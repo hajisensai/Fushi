@@ -10,6 +10,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 
+/// [MalVideoMetadataProvider.maxCharacterDetailFetches] 的默认值：每部作品最多给
+/// 8 个主要角色取 Jikan 角色详情（日文原名）。
+const int kMalMaxCharacterDetailFetches = 8;
+
 /// Endpoints whose optional credits could not be loaded for this work.
 const String malIncompleteCreditEndpointsKey =
     'mal_incomplete_credit_endpoints';
@@ -66,6 +70,7 @@ class MalVideoMetadataProvider
     VideoMetadataHttpClient? transport,
     this.endpoint = 'https://api.jikan.moe/v4',
     this.language = kFallbackVideoMetadataLocale,
+    this.maxCharacterDetailFetches = kMalMaxCharacterDetailFetches,
     MalVideoMetadataRequestGate? requestGate,
   })  : assert(client == null || transport == null),
         _transport = transport ??
@@ -92,6 +97,11 @@ class MalVideoMetadataProvider
   /// 此前无论资料语言是什么都把 `title_japanese` 写进 `title`——海报、简介按
   /// 资料语言走而标题恒日文，就是「刮削不同语言」的来源。
   final String language;
+
+  /// 每部作品最多给几个**主要角色**（Jikan `role == "Main"`、有日语声优）取
+  /// `/characters/{id}` 详情拿日文原名 `name_kanji`。0 = 不取。见
+  /// [kMalMaxCharacterDetailFetches]。
+  final int maxCharacterDetailFetches;
 
   /// [language] 的主子标签（`zh-CN` → `zh`）。
   String get _titleLanguage => VideoMetadataLanguages(language).primarySubtag;
@@ -138,8 +148,10 @@ class MalVideoMetadataProvider
         await _optionalCredits(id, 'characters', incomplete);
     final Map<String, Object?> staff =
         await _optionalCredits(id, 'staff', incomplete);
+    final Map<String, String> kanjiNames =
+        await _mainCharacterKanjiNames(characters);
     return work.copyWith(
-      credits: _credits(characters, staff),
+      credits: _credits(characters, staff, kanjiNames),
       rawPayload: <String, Object?>{
         ...item,
         if (incomplete.isNotEmpty) malIncompleteCreditEndpointsKey: incomplete,
@@ -224,6 +236,54 @@ class MalVideoMetadataProvider
       incomplete.add(endpoint);
       return const <String, Object?>{};
     }
+  }
+
+  /// 主要角色的日文原名（角色 MAL id → `name_kanji`）。
+  ///
+  /// Jikan v4 `/anime/{id}/characters` 的角色对象只有 `mal_id / url / images /
+  /// name`（罗马音），`name_kanji` 只在 `/characters/{id}` 详情里（Jikan OpenAPI
+  /// `anime_characters` 与 `character` 两个 schema）。逐个角色取详情要一条请求
+  /// 一个角色，而本闸门是全局 1.1 s 一条（Jikan 60 req/min），所以只取**主要角色**
+  /// 且有上限 [maxCharacterDetailFetches]：一部作品最多多花约 9 秒。配角的日文写法
+  /// 由专名表生成阶段的百科资料补。
+  ///
+  /// 这是锦上添花的字段：任何一条失败都不影响作品与演职员表（不记进
+  /// [malIncompleteCreditEndpointsKey]）。单个角色 4xx（下架 / 不存在）跳过继续；
+  /// 限流用尽或连不上就停下，不把整次刮削拖进冷却。
+  Future<Map<String, String>> _mainCharacterKanjiNames(
+    Map<String, Object?> characters,
+  ) async {
+    final List<String> ids = <String>[];
+    for (final Object? node in metadataList(characters['data'])) {
+      if (ids.length >= maxCharacterDetailFetches) break;
+      final Map<String, Object?>? item = metadataObject(node);
+      if (metadataString(item?['role'])?.toLowerCase() != 'main') continue;
+      final bool hasJapaneseVoice = metadataList(item?['voice_actors']).any(
+          (Object? actor) =>
+              metadataString(metadataObject(actor)?['language']) ==
+              'Japanese');
+      if (!hasJapaneseVoice) continue;
+      final int? characterId =
+          metadataInt(metadataObject(item?['character'])?['mal_id']);
+      if (characterId == null || ids.contains('$characterId')) continue;
+      ids.add('$characterId');
+    }
+    final Map<String, String> names = <String, String>{};
+    for (final String characterId in ids) {
+      try {
+        final Map<String, Object?> payload =
+            await _get('characters/$characterId');
+        final String? kanji =
+            metadataString(metadataObject(payload['data'])?['name_kanji']);
+        if (kanji != null) names[characterId] = kanji;
+      } on VideoMetadataNetworkException catch (error) {
+        final int? status = error.statusCode;
+        final bool perCharacterMiss =
+            status != null && status >= 400 && status < 500 && status != 429;
+        if (!perCharacterMiss) break;
+      }
+    }
+    return names;
   }
 
   @override
@@ -382,8 +442,8 @@ class MalVideoMetadataProvider
         ]);
   }
 
-  List<VideoMetadataCredit> _credits(
-      Map<String, Object?> characters, Map<String, Object?> staff) {
+  List<VideoMetadataCredit> _credits(Map<String, Object?> characters,
+      Map<String, Object?> staff, Map<String, String> kanjiNames) {
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
     for (final Object? node in metadataList(characters['data'])) {
       final Map<String, Object?>? item = metadataObject(node);
@@ -404,6 +464,7 @@ class MalVideoMetadataProvider
             character: VideoMetadataCharacter(
                 id: characterId,
                 name: name,
+                originalName: kanjiNames[characterId],
                 imageUrl: _image(character),
                 ids: <VideoMetadataId>[
                   if (characterId != null)

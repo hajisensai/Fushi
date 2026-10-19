@@ -4,16 +4,14 @@ import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 void main() {
   group('buildYomitanTokenizeResponse', () {
     test('wraps each segment in its own array (yomitan 2D content)', () {
-      List<TokenizedSegment> fakeTokenizer(String t) => [
-        (text: '日本語', reading: 'にほんご'),
-        (text: 'は', reading: ''),
-        (text: '難しい', reading: ''),
-      ];
-
       final out = buildYomitanTokenizeResponse(
         text: '日本語は難しい',
         index: 0,
-        tokenize: fakeTokenizer,
+        segments: <TokenizedSegment>[
+          (text: '日本語', reading: 'にほんご'),
+          (text: 'は', reading: ''),
+          (text: '難しい', reading: ''),
+        ],
       );
 
       expect(out['id'], 'scan');
@@ -34,7 +32,8 @@ void main() {
       final out = buildYomitanTokenizeResponse(
         text: '',
         index: 2,
-        tokenize: (String t) => <TokenizedSegment>[],
+        // 空文本不看 segments：一律空 content。
+        segments: <TokenizedSegment>[(text: 'x', reading: '')],
       );
       expect(out['index'], 2);
       expect(out['content'], <dynamic>[]);

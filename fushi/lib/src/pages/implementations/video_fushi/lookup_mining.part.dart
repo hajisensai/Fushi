@@ -285,6 +285,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
   }
 
   Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {
+    // 网页档：画面归站点（硬件 DRM 截不到）、没有本地媒体源——只入队，由内置档重放落卡
+    // （见 web_source.part.dart）。
+    if (_webMode) return _onWebMineEntry(fields);
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
       return const MinePopupResult();
@@ -376,6 +379,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     int noteId,
     Map<String, String> fields,
   ) async {
+    // 网页档覆盖最新那张卡：没有可裁的媒体，只覆盖字段（mixin 路径）。
+    if (_webMode) return _updateFieldsOnly(noteId, fields);
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
       return const MinePopupResult();

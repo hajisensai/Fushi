@@ -75,11 +75,7 @@ class GalLookupSamplesDialog extends StatefulWidget {
   final bool nativeGeometryActive;
   final GalLookupCalibrationStore store;
   final GalCalibrationPreviewBuilder previewBuilder;
-  final Future<GalCalibrationImageFit> Function(
-    GalLookupCalibrationDraft draft, {
-    GalCalibrationPreviewBuilder build,
-  })
-  imageFitter;
+  final GalCalibrationImageFitter imageFitter;
 
   @override
   State<GalLookupSamplesDialog> createState() => _GalLookupSamplesDialogState();
@@ -564,6 +560,9 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
       final GalCalibrationImageFit result = await widget.imageFitter(
         input,
         build: widget.previewBuilder,
+        // 对话框关掉后剩余样本不必再跑完：拟合在下一个边界看到过期就停（finally 照样
+        // 关 OCR 会话），返回的过期结果由下面的 !mounted 丢弃。
+        isStale: () => !mounted,
       );
       if (!mounted) return;
       if (result.draft == null) {

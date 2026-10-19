@@ -55,6 +55,8 @@ import 'package:fushi_engine/ai/ai_key_rotation.dart'
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart'
+    show MossBackendPreference, VideoSubtitleSegmenterMode;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
@@ -2771,6 +2773,63 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 生成日语字幕时是否用 AI 校对（spec `2026-10-19-video-asr-llm-subtitle-pipeline`
+  /// 第 7 节：**默认关**）。设备本地：开着就是「把 ASR 文本与专名表发给所选
+  /// 提供商并按量计费」，这种同意只对点它的那台设备成立。
+  bool get videoSubtitleAiProofread =>
+      getPref('video_subtitle_ai_proofread', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleAiProofread(bool enabled) async {
+    await setPref('video_subtitle_ai_proofread', enabled);
+    notifyListeners();
+  }
+
+  /// 用户是否已看过并同意「AI 校对会发送什么」的说明（首次开启 AI 校对时弹一次；
+  /// CLI 用 `--consent-ai` 写同一个键）。设备本地，理由同上。
+  bool get videoSubtitleAiConsented =>
+      getPref('video_subtitle_ai_consented', defaultValue: false) as bool;
+
+  Future<void> setVideoSubtitleAiConsented(bool consented) async {
+    await setPref('video_subtitle_ai_consented', consented);
+    notifyListeners();
+  }
+
+  /// 生成日语字幕的分段方式（`VideoSubtitleSegmenterMode.name`：auto / moss /
+  /// window）；不认识的值按 auto。设备本地：能不能跑 MOSS 取决于这台机器的显卡。
+  VideoSubtitleSegmenterMode get videoSubtitleSegmenter {
+    final String raw =
+        getPref('video_subtitle_segmenter', defaultValue: 'auto') as String;
+    return VideoSubtitleSegmenterMode.values.firstWhere(
+      (VideoSubtitleSegmenterMode m) => m.name == raw,
+      orElse: () => VideoSubtitleSegmenterMode.auto,
+    );
+  }
+
+  Future<void> setVideoSubtitleSegmenter(
+    VideoSubtitleSegmenterMode mode,
+  ) async {
+    await setPref('video_subtitle_segmenter', mode.name);
+    notifyListeners();
+  }
+
+  /// MOSS（audio.cpp）的推理后端偏好（`MossBackendPreference.name`：auto / cuda /
+  /// vulkan / cpu）；不认识的值按 auto。设备本地，理由同上。
+  MossBackendPreference get videoSubtitleMossBackend {
+    final String raw =
+        getPref('video_subtitle_moss_backend', defaultValue: 'auto') as String;
+    return MossBackendPreference.values.firstWhere(
+      (MossBackendPreference b) => b.name == raw,
+      orElse: () => MossBackendPreference.auto,
+    );
+  }
+
+  Future<void> setVideoSubtitleMossBackend(
+    MossBackendPreference backend,
+  ) async {
+    await setPref('video_subtitle_moss_backend', backend.name);
+    notifyListeners();
+  }
+
   /// 下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）。默认关：
   /// 整颗种子全下（旧行为）。下载管线每轮现读，改了对还没拿到文件表的任务生效。
   bool get videoDownloadSkipExtras =>
@@ -2996,6 +3055,24 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsReviewHideHardEasy(bool value) async {
     await setPref('srs_review_hide_hard_easy', value);
+    notifyListeners();
+  }
+
+  // 复习页底部重播键的位置（SrsReviewReplayButton.wire）。默认 'off'。
+  String get srsReviewReplayButton =>
+      getPref('srs_review_replay_button', defaultValue: 'off') as String;
+
+  Future<void> setSrsReviewReplayButton(String wire) async {
+    await setPref('srs_review_replay_button', wire);
+    notifyListeners();
+  }
+
+  // 复习页评分按钮显示下次间隔。默认 true。
+  bool get srsReviewShowIntervals =>
+      getPref('srs_review_show_intervals', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewShowIntervals(bool value) async {
+    await setPref('srs_review_show_intervals', value);
     notifyListeners();
   }
 
@@ -4695,6 +4772,25 @@ class PreferencesRepository extends ChangeNotifier
   /// 漫画阅读器顶栏是否悬浮（默认开，与 EPUB 阅读器「点空白隐藏控制栏」同默认）。
   /// 悬浮 = 顶栏不占布局、默认收起、点页面中央 / 顶边悬停唤出并自动收起；
   /// 关 = 顶栏常驻并占 48px 布局高，页图在它下方排布。
+  /// 网页漫画：章末二维码广告页剔除（`lib/src/media/manga/web/`）。默认开。
+  bool get webComicAdFilter =>
+      getPref('web_comic_ad_filter', defaultValue: true) as bool;
+
+  Future<void> setWebComicAdFilter(bool value) async {
+    await setPref('web_comic_ad_filter', value);
+    notifyListeners();
+  }
+
+  /// app 内浏览器的站点书签（JSON 数组，见 `web_browser_sites.dart`）。空串 =
+  /// 从没改过，用预置站点。
+  String get webBrowserSitesJson =>
+      getPref('web_browser_sites', defaultValue: '') as String;
+
+  Future<void> setWebBrowserSitesJson(String value) async {
+    await setPref('web_browser_sites', value);
+    notifyListeners();
+  }
+
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
 

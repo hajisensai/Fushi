@@ -277,7 +277,17 @@ class VideoRemoteMineResult {
 }
 
 /// 长任务种类。
-enum VideoRemoteJobKind { subtitleOcr, transcribe, retime, align, clip }
+enum VideoRemoteJobKind {
+  subtitleOcr,
+  transcribe,
+  retime,
+  align,
+  clip,
+
+  /// 生成日语字幕（ASR + AI 校对管线，`AppVideoSubtitleService`）：不依赖视频页，
+  /// 视频页 / 合集页 / CLI 起的都登记成这一种。
+  subtitleGenerate,
+}
 
 enum VideoRemoteJobStatus { running, succeeded, failed, cancelled }
 

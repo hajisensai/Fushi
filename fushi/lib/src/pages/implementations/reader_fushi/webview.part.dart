@@ -187,7 +187,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
-    final LnReaderOnlineChapterLoader? onlineChapters = _onlineChapterLoader;
+    final OnlineNovelChapterLoader? onlineChapters = _onlineChapterLoader;
     if (onlineChapters != null) {
       await _ensureOnlineChapter(onlineChapters, filePath);
     }
@@ -283,12 +283,12 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
-  /// 在线小说书：WebView 要的章节还是占位页就先经插件取正文写回解压树（按需
-  /// 取章，见 [LnReaderOnlineChapterLoader]）。换成正文后丢掉这一章的 sanitize
+  /// 在线小说书 / 网页小说书：WebView 要的章节还是占位页就先取正文写回解压树
+  /// （按需取章，见 [OnlineNovelChapterLoader]）。换成正文后丢掉这一章的 sanitize
   /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
   /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
   Future<void> _ensureOnlineChapter(
-    LnReaderOnlineChapterLoader loader,
+    OnlineNovelChapterLoader loader,
     String filePath,
   ) async {
     try {
@@ -694,6 +694,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       // TODO-756b：是否“鼠标悬停即自动查词”。live 变更经 _applyHoverAutoLookupLive
       // 改同一个 JS 全局，无需整章重注入。
       hoverAutoLookup: ReaderFushiSource.instance.hoverAutoLookup,
+      hoverKey: ReaderFushiSource.instance.hoverLookupModifier.jsEventFlag,
       // BUG-2508：macOS 由宿主腿接管悬停查词，关掉文档内 mousemove 腿（判据见
       // [hostOwnsWebViewHoverLookup]，只有 macOS；其余平台 JS 腿不动）。
       hostHoverLookup: hostOwnsWebViewHoverLookup,
@@ -903,6 +904,7 @@ install: function(C) {
   var fushiVnMode = C.vnMode;
   var fushiVnClickAdvance = C.vnClickAdvance;
   window.__hoverAutoLookup = C.hoverAutoLookup;
+  window.__fushiHoverKey = C.hoverKey || 'shiftKey';
   // BUG-2508：宿主（Flutter）侧接管悬停查词的平台上，本文档的 mousemove 腿整条关掉
   // （一平台一条腿，见 reader_host_hover_lookup.dart）。与 __hoverAutoLookup 同为
   // Dart 单写的只读镜像，live 变更经 _applyHoverAutoLookupLive 改同一全局。
@@ -1700,7 +1702,7 @@ $kContinuousWheelScrollJs
     if (window.__fushiHostHoverLookup) return;
     // TODO-756b：开了 window.__hoverAutoLookup 则纯悬停即查词（不要求 Shift）；
     // 否则退回 756a 的 Shift 门控。未触发分支仍复位节流锚，使下次进入即触发。
-    if (!e.shiftKey && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
+    if (!e[window.__fushiHoverKey || 'shiftKey'] && !window.__hoverAutoLookup) { _shiftHoverLastX = -1; _shiftHoverLastY = -1; return; }
     var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
     if (dx * dx + dy * dy < 64) return;
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;

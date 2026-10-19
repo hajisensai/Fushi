@@ -88,7 +88,19 @@ function deliver(sb, data) {
   for (const fn of sb.listeners.window.message || []) fn({ source: sb.window, origin: sb.window.origin, data });
 }
 function runTimeouts(sb) { const t = sb.timeouts.splice(0); for (const { fn } of t) fn(); }
-function sampler(sb) { return sb.intervals.find((i) => i.ms === 250).fn; }
+// 250ms 轮询不止一条（还有 YouTube 广告处理 handleAds，非 YouTube 站点是 no-op），
+// 按注册顺序全跑一遍，不靠「第一条就是播放态轮询」这种顺序假设。
+function sampler(sb) {
+  const fns = sb.intervals.filter((i) => i.ms === 250).map((i) => i.fn);
+  assert.ok(fns.length > 0, 'glue 必须注册 250ms 播放态轮询');
+  return () => { for (const fn of fns) fn(); };
+}
+// netflix-bridge 的正片播放器会话（fushiNetflixPlayer）在沙箱里不加载：按需 stub。
+function stubNetflixPlayer(sb) {
+  sb.window.fushiNetflixPlayer = () => ({
+    getCurrentTime: () => 0, isPaused: () => true, getDuration: () => 0,
+  });
+}
 
 test('整集字幕轨：bridge cues → providers store → 节流后整轨投给 Dart', () => {
   const sb = makeSandbox({ hostname: 'www.netflix.com', pathname: '/watch/81236554' });
@@ -103,7 +115,7 @@ test('整集字幕轨：bridge cues → providers store → 节流后整轨投�
   assert.strictEqual(tracks.length, 1);
   assert.strictEqual(tracks[0].name, 'fushiWebVideo');
   assertPlainEqual(tracks[0].payload, {
-    type: 'track', key: '81236554|ja', videoKey: '81236554', lang: 'ja',
+    type: 'track', key: '81236554|ja', videoKey: '81236554', lang: 'ja', trackId: '',
     cues: [{ s: 1000, e: 2000, t: 'こんにちは' }, { s: 3000, e: 4000, t: 'さようなら' }],
   });
 });
@@ -146,8 +158,12 @@ test('播放态轮询：变化才投递，静止不重复', () => {
 
 test('seek：Netflix 走 bridge 消息（官方播放器 API），其它站直接写 currentTime', () => {
   const nf = makeSandbox({ hostname: 'www.netflix.com', pathname: '/watch/1' });
-  assert.strictEqual(nf.window.__fushiWebVideo.seek(12345.6), 'bridge');
-  assertPlainEqual(nf.messages.filter((m) => m.__fushiNf === 'seek'), [{ __fushiNf: 'seek', ms: 12346 }]);
+  // 没有正片播放器会话：不发消息、返回确定的未发出结果码。
+  assert.strictEqual(nf.window.__fushiWebVideo.seek(1000, 7), 'no-player');
+  assert.strictEqual(nf.messages.filter((m) => m.__fushiNf === 'seek').length, 0);
+  stubNetflixPlayer(nf);
+  assert.strictEqual(nf.window.__fushiWebVideo.seek(12345.6, 7), 'bridge');
+  assertPlainEqual(nf.messages.filter((m) => m.__fushiNf === 'seek'), [{ __fushiNf: 'seek', ms: 12346, id: 7 }]);
   assert.strictEqual(nf.video.currentTime, 0, 'Netflix 绝不直接改 currentTime（M7375）');
 
   const other = makeSandbox({ hostname: 'www.example.com' });
@@ -159,8 +175,12 @@ test('seek：Netflix 走 bridge 消息（官方播放器 API），其它站直�
 test('seekDone 回执透传给 Dart', () => {
   const sb = makeSandbox({ hostname: 'www.netflix.com' });
   deliver(sb, { __fushiNf: 'seekDone', ok: true, err: '' });
+  deliver(sb, { __fushiNf: 'seekDone', ok: false, err: 'timeout', id: 3 });
   const done = sb.posted.filter((p) => p.payload.type === 'seekDone');
-  assertPlainEqual(done.map((d) => d.payload), [{ type: 'seekDone', ok: true, err: '' }]);
+  assertPlainEqual(done.map((d) => d.payload), [
+    { type: 'seekDone', ok: true, err: '', id: null },
+    { type: 'seekDone', ok: false, err: 'timeout', id: 3 },
+  ]);
 });
 
 test('隐藏站点原生字幕：visibility 而非 display:none，可撤销', () => {

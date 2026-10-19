@@ -71,7 +71,7 @@ void main() {
       expect(
         _flat(page),
         contains(
-          _flat('String get _activeBookUid => _discBookUid ?? widget.bookUid;'),
+          _flat('String get _activeBookUid => _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;'),
         ),
         reason:
             'ordinary local and remote videos retain their existing bookUid key',

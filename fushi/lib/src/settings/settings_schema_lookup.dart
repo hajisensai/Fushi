@@ -36,6 +36,7 @@ import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 void _showSettingsSnackBar(SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
@@ -355,6 +356,34 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
             defaultValue: false,
+          ),
+          // 悬停查词按住哪个键（浏览器扩展 / Yomitan 同款可选）。与上面的「悬停即查词」
+          // 并存：那个开着就不用按键。
+          SettingsSegmentedItem<String>(
+            id: 'lookup.hover_lookup_modifier',
+            dropdown: true,
+            title: t.hover_lookup_modifier,
+            subtitle: t.hover_lookup_modifier_hint,
+            icon: FushiIcons.keyboard,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 26),
+            options: <SettingsSegmentOption<String>>[
+              for (final HoverLookupModifier m in HoverLookupModifier.values)
+                SettingsSegmentOption<String>(
+                  value: m.storageKey,
+                  label: m.label,
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.hoverLookupModifier.storageKey,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await settingsContext.readerSource.setHoverLookupModifier(
+                HoverLookupModifier.fromStorage(value),
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: HoverLookupModifier.shift.storageKey,
           ),
           // 悬停查词的收尾动作：鼠标离开字幕与查词浮层即自动关浮层 + 恢复播放，免去
           // 「再点一下空白」。只作用于悬停发起的查词会话（点击查词不受影响），故与上面

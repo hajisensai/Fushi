@@ -33,7 +33,23 @@ function loadBridge(opts) {
     addEventListener: (t, fn) => { if (t === 'message') listeners.push(fn); },
   };
   // BUG-1949：播放器 API 桩——嗅探到的字幕正文用它取「当前轨」语言。
-  const player = { track: opts.track === undefined ? { bcp47: 'ja', displayName: '日本語' } : opts.track };
+  const player = {
+    track: opts.track === undefined ? { bcp47: 'ja', displayName: '日本語', trackId: 'T:ja-1' } : opts.track,
+    time: 0,
+    seeks: [],
+    // 正片会话 id 以 'watch' 开头；预告 / billboard 会话排在它后面也不能被选中。
+    sessionIds: opts.sessionIds || ['watch-81001', 'motion-billboard-1'],
+  };
+  const watchPlayer = {
+    getTimedTextTrack: () => player.track,
+    getCurrentTime: () => player.time,
+    seek: (ms) => { player.seeks.push(ms); if (!opts.seekNeverLands) player.time = ms; },
+  };
+  const trailerPlayer = {
+    getTimedTextTrack: () => ({ bcp47: 'en', trackId: 'T:trailer' }),
+    getCurrentTime: () => 0,
+    seek: () => { throw new Error('seek reached the trailer player'); },
+  };
   if (opts.withPlayer !== false) {
     windowObj.netflix = {
       appContext: {
@@ -41,8 +57,8 @@ function loadBridge(opts) {
           playerApp: {
             getAPI: () => ({
               videoPlayer: {
-                getAllPlayerSessionIds: () => ['s1', 's2'],
-                getVideoPlayerBySessionId: () => ({ getTimedTextTrack: () => player.track }),
+                getAllPlayerSessionIds: () => player.sessionIds,
+                getVideoPlayerBySessionId: (id) => (String(id).indexOf('watch') === 0 ? watchPlayer : trailerPlayer),
               },
             }),
           },
@@ -63,6 +79,7 @@ function loadBridge(opts) {
   class FakeResponse {
     constructor(url, body) { this.url = url; this.body = body; }
     text() { return Promise.resolve(this.body); }
+    arrayBuffer() { return Promise.resolve(new TextEncoder().encode(this.body).buffer); }
   }
   const sandbox = {
     window: windowObj,
@@ -73,6 +90,7 @@ function loadBridge(opts) {
     Uint8Array,
     Math,
     setTimeout: (fn) => { fn(); return 0; },
+    Date: opts.Date || Date,
     // BUG-1728：记录 fetch 第二参（init）供「不带 credentials」断言；mock 响应带 ok/status
     //（实现按 r.ok 分流成功/失败）。
     fetch: (url, init) => {
@@ -85,7 +103,6 @@ function loadBridge(opts) {
       });
     },
     console: { warn: () => {}, log: () => {}, error: () => {} },
-    Date,
     Array,
     Object,
     Error,
@@ -333,4 +350,86 @@ test('BUG-1949 清单路径抓到的轨不被 fetch 嗅探二次投递（同一 
   const cues = cuesPosted(h);
   assert.strictEqual(cues.length, 3, '3 轨各投一次，不得因嗅探而变 6');
   assert.deepStrictEqual(cues.map((p) => p.msg.lang).sort(), ['en', 'ja', 'zh-Hans'], '清单路径的语言标签优先');
+});
+
+// ── 2026-10 Netflix 站点书修复：正片会话选择 / seek 回执 / 轨身份 / 抓取失败回执 ──
+function sendSeek(h, ms, id) {
+  for (const fn of h.listeners) {
+    fn({ origin: 'https://www.netflix.com', source: h.windowObj, data: { __fushiNf: 'seek', ms, id } });
+  }
+  return h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'seekDone').map((p) => p.msg);
+}
+
+test('seek 只打到 watch 前缀的正片会话（预告会话排在后面也不选），回执带回 id', () => {
+  const h = loadBridge();
+  const done = sendSeek(h, 61000, 7);
+  assert.deepStrictEqual(h.player.seeks, [61000], 'seek 必须落在正片播放器上');
+  assert.strictEqual(done.length, 1);
+  assert.strictEqual(done[0].ok, true);
+  assert.strictEqual(done[0].id, 7, '回执原样回显 id（调用方只认最后一次 seek）');
+});
+
+test('没有正片会话时不退化成「随便最后一个」：seek 失败回执 ok:false', () => {
+  const h = loadBridge({ sessionIds: ['motion-billboard-1'] });
+  const done = sendSeek(h, 1000, 3);
+  assert.strictEqual(done.length, 1);
+  assert.strictEqual(done[0].ok, false);
+  assert.strictEqual(done[0].id, 3);
+  assert.match(done[0].err, /no watch player session/);
+});
+
+test('seek 4 s 没落地：回执 ok:false err:timeout（不再假装成功）', () => {
+  let now = 0;
+  class FakeDate { static now() { now += 500; return now; } }
+  const h = loadBridge({ seekNeverLands: true, Date: FakeDate });
+  const done = sendSeek(h, 90000, 9);
+  assert.strictEqual(done.length, 1);
+  assert.strictEqual(done[0].ok, false);
+  assert.strictEqual(done[0].err, 'timeout');
+  assert.strictEqual(done[0].id, 9);
+});
+
+test('window.fushiNetflixPlayer 暴露同一个正片会话判据（glue 共用）', () => {
+  const h = loadBridge();
+  assert.strictEqual(typeof h.windowObj.fushiNetflixPlayer, 'function');
+  assert.strictEqual(h.windowObj.fushiNetflixPlayer().getTimedTextTrack().trackId, 'T:ja-1');
+  const none = loadBridge({ sessionIds: ['motion-billboard-1'] });
+  assert.strictEqual(none.windowObj.fushiNetflixPlayer(), null);
+});
+
+test('嗅探到的整轨带 trackId / 显示名（同语言普通与 CC 轨不再撞 key）', () => {
+  const h = loadBridge({ track: { bcp47: 'en', trackId: 'T:en-cc', displayName: 'English [CC]' } });
+  const x = new h.FakeXhr();
+  x.open('GET', CDN_URL);
+  x.responseText = VTT_BODY;
+  x.send();
+  x.fire('load');
+  const cues = cuesPosted(h);
+  assert.strictEqual(cues.length, 1);
+  assert.strictEqual(cues[0].msg.lang, 'en');
+  assert.strictEqual(cues[0].msg.trackId, 'T:en-cc');
+  assert.strictEqual(cues[0].msg.label, 'English [CC]');
+});
+
+test('fetch 路径的 Response.arrayBuffer 同样嗅探字幕正文', async () => {
+  const h = loadBridge();
+  const sub = new h.FakeResponse(CDN_URL + '&ab=1', VTT_BODY);
+  await vm.runInContext('(r) => r.arrayBuffer()', h.ctx)(sub);
+  await settle();
+  const cues = cuesPosted(h);
+  assert.strictEqual(cues.length, 1, 'arrayBuffer 取回的字幕必须被投出');
+  assert.strictEqual(cues[0].msg.format, 'webvtt');
+});
+
+test('清单轨抓取失败投 cuesFailed（带语言与 trackId），消费端据此落成失败态', async () => {
+  const h = loadBridge({ failing: true });
+  const manifest = makeManifest();
+  manifest.timedtexttracks[0].new_track_id = 'T:ja-1';
+  vm.runInContext('JSON.parse(' + JSON.stringify(JSON.stringify(manifest)) + ')', h.ctx);
+  await settle();
+  const failed = h.posted.filter((p) => p.msg && p.msg.__fushiNf === 'cuesFailed').map((p) => p.msg);
+  assert.strictEqual(failed.length, 3);
+  const ja = failed.find((m) => m.lang === 'ja');
+  assert.strictEqual(ja.trackId, 'T:ja-1');
+  assert.strictEqual(ja.videoId, '81001');
 });

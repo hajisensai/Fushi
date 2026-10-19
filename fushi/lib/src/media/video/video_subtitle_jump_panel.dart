@@ -17,6 +17,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 export 'subtitle_transcript_text.dart';
 
@@ -535,6 +536,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
     this.onFontScaleIndexChanged,
     this.hoverAutoLookupEnabled = false,
+    this.hoverLookupModifier = HoverLookupModifier.shift,
     this.fontSize = 14,
     this.fontFamily,
     this.width = 320,
@@ -607,6 +609,9 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// true 时列表行文本纯悬停即查词，false 时退回按住 Shift 悬停才查词。由页面层从
   /// `ReaderFushiSource.instance.hoverAutoLookup` 传入。默认 false（向后兼容）。
   final bool hoverAutoLookupEnabled;
+
+  /// 悬停查词按住的键（设置「悬停查词按键」）。
+  final HoverLookupModifier hoverLookupModifier;
 
   final double fontSize;
 
@@ -1112,7 +1117,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final void Function(AudioCue, int, Rect)? onLookup = _lookupCue;
     if (onLookup == null) return;
     if (!widget.hoverAutoLookupEnabled &&
-        !HardwareKeyboard.instance.isShiftPressed) {
+        !widget.hoverLookupModifier.isPressed()) {
       // 未开「悬停即查词」且未按 Shift：复位节流锚，下次按 Shift 进入即触发。
       _lastRowHoverPos = Offset.zero;
       _lastRowHoverCueKey = null;

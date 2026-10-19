@@ -410,6 +410,61 @@ _PpOcrDecodedOutput _decodePpOcrDetailed({
   return (data: data, frames: frames, vocabSize: vocabSize);
 }
 
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 前处理块的产物：输入张量与后处理
+/// 要用的几个宽度（全是纯数据，可跨 isolate 传）。
+typedef PpRecDetailedInput = ({
+  Float32List data,
+  int inputWidth,
+  int contentWidth,
+  int lineWidth,
+  int lineHeight,
+});
+
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 的前处理块（纯计算，不碰会话）。
+/// [line] 没有面积时返回 null（识别结果是 [PpOcrLineRecognition.empty]）。
+PpRecDetailedInput? ppRecPrepareDetailed(img.Image line) {
+  if (line.width <= 0 || line.height <= 0) return null;
+  final ({Float32List data, int width}) input = ppRecPreprocess(line);
+  return (
+    data: input.data,
+    inputWidth: input.width,
+    contentWidth: _ppRecContentWidth(line, input.width),
+    lineWidth: line.width,
+    lineHeight: line.height,
+  );
+}
+
+/// [PpOcrLineRecognizer.recognizeLineDetailed] 的后处理块（纯计算，不碰会话）：
+/// 校验输出形状 / 词表 / 长度，再做详细 CTC 解码（逐帧置信度、有限值检查）。
+PpOcrLineRecognition ppRecDecodeDetailed(
+  OcrTensor logits,
+  List<String> vocab, {
+  required int lineWidth,
+  required int lineHeight,
+  required int contentWidth,
+  required int inputWidth,
+}) {
+  final ({Float32List data, int frames, int vocabSize}) validated =
+      _validatePpOcrOutput(logits, vocab.length);
+  final _PpOcrDecodedOutput decoded = _decodePpOcrDetailed(
+    data: validated.data,
+    frames: validated.frames,
+    vocabSize: validated.vocabSize,
+    vocab: vocab,
+    lineWidth: lineWidth,
+    contentWidth: contentWidth,
+    inputWidth: inputWidth,
+  );
+  return PpOcrLineRecognition(
+    text: decoded.text,
+    tokens: decoded.tokens,
+    lineWidth: lineWidth,
+    lineHeight: lineHeight,
+    contentWidth: contentWidth,
+    inputWidth: inputWidth,
+  );
+}
+
 /// [PpOcrLineRecognizer.recognizeLinePositioned] 的结果：文字、置信度（同
 /// [ctcGreedyDecodeScored]）与每个吐字 token 在行图上的近似横向区间。
 class PpOcrPositionedLine {
@@ -513,19 +568,43 @@ class PpOcrLineRecognizer {
   /// 坐标是原始 [line] 的像素坐标。位置是模型帧感受野映射得到的近似
   /// 横向范围，绝不是字形 bbox；右 padding 中的 token 仍保留在 [text]，
   /// 但 [PpOcrCtcToken.hasPosition] 为 false。
+  ///
+  /// 三块的组合：[ppRecPrepareDetailed]（纯前处理）→ [runRecognition]（只做推理）
+  /// → [ppRecDecodeDetailed]（纯后处理）。两块纯计算不碰会话，可以挪到别的 isolate。
   Future<PpOcrLineRecognition> recognizeLineDetailed(img.Image line) async {
-    if (line.width <= 0 || line.height <= 0) {
-      return const PpOcrLineRecognition.empty();
-    }
-    final ({Float32List data, int width}) input = ppRecPreprocess(line);
-    final int contentWidth = _ppRecContentWidth(line, input.width);
+    final PpRecDetailedInput? input = ppRecPrepareDetailed(line);
+    if (input == null) return const PpOcrLineRecognition.empty();
+    final OcrTensor logits = await runRecognition(
+      input.data,
+      inputWidth: input.inputWidth,
+    );
+    return ppRecDecodeDetailed(
+      logits,
+      vocab,
+      lineWidth: input.lineWidth,
+      lineHeight: input.lineHeight,
+      contentWidth: input.contentWidth,
+      inputWidth: input.inputWidth,
+    );
+  }
+
+  /// 只做推理：[data] 是 [1,3,[kPpRecHeight],[inputWidth]] 的输入张量
+  /// （[ppRecPrepareDetailed] / [ppRecPreprocess]），返回唯一的输出（逐帧 logits）。
+  /// 输出个数不是 1、或输出的形状 / 词表维度 / 长度 / 元素类型不对时抛
+  /// [StateError]——推理一返回就查（都是 O(1) 的元数据检查），不推迟到后处理：
+  /// 逐行推理、批量后处理的调用方（校准 OCR）要在第一行就停，而不是把剩下的行
+  /// 全推理完才发现模型不对。逐元素的有限值检查仍在 [ppRecDecodeDetailed]。
+  Future<OcrTensor> runRecognition(
+    Float32List data, {
+    required int inputWidth,
+  }) async {
     final Map<String, OcrTensor> outputs = await _session.run(
       <String, OcrTensor>{
-        inputName: OcrTensor.float32(input.data, <int>[
+        inputName: OcrTensor.float32(data, <int>[
           1,
           3,
           kPpRecHeight,
-          input.width,
+          inputWidth,
         ]),
       },
     );
@@ -535,25 +614,8 @@ class PpOcrLineRecognizer {
       );
     }
     final OcrTensor logits = outputs.values.single;
-    final ({Float32List data, int frames, int vocabSize}) validated =
-        _validatePpOcrOutput(logits, vocab.length);
-    final _PpOcrDecodedOutput decoded = _decodePpOcrDetailed(
-      data: validated.data,
-      frames: validated.frames,
-      vocabSize: validated.vocabSize,
-      vocab: vocab,
-      lineWidth: line.width,
-      contentWidth: contentWidth,
-      inputWidth: input.width,
-    );
-    return PpOcrLineRecognition(
-      text: decoded.text,
-      tokens: decoded.tokens,
-      lineWidth: line.width,
-      lineHeight: line.height,
-      contentWidth: contentWidth,
-      inputWidth: input.width,
-    );
+    _validatePpOcrOutput(logits, vocab.length);
+    return logits;
   }
 
   Future<void> close() => _session.close();

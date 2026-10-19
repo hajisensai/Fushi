@@ -10,6 +10,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:fushi_engine/asr/asr_host_job_runner.dart' show asrAudioProfileForJob;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
+    show VideoSubtitleJobParams, kVideoSubtitleJobKind;
+import 'package:path/path.dart' as p;
 import 'package:fushi_server/src/ctl/admin_client.dart';
 
 /// admin 代理前缀。
@@ -65,7 +69,19 @@ void addCtlHostOptions(ArgParser parser) {
     ..addOption('after', help: 'assistant show：只要比这个 revision 新的视图')
     ..addFlag('wait', negatable: false, help: 'assistant show：长轮询等新视图；jobs submit：等任务结束')
     ..addOption('language', abbr: 'l', help: 'jobs submit asr：语言 tag', defaultsTo: 'ja')
-    ..addOption('out', abbr: 'o', help: 'jobs submit / result：产物写到这里');
+    ..addOption(
+      'profile',
+      help: 'jobs submit asr：cleanSpeech | mixedAudio（缺省按文件扩展名，视频 → mixedAudio）',
+      allowed: <String>['cleanSpeech', 'mixedAudio'],
+    )
+    ..addOption('out', abbr: 'o', help: 'jobs submit / result：产物写到这里')
+    ..addOption('video-id', help: 'jobs submit video_subtitle：host 库里的视频 id（不上传文件）')
+    ..addOption('collection-id', help: 'jobs submit video_subtitle：整季（合集 id）')
+    ..addFlag('ai', defaultsTo: true, help: 'jobs submit video_subtitle：AI 校对（--no-ai 关）')
+    ..addOption('segmenter', help: 'jobs submit video_subtitle：auto | moss | window', defaultsTo: 'auto')
+    ..addOption('moss-backend', help: 'jobs submit video_subtitle：auto | cuda | vulkan | cpu', defaultsTo: 'auto')
+    ..addOption('suffix', help: 'jobs submit video_subtitle：输出 <视频名>.<后缀>.srt', defaultsTo: 'ja')
+    ..addFlag('regen-glossary', negatable: false, help: 'jobs submit video_subtitle：重新生成专名表');
 }
 
 /// 用法说明片段。
@@ -84,7 +100,9 @@ const String kCtlHostUsage = '''
          | episode-group <bookUid> --episode-group <g>      （合集作品用 --collection 名 --collection-type 类型）
          | pending | sweep（补刮从未识别的作品） | ai-identify <pending id>
   activity | collections | tags | tombstones
-  jobs submit asr <音频> [-l ja] [-o x.srt] [--wait] | get <id> | result <id> [产物名] [-o 文件]
+  jobs submit asr <音频> [-l ja] [--profile cleanSpeech|mixedAudio] [-o x.srt] [--wait] | get <id> | result <id> [产物名] [-o 文件]
+       submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] [--segmenter auto|moss|window]
+              [--moss-backend auto|cuda|vulkan|cpu] [--suffix ja] [--regen-glossary] [--title T] [-o 产物] [--wait]
   assistant start --feature <f> | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>
   host <GET|POST|PUT|DELETE> <互联路径，如 library/books> ['<json>']   直调任意互联接口''';
 
@@ -334,8 +352,12 @@ Future<int> _submitJob(
   required int Function(AdminApiException ex) exitCodeFor,
   required Duration poll,
 }) async {
+  if (args.isNotEmpty && args.first == kVideoSubtitleJobKind) {
+    return _submitVideoSubtitleJob(client, command, args.sublist(1), out: out, err: err, exitCodeFor: exitCodeFor, poll: poll);
+  }
   if (args.length < 2 || args.first != 'asr') {
     err.writeln('用法: fushi_server ctl jobs submit asr <音频> [-l ja] [-o x.srt] [--wait]');
+    err.writeln('      fushi_server ctl jobs submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] …');
     return 64;
   }
   final File audio = File(args[1]);
@@ -348,14 +370,23 @@ Future<int> _submitJob(
       '$kHostProxy/jobs',
       body: <String, Object?>{
         'kind': 'asr',
-        'params': <String, Object?>{'language': command['language'] as String, 'input': 'audio'},
+        'params': <String, Object?>{
+          'language': command['language'] as String,
+          'input': 'audio',
+          // 上传后的输入名固定是 `audio`（无扩展名），服务端按扩展名判不出视频，
+          // 所以素材档位在这边按本地文件名定好再带过去。
+          'audioProfile': asrAudioProfileForJob(
+            explicit: command['profile'] as String?,
+            path: audio.path,
+          ).name,
+        },
       },
     );
     final String? id = created is Map ? created['jobId']?.toString() : null;
     if (id == null) throw AdminApiException(1, '服务端没返回 jobId: $created');
     final String base = '$kHostProxy/jobs/${Uri.encodeComponent(id)}';
     err.writeln('任务 $id：上传 ${audio.path}…');
-    await client.sendBytes('PUT', '$base/input/audio', bytes: await audio.readAsBytes());
+    await client.sendFile('PUT', '$base/input/audio', file: audio);
     await client.post('$base/start');
     final bool wait = command['wait'] as bool || command['out'] != null;
     if (!wait) {
@@ -367,6 +398,87 @@ Future<int> _submitJob(
       final String state = job is Map ? '${job['state']}' : '?';
       final Object? progress = job is Map ? job['progress'] : null;
       err.write('\r$id  $state  ${progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : ''}   ');
+      if (state == 'done') {
+        err.writeln();
+        final Object? result = await client.get('$base/result');
+        return _writeResult(result, command['out'] as String?, out);
+      }
+      if (state == 'error' || state == 'cancelled') {
+        err.writeln('\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}');
+        return 1;
+      }
+      await Future<void>.delayed(poll);
+    }
+  });
+}
+
+/// `jobs submit video_subtitle`：参数映射到 `VideoSubtitleJobParams`（host 端同一份
+/// 解析，这边先在本地校一遍，拼错的选项不用等上传完才 400）。给了视频文件就上传
+/// （输入名保留原文件名：管线缓存按文件名 + 字节数认，重提交才能续上）；否则按
+/// `--video-id` / `--collection-id` 处理 host 库里的视频。
+Future<int> _submitVideoSubtitleJob(
+  AdminClient client,
+  ArgResults command,
+  List<String> args, {
+  required StringSink out,
+  required StringSink err,
+  required int Function(AdminApiException ex) exitCodeFor,
+  required Duration poll,
+}) async {
+  final File? video = args.isEmpty ? null : File(args.first);
+  if (video != null && !video.existsSync()) {
+    err.writeln('找不到文件: ${video.path}');
+    return 66;
+  }
+  final Map<String, Object?> params = <String, Object?>{
+    if (command['video-id'] != null) 'videoId': command['video-id'],
+    if (command['collection-id'] != null) 'collectionId': command['collection-id'],
+    if (command['title'] != null) 'title': command['title'],
+    'proofread': command['ai'] as bool,
+    'segmenter': command['segmenter'],
+    'mossBackend': command['moss-backend'],
+    'suffix': command['suffix'],
+    'regenerateGlossary': command['regen-glossary'] as bool,
+    if (video != null) 'input': p.basename(video.path),
+  };
+  if (video == null && command['video-id'] == null && command['collection-id'] == null) {
+    err.writeln('用法: fushi_server ctl jobs submit video_subtitle <视频> | --video-id <id> | --collection-id <n> …');
+    return 64;
+  }
+  try {
+    VideoSubtitleJobParams.parse(params);
+  } on FormatException catch (e) {
+    err.writeln(e.message);
+    return 64;
+  }
+  return _guard(err, exitCodeFor, () async {
+    final Object? created = await client.post(
+      '$kHostProxy/jobs',
+      body: <String, Object?>{'kind': kVideoSubtitleJobKind, 'params': params},
+    );
+    final String? id = created is Map ? created['jobId']?.toString() : null;
+    if (id == null) throw AdminApiException(1, '服务端没返回 jobId: $created');
+    final String base = '$kHostProxy/jobs/${Uri.encodeComponent(id)}';
+    if (video != null) {
+      err.writeln('任务 $id：上传 ${video.path}…');
+      await client.sendFile(
+        'PUT',
+        '$base/input/${Uri.encodeComponent(p.basename(video.path))}',
+        file: video,
+      );
+    }
+    await client.post('$base/start');
+    final bool wait = command['wait'] as bool || command['out'] != null;
+    if (!wait) {
+      out.writeln(id);
+      return 0;
+    }
+    while (true) {
+      final Object? job = await client.get(base);
+      final String state = job is Map ? '${job['state']}' : '?';
+      final Object? progress = job is Map ? job['progress'] : null;
+      final Object? message = job is Map ? job['message'] : null;
+      err.write('\r$id  $state  ${progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : ''}  ${message ?? ''}   ');
       if (state == 'done') {
         err.writeln();
         final Object? result = await client.get('$base/result');

@@ -29,6 +29,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetPinchDelta = "setPinchDelta";
   constexpr auto kMethodSetFpsLimit = "setFpsLimit";
   constexpr auto kMethodSetShaders = "setShaders";
+  constexpr auto kMethodSetWindowedInputEnabled = "setWindowedInputEnabled";
 
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
@@ -473,6 +474,12 @@ namespace flutter_inappwebview_plugin
       }
       const bool ok = texture_bridge_ ? texture_bridge_->SetShaders(texts) : false;
       return result->Success(flutter::EncodableValue(ok));
+    }
+    else if (method_name.compare(kMethodSetWindowedInputEnabled) == 0) {
+      if (const auto value = std::get_if<bool>(method_call.arguments())) {
+        const bool ok = view ? view->setWindowedInputEnabled(*value) : false;
+        return result->Success(flutter::EncodableValue(ok));
+      }
     }
     else if (method_name.compare(kMethodSetFpsLimit) == 0) {
       if (const auto value = std::get_if<int32_t>(method_call.arguments())) {

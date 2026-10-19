@@ -62,6 +62,20 @@ void main() {
       FushiDicts.disposeInstance();
       expect(FushiDicts.hasPendingDicts, isFalse);
     });
+
+    test('映射释放作用域里排下的待办不结算，留到作用域结束（HBK-AUDIT-009）', () async {
+      // 释放与删 / 覆盖文件之间隔着 await；这时元数据写入排下的待办若被结算，正被删的
+      // 词典又映射回来（BUG-1756）。
+      await FushiDicts.withMappingsReleased(() async {
+        FushiDicts.scheduleTyped(termPaths: <String>['/nonexistent/a']);
+        await FushiDicts.loadPendingAsync();
+        expect(FushiDicts.hasPendingDicts, isTrue,
+            reason: '作用域内的异步结算必须原样留下待办');
+      });
+      expect(FushiDicts.debugPendingTermPathsForTest(),
+          <String>['/nonexistent/a'],
+          reason: '作用域结束后待办还在，下一次用引擎时照常结算');
+    });
   });
 
   group('isInitialized 覆盖「已排期但还没装」', () {

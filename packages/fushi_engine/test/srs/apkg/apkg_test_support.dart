@@ -374,7 +374,10 @@ Uint8List buildLegacyCollection({
     jsonEncode(dconf),
     '{}',
   ]);
+  // 一个事务：大夹具（导入基准的上万条笔记）逐条自动提交要几分钟。
+  db.execute('BEGIN');
   insertNotes(db, notes);
+  db.execute('COMMIT');
 });
 
 /// 打 zip。

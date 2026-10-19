@@ -9,7 +9,6 @@ import 'package:flutter/rendering.dart'
     show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:fushi/src/models/content_font_chain.dart';
-import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
@@ -17,6 +16,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
 /// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形、
 /// **该字符所属的那条 cue**。与 [VideoSubtitleOverlay.onCharTap] 的回调四元组同构。
@@ -507,6 +507,7 @@ class VideoSubtitleOverlay extends StatefulWidget {
     this.onCharTap,
     this.onCharHover,
     this.hoverAutoLookupEnabled = false,
+    this.hoverLookupModifier = HoverLookupModifier.shift,
     this.onHoverChanged,
     this.hitTester,
     this.caretEntryIndex,
@@ -567,6 +568,9 @@ class VideoSubtitleOverlay extends StatefulWidget {
   /// Shift+悬停门控。由页面侧从 `ReaderFushiSource.instance.hoverAutoLookup` 传入。
   /// 移动端无 OS hover，本标志为何值都不产生 hover 事件、自然不触发。
   final bool hoverAutoLookupEnabled;
+
+  /// 悬停查词按住的键（设置「悬停查词按键」）。
+  final HoverLookupModifier hoverLookupModifier;
 
   /// 鼠标进 / 出**字幕盒本身**（非整片视频区）时回调（BUG-283）。桌面用：字幕盒覆盖在
   /// media_kit 控制条之上，鼠标停字幕上读字 / 查词时，media_kit 控制条 2s 自动隐藏会让
@@ -1105,7 +1109,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // TODO-756b：开了“悬停即查词”则纯悬停即触发，无需 Shift；否则退回 756a 的
     // Shift 门控。两路都共用同一节流锚与命中链路（onCharHover），仅门控判据不同。
     if (!widget.hoverAutoLookupEnabled &&
-        !HardwareKeyboard.instance.isShiftPressed) {
+        !widget.hoverLookupModifier.isPressed()) {
       // 未开“悬停即查词”且未按 Shift：复位节流锚，使下次按 Shift 重新进入即触发
       // （不被旧锚误判为同位置）。
       _lastShiftHoverPos = Offset.zero;

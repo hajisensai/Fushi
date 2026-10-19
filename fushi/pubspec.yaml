@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
+      ref: b0326576fea658ea3a3bfeb98e947e2db1c26ac6
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
+      ref: b0326576fea658ea3a3bfeb98e947e2db1c26ac6
   archive: ^3.6.1
   async_zip: ^0.1.0
   audio_service: ^0.18.9
@@ -83,6 +83,9 @@ dependencies:
     path: ../packages/fushi_srs
   fushi_compute:
     path: ../packages/fushi_compute
+  # 网页广告 / 跟踪拦截（adblock-rust FFI + 过滤列表管理），WebView 接线在 lib/src/web_adblock/。
+  fushi_web_core:
+    path: ../packages/fushi_web_core
   fushi_audio:
     path: ../packages/fushi_audio
   fushi_platform:
@@ -248,6 +251,8 @@ flutter:
     # 内置网页播放器（WebView2 站点播放）主世界胶水；站点 bridge / 字幕 provider 复用
     # 上面的扩展镜像（同一份文件，见 lib/src/media/video/web_video_bridge.dart）。
     - assets/web_video/
+    # 网页漫画：注入漫画站章节页的扫图脚本 + 站点规则（lib/src/media/manga/web/）。
+    - assets/web_comic/
     - assets/gamepad/xbox/
     - assets/gamepad/playstation/
     - assets/gamepad/switch/

@@ -9,12 +9,14 @@
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
 
+namespace {
+
+// 内部链接：fushidicts_ffi.cpp 有一个布局不同的同名结构体（带引用计数与读写锁），
+// 两个 .so 在 Android 上同进程加载，外部链接的同名类型是 ODR 违规。
 struct FushidictsHandle {
   DictionaryQuery query;
   Deinflector deinflector;
 };
-
-namespace {
 
 // Minimal JSON string escaper for kanji fields (no external dep). Handles the
 // control / quote / backslash bytes that would otherwise break the JSON sent to

@@ -33,7 +33,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.lookup => 'system.module_lookup',
   // 2026-10-14 新增（复习 / Fushi 内置 SRS），跟随同一前缀。
   ModuleId.srs => 'system.module_srs',
-  ModuleId.browserExtension => 'system.module_browser_extension',
+  ModuleId.web => 'system.module_browser_extension',
   ModuleId.listening => 'system.module_listening',
   ModuleId.cardCreation => 'system.module_card_creation',
   ModuleId.services => 'system.module_services',
@@ -83,9 +83,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ModuleId.browse ||
     ModuleId.lookup ||
     ModuleId.srs ||
-    ModuleId.browserExtension => throw StateError(
-      '$module 有对应 HomeTab，标识应走 homeNavItemFor',
-    ),
+    ModuleId.web => throw StateError('$module 有对应 HomeTab，标识应走 homeNavItemFor'),
   };
 }
 

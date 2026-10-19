@@ -29,7 +29,7 @@ ModuleVisibility _visibility({
   if (games) ModuleId.games,
   if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
-  if (browserExtension) ModuleId.browserExtension,
+  if (browserExtension) ModuleId.web,
 });
 
 /// 守卫首页顶层导航的 tab 身份建模与启动逻辑。v23 起首页用 [HomeTab] 枚举建模 tab 身份
@@ -228,8 +228,8 @@ void main() {
       final List<HomeTab> withoutExt = homeActiveTabs(
         _visibility(video: true, browserExtension: false),
       );
-      expect(withExt, contains(HomeTab.browserExtension));
-      expect(withoutExt, isNot(contains(HomeTab.browserExtension)));
+      expect(withExt, contains(HomeTab.web));
+      expect(withoutExt, isNot(contains(HomeTab.web)));
     });
 
     test('五个模块全关时首页/词典/设置/下载仍恒在（安全回退面）', () {
@@ -268,10 +268,7 @@ void main() {
       );
       expect(tabs, isNot(contains(HomeTab.dictionaries)));
       expect(tabs, contains(HomeTab.browse));
-      expect(
-        tabs.indexOf(HomeTab.browserExtension),
-        tabs.indexOf(HomeTab.browse) + 1,
-      );
+      expect(tabs.indexOf(HomeTab.web), tabs.indexOf(HomeTab.browse) + 1);
     });
 
     test('七个模块全关时只剩首页/设置（安全回退面）', () {

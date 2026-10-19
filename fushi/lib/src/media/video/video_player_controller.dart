@@ -28,6 +28,7 @@ import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
+import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
 import 'package:fushi_engine/media/media_extensions.dart'
@@ -1091,7 +1092,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 外部态。生命周期「切后台暂停 → 回前台续播」只对真播放器成立——对网页播放器
   /// 发 [pause] 既停不住站点的播放，回来那次 [play] 也点不动它，只会凭空记下一个
   /// 永远兑现不了的「我暂停过」标记。故那条路径直接不接管（维持既有行为）。
-  bool get hasNativePlayer => _player != null;
+  bool get hasNativePlayer => _player != null && !_webBackend;
+
+  /// 当前片源由网页站点播放（[loadWeb]）：[player] 是 [WebVideoPlatformPlayer]，播放 /
+  /// seek / 倍速 / 音量照常（转成页面 JS），mpv 专属能力（轨道、截图、着色器、
+  /// dump-cache、属性读写）一律不可用——页面据此隐藏对应入口。
+  bool get isWebBackend => _webBackend;
+  bool _webBackend = false;
 
   /// 后台抽取/解析内封文本字幕 cue 是否仍在进行。
   bool get isSubtitleCuesLoading => _subtitleCuesLoading;
@@ -3577,6 +3584,33 @@ class VideoPlayerController extends ChangeNotifier
     _confirmSeekDispatched(restoreSeekToken);
     _syncCueForPosition(resolvedStartMs, persistPosition: false);
 
+    _attachPlaybackStreams(player, loadToken);
+
+    // 自动播放：进页面/换集后直接开播（用户偏好）。放在恢复 seek **之后**（否则
+    // 先从 0 起播再跳到恢复位置，产生可见闪跳），且放在订阅播放态之后（让
+    // stream.playing 监听捕获到起播事件、即时刷新 UI）。换片守卫用 [_isCurrentLoad]
+    // 双判据：换集复用同一 player 实例时单判 `_player == player` 仍成立，会向已被新
+    // load 接管的 player 误发 play()；loadToken 才能区分本次 load 是否仍当前（BUG-344）。
+    if (autoPlay && _isCurrentLoad(player, loadToken)) {
+      await player.play();
+    }
+    await _afterLoadPlaybackStarted(
+      player: player,
+      loadToken: loadToken,
+      bookUid: bookUid,
+      cues: cues,
+      openBlurayMenu: openBlurayMenu,
+      renderGraphicStreamIndex: renderGraphicStreamIndex,
+      subtitleExplicitlyOff: subtitleExplicitlyOff,
+      externalSubtitlePath: externalSubtitlePath,
+      onEmbeddedSubtitleAutoLoad: onEmbeddedSubtitleAutoLoad,
+    );
+  }
+
+  /// [load] 与 [loadWeb] 共用的播放态订阅：播放态 / 播完 / 宽高 / 色彩参数 / 缓冲 /
+  /// 位置推送，以及 125 ms 的 cue 同步节拍。只读 `player.stream` / `player.state`，
+  /// 与后端是 libmpv 还是网页站点无关。
+  void _attachPlaybackStreams(Player player, int loadToken) {
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
     _playingSub = player.stream.playing.listen(_onPlayingChanged);
     _completedSub = player.stream.completed.listen(_handleCompletedChanged);
@@ -3629,18 +3663,24 @@ class VideoPlayerController extends ChangeNotifier
       updateCueForPosition(p.state.position.inMilliseconds);
       // TODO-1119：同一 tick 里顺带做黑闪采样（内部自节流到 >=1s、仅 Windows 挂了
       // 回调时才真正读属性），不新起定时器。
-      _maybeSampleBlackFlicker(p, loadToken);
+      // 网页后端没有 mpv 属性可读（黑闪采样读的是 libmpv 的帧统计）。
+      if (!_webBackend) _maybeSampleBlackFlicker(p, loadToken);
     });
+  }
 
-    // 自动播放：进页面/换集后直接开播（用户偏好）。放在恢复 seek **之后**（否则
-    // 先从 0 起播再跳到恢复位置，产生可见闪跳），且放在订阅播放态之后（让
-    // stream.playing 监听捕获到起播事件、即时刷新 UI）。换片守卫用 [_isCurrentLoad]
-    // 双判据：换集复用同一 player 实例时单判 `_player == player` 仍成立，会向已被新
-    // load 接管的 player 误发 play()；loadToken 才能区分本次 load 是否仍当前（BUG-344）。
-    if (autoPlay && _isCurrentLoad(player, loadToken)) {
-      await player.play();
-    }
-
+  /// [load] 起播之后的收尾：图形 / 内嵌字幕恢复、章节、碟片阶段（都是 libmpv 专属）。
+  Future<void> _afterLoadPlaybackStarted({
+    required Player player,
+    required int loadToken,
+    required String bookUid,
+    required List<AudioCue> cues,
+    required bool openBlurayMenu,
+    required int? renderGraphicStreamIndex,
+    required bool subtitleExplicitlyOff,
+    required String? externalSubtitlePath,
+    required void Function(DefaultEmbeddedSubtitleLoadResult result)?
+    onEmbeddedSubtitleAutoLoad,
+  }) async {
     // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
     // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
     // 与下面的「抽文本 cue 自动加载」互斥——图形轨没有可抽的文本。
@@ -3990,6 +4030,57 @@ class VideoPlayerController extends ChangeNotifier
         _setSubtitleCuesLoading(false);
       }
     }
+  }
+
+  /// 用网页站点当播放后端开一集：原生播放器页与控制条照常工作，画面由垫在 Flutter
+  /// 下面的 WebView2 自己画（[platform] 是外部渲染的，VideoController 不建纹理）。
+  /// 不做任何 mpv 设置；[cues] 来自站点字幕 bridge（之后可经 [setCues] 更新）。
+  Future<void> loadWeb({
+    required WebVideoPlatformPlayer platform,
+    required String bookUid,
+    required String pageUrl,
+    List<AudioCue> cues = const <AudioCue>[],
+    double initialSpeed = 1.0,
+    double initialVolume = 100.0,
+  }) async {
+    assert(_player == null, 'loadWeb opens a fresh controller only');
+    final int loadToken = ++_loadToken;
+    _webBackend = true;
+    _bookUid = bookUid;
+    _videoPath = null;
+    _sourceIsNetwork = true;
+    _mediaOpened = false;
+    _lastSpeed = initialSpeed;
+    _lastVolume = initialVolume;
+    final Player player = Player(platformPlayer: platform);
+    _player = player;
+    // 没有 libmpv：hwdec 无意义，但照常显式传 configuration（BUG-1545 守卫的口径）。
+    _videoController = VideoController(
+      player,
+      configuration: const VideoControllerConfiguration(),
+    );
+    setCues(cues);
+    final Future<void> opened = player.open(Media(pageUrl));
+    await opened;
+    if (!_isCurrentLoad(player, loadToken)) return;
+    _attachPlaybackStreams(player, loadToken);
+    notifyListeners();
+  }
+
+  /// 网页档的章节（站点给的片头 / 片尾标记，如 Netflix metadata）：替换整张章节表并通知。
+  /// 空表 = 这一集没有章节。
+  void setWebChapters(List<VideoChapter> chapters) {
+    assert(_webBackend, 'setWebChapters is for the web backend only');
+    if (listEquals(_chapters, chapters)) return;
+    _chapters = List<VideoChapter>.unmodifiable(chapters);
+    notifyListeners();
+  }
+
+  /// 网页档换书身份（站内换集 / 站点入口播起某一集）：之后的进度写回落到 [bookUid]；null =
+  /// 暂不写（站点入口还没有书、站内刚换了视频还没认出是哪一集）。
+  void rebindWebBook(String? bookUid) {
+    assert(_webBackend, 'rebindWebBook is for the web backend only');
+    _bookUid = bookUid;
   }
 
   @visibleForTesting
@@ -4704,6 +4795,13 @@ class VideoPlayerController extends ChangeNotifier
     _setSubtitleCuesLoading(loading);
   }
 
+  /// 测试可见：模拟网页播放后端（[isWebBackend]；widget 测试起不了 WebView2）。
+  @visibleForTesting
+  void debugSetWebBackendForTesting(bool web) {
+    _webBackend = web;
+    notifyListeners();
+  }
+
   @visibleForTesting
   void debugSetSubtitleEndHoldHooksForTesting({
     bool Function()? isPlaying,
@@ -5229,6 +5327,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 首章之前可能为负（章节面板据此高亮当前章；负/越界视为「无当前章」）。未 [load]
   /// 或解析失败时返回 null。
   Future<int?> currentChapterIndex() async {
+    // 网页档没有 libmpv：章节来自站点数据（[setWebChapters]），按播放位置算。
+    if (_webBackend) {
+      final int? pos = positionMs;
+      return pos == null ? null : chapterIndexForPosition(pos);
+    }
     final String raw = await _getMpvProperty('chapter');
     if (raw.isEmpty) return null;
     return int.tryParse(raw.trim());

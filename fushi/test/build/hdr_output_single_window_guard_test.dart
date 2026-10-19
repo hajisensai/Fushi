@@ -50,9 +50,17 @@ void main() {
         "'wid'",
         'hdrHost',
         'HdrHost',
-        'Colors.transparent : colors.surface',
       ]) {
         expect(code, isNot(contains(forbidden)), reason: '$path：$forbidden');
+      }
+      // 透明底只为「底层合成」（WebView2 垫在 Flutter 下面，underlay_composition.dart）
+      // 存在：宿主窗那套挖洞已删，任何透明分支都必须由 underlayCompositionActive 驱动。
+      if (code.contains('Colors.transparent : colors.surface')) {
+        expect(
+          code,
+          contains('underlayCompositionActive'),
+          reason: '$path：透明底色只能跟底层合成走',
+        );
       }
     }
     final String texture = _read(

@@ -7,6 +7,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart'
+    show underlayCompositionActive;
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -369,8 +371,15 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       valueListenable: FushiDesktopTitleBar._contentFullscreen,
       builder: (BuildContext context, bool contentFullscreen, Widget? child) {
         final bool hideFrame = contentFullscreen;
-        final Widget frame = ColoredBox(
-          color: colors.surface,
+        // 底层合成（underlay_composition.dart）：这层 surface 底色盖着整个 Navigator，
+        // 开着时必须让开，否则垫在 Flutter 下面的 WebView2 子窗口透不出来。
+        final Widget frame = ValueListenableBuilder<bool>(
+          valueListenable: underlayCompositionActive,
+          builder: (BuildContext context, bool underlay, Widget? navigator) =>
+              ColoredBox(
+                color: underlay ? Colors.transparent : colors.surface,
+                child: navigator,
+              ),
           // 叠放而不是竖排（2026-10-06「app 顶栏和主要界面没有融为一体」）：
           // 曾经是 Column[标题行, Expanded(页面)]——页面从 y = 32 才开始画，
           // 标题行是一条独立的带子，详情页的 fanart / 模糊背景在它下沿被一刀

@@ -14,6 +14,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/rendering.dart' show RenderProxyBox;
@@ -97,6 +98,7 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
     required this.face,
     required this.fields,
     required this.definitionsHtml,
+    this.topInset = 0,
   });
 
   /// 这面卡（cardId / 正反面 / 版式 / 按键桥）。[SrsCardFace.css] 是模板样式表，给释义 WebView 用。
@@ -107,6 +109,10 @@ class SrsFushiCardView extends ConsumerStatefulWidget {
 
   /// 只含释义区的背面 HTML（引擎渲染）。
   final String definitionsHtml;
+
+  /// 卡面顶端被浮动页头盖住的高度（状态栏 + 页头）。卡面铺到页头底下，这段只作滚动
+  /// 内边距：开头的内容从页头下沿开始，往下翻时滚进页头底下，页头收起后不留空带。
+  final double topInset;
 
   @override
   ConsumerState<SrsFushiCardView> createState() => _SrsFushiCardViewState();
@@ -212,7 +218,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             color: scheme.surface,
             child: LayoutBuilder(
               builder: (BuildContext context, BoxConstraints c) {
-                if (c.maxHeight.isFinite) _viewport = c.maxHeight;
+                if (c.maxHeight.isFinite) {
+                  _viewport = math.max(0, c.maxHeight - widget.topInset);
+                }
                 final bool wide = switch (widget.face.layout) {
                   SrsCardLayout.wide => true,
                   SrsCardLayout.narrow => false,
@@ -286,7 +294,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(s.pad),
+        padding: EdgeInsets.all(
+          s.pad,
+        ).copyWith(top: s.pad + widget.topInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -510,9 +520,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return _MediaImage(
       key: const ValueKey<String>('srs-fushi-picture'),
       name: name,
-      size: wide ? null : s.thumb,
-      // 与模板同：左栏图最高 220，矮视口（手机横屏）120。
-      maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : null,
+      // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
+      // 左栏图最高 220，矮视口（手机横屏）120。
+      maxWidth: wide ? null : s.thumb * 1.5,
+      maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : s.thumb * 1.4,
       radius: s.tokens.radiusSmall,
     );
   }
@@ -707,6 +718,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
+    autoplayMedia: widget.face.autoplayMedia,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -764,7 +776,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Widget? picture = _picture(s, wide: false);
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: false);
-    final double viewport = c.maxHeight.isFinite ? c.maxHeight : 800;
+    final double viewport = c.maxHeight.isFinite ? _viewport : 800;
     final double reported = _defsHeight ?? viewport * 0.6;
     final double defsHeight = reported > kSrsDefsMaxInlineHeight
         ? viewport
@@ -812,7 +824,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return SingleChildScrollView(
       key: const ValueKey<String>('srs-fushi-back-narrow'),
       controller: _scroll,
-      padding: EdgeInsets.only(bottom: s.pad),
+      padding: EdgeInsets.only(top: widget.topInset, bottom: s.pad),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -861,7 +873,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           width: leftWidth,
           child: SingleChildScrollView(
             controller: _scroll,
-            padding: EdgeInsets.all(s.pad),
+            padding: EdgeInsets.all(
+              s.pad,
+            ).copyWith(top: s.pad + widget.topInset),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -876,7 +890,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         ),
         if (defs != null)
           Expanded(
-            child: FushiStaggeredEntrance(index: left.length, child: defs),
+            // 释义栏是 WebView，滚不到页头底下：整栏让位。
+            child: Padding(
+              padding: EdgeInsets.only(top: widget.topInset),
+              child: FushiStaggeredEntrance(index: left.length, child: defs),
+            ),
           ),
       ],
     );
@@ -1251,13 +1269,13 @@ class _MediaImage extends ConsumerWidget {
     super.key,
     required this.name,
     required this.radius,
-    this.size,
+    this.maxWidth,
     this.maxHeight,
   });
 
   final String name;
   final double radius;
-  final double? size;
+  final double? maxWidth;
   final double? maxHeight;
 
   @override
@@ -1270,19 +1288,17 @@ class _MediaImage extends ConsumerWidget {
         ? const SizedBox.shrink()
         : Image(
             image: provider,
-            fit: BoxFit.cover,
-            width: size,
-            height: size,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           );
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
-      child: size != null
-          ? SizedBox.square(dimension: size, child: image)
-          : ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight ?? 220),
-              child: image,
-            ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxWidth ?? double.infinity,
+          maxHeight: maxHeight ?? 220,
+        ),
+        child: image,
+      ),
     );
     if (provider == null) return box;
     return FushiPressScale(

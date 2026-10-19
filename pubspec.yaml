@@ -23,6 +23,7 @@ workspace:
   - fushi
   - packages/flutter_inappwebview_linux
   - packages/flutter_inappwebview_windows
+  - packages/fushi_web_core
   - packages/fushi_anki
   - packages/fushi_audio
   - packages/fushi_cli
@@ -162,7 +163,7 @@ dependency_overrides:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 0c5878a856be72c7439f166a3144c0c4c6a998a7
+      ref: b0326576fea658ea3a3bfeb98e947e2db1c26ac6
   # fushi_asr_onnx_ffi（仅无头 fushi_server 依赖）把 archive 钉成 ^4.0.0，本仓其余
   # 全部钉 ^3.6.1；pub workspace 只解析一次，两者无法共存。
   #

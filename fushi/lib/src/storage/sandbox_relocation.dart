@@ -107,19 +107,27 @@ class SandboxRelocation {
         return SandboxRelocationOutcome.unchanged(source);
       }
 
+      final DocumentsPathRebaser docs = DocumentsPathRebaser(
+        oldRoot: oldRoot,
+        newRoot: documentsRoot,
+        // 只重基**数据根自己那几个顶层项**。容器整体被搬走时，库内路径的首段
+        // 本来就全在这份白名单里（`deriveOldRootFromPath` 反推旧根时用的正是
+        // 同一份判据，两侧必须一致）；传 null 等于在所有平台上放弃迁移引擎
+        // 刻意保留的「不碰非 Fushi 内容」保护 —— 用户自选的外部媒体库只要
+        // 恰好落在旧根之下，就会被一起改写。
+        scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
+      );
       await DataRootMigrator.rebaseOpenDatabasePaths(
         db: db,
-        docs: DocumentsPathRebaser(
-          oldRoot: oldRoot,
-          newRoot: documentsRoot,
-          // 只重基**数据根自己那几个顶层项**。容器整体被搬走时，库内路径的首段
-          // 本来就全在这份白名单里（`deriveOldRootFromPath` 反推旧根时用的正是
-          // 同一份判据，两侧必须一致）；传 null 等于在所有平台上放弃迁移引擎
-          // 刻意保留的「不碰非 Fushi 内容」保护 —— 用户自选的外部媒体库只要
-          // 恰好落在旧根之下，就会被一起改写。
-          scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
-        ),
+        docs: docs,
         newSupportRoot: supportRoot,
+      );
+      // 内置引擎 fast-resume 里的绝对 save_path 同一判据重基（BUG-3541）。这里在
+      // AppModel.initialise 早段、下载服务与引擎都还没起，没有并发落盘。失败落到
+      // 下面的 catch：台账不写，下次启动重试（两步都按作用域判据幂等）。
+      await DataRootMigrator.rebaseEmbeddedTorrentFastResume(
+        documentsRoot: documentsRoot,
+        docs: docs,
       );
       await _writeLedger(db, documentsRoot, supportRoot);
       return SandboxRelocationOutcome.rebased(

@@ -135,12 +135,7 @@ Future<_Result> _open(
   required _MemoryStore store,
   Future<GalLookupCalibrationCapture> Function() capture = _captureAsync,
   GalCalibrationPreviewBuilder previewBuilder = _preview,
-  Future<GalCalibrationImageFit> Function(
-        GalLookupCalibrationDraft draft, {
-        GalCalibrationPreviewBuilder build,
-      })
-      imageFitter =
-      fitGalCalibrationImages,
+  GalCalibrationImageFitter imageFitter = fitGalCalibrationImages,
   Size size = const Size(1280, 900),
   bool manual = true,
   GalLookupCalibrationSlotV1? slot,
@@ -587,6 +582,7 @@ void main() {
           (
             GalLookupCalibrationDraft fitting, {
             required GalCalibrationPreviewBuilder build,
+            bool Function()? isStale,
           }) async {
             expect(fitting.samples.single.capture.sourceText, '「A\r\nB\nC」');
             expect(fitting.layout.quotedTextOnly, isTrue);
@@ -1211,7 +1207,7 @@ void main() {
         tester,
         store: store,
         manual: false,
-        imageFitter: (draft, {build = _preview}) async {
+        imageFitter: (draft, {build = _preview, isStale}) async {
           expect(draft.samples.single.validation, isFalse);
           expect(draft.samples.single.anchors, isEmpty);
           return GalCalibrationImageFit(
@@ -1281,7 +1277,7 @@ void main() {
         tester,
         store: store,
         manual: false,
-        imageFitter: (draft, {build = _preview}) async {
+        imageFitter: (draft, {build = _preview, isStale}) async {
           fitSampleCounts.add(draft.samples.length);
           return GalCalibrationImageFit(
             draft: GalLookupCalibrationDraft(
@@ -1337,7 +1333,7 @@ void main() {
         tester,
         store: store,
         manual: false,
-        imageFitter: (draft, {build = _preview}) async {
+        imageFitter: (draft, {build = _preview, isStale}) async {
           expect(draft.samples, hasLength(1));
           expect(draft.samples.single.capture.referenceClient, selectedClient);
           expect(draft.samples.single.validation, isFalse);
@@ -1402,7 +1398,7 @@ void main() {
         tester,
         store: store,
         manual: false,
-        imageFitter: (draft, {build = _preview}) async =>
+        imageFitter: (draft, {build = _preview, isStale}) async =>
             const GalCalibrationImageFit(
               reason: 'inconsistent_samples',
               sampleIndex: 0,
@@ -1465,7 +1461,7 @@ void main() {
             }) async => client == selectedClient
             ? _preview(text: text, client: client, rect: rect, layout: layout)
             : const GalCalibrationPreview(boxes: [], reason: 'overflow'),
-        imageFitter: (draft, {build = _preview}) async =>
+        imageFitter: (draft, {build = _preview, isStale}) async =>
             GalCalibrationImageFit(
               draft: GalLookupCalibrationDraft(
                 rect: draft.rect,
@@ -1515,7 +1511,7 @@ void main() {
       tester,
       store: store,
       manual: false,
-      imageFitter: (draft, {build = _preview}) async =>
+      imageFitter: (draft, {build = _preview, isStale}) async =>
           const GalCalibrationImageFit(reason: 'multiline_required'),
     );
     await tester.tap(
@@ -1559,7 +1555,7 @@ void main() {
               previews++;
               return const GalCalibrationPreview(boxes: [], reason: 'overflow');
             },
-        imageFitter: (draft, {build = _preview}) async {
+        imageFitter: (draft, {build = _preview, isStale}) async {
           expect(draft.samples.map((s) => s.validation), [true, false, false]);
           return const GalCalibrationImageFit(
             reason: 'inconsistent_samples',

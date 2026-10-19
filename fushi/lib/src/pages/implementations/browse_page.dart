@@ -1069,6 +1069,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                               database: appModel.database,
                                               job: job,
                                               deleteFiles: deleteFiles,
+                                              pathMappings: appModel.downloadPathMappingsForProfile(
+                                                job.backendProfileId,
+                                              ),
                                             );
                                           }
                                         },

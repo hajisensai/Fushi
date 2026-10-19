@@ -15,6 +15,7 @@ import 'package:fushi/src/models/local_audio_manager.dart'
 import 'package:fushi/src/profile/profile_keys.dart' show ProfileKeys;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/path_rebase_coverage.dart';
+import 'package:fushi_engine/media/torrent/torrent_fast_resume.dart';
 import 'package:fushi/src/sync/backup_service.dart'
     show
         joinPrefTag,
@@ -327,8 +328,18 @@ class DataRootMigrator {
       throw DataRootMigrationException('搬动数据目录失败，已回滚到旧根', cause: e);
     }
 
-    // ③ 在新 support 根的 fushi.db 上把绝对路径从旧根 rebase 到新根。
+    // ③ 在新根上把绝对路径从旧根 rebase 到新根：先内置引擎 fast-resume 文件
+    //    （BUG-3541，失败可逐文件写回），再新 support 根的 fushi.db（单事务）。
+    FastResumeRebase? fastResumeRebase;
     try {
+      fastResumeRebase = await rebaseEmbeddedTorrentFastResume(
+        documentsRoot: newDocs.path,
+        docs: DocumentsPathRebaser(
+          oldRoot: req.oldDocumentsRoot.path,
+          newRoot: newDocs.path,
+          scopeTopLevelNames: req.documentsTopLevelIncludeNames,
+        ),
+      );
       await _rebaseDatabasePaths(
         dbDirectory: newSupport.path,
         oldDocumentsRoot: req.oldDocumentsRoot.path,
@@ -337,7 +348,9 @@ class DataRootMigrator {
         documentsScopeEntries: req.documentsTopLevelIncludeNames,
       );
     } catch (e) {
-      // DB 改写失败：把已搬目录搬回旧根、只清迁移自建子树（不删用户选定的 newRoot 本体）。
+      // DB 改写失败：resume 先写回原字节（文件此刻还在新根），再把已搬目录搬回旧根、
+      // 只清迁移自建子树（不删用户选定的 newRoot 本体）。
+      await fastResumeRebase?.revert();
       await _rollbackMoves(done);
       await _cleanupCreatedSubtrees(createdSubtrees);
       throw DataRootMigrationException('改写数据库内绝对路径失败，已回滚到旧根', cause: e);
@@ -374,6 +387,28 @@ class DataRootMigrator {
       } catch (rollbackError) {
         debugPrint(
           'DataRootMigrator: 写入 pref 失败后的 DB 路径回滚失败: '
+          '$rollbackError',
+        );
+      }
+      // fast-resume 同理：在文件**此刻所在**的根上反向改写（跨盘复制时旧根从未改写，
+      // 反向改写是空操作；同盘 rename 时文件已随目录回到旧根）。
+      final String resumeHome = Directory(
+        embeddedTorrentFastResumeDirectory(req.oldDocumentsRoot.path),
+      ).existsSync()
+          ? req.oldDocumentsRoot.path
+          : newDocs.path;
+      try {
+        await rebaseEmbeddedTorrentFastResume(
+          documentsRoot: resumeHome,
+          docs: DocumentsPathRebaser(
+            oldRoot: newDocs.path,
+            newRoot: req.oldDocumentsRoot.path,
+            scopeTopLevelNames: req.documentsTopLevelIncludeNames,
+          ),
+        );
+      } catch (rollbackError) {
+        debugPrint(
+          'DataRootMigrator: 写入 pref 失败后的 fast-resume 回滚失败: '
           '$rollbackError',
         );
       }
@@ -1005,6 +1040,7 @@ class DataRootMigrator {
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
+      await _rebaseVideoDownloadJobs(db, docs);
       await _rebaseVideoDownloadJobFiles(db, docs);
       await _rebaseVideoDownloadJobSubtitles(db, docs);
       await _rebaseMediaOpenHistory(db, docs);
@@ -1266,6 +1302,35 @@ class DataRootMigrator {
     }
   }
 
+  /// video_download_jobs：observed_save_path（BUG-3542）。
+  ///
+  /// 后端坐标的保存根。内置引擎用默认下载根 `<documents>/anime_downloads/content`
+  /// 时它是数据根内的本机路径：文件随根搬走、引擎 resume 也被改写（BUG-3541），
+  /// 这列不改写就停在旧根——已完成任务不再刷新它，任务删除 / 打开位置的兜底与
+  /// 持久化详情都会拿着一个不存在的目录。外接远端 qBittorrent 的远端坐标与用户
+  /// 自选的外部下载根不在旧根下，[DocumentsPathRebaser] 按搬移作用域原样跳过。
+  static Future<void> _rebaseVideoDownloadJobs(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT job_id, observed_save_path FROM video_download_jobs '
+          'WHERE observed_save_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String current = row.read<String>('observed_save_path');
+      final String rebased = docs.rebase(current);
+      if (rebased == current) continue;
+      await db.customStatement(
+        'UPDATE video_download_jobs SET observed_save_path = ? '
+        'WHERE job_id = ?',
+        <Object?>[rebased, row.read<String>('job_id')],
+      );
+    }
+  }
+
   /// video_download_job_files：final_absolute_path（下载任务与库行的唯一纽带）。
   ///
   /// 默认下载根是 `<documents>/anime_downloads/content`，`anime_downloads` 在搬移
@@ -1428,6 +1493,70 @@ class DataRootMigrator {
     }
   }
 
+  /// 内置 torrent 引擎的 fast-resume 目录 `<documents>/anime_downloads/resume`。
+  /// 派生点与 `AppModel.startAnimeDownloadService`（`documentsSubdirectory(
+  /// 'anime_downloads')` + [kEmbeddedTorrentFastResumeDirName]）一致。
+  static String embeddedTorrentFastResumeDirectory(String documentsRoot) =>
+      p.join(documentsRoot, 'anime_downloads', kEmbeddedTorrentFastResumeDirName);
+
+  /// BUG-3541：把 [documentsRoot] 下内置引擎 fast-resume 文件里的绝对 `save_path`
+  /// 按 [docs] 改写。
+  ///
+  /// `ht_load_resume_dir` 原样读回 resume 里记的 save_path；默认下载根
+  /// `<documents>/anime_downloads/content` 随数据根搬走后不改写，种子就指向已搬空的
+  /// 旧目录。作用域判据与 DB 路径改写是同一个 [DocumentsPathRebaser]：用户自选的
+  /// 外部下载根不在搬移作用域内，原样保留；已改写过的路径首段不在白名单里，天然
+  /// 幂等。
+  ///
+  /// 先在内存里算好全部新字节，再逐个「写临时文件 → 原子替换」；中途写失败就把
+  /// 已替换的文件写回原字节再抛出——要么全改、要么全不改。不是合法 resume 的文件
+  /// （libtorrent 本来也加载不了）原样跳过。返回值可在后续步骤失败时 [FastResumeRebase.revert]。
+  ///
+  /// 调用方必须保证引擎已经停下（`AppModel.releaseEmbeddedTorrentForDataRootMove`
+  /// 先强制落一次 resume 再关 session）：否则引擎之后的落盘会把旧路径写回来。
+  static Future<FastResumeRebase> rebaseEmbeddedTorrentFastResume({
+    required String documentsRoot,
+    required DocumentsPathRebaser docs,
+  }) async {
+    final Directory dir =
+        Directory(embeddedTorrentFastResumeDirectory(documentsRoot));
+    if (!dir.existsSync()) return const FastResumeRebase._(<_FastResumeFile>[]);
+    final List<_FastResumeFile> pending = <_FastResumeFile>[];
+    for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
+      if (entity is! File ||
+          p.extension(entity.path) != kEmbeddedTorrentFastResumeExtension) {
+        continue;
+      }
+      final Uint8List original = entity.readAsBytesSync();
+      final Uint8List? rebased = rebaseFastResumeSavePath(original, docs.rebase);
+      if (rebased == null) continue;
+      pending.add(_FastResumeFile(entity, original, rebased));
+    }
+    final List<_FastResumeFile> written = <_FastResumeFile>[];
+    try {
+      for (final _FastResumeFile file in pending) {
+        _replaceFileBytes(file.file, file.rebased);
+        written.add(file);
+      }
+    } catch (_) {
+      await FastResumeRebase._(written).revert();
+      rethrow;
+    }
+    return FastResumeRebase._(written);
+  }
+
+  /// 写临时文件再原子替换（同目录 rename），不留半截 resume。
+  static void _replaceFileBytes(File file, Uint8List bytes) {
+    final File temp = File('${file.path}.rebase-tmp');
+    try {
+      temp.writeAsBytesSync(bytes, flush: true);
+      temp.renameSync(file.path);
+    } catch (_) {
+      if (temp.existsSync()) temp.deleteSync();
+      rethrow;
+    }
+  }
+
   /// 仅供单测（BUG-1174 ③）：直接驱动 DB 路径改写，用来验证**幂等性**（同一改写连跑
   /// 两次，第二次必须是 no-op）。生产走 [migrate]，不经此入口。
   @visibleForTesting
@@ -1571,6 +1700,35 @@ class _CopyProgress {
 /// 「路径改了但文件还在旧位置」。`null`（Fushi 专属根的整树搬移语义）= 无首段限制；
 /// 那条路径上 `_validateTarget` 已禁止新根落在旧根内部，故同样幂等。
 @immutable
+/// 一次 fast-resume 改写落盘的文件清单（BUG-3541），供后续步骤失败时写回原字节。
+class FastResumeRebase {
+  const FastResumeRebase._(this._files);
+
+  final List<_FastResumeFile> _files;
+
+  /// 本次真正改写了的 resume 文件数。
+  int get rewrittenCount => _files.length;
+
+  /// 把改写过的文件写回原字节（尽力而为：单个文件写不回不影响其它，记日志）。
+  Future<void> revert() async {
+    for (final _FastResumeFile file in _files) {
+      try {
+        DataRootMigrator._replaceFileBytes(file.file, file.original);
+      } catch (e) {
+        debugPrint('DataRootMigrator: fast-resume 回滚失败 ${file.file.path}: $e');
+      }
+    }
+  }
+}
+
+class _FastResumeFile {
+  const _FastResumeFile(this.file, this.original, this.rebased);
+
+  final File file;
+  final Uint8List original;
+  final Uint8List rebased;
+}
+
 class DocumentsPathRebaser {
   const DocumentsPathRebaser({
     required this.oldRoot,

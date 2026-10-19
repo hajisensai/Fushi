@@ -18,13 +18,16 @@ import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:test/test.dart';
 
 class _Seen {
-  _Seen(this.method, this.path, this.query, this.auth, this.body);
+  _Seen(this.method, this.path, this.query, this.auth, this.body, this.raw);
 
   final String method;
   final String path;
   final Map<String, String> query;
   final String? auth;
   final Object? body;
+
+  /// 原始请求体（上传类请求核对字节用）。
+  final List<int> raw;
 }
 
 class _FakeAdmin {
@@ -58,6 +61,7 @@ class _FakeAdmin {
           request.uri.queryParameters,
           request.headers.value(HttpHeaders.authorizationHeader),
           text.isEmpty ? null : jsonDecode(text),
+          raw,
         ),
       );
       request.response
@@ -426,11 +430,57 @@ void main() {
         'PUT /api/admin/host/jobs/j9/input/audio',
         'POST /api/admin/host/jobs/j9/start',
       ]);
+      expect(admin.seen[1].raw, <int>[1, 2, 3]);
       expect(admin.seen.first.body, <String, Object?>{
         'kind': 'asr',
-        'params': <String, Object?>{'language': 'en', 'input': 'audio'},
+        // 素材档位在本地按文件名定好再带过去（上传后的输入名没有扩展名）。
+        'params': <String, Object?>{'language': 'en', 'input': 'audio', 'audioProfile': 'cleanSpeech'},
       });
       expect(out.toString().trim(), 'j9');
+    });
+
+    test('video_subtitle：上传视频（输入名保留原文件名）+ 选项映射到任务参数', () async {
+      final File video = File('${tmp.path}/ep01.mkv')..writeAsBytesSync(<int>[1, 2, 3]);
+      admin.nextBody = <String, Object?>{'jobId': 'j7', 'state': 'pending'};
+      expect(
+        await ctl(<String>[
+          'jobs', 'submit', 'video_subtitle', video.path, //
+          '--no-ai', '--segmenter', 'moss', '--moss-backend', 'vulkan', '--regen-glossary',
+        ]),
+        0,
+        reason: '$err',
+      );
+      expect(admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(), <String>[
+        'POST /api/admin/host/jobs',
+        'PUT /api/admin/host/jobs/j7/input/ep01.mkv',
+        'POST /api/admin/host/jobs/j7/start',
+      ]);
+      // 视频按文件流式上传（不整读进内存），落到对端的字节与源文件逐字节一致。
+      expect(admin.seen[1].raw, <int>[1, 2, 3]);
+      expect(admin.seen.first.body, <String, Object?>{
+        'kind': 'video_subtitle',
+        'params': <String, Object?>{
+          'proofread': false,
+          'segmenter': 'moss',
+          'mossBackend': 'vulkan',
+          'suffix': 'ja',
+          'regenerateGlossary': true,
+          'input': 'ep01.mkv',
+        },
+      });
+    });
+
+    test('video_subtitle：库视频不上传；参数不合法本地就 64、不发请求', () async {
+      admin.nextBody = <String, Object?>{'jobId': 'j8', 'state': 'pending'};
+      expect(await ctl(<String>['jobs', 'submit', 'video_subtitle', '--video-id', 'v1']), 0, reason: '$err');
+      expect(admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(), <String>[
+        'POST /api/admin/host/jobs',
+        'POST /api/admin/host/jobs/j8/start',
+      ]);
+      admin.seen.clear();
+      expect(await ctl(<String>['jobs', 'submit', 'video_subtitle', '--video-id', 'v1', '--segmenter', 'whisper']), 64);
+      expect(await ctl(<String>['jobs', 'submit', 'video_subtitle']), 64);
+      expect(admin.seen, isEmpty);
     });
 
     test('音频不存在 = 66', () async {

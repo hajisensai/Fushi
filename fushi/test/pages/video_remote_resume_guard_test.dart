@@ -187,7 +187,7 @@ void main() {
       expect(
         _flat(src),
         contains(
-          _flat('String get _activeBookUid => _discBookUid ?? widget.bookUid;'),
+          _flat('String get _activeBookUid => _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;'),
         ),
         reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );

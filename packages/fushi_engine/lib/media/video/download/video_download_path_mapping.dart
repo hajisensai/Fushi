@@ -177,3 +177,106 @@ class VideoDownloadPathMapping {
     return path.substring(prefix.length);
   }
 }
+
+/// 选出属于后端配置档 [profileId] 的显式映射。
+///
+/// 映射绑定在**任务实际使用的**配置档上（任务行 `backendProfileId`），而不是
+/// 「当前设置里的后端」：切换 qB 地址后，旧任务仍按它自己那台机器的坐标解释。
+List<VideoDownloadPathMapping> videoDownloadPathMappingsForProfile(
+  Iterable<VideoDownloadBackendPathMappingConfig> configs,
+  String? profileId,
+) {
+  final String id = profileId?.trim() ?? '';
+  if (id.isEmpty) return const <VideoDownloadPathMapping>[];
+  return List<VideoDownloadPathMapping>.unmodifiable(<VideoDownloadPathMapping>[
+    for (final VideoDownloadBackendPathMappingConfig config in configs)
+      if (config.isValid && config.backendProfileId == id) config.toMapping(),
+  ]);
+}
+
+/// 后端坐标 ↔ 本机坐标的**有效**映射（下载流水线、改名/移动、任务删除共用的
+/// 唯一判据）。
+///
+/// - 配了显式映射：只用显式映射，后端报告的路径一律经它换算；
+/// - 没配：只在「下载器与本机同盘同视角」时成立——[sameMachineAnchors] 里的
+///   目录**在本机真实存在**才按它所在的文件系统根（盘符根或 `/`）做恒等映射。
+///   远端 qBittorrent 报告的 `/downloads` 在 Windows 本机永远映射不上（盘符根
+///   前缀不匹配），不会被当成本机路径读写或删除。
+List<VideoDownloadPathMapping> effectiveVideoDownloadPathMappings(
+  Iterable<VideoDownloadPathMapping> configured, {
+  Iterable<String?> sameMachineAnchors = const <String?>[],
+}) {
+  final List<VideoDownloadPathMapping> explicit = configured.toList(
+    growable: false,
+  );
+  if (explicit.isNotEmpty) {
+    return List<VideoDownloadPathMapping>.unmodifiable(explicit);
+  }
+  final List<VideoDownloadPathMapping> identities =
+      <VideoDownloadPathMapping>[];
+  final Set<String> anchors = <String>{};
+  for (final String? path in sameMachineAnchors) {
+    if (path == null || path.trim().isEmpty) continue;
+    if (!Directory(path).existsSync()) continue;
+    final String absolute = p.normalize(p.absolute(path));
+    final String anchor = p.rootPrefix(absolute);
+    final String root = anchor.isEmpty ? absolute : anchor;
+    final String key = Platform.isWindows ? root.toLowerCase() : root;
+    if (anchors.add(key)) {
+      identities.add(VideoDownloadPathMapping.identity(root));
+    }
+  }
+  return List<VideoDownloadPathMapping>.unmodifiable(identities);
+}
+
+/// 能解释后端路径 [remotePath] 的映射里远端根最长的那条；没有返回 null。
+VideoDownloadPathMapping? videoDownloadMappingForRemotePath(
+  Iterable<VideoDownloadPathMapping> mappings,
+  String remotePath,
+) {
+  VideoDownloadPathMapping? selected;
+  for (final VideoDownloadPathMapping mapping in mappings) {
+    if (mapping.remoteToLocal(remotePath) == null) continue;
+    if (selected == null ||
+        mapping.remoteRoot.length > selected.remoteRoot.length) {
+      selected = mapping;
+    }
+  }
+  return selected;
+}
+
+/// 能解释本机路径 [localPath] 的映射里本机根最长的那条；没有返回 null。
+VideoDownloadPathMapping? videoDownloadMappingForLocalPath(
+  Iterable<VideoDownloadPathMapping> mappings,
+  String localPath,
+) {
+  VideoDownloadPathMapping? selected;
+  for (final VideoDownloadPathMapping mapping in mappings) {
+    if (mapping.localToRemote(localPath) == null) continue;
+    if (selected == null ||
+        mapping.localRoot.length > selected.localRoot.length) {
+      selected = mapping;
+    }
+  }
+  return selected;
+}
+
+/// 后端路径 → 本机路径；映射不到返回 null（**不得**把原值当本机路径用）。
+String? videoDownloadRemoteToLocal(
+  Iterable<VideoDownloadPathMapping> mappings,
+  String remotePath,
+) =>
+    videoDownloadMappingForRemotePath(
+      mappings,
+      remotePath,
+    )?.remoteToLocal(remotePath);
+
+/// 本机路径 → 后端路径；映射不到返回 null（**不得**把本机路径直接发给后端）。
+String? videoDownloadLocalToRemote(
+  Iterable<VideoDownloadPathMapping> mappings,
+  String localPath,
+) =>
+    videoDownloadMappingForLocalPath(
+      mappings,
+      localPath,
+    )?.localToRemote(localPath);
