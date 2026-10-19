@@ -13,6 +13,24 @@ typedef _ParseC =
     );
 typedef _ParseDart =
     int Function(Pointer<Uint16>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
+typedef _StripBatchC =
+    Int32 Function(
+      Pointer<Uint16>,
+      Size,
+      Pointer<Uint32>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _StripBatchDart =
+    int Function(
+      Pointer<Uint16>,
+      int,
+      Pointer<Uint32>,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
 typedef _ParseAssC =
     Int32 Function(
       Pointer<Uint16>,
@@ -70,6 +88,7 @@ final class SubtitleParseNative implements Finalizable {
     this._ass,
     this._markup,
     this._strip,
+    this._stripBatch,
   );
 
   final FushiCompute _compute;
@@ -78,6 +97,7 @@ final class SubtitleParseNative implements Finalizable {
   final _ParseAssDart _ass;
   final _ParseMarkupDart _markup;
   final _ParseDart _strip;
+  final _StripBatchDart _stripBatch;
 
   /// 固定输出槽：outPtr（指针）+ outLen（size_t）。
   final NativeScratch _slots = NativeScratch.fixed(16);
@@ -85,6 +105,9 @@ final class SubtitleParseNative implements Finalizable {
   Pointer<Size> get _outLen => (_slots.pointer + 8).cast<Size>();
 
   final NativeScratch _buffer = NativeScratch(minCapacity: 2048);
+
+  /// [stripHtmlTagsBatch] 的各条结束下标（u32）。
+  final NativeScratch _ends = NativeScratch(minCapacity: 1024);
 
   /// 暂存区超过这么多码元时用完即释放（大文件只在后台 isolate 里解析一次）。
   static const int _retainCapacity = 1 << 16;
@@ -114,6 +137,10 @@ final class SubtitleParseNative implements Finalizable {
         ),
         compute.library.lookupFunction<_ParseC, _ParseDart>(
           'ffc_parse_subtitle_strip_html_tags',
+          isLeaf: true,
+        ),
+        compute.library.lookupFunction<_StripBatchC, _StripBatchDart>(
+          'ffc_parse_subtitle_strip_html_tags_batch',
           isLeaf: true,
         ),
       );
@@ -175,6 +202,55 @@ final class SubtitleParseNative implements Finalizable {
     );
     try {
       return result.reader().string();
+    } finally {
+      result.free();
+    }
+  }
+
+  /// 批量 [stripHtmlTags]：第 i 项逐字等于 `stripHtmlTags(texts[i])`。整批首尾相接拷进一块
+  /// 原生内存、附各条结束下标，一次 FFI（`ffc_parse_subtitle_strip_html_tags_batch`，循环在
+  /// Rust；标签不会跨条匹配）。增强 LRC 整份的行一次交过去，不逐行跨边界。
+  List<String> stripHtmlTagsBatch(List<String> texts) {
+    final int count = texts.length;
+    if (count == 0) return <String>[];
+    int length = 0;
+    for (final String text in texts) {
+      length += text.length;
+    }
+    final Pointer<Uint16> buffer = _buffer.reserve(length * 2).cast<Uint16>();
+    final Pointer<Uint32> ends = _ends.reserve(count * 4).cast<Uint32>();
+    final Uint16List units = buffer.asTypedList(length);
+    final Uint32List endView = ends.asTypedList(count);
+    int at = 0;
+    for (int k = 0; k < count; k++) {
+      final String text = texts[k];
+      for (int i = 0; i < text.length; i++) {
+        units[at + i] = text.codeUnitAt(i);
+      }
+      at += text.length;
+      endView[k] = at;
+    }
+    final int status = _stripBatch(
+      buffer,
+      length,
+      ends,
+      count,
+      _outPtr,
+      _outLen,
+    );
+    if (_buffer.capacity > _retainCapacity * 2) _buffer.release();
+    if (_ends.capacity > _retainCapacity * 2) _ends.release();
+    if (status != FfcStatus.ok) {
+      throw StateError('ffc_parse_subtitle_* failed with status $status');
+    }
+    final SubtitleNativeResult result = SubtitleNativeResult._(
+      _compute,
+      _outPtr.value,
+      _outLen.value,
+    );
+    try {
+      final SubtitleNativeReader reader = result.reader();
+      return <String>[for (int k = 0; k < count; k++) reader.string()];
     } finally {
       result.free();
     }

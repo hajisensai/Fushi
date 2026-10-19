@@ -58,3 +58,30 @@ import 'package:fushi_compute/fushi_compute.dart';
 String stripHtmlTags(String text) => text.contains('<')
     ? SubtitleParseNative.instance.stripHtmlTags(text)
     : text.trim();
+
+/// 批量 [stripHtmlTags]：第 i 项逐字等于 `stripHtmlTags(texts[i])`。含 `<` 的项整批一次 FFI
+/// （`SubtitleParseNative.stripHtmlTagsBatch`，循环在 Rust），其余项与单条入口一样只
+/// `trim()`。逐行解析的格式（增强 LRC 每行都带 `<MM:SS.xx>`）先攒齐整份再调这里，不要在
+/// 行循环里逐行调 [stripHtmlTags]。
+List<String> stripHtmlTagsBatch(List<String> texts) {
+  final List<String> out = List<String>.filled(texts.length, '');
+  final List<int> tagged = <int>[];
+  final List<String> taggedTexts = <String>[];
+  for (int i = 0; i < texts.length; i++) {
+    final String text = texts[i];
+    if (text.contains('<')) {
+      tagged.add(i);
+      taggedTexts.add(text);
+    } else {
+      out[i] = text.trim();
+    }
+  }
+  if (tagged.isNotEmpty) {
+    final List<String> stripped = SubtitleParseNative.instance
+        .stripHtmlTagsBatch(taggedTexts);
+    for (int k = 0; k < tagged.length; k++) {
+      out[tagged[k]] = stripped[k];
+    }
+  }
+  return out;
+}

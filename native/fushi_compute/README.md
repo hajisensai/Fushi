@@ -421,6 +421,15 @@ FFI 借出、整表物化成 Dart 记录。代价是首次加载多了这一步�
 739–925 ms → 加粗后 872–1016 ms（物化本身 36–130 ms，都在后台 isolate；旧 Dart 2911–3529 ms）。
 搜索不变（同轮 600 条：加粗前 399–443 ms / 加粗后 411–543 ms / 旧 Dart 3617–4069 ms，结果摘要三者一致）。
 
+## 解析域：字幕行内标签批量剥离
+
+| 符号 | 说明 |
+|---|---|
+| `ffc_parse_subtitle_strip_html_tags_batch(const u16* units, usize len, const u32* ends[count], usize count, u8** out, usize* out_len) -> i32` | 一批行内 HTML / VTT / 增强 LRC 词级时间标签剥离（`ffc_parse_subtitle_strip_html_tags` 的批量版）：各条首尾相接的 UTF-16 + 每条结束下标（单调不减、末项 = `len`，否则 `INVALID_ARGUMENT`）；数据区 `count` 个字符串引用，逐条与单条入口相同，标签不跨条匹配 |
+
+`packages/fushi_audio` 的 `LrcParser` 先收齐整份 LRC 带时间标签的行，再经 `stripHtmlTagsBatch`
+一次剥离（增强 LRC 每行都有 `<MM:SS.xx>`，原先逐行一次 FFI，HBK-AUDIT-008）。
+
 ## Dart `toLowerCase` 口径（全 crate 共用）
 
 凡是复刻 Dart `String.toLowerCase()` 的地方（Anki 媒体扫描、字幕段头 / 样式名、标题归一化与 AniDB
@@ -509,7 +518,7 @@ crate 的 AES 指令，跳过）。
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。
 - `verify_abi.sh <二进制> [nm]` 递归抓 `packages/fushi_compute/lib/` 下所有 `'ffc_*'` 字面量，逐个核对
-  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 116。
+  导出表（ELF / Mach-O / ar 静态库）；规模哨兵下界 117。
 
 ## CI
 

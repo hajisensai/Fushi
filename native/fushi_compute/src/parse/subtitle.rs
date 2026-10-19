@@ -624,6 +624,56 @@ pub unsafe extern "C" fn ffc_parse_subtitle_strip_html_tags(
     })
 }
 
+/// 一批行内标签剥离（[ffc_parse_subtitle_strip_html_tags] 的批量版：增强 LRC 每行都带
+/// `<MM:SS.xx>`，整份一次调用，循环在这里）。`units[0..len]` 是各条首尾相接的 UTF-16，
+/// `ends[i]` 是第 `i` 条的结束下标（第 `i` 条 = `units[ends[i-1]..ends[i]]`，`ends[-1]` 记 0），
+/// 必须单调不减且 `ends[count-1] == len`，否则返回 `INVALID_ARGUMENT`。数据区是 `count` 个
+/// 字符串引用，第 `i` 个与对第 `i` 条单独调用单条入口的结果逐码元相同（各条互不影响：标签
+/// 不会跨条匹配）。
+///
+/// # Safety
+/// `len > 0` 时 `units` 指向 `len` 个可读 `u16`；`count > 0` 时 `ends` 指向 `count` 个可读
+/// `u32`；`out_ptr` / `out_len` 非空可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_parse_subtitle_strip_html_tags_batch(
+    units: *const u16,
+    len: usize,
+    ends: *const u32,
+    count: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if count > 0 && ends.is_null() {
+        return status::NULL_ARGUMENT;
+    }
+    let ends: &[u32] = if count == 0 {
+        &[]
+    } else {
+        std::slice::from_raw_parts(ends, count)
+    };
+    let mut prev = 0usize;
+    for &end in ends {
+        let end = end as usize;
+        if end < prev || end > len {
+            return status::INVALID_ARGUMENT;
+        }
+        prev = end;
+    }
+    if prev != len {
+        return status::INVALID_ARGUMENT;
+    }
+    run(units, len, out_ptr, out_len, |s| {
+        let mut out = Out::new();
+        let mut start = 0usize;
+        for &end in ends {
+            let end = end as usize;
+            out.str(&markup::strip_html_tags(&s[start..end]));
+            start = end;
+        }
+        out.finish(0)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -648,6 +698,118 @@ mod tests {
         let rc = unsafe { ffc_parse_subtitle_srt(std::ptr::null(), 3, &mut ptr, &mut len) };
         assert_eq!(rc, status::NULL_ARGUMENT);
         let rc = unsafe { ffc_parse_subtitle_vtt(std::ptr::null(), 0, &mut ptr, &mut len) };
+        assert_eq!(rc, status::OK);
+        ffc_free_bytes(ptr, len);
+    }
+
+    /// 结果字节块数据区里的第 `k` 个字符串引用（池偏移 + 长度）。
+    fn nth_string(bytes: &[u8], k: usize) -> Vec<u16> {
+        let data_len = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        let pool_offset = 16 + data_len.div_ceil(8) * 8;
+        let at = 16 + 8 * k;
+        let start = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let n = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        (0..n)
+            .map(|i| {
+                let p = pool_offset + 2 * (start + i);
+                u16::from_le_bytes([bytes[p], bytes[p + 1]])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn strip_batch_matches_single_entry_per_item() {
+        let items: Vec<Vec<u16>> = [
+            "<00:12.34>こん<00:12.99>にちは",
+            "",
+            "  吾輩は猫である。  ",
+            "<ruby>震<rt>ふる</rt></ruby>",
+            // 未闭合的 `<` 在条尾：不能借下一条的 `>` 吃掉下一条的正文。
+            "a<b",
+            "c>d",
+            "<ruby>漢<rt かん</ruby>の話",
+            "震<rt>ふる",
+            "<i>x</i>",
+        ]
+        .iter()
+        .map(|s| s.encode_utf16().collect())
+        .collect();
+        let mut units: Vec<u16> = Vec::new();
+        let mut ends: Vec<u32> = Vec::new();
+        for item in &items {
+            units.extend_from_slice(item);
+            ends.push(units.len() as u32);
+        }
+        let mut ptr = std::ptr::null_mut();
+        let mut len = 0usize;
+        let rc = unsafe {
+            ffc_parse_subtitle_strip_html_tags_batch(
+                units.as_ptr(),
+                units.len(),
+                ends.as_ptr(),
+                ends.len(),
+                &mut ptr,
+                &mut len,
+            )
+        };
+        assert_eq!(rc, status::OK);
+        let bytes = unsafe { std::slice::from_raw_parts(ptr, len) }.to_vec();
+        ffc_free_bytes(ptr, len);
+        assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 0);
+        for (k, item) in items.iter().enumerate() {
+            assert_eq!(
+                nth_string(&bytes, k),
+                markup::strip_html_tags(item),
+                "item {k}"
+            );
+        }
+        assert_eq!(
+            String::from_utf16(&nth_string(&bytes, 4)).unwrap(),
+            "a<b",
+            "标签不能跨条匹配"
+        );
+    }
+
+    #[test]
+    fn strip_batch_rejects_bad_ends() {
+        let units: Vec<u16> = "abcd".encode_utf16().collect();
+        let mut ptr = std::ptr::null_mut();
+        let mut len = 0usize;
+        for bad in [&[3u32, 2, 4][..], &[2, 5][..], &[1, 3][..]] {
+            let rc = unsafe {
+                ffc_parse_subtitle_strip_html_tags_batch(
+                    units.as_ptr(),
+                    units.len(),
+                    bad.as_ptr(),
+                    bad.len(),
+                    &mut ptr,
+                    &mut len,
+                )
+            };
+            assert_eq!(rc, status::INVALID_ARGUMENT, "{bad:?}");
+        }
+        let rc = unsafe {
+            ffc_parse_subtitle_strip_html_tags_batch(
+                units.as_ptr(),
+                units.len(),
+                std::ptr::null(),
+                2,
+                &mut ptr,
+                &mut len,
+            )
+        };
+        assert_eq!(rc, status::NULL_ARGUMENT);
+        // 空批：零条、零长度。
+        let rc = unsafe {
+            ffc_parse_subtitle_strip_html_tags_batch(
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                0,
+                &mut ptr,
+                &mut len,
+            )
+        };
         assert_eq!(rc, status::OK);
         ffc_free_bytes(ptr, len);
     }
