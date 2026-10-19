@@ -350,4 +350,140 @@ void main() {
     );
     expect(bookSourceRelPath(libraryRoot.path, libraryRoot.path), '.');
   });
+
+  group('负向结果表（不是本类媒体的源）', () {
+    test('随索引落库读回；旧版只有 entries 的 JSON 读成空表', () async {
+      final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+        ..put('a.cbz', 'uid-a')
+        ..reject('dict.zip', 's:10|m:20');
+      await index.save(db);
+
+      final BookSourceIndex loaded = await BookSourceIndex.load(db, sourceId);
+      expect(loaded.uidOf('a.cbz'), 'uid-a');
+      expect(loaded.isRejected('dict.zip', 's:10|m:20'), isTrue);
+      expect(loaded.isRejected('dict.zip', 's:11|m:20'), isFalse,
+          reason: '指纹变了 = 文件被换过，必须重判');
+      expect(loaded.isRejected('dict.zip', null), isFalse,
+          reason: '拿不到指纹时宁可重判');
+
+      await indexOf(<String, String>{'b.cbz': 'uid-b'});
+      expect((await BookSourceIndex.load(db, sourceId)).rejected, isEmpty);
+    });
+
+    test('只有负向结果时也落库；源不在场了随之作废', () async {
+      final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+        ..reject('dict.zip', 'e:"abc"')
+        ..reject('gone.zip', 'e:"def"');
+      await index.save(db);
+      final BookSourceIndex loaded = await BookSourceIndex.load(db, sourceId);
+      expect(loaded.rejected.keys, unorderedEquals(<String>['dict.zip', 'gone.zip']));
+
+      loaded.retainRejected(<String>{'dict.zip'});
+      expect(loaded.rejected.keys, <String>['dict.zip']);
+    });
+
+    test('指纹：ETag 优先；大小 / 时刻能拿几样拼几样；一样都没有为 null', () {
+      expect(sourceContentFingerprint(etag: '"x"', sizeBytes: 1), 'e:"x"');
+      expect(sourceContentFingerprint(sizeBytes: 3, modifiedAt: 4), 's:3|m:4');
+      expect(sourceContentFingerprint(sizeBytes: 3), 's:3|m:-');
+      expect(sourceContentFingerprint(), isNull);
+    });
+  });
+
+  group('isDuplicateSourceBook（重复判据 = 标题 + 来源路径）', () {
+    Future<SourceDuplicateVerdict> judge(
+      BookSourceIndex index,
+      String rel, {
+      required String title,
+      required Set<String> present,
+    }) => isDuplicateSourceBook(
+      db: db,
+      index: index,
+      sourceId: sourceId,
+      rel: rel,
+      proposedTitle: title,
+      format: BookFormat.manga,
+      presentRels: present,
+    );
+
+    test('本来源另一个仍在场的文件已认领 → 不是重复（换名另导）', () async {
+      final String uid = await addBook(
+        'SeriesA/Vol 1.cbz',
+        format: 'manga',
+        epubPath: 'manga.json',
+      );
+      final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+        ..put('SeriesA/Vol 1.cbz', uid);
+
+      final SourceDuplicateVerdict verdict = await judge(
+        index,
+        'SeriesB/Vol 1.cbz',
+        title: 'Vol 1',
+        present: <String>{'SeriesA/Vol 1.cbz', 'SeriesB/Vol 1.cbz'},
+      );
+      expect(verdict.kind, SourceDuplicateKind.otherSourceFile);
+      expect(verdict.isDuplicate, isFalse);
+    });
+
+    test('认领它的旧路径已不在场（文件挪了）/ 没被认领的本来源旧行 → 同一个源', () async {
+      final String uid = await addBook(
+        'Vol 1.cbz',
+        format: 'manga',
+        epubPath: 'manga.json',
+      );
+      final BookSourceIndex moved = BookSourceIndex.empty(sourceId)
+        ..put('old/Vol 1.cbz', uid);
+      expect(
+        (await judge(moved, 'new/Vol 1.cbz',
+                title: 'Vol 1', present: <String>{'new/Vol 1.cbz'}))
+            .kind,
+        SourceDuplicateKind.sameSource,
+      );
+      expect(
+        (await judge(BookSourceIndex.empty(sourceId), 'Vol 1.cbz',
+                title: 'Vol 1', present: <String>{'Vol 1.cbz'}))
+            .isDuplicate,
+        isTrue,
+      );
+    });
+
+    test('别的来源 / 手动导入（无来源）之外的格式 → 按重复处理（foreign）', () async {
+      await addBook('x.cbz', owner: sourceId + 99, format: 'manga');
+      expect(
+        (await judge(BookSourceIndex.empty(sourceId), 'x.cbz',
+                title: 'x', present: <String>{'x.cbz'}))
+            .kind,
+        SourceDuplicateKind.foreign,
+      );
+    });
+
+    test('标题没被占 → none', () async {
+      expect(
+        (await judge(BookSourceIndex.empty(sourceId), 'y.cbz',
+                title: 'y', present: <String>{'y.cbz'}))
+            .kind,
+        SourceDuplicateKind.none,
+      );
+    });
+  });
+
+  test('漫画根枚举含单文件卷（与扫描器登记进索引的源同口径）', () async {
+    final Directory series = Directory(p.join(libraryRoot.path, 'Veil'))
+      ..createSync();
+    File(p.join(series.path, 'v1.cbz')).writeAsBytesSync(<int>[0]);
+    File(p.join(series.path, 'v2.zip')).writeAsBytesSync(<int>[0]);
+    Directory(p.join(libraryRoot.path, 'm')).createSync();
+    File(p.join(libraryRoot.path, 'm', 'a.mokuro')).writeAsStringSync('{}');
+    final Directory loose = Directory(p.join(libraryRoot.path, 'loose'))
+      ..createSync();
+    File(p.join(loose.path, '001.png')).writeAsBytesSync(<int>[0]);
+
+    expect(
+      await enumerateBookSourceRelPaths(
+        libraryRoot,
+        kind: SourceLibraryKind.manga,
+      ),
+      <String>{'m/a.mokuro', 'Veil/v1.cbz', 'Veil/v2.zip', 'loose'},
+    );
+  });
 }

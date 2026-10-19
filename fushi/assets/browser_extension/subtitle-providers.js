@@ -544,6 +544,7 @@ function fushiOnFullEpisodeCues(msg) {
     const key = vid + '|' + fushiFullTrackLangSegment(msg);
     if (msg.label) fushiTrackLabels[key] = String(msg.label);
     fushiEpisodeCues[key] = cues;
+    delete fushiLazyTracks[key]; // 占位轨拿到真 cue 就不再是「待加载」
     try {
       console.log('[Fushi][TODO-1219] full-episode cues intercepted:', key, cues.length, 'cues; first:', cues.slice(0, 3));
     } catch (_) {}
@@ -554,9 +555,30 @@ function fushiOnFullEpisodeCues(msg) {
     } catch (_) {}
   } catch (_) {}
 }
+// 播放器状态通道的整份轨清单（netflix-bridge.js harvestPlayerState）：每条文字轨登记成空 cue 的
+// 占位轨（key 与整轨同形 `${videoId}|${lang}~${trackId}`，cue 到了同 key 覆盖），菜单 / 侧边栏
+// 立刻能列出全部轨；用户选中时 fushiRequestLazyTrack 发 {__fushiNf:'fetchTrack'} 让桥真取。
+function fushiOnNetflixTracks(msg) {
+  try {
+    if (!Array.isArray(msg.tracks)) return;
+    const vid = String(msg.videoId || netflixVideoIdFromPath(location.pathname) || '');
+    if (!vid) return;
+    for (const t of msg.tracks) {
+      if (!t || !t.lang || !t.trackId) continue;
+      const key = vid + '|' + fushiFullTrackLangSegment(t);
+      if (t.label) fushiTrackLabels[key] = String(t.label);
+      if (fushiEpisodeCues[key] && fushiEpisodeCues[key].length) continue; // 已有真 cue
+      if (fushiLazyTracks[key]) continue; // 已登记
+      fushiEpisodeCues[key] = [];
+      fushiLazyTracks[key] = true;
+      fushiNotifyPanel(key);
+    }
+  } catch (_) {}
+}
 window.addEventListener('message', (e) => {
   if (e.source !== window || !e.data) return;
   if (e.data.__fushiNf === 'cuesFailed') { fushiOnFullEpisodeCuesFailed(e.data); return; }
+  if (e.data.__fushiNf === 'tracks') { fushiOnNetflixTracks(e.data); return; }
   if (e.data.__fushiNf !== 'cues') return;
   fushiOnFullEpisodeCues(e.data);
 });
@@ -624,6 +646,15 @@ window.fushiRequestLazyTrack = function (key) {
   if (!fushiLazyTracks[key]) return false;
   const sep = key.indexOf('|');
   if (sep < 0) return false;
+  // Netflix 占位轨（lang 段带 `~trackId`）走 netflix-bridge 的按需取轨。
+  const seg = key.slice(sep + 1);
+  const tilde = seg.indexOf('~');
+  if (fushiSite() === 'netflix' && tilde > 0) {
+    try {
+      window.postMessage({ __fushiNf: 'fetchTrack', videoId: key.slice(0, sep), trackId: seg.slice(tilde + 1) }, '/');
+    } catch (_) { return false; }
+    return true;
+  }
   try {
     window.postMessage({ __fushiStream: 'fetchTrack', videoKey: key.slice(0, sep), lang: key.slice(sep + 1) }, '/');
   } catch (_) { return false; }
