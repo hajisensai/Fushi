@@ -1,0 +1,6 @@
+## BUG-3567 · mixed-dict-kanji-section-missing
+- **报告**：2026-10-19（用户：反馈「現代新国語辞典 第七版」同时带 term 与 kanji 条目，Fushi 没导入汉字条目，Hoshi Reader 有）
+- **真实性**：✅ 真 bug（展示层），但不是导入丢数据。用正式版 `fushidicts_ffi.dll` 实测：导入得 terms 82620 / kanji 2136，`probe_dict_content` 掩码 3，`query_kanji` 查「愛/亜/水」均命中；混合词典打 `hasKanji` 后也正确进汉字桶，弹窗点词头汉字能出汉字卡。用户看到的缺口在词典管理：「汉字」分区只列 `type == kanji` 的词典（`fushi/lib/src/models/dictionary_repository.dart:98` `kanjiDictionaries`，`dictionary_dialog_page.dart` `_dictionariesForType`），混合词典只在「术语」里，汉字分区是空的、计数 0，看起来像没导入；汉字部分也没法单独开关 / 排序（只能跟着整本的 `hiddenLanguages`）。Hoshi Reader 把同一本词典同时放进 Term 与 Kanji 两个列表（`Core/DictionaryManager.swift` 按 counts 各拷一份）。
+- **[x] ① 已修复** — 「汉字」分区 = 纯 kanji 词典 + 混合词典的汉字部分（`kanjiSectionDictionariesOf`，`packages/fushi_dictionary/lib/src/engine/dictionary.dart`）；汉字部分的开关 / 位置独立存 metadata `kanjiHidden` / `kanjiOrder`，不碰术语分区的 `hiddenLanguages` / `order`（共用 `order` 的话在汉字分区一拖动就改掉它在术语分区的位置）；引擎汉字桶按同一顺序与开关装载（`bucketDictPaths`）；重导 / 在线更新继承这两项（`kanjiPartSettingsOf`）；行副标题标注「术语词典内附的汉字」。
+- **[x] ② 已加自动化测试** — `fushi/test/models/mixed_dict_kanji_section_test.dart`（分区成员与顺序、开关独立、汉字分区重排不改术语 order、写穿 DB、重导继承）；`fushi/test/models/bucket_dict_paths_test.dart`（两部分开关各自生效、汉字桶按分区顺序）。
+- **备注**：行为变化——以前在「术语」里关掉混合词典会连带关掉汉字卡；现在两部分各管各的，要关汉字卡在「汉字」分区关。无头服务端 `packages/fushi_server/lib/src/dictionary_host.dart` 没有分区 UI，仍按整本 hidden 处理，未改。

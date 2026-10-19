@@ -1802,6 +1802,7 @@
   "dict_language_title": "词典内容语言",
   "dict_language_tooltip": "内容语言",
   "dict_manager_summary": "共 $n 本 · 已启用 $m 本",
+  "dict_mixed_kanji_part": "术语词典内附的汉字",
   "dict_order_bottom_move": "移到最后",
   "dict_order_position_clamped": "超出范围，将移到第 $n 位",
   "dict_order_position_label": "位置（1–$m）",
