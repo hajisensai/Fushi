@@ -109,6 +109,23 @@ import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService, isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show
+        AppVideoSubtitleJob,
+        AppVideoSubtitleJobStatus,
+        AppVideoSubtitleService,
+        AppVideoSubtitleTarget,
+        AppVideoSubtitleTargetNotFound,
+        appVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
+    show
+        PrefsRepoVideoSubtitleGeneratePrefs,
+        showVideoSubtitleGenerateSheet,
+        videoSubtitleEpisodeStatusLabel;
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
+    show pushAiSettingsPage;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show VideoSubtitleEpisodeResult;
 import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart'
     show AppAudiobookTranscriber;
 import 'package:fushi/src/media/video/subtitle_embedded_fonts.dart';

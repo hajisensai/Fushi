@@ -1366,6 +1366,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 的 reducer——打开对话时读一次偏好快照决定「问不问 / 勾选框初值」，harness 里
   // 没有那条对话。由窄测试咬住写穿 + 选项由代码枚举生成 + 类型化封装往返，
   // reducer 侧的三态行为由 test/media/video/acquisition/ 的 reducer 用例咬住。
+  // 视频日语字幕的分段方式 / MOSS 后端：写 prefsRepo（changed=true），生效点在
+  // 「生成日语字幕」任务挑识别器时（视频页面板 / 合集页 / 桌面 CLI 都经
+  // AppVideoSubtitleService，没给显式值就取这两个偏好），harness 里没有起任务。
+  'models/Segmentation':
+      'test/platform/desktop/ctl/ctl_video_subtitle_routes_test.dart（没给 segmenter 用设置里的值）',
+  'models/MOSS backend':
+      'test/platform/desktop/ctl/ctl_video_subtitle_routes_test.dart（没给 mossBackend 用设置里的值）',
   'ai/Default quality':
       'test/settings/ai_video_download_settings_test.dart + '
       'test/ai/ai_video_acquisition_preferences_test.dart',

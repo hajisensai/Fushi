@@ -75,6 +75,16 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show
+        AppVideoSubtitleService,
+        AppVideoSubtitleTarget,
+        appVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
+    show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
+    show pushAiSettingsPage;
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -1067,6 +1077,28 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         members: _members,
       ),
       initialScope: SubtitleWorkbenchScope.collection,
+    );
+  }
+
+  /// 「整季生成日语字幕」：取合集全部视频成员（已有 `.ja.srt` 的由管线跳过），一部
+  /// 作品一张专名表，面板里显示每集进度与跳过原因。编排在 [AppVideoSubtitleService]
+  /// （与视频页单集、桌面 CLI 同一个服务）。
+  Future<void> _generateSeasonJaSubtitles() async {
+    final AppModel appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    final AppVideoSubtitleTarget target = await service.resolveCollection(
+      widget.collection.id,
+    );
+    if (!mounted) return;
+    await showVideoSubtitleGenerateSheet(
+      context: context,
+      service: service,
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
     );
   }
 
@@ -2451,6 +2483,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.subtitles:
         await _fetchCollectionSubtitles();
         return;
+      case _CollectionManageAction.generateJaSubtitles:
+        await _generateSeasonJaSubtitles();
+        return;
       case _CollectionManageAction.renameEpisodes:
         await _renameEpisodesFromScrape();
         return;
@@ -2616,6 +2651,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         t.video_jimaku_batch_title,
         enabled: _members.isNotEmpty,
       ),
+      // 整季生成日语字幕（ASR + 可选 AI 校对）：要本机视频文件与本机 ONNX 运行时；
+      // 只在对端的集由面板列出跳过原因，不在这里藏入口。
+      if (isAsrSupported)
+        action(
+          _CollectionManageAction.generateJaSubtitles,
+          FushiIcons.ai,
+          t.video_subtitle_ai_season_title,
+          enabled: _members.isNotEmpty,
+        ),
       action(
         _CollectionManageAction.renameEpisodes,
         FushiIcons.edit,
@@ -2780,6 +2824,7 @@ enum _CollectionManageAction {
   tmdbOrderingOnHost,
   sortBySeason,
   subtitles,
+  generateJaSubtitles,
   renameEpisodes,
   downloadRemote,
   scrapeOnHost,
