@@ -1462,15 +1462,17 @@ class _GalgameEditTabState extends State<_GalgameEditTab> {
 
   /// 刮削：打开统一刮削弹窗（与库页卡菜单「刮削元数据」同一个入口，
   /// [showGalgameScrapeDialog]）。搜索/候选/落库/封面全部在弹窗内闭环；
-  /// 预填词取编辑框里的名字（用户可能刚改过），空则退回当前显示名。
+  /// 预填词取编辑框里的名字（用户可能刚改过）；没填或与当前显示名相同则不传，
+  /// 让弹窗按缺省规则取显示名并回退到 exe 路径认 DLsite 编号
+  /// （[galgameScrapeInitialQuery]）——显式传入的词会被当作用户手填、不再被覆盖。
   Future<void> _scrape() async {
+    final String typed = _name.text.trim();
     final bool applied = await showGalgameScrapeDialog(
       context: context,
       game: widget.game,
       repo: widget.repo,
-      initialQuery: _name.text.trim().isEmpty
-          ? widget.game.displayName
-          : _name.text.trim(),
+      initialQuery:
+          typed.isEmpty || typed == widget.game.displayName ? null : typed,
     );
     if (!applied || !mounted) return;
     await widget.onSaved();

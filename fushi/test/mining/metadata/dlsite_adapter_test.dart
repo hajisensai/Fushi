@@ -243,7 +243,7 @@ void main() {
       );
     });
 
-    test('预填词：名字里有编号 → 编号；否则 exe 路径里有编号 → 编号；都没有 → 原词', () {
+    test('预填词：名字里有编号 → 编号；没给预填词时 exe 路径里有编号 → 编号；都没有 → 原词', () {
       expect(
         galgameScrapeInitialQuery(
           _game(name: '[RJ01234567] 測試', exePath: r'C:\g\game.exe'),
@@ -251,12 +251,29 @@ void main() {
         ),
         'RJ01234567',
       );
+      // 缺省预填（显示名）里没编号：回退到 exe 路径认编号。
+      expect(
+        galgameScrapeInitialQuery(
+          _game(name: 'game', exePath: r'D:\Games\RJ299717\game.exe'),
+          null,
+        ),
+        'RJ299717',
+      );
+      // 显式给的搜索词（详情页编辑框手填）没编号：原样保留，不被 exe 路径的编号覆盖。
       expect(
         galgameScrapeInitialQuery(
           _game(name: 'game', exePath: r'D:\Games\RJ299717\game.exe'),
           '測試ゲーム',
         ),
-        'RJ299717',
+        '測試ゲーム',
+      );
+      // 显式词里自带编号：仍只取编号。
+      expect(
+        galgameScrapeInitialQuery(
+          _game(name: 'game', exePath: r'D:\Games\RJ299717\game.exe'),
+          '測試 RJ01234567',
+        ),
+        'RJ01234567',
       );
       expect(
         galgameScrapeInitialQuery(
