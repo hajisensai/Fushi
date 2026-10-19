@@ -58,6 +58,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
@@ -8627,6 +8628,14 @@ class AppModel with ChangeNotifier {
   bool get srsReviewHideHardEasy => _prefsRepo?.srsReviewHideHardEasy ?? false;
   Future<void> setSrsReviewHideHardEasy(bool value) =>
       prefsRepo.setSrsReviewHideHardEasy(value);
+  // 复习页布局（透传 prefsRepo）。可空读：prefs 未装配 = 无底部重播键、显示间隔。
+  SrsReviewReplayButton get srsReviewReplayButton =>
+      SrsReviewReplayButton.fromWire(_prefsRepo?.srsReviewReplayButton);
+  Future<void> setSrsReviewReplayButton(SrsReviewReplayButton value) =>
+      prefsRepo.setSrsReviewReplayButton(value.wire);
+  bool get srsReviewShowIntervals => _prefsRepo?.srsReviewShowIntervals ?? true;
+  Future<void> setSrsReviewShowIntervals(bool value) =>
+      prefsRepo.setSrsReviewShowIntervals(value);
   double get srsReviewZoom => _prefsRepo?.srsReviewZoom ?? 1.0;
   Future<void> setSrsReviewZoom(double value) =>
       prefsRepo.setSrsReviewZoom(value);

@@ -40,6 +40,14 @@
 | [BUG-3567](bugs/BUG-3567-web-browser-embedded-under-nav.md) | ✅ | ✅ | 浏览器嵌在模块页里：主导航底栏与「阅读本章」FAB 叠在网页上互相遮挡，顶部还有「浏览器」标题 |
 | [BUG-3566](bugs/BUG-3566-lookup-shell-title-md3-compact.md) | ✅ | ✅ | 查词页（MD3 手机）顶部仍有一整行「查词」大标题 |
 | [BUG-3565](bugs/BUG-3565-root-page-back-button-on-popup.md) | ✅ | ✅ | 根页打开弹出菜单 / 对话框后重建会凭空长出返回键（浏览器页点「⋯」左上角出现返回） |
+> 共 3196 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3566](bugs/BUG-3566-srs-host-not-in-srs-sync.md) | ✅ | ✅ | 互联 host 自己不参与复习（SRS）同步：立即同步提示没配置、对端看不到它的卡 |
+| [BUG-3565](bugs/BUG-3565-srs-multi-channel-shared-state.md) | ✅ | ✅ | 云盘 + 互联同时开着时复习同步状态全局一份：批次只到先跑的目录、另一个目录每轮换化身 |
+| [BUG-3564](bugs/BUG-3564-srs-template-preview-field-name-unescaped.md) | ✅ | ✅ | 复习模板预览：没有样例时的占位值 `(字段名)` 未转义，字段名里的 HTML 会在卡面 WebView 里生效 |
+| [BUG-3563](bugs/BUG-3563-srs-delete-field-visual-rewrite-not-atomic.md) | ✅ | ✅ | 复习笔记类型：删字段时可视化模板的改写与字段删除分两次写入，删不掉时模板已被改 |
 | [BUG-3562](bugs/BUG-3562-srs-review-top-band-and-phone-dict-tabs.md) | ✅ | ✅ | srs-review-top-band-and-phone-dict-tabs |
 | [BUG-3561](bugs/BUG-3561-video-pause-ocr-capture-null-never-retried.md) | ✅ | ✅ | video-pause-ocr-capture-null-never-retried |
 | [BUG-3560](bugs/BUG-3560-video-pause-ocr-all-skips-when-text-subtitle-on-screen.md) | ✅ | ✅ | video-pause-ocr-all-skips-when-text-subtitle-on-screen |

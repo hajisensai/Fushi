@@ -2,6 +2,9 @@
 /// 模拟器的设备就是它；数据库副本（fushi_engine）的行为必须与它一致。
 library;
 
+import 'dart:collection';
+import 'dart:typed_data';
+
 import '../causal_context.dart';
 import '../entities.dart';
 import '../event_store.dart';
@@ -46,6 +49,10 @@ class SrsMemoryReplica implements SrsSyncReplica {
   late SrsEditWriter writer;
   final List<String> _outbox = <String>[];
   final Map<String, SrsEvent> _local = <String, SrsEvent>{};
+
+  /// 已冻结批次的本机留存：写入者 → 批次号 → 字节。
+  final Map<String, SplayTreeMap<int, Uint8List>> _sent =
+      <String, SplayTreeMap<int, Uint8List>>{};
 
   String get writerId => _state.writerId;
   SrsSyncLocalState get syncState => _state;
@@ -102,7 +109,9 @@ class SrsMemoryReplica implements SrsSyncReplica {
     unpublishedIds: List<String>.of(_outbox),
   );
 
-  /// 恢复备份：本机数据整体换成备份内容；换新化身号（不复用旧 writerId），备份里没发布过的事件由新化身重新发布。
+  /// 恢复备份：本机数据整体换成备份内容；换新化身号（不复用旧 writerId），备份里的全部事件由新化身重新发布
+  /// （与数据库副本 `SrsDbStore.afterRestore` 一致：新化身不知道每个同步目录里已经有哪些，
+  /// 多目录时旧化身的批次未必到过每个目录；事件不可变、按 ID 取并集，重复发布无害）。
   /// 备份之后才产生、又没发布出去的本机改动随之丢失（这是「恢复旧备份」本身的语义）。
   /// 事件不可变，它们的 dot / HLC 仍属旧写入者（第六轮审查第 2 条，由因果上下文按 dot 处理）。
   void restore(SrsBackup b) {
@@ -115,14 +124,13 @@ class SrsMemoryReplica implements SrsSyncReplica {
     writer = SrsEditWriter(writerId: _state.writerId);
     _outbox.clear();
     _local.clear();
+    _sent.clear();
     store = SrsEventStore();
     store.serverTime.addAll(b.serverTimes);
     for (final SrsEvent e in b.events) {
       store.apply(e);
-      if (b.unpublishedIds.contains(e.id)) {
-        _local[e.id] = e;
-        _outbox.add(e.id);
-      }
+      _local[e.id] = e;
+      _outbox.add(e.id);
     }
     writer.adopt(store.seenContext);
   }
@@ -153,22 +161,70 @@ class SrsMemoryReplica implements SrsSyncReplica {
   ];
 
   @override
-  Future<void> markPublished(List<String> eventIds) async {
-    _outbox.removeWhere(eventIds.contains);
+  Future<void> freezeBatch(
+    SrsSyncLocalState state,
+    int no,
+    Uint8List bytes,
+    List<String> eventIds,
+  ) async {
+    (_sent[state.writerId] ??= SplayTreeMap<int, Uint8List>())[no] = bytes;
+    final Set<String> ids = eventIds.toSet();
+    _outbox.removeWhere(ids.contains);
+    await saveSyncState(state);
+  }
+
+  @override
+  Future<Uint8List?> sentBatch(String writerId, int no) async =>
+      _sent[writerId]?[no];
+
+  @override
+  Future<List<int>> sentBatchNos(String writerId) async =>
+      _sent[writerId]?.keys.toList() ?? <int>[];
+
+  @override
+  Future<void> dropSentBatches(String writerId, {int? throughNo}) async {
+    if (throughNo == null) {
+      _sent.remove(writerId);
+      return;
+    }
+    _sent[writerId]?.removeWhere((int no, Uint8List _) => no <= throughNo);
   }
 
   @override
   Future<void> requeue(List<String> eventIds) async {
+    // 重新发布的可以是对端的事件（转发 / 换化身 / 目录起步）：按 ID 从合并状态里取。
+    Map<String, SrsEvent>? all;
     for (final String id in eventIds) {
-      if (!_outbox.contains(id) && _local.containsKey(id)) _outbox.add(id);
+      if (_outbox.contains(id)) continue;
+      SrsEvent? e = _local[id];
+      if (e == null) {
+        all ??= <String, SrsEvent>{
+          for (final SrsEvent x in store.allEvents()) x.id: x,
+        };
+        e = all[id];
+      }
+      if (e == null) continue;
+      _local[id] = e;
+      _outbox.add(id);
     }
   }
 
   @override
-  Future<void> applyRemote(List<SrsEvent> events, {int? serverTimeMs}) async {
+  Future<void> applyRemote(
+    List<SrsEvent> events, {
+    int? serverTimeMs,
+    bool forward = false,
+  }) async {
     final (int now, SrsTimeSource _) = trustedNow();
     for (final SrsEvent e in events) {
-      store.apply(e, serverTimeMs: serverTimeMs);
+      final int? before = store.serverTimeOf(e.id);
+      final bool landed = store.apply(e, serverTimeMs: serverTimeMs);
+      if (forward &&
+          (landed || _lowered(before, store.serverTimeOf(e.id))) &&
+          !_outbox.contains(e.id)) {
+        _local[e.id] = e;
+        _outbox.add(e.id);
+      }
       final Hlc? h = switch (e) {
         SrsEditEvent(:final SrsFieldEdit edit) => edit.hlc,
         SrsLogEvent(:final SrsReviewLog log) => log.hlc,
@@ -185,10 +241,31 @@ class SrsMemoryReplica implements SrsSyncReplica {
     writer.adopt(store.seenContext);
   }
 
+  /// S 变小了（含从未知变成已知）。
+  static bool _lowered(int? before, int? after) =>
+      after != null && (before == null || after < before);
+
   @override
-  Future<void> observeServerTimes(Map<String, int> times) async {
-    times.forEach(store.observeServerTime);
+  Future<void> observeServerTimes(
+    Map<String, int> times, {
+    bool forward = false,
+  }) async {
+    final List<String> lowered = <String>[];
+    times.forEach((String id, int s) {
+      final int? before = store.serverTimeOf(id);
+      store.observeServerTime(id, s);
+      if (forward && _lowered(before, store.serverTimeOf(id))) lowered.add(id);
+    });
+    // 已在本机的事件才转发（还没到的随后落地时按「新落地」转发）。
+    if (lowered.isNotEmpty) await requeue(lowered);
   }
+
+  @override
+  Future<Map<String, int>> knownServerTimes(List<String> eventIds) async =>
+      <String, int>{
+        for (final String id in eventIds)
+          if (store.serverTimeOf(id) case final int s) id: s,
+      };
 
   @override
   Future<List<SrsEvent>> exportAll() async => store.allEvents().toList();

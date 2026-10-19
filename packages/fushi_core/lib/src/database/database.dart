@@ -813,6 +813,8 @@ void _requireOneVideoMetadataOwner({
   SrsNotesCache,
   SrsCardsCache,
   VideoSubtitleGlossaries,
+  SrsSentBatches,
+  MediaPrivacyFlags,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -846,7 +848,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 120;
+  int get schemaVersion => 122;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2333,6 +2335,24 @@ class FushiDatabase extends _$FushiDatabase
             // 跑一次也无害；表在阶梯上不存在（合成库）则跳过。
             if (await _tableExists('srs_field_edits')) {
               await _ensureSrsIndexes();
+            }
+          }
+          if (from < 121) {
+            // v121（Fushi SRS 多目录同步；原定 v119 / v120，被并行合入的视频字幕 AI 校对与
+            // SRS 批量修复的索引步占用后顺延）：
+            // srs_sent_batches——本机已冻结批次的留存，同一批次逐字节相同地传到每个同步目录
+            // （云盘 / 互联 host / 本机 host 目录），到最近同步过的目录都确认为止。设备本地、
+            // 不进备份、无外键；存量库没有留存可迁（旧版本冻结中的批次由 SrsDbStore 读本机
+            // 状态时搬进来）。
+            if (!await _tableExists('srs_sent_batches')) {
+              await m.createTable(srsSentBatches);
+            }
+          }
+          if (from < 122) {
+            // v122：作品级「私密」标记表 media_privacy_flags（不上传排行榜、不推
+            // Bangumi）。纯新表、不动数据；幂等守卫同 v119。
+            if (!await _tableExists('media_privacy_flags')) {
+              await m.createTable(mediaPrivacyFlags);
             }
           }
         },

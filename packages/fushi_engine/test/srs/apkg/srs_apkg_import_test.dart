@@ -312,7 +312,11 @@ void main() {
   Future<void> syncAll(List<SrsDbStore> stores) async {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
-        await SrsSyncEngine(directory: dir, replica: s).syncOnce();
+        await SrsSyncEngine(
+          directoryKey: 'test',
+          directory: dir,
+          replica: s,
+        ).syncOnce();
       }
     }
   }

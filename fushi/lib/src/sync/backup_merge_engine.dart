@@ -1727,6 +1727,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'srs_local_state',
       'srs_notes_cache',
       'srs_cards_cache',
+      // v121：本机已冻结批次留存（多目录同步），与本机写入者绑定，同属设备本地。
+      'srs_sent_batches',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →

@@ -19,6 +19,10 @@
 // 只有扩展级、没有源级分级）；刮削视频 = 作品 `contentRating` 成人向（AniDB restricted →
 // `R18+`、MAL `Rx - Hentai`）。拿不到信号的条目为 false。
 //
+// 用户标成私密的作品（`media_privacy_flags`，口径见 [MediaPrivacySnapshot]）一律不上报；
+// 已上报过的随书架同步的「本地已消失 → remove」自动从服务端删掉。每日字数不带作品
+// 身份，私密作品的字数照常计入。
+//
 // 书 / 视频 / 游戏的库表本身不分 Profile（与库页口径一致），只有统计按 Profile 隔离。
 // Profile 口径：只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时**别的
 // Profile 有学习记录、本 Profile 没有**的作品不上传——别的 Profile 读完的书不算到本账户
@@ -36,6 +40,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/work_refs.dart';
+import 'package:fushi_engine/privacy/media_privacy.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
 
@@ -112,6 +117,7 @@ Future<LocalShelf> buildLocalShelf(
     otherProfiles: await _otherProfileMedia(db, profileId),
     nowMs: at.millisecondsSinceEpoch,
     nsfwExtensions: await _nsfwExtensionPackages(db),
+    privacy: await MediaPrivacySnapshot.load(db),
     countsUnattributed: countsUnattributed,
   );
   final List<LocalShelfEntry> entries =
@@ -249,6 +255,7 @@ class _ShelfBuild {
     required this.otherProfiles,
     required this.nowMs,
     required this.nsfwExtensions,
+    required this.privacy,
     required this.countsUnattributed,
   });
 
@@ -260,6 +267,9 @@ class _ShelfBuild {
 
   /// 分级为 NSFW 的扩展包名。
   final Set<String> nsfwExtensions;
+
+  /// 用户标成私密的作品：一律不上报。
+  final MediaPrivacySnapshot privacy;
 
   /// 见 [buildLocalShelf] 的同名参数。
   final bool countsUnattributed;
@@ -534,6 +544,7 @@ Future<List<LocalShelfEntry>> _bookEntries(
     if (build.belongsToOtherProfile(kActivityMediaBook, <String>[bookKey])) {
       continue;
     }
+    if (build.privacy.isBookPrivate(bookKey)) continue;
     final String title = _nonEmpty(row.read(t.title)) ?? bookKey;
     final String author = _nonEmpty(row.read(t.author)) ?? '';
     final _SourceInfo source = _sourceInfo(row.read(t.sourceMetadata));
@@ -663,6 +674,12 @@ Future<List<LocalShelfEntry>> _videoEntries(
     if (build.belongsToOtherProfile(
       kActivityMediaVideo,
       unit.members.map((VideoBookRow m) => m.bookUid),
+    )) {
+      continue;
+    }
+    if (build.privacy.isVideoUnitPrivate(
+      unit.members.map((VideoBookRow m) => m.bookUid),
+      collectionId: unit.collectionId,
     )) {
       continue;
     }
@@ -1010,6 +1027,7 @@ Future<List<LocalShelfEntry>> _gameEntries(
     if (build.belongsToOtherProfile(kActivityMediaGame, <String>[g.id])) {
       continue;
     }
+    if (build.privacy.isGamePrivate(g.id)) continue;
     final _GameMeta meta = _GameMeta.of(
       g,
       sources[g.id] ?? const <GalgameSourceRow>[],

@@ -312,6 +312,56 @@ void main() {
     expect(srsVisualDropField(handEdited, 'f2', _ctx), isNull);
   });
 
+  test('删字段的模板改写（存储形态 fld:<id>）：可视化面整面重编、引用仍是 id 形式；没引用返回 null', () {
+    final SrsNoteTypeView type = SrsNoteTypeView(
+      id: 'nt',
+      ankiNum: 1,
+      kind: SrsNoteTypeKind.standard,
+      name: 'Basic',
+      fields: const <SrsFieldDef>[
+        SrsFieldDef(id: 'f1', name: 'Front', ord: 0),
+        SrsFieldDef(id: 'f2', name: 'Back', ord: 1),
+        SrsFieldDef(id: 'f3', name: 'Reading', ord: 2),
+      ],
+      templates: const <SrsTemplateDef>[],
+      css: '',
+      termFieldId: null,
+      deletedAt: null,
+      builtinKey: null,
+      edits: SrsEntityEdits(<String, SrsRegister>{}),
+    );
+    final Map<String, String> nameToId = <String, String>{
+      'Front': 'f1',
+      'Back': 'f2',
+      'Reading': 'f3',
+    };
+    final String storedBack = templateNamesToIds(
+      srsCompileVisualSide(<SrsVisualBlock>[
+        _field('b1', 'f1'),
+        const SrsVisualBlock(
+          id: 'b2',
+          kind: SrsVisualBlockKind.field,
+          fieldId: 'f2',
+          label: 'Meaning',
+        ),
+      ], _ctx),
+      nameToId,
+    );
+    final SrsTemplateDef tpl = SrsTemplateDef(
+      id: 't1',
+      name: 'Card 1',
+      ord: 0,
+      front: '{{fld:f1}}',
+      back: storedBack,
+    );
+    final SrsTemplateDef next = srsVisualTemplateWithoutField(type, tpl, 'f2')!;
+    expect(next.front, tpl.front, reason: '非可视化的一面不动');
+    expect(next.back, contains('{{fld:f1}}'));
+    expect(next.back, isNot(contains('fld:f2')));
+    expect(next.back, isNot(contains('Meaning')));
+    expect(srsVisualTemplateWithoutField(type, tpl, 'f3'), isNull);
+  });
+
   test('自动布局（填空类型）：背面自己放填空字段而不是重复正面，答案面显示挖出的词', () {
     final SrsNoteTypeView type = SrsNoteTypeView(
       id: 'nt',

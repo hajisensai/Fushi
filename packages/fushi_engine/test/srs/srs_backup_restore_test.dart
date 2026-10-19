@@ -68,7 +68,11 @@ void main() {
     for (int round = 0; round < 3; round++) {
       for (final SrsDbStore s in stores) {
         t += 1000;
-        await SrsSyncEngine(directory: dir, replica: s).syncOnce();
+        await SrsSyncEngine(
+          directoryKey: 'test',
+          directory: dir,
+          replica: s,
+        ).syncOnce();
       }
     }
   }
