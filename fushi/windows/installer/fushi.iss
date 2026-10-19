@@ -220,6 +220,9 @@ Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: none; Val
 ; 数据存储位置引导文件（见 [Code] WriteDataRootBootstrap）。app 首启即消费并删除；
 ; 装完从没启动过就卸载时由这里收尾，别在安装目录留一个孤儿文件。
 Type: files; Name: "{app}\data_root.bootstrap"
+; 应用内更新提权安装时 Inno 日志写在安装目录（BUG-3567，见 platform_updater.dart
+; windowsElevatedInstallerLogPath；前缀与 kWindowsElevatedInstallLogPrefix 一致）。
+Type: files; Name: "{app}\fushi-update-install-*.log"
 
 [Run]
 Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
@@ -691,12 +694,34 @@ end;
 // 平台限制（如实记录）：Windows 不提供程序化「固定到任务栏」的公开接口，
 // 所以任务栏固定项这里只能删掉指向已消失的 hibiki.exe 的死链接，
 // 无法自动改指 fushi.exe、也无法重新固定；用户需要的话得手动再固定一次。
+{ BUG-3567：提权的应用内更新把 Inno 日志写进安装目录（用户不可写，防链接重定向），
+  文件名带交接时刻。安装成功后只留本次这份（{log}），其余历次的删掉，不在安装目录堆积。 }
+procedure CleanupStaleElevatedInstallLogs();
+var
+  FindRec: TFindRec;
+  Current: String;
+begin
+  Current := Lowercase(ExtractFileName(ExpandConstant('{log}')));
+  if FindFirst(ExpandConstant('{app}\fushi-update-install-*.log'), FindRec) then
+  begin
+    try
+      repeat
+        if Lowercase(FindRec.Name) <> Current then
+          DeleteFile(ExpandConstant('{app}\') + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep <> ssPostInstall then
     Exit;
 
   WriteDataRootBootstrap();
+  CleanupStaleElevatedInstallLogs();
 
   // 旧名可执行文件：Inno 只覆盖同名文件，改了名的旧 exe 不清就会与 fushi.exe
   // 并存，旧快捷方式还能把上一版拉起来。

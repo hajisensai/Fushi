@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
+import 'package:fushi/src/utils/misc/update_handoff.dart'
+    show WindowsUpdateHandoff, WindowsUpdateHandoffRecord, WindowsUpdateHandoffResult;
 
 /// 装进 `C:\Program Files\Fushi`（手动提权安装）后，普通权限的 app 写不进安装目录，
 /// 应用内更新旧行为是直接报 `Cannot write to installation directory` 并要求用户
@@ -157,6 +159,7 @@ void main() {
         probeInstallDirWritable: (Directory dir) async => probe,
         expectedSha256: expectedSha256,
         hashFile: (File file) async => actualSha256,
+        grantForegroundTo: (int pid) => false,
         startProcess: (String executable, List<String> args) async {
           onStart?.call();
           launchedArgs = args;
@@ -195,6 +198,138 @@ void main() {
         reason: '提权的安装器自启 app 会把管理员令牌传给 app',
       );
       expect(exitCalls, 1);
+    });
+
+    test('提权时 Inno 日志写进安装目录（用户不可写，防链接重定向），marker 记同一路径，'
+        'reconcile 以普通权限读回', () async {
+      final prepared = await prepare();
+      final DateTime startedAt = DateTime.utc(2026, 10, 19, 12);
+      List<String>? launchedArgs;
+      await WindowsInstaller.runAndExit(
+        prepared.installer.path,
+        targetVersion: '3.0.1',
+        handoffMarkerFile: prepared.marker,
+        now: () => startedAt,
+        currentExecutablePath:
+            '${prepared.installDir.path}${Platform.pathSeparator}fushi.exe',
+        collectDiagnostics: () async => const WindowsInstallerDiagnostics(),
+        probeInstallDirWritable: (Directory dir) async =>
+            WindowsInstallDirWriteProbe.accessDenied,
+        expectedSha256: digest,
+        hashFile: (File file) async => digest,
+        grantForegroundTo: (int pid) => true,
+        startProcess: (String executable, List<String> args) async {
+          launchedArgs = args;
+          return const WindowsInstallerStartedProcess(pid: 42);
+        },
+        exitProcess: (int code) {},
+      );
+
+      final String expectedLog = windowsElevatedInstallerLogPath(
+        prepared.installDir.path,
+        startedAt,
+      );
+      expect(
+        expectedLog,
+        startsWith(
+          '${prepared.installDir.path}${Platform.pathSeparator}'
+          '$kWindowsElevatedInstallLogPrefix',
+        ),
+      );
+      final List<String> innoArgs =
+          launchedArgs!.sublist(launchedArgs!.indexOf('--') + 1);
+      expect(innoArgs, contains('/LOG=$expectedLog'));
+      expect(
+        innoArgs.where((String a) => a.startsWith('/LOG=')),
+        hasLength(1),
+      );
+      expect(
+        innoArgs.any(
+          (String a) => a.startsWith('/LOG=${prepared.installer.parent.path}'),
+        ),
+        isFalse,
+        reason: '提权进程绝不能往用户可写的 updates 目录写',
+      );
+
+      final WindowsUpdateHandoffRecord? record =
+          await WindowsUpdateHandoff.read(prepared.marker);
+      expect(record?.innoLogPath, expectedLog);
+
+      // 安装器（提权）在安装目录写下的日志，app 重启后以普通权限按 marker 读回。
+      await File(expectedLog).writeAsString(
+        <String>[
+          r'2026-10-19 12:00:01.000   DeleteFile failed; code 5.',
+          r'2026-10-19 12:00:01.001   C:\Program Files\Fushi\libmpv-2.dll',
+        ].join('\n'),
+      );
+      final WindowsUpdateHandoffResult? result =
+          await WindowsUpdateHandoff.reconcile(
+        markerFile: prepared.marker,
+        currentVersion: '3.0.0',
+        now: DateTime.utc(2026, 10, 19, 12, 5),
+      );
+      expect(result?.record.innoLogExists, isTrue);
+      expect(result?.record.installerFailureType, 'deletefile_code_5');
+    });
+
+    test('非提权路径的日志位置不变：仍在安装包旁边', () async {
+      final prepared = await prepare();
+      final List<String>? launchedArgs = await run(
+        prepared,
+        probe: WindowsInstallDirWriteProbe.writable,
+        expectedSha256: digest,
+      );
+      final String siblingLog =
+          windowsInstallerLogPath(prepared.installer.path);
+      expect(launchedArgs, contains('/LOG=$siblingLog'));
+      expect(
+        (await WindowsUpdateHandoff.read(prepared.marker))?.innoLogPath,
+        siblingLog,
+      );
+    });
+
+    test('只在提权时把前台让给 launcher（UAC 框才会直接弹出）', () async {
+      final List<int> granted = <int>[];
+      await WindowsInstaller.runAndExit(
+        (await prepare()).installer.path,
+        targetVersion: '3.0.1',
+        handoffMarkerFile: File(join('updates/handoff.json')),
+        currentExecutablePath: join('app/fushi.exe'),
+        collectDiagnostics: () async => const WindowsInstallerDiagnostics(),
+        probeInstallDirWritable: (Directory dir) async =>
+            WindowsInstallDirWriteProbe.accessDenied,
+        expectedSha256: digest,
+        hashFile: (File file) async => digest,
+        grantForegroundTo: (int pid) {
+          granted.add(pid);
+          return true;
+        },
+        startProcess: (String executable, List<String> args) async =>
+            const WindowsInstallerStartedProcess(pid: 4242),
+        exitProcess: (int code) {},
+      );
+      expect(granted, <int>[4242]);
+
+      granted.clear();
+      await tempDir.delete(recursive: true);
+      await tempDir.create(recursive: true);
+      await WindowsInstaller.runAndExit(
+        (await prepare()).installer.path,
+        targetVersion: '3.0.1',
+        handoffMarkerFile: File(join('updates/handoff.json')),
+        currentExecutablePath: join('app/fushi.exe'),
+        collectDiagnostics: () async => const WindowsInstallerDiagnostics(),
+        probeInstallDirWritable: (Directory dir) async =>
+            WindowsInstallDirWriteProbe.writable,
+        grantForegroundTo: (int pid) {
+          granted.add(pid);
+          return true;
+        },
+        startProcess: (String executable, List<String> args) async =>
+            const WindowsInstallerStartedProcess(pid: 4242),
+        exitProcess: (int code) {},
+      );
+      expect(granted, isEmpty, reason: '非提权不需要、也不该放出前台权限');
     });
 
     test('拒绝访问但发布方没公布哈希：不提权执行未校验的安装包，报错且不退出', () async {
@@ -329,6 +464,31 @@ void main() {
         contains('function ShouldLaunchAppAfterInstall(): Boolean;'),
       );
       expect(script, contains("'$kWindowsInstallerNoRelaunchSwitch'"));
+    });
+
+    test('安装目录里的提权日志：成功后只留本次、卸载时删除，前缀与 Dart 侧一致', () {
+      final String script = File(
+        'windows/installer/fushi.iss',
+      ).readAsStringSync();
+      final String pattern =
+          r'{app}\' '$kWindowsElevatedInstallLogPrefix*.log';
+      expect(script, contains('Type: files; Name: "$pattern"'));
+      expect(script, contains("FindFirst(ExpandConstant('$pattern'), FindRec)"));
+      expect(
+        script,
+        contains("Current := Lowercase(ExtractFileName(ExpandConstant('{log}')));"),
+      );
+      expect(script, contains('  CleanupStaleElevatedInstallLogs();\n'));
+    });
+
+    test('launcher 提权时以置前台的锚点窗口作 ShellExecuteExW 的 hwnd', () {
+      final String launcher = File(
+        'windows/runner/update_launcher.cpp',
+      ).readAsStringSync();
+      expect(launcher, contains('const ForegroundAnchor anchor;'));
+      expect(launcher, contains('info.hwnd = anchor.hwnd();'));
+      expect(launcher, contains('::SetForegroundWindow(hwnd_);'));
+      expect(launcher, contains('"installerElevationForeground"'));
     });
 
     test('提权的安装器只结束本会话的进程，不碰别的登录用户的 Fushi（BUG-3567）', () {

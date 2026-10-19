@@ -593,6 +593,47 @@ bool LockAndVerifyInstaller(const ParsedArgs& args, InstallerFileLock* lock) {
   return true;
 }
 
+// UAC 同意框的前台锚点（BUG-3567）。consent 只在发起方传入的 hwnd 处于前台时才直接
+// 弹出，否则只在任务栏闪一个盾牌——而此刻 app 已经退出，launcher 本身没有窗口，用户
+// 看到的就是「Fushi 关掉了、什么都没发生」。Windows 前台锁规则下，一个后台进程能
+// SetForegroundWindow 只有几种情形：它是前台进程、前台进程用 AllowSetForegroundWindow
+// 把权限让给了它、或当前根本没有前台窗口。app 在退出前对 launcher 的 pid 调了
+// AllowSetForegroundWindow（platform_updater.dart），所以这里建一个 1x1 的不抢眼弹出
+// 窗口并把它置前台，作为 ShellExecuteExW 的 hwnd。拿不到前台也照常发起提权（退化为
+// 任务栏闪烁，与没有锚点时一样），结果记进 marker 供诊断。
+class ForegroundAnchor {
+ public:
+  ForegroundAnchor() {
+    HINSTANCE instance = ::GetModuleHandleW(nullptr);
+    WNDCLASSW window_class = {};
+    window_class.lpfnWndProc = ::DefWindowProcW;
+    window_class.hInstance = instance;
+    window_class.lpszClassName = kClassName;
+    ::RegisterClassW(&window_class);
+    const int x = ::GetSystemMetrics(SM_CXSCREEN) / 2;
+    const int y = ::GetSystemMetrics(SM_CYSCREEN) / 2;
+    hwnd_ = ::CreateWindowExW(WS_EX_TOOLWINDOW, kClassName, L"Fushi",
+                              WS_POPUP, x, y, 1, 1, nullptr, nullptr,
+                              instance, nullptr);
+    if (hwnd_ == nullptr) return;
+    ::ShowWindow(hwnd_, SW_SHOWNORMAL);
+    ::SetForegroundWindow(hwnd_);
+    foreground_ = ::GetForegroundWindow() == hwnd_;
+  }
+  ForegroundAnchor(const ForegroundAnchor&) = delete;
+  ForegroundAnchor& operator=(const ForegroundAnchor&) = delete;
+  ~ForegroundAnchor() {
+    if (hwnd_ != nullptr) ::DestroyWindow(hwnd_);
+  }
+  HWND hwnd() const { return hwnd_; }
+  bool foreground() const { return foreground_; }
+
+ private:
+  static constexpr wchar_t kClassName[] = L"FushiUpdateUacAnchor";
+  HWND hwnd_ = nullptr;
+  bool foreground_ = false;
+};
+
 // 安装器的参数串（不含可执行文件本身）。ShellExecuteExW 把可执行与参数分开传。
 std::wstring BuildArgumentString(const std::vector<std::wstring>& args) {
   std::wstring result;
@@ -611,9 +652,14 @@ bool LaunchInstallerElevated(const ParsedArgs& args, InstallerRun* run,
                              InstallerFileLock* lock) {
   if (!LockAndVerifyInstaller(args, lock)) return false;
   const std::wstring parameters = BuildArgumentString(args.installer_args);
+  const ForegroundAnchor anchor;
+  AppendMarkerFields(
+      args.marker_path,
+      {{"installerElevationForeground", anchor.foreground() ? "true" : "false"}});
   SHELLEXECUTEINFOW info = {};
   info.cbSize = sizeof(info);
   info.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+  info.hwnd = anchor.hwnd();
   info.lpVerb = L"runas";
   info.lpFile = lock->final_path.c_str();
   info.lpParameters = parameters.c_str();

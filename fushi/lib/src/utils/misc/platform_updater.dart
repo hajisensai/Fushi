@@ -1,3 +1,4 @@
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
@@ -722,6 +723,21 @@ Future<String?> stageWindowsUpdateLauncher({
   }
 }
 
+/// 提权安装时 Inno 日志的落点：安装目录本身（`{app}`）。只在探针判定当前用户在
+/// [installDir] 里建不了文件时使用——这正是同用户进程无法在此预置 junction / 硬链接 /
+/// 符号链接的保证；普通用户对安装目录有读权限，reconcile 能照常读回。文件名带本次交接
+/// 时刻，避免读到上一轮提权安装留下的旧日志；`fushi.iss` 安装成功后清掉其余的
+/// [kWindowsElevatedInstallLogPrefix]`*.log`，卸载时一并删除。
+String windowsElevatedInstallerLogPath(String installDir, DateTime startedAt) {
+  final String dir = installDir.replaceFirst(RegExp(r'[\\/]+$'), '');
+  return '$dir${Platform.pathSeparator}'
+      '$kWindowsElevatedInstallLogPrefix'
+      '${startedAt.toUtc().millisecondsSinceEpoch}.log';
+}
+
+/// 与 `fushi.iss` 的 `CleanupStaleElevatedInstallLogs` / `[UninstallDelete]` 一致。
+const String kWindowsElevatedInstallLogPrefix = 'fushi-update-install-';
+
 String windowsInstallerLogPath(String installerPath) {
   final int sep = _lastPathSeparatorIndex(installerPath);
   final String dir = sep >= 0 ? installerPath.substring(0, sep) : '';
@@ -803,9 +819,11 @@ class WindowsInstaller {
         probeInstallDirWritable,
     String? expectedSha256,
     Future<String> Function(File file)? hashFile,
+    bool Function(int pid)? grantForegroundTo,
   }) async {
     final DateTime Function() clock = now ?? DateTime.now;
-    final String innoLogPath = windowsInstallerLogPath(installerPath);
+    // 提权安装时改写到受保护位置，见 [windowsElevatedInstallerLogPath]。
+    String innoLogPath = windowsInstallerLogPath(installerPath);
     final String resolvedExecutablePath =
         currentExecutablePath ?? Platform.resolvedExecutable;
     final Directory currentInstallDir = File(resolvedExecutablePath).parent;
@@ -882,13 +900,14 @@ class WindowsInstaller {
           rawDiagnostics.currentInstallDir ?? currentInstallDir.path,
       targetInstallDir: targetInstallDir,
     );
+    final DateTime handoffStartedAt = clock();
     if (targetVersion != null && handoffMarkerFile != null) {
       await WindowsUpdateHandoff.writePending(
         markerFile: handoffMarkerFile,
         targetVersion: targetVersion,
         installerPath: installerPath,
         innoLogPath: innoLogPath,
-        startedAt: clock(),
+        startedAt: handoffStartedAt,
         diagnostics: diagnostics,
       );
       ErrorLogService.instance.log(
@@ -935,6 +954,24 @@ class WindowsInstaller {
           );
         }
         elevateInstaller = true;
+        // 提权的 Inno 不能把日志写进用户可写的 updates 目录：同用户进程可以预先在
+        // 那里放 junction / 符号链接，把一次管理员身份的写重定向到任意位置。改写进
+        // 安装目录本身——探针刚证明当前用户在那里建不了文件，也就放不了链接；
+        // 普通权限仍可读，reconcile 照常按 marker 里的路径读回（BUG-3567）。
+        innoLogPath = windowsElevatedInstallerLogPath(
+          targetInstallDir,
+          handoffStartedAt,
+        );
+        if (targetVersion != null && handoffMarkerFile != null) {
+          await WindowsUpdateHandoff.writePending(
+            markerFile: handoffMarkerFile,
+            targetVersion: targetVersion,
+            installerPath: installerPath,
+            innoLogPath: innoLogPath,
+            startedAt: handoffStartedAt,
+            diagnostics: diagnostics,
+          );
+        }
         ErrorLogService.instance.log(
           'WindowsInstaller.elevate',
           'Install dir $targetInstallDir is not writable with the current '
@@ -1039,6 +1076,20 @@ class WindowsInstaller {
         executable,
         launchArgs,
       );
+      // UAC 同意框只在发起方窗口处于前台时直接弹出，否则只在任务栏闪烁。此刻用户刚
+      // 点了「更新」，本进程就是前台进程，是唯一有权把前台让给 launcher 的一方；
+      // 定向让渡（不用 ASFW_ANY），launcher 发起提权前再自己置前台（BUG-3567）。
+      final int? launcherPid = started.pid;
+      if (elevateInstaller && launcherPid != null && launcherPid > 0) {
+        final bool granted = (grantForegroundTo ??
+            (Platform.isWindows
+                ? _allowSetForegroundWindow
+                : (int _) => false))(launcherPid);
+        ErrorLogService.instance.log(
+          'WindowsInstaller.elevate',
+          'AllowSetForegroundWindow(launcher pid=$launcherPid) -> $granted',
+        );
+      }
       ErrorLogService.instance.log(
         'WindowsInstaller.launch',
         useDelayedLauncher
@@ -1077,6 +1128,17 @@ class WindowsInstaller {
 
   static Future<String> _sha256OfInstaller(File file) =>
       ffcSha256File(file.path);
+
+  static bool _allowSetForegroundWindow(int pid) {
+    try {
+      final int Function(int) allow = DynamicLibrary.open('user32.dll')
+          .lookupFunction<Int32 Function(Uint32), int Function(int)>(
+              'AllowSetForegroundWindow');
+      return allow(pid) != 0;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Future<List<int>> _readHeaderBytes(File file) async {
     final RandomAccessFile raf = await file.open();
