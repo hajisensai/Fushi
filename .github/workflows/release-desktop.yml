@@ -1637,7 +1637,7 @@ jobs:
           app_archs="$(lipo -archs "$app_bin")"
           echo "app archs: $app_archs"
           if [ "$app_archs" != "arm64" ]; then
-            echo "::error title=macOS app not arm64-only::$app_bin 架构是「$app_archs」，期望只有 arm64（检查 fushi/macos/Runner.xcodeproj 的 EXCLUDED_ARCHS）。"
+            echo "::error title=macOS app not arm64-only::$app_bin 架构是「${app_archs}」，期望只有 arm64（检查 fushi/macos/Runner.xcodeproj 的 EXCLUDED_ARCHS）。"
             exit 1
           fi
           # 只记录、不设门：Frameworks 里第三方预编译件（如 media_kit 的 libmpv
@@ -1837,7 +1837,7 @@ jobs:
               case " $tool_archs " in
                 *" $want "*) ;;
                 *)
-                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-unified-mobile 工作流的 macos job 并重新 vendor third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz。"
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 ${want}（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-unified-mobile 工作流的 macos job 并重新 vendor third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz。"
                   exit 1
                   ;;
               esac
@@ -1887,7 +1887,7 @@ jobs:
             case " $helper_archs " in
               *" $want "*) ;;
               *)
-                echo "::error title=Bundled helper arch mismatch::fushi-anki-sync 缺 $want（app: $app_archs / helper: $helper_archs）。该架构的 Mac 上 Anki 同步会整条不可用。"
+                echo "::error title=Bundled helper arch mismatch::fushi-anki-sync 缺 ${want}（app: $app_archs / helper: $helper_archs）。该架构的 Mac 上 Anki 同步会整条不可用。"
                 exit 1
                 ;;
             esac
@@ -1957,7 +1957,7 @@ jobs:
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_dir/Contents/Info.plist")"
           if [ "$bundle_id" != "app.fushi.reader" ]; then
-            echo "::error title=Unexpected bundle id::$bundle_id（TCC 授权按 bundle id 钉，改包名等于让所有用户重新授权，须同步这里）"
+            echo "::error title=Unexpected bundle id::${bundle_id}（TCC 授权按 bundle id 钉，改包名等于让所有用户重新授权，须同步这里）"
             exit 1
           fi
           codesign --force --sign - --timestamp=none \
