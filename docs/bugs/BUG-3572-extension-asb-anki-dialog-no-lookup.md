@@ -1,0 +1,8 @@
+## BUG-3572 · 浏览器扩展：asbplayer Mining History「Export to Anki」对话框的字段里查不了词
+- **报告**：2026-10-19（用户：截图，网飞页上从 asbplayer 侧边栏 Mining History 打开 Anki Export，Sentence 等字段里查不了词）
+- **真实性**：✅ 真 bug，两层根因叠加：
+  1. asbplayer 的对话框是铺满视口、`pointer-events:auto`、z-index 最大的 `about:blank` iframe（asbplayer `services/ui-frame.ts` 用 `document.write` 保持 about:blank，注释写明是为了让查词扩展能注入）；`tools/browser-extension/manifest.json` 主 content script 没开 `all_frames`，只在顶层页 → 对话框一开，`content.js` 的 Shift 悬停监听一次都收不到。
+  2. 字段是 `<textarea>` / `<input>`：控件里的字不是 DOM 文本节点，`vendor/selection.js` `getCaretRange` 的 caret API 只返回控件 / 外层元素，`getCharacterAtPoint` 在 `nodeType !== TEXT_NODE` 处返回 null（headless Chrome 实测旧版 5 个探针全 null）。
+- **[x] ① 已修复** — `d97bb0864d`：新增 `frame-gate.js`（单独一组 `all_frames` + `match_about_blank` + `match_origin_as_fallback`，只在 about: 子 frame 里等 Shift / Shift 悬停）→ background `fushiInjectEmbeddedFrame` 把主 content script 整套注入这一个 frame（已注入跳过）；侧边栏与 background 发往页面的 `tabs.sendMessage` 钉 `frameId: 0`，内嵌实例不抢答、不重复弹 toast。`selection.js`（三份镜像）对 textarea / 文字类 input（不含密码框）在复刻计算样式的透明镜像 div 上取词（Yomitan imposter 同法），镜像不挡点击，移开控件 / clearSelection 即清，句子不越出字段。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/embedded-frame-lookup.test.js`（manifest 分组、frame-gate 唤起条件、background 按 frame 注入、frameId 0 源码守卫、**真 Chrome 排版**：textarea 两行 + input 命中字 / 选词 / 句子 / 锚点矩形、密码框不取、镜像不挡点击、移开与 clearSelection 清镜像）；`fushi/test/lookup/browser_extension_shadow_dom_lookup_bug1012_test.dart` 守卫锚点改为从 `getCaretRange` 起找。
+- **备注**：未在真网飞 + asbplayer 环境复测（需要两个扩展同时装在用户浏览器里）。从对话框里的弹窗制卡时 iframe 内没有 `<video>`，截图 / 音频走不到（只影响对话框内二次制卡，查词不受影响）；对话框 iframe 第一下 Shift 只负责唤起注入，挪一下鼠标即可查词。
