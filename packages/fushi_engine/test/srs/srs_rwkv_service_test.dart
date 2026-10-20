@@ -57,7 +57,9 @@ class _FakeBackend implements SrsRwkvBackend {
     restores++;
     replayedCards
       ..clear()
-      ..addAll((jsonDecode(utf8.decode(snapshot)) as List<Object?>).cast<int>());
+      ..addAll(
+        (jsonDecode(utf8.decode(snapshot)) as List<Object?>).cast<int>(),
+      );
   }
 
   @override
@@ -78,7 +80,9 @@ class _Fixture {
   final List<int> clock;
 
   static Future<_Fixture> create() async {
-    final List<int> clock = <int>[DateTime.utc(2026, 3, 1, 12).millisecondsSinceEpoch];
+    final List<int> clock = <int>[
+      DateTime.utc(2026, 3, 1, 12).millisecondsSinceEpoch,
+    ];
     final SrsDbStore store = await SrsDbStore.open(
       db: FushiDatabase.forTesting(NativeDatabase.memory()),
       profileUid: kProfile,
@@ -90,7 +94,11 @@ class _Fixture {
         bootId: 'b',
       ),
     );
-    return _Fixture._(store, Directory.systemTemp.createTempSync('srs_rwkv'), clock);
+    return _Fixture._(
+      store,
+      Directory.systemTemp.createTempSync('srs_rwkv'),
+      clock,
+    );
   }
 
   void advance(int ms) => clock[0] += ms;
@@ -110,30 +118,41 @@ class _Fixture {
   }
 
   Future<void> useRwkv() async {
-    await store.editFields(SrsEntityKind.deck, store.defaultDeckId, <String, Object?>{
-      SrsFieldKeys.deckAlgorithm: <String, Object?>{'alg': 'rwkv', 'auto': false},
-    });
+    await store.editFields(
+      SrsEntityKind.deck,
+      store.defaultDeckId,
+      <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': 'rwkv',
+          'auto': false,
+        },
+      },
+    );
   }
 
   /// 权重「已就绪」：替身后端不读它，只要长度与校验标记对得上。
   SrsRwkvModels models({bool ready = true}) {
-    final Directory modelDir = Directory('${dir.path}/models')..createSync(recursive: true);
+    final Directory modelDir = Directory('${dir.path}/models')
+      ..createSync(recursive: true);
     final SrsRwkvModels models = SrsRwkvModels(dir: modelDir);
     if (ready) {
       final File weights = models.weightsFile(SrsRwkvModelChoice.small)
         ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
-      File('${weights.path}.verified').writeAsStringSync(kSrsRwkvSmallWeightsSha256);
+      File(
+        '${weights.path}.verified',
+      ).writeAsStringSync(kSrsRwkvSmallWeightsSha256);
     }
     return models;
   }
 
-  SrsRwkvService service(_FakeBackend backend, {bool ready = true}) => SrsRwkvService(
-    store: store,
-    models: models(ready: ready),
-    choice: SrsRwkvModelChoice.small,
-    snapshotDir: Directory('${dir.path}/state'),
-    openBackend: (File weights, SrsRwkvModelChoice choice) async => backend,
-  );
+  SrsRwkvService service(_FakeBackend backend, {bool ready = true}) =>
+      SrsRwkvService(
+        store: store,
+        models: models(ready: ready),
+        choice: SrsRwkvModelChoice.small,
+        snapshotDir: Directory('${dir.path}/state'),
+        openBackend: (File weights, SrsRwkvModelChoice choice) async => backend,
+      );
 }
 
 Future<void> _settled(SrsRwkvService service) async {
@@ -141,7 +160,9 @@ Future<void> _settled(SrsRwkvService service) async {
     if (service.status.phase == SrsRwkvPhase.ready) return;
     await Future<void>.delayed(const Duration(milliseconds: 2));
   }
-  fail('RWKV service did not become ready: ${service.status.phase} ${service.status.error}');
+  fail(
+    'RWKV service did not become ready: ${service.status.phase} ${service.status.error}',
+  );
 }
 
 void main() {
@@ -167,12 +188,19 @@ void main() {
         presetId: 1,
         history: h[cards[i]]!,
       );
-      final (RwkvRows rows, int? lastAt) = srsRwkvReplayRows(<SrsRwkvCard>[card(0), card(1)], day);
+      final (RwkvRows rows, int? lastAt) = srsRwkvReplayRows(<SrsRwkvCard>[
+        card(0),
+        card(1),
+      ], day);
       expect(rows.length, 4);
-      expect(<int>[for (int i = 0; i < 4; i++) rows.cardIdAt(i)], <int>[10, 11, 10, 10]);
+      expect(
+        <int>[for (int i = 0; i < 4; i++) rows.cardIdAt(i)],
+        <int>[10, 11, 10, 10],
+      );
       expect(lastAt, f.clock[0]);
       final ByteData b = ByteData.sublistView(rows.bytes);
-      int field(int row, int index) => b.getInt64(row * 80 + 8 * index, Endian.little);
+      int field(int row, int index) =>
+          b.getInt64(row * 80 + 8 * index, Endian.little);
       // 第一条：学习序列起点 card_type 0，elapsed -1。
       expect(field(0, 5), 0);
       expect(field(0, 7), -1);
@@ -193,7 +221,13 @@ void main() {
       expect(srsRwkvKeptRatings(undone), hasLength(2));
       expect(
         srsRwkvAppendRow(
-          SrsRwkvCard(cardId: 10, noteId: 20, deckId: 1, presetId: 1, history: undone),
+          SrsRwkvCard(
+            cardId: 10,
+            noteId: 20,
+            deckId: 1,
+            presetId: 1,
+            history: undone,
+          ),
           last,
           day,
         ),
@@ -228,7 +262,11 @@ void main() {
       final SrsReviewLog log = await f.store.answer(cards[0], 3);
       expect(log.algorithm, 'rwkv');
       await service.refresh();
-      expect(backend.resets, 1, reason: 'a new answer is appended, not a rebuild');
+      expect(
+        backend.resets,
+        1,
+        reason: 'a new answer is appended, not a rebuild',
+      );
       expect(backend.replayedCards, hasLength(4));
 
       // 撤销改写了历史：后台重建，回到 3 条。

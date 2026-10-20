@@ -151,6 +151,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
   /// 已回放的最后一条评分时刻（增量追加只接受不早于它的）。
   int? _lastAt;
   int _appendsSinceSnapshot = 0;
+
+  /// [SrsDbStore.changeFingerprint] 上次核对时的值（状态与日志表一致时记下）。
+  String? _checkedRevision;
   Future<void>? _preparing;
   Future<void> _queue = Future<void>.value();
   Future<void> _refreshQueue = Future<void>.value();
@@ -223,8 +226,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   Future<bool> _restoreSnapshot(SrsRwkvBackend backend) async {
-    if (!await _snapshotFile.exists() || !await _snapshotMeta.exists())
+    if (!await _snapshotFile.exists() || !await _snapshotMeta.exists()) {
       return false;
+    }
     try {
       final Map<String, Object?> meta =
           jsonDecode(await _snapshotMeta.readAsString())
@@ -392,11 +396,18 @@ class SrsRwkvService implements SrsRwkvScheduling {
         _current.phase != SrsRwkvPhase.ready) {
       return false;
     }
+    // 先比 store 的内存修订号（零成本）：没变就不必扫日志表（每张卡出题都会走到这里）。
+    final String revision = await store.changeFingerprint();
+    if (revision == _checkedRevision) return true;
     final _LogPrint now = await _fingerprint();
-    if (now == replayed) return true;
+    if (now == replayed) {
+      _checkedRevision = revision;
+      return true;
+    }
     if (now.maxRowId > replayed.maxRowId &&
         now.count - replayed.count == await _countNewRows(replayed.maxRowId) &&
         await _appendNew(backend, replayed.maxRowId, now)) {
+      _checkedRevision = revision;
       return true;
     }
     _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
@@ -470,8 +481,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
       final SrsReviewLog? log = card.history.effective
           .where((SrsReviewLog l) => l.id == r.id)
           .firstOrNull;
-      if (log == null || !log.isRatingReview || log.rating == null)
+      if (log == null || !log.isRatingReview || log.rating == null) {
         return false;
+      }
       final RwkvRows? row = srsRwkvAppendRow(card, log, day);
       if (row == null) return false;
       batch.addRows(row);
