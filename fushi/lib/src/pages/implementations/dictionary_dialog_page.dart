@@ -2057,33 +2057,35 @@ class _DictionaryDialogPageState extends BasePageState {
   // collapse_dictionaries 默认 true，用户对自动展开窗口之外的词典点「展开」，
   // 视觉上毫无反应。现在是三态循环：继承 → 显式展开 → 显式折叠 → 继承。
   //
-  // 图标表示**当前态**（20+ 本词典要能一眼扫出谁被显式设过），tooltip 说的是
-  // **点一下会变成什么**——两者故意不同，别再把它们合成一个。
+  // 图标与 tooltip 都表示**当前态**（20+ 本词典要能一眼扫出谁被显式设过）。
+  // 以前 tooltip 说的是「点一下会变成什么」，折叠图标配「跟随全局设置」被读成
+  // 当前态。tooltip 带「默认展示」标题、用详情分段控件同一套状态词，免得中文
+  // 「折叠」被读成动作。
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
     final DictionaryCollapseState state =
         dictionary.collapseStateFor(JapaneseLanguage.instance);
-    final (IconData icon, String tooltip) = switch (state) {
+    final (IconData icon, String stateLabel) = switch (state) {
       // 未表态：一条横杠，与两个「已表态」图标一眼可分。点下去 → 显式展开。
       DictionaryCollapseState.inherit => (
           Icons.horizontal_rule,
-          t.options_expand,
+          t.dict_collapse_state_inherit,
         ),
       // 显式展开：展开图标。点下去 → 显式折叠。
       DictionaryCollapseState.expanded => (
           Icons.unfold_more,
-          t.options_collapse,
+          t.dict_collapse_state_expanded,
         ),
       // 显式折叠：折叠图标。点下去 → 交还给全局。
       DictionaryCollapseState.collapsed => (
           Icons.unfold_less,
-          t.dictionary_collapse_follow_global,
+          t.dict_collapse_state_collapsed,
         ),
     };
     return FushiIconButton(
       key: ValueKey<String>('dict-row-collapse-${dictionary.name}'),
       icon: icon,
       size: 20,
-      tooltip: tooltip,
+      tooltip: t.dict_row_collapse_tooltip(state: stateLabel),
       onTap: () => _saveDictionaryChange(
         () => appModel.cycleDictionaryCollapseState(dictionary),
       ),
