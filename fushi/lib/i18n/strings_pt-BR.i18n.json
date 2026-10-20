@@ -7488,7 +7488,7 @@
   "updates_system_notifications_hint": "Também envia uma notificação do sistema. Desativar mantém o selo dentro do app.",
   "url": "URL",
   "usage_stats_enabled": "Compartilhar estatísticas de uso",
-  "usage_stats_enabled_hint": "Uma vez por dia, envia ao fushi.moe um ID de instalação derivado deste dispositivo (não muda ao reinstalar), a versão do app, a plataforma e o canal de atualização para que possamos contar os usuários ativos. Nenhum dado de conta, biblioteca ou leitura é incluído, e seu endereço IP não é armazenado. Ao anexar informações do dispositivo a um feedback, o ID de instalação é enviado junto.",
+  "usage_stats_enabled_hint": "Uma vez por dia, envia ao fushi.moe um ID de instalação derivado deste dispositivo (não muda ao reinstalar), a versão do app, a plataforma, o canal de atualização, o idioma do app, a arquitetura da CPU, a versão principal do sistema e a origem da instalação (ex.: loja ou instalador) para que possamos contar os usuários ativos. Nenhum dado de conta, biblioteca ou leitura é incluído, e seu endereço IP não é armazenado — só o país ou região deduzido dele é guardado. Ao anexar informações do dispositivo a um feedback, o ID de instalação é enviado junto.",
   "video_air_season_autumn": "Outono",
   "video_air_season_spring": "Primavera",
   "video_air_season_summer": "Verão",
