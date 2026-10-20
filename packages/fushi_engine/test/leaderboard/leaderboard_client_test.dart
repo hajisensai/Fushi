@@ -854,7 +854,7 @@ void main() {
       });
     });
 
-    test('ping 带界面语言时 body 多一个 locale 字段（仍在签名覆盖内）', () async {
+    test('ping 带可选维度时 body 多出对应字段（仍在签名覆盖内）', () async {
       final _Harness h = _Harness(
         (http.Request r) async => http.Response('', 204),
         identity: _id,
@@ -862,17 +862,21 @@ void main() {
       await h.client.ping(
         install: install,
         version: '2.10.0-debug.8',
-        platform: 'windows',
+        platform: 'android',
         channel: 'debug',
         locale: 'zh-CN',
+        arch: 'arm64',
+        osVersion: '34',
+        source: 'self_update',
       );
       final http.Request r = h.requests.single;
       expect(verifyInstall(r), isTrue);
-      expect(
-        (jsonDecode(utf8.decode(r.bodyBytes))
-            as Map<String, dynamic>)['locale'],
-        'zh-CN',
-      );
+      final Map<String, dynamic> body =
+          jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, dynamic>;
+      expect(body['locale'], 'zh-CN');
+      expect(body['arch'], 'arm64');
+      expect(body['osVersion'], '34');
+      expect(body['source'], 'self_update');
     });
 
     test('ping 失败按状态码抛错', () async {

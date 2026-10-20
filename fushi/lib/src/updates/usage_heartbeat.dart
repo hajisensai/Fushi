@@ -2,7 +2,8 @@
 // （rank.fushi.moe，服务端 services/leaderboard/src/installs.js），统计日活 / 周活 / 月活与
 // 版本 / 平台 / 通道分布。
 //
-// 上报内容只有五项：本机安装 id、运行中的构建版本、平台、当前更新通道、App 界面语言；外加安装证明头
+// 上报内容：本机安装 id、运行中的构建版本、平台、当前更新通道、App 界面语言，以及设备的粗粒度维度
+// （CPU 架构、系统大版本、安装来源类别，见 usage_heartbeat_device.dart）；外加安装证明头
 // （公钥 + 签名 + 工作量证明，见 install_attestation.dart / fushi_engine install_identity.dart）。
 // 安装 id 由系统机器标识经 HMAC 派生成签名钥匙、再取公钥指纹，同一台机器重装不变；原始机器标识
 // 不上传、不落盘，不挂账户。服务端不存 IP，只存 Cloudflare 据它判出的两位国家 / 地区码。iOS 不发：App Store Connect 自带分析，再发要改隐私标签。
@@ -25,6 +26,7 @@ import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi/src/updates/install_attestation.dart';
+import 'package:fushi/src/updates/usage_heartbeat_device.dart';
 import 'package:fushi_engine/leaderboard/install_identity.dart';
 
 /// 发心跳的平台（与服务端 `PING_PLATFORMS` 一致）。
@@ -85,6 +87,7 @@ typedef UsageHeartbeatSender =
       required String platform,
       required String channel,
       String? locale,
+      UsageHeartbeatDevice device,
     });
 
 /// 生产发送器：固定发往 [kLeaderboardDefaultBaseUrl]（统计是 Fushi 自己的，不跟随排行榜
@@ -95,6 +98,7 @@ Future<void> sendUsageHeartbeatToFushi({
   required String platform,
   required String channel,
   String? locale,
+  UsageHeartbeatDevice device = UsageHeartbeatDevice.unknown,
 }) =>
     LeaderboardClient(
       baseUrl: Uri.parse(kLeaderboardDefaultBaseUrl),
@@ -105,7 +109,16 @@ Future<void> sendUsageHeartbeatToFushi({
       platform: platform,
       channel: channel,
       locale: locale,
+      arch: device.arch,
+      osVersion: device.osVersion,
+      source: device.source,
     );
+
+/// 读设备维度（生产是 [collectUsageHeartbeatDevice]，全进程缓存）。
+typedef UsageHeartbeatDeviceResolver = Future<UsageHeartbeatDevice> Function();
+
+Future<UsageHeartbeatDevice> _unknownDevice() async =>
+    UsageHeartbeatDevice.unknown;
 
 /// 心跳调度：[start] 时立刻看一次是否到期，之后每 [tick] 再看一次（app 连开好几天也
 /// 每天都有一次）。幂等：重复 [start] 不起第二个定时器。
@@ -116,6 +129,7 @@ class UsageHeartbeat {
     required String Function() version,
     required String Function() channel,
     String? Function()? locale,
+    UsageHeartbeatDeviceResolver device = _unknownDevice,
     String? operatingSystem,
     this.tick = const Duration(hours: 1),
     DateTime Function() now = DateTime.now,
@@ -126,6 +140,7 @@ class UsageHeartbeat {
        _version = version,
        _channel = channel,
        _locale = locale ?? _noLocale,
+       _device = device,
        _platform = usageHeartbeatPlatformFor(
          operatingSystem ?? Platform.operatingSystem,
        ),
@@ -143,6 +158,7 @@ class UsageHeartbeat {
     version: () => resolveCurrentAppVersion(executableVersion),
     channel: channel,
     locale: () => LocaleSettings.currentLocale.languageTag,
+    device: collectUsageHeartbeatDevice,
   );
 
   static String? _noLocale() => null;
@@ -152,6 +168,7 @@ class UsageHeartbeat {
   final String Function() _version;
   final String Function() _channel;
   final String? Function() _locale;
+  final UsageHeartbeatDeviceResolver _device;
   final String? _platform;
   final DateTime Function() _now;
   final UsageStatsInstallResolver _install;
@@ -201,6 +218,7 @@ class UsageHeartbeat {
         platform: platform,
         channel: _channel(),
         locale: _locale(),
+        device: await _device(),
       );
     } catch (error) {
       // 断网 / 服务端日预算打满 / 机器标识或 PoW 解析失败都在这里：等下一个 tick，不记日志上传。

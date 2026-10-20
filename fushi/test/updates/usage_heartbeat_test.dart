@@ -4,6 +4,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi/src/updates/usage_heartbeat_device.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/install_identity.dart';
 
@@ -42,6 +43,7 @@ void main() {
     required String platform,
     required String channel,
     String? locale,
+    UsageHeartbeatDevice device = UsageHeartbeatDevice.unknown,
   }) async {
     if (fail) throw StateError('offline');
     sent.add(<String, String>{
@@ -50,6 +52,9 @@ void main() {
       'platform': platform,
       'channel': channel,
       'locale': ?locale,
+      'arch': ?device.arch,
+      'osVersion': ?device.osVersion,
+      'source': ?device.source,
     });
   }
 
@@ -59,6 +64,11 @@ void main() {
     version: () => '2.10.0-debug.8',
     channel: () => 'debug',
     locale: () => 'zh-CN',
+    device: () async => const UsageHeartbeatDevice(
+      arch: 'x64',
+      osVersion: '11',
+      source: 'installer',
+    ),
     operatingSystem: os,
     now: () => clock,
     install: fakeResolve,
@@ -111,6 +121,9 @@ void main() {
       'platform': 'windows',
       'channel': 'debug',
       'locale': 'zh-CN',
+      'arch': 'x64',
+      'osVersion': '11',
+      'source': 'installer',
     });
     expect(
       RegExp(

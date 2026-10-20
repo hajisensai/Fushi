@@ -7484,7 +7484,7 @@
   "updates_system_notifications_hint": "Stuur ook een systeemmelding. Als je dit uitzet, blijft de badge in de app behouden.",
   "url": "URL",
   "usage_stats_enabled": "Gebruiksstatistieken delen",
-  "usage_stats_enabled_hint": "Stuurt één keer per dag een van dit apparaat afgeleide installatie-ID (blijft gelijk na herinstallatie), de app-versie, het platform, het updatekanaal en de app-taal naar fushi.moe, zodat we actieve gebruikers kunnen tellen. Er worden geen account-, bibliotheek- of leesgegevens meegestuurd en je IP-adres wordt niet opgeslagen; alleen het daaruit afgeleide land of de regio wordt bewaard. Als je apparaatinformatie aan feedback toevoegt, wordt de installatie-ID meegestuurd.",
+  "usage_stats_enabled_hint": "Stuurt één keer per dag een van dit apparaat afgeleide installatie-ID (blijft gelijk na herinstallatie), de app-versie, het platform, het updatekanaal, de app-taal, de CPU-architectuur, de hoofdversie van het besturingssysteem en de installatiebron (bijv. app-winkel of installatieprogramma) naar fushi.moe, zodat we actieve gebruikers kunnen tellen. Er worden geen account-, bibliotheek- of leesgegevens meegestuurd en je IP-adres wordt niet opgeslagen; alleen het daaruit afgeleide land of de regio wordt bewaard. Als je apparaatinformatie aan feedback toevoegt, wordt de installatie-ID meegestuurd.",
   "video_air_season_autumn": "Herfst",
   "video_air_season_spring": "Lente",
   "video_air_season_summer": "Zomer",

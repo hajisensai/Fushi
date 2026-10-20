@@ -7484,7 +7484,7 @@
   "updates_system_notifications_hint": "同時發送系統通知。關掉後仍保留應用內紅點。",
   "url": "網址",
   "usage_stats_enabled": "傳送使用統計",
-  "usage_stats_enabled_hint": "每天一次向 fushi.moe 傳送由本機衍生的安裝 ID（重新安裝不變）、應用程式版本、平台、更新通道和介面語言，用於統計活躍用戶。不包含帳戶、書庫或閱讀內容，也不保存你的 IP 位址，只記錄據此判斷的國家或地區。提交回饋並附帶裝置資訊時，安裝 ID 會隨回饋一併傳送。",
+  "usage_stats_enabled_hint": "每天一次向 fushi.moe 傳送由本機衍生的安裝 ID（重新安裝不變）、應用程式版本、平台、更新通道、介面語言、CPU 架構、系統主要版本和安裝來源（如應用程式商店或安裝程式），用於統計活躍用戶。不包含帳戶、書庫或閱讀內容，也不保存你的 IP 位址，只記錄據此判斷的國家或地區。提交回饋並附帶裝置資訊時，安裝 ID 會隨回饋一併傳送。",
   "video_air_season_autumn": "秋",
   "video_air_season_spring": "春",
   "video_air_season_summer": "夏",
