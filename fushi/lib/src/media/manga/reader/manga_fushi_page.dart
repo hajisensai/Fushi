@@ -861,6 +861,27 @@ class MangaFushiPage extends BaseSourcePage {
     return (page, isWebtoon ? webtoonFraction : 0.0);
   }
 
+  /// 纯函数：落库页码 [page] 所在的那一屏是否已经显示到最后一页（「已读完」判据）。
+  ///
+  /// [mangaProgressForSpread] 落的是 spread **首页**：双页展开的最后一屏是
+  /// `[n-2, n-1]`，落库页码恒为 `n-2`，旧判据 `page >= n - 1` 永远不成立——读到最后
+  /// 一页也不写 completedAt，卷一直留在首页「继续阅读」。判据改看这一屏里的页。
+  /// [spreads] 为空（payload 未就绪）时退回按页码判。
+  static bool spreadReachesLastPage(
+    List<MangaSpreadEntry> spreads,
+    int page,
+    int pageCount,
+  ) {
+    if (pageCount <= 0) return false;
+    if (page >= pageCount - 1) return true;
+    for (final MangaSpreadEntry s in spreads) {
+      if (s.pageIndices.contains(page)) {
+        return s.pageIndices.any((int p) => p >= pageCount - 1);
+      }
+    }
+    return false;
+  }
+
   /// 纯函数：持久化页码 → 恢复的 spread 序号（clamp 越界存档）。
   static int restoreSpreadFromProgress(
     List<MangaSpreadEntry> spreads,
@@ -5120,9 +5141,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
     }
-    // 翻到最后一页 → 幂等写「已读完」（判据用总页数）。
+    // 翻到最后一页 → 幂等写「已读完」（判据用总页数；双页展开看整屏，见
+    // [MangaFushiPage.spreadReachesLastPage]）。
     final int pageCount = _payload?.images.length ?? 0;
-    final bool atLastPage = pageCount > 0 && page >= pageCount - 1;
+    final bool atLastPage = MangaFushiPage.spreadReachesLastPage(
+      isWebtoon ? const <MangaSpreadEntry>[] : _spreads,
+      page,
+      pageCount,
+    );
     if (atLastPage) {
       try {
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());
