@@ -329,6 +329,92 @@ export function localeLabel(tag) {
   return name ? `${name}（${tag}）` : tag;
 }
 
+const PLATFORM_LABEL = { android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux' };
+const NOT_REPORTED = '未上报';
+
+/** Android API 级别 → 系统版本号（只列 minSdk 24 起）。 */
+const ANDROID_API_RELEASE = {
+  24: '7.0', 25: '7.1', 26: '8.0', 27: '8.1', 28: '9', 29: '10', 30: '11', 31: '12', 32: '12L',
+  33: '13', 34: '14', 35: '15', 36: '16',
+};
+
+/** 心跳 osVersion（按平台的大版本记号）→ 可读名。 */
+export function osVersionLabel(platform, v) {
+  if (v === null || v === undefined) return `${PLATFORM_LABEL[platform] || platform} · ${NOT_REPORTED}`;
+  if (platform === 'android') {
+    const release = ANDROID_API_RELEASE[v];
+    return release ? `Android ${release}（API ${v}）` : `Android API ${v}`;
+  }
+  return `${PLATFORM_LABEL[platform] || platform} ${v}`;
+}
+
+const SOURCE_LABEL = {
+  play: 'Google Play',
+  fdroid: 'F-Droid 系客户端',
+  obtainium: 'Obtainium',
+  self_update: 'App 内更新',
+  manual: '手动安装 APK（文件管理器 / 浏览器）',
+  adb: 'adb / 开发安装',
+  installer: '安装包',
+  portable: '便携 / 解压版',
+  direct: '直接下载',
+  source: '源码构建',
+};
+
+/** 安装来源类别 → 「平台 · 中文说明」。 */
+export function sourceLabel(platform, v) {
+  const p = PLATFORM_LABEL[platform] || platform;
+  if (v === null || v === undefined) return `${p} · ${NOT_REPORTED}`;
+  return `${p} · ${SOURCE_LABEL[v] || v}`;
+}
+
+/** 架构 → 「平台 · 架构」。 */
+export function archLabel(platform, v) {
+  return `${PLATFORM_LABEL[platform] || platform} · ${v ?? NOT_REPORTED}`;
+}
+
+/** 按平台分组的分布行 → distTable 的 {key, n}（key 已是展示文案）。 */
+function byPlatform(rows, label) {
+  return rows.map((r) => ({ key: label(r.platform, r.value), n: r.n }));
+}
+
+const pctText = (n, d) => (d ? `${((n * 100) / d).toFixed(1)}%` : '—');
+
+/** 留存表：新增日 × 次日 / 第 7–13 天 / 第 30–59 天。 */
+function retentionTable(rows) {
+  if (!rows.length) return '<p class="muted">还没有数据。</p>';
+  const cell = (r, k) => (r[k] === null ? '<td class="muted">—</td>' : `<td>${pctText(r[k], r.n)} <span class="muted">${r[k]}</span></td>`);
+  const mature = (k) => rows.filter((r) => r[k] !== null && !r.seeded);
+  const avg = (k) => {
+    const m = mature(k);
+    const n = m.reduce((a, r) => a + r.n, 0);
+    return n ? `<td><b>${pctText(m.reduce((a, r) => a + r[k], 0), n)}</b></td>` : '<td class="muted">—</td>';
+  };
+  return `<table class="grid"><tr><th>新增日（UTC）</th><th>新增</th><th>次日</th><th>第 7–13 天</th><th>第 30–59 天</th></tr>
+<tr><td>合计（已完整的窗口，不含起始日）</td><td></td>${avg('d1')}${avg('d7')}${avg('d30')}</tr>
+${rows.map((r) => `<tr><td>${esc(r.day)}${r.seeded ? ' <span class="muted">起始日，含存量安装</span>' : ''}</td><td>${r.n}</td>`
+    + `${cell(r, 'd1')}${cell(r, 'd7')}${cell(r, 'd30')}</tr>`).join('')}</table>`;
+}
+
+const TRACK_LABEL = { '': '正式', beta: '测试', debug: '调试' };
+
+/** 版本升级进度：该版本在同轨道 7 日活跃里的覆盖率。 */
+function adoptionTable(rows) {
+  if (!rows.length) return '<p class="muted">还没有数据。</p>';
+  return `<table class="grid"><tr><th>版本</th><th>轨道</th><th>首次出现</th><th>已装到该版本或更新</th><th>正好在该版本</th></tr>
+${rows.map((r) => `<tr><td>${esc(r.version)}</td><td>${esc(r.track === null ? '?' : TRACK_LABEL[r.track] ?? r.track)}</td>`
+    + `<td>${esc(r.firstDay)}</td><td>${pctText(r.reached, r.peers)} <span class="muted">${r.reached}/${r.peers}</span></td>`
+    + `<td>${pctText(r.exact, r.peers)} <span class="muted">${r.exact}</span></td></tr>`).join('')}</table>`;
+}
+
+/** 分国家日活趋势：日期 × 前几个国家 + 其它。 */
+function countryTrendTable(trend) {
+  if (!trend.days.length) return '<p class="muted">还没有数据。</p>';
+  const head = trend.countries.map((c) => `<th>${esc(c === null ? '未记录' : c)}</th>`).join('');
+  return `<table class="grid"><tr><th>日期（UTC）</th>${head}<th>其它</th></tr>
+${trend.days.map((d) => `<tr><td>${esc(d.day)}</td>${d.counts.map((n) => `<td>${n}</td>`).join('')}<td class="muted">${d.other}</td></tr>`).join('')}</table>`;
+}
+
 /** 修复追踪（只读）：修复 commit + 各通道 / 平台最早包含它的版本。未标记修复 → 空串。 */
 function fixSection(fix) {
   if (!fix) return '';
@@ -376,7 +462,18 @@ async function statsPage(env, now) {
 <h2>国家 / 地区</h2>
 <p class="muted">Cloudflare 按心跳连接 IP 判出的国家 / 地区（只存两位码，不存 IP）；走代理 / VPN 的安装记到出口所在地。</p>
 <div class="card">${distTable(st.countries, countryLabel)}</div>
-<h2>界面语言</h2><div class="card">${distTable(st.locales, localeLabel)}</div>`, { signedIn: true }));
+<h2>界面语言</h2><div class="card">${distTable(st.locales, localeLabel)}</div>
+<h2>分国家日活趋势</h2><div class="card">${countryTrendTable(st.countryTrend)}</div>
+<h2>留存</h2>
+<p class="muted">按首次心跳日分组：之后那段时间里任何一天有心跳即算留存。窗口还没走完的格子显示「—」。
+心跳只在 App 打开时发，留存反映的是「还在打开」，不是「还装着」。</p>
+<div class="card">${retentionTable(st.retention)}</div>
+<h2>版本升级进度</h2>
+<p class="muted">分母是同一发布轨道（正式 / 测试 / 调试）近 7 日活跃的已验证安装；「已装到该版本或更新」按与修复追踪相同的版本判据。</p>
+<div class="card">${adoptionTable(st.adoption)}</div>
+<h2>CPU 架构</h2><div class="card">${distTable(byPlatform(st.archs, archLabel))}</div>
+<h2>系统版本</h2><div class="card">${distTable(byPlatform(st.osVersions, osVersionLabel))}</div>
+<h2>安装来源</h2><div class="card">${distTable(byPlatform(st.sources, sourceLabel))}</div>`, { signedIn: true }));
 }
 
 /** 修复是否已装到报告人那台（按该安装最近一次心跳的通道 / 平台 / 版本）。没有可比的发布 → 空串。 */
@@ -400,6 +497,7 @@ function installSection(trail, fix) {
 <tr><td>当前版本</td><td>${esc(i.version)}</td></tr>
 <tr><td>平台 / 通道</td><td>${esc(i.platform)} · ${esc(CHANNEL_LABEL[i.channel] || i.channel)}</td></tr>
 <tr><td>地区 / 界面语言</td><td>${esc(countryLabel(i.country))} · ${esc(localeLabel(i.locale))}</td></tr>
+<tr><td>系统 / 架构 / 来源</td><td>${esc(osVersionLabel(i.platform, i.osVersion))} · ${esc(i.arch ?? NOT_REPORTED)} · ${esc(sourceLabel(i.platform, i.source))}</td></tr>
 <tr><td>首次心跳</td><td>${esc(fmtTime(i.firstSeen))}</td></tr>
 <tr><td>最近心跳</td><td>${esc(fmtTime(i.lastSeen))}</td></tr>
 </table>${fixOnInstall(fix, i)}`
