@@ -3356,7 +3356,7 @@
   "game_text_process_kind_strip_angle_brackets": "꺾쇠 괄호 태그 제거",
   "game_text_process_kind_strip_angle_brackets_desc": "ruby, br 태그 같은 마크업을 제거합니다",
   "game_text_process_kind_strip_curly_braces": "후리가나 중괄호 제거",
-  "game_text_process_kind_strip_curly_braces_detail": "{kanji/kana} or {kanji:kana} keeps the kanji; other braces are removed entirely",
+  "game_text_process_kind_strip_curly_braces_detail": "{kanji/kana} or {kanji:kana} is shown as furigana above the kanji; other braces are removed entirely",
   "game_text_process_kind_strip_outside_quotes": "Strip text outside 「」",
   "game_text_process_kind_strip_outside_quotes_desc": "Drops speaker names and other text outside 「」; lines without 「」 (narration) are kept as-is",
   "game_text_process_kind_take_lines": "N줄만 유지",

@@ -176,7 +176,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
 
   /// 把 AI 建议并进草稿：不允许重复的种类若草稿里已有一步（默认步骤表里通常都有，
   /// 只是关着），**就地**换成建议的参数并打开，而不是在末尾再挂一张同名卡——那样
-  /// 用户会看到两张「去除花括号注音」，一开一关，顺序还跟默认表对不上。
+  /// 用户会看到两张「花括号注音转振假名」，一开一关，顺序还跟默认表对不上。
   List<GalTextProcessStep> _mergeAiSteps(List<GalTextProcessStep> suggested) {
     final List<GalTextProcessStep> next = List<GalTextProcessStep>.of(_steps);
     for (final GalTextProcessStep step in suggested) {

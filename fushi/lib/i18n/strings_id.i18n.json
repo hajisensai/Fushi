@@ -3356,7 +3356,7 @@
   "game_text_process_kind_strip_angle_brackets": "Hapus tag kurung siku",
   "game_text_process_kind_strip_angle_brackets_desc": "Menghapus markup seperti tag ruby dan br",
   "game_text_process_kind_strip_curly_braces": "Hapus kurung furigana",
-  "game_text_process_kind_strip_curly_braces_detail": "{kanji/kana} or {kanji:kana} keeps the kanji; other braces are removed entirely",
+  "game_text_process_kind_strip_curly_braces_detail": "{kanji/kana} or {kanji:kana} is shown as furigana above the kanji; other braces are removed entirely",
   "game_text_process_kind_strip_outside_quotes": "Strip text outside 「」",
   "game_text_process_kind_strip_outside_quotes_desc": "Drops speaker names and other text outside 「」; lines without 「」 (narration) are kept as-is",
   "game_text_process_kind_take_lines": "Pertahankan N baris",

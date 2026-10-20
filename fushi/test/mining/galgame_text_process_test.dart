@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
+import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 GalTextProcessStep _step(
   GalTextProcessKind kind, {
@@ -41,10 +42,7 @@ void main() {
     test('自动分析取最常见的游程长度：只画了一遍的标点不再让整步失效', () {
       // 游程 [3,3,1]：旧的 gcd 判据得 1、原样返回；按众数取 3（同 LunaTranslator）。
       expect(dedupeGalTextChars('恵恵恵麻麻麻。', null), '恵麻。');
-      expect(
-        dedupeGalTextChars('恵恵恵麻麻麻さささんんんははは……', null),
-        '恵麻さんは……',
-      );
+      expect(dedupeGalTextChars('恵恵恵麻麻麻さささんんんははは……', null), '恵麻さんは……');
       // 游程 [6,3,1] 各出现一次打平：1 让位，取其余最小的 3。
       expect(dedupeGalTextChars('ああああああそそそ。', null), 'ああそ。');
       // 多数字只出现一次（众数是 1）→ 真台词，原样返回。
@@ -129,30 +127,41 @@ void main() {
         '「あ」「い」',
       );
       // 回归：旧实现把旁白处理成空串，整行被丢弃。
-      expect(
-        _apply(GalTextProcessKind.keepJapaneseQuotes, 'ただの地の文'),
-        'ただの地の文',
-      );
+      expect(_apply(GalTextProcessKind.keepJapaneseQuotes, 'ただの地の文'), 'ただの地の文');
     });
 
-    test('去除花括号注音：斜杠 / 冒号留基字，成对标签留中间，其余整体删', () {
+    test('花括号注音转振假名：斜杠 / 冒号转青空文庫显式形，成对标签留中间，其余整体删', () {
       expect(
         _apply(GalTextProcessKind.stripCurlyBraces, '{漢字/かんじ}を{r}読む'),
-        '漢字を読む',
+        '｜漢字《かんじ》を読む',
       );
-      // LunaTranslator 文档原例（两种分隔符）。
+      // LunaTranslator 文档原例（两种分隔符）；Luna 丢读音，这里转成振假名。
       expect(
         _apply(GalTextProcessKind.stripCurlyBraces, '「{恵麻/えま}さん、まだ{起き/おき}てる？」'),
-        '「恵麻さん、まだ起きてる？」',
+        '「｜恵麻《えま》さん、まだ｜起き《おき》てる？」',
       );
       expect(
         _apply(GalTextProcessKind.stripCurlyBraces, '「{恵麻:えま}さん、まだ{起き:おき}てる？」'),
-        '「恵麻さん、まだ起きてる？」',
+        '「｜恵麻《えま》さん、まだ｜起き《おき》てる？」',
       );
+      // 读音为空时只留基字，不造空注音。
+      expect(_apply(GalTextProcessKind.stripCurlyBraces, '{漢字/ }を'), '漢字を');
       expect(
         _apply(GalTextProcessKind.stripCurlyBraces, '{color=red}赤い{/color}花'),
         '赤い花',
       );
+    });
+
+    test('花括号读音经注音解析落到文字上方，正文不留标记', () {
+      // 管线之后 appendLine 里跑的就是 parseRubyMarkup；这里把两段串起来验真。
+      final RubyMarkupText parsed = parseRubyMarkup(
+        _apply(GalTextProcessKind.stripCurlyBraces, '「{恵麻/えま}さん、まだ{起き:おき}てる？」'),
+      );
+      expect(parsed.text, '「恵麻さん、まだ起きてる？」');
+      expect(parsed.spans, const <RubySpan>[
+        RubySpan(start: 1, length: 2, ruby: 'えま'),
+        RubySpan(start: 8, length: 2, ruby: 'おき'),
+      ]);
     });
 
     test('过滤尖括号标签', () {
@@ -282,7 +291,8 @@ void main() {
 
   group('默认管线', () {
     test('列出除「字符串替换」外的全部步骤，各一步，id 即种类名', () {
-      final List<GalTextProcessKind> kinds = kGalDefaultTextProcessPipeline.steps
+      final List<GalTextProcessKind> kinds = kGalDefaultTextProcessPipeline
+          .steps
           .map((GalTextProcessStep s) => s.kind)
           .toList();
       expect(
@@ -290,12 +300,13 @@ void main() {
         GalTextProcessKind.values.toSet()..remove(GalTextProcessKind.replace),
       );
       expect(kinds, hasLength(kinds.toSet().length));
-      for (final GalTextProcessStep step in kGalDefaultTextProcessPipeline.steps) {
+      for (final GalTextProcessStep step
+          in kGalDefaultTextProcessPipeline.steps) {
         expect(step.id, step.kind.storageKey);
       }
     });
 
-    test('默认只开「去除花括号注音」与「过滤换行符」', () {
+    test('默认只开「花括号注音转振假名」与「过滤换行符」', () {
       expect(
         kGalDefaultTextProcessPipeline.steps
             .where((GalTextProcessStep s) => s.enabled)
@@ -307,14 +318,14 @@ void main() {
       );
     });
 
-    test('默认管线不丢旁白、不改普通台词，只清注音花括号与换行', () {
+    test('默认管线不丢旁白、不改普通台词，只把花括号读音转振假名并拼掉换行', () {
       const GalTextProcessPipeline pipeline = kGalDefaultTextProcessPipeline;
       expect(pipeline.apply('ただの地の文'), 'ただの地の文');
       expect(pipeline.apply('こなみ「ねえねえ、ああ」'), 'こなみ「ねえねえ、ああ」');
-      expect(
-        pipeline.apply('「{恵麻/えま}さん、\nまだ{起き:おき}てる？」'),
-        '「恵麻さん、まだ起きてる？」',
-      );
+      final String processed = pipeline.apply('「{恵麻/えま}さん、\nまだ{起き:おき}てる？」');
+      expect(processed, '「｜恵麻《えま》さん、まだ｜起き《おき》てる？」');
+      expect(parseRubyMarkup(processed).text, '「恵麻さん、まだ起きてる？」');
+      expect(parseRubyMarkup(processed).spans, hasLength(2));
     });
 
     test('新加一步沿用默认参数且启用：截取行数默认取末尾', () {

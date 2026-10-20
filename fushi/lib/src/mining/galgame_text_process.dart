@@ -32,8 +32,8 @@ enum GalTextProcessKind {
   /// 语义对齐 LunaTranslator 的「过滤「」以外的字符」。
   keepJapaneseQuotes,
 
-  /// 去除花括号注音标记：`{漢字/かんじ}` / `{漢字:かんじ}` → `漢字`，
-  /// `{tag}…{/tag}` 留中间文字，其余 `{…}` 整体删除。
+  /// 花括号注音转振假名：`{漢字/かんじ}` / `{漢字:かんじ}` → `｜漢字《かんじ》`
+  /// （交给注音解析画在文字上方），`{tag}…{/tag}` 留中间文字，其余 `{…}` 整体删除。
   stripCurlyBraces,
 
   /// 全角/半角正规化：全角 ASCII → 半角、半角片假名 → 全角（含浊点合成）。
@@ -418,10 +418,10 @@ class GalTextProcessPipeline {
 
 /// 没存过管线的游戏用的默认处理链：LunaTranslator 文本预处理页的步骤全集与顺序
 /// （「自定义 python 处理」不实现；「字符串替换」要先写规则，留给「添加步骤」），
-/// 默认只开两步：去除花括号注音、过滤换行符。
+/// 默认只开两步：花括号注音转振假名、过滤换行符。
 ///
-/// 只开这两步，是因为它们对任何游戏都不会吃掉正文：真台词里几乎不出现 `{}`，日文
-/// 跨行拼起来不需要空格。去重复类的自动分析会误压叠字台词（「ねえねえ」），还会打断
+/// 只开这两步，是因为它们对任何游戏都不会吃掉正文：真台词里几乎不出现 `{}`，花括号
+/// 里的读音转成振假名画在文字上方而不是丢掉；日文跨行拼起来不需要空格。去重复类的自动分析会误压叠字台词（「ねえねえ」），还会打断
 /// 渐进重绘折叠，留给用户按游戏自己开。各步骤的参数（截取行数默认取末尾等）也以这里
 /// 为准——编辑页「添加步骤」从这里取初值。
 const GalTextProcessPipeline kGalDefaultTextProcessPipeline =
@@ -686,17 +686,26 @@ String _keepJapaneseQuotes(String text) {
 }
 
 /// 三段与 LunaTranslator `remove_braces` 同序：
-/// ① `{tag…}文字{/tag}` → `文字`；② `{漢字/かんじ}` / `{漢字:かんじ}` → `漢字`；
-/// ③ 剩下的 `{…}`（引擎控制标记）整体删除。
+/// ① `{tag…}文字{/tag}` → `文字`；② `{漢字/かんじ}` / `{漢字:かんじ}` →
+/// `｜漢字《かんじ》`；③ 剩下的 `{…}`（引擎控制标记）整体删除。
+///
+/// 第②段与 Luna **刻意不同**：Luna 拿文本去翻译，读音只能扔；本 app 在文字上方画
+/// 振假名，而注音解析（`parseRubyMarkup`，跑在管线之后的 `appendLine` 里）不认花括号。
+/// 转成它认的青空文庫显式形（`｜` 定界、无歧义），读音就落到正文上方，正文里不留
+/// 任何标记。读音为空时只留基字。
 String _stripCurlyBraces(String text) => text
     .replaceAllMapped(
       RegExp(r'\{(\w+)([^{}]*)\}(.*?)\{/\1\}'),
       (Match m) => m.group(3) ?? '',
     )
-    .replaceAllMapped(
-      RegExp(r'\{([^{}]*?)[:/]([^{}]*)\}'),
-      (Match m) => m.group(1) ?? '',
-    )
+    .replaceAllMapped(RegExp(r'\{([^{}]*?)[:/]([^{}]*)\}'), (Match m) {
+      final String base = m.group(1) ?? '';
+      final String reading = (m.group(2) ?? '').trim();
+      if (base.isEmpty || reading.isEmpty) {
+        return base;
+      }
+      return '｜$base《$reading》';
+    })
     .replaceAll(RegExp(r'\{[^{}]*\}'), '');
 
 /// 空行先丢再拼（同 LunaTranslator `remove_line_breaks`）：`あ\n\nい` 用空格拼成

@@ -66,7 +66,7 @@ String _kindSemantics(GalTextProcessKind kind) => switch (kind) {
   GalTextProcessKind.keepJapaneseQuotes =>
     'drop text outside 「」 (speaker names etc.) and keep the 「…」 quotes themselves; a line with no 「」 (narration) is left unchanged',
   GalTextProcessKind.stripCurlyBraces =>
-    'remove furigana braces: {漢字/かんじ} or {漢字:かんじ} keeps 漢字, {tag}text{/tag} keeps text, any other {…} is removed entirely',
+    'turn brace furigana into ruby: {漢字/かんじ} or {漢字:かんじ} becomes 漢字 with かんじ shown above it, {tag}text{/tag} keeps text, any other {…} is removed entirely',
   GalTextProcessKind.normalizeWidth =>
     'full-width ASCII to half-width, half-width katakana to full-width (voiced marks composed)',
   GalTextProcessKind.takeLines => 'keep only the first (or last) N lines',
