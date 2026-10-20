@@ -71,15 +71,20 @@ void main() {
       // **唯一**报警器，在 CI 上静默跳过等于没有它。本机缺 node 只是环境问题，
       // 允许 skip；CI 上缺 node 是**镜像坏了**，必须红。
       if (Platform.environment['CI'] == 'true') {
-        fail('CI 上找不到 node —— Dart↔JS 口径对拍是分叉的唯一报警器，'
-            '它静默跳过等于没有它。修构建镜像，别把这条改回 skip。');
+        fail(
+          'CI 上找不到 node —— Dart↔JS 口径对拍是分叉的唯一报警器，'
+          '它静默跳过等于没有它。修构建镜像，别把这条改回 skip。',
+        );
       }
       markTestSkipped('node not found on PATH; skipping Dart/JS parity');
       return;
     }
     final File harness = File('test/stats/study_char_count_parity_test.js');
-    expect(harness.existsSync(), isTrue,
-        reason: 'parity harness ${harness.path} must exist');
+    expect(
+      harness.existsSync(),
+      isTrue,
+      reason: 'parity harness ${harness.path} must exist',
+    );
 
     final Directory tmp = Directory.systemTemp.createTempSync('fushi_parity_');
     try {
@@ -89,29 +94,48 @@ void main() {
       final File corpusFile = File('${tmp.path}/corpus.json');
       corpusFile.writeAsStringSync(jsonEncode(corpus));
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[harness.path, jsFile.path, corpusFile.path],
-        workingDirectory: Directory.current.path,
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        harness.path,
+        jsFile.path,
+        corpusFile.path,
+      ], workingDirectory: Directory.current.path);
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'parity harness failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
-      expect(result.exitCode, 0,
-          reason: 'parity harness failed.\n'
-              'stdout:\n${result.stdout}\nstderr:\n${result.stderr}');
 
       final Map<String, dynamic> out =
           jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
       final List<dynamic> counts = out['counts'] as List<dynamic>;
       final List<dynamic> prefixTotals = out['prefixTotals'] as List<dynamic>;
       expect(counts.length, corpus.length);
+      // BUG-3648：unitStartOffset（单位索引 → 码元下标的逆映射，分页落页 / 页上校验 /
+      // 连续句首锚共用）必须落在目标单位首码点上，不停在它前面的句读 / 空白上。
+      expect(
+        out['inverseFails'] as List<dynamic>,
+        isEmpty,
+        reason: 'unitStartOffset 与 isUnitEnd 前缀计数不互逆',
+      );
 
       for (int i = 0; i < corpus.length; i++) {
         final int dartCount = countStudyChars(corpus[i]);
-        expect(counts[i], dartCount,
-            reason: 'JS count 与 Dart countStudyChars 分叉，语料 #$i: '
-                '${jsonEncode(corpus[i])}');
-        expect(prefixTotals[i], dartCount,
-            reason: '逐位置 isUnitEnd 累加与整段 count 分叉，语料 #$i: '
-                '${jsonEncode(corpus[i])}');
+        expect(
+          counts[i],
+          dartCount,
+          reason:
+              'JS count 与 Dart countStudyChars 分叉，语料 #$i: '
+              '${jsonEncode(corpus[i])}',
+        );
+        expect(
+          prefixTotals[i],
+          dartCount,
+          reason:
+              '逐位置 isUnitEnd 累加与整段 count 分叉，语料 #$i: '
+              '${jsonEncode(corpus[i])}',
+        );
       }
     } finally {
       tmp.deleteSync(recursive: true);
@@ -156,14 +180,23 @@ void main() {
       final String a = c[0] as String;
       final String b = c[1] as String;
       test('逐节点求和 != 拼接整体：${jsonEncode(a)} + ${jsonEncode(b)}', () {
-        expect(countStudyChars(a) + countStudyChars(b), c[2],
-            reason: '逐文本节点求和（JS buildNodeOffsets 的做法）');
-        expect(countStudyChars(a + b), c[3],
-            reason: '拼接后整体计数（Dart chapterCharacterCount 的做法）');
-        expect(countStudyChars(a) + countStudyChars(b),
-            greaterThan(countStudyChars(a + b)),
-            reason: '词内切开时逐节点求和恒不小于整体——方向错了就不是'
-                '「进度提前封顶」而是「永远到不了 100%」，症状完全不同。');
+        expect(
+          countStudyChars(a) + countStudyChars(b),
+          c[2],
+          reason: '逐文本节点求和（JS buildNodeOffsets 的做法）',
+        );
+        expect(
+          countStudyChars(a + b),
+          c[3],
+          reason: '拼接后整体计数（Dart chapterCharacterCount 的做法）',
+        );
+        expect(
+          countStudyChars(a) + countStudyChars(b),
+          greaterThan(countStudyChars(a + b)),
+          reason:
+              '词内切开时逐节点求和恒不小于整体——方向错了就不是'
+              '「进度提前封顶」而是「永远到不了 100%」，症状完全不同。',
+        );
       });
     }
 
@@ -179,8 +212,10 @@ void main() {
     ];
     for (final List<String> c in additiveCases) {
       test('可加性仍成立：${jsonEncode(c[0])} + ${jsonEncode(c[1])}', () {
-        expect(countStudyChars(c[0]) + countStudyChars(c[1]),
-            countStudyChars(c[0] + c[1]));
+        expect(
+          countStudyChars(c[0]) + countStudyChars(c[1]),
+          countStudyChars(c[0] + c[1]),
+        );
       });
     }
   });
@@ -188,8 +223,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

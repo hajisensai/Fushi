@@ -1,0 +1,14 @@
+## BUG-3645 · 翻页模式页首字在禁则换行处时重开退一页（分页 scrollToCharOffset 用塌缩光标锚）
+- **报告**：2026-10-20（实现折叠屏竖排对开时，真 Chrome 探针 `tool/reader_pitch_headless/vertical_spread_probe.mjs` 的「存→取不动点」断言发现；回到 develop 原有的竖排单条几何同样复现）
+- **真实性**：✅ 真 bug，真 Chrome 跑生产分页 shell 复现。
+  - 现象：取当前页页首字 f，再 `restoreToCharOffset(f)`（= 退出重进的精确恢复），落到**前一页**。竖排单条实测 f=1448 从第 3 页（2298）落到第 2 页（1532）；1258×646 视口下 f=1057 / 2128 / 3199 / 4270 每隔一页退一页。每次重开都按新的页首字落库，所以会一页一页往回退。
+  - 触发条件：页首字恰是**被禁则推出来的软换行**的行首。例如「…文章文章。」里「。」不能出现在行首，换行被迫提前到「章」之前，于是「章」成了下一页页首。
+  - 根因：`fushi/lib/src/reader/reader_pagination_scripts.dart` 分页 shell 的 `scrollToCharOffset`（修复前同一行在 `characterAnchorRect(range)`）对**塌缩** range 先取 `getBoundingClientRect`。这种换行处 Chromium 把塌缩光标算到**上一行行尾**（实测光标矩形在上一页末行底端，字形矩形在本页首行顶端）。竖排光标宽非零，`characterAnchorRect` 只在宽高全零时才改量字形（BUG-3431），所以兜底不触发，光标锚把整页判进前一页。BUG-2205 的 ±1 保原页 hint 只在样式 / 几何重锚时有，冷启动 `restoreToCharOffset` 没有 hint，兜不住。
+  - BUG-3431 当时只修了连续 shell 的同一处（字形优先），分页 shell 漏了。
+- **[x] ① 已修复** — `fushi/lib/src/reader/reader_pagination_scripts.dart:3342`：分页 `scrollToCharOffset` 改为 `this.characterGlyphRect(range) || this.characterAnchorRect(range)`，先量目标字自己的字形盒，量不到（偏移在节点末尾等）才退回光标几何，与连续 shell 一致。`charOffsetOnCurrentPage` 用的是覆盖一个码点的非塌缩 range，本来就是字形盒，不受影响。提交 `083655f1a0`。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/paginated_page_first_fixed_point_test.dart` + `paginated_page_first_fixed_point_harness.mjs`：`flutter test` 内起真 Chrome 跑生产分页 shell，横排 / 竖排单条 / 竖排对开（含奇偶两种末页、20px / 26px 字号）逐页取页首字再 `restoreToCharOffset`，断言落回同一页、且页首字画在当前页；另断言后退逐页走回与前进相同的网格位置。
+  - 变异实测：把这一行改回 `characterAnchorRect(range)`，竖排单条两组与对开 20px 组变红；修复版 8 组全绿。
+  - 横排没被抓到：横排页首撞上这类禁则换行的情形本语料没有凑出来。
+- **备注**：
+  - 没有 node / Chrome 的环境 skip。
+  - 未在真机复测：本机没有可半折的折叠屏。修复路径与连续 shell 的 BUG-3431 修复相同，BUG-3431 那次的真机复测覆盖了连续模式。

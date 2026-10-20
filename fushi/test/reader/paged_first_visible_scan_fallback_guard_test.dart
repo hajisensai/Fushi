@@ -60,16 +60,16 @@ void main() {
     pagedScan = _functionSource(
       source,
       '  firstVisibleCharOffsetByScanPaged: function() {',
-      '\n  pagedFirstEdge: function(vertical) {',
+      '\n  pagedFirstEdge: function(axisOrVertical) {',
     );
     pagedCountChars = _functionSource(
       source,
-      '  countCharsBeforeViewportPaged: function(node, vertical, firstEdge) {',
+      '  countCharsBeforeViewportPaged: function(node, axis, firstEdge) {',
       '\n  isTextOffsetBeforeViewportPaged:',
     );
     pagedIsBefore = _functionSource(
       source,
-      '  isTextOffsetBeforeViewportPaged: function(node, offset, text, vertical, firstEdge) {',
+      '  isTextOffsetBeforeViewportPaged: function(node, offset, text, axis, firstEdge) {',
       '\n  charOffsetOnCurrentPage: function(charOffset) {',
     );
     pagedGetFirstCode = _stripJsLineComments(pagedGetFirst);
@@ -136,21 +136,25 @@ void main() {
         reason: '分页扫描兜底不得用 window 量纲 window.innerWidth',
       );
       expect(
-        pagedScan.contains('var firstEdge = this.pagedFirstEdge(vertical);'),
+        pagedScan.contains('var firstEdge = this.pagedFirstEdge(axis);') &&
+            pagedScan.contains('var axis = this.pagedAxis();'),
         isTrue,
         reason: 'BUG-2492：首边必须是翻页轴上的 content-box 起点'
-            '（横排 padding-left / 竖排 padding-top），不是连续版的 0 / body.clientWidth',
+            '（横排 padding-left / 竖排 padding-top / 竖排对开 padding-right），'
+            '不是连续版的 0 / body.clientWidth',
       );
       final String firstEdge = _functionSource(
         source,
-        '  pagedFirstEdge: function(vertical) {',
-        '\n  pagedLastEdge: function(vertical) {',
+        '  pagedFirstEdge: function(axisOrVertical) {',
+        '\n  pagedLastEdge: function(axisOrVertical) {',
       );
       expect(
         firstEdge.contains('(parseFloat(cs.paddingTop) || 0)') &&
-            firstEdge.contains('(parseFloat(cs.paddingLeft) || 0)'),
+            firstEdge.contains('(parseFloat(cs.paddingLeft) || 0)') &&
+            firstEdge.contains("if (axis === 'xr') return parseFloat(cs.paddingRight) || 0;"),
         isTrue,
-        reason: 'pagedFirstEdge 竖排=padding-top、横排=padding-left（与分页 caret 探点同量纲）',
+        reason: 'pagedFirstEdge 竖排=padding-top、横排=padding-left、竖排对开（xr，到 body 右缘'
+            '的距离）=padding-right（与分页 caret 探点同量纲）',
       );
       // 兜底必须走分页专版的逐节点累加，不串到连续版。
       expect(
@@ -186,16 +190,17 @@ void main() {
         reason: '「整节点在本页或之后」= 翻页轴起边 >= firstEdge（横竖同式）',
       );
       expect(
-        pagedCountChars.contains('var start = vertical ? rect.top : rect.left;') &&
-            pagedCountChars.contains('var end = vertical ? rect.bottom : rect.right;'),
+        pagedCountChars.contains('var span = this.turnSpan(axis, rect);') &&
+            pagedCountChars.contains('minStart = Math.min(minStart, span.start);') &&
+            pagedCountChars.contains('maxEnd = Math.max(maxEnd, span.end);'),
         isTrue,
-        reason: 'BUG-2492：翻页轴 = 竖排 y（top/bottom）、横排 x（left/right），'
-            '不是连续版的竖排 x / 横排 y',
+        reason: 'BUG-2492：翻页轴 = 竖排 y（top/bottom）、横排 x（left/right）、竖排对开 xr'
+            '（到右缘的距离），统一走 turnSpan；不是连续版的竖排 x / 横排 y',
       );
     });
 
     test(
-        'isTextOffsetBeforeViewportPaged 沿翻页轴判：竖排 rect.bottom<=firstEdge、横排 rect.right<=firstEdge',
+        'isTextOffsetBeforeViewportPaged 沿翻页轴判：turnSpan(axis).end<=firstEdge',
         () {
       expect(
         pagedIsBeforeCode.contains('window.innerWidth'),
@@ -204,7 +209,7 @@ void main() {
       );
       expect(
         pagedIsBefore.contains(
-            'return (vertical ? rect.bottom : rect.right) <= firstEdge;'),
+            'return this.turnSpan(axis, rect).end <= firstEdge;'),
         isTrue,
         reason: 'BUG-2492：竖排 rect.bottom<=firstEdge（=padding-top）/ '
             '横排 rect.right<=firstEdge（=padding-left）；连续版的 left>=clientWidth / '
