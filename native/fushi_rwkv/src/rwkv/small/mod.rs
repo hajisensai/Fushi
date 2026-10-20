@@ -121,6 +121,57 @@ impl SmallInference {
     /// Same contract as the big model's `warm_up_reviews`: rating-less rows
     /// are skipped; with `record_predictions` every answered row also gets the
     /// R a query just before it would have given (index into `reviews`).
+    /// Diagnostic replay (examples/curve_calibration.rs): like
+    /// [Self::warm_up_reviews] with predictions, but also returns each
+    /// answered row's own heads with the curve, i.e. the forgetting curve that
+    /// scheduling would read after that answer. `(index, p_imm before the
+    /// answer, heads of the answer row)`.
+    #[doc(hidden)]
+    pub fn replay_with_curves(&mut self, reviews: Vec<ReviewInput>) -> io::Result<Vec<(usize, f32, SmallHeads)>> {
+        let answered: Vec<(usize, ReviewInput)> = reviews
+            .into_iter()
+            .enumerate()
+            .filter(|(_, input)| input.ease.is_some())
+            .collect();
+        let mut out = Vec::with_capacity(answered.len());
+        for chunk in answered.chunks(CHUNK_REVIEWS) {
+            let mut features = Vec::with_capacity(2 * chunk.len() * CARD_FEATURES);
+            let mut keys = Vec::with_capacity(2 * chunk.len());
+            let mut commit = Vec::with_capacity(2 * chunk.len());
+            for (_, input) in chunk {
+                let mut query = input.clone();
+                query.is_query = true;
+                query.ease = None;
+                query.duration_millis = None;
+                features.extend(self.features.features_for(&query));
+                keys.push(stream_keys(input));
+                commit.push(false);
+                features.extend(self.features.features_for(input));
+                self.features.store_review(input);
+                keys.push(stream_keys(input));
+                commit.push(true);
+            }
+            let heads = vec![true; commit.len()];
+            let rows = model::run(
+                &self.model.net,
+                &self.layouts,
+                &mut self.stores,
+                &Rows {
+                    features: &features,
+                    keys: &keys,
+                    commit: &commit,
+                    heads: &heads,
+                },
+                true,
+                true,
+            );
+            for ((index, _), pair) in chunk.iter().zip(rows.chunks_exact(2)) {
+                out.push((*index, pair[0].retrievability(), pair[1]));
+            }
+        }
+        Ok(out)
+    }
+
     pub fn warm_up_reviews(
         &mut self,
         reviews: Vec<ReviewInput>,
