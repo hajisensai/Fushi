@@ -4073,6 +4073,7 @@
   "manga_import_batch_done": "$imported içe aktarıldı, $skipped atlandı, $failed başarısız.",
   "manga_import_batch_hint": "Bu klasörde $n cilt dosyası var; her biri dosya adıyla kendi kitabı olarak içe aktarılır.",
   "manga_import_detected_confirm": "Manga olarak içe aktar",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "\"$name\" bir manga dosyasıdır, bu yüzden kitap içe aktarıcı yerine manga içe aktarıcıdan geçecektir.",
   "manga_import_detected_title": "Bu bir manga gibi görünüyor",
   "manga_import_direct": "OCR'siz içe aktar",

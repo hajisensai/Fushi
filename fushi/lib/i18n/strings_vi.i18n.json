@@ -4073,6 +4073,7 @@
   "manga_import_batch_done": "Đã nhập $imported, bỏ qua $skipped, thất bại $failed.",
   "manga_import_batch_hint": "Thư mục này chứa $n tệp tập; mỗi tệp được nhập thành một cuốn sách riêng, đặt tên theo tệp.",
   "manga_import_detected_confirm": "Nhập dạng truyện tranh",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "\"$name\" là tệp truyện tranh, nên sẽ được xử lý qua trình nhập truyện tranh thay vì trình nhập sách.",
   "manga_import_detected_title": "Đây có vẻ là truyện tranh",
   "manga_import_direct": "Nhập không dùng OCR",

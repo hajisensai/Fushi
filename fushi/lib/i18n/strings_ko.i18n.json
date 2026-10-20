@@ -4073,6 +4073,7 @@
   "manga_import_batch_done": "$imported개 가져옴, $skipped개 건너뜀, $failed개 실패.",
   "manga_import_batch_hint": "이 폴더에 $n개의 볼륨 파일이 있습니다. 각각 파일 이름을 따서 별도의 책으로 가져옵니다.",
   "manga_import_detected_confirm": "만화로 가져오기",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "\"$name\"은(는) 만화 파일이므로 책 가져오기 대신 만화 가져오기로 처리됩니다.",
   "manga_import_detected_title": "만화로 보입니다",
   "manga_import_direct": "OCR 없이 가져오기",

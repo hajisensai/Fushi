@@ -4073,6 +4073,7 @@
   "manga_import_batch_done": "Importés $imported, ignorés $skipped, échoués $failed.",
   "manga_import_batch_hint": "Ce dossier contient $n fichiers de tomes ; chacun est importé comme son propre livre, nommé d'après son fichier.",
   "manga_import_detected_confirm": "Importer comme manga",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "« $name » est un fichier manga, il passera donc par l'importateur de manga au lieu de l'importateur de livres.",
   "manga_import_detected_title": "Cela ressemble à un manga",
   "manga_import_direct": "Importer sans OCR",

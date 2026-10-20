@@ -4073,6 +4073,7 @@
   "manga_import_batch_done": "导入完成：成功 $imported 卷，跳过 $skipped 卷，失败 $failed 卷。",
   "manga_import_batch_hint": "该文件夹里有 $n 个整卷文件，将逐卷各导入为一本，书名取各自的文件名。",
   "manga_import_detected_confirm": "按漫画导入",
+  "manga_import_detected_import_as_book": "仍按书籍导入",
   "manga_import_detected_message": "「$name」是漫画文件，将走漫画导入流程，而不是书籍导入流程。",
   "manga_import_detected_title": "这看起来是漫画",
   "manga_import_direct": "直接导入",

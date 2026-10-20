@@ -304,4 +304,54 @@ void main() {
         reason: '书籍入口误投漫画必须保留一次明确安全确认');
     expect(find.text(t.manga_import_detected_confirm), findsOneWidget);
   });
+
+  testWidgets(
+      'image-only EPUB misdetected as manga can still be imported as a book',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 1000);
+    addTearDown(tester.view.reset);
+    final Directory root =
+        Directory.systemTemp.createTempSync('force_book_import_');
+    final File manga = File(p.join(root.path, 'picture_book.epub'))
+      ..writeAsBytesSync(
+        _realEpubBytes('Force book import', pureImage: true),
+      );
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    EpubStorage.debugBaseDirectoryOverride = root.path;
+    addTearDown(() async {
+      EpubStorage.debugBaseDirectoryOverride = null;
+      await db.close();
+      if (root.existsSync()) root.deleteSync(recursive: true);
+    });
+
+    await tester.pumpWidget(
+      _host(
+        BookImportDialog(
+          repo: SrtBookRepository(db),
+          audiobookRepo: AudiobookRepository(db),
+          db: db,
+          initialEpubPath: manga.path,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text(t.dialog_import));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.manga_import_detected_title), findsOneWidget);
+    await tester.tap(find.text(t.manga_import_detected_import_as_book));
+    await tester.pump();
+    await _pumpUntil(
+      tester,
+      condition: () async => (await db.getAllEpubBooks()).length == 1,
+    );
+    // 让确认框的退出动画播完，再判「没有第二次弹框」。
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text(t.manga_import_detected_title), findsNothing,
+        reason: '坚持按书导入后兜底闸门与最终分派不得再把它判回漫画');
+    expect(await db.getAllEpubBooks(), hasLength(1),
+        reason: '必须由真 EpubImporter 把图片型 EPUB 落成一本书');
+  });
 }

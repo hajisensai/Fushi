@@ -4073,6 +4073,7 @@
   "manga_import_batch_done": "Imported $imported, skipped $skipped, failed $failed.",
   "manga_import_batch_hint": "This folder holds $n volume files; each is imported as its own book, named after its file.",
   "manga_import_detected_confirm": "Import as manga",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "\"$name\" is a manga file, so it will go through the manga importer instead of the book importer.",
   "manga_import_detected_title": "This looks like manga",
   "manga_import_direct": "Import without OCR",

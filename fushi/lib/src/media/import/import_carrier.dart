@@ -157,6 +157,17 @@ ImportCarrier classifyImportCarrier(
   return ImportCarrier.epub;
 }
 
+/// 被判成漫画的 [path]（载体 [carrier]），用户能不能坚持按书籍导入。
+///
+/// 漫画判据是启发式的（图片型 EPUB 也可能是插图版小说、绘本、图文书），判错时
+/// 书籍框必须给用户一条「仍按书籍导入」的出口，而不是只剩取消 / 转漫画。但出口
+/// 只开给**书籍管线真吃得下**的载体：图片型 `.epub` 本身就是合法 EPUB，
+/// `EpubImporter` 照常导入；`.cbz` / `.zip` / `.mokuro` / 页图目录在书籍侧没有任何
+/// importer，给了出口也只会换来一次导入失败。
+bool canImportMangaCarrierAsBook(String path, ImportCarrier carrier) =>
+    carrier == ImportCarrier.mangaArchive &&
+    p.extension(path).toLowerCase() == '.epub';
+
 /// 需要真读包才能定性的容器扩展名（带点，小写）。
 const Set<String> _ambiguousArchiveExtensions = <String>{'.zip', '.epub'};
 
