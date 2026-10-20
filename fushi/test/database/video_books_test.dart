@@ -112,4 +112,55 @@ void main() {
       expect(after, before, reason: '显式刷新只能发表级通知，不能借机改业务列');
     });
   });
+  // BUG-3610：库页按「观看进度变了」重读列表——uid 流刻意不管纯列更新，进度要
+  // 单独的信号；封面等其余列的回写不能触发（否则自愈写回会让库页重刷成环）。
+  group('watchVideoWatchProgressChanged', () {
+    test('baseline does not emit; position / completion / episode emit',
+        () async {
+      final db = await _openDb();
+      await db.upsertVideoBook(_book());
+      int emissions = 0;
+      final sub = db.watchVideoWatchProgressChanged().listen((_) {
+        emissions++;
+      });
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+      expect(emissions, 0, reason: '首次查询只登记基线，库页进页已首载');
+
+      await db.updateVideoBookPosition('video/1', 5000, playedAt: 1700);
+      await pumpEventQueue();
+      expect(emissions, 1, reason: '断点变了 = 进度变了');
+
+      await db.markVideoCompleted('video/1', DateTime(2026, 10, 19));
+      await pumpEventQueue();
+      expect(emissions, 2, reason: '看完标记变了');
+
+      await db.updateVideoBookEpisode('video/1', 3);
+      await pumpEventQueue();
+      expect(emissions, 3, reason: '单行多集的集指针变了');
+    });
+
+    test('cover / subtitle writes and no-op notifications do not emit',
+        () async {
+      final db = await _openDb();
+      await db.upsertVideoBook(_book());
+      int emissions = 0;
+      final sub = db.watchVideoWatchProgressChanged().listen((_) {
+        emissions++;
+      });
+      addTearDown(sub.cancel);
+      await pumpEventQueue();
+
+      await db.updateVideoBookCover('video/1', '/abs/cover.jpg');
+      await db.updateVideoBookSubtitleSource('video/1', 'embedded:0');
+      db.notifyVideoLibraryChanged();
+      await pumpEventQueue();
+      expect(emissions, 0, reason: '非进度列的写入不改签名');
+
+      await db.updateVideoBookPosition('video/1', 5000, playedAt: 1700);
+      await db.updateVideoBookPosition('video/1', 5000, playedAt: 1700);
+      await pumpEventQueue();
+      expect(emissions, 1, reason: '同值重写不算变化');
+    });
+  });
 }
