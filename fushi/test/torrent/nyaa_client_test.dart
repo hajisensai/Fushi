@@ -831,6 +831,61 @@ void main() {
       });
     });
 
+    test('同 host 的多个实例同时请求也按 minRequestInterval 顺延，不在同一时刻一起放行', () {
+      // 发现源 / 资源 provider / 订阅轮询各自 new 一个 client 打同一站点：节流表按
+      // host 共享，必须在调用进入时同步占坑。「先读 last、睡完再写」会让三个实例读到
+      // 同一个 last、睡到同一时刻、一起打出去。
+      fakeAsync((FakeAsync async) {
+        const Duration interval = Duration(milliseconds: 120);
+        final List<Duration> startedAt = <Duration>[];
+        final List<String> order = <String>[];
+        NyaaClient instance(String name) => NyaaClient(
+              // 三个实例共用这个独占 host（虚拟时钟不能和别的用例共用同一格）。
+              baseUrl: 'https://throttle-cross-instance.nyaa.test',
+              client: MockClient((http.Request req) async {
+                startedAt.add(async.elapsed);
+                order.add(name);
+                return http.Response(kNyaaNoResultsHtml, 200);
+              }),
+              minRequestInterval: interval,
+              monotonicNow: () => async.elapsed,
+            );
+        final List<NyaaClient> clients = <NyaaClient>[
+          instance('discovery'),
+          instance('provider'),
+          instance('subscription'),
+        ];
+        // 另一个实例先打一次把这一格占上，三个实例随后在间隔内同时请求。
+        final NyaaClient warmup = instance('warmup');
+        warmup.search('warmup');
+        async.flushMicrotasks();
+        expect(startedAt, <Duration>[Duration.zero]);
+
+        async.elapse(const Duration(milliseconds: 10));
+        int completed = 0;
+        for (final NyaaClient c in clients) {
+          c.search('q').then((_) => completed++);
+        }
+        async.flushMicrotasks();
+        expect(startedAt, hasLength(1), reason: '间隔内的跨实例请求被立刻放行了');
+
+        async.elapse(interval - const Duration(milliseconds: 10));
+        expect(startedAt, <Duration>[Duration.zero, interval]);
+        async.elapse(interval);
+        expect(startedAt, <Duration>[Duration.zero, interval, interval * 2]);
+        async.elapse(interval);
+        expect(
+          startedAt,
+          <Duration>[Duration.zero, interval, interval * 2, interval * 3],
+        );
+        expect(completed, 3);
+        expect(order.skip(1), <String>['discovery', 'provider', 'subscription']);
+        for (final NyaaClient c in <NyaaClient>[warmup, ...clients]) {
+          c.close();
+        }
+      });
+    });
+
     test('底层网络异常（如握手失败）原样穿透，不吞成空列表', () async {
       final NyaaClient client = _clientWith((http.Request req) async {
         throw http.ClientException('HandshakeException: 模拟被墙', req.url);

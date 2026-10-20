@@ -419,20 +419,13 @@ jobs:
   # 各片只把自己的 suite 路径交给 flutter test，并集恰好是整个 test/（契约测试
   # fushi/test/tools/test_file_shards_test.dart）。分片数改这里的 matrix 和下面
   # 的 --file-shard 分母，两处一起改。
-  # 2026-10-20：分片内再用 --experimental-faster-testing：本片全部 suite 合成一个
-  # dill 只编译一次，每个 suite 在同一个 flutter_tester 进程里各起一个 isolate。
-  # 普通模式下每个 suite 单独增量编译、单独起进程，编译排队正是 CI 冷编的大头
-  # （settings 目录 100 个文件实测 211 s → 117 s）。代价：suite 之间不再隔进程，
-  # 测试结束后还在跑的异步工作（没关的 socket / timer / 子进程）会落到别的 suite
-  # 头上——遇到按根因修泄漏，不要退回普通模式。泄漏的 suite 的 isolate 不会退出、
-  # 一直占着共享堆，越往后跑越慢（PR #2422 实测：超时全落在每片最后 20% 的 suite），
-  # 所以每片再拆成若干个各自独立进程的批次（--max-suites-per-run，每批多编译一次，
-  # 约 1 分钟），把积累封顶。
-  # --concurrency=1：faster-testing 下一个进程里的所有 suite 共用**一条 UI 线程**（引擎
-  # Shell::Spawn 复用父 shell 的 task runner），并发数只决定交错，不增加并行度；交错会把
-  # 每条测试的墙钟拉长、让 30 秒超时和毫秒级时序断言随邻居的同步代码抖动。实测一次一个
-  # 不比默认并发慢（settings 100 个文件 93 s vs 104 s）。（flutter 会打印「-j 被忽略」，
-  # 但它照样转给 package:test，生成的 spawner 里能看到 --concurrency=1。）
+  # 2026-10-21：试过分片内加 --experimental-faster-testing（全片 suite 合成一个 dill 只编译
+  # 一次、同一个 flutter_tester 进程里各起一个 isolate），已撤回：PR #2422 五轮 CI 里两次
+  # flutter_tester 随机 SIGSEGV（exit 245，一次在批次全部 suite 跑完、进程收尾时），根因未明，
+  # 单测门不能带随机原生崩溃上线。现在回到普通模式（每个 suite 独立进程、默认并发），
+  # 保留的提速是：Rust 测试库由 test-native-linux 只编一次、按实测 suite 耗时
+  # （tool/test_flow/suite_timings.json）均衡分片。重新启用前先拿到崩溃的原生栈定根因；
+  # 届时 --concurrency=1 与 --max-suites-per-run 的理由见 git 历史（PR #2422）。
   unit-tests:
     needs: [web-core-linux, test-native-linux]
     runs-on: ubuntu-latest
@@ -497,16 +490,15 @@ jobs:
       with:
         name: fushi-test-native-linux-x64
         path: native
-    # faster-testing 下 flutter_tester 偶发 SIGSEGV（exit 245；PR #2422 五轮里两次，第二次是
-    # 一批 suite 全部跑完、报告 done 之前，即进程收尾销毁各 suite 的 isolate / 引擎时）。
-    # 开 core dump，失败时由下面的 backtrace 步骤打全线程原生栈，看是哪个原生库。
+    # flutter_tester 原生崩溃（SIGSEGV 等）时留 core dump，失败时由下面的 backtrace 步骤打
+    # 全线程原生栈，看是哪个原生库（PR #2422 撤回 faster-testing 时根因就卡在没有这份栈）。
     - name: Enable core dumps
       run: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
       run: |
         ulimit -c unlimited
-        dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
+        dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
     - name: Native backtrace of a crashed flutter_tester
       if: failure()
       shell: bash

@@ -4,8 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// CI 的单测分片用 `flutter test --experimental-faster-testing`：一片里的上千个 suite
-/// 在**同一个进程**里各起一个 isolate 并发跑。进程级状态因此是所有 suite 共享的，
+/// `flutter test --experimental-faster-testing`（PR #2422 在 CI 试过，因随机 SIGSEGV
+/// 已撤回，本地仍可用）把上千个 suite 放在**同一个进程**里各起一个 isolate 并发跑。
+/// 进程级状态因此是所有 suite 共享的，
 /// 其中最致命的是工作目录——`bug_tool_*` 测试曾把 `Directory.current` 切进临时 fixture
 /// 仓库，同时在跑的 15 个 suite 读 `lib/…` / `test/…` / `tool/…` 相对路径全部
 /// PathNotFound（PR #2422 第一轮 CI）。

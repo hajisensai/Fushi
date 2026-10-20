@@ -1601,8 +1601,8 @@ jobs:
     # 2026-09-30：已按文件分片（--file-shard，原理见 main.yml 的 unit-tests 注释）。
     # 矩阵 5 份：4 片主应用单测 + checks（analyze + 包测试），各自独立 runner 并行；
     # 分片数改 matrix 和 --file-shard 分母两处。
-    # 2026-10-20：分片内加 --experimental-faster-testing（每片只编译一次，原理与代价见
-    # main.yml 的 unit-tests 注释）。
+    # 2026-10-21：--experimental-faster-testing 试过又撤回（随机 SIGSEGV，见 main.yml 的
+    # unit-tests 注释）；分片仍按实测 suite 耗时均衡，Rust 测试库由 test-native-linux 只编一次。
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -1673,7 +1673,7 @@ jobs:
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
       working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden
 
     # 逐 suite 耗时（tool/update_suite_timings.dart 的输入），见 main.yml 同名步骤。
     - name: Upload test event log

@@ -553,7 +553,8 @@ class NyaaClient {
   /// 同 host 两次请求**开始**之间的最小间隔；测试可注入 [Duration.zero]。
   final Duration minRequestInterval;
 
-  /// 各站点 host 最近一次请求**实际放行**的时刻（单调时钟读数）。多个实例
+  /// 各站点 host 最近一次请求的放行时刻（单调时钟读数）：调用进入时先同步记下
+  /// 预约的那一格，醒来后若实际放行更晚再改记成实际时刻（见 [_waitForRequestSlot]）。多个实例
   /// （发现源 / 视频资源 provider / 订阅轮询）打同一站点时共用节奏，这才是
   /// 「同 host」而不只是「同实例」。
   ///
@@ -588,30 +589,40 @@ class NyaaClient {
   Future<void> _waitForRequestSlot(Future<void>? previous) async {
     if (previous != null) await previous;
     final String host = Uri.parse(baseUrl).host;
-    // 间隔从**上一次实际放行**的时刻量起：睡够剩余时长后，记下的是醒来那一刻
-    // 的时钟读数，不是计划时刻。
+    // **进入时先同步占坑、再睡**，不能「读 last → 睡 → 写 last」：后者中间隔着
+    // 一个 await，发现源 / 资源 provider / 订阅轮询各自 new 的 client 并发打同一
+    // 站点时，会同时读到同一个 last、同时睡到同一时刻、然后一起发请求 —— 契约说的
+    // 「同 host 至少间隔 minRequestInterval」退化成「一阵爆发再等一轮」。这里的读改写
+    // 在同一个同步段里完成（Dart 单线程，无 await 即不可被打断），所以下一个并发调用
+    // （无论哪个实例）看到的已经是这一格预约，自己再顺延一格。
     //
-    // 旧实现记录的是**计划**时刻：定时器在负载下晚醒（计划 +120ms、实际 +300ms
-    // 才醒）时，排在后面的调用拿计划时刻算间隔，发现「早就过了」立刻放行，于是
-    // 两次请求几乎同时打出去，契约说的「同 host 至少间隔 minRequestInterval」被
-    // 破坏。本实例的调用经 [_requestQueueTail] 串行，后一个总是在前一个记下实际
-    // 放行时刻之后才开始算，所以晚醒只会让后面的顺延。
+    // 醒来后再把这一格改记成**实际放行**时刻：定时器在负载下晚醒（计划 +120ms、
+    // 实际 +300ms 才醒）时，后面的调用要从实际放行时刻起算，否则会拿计划时刻算出
+    // 「早就过了」而贴着这一次一起打出去。只往后改、不往回改：期间别的调用可能已经
+    // 在后面占了更晚的一格，那一格不能被覆盖掉。（同实例的调用经 [_requestQueueTail]
+    // 串行，下一个总在这里改记之后才占坑；别的实例已经按预约排好的定时器则挪不动，
+    // 晚醒的余量只能由它们醒来时各自的改记吸收。）
     //
     // 只睡一次、醒来不再按时钟复查：时钟（真实单调时钟）和定时器（当前 zone 的
     // `Future.delayed`）不是同一个时间源。widget 测试的 fake-async 里定时器走虚拟
     // 时间、单调时钟走真实时间，「睡醒再查」会一直查出「还差一点」再睡，请求被
     // 无限推迟（resource_search_page_scroll_test 实测因此变红）。
-    // 已知限制（本修改之前就有）：**不同实例**打同一 host 时各自从同一个时刻
-    // 算起，可能在同一时刻一起醒来放行。
     //
     // 存的仍然只是时刻、不是 Future —— 静态存完成态 Future 正是上面注释里那个
     // 跨 zone 挂死的坑，别为了排队把它请回来。
+    final Duration now = _monotonicNow();
     final Duration? last = _lastRequestStartByHost[host];
-    if (last != null) {
-      final Duration remaining = minRequestInterval - (_monotonicNow() - last);
-      if (remaining > Duration.zero) await Future<void>.delayed(remaining);
-    }
-    _lastRequestStartByHost[host] = _monotonicNow();
+    final Duration reserved =
+        (last == null || now - last >= minRequestInterval)
+            ? now
+            : last + minRequestInterval;
+    _lastRequestStartByHost[host] = reserved;
+    final Duration wait = reserved - now;
+    if (wait <= Duration.zero) return;
+    await Future<void>.delayed(wait);
+    final Duration released = _monotonicNow();
+    final Duration latest = _lastRequestStartByHost[host] ?? released;
+    if (released > latest) _lastRequestStartByHost[host] = released;
   }
 
   /// 单次请求的整体超时上限。默认取发现链路的唯一真相源
