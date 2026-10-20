@@ -475,18 +475,26 @@ class _Importer {
     _mediaShare = 0.5;
     int next = 0;
     int done = 0;
+    // 一路叫停或出错后其余各路也停下：[Future.wait] 要等每一路都结束才报错，不停的话
+    // 剩下的几路会把余下的媒体全部存完。
+    bool halted = false;
     Future<void> worker() async {
-      while (next < names.length) {
-        await _media(names[next++]);
-        done++;
-        // 进度与叫停每 50 个文件一次（真实集合上约几十毫秒一次，叫停仍即时）；叫停时
-        // 只存了媒体、还没写笔记，重导照常补齐。
-        if (done % 50 == 0) {
-          onProgress?.call(
-            _scanShare + (_mediaShare - _scanShare) * done / names.length,
-          );
-          await _stopIfAsked();
+      try {
+        while (!halted && next < names.length) {
+          await _media(names[next++]);
+          done++;
+          // 进度与叫停每 50 个文件一次（真实集合上约几十毫秒一次，叫停仍即时）；叫停时
+          // 只存了媒体、还没写笔记，重导照常补齐。
+          if (done % 50 == 0) {
+            onProgress?.call(
+              _scanShare + (_mediaShare - _scanShare) * done / names.length,
+            );
+            await _stopIfAsked();
+          }
         }
+      } catch (_) {
+        halted = true;
+        rethrow;
       }
     }
 

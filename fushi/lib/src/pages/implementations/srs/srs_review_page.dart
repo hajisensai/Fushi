@@ -873,8 +873,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     unawaited(_editNote(detail));
   }
 
-  /// 顶栏常驻的只有复习中高频的几项（撤销 / 待决 / 重播 / 编辑）；其余卡片操作与设置进
-  /// [_menuItems] 的 ⋯。撤销在没有可撤销的评分时不占位（Ctrl+Z 照常）。
+  /// 复习中高频的几项（撤销 / 待决 / 重播 / 编辑），优先级最高、最后才收进「⋯」；其余卡片
+  /// 操作与设置在 [_menuItems]，优先级最低、宽度不够时先收。撤销在没有可撤销的评分时不占位
+  /// （Ctrl+Z 照常）。
   List<FushiToolbarItem> _actionItems() => <FushiToolbarItem>[
     if (_undo.isNotEmpty)
       FushiToolbarItem(
@@ -1135,17 +1136,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[_actionItems()],
-        // 卡片级操作与设置恒在 ⋯ 里（Anki「更多」菜单同款）：用 overflow 的话宽窗会把
-        // 十几项全平铺成图标，复习时顶栏一整排按钮。
-        menu: _menuItems(),
+        // 默认平铺、宽度不够才按优先级收进「⋯」（自适应溢出，CLAUDE.md 工具栏规则）。
+        overflow: _menuItems(),
       ),
     );
   }
 
-  /// Apple：常驻项平铺成图标，其余与 MD3 的 [FushiFloatingTopBar.menu] 一样恒在 ⋯ 里
-  /// （以前十几项全平铺，挤满导航栏）。
+  /// Apple：全部平铺成图标，放不下时由页头按优先级收进「⋯」（[FushiPageScaffold] 的
+  /// 自适应收纳，同级越靠后越先收：[_menuItems] 先收，高频项最后收）。
   List<Widget> _buildAppleActions() => <Widget>[
-    for (final FushiToolbarItem item in _actionItems())
+    for (final FushiToolbarItem item in <FushiToolbarItem>[
+      ..._actionItems(),
+      ..._menuItems(),
+    ])
       FushiIconButton(
         key: item.key,
         icon: item.icon,
@@ -1154,10 +1157,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         selected: item.selected,
         onTap: item.onPressed,
       ),
-    FushiToolbarOverflowButton(
-      items: _menuItems(),
-      foreground: Theme.of(context).colorScheme.primary,
-    ),
   ];
 
   @override
