@@ -1456,9 +1456,12 @@ class _HomeDashboardPageState
           child: FocusTraversalGroup(
             child: Stack(
               children: <Widget>[
-                NotificationListener<ScrollNotification>(
-                  onNotification: _toolbarScroll.handle,
-                  child: list,
+                NotificationListener<ScrollMetricsNotification>(
+                  onNotification: _toolbarScroll.handleMetrics,
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _toolbarScroll.handle,
+                    child: list,
+                  ),
                 ),
                 Positioned(
                   top: 0,

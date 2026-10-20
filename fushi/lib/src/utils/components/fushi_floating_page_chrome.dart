@@ -426,6 +426,16 @@ class FushiScrollAwayController extends ChangeNotifier {
   bool handleNotification(Notification notification) {
     // 平滑滚轮补间的「拉回起点」不是用户滚动（[SmoothWheelScrollScope.isRewinding]）。
     if (SmoothWheelScrollScope.isRewinding) return false;
+    // 版面修正（列表缩短 / 视口变高把位置夹回顶部）只发 ScrollMetricsNotification、
+    // 不发 ScrollUpdate：不在这里叫出页头，它会停在收起态而正文已滚不动，用户
+    // 再也唤不回来（同库页 BUG-3133）。
+    if (notification is ScrollMetricsNotification) {
+      final ScrollMetrics metrics = notification.metrics;
+      if (metrics.axis == Axis.vertical && metrics.extentBefore <= 0) {
+        hidden = false;
+      }
+      return false;
+    }
     if (notification is! ScrollNotification) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
     if (notification is UserScrollNotification) {
