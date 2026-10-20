@@ -4,6 +4,32 @@
 > 所有者已拍板（2026-10-20）：**AI 直接改库**（不经预览确认）；**允许自动运行**；**发送视频文件夹末级名**；书 / 漫画「同系列不同作品」放哪随设计定（本稿：进同一个合集）；**多端冲突要彻底解决**。
 > 范围：书架（小说 / 字幕书 / 有声书）、漫画、视频媒体库、游戏库。
 
+## 0. 实现记录（v3，2026-10-21）
+
+已在分支 `worktree-ai-library-organize-spec` 全部实现。下文 §1–§16 是 v2 设计；实现中有以下**有意偏离**，以这里为准：
+
+| 主题 | v2 设计 | 实现 | 为什么 |
+|---|---|---|---|
+| 收敛放在哪 | 同步纯函数 merge 之后做一步规整 | 同步一轮**推进基线之后**由调用方调 `convergeCollectionsAfterSync`（三个调用方：云同步两条路径、互联 host 的 POST 合并），败方墓碑时刻取 `max(now, 新基线 + 1)` | 多端随机同步的性质测试实测：收敛若在落盘里（基线之前）跑，败方墓碑早于新基线被判成旧闻，对端活副本「重建胜」，两端永远来回；同毫秒同样会来回 |
+| 合并去向 | 墓碑上记 `mergedIntoName` | 胜方合集记只增不删的 `organizeAliases`（并集合并）；墓碑只记 `organizeKey` + `organizeMerged`（被整理器并掉 / 用户删的） | 去向只记在败方墓碑上，旧对端把败方复活后去向就丢了；别名在胜方、按并集合并，永远不丢 |
+| 部分可见下的丢失 | 未覆盖 | 同步落盘删整理器合集时 `rehomeDissolvedOrganizerCollections`：键被吸收 → 本机成员转给吸收者；同名异组或「并掉但吸收者还没到」→ 按 `disambiguatedOrganizeName`（名字 + 键的 4 位短哈希）重建；用户删的同组 → 才算拒绝 | 200～1000 个随机种子的性质测试找到两种丢成员：A 并 Y 进 X 的同时 B 并 Z 进 Y；两个不同系列碰巧同名、一端删自己那个连带删了另一端那个 |
+| 规则归组的键 | — | `BookSeriesGrouper` / 视频系列模式建的合集写 `origin=rule` 与标题键（与 AI 同一个折叠函数 `foldMediaTitle`，下沉到 fushi_core） | 日文作品 AI 给的原名与系列名一致时天然认成一个 |
+| 「负责设备」 | 非负责设备只整理负责设备没有的条目 | 自动整理开关本身就是设备本地的、默认关，文案提示只在一台设备打开 | 判断「负责设备有没有这个条目」需要对端整库清单（合集清单只有成员），而正确性已由收敛保证，这只是省钱 |
+| 同意 | 弹一次性说明框 | 手动入口弹一次；设置里的自动开关**副标题即完整披露**，亲手打开即记为同意（不弹模态框）；CLI 要 `--yes` | 设置开关弹模态框会挂住设置页的焦点驱动覆盖测试，且披露就在开关旁边更直接 |
+| 入口 | 顶栏 `adaptiveOverflow` | 四个库页共用的 `FushiTagFilterBar` 动作区（`onAiOrganize`）+ 书架 / 视频库多选「AI 整理所选」 | 库页实际不用 `FushiFloatingTopBar` |
+| 结果提示 | toast 带「查看 / 撤销」 | 结果对话框（撤销 / 查看 / 好） | `FushiToast` 不支持按钮 |
+| 自动触发 | 导入后传新条目 | 库页加载 / 来源扫描后去抖 30 秒，只看 `local_added_at`（游戏 `added_at`）晚于「上次自动整理开始 / 打开开关时刻」的条目 | 书架的归组触发点是每次页面加载，不带新条目清单 |
+| 无头服务端 | — | yaml `ai.library_organize: true`（默认关）时扫描后对本轮新入库条目跑一次自动整理；新合集名用作品原语言 | 服务端常驻，正适合当负责自动整理的那台 |
+
+代码位置：
+- 数据层：`packages/fushi_core/lib/src/database/collection_organize.dart`（来源 / 键 / 别名的纯值层）、`tables.dart`、`database_library.part.dart`（`_claimCollectionForUser`、`absorbOrganizeIdentity`、`getRejectedOrganizeKeys`…）、迁移 `database.dart` `from < 124`。
+- 同步与收敛：`packages/fushi_engine/lib/sync/collection_sync_engine.dart`、`collection_manifest.dart`、`lib/media/collections/library_organize/organize_convergence.dart`、`lib/media/collections/collection_merge.dart`（合并唯一入口）。
+- AI 引擎：`packages/fushi_engine/lib/ai/ai_library_organize_assistant.dart`、`lib/media/collections/library_organize/`（facts / plan / apply（含撤销）/ service）。
+- app：`fushi/lib/src/media/collections/library_organize_runner.dart`、`pages/implementations/library_organize_history_page.dart`、`settings/settings_schema_ai.dart`（`ai.library_organize`）、`platform/desktop/ctl/ctl_library_organize_routes.dart`。
+- CLI：`fushi_cli library organize --domain <books|manga|video|games> [--yes]` / `organize-history` / `organize-undo <id>`。
+- 服务端：`packages/fushi_server/lib/src/config/server_ai_config.dart`（`serverLibraryOrganizer`）、`library_scanner.dart`。
+- 测试：`fushi/test/sync/collection_organize_convergence_test.dart`（多端随机性质测试：逐项一致、每键至多一个合集、不丢任何一次归组）、`fushi/test/database/migration_v124_collection_organize_test.dart`、`fushi/test/media/collections/library_organize_test.dart`、`library_organize_runner_test.dart`、`fushi/test/platform/desktop/ctl/ctl_library_organize_routes_test.dart`、`packages/fushi_server/test/library_organize_config_test.dart`。
+
 ## 1. 要解决什么
 
 规则归组已经有了，但只能认「文件名长得像同一系列」：
