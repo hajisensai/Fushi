@@ -6569,7 +6569,7 @@
   "srs_settings_rwkv_hint": "RWKV-Instant 用神经网络根据整个复习历史预测回忆率，卡片在预测回忆率降到目标保留率时到期。稳定性与难度仍由 FSRS-7 维护。",
   "srs_settings_rwkv_license_small": "小模型从作者的 GitHub 发布页下载；作者尚未声明它的许可。",
   "srs_settings_rwkv_model": "RWKV 模型（本机）",
-  "srs_settings_rwkv_model_hint": "小模型：每张卡约占 2.9 KB 内存。大模型：每张卡约 25.7 KB，准备也更慢。对本机所有 RWKV 牌组生效。",
+  "srs_settings_rwkv_model_hint": "小模型（推荐）：每张卡约占 2.9 KB 内存，在真实复习记录上实测也略准一些。大模型：每张卡约 25.7 KB，准备也更慢。对本机所有 RWKV 牌组生效。",
   "srs_settings_rwkv_model_large": "大模型",
   "srs_settings_rwkv_model_small": "小模型",
   "srs_settings_rwkv_preparing": "正在回放复习历史… $done/$total",
