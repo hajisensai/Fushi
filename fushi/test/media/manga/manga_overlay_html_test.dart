@@ -1,4 +1,3 @@
-
 import 'dart:ui' show Rect;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -42,10 +41,16 @@ void main() {
 
     test('多行拆成字符区域且 DOM 顺序连续，绝不含字面换行', () {
       final String html = mangaOcrBoxesHtml(_pageWithTwoBlocks());
-      expect('class="ocr-char"'.allMatches(html).length, 9,
-          reason: '竖排两行 6 字 + 横排 3 字都必须成为独立命中区域');
-      expect(html.indexOf('>一</span>') < html.indexOf('>二</span>'), isTrue,
-          reason: '跨行扫描顺序必须保持 OCR 行顺序');
+      expect(
+        'class="ocr-char"'.allMatches(html).length,
+        9,
+        reason: '竖排两行 6 字 + 横排 3 字都必须成为独立命中区域',
+      );
+      expect(
+        html.indexOf('>一</span>') < html.indexOf('>二</span>'),
+        isTrue,
+        reason: '跨行扫描顺序必须保持 OCR 行顺序',
+      );
       expect(html.contains('一行目\n二行目'), isFalse);
       expect(html.contains('一行目\\n二行目'), isFalse);
     });
@@ -55,13 +60,22 @@ void main() {
       // 若覆盖层用裸 `\n` 连接跨行文本，扫描会在换行处截断跨行长词。这里锚定该
       // 契约：源码含 scanDelimiters 且包含换行符，佐证覆盖层用 <br> 的必要性。
       final String scripts = ReaderSelectionScripts.source();
-      expect(scripts.contains('scanDelimiters'), isTrue,
-          reason: '选区脚本应定义 scanDelimiters（扫描分隔集）');
-      expect(scripts.contains(r'\n'), isTrue,
-          reason: 'scanDelimiters 含换行 → 覆盖层必须用 <br> 而非 \\n');
+      expect(
+        scripts.contains('scanDelimiters'),
+        isTrue,
+        reason: '选区脚本应定义 scanDelimiters（扫描分隔集）',
+      );
+      expect(
+        scripts.contains(r'\n'),
+        isTrue,
+        reason: 'scanDelimiters 含换行 → 覆盖层必须用 <br> 而非 \\n',
+      );
       // BLOCK_SELECTOR 认 p → <p class="ocr-box"> 能被 findParagraph 命中为块。
-      expect(RegExp(r'BLOCK_SELECTOR:\s*.p[,\x27]').hasMatch(scripts), isTrue,
-          reason: 'BLOCK_SELECTOR 必须含 p（覆盖层块级 <p> 才会被命中）');
+      expect(
+        RegExp(r'BLOCK_SELECTOR:\s*.p[,\x27]').hasMatch(scripts),
+        isTrue,
+        reason: 'BLOCK_SELECTOR 必须含 p（覆盖层块级 <p> 才会被命中）',
+      );
     });
 
     test('坐标按百分比换算（box / page.size）', () {
@@ -81,10 +95,16 @@ void main() {
       // img_width 1000 * 100 = 3.2cqi。
       expect(html.contains('cqi'), isTrue, reason: 'OCR 框字号必须用容器查询单位 cqi');
       // 绝不能出现 font-size:<数字>%（相对父字号会塌缩）
-      expect(RegExp(r'font-size:\s*[\d.]+%').hasMatch(html), isFalse,
-          reason: '字号绝不能用百分比（相对父字号）');
-      expect(html.contains('font-size:3.2cqi'), isTrue,
-          reason: 'block0 字号应为 32/1000*100=3.2cqi');
+      expect(
+        RegExp(r'font-size:\s*[\d.]+%').hasMatch(html),
+        isFalse,
+        reason: '字号绝不能用百分比（相对父字号）',
+      );
+      expect(
+        html.contains('font-size:3.2cqi'),
+        isTrue,
+        reason: 'block0 字号应为 32/1000*100=3.2cqi',
+      );
     });
 
     test('font_size==0 不塌缩：用非零下限 cqi（ERRATA M1）', () {
@@ -104,16 +124,25 @@ void main() {
         ],
       );
       final String html = mangaOcrBoxesHtml(page);
-      expect(html.contains('font-size:0cqi'), isFalse,
-          reason: 'font_size==0 绝不能写出 font-size:0cqi（塌缩）');
-      expect(html.contains('font-size:3cqi'), isTrue,
-          reason: 'font_size==0 应回退到非零下限 3cqi');
+      expect(
+        html.contains('font-size:0cqi'),
+        isFalse,
+        reason: 'font_size==0 绝不能写出 font-size:0cqi（塌缩）',
+      );
+      expect(
+        html.contains('font-size:3cqi'),
+        isTrue,
+        reason: 'font_size==0 应回退到非零下限 3cqi',
+      );
     });
 
     test('竖排框带 writing-mode:vertical-rl，横排框不带', () {
       final String html = mangaOcrBoxesHtml(_pageWithTwoBlocks());
-      expect('writing-mode:vertical-rl'.allMatches(html).length, 1,
-          reason: '仅竖排 block 应带 vertical-rl');
+      expect(
+        'writing-mode:vertical-rl'.allMatches(html).length,
+        1,
+        reason: '仅竖排 block 应带 vertical-rl',
+      );
     });
 
     test('文字 transparent + margin/padding 清零，字符公共命中样式不重复内联', () {
@@ -122,8 +151,11 @@ void main() {
       expect(html.contains('margin:0'), isTrue);
       expect(html.contains('padding:0'), isTrue);
       expect(html.contains('class="ocr-char"'), isTrue);
-      expect(html.contains('position:absolute;display:block'), isFalse,
-          reason: '密集页面不能为每个字符重复公共 CSS，否则 WebView 文档会膨胀并超时');
+      expect(
+        html.contains('position:absolute;display:block'),
+        isFalse,
+        reason: '密集页面不能为每个字符重复公共 CSS，否则 WebView 文档会膨胀并超时',
+      );
     });
 
     test('HTML 特殊字符转义（< > & 不破坏结构）', () {
@@ -143,8 +175,11 @@ void main() {
       final String html = mangaOcrBoxesHtml(page);
       expect(html.contains('>&lt;</span>'), isTrue);
       expect(html.contains('>&gt;</span>'), isTrue);
-      expect(html.contains('>&amp;</span>'), isTrue,
-          reason: '字符区域里的 < > & 必须分别转义');
+      expect(
+        html.contains('>&amp;</span>'),
+        isTrue,
+        reason: '字符区域里的 < > & 必须分别转义',
+      );
     });
 
     test('Lens 拆开的竖排气泡合成整句，并排除窄假名注音', () {
@@ -192,23 +227,16 @@ void main() {
         ],
       );
 
-      expect(
-        mangaBlockSentenceTexts(page),
-        <String>[
-          '大丈夫だよな?',
-          '大丈夫だよな?',
-          '大丈夫だよな?',
-          '大丈夫だよな?',
-          'なに?',
-        ],
-        reason: '相邻正文列应按竖排阅读顺序合并；右侧窄假名只作注音',
-      );
+      expect(mangaBlockSentenceTexts(page), <String>[
+        '大丈夫だよな?',
+        '大丈夫だよな?',
+        '大丈夫だよな?',
+        '大丈夫だよな?',
+        'なに?',
+      ], reason: '相邻正文列应按竖排阅读顺序合并；右侧窄假名只作注音');
 
       final String html = mangaOcrBoxesHtml(page);
-      expect(
-        'data-manga-sentence="大丈夫だよな?"'.allMatches(html).length,
-        4,
-      );
+      expect('data-manga-sentence="大丈夫だよな?"'.allMatches(html).length, 4);
       expect(
         'data-manga-sentence-group="0"'.allMatches(html).length,
         4,
@@ -251,10 +279,11 @@ void main() {
         ],
       );
 
-      expect(
-        mangaBlockSentenceTexts(page),
-        <String>['今日は晴れ。', '今日は晴れ。', '帰る。'],
-      );
+      expect(mangaBlockSentenceTexts(page), <String>[
+        '今日は晴れ。',
+        '今日は晴れ。',
+        '帰る。',
+      ]);
       final String html = mangaOcrBoxesHtml(page);
       expect(
         '<p class="ocr-box" data-ocr-orientation="horizontal"'
@@ -357,10 +386,12 @@ void main() {
       final List<int> groups = groupsOf(page);
       expect(groups.sublist(0, 4).toSet().length, 1);
       expect(groups[4], isNot(groups[0]));
-      expect(
-        mangaSentenceGroupBlockIndices(page, groups[2]),
-        <int>[0, 1, 2, 3],
-      );
+      expect(mangaSentenceGroupBlockIndices(page, groups[2]), <int>[
+        0,
+        1,
+        2,
+        3,
+      ]);
 
       final Rect rect = mangaSentenceGroupNormalizedRect(page, groups[2])!;
       expect(rect.left, closeTo(164 / 1170, 1e-9));
@@ -424,8 +455,11 @@ void main() {
         const MokuroRect.fromLTWH(80, 70, 12, 20),
       ]);
       expect(verticalRegions.first.utf16Start, 0);
-      expect(verticalRegions.first.utf16End, 2,
-          reason: '补充平面字符必须按 UTF-16 两个 code unit 计数');
+      expect(
+        verticalRegions.first.utf16End,
+        2,
+        reason: '补充平面字符必须按 UTF-16 两个 code unit 计数',
+      );
       expect(verticalRegions[1].utf16Start, 2);
     });
 
@@ -440,9 +474,13 @@ void main() {
       final List<MangaOcrTextRegion> fallbackRegions =
           mangaEffectiveTextRegions(fallback);
       expect(
-          fallbackRegions[0].rectangle, const MokuroRect.fromLTWH(30, 20, 20, 100));
+        fallbackRegions[0].rectangle,
+        const MokuroRect.fromLTWH(30, 20, 20, 100),
+      );
       expect(
-          fallbackRegions[1].rectangle, const MokuroRect.fromLTWH(10, 20, 20, 100));
+        fallbackRegions[1].rectangle,
+        const MokuroRect.fromLTWH(10, 20, 20, 100),
+      );
 
       const MokuroBlock withCoordinates = MokuroBlock(
         rectangle: MokuroRect.fromLTWH(0, 0, 100, 100),
@@ -462,9 +500,13 @@ void main() {
       final List<MangaOcrTextRegion> coordinateRegions =
           mangaEffectiveTextRegions(withCoordinates);
       expect(
-          coordinateRegions[0].rectangle, const MokuroRect.fromLTWH(20, 30, 30, 20));
+        coordinateRegions[0].rectangle,
+        const MokuroRect.fromLTWH(20, 30, 30, 20),
+      );
       expect(
-          coordinateRegions[1].rectangle, const MokuroRect.fromLTWH(50, 30, 30, 20));
+        coordinateRegions[1].rectangle,
+        const MokuroRect.fromLTWH(50, 30, 30, 20),
+      );
     });
   });
 
@@ -595,16 +637,20 @@ void main() {
   });
 
   group('mangaPageDivHtml', () {
-    test(
-        '包 <div class="manga-page"> + container-type:inline-size + <img '
+    test('包 <div class="manga-page"> + container-type:inline-size + <img '
         'pointer-events:none> + 框', () {
-      final String html =
-          mangaPageDivHtml(_pageWithTwoBlocks(), 'manga.local/0/p001.jpg');
+      final String html = mangaPageDivHtml(
+        _pageWithTwoBlocks(),
+        'manga.local/0/p001.jpg',
+      );
       expect(html.contains('<div class="manga-page"'), isTrue);
       // H5: 容器查询上下文必须在 .manga-page 上（cqi 才有参照宽）。用 inline-size
       // 而非 size（size 会塌缩 img 驱动的页高、两框重叠串字）。
-      expect(html.contains('container-type:inline-size'), isTrue,
-          reason: '.manga-page 必须声明 container-type:inline-size 供 cqi 参照');
+      expect(
+        html.contains('container-type:inline-size'),
+        isTrue,
+        reason: '.manga-page 必须声明 container-type:inline-size 供 cqi 参照',
+      );
       expect(html.contains('src="manga.local/0/p001.jpg"'), isTrue);
       // 底图必须 pointer-events:none（点裸图→放大，点框→查词，互斥命中）
       expect(
@@ -617,24 +663,40 @@ void main() {
 
     // spread 页同时受槽宽与 100vh 限制，横屏/矮窗口都不得裁切。
     test('spread 单页同时受 100vw 与 100vh 宽高约束', () {
-      final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
-          pagesInSpread: 1, isWebtoon: false);
+      final String html = mangaPageDivHtml(
+        _pageWithTwoBlocks(),
+        'p.jpg',
+        pagesInSpread: 1,
+        isWebtoon: false,
+      );
       // 1000×2000：宽=min(100vw,50vh)，高=min(100vh,200vw)。
       expect(html.contains('width:min(100vw,50vh)'), isTrue);
       expect(html.contains('height:min(100vh,200vw)'), isTrue);
-      expect(html.contains('aspect-ratio:'), isTrue,
-          reason: 'OCR 覆盖层仍需与原图保持同一宽高比');
+      expect(
+        html.contains('aspect-ratio:'),
+        isTrue,
+        reason: 'OCR 覆盖层仍需与原图保持同一宽高比',
+      );
     });
 
     test('折叠屏铰链缝：双页每页让出半条缝，单页不受影响', () {
-      final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
-          pagesInSpread: 2, isWebtoon: false, spreadGutterPx: 24);
+      final String html = mangaPageDivHtml(
+        _pageWithTwoBlocks(),
+        'p.jpg',
+        pagesInSpread: 2,
+        isWebtoon: false,
+        spreadGutterPx: 24,
+      );
       expect(html, contains('width:min(calc(50vw - 12px),50vh)'));
       expect(html, contains('height:min(100vh,calc((50vw - 12px) * 2))'));
-      final String solo = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
-          pagesInSpread: 1, isWebtoon: false, spreadGutterPx: 24);
-      expect(solo, contains('width:min(100vw,50vh)'),
-          reason: '宽页独占一屏没有「两页之间」');
+      final String solo = mangaPageDivHtml(
+        _pageWithTwoBlocks(),
+        'p.jpg',
+        pagesInSpread: 1,
+        isWebtoon: false,
+        spreadGutterPx: 24,
+      );
+      expect(solo, contains('width:min(100vw,50vh)'), reason: '宽页独占一屏没有「两页之间」');
     });
 
     test('折叠屏铰链缝：跨页容器两页之间留出整条缝', () {
@@ -659,8 +721,12 @@ void main() {
     });
 
     test('spread 双页每页最多 50vw 且高度不超过 100vh', () {
-      final String html = mangaPageDivHtml(_pageWithTwoBlocks(), 'p.jpg',
-          pagesInSpread: 2, isWebtoon: false);
+      final String html = mangaPageDivHtml(
+        _pageWithTwoBlocks(),
+        'p.jpg',
+        pagesInSpread: 2,
+        isWebtoon: false,
+      );
       expect(html.contains('width:min(50vw,50vh)'), isTrue);
       expect(html.contains('height:min(100vh,100vw)'), isTrue);
     });
@@ -668,17 +734,30 @@ void main() {
     test('webtoon → .manga-page div 不内联 width（宽由 style 块 width:100vw 给）', () {
       // 用无 OCR 框的页：OCR 框自带 width:% 会干扰「div 是否内联 width」的判定。
       const MokuroImage blank = MokuroImage(
-          url: 'p.jpg', size: MokuroSize(800, 1200), blocks: <MokuroBlock>[]);
-      final String html =
-          mangaPageDivHtml(blank, 'p.jpg', pagesInSpread: 1, isWebtoon: true);
+        url: 'p.jpg',
+        size: MokuroSize(800, 1200),
+        blocks: <MokuroBlock>[],
+      );
+      final String html = mangaPageDivHtml(
+        blank,
+        'p.jpg',
+        pagesInSpread: 1,
+        isWebtoon: true,
+      );
       // .manga-page div 的 style 不含 vw 宽（webtoon 宽由外部 style 块给）。
-      expect(html.contains('width:100vw'), isFalse,
-          reason: 'webtoon 页 div 不应内联 width:100vw');
+      expect(
+        html.contains('width:100vw'),
+        isFalse,
+        reason: 'webtoon 页 div 不应内联 width:100vw',
+      );
       expect(html.contains('width:50vw'), isFalse);
       expect(html.contains('aspect-ratio:'), isTrue);
       // webtoon 底图必须 lazy 加载（整书单文档，避免一次性解码全卷）。
-      expect(html.contains('loading="lazy"'), isTrue,
-          reason: 'webtoon <img> 必须 loading="lazy"');
+      expect(
+        html.contains('loading="lazy"'),
+        isTrue,
+        reason: 'webtoon <img> 必须 loading="lazy"',
+      );
     });
   });
 
@@ -699,12 +778,19 @@ void main() {
       expect(doc.contains('window.fushiSelection'), isTrue);
       // 调 selectText 前必须 null-guard bridge
       expect(doc.contains('window.flutter_inappwebview'), isTrue);
-      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'),
-          isTrue,
-          reason: '字符区域命中后必须带 maxLength=40 进入统一查词管线');
+      expect(
+        doc.contains(
+          'selection.selectFromPosition(node, 0, 40, x, y, fromHover)',
+        ),
+        isTrue,
+        reason: '字符区域命中后必须带 maxLength=40 进入统一查词管线',
+      );
       // 唯一一个 pointerup 监听
-      expect('pointerup'.allMatches(doc).length, 1,
-          reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
+      expect(
+        'pointerup'.allMatches(doc).length,
+        1,
+        reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）',
+      );
     });
 
     test('spread 视口裁剪 + translateX 翻页机（ERRATA C1）', () {
@@ -719,19 +805,31 @@ void main() {
         currentSpread: 1,
       );
       // 外层固定视口 overflow:hidden（只显示当前跨页）。
-      expect(doc.contains('#manga-viewport{overflow:hidden'), isTrue,
-          reason: 'spread 必须有 overflow:hidden 视口裁剪');
+      expect(
+        doc.contains('#manga-viewport{overflow:hidden'),
+        isTrue,
+        reason: 'spread 必须有 overflow:hidden 视口裁剪',
+      );
       expect(doc.contains('id="manga-viewport"'), isTrue);
       // strip 用 translateX 平移；翻页机 + 恢复定位函数存在。
-      expect(doc.contains('__mangaApplyTranslate'), isTrue,
-          reason: 'spread 必须有 translateX 定位函数');
+      expect(
+        doc.contains('__mangaApplyTranslate'),
+        isTrue,
+        reason: 'spread 必须有 translateX 定位函数',
+      );
       expect(doc.contains('translateX'), isTrue);
       // 翻页手势报 onMangaTurn。
-      expect(doc.contains('onMangaTurn'), isTrue,
-          reason: 'spread swipe 必须报 onMangaTurn');
+      expect(
+        doc.contains('onMangaTurn'),
+        isTrue,
+        reason: 'spread swipe 必须报 onMangaTurn',
+      );
       // 恢复定位用到 currentSpread=1。
-      expect(RegExp(r'CURRENT\s*=\s*1').hasMatch(doc), isTrue,
-          reason: '恢复定位必须用 currentSpread');
+      expect(
+        RegExp(r'CURRENT\s*=\s*1').hasMatch(doc),
+        isTrue,
+        reason: '恢复定位必须用 currentSpread',
+      );
       // 每页带 data-spread 标注（供 JS 按跨页分组）。
       expect(doc.contains('data-spread="0"'), isTrue);
       expect(doc.contains('data-spread="1"'), isTrue);
@@ -747,32 +845,63 @@ void main() {
         inlineSelectionJs: ReaderSelectionScripts.source(),
         pageSpreadIndices: <int>[0],
       );
-      expect(doc.contains('onImageTap'), isFalse,
-          reason: '裸图单击必须留在阅读器，不再打开独立大图');
+      expect(
+        doc.contains('onImageTap'),
+        isFalse,
+        reason: '裸图单击必须留在阅读器，不再打开独立大图',
+      );
       // 裸图单击走空白回传、留在阅读器；阅读器内不再触发 OCR，所以 onTapEmpty
       // 回到无 payload（Dart 侧只回收焦点）。
       expect(doc.contains("b.callHandler('onTapEmpty');"), isTrue);
-      expect(doc.contains('__mangaTapLookupAt'), isFalse,
-          reason: '点击即识别已移除，不得再有回放钩子');
-      expect(doc.contains('__mangaSetRescanMode'), isFalse,
-          reason: '框选重识别已移除，不得再有 JS 侧模式门');
+      expect(
+        doc.contains('__mangaTapLookupAt'),
+        isFalse,
+        reason: '点击即识别已移除，不得再有回放钩子',
+      );
+      expect(
+        doc.contains('__mangaSetRescanMode'),
+        isFalse,
+        reason: '框选重识别已移除，不得再有 JS 侧模式门',
+      );
       expect(doc.contains('function _hitOcrChar(x, y)'), isTrue);
-      expect(doc.contains('r.left - 4'), isTrue,
-          reason: '不同缩放下都必须保留 Niratan 的 4 屏幕像素命中余量');
-      expect(doc.contains('area < bestArea'), isTrue,
-          reason: '重叠字符区域必须选择面积最小者');
-      expect(doc.contains('selection.selectFromPosition(node, 0, 40, x, y, fromHover)'),
-          isTrue,
-          reason: '必须从精确命中的字符节点发起现有查词管线');
-      expect(doc.contains('_selectOcrChar(e.clientX, e.clientY, true)'), isTrue,
-          reason: 'Shift 悬停必须复用同一精确字符命中路径');
-      expect(doc.contains('if (!e.shiftKey && !false)'), isTrue,
-          reason: '默认仍需 Shift，显式开启 hover 后才省略修饰键');
+      expect(
+        doc.contains('r.left - 4'),
+        isTrue,
+        reason: '不同缩放下都必须保留 Niratan 的 4 屏幕像素命中余量',
+      );
+      expect(
+        doc.contains('area < bestArea'),
+        isTrue,
+        reason: '重叠字符区域必须选择面积最小者',
+      );
+      expect(
+        doc.contains(
+          'selection.selectFromPosition(node, 0, 40, x, y, fromHover)',
+        ),
+        isTrue,
+        reason: '必须从精确命中的字符节点发起现有查词管线',
+      );
+      expect(
+        doc.contains('_selectOcrChar(e.clientX, e.clientY, true)'),
+        isTrue,
+        reason: 'Shift 悬停必须复用同一精确字符命中路径',
+      );
+      expect(
+        doc.contains('if (!e.shiftKey && !false)'),
+        isTrue,
+        reason: '默认仍需 Shift，显式开启 hover 后才省略修饰键',
+      );
       // 收敛不变式：恰好一个 pointerup 监听。
-      expect("addEventListener('pointerup'".allMatches(doc).length, 1,
-          reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
-      expect(doc.contains('__mangaReplaceOcr'), isTrue,
-          reason: '后台 OCR 必须能逐页热替换透明文字层');
+      expect(
+        "addEventListener('pointerup'".allMatches(doc).length,
+        1,
+        reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）',
+      );
+      expect(
+        doc.contains('__mangaReplaceOcr'),
+        isTrue,
+        reason: '后台 OCR 必须能逐页热替换透明文字层',
+      );
     });
 
     test('webtoon → 竖向堆叠（column）', () {
@@ -786,14 +915,23 @@ void main() {
       );
       expect(doc.contains('flex-direction:column'), isTrue);
       // webtoon 滚动近边缘报 onMangaScroll（ERRATA C1）。
-      expect(doc.contains('onMangaScroll'), isTrue,
-          reason: 'webtoon 滚动必须报 onMangaScroll');
+      expect(
+        doc.contains('onMangaScroll'),
+        isTrue,
+        reason: 'webtoon 滚动必须报 onMangaScroll',
+      );
       // webtoon 不裁 spread 视口（靠文档竖滚）。
-      expect(doc.contains('#manga-viewport{overflow:hidden'), isFalse,
-          reason: 'webtoon 不应有 spread 视口裁剪');
+      expect(
+        doc.contains('#manga-viewport{overflow:hidden'),
+        isFalse,
+        reason: 'webtoon 不应有 spread 视口裁剪',
+      );
       // webtoon 模式不报 spread 翻页。
-      expect(doc.contains('onMangaTurn'), isTrue,
-          reason: '手势机仍内联（IS_WEBTOON 闸门内部不触发翻页）');
+      expect(
+        doc.contains('onMangaTurn'),
+        isTrue,
+        reason: '手势机仍内联（IS_WEBTOON 闸门内部不触发翻页）',
+      );
     });
 
     test('spread 双页跨页：固定视口容器内完整居中', () {
@@ -807,15 +945,21 @@ void main() {
         pageSpreadIndices: <int>[0, 0],
         pagesPerSpread: <int>[2, 2], // 同一双页跨页
       );
-      expect('width:min(50vw,50vh)'.allMatches(doc).length, 2,
-          reason: '双页各自受 50vw 与 100vh 双重约束');
+      expect(
+        'width:min(50vw,50vh)'.allMatches(doc).length,
+        2,
+        reason: '双页各自受 50vw 与 100vh 双重约束',
+      );
       expect(doc.contains('#manga-viewport{overflow:hidden'), isTrue);
       expect(doc.contains('class="manga-spread" data-spread="0"'), isTrue);
       expect(
-          doc.contains('width:100vw;height:100vh;align-items:center;'
-              'justify-content:center'),
-          isTrue,
-          reason: '每个 spread 必须有独立的全视口居中槽');
+        doc.contains(
+          'width:100vw;height:100vh;align-items:center;'
+          'justify-content:center',
+        ),
+        isTrue,
+        reason: '每个 spread 必须有独立的全视口居中槽',
+      );
     });
 
     test('spread 单页跨页：每页在独立 100vw 容器内 contain', () {
@@ -830,8 +974,11 @@ void main() {
         pagesPerSpread: <int>[1, 1], // 两个独立单页跨页
       );
       expect('width:min(100vw,50vh)'.allMatches(doc).length, 2);
-      expect('class="manga-spread"'.allMatches(doc).length, 2,
-          reason: '两个单页 spread 应各有一个固定视口容器');
+      expect(
+        'class="manga-spread"'.allMatches(doc).length,
+        2,
+        reason: '两个单页 spread 应各有一个固定视口容器',
+      );
     });
 
     // HIGH-1：webtoon scroll 报**页内** fraction（(scrollY-offsetTop)/offsetHeight），
@@ -846,17 +993,29 @@ void main() {
         inlineSelectionJs: '',
       );
       // 页内归一化：(y - page.offsetTop) / page.offsetHeight。
-      expect(doc.contains('pages[i].offsetTop'), isTrue,
-          reason: 'fraction 必须按视口顶部所在页的 offsetTop 算页内偏移');
-      expect(doc.contains('pages[i].offsetHeight'), isTrue,
-          reason: 'fraction 分母必须是该页 offsetHeight（页内口径）');
+      expect(
+        doc.contains('pages[i].offsetTop'),
+        isTrue,
+        reason: 'fraction 必须按视口顶部所在页的 offsetTop 算页内偏移',
+      );
+      expect(
+        doc.contains('pages[i].offsetHeight'),
+        isTrue,
+        reason: 'fraction 分母必须是该页 offsetHeight（页内口径）',
+      );
       // 旧的文档全局口径（scrollHeight - vh 当分母）必须移除。
-      expect(doc.contains('scrollHeight - vh'), isFalse,
-          reason: 'webtoon fraction 不得再用文档全局口径（scrollHeight-vh）');
+      expect(
+        doc.contains('scrollHeight - vh'),
+        isFalse,
+        reason: 'webtoon fraction 不得再用文档全局口径（scrollHeight-vh）',
+      );
       // 恢复函数仍按页内 fraction 微调。
       expect(doc.contains('__mangaScrollToSpread'), isTrue);
-      expect(doc.contains('page.offsetTop + (fraction'), isTrue,
-          reason: '恢复定位必须 page.offsetTop + fraction*page.offsetHeight（同口径）');
+      expect(
+        doc.contains('page.offsetTop + (fraction'),
+        isTrue,
+        reason: '恢复定位必须 page.offsetTop + fraction*page.offsetHeight（同口径）',
+      );
     });
 
     // BUG-051：桌面鼠标三种自然操作（滚轮/拖动/键盘）在 spread 模式全失效。
@@ -875,26 +1034,43 @@ void main() {
       );
       // wheel 监听内联存在，且被 `if (!IS_WEBTOON) {` 闸门包裹（闸门在监听注册之前）。
       final int wheelIdx = doc.indexOf("addEventListener('wheel'");
-      final int spreadWheelIdx =
-          doc.indexOf("addEventListener('wheel'", wheelIdx + 1);
+      final int spreadWheelIdx = doc.indexOf(
+        "addEventListener('wheel'",
+        wheelIdx + 1,
+      );
       final int gateIdx = doc.lastIndexOf('if (!IS_WEBTOON) {', spreadWheelIdx);
       expect(gateIdx >= 0, isTrue, reason: 'wheel 必须有 if(!IS_WEBTOON) 闸门');
-      expect(spreadWheelIdx > gateIdx, isTrue,
-          reason: 'wheel 监听必须在 !IS_WEBTOON 闸门之内');
+      expect(
+        spreadWheelIdx > gateIdx,
+        isTrue,
+        reason: 'wheel 监听必须在 !IS_WEBTOON 闸门之内',
+      );
       // spread → IS_WEBTOON=false → 运行时闸门放行，滚轮翻页生效。
-      expect(doc.contains('var IS_WEBTOON = false'), isTrue,
-          reason: 'spread 必须 IS_WEBTOON=false（滚轮翻页生效）');
+      expect(
+        doc.contains('var IS_WEBTOON = false'),
+        isTrue,
+        reason: 'spread 必须 IS_WEBTOON=false（滚轮翻页生效）',
+      );
       // wheel 回调必须 preventDefault（overflow:hidden 视口下消除无操作反馈）并按
       // deltaY 符号报 next/prev。
       expect(doc.contains('e.preventDefault()'), isTrue);
-      expect(doc.contains("dir > 0 ? 'next' : 'prev'"), isTrue,
-          reason: 'wheel 必须按滚动方向报 next/prev');
+      expect(
+        doc.contains("dir > 0 ? 'next' : 'prev'"),
+        isTrue,
+        reason: 'wheel 必须按滚动方向报 next/prev',
+      );
       // 翻页触发按**累计位移**而非「一个事件 = 一页」：鼠标一格立即翻，触控板碎
       // delta 攒够才翻。旧实现首个事件就翻 + 320ms 全禁，滚轮上限约 3 页/秒。
-      expect(doc.contains('_wheelAccum'), isTrue,
-          reason: '滚轮翻页必须按累计 delta 触发，不能一个事件翻一页');
-      expect(doc.contains('_wheelLock = false; }, 110)'), isTrue,
-          reason: '滚轮合并窗口 110ms（旧 320ms 把翻页上限压到约 3 页/秒）');
+      expect(
+        doc.contains('_wheelAccum'),
+        isTrue,
+        reason: '滚轮翻页必须按累计 delta 触发，不能一个事件翻一页',
+      );
+      expect(
+        doc.contains('_wheelLock = false; }, 110)'),
+        isTrue,
+        reason: '滚轮合并窗口 110ms（旧 320ms 把翻页上限压到约 3 页/秒）',
+      );
     });
 
     test('webtoon IS_WEBTOON=true 运行时跳过 wheel→翻页（保留原生竖滚，BUG-051）', () {
@@ -908,8 +1084,11 @@ void main() {
       );
       // wheel 源码内联（与 onMangaTurn 同样常驻），但 IS_WEBTOON=true 让
       // if(!IS_WEBTOON) 闸门在运行时跳过滚轮翻页 → 不抢 WebView 原生竖滚。
-      expect(doc.contains('var IS_WEBTOON = true'), isTrue,
-          reason: 'webtoon 必须 IS_WEBTOON=true（运行时跳过滚轮翻页闸门）');
+      expect(
+        doc.contains('var IS_WEBTOON = true'),
+        isTrue,
+        reason: 'webtoon 必须 IS_WEBTOON=true（运行时跳过滚轮翻页闸门）',
+      );
     });
 
     test('spread + webtoon 都禁用原生选区/拖拽残影「秃瓢」（BUG-051）', () {
@@ -926,14 +1105,22 @@ void main() {
           inlineSelectionJs: '',
         );
         // 文字选区禁用（查词走坐标式 DOM 读取，不依赖原生选区，故安全）。
-        expect(doc.contains('user-select:none'), isTrue,
-            reason: '$mode：必须禁用原生文字选区');
-        // 图片拖拽禁用 + dragstart 兜底 preventDefault。
-        expect(doc.contains('user-drag:none'), isTrue,
-            reason: '$mode：必须禁用原生图片拖拽');
         expect(
-            RegExp(r"addEventListener\(\s*'dragstart'").hasMatch(doc), isTrue,
-            reason: '$mode：必须 preventDefault dragstart 兜底消除残影');
+          doc.contains('user-select:none'),
+          isTrue,
+          reason: '$mode：必须禁用原生文字选区',
+        );
+        // 图片拖拽禁用 + dragstart 兜底 preventDefault。
+        expect(
+          doc.contains('user-drag:none'),
+          isTrue,
+          reason: '$mode：必须禁用原生图片拖拽',
+        );
+        expect(
+          RegExp(r"addEventListener\(\s*'dragstart'").hasMatch(doc),
+          isTrue,
+          reason: '$mode：必须 preventDefault dragstart 兜底消除残影',
+        );
       }
     });
 
@@ -951,9 +1138,12 @@ void main() {
       // 「spread RTL 的 strip 几何倒序」。
       expect(docRtl.indexOf('a.jpg') < docRtl.indexOf('b.jpg'), isTrue);
       expect(
-          docRtl.contains('#manga-root{display:flex;flex-direction:row;'
-              'direction:ltr;'),
-          isTrue);
+        docRtl.contains(
+          '#manga-root{display:flex;flex-direction:row;'
+          'direction:ltr;',
+        ),
+        isTrue,
+      );
       expect(docRtl.contains('justify-content:center;direction:rtl'), isTrue);
 
       final String docLtr = mangaWindowDocument(
@@ -1006,9 +1196,12 @@ void main() {
       // 否则 __mangaApplyTranslate 的 -offsetLeft 口径失效（这正是当初钉死 LTR 的原因）。
       for (final String doc in <String>[docRtl, docLtr]) {
         expect(
-            doc.contains('#manga-root{display:flex;flex-direction:row;'
-                'direction:ltr;'),
-            isTrue);
+          doc.contains(
+            '#manga-root{display:flex;flex-direction:row;'
+            'direction:ltr;',
+          ),
+          isTrue,
+        );
       }
     });
 
@@ -1023,10 +1216,16 @@ void main() {
       );
       // 拖动内容向左露出的是 strip 右边那一跨页；RTL 倒序后右边是 prev，所以判据
       // 必须含 IS_RTL。修复前是写死的 `dx < 0 ? 'next' : 'prev'`。
-      expect(doc.contains("(swipeRight === IS_RTL) ? 'next' : 'prev'"), isTrue,
-          reason: 'swipe 必须按 IS_RTL 镜像，否则与倒序后的 strip 几何相反');
-      expect(doc.contains("dx < 0 ? 'next' : 'prev'"), isFalse,
-          reason: '不许再有不看阅读方向的写死 swipe 判据');
+      expect(
+        doc.contains("(swipeRight === IS_RTL) ? 'next' : 'prev'"),
+        isTrue,
+        reason: 'swipe 必须按 IS_RTL 镜像，否则与倒序后的 strip 几何相反',
+      );
+      expect(
+        doc.contains("dx < 0 ? 'next' : 'prev'"),
+        isFalse,
+        reason: '不许再有不看阅读方向的写死 swipe 判据',
+      );
     });
 
     test('键盘平移导出 __mangaPanBy，且平移被钳制在视口内', () {
@@ -1039,20 +1238,29 @@ void main() {
         inlineSelectionJs: '',
       );
       // 视口比例入参 + 「视野怎么动」的符号（故 _panBy 取负）。
-      expect(doc.contains('window.__mangaPanBy = function(fx, fy){'), isTrue,
-          reason: '方向键平移要走导出的 JS 入口，而不是在 JS 里自己监听键盘');
       expect(
-          doc.contains(
-              '_panBy(-window.innerWidth * fx, -window.innerHeight * fy);'),
-          isTrue);
+        doc.contains('window.__mangaPanBy = function(fx, fy){'),
+        isTrue,
+        reason: '方向键平移要走导出的 JS 入口，而不是在 JS 里自己监听键盘',
+      );
+      expect(
+        doc.contains(
+          '_panBy(-window.innerWidth * fx, -window.innerHeight * fy);',
+        ),
+        isTrue,
+      );
       // 钳制：PAN_X ∈ [vw*(1-ZOOM), 0]，spread 的 PAN_Y 同理。此前完全没有边界，
       // 拖动/方向键能把页面推出视口且回不来。
       expect(doc.contains('function _clampPan(){'), isTrue);
       expect(
-          doc.contains('var minX = window.innerWidth * (1 - ZOOM);'), isTrue);
-      expect(doc.contains('if (canvasMoved) { _clampPan(); _applyCanvas(); }'),
-          isTrue,
-          reason: '拖动/惯性/方向键三条平移路径必须共用同一条钳制规则');
+        doc.contains('var minX = window.innerWidth * (1 - ZOOM);'),
+        isTrue,
+      );
+      expect(
+        doc.contains('if (canvasMoved) { _clampPan(); _applyCanvas(); }'),
+        isTrue,
+        reason: '拖动/惯性/方向键三条平移路径必须共用同一条钳制规则',
+      );
       // ZOOM<=1 时位置归 _recenterPan 居中，钳制必须让路，否则缩小后页面被顶到左边。
       expect(doc.contains('if (ZOOM <= 1) return;'), isTrue);
     });
@@ -1089,36 +1297,42 @@ void main() {
       expect(doc.contains('>日</span>'), isTrue);
       expect(doc.contains('color:transparent;pointer-events:auto'), isTrue);
       expect(
-          doc.contains(
-              '.ocr-char{position:absolute;display:block;overflow:hidden;'),
-          isTrue,
-          reason: '字符命中层的公共布局应只在文档 CSS 中声明一次');
-    });
-
-    test('online image load replaces bootstrap dimensions with natural size',
-        () {
-      final String doc = mangaWindowDocument(
-        <MokuroImage>[
-          const MokuroImage(
-            url: 'online.jpg',
-            size: MokuroSize(1000, 1400),
-            blocks: <MokuroBlock>[],
-          ),
-        ],
-        <String>['online.jpg'],
-        mode: MangaReadingMode.spread,
-        spreadDirection: 'rtl',
-        inlineSelectionJs: '',
+        doc.contains(
+          '.ocr-char{position:absolute;display:block;overflow:hidden;',
+        ),
+        isTrue,
+        reason: '字符命中层的公共布局应只在文档 CSS 中声明一次',
       );
-
-      expect(doc.contains('window.__mangaUpdatePageGeometry'), isTrue);
-      expect(doc.contains('image.naturalWidth'), isTrue);
-      expect(doc.contains('image.naturalHeight'), isTrue);
-      expect(doc.contains("page.style.aspectRatio = width + ' / ' + height"),
-          isTrue);
-      expect(doc.contains('_inspectSource(page);'), isTrue);
-      expect(doc.contains('var fit = Math.min(sx, sy);'), isTrue);
     });
+
+    test(
+      'online image load replaces bootstrap dimensions with natural size',
+      () {
+        final String doc = mangaWindowDocument(
+          <MokuroImage>[
+            const MokuroImage(
+              url: 'online.jpg',
+              size: MokuroSize(1000, 1400),
+              blocks: <MokuroBlock>[],
+            ),
+          ],
+          <String>['online.jpg'],
+          mode: MangaReadingMode.spread,
+          spreadDirection: 'rtl',
+          inlineSelectionJs: '',
+        );
+
+        expect(doc.contains('window.__mangaUpdatePageGeometry'), isTrue);
+        expect(doc.contains('image.naturalWidth'), isTrue);
+        expect(doc.contains('image.naturalHeight'), isTrue);
+        expect(
+          doc.contains("page.style.aspectRatio = width + ' / ' + height"),
+          isTrue,
+        );
+        expect(doc.contains('_inspectSource(page);'), isTrue);
+        expect(doc.contains('var fit = Math.min(sx, sy);'), isTrue);
+      },
+    );
 
     test('desktop zoom and right-button drag/menu contract is embedded', () {
       final String doc = mangaWindowDocument(
@@ -1141,36 +1355,60 @@ void main() {
       // 那让「一格缩多少」取决于本机 deltaY 的绝对值（WebView2 高 DPI 上一格不是
       // 100，BUG-1065 实测 67），用户实测一格约 112%、既非设计值也无法预期。
       expect(
-          doc.contains(
-              'var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));'),
-          isTrue,
-          reason: '滚轮步长必须是 10 个百分点（乘灵敏度）的定量网格，不能是乘法缩放');
+        doc.contains(
+          'var ZOOM_STEP = Math.max(1, Math.round(10 * ZOOM_SENS));',
+        ),
+        isTrue,
+        reason: '滚轮步长必须是 10 个百分点（乘灵敏度）的定量网格，不能是乘法缩放',
+      );
       // 鼠标一格（>=40）的网格步进不能退回按幅值乘法缩放；指数只允许出现在
       // 精密手势分支（BUG-2758），并且以 -dy/100 还原 fork 合成的捏合比例。
-      expect('Math.exp('.allMatches(doc).length, 1,
-          reason: '乘法指数缩放只属于精密手势分支，鼠标一格仍走网格');
-      final int precise = doc.indexOf('if (Math.abs(dy) < PRECISE_ZOOM_DELTA) {');
+      expect(
+        'Math.exp('.allMatches(doc).length,
+        1,
+        reason: '乘法指数缩放只属于精密手势分支，鼠标一格仍走网格',
+      );
+      final int precise = doc.indexOf(
+        'if (Math.abs(dy) < PRECISE_ZOOM_DELTA) {',
+      );
       expect(precise, greaterThan(0));
       expect(
-          doc
-              .substring(precise, precise + 160)
-              .contains('_zoomAbout(ZOOM * Math.exp(-dy / 100 * ZOOM_SENS), '
-                  'e.clientX, e.clientY);'),
-          isTrue,
-          reason: '触控板捏合（-100·ln 比例的碎 delta）必须连续跟手，'
-              '攒够 40 才走 10% 要张开约 1.5 倍');
-      expect(doc.contains('var PRECISE_ZOOM_DELTA = 40;'), isTrue,
-          reason: '鼠标一格恒 >=40，精密增量恒 <40');
+        doc
+            .substring(precise, precise + 160)
+            .contains(
+              '_zoomAbout(ZOOM * Math.exp(-dy / 100 * ZOOM_SENS), '
+              'e.clientX, e.clientY);',
+            ),
+        isTrue,
+        reason:
+            '触控板捏合（-100·ln 比例的碎 delta）必须连续跟手，'
+            '攒够 40 才走 10% 要张开约 1.5 倍',
+      );
       expect(
-          doc.contains('(Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP'), isTrue,
-          reason: '放大必须对齐到网格，否则捏合留下的非整值会一路歪下去');
+        doc.contains('var PRECISE_ZOOM_DELTA = 40;'),
+        isTrue,
+        reason: '鼠标一格恒 >=40，精密增量恒 <40',
+      );
       expect(
-          doc.contains('(Math.ceil(cur / ZOOM_STEP) - 1) * ZOOM_STEP'), isTrue,
-          reason: '缩小必须对齐到网格');
-      expect(doc.contains('var cur = Math.round(ZOOM * 1000) / 10;'), isTrue,
-          reason: '必须先消掉浮点毛刺，否则 1.2000000000000002 缩小一步会原地不动');
-      expect(doc.contains('e.deltaMode === 1'), isTrue,
-          reason: 'deltaMode 必须归一化，否则行/页模式步长完全不同');
+        doc.contains('(Math.floor(cur / ZOOM_STEP) + 1) * ZOOM_STEP'),
+        isTrue,
+        reason: '放大必须对齐到网格，否则捏合留下的非整值会一路歪下去',
+      );
+      expect(
+        doc.contains('(Math.ceil(cur / ZOOM_STEP) - 1) * ZOOM_STEP'),
+        isTrue,
+        reason: '缩小必须对齐到网格',
+      );
+      expect(
+        doc.contains('var cur = Math.round(ZOOM * 1000) / 10;'),
+        isTrue,
+        reason: '必须先消掉浮点毛刺，否则 1.2000000000000002 缩小一步会原地不动',
+      );
+      expect(
+        doc.contains('e.deltaMode === 1'),
+        isTrue,
+        reason: 'deltaMode 必须归一化，否则行/页模式步长完全不同',
+      );
     });
 
     test('缩放范围与灵敏度随参数注入，触屏有捏合缩放', () {
@@ -1188,13 +1426,22 @@ void main() {
       expect(doc.contains('var ZOOM_SENS = 2.0;'), isTrue);
       // 触屏此前完全无法缩放：viewport 是 user-scalable=no（必须，否则浏览器原生
       // 缩放与 #manga-canvas 的 transform 打架），而 JS 侧没有任何多指处理。
-      expect(doc.contains("e.pointerType === 'touch'"), isTrue,
-          reason: '必须自己处理触点，浏览器原生缩放被 user-scalable=no 禁掉了');
+      expect(
+        doc.contains("e.pointerType === 'touch'"),
+        isTrue,
+        reason: '必须自己处理触点，浏览器原生缩放被 user-scalable=no 禁掉了',
+      );
       expect(doc.contains('_pinchGeom'), isTrue, reason: '必须有双指捏合几何');
-      expect(doc.contains('Math.pow(g.dist / pinch.dist, ZOOM_SENS)'), isTrue,
-          reason: '灵敏度设置声明覆盖滚轮与捏合，pinch 比率也必须应用 ZOOM_SENS');
-      expect(doc.contains("addEventListener('pointermove'"), isTrue,
-          reason: '捏合需要 pointermove 才能跟手');
+      expect(
+        doc.contains('Math.pow(g.dist / pinch.dist, ZOOM_SENS)'),
+        isTrue,
+        reason: '灵敏度设置声明覆盖滚轮与捏合，pinch 比率也必须应用 ZOOM_SENS',
+      );
+      expect(
+        doc.contains("addEventListener('pointermove'"),
+        isTrue,
+        reason: '捏合需要 pointermove 才能跟手',
+      );
     });
 
     test('点击边缘翻页可关，且方向随 RTL 镜像', () {
@@ -1213,13 +1460,22 @@ void main() {
       // RTL 下左边缘前进（LTR 相反）。镜像已从 JS 的 `IS_RTL ? ...` 三元挪到
       // Dart 的 mangaTapZones()，注入的热区表里 forward 就是最终值——JS 不得再
       // 镜像一次（会抵消）。表本身的几何见 manga_tap_zones_test.dart。
-      expect(on.contains('[0,0,0.25,1,true]'), isTrue,
-          reason: 'RTL 左竖条必须已经是前进');
+      expect(
+        on.contains('[0,0,0.25,1,true]'),
+        isTrue,
+        reason: 'RTL 左竖条必须已经是前进',
+      );
       final String ltrOn = docFor(tapZonePaging: true, direction: 'ltr');
-      expect(ltrOn.contains('[0,0,0.25,1,false]'), isTrue,
-          reason: 'LTR 左竖条必须是后退');
-      expect(on.contains("IS_RTL ? 'next' : 'prev'"), isFalse,
-          reason: 'JS 侧不得二次镜像');
+      expect(
+        ltrOn.contains('[0,0,0.25,1,false]'),
+        isTrue,
+        reason: 'LTR 左竖条必须是后退',
+      );
+      expect(
+        on.contains("IS_RTL ? 'next' : 'prev'"),
+        isFalse,
+        reason: 'JS 侧不得二次镜像',
+      );
       final String off = docFor(tapZonePaging: false, direction: 'ltr');
       expect(off.contains('var TAP_ZONE_PAGING = false;'), isTrue);
       expect(off.contains('var IS_RTL = false;'), isTrue);
@@ -1227,30 +1483,39 @@ void main() {
 
     test('翻页动画偏好决定 #manga-root 过渡声明', () {
       String docFor(MangaPageAnimation animation) => mangaWindowDocument(
-            <MokuroImage>[_pageWithTwoBlocks()],
-            <String>['p.jpg'],
-            mode: MangaReadingMode.spread,
-            spreadDirection: 'rtl',
-            inlineSelectionJs: '',
-            pageAnimation: animation,
-          );
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        pageAnimation: animation,
+      );
       // 默认速度 normal（FushiMotion token），缓动统一 cubic-bezier(.2,.7,.2,1)。
       final int normalMs = PageTurnAnimationSpeed.normal.durationMs;
       expect(
-          docFor(MangaPageAnimation.slide).contains(
-              'transition:transform ${normalMs}ms cubic-bezier(.2,.7,.2,1);'),
-          isTrue);
+        docFor(MangaPageAnimation.slide).contains(
+          'transition:transform ${normalMs}ms cubic-bezier(.2,.7,.2,1);',
+        ),
+        isTrue,
+      );
       // none = 完全不声明过渡（要极限响应的用户）。
       final String none = docFor(MangaPageAnimation.none);
       expect(none.contains('transition:transform '), isFalse);
       expect(none.contains('transition:opacity '), isFalse);
       // fade 只过渡 opacity（淡出 / 淡入各半程），位移在淡出后瞬时完成。
       final String fade = docFor(MangaPageAnimation.fade);
-      expect(fade.contains('transition:opacity ${(normalMs / 2).round()}ms '),
-          isTrue);
+      expect(
+        fade.contains('transition:opacity ${(normalMs / 2).round()}ms '),
+        isTrue,
+      );
       expect(fade.contains('transition:transform '), isFalse);
-      expect(fade.contains("if (PAGE_ANIM === 'fade') { _fadeTurn(ms); return; }"),
-          isTrue);
+      // 被拖动跟手过的翻页按平移收尾（BUG-3624），淡入淡出只给点按 / 按键翻页。
+      expect(
+        fade.contains(
+          "if (PAGE_ANIM === 'fade' && !handoff) { _fadeTurn(ms); return; }",
+        ),
+        isTrue,
+      );
       // cover：strip 本身瞬时定位（root 不声明过渡），动的是克隆覆盖层。
       final String cover = docFor(MangaPageAnimation.cover);
       expect(cover.contains("var PAGE_ANIM = 'cover';"), isTrue);
@@ -1262,22 +1527,29 @@ void main() {
 
     test('翻页动画速度三档注入 PAGE_ANIM_MS 与过渡时长', () {
       String docFor(PageTurnAnimationSpeed speed) => mangaWindowDocument(
-            <MokuroImage>[_pageWithTwoBlocks()],
-            <String>['p.jpg'],
-            mode: MangaReadingMode.spread,
-            spreadDirection: 'rtl',
-            inlineSelectionJs: '',
-            pageAnimationSpeed: speed,
-          );
-      for (final PageTurnAnimationSpeed speed in PageTurnAnimationSpeed.values) {
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        pageAnimationSpeed: speed,
+      );
+      for (final PageTurnAnimationSpeed speed
+          in PageTurnAnimationSpeed.values) {
         final String doc = docFor(speed);
-        expect(doc.contains('var PAGE_ANIM_MS = ${speed.durationMs};'), isTrue,
-            reason: '$speed');
         expect(
-            doc.contains('transition:transform ${speed.durationMs}ms '
-                'cubic-bezier(.2,.7,.2,1);'),
-            isTrue,
-            reason: '$speed');
+          doc.contains('var PAGE_ANIM_MS = ${speed.durationMs};'),
+          isTrue,
+          reason: '$speed',
+        );
+        expect(
+          doc.contains(
+            'transition:transform ${speed.durationMs}ms '
+            'cubic-bezier(.2,.7,.2,1);',
+          ),
+          isTrue,
+          reason: '$speed',
+        );
       }
       // 不再写死 180 / 160ms。
       expect(docFor(PageTurnAnimationSpeed.normal).contains('180ms'), isFalse);
@@ -1285,26 +1557,29 @@ void main() {
 
     test('拖动跟手开关、阈值与长距离跳页上限注入 JS', () {
       String docFor({bool followDrag = true}) => mangaWindowDocument(
-            <MokuroImage>[_pageWithTwoBlocks()],
-            <String>['p.jpg'],
-            mode: MangaReadingMode.spread,
-            spreadDirection: 'rtl',
-            inlineSelectionJs: '',
-            followDrag: followDrag,
-          );
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        followDrag: followDrag,
+      );
       final String on = docFor();
       expect(on.contains('var FOLLOW_DRAG = true;'), isTrue);
-      expect(docFor(followDrag: false).contains('var FOLLOW_DRAG = false;'),
-          isTrue);
+      expect(
+        docFor(followDrag: false).contains('var FOLLOW_DRAG = false;'),
+        isTrue,
+      );
       expect(on.contains('var FOLLOW_COMMIT = 0.25;'), isTrue);
       expect(on.contains('var FOLLOW_FLING = 0.6;'), isTrue);
       expect(on.contains('var MAX_ANIM_DIST = 1;'), isTrue);
-      // 跟手只对有位移的效果生效，阈值分支按是否真跟了手选择。
+      // 跟手只看开关、与翻页效果无关（BUG-3624，对齐 Mihon）；阈值分支按是否
+      // 真跟了手选择。行为由 manga_swipe_follow_js_test 逐效果跑真实 JS 钉住。
+      expect(on.contains('return FOLLOW_DRAG && !IS_WEBTOON;'), isTrue);
       expect(
-          on.contains("(PAGE_ANIM === 'slide' || PAGE_ANIM === 'cover')"),
-          isTrue);
-      expect(on.contains('commit = aux > FOLLOW_COMMIT * (window.innerWidth || 1)'),
-          isTrue);
+        on.contains('commit = aux > FOLLOW_COMMIT * (window.innerWidth || 1)'),
+        isTrue,
+      );
       // 运行中换设置的入口（设置面板 / 系统减弱动态效果）与独立的过渡样式表。
       expect(on.contains('window.__mangaSetPageAnimation = function'), isTrue);
       expect(on.contains('<style id="manga-anim-css">#manga-root{'), isTrue);
@@ -1312,40 +1587,47 @@ void main() {
 
     test('墨水屏强制无动画；animateTransitions 不再参与判定', () {
       String docFor(MangaReaderPreferences prefs) => mangaWindowDocument(
-            <MokuroImage>[_pageWithTwoBlocks()],
-            <String>['p.jpg'],
-            mode: MangaReadingMode.spread,
-            spreadDirection: 'rtl',
-            inlineSelectionJs: '',
-            pageAnimation: MangaPageAnimation.cover,
-            readerPreferences: prefs,
-          );
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        pageAnimation: MangaPageAnimation.cover,
+        readerPreferences: prefs,
+      );
       expect(
-          docFor(const MangaReaderPreferences(einkMode: true))
-              .contains("var PAGE_ANIM = 'none';"),
-          isTrue);
+        docFor(
+          const MangaReaderPreferences(einkMode: true),
+        ).contains("var PAGE_ANIM = 'none';"),
+        isTrue,
+      );
       expect(
-          docFor(const MangaReaderPreferences(animateTransitions: false))
-              .contains("var PAGE_ANIM = 'cover';"),
-          isTrue,
-          reason: '翻页动画只认 manga_page_animation，旧开关只是它的投影');
+        docFor(
+          const MangaReaderPreferences(animateTransitions: false),
+        ).contains("var PAGE_ANIM = 'cover';"),
+        isTrue,
+        reason: '翻页动画只认 manga_page_animation，旧开关只是它的投影',
+      );
     });
 
     test('纵向分页相邻翻页平滑滚动，条漫不动', () {
       String docFor(MangaReadingMode mode) => mangaWindowDocument(
-            <MokuroImage>[_pageWithTwoBlocks()],
-            <String>['p.jpg'],
-            mode: mode,
-            spreadDirection: 'rtl',
-            inlineSelectionJs: '',
-          );
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: mode,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+      );
       final String paged = docFor(MangaReadingMode.pagedVertical);
       expect(paged.contains('var IS_VERTICAL_PAGED = true;'), isTrue);
       expect(paged.contains('Math.abs(target - from) === 1'), isTrue);
       expect(paged.contains('_animateScrollTo(top, ms);'), isTrue);
-      expect(docFor(MangaReadingMode.webtoon).contains(
-              'var IS_VERTICAL_PAGED = false;'),
-          isTrue);
+      expect(
+        docFor(
+          MangaReadingMode.webtoon,
+        ).contains('var IS_VERTICAL_PAGED = false;'),
+        isTrue,
+      );
       // 条漫 / 纵向分页没有 strip，不出过渡样式表。
       expect(paged.contains('id="manga-anim-css"'), isFalse);
     });
@@ -1376,18 +1658,30 @@ void main() {
         pageNumbers: const <int>[0, 1],
         ocrPageIndices: const <int>{1},
       );
-      expect('class="manga-page"'.allMatches(doc).length, 2,
-          reason: '图片页全部常驻，翻页不应重建 WebView 文档');
-      expect('class="ocr-char"'.allMatches(doc).length, 9,
-          reason: '只有当前页面物化字符节点，避免密集杂志把 loadData 撑爆');
       expect(
-          doc.contains('data-page="0" data-pw="1000" data-ph="2000" '
-              'data-ocr-loaded="0"'),
-          isTrue);
+        'class="manga-page"'.allMatches(doc).length,
+        2,
+        reason: '图片页全部常驻，翻页不应重建 WebView 文档',
+      );
       expect(
-          doc.contains('data-page="1" data-pw="1000" data-ph="2000" '
-              'data-ocr-loaded="1"'),
-          isTrue);
+        'class="ocr-char"'.allMatches(doc).length,
+        9,
+        reason: '只有当前页面物化字符节点，避免密集杂志把 loadData 撑爆',
+      );
+      expect(
+        doc.contains(
+          'data-page="0" data-pw="1000" data-ph="2000" '
+          'data-ocr-loaded="0"',
+        ),
+        isTrue,
+      );
+      expect(
+        doc.contains(
+          'data-page="1" data-pw="1000" data-ph="2000" '
+          'data-ocr-loaded="1"',
+        ),
+        isTrue,
+      );
     });
 
     // BUG-1701：手机端「放大缩小跟上下滑动混了」的根因有两条，这一组把两个不变式
@@ -1410,80 +1704,123 @@ void main() {
       test('touch-action 恒为 none，不再有运行期切换的特例', () {
         for (final MangaReadingMode mode in MangaReadingMode.values) {
           final String doc = docFor(mode);
-          expect(doc.contains('touch-action:none;'), isTrue,
-              reason: '$mode：手势必须在第一个 touchstart 前就归 JS 独占，'
-                  '否则捏合会被原生二指 pan 抢走');
-          expect(doc.contains('document.body.style.touchAction'), isFalse,
-              reason: '$mode：运行期切换 touch-action 对已开始的手势无效，'
-                  '这个特例必须保持消除');
+          expect(
+            doc.contains('touch-action:none;'),
+            isTrue,
+            reason:
+                '$mode：手势必须在第一个 touchstart 前就归 JS 独占，'
+                '否则捏合会被原生二指 pan 抢走',
+          );
+          expect(
+            doc.contains('document.body.style.touchAction'),
+            isFalse,
+            reason:
+                '$mode：运行期切换 touch-action 对已开始的手势无效，'
+                '这个特例必须保持消除',
+          );
         }
       });
 
       test('webtoon 纵向位置只由 scrollY 拥有，PAN_Y 恒 0', () {
         final String doc = docFor(MangaReadingMode.webtoon);
         expect(
-            doc.contains(
-                'PAN_Y = IS_WEBTOON ? 0 : window.innerHeight * (1 - ZOOM) / 2;'),
-            isTrue,
-            reason: 'webtoon 竖滚文档不得再用 spread 的 PAN_Y 居中公式');
-        expect(doc.contains('PAN_Y = IS_WEBTOON ? 0 : ay - localY * ZOOM;'),
-            isTrue,
-            reason: '缩放锚点补偿在 webtoon 必须写 scrollY 而非 PAN_Y');
-        // 位置断言前先确认锚点唯一，避免同形 token 抢走 indexOf 的窗口。
-        expect('var IS_WEBTOON = '.allMatches(doc).length, 1,
-            reason: 'IS_WEBTOON 只允许一处声明');
+          doc.contains(
+            'PAN_Y = IS_WEBTOON ? 0 : window.innerHeight * (1 - ZOOM) / 2;',
+          ),
+          isTrue,
+          reason: 'webtoon 竖滚文档不得再用 spread 的 PAN_Y 居中公式',
+        );
         expect(
-            doc.indexOf('var IS_WEBTOON = ') <
-                doc.indexOf('function _recenterPan()'),
-            isTrue,
-            reason: '_recenterPan/_applyCanvas 在文档解析期就跑，'
-                'IS_WEBTOON 必须先就绪，否则首帧按 spread 公式算 PAN_Y');
+          doc.contains('PAN_Y = IS_WEBTOON ? 0 : ay - localY * ZOOM;'),
+          isTrue,
+          reason: '缩放锚点补偿在 webtoon 必须写 scrollY 而非 PAN_Y',
+        );
+        // 位置断言前先确认锚点唯一，避免同形 token 抢走 indexOf 的窗口。
+        expect(
+          'var IS_WEBTOON = '.allMatches(doc).length,
+          1,
+          reason: 'IS_WEBTOON 只允许一处声明',
+        );
+        expect(
+          doc.indexOf('var IS_WEBTOON = ') <
+              doc.indexOf('function _recenterPan()'),
+          isTrue,
+          reason:
+              '_recenterPan/_applyCanvas 在文档解析期就跑，'
+              'IS_WEBTOON 必须先就绪，否则首帧按 spread 公式算 PAN_Y',
+        );
       });
 
       test('webtoon 缩放态下滚动坐标两端都换算 ZOOM', () {
         final String doc = docFor(MangaReadingMode.webtoon);
         expect(
-            doc.contains('var top = (page.offsetTop + (fraction || 0) * '
-                'page.offsetHeight) * ZOOM;'),
-            isTrue,
-            reason: 'offsetTop 是布局坐标，scrollTo 收视觉坐标，缺 *ZOOM 会定位错页');
-        expect(doc.contains('var y = window.scrollY / ZOOM;'), isTrue,
-            reason: 'onMangaScroll 的 fraction 与 offsetTop 同口径，'
-                'scrollY 必须换回布局坐标');
+          doc.contains(
+            'var top = (page.offsetTop + (fraction || 0) * '
+            'page.offsetHeight) * ZOOM;',
+          ),
+          isTrue,
+          reason: 'offsetTop 是布局坐标，scrollTo 收视觉坐标，缺 *ZOOM 会定位错页',
+        );
         expect(
-            doc.contains(
-                'var localY = (IS_WEBTOON ? window.scrollY + ay : ay - PAN_Y) '
-                '/ ZOOM;'),
-            isTrue,
-            reason: 'webtoon 的锚点屏幕坐标是 layout*ZOOM - scrollY');
+          doc.contains('var y = window.scrollY / ZOOM;'),
+          isTrue,
+          reason:
+              'onMangaScroll 的 fraction 与 offsetTop 同口径，'
+              'scrollY 必须换回布局坐标',
+        );
         expect(
-            doc.contains(
-                'window.scrollTo(0, Math.max(0, localY * ZOOM - ay));'),
-            isTrue,
-            reason: '捏合后必须把锚点补偿写回 scrollY，否则画面跟着缩放跳走');
+          doc.contains(
+            'var localY = (IS_WEBTOON ? window.scrollY + ay : ay - PAN_Y) '
+            '/ ZOOM;',
+          ),
+          isTrue,
+          reason: 'webtoon 的锚点屏幕坐标是 layout*ZOOM - scrollY',
+        );
+        expect(
+          doc.contains('window.scrollTo(0, Math.max(0, localY * ZOOM - ay));'),
+          isTrue,
+          reason: '捏合后必须把锚点补偿写回 scrollY，否则画面跟着缩放跳走',
+        );
       });
 
       test('原生滚动关掉后 webtoon 竖滚由 JS 自己实现，带惯性', () {
         final String doc = docFor(MangaReadingMode.webtoon);
-        expect(doc.contains('window.scrollBy(0, -dy);'), isTrue,
-            reason: 'touch-action:none 后单指拖动必须自己驱动竖滚');
-        expect(doc.contains('flickVy *= Math.pow(0.002, dt / 1000);'), isTrue,
-            reason: '自实现滚动必须补上惯性，否则手感比原生退化');
-        expect(doc.contains('if (drag && drag.touch) _startFlick(drag.vy);'),
-            isTrue,
-            reason: '惯性只给触屏：鼠标松手不该继续滑');
+        expect(
+          doc.contains('window.scrollBy(0, -dy);'),
+          isTrue,
+          reason: 'touch-action:none 后单指拖动必须自己驱动竖滚',
+        );
+        expect(
+          doc.contains('flickVy *= Math.pow(0.002, dt / 1000);'),
+          isTrue,
+          reason: '自实现滚动必须补上惯性，否则手感比原生退化',
+        );
+        expect(
+          doc.contains('if (drag && drag.touch) _startFlick(drag.vy);'),
+          isTrue,
+          reason: '惯性只给触屏：鼠标松手不该继续滑',
+        );
       });
 
       test('放大态的拖动先平移，只有贴边没吃掉的余量才判翻页（BUG-2875）', () {
         final String doc = docFor(MangaReadingMode.spread, zoomPercent: 150);
-        expect(doc.contains('var ux = dx - (PAN_X - spx), aux = Math.abs(ux);'),
-            isTrue,
-            reason: 'ZOOM>1 时拖动已被 _panBy 消费为平移，只有余量才能判 swipe；'
-                '行为见 manga_zoomed_swipe_edge_js_test');
-        expect(doc.contains('ZOOM <= 1 &&'), isFalse,
-            reason: '硬性 ZOOM<=1 门让 101%~105% 的捏合残留永远划不动');
-        expect(doc.contains('function _panBy(dx, dy)'), isTrue,
-            reason: '放大后必须能平移查看页面各处');
+        expect(
+          doc.contains('var ux = dx - (PAN_X - spx), aux = Math.abs(ux);'),
+          isTrue,
+          reason:
+              'ZOOM>1 时拖动已被 _panBy 消费为平移，只有余量才能判 swipe；'
+              '行为见 manga_zoomed_swipe_edge_js_test',
+        );
+        expect(
+          doc.contains('ZOOM <= 1 &&'),
+          isFalse,
+          reason: '硬性 ZOOM<=1 门让 101%~105% 的捏合残留永远划不动',
+        );
+        expect(
+          doc.contains('function _panBy(dx, dy)'),
+          isTrue,
+          reason: '放大后必须能平移查看页面各处',
+        );
       });
     });
   });

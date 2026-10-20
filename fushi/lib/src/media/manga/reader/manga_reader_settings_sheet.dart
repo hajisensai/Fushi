@@ -1094,19 +1094,19 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                       unawaited(_setPageTurn(value.copyWith(speed: sp)))
                 : null,
           ),
-        if (value.animation.isDirectional)
-          AdaptiveSettingsSwitchRow(
-            key: const ValueKey<String>('manga_page_turn_follow_drag'),
-            title: t.page_turn_follow_drag,
-            subtitle: t.page_turn_follow_drag_description,
-            icon: FushiIcons.touch,
-            showIcon: true,
-            value: value.followDrag,
-            onChanged: editable
-                ? (bool v) =>
-                      unawaited(_setPageTurn(value.copyWith(followDrag: v)))
-                : null,
-          ),
+        // 跟手与翻页效果无关（BUG-3624）：任何效果下都能开关。
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('manga_page_turn_follow_drag'),
+          title: t.page_turn_follow_drag,
+          subtitle: t.page_turn_follow_drag_description,
+          icon: FushiIcons.touch,
+          showIcon: true,
+          value: value.followDrag,
+          onChanged: editable
+              ? (bool v) =>
+                    unawaited(_setPageTurn(value.copyWith(followDrag: v)))
+              : null,
+        ),
       ],
     );
   }

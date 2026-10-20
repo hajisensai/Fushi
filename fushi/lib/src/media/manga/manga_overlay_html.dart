@@ -1693,7 +1693,9 @@ String _mangaGestureJs({
       return;
     }
     _hintWillChange(root, ms + 120);
-    if (PAGE_ANIM === 'fade') { _fadeTurn(ms); return; }
+    // 被拖动过的翻页按平移收尾（页面已经跟着手指走了一截）；淡入淡出只给点按 /
+    // 按键这类没有拖动的翻页。
+    if (PAGE_ANIM === 'fade' && !handoff) { _fadeTurn(ms); return; }
     // 覆盖：宽页切半态降为平移（翻的视图是同一跨页的半边）。
     if (PAGE_ANIM === 'cover' && !SPLIT_ACTIVE) {
       var coverMs = ms;
@@ -2034,7 +2036,12 @@ String _mangaGestureJs({
   // 平移吃掉的那段），1:1 跟随；松手由 _end 的阈值决定交给 Dart 翻页还是回弹。
   // 拖动中关掉 root 的 transition（否则每一帧都在追一段 ease-out，永远慢半拍），
   // 翻页 / 回弹动画都从手指停下的位置接着走。
-  // 跟手只在设置开着、效果是有位移的 slide / cover 时生效（_followActive）；
+  // 跟手只看设置开关（_followActive），**与翻页动画无关**（BUG-3624，对齐 Mihon：
+  // ViewPager 的拖动永远跟手，「页面切换动画」只管点按 / 按键翻页）。此前跟手
+  // 绑在 slide / cover 上：选了「无 / 淡入淡出」、墨水屏、系统「减弱动态效果」，
+  // 或旧版关过「页面切换动画」被迁移成「无」的用户，拖动全程页面纹丝不动、
+  // 松手才跳——这正是「不跟手」。动画只决定松手后怎么落位：无动画瞬时落位，
+  // 淡入淡出在被拖过之后按平移收尾（手指已经把页面拖走一截，再淡出是两段动作）。
   // 「覆盖」跟手时动的是克隆层（见 _coverDrag），朝没有相邻跨页的方向拖按
   // FOLLOW_EDGE_DAMPING 阻尼，松手回弹，跨章仍交给 Dart。
   // swipe：null = 没有在跟的手势；axis 在越过 SWIPE_SLOP 后锁定为 'x' / 'y'。
@@ -2042,8 +2049,7 @@ String _mangaGestureJs({
   var swipe = null;
   var swipeToken = 0;
   function _followActive(){
-    return FOLLOW_DRAG && !IS_WEBTOON && _animMs() > 0 &&
-        (PAGE_ANIM === 'slide' || PAGE_ANIM === 'cover');
+    return FOLLOW_DRAG && !IS_WEBTOON;
   }
   function _start(x, y){
     has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X;
