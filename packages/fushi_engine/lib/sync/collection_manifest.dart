@@ -128,6 +128,7 @@ class CollectionManifestEntry {
     this.origin,
     this.organizeKey,
     this.organizeAliases = const <String>[],
+    this.organizeMerged = false,
   });
 
   /// 自然键：合集名（跨端身份，同 backup 合并的 (name, collection_type) 对齐）。
@@ -175,6 +176,10 @@ class CollectionManifestEntry {
 
   /// 吸收过的其它分组键（spec §8.3），只增不删，合并取并集。
   final List<String> organizeAliases;
+
+  /// 死条目：这次删除是整理器把它并进了别的合集（不是用户删的）。两端说法不一时
+  /// 以「用户删的」为准（取与）。活条目恒 false。
+  final bool organizeMerged;
 
   factory CollectionManifestEntry.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -234,6 +239,7 @@ class CollectionManifestEntry {
                 if (a is String && a.isNotEmpty) a,
             ]
           : const <String>[],
+      organizeMerged: json['organizeMerged'] == true,
     );
   }
 
@@ -294,6 +300,7 @@ class CollectionManifestEntry {
             if (a.isNotEmpty) a,
         }.toList()
           ..sort()),
+      if (organizeMerged) 'organizeMerged': true,
     };
   }
 }

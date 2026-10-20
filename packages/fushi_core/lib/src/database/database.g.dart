@@ -17268,6 +17268,21 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _organizeMergedMeta = const VerificationMeta(
+    'organizeMerged',
+  );
+  @override
+  late final GeneratedColumn<bool> organizeMerged = GeneratedColumn<bool>(
+    'organize_merged',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("organize_merged" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     collectionName,
@@ -17276,6 +17291,7 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     entryKey,
     deletedAt,
     organizeKey,
+    organizeMerged,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -17344,6 +17360,15 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
         ),
       );
     }
+    if (data.containsKey('organize_merged')) {
+      context.handle(
+        _organizeMergedMeta,
+        organizeMerged.isAcceptableOrUnknown(
+          data['organize_merged']!,
+          _organizeMergedMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -17385,6 +17410,10 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
         DriftSqlType.string,
         data['${effectivePrefix}organize_key'],
       ),
+      organizeMerged: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}organize_merged'],
+      )!,
     );
   }
 
@@ -17417,6 +17446,11 @@ class CollectionMemberTombstoneRow extends DataClass
   /// 了），任何设备上的 AI 都不再建它；键在某个活合集的别名里 = 只是被合并掉了。
   /// 成员墓碑行恒 NULL。
   final String? organizeKey;
+
+  /// 合集级删除哨兵行：这次删除是整理器把它**并进了别的合集**（true），还是用户删的
+  /// （false，默认）。只看键找不找得到吸收者分不清这两者——吸收者可能还没同步过来；
+  /// 分不清就会把并掉的当成用户拒绝、把成员丢回散条目（schema v124，spec §8.5）。
+  final bool organizeMerged;
   const CollectionMemberTombstoneRow({
     required this.collectionName,
     required this.collectionType,
@@ -17424,6 +17458,7 @@ class CollectionMemberTombstoneRow extends DataClass
     required this.entryKey,
     required this.deletedAt,
     this.organizeKey,
+    required this.organizeMerged,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -17436,6 +17471,7 @@ class CollectionMemberTombstoneRow extends DataClass
     if (!nullToAbsent || organizeKey != null) {
       map['organize_key'] = Variable<String>(organizeKey);
     }
+    map['organize_merged'] = Variable<bool>(organizeMerged);
     return map;
   }
 
@@ -17449,6 +17485,7 @@ class CollectionMemberTombstoneRow extends DataClass
       organizeKey: organizeKey == null && nullToAbsent
           ? const Value.absent()
           : Value(organizeKey),
+      organizeMerged: Value(organizeMerged),
     );
   }
 
@@ -17464,6 +17501,7 @@ class CollectionMemberTombstoneRow extends DataClass
       entryKey: serializer.fromJson<String>(json['entryKey']),
       deletedAt: serializer.fromJson<int>(json['deletedAt']),
       organizeKey: serializer.fromJson<String?>(json['organizeKey']),
+      organizeMerged: serializer.fromJson<bool>(json['organizeMerged']),
     );
   }
   @override
@@ -17476,6 +17514,7 @@ class CollectionMemberTombstoneRow extends DataClass
       'entryKey': serializer.toJson<String>(entryKey),
       'deletedAt': serializer.toJson<int>(deletedAt),
       'organizeKey': serializer.toJson<String?>(organizeKey),
+      'organizeMerged': serializer.toJson<bool>(organizeMerged),
     };
   }
 
@@ -17486,6 +17525,7 @@ class CollectionMemberTombstoneRow extends DataClass
     String? entryKey,
     int? deletedAt,
     Value<String?> organizeKey = const Value.absent(),
+    bool? organizeMerged,
   }) => CollectionMemberTombstoneRow(
     collectionName: collectionName ?? this.collectionName,
     collectionType: collectionType ?? this.collectionType,
@@ -17493,6 +17533,7 @@ class CollectionMemberTombstoneRow extends DataClass
     entryKey: entryKey ?? this.entryKey,
     deletedAt: deletedAt ?? this.deletedAt,
     organizeKey: organizeKey.present ? organizeKey.value : this.organizeKey,
+    organizeMerged: organizeMerged ?? this.organizeMerged,
   );
   CollectionMemberTombstoneRow copyWithCompanion(
     CollectionMemberTombstonesCompanion data,
@@ -17510,6 +17551,9 @@ class CollectionMemberTombstoneRow extends DataClass
       organizeKey: data.organizeKey.present
           ? data.organizeKey.value
           : this.organizeKey,
+      organizeMerged: data.organizeMerged.present
+          ? data.organizeMerged.value
+          : this.organizeMerged,
     );
   }
 
@@ -17521,7 +17565,8 @@ class CollectionMemberTombstoneRow extends DataClass
           ..write('mediaType: $mediaType, ')
           ..write('entryKey: $entryKey, ')
           ..write('deletedAt: $deletedAt, ')
-          ..write('organizeKey: $organizeKey')
+          ..write('organizeKey: $organizeKey, ')
+          ..write('organizeMerged: $organizeMerged')
           ..write(')'))
         .toString();
   }
@@ -17534,6 +17579,7 @@ class CollectionMemberTombstoneRow extends DataClass
     entryKey,
     deletedAt,
     organizeKey,
+    organizeMerged,
   );
   @override
   bool operator ==(Object other) =>
@@ -17544,7 +17590,8 @@ class CollectionMemberTombstoneRow extends DataClass
           other.mediaType == this.mediaType &&
           other.entryKey == this.entryKey &&
           other.deletedAt == this.deletedAt &&
-          other.organizeKey == this.organizeKey);
+          other.organizeKey == this.organizeKey &&
+          other.organizeMerged == this.organizeMerged);
 }
 
 class CollectionMemberTombstonesCompanion
@@ -17555,6 +17602,7 @@ class CollectionMemberTombstonesCompanion
   final Value<String> entryKey;
   final Value<int> deletedAt;
   final Value<String?> organizeKey;
+  final Value<bool> organizeMerged;
   final Value<int> rowid;
   const CollectionMemberTombstonesCompanion({
     this.collectionName = const Value.absent(),
@@ -17563,6 +17611,7 @@ class CollectionMemberTombstonesCompanion
     this.entryKey = const Value.absent(),
     this.deletedAt = const Value.absent(),
     this.organizeKey = const Value.absent(),
+    this.organizeMerged = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CollectionMemberTombstonesCompanion.insert({
@@ -17572,6 +17621,7 @@ class CollectionMemberTombstonesCompanion
     required String entryKey,
     required int deletedAt,
     this.organizeKey = const Value.absent(),
+    this.organizeMerged = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : collectionName = Value(collectionName),
        collectionType = Value(collectionType),
@@ -17585,6 +17635,7 @@ class CollectionMemberTombstonesCompanion
     Expression<String>? entryKey,
     Expression<int>? deletedAt,
     Expression<String>? organizeKey,
+    Expression<bool>? organizeMerged,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -17594,6 +17645,7 @@ class CollectionMemberTombstonesCompanion
       if (entryKey != null) 'entry_key': entryKey,
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (organizeKey != null) 'organize_key': organizeKey,
+      if (organizeMerged != null) 'organize_merged': organizeMerged,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -17605,6 +17657,7 @@ class CollectionMemberTombstonesCompanion
     Value<String>? entryKey,
     Value<int>? deletedAt,
     Value<String?>? organizeKey,
+    Value<bool>? organizeMerged,
     Value<int>? rowid,
   }) {
     return CollectionMemberTombstonesCompanion(
@@ -17614,6 +17667,7 @@ class CollectionMemberTombstonesCompanion
       entryKey: entryKey ?? this.entryKey,
       deletedAt: deletedAt ?? this.deletedAt,
       organizeKey: organizeKey ?? this.organizeKey,
+      organizeMerged: organizeMerged ?? this.organizeMerged,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -17639,6 +17693,9 @@ class CollectionMemberTombstonesCompanion
     if (organizeKey.present) {
       map['organize_key'] = Variable<String>(organizeKey.value);
     }
+    if (organizeMerged.present) {
+      map['organize_merged'] = Variable<bool>(organizeMerged.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -17654,6 +17711,7 @@ class CollectionMemberTombstonesCompanion
           ..write('entryKey: $entryKey, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('organizeKey: $organizeKey, ')
+          ..write('organizeMerged: $organizeMerged, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -76209,6 +76267,7 @@ typedef $$CollectionMemberTombstonesTableCreateCompanionBuilder =
       required String entryKey,
       required int deletedAt,
       Value<String?> organizeKey,
+      Value<bool> organizeMerged,
       Value<int> rowid,
     });
 typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder =
@@ -76219,6 +76278,7 @@ typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder =
       Value<String> entryKey,
       Value<int> deletedAt,
       Value<String?> organizeKey,
+      Value<bool> organizeMerged,
       Value<int> rowid,
     });
 
@@ -76258,6 +76318,11 @@ class $$CollectionMemberTombstonesTableFilterComposer
 
   ColumnFilters<String> get organizeKey => $composableBuilder(
     column: $table.organizeKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get organizeMerged => $composableBuilder(
+    column: $table.organizeMerged,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -76300,6 +76365,11 @@ class $$CollectionMemberTombstonesTableOrderingComposer
     column: $table.organizeKey,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get organizeMerged => $composableBuilder(
+    column: $table.organizeMerged,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CollectionMemberTombstonesTableAnnotationComposer
@@ -76332,6 +76402,11 @@ class $$CollectionMemberTombstonesTableAnnotationComposer
 
   GeneratedColumn<String> get organizeKey => $composableBuilder(
     column: $table.organizeKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get organizeMerged => $composableBuilder(
+    column: $table.organizeMerged,
     builder: (column) => column,
   );
 }
@@ -76388,6 +76463,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 Value<String> entryKey = const Value.absent(),
                 Value<int> deletedAt = const Value.absent(),
                 Value<String?> organizeKey = const Value.absent(),
+                Value<bool> organizeMerged = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CollectionMemberTombstonesCompanion(
                 collectionName: collectionName,
@@ -76396,6 +76472,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 entryKey: entryKey,
                 deletedAt: deletedAt,
                 organizeKey: organizeKey,
+                organizeMerged: organizeMerged,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -76406,6 +76483,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 required String entryKey,
                 required int deletedAt,
                 Value<String?> organizeKey = const Value.absent(),
+                Value<bool> organizeMerged = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CollectionMemberTombstonesCompanion.insert(
                 collectionName: collectionName,
@@ -76414,6 +76492,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 entryKey: entryKey,
                 deletedAt: deletedAt,
                 organizeKey: organizeKey,
+                organizeMerged: organizeMerged,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

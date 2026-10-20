@@ -186,7 +186,8 @@ void main() {
     });
 
     test('随机多端、随机键冲突、随机同步顺序：最终逐项一致且每键至多一个合集', () async {
-      for (int seed = 0; seed < 12; seed++) {
+      // 200 个种子覆盖到了曾经炸过的 0（同名不同组）与 139（部分可见下各端选出不同胜方）。
+      for (int seed = 0; seed < 200; seed++) {
         for (final _Device d in devices) {
           await d.db.close();
         }
@@ -198,19 +199,17 @@ void main() {
           device();
         }
         const List<String> keys = <String>['t:video:a', 't:video:b', 'anilist:7'];
+        final Set<String> everAdded = <String>{};
         for (final _Device d in devices) {
           final int n = 1 + random.nextInt(3);
           for (int i = 0; i < n; i++) {
             final String key = keys[random.nextInt(keys.length)];
-            await aiCollection(
-              d,
-              'name-${random.nextInt(4)}',
-              key,
-              <String>[
-                for (int m = 0; m < 1 + random.nextInt(3); m++)
-                  'v${random.nextInt(8)}',
-              ],
-            );
+            final List<String> members = <String>[
+              for (int m = 0; m < 1 + random.nextInt(3); m++)
+                'v${random.nextInt(8)}',
+            ];
+            everAdded.addAll(<String>[for (final String m in members) 'video|$m']);
+            await aiCollection(d, 'name-${random.nextInt(4)}', key, members);
           }
           // 中途插一轮部分同步，制造交错。
           if (random.nextBool()) await d.sync(cloud);
@@ -220,6 +219,12 @@ void main() {
         for (final _Device d in devices.skip(1)) {
           expect(await _snapshot(d.db), first, reason: 'seed $seed diverged');
         }
+        // 没有人移出过成员：收敛只能合并，不能把任何一次归组弄丢。
+        expect(
+          <String>{for (final _Snapshot s in first) ...s.members},
+          everAdded,
+          reason: 'seed $seed lost grouped members: $first',
+        );
         final Map<String, int> byKey = <String, int>{};
         for (final _Snapshot s in first) {
           if (s.key != null) byKey[s.key!] = (byKey[s.key!] ?? 0) + 1;
@@ -230,7 +235,7 @@ void main() {
           reason: 'seed $seed: a key is held by >1 collection: $first',
         );
       }
-    });
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     test('用户在一端接手 → 来源跨端升为 user，收敛不再并它', () async {
       final _Device a = device();

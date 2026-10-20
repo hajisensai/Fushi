@@ -1206,6 +1206,12 @@ class CollectionMemberTombstones extends Table {
   /// 成员墓碑行恒 NULL。
   TextColumn get organizeKey => text().nullable()();
 
+  /// 合集级删除哨兵行：这次删除是整理器把它**并进了别的合集**（true），还是用户删的
+  /// （false，默认）。只看键找不找得到吸收者分不清这两者——吸收者可能还没同步过来；
+  /// 分不清就会把并掉的当成用户拒绝、把成员丢回散条目（schema v124，spec §8.5）。
+  BoolColumn get organizeMerged =>
+      boolean().withDefault(const Constant(false))();
+
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
   Set<Column> get primaryKey =>

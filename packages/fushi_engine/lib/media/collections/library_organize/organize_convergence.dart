@@ -201,6 +201,90 @@ int _winnerOrder(ConvergenceCollection a, ConvergenceCollection b) {
   return _byStableIdentity(a, b);
 }
 
+/// 同步删掉的一个整理器合集在删除前的快照（[rehomeDissolvedOrganizerCollections]）。
+class DissolvedOrganizerCollection {
+  const DissolvedOrganizerCollection({
+    required this.row,
+    required this.members,
+    required this.deadKey,
+    required this.deadMerged,
+  });
+
+  final MediaCollectionRow row;
+  final List<MediaCollectionItemRow> members;
+
+  /// 清单里那条删除记录带的分组键（被删的是哪个分组）。
+  final String? deadKey;
+
+  /// 那条删除是整理器「并掉」（不是用户删的）。
+  final bool deadMerged;
+}
+
+/// 同步落盘删掉整理器合集之后调，三种情况：
+/// 1. 它的分组键落在某个活合集的键或别名里（被「并掉」了）：本机快照里的成员和吸收过
+///    的别名转给那个活合集；
+/// 2. 删除记录的分组键与本机这份不同（两个不同系列碰巧同名，合集名是 wire 自然键，
+///    一端并掉 / 删掉自己那个会连带删掉另一端那个），或者它是被并掉的、但吸收者还
+///    没同步到本机：本机这份按 [disambiguatedOrganizeName] 换个名字、带着原分组键
+///    重建——持有它的每台设备算出同一个名字；吸收者到了以后下一轮收敛按键并过去；
+/// 3. 同一个分组、是用户删的（不是并掉）：用户拒绝，成员照常回到散条目。
+///
+/// 为什么需要：各端只看得到部分合集时会选出不同的胜方——A 把 Y 并进 X，同时 B 把
+/// Z 并进 Y；A 删 Y 的墓碑到 B 是新闻，B 上 Y 连同刚并进来的 Z 的成员一起消失，
+/// 归组就丢了。把成员转给吸收者后，删除只是「换个地方放」，任何顺序都不丢东西。
+Future<void> rehomeDissolvedOrganizerCollections(
+  FushiDatabase db,
+  List<DissolvedOrganizerCollection> dissolved,
+) async {
+  for (final DissolvedOrganizerCollection d in dissolved) {
+    final String? key = d.row.organizeKey;
+    if (key == null) continue;
+    MediaCollectionRow? target = await _collectionHoldingKey(db, key);
+    if (target == null && (d.deadKey != key || d.deadMerged)) {
+      final String name = disambiguatedOrganizeName(d.row.name, key);
+      final int id = await db.createMediaCollection(
+        name,
+        collectionType: d.row.collectionType,
+        origin: CollectionOrigin.parse(d.row.origin),
+        organizeKey: key,
+      );
+      target = await db.getMediaCollectionById(id);
+    }
+    if (target == null) continue;
+    final Set<String> tombstoned = await db.collectionMemberTombstoneKeysFor(
+      target.name,
+      target.collectionType,
+    );
+    for (final MediaCollectionItemRow m in d.members) {
+      if (tombstoned.contains(
+        await db.collectionMemberTombstoneKeyOf(m.mediaType, m.entryKey),
+      )) {
+        continue;
+      }
+      await db.addToCollectionRaw(
+        target.id,
+        m.mediaType,
+        m.entryKey,
+        userIntent: false,
+      );
+    }
+    await db.absorbOrganizeIdentity(targetId: target.id, source: d.row);
+  }
+}
+
+/// 键或别名里带 [key] 的活合集（多个时取胜方序最前的，与收敛同口径）。
+Future<MediaCollectionRow?> _collectionHoldingKey(
+  FushiDatabase db,
+  String key,
+) async {
+  final List<ConvergenceCollection> holders = <ConvergenceCollection>[
+    for (final ConvergenceCollection c in await loadConvergenceCollections(db))
+      if (c.identityKeys.contains(key)) c,
+  ]..sort(_winnerOrder);
+  if (holders.isEmpty) return null;
+  return db.getMediaCollectionById(holders.first.id);
+}
+
 /// 从库里取收敛输入。
 Future<List<ConvergenceCollection>> loadConvergenceCollections(
   FushiDatabase db,

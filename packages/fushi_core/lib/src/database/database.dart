@@ -2373,8 +2373,8 @@ class FushiDatabase extends _$FushiDatabase
             // ① media_collections.origin / organize_key / organize_aliases——合集由谁建
             //   归谁管 + 整理分组身份。存量行一律 `user`（分不清的宁可当用户的，整理器
             //   永不改它），目录自动合集（source_folder_path 非空）回填 `folder`。
-            // ② collection_member_tombstones.organize_key——合集级删除哨兵上的分组键
-            //   （拒绝 / 合并去向）。存量 NULL。
+            // ② collection_member_tombstones.organize_key / organize_merged——合集级删除
+            //   哨兵上的分组键与「是被并掉还是用户删的」。存量 NULL / false。
             // ③ library_organize_runs / library_organize_changes——本机整理记录（设备本地）。
             // 幂等守卫同 v119。
             if (await _tableExists('media_collections')) {
@@ -2400,6 +2400,12 @@ class FushiDatabase extends _$FushiDatabase
                     'collection_member_tombstones', 'organize_key')) {
               await m.addColumn(collectionMemberTombstones,
                   collectionMemberTombstones.organizeKey);
+            }
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'organize_merged')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.organizeMerged);
             }
             if (!await _tableExists('library_organize_runs')) {
               await m.createTable(libraryOrganizeRuns);

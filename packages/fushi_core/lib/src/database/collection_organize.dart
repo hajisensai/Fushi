@@ -6,6 +6,7 @@
 library;
 
 import '../utils/media_title_fold.dart';
+import '../utils/stable_hash.dart';
 
 /// 合集来源。wire / DB 值固定为 [dbValue]。
 enum CollectionOrigin {
@@ -115,3 +116,9 @@ String? titleOrganizeKey(String domain, String title) {
   if (folded.isEmpty) return null;
   return 't:$domain:$folded';
 }
+
+/// 同名但不同分组的整理器合集改用的名字：`<name> · <键的 4 位短哈希>`。只由
+/// [name] 与 [organizeKey] 决定——持有同一分组的每台设备独立算出同一个名字，改名后
+/// 仍按自然键对齐（spec §8.7：合集名是 wire 自然键，两个系列不能同名）。
+String disambiguatedOrganizeName(String name, String organizeKey) =>
+    '$name · ${fnv1a32Hex(organizeKey.codeUnits).substring(0, 4)}';

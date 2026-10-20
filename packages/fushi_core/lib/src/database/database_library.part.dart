@@ -879,7 +879,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   ///
   /// [deletedAt]（缺省 now）：合集级墓碑时刻。整理收敛在同步基线推进后删败方时传
   /// 「严格晚于基线」的值——同毫秒的墓碑会被下一轮判成旧闻（v124）。
-  Future<int> deleteMediaCollection(int id, {int? deletedAt}) =>
+  ///
+  /// [organizeMerged]：整理器把它并进别的合集时传 true（删除哨兵记下「并掉」，不算
+  /// 用户拒绝这个分组）。
+  Future<int> deleteMediaCollection(int id,
+          {int? deletedAt, bool organizeMerged = false}) =>
       transaction(() async {
         final MediaCollectionRow? col = await getMediaCollectionById(id);
         await _carryCollectionPrivacyToMembers(
@@ -912,6 +916,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             // v124：带上分组键——键若已被别的活合集吸收（合并）就只是去向记录，
             // 否则就是用户拒绝了这个分组（spec §5.2）。
             organizeKey: col.organizeKey,
+            organizeMerged: organizeMerged,
           );
         }
         return deleted;
@@ -1277,8 +1282,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             '${t.mediaType}\u0000${t.entryKey}',
       };
 
-  /// 被用户拒绝的整理分组键（spec §5.2 / §8.5）：带键的合集级删除哨兵里，键不在
-  /// 任何活合集的 organizeKey / organizeAliases 里的那些。
+  /// 被用户拒绝的整理分组键（spec §5.2 / §8.5）：带键、不是「并掉」的合集级删除
+  /// 哨兵里，键不在任何活合集的 organizeKey / organizeAliases 里的那些。
   Future<Set<String>> getRejectedOrganizeKeys() async {
     final Set<String> live = <String>{};
     for (final MediaCollectionRow c in await select(mediaCollections).get()) {
@@ -1293,7 +1298,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
                         .equals(FushiDatabase.collectionTombstoneSentinel) &
                     t.entryKey
                         .equals(FushiDatabase.collectionTombstoneSentinel) &
-                    t.organizeKey.isNotNull()))
+                    t.organizeKey.isNotNull() &
+                    t.organizeMerged.equals(false)))
               .get())
         if (!live.contains(t.organizeKey)) t.organizeKey!,
     };
@@ -1564,6 +1570,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     required String entryKey,
     required int deletedAt,
     String? organizeKey,
+    bool organizeMerged = false,
   }) =>
       into(collectionMemberTombstones).insertOnConflictUpdate(
         CollectionMemberTombstonesCompanion.insert(
@@ -1573,6 +1580,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           entryKey: entryKey,
           deletedAt: deletedAt,
           organizeKey: Value(organizeKey),
+          organizeMerged: Value(organizeMerged),
         ),
       );
 

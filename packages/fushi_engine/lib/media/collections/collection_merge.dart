@@ -56,7 +56,13 @@ Future<int> mergeMediaCollectionsInto(
       );
     }
     await db.absorbOrganizeIdentity(targetId: targetId, source: source);
-    await deleteMediaCollectionWithAssets(db, sourceId, deletedAt: deletedAt);
+    await deleteMediaCollectionWithAssets(
+      db,
+      sourceId,
+      deletedAt: deletedAt,
+      // 删除记下「并掉」：收到这条删除的设备知道它不是用户拒绝。
+      organizeMerged: true,
+    );
     merged++;
   }
   return merged;
