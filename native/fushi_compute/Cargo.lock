@@ -756,7 +756,7 @@ dependencies = [
 [[package]]
 name = "rav1d"
 version = "1.1.0"
-source = "git+https://github.com/memorysafety/rav1d?rev=0c851fa046d6a36430570459283e5886fbdd8a66#0c851fa046d6a36430570459283e5886fbdd8a66"
+source = "git+https://github.com/hajisensai/rav1d?rev=b757fbae698d1959d415d14e7c70da8dba36dc59#b757fbae698d1959d415d14e7c70da8dba36dc59"
 dependencies = [
  "assert_matches",
  "atomig",
