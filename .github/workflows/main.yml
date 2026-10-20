@@ -428,6 +428,11 @@ jobs:
   # 一直占着共享堆，越往后跑越慢（PR #2422 实测：超时全落在每片最后 20% 的 suite），
   # 所以每片再拆成若干个各自独立进程的批次（--max-suites-per-run，每批多编译一次，
   # 约 1 分钟），把积累封顶。
+  # --concurrency=1：faster-testing 下一个进程里的所有 suite 共用**一条 UI 线程**（引擎
+  # Shell::Spawn 复用父 shell 的 task runner），并发数只决定交错，不增加并行度；交错会把
+  # 每条测试的墙钟拉长、让 30 秒超时和毫秒级时序断言随邻居的同步代码抖动。实测一次一个
+  # 不比默认并发慢（settings 100 个文件 93 s vs 104 s）。（flutter 会打印「-j 被忽略」，
+  # 但它照样转给 package:test，生成的 spawner 里能看到 --concurrency=1。）
   unit-tests:
     needs: [web-core-linux, test-native-linux]
     runs-on: ubuntu-latest
@@ -494,7 +499,7 @@ jobs:
         path: native
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --max-suites-per-run=400
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
 
     # 逐 suite 耗时的唯一来源：tool/update_suite_timings.dart 读这些事件日志刷新
     # tool/test_flow/suite_timings.json（--file-shard 按它均衡各片）。失败时也传，排障用。
