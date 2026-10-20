@@ -53,12 +53,13 @@ class SrsAnswerPreview {
   final SrsAnswerPlan plan;
   final SrsMemory? memoryBefore;
 
-  /// 实际算出间隔的算法：RWKV 牌组拿到了 RWKV 间隔时是 [SrsAlgorithm.rwkv]，
-  /// 否则是它的记忆算法（FSRS-7），见 [rwkvUnavailable]。写进日志的 `alg`。
+  /// 算出间隔与记忆状态的算法（牌组算法的 [SrsAlgorithm.memoryAlgorithm]：RWKV 牌组是 FSRS-7）。
+  /// 写进日志的 `alg`。RWKV-Instant 不给间隔：它决定的是卡**什么时候进队**（按此刻的回忆率），
+  /// 存下的到期日只供统计 / 同步 / RWKV 不可用时排队。
   final SrsAlgorithm algorithm;
 
-  /// 牌组设的是 RWKV，但这次没有 RWKV 间隔（运行时未就绪 / 权重未下载 / 出错），
-  /// 间隔按 FSRS-7 算的。界面据此提示。
+  /// 牌组设的是 RWKV，但现在没法用它排队（运行时未就绪 / 权重未下载 / 出错），这个牌组按存下的
+  /// 到期日排队。界面据此提示。
   final bool rwkvUnavailable;
   final List<double> params;
   final int nowMs;
@@ -73,15 +74,13 @@ class SrsCardOps {
 
   /// 算四个评分的结果（显示间隔预览，也是 [answer] 的第一步）。
   ///
-  /// [rwkvIntervalDays]：RWKV 牌组的 Again / Hard / Good / Easy 间隔（天，RWKV 运行时在
-  /// 作答这一刻算的，`RwkvWorker.nextIntervals`）。替换 FSRS 的间隔，记忆状态仍由 FSRS-7 维护；
-  /// 学习步、毕业、fuzz、最大间隔照旧由 [srsPlanAnswer] 处理。null 或非 RWKV 牌组时按 FSRS 算。
+  /// [rwkvUnavailable] 只透传到结果里（见 [SrsAnswerPreview.rwkvUnavailable]），不影响计算。
   SrsAnswerPreview preview({
     required String cardId,
     required SrsCardHistory history,
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
-    List<int>? rwkvIntervalDays,
+    bool rwkvUnavailable = false,
   }) {
     final (int nowMs, SrsTimeSource source) = ctx.now();
     final SrsAlgorithm algorithm = config.algorithm.memoryAlgorithm;
@@ -105,40 +104,21 @@ class SrsCardOps {
       day: ctx.day,
       config: config,
     );
-    SrsNextStates next = engine.nextStates(
+    final SrsNextStates next = engine.nextStates(
       algorithm: algorithm,
       params: params,
       desiredRetention: config.desiredRetention,
       memory: memory,
       elapsedDays: answerCtx.elapsedDaysFor(algorithm),
     );
-    final bool rwkv = config.algorithm.usesRwkv;
-    final List<int>? days = rwkv ? rwkvIntervalDays : null;
-    if (days != null) {
-      if (days.length != 4 || days.any((int d) => d < 1)) {
-        throw ArgumentError.value(
-          days,
-          'rwkvIntervalDays',
-          'need 4 positive days',
-        );
-      }
-      SrsItemState swap(SrsItemState s, int d) =>
-          SrsItemState(memory: s.memory, interval: d.toDouble());
-      next = SrsNextStates(
-        again: swap(next.again, days[0]),
-        hard: swap(next.hard, days[1]),
-        good: swap(next.good, days[2]),
-        easy: swap(next.easy, days[3]),
-      );
-    }
     return SrsAnswerPreview(
       plan: srsPlanAnswer(answerCtx, next),
       memoryBefore: memory,
-      algorithm: days != null ? SrsAlgorithm.rwkv : algorithm,
+      algorithm: algorithm,
       params: params,
       nowMs: nowMs,
       timeSource: source,
-      rwkvUnavailable: rwkv && days == null,
+      rwkvUnavailable: rwkvUnavailable,
     );
   }
 
@@ -150,7 +130,6 @@ class SrsCardOps {
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
     int durationMs = 0,
-    List<int>? rwkvIntervalDays,
   }) {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
@@ -162,7 +141,6 @@ class SrsCardOps {
       history: history,
       config: config,
       ctx: ctx,
-      rwkvIntervalDays: rwkvIntervalDays,
     );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);

@@ -92,13 +92,39 @@ void _add(
   required int cardType,
   required int? durationMs,
   required SrsDayContext day,
+}) => _addRow(
+  rows,
+  cardId: card.cardId,
+  noteId: card.noteId,
+  deckId: card.deckId,
+  presetId: card.presetId,
+  ease: ease,
+  at: at,
+  previousAt: previousAt,
+  cardType: cardType,
+  durationMs: durationMs,
+  day: day,
+);
+
+void _addRow(
+  RwkvRows rows, {
+  required int cardId,
+  required int? noteId,
+  required int? deckId,
+  required int? presetId,
+  required int ease,
+  required int at,
+  required int? previousAt,
+  required int cardType,
+  required int? durationMs,
+  required SrsDayContext day,
 }) {
   final int today = day.dayIndexOf(at);
   rows.add(
-    cardId: card.cardId,
-    noteId: card.noteId,
-    deckId: card.deckId,
-    presetId: card.presetId,
+    cardId: cardId,
+    noteId: noteId,
+    deckId: deckId,
+    presetId: presetId,
     ease: ease,
     durationMs: durationMs != null && durationMs > 0 ? durationMs : null,
     cardType: cardType,
@@ -202,43 +228,94 @@ RwkvRows? srsRwkvAppendRow(
   return rows;
 }
 
-/// 「这张卡此刻作答」的行（作答时排程用；ease 由原生侧逐个替换）。[queue] 是卡当前所在队列。
+/// 一张卡最后一条**保留**评分（[srsRwkvKeptRatings] 的最后一条）的摘要：「此刻」这一行的
+/// card_type 与间隔只取决于它，RWKV-Instant 排队给几万张卡打分时不必为每张卡载入整段历史。
+class SrsRwkvLastRating {
+  const SrsRwkvLastRating({
+    required this.at,
+    required this.rating,
+    required this.reviewType,
+  });
+
+  final int at;
+  final int rating;
+  final String reviewType;
+
+  /// 没有保留评分（新卡、重置后还没复习）时 null。
+  static SrsRwkvLastRating? of(SrsCardHistory history) {
+    final List<SrsReviewLog> kept = srsRwkvKeptRatings(history);
+    if (kept.isEmpty) return null;
+    final SrsReviewLog last = kept.last;
+    return SrsRwkvLastRating(
+      at: last.occurredAt,
+      rating: last.rating!,
+      reviewType: last.reviewType,
+    );
+  }
+}
+
+/// 「这张卡此刻」的行（ease 0）：RWKV-Instant 排队时查此刻的 R（`RwkvWorker.query`），也是作答时
+/// 「此刻作答」的行（原生侧把 ease 逐个替换）。[queue] 是卡当前所在队列，[last] 见
+/// [SrsRwkvLastRating.of]。card_type 规则同回放（[_cardType]）：同一调度日再次复习 review 卡时
+/// 是 3（上一条 review+Again 或 relearn+Again/Hard）或 4。
+void srsRwkvAddNowRow(
+  RwkvRows rows, {
+  required int cardId,
+  required int? noteId,
+  required int? deckId,
+  required int? presetId,
+  required SrsRwkvLastRating? last,
+  required SrsQueue queue,
+  required int nowMs,
+  required SrsDayContext day,
+}) {
+  final String reviewType = SrsReviewType.ofQueue(queue);
+  final bool fresh = last == null || queue == SrsQueue.newCard;
+  final int cardType;
+  if (fresh) {
+    cardType = 0;
+  } else if (reviewType == SrsReviewType.review &&
+      day.dayIndexOf(nowMs) == day.dayIndexOf(last.at)) {
+    final bool relearning =
+        (last.reviewType == SrsReviewType.review && last.rating == 1) ||
+        (last.reviewType == SrsReviewType.relearn &&
+            (last.rating == 1 || last.rating == 2));
+    cardType = relearning ? 3 : 4;
+  } else {
+    cardType = _typeOf(reviewType);
+  }
+  _addRow(
+    rows,
+    cardId: cardId,
+    noteId: noteId,
+    deckId: deckId,
+    presetId: presetId,
+    ease: 0,
+    at: nowMs,
+    previousAt: fresh ? null : last.at,
+    cardType: cardType,
+    durationMs: null,
+    day: day,
+  );
+}
+
+/// 「这张卡此刻作答」的行（[srsRwkvAddNowRow]，从完整历史取 [SrsRwkvLastRating]）。
 RwkvRows srsRwkvAnswerRow(
   SrsRwkvCard card, {
   required int nowMs,
   required SrsQueue queue,
   required SrsDayContext day,
 }) {
-  final List<SrsReviewLog> kept = srsRwkvKeptRatings(card.history);
-  final String reviewType = SrsReviewType.ofQueue(queue);
-  final int cardType;
-  if (kept.isEmpty || queue == SrsQueue.newCard) {
-    cardType = 0;
-  } else {
-    final SrsReviewLog prev = kept.last;
-    final bool sameDay =
-        day.dayIndexOf(nowMs) == day.dayIndexOf(prev.occurredAt);
-    if (reviewType == SrsReviewType.review && sameDay) {
-      final bool relearning =
-          (prev.reviewType == SrsReviewType.review && prev.rating == 1) ||
-          (prev.reviewType == SrsReviewType.relearn &&
-              (prev.rating == 1 || prev.rating == 2));
-      cardType = relearning ? 3 : 4;
-    } else {
-      cardType = _typeOf(reviewType);
-    }
-  }
   final RwkvRows rows = RwkvRows(1);
-  _add(
+  srsRwkvAddNowRow(
     rows,
-    card,
-    ease: 0,
-    at: nowMs,
-    previousAt: kept.isEmpty || queue == SrsQueue.newCard
-        ? null
-        : kept.last.occurredAt,
-    cardType: cardType,
-    durationMs: null,
+    cardId: card.cardId,
+    noteId: card.noteId,
+    deckId: card.deckId,
+    presetId: card.presetId,
+    last: SrsRwkvLastRating.of(card.history),
+    queue: queue,
+    nowMs: nowMs,
     day: day,
   );
   return rows;

@@ -1,5 +1,6 @@
-// RWKV 排程接入：日志 → 回放行的转换规则、服务的增量追加 / 后台重建 / 快照缓存、store 的
-// preview / answer 走 RWKV 间隔。后端用替身（真库 + 真权重的端到端在 packages/fushi_rwkv 的测试里）。
+// RWKV 排程接入：日志 → 回放行的转换规则、服务的增量追加 / 后台重建 / 快照缓存 / 自动下载失败、
+// store 的 RWKV-Instant 排队（按此刻的 R 选复习卡、不看到期日、同日间隔守卫、计数同口径）。
+// 后端用替身（真库 + 真权重的端到端在 packages/fushi_rwkv 的测试里）。
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -22,14 +23,18 @@ import 'support/srs_fake_engine.dart';
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDay = 86400000;
 
-/// 记录收到的命令；排程永远给 [days]。快照 = 已回放条数（JSON）。
+/// 记录收到的命令；查询按卡的数字 id 给 [r]（没设的给 [defaultR]）。快照 = 已回放的卡（JSON）。
 class _FakeBackend implements SrsRwkvBackend {
   final List<int> replayedCards = <int>[];
+  final Map<int, double> r = <int, double>{};
+  double defaultR = 0.5;
   int resets = 0;
   int restores = 0;
-  int intervalCalls = 0;
-  List<int> days = <int>[1, 4, 9, 20];
+  int queries = 0;
   bool closed = false;
+
+  void setR(String cardId, double value) =>
+      r[SrsIds.ankiNumericIds(<String>[cardId]).single] = value;
 
   @override
   Future<void> replay(RwkvRows rows) async {
@@ -39,13 +44,11 @@ class _FakeBackend implements SrsRwkvBackend {
   }
 
   @override
-  Future<RwkvIntervals> nextIntervals(
-    RwkvRows answer, {
-    required double targetRetention,
-    required int maxIntervalDays,
-  }) async {
-    intervalCalls++;
-    return RwkvIntervals(days, <double>[0.8, 0.8, 0.8, 0.8]);
+  Future<Float32List> query(RwkvRows rows) async {
+    queries++;
+    return Float32List.fromList(<double>[
+      for (int i = 0; i < rows.length; i++) r[rows.cardIdAt(i)] ?? defaultR,
+    ]);
   }
 
   @override
@@ -117,24 +120,36 @@ class _Fixture {
     return out;
   }
 
-  Future<void> useRwkv() async {
+  /// 新卡答 Easy 直接毕业成复习卡（假引擎：间隔 6 天）。
+  Future<void> graduate(List<String> cards) async {
+    for (final String c in cards) {
+      await store.answer(c, 4);
+      advance(1000);
+    }
+  }
+
+  Future<void> useAlgorithm(SrsAlgorithm algorithm) async {
     await store.editFields(
       SrsEntityKind.deck,
       store.defaultDeckId,
       <String, Object?>{
         SrsFieldKeys.deckAlgorithm: <String, Object?>{
-          'alg': 'rwkv',
+          'alg': algorithm.wire,
           'auto': false,
         },
       },
     );
   }
 
-  /// 权重「已就绪」：替身后端不读它，只要长度与校验标记对得上。
+  /// 权重「已就绪」：替身后端不读它，只要长度与校验标记对得上。没就绪时下载一律失败（不碰网络）。
   SrsRwkvModels models({bool ready = true}) {
     final Directory modelDir = Directory('${dir.path}/models')
       ..createSync(recursive: true);
-    final SrsRwkvModels models = SrsRwkvModels(dir: modelDir);
+    final SrsRwkvModels models = SrsRwkvModels(
+      dir: modelDir,
+      createClient: () =>
+          throw const SocketException('network disabled in tests'),
+    );
     if (ready) {
       final File weights = models.weightsFile(SrsRwkvModelChoice.small)
         ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
@@ -153,6 +168,9 @@ class _Fixture {
         snapshotDir: Directory('${dir.path}/state'),
         openBackend: (File weights, SrsRwkvModelChoice choice) async => backend,
       );
+
+  Future<int> reviewCount() async =>
+      (await store.deckSummary(store.defaultDeckId))!.reviewCount;
 }
 
 Future<void> _settled(SrsRwkvService service) async {
@@ -167,6 +185,17 @@ Future<void> _settled(SrsRwkvService service) async {
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+
+  test('默认算法是 RWKV（Instant）', () async {
+    expect(srsDefaultAlgorithm, SrsAlgorithm.rwkv);
+    final _Fixture f = await _Fixture.create();
+    final SrsSchedulingConfig config = await f.store.schedulingConfigFor(
+      f.store.defaultDeckId,
+    );
+    expect(config.algorithm, SrsAlgorithm.rwkv);
+    // 记忆状态与存下的到期日仍由 FSRS-7 维护。
+    expect(config.algorithm.memoryAlgorithm, SrsAlgorithm.fsrs7);
+  });
 
   group('日志 → 回放行', () {
     test('按时间排序、card_type 与 elapsed 按上游规则；重置之前的丢弃', () async {
@@ -213,6 +242,18 @@ void main() {
         expect(field(i, 6), greaterThanOrEqualTo(field(i - 1, 6)));
       }
 
+      // 「此刻」的查询行：间隔从最后一条保留评分算，ease 0。
+      f.advance(kDay * 2);
+      final RwkvRows now = srsRwkvAnswerRow(
+        card(0),
+        nowMs: f.clock[0],
+        queue: SrsQueue.review,
+        day: day,
+      );
+      final ByteData nb = ByteData.sublistView(now.bytes);
+      expect(nb.getInt64(7 * 8, Endian.little), 2);
+      expect(nb.getInt64(8 * 8, Endian.little), 2 * 86400);
+
       // 撤销卡 0 最后一条：保留评分少一条，「追加最后一条」不再成立。
       final SrsReviewLog last = h[cards[0]]!.effectiveRatings.last;
       expect(srsRwkvAppendRow(card(0), last, day), isNotNull);
@@ -237,14 +278,10 @@ void main() {
   });
 
   group('服务', () {
-    test('启动全量回放；作答用 RWKV 间隔并只追加这一条；撤销触发后台重建；快照命中', () async {
+    test('启动全量回放；作答只追加这一条；撤销触发后台重建；快照命中', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(3);
-      await f.useRwkv();
-      for (final String c in cards) {
-        await f.store.answer(c, 3);
-        f.advance(1000);
-      }
+      await f.graduate(cards);
       final _FakeBackend backend = _FakeBackend();
       final SrsRwkvService service = f.service(backend);
       f.store.rwkv = service;
@@ -253,14 +290,17 @@ void main() {
       expect(backend.resets, 1);
       expect(backend.replayedCards, hasLength(3));
 
-      f.advance(kDay * 2);
-      final SrsAnswerPreview preview = await f.store.preview(cards[0]);
-      expect(preview.algorithm, SrsAlgorithm.rwkv);
+      f.advance(kDay);
+      final String? next = await f.store.nextCard(f.store.defaultDeckId);
+      expect(next, isNotNull);
+      expect(backend.queries, greaterThan(0));
+      final SrsAnswerPreview preview = await f.store.preview(next!);
+      // 间隔与记忆状态是 FSRS-7 的（存下的到期日）；RWKV 决定的是进队时机。
+      expect(preview.algorithm, SrsAlgorithm.fsrs7);
       expect(preview.rwkvUnavailable, isFalse);
-      expect(backend.intervalCalls, 1);
 
-      final SrsReviewLog log = await f.store.answer(cards[0], 3);
-      expect(log.algorithm, 'rwkv');
+      final SrsReviewLog log = await f.store.answer(next, 3);
+      expect(log.algorithm, 'fsrs7');
       await service.refresh();
       expect(
         backend.resets,
@@ -270,7 +310,7 @@ void main() {
       expect(backend.replayedCards, hasLength(4));
 
       // 撤销改写了历史：后台重建，回到 3 条。
-      expect(await f.store.undo(cards[0], log.id), isTrue);
+      expect(await f.store.undo(next, log.id), isTrue);
       expect(await service.refresh(), isFalse);
       await _settled(service);
       expect(backend.resets, 2);
@@ -289,35 +329,118 @@ void main() {
       await again.close();
     });
 
-    test('权重没下载：RWKV 牌组这一次按 FSRS-7 排并标出来', () async {
+    test('权重没下载、下载失败：按存下的到期日排队并标出来，不碰网络', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(1);
-      await f.useRwkv();
-      final _FakeBackend backend = _FakeBackend();
+      await f.graduate(cards);
+      final _FakeBackend backend = _FakeBackend()..defaultR = 0.1;
       final SrsRwkvService service = f.service(backend, ready: false);
       f.store.rwkv = service;
       final SrsAnswerPreview preview = await f.store.preview(cards.single);
       expect(preview.algorithm, SrsAlgorithm.fsrs7);
       expect(preview.rwkvUnavailable, isTrue);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(service.status.phase, SrsRwkvPhase.needsModel);
-      final SrsReviewLog log = await f.store.answer(cards.single, 3);
-      expect(log.algorithm, 'fsrs7');
-      expect(backend.intervalCalls, 0);
+      // 还没到 FSRS 的到期日：照到期日排就没有复习卡（RWKV 的 R 再低也用不上）。
+      f.advance(kDay);
+      expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
+      for (int i = 0; i < 500; i++) {
+        if (service.status.phase == SrsRwkvPhase.failed) break;
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(service.status.phase, SrsRwkvPhase.failed);
+      expect(backend.queries, 0);
+      // 过了 FSRS 的到期日（6 天，带 fuzz）就照常出。
+      f.advance(kDay * 10);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
       await service.close();
     });
 
     test('FSRS 牌组不碰 RWKV', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(1);
+      await f.useAlgorithm(SrsAlgorithm.fsrs7);
+      await f.graduate(cards);
       final _FakeBackend backend = _FakeBackend();
       final SrsRwkvService service = f.service(backend);
       f.store.rwkv = service;
+      await service.start();
       final SrsAnswerPreview preview = await f.store.preview(cards.single);
       expect(preview.algorithm, SrsAlgorithm.fsrs7);
       expect(preview.rwkvUnavailable, isFalse);
-      expect(backend.intervalCalls, 0);
+      f.advance(kDay * 10); // 过了 FSRS 的到期日（6 天，带 fuzz）
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards.single);
+      expect(backend.queries, 0);
       await service.close();
+    });
+  });
+
+  group('RWKV-Instant 排队', () {
+    late _Fixture f;
+    late List<String> cards;
+    late _FakeBackend backend;
+    late SrsRwkvService service;
+
+    setUp(() async {
+      f = await _Fixture.create();
+      cards = await f.cards(8);
+      await f.graduate(cards); // 都是复习卡，FSRS 的到期日在 6 天后
+      backend = _FakeBackend()..defaultR = 0.95;
+      service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+    });
+
+    tearDown(() => service.close());
+
+    test('不看到期日：没到期但 R ≤ 目标的按 R 升序出，计数同口径', () async {
+      f.advance(kDay);
+      backend
+        ..setR(cards[0], 0.9)
+        ..setR(cards[1], 0.6)
+        ..setR(cards[2], 0.7);
+      expect(await f.reviewCount(), 2);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[1]);
+      expect(
+        await f.store.nextCard(
+          f.store.defaultDeckId,
+          exclude: <String>{cards[1]},
+        ),
+        cards[2],
+      );
+    });
+
+    test('到期了但 R 高于目标：不出', () async {
+      f.advance(kDay * 30); // FSRS 早就到期
+      expect(await f.reviewCount(), 0);
+      expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
+      // 目标保留率是牌组设置：调高到 0.97，R 0.95 的卡全部合格。
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{SrsFieldKeys.deckRetention: 0.97},
+      );
+      expect(await f.reviewCount(), cards.length);
+    });
+
+    test('同日重复的间隔守卫：30 秒且别的卡答过 5 次后才再出', () async {
+      f.advance(kDay);
+      backend.setR(cards[0], 0.1);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
+      await f.store.answer(cards[0], 3); // 仍是复习卡，R 仍最低
+      await service.refresh();
+      for (int i = 1; i <= 5; i++) {
+        backend.setR(cards[i], 0.5);
+      }
+      f.advance(40000);
+      // 30 秒过了，但别的卡还没答够 5 次。
+      expect(await f.store.nextCard(f.store.defaultDeckId), isNot(cards[0]));
+      for (int i = 1; i <= 5; i++) {
+        await f.store.answer(cards[i], 3);
+        f.advance(1000);
+      }
+      await service.refresh();
+      f.advance(31000);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
     });
   });
 }

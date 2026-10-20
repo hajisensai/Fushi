@@ -1,12 +1,13 @@
-/// RWKV 排程服务：维护「整个 collection 的复习历史回放进 RWKV」这份状态，并在作答时给出间隔。
+/// RWKV 排程服务：维护「整个 collection 的复习历史回放进 RWKV」这份状态，排队时给候选复习卡打
+/// 此刻的回忆率（RWKV-Instant，[instantRetrievability]）。
 ///
 /// - 状态由后台 isolate 里的原生 runtime 持有（[RwkvWorker]）；本类只发粗粒度命令。
 /// - **增量**：本机作答后追加这一条（[onAnswered]）；对端同步来的新评分若都在已回放的最后一条之后，
 ///   也只追加。其余变化（撤销、重置、学习序列重启、插进历史中间的旧日志）→ 后台全量重建。
 /// - **快照缓存**：重建完与关闭时把状态写到磁盘，按（模型、精度、日志指纹）命中；下次启动只需追加
 ///   之后的新日志。
-/// - 没准备好（权重没下载 / 正在重建 / 出错）时 [intervalsFor] 返回 null，调用方按 FSRS 排这一次
-///   并在界面上说明（`SrsAnswerPreview.rwkvUnavailable`）。
+/// - 没准备好（权重没下载 / 正在重建 / 出错）时 [instantRetrievability] 返回 null，调用方按存下的
+///   到期日排队并在界面上说明（`SrsAnswerPreview.rwkvUnavailable`）。
 ///
 /// 已知近似：卡片换牌组、预设归属变化不触发重建（上游 kuma3 把它们当改写历史）；这类变化在下次
 /// 全量重建（日志指纹变了、快照失效、换模型）时才进入状态。
@@ -15,9 +16,11 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show min;
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Variable;
+import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -33,11 +36,9 @@ export 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 /// 后台 runtime 的命令面（生产实现是 [RwkvWorker]；测试可替换）。
 abstract interface class SrsRwkvBackend {
   Future<void> replay(RwkvRows rows);
-  Future<RwkvIntervals> nextIntervals(
-    RwkvRows answer, {
-    required double targetRetention,
-    required int maxIntervalDays,
-  });
+
+  /// 每行（查询行）此刻的 R；不合法的行是 NaN。
+  Future<Float32List> query(RwkvRows rows);
   Future<Uint8List> snapshot();
   Future<void> restore(Uint8List snapshot);
   Future<void> reset();
@@ -51,15 +52,7 @@ class _WorkerBackend implements SrsRwkvBackend {
   @override
   Future<void> replay(RwkvRows rows) => worker.replay(rows);
   @override
-  Future<RwkvIntervals> nextIntervals(
-    RwkvRows answer, {
-    required double targetRetention,
-    required int maxIntervalDays,
-  }) => worker.nextIntervals(
-    answer,
-    targetRetention: targetRetention,
-    maxIntervalDays: maxIntervalDays,
-  );
+  Future<Float32List> query(RwkvRows rows) => worker.query(rows);
   @override
   Future<Uint8List> snapshot() => worker.snapshot();
   @override
@@ -75,8 +68,8 @@ enum SrsRwkvPhase {
   /// 还没启动（没有 RWKV 牌组时不启动）。
   idle,
 
-  /// 所选模型的权重没下载。
-  needsModel,
+  /// 正在下载所选模型的权重（[SrsRwkvStatus.done] / [SrsRwkvStatus.total] 是字节）。
+  downloading,
 
   /// 正在加载 / 恢复快照 / 全量回放。
   preparing,
@@ -91,17 +84,33 @@ enum SrsRwkvPhase {
 class SrsRwkvStatus {
   const SrsRwkvStatus(
     this.phase, {
-    this.replayed = 0,
+    this.done = 0,
     this.total = 0,
     this.error,
   });
 
   final SrsRwkvPhase phase;
 
-  /// 全量回放进度（条）。
-  final int replayed;
+  /// 进度：下载时是字节，全量回放时是条数。
+  final int done;
   final int total;
   final Object? error;
+}
+
+class _QueryIdentity {
+  const _QueryIdentity({
+    required this.lastLogId,
+    required this.deckId,
+    required this.ids,
+    required this.last,
+  });
+
+  final String? lastLogId;
+  final String deckId;
+
+  /// 卡 / 笔记 / 牌组 / 预设的数字 id。
+  final List<int> ids;
+  final SrsRwkvLastRating? last;
 }
 
 /// `srs_review_logs` 的指纹：行数与最大 rowid（日志只追加，所以「只多了新行」= 行数与 rowid 同增）。
@@ -185,20 +194,54 @@ class SrsRwkvService implements SrsRwkvScheduling {
   );
   File get _snapshotMeta => File('${_snapshotFile.path}.json');
 
-  /// 开始准备（下载好权重之后调用；已在准备时什么都不做，已就绪时只对齐日志）。
-  Future<void> start() async {
+  /// 开始准备：权重没下载时先下载（RWKV 是新建牌组的默认算法，不能要求用户先去设置里点下载），
+  /// 再恢复快照或全量回放。已在准备时什么都不做，已就绪时只对齐日志。失败后的自动重试（排队时
+  /// 调用）最多每 [_retryAfter] 一次，免得断网时每出一张卡都重下一遍；[force]（设置里「重试」）
+  /// 不受此限。
+  Future<void> start({bool force = false}) async {
     if (_closed) return;
     if (_current.phase == SrsRwkvPhase.ready) {
       await refresh();
       return;
     }
+    final DateTime? failedAt = _failedAt;
+    if (!force &&
+        _preparing == null &&
+        failedAt != null &&
+        DateTime.now().difference(failedAt) < _retryAfter) {
+      return;
+    }
     await (_preparing ??= _prepare().whenComplete(() => _preparing = null));
+  }
+
+  static const Duration _retryAfter = Duration(minutes: 10);
+  DateTime? _failedAt;
+
+  void _fail(Object error) {
+    _failedAt = DateTime.now();
+    _set(SrsRwkvStatus(SrsRwkvPhase.failed, error: error));
   }
 
   Future<void> _prepare() async {
     if (!models.isReady(choice)) {
-      _set(const SrsRwkvStatus(SrsRwkvPhase.needsModel));
-      return;
+      _set(const SrsRwkvStatus(SrsRwkvPhase.downloading));
+      try {
+        await for (final ModelDownloadEvent e in models.download(choice)) {
+          if (_closed) return;
+          _set(
+            SrsRwkvStatus(
+              SrsRwkvPhase.downloading,
+              done: e.receivedBytes,
+              total: e.totalBytes,
+            ),
+          );
+        }
+      } catch (error, stack) {
+        _log('RWKV model download failed: $error\n$stack');
+        _fail(error);
+        return;
+      }
+      if (_closed) return;
     }
     _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
     try {
@@ -211,7 +254,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
       _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
     } catch (error, stack) {
       _log('RWKV prepare failed: $error\n$stack');
-      _set(SrsRwkvStatus(SrsRwkvPhase.failed, error: error));
+      _fail(error);
     }
   }
 
@@ -293,7 +336,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
       _set(
         SrsRwkvStatus(
           SrsRwkvPhase.preparing,
-          replayed: 0,
+          done: 0,
           total: builder.length,
         ),
       );
@@ -319,7 +362,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         _set(
           SrsRwkvStatus(
             SrsRwkvPhase.preparing,
-            replayed: end,
+            done: end,
             total: rows.length,
           ),
         );
@@ -417,7 +460,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
       } catch (error, stack) {
         _log('RWKV rebuild failed: $error\n$stack');
-        _set(SrsRwkvStatus(SrsRwkvPhase.failed, error: error));
+        _fail(error);
       }
     }().whenComplete(() => _preparing = null);
     return false;
@@ -499,9 +542,11 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   @override
-  Future<List<int>?> intervalsFor(
-    String cardId, {
-    required SrsSchedulingConfig config,
+  bool get ready => !_closed && _current.phase == SrsRwkvPhase.ready;
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
     required int nowMs,
   }) async {
     if (_current.phase != SrsRwkvPhase.ready) {
@@ -512,30 +557,74 @@ class SrsRwkvService implements SrsRwkvScheduling {
     if (backend == null) return null;
     try {
       if (!await refresh()) return null;
-      final SrsRwkvCard? card = await _card(cardId);
-      final SrsCardCacheRow? row = await store.cardRow(cardId);
-      if (card == null || row == null) return null;
-      final RwkvRows answer = srsRwkvAnswerRow(
-        card,
-        nowMs: nowMs,
-        queue: SrsQueue.values.firstWhere(
-          (SrsQueue q) => q.wire == row.queue,
-          orElse: () => SrsQueue.review,
-        ),
-        day: await store.dayContext(),
-      );
-      final RwkvIntervals intervals = await _serial(
-        () => backend.nextIntervals(
-          answer,
-          targetRetention: config.desiredRetention,
-          maxIntervalDays: config.maxIntervalDays,
-        ),
-      );
-      return intervals.days;
+      if (cards.isEmpty) return const <double>[];
+      await _refreshQueryIdentities(cards);
+      final SrsDayContext day = await store.dayContext();
+      final RwkvRows rows = RwkvRows(cards.length);
+      for (final SrsRwkvCandidate c in cards) {
+        final _QueryIdentity q = _queryIdentities[c.id]!;
+        srsRwkvAddNowRow(
+          rows,
+          cardId: q.ids[0],
+          noteId: q.ids[1],
+          deckId: q.ids[2],
+          presetId: q.ids[3],
+          last: q.last,
+          queue: SrsQueue.review,
+          nowMs: nowMs,
+          day: day,
+        );
+      }
+      final Float32List r = await _serial(() => backend.query(rows));
+      return <double>[for (final double v in r) v];
     } catch (error, stack) {
-      // 例如本机时钟早于已回放的最后一条评分（对端设备时钟超前）：这一次按 FSRS 排。
-      _log('RWKV intervals unavailable for $cardId: $error\n$stack');
+      // 例如本机时钟早于已回放的最后一条评分（对端设备时钟超前）：这一次按到期日排。
+      _log('RWKV instant retrievability unavailable: $error\n$stack');
       return null;
+    }
+  }
+
+  /// 每张候选卡的数字身份与最后保留评分（[SrsRwkvLastRating]）：只为第一次见到、换了牌组或
+  /// 最后一条有效日志变了的卡读历史（一次作答后只剩那一张）。
+  final Map<String, _QueryIdentity> _queryIdentities = <String, _QueryIdentity>{};
+
+  Future<void> _refreshQueryIdentities(List<SrsRwkvCandidate> cards) async {
+    bool current(SrsRwkvCandidate c) {
+      final _QueryIdentity? q = _queryIdentities[c.id];
+      return q != null && q.lastLogId == c.lastLogId && q.deckId == c.deckId;
+    }
+
+    final List<SrsRwkvCandidate> stale = cards
+        .where((SrsRwkvCandidate c) => !current(c))
+        .toList();
+    if (stale.isEmpty) return;
+    final SrsDeckTree tree = await store.deckTree();
+    for (int at = 0; at < stale.length; at += 500) {
+      final List<SrsRwkvCandidate> chunk = stale.sublist(
+        at,
+        min(at + 500, stale.length),
+      );
+      final Map<String, SrsCardHistory> histories = await store.histories(
+        chunk.map((SrsRwkvCandidate c) => c.id),
+      );
+      final List<int> numeric = SrsIds.ankiNumericIds(<String>[
+        for (final SrsRwkvCandidate c in chunk) ...<String>[
+          c.id,
+          c.noteId,
+          c.deckId,
+          _presetOf(tree, c.deckId),
+        ],
+      ]);
+      for (int i = 0; i < chunk.length; i++) {
+        final SrsRwkvCandidate c = chunk[i];
+        final SrsCardHistory? history = histories[c.id];
+        _queryIdentities[c.id] = _QueryIdentity(
+          lastLogId: c.lastLogId,
+          deckId: c.deckId,
+          ids: numeric.sublist(4 * i, 4 * i + 4),
+          last: history == null ? null : SrsRwkvLastRating.of(history),
+        );
+      }
     }
   }
 

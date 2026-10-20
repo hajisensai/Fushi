@@ -1,11 +1,11 @@
-/// 牌组设置里 RWKV 的说明、模型选择（本机）与下载 / 准备状态。
+/// 牌组设置里 RWKV 的说明、模型选择（本机）与下载 / 准备状态。下载由 [SrsRwkvService] 自己发起
+/// （RWKV 是默认算法，不能要求用户先来这里点下载）；这里只显示进度，失败时给「重试」。
 library;
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 
@@ -25,16 +25,12 @@ class SrsRwkvPanel extends ConsumerStatefulWidget {
 }
 
 class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
-  StreamSubscription<ModelDownloadEvent>? _download;
-  double? _progress;
-  Object? _downloadError;
   StreamSubscription<SrsRwkvStatus>? _statusSubscription;
   SrsRwkvService? _watched;
   SrsRwkvStatus? _status;
 
   @override
   void dispose() {
-    unawaited(_download?.cancel());
     unawaited(_statusSubscription?.cancel());
     super.dispose();
   }
@@ -49,49 +45,12 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
     });
   }
 
-  Future<void> _startDownload(
-    SrsRwkvModels models,
-    SrsRwkvModelChoice choice,
-  ) async {
-    setState(() {
-      _progress = 0;
-      _downloadError = null;
-    });
-    _download = models
-        .download(choice)
-        .listen(
-          (ModelDownloadEvent e) {
-            if (mounted && e.totalBytes > 0) {
-              setState(() => _progress = e.receivedBytes / e.totalBytes);
-            }
-          },
-          onError: (Object error) {
-            if (mounted) {
-              setState(() {
-                _progress = null;
-                _downloadError = error;
-              });
-            }
-          },
-          onDone: () {
-            if (!mounted) return;
-            setState(() => _progress = null);
-            final SrsRwkvService? service = _watched;
-            if (service != null && _downloadError == null) {
-              srsRunLogged('SrsRwkvService.start', service.start);
-            }
-          },
-          cancelOnError: true,
-        );
-  }
-
   @override
   Widget build(BuildContext context) {
     final SrsRwkvModelChoice choice = ref.watch(srsRwkvModelChoiceProvider);
-    final SrsRwkvModels? models = ref.watch(srsRwkvModelsProvider).valueOrNull;
-    _watch(ref.watch(srsRwkvServiceProvider).valueOrNull);
+    final SrsRwkvService? service = ref.watch(srsRwkvServiceProvider).valueOrNull;
+    _watch(service);
     final TextStyle hintStyle = context.fushiType.bodySmall;
-    final bool ready = models?.isReady(choice) ?? false;
     final SrsRwkvStatus? status = _status;
 
     final List<Widget> children = <Widget>[
@@ -117,68 +76,74 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
         },
       ),
     ];
-    if (!ready) {
-      final double? progress = _progress;
-      children.add(
-        progress != null
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    t.srs_settings_rwkv_downloading(
-                      percent: (progress * 100).round(),
-                    ),
-                    style: hintStyle,
+    if (status != null) {
+      final TextStyle errorStyle = hintStyle.copyWith(
+        color: Theme.of(context).colorScheme.error,
+      );
+      switch (status.phase) {
+        case SrsRwkvPhase.downloading:
+          final double? progress = status.total > 0
+              ? status.done / status.total
+              : null;
+          children.add(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.srs_settings_rwkv_downloading(
+                    percent: ((progress ?? 0) * 100).round(),
                   ),
-                  LinearProgressIndicator(value: progress),
-                ],
-              )
-            : Align(
+                  style: hintStyle,
+                ),
+                LinearProgressIndicator(value: progress),
+              ],
+            ),
+          );
+        case SrsRwkvPhase.failed:
+          children
+            ..add(
+              Text(
+                t.srs_settings_rwkv_failed(error: '${status.error}'),
+                style: errorStyle,
+              ),
+            )
+            ..add(
+              Align(
                 alignment: AlignmentDirectional.centerStart,
                 child: FushiFilledButton(
                   key: const ValueKey<String>('srs-settings-rwkv-download'),
-                  onPressed: models == null
+                  onPressed: service == null
                       ? null
-                      : () => unawaited(_startDownload(models, choice)),
+                      : () => srsRunLogged(
+                          'SrsRwkvService.start',
+                          () => service.start(force: true),
+                        ),
                   child: Text(
                     t.srs_settings_rwkv_download(size: _sizeOf(choice)),
                   ),
                 ),
               ),
-      );
-      if (choice == SrsRwkvModelChoice.small) {
-        children.add(Text(t.srs_settings_rwkv_license_small, style: hintStyle));
-      }
-      if (_downloadError case final Object error) {
-        children.add(
-          Text(
-            t.srs_settings_rwkv_failed(error: error.toString()),
-            style: hintStyle.copyWith(
-              color: Theme.of(context).colorScheme.error,
-            ),
-          ),
-        );
-      }
-    } else if (status != null) {
-      children.add(
-        Text(
-          switch (status.phase) {
-            SrsRwkvPhase.ready => t.srs_settings_rwkv_ready,
-            SrsRwkvPhase.preparing when status.total > 0 =>
+            );
+        case SrsRwkvPhase.ready:
+          children.add(Text(t.srs_settings_rwkv_ready, style: hintStyle));
+        case SrsRwkvPhase.preparing when status.total > 0:
+          children.add(
+            Text(
               t.srs_settings_rwkv_preparing(
-                done: status.replayed,
+                done: status.done,
                 total: status.total,
               ),
-            SrsRwkvPhase.failed => t.srs_settings_rwkv_failed(
-              error: '${status.error}',
+              style: hintStyle,
             ),
-            _ => t.srs_settings_rwkv_preparing_start,
-          },
-          style: status.phase == SrsRwkvPhase.failed
-              ? hintStyle.copyWith(color: Theme.of(context).colorScheme.error)
-              : hintStyle,
-        ),
-      );
+          );
+        case SrsRwkvPhase.preparing || SrsRwkvPhase.idle:
+          children.add(
+            Text(t.srs_settings_rwkv_preparing_start, style: hintStyle),
+          );
+      }
+    }
+    if (choice == SrsRwkvModelChoice.small) {
+      children.add(Text(t.srs_settings_rwkv_license_small, style: hintStyle));
     }
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     return Column(
