@@ -4,7 +4,7 @@
   - 首页「继续」区的书合集分支（`fushi/lib/src/pages/implementations/home_dashboard_page.dart` `_collectContinueEntries` → `dashboardBookCollectionContinueIndex`）判成员读完用 `classifyShelfReadStatus`：`completedAt` 非 null，或 `position >= duration`。
   - 漫画阅读器落库页码是**当前展开的首页**（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart` `mangaProgressForSpread` → `firstPageOfSpread`）。双页展开的最后一屏是 `[n-2, n-1]`，落库恒为 `n-2`。
   - 自动写「已读完」的判据是 `page >= pageCount - 1`（同文件 `_persistPosition`），对双页最后一屏永远不成立 → `completedAt` 不写；书架进度 = `(n-2)+1 / n`（`reader_fushi_source.dart` 页式书分支）≈ 99%，进度条看着是满的但判「在读」，卷一直挂在「继续阅读」。在线漫画章节的 `readAt`（`saveMangaChapterState`）走同一个 `atLastPage`，同样不记已读。
-- **[x] ① 根因修复** — 新增纯函数 `MangaFushiPage.spreadReachesLastPage(spreads, page, pageCount)`：看落库页码所在的那一屏是否含最后一页；`_persistPosition` 的 `atLastPage` 改用它（webtoon 模式传空 spreads，退回按页码判）。落库页码不变（恢复仍需首页）。
+- **[x] ① 根因修复**（`52f40f7dee`）— 新增纯函数 `MangaFushiPage.spreadReachesLastPage(spreads, page, pageCount)`：看落库页码所在的那一屏是否含最后一页；`_persistPosition` 的 `atLastPage` 改用它（webtoon 模式传空 spreads，退回按页码判）。落库页码不变（恢复仍需首页）。
 - **[x] ② 自动化测试** — `fushi/test/pages/manga_fushi_page_pure_test.dart` 的 `spreadReachesLastPage` 组（双页最后一屏落 `n-2` 判读完、中间屏不判；单页 / 空 spreads 按页码判；0 页不判）。
 - **备注**：
   - 已受影响的卷（`completedAt` 仍为空）不会自动回填：修复后重新打开并翻到最后一屏即会写入；或在书架条目菜单里手动标为读完。
