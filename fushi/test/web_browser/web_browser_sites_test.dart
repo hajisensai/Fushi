@@ -62,4 +62,91 @@ void main() {
     expect(parseWebBrowserAddress('localhost'), isNull);
     expect(parseWebBrowserAddress(''), isNull);
   });
+
+  group('resolveWebBrowserInput', () {
+    test('像网址的输入直接打开，不经搜索引擎', () {
+      for (final WebBrowserSearchEngine engine
+          in WebBrowserSearchEngine.values) {
+        expect(
+          resolveWebBrowserInput('mangadex.org', engine)?.toString(),
+          'https://mangadex.org',
+        );
+        expect(
+          resolveWebBrowserInput(
+            ' http://a.example/x?y=1 ',
+            engine,
+          )?.toString(),
+          'http://a.example/x?y=1',
+        );
+      }
+    });
+
+    test('空输入返回 null', () {
+      expect(resolveWebBrowserInput('', WebBrowserSearchEngine.google), isNull);
+      expect(
+        resolveWebBrowserInput('   ', WebBrowserSearchEngine.google),
+        isNull,
+      );
+    });
+
+    test('不像网址的输入交给所选引擎搜索（q 参数，去首尾空白）', () {
+      final Uri? google = resolveWebBrowserInput(
+        '  進撃の巨人 1話 ',
+        WebBrowserSearchEngine.google,
+      );
+      expect(google?.scheme, 'https');
+      expect(google?.host, 'www.google.com');
+      expect(google?.path, '/search');
+      expect(google?.queryParameters, <String, String>{'q': '進撃の巨人 1話'});
+
+      final Uri? bing = resolveWebBrowserInput(
+        'hello world',
+        WebBrowserSearchEngine.bing,
+      );
+      expect(bing?.host, 'www.bing.com');
+      expect(bing?.path, '/search');
+      expect(bing?.queryParameters['q'], 'hello world');
+
+      final Uri? ddg = resolveWebBrowserInput(
+        'localhost',
+        WebBrowserSearchEngine.duckDuckGo,
+      );
+      expect(ddg?.host, 'duckduckgo.com');
+      expect(ddg?.queryParameters['q'], 'localhost');
+    });
+
+    test('非 http(s) 协议不会被当成地址打开，只会被搜索', () {
+      for (final String input in <String>[
+        'javascript:alert(1)',
+        'file:///etc/passwd',
+      ]) {
+        final Uri? uri = resolveWebBrowserInput(
+          input,
+          WebBrowserSearchEngine.google,
+        );
+        expect(uri?.scheme, 'https', reason: input);
+        expect(uri?.host, 'www.google.com', reason: input);
+        expect(uri?.queryParameters['q'], input, reason: input);
+      }
+    });
+
+    test('引擎持久化值：未知 / 缺省回落 Google', () {
+      expect(
+        WebBrowserSearchEngine.fromName('bing'),
+        WebBrowserSearchEngine.bing,
+      );
+      expect(
+        WebBrowserSearchEngine.fromName('duckDuckGo'),
+        WebBrowserSearchEngine.duckDuckGo,
+      );
+      expect(
+        WebBrowserSearchEngine.fromName(null),
+        WebBrowserSearchEngine.google,
+      );
+      expect(
+        WebBrowserSearchEngine.fromName('yahoo'),
+        WebBrowserSearchEngine.google,
+      );
+    });
+  });
 }

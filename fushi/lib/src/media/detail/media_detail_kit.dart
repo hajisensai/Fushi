@@ -2161,7 +2161,10 @@ class MediaDetailLayout extends StatelessWidget {
 /// 布局下发给 hero 按钮组的锚点：主按钮挂上它，[_MediaDetailFabHost] 据它的
 /// 实际位置判断「主按钮还看得见吗」。
 class _MediaDetailFabAnchorScope extends InheritedWidget {
-  const _MediaDetailFabAnchorScope({required this.anchor, required super.child});
+  const _MediaDetailFabAnchorScope({
+    required this.anchor,
+    required super.child,
+  });
 
   final GlobalKey anchor;
 
@@ -2270,11 +2273,11 @@ class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
               child: AnimatedSlide(
                 offset: _visible ? Offset.zero : const Offset(0, 0.25),
                 duration: duration,
-                curve: Curves.easeOutCubic,
+                curve: context.fushiMotion.spatialDefault.curve,
                 child: AnimatedOpacity(
                   opacity: _visible ? 1 : 0,
                   duration: duration,
-                  curve: Curves.easeOut,
+                  curve: context.fushiMotion.effectsDefault.curve,
                   child: widget.fab,
                 ),
               ),
@@ -2402,12 +2405,17 @@ class MediaDetailSkeleton extends StatelessWidget {
         builder: (BuildContext context, BoxConstraints constraints) {
           final double width = constraints.maxWidth;
           if (MediaDetailLayout.isTwoPane(context, width)) {
+            // 两栏各自是不可滚的 SingleChildScrollView（与单列骨架的
+            // NeverScrollable ListView 同理）：横屏矮窗口（如 800×600）放不下
+            // 六张集卡时裁掉多出的部分，而不是 RenderFlex 溢出。
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SizedBox(
                   width: MediaDetailLayout.sidePaneWidthFor(width),
-                  child: Padding(
+                  child: SingleChildScrollView(
+                    primary: false,
+                    physics: const NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(
                       page,
                       top + tokens.spacing.section,
@@ -2418,7 +2426,9 @@ class MediaDetailSkeleton extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: Padding(
+                  child: SingleChildScrollView(
+                    primary: false,
+                    physics: const NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(
                       page,
                       top + 8 + 12,

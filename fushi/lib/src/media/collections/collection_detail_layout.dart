@@ -343,16 +343,18 @@ class CollectionDetailHero extends StatelessWidget {
         chips: chips,
       );
     }
-    return SingleChildScrollView(
-      key: const ValueKey<String>('collection-hero-tags'),
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: <Widget>[
-          for (int i = 0; i < chips.length; i++) ...<Widget>[
-            if (i > 0) const SizedBox(width: 6),
-            MediaDetailChipView(chip: chips[i]),
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        key: const ValueKey<String>('collection-hero-tags'),
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < chips.length; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: 6),
+              MediaDetailChipView(chip: chips[i]),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

@@ -190,16 +190,18 @@ class _OnlineWorkFooter extends StatelessWidget {
     final Widget? tagsView = tags.isEmpty
         ? null
         : singleLineTags
-        ? SingleChildScrollView(
-            key: const ValueKey<String>('online_work_tags'),
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: <Widget>[
-                for (int i = 0; i < tags.length; i++) ...<Widget>[
-                  if (i > 0) const SizedBox(width: 6),
-                  FushiTagChip(label: tags[i]),
+        ? HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              key: const ValueKey<String>('online_work_tags'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < tags.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(width: 6),
+                    FushiTagChip(label: tags[i]),
+                  ],
                 ],
-              ],
+              ),
             ),
           )
         : Wrap(

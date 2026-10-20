@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -134,7 +135,7 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
         LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
             final double itemWidth = _itemWidth(constraints.maxWidth);
-            return AnimatedSize(
+            return FushiAnimatedSize(
               duration: motion.spatialDefault.duration,
               curve: motion.spatialDefault.curve,
               alignment: AlignmentDirectional.topStart,

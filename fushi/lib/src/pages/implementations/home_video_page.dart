@@ -4639,6 +4639,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                                     cardLayout: cardLayout,
                                     allVideosCardLayout: allVideosCardLayout,
                                     availableWidth: availableWallWidth,
+                                    homeHeroLikely:
+                                        loaded == null ||
+                                        all.any(_mayHaveContinueProgress) ||
+                                        remoteVideos.any(
+                                          (RemoteVideoInfo v) =>
+                                              v.positionMs > 0,
+                                        ),
                                   ),
                                 ],
                               );
@@ -4831,7 +4838,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return FushiCard(
       key: hero.cardKey,
       focusId: hero.focusId,
-      color: cs.surfaceContainerLow,
+      color: tokens.surfaces.group,
       // 大图贴边铺满到圆角，不吃卡片默认内边距。
       padding: EdgeInsets.zero,
       borderRadius: const BorderRadius.all(Radius.circular(24)),
@@ -4890,7 +4897,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     value: progress.clamp(0.0, 1.0),
                     minHeight: 4,
                     color: cs.primary,
-                    backgroundColor: cs.surfaceContainerHighest,
+                    backgroundColor: tokens.surfaces.overlay,
                     borderRadius: const BorderRadius.all(Radius.circular(2)),
                   ),
                 ),
@@ -4946,6 +4953,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _buildHomeHeroOverlay(_HomeHeroData hero) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 叠在图上的文字恒用浅色：遮罩是 scrim 色（深），不随明暗主题翻转。
     final Color onImage = cs.surface.computeLuminance() > 0.5
         ? cs.surface
@@ -4957,7 +4965,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return FushiCard(
       key: hero.cardKey,
       focusId: hero.focusId,
-      color: cs.surfaceContainerLow,
+      color: tokens.surfaces.group,
       // 大图贴边铺满到圆角，不吃卡片默认内边距。
       padding: EdgeInsets.zero,
       borderRadius: const BorderRadius.all(Radius.circular(28)),
@@ -5103,7 +5111,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<_HomeSubscriptionItem> updates,
     double height,
   ) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 每条 60 高封面 + 上下各 8 内边距；标题行与面板内边距约 68。
     const double tileExtent = 76;
@@ -5113,7 +5120,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         .toList(growable: false);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
+        color: tokens.surfaces.group,
         borderRadius: const BorderRadius.all(Radius.circular(28)),
       ),
       child: Padding(
@@ -6194,6 +6201,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   static bool _isUnstarted(VideoBookRow book) =>
       book.completedAt == null && book.lastPositionMs <= 0;
 
+  /// 首屏骨架预判主卡用（[_buildLibraryMapsPendingSlivers]）：这一条有任何播放
+  /// 痕迹（有位置 / 已打勾 / 有行级播放时刻）。只是「可能有继续观看」的宽判据——
+  /// 合集看完一集落到下一集时，目标集自己没进度，但上一集打了勾，同样命中。
+  static bool _mayHaveContinueProgress(VideoBookRow book) =>
+      book.lastPositionMs > 0 ||
+      book.completedAt != null ||
+      book.lastPlayedAt != null;
+
   /// 继续观看行·远端占位卡：点击流播（BUG-995 血缘——只看远端也有续播入口）；
   /// 云角标；角标显示看到的时间，host 下发片长时画集内进度。
   Widget _buildContinueRemoteCard(RemoteVideoInfo video, double cardWidth) {
@@ -6459,10 +6474,16 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///   行版式本体 [_buildHorizontalRowFrame]、同一份外边距与行高。
   ///
   /// 骨架上没有可勾选的卡：可见序在这里如实清空（与空态 / 首页同一纪律）。
+  ///
+  /// [homeHeroLikely]：首页骨架要不要画主卡位。主卡 = 继续观看的第一项，要等映射
+  /// 才算得准；此刻本地列表已到，按「有没有任何播放痕迹」预判（见
+  /// [_mayHaveContinueProgress]）。一部都没看过的库（刚导入）真实首页没有主卡，
+  /// 骨架若照画主卡位，换真行时整段下跳一个主卡高（BUG-3235「同几何不跳」）。
   List<Widget> _buildLibraryMapsPendingSlivers({
     required ({int columns, double cardWidth}) cardLayout,
     required ({int columns, double cardWidth}) allVideosCardLayout,
     required double availableWidth,
+    required bool homeHeroLikely,
   }) {
     _registerNoSelectableCards();
     const Key pendingKey = ValueKey<String>('home_video_library_maps_pending');
@@ -6470,7 +6491,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       return <Widget>[
         SliverToBoxAdapter(
           key: pendingKey,
-          child: _buildHomeRowsSkeleton(availableWidth),
+          child: _buildHomeRowsSkeleton(
+            availableWidth,
+            withHero: homeHeroLikely,
+          ),
         ),
       ];
     }
@@ -6499,8 +6523,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// （竖排版 16:9 大图 + 文字区；横排版按整宽主卡高）+ 两条竖版 2:3 卡的横滚行
   /// （[videoHomePosterCardWidth]）。标题位是一条文字条，高度由同样式的单行文本
   /// 撑出，与真实行标题逐像素同高。真实版面随数据变（有无主卡 / 面板、0–3 条
-  /// 行），骨架取最常见的「主卡 + 两条行」。[availableWidth] 是已扣外边距的内容宽。
-  Widget _buildHomeRowsSkeleton(double availableWidth) {
+  /// 行），骨架取最常见的「主卡 + 两条行」；[withHero] 为 false（库里没有任何播放
+  /// 痕迹，真实首页不会有主卡）时不画主卡位，行从顶上开始。[availableWidth] 是
+  /// 已扣外边距的内容宽。
+  Widget _buildHomeRowsSkeleton(
+    double availableWidth, {
+    required bool withHero,
+  }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double cardWidth = videoHomePosterCardWidth(availableWidth);
     final double coverHeight = videoCoverHeightForPortraitWidth(cardWidth);
@@ -6581,13 +6610,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            KeyedSubtree(
-              key: const ValueKey<String>('home_video_hero_skeleton'),
-              child: Padding(
-                padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
-                child: hero,
+            if (withHero)
+              KeyedSubtree(
+                key: const ValueKey<String>('home_video_hero_skeleton'),
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+                  child: hero,
+                ),
               ),
-            ),
             for (int row = 0; row < 2; row++)
               KeyedSubtree(
                 key: ValueKey<String>('home_video_row_skeleton_$row'),

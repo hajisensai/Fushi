@@ -27,30 +27,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  Finder coverBlock() => find.byWidgetPredicate(
-    (Widget w) => w is FushiSkeleton && w.width == 150 && w.height == 225,
+  // 骨架与加载后的紧凑 hero 同形（2026-10 紧凑 hero 重设计）：两栏左栏小封面
+  // 112×168、单列 96×144，都在起始侧，信息在封面旁。
+  Finder coverBlock({required bool sidePane}) => find.byWidgetPredicate(
+    (Widget w) =>
+        w is FushiSkeleton &&
+        w.width == (sidePane ? 112 : 96) &&
+        w.height == (sidePane ? 168 : 144),
   );
 
-  testWidgets('① 两栏宽度：骨架左栏是居中封面的窄式 hero，右栏是集卡', (WidgetTester tester) async {
+  testWidgets('① 两栏宽度：骨架左栏是紧凑 hero（封面在起始侧），右栏是集卡', (WidgetTester tester) async {
     await pumpSkeleton(tester, const Size(1600, 900));
-    expect(coverBlock(), findsOneWidget, reason: '左栏 2:3 封面居中，与加载后同形');
-    final Offset cover = tester.getCenter(coverBlock());
-    expect(cover.dx, closeTo(kMediaDetailSidePaneWidth / 2, 1));
+    final Finder cover = coverBlock(sidePane: true);
+    expect(cover, findsOneWidget, reason: '左栏紧凑 hero 小封面，与加载后同形');
+    final double paneWidth = MediaDetailLayout.sidePaneWidthFor(1600);
+    expect(tester.getTopLeft(cover).dx, lessThan(paneWidth / 2));
+    expect(tester.getTopRight(cover).dx, lessThan(paneWidth));
     // 右栏集卡缩略图块在左栏之外。
     final Finder thumbs = find.byWidgetPredicate(
       (Widget w) => w is FushiSkeleton && w.width == 168 && w.height == 96,
     );
     expect(thumbs, findsWidgets);
-    expect(
-      tester.getTopLeft(thumbs.first).dx,
-      greaterThan(kMediaDetailSidePaneWidth),
-    );
+    expect(tester.getTopLeft(thumbs.first).dx, greaterThan(paneWidth));
   });
 
-  testWidgets('① 手机宽度：窄式 hero 居中，下接条目', (WidgetTester tester) async {
+  testWidgets('① 手机宽度：紧凑 hero 封面在起始侧，下接条目', (WidgetTester tester) async {
     await pumpSkeleton(tester, const Size(390, 844));
-    expect(coverBlock(), findsOneWidget);
-    expect(tester.getCenter(coverBlock()).dx, closeTo(195, 1));
+    final Finder cover = coverBlock(sidePane: false);
+    expect(cover, findsOneWidget);
+    expect(tester.getTopLeft(cover).dx, lessThan(195 - 48));
   });
 
   testWidgets('② 横版 fanart 原样露出（不模糊），封面垫底仍模糊', (WidgetTester tester) async {
