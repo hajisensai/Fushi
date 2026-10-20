@@ -6301,7 +6301,7 @@
   "srs_import_pick_title": "导入 Anki 包",
   "srs_import_report_cards": "新增卡片：$n",
   "srs_import_report_conflicts": "有 $n 条笔记因笔记类型冲突未导入",
-  "srs_import_report_fushi_restored": "恢复 Fushi 复习记录：$n 条",
+  "srs_import_report_fushi_restored": "恢复 SRS 复习记录：$n 条",
   "srs_import_report_future": "有 $n 张卡的排程时间在未来，导入时没带排程",
   "srs_import_report_invalid_params": "预设「$preset」的参数无效，未导入",
   "srs_import_report_media": "存入媒体文件：$n 个",

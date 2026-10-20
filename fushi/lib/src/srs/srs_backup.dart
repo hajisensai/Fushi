@@ -167,8 +167,8 @@ class SrsBackupController {
   /// 自动备份：开着、有变动，且（[leavingReview] 或距最近一份已满间隔）才备份。返回新备份；没备份为 null。
   Future<SrsBackupInfo?> autoBackup({bool leavingReview = false}) =>
       _serial(() async {
-        // 复习中不做自动备份：读快照的事务会把复习页的查询挡上二三十秒（BUG-3575），
-        // 离开复习页时 [onLeftReview] 再补。
+        // SRS 界面在用时不做自动备份：读快照的事务会把复习页的查询挡上二三十秒（BUG-3575），
+        // SRS 界面不再被使用时 [onSrsIdle] 再补。
         if (_disposed || !_autoEnabled() || _reviewing) return null;
         final SrsDbStore? store = await _readStore();
         final SrsBackupStore? backups = await _readBackups();
