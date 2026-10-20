@@ -16,8 +16,11 @@ FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 /// downloadable `.epub` content asset; when false it is an orphan that holds
 /// only sync metadata (BUG-049 phantom).
 class _OrphanFakeBackend implements SyncBackend {
-  _OrphanFakeBackend({required this.hasEpub});
+  _OrphanFakeBackend({required this.hasEpub, this.contentName = 'book.epub'});
   final bool hasEpub;
+
+  /// 内容资产名（[hasEpub] 为 true 时列出）：`.epub` 或漫画包 `.manga.zip`。
+  final String contentName;
   static const String _folderId = 'folder1';
 
   @override
@@ -42,7 +45,7 @@ class _OrphanFakeBackend implements SyncBackend {
   @override
   Future<List<AssetEntry>> listChildren(String id) async {
     if (id == _folderId && hasEpub) {
-      return const <AssetEntry>[AssetEntry(id: 'epub1', name: 'book.epub')];
+      return <AssetEntry>[AssetEntry(id: 'epub1', name: contentName)];
     }
     // Orphan: only metadata-ish children, no downloadable book.
     return const <AssetEntry>[AssetEntry(id: 'prog1', name: 'progress_x.json')];
@@ -174,6 +177,23 @@ void main() {
     // A remote folder WITH an .epub is still a real downloadable book.
     expect(book.remoteHasContent, isTrue);
     expect(book.isDownloadableRemoteOnly, isTrue);
+  });
+
+  test('a remote folder holding only a `.manga.zip` manga package is downloadable',
+      () async {
+    // 所有者 2026-10-21：漫画包改传 `<title>.manga.zip`；对比弹窗不认的话，新版上传
+    // 的漫画会被当成只剩元数据的孤儿（不给下载入口）。
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      _OrphanFakeBackend(hasEpub: true, contentName: 'GhostBook.manga.zip'),
+    );
+    final SyncCompareEntry manga = entries
+        .firstWhere((SyncCompareEntry e) => e.title.contains('GhostBook'));
+    expect(manga.remoteHasContent, isTrue);
+    expect(manga.isDownloadableRemoteOnly, isTrue);
   });
 
   test('source guard: _copyWithoutAudio preserves remoteHasContent (BUG-049)',

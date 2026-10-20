@@ -56,6 +56,7 @@ SyncOrchestrator _orchestrator({
       syncStats: false,
       syncAudioBookPosition: false,
       syncContent: false,
+      syncMangaContent: false,
       syncAudioBookFiles: false,
       syncVideoFiles: true,
       syncDictionary: false,

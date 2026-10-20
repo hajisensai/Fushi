@@ -74,6 +74,7 @@ SyncOrchestrator _orchestrator({
       syncStats: true,
       syncAudioBookPosition: false,
       syncContent: false,
+      syncMangaContent: false,
       syncAudioBookFiles: false,
       syncDictionary: false,
     );

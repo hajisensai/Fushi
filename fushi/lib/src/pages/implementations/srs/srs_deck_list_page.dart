@@ -64,6 +64,8 @@ enum _DeckAction {
 
 enum _ImportSource { anki, file, minedHistory }
 
+enum _DeckDeleteMode { moveCards, deleteCards }
+
 /// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
 List<SrsDeckSummary> _siblingsOf(
   List<SrsDeckSummary> decks,
@@ -188,17 +190,29 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (mounted) bumpSrsRevision(ref);
   }
 
+  /// 删牌组时卡片的去向二选一（Anki 的删除牌组是连卡片一起删；以前这里只能移走卡片）。
   Future<void> _delete(SrsDeckSummary deck) async {
-    final bool confirmed = await showFushiConfirmDialog(
+    final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
-      message: t.srs_deck_delete_confirm(name: deck.fullName),
-      confirmLabel: t.srs_deck_delete,
-      cancelLabel: t.cancel,
+      message: t.srs_deck_delete_prompt(name: deck.fullName),
       icon: FushiIcons.delete,
-      destructive: true,
+      options: <FushiChoiceOption<_DeckDeleteMode>>[
+        FushiChoiceOption<_DeckDeleteMode>(
+          value: _DeckDeleteMode.moveCards,
+          label: t.srs_deck_delete_move_cards,
+          subtitle: t.srs_deck_delete_move_cards_hint,
+          icon: FushiIcons.moveFile,
+        ),
+        FushiChoiceOption<_DeckDeleteMode>(
+          value: _DeckDeleteMode.deleteCards,
+          label: t.srs_deck_delete_with_cards,
+          subtitle: t.srs_deck_delete_with_cards_hint,
+          icon: FushiIcons.deleteSweep,
+        ),
+      ],
     );
-    if (!confirmed || !mounted) return;
+    if (mode == null || !mounted) return;
     // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
     final SrsDeckDeleteController deleter = ref.read(
       srsDeckDeleteControllerProvider,
@@ -207,7 +221,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (store == null) return;
     // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用。删除由 app 级
     // 控制器跑完并让列表重读，与本页在不在无关。
-    await deleter.delete(store, deck.deck.id);
+    await deleter.delete(
+      store,
+      deck.deck.id,
+      deleteCards: mode == _DeckDeleteMode.deleteCards,
+    );
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。

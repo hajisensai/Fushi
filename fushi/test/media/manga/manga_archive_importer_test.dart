@@ -322,6 +322,52 @@ void main() {
     });
   });
 
+  test('CBZ of AVIF pages imports with displayed (irot / grid) page sizes',
+      () async {
+    // 用户反馈「不支持含 AVIF 图片的 CBZ」：以前 `.avif` 不在页图白名单里，整包报
+    // 「Manga archive has no images」；放进白名单后尺寸回退又走 package:image 解不开。
+    // 样本与 native/fushi_compute 的单元测试共用（libavif 生成）。
+    Uint8List avif(String name) => File(
+          p.join(
+            '..',
+            'packages',
+            'fushi_engine',
+            'test',
+            'media',
+            'image_kernels',
+            'fixtures',
+            'avif',
+            '$name.avif',
+          ),
+        ).readAsBytesSync();
+    final Uint8List rotated = avif('orient6'); // 40×24 编码，irot → 24×40
+    final Uint8List grid = avif('grid'); // 2×2 瓦片拼成 72×60
+    final Uint8List plain = avif('rgb420'); // 61×47
+    final String path = _writeArchive(root, <ArchiveFile>[
+      ArchiveFile('001.avif', rotated.length, rotated),
+      ArchiveFile('002.AVIF', grid.length, grid),
+      ArchiveFile('003.avif', plain.length, plain),
+    ]);
+    expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+
+    final String key = await MangaArchiveImporter.importArchive(
+      db: db,
+      archivePath: path,
+    );
+    final MokuroPayload payload = await _readImportedPayload(db, key);
+    expect(
+      payload.images
+          .map((MokuroImage i) => (i.size.width, i.size.height))
+          .toList(),
+      <(double, double)>[(24, 40), (72, 60), (61, 47)],
+    );
+    final EpubBookRow row = (await db.getEpubBook(key))!;
+    for (final MokuroImage image in payload.images) {
+      expect(File(p.join(row.extractDir, image.url)).existsSync(), isTrue,
+          reason: image.url);
+    }
+  });
+
   test('CBZ images import in natural order', () async {
     final Uint8List png = Uint8List.fromList(
       img.encodePng(img.Image(width: 40, height: 80)),
@@ -634,6 +680,49 @@ Attributes = A
       ).readAsBytesSync(),
     )!;
     expect(importedFirst.width, 30);
+  });
+
+  test('KCC Panel View EPUB imports one manga page per spine page', () async {
+    // Each KCC page references its image once visibly plus four hidden
+    // `.PV-P` magnify regions; every <img> used to become its own page, so a
+    // 197-page volume imported as 985 pages (each page five times).
+    final Uint8List first = Uint8List.fromList(
+      img.encodePng(img.Image(width: 20, height: 40)),
+    );
+    final Uint8List second = Uint8List.fromList(
+      img.encodePng(img.Image(width: 30, height: 40)),
+    );
+    const String region = '<div class="PV-P">'
+        '<img src="../images/1.png" width="40" height="80"/></div>';
+    final String path = _writeImageEpub(
+      root,
+      first: first,
+      second: second,
+      firstSpineId: 'page1',
+      page1Body: '<div><img src="../images/1.png"/></div>'
+          '<div id="PV"><div id="PV-TL"><a class="app-amzn-magnify"></a>'
+          '</div></div>'
+          '${region * 4}',
+    );
+    expect(MangaArchiveImporter.looksLikeImageArchive(path), isTrue);
+
+    final String key = await MangaArchiveImporter.importArchive(
+      db: db,
+      archivePath: path,
+    );
+    final EpubBookRow row = (await db.getEpubBook(key))!;
+    final List<String> pages = Directory(p.join(row.extractDir, 'images'))
+        .listSync()
+        .map((FileSystemEntity e) => p.basename(e.path))
+        .toList()
+      ..sort();
+    expect(pages, <String>['page_000000.png', 'page_000001.png']);
+    final img.Image importedSecond = img.decodeImage(
+      File(
+        p.join(row.extractDir, 'images', 'page_000001.png'),
+      ).readAsBytesSync(),
+    )!;
+    expect(importedSecond.width, 30);
   });
 
   test('EPUB containing a text spine page stays a normal EPUB', () {

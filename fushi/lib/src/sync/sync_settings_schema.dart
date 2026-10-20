@@ -213,6 +213,23 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncContentEnabled(value);
             },
           ),
+          // 漫画与书籍分开（所有者 2026-10-21）：漫画卷体积大，独立 opt-in；未设置过时
+          // 继承「上传书籍文件」（见 SyncRepository.isSyncMangaContentEnabled）。
+          SettingsSwitchItem(
+            id: 'sync.manga_content',
+            title: t.sync_manga_content,
+            subtitle: t.sync_manga_content_warning,
+            icon: FushiIcons.manga,
+            visible: (SettingsContext ctx) =>
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncMangaContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncMangaContent = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSyncMangaContentEnabled(value);
+            },
+          ),
           SettingsSwitchItem(
             id: 'sync.audiobook_files',
             title: t.sync_audiobook_files,
@@ -672,6 +689,20 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setInterconnectSyncContentEnabled(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'interconnect.upload_manga_content',
+            title: t.interconnect_upload_manga_content,
+            subtitle: t.interconnect_upload_manga_content_hint,
+            icon: FushiIcons.manga,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectSyncMangaContent,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectSyncMangaContent = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectSyncMangaContentEnabled(value);
             },
           ),
           // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
@@ -1224,10 +1255,12 @@ class _SyncSettingsState {
   bool autoSync = false;
   bool syncStats = true;
   bool syncContent = false;
+  bool syncMangaContent = false;
   bool syncAudioBookFiles = false;
   bool syncVideoFiles = false;
   // BUG-988：互联通道专属的「上传内容到对端」开关，独立于上面的云备份 sync* 开关。
   bool interconnectSyncContent = false;
+  bool interconnectSyncMangaContent = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
   // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
@@ -1343,9 +1376,12 @@ class _SyncSettingsState {
       autoSync = await _repo.isAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
       syncContent = await _repo.isSyncContentEnabled();
+      syncMangaContent = await _repo.isSyncMangaContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
+      interconnectSyncMangaContent = await _repo
+          .isInterconnectSyncMangaContentEnabled();
       interconnectSyncAudioBookFiles = await _repo
           .isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles = await _repo

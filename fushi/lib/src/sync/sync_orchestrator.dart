@@ -21,6 +21,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
@@ -479,6 +480,7 @@ class SyncOrchestrator {
     this.syncFavorites = true,
     required this.syncAudioBookPosition,
     required this.syncContent,
+    required this.syncMangaContent,
     required this.syncAudioBookFiles,
     this.syncVideoFiles = false,
     required this.syncDictionary,
@@ -526,7 +528,12 @@ class SyncOrchestrator {
   /// 默认 true：省略该参数的既有调用点行为不变。
   final bool syncFavorites;
   final bool syncAudioBookPosition;
+  /// 「上传书籍文件」：EPUB 等非漫画格式的书文件是否上传（漫画看 [syncMangaContent]）。
   final bool syncContent;
+
+  /// 「上传漫画文件」：漫画（[BookFormat.manga]）书文件是否上传，与 [syncContent]
+  /// 互不牵连（所有者 2026-10-21：书籍和漫画分开）。
+  final bool syncMangaContent;
   final bool syncAudioBookFiles;
 
   /// 是否把本地视频文件上传到云 `__videos__/` 命名空间（多端库联合视图 §2.6）。默认
@@ -620,9 +627,10 @@ class SyncOrchestrator {
 
     if (isInterconnect) {
       await _syncServiceConfigLive(report, b);
-      // 互联内容（epub）走 live 端点，仅当 syncContent 开时执行。
-      // 元数据（进度/统计/有声书位置）由下方 SyncManager 以 syncContent=false 处理。
-      if (syncContent) {
+      // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
+      // 按格式各看各的开关。元数据（进度/统计/有声书位置）由下方 SyncManager 以
+      // syncContent=false 处理。
+      if (syncContent || syncMangaContent) {
         await _syncBooksContentLive(report, b);
       }
     }
@@ -640,6 +648,8 @@ class SyncOrchestrator {
     // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
     // 音频文件 live 同步，请参考本方法的分流模式扩展。
     final bool managerSyncContent = isInterconnect ? false : syncContent;
+    final bool managerSyncMangaContent =
+        isInterconnect ? false : syncMangaContent;
 
     int readingDone = 0;
     int readingTotal = 0;
@@ -669,6 +679,7 @@ class SyncOrchestrator {
         statsSyncMode: statsSyncMode,
         syncAudioBook: syncAudioBookPosition,
         syncContent: managerSyncContent,
+        syncMangaContent: managerSyncMangaContent,
         listing: listing,
         onBookProgress: (int done, int total, String title) {
           readingDone = done;
@@ -684,6 +695,13 @@ class SyncOrchestrator {
       report.errors.add('books: $e');
     }
     _collectConflicts(bookResults, report);
+    // 进度已落地、补传书文件 / 元数据失败的书：单独进报告（进度结果照实，不改判失败）。
+    for (final SyncBookResult result in bookResults) {
+      final String? contentError = result.contentError;
+      if (contentError != null) {
+        report.errors.add('books: ${result.title}: $contentError');
+      }
+    }
 
     // 生产侧的自动 sweep 恒传 [syncDictionary]=false（两条通道的词典都改由设置页的
     // 显式上传 / 下载驱动，见 [runAssetTransferOnly]，BUG-2762）；这里只剩编排器自身
@@ -1643,7 +1661,12 @@ class SyncOrchestrator {
         final String bookKey = book.bookKey;
         final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
         final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
-        final bool hasLocal = ab != null && srt != null;
+        // 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
+        // 这本书永远不再补传（与互联 BUG-2551 同判据）。
+        final bool hasLocal = ab != null &&
+            srt != null &&
+            await audiobookAudioIsIntact(
+                audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot);
 
         final String folderId = await _backend.ensureBookFolder(
           bookTitle: book.title,
@@ -1725,9 +1748,10 @@ class SyncOrchestrator {
   }
 }
 
-/// 下载远端书文件夹 [folderId] 里的 `.epub` 内容资产并导入为本地书。资产**内容**
-/// 可以是 EPUB，也可以是漫画书目录整树包（同名 `.epub`，见下方内容嗅探分流）。
-/// 返回 true=导入成功；false=该文件夹没有 `.epub`（发送方关了内容同步，跳过）。
+/// 下载远端书文件夹 [folderId] 里的书内容资产（`.manga.zip` 或 `.epub`）并导入为
+/// 本地书。资产**内容**可以是 EPUB，也可以是漫画书目录整树包（新版名 `.manga.zip`，
+/// 旧版同名 `.epub`，见下方内容嗅探分流）。返回 true=导入成功；false=该文件夹没有
+/// 内容资产（发送方关了内容同步，跳过）。
 /// 传输/导入失败时抛出，交调用方决定如何提示。临时文件用后即删。
 Future<bool> importRemoteBookFolder({
   required FushiDatabase db,
@@ -1738,13 +1762,12 @@ Future<bool> importRemoteBookFolder({
   void Function(double fraction)? onProgress,
 }) async {
   final List<AssetEntry> children = await backend.listChildren(folderId);
-  AssetEntry? epub;
-  for (final AssetEntry e in children) {
-    if (!e.isFolder && e.name.toLowerCase().endsWith('.epub')) {
-      epub = e;
-      break;
-    }
-  }
+  // 内容资产：漫画包新名 `<title>.manga.zip` 或 `<title>.epub`（EPUB / 旧版漫画包），
+  // 判据与写入方共用 [pickRemoteBookContentEntry]。
+  final AssetEntry? epub = pickRemoteBookContentEntry<AssetEntry>(
+    children.where((AssetEntry e) => !e.isFolder),
+    (AssetEntry e) => e.name,
+  );
   if (epub == null) return false;
 
   tempDir.createSync(recursive: true);
@@ -1755,7 +1778,7 @@ Future<bool> importRemoteBookFolder({
   try {
     await backend.getAsset(epub.id, tmp,
         onProgress: syncTransferFractionOnly(onProgress));
-    // 漫画包与 EPUB 共用同一个 `<title>.epub` 资产名（云盘 push 侧同契约），故按
+    // 漫画包可能是新名 `.manga.zip`，也可能是旧版本传的同名 `<title>.epub`，故按
     // **内容**嗅探分流：zip 根含 manga.json = 漫画书目录整树包，走 MangaImporter
     // 的既有两遍式校验落库；否则按 EPUB。与互联通道（host importBookFromFile /
     // 书架 _importRemoteBookFile）逐字同语义。标题用远端资产名去扩展名
@@ -1765,7 +1788,8 @@ Future<bool> importRemoteBookFolder({
         ? await importMangaPackageFile(
             db: db,
             file: tmp,
-            title: p.basenameWithoutExtension(epub.name),
+            // `.manga.zip` 是双段后缀，basenameWithoutExtension 只去一层。
+            title: remoteBookContentBaseName(epub.name),
           )
         : await EpubImporter.importFromPath(
             db: db,

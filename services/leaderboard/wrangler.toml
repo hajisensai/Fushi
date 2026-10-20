@@ -16,6 +16,8 @@ routes = [
 #   wrangler r2 bucket create fushi-leaderboard-media
 #   wrangler secret put ADMIN_USER / ADMIN_PASS / EMAIL_PEPPER / RESEND_API_KEY
 #   （可选）wrangler secret put FEEDBACK_CI_TOKEN   CI 回填反馈修复 / 发布；不设则 /v1/ci/** 一律 404
+#   （可选）wrangler secret put CF_ANALYTICS_TOKEN  处理台 /dev/project 的官网访问量；不设则不取
+#   （可选）wrangler secret put GITHUB_TOKEN        /dev/project 走认证配额（免共享 IP 随机 403），有 push 权限时另取访问 / clone
 [[d1_databases]]
 binding = "DB"
 database_name = "fushi-leaderboard"
@@ -63,3 +65,8 @@ BANNED_WORDS = ""
 # MEDIA_QUOTA_BYTES = "8589934592"
 # 反馈视频配额池（字节，默认 1 GiB，从上面的总配额里切出，最多切一半）。
 # VIDEO_QUOTA_BYTES = "1073741824"
+# 处理台 /dev/project 的官网访问量（src/project_stats.js）：fushi.moe 的 zone id，配合 secret CF_ANALYTICS_TOKEN
+# （API token，权限 Zone · Analytics · Read）。没有 token 就不取官网数据。
+CF_ZONE_ID = "e14cc8639f6160ca94ab8838ecb9a64b"
+# 可选：要统计的 GitHub 仓库（逗号分隔 owner/name），默认 hajisensai/Fushi、fushi-subtitles、fushi-server。
+# GITHUB_REPOS = "hajisensai/Fushi"
