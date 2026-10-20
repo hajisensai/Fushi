@@ -543,7 +543,9 @@ class NyaaClient {
     http.Client? client,
     this.requestTimeout = kDownloadDiscoveryTimeout,
     this.minRequestInterval = kNyaaMinRequestInterval,
-  }) : _client = client ?? createAppHttpIoClient();
+    Duration Function()? monotonicNow,
+  })  : _client = client ?? createAppHttpIoClient(),
+        _monotonicNow = monotonicNow ?? _processMonotonicNow;
 
   final String baseUrl;
   final http.Client _client;
@@ -551,14 +553,27 @@ class NyaaClient {
   /// 同 host 两次请求**开始**之间的最小间隔；测试可注入 [Duration.zero]。
   final Duration minRequestInterval;
 
-  /// 各站点 host 最近一次请求的开始时刻。多个实例（发现源 / 视频资源 provider /
-  /// 订阅轮询）打同一站点时共用节奏，这才是「同 host」而不只是「同实例」。
+  /// 各站点 host 最近一次请求**实际放行**的时刻（单调时钟读数）。多个实例
+  /// （发现源 / 视频资源 provider / 订阅轮询）打同一站点时共用节奏，这才是
+  /// 「同 host」而不只是「同实例」。
   ///
   /// 只存时刻、不存 Future：完成态 Future 记住创建时的 zone，测试在 setUp 里建
   /// client、在 fake-async 测试体里 await 时，`then` 回调会被派到拿不到 pump 的
   /// zone 里，整条搜索无声挂死（pumpAndSettle 超时、请求根本没发出）。
-  static final Map<String, DateTime> _lastRequestStartByHost =
-      <String, DateTime>{};
+  static final Map<String, Duration> _lastRequestStartByHost =
+      <String, Duration>{};
+
+  /// 进程级单调时钟。节流间隔不能用墙钟 `DateTime.now()` 量：系统校时把墙钟
+  /// 往回拨时，「距上次多久」会算成负数，下一次请求要睡掉回拨的整段时长。
+  static final Stopwatch _processMonotonicClock = Stopwatch()..start();
+
+  static Duration _processMonotonicNow() => _processMonotonicClock.elapsed;
+
+  /// 读单调时钟。默认是进程级 [Stopwatch]；测试注入 fake-async 的
+  /// `elapsed`，让节流完全由虚拟时间驱动、不受调度负载影响。注入的时间基与
+  /// 默认时钟不同，所以注入方必须用独占的 [baseUrl] host，别和其它 client 共用
+  /// [_lastRequestStartByHost] 的同一格。
+  final Duration Function() _monotonicNow;
 
   /// 本实例排队的尾巴；null = 没人在排。惰性创建，理由同上。
   Future<void>? _requestQueueTail;
@@ -573,24 +588,30 @@ class NyaaClient {
   Future<void> _waitForRequestSlot(Future<void>? previous) async {
     if (previous != null) await previous;
     final String host = Uri.parse(baseUrl).host;
-    // **先占坑、再等**，而不是「读 last → 睡 → 写 last」。后者中间隔着一个 await：
-    // 发现源 / 资源 provider / 订阅轮询各自 new 的 client 并发打同一站点时，会同时
-    // 读到同一个 last、同时睡到同一时刻、然后一起发请求 —— 契约说的「同 host 至少
-    // 间隔 minRequestInterval」退化成「一阵爆发再等一轮」。
+    // 间隔从**上一次实际放行**的时刻量起，并且「检查 → 记录放行时刻」在同一个
+    // 同步段里完成（Dart 单线程，无 await 即不可被打断）；睡醒后回到循环顶部
+    // 重新检查，而不是醒来就直接放行。
     //
-    // 这里的读改写全在同一个同步段里完成（Dart 单线程，无 await 即不可被打断），
-    // 所以第二个并发调用看到的 last 已经是第一个占掉的那一格，自己顺延一格。
+    // 旧实现是「先按计划时刻占坑、睡到计划时刻就放行」，记录的是**计划**时刻：
+    // 定时器在负载下晚醒（计划 +120ms、实际 +300ms 才醒）时，排在后面的调用
+    // 拿计划时刻算间隔，发现「早就过了」立刻放行，于是两次请求几乎同时打出去，
+    // 契约说的「同 host 至少间隔 minRequestInterval」被破坏。跨实例并发同理：
+    // 几个 client 同时睡到同一时刻醒来，第一个放行并记下时刻，其余的回到循环
+    // 看到刚记下的时刻、各自再睡一格，不会一阵爆发。
+    //
     // 存的仍然只是时刻、不是 Future —— 静态存完成态 Future 正是上面注释里那个
     // 跨 zone 挂死的坑，别为了排队把它请回来。
-    final DateTime now = DateTime.now();
-    final DateTime? last = _lastRequestStartByHost[host];
-    final DateTime start =
-        (last == null || now.difference(last) >= minRequestInterval)
-            ? now
-            : last.add(minRequestInterval);
-    _lastRequestStartByHost[host] = start;
-    final Duration wait = start.difference(now);
-    if (wait > Duration.zero) await Future<void>.delayed(wait);
+    while (true) {
+      final Duration now = _monotonicNow();
+      final Duration? last = _lastRequestStartByHost[host];
+      final Duration remaining =
+          last == null ? Duration.zero : minRequestInterval - (now - last);
+      if (remaining <= Duration.zero) {
+        _lastRequestStartByHost[host] = now;
+        return;
+      }
+      await Future<void>.delayed(remaining);
+    }
   }
 
   /// 单次请求的整体超时上限。默认取发现链路的唯一真相源

@@ -67,8 +67,10 @@
 //
 // 零外部依赖（只用 dart:*）。运行目录 = 仓库根（docs/ 在其下）。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 const String bugsDir = 'docs/bugs'; // 仓库根相对路径，文件读写用（经 [repoPath]）
@@ -78,11 +80,102 @@ const String beginMarker =
     '<!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->';
 const String endMarker = '<!-- BUGS-INDEX:END -->';
 
-/// 所有命令读写的仓库根；null = 进程当前目录（CLI 就这么用：运行目录 = 仓库根）。
-/// 测试指向临时 fixture 仓库，**不改进程级 `Directory.current`**：同一进程里并发跑的
-/// 其它测试会跟着读错文件（`flutter test --experimental-faster-testing` 下实测一次打翻
-/// 15 个 suite）。文件读写一律经 [repoPath]，git 子进程以它为工作目录。
-String? bugRepoRoot;
+/// 一次进程内调用（测试用）的仓库根与输出 sink，绑在 zone 上，见 [runInBugRepoScope]。
+final class BugRepoScope {
+  BugRepoScope({required this.logOut, required this.logWarn});
+
+  String? root;
+  final void Function(String) logOut;
+  final void Function(String) logWarn;
+}
+
+const Symbol _bugRepoScopeKey = #fushiBugRepoScope;
+
+BugRepoScope? get _currentBugRepoScope {
+  final scope = Zone.current[_bugRepoScopeKey];
+  return scope is BugRepoScope ? scope : null;
+}
+
+/// 在独立作用域里跑 [body]：其中设的 [bugRepoRoot] 与 [logOut] / [logWarn] 只对
+/// [body] 及它派生的全部异步续体可见。
+///
+/// 为什么不用全局变量：测试超时后 package:test 照样跑 tearDown 和下一条测试，但超时那条的
+/// body（还在等 git 子进程）**不会被取消**、会接着跑。全局根在 tearDown 被复位成 null 时，
+/// 它的下一个 git / 文件操作就落到进程 cwd——开发者或 CI 的真仓库；下一条测试的 setUp 设了
+/// 新根时，它又改到别人的 fixture 上（实测：超时那条的 `git mv` 落进下一条的 fixture，把
+/// 那条打红）。绑在 zone 上，残留的 body 只能碰到自己那份（已删的）fixture。
+/// 作用域内没设根就读 [bugRepoRoot] 直接抛错，绝不回落到进程 cwd。
+R runInBugRepoScope<R>(
+  R Function() body, {
+  required void Function(String) logOut,
+  required void Function(String) logWarn,
+}) => runZoned(
+  body,
+  zoneValues: <Object?, Object?>{_bugRepoScopeKey: BugRepoScope(logOut: logOut, logWarn: logWarn)},
+);
+
+/// 在后台 isolate 里、以 [root] 为仓库根跑一条命令；命令的输出在它返回后依次转给调用方
+/// 当前的 [logOut] / [logWarn]，抛出的错误原样重抛。
+///
+/// 测试用：`flutter test --experimental-faster-testing` 把一个分片的全部 suite 跑在同一个
+/// 进程里，它们的根 isolate **共用一条 UI 线程**（引擎 `Shell::Spawn` 复用父 shell 的
+/// task runner；实测两个 suite 各忙等 8 秒是首尾相接的 16 秒，不是并行的 8 秒）。命令里每个
+/// `await` git 子进程都要排队等别的 suite 跑完手头那段同步代码，几十次 await 就把本来 ~2 秒
+/// 的测试拖到 90~120 秒、撞上 30 秒的默认超时。`Isolate.run` 的 isolate 跑在 VM 线程池上，
+/// 不占那条线程（同一实测：两个 suite 的忙等改进 `Isolate.run` 后完全重叠），整条命令只在
+/// 起止各回 UI 线程一次。
+Future<T> runBugCommandIsolated<T>(String root, Future<T> Function() command) async {
+  final _IsolatedBugRun<T> run = await Isolate.run(() async {
+    final out = <String>[];
+    final warn = <String>[];
+    try {
+      final value = await runInBugRepoScope(() {
+        bugRepoRoot = root;
+        return command();
+      }, logOut: out.add, logWarn: warn.add);
+      return _IsolatedBugRun<T>(value, null, out, warn);
+    } on Object catch (error) {
+      return _IsolatedBugRun<T>(null, error, out, warn);
+    }
+  });
+  run.out.forEach(logOut);
+  run.warn.forEach(logWarn);
+  final error = run.error;
+  if (error != null) throw error;
+  return run.value as T;
+}
+
+final class _IsolatedBugRun<T> {
+  _IsolatedBugRun(this.value, this.error, this.out, this.warn);
+
+  final T? value;
+  final Object? error;
+  final List<String> out;
+  final List<String> warn;
+}
+
+/// 所有命令读写的仓库根；作用域外恒为 null = 进程当前目录（CLI 就这么用：运行目录 = 仓库根）。
+/// 测试在 [runInBugRepoScope] 里指向临时 fixture 仓库，**不改进程级 `Directory.current`**：
+/// 同一进程里并发跑的其它测试会跟着读错文件（`flutter test --experimental-faster-testing`
+/// 下实测一次打翻 15 个 suite）。文件读写一律经 [repoPath]，git 子进程以它为工作目录。
+String? get bugRepoRoot {
+  final scope = _currentBugRepoScope;
+  if (scope == null) return null;
+  final root = scope.root;
+  if (root == null) {
+    throw StateError('runInBugRepoScope 里还没设 bugRepoRoot：作用域内绝不回落到进程 cwd（那是真仓库）');
+  }
+  return root;
+}
+
+/// 只能在 [runInBugRepoScope] 里设：进程级的根没有安全的复位时机（见那里的说明）。
+set bugRepoRoot(String? value) {
+  final scope = _currentBugRepoScope;
+  if (scope == null) {
+    throw StateError('bugRepoRoot 只能在 runInBugRepoScope 里设');
+  }
+  scope.root = value;
+}
 
 /// 仓库根相对路径 → 实际要打开的路径（绝对路径原样返回）。
 String repoPath(String path) {
@@ -100,9 +193,10 @@ String repoRootPath() => Directory(bugRepoRoot ?? Directory.current.path).absolu
 /// 本地不入库、但同样会引用 BUG 号的文件（`git ls-files` 看不到，改号时单独带上）。
 const List<String> extraScanPaths = <String>['docs/REGRESSION_BUGS.md'];
 
-/// 可注入的输出/警告 sink（测试替换用；默认写 stdout / stderr）。
-void Function(String) logOut = stdout.writeln;
-void Function(String) logWarn = stderr.writeln;
+/// 输出/警告 sink：默认写 stdout / stderr；测试经 [runInBugRepoScope] 注入
+/// （同样绑在 zone 上，超时残留的 body 写不进下一条测试的断言缓冲）。
+void Function(String) get logOut => _currentBugRepoScope?.logOut ?? stdout.writeln;
+void Function(String) get logWarn => _currentBugRepoScope?.logWarn ?? stderr.writeln;
 
 /// 工具级错误：`main` 捕获后写 stderr + 非 0 退出；测试可直接断言消息。
 class BugToolError implements Exception {
