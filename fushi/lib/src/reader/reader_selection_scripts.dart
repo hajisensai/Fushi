@@ -50,6 +50,22 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.fushiSelection.clearSelection()';
 
+  /// 悬停查词背压的宿主侧显式释放（见 webview.part.dart 的 `_fushiHoverLookup*`）：
+  /// onTextSelected 回调处理完一次**悬停**查词（成功、失败、异常都算）后对正文 WebView
+  /// eval 这一句，按 payload 里的 `selectedSeq` 释放 JS 侧在等的那一次。不依赖
+  /// callHandler 的 Promise 是否送达；序号对不上（已被回执释放、又发了新一次）时 JS 侧忽略。
+  /// 非悬停查词（点按 / 键盘）或没有合法序号的 payload 返回 null，调用方什么也不做。
+  static String? hoverLookupSettledInvocation(Map<String, dynamic> payload) {
+    if (payload['fromHover'] != true) return null;
+    final Object? raw = payload['selectedSeq'];
+    if (raw is! num || !raw.isFinite || raw != raw.truncate() || raw <= 0) {
+      return null;
+    }
+    final int seq = raw.toInt();
+    return 'window.__fushiHoverLookupSettled && '
+        'window.__fushiHoverLookupSettled($seq)';
+  }
+
   /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
   /// 长按 [delayMs] 毫秒即建立单字选区，继续拖动经
   /// `window.fushiSelection.updateRangeSelection`
@@ -3160,7 +3176,11 @@ window.fushiSelection = {
     // 宿主处理完这次查词（callHandler 的 Promise 在 Dart 回调 await 完后兑现）的回执，
     // 供悬停查词做背压：回执到之前只留最后一个悬停位置（见 webview.part.dart 的
     // _fushiHoverLookup*）。点按路径不读它，行为不变。
-    this.textSelectedSeq = (this.textSelectedSeq || 0) + 1;
+    // selectedSeq 随 payload 带给宿主：回执之外，宿主处理完（成功或失败）还会按这个序号
+    // 显式调 window.__fushiHoverLookupSettled(seq) 释放背压，两条释放路按序号对账。
+    var seq = (this.textSelectedSeq || 0) + 1;
+    this.textSelectedSeq = seq;
+    payload.selectedSeq = seq;
     var ack = window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
     this.lastTextSelectedAck = ack;
     return payload.text;

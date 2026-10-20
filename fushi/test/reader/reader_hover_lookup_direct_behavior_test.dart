@@ -2,13 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 /// 查词卡顿（P0-2）：阅读器正文的悬停查词在 JS 里直接 `fushiSelection.selectText`，不再
 /// 经 `onShiftHover → Dart → evaluateJavascript` 绕一圈；一帧最多选一次，宿主回执
 /// （onTextSelected 的 Promise）到达前只留最后一个指针位置。
 ///
 /// 这里把 setup 脚本里那段 mousemove 腿原样切出来，在 node 里配上假的 document /
-/// requestAnimationFrame / fushiSelection 跑，逐条验行为（不是源码扫描）。
+/// requestAnimationFrame / fushiSelection 跑，逐条验行为（不是源码扫描）。回执 Promise
+/// 丢失时，宿主按序号显式调 `window.__fushiHoverLookupSettled(seq)` 释放；迟到的旧回执
+/// 不得放掉新一次。
 void main() {
   test(
     'hover lookup selects in JS, coalesces per frame and waits for the ack',
@@ -42,12 +45,45 @@ void main() {
           0,
           reason: 'stdout=${result.stdout}\nstderr=${result.stderr}',
         );
-        expect(result.stdout.toString().trim(), 'OK 8');
+        expect(result.stdout.toString().trim(), 'OK 13');
       } finally {
         temp.deleteSync(recursive: true);
       }
     },
   );
+
+  test('宿主显式释放只认悬停查词与合法序号', () {
+    expect(
+      ReaderSelectionScripts.hoverLookupSettledInvocation(<String, dynamic>{
+        'fromHover': true,
+        'selectedSeq': 7,
+      }),
+      'window.__fushiHoverLookupSettled && window.__fushiHoverLookupSettled(7)',
+    );
+    // JSON 里的整数可能被解成 double。
+    expect(
+      ReaderSelectionScripts.hoverLookupSettledInvocation(<String, dynamic>{
+        'fromHover': true,
+        'selectedSeq': 7.0,
+      }),
+      endsWith('(7)'),
+    );
+    for (final Map<String, dynamic> payload in <Map<String, dynamic>>[
+      <String, dynamic>{'fromHover': false, 'selectedSeq': 7},
+      <String, dynamic>{'selectedSeq': 7},
+      <String, dynamic>{'fromHover': true},
+      <String, dynamic>{'fromHover': true, 'selectedSeq': 0},
+      <String, dynamic>{'fromHover': true, 'selectedSeq': 1.5},
+      <String, dynamic>{'fromHover': true, 'selectedSeq': '7'},
+      <String, dynamic>{'fromHover': true, 'selectedSeq': double.nan},
+    ]) {
+      expect(
+        ReaderSelectionScripts.hoverLookupSettledInvocation(payload),
+        isNull,
+        reason: '$payload',
+      );
+    }
+  });
 }
 
 const String _runner = r'''
@@ -89,6 +125,9 @@ function setup(opts) {
     move(x, y, shift) { listeners.mousemove({ clientX: x, clientY: y, shiftKey: shift !== false }); },
     frame() { const fs = frames.splice(0); fs.forEach((f) => f()); return fs.length; },
     ack() { const r = resolveAck; resolveAck = null; r(null); return Promise.resolve().then(() => {}); },
+    // 拿走当前回执的 resolve 而不兑现：模拟平台把 callHandler 的 Promise 弄丢。
+    dropAck() { const r = resolveAck; resolveAck = null; return r; },
+    seq() { return window.fushiSelection.textSelectedSeq; },
   };
 }
 
@@ -116,6 +155,30 @@ function setup(opts) {
   h.move(200, 10); h.frame();
   check(h.calls.select.length === 2 && h.calls.select[1][0] === 200,
     'a deduplicated hover does not wait for an ack that never comes');
+
+  // 5) The ack Promise never settles: the host's explicit settle(seq) releases the lock;
+  //    a settle with a stale / unknown sequence number does not.
+  h = setup({});
+  h.move(10, 10); h.frame();
+  const lostAck = h.dropAck();
+  const firstSeq = h.seq();
+  h.move(200, 10);
+  check(h.frame() === 0, 'still waiting while the lost ack is outstanding');
+  h.window.__fushiHoverLookupSettled(firstSeq + 5);
+  check(h.frame() === 0 && h.calls.select.length === 1, 'a settle with the wrong sequence is ignored');
+  h.window.__fushiHoverLookupSettled(firstSeq);
+  check(h.frame() === 1 && h.calls.select.length === 2 && h.calls.select[1][0] === 200,
+    'the explicit host settle releases a lookup whose ack was lost: ' + JSON.stringify(h.calls.select));
+
+  // 6) The late ack of the first lookup must not release the second one.
+  lostAck(null);
+  await Promise.resolve(); await Promise.resolve();
+  h.move(400, 10);
+  check(h.frame() === 0 && h.calls.select.length === 2,
+    'a late ack for an older sequence does not release the newer in-flight lookup');
+  await h.ack();
+  check(h.frame() === 1 && h.calls.select.length === 3 && h.calls.select[2][0] === 400,
+    'the newer lookup is released by its own ack');
 
   // 4) Gates keep their old meaning: host leg, modifier / auto-lookup, missing selection script.
   h = setup({ hostLeg: true }); h.move(10, 10); h.frame();
