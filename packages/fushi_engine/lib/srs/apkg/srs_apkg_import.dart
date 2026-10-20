@@ -1050,6 +1050,26 @@ class _Importer {
         }
       }
     }
+    // 关着「使用 RWKV」：自己管参数的新牌组一律落在 FSRS 上——Fushi 自己导出的 RWKV 牌组改回
+    // FSRS-7；没写算法的（不含牌组预设时）也明确写 FSRS-7，否则会落到默认算法 RWKV。
+    // 继承父牌组的子牌组不写，随父牌组。
+    if (!options.useRwkv) {
+      final Object? alg = values[SrsFieldKeys.deckAlgorithm];
+      final bool owns =
+          _parts(full).length == 1 ||
+          values[SrsFieldKeys.deckParamsMode] == 'own';
+      if (alg is Map && alg['alg'] == SrsAlgorithm.rwkv.wire) {
+        values[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
+          ...alg.cast<String, Object?>(),
+          'alg': SrsAlgorithm.fsrs7.wire,
+        };
+      } else if (alg == null && owns) {
+        values[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': true,
+        };
+      }
+    }
     return values;
   }
 
@@ -1128,21 +1148,28 @@ class _Importer {
         params = p.fsrs6Params;
       }
     }
-    // 一律用默认算法 RWKV（RWKV fork 的 rwkvReviewEnabled 预设本来就是）。带着 FSRS 参数来的预设
-    // 参数照样存下、报告里写明，用户不要 RWKV 就在报告里「继续用 FSRS」或去牌组设置切回，参数还在；
-    // 没有参数的（SM-2 或没优化过）同样写进报告，不静默换算法。
+    // 开着「使用 RWKV」（默认）：一律用默认算法 RWKV（RWKV fork 的 rwkvReviewEnabled 预设本来就是）。
+    // 带着 FSRS 参数来的预设参数照样存下、报告里写明，用户不要 RWKV 就在报告里「继续用 FSRS」或去
+    // 牌组设置切回，参数还在；没有参数的（SM-2 或没优化过）同样写进报告，不静默换算法。
+    // 关着：保留来源的 FSRS 算法，没有参数（含 Anki 里开了 RWKV 的）用 FSRS-7，同样进报告。
+    final bool rwkv = options.useRwkv;
     if (report) {
       if (p.rwkvEnabled) {
-        this.report.rwkvPresets.add(p.name);
+        (rwkv ? this.report.rwkvPresets : this.report.rwkvPresetsOnFsrs).add(
+          p.name,
+        );
       } else if (fsrs == null) {
-        this.report.defaultAlgorithmPresets.add(p.name);
-      } else {
+        (rwkv
+                ? this.report.defaultAlgorithmPresets
+                : this.report.defaultFsrsPresets)
+            .add(p.name);
+      } else if (rwkv) {
         this.report.fsrsPresets[p.name] = fsrs;
       }
     }
-    if (fsrs != null && !p.rwkvEnabled) _fsrsOfPreset[p.id] = fsrs;
+    if (rwkv && fsrs != null && !p.rwkvEnabled) _fsrsOfPreset[p.id] = fsrs;
     v[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
-      'alg': srsDefaultAlgorithm.wire,
+      'alg': (rwkv ? srsDefaultAlgorithm : (fsrs ?? SrsAlgorithm.fsrs7)).wire,
       'auto': true,
     };
     if (fsrs != null && params != null) {

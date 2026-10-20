@@ -142,6 +142,12 @@ class SrsImportReport {
   /// 没有可用 FSRS 参数（SM-2 或没训练过）、导入后用默认算法的预设名。
   final List<String> defaultAlgorithmPresets = <String>[];
 
+  /// 导入时关了 RWKV（[SrsAnkiImportOptions.useRwkv]）：Anki 里开了 RWKV、改用 FSRS-7 的预设名。
+  final List<String> rwkvPresetsOnFsrs = <String>[];
+
+  /// 导入时关了 RWKV：没有可用 FSRS 参数、用 FSRS-7 默认参数的预设名。
+  final List<String> defaultFsrsPresets = <String>[];
+
   /// 本次新建、自己管参数、由 FSRS 预设改用 RWKV 的牌组：牌组 ID → 原算法
   /// （导入报告的「继续用 FSRS」按这份改回）。
   final Map<String, SrsAlgorithm> fsrsDecks = <String, SrsAlgorithm>{};
@@ -185,6 +191,8 @@ class SrsImportReport {
         e.key: e.value.wire,
     },
     'defaultAlgorithmPresets': defaultAlgorithmPresets,
+    'rwkvPresetsOnFsrs': rwkvPresetsOnFsrs,
+    'defaultFsrsPresets': defaultFsrsPresets,
     'fsrsDecks': <String, String>{
       for (final MapEntry<String, SrsAlgorithm> e in fsrsDecks.entries)
         e.key: e.value.wire,

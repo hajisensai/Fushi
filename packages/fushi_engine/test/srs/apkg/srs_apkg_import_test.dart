@@ -1405,6 +1405,116 @@ void main() {
     });
   });
 
+  // 所有者 2026-10-20：「从 anki 迁移数据时，应该让用户选择是否迁移 rwkv」。
+  group('导入选项「使用 RWKV 排程」关闭', () {
+    Future<(SrsImportReport, SrsDeckView, SrsDeckView)> run(
+      Uint8List pkg,
+      SrsAnkiImportOptions options,
+    ) async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(s, pkg, options: options);
+      final SrsDeckTree tree = await s.deckTree();
+      SrsDeckView named(String n) =>
+          tree.decks.firstWhere((SrsDeckView d) => tree.fullName(d.id) == n);
+      return (rep, named('Lang'), named('Lang::JP'));
+    }
+
+    test('默认开；旧偏好里没有这一项时也按开', () {
+      expect(const SrsAnkiImportOptions().useRwkv, isTrue);
+      expect(
+        SrsAnkiImportOptions.fromJson(const <String, Object?>{}).useRwkv,
+        isTrue,
+      );
+      expect(
+        SrsAnkiImportOptions.fromJson(
+          const SrsAnkiImportOptions(useRwkv: false).toJson(),
+        ).useRwkv,
+        isFalse,
+      );
+    });
+
+    test('带 FSRS-6 参数的预设保留 FSRS-6，不提供「继续用 FSRS」', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(useRwkv: false),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs6.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+      expect(rep.rwkvPresets, isEmpty);
+    });
+
+    test('没有 FSRS 参数（SM-2）：FSRS-7，进报告', () async {
+      final (SrsImportReport rep, SrsDeckView lang, _) = await run(
+        legacyApkg(t, fsrs: false),
+        kFullOptions.copyWith(useRwkv: false),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(rep.defaultFsrsPresets, contains('JP preset'));
+      expect(rep.defaultAlgorithmPresets, isEmpty);
+    });
+
+    test('不含牌组预设也不落到默认的 RWKV：顶层新牌组写 FSRS-7，子牌组随继承', () async {
+      final (_, SrsDeckView lang, SrsDeckView jp) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(withDeckConfigs: false, useRwkv: false),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(jp.ownParams, isFalse);
+      // 对照：开着 RWKV、不含预设时新牌组用默认算法。
+      final (_, SrsDeckView langOn, _) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(withDeckConfigs: false),
+      );
+      expect(langOn.localAlgorithm, srsDefaultAlgorithm);
+    });
+
+    test('Fushi 自己导出的 RWKV 牌组回导时改回 FSRS-7', () async {
+      final SrsDbStore src = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final String deck = await src.createDeck('R');
+      await src.editFields(SrsEntityKind.deck, deck, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.rwkv.wire,
+          'auto': true,
+        },
+      });
+      await src.createNote(
+        noteTypeId: src.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '食べる',
+        },
+        deckId: deck,
+      );
+      final Uint8List pkg = await exportAnkiPackage(store: src);
+
+      final SrsDbStore dst = await openTestStore(
+        profileUid: kProfile2,
+        deviceId: 'b',
+        now: () => t,
+      );
+      await importInto(
+        dst,
+        pkg,
+        options: kFullOptions.copyWith(useRwkv: false),
+      );
+      final SrsDeckTree tree = await dst.deckTree();
+      final SrsDeckView r = tree.decks.firstWhere(
+        (SrsDeckView d) => tree.fullName(d.id) == 'R',
+      );
+      expect(r.algorithmWire, SrsAlgorithm.fsrs7.wire);
+    });
+  });
+
   test('BUG-3455：新格式预设的 proto3 零值（上限 0 / 开关 false）导入后保持 0 / false', () async {
     // schema 18 的表放进 collection.anki21（不走 zstd）：解码路径与 anki21b 相同。
     final Uint8List collection = buildSqlite((Database db) {

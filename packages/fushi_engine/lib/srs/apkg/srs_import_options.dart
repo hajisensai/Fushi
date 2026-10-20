@@ -44,6 +44,7 @@ class SrsAnkiImportOptions {
     this.updateNoteTypes = SrsImportUpdateCondition.ifNewer,
     this.withScheduling = false,
     this.withDeckConfigs = false,
+    this.useRwkv = true,
   });
 
   /// 来源笔记类型与本机同一笔记类型的字段 / 模板不一致时：
@@ -65,18 +66,25 @@ class SrsAnkiImportOptions {
   /// 新建的牌组写入来源预设（步长 / 上限 / 算法 / 参数…）；关闭时用本机默认设置。
   final bool withDeckConfigs;
 
+  /// 新建的牌组改用 RWKV 排程（Fushi 默认）。关闭时保留来源的 FSRS 算法（带 FSRS-6 / FSRS-7
+  /// 参数的照原算法；Anki 里开了 RWKV 或没有参数的用 FSRS-7），Fushi 自己导出的 RWKV 牌组同样
+  /// 改回 FSRS-7。所有者 2026-10-20：「从 anki 迁移数据时，应该让用户选择是否迁移 rwkv」。
+  final bool useRwkv;
+
   SrsAnkiImportOptions copyWith({
     bool? mergeNoteTypes,
     SrsImportUpdateCondition? updateNotes,
     SrsImportUpdateCondition? updateNoteTypes,
     bool? withScheduling,
     bool? withDeckConfigs,
+    bool? useRwkv,
   }) => SrsAnkiImportOptions(
     mergeNoteTypes: mergeNoteTypes ?? this.mergeNoteTypes,
     updateNotes: updateNotes ?? this.updateNotes,
     updateNoteTypes: updateNoteTypes ?? this.updateNoteTypes,
     withScheduling: withScheduling ?? this.withScheduling,
     withDeckConfigs: withDeckConfigs ?? this.withDeckConfigs,
+    useRwkv: useRwkv ?? this.useRwkv,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -85,6 +93,7 @@ class SrsAnkiImportOptions {
     'updateNoteTypes': updateNoteTypes.wire,
     'withScheduling': withScheduling,
     'withDeckConfigs': withDeckConfigs,
+    'useRwkv': useRwkv,
   };
 
   /// 缺项 / 坏值回落到默认值。
@@ -105,6 +114,7 @@ class SrsAnkiImportOptions {
           d.updateNoteTypes,
       withScheduling: b('withScheduling', d.withScheduling),
       withDeckConfigs: b('withDeckConfigs', d.withDeckConfigs),
+      useRwkv: b('useRwkv', d.useRwkv),
     );
   }
 
@@ -115,7 +125,8 @@ class SrsAnkiImportOptions {
       other.updateNotes == updateNotes &&
       other.updateNoteTypes == updateNoteTypes &&
       other.withScheduling == withScheduling &&
-      other.withDeckConfigs == withDeckConfigs;
+      other.withDeckConfigs == withDeckConfigs &&
+      other.useRwkv == useRwkv;
 
   @override
   int get hashCode => Object.hash(
@@ -124,5 +135,6 @@ class SrsAnkiImportOptions {
     updateNoteTypes,
     withScheduling,
     withDeckConfigs,
+    useRwkv,
   );
 }

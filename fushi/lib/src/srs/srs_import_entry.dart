@@ -110,6 +110,10 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     t.srs_import_report_default_algorithm(preset: preset),
   for (final String preset in r.rwkvPresets)
     t.srs_import_report_rwkv(preset: preset),
+  for (final String preset in r.rwkvPresetsOnFsrs)
+    t.srs_import_report_rwkv_on_fsrs(preset: preset),
+  for (final String preset in r.defaultFsrsPresets)
+    t.srs_import_report_default_fsrs(preset: preset),
   for (final String preset in r.invalidParams.keys)
     t.srs_import_report_invalid_params(preset: preset),
   if (r.conflictNotes.isNotEmpty)
