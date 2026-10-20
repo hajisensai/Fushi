@@ -123,7 +123,7 @@ void main() {
     expect(dialog.bottom, lessThanOrEqualTo(760));
   });
 
-  testWidgets('默认值 = Anki 默认：两个开关关、合并关、更新两项「较新时」，恢复默认都不可点', (
+  testWidgets('默认值 = Anki 默认：进度 / 预设两个开关关、FSRS 参数开、合并关、更新两项「较新时」，恢复默认都不可点', (
     WidgetTester tester,
   ) async {
     final BuildContext host = await pumpHost(tester, const Size(1280, 800));
@@ -142,6 +142,8 @@ void main() {
         );
     expect(switchRow('srs-import-with-scheduling').value, isFalse);
     expect(switchRow('srs-import-with-deck-configs').value, isFalse);
+    // FSRS 参数是 Fushi 自加的一项（所有者 2026-10-20），默认开。
+    expect(switchRow('srs-import-with-fsrs-params').value, isTrue);
     expect(switchRow('srs-import-merge-notetypes').value, isFalse);
     for (final String key in <String>[
       'srs-import-update-notes',
