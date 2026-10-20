@@ -189,7 +189,7 @@ String _againLabel(WidgetTester tester) {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  testWidgets('BUG-3575：首张卡还没出来就离开复习页，卸载不抛错、之后到达的卡不再上屏', (
+  testWidgets('BUG-3579：首张卡还没出来就离开复习页，卸载不抛错、之后到达的卡不再上屏', (
     WidgetTester tester,
   ) async {
     final SrsDbStore store = await _openStore(tester);

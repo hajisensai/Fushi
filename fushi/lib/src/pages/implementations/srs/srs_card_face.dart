@@ -640,7 +640,7 @@ String srsCardSetCardScript({
     '${_jsString(classes)});';
 
 /// 一次下发的整段调用：外壳不在返回 `false`；各步依次执行、各自兜住异常（换主题出错
-/// 不能把换卡也拦下，否则卡面停在外壳底色、什么都不报，BUG-3575），全部成功返回 `true`，
+/// 不能把换卡也拦下，否则卡面停在外壳底色、什么都不报，BUG-3579），全部成功返回 `true`，
 /// 有步骤抛错返回错误文本（宿主据此留痕）。
 @visibleForTesting
 String srsCardFaceCallsScript(List<String> steps) {
@@ -1817,7 +1817,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           );
         },
         // 外壳没能加载 / 平台视图没建起来时不会有 onLoadStop，卡面会一直停在空白：
-        // 留痕并各重来一次（BUG-3575；以前没接这个回调，失败完全无声）。
+        // 留痕并各重来一次（BUG-3579；以前没接这个回调，失败完全无声）。
         onReceivedError:
             (
               InAppWebViewController controller,

@@ -1,6 +1,6 @@
 // 真实牌组打开探针（Windows 离屏 runner，手动跑）：把一份真实库与 SRS 媒体播种进隔离根，
 // 打开指定牌组的复习页，按时间线记下「页面出现 → 卡面 WebView 建好 → 外壳就绪 →
-// 卡片内容进 DOM」，并抓卡面截图。用来复现「卡面空白 / 打开很慢」（BUG-3575）。
+// 卡片内容进 DOM」，并抓卡面截图。用来复现「卡面空白 / 打开很慢」（BUG-3579）。
 //
 //   .\tool\run_windows_itest.ps1 integration_test/srs_real_deck_open_itest.dart `
 //     -DartDefine @('FUSHI_PROBE_SRS_SEED=C:/path/seed', 'FUSHI_PROBE_SRS_DECK=<deckId>')

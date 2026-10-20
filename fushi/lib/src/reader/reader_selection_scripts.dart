@@ -1507,7 +1507,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // clip 矩形（沿行 ±1em、跨行 ±3em）同口径且更宽，不会裁到笔划。
     // 一行一张而不是一组一张：WebKit 竖排里落笔动画（SMIL 驱动的 clipPath）的重绘区按 svg 盒子左右
     // 镜像——整组一张时跨三栏的句子第一栏与第三栏的重绘互换，最后播的第三栏动画播完屏上只剩右侧一窄条，
-    // 整层重建才补全（BUG-3571）。盒子以本行为中心，镜像后仍落在本行上。
+    // 整层重建才补全（BUG-3578）。盒子以本行为中心，镜像后仍落在本行上。
     var markOpen = function(g) {
       var a = g.u0 - g.em * 2, b = g.u1 + g.em * 2, lo = g.vc - g.em * 3.5, hi = g.vc + g.em * 3.5;
       // 横排 (x, y) = (u, v)，竖排 (x, y) = (-v, u)（同 markPoint）。

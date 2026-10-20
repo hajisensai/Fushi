@@ -552,7 +552,7 @@ class SrsBackupStore {
   /// 做一份备份。[profileName] 只用于显示。
   ///
   /// 读快照的事务开着时，库上别的语句都要排在它后面（drift 单连接）：真实库三十万条复习
-  /// 日志要读二三十秒，复习页的查询全被挡住（BUG-3575）。[shouldStop] 每读完一页问一次，
+  /// 日志要读二三十秒，复习页的查询全被挡住（BUG-3579）。[shouldStop] 每读完一页问一次，
   /// 为 true 时抛 [SrsBackupCancelled]：事务回滚（只读，没有副作用）、暂存文件删掉。
   Future<SrsBackupInfo> create(
     SrsDbStore store, {

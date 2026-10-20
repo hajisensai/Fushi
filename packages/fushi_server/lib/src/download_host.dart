@@ -91,7 +91,7 @@ class ServerDownloadHost implements HostDownloadHost {
   /// 当前 registry 下可用的 provider id（能力位同源；WebUI 保存索引器后回显用）。
   List<String> get availableResourceProviderIds => (_subscriptions ??= _buildSubscriptionHost()).availableProviderIds;
   TorrentBackend? _backend;
-  /// 内置宿主（BUG-3571：跑在专用工作 isolate，本 isolate 只持客户端——服务端的
+  /// 内置宿主（BUG-3577：跑在专用工作 isolate，本 isolate 只持客户端——服务端的
   /// HTTP 事件循环同样不能被 libtorrent 的同步往返卡住）。槽位负责懒建去重（并发
   /// 解析后端时只起一个工作 isolate，不抢同一个监听端口），并在工作 isolate 意外
   /// 退出后摘下失效客户端，下一个任务解析后端时重建。

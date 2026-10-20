@@ -280,7 +280,7 @@ class SrsAppRuntime {
   bool _lastSrsInUse = false;
 
   /// 自动备份让路：开始用时叫停在做的那一份；不用了（离开 SRS 界面 / app 退到后台）立即补一份
-  /// （BUG-3575：以前离开复习页就开始备份，回到牌组列表、再点下一个牌组全被挡二三十秒）。
+  /// （BUG-3579：以前离开复习页就开始备份，回到牌组列表、再点下一个牌组全被挡二三十秒）。
   void _syncBackupUse() {
     final bool inUse = _srsInUse;
     if (inUse == _lastSrsInUse) return;

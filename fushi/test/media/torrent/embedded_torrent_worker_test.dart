@@ -1,4 +1,4 @@
-// BUG-3571：内置 libtorrent 宿主必须跑在专用工作 isolate，UI isolate 不得被
+// BUG-3577：内置 libtorrent 宿主必须跑在专用工作 isolate，UI isolate 不得被
 // libtorrent 的同步往返卡住 —— **不需要 native DLL**。
 //
 // 事故本体（用户机 hang dump，2026-10-19）：启动 58 秒后看门狗记下
@@ -292,7 +292,7 @@ void main() {
     expect(
       maxGapMs,
       lessThan(400),
-      reason: 'BUG-3571 回归：libtorrent 同步往返又回到了 UI isolate',
+      reason: 'BUG-3577 回归：libtorrent 同步往返又回到了 UI isolate',
     );
   });
 

@@ -1,4 +1,4 @@
-## BUG-3575 · 复习「立即同步」失败时提示「还没有配置同步服务」
+## BUG-3581 · 复习「立即同步」失败时提示「还没有配置同步服务」
 - **报告**：2026-10-20（用户：iOS 作为互联客户端、书和视频经互联同步正常，在复习牌组列表点「立即同步」仍提示「还没有配置同步服务」；BUG-3566 的修复只覆盖 host 侧）
 - **真实性**：✅ 真 bug（提示层）。`fushi/lib/src/srs/srs_import_entry.dart` 修复前 `openSrsSyncNow` 只看「跑过的目录数」，`== 0` 就提示没配置；而这个数在 `fushi/lib/src/sync/sync_auto_trigger.dart` `runOnAuthenticatedSyncChannels` 里只在通道 body 不抛时才加 1，抛错只记日志、照样返回 0。互联客户端在 SRS 同步里抛错（例如 `srsDirectoryKeyOf` → `InterconnectSyncBackend.connectedHostIdentity()` → `_ensureResolved()` 连不上 host，或批次读写出错）时，「配置了但这轮失败」被说成「没配置」，用户会去找一个其实已经配好的设置，真实原因也看不到。另外 `SrsSyncScheduler._syncWithBackend` 以报告 `error` 返回（目录身份拿不到 / 后端拿不到服务器时间）的那一轮也被计成同步成功，提示「复习数据已同步」。iOS 上具体抛的是什么，要等这条修复上线后由新提示带出（本条不修那个底层失败）。
 - **[x] ① 已修复** — `runOnAuthenticatedSyncChannels` 返回 `(ran, errors)`（抛错通道的异常带回调用方）；`SrsSyncScheduler.syncNow` / `syncLocalDirectories` 返回 `SrsSyncNowResult`，报告带错的目录记成 `SrsSyncReportError` 计入失败、不计入成功；`srsSyncNowToast` 分三种提示：有失败 → `srs_sync_failed`（带原因，`friendlySyncErrorDetail`；目录身份 / 服务器时间两种报告错误给人话），没有任何目录也没失败 → `srs_sync_no_backend`，否则 `srs_sync_done`。

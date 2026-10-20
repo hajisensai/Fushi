@@ -282,7 +282,7 @@ void main() {
     });
   });
 
-  group('BUG-3575：自动备份给 SRS 界面让路', () {
+  group('BUG-3579：自动备份给 SRS 界面让路', () {
     Future<void> addNote(String word) => current.createNote(
       noteTypeId: current.lapisNoteTypeId,
       fieldsById: <String, String>{

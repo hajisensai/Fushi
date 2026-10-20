@@ -79,7 +79,7 @@ class EmbeddedTorrentHost {
 
   /// 周期保存时给 native 的等待预算（毫秒）。
   ///
-  /// BUG-3571 起宿主整体跑在专用工作 isolate（`embedded_torrent_worker.dart`），
+  /// BUG-3577 起宿主整体跑在专用工作 isolate（`embedded_torrent_worker.dart`），
   /// 这段同步等待不再冻结 UI；预算仍压在 1.5s，是因为它会顺延同一 isolate 里
   /// 排在后面的命令（列种子、暂停等）。没收齐的种子下一轮再存，盘上仍是上一轮
   /// 的 resume，不丢数据。

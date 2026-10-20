@@ -132,7 +132,7 @@ class EmbeddedTorrentBackend
 
   /// [addTorrent] 的形态之一：成功返回新种子的 infohash，失败返回 null。
   ///
-  /// BUG-3571：工作 isolate 里的视图没有订阅服务（拉订阅要用 app 装配的代理感知
+  /// BUG-3577：工作 isolate 里的视图没有订阅服务（拉订阅要用 app 装配的代理感知
   /// http client，带不过 isolate 边界），UI isolate 的代理拿这个 id 在 add
   /// 之后补订阅 tracker——与本类自持订阅服务时的先 add 后拉订阅同序。
   Future<String?> addTorrentReturningId(

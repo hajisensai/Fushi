@@ -10,7 +10,7 @@ import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
 import 'package:meta/meta.dart';
 
-/// [EmbeddedTorrentHost] 的 UI isolate 一侧（BUG-3571）。
+/// [EmbeddedTorrentHost] 的 UI isolate 一侧（BUG-3577）。
 ///
 /// 宿主整体跑在 [EmbeddedTorrentWorker] 的专用 isolate 里；这里的每个方法都
 /// 是一条粗粒度命令，返回 `Future`，**绝不在调用方 isolate 上碰 FFI**。生产代码

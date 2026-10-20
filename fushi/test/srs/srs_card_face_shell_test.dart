@@ -199,7 +199,7 @@ void main() {
       expect(calls, 2);
     });
 
-    test('BUG-3575：调用没执行（返回 null）不算已下发，下次整份重发', () async {
+    test('BUG-3579：调用没执行（返回 null）不算已下发，下次整份重发', () async {
       final List<Object?> results = <Object?>[null, true];
       final List<String> sent = <String>[];
       final SrsCardFaceSync s = SrsCardFaceSync(
@@ -219,7 +219,7 @@ void main() {
       expect(sent.last, contains('__fushiSrsSetTheme'));
     });
 
-    test('BUG-3575：某一步在页内抛错，后面的换卡照常执行，错误文本带回宿主', () async {
+    test('BUG-3579：某一步在页内抛错，后面的换卡照常执行，错误文本带回宿主', () async {
       final String code =
           'globalThis.window = globalThis;'
           'window.__fushiSrsSetCard = function(){};'

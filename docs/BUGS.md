@@ -33,64 +33,40 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3205 条。点号进各自文件。
+> 共 3230 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3575](bugs/BUG-3575-gal-long-line-voice-truncated.md) | ✅ | ✅ | gal-long-line-voice-truncated |
-> 共 3206 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
+| [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
+| [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
+| [BUG-3617](bugs/BUG-3617-srs-browse-orphan-deck-cards.md) | ✅ | ✅ | 复习卡片浏览：牌组已不存在的卡不归默认牌组，deck:Default 筛不到 |
+| [BUG-3616](bugs/BUG-3616-game-stream-study-duration.md) | ✅ | ✅ | 串流游玩时游戏留在主机后台，游玩时长整场记 0 |
+| [BUG-3615](bugs/BUG-3615-interconnect-remote-host-downloaded-subtitle.md) | ✅ | ✅ | iPad 经互联流播用不了电脑上已下载的字幕 |
+| [BUG-3614](bugs/BUG-3614-interconnect-remote-danmaku.md) | ✅ | ✅ | iPad 经互联流播没有弹幕，下载到本机才有 |
+| [BUG-3613](bugs/BUG-3613-interconnect-remote-season-and-detail.md) | ✅ | ✅ | iPad 经互联：刮削后剧集不分季、独立作品点开直接播放无资料页 |
+| [BUG-3612](bugs/BUG-3612-remote-lookup-card-missing-host-dict-styles.md) | ✅ | ✅ | 瘦客户端经远端查词制卡缺少 host 词典自带样式（看电脑媒体库视频） |
+| [BUG-3611](bugs/BUG-3611-interconnect-continue-watching-collection.md) | ✅ | ✅ | 互联子端「继续观看」远端视频不按合集归并、看完的集仍在 |
+| [BUG-3610](bugs/BUG-3610-video-library-progress-refresh.md) | ✅ | ✅ | 视频媒体库页从详情页退回后观看进度不刷新 |
+| [BUG-3609](bugs/BUG-3609-ass-bilingual-overlap-width.md) | 🚧 | 🚧 | 简日内封双语 ASS 重叠、纯日字幕字宽不对（缺原片未定根因） |
+| [BUG-3608](bugs/BUG-3608-ass-plain-mode-pos-order.md) | ✅ | ✅ | 纯字幕模式下 \pos 排成上下的同时间戳 ASS 两行被上下颠倒 |
+| [BUG-3606](bugs/BUG-3606-vertical-quote-orientation-mixed.md) | ✅ | ✅ | 竖排引号方向不一致（有的竖有的横） |
+| [BUG-3605](bugs/BUG-3605-ocr-progress-double-run.md) | ✅ | ✅ | 漫画远程 OCR 右上角进度走两遍（上传段与识别段共用一条进度） |
+| [BUG-3604](bugs/BUG-3604-manga-lookup-popup-offscreen.md) | ✅ | ✅ | 漫画查词弹窗在整句并集放不下时被压成 0 高挤出屏幕 |
+| [BUG-3603](bugs/BUG-3603-floating-ball-screen-ocr-launch-dropped.md) | ✅ | ✅ | Android 应用外悬浮球截屏查词点了没反应（宿主 Activity 被 ROM 静默拦下） |
+| [BUG-3602](bugs/BUG-3602-floating-ball-in-app-hidden-after-screen-ocr.md) | ✅ | ✅ | Android 应用内悬浮球不显示（截屏 OCR 回调丢失后一直藏着） |
+| [BUG-3601](bugs/BUG-3601-app-icon-switch-crash.md) | ✅ | ✅ | Android 换应用图标（自定义图标）闪退 |
+| [BUG-3581](bugs/BUG-3581-srs-sync-now-failure-says-unconfigured.md) | ✅ | ✅ | 复习「立即同步」失败时提示「还没有配置同步服务」 |
+| [BUG-3580](bugs/BUG-3580-srs-new-card-reposition.md) | ✅ | ✅ | 制卡目标为「Fushi 复习」时「新卡按词频重排」（手动 + 制卡后自动）不可用 |
+| [BUG-3579](bugs/BUG-3579-srs-deck-open-slow.md) | ✅ | ✅ | SRS 打开大牌组很慢（eggrolls 首张卡要等十几秒），首张卡出来前退出复习页时 State 卡成僵尸 |
+| [BUG-3578](bugs/BUG-3578-ios-stroke-sweep-last-line-sliver.md) | ✅ | ✅ | iOS 竖排笔触高亮落笔动画：跨三栏的句子最后一栏只剩右侧一窄条 |
+| [BUG-3577](bugs/BUG-3577-embedded-torrent-ui-isolate-hang.md) | ✅ | ✅ | embedded-torrent-ui-isolate-hang |
 | [BUG-3576](bugs/BUG-3576-interconnect-srs-writer-dir-hash-propfind-404.md) | ✅ | ✅ | 互联客户端复习同步第二轮起 PROPFIND 404（写入者目录名带 `#`） |
-| [BUG-3575](bugs/BUG-3575-srs-sync-now-failure-says-unconfigured.md) | ✅ | ✅ | 复习「立即同步」失败时提示「还没有配置同步服务」 |
-| [BUG-3575](bugs/BUG-3575-srs-deck-open-slow.md) | ✅ | ✅ | SRS 打开大牌组很慢（eggrolls 首张卡要等十几秒），首张卡出来前退出复习页时 State 卡成僵尸 |
-| [BUG-3575](bugs/BUG-3575-srs-new-card-reposition.md) | ✅ | ✅ | 制卡目标为「Fushi 复习」时「新卡按词频重排」（手动 + 制卡后自动）不可用 |
+| [BUG-3575](bugs/BUG-3575-gal-long-line-voice-truncated.md) | ✅ | ✅ | gal-long-line-voice-truncated |
 | [BUG-3574](bugs/BUG-3574-manga-source-scan-skips-cbz-zip.md) | ✅ | ✅ | 漫画来源扫描跳过 .cbz / .zip 卷（显示 0 卷），漫画来源里的 .epub / .pdf 卷也被丢掉 |
 | [BUG-3573](bugs/BUG-3573-mixed-dict-kanji-section-missing.md) | ✅ | ✅ | mixed-dict-kanji-section-missing |
 | [BUG-3572](bugs/BUG-3572-extension-asb-anki-dialog-no-lookup.md) | ✅ | ✅ | 浏览器扩展：asbplayer Mining History「Export to Anki」对话框的字段里查不了词 |
 | [BUG-3571](bugs/BUG-3571-extension-netflix-no-subtitle-tracks.md) | ✅ | ✅ | 浏览器扩展：网飞播放页「字幕轨」显示「这个视频还没有字幕轨」，同页 asbplayer 能拿到轨 |
-> 共 3201 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3606](bugs/BUG-3606-vertical-quote-orientation-mixed.md) | ✅ | ✅ | 竖排引号方向不一致（有的竖有的横） |
-> 共 3200 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3571](bugs/BUG-3571-ios-stroke-sweep-last-line-sliver.md) | ✅ | ✅ | iOS 竖排笔触高亮落笔动画：跨三栏的句子最后一栏只剩右侧一窄条 |
-> 共 3201 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3571](bugs/BUG-3571-embedded-torrent-ui-isolate-hang.md) | 🚧 | 🚧 | embedded-torrent-ui-isolate-hang |
-| [BUG-3611](bugs/BUG-3611-interconnect-continue-watching-collection.md) | ✅ | ✅ | 互联子端「继续观看」远端视频不按合集归并、看完的集仍在 |
-> 共 3203 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3615](bugs/BUG-3615-interconnect-remote-host-downloaded-subtitle.md) | ✅ | ✅ | iPad 经互联流播用不了电脑上已下载的字幕 |
-| [BUG-3614](bugs/BUG-3614-interconnect-remote-danmaku.md) | ✅ | ✅ | iPad 经互联流播没有弹幕，下载到本机才有 |
-| [BUG-3613](bugs/BUG-3613-interconnect-remote-season-and-detail.md) | ✅ | ✅ | iPad 经互联：刮削后剧集不分季、独立作品点开直接播放无资料页 |
-| [BUG-3610](bugs/BUG-3610-video-library-progress-refresh.md) | ✅ | ✅ | 视频媒体库页从详情页退回后观看进度不刷新 |
-| [BUG-3612](bugs/BUG-3612-remote-lookup-card-missing-host-dict-styles.md) | ✅ | ✅ | 瘦客户端经远端查词制卡缺少 host 词典自带样式（看电脑媒体库视频） |
-> 共 3202 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3609](bugs/BUG-3609-ass-bilingual-overlap-width.md) | 🚧 | 🚧 | 简日内封双语 ASS 重叠、纯日字幕字宽不对（缺原片未定根因） |
-| [BUG-3608](bugs/BUG-3608-ass-plain-mode-pos-order.md) | ✅ | ✅ | 纯字幕模式下 \pos 排成上下的同时间戳 ASS 两行被上下颠倒 |
-| [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
-| [BUG-3616](bugs/BUG-3616-game-stream-study-duration.md) | ✅ | ✅ | 串流游玩时游戏留在主机后台，游玩时长整场记 0 |
-| [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
-| [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
-| [BUG-3605](bugs/BUG-3605-ocr-progress-double-run.md) | ✅ | ✅ | 漫画远程 OCR 右上角进度走两遍（上传段与识别段共用一条进度） |
-| [BUG-3601](bugs/BUG-3601-app-icon-switch-crash.md) | ✅ | ✅ | Android 换应用图标（自定义图标）闪退 |
-| [BUG-3604](bugs/BUG-3604-manga-lookup-popup-offscreen.md) | ✅ | ✅ | 漫画查词弹窗在整句并集放不下时被压成 0 高挤出屏幕 |
-| [BUG-3603](bugs/BUG-3603-floating-ball-screen-ocr-launch-dropped.md) | ✅ | ✅ | Android 应用外悬浮球截屏查词点了没反应（宿主 Activity 被 ROM 静默拦下） |
-| [BUG-3602](bugs/BUG-3602-floating-ball-in-app-hidden-after-screen-ocr.md) | ✅ | ✅ | Android 应用内悬浮球不显示（截屏 OCR 回调丢失后一直藏着） |
-| [BUG-3617](bugs/BUG-3617-srs-browse-orphan-deck-cards.md) | ✅ | ✅ | 复习卡片浏览：牌组已不存在的卡不归默认牌组，deck:Default 筛不到 |
 | [BUG-3570](bugs/BUG-3570-web-browser-embedded-under-nav.md) | ✅ | ✅ | 浏览器嵌在模块页里：主导航底栏与「阅读本章」FAB 叠在网页上互相遮挡，顶部还有「浏览器」标题 |
 | [BUG-3569](bugs/BUG-3569-lookup-shell-title-md3-compact.md) | ✅ | ✅ | 查词页（MD3 手机）顶部仍有一整行「查词」大标题 |
 | [BUG-3568](bugs/BUG-3568-root-page-back-button-on-popup.md) | ✅ | ✅ | 根页打开弹出菜单 / 对话框后重建会凭空长出返回键（浏览器页点「⋯」左上角出现返回） |

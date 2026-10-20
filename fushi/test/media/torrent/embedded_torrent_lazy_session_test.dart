@@ -64,7 +64,7 @@ void main() {
     });
 
     test('后端工厂在真要用时才懒建（且仅内置后端路径）', () {
-      // BUG-3571：工厂同步交出代理，代理里再等懒建出的工作 isolate。
+      // BUG-3577：工厂同步交出代理，代理里再等懒建出的工作 isolate。
       final String body =
           methodBody(appModel, 'TorrentBackend _torrentBackendFor(');
       expect(body.contains('_embeddedTorrentBackendProxy(config)'), isTrue,
@@ -92,7 +92,7 @@ void main() {
       // 窗口=方法体（花括号配对）。原写法是「找下一个 `\n  }`，找不到就退定长 1200」：
       // 前半赌方法体里不出现同缩进闭合行，后半的静默兜底更是假绿温床——探测体一长，
       // 下面两条 isFalse 就只扫前 1200 字符，后面真写了 session.open( 也照样绿。
-      // BUG-3571：probeAvailable 委托给 probeCapabilities（顺带读出 DLL 能力位），
+      // BUG-3577：probeAvailable 委托给 probeCapabilities（顺带读出 DLL 能力位），
       // 真正加载引擎的是后者，窗口跟着它走。
       final String probe = methodBody(host, 'static bool probeAvailable(');
       expect(probe.contains('probeCapabilities('), isTrue);

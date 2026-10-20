@@ -1,4 +1,4 @@
-## BUG-3571 · embedded-torrent-ui-isolate-hang
+## BUG-3577 · embedded-torrent-ui-isolate-hang
 - **报告**：2026-10-19（用户：Windows 开发版用了一会儿就被关闭）
 - **真实性**：✅ 真 bug。不是崩溃，是 UI 线程卡死后进程被结束。`%LOCALAPPDATA%\Fushi\crashdumps\hang_watchdog.log` 记 `pid=115708 main thread unresponsive >=10000 ms`（启动 58 秒后），对应 hang dump 主线程栈：Dart（UI isolate）→ `fushi_torrent_ffi!ht_set_upload_mode` → `libtorrent::session_handle::get_torrents` → `_Cnd_wait`，即 UI 线程同步等网络线程交回种子列表，而网络线程正忙着加载 fastResume。本机 7 份 hang dump 里有 4 份停在 torrent_rasterbar 的同一个条件变量上（10-15 11:08 / 11:11 / 11:15、10-19 21:45）。
   - 直接触发点：`packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart` `sweepUploadPolicy()` 首轮「清 upload_mode 残留」调 `_session.setUploadMode(enabled: true)` → `native/fushi_torrent/fushi_torrent_ffi.cpp` `ht_set_upload_mode`（无 infohash 走 `get_torrents()`）。

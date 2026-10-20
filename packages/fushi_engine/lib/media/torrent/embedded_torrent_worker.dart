@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:meta/meta.dart';
 
-/// 内置 libtorrent 的专用工作 isolate（BUG-3571）。
+/// 内置 libtorrent 的专用工作 isolate（BUG-3577）。
 ///
 /// 为什么整个 [EmbeddedTorrentHost] 都搬进来、而不是只搬 session：
 /// libtorrent 的 `session_handle` 查询（`get_torrents` / `status` / 逐种子

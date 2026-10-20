@@ -154,7 +154,7 @@ void main() {
       expect(picked.every((String d) => d == a1 || d == a2), isTrue);
     });
 
-    test('BUG-3575：单牌组计数（复习页用）与列表里同一牌组那一行逐项相同', () async {
+    test('BUG-3579：单牌组计数（复习页用）与列表里同一牌组那一行逐项相同', () async {
       // 今天学过 / 留在学习队列的卡都要算进去（newDone 与 learn 走的是另一条查询）。
       for (int i = 0; i < 2; i++) {
         await s.answer((await s.nextCard(a1))!, 4);

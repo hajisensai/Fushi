@@ -4815,7 +4815,7 @@ class AppModel with ChangeNotifier {
 
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
   ///
-  /// BUG-3571：宿主在专用工作 isolate 里，这里只是按序投递命令（工作 isolate
+  /// BUG-3577：宿主在专用工作 isolate 里，这里只是按序投递命令（工作 isolate
   /// 逐条执行，先后依赖照旧成立），不等回执、不碰 FFI。投递一律走
   /// [EmbeddedTorrentHostClient.post]：工作 isolate 抛错 / 已关时错误进日志，
   /// 不变成 zone 未处理异步错误。
@@ -5364,7 +5364,7 @@ class AppModel with ChangeNotifier {
   /// 于是没有任何下载任务的用户，只要 Fushi 开着就一直在跑全球 DHT，路由器
   /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Fushi 即恢复。
   ///
-  /// BUG-3571：这里只持有工作 isolate 的客户端，宿主与 session 本体在工作
+  /// BUG-3577：这里只持有工作 isolate 的客户端，宿主与 session 本体在工作
   /// isolate 里——UI isolate 不碰 libtorrent 的任何同步 FFI。
   ///
   /// 槽位管懒建去重（同一时刻只起一个工作 isolate）、释放与懒建竞发，以及
@@ -5799,7 +5799,7 @@ class AppModel with ChangeNotifier {
       subtitleAligner: alignDownloadedSubtitle,
       backendFactory: _torrentBackendFor,
       onTick: () {
-        // BUG-3571：两轮扫描在工作 isolate 里按序执行，这里只投递。
+        // BUG-3577：两轮扫描在工作 isolate 里按序执行，这里只投递。
         final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
         if (host != null) {
           host.post('sweepAntiLeech', host.sweepAntiLeech());
@@ -6835,7 +6835,7 @@ class AppModel with ChangeNotifier {
   /// 内置引擎后端代理（同步交出，方法里再等宿主就绪）。宿主建不出来 → null。
   ///
   /// BUG-1053：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
-  /// BUG-3571：懒建是起工作 isolate，异步；能不能建由 DLL 探测同步判定。
+  /// BUG-3577：懒建是起工作 isolate，异步；能不能建由 DLL 探测同步判定。
   TorrentBackend? _embeddedTorrentBackendProxy(QbConnectionConfig config) {
     final EmbeddedTorrentHostCapabilities? capabilities =
         _embeddedTorrentHostCapabilities();

@@ -66,7 +66,7 @@ const CHECK = String.raw`(async () => {
       const box = s.getBoundingClientRect();
       ok(box.width > 1 && box.height > 1, label + ': the stroke svg box is the stroke bounds (' +
         box.width.toFixed(1) + 'x' + box.height.toFixed(1) + ')');
-      // BUG-3571: one svg per line. WebKit (vertical writing) mirrors the repaint area of the SMIL
+      // BUG-3578: one svg per line. WebKit (vertical writing) mirrors the repaint area of the SMIL
       // sweep across the svg box, so a box spanning three columns swapped the first and last
       // column's repaints and the last column stayed a sliver. The cross-line extent is one band.
       const cross = vertical ? box.width : box.height;
@@ -220,7 +220,7 @@ const CHECK = String.raw`(async () => {
     ok(vertical ? order[i].pos < order[i - 1].pos : order[i].pos > order[i - 1].pos,
       'line ' + i + ' sweeps after the one before it in reading order');
   }
-  // BUG-3571: a sweep over several lines still puts each line in its own svg box (the vertical
+  // BUG-3578: a sweep over several lines still puts each line in its own svg box (the vertical
   // pages wrap this favourite over several columns).
   ok(group('fushi-hl-blue').querySelectorAll('svg.fushi-mark-ink').length === order.length,
     'the long favourite paints one svg per line');

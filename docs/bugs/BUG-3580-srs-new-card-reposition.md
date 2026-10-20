@@ -1,4 +1,4 @@
-## BUG-3575 · 制卡目标为「Fushi 复习」时「新卡按词频重排」（手动 + 制卡后自动）不可用
+## BUG-3580 · 制卡目标为「Fushi 复习」时「新卡按词频重排」（手动 + 制卡后自动）不可用
 - **报告**：2026-10-20（用户：挖词目标切到 Fushi 复习后，设置里「按词频重排新卡」「制卡后自动重排」两行消失，复习里也没法按词频排新卡）
 - **真实性**：✅ 真缺口（能力缺失，不是偶发）。根因四处：
   1. `fushi/lib/src/settings/settings_schema_card_creation.dart`（`_ankiOnly` 包住 `card_creation.anki.reposition` / `reposition_auto` 两条搜索条目）与 `ankiSectionRowsFor` 只在 Anki 目标下列出这两行——复习目标下整组不渲染、搜不到。

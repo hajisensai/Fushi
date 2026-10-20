@@ -1,4 +1,4 @@
-// BUG-3571 守卫：生产代码只能经工作 isolate 的客户端使用内置 libtorrent。
+// BUG-3577 守卫：生产代码只能经工作 isolate 的客户端使用内置 libtorrent。
 //
 // libtorrent 的 session 查询（`get_torrents` / `status` / 逐种子 `find_torrent`）
 // 都是同步等网络线程回话的 FFI，启动加载 fastResume 时一次就能卡几秒。宿主
@@ -69,7 +69,7 @@ void main() {
       offenders,
       isEmpty,
       reason:
-          'BUG-3571：经 EmbeddedTorrentHostClient / '
+          'BUG-3577：经 EmbeddedTorrentHostClient / '
           'EmbeddedTorrentBackendProxy 使用内置引擎，libtorrent 的同步 FFI '
           '只能在工作 isolate 里跑',
     );
