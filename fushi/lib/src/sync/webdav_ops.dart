@@ -419,7 +419,7 @@ class WebDavOps {
       final hrefMatch = hrefPattern.firstMatch(block);
       if (hrefMatch == null) continue;
 
-      final href = Uri.decodeFull(hrefMatch.group(1)!.trim());
+      final href = decodedDavHref(hrefMatch.group(1)!.trim());
       final isCollection = collectionPattern.hasMatch(block);
       final displayMatch = displayNamePattern.firstMatch(block);
 
@@ -451,6 +451,16 @@ class WebDavOps {
     }
     return entries;
   }
+
+  /// PROPFIND 返回的 href 解码成 [DavEntry.href]（之后原样当 URL 交给 [buildRequest]）。
+  ///
+  /// 解码让中文 / 空格等字符以可读形式出现（既有 id 形态，按 id 比较的调用方依赖它），但
+  /// `%`、`#`、`?` 解码出来就成了 URL 分隔符：`Uri.parse` 会把 `#1/` 当片段、把 `?` 后当查询，
+  /// 请求打到截断后的路径（BUG-3576：复习同步写入者目录名 `<deviceId>#<化身号>`，第二轮起
+  /// PROPFIND 404）。这三个字符解码后重新转义，其余保持原样。
+  static String decodedDavHref(String rawHref) => Uri.decodeFull(
+    rawHref,
+  ).replaceAll('%', '%25').replaceAll('#', '%23').replaceAll('?', '%3F');
 
   String resolveHref(String href, String basePath) {
     final baseUri = Uri.parse(basePath);
