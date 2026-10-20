@@ -228,7 +228,9 @@ img.Image? decodePngNative(Uint8List bytes) {
 /// - 灰度展开成 RGB、16 位截成 8 位、调色板展开，多帧格式只取首帧。
 /// - JPEG 的像素与旧的 `package:image` 解码有 ±1 的差（3.5～4.8% 的通道值），下游影响见
 ///   PR #2330；PNG 等无损格式逐字节相同。
-/// - 认得 JPEG / PNG / GIF / WebP / BMP / TIFF / TGA / ICO / PNM；认不出或坏字节返回 null。
+/// - 认得 JPEG / PNG / GIF / WebP / BMP / TIFF / TGA / ICO / PNM / AVIF；认不出或坏字节返回 null。
+///   AVIF（含 grid 拼图、alpha）的 clap / irot / imir 是 HEIF 的必选显示变换，与 [orient] 无关、
+///   总是应用——与 WebView 里显示的页面同一坐标系。
 img.Image? decodeImageNative(Uint8List bytes, {bool orient = true}) =>
     decodeImageWithFormat(bytes, orient: orient)?.image;
 

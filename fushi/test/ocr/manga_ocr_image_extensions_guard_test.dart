@@ -2,7 +2,8 @@
 ///
 /// 历史：两表各自手写整表，OCR 侧比导入侧少 `.bmp` / `.gif`——导入能收的
 /// bmp 漫画整卷 OCR 时 bmp 页被静默跳过、产物 manga.json 缺页无任何提示。
-/// 现两表统一取共享基集 `kImageExtensionsBase`（media_extensions.dart）。
+/// 现两表统一取漫画页图共享表 `kMangaPageImageExtensions`（media_extensions.dart，
+/// = 图片扩展名基集 + `.avif`）。
 library;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -22,9 +23,13 @@ void main() {
       );
     });
 
-    test('两道关卡都以图片扩展名基集为源，.bmp / .gif 不再缺席', () {
-      expect(kMangaImageExtensions, equals(kImageExtensionsBase));
-      expect(kMangaOcrImageExtensions, containsAll(<String>{'.bmp', '.gif'}));
+    test('两道关卡都以漫画页图共享表为源，.bmp / .gif / .avif 不再缺席', () {
+      expect(kMangaImageExtensions, equals(kMangaPageImageExtensions));
+      expect(kMangaPageImageExtensions, containsAll(kImageExtensionsBase));
+      expect(
+        kMangaOcrImageExtensions,
+        containsAll(<String>{'.bmp', '.gif', '.avif'}),
+      );
     });
   });
 }

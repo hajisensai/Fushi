@@ -133,8 +133,8 @@ void main() {
     );
   });
 
-  test('声明长度超过剩余字节的截断块同样不越界', () {
-    // 一个声称 40 字节、实际只剩 2 字节的块。
+  test('声明长度超过剩余字节的截断块被跳过，不影响条目本身', () {
+    // 一个声称 40 字节、实际只剩 2 字节的块：补丁在这里 break，条目照常解出。
     final List<int> truncated = <int>[0xfe, 0xca, 40, 0, 0x20, 0x20];
     final EpubBook book =
         EpubParser.parseSync(_epub(truncated), p.join(tmp.path, 'out'));

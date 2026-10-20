@@ -98,7 +98,7 @@ Future<({int width, int height})?> mangaPageOrientedSizeAsync(
 /// 之前打到整页上——块大小按整页算，与对话框里整页预览上看到的一致。
 ///
 /// 编码：源是 PNG → PNG；其余 → JPEG（[quality]）。
-/// 解码失败（AVIF 等 `package:image` 不认识的格式、损坏字节）返回 null——调用方退回
+/// 解码失败（原生解码器不认识的格式、损坏字节）返回 null——调用方退回
 /// 整页原图，绝不让裁切把一张能用的卡图变成没有图。
 MangaPageCropResult? cropMangaPage(
   Uint8List bytes, {
