@@ -11,9 +11,18 @@ import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 Uint8List _avif(String name) => File(
-      p.join('..', 'packages', 'fushi_engine', 'test', 'media',
-          'image_kernels', 'fixtures', 'avif', '$name.avif'),
-    ).readAsBytesSync();
+  p.join(
+    '..',
+    'packages',
+    'fushi_engine',
+    'test',
+    'media',
+    'image_kernels',
+    'fixtures',
+    'avif',
+    '$name.avif',
+  ),
+).readAsBytesSync();
 
 void main() {
   test('AVIF（单图 / grid / alpha）嗅成 image/avif', () {
@@ -42,13 +51,26 @@ void main() {
     // 只有 ftyp 头、品牌不是 avif 的 HEIC 不算 AVIF。
     expect(
       mangaImageContentType(
-        Uint8List.fromList(<int>[0, 0, 0, 12, ...'ftypheic'.codeUnits, 0, 0, 0, 0]),
+        Uint8List.fromList(<int>[
+          0,
+          0,
+          0,
+          12,
+          ...'ftypheic'.codeUnits,
+          0,
+          0,
+          0,
+          0,
+        ]),
       ),
       'application/octet-stream',
     );
   });
 
   test('直读缓存文件名按 AVIF 取扩展名', () {
-    expect(onlineMangaStreamPageFileName(0, _avif('rgb444')), 'page-000001.avif');
+    expect(
+      onlineMangaStreamPageFileName(0, _avif('rgb444')),
+      'page-000001.avif',
+    );
   });
 }

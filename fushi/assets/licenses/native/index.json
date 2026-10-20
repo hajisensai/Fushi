@@ -5,12 +5,12 @@
   "inputs": {
     "native/fushi_anki_sync/Cargo.lock": "0423cf9ecbaa664832285f4f5230d9b0c691ea29c8c035b847a970ba077d398f",
     "native/fushi_anki_sync/Cargo.toml": "5e2fab544da4eb3ff0b9481130104a95c8ed094d7c54da1fe8959d3b1e22aecb",
-    "native/fushi_compute/Cargo.lock": "2b6bc353b9c73b48510b21beb6f09316ad9cd9a7807015c653f36ee910e8af9e",
-    "native/fushi_compute/Cargo.toml": "ef1a03c15a7e47ebb0df9a4631205136c2f2b2c7dfc479ee09340ceee8463d67",
+    "native/fushi_compute/Cargo.lock": "bc7c6f2ac8cddba2e62effafa5d54a8d6c075a713a328b18a2a73cd0cfec5316",
+    "native/fushi_compute/Cargo.toml": "677d0a78e11f39a1f993028a49bb80da383133ad00f3d522d9fa829004211403",
     "native/fushi_fsrs/Cargo.lock": "a8815739cc64de26beb0e848f11b7c8cf53d2efea4c63fdcbac57a69ea765de9",
     "native/fushi_fsrs/Cargo.toml": "31efb16a899a66b190c27e6791758071b8cd176688954f298ef2780de5e0fe02",
-    "native/fushi_ios_umbrella/Cargo.lock": "60426336f3c5dd598794f85c71493b452908fa54e50320845eb2b1fd36ad56d7",
-    "native/fushi_ios_umbrella/Cargo.toml": "4ff97decc131ad9e04a9b0bba9bf6252fd198ca94d7b4df034fafe2f8c93385e",
+    "native/fushi_ios_umbrella/Cargo.lock": "2986e23d7ccfe5d897cfd3d8a4e775981ae071a20956b49427c9653b576898fc",
+    "native/fushi_ios_umbrella/Cargo.toml": "ce7515a0efab0890dbfcadba88cd7dda071b5ef48b447be826f3b9245585e819",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "0fba229e5dbc8b5b90483324d5a9bf25e036564ab6c36567c37910a87845f8bf",
@@ -347,6 +347,7 @@
       "file": "01c266bced4a434d.txt",
       "packages": [
         "aho-corasick",
+        "byteorder",
         "csv",
         "csv-core",
         "memchr",
@@ -563,10 +564,17 @@
       "file": "0f96a83840e146e4.txt",
       "packages": [
         "aho-corasick",
+        "byteorder",
         "byteorder-lite",
         "csv",
         "csv-core",
         "memchr"
+      ]
+    },
+    {
+      "file": "0ffd79084929c491.txt",
+      "packages": [
+        "av-data"
       ]
     },
     {
@@ -618,6 +626,7 @@
         "addr",
         "arc-swap",
         "arrayvec",
+        "assert_matches",
         "async-compression",
         "atomic-waker",
         "base64",
@@ -666,8 +675,10 @@
         "matrixmultiply",
         "mime",
         "ndarray",
+        "num-bigint",
         "num-complex",
         "num-integer",
+        "num-rational",
         "num-traits",
         "num_cpus",
         "once_cell",
@@ -1602,6 +1613,7 @@
         "SPIRV-Cross",
         "spirv-cross",
         "SPIRV-Tools",
+        "static_assertions",
         "SwiftShader (vk_swiftshader.dll)",
         "tinyvec",
         "utf8_iter",
@@ -1712,6 +1724,12 @@
       "file": "592dc80f1a865d20.txt",
       "packages": [
         "color_quant"
+      ]
+    },
+    {
+      "file": "5b10bf6c1bbe9e70.txt",
+      "packages": [
+        "raw-cpuid"
       ]
     },
     {
@@ -1853,13 +1871,21 @@
       ]
     },
     {
+      "file": "6477f5c0674c89dc.txt",
+      "packages": [
+        "rav1d"
+      ]
+    },
+    {
       "file": "6485b8ed310d3f03.txt",
       "packages": [
         "bitflags",
         "getopts",
         "log",
+        "num-bigint",
         "num-complex",
         "num-integer",
+        "num-rational",
         "num-traits",
         "regex",
         "regex-automata",
@@ -2007,6 +2033,12 @@
       "file": "6ced8d1b9d96dae2.txt",
       "packages": [
         "ammonia"
+      ]
+    },
+    {
+      "file": "6f54826bbf67526f.txt",
+      "packages": [
+        "atomig"
       ]
     },
     {
@@ -2235,6 +2267,7 @@
       "file": "7e12e5df4bae12cb.txt",
       "packages": [
         "aho-corasick",
+        "byteorder",
         "byteorder-lite",
         "csv",
         "csv-core",
@@ -2764,7 +2797,8 @@
       "file": "a2010f343487d3f7.txt",
       "packages": [
         "blake3",
-        "constant_time_eq"
+        "constant_time_eq",
+        "to_method"
       ]
     },
     {
@@ -2948,6 +2982,7 @@
     {
       "file": "af975c9737b3bdcd.txt",
       "packages": [
+        "atomig",
         "bit-set",
         "bit-vec",
         "diatomic-waker",
@@ -3523,6 +3558,12 @@
       ]
     },
     {
+      "file": "d4c1ce21c702ac8f.txt",
+      "packages": [
+        "assert_matches"
+      ]
+    },
+    {
       "file": "d59585cae945a16c.txt",
       "packages": [
         "libiconv"
@@ -3607,6 +3648,12 @@
       "packages": [
         "dav1d",
         "dav1d (in WebRTC)"
+      ]
+    },
+    {
+      "file": "ddb2443364781421.txt",
+      "packages": [
+        "byte-slice-cast"
       ]
     },
     {
@@ -3752,6 +3799,12 @@
       "file": "e9e90971a8e75a9a.txt",
       "packages": [
         "ONNX Runtime"
+      ]
+    },
+    {
+      "file": "ea084a2373ebc1f0.txt",
+      "packages": [
+        "static_assertions"
       ]
     },
     {
@@ -4365,6 +4418,20 @@
       "note": ""
     },
     {
+      "name": "assert_matches",
+      "version": "1.5.0",
+      "license": "MIT/Apache-2.0",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "d4c1ce21c702ac8f.txt"
+      ]
+    },
+    {
       "name": "async-compression",
       "version": "0.4.48",
       "license": "MIT OR Apache-2.0",
@@ -4394,6 +4461,20 @@
       ]
     },
     {
+      "name": "atomig",
+      "version": "0.4.3",
+      "license": "MIT/Apache-2.0",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "af975c9737b3bdcd.txt",
+        "6f54826bbf67526f.txt"
+      ]
+    },
+    {
       "name": "attohttpc",
       "version": "0.30.1",
       "license": "MPL-2.0",
@@ -4404,6 +4485,19 @@
       "textSource": "package",
       "texts": [
         "f77c12e42245743c.txt"
+      ]
+    },
+    {
+      "name": "av-data",
+      "version": "0.4.4",
+      "license": "MIT",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "0ffd79084929c491.txt"
       ]
     },
     {
@@ -4745,6 +4839,19 @@
       ]
     },
     {
+      "name": "byte-slice-cast",
+      "version": "1.2.3",
+      "license": "MIT",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "ddb2443364781421.txt"
+      ]
+    },
+    {
       "name": "bytemuck",
       "version": "1.25.2",
       "license": "Zlib OR Apache-2.0 OR MIT",
@@ -4759,6 +4866,21 @@
         "e3ba223bb1423f0a.txt",
         "9df9ba60a11af705.txt",
         "84b34dd7608f7fb9.txt"
+      ]
+    },
+    {
+      "name": "byteorder",
+      "version": "1.5.0",
+      "license": "Unlicense OR MIT",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "01c266bced4a434d.txt",
+        "0f96a83840e146e4.txt",
+        "7e12e5df4bae12cb.txt"
       ]
     },
     {
@@ -4782,6 +4904,7 @@
       "license": "MIT",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_p2p"
       ],
@@ -9082,6 +9205,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_web_core"
       ],
@@ -9925,6 +10049,20 @@
       ]
     },
     {
+      "name": "num-bigint",
+      "version": "0.4.8",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "6485b8ed310d3f03.txt"
+      ]
+    },
+    {
       "name": "num-complex",
       "version": "0.4.6",
       "license": "MIT OR Apache-2.0",
@@ -9973,7 +10111,22 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_fsrs",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "6485b8ed310d3f03.txt"
+      ]
+    },
+    {
+      "name": "num-rational",
+      "version": "0.4.2",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_compute",
         "fushi_ios_umbrella"
       ],
       "textSource": "package",
@@ -10526,6 +10679,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_web_core"
       ],
@@ -10541,6 +10695,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_web_core"
       ],
@@ -11358,6 +11513,19 @@
       ]
     },
     {
+      "name": "rav1d",
+      "version": "1.1.0",
+      "license": "BSD-2-Clause",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "6477f5c0674c89dc.txt"
+      ]
+    },
+    {
       "name": "rav1e",
       "version": "0.8.1",
       "license": "BSD-2-Clause AND LicenseRef-AOM-Patent-License-1.0",
@@ -11374,6 +11542,19 @@
       ],
       "source": "MSYS2 mingw-w64-x86_64-rav1e 0.8.1-1 (native-dependency-packages.json); texts: license files installed by the MSYS2 package (licenses/ in the vendored archive)",
       "note": "DLLs: librav1e.dll. Rust library; its statically linked crate dependencies are not listed separately."
+    },
+    {
+      "name": "raw-cpuid",
+      "version": "11.6.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "5b10bf6c1bbe9e70.txt"
+      ]
     },
     {
       "name": "rawpointer",
@@ -11783,6 +11964,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_web_core"
       ],
@@ -12323,6 +12505,7 @@
       "version": "1.16.3",
       "license": "MIT OR Apache-2.0",
       "origin": [
+        "fushi_compute",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12594,6 +12777,20 @@
       ]
     },
     {
+      "name": "static_assertions",
+      "version": "1.1.0",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "50e6751797c50ded.txt",
+        "ea084a2373ebc1f0.txt"
+      ]
+    },
+    {
       "name": "string_cache",
       "version": "0.11.0",
       "license": "MIT OR Apache-2.0",
@@ -12625,7 +12822,9 @@
       "version": "0.27.2",
       "license": "MIT",
       "origin": [
-        "fushi_anki_sync"
+        "fushi_anki_sync",
+        "fushi_compute",
+        "fushi_ios_umbrella"
       ],
       "textSource": "package",
       "texts": [
@@ -12917,6 +13116,19 @@
         "50e6751797c50ded.txt",
         "fd80a26fbb3f644a.txt",
         "84b34dd7608f7fb9.txt"
+      ]
+    },
+    {
+      "name": "to_method",
+      "version": "1.1.0",
+      "license": "CC0-1.0",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a2010f343487d3f7.txt"
       ]
     },
     {
@@ -13828,6 +14040,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_anki_sync",
+        "fushi_compute",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -14187,6 +14400,21 @@
       "textSource": "package",
       "texts": [
         "f367c1b8e1aa2624.txt"
+      ]
+    },
+    {
+      "name": "zerocopy",
+      "version": "0.7.35",
+      "license": "BSD-2-Clause OR Apache-2.0 OR MIT",
+      "origin": [
+        "fushi_compute",
+        "fushi_ios_umbrella"
+      ],
+      "textSource": "package",
+      "texts": [
+        "cb84f28c8b267bfd.txt",
+        "83c1763356e822ad.txt",
+        "24fa231567ace7e0.txt"
       ]
     },
     {

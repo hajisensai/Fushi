@@ -1,0 +1,22 @@
+## BUG-3622 · CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images）
+- **报告**：2026-10-20（用户转述社区反馈：「It doesn't support cbz files that contains avif images」）
+- **真实性**：✅ 真 bug。AVIF 在整条漫画链路上都没接，失败点逐层叠：
+  - 页图白名单 `kMangaImageExtensions = kImageExtensionsBase`（`packages/fushi_engine/lib/media/manga/manga_importer.dart:24`，基集无 `.avif`）→ `manga_archive_importer.dart:208` 把 AVIF 页当非图片跳过 → `:222` 抛 `Manga archive has no images`；
+  - 白名单放行后，页尺寸回退 `img.decodeImage`（`manga_importer.dart:141`，package:image 不认 AVIF）抛 `Could not decode manga page`；
+  - 原生解码 `decodeImageNative` / `probeImageNative`（`native/fushi_compute/src/image.rs`，`image` crate 未开 AVIF）→ OCR / 分镜 / 裁图 / 封面哈希全解不开；
+  - 书架封面 / 作品页 / 阅读器缩略图走 Flutter 自带 codec（`resizedFileImage` = `ResizeImage(FileImage)`、`manga_series_page.dart` 裸 `FileImage` / `Image.file`），多数平台不认 AVIF；
+  - WebView MIME `_mangaMimeForPath` 把 `.avif` 标成 `image/jpeg`；在线源 / 下载的字节嗅探 `mangaImageContentType` 不认 AVIF → 下载存成 `.jpg`、直读缓存 `.img`、在线封面不落盘；
+  - 系统 OCR 把原字节交给平台解码器（WIC / ImageIO / ImageDecoder），旧系统与未装 AV1 扩展的 Windows 解不开。
+- **[x] ① 已修复** — 提交 `7c756c9c2a`（原生解码）/ `bbfa291216`（白名单 + 尺寸）/ `5cd2099e38`（嗅探 / 扩展名 / 系统 OCR）/ `f43e660a32`（封面与缩略图），分支 `worktree-fix-manga-avif-epub-range`：
+  - `native/fushi_compute/src/image/avif.rs`：HEIF 容器自己解析（pitm / iinf / iloc+idat / iprp / iref；grid 拼图、alpha 辅助图 + prem、clap → irot → imir 必选变换、未知必选性质按规范拒绝）+ rav1d（纯 Rust、无 asm）解 AV1 + YUV→RGB（BT.601/709/2020/FCC/240/YCgCo/恒等，8/10/12 位，4:0:0/4:2:0/4:2:2/4:4:4，色度双线性中心采样 = libyuv）。`ffc_image_decode` / `ffc_image_probe` 先认 AVIF 再分派，格式码 `FORMAT_AVIF = 10` ↔ `FfcImageFormat.avif`；
+  - rav1d 钉 git rev（`0c851fa`）并只用它的 Rust API：crates.io 1.1.0 的 `on_error` 对 `frame_hdr` 直接 unwrap，坏码流在 `extern "C"` 的 `dav1d_send_data` 里 panic → 不可 unwind → 进程 abort（fuzz 实测复现）；Rust API 的 panic 可被 catch_unwind 接住，解码器用 ManuallyDrop、出错时不在 unwind 途中析构；单线程解码（1400×2000 页 ≈ 80 ms）；
+  - 漫画页图共享表 `kMangaPageImageExtensions`（基集 + `.avif`，`media_extensions.dart`），导入与整卷 OCR 两关共用；`_pageSize` 回退改 `probeImageNative`；
+  - `mangaImageContentType` 认不出时问原生 probe（只解析容器）→ `image/avif`；下载 / 直读 / 在线封面扩展名 `.avif`；WebView MIME `image/avif`；系统 OCR 先在后台 isolate 原生转 JPEG（`systemOcrDecodableBytes`）；
+  - `resizedFileImage` 对 `.avif` 返回 `AvifFileImage`（后台 isolate 原生解 RGBA → `ImageDescriptor.raw`，只缩不放），作品页封面 / 背景与阅读器跳页缩略图改走该统一入口。
+- **[x] ② 已加自动化测试** —
+  - `native/fushi_compute/src/image/avif.rs` 单元测试：10 个 libavif 生成的样本逐像素对参考（4:2:0 最大差 2、10 位 4、其余 ≤1）、probe 尺寸、截断不 panic、AV1 载荷逐字节改坏 + 随机字节不 abort、未知必选性质被拒；
+  - `packages/fushi_engine/test/media/image_kernels/image_codec_test.dart`（AVIF 组：经 FFI 的 decode / probe / orient:false / 截断 / 转 JPEG），样本与生成脚本 `fixtures/avif/`；
+  - `fushi/test/media/manga/manga_archive_importer_test.dart`（CBZ 内 AVIF 页端到端导入，irot / grid 页尺寸按显示方向）；
+  - `fushi/test/ocr/manga_ocr_image_extensions_guard_test.dart`（两关共用表含 `.avif`）；
+  - `fushi/test/media/manga/manga_page_content_type_avif_test.dart`、`fushi/test/media/manga/ocr/system_ocr_manga_service_test.dart`（AVIF 组）、`fushi/test/utils/avif_file_image_test.dart`。
+- **备注**：阅读器正文页由 WebView 自己解 AVIF（WebView2 / Android System WebView / WKWebView iOS 16+ / WPE 视构建而定），本修复只纠正了声明的 MIME；真机肉眼复测（各平台打开 AVIF CBZ 翻页 + 书架封面）待补。rav1d 的默认 logger 会把坏码流解析错误打到 stderr（Rust API 不暴露 logger），只在坏图上出现。rav1d 发 1.1.0 之后的版本时换回 crates.io（见 `native/fushi_compute/Cargo.toml` 注释）。

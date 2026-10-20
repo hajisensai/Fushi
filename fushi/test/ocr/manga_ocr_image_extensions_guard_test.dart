@@ -18,7 +18,8 @@ void main() {
       expect(
         kMangaOcrImageExtensions,
         equals(kMangaImageExtensions),
-        reason: '导入能收的页图 OCR 必须能扫；两表漂移会让该格式页在整卷 OCR '
+        reason:
+            '导入能收的页图 OCR 必须能扫；两表漂移会让该格式页在整卷 OCR '
             '被静默跳过、产物缺页无提示（BUG-1121：bmp）',
       );
     });

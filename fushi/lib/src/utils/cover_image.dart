@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
@@ -36,10 +35,9 @@ const int kActivityCoverDecodePixelWidth = 192;
 ImageProvider resizedFileImage(
   File file, {
   int width = kLocalCoverDecodePixelWidth,
-}) =>
-    isAvifPath(file.path)
-        ? AvifFileImage(file, maxWidth: width)
-        : ResizeImage(FileImage(file), width: width, allowUpscaling: false);
+}) => isAvifPath(file.path)
+    ? AvifFileImage(file, maxWidth: width)
+    : ResizeImage(FileImage(file), width: width, allowUpscaling: false);
 
 /// 路径扩展名是不是 `.avif`（大小写不敏感）。导入 / 下载 / 直读缓存都按真实字节定
 /// 扩展名，所以扩展名就是格式。
@@ -65,15 +63,17 @@ class AvifFileImage extends ImageProvider<AvifFileImage> {
       SynchronousFuture<AvifFileImage>(this);
 
   @override
-  ImageStreamCompleter loadImage(AvifFileImage key, ImageDecoderCallback decode) =>
-      MultiFrameImageStreamCompleter(
-        codec: _loadCodec(key),
-        scale: 1,
-        debugLabel: key.file.path,
-        informationCollector: () => <DiagnosticsNode>[
-          ErrorDescription('Path: ${file.path}'),
-        ],
-      );
+  ImageStreamCompleter loadImage(
+    AvifFileImage key,
+    ImageDecoderCallback decode,
+  ) => MultiFrameImageStreamCompleter(
+    codec: _loadCodec(key),
+    scale: 1,
+    debugLabel: key.file.path,
+    informationCollector: () => <DiagnosticsNode>[
+      ErrorDescription('Path: ${file.path}'),
+    ],
+  );
 
   Future<ui.Codec> _loadCodec(AvifFileImage key) async {
     final Uint8List bytes = await key.file.readAsBytes();
@@ -84,8 +84,9 @@ class AvifFileImage extends ImageProvider<AvifFileImage> {
       scheduleMicrotask(() => PaintingBinding.instance.imageCache.evict(key));
       throw StateError('${key.file.path} could not be decoded as AVIF.');
     }
-    final ui.ImmutableBuffer buffer =
-        await ui.ImmutableBuffer.fromUint8List(decoded.rgba);
+    final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
+      decoded.rgba,
+    );
     final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
       buffer,
       width: decoded.width,
@@ -119,7 +120,12 @@ class AvifFileImage extends ImageProvider<AvifFileImage> {
   if (d == null) return null;
   final Uint8List rgba = d.channels == 4
       ? d.pixels
-      : FushiComputeImage.instance.toRgba8(d.pixels, d.channels, d.width, d.height);
+      : FushiComputeImage.instance.toRgba8(
+          d.pixels,
+          d.channels,
+          d.width,
+          d.height,
+        );
   return (rgba: rgba, width: d.width, height: d.height);
 }
 
