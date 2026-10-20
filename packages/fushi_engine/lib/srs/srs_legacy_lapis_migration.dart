@@ -26,6 +26,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -690,9 +691,13 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   /// 把 [sourceTypeId] 的笔记（缺省全部；给了 [noteIds] 就只迁这些，它们必须都是这个类型）
   /// 迁到 Fushi 卡片：按语义映射换类型（复习历史经前身链接随迁），再对这些笔记跑一遍补迁
   /// （主映射为空、同槽的其它源字段有内容的逐条补上）。返回迁移的笔记数。
+  ///
+  /// 给了 [targetDeckId] 就顺手把这些笔记连同迁移后的卡片移到该牌组（笔记的首选牌组也改过去，
+  /// 以后按模板新生成的卡同样落在那里）；缺省 = 牌组不动。
   Future<int> migrateLegacyLapis(
     String sourceTypeId, {
     List<String>? noteIds,
+    String? targetDeckId,
   }) => runExclusive(() async {
     final SrsNoteTypeView? from = await noteType(sourceTypeId);
     if (from == null || srsDetectLapisVariant(from) == null) {
@@ -704,6 +709,9 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     }
     final List<String> ids = noteIds ?? await noteIdsOfType(sourceTypeId);
     if (ids.isEmpty) return 0;
+    if (targetDeckId != null && (await deckTree())[targetDeckId] == null) {
+      throw ArgumentError.value(targetDeckId, 'targetDeckId', 'no such deck');
+    }
     final SrsNoteTypeView to = await _fushiCardType();
     final SrsLapisFieldPlan plan = srsLapisFieldPlan(profileUid, from, to);
     await changeNoteType(
@@ -713,8 +721,32 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       templateMap: srsLapisTemplateMap(from, to),
     );
     await applyLapisBackfill(noteIds: ids);
+    if (targetDeckId != null) await _moveNotesToDeck(ids, targetDeckId);
     return ids.length;
   });
+
+  /// 把 [noteIds] 的首选牌组与它们现有的可见卡片都移到 [deckId]（已经在那里的不写）。
+  Future<void> _moveNotesToDeck(List<String> noteIds, String deckId) async {
+    final Map<String, SrsNoteView?> views = await notes(noteIds);
+    final Map<String, List<SrsCardCacheRow>> cards = await cardsOfNotes(
+      noteIds,
+    );
+    await editFieldsBatch(<SrsFieldChange>[
+      for (final String id in noteIds)
+        if (views[id] != null && views[id]!.deckId != deckId)
+          SrsFieldChange(SrsEntityKind.note, id, SrsFieldKeys.noteDeck, deckId),
+      for (final List<SrsCardCacheRow> rows in cards.values)
+        for (final SrsCardCacheRow c in rows)
+          // 隐藏的是被换掉的旧模板卡（只作新卡的前身留着历史），不动它。
+          if (!c.hidden && c.deckId != deckId)
+            SrsFieldChange(
+              SrsEntityKind.card,
+              c.id,
+              SrsFieldKeys.cardDeck,
+              deckId,
+            ),
+    ]);
+  }
 
   /// 预演「遗漏字段补迁」：当前是 Fushi 卡片的笔记（缺省全部，或只看 [noteIds]），新字段
   /// 为空、迁移前所属的旧 Lapis 变体里同语义的字段有内容的。不写库。

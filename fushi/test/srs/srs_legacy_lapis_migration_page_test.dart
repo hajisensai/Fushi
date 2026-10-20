@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -169,6 +170,75 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('[$ds] 迁移页：选了目标牌组，迁移后笔记与卡片都移过去', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String fushiDeck = await _db(
+        tester,
+        () => store.createDeck('Fushi'),
+      );
+      final (String note, _) = await _seedLapisWithSource(tester, store);
+      final String lapisId = store.lapisNoteTypeId;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsLegacyLapisMigrationPage(),
+      );
+
+      final Finder deckRow = find.byKey(
+        const ValueKey<String>('srs-lapis-migration-target-deck'),
+      );
+      expect(
+        find.descendant(
+          of: deckRow,
+          matching: find.text(t.srs_lapis_migration_keep_deck),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.srs_lapis_migration_target_deck));
+      await _settle(tester);
+      await tester.tap(find.text('Fushi').last);
+      await _settle(tester);
+      expect(
+        find.descendant(of: deckRow, matching: find.text('Fushi')),
+        findsOneWidget,
+      );
+
+      final Finder migrate = find.byKey(
+        ValueKey<String>('srs-lapis-migration-migrate-$lapisId'),
+      );
+      await tester.ensureVisible(migrate);
+      await _settle(tester, rounds: 4);
+      await tester.tap(migrate);
+      await _settle(tester);
+      expect(
+        find.textContaining(
+          t.srs_lapis_migration_confirm_deck(deck: 'Fushi'),
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.srs_lapis_migration_migrate).last);
+      await _settle(tester);
+
+      final SrsNoteView after = (await _db(tester, () => store.note(note)))!;
+      expect(after.noteTypeId, store.fushiCardNoteTypeId);
+      expect(after.deckId, fushiDeck);
+      final Map<String, List<SrsCardCacheRow>> cards = await _db(
+        tester,
+        () => store.cardsOfNotes(<String>[note]),
+      );
+      // 隐藏的是被换掉的旧模板卡（只作前身留历史），不移。
+      expect(
+        <String>{
+          for (final SrsCardCacheRow c in cards[note]!)
+            if (!c.hidden) c.deckId,
+        },
+        <String>{fushiDeck},
+      );
+      await _unmount(tester);
+    });
+
     testWidgets('[$ds] 迁移页：旧版迁移漏掉的字段一键补迁，已有内容不动', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       final (String note, String src) = await _seedLapisWithSource(
@@ -248,6 +318,67 @@ void main() {
       await tester.tap(entry);
       await _settle(tester);
       expect(find.byType(SrsLegacyLapisMigrationPage), findsOneWidget);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表：有旧 Lapis 笔记时默认提醒迁移，点「迁移」打开迁移页', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _seedLapisWithSource(tester, store);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-lapis-migration-reminder')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(t.srs_lapis_migration_entry_summary(n: 1)),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs-lapis-migration-reminder-open')),
+      );
+      await _settle(tester);
+      expect(find.byType(SrsLegacyLapisMigrationPage), findsOneWidget);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表：「不再提醒」后提醒消失；没有旧 Lapis 时不提醒', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      final Finder reminder = find.byKey(
+        const ValueKey<String>('srs-lapis-migration-reminder'),
+      );
+      expect(reminder, findsNothing);
+      await _unmount(tester);
+
+      await _seedLapisWithSource(tester, store);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      expect(reminder, findsOneWidget);
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('srs-lapis-migration-reminder-dismiss'),
+        ),
+      );
+      await _settle(tester);
+      expect(reminder, findsNothing);
       await _unmount(tester);
     });
   }

@@ -60,6 +60,10 @@ class _SrsLegacyLapisMigrationPageState
   List<SrsLegacyLapisMigrationPreview> _previews =
       const <SrsLegacyLapisMigrationPreview>[];
   SrsLapisBackfillPreview? _backfill;
+  List<SrsDeckSummary> _decks = const <SrsDeckSummary>[];
+
+  /// 迁移后放到哪个牌组；null = 保持原牌组。
+  String? _targetDeckId;
 
   @override
   void initState() {
@@ -90,11 +94,17 @@ class _SrsLegacyLapisMigrationPageState
           ];
       final SrsLapisBackfillPreview backfill = await store
           .previewLapisBackfill();
+      final List<SrsDeckSummary> decks = await store.deckSummaries();
       if (!mounted) return;
       setState(() {
         _fushiCard = fushi;
         _previews = previews;
         _backfill = backfill;
+        _decks = decks;
+        // 选过的牌组被删了：回到「保持原牌组」。
+        if (!decks.any((SrsDeckSummary d) => d.deck.id == _targetDeckId)) {
+          _targetDeckId = null;
+        }
         _unavailable = false;
         _loading = false;
       });
@@ -147,15 +157,46 @@ class _SrsLegacyLapisMigrationPageState
     await _reload();
   }
 
+  /// 目标牌组的全名；null = 保持原牌组。
+  String? get _targetDeckName {
+    for (final SrsDeckSummary d in _decks) {
+      if (d.deck.id == _targetDeckId) return d.fullName;
+    }
+    return null;
+  }
+
+  Future<void> _pickTargetDeck() async {
+    // 空串 = 「保持原牌组」（选择框的值不能是 null）。
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.srs_lapis_migration_target_deck,
+      icon: FushiIcons.folder,
+      selected: _targetDeckId ?? '',
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: '',
+          label: t.srs_lapis_migration_keep_deck,
+        ),
+        for (final SrsDeckSummary d in _decks)
+          FushiChoiceOption<String>(value: d.deck.id, label: d.fullName),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _targetDeckId = picked.isEmpty ? null : picked);
+  }
+
   Future<void> _migrate(SrsLegacyLapisMigrationPreview p) async {
     final int n = p.source.noteIds.length;
     final int dropped = p.change.droppedCards;
+    final String? targetDeckId = _targetDeckId;
+    final String? deckName = _targetDeckName;
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.srs_lapis_migration_title,
       message:
           '${t.srs_lapis_migration_confirm(n: n, name: p.source.type.name)}\n'
-          '${t.srs_lapis_migration_cards(linked: p.change.linkedCards, dropped: dropped)}',
+          '${t.srs_lapis_migration_cards(linked: p.change.linkedCards, dropped: dropped)}'
+          '${deckName == null ? '' : '\n${t.srs_lapis_migration_confirm_deck(deck: deckName)}'}',
       confirmLabel: t.srs_lapis_migration_migrate,
       cancelLabel: t.cancel,
       icon: FushiIcons.swap,
@@ -163,7 +204,10 @@ class _SrsLegacyLapisMigrationPageState
     );
     if (!ok || !mounted) return;
     await _write('SrsLegacyLapisMigration.migrate', (SrsDbStore store) async {
-      final int migrated = await store.migrateLegacyLapis(p.source.type.id);
+      final int migrated = await store.migrateLegacyLapis(
+        p.source.type.id,
+        targetDeckId: targetDeckId,
+      );
       return t.srs_migrate_fushi_done(n: migrated);
     });
   }
@@ -276,6 +320,7 @@ class _SrsLegacyLapisMigrationPageState
     final bool hasBackfill = backfill != null && backfill.notes > 0;
     final List<SrsSection> sections = <SrsSection>[
       SrsSection(_introCard(context)),
+      if (_previews.isNotEmpty) SrsSection(_targetDeckCard(context)),
       if (_previews.isEmpty && !hasBackfill)
         SrsSection(
           Center(
@@ -311,6 +356,23 @@ class _SrsLegacyLapisMigrationPageState
       ),
     );
   }
+
+  /// 「迁移后放到牌组」：对本页所有变体的迁移生效。
+  Widget _targetDeckCard(BuildContext context) => FushiCard(
+    key: const ValueKey<String>('srs-lapis-migration-target-deck'),
+    padding: EdgeInsets.zero,
+    child: FushiListItem(
+      leading: const FushiListLeadingIcon(FushiIcons.folder),
+      title: Text(t.srs_lapis_migration_target_deck),
+      subtitle: Text(_targetDeckName ?? t.srs_lapis_migration_keep_deck),
+      onTap: _busy
+          ? null
+          : () => srsRunLogged(
+              'SrsLegacyLapisMigration.targetDeck',
+              _pickTargetDeck,
+            ),
+    ),
+  );
 
   Widget _note(
     BuildContext context,
