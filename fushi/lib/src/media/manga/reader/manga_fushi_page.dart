@@ -30,6 +30,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -2818,6 +2819,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return 'image/webp';
       case '.gif':
         return 'image/gif';
+      case '.avif':
+        // WebView（WebView2 / Android WebView / WKWebView iOS 16+）自己解 AVIF，
+        // 但标成 image/jpeg 时部分内核按声明类型拒绝渲染。
+        return 'image/avif';
       case '.jpg':
       case '.jpeg':
       default:
@@ -5801,11 +5806,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pageIndex,
     );
     if (path == null || !File(path).existsSync()) return null;
-    return ResizeImage(
-      FileImage(File(path)),
-      width: 240,
-      policy: ResizeImagePolicy.fit,
-    );
+    // 页图可能是 AVIF：走本地封面统一入口（AVIF 交原生内核，其余仍是 ResizeImage）。
+    return resizedFileImage(File(path), width: 240);
   }
 
   /// 当前屏上的页（双页 spread 两页都算），页面一览里高亮它们。

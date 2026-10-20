@@ -2,11 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/import/image_size_probe.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -16,12 +17,12 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
-/// 已知漫画页图扩展名（mokuro 惯例）＝图片扩展名基集。
+/// 已知漫画页图扩展名（mokuro 惯例）＝漫画页图共享表（基集 + `.avif`）。
 ///
 /// 与整卷 OCR 的白名单 `kMangaOcrImageExtensions`（manga_ocr_folder_job.dart）
-/// 同源取基集：导入这道关认的页图，OCR 那道关必须能扫（BUG-1121——两表曾各自
+/// 同源取共享表：导入这道关认的页图，OCR 那道关必须能扫（BUG-1121——两表曾各自
 /// 手写漂移，bmp 漫画 OCR 静默缺页），守卫测试钉死两关口径一致。
-const Set<String> kMangaImageExtensions = kImageExtensionsBase;
+const Set<String> kMangaImageExtensions = kMangaPageImageExtensions;
 
 /// **载体分类**判据：[paths] 中至少有一个 `.mokuro` 文件，且其同级目录（含一层子目录）
 /// 里有图片来源——即「这看起来是一卷 mokuro 漫画」，用于对话框即时禁用按钮 / 拖入分流。
@@ -131,19 +132,23 @@ class MangaImporter {
     return MokuroPayload(images: pages);
   }
 
-  /// 页图宽高：先只读文件头（[probeOrientedImageSize]，零像素解码），认不出的
-  /// 格式才回退整张解码 + `bakeOrientation`（与从前逐字节同口径）。
+  /// 页图宽高（已按显示方向）：先走 Dart 头部探测（[probeOrientedImageSize]，JPEG /
+  /// PNG / WebP 等），认不出的格式交给原生内核只读头（[probeImageNative]，含 AVIF——
+  /// 它的 irot 宽高互换在原生侧完成）。原生也认不出才算坏页。
+  ///
+  /// 以前的回退是 `package:image` 整张解码：AVIF 页到这里直接抛「Could not decode」，
+  /// 整卷导入失败。
   static MokuroSize _pageSize(Uint8List bytes, String relativeUrl) {
-    final ({int width, int height})? probed = probeOrientedImageSize(bytes);
-    if (probed != null) {
-      return MokuroSize(probed.width.toDouble(), probed.height.toDouble());
+    final ({int width, int height})? header = probeOrientedImageSize(bytes);
+    if (header != null) {
+      return MokuroSize(header.width.toDouble(), header.height.toDouble());
     }
-    final img.Image? decoded = img.decodeImage(bytes);
-    if (decoded == null) {
+    final ({int width, int height, FfcImageFormat format})? native =
+        probeImageNative(bytes);
+    if (native == null) {
       throw MangaImportException('Could not decode manga page: $relativeUrl');
     }
-    final img.Image oriented = img.bakeOrientation(decoded);
-    return MokuroSize(oriented.width.toDouble(), oriented.height.toDouble());
+    return MokuroSize(native.width.toDouble(), native.height.toDouble());
   }
 
   /// 第一遍（纯校验，零副作用）：为 [payload] 的每页规划书目录内的 destRel

@@ -19,7 +19,7 @@
 ///   不是一卷漫画；但 `系列/ch01/*.jpg` + `系列/extra.cbz` 里 `ch01` 的子树没有包，
 ///   那批图是真页，`系列` 照常成卷。
 ///
-/// 「是页图」的判据是 [kMangaImageExtensions]（= `kImageExtensionsBase`），
+/// 「是页图」的判据是 [kMangaImageExtensions]（= `kMangaPageImageExtensions`），
 /// 与导入器 `enumerateMangaPages` 同源；这里只决定**哪个目录是一卷**，
 /// 目录里具体有哪些页仍由导入器枚举。
 library;
