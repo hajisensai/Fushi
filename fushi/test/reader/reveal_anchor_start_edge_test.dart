@@ -173,7 +173,7 @@ void main() {
       final String turnSpan =
           scripts.substring(start, scripts.indexOf('\n  },', start));
       expect(turnSpan, contains('return { start: right - rect.right, end: right - rect.left };'));
-      expect(turnSpan, contains("? { start: rect.top, end: rect.bottom }"));
+      expect(turnSpan, contains('? { start: rect.top, end: rect.bottom }'));
       expect(turnSpan, contains(': { start: rect.left, end: rect.right };'));
     });
   });
