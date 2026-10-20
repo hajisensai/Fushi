@@ -3919,7 +3919,7 @@
   "library_filters_clear": "Clear filters",
   "library_organize_action": "AI organize",
   "library_organize_auto_setting": "Organize with AI after import",
-  "library_organize_auto_setting_summary": "New items the rules can't group go to AI on this device. Only high-confidence suggestions are applied, at most 5 requests per library per day. Turn it on for one device only: synced devices get the result without paying twice",
+  "library_organize_auto_setting_summary": "Turning this on sends the titles, authors or brands, years and video folder names of new items the rules can't group to the AI provider you chose (it may charge). Only high-confidence suggestions are applied, at most 5 requests per library per day. Turn it on for one device only: synced devices get the result without paying twice",
   "library_organize_cancel": "Stop",
   "library_organize_change_add": "Added $n to “$name”",
   "library_organize_change_create": "Created “$name” with $n",

@@ -3919,7 +3919,7 @@
   "library_filters_clear": "清除筛选",
   "library_organize_action": "AI 整理",
   "library_organize_auto_setting": "导入后自动 AI 整理",
-  "library_organize_auto_setting_summary": "规则归不了组的新条目在这台设备上交给 AI，只落高置信度的建议，每个库每天最多 5 次请求。只在一台设备上打开就够了：同步的其它设备直接拿到结果，不重复计费",
+  "library_organize_auto_setting_summary": "打开即同意：规则归不了组的新条目，其标题、作者或品牌、年份和视频文件夹名会发给你选的 AI 提供商（可能计费）。只落高置信度的建议，每个库每天最多 5 次请求。只在一台设备上打开就够了：同步的其它设备直接拿到结果，不重复计费",
   "library_organize_cancel": "停止",
   "library_organize_change_add": "$n 个并入「$name」",
   "library_organize_change_create": "新建「$name」（$n 个）",

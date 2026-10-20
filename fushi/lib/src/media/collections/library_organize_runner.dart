@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
@@ -36,12 +37,14 @@ LibraryOrganizeService _serviceFor({
   required FushiDatabase db,
   required AiSettingsSource settings,
   required String nameLanguage,
+  AiChatClient Function()? clientFactory,
 }) =>
     LibraryOrganizeService(
       db: db,
       settings: settings,
       nameLanguage: nameLanguage,
       videoTagPrefix: t.library_organize_series_tag_prefix,
+      clientFactory: clientFactory,
     );
 
 /// 「会发送什么」的一次性同意（照 `ocr_llm_default_consent.dart`）：点「开始」才记住；
@@ -209,11 +212,15 @@ class LibraryOrganizeAutoHost {
     required this.db,
     required this.prefs,
     required this.nameLanguage,
+    this.clientFactory,
   });
 
   final FushiDatabase db;
   final PreferencesRepository prefs;
   final String Function() nameLanguage;
+
+  /// 仅测试注入假 AI；生产为 null（[AiChatClient] 默认装配，走应用代理）。
+  final AiChatClient Function()? clientFactory;
 }
 
 LibraryOrganizeAutoHost? _autoHost;
@@ -265,6 +272,7 @@ Future<LibraryOrganizeResult?> runAutomaticLibraryOrganize(
       db: host!.db,
       settings: host.prefs,
       nameLanguage: host.nameLanguage(),
+      clientFactory: host.clientFactory,
     );
     final int lastRun = await service.lastAutoRunStartedAt(domain) ?? 0;
     final int since = lastRun > host.prefs.libraryOrganizeAutoSince

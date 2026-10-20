@@ -1422,6 +1422,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/ai_video_download_settings_test.dart + '
       'test/media/video/download/video_download_pipeline_service_test.dart + '
       'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
+  // 导入后自动 AI 整理：生效点是自动路径每轮现读开关 / 同意 / 打开时刻（harness 里
+  // 没有导入与 AI 提供商），由专项测试咬住（关着不发请求、同意撤回不发、只看打开之后
+  // 新入库的）。
+  'ai/Organize with AI after import':
+      'test/media/collections/library_organize_runner_test.dart',
   // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
   // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
   // 测试咬住「只请求传入的站点」。

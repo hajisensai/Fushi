@@ -5019,7 +5019,8 @@ class PreferencesRepository extends ChangeNotifier
   bool get libraryOrganizeAuto =>
       getPref('library_organize_auto', defaultValue: false) as bool;
 
-  /// 打开时同时记下打开时刻：自动整理只看此后新入库的条目。
+  /// 打开时同时记下打开时刻（自动整理只看此后新入库的条目），并记为已同意：开关
+  /// 的副标题就是「会发送什么」的完整说明，用户亲手打开即同意。
   Future<void> setLibraryOrganizeAuto(bool value) async {
     await setPref('library_organize_auto', value);
     if (value) {
@@ -5027,6 +5028,7 @@ class PreferencesRepository extends ChangeNotifier
         'library_organize_auto_since',
         DateTime.now().millisecondsSinceEpoch,
       );
+      await setPref('library_organize_consented', true);
     }
     notifyListeners();
   }
