@@ -157,11 +157,11 @@ void main() {
   ].join(Platform.pathSeparator);
 
   test('支持服务器时间的后端：同步成功、发布、校时；不提示', () async {
-    final SrsSyncReport? r = await scheduler().syncWithBackend(
+    final SrsSyncReport r = await scheduler().syncWithBackend(
       LocalDirectoryAssetStore(root),
     );
     expect(r, isNotNull);
-    expect(r!.error, isNull);
+    expect(r.error, isNull);
     expect(r.serverTimeMs, isNotNull);
     expect(r.published, greaterThan(0));
     expect(store.trustedClock.isAnchored, isTrue, reason: 'anchorTime 被调用');
@@ -178,10 +178,10 @@ void main() {
   test('后端拿不到服务器时间：提示「不支持」只一次，不校时', () async {
     final SrsSyncScheduler s = scheduler();
     final _NoTimeStore backend = _NoTimeStore(LocalDirectoryAssetStore(root));
-    final SrsSyncReport? r1 = await s.syncWithBackend(backend);
-    final SrsSyncReport? r2 = await s.syncWithBackend(backend);
-    expect(r1!.error, kSrsSyncServerTimeUnavailable);
-    expect(r2!.error, kSrsSyncServerTimeUnavailable);
+    final SrsSyncReport r1 = await s.syncWithBackend(backend);
+    final SrsSyncReport r2 = await s.syncWithBackend(backend);
+    expect(r1.error, kSrsSyncServerTimeUnavailable);
+    expect(r2.error, kSrsSyncServerTimeUnavailable);
     expect(notices, <SrsSyncNotice>[SrsSyncNotice.backendUnsupported]);
     expect(store.trustedClock.isAnchored, isFalse);
   });
@@ -350,10 +350,10 @@ void main() {
           return SrsSyncReport();
         },
       );
-      final SrsSyncReport? r = await s.syncWithBackend(
+      final SrsSyncReport r = await s.syncWithBackend(
         LocalDirectoryAssetStore(root),
       );
-      expect(r!.error, kSrsSyncDirectoryIdentityUnavailable);
+      expect(r.error, kSrsSyncDirectoryIdentityUnavailable);
       expect(runs, 0);
       expect((await store.loadSyncState()).directories, isEmpty);
     });
@@ -419,10 +419,10 @@ void main() {
         runner: (SyncAssetStore b, SrsDbStore st, String key) async =>
             SrsSyncReport()..skippedFiles.add('w#1/batch-0000000002: bad'),
       );
-      final SrsSyncReport? r = await s.syncWithBackend(
+      final SrsSyncReport r = await s.syncWithBackend(
         LocalDirectoryAssetStore(root),
       );
-      expect(r!.error, isNull);
+      expect(r.error, isNull);
       expect(r.skippedFiles, hasLength(1));
     });
 
