@@ -534,8 +534,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();
-      // 确认框：标题与确认按钮同名，按钮在后。
-      await tester.tap(find.text(t.srs_deck_delete).last);
+      // 卡片去向二选一（BUG-3647）：保留卡片 = 移到上级（这里是默认牌组）。
+      await tester.tap(find.text(t.srs_deck_delete_move_cards));
       // 不推进数据库（fake zone 里真异步不走）：删除停在进行中。
       for (int i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 60));
@@ -835,7 +835,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(t.srs_deck_delete).last);
+      await tester.tap(find.text(t.srs_deck_delete_move_cards));
       for (int i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 60));
       }
