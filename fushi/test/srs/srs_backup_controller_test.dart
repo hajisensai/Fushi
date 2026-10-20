@@ -281,4 +281,66 @@ void main() {
       expect(gated.pendingTimerDueAtMs, isNull);
     });
   });
+
+  group('BUG-3575：自动备份给 SRS 界面让路', () {
+    Future<void> addNote(String word) => current.createNote(
+      noteTypeId: current.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(current.profileUid, 'Expression'): word,
+      },
+    );
+
+    test('在用时不做自动备份；不用了立即补一份', () async {
+      await addNote('雨');
+      controller.onSrsInUse();
+      expect(await controller.autoBackup(), isNull);
+      expect(await backupsOf(current.profileUid).list(), isEmpty);
+      controller.onSrsIdle();
+      // onSrsIdle 的补备份排在串行队列里：再排一次就等到它做完。
+      await controller.autoBackup();
+      expect(await backupsOf(current.profileUid).list(), hasLength(1));
+    });
+
+    test('读快照中途叫停：不留备份与暂存文件，事务结束、库照常可读', () async {
+      await addNote('雪');
+      final SrsBackupStore backups = backupsOf(current.profileUid);
+      int asked = 0;
+      await expectLater(
+        backups.create(
+          current,
+          kind: SrsBackupKind.auto,
+          profileName: '默认',
+          shouldStop: () => ++asked > 1,
+        ),
+        throwsA(isA<SrsBackupCancelled>()),
+      );
+      expect(asked, 2, reason: '第一页读完就停');
+      expect(await backups.list(), isEmpty);
+      final List<FileSystemEntity> left = backups.profileDir.existsSync()
+          ? backups.profileDir.listSync()
+          : const <FileSystemEntity>[];
+      expect(left, isEmpty, reason: '暂存文件已删');
+      expect(await current.deckSummaries(), isNotEmpty);
+    });
+
+    test('上一次没做完留下的暂存文件，下一次备份时清掉', () async {
+      await addNote('風');
+      final SrsBackupStore backups = backupsOf(current.profileUid);
+      await backups.profileDir.create(recursive: true);
+      final File staleEvents = File(
+        p.join(backups.profileDir.path, '.old-auto.events.tmp'),
+      )..writeAsStringSync('x');
+      final File staleTimes = File(
+        p.join(backups.profileDir.path, '.old-auto.server_times.tmp'),
+      )..writeAsStringSync('x');
+      await backups.create(
+        current,
+        kind: SrsBackupKind.manual,
+        profileName: '默认',
+      );
+      expect(staleEvents.existsSync(), isFalse);
+      expect(staleTimes.existsSync(), isFalse);
+      expect(await backups.list(), hasLength(1));
+    });
+  });
 }

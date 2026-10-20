@@ -285,10 +285,18 @@ class AnkiCollectionSnapshot {
     required this.mediaDir,
     required this.stats,
     required Directory workDir,
+    this.sourceWalBytes = 0,
   }) : _workDir = workDir;
 
   /// 快照里的集合（已回放 WAL、改成 DELETE 日志模式，属于快照自己）。
   final File collection;
+
+  /// 拍快照那一刻原始集合 `-wal` 的大小（拷进来的那份）。
+  final int sourceWalBytes;
+
+  /// 拍快照时 Anki 大概率还开着。按快照时刻判，不用发现阶段的 [AnkiProfileCandidate]：
+  /// 用户看到列表后再去关 Anki，候选里记的还是关之前的 WAL。
+  bool get sourceProbablyOpen => sourceWalBytes > 0;
 
   /// 原位媒体目录（用户的，只读）。
   final Directory mediaDir;
@@ -409,6 +417,9 @@ Future<AnkiCollectionSnapshot> _snapshot({
     }
     // 比对两遍副本 + 回放 WAL + quick_check 在大集合上要几秒：放后台 isolate，不卡 UI 线程。
     // 哈希走 fushi_compute（每 1 MiB 一次 FFI），只读本快照自己的副本。
+    final int walBytes = suffixes.contains('-wal')
+        ? await File('${copy.path}-wal').length()
+        : 0;
     final String copyPath = copy.path;
     final String verifyPath = verify.path;
     final AnkiCollectionStats stats = await Isolate.run(() {
@@ -423,6 +434,7 @@ Future<AnkiCollectionSnapshot> _snapshot({
           Directory(p.join(collection.parent.path, ankiMediaFolderName)),
       stats: stats,
       workDir: work,
+      sourceWalBytes: walBytes,
     );
   } on Object {
     try {

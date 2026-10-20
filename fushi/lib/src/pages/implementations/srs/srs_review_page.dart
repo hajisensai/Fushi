@@ -105,6 +105,10 @@ class SrsReviewPage extends ConsumerStatefulWidget {
   final String deckId;
   final String deckName;
 
+  /// 集成测试探针：打开首张卡的各阶段（null = 不记）。
+  @visibleForTesting
+  static void Function(String phase)? debugPhase;
+
   @override
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
 }
@@ -171,9 +175,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   final List<_UndoStep> _undo = <_UndoStep>[];
 
   /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
-  late final SrsCardAudioSequencer _audio = SrsCardAudioSequencer(
-    ref.read(srsCardAudioOutputProvider),
-  );
+  ///
+  /// 在 [initState] 里建好：以前是惰性初始化，首张卡还没出来就离开本页时它第一次被读是在
+  /// [dispose] 里，`ref.read` 在卸载中抛错，`super.dispose()` 被跳过、State 永远 mounted。
+  late final SrsCardAudioSequencer _audio;
 
   /// 当前卡的音频设置来自哪个牌组（卡所在牌组的 own 祖先）；随换卡 / 改设置重读。
   SrsDeckView? _audioOwner;
@@ -181,6 +186,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void initState() {
     super.initState();
+    _audio = SrsCardAudioSequencer(ref.read(srsCardAudioOutputProvider));
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
     srsActiveReviewSessions.value++;
     unawaited(_start());
@@ -206,13 +212,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       return;
     }
     _store = store;
+    SrsReviewPage.debugPhase?.call('store');
     await _loadNext();
   }
 
-  Future<SrsDeckSummary?> _deckSummary() async =>
-      (await _store!.deckSummaries())
-          .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
-          .firstOrNull;
+  Future<SrsDeckSummary?> _deckSummary() => _store!.deckSummary(widget.deckId);
 
   void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
@@ -320,14 +324,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         unawaited(_completeShown(id, _shownGeneration));
         return;
       }
+      SrsReviewPage.debugPhase?.call('nextCard');
       await _refreshCounts();
+      SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
+      SrsReviewPage.debugPhase?.call('render');
       final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
       final SrsDayContext day = await store.dayContext();
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(id)
           : null;
+      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted) return;
       _show(
         detail,
@@ -356,6 +364,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     required SrsDeckView? audioOwner,
   }) {
     _shownGeneration++;
+    SrsReviewPage.debugPhase?.call('show');
     // 换卡：上一张卡上查的词弹窗收起。
     _lookup.closeAll();
     setState(() {
@@ -864,14 +873,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     unawaited(_editNote(detail));
   }
 
+  /// 复习中高频的几项（撤销 / 待决 / 重播 / 编辑），优先级最高、最后才收进「⋯」；其余卡片
+  /// 操作与设置在 [_menuItems]，优先级最低、宽度不够时先收。撤销在没有可撤销的评分时不占位
+  /// （Ctrl+Z 照常）。
   List<FushiToolbarItem> _actionItems() => <FushiToolbarItem>[
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_review_undo'),
-      icon: FushiIcons.undo,
-      label: t.undo,
-      tooltip: '${t.undo} (Ctrl+Z)',
-      onPressed: _undo.isEmpty || _busy ? null : _undoLast,
-    ),
+    if (_undo.isNotEmpty)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_undo'),
+        icon: FushiIcons.undo,
+        label: t.undo,
+        tooltip: '${t.undo} (Ctrl+Z)',
+        onPressed: _busy ? null : _undoLast,
+      ),
     if (_pendingDecision)
       FushiToolbarItem(
         key: const ValueKey<String>('srs_review_pending'),
@@ -894,13 +907,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         icon: FushiIcons.edit,
         label: t.srs_note_edit,
         onPressed: () => unawaited(_onCardAction(_CardAction.edit)),
-      ),
-    if (_detail != null)
-      FushiToolbarItem(
-        key: const ValueKey<String>('srs_review_browse'),
-        icon: FushiIcons.search,
-        label: t.srs_browse_title,
-        onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
       ),
   ];
 
@@ -962,6 +968,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   List<FushiToolbarItem> _menuItems() => _detail == null
       ? const <FushiToolbarItem>[]
       : <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('srs_review_browse'),
+            icon: FushiIcons.search,
+            label: t.srs_browse_title,
+            onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
+          ),
           FushiToolbarItem(
             icon: FushiIcons.pause,
             label: t.srs_card_suspend,
@@ -1124,11 +1136,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[_actionItems()],
+        // 默认平铺、宽度不够才按优先级收进「⋯」（自适应溢出，CLAUDE.md 工具栏规则）。
         overflow: _menuItems(),
       ),
     );
   }
 
+  /// Apple：全部平铺成图标，放不下时由页头按优先级收进「⋯」（[FushiPageScaffold] 的
+  /// 自适应收纳，同级越靠后越先收：[_menuItems] 先收，高频项最后收）。
   List<Widget> _buildAppleActions() => <Widget>[
     for (final FushiToolbarItem item in <FushiToolbarItem>[
       ..._actionItems(),

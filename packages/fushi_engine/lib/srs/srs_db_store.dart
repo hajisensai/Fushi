@@ -44,6 +44,46 @@ class SrsFieldChange {
   final Object? value;
 }
 
+/// 「按词频重排新卡」读到的一张新卡（[SrsDbStore.newCardsInDeck]）。
+class SrsNewCardEntry {
+  const SrsNewCardEntry({
+    required this.card,
+    required this.note,
+    required this.noteType,
+    required this.ord,
+    required this.position,
+  });
+
+  final SrsCardCacheRow card;
+  final SrsNoteView note;
+  final SrsNoteTypeView noteType;
+
+  /// 同一笔记的第几张卡（标准类型 = 模板序号，填空 = cN - 1），与 AnkiConnect `ord` 同口径。
+  final int ord;
+
+  /// 此刻在出卡队列里的位置：排过的卡是它的 [SrsCardCacheRow.newPosition]；没排过的卡
+  /// 按出卡顺序接在已排的最大位置后面编号（只供比较与撤销，不落库）。与
+  /// [SrsDbStore.compareNewCardOrder] 的顺序一致、严格递增。
+  final int position;
+}
+
+/// [SrsDbStore.moveDeck] 的结果。
+enum SrsDeckMoveResult {
+  moved,
+
+  /// 本来就在那里。
+  unchanged,
+
+  /// 牌组或目标牌组不存在（已删）。
+  missing,
+
+  /// 目标是它自己或它的子孙。
+  intoOwnSubtree,
+
+  /// 目标下已有同名牌组。
+  nameTaken,
+}
+
 /// 牌组列表的一行。
 class SrsDeckSummary {
   const SrsDeckSummary({
@@ -200,6 +240,9 @@ class SrsDbStore implements SrsSyncReplica {
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
     if (hadLocalState && s._epochMissing) await s._saveLocal();
     await s._migrateLegacyFrozenBatch();
+    if (hadLocalState && s._cacheRevision < _kCacheRevision) {
+      await s._upgradeCaches();
+    }
     if (!hadLocalState && await s._hasAnyEvent()) {
       // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。
       // 换新化身、重新发布、重建缓存；绝不沿用备份来源设备的写入者身份。
@@ -229,6 +272,15 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
   int _styleCursor = 0;
+
+  /// 本机缓存按哪一版推导规则建的（本机状态，不进备份）。缓存加了新的派生列、而存量库里
+  /// 可能已有喂它的修改记录时 +1，并在 [_upgradeCaches] 里补一步定向重算。
+  ///
+  /// 1（v123）：srs_cards_cache.new_position。旧版本设备会照常收下对端同步来的 `newPos`
+  /// 修改记录（修改记录不认键名、原样落库），但它的卡片缓存没有这一列；升级加列时留 NULL，
+  /// 这些卡就一直按创建时刻出、取卡读到的位置也是空的，直到这张卡再被改一次。
+  static const int _kCacheRevision = 1;
+  int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
   int _revision = 0;
@@ -270,6 +322,40 @@ class SrsDbStore implements SrsSyncReplica {
       if (identical(_writeTail, mine.future)) _writeTail = null;
     }
   }
+
+  /// 大批量写入（Anki 迁移 / .apkg 导入）期间暂停这条连接的 WAL 自动 checkpoint，结束后
+  /// 恢复原值并 checkpoint 一次。
+  ///
+  /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次
+  /// 事务都远超阈值，于是每次提交都把同一批热页（索引、缓存表）拷回主库一遍——实测迁移
+  /// 1.5 万笔记时 COMMIT 合计 37 秒，暂停后 6 秒。WAL 在导入期间会长大，结束时一次并回；
+  /// 中途崩溃也无妨：下次打开时 SQLite 照常回放 WAL。可嵌套；按数据库连接计数（几个
+  /// profile 的副本共用一条连接），只有最外层恢复。
+  Future<T> bulkWrites<T>(Future<T> Function() body) async {
+    final _BulkWriteState state = _bulkWrites[db] ??= _BulkWriteState();
+    if (state.depth++ == 0) {
+      final List<QueryRow> rows = await db
+          .customSelect('PRAGMA wal_autocheckpoint')
+          .get();
+      state.restore = rows.isEmpty
+          ? 1000
+          : (rows.first.data.values.first as int?) ?? 1000;
+      await db.customStatement('PRAGMA wal_autocheckpoint = 0');
+    }
+    try {
+      return await body();
+    } finally {
+      if (--state.depth == 0) {
+        await db.customStatement(
+          'PRAGMA wal_autocheckpoint = ${state.restore}',
+        );
+        await db.customSelect('PRAGMA wal_checkpoint(PASSIVE)').get();
+      }
+    }
+  }
+
+  static final Expando<_BulkWriteState> _bulkWrites =
+      Expando<_BulkWriteState>();
 
   /// 排在最后的写入完成时完成（只会正常完成）。
   Future<void>? _writeTail;
@@ -345,6 +431,10 @@ class SrsDbStore implements SrsSyncReplica {
     );
     _outboxSeq = (j['outboxSeq'] as int?) ?? 0;
     _styleCursor = (j['styleCursor'] as int?) ?? 0;
+    // 没有本机状态（新设备 / 恢复备份后）：缓存要么还没有、要么随即整份重建，按当前规则算。
+    _cacheRevision = row == null
+        ? _kCacheRevision
+        : (j['cacheRev'] as int?) ?? 0;
     _revision = (j['revision'] as int?) ?? 0;
     _epochMissing = j['epoch'] is! String;
     _epoch =
@@ -398,6 +488,7 @@ class SrsDbStore implements SrsSyncReplica {
       'hlc': _clock.last.encode(),
       'outboxSeq': _outboxSeq,
       'styleCursor': _styleCursor,
+      'cacheRev': _cacheRevision,
       'revision': _revision,
       'epoch': _epoch,
       'sync': <String, Object?>{
@@ -584,15 +675,28 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 笔记字段值里的内联样式换成共享样式引用（表示层，见库注释）。只动 `f/<fieldId>` 的字符串值；
   /// 其余字段键、没有可换的块、没装样式库时原样返回。本机写、导入、对端事件都经这里落库。
-  Future<SrsFieldEdit> _compactEdit(SrsFieldEdit e) async {
+  ///
+  /// 没有 `<style>` 块（绝大多数记录）时同步返回，不进异步流程：批量落库时逐条 await 本身
+  /// 就是秒级开销（迁移 1.5 万笔记约 28 万条修改记录）。判据与 [srsDedupStyles] 的快速
+  /// 判断相同，结果不变。
+  FutureOr<SrsFieldEdit> _compactEdit(SrsFieldEdit e) {
     final SrsStyleStore? st = styles;
     final Object? v = e.value;
     if (st == null ||
         e.entityKind != SrsEntityKind.note ||
         v is! String ||
-        !e.fieldKey.startsWith(_noteFieldPrefix)) {
+        !e.fieldKey.startsWith(_noteFieldPrefix) ||
+        !v.contains('<style>')) {
       return e;
     }
+    return _compactWith(st, e, v);
+  }
+
+  Future<SrsFieldEdit> _compactWith(
+    SrsStyleStore st,
+    SrsFieldEdit e,
+    String v,
+  ) async {
     final String compacted = await st.compact(v);
     if (identical(compacted, v)) return e;
     return _withValue(e, compacted);
@@ -671,7 +775,10 @@ class SrsDbStore implements SrsSyncReplica {
               (jsonDecode(r.read<String>('json')) as Map)
                   .cast<String, Object?>(),
             );
-            final SrsFieldEdit c = await _compactEdit(e);
+            final FutureOr<SrsFieldEdit> pending = _compactEdit(e);
+            final SrsFieldEdit c = pending is SrsFieldEdit
+                ? pending
+                : await pending;
             if (!identical(c, e)) {
               await (db.update(
                 db.srsFieldEdits,
@@ -872,7 +979,10 @@ class SrsDbStore implements SrsSyncReplica {
               writerId: edit.dot.writerId,
               seq: edit.dot.seq,
               // 表示层：内联样式换成共享样式引用（见 [_compactEdit]）。
-              json: (await _compactEdit(edit)).canonical(),
+              json: switch (_compactEdit(edit)) {
+                final SrsFieldEdit c => c,
+                final Future<SrsFieldEdit> f => await f,
+              }.canonical(),
             );
             writes.add((Batch b) => b.insert(db.srsFieldEdits, row));
             _markEntity(edit.entityKind, edit.entityId);
@@ -1596,8 +1706,35 @@ class SrsDbStore implements SrsSyncReplica {
     return SrsEntityEdits(regs);
   }
 
+  /// 本机缓存的推导规则比 [_cacheRevision] 新：只重算受新规则影响的那些行（见
+  /// [_kCacheRevision]），记下新版本。一个事务；失败照常抛出（打开失败），下次打开重来。
+  Future<void> _upgradeCaches() => runExclusive(() async {
+    await db.transaction(() async {
+      if (_cacheRevision < 1) {
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT DISTINCT entity_id FROM srs_field_edits '
+              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ?',
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid),
+                Variable<String>(SrsEntityKind.card.wire),
+                Variable<String>(SrsFieldKeys.cardNewPosition),
+              ],
+            )
+            .get();
+        _dirtyCards.addAll(
+          rows.map((QueryRow r) => r.read<String>('entity_id')),
+        );
+        await _flushCaches();
+      }
+      _cacheRevision = _kCacheRevision;
+      await _saveLocal();
+    });
+  });
+
   /// 丢掉全部缓存，由事件重建（缓存不同步，随时可重建）。
   Future<void> rebuildCaches() => runExclusive(() async {
+    _cacheRevision = _kCacheRevision;
     await db.transaction(() async {
       await (db.delete(
         db.srsCardsCache,
@@ -1839,6 +1976,7 @@ class SrsDbStore implements SrsSyncReplica {
       lastLogId: Value<String?>(h.lastEffective?.id),
       scheduler: Value<String>(h.scheduler),
       noteCreatedAt: Value<int>(noteCreatedAt),
+      newPosition: Value<int?>(flags.newPosition),
     );
   }
 
@@ -1949,15 +2087,40 @@ class SrsDbStore implements SrsSyncReplica {
 
   // ------------------------------------------------------------------ 牌组
 
-  /// 新建牌组。ID 由「父::子」全名确定性派生（SrsIds.deck）：多台设备离线各建同名牌组不会出重复；
-  /// 同名牌组已存在（含已删除的）时复活并沿用它。身份记录不含本机时刻（createdAt = 0），同 ID 同内容。
+  /// 按名字 [name] 在 [parentId] 下（null = 顶层）新建或复活牌组时用的 ID（[createDeck] 与
+  /// Anki 导入共用）。先取「父::子」全名确定性派生的 [SrsIds.deck]：多台设备离线各建同名牌组
+  /// 落在同一个 ID 上。
+  ///
+  /// 「同名」按牌组此刻的名字与父牌组认，不按 ID：牌组改过名或挪过父牌组后 ID 不变，按它原来
+  /// 的全名再新建时派生 ID 落在它身上——那不是同一个牌组，沿用就会把它改名 / 拽回原处（BUG：
+  /// 拖放挪走 A 后再按「A」建牌组，挪走的那个被拽回顶层）。这时依次试 [SrsIds.deckAlternate]
+  /// 的备选 ID，取第一个没被用过的、或名字与父牌组都一致（可沿用 / 复活）的。只由本机牌组状态
+  /// 决定：看到同样牌组状态的设备（含收下了挪动 / 改名记录的其它设备）得到同一个 ID。
+  Future<String> deckIdForNew(String name, {String? parentId}) async {
+    final SrsDeckTree tree = await deckTree();
+    final String parentPath = parentId == null || tree[parentId] == null
+        ? ''
+        : '${tree.fullName(parentId)}::';
+    final String fullPath = '$parentPath$name';
+    final String trimmed = name.trim();
+    String id = SrsIds.deck(profileUid, fullPath);
+    for (int n = 1; ; n++) {
+      final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
+      if (current.keys.isEmpty ||
+          (current.value(SrsFieldKeys.name) == trimmed &&
+              current.value(SrsFieldKeys.deckParent) == parentId)) {
+        return id;
+      }
+      id = SrsIds.deckAlternate(profileUid, fullPath, n);
+    }
+  }
+
+  /// 新建牌组，ID 见 [deckIdForNew]；名字与父牌组都一致的牌组已存在（含已删除的）时复活并沿用它。
+  /// 身份记录不含本机时刻（createdAt = 0），同 ID 同内容。
   Future<String> createDeck(String name, {String? parentId}) => runExclusive(
     () async {
-      final SrsDeckTree tree = await deckTree();
-      final String parentPath = parentId == null || tree[parentId] == null
-          ? ''
-          : '${tree.fullName(parentId)}::';
-      final String id = SrsIds.deck(profileUid, '$parentPath$name');
+      final String trimmed = name.trim();
+      final String id = await deckIdForNew(name, parentId: parentId);
       final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
       // 身份记录与名字 / 父牌组记录同一个事务落库（以前分两次事务、两次缓存刷新）。
       await _emit(
@@ -1973,7 +2136,7 @@ class SrsDbStore implements SrsSyncReplica {
             ),
           ),
           ...newEditDrafts(SrsEntityKind.deck, id, <String, Object?>{
-            SrsFieldKeys.name: name.trim(),
+            SrsFieldKeys.name: trimmed,
             if (parentId != null) SrsFieldKeys.deckParent: parentId,
             if (current.deletedAt != null) SrsFieldKeys.deleted: null,
           }, current: current),
@@ -2097,7 +2260,7 @@ class SrsDbStore implements SrsSyncReplica {
       _schedulingConfigIn(await deckTree(), deckId);
 
   SrsSchedulingConfig _schedulingConfigIn(SrsDeckTree tree, String deckId) {
-    final String id = tree[deckId] == null ? defaultDeckId : deckId;
+    final String id = tree.effectiveDeckOf(deckId, fallback: defaultDeckId);
     return tree.schedulingConfig(id, defaultsOf: engine?.defaultParams);
   }
 
@@ -2502,27 +2665,108 @@ class SrsDbStore implements SrsSyncReplica {
     int days,
   ) async {
     final int from = day.dayStartMs(today - days + 1);
-    final List<SrsReviewLogRow> rows =
-        await (db.select(db.srsReviewLogs)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.kind.equals(SrsLogKind.review) &
-                  t.occurredAt.isBiggerOrEqualValue(from),
-            ))
+    // 只取时刻列：整行带着几百字节的 json，一个月几千条日志全搬回来只为按天计数。
+    final $SrsReviewLogsTable t = db.srsReviewLogs;
+    final List<TypedResult> rows =
+        await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.occurredAt])
+              ..where(
+                t.profileUid.equals(profileUid) &
+                    t.kind.equals(SrsLogKind.review) &
+                    t.occurredAt.isBiggerOrEqualValue(from),
+              ))
             .get();
     final Map<int, int> out = <int, int>{};
-    for (final SrsReviewLogRow r in rows) {
-      final int d = day.dayIndexOf(r.occurredAt);
+    for (final TypedResult r in rows) {
+      final int d = day.dayIndexOf(r.read(t.occurredAt)!);
       out[d] = (out[d] ?? 0) + 1;
     }
     return out;
   }
 
-  bool _isLive(SrsCardCacheRow c, int today) =>
-      !c.hidden &&
-      !c.suspended &&
-      c.scheduler == SrsScheduler.fushi &&
-      (c.buriedUntilDay == null || c.buriedUntilDay! <= today);
+  /// 卡「可出」的 SQL 条件：可见、未暂停、归 Fushi 排程、没埋或埋到期（绑定一个参数：今天）。
+  static const String _liveSql =
+      "hidden = 0 AND suspended = 0 AND scheduler = '${SrsScheduler.fushi}' "
+      'AND (buried_until_day IS NULL OR buried_until_day <= ?)';
+
+  /// `deck_id IN (?, ?, …)`；[decks] 为 null 时不限牌组。
+  static String _deckInSql(Iterable<String>? decks) => decks == null
+      ? ''
+      : ' AND deck_id IN (${List<String>.filled(decks.length, '?').join(', ')})';
+
+  /// 每个牌组**自己**（不含子牌组）的计数原料：在 SQL 里按牌组聚合，只回每个牌组一行。
+  ///
+  /// 以前把整张卡片缓存表的行（几万行）搬回 Dart 再逐张数，打开一个牌组要等一两秒；
+  /// 口径与逐张数相同：可出见 [_liveSql]，队列值不认识的按新卡（[SrsQueue.parse]）。
+  Future<Map<String, _DeckTally>> _deckTallies(
+    _CountContext ctx, {
+    Iterable<String>? decks,
+  }) async {
+    final List<String>? deckList = decks?.toList();
+    // 不限牌组时整张表都要数：`+profile_uid` 让 SQLite 顺序扫表，而不是沿只有 profile
+    // 一列有用的复合索引逐行回表（真实库 4.4 万张卡：40 ms 对 100 ms）。限定子树时
+    // (profile_uid, deck_id) 前缀有选择性，照常走索引。
+    final String profileCol = deckList == null ? '+profile_uid' : 'profile_uid';
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT deck_id, COUNT(*) AS total, '
+          "SUM(CASE WHEN $_liveSql AND queue NOT IN ('learning', 'relearning', 'review') "
+          'THEN 1 ELSE 0 END) AS new_avail, '
+          "SUM(CASE WHEN $_liveSql AND queue IN ('learning', 'relearning') "
+          'AND COALESCE(due_at, 0) <= ? THEN 1 ELSE 0 END) AS learn, '
+          "SUM(CASE WHEN $_liveSql AND queue = 'review' "
+          'AND COALESCE(due_day, 0) <= ? THEN 1 ELSE 0 END) AS due '
+          'FROM srs_cards_cache WHERE $profileCol = ? AND hidden = 0'
+          '${_deckInSql(deckList)} GROUP BY deck_id',
+          variables: <Variable<Object>>[
+            Variable<int>(ctx.today),
+            Variable<int>(ctx.today),
+            Variable<int>(ctx.nowMs + 20 * 60000),
+            Variable<int>(ctx.today),
+            Variable<int>(ctx.today),
+            Variable<String>(profileUid),
+            for (final String d in deckList ?? const <String>[])
+              Variable<String>(d),
+          ],
+        )
+        .get();
+    final Map<String, _DeckTally> out = <String, _DeckTally>{
+      for (final QueryRow r in rows)
+        r.read<String>('deck_id'): _DeckTally()
+          ..total = r.read<int>('total')
+          ..newAvail = r.read<int>('new_avail')
+          ..learn = r.read<int>('learn')
+          ..due = r.read<int>('due'),
+    };
+    // 今天已学的新卡 / 已复习的卡只有当天那几十上百张：按主键查它们所在牌组补进各自的计数。
+    // `+profile_uid` 不可省：写成普通条件时 SQLite（库里没有 ANALYZE 统计）会改走
+    // profile 前缀索引把整个 profile 的卡逐行回表，一百来张卡查 200 多毫秒。
+    final Set<String> touched = <String>{
+      ...ctx.introducedToday,
+      ...ctx.reviewedToday,
+    };
+    for (final List<String> chunk in _chunks(touched)) {
+      final List<QueryRow> cards = await db
+          .customSelect(
+            'SELECT id, deck_id FROM srs_cards_cache '
+            'WHERE id IN (${List<String>.filled(chunk.length, '?').join(', ')}) '
+            'AND +profile_uid = ? AND hidden = 0',
+            variables: <Variable<Object>>[
+              for (final String id in chunk) Variable<String>(id),
+              Variable<String>(profileUid),
+            ],
+          )
+          .get();
+      for (final QueryRow c in cards) {
+        final String id = c.read<String>('id');
+        final _DeckTally? t = out[c.read<String>('deck_id')];
+        if (t == null) continue;
+        if (ctx.introducedToday.contains(id)) t.newDone++;
+        if (ctx.reviewedToday.contains(id)) t.reviewDone++;
+      }
+    }
+    return out;
+  }
 
   /// 计数用的一次性上下文：牌组树、「今天」、最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡。
   Future<_CountContext> _countContext() async {
@@ -2567,7 +2811,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 于是会出现「子牌组都是 0、父牌组却有 50」（BUG-3502）。
   Map<String, _DeckCount> _countTree(
     _CountContext ctx,
-    Iterable<SrsCardCacheRow> cards, {
+    Map<String, _DeckTally> tallies, {
     String? root,
   }) {
     final SrsDeckTree tree = ctx.tree;
@@ -2576,25 +2820,8 @@ class SrsDbStore implements SrsSyncReplica {
         : tree.subtree(root);
     final Set<String> scope = ids.toSet();
     final Map<String, _DeckTally> own = <String, _DeckTally>{
-      for (final String id in ids) id: _DeckTally(),
+      for (final String id in ids) id: tallies[id] ?? _DeckTally(),
     };
-    for (final SrsCardCacheRow c in cards) {
-      final _DeckTally? t = own[c.deckId];
-      if (t == null || c.hidden) continue;
-      t.total++;
-      if (ctx.introducedToday.contains(c.id)) t.newDone++;
-      if (ctx.reviewedToday.contains(c.id)) t.reviewDone++;
-      if (!_isLive(c, ctx.today)) continue;
-      switch (SrsQueue.parse(c.queue)) {
-        case SrsQueue.newCard:
-          t.newAvail++;
-        case SrsQueue.learning:
-        case SrsQueue.relearning:
-          if ((c.dueAt ?? 0) <= ctx.nowMs + 20 * 60000) t.learn++;
-        case SrsQueue.review:
-          if ((c.dueDay ?? 0) <= ctx.today) t.due++;
-      }
-    }
     final Map<String, List<String>> children = <String, List<String>>{};
     final List<String> tops = <String>[];
     for (final String id in ids) {
@@ -2662,28 +2889,50 @@ class SrsDbStore implements SrsSyncReplica {
     totalCards: count.subtree.total,
   );
 
-  /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。卡片缓存只读一次。
+  /// 牌组列表：每个牌组（含子树）的新卡 / 学习 / 到期数。计数在 SQL 里按牌组聚合。
   Future<List<SrsDeckSummary>> deckSummaries() async {
     final _CountContext ctx = await _countContext();
-    final List<SrsCardCacheRow> cards = await (db.select(
-      db.srsCardsCache,
-    )..where((c) => c.profileUid.equals(profileUid))).get();
-    final Map<String, _DeckCount> counts = _countTree(ctx, cards);
-    final List<SrsDeckSummary> out =
-        <SrsDeckSummary>[
-          for (final SrsDeckView d in ctx.tree.decks)
-            _summaryOf(d, ctx, counts[d.id]!),
-        ]..sort(
-          (SrsDeckSummary a, SrsDeckSummary b) =>
-              _treeOrderKey(a.fullName).compareTo(_treeOrderKey(b.fullName)),
-        );
+    final Map<String, _DeckCount> counts = _countTree(
+      ctx,
+      await _deckTallies(ctx),
+    );
+    final Map<String?, List<SrsDeckView>> children =
+        <String?, List<SrsDeckView>>{};
+    for (final SrsDeckView d in ctx.tree.decks) {
+      (children[ctx.tree.parentOf(d.id)] ??= <SrsDeckView>[]).add(d);
+    }
+    // 先序（父在前、子紧跟父）；同级按手动位置、再按名字（[SrsDeckView.compareSiblings]）。
+    // 没人排过时与 Anki 按名字逐层排序同一口径——直接比全名的话「Lang2」会插进「Lang」
+    // 与「Lang::JP」之间，子牌组就离开了父牌组。
+    final List<SrsDeckSummary> out = <SrsDeckSummary>[];
+    void visit(String? parent) {
+      final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
+        ..sort(SrsDeckView.compareSiblings);
+      for (final SrsDeckView d in level) {
+        out.add(_summaryOf(d, ctx, counts[d.id]!));
+        visit(d.id);
+      }
+    }
+
+    visit(null);
     return out;
   }
 
-  /// 先序（父在前、子紧跟父）的排序键：按层级逐段比较，与 Anki 把「::」存成 \x1f 再排序同一口径。
-  /// 直接比全名时「Lang2」会插进「Lang」与「Lang::JP」之间，子牌组就离开了父牌组。
-  static String _treeOrderKey(String fullName) =>
-      fullName.replaceAll('::', '\x1f');
+  /// 单个牌组（含子树）的计数，与 [deckSummaries] 里同一牌组的那一行相同：
+  /// 一个牌组的计数只取决于它自己的子树，祖先的上限不参与（见 [_countTree]）。
+  /// 复习页只要当前牌组这一行，不必把所有牌组都数一遍。
+  Future<SrsDeckSummary?> deckSummary(String deckId) async {
+    final _CountContext ctx = await _countContext();
+    final SrsDeckView? d = ctx.tree[deckId];
+    if (d == null) return null;
+    final List<String> sub = ctx.tree.subtree(deckId);
+    final Map<String, _DeckCount> counts = _countTree(
+      ctx,
+      await _deckTallies(ctx, decks: sub),
+      root: deckId,
+    );
+    return _summaryOf(d, ctx, counts[deckId]!);
+  }
 
   /// 牌组列表里收起 / 展开子牌组（Anki 的 deck collapsed）。走修改记录，随同步到其它设备；
   /// 并发开合不进冲突记录（[SrsFieldClass.viewState]）。
@@ -2695,6 +2944,82 @@ class SrsDbStore implements SrsSyncReplica {
       collapsed,
     );
   }
+
+  /// 把牌组（连同子树）挪到 [newParentId] 下、末尾；null = 顶层（Anki 拖放牌组同语义）。
+  /// 见 [placeDeck]。
+  Future<SrsDeckMoveResult> moveDeck(String deckId, String? newParentId) =>
+      placeDeck(deckId, parentId: newParentId);
+
+  /// 把牌组（连同子树）放到 [parentId] 下（null = 顶层）、排在同级的 [beforeId] 前面
+  /// （null = 排最后）。拖放与「上移 / 下移」都走这里。
+  ///
+  /// 父牌组只改父字段，ID 不变（卡、设置、同步身份都跟着走）；同级顺序给新父牌组下
+  /// 的全部同级重新编排位置（[SrsFieldKeys.deckPosition]，只写变了的）。拒绝的情形返回
+  /// 对应 [SrsDeckMoveResult]、不写库：挪到自己或自己的子孙下（本地成环；跨设备并发
+  /// 成环由 [SrsDeckTree] 确定性打破）、目标下已有同名牌组、[beforeId] 不是目标下的同级。
+  Future<SrsDeckMoveResult> placeDeck(
+    String deckId, {
+    required String? parentId,
+    String? beforeId,
+  }) => runExclusive(() async {
+    final SrsDeckTree tree = await deckTree();
+    final SrsDeckView? deck = tree[deckId];
+    if (deck == null || (parentId != null && tree[parentId] == null)) {
+      return SrsDeckMoveResult.missing;
+    }
+    for (String? p = parentId; p != null; p = tree.parentOf(p)) {
+      if (p == deckId) return SrsDeckMoveResult.intoOwnSubtree;
+    }
+    final bool reparent = tree.parentOf(deckId) != parentId;
+    final List<SrsDeckView> siblings = <SrsDeckView>[
+      for (final SrsDeckView d in tree.decks)
+        if (d.id != deckId && tree.parentOf(d.id) == parentId) d,
+    ]..sort(SrsDeckView.compareSiblings);
+    if (reparent && siblings.any((SrsDeckView d) => d.name == deck.name)) {
+      return SrsDeckMoveResult.nameTaken;
+    }
+    final int at = beforeId == null
+        ? siblings.length
+        : siblings.indexWhere((SrsDeckView d) => d.id == beforeId);
+    if (at < 0) return SrsDeckMoveResult.missing;
+    final List<SrsDeckView> ordered = <SrsDeckView>[...siblings]
+      ..insert(at, deck);
+    final List<SrsDeckView> before = <SrsDeckView>[
+      for (final SrsDeckView d in tree.decks)
+        if (tree.parentOf(d.id) == parentId) d,
+    ]..sort(SrsDeckView.compareSiblings);
+    final bool reordered =
+        before.length != ordered.length ||
+        <int>[
+          for (int i = 0; i < ordered.length; i++) i,
+        ].any((int i) => before[i].id != ordered[i].id);
+    if (!reparent && !reordered) return SrsDeckMoveResult.unchanged;
+    if (reparent) {
+      await editField(
+        SrsEntityKind.deck,
+        deckId,
+        SrsFieldKeys.deckParent,
+        parentId,
+      );
+    }
+    // 只换父牌组（没指定位置）、新同级又都没手动排过：保持「按名字」的缺省排法，
+    // 不给整组写位置。显式排序（[beforeId] 或同父下挪到末尾）一律写。
+    final bool keepNameOrder =
+        reparent &&
+        beforeId == null &&
+        siblings.every((SrsDeckView d) => d.position == null);
+    if (reordered && !keepNameOrder) {
+      for (int i = 0; i < ordered.length; i++) {
+        await editField(
+          SrsEntityKind.deck,
+          ordered[i].id,
+          SrsFieldKeys.deckPosition,
+          i,
+        );
+      }
+    }
+    return SrsDeckMoveResult.moved;
+  });
 
   /// 今天的活动：从新卡学起的卡（新卡配额）与复习了的复习卡（复习上限）。
   Future<(Set<String>, Set<String>)> _todayActivity(
@@ -2721,8 +3046,108 @@ class SrsDbStore implements SrsSyncReplica {
     return (introduced, reviewed);
   }
 
-  /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（笔记创建时刻, cardId）。
-  /// 只查目标子树里可见的卡（一次过滤查询），不扫全表。
+  /// 新卡出卡顺序（[nextCard] 与「按词频重排新卡」共用这一处）：排过的卡在前、按位置
+  /// 升序；没排过的（[SrsCardCacheRow.newPosition] 为 null）在后、按（笔记创建时刻,
+  /// cardId）——从没重排过的库出卡顺序与加位置之前逐张相同。位置相同再按后者。
+  static int compareNewCardOrder(SrsCardCacheRow a, SrsCardCacheRow b) {
+    final int? pa = a.newPosition;
+    final int? pb = b.newPosition;
+    if (pa != pb) {
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return pa.compareTo(pb);
+    }
+    final int byCreated = a.noteCreatedAt.compareTo(b.noteCreatedAt);
+    if (byCreated != 0) return byCreated;
+    return a.id.compareTo(b.id);
+  }
+
+  /// [deckFullName]（「父::子」全名；同名牌组全部算上）及其全部子牌组里的可见新卡（含暂停 /
+  /// 搁置的：位置与它们无关），按 [compareNewCardOrder] 排好。笔记已删 / 类型缺失的卡跳过。
+  /// 「按词频重排新卡」的取卡步，对应 AnkiConnect 的 `deck:… is:new` + `cardsInfo`。
+  Future<List<SrsNewCardEntry>> newCardsInDeck(String deckFullName) async {
+    final SrsDeckTree tree = await deckTree();
+    final Set<String> sub = <String>{
+      for (final SrsDeckView d in tree.decks)
+        if (tree.fullName(d.id) == deckFullName) ...tree.subtree(d.id),
+    };
+    if (sub.isEmpty) return const <SrsNewCardEntry>[];
+    final List<SrsCardCacheRow> rows =
+        await (db.select(db.srsCardsCache)..where(
+                (c) =>
+                    c.profileUid.equals(profileUid) &
+                    c.deckId.isIn(sub) &
+                    c.hidden.equals(false) &
+                    c.queue.equals(SrsQueue.newCard.wire),
+              ))
+              .get()
+          ..sort(compareNewCardOrder);
+    if (rows.isEmpty) return const <SrsNewCardEntry>[];
+    final Map<String, SrsNoteView?> notesById = await notes(<String>[
+      for (final SrsCardCacheRow c in rows) c.noteId,
+    ]);
+    final Map<String, SrsNoteTypeView?> typesById = await noteTypesById(
+      <String>{
+        for (final SrsNoteView? n in notesById.values)
+          if (n != null) n.noteTypeId,
+      },
+    );
+    int next = 0;
+    for (final SrsCardCacheRow c in rows) {
+      final int? pos = c.newPosition;
+      if (pos != null && pos > next) next = pos;
+    }
+    final List<SrsNewCardEntry> out = <SrsNewCardEntry>[];
+    for (final SrsCardCacheRow c in rows) {
+      final SrsNoteView? n = notesById[c.noteId];
+      if (n == null || n.deletedAt != null) continue;
+      final SrsNoteTypeView? t = typesById[n.noteTypeId];
+      if (t == null) continue;
+      final int ord = t.isCloze
+          ? max(0, c.clozeOrd - 1)
+          : (t.templates
+                    .where((SrsTemplateDef x) => x.id == c.templateId)
+                    .firstOrNull
+                    ?.ord ??
+                0);
+      out.add(
+        SrsNewCardEntry(
+          card: c,
+          note: n,
+          noteType: t,
+          ord: ord,
+          position: c.newPosition ?? ++next,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 写新卡位置（cardId → 位置）：一个事务、一次发件箱批次，每张卡一条 `newPos` 修改记录
+  /// （值没变的不写）。**只写此刻仍是可见新卡的那些**——学过的卡位置不起作用，写了只是
+  /// 无用的同步行；返回实际被接受的 cardId（含值没变而没产生记录的）。
+  Future<Set<String>> setNewCardPositions(Map<String, int> positions) async {
+    if (positions.isEmpty) return const <String>{};
+    final Set<String> accepted = <String>{
+      for (final SrsCardCacheRow c in await cardRows(positions.keys))
+        if (!c.hidden && c.queue == SrsQueue.newCard.wire) c.id,
+    };
+    await editFieldsBatch(<SrsFieldChange>[
+      for (final String id in accepted)
+        SrsFieldChange(
+          SrsEntityKind.card,
+          id,
+          SrsFieldKeys.cardNewPosition,
+          positions[id],
+        ),
+    ]);
+    return accepted;
+  }
+
+  /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（[compareNewCardOrder]
+  /// 的同序 SQL：排过位置的在前按位置升序，没排过的在后按（笔记创建时刻, cardId））。
+  /// 计数按牌组在 SQL 里聚合，三类候选各由一条 `LIMIT 1` 查询在 SQL 里挑出，
+  /// 不把子树里几千上万张卡的行搬回 Dart。
   Future<String?> nextCard(
     String deckId, {
     Set<String> exclude = const <String>{},
@@ -2730,18 +3155,10 @@ class SrsDbStore implements SrsSyncReplica {
     final _CountContext ctx = await _countContext();
     final SrsDeckView? deck = ctx.tree[deckId];
     if (deck == null) return null;
-    final Set<String> sub = ctx.tree.subtree(deckId).toSet();
-    final List<SrsCardCacheRow> inSubtree =
-        await (db.select(db.srsCardsCache)..where(
-              (c) =>
-                  c.profileUid.equals(profileUid) &
-                  c.deckId.isIn(sub) &
-                  c.hidden.equals(false),
-            ))
-            .get();
+    final List<String> sub = ctx.tree.subtree(deckId);
     final Map<String, _DeckCount> counts = _countTree(
       ctx,
-      inSubtree,
+      await _deckTallies(ctx, decks: sub),
       root: deckId,
     );
     final _DeckCount sum = counts[deckId]!;
@@ -2760,63 +3177,75 @@ class SrsDbStore implements SrsSyncReplica {
     }
 
     final int nowMs = ctx.nowMs;
-    final List<SrsCardCacheRow> cards = <SrsCardCacheRow>[
-      for (final SrsCardCacheRow c in inSubtree)
-        if (_isLive(c, ctx.today) && !exclude.contains(c.id)) c,
-    ];
-    final List<SrsCardCacheRow> learning =
-        cards
-            .where(
-              (SrsCardCacheRow c) =>
-                  (c.queue == SrsQueue.learning.wire ||
-                      c.queue == SrsQueue.relearning.wire) &&
-                  (c.dueAt ?? 0) <= nowMs + 20 * 60000,
-            )
-            .toList()
-          ..sort(
-            (SrsCardCacheRow a, SrsCardCacheRow b) =>
-                (a.dueAt ?? 0).compareTo(b.dueAt ?? 0),
-          );
-    if (learning.isNotEmpty && (learning.first.dueAt ?? 0) <= nowMs) {
-      return learning.first.id;
-    }
-    if (sum.reviewCount > 0) {
-      final List<SrsCardCacheRow> due = cards
-          .where(
-            (SrsCardCacheRow c) =>
-                c.queue == SrsQueue.review.wire &&
-                (c.dueDay ?? 0) <= ctx.today &&
-                pathHasRoom(c.deckId, (_DeckCount x) => x.reviewRemaining),
+    final List<String> ex = exclude.toList();
+    // 子树里一条「可出 + 条件」的候选，按 [orderBy] 取第一张。
+    Future<(String, int?)?> pick(
+      Iterable<String> decks,
+      String condition,
+      String orderBy,
+      List<Variable<Object>> vars, {
+      List<Variable<Object>> orderVars = const <Variable<Object>>[],
+    }) async {
+      final List<String> deckList = decks.toList();
+      if (deckList.isEmpty) return null;
+      final String notIn = ex.isEmpty
+          ? ''
+          : ' AND id NOT IN (${List<String>.filled(ex.length, '?').join(', ')})';
+      final QueryRow? row = await db
+          .customSelect(
+            'SELECT id, due_at FROM srs_cards_cache '
+            'WHERE profile_uid = ? AND $_liveSql${_deckInSql(deckList)} '
+            'AND $condition$notIn ORDER BY $orderBy LIMIT 1',
+            variables: <Variable<Object>>[
+              Variable<String>(profileUid),
+              Variable<int>(ctx.today),
+              for (final String d in deckList) Variable<String>(d),
+              ...vars,
+              for (final String id in ex) Variable<String>(id),
+              ...orderVars,
+            ],
           )
-          .toList();
-      double r(SrsCardCacheRow c) {
-        final double s = c.stability ?? 1;
-        final double elapsed = c.lastReviewedAt == null
-            ? 0
-            : (nowMs - c.lastReviewedAt!) / 86400000;
-        // 复习排序只需单调近似：FSRS 遗忘曲线 R = (1 + t/(9S))^-1。
-        return 1 / (1 + elapsed / (9 * s));
-      }
+          .getSingleOrNull();
+      return row == null
+          ? null
+          : (row.read<String>('id'), row.read<int?>('due_at'));
+    }
 
-      due.sort((SrsCardCacheRow a, SrsCardCacheRow b) => r(a).compareTo(r(b)));
-      if (due.isNotEmpty) return due.first.id;
+    final (String, int?)? learning = await pick(
+      sub,
+      "queue IN ('learning', 'relearning') AND COALESCE(due_at, 0) <= ?",
+      'COALESCE(due_at, 0), id',
+      <Variable<Object>>[Variable<int>(nowMs + 20 * 60000)],
+    );
+    if (learning != null && (learning.$2 ?? 0) <= nowMs) return learning.$1;
+    if (sum.reviewCount > 0) {
+      // 复习排序只需单调近似：FSRS 遗忘曲线 R = (1 + t/(9S))^-1，可提取度低的先出。
+      final (String, int?)? due = await pick(
+        sub.where(
+          (String d) => pathHasRoom(d, (_DeckCount x) => x.reviewRemaining),
+        ),
+        "queue = 'review' AND COALESCE(due_day, 0) <= ?",
+        '1.0 / (1.0 + (CASE WHEN last_reviewed_at IS NULL THEN 0.0 '
+            'ELSE (? - last_reviewed_at) / 86400000.0 END) '
+            '/ (9.0 * COALESCE(stability, 1.0))), id',
+        <Variable<Object>>[Variable<int>(ctx.today)],
+        orderVars: <Variable<Object>>[Variable<int>(nowMs)],
+      );
+      if (due != null) return due.$1;
     }
     if (sum.newCount > 0) {
-      SrsCardCacheRow? first;
-      for (final SrsCardCacheRow c in cards) {
-        if (c.queue != SrsQueue.newCard.wire) continue;
-        if (!pathHasRoom(c.deckId, (_DeckCount x) => x.newRemaining)) continue;
-        if (first == null ||
-            c.noteCreatedAt < first.noteCreatedAt ||
-            (c.noteCreatedAt == first.noteCreatedAt &&
-                c.id.compareTo(first.id) < 0)) {
-          first = c;
-        }
-      }
-      if (first != null) return first.id;
+      final (String, int?)? fresh = await pick(
+        sub.where(
+          (String d) => pathHasRoom(d, (_DeckCount x) => x.newRemaining),
+        ),
+        "queue = 'new'",
+        // 与 [compareNewCardOrder] 同序：NULL 位置排在最后。
+        'new_position IS NULL, new_position, note_created_at, id',
+        const <Variable<Object>>[],
+      );
+      if (fresh != null) return fresh.$1;
     }
-    if (learning.isNotEmpty) return learning.first.id;
-    return null;
+    return learning?.$1;
   }
 
   Future<SrsCardDetail?> cardDetail(String cardId) async {
@@ -2835,7 +3264,7 @@ class SrsDbStore implements SrsSyncReplica {
       note: n,
       noteType: t,
       template: tpl,
-      deckName: tree[c.deckId] == null ? '' : tree.fullName(c.deckId),
+      deckName: tree.effectiveDeckNameOf(c.deckId, fallback: defaultDeckId),
     );
   }
 
@@ -3900,4 +4329,10 @@ class _NotePlan {
   /// cardId → (templateId, clozeOrd, empty)。
   final Map<String, (String, int, bool)> expected;
   final bool noteGone;
+}
+
+/// [SrsDbStore.bulkWrites] 在一条数据库连接上的嵌套深度与要恢复的阈值。
+class _BulkWriteState {
+  int depth = 0;
+  int restore = 1000;
 }

@@ -223,6 +223,50 @@ void main() {
       }
     });
 
+    test('「Anki 正开着」按拍快照那一刻判：发现时开着、之后关掉再拍 → 不再报开着', () async {
+      final int now = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
+      final Directory dir = Directory(p.join(tmp.path, 'User 1'));
+      final File col = writeCollection(dir, now);
+      final Database live = sqlite3.open(col.path);
+      live.execute('PRAGMA journal_mode = WAL');
+      live.execute('PRAGMA wal_autocheckpoint = 0');
+      insertNotes(live, <FxNote>[
+        FxNote(
+          id: 99,
+          guid: 'wal-only',
+          mid: fx.kBasic,
+          fields: <String>['wal', 'only'],
+          cards: <FxCard>[FxCard(id: 991, ord: 0, did: 1)],
+        ),
+      ]);
+      final AnkiDiscovery found = await discoverAnkiProfiles(<AnkiDataRoot>[
+        AnkiDataRoot(tmp.path, AnkiDataRootKind.desktop),
+      ]);
+      final AnkiProfileCandidate candidate = found.profiles.single;
+      expect(candidate.probablyOpen, isTrue);
+      final Directory work = Directory(p.join(tmp.path, 'work'));
+      final AnkiCollectionSnapshot open = await snapshotAnkiCollection(
+        collection: candidate.collection,
+        tempParent: work,
+      );
+      expect(open.sourceProbablyOpen, isTrue);
+      await open.discard();
+
+      // 用户去关 Anki：最后一个连接关闭时 SQLite 把 WAL 并回主文件并删掉 -wal。
+      live.close();
+      expect(File('${col.path}-wal').existsSync(), isFalse);
+      final AnkiCollectionSnapshot closed = await snapshotAnkiCollection(
+        collection: candidate.collection,
+        tempParent: work,
+      );
+      try {
+        expect(closed.sourceProbablyOpen, isFalse);
+        expect(closed.stats.notes, 4);
+      } finally {
+        await closed.discard();
+      }
+    });
+
     test('集合不存在 → missing；不是 SQLite → corrupt，临时目录不残留', () async {
       final Directory work = Directory(p.join(tmp.path, 'work'));
       await expectLater(

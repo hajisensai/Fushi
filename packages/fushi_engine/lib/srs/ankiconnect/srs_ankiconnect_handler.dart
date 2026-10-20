@@ -254,6 +254,7 @@ class SrsAnkiConnectHandler {
     'notesInfo',
     'removeTags',
     'requestPermission',
+    'setSpecificValueOfCard',
     'storeMediaFile',
     'suspend',
     'suspended',
@@ -498,6 +499,8 @@ class SrsAnkiConnectHandler {
           out.add(row?.suspended);
         }
         return out;
+      case 'setSpecificValueOfCard':
+        return _setSpecificValueOfCard(p);
       case 'storeMediaFile':
         return _storeMediaFile(p);
       case 'guiBrowse':
@@ -1316,6 +1319,54 @@ class SrsAnkiConnectHandler {
     ];
   }
 
+  /// AnkiConnect `setSpecificValueOfCard`：只支持新卡的 `due`（= 新卡队列位置，
+  /// 「按词频重排新卡」用它）。结果形状照插件：每个键一项，成功 `true`、失败
+  /// `[false, 原因]`；卡不存在是单项 `[[false, 原因]]`；keys 与 newValues 长度不同
+  /// 返回裸 `false`。别的键（ease / ivl / type …）直接对应 Anki 内部排程列，Fushi 的
+  /// 排程只来自复习日志，一律报不支持而不是假装写进去。
+  Future<Object?> _setSpecificValueOfCard(Map<String, Object?> p) async {
+    final int card = _requireInt(p, 'card');
+    final List<Object?> keys = _requireList(p, 'keys');
+    final List<Object?> values = _requireList(p, 'newValues');
+    if (keys.length != values.length) return false;
+    final SrsDbStore store = await _store();
+    final String? cid = await store.cardIdForAnkiNumericId(card);
+    final SrsCardCacheRow? row = cid == null ? null : await store.cardRow(cid);
+    if (row == null || row.hidden) {
+      return <Object?>[
+        <Object?>[false, 'Card was not found: $card'],
+      ];
+    }
+    final List<Object?> out = <Object?>[];
+    int? due;
+    for (int i = 0; i < keys.length; i++) {
+      final Object? key = keys[i];
+      final Object? raw = values[i];
+      final int? value = raw is int
+          ? raw
+          : raw is num && raw == raw.truncate()
+          ? raw.toInt()
+          : int.tryParse('$raw');
+      if (key != 'due') {
+        out.add(<Object?>[false, 'Fushi review cannot set "$key" on a card']);
+      } else if (row.queue != SrsQueue.newCard.wire) {
+        out.add(<Object?>[
+          false,
+          'Fushi review only sets "due" (queue position) on new cards',
+        ]);
+      } else if (value == null) {
+        out.add(<Object?>[false, 'due must be an integer']);
+      } else {
+        due = value;
+        out.add(true);
+      }
+    }
+    if (due != null) {
+      await store.setNewCardPositions(<String, int>{row.id: due});
+    }
+    return out;
+  }
+
   Future<bool> _setSuspended(List<int> cards, bool value) async {
     final SrsDbStore store = await _store();
     // 卡片缓存行一次读、改动攒成一个批次写（以前每张卡一个事务一次缓存刷新，BUG-3543）。
@@ -1464,9 +1515,10 @@ class SrsAnkiConnectHandler {
         'note': _num(c.noteId),
         'type': type,
         'queue': queue,
-        // review：Fushi 排程日序号；learn：到期时刻（秒）；new：0。不是 Anki 集合内的序号。
+        // review：Fushi 排程日序号；learn：到期时刻（秒）；new：排过的新卡是队列位置
+        // （setSpecificValueOfCard 写的 due），没排过的是 0。不是 Anki 集合内的序号。
         'due': switch (q) {
-          SrsQueue.newCard => 0,
+          SrsQueue.newCard => c.newPosition ?? 0,
           SrsQueue.review => c.dueDay ?? 0,
           SrsQueue.learning || SrsQueue.relearning => (c.dueAt ?? 0) ~/ 1000,
         },

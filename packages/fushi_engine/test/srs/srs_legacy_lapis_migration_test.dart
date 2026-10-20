@@ -233,6 +233,123 @@ void main() {
     },
   );
 
+  test(
+    'migration with a target deck moves the notes and their cards there',
+    () async {
+      final SrsDbStore s = await device();
+      final String id = await importedLapis(s, 'Lapis');
+      final SrsNoteTypeView v = await type(s, id);
+      final String lapisDeck = await s.createDeck('Lapis');
+      final String fushiDeck = await s.createDeck('Fushi');
+      final String n = await s.createNote(
+        noteTypeId: id,
+        deckId: lapisDeck,
+        fieldsById: <String, String>{fieldNamed(v, 'Expression'): '琢磨'},
+      );
+      final SrsReviewLog l1 = await s.answer(
+        SrsIds.card(n, v.templates.single.id, 0),
+        3,
+      );
+
+      // 不存在的牌组：整个迁移不发生。
+      await expectLater(
+        s.migrateLegacyLapis(id, targetDeckId: 'no-such-deck'),
+        throwsArgumentError,
+      );
+      expect((await s.note(n))!.noteTypeId, id);
+
+      expect(await s.migrateLegacyLapis(id, targetDeckId: fushiDeck), 1);
+      final SrsNoteView after = (await s.note(n))!;
+      expect(after.noteTypeId, s.fushiCardNoteTypeId);
+      expect(after.deckId, fushiDeck);
+      final SrsNoteTypeView fc = await type(s, s.fushiCardNoteTypeId);
+      final String newCard = SrsIds.card(n, fc.templates.single.id, 0);
+      expect((await s.cardRows(<String>[newCard])).single.deckId, fushiDeck);
+      expect(
+        (await s.history(newCard)).all.map((SrsReviewLog l) => l.id),
+        contains(l1.id),
+      );
+    },
+  );
+
+  for (final String stage in <String>['noteType', 'backfill']) {
+    test(
+      'a failure after the $stage step rolls the whole migration back; retry works',
+      () async {
+        final SrsDbStore s = await device();
+        final String id = await importedLapis(s, 'Lapis');
+        final SrsNoteTypeView v = await type(s, id);
+        final String lapisDeck = await s.createDeck('Lapis');
+        final String fushiDeck = await s.createDeck('Fushi');
+        final String n = await s.createNote(
+          noteTypeId: id,
+          deckId: lapisDeck,
+          fieldsById: <String, String>{fieldNamed(v, 'Expression'): '琢磨'},
+        );
+        final String oldCard = SrsIds.card(n, v.templates.single.id, 0);
+        final String fingerprint = await s.changeFingerprint();
+
+        await expectLater(
+          s.migrateLegacyLapis(
+            id,
+            targetDeckId: fushiDeck,
+            debugOnStage: (String at) async {
+              if (at == stage) throw StateError('injected at $at');
+            },
+          ),
+          throwsStateError,
+        );
+        // 什么都没落库：仍是旧 Lapis、仍在原牌组、仍是迁移源。
+        expect(await s.changeFingerprint(), fingerprint);
+        final SrsNoteView before = (await s.note(n))!;
+        expect(before.noteTypeId, id);
+        expect(before.deckId, lapisDeck);
+        expect((await s.cardRows(<String>[oldCard])).single.deckId, lapisDeck);
+        expect(
+          (await s.legacyLapisSources()).map(
+            (SrsLegacyLapisSource x) => x.type.id,
+          ),
+          <String>[id],
+        );
+
+        // 原样重试成功。
+        expect(await s.migrateLegacyLapis(id, targetDeckId: fushiDeck), 1);
+        final SrsNoteView after = (await s.note(n))!;
+        expect(after.noteTypeId, s.fushiCardNoteTypeId);
+        expect(after.deckId, fushiDeck);
+        final SrsNoteTypeView fc = await type(s, s.fushiCardNoteTypeId);
+        expect(
+          (await s.cardRows(<String>[
+            SrsIds.card(n, fc.templates.single.id, 0),
+          ])).single.deckId,
+          fushiDeck,
+        );
+        expect(await s.legacyLapisSources(), isEmpty);
+      },
+    );
+  }
+
+  test('migration without a target deck leaves decks alone', () async {
+    final SrsDbStore s = await device();
+    final String id = await importedLapis(s, 'Lapis');
+    final SrsNoteTypeView v = await type(s, id);
+    final String lapisDeck = await s.createDeck('Lapis');
+    final String n = await s.createNote(
+      noteTypeId: id,
+      deckId: lapisDeck,
+      fieldsById: <String, String>{fieldNamed(v, 'Expression'): '琢磨'},
+    );
+    expect(await s.migrateLegacyLapis(id), 1);
+    final SrsNoteTypeView fc = await type(s, s.fushiCardNoteTypeId);
+    expect((await s.note(n))!.deckId, lapisDeck);
+    expect(
+      (await s.cardRows(<String>[
+        SrsIds.card(n, fc.templates.single.id, 0),
+      ])).single.deckId,
+      lapisDeck,
+    );
+  });
+
   group('backfill of already-migrated notes', () {
     test(
       'fills only empty fields from the pre-migration note, idempotently',

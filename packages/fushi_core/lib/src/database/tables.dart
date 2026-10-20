@@ -3504,8 +3504,13 @@ class SrsCardsCache extends Table {
   TextColumn get lastLogId => text().nullable()();
   TextColumn get scheduler => text().withDefault(const Constant('fushi'))();
 
-  /// 新卡出卡顺序（笔记 createdAt, cardId）。
+  /// 新卡出卡顺序的兜底键（笔记 createdAt, cardId）：没有 [newPosition] 的新卡按它排。
   IntColumn get noteCreatedAt => integer().withDefault(const Constant(0))();
+
+  /// v123：新卡在出卡队列里的位置（卡片修改记录 `newPos` 的生效值，「按词频重排新卡」
+  /// 写它）。NULL = 从没排过：有位置的新卡先出（位置升序），没位置的排在后面并保持
+  /// 原有的（笔记 createdAt, cardId）顺序——老数据出卡顺序不变。
+  IntColumn get newPosition => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

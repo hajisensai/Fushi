@@ -109,11 +109,8 @@ class SrsAppRuntime {
   final FsrsEngine? Function() _engine;
   final void Function() _bumpRevision;
 
-  /// 自动备份（离开复习页、库有变动时触发；见 srs_backup.dart）。
+  /// 自动备份（离开 SRS 界面、库有变动时触发；见 srs_backup.dart）。
   final SrsBackupController backup;
-
-  /// 上一次看到的复习页数量（从 >0 回到 0 = 离开复习页）。
-  int _reviewSessions = 0;
 
   late final SrsSyncScheduler sync = SrsSyncScheduler(
     readStore: _readStore,
@@ -202,7 +199,8 @@ class SrsAppRuntime {
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
-    _reviewSessions = srsActiveReviewSessions.value;
+    // 启动就停在 SRS 底栏时自动备份先让路（离开时补）。
+    _syncBackupUse();
     // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
     backup.onDataChanged();
   }
@@ -249,7 +247,7 @@ class SrsAppRuntime {
         onSync: () => unawaited(
           sync.syncNow().catchError((Object e, StackTrace stack) {
             ErrorLogService.instance.log('SrsAnkiConnect.sync', e, stack);
-            return 0;
+            return const SrsSyncNowResult(ran: 0);
           }),
         ),
         onGuiBrowse: (String? query, List<String> cardIds) async {
@@ -267,10 +265,35 @@ class SrsAppRuntime {
     );
   }
 
-  /// 牌组列表「立即同步」：对所有已认证通道跑一轮。返回跑过的通道数（0 = 没配置）。
-  Future<int> syncNow() => sync.syncNow();
+  /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
+  Future<SrsSyncNowResult> syncNow() => sync.syncNow();
+
+  /// SRS 界面正在用：app 在前台，且有复习页开着或 SRS 底栏在显示（牌组列表的计数同样会被
+  /// 备份读快照的事务挡住）。
+  bool get _srsInUse {
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return false;
+    return srsActiveReviewSessions.value > 0 ||
+        homeShellTabNotifier.value == HomeTab.srs;
+  }
+
+  bool _lastSrsInUse = false;
+
+  /// 自动备份让路：开始用时叫停在做的那一份；不用了（离开 SRS 界面 / app 退到后台）立即补一份
+  /// （BUG-3575：以前离开复习页就开始备份，回到牌组列表、再点下一个牌组全被挡二三十秒）。
+  void _syncBackupUse() {
+    final bool inUse = _srsInUse;
+    if (inUse == _lastSrsInUse) return;
+    _lastSrsInUse = inUse;
+    if (inUse) {
+      backup.onSrsInUse();
+    } else {
+      backup.onSrsIdle();
+    }
+  }
 
   void _onHomeTabChanged() {
+    _syncBackupUse();
     if (homeShellTabNotifier.value != HomeTab.srs) return;
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
@@ -283,12 +306,11 @@ class SrsAppRuntime {
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
-    // 离开复习页：有变动就立即备份一份（不等间隔）。
-    if (now == 0 && _reviewSessions > 0) backup.onLeftReview();
-    _reviewSessions = now;
+    _syncBackupUse();
   }
 
   void _onLifecycle(AppLifecycleState state) {
+    _syncBackupUse();
     if (state != AppLifecycleState.resumed) optimizer.cancel();
   }
 

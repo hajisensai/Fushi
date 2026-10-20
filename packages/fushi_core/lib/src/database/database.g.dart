@@ -59554,6 +59554,17 @@ class $SrsCardsCacheTable extends SrsCardsCache
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _newPositionMeta = const VerificationMeta(
+    'newPosition',
+  );
+  @override
+  late final GeneratedColumn<int> newPosition = GeneratedColumn<int>(
+    'new_position',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -59578,6 +59589,7 @@ class $SrsCardsCacheTable extends SrsCardsCache
     lastLogId,
     scheduler,
     noteCreatedAt,
+    newPosition,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -59742,6 +59754,15 @@ class $SrsCardsCacheTable extends SrsCardsCache
         ),
       );
     }
+    if (data.containsKey('new_position')) {
+      context.handle(
+        _newPositionMeta,
+        newPosition.isAcceptableOrUnknown(
+          data['new_position']!,
+          _newPositionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -59839,6 +59860,10 @@ class $SrsCardsCacheTable extends SrsCardsCache
         DriftSqlType.int,
         data['${effectivePrefix}note_created_at'],
       )!,
+      newPosition: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}new_position'],
+      ),
     );
   }
 
@@ -59874,8 +59899,13 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
   final String? lastLogId;
   final String scheduler;
 
-  /// 新卡出卡顺序（笔记 createdAt, cardId）。
+  /// 新卡出卡顺序的兜底键（笔记 createdAt, cardId）：没有 [newPosition] 的新卡按它排。
   final int noteCreatedAt;
+
+  /// v123：新卡在出卡队列里的位置（卡片修改记录 `newPos` 的生效值，「按词频重排新卡」
+  /// 写它）。NULL = 从没排过：有位置的新卡先出（位置升序），没位置的排在后面并保持
+  /// 原有的（笔记 createdAt, cardId）顺序——老数据出卡顺序不变。
+  final int? newPosition;
   const SrsCardCacheRow({
     required this.id,
     required this.profileUid,
@@ -59899,6 +59929,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     this.lastLogId,
     required this.scheduler,
     required this.noteCreatedAt,
+    this.newPosition,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -59939,6 +59970,9 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     }
     map['scheduler'] = Variable<String>(scheduler);
     map['note_created_at'] = Variable<int>(noteCreatedAt);
+    if (!nullToAbsent || newPosition != null) {
+      map['new_position'] = Variable<int>(newPosition);
+    }
     return map;
   }
 
@@ -59980,6 +60014,9 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
           : Value(lastLogId),
       scheduler: Value(scheduler),
       noteCreatedAt: Value(noteCreatedAt),
+      newPosition: newPosition == null && nullToAbsent
+          ? const Value.absent()
+          : Value(newPosition),
     );
   }
 
@@ -60011,6 +60048,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       lastLogId: serializer.fromJson<String?>(json['lastLogId']),
       scheduler: serializer.fromJson<String>(json['scheduler']),
       noteCreatedAt: serializer.fromJson<int>(json['noteCreatedAt']),
+      newPosition: serializer.fromJson<int?>(json['newPosition']),
     );
   }
   @override
@@ -60039,6 +60077,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       'lastLogId': serializer.toJson<String?>(lastLogId),
       'scheduler': serializer.toJson<String>(scheduler),
       'noteCreatedAt': serializer.toJson<int>(noteCreatedAt),
+      'newPosition': serializer.toJson<int?>(newPosition),
     };
   }
 
@@ -60065,6 +60104,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     Value<String?> lastLogId = const Value.absent(),
     String? scheduler,
     int? noteCreatedAt,
+    Value<int?> newPosition = const Value.absent(),
   }) => SrsCardCacheRow(
     id: id ?? this.id,
     profileUid: profileUid ?? this.profileUid,
@@ -60092,6 +60132,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     lastLogId: lastLogId.present ? lastLogId.value : this.lastLogId,
     scheduler: scheduler ?? this.scheduler,
     noteCreatedAt: noteCreatedAt ?? this.noteCreatedAt,
+    newPosition: newPosition.present ? newPosition.value : this.newPosition,
   );
   SrsCardCacheRow copyWithCompanion(SrsCardsCacheCompanion data) {
     return SrsCardCacheRow(
@@ -60131,6 +60172,9 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
       noteCreatedAt: data.noteCreatedAt.present
           ? data.noteCreatedAt.value
           : this.noteCreatedAt,
+      newPosition: data.newPosition.present
+          ? data.newPosition.value
+          : this.newPosition,
     );
   }
 
@@ -60158,7 +60202,8 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
           ..write('lastReviewedAt: $lastReviewedAt, ')
           ..write('lastLogId: $lastLogId, ')
           ..write('scheduler: $scheduler, ')
-          ..write('noteCreatedAt: $noteCreatedAt')
+          ..write('noteCreatedAt: $noteCreatedAt, ')
+          ..write('newPosition: $newPosition')
           ..write(')'))
         .toString();
   }
@@ -60187,6 +60232,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
     lastLogId,
     scheduler,
     noteCreatedAt,
+    newPosition,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -60213,7 +60259,8 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
           other.lastReviewedAt == this.lastReviewedAt &&
           other.lastLogId == this.lastLogId &&
           other.scheduler == this.scheduler &&
-          other.noteCreatedAt == this.noteCreatedAt);
+          other.noteCreatedAt == this.noteCreatedAt &&
+          other.newPosition == this.newPosition);
 }
 
 class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
@@ -60239,6 +60286,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
   final Value<String?> lastLogId;
   final Value<String> scheduler;
   final Value<int> noteCreatedAt;
+  final Value<int?> newPosition;
   final Value<int> rowid;
   const SrsCardsCacheCompanion({
     this.id = const Value.absent(),
@@ -60263,6 +60311,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     this.lastLogId = const Value.absent(),
     this.scheduler = const Value.absent(),
     this.noteCreatedAt = const Value.absent(),
+    this.newPosition = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SrsCardsCacheCompanion.insert({
@@ -60288,6 +60337,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     this.lastLogId = const Value.absent(),
     this.scheduler = const Value.absent(),
     this.noteCreatedAt = const Value.absent(),
+    this.newPosition = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        profileUid = Value(profileUid),
@@ -60317,6 +60367,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     Expression<String>? lastLogId,
     Expression<String>? scheduler,
     Expression<int>? noteCreatedAt,
+    Expression<int>? newPosition,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -60342,6 +60393,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
       if (lastLogId != null) 'last_log_id': lastLogId,
       if (scheduler != null) 'scheduler': scheduler,
       if (noteCreatedAt != null) 'note_created_at': noteCreatedAt,
+      if (newPosition != null) 'new_position': newPosition,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -60369,6 +60421,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     Value<String?>? lastLogId,
     Value<String>? scheduler,
     Value<int>? noteCreatedAt,
+    Value<int?>? newPosition,
     Value<int>? rowid,
   }) {
     return SrsCardsCacheCompanion(
@@ -60394,6 +60447,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
       lastLogId: lastLogId ?? this.lastLogId,
       scheduler: scheduler ?? this.scheduler,
       noteCreatedAt: noteCreatedAt ?? this.noteCreatedAt,
+      newPosition: newPosition ?? this.newPosition,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -60467,6 +60521,9 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
     if (noteCreatedAt.present) {
       map['note_created_at'] = Variable<int>(noteCreatedAt.value);
     }
+    if (newPosition.present) {
+      map['new_position'] = Variable<int>(newPosition.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -60498,6 +60555,7 @@ class SrsCardsCacheCompanion extends UpdateCompanion<SrsCardCacheRow> {
           ..write('lastLogId: $lastLogId, ')
           ..write('scheduler: $scheduler, ')
           ..write('noteCreatedAt: $noteCreatedAt, ')
+          ..write('newPosition: $newPosition, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -104117,6 +104175,7 @@ typedef $$SrsCardsCacheTableCreateCompanionBuilder =
       Value<String?> lastLogId,
       Value<String> scheduler,
       Value<int> noteCreatedAt,
+      Value<int?> newPosition,
       Value<int> rowid,
     });
 typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
@@ -104143,6 +104202,7 @@ typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
       Value<String?> lastLogId,
       Value<String> scheduler,
       Value<int> noteCreatedAt,
+      Value<int?> newPosition,
       Value<int> rowid,
     });
 
@@ -104262,6 +104322,11 @@ class $$SrsCardsCacheTableFilterComposer
 
   ColumnFilters<int> get noteCreatedAt => $composableBuilder(
     column: $table.noteCreatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get newPosition => $composableBuilder(
+    column: $table.newPosition,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -104384,6 +104449,11 @@ class $$SrsCardsCacheTableOrderingComposer
     column: $table.noteCreatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get newPosition => $composableBuilder(
+    column: $table.newPosition,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SrsCardsCacheTableAnnotationComposer
@@ -104474,6 +104544,11 @@ class $$SrsCardsCacheTableAnnotationComposer
     column: $table.noteCreatedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get newPosition => $composableBuilder(
+    column: $table.newPosition,
+    builder: (column) => column,
+  );
 }
 
 class $$SrsCardsCacheTableTableManager
@@ -104535,6 +104610,7 @@ class $$SrsCardsCacheTableTableManager
                 Value<String?> lastLogId = const Value.absent(),
                 Value<String> scheduler = const Value.absent(),
                 Value<int> noteCreatedAt = const Value.absent(),
+                Value<int?> newPosition = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsCardsCacheCompanion(
                 id: id,
@@ -104559,6 +104635,7 @@ class $$SrsCardsCacheTableTableManager
                 lastLogId: lastLogId,
                 scheduler: scheduler,
                 noteCreatedAt: noteCreatedAt,
+                newPosition: newPosition,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -104585,6 +104662,7 @@ class $$SrsCardsCacheTableTableManager
                 Value<String?> lastLogId = const Value.absent(),
                 Value<String> scheduler = const Value.absent(),
                 Value<int> noteCreatedAt = const Value.absent(),
+                Value<int?> newPosition = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsCardsCacheCompanion.insert(
                 id: id,
@@ -104609,6 +104687,7 @@ class $$SrsCardsCacheTableTableManager
                 lastLogId: lastLogId,
                 scheduler: scheduler,
                 noteCreatedAt: noteCreatedAt,
+                newPosition: newPosition,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

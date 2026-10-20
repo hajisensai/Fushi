@@ -198,6 +198,53 @@ void main() {
       expect(shellReloads, 1, reason: '连续第二次失败不再重载');
       expect(calls, 2);
     });
+
+    test('BUG-3575：调用没执行（返回 null）不算已下发，下次整份重发', () async {
+      final List<Object?> results = <Object?>[null, true];
+      final List<String> sent = <String>[];
+      final SrsCardFaceSync s = SrsCardFaceSync(
+        evaluate: (String source) async {
+          sent.add(source);
+          return results.removeAt(0);
+        },
+        reloadShell: () => shellReloads++,
+      );
+      s.shellLoaded();
+      s.update(doc());
+      await Future<void>.delayed(Duration.zero);
+      s.update(doc());
+      await Future<void>.delayed(Duration.zero);
+      expect(sent, hasLength(2), reason: '同一份内容在第一次没上屏后重发');
+      expect(sent.last, contains('__fushiSrsSetCard'));
+      expect(sent.last, contains('__fushiSrsSetTheme'));
+    });
+
+    test('BUG-3575：某一步在页内抛错，后面的换卡照常执行，错误文本带回宿主', () async {
+      final String code =
+          'globalThis.window = globalThis;'
+          'window.__fushiSrsSetCard = function(){};'
+          'var ran = 0;'
+          'var r = ${srsCardFaceCallsScript(<String>['throw new Error("boom");', 'ran++;'])};'
+          'console.log(JSON.stringify({r: r, ran: ran}));';
+      final Directory dir = Directory.systemTemp.createTempSync('srs-calls-');
+      try {
+        final File script = File('${dir.path}/calls.js')
+          ..writeAsStringSync(code);
+        final ProcessResult result = await Process.run(
+          'node',
+          <String>[script.path],
+          runInShell: Platform.isWindows,
+          stdoutEncoding: utf8,
+        );
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        final Map<String, dynamic> out =
+            jsonDecode('${result.stdout}'.trim()) as Map<String, dynamic>;
+        expect(out['ran'], 1);
+        expect(out['r'], contains('boom'));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
   });
 
   group('外壳 HTML / 主题样式', () {

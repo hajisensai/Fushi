@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3575](bugs/BUG-3575-gal-long-line-voice-truncated.md) | ✅ | ✅ | gal-long-line-voice-truncated |
+> 共 3206 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3576](bugs/BUG-3576-interconnect-srs-writer-dir-hash-propfind-404.md) | ✅ | ✅ | 互联客户端复习同步第二轮起 PROPFIND 404（写入者目录名带 `#`） |
+| [BUG-3575](bugs/BUG-3575-srs-sync-now-failure-says-unconfigured.md) | ✅ | ✅ | 复习「立即同步」失败时提示「还没有配置同步服务」 |
+| [BUG-3575](bugs/BUG-3575-srs-deck-open-slow.md) | ✅ | ✅ | SRS 打开大牌组很慢（eggrolls 首张卡要等十几秒），首张卡出来前退出复习页时 State 卡成僵尸 |
+| [BUG-3575](bugs/BUG-3575-srs-new-card-reposition.md) | ✅ | ✅ | 制卡目标为「Fushi 复习」时「新卡按词频重排」（手动 + 制卡后自动）不可用 |
 | [BUG-3574](bugs/BUG-3574-manga-source-scan-skips-cbz-zip.md) | ✅ | ✅ | 漫画来源扫描跳过 .cbz / .zip 卷（显示 0 卷），漫画来源里的 .epub / .pdf 卷也被丢掉 |
 | [BUG-3573](bugs/BUG-3573-mixed-dict-kanji-section-missing.md) | ✅ | ✅ | mixed-dict-kanji-section-missing |
 | [BUG-3572](bugs/BUG-3572-extension-asb-anki-dialog-no-lookup.md) | ✅ | ✅ | 浏览器扩展：asbplayer Mining History「Export to Anki」对话框的字段里查不了词 |
@@ -82,6 +90,7 @@
 | [BUG-3604](bugs/BUG-3604-manga-lookup-popup-offscreen.md) | ✅ | ✅ | 漫画查词弹窗在整句并集放不下时被压成 0 高挤出屏幕 |
 | [BUG-3603](bugs/BUG-3603-floating-ball-screen-ocr-launch-dropped.md) | ✅ | ✅ | Android 应用外悬浮球截屏查词点了没反应（宿主 Activity 被 ROM 静默拦下） |
 | [BUG-3602](bugs/BUG-3602-floating-ball-in-app-hidden-after-screen-ocr.md) | ✅ | ✅ | Android 应用内悬浮球不显示（截屏 OCR 回调丢失后一直藏着） |
+| [BUG-3617](bugs/BUG-3617-srs-browse-orphan-deck-cards.md) | ✅ | ✅ | 复习卡片浏览：牌组已不存在的卡不归默认牌组，deck:Default 筛不到 |
 | [BUG-3570](bugs/BUG-3570-web-browser-embedded-under-nav.md) | ✅ | ✅ | 浏览器嵌在模块页里：主导航底栏与「阅读本章」FAB 叠在网页上互相遮挡，顶部还有「浏览器」标题 |
 | [BUG-3569](bugs/BUG-3569-lookup-shell-title-md3-compact.md) | ✅ | ✅ | 查词页（MD3 手机）顶部仍有一整行「查词」大标题 |
 | [BUG-3568](bugs/BUG-3568-root-page-back-button-on-popup.md) | ✅ | ✅ | 根页打开弹出菜单 / 对话框后重建会凭空长出返回键（浏览器页点「⋯」左上角出现返回） |

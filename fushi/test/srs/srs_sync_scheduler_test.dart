@@ -136,7 +136,7 @@ void main() {
         channels ??
         (Future<void> Function(SyncAssetStore) body) async {
           await body(LocalDirectoryAssetStore(root));
-          return 1;
+          return (ran: 1, errors: const <Object>[]);
         },
     // 测试里的目录都是 LocalDirectoryAssetStore：按根目录区分物理目录。
     directoryKeyOf: (SyncAssetStore b) async => b is LocalDirectoryAssetStore
@@ -157,11 +157,11 @@ void main() {
   ].join(Platform.pathSeparator);
 
   test('支持服务器时间的后端：同步成功、发布、校时；不提示', () async {
-    final SrsSyncReport? r = await scheduler().syncWithBackend(
+    final SrsSyncReport r = await scheduler().syncWithBackend(
       LocalDirectoryAssetStore(root),
     );
     expect(r, isNotNull);
-    expect(r!.error, isNull);
+    expect(r.error, isNull);
     expect(r.serverTimeMs, isNotNull);
     expect(r.published, greaterThan(0));
     expect(store.trustedClock.isAnchored, isTrue, reason: 'anchorTime 被调用');
@@ -178,10 +178,10 @@ void main() {
   test('后端拿不到服务器时间：提示「不支持」只一次，不校时', () async {
     final SrsSyncScheduler s = scheduler();
     final _NoTimeStore backend = _NoTimeStore(LocalDirectoryAssetStore(root));
-    final SrsSyncReport? r1 = await s.syncWithBackend(backend);
-    final SrsSyncReport? r2 = await s.syncWithBackend(backend);
-    expect(r1!.error, kSrsSyncServerTimeUnavailable);
-    expect(r2!.error, kSrsSyncServerTimeUnavailable);
+    final SrsSyncReport r1 = await s.syncWithBackend(backend);
+    final SrsSyncReport r2 = await s.syncWithBackend(backend);
+    expect(r1.error, kSrsSyncServerTimeUnavailable);
+    expect(r2.error, kSrsSyncServerTimeUnavailable);
     expect(notices, <SrsSyncNotice>[SrsSyncNotice.backendUnsupported]);
     expect(store.trustedClock.isAnchored, isFalse);
   });
@@ -209,7 +209,7 @@ void main() {
       clock: () => now,
       channels: (Future<void> Function(SyncAssetStore) body) async {
         runs++;
-        return 0;
+        return (ran: 0, errors: const <Object>[]);
       },
     );
     expect(await s.syncThrottled(), isTrue);
@@ -230,10 +230,10 @@ void main() {
         channels: (Future<void> Function(SyncAssetStore) body) async {
           await body(LocalDirectoryAssetStore(cloudRoot));
           await body(LocalDirectoryAssetStore(root));
-          return 2;
+          return (ran: 2, errors: const <Object>[]);
         },
       );
-      expect(await s.syncNow(), 2);
+      expect((await s.syncNow()).ran, 2);
       final String writer = store.writerId;
       expect(File(ownBatchPath(cloudRoot, store, 1)).existsSync(), isTrue);
       // 第二个目录这时还没同步过、不拖住本机留存：第 1 批由快照补齐（覆盖同一段前缀）。
@@ -255,7 +255,7 @@ void main() {
           srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨',
         },
       );
-      expect(await s.syncNow(), 2);
+      expect((await s.syncNow()).ran, 2);
       expect(store.writerId, writer);
       expect(File(ownBatchPath(cloudRoot, store, 2)).existsSync(), isTrue);
       expect(File(ownBatchPath(root, store, 2)).existsSync(), isTrue);
@@ -263,7 +263,8 @@ void main() {
 
     test('本机开着互联服务：host 自己的同步目录也参与（没有任何通道也算同步过）', () async {
       final SrsSyncScheduler s = scheduler(
-        channels: (Future<void> Function(SyncAssetStore) body) async => 0,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
         localDirectories: () async => <SrsLocalDirectory>[
           SrsLocalDirectory(
             directoryKey: 'interconnect:host',
@@ -271,16 +272,76 @@ void main() {
           ),
         ],
       );
-      expect(await s.syncNow(), 1);
+      expect((await s.syncNow()).ran, 1);
       expect(File(ownBatchPath(root, store, 1)).existsSync(), isTrue);
       expect(store.trustedClock.isAnchored, isTrue);
+    });
+
+    test('立即同步：通道抛错与报告带错都记成失败，不算同步成功', () async {
+      final StateError unreachable = StateError('host unreachable');
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          // 第一条通道：引擎跑完但目录身份拿不到（报告带错，没抛）。
+          await body(LocalDirectoryAssetStore(root));
+          // 第二条通道：抛错，由通道 runner 记账。
+          return (ran: 1, errors: <Object>[unreachable]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => null,
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 0);
+      expect(r.unconfigured, isFalse);
+      expect(r.errors, hasLength(2));
+      expect(
+        (r.errors.first as SrsSyncReportError).message,
+        kSrsSyncDirectoryIdentityUnavailable,
+      );
+      expect(r.errors.last, same(unreachable));
+    });
+
+    test('立即同步：本机 SRS 副本打不开时如实报未同步，不算成功、也不说成没配置', () async {
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => null,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 0);
+      expect(r.unconfigured, isFalse);
+      expect(
+        r.errors.map((Object e) => (e as SrsSyncReportError).message),
+        <String>[kSrsSyncStoreUnavailable, kSrsSyncStoreUnavailable],
+      );
+    });
+
+    test('立即同步：没有通道也没有本机目录 = 没配置', () async {
+      final SrsSyncNowResult r = await scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+      ).syncNow();
+      expect(r.unconfigured, isTrue);
     });
 
     test('目录身份拿不到（云盘账户还没认出来）：这一轮不跑，不当成新目录', () async {
       int runs = 0;
       final SrsSyncScheduler s = SrsSyncScheduler(
         readStore: () async => store,
-        channels: (Future<void> Function(SyncAssetStore) body) async => 0,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
         directoryKeyOf: (SyncAssetStore b) async => null,
         onDataChanged: () {},
         onNotice: (SrsSyncNotice _) {},
@@ -289,10 +350,10 @@ void main() {
           return SrsSyncReport();
         },
       );
-      final SrsSyncReport? r = await s.syncWithBackend(
+      final SrsSyncReport r = await s.syncWithBackend(
         LocalDirectoryAssetStore(root),
       );
-      expect(r!.error, kSrsSyncDirectoryIdentityUnavailable);
+      expect(r.error, kSrsSyncDirectoryIdentityUnavailable);
       expect(runs, 0);
       expect((await store.loadSyncState()).directories, isEmpty);
     });
@@ -308,7 +369,7 @@ void main() {
           readStore: () async => store,
           channels: (Future<void> Function(SyncAssetStore) body) async {
             channelRuns++;
-            return 0;
+            return (ran: 0, errors: const <Object>[]);
           },
           directoryKeyOf: (SyncAssetStore b) async => 'cloud',
           localDirectories: () async => <SrsLocalDirectory>[
@@ -350,17 +411,18 @@ void main() {
     test('坏文件只记一次日志，不影响结果', () async {
       final SrsSyncScheduler s = SrsSyncScheduler(
         readStore: () async => store,
-        channels: (Future<void> Function(SyncAssetStore) body) async => 0,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
         directoryKeyOf: (SyncAssetStore b) async => 'k',
         onDataChanged: () {},
         onNotice: (SrsSyncNotice _) {},
         runner: (SyncAssetStore b, SrsDbStore st, String key) async =>
             SrsSyncReport()..skippedFiles.add('w#1/batch-0000000002: bad'),
       );
-      final SrsSyncReport? r = await s.syncWithBackend(
+      final SrsSyncReport r = await s.syncWithBackend(
         LocalDirectoryAssetStore(root),
       );
-      expect(r!.error, isNull);
+      expect(r.error, isNull);
       expect(r.skippedFiles, hasLength(1));
     });
 
@@ -369,7 +431,8 @@ void main() {
       int maxRunning = 0;
       final SrsSyncScheduler s = SrsSyncScheduler(
         readStore: () async => store,
-        channels: (Future<void> Function(SyncAssetStore) body) async => 0,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
         directoryKeyOf: (SyncAssetStore b) async => 'k',
         onDataChanged: () {},
         onNotice: (SrsSyncNotice _) {},
@@ -411,22 +474,45 @@ void main() {
               body: (SyncBackend b) => body(b),
             ),
       );
-      expect(await s.syncNow(), 1);
+      expect((await s.syncNow()).ran, 1);
       expect(cloud.restoreCalls, 1);
       expect(offline.restoreCalls, 1);
       expect(store.trustedClock.isAnchored, isTrue);
     });
 
+    test('已认证通道这轮抛错：不算跑过，异常带回给调用方（不能说成没配置）', () async {
+      final _AssetBackend interconnect = _AssetBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[
+        SyncChannel(
+          interconnect,
+          type: SyncBackendType.fushiServer,
+          isInterconnect: true,
+        ),
+      ];
+      final StateError unreachable = StateError('host unreachable');
+      final ({int ran, List<Object> errors}) n =
+          await runOnAuthenticatedSyncChannels(
+            db: db,
+            body: (SyncBackend _) async => throw unreachable,
+          );
+      expect(n.ran, 0);
+      expect(n.errors, <Object>[unreachable]);
+    });
+
     test('没配置任何同步后端：什么都不做', () async {
       debugSyncChannelsOverride = (SyncRepository _) async => <SyncChannel>[];
       int called = 0;
-      final int n = await runOnAuthenticatedSyncChannels(
-        db: FushiDatabase.forTesting(
-          DatabaseConnection(NativeDatabase.memory()),
-        ),
-        body: (SyncBackend _) async => called++,
-      );
-      expect(n, 0);
+      final ({int ran, List<Object> errors}) n =
+          await runOnAuthenticatedSyncChannels(
+            db: FushiDatabase.forTesting(
+              DatabaseConnection(NativeDatabase.memory()),
+            ),
+            body: (SyncBackend _) async => called++,
+          );
+      expect(n.ran, 0);
+      expect(n.errors, isEmpty);
       expect(called, 0);
     });
   });

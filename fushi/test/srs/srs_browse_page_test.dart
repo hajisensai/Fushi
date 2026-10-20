@@ -12,10 +12,13 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
+import 'package:fushi_engine/srs/srs_browse_ops.dart' show srsBatchMoveCards;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show FushiFsrs, kFushiFsrsLibEnv;
@@ -137,6 +140,35 @@ Future<void> _search(WidgetTester tester, String query) async {
   await _settle(tester, rounds: 3);
 }
 
+/// 在 [deckId] 牌组里加一条 Lapis 笔记（null = 默认牌组）。
+Future<String> _addIn(
+  WidgetTester tester,
+  SrsDbStore store,
+  String expression, {
+  String? deckId,
+}) async {
+  final String id = (await tester.runAsync(
+    () => store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      deckId: deckId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(kSrsTestProfile, 'Expression'): expression,
+        srsLapisFieldId(kSrsTestProfile, 'MainDefinition'): 'x',
+      },
+    ),
+  ))!;
+  _clock.advance(const Duration(seconds: 1));
+  return id;
+}
+
+void _expectNativeSearch() => expect(
+  FushiFsrs.isAvailable,
+  isTrue,
+  reason:
+      'fushi_fsrs native library not loadable: build it with '
+      'native/fushi_fsrs/build_*.{ps1,sh} and set $kFushiFsrsLibEnv',
+);
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
@@ -214,7 +246,131 @@ void main() {
       expect(undone.where((SrsCardCacheRow c) => c.suspended), isEmpty);
       await _unmount(tester);
     });
+    testWidgets('[$ds] 牌组菜单「浏览此牌组的卡片」：宽屏「⋯」与窄屏长按（含默认牌组）带 deck: 查询打开浏览页', (
+      WidgetTester tester,
+    ) async {
+      _expectNativeSearch();
+      final SrsDbStore store = await _openStore(tester);
+      final String jp = (await tester.runAsync(
+        () => store.ensureDeckPath('JP'),
+      ))!;
+      final String n3 = (await tester.runAsync(
+        () => store.ensureDeckPath('JP::N3'),
+      ))!;
+      await _addIn(tester, store, '食べる');
+      await _addIn(tester, store, '飲む', deckId: jp);
+      await _addIn(tester, store, '走る', deckId: n3);
+
+      // 宽屏：行尾「⋯」。
+      await _pump(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(1100, 900),
+        page: const SrsDeckListPage(),
+      );
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(ValueKey<String>('srs-deck-$jp')),
+          // 行尾「⋯」（Apple 版不挂 Tooltip，按组件类型找）。
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w.runtimeType.toString().startsWith('FushiPopupMenuButton'),
+          ),
+        ),
+      );
+      await _settle(tester, rounds: 4);
+      expect(find.text(t.srs_deck_browse_cards), findsOneWidget);
+      // Apple 菜单按 value / child 重建菜单项（不保留 key），按文案点。
+      await tester.tap(find.text(t.srs_deck_browse_cards));
+      await _settle(tester);
+      final SrsBrowsePage page = tester.widget<SrsBrowsePage>(
+        find.byType(SrsBrowsePage),
+      );
+      expect(page.initialQuery, srsDeckQuery('JP'));
+      expect(page.initialQuery, 'deck:"JP"');
+      // 含子牌组（Anki deck: 语义），不含默认牌组的卡。
+      expect(_row('飲む'), findsOneWidget);
+      expect(_row('走る'), findsOneWidget);
+      expect(_row('食べる'), findsNothing);
+      await _unmount(tester);
+
+      // 窄屏：长按默认牌组行弹同一份菜单，默认牌组同样可用。
+      await _pump(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(412, 915),
+        page: const SrsDeckListPage(),
+      );
+      await tester.longPress(find.text('Default'));
+      await _settle(tester, rounds: 4);
+      expect(find.text(t.srs_deck_browse_cards), findsOneWidget);
+      await tester.tap(find.text(t.srs_deck_browse_cards));
+      await _settle(tester);
+      expect(
+        tester.widget<SrsBrowsePage>(find.byType(SrsBrowsePage)).initialQuery,
+        'deck:"Default"',
+      );
+      expect(_row('食べる'), findsOneWidget);
+      expect(_row('飲む'), findsNothing);
+      await _unmount(tester);
+    });
   }
+
+  test('srsDeckQuery：通配符 / 反斜杠 / 引号转义成字面量，层级 :: 原样保留', () {
+    expect(srsDeckQuery('A::B c'), 'deck:"A::B c"');
+    expect(srsDeckQuery(r'x_y*z"q\w'), r'deck:"x\_y\*z\"q\\w"');
+  });
+
+  testWidgets('BUG-3617：牌组已不存在的卡在浏览页归默认牌组，deck:Default 筛得到', (
+    WidgetTester tester,
+  ) async {
+    _expectNativeSearch();
+    final SrsDbStore store = await _openStore(tester);
+    final String jp = (await tester.runAsync(
+      () => store.ensureDeckPath('JP'),
+    ))!;
+    await _addIn(tester, store, '食べる');
+    final String orphan = await _addIn(tester, store, '飲む');
+    await _addIn(tester, store, '走る', deckId: jp);
+    // 卡片指向一个本机不存在的牌组（别的设备删了牌组 / 移动先于牌组同步到）。
+    final List<String> orphanCards = <String>[
+      for (final SrsCardCacheRow c in await _cards(tester, store))
+        if (c.noteId == orphan) c.id,
+    ];
+    await tester.runAsync(
+      () => srsBatchMoveCards(store, orphanCards, 'deck-gone-elsewhere'),
+    );
+    expect(
+      (await _cards(tester, store))
+          .where((SrsCardCacheRow c) => c.noteId == orphan)
+          .map((SrsCardCacheRow c) => c.deckId),
+      everyElement('deck-gone-elsewhere'),
+    );
+
+    await _pump(
+      tester,
+      store: store,
+      page: SrsBrowsePage(initialQuery: srsDeckQuery('Default')),
+    );
+    expect(_row('食べる'), findsOneWidget);
+    expect(_row('飲む'), findsOneWidget, reason: '孤儿卡归默认牌组');
+    expect(_row('走る'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byWidgetPredicate(
+          (Widget w) =>
+              w.key is ValueKey<String> &&
+              (w.key! as ValueKey<String>).value.startsWith('srs-browse-row-'),
+        ),
+        matching: find.textContaining('Default'),
+      ),
+      findsNWidgets(2),
+      reason: '孤儿卡的牌组名显示为默认牌组（以前是空）',
+    );
+    await _unmount(tester);
+  });
 
   testWidgets('批量删除需要确认；全选 + 改旗标', (WidgetTester tester) async {
     final SrsDbStore store = await _openStore(tester);
