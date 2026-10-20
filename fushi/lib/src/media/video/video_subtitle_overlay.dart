@@ -1823,7 +1823,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     // TODO-1372/BUG-698：组内跨帧稳定槽位（锚点侧在前，不变量见 [_groupSlots]）。Column
     // 自顶向下渲染：底部锚组反转（slot0 贴底、新 cue 往上长），顶部/中部锚组顺序（slot0
     // 贴顶、新 cue 往下长；中部锚组增长对称外扩，重叠罕见，接受半高偏移）。
-    final List<_GroupSlot> slots = _syncGroupSlots(slotKey, cues);
+    // 纯字幕模式（BUG-3608）：位置语义归零后整层折进一个堆叠组，入槽次序按作者排版的
+    // 竖直次序（\pos y / 锚点+MarginV），否则先写的行恒贴锚点——作者用 \pos 排成「先写
+    // 的在上」的同时间戳两行会上下颠倒。尊重样式时位置由分组键承载，不走这里。
+    final List<AudioCue> slotOrder = widget.respectAssStyle
+        ? cues
+        : orderPlainCuesByAuthoredPosition(cues,
+            anchorBottom: effectiveV == SubtitleVAlign.bottom);
+    final List<_GroupSlot> slots = _syncGroupSlots(slotKey, slotOrder);
     final Iterable<_GroupSlot> topToBottom =
         effectiveV == SubtitleVAlign.bottom ? slots.reversed : slots;
     Widget content = Column(
@@ -3778,6 +3785,61 @@ List<(String, List<AudioCue>)> sortCueGroupsForPaint(
       return byOrder != 0 ? byOrder : a.compareTo(b);
     });
   return <(String, List<AudioCue>)>[for (final int i in idx) groups[i]];
+}
+
+/// 一条 cue 在**作者排版**里的竖直位置（0=画面顶，1=画面底），供纯字幕模式排行序用
+/// （BUG-3608）。\pos 取 y 分数、\move 取起点 y；无显式位置按 \an 竖直锚点 + MarginV
+/// （有 PlayResY 才折算）近似：底部 `1 - MarginV/PlayResY`、顶部 `MarginV/PlayResY`、中部
+/// 0.5。无 markup（srt/vtt）视作底部（1.0）。
+double _authoredVerticalFraction(SubtitleMarkup? m) {
+  if (m == null) return 1.0;
+  final SubtitlePos? pos = m.posFraction;
+  if (pos != null) return pos.yFraction;
+  final SubtitleMove? move = m.move;
+  if (move != null) return move.y1Fraction;
+  final double? playResY = m.playResY;
+  final double mv = m.cueStyle?.marginV ?? 0;
+  final double mvFraction = (playResY != null && playResY > 0 && mv > 0)
+      ? (mv / playResY).clamp(0.0, 1.0).toDouble()
+      : 0.0;
+  switch (m.anchor?.vertical ?? SubtitleVAlign.bottom) {
+    case SubtitleVAlign.top:
+      return mvFraction;
+    case SubtitleVAlign.middle:
+      return 0.5;
+    case SubtitleVAlign.bottom:
+      return 1.0 - mvFraction;
+  }
+}
+
+/// 纯字幕模式（respectAssStyle 关，BUG-915）把整层 cue 折进**一个**锚定堆叠组、位置
+/// 语义归零后，组内行序按**作者排版的竖直次序**排（BUG-3608）：返回「锚点侧在前」的
+/// 顺序（与 `_syncGroupSlots` 的槽位次序同构）——[anchorBottom] 时最靠下的在前（slot0
+/// 贴底），否则最靠上的在前（slot0 贴顶）。
+///
+/// 病根：旧实现直接按活动集发现顺序（文件序）入槽，底部锚组 slot0 贴底，于是先写的行
+/// 恒在下面。作者用 `\pos` 把同时间戳的两行**显式**排成上下（文件序第一行 y=900 在上、
+/// 第二行 y=1020 在下）时，纯字幕模式把它们上下颠倒；asbplayer 剥掉位置后按文件序自上
+/// 而下排，恰好与这类字幕的作者次序一致，所以「asb 正常、Fushi 反了」。
+///
+/// 竖直位置相同（典型：无 \pos 的同锚点同 MarginV 对白）保持发现顺序（稳定排序），即
+/// 沿用 libass 碰撞语义「先出的贴锚点、后出的往外推」，既有纯 SRT / 普通 ASS 行为不变。
+@visibleForTesting
+List<AudioCue> orderPlainCuesByAuthoredPosition(
+  List<AudioCue> cues, {
+  required bool anchorBottom,
+}) {
+  if (cues.length < 2) return cues;
+  final List<double> ys = <double>[
+    for (final AudioCue c in cues) _authoredVerticalFraction(c.markup),
+  ];
+  final List<int> idx = List<int>.generate(cues.length, (int i) => i)
+    ..sort((int a, int b) {
+      final int byY =
+          anchorBottom ? ys[b].compareTo(ys[a]) : ys[a].compareTo(ys[b]);
+      return byY != 0 ? byY : a.compareTo(b);
+    });
+  return <AudioCue>[for (final int i in idx) cues[i]];
 }
 
 /// ASS `\p` 矢量绘图画笔：路径坐标（归一化分数）减去包围盒左上角后乘 [scaleX]/[scaleY]
