@@ -588,30 +588,30 @@ class NyaaClient {
   Future<void> _waitForRequestSlot(Future<void>? previous) async {
     if (previous != null) await previous;
     final String host = Uri.parse(baseUrl).host;
-    // 间隔从**上一次实际放行**的时刻量起，并且「检查 → 记录放行时刻」在同一个
-    // 同步段里完成（Dart 单线程，无 await 即不可被打断）；睡醒后回到循环顶部
-    // 重新检查，而不是醒来就直接放行。
+    // 间隔从**上一次实际放行**的时刻量起：睡够剩余时长后，记下的是醒来那一刻
+    // 的时钟读数，不是计划时刻。
     //
-    // 旧实现是「先按计划时刻占坑、睡到计划时刻就放行」，记录的是**计划**时刻：
-    // 定时器在负载下晚醒（计划 +120ms、实际 +300ms 才醒）时，排在后面的调用
-    // 拿计划时刻算间隔，发现「早就过了」立刻放行，于是两次请求几乎同时打出去，
-    // 契约说的「同 host 至少间隔 minRequestInterval」被破坏。跨实例并发同理：
-    // 几个 client 同时睡到同一时刻醒来，第一个放行并记下时刻，其余的回到循环
-    // 看到刚记下的时刻、各自再睡一格，不会一阵爆发。
+    // 旧实现记录的是**计划**时刻：定时器在负载下晚醒（计划 +120ms、实际 +300ms
+    // 才醒）时，排在后面的调用拿计划时刻算间隔，发现「早就过了」立刻放行，于是
+    // 两次请求几乎同时打出去，契约说的「同 host 至少间隔 minRequestInterval」被
+    // 破坏。本实例的调用经 [_requestQueueTail] 串行，后一个总是在前一个记下实际
+    // 放行时刻之后才开始算，所以晚醒只会让后面的顺延。
+    //
+    // 只睡一次、醒来不再按时钟复查：时钟（真实单调时钟）和定时器（当前 zone 的
+    // `Future.delayed`）不是同一个时间源。widget 测试的 fake-async 里定时器走虚拟
+    // 时间、单调时钟走真实时间，「睡醒再查」会一直查出「还差一点」再睡，请求被
+    // 无限推迟（resource_search_page_scroll_test 实测因此变红）。
+    // 已知限制（本修改之前就有）：**不同实例**打同一 host 时各自从同一个时刻
+    // 算起，可能在同一时刻一起醒来放行。
     //
     // 存的仍然只是时刻、不是 Future —— 静态存完成态 Future 正是上面注释里那个
     // 跨 zone 挂死的坑，别为了排队把它请回来。
-    while (true) {
-      final Duration now = _monotonicNow();
-      final Duration? last = _lastRequestStartByHost[host];
-      final Duration remaining =
-          last == null ? Duration.zero : minRequestInterval - (now - last);
-      if (remaining <= Duration.zero) {
-        _lastRequestStartByHost[host] = now;
-        return;
-      }
-      await Future<void>.delayed(remaining);
+    final Duration? last = _lastRequestStartByHost[host];
+    if (last != null) {
+      final Duration remaining = minRequestInterval - (_monotonicNow() - last);
+      if (remaining > Duration.zero) await Future<void>.delayed(remaining);
     }
+    _lastRequestStartByHost[host] = _monotonicNow();
   }
 
   /// 单次请求的整体超时上限。默认取发现链路的唯一真相源
