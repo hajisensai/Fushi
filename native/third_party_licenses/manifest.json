@@ -2366,11 +2366,25 @@
     },
     {
       "name": "ONNX Runtime",
+      "version": "1.28.0",
+      "license": "MIT",
+      "component": "pub:flutter_onnxruntime (third_party/flutter_onnxruntime)",
+      "platforms": [
+        "android"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.28.0-LICENSE",
+        "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.28.0-ThirdPartyNotices.txt"
+      ],
+      "source": "third_party/flutter_onnxruntime/android/build.gradle com.microsoft.onnxruntime:onnxruntime-android:1.28.0 (Maven Central aar: jni/arm64-v8a/libonnxruntime.so 28637280 B); texts from raw.githubusercontent.com/microsoft/onnxruntime/v1.28.0/{LICENSE,ThirdPartyNotices.txt}",
+      "note": "Shared libonnxruntime.so + libonnxruntime4j_jni.so. The aar does not ship ThirdPartyNotices.txt. Moved off 1.23.0 by BUG-3622 (KleidiAI SME2 kernels SIGILL on SME-only CPUs)."
+    },
+    {
+      "name": "ONNX Runtime",
       "version": "1.23.0",
       "license": "MIT",
       "component": "pub:flutter_onnxruntime (third_party/flutter_onnxruntime)",
       "platforms": [
-        "android",
         "ios",
         "macos"
       ],
@@ -2378,8 +2392,8 @@
         "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.23.0-LICENSE",
         "native/third_party_licenses/texts/pub_prebuilt/onnxruntime-1.23.0-ThirdPartyNotices.txt"
       ],
-      "source": "android/build.gradle:50 com.microsoft.onnxruntime:onnxruntime-android:1.23.0 (APK lib/arm64-v8a/libonnxruntime.so 19242472 B == file in the cached aar); ios|macos podspec s.dependency 'onnxruntime-objc','1.23.0' -> onnxruntime-c 1.23.0 (Mac Podfile.lock); texts from raw.githubusercontent.com/microsoft/onnxruntime/v1.23.0/{LICENSE,ThirdPartyNotices.txt}; pod onnxruntime-c's own LICENSE is byte-identical",
-      "note": "Android: shared libonnxruntime.so + libonnxruntime4j_jni.so. iOS/macOS: static onnxruntime.xcframework linked into the main executable (onnxruntime symbols present in /Applications/fushi.app/Contents/MacOS/fushi). Neither the aar nor the pod ships ThirdPartyNotices.txt."
+      "source": "ios|macos podspec s.dependency 'onnxruntime-objc','1.23.0' -> onnxruntime-c 1.23.0 (Mac Podfile.lock); texts from raw.githubusercontent.com/microsoft/onnxruntime/v1.23.0/{LICENSE,ThirdPartyNotices.txt}; pod onnxruntime-c's own LICENSE is byte-identical",
+      "note": "iOS/macOS: static onnxruntime.xcframework linked into the main executable (onnxruntime symbols present in /Applications/fushi.app/Contents/MacOS/fushi). The pod does not ship ThirdPartyNotices.txt."
     },
     {
       "name": "ONNX Runtime",
