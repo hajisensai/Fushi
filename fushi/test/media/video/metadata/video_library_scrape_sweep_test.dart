@@ -1060,7 +1060,7 @@ void main() {
         title: 'Unscraped Movie',
       );
       const String secretFingerprint =
-          'tmdb-key-0123 user anidb-secret-password';
+          'tmdb-key-0123\u0000user\u0000anidb-secret-password';
 
       await relaunch(
         DateTime(2026, 9, 20),
