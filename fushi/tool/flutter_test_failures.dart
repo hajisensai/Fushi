@@ -6,6 +6,7 @@ import 'test_flow/flutter_sdk_executables.dart';
 import 'test_flow/flutter_test_failure_filter.dart';
 import 'test_flow/heavy_budget.dart';
 import 'test_flow/heavy_lease.dart';
+import 'test_flow/suite_timings.dart';
 import 'test_flow/test_file_shards.dart';
 
 Future<void> main(List<String> args) async {
@@ -190,21 +191,20 @@ class _FlutterTestFailureOptions {
   }
 }
 
-/// Per-suite fixed cost (compile + isolate spin-up), in the same unit as the
-/// byte-size weight, so a shard of many tiny suites is not under-counted.
-const int _kPerSuiteWeight = 4096;
-
 /// Lists this shard's suites under `test/` (the directory `flutter test` scans
 /// by default), passed as explicit paths so the other shards' suites are never
 /// compiled here. Do not combine `--file-shard` with explicit test paths.
+/// Balanced by the measured suite times in [kSuiteTimingsPath] (see
+/// test_flow/suite_timings.dart).
 List<String> _shardTestFiles(TestFileShard shard) {
-  final Map<String, int> weights = <String, int>{};
+  final Map<String, int> bytes = <String, int>{};
   for (final FileSystemEntity entity
       in Directory('test').listSync(recursive: true, followLinks: false)) {
     if (entity is! File || !entity.path.endsWith('_test.dart')) continue;
-    weights[entity.path.replaceAll(r'\', '/')] =
-        entity.lengthSync() + _kPerSuiteWeight;
+    bytes[entity.path.replaceAll(r'\', '/')] = entity.lengthSync();
   }
+  final Map<String, int> timings = readSuiteTimings(File(kSuiteTimingsPath));
+  final Map<String, int> weights = suiteShardWeights(bytes, timings);
   final List<String> selected = selectTestFileShard(weights, shard);
   if (selected.isEmpty) {
     // An empty path list would make `flutter test` fall back to the WHOLE
@@ -213,7 +213,12 @@ List<String> _shardTestFiles(TestFileShard shard) {
         '(${weights.length} test files); lower --file-shard total.');
     exit(64);
   }
+  final int timed = bytes.keys.where(timings.containsKey).length;
+  final int shardMs =
+      selected.fold<int>(0, (int sum, String path) => sum + weights[path]!);
   stdout.writeln('File shard ${shard.index}/${shard.total}: '
-      '${selected.length} of ${weights.length} test files');
+      '${selected.length} of ${weights.length} test files, '
+      '~${(shardMs / 60000).toStringAsFixed(1)} suite-minutes '
+      '($timed of ${bytes.length} suites have a measured time)');
   return selected;
 }

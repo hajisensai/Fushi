@@ -22,12 +22,15 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../integration_test/helpers/effect_probes.dart';
 import '../../integration_test/helpers/focus_driver.dart';
@@ -1495,6 +1498,18 @@ void main() {
       // debugSettingsForceExpandAllSections）。
       debugSettingsForceExpandAllSections = true;
       addTearDown(() => debugSettingsForceExpandAllSections = false);
+      // 「接收文本（texthooker）」切 ON 会让 TexthookerWsClientManager 连出去：换成永远
+      // 连不上的替身，不碰 testWidgets 的假 HttpClient（原因见 channelFactory 注释），
+      // 收尾停掉客户端——app 级单例不停就一直活到进程结束。
+      final TexthookerWsClientManager texthooker =
+          TexthookerWsClientManager.instance;
+      final WsChannelFactory previousTexthookerFactory =
+          texthooker.channelFactory;
+      texthooker.channelFactory = (String url) => _PendingWsChannel();
+      addTearDown(() async {
+        await texthooker.stop();
+        texthooker.channelFactory = previousTexthookerFactory;
+      });
       // cardCreation 详情页现在内联渲染 AnkiSettingsBody（扁平化后不再藏在子路由
       // 后），它经 ankiViewModelProvider → BaseAnkiRepository 调
       // SharedPreferences.getInstance()；host 无插件实现会抛 MissingPluginException。
@@ -2128,6 +2143,15 @@ List<String> _mapDiff(Map<String, String> before, Map<String, String> after) {
 }
 
 enum _RowKind { switchRow, slider, stepper, segmented, picker }
+
+/// 永远停在「连接中」的 WS 通道：`ready` 不完成，客户端既不监听 stream，也不排重连 timer。
+class _PendingWsChannel implements WebSocketChannel {
+  @override
+  Future<void> get ready => Completer<void>().future;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _FocusedRow {
   const _FocusedRow({
