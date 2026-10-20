@@ -55,6 +55,11 @@
 | [BUG-3624](bugs/BUG-3624-manga-swipe-follow-bound-to-page-animation.md) | ✅ | ✅ | manga-swipe-follow-bound-to-page-animation |
 | [BUG-3623](bugs/BUG-3623-manga-turn-queue-silent-stall.md) | 🚧 | 🚧 | manga-turn-queue-silent-stall |
 | [BUG-3622](bugs/BUG-3622-airing-calendar-romaji-and-empty-related.md) | ✅ | ✅ | 放送日历标题全是罗马字 + 关掉「显示本季全部」后为空 |
+> 共 3231 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3622](bugs/BUG-3622-pause-ocr-resume-delay.md) | ✅ | ✅ | 开了暂停 OCR 后，暂停 → 继续播放有明显延迟 |
 | [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
 | [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
 | [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
