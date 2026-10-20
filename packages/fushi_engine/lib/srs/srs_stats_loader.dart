@@ -206,7 +206,7 @@ Future<SrsStatsBundle> loadSrsStats(
       try {
         final List<double> r = srsRetrievabilityBatch(
           engine,
-          algorithm: e.key.algorithm,
+          algorithm: e.key.algorithm.memoryAlgorithm,
           params: e.key.params,
           memories: g.memories,
           elapsedDays: g.elapsedDays,

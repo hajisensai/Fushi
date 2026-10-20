@@ -17,6 +17,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -56,6 +57,7 @@ String srsFormatOptimizedAt(int ms) {
 String _algorithmLabel(SrsAlgorithm a) => switch (a) {
   SrsAlgorithm.fsrs7 => 'FSRS-7',
   SrsAlgorithm.fsrs6 => 'FSRS-6',
+  SrsAlgorithm.rwkv => 'RWKV',
 };
 
 class SrsDeckSettingsPage extends ConsumerStatefulWidget {
@@ -711,6 +713,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
               value: SrsAlgorithm.fsrs6,
               label: Text(_algorithmLabel(SrsAlgorithm.fsrs6)),
             ),
+            ButtonSegment<SrsAlgorithm>(
+              value: SrsAlgorithm.rwkv,
+              label: Text(_algorithmLabel(SrsAlgorithm.rwkv)),
+            ),
           ],
           selected: <SrsAlgorithm>{_algorithm},
           onSelectionChanged: (Set<SrsAlgorithm> v) =>
@@ -732,6 +738,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       add(
         Text(t.srs_settings_algorithm_hint, style: context.fushiType.bodySmall),
       );
+      if (_algorithm == SrsAlgorithm.rwkv) {
+        add(const SrsRwkvPanel(key: ValueKey<String>('srs-settings-rwkv')));
+      }
       add(_conflictNote(context, SrsFieldKeys.deckAlgorithm));
       add(
         AdaptiveSettingsSwitchRow(

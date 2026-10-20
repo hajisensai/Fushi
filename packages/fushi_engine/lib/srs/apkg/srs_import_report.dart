@@ -132,8 +132,8 @@ class SrsImportReport {
   final List<SrsImportTruncatedSteps> truncatedSteps =
       <SrsImportTruncatedSteps>[];
 
-  /// 开了 RWKV、改用 FSRS 的预设名。
-  final List<String> rwkvPresetsFellBack = <String>[];
+  /// 开了 RWKV 的预设名（导入后照旧用 RWKV；要先在牌组设置里下载 RWKV 模型）。
+  final List<String> rwkvPresets = <String>[];
 
   /// 参数校验不过、没写参数的预设：预设名 → 原因。
   final Map<String, String> invalidParams = <String, String>{};
@@ -168,7 +168,7 @@ class SrsImportReport {
     'truncatedSteps': <Map<String, Object?>>[
       for (final SrsImportTruncatedSteps s in truncatedSteps) s.toJson(),
     ],
-    'rwkvPresetsFellBack': rwkvPresetsFellBack,
+    'rwkvPresets': rwkvPresets,
     'invalidParams': invalidParams,
     'removedInSource': <Map<String, Object?>>[
       for (final SrsImportRemovedItem r in removedInSource) r.toJson(),

@@ -101,7 +101,7 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
       preset: s.preset,
       removed: _formatSteps(s.removed),
     ),
-  for (final String preset in r.rwkvPresetsFellBack)
+  for (final String preset in r.rwkvPresets)
     t.srs_import_report_rwkv(preset: preset),
   for (final String preset in r.invalidParams.keys)
     t.srs_import_report_invalid_params(preset: preset),
@@ -132,7 +132,11 @@ Future<bool> srsExportScopeUsesFsrs7(SrsDbStore store, {String? deckId}) async {
       ? tree.decks.map((SrsDeckView d) => d.id)
       : tree.subtree(deckId);
   for (final String id in ids) {
-    if (tree.paramsOwner(id).localAlgorithm == SrsAlgorithm.fsrs7) return true;
+    // RWKV 牌组的参数组也是 FSRS-7 的（影子记忆状态），Anki 里同样改用 FSRS-6。
+    if (tree.paramsOwner(id).localAlgorithm.memoryAlgorithm ==
+        SrsAlgorithm.fsrs7) {
+      return true;
+    }
   }
   return false;
 }

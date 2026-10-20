@@ -1716,6 +1716,9 @@ class SyncRepository {
     // 设置描述的是这台设备的磁盘，换设备恢复带过去没有意义。
     PreferencesRepository.srsBackupAutoKey,
     PreferencesRepository.srsBackupLimitsKey,
+    // RWKV 网络选择按这台设备的内存定（手机选小模型、电脑可选大模型），带到别的设备没有意义；
+    // 权重与回放快照也只在本机。
+    PreferencesRepository.srsRwkvModelKey,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,

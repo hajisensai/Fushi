@@ -91,6 +91,22 @@ class RwkvRows {
     _length++;
   }
 
+  /// 追加 [other] 的全部行（原样复制字节）。
+  void addRows(RwkvRows other) {
+    final int needed = (_length + other.length) * kFrwkvReviewSize;
+    if (needed > _bytes.lengthInBytes) {
+      final ByteData grown = ByteData(
+        needed > 2 * _bytes.lengthInBytes ? needed : 2 * _bytes.lengthInBytes,
+      );
+      grown.buffer.asUint8List().setRange(0, _length * kFrwkvReviewSize, bytes);
+      _bytes = grown;
+    }
+    _bytes.buffer
+        .asUint8List(_bytes.offsetInBytes)
+        .setRange(_length * kFrwkvReviewSize, needed, other.bytes);
+    _length += other.length;
+  }
+
   int cardIdAt(int index) =>
       _bytes.getInt64(index * kFrwkvReviewSize, Endian.little);
   int easeAt(int index) => _bytes.getUint8(index * kFrwkvReviewSize + 76);

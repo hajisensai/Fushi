@@ -49,7 +49,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   List<double> defaultParams(SrsAlgorithm algorithm) {
     final Object? result = _call(<String, Object?>{
       'op': 'defaults',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
     });
     final Object? params = result is Map ? result['params'] : null;
     return _doubleList(params, 'defaults');
@@ -60,7 +60,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     try {
       _call(<String, Object?>{
         'op': 'validate',
-        'algorithm': algorithm.wire,
+        'algorithm': algorithm.memoryAlgorithm.wire,
         'params': params,
       });
       return null;
@@ -79,7 +79,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }) {
     final Object? result = _call(<String, Object?>{
       'op': 'next_states',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
       'desiredRetention': desiredRetention,
       'elapsedDays': elapsedDays,
@@ -105,7 +105,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }) {
     final Object? result = _call(<String, Object?>{
       'op': 'memory_state',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
       'reviews': <Map<String, Object?>>[
         for (final SrsFsrsReview r in reviews) r.toJson(),
@@ -126,7 +126,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }) {
     final Object? result = _call(<String, Object?>{
       'op': 'memory_state_from_sm2',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
       'easeFactor': easeFactor,
       'interval': intervalDays,
@@ -144,7 +144,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }) {
     final Object? result = _call(<String, Object?>{
       'op': 'retrievability',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
       'memory': memory.toJson(),
       'elapsedDays': elapsedDays,
@@ -167,7 +167,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       throw ArgumentError('memories and elapsedDays differ in length');
     }
     final Pointer<Char> model = _encode(<String, Object?>{
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
     }).toNativeUtf8().cast<Char>();
     // 五段 f32 连续放在一块：s | d | sf | elapsed | out。
@@ -216,7 +216,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       throw const SrsFsrsException('cancelled');
     }
     final String request = _encode(<String, Object?>{
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'items': _itemsJson(items),
       'cardIds': cardIds,
     });
@@ -244,7 +244,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }) {
     final Object? result = _call(<String, Object?>{
       'op': 'evaluate_tss',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'items': _itemsJson(items),
     });
     return _evaluation(result, 'evaluate_tss');
@@ -258,7 +258,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   }) {
     final Object? result = _call(<String, Object?>{
       'op': 'evaluate',
-      'algorithm': algorithm.wire,
+      'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
       'items': _itemsJson(items),
     });

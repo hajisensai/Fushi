@@ -1501,18 +1501,33 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     // 只留「重来 / 良好」时两颗各占半行（对齐 AnkiDroid：不留空位）；key 随模式变，
     // 外层 AnimatedSwitcher 借此在两种布局间淡入淡出。
     final bool twoButtons = ref.watch(srsReviewHideHardEasyProvider);
-    return Row(
-      key: ValueKey<String>(
-        twoButtons ? 'srs-rating-row-two' : 'srs-rating-row',
-      ),
-      spacing: tokens.spacing.gap,
-      children: <Widget>[
-        button(1, t.srs_rating_again, SrsRatingTone.again),
-        if (!twoButtons) button(2, t.srs_rating_hard, SrsRatingTone.hard),
-        button(3, t.srs_rating_good, SrsRatingTone.good),
-        if (!twoButtons) button(4, t.srs_rating_easy, SrsRatingTone.easy),
-      ],
+    final Key key = ValueKey<String>(
+      twoButtons ? 'srs-rating-row-two' : 'srs-rating-row',
     );
+    final List<Widget> buttons = <Widget>[
+      button(1, t.srs_rating_again, SrsRatingTone.again),
+      if (!twoButtons) button(2, t.srs_rating_hard, SrsRatingTone.hard),
+      button(3, t.srs_rating_good, SrsRatingTone.good),
+      if (!twoButtons) button(4, t.srs_rating_easy, SrsRatingTone.easy),
+    ];
+    // RWKV 牌组这张卡没拿到 RWKV 间隔（模型没下载 / 正在回放历史 / 出错），按 FSRS-7 排：说一声。
+    if (preview?.rwkvUnavailable ?? false) {
+      return Column(
+        key: key,
+        mainAxisSize: MainAxisSize.min,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(
+            t.srs_review_rwkv_unavailable,
+            key: const ValueKey<String>('srs-review-rwkv-unavailable'),
+            style: context.fushiType.bodySmall,
+            textAlign: TextAlign.center,
+          ),
+          Row(spacing: tokens.spacing.gap, children: buttons),
+        ],
+      );
+    }
+    return Row(key: key, spacing: tokens.spacing.gap, children: buttons);
   }
 }
 

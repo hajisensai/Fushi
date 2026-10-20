@@ -47,11 +47,19 @@ class SrsAnswerPreview {
     required this.params,
     required this.nowMs,
     required this.timeSource,
+    this.rwkvUnavailable = false,
   });
 
   final SrsAnswerPlan plan;
   final SrsMemory? memoryBefore;
+
+  /// 实际算出间隔的算法：RWKV 牌组拿到了 RWKV 间隔时是 [SrsAlgorithm.rwkv]，
+  /// 否则是它的记忆算法（FSRS-7），见 [rwkvUnavailable]。写进日志的 `alg`。
   final SrsAlgorithm algorithm;
+
+  /// 牌组设的是 RWKV，但这次没有 RWKV 间隔（运行时未就绪 / 权重未下载 / 出错），
+  /// 间隔按 FSRS-7 算的。界面据此提示。
+  final bool rwkvUnavailable;
   final List<double> params;
   final int nowMs;
   final SrsTimeSource timeSource;
@@ -64,14 +72,19 @@ class SrsCardOps {
   final FsrsEngine engine;
 
   /// 算四个评分的结果（显示间隔预览，也是 [answer] 的第一步）。
+  ///
+  /// [rwkvIntervalDays]：RWKV 牌组的 Again / Hard / Good / Easy 间隔（天，RWKV 运行时在
+  /// 作答这一刻算的，`RwkvWorker.nextIntervals`）。替换 FSRS 的间隔，记忆状态仍由 FSRS-7 维护；
+  /// 学习步、毕业、fuzz、最大间隔照旧由 [srsPlanAnswer] 处理。null 或非 RWKV 牌组时按 FSRS 算。
   SrsAnswerPreview preview({
     required String cardId,
     required SrsCardHistory history,
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
+    List<int>? rwkvIntervalDays,
   }) {
     final (int nowMs, SrsTimeSource source) = ctx.now();
-    final SrsAlgorithm algorithm = config.algorithm;
+    final SrsAlgorithm algorithm = config.algorithm.memoryAlgorithm;
     final List<double> params = config.params;
     final SrsMemoryInput input = srsCollectMemoryInput(
       history,
@@ -92,20 +105,40 @@ class SrsCardOps {
       day: ctx.day,
       config: config,
     );
-    final SrsNextStates next = engine.nextStates(
+    SrsNextStates next = engine.nextStates(
       algorithm: algorithm,
       params: params,
       desiredRetention: config.desiredRetention,
       memory: memory,
       elapsedDays: answerCtx.elapsedDaysFor(algorithm),
     );
+    final bool rwkv = config.algorithm.usesRwkv;
+    final List<int>? days = rwkv ? rwkvIntervalDays : null;
+    if (days != null) {
+      if (days.length != 4 || days.any((int d) => d < 1)) {
+        throw ArgumentError.value(
+          days,
+          'rwkvIntervalDays',
+          'need 4 positive days',
+        );
+      }
+      SrsItemState swap(SrsItemState s, int d) =>
+          SrsItemState(memory: s.memory, interval: d.toDouble());
+      next = SrsNextStates(
+        again: swap(next.again, days[0]),
+        hard: swap(next.hard, days[1]),
+        good: swap(next.good, days[2]),
+        easy: swap(next.easy, days[3]),
+      );
+    }
     return SrsAnswerPreview(
       plan: srsPlanAnswer(answerCtx, next),
       memoryBefore: memory,
-      algorithm: algorithm,
+      algorithm: days != null ? SrsAlgorithm.rwkv : algorithm,
       params: params,
       nowMs: nowMs,
       timeSource: source,
+      rwkvUnavailable: rwkv && days == null,
     );
   }
 
@@ -117,6 +150,7 @@ class SrsCardOps {
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
     int durationMs = 0,
+    List<int>? rwkvIntervalDays,
   }) {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
@@ -128,6 +162,7 @@ class SrsCardOps {
       history: history,
       config: config,
       ctx: ctx,
+      rwkvIntervalDays: rwkvIntervalDays,
     );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);
@@ -211,20 +246,23 @@ class SrsCardOps {
   }) {
     final SrsScheduleResult cur = history.state;
     if (cur.queue != SrsQueue.review || cur.lastReviewedAt == null) return null;
+    final SrsAlgorithm algorithm = config.algorithm.memoryAlgorithm;
     final SrsMemoryInput input = srsCollectMemoryInput(
       history,
-      algorithm: config.algorithm,
+      algorithm: algorithm,
       dayIndexOf: ctx.day.dayIndexOf,
     );
     final SrsMemory? memory = srsComputeMemory(
       input,
       engine: engine,
-      algorithm: config.algorithm,
+      algorithm: algorithm,
       params: config.params,
     );
     if (memory == null) return null;
+    // 「立即重排」只重算 FSRS 间隔：RWKV 的间隔取决于作答当下整个 collection 的状态，
+    // 对已经过去的复习回推没有意义（RWKV 牌组的卡在下次作答时按 RWKV 排）。
     final SrsNextStates next = engine.nextStates(
-      algorithm: config.algorithm,
+      algorithm: algorithm,
       params: config.params,
       desiredRetention: config.desiredRetention,
       memory: memory,

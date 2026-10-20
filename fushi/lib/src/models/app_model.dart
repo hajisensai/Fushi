@@ -8756,6 +8756,11 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsReviewZoom(double value) =>
       prefsRepo.setSrsReviewZoom(value);
 
+  // RWKV 排程的网络选择（设备本地；空串 = 默认小模型）。
+  String get srsRwkvModel => _prefsRepo?.srsRwkvModel ?? '';
+  Future<void> setSrsRwkvModel(String value) =>
+      prefsRepo.setSrsRwkvModel(value);
+
   // 复习自动备份（设备本地；透传 prefsRepo）。可空读：prefs 未装配 = 默认开 + Anki 默认份数。
   bool get srsBackupAuto => _prefsRepo?.srsBackupAuto ?? true;
   Future<void> setSrsBackupAuto(bool value) =>

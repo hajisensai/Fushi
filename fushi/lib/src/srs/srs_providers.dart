@@ -20,7 +20,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
+import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -214,6 +217,61 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
         await store.compactStoredStyles(shouldStop: () => disposed);
       });
       return store;
+    });
+
+/// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理。
+final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
+    FutureProvider<SrsRwkvModels>((Ref ref) async {
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      return SrsRwkvModels(
+        dir: Directory(p.join(support.path, 'srs_rwkv', 'models')),
+        createClient: createAppHttpClient,
+      );
+    });
+
+/// 本机选的 RWKV 网络（设备本地偏好，缺省小模型）。
+final Provider<SrsRwkvModelChoice> srsRwkvModelChoiceProvider =
+    Provider<SrsRwkvModelChoice>(
+      (Ref ref) => SrsRwkvModelChoice.parse(
+        ref.watch(appProvider.select((AppModel app) => app.srsRwkvModel)),
+      ),
+    );
+
+/// RWKV 排程服务：挂到 store 上（[SrsDbStore.rwkv]）。对象本身很轻；后台 isolate 与全量回放
+/// 只在有 RWKV 牌组、且权重已下载时启动（[SrsRwkvService.start]，或第一次给 RWKV 牌组排程时）。
+/// 由 `srsAppRuntimeProvider` 保活（模块开着时常驻）。换模型 / 换 profile / 关模块时关掉（存快照）。
+final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
+    FutureProvider<SrsRwkvService?>((Ref ref) async {
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final SrsRwkvModelChoice choice = ref.watch(srsRwkvModelChoiceProvider);
+      final SrsRwkvModels models = await ref.watch(
+        srsRwkvModelsProvider.future,
+      );
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      final SrsRwkvService service = SrsRwkvService(
+        store: store,
+        models: models,
+        choice: choice,
+        snapshotDir: Directory(p.join(support.path, 'srs_rwkv', 'state')),
+        log: (String message) => ErrorLogService.instance.log(
+          'SrsRwkvService',
+          message,
+          StackTrace.current,
+        ),
+      );
+      store.rwkv = service;
+      ref.onDispose(() {
+        if (identical(store.rwkv, service)) store.rwkv = null;
+        unawaited(service.close());
+      });
+      final SrsDeckTree tree = await store.deckTree();
+      if (tree.decks.any(
+        (SrsDeckView d) => tree.paramsOwner(d.id).localAlgorithm.usesRwkv,
+      )) {
+        srsRunLogged('SrsRwkvService.start', service.start);
+      }
+      return service;
     });
 
 /// SRS 媒体根所在的支持目录（测试覆写成临时目录）。

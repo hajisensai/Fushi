@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 
 /// 本机时间：服务器校时锚点 + 本进程单调时钟（Stopwatch）。
@@ -258,6 +259,10 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 排程内核；null = 原生库不可用（只能浏览 / 编辑，不能复习）。
   final FsrsEngine? engine;
+
+  /// RWKV 牌组作答时的间隔来源（app 在有 RWKV 牌组时装配 `SrsRwkvService`）；null 或它返回
+  /// null 时 RWKV 牌组按 FSRS-7 排这一次（`SrsAnswerPreview.rwkvUnavailable`）。
+  SrsRwkvScheduling? rwkv;
 
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
   final SrsStyleStore? styles;
@@ -2556,15 +2561,28 @@ class SrsDbStore implements SrsSyncReplica {
     db.srsCardsCache,
   )..where((c) => c.id.equals(cardId))).getSingleOrNull();
 
+  /// RWKV 牌组的间隔（不是 RWKV 牌组、没装配或没准备好时 null）。
+  Future<List<int>?> _rwkvIntervals(
+    String cardId,
+    SrsSchedulingConfig config,
+  ) async {
+    final SrsRwkvScheduling? source = rwkv;
+    if (source == null || !config.algorithm.usesRwkv) return null;
+    final (int nowMs, SrsTimeSource _) = now();
+    return source.intervalsFor(cardId, config: config, nowMs: nowMs);
+  }
+
   /// 四个评分的预览。
   Future<SrsAnswerPreview> preview(String cardId) async {
     final SrsCardCacheRow c = (await cardRow(cardId))!;
     final SrsDayContext day = await dayContext();
+    final SrsSchedulingConfig config = await schedulingConfigFor(c.deckId);
     return _ops.preview(
       cardId: cardId,
       history: await history(cardId),
-      config: await schedulingConfigFor(c.deckId),
+      config: config,
       ctx: _logContext(day),
+      rwkvIntervalDays: await _rwkvIntervals(cardId, config),
     );
   }
 
@@ -2576,15 +2594,19 @@ class SrsDbStore implements SrsSyncReplica {
   }) => runExclusive(() async {
     final SrsCardCacheRow c = (await cardRow(cardId))!;
     final SrsDayContext day = await dayContext();
+    final SrsSchedulingConfig config = await schedulingConfigFor(c.deckId);
     final SrsReviewLog log = _ops.answer(
       cardId: cardId,
       history: await history(cardId),
       rating: rating,
-      config: await schedulingConfigFor(c.deckId),
+      config: config,
       ctx: _logContext(day),
       durationMs: durationMs,
+      rwkvIntervalDays: await _rwkvIntervals(cardId, config),
     );
     await _emit(<SrsEvent>[SrsLogEvent(log)]);
+    // RWKV 状态追加这一条（不等：它在后台 isolate 里串行执行，下一次预览前会对齐）。
+    unawaited(rwkv?.onAnswered(cardId, log));
     return log;
   });
 

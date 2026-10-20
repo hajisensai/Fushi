@@ -623,6 +623,8 @@ class _Exporter {
       'fsrsParams6': fsrs6.length == SrsAlgorithm.fsrs6.paramCount
           ? fsrs6
           : <double>[],
+      // Anki RWKV fork 认这个键（导入时读的就是它）；Anki 主线忽略。
+      if (o?.localAlgorithm == SrsAlgorithm.rwkv) 'rwkvReviewEnabled': true,
       'desiredRetention': o?.desiredRetention ?? 0.9,
       'ignoreRevlogsBeforeDate': '',
       'easyDaysPercentages': <double>[1, 1, 1, 1, 1, 1, 1],

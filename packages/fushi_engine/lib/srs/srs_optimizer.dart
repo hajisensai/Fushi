@@ -100,7 +100,8 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
   final SrsDeckView owner = tree.paramsOwner(deckId);
   final Set<String> scope = tree.paramsScope(owner.id).toSet();
   final SrsDayContext day = await store.dayContext();
-  final SrsAlgorithm alg = owner.localAlgorithm;
+  // RWKV 牌组优化的是它的影子记忆状态（FSRS-7）参数。
+  final SrsAlgorithm alg = owner.localAlgorithm.memoryAlgorithm;
   final SrsParamSet? set = owner.paramSetFor(alg);
 
   final List<(int, List<SrsFsrsReview>, int)> rows =
@@ -272,7 +273,7 @@ Future<void> srsResetParams(
 }) async {
   final (int nowMs, _) = store.now();
   await store.editFields(SrsEntityKind.deck, deckId, <String, Object?>{
-    algorithm == SrsAlgorithm.fsrs7
+    algorithm.memoryAlgorithm == SrsAlgorithm.fsrs7
             ? SrsFieldKeys.deckFsrs7Params
             : SrsFieldKeys.deckFsrs6Params:
         null,

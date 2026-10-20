@@ -133,9 +133,9 @@ class SrsDeckView {
   bool get algorithmUnknownLocally =>
       SrsAlgorithm.tryParse(algorithmWire) == null;
 
-  SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a) {
+  SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a.memoryAlgorithm) {
     SrsAlgorithm.fsrs6 => fsrs6,
-    SrsAlgorithm.fsrs7 => fsrs7,
+    SrsAlgorithm.fsrs7 || SrsAlgorithm.rwkv => fsrs7,
   };
 
   static SrsDeckView materialize(SrsEntityRecord record, SrsEntityEdits edits) {
@@ -311,7 +311,7 @@ class SrsDeckTree {
     final List<double> params =
         (set != null && set.params.length == alg.paramCount)
         ? set.params
-        : (defaultsOf?.call(alg) ?? const <double>[]);
+        : (defaultsOf?.call(alg.memoryAlgorithm) ?? const <double>[]);
     return SrsSchedulingConfig(
       learnStepsMinutes: self.learnSteps,
       relearnStepsMinutes: self.relearnSteps,

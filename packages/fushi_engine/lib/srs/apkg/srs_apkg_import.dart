@@ -1111,7 +1111,6 @@ class _Importer {
     SrsAlgorithm alg = srsDefaultAlgorithm;
     List<double>? params;
     if (col.fsrsEnabled) {
-      if (p.rwkvEnabled && report) this.report.rwkvPresetsFellBack.add(p.name);
       if (p.fsrs7Params.length == SrsAlgorithm.fsrs7.paramCount &&
           (p.fsrsVersion ?? 0) == 0) {
         alg = SrsAlgorithm.fsrs7;
@@ -1120,6 +1119,13 @@ class _Importer {
         alg = SrsAlgorithm.fsrs6;
         params = p.fsrs6Params;
       }
+    }
+    if (p.rwkvEnabled) {
+      // RWKV 预设照旧用 RWKV（Anki RWKV fork 的 rwkvReviewEnabled）。它的影子记忆状态用 FSRS-7：
+      // 有 FSRS-7 参数就带上，FSRS-6 参数用不上（参数组按 FSRS-7 存）。
+      if (report) this.report.rwkvPresets.add(p.name);
+      if (alg != SrsAlgorithm.fsrs7) params = null;
+      alg = SrsAlgorithm.rwkv;
     }
     v[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
       'alg': alg.wire,
@@ -1130,7 +1136,7 @@ class _Importer {
       if (bad != null) {
         if (report) this.report.invalidParams[p.name] = bad;
       } else {
-        v[alg == SrsAlgorithm.fsrs6
+        v[alg.memoryAlgorithm == SrsAlgorithm.fsrs6
             ? SrsFieldKeys.deckFsrs6Params
             : SrsFieldKeys.deckFsrs7Params] = SrsParamSet(
           params: params,
