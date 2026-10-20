@@ -95,7 +95,7 @@ class BookSeriesGrouper {
     final List<_Volume> out = <_Volume>[];
     final Map<String, _Volume> byBookKey = <String, _Volume>{};
     for (final EpubBookRow book in await _database.getAllEpubBooks()) {
-      if (_isOnlineManga(book.sourceMetadata)) continue;
+      if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
       final BookSeriesKey? key = parseBookSeriesKey(book.title);
       if (key == null) continue;
       final _Volume v = _Volume(
@@ -294,7 +294,9 @@ class _Volume {
   String get groupKey => '$shelf|${key.key}';
 }
 
-bool _isOnlineManga(String? sourceMetadata) {
+/// 在线漫画（Mihon / mokuro 在线源的书架条目）：不归组、不交 AI 整理——它们的
+/// 「卷」是在线章节容器，不是本地书。
+bool isOnlineMangaSourceMetadata(String? sourceMetadata) {
   if (sourceMetadata == null) return false;
   try {
     final Object? value = jsonDecode(sourceMetadata);
