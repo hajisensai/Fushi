@@ -209,26 +209,27 @@ List<FxNote> fixtureNotes(int nowMs) => <FxNote>[
   ),
 ];
 
-Uint8List legacyApkg(int nowMs) => zipOf(<String, List<int>>{
-  'collection.anki21': buildLegacyCollection(
-    crtSecs: crtSecs,
-    conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': true},
-    models: legacyModels(),
-    decks: legacyDecks(),
-    dconf: legacyDconf(),
-    notes: fixtureNotes(nowMs),
-  ),
-  'media': utf8.encode(
-    jsonEncode(<String, String>{
-      '0': 'a.png',
-      '1': '_font.woff',
-      '2': 'unused.png',
-    }),
-  ),
-  '0': <int>[1, 2, 3],
-  '1': <int>[4, 5],
-  '2': <int>[6],
-});
+Uint8List legacyApkg(int nowMs, {bool fsrs = true}) =>
+    zipOf(<String, List<int>>{
+      'collection.anki21': buildLegacyCollection(
+        crtSecs: crtSecs,
+        conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': fsrs},
+        models: legacyModels(),
+        decks: legacyDecks(),
+        dconf: legacyDconf(),
+        notes: fixtureNotes(nowMs),
+      ),
+      'media': utf8.encode(
+        jsonEncode(<String, String>{
+          '0': 'a.png',
+          '1': '_font.woff',
+          '2': 'unused.png',
+        }),
+      ),
+      '0': <int>[1, 2, 3],
+      '1': <int>[4, 5],
+      '2': <int>[6],
+    });
 
 /// 旧行为（选项加入前）：全部导入排程与预设、合并笔记类型、从不覆盖已有内容。
 const SrsAnkiImportOptions kFullOptions = SrsAnkiImportOptions(
@@ -445,6 +446,12 @@ void main() {
     expect(lang.desiredRetention, 0.85);
     expect(tree.paramsOwner(jp.id).id, lang.id);
     expect(jsonEncode(rep.toJson()), contains('JP preset'));
+    // 带 FSRS 参数的预设留在 FSRS，报告列出预设与它自己管参数的牌组（导入报告据此提示改用 RWKV）。
+    expect(rep.fsrsPresets, <String, SrsAlgorithm>{
+      'JP preset': SrsAlgorithm.fsrs6,
+    });
+    expect(rep.fsrsDecks, <String>[lang.id]);
+    expect(rep.defaultAlgorithmPresets, isEmpty);
   });
 
   test('② 两台设备各导入同一个包，同步后不出重复', () async {
@@ -1370,8 +1377,30 @@ void main() {
       expect(lang.fsrs6, isNull);
       expect(lang.desiredRetention, 0.8);
       expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
       // 排程照常导入。
       expect(rep.anchorsWritten, 2);
+    });
+
+    test('Anki 没开 FSRS（SM-2）：预设落到默认算法并写进报告，不静默换算法', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(
+        s,
+        legacyApkg(t, fsrs: false),
+      );
+      final SrsDeckTree tree = await s.deckTree();
+      final SrsDeckView lang = tree.decks.firstWhere(
+        (SrsDeckView d) => tree.fullName(d.id) == 'Lang',
+      );
+      expect(lang.localAlgorithm, srsDefaultAlgorithm);
+      expect(rep.defaultAlgorithmPresets, contains('JP preset'));
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
     });
   });
 

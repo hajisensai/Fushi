@@ -971,6 +971,10 @@ class _Importer {
           ),
         ],
       );
+      final Object? alg = values[SrsFieldKeys.deckAlgorithm];
+      if (alg is Map && alg['alg'] != SrsAlgorithm.rwkv.wire) {
+        report.fsrsDecks.add(id);
+      }
       idByName[full] = id;
       if (!renamedImport) created.add(full);
       tree = await store.deckTree();
@@ -1126,6 +1130,14 @@ class _Importer {
       if (report) this.report.rwkvPresets.add(p.name);
       if (alg != SrsAlgorithm.fsrs7) params = null;
       alg = SrsAlgorithm.rwkv;
+    } else if (report) {
+      // 带着 FSRS 参数来的预设留在 FSRS（参数是用户自己的历史训练出来的），报告里提示可改用 RWKV；
+      // 没有可用参数的（SM-2 或没训练过）落到默认算法，也写进报告，不静默换算法。
+      if (params == null) {
+        this.report.defaultAlgorithmPresets.add(p.name);
+      } else {
+        this.report.fsrsPresets[p.name] = alg;
+      }
     }
     v[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
       'alg': alg.wire,

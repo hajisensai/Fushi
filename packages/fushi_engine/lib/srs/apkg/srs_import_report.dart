@@ -2,6 +2,7 @@
 library;
 
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 
 /// 一条不导入 / 有冲突的笔记。
 class SrsImportNoteIssue {
@@ -132,8 +133,17 @@ class SrsImportReport {
   final List<SrsImportTruncatedSteps> truncatedSteps =
       <SrsImportTruncatedSteps>[];
 
-  /// 开了 RWKV 的预设名（导入后照旧用 RWKV；要先在牌组设置里下载 RWKV 模型）。
+  /// 开了 RWKV 的预设名（导入后照旧用 RWKV）。
   final List<String> rwkvPresets = <String>[];
+
+  /// 带着 FSRS 参数导入、仍用 FSRS 的预设：预设名 → 算法（FSRS-6 / FSRS-7）。
+  final Map<String, SrsAlgorithm> fsrsPresets = <String, SrsAlgorithm>{};
+
+  /// 没有可用 FSRS 参数（SM-2 或没训练过）、导入后用默认算法的预设名。
+  final List<String> defaultAlgorithmPresets = <String>[];
+
+  /// 本次新建、自己管参数且仍用 FSRS 的牌组 ID（导入报告的「改用 RWKV」按这份改）。
+  final List<String> fsrsDecks = <String>[];
 
   /// 参数校验不过、没写参数的预设：预设名 → 原因。
   final Map<String, String> invalidParams = <String, String>{};
@@ -169,6 +179,12 @@ class SrsImportReport {
       for (final SrsImportTruncatedSteps s in truncatedSteps) s.toJson(),
     ],
     'rwkvPresets': rwkvPresets,
+    'fsrsPresets': <String, String>{
+      for (final MapEntry<String, SrsAlgorithm> e in fsrsPresets.entries)
+        e.key: e.value.wire,
+    },
+    'defaultAlgorithmPresets': defaultAlgorithmPresets,
+    'fsrsDecks': fsrsDecks,
     'invalidParams': invalidParams,
     'removedInSource': <Map<String, Object?>>[
       for (final SrsImportRemovedItem r in removedInSource) r.toJson(),

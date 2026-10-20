@@ -13,10 +13,12 @@ library;
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -62,7 +64,7 @@ class SrsImportTasksBar extends ConsumerWidget {
   }
 }
 
-class _TaskRow extends StatefulWidget {
+class _TaskRow extends ConsumerStatefulWidget {
   const _TaskRow({
     required this.task,
     required this.onDismiss,
@@ -79,10 +81,10 @@ class _TaskRow extends StatefulWidget {
   final VoidCallback onCancel;
 
   @override
-  State<_TaskRow> createState() => _TaskRowState();
+  ConsumerState<_TaskRow> createState() => _TaskRowState();
 }
 
-class _TaskRowState extends State<_TaskRow>
+class _TaskRowState extends ConsumerState<_TaskRow>
     with SingleTickerProviderStateMixin {
   /// 进场：尺寸 + 透明度从 0 展开（与牌组列表行进场同一套时长）。
   late final AnimationController _enter = AnimationController(vsync: this);
@@ -112,7 +114,15 @@ class _TaskRowState extends State<_TaskRow>
     switch (task.status) {
       case SrsImportTaskStatus.done:
         if (task.report != null) {
-          showSrsImportReportDialog(context, task.report!);
+          final SrsImportReport report = task.report!;
+          showSrsImportReportDialog(
+            context,
+            report,
+            onSwitchToRwkv: () => srsRunLogged(
+              'srsSwitchImportedDecksToRwkv',
+              () => srsSwitchImportedDecksToRwkvFromReport(ref, report),
+            ),
+          );
         }
       case SrsImportTaskStatus.failed:
         if (task.error != null) {

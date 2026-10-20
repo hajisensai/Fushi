@@ -157,6 +157,11 @@ void main() {
         t.srs_import_report_steps_removed(preset: 'JP preset', removed: '1d'),
       ),
     );
+    // 开了 FSRS 但预设没有参数：落到默认算法，报告里写明。
+    expect(
+      lines,
+      contains(t.srs_import_report_default_algorithm(preset: 'JP preset')),
+    );
 
     // 再导一次（默认不更新已有笔记）：没有新增。
     final SrsImportReport again = await runSrsAnkiImport(
@@ -167,6 +172,42 @@ void main() {
     );
     expect(again.notesAdded, 0);
     expect(again.notesSkipped, 1);
+  });
+
+  test('带 FSRS 参数导入：报告提示改用 RWKV；「改用 RWKV」只改仍自己管参数的 FSRS 牌组', () async {
+    final String fsrs = await store.createDeck('FSRS deck');
+    final String child = await store.createDeck('Child', parentId: fsrs);
+    final String mine = await store.createDeck('Already switched');
+    await store.editFields(SrsEntityKind.deck, fsrs, <String, Object?>{
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': SrsAlgorithm.fsrs7.wire,
+        'auto': true,
+      },
+    });
+    await store.editFields(SrsEntityKind.deck, child, <String, Object?>{
+      SrsFieldKeys.deckParamsMode: 'inherit',
+    });
+    await store.editFields(SrsEntityKind.deck, mine, <String, Object?>{
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': SrsAlgorithm.rwkv.wire,
+        'auto': false,
+      },
+    });
+    final SrsImportReport report = SrsImportReport()
+      ..fsrsPresets['JP preset'] = SrsAlgorithm.fsrs6
+      ..fsrsDecks.addAll(<String>[fsrs, child, mine, 'gone']);
+    expect(
+      srsImportReportLines(report),
+      contains(t.srs_import_report_fsrs(preset: 'JP preset', alg: 'FSRS-6')),
+    );
+
+    expect(await srsSwitchImportedDecksToRwkv(store, report.fsrsDecks), 1);
+    final SrsDeckTree tree = await store.deckTree();
+    expect(tree[fsrs]!.localAlgorithm, SrsAlgorithm.rwkv);
+    expect(tree[fsrs]!.algorithmAuto, isFalse);
+    expect(tree.paramsOwner(child).localAlgorithm, SrsAlgorithm.rwkv);
+    // 再点一次什么也不改。
+    expect(await srsSwitchImportedDecksToRwkv(store, report.fsrsDecks), 0);
   });
 
   test('坏包：抛 SrsImportException（入口据此报失败而不是吞掉）', () async {
