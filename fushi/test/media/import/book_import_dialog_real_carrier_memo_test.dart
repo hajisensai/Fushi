@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -9,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
@@ -331,26 +333,35 @@ void main() {
           repo: SrtBookRepository(db),
           audiobookRepo: AudiobookRepository(db),
           db: db,
-          initialEpubPath: manga.path,
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.text(t.dialog_import));
-    await tester.pumpAndSettle();
 
+    // 拖入入口先过一道漫画闸门，用户在这里坚持按书导入。
+    final FushiFileDropTarget dropTarget = tester.widget<FushiFileDropTarget>(
+      find.byType(FushiFileDropTarget),
+    );
+    unawaited(
+      Future<void>.sync(
+        () => dropTarget.onDrop(<String>[manga.path], Offset.zero),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.text(t.manga_import_detected_title), findsOneWidget);
     await tester.tap(find.text(t.manga_import_detected_import_as_book));
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.text(t.manga_import_detected_title), findsNothing);
+
+    // 点导入时 `_doImport` 兜底闸门再问一次载体：覆盖必须生效，不得二次弹框。
+    await tester.tap(find.text(t.dialog_import));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text(t.manga_import_detected_title), findsNothing,
+        reason: '坚持按书导入后兜底闸门不得再把它判回漫画');
     await _pumpUntil(
       tester,
       condition: () async => (await db.getAllEpubBooks()).length == 1,
     );
-    // 让确认框的退出动画播完，再判「没有第二次弹框」。
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(find.text(t.manga_import_detected_title), findsNothing,
-        reason: '坚持按书导入后兜底闸门与最终分派不得再把它判回漫画');
     expect(await db.getAllEpubBooks(), hasLength(1),
         reason: '必须由真 EpubImporter 把图片型 EPUB 落成一本书');
   });
