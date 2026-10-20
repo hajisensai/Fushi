@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
@@ -11,6 +12,8 @@ import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart'
+    show mangaImageContentType;
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart'
@@ -469,28 +472,17 @@ class OnlineMangaLibraryService {
     await temporary.rename(target.path);
   }
 
-  /// 按魔数定封面扩展名；不是 PNG / WebP / GIF / JPEG 返回 null（调用方不落盘）。
-  static String? _imageExtension(List<int> bytes) {
-    if (bytes.length >= 8 &&
-        bytes[0] == 0x89 &&
-        bytes[1] == 0x50 &&
-        bytes[2] == 0x4e &&
-        bytes[3] == 0x47) {
-      return '.png';
-    }
-    if (bytes.length >= 12 &&
-        String.fromCharCodes(bytes.skip(8).take(4)) == 'WEBP') {
-      return '.webp';
-    }
-    if (bytes.length >= 6 && String.fromCharCodes(bytes.take(3)) == 'GIF') {
-      return '.gif';
-    }
-    if (bytes.length >= 3 &&
-        bytes[0] == 0xff &&
-        bytes[1] == 0xd8 &&
-        bytes[2] == 0xff) {
-      return '.jpg';
-    }
-    return null;
-  }
+  /// 按魔数定封面扩展名（与页图同一判据 [mangaImageContentType]）；不是 PNG / WebP /
+  /// GIF / JPEG / AVIF 返回 null（调用方不落盘）。
+  static String? _imageExtension(List<int> bytes) =>
+      switch (mangaImageContentType(
+        bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+      )) {
+        'image/png' => '.png',
+        'image/webp' => '.webp',
+        'image/gif' => '.gif',
+        'image/jpeg' => '.jpg',
+        'image/avif' => '.avif',
+        _ => null,
+      };
 }

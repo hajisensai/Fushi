@@ -2767,6 +2767,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return 'image/webp';
       case '.gif':
         return 'image/gif';
+      case '.avif':
+        // WebView（WebView2 / Android WebView / WKWebView iOS 16+）自己解 AVIF，
+        // 但标成 image/jpeg 时部分内核按声明类型拒绝渲染。
+        return 'image/avif';
       case '.jpg':
       case '.jpeg':
       default:
