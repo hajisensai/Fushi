@@ -12,7 +12,6 @@
 //! the states without changing them.
 
 mod model;
-mod store;
 mod weights;
 
 use std::io;
@@ -24,7 +23,7 @@ use super::{
 };
 pub use model::SmallHeads;
 use model::{Layout, Rows, SmallNet, COMPACT_STREAMS, STREAMS};
-use store::SlotStore;
+use super::slots::SlotStore;
 use weights::Weights;
 
 /// Answered reviews per engine call. A call holds about 2.2 KB of scratch
@@ -170,6 +169,7 @@ impl SmallInference {
                     heads: &heads,
                 },
                 false,
+                true,
             );
             if record_predictions {
                 for ((index, _), heads) in chunk.iter().zip(out.chunks_exact(2)) {
@@ -191,6 +191,51 @@ impl SmallInference {
             .iter()
             .map(SmallHeads::retrievability)
             .collect())
+    }
+
+    /// R of `answer`'s card at each of `queries` had `answer` been given with
+    /// each rating in `ratings` (see the big model's `forecast`). Nothing is
+    /// kept. Result: `ratings.len() * queries.len()` values, rating-major.
+    pub fn forecast(
+        &mut self,
+        answer: &ReviewInput,
+        ratings: &[u8],
+        queries: &[ReviewInput],
+    ) -> io::Result<Vec<f32>> {
+        let mut out = Vec::with_capacity(ratings.len() * queries.len());
+        for &rating in ratings {
+            let mut answer = answer.clone();
+            answer.is_query = false;
+            answer.ease = Some(rating);
+            let mut features = self.features.features_for(&answer);
+            self.features.with_hypothetical_review(&answer, |state| {
+                for query in queries {
+                    features.extend(state.features_for(query));
+                }
+            });
+            let rows = 1 + queries.len();
+            let mut keys = vec![stream_keys(&answer)];
+            keys.extend(queries.iter().map(stream_keys));
+            let mut commit = vec![false; rows];
+            commit[0] = true;
+            let mut heads = vec![true; rows];
+            heads[0] = false;
+            let result = model::run(
+                &self.model.net,
+                &self.layouts,
+                &mut self.stores,
+                &Rows {
+                    features: &features,
+                    keys: &keys,
+                    commit: &commit,
+                    heads: &heads,
+                },
+                false,
+                false,
+            );
+            out.extend(result[1..].iter().map(SmallHeads::retrievability));
+        }
+        Ok(out)
     }
 
     fn query_heads(&mut self, inputs: &[ReviewInput], curve: bool) -> io::Result<Vec<SmallHeads>> {
@@ -220,6 +265,7 @@ impl SmallInference {
                     heads: &heads,
                 },
                 curve,
+                true,
             ));
         }
         Ok(out)
@@ -253,6 +299,7 @@ impl SmallInference {
                     heads: &heads,
                 },
                 true,
+                true,
             ));
             start = end;
         }
@@ -266,6 +313,18 @@ impl SmallInference {
     pub fn state_peaks(&self, stream: usize, id: i64) -> Option<Vec<f32>> {
         let bytes = self.stores[stream].get(id)?;
         Some(self.layouts[stream].matrix_peaks(bytes))
+    }
+
+    /// Largest absolute WKV value over every stored state of `stream`.
+    #[doc(hidden)]
+    pub fn stream_peak(&self, stream: usize) -> f32 {
+        let store = &self.stores[stream];
+        store
+            .ids()
+            .into_iter()
+            .filter_map(|id| store.get(id))
+            .flat_map(|bytes| self.layouts[stream].matrix_peaks(bytes))
+            .fold(0.0, f32::max)
     }
 
     /// Ids with a stored state in `stream` (see [Self::state_peaks]).

@@ -1,21 +1,23 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: per-stream state storage of the small model.
+//! Fushi: fixed-size state slots (not upstream).
 //!
-//! Every entity of a stream has a state of the same byte length (fixed by the
-//! architecture and the stream's precision), so states live in fixed-size
-//! slots carved out of large blocks and are overwritten in place. Replay
-//! therefore never frees and re-allocates per-card buffers: the big model's
-//! per-state `Vec`s, interleaved with the decoded f32 scratch of every replay
-//! chunk, left the process heap at about twice the live state (measured
-//! 2026-10-20: 14,715 cards, 401 MB live, 760 MB working set), and the holes
-//! could neither be reused nor returned to the OS.
+//! Every card (or note) state of one stream has the same byte length, fixed
+//! by the architecture and the state precision, so states live in slots
+//! carved out of large blocks and are overwritten in place. Replay therefore
+//! never frees and re-allocates long-lived per-card buffers. Upstream kept
+//! each compact state in its own `Vec`; replay replaced them every chunk,
+//! interleaved with that chunk's decoded f32 scratch, and the long-lived
+//! buffers pinned the scratch's holes: measured 2026-10-20 on 14,715 cards
+//! (big model, int8 state), 401 MB of live allocations held a 760 MB working
+//! set, and `HeapCompact` could return none of it.
 
 use std::collections::HashMap;
 
-/// Bytes per block: big enough that blocks come straight from the OS (and go
-/// back to it when the store is dropped), small enough not to overshoot.
+/// Bytes per block: large enough that the allocator maps each block straight
+/// from the OS (and unmaps it when the store is dropped), so long-lived state
+/// never shares heap pages with short-lived scratch.
 const BLOCK_BYTES: usize = 1 << 20;
 
 pub(super) struct SlotStore {
@@ -24,7 +26,9 @@ pub(super) struct SlotStore {
     blocks: Vec<Box<[u8]>>,
     /// Slot index by entity id.
     index: HashMap<i64, u32>,
-    /// Slots handed out so far.
+    /// Slots given back by [Self::take], reused before new ones.
+    free: Vec<u32>,
+    /// Slots handed out so far (in use or free).
     used: u32,
 }
 
@@ -36,6 +40,7 @@ impl SlotStore {
             slots_per_block: (BLOCK_BYTES / slot_len).max(1),
             blocks: Vec::new(),
             index: HashMap::new(),
+            free: Vec::new(),
             used: 0,
         }
     }
@@ -48,7 +53,7 @@ impl SlotStore {
         self.index.len()
     }
 
-    /// Bytes held by states (what a snapshot of this stream stores).
+    /// Bytes held by states (what a snapshot of these states stores).
     pub fn state_bytes(&self) -> usize {
         self.index.len() * self.slot_len
     }
@@ -70,6 +75,15 @@ impl SlotStore {
         self.slot_mut(slot)
     }
 
+    /// Removes the entity's state, returning a copy; its slot is reused by
+    /// the next insertion.
+    pub fn take(&mut self, id: i64) -> Option<Vec<u8>> {
+        let slot = self.index.remove(&id)?;
+        let bytes = self.slot(slot).to_vec();
+        self.free.push(slot);
+        Some(bytes)
+    }
+
     pub fn ids(&self) -> Vec<i64> {
         let mut ids: Vec<i64> = self.index.keys().copied().collect();
         ids.sort_unstable();
@@ -81,9 +95,12 @@ impl SlotStore {
     }
 
     fn allocate(&mut self) -> u32 {
+        if let Some(slot) = self.free.pop() {
+            self.slot_mut(slot).fill(0);
+            return slot;
+        }
         let slot = self.used;
         if slot as usize == self.blocks.len() * self.slots_per_block {
-            // A whole block at once: one allocation per ~1 MB of states.
             self.blocks
                 .push(vec![0u8; self.slots_per_block * self.slot_len].into_boxed_slice());
         }
@@ -125,5 +142,15 @@ mod tests {
         assert!(store.get(3).unwrap().iter().all(|&b| b == 77));
         assert_eq!(store.ids(), (0..10).collect::<Vec<_>>());
         assert!(store.get(11).is_none());
+
+        let blocks = store.blocks.len();
+        let taken = store.take(4).unwrap();
+        assert!(taken.iter().all(|&b| b == 4));
+        assert!(store.get(4).is_none());
+        assert_eq!(store.len(), 9);
+        // The freed slot is reused, zero-filled, without a new block.
+        assert!(store.get_or_insert(42).iter().all(|&b| b == 0));
+        assert_eq!(store.blocks.len(), blocks);
+        assert_eq!(store.used, 10);
     }
 }

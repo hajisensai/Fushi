@@ -11,7 +11,8 @@ use rayon::prelude::*;
 
 mod bulk;
 mod precision;
-// Fushi: the small RWKV model (not upstream; see small/mod.rs).
+// Fushi: the small RWKV model and fixed-size state slots (not upstream).
+mod slots;
 pub mod small;
 pub use precision::StatePrecision;
 #[cfg(target_os = "macos")]
@@ -449,9 +450,10 @@ impl RwkvInference {
             for _ in 0..count {
                 let id = cursor.i64()?;
                 let state = self.read_snapshot_state(&mut cursor, module_id)?;
-                if map.0.insert(id, Arc::new(state)).is_some() {
+                if map.contains(id) {
                     return Err(invalid("duplicate RWKV snapshot state"));
                 }
+                map.put(id, state);
             }
         }
         for module_id in [1, 3] {
@@ -524,21 +526,51 @@ impl RwkvInference {
         Some(self.features.first_day_offset? + self.features.previous_day_offset?)
     }
 
+    /// Fushi: R of `answer`'s card at each query in `queries` (built for the
+    /// moment after the answer: [forecast_query]) had `answer` been given
+    /// with each rating in `ratings`. Nothing is kept: the answer runs on the
+    /// current states without storing them (the sequential path's
+    /// `SrsModel::review`) and the feature bookkeeping is put back. Result:
+    /// `ratings.len() * queries.len()` values, rating-major.
+    pub fn forecast(
+        &mut self,
+        answer: &ReviewInput,
+        ratings: &[u8],
+        queries: &[ReviewInput],
+    ) -> io::Result<Vec<f32>> {
+        let mut out = Vec::with_capacity(ratings.len() * queries.len());
+        for &rating in ratings {
+            let mut answer = answer.clone();
+            answer.is_query = false;
+            answer.ease = Some(rating);
+            let features = self.features.features_for(&answer);
+            let view = self.warm_up_states.state_view(&answer);
+            let next = self.model.review(&features, view.as_ref()).next_state;
+            drop(view);
+            let query_features: Vec<Vec<f32>> = self.features.with_hypothetical_review(&answer, |state| {
+                queries.iter().map(|query| state.features_for(query)).collect()
+            });
+            let state = SrsStateRef {
+                card: Some(&next.card),
+                deck: answer.deck_id.map(|_| &next.deck),
+                note: answer.note_id.map(|_| &next.note),
+                preset: answer.preset_id.map(|_| &next.preset),
+                global: Some(&next.global),
+            };
+            let items: Vec<ReviewPredictionQueryRef<'_>> = query_features
+                .iter()
+                .map(|features| ReviewPredictionQueryRef { features, state })
+                .collect();
+            out.extend(self.model.review_retrievability_query_refs(&items));
+        }
+        Ok(out)
+    }
+
     /// Sizes of what has been built up so far.
     pub fn stats(&self) -> RwkvStats {
         let states = &self.warm_up_states;
-        let card_state_bytes = states
-            .card
-            .0
-            .values()
-            .map(|s| serialized_module_state_len(s))
-            .sum();
-        let note_state_bytes = states
-            .note
-            .0
-            .values()
-            .map(|s| serialized_module_state_len(s))
-            .sum();
+        let card_state_bytes = states.card.serialized_len();
+        let note_state_bytes = states.note.serialized_len();
         let shared_state_bytes = states
             .deck
             .values()
@@ -548,8 +580,8 @@ impl RwkvInference {
             .sum();
         RwkvStats {
             reviews: self.features.review_index,
-            cards: states.card.0.len(),
-            notes: states.note.0.len(),
+            cards: states.card.count(),
+            notes: states.note.count(),
             decks: states.deck.len(),
             presets: states.preset.len(),
             card_state_bytes,
@@ -781,6 +813,60 @@ impl FeatureState {
         self.review_index += 1;
     }
 
+    /// Fushi: runs `f` on this state as if `input` had been replayed
+    /// ([Self::store_review]), then puts back everything that call changed
+    /// (ID codes `f` assigns stay, as after any query).
+    fn with_hypothetical_review<R>(&mut self, input: &ReviewInput, f: impl FnOnce(&mut Self) -> R) -> R {
+        let card = input.card_id;
+        let scalars = (
+            self.first_day_offset,
+            self.previous_day_offset,
+            self.today,
+            self.today_reviews,
+            self.today_new_cards,
+            self.review_index,
+        );
+        let seen = self.card_set.contains_key(&card);
+        let per_card = [
+            self.last_new_cards.get(&card).copied(),
+            self.last_i.get(&card).copied(),
+            self.card_first_day_offset.get(&card).copied(),
+            self.card_elapsed_days_cumulative.get(&card).copied(),
+            self.card_elapsed_seconds_cumulative.get(&card).copied(),
+        ];
+        self.store_review(input);
+        let result = f(self);
+        (
+            self.first_day_offset,
+            self.previous_day_offset,
+            self.today,
+            self.today_reviews,
+            self.today_new_cards,
+            self.review_index,
+        ) = scalars;
+        if !seen {
+            self.card_set.remove(&card);
+        }
+        let maps = [
+            &mut self.last_new_cards,
+            &mut self.last_i,
+            &mut self.card_first_day_offset,
+            &mut self.card_elapsed_days_cumulative,
+            &mut self.card_elapsed_seconds_cumulative,
+        ];
+        for (map, value) in maps.into_iter().zip(per_card) {
+            match value {
+                Some(value) => {
+                    map.insert(card, value);
+                }
+                None => {
+                    map.remove(&card);
+                }
+            }
+        }
+        result
+    }
+
     fn append_id_encoding(&mut self, features: &mut Vec<f32>, kind: IdKind, value: i64) {
         let encoding = self.id_encodings.entry((kind, value)).or_insert_with(|| {
             let dim = id_encoding_dim(kind);
@@ -986,6 +1072,21 @@ fn append_day_offset_encoding(features: &mut Vec<f32>, day_offset: i64, first_da
         features.push((phase * day).cos());
         features.push((phase * first_day).sin());
         features.push((phase * first_day).cos());
+    }
+}
+
+/// Fushi: the query for `answer`'s card `days` scheduling days and `seconds`
+/// seconds after it (the same ids, elapsed since that answer).
+pub fn forecast_query(answer: &ReviewInput, days: i64, seconds: i64) -> ReviewInput {
+    ReviewInput {
+        is_query: true,
+        ease: None,
+        duration_millis: None,
+        card_type: Some(2),
+        day_offset: answer.day_offset.map(|day| day + days),
+        current_elapsed_days: Some(days),
+        current_elapsed_seconds: Some(seconds),
+        ..answer.clone()
     }
 }
 
@@ -2310,8 +2411,31 @@ impl RwkvLayer {
 /// and shared (`Arc`), so copying a map copies pointers: the state file is
 /// written from such a copy on another thread ([RwkvStateSnapshot]). A state
 /// is never changed in place, only replaced, so the copy stays as it was.
-#[derive(Clone, Default)]
-struct SharedStateMap(HashMap<i64, Arc<ModuleState>>);
+///
+/// Fushi: compact states live in fixed-size slots ([slots::SlotStore]) rather
+/// than one `Vec` each, so replay overwrites them in place instead of
+/// re-allocating them around its scratch (which fragmented the heap to about
+/// twice the live state). f32 states (no packed bytes) stay shared `Arc`s.
+#[derive(Default)]
+struct SharedStateMap {
+    full: HashMap<i64, Arc<ModuleState>>,
+    packed: Option<slots::SlotStore>,
+}
+
+impl SharedStateMap {
+    fn contains(&self, id: i64) -> bool {
+        self.full.contains_key(&id) || self.packed.as_ref().is_some_and(|p| p.get(id).is_some())
+    }
+
+    /// Bytes the states serialize to (= resident bytes of compact states).
+    fn serialized_len(&self) -> usize {
+        self.full
+            .values()
+            .map(|s| serialized_module_state_len(s))
+            .sum::<usize>()
+            + self.packed.as_ref().map_or(0, slots::SlotStore::state_bytes)
+    }
+}
 
 /// Queries at a time when scoring many cards: compact states are decoded
 /// for their batch only.
@@ -2348,29 +2472,49 @@ impl StateMap for HashMap<i64, ModuleState> {
 
 impl StateMap for SharedStateMap {
     fn state(&self, id: &i64) -> Option<Cow<'_, ModuleState>> {
-        self.0.get(id).map(|state| Cow::Borrowed(&**state))
+        if let Some(bytes) = self.packed.as_ref().and_then(|p| p.get(*id)) {
+            return Some(Cow::Owned(ModuleState {
+                layers: Vec::new(),
+                packed: Some(bytes.to_vec()),
+            }));
+        }
+        self.full.get(id).map(|state| Cow::Borrowed(&**state))
     }
     fn put(&mut self, id: i64, state: ModuleState) {
-        self.0.insert(id, Arc::new(state));
+        match &state.packed {
+            Some(bytes) if self.packed.as_ref().is_none_or(|p| p.slot_len() == bytes.len()) => {
+                self.packed
+                    .get_or_insert_with(|| slots::SlotStore::new(bytes.len()))
+                    .get_or_insert(id)
+                    .copy_from_slice(bytes);
+                self.full.remove(&id);
+            }
+            _ => {
+                if let Some(packed) = &mut self.packed {
+                    packed.take(id);
+                }
+                self.full.insert(id, Arc::new(state));
+            }
+        }
     }
     fn take(&mut self, id: &i64) -> Option<ModuleState> {
-        self.0.remove(id).map(Arc::unwrap_or_clone)
+        if let Some(bytes) = self.packed.as_mut().and_then(|p| p.take(*id)) {
+            return Some(ModuleState {
+                layers: Vec::new(),
+                packed: Some(bytes),
+            });
+        }
+        self.full.remove(id).map(Arc::unwrap_or_clone)
     }
     fn ids(&self) -> Vec<i64> {
-        self.0.keys().copied().collect()
+        let mut ids: Vec<i64> = self.full.keys().copied().collect();
+        if let Some(packed) = &self.packed {
+            ids.extend(packed.ids());
+        }
+        ids
     }
     fn count(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl FromIterator<(i64, ModuleState)> for SharedStateMap {
-    fn from_iter<T: IntoIterator<Item = (i64, ModuleState)>>(iter: T) -> Self {
-        Self(
-            iter.into_iter()
-                .map(|(id, state)| (id, Arc::new(state)))
-                .collect(),
-        )
+        self.full.len() + self.packed.as_ref().map_or(0, slots::SlotStore::len)
     }
 }
 

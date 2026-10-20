@@ -23,6 +23,7 @@
 //!   frwkv_abi_version / frwkv_review_struct_size /
 //!   frwkv_model_load / frwkv_model_kind / frwkv_model_free /
 //!   frwkv_runtime_new / frwkv_runtime_free / frwkv_runtime_replay / frwkv_runtime_query /
+//!   frwkv_runtime_next_intervals /
 //!   frwkv_runtime_snapshot / frwkv_runtime_restore / frwkv_runtime_reset / frwkv_runtime_stats /
 //!   frwkv_last_error / frwkv_free_string / frwkv_free_bytes
 
@@ -40,10 +41,11 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 mod rwkv;
 
 pub use rwkv::small::{SmallHeads, SmallInference, SmallModel};
-pub use rwkv::{ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision};
+pub use rwkv::{forecast_query, ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
-/// 2：加小模型（[ModelKind::Small]）、int4 精度、[FRWKV_PRECISION_DEFAULT]、`frwkv_model_kind`。
+/// 2：加小模型（[ModelKind::Small]）、int4 精度、[FRWKV_PRECISION_DEFAULT]、`frwkv_model_kind`、
+/// `frwkv_runtime_next_intervals`。
 pub const ABI_VERSION: i32 = 2;
 
 /// 搬运来源（写进 UPSTREAM.md，运行时可查）。
@@ -156,6 +158,18 @@ impl Engine {
         }
     }
 
+    fn forecast(
+        &mut self,
+        answer: &ReviewInput,
+        ratings: &[u8],
+        queries: &[ReviewInput],
+    ) -> io::Result<Vec<f32>> {
+        match self {
+            Self::Large(inference) => inference.forecast(answer, ratings, queries),
+            Self::Small(inference) => inference.forecast(answer, ratings, queries),
+        }
+    }
+
     fn snapshot(&self) -> Vec<u8> {
         match self {
             Self::Large(inference) => inference.snapshot(),
@@ -262,6 +276,16 @@ impl RwkvRuntime {
         self.kind
     }
 
+    /// Diagnostics: largest absolute WKV state value over every entity of
+    /// each stream (card, deck, note, preset, user); small model only.
+    #[doc(hidden)]
+    pub fn state_peaks(&self) -> Option<[f32; 5]> {
+        match &self.inference {
+            Engine::Small(inference) => Some(std::array::from_fn(|s| inference.stream_peak(s))),
+            Engine::Large(_) => None,
+        }
+    }
+
     /// 按时间顺序追加一批已答复习（`is_query` 被忽略并当作 false）。
     ///
     /// 校验整批通过才应用（否则 [RwkvError::Input]，状态不变）：
@@ -364,6 +388,116 @@ impl RwkvRuntime {
             }
         }
         Ok(out)
+    }
+
+    /// 「如果这张卡现在以各个评分作答」之后，在 `horizons`（作答后的调度日数，同一时刻）
+    /// 各处查询的 R：`ratings.len() * horizons.len()` 个值，按评分分组。什么都不保存
+    /// （状态与特征簿记原样）。`answer` 的校验同 [Self::replay]（`ease` 被逐个替换）。
+    pub fn forecast(
+        &mut self,
+        answer: &ReviewInput,
+        ratings: &[u8],
+        horizons: &[i64],
+    ) -> Result<Vec<f32>, RwkvError> {
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        if ratings.iter().any(|r| !(1..=4).contains(r)) {
+            return Err(RwkvError::Input("ratings must be 1..=4".into()));
+        }
+        if horizons.iter().any(|&d| d < 1) {
+            return Err(RwkvError::Input("horizons must be >= 1 day".into()));
+        }
+        let mut answer = answer.clone();
+        answer.is_query = false;
+        answer.ease = Some(1);
+        validate_answer(&answer, self.inference.last_day_offset())
+            .map_err(|message| RwkvError::Input(format!("answer: {message}")))?;
+        let queries: Vec<ReviewInput> = horizons
+            .iter()
+            .map(|&days| forecast_query(&answer, days, days * 86_400))
+            .collect();
+        let Self {
+            inference,
+            pool,
+            poisoned,
+            ..
+        } = self;
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            install(pool, || inference.forecast(&answer, ratings, &queries))
+        }));
+        match outcome {
+            Ok(result) => Ok(result?
+                .into_iter()
+                .map(|r| if r.is_finite() && (0.0..=1.0).contains(&r) { r } else { f32::NAN })
+                .collect()),
+            Err(panic) => {
+                *poisoned = true;
+                std::panic::resume_unwind(panic)
+            }
+        }
+    }
+
+    /// 作答时排程：对 Again / Hard / Good / Easy 各算「这次以该评分作答后，R 第一次
+    /// ≤ `target_retention` 的调度日数」（1..=`max_interval_days`；到上限仍高于目标给上限），
+    /// 即 RWKV-Instant 的到期规则（R ≤ 目标保留率）沿时间外推。先在 1..30 天逐日、之后
+    /// 每步 ×1.06 的网格上找第一个越线点，再在它与前一网格点之间逐日（最多 48 点）细化；
+    /// 最后按评分单调不减（Hard ≥ Again、Good ≥ Hard、Easy ≥ Good）。返回天数与该日的 R。
+    pub fn next_intervals(
+        &mut self,
+        answer: &ReviewInput,
+        target_retention: f32,
+        max_interval_days: u32,
+    ) -> Result<([u32; 4], [f32; 4]), RwkvError> {
+        if !(target_retention > 0.0 && target_retention < 1.0) {
+            return Err(RwkvError::Input("target_retention must be in (0, 1)".into()));
+        }
+        let max = i64::from(max_interval_days.max(1));
+        let mut grid: Vec<i64> = (1..=30.min(max)).collect();
+        let mut day = 30.0f64;
+        while (*grid.last().unwrap()) < max {
+            day *= 1.06;
+            grid.push((day.ceil() as i64).clamp(grid.last().unwrap() + 1, max));
+        }
+        let ratings = [1u8, 2, 3, 4];
+        let coarse = self.forecast(answer, &ratings, &grid)?;
+        let mut days = [max; 4];
+        let mut at = [f32::NAN; 4];
+        for (index, &rating) in ratings.iter().enumerate() {
+            let curve = &coarse[index * grid.len()..(index + 1) * grid.len()];
+            let Some(hit) = curve.iter().position(|&r| r <= target_retention) else {
+                at[index] = curve[curve.len() - 1];
+                continue;
+            };
+            let (low, high) = (if hit == 0 { 0 } else { grid[hit - 1] }, grid[hit]);
+            if high - low <= 1 {
+                days[index] = high;
+                at[index] = curve[hit];
+                continue;
+            }
+            let step = ((high - low) as f64 / 48.0).ceil() as i64;
+            let fine: Vec<i64> = (1..)
+                .map(|k| low + k * step)
+                .take_while(|&d| d < high)
+                .collect();
+            let refined = self.forecast(answer, &[rating], &fine)?;
+            match refined.iter().position(|&r| r <= target_retention) {
+                Some(found) => {
+                    days[index] = fine[found];
+                    at[index] = refined[found];
+                }
+                None => {
+                    days[index] = high;
+                    at[index] = curve[hit];
+                }
+            }
+        }
+        for index in 1..4 {
+            if days[index] < days[index - 1] {
+                days[index] = days[index - 1];
+            }
+        }
+        Ok((days.map(|d| d as u32), at))
     }
 
     /// 无损快照（格式见 [RwkvInference::snapshot]）。
@@ -831,6 +965,48 @@ pub unsafe extern "C" fn frwkv_runtime_query(
         let values = runtime.0.query(&inputs).map_err(rwkv_error)?;
         if count > 0 {
             std::slice::from_raw_parts_mut(out_retrievability, count).copy_from_slice(&values);
+        }
+        Ok(())
+    })
+}
+
+/// 作答时排程（[RwkvRuntime::next_intervals]）：`answer` 是这次作答的复习行（`ease` 被忽略，
+/// 依次替换为 1..4；`duration` 通常未知、不置位），写 4 个天数到 `out_days`（Again / Hard /
+/// Good / Easy），`out_retrievability` 可空，非空时写 4 个「该日的 R」（到上限仍高于目标时
+/// 是上限那天的 R）。什么都不保存。`answer` 不合法 → [FRWKV_ERR_INPUT]。
+///
+/// # Safety
+/// `runtime`、`answer` 有效；`out_days` 可写 4 个 u32；`out_retrievability` 为空或可写 4 个 f32。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_next_intervals(
+    runtime: *mut FrwkvRuntime,
+    answer: *const FrwkvReview,
+    target_retention: f32,
+    max_interval_days: u32,
+    out_days: *mut u32,
+    out_retrievability: *mut f32,
+) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let answer = answer.as_ref().ok_or_else(|| argument("null answer"))?;
+        if out_days.is_null() {
+            return Err(argument("null output"));
+        }
+        let mut row = *answer;
+        row.ease = 1;
+        let input = row.to_input(false).ok_or_else(|| {
+            (
+                FRWKV_ERR_INPUT,
+                "invalid input: answer: unknown present bits".to_owned(),
+            )
+        })?;
+        let (days, retrievability) = runtime
+            .0
+            .next_intervals(&input, target_retention, max_interval_days)
+            .map_err(rwkv_error)?;
+        std::slice::from_raw_parts_mut(out_days, 4).copy_from_slice(&days);
+        if !out_retrievability.is_null() {
+            std::slice::from_raw_parts_mut(out_retrievability, 4).copy_from_slice(&retrievability);
         }
         Ok(())
     })

@@ -25,8 +25,8 @@ use std::io;
 use half::f16;
 use rayon::prelude::*;
 
-use super::super::{dot_product, sigmoid, StatePrecision, CARD_FEATURES};
-use super::store::SlotStore;
+use super::super::{add_scaled_in_place, dot_product, sigmoid, StatePrecision, CARD_FEATURES};
+use super::super::slots::SlotStore;
 use super::weights::Weights;
 
 pub(super) const D: usize = 64;
@@ -49,6 +49,59 @@ pub(super) const PROB_CLAMP: f32 = 1e-5;
 pub(super) const COMPACT_STREAMS: [usize; 2] = [0, 2];
 
 type V = [f32; D];
+type HeadV = [f32; K];
+
+/// Rows per block of the per-row maths: each weight column is streamed once
+/// per block (`Linear::apply_rows`), and a block's scratch stays in L1/L2.
+const BLOCK: usize = 32;
+
+/// Per-task scratch of the block maths, on the heap: rayon threads run
+/// stolen tasks on top of a waiting one, so big stack frames nest and
+/// overflow.
+struct Scratch {
+    mix: Vec<f32>,
+    r: Vec<f32>,
+    k: Vec<f32>,
+    v: Vec<f32>,
+    a: Vec<f32>,
+    g: Vec<f32>,
+    tmp: Vec<f32>,
+    out: Vec<f32>,
+    delta: Vec<f32>,
+    k_scale: Vec<f32>,
+    v_scale: Vec<f32>,
+    lora: Vec<f32>,
+    features: Vec<f32>,
+    hidden: Vec<f32>,
+    normed: Vec<f32>,
+    wide: Vec<f32>,
+    gathered: Vec<V>,
+}
+
+impl Scratch {
+    fn new() -> Self {
+        let rows = |width: usize| vec![0.0f32; BLOCK * width];
+        Self {
+            mix: rows(8 * D),
+            r: rows(D),
+            k: rows(D),
+            v: rows(D),
+            a: rows(D),
+            g: rows(D),
+            tmp: rows(D),
+            out: rows(D),
+            delta: rows(D),
+            k_scale: rows(HEADS),
+            v_scale: rows(HEADS),
+            lora: rows(MAX_LORA_RANK),
+            features: rows(CARD_FEATURES),
+            hidden: rows(FC),
+            normed: rows(FC),
+            wide: rows(MAX_CHANNEL_HIDDEN),
+            gathered: vec![[0.0; D]; BLOCK],
+        }
+    }
+}
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
@@ -63,6 +116,8 @@ struct Linear {
     input: usize,
     /// `[output, input]`, row-major (PyTorch layout): `y = W x + b`.
     weight: Vec<f32>,
+    /// The same, `[input, output]`: one column per input for [Self::apply_rows].
+    weight_by_input: Vec<f32>,
     bias: Option<Vec<f32>>,
 }
 
@@ -75,12 +130,23 @@ impl Linear {
         } else {
             None
         };
-        Ok(Self {
+        Ok(Self::new(output, input, weight, bias))
+    }
+
+    fn new(output: usize, input: usize, weight: Vec<f32>, bias: Option<Vec<f32>>) -> Self {
+        let mut weight_by_input = vec![0.0; weight.len()];
+        for o in 0..output {
+            for i in 0..input {
+                weight_by_input[i * output + o] = weight[o * input + i];
+            }
+        }
+        Self {
             output,
             input,
             weight,
+            weight_by_input,
             bias,
-        })
+        }
     }
 
     /// A low-rank matrix whose rank is read from the file.
@@ -107,6 +173,35 @@ impl Linear {
                 Some(bias) => value + bias[o],
                 None => value,
             };
+        }
+    }
+
+    /// `rows * input` -> `rows * output`. Wide outputs stream each weight
+    /// column once per block of rows (SIMD axpy, the fork's batched layout);
+    /// narrow ones (LoRA ranks, per-head scales) take a dot product per row.
+    fn apply_rows(&self, xs: &[f32], ys: &mut [f32]) {
+        let rows = xs.len() / self.input;
+        debug_assert_eq!(xs.len(), rows * self.input);
+        debug_assert_eq!(ys.len(), rows * self.output);
+        if self.output < 16 {
+            for (x, y) in xs.chunks_exact(self.input).zip(ys.chunks_exact_mut(self.output)) {
+                self.apply(x, y);
+            }
+            return;
+        }
+        for y in ys.chunks_exact_mut(self.output) {
+            match &self.bias {
+                Some(bias) => y.copy_from_slice(bias),
+                None => y.fill(0.0),
+            }
+        }
+        for (column, weights) in self.weight_by_input.chunks_exact(self.output).enumerate() {
+            for (x, y) in xs.chunks_exact(self.input).zip(ys.chunks_exact_mut(self.output)) {
+                let scale = x[column];
+                if scale != 0.0 {
+                    add_scaled_in_place(y, weights, scale);
+                }
+            }
         }
     }
 }
@@ -197,68 +292,102 @@ impl TimeMixer {
         })
     }
 
-    /// Everything of the time mixer that does not need the recurrent matrix.
-    /// `v0` is the stream's layer-0 value of this row (written by layer 0).
-    fn prepare(&self, xl: &V, xs: &V, v0: &mut V, out: &mut Prepared) {
-        let mut mix = [[0.0f32; D]; 8];
-        for (j, m) in mix.iter_mut().enumerate() {
+    /// Everything of the time mixer that does not need the recurrent
+    /// matrix, for a block of rows. `v0` is the stream's layer-0 value of
+    /// each row (written by layer 0, read by the later layers).
+    fn prepare_rows(&self, xl: &[V], xs: &[V], v0: &mut [V], out: &mut [Prepared], scratch: &mut Scratch) {
+        let n = xl.len();
+        debug_assert!(n <= BLOCK);
+        let Scratch {
+            mix,
+            r,
+            k,
+            v,
+            a,
+            g,
+            tmp,
+            k_scale,
+            v_scale,
+            lora,
+            ..
+        } = scratch;
+        let rows = n * D;
+        for j in 0..8 {
             let weights = &self.lerp[j * D..(j + 1) * D];
-            for c in 0..D {
-                m[c] = torch_lerp(xl[c], xs[c], weights[c]);
-            }
-        }
-        self.w_r.apply(&mix[0], &mut out.r);
-        let mut k = [0.0; D];
-        self.w_k.apply(&mix[1], &mut k);
-        let mut v = [0.0; D];
-        self.w_v.apply(&mix[2], &mut v);
-        let mut k_scale = [0.0; HEADS];
-        self.k_scale.apply(&mix[6], &mut k_scale);
-        let mut v_scale = [0.0; HEADS];
-        self.v_scale.apply(&mix[7], &mut v_scale);
-        match &self.v_lora {
-            None => *v0 = v,
-            Some((a, b)) => {
-                let mut v_lerp = [0.0; D];
-                lora_into(a, b, &mix[2], &mut v_lerp, Activation::None);
+            let m = &mut mix[j * BLOCK * D..j * BLOCK * D + rows];
+            for row in 0..n {
                 for c in 0..D {
-                    v[c] = torch_lerp(v[c], v0[c], sigmoid(v_lerp[c]));
+                    m[row * D + c] = torch_lerp(xl[row][c], xs[row][c], weights[c]);
                 }
             }
         }
-        lora_into(&self.a_lora.0, &self.a_lora.1, &mix[4], &mut out.a, Activation::None);
-        out.a.iter_mut().for_each(|a| *a = sigmoid(*a));
-        lora_into(&self.g_lora.0, &self.g_lora.1, &mix[5], &mut out.g, Activation::Sigmoid);
-        let mut dd = [0.0; D];
-        lora_into(&self.d_lora.0, &self.d_lora.1, &mix[3], &mut dd, Activation::Tanh);
-        for c in 0..D {
-            let dd = -0.5 - softplus(-dd[c]);
-            out.w[c] = (-dd.exp()).exp();
+        let m = |j: usize| &mix[j * BLOCK * D..j * BLOCK * D + rows];
+        self.w_r.apply_rows(m(0), &mut r[..rows]);
+        self.w_k.apply_rows(m(1), &mut k[..rows]);
+        self.w_v.apply_rows(m(2), &mut v[..rows]);
+        self.k_scale.apply_rows(m(6), &mut k_scale[..n * HEADS]);
+        self.v_scale.apply_rows(m(7), &mut v_scale[..n * HEADS]);
+        match &self.v_lora {
+            None => {
+                for row in 0..n {
+                    v0[row].copy_from_slice(&v[row * D..(row + 1) * D]);
+                }
+            }
+            Some((first, second)) => {
+                lora_rows(first, second, m(2), &mut tmp[..rows], Activation::None, lora);
+                for row in 0..n {
+                    for c in 0..D {
+                        let i = row * D + c;
+                        v[i] = torch_lerp(v[i], v0[row][c], sigmoid(tmp[i]));
+                    }
+                }
+            }
         }
-        for h in 0..HEADS {
-            let range = h * K..(h + 1) * K;
-            normalize_scaled(&k[range.clone()], sigmoid(k_scale[h]), &mut out.kk[range.clone()]);
-            normalize_scaled(&v[range.clone()], sigmoid(v_scale[h]), &mut out.vv[range]);
+        lora_rows(&self.a_lora.0, &self.a_lora.1, m(4), &mut a[..rows], Activation::None, lora);
+        lora_rows(&self.g_lora.0, &self.g_lora.1, m(5), &mut g[..rows], Activation::Sigmoid, lora);
+        lora_rows(&self.d_lora.0, &self.d_lora.1, m(3), &mut tmp[..rows], Activation::Tanh, lora);
+        for (row, p) in out.iter_mut().enumerate().take(n) {
+            let at = row * D;
+            p.r.copy_from_slice(&r[at..at + D]);
+            p.g.copy_from_slice(&g[at..at + D]);
+            for c in 0..D {
+                p.a[c] = sigmoid(a[at + c]);
+                let dd = -0.5 - softplus(-tmp[at + c]);
+                p.w[c] = (-dd.exp()).exp();
+            }
+            for h in 0..HEADS {
+                let range = h * K..(h + 1) * K;
+                let src = at + h * K..at + (h + 1) * K;
+                normalize_scaled(&k[src.clone()], sigmoid(k_scale[row * HEADS + h]), &mut p.kk[range.clone()]);
+                normalize_scaled(&v[src], sigmoid(v_scale[row * HEADS + h]), &mut p.vv[range]);
+            }
         }
     }
 
-    /// `x + W_o(g * (GroupNorm(S_new r) + bonus))`.
-    fn finish(&self, x: &mut V, wkv: &V, p: &Prepared) {
-        let mut out = [0.0; D];
-        self.group_norm.apply(wkv, &mut out);
-        for h in 0..HEADS {
-            let mut bonus = 0.0;
-            for j in h * K..(h + 1) * K {
-                bonus += p.r[j] * self.bonus[j] * p.kk[j] * p.a[j];
-            }
-            for i in h * K..(h + 1) * K {
-                out[i] = p.g[i] * (out[i] + bonus * p.vv[i]);
+    /// `x + W_o(g * (GroupNorm(S_new r) + bonus))` for a block of rows;
+    /// `wkv[row]` is `S_new r` of that row, head after head.
+    fn finish_rows(&self, x: &mut [V], wkv: &[V], p: &[Prepared], scratch: &mut Scratch) {
+        let n = x.len();
+        let Scratch { out, delta, .. } = scratch;
+        for row in 0..n {
+            let out = &mut out[row * D..(row + 1) * D];
+            self.group_norm.apply(&wkv[row], out);
+            let p = &p[row];
+            for h in 0..HEADS {
+                let mut bonus = 0.0;
+                for j in h * K..(h + 1) * K {
+                    bonus += p.r[j] * self.bonus[j] * p.kk[j] * p.a[j];
+                }
+                for i in h * K..(h + 1) * K {
+                    out[i] = p.g[i] * (out[i] + bonus * p.vv[i]);
+                }
             }
         }
-        let mut delta = [0.0; D];
-        self.w_o.apply(&out, &mut delta);
-        for c in 0..D {
-            x[c] += delta[c];
+        self.w_o.apply_rows(&out[..n * D], &mut delta[..n * D]);
+        for (row, x) in x.iter_mut().enumerate() {
+            for c in 0..D {
+                x[c] += delta[row * D + c];
+            }
         }
     }
 }
@@ -270,16 +399,23 @@ enum Activation {
     Tanh,
 }
 
-fn lora_into(first: &Linear, second: &Linear, x: &[f32], out: &mut [f32], between: Activation) {
-    let mut hidden = [0.0f32; MAX_LORA_RANK];
-    let hidden = &mut hidden[..first.output];
-    first.apply(x, hidden);
+fn lora_rows(
+    first: &Linear,
+    second: &Linear,
+    xs: &[f32],
+    out: &mut [f32],
+    between: Activation,
+    hidden: &mut [f32],
+) {
+    let rows = xs.len() / first.input;
+    let hidden = &mut hidden[..rows * first.output];
+    first.apply_rows(xs, hidden);
     match between {
         Activation::None => {}
         Activation::Sigmoid => hidden.iter_mut().for_each(|h| *h = sigmoid(*h)),
         Activation::Tanh => hidden.iter_mut().for_each(|h| *h = h.tanh()),
     }
-    second.apply(hidden, out);
+    second.apply_rows(hidden, out);
 }
 
 /// `torch.lerp`'s two-branch formula (the reference's `_lerp`).
@@ -338,19 +474,28 @@ impl ChannelMixer {
         }))
     }
 
-    fn apply(&self, x: &mut V, xl: &V, xs: &V) {
-        let mut mixed = [0.0; D];
-        for c in 0..D {
-            mixed[c] = torch_lerp(xl[c], xs[c], self.lerp[c]);
+    fn apply_rows(&self, x: &mut [V], xl: &[V], xs: &[V], scratch: &mut Scratch) {
+        let n = x.len();
+        let hidden = self.w_k.output;
+        let Scratch {
+            tmp: mixed,
+            wide: k,
+            delta,
+            ..
+        } = scratch;
+        for row in 0..n {
+            for c in 0..D {
+                mixed[row * D + c] = torch_lerp(xl[row][c], xs[row][c], self.lerp[c]);
+            }
         }
-        let mut k = [0.0f32; MAX_CHANNEL_HIDDEN];
-        let k = &mut k[..self.w_k.output];
-        self.w_k.apply(&mixed, k);
+        let k = &mut k[..n * hidden];
+        self.w_k.apply_rows(&mixed[..n * D], k);
         k.iter_mut().for_each(|k| *k = k.max(0.0) * k.max(0.0));
-        let mut delta = [0.0; D];
-        self.w_v.apply(k, &mut delta);
-        for c in 0..D {
-            x[c] += delta[c];
+        self.w_v.apply_rows(k, &mut delta[..n * D]);
+        for (row, x) in x.iter_mut().enumerate() {
+            for c in 0..D {
+                x[c] += delta[row * D + c];
+            }
         }
     }
 }
@@ -446,12 +591,12 @@ impl SmallNet {
             })
             .collect();
         let gru = |w: &mut Weights, name: &str| -> io::Result<Linear> {
-            Ok(Linear {
-                output: 3,
-                input: FC,
-                weight: w.matrix(&format!("gru_{name}_weight"), 3, FC)?,
-                bias: Some(w.take(&format!("gru_{name}_bias"), 3)?),
-            })
+            Ok(Linear::new(
+                3,
+                FC,
+                w.matrix(&format!("gru_{name}_weight"), 3, FC)?,
+                Some(w.take(&format!("gru_{name}_bias"), 3)?),
+            ))
         };
         Ok(Self {
             features_0: Linear::load(w, "features2card.0", FC, CARD_FEATURES, true)?,
@@ -496,17 +641,29 @@ impl SmallNet {
         }
     }
 
-    fn feature_mlp(&self, features: &[f32], out: &mut V) {
-        let mut f = [0.0f32; CARD_FEATURES];
-        f.copy_from_slice(features);
-        f[ZERO_FEATURE] = 0.0;
-        let mut hidden = [0.0f32; FC];
-        self.features_0.apply(&f, &mut hidden);
-        silu(&mut hidden);
-        let mut normed = [0.0f32; FC];
-        self.features_norm.apply(&hidden, &mut normed);
-        self.features_3.apply(&normed, out);
-        silu(out);
+    fn feature_mlp_rows(&self, features: &[f32], out: &mut [V], scratch: &mut Scratch) {
+        let n = out.len();
+        let Scratch {
+            features: f,
+            hidden,
+            normed,
+            tmp: x,
+            ..
+        } = scratch;
+        f[..n * CARD_FEATURES].copy_from_slice(features);
+        for row in 0..n {
+            f[row * CARD_FEATURES + ZERO_FEATURE] = 0.0;
+        }
+        self.features_0.apply_rows(&f[..n * CARD_FEATURES], &mut hidden[..n * FC]);
+        silu(&mut hidden[..n * FC]);
+        for row in 0..n {
+            self.features_norm.apply(&hidden[row * FC..(row + 1) * FC], &mut normed[row * FC..(row + 1) * FC]);
+        }
+        self.features_3.apply_rows(&normed[..n * FC], &mut x[..n * D]);
+        silu(&mut x[..n * D]);
+        for (row, out) in out.iter_mut().enumerate() {
+            out.copy_from_slice(&x[row * D..(row + 1) * D]);
+        }
     }
 
     fn heads(&self, x: &V, curve: bool) -> SmallHeads {
@@ -629,9 +786,14 @@ impl Layout {
         }
     }
 
-    fn read_matrix(&self, bytes: &[u8], at: usize, out: &mut [f32; MATRIX]) {
+    /// Bytes of `rows` stored matrix rows.
+    fn rows_bytes(&self, rows: usize) -> usize {
+        rows * row_bytes(self.precision)
+    }
+
+    /// Decodes stored matrix rows (`out.len() / K` of them).
+    fn read_rows(&self, bytes: &[u8], out: &mut [f32]) {
         let row = row_bytes(self.precision);
-        let bytes = &bytes[at..at + matrix_bytes(self.precision)];
         for (values, encoded) in out.chunks_exact_mut(K).zip(bytes.chunks_exact(row)) {
             match self.precision {
                 StatePrecision::F32 => {
@@ -656,12 +818,11 @@ impl Layout {
         }
     }
 
-    /// Stores `values` and replaces them with what they read back as.
+    /// Stores matrix rows and replaces them with what they read back as.
     /// Rows: `scale = max|row| / limit` (1 for an all-zero row),
     /// codes `round_half_even(v / scale)` clipped to ±limit.
-    fn write_matrix(&self, values: &mut [f32; MATRIX], bytes: &mut [u8], at: usize) {
+    fn write_rows(&self, values: &mut [f32], bytes: &mut [u8]) {
         let row = row_bytes(self.precision);
-        let bytes = &mut bytes[at..at + matrix_bytes(self.precision)];
         for (values, encoded) in values.chunks_exact_mut(K).zip(bytes.chunks_exact_mut(row)) {
             if self.precision == StatePrecision::F32 {
                 for (v, b) in values.iter().zip(encoded.chunks_exact_mut(4)) {
@@ -724,7 +885,7 @@ impl Layout {
                 }
             }
             let mut matrix = [0.0; MATRIX];
-            self.read_matrix(bytes, layer.matrix, &mut matrix);
+            self.read_rows(&bytes[layer.matrix..], &mut matrix);
             if matrix.iter().any(|v| !v.is_finite()) {
                 return Err(damaged());
             }
@@ -739,7 +900,7 @@ impl Layout {
         self.layers
             .iter()
             .map(|layer| {
-                self.read_matrix(bytes, layer.matrix, &mut matrix);
+                self.read_rows(&bytes[layer.matrix..], &mut matrix);
                 matrix.iter().fold(0.0f32, |m, v| m.max(v.abs()))
             })
             .collect()
@@ -892,21 +1053,27 @@ impl StreamPlan {
     }
 }
 
-/// Runs `rows` through the network. Committed rows update `stores`; the
-/// heads of rows with `heads[row]` are returned (default elsewhere).
+/// Runs `rows` through the network. Committed rows update the states the
+/// later rows of this call read; with `persist` they are also written back to
+/// `stores` (without it, a what-if). The heads of rows with `heads[row]` are
+/// returned (default elsewhere).
 pub(super) fn run(
     net: &SmallNet,
     layouts: &[Layout; STREAMS],
     stores: &mut [SlotStore; STREAMS],
     rows: &Rows<'_>,
     curve: bool,
+    persist: bool,
 ) -> Vec<SmallHeads> {
     let n = rows.keys.len();
     debug_assert_eq!(rows.features.len(), n * CARD_FEATURES);
     let mut x: Vec<V> = vec![[0.0; D]; n];
-    x.par_iter_mut().enumerate().for_each(|(row, x)| {
-        net.feature_mlp(&rows.features[row * CARD_FEATURES..(row + 1) * CARD_FEATURES], x)
-    });
+    x.par_chunks_mut(BLOCK)
+        .enumerate()
+        .for_each_init(Scratch::new, |scratch, (block, x)| {
+            let start = block * BLOCK * CARD_FEATURES;
+            net.feature_mlp_rows(&rows.features[start..start + x.len() * CARD_FEATURES], x, scratch)
+        });
 
     let mut plans: Vec<StreamPlan> = (0..STREAMS)
         .into_par_iter()
@@ -915,7 +1082,8 @@ pub(super) fn run(
     let mut v0: Vec<Vec<V>> = vec![vec![[0.0; D]; n]; STREAMS];
     let mut xl: Vec<V> = vec![[0.0; D]; n];
     let mut prepared: Vec<Prepared> = vec![Prepared::default(); n];
-    let mut wkv: Vec<V> = vec![[0.0; D]; n];
+    // `S_new r` per head, rows in the stream plan's entity order.
+    let mut wkv: Vec<Vec<HeadV>> = vec![vec![[0.0; K]; n]; HEADS];
 
     for &(stream, layer_id) in net.steps() {
         let layer = &net.streams[stream][layer_id];
@@ -923,44 +1091,52 @@ pub(super) fn run(
         let at = layout.layers[layer_id];
         let plan = &mut plans[stream];
 
-        // Time mixer, per row.
+        // Time mixer, per block of rows.
         xl.par_iter_mut()
             .zip(&x)
             .for_each(|(xl, x)| layer.time.norm.apply(x, xl));
         let xs = plan.shifts(layout, at.shift, &xl);
         prepared
-            .par_iter_mut()
-            .zip(v0[stream].par_iter_mut())
-            .zip(xl.par_iter().zip(&xs))
-            .for_each(|((p, v0), (xl, xs))| layer.time.prepare(xl, xs, v0, p));
+            .par_chunks_mut(BLOCK)
+            .zip(v0[stream].par_chunks_mut(BLOCK))
+            .zip(xl.par_chunks(BLOCK).zip(xs.par_chunks(BLOCK)))
+            .for_each_init(Scratch::new, |scratch, ((p, v0), (xl, xs))| {
+                layer.time.prepare_rows(xl, xs, v0, p, scratch)
+            });
 
-        // WKV recurrence, per entity; outputs in entity order.
-        scan(plan, layout, at, &prepared, &xl, rows.commit, &mut wkv);
+        // WKV recurrence: sequential per entity and head, parallel across them.
+        scan(plan, layout, at, &prepared, rows.commit, &mut wkv);
+        plan.store_shift(layout, at.shift, &xl);
 
-        x.par_iter_mut()
-            .zip(&prepared)
+        let position = &plan.position;
+        x.par_chunks_mut(BLOCK)
+            .zip(prepared.par_chunks(BLOCK))
             .enumerate()
-            .for_each(|(row, (x, p))| layer.time.finish(x, &wkv[plan.position[row] as usize], p));
+            .for_each_init(Scratch::new, |scratch, (block, (x, p))| {
+                let mut gathered = std::mem::take(&mut scratch.gathered);
+                for (offset, out) in gathered.iter_mut().take(x.len()).enumerate() {
+                    let pos = position[block * BLOCK + offset] as usize;
+                    for (h, wkv) in wkv.iter().enumerate() {
+                        out[h * K..(h + 1) * K].copy_from_slice(&wkv[pos]);
+                    }
+                }
+                layer.time.finish_rows(x, &gathered[..x.len()], p, scratch);
+                scratch.gathered = gathered;
+            });
 
-        // Channel mixer, per row; its shift is committed like the time shift.
+        // Channel mixer, per block of rows; its shift is committed like the
+        // time shift.
         if let (Some(channel), Some(channel_at)) = (&layer.channel, at.channel) {
             xl.par_iter_mut()
                 .zip(&x)
                 .for_each(|(xl, x)| channel.norm.apply(x, xl));
             let xs = plan.shifts(layout, channel_at, &xl);
-            x.par_iter_mut()
-                .zip(xl.par_iter().zip(&xs))
-                .for_each(|(x, (xl, xs))| channel.apply(x, xl, xs));
-            let slot_len = layout.slot_len;
-            let last_commit = &plan.last_commit;
-            plan.state
-                .par_chunks_mut(slot_len)
-                .zip(last_commit.par_iter())
-                .for_each(|(state, &row)| {
-                    if row != NONE {
-                        layout.write_shift(&xl[row as usize], state, channel_at);
-                    }
+            x.par_chunks_mut(BLOCK)
+                .zip(xl.par_chunks(BLOCK).zip(xs.par_chunks(BLOCK)))
+                .for_each_init(Scratch::new, |scratch, (x, (xl, xs))| {
+                    channel.apply_rows(x, xl, xs, scratch)
                 });
+            plan.store_shift(layout, channel_at, &xl);
         }
     }
 
@@ -976,6 +1152,9 @@ pub(super) fn run(
         })
         .collect();
 
+    if !persist {
+        return heads;
+    }
     for (stream, plan) in plans.into_iter().enumerate() {
         let slot_len = layouts[stream].slot_len;
         let store = &mut stores[stream];
@@ -990,82 +1169,106 @@ pub(super) fn run(
     heads
 }
 
-/// `S_new = S diag(w) - (S kk)(a kk)^T + vv (kk a)^T`, `out = S_new r` per
-/// head, row by row for each entity. Committed rows store `S_new` (rounded
-/// to the stream's precision; the row's own output uses it unrounded) and
-/// their time shift.
+impl StreamPlan {
+    /// After a step: each entity's stored shift is the (rounded) input of
+    /// its last committed row. Rows of this call read earlier committed
+    /// rows' shifts from `xl` directly ([Self::shifts]).
+    fn store_shift(&mut self, layout: &Layout, at: usize, xl: &[V]) {
+        let slot_len = layout.slot_len;
+        self.state
+            .par_chunks_mut(slot_len)
+            .zip(self.last_commit.par_iter())
+            .for_each(|(state, &row)| {
+                if row != NONE {
+                    layout.write_shift(&xl[row as usize], state, at);
+                }
+            });
+    }
+}
+
+/// `S_new = S diag(w) - (S kk)(a kk)^T + vv (kk a)^T` and `out = S_new r`
+/// per head, row after row of each entity. Heads are independent, so every
+/// (entity, head) pair is its own sequential task: even the user stream (one
+/// entity) runs on four threads. Committed rows store `S_new` rounded to the
+/// stream's precision (the row's own output uses it unrounded).
 fn scan(
     plan: &mut StreamPlan,
     layout: &Layout,
     at: LayerLayout,
     prepared: &[Prepared],
-    xl: &[V],
     commit: &[bool],
-    wkv: &mut [V],
+    wkv: &mut [Vec<HeadV>],
 ) {
     let slot_len = layout.slot_len;
-    // Split the output (entity order) into one slice per entity.
-    let mut outputs: Vec<&mut [V]> = Vec::with_capacity(plan.keys.len());
-    let mut rest = wkv;
-    for e in 0..plan.keys.len() {
-        let (head, tail) = rest.split_at_mut(plan.ranges[e + 1] - plan.ranges[e]);
-        outputs.push(head);
-        rest = tail;
+    let head_bytes = layout.rows_bytes(K);
+    let entities = plan.keys.len();
+    // Each entity's matrix bytes, one slice per head.
+    let mut matrices: Vec<&mut [u8]> = Vec::with_capacity(entities * HEADS);
+    for slot in plan.state.chunks_mut(slot_len) {
+        let matrix = &mut slot[at.matrix..at.matrix + HEADS * head_bytes];
+        matrices.extend(matrix.chunks_mut(head_bytes));
+    }
+    // Each head's outputs, one slice per entity.
+    let mut outputs: Vec<Vec<&mut [HeadV]>> = Vec::with_capacity(HEADS);
+    for wkv in wkv.iter_mut() {
+        let mut per_entity = Vec::with_capacity(entities);
+        let mut rest = wkv.as_mut_slice();
+        for e in 0..entities {
+            let (head, tail) = rest.split_at_mut(plan.ranges[e + 1] - plan.ranges[e]);
+            per_entity.push(head);
+            rest = tail;
+        }
+        outputs.push(per_entity);
+    }
+    let mut tasks: Vec<(usize, usize, &mut [u8], &mut [HeadV])> = Vec::with_capacity(entities * HEADS);
+    let mut outputs: Vec<_> = outputs.into_iter().map(Vec::into_iter).collect();
+    for (index, matrix) in matrices.into_iter().enumerate() {
+        let (e, h) = (index / HEADS, index % HEADS);
+        tasks.push((e, h, matrix, outputs[h].next().unwrap()));
     }
     let order = &plan.order;
     let ranges = &plan.ranges;
     let stored = &plan.stored;
-    plan.state
-        .par_chunks_mut(slot_len)
-        .zip(outputs)
-        .enumerate()
-        .for_each(|(e, (state, outputs))| {
-            let mut s = [0.0f32; MATRIX];
-            if stored[e] {
-                layout.read_matrix(state, at.matrix, &mut s);
+    tasks.into_par_iter().for_each(|(e, h, matrix, outputs)| {
+        let mut s = [0.0f32; K * K];
+        if stored[e] {
+            layout.read_rows(matrix, &mut s);
+        }
+        let mut next = [0.0f32; K * K];
+        for (out, &row) in outputs.iter_mut().zip(&order[ranges[e]..ranges[e + 1]]) {
+            let row = row as usize;
+            step_head(&s, &prepared[row], h, &mut next, out);
+            if commit[row] {
+                s = next;
+                layout.write_rows(&mut s, matrix);
             }
-            let mut next = [0.0f32; MATRIX];
-            for (out, &row) in outputs.iter_mut().zip(&order[ranges[e]..ranges[e + 1]]) {
-                let row = row as usize;
-                step_matrix(&s, &prepared[row], &mut next, out);
-                if commit[row] {
-                    s = next;
-                    layout.write_matrix(&mut s, state, at.matrix);
-                    layout.write_shift(&xl[row], state, at.shift);
-                }
-            }
-        });
+        }
+    });
 }
 
 #[inline]
-fn step_matrix(s: &[f32; MATRIX], p: &Prepared, next: &mut [f32; MATRIX], out: &mut V) {
-    for h in 0..HEADS {
-        let base = h * K;
-        let mut kk = [0.0f32; K];
-        let mut kb = [0.0f32; K];
-        let mut w = [0.0f32; K];
-        let mut r = [0.0f32; K];
+fn step_head(s: &[f32; K * K], p: &Prepared, h: usize, next: &mut [f32; K * K], out: &mut HeadV) {
+    let base = h * K;
+    let kk: &[f32; K] = p.kk[base..base + K].try_into().unwrap();
+    let w: &[f32; K] = p.w[base..base + K].try_into().unwrap();
+    let r: &[f32; K] = p.r[base..base + K].try_into().unwrap();
+    let mut kb = [0.0f32; K];
+    for j in 0..K {
+        kb[j] = kk[j] * p.a[base + j];
+    }
+    for i in 0..K {
+        let row: &[f32; K] = s[i * K..(i + 1) * K].try_into().unwrap();
+        let mut s_kk = 0.0f32;
         for j in 0..K {
-            kk[j] = p.kk[base + j];
-            kb[j] = kk[j] * p.a[base + j];
-            w[j] = p.w[base + j];
-            r[j] = p.r[base + j];
+            s_kk += row[j] * kk[j];
         }
-        for i in 0..K {
-            let offset = h * K * K + i * K;
-            let row: &[f32; K] = s[offset..offset + K].try_into().unwrap();
-            let mut s_kk = 0.0f32;
-            for j in 0..K {
-                s_kk += row[j] * kk[j];
-            }
-            let vv = p.vv[base + i];
-            let new: &mut [f32; K] = (&mut next[offset..offset + K]).try_into().unwrap();
-            let mut acc = 0.0f32;
-            for j in 0..K {
-                new[j] = row[j] * w[j] - s_kk * kb[j] + vv * kb[j];
-                acc += new[j] * r[j];
-            }
-            out[base + i] = acc;
+        let vv = p.vv[base + i];
+        let new: &mut [f32; K] = (&mut next[i * K..(i + 1) * K]).try_into().unwrap();
+        let mut acc = 0.0f32;
+        for j in 0..K {
+            new[j] = row[j] * w[j] - s_kk * kb[j] + vv * kb[j];
+            acc += new[j] * r[j];
         }
+        out[i] = acc;
     }
 }
