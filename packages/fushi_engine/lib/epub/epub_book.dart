@@ -274,9 +274,34 @@ class EpubBook {
   /// classifier). Empty / whitespace references are skipped. The inline image-merge
   /// renderer folds all of them into the absorbing prose chapter so a multi-image
   /// or SVG-`<image>` illustration page never loses an illustration when merged.
+  ///
+  /// One entry per image *file*, at its first occurrence — the same key
+  /// ([normalizeEpubImageKey] of the resolved href) [images] dedupes on. A page
+  /// that references one file several times still shows one picture: KCC's
+  /// Kindle "Panel View" markup puts the page image in once visibly plus four
+  /// `display:none` magnify regions (`.PV-P`), and counting every `<img>`
+  /// turned each page into five manga pages / five merged figures.
   List<String> chapterImageSrcs(int index) {
     if (index < 0 || index >= chapters.length) return const <String>[];
-    return _scanChapter(index, EpubScanRequest.imageRefs).imageRefs!;
+    final List<String> refs =
+        _scanChapter(index, EpubScanRequest.imageRefs).imageRefs!;
+    if (refs.length < 2) return refs;
+    final String chapterHref = chapters[index].href;
+    final Set<String> seen = <String>{};
+    return <String>[
+      for (final String ref in refs)
+        if (seen.add(_chapterImageRefKey(chapterHref, ref))) ref,
+    ];
+  }
+
+  /// Identity of one chapter image reference for [chapterImageSrcs]: the
+  /// book-wide image key for a relative ref (the resolved path when it escapes
+  /// the book root), the trimmed ref itself for a `data:` / absolute URL.
+  static String _chapterImageRefKey(String chapterHref, String ref) {
+    final String trimmed = ref.trim();
+    if (trimmed.startsWith('data:') || trimmed.contains('://')) return trimmed;
+    final String resolved = resolveImageHref(chapterHref, trimmed);
+    return normalizeEpubImageKey(resolved) ?? resolved;
   }
 
   /// TODO-723 / BUG-2559: every illustration in the book, once each, in reading
