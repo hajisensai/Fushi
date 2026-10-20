@@ -42,6 +42,7 @@ import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
@@ -1858,7 +1859,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// ImageProvider，就只画色晕（不为背景另开一条取图路径）。
   ImageProvider? _coverImageProvider() {
     final String? path = _localCoverPath();
-    return path == null ? null : FileImage(File(path));
+    // 走本地封面统一入口：漫画封面常是第一页页图，可能是 AVIF（裸 FileImage 解不开）。
+    return path == null ? null : resizedFileImage(File(path));
   }
 
   /// 封面。
@@ -1869,8 +1871,8 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget _buildCover(BuildContext context) {
     final String? resolved = _localCoverPath();
     if (resolved != null) {
-      return Image.file(
-        File(resolved),
+      return Image(
+        image: resizedFileImage(File(resolved)),
         fit: BoxFit.cover,
         // BUG-2496：坏封面文件解码失败退回占位块，不当致命 FlutterError。
         errorBuilder: (_, Object error, __) {
