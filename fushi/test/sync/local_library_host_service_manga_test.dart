@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -8,6 +9,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -393,4 +395,132 @@ void main() {
       }
     });
   });
+
+  group('host 运行时按需取页（未下载的在线漫画也给对端看）', () {
+    late _FakeOnlineReader reader;
+    late LocalLibraryHostService online;
+
+    setUp(() {
+      // 现取页的临时缓存按 bookKey 定位在系统临时目录；先清掉上次残留，免得命中旧页。
+      final Directory pageCache = Directory(
+        p.join(
+          Directory.systemTemp.path,
+          'fushi_interconnect_manga',
+          mangaChapterDigest('mihon-none'),
+        ),
+      );
+      if (pageCache.existsSync()) pageCache.deleteSync(recursive: true);
+      reader = _FakeOnlineReader();
+      online = LocalLibraryHostService(
+        db: db,
+        dictionaryResourceRoot: Directory.systemTemp,
+        packages: SyncAssetPackageService(db: db),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+        onlineMangaReader: reader,
+      );
+    });
+
+    test('一章没下的在线条目出现在清单，页表列出全部章', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1', '/c/2'],
+        downloaded: const <String>{'/c/2'},
+      );
+      final RemoteBookInfo book = (await online.listBooks())
+          .firstWhere((RemoteBookInfo b) => b.bookKey == 'mihon-none');
+      expect(book.hasMangaChapters, isTrue);
+      final RemoteMangaManifest manifest =
+          await online.mangaManifest('mihon-none');
+      expect(
+        manifest.chapters.map((RemoteMangaChapterInfo c) => c.key),
+        <String>['/c/1', '/c/2'],
+      );
+      // 已下载的章报真实页数，没下载的报 0（打开那章才知道）。
+      expect(
+        manifest.chapters.map((RemoteMangaChapterInfo c) => c.pageCount),
+        <int>[0, 2],
+      );
+    });
+
+    test('未下载的章：页表与页图经运行时现取，同页不重复取', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      final RemoteMangaManifest chapter =
+          await online.mangaChapterManifest('mihon-none', digest);
+      expect(
+        chapter.pages.map((RemoteMangaPageInfo e) => e.index),
+        <int>[0, 1, 2],
+      );
+      final File page =
+          await online.mangaChapterPageFile('mihon-none', digest, 1);
+      expect(p.extension(page.path), '.png');
+      expect(page.readAsBytesSync(), _FakeOnlineReader.pageBytes(1));
+      final File again =
+          await online.mangaChapterPageFile('mihon-none', digest, 1);
+      expect(again.path, page.path);
+      expect(reader.pageFetches, 1);
+      expect(reader.lastChapter?['key'], '/c/1');
+      await expectLater(
+        online.mangaChapterPageFile('mihon-none', digest, 3),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('运行时不认领的条目（iOS host / 二跳互联）照旧只给已下载的章', () async {
+      reader.serves = false;
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final RemoteBookInfo book = (await online.listBooks())
+          .firstWhere((RemoteBookInfo b) => b.bookKey == 'mihon-none');
+      expect(book.hasMangaChapters, isFalse);
+      await expectLater(
+        online.mangaChapterManifest('mihon-none', mangaChapterDigest('/c/1')),
+        throwsA(isA<StateError>()),
+      );
+      expect(reader.pageFetches, 0);
+    });
+  });
+}
+
+class _FakeOnlineReader implements OnlineMangaHostReader {
+  bool serves = true;
+  int pageFetches = 0;
+  Map<String, Object?>? lastChapter;
+
+  static List<int> pageBytes(int index) =>
+      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, index];
+
+  @override
+  bool canServe(String sourceMetadata) => serves;
+
+  @override
+  Future<int> chapterPageCount({
+    required String bookKey,
+    required String sourceMetadata,
+    required Map<String, Object?> chapter,
+  }) async {
+    lastChapter = chapter;
+    return 3;
+  }
+
+  @override
+  Future<Uint8List> chapterPage({
+    required String bookKey,
+    required String sourceMetadata,
+    required Map<String, Object?> chapter,
+    required int index,
+  }) async {
+    lastChapter = chapter;
+    RangeError.checkValidIndex(index, const <int>[0, 1, 2], 'index');
+    pageFetches++;
+    return Uint8List.fromList(pageBytes(index));
+  }
 }

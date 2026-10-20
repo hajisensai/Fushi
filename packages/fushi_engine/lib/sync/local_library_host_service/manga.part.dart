@@ -67,10 +67,31 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     final MokuroPayload? payload = await readDownloadedChapterPayload(
       chapterDir,
     );
-    if (payload == null) {
-      throw StateError('manga chapter not downloaded: $bookKey/$chapterDigest');
+    if (payload != null) return _volumeManifest(row, payload);
+    // 没下载的章：本机运行时能取就现取页表（页尺寸未知报 0，对端按图片实测）。
+    final _OnlineChapterSource source = _requireOnlineChapter(
+      row,
+      chapterDigest,
+    );
+    final int count = await source.reader.chapterPageCount(
+      bookKey: row.bookKey,
+      sourceMetadata: source.sourceMetadata,
+      chapter: source.chapter,
+    );
+    if (count <= 0) {
+      throw StateError(
+        'online manga chapter has no pages: $bookKey/$chapterDigest',
+      );
     }
-    return _volumeManifest(row, payload);
+    return RemoteMangaManifest(
+      bookKey: row.bookKey,
+      title: row.title,
+      readingMode: row.mangaReadingMode,
+      pages: <RemoteMangaPageInfo>[
+        for (int i = 0; i < count; i++)
+          RemoteMangaPageInfo(index: i, name: '$i', width: 0, height: 0),
+      ],
+    );
   }
 
   @override
@@ -90,7 +111,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       chapterDir,
     );
     if (payload == null) {
-      throw StateError('manga chapter not downloaded: $bookKey/$chapterDigest');
+      return _onlineChapterPageFile(row, chapterDigest, index);
     }
     return _pageFile(
       payload: payload,
@@ -139,8 +160,9 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     return File(path);
   }
 
-  /// 章节式在线漫画在 host 上已完整下载的章，按 `chaptersJson`（书架条目的章表，
-  /// 源给的顺序）逐章问 [readDownloadedChapterPayload]。
+  /// 章节式在线漫画对端可读的章，按 `chaptersJson`（书架条目的章表，源给的顺序）：
+  /// 已完整下载的章（[readDownloadedChapterPayload]），加上本机运行时能按需取页时
+  /// 的其余各章（[OnlineMangaHostReader]）。
   ///
   /// 章表从 `epub_books.chaptersJson` 读而不是 `sourceMetadata`：前者就是一列
   /// `{key,name,number,scanlator,uploadedAt,raw}`，引擎不必认识 app 侧的书架条目
@@ -148,30 +170,28 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   Future<List<RemoteMangaChapterInfo>> _downloadedChapters(
     EpubBookRow row,
   ) async {
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(row.chaptersJson);
-    } on Object {
-      return const <RemoteMangaChapterInfo>[];
-    }
-    if (decoded is! List<Object?>) return const <RemoteMangaChapterInfo>[];
+    final bool online = _servesOnlineMangaChapters(_onlineMangaReader, row);
     final List<RemoteMangaChapterInfo> chapters = <RemoteMangaChapterInfo>[];
-    for (final Object? item in decoded) {
-      if (item is! Map<Object?, Object?>) continue;
-      final Map<String, Object?> json = item.cast<String, Object?>();
+    for (final Map<String, Object?> json in _mangaChapterItems(row)) {
       final String key = json['key']?.toString() ?? '';
       if (key.isEmpty) continue;
-      final MokuroPayload? payload = await readDownloadedChapterPayload(
-        mangaChapterDirectoryByDigest(row.extractDir, mangaChapterDigest(key)),
-      );
-      if (payload == null) continue;
+      final MokuroPayload? payload = row.extractDir.isEmpty
+          ? null
+          : await readDownloadedChapterPayload(
+              mangaChapterDirectoryByDigest(
+                row.extractDir,
+                mangaChapterDigest(key),
+              ),
+            );
+      // 没下载的章只在本机运行时能现取时列出（页数要等打开那章才知道，报 0）。
+      if (payload == null && !online) continue;
       final int uploadedAt = (json['uploadedAt'] as num?)?.toInt() ?? 0;
       final String scanlator = json['scanlator']?.toString() ?? '';
       chapters.add(
         RemoteMangaChapterInfo(
           key: key,
           name: json['name']?.toString() ?? '',
-          pageCount: payload.images.length,
+          pageCount: payload?.images.length ?? 0,
           number: (json['number'] as num?)?.toDouble(),
           scanlator: scanlator.isEmpty ? null : scanlator,
           uploadedAt: uploadedAt <= 0 ? null : uploadedAt,
@@ -179,6 +199,88 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       );
     }
     return chapters;
+  }
+
+  /// 没下载的章第 [index] 页：经本机运行时现取，落成临时文件交给
+  /// `serveFileWithRange`（与已下载页同一条响应路径，Range / Content-Type 不分叉）。
+  ///
+  /// 临时文件按 (bookKey, 章, 页) 定名、同页复用：对端翻回来不重复打源站。文件在
+  /// 系统临时目录下，由系统回收，不进书目录（那是「已下载」的判据，混进去会让半章
+  /// 冒充下载完成）。
+  Future<File> _onlineChapterPageFile(
+    EpubBookRow row,
+    String chapterDigest,
+    int index,
+  ) async {
+    final _OnlineChapterSource source = _requireOnlineChapter(
+      row,
+      chapterDigest,
+    );
+    if (index < 0) {
+      throw StateError('manga page out of range: ${row.bookKey}#$index');
+    }
+    final Directory dir = Directory(
+      p.join(
+        Directory.systemTemp.path,
+        'fushi_interconnect_manga',
+        mangaChapterDigest(row.bookKey),
+        chapterDigest,
+      ),
+    );
+    if (dir.existsSync()) {
+      for (final FileSystemEntity entity in dir.listSync()) {
+        if (entity is File &&
+            p.basenameWithoutExtension(entity.path) == '$index' &&
+            p.extension(entity.path) != '.part' &&
+            entity.lengthSync() > 0) {
+          return entity;
+        }
+      }
+    }
+    final Uint8List bytes;
+    try {
+      bytes = await source.reader.chapterPage(
+        bookKey: row.bookKey,
+        sourceMetadata: source.sourceMetadata,
+        chapter: source.chapter,
+        index: index,
+      );
+    } on RangeError {
+      throw StateError('manga page out of range: ${row.bookKey}#$index');
+    }
+    if (bytes.isEmpty) {
+      throw StateError('online manga page is empty: ${row.bookKey}#$index');
+    }
+    await dir.create(recursive: true);
+    final File file = File(
+      p.join(dir.path, '$index${onlineMangaPageExtension(bytes)}'),
+    );
+    final File staging = File('${file.path}.part');
+    await staging.writeAsBytes(bytes, flush: true);
+    return staging.rename(file.path);
+  }
+
+  /// [chapterDigest] 对应的、可由本机运行时现取的章；取不了一律 [StateError] → 404。
+  _OnlineChapterSource _requireOnlineChapter(
+    EpubBookRow row,
+    String chapterDigest,
+  ) {
+    final OnlineMangaHostReader? reader = _onlineMangaReader;
+    final String? metadata = row.sourceMetadata;
+    if (reader == null ||
+        metadata == null ||
+        !_servesOnlineMangaChapters(reader, row)) {
+      throw StateError(
+        'manga chapter not downloaded: ${row.bookKey}/$chapterDigest',
+      );
+    }
+    for (final Map<String, Object?> json in _mangaChapterItems(row)) {
+      final String key = json['key']?.toString() ?? '';
+      if (key.isNotEmpty && mangaChapterDigest(key) == chapterDigest) {
+        return (reader: reader, sourceMetadata: metadata, chapter: json);
+      }
+    }
+    throw StateError('manga chapter not found: ${row.bookKey}/$chapterDigest');
   }
 
   /// digest 是路径段：判形即穿越守卫（24 位小写十六进制之外一律 [ArgumentError] → 403）。
@@ -221,4 +323,37 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       File(p.join(row.extractDir, fileName)).readAsStringSync(),
     );
   }
+}
+
+typedef _OnlineChapterSource = ({
+  OnlineMangaHostReader reader,
+  String sourceMetadata,
+  Map<String, Object?> chapter,
+});
+
+/// 该在线漫画行能否由本机运行时按需取页：有装配、描述符被运行时认领、章表非空。
+/// 清单（`hasMangaChapters`）与各章端点共用这一条，「清单说有、翻页说没有」不会分裂。
+bool _servesOnlineMangaChapters(
+  OnlineMangaHostReader? reader,
+  EpubBookRow row,
+) {
+  final String? metadata = row.sourceMetadata;
+  if (reader == null || metadata == null || metadata.isEmpty) return false;
+  if (BookFormat.parseOrEpub(row.format) != BookFormat.manga) return false;
+  return reader.canServe(metadata) && _mangaChapterItems(row).isNotEmpty;
+}
+
+/// `EpubBooks.chaptersJson` 里的各章（坏 JSON / 非数组一律视为无章）。
+List<Map<String, Object?>> _mangaChapterItems(EpubBookRow row) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(row.chaptersJson);
+  } on Object {
+    return const <Map<String, Object?>>[];
+  }
+  if (decoded is! List<Object?>) return const <Map<String, Object?>>[];
+  return <Map<String, Object?>>[
+    for (final Object? item in decoded)
+      if (item is Map<Object?, Object?>) item.cast<String, Object?>(),
+  ];
 }
