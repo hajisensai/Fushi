@@ -6,11 +6,15 @@
 /// 白名单逐一对应、同一本书再次外部打开复用已在库那一本（不在书架上多出 `X (2)`）。
 library;
 
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:archive/archive.dart';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/import/external_book.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_entries.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_library_import.dart';
@@ -200,4 +204,99 @@ void main() {
       expect(await existingBookKeyForTitle(db, '存在しない'), isNull);
     });
   });
+
+  group('显式 --kind book 的图片型 EPUB 按书导入', () {
+    late FushiDatabase db;
+    late Directory tmp;
+
+    setUp(() {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      tmp = Directory.systemTemp.createTempSync('fushi_ctl_force_book_');
+      EpubStorage.debugBaseDirectoryOverride = p.join(tmp.path, 'app');
+    });
+
+    tearDown(() async {
+      await db.close();
+      EpubStorage.debugBaseDirectoryOverride = null;
+      tmp.deleteSync(recursive: true);
+    });
+
+    test('漫画判据命中也落成一本书，不被静默改成漫画', () async {
+      final File epub = File(p.join(tmp.path, 'picture_book.epub'))
+        ..writeAsBytesSync(_imageOnlyEpubBytes());
+      expect(
+        MangaModule.isImageArchive(epub.path),
+        isTrue,
+        reason: '前提：这份 EPUB 确实会被判成漫画，否则本用例是空壳',
+      );
+
+      final LibraryCtlImportResult result = (await LibraryCtlImporter(
+        db: db,
+        galgameRepo: GalgameRepository(db),
+        isKindEnabled: (LibraryCtlKind _) => true,
+        keepDuplicates: false,
+      ).importAll(<String>[epub.path], kind: LibraryCtlKind.book)).single;
+
+      expect(
+        result.status,
+        LibraryCtlImportStatus.imported,
+        reason: result.message,
+      );
+      expect(result.kind, LibraryCtlKind.book);
+      expect((await db.getEpubBookMetas()).length, 1);
+    });
+  });
+}
+
+/// 一份只有插图、没有正文的合法 EPUB（漫画判据会命中它）。
+List<int> _imageOnlyEpubBytes() {
+  final Archive archive = Archive();
+  void addText(String name, String content) {
+    final List<int> bytes = utf8.encode(content);
+    archive.addFile(ArchiveFile(name, bytes.length, bytes));
+  }
+
+  addText('mimetype', 'application/epub+zip');
+  addText('META-INF/container.xml', '''
+<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0"
+    xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf"
+        media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+''');
+  addText('OEBPS/content.opf', '''
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0"
+    unique-identifier="book-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="book-id">ctl-force-book</dc:identifier>
+    <dc:title>Picture Book</dc:title>
+    <dc:language>ja</dc:language>
+  </metadata>
+  <manifest>
+    <item id="chapter" href="chapter.xhtml"
+        media-type="application/xhtml+xml"/>
+    <item id="page" href="page.png" media-type="image/png"/>
+  </manifest>
+  <spine>
+    <itemref idref="chapter"/>
+  </spine>
+</package>
+''');
+  addText('OEBPS/chapter.xhtml', '''
+<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>Chapter</title></head>
+  <body><img src="page.png" alt=""/></body>
+</html>
+''');
+  final List<int> png = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+    '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  );
+  archive.addFile(ArchiveFile('OEBPS/page.png', png.length, png));
+  return ZipEncoder().encode(archive)!;
 }

@@ -4116,6 +4116,7 @@
   "manga_import_batch_done": "導入完成：成功 $imported 卷，跳過 $skipped 卷，失敗 $failed 卷。",
   "manga_import_batch_hint": "該資料夾裡有 $n 個整卷檔案，將逐卷各導入為一本，書名取各自的檔案名。",
   "manga_import_detected_confirm": "按漫畫導入",
+  "manga_import_detected_import_as_book": "仍按書籍導入",
   "manga_import_detected_message": "「$name」是漫畫檔案，將走漫畫導入流程，而不是書籍導入流程。",
   "manga_import_detected_title": "這看起來是漫畫",
   "manga_import_direct": "直接導入",

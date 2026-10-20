@@ -4116,6 +4116,7 @@
   "manga_import_batch_done": "$imported importiert, $skipped übersprungen, $failed fehlgeschlagen.",
   "manga_import_batch_hint": "Dieser Ordner enthält $n Banddateien; jede wird als eigenes Buch importiert, benannt nach der Datei.",
   "manga_import_detected_confirm": "Als Manga importieren",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "„$name\" ist eine Manga-Datei und wird daher über den Manga-Importer statt den Buch-Importer importiert.",
   "manga_import_detected_title": "Dies sieht nach Manga aus",
   "manga_import_direct": "Ohne OCR importieren",

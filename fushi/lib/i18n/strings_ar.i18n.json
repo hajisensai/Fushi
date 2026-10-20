@@ -4116,6 +4116,7 @@
   "manga_import_batch_done": "تم استيراد $imported، تخطّي $skipped، فشل $failed.",
   "manga_import_batch_hint": "يحتوي هذا المجلد على $n ملف مجلّد؛ يتم استيراد كل منها ككتاب مستقل باسم ملفه.",
   "manga_import_detected_confirm": "استيراد كمانغا",
+  "manga_import_detected_import_as_book": "Import as book anyway",
   "manga_import_detected_message": "\"$name\" هو ملف مانغا، لذا سيمر عبر مستورد المانغا بدلاً من مستورد الكتب.",
   "manga_import_detected_title": "يبدو أن هذا مانغا",
   "manga_import_direct": "استيراد بدون OCR",
