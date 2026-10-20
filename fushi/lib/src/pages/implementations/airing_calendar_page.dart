@@ -112,8 +112,14 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         for (final MediaCollectionRow c in collections)
           if (c.anilistId != null) c.anilistId!,
       };
+      // 订阅有两套存储：旧版番剧订阅 + 发现页订阅表（从本页点进详情页订阅
+      // 写的是后者）。只认前者 = 刚订阅的番在「相关」视图里照样不出现。
+      final List<VideoDownloadSubscriptionRow> discoverySubscriptions =
+          await _appModel.database.getVideoDownloadSubscriptions();
       final Set<int> subscribedIds = <int>{
         for (final AnimeDownloadSubscription s in subscriptions) s.anilistId,
+        for (final VideoDownloadSubscriptionRow row in discoverySubscriptions)
+          ?anilistIdOfVideoDownloadSubscription(row),
       };
       final List<int> boundIds = <int>{...libraryIds, ...subscribedIds}.toList()
         ..sort();
@@ -405,10 +411,22 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       );
     }
     if (_episodes.isEmpty) {
+      // 「相关」视图本周没条目时给一条直达全量的出口：库里绑定的多是完结旧番，
+      // 只给一句「没有」用户会以为页面坏了。
       return _buildCenteredNote(
         theme,
         icon: FushiIcons.schedule,
         message: t.download_airing_calendar_week_empty,
+        action: _showAll
+            ? null
+            : FushiFilledButton.tonalIcon(
+                icon: const FushiIcon(FushiIcons.calendar),
+                label: Text(t.download_airing_calendar_show_all),
+                onPressed: () {
+                  setState(() => _showAll = true);
+                  unawaited(_load());
+                },
+              ),
       );
     }
     final List<List<AniListAiringEpisode>> buckets =
@@ -504,12 +522,17 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     ThemeData theme, {
     required IconData icon,
     required String message,
+    Widget? action,
   }) {
     // 空状态走共享 [FushiPlaceholderMessage]（M3E 色块图标 / Apple
     // ContentUnavailableView），不再手写图标 + 文字列。
     return SafeArea(
       bottom: false,
-      child: FushiPlaceholderMessage(icon: icon, message: message),
+      child: FushiPlaceholderMessage(
+        icon: icon,
+        message: message,
+        action: action,
+      ),
     );
   }
 
@@ -746,7 +769,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
                 children: <Widget>[
                   // 番名普遍很长，放宽到两行——单行省略在七列窄栏里只看得到开头。
                   Text(
-                    episode.media.displayTitle,
+                    episode.media.nativeFirstTitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: compact
