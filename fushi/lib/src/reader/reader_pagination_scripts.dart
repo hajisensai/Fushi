@@ -1877,6 +1877,7 @@ window.__fushiInstallShell = function(C) {
         }
       });
       cueRanges.track(this.cueRangesMap);
+      this._cueLookupIndex = null; // 反查索引作废（见 cueLookupIndex）
       // 让可绘制包裹（BUG-3323，整节点搬进行内元素、不切开）后的文本索引重建。
       this.buildNodeOffsets();
       return;
@@ -1907,6 +1908,7 @@ window.__fushiInstallShell = function(C) {
         if (rubyElements.length) self.cueRubyElements.set(id, rubyElements);
       }
     });
+    this._cueLookupIndex = null; // 反查索引作废（见 cueLookupIndex）
     this.buildNodeOffsets();
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
@@ -1967,7 +1969,149 @@ window.__fushiInstallShell = function(C) {
   },
   // Resolve the actual rendered cue, shared by pointer seek and lookup payloads.
   // Study-unit offsets are not subtitle-normalized character offsets.
+  //
+  // 查词卡顿（P2）：每次查词（buildSelectionPayload）都会调这里。旧实现对三张表逐 cue 线性
+  // 判包含（comparePoint / contains），整章几千句时就是几千次 DOM 调用。现在走懒建的反查
+  // 索引（cueLookupIndex）：wrapper / ruby 两支沿命中点的祖先链查表（O(树深)），Range 支对
+  // 按起点排好序、两两不重叠的 Range 二分（不满足不重叠就退回线性）。返回值与旧线性扫描逐位
+  // 相同——同一 cue 的多个候选里仍按 Map 插入序取第一个（见 cueIdAtDomPointLinear，保留作
+  // 参照实现与回退）。
   cueIdAtDomPoint: function(node, off) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    var sidEl = el && el.closest ? el.closest('[data-cue-id]') : null;
+    if (sidEl) return JSON.stringify({ type: 'sid', id: sidEl.getAttribute('data-cue-id') });
+    var index = this.cueLookupIndex();
+    var found = null;
+    if (this.cueRangesMap.size) {
+      found = index.ranges ? this.cueIdInSortedRanges(index.ranges, node, off) : undefined;
+      if (found === undefined) return this.cueIdAtDomPointLinear(node, off);
+      if (found) return JSON.stringify({ type: 'frag', id: found });
+    }
+    if (this.cueRubyElements.size) {
+      found = this.cueOwnerOnAncestors(index.rubyOwner, node);
+      if (found) return JSON.stringify({ type: 'frag', id: found.id });
+    }
+    if (this.cueWrappers.size) {
+      var best = this.cueOwnerOnAncestors(index.wrapperOwner, node);
+      // BUG-2806：点在注音上时按「同一颗 ruby」归属（与线性版同一判据）。
+      var pointRuby = this.rubyForNode(node);
+      var viaRuby = pointRuby ? index.wrapperRubyOwner.get(pointRuby) : null;
+      if (viaRuby && (!best || viaRuby.order < best.order)) best = viaRuby;
+      if (best) return JSON.stringify({ type: 'frag', id: best.id });
+    }
+    return null;
+  },
+  // 反查索引：三张 cue 表在 applySentenceAudioCues / resetSentenceAudioCues 时整体重建（两处都
+  // 直接把 _cueLookupIndex 置空作废本索引）；另按三表 size 自检，防直接改表（测试与旧调用方会 reset 后手工 set）。
+  cueLookupIndex: function() {
+    var idx = this._cueLookupIndex;
+    if (idx && idx.rangesSize === this.cueRangesMap.size &&
+        idx.rubySize === this.cueRubyElements.size &&
+        idx.wrappersSize === this.cueWrappers.size) {
+      return idx;
+    }
+    var self = this;
+    idx = {
+      rangesSize: this.cueRangesMap.size,
+      rubySize: this.cueRubyElements.size,
+      wrappersSize: this.cueWrappers.size,
+      ranges: null,
+      rubyOwner: new Map(),
+      wrapperOwner: new Map(),
+      wrapperRubyOwner: new Map()
+    };
+    var order = 0;
+    // 每个元素只记 Map 插入序里第一个拥有它的 cue（= 线性 forEach 先命中的那个）。
+    var own = function(map, key, id, rank) {
+      if (key && !map.has(key)) map.set(key, { id: id, order: rank });
+    };
+    this.cueRubyElements.forEach(function(rubyElements, id) {
+      var rank = order++;
+      for (var i = 0; i < rubyElements.length; i++) own(idx.rubyOwner, rubyElements[i], id, rank);
+    });
+    order = 0;
+    this.cueWrappers.forEach(function(wrappers, id) {
+      var rank = order++;
+      for (var i = 0; i < wrappers.length; i++) {
+        own(idx.wrapperOwner, wrappers[i], id, rank);
+        own(idx.wrapperRubyOwner, self.rubyForNode(wrappers[i]), id, rank);
+      }
+    });
+    idx.ranges = this.sortedDisjointCueRanges();
+    this._cueLookupIndex = idx;
+    return idx;
+  },
+  // 边界点 (na, oa) 相对 (nb, ob)：-1 在前 / 0 相同 / 1 在后（DOM 边界点序）。
+  compareBoundaryPoint: function(na, oa, nb, ob) {
+    var probe = document.createRange();
+    probe.setStart(nb, ob);
+    return probe.comparePoint(na, oa);
+  },
+  // 全部 cue Range 按起点排序；只有两两不重叠（前一个的终点 <= 后一个的起点）时返回数组，
+  // 否则返回 null（让查询退回线性，保住「插入序第一个」的语义）。Live Range 随 DOM 改动
+  // 单调移动，排好的序与不重叠性在改动后仍成立。
+  sortedDisjointCueRanges: function() {
+    if (!this.cueRangesMap.size) return null;
+    var all = [];
+    this.cueRangesMap.forEach(function(ranges, id) {
+      for (var i = 0; i < ranges.length; i++) all.push({ range: ranges[i], id: id });
+    });
+    var self = this;
+    try {
+      all.sort(function(a, b) {
+        return self.compareBoundaryPoint(a.range.startContainer, a.range.startOffset,
+          b.range.startContainer, b.range.startOffset);
+      });
+      for (var k = 1; k < all.length; k++) {
+        var prev = all[k - 1].range, cur = all[k].range;
+        if (this.compareBoundaryPoint(prev.endContainer, prev.endOffset,
+            cur.startContainer, cur.startOffset) > 0) {
+          return null;
+        }
+      }
+    } catch (e) {
+      return null;
+    }
+    return all;
+  },
+  // 在排好序、不重叠的 Range 里找包含 (node, off) 的那个（start <= p < end，与线性版的
+  // 「comparePoint == 0 且不是终点」同一判据）。返回 cue id / null；量不了（跨文档等）返回
+  // undefined，调用方退回线性。不重叠保证至多一个 Range 满足，且必是起点 <= p 的最后一个。
+  cueIdInSortedRanges: function(sorted, node, off) {
+    try {
+      var lo = 0, hi = sorted.length - 1, hit = -1;
+      while (lo <= hi) {
+        var mid = (lo + hi) >> 1;
+        var r = sorted[mid].range;
+        if (this.compareBoundaryPoint(r.startContainer, r.startOffset, node, off) <= 0) {
+          hit = mid; lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      if (hit < 0) return null;
+      var range = sorted[hit].range;
+      if (range.comparePoint(node, off) === 0 &&
+          !(range.endContainer === node && range.endOffset === off)) {
+        return sorted[hit].id;
+      }
+      return null;
+    } catch (e) {
+      return undefined;
+    }
+  },
+  // 沿 node 的祖先链（含自身）找 owner 表里的元素，返回插入序最靠前的 {id, order}。
+  // 等价于线性版的 element.contains(node)：contains 为真 ⇔ 元素是 node 自身或其祖先。
+  cueOwnerOnAncestors: function(owners, node) {
+    var best = null;
+    for (var n = node; n; n = n.parentNode) {
+      var owner = owners.get(n);
+      if (owner && (!best || owner.order < best.order)) best = owner;
+    }
+    return best;
+  },
+  // 旧的线性反查原样保留：Range 支不满足二分前提时的回退，也是一致性测试的参照实现。
+  cueIdAtDomPointLinear: function(node, off) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     var sidEl = el && el.closest ? el.closest('[data-cue-id]') : null;
     if (sidEl) return JSON.stringify({ type: 'sid', id: sidEl.getAttribute('data-cue-id') });
@@ -2040,6 +2184,7 @@ window.__fushiInstallShell = function(C) {
     });
     this.cueWrappers.clear();
     this.activeCueId = null;
+    this._cueLookupIndex = null; // 反查索引作废（见 cueLookupIndex）
   },
   // BUG-3343：拆包裹与合并文本节点都经 __fushiLiveRanges（定义在选区脚本），查词选区的
   // 「节点 + 偏移」与 live Range 换算到合并后的节点，不随被并掉的节点一起失效。

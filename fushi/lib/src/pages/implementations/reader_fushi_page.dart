@@ -110,6 +110,7 @@ import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
+import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart'
     show AudiobookSleepTimer;
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
@@ -4886,6 +4887,10 @@ $liveConfigJs
 
   List<AudioCue>? _cachedAllCues;
   bool _cachedSentenceAudio = false;
+
+  /// 查词时「音频坐标 → cue」反查的预解码索引（[_findCueForOffset]）；按播放器 cue 列表
+  /// 身份 + 章号自检失效，换书 / 换章 / 重设 cue 后首次查词重建。
+  AudioCueOffsetIndex? _cueOffsetIndex;
 
   // ── Spread (two-page) support ──────────────────────────────────────
 

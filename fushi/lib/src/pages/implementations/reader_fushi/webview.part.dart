@@ -1718,6 +1718,41 @@ $kContinuousWheelScrollJs
     _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
+  // 查词卡顿（P0-2）：悬停查词原先三跳——mousemove → onShiftHover 进 Dart → Dart
+  // evaluateJavascript(selectText) 回 JS → 选中后 onTextSelected 再进 Dart。宿主那一跳
+  // 没有任何门控（onShiftHover 回调只是原样转发 selectText(x, y, 400, true)），所以与
+  // 点按快路（BUG-712）一样在 JS 里直接选词，只留 onTextSelected 一跳。
+  //
+  // 背压：一帧最多选一次（rAF 合并）；onTextSelected 发出后、宿主处理完（callHandler 的
+  // Promise 兑现）之前不再发新查词，只记最后一个指针位置；回执到达后若还挂着位置就补发
+  // 那一个。同一个词内的移动由 selectText 自己的 fromHover 同词短路吃掉，不占回执。
+  var _fushiHoverLookupX = 0, _fushiHoverLookupY = 0;
+  var _fushiHoverLookupPending = false;
+  var _fushiHoverLookupFrame = false;
+  var _fushiHoverLookupInFlight = false;
+  function _fushiHoverLookupSchedule() {
+    if (_fushiHoverLookupFrame || _fushiHoverLookupInFlight || !_fushiHoverLookupPending) return;
+    _fushiHoverLookupFrame = true;
+    requestAnimationFrame(_fushiHoverLookupFlush);
+  }
+  function _fushiHoverLookupRelease() {
+    _fushiHoverLookupInFlight = false;
+    _fushiHoverLookupSchedule();
+  }
+  function _fushiHoverLookupFlush() {
+    _fushiHoverLookupFrame = false;
+    if (_fushiHoverLookupInFlight || !_fushiHoverLookupPending) return;
+    _fushiHoverLookupPending = false;
+    var sel = window.fushiSelection;
+    var gate = window.__fushiTapGate;
+    var seq = sel.textSelectedSeq || 0;
+    sel.selectText(_fushiHoverLookupX, _fushiHoverLookupY, (gate && gate.maxLen) || 400, true);
+    if ((sel.textSelectedSeq || 0) === seq) return;
+    var ack = sel.lastTextSelectedAck;
+    if (!ack || typeof ack.then !== 'function') return;
+    _fushiHoverLookupInFlight = true;
+    ack.then(_fushiHoverLookupRelease, _fushiHoverLookupRelease);
+  }
   document.addEventListener('mousemove', function(e) {
     // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
     if (window.__fushiHostHoverLookup) return;
@@ -1727,6 +1762,13 @@ $kContinuousWheelScrollJs
     var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
     if (dx * dx + dy * dy < 64) return;
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
+    if (window.fushiSelection && typeof window.fushiSelection.selectText === 'function') {
+      _fushiHoverLookupX = e.clientX; _fushiHoverLookupY = e.clientY;
+      _fushiHoverLookupPending = true;
+      _fushiHoverLookupSchedule();
+      return;
+    }
+    // 选区脚本未就绪：退回宿主转发链，行为与旧实现一致。
     window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
   }, {passive: true});
   // TODO-1078：桌面 Windows 阅读器裸 Space 被 WebView2 吞成 Chromium 默认
