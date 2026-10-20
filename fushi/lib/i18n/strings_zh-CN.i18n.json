@@ -2518,6 +2518,7 @@
   "floating_ball_ocr_empty": "没有识别到文字",
   "floating_ball_ocr_failed": "截屏识字失败",
   "floating_ball_ocr_language_missing": "系统没有安装日语文字识别：到「设置 → 时间和语言 → 语言和区域」添加日语（含光学字符识别）",
+  "floating_ball_ocr_launch_blocked": "Fushi 没能弹出截屏确认框。请在系统设置里允许 Fushi「后台弹出界面」后再试。",
   "floating_ball_ocr_model_unavailable": "系统 OCR 模型尚未就绪",
   "floating_ball_ocr_notification": "正在截屏识字",
   "floating_ball_ocr_pick_hint": "点文字查词",
