@@ -1699,7 +1699,7 @@ window.__fushiInstallShell = function(C) {
     var text = targetNode.textContent;
     // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：句读 / 括号（「。」）、
     // 西文分词空格、`<p>\n本文` 的前导折叠空白都落在这里，且软换行处它们可能带着一个落在
-    // **前页末行**的非零 rect。unitStartOffset 直接给出目标单元首码点（BUG-3648），再交给
+    // **前页末行**的非零 rect。unitStartOffset 直接给出目标单元首码点（BUG-3651），再交给
     // characterAnchorRect 跳零尺寸盒（scrollToCharOffset 同款）。
     var textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     if (textOffset >= text.length) return false;
@@ -3460,7 +3460,7 @@ $kReaderPageTurnJs
     }
     if (!targetNode) return;
     var text = targetNode.textContent;
-    // BUG-3648：落到目标单元的首码点，不是「前一单元结束后的下一码元」——后者可能是句读 /
+    // BUG-3651：落到目标单元的首码点，不是「前一单元结束后的下一码元」——后者可能是句读 /
     // 空白分隔符；页首字紧跟在前一页末行的「。」之后时，量到的是那个「。」的字形，整页
     // 退回前一页（与 charOffsetOnCurrentPage / collapsedRangeAtCharOffset 同一个逆映射）。
     var textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
@@ -4199,7 +4199,7 @@ $kSentenceAudioRubyGapJs
   // 该偏移落在正文之外（解析失败）。
   // [afterPreviousUnit]（句尾锚用）：句尾偏移是**开区间**终点（句首 + 句长），塌缩到第
   // charOffset 个单元结束之后（即句子最后一个单元之后、句末「。」之前），而不是下一句的
-  // 首字——后者可能已换到下一行。省略时（句首锚）塌缩到目标单元首码点（BUG-3648）。
+  // 首字——后者可能已换到下一行。省略时（句首锚）塌缩到目标单元首码点（BUG-3651）。
   collapsedRangeAtCharOffset: function(charOffset, afterPreviousUnit) {
     if (charOffset < 0) return null;
     var walker = this.createWalker();
@@ -4225,7 +4225,7 @@ $kSentenceAudioRubyGapJs
         textOffset = i + 1;
       }
     } else {
-      // BUG-3648：塌缩到目标单元的首码点，不停在它前面的句读 / 空白分隔符上。
+      // BUG-3651：塌缩到目标单元的首码点，不停在它前面的句读 / 空白分隔符上。
       textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     }
     var range = document.createRange();

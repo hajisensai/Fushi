@@ -9,7 +9,7 @@
 //                     入口自相矛盾——调用点用的是 isUnitEnd，总数用的是 count）
 //   inverseFails    = unitStartOffset（isUnitEnd 前缀计数的逆，落页 / 页上校验用）违例：
 //                     第 k 个单位的首码点前必须恰有 k 个单位结束、该码点是字母数字、
-//                     不在词中间；k == count 时落到文本末尾（BUG-3648）
+//                     不在词中间；k == count 时落到文本末尾（BUG-3651）
 const fs = require('node:fs');
 const vm = require('node:vm');
 

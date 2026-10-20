@@ -1,4 +1,4 @@
-## BUG-3645 · 翻页模式页首字在禁则换行处时重开退一页（分页 scrollToCharOffset 用塌缩光标锚）
+## BUG-3650 · 翻页模式页首字在禁则换行处时重开退一页（分页 scrollToCharOffset 用塌缩光标锚）
 - **报告**：2026-10-20（实现折叠屏竖排对开时，真 Chrome 探针 `tool/reader_pitch_headless/vertical_spread_probe.mjs` 的「存→取不动点」断言发现；回到 develop 原有的竖排单条几何同样复现）
 - **真实性**：✅ 真 bug，真 Chrome 跑生产分页 shell 复现。
   - 现象：取当前页页首字 f，再 `restoreToCharOffset(f)`（= 退出重进的精确恢复），落到**前一页**。竖排单条实测 f=1448 从第 3 页（2298）落到第 2 页（1532）；1258×646 视口下 f=1057 / 2128 / 3199 / 4270 每隔一页退一页。每次重开都按新的页首字落库，所以会一页一页往回退。

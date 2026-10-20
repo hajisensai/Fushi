@@ -1,4 +1,4 @@
-## BUG-3648 · 页首字紧跟上一页末行的「。」时，存→取退回前一页（学习单位逆映射停在分隔符上）
+## BUG-3651 · 页首字紧跟上一页末行的「。」时，存→取退回前一页（学习单位逆映射停在分隔符上）
 - **报告**：2026-10-21（PR #2415 CI run 39401882521 `unit-tests (3/4)`：`paginated_page_first_fixed_point_test.dart:57` 的「vertical spread 20px」组每页 `first char N not on page` 且 `restores to <前一页>`；本机 Windows 绿）
 - **真实性**：✅ 真 bug，生产代码，与平台 / 字体无关，只取决于页边界落在哪。
   - CI 与本机的差别只是视口：Linux 无头 Chrome 视口宽 1280（`pageSize 1272`），Windows 是 1258×646（`pageSize 1250`）。本机用 `Emulation.setDeviceMetricsOverride` 设 1280×556..572，默认字体 / MS Gothic / Yu Mincho 三种字体都**逐字**复现 CI 原文（`page 1: first char 551 ... restores to 0 not 1272` 直到 page 9 的 5087）。

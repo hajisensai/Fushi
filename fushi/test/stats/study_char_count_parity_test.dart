@@ -112,7 +112,7 @@ void main() {
       final List<dynamic> counts = out['counts'] as List<dynamic>;
       final List<dynamic> prefixTotals = out['prefixTotals'] as List<dynamic>;
       expect(counts.length, corpus.length);
-      // BUG-3648：unitStartOffset（单位索引 → 码元下标的逆映射，分页落页 / 页上校验 /
+      // BUG-3651：unitStartOffset（单位索引 → 码元下标的逆映射，分页落页 / 页上校验 /
       // 连续句首锚共用）必须落在目标单位首码点上，不停在它前面的句读 / 空白上。
       expect(
         out['inverseFails'] as List<dynamic>,

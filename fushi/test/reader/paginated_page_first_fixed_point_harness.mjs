@@ -61,7 +61,7 @@ const check = (expectAxis) => `(async () => {
   if (ctx0.axis !== ${JSON.stringify(expectAxis)}) fails.push('axis ' + ctx0.axis);
   // Pages whose first unit directly follows a 「。」 in the same text node: the
   // inverse unit -> text-offset lookup used to stop on that 「。」, which is drawn
-  // on the previous page (BUG-3648).
+  // on the previous page (BUG-3651).
   const followsStop = (f) => {
     const w = r.createWalker();
     let run = 0, n;
@@ -119,7 +119,7 @@ const CASES = [
   // two more font sizes keep the spread geometry inside the mutation net.
   ['vertical spread 20px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20 }, 'xr'],
   ['vertical spread 26px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 26 }, 'xr'],
-  // BUG-3648: pinned viewport (Linux CI's headless window measured 1280 wide; the
+  // BUG-3651: pinned viewport (Linux CI's headless window measured 1280 wide; the
   // Windows one 1258x646 never hit it). At 1280x560 every spread holds exactly
   // nine paragraphs, so every page starts right after the previous paragraph's
   // closing 「。」; the old lookup stopped on that 「。」 and every reopen fell one
@@ -145,7 +145,7 @@ try {
     }
     const res = await driver.evalOnPage(page(opts), check(axis));
     if (extra.requireAfterStop && res.afterStop === 0) {
-      res.fails.push('no page starts right after 「。」; the case no longer exercises BUG-3648');
+      res.fails.push('no page starts right after 「。」; the case no longer exercises BUG-3651');
     }
     if (res.fails.length) {
       failed++;
