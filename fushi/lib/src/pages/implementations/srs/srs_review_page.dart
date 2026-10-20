@@ -873,14 +873,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     unawaited(_editNote(detail));
   }
 
+  /// 顶栏常驻的只有复习中高频的几项（撤销 / 待决 / 重播 / 编辑）；其余卡片操作与设置进
+  /// [_menuItems] 的 ⋯。撤销在没有可撤销的评分时不占位（Ctrl+Z 照常）。
   List<FushiToolbarItem> _actionItems() => <FushiToolbarItem>[
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_review_undo'),
-      icon: FushiIcons.undo,
-      label: t.undo,
-      tooltip: '${t.undo} (Ctrl+Z)',
-      onPressed: _undo.isEmpty || _busy ? null : _undoLast,
-    ),
+    if (_undo.isNotEmpty)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_undo'),
+        icon: FushiIcons.undo,
+        label: t.undo,
+        tooltip: '${t.undo} (Ctrl+Z)',
+        onPressed: _busy ? null : _undoLast,
+      ),
     if (_pendingDecision)
       FushiToolbarItem(
         key: const ValueKey<String>('srs_review_pending'),
@@ -903,13 +906,6 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         icon: FushiIcons.edit,
         label: t.srs_note_edit,
         onPressed: () => unawaited(_onCardAction(_CardAction.edit)),
-      ),
-    if (_detail != null)
-      FushiToolbarItem(
-        key: const ValueKey<String>('srs_review_browse'),
-        icon: FushiIcons.search,
-        label: t.srs_browse_title,
-        onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
       ),
   ];
 
@@ -971,6 +967,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   List<FushiToolbarItem> _menuItems() => _detail == null
       ? const <FushiToolbarItem>[]
       : <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('srs_review_browse'),
+            icon: FushiIcons.search,
+            label: t.srs_browse_title,
+            onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
+          ),
           FushiToolbarItem(
             icon: FushiIcons.pause,
             label: t.srs_card_suspend,
@@ -1133,16 +1135,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[_actionItems()],
-        overflow: _menuItems(),
+        // 卡片级操作与设置恒在 ⋯ 里（Anki「更多」菜单同款）：用 overflow 的话宽窗会把
+        // 十几项全平铺成图标，复习时顶栏一整排按钮。
+        menu: _menuItems(),
       ),
     );
   }
 
+  /// Apple：常驻项平铺成图标，其余与 MD3 的 [FushiFloatingTopBar.menu] 一样恒在 ⋯ 里
+  /// （以前十几项全平铺，挤满导航栏）。
   List<Widget> _buildAppleActions() => <Widget>[
-    for (final FushiToolbarItem item in <FushiToolbarItem>[
-      ..._actionItems(),
-      ..._menuItems(),
-    ])
+    for (final FushiToolbarItem item in _actionItems())
       FushiIconButton(
         key: item.key,
         icon: item.icon,
@@ -1151,6 +1154,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         selected: item.selected,
         onTap: item.onPressed,
       ),
+    FushiToolbarOverflowButton(
+      items: _menuItems(),
+      foreground: Theme.of(context).colorScheme.primary,
+    ),
   ];
 
   @override

@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +31,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_p
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
@@ -49,7 +51,44 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 
 /// 行内菜单动作。
-enum _DeckAction { browse, addChild, rename, settings, delete }
+enum _DeckAction {
+  browse,
+  addChild,
+  rename,
+  move,
+  moveUp,
+  moveDown,
+  settings,
+  delete,
+}
+
+enum _ImportSource { anki, file, minedHistory }
+
+/// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
+List<SrsDeckSummary> _siblingsOf(
+  List<SrsDeckSummary> decks,
+  SrsDeckSummary deck,
+) => <SrsDeckSummary>[
+  for (final SrsDeckSummary d in decks)
+    if (d.parentId == deck.parentId) d,
+];
+
+/// [rootId] 及其全部子孙牌组的 id（「移动到…」排除目标、拖放判据共用）。
+@visibleForTesting
+Set<String> srsDeckSubtreeIds(List<SrsDeckSummary> decks, String rootId) {
+  final Map<String?, List<String>> children = <String?, List<String>>{};
+  for (final SrsDeckSummary d in decks) {
+    (children[d.parentId] ??= <String>[]).add(d.deck.id);
+  }
+  final Set<String> out = <String>{rootId};
+  final List<String> stack = <String>[rootId];
+  while (stack.isNotEmpty) {
+    for (final String c in children[stack.removeLast()] ?? const <String>[]) {
+      if (out.add(c)) stack.add(c);
+    }
+  }
+  return out;
+}
 
 class SrsDeckListPage extends ConsumerStatefulWidget {
   const SrsDeckListPage({super.key});
@@ -193,6 +232,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         );
       case _DeckAction.rename:
         srsRunLogged('SrsDeckList.rename', () => _rename(deck));
+      case _DeckAction.move:
+        srsRunLogged('SrsDeckList.move', () => _pickMoveTarget(deck));
+      case _DeckAction.moveUp:
+        srsRunLogged('SrsDeckList.moveUp', () => _shift(deck, -1));
+      case _DeckAction.moveDown:
+        srsRunLogged('SrsDeckList.moveDown', () => _shift(deck, 1));
       case _DeckAction.settings:
         srsRunLogged(
           'SrsDeckList.settings',
@@ -203,17 +248,130 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     }
   }
 
-  /// 复习的「今天」从几点开始：与统计页共用日界（stats_day_reset_hour）。
-  Future<void> _showDayBoundary() async {
-    final int hour = ref.read(appProvider).statDayResetHour;
-    await showFushiConfirmDialog(
+  /// 「导入」：三种来源一个入口（以前「导入」「从 Anki 迁移」「从制卡历史导入」分散在
+  /// 顶栏与 ⋯ 里，看不出区别）。
+  Future<void> _openImport() async {
+    final _ImportSource? source = await showFushiChoiceDialog<_ImportSource>(
       context: context,
-      title: t.srs_day_boundary_title,
-      message: t.srs_day_boundary_body(hour: hour),
-      icon: FushiIcons.schedule,
-      confirmLabel: t.dialog_ok,
-      cancelLabel: t.cancel,
+      title: t.srs_import,
+      icon: FushiIcons.importFile,
+      options: <FushiChoiceOption<_ImportSource>>[
+        FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.anki,
+          label: t.srs_anki_migrate,
+          subtitle: t.srs_anki_migrate_hint,
+          icon: FushiIcons.moveFile,
+        ),
+        FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.file,
+          label: t.srs_import_file,
+          subtitle: t.srs_import_file_hint,
+          icon: FushiIcons.importFile,
+        ),
+        FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.minedHistory,
+          label: t.srs_history_import,
+          subtitle: t.srs_history_import_hint,
+          icon: FushiIcons.history,
+        ),
+      ],
     );
+    if (source == null || !mounted) return;
+    switch (source) {
+      case _ImportSource.anki:
+        await _push<void>(
+          (_) => SrsAnkiMigrationPage(onMigrated: _offerLegacyLapisMigration),
+        );
+      case _ImportSource.file:
+        await openSrsImport(context, ref);
+      case _ImportSource.minedHistory:
+        await openSrsMinedHistoryImport(context, ref);
+    }
+  }
+
+  Future<void> _syncNow() => openSrsSyncNow(
+    ref.read(srsAppRuntimeProvider)?.syncNow,
+    onNoChannel: () async {
+      if (!mounted) return;
+      await showSrsSyncSetupDialog(
+        context,
+        ref.read(appProvider).moduleVisibility,
+      );
+    },
+  );
+
+  /// 牌组拖放 / 「移动到… / 上移 / 下移」落地：拒绝时说明原因，成功后列表重读。
+  Future<void> _placeDeck(
+    SrsDeckSummary deck,
+    String? parentId, {
+    String? beforeId,
+  }) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null) return;
+    final SrsDeckMoveResult result = await store.placeDeck(
+      deck.deck.id,
+      parentId: parentId,
+      beforeId: beforeId,
+    );
+    switch (result) {
+      case SrsDeckMoveResult.moved:
+        if (mounted) bumpSrsRevision(ref);
+      case SrsDeckMoveResult.unchanged || SrsDeckMoveResult.missing:
+        break;
+      case SrsDeckMoveResult.intoOwnSubtree:
+        FushiToast.show(
+          msg: t.srs_deck_move_into_own_subdeck,
+          severity: ToastSeverity.warning,
+        );
+      case SrsDeckMoveResult.nameTaken:
+        FushiToast.show(
+          msg: t.srs_deck_move_name_taken,
+          severity: ToastSeverity.warning,
+        );
+    }
+  }
+
+  /// 行菜单「移动到…」：键盘 / 手柄 / 窄屏触摸（长按已是菜单）也能挪牌组。
+  /// 目标里不列它自己和它的子孙。
+  Future<void> _pickMoveTarget(SrsDeckSummary deck) async {
+    final SrsDeckListData? data = ref.read(srsDeckListProvider).valueOrNull;
+    if (data == null) return;
+    final Set<String> subtree = srsDeckSubtreeIds(data.decks, deck.deck.id);
+    const String topLevel = '';
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.srs_deck_move,
+      icon: FushiIcons.moveFile,
+      selected: deck.parentId ?? topLevel,
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: topLevel,
+          label: t.srs_deck_move_top_level,
+        ),
+        for (final SrsDeckSummary d in data.decks)
+          if (!subtree.contains(d.deck.id))
+            FushiChoiceOption<String>(value: d.deck.id, label: d.fullName),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    await _placeDeck(deck, picked == topLevel ? null : picked);
+  }
+
+  /// 「上移 / 下移」：在同级里挪一位（[delta] = -1 / +1）。
+  Future<void> _shift(SrsDeckSummary deck, int delta) async {
+    final SrsDeckListData? data = ref.read(srsDeckListProvider).valueOrNull;
+    if (data == null) return;
+    final List<SrsDeckSummary> level = _siblingsOf(data.decks, deck);
+    final int i = level.indexWhere(
+      (SrsDeckSummary d) => d.deck.id == deck.deck.id,
+    );
+    final int to = i + delta;
+    if (i < 0 || to < 0 || to >= level.length) return;
+    // 上移 = 排到前一个前面；下移 = 排到后一个的后面（即再后一个前面，没有就排最后）。
+    final String? beforeId = delta < 0
+        ? level[to].deck.id
+        : (to + 1 < level.length ? level[to + 1].deck.id : null);
+    await _placeDeck(deck, deck.parentId, beforeId: beforeId);
   }
 
   /// 低优先级动作（MD3 顶栏的 [FushiFloatingTopBar.overflow]：宽度够平铺、不够收进「⋯」；
@@ -223,30 +381,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       key: const ValueKey<String>('srs_sync_now'),
       icon: FushiIcons.sync,
       label: t.srs_sync_now,
-      onPressed: () => srsRunLogged(
-        'SrsDeckList.syncNow',
-        () => openSrsSyncNow(ref.read(srsAppRuntimeProvider)?.syncNow),
-      ),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_history_import'),
-      icon: FushiIcons.history,
-      label: t.srs_history_import,
-      onPressed: () => srsRunLogged(
-        'SrsDeckList.historyImport',
-        () => openSrsMinedHistoryImport(context, ref),
-      ),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_anki_migrate'),
-      icon: FushiIcons.moveFile,
-      label: t.srs_anki_migrate,
-      onPressed: () => srsRunLogged(
-        'SrsDeckList.ankiMigrate',
-        () => _push<void>(
-          (_) => SrsAnkiMigrationPage(onMigrated: _offerLegacyLapisMigration),
-        ),
-      ),
+      onPressed: () => srsRunLogged('SrsDeckList.syncNow', _syncNow),
     ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_export_apkg'),
@@ -269,12 +404,6 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         'SrsDeckList.backups',
         () => _push<void>((_) => const SrsBackupsPage()),
       ),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_day_boundary'),
-      icon: FushiIcons.schedule,
-      label: t.srs_day_boundary_title,
-      onPressed: () => srsRunLogged('SrsDeckList.day', _showDayBoundary),
     ),
   ];
 
@@ -349,8 +478,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       key: const ValueKey<String>('srs_import'),
       icon: FushiIcons.importFile,
       label: t.srs_import,
-      onPressed: () =>
-          srsRunLogged('SrsDeckList.import', () => openSrsImport(context, ref)),
+      onPressed: () => srsRunLogged('SrsDeckList.import', _openImport),
     ),
   ];
 
@@ -451,6 +579,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       onAction: _onDeckAction,
       onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
       onSetCollapsed: _setCollapsed,
+      onPlace: (SrsDeckSummary deck, String? parentId, String? beforeId) =>
+          srsRunLogged(
+            'SrsDeckList.drop',
+            () => _placeDeck(deck, parentId, beforeId: beforeId),
+          ),
     );
   }
 }
@@ -467,7 +600,11 @@ class _DeckList extends StatefulWidget {
     required this.lapisPending,
     required this.onMigrateLapis,
     required this.onDismissLapisReminder,
+    required this.onPlace,
   });
+
+  /// 拖放落地（见 [_DeckPlace]）。
+  final _DeckPlace onPlace;
 
   final SrsDeckListData data;
 
@@ -497,6 +634,14 @@ class _DeckList extends StatefulWidget {
 class _DeckListState extends State<_DeckList> {
   /// 本机刚点过、数据还没重读回来的折叠状态：先按它动画，不等写库往返。
   final Map<String, bool> _pending = <String, bool>{};
+
+  /// 正在拖的牌组（拖着子牌组时列表顶上出现「移到顶层」落点）。
+  SrsDeckSummary? _dragging;
+
+  void _setDragging(SrsDeckSummary? deck) {
+    if (!mounted || identical(_dragging, deck)) return;
+    setState(() => _dragging = deck);
+  }
 
   @override
   void didUpdateWidget(_DeckList oldWidget) {
@@ -652,6 +797,18 @@ class _DeckListState extends State<_DeckList> {
     }
 
     final int firstDeckItem = items.length;
+    // 每个牌组的前 / 后一个同级（列表是先序，同级已排好）：拖到行下缘、上移 / 下移用。
+    final Map<String, String> next = <String, String>{};
+    final Set<String> hasPrev = <String>{};
+    final Map<String?, String> lastOfLevel = <String?, String>{};
+    for (final SrsDeckSummary d in decks) {
+      final String? prev = lastOfLevel[d.parentId];
+      if (prev != null) {
+        next[prev] = d.deck.id;
+        hasPrev.add(d.deck.id);
+      }
+      lastOfLevel[d.parentId] = d.deck.id;
+    }
     int shown = 0;
     for (int i = 0; i < decks.length; i++) {
       final SrsDeckSummary d = decks[i];
@@ -661,44 +818,78 @@ class _DeckListState extends State<_DeckList> {
         _DeckReveal(
           key: ValueKey<String>('srs-deck-${d.deck.id}'),
           visible: visible[i],
-          child: _DeckRow(
+          child: _DeckDragShell(
+            key: ValueKey<String>('srs-drag-${d.deck.id}'),
             deck: d,
-            deleting: deletingOf(d),
-            index: index,
-            count: visibleCount,
-            isDefault: d.deck.id == widget.data.store.defaultDeckId,
-            hasTree: parents.isNotEmpty,
-            hasChildren: parents.contains(d.deck.id),
-            collapsed: _collapsed(d),
-            onSetCollapsed: (bool c) => _setCollapsed(d, c),
-            onOpen: widget.onOpen,
-            onAction: widget.onAction,
+            decks: decks,
+            enabled: deletingOf(d) == null,
+            onDragStarted: () => _setDragging(d),
+            onDragEnded: () => _setDragging(null),
+            onPlace: widget.onPlace,
+            nextSiblingId: next[d.deck.id],
+            child: _DeckRow(
+              deck: d,
+              deleting: deletingOf(d),
+              index: index,
+              count: visibleCount,
+              isDefault: d.deck.id == widget.data.store.defaultDeckId,
+              hasTree: parents.isNotEmpty,
+              hasChildren: parents.contains(d.deck.id),
+              collapsed: _collapsed(d),
+              onSetCollapsed: (bool c) => _setCollapsed(d, c),
+              onOpen: widget.onOpen,
+              onAction: widget.onAction,
+              canMoveUp: hasPrev.contains(d.deck.id),
+              canMoveDown: next.containsKey(d.deck.id),
+            ),
           ),
         ),
       );
     }
-    return FushiEntranceScope(
-      child: ListView.separated(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
-            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-            tokens.spacing.page,
-            tokens.spacing.section,
+    final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
+    return Stack(
+      children: <Widget>[
+        FushiEntranceScope(
+          child: ListView.separated(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+                top,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+            ),
+            itemCount: items.length,
+            // 牌组行是一组分段卡（行间 2px，由 FushiGroupedListItem 自己画），横幅与
+            // 牌组之间才留卡片间距。
+            separatorBuilder: (BuildContext context, int index) => SizedBox(
+              height: index >= firstDeckItem ? 0 : tokens.spacing.gap * 1.5,
+            ),
+            itemBuilder: fushiStaggeredItemBuilder(
+              (BuildContext context, int index) => items[index],
+            ),
           ),
         ),
-        itemCount: items.length,
-        // 牌组行是一组分段卡（行间 2px，由 FushiGroupedListItem 自己画），横幅与
-        // 牌组之间才留卡片间距。
-        separatorBuilder: (BuildContext context, int index) => SizedBox(
-          height: index >= firstDeckItem ? 0 : tokens.spacing.gap * 1.5,
+        // 「移到顶层」落点浮在列表顶上（列表滚到哪都够得着），只在拖着子牌组时出现。
+        PositionedDirectional(
+          top: top,
+          start: tokens.spacing.page,
+          end: tokens.spacing.page,
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            child: _dragging?.parentId == null
+                ? const SizedBox.shrink()
+                : _TopLevelDropZone(
+                    key: const ValueKey<String>('srs-drop-top-level'),
+                    onPlace: widget.onPlace,
+                  ),
+          ),
         ),
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int index) => items[index],
-        ),
-      ),
+      ],
     );
   }
 }
@@ -787,9 +978,15 @@ class _DeckRow extends StatelessWidget {
     required this.onSetCollapsed,
     required this.onOpen,
     required this.onAction,
+    required this.canMoveUp,
+    required this.canMoveDown,
   });
 
   final SrsDeckSummary deck;
+
+  /// 同级里前 / 后还有牌组（菜单「上移 / 下移」）。
+  final bool canMoveUp;
+  final bool canMoveDown;
 
   /// 非 null = 正在删除（本牌组或祖先）：行变淡、不可点 / 不进焦点，副标题换成进度条。
   final ValueListenable<double?>? deleting;
@@ -953,6 +1150,20 @@ class _DeckRow extends StatelessWidget {
           child: Text(t.srs_deck_rename),
         ),
         PopupMenuItem<_DeckAction>(
+          value: _DeckAction.move,
+          child: Text(t.srs_deck_move),
+        ),
+        if (canMoveUp)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveUp,
+            child: Text(t.srs_deck_move_up),
+          ),
+        if (canMoveDown)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveDown,
+            child: Text(t.srs_deck_move_down),
+          ),
+        PopupMenuItem<_DeckAction>(
           value: _DeckAction.settings,
           child: Text(t.srs_deck_settings),
         ),
@@ -1079,6 +1290,322 @@ class _DeckRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 只认 [devices] 的 [Draggable]：鼠标按下即可拖（桌面列表不靠拖动滚动），触摸走长按
+/// 版（[_DeviceLongPressDraggable]），两者设备不重叠、互不抢手势；触摸的滑动照常滚列表。
+class _DeviceDraggable<T extends Object> extends Draggable<T> {
+  const _DeviceDraggable({
+    required this.devices,
+    required super.child,
+    required super.feedback,
+    super.data,
+    super.childWhenDragging,
+    super.onDragStarted,
+    super.onDragEnd,
+    super.onDraggableCanceled,
+    super.dragAnchorStrategy,
+  });
+
+  final Set<PointerDeviceKind> devices;
+
+  @override
+  MultiDragGestureRecognizer createRecognizer(
+    GestureMultiDragStartCallback onStart,
+  ) =>
+      ImmediateMultiDragGestureRecognizer(supportedDevices: devices)
+        ..onStart = onStart;
+}
+
+class _DeviceLongPressDraggable<T extends Object>
+    extends LongPressDraggable<T> {
+  const _DeviceLongPressDraggable({
+    required this.devices,
+    required super.child,
+    required super.feedback,
+    super.data,
+    super.childWhenDragging,
+    super.onDragStarted,
+    super.onDragEnd,
+    super.onDraggableCanceled,
+    super.dragAnchorStrategy,
+  });
+
+  final Set<PointerDeviceKind> devices;
+
+  @override
+  DelayedMultiDragGestureRecognizer createRecognizer(
+    GestureMultiDragStartCallback onStart,
+  ) =>
+      DelayedMultiDragGestureRecognizer(delay: delay, supportedDevices: devices)
+        ..onStart = (Offset position) {
+          final Drag? result = onStart(position);
+          if (result != null && hapticFeedbackOnStart) {
+            unawaited(HapticFeedback.selectionClick());
+          }
+          return result;
+        };
+}
+
+/// 拖放落地：把 dragged 放到 parentId 下（null = 顶层）、排在 beforeId 前（null = 末尾）。
+typedef _DeckPlace =
+    void Function(SrsDeckSummary dragged, String? parentId, String? beforeId);
+
+/// 指针在行里的落点区：上 / 下缘 = 排到本行前 / 后（同级），中间 = 挪成本行的子牌组。
+enum _DropZone { before, into, after }
+
+/// 牌组行的拖放外壳（Anki 拖放 + 同级手动排序）：拖起本行；别的牌组拖到本行上——
+/// 上缘四分之一 = 排到本行前面，下缘四分之一 = 排到本行后面（都与本行同级），中间 =
+/// 挪成本行的子牌组。拖到自己 / 自己的子孙上不接（不高亮）。
+///
+/// 鼠标：按下拖动即开始。触摸：宽屏长按开始；窄屏长按已是牌组菜单，触摸挪牌组走菜单
+/// 「移动到… / 上移 / 下移」。
+class _DeckDragShell extends StatefulWidget {
+  const _DeckDragShell({
+    super.key,
+    required this.deck,
+    required this.decks,
+    required this.nextSiblingId,
+    required this.enabled,
+    required this.onDragStarted,
+    required this.onDragEnded,
+    required this.onPlace,
+    required this.child,
+  });
+
+  final SrsDeckSummary deck;
+  final List<SrsDeckSummary> decks;
+
+  /// 同级里排在本行后面的那个（「排到本行后面」= 排到它前面；null = 本行是同级最后）。
+  final String? nextSiblingId;
+  final bool enabled;
+  final VoidCallback onDragStarted;
+  final VoidCallback onDragEnded;
+  final _DeckPlace onPlace;
+  final Widget child;
+
+  @override
+  State<_DeckDragShell> createState() => _DeckDragShellState();
+}
+
+class _DeckDragShellState extends State<_DeckDragShell> {
+  _DropZone? _zone;
+
+  /// 被拖的牌组不能落到它自己或它的子孙上（任何区都不行）。
+  bool _accepts(SrsDeckSummary dragged) =>
+      widget.enabled &&
+      !srsDeckSubtreeIds(
+        widget.decks,
+        dragged.deck.id,
+      ).contains(widget.deck.deck.id);
+
+  _DropZone _zoneAt(Offset global) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || box.size.height <= 0) {
+      return _DropZone.into;
+    }
+    final double y = box.globalToLocal(global).dy / box.size.height;
+    if (y < 0.25) return _DropZone.before;
+    if (y > 0.75) return _DropZone.after;
+    return _DropZone.into;
+  }
+
+  void _setZone(_DropZone? zone) {
+    if (_zone == zone || !mounted) return;
+    setState(() => _zone = zone);
+  }
+
+  void _place(SrsDeckSummary dragged, _DropZone zone) {
+    final SrsDeckSummary row = widget.deck;
+    switch (zone) {
+      case _DropZone.into:
+        widget.onPlace(dragged, row.deck.id, null);
+      case _DropZone.before:
+        widget.onPlace(dragged, row.parentId, row.deck.id);
+      case _DropZone.after:
+        // 排到下一个同级前面；下一个就是被拖的自己时，相当于原地不动。
+        final String? next = widget.nextSiblingId == dragged.deck.id
+            ? null
+            : widget.nextSiblingId;
+        widget.onPlace(dragged, row.parentId, next);
+    }
+  }
+
+  Widget _feedback(BuildContext context, double width) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.secondaryContainer,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(tokens.radii.group),
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal,
+            vertical: tokens.spacing.gap,
+          ),
+          child: Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiIcon(FushiIcons.folder, color: scheme.onSecondaryContainer),
+              Expanded(
+                child: Text(
+                  widget.deck.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: scheme.onSecondaryContainer),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 落点指示：前 / 后 = 行上 / 下缘一条主色线（插入位置），中间 = 整行描边（成为子牌组）。
+  Decoration _indicator(ColorScheme scheme, FushiDesignTokens tokens) {
+    final BorderSide line = BorderSide(color: scheme.primary, width: 3);
+    return switch (_zone) {
+      null => const BoxDecoration(),
+      _DropZone.before => BoxDecoration(border: Border(top: line)),
+      _DropZone.after => BoxDecoration(border: Border(bottom: line)),
+      _DropZone.into => BoxDecoration(
+        border: Border.all(color: scheme.primary, width: 2),
+        borderRadius: BorderRadius.circular(tokens.radii.group),
+      ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = constraints.maxWidth < _DeckRow.compactBelow;
+        // 拖影挂在指针左上方一点（锚点是指针本身，见 [_pointerOf]）。
+        final Widget feedback = FractionalTranslation(
+          translation: const Offset(-0.1, -0.5),
+          child: _feedback(
+            context,
+            constraints.maxWidth.isFinite
+                ? constraints.maxWidth.clamp(0, 360).toDouble()
+                : 360,
+          ),
+        );
+        final Widget dimmed = Opacity(opacity: 0.4, child: widget.child);
+        Widget row = widget.child;
+        if (widget.enabled) {
+          row = _DeviceDraggable<SrsDeckSummary>(
+            devices: const <PointerDeviceKind>{PointerDeviceKind.mouse},
+            data: widget.deck,
+            feedback: feedback,
+            dragAnchorStrategy: pointerDragAnchorStrategy,
+            childWhenDragging: dimmed,
+            onDragStarted: widget.onDragStarted,
+            onDragEnd: (_) => widget.onDragEnded(),
+            child: compact
+                ? row
+                : _DeviceLongPressDraggable<SrsDeckSummary>(
+                    devices: const <PointerDeviceKind>{
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.stylus,
+                    },
+                    data: widget.deck,
+                    feedback: feedback,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
+                    childWhenDragging: dimmed,
+                    onDragStarted: widget.onDragStarted,
+                    onDragEnd: (_) => widget.onDragEnded(),
+                    child: row,
+                  ),
+          );
+        }
+        return DragTarget<SrsDeckSummary>(
+          onWillAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
+              _accepts(d.data),
+          onMove: (DragTargetDetails<SrsDeckSummary> d) {
+            if (_accepts(d.data)) _setZone(_zoneAt(_pointerOf(d)));
+          },
+          onLeave: (_) => _setZone(null),
+          onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) {
+            final _DropZone zone = _zone ?? _zoneAt(_pointerOf(d));
+            _setZone(null);
+            _place(d.data, zone);
+          },
+          builder:
+              (
+                BuildContext context,
+                List<SrsDeckSummary?> candidates,
+                List<dynamic> _,
+              ) => AnimatedContainer(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                foregroundDecoration: candidates.isEmpty
+                    ? const BoxDecoration()
+                    : _indicator(scheme, tokens),
+                child: row,
+              ),
+        );
+      },
+    );
+  }
+
+  /// 拖起时用 [pointerDragAnchorStrategy]：[DragTargetDetails.offset] 就是指针位置
+  /// （拖影的视觉偏移另由 [FractionalTranslation] 做，不影响这里）。
+  Offset _pointerOf(DragTargetDetails<SrsDeckSummary> d) => d.offset;
+}
+
+/// 拖着子牌组时列表顶上出现的落点：放下 = 挪到顶层（末尾）。
+class _TopLevelDropZone extends StatelessWidget {
+  const _TopLevelDropZone({super.key, required this.onPlace});
+
+  final _DeckPlace onPlace;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return DragTarget<SrsDeckSummary>(
+      onWillAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
+          d.data.parentId != null,
+      onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
+          onPlace(d.data, null, null),
+      builder:
+          (
+            BuildContext context,
+            List<SrsDeckSummary?> candidates,
+            List<dynamic> _,
+          ) {
+            final bool hovering = candidates.isNotEmpty;
+            return AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              padding: EdgeInsets.all(tokens.spacing.gap * 1.5),
+              decoration: BoxDecoration(
+                color: hovering
+                    ? scheme.primaryContainer
+                    : scheme.surfaceContainerHigh,
+                border: Border.all(
+                  color: hovering ? scheme.primary : scheme.outlineVariant,
+                  width: hovering ? 2 : 1,
+                ),
+                borderRadius: BorderRadius.circular(tokens.radii.group),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  const FushiIcon(FushiIcons.moveFile),
+                  Flexible(child: Text(t.srs_deck_move_drop_top_level)),
+                ],
+              ),
+            );
+          },
     );
   }
 }

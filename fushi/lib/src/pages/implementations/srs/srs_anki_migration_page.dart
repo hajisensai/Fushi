@@ -67,7 +67,8 @@ class SrsAnkiMigrationPage extends ConsumerStatefulWidget {
       _SrsAnkiMigrationPageState();
 }
 
-class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
+class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
+    with WidgetsBindingObserver {
   final bool _canScan = srsAnkiMigrationCanScan(Platform.operatingSystem);
   bool _scanning = true;
   bool _busy = false;
@@ -77,20 +78,39 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
   List<AnkiProfileCandidate> _profiles = const <AnkiProfileCandidate>[];
   List<AnkiDataRoot> _unreadable = const <AnkiDataRoot>[];
 
+  /// 「选文件夹」选过、含多个 profile 的根：重扫时一起扫，不被平台根的结果冲掉。
+  final List<AnkiDataRoot> _customRoots = <AnkiDataRoot>[];
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_scan());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 用户常是看到「Anki 正开着」后切出去关 Anki 再回来：回到前台时静默重扫，
+  /// 列表里的状态（WAL / 大小 / 修改时刻）跟上磁盘现状。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || _scanning || _busy) return;
+    srsRunLogged('SrsAnkiMigration.resumeRescan', () => _scan(quiet: true));
   }
 
   // ---------------------------------------------------------------- 发现
 
-  Future<void> _scan() async {
+  /// [quiet]：不切到加载态（列表原地刷新，不闪）。
+  Future<void> _scan({bool quiet = false}) async {
     if (!_canScan) {
       setState(() => _scanning = false);
       return;
     }
-    setState(() => _scanning = true);
+    if (!quiet) setState(() => _scanning = true);
     bool needsAccess = false;
     if (Platform.isAndroid) {
       needsAccess = !await ref
@@ -105,7 +125,10 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
     );
     if (!needsAccess) {
       try {
-        found = await discoverAnkiProfiles(srsAnkiPlatformRoots());
+        found = await discoverAnkiProfiles(<AnkiDataRoot>[
+          ...srsAnkiPlatformRoots(),
+          ..._customRoots,
+        ]);
       } catch (e, stack) {
         ErrorLogService.instance.log('SrsAnkiMigration.scan', e, stack);
       }
@@ -131,8 +154,9 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
       dialogTitle: t.srs_anki_migrate_pick_folder,
     );
     if (path == null || !mounted) return;
+    final AnkiDataRoot root = AnkiDataRoot(path, AnkiDataRootKind.custom);
     final AnkiDiscovery found = await discoverAnkiProfiles(<AnkiDataRoot>[
-      AnkiDataRoot(path, AnkiDataRootKind.custom),
+      root,
     ]);
     if (!mounted) return;
     if (found.profiles.isEmpty) {
@@ -147,6 +171,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
       return;
     }
     // 选的是桌面 Anki 的数据根（多个 profile）：并进列表让用户挑。
+    if (!_customRoots.contains(root)) _customRoots.add(root);
     setState(() {
       _profiles = <AnkiProfileCandidate>[
         ...found.profiles,
@@ -198,7 +223,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage> {
             cards: s.cards,
             reviews: s.reviews,
           ),
-          if (profile.probablyOpen) t.srs_anki_migrate_open_warning,
+          if (snapshot.sourceProbablyOpen) t.srs_anki_migrate_open_warning,
         ].join('\n\n'),
         icon: FushiIcons.importFile,
         confirmLabel: t.srs_anki_migrate_start,

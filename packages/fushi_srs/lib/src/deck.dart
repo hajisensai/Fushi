@@ -72,6 +72,7 @@ class SrsDeckView {
     required this.createdAt,
     required this.edits,
     this.collapsed = false,
+    this.position,
   });
 
   static const List<double> defaultLearnSteps = <double>[1, 10];
@@ -99,6 +100,18 @@ class SrsDeckView {
 
   /// 牌组列表里收起了子牌组（缺省 = 展开，与 Anki 一致）。
   final bool collapsed;
+
+  /// 同级里的手动排序位（[SrsFieldKeys.deckPosition]）；null = 没排过。
+  final double? position;
+
+  /// 同级排序：有位置的按位置在前，其余按名字；最后按 id 定序（全确定性，各端一致）。
+  static int compareSiblings(SrsDeckView a, SrsDeckView b) {
+    final double pa = a.position ?? double.infinity;
+    final double pb = b.position ?? double.infinity;
+    if (pa != pb) return pa.compareTo(pb);
+    final int byName = a.name.compareTo(b.name);
+    return byName != 0 ? byName : a.id.compareTo(b.id);
+  }
 
   /// 复习时自动播放卡面音频（Anki「自动播放音频」）。只看 own 祖先上的值
   /// （[SrsDeckTree.paramsOwner]）。
@@ -165,6 +178,10 @@ class SrsDeckView {
       maxIntervalDays:
           (edits.value(SrsFieldKeys.deckMaxInterval) as int?) ?? 36500,
       collapsed: edits.value(SrsFieldKeys.deckCollapsed) == true,
+      position: switch (edits.value(SrsFieldKeys.deckPosition)) {
+        final num v when v.isFinite => v.toDouble(),
+        _ => null,
+      },
       autoplayAudio: edits.value(SrsFieldKeys.deckAutoplay) != false,
       replayQuestionAudio:
           edits.value(SrsFieldKeys.deckReplayQuestion) != false,

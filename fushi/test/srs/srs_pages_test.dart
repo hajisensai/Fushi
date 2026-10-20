@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -396,6 +397,112 @@ void main() {
       await tester.longPress(find.text('Vocabulary'));
       await _settle(tester);
       expect(find.text(t.srs_deck_rename), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组拖放：拖到行中间 = 挪成子牌组、拖到行上缘 = 排到它前面；拖着子牌组出现「移到顶层」落点', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await tester.runAsync(() async {
+        await store.createDeck('Alpha');
+        await store.createDeck('Beta');
+      });
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      Future<List<String>> names() async => (await tester.runAsync(
+        store.deckSummaries,
+      ))!.map((SrsDeckSummary d) => d.fullName).toList();
+      final Finder zone = find.byKey(
+        const ValueKey<String>('srs-drop-top-level'),
+      );
+
+      // 拖着顶层牌组：没有「移到顶层」落点。
+      TestGesture g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, 24));
+      await tester.pump();
+      expect(zone, findsNothing);
+      await g.moveTo(tester.getCenter(find.text('Alpha')));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      expect(await names(), contains('Alpha::Beta'));
+
+      // 拖着子牌组：顶上出现落点，放下 = 回到顶层。
+      g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, 24));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(zone, findsOneWidget);
+      await g.moveTo(tester.getCenter(zone));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      final List<String> after = await names();
+      expect(after, contains('Beta'));
+      expect(after, isNot(contains('Alpha::Beta')));
+      expect(zone, findsNothing);
+      expect(after.indexOf('Alpha'), lessThan(after.indexOf('Beta')));
+
+      // 拖到 Alpha 行的上缘 = 同级排到 Alpha 前面（不是挪成子牌组）。
+      final String alphaId = (await tester.runAsync(
+        store.deckSummaries,
+      ))!.firstWhere((SrsDeckSummary d) => d.fullName == 'Alpha').deck.id;
+      final Rect alphaRow = tester.getRect(
+        find.byKey(ValueKey<String>('srs-drag-$alphaId')),
+      );
+      g = await tester.startGesture(
+        tester.getCenter(find.text('Beta')),
+        kind: PointerDeviceKind.mouse,
+      );
+      await g.moveBy(const Offset(0, -24));
+      await tester.pump();
+      await g.moveTo(Offset(alphaRow.center.dx, alphaRow.top + 3));
+      await tester.pump();
+      await g.up();
+      await _settle(tester);
+      final List<String> reordered = await names();
+      expect(reordered, isNot(contains('Alpha::Beta')));
+      expect(reordered.indexOf('Beta'), lessThan(reordered.indexOf('Alpha')));
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] 牌组列表「导入」：一个入口列出 Anki 迁移 / 文件 / 制卡历史三种来源', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: apple,
+        page: const SrsDeckListPage(),
+      );
+      // 旧的分散入口不再出现在顶栏 / ⋯ 里。
+      expect(
+        find.byKey(const ValueKey<String>('srs_anki_migrate')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs_history_import')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs_import')).first);
+      await _settle(tester);
+      expect(find.text(t.srs_anki_migrate), findsOneWidget);
+      expect(find.text(t.srs_import_file), findsOneWidget);
+      expect(find.text(t.srs_history_import), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await _settle(tester);
       await _unmount(tester);

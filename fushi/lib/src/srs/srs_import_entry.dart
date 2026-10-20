@@ -401,13 +401,23 @@ String srsSyncErrorReason(Object error) => switch (error) {
   _ => friendlySyncErrorDetail(error),
 };
 
+/// 牌组列表 ⋯「立即同步」。
+///
+/// [onNoChannel]：没配置任何同步通道时调用（页面借它直达同步设置）；不给就只弹提示。
+/// 配置了但失败时照常报失败原因，不跳设置。
 Future<void> openSrsSyncNow(
-  Future<SrsSyncNowResult> Function()? syncNow,
-) async {
+  Future<SrsSyncNowResult> Function()? syncNow, {
+  Future<void> Function()? onNoChannel,
+}) async {
   if (syncNow == null) return;
   try {
+    final SrsSyncNowResult result = await syncNow();
+    if (result.unconfigured && onNoChannel != null) {
+      await onNoChannel();
+      return;
+    }
     final ({String msg, ToastSeverity severity}) toast = srsSyncNowToast(
-      await syncNow(),
+      result,
     );
     FushiToast.show(msg: toast.msg, severity: toast.severity);
   } catch (e, stack) {

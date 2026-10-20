@@ -67,6 +67,23 @@ class SrsNewCardEntry {
   final int position;
 }
 
+/// [SrsDbStore.moveDeck] 的结果。
+enum SrsDeckMoveResult {
+  moved,
+
+  /// 本来就在那里。
+  unchanged,
+
+  /// 牌组或目标牌组不存在（已删）。
+  missing,
+
+  /// 目标是它自己或它的子孙。
+  intoOwnSubtree,
+
+  /// 目标下已有同名牌组。
+  nameTaken,
+}
+
 /// 牌组列表的一行。
 class SrsDeckSummary {
   const SrsDeckSummary({
@@ -293,6 +310,40 @@ class SrsDbStore implements SrsSyncReplica {
       if (identical(_writeTail, mine.future)) _writeTail = null;
     }
   }
+
+  /// 大批量写入（Anki 迁移 / .apkg 导入）期间暂停这条连接的 WAL 自动 checkpoint，结束后
+  /// 恢复原值并 checkpoint 一次。
+  ///
+  /// 自动 checkpoint 在 WAL 超过阈值（缺省 1000 页）后的每次提交时跑；导入的每个批次
+  /// 事务都远超阈值，于是每次提交都把同一批热页（索引、缓存表）拷回主库一遍——实测迁移
+  /// 1.5 万笔记时 COMMIT 合计 37 秒，暂停后 6 秒。WAL 在导入期间会长大，结束时一次并回；
+  /// 中途崩溃也无妨：下次打开时 SQLite 照常回放 WAL。可嵌套；按数据库连接计数（几个
+  /// profile 的副本共用一条连接），只有最外层恢复。
+  Future<T> bulkWrites<T>(Future<T> Function() body) async {
+    final _BulkWriteState state = _bulkWrites[db] ??= _BulkWriteState();
+    if (state.depth++ == 0) {
+      final List<QueryRow> rows = await db
+          .customSelect('PRAGMA wal_autocheckpoint')
+          .get();
+      state.restore = rows.isEmpty
+          ? 1000
+          : (rows.first.data.values.first as int?) ?? 1000;
+      await db.customStatement('PRAGMA wal_autocheckpoint = 0');
+    }
+    try {
+      return await body();
+    } finally {
+      if (--state.depth == 0) {
+        await db.customStatement(
+          'PRAGMA wal_autocheckpoint = ${state.restore}',
+        );
+        await db.customSelect('PRAGMA wal_checkpoint(PASSIVE)').get();
+      }
+    }
+  }
+
+  static final Expando<_BulkWriteState> _bulkWrites =
+      Expando<_BulkWriteState>();
 
   /// 排在最后的写入完成时完成（只会正常完成）。
   Future<void>? _writeTail;
@@ -607,15 +658,28 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 笔记字段值里的内联样式换成共享样式引用（表示层，见库注释）。只动 `f/<fieldId>` 的字符串值；
   /// 其余字段键、没有可换的块、没装样式库时原样返回。本机写、导入、对端事件都经这里落库。
-  Future<SrsFieldEdit> _compactEdit(SrsFieldEdit e) async {
+  ///
+  /// 没有 `<style>` 块（绝大多数记录）时同步返回，不进异步流程：批量落库时逐条 await 本身
+  /// 就是秒级开销（迁移 1.5 万笔记约 28 万条修改记录）。判据与 [srsDedupStyles] 的快速
+  /// 判断相同，结果不变。
+  FutureOr<SrsFieldEdit> _compactEdit(SrsFieldEdit e) {
     final SrsStyleStore? st = styles;
     final Object? v = e.value;
     if (st == null ||
         e.entityKind != SrsEntityKind.note ||
         v is! String ||
-        !e.fieldKey.startsWith(_noteFieldPrefix)) {
+        !e.fieldKey.startsWith(_noteFieldPrefix) ||
+        !v.contains('<style>')) {
       return e;
     }
+    return _compactWith(st, e, v);
+  }
+
+  Future<SrsFieldEdit> _compactWith(
+    SrsStyleStore st,
+    SrsFieldEdit e,
+    String v,
+  ) async {
     final String compacted = await st.compact(v);
     if (identical(compacted, v)) return e;
     return _withValue(e, compacted);
@@ -694,7 +758,10 @@ class SrsDbStore implements SrsSyncReplica {
               (jsonDecode(r.read<String>('json')) as Map)
                   .cast<String, Object?>(),
             );
-            final SrsFieldEdit c = await _compactEdit(e);
+            final FutureOr<SrsFieldEdit> pending = _compactEdit(e);
+            final SrsFieldEdit c = pending is SrsFieldEdit
+                ? pending
+                : await pending;
             if (!identical(c, e)) {
               await (db.update(
                 db.srsFieldEdits,
@@ -895,7 +962,10 @@ class SrsDbStore implements SrsSyncReplica {
               writerId: edit.dot.writerId,
               seq: edit.dot.seq,
               // 表示层：内联样式换成共享样式引用（见 [_compactEdit]）。
-              json: (await _compactEdit(edit)).canonical(),
+              json: switch (_compactEdit(edit)) {
+                final SrsFieldEdit c => c,
+                final Future<SrsFieldEdit> f => await f,
+              }.canonical(),
             );
             writes.add((Batch b) => b.insert(db.srsFieldEdits, row));
             _markEntity(edit.entityKind, edit.entityId);
@@ -2757,14 +2827,25 @@ class SrsDbStore implements SrsSyncReplica {
       ctx,
       await _deckTallies(ctx),
     );
-    final List<SrsDeckSummary> out =
-        <SrsDeckSummary>[
-          for (final SrsDeckView d in ctx.tree.decks)
-            _summaryOf(d, ctx, counts[d.id]!),
-        ]..sort(
-          (SrsDeckSummary a, SrsDeckSummary b) =>
-              _treeOrderKey(a.fullName).compareTo(_treeOrderKey(b.fullName)),
-        );
+    final Map<String?, List<SrsDeckView>> children =
+        <String?, List<SrsDeckView>>{};
+    for (final SrsDeckView d in ctx.tree.decks) {
+      (children[ctx.tree.parentOf(d.id)] ??= <SrsDeckView>[]).add(d);
+    }
+    // 先序（父在前、子紧跟父）；同级按手动位置、再按名字（[SrsDeckView.compareSiblings]）。
+    // 没人排过时与 Anki 按名字逐层排序同一口径——直接比全名的话「Lang2」会插进「Lang」
+    // 与「Lang::JP」之间，子牌组就离开了父牌组。
+    final List<SrsDeckSummary> out = <SrsDeckSummary>[];
+    void visit(String? parent) {
+      final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
+        ..sort(SrsDeckView.compareSiblings);
+      for (final SrsDeckView d in level) {
+        out.add(_summaryOf(d, ctx, counts[d.id]!));
+        visit(d.id);
+      }
+    }
+
+    visit(null);
     return out;
   }
 
@@ -2784,11 +2865,6 @@ class SrsDbStore implements SrsSyncReplica {
     return _summaryOf(d, ctx, counts[deckId]!);
   }
 
-  /// 先序（父在前、子紧跟父）的排序键：按层级逐段比较，与 Anki 把「::」存成 \x1f 再排序同一口径。
-  /// 直接比全名时「Lang2」会插进「Lang」与「Lang::JP」之间，子牌组就离开了父牌组。
-  static String _treeOrderKey(String fullName) =>
-      fullName.replaceAll('::', '\x1f');
-
   /// 牌组列表里收起 / 展开子牌组（Anki 的 deck collapsed）。走修改记录，随同步到其它设备；
   /// 并发开合不进冲突记录（[SrsFieldClass.viewState]）。
   Future<void> setDeckCollapsed(String deckId, bool collapsed) async {
@@ -2799,6 +2875,82 @@ class SrsDbStore implements SrsSyncReplica {
       collapsed,
     );
   }
+
+  /// 把牌组（连同子树）挪到 [newParentId] 下、末尾；null = 顶层（Anki 拖放牌组同语义）。
+  /// 见 [placeDeck]。
+  Future<SrsDeckMoveResult> moveDeck(String deckId, String? newParentId) =>
+      placeDeck(deckId, parentId: newParentId);
+
+  /// 把牌组（连同子树）放到 [parentId] 下（null = 顶层）、排在同级的 [beforeId] 前面
+  /// （null = 排最后）。拖放与「上移 / 下移」都走这里。
+  ///
+  /// 父牌组只改父字段，ID 不变（卡、设置、同步身份都跟着走）；同级顺序给新父牌组下
+  /// 的全部同级重新编排位置（[SrsFieldKeys.deckPosition]，只写变了的）。拒绝的情形返回
+  /// 对应 [SrsDeckMoveResult]、不写库：挪到自己或自己的子孙下（本地成环；跨设备并发
+  /// 成环由 [SrsDeckTree] 确定性打破）、目标下已有同名牌组、[beforeId] 不是目标下的同级。
+  Future<SrsDeckMoveResult> placeDeck(
+    String deckId, {
+    required String? parentId,
+    String? beforeId,
+  }) => runExclusive(() async {
+    final SrsDeckTree tree = await deckTree();
+    final SrsDeckView? deck = tree[deckId];
+    if (deck == null || (parentId != null && tree[parentId] == null)) {
+      return SrsDeckMoveResult.missing;
+    }
+    for (String? p = parentId; p != null; p = tree.parentOf(p)) {
+      if (p == deckId) return SrsDeckMoveResult.intoOwnSubtree;
+    }
+    final bool reparent = tree.parentOf(deckId) != parentId;
+    final List<SrsDeckView> siblings = <SrsDeckView>[
+      for (final SrsDeckView d in tree.decks)
+        if (d.id != deckId && tree.parentOf(d.id) == parentId) d,
+    ]..sort(SrsDeckView.compareSiblings);
+    if (reparent && siblings.any((SrsDeckView d) => d.name == deck.name)) {
+      return SrsDeckMoveResult.nameTaken;
+    }
+    final int at = beforeId == null
+        ? siblings.length
+        : siblings.indexWhere((SrsDeckView d) => d.id == beforeId);
+    if (at < 0) return SrsDeckMoveResult.missing;
+    final List<SrsDeckView> ordered = <SrsDeckView>[...siblings]
+      ..insert(at, deck);
+    final List<SrsDeckView> before = <SrsDeckView>[
+      for (final SrsDeckView d in tree.decks)
+        if (tree.parentOf(d.id) == parentId) d,
+    ]..sort(SrsDeckView.compareSiblings);
+    final bool reordered =
+        before.length != ordered.length ||
+        <int>[
+          for (int i = 0; i < ordered.length; i++) i,
+        ].any((int i) => before[i].id != ordered[i].id);
+    if (!reparent && !reordered) return SrsDeckMoveResult.unchanged;
+    if (reparent) {
+      await editField(
+        SrsEntityKind.deck,
+        deckId,
+        SrsFieldKeys.deckParent,
+        parentId,
+      );
+    }
+    // 只换父牌组（没指定位置）、新同级又都没手动排过：保持「按名字」的缺省排法，
+    // 不给整组写位置。显式排序（[beforeId] 或同父下挪到末尾）一律写。
+    final bool keepNameOrder =
+        reparent &&
+        beforeId == null &&
+        siblings.every((SrsDeckView d) => d.position == null);
+    if (reordered && !keepNameOrder) {
+      for (int i = 0; i < ordered.length; i++) {
+        await editField(
+          SrsEntityKind.deck,
+          ordered[i].id,
+          SrsFieldKeys.deckPosition,
+          i,
+        );
+      }
+    }
+    return SrsDeckMoveResult.moved;
+  });
 
   /// 今天的活动：从新卡学起的卡（新卡配额）与复习了的复习卡（复习上限）。
   Future<(Set<String>, Set<String>)> _todayActivity(
@@ -4108,4 +4260,10 @@ class _NotePlan {
   /// cardId → (templateId, clozeOrd, empty)。
   final Map<String, (String, int, bool)> expected;
   final bool noteGone;
+}
+
+/// [SrsDbStore.bulkWrites] 在一条数据库连接上的嵌套深度与要恢复的阈值。
+class _BulkWriteState {
+  int depth = 0;
+  int restore = 1000;
 }

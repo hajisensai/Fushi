@@ -115,6 +115,10 @@ abstract final class SrsFieldKeys {
   /// 牌组列表里是否收起子牌组（对应 Anki deck 的 `collapsed` / Deck.Common.study_collapsed）。
   static const String deckCollapsed = 'collapsed';
 
+  /// 牌组在同级里的手动排序位（num，小的在前；缺省 = 排在有位置的之后、按名字排）。
+  /// Anki 没有这一项（它只按名字排），导出时不带。
+  static const String deckPosition = 'position';
+
   /// 复习时自动播放卡面音频（bool，缺省 = true；对应 Anki 预设的 autoplay /
   /// disable_autoplay）。随参数继承走 own 祖先。
   static const String deckAutoplay = 'autoplay';
@@ -150,7 +154,8 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
       }
       return SrsFieldClass.flag;
     case SrsEntityKind.deck:
-      if (fieldKey == SrsFieldKeys.deckCollapsed) {
+      if (fieldKey == SrsFieldKeys.deckCollapsed ||
+          fieldKey == SrsFieldKeys.deckPosition) {
         return SrsFieldClass.viewState;
       }
       return SrsFieldClass.setting;
