@@ -244,6 +244,12 @@ class VideoFolderGroupCoordinator {
           final int id = await _database.createMediaCollection(
             group.series,
             collectionType: 'playlist',
+            // v124（AI 整理库 spec §6）：规则建的合集归整理器管。
+            origin: CollectionOrigin.rule,
+            organizeKey: titleOrganizeKey(
+              CollectionShelfDomain.video.name,
+              group.series,
+            ),
           );
           collection = (await _database.getMediaCollectionById(id))!;
           createdCollection = true;
@@ -270,6 +276,7 @@ class VideoFolderGroupCoordinator {
             collection.id,
             MediaKind.video,
             row.bookUid,
+            userIntent: false,
           );
           changed = true;
         }
@@ -372,6 +379,8 @@ class VideoFolderGroupCoordinator {
           final int id = await _database.createMediaCollection(
             name,
             collectionType: 'collection',
+            // v124：目录合集——整理器只把它当并入目标，不合并、不移出成员。
+            origin: CollectionOrigin.folder,
           );
           await (_database.update(
             _database.mediaCollections,
@@ -410,6 +419,7 @@ class VideoFolderGroupCoordinator {
             collection.id,
             MediaKind.video,
             row.bookUid,
+            userIntent: false,
           );
           changed = true;
         }

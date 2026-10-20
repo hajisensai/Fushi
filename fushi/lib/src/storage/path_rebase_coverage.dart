@@ -127,6 +127,12 @@ class PathRebasePref {
 /// 按 tables.dart 出现顺序排列，便于人工对照。
 const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // ── media_open_history（v80 最近打开流，取代 media_items）──────────
+  // v124 AI 整理记录：改动细节 JSON（合集名 / 成员键 / 分组键）与「规则 / AI」来源
+  // 标记，都不含路径。
+  PathRebaseColumn('LibraryOrganizeChanges', 'payloadJson',
+      PathRebaseKind.notAPath, '成员键与合集快照 JSON，无路径。'),
+  PathRebaseColumn('LibraryOrganizeChanges', 'source', PathRebaseKind.notAPath,
+      '`rule` / `ai` 来源标记，不是来源路径。'),
   PathRebaseColumn('MediaOpenHistory', 'mediaSource', PathRebaseKind.notAPath,
       '媒体源标识（MediaSource.uniqueKey），不是路径。'),
   PathRebaseColumn(

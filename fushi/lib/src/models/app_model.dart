@@ -48,6 +48,8 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart'
+    show LibraryOrganizeAutoHost, installLibraryOrganizeAutomatic;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show installCollectionAiOrderSettings;
 import 'package:fushi/src/media/override_thumbnail_migration.dart';
@@ -3266,6 +3268,13 @@ class AppModel with ChangeNotifier {
       // 导入 / 归组后的合集 AI 排序（自动路径）按偏好里的 AI 指派决定发不发请求；
       // 每次现取，设置页改了立即生效。弹窗进程不装，自动路径在那边是 no-op。
       installCollectionAiOrderSettings(_prefsRepo);
+      // AI 整理库「导入后自动整理」（spec 2026-10-20 §10.2）：同一处装配，弹窗 /
+      // 悬浮词典进程不经 initialise()，那边自动路径是 no-op。
+      installLibraryOrganizeAutomatic(LibraryOrganizeAutoHost(
+        db: _database,
+        prefs: _prefsRepo!,
+        nameLanguage: () => appLocale.toLanguageTag(),
+      ));
       final BaseAnkiRepository ankiRepo =
           platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(
