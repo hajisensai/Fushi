@@ -74,6 +74,7 @@
 | [BUG-3609](bugs/BUG-3609-ass-bilingual-overlap-width.md) | 🚧 | 🚧 | 简日内封双语 ASS 重叠、纯日字幕字宽不对（缺原片未定根因） |
 | [BUG-3608](bugs/BUG-3608-ass-plain-mode-pos-order.md) | ✅ | ✅ | 纯字幕模式下 \pos 排成上下的同时间戳 ASS 两行被上下颠倒 |
 | [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
+| [BUG-3616](bugs/BUG-3616-game-stream-study-duration.md) | ✅ | ✅ | 串流游玩时游戏留在主机后台，游玩时长整场记 0 |
 | [BUG-3570](bugs/BUG-3570-web-browser-embedded-under-nav.md) | ✅ | ✅ | 浏览器嵌在模块页里：主导航底栏与「阅读本章」FAB 叠在网页上互相遮挡，顶部还有「浏览器」标题 |
 | [BUG-3569](bugs/BUG-3569-lookup-shell-title-md3-compact.md) | ✅ | ✅ | 查词页（MD3 手机）顶部仍有一整行「查词」大标题 |
 | [BUG-3568](bugs/BUG-3568-root-page-back-button-on-popup.md) | ✅ | ✅ | 根页打开弹出菜单 / 对话框后重建会凭空长出返回键（浏览器页点「⋯」左上角出现返回） |

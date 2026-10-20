@@ -79,14 +79,14 @@ class GalgamePlaySessionResult {
   final int durationSeconds;
 
   @override
-  String toString() => 'GalgamePlaySessionResult(gameId: $gameId, '
+  String toString() =>
+      'GalgamePlaySessionResult(gameId: $gameId, '
       'startMs: $startMs, endMs: $endMs, durationSeconds: $durationSeconds)';
 }
 
 /// 会话结束回调（落库在别处接线）。
-typedef GalgamePlaySessionSink = Future<void> Function(
-  GalgamePlaySessionResult result,
-);
+typedef GalgamePlaySessionSink =
+    Future<void> Function(GalgamePlaySessionResult result);
 
 /// 计时器对操作系统的**全部**依赖面。Windows 实现见
 /// [GalgameWindowsProcessProbe]，测试注入假实现。
@@ -122,9 +122,9 @@ class GalgamePlaySessionMachine {
     this.minSessionSeconds = kMinSessionSeconds,
     this.maxConsecutiveFailures = kMaxConsecutiveFailures,
     this.candidateScanDelayMs = kCandidateScanDelayMs,
-  })  : _gameDirectory = gameDirectory,
-        _probe = probe,
-        _onSessionEnded = onSessionEnded;
+  }) : _gameDirectory = gameDirectory,
+       _probe = probe,
+       _onSessionEnded = onSessionEnded;
 
   /// `galgames.id`。
   final String gameId;
@@ -154,6 +154,7 @@ class GalgamePlaySessionMachine {
   int _consecutiveFailures = 0;
   bool _candidatesScanned = false;
   bool _foregroundIsGame = false;
+  bool _remotePresent = false;
   String? _canonicalGameDirectory;
   bool _canonicalGameDirectoryResolved = false;
 
@@ -182,6 +183,20 @@ class GalgamePlaySessionMachine {
 
   /// 最近一次前台采样是否落在候选进程组内。
   bool get foregroundIsGame => _foregroundIsGame;
+
+  /// 游戏窗口此刻是否正被串流到已连上的接收端（见 [setRemotePresence]）。
+  bool get remotePresent => _remotePresent;
+
+  /// 远端在场：游戏窗口正被串流到已连上的接收端（iPad / 手机）时，玩家的「前台」
+  /// 在接收端，主机上的游戏窗口按设计留在后台（窗口级捕获 + 只投递到该窗口的
+  /// 输入，`GameStreamInputFocus.background` 是默认值）。只认主机前台会让整场
+  /// 串流游玩累计 0 秒、不足门槛被丢弃（BUG-3616），所以在场期间与「前台是本游戏」
+  /// 同等计时——两者取或，同时成立也只记一秒，不双计。
+  ///
+  /// 在场状态由外部（串流宿主）维护，与会话起止无关：可以在 [start] 之前设置。
+  void setRemotePresence(bool present) {
+    _remotePresent = present;
+  }
 
   /// 当前候选进程组快照。
   Set<int> get candidatePids => Set<int>.unmodifiable(_candidatePids);
@@ -244,7 +259,8 @@ class GalgamePlaySessionMachine {
       _candidatesScanned = true;
       _rescanCandidates();
     }
-    if (mode == GalgamePlayTimingMode.playtime && _foregroundIsGame) {
+    if (mode == GalgamePlayTimingMode.playtime &&
+        (_foregroundIsGame || _remotePresent)) {
       _activeSeconds++;
     }
     _tickLiveness(nowMs);
@@ -362,14 +378,14 @@ class GalgamePlayTracker {
     int Function()? nowMs,
     Duration foregroundInterval = const Duration(milliseconds: 200),
     Duration accrualInterval = const Duration(seconds: 1),
-  })  : _gameDirectory = gameDirectory,
-        _onSessionEnded = onSessionEnded,
-        _probe = probe,
-        _mode = mode,
-        _isWindows = isWindows ?? Platform.isWindows,
-        _nowMs = nowMs ?? _defaultNowMs,
-        _foregroundInterval = foregroundInterval,
-        _accrualInterval = accrualInterval;
+  }) : _gameDirectory = gameDirectory,
+       _onSessionEnded = onSessionEnded,
+       _probe = probe,
+       _mode = mode,
+       _isWindows = isWindows ?? Platform.isWindows,
+       _nowMs = nowMs ?? _defaultNowMs,
+       _foregroundInterval = foregroundInterval,
+       _accrualInterval = accrualInterval;
 
   static int _defaultNowMs() => DateTime.now().millisecondsSinceEpoch;
 
@@ -388,6 +404,15 @@ class GalgamePlayTracker {
   Timer? _foregroundTimer;
   Timer? _accrualTimer;
   GalgamePlaySessionMachine? _machine;
+  bool _remotePresent = false;
+
+  /// 远端在场（游戏窗口正被串流到已连上的接收端），见
+  /// [GalgamePlaySessionMachine.setRemotePresence]。启动前设置的值在 [start] 时带入。
+  bool get remotePresent => _remotePresent;
+  set remotePresent(bool present) {
+    _remotePresent = present;
+    _machine?.setRemotePresence(present);
+  }
 
   /// 当前状态机（未启动 / 非 Windows 时为 null）。
   @visibleForTesting
@@ -406,7 +431,7 @@ class GalgamePlayTracker {
       probe: probe,
       onSessionEnded: _onSessionEnded,
       mode: _mode,
-    );
+    )..setRemotePresence(_remotePresent);
     machine.start(nowMs: _nowMs(), mainPid: mainPid);
     _machine = machine;
     _foregroundTimer = Timer.periodic(_foregroundInterval, (_) {
@@ -440,32 +465,37 @@ class GalgamePlayTracker {
 /// `desktop_foreground_guard.dart` / `selection_capture_ffi.dart` 也是这个范式。
 class GalgameWindowsProcessProbe implements GalgameProcessProbe {
   GalgameWindowsProcessProbe()
-      : _getForegroundWindow = _user32.lookupFunction<
-            _GetForegroundWindowNative,
-            _GetForegroundWindowDart>('GetForegroundWindow'),
-        _getWindowThreadProcessId = _user32.lookupFunction<
+    : _getForegroundWindow = _user32
+          .lookupFunction<_GetForegroundWindowNative, _GetForegroundWindowDart>(
+            'GetForegroundWindow',
+          ),
+      _getWindowThreadProcessId = _user32
+          .lookupFunction<
             _GetWindowThreadProcessIdNative,
-            _GetWindowThreadProcessIdDart>('GetWindowThreadProcessId'),
-        _openProcess =
-            _kernel32.lookupFunction<_OpenProcessNative, _OpenProcessDart>(
-                'OpenProcess'),
-        _getExitCodeProcess = _kernel32.lookupFunction<
-            _GetExitCodeProcessNative,
-            _GetExitCodeProcessDart>('GetExitCodeProcess'),
-        _queryFullProcessImageName = _kernel32.lookupFunction<
+            _GetWindowThreadProcessIdDart
+          >('GetWindowThreadProcessId'),
+      _openProcess = _kernel32
+          .lookupFunction<_OpenProcessNative, _OpenProcessDart>('OpenProcess'),
+      _getExitCodeProcess = _kernel32
+          .lookupFunction<_GetExitCodeProcessNative, _GetExitCodeProcessDart>(
+            'GetExitCodeProcess',
+          ),
+      _queryFullProcessImageName = _kernel32
+          .lookupFunction<
             _QueryFullProcessImageNameNative,
-            _QueryFullProcessImageNameDart>('QueryFullProcessImageNameW'),
-        _createToolhelp32Snapshot = _kernel32.lookupFunction<
+            _QueryFullProcessImageNameDart
+          >('QueryFullProcessImageNameW'),
+      _createToolhelp32Snapshot = _kernel32
+          .lookupFunction<
             _CreateToolhelp32SnapshotNative,
-            _CreateToolhelp32SnapshotDart>('CreateToolhelp32Snapshot'),
-        _process32First =
-            _kernel32.lookupFunction<_Process32Native, _Process32Dart>(
-                'Process32FirstW'),
-        _process32Next = _kernel32
-            .lookupFunction<_Process32Native, _Process32Dart>('Process32NextW'),
-        _closeHandle =
-            _kernel32.lookupFunction<_CloseHandleNative, _CloseHandleDart>(
-                'CloseHandle');
+            _CreateToolhelp32SnapshotDart
+          >('CreateToolhelp32Snapshot'),
+      _process32First = _kernel32
+          .lookupFunction<_Process32Native, _Process32Dart>('Process32FirstW'),
+      _process32Next = _kernel32
+          .lookupFunction<_Process32Native, _Process32Dart>('Process32NextW'),
+      _closeHandle = _kernel32
+          .lookupFunction<_CloseHandleNative, _CloseHandleDart>('CloseHandle');
 
   static final DynamicLibrary _user32 = DynamicLibrary.open('user32.dll');
   static final DynamicLibrary _kernel32 = DynamicLibrary.open('kernel32.dll');
@@ -630,65 +660,48 @@ final class _ProcessEntry32W extends Struct {
 typedef _GetForegroundWindowNative = IntPtr Function();
 typedef _GetForegroundWindowDart = int Function();
 
-typedef _GetWindowThreadProcessIdNative = Uint32 Function(
-  IntPtr hWnd,
-  Pointer<Uint32> processId,
-);
-typedef _GetWindowThreadProcessIdDart = int Function(
-  int hWnd,
-  Pointer<Uint32> processId,
-);
+typedef _GetWindowThreadProcessIdNative =
+    Uint32 Function(IntPtr hWnd, Pointer<Uint32> processId);
+typedef _GetWindowThreadProcessIdDart =
+    int Function(int hWnd, Pointer<Uint32> processId);
 
-typedef _OpenProcessNative = IntPtr Function(
-  Uint32 desiredAccess,
-  Int32 inheritHandle,
-  Uint32 processId,
-);
-typedef _OpenProcessDart = int Function(
-  int desiredAccess,
-  int inheritHandle,
-  int processId,
-);
+typedef _OpenProcessNative =
+    IntPtr Function(
+      Uint32 desiredAccess,
+      Int32 inheritHandle,
+      Uint32 processId,
+    );
+typedef _OpenProcessDart =
+    int Function(int desiredAccess, int inheritHandle, int processId);
 
-typedef _GetExitCodeProcessNative = Int32 Function(
-  IntPtr process,
-  Pointer<Uint32> exitCode,
-);
-typedef _GetExitCodeProcessDart = int Function(
-  int process,
-  Pointer<Uint32> exitCode,
-);
+typedef _GetExitCodeProcessNative =
+    Int32 Function(IntPtr process, Pointer<Uint32> exitCode);
+typedef _GetExitCodeProcessDart =
+    int Function(int process, Pointer<Uint32> exitCode);
 
-typedef _QueryFullProcessImageNameNative = Int32 Function(
-  IntPtr process,
-  Uint32 flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
-typedef _QueryFullProcessImageNameDart = int Function(
-  int process,
-  int flags,
-  Pointer<Utf16> exeName,
-  Pointer<Uint32> size,
-);
+typedef _QueryFullProcessImageNameNative =
+    Int32 Function(
+      IntPtr process,
+      Uint32 flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
+typedef _QueryFullProcessImageNameDart =
+    int Function(
+      int process,
+      int flags,
+      Pointer<Utf16> exeName,
+      Pointer<Uint32> size,
+    );
 
-typedef _CreateToolhelp32SnapshotNative = IntPtr Function(
-  Uint32 flags,
-  Uint32 processId,
-);
-typedef _CreateToolhelp32SnapshotDart = int Function(
-  int flags,
-  int processId,
-);
+typedef _CreateToolhelp32SnapshotNative =
+    IntPtr Function(Uint32 flags, Uint32 processId);
+typedef _CreateToolhelp32SnapshotDart = int Function(int flags, int processId);
 
-typedef _Process32Native = Int32 Function(
-  IntPtr snapshot,
-  Pointer<_ProcessEntry32W> entry,
-);
-typedef _Process32Dart = int Function(
-  int snapshot,
-  Pointer<_ProcessEntry32W> entry,
-);
+typedef _Process32Native =
+    Int32 Function(IntPtr snapshot, Pointer<_ProcessEntry32W> entry);
+typedef _Process32Dart =
+    int Function(int snapshot, Pointer<_ProcessEntry32W> entry);
 
 typedef _CloseHandleNative = Int32 Function(IntPtr handle);
 typedef _CloseHandleDart = int Function(int handle);

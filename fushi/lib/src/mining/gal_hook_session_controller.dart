@@ -1250,6 +1250,9 @@ class GalHookSessionController extends ChangeNotifier {
   /// 登记进 [ExitFlushRegistry] 的游玩计时落库回调；首个 tracker 启动时登记。
   ExitFlushCallback? _playTrackerExitFlush;
 
+  /// 本会话的游戏窗口此刻是否正被串流到已连上的接收端（见 [setRemotePlayPresence]）。
+  bool _remotePlayPresent = false;
+
   static GalgamePlayTracker _defaultPlayTrackerFactory({
     required String gameId,
     required String gameDirectory,
@@ -4067,6 +4070,24 @@ class GalHookSessionController extends ChangeNotifier {
   @visibleForTesting
   GalgamePlayTracker? get playTracker => _playTracker;
 
+  /// 串流宿主报告「本会话的游戏窗口正被串流到已连上的接收端」。
+  ///
+  /// 游玩计时默认只认主机前台是游戏；串流时玩家在接收端（iPad / 手机），主机上的
+  /// 游戏窗口按设计留在后台，不转告这一位整场串流就累计 0 秒、被门槛丢弃，统计里
+  /// 只剩字数没有时长（BUG-3616）。在场期间计时器与前台同等计时（取或，不双计）。
+  ///
+  /// 唯一写入方是 `FushiSyncServerController`（串流连上 / 断开 / 停止时同步）；
+  /// 值跨计时器保留，之后（重新）启动的计时器起步即带上。
+  void setRemotePlayPresence(bool present) {
+    if (_remotePlayPresent == present) return;
+    _remotePlayPresent = present;
+    _playTracker?.remotePresent = present;
+  }
+
+  /// [setRemotePlayPresence] 的当前值（单测断言接线用）。
+  @visibleForTesting
+  bool get remotePlayPresent => _remotePlayPresent;
+
   /// 解析一次捕获会话的库内身份。**launch 与 attach 的唯一身份来源**（BUG-1892）。
   ///
   /// [gameId] / [gameTitle] 是库页启动时上层已经握着的身份，直接采信；缺席时才反查。
@@ -4157,6 +4178,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
     _playTracker = tracker;
     _activitySkippedMs = 0;
+    tracker.remotePresent = _remotePlayPresent;
     tracker.start(mainPid: mainPid ?? 0);
     // 桌面点 X 走 `exit(0)` 快杀，[close] 不会被调用；与超分同款，登记退出 flush
     // 把结算写穿再放进程死（登记点就在启动处，换人再启动也不会漏）。

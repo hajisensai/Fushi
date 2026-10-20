@@ -100,32 +100,33 @@ class FushiSyncServerController extends ChangeNotifier {
     InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
-  })  : _navigatorKey = navigatorKey,
-        _database = database,
-        _syncDataDir = syncDataDir,
-        _remoteLookupServiceFactory = remoteLookupServiceFactory,
-        _miningServiceFactory = miningServiceFactory,
-        _videoRemoteServiceFactory = videoRemoteServiceFactory,
-        _videoRemoteStopped = videoRemoteStopped,
-        _historyServiceFactory = historyServiceFactory,
-        _libraryServiceFactory = libraryServiceFactory,
-        _mangaOcrServiceFactory = mangaOcrServiceFactory,
-        _mangaOcrModelServicesFactory = mangaOcrModelServicesFactory,
-        _hostJobsFactory = hostJobsFactory,
-        _downloadsFactory = downloadsFactory,
-        _subscriptionsFactory = subscriptionsFactory,
-        _assistantFactory = assistantFactory,
-        _videoSubtitleBackfill = videoSubtitleBackfill,
-        _graphicSubtitleTrackExporter = graphicSubtitleTrackExporter ??
-            exportGraphicSubtitleTrackForInterconnect,
-        _hostSelfUpdater = hostSelfUpdater,
-        _leaderboardLinkHost = leaderboardLinkHost,
-        _prefsStore = prefsStore,
-        // Headless/test construction without an injected service falls back to
-        // the desktop (machine-hostname) source; production wires the real
-        // per-platform service so mobile hosts advertise their model, not
-        // Android's "localhost" (TODO-1356).
-        _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
+  }) : _navigatorKey = navigatorKey,
+       _database = database,
+       _syncDataDir = syncDataDir,
+       _remoteLookupServiceFactory = remoteLookupServiceFactory,
+       _miningServiceFactory = miningServiceFactory,
+       _videoRemoteServiceFactory = videoRemoteServiceFactory,
+       _videoRemoteStopped = videoRemoteStopped,
+       _historyServiceFactory = historyServiceFactory,
+       _libraryServiceFactory = libraryServiceFactory,
+       _mangaOcrServiceFactory = mangaOcrServiceFactory,
+       _mangaOcrModelServicesFactory = mangaOcrModelServicesFactory,
+       _hostJobsFactory = hostJobsFactory,
+       _downloadsFactory = downloadsFactory,
+       _subscriptionsFactory = subscriptionsFactory,
+       _assistantFactory = assistantFactory,
+       _videoSubtitleBackfill = videoSubtitleBackfill,
+       _graphicSubtitleTrackExporter =
+           graphicSubtitleTrackExporter ??
+           exportGraphicSubtitleTrackForInterconnect,
+       _hostSelfUpdater = hostSelfUpdater,
+       _leaderboardLinkHost = leaderboardLinkHost,
+       _prefsStore = prefsStore,
+       // Headless/test construction without an injected service falls back to
+       // the desktop (machine-hostname) source; production wires the real
+       // per-platform service so mobile hosts advertise their model, not
+       // Android's "localhost" (TODO-1356).
+       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final FushiDatabase Function() _database;
@@ -187,6 +188,10 @@ class FushiSyncServerController extends ChangeNotifier {
   TexthookerLineEntry? _lastPublishedGameLine;
   int? _gameStreamHwnd;
   DateTime? _gameStreamHookStartedAt;
+
+  /// Last remote-presence value reported to the play timer
+  /// ([GalHookSessionController.setRemotePlayPresence]).
+  bool _gameStreamPlayPresence = false;
   FushiGameStreamMiningAdapter? _gameStreamMining;
   FushiGameStreamHost? get activeGameStreamHost => _gameStreamHost;
 
@@ -212,7 +217,31 @@ class FushiSyncServerController extends ChangeNotifier {
     if (_gameStreamService?.session?.state.isTerminal == true) {
       _detachGameStreamTexthooker();
     }
+    _syncGameStreamPlayPresence();
     notifyListeners();
+  }
+
+  /// While the bound game window streams to a connected receiver the player is
+  /// at the receiver and the host keeps the game in the background, so the
+  /// foreground-only play timer would count nothing (BUG-3616). Report that
+  /// presence to the timer; every teardown path clears it via
+  /// [_detachGameStreamTexthooker].
+  void _syncGameStreamPlayPresence() {
+    final FushiGameStreamHost? host = _gameStreamHost;
+    final GameStreamSession? session = _gameStreamService?.session;
+    _setGameStreamPlayPresence(
+      host != null &&
+          host.connected &&
+          _gameStreamHwnd != null &&
+          session != null &&
+          !session.state.isTerminal,
+    );
+  }
+
+  void _setGameStreamPlayPresence(bool present) {
+    if (_gameStreamPlayPresence == present) return;
+    _gameStreamPlayPresence = present;
+    GalHookSessionController.instance.setRemotePlayPresence(present);
   }
 
   FushiGameStreamMiningAdapter Function()? _gameStreamMiningFactory;
@@ -353,6 +382,7 @@ class FushiSyncServerController extends ChangeNotifier {
     }
     _gameStreamHwnd = null;
     _gameStreamHookStartedAt = null;
+    _setGameStreamPlayPresence(false);
     _lastPublishedGameLine = null;
     _gameStreamMining?.clear();
     _gameStreamMining = null;
@@ -695,69 +725,70 @@ class FushiSyncServerController extends ChangeNotifier {
     // 与 LAN 广播 TXT `id=` 同一个值：client 靠它把本机的多条地址归为一台 host。
     final String hostId = await repo.getOrCreateDeviceId();
     final HostJobManager? hostJobs = await _hostJobsFactory?.call();
-    final FushiSyncServer server = FushiSyncServer(
-      syncDataDir: _syncDataDir(),
-      port: port,
-      token: token,
-      allowLan: true,
-      remoteLookupService: _remoteLookupServiceFactory(),
-      miningService: _miningServiceFactory?.call(),
-      videoRemoteService: _videoRemoteServiceFactory?.call(),
-      historyService: _historyServiceFactory?.call(),
-      libraryService: _libraryServiceFactory?.call(),
-      // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
-      // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
-      mangaOcrJobs: _buildMangaOcrJobManager(),
-      // 通用任务 / 代下载 / 订阅：与无头 fushi_server 同一份引擎路由，只是实现
-      // 挂在 app 自己的管线上（见 app_download_host.dart）。
-      hostJobs: hostJobs,
-      downloads: _downloadsFactory?.call(),
-      subscriptions: _subscriptionsFactory?.call(),
-      assistant: _assistantFactory?.call(),
-      securityContext: securityContext,
-      hostFingerprint: hostFingerprint,
-      deviceName: deviceName,
-      // 引擎按请求实时读的 host 偏好（目前只有「允许为对端转码视频」）：传仓库本体
-      // 而不是启动时的快照，用户在设置里改完不必重启互联服务。
-      prefs: _prefsStore?.call(),
-      // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
-      // FFI engine so the browser extension's rewritten <img> GET can fetch
-      // them. Null-safe: before the engine is initialised it yields null and
-      // the endpoint answers 404.
-      // 游戏串流（本 PR）：仅当主机本地点了「开始串流」才非空；null = 串流端点
-      // 全部 404，行为与从前一致。
-      gameStreamService: gameStreamService,
-      dictionaryMediaProvider: (String dict, String mediaPath) =>
-          FushiDicts.isInitialized
-              ? FushiDicts.instance.getMediaFile(dict, mediaPath)
-              : null,
-      // 对端弹窗渲染本机查词结果时用本机的词典样式（`/api/lookup/dictionary/styles`）。
-      dictionaryStylesProvider: () => FushiDicts.isInitialized
-          ? FushiDicts.dictionaryStyles
-          : const <String, String>{},
-    )
-      ..onPairRequest = _promptPairApproval
-      // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
-      ..onPairPinGenerated = _generatePairPin
-      // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
-      ..onPairSessionResolved = _dismissPendingPairPinDialog
-      ..lanRequiresPinProvider = _repo.getLanRequiresPin
-      // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
-      // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
-      ..onPeerPaired = _persistPairedPeer
-      // 复习同步：已配对设备写进同步目录后，host 自己的 SRS 同步去抖跟一轮（srs_app_runtime.dart）。
-      ..onClientWrite = _onClientWrite
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens
-      // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
-      // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
-      ..hostId = hostId
-      ..publicUrlsProvider = repo.getInterconnectPublicUrls
-      ..videoSubtitleBackfill = _videoSubtitleBackfill
-      ..graphicSubtitleTrackExporter = _graphicSubtitleTrackExporter
-      // 远程更新本机（反馈 Pp8XPyve0N）：开关 / 平台门在实现里按请求实时判。
-      ..hostSelfUpdater = _hostSelfUpdater?.call()
-      // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
-      ..leaderboardLinkHost = _leaderboardLinkHost?.call();
+    final FushiSyncServer server =
+        FushiSyncServer(
+            syncDataDir: _syncDataDir(),
+            port: port,
+            token: token,
+            allowLan: true,
+            remoteLookupService: _remoteLookupServiceFactory(),
+            miningService: _miningServiceFactory?.call(),
+            videoRemoteService: _videoRemoteServiceFactory?.call(),
+            historyService: _historyServiceFactory?.call(),
+            libraryService: _libraryServiceFactory?.call(),
+            // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
+            // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
+            mangaOcrJobs: _buildMangaOcrJobManager(),
+            // 通用任务 / 代下载 / 订阅：与无头 fushi_server 同一份引擎路由，只是实现
+            // 挂在 app 自己的管线上（见 app_download_host.dart）。
+            hostJobs: hostJobs,
+            downloads: _downloadsFactory?.call(),
+            subscriptions: _subscriptionsFactory?.call(),
+            assistant: _assistantFactory?.call(),
+            securityContext: securityContext,
+            hostFingerprint: hostFingerprint,
+            deviceName: deviceName,
+            // 引擎按请求实时读的 host 偏好（目前只有「允许为对端转码视频」）：传仓库本体
+            // 而不是启动时的快照，用户在设置里改完不必重启互联服务。
+            prefs: _prefsStore?.call(),
+            // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
+            // FFI engine so the browser extension's rewritten <img> GET can fetch
+            // them. Null-safe: before the engine is initialised it yields null and
+            // the endpoint answers 404.
+            // 游戏串流（本 PR）：仅当主机本地点了「开始串流」才非空；null = 串流端点
+            // 全部 404，行为与从前一致。
+            gameStreamService: gameStreamService,
+            dictionaryMediaProvider: (String dict, String mediaPath) =>
+                FushiDicts.isInitialized
+                ? FushiDicts.instance.getMediaFile(dict, mediaPath)
+                : null,
+            // 对端弹窗渲染本机查词结果时用本机的词典样式（`/api/lookup/dictionary/styles`）。
+            dictionaryStylesProvider: () => FushiDicts.isInitialized
+                ? FushiDicts.dictionaryStyles
+                : const <String, String>{},
+          )
+          ..onPairRequest = _promptPairApproval
+          // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
+          ..onPairPinGenerated = _generatePairPin
+          // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
+          ..onPairSessionResolved = _dismissPendingPairPinDialog
+          ..lanRequiresPinProvider = _repo.getLanRequiresPin
+          // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
+          // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
+          ..onPeerPaired = _persistPairedPeer
+          // 复习同步：已配对设备写进同步目录后，host 自己的 SRS 同步去抖跟一轮（srs_app_runtime.dart）。
+          ..onClientWrite = _onClientWrite
+          ..pairedPeerTokensProvider = _loadPairedPeerTokens
+          // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
+          // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
+          ..hostId = hostId
+          ..publicUrlsProvider = repo.getInterconnectPublicUrls
+          ..videoSubtitleBackfill = _videoSubtitleBackfill
+          ..graphicSubtitleTrackExporter = _graphicSubtitleTrackExporter
+          // 远程更新本机（反馈 Pp8XPyve0N）：开关 / 平台门在实现里按请求实时判。
+          ..hostSelfUpdater = _hostSelfUpdater?.call()
+          // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
+          ..leaderboardLinkHost = _leaderboardLinkHost?.call();
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
@@ -798,7 +829,8 @@ class FushiSyncServerController extends ChangeNotifier {
     if (factory == null) return null;
     return MangaOcrHostJobManager(
       service: factory(),
-      modelServices: _mangaOcrModelServicesFactory?.call() ??
+      modelServices:
+          _mangaOcrModelServicesFactory?.call() ??
           const <String, MangaOcrService>{},
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
@@ -854,9 +886,12 @@ class FushiSyncServerController extends ChangeNotifier {
 
   Future<void> _serializeP2p(Future<void> Function() op) {
     final Future<void> next = _p2pOps.then((_) => op());
-    _p2pOps = next.then<void>((_) {}, onError: (Object e, StackTrace st) {
-      ErrorLogService.instance.log('FushiServerController.p2p', e, st);
-    });
+    _p2pOps = next.then<void>(
+      (_) {},
+      onError: (Object e, StackTrace st) {
+        ErrorLogService.instance.log('FushiServerController.p2p', e, st);
+      },
+    );
     return _p2pOps;
   }
 
@@ -882,11 +917,11 @@ class FushiSyncServerController extends ChangeNotifier {
       });
 
   Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
-        currentAppInterconnectP2pRuntime?.current?.hostStop();
-        server.extraAddressesProvider = null;
-        server.p2pPeerResolver = null;
-        await server.stopP2pListener();
-      });
+    currentAppInterconnectP2pRuntime?.current?.hostStop();
+    server.extraAddressesProvider = null;
+    server.p2pPeerResolver = null;
+    await server.stopP2pListener();
+  });
 
   /// 切换「允许经 P2P 隧道远程连接」，host 正在跑时即时生效。
   Future<void> setP2pEnabled(bool enabled) async {
@@ -1168,7 +1203,8 @@ class FushiSyncServerController extends ChangeNotifier {
 
     // 本会话能否授予「我的设备」：client 上报了设备钥匙才有这个选项（server 给的
     // [FushiPairRequest.ownerDeviceGrant]）。旧 client / 没有设备钥匙 = 只有「允许」。
-    final FushiPairOwnerDeviceGrant? ownerDeviceGrant = request.ownerDeviceGrant;
+    final FushiPairOwnerDeviceGrant? ownerDeviceGrant =
+        request.ownerDeviceGrant;
 
     void onAllow({required bool ownerDevice}) {
       // 「允许 · 这是我的设备」与「仅互联」都放行配对；前者在**本会话**的 grant 上记下
