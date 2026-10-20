@@ -82,6 +82,10 @@ abstract interface class EmbeddedTorrentWorkerState {
 
   /// 释放视图（短命适配器 close 时调用；不关 session）。
   void closeView(int viewId);
+
+  /// 关宿主（强制存 resume + 关 session），幂等。关闭命令与工作 isolate 退出
+  /// 前的兜底都走这里，同一个 session 只关一次。
+  void disposeHost({Set<String>? keepIds});
 }
 
 class _EmbeddedTorrentWorkerState implements EmbeddedTorrentWorkerState {
@@ -113,6 +117,15 @@ class _EmbeddedTorrentWorkerState implements EmbeddedTorrentWorkerState {
   @override
   void closeView(int viewId) {
     _views.remove(viewId)?.close();
+  }
+
+  bool _hostDisposed = false;
+
+  @override
+  void disposeHost({Set<String>? keepIds}) {
+    if (_hostDisposed) return;
+    _hostDisposed = true;
+    host.dispose(keepIds: keepIds);
   }
 }
 
@@ -205,26 +218,43 @@ class _Handshake {
   final bool hasRestored;
 }
 
-Future<void> _workerMain(_WorkerBoot boot) async {
+void _workerMain(_WorkerBoot boot) {
   final SendPort logPort = boot.logPort;
   fushiDebugPrint = (String? message, {int? wrapWidth}) =>
       logPort.send(_DebugPrintRecord(message));
   engineLog = _ForwardingEngineLogSink(logPort);
 
+  final ReceivePort requests = ReceivePort('embedded-torrent-worker');
+  // 未捕获的错误不许直接打死本 isolate：默认 errorsAreFatal 下 isolate 当场
+  // 终止，[_serveWorker] 的 finally 根本不跑，原生 session 留在进程里（监听
+  // 端口、DHT、磁盘句柄都还占着），主 isolate 再起一个也绑不上同一端口。
+  // 这里记一笔后关请求端口：命令循环随之结束，finally 关 session，isolate
+  // 再自然退出（主 isolate 由 onExit 得知）。
+  runZonedGuarded<void>(() => unawaited(_serveWorker(boot, requests)), (
+    Object error,
+    StackTrace stack,
+  ) {
+    engineLog.log('EmbeddedTorrentWorker.uncaught', error, stack);
+    requests.close();
+  });
+}
+
+Future<void> _serveWorker(_WorkerBoot boot, ReceivePort requests) async {
   final EmbeddedTorrentHost? host;
   try {
     host = boot.factory(boot.args);
   } on Object catch (e, s) {
     engineLog.log('EmbeddedTorrentWorker.open', e, s);
+    requests.close();
     boot.handshakePort.send(const _Handshake(null, null, false));
     return;
   }
   if (host == null) {
+    requests.close();
     boot.handshakePort.send(const _Handshake(null, null, false));
     return;
   }
   final _EmbeddedTorrentWorkerState state = _EmbeddedTorrentWorkerState(host);
-  final ReceivePort requests = ReceivePort('embedded-torrent-worker');
   boot.handshakePort.send(
     _Handshake(requests.sendPort, host.capabilities, host.hasRestored),
   );
@@ -233,27 +263,45 @@ Future<void> _workerMain(_WorkerBoot boot) async {
   // 无锁、依赖调用方串行；backend 的 add 路径里还有 begin/endNetworkWake
   // 包住同步 add 的不变量，交错执行会让并发 add 提前收回发现协议。
   SendPort? replyPort;
-  await for (final Object? message in requests) {
-    if (message is SendPort) {
-      replyPort = message;
-      continue;
+  int? shutdownId;
+  try {
+    await for (final Object? message in requests) {
+      if (message is SendPort) {
+        replyPort = message;
+        continue;
+      }
+      if (message is _Shutdown) {
+        shutdownId = message.id;
+        break;
+      }
+      if (message is! _Request) continue;
+      Object? value;
+      String? error;
+      String? stack;
+      try {
+        value = await message.command(state);
+      } on Object catch (e, s) {
+        error = '$e';
+        stack = '$s';
+      }
+      // 结果不可发送时这里同步抛出：落到外层 finally（关 session），错误本身
+      // 交给 [_workerMain] 的守护 zone 记录。
+      replyPort?.send(_Response(message.id, value, error, stack));
     }
-    if (message is _Shutdown) {
-      replyPort?.send(_Response(message.id, null, null, null));
-      requests.close();
-      continue;
-    }
-    if (message is! _Request) continue;
-    Object? value;
-    String? error;
-    String? stack;
+  } finally {
+    requests.close();
+    // 无论怎么离开循环（正常关闭 / 命令处理之外的未捕获错误 / 请求端口被守护
+    // zone 关掉），session 都在本 isolate 退出前关掉。正常关闭路径上关闭前的
+    // 最后一条命令已经 dispose 过，这里是幂等的 no-op。
     try {
-      value = await message.command(state);
+      state.disposeHost();
     } on Object catch (e, s) {
-      error = '$e';
-      stack = '$s';
+      engineLog.log('EmbeddedTorrentWorker.dispose', e, s);
     }
-    replyPort?.send(_Response(message.id, value, error, stack));
+    // 关闭应答排在 session 真正关掉之后：主 isolate 拿到它时端口已经释放。
+    if (shutdownId != null) {
+      replyPort?.send(_Response(shutdownId, null, null, null));
+    }
   }
 }
 
@@ -307,8 +355,17 @@ class EmbeddedTorrentWorker {
   final Map<int, Completer<Object?>> _pending = <int, Completer<Object?>>{};
   int _nextId = 0;
   bool _closed = false;
+  bool _exitedUnexpectedly = false;
+  final Completer<void> _closedSignal = Completer<void>();
 
   bool get isClosed => _closed;
+
+  /// 本端收尾完成时完成（[close] 主动关闭，或工作 isolate 意外退出）。从不以
+  /// 错误完成。持有方据此把已经失效的客户端摘下来，下次需要时重建。
+  Future<void> get closed => _closedSignal.future;
+
+  /// 工作 isolate 是否在没有经过 [close] 的情况下退出了。
+  bool get exitedUnexpectedly => _exitedUnexpectedly;
 
   /// 起工作 isolate 并在其中用 [factory] 打开宿主。宿主打不开（DLL 缺失 /
   /// session 创建失败）返回 null，isolate 随之退出。
@@ -433,6 +490,7 @@ class EmbeddedTorrentWorker {
 
   void _onExit() {
     if (_closed) return;
+    _exitedUnexpectedly = true;
     engineLog.log(
       'EmbeddedTorrentWorker',
       StateError('embedded torrent isolate exited unexpectedly'),
@@ -452,6 +510,7 @@ class EmbeddedTorrentWorker {
     _logs.close();
     _exits.close();
     _isolate.kill(priority: Isolate.beforeNextEvent);
+    _closedSignal.complete();
   }
 
   static void _replayLog(Object? message) {

@@ -27,6 +27,9 @@ class EmbeddedTorrentHostClient {
   int _nextViewId = 0;
   bool _hasRestored;
 
+  /// [post] 已经为「工作 isolate 已关」记过一笔（之后静默丢弃，不每 tick 刷屏）。
+  bool _loggedPostAfterClose = false;
+
   /// 起工作 isolate 并在其中打开宿主。DLL 缺失 / session 创建失败返回 null。
   ///
   /// [factory] 仅测试覆盖（顶层函数，在工作 isolate 里执行）。
@@ -52,6 +55,42 @@ class EmbeddedTorrentHostClient {
   bool get hasRestored => _hasRestored;
 
   bool get isClosed => _worker.isClosed;
+
+  /// 客户端失效时完成（[dispose]，或工作 isolate 意外退出）；从不以错误完成。
+  /// 持有方（[EmbeddedTorrentHostSlot]）据此摘下失效客户端，下次需要时重建。
+  Future<void> get closed => _worker.closed;
+
+  /// 工作 isolate 是否没经 [dispose] 就退出了（崩溃 / 未捕获错误）。
+  bool get exitedUnexpectedly => _worker.exitedUnexpectedly;
+
+  /// 投递式入口：调用方不等回执的命令（铺设置、每 tick 的扫描）一律经这里发，
+  /// 别裸 `unawaited(client.xxx())`——工作 isolate 抛错或已关时那会变成 zone
+  /// 未处理异步错误。
+  ///
+  /// [command] 是本客户端某个方法刚返回的 future（如 `post('applyLimits',
+  /// client.applyLimits(...))`）；命令照常按发送顺序执行。失败记进
+  /// [engineLog]：命令自身的错误每次都记；「工作 isolate 已关」只在第一次记
+  /// 一条诊断——关掉之后每 tick 的投递都会撞上它，那是同一件事，
+  /// 真正的退出原因已由 [EmbeddedTorrentWorker] 记过。
+  void post(String operation, Future<Object?> command) {
+    unawaited(
+      command.then<void>(
+        (Object? _) {},
+        onError: (Object error, StackTrace stack) {
+          if (error is EmbeddedTorrentWorkerClosed) {
+            if (_loggedPostAfterClose) return;
+            _loggedPostAfterClose = true;
+            engineLog.logDiagnostic(
+              'EmbeddedTorrentHostClient.$operation',
+              'dropped: embedded torrent worker is closed',
+            );
+            return;
+          }
+          engineLog.log('EmbeddedTorrentHostClient.$operation', error, stack);
+        },
+      ),
+    );
+  }
 
   /// 底层 DLL 是否支持把限速套到局域网 peer。
   bool get supportsLocalPeerRateLimit =>
@@ -593,7 +632,7 @@ EmbeddedTorrentCommand<bool> _resumeTorrentByUser(String infoHash) =>
 
 EmbeddedTorrentCommand<Object?> _disposeHost(Set<String>? keepIds) =>
     (EmbeddedTorrentWorkerState s) {
-      s.host.dispose(keepIds: keepIds);
+      s.disposeHost(keepIds: keepIds);
       return null;
     };
 
