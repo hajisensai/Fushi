@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3232 条。点号进各自文件。
+> 共 3246 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3623](bugs/BUG-3623-epub-zip-extra-field-padding-range-error.md) | ✅ | ✅ | EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读） |
-| [BUG-3622](bugs/BUG-3622-manga-cbz-avif-pages.md) | ✅ | ✅ | CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images） |
-> 共 3244 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3642](bugs/BUG-3642-epub-zip-extra-field-padding-range-error.md) | ✅ | ✅ | EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读） |
+| [BUG-3641](bugs/BUG-3641-manga-cbz-avif-pages.md) | ✅ | ✅ | CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images） |
 | [BUG-3640](bugs/BUG-3640-scrape-ledger-plaintext-credentials.md) | ✅ | ✅ | 补刮账本把含凭据的配置指纹明文落盘 |
 | [BUG-3639](bugs/BUG-3639-interconnect-online-manga-undownloaded-hidden.md) | ✅ | ✅ | interconnect-online-manga-undownloaded-hidden |
 | [BUG-3638](bugs/BUG-3638-collection-hero-cover-dangling-path.md) | ✅ | ✅ | 系列封面路径悬空时详情页 hero 不回落到刮削封面 |

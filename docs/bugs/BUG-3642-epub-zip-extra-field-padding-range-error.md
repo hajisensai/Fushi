@@ -1,4 +1,4 @@
-## BUG-3623 · EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读）
+## BUG-3642 · EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读）
 - **报告**：2026-10-20（用户转来截图：导入「Re：ゼロから始める異世界生活 01.epub」时 toast `Import failed: RangeError (length): Invalid value: Not in inclusive range 0..36: 37`；原文件未拿到）
 - **真实性**：✅ 真 bug（同一报文在构造样本上逐字复现）。根因在依赖 archive 3.6.1：遍历 zip extra field 的循环以 `while (!extra.isEOS)` 为条件（中央目录 `lib/src/zip/zip_file_header.dart:52`；加密条目本地头 `lib/src/zip/zip_file.dart:82`），extra field 末尾剩 1～3 字节（打包工具的对齐填充）时仍进循环执行 `readUint16`，而 `InputStream.readUint16`（`lib/src/util/input_stream.dart:235`）是不查边界的 `buffer[offset++]`——37 字节的 extra 被读下标 37。调用链：`BookImportDialog._importEpubOnly` → `EpubImporter.importFromPath` → `EpubParser._decodeVerified`（`packages/fushi_engine/lib/epub/epub_parser.dart:25`）→ `ZipDecoder.decodeBytes` → `ZipDirectory.read` → `ZipFileHeader`。与书名 / 全角冒号无关，只取决于 EPUB 内部 zip 结构。上游 archive 4.x 已改成 `while (extra.length >= 4)`；本仓钉 archive ^3.6.1（升 4 要动 76 个文件）。
 - **[x] ① 已修复** — 提交 `7c756c9c2a`：`ci/patches/hosted/archive-3.6.1/`（两处循环改 `extra.length >= 4`，另加块声明的 size 超过剩余字节即停），说明与删除条件见该目录 `FUSHI_PATCH.md`。
