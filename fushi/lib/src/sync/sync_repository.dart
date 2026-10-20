@@ -1697,6 +1697,8 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
+    kStudyProfileNameAliasesPrefKey,
     _keyBackendType,
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。
