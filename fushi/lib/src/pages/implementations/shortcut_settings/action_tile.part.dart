@@ -88,7 +88,43 @@ class _ActionTileState extends State<_ActionTile> {
     }
     if (w.readOnly) return Text(t.shortcut_read_only);
     if (chips.isEmpty) {
-      return Text(t.shortcut_tap_to_assign);
+      // BUG-3621：当前设备没有绑定、但别的设备有时，不能只写「点按分配」——那等于
+      // 告诉用户这个动作什么都没绑（从手柄键位图绑了 LB，回到键盘分段的列表就像没
+      // 绑过，只有点进完整编辑才看得到）。把别的设备上的绑定带设备图标只读列出，
+      // 「点按分配」照旧保留：整行点按仍是给**当前设备**录键。
+      final List<Widget> elsewhere = <Widget>[
+        for (final ShortcutInputDevice device in ShortcutInputDevice.values)
+          if (device != w.device)
+            for (final Object b in shortcutBindingsForDevice(
+              w.bindings,
+              device,
+            ))
+              _InputIconChip(
+                key: ValueKey<String>(
+                  'elsewhere-${w.action.name}-${device.name}-'
+                  '${shortcutBindingLabel(b, w.brand)}',
+                ),
+                icon: device.icon,
+                label: shortcutBindingLabel(b, w.brand),
+              ),
+      ];
+      if (elsewhere.isEmpty) return Text(t.shortcut_tap_to_assign);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Wrap(
+            spacing: tokens.spacing.gap / 2,
+            runSpacing: tokens.spacing.gap / 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: elsewhere,
+          ),
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+            child: Text(t.shortcut_tap_to_assign),
+          ),
+        ],
+      );
     }
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -257,6 +293,7 @@ class _InputIconChip extends StatelessWidget {
     required this.icon,
     required this.label,
     this.onDeleted,
+    super.key,
   });
 
   final IconData icon;

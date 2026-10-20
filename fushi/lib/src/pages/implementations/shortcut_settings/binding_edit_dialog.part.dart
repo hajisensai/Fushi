@@ -396,6 +396,20 @@ class _ShortcutBindingEditDialogState extends State<ShortcutBindingEditDialog> {
       return KeyEventResult.handled;
     }
 
+    // BUG-3619：Android 上手柄按键（gameButton* 与手柄来源的十字键）也是 KeyEvent，
+    // 会落进键盘捕获区。按键盘键存下去就成了「键盘通道里的 LB」：冲突检测只扫键盘
+    // 通道、手柄键位图看不见，运行时却照样被 LB 触发。这里改投手柄通道，走与「录入
+    // 手柄」同一套重复 → 冲突 → 重分配三段式；动作没有手柄通道时不录（保持捕获）。
+    final GamepadButton? pad = GamepadButton.fromKeyEvent(event);
+    if (pad != null) {
+      if (event is KeyDownEvent &&
+          widget.action.channels.contains(ShortcutChannel.gamepad)) {
+        setState(() => _capturing = false);
+        unawaited(_addGamepad(pad));
+      }
+      return KeyEventResult.handled;
+    }
+
     // BUG-1422：IME（Windows 微软输入法）激活时引擎把 logicalKey 改写成
     // LogicalKeyboardKey.process，物理键不受影响。运行时解析
     // (FushiShortcutRegistry.resolveKeyboard) 早有这条回退，录入侧必须用同一条
