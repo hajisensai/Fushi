@@ -17,14 +17,18 @@ import 'package:fushi_core/fushi_core.dart'
         MediaSourceRow,
         VideoDownloadSubscriptionItemRow,
         VideoDownloadSubscriptionItemStatus,
-        VideoDownloadSubscriptionRow,
-        VideoDownloadSubscriptionsCompanion;
+        VideoDownloadSubscriptionRow;
+import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
+    show HostSubscriptionRejected;
+import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart'
+    show PipelineSubscriptionHost, VideoDownloadSubscriptionRuleEdit;
 
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/remote_subscriptions_section.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
+import 'package:fushi/src/sync/app_download_host.dart' show AppSubscriptionHost;
 import 'package:fushi/utils.dart';
 
 typedef VideoDownloadSubscriptionAction = Future<void> Function(
@@ -117,8 +121,9 @@ List<VideoDownloadSubscriptionRow> sortedVideoDownloadSubscriptions(
 ///
 /// 2026-08 重做（B3，参照 RSS-Subtitle-Manager）：卡片富信息化（封面/调度/
 /// 逐集计数）、编辑走窄合并（[showVideoDownloadSubscriptionEditDialog] +
-/// `updateVideoDownloadSubscription` 白名单列，items 历史绝不清）、卡内逐集
-/// 状态视图、搜索 + 排序。
+/// [AppSubscriptionHost.update] 白名单列，items 历史绝不清）、卡内逐集
+/// 状态视图、搜索 + 排序。所有写操作只经 [AppSubscriptionHost]（与桌面控制通道
+/// 同一份），页面不直接写库。
 class VideoDownloadSubscriptionsPanel extends ConsumerStatefulWidget {
   const VideoDownloadSubscriptionsPanel({super.key});
 
@@ -131,66 +136,46 @@ class _VideoDownloadSubscriptionsPanelState
     extends ConsumerState<VideoDownloadSubscriptionsPanel> {
   bool _checkingAll = false;
 
+  /// 本机订阅操作的唯一入口（与桌面控制通道同一份，见 [AppSubscriptionHost]）。
+  AppSubscriptionHost get _host =>
+      ref.read(appProvider).appDownloadHost.subscriptions;
+
+  /// host 拒绝（没有下载后端 / 订阅已停用等）→ 提示，不当成未捕获错误。
+  Future<void> _guard(Future<void> Function() action) async {
+    try {
+      await action();
+    } on HostSubscriptionRejected catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            e.reason == 'unsupported'
+                ? t.download_backend_not_configured
+                : e.message,
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _setEnabled(
     VideoDownloadSubscriptionRow subscription,
     bool enabled,
-  ) async {
-    final AppModel appModel = ref.read(appProvider);
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await appModel.database.updateVideoDownloadSubscription(
-      subscription.subscriptionId,
-      VideoDownloadSubscriptionsCompanion(
-        enabled: Value<bool>(enabled),
-        nextCheckAt: enabled ? Value<int?>(now) : const Value<int?>.absent(),
-        // oneShot 完成位只在 disabled 态合法（表级 CHECK）；重新启用必须同时
-        // 清掉，否则写入直接抛。
-        fulfilledAt:
-            enabled ? const Value<int?>(null) : const Value<int?>.absent(),
-        updatedAt: Value<int>(now),
-      ),
-    );
-    if (enabled) {
-      await appModel.videoDownloadSubscriptionService?.checkNow();
-    }
-  }
+  ) =>
+      _guard(() => _host.setEnabled(subscription.subscriptionId, enabled));
 
   Future<void> _checkOne(
     VideoDownloadSubscriptionRow subscription,
   ) async {
     if (!subscription.enabled) return;
-    final AppModel appModel = ref.read(appProvider);
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await appModel.database.updateVideoDownloadSubscription(
-      subscription.subscriptionId,
-      VideoDownloadSubscriptionsCompanion(
-        nextCheckAt: Value<int?>(now),
-        updatedAt: Value<int>(now),
-      ),
-    );
-    await appModel.videoDownloadSubscriptionService?.checkNow();
+    await _guard(() => _host.checkNow(subscription.subscriptionId));
   }
 
-  Future<void> _checkAll(
-    List<VideoDownloadSubscriptionRow> subscriptions,
-  ) async {
+  Future<void> _checkAll() async {
     if (_checkingAll) return;
     setState(() => _checkingAll = true);
     try {
-      final AppModel appModel = ref.read(appProvider);
-      final int now = DateTime.now().millisecondsSinceEpoch;
-      for (final VideoDownloadSubscriptionRow subscription
-          in subscriptions.where(
-        (VideoDownloadSubscriptionRow row) => row.enabled,
-      )) {
-        await appModel.database.updateVideoDownloadSubscription(
-          subscription.subscriptionId,
-          VideoDownloadSubscriptionsCompanion(
-            nextCheckAt: Value<int?>(now),
-            updatedAt: Value<int>(now),
-          ),
-        );
-      }
-      await appModel.videoDownloadSubscriptionService?.checkNow();
+      await _guard(() => _host.checkNow(null));
     } finally {
       if (mounted) setState(() => _checkingAll = false);
     }
@@ -210,15 +195,12 @@ class _VideoDownloadSubscriptionsPanelState
       destructive: true,
     );
     if (!confirmed) return;
-    await ref
-        .read(appProvider)
-        .database
-        .deleteVideoDownloadSubscription(subscription.subscriptionId);
+    await _guard(() => _host.delete(subscription.subscriptionId));
   }
 
-  /// 编辑订阅（窄合并）：只写白名单列（搜索词 / 起始集 / 字幕策略 / 目标
-  /// 来源）+ `nextCheckAt=now` 让新规则尽快跑一轮 + 清 `lastError`。
-  /// items 历史与调度状态其余字段一概不动——「改规则不清历史」。
+  /// 编辑订阅（窄合并，见 [PipelineSubscriptionHost.update]）：只写白名单列（搜索词 /
+  /// 起始集 / 字幕策略 / 目标来源 / 版本规则），items 历史与其余调度状态一概不动——
+  /// 「改规则不清历史」。
   Future<void> _edit(VideoDownloadSubscriptionRow subscription) async {
     final AppModel appModel = ref.read(appProvider);
     final List<MediaSourceRow> sources =
@@ -237,38 +219,26 @@ class _VideoDownloadSubscriptionsPanelState
       sources: sources,
     );
     if (result == null || !mounted) return;
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    // 改了目标来源时，该订阅已派出、还没进整理的任务一起改过去（BUG-2755），
-    // 否则它们下载完照旧整理进旧来源。
-    await appModel.database.updateVideoDownloadSubscriptionRetargetingJobs(
-      subscription.subscriptionId,
-      VideoDownloadSubscriptionsCompanion(
-        searchQuery: Value<String>(result.searchQuery),
-        startAfterEpisode: Value<int?>(result.startAfterEpisode),
-        subtitlePolicy: Value<String>(result.subtitlePolicy.name),
-        // 用户没动过目标来源就**不写这一列**（result.targetSourceId 为 null）。
-        // 无条件写会在原绑定当前不可用时把它改写成别的库，见
-        // [VideoDownloadSubscriptionEdit.targetSourceId] 的说明。
-        targetSourceId: result.targetSourceId == null
-            ? const Value<int?>.absent()
-            : Value<int?>(result.targetSourceId),
-        // 字幕组 / 分辨率 / 标题关键词：同样只在用户改过时写（null = 没动）。
-        filterJson: result.filterJson == null
-            ? const Value<String>.absent()
-            : Value<String>(result.filterJson!),
-        nextCheckAt: Value<int?>(now),
-        lastError: const Value<String?>(null),
-        updatedAt: Value<int>(now),
+    await _guard(
+      () => _host.update(
+        subscription.subscriptionId,
+        VideoDownloadSubscriptionRuleEdit(
+          searchQuery: Value<String>(result.searchQuery),
+          startAfterEpisode: Value<int?>(result.startAfterEpisode),
+          subtitlePolicy: Value<String>(result.subtitlePolicy.name),
+          // 用户没动过目标来源就**不写这一列**（result.targetSourceId 为 null）。
+          // 无条件写会在原绑定当前不可用时把它改写成别的库，见
+          // [VideoDownloadSubscriptionEdit.targetSourceId] 的说明。
+          targetSourceId: result.targetSourceId == null
+              ? const Value<int?>.absent()
+              : Value<int?>(result.targetSourceId),
+          // 字幕组 / 分辨率 / 标题关键词：同样只在用户改过时写（null = 没动）。
+          filterJson: result.filterJson == null
+              ? const Value<String>.absent()
+              : Value<String>(result.filterJson!),
+        ),
       ),
-      nowAt: now,
     );
-    // 已完成的集还在旧来源里做种：一并摘掉种子（不删文件），否则用户删掉旧目录后
-    // 引擎续传会在原处重下（BUG-2776）。
-    if (result.targetSourceId != null) {
-      await appModel.videoDownloadPipelineService
-          ?.releaseSubscriptionSeedsOutsideTarget(subscription.subscriptionId);
-    }
-    await appModel.videoDownloadSubscriptionService?.checkNow();
   }
 
   @override
@@ -293,7 +263,7 @@ class _VideoDownloadSubscriptionsPanelState
         return VideoDownloadSubscriptionsView(
           subscriptions: subscriptions,
           checkingAll: _checkingAll,
-          onCheckAll: () => _checkAll(subscriptions),
+          onCheckAll: _checkAll,
           onToggle: _setEnabled,
           onCheck: _checkOne,
           onDelete: _delete,
