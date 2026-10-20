@@ -59899,7 +59899,7 @@ class SrsCardCacheRow extends DataClass implements Insertable<SrsCardCacheRow> {
   final String? lastLogId;
   final String scheduler;
 
-  /// 新卡出卡顺序（笔记 createdAt, cardId）。
+  /// 新卡出卡顺序的兜底键（笔记 createdAt, cardId）：没有 [newPosition] 的新卡按它排。
   final int noteCreatedAt;
 
   /// v123：新卡在出卡队列里的位置（卡片修改记录 `newPos` 的生效值，「按词频重排新卡」
@@ -104175,6 +104175,7 @@ typedef $$SrsCardsCacheTableCreateCompanionBuilder =
       Value<String?> lastLogId,
       Value<String> scheduler,
       Value<int> noteCreatedAt,
+      Value<int?> newPosition,
       Value<int> rowid,
     });
 typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
@@ -104201,6 +104202,7 @@ typedef $$SrsCardsCacheTableUpdateCompanionBuilder =
       Value<String?> lastLogId,
       Value<String> scheduler,
       Value<int> noteCreatedAt,
+      Value<int?> newPosition,
       Value<int> rowid,
     });
 
@@ -104320,6 +104322,11 @@ class $$SrsCardsCacheTableFilterComposer
 
   ColumnFilters<int> get noteCreatedAt => $composableBuilder(
     column: $table.noteCreatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get newPosition => $composableBuilder(
+    column: $table.newPosition,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -104442,6 +104449,11 @@ class $$SrsCardsCacheTableOrderingComposer
     column: $table.noteCreatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get newPosition => $composableBuilder(
+    column: $table.newPosition,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SrsCardsCacheTableAnnotationComposer
@@ -104532,6 +104544,11 @@ class $$SrsCardsCacheTableAnnotationComposer
     column: $table.noteCreatedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get newPosition => $composableBuilder(
+    column: $table.newPosition,
+    builder: (column) => column,
+  );
 }
 
 class $$SrsCardsCacheTableTableManager
@@ -104593,6 +104610,7 @@ class $$SrsCardsCacheTableTableManager
                 Value<String?> lastLogId = const Value.absent(),
                 Value<String> scheduler = const Value.absent(),
                 Value<int> noteCreatedAt = const Value.absent(),
+                Value<int?> newPosition = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsCardsCacheCompanion(
                 id: id,
@@ -104617,6 +104635,7 @@ class $$SrsCardsCacheTableTableManager
                 lastLogId: lastLogId,
                 scheduler: scheduler,
                 noteCreatedAt: noteCreatedAt,
+                newPosition: newPosition,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -104643,6 +104662,7 @@ class $$SrsCardsCacheTableTableManager
                 Value<String?> lastLogId = const Value.absent(),
                 Value<String> scheduler = const Value.absent(),
                 Value<int> noteCreatedAt = const Value.absent(),
+                Value<int?> newPosition = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsCardsCacheCompanion.insert(
                 id: id,
@@ -104667,6 +104687,7 @@ class $$SrsCardsCacheTableTableManager
                 lastLogId: lastLogId,
                 scheduler: scheduler,
                 noteCreatedAt: noteCreatedAt,
+                newPosition: newPosition,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
