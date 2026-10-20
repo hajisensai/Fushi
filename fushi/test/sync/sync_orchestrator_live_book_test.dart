@@ -100,6 +100,7 @@ SyncOrchestrator _bookOrchestrator({
   required SyncBackend backend,
   required Directory tmp,
   required bool syncContent,
+  bool? syncMangaContent,
 }) =>
     SyncOrchestrator(
       db: db,
@@ -110,6 +111,7 @@ SyncOrchestrator _bookOrchestrator({
       syncStats: false,
       syncAudioBookPosition: false,
       syncContent: syncContent,
+      syncMangaContent: syncMangaContent ?? syncContent,
       syncAudioBookFiles: false,
       syncDictionary: false,
     );
@@ -332,6 +334,90 @@ void main() {
       expect(report.errors, isEmpty);
       expect(await hostDb.getEpubBook('OnlineManga'), isNull);
       expect(tmp.listSync(), isEmpty);
+    });
+
+    // 所有者 2026-10-21「书籍和漫画应该分开」：互联 live 上传里 EPUB 只看
+    // 「上传书籍文件」，漫画只看「上传漫画文件」。
+    Future<List<String>> pushWith({
+      required String label,
+      required bool syncContent,
+      required bool syncMangaContent,
+      bool viaRun = false,
+    }) async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await _seedBook(
+          db: localDb,
+          title: 'BookX',
+          extractDir: p.join(work.path, 'local_extract_X_$label'));
+      final Directory manga = Directory(p.join(work.path, 'manga_$label'))
+        ..createSync();
+      Directory(p.join(manga.path, 'images')).createSync();
+      File(p.join(manga.path, 'images', 'p1.jpg'))
+          .writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF, 1]);
+      File(p.join(manga.path, 'manga.json')).writeAsStringSync(
+          '{"pages":[{"url":"images/p1.jpg","width":800,"height":1200,'
+          '"blocks":[]}]}');
+      await localDb.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: 'MangaZ',
+        title: 'MangaZ',
+        epubPath: 'manga.json',
+        extractDir: manga.path,
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('manga'),
+      ));
+      final Directory tmp = Directory(p.join(work.path, 'tmp_$label'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _bookOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncContent: syncContent,
+        syncMangaContent: syncMangaContent,
+      );
+      final SyncRunReport report;
+      if (viaRun) {
+        report = await orch.run();
+      } else {
+        report = SyncRunReport();
+        await orch.syncBooksContentLiveForTest(report, backend);
+      }
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      return <String>[
+        for (final EpubBookRow b in await hostDb.getAllEpubBooks())
+          if (b.title != 'BookY') b.title,
+      ]..sort();
+    }
+
+    test('书籍开、漫画关 → 只推 EPUB', () async {
+      expect(
+        await pushWith(
+            label: 'epub_only', syncContent: true, syncMangaContent: false),
+        <String>['BookX'],
+      );
+    });
+
+    test('书籍关、漫画开 → 只推漫画', () async {
+      expect(
+        await pushWith(
+            label: 'manga_only', syncContent: false, syncMangaContent: true),
+        <String>['MangaZ'],
+      );
+    });
+
+    test('run()：只开漫画开关也进 live 内容阶段', () async {
+      expect(
+        await pushWith(
+            label: 'manga_run',
+            syncContent: false,
+            syncMangaContent: true,
+            viaRun: true),
+        <String>['MangaZ'],
+      );
     });
 
     test('本地无 BookY，syncContent=true → 不自动拉取远端独有 BookY', () async {

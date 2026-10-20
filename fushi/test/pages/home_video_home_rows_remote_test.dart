@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -170,7 +171,7 @@ void main() {
       reason: '合并后的序列里下一集是第 2 集（远端那一集）',
     );
     expect(
-      find.descendant(of: card, matching: find.byIcon(Icons.cloud_outlined)),
+      find.descendant(of: card, matching: find.byIcon(FushiIcons.cloud)),
       findsOneWidget,
       reason: '目标集只在 host 上：卡带云角标（点开流播）',
     );

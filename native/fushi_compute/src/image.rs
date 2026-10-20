@@ -15,7 +15,7 @@
 //! 调色板图由 Dart 侧先 `convert` 成 uint8，未转正的 EXIF 方向先 `bakeOrientation`
 //! （`copyResize` 自己也这么做），多帧图由 Dart 侧逐帧调用。
 //!
-//! 解码也在本模块（`ffc_image_decode` / `ffc_image_probe`，`image` crate，纯 Rust；见文件后段
+//! 解码也在本模块（`ffc_image_decode` / `ffc_image_probe`，`image` crate + AVIF 的 `image/avif.rs`，纯 Rust；见文件后段
 //! 「解码 / JPEG 编码」一节）：PNG 等无损格式与旧的 `package:image` 逐字节相同；JPEG 换成
 //! zune-jpeg 后与旧解码有差。2026-10-18 实测：真书漫画页 / 截图 / 封面最大差 1（3.5～5% 的通道值），
 //! 强色度边缘的 4:2:0 图上 `package:image` 自己偏离 libjpeg 更多（样本上差到 67），zune-jpeg 与
@@ -25,6 +25,8 @@
 //! DB 后处理（`ffc_image_db_components`）只回传原始矩，含超越函数的派生量仍在 Dart 算。
 
 use crate::{guard, status};
+
+mod avif;
 
 /// 缩放插值，取值与 `package:image` 的 `Interpolation` 对应（不支持 cubic）。
 pub const INTERP_NEAREST: i32 = 0;
@@ -1351,8 +1353,10 @@ pub unsafe extern "C" fn ffc_image_compose_indexed(
 // 解码 / JPEG 编码。
 //
 // 解码统一走 `image` crate（纯 Rust：JPEG = zune-jpeg、PNG、GIF、WebP、BMP、TIFF、TGA、ICO、
-// PNM）。输出一律是行紧排的 uint8：有 alpha 的 RGBA，否则 RGB（灰度展开成 RGB，16 位截成
-// 8 位），多帧格式只取首帧。`orient != 0` 时按 EXIF 方向转正（同 `bakeOrientation`）。
+// PNM），AVIF 例外、走 `image/avif.rs`（HEIF 容器自己解析 + rav1d）。输出一律是行紧排的 uint8：
+// 有 alpha 的 RGBA，否则 RGB（灰度展开成 RGB，16 位截成 8 位），多帧格式只取首帧。
+// `orient != 0` 时按 EXIF 方向转正（同 `bakeOrientation`）；AVIF 的 clap / irot / imir 是必选
+// 显示变换，不看 `orient` 一律应用。
 //
 // 与旧的 `package:image` 解码相比：PNG 等无损格式逐字节相同；JPEG 的 IDCT / 上采样实现不同，
 // 实测 3.5～4.8% 的通道值差 ±1（最大 1），下游影响见 PR 说明。`package:image` 能解而这里不能的：
@@ -1371,6 +1375,8 @@ pub const FORMAT_TIFF: u32 = 6;
 pub const FORMAT_TGA: u32 = 7;
 pub const FORMAT_ICO: u32 = 8;
 pub const FORMAT_PNM: u32 = 9;
+/// AVIF 不经 `image` crate，见 [avif]。
+pub const FORMAT_AVIF: u32 = 10;
 
 fn format_code(f: image::ImageFormat) -> Option<u32> {
     use image::ImageFormat as F;
@@ -1407,6 +1413,17 @@ fn open_decoder(data: &[u8]) -> Result<(impl image::ImageDecoder + '_, u32), i32
 
 fn decode_image(data: &[u8], orient: bool) -> Result<Decoded, i32> {
     use image::ImageDecoder;
+    if avif::is_avif(data) {
+        // HEIF 的 clap / irot / imir 是必选显示变换，与 `orient`（EXIF）无关、总是应用。
+        let (pixels, width, height, channels) = avif::decode(data)?;
+        return Ok(Decoded {
+            pixels,
+            width,
+            height,
+            channels,
+            format: FORMAT_AVIF,
+        });
+    }
     let (mut decoder, format) = open_decoder(data)?;
     let orientation = if orient {
         decoder
@@ -1482,6 +1499,15 @@ pub unsafe extern "C" fn ffc_image_probe(
         use image::ImageDecoder;
         if data.is_null() || out_meta.is_null() {
             return status::NULL_ARGUMENT;
+        }
+        if avif::is_avif(slice(data, len)) {
+            return match avif::probe(slice(data, len)) {
+                Ok((w, h)) => {
+                    slice_mut(out_meta, 3).copy_from_slice(&[w, h, FORMAT_AVIF]);
+                    status::OK
+                }
+                Err(code) => code,
+            };
         }
         let (mut decoder, format) = match open_decoder(slice(data, len)) {
             Ok(v) => v,
