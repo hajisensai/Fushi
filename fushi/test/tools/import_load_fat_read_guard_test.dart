@@ -31,34 +31,56 @@ void main() {
       'lib/src/pages/implementations/collections_page.dart',
       'lib/src/media/manga/online/mokuro_moe_catalog_view.dart',
     ];
+    // 已不再读整张书表的调用方：只禁全行读，不要求出现瘦投影。来源库扫描自
+    // 613d85abc6 起按「标题 + 来源路径」认身份、去重不再枚举书库，强求它出现
+    // getEpubBookMetas() 等于逼它为了过守卫把整表读回来。
+    const Set<String> noLibraryEnumeration = <String>{
+      'lib/src/media/source_library/source_library_scanner.dart',
+    };
     for (final String rel in thinCallers) {
       test(rel, () {
         final String src = read(rel);
-        expect(src.contains('getAllEpubBooks()'), isFalse,
-            reason: '$rel 只要元数据列，必须走 getEpubBookMetas()');
-        expect(src.contains('getEpubBookMetas()'), isTrue);
+        expect(
+          src.contains('getAllEpubBooks()'),
+          isFalse,
+          reason: '$rel 只要元数据列，必须走 getEpubBookMetas()',
+        );
+        if (!noLibraryEnumeration.contains(rel)) {
+          expect(src.contains('getEpubBookMetas()'), isTrue);
+        }
       });
     }
 
-    test('reader_fushi_source: only the shelf materialiser reads full rows',
-        () {
-      final String src = read('lib/src/media/sources/reader_fushi_source.dart');
-      // getBooksFromDb 需要 chaptersJson 算进度：允许恰好一处全行读。
-      expect('getAllEpubBooks()'.allMatches(src).length, 1,
-          reason: 'epubBookUidByKeyProvider 等只要 uid 的口径走瘦投影');
-      expect(src.contains('getEpubBookMetas()'), isTrue);
-    });
+    test(
+      'reader_fushi_source: only the shelf materialiser reads full rows',
+      () {
+        final String src = read(
+          'lib/src/media/sources/reader_fushi_source.dart',
+        );
+        // getBooksFromDb 需要 chaptersJson 算进度：允许恰好一处全行读。
+        expect(
+          'getAllEpubBooks()'.allMatches(src).length,
+          1,
+          reason: 'epubBookUidByKeyProvider 等只要 uid 的口径走瘦投影',
+        );
+        expect(src.contains('getEpubBookMetas()'), isTrue);
+      },
+    );
   });
 
   group('watchEpubBookKeys projects only the key column', () {
     test('no full-row select behind the key stream', () {
       final String src = read(
-          '../packages/fushi_core/lib/src/database/database_content_misc.part.dart');
+        '../packages/fushi_core/lib/src/database/database_content_misc.part.dart',
+      );
       final int start = src.indexOf('Stream<List<String>> watchEpubBookKeys()');
       expect(start, greaterThan(0));
       final String body = src.substring(start, src.indexOf(';', start));
-      expect(body.contains('selectOnly(epubBooks)'), isTrue,
-          reason: '流在每次写入时重跑，全列 select 会把整库大列读一遍只为取 key');
+      expect(
+        body.contains('selectOnly(epubBooks)'),
+        isTrue,
+        reason: '流在每次写入时重跑，全列 select 会把整库大列读一遍只为取 key',
+      );
       expect(body.contains('select(epubBooks).map'), isFalse);
     });
   });
@@ -70,29 +92,40 @@ void main() {
       final int start = src.indexOf('Future<MediaItem> _bookToMediaItem(');
       expect(start, greaterThan(0));
       final String body = src.substring(start, src.indexOf('\n  }\n', start));
-      expect(body.contains('findByBookUid('), isFalse,
-          reason: '_bookToMediaItem 不得再按本查位置（N+1）');
+      expect(
+        body.contains('findByBookUid('),
+        isFalse,
+        reason: '_bookToMediaItem 不得再按本查位置（N+1）',
+      );
     });
 
     test('audiobook health is resolved in one prefix query', () {
-      final String src =
-          read('lib/src/pages/implementations/reader_fushi_history_page.dart');
+      final String src = read(
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      );
       final int start = src.indexOf('_loadAllAudiobookInfo()');
       expect(start, greaterThan(0));
       final String body = src.substring(start, src.indexOf('\n  }\n', start));
       expect(body.contains('resolveAllHealth('), isTrue);
-      expect(body.contains('resolveHealth(entry'), isFalse,
-          reason: '每本一条 getPref 是 N+1');
+      expect(
+        body.contains('resolveHealth(entry'),
+        isFalse,
+        reason: '每本一条 getPref 是 N+1',
+      );
     });
 
     test('local source listing does not stat every file', () {
-      final String src =
-          read('lib/src/media/source_library/source_file_system.dart');
+      final String src = read(
+        'lib/src/media/source_library/source_file_system.dart',
+      );
       final int start = src.indexOf('class LocalSourceFileSystem');
       final int end = src.indexOf('listSiblingNames', start);
       final String body = src.substring(start, end);
-      expect(body.contains('.length()'), isFalse,
-          reason: 'sizeBytes 无消费方；递归枚举时每文件一次 length() 是纯浪费');
+      expect(
+        body.contains('.length()'),
+        isFalse,
+        reason: 'sizeBytes 无消费方；递归枚举时每文件一次 length() 是纯浪费',
+      );
     });
   });
 }
