@@ -7,13 +7,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
-import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
-import 'package:fushi_engine/media/torrent/download_timeouts.dart';
-import 'package:fushi/src/media/video/airing_calendar_cache.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart';
 import 'package:fushi/src/media/video/airing_discovery_mapping.dart';
 import 'package:fushi/src/media/video/airing_week.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
@@ -22,7 +19,6 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_core/fushi_core.dart';
 
 /// 放送日历页（hayase Schedule 式周历，2026-08-21 重做）：周一到周日七列
 /// （窄屏切按天分组列表），默认只显示与本地相关的番剧——合集绑定的 anilistId
@@ -34,7 +30,11 @@ import 'package:fushi_core/fushi_core.dart';
 /// 下载不出来」）由此消除。数据走 AniList airingSchedules
 /// （[AniListClient.fetchAiringSchedulePage]，HTTP 客户端经
 /// [AppModel.createDownloadHttpClient] 走全应用统一代理出口）；缓存内存 + 偏好
-/// 两层（airing_calendar_cache.dart），**无 Drift schema 改动**。
+/// 两层（airing_calendar_cache.dart），**无 Drift schema 改动**。取数实现在
+/// `airing_calendar_loader.dart`，发现页「今日放送」小模块共用同一份。
+///
+/// 入口（2026-10-20 起）：视频发现页的「今日放送」小模块标题行 /「查看全部」；
+/// 发现页页头 / 搜索行原有的日历图标按钮已删除。
 class AiringCalendarPage extends ConsumerStatefulWidget {
   const AiringCalendarPage({
     super.key,
@@ -50,18 +50,10 @@ class AiringCalendarPage extends ConsumerStatefulWidget {
 }
 
 class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
-  /// 「显示本季全部」分页上限：AniList perPage=50，一周全量 airing 实测数百条，
-  /// 12 页（600 条）够覆盖；防御性上限避免异常响应导致无限翻页打爆 rate limit。
-  static const int _maxPages = 12;
-
-  /// 翻页间隔：AniList 约 90 req/min，700ms 一页远低于限额，避免 429。
-  static const Duration _pageInterval = Duration(milliseconds: 700);
-
   /// 七列布局的最小宽度；再窄切按天分组列表。
   static const double _wideLayoutMinWidth = 900;
 
   late DateTime _weekStart = localWeekStart(DateTime.now());
-  bool _showAll = false;
   bool _loading = true;
   String? _errorDetail;
 
@@ -92,8 +84,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     unawaited(_load());
   }
 
-  /// 重载整页：本地映射（合集/订阅）恒重建，放送表按缓存口径取。
-  /// [force] = 用户点刷新，绕过两层缓存。
+  /// 重载整页：取数走共享的 [loadAiringCalendarWeek]（发现页「今日放送」
+  /// 小模块同一条路径）。[force] = 用户点刷新，绕过两层缓存。
   Future<void> _load({bool force = false}) async {
     setState(() {
       _loading = true;
@@ -101,33 +93,19 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       _errorKind = null;
     });
     try {
-      final List<MediaCollectionRow> collections = await _appModel.database
-          .getAllMediaCollections();
-      final AnimeDownloadSubscriptionStore? store =
-          _appModel.animeDownloadSubscriptionStore;
-      final List<AnimeDownloadSubscription> subscriptions = store == null
-          ? const <AnimeDownloadSubscription>[]
-          : await store.loadAll();
-      final Set<int> libraryIds = <int>{
-        for (final MediaCollectionRow c in collections)
-          if (c.anilistId != null) c.anilistId!,
-      };
-      final Set<int> subscribedIds = <int>{
-        for (final AnimeDownloadSubscription s in subscriptions) s.anilistId,
-      };
-      final List<int> boundIds = <int>{...libraryIds, ...subscribedIds}.toList()
-        ..sort();
-      final List<int>? filterIds = _showAll ? null : boundIds;
-      List<AniListAiringEpisode> episodes = const <AniListAiringEpisode>[];
-      // 相关模式且零绑定：不发网络请求，直接进引导空态。
-      if (filterIds == null || filterIds.isNotEmpty) {
-        episodes = await _fetchEpisodes(filterIds: filterIds, force: force);
-      }
+      final AiringCalendarSnapshot snapshot = await loadAiringCalendarWeek(
+        _appModel,
+        AiringCalendarRequest(
+          weekStart: _weekStart,
+          force: force,
+          isCancelled: () => !mounted,
+        ),
+      );
       if (!mounted) return;
       setState(() {
-        _libraryAnilistIds = libraryIds;
-        _subscribedAnilistIds = subscribedIds;
-        _episodes = episodes;
+        _libraryAnilistIds = snapshot.libraryAnilistIds;
+        _subscribedAnilistIds = snapshot.subscribedAnilistIds;
+        _episodes = snapshot.episodes;
         _loading = false;
       });
     } catch (error) {
@@ -137,84 +115,6 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         _errorDetail = error.toString();
         _errorKind = classifyAniListError(error);
       });
-    }
-  }
-
-  /// 取本周窗口的放送条目：内存缓存 → 偏好缓存 → AniList 分页拉取。
-  Future<List<AniListAiringEpisode>> _fetchEpisodes({
-    required List<int>? filterIds,
-    required bool force,
-  }) async {
-    final int weekStartSeconds = _weekStart.millisecondsSinceEpoch ~/ 1000;
-    final int weekEndSeconds =
-        DateTime(
-          _weekStart.year,
-          _weekStart.month,
-          _weekStart.day + 7,
-        ).millisecondsSinceEpoch ~/
-        1000;
-    final String signature = airingCacheSignature(
-      weekStartEpochSeconds: weekStartSeconds,
-      mediaIds: filterIds,
-    );
-    final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    if (!force) {
-      final AiringScheduleCache? memory = AiringMemoryCache.get(
-        signature,
-        nowMs: nowMs,
-      );
-      if (memory != null) return memory.episodes;
-      final String raw =
-          _appModel.prefsRepo.getPref(
-                kAiringCalendarCachePrefKey,
-                defaultValue: '',
-              )
-              as String;
-      final AiringScheduleCache? persisted = decodeAiringScheduleCache(
-        raw,
-        signature: signature,
-        nowMs: nowMs,
-      );
-      if (persisted != null) {
-        AiringMemoryCache.put(persisted);
-        return persisted.episodes;
-      }
-    }
-    final http.Client httpClient = await _appModel.createDownloadHttpClient();
-    final AniListClient client = AniListClient(client: httpClient);
-    try {
-      final List<AniListAiringEpisode> all = <AniListAiringEpisode>[];
-      int page = 1;
-      while (true) {
-        // airingAt_greater 是严格大于：-1 让周一 00:00 整点的条目也进窗口。
-        final AniListAiringPage result = await client
-            .fetchAiringSchedulePage(
-              airingAtGreater: weekStartSeconds - 1,
-              airingAtLesser: weekEndSeconds,
-              mediaIds: filterIds,
-              page: page,
-            )
-            .timeout(kDownloadDiscoveryTimeout);
-        all.addAll(result.episodes);
-        if (!result.hasNextPage || page >= _maxPages) break;
-        // 页面已销毁就停止翻页：不省 setState（末尾已有保护），省的是后续网络请求。
-        if (!mounted) break;
-        page += 1;
-        await Future<void>.delayed(_pageInterval);
-      }
-      final AiringScheduleCache cache = AiringScheduleCache(
-        fetchedAtMs: nowMs,
-        signature: signature,
-        episodes: all,
-      );
-      AiringMemoryCache.put(cache);
-      await _appModel.prefsRepo.setPref(
-        kAiringCalendarCachePrefKey,
-        encodeAiringScheduleCache(cache),
-      );
-      return all;
-    } finally {
-      client.close();
     }
   }
 
@@ -289,17 +189,17 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
   }
 
-  /// 正文状态键：加载 / 错误 / 数据之间切换时交叉淡入；换周 / 切「全部」时
-  /// 也换键，让新一屏重播错峰进场。
+  /// 正文状态键：加载 / 错误 / 数据之间切换时交叉淡入；换周时也换键，让新
+  /// 一屏重播错峰进场。
   String get _bodyStateKey {
     if (_loading) return 'loading';
     if (_errorDetail != null) return 'error';
-    return 'data-${_weekStart.millisecondsSinceEpoch}-$_showAll';
+    return 'data-${_weekStart.millisecondsSinceEpoch}';
   }
 
   /// 周切换条：上一周 / 周区间 / 下一周 组成一枚按钮组（本周时区间块变成
-  /// primaryContainer 胶囊），「显示本季全部」筛选 chip 放在行尾。窄屏时整行
-  /// 可横向滚动，不挤压按钮。
+  /// primaryContainer 胶囊）。放送表恒显示当季全部，不再有筛选 chip。窄屏时
+  /// 整行可横向滚动，不挤压按钮。
   Widget _buildToolbar(ThemeData theme) {
     final DateTime weekEnd = DateTime(
       _weekStart.year,
@@ -369,17 +269,6 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
                   ),
                 ],
               ),
-              const SizedBox(width: 12),
-              FushiFilterChip(
-                label: Text(t.download_airing_calendar_show_all),
-                selected: _showAll,
-                onSelected: _loading
-                    ? null
-                    : (bool value) {
-                        setState(() => _showAll = value);
-                        unawaited(_load());
-                      },
-              ),
             ],
           ),
         ),
@@ -394,15 +283,6 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     final String? errorDetail = _errorDetail;
     if (errorDetail != null) {
       return _buildError(theme, errorDetail, _errorKind);
-    }
-    if (!_showAll &&
-        _libraryAnilistIds.isEmpty &&
-        _subscribedAnilistIds.isEmpty) {
-      return _buildCenteredNote(
-        theme,
-        icon: FushiIcons.calendar,
-        message: t.download_airing_calendar_empty_guidance,
-      );
     }
     if (_episodes.isEmpty) {
       return _buildCenteredNote(
@@ -746,7 +626,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
                 children: <Widget>[
                   // 番名普遍很长，放宽到两行——单行省略在七列窄栏里只看得到开头。
                   Text(
-                    episode.media.displayTitle,
+                    episode.media.nativeFirstTitle,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: compact

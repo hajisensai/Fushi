@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -110,7 +111,11 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('「下一集」跨本地/远端合并选集：本机看到第 1 集，下一集指向 host 上的第 2 集', (
+  // 2026-10 首页重设计：「下一集」行并入「继续观看」（Next-Up 口径：最近那集没看完
+  // 停它、看完取下一集）。跨本地 / 远端合并选集的语义不变：本机第 1 集看完、第 2
+  // 集只在 host 上 → 继续观看那张合集卡（此处是唯一一部、被提成首屏主卡）指向 host
+  // 上的第 2 集、带云角标。
+  testWidgets('「继续观看」跨本地/远端合并选集：本机看完第 1 集，Next-Up 指向 host 上的第 2 集', (
     WidgetTester tester,
   ) async {
     await sizeUp(tester);
@@ -119,13 +124,15 @@ void main() {
       'MyShow',
       collectionType: 'collection',
     );
-    // 本地第 1 集：有播放痕迹（未看完）→ latestPlayed = 0。
+    // 本地第 1 集：看完（最近播放）→ Next-Up 落到序列里的下一集。
     await db.upsertVideoBook(
-      const VideoBooksCompanion(
-        bookUid: Value('video/local-ep1'),
-        title: Value('Local Ep1'),
-        videoPath: Value('/abs/ep1.mp4'),
-        lastPositionMs: Value(60000),
+      VideoBooksCompanion(
+        bookUid: const Value('video/local-ep1'),
+        title: const Value('Local Ep1'),
+        videoPath: const Value('/abs/ep1.mp4'),
+        lastPositionMs: const Value(60000),
+        completedAt: Value(DateTime.now()),
+        lastPlayedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
     await db.addToCollection(cid, MediaKind.video, 'video/local-ep1');
@@ -147,15 +154,31 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      find.byKey(ValueKey<String>('home_video_next_collection_$cid')),
-      findsOneWidget,
-      reason: '本地只有第 1 集、第 2 集在 host 上时，「下一集」行必须出现',
+    final Finder card = find.byKey(
+      ValueKey<String>('home_video_continue_collection_$cid'),
     );
     expect(
-      find.text(t.video_home_next_episode_number(n: 2)),
+      card,
+      findsOneWidget,
+      reason: '本地只有第 1 集、第 2 集在 host 上时，继续观看仍要有这部（不能因下一集不在本机就消失）',
+    );
+    expect(
+      find.descendant(
+        of: card,
+        matching: find.textContaining(t.video_home_next_episode_number(n: 2)),
+      ),
       findsOneWidget,
       reason: '合并后的序列里下一集是第 2 集（远端那一集）',
+    );
+    expect(
+      find.descendant(of: card, matching: find.byIcon(FushiIcons.cloud)),
+      findsOneWidget,
+      reason: '目标集只在 host 上：卡带云角标（点开流播）',
+    );
+    expect(
+      find.byKey(ValueKey<String>('home_video_next_collection_$cid')),
+      findsNothing,
+      reason: '「下一集」行已并入继续观看，不再单独成行',
     );
   });
 

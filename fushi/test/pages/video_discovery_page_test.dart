@@ -6,6 +6,9 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey, TextInputAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart';
+import 'package:fushi/src/media/video/airing_week.dart';
+import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
     as discovery;
@@ -17,14 +20,13 @@ import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import '../helpers/glass_unwrap.dart';
 
-typedef _LoadHandler = Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>
-    Function(
-  discovery.VideoDiscoveryRequest request,
-);
+typedef _LoadHandler =
+    Future<ProviderBatchResult<discovery.VideoDiscoveryPage>> Function(
+      discovery.VideoDiscoveryRequest request,
+    );
 
-typedef _ProgressCallback = void Function(
-  ProviderBatchResult<discovery.VideoDiscoveryPage> partial,
-);
+typedef _ProgressCallback =
+    void Function(ProviderBatchResult<discovery.VideoDiscoveryPage> partial);
 
 class _FakeDiscoveryController implements VideoDiscoveryController {
   _FakeDiscoveryController(this.handler);
@@ -84,11 +86,7 @@ ProviderBatchResult<discovery.VideoDiscoveryPage> _result(
 }) {
   return ProviderBatchResult<discovery.VideoDiscoveryPage>(
     items: <discovery.VideoDiscoveryPage>[
-      discovery.VideoDiscoveryPage(
-        items: items,
-        page: 1,
-        hasMore: hasMore,
-      ),
+      discovery.VideoDiscoveryPage(items: items, page: 1, hasMore: hasMore),
     ],
     failures: failures,
     successfulProviderCount: successfulProviderCount,
@@ -104,10 +102,8 @@ Widget _harness(
 }) {
   return TranslationProvider(
     child: MaterialApp(
-      builder: (BuildContext context, Widget? child) => FushiAppUiScale(
-        scale: scale,
-        child: child!,
-      ),
+      builder: (BuildContext context, Widget? child) =>
+          FushiAppUiScale(scale: scale, child: child!),
       theme: ThemeData.dark(useMaterial3: true),
       home: Scaffold(
         body: VideoDiscoveryPage(
@@ -142,77 +138,159 @@ void main() {
     );
 
     int opened = 0;
-    await tester.pumpWidget(_harness(
-      controller,
-      actions: VideoDiscoveryActions(onAiAcquire: (_) => opened++),
-    ));
+    await tester.pumpWidget(
+      _harness(
+        controller,
+        actions: VideoDiscoveryActions(onAiAcquire: (_) => opened++),
+      ),
+    );
     await tester.pumpAndSettle();
-    final Finder entry =
-        find.byKey(const ValueKey<String>('video-discovery-ai-acquire'));
+    final Finder entry = find.byKey(
+      const ValueKey<String>('video-discovery-ai-acquire'),
+    );
     expect(entry, findsOneWidget);
     await tester.tap(entry);
     await tester.pump();
     expect(opened, 1);
   });
 
-  // PR #1707 审查：浏览页以 embedded 挂视频发现，页头不渲染；放送日历入口原本只在
-  // 页头，嵌进浏览后全仓再没有能打开日历的地方。三种宽度（手机 / 中宽 / 桌面）下
-  // embedded 都必须能找到可点的日历入口，独立页面时只在页头出现一次。
+  // 2026-10-20：放送日历不再是页头 / 搜索行上的图标按钮（用户：「藏太深了」），
+  // 改成正文里的「今日放送」小模块。旧按钮必须彻底消失；三种宽度、embedded 与否
+  // 模块都在，标题行 /「查看全部」是进完整日历的入口，内容只列**今天**播出的番。
   for (final double width in <double>[500, 800, 1280]) {
-    testWidgets('embedded 时放送日历入口在搜索行可达（宽 $width）',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = Size(width, 900);
+    testWidgets('「今日放送」小模块取代日历图标按钮（宽 $width）', (WidgetTester tester) async {
+      tester.view.physicalSize = Size(width, 1600);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final _FakeDiscoveryController controller = _FakeDiscoveryController(
         (_) async => _result(<discovery.VideoDiscoveryItem>[]),
       );
-      const ValueKey<String> calendarKey =
-          ValueKey<String>('video-discovery-open-calendar');
+      final DateTime now = DateTime.now();
+      final DateTime weekStart = localWeekStart(now);
+      final DateTime todayNoon = DateTime(now.year, now.month, now.day, 12);
+      final DateTime otherDay = DateTime(
+        now.year,
+        now.month,
+        now.day + (daysBetweenLocalDates(weekStart, now) == 6 ? -1 : 1),
+        12,
+      );
+      final List<AiringCalendarRequest> requests = <AiringCalendarRequest>[];
+      Future<AiringCalendarSnapshot> loader(
+        AiringCalendarRequest request,
+      ) async {
+        requests.add(request);
+        return AiringCalendarSnapshot(
+          libraryAnilistIds: const <int>{1, 2},
+          subscribedAnilistIds: const <int>{},
+          episodes: <AniListAiringEpisode>[
+            AniListAiringEpisode(
+              mediaId: 1,
+              episode: 3,
+              airingAtSeconds: todayNoon.millisecondsSinceEpoch ~/ 1000,
+              media: const AniListMedia(id: 1, native: '今日の番組'),
+            ),
+            AniListAiringEpisode(
+              mediaId: 2,
+              episode: 7,
+              airingAtSeconds: otherDay.millisecondsSinceEpoch ~/ 1000,
+              media: const AniListMedia(id: 2, native: '別の日の番組'),
+            ),
+          ],
+        );
+      }
 
-      await tester.pumpWidget(_harness(controller, embedded: true));
-      await tester.pumpAndSettle();
-      expect(find.text('video navigation'), findsNothing);
-      final Finder entry = find.byKey(calendarKey);
-      expect(entry, findsOneWidget);
-      final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(entry));
-      expect(button.onPressed, isNotNull);
-      expect(tester.getRect(entry).right, lessThanOrEqualTo(width));
-
-      await tester.pumpWidget(_harness(controller));
-      await tester.pumpAndSettle();
-      expect(find.byKey(calendarKey), findsOneWidget);
+      for (final bool embedded in <bool>[true, false]) {
+        await tester.pumpWidget(
+          _harness(
+            controller,
+            embedded: embedded,
+            actions: VideoDiscoveryActions(loadAiringCalendar: loader),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey<String>('video-discovery-open-calendar')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('video-discovery-airing-today')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(
+            const ValueKey<String>('video-discovery-airing-today-view-all'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('今日の番組'), findsOneWidget);
+        expect(find.text('別の日の番組'), findsNothing);
+        expect(requests.last.weekStart, weekStart);
+      }
     });
   }
+
+  testWidgets('没接放送日历取数端口时不渲染「今日放送」', (WidgetTester tester) async {
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[]),
+    );
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-airing-today')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('「今日放送」今天没有条目给空态，零绑定也不出引导', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[]),
+    );
+    await tester.pumpWidget(
+      _harness(
+        controller,
+        actions: VideoDiscoveryActions(
+          loadAiringCalendar: (AiringCalendarRequest request) async =>
+              const AiringCalendarSnapshot(
+                libraryAnilistIds: <int>{},
+                subscribedAnilistIds: <int>{},
+                episodes: <AniListAiringEpisode>[],
+              ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.download_airing_calendar_today_empty), findsOneWidget);
+  });
 
   testWidgets('默认同时加载热门、本季动漫和全部作品', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    final _FakeDiscoveryController controller = _FakeDiscoveryController(
-      (discovery.VideoDiscoveryRequest request) async {
-        return switch (request.feed) {
-          discovery.VideoDiscoveryFeed.trending =>
-            _result(<discovery.VideoDiscoveryItem>[
-              _item('popular', '热门作品'),
-            ]),
-          discovery.VideoDiscoveryFeed.airing =>
-            _result(<discovery.VideoDiscoveryItem>[
-              _item(
-                'anime',
-                '本季动画',
-                category: discovery.VideoDiscoveryCategory.anime,
-                mediaKind: VideoMetadataMediaKind.tv,
-              ),
-            ]),
-          _ => _result(<discovery.VideoDiscoveryItem>[
-              _item('all', '全部作品条目'),
-            ]),
-        };
-      },
-    );
+    final _FakeDiscoveryController controller = _FakeDiscoveryController((
+      discovery.VideoDiscoveryRequest request,
+    ) async {
+      return switch (request.feed) {
+        discovery.VideoDiscoveryFeed.trending => _result(
+          <discovery.VideoDiscoveryItem>[_item('popular', '热门作品')],
+        ),
+        discovery.VideoDiscoveryFeed.airing =>
+          _result(<discovery.VideoDiscoveryItem>[
+            _item(
+              'anime',
+              '本季动画',
+              category: discovery.VideoDiscoveryCategory.anime,
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+          ]),
+        _ => _result(<discovery.VideoDiscoveryItem>[_item('all', '全部作品条目')]),
+      };
+    });
 
     await tester.pumpWidget(_harness(controller));
     await tester.pumpAndSettle();
@@ -245,10 +323,10 @@ void main() {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (discovery.VideoDiscoveryRequest request) async =>
           request.feed == discovery.VideoDiscoveryFeed.trending
-              ? _result(const <discovery.VideoDiscoveryItem>[])
-              : _result(<discovery.VideoDiscoveryItem>[
-                  _item('all-${request.feed.name}', '全部作品条目'),
-                ]),
+          ? _result(const <discovery.VideoDiscoveryItem>[])
+          : _result(<discovery.VideoDiscoveryItem>[
+              _item('all-${request.feed.name}', '全部作品条目'),
+            ]),
     );
 
     await tester.pumpWidget(_harness(controller, embedded: true));
@@ -264,8 +342,7 @@ void main() {
     );
   });
 
-  testWidgets('热门有多条时 Hero 是轮播，滚动后顶缘渐隐、回顶收起',
-      (WidgetTester tester) async {
+  testWidgets('热门有多条时 Hero 是轮播，滚动后顶缘渐隐、回顶收起', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 860);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -273,9 +350,9 @@ void main() {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (discovery.VideoDiscoveryRequest request) async =>
           _result(<discovery.VideoDiscoveryItem>[
-        for (int i = 0; i < 8; i++)
-          _item('${request.feed.name}-$i', '${request.feed.name} $i'),
-      ]),
+            for (int i = 0; i < 8; i++)
+              _item('${request.feed.name}-$i', '${request.feed.name} $i'),
+          ]),
     );
 
     await tester.pumpWidget(_harness(controller, embedded: true));
@@ -325,8 +402,8 @@ void main() {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (discovery.VideoDiscoveryRequest request) =>
           Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
-        _result(const <discovery.VideoDiscoveryItem>[]),
-      ),
+            _result(const <discovery.VideoDiscoveryItem>[]),
+          ),
     );
 
     await tester.pumpWidget(_harness(controller));
@@ -370,8 +447,9 @@ void main() {
     );
   });
 
-  testWidgets('BUG-2750 搜索默认按相关度，显式选的排序才覆盖，清空回落热度',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2750 搜索默认按相关度，显式选的排序才覆盖，清空回落热度', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -379,8 +457,8 @@ void main() {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (discovery.VideoDiscoveryRequest request) =>
           Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
-        _result(const <discovery.VideoDiscoveryItem>[]),
-      ),
+            _result(const <discovery.VideoDiscoveryItem>[]),
+          ),
     );
 
     await tester.pumpWidget(_harness(controller));
@@ -448,8 +526,8 @@ void main() {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
       (discovery.VideoDiscoveryRequest request) =>
           Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
-        _result(const <discovery.VideoDiscoveryItem>[]),
-      ),
+            _result(const <discovery.VideoDiscoveryItem>[]),
+          ),
     );
 
     await tester.pumpWidget(_harness(controller));
@@ -480,7 +558,8 @@ void main() {
     expect(
       field.focusNode.hasFocus,
       isTrue,
-      reason: '提交后焦点要留在框里：掉焦点会被焦点系统以编程方式还回来，'
+      reason:
+          '提交后焦点要留在框里：掉焦点会被焦点系统以编程方式还回来，'
           '桌面端随即整段选中文本',
     );
   });
@@ -494,17 +573,17 @@ void main() {
         Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>>();
     final Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>> fresh =
         Completer<ProviderBatchResult<discovery.VideoDiscoveryPage>>();
-    final _FakeDiscoveryController controller = _FakeDiscoveryController(
-      (discovery.VideoDiscoveryRequest request) {
-        return switch (request.query) {
-          'old' => old.future,
-          'new' => fresh.future,
-          _ => Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
-              _result(const <discovery.VideoDiscoveryItem>[]),
-            ),
-        };
-      },
-    );
+    final _FakeDiscoveryController controller = _FakeDiscoveryController((
+      discovery.VideoDiscoveryRequest request,
+    ) {
+      return switch (request.query) {
+        'old' => old.future,
+        'new' => fresh.future,
+        _ => Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
+          _result(const <discovery.VideoDiscoveryItem>[]),
+        ),
+      };
+    });
 
     await tester.pumpWidget(_harness(controller));
     await tester.pumpAndSettle();
@@ -526,15 +605,15 @@ void main() {
     );
 
     await tester.enterText(editable, 'new');
-    old.complete(_result(<discovery.VideoDiscoveryItem>[
-      _item('old', '过期请求结果'),
-    ]));
+    old.complete(
+      _result(<discovery.VideoDiscoveryItem>[_item('old', '过期请求结果')]),
+    );
     await tester.pump(const Duration(milliseconds: 349));
     expect(find.text('过期请求结果'), findsNothing);
     await tester.pump(const Duration(milliseconds: 1));
-    fresh.complete(_result(<discovery.VideoDiscoveryItem>[
-      _item('new', '新请求结果'),
-    ]));
+    fresh.complete(
+      _result(<discovery.VideoDiscoveryItem>[_item('new', '新请求结果')]),
+    );
     await tester.pump();
     await tester.pump();
     expect(find.text('新请求结果'), findsOneWidget);
@@ -543,8 +622,7 @@ void main() {
     expect(find.text('过期请求结果'), findsNothing);
   });
 
-  testWidgets('搜索一开始旧的热门列表立即撤下，不在「搜索结果」下冒充结果',
-      (WidgetTester tester) async {
+  testWidgets('搜索一开始旧的热门列表立即撤下，不在「搜索结果」下冒充结果', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -555,9 +633,7 @@ void main() {
       (discovery.VideoDiscoveryRequest request) => request.isSearch
           ? search.future
           : Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
-              _result(<discovery.VideoDiscoveryItem>[
-                _item('hot', '热门作品'),
-              ]),
+              _result(<discovery.VideoDiscoveryItem>[_item('hot', '热门作品')]),
             ),
     );
 
@@ -575,16 +651,15 @@ void main() {
 
     expect(find.text('热门作品'), findsNothing, reason: '搜索还没返回也不能显示旧列表');
 
-    search.complete(_result(<discovery.VideoDiscoveryItem>[
-      _item('fx', 'FX戦士くるみちゃん'),
-    ]));
+    search.complete(
+      _result(<discovery.VideoDiscoveryItem>[_item('fx', 'FX戦士くるみちゃん')]),
+    );
     await tester.pumpAndSettle();
     expect(find.text('FX戦士くるみちゃん'), findsWidgets);
     expect(find.text('热门作品'), findsNothing);
   });
 
-  testWidgets('快的来源先显示并挂细进度条，全部返回后进度条消失',
-      (WidgetTester tester) async {
+  testWidgets('快的来源先显示并挂细进度条，全部返回后进度条消失', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -610,9 +685,7 @@ void main() {
     await tester.pump();
 
     final _ProgressCallback onProgress = controller.progress.last!;
-    onProgress(_result(<discovery.VideoDiscoveryItem>[
-      _item('tmdb', '快来源结果'),
-    ]));
+    onProgress(_result(<discovery.VideoDiscoveryItem>[_item('tmdb', '快来源结果')]));
     await tester.pump();
     expect(find.text('快来源结果'), findsWidgets);
     expect(
@@ -620,10 +693,12 @@ void main() {
       findsOneWidget,
     );
 
-    search.complete(_result(<discovery.VideoDiscoveryItem>[
-      _item('tmdb', '快来源结果'),
-      _item('mal', '慢来源结果'),
-    ]));
+    search.complete(
+      _result(<discovery.VideoDiscoveryItem>[
+        _item('tmdb', '快来源结果'),
+        _item('mal', '慢来源结果'),
+      ]),
+    );
     await tester.pumpAndSettle();
     expect(find.text('慢来源结果'), findsWidgets);
     expect(
@@ -634,9 +709,8 @@ void main() {
 
   testWidgets('筛选态隐藏推荐横栏并显示搜索结果网格', (WidgetTester tester) async {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
-      (_) async => _result(<discovery.VideoDiscoveryItem>[
-        _item('result', '筛选结果'),
-      ]),
+      (_) async =>
+          _result(<discovery.VideoDiscoveryItem>[_item('result', '筛选结果')]),
     );
     await tester.pumpWidget(_harness(controller));
     await tester.pumpAndSettle();
@@ -795,7 +869,14 @@ void main() {
     expect(controller.requests, hasLength(appliedRequests));
     await tester.tap(openFilters);
     await tester.pumpAndSettle();
-    expect(tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(region)).initialValue, 'JP');
+    expect(
+      tester
+          .widget<PopupMenuButton<String>>(
+            glassUnwrap<PopupMenuButton<String>>(region),
+          )
+          .initialValue,
+      'JP',
+    );
     await tester.tap(reset);
     await tester.pumpAndSettle();
     await tester.tap(apply);
@@ -815,10 +896,14 @@ void main() {
     );
     await tester.pumpWidget(_harness(controller, scale: 0.6));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey<String>('video-discovery-open-filters')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('video-discovery-filter-year')),
-        findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-open-filters')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-filter-year')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -833,9 +918,7 @@ void main() {
 
     final double expectedHeight = tester
         .getSize(
-          find.byKey(
-            const ValueKey<String>('video-discovery-filter-year'),
-          ),
+          find.byKey(const ValueKey<String>('video-discovery-filter-year')),
         )
         .height;
     for (final String key in <String>[
@@ -852,17 +935,18 @@ void main() {
 
   testWidgets('年份与题材菜单不依赖首批趋势卡片', (WidgetTester tester) async {
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
-      (_) async => _result(<discovery.VideoDiscoveryItem>[
-        _item('current', '首批作品'),
-      ]),
+      (_) async =>
+          _result(<discovery.VideoDiscoveryItem>[_item('current', '首批作品')]),
     );
     await tester.pumpWidget(_harness(controller));
     await tester.pumpAndSettle();
 
-    final Finder yearFinder =
-        find.byKey(const ValueKey<String>('video-discovery-filter-year'));
-    final PopupMenuButton<int> yearMenu =
-        tester.widget<PopupMenuButton<int>>(glassUnwrap<PopupMenuButton<int>>(yearFinder));
+    final Finder yearFinder = find.byKey(
+      const ValueKey<String>('video-discovery-filter-year'),
+    );
+    final PopupMenuButton<int> yearMenu = tester.widget<PopupMenuButton<int>>(
+      glassUnwrap<PopupMenuButton<int>>(yearFinder),
+    );
     final Iterable<int?> yearValues = yearMenu
         .itemBuilder(tester.element(yearFinder))
         .whereType<PopupMenuItem<int>>()
@@ -872,16 +956,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.requests.last.year, 1999);
 
-    final Finder genreFinder =
-        find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
-    final PopupMenuButton<String> genreMenu =
-        tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(genreFinder));
-    final List<PopupMenuEntry<String>> genreEntries =
-        genreMenu.itemBuilder(tester.element(genreFinder));
+    final Finder genreFinder = find.byKey(
+      const ValueKey<String>('video-discovery-filter-genre'),
+    );
+    final PopupMenuButton<String> genreMenu = tester
+        .widget<PopupMenuButton<String>>(
+          glassUnwrap<PopupMenuButton<String>>(genreFinder),
+        );
+    final List<PopupMenuEntry<String>> genreEntries = genreMenu.itemBuilder(
+      tester.element(genreFinder),
+    );
     expect(
-      genreEntries
-          .whereType<PopupMenuItem<String>>()
-          .map((entry) => entry.value),
+      genreEntries.whereType<PopupMenuItem<String>>().map(
+        (entry) => entry.value,
+      ),
       contains('Mecha'),
     );
   });
@@ -905,10 +993,13 @@ void main() {
     await tester.pumpWidget(_harness(controller));
     await tester.pumpAndSettle();
 
-    final Finder genreFinder =
-        find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
-    final PopupMenuButton<String> genreMenu =
-        tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(genreFinder));
+    final Finder genreFinder = find.byKey(
+      const ValueKey<String>('video-discovery-filter-genre'),
+    );
+    final PopupMenuButton<String> genreMenu = tester
+        .widget<PopupMenuButton<String>>(
+          glassUnwrap<PopupMenuButton<String>>(genreFinder),
+        );
     final Iterable<String?> values = genreMenu
         .itemBuilder(tester.element(genreFinder))
         .whereType<PopupMenuItem<String>>()
@@ -934,8 +1025,9 @@ void main() {
     await tester.pumpWidget(_harness(controller));
     await tester.pump();
 
-    final PortraitCoverImage cover = tester
-        .widget<PortraitCoverImage>(find.byType(PortraitCoverImage).first);
+    final PortraitCoverImage cover = tester.widget<PortraitCoverImage>(
+      find.byType(PortraitCoverImage).first,
+    );
     expect(cover.image, isA<CachedNetworkImageProvider>());
   });
 
@@ -1022,9 +1114,8 @@ void main() {
       retryable: true,
     );
     final _FakeDiscoveryController controller = _FakeDiscoveryController(
-      (_) async => ProviderBatchResult<discovery.VideoDiscoveryPage>.failure(
-        failure,
-      ),
+      (_) async =>
+          ProviderBatchResult<discovery.VideoDiscoveryPage>.failure(failure),
     );
 
     await tester.pumpWidget(_harness(controller));

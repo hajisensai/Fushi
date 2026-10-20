@@ -349,6 +349,7 @@ class ChannelSyncFlags {
     required this.syncFavorites,
     required this.syncAudioBookPosition,
     required this.syncContent,
+    required this.syncMangaContent,
     required this.syncAudioBookFiles,
     required this.syncVideoFiles,
   });
@@ -360,6 +361,10 @@ class ChannelSyncFlags {
   final bool syncFavorites;
   final bool syncAudioBookPosition;
   final bool syncContent;
+
+  /// 漫画（[BookFormat.manga]）书文件是否上传；与 [syncContent]（EPUB 等其它格式）
+  /// 分开（所有者 2026-10-21：书籍和漫画分开）。
+  final bool syncMangaContent;
   final bool syncAudioBookFiles;
   final bool syncVideoFiles;
 
@@ -398,6 +403,9 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
     syncContent: isInterconnect
         ? await repo.isInterconnectSyncContentEnabled()
         : await repo.isSyncContentEnabled(),
+    syncMangaContent: isInterconnect
+        ? await repo.isInterconnectSyncMangaContentEnabled()
+        : await repo.isSyncMangaContentEnabled(),
     syncAudioBookFiles: isInterconnect
         ? await repo.isInterconnectSyncAudioBookFilesEnabled()
         : await repo.isSyncAudioBookFilesEnabled(),
@@ -484,6 +492,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     syncFavorites: flags.syncFavorites,
     syncAudioBookPosition: flags.syncAudioBookPosition,
     syncContent: flags.syncContent,
+    syncMangaContent: flags.syncMangaContent,
     syncAudioBookFiles: flags.syncAudioBookFiles,
     syncVideoFiles: flags.syncVideoFiles,
     // 自动 sweep 一律不碰词典（两条通道都是），见 [ChannelSyncFlags] 末尾注释。
@@ -1189,6 +1198,7 @@ Future<SyncRunReport?> _runAssetTransferChannel({
       syncFavorites: false,
       syncAudioBookPosition: false,
       syncContent: false,
+      syncMangaContent: false,
       syncAudioBookFiles: false,
       syncVideoFiles: false,
       syncDictionary: false,
@@ -1317,6 +1327,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
             syncFavorites: false,
             syncAudioBookPosition: false,
             syncContent: false,
+            syncMangaContent: false,
             syncAudioBookFiles: false,
             syncVideoFiles: false,
             syncDictionary: false,
@@ -1445,6 +1456,7 @@ Future<void> _runAutoSync({
             statsSyncMode: StatisticsSyncMode.merge,
             syncAudioBook: flags.syncAudioBookPosition,
             syncContent: flags.syncContent,
+            syncMangaContent: flags.syncMangaContent,
           );
           // 计数放在 syncBook **之后**：抛异常的通道不算「跑过」，否则
           // channelsRun>0 会把一条都没成功的轮次记成 completed（与 sweep 一致）。

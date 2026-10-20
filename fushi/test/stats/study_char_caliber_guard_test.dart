@@ -126,6 +126,9 @@ void main() {
         // AI 整理库：新合集名的长度上限（80 个码点），是校验判据不是学习计数。
         'packages/fushi_engine/lib/media/collections/library_organize/library_organize_plan.dart':
             1,
+        // PDF 文字层：一页文字层字素数是否达到「整页正文就是文字层」门槛
+        // （kPdfTextLayerCompletePageMinChars），是覆盖判据不是学习计数。
+        'packages/fushi_engine/lib/media/manga/manga_pdf_text_layer.dart': 1,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':

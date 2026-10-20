@@ -8,6 +8,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -66,7 +67,7 @@ class SyncCompareEntry {
   /// `/api/library/books/<title>`，不能交给 [importRemoteBookFolder]。
   final String? remoteLiveTitle;
 
-  /// 该远端文件夹是否含可下载的 `.epub` 内容。仅对「远端独有」书有意义：为 false
+  /// 该远端文件夹是否含可下载的书内容（`.epub` / `.manga.zip`）。仅对「远端独有」书有意义：为 false
   /// 时是只剩同步元数据的孤儿，不能当可下载书（避免 BUG-049 幽灵下载），但条目保留
   /// 以便删除。本端已有书 / 本端独有书恒为 true（不参与远端下载判定）。
   final bool remoteHasContent;
@@ -181,7 +182,8 @@ class SyncDictEntry {
       ].join(' · ');
 }
 
-/// True if a remote book folder holds a downloadable EPUB content asset.
+/// True if a remote book folder holds a downloadable book content asset
+/// (`.epub`, or a manga package `.manga.zip` — [isRemoteBookContentName]).
 /// Mirrors [importRemoteBookFolder]'s content lookup so the compare list never
 /// offers a download it can't fulfil (BUG-049). Errs toward *showing* the entry
 /// when the listing fails, so a transient error never hides a real remote book.
@@ -191,8 +193,8 @@ Future<bool> _remoteFolderHasContent(
 ) async {
   try {
     final List<AssetEntry> children = await backend.listChildren(folderId);
-    return children.any((AssetEntry e) =>
-        !e.isFolder && e.name.toLowerCase().endsWith('.epub'));
+    return children.any(
+        (AssetEntry e) => !e.isFolder && isRemoteBookContentName(e.name));
   } catch (e) {
     developer.log(
       'Failed to check remote content for "$folderId"',
@@ -739,6 +741,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
     final bool syncStats = flags.syncStats;
     final bool syncAudioBook = flags.syncAudioBookPosition;
     final bool syncContent = flags.syncContent;
+    final bool syncMangaContent = flags.syncMangaContent;
 
     var done = 0;
     // Blend per-file transfer fraction into the overall book progress so the
@@ -809,6 +812,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           statsSyncMode: StatisticsSyncMode.merge,
           syncAudioBook: syncAudioBook,
           syncContent: syncContent,
+          syncMangaContent: syncMangaContent,
         );
         outcome = classifySyncApply(result);
       } catch (e) {

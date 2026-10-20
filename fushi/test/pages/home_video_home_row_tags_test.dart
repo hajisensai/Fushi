@@ -31,14 +31,20 @@ import '../helpers/test_platform_services.dart';
 /// 横滚行；标签层当时只写在墙卡 `_buildCard` 上，于是「打了标签，首页一个都看不
 /// 见」。这几条断言就是那个缺口的行为门：继续观看行的散卡、合集卡与最近添加行卡
 /// 各自认自己那条标签，没打标签的卡不得凭空长出 chip。
+///
+/// 2026-10 首页重设计：继续观看的第一项提成首屏主卡（key 沿用继续观看卡），主卡
+/// 是大图 + 标题 + 按钮的版式、**不画标签**；「下一集」行并入继续观看。所以测
+/// 继续观看行卡时先种一部更近播放的「主卡占位」（[seedHeroDecoy]），被测卡才会
+/// 落进横滚行。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_home_row_tags_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_home_row_tags_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -87,27 +93,26 @@ void main() {
   Widget buildApp({
     VideoLibrarySection section = VideoLibrarySection.home,
     List<RemoteVideoInfo> remote = const <RemoteVideoInfo>[],
-  }) =>
-      ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: section,
-                remoteVideoClientLoader: remote.isEmpty
-                    ? null
-                    : () async => _ListFakeRemoteVideoClient(remote),
-              ),
-            ),
+  }) => ProviderScope(
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: section,
+            remoteVideoClientLoader: remote.isEmpty
+                ? null
+                : () async => _ListFakeRemoteVideoClient(remote),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> pumpHome(
     WidgetTester tester, {
@@ -123,20 +128,42 @@ void main() {
   }
 
   /// 有播放痕迹（未看完）→ 进「继续观看」行。
-  Future<void> seedInProgress(String uid, String title) =>
-      db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(uid),
-        title: Value<String>(title),
-        videoPath: Value<String>('/abs/$title.mp4'),
+  Future<void> seedInProgress(String uid, String title) => db.upsertVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value<String>(uid),
+      title: Value<String>(title),
+      videoPath: Value<String>('/abs/$title.mp4'),
+      lastPositionMs: const Value<int>(60000),
+    ),
+  );
+
+  /// 一部最近刚播放（`lastPlayedAt` = 现在）的在看合集：它是继续观看的第一项、
+  /// 被提成首屏主卡，其余在看条目都进「继续观看」横滚行。返回合集 id。
+  Future<int> seedHeroDecoy() async {
+    final int cid = await db.createMediaCollection(
+      'HeroDecoy',
+      collectionType: 'playlist',
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/hero-decoy'),
+        title: const Value<String>('HeroDecoy Ep1'),
+        videoPath: const Value<String>('/abs/hero-decoy.mp4'),
         lastPositionMs: const Value<int>(60000),
-      ));
+        lastPlayedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await db.addToCollection(cid, MediaKind.video, 'video/hero-decoy');
+    return cid;
+  }
 
   Finder tagTextIn(String cardKey, String tagName) => find.descendant(
-        of: find.byKey(ValueKey<String>(cardKey)),
-        matching: find.text(tagName),
-      );
+    of: find.byKey(ValueKey<String>(cardKey)),
+    matching: find.text(tagName),
+  );
 
   testWidgets('继续观看行的散卡显示该视频的标签', (WidgetTester tester) async {
+    await seedHeroDecoy();
     await seedInProgress('video/tagged', 'Tagged Show');
     await seedInProgress('video/plain', 'Plain Show');
     final int tagId = await db.createTag('WatchLater', 0xFF2196F3);
@@ -158,12 +185,14 @@ void main() {
 
   testWidgets('最近添加行的卡显示该视频的标签', (WidgetTester tester) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value<String>('video/fresh'),
-      title: const Value<String>('Fresh Show'),
-      videoPath: const Value<String>('/abs/fresh.mp4'),
-      importedAt: Value<int>(nowMs),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/fresh'),
+        title: const Value<String>('Fresh Show'),
+        videoPath: const Value<String>('/abs/fresh.mp4'),
+        importedAt: Value<int>(nowMs),
+      ),
+    );
     final int tagId = await db.createTag('Backlog', 0xFF4CAF50);
     await db.addTagToVideoBook('video/fresh', tagId);
 
@@ -177,8 +206,11 @@ void main() {
   });
 
   testWidgets('继续观看行的合集卡显示合集自己的标签', (WidgetTester tester) async {
-    final int cid =
-        await db.createMediaCollection('MyShow', collectionType: 'playlist');
+    await seedHeroDecoy();
+    final int cid = await db.createMediaCollection(
+      'MyShow',
+      collectionType: 'playlist',
+    );
     await seedInProgress('video/ep1', 'Ep1');
     await db.addToCollection(cid, MediaKind.video, 'video/ep1');
     final int tagId = await db.createTag('Airing', 0xFFFF9800);
@@ -193,25 +225,34 @@ void main() {
     );
   });
 
-  // 首页 overview 有**三条**横滚行（继续观看 / 下一集 / 最近添加），每条都可能
+  // 首页 overview 原有**三条**横滚行（继续观看 / 下一集 / 最近添加），每条都可能
   // 出合集卡。上面三条只覆盖了继续观看的散卡/合集卡与最近添加的散卡，剩下两处
   // 合集卡当初就是这么漏掉的——补画时同样漏了一遍。按行 × 卡型逐格补齐。
-  testWidgets('「下一集」行的合集卡显示合集自己的标签', (WidgetTester tester) async {
-    final int cid =
-        await db.createMediaCollection('NextShow', collectionType: 'playlist');
-    // 「下一集」的判据是「最后实际播放的那集已看完，且序列里还有下一集」。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value<String>('video/next-ep1'),
-      title: const Value<String>('NextShow Ep1'),
-      videoPath: const Value<String>('/abs/next-ep1.mp4'),
-      lastPositionMs: const Value<int>(60000),
-      completedAt: Value<DateTime>(DateTime.now()),
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value<String>('video/next-ep2'),
-      title: const Value<String>('NextShow Ep2'),
-      videoPath: const Value<String>('/abs/next-ep2.mp4'),
-    ));
+  // 2026-10 重设计后「下一集」并入继续观看：Next-Up 落到下一集的合集卡同样要画
+  // 标签（它走的是继续观看合集卡，但目标集是未开播的下一集，副标题与进度另一套）。
+  testWidgets('继续观看里 Next-Up 落到下一集的合集卡显示合集自己的标签', (WidgetTester tester) async {
+    await seedHeroDecoy();
+    final int cid = await db.createMediaCollection(
+      'NextShow',
+      collectionType: 'playlist',
+    );
+    // Next-Up 落到下一集：最后实际播放的那集已看完，且序列里还有下一集。
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/next-ep1'),
+        title: const Value<String>('NextShow Ep1'),
+        videoPath: const Value<String>('/abs/next-ep1.mp4'),
+        lastPositionMs: const Value<int>(60000),
+        completedAt: Value<DateTime>(DateTime.now()),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/next-ep2'),
+        title: const Value<String>('NextShow Ep2'),
+        videoPath: const Value<String>('/abs/next-ep2.mp4'),
+      ),
+    );
     await db.addToCollection(cid, MediaKind.video, 'video/next-ep1');
     await db.addToCollection(cid, MediaKind.video, 'video/next-ep2');
     final int tagId = await db.createTag('NextUp', 0xFF9C27B0);
@@ -220,22 +261,34 @@ void main() {
     await pumpHome(tester);
 
     expect(
-      tagTextIn('home_video_next_collection_$cid', 'NextUp'),
+      find.descendant(
+        of: find.byKey(ValueKey<String>('home_video_continue_collection_$cid')),
+        matching: find.text(t.video_home_next_episode_number(n: 2)),
+      ),
       findsOneWidget,
-      reason: '「下一集」行的合集卡与其它行同一标签口径（BUG-1808 补齐）',
+      reason: '前提：这张卡确实是 Next-Up 落到下一集的那种',
+    );
+    expect(
+      tagTextIn('home_video_continue_collection_$cid', 'NextUp'),
+      findsOneWidget,
+      reason: 'Next-Up 合集卡与其它行同一标签口径（BUG-1808 补齐）',
     );
   });
 
   testWidgets('「最近添加」行的合集卡显示合集自己的标签', (WidgetTester tester) async {
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
-    final int cid = await db.createMediaCollection('FreshShow',
-        collectionType: 'playlist');
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value<String>('video/fresh-ep1'),
-      title: const Value<String>('FreshShow Ep1'),
-      videoPath: const Value<String>('/abs/fresh-ep1.mp4'),
-      importedAt: Value<int>(nowMs),
-    ));
+    final int cid = await db.createMediaCollection(
+      'FreshShow',
+      collectionType: 'playlist',
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/fresh-ep1'),
+        title: const Value<String>('FreshShow Ep1'),
+        videoPath: const Value<String>('/abs/fresh-ep1.mp4'),
+        importedAt: Value<int>(nowMs),
+      ),
+    );
     await db.addToCollection(cid, MediaKind.video, 'video/fresh-ep1');
     final int tagId = await db.createTag('JustAdded', 0xFF00BCD4);
     await db.addTagToCollection(cid, tagId);
@@ -248,9 +301,36 @@ void main() {
       reason: '「最近添加」行的合集卡与其它行同一标签口径（BUG-1808 补齐）',
     );
   });
+  testWidgets('首屏主卡不画标签（标签只在横滚行卡 / 墙卡上）', (WidgetTester tester) async {
+    final int heroCid = await seedHeroDecoy();
+    final int tagId = await db.createTag('HeroTag', 0xFF3F51B5);
+    await db.addTagToCollection(heroCid, tagId);
+
+    await pumpHome(tester);
+
+    final Finder hero = find.byKey(
+      ValueKey<String>('home_video_continue_collection_$heroCid'),
+    );
+    expect(hero, findsOneWidget, reason: '唯一在看的一部被提成首屏主卡');
+    expect(
+      find.descendant(
+        of: hero,
+        matching: find.byKey(const ValueKey<String>('home_video_hero_play')),
+      ),
+      findsOneWidget,
+      reason: '前提：这张是主卡（带「继续」主按钮），不是横滚行卡',
+    );
+    expect(
+      tagTextIn('home_video_continue_collection_$heroCid', 'HeroTag'),
+      findsNothing,
+      reason: '2026-10 重设计：主卡是大图 + 标题 + 按钮版式，不画标签 chip',
+    );
+  });
+
   // ── 远端占位卡：host 清单下发的是标签**名**（标签本身每设备本地） ──────────
 
   testWidgets('继续观看行的远端占位卡显示 host 下发的标签', (WidgetTester tester) async {
+    await seedHeroDecoy();
     await pumpHome(
       tester,
       remote: const <RemoteVideoInfo>[
@@ -271,10 +351,11 @@ void main() {
     );
   });
 
-  testWidgets('远端标签借本机同名标签的颜色，本机没有则走 chip 默认色',
-      (WidgetTester tester) async {
+  testWidgets('远端标签借本机同名标签的颜色，本机没有则走 chip 默认色', (WidgetTester tester) async {
     const int knownColor = 0xFF9C27B0;
     await db.createTag('Known', knownColor);
+    // 远端卡要落进横滚行（主卡不画标签）。
+    await seedHeroDecoy();
 
     await pumpHome(
       tester,
@@ -289,23 +370,28 @@ void main() {
       ],
     );
 
-    final FushiTagChip known = tester.widget<FushiTagChip>(find.ancestor(
-      of: find.text('Known'),
-      matching: find.byType(FushiTagChip),
-    ));
-    final FushiTagChip unknown = tester.widget<FushiTagChip>(find.ancestor(
-      of: find.text('Unknown'),
-      matching: find.byType(FushiTagChip),
-    ));
+    final FushiTagChip known = tester.widget<FushiTagChip>(
+      find.ancestor(
+        of: find.text('Known'),
+        matching: find.byType(FushiTagChip),
+      ),
+    );
+    final FushiTagChip unknown = tester.widget<FushiTagChip>(
+      find.ancestor(
+        of: find.text('Unknown'),
+        matching: find.byType(FushiTagChip),
+      ),
+    );
 
-    expect(known.color, const Color(knownColor),
-        reason: '本机有同名标签就借它的颜色，两端看同一条标签颜色才一致');
-    expect(unknown.color, isNull,
-        reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色');
+    expect(
+      known.color,
+      const Color(knownColor),
+      reason: '本机有同名标签就借它的颜色，两端看同一条标签颜色才一致',
+    );
+    expect(unknown.color, isNull, reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色');
   });
 
-  testWidgets('「全部视频」墙格里的远端占位卡也显示标签（与字幕角标并成一列）',
-      (WidgetTester tester) async {
+  testWidgets('「全部视频」墙格里的远端占位卡也显示标签（与字幕角标并成一列）', (WidgetTester tester) async {
     await pumpHome(
       tester,
       section: VideoLibrarySection.allVideos,
@@ -327,7 +413,8 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(
-            const ValueKey<String>('remote_video_card_video_remote-wall')),
+          const ValueKey<String>('remote_video_card_video_remote-wall'),
+        ),
         matching: find.byIcon(Icons.subtitles_outlined),
       ),
       findsOneWidget,
@@ -347,9 +434,10 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-          {int episodeIndex = 0}) async =>
-      const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async => const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -373,8 +461,7 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(

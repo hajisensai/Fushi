@@ -61,12 +61,67 @@ const String kActiveProfileIdPrefKey = 'active_profile_id';
 /// （fushi 层 `ProfileKeys` / `SyncRepository.deviceLocalPrefKeys` 各排除一次）。
 const String kStatLegacyProfileIdPrefKey = 'stats_legacy_profile_id';
 
+/// BUG-3644：同步落地时「对端 Profile 名字 → 本机 Profile」的回退别名。对端某个
+/// Profile 名在本机没有同名 Profile 时，它的段落进当时激活的 Profile；这里记下
+/// `本机 Profile id → {对端名字}`，导出时该 Profile 的碑再以这些名字各发一份，碑
+/// 才能在对端压到当初那批段（否则名字对不上的碑在对端被丢弃，两端永久分叉）。
+/// JSON：`{"<profileId>": ["名字", ...]}`。
+///
+/// 设备本地键：值是本库自增 id，同 [kStatLegacyProfileIdPrefKey] 一样绝不出境。
+const String kStudyProfileNameAliasesPrefKey = 'stats_profile_name_aliases';
+
 mixin _FushiDbStatistics
     on
         _$FushiDatabase,
         _FushiDbPrefsMedia,
         _FushiDbContentMisc,
         _FushiDbTagsSync {
+  /// 读 [kStudyProfileNameAliasesPrefKey]：本机 Profile id → 落进它的对端名字。
+  /// 坏值当空（只影响碑的别名副本，不影响数据本身）。
+  Future<Map<int, Set<String>>> getStudyProfileNameAliases() async {
+    final String? raw = await getPref(kStudyProfileNameAliasesPrefKey);
+    if (raw == null || raw.isEmpty) return <int, Set<String>>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return <int, Set<String>>{};
+    }
+    if (decoded is! Map<String, Object?>) return <int, Set<String>>{};
+    final Map<int, Set<String>> out = <int, Set<String>>{};
+    for (final MapEntry<String, Object?> e in decoded.entries) {
+      final int? id = int.tryParse(e.key);
+      final Object? names = e.value;
+      if (id == null || names is! List<Object?>) continue;
+      out[id] = <String>{
+        for (final Object? n in names)
+          if (n is String && n.isNotEmpty) n,
+      };
+    }
+    return out;
+  }
+
+  /// 并入别名（只增不减；没有新名字时不写）。
+  Future<void> addStudyProfileNameAliases(Map<int, Set<String>> added) async {
+    if (added.isEmpty) return;
+    final Map<int, Set<String>> current = await getStudyProfileNameAliases();
+    bool changed = false;
+    for (final MapEntry<int, Set<String>> e in added.entries) {
+      final Set<String> names = current.putIfAbsent(e.key, () => <String>{});
+      for (final String n in e.value) {
+        if (n.isNotEmpty && names.add(n)) changed = true;
+      }
+    }
+    if (!changed) return;
+    await setPref(
+      kStudyProfileNameAliasesPrefKey,
+      jsonEncode(<String, List<String>>{
+        for (final MapEntry<int, Set<String>> e in current.entries)
+          '${e.key}': (e.value.toList()..sort()),
+      }),
+    );
+  }
+
   // ── reading statistics ──────────────────────────────────────────
   /// OVERWRITE semantics: sets the row for (title, dateKey) to the absolute
   /// values in [stat]. Use this when the caller already holds the final total

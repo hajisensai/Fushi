@@ -138,13 +138,15 @@ const Set<OnboardingFeature> kOnboardingResourceFeatures = <OnboardingFeature>{
   OnboardingFeature.manualResources,
 };
 
-/// 新手引导 Anki 步里「制卡后自动按词频重排」开关的初值：**开**。
+/// 新手引导里「制卡后自动按词频重排」开关的初值：**开**。Fushi 复习路径（复习方式
+/// 一步）与 Anki 路径（Anki 步）各摆一颗，共用这一个初值与同一个设置
+/// （所有者 2026-10-20：「走新手教程那步的时候默认开启」）。
 ///
 /// 设置本身（`AnkiSettings.autoRepositionEnabled`）默认关，因为它会在用户没点
-/// 任何按钮时改 Anki 的新卡顺序，不能是升级送的；但引导里用户看得见这颗开关，
+/// 任何按钮时改新卡顺序，不能是升级送的；但引导里用户看得见这颗开关，
 /// 照着默认走下一步就是显式选择。新卡按常见词优先学是绝大多数人想要的顺序，
 /// 而手机端用户此前几乎不会知道有这个功能。
-const bool kOnboardingAnkiAutoRepositionDefault = true;
+const bool kOnboardingAutoRepositionDefault = true;
 
 /// 第一张 Anki 卡教程的真实就绪判据。仅有旧的非空选择 id 不够：本次必须连接
 /// 成功，且两个 id 都仍存在于本次拉回的列表中。
@@ -176,35 +178,36 @@ enum OnboardingReviewMethod {
   anki,
 }
 
-/// 「复习方式」一步的初值 = 用户此刻的真实状态：复习模块开着**且**挖词目标是 Fushi
-/// 复习才算 [OnboardingReviewMethod.fushi]。全新安装两者的出厂默认正是如此（模块默认
-/// 开、挖词目标默认 srs）；老用户从设置里重开向导看到的是 Anki（照旧）。
-OnboardingReviewMethod onboardingReviewMethodOf({
-  required bool srsModuleEnabled,
-  required SrsMiningTarget miningTarget,
-}) => srsModuleEnabled && miningTarget == SrsMiningTarget.srs
-    ? OnboardingReviewMethod.fushi
-    : OnboardingReviewMethod.anki;
+/// 「复习方式」一步的初值：**恒为 Fushi 复习**（所有者 2026-10-20：「新手教程从默认
+/// anki 改成默认 fushi 复习」）。此前按用户此刻的状态推断，老用户重开向导看到的是
+/// Anki；现在一律从 Fushi 起步，要用 Anki 的展开折叠点选。初值不在进页时写入：离开
+/// 这一步（按下一步）或点选时才写（见 [applyOnboardingReviewMethod]）。
+const OnboardingReviewMethod kOnboardingDefaultReviewMethod =
+    OnboardingReviewMethod.fushi;
 
-/// 用户在「复习方式」一步点选后立即写入（跳过向导也不丢）。
+/// 「复习方式」的写入：用户点选时立即写（跳过向导也不丢），离开这一步时按当前选择再
+/// 写一次（照着默认直接按下一步的用户也算显式选择）。
 ///
-/// - [OnboardingReviewMethod.fushi]：开复习模块、挖词目标 = Fushi 复习。笔记类型不写：
-///   没选过（空 id）就是内置 Fushi 卡片，选过的不替用户改。
+/// - [OnboardingReviewMethod.fushi]：开复习模块、挖词目标 = Fushi 复习，再调
+///   [adoptFushiCard] 把制卡笔记类型落到内置 Fushi 卡片（生产实现只把旧默认 Lapis 换掉，
+///   用户自建的笔记类型不动）。
 /// - [OnboardingReviewMethod.anki]：挖词目标 = Anki、关复习模块（与升级上来的老用户
 ///   同一形态：只在设置里能找到 Fushi 复习）。
 ///
-/// 写入经两个回调（生产是 `AppModel.setModuleEnabled` / `AppModel.setSrsMiningTarget`），
+/// 写入经回调（生产是 `AppModel.setModuleEnabled` / `AppModel.setSrsMiningTarget`），
 /// 便于单测断言不起整个 AppModel。
 Future<void> applyOnboardingReviewMethod(
   OnboardingReviewMethod method, {
   required Future<void> Function(ModuleId module, bool enabled)
   setModuleEnabled,
   required Future<void> Function(SrsMiningTarget target) setMiningTarget,
+  Future<void> Function()? adoptFushiCard,
 }) async {
   switch (method) {
     case OnboardingReviewMethod.fushi:
       await setMiningTarget(SrsMiningTarget.srs);
       await setModuleEnabled(ModuleId.srs, true);
+      if (adoptFushiCard != null) await adoptFushiCard();
     case OnboardingReviewMethod.anki:
       await setMiningTarget(SrsMiningTarget.anki);
       await setModuleEnabled(ModuleId.srs, false);

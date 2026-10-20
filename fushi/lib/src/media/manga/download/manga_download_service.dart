@@ -948,7 +948,13 @@ class MangaDownloadService {
   /// 续跑时找磁盘上已落地的第 [index] 页（任意扩展名，`.tmp` 除外，空文件不算）。
   Future<_PageFile?> _existingPageFile(Directory images, int index) async {
     final String stem = _pageStem(index);
-    for (final String ext in const <String>['.jpg', '.png', '.webp', '.gif']) {
+    for (final String ext in const <String>[
+      '.jpg',
+      '.png',
+      '.webp',
+      '.gif',
+      '.avif',
+    ]) {
       final File file = File(p.join(images.path, '$stem$ext'));
       if (await file.exists() && await file.length() > 0) {
         return _PageFile(
@@ -968,6 +974,10 @@ class MangaDownloadService {
         return '.webp';
       case 'image/gif':
         return '.gif';
+      case 'image/avif':
+        // 以前落进 default 存成 `.jpg`：WebView 按扩展名给 image/jpeg、导入白名单也照旧，
+        // 但内容其实是 AVIF，换扩展名就能对上真实格式。
+        return '.avif';
       default:
         return '.jpg';
     }

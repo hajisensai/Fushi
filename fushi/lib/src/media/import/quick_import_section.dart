@@ -9,6 +9,25 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
+/// 把各域的扩展名真相源集合（带不带点均可）派生成「支持格式」chip 文案：
+/// 去点、转大写、按给出顺序去重（如 `.mp4` 同时在视频与音频集合里）。
+///
+/// chip 必须从导入实际认的集合派生，不许再手写子集——手写的那份会和导入器
+/// 静默漂移（漫画页曾只写 CBZ/ZIP/PDF/MOKURO/JPG/PNG，实际还认 CBR/CB7/RAR/
+/// EPUB 与 WEBP/GIF/BMP 等）。
+List<String> importFormatLabels(Iterable<Iterable<String>> extensionSets) {
+  final Set<String> labels = <String>{};
+  for (final Iterable<String> extensions in extensionSets) {
+    for (final String extension in extensions) {
+      final String bare = extension.startsWith('.')
+          ? extension.substring(1)
+          : extension;
+      if (bare.isNotEmpty) labels.add(bare.toUpperCase());
+    }
+  }
+  return labels.toList(growable: false);
+}
+
 /// 「快速导入」区的一个入口按钮声明。
 class QuickImportAction {
   const QuickImportAction({

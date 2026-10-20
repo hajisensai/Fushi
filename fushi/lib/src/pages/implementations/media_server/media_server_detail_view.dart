@@ -371,6 +371,13 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   }
 
   /// hero 续播行文案（剧且当前季有未看集才出）。
+  /// 主操作会播的那一集的名字（电影 / 还没取到集为 null）。
+  String? _resumeEpisodeName() {
+    if (!_isSeries || _episodes.isEmpty) return null;
+    final int index = _continueIndex;
+    return (index >= 0 ? _episodes[index] : _episodes.first).name;
+  }
+
   String? _continueLabel() {
     if (!_isSeries) return null;
     final int index = _continueIndex;
@@ -433,6 +440,18 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             ),
             backdropBlur: collectionHeroBackdropBlur(backdrop: backdrop),
             bottomPadding: tokens.spacing.section,
+            // 「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一动作（剧 = 续播那一集）。
+            fab: canPlay
+                ? MediaDetailResumeFab(
+                    buttonKey: const ValueKey<String>(
+                      'media-server-detail-resume-fab',
+                    ),
+                    watching: true,
+                    started: _resumesMidway,
+                    itemLabel: _resumeEpisodeName(),
+                    onPressed: _playPrimary,
+                  )
+                : null,
             header: CollectionDetailHero(
               backdrop: backdrop,
               cover: cover,
@@ -446,7 +465,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
               tagNames: genres.take(6).toList(),
               summary: _detail.overview,
               continueLabel: _continueLabel(),
-              playLabel: _resumesMidway ? t.video_continue_watching : null,
+              playLabel: MediaDetailResumeFab.labelFor(
+                watching: true,
+                started: _resumesMidway,
+              ),
               playButtonKey: const ValueKey<String>('media-server-detail-play'),
               onPlay: canPlay ? _playPrimary : null,
               secondaryAction: _buildDownloadAction(),

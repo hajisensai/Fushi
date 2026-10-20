@@ -11,12 +11,15 @@ import '../helpers/source_guard.dart';
 /// 旧 Series 系统或 playlistJson 整本模型。
 void main() {
   final File mergeEngine = File('lib/src/sync/backup_merge_engine.dart');
-  final File importDialog =
-      File('lib/src/media/video/video_import_dialog.dart');
-  final File homeVideo =
-      File('lib/src/pages/implementations/home_video_page.dart');
-  final File historyPage =
-      File('lib/src/pages/implementations/reader_fushi_history_page.dart');
+  final File importDialog = File(
+    'lib/src/media/video/video_import_dialog.dart',
+  );
+  final File homeVideo = File(
+    'lib/src/pages/implementations/home_video_page.dart',
+  );
+  final File historyPage = File(
+    'lib/src/pages/implementations/reader_fushi_history_page.dart',
+  );
 
   late String mergeSrc;
   late String importSrc;
@@ -47,112 +50,211 @@ void main() {
     final int mergeEnd = mergeSrc.indexOf('\n  }', mergeFn);
     expect(mergeEnd, isNonNegative);
     final String body = mergeSrc.substring(mergeFn, mergeEnd);
-    expect(body.contains('await _mergeMediaCollections();'), isTrue,
-        reason: 'merge() 必须合并 media_collections，否则备份恢复后分组全丢');
+    expect(
+      body.contains('await _mergeMediaCollections();'),
+      isTrue,
+      reason: 'merge() 必须合并 media_collections，否则备份恢复后分组全丢',
+    );
     // 自然键幂等 remap（不能按自增 id 直搬）。
     expect(mergeSrc.contains('collection_type'), isTrue);
-    expect(mergeSrc.contains('INSERT OR IGNORE INTO media_collection_items'),
-        isTrue,
-        reason: '成员按复合主键 INSERT OR IGNORE 去重');
+    expect(
+      mergeSrc.contains('INSERT OR IGNORE INTO media_collection_items'),
+      isTrue,
+      reason: '成员按复合主键 INSERT OR IGNORE 去重',
+    );
   });
 
   test('视频播放列表导入走 importSplitPlaylist（拆集），不再写整本 playlistJson', () {
-    expect(importSrc.contains('importSplitPlaylist('), isTrue,
-        reason: '播放列表导入必须拆成独立行 + 合集（单一真相源 importSplitPlaylist）');
+    expect(
+      importSrc.contains('importSplitPlaylist('),
+      isTrue,
+      reason: '播放列表导入必须拆成独立行 + 合集（单一真相源 importSplitPlaylist）',
+    );
     // 导入对话框绝不再往 VideoBooks 写 playlistJson 整本列（拆集后该列恒 NULL）。
-    expect(importSrc.contains('playlistJson: Value'), isFalse,
-        reason: '拆集模型下导入不得再写 playlistJson 整本列');
+    expect(
+      importSrc.contains('playlistJson: Value'),
+      isFalse,
+      reason: '拆集模型下导入不得再写 playlistJson 整本列',
+    );
   });
 
   test('库/书架主网格用 groupByCollections 折叠（合集是展示真相源）', () {
-    expect(homeSrc.contains('groupByCollections'), isTrue,
-        reason: '视频库主网格必须按合集折叠');
-    expect(historySrc.contains('groupByCollections'), isTrue,
-        reason: '书架主网格必须按合集折叠');
+    expect(
+      homeSrc.contains('groupByCollections'),
+      isTrue,
+      reason: '视频库主网格必须按合集折叠',
+    );
+    expect(
+      historySrc.contains('groupByCollections'),
+      isTrue,
+      reason: '书架主网格必须按合集折叠',
+    );
     // 折叠归属来自 getPrimaryCollectionIdByEntry（最小 collectionId），不再靠 seriesId。
     expect(homeSrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
     expect(historySrc.contains('getPrimaryCollectionIdByEntry'), isTrue);
   });
 
-  test('合集渲染形态：书架合集格子（SeriesShelfCard）+ 视频封面卡（用户拍板 2026-07-22 / 2026-10-13）', () {
-    // 书架：合集折成网格里的一个叠层格子（2026-10-13 用户拍板移除「整行展开」横排
-    // 行，反馈 #TgkCgTGy81）；视频侧用户拍板封面卡形态（「一进去就是封面，跟小说
-    // 那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
-    expect(historySrc.contains('_buildShelfCollectionCard'), isTrue,
-        reason: '书架合集必须渲染成网格里的一个格子');
-    expect(historySrc.contains('CollectionShelfRow'), isFalse,
-        reason: '书架不得回退到全宽横排行（整行展开已移除；横排行只剩游戏库用）');
-    expect(homeSrc.contains('_buildCollectionCoverCard'), isTrue,
-        reason: '视频库合集必须渲染成封面卡（一合集一封面）');
-    expect(homeSrc.contains('CollectionShelfRow('), isFalse,
-        reason: '视频库不得回退到全宽横排行（用户拍板封面卡）');
-    // 点某集从该集进播放器（带剧集面板/连播）的能力经详情页保留。
-    expect(homeSrc.contains('playlistCollectionId: collection.id'), isTrue,
-        reason: '视频合集详情页开集必须带 playlistCollectionId 直接换集');
-  });
+  test(
+    '合集渲染形态：书架合集格子（SeriesShelfCard）+ 视频封面卡（用户拍板 2026-07-22 / 2026-10-13）',
+    () {
+      // 书架：合集折成网格里的一个叠层格子（2026-10-13 用户拍板移除「整行展开」横排
+      // 行，反馈 #TgkCgTGy81）；视频侧用户拍板封面卡形态（「一进去就是封面，跟小说
+      // 那种一样」）：合集渲染成封面卡混入媒体库墙。互退即转红。
+      expect(
+        historySrc.contains('_buildShelfCollectionCard'),
+        isTrue,
+        reason: '书架合集必须渲染成网格里的一个格子',
+      );
+      expect(
+        historySrc.contains('CollectionShelfRow'),
+        isFalse,
+        reason: '书架不得回退到全宽横排行（整行展开已移除；横排行只剩游戏库用）',
+      );
+      expect(
+        homeSrc.contains('_buildCollectionCoverCard'),
+        isTrue,
+        reason: '视频库合集必须渲染成封面卡（一合集一封面）',
+      );
+      expect(
+        homeSrc.contains('CollectionShelfRow('),
+        isFalse,
+        reason: '视频库不得回退到全宽横排行（用户拍板封面卡）',
+      );
+      // 点某集从该集进播放器（带剧集面板/连播）的能力经详情页保留。
+      expect(
+        homeSrc.contains('playlistCollectionId: collection.id'),
+        isTrue,
+        reason: '视频合集详情页开集必须带 playlistCollectionId 直接换集',
+      );
+    },
+  );
 
-  test('TODO-2486 hayase 式视频首页形态：hero 轮播 + 双横滚行 + 分区化媒体库墙', () {
-    // 用户拍板设计稿（2026-08-01）：顶部全宽 backdrop hero 轮播（最近在看前 5
-    // 合集）→「继续观看」/「最近添加」横滚行 → 竖横混排媒体库墙。撤任一接线
-    // 或回退到恒 2:3 单一网格即转红。
-    // hero 轮播的断言已删（2026-10-04）：#792 dashboard 化后首页不再渲染轮播，
-    // `_buildHeroCarousel` 只剩无调用方的死代码，旧断言反而强迫死代码留存。
-    expect(homeSrc.contains('getAllCollectionScrapeMeta'), isTrue,
-        reason: '视频首页必须消费合集刮削资料（作品名 / 年份筛选）');
-    expect(homeSrc.contains('_buildContinueRow'), isTrue,
-        reason: '必须有「继续观看」横滚行');
-    expect(homeSrc.contains('_buildRecentlyAddedRow'), isTrue,
-        reason: '必须有「最近添加」横滚行');
+  test('视频首页形态：首屏主卡 + 横滚行 + 分区化媒体库墙（TODO-2486 → 2026-10 重设计）', () {
+    // TODO-2486 用户拍板设计稿（2026-08-01）：hero →「继续观看」/「最近添加」横滚行
+    // → 分区化媒体库墙。hero 轮播已随 #792 dashboard 化删除（2026-10-04）。
+    // 2026-10 首页重设计：继续观看第一项提成首屏主卡（竖排版上图下文 / 横排版大图
+    // 叠字 + 右侧「已更新未看」面板），「下一集」并入继续观看；行卡统一 2:3 竖封面。
+    // 撤任一接线即转红。
+    expect(
+      homeSrc.contains('_buildHomeHeroCard('),
+      isTrue,
+      reason: '竖排版首屏主卡（继续观看第一项）',
+    );
+    expect(
+      homeSrc.contains('_buildHomeHeroSplit('),
+      isTrue,
+      reason: '横排版首屏主卡 + 「已更新未看」面板',
+    );
+    expect(
+      homeSrc.contains('_buildNextEpisodeRow'),
+      isFalse,
+      reason: '「下一集」行已并入继续观看（每部作品只出现一次），不得长回独立行',
+    );
+    expect(
+      homeSrc.contains('videoHomePosterCardWidth('),
+      isTrue,
+      reason: '首页行卡统一 2:3 竖封面，卡宽走 videoHomePosterCardWidth',
+    );
+    expect(
+      homeSrc.contains('getAllCollectionScrapeMeta'),
+      isTrue,
+      reason: '视频首页必须消费合集刮削资料（作品名 / 年份筛选）',
+    );
+    expect(
+      homeSrc.contains('_buildContinueRow'),
+      isTrue,
+      reason: '必须有「继续观看」横滚行',
+    );
+    expect(
+      homeSrc.contains('_buildRecentlyAddedRow'),
+      isTrue,
+      reason: '必须有「最近添加」横滚行',
+    );
     // 横滚行放开鼠标拖拽（桌面默认 dragDevices 不含鼠标）。
-    expect(homeSrc.contains('HorizontalDragScrollable('), isTrue,
-        reason: '横滚行必须包 HorizontalDragScrollable（桌面鼠标拖拽）');
+    expect(
+      homeSrc.contains('HorizontalDragScrollable('),
+      isTrue,
+      reason: '横滚行必须包 HorizontalDragScrollable（桌面鼠标拖拽）',
+    );
     // BUG-1536：横滚行**不得**再包滚轮投轴桥——它会把整页纵向滚动吃掉（用户
     // 实报「不然会把上下滚动行为抢走」）。Shift + 滚轮的横滚由 Flutter 内建
     // 翻轴提供，不需要自有代码；行为守卫见
     // test/pages/collection_relations_section_test.dart。
-    expect(homeSrc.contains('WheelToHorizontalScroll('), isFalse,
-        reason: '视频首页横滚行不得包 WheelToHorizontalScroll（会抢走整页纵滚，'
-            'BUG-1536）；Shift+滚轮横滚由 Flutter 内建提供');
+    expect(
+      homeSrc.contains('WheelToHorizontalScroll('),
+      isFalse,
+      reason:
+          '视频首页横滚行不得包 WheelToHorizontalScroll（会抢走整页纵滚，'
+          'BUG-1536）；Shift+滚轮横滚由 Flutter 内建提供',
+    );
     // 系列墙：行高固定、宽随封面朝向的流式换行（Wrap）。全部视频则固定为
     // 16:9 等宽网格，避免横竖卡混排在宽屏留下大洞（BUG-1989）。
-    expect(homeSrc.contains('_buildVideoWallSliver'), isTrue,
-        reason: '系列墙必须保留 _buildVideoWallSliver（Wrap 流式混排）');
-    expect(homeSrc.contains('CoverOrientationBuilder('), isTrue,
-        reason: '系列卡片朝向必须由 CoverOrientationBuilder 探测（共享 aspect 内核）');
-    expect(homeSrc.contains('_buildAllVideoGridSliver'), isTrue,
-        reason: '全部视频必须走独立的 16:9 等宽网格');
-    expect(homeSrc.contains('SliverGrid.builder('), isTrue,
-        reason: '全部视频必须用 SliverGrid 等分整行，不能回退到左对齐 Wrap');
+    expect(
+      homeSrc.contains('_buildVideoWallSliver'),
+      isTrue,
+      reason: '系列墙必须保留 _buildVideoWallSliver（Wrap 流式混排）',
+    );
+    // 「CoverOrientationBuilder 探测卡片朝向」一条已删（2026-10 重设计）：它在
+    // 本页唯一的调用方是横滚行卡；系列墙早已恒竖卡、全部视频恒 16:9，行卡改为
+    // 统一竖封面后本页不再探测朝向，旧断言只会逼着留一处无意义的探测。
+    expect(
+      homeSrc.contains('_buildAllVideoGridSliver'),
+      isTrue,
+      reason: '全部视频必须走独立的 16:9 等宽网格',
+    );
+    expect(
+      homeSrc.contains('SliverGrid.builder('),
+      isTrue,
+      reason: '全部视频必须用 SliverGrid 等分整行，不能回退到左对齐 Wrap',
+    );
     // 年份 / 看完状态筛选（本地即筛，纯函数测试同源）。
-    expect(homeSrc.contains('VideoYearFilter'), isTrue,
-        reason: '筛选条必须有年份下拉（airDate 派生，未知桶不消失）');
-    expect(homeSrc.contains('matchesVideoWatchStatus'), isTrue,
-        reason: '筛选条必须有看完状态下拉（completedAt/lastPositionMs 三档）');
+    expect(
+      homeSrc.contains('VideoYearFilter'),
+      isTrue,
+      reason: '筛选条必须有年份下拉（airDate 派生，未知桶不消失）',
+    );
+    expect(
+      homeSrc.contains('matchesVideoWatchStatus'),
+      isTrue,
+      reason: '筛选条必须有看完状态下拉（completedAt/lastPositionMs 三档）',
+    );
   });
 
   test('UI v2：整理排序页已按用户拍板整体砍掉——零残留 + 能力不回退', () {
     // 用户：「编辑排序这个页面整个砍掉，做的太烂了」。整理排序页 + 入口按钮全删；
     // 恢复任一残留即转红。
     expect(
-        File('lib/src/pages/implementations/shelf_reorder_page.dart')
-            .existsSync(),
-        isFalse,
-        reason: '整理排序页必须保持删除');
+      File(
+        'lib/src/pages/implementations/shelf_reorder_page.dart',
+      ).existsSync(),
+      isFalse,
+      reason: '整理排序页必须保持删除',
+    );
     // 共享 2D 拖拽网格当年随整理页删除（零消费者）；现书籍合集详情页重新需要它做
     // 网格内拖排（有消费者），且新实现消缩放（浮层渲染在组件自身 Stack、指针
     // globalToLocal 消祖先 Transform.scale，非 SDK/pub 的 Overlay 平移代理，BUG-778）。
     // 断言按新现实：文件必须存在、含 globalToLocal（消缩放核心），且详情页真在用。
-    final File reorderGrid =
-        File('lib/src/utils/components/fushi_reorderable_grid.dart');
-    expect(reorderGrid.existsSync(), isTrue,
-        reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 FushiReorderableGrid');
-    expect(reorderGrid.readAsStringSync().contains('globalToLocal'), isTrue,
-        reason: '消缩放核心：所有指针坐标必经根 Stack 的 globalToLocal 转本地（消祖先缩放）');
+    final File reorderGrid = File(
+      'lib/src/utils/components/fushi_reorderable_grid.dart',
+    );
+    expect(
+      reorderGrid.existsSync(),
+      isTrue,
+      reason: '书籍合集详情页网格拖排依赖消缩放 2D 组件 FushiReorderableGrid',
+    );
+    expect(
+      reorderGrid.readAsStringSync().contains('globalToLocal'),
+      isTrue,
+      reason: '消缩放核心：所有指针坐标必经根 Stack 的 globalToLocal 转本地（消祖先缩放）',
+    );
     final String gridPageSrc = File(
       'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
     ).readAsStringSync();
-    expect(gridPageSrc.contains('FushiReorderableGrid'), isTrue,
-        reason: '书籍合集详情页必须用消缩放 2D 拖排网格（不得裸用 SDK/pub Reorderable 网格）');
+    expect(
+      gridPageSrc.contains('FushiReorderableGrid'),
+      isTrue,
+      reason: '书籍合集详情页必须用消缩放 2D 拖排网格（不得裸用 SDK/pub Reorderable 网格）',
+    );
     for (final String banned in <String>[
       'ReorderableListView.builder(',
       'ReorderableListView(',
@@ -160,14 +262,23 @@ void main() {
       'ReorderableDelayedDragStartListener(',
       'ReorderableDragStartListener(',
     ]) {
-      expect(gridPageSrc.contains(banned), isFalse,
-          reason: 'SDK/pub Reorderable 在 UI 缩放下拖动漂移（BUG-778），详情页不得回潮（$banned）');
+      expect(
+        gridPageSrc.contains(banned),
+        isFalse,
+        reason: 'SDK/pub Reorderable 在 UI 缩放下拖动漂移（BUG-778），详情页不得回潮（$banned）',
+      );
     }
     for (final String banned in <String>['ShelfReorderPage', 'onOrganize:']) {
-      expect(homeSrc.contains(banned), isFalse,
-          reason: '视频库不得残留整理页接线（$banned）');
-      expect(historySrc.contains(banned), isFalse,
-          reason: '书架不得残留整理页接线（$banned）');
+      expect(
+        homeSrc.contains(banned),
+        isFalse,
+        reason: '视频库不得残留整理页接线（$banned）',
+      );
+      expect(
+        historySrc.contains(banned),
+        isFalse,
+        reason: '书架不得残留整理页接线（$banned）',
+      );
     }
     // series 死模型同样不得回潮。
     expect(historySrc.contains('updateSeriesSortOrder'), isFalse);
@@ -180,18 +291,30 @@ void main() {
     final String videoDetailSrc = File(
       'lib/src/pages/implementations/media_collection_detail_page.dart',
     ).readAsStringSync();
-    expect(gridDetailSrc.contains('removeFromCollection'), isTrue,
-        reason: '书籍合集详情页必须保留成员移出');
-    expect(videoDetailSrc.contains('removeFromCollection'), isTrue,
-        reason: '视频合集详情页必须提供逐集移出（整理页删除后的唯一入口）');
+    expect(
+      gridDetailSrc.contains('removeFromCollection'),
+      isTrue,
+      reason: '书籍合集详情页必须保留成员移出',
+    );
+    expect(
+      videoDetailSrc.contains('removeFromCollection'),
+      isTrue,
+      reason: '视频合集详情页必须提供逐集移出（整理页删除后的唯一入口）',
+    );
   });
 
   test('每集独立视频各自有封面：后台补齐 + playlist 详情页渲染每集缩略图', () {
     // 拆集/迁移拆出的非首集 cover_path 为空 → home_video_page 后台逐集抽帧补齐。
-    expect(homeSrc.contains('_maybeBackfillCovers'), isTrue,
-        reason: '视频库必须后台给缺封面的各集抽帧补封面（每集独立视频应各有封面）');
-    expect(homeSrc.contains('extractVideoCover'), isTrue,
-        reason: '补封面走单视频抽帧 extractVideoCover（非整本 playlist 封面）');
+    expect(
+      homeSrc.contains('_maybeBackfillCovers'),
+      isTrue,
+      reason: '视频库必须后台给缺封面的各集抽帧补封面（每集独立视频应各有封面）',
+    );
+    expect(
+      homeSrc.contains('extractVideoCover'),
+      isTrue,
+      reason: '补封面走单视频抽帧 extractVideoCover（非整本 playlist 封面）',
+    );
     // playlist 合集详情页每集渲染各自封面缩略图（对齐 Jellyfin 剧集列表）。
     final File detail = File(
       'lib/src/pages/implementations/media_collection_detail_page.dart',
@@ -244,7 +367,8 @@ void main() {
     expect(
       containsCodeLine(coverBody, 'slot.coverPath'),
       isTrue,
-      reason: '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
+      reason:
+          '每集封面必须取该集自身的 coverPath（每集独立视频各有封面），'
           '不得回退成整个合集共用一张封面',
     );
   });
@@ -260,10 +384,16 @@ void main() {
       'itemSortOrder',
       'groupSortOrder',
     ]) {
-      expect(homeSrc.contains(banned), isFalse,
-          reason: '视频库不得再读已废弃的手动权重（$banned）');
-      expect(historySrc.contains(banned), isFalse,
-          reason: '书架不得再读已废弃的手动权重（$banned）');
+      expect(
+        homeSrc.contains(banned),
+        isFalse,
+        reason: '视频库不得再读已废弃的手动权重（$banned）',
+      );
+      expect(
+        historySrc.contains(banned),
+        isFalse,
+        reason: '书架不得再读已废弃的手动权重（$banned）',
+      );
     }
     for (final String required in <String>[
       'compareShelfSortKeys',
@@ -272,10 +402,16 @@ void main() {
       // getCollectionItems 同源，一处落盘三处同序）。
       'memberSortIndex',
     ]) {
-      expect(homeSrc.contains(required), isTrue,
-          reason: '视频库必须接线排序模式/成员序真相源（$required）');
-      expect(historySrc.contains(required), isTrue,
-          reason: '书架必须接线排序模式/成员序真相源（$required）');
+      expect(
+        homeSrc.contains(required),
+        isTrue,
+        reason: '视频库必须接线排序模式/成员序真相源（$required）',
+      );
+      expect(
+        historySrc.contains(required),
+        isTrue,
+        reason: '书架必须接线排序模式/成员序真相源（$required）',
+      );
     }
     // 层次 B：视频详情页拖拽精修 + 两详情页一键排序，均写穿 reorderCollectionItems。
     final String videoDetailSrc = File(
@@ -287,8 +423,11 @@ void main() {
     // BUG-778：SDK ReorderableListView 的拖拽代理不认祖先 Transform.scale
     // （界面大小缩放下拖动漂移），详情页拖拽必须用自实现的
     // FushiReorderableColumn（本地坐标消缩放）；裸 SDK 组件回潮即转红。
-    expect(videoDetailSrc.contains('FushiReorderableColumn'), isTrue,
-        reason: '视频合集详情页必须支持拖拽排集（消缩放组件，手动排序的唯一形态）');
+    expect(
+      videoDetailSrc.contains('FushiReorderableColumn'),
+      isTrue,
+      reason: '视频合集详情页必须支持拖拽排集（消缩放组件，手动排序的唯一形态）',
+    );
     // 盯真实使用 token（注释里提及组件名做解释是允许的）。
     for (final String banned in <String>[
       'ReorderableListView.builder(',
@@ -296,23 +435,38 @@ void main() {
       'ReorderableDelayedDragStartListener(',
       'ReorderableDragStartListener(',
     ]) {
-      expect(videoDetailSrc.contains(banned), isFalse,
-          reason: 'SDK Reorderable 组件在 UI 缩放下拖动漂移（BUG-778），不得回潮（$banned）');
+      expect(
+        videoDetailSrc.contains(banned),
+        isFalse,
+        reason: 'SDK Reorderable 组件在 UI 缩放下拖动漂移（BUG-778），不得回潮（$banned）',
+      );
     }
-    expect(videoDetailSrc.contains('reorderCollectionItems'), isTrue,
-        reason: '视频详情页排序必须写穿 sortIndex（层次 C 真相源）');
-    expect(gridDetailSrc.contains('reorderCollectionItems'), isTrue,
-        reason: '书籍合集详情页一键排序必须写穿 sortIndex');
+    expect(
+      videoDetailSrc.contains('reorderCollectionItems'),
+      isTrue,
+      reason: '视频详情页排序必须写穿 sortIndex（层次 C 真相源）',
+    );
+    expect(
+      gridDetailSrc.contains('reorderCollectionItems'),
+      isTrue,
+      reason: '书籍合集详情页一键排序必须写穿 sortIndex',
+    );
   });
 
   test('去碎片方案A（已拍板）：合集区集中+散卡单一展示区，交错组装不回潮', () {
     // 旧保序交错的 flushLoose 分段组装每个合集行都切碎散卡区（一两本书占
     // 一行，用户实报）；分区后散卡恒渲染成一个连续展示区（书架=网格，视频=
     // TODO-2486 混排墙，合集卡在前散卡在后）。恢复交错即转红。
-    expect(homeSrc.contains('flushLoose'), isFalse,
-        reason: '视频库不得回到交错分段组装（散卡必须单一展示区）');
-    expect(historySrc.contains('flushLoose'), isFalse,
-        reason: '书架不得回到交错分段组装（散卡必须单一网格）');
+    expect(
+      homeSrc.contains('flushLoose'),
+      isFalse,
+      reason: '视频库不得回到交错分段组装（散卡必须单一展示区）',
+    );
+    expect(
+      historySrc.contains('flushLoose'),
+      isFalse,
+      reason: '书架不得回到交错分段组装（散卡必须单一网格）',
+    );
   });
 
   test('多端库联合视图（spec §2.1/§2.4）：远端占位卡混排主网格 + 撤独立远端分区零残留', () {
@@ -328,59 +482,101 @@ void main() {
       '_buildRemoteVideoSection',
       'RemoteVideoSectionHeader',
     ]) {
-      expect(historySrc.contains(banned), isFalse,
-          reason: '书架不得残留独立远端分区接线（$banned）');
-      expect(remotePartSrc.contains(banned), isFalse,
-          reason: '书架远端 part 不得残留独立远端分区（$banned）');
-      expect(homeSrc.contains(banned), isFalse,
-          reason: '视频库不得残留独立远端分区接线（$banned）');
+      expect(
+        historySrc.contains(banned),
+        isFalse,
+        reason: '书架不得残留独立远端分区接线（$banned）',
+      );
+      expect(
+        remotePartSrc.contains(banned),
+        isFalse,
+        reason: '书架远端 part 不得残留独立远端分区（$banned）',
+      );
+      expect(
+        homeSrc.contains(banned),
+        isFalse,
+        reason: '视频库不得残留独立远端分区接线（$banned）',
+      );
     }
 
     // ② 占位卡混排进主网格：远端卡渲染入口从主散卡路径调用（书=_ShelfBookSlot.remote
     // → _buildRemoteBookCard；视频=_VideoSlot union 混入 _groupVideos → _buildRemoteVideoCard），
     // 且带云角标 ☁。
-    expect(historySrc.contains('slot.remote'), isTrue,
-        reason: '书架散卡槽须承载远端占位（_ShelfBookSlot.remote）');
+    expect(
+      historySrc.contains('slot.remote'),
+      isTrue,
+      reason: '书架散卡槽须承载远端占位（_ShelfBookSlot.remote）',
+    );
     expect(remotePartSrc.contains('_buildRemoteBookCard'), isTrue);
-    expect(remotePartSrc.contains('remote_book_cloud_badge'), isTrue,
-        reason: '远端书占位卡必须带云角标 ☁');
+    expect(
+      remotePartSrc.contains('remote_book_cloud_badge'),
+      isTrue,
+      reason: '远端书占位卡必须带云角标 ☁',
+    );
     // 断言的是「同一次分组调用同时吃本地与远端两路」，不是某一串写法：形参名与
     // 换行都可能随重构变（曾写死 `_groupVideos(books, remoteVideos` 整串，一次
     // 改名 + dart format 换行就假红）。守的是 union 折叠这件事本身。
     final int groupCallAt = homeSrc.indexOf('_groupVideos(');
-    expect(groupCallAt, greaterThanOrEqualTo(0),
-        reason: '视频库必须有 _groupVideos 调用（union 折叠入口）');
+    expect(
+      groupCallAt,
+      greaterThanOrEqualTo(0),
+      reason: '视频库必须有 _groupVideos 调用（union 折叠入口）',
+    );
     final String groupCallArgs = homeSrc.substring(
       groupCallAt,
       (groupCallAt + 240).clamp(0, homeSrc.length),
     );
-    expect(groupCallArgs.contains('books'), isTrue,
-        reason: '_groupVideos 必须吃本地视频');
-    expect(RegExp(r'[Rr]emoteVideos').hasMatch(groupCallArgs), isTrue,
-        reason: '远端视频占位须混入 _groupVideos（union 折叠 + 排序模式统一排序）');
+    expect(
+      groupCallArgs.contains('books'),
+      isTrue,
+      reason: '_groupVideos 必须吃本地视频',
+    );
+    expect(
+      RegExp(r'[Rr]emoteVideos').hasMatch(groupCallArgs),
+      isTrue,
+      reason: '远端视频占位须混入 _groupVideos（union 折叠 + 排序模式统一排序）',
+    );
     expect(homeSrc.contains('_buildRemoteVideoCard'), isTrue);
-    expect(homeSrc.contains('remote_video_cloud_badge'), isTrue,
-        reason: '远端视频占位卡必须带云角标 ☁');
+    expect(
+      homeSrc.contains('remote_video_cloud_badge'),
+      isTrue,
+      reason: '远端视频占位卡必须带云角标 ☁',
+    );
 
     // ③ 「显示远端条目」开关 + 离线语义门控：两页混排前都读 showRemoteEntries；
     // 远端目录拉取失败（failed）门控占位卡不出现（离线=只剩本地）。
-    expect(historySrc.contains('showRemoteEntries'), isTrue,
-        reason: '书架混排远端占位前须读「显示远端条目」开关');
-    expect(homeSrc.contains('showRemoteEntries'), isTrue,
-        reason: '视频库混排远端占位前须读「显示远端条目」开关');
-    expect(homeSrc.contains('state.failed'), isTrue,
-        reason: '视频库须按远端拉取失败门控（离线不显示远端占位）');
+    expect(
+      historySrc.contains('showRemoteEntries'),
+      isTrue,
+      reason: '书架混排远端占位前须读「显示远端条目」开关',
+    );
+    expect(
+      homeSrc.contains('showRemoteEntries'),
+      isTrue,
+      reason: '视频库混排远端占位前须读「显示远端条目」开关',
+    );
+    expect(
+      homeSrc.contains('state.failed'),
+      isTrue,
+      reason: '视频库须按远端拉取失败门控（离线不显示远端占位）',
+    );
   });
 
   test('BUG-777：书架 recency 读 reader_positions.updatedAt，假名次不回潮', () {
-    final String sourceSrc =
-        File('lib/src/media/sources/reader_fushi_source.dart')
-            .readAsStringSync();
+    final String sourceSrc = File(
+      'lib/src/media/sources/reader_fushi_source.dart',
+    ).readAsStringSync();
     // 唯一 recency 真相源（批量 DAO + provider）。
-    expect(sourceSrc.contains('bookLastReadAtProvider'), isTrue,
-        reason: 'recency 必须有唯一真相源 provider');
-    expect(sourceSrc.contains('getAllReaderPositions'), isTrue,
-        reason: 'recency 映射必须一次批量查询 reader_positions');
+    expect(
+      sourceSrc.contains('bookLastReadAtProvider'),
+      isTrue,
+      reason: 'recency 必须有唯一真相源 provider',
+    );
+    expect(
+      sourceSrc.contains('getAllReaderPositions'),
+      isTrue,
+      reason: 'recency 映射必须一次批量查询 reader_positions',
+    );
     // 关书与书列表同点失效，否则 hero/「最近阅读」陈旧到重启。方法体终点锚定
     // 下一个 override（`\n  }` 会先撞上参数表的 `}) async {`，不能用）。
     final int exitFn = sourceSrc.indexOf('Future<void> onSourceExit(');
@@ -388,8 +584,11 @@ void main() {
     final int exitEnd = sourceSrc.indexOf('onSearchBarTap', exitFn);
     expect(exitEnd, isNonNegative);
     final String exitBody = sourceSrc.substring(exitFn, exitEnd);
-    expect(exitBody.contains('ref.invalidate(bookLastReadAtProvider)'), isTrue,
-        reason: '关书必须同点失效 recency 映射（BUG-777 刷新语义）');
+    expect(
+      exitBody.contains('ref.invalidate(bookLastReadAtProvider)'),
+      isTrue,
+      reason: '关书必须同点失效 recency 映射（BUG-777 刷新语义）',
+    );
     // 书架页「最近阅读」排序读同一 recency 映射、没读过退 importedAt；provider
     // 下标假名次（实为导入序）不得回潮。（v49：继续阅读 hero/概览热力图已从书架页
     // 移到新首页 HomeDashboardPage，此处只守卫书架页仍在用的「最近阅读」排序语义。）
@@ -399,52 +598,89 @@ void main() {
     // uid 键表恒查空、退化成「最近导入」——任何 `_lastReadAtByBookKey[` 直接下标
     // 访问都算回潮。
     expect(
-        RegExp(r'lastReadAtForBookKey\(\s*_lastReadAtByBookKey,\s*_epubUidByKey,')
-            .allMatches(historySrc)
-            .length,
-        greaterThanOrEqualTo(2),
-        reason: '「最近阅读」排序与继续阅读 hero 都按 uid 键查'
-            '（bookKey 经换算表一跳），没读过按导入时间融入');
-    expect(historySrc.contains('_lastReadAtByBookKey['), isFalse,
-        reason: 'recency 表键是 uid，裸下标访问会绕过 bookKey→uid 换算（BUG-2904）');
-    expect(historySrc.contains('payload.seq'), isFalse,
-        reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）');
+      RegExp(
+        r'lastReadAtForBookKey\(\s*_lastReadAtByBookKey,\s*_epubUidByKey,',
+      ).allMatches(historySrc).length,
+      greaterThanOrEqualTo(2),
+      reason:
+          '「最近阅读」排序与继续阅读 hero 都按 uid 键查'
+          '（bookKey 经换算表一跳），没读过按导入时间融入',
+    );
+    expect(
+      historySrc.contains('_lastReadAtByBookKey['),
+      isFalse,
+      reason: 'recency 表键是 uid，裸下标访问会绕过 bookKey→uid 换算（BUG-2904）',
+    );
+    expect(
+      historySrc.contains('payload.seq'),
+      isFalse,
+      reason: '列表下标假名次已删（provider 序 = importedAt 倒序，不是访问序）',
+    );
   });
 
   test('多端库联合视图 §2.2/§2.6：云视频占位必经 CloudRemoteVideoClient（不自造清单解析）', () {
     // 云后端分支必须经 CloudRemoteVideoClient（唯一清单解析入口）而非在页面里自己
     // ensureNamespace/读 videos.json/构造 RemoteVideoManifest——把解析散进页面即转红。
-    expect(homeSrc.contains('CloudRemoteVideoClient'), isTrue,
-        reason: '云视频目录/下载必须经 CloudRemoteVideoClient');
-    expect(homeSrc.contains('_resolveCloudRemoteVideoClient'), isTrue,
-        reason: '云后端分支：resolveSyncBackend 产物包进 CloudRemoteVideoClient');
+    expect(
+      homeSrc.contains('CloudRemoteVideoClient'),
+      isTrue,
+      reason: '云视频目录/下载必须经 CloudRemoteVideoClient',
+    );
+    expect(
+      homeSrc.contains('_resolveCloudRemoteVideoClient'),
+      isTrue,
+      reason: '云后端分支：resolveSyncBackend 产物包进 CloudRemoteVideoClient',
+    );
     // TODO-2119：清单→RemoteVideoInfo 的适配已从页面搬进 CloudRemoteVideoClient
     // （原 `_cloudManifestToRemoteVideoInfo`）。页面现在只认 RemoteVideoSource 契约，
     // 连 RemoteVideoManifestEntry 这个类型都不该出现——给 RemoteVideoInfo 加字段时
     // 不必再回来改页面，漏改导致「云侧该字段永远为空」的坑就此消失。
-    expect(homeSrc.contains('_cloudManifestToRemoteVideoInfo'), isFalse,
-        reason: '清单→DTO 适配必须在 CloudRemoteVideoClient 里，不得回流页面');
-    expect(homeSrc.contains('RemoteVideoManifestEntry'), isFalse,
-        reason: '页面不得再感知清单条目类型（收敛到 CloudRemoteVideoClient）');
+    expect(
+      homeSrc.contains('_cloudManifestToRemoteVideoInfo'),
+      isFalse,
+      reason: '清单→DTO 适配必须在 CloudRemoteVideoClient 里，不得回流页面',
+    );
+    expect(
+      homeSrc.contains('RemoteVideoManifestEntry'),
+      isFalse,
+      reason: '页面不得再感知清单条目类型（收敛到 CloudRemoteVideoClient）',
+    );
     // 页面不得自造清单解析（RemoteVideoManifest.fromJson 只应在 client 里）。
-    expect(homeSrc.contains('RemoteVideoManifest.fromJson'), isFalse,
-        reason: '页面不得自己解析 videos.json 清单（收敛到 CloudRemoteVideoClient）');
-    expect(homeSrc.contains('kSyncVideosManifestName'), isFalse,
-        reason: '页面不得直接触碰清单资产名（收敛到 CloudRemoteVideoClient）');
+    expect(
+      homeSrc.contains('RemoteVideoManifest.fromJson'),
+      isFalse,
+      reason: '页面不得自己解析 videos.json 清单（收敛到 CloudRemoteVideoClient）',
+    );
+    expect(
+      homeSrc.contains('kSyncVideosManifestName'),
+      isFalse,
+      reason: '页面不得直接触碰清单资产名（收敛到 CloudRemoteVideoClient）',
+    );
     // 下载统一走 RemoteVideoSource.downloadRemoteVideo：云盘实现内部委托给
     // getRemoteVideo 拉整文件（无 Range 续传），互联走 host live 引擎。页面不再按
     // 后端类型分派下载路径。
-    expect(homeSrc.contains('source.downloadRemoteVideo('), isTrue,
-        reason: '远端下载必须经 RemoteVideoSource.downloadRemoteVideo 统一入口');
-    expect(homeSrc.contains('_registerDownloadedCloudVideo'), isTrue,
-        reason: '云视频下载后必须建 VideoBooks 行（勿双重导入）');
+    expect(
+      homeSrc.contains('source.downloadRemoteVideo('),
+      isTrue,
+      reason: '远端下载必须经 RemoteVideoSource.downloadRemoteVideo 统一入口',
+    );
+    expect(
+      homeSrc.contains('_registerDownloadedCloudVideo'),
+      isTrue,
+      reason: '云视频下载后必须建 VideoBooks 行（勿双重导入）',
+    );
     // 两个互斥 nullable client 字段已收成一个 source（TODO-2119）：能力差异由类型
     // 系统表达（source is RemoteVideoClient），不再靠「哪个字段非空」判后端。
-    expect(homeSrc.contains('CloudRemoteVideoClient? _cloudRemoteVideoClient;'),
-        isFalse,
-        reason: '不得恢复「互联 client + 云 client」两个互斥字段（TODO-2119 回归）');
-    expect(homeSrc.contains('RemoteVideoSource? _remoteVideoSource;'), isTrue,
-        reason: '当前远端视频来源必须是单一真相字段');
+    expect(
+      homeSrc.contains('CloudRemoteVideoClient? _cloudRemoteVideoClient;'),
+      isFalse,
+      reason: '不得恢复「互联 client + 云 client」两个互斥字段（TODO-2119 回归）',
+    );
+    expect(
+      homeSrc.contains('RemoteVideoSource? _remoteVideoSource;'),
+      isTrue,
+      reason: '当前远端视频来源必须是单一真相字段',
+    );
   });
 
   test('多端库联合视图 §2.3 任务10：远端占位的合集归属在目录加载时原子收养，渲染只读本地裁决', () {
@@ -453,24 +689,39 @@ void main() {
     // 加载时经 RemoteCollectionAdoptionService 把 DTO 的主合集归属写进本地合集表
     // （DAO 在事务里裁决墓碑 / 自然键 / 排序），渲染只读 _primaryCollectionByEntry。
     // 退回渲染期解析（撤收养、或重新出现 _resolveLocalCollectionId）即转红。
-    expect(homeSrc.contains('adoption.adoptVideo(video)'), isTrue,
-        reason: '视频远端占位的合集归属须在目录加载时持久化收养');
+    expect(
+      homeSrc.contains('adoption.adoptVideo(video)'),
+      isTrue,
+      reason: '视频远端占位的合集归属须在目录加载时持久化收养',
+    );
     // 书架的远端清单加载在 reader_history/remote.part.dart（主体的 part）。
     final String historyRemoteSrc = File(
       'lib/src/pages/implementations/reader_history/remote.part.dart',
     ).readAsStringSync();
-    expect(historyRemoteSrc.contains('adoption.adoptBooks('), isTrue,
-        reason: '书远端占位的合集归属须在目录加载时持久化收养（整份清单一次）');
+    expect(
+      historyRemoteSrc.contains('adoption.adoptBooks('),
+      isTrue,
+      reason: '书远端占位的合集归属须在目录加载时持久化收养（整份清单一次）',
+    );
     for (final String src in <String>[homeSrc, historySrc]) {
-      expect(src.contains('_resolveLocalCollectionId('), isFalse,
-          reason: '渲染期按 (name, type) 解析本地合集 id 的路线已废，归属只认 DAO 裁决');
+      expect(
+        src.contains('_resolveLocalCollectionId('),
+        isFalse,
+        reason: '渲染期按 (name, type) 解析本地合集 id 的路线已废，归属只认 DAO 裁决',
+      );
     }
     // 视频侧用 _VideoSlot union 把远端占位与本地成员折进同一合集行。
-    expect(homeSrc.contains('_VideoSlot'), isTrue,
-        reason: '视频远端占位须经 _VideoSlot union 折进合集行');
+    expect(
+      homeSrc.contains('_VideoSlot'),
+      isTrue,
+      reason: '视频远端占位须经 _VideoSlot union 折进合集行',
+    );
     // 书侧远端占位给真实 mediaType（epub），不再用私有 remote-book 伪类型（否则永不折叠）。
-    expect(historySrc.contains("mediaType: 'remote-book'"), isFalse,
-        reason: '远端书占位须给真实 mediaType（epub）才能与本地成员共键折叠');
+    expect(
+      historySrc.contains("mediaType: 'remote-book'"),
+      isFalse,
+      reason: '远端书占位须给真实 mediaType（epub）才能与本地成员共键折叠',
+    );
   });
 
   test('BUG-790：视频合集卡集数 = 全部成员数（本地+远端占位同源），全云端合集不再显示「0 集」', () {
@@ -481,22 +732,33 @@ void main() {
     final int cardFn = homeSrc.indexOf('Widget _buildCollectionCoverCard(');
     expect(cardFn, isNonNegative, reason: '缺 _buildCollectionCoverCard');
     final int cardEnd = homeSrc.indexOf('\n  /// ', cardFn + 1);
-    final String cardSrc =
-        homeSrc.substring(cardFn, cardEnd < 0 ? homeSrc.length : cardEnd);
+    final String cardSrc = homeSrc.substring(
+      cardFn,
+      cardEnd < 0 ? homeSrc.length : cardEnd,
+    );
 
     // ① 集数不得再用「只数本地成员」的过滤式。
-    expect(cardSrc.contains('.where((it) => it.payload.local != null).length'),
-        isFalse,
-        reason: 'BUG-790：不得再用「只数本地」过滤统计合集集数（localCount）');
-    expect(RegExp(r'_buildPlaylistBadge\(\s*\w*[Ll]ocal').hasMatch(cardSrc),
-        isFalse,
-        reason: 'BUG-790：集数角标不得喂 localCount，须与成员总数同源');
+    expect(
+      cardSrc.contains('.where((it) => it.payload.local != null).length'),
+      isFalse,
+      reason: 'BUG-790：不得再用「只数本地」过滤统计合集集数（localCount）',
+    );
+    expect(
+      RegExp(r'_buildPlaylistBadge\(\s*\w*[Ll]ocal').hasMatch(cardSrc),
+      isFalse,
+      reason: 'BUG-790：集数角标不得喂 localCount，须与成员总数同源',
+    );
 
     // ② 集数角标必须喂 group.items.length 派生的 memberCount。
     expect(
-        cardSrc.contains('final int memberCount = group.items.length;'), isTrue,
-        reason: 'BUG-790：memberCount 必须 = group.items.length（本地+远端占位同源）');
-    expect(cardSrc.contains('_buildPlaylistBadge(memberCount)'), isTrue,
-        reason: 'BUG-790：集数角标必须喂 memberCount');
+      cardSrc.contains('final int memberCount = group.items.length;'),
+      isTrue,
+      reason: 'BUG-790：memberCount 必须 = group.items.length（本地+远端占位同源）',
+    );
+    expect(
+      cardSrc.contains('_buildPlaylistBadge(memberCount)'),
+      isTrue,
+      reason: 'BUG-790：集数角标必须喂 memberCount',
+    );
   });
 }

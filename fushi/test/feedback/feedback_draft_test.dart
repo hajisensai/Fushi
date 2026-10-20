@@ -92,6 +92,27 @@ void main() {
     }
   }
 
+  /// 等页面已排进草稿存储串行队列的读写全部走完（调用前那次落盘必须已经发起）。
+  ///
+  /// 等的是队列本身，不轮询文件、也不设真实时间上限——轮询会撞上写到一半的目录，
+  /// 上限在机器一忙时会提前放弃。完成回调挂在测试 zone 里：写的后续微任务只在
+  /// pump 时冲刷，在真实 zone 里干等它会永远挂住。不推进假时钟。
+  Future<void> drainDraftWrites(WidgetTester tester) async {
+    bool drained = false;
+    unawaited(
+      service
+          .draftStore()
+          .then((FeedbackDraftStore store) => store.idle)
+          .then((_) => drained = true),
+    );
+    while (!drained) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump();
+    }
+  }
+
   Future<FeedbackComposeDraft?> readDraft(WidgetTester tester) async => tester
       .runAsync<FeedbackComposeDraft?>(() => FeedbackDraftStore(root).read());
 
@@ -221,8 +242,10 @@ void main() {
     // 内容变了：失焦照常立刻落盘。
     await tester.enterText(key('feedback-body'), '写了一半，又补一句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    // 整份重写是「删旧目录 → 改名新目录」两步：等新草稿真落地再读，别读在两步之间。
-    await settle(tester, () => !marker.existsSync() && draftOnDisk());
+    // 整份重写是「删旧目录 → 改名新目录」两步，且删旧目录是逐个文件删：轮询文件
+    // （「记号没了 + draft.json 还在」）在 Linux 上会命中删到一半的旧目录，读到空草稿。
+    // 等写队列本身走完再读。
+    await drainDraftWrites(tester);
     expect(marker.existsSync(), isFalse);
     expect((await readDraft(tester))!.body, '写了一半，又补一句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -247,22 +270,7 @@ void main() {
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     // 不推进假时钟（防抖定时器不会触发），只等真实 IO 走完：落盘只能来自进后台。
-    // 等的是草稿存储的串行写队列本身（进后台那次写已经排在里面），不轮询文件、也不
-    // 设真实时间上限——机器一忙就会提前放弃。完成回调挂在测试 zone 里：那次写的
-    // 后续微任务只在 pump 时冲刷，在真实 zone 里干等它会永远挂住。
-    bool written = false;
-    unawaited(
-      service
-          .draftStore()
-          .then((FeedbackDraftStore store) => store.idle)
-          .then((_) => written = true),
-    );
-    while (!written) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
-      );
-      await tester.pump();
-    }
+    await drainDraftWrites(tester);
     expect((await readDraft(tester))!.body, '第一句，第二句');
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
