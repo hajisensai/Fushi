@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3231 条。点号进各自文件。
+> 共 3245 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3622](bugs/BUG-3622-unread-epub-content-sync.md) | ✅ | ✅ | 未读 EPUB 因无阅读进度被同步跳过，云端只有元数据 |
-> 共 3244 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3641](bugs/BUG-3641-unread-epub-content-sync.md) | ✅ | ✅ | 未读 EPUB 因无阅读进度被同步跳过，云端只有元数据 |
 | [BUG-3640](bugs/BUG-3640-scrape-ledger-plaintext-credentials.md) | ✅ | ✅ | 补刮账本把含凭据的配置指纹明文落盘 |
 | [BUG-3639](bugs/BUG-3639-interconnect-online-manga-undownloaded-hidden.md) | ✅ | ✅ | interconnect-online-manga-undownloaded-hidden |
 | [BUG-3638](bugs/BUG-3638-collection-hero-cover-dangling-path.md) | ✅ | ✅ | 系列封面路径悬空时详情页 hero 不回落到刮削封面 |
