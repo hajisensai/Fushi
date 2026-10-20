@@ -848,7 +848,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 122;
+  int get schemaVersion => 123;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2353,6 +2353,15 @@ class FushiDatabase extends _$FushiDatabase
             // Bangumi）。纯新表、不动数据；幂等守卫同 v119。
             if (!await _tableExists('media_privacy_flags')) {
               await m.createTable(mediaPrivacyFlags);
+            }
+          }
+          if (from < 123) {
+            // v123：srs_cards_cache.new_position——新卡出卡位置（卡片修改记录 `newPos`
+            // 的生效值，「按词频重排新卡」写它）。缓存可重建、存量库没有任何位置修改记录，
+            // 留 NULL 即与事件一致，不必重建缓存。幂等守卫同 v119。
+            if (await _tableExists('srs_cards_cache') &&
+                !await _columnExists('srs_cards_cache', 'new_position')) {
+              await m.addColumn(srsCardsCache, srsCardsCache.newPosition);
             }
           }
         },

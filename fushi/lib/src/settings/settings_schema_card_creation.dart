@@ -119,19 +119,17 @@ SettingsDestination buildCardCreationDestination() {
         id: 'card_creation.anki.reposition',
         title: t.anki_reposition_title,
         hasRevealTarget: true,
-        visible: _ankiOnly(
-          (SettingsContext c) =>
-              c.ref.watch(ankiViewModelProvider).isConfigured,
-        ),
+        // 两种目标都有：Anki 目标在「Anki」分组（要 Anki 已配置），Fushi 复习目标在
+        // 「Fushi 复习」分组（复习层自己读写新卡位置）。
+        visible: _repositionVisible,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.reposition_auto',
         title: t.anki_reposition_auto_title,
         hasRevealTarget: true,
-        visible: _ankiOnly(
-          (SettingsContext c) =>
-              c.ref.watch(ankiViewModelProvider).isConfigured,
-        ),
+        // 两种目标都有：Anki 目标在「Anki」分组（要 Anki 已配置），Fushi 复习目标在
+        // 「Fushi 复习」分组（复习层自己读写新卡位置）。
+        visible: _repositionVisible,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.profile',
@@ -479,6 +477,14 @@ bool _toReview(SettingsContext c) =>
 /// 只作用于 Anki 的项：目标为 Fushi 复习时隐藏，否则再看 [inner]（默认恒可见）。
 SettingsVisibility _ankiOnly([SettingsVisibility? inner]) =>
     (SettingsContext c) => !_toReview(c) && (inner?.call(c) ?? true);
+
+/// 「按词频重排新卡」两行：目标为 Fushi 复习时恒在（「Fushi 复习」分组），否则跟着
+/// 「Anki」分组里的条件（Anki 已配置）。
+bool _repositionVisible(SettingsContext c) =>
+    _toReview(c) ||
+    _ankiOnly(
+      (SettingsContext c) => c.ref.watch(ankiViewModelProvider).isConfigured,
+    )(c);
 
 /// Anki 牌组 / 笔记类型已从 Anki 拉到（或已选好）：牌组 / 笔记类型两行可选。还没
 /// 加载到任何东西时只给「点刷新加载」提示。

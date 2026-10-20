@@ -86,6 +86,11 @@ abstract final class SrsFieldKeys {
   static const String flag = 'flag';
   static const String cardDeck = 'deck';
 
+  /// 新卡在出卡队列里的位置（int；null / 没有记录 = 没排过，按笔记创建时刻出卡）。
+  /// 「按词频重排新卡」写它，对应 Anki 新卡的 `due`（队列位置）。只影响新卡的出卡
+  /// 顺序：学过的卡排程只来自日志，这个值留着也不起作用。
+  static const String cardNewPosition = 'newPos';
+
   /// 卡片的「前身」：更改笔记类型时新卡继承旧卡的复习历史与标志（值恒为 true）。
   /// 每个前身一个键（集合语义）：两台设备各自加同一个前身是同值，不冲突。
   static String cardHistoryFrom(String predecessorCardId) =>
@@ -138,6 +143,11 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
       }
       return SrsFieldClass.content;
     case SrsEntityKind.card:
+      // 新卡位置是一整批机械重排的产物：两台设备各自重排同一牌组是常态，每张卡都进
+      // 「同步冲突记录」只会刷屏，所以同折叠状态一样按界面状态处理（最后修改生效）。
+      if (fieldKey == SrsFieldKeys.cardNewPosition) {
+        return SrsFieldClass.viewState;
+      }
       return SrsFieldClass.flag;
     case SrsEntityKind.deck:
       if (fieldKey == SrsFieldKeys.deckCollapsed) {

@@ -1,5 +1,5 @@
 // 制卡设置：挖词目标 = Fushi 复习时，只作用于 Anki 发送链路的项（AnkiConnect、Anki
-// 牌组 / 笔记类型、Lapis、批量制卡、跨设备中转、查重范围、重排……）不显示也搜不到，
+// 牌组 / 笔记类型、Lapis、批量制卡、跨设备中转、查重范围……）不显示也搜不到，
 // 换成 Fushi 复习的牌组 / 笔记类型；目标切回 Anki 时一切照旧。切换即时生效。
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,8 +43,6 @@ const List<String> _ankiOnlyEntries = <String>[
   'card_creation.anki.pending_mines',
   'card_creation.anki.deck',
   'card_creation.anki.note_type',
-  'card_creation.anki.reposition',
-  'card_creation.anki.reposition_auto',
   'card_creation.anki.duplicate_scope',
   'card_creation.anki.backup_import',
 ];
@@ -156,6 +154,9 @@ void main() {
       'card_creation.anki.allow_duplicates',
       'card_creation.anki.compact_glossaries',
       'card_creation.anki.overwrite_scope',
+      // 新卡按词频重排：复习层自己读写新卡位置，挪进「Fushi 复习」分组。
+      'card_creation.anki.reposition',
+      'card_creation.anki.reposition_auto',
     ]) {
       expect(entry(id).isVisible(ctx), isTrue, reason: id);
     }

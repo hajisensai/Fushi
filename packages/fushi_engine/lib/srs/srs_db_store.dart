@@ -44,6 +44,29 @@ class SrsFieldChange {
   final Object? value;
 }
 
+/// 「按词频重排新卡」读到的一张新卡（[SrsDbStore.newCardsInDeck]）。
+class SrsNewCardEntry {
+  const SrsNewCardEntry({
+    required this.card,
+    required this.note,
+    required this.noteType,
+    required this.ord,
+    required this.position,
+  });
+
+  final SrsCardCacheRow card;
+  final SrsNoteView note;
+  final SrsNoteTypeView noteType;
+
+  /// 同一笔记的第几张卡（标准类型 = 模板序号，填空 = cN - 1），与 AnkiConnect `ord` 同口径。
+  final int ord;
+
+  /// 此刻在出卡队列里的位置：排过的卡是它的 [SrsCardCacheRow.newPosition]；没排过的卡
+  /// 按出卡顺序接在已排的最大位置后面编号（只供比较与撤销，不落库）。与
+  /// [SrsDbStore.compareNewCardOrder] 的顺序一致、严格递增。
+  final int position;
+}
+
 /// 牌组列表的一行。
 class SrsDeckSummary {
   const SrsDeckSummary({
@@ -1839,6 +1862,7 @@ class SrsDbStore implements SrsSyncReplica {
       lastLogId: Value<String?>(h.lastEffective?.id),
       scheduler: Value<String>(h.scheduler),
       noteCreatedAt: Value<int>(noteCreatedAt),
+      newPosition: Value<int?>(flags.newPosition),
     );
   }
 
@@ -2801,7 +2825,106 @@ class SrsDbStore implements SrsSyncReplica {
     return (introduced, reviewed);
   }
 
-  /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（笔记创建时刻, cardId）。
+  /// 新卡出卡顺序（[nextCard] 与「按词频重排新卡」共用这一处）：排过的卡在前、按位置
+  /// 升序；没排过的（[SrsCardCacheRow.newPosition] 为 null）在后、按（笔记创建时刻,
+  /// cardId）——从没重排过的库出卡顺序与加位置之前逐张相同。位置相同再按后者。
+  static int compareNewCardOrder(SrsCardCacheRow a, SrsCardCacheRow b) {
+    final int? pa = a.newPosition;
+    final int? pb = b.newPosition;
+    if (pa != pb) {
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      return pa.compareTo(pb);
+    }
+    final int byCreated = a.noteCreatedAt.compareTo(b.noteCreatedAt);
+    if (byCreated != 0) return byCreated;
+    return a.id.compareTo(b.id);
+  }
+
+  /// [deckFullName]（「父::子」全名；同名牌组全部算上）及其全部子牌组里的可见新卡（含暂停 /
+  /// 搁置的：位置与它们无关），按 [compareNewCardOrder] 排好。笔记已删 / 类型缺失的卡跳过。
+  /// 「按词频重排新卡」的取卡步，对应 AnkiConnect 的 `deck:… is:new` + `cardsInfo`。
+  Future<List<SrsNewCardEntry>> newCardsInDeck(String deckFullName) async {
+    final SrsDeckTree tree = await deckTree();
+    final Set<String> sub = <String>{
+      for (final SrsDeckView d in tree.decks)
+        if (tree.fullName(d.id) == deckFullName) ...tree.subtree(d.id),
+    };
+    if (sub.isEmpty) return const <SrsNewCardEntry>[];
+    final List<SrsCardCacheRow> rows =
+        await (db.select(db.srsCardsCache)..where(
+                (c) =>
+                    c.profileUid.equals(profileUid) &
+                    c.deckId.isIn(sub) &
+                    c.hidden.equals(false) &
+                    c.queue.equals(SrsQueue.newCard.wire),
+              ))
+              .get()
+          ..sort(compareNewCardOrder);
+    if (rows.isEmpty) return const <SrsNewCardEntry>[];
+    final Map<String, SrsNoteView?> notesById = await notes(<String>[
+      for (final SrsCardCacheRow c in rows) c.noteId,
+    ]);
+    final Map<String, SrsNoteTypeView?> typesById = await noteTypesById(
+      <String>{
+        for (final SrsNoteView? n in notesById.values)
+          if (n != null) n.noteTypeId,
+      },
+    );
+    int next = 0;
+    for (final SrsCardCacheRow c in rows) {
+      final int? pos = c.newPosition;
+      if (pos != null && pos > next) next = pos;
+    }
+    final List<SrsNewCardEntry> out = <SrsNewCardEntry>[];
+    for (final SrsCardCacheRow c in rows) {
+      final SrsNoteView? n = notesById[c.noteId];
+      if (n == null || n.deletedAt != null) continue;
+      final SrsNoteTypeView? t = typesById[n.noteTypeId];
+      if (t == null) continue;
+      final int ord = t.isCloze
+          ? max(0, c.clozeOrd - 1)
+          : (t.templates
+                    .where((SrsTemplateDef x) => x.id == c.templateId)
+                    .firstOrNull
+                    ?.ord ??
+                0);
+      out.add(
+        SrsNewCardEntry(
+          card: c,
+          note: n,
+          noteType: t,
+          ord: ord,
+          position: c.newPosition ?? ++next,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 写新卡位置（cardId → 位置）：一个事务、一次发件箱批次，每张卡一条 `newPos` 修改记录
+  /// （值没变的不写）。**只写此刻仍是可见新卡的那些**——学过的卡位置不起作用，写了只是
+  /// 无用的同步行；返回实际被接受的 cardId（含值没变而没产生记录的）。
+  Future<Set<String>> setNewCardPositions(Map<String, int> positions) async {
+    if (positions.isEmpty) return const <String>{};
+    final Set<String> accepted = <String>{
+      for (final SrsCardCacheRow c in await cardRows(positions.keys))
+        if (!c.hidden && c.queue == SrsQueue.newCard.wire) c.id,
+    };
+    await editFieldsBatch(<SrsFieldChange>[
+      for (final String id in accepted)
+        SrsFieldChange(
+          SrsEntityKind.card,
+          id,
+          SrsFieldKeys.cardNewPosition,
+          positions[id],
+        ),
+    ]);
+    return accepted;
+  }
+
+  /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（[compareNewCardOrder]
+  /// 的同序 SQL：排过位置的在前按位置升序，没排过的在后按（笔记创建时刻, cardId））。
   /// 计数按牌组在 SQL 里聚合，三类候选各由一条 `LIMIT 1` 查询在 SQL 里挑出，
   /// 不把子树里几千上万张卡的行搬回 Dart。
   Future<String?> nextCard(
@@ -2895,7 +3018,8 @@ class SrsDbStore implements SrsSyncReplica {
           (String d) => pathHasRoom(d, (_DeckCount x) => x.newRemaining),
         ),
         "queue = 'new'",
-        'note_created_at, id',
+        // 与 [compareNewCardOrder] 同序：NULL 位置排在最后。
+        'new_position IS NULL, new_position, note_created_at, id',
         const <Variable<Object>>[],
       );
       if (fresh != null) return fresh.$1;

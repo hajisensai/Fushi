@@ -8,7 +8,12 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/anki/anki_auto_reposition.dart';
+import 'package:fushi/src/anki/anki_deck_reposition.dart';
+import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
@@ -573,15 +578,178 @@ void main() {
       expect(inner.sourceLookups, 1, reason: '复习里没有 → 交给 Anki（切换前的卡）');
     });
 
-    test('Anki 专属能力在复习模式下关闭', () async {
+    test('Anki 专属能力在复习模式下关闭（新卡重排除外：走复习）', () async {
       expect(repo.supportsNoteTypeEditing, isFalse);
       expect(repo.supportsMediaMaintenance, isFalse);
       expect(await repo.probeMediaMaintenance(), isFalse);
-      expect(repo.supportsDeckReposition, isFalse);
+      expect(repo.supportsDeckReposition, isTrue);
       expect(await repo.rendersSynchronizedClip(), isNull);
       expect(repo.canVerifyExistingCards, isTrue);
       expect(() => repo.createDeck('X'), throwsUnsupportedError);
-      expect(() => repo.listNewCards('X'), throwsUnsupportedError);
+      expect(await repo.listNewCards('不存在的牌组'), isEmpty);
+    });
+
+    group('新卡按词频重排', () {
+      late Directory snapshots;
+      setUp(() {
+        snapshots = Directory('${tmp.path}/reposition')..createSync();
+      });
+
+      Future<String> deckName() async =>
+          (await store.deckTree()).fullName(store.defaultDeckId);
+
+      /// 制一张卡并把它的 FreqSort 字段设成 [rank]；返回 SRS 笔记 id。
+      Future<String> mineRanked(
+        BaseAnkiRepository via,
+        String expression,
+        String reading,
+        int rank,
+      ) async {
+        final MineOutcome out = await via.mineEntry(
+          rawPayloadJson: _payload(expression, reading, allowDuplicate: true),
+          context: bookContext(),
+        );
+        expect(out.result, MineResult.success);
+        final String noteId = (await store.noteIdForAnkiNumericId(
+          out.noteId!,
+        ))!;
+        await store.updateNote(
+          noteId,
+          fieldsById: <String, String>{fid('FreqSort'): '$rank'},
+        );
+        return noteId;
+      }
+
+      Future<List<String>> expressionsInOrder() async => <String>[
+        for (final AnkiCardInfo c in await repo.listNewCards(await deckName()))
+          c.fields['Expression']!,
+      ];
+
+      Future<String> nextExpression() async {
+        final String cardId = (await store.nextCard(store.defaultDeckId))!;
+        final SrsCardCacheRow row = (await store.cardRow(cardId))!;
+        return (await store.note(row.noteId))!.field(fid('Expression'));
+      }
+
+      AnkiDeckRepositionRunner runner() => AnkiDeckRepositionRunner(
+        repo,
+        snapshotDirectory: () async => snapshots,
+      );
+
+      test('Fushi 卡片的词形 / 读音 / 词频序字段能被角色解析认出', () async {
+        await mineRanked(repo, '雪', 'ゆき', 300);
+        final AnkiCardInfo card = (await repo.listNewCards(
+          await deckName(),
+        )).single;
+        expect(card.isNew, isTrue);
+        expect(card.fields['Expression'], '雪');
+        expect(card.fields['ExpressionReading'], 'ゆき');
+        expect(card.fields['FreqSort'], '300');
+        final AnkiNoteFieldRoles roles = resolveNoteFieldRoles(
+          modelName: card.modelName,
+          fieldNames: card.fields.keys,
+          settings: const AnkiSettings(),
+        );
+        expect(roles.expression, 'Expression');
+        expect(roles.reading, 'ExpressionReading');
+        expect(roles.rank, 'FreqSort');
+      });
+
+      test('手动重排往返：计划 → 写回 → 出卡顺序按词频 → 撤销回到原顺序', () async {
+        await mineRanked(repo, '雪', 'ゆき', 300);
+        await mineRanked(repo, '上手', 'じょうず', 100);
+        await mineRanked(repo, '犬', 'いぬ', 200);
+        final List<String> before = await expressionsInOrder();
+
+        final AnkiRepositionPlan plan = (await runner().plan(
+          deckName: await deckName(),
+          settings: const AnkiSettings(),
+          options: const AnkiRepositionRankOptions(
+            source: AnkiRepositionSource.field,
+          ),
+        ))!;
+        expect(plan.total, 3);
+        expect(plan.ranked, 3);
+        expect(
+          plan.ordered.map((AnkiRepositionCard c) => c.expression),
+          <String>['上手', '犬', '雪'],
+        );
+
+        final AnkiRepositionOutcome outcome = await runner().apply(plan);
+        expect(outcome.failures, isEmpty);
+        expect(outcome.written, 3);
+        expect(await expressionsInOrder(), <String>['上手', '犬', '雪']);
+        expect(
+          (await repo.listNewCards(
+            await deckName(),
+          )).map((AnkiCardInfo c) => c.due),
+          <int>[1, 2, 3],
+        );
+        expect(await nextExpression(), '上手');
+
+        final AnkiRepositionSnapshot snapshot = (await runner().latestSnapshot(
+          await deckName(),
+        ))!;
+        final AnkiRepositionUndoOutcome undo = await runner().undo(snapshot);
+        expect(undo.restored, 3);
+        expect(undo.failures, isEmpty);
+        expect(await expressionsInOrder(), before);
+      });
+
+      test('写回时已不是新卡 / 找不到的进 failures、不写', () async {
+        await mineRanked(repo, '雪', 'ゆき', 300);
+        final AnkiCardInfo card = (await repo.listNewCards(
+          await deckName(),
+        )).single;
+        final String cardId = (await store.cardIdForAnkiNumericId(
+          card.cardId,
+        ))!;
+        await store.setDueDay(cardId, 100);
+        final AnkiCardDueWriteResult result = await repo
+            .setNewCardPositions(<AnkiCardDueUpdate>[
+              AnkiCardDueUpdate(cardId: card.cardId, due: 5),
+              const AnkiCardDueUpdate(cardId: 1, due: 6),
+            ]);
+        expect(result.written, 0);
+        expect(result.failures.keys.toSet(), <int>{card.cardId, 1});
+        expect((await store.cardRow(cardId))!.newPosition, isNull);
+      });
+
+      test('制卡后自动重排：外层装饰器看得见复习制卡，到期后按词频排好', () async {
+        final List<AnkiAutoRepositionRun> runs = <AnkiAutoRepositionRun>[];
+        final AnkiAutoRepositionScheduler scheduler =
+            AnkiAutoRepositionScheduler(
+              runner: runner(),
+              loadSettings: () async => const AnkiSettings(
+                autoRepositionEnabled: true,
+                repositionSource: AnkiRepositionSource.field,
+              ),
+              debounce: const Duration(hours: 1),
+            )..onRunForTesting = runs.add;
+        addTearDown(scheduler.dispose);
+        final AutoRepositionAnkiRepository auto = AutoRepositionAnkiRepository(
+          inner: repo,
+          scheduler: scheduler,
+        );
+
+        final String snow = await mineRanked(auto, '雪', 'ゆき', 300);
+        final String good = await mineRanked(auto, '上手', 'じょうず', 100);
+        expect(scheduler.isIdle, isFalse, reason: '复习制卡成功 → 调度器收到落卡牌组');
+        expect(inner.mined, 0, reason: '仍然只写复习');
+        // 先把顺序钉成「雪 在前」，自动重排必须把它翻过来。
+        await store.setNewCardPositions(<String, int>{
+          (await store.cardsOfNote(snow)).single.id: 1,
+          (await store.cardsOfNote(good)).single.id: 2,
+        });
+        expect(await nextExpression(), '雪');
+
+        await scheduler.flushNow();
+        expect(runs, hasLength(1));
+        expect(runs.single.deckName, await deckName());
+        expect(runs.single.failed, 0);
+        expect(await nextExpression(), '上手');
+        expect(scheduler.isIdle, isTrue);
+      });
     });
   });
 
@@ -696,12 +864,33 @@ void main() {
       expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
     });
 
-    test('模块开着、目标是 Fushi 复习：最外层是 SRS 层', () {
+    test('模块开着、目标是 Fushi 复习：SRS 层外只套自动重排，快照目录与 Anki 分开', () {
       final BaseAnkiRepository repo = container(
         srsEnabled: true,
         target: SrsMiningTarget.srs,
       ).read(ankiRepositoryProvider);
-      expect(repo, isA<SrsMiningAnkiRepository>());
+      // 自动重排包在 SRS 层外面：SRS 层的制卡不经过里层，包在里面看不到复习制卡。
+      expect(repo, isA<AutoRepositionAnkiRepository>());
+      expect(
+        (repo as DelegatingAnkiRepository).inner,
+        isA<SrsMiningAnkiRepository>(),
+      );
+      expect(repo.supportsDeckReposition, isTrue);
+      expect(
+        repositionSnapshotFolderFor(repo),
+        AnkiDeckRepositionRunner.kSrsSnapshotFolder,
+      );
+    });
+
+    test('目标是 Anki：重排快照仍落在 Anki 的目录', () {
+      final BaseAnkiRepository repo = container(
+        srsEnabled: true,
+        target: SrsMiningTarget.anki,
+      ).read(ankiRepositoryProvider);
+      expect(
+        repositionSnapshotFolderFor(repo),
+        AnkiDeckRepositionRunner.kAnkiSnapshotFolder,
+      );
     });
   });
 

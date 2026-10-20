@@ -50,7 +50,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 122);
+      expect(migrated.schemaVersion, 123);
       await migrated
           .into(migrated.pendingMineQueue)
           .insert(
@@ -74,7 +74,7 @@ void main() {
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 122);
+      expect(probe.select('PRAGMA user_version').first.values.first, 123);
       final Map<String, sqlite.Row> columns = columnsOf(probe);
       expect(columns.keys.toSet(), <String>{
         'id',
