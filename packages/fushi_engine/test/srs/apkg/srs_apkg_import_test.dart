@@ -441,16 +441,17 @@ void main() {
     expect(jp.ownParams, isFalse);
     expect(jp.newPerDay, 15);
     expect(lang.ownParams, isTrue);
-    expect(lang.algorithmWire, 'fsrs6');
+    // 带 FSRS 参数的预设也用默认的 RWKV；参数照样存下，切回 FSRS-6 时还在。
+    expect(lang.algorithmWire, SrsAlgorithm.rwkv.wire);
     expect(lang.fsrs6!.params, fsrs6Params);
     expect(lang.desiredRetention, 0.85);
     expect(tree.paramsOwner(jp.id).id, lang.id);
     expect(jsonEncode(rep.toJson()), contains('JP preset'));
-    // 带 FSRS 参数的预设留在 FSRS，报告列出预设与它自己管参数的牌组（导入报告据此提示改用 RWKV）。
+    // 报告列出改用 RWKV 的 FSRS 预设与它自己管参数的牌组（导入报告据此提供「继续用 FSRS」）。
     expect(rep.fsrsPresets, <String, SrsAlgorithm>{
       'JP preset': SrsAlgorithm.fsrs6,
     });
-    expect(rep.fsrsDecks, <String>[lang.id]);
+    expect(rep.fsrsDecks, <String, SrsAlgorithm>{lang.id: SrsAlgorithm.fsrs6});
     expect(rep.defaultAlgorithmPresets, isEmpty);
   });
 
@@ -989,7 +990,7 @@ void main() {
     expect(core.ownParams, isTrue);
     expect(core.learnSteps, <double>[2, 20]);
     expect(core.newPerDay, 30);
-    expect(core.algorithmWire, 'fsrs6');
+    expect(core.algorithmWire, SrsAlgorithm.rwkv.wire);
     expect(core.desiredRetention, closeTo(0.9, 1e-6));
     expect(core.fsrs6!.params.first, closeTo(fsrs6Params.first, 1e-6));
   });

@@ -136,14 +136,15 @@ class SrsImportReport {
   /// 开了 RWKV 的预设名（导入后照旧用 RWKV）。
   final List<String> rwkvPresets = <String>[];
 
-  /// 带着 FSRS 参数导入、仍用 FSRS 的预设：预设名 → 算法（FSRS-6 / FSRS-7）。
+  /// 带着 FSRS 参数导入、改用 RWKV 的预设：预设名 → 原算法（FSRS-6 / FSRS-7）。参数照样存下。
   final Map<String, SrsAlgorithm> fsrsPresets = <String, SrsAlgorithm>{};
 
   /// 没有可用 FSRS 参数（SM-2 或没训练过）、导入后用默认算法的预设名。
   final List<String> defaultAlgorithmPresets = <String>[];
 
-  /// 本次新建、自己管参数且仍用 FSRS 的牌组 ID（导入报告的「改用 RWKV」按这份改）。
-  final List<String> fsrsDecks = <String>[];
+  /// 本次新建、自己管参数、由 FSRS 预设改用 RWKV 的牌组：牌组 ID → 原算法
+  /// （导入报告的「继续用 FSRS」按这份改回）。
+  final Map<String, SrsAlgorithm> fsrsDecks = <String, SrsAlgorithm>{};
 
   /// 参数校验不过、没写参数的预设：预设名 → 原因。
   final Map<String, String> invalidParams = <String, String>{};
@@ -184,7 +185,10 @@ class SrsImportReport {
         e.key: e.value.wire,
     },
     'defaultAlgorithmPresets': defaultAlgorithmPresets,
-    'fsrsDecks': fsrsDecks,
+    'fsrsDecks': <String, String>{
+      for (final MapEntry<String, SrsAlgorithm> e in fsrsDecks.entries)
+        e.key: e.value.wire,
+    },
     'invalidParams': invalidParams,
     'removedInSource': <Map<String, Object?>>[
       for (final SrsImportRemovedItem r in removedInSource) r.toJson(),

@@ -118,9 +118,9 @@ class _TaskRowState extends ConsumerState<_TaskRow>
           showSrsImportReportDialog(
             context,
             report,
-            onSwitchToRwkv: () => srsRunLogged(
-              'srsSwitchImportedDecksToRwkv',
-              () => srsSwitchImportedDecksToRwkvFromReport(ref, report),
+            onKeepFsrs: () => srsRunLogged(
+              'srsKeepImportedDecksOnFsrs',
+              () => srsKeepImportedDecksOnFsrsFromReport(ref, report),
             ),
           );
         }

@@ -174,40 +174,47 @@ void main() {
     expect(again.notesSkipped, 1);
   });
 
-  test('带 FSRS 参数导入：报告提示改用 RWKV；「改用 RWKV」只改仍自己管参数的 FSRS 牌组', () async {
-    final String fsrs = await store.createDeck('FSRS deck');
-    final String child = await store.createDeck('Child', parentId: fsrs);
-    final String mine = await store.createDeck('Already switched');
-    await store.editFields(SrsEntityKind.deck, fsrs, <String, Object?>{
+  test('带 FSRS 参数导入：报告写明已改用 RWKV；「继续用 FSRS」只切回仍自己管参数的 RWKV 牌组', () async {
+    final String imported = await store.createDeck('Imported');
+    final String child = await store.createDeck('Child', parentId: imported);
+    final String changed = await store.createDeck('User changed');
+    await store.editFields(SrsEntityKind.deck, imported, <String, Object?>{
       SrsFieldKeys.deckAlgorithm: <String, Object?>{
-        'alg': SrsAlgorithm.fsrs7.wire,
+        'alg': SrsAlgorithm.rwkv.wire,
         'auto': true,
       },
     });
     await store.editFields(SrsEntityKind.deck, child, <String, Object?>{
       SrsFieldKeys.deckParamsMode: 'inherit',
     });
-    await store.editFields(SrsEntityKind.deck, mine, <String, Object?>{
+    // 导入后用户自己在牌组设置里换成了 FSRS-7：不动。
+    await store.editFields(SrsEntityKind.deck, changed, <String, Object?>{
       SrsFieldKeys.deckAlgorithm: <String, Object?>{
-        'alg': SrsAlgorithm.rwkv.wire,
+        'alg': SrsAlgorithm.fsrs7.wire,
         'auto': false,
       },
     });
     final SrsImportReport report = SrsImportReport()
       ..fsrsPresets['JP preset'] = SrsAlgorithm.fsrs6
-      ..fsrsDecks.addAll(<String>[fsrs, child, mine, 'gone']);
+      ..fsrsDecks.addAll(<String, SrsAlgorithm>{
+        imported: SrsAlgorithm.fsrs6,
+        child: SrsAlgorithm.fsrs6,
+        changed: SrsAlgorithm.fsrs6,
+        'gone': SrsAlgorithm.fsrs6,
+      });
     expect(
       srsImportReportLines(report),
       contains(t.srs_import_report_fsrs(preset: 'JP preset', alg: 'FSRS-6')),
     );
 
-    expect(await srsSwitchImportedDecksToRwkv(store, report.fsrsDecks), 1);
+    expect(await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks), 1);
     final SrsDeckTree tree = await store.deckTree();
-    expect(tree[fsrs]!.localAlgorithm, SrsAlgorithm.rwkv);
-    expect(tree[fsrs]!.algorithmAuto, isFalse);
-    expect(tree.paramsOwner(child).localAlgorithm, SrsAlgorithm.rwkv);
+    expect(tree[imported]!.localAlgorithm, SrsAlgorithm.fsrs6);
+    expect(tree[imported]!.algorithmAuto, isFalse);
+    expect(tree.paramsOwner(child).localAlgorithm, SrsAlgorithm.fsrs6);
+    expect(tree[changed]!.localAlgorithm, SrsAlgorithm.fsrs7);
     // 再点一次什么也不改。
-    expect(await srsSwitchImportedDecksToRwkv(store, report.fsrsDecks), 0);
+    expect(await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks), 0);
   });
 
   test('坏包：抛 SrsImportException（入口据此报失败而不是吞掉）', () async {

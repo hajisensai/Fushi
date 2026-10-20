@@ -327,6 +327,9 @@ class _Importer {
 
   /// 同 profile 回导时补的「前身」链接（日志原样保留在前身卡上）。
   final List<SrsEditSpec> _historyLinks = <SrsEditSpec>[];
+
+  /// 带 FSRS 参数、导入后改用 RWKV 的来源预设 id → 原算法（报告的「继续用 FSRS」用）。
+  final Map<int, SrsAlgorithm> _fsrsOfPreset = <int, SrsAlgorithm>{};
   final Map<String, Map<String, Object?>> _extDecks =
       <String, Map<String, Object?>>{};
   final Map<String, Object?> _extNotes = <String, Object?>{};
@@ -971,9 +974,9 @@ class _Importer {
           ),
         ],
       );
-      final Object? alg = values[SrsFieldKeys.deckAlgorithm];
-      if (alg is Map && alg['alg'] != SrsAlgorithm.rwkv.wire) {
-        report.fsrsDecks.add(id);
+      final SrsAlgorithm? fromFsrs = _fsrsOfPreset[byName[full]?.configId];
+      if (fromFsrs != null && values.containsKey(SrsFieldKeys.deckAlgorithm)) {
+        report.fsrsDecks[id] = fromFsrs;
       }
       idByName[full] = id;
       if (!renamedImport) created.add(full);
@@ -1112,43 +1115,42 @@ class _Importer {
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }
-    SrsAlgorithm alg = srsDefaultAlgorithm;
+    // 带来的 FSRS 参数组（按它自己的算法存）。
+    SrsAlgorithm? fsrs;
     List<double>? params;
     if (col.fsrsEnabled) {
       if (p.fsrs7Params.length == SrsAlgorithm.fsrs7.paramCount &&
           (p.fsrsVersion ?? 0) == 0) {
-        alg = SrsAlgorithm.fsrs7;
+        fsrs = SrsAlgorithm.fsrs7;
         params = p.fsrs7Params;
       } else if (p.fsrs6Params.length == SrsAlgorithm.fsrs6.paramCount) {
-        alg = SrsAlgorithm.fsrs6;
+        fsrs = SrsAlgorithm.fsrs6;
         params = p.fsrs6Params;
       }
     }
-    if (p.rwkvEnabled) {
-      // RWKV 预设照旧用 RWKV（Anki RWKV fork 的 rwkvReviewEnabled）。它的影子记忆状态用 FSRS-7：
-      // 有 FSRS-7 参数就带上，FSRS-6 参数用不上（参数组按 FSRS-7 存）。
-      if (report) this.report.rwkvPresets.add(p.name);
-      if (alg != SrsAlgorithm.fsrs7) params = null;
-      alg = SrsAlgorithm.rwkv;
-    } else if (report) {
-      // 带着 FSRS 参数来的预设留在 FSRS（参数是用户自己的历史训练出来的），报告里提示可改用 RWKV；
-      // 没有可用参数的（SM-2 或没训练过）落到默认算法，也写进报告，不静默换算法。
-      if (params == null) {
+    // 一律用默认算法 RWKV（RWKV fork 的 rwkvReviewEnabled 预设本来就是）。带着 FSRS 参数来的预设
+    // 参数照样存下、报告里写明，用户不要 RWKV 就在报告里「继续用 FSRS」或去牌组设置切回，参数还在；
+    // 没有参数的（SM-2 或没优化过）同样写进报告，不静默换算法。
+    if (report) {
+      if (p.rwkvEnabled) {
+        this.report.rwkvPresets.add(p.name);
+      } else if (fsrs == null) {
         this.report.defaultAlgorithmPresets.add(p.name);
       } else {
-        this.report.fsrsPresets[p.name] = alg;
+        this.report.fsrsPresets[p.name] = fsrs;
       }
     }
+    if (fsrs != null && !p.rwkvEnabled) _fsrsOfPreset[p.id] = fsrs;
     v[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
-      'alg': alg.wire,
+      'alg': srsDefaultAlgorithm.wire,
       'auto': true,
     };
-    if (params != null) {
-      final String? bad = _validate(alg, params);
+    if (fsrs != null && params != null) {
+      final String? bad = _validate(fsrs, params);
       if (bad != null) {
         if (report) this.report.invalidParams[p.name] = bad;
       } else {
-        v[alg.memoryAlgorithm == SrsAlgorithm.fsrs6
+        v[fsrs == SrsAlgorithm.fsrs6
             ? SrsFieldKeys.deckFsrs6Params
             : SrsFieldKeys.deckFsrs7Params] = SrsParamSet(
           params: params,
