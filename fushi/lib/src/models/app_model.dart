@@ -8888,7 +8888,13 @@ class AppModel with ChangeNotifier {
     } on SyncServerPortInUseException {
       await setFushiApiPort(previous);
       if (wasEnabled) await setFushiApiServerEnabled(true);
-      await applyFushiApiServerConfigChange();
+      try {
+        await applyFushiApiServerConfigChange();
+      } on SyncServerPortInUseException catch (e) {
+        // 旧端口在这期间也被别的进程占了：start 已把开关复位为 false，服务如实
+        // 停着；端口仍回滚到旧值，结果同样是「没改成」。
+        debugPrint('Fushi API rollback to port $previous failed: $e');
+      }
       return false;
     }
   }

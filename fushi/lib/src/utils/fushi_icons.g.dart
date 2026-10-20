@@ -710,6 +710,24 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 本机 API 服务：Symbols `api`（取代 Icons.api_outlined / Icons.api）
+  static const IconData localApi = IconData(
+    0xf1b7,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 局域网访问范围：Symbols `lan`（取代 Icons.lan_outlined / Icons.lan）
+  static const IconData lan = IconData(
+    0xeb2f,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 监听端口：Symbols `settings_ethernet`（取代 Icons.settings_ethernet_outlined / Icons.settings_ethernet）
+  static const IconData networkPort = IconData(
+    0xe8be,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 局域网：Symbols `wifi`（取代 Icons.wifi / Icons.wifi）
   static const IconData wifi = IconData(
     0xe63e,
@@ -1769,6 +1787,9 @@ abstract final class FushiIcons {
     'devices': devices,
     'server': server,
     'hub': hub,
+    'localApi': localApi,
+    'lan': lan,
+    'networkPort': networkPort,
     'wifi': wifi,
     'person': person,
     'account': account,
@@ -2176,6 +2197,7 @@ abstract final class FushiIcons {
     0xe8b3: IconData(0xe8b3, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8b8: IconData(0xe8b8, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8ba: IconData(0xe8ba, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe8be: IconData(0xe8be, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8c7: IconData(0xe8c7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d4: IconData(0xe8d4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d5: IconData(0xe8d5, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2246,6 +2268,7 @@ abstract final class FushiIcons {
     0xeadd: IconData(0xeadd, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeae2: IconData(0xeae2, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeae7: IconData(0xeae7, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xeb2f: IconData(0xeb2f, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeb32: IconData(0xeb32, fontFamily: kFushiSymbolsFilledFontFamily),
     0xeb5a: IconData(0xeb5a, fontFamily: kFushiSymbolsFilledFontFamily),
     0xebcc: IconData(0xebcc, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2285,6 +2308,7 @@ abstract final class FushiIcons {
     0xf10d: IconData(0xf10d, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf15c: IconData(0xf15c, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf18a: IconData(0xf18a, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf1b7: IconData(0xf1b7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf1ca: IconData(0xf1ca, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf1dc: IconData(0xf1dc, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf20b: IconData(0xf20b, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2558,6 +2582,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.arrow_counterclockwise,
     CupertinoIcons.arrow_counterclockwise,
   ),
+  0xe8be: (CupertinoIcons.number_square, CupertinoIcons.number_square_fill),
   0xe8c7: (
     CupertinoIcons.antenna_radiowaves_left_right,
     CupertinoIcons.antenna_radiowaves_left_right,
@@ -2648,6 +2673,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xeadd: (CupertinoIcons.textformat_size, CupertinoIcons.textformat_size),
   0xeae2: (CupertinoIcons.textformat_size, CupertinoIcons.textformat_size),
   0xeae7: (CupertinoIcons.command, CupertinoIcons.command),
+  0xeb2f: (
+    CupertinoIcons.antenna_radiowaves_left_right,
+    CupertinoIcons.antenna_radiowaves_left_right,
+  ),
   0xeb32: (
     CupertinoIcons.line_horizontal_3_decrease_circle,
     CupertinoIcons.line_horizontal_3_decrease_circle_fill,
@@ -2723,6 +2752,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xf10d: (CupertinoIcons.pin, CupertinoIcons.pin_fill),
   0xf15c: (CupertinoIcons.cloud, CupertinoIcons.cloud_fill),
   0xf18a: (CupertinoIcons.envelope_badge, CupertinoIcons.envelope_badge_fill),
+  0xf1b7: (
+    CupertinoIcons.chevron_left_slash_chevron_right,
+    CupertinoIcons.chevron_left_slash_chevron_right,
+  ),
   0xf1ca: (CupertinoIcons.wifi_slash, CupertinoIcons.wifi_slash),
   0xf1dc: (CupertinoIcons.captions_bubble, CupertinoIcons.captions_bubble_fill),
   0xf20b: (

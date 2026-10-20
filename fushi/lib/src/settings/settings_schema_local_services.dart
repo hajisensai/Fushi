@@ -40,7 +40,7 @@ SettingsDestination buildLocalServicesDestination() {
           SettingsNavigationItem(
             id: 'local_services.browser_extension',
             title: t.nav_browser_extension,
-            icon: Icons.extension_outlined,
+            icon: FushiIcons.browserExtension,
             showIcon: true,
             visible: (SettingsContext settingsContext) =>
                 DesktopLookupService.isDesktop,
@@ -55,7 +55,7 @@ SettingsDestination buildLocalServicesDestination() {
             id: 'local_services.fushi_api_server',
             title: t.fushi_api_server,
             subtitle: t.fushi_api_server_hint,
-            icon: Icons.api_outlined,
+            icon: FushiIcons.localApi,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.fushiApiServerEnabled,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -82,7 +82,7 @@ SettingsDestination buildLocalServicesDestination() {
           SettingsStatusItem(
             id: 'local_services.fushi_api_reach',
             title: t.fushi_api_reach_title,
-            icon: Icons.shield_outlined,
+            icon: FushiIcons.shield,
             subtitleBuilder: fushiApiReachDescription,
             actionLabel: t.fushi_api_key_generate,
             actionVisible: (SettingsContext c) =>
@@ -98,7 +98,7 @@ SettingsDestination buildLocalServicesDestination() {
             id: 'local_services.fushi_api_access',
             title: t.fushi_api_access_title,
             subtitle: t.fushi_api_access_hint,
-            icon: Icons.lan_outlined,
+            icon: FushiIcons.lan,
             options: <SettingsSegmentOption<FushiApiAccessMode>>[
               SettingsSegmentOption<FushiApiAccessMode>(
                 value: FushiApiAccessMode.localOnly,
@@ -129,7 +129,7 @@ SettingsDestination buildLocalServicesDestination() {
           SettingsStatusItem(
             id: 'local_services.fushi_api_allowed_networks',
             title: t.fushi_api_allowed_networks_title,
-            icon: Icons.rule_outlined,
+            icon: FushiIcons.filterList,
             visible: (SettingsContext c) =>
                 c.appModel.fushiApiAccessMode == FushiApiAccessMode.allowList,
             subtitleBuilder: (SettingsContext c) {
@@ -145,7 +145,7 @@ SettingsDestination buildLocalServicesDestination() {
           SettingsStatusItem(
             id: 'local_services.fushi_api_port',
             title: t.fushi_api_port_title,
-            icon: Icons.settings_ethernet_outlined,
+            icon: FushiIcons.networkPort,
             subtitleBuilder: (SettingsContext c) =>
                 t.fushi_api_port_value(port: c.appModel.fushiApiPort),
             actionLabel: t.dialog_edit,
@@ -157,7 +157,7 @@ SettingsDestination buildLocalServicesDestination() {
             id: 'local_services.fushi_api_key',
             title: t.fushi_api_key,
             subtitle: t.fushi_api_key_hint,
-            icon: Icons.key_outlined,
+            icon: FushiIcons.key,
             secret: true,
             copyable: true,
             value: (SettingsContext settingsContext) =>

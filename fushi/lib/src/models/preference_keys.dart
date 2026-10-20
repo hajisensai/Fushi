@@ -188,6 +188,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_lyric_width',
   // String JSON：Windows 悬浮字幕窗口矩形（物理 px）。
   'floating_lyric_window_rect',
+  // String：Fushi API「允许谁连」（FushiApiAccessMode.wireName），缺省 `lan`。
+  'fushi_api_access_mode',
+  // String：「指定网段」模式的白名单原文（每行一个 IP / CIDR），非凭据。
+  'fushi_api_allowed_networks',
   'gal_card_lookup_independent_size',
   'gal_card_lookup_max_height',
   'gal_card_lookup_max_width',
