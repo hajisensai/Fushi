@@ -130,6 +130,11 @@ class Float16Utils {
 
 /** FlutterOnnxruntimePlugin */
 class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
+    companion object {
+        /** ORT session config key (>= 1.25) that keeps MLAS off its KleidiAI kernels. */
+        const val DISABLE_KLEIDIAI_KEY = "mlas.disable_kleidiai"
+    }
+
     /** The MethodChannel that will the communication between Flutter and native Android
 
      This local reference serves to register the plugin with the Flutter Engine and unregister it
@@ -220,6 +225,11 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                         }
 
                         val ortSessionOptions = OrtSession.SessionOptions()
+                        // Fushi fork (PATCHES.md delta 14, BUG-3622): every Android session runs
+                        // the NEON MLAS path. KleidiAI only engages on SME phones, where it has
+                        // SIGILLed (ORT 1.23) and still retains MatMul buffers per largest
+                        // input shape (microsoft/onnxruntime#29538, unfixed in 1.28).
+                        ortSessionOptions.addConfigEntry(DISABLE_KLEIDIAI_KEY, "1")
 
                         // Configure session options based on the provided map
                         if (sessionOptions.containsKey("intraOpNumThreads")) {
@@ -256,7 +266,14 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                                     ortSessionOptions.addACL(true)
                                 }
                                 "ARM_NN" -> {
-                                    ortSessionOptions.addArmNN(useArena)
+                                    // ORT 1.25 removed the ArmNN EP (and SessionOptions.addArmNN).
+                                    result.error(
+                                        "INVALID_PROVIDER",
+                                        "Provider ARM_NN is not supported: the ArmNN execution provider was removed in " +
+                                            "ONNX Runtime 1.25",
+                                        null,
+                                    )
+                                    return
                                 }
                                 "CORE_ML" -> {
                                     ortSessionOptions.addCoreML()

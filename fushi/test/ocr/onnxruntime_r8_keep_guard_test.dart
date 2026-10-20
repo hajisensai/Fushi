@@ -21,10 +21,11 @@ import 'package:flutter_test/flutter_test.dart';
 /// 这条路根本够不着。
 ///
 /// 清单来源（可复现）：解包
-/// `com.microsoft.onnxruntime:onnxruntime-android:1.23.0` 的 AAR，对
+/// `com.microsoft.onnxruntime:onnxruntime-android:1.28.0` 的 AAR（1.23.0 时清单相同，
+/// BUG-3622 升级时逐条比对过），对
 /// `jni/arm64-v8a/libonnxruntime4j_jni.so` 取 `ai/onnxruntime/...` 字符串：
 ///
-///     unzip -p onnxruntime-android-1.23.0.aar jni/arm64-v8a/libonnxruntime4j_jni.so \
+///     unzip -p onnxruntime-android-1.28.0.aar jni/arm64-v8a/libonnxruntime4j_jni.so \
 ///       | grep -aoE "ai/onnxruntime/[A-Za-z0-9_/]+" | sort -u
 ///
 /// 同一次解包还确认了：**该 AAR 里只有 `classes.jar`，没有 `proguard.txt`**，
