@@ -15,9 +15,10 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 > 链接它的产物整体受 AGPL 约束；无头服务端若对外提供 RWKV 调度，须向用户提供源码。
 
 现状（2026-10-20）：五端随包（硬依赖，构建脚本 `build_*.{ps1,sh}`、`verify_abi.sh`）；Dart 绑定
-`packages/fushi_rwkv`（FFI + 常驻 worker isolate）；排程接入 `SrsAlgorithm.rwkv`（作答时用
-[`frwkv_runtime_next_intervals`](#作答时排程)，记忆状态仍由 FSRS-7 维护；`packages/fushi_engine/lib/srs/srs_rwkv_*.dart`）。
-权重 app 里按需下载（`srs_rwkv_models.dart`，钉 URL + SHA-256）。
+`packages/fushi_rwkv`（FFI + 常驻 worker isolate）；排程接入 `SrsAlgorithm.rwkv`，**RWKV-Instant、
+新建牌组的默认算法**（排队时用 `frwkv_runtime_query` 查此刻的 R，见[排队](#排队rwkv-instantfushi-用的)；
+记忆状态与存下的到期日仍由 FSRS-7 维护；`packages/fushi_engine/lib/srs/srs_rwkv_*.dart`、
+`SrsDbStore._instantReviews`）。权重由服务自动下载（`srs_rwkv_models.dart`，钉 URL + SHA-256）。
 
 ## 它算什么
 
@@ -63,7 +64,34 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 相同；小模型：每个实体 × 头是一条顺序任务，块边界与线程数都不改结果，测试核对块大小 1 / 7 / 333 /
 整批逐位相同）。
 
-### 作答时排程
+### 排队（RWKV-Instant，Fushi 用的）
+
+上游 kuma3 / JSchoreels 的 RWKV-Instant（`rslib/src/scheduler/rwkv.rs`、`queue/builder/gathering.rs`）：
+RWKV 牌组的复习卡**不看到期日**，每次排队以当前状态查每张复习卡此刻的即时 R（`frwkv_runtime_query`，
+一批一次），**R ≤ 牌组目标保留率**的才出，按 R 升序，每日复习上限照常；今天答过的卡还要满足间隔守卫
+（距上次作答 ≥ 30 秒且之后别的卡答过 ≥ 5 次，上游默认）。学习 / 重学 / 新卡照旧。每答一题后重查
+（上游默认刷新间隔 1）。别的卡的作答改变牌组 / 预设 / 全局状态，所以一张卡什么时候回来会随整体表现
+自动变化。上游的「每天最少复习数」默认 0，这里不做：R 都高于目标时队列为空，即模型认为都还记得。
+
+存下的到期日（作答时由 FSRS-7 写）只在 RWKV 不可用时排队、导出给 Anki 时用；同步不需要它——
+RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权重、确定性）。统计页的未来到期 / 逾期 /
+负担不计按 R 排队的卡，可提取度用 RWKV 的；浏览器的 `is:due` 与出卡同口径；日志的 `alg` 记 `rwkv`。
+
+**为什么用即时头而不是曲线头**（`examples/curve_calibration.rs`，小模型 int4，20 个封存用户约 136 万对
+相邻复习，按真实间隔分桶的预测均值 vs 实际通过率）：
+
+| 分组 / 真实间隔 | 曲线头 | 即时头 | 实际 |
+|---|---|---|---|
+| 全体，90–365 天 | 0.841 | 0.810 | 0.812 |
+| 全体，1–3 年 | 0.846 | 0.831 | 0.834 |
+| 通过率 ≥ 95% 的用户，90–365 天 | 0.948 | 0.860 | 0.854 |
+| 通过率 ≥ 95% 的用户，1–3 年 | 0.933 | 0.786 | 0.691 |
+
+即时头在每个间隔段都基本校准，曲线头对长间隔过度乐观（高通过率用户里曲线头预测在 0.75–0.85 之间的
+那些 90–365 天复习，实际只答对 44%）。即时头不能沿天数外推成间隔（见下一节），所以用它的方式就是
+上游 Instant 的「每次排队重查」。
+
+### 作答时排程（RWKV-Curve，库里保留，app 不用）
 
 `frwkv_runtime_next_intervals` 读**曲线头**：对每个评分假设这张卡**现在**以该评分作答（一行不提交的
 更新行，什么都不保存），得到这次作答之后的遗忘曲线 R(t)（小模型：3 条幂曲线的混合

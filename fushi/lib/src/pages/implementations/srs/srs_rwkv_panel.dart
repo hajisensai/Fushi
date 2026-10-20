@@ -95,7 +95,7 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
                   ),
                   style: hintStyle,
                 ),
-                LinearProgressIndicator(value: progress),
+                FushiLinearProgressIndicator(value: progress),
               ],
             ),
           );
