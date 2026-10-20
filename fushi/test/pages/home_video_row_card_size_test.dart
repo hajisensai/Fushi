@@ -18,6 +18,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,18 +28,22 @@ import '../helpers/test_platform_services.dart';
 
 /// 视频首页横滚行的卡片尺寸门（用户实报「动画缩略图太大」）。
 ///
-/// 行卡高必须走 [videoRowCoverHeightForPortraitWidth]，不是库墙的
-/// [videoCoverHeightForPortraitWidth]——后者按竖卡定高，同一卡宽下横卡会撑到
-/// 竖卡目标宽的 8/3 倍（桌面 ~626px，一屏只剩 3 张）。这里量**真渲染出来的卡宽**
-/// 而不是复述公式：换回库墙口径时竖卡宽会恰好等于目标卡宽，本测试立刻红。
+/// 2026-10 首页重设计后行卡统一画 2:3 竖封面，宽度走 [videoHomePosterCardWidth]
+/// （按内容宽：手机约 3.3 张一行，平板 / 桌面夹在 120–140），不再按封面朝向
+/// 探测横 / 竖卡、也不再沿用库墙目标卡宽。这里量**真渲染出来的卡宽**而不是复述
+/// 公式：退回库墙卡宽（桌面 ~200+）时立刻红。
+///
+/// 继续观看的第一项会被提成首屏主卡（整宽大卡，不是行卡），所以先种一部更近
+/// 播放的合集占主卡位，被测散卡才落进横滚行。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_row_card_size_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_row_card_size_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -85,70 +90,97 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.home,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.home,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('「继续观看」行卡按横滚行口径定高，不再与库墙目标卡宽同宽',
-      (WidgetTester tester) async {
+  testWidgets('「继续观看」行卡是 videoHomePosterCardWidth 宽的竖卡，不再与库墙目标卡宽同宽', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/loose-1'),
-      title: Value('Loose One'),
-      videoPath: Value('/abs/loose-1.mp4'),
-      lastPositionMs: Value(60000),
-    ));
+    // 主卡占位：最近刚播放的在看合集。
+    final int heroCid = await db.createMediaCollection(
+      'HeroDecoy',
+      collectionType: 'playlist',
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/hero-decoy'),
+        title: const Value('HeroDecoy Ep1'),
+        videoPath: const Value('/abs/hero-decoy.mp4'),
+        lastPositionMs: const Value(60000),
+        lastPlayedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await db.addToCollection(heroCid, MediaKind.video, 'video/hero-decoy');
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/loose-1'),
+        title: Value('Loose One'),
+        videoPath: Value('/abs/loose-1.mp4'),
+        lastPositionMs: Value(60000),
+      ),
+    );
 
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final Finder card =
-        find.byKey(const ValueKey<String>('home_video_continue_video/loose-1'));
+    final Finder card = find.byKey(
+      const ValueKey<String>('home_video_continue_video/loose-1'),
+    );
     expect(card, findsOneWidget, reason: '有进度的散卡必须出现在「继续观看」行');
 
     // 页面自己看到的可用宽 = LayoutBuilder 给 CustomScrollView 的宽度，直接量，
     // 不在测试里复刻外层 padding。
-    final double layoutWidth =
-        tester.getSize(find.byType(CustomScrollView)).width;
-    final FushiDesignTokens tokens =
-        FushiDesignTokens.of(tester.element(find.byType(CustomScrollView)));
-    final ({int columns, double cardWidth}) wallLayout = unifiedShelfCardLayout(
-      availableWidth: layoutWidth - tokens.spacing.card * 2,
-      targetWidth: readerShelfGridExtentForWidth(layoutWidth),
+    final double layoutWidth = tester
+        .getSize(find.byType(CustomScrollView))
+        .width;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(
+      tester.element(find.byType(CustomScrollView)),
     );
-    // 无封面 → 朝向未知 → 竖卡（[videoCardOrientationForAspect] 的默认）。
-    final double expectedWidth = videoCardWidthForOrientation(
-      orientation: VideoCardOrientation.portrait,
-      coverHeight: videoRowCoverHeightForPortraitWidth(wallLayout.cardWidth),
-    );
+    final double contentWidth = layoutWidth - tokens.spacing.card * 2;
+    final double expectedWidth = videoHomePosterCardWidth(contentWidth);
 
     expect(
       tester.getSize(card).width,
       closeTo(expectedWidth, 0.5),
-      reason: '行卡高必须来自 videoRowCoverHeightForPortraitWidth',
+      reason: '行卡宽必须来自 videoHomePosterCardWidth（2026-10 首页重设计）',
     );
-    // 库墙口径下竖卡宽恰等于目标卡宽——旧值必须被真正甩开，否则这条门恒真。
+    // 库墙目标卡宽是「太大」的那个旧值——必须被真正甩开，否则这条门恒真。
+    final ({int columns, double cardWidth}) wallLayout = unifiedShelfCardLayout(
+      availableWidth: contentWidth,
+      targetWidth: readerShelfGridExtentForWidth(layoutWidth),
+    );
     expect(
       tester.getSize(card).width,
       lessThan(wallLayout.cardWidth - 1),
-      reason: '换回 videoCoverHeightForPortraitWidth 会让卡宽回到目标卡宽',
+      reason: '行卡不得回到库墙目标卡宽（用户实报缩略图太大）',
+    );
+    // 恒竖版：封面区是 2:3（无封面 / 横图都不改槽向）。
+    final Rect cover = tester.getRect(
+      find.descendant(of: card, matching: find.byType(ShelfCoverFrame)).first,
+    );
+    expect(
+      cover.height,
+      closeTo(videoCoverHeightForPortraitWidth(cover.width), 0.5),
+      reason: '首页行卡封面恒 2:3 竖槽',
     );
   });
 }

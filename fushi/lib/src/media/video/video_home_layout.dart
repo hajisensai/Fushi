@@ -90,6 +90,34 @@ double allVideoThumbnailTargetWidthForWidth(double width) {
 double videoHeroHeightForWidth(double width) =>
     (width * 9 / 21).clamp(220.0, 420.0);
 
+/// 视频首页（2026-10 重设计）的横排版断点：内容宽（已扣左右外边距）≥ 它时，
+/// 首屏主卡与「已更新未看」面板左右并排（主卡大图铺满、文字叠在左侧渐暗上）；
+/// 窄于它时主卡整宽、上图下文，「已更新未看」退回一条横滚行。
+const double kVideoHomeHeroSplitMinWidth = 860;
+
+/// 横排版里主卡与「已更新未看」面板的宽度比（主卡 : 面板 = 1.55 : 1）。
+const double kVideoHomeHeroSplitFlex = 1.55;
+
+/// 横排版主卡（及并排面板）的高度：随主卡宽按 0.45 换算，夹在 [260, 380]——
+/// 太矮压不下标题 / 进度 / 按钮三层，太高首屏看不到下面的横滚行。
+double videoHomeHeroSplitHeight(double heroWidth) =>
+    (heroWidth * 0.45).clamp(260.0, 380.0);
+
+/// 竖排版主卡的大图高：按卡宽 16:9，封顶 320（平板竖屏不让大图吃掉半屏）。
+double videoHomeHeroStillHeight(double cardWidth) =>
+    (cardWidth * 9 / 16).clamp(0.0, 320.0);
+
+/// 视频首页横滚行（继续观看 / 已更新未看 / 最近添加）的竖版 2:3 卡宽。
+///
+/// 首页行卡一律画作品竖封面（不再按封面图宽高比探测横 / 竖卡）：
+/// - 手机（内容宽 < 600）：按内容宽 / 3.45 取，一行露出约 3.3 张，露半张提示可横滑
+///   （390 宽手机内容宽 358 → 约 104）；
+/// - 平板 / 桌面：内容宽 / 8，夹在 [120, 140]。
+double videoHomePosterCardWidth(double contentWidth) {
+  if (contentWidth < 600) return (contentWidth / 3.45).clamp(96.0, 128.0);
+  return (contentWidth / 8).clamp(120.0, 140.0);
+}
+
 /// 视频库搜索行的单行排版下限（2026-10 体验优化）：宽度低于此值时搜索框独占
 /// 一行、年份 / 看完状态 chip 落到第二行可横滑。宽度取 LayoutBuilder 的逻辑
 /// 像素，界面缩放已折算在内。

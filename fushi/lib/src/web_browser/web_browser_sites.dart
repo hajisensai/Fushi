@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// app 内浏览器（`FushiWebBrowserPage`）的一个站点书签。
 @immutable
@@ -110,4 +111,48 @@ Uri? parseWebBrowserAddress(String input) {
   }
   if (uri.host.isEmpty || !uri.host.contains('.')) return null;
   return uri;
+}
+
+/// 地址栏的搜索引擎（用户 2026-10-20：「搜索框不要用网址，要支持搜索引擎，并且
+/// 可切换默认谷歌」）。值名即持久化值，改名要迁移。
+enum WebBrowserSearchEngine {
+  google('Google', 'https://www.google.com/search'),
+  bing('Bing', 'https://www.bing.com/search'),
+  duckDuckGo('DuckDuckGo', 'https://duckduckgo.com/');
+
+  const WebBrowserSearchEngine(this.label, this.endpoint);
+
+  /// 专有名词，不进 i18n。
+  final String label;
+  final String endpoint;
+
+  /// 用本引擎搜 [query] 的地址（三家都吃 `q` 参数）。
+  Uri searchUrl(String query) => Uri.parse(
+    endpoint,
+  ).replace(queryParameters: <String, String>{'q': query.trim()});
+
+  static WebBrowserSearchEngine fromName(Object? name) =>
+      WebBrowserSearchEngine.values.firstWhere(
+        (WebBrowserSearchEngine e) => e.name == name,
+        orElse: () => WebBrowserSearchEngine.google,
+      );
+}
+
+/// 当前搜索引擎的偏好键（设备本地）。
+const String kWebBrowserSearchEnginePref = 'web_browser_search_engine';
+
+WebBrowserSearchEngine readWebBrowserSearchEngine(PrefStore prefs) =>
+    WebBrowserSearchEngine.fromName(prefs.getPref(kWebBrowserSearchEnginePref));
+
+Future<void> writeWebBrowserSearchEngine(
+  PrefStore prefs,
+  WebBrowserSearchEngine engine,
+) => prefs.setPref(kWebBrowserSearchEnginePref, engine.name);
+
+/// 地址栏输入 → 要打开的地址：像网址就直接打开（[parseWebBrowserAddress]），
+/// 否则交给 [engine] 搜索；空输入返回 null。
+Uri? resolveWebBrowserInput(String input, WebBrowserSearchEngine engine) {
+  final String text = input.trim();
+  if (text.isEmpty) return null;
+  return parseWebBrowserAddress(text) ?? engine.searchUrl(text);
 }

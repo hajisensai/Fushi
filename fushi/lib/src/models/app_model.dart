@@ -157,6 +157,7 @@ import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi/src/media/torrent/video_download_legacy_importer.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi/src/media/torrent/anime_download_importer.dart';
@@ -6130,6 +6131,8 @@ class AppModel with ChangeNotifier {
       database: database,
       resourceRegistry: resources,
       enqueue: pipeline.enqueue,
+      autoDisableAfterDays: () =>
+          readVideoDownloadSubscriptionAutoDisableDays(prefsRepo),
     )..start();
     // 下载那一刻没搜到字幕的分集，过几小时再找（连载番字幕常晚一两天上传）。
     // 起管线时立刻看一轮：移动端很少连续前台 30 分钟，只靠周期首轮基本触发不到。
