@@ -408,7 +408,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         method,
         setModuleEnabled: appModelNoUpdate.setModuleEnabled,
         setMiningTarget: appModelNoUpdate.setSrsMiningTarget,
-        adoptFushiCard: _adoptFushiCard,
+        // 换笔记类型要先打开复习库（首次会建表、播种内置项），不让「下一步」等它。
+        adoptFushiCard: () async => unawaited(_adoptFushiCard()),
       );
 
   /// 选了 Fushi 复习：制卡笔记类型落到内置 Fushi 卡片（所有者 2026-10-20「用户默认
@@ -416,11 +417,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// `resolveSrsMiningDestination`）；用户自建的笔记类型不替他改。打开 store 这一步
   /// 同时播种内置默认牌组与笔记类型（`SrsDbStore.ensureBuiltins`）。
   Future<void> _adoptFushiCard() async {
-    final SrsDbStore? store = await ref.read(srsStoreProvider.future);
-    if (store == null) return;
-    if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
-        store.lapisNoteTypeId) {
-      await appModelNoUpdate.setSrsMiningNoteTypeId('');
+    try {
+      final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+      if (store == null) return;
+      if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
+          store.lapisNoteTypeId) {
+        await appModelNoUpdate.setSrsMiningNoteTypeId('');
+      }
+    } catch (e, stack) {
+      // 复习库打不开时制卡照样回落默认（见 resolveSrsMiningDestination），只留痕。
+      ErrorLogService.instance.log('onboarding.adoptFushiCard', e, stack);
     }
   }
 

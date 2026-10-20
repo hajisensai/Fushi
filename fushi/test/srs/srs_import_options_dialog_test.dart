@@ -84,7 +84,9 @@ void main() {
   testWidgets('桌面：对话框按内容收高、宽度在 MD3 对话框规范内，标题与文件名在顶部', (
     WidgetTester tester,
   ) async {
-    final BuildContext host = await pumpHost(tester, const Size(1280, 800));
+    // 高 1000：内容（多了「导入 FSRS 参数」一行后约 750）在 800 高窗口里与对话框
+    // 上限（800 - 2×24）只差几像素，量不出「按内容收高」还是「撑满」。
+    final BuildContext host = await pumpHost(tester, const Size(1280, 1000));
     await open(tester, host);
     expect(tester.takeException(), isNull);
 
@@ -97,7 +99,7 @@ void main() {
     final Rect confirmBtn = tester.getRect(
       find.byKey(const ValueKey<String>('srs-import-confirm')),
     );
-    expect(dialog.height, lessThan(800 - 120));
+    expect(dialog.height, lessThan(1000 - 120));
     expect(confirmBtn.top - options.bottom, lessThan(120));
     expect(dialog.bottom - confirmBtn.bottom, lessThan(60));
     // 文件名在标题下、在选项之上。
