@@ -2951,15 +2951,6 @@ abstract interface class VideoMetadataOrderingHost {
   });
 }
 
-/// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
-/// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
-///
-/// 与 [FushiLibraryHostService] 分开的理由同 [VideoDeletionHost]：主接口有十余个
-/// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩。
-///
-/// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/playback`
-/// 落 404；client 上报是 best-effort（失败只记日志），本地 prefs 已持久化，对旧
-/// host 优雅降级（Never break userspace）。
 /// host 端「弹幕匹配指纹」的**可选**能力（BUG-3614）。
 ///
 /// 弹幕（弹弹play）按文件名 + 前 16 MiB md5 + 字节数匹配，client 远端流播时本机
@@ -2973,6 +2964,15 @@ abstract interface class VideoDanmakuKeyHost {
   Future<DandanplayFileKey?> videoDanmakuKey(String id, {int episodeIndex = 0});
 }
 
+/// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
+/// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
+///
+/// 与 [FushiLibraryHostService] 分开的理由同 [VideoDeletionHost]：主接口有十余个
+/// 测试 fake 用 `implements` 全量实现，往主接口加方法会强制它们全部补桩。
+///
+/// server 用 `is` 探测——host 不实现就让 `GET/PUT /api/library/videos/<id>/playback`
+/// 落 404；client 上报是 best-effort（失败只记日志），本地 prefs 已持久化，对旧
+/// host 优雅降级（Never break userspace）。
 abstract interface class VideoPlaybackSyncHost {
   /// 读 host 端视频 [id] 的播放偏好带戳状态。无带戳记录的字段回退行/系列级基底
   /// （时间戳 0）；id 未知返回全默认。

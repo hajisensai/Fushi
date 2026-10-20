@@ -697,6 +697,10 @@ class VideoPlayerController extends ChangeNotifier
   /// （属性挂在复用的 Player 上，上一集 HLS 留下的值要在第一次 seek 前改回来）。
   double? _appliedHrSeekDemuxerOffset;
 
+  /// `hr-seek-demuxer-offset` 写请求的代次：异步回执只在仍是最新请求时改
+  /// [_appliedHrSeekDemuxerOffset]。
+  int _hrSeekDemuxerOffsetGeneration = 0;
+
   /// [networkReadBytesPerSecond] 的 1 秒轮询；不用 `observeProperty`——换集复用同一
   /// `Player`，同名重复 observe 会抛 `Already observed`，而 mpv 该值本就是 1 秒窗口。
   Timer? _cacheSpeedTimer;
@@ -4467,10 +4471,12 @@ class VideoPlayerController extends ChangeNotifier
   }
 
   /// 按 [targetMs] 给这次 seek 下发 `hr-seek-demuxer-offset`（BUG-3618，判据见
-  /// [hrSeekDemuxerOffsetForSeek]）。必须在 `player.seek` **之前**同步调用：两条都是
-  /// 发往同一 mpv client 的异步请求，按发出顺序执行；mpv 在真正执行 seek 时才读这个
-  /// 属性。与上次下发值相同就不再发。非 libmpv 后端 / 写失败静默跳过（只是退回 mpv
-  /// 默认行为，不影响 seek 本身）。
+  /// [hrSeekDemuxerOffsetForSeek]）。必须在 `player.seek` **之前**同步调用：libmpv
+  /// 只保证同一 client 的异步请求「可能乱序」，这里靠的是 seek 在 Dart 侧多过一层
+  /// `lock.synchronized`（属性请求先入队）加 mpv 按 FIFO 派发，且 mpv 真正执行 seek
+  /// 时才读这个属性；不在 seek 前 await，免得让并发 seek 的令牌交错。与上次**写成功**
+  /// 的值相同就不再发。非 libmpv 后端维持默认行为；写失败记日志并作废缓存，下一次
+  /// seek 按当时的判据重新下发（只退回 mpv 默认行为，不影响 seek 本身）。
   void _applyHrSeekDemuxerOffsetFor(int targetMs) {
     if (_webBackend) return;
     final dynamic native = _player?.platform;
@@ -4481,16 +4487,37 @@ class VideoPlayerController extends ChangeNotifier
       targetSeconds: targetMs / 1000,
     );
     if (offset == _appliedHrSeekDemuxerOffset) return;
-    _appliedHrSeekDemuxerOffset = offset;
+    // 只认最新一次请求的结局：较早请求晚到的成功不能覆盖较新的值。
+    final int generation = ++_hrSeekDemuxerOffsetGeneration;
+    final Object? pending;
     try {
-      final Object? pending = native.setProperty(
-        'hr-seek-demuxer-offset',
-        offset.toString(),
-      );
-      if (pending is Future) unawaited(pending.catchError((Object _) {}));
-    } catch (_) {
-      // 非 libmpv 后端没有 setProperty：维持默认行为。
+      pending = native.setProperty('hr-seek-demuxer-offset', offset.toString());
+    } catch (e) {
+      // 非 libmpv 后端没有 setProperty（NoSuchMethodError）：维持默认行为。
+      debugPrint('VideoPlayerController: hr-seek-demuxer-offset skipped: $e');
+      return;
     }
+    if (pending is! Future) {
+      _appliedHrSeekDemuxerOffset = offset;
+      return;
+    }
+    unawaited(
+      pending.then(
+        (_) {
+          if (generation == _hrSeekDemuxerOffsetGeneration) {
+            _appliedHrSeekDemuxerOffset = offset;
+          }
+        },
+        onError: (Object e) {
+          if (generation == _hrSeekDemuxerOffsetGeneration) {
+            _appliedHrSeekDemuxerOffset = null;
+          }
+          debugPrint(
+            'VideoPlayerController: hr-seek-demuxer-offset=$offset failed: $e',
+          );
+        },
+      ),
+    );
   }
 
   /// 外部 seek（[notifyExternalSeek] 登记过目标的那次 `player.seek`）的下发 Future：
@@ -5336,6 +5363,7 @@ class VideoPlayerController extends ChangeNotifier
     _seekStreamIsHls = false;
     _seekableRangesSnapshot = const <MpvSeekableRange>[];
     _appliedHrSeekDemuxerOffset = null;
+    _hrSeekDemuxerOffsetGeneration++;
     if (!_sourceIsNetwork) return;
     // 「容器是不是 HLS」open 后才读得到，读到为止每拍试一次（见 [_seekStreamIsHls]）。
     bool formatKnown = false;

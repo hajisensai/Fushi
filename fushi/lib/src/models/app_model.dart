@@ -7480,7 +7480,7 @@ class AppModel with ChangeNotifier {
     _remoteDictionaryLookupHttpClient = httpClient;
     return _remoteDictionaryLookupClient = FushiRemoteLookupClient(
       repo: SyncRepository(_database),
-      httpClient: httpClient,
+      httpClient: _remoteLookupClient,
       trackDictionaryStyles: true,
     );
   }
