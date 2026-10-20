@@ -2357,8 +2357,9 @@ class FushiDatabase extends _$FushiDatabase
           }
           if (from < 123) {
             // v123：srs_cards_cache.new_position——新卡出卡位置（卡片修改记录 `newPos`
-            // 的生效值，「按词频重排新卡」写它）。缓存可重建、存量库没有任何位置修改记录，
-            // 留 NULL 即与事件一致，不必重建缓存。幂等守卫同 v119。
+            // 的生效值，「按词频重排新卡」写它）。这里只加列、留 NULL：旧版本设备可能已从
+            // 对端收下 `newPos` 修改记录，那些卡由 SrsDbStore 打开时按本机缓存版本定向重算
+            // （fushi_engine `SrsDbStore._upgradeCaches`）。幂等守卫同 v119。
             if (await _tableExists('srs_cards_cache') &&
                 !await _columnExists('srs_cards_cache', 'new_position')) {
               await m.addColumn(srsCardsCache, srsCardsCache.newPosition);

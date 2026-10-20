@@ -240,6 +240,9 @@ class SrsDbStore implements SrsSyncReplica {
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
     if (hadLocalState && s._epochMissing) await s._saveLocal();
     await s._migrateLegacyFrozenBatch();
+    if (hadLocalState && s._cacheRevision < _kCacheRevision) {
+      await s._upgradeCaches();
+    }
     if (!hadLocalState && await s._hasAnyEvent()) {
       // 有事件却没有本机状态：覆盖恢复了备份（本机状态与缓存不进备份，恢复时清空）。
       // 换新化身、重新发布、重建缓存；绝不沿用备份来源设备的写入者身份。
@@ -269,6 +272,15 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
   int _styleCursor = 0;
+
+  /// 本机缓存按哪一版推导规则建的（本机状态，不进备份）。缓存加了新的派生列、而存量库里
+  /// 可能已有喂它的修改记录时 +1，并在 [_upgradeCaches] 里补一步定向重算。
+  ///
+  /// 1（v123）：srs_cards_cache.new_position。旧版本设备会照常收下对端同步来的 `newPos`
+  /// 修改记录（修改记录不认键名、原样落库），但它的卡片缓存没有这一列；升级加列时留 NULL，
+  /// 这些卡就一直按创建时刻出、取卡读到的位置也是空的，直到这张卡再被改一次。
+  static const int _kCacheRevision = 1;
+  int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
   int _revision = 0;
@@ -419,6 +431,10 @@ class SrsDbStore implements SrsSyncReplica {
     );
     _outboxSeq = (j['outboxSeq'] as int?) ?? 0;
     _styleCursor = (j['styleCursor'] as int?) ?? 0;
+    // 没有本机状态（新设备 / 恢复备份后）：缓存要么还没有、要么随即整份重建，按当前规则算。
+    _cacheRevision = row == null
+        ? _kCacheRevision
+        : (j['cacheRev'] as int?) ?? 0;
     _revision = (j['revision'] as int?) ?? 0;
     _epochMissing = j['epoch'] is! String;
     _epoch =
@@ -472,6 +488,7 @@ class SrsDbStore implements SrsSyncReplica {
       'hlc': _clock.last.encode(),
       'outboxSeq': _outboxSeq,
       'styleCursor': _styleCursor,
+      'cacheRev': _cacheRevision,
       'revision': _revision,
       'epoch': _epoch,
       'sync': <String, Object?>{
@@ -1689,8 +1706,35 @@ class SrsDbStore implements SrsSyncReplica {
     return SrsEntityEdits(regs);
   }
 
+  /// 本机缓存的推导规则比 [_cacheRevision] 新：只重算受新规则影响的那些行（见
+  /// [_kCacheRevision]），记下新版本。一个事务；失败照常抛出（打开失败），下次打开重来。
+  Future<void> _upgradeCaches() => runExclusive(() async {
+    await db.transaction(() async {
+      if (_cacheRevision < 1) {
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT DISTINCT entity_id FROM srs_field_edits '
+              'WHERE profile_uid = ? AND entity_kind = ? AND field_key = ?',
+              variables: <Variable<Object>>[
+                Variable<String>(profileUid),
+                Variable<String>(SrsEntityKind.card.wire),
+                Variable<String>(SrsFieldKeys.cardNewPosition),
+              ],
+            )
+            .get();
+        _dirtyCards.addAll(
+          rows.map((QueryRow r) => r.read<String>('entity_id')),
+        );
+        await _flushCaches();
+      }
+      _cacheRevision = _kCacheRevision;
+      await _saveLocal();
+    });
+  });
+
   /// 丢掉全部缓存，由事件重建（缓存不同步，随时可重建）。
   Future<void> rebuildCaches() => runExclusive(() async {
+    _cacheRevision = _kCacheRevision;
     await db.transaction(() async {
       await (db.delete(
         db.srsCardsCache,

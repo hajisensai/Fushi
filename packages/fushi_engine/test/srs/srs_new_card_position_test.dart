@@ -1,6 +1,8 @@
 // 新卡出卡位置（卡片修改记录 `newPos` → srs_cards_cache.new_position，v123）：
 // 「按词频重排新卡」在 Fushi 复习下的存储层——出卡顺序、取卡、写回、同步合并。
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -169,6 +171,67 @@ void main() {
     expect((await b.cardRow(c[0]))!.newPosition, 20);
     expect(await a.syncConflicts(), isEmpty);
     expect(await b.syncConflicts(), isEmpty);
+  });
+
+  test('旧版本设备收下的 newPos：升级后打开时定向重算缓存（只做一次）', () async {
+    final SrsDbStore a = await open();
+    final List<String> c = await addNotes(a, <String>['一', '二', '三']);
+    await a.setNewCardPositions(<String, int>{c[2]: 1});
+
+    // 模拟 v123 之前的设备：修改记录已落库，缓存没有这一列（升级加列后为 NULL），
+    // 本机状态里也没有缓存版本。
+    Future<void> asPreV123() async {
+      await a.db.customStatement(
+        'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = ?',
+        <Object>[kPosProfile],
+      );
+      final String json =
+          (await a.db
+                  .customSelect(
+                    'SELECT json FROM srs_local_state WHERE profile_uid = ?',
+                    variables: <Variable<Object>>[
+                      Variable<String>(kPosProfile),
+                    ],
+                  )
+                  .getSingle())
+              .read<String>('json');
+      final Map<String, Object?> j =
+          (jsonDecode(json) as Map).cast<String, Object?>()..remove('cacheRev');
+      await a.db.customStatement(
+        'UPDATE srs_local_state SET json = ? WHERE profile_uid = ?',
+        <Object>[jsonEncode(j), kPosProfile],
+      );
+    }
+
+    Future<SrsDbStore> reopen() => SrsDbStore.open(
+      db: a.db,
+      profileUid: kPosProfile,
+      deviceId: 'a',
+      engine: const FakeFsrsEngine(),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        monotonicMs: () => t,
+        bootId: 'boot-a',
+      ),
+      fallbackRolloverHour: () => 4,
+    );
+
+    await asPreV123();
+    expect((await a.cardRow(c[2]))!.newPosition, isNull);
+    expect(await a.nextCard(a.defaultDeckId), c[0], reason: '前提：缓存是旧的');
+
+    final SrsDbStore upgraded = await reopen();
+    expect((await upgraded.cardRow(c[2]))!.newPosition, 1);
+    expect((await upgraded.cardRow(c[0]))!.newPosition, isNull);
+    expect(await upgraded.nextCard(upgraded.defaultDeckId), c[2]);
+
+    // 记下了缓存版本：之后再打开不再扫修改记录表（手动清掉的值不会被补回）。
+    await a.db.customStatement(
+      'UPDATE srs_cards_cache SET new_position = NULL WHERE profile_uid = ?',
+      <Object>[kPosProfile],
+    );
+    final SrsDbStore again = await reopen();
+    expect((await again.cardRow(c[2]))!.newPosition, isNull);
   });
 
   test('字段类别：newPos 按界面状态（最后修改生效、不报冲突）', () {
