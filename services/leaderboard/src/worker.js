@@ -67,6 +67,7 @@ import { isPagePath, renderPage } from './pages.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
 import { purgeInstallStats, recordPing } from './installs.js';
+import { refreshProjectStats } from './project_stats.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -348,6 +349,8 @@ export default {
     await purgeInstallStats(env, now);
     // 冷却期到期、没有新票的封面挑战者（cover_votes.js 文件头「替换门槛」）。
     await deleteMedia(env, (await settlePendingCovers(env.DB, now)).released);
+    // 放最后：要等外部 API（GitHub / Cloudflare），按自己的间隔节流，失败只记状态不抛。
+    await refreshProjectStats(env, now);
   },
 };
 

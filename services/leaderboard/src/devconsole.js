@@ -7,6 +7,8 @@
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
 //   POST /dev/f/:id  {status,reply}
+//   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
+//   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
 //   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
 //
 // 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
@@ -28,6 +30,7 @@ import {
   newSessionToken,
 } from './feedback.js';
 import { PING_PLATFORMS, installStats, versionIncludes } from './installs.js';
+import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -106,7 +109,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -182,6 +185,9 @@ nav.top{display:flex;gap:14px;align-items:baseline}
 .grid th:first-child{text-align:left}
 .bar{display:inline-block;height:8px;border-radius:4px;background:var(--accent);vertical-align:middle;margin-right:6px}
 .err{color:var(--accent)}
+.up{color:var(--ok)}
+svg.spark{display:block;width:100%;height:80px;margin:4px 0 10px}
+svg.spark polyline{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
 `;
 
 function readCookie(request, name) {
@@ -476,6 +482,118 @@ async function statsPage(env, now) {
 <h2>安装来源</h2><div class="card">${distTable(byPlatform(st.sources, sourceLabel))}</div>`, { signedIn: true }));
 }
 
+const fmtInt = (n) => (n === null || n === undefined ? '—' : Number(n).toLocaleString('en-US'));
+
+/** 带符号的增量；null → —。 */
+function fmtDelta(n) {
+  if (n === null || n === undefined) return '<span class="muted">—</span>';
+  return n > 0 ? `<span class="up">+${fmtInt(n)}</span>` : fmtInt(n);
+}
+
+function fmtVolume(n) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = n;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v.toFixed(i >= 3 ? 1 : 0)} ${units[i]}`;
+}
+
+/** 外部数据源的状态行：最近成功时刻 + 最近一次错误。 */
+function sourceStatus(status) {
+  if (!status) return '<p class="muted">还没取过。</p>';
+  const ok = status.okAt ? `最近成功 ${esc(fmtTime(status.okAt))}` : '还没成功过';
+  const err = status.error ? ` · <span class="err">最近一次失败：${esc(status.error)}</span>（${esc(fmtTime(status.at))}）` : '';
+  return `<p class="muted">${ok}${err}</p>`;
+}
+
+/** star 走势折线（内联 SVG，无脚本）。少于两个点不画。 */
+function sparkline(values) {
+  if (values.length < 2) return '';
+  const lo = Math.min(...values);
+  const span = Math.max(1, Math.max(...values) - lo);
+  const pts = values.map((v, i) => `${((i * 100) / (values.length - 1)).toFixed(2)},${(38 - ((v - lo) * 36) / span).toFixed(2)}`);
+  return `<svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="star 走势">`
+    + `<polyline points="${pts.join(' ')}"/></svg>`;
+}
+
+const RELEASE_PLATFORM_LABEL = {
+  android: 'Android', windows: 'Windows', macos: 'macOS', ios: 'iOS', linux: 'Linux', other: '其它',
+};
+
+function repoSection(r) {
+  const l = r.latest;
+  if (!l) return `<h2>${esc(r.repo)}</h2><div class="card"><p class="muted">还没有数据。</p></div>`;
+  const kpi = (label, n, extra = '') => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${fmtInt(n)}</b>${extra}</div>`;
+  const kpis = `<div class="kpis">${kpi('Star', l.stars, `<span class="muted">7 天 ${fmtDelta(r.stars7)} · 30 天 ${fmtDelta(r.stars30)}</span>`)}`
+    + `${kpi('Fork', l.forks)}${kpi('关注', l.watchers)}${kpi('开放 Issue + PR', l.open_issues)}`
+    + `${kpi('App 下载（累计）', l.downloads, `<span class="muted">7 天 ${fmtDelta(r.downloads7)}</span>`)}</div>`;
+  const trend = r.trend.length
+    ? `${sparkline(r.trend.map((d) => d.stars).reverse())}<table class="grid"><tr><th>日期（UTC）</th><th>Star</th><th>当日新增</th><th>累计下载</th><th>当日下载</th></tr>
+${r.trend.map((d) => `<tr><td>${esc(d.day)}</td><td>${fmtInt(d.stars)}</td><td>${fmtDelta(d.starsDelta)}</td>`
+    + `<td>${fmtInt(d.downloads)}</td><td>${fmtDelta(d.downloadsDelta)}</td></tr>`).join('')}</table>`
+    : '';
+  const used = RELEASE_PLATFORMS.filter((p) => r.releases.some((x) => x.platforms[p] > 0));
+  const releases = r.releases.length
+    ? `<table class="grid"><tr><th>版本</th><th>发布（UTC）</th><th>合计</th>${used.map((p) => `<th>${esc(RELEASE_PLATFORM_LABEL[p])}</th>`).join('')}</tr>
+${r.releases.map((x) => `<tr><td>${esc(x.tag)}${x.prerelease ? ' <span class="muted">预发布</span>' : ''}</td>`
+    + `<td>${esc((x.publishedAt || '').slice(0, 10))}</td><td>${fmtInt(x.total)}</td>`
+    + `${used.map((p) => `<td>${fmtInt(x.platforms[p])}</td>`).join('')}</tr>`).join('')}</table>`
+    : '<p class="muted">没有 App Release。</p>';
+  let traffic = '';
+  if (r.traffic) {
+    const clones = new Map((r.traffic.clones?.clones || []).map((c) => [c.timestamp.slice(0, 10), c]));
+    const views = [...(r.traffic.views?.views || [])].reverse();
+    traffic = `<h3>GitHub 访问（近 14 天）</h3>
+<p class="muted">浏览 ${fmtInt(r.traffic.views?.count)}（${fmtInt(r.traffic.views?.uniques)} 人）· clone ${fmtInt(r.traffic.clones?.count)}（${fmtInt(r.traffic.clones?.uniques)} 个来源）</p>
+<table class="grid"><tr><th>日期（UTC）</th><th>浏览</th><th>访客</th><th>clone</th></tr>
+${views.map((v) => {
+    const day = v.timestamp.slice(0, 10);
+    const c = clones.get(day);
+    return `<tr><td>${esc(day)}</td><td>${fmtInt(v.count)}</td><td>${fmtInt(v.uniques)}</td><td>${fmtInt(c ? c.count : 0)}</td></tr>`;
+  }).join('')}</table>`;
+  }
+  return `<h2><a href="https://github.com/${esc(r.repo)}">${esc(r.repo)}</a></h2>
+<div class="card">${kpis}${trend}</div>
+<div class="card"><h3>近期 App Release 下载</h3>${releases}${traffic}</div>`;
+}
+
+async function projectPage(env, now) {
+  const st = await projectStats(env, now);
+  const s = st.site;
+  const siteBody = !s.configured
+    ? `<p class="muted">没配置。要看官网访问量：在 Cloudflare 建一个 API token（权限 Zone · Analytics · Read，限定 zone fushi.moe），
+<code>wrangler secret put CF_ANALYTICS_TOKEN</code>，并在 wrangler.toml 的 [vars] 填 <code>CF_ZONE_ID</code>。</p>`
+    : `${sourceStatus(s.status)}
+${s.days.length ? `<div class="kpis">
+<div class="kpi"><span class="muted">昨日页面浏览</span><b>${fmtInt(s.yesterday?.page_views ?? null)}</b></div>
+<div class="kpi"><span class="muted">昨日独立访客</span><b>${fmtInt(s.yesterday?.visitors ?? null)}</b></div>
+<div class="kpi"><span class="muted">近 30 天页面浏览</span><b>${fmtInt(s.totals.pageViews)}</b></div>
+<div class="kpi"><span class="muted">近 30 天流量</span><b>${esc(fmtVolume(s.totals.bytes))}</b></div></div>
+${sparkline(s.days.map((d) => d.pageViews).reverse())}
+<table class="grid"><tr><th>日期（UTC）</th><th>页面浏览</th><th>独立访客</th><th>请求</th><th>流量</th></tr>
+${s.days.map((d) => `<tr><td>${esc(d.day)}</td><td>${fmtInt(d.pageViews)}</td><td>${fmtInt(d.visitors)}</td>`
+    + `<td>${fmtInt(d.requests)}</td><td>${esc(fmtVolume(d.bytes))}</td></tr>`).join('')}</table>` : '<p class="muted">还没有数据。</p>'}`;
+  const countries = s.configured && s.countries.length
+    ? `<h2>官网请求来源（近 30 天，按请求数）</h2><div class="card">${distTable(s.countries, countryLabel)}</div>`
+    : '';
+  return html(layout('项目', `<h1>项目数据</h1>
+<p class="muted">GitHub 与官网的每日快照，定时任务每几个小时取一次、存进库里画趋势（GitHub 只给当前值）。
+下载数只算 App Release（tag 以 v 开头）的安装包，不含 libmpv / 引擎 / 模型等内部构件，也不含官网 /releases 走 Cloudflare 镜像的下载。</p>
+<form method="post" action="/dev/project/refresh" class="inline"><button>立即刷新</button></form>
+<h2>GitHub</h2>
+${sourceStatus(st.githubStatus)}
+${st.githubToken ? '' : '<p class="muted">没配 GITHUB_TOKEN：走未认证配额（Cloudflare 共享出口 IP，偶尔 403），也看不到访问 / clone 数。<code>wrangler secret put GITHUB_TOKEN</code> 后补上。</p>'}
+${st.repos.map(repoSection).join('')}
+<h2>官网 fushi.moe</h2>
+<p class="muted">Cloudflare zone 级每日汇总，含同 zone 的 rank.fushi.moe（App 心跳 / 排行榜）与安装包下载：
+页面浏览只数 HTML 响应，基本是官网与处理台的页面；独立访客按 IP 去重，会混进发心跳的 App；流量大头是安装包。当天数字未完结。</p>
+<div class="card">${siteBody}</div>
+${countries}`, { signedIn: true }));
+}
+
 /** 修复是否已装到报告人那台（按该安装最近一次心跳的通道 / 平台 / 版本）。没有可比的发布 → 空串。 */
 function fixOnInstall(fix, install) {
   if (!fix || fix.scope === 'none' || !install) return '';
@@ -651,6 +769,11 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
+  if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
+  if (method === 'POST' && path === '/dev/project/refresh') {
+    await refreshProjectStats(env, now, { force: true });
+    return redirect('/dev/project');
+  }
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1]);
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {

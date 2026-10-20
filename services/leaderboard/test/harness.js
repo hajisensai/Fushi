@@ -171,6 +171,8 @@ export function makeEnv(over = {}) {
     },
     sent,
     autoSnapshot: true,
+    // 项目数据（project_stats.js）的外部请求：测试里一律离线，要数据的用例自己换成假上游。
+    PROJECT_FETCH: async () => new Response('offline', { status: 503 }),
     ...over,
   };
 }
