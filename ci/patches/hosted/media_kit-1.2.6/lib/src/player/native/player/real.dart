@@ -1192,8 +1192,12 @@ class NativePlayer extends PlatformPlayer {
 
       await waitForPlayerInitialization;
       await waitForVideoControllerInitializationIfAttached;
+      // Fushi patch: an unsynchronized screenshot may race [dispose].
+      if (disposed) {
+        throw AssertionError('[Player] has been disposed');
+      }
 
-      return compute(
+      final call = compute(
         _screenshot,
         _ScreenshotData(
           ctx.address,
@@ -1202,6 +1206,19 @@ class NativePlayer extends PlatformPlayer {
           includeLibassSubtitles,
         ),
       );
+      // Fushi patch: the capture (screenshot-raw + pure-Dart PNG/JPEG encode,
+      // hundreds of ms for a 1080p frame) runs on a helper isolate against the
+      // raw handle, so [dispose] must wait for it before
+      // `mpv_terminate_destroy` — same contract as the hook continuations. The
+      // registered future never errors: a failed capture must not keep the
+      // handle from being destroyed.
+      final Future<void> tracked = call.then<void>((_) {}, onError: (_) {});
+      _offThreadNativeCalls.add(tracked);
+      try {
+        return await call;
+      } finally {
+        _offThreadNativeCalls.remove(tracked);
+      }
     }
 
     if (synchronized) {

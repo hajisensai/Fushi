@@ -1637,6 +1637,11 @@ class VideoPlayerController extends ChangeNotifier
     return _player?.screenshot(
       format: 'image/png',
       includeLibassSubtitles: true,
+      // 不占 Player 的串行锁：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间 play() /
+      // pause() 都得排队——暂停 OCR 开着时按继续播放要等截帧编完才响应。截帧在
+      // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
+      // `_offThreadNativeCalls`）。
+      synchronized: false,
     );
   }
 
