@@ -872,6 +872,38 @@ mixin DictionaryPageMixin {
     Widget Function(Widget child)? wrapContent,
   }) {
     final DictionaryPopupEntry entry = controller.entries[index];
+    // P1-A：本层直接订阅 controller（[DictionaryPopupEntryBinding]）。结果回填 /
+    // 挂起翻出 / 自适应高度都只 notify，这一层当帧重建；不再「宿主整页 setState →
+    // 宿主 build 尾部 post-frame markNeedsBuild 根 Overlay → 下一帧才推结果」。宿主
+    // （视频页 / 首页 / texthooker / 遥控 / 网页视频 / 悬浮歌词 / 复习卡）零改动。
+    // BUG-941 的 entry 身份 key 挂在 binding 上（它才是 Stack 的直接子项）。
+    return DictionaryPopupEntryBinding(
+      key: ObjectKey(entry),
+      controller: controller,
+      entry: entry,
+      builder: () => _buildNestedPopupLayerFor(
+        entry: entry,
+        index: index,
+        screen: screen,
+        controller: controller,
+        onPush: onPush,
+        onPop: onPop,
+        autoReadOnNavigate: autoReadOnNavigate,
+        wrapContent: wrapContent,
+      ),
+    );
+  }
+
+  Widget _buildNestedPopupLayerFor({
+    required DictionaryPopupEntry entry,
+    required int index,
+    required Size screen,
+    required DictionaryPopupController controller,
+    required Future<int> Function(String text, Rect selectionRect) onPush,
+    required void Function(int index) onPop,
+    required bool autoReadOnNavigate,
+    required Widget Function(Widget child)? wrapContent,
+  }) {
     // 真实空结果收成「未找到」空态的高度，否则按内容测量（见 layoutAutoFitHeight）。
     final double emptyHeight =
         kLookupPopupEmptyHeight * mixinAppModel.appUiScale;
@@ -901,11 +933,9 @@ mixin DictionaryPageMixin {
             Brightness.dark;
     // BUG-135 parking + Visibility 几何收口在 [parkedPopupLayer]。
     return parkedPopupLayer(
-      // BUG-941：搜索占位层消失时本层会在 Stack children 中前移一位。若顶层
-      // Positioned 无 key，Flutter 会按位置把「占位层的 Positioned」更新成本层、
-      // 再销毁旧位置的平台 WebView；Windows 上最终只剩空白弹窗外壳。以 entry
-      // 身份钉住整层，让元素真正搬位而不是拆建原生表面。
-      key: ObjectKey(entry),
+      // BUG-941：搜索占位层消失时本层会在 Stack children 中前移一位。身份 key
+      // 已挂在外层 [DictionaryPopupEntryBinding] 上（Stack 的直接子项），元素按
+      // entry 身份搬位而不是拆建原生表面。
       pos: pos,
       // 被更上层查词卡盖住的部分裁掉：上层的模糊才采到正文而不是本层面板
       // （[PopupOccluderClip]，玻璃叠玻璃）。
@@ -969,8 +999,8 @@ mixin DictionaryPageMixin {
             onClose: () => onPop(index),
             // TODO-485：嵌套层即便禁用滑动关闭，也有显式返回父层入口。
             onBack: null,
-            // 弹窗内原地跳转历史（词头 / 链接 / 汉字点击）：跳过才画 ← →。mixin 家族不
-            // 监听 controller，换页后自己 setState 重建。
+            // 弹窗内原地跳转历史（词头 / 链接 / 汉字点击）：跳过才画 ← →。换页由
+            // controller notify，本层经 [DictionaryPopupEntryBinding] 重建。
             historyNav: entry.hasNavigationHistory
                 ? DictionaryPopupHistoryNav(
                     canGoBack: entry.canGoBack,
@@ -1034,7 +1064,9 @@ mixin DictionaryPageMixin {
                   1) {
                 return;
               }
-              setState(() => entry.autoFitHeight = nextHeight);
+              // P1-D：只 notify controller，本层（[DictionaryPopupEntryBinding]）与
+              // 下层的遮挡裁剪就地重建；不再整页 setState。
+              controller.setAutoFitHeight(entry, nextHeight);
             },
             // TODO-058 fail-safe：WebView 加载失败也走同一翻可见路径（不卡死）。
             onRenderError: () {
@@ -1068,18 +1100,18 @@ mixin DictionaryPageMixin {
                 // BUG-2054：同一次高亮顺带取回整词 bbox，把刚打开的子层从「点击的首
                 // 字符」重锚到整词矩形——跨行选区时首字符矩形只覆盖第一行，子弹窗会
                 // 正好盖住选区的第二行。expectedTerm 是身份门：eval 往返期间用户再点
-                // 一个词时，同一下标上会是另一个词的子层（beginTop 同步压栈）。mixin
-                // 家族不监听 controller，改了要自己重建。
-                if (mounted &&
-                    reanchorNestedPopupToWord(
-                      controller: controller,
-                      parentWebViewKey: entry.webViewKey,
-                      parentIndex: index,
-                      expectedTerm: text,
-                      wordLocalRect: wordRect,
-                      fallback: childRect,
-                    )) {
-                  setState(() {});
+                // 一个词时，同一下标上会是另一个词的子层（beginTop 同步压栈）。
+                // reanchorEntry 自己 notify，子层经 [DictionaryPopupEntryBinding] 就地
+                // 重定位，不必整页重建。
+                if (mounted) {
+                  reanchorNestedPopupToWord(
+                    controller: controller,
+                    parentWebViewKey: entry.webViewKey,
+                    parentIndex: index,
+                    expectedTerm: text,
+                    wordLocalRect: wordRect,
+                    fallback: childRect,
+                  );
                 }
               }
             },
@@ -1254,7 +1286,14 @@ mixin DictionaryPageMixin {
       // 关栈路径清掉它就自动落幕，不再依赖某条成功路径记得调 endSearchUi。
       controller.beginSearchUi(rect, entry);
     }
+    // 栈结构 / 搜索占位态变了：barrier 与占位卡由宿主的根 Overlay builder 画，这一次
+    // 宿主重建省不掉。结果回填与翻出则只 notify controller（见 [buildNestedPopupLayer]）。
     setState(() {});
+    // 本次查词会话的代次（P1-A 附）：热槽复用时新旧查词是**同一个** entry，只核
+    // `entries.contains` 会让慢回来的旧结果（远程查词真异步）覆盖新词。
+    final int generation = entry.lookupGeneration;
+    bool isCurrent() =>
+        mounted && controller.isCurrentLookup(entry, generation);
     late final DictionarySearchResult result;
     try {
       result = await searchPopupDictionary(
@@ -1268,56 +1307,59 @@ mixin DictionaryPageMixin {
           detail: 'entries=${result.entries.length} '
               'kanji=${result.kanjiResults.length} '
               'truncated=${result.truncated}');
-      if (mounted && controller.entries.contains(entry)) {
-        setState(() {
-          controller.fillResult(
+      if (isCurrent()) {
+        // P1-A：不再包宿主 setState。fillResult / markPendingReveal 都 notify，本层
+        // （[DictionaryPopupEntryBinding]）当帧重建、把结果推进 WebView。
+        controller.fillResult(
+          entry,
+          result: result,
+          allLoaded: !result.truncated,
+        );
+        // TODO-058 / BUG-480：真实空结果走 Flutter 占位，可立即显示；有词条/汉字卡
+        // 的结果必须等当前 WebView render 信号，哪怕复用 warm slot。macOS 隐藏
+        // warm slot 可能漏掉当前结果注入，直显会露出空白 WebView 壳。
+        final bool needsWebViewRender =
+            result.entries.isNotEmpty || result.kanjiResults.isNotEmpty;
+        trace?.mark('fill', detail: 'webview-render=$needsWebViewRender');
+        if (!needsWebViewRender) {
+          // 空结果走 Flutter 占位直显，链路到此结束（不经 WebView，故没有 rendered
+          // / reveal 两段）——这条也要收尾，否则游标会挂着不放。占位卡随 finally 的
+          // endSearchUi 撤，宿主重建在那里统一做。
+          controller.show(entry);
+          trace?.finish('empty');
+        } else {
+          // TODO-058 fail-safe：超时强制翻可见时本层随 notify 重建；占位卡与 barrier
+          // 在宿主的 Overlay builder 里，仍要宿主重建一次（守 mounted，Timer 后触发）。
+          controller.markPendingReveal(
             entry,
-            result: result,
-            allLoaded: !result.truncated,
+            onForcedReveal: () {
+              controller.endSearchUi();
+              if (mounted) setState(() {});
+            },
           );
-          // TODO-058 / BUG-480：真实空结果走 Flutter 占位，可立即显示；有词条/汉字卡
-          // 的结果必须等当前 WebView render 信号，哪怕复用 warm slot。macOS 隐藏
-          // warm slot 可能漏掉当前结果注入，直显会露出空白 WebView 壳。
-          final bool needsWebViewRender =
-              result.entries.isNotEmpty || result.kanjiResults.isNotEmpty;
-          trace?.mark('fill', detail: 'webview-render=$needsWebViewRender');
-          if (!needsWebViewRender) {
-            // 空结果走 Flutter 占位直显，链路到此结束（不经 WebView，故没有 rendered
-            // / reveal 两段）——这条也要收尾，否则游标会挂着不放。
-            controller.show(entry);
-            trace?.finish('empty');
-          } else {
-            // TODO-058 fail-safe：mixin 宿主（视频/首页）不监听 controller，靠
-            // setState 重建；超时强制翻可见后也要 setState（守 mounted，Timer 后触发）。
-            controller.markPendingReveal(
-              entry,
-              onForcedReveal: () {
-                controller.endSearchUi();
-                if (mounted) setState(() {});
-              },
-            );
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted ||
-                  !controller.entries.contains(entry) ||
-                  !entry.revealOnRender) {
-                return;
-              }
-              // refreshCurrentResult 已去重（同一结果不再全量重推）：返回 false
-              // 表示当前结果已渲染完成、popupRendered 不会再来——立即走与
-              // onRendered 相同的翻可见路径，不空等 failsafe。state 为 null 时
-              // 维持等待，交给 failsafe。
-              final bool renderPending =
-                  entry.webViewKey.currentState?.refreshCurrentResult() ?? true;
-              if (!renderPending && controller.revealRendered(entry)) {
-                controller.endSearchUi();
-                setState(() {});
-              }
-            });
-          }
-        });
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!isCurrent() || !entry.revealOnRender) return;
+            // refreshCurrentResult 已去重（同一结果不再全量重推）：返回 false
+            // 表示当前结果已渲染完成、popupRendered 不会再来——立即走与
+            // onRendered 相同的翻可见路径，不空等 failsafe。state 为 null 时
+            // 维持等待，交给 failsafe。
+            final bool renderPending =
+                entry.webViewKey.currentState?.refreshCurrentResult() ?? true;
+            if (!renderPending && controller.revealRendered(entry)) {
+              controller.endSearchUi();
+              setState(() {});
+            }
+          });
+          // 回填不再经宿主 setState，帧调度不能指望它：确保上面的 post-frame 回调有
+          // 一帧可跑（markPendingReveal 的 notify 通常已排了帧，这里只是不依赖它）。
+          WidgetsBinding.instance.ensureVisualUpdate();
+        }
       }
     } finally {
-      if (mounted && controller.entries.contains(entry)) {
+      // 只在真有东西要变时才重建宿主：成功且挂起等渲染的常态路径（isSearching 已被
+      // fillResult 清掉、revealOnRender=true）什么都不用做——这正是省掉的那次整页重建。
+      // 空结果（占位卡要撤）与异常（isSearching 仍为 true）两条路仍要宿主重建。
+      if (isCurrent() && (entry.isSearching || !entry.revealOnRender)) {
         setState(() {
           entry.isSearching = false;
           if (!entry.revealOnRender) {
@@ -1326,9 +1368,9 @@ mixin DictionaryPageMixin {
         });
       }
     }
-    if (!mounted || !controller.entries.contains(entry)) {
-      // 页面已卸载 / 该层已被裁掉：这次查词没有结局，如实收尾成 abandoned，不要让游标
-      // 悬着把后续查词的阶段记到这一条上。
+    if (!isCurrent()) {
+      // 页面已卸载 / 该层已被裁掉 / 该层已被新一次查词接管（热槽复用）：这次查词
+      // 没有结局，如实收尾成 abandoned，不要让游标悬着把后续查词的阶段记到这一条上。
       trace?.finish('abandoned');
       return 0;
     }
@@ -1365,15 +1407,17 @@ mixin DictionaryPageMixin {
     final int current = entry.result!.headwordCount;
     final int newMax = current + mixinAppModel.maximumTerms;
     final String term = entry.searchTerm;
+    final int generation = entry.lookupGeneration;
     setState(() => entry.isSearching = true);
     try {
       final DictionarySearchResult result = await searchPopupDictionary(
         term: term,
         maximumTerms: newMax,
       );
-      // 原地跳转 / 后退 / 前进会在同一个 entry 上换词：词变了就丢弃这批续查结果。
+      // 原地跳转 / 后退 / 前进 / 热槽换词都会在同一个 entry 上换词：会话代次变了
+      // （或词变了）就丢弃这批续查结果。
       if (mounted &&
-          controller.entries.contains(entry) &&
+          controller.isCurrentLookup(entry, generation) &&
           entry.searchTerm == term) {
         setState(() => controller.fillResult(
               entry,
@@ -1403,7 +1447,7 @@ mixin DictionaryPageMixin {
   /// 新词（Hoshi iOS：`if (count > 0) redirect(count)`，空结果什么都不发生，弹窗
   /// 不动）。弹窗位置 / 尺寸都不变：selectionRect 保留，外壳高度由新内容的
   /// onContentMetrics 再伸缩。与 [BaseSourcePageState.navigatePopupInPlace] 同语义
-  /// （mixin 家族不监听 controller，换页后显式 setState）。
+  /// （换页由 controller notify，本层经 [DictionaryPopupEntryBinding] 重建）。
   ///
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃。查询期间置
@@ -1442,15 +1486,14 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
-      setState(() {
-        controller.navigateInPlace(
-          entry,
-          term: trimmed,
-          result: result,
-          allLoaded: !result.truncated,
-          scrollTop: scrollTop,
-        );
-      });
+      // navigateInPlace 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
+      controller.navigateInPlace(
+        entry,
+        term: trimmed,
+        result: result,
+        allLoaded: !result.truncated,
+        scrollTop: scrollTop,
+      );
       if (autoRead &&
           ReaderFushiSource.instance.autoReadOnLookup &&
           result.entries.isNotEmpty) {
@@ -1469,8 +1512,8 @@ mixin DictionaryPageMixin {
   }
 
   /// 顶栏 ← / →：在 [entry] 的原地跳转历史里后退 / 前进一页。先记当前页滚动位
-  /// （再往回走时恢复），换页后 setState 重建：WebView 按 result 身份重推、渲染完
-  /// 恢复该页滚动位。
+  /// （再往回走时恢复），换页由 controller notify 驱动本层重建：WebView 按 result
+  /// 身份重推、渲染完恢复该页滚动位。
   Future<void> navigatePopupHistory({
     required DictionaryPopupController controller,
     required DictionaryPopupEntry entry,
@@ -1480,10 +1523,12 @@ mixin DictionaryPageMixin {
     final double scrollTop =
         await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
     if (!mounted || !controller.entries.contains(entry)) return;
-    final bool moved = forward
-        ? controller.goForward(entry, scrollTop: scrollTop)
-        : controller.goBack(entry, scrollTop: scrollTop);
-    if (moved) setState(() {});
+    // goForward / goBack 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
+    if (forward) {
+      controller.goForward(entry, scrollTop: scrollTop);
+    } else {
+      controller.goBack(entry, scrollTop: scrollTop);
+    }
   }
 
   /// 与基类 [BaseSourcePageState] 的同名 helper 同语义（mixin 路径不监听 controller，

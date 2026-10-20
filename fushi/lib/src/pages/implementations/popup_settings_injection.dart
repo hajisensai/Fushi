@@ -678,20 +678,92 @@ String buildPopupEntriesJs(
   bool pending = false,
   bool idle = false,
 }) {
-  final String entriesJson = result.popupJson ??
-      DictionaryPopupWebViewState.buildLookupEntriesJson(result);
-  final String kanjiResultsJson = jsonEncode(
-    result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
-  );
+  final String entriesJson = popupEntriesJsonOf(result);
   // BUG-3274：词条 JSON 以字符串字面量交给 JSON.parse，而不是当 JS 对象字面量 eval。
   // 结果多时这一段有 MB 级（38 本词典查 トランクルーム 是 2 MB）；V8 解析 JSON 文本比
   // 解析同等体量的对象字面量快（4 倍降速实测 347 → 236 ms），且每次查词的源码都不同，
   // 吃不到脚本编译缓存。jsonEncode 产出的是合法 JS 字符串字面量。
+  //
+  // P1-B：in-app 弹窗在能拦截子资源的平台上大结果不走这条（见
+  // [buildPopupFetchedEntriesJs]）；这条留给小结果、Linux、app 外裸 WebView2 两个
+  // 表面，以及拦截投递失败后的回退。
   final String entriesJsonLiteral = jsonEncode(entriesJson);
   return '''    try { window.lookupEntries = JSON.parse($entriesJsonLiteral); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); window.lookupEntries = []; }
-    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
+${_popupEntriesMetaJs(result, pending: pending, idle: idle)}''';
+}
+
+/// 词条段的 JSON 文本（`window.lookupEntries` 的唯一来源）：引擎随结果带回的
+/// [DictionarySearchResult.popupJson]，缺省时现场序列化。
+String popupEntriesJsonOf(DictionarySearchResult result) =>
+    result.popupJson ??
+    DictionaryPopupWebViewState.buildLookupEntriesJson(result);
+
+/// 词条段里除词条本体以外的三项：汉字卡、`lookupPending`、`lookupIdle`。两种投递
+/// 方式共用，保证「同一份结果两条路渲染出同一个页面」。
+String _popupEntriesMetaJs(
+  DictionarySearchResult result, {
+  required bool pending,
+  required bool idle,
+}) {
+  final String kanjiResultsJson = jsonEncode(
+    result.kanjiResults.map((FushiKanjiResult k) => k.toMap()).toList(),
+  );
+  return '''    try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
     window.lookupPending = $pending;
     window.lookupIdle = $idle;
+''';
+}
+
+/// P1-B：词条 JSON 达到这个长度（UTF-16 码元）才改走拦截器投递。
+///
+/// 拦截投递多一次「WebView → 原生拦截器 → Dart」往返（Android 是后台线程到主线程
+/// 的一跳，量级是毫秒），换掉的是 UI isolate 上对整串的 `jsonEncode` 转义扫描、平台
+/// 通道上的超长脚本字符串、以及 V8 对它的整段脚本编译。几 KB 的常见结果后三项加起来
+/// 远不到一毫秒，走字面量更快；MB 级（多词典大结果）时后三项是百毫秒级（见
+/// [buildPopupEntriesJs] 的 BUG-3274 实测）。32K 码元落在两者之间。
+const int kPopupEntriesFetchMinChars = 32 * 1024;
+
+/// P1-B：词条 JSON **不进脚本**，由页面经宿主的资源拦截器 `fetch([url])` 取回 UTF-8
+/// 字节后 `JSON.parse`，再执行 [afterEntriesJs]（全量渲染 / 增量追加及其收尾）。
+///
+/// 时序与令牌：本段在 `window.__fushiRenderToken = [renderToken]` **之后**执行；取回
+/// 时若令牌已被更新的一次推送取代就整段作废（旧结果绝不覆盖新结果）。取回失败（拦截器
+/// 不认 / 平台不放行）经 `popupEntriesFetchFailed` 告诉宿主，宿主改用字面量重推同一份
+/// 结果并在本 WebView 上停用拦截投递——失败是可见的（错误日志），不会静默空白。
+String buildPopupFetchedEntriesJs({
+  required DictionarySearchResult result,
+  required String url,
+  required int renderToken,
+  required bool pending,
+  required bool idle,
+  required String afterEntriesJs,
+}) {
+  return '''
+    (function(){
+      var token = $renderToken;
+      function apply(entries){
+        if (window.__fushiRenderToken !== token) return;
+        window.lookupEntries = entries;
+${_popupEntriesMetaJs(result, pending: pending, idle: idle)}
+        $afterEntriesJs
+      }
+      fetch(${jsonEncode(url)}, { cache: 'no-store', credentials: 'omit' })
+        .then(function(r){
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function(text){
+          var entries;
+          try { entries = JSON.parse(text); } catch(e) { console.warn('[popup] lookupEntries JSON.parse failed', e); entries = []; }
+          apply(entries);
+        })
+        .catch(function(e){
+          if (window.__fushiRenderToken !== token) return;
+          try {
+            window.flutter_inappwebview.callHandler('popupEntriesFetchFailed', token, String((e && e.message) || e));
+          } catch (_) {}
+        });
+    })();
 ''';
 }
 
@@ -879,6 +951,19 @@ class _PopupStaticSettingsMemo {
 
 final Map<String, _PopupStaticSettingsMemo> _staticSettingsMemo =
     <String, _PopupStaticSettingsMemo>{};
+
+/// P2-E：[AppModel.effectiveCustomDictCSS] 在规则与手写 CSS 都没变时返回同一个不可变
+/// Map 实例；按实例身份 memo 它的 JSON，命中判据每次查词不再整表 jsonEncode。
+({Map<String, String> source, String json})? _customDictCssJsonMemo;
+
+String _customDictCssJsonOf(Map<String, String> css) {
+  final ({Map<String, String> source, String json})? cached =
+      _customDictCssJsonMemo;
+  if (cached != null && identical(cached.source, css)) return cached.json;
+  final String json = jsonEncode(css);
+  _customDictCssJsonMemo = (source: css, json: json);
+  return json;
+}
 int _staticSettingsRevision = 0;
 
 /// 测试专用：清空本文件的进程内 memo（字体注入串 + 静态设置产物），避免用例间
@@ -887,6 +972,7 @@ int _staticSettingsRevision = 0;
 void debugResetPopupSettingsInjectionCaches() {
   debugResetDictionaryFontStyleMemo();
   _staticSettingsMemo.clear();
+  _customDictCssJsonMemo = null;
 }
 
 /// 静态设置负载（主题变量/词典字体/图标字体覆盖/zoom/开关/名单/词典样式/自定义
@@ -966,7 +1052,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
   // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;
-  final String customDictCSSJson = jsonEncode(appModel.effectiveCustomDictCSS);
+  final String customDictCSSJson =
+      _customDictCssJsonOf(appModel.effectiveCustomDictCSS);
 
   // 「制卡」功能模块（[ModuleId.cardCreation]）总开关。关掉时 popup.js 不渲染词条头
   // 上的「+」制卡按钮与「在 Anki 中打开」↗ 按钮，也不再每次查词去问 Anki 查重——

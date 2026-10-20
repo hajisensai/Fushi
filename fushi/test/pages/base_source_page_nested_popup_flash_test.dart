@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -120,8 +121,12 @@ class NestedFlashHostPageState
     );
   }
 
+  /// 宿主（阅读器）整页 build 次数：P1-D 的自适应高度不应让它增长。
+  int builds = 0;
+
   @override
   Widget build(BuildContext context) {
+    builds++;
     return Stack(
       children: <Widget>[
         const Positioned.fill(child: SizedBox.expand()),
@@ -172,12 +177,19 @@ void main() {
     await tester.pump(); // post-frame warm-slot seed
     await tester.pump();
 
-    // First lookup reuses the warm slot -> visible immediately (warm WebView).
+    // First lookup reuses the warm slot. P1-C: it stays hidden until its own
+    // render signal (no max-height shell jump), then reveals.
     await hostKey.currentState!.topSearch('first');
     await tester.pump();
     var stack = hostKey.currentState!.debugPopupStack;
     expect(stack, hasLength(1));
-    expect(stack.single.visible, isTrue, reason: '首个查词复用热槽，立即可见');
+    expect(stack.single.visible, isFalse,
+        reason: 'P1-C：热槽命中也等首条渲染信号再翻出（外壳不先按最大高度铺开）');
+    expect(stack.single.revealOnRender, isTrue);
+    hostKey.currentState!.debugFirePopupRendered(0);
+    await tester.pump();
+    stack = hostKey.currentState!.debugPopupStack;
+    expect(stack.single.visible, isTrue, reason: '热槽渲染完成即可见');
     expect(stack.single.revealOnRender, isFalse);
 
     // Nested lookup appends a fresh COLD WebView entry. It must NOT be visible
@@ -227,8 +239,8 @@ void main() {
   });
 
   testWidgets(
-      'reader deferred warm-slot lookup keeps loading cover until popupRendered',
-      (WidgetTester tester) async {
+      'reader deferred warm-slot lookup stays hidden until popupRendered '
+      '(P1-C: no max-height shell, no cover)', (WidgetTester tester) async {
     final appModel = NestedFlashAppModel(results: <DictionaryEntry>[_entry()]);
     final hostKey = GlobalKey<NestedFlashHostPageState>();
 
@@ -243,22 +255,104 @@ void main() {
 
     var stack = hostKey.currentState!.debugPopupStack;
     expect(stack, hasLength(1));
-    expect(stack.single.visible, isTrue,
-        reason: 'showDeferredPopup should reveal the shell at the final rect');
-    expect(_activeLoadingCover(), findsOneWidget,
-        reason: 'The body must stay covered until the reused WebView reports '
-            'that this lookup has rendered; otherwise macOS can expose a '
-            'white empty WebView body.');
+    expect(stack.single.visible, isFalse,
+        reason: 'P1-C：autoFitHeight 尚未测得，翻出会先按最大高度铺开再收缩——'
+            '挂起到本次结果的渲染信号再翻出');
+    expect(stack.single.revealOnRender, isTrue);
+    expect(_activeLoadingCover(), findsNothing,
+        reason: '挂起期没有可见外壳，自然也不架盖板（deferDisplay 的防闪烁本意）');
+    expect(hostKey.currentState!.debugPopupEntries.single.selectionRect,
+        const Rect.fromLTWH(44, 44, 8, 8),
+        reason: 'showDeferredPopup 的最终 rect 在翻出前就落到条目上');
 
     hostKey.currentState!.debugFirePopupRendered(0);
     await tester.pump();
 
     stack = hostKey.currentState!.debugPopupStack;
     expect(stack.single.visible, isTrue);
-    expect(_activeLoadingCover(), findsNothing,
-        reason: 'popupRendered clears the temporary cover.');
+    expect(_activeLoadingCover(), findsNothing);
     // 指示器在 150ms 内撤场 = 从没露出过（快查询不闪）。
     expect(find.byType(FushiLoadingView), findsNothing);
+  });
+
+  testWidgets(
+      'reader deferred warm slot: render signal never arrives -> forced reveal '
+      'falls back to the covered shell + re-push (BUG-480 macOS safety net)',
+      (WidgetTester tester) async {
+    final appModel = NestedFlashAppModel(results: <DictionaryEntry>[_entry()]);
+    final hostKey = GlobalKey<NestedFlashHostPageState>();
+
+    await tester.pumpWidget(
+      buildNestedFlashApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await hostKey.currentState!.deferredTopSearch('first');
+    await tester.pump();
+    expect(hostKey.currentState!.debugPopupStack.single.visible, isFalse);
+
+    // macOS 隐藏热槽漏注入：popupRendered 一直不来，兜底超时强制翻可见。
+    await tester.pump(
+      DictionaryPopupController.kRevealFailsafeTimeout +
+          const Duration(milliseconds: 50),
+    );
+    var stack = hostKey.currentState!.debugPopupStack;
+    expect(stack.single.visible, isTrue, reason: '永不卡死在隐藏态');
+    expect(_activeLoadingCover(), findsOneWidget,
+        reason: '强制翻出后退回旧路径：带盖板等可见后的补推渲染完，绝不露白壳');
+
+    hostKey.currentState!.debugFirePopupRendered(0);
+    await tester.pump();
+    stack = hostKey.currentState!.debugPopupStack;
+    expect(stack.single.visible, isTrue);
+    expect(_activeLoadingCover(), findsNothing,
+        reason: '补推渲染完成即撤盖板');
+    // 让剩余兜底窗口过去，确认没有残留 Timer。
+    await tester.pump(
+      DictionaryPopupController.kRevealFailsafeTimeout +
+          const Duration(milliseconds: 50),
+    );
+  });
+
+  testWidgets(
+      'P1-D: reader content metrics resize the shell locally '
+      '(no whole-page setState)', (WidgetTester tester) async {
+    final appModel = NestedFlashAppModel(results: <DictionaryEntry>[_entry()]);
+    final hostKey = GlobalKey<NestedFlashHostPageState>();
+
+    await tester.pumpWidget(
+      buildNestedFlashApp(appModel: appModel, hostKey: hostKey),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await hostKey.currentState!.topSearch('first');
+    await tester.pump();
+    hostKey.currentState!.debugFirePopupRendered(0);
+    await tester.pump();
+    final DictionaryPopupEntry entry =
+        hostKey.currentState!.debugPopupEntries.single;
+    expect(entry.visible, isTrue);
+    final int builds = hostKey.currentState!.builds;
+
+    final DictionaryPopupLayer layer =
+        tester.widget<DictionaryPopupLayer>(find.byType(DictionaryPopupLayer));
+    layer.onContentMetrics!(220, 360);
+    await tester.pump();
+
+    expect(entry.autoFitHeight, 220);
+    expect(hostKey.currentState!.builds, builds,
+        reason: '自适应高度只 notify controller，阅读器整页不重建');
+    final Positioned box = tester.widget<Positioned>(
+      find
+          .ancestor(
+            of: find.byType(DictionaryPopupLayer),
+            matching: find.byType(Positioned),
+          )
+          .first,
+    );
+    expect(box.height, 220, reason: '弹窗层就地按新高度重排');
   });
 
   testWidgets(
@@ -302,6 +396,9 @@ void main() {
 
     await hostKey.currentState!.topSearch('first');
     await tester.pump();
+    // 嵌套查词只能从已显示的父层里点出来：先让热槽父层渲染翻出（P1-C）。
+    hostKey.currentState!.debugFirePopupRendered(0);
+    await tester.pump();
     await hostKey.currentState!.nestedSearch('second');
     await tester.pump();
 
@@ -335,6 +432,8 @@ void main() {
     await tester.pump();
 
     await hostKey.currentState!.topSearch('first');
+    await tester.pump();
+    hostKey.currentState!.debugFirePopupRendered(0);
     await tester.pump();
     await hostKey.currentState!.nestedSearch('second');
     await tester.pump();
