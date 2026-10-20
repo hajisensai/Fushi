@@ -152,6 +152,33 @@ void main() {
       expect(parseBrowserExtensionBuild(withoutBuild), isNull);
     });
 
+    // 改了密钥 / 端口后只重写 defaults（保留 build）：此前只在内容指纹变化时重写，
+    // 改密钥后扩展永远拿着旧 token，状态卡一直报「API 密钥不匹配」。
+    test('rewriteBrowserExtensionDefaultsFile keeps build, swaps token/port',
+        () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('fushi_ext_defaults_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final File defaults = File('${dir.path}/fushi-defaults.js');
+      await defaults.writeAsString(buildBrowserExtensionDefaultsJs(
+        const BrowserExtensionServerConfig(
+            host: '127.0.0.1', port: 19633, token: 'old'),
+        build: 'deadbeef01234567',
+      ));
+
+      const BrowserExtensionServerConfig next = BrowserExtensionServerConfig(
+          host: '127.0.0.1', port: 19700, token: 'new');
+      expect(await rewriteBrowserExtensionDefaultsFile(defaults, next), isTrue);
+      final String written = await defaults.readAsString();
+      expect(
+        written,
+        buildBrowserExtensionDefaultsJs(next, build: 'deadbeef01234567'),
+      );
+      // 已一致：不再写（不碰 mtime，不扰动扩展）。
+      expect(
+          await rewriteBrowserExtensionDefaultsFile(defaults, next), isFalse);
+    });
+
     test('prepareBundledBrowserExtension writes fingerprint into defaults', () {
       // 生产接线守卫（源码扫描）：解压时必须把指纹写进 fushi-defaults.js 的 build，
       // 否则启动刷新（refreshBundledBrowserExtensionIfStale）恒判陈旧、每次启动全量重写。

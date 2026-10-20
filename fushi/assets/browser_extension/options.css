@@ -616,6 +616,14 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
+/* 状态卡里的「恢复自动配置」：只在它能解决当前状态时出现（options.js refreshConnection），整宽贴在端点下方。 */
+.connection-restore {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+}
+.connection-restore[hidden] { display: none; }
+
 /* 标准图标按钮（M3 standard icon button：40 触控区、24 图标、悬停状态层）；按下时图标转一下。 */
 .icon-button {
   display: grid;

@@ -234,6 +234,7 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.cardCreation => SettingsIconTone.green,
   SettingsDestinationId.downloads => SettingsIconTone.teal,
   SettingsDestinationId.services => SettingsIconTone.blue,
+  SettingsDestinationId.localServices => SettingsIconTone.teal,
   SettingsDestinationId.ai => SettingsIconTone.purple,
   SettingsDestinationId.models => SettingsIconTone.purple,
   SettingsDestinationId.profiles => SettingsIconTone.pink,

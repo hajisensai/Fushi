@@ -1,8 +1,17 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('fushi-defaults.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'mine-outcome.js', 'self-update.js', 'site-cookie-export.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('fushi-defaults.js', 'auto-config.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'mine-outcome.js', 'self-update.js', 'site-cookie-export.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
+// 自动配置的连接三元组。初值 = SW 启动时 importScripts 读到的 fushi-defaults.js；app 改密钥 /
+// 端口后会就地重写磁盘上的这个文件（build 不变 → 不触发自更新 reload），请求遇 401 / 连不上时由
+// refreshAutoConfigDefaults() 重读磁盘替换这里。build 不在此列：它标识「当前加载的代码」，
+// 自更新比对（maybeSelfReload / statusRequestBody）必须继续用 importScripts 时的 FUSHI_DEFAULTS。
+let autoConfigDefaults = {
+  host: FUSHI_DEFAULTS.host,
+  port: FUSHI_DEFAULTS.port,
+  token: FUSHI_DEFAULTS.token,
+};
 
 let connectionConfigPromise = null;
 // 界面文案走 i18n.js（SW 里经 importScripts 装入；缺席时退回键名）。
@@ -94,20 +103,83 @@ async function cfg() {
   if (!connectionConfigPromise) {
     // Yomitan 的热路径不会在每次扫描前重新读取扩展存储。连接配置在 service worker
     // 生命周期内复用；options 写入时由 storage.onChanged 精确失效。
-    connectionConfigPromise = chrome.storage.local.get(['host', 'port', 'token']).then((saved) => {
-      const host = (saved.host != null && saved.host !== '')
-          ? saved.host : FUSHI_DEFAULTS.host;
-      const port = (saved.port != null && saved.port !== 0)
-          ? saved.port : FUSHI_DEFAULTS.port;
-      const token = (saved.token != null && saved.token !== '')
-          ? saved.token : FUSHI_DEFAULTS.token;
-      return { base: `http://${host}:${port}`, token };
-    }).catch((error) => {
-      connectionConfigPromise = null;
-      throw error;
-    });
+    connectionConfigPromise = chrome.storage.local.get(['host', 'port', 'token'])
+      .then((saved) => resolveConnection(saved))
+      .catch((error) => {
+        connectionConfigPromise = null;
+        throw error;
+      });
   }
   return connectionConfigPromise;
+}
+// 连接配置的唯一取值规则：用户在 options 手动保存过的非空值优先，其余字段取当前自动配置。
+// manual 记下哪几个字段是用户覆盖的——自动配置重读只会改变未覆盖的字段，设置页据此判断
+// 「恢复自动配置」能不能解决当前问题。
+function resolveConnection(saved) {
+  const s = saved || {};
+  const manual = {
+    host: s.host != null && s.host !== '',
+    port: s.port != null && s.port !== 0,
+    token: s.token != null && s.token !== '',
+  };
+  const host = manual.host ? s.host : autoConfigDefaults.host;
+  const port = manual.port ? s.port : autoConfigDefaults.port;
+  const token = manual.token ? s.token : autoConfigDefaults.token;
+  return { base: `http://${host}:${port}`, token, manual };
+}
+
+// 自动配置重读：取扩展目录里 fushi-defaults.js 的**磁盘当前内容**（扩展自身资源，cache:
+// 'no-store' 绕过 HTTP 缓存），三元组变了才替换并让连接配置 / 诊断缓存失效。并发失败的请求
+// 共用同一次读取。读不到 / 解析不出完整三元组时保持现值——原请求的失败照常上报，不被掩盖。
+let autoConfigRefresh = null;
+function refreshAutoConfigDefaults() {
+  if (!autoConfigRefresh) {
+    autoConfigRefresh = (async () => {
+      try {
+        const r = await fetch(chrome.runtime.getURL('fushi-defaults.js'), { cache: 'no-store' });
+        if (!r.ok) return;
+        const fresh = self.FUSHI_AUTO_CONFIG.parseDefaultsSource(await r.text());
+        if (!fresh || self.FUSHI_AUTO_CONFIG.sameConnection(fresh, autoConfigDefaults)) return;
+        autoConfigDefaults = fresh;
+        connectionConfigPromise = null;
+        connectionCache = null;
+      } catch (_) { /* 文件不可读：没有可用的新配置 */ }
+    })().finally(() => { autoConfigRefresh = null; });
+  }
+  return autoConfigRefresh;
+}
+// 重读自动配置后，生效连接（base / token）与失败请求用的那份不同 → 返回新连接；否则 null。
+// 用户手动覆盖的字段不受自动配置影响，所以全覆盖时恒为 null（绝不静默替换用户的值）。
+async function reconfiguredConnection(used) {
+  await refreshAutoConfigDefaults();
+  const now = await cfg();
+  return (now.base !== used.base || now.token !== used.token) ? now : null;
+}
+// fetch 的网络层失败（拒绝连接 / 端口没人听）是 TypeError；超时 / 中止是 DOMException
+// （TimeoutError / AbortError）——那时请求可能已被处理，不能重发。
+function isNetworkFailure(error) {
+  return !!error && error.name === 'TypeError';
+}
+// 一次 Fushi API 请求：request 是「给定连接 → fetch」的工厂。遇 401（密钥被拒）或连不上时
+// 重读自动配置，生效连接确实变了才用新连接**只重试一次**；返回实际用的连接，调用方据此更新
+// 自己的 base / token。
+async function fetchWithAutoConfigRetry(conn, request) {
+  let response;
+  try {
+    response = await request(conn);
+  } catch (error) {
+    if (!isNetworkFailure(error)) throw error;
+    const next = await reconfiguredConnection(conn);
+    if (!next) throw error;
+    return { response: await request(next), base: next.base, token: next.token };
+  }
+  if (response.status !== 401) return { response, base: conn.base, token: conn.token };
+  const next = await reconfiguredConnection(conn);
+  if (!next) return { response, base: conn.base, token: conn.token };
+  return { response: await request(next), base: next.base, token: next.token };
+}
+async function fushiFetch(request) {
+  return fetchWithAutoConfigRetry(await cfg(), request);
 }
 function authHeader(token) { return 'Basic ' + btoa('fushi:' + token); }
 // /api/extension/fonts 的条目 → 给 options 下拉 / 覆盖层 @font-face 用的形状：只留 id/name/family/ext，
@@ -165,8 +237,18 @@ try {
 async function responseJson(resp) {
   try { return await resp.json(); } catch (_) { return null; }
 }
-async function diagnoseConnection(force) {
-  const { base, token } = await cfg();
+// 诊断用：status + 原始文本 + 能解析时的 JSON。403 的原因只在纯文本 body 里（app 的
+// _accessDeniedMessage），只读 json() 会把它丢掉。
+async function diagnosticResponse(resp) {
+  let text = '';
+  try { text = await resp.text(); } catch (_) {}
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch (_) {}
+  return { status: resp.status, body, text };
+}
+async function diagnoseConnection(force, healed) {
+  const conn = await cfg();
+  const { base, token } = conn;
   const cacheKey = base + '|' + token;
   const now = Date.now();
   if (!force && connectionCache && connectionCache.key === cacheKey && now - connectionCache.at < 5000) {
@@ -182,19 +264,20 @@ async function diagnoseConnection(force) {
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
     });
-    primary = { status: r.status, body: await responseJson(r) };
+    primary = await diagnosticResponse(r);
     if (r.status === 404 || r.status === 405) {
       const old = await fetch(base + '/api/lookup/dictionary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
         body: JSON.stringify({ term: '', popupOnly: true }),
       });
-      legacy = { status: old.status, body: await responseJson(old) };
+      legacy = await diagnosticResponse(old);
     }
     const preliminary = self.FUSHI_CONNECTION.classify(primary, legacy, null, false);
     if (preliminary !== self.FUSHI_CONNECTION.states.connected &&
         preliminary !== self.FUSHI_CONNECTION.states.legacy &&
-        preliminary !== self.FUSHI_CONNECTION.states.unauthorized) {
+        preliminary !== self.FUSHI_CONNECTION.states.unauthorized &&
+        preliminary !== self.FUSHI_CONNECTION.states.forbidden) {
       const v = await fetch(base + '/serverVersion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,8 +288,19 @@ async function diagnoseConnection(force) {
   } catch (_) {
     networkError = true;
   }
+  // 密钥被拒（401）或连不上：先重读自动配置（app 改了密钥 / 端口会就地重写 fushi-defaults.js），
+  // 生效连接变了就用新连接重测一次——与请求侧 fetchWithAutoConfigRetry 同一判据。
+  // 403 不在此列：那是 app 按来源地址拒绝，换密钥 / 端口都不会变。
+  const rejected = (primary && primary.status === 401) || (legacy && legacy.status === 401);
+  if (!healed && (networkError || rejected) && await reconfiguredConnection(conn)) {
+    return diagnoseConnection(true, true);
+  }
   const state = self.FUSHI_CONNECTION.classify(primary, legacy, version, networkError);
-  const value = { state, base, port: Number(new URL(base).port) || 19633 };
+  const value = {
+    state, base, port: Number(new URL(base).port) || 19633, manual: conn.manual || null,
+    reason: state === self.FUSHI_CONNECTION.states.forbidden
+      ? self.FUSHI_CONNECTION.forbiddenReason(primary, legacy) : null,
+  };
   connectionCache = { key: cacheKey, at: now, value };
   return value;
 }
@@ -359,13 +453,12 @@ async function forwardStudySample(sample) {
   if (!sample || typeof sample !== 'object') return { ok: false, error: 'no sample' };
   if (Date.now() < studyBackoffUntil) return { ok: false, error: 'backoff' };
   try {
-    const { base, token } = await cfg();
-    const r = await fetch(base + '/api/extension/study', {
+    const { response: r } = await fushiFetch(({ base, token }) => fetch(base + '/api/extension/study', {
       method: 'POST',
       signal: AbortSignal.timeout(4000),
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: JSON.stringify(sample),
-    });
+    }));
     if (!r.ok) studyBackoffUntil = Date.now() + 15000;
     return { ok: r.ok, status: r.status };
   } catch (error) {
@@ -498,14 +591,14 @@ async function maybeReinjectAfterReload() {
 // 拉新。附带效果：这次请求也刷新 app 侧扩展 last-seen（连接检测据此判断「插件已正常启用」）。
 async function checkVersionOnStartup() {
   try {
-    const { base, token } = await cfg();
     // BUG-1079：请求体自报 build/version（不再写死 '{}'），app 端据此显示「浏览器中
-    // 实际加载的版本」并在与内置指纹不一致时给出更新提示。
-    const r = await fetch(base + '/api/extension/status', {
+    // 实际加载的版本」并在与内置指纹不一致时给出更新提示。心跳每分钟走这里一次，
+    // 401 / 连不上时顺带重读自动配置——app 改密钥 / 端口后 ≤1 分钟自愈。
+    const { response: r } = await fushiFetch(({ base, token }) => fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
-    });
+    }));
     if (!r.ok) return;
     const status = await responseJson(r);
     if (status) await maybeSelfReload(status);
@@ -548,13 +641,13 @@ let siteCookieExportInflight = null;
 async function fetchCookieImportRequest() {
   const api = self.FUSHI_SITE_COOKIES;
   if (!api) return null;
-  const { base, token } = await cfg();
+  const conn = await cfg();
   try {
-    const r = await fetch(base + '/api/extension/status', {
+    const { response: r } = await fetchWithAutoConfigRetry(conn, ({ base, token }) => fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
-    });
+    }));
     if (!r.ok) return null;
     return api.parseImportRequest(await responseJson(r));
   } catch (_) {
@@ -590,13 +683,13 @@ async function maybeExportSiteCookies(loadedUrl) {
     } catch (_) {
       return;
     }
-    const { base, token } = await cfg();
+    const conn = await cfg();
     try {
-      await fetch(base + '/api/extension/site-cookies', {
+      await fetchWithAutoConfigRetry(conn, ({ base, token }) => fetch(base + '/api/extension/site-cookies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
         body: JSON.stringify(api.toPayload(request, cookies)),
-      });
+      }));
     } catch (_) { /* app 没开 / 登记已撤：下次再说 */ }
   })().finally(() => { siteCookieExportInflight = null; });
 }
@@ -708,8 +801,7 @@ const FUSHI_YT_KEEPALIVE_MS = 20000;
  */
 async function fushiMineYoutubeItem(q) {
   try {
-    const { base, token } = await cfg();
-    const r = await fetch(base + '/api/mine', {
+    const { response: r } = await fushiFetch(({ base, token }) => fetch(base + '/api/mine', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: JSON.stringify({
@@ -717,7 +809,7 @@ async function fushiMineYoutubeItem(q) {
         youtubeVideoId: q.youtubeId,
         clipStartMs: q.startV, clipEndMs: q.endV,
       }),
-    });
+    }));
     return { ok: r.ok, status: r.status, data: r.ok ? await r.json() : null };
   } catch (e) {
     return { ok: false, error: String(e && e.message || e) };
@@ -1129,9 +1221,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   }
   (async () => {
-    let base = `http://${FUSHI_DEFAULTS.host}:${FUSHI_DEFAULTS.port}`;
-    let token = FUSHI_DEFAULTS.token;
+    // cfg() 失败时（storage 不可读）catch 分支的诊断仍需要一个 base：取当前自动配置，
+    // 与 cfg() 同一取值规则（resolveConnection），不另拼一份。
+    let { base, token } = resolveConnection(null);
     let cfgMs = 0;
+    // 本消息的 Fushi API 请求：401 / 连不上时经 fetchWithAutoConfigRetry 重读自动配置并
+    // 至多重试一次；重试换了连接就同步更新这里的 base / token（字体 URL、诊断都用它们）。
+    const fushiRequest = async (request) => {
+      const out = await fetchWithAutoConfigRetry({ base, token }, request);
+      ({ base, token } = out);
+      return out.response;
+    };
     try {
       if (lookupTrace) lookupTrace.phase = 'config';
       const cfgStartedAt = performance.now();
@@ -1148,12 +1248,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 文件 URL（GET /api/extension/fonts/file?id=&token=，与 dict-media 图片同款「查询串
         // 带 token」——content script 的 @font-face 请求发不了鉴权头）。app 没开 → ok:false，
         // 下拉只剩本机字体栈，覆盖层回落 CSS 默认字体。
-        const r = await fetch(base + '/api/extension/fonts', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/extension/fonts', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: '{}',
-        });
+        }));
         const data = r.ok ? await r.json() : null;
         sendResponse({
           ok: r.ok,
@@ -1165,12 +1265,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === 'subtitleFontDownload') {
         // 下拉旁「下载」：让 app 走它自己的推荐字体下载（多源回退 + 校验 + 入目录），扩展只等结果。
         // CJK 字体十几 MB，给足超时；MV3 SW 有在途 fetch 不会被回收。
-        const r = await fetch(base + '/api/extension/fonts/download', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/extension/fonts/download', {
           method: 'POST',
           signal: AbortSignal.timeout(10 * 60 * 1000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ name: String(msg.name || '') }),
-        });
+        }));
         let data = null;
         try { data = await r.json(); } catch (_) {}
         sendResponse({
@@ -1186,11 +1286,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 回写 app（POST /api/extension/popup-size，Basic auth 与查词同源）。app 侧 clamp
         // (250-2000/200-1600) + 「拖即解锁」extensionPopupIndependentSize=true + 写扩展键，
         // 下次查词以新尺寸下发。lookup 样板同款鉴权头，不新开无鉴权入口。
-        const r = await fetch(base + '/api/extension/popup-size', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/extension/popup-size', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ maxWidth: msg.maxWidth, maxHeight: msg.maxHeight }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status });
       } else if (msg.type === 'lookup') {
         const lookupId = lookupTrace.id;
@@ -1202,7 +1302,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // sendResponse 永不被调——Side Panel 的「正在查词…」就永久停留。超时走下方 catch 分支
         // 回错误响应，用户看到可重试的失败文案而不是无限转圈。上限 > Side Panel 兜底(8s)，
         // 正常慢查询不受影响。
-        const r = await fetch(base + '/api/lookup/dictionary', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/lookup/dictionary', {
           method: 'POST',
           signal: AbortSignal.timeout(10000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -1220,7 +1320,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             // 扩展主题显式 light/dark：让 app 按这个明暗生成弹窗配色（旧 app 忽略该字段）。
             ...(colorScheme ? { colorScheme } : {}),
           }),
-        });
+        }));
         const headersAt = performance.now();
         const serverTiming = parseLookupServerTiming(r.headers.get('server-timing'));
         const serverCache = r.headers.get('x-fushi-lookup-cache');
@@ -1305,11 +1405,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 单词音频：POST /api/lookup/audio {expression,reading}（Basic auth）→ server 用
         // 与 app 同一 lookupAudio（本地音频库）解析出音频字节，回 {url,contentType}，url 是
         // 免鉴权短命 /api/lookup/audio/file?id=。content-script 的 HTML5 Audio 直接播该 url。
-        const r = await fetch(base + '/api/lookup/audio', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/lookup/audio', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
-        });
+        }));
         if (!r.ok) { sendResponse({ ok: false, status: r.status, url: null }); return; }
         const data = await r.json();
         sendResponse({ ok: !!(data && data.url), url: (data && data.url) || null, contentType: (data && data.contentType) || null });
@@ -1317,11 +1417,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 「选择音频源」菜单：POST /api/lookup/audio/list {expression,reading}（Basic auth）→
         // {audioSources:[{name, variant, url}]}，url 同为免鉴权短命 /api/lookup/audio/file?id=。
         // 旧 app 无该端点 → !r.ok → 空列表（popup.js 按「暂无发音」处理）。
-        const r = await fetch(base + '/api/lookup/audio/list', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/lookup/audio/list', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
-        });
+        }));
         if (!r.ok) { sendResponse({ ok: false, status: r.status, audioSources: [] }); return; }
         const data = await r.json();
         const list = data && Array.isArray(data.audioSources) ? data.audioSources : [];
@@ -1338,11 +1438,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // {videoId,preferLang} → server 复用 app 内已修的解析器（androidVr getPlayerResponse +
         // format-3 timedtext），回全部轨（自动/人工）+ cue。Basic auth 与查词同源。best-effort：
         // 失败/无字幕回 {tracks:[]}，content.js 回退 live 采样。
-        const r = await fetch(base + '/api/youtube/captions', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/youtube/captions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ videoId: msg.videoId || '', preferLang: msg.preferLang || 'ja' }),
-        });
+        }));
         sendResponse({
           ok: r.ok,
           status: r.status,
@@ -1355,12 +1455,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // BUG-3146：解析是纯 CPU 小活，正常几十毫秒回。此前没有上限——app 不应答时这条消息永远
         // 挂着，页面「导入了没反应」，直到 app 恢复应答才突然导进去。给上限并走限时诊断：
         // 超时由下方 catch 回 {ok:false, connection:no-response}，页面如实说「Fushi 没有响应」。
-        const r = await fetch(base + '/api/subtitle/parse', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/subtitle/parse', {
           method: 'POST',
           signal: AbortSignal.timeout(15000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ filename: msg.filename || '', content: msg.content || '' }),
-        });
+        }));
         sendResponse({
           ok: r.ok,
           status: r.status,
@@ -1374,7 +1474,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         //
         // 超时比别的端点长：AJATT 第一次搜索要拉约 9 MB 的静态目录（之后落盘缓存
         // 24 小时），20 秒会在首次使用时稳定超时，而那正是零配置用户的第一印象。
-        const r = await fetch(base + '/api/subtitle/search', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/subtitle/search', {
           method: 'POST',
           signal: AbortSignal.timeout(45000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -1383,7 +1483,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(Number.isInteger(msg.episode) ? { episode: msg.episode } : {}),
             ...(typeof msg.anime === 'boolean' ? { anime: msg.anime } : {}),
           }),
-        });
+        }));
         sendResponse({
           ok: r.ok,
           status: r.status,
@@ -1394,12 +1494,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // 查字幕②：候选 handle → server 按 handle 找回候选、交还给**它自己的来源**下载，
         // 自动识别编码 + 解析，响应与 /api/subtitle/parse 同形（{format,cues}），
         // Side Panel 直接走既有 InstallTrack。
-        const r = await fetch(base + '/api/subtitle/fetch', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/subtitle/fetch', {
           method: 'POST',
           signal: AbortSignal.timeout(30000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ handle: msg.handle || '' }),
-        });
+        }));
         sendResponse({
           ok: r.ok,
           status: r.status,
@@ -1428,7 +1528,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
           ? null
           : msg.clipSourceKind;
-        const r = await fetch(base + '/api/mine', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/mine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
@@ -1445,42 +1545,42 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               ? { clipSourcePart: msg.clipSourcePart } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
           }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'duplicate') {
         // TODO-1176：查词弹窗制卡按钮真查重（+→✓，与 app 一致）。POST {expression,reading}
         // → server /api/duplicate，经 Anki 后端判断该词是否已存在，返回 {duplicate:bool}。
-        const r = await fetch(base + '/api/duplicate', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/duplicate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'srsTermStatus') {
         // Fushi 复习词状态：POST {expression,reading} → server /api/srs/term-status，回
         // {status: null | {...}}。app 的复习模块关着时 404（bridge-shim 据此退避）。
-        const r = await fetch(base + '/api/srs/term-status', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/term-status', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'srsOpenCard') {
         // 点复习标记：让 app 打开那张卡。POST {cardId,noteId} → /api/srs/open，回 {opened:bool}。
-        const r = await fetch(base + '/api/srs/open', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/open', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ cardId: msg.cardId || '', noteId: msg.noteId || '' }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'favorite') {
         // BUG-3141：弹窗 ☆/★ 收藏。POST {toggle,expression,reading,glossary,sentence}
         // → server /api/extension/favorite，与 app 外浮窗 favoriteEntry / favoriteCheck 两个桥
         // 同一份 overlayToggleOrCheckFavoriteWord（跨源判 / 跨源删 / 单源写），回 {favorite:bool}。
         // 旧 app 没有这个端点 → 404 → ok:false，带连接诊断让页面说清楚为什么没收藏上。
-        const r = await fetch(base + '/api/extension/favorite', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/extension/favorite', {
           method: 'POST',
           signal: AbortSignal.timeout(8000),
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
@@ -1491,7 +1591,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             glossary: msg.glossary || '',
             sentence: msg.sentence || '',
           }),
-        });
+        }));
         const data = r.ok ? await responseJson(r) : null;
         sendResponse({
           ok: r.ok && !!data && typeof data.favorite === 'boolean',
@@ -1503,17 +1603,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // Issue #1409：弹窗 ↗「在 Anki 中打开这个词的卡」。POST {expression,reading}
         // → server /api/anki/open，与 app 内 openInAnki 桥同一 repo.openWordInAnki，
         // 回 {outcome:'opened'|'noMatch'|'failed'}。
-        const r = await fetch(base + '/api/anki/open', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/anki/open', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mineClip') {
         // Netflix 回放录到的整段 webm → 服务端整段裁 [0,时长] 转 GIF+音频（无偏移运算）。
         // BUG-676（TODO-1361 ③）：带上剧名 documentTitle（服务端映射到 Anki {document-title} 视频名
         // 字段）；不发时服务端回落字面「Netflix」。空串不发（保持旧行为 → 回落 Netflix）。
-        const r = await fetch(base + '/api/mine', {
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/mine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
           body: JSON.stringify({
@@ -1535,7 +1635,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
           }),
-        });
+        }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'nfEnsureCapture') {
         // 到位后开录：还在录就复用，否则用仍有效的 activeTab 重取 streamId 起录（无需新手势）。

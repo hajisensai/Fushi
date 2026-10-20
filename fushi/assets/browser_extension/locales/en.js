@@ -289,6 +289,7 @@
   conn_api_off: 'Fushi API is off: enable the Fushi API server under Fushi Settings → Lookup',
   conn_yomitan_conflict: 'Port {port} is taken by the Yomitan API: turn off “Enable Yomitan API” in Yomitan’s advanced settings, then enable the Fushi API server',
   conn_unauthorized: 'Fushi API key mismatch: open the extension settings and restore automatic configuration',
+  conn_forbidden: 'Fushi refused this address: allow this device’s network in Fushi → “Local services” › “Allow connections from”',
   conn_wrong_service: 'The extension port is connected to another service: check the connection in the extension settings',
 
   // ── content.js: sentence context, batch generation ──
@@ -350,7 +351,13 @@
   conn_state_legacy_title: 'Connected to an older Fushi',
   conn_state_legacy_detail: 'Basic features work; update Fushi for full connection diagnostics.',
   conn_state_unauthorized_title: 'API key mismatch',
-  conn_state_unauthorized_detail: 'Fushi answered, but the token in the extension is stale. Press “Restore automatic configuration” or run the installer again.',
+  conn_state_unauthorized_detail: 'The connection settings saved by hand in the extension don’t match Fushi. Restore the automatic configuration to use the settings Fushi wrote.',
+  conn_state_unauthorized_auto_detail: 'Fushi rejected the key in the automatic configuration. The extension may not be loaded from the folder the installer extracted; run the installer again.',
+  conn_state_forbidden_title: 'Fushi refused this address',
+  conn_state_forbidden_detail: 'Fushi refused the connection from this address. In Fushi, open “Local services” › “Allow connections from”, allow the network this device is on, and set an API key.',
+  conn_state_forbidden_no_key_detail: 'Fushi has no API key yet, so it only accepts connections from its own device. In Fushi, set an API key under “Local services”, and allow this device’s network in “Allow connections from”.',
+  conn_state_forbidden_not_allowed_detail: 'This device’s address is not in Fushi’s allowed networks. In Fushi, open “Local services” › “Allow connections from” and add the network this device is on.',
+  conn_state_forbidden_local_only_detail: 'Fushi only accepts connections from its own device. In Fushi, open “Local services” › “Allow connections from”, allow the network this device is on, and set an API key.',
   conn_state_yomitan_title: 'Port taken by the Yomitan API',
   conn_state_yomitan_detail: 'Port {port} is in use by Yomitan. Turn off “Enable Yomitan API” in Yomitan’s advanced settings, then enable “Fushi API server” in Fushi.',
   conn_state_wrong_service_title: 'Port connected to another service',

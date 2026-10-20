@@ -12,7 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 /// 桌面「浏览器扩展」页（`BrowserExtensionPage`，安装助手）在控制通道上的条目。
 ///
 /// 页面上的设置只有「Fushi API 服务器」开关与 API 密钥，它们已在 schema 里
-/// （`lookup.fushi_api_server` / `lookup.fushi_api_key`），这里只声明页面独有的动作：
+/// （`local_services.fushi_api_server` / `local_services.fushi_api_key`），这里只声明页面独有的动作：
 ///
 /// - `status`：服务 / 端口 / 是否已有 token / 内置与浏览器实际加载的扩展版本 /
 ///   最近连接时间 / 是否已连接 / 试用页地址；

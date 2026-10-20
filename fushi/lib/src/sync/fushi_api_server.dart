@@ -30,6 +30,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart'
 import 'package:fushi/src/sync/browser_extension_test_page.dart'
     show kBrowserExtensionTestPagePath;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/yomitan_term_entries_adapter.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -159,7 +160,7 @@ class FushiApiServer {
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
     String? apiKey,
-    bool allowLan = false,
+    FushiApiAccessPolicy accessPolicy = FushiApiAccessPolicy.localOnly,
     SrsAnkiConnectEndpoint? ankiConnectEndpoint,
     int? ankiConnectCompatPort,
   }) : _requestedPort = port,
@@ -187,7 +188,7 @@ class FushiApiServer {
        _fontApi = fontApi,
        _srsApiProvider = srsApiProvider,
        _apiKey = apiKey,
-       _allowLan = allowLan;
+       _accessPolicy = accessPolicy;
 
   final int _requestedPort;
   final FushiRemoteLookupService _lookup;
@@ -255,7 +256,9 @@ class FushiApiServer {
   /// 复习（SRS）扩展端点的供给器；未注入或回 null（模块关）时 `/api/srs/*` 404。
   final SrsExtensionApi? Function()? _srsApiProvider;
   final String? _apiKey;
-  final bool _allowLan;
+
+  /// 网络层「允许谁连」：决定监听地址，并在密钥校验之前对**每个**请求判来源。
+  final FushiApiAccessPolicy _accessPolicy;
 
   HttpServer? _server;
 
@@ -347,12 +350,13 @@ class FushiApiServer {
   Future<void> start() async {
     if (_server != null) return;
     final shelf.Handler handler = const shelf.Pipeline()
+        .addMiddleware(_networkAccessMiddleware())
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
     try {
       _server = await shelf_io.serve(
         handler,
-        _allowLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
+        _accessPolicy.bindAddress,
         _requestedPort,
       );
     } on SocketException catch (e) {
@@ -370,6 +374,40 @@ class FushiApiServer {
     _server = null;
     _subtitleCandidates.clear();
   }
+
+  /// 网络层访问控制，先于 [_authMiddleware]、覆盖全部路径（含免密钥的音频文件 /
+  /// 「试一试」页与 AnkiConnect 兼容端点）。判据见 [FushiApiAccessPolicy.decide]：
+  /// 本机恒放行；非本机须在允许范围内**且**已设密钥。
+  shelf.Middleware _networkAccessMiddleware() {
+    return (shelf.Handler inner) {
+      return (shelf.Request request) {
+        final Object? info = request.context['shelf.io.connection_info'];
+        final InternetAddress? remote = info is HttpConnectionInfo
+            ? info.remoteAddress
+            : null;
+        final String? key = _apiKey;
+        final FushiApiAccessDecision decision = _accessPolicy.decide(
+          remote: remote,
+          keyConfigured: key != null && key.isNotEmpty,
+        );
+        if (decision == FushiApiAccessDecision.allow) return inner(request);
+        return shelf.Response.forbidden(_accessDeniedMessage(decision));
+      };
+    };
+  }
+
+  static String _accessDeniedMessage(FushiApiAccessDecision decision) =>
+      switch (decision) {
+        FushiApiAccessDecision.denyNoKey =>
+          'Fushi API only accepts requests from this device until an API key '
+              'is set',
+        FushiApiAccessDecision.denyNotInAllowList =>
+          'This address is not in the Fushi API allowed networks',
+        FushiApiAccessDecision.denyLocalOnly =>
+          'Fushi API only accepts requests from this device',
+        FushiApiAccessDecision.denyUnknownPeer ||
+        FushiApiAccessDecision.allow => 'Forbidden',
+      };
 
   shelf.Middleware _authMiddleware() {
     return (shelf.Handler inner) {

@@ -8,7 +8,9 @@ const on = (id, type, handler) => {
   if (el) el.addEventListener(type, handler);
   return el;
 };
-const D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
+// 自动配置（fushi-defaults.js）。<script> 只在页面打开那一刻读一次；app 改密钥 / 端口后会就地重写
+// 磁盘上的这个文件，所以显示占位与「恢复自动配置」前都经 loadAutoDefaults() 重读磁盘当前值。
+let D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
 // 界面文案统一走 i18n.js（fushiT）。
 const tr = (key, params) => (typeof self.fushiT === 'function' ? self.fushiT(key, params) : key);
 const settingDefaults = Object.freeze({
@@ -132,6 +134,37 @@ function runtimeMessage(message) {
   });
 }
 
+// 重读扩展目录里 fushi-defaults.js 的磁盘当前内容（与 background 的 refreshAutoConfigDefaults
+// 同一解析器 auto-config.js）。读不到 / 解析不出完整三元组时保持现值。build 不动：它描述的是
+// 浏览器当前加载的代码版本。
+async function loadAutoDefaults() {
+  try {
+    const r = await fetch(chrome.runtime.getURL('fushi-defaults.js'), { cache: 'no-store' });
+    if (!r.ok) return;
+    const fresh = self.FUSHI_AUTO_CONFIG.parseDefaultsSource(await r.text());
+    if (fresh) D = Object.assign({}, D, fresh);
+  } catch (_) { /* 文件不可读：沿用页面打开时的自动配置 */ }
+}
+
+function applyAutoDefaultPlaceholders() {
+  $('host').placeholder = D.host || '127.0.0.1';
+  $('port').placeholder = String(D.port || 19633);
+  $('token').placeholder = D.token ? tr('opt_token_auto_placeholder') : '';
+}
+
+// 「恢复自动配置」：清掉手动保存的 host / port / token，改用 Fushi 写入的自动配置。高级连接设置里的
+// #reset 与状态卡里的 #connRestoreAuto 共用这一处理。
+async function restoreAutoConfig() {
+  await chrome.storage.local.set({ host: '', port: 0, token: '' });
+  $('host').value = '';
+  $('port').value = '';
+  $('token').value = '';
+  await loadAutoDefaults();
+  applyAutoDefaultPlaceholders();
+  toast(tr('opt_toast_auto_config_restored'));
+  await refreshConnection(true);
+}
+
 function effectivePort() {
   return parseInt($('port').value, 10) || Number(D.port) || 19633;
 }
@@ -151,12 +184,18 @@ async function refreshConnection(force) {
   const connection = response && response.connection
     ? response.connection
     : { state: 'offline', port: effectivePort(), base: 'http://127.0.0.1:' + effectivePort() };
-  const copy = self.FUSHI_CONNECTION.copy(connection.state, connection.port);
+  const copy = self.FUSHI_CONNECTION.copy(
+    connection.state, connection.port, connection.manual, connection.reason);
   if (card) card.dataset.tone = copy.tone;
   if (title) title.textContent = copy.title;
   if (detail) detail.textContent = copy.detail;
   if (endpoint) endpoint.textContent = connection.base || ('http://127.0.0.1:' + effectivePort());
   if (button) button.disabled = false;
+  // 状态卡就地给出解法：只在「恢复自动配置」确实能解决当前状态时出现（用户手动覆盖过连接设置）。
+  const restore = $('connRestoreAuto');
+  if (restore) {
+    restore.hidden = !self.FUSHI_CONNECTION.autoConfigFixable(connection.state, connection.manual);
+  }
 
   if (connection.state === self.FUSHI_CONNECTION.states.unauthorized ||
       connection.state === self.FUSHI_CONNECTION.states.wrongService) {
@@ -165,9 +204,8 @@ async function refreshConnection(force) {
 }
 
 async function loadSettings() {
-  $('host').placeholder = D.host || '127.0.0.1';
-  $('port').placeholder = String(D.port || 19633);
-  $('token').placeholder = D.token ? tr('opt_token_auto_placeholder') : '';
+  await loadAutoDefaults();
+  applyAutoDefaultPlaceholders();
 
   // 旧 subtitleHoverPause / videoShortcutsEnabled 只作一次向后兼容读取：
   // 新键已有显式值时永远优先；旧键不再由 UI 写入。
@@ -413,14 +451,8 @@ on('connectionForm', 'submit', async (event) => {
   await refreshConnection(true);
 });
 
-on('reset', 'click', async () => {
-  await chrome.storage.local.set({ host: '', port: 0, token: '' });
-  $('host').value = '';
-  $('port').value = '';
-  $('token').value = '';
-  toast(tr('opt_toast_auto_config_restored'));
-  await refreshConnection(true);
-});
+on('reset', 'click', restoreAutoConfig);
+on('connRestoreAuto', 'click', restoreAutoConfig);
 
 // 覆盖层位置：拖过的位置存 subtitleOverlayPosition（视频分数坐标）；删键即回默认（居中、底锚 88%），
 // 已打开的视频页经 storage.onChanged 立刻重摆。

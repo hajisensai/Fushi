@@ -34,6 +34,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 Fushi API 服务器�
 | `self-update.js` | SW/options | 自更新决策纯状态机 + 状态文案（node 可测） |
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 文案（纯函数，文案经 i18n 键） |
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
+| `auto-config.js` | SW/options | 把磁盘上 `fushi-defaults.js` 的源码文本解析回 host/port/token（不 eval；运行时自愈用，见下） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
 | `options.html/css/js` | options | 设置页，按任务分六组：查词 / 字幕 / 字幕外观（实时预览）/ 外观（界面风格 · 配色主题 · 明暗 · 语言）/ 快捷键 / 高级（沉浸时间 · 连接与诊断 · 版本与更新）；每组常用项在前、次要项收进「更多选项」折叠，每项一行说明 |
 | `material.css` | 扩展页 | 表面材质层（options / 工具栏菜单 / 字幕侧边栏）：两套外观风格 `extensionStyle`——M3E（缺省，与 Fushi 本体同一套 Material 3 Expressive）与液态玻璃——共用一份规则，形状 / 材质 / 动效全取 `theme.css` 的风格 token；与配色正交 |
@@ -64,6 +65,11 @@ scripts/generate-content-css.mjs ──▶ 两处 vendor/content.css
    **内容指纹 build**（全部文件排除 `fushi-defaults.js` 的 sha256 前 16 hex）写进
    `fushi-defaults.js` → 用户浏览器「加载已解压」后零配置可用。
 3. 用户可在 options 页覆盖连接参数（chrome.storage.local 优先于内置默认）。
+4. app 里改了 API 密钥 / 端口：app 就地重写已解压副本的 `fushi-defaults.js`（build 不变，不触发自更新）。
+   SW 的请求遇 401 / 连不上时 `fetch(chrome.runtime.getURL('fushi-defaults.js'), {cache:'no-store'})`
+   重读磁盘当前内容（`auto-config.js` 解析），**未被用户手动覆盖的字段**变了才更新内存并重试一次
+   （`fetchWithAutoConfigRetry`；超时不重发）；连接诊断同理。心跳每分钟打一次状态端点，所以 ≤1 分钟自愈。
+   设置页打开时也重读一次；状态卡在「恢复自动配置」能解决问题时（有手动覆盖）就地给出该按钮。
 
 ## 自更新流水线
 

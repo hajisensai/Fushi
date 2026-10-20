@@ -241,6 +241,7 @@ import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
+import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
@@ -8842,6 +8843,69 @@ class AppModel with ChangeNotifier {
   Future<void> setFushiApiKey(String value) =>
       prefsRepo.setFushiApiKey(value);
 
+  FushiApiAccessMode get fushiApiAccessMode =>
+      FushiApiAccessMode.fromWireName(prefsRepo.fushiApiAccessMode);
+  Future<void> setFushiApiAccessMode(FushiApiAccessMode value) =>
+      prefsRepo.setFushiApiAccessMode(value.wireName);
+
+  String get fushiApiAllowedNetworks => prefsRepo.fushiApiAllowedNetworks;
+  Future<void> setFushiApiAllowedNetworks(String value) =>
+      prefsRepo.setFushiApiAllowedNetworks(value);
+
+  /// 由偏好拼出的网络层访问策略。白名单写入前已在设置里校验过，这里遇到非法条目
+  /// （手改偏好 / 旧数据）只丢弃该条——丢弃只会收紧放行范围，不会放宽。
+  FushiApiAccessPolicy get fushiApiAccessPolicy => FushiApiAccessPolicy(
+    mode: fushiApiAccessMode,
+    allowedNetworks: parseFushiIpNetworks(fushiApiAllowedNetworks).networks,
+  );
+
+  /// 端口 / 密钥 / 访问范围变更后的统一收尾：服务开着就按新配置重启，并把新的
+  /// host/port/token 写进本机已解压的浏览器扩展副本（扩展靠它自动配置；此前只在
+  /// 扩展内容指纹变化时才重写，改密钥后扩展永远拿着旧 token → 「API 密钥不匹配」）。
+  ///
+  /// 端口被占时抛 [SyncServerPortInUseException]（此时开关已被复位为 false）。
+  Future<void> applyFushiApiServerConfigChange() async {
+    try {
+      if (fushiApiServerEnabled) {
+        await stopFushiApiServer();
+        await startFushiApiServer();
+      }
+    } finally {
+      await syncBrowserExtensionServerConfig();
+    }
+  }
+
+  /// 改端口：新端口被占时**回滚到旧端口**并在旧端口上重新拉起服务，返回 false；
+  /// 成功返回 true。服务关着时只落偏好。
+  Future<bool> changeFushiApiPort(int port) async {
+    final int previous = fushiApiPort;
+    if (port == previous) return true;
+    final bool wasEnabled = fushiApiServerEnabled;
+    await setFushiApiPort(port);
+    try {
+      await applyFushiApiServerConfigChange();
+      return true;
+    } on SyncServerPortInUseException {
+      await setFushiApiPort(previous);
+      if (wasEnabled) await setFushiApiServerEnabled(true);
+      await applyFushiApiServerConfigChange();
+      return false;
+    }
+  }
+
+  /// 把当前 server 真值写进本机已解压的浏览器扩展副本（没装过不落盘）。
+  Future<void> syncBrowserExtensionServerConfig() async {
+    if (!DesktopLookupService.isDesktop) return;
+    if (!moduleVisibility.isEnabled(ModuleId.web)) return;
+    await rewriteBrowserExtensionServerConfig(
+      BrowserExtensionServerConfig(
+        host: '127.0.0.1',
+        port: fushiApiPort,
+        token: fushiApiKey,
+      ),
+    );
+  }
+
   /// [fushiApiKey] 为空时播种一枚随机 key（与 sync server 同款密码学安全随机源），
   /// 返回是否真的播种了。**绝不覆盖**非空值：主 Fushi API 一旦有 key，本机回环请求
   /// 也必须带 key，覆盖会让已配好的客户端（Yomitan / 浏览器扩展 / 另一台设备）401。
@@ -9469,7 +9533,11 @@ class AppModel with ChangeNotifier {
   Future<void> startFushiApiServer() async {
     try {
       await _ensureYomitanManager()
-          .start(port: fushiApiPort, apiKey: fushiApiKey);
+          .start(
+            port: fushiApiPort,
+            apiKey: fushiApiKey,
+            accessPolicy: fushiApiAccessPolicy,
+          );
       // 用户在提醒弹出前已从别处把服务器开起来：过时的冲突不再弹。
       fushiApiStartupPortConflict.value = null;
     } on SyncServerPortInUseException {

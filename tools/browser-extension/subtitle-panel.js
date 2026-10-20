@@ -1122,6 +1122,7 @@
     if (!c) return fallback;
     if (c.state === 'yomitan-conflict') return tr('conn_yomitan_conflict', { port: c.port || 19633 });
     if (c.state === 'unauthorized') return tr('conn_unauthorized');
+    if (c.state === 'forbidden') return tr('conn_forbidden');
     if (c.state === 'offline') return tr('conn_api_off');
     if (c.state === 'no-response') return tr('conn_no_response');
     return fallback;

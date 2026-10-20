@@ -101,6 +101,9 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.profiles => null,
   SettingsDestinationId.reading => null,
   SettingsDestinationId.lookup => null,
+  // 本机服务（Fushi API）刻意不挂模块门：它同时服务浏览器扩展、yomitan-api 客户端与
+  // 复习的 AnkiConnect 端点，移动端同样可用（见 app_model 启动处同款说明）。
+  SettingsDestinationId.localServices => null,
   SettingsDestinationId.storage => null,
   SettingsDestinationId.system => null,
   SettingsDestinationId.readerQuickSettings => null,

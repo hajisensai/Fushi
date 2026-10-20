@@ -1147,7 +1147,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
-  'lookup/Fushi API server':
+  // 「允许连接」三态：偏好 → AppModel.fushiApiAccessPolicy（seed 测试）→ 服务端监听地址与
+  // 逐请求放行判定（access 测试用本机局域网地址真连，非本机无密钥 403 / 白名单外 403 /
+  // 仅本机连 TCP 都建不起来）。harness 里不起真实非回环连接，观测不到。
+  'localServices/Allow connections from':
+      'test/sync/fushi_api_server_access_test.dart + test/models/fushi_api_key_seed_on_enable_test.dart',
+  'localServices/Fushi API server':
       'INTEGRATION: yomitan-api server lifecycle (test/sync/fushi_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',

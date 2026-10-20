@@ -881,6 +881,25 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Fushi API「允许谁连」（[FushiApiAccessMode.wireName]）。缺省 = `lan`：改造前
+  /// 服务恒绑 0.0.0.0，升级的老用户保持原样不断连（用户 2026-10-20 拍板）。
+  String get fushiApiAccessMode =>
+      getPref('fushi_api_access_mode', defaultValue: 'lan') as String;
+
+  Future<void> setFushiApiAccessMode(String value) async {
+    await setPref('fushi_api_access_mode', value);
+    notifyListeners();
+  }
+
+  /// 「指定网段」模式的白名单原文（每行一个 IP / CIDR）。
+  String get fushiApiAllowedNetworks =>
+      getPref('fushi_api_allowed_networks', defaultValue: '') as String;
+
+  Future<void> setFushiApiAllowedNetworks(String value) async {
+    await setPref('fushi_api_allowed_networks', value);
+    notifyListeners();
+  }
+
   // ── 实验性：键盘/手柄焦点导航 ──────────────────────────────────────────
   // 整套自定义焦点导航（FushiFocusRoot/Ring + 手柄/方向键焦点移动）默认关闭，
   // 关闭时回退到 Flutter 原生焦点遍历。空格不再确认焦点的行为不受此开关影响。
