@@ -54,20 +54,28 @@ void main() {
       // isFalse 断言就只扫前 2500 字符、后面 1100 字符里出现 open() 也照样绿。
       final String body =
           methodBody(appModel, 'Future<void> startAnimeDownloadService()');
-      expect(body.contains('EmbeddedTorrentHost.open('), isFalse,
+      expect(body.contains('EmbeddedTorrentHostClient.open('), isFalse,
           reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
+      expect(maskCommentsAndStrings(body).contains('_ensureEmbeddedTorrentHost('),
+          isFalse,
+          reason: 'BUG-1053 回归：启动即懒建 = 空闲也在跑 DHT/占 6881');
       // 只记保存路径（TODO-1961 起是活动根 + 历史根集合），真会话交给懒建入口。
       expect(body.contains('_embeddedTorrentSaveRoots'), isTrue);
     });
 
     test('后端工厂在真要用时才懒建（且仅内置后端路径）', () {
+      // BUG-3571：工厂同步交出代理，代理里再等懒建出的工作 isolate。
       final String body =
           methodBody(appModel, 'TorrentBackend _torrentBackendFor(');
-      expect(body.contains('_ensureEmbeddedTorrentHost()'), isTrue,
+      expect(body.contains('_embeddedTorrentBackendProxy(config)'), isTrue,
+          reason: 'BUG-1053：内置后端路径必须走懒建入口');
+      final String proxy = methodBody(
+          appModel, 'TorrentBackend? _embeddedTorrentBackendProxy(');
+      expect(proxy.contains('_ensureEmbeddedTorrentHost()'), isTrue,
           reason: 'BUG-1053：内置后端路径必须走懒建入口');
       expect(
-          appModel
-              .contains('EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()'),
+          appModel.contains(
+              'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()'),
           isTrue);
     });
 
@@ -84,7 +92,12 @@ void main() {
       // 窗口=方法体（花括号配对）。原写法是「找下一个 `\n  }`，找不到就退定长 1200」：
       // 前半赌方法体里不出现同缩进闭合行，后半的静默兜底更是假绿温床——探测体一长，
       // 下面两条 isFalse 就只扫前 1200 字符，后面真写了 session.open( 也照样绿。
-      final String body = methodBody(host, 'static bool probeAvailable(');
+      // BUG-3571：probeAvailable 委托给 probeCapabilities（顺带读出 DLL 能力位），
+      // 真正加载引擎的是后者，窗口跟着它走。
+      final String probe = methodBody(host, 'static bool probeAvailable(');
+      expect(probe.contains('probeCapabilities('), isTrue);
+      final String body = methodBody(
+          host, 'static EmbeddedTorrentHostCapabilities? probeCapabilities(');
       expect(body.contains('EmbeddedTorrentEngine.open('), isTrue);
       expect(body.contains('EmbeddedTorrentSession.open('), isFalse,
           reason: 'BUG-1053：探测里建 session 就等于没修');
@@ -93,24 +106,26 @@ void main() {
     });
 
     test('只有 open() 建 session，且它只被懒建入口调用', () {
-      // 全仓（lib 下）对 EmbeddedTorrentHost.open 的调用点应当只剩懒建入口一处。
-      final Iterable<Match> hits =
-          RegExp(r'EmbeddedTorrentHost\.open\(').allMatches(appModel);
+      // AppModel 里起工作 isolate（= 建 session）的调用点只剩懒建入口一处。
+      final Iterable<Match> hits = RegExp(r'EmbeddedTorrentHostClient\.open\(')
+          .allMatches(maskCommentsAndStrings(appModel));
       expect(hits.length, 1,
-          reason:
-              'BUG-1053：AppModel 里 open() 只应出现在 _ensureEmbeddedTorrentHost');
-      final String ensure = methodBody(
-          appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
-      expect(ensure.contains('EmbeddedTorrentHost.open('), isTrue);
+          reason: 'BUG-1053：AppModel 里 open() 只应出现在懒建入口');
+      final String open = methodBody(
+          appModel, 'Future<EmbeddedTorrentHostClient?> _openEmbeddedTorrentHost(');
+      expect(open.contains('EmbeddedTorrentHostClient.open('), isTrue);
+      final String ensure = methodBody(appModel,
+          'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()');
+      expect(ensure.contains('_openEmbeddedTorrentHost('), isTrue);
     });
 
     test('懒建 host 时 session 初始 DHT 必须显式关闭', () {
-      final String ensure = methodBody(
-          appModel, 'EmbeddedTorrentHost? _ensureEmbeddedTorrentHost()');
+      final String ensure = methodBody(appModel,
+          'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()');
       final String structural = maskCommentsAndStrings(ensure);
       expect(
         RegExp(
-          r'EmbeddedTorrentHost\.open\([\s\S]*?enableDht\s*:\s*false',
+          r'EmbeddedTorrentHostOpenArgs\([\s\S]*?enableDht\s*:\s*false',
         ).hasMatch(structural),
         isTrue,
         reason: 'BUG-1648：resume 恢复阶段若先开 DHT，门控接管前仍会产生空闲流量',

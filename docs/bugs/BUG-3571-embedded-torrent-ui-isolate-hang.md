@@ -1,0 +1,13 @@
+## BUG-3571 · embedded-torrent-ui-isolate-hang
+- **报告**：2026-10-19（用户：Windows 开发版用了一会儿就被关闭）
+- **真实性**：✅ 真 bug。不是崩溃，是 UI 线程卡死后进程被结束。`%LOCALAPPDATA%\Fushi\crashdumps\hang_watchdog.log` 记 `pid=115708 main thread unresponsive >=10000 ms`（启动 58 秒后），对应 hang dump 主线程栈：Dart（UI isolate）→ `fushi_torrent_ffi!ht_set_upload_mode` → `libtorrent::session_handle::get_torrents` → `_Cnd_wait`，即 UI 线程同步等网络线程交回种子列表，而网络线程正忙着加载 fastResume。本机 7 份 hang dump 里有 4 份停在 torrent_rasterbar 的同一个条件变量上（10-15 11:08 / 11:11 / 11:15、10-19 21:45）。
+  - 直接触发点：`packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart` `sweepUploadPolicy()` 首轮「清 upload_mode 残留」调 `_session.setUploadMode(enabled: true)` → `native/fushi_torrent/fushi_torrent_ffi.cpp` `ht_set_upload_mode`（无 infohash 走 `get_torrents()`）。
+  - 根因：整个内置 torrent 宿主（`EmbeddedTorrentHost` + `EmbeddedTorrentSession`）都在 UI isolate 上同步驱动（`fushi/lib/src/models/app_model.dart` 的 `onTick` / `_applyEmbeddedTorrentLimits` / `_torrentNetworkTick` 等），libtorrent 的 `get_torrents` / `status` / 逐种子 `find_torrent` 都是同步等网络线程的往返。宿主里早有注释承认这一点，当时只压低了 `ht_save_resume_data` 的超时预算。无头服务端（`packages/fushi_server/lib/src/download_host.dart`）同样在 HTTP 事件循环上同步驱动。
+- **[x] ① 已修复** — 宿主连同 session 整体搬进专用工作 isolate（`packages/fushi_engine/lib/media/torrent/embedded_torrent_worker.dart`：起 isolate、握手、逐条串行执行命令、日志转发回 UI isolate 的 `fushiDebugPrint` / `engineLog`、有序关闭）；UI isolate 与服务端只持 `EmbeddedTorrentHostClient` / `EmbeddedTorrentBackendProxy`（`embedded_torrent_host_client.dart`，粗粒度命令，一个 tick 个位数消息）。原生桥 `ht_session_ctx` 无锁、依赖调用方串行，单 worker 串行执行原样满足，C++ 不改。
+  - 同步后端工厂（下载服务每 tick 同步取后端）改为同步交出代理、方法里再等 worker 就绪；能否用内置由 DLL 能力探测 `EmbeddedTorrentHost.probeCapabilities` 同步判定（只加载 DLL，不建 session）。
+  - 懒建的 future 在用户配置命令全部入队之后才完成，代理的首个 add 必然排在限速 / 会话设置 / 上传策略之后，与原同步语义一致。
+  - 顺带补上既有缺口：桌面退出走 `ExitFlushRegistry.flushAll` → `exit(0)`，从不经过 `AppModel.dispose()`，所以「退出前强制存一次 resume」在生产上从未发生。现在 worker 打开时登记退出 flush，按 `EmbeddedTorrentHost.exitFlushSaveTimeoutMs`（1.5s，落在注册表单回调 2s 上限内）存 resume、不关 session。
+  - 数据根迁移的释放改成 `Future`，迁移在搬文件前 `await` 到 session 真正关闭。
+  - 未改写成 Rust：`fushi_torrent` 是既有 C++ 模块（CLAUDE.md「Rust 胖核心」条明确不因该条改写），阻塞源是 libtorrent 本身，换语言只多一层 FFI。
+- **[x] ② 已加自动化测试** — `fushi/test/media/torrent/embedded_torrent_worker_test.dart`（无需 DLL：工作 isolate 里伪造 C ABI，让 `ht_set_upload_mode` 同步阻塞 1.5s，断言 UI isolate 定时器最大间隔 < 400ms；另测命令保序、代理往返与暂停显示态、日志回放、退出 flush 预算且不关 session、打不开返回 null、关闭后兜底、上传策略下发）；`fushi/test/media/torrent/embedded_torrent_off_ui_isolate_guard_test.dart`（源码守卫：`fushi/lib` 与 `packages/fushi_server/lib` 不得直接持有宿主 / session / 引擎 / 同步后端）；`embedded_torrent_lazy_session_test.dart` 随新签名更新。
+- **备注**：同时段 `rank.fushi.moe` 反馈拉取超时（`FeedbackReplyNotifier.check`）是网络 / 代理抖动，已被 catch，与本次关闭无关。真机验证见 PR 描述。

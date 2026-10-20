@@ -543,7 +543,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     //    关 session，迁移器随后在新根上改写 resume 里的 save_path；本进程不再懒建。
     //    **不**做 best-effort：停不下引擎就不该搬文件（抛出 → 迁移在搬任何东西前
     //    失败，旧根原样）。
-    appModel.releaseEmbeddedTorrentForDataRootMove();
+    await appModel.releaseEmbeddedTorrentForDataRootMove();
     // 1.5) TODO-1212：释放页面级媒体播放器的文件句柄（视频主播放器 / 离屏缩略图
     //    取帧 Player）。有声书会话上面 stop() 已直接 await disposeAndRelease 释放；
     //    这些视频侧 leaf 播放器是页面级、没有进程级持有者，迁移路径够不到——经

@@ -136,6 +136,9 @@ import 'package:fushi_engine/media/torrent/download_timeouts.dart';
 import 'package:fushi/src/media/torrent/download_relocate_service.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart'
+    show EmbeddedTorrentHostOpenArgs, EmbeddedTorrentWorkerClosed;
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -4807,32 +4810,35 @@ class AppModel with ChangeNotifier {
       createAppHttpIoClient(connectionTimeout: kDownloadConnectionTimeout);
 
   /// 把配置里的内置引擎资源限制应用到常驻宿主（宿主不存在则 no-op）。
+  ///
+  /// BUG-3571：宿主在专用工作 isolate 里，这里只是按序投递命令（工作 isolate
+  /// 逐条执行，先后依赖照旧成立），不等回执、不碰 FFI。
   void _applyEmbeddedTorrentLimits(QbConnectionConfig? config) {
-    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     if (host == null) return;
     final QbConnectionConfig effective = effectiveTorrentConfig(config);
-    host.applyLimits(
+    unawaited(host.applyLimits(
       downloadKbps: effective.downloadLimitKbps,
       uploadKbps: effective.uploadLimitKbps,
       maxConnections: effective.maxConnections,
       limitLocalPeers: effective.limitLocalPeers,
-    );
+    ));
     // 内存占用上限（按物理内存或用户设定推导；避免 libtorrent 吃满内存）。
     // 用户显式设了 maxConnections 就不用内存预算的连接数覆盖它（传 0）。
     final TorrentMemorySettings mem = computeTorrentMemorySettings(
       memoryLimitMb: effective.memoryLimitMb,
       totalRamMb: detectTotalMemoryMb() ?? 0,
     );
-    host.applyMemorySettings(
+    unawaited(host.applyMemorySettings(
       mem,
       connectionsLimit: effective.maxConnections > 0 ? 0 : mem.connectionsLimit,
-    );
+    ));
     // 会话级设置（端口/DHT/LSD/UPnP/NAT-PMP/加密/匿名/活跃数/上传槽）。
-    host.applySessionSettings(effective);
+    unawaited(host.applySessionSettings(effective));
     // 反吸血开关/阈值（用户可调）。
-    host.applyAntiLeechConfig(effective);
+    unawaited(host.applyAntiLeechConfig(effective));
     // 上传/做种策略（默认关上传；开启后做种时长/分享率上限），即时生效。
-    host.setUploadPolicy(effective);
+    unawaited(host.setUploadPolicy(effective));
     // P2P 代理（默认直连；用户在系统设置里单独开启才跟全局代理）。
     _applyEmbeddedTorrentProxy();
   }
@@ -5346,8 +5352,19 @@ class AppModel with ChangeNotifier {
   /// 创建——而创建 = 起一个 libtorrent session（绑 6881 TCP+UDP + 默认开 DHT）。
   /// 于是没有任何下载任务的用户，只要 Fushi 开着就一直在跑全球 DHT，路由器
   /// NAT/conntrack 被小包撑爆 → 整机网络周期性高延迟，关掉 Fushi 即恢复。
-  EmbeddedTorrentHost? _embeddedTorrentHost;
-  EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
+  ///
+  /// BUG-3571：这里只持有工作 isolate 的客户端，宿主与 session 本体在工作
+  /// isolate 里——UI isolate 不碰 libtorrent 的任何同步 FFI。
+  EmbeddedTorrentHostClient? _embeddedTorrentHost;
+  EmbeddedTorrentHostClient? get embeddedTorrentHost => _embeddedTorrentHost;
+
+  /// 正在起的工作 isolate（懒建去重：同一时刻只起一个）。完成值 = 已铺好用户
+  /// 配置的客户端，或 null（打不开）。
+  Future<EmbeddedTorrentHostClient?>? _embeddedTorrentHostOpening;
+
+  /// 进程退出前把 resume 写穿（登记在 [ExitFlushRegistry]，见
+  /// [_flushEmbeddedTorrentForExit]）。
+  ExitFlushCallback? _embeddedTorrentExitFlush;
 
   /// BUG-2950：内置引擎会话级网络诊断（fake-ip 掐断 UDP / DHT 不可达）。
   /// 下载页横幅与种子详情的网络行照此展示；host 未建时恒为 none。
@@ -5394,12 +5411,19 @@ class AppModel with ChangeNotifier {
   /// resume 按**旧绝对路径**落到旧 resume 目录。这里先强制落一次 resume（让迁移器
   /// 改写的是最新状态），再关 session，并禁止本进程再懒建——迁移成功后进程重启，
   /// 新进程按改写过的 resume 恢复。
-  void releaseEmbeddedTorrentForDataRootMove() {
+  ///
+  /// 返回时 session 已关、文件句柄已放（在途的懒建也等它落地后一并关掉）。
+  Future<void> releaseEmbeddedTorrentForDataRootMove() async {
     _embeddedTorrentReleasedForDataRootMove = true;
     _animeDownloadService?.stop();
     _stopTorrentNetworkMonitor();
-    _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
+    final Future<EmbeddedTorrentHostClient?>? opening =
+        _embeddedTorrentHostOpening;
+    _embeddedTorrentHostOpening = null;
     _embeddedTorrentHost = null;
+    _unregisterEmbeddedTorrentExitFlush();
+    final EmbeddedTorrentHostClient? host = await opening;
+    await host?.dispose(keepIds: _animeDownloadPlanIds);
   }
 
   /// 当前仍存在的计划 id 集合（= infohash）。resume 剪枝的真相源：不在这个集合
@@ -5417,34 +5441,91 @@ class AppModel with ChangeNotifier {
   DownloadSaveRootIssue? _downloadSaveRootIssue;
   String? _downloadSaveRootRejectedPath;
 
-  /// 需要真会话时才建（幂等）。不支持的平台 / 无保存路径 / DLL 不可用 → null，
-  /// 调用方自然回退外接 qb。
-  EmbeddedTorrentHost? _ensureEmbeddedTorrentHost() {
-    final EmbeddedTorrentHost? existing = _embeddedTorrentHost;
-    if (existing != null) return existing;
+  /// 内置宿主**能**建出来时同步给出 DLL 能力（不建 session、不起 isolate）；
+  /// 不支持的平台 / 无保存路径 / 已为数据根迁移释放 / DLL 不可用 → null，调用方
+  /// 回退外接 qb。同步的后端工厂靠它决定交不交内置代理。
+  EmbeddedTorrentHostCapabilities? _embeddedTorrentHostCapabilities() {
     // 数据根迁移已把引擎停下、resume 交给迁移器改写（BUG-3541）：本进程随后
     // 重启，不得再懒建一个按旧路径落盘的 session。
     if (_embeddedTorrentReleasedForDataRootMove) return null;
-    final TorrentSaveRoots? roots = _embeddedTorrentSaveRoots;
-    final String? resumeDir = _embeddedTorrentResumeDir;
-    if (roots == null || resumeDir == null || !_supportsEmbeddedTorrent()) {
+    if (_embeddedTorrentSaveRoots == null ||
+        _embeddedTorrentResumeDir == null ||
+        !_supportsEmbeddedTorrent()) {
       return null;
     }
-    final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
-      baseSavePath: roots.active,
-      legacySavePaths: roots.legacy,
-      resumeDir: resumeDir,
-      restoreIds: _animeDownloadPlanIds,
-      // 恢复阶段先保持 DHT 静默；host 读完 torrent 状态后再按实际下载/
-      // 允许做种工作恢复用户配置，避免仅有历史 resume 时启动即广播。
-      enableDht: false,
-    );
-    if (host == null) return null;
+    return EmbeddedTorrentHost.probeCapabilities();
+  }
+
+  /// 需要真会话时才建（幂等、并发去重）。不支持的平台 / 无保存路径 / DLL 不可用
+  /// → null，调用方自然回退外接 qb。
+  ///
+  /// 完成时用户配置已经**按序投递**进工作 isolate：等这个 future 的代理随后
+  /// 发出的 add 一定排在限速/会话设置/上传策略之后执行。
+  Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost() {
+    final EmbeddedTorrentHostClient? existing = _embeddedTorrentHost;
+    if (existing != null) {
+      return Future<EmbeddedTorrentHostClient?>.value(existing);
+    }
+    final Future<EmbeddedTorrentHostClient?>? opening =
+        _embeddedTorrentHostOpening;
+    if (opening != null) return opening;
+    if (_embeddedTorrentHostCapabilities() == null) {
+      return Future<EmbeddedTorrentHostClient?>.value();
+    }
+    final TorrentSaveRoots roots = _embeddedTorrentSaveRoots!;
+    final String resumeDir = _embeddedTorrentResumeDir!;
+    final Completer<EmbeddedTorrentHostClient?> started =
+        Completer<EmbeddedTorrentHostClient?>();
+    _embeddedTorrentHostOpening = started.future;
+    started.complete(_openEmbeddedTorrentHost(
+      started.future,
+      EmbeddedTorrentHostOpenArgs(
+        baseSavePath: roots.active,
+        legacySavePaths: roots.legacy.toList(growable: false),
+        resumeDir: resumeDir,
+        restoreIds: _animeDownloadPlanIds,
+        // 恢复阶段先保持 DHT 静默；host 读完 torrent 状态后再按实际下载/
+        // 允许做种工作恢复用户配置，避免仅有历史 resume 时启动即广播。
+        enableDht: false,
+      ),
+    ));
+    return started.future;
+  }
+
+  /// [self] 是本次懒建登记在 [_embeddedTorrentHostOpening] 的 future，用来认出
+  /// 「起 isolate 期间被数据根迁移 / dispose 撤掉了」——那两条路径会 await 它
+  /// 并负责关掉这个客户端，这里不得再把它挂回来。
+  Future<EmbeddedTorrentHostClient?> _openEmbeddedTorrentHost(
+    Future<EmbeddedTorrentHostClient?> self,
+    EmbeddedTorrentHostOpenArgs args,
+  ) async {
+    final EmbeddedTorrentHostClient? host =
+        await EmbeddedTorrentHostClient.open(args);
+    if (!identical(self, _embeddedTorrentHostOpening)) return host;
+    if (host == null) {
+      _embeddedTorrentHostOpening = null; // 打不开：下次需要时再试。
+      return null;
+    }
     _embeddedTorrentHost = host;
     // 建好即把已保存的资源限制/会话设置铺上（不必等用户改设置）。
     _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
     _startTorrentNetworkMonitor();
+    _embeddedTorrentExitFlush ??=
+        ExitFlushRegistry.instance.register(_flushEmbeddedTorrentForExit);
     return host;
+  }
+
+  /// 退出 flush：把最新 resume 写穿（不关 session，进程随后 `exit(0)`）。
+  /// 桌面退出走 flush 后快杀、不经 [dispose]，没有这一步，「退出前最后一次保存」
+  /// 根本不会发生，只剩最多一分钟前的周期保存。
+  Future<void> _flushEmbeddedTorrentForExit() async {
+    await _embeddedTorrentHost?.flushResumeForExit(_animeDownloadPlanIds);
+  }
+
+  void _unregisterEmbeddedTorrentExitFlush() {
+    final ExitFlushCallback? flush = _embeddedTorrentExitFlush;
+    _embeddedTorrentExitFlush = null;
+    if (flush != null) ExitFlushRegistry.instance.unregister(flush);
   }
 
   // ── BUG-2950：fake-ip 绕行 + 会话级网络诊断 ──────────────────────────────
@@ -5480,13 +5561,19 @@ class AppModel with ChangeNotifier {
   }
 
   Future<void> _torrentNetworkTick() async {
-    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     if (host == null) {
       torrentNetworkIssue.value = TorrentNetworkIssue.none;
       return;
     }
-    final FtSessionStatus? status = host.sessionStatus();
-    if (status == null) return;
+    final FtSessionStatus? status;
+    try {
+      status = await host.sessionStatus();
+    } on EmbeddedTorrentWorkerClosed {
+      return; // 宿主在这次查询途中被释放。
+    }
+    // 等回执期间 AppModel 可能已 dispose / host 被换掉：通知器不再归本轮所有。
+    if (status == null || !identical(host, _embeddedTorrentHost)) return;
     if (!status.dhtRunning) {
       _torrentDhtRunningSince = null;
       _torrentBypassFed = false;
@@ -5500,7 +5587,7 @@ class AppModel with ChangeNotifier {
     if (status.dhtRunning &&
         !_torrentBypassFed &&
         _torrentFakeIpBypass.dhtNodes.isNotEmpty) {
-      host.addDhtNodes(_torrentFakeIpBypass.dhtNodes);
+      unawaited(host.addDhtNodes(_torrentFakeIpBypass.dhtNodes));
       _torrentBypassFed = true;
     }
     final DateTime? since = _torrentDhtRunningSince;
@@ -5513,7 +5600,9 @@ class AppModel with ChangeNotifier {
     );
   }
 
-  Future<void> _refreshTorrentFakeIpBypass(EmbeddedTorrentHost host) async {
+  Future<void> _refreshTorrentFakeIpBypass(
+    EmbeddedTorrentHostClient host,
+  ) async {
     if (_torrentFakeIpProbing) return;
     _torrentFakeIpProbing = true;
     try {
@@ -5533,7 +5622,7 @@ class AppModel with ChangeNotifier {
       }
       _torrentBypassFed = false;
       if (identical(host, _embeddedTorrentHost)) {
-        host.setExtraTrackers(_torrentFakeIpBypass.trackers);
+        unawaited(host.setExtraTrackers(_torrentFakeIpBypass.trackers));
       }
       debugPrint(
         '[torrent] fake-ip DNS detected; real-IP bypass: '
@@ -5616,7 +5705,10 @@ class AppModel with ChangeNotifier {
       );
     }
     // 会话已在跑：就地换根，绝不重建 session（重建 = 掐断当前下载与做种）。
-    if (active.isNotEmpty) _embeddedTorrentHost?.setActiveSaveRoot(active);
+    final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
+    if (active.isNotEmpty && host != null) {
+      unawaited(host.setActiveSaveRoot(active));
+    }
     // 用户显式改过目录，之前的启动回退警告作废。
     _downloadSaveRootIssue = null;
     _downloadSaveRootRejectedPath = null;
@@ -5695,8 +5787,12 @@ class AppModel with ChangeNotifier {
       subtitleAligner: alignDownloadedSubtitle,
       backendFactory: _torrentBackendFor,
       onTick: () {
-        _embeddedTorrentHost?.sweepAntiLeech();
-        _embeddedTorrentHost?.sweepUploadPolicy();
+        // BUG-3571：两轮扫描在工作 isolate 里按序执行，这里只投递。
+        final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
+        if (host != null) {
+          unawaited(host.sweepAntiLeech());
+          unawaited(host.sweepUploadPolicy());
+        }
         unawaited(_saveEmbeddedTorrentResume());
       },
     )..start();
@@ -5892,12 +5988,7 @@ class AppModel with ChangeNotifier {
     final String resolved =
         config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
     if (resolved == QbConnectionConfig.backendEmbedded) {
-      final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
-      return host?.backendView(
-        trackerSubscriptionService: _trackers,
-        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
-        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
-      );
+      return _embeddedTorrentBackendProxy(config);
     }
     if (config.baseUrl.trim().isEmpty) return null;
     return QbTorrentBackend(
@@ -6624,14 +6715,14 @@ class AppModel with ChangeNotifier {
     VideoDownloadJobRow job,
   ) async {
     if (job.backendKind != QbConnectionConfig.backendEmbedded) return;
-    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     if (host == null) return;
     try {
       final AnimeDownloadPlanStore? store = _animeDownloadPlanStore;
       final Set<String> keepIds = store == null
           ? await loadEmbeddedTorrentResumeIds(database)
           : await _refreshAnimeDownloadPlanIds(store);
-      host.saveResumeSnapshot(keepIds, force: true);
+      await host.saveResumeSnapshot(keepIds, force: true);
     } catch (e) {
       debugPrint('[torrent] post-enqueue resume checkpoint failed: $e');
     }
@@ -6662,26 +6753,26 @@ class AppModel with ChangeNotifier {
       return;
     }
     if (!hasRestorable) return;
-    final EmbeddedTorrentHost? host = _ensureEmbeddedTorrentHost();
+    final EmbeddedTorrentHostClient? host = await _ensureEmbeddedTorrentHost();
     // host 已经被别处（下载服务 tick）先建出来时，那次 open 可能因为计划 id
     // 还没加载而跳过了恢复（[EmbeddedTorrentHost.hasRestored] = false）。
     // 真相源到位了就在这里补做一次，别让「本次启动不续传」变成常态。
     if (host != null && !host.hasRestored) {
-      host.restoreFromResume(planIds);
+      await host.restoreFromResume(planIds);
       // 这个防御性延迟恢复发生在 host 已应用用户配置之后；恢复出的活跃下载
       // 需要立即重开 discovery，不能等下一次维护 tick。
-      host.reconcileNetworkDiscoveryState();
+      await host.reconcileNetworkDiscoveryState();
     }
   }
 
   /// TODO-1961-a：周期性把 resume data 落盘（host 内部按
   /// [EmbeddedTorrentHost.resumeSaveInterval] 节流，这里每 tick 调是安全的）。
   Future<void> _saveEmbeddedTorrentResume() async {
-    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
     final AnimeDownloadPlanStore? store = _animeDownloadPlanStore;
     if (host == null || store == null) return;
     try {
-      host.saveResumeSnapshot(await _refreshAnimeDownloadPlanIds(store));
+      await host.saveResumeSnapshot(await _refreshAnimeDownloadPlanIds(store));
     } catch (e) {
       // 保存失败不打断下载轮询（下轮再试），但必须留痕：resume 长期写不进去
       // 等于「重启后所有下载蒸发」，静默吞掉用户和开发者都看不见。
@@ -6729,22 +6820,31 @@ class AppModel with ChangeNotifier {
   TorrentBackend createTorrentBackend(QbConnectionConfig config) =>
       _torrentBackendFor(config);
 
+  /// 内置引擎后端代理（同步交出，方法里再等宿主就绪）。宿主建不出来 → null。
+  ///
+  /// BUG-1053：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
+  /// BUG-3571：懒建是起工作 isolate，异步；能不能建由 DLL 探测同步判定。
+  TorrentBackend? _embeddedTorrentBackendProxy(QbConnectionConfig config) {
+    final EmbeddedTorrentHostCapabilities? capabilities =
+        _embeddedTorrentHostCapabilities();
+    if (capabilities == null) return null;
+    return EmbeddedTorrentBackendProxy(
+      host: _ensureEmbeddedTorrentHost(),
+      capabilities: capabilities,
+      trackerSubscriptionService: _trackers,
+      autoAddTrackerSubscription: config.autoAddTrackerSubscription,
+      trackerSubscriptionUrl: config.trackerSubscriptionUrl,
+    );
+  }
+
   /// 后端选择：配置选内置且宿主可用 → 内置引擎的共享 session 视图；否则
   /// 外接 qBittorrent（默认 / 内置不可用时的回退）。
   TorrentBackend _torrentBackendFor(QbConnectionConfig config) {
     final String backend =
         config.resolveBackend(embeddedSupported: _supportsEmbeddedTorrent());
-    // BUG-1053：到这里才是「真的要用下载后端」，session 在此懒建（幂等）。
-    final EmbeddedTorrentHost? host =
-        backend == QbConnectionConfig.backendEmbedded
-            ? _ensureEmbeddedTorrentHost()
-            : _embeddedTorrentHost;
-    if (backend == QbConnectionConfig.backendEmbedded && host != null) {
-      return host.backendView(
-        trackerSubscriptionService: _trackers,
-        autoAddTrackerSubscription: config.autoAddTrackerSubscription,
-        trackerSubscriptionUrl: config.trackerSubscriptionUrl,
-      );
+    if (backend == QbConnectionConfig.backendEmbedded) {
+      final TorrentBackend? embedded = _embeddedTorrentBackendProxy(config);
+      if (embedded != null) return embedded;
     }
     return QbTorrentBackend(
       QBittorrentClient(
@@ -8521,8 +8621,18 @@ class AppModel with ChangeNotifier {
     // await 一次 `store.loadAll()`；缓存最多落后一个 tick（20s），代价只是某个
     // 刚删掉的计划多留一轮 resume 文件，下次启动的剪枝会立刻清掉它。
     _stopTorrentNetworkMonitor();
-    _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
+    _unregisterEmbeddedTorrentExitFlush();
+    final Future<EmbeddedTorrentHostClient?>? opening =
+        _embeddedTorrentHostOpening;
+    final Set<String>? keepIds = _animeDownloadPlanIds;
+    _embeddedTorrentHostOpening = null;
     _embeddedTorrentHost = null;
+    // dispose 是同步的：关宿主（存 resume + 关 session + 退工作 isolate）只能
+    // 投递出去。生产桌面退出不经这里（见 [_flushEmbeddedTorrentForExit]）。
+    if (opening != null) {
+      unawaited(opening.then(
+          (EmbeddedTorrentHostClient? host) => host?.dispose(keepIds: keepIds)));
+    }
     torrentNetworkIssue.dispose();
     super.dispose();
   }
@@ -9953,11 +10063,13 @@ class AppModel with ChangeNotifier {
   /// 把「P2P 该不该走代理、走哪个、哪一档」下发给内置引擎（宿主不存在则
   /// no-op；宿主建好时 [_applyEmbeddedTorrentLimits] 会再调一次）。
   void _applyEmbeddedTorrentProxy() {
+    final EmbeddedTorrentHostClient? host = _embeddedTorrentHost;
+    if (host == null) return;
     final String mode = prefsRepo.p2pProxyMode;
-    _embeddedTorrentHost?.applyProxy(
+    unawaited(host.applyProxy(
       resolveP2pProxyHostPort(enabled: mode != 'direct'),
       mixed: mode == 'mixed',
-    );
+    ));
   }
 
   /// 外部 mokuro CLI 可执行路径（漫画 OCR 后备；空串=未设，退回 env/PATH 探测）。
