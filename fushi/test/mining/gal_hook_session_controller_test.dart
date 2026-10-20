@@ -1774,8 +1774,11 @@ void main() {
       );
       expect(
         loopback.grabRecentCalls,
-        1,
-        reason: 'mining must reuse the line cache instead of recording later',
+        2,
+        reason:
+            'the line is still current (no next line yet), so mining closes '
+            'its window at "now" once (BUG-3575); a line already superseded '
+            'is never re-recorded (gal_audio_degrade_track_test)',
       );
       expect(
         engine.utteranceTimestamps,
@@ -2125,9 +2128,14 @@ void main() {
         sentence: entry.text,
         outputExtension: 'aac',
       );
-      expect(engine.utteranceTimestamps, <int>[
-        654321,
-      ], reason: 'mining reuses the exact cached utterance for this line');
+      expect(
+        engine.utteranceTimestamps,
+        <int>[654321, 654321],
+        reason:
+            'mining does one closing grab for this exact line timestamp '
+            '(BUG-3575: tail that arrived after settle stopped); it never '
+            'grabs any other line',
+      );
 
       await controller.close();
       endpoints.dispose();

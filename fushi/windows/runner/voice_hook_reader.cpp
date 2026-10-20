@@ -1797,8 +1797,9 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   }
 
   // 拼接选定源在 [下界, ts+forward_ms] 的段；静音判据用该源峰值能量的 8%。
+  // 无下一句时前向上限是 kUtteranceMaxForwardMs（旧值 6000 会把长句截在 6 秒）。
   //
-  // BUG-1475：forward_ms 缺省仍是 6000（旧行为逐字等价）。调用方给出 end_ts_ms
+  // BUG-1475：调用方给出 end_ts_ms
   // （下一句的时间戳）时收窄到那里——封口 grab 要拿回已进环、时间戳**严格早于**
   // 下一句的那点尾巴，同时保住 BUG-1109「不把下一句的段拼进上一句」的不变量。
   //
@@ -1807,14 +1808,8 @@ VoiceHookStatus VoiceHookReader::GrabUtterance(
   // 缓冲，实测比文本 hook 早 219ms 灌进 1500ms 音频），固定 200ms 回看会把整句的开头
   // 整块丢掉。判据见 voice_hook_utterance_window.h：只对「明显快于实时写入」的段回退，
   // 实时写入的混音 / BGM 源逐字节维持旧行为。
-  int64_t forward_ms = 6000;
-  if (end_ts_ms != 0 && end_ts_ms > ts_ms) {
-    forward_ms = std::min<int64_t>(
-        forward_ms, static_cast<int64_t>(end_ts_ms - ts_ms));
-  } else if (end_ts_ms != 0) {
-    // 下一句时间戳不晚于本句：拿不到任何合法的前向窗口，退化为只取本句时刻附近。
-    forward_ms = 0;
-  }
+  const int64_t forward_ms = fushi_voice_hook::UtteranceForwardMs(
+      static_cast<int64_t>(ts_ms), static_cast<int64_t>(end_ts_ms));
   // 选定源的段（按提交顺序）喂给下界推算：valid 本身就是 seq 升序。
   std::vector<fushi_voice_hook::UtteranceClipTiming> timings;
   timings.reserve(valid.size());

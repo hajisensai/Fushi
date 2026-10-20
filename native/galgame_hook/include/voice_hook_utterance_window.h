@@ -29,6 +29,29 @@ constexpr int64_t kUtteranceBackMs = 200;
 // 下界最多回看多远：与前向窗口同量级，兜住「选到长流式源」时的失控回溯。
 constexpr int64_t kUtteranceMaxBackMs = 6000;
 
+// 文本时刻之后仍算作本句的**最长**前向窗口（无下一句时间戳时的上限）。
+//
+// 旧值 6000ms 是把「一句台词的语音」默认成不超过 6 秒：流式提交的引擎（逐块喂
+// XAudio2 / DirectSound）在 ts+6000 之后提交的段全被丢掉，长句必然被截在 6 秒处，
+// 短句完整——用户报的就是这个形状。一句话真正的右界是**下一句到达**（调用方经
+// end_ts_ms 传入）；这里的上限只兜「迟迟没有下一句」的情形，取 30s 覆盖长独白，
+// 远小于共享内存环的容量。与 Dart 侧 kGalLineVoiceMaxMs 同值。
+constexpr int64_t kUtteranceMaxForwardMs = 30000;
+
+// 前向窗口长度：end_ts_ms 为 0 表示「还没有下一句」→ 上限；下一句晚于本句 → 收到
+// 下一句为止（BUG-1475，不把下一句的段拼进来）；下一句不晚于本句 → 0。
+inline int64_t UtteranceForwardMs(int64_t ts_ms, int64_t end_ts_ms,
+                                  int64_t max_forward_ms = kUtteranceMaxForwardMs) {
+  if (end_ts_ms == 0) {
+    return max_forward_ms;
+  }
+  if (end_ts_ms <= ts_ms) {
+    return 0;
+  }
+  const int64_t span = end_ts_ms - ts_ms;
+  return span < max_forward_ms ? span : max_forward_ms;
+}
+
 struct UtteranceClipTiming {
   int64_t timestamp_ms;  // 提交时刻（VoiceClip::timestamp_ms）
   int64_t duration_ms;   // 该段承载的音频时长
