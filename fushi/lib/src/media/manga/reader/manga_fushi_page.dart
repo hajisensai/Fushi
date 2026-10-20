@@ -61,7 +61,10 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
+import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -1899,9 +1902,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
 
     final String jsonStr = await jsonFile.readAsString();
-    final MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(
-      jsonStr,
-    );
+    MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(jsonStr);
+    // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
+    // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
+    if (payload.pdfTextLayerVersion == null &&
+        File(
+          p.join(p.dirname(mangaJsonPath), PdfImporter.kPdfFileName),
+        ).existsSync()) {
+      payload =
+          await MangaPdfTextLayer.ensure(p.dirname(mangaJsonPath)) ?? payload;
+    }
     if (!mounted) return;
     await _presentPayload(
       row: row,
@@ -2149,9 +2159,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _bookRow = row;
       _imagesDir = imagesDir;
       _payload = payload;
-      _volumeOcrSettled =
-          payload.ocr != null ||
-          payload.images.any((MokuroImage image) => image.blocks.isNotEmpty);
+      // PDF 文字层块不算识别结果（见 mangaVolumeOcrSettled）。
+      _volumeOcrSettled = mangaVolumeOcrSettled(payload);
       _volumeOcrRelayoutCandidate = isMangaOcrRelayoutCandidate(payload.ocr);
       _mode = mode;
       _spreads = spreads;
@@ -4452,11 +4461,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     final List<MokuroImage> images = List<MokuroImage>.of(current.images);
-    images[pageIndex] = page;
+    // 逐页进度只带 OCR 块：保留这页的 PDF 文字层（与落盘时同一合并规则）。
+    final MokuroImage merged = preservePdfTextLayerPage(
+      current.images[pageIndex],
+      page,
+    );
+    images[pageIndex] = merged;
     setState(() {
       _payload = MokuroPayload(images: images, ocr: current.ocr);
     });
-    await _replacePageOcrOverlay(pageIndex, page);
+    await _replacePageOcrOverlay(pageIndex, merged);
   }
 
   /// 记录并（首次）提示本次任务真正生效的执行后端。

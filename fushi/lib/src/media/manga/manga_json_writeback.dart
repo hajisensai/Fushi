@@ -33,6 +33,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 进程内 per-path 写锁（规范化路径 → 链尾 Future）。
@@ -74,16 +75,39 @@ Future<T> runExclusiveOnMangaJson<T>(
 ///
 /// **调用方必须已持有 [runExclusiveOnMangaJson] 的锁**（本函数不自锁，以便读-改-写
 /// 整体在同一临界区内）：`.tmp` 是 per-path 固定名，两个写者交叠会互相踩临时文件。
-Future<void> writeMangaJsonAtomically(
+///
+/// 覆写前把磁盘上旧文件里的 PDF 文字层块并进来（[preservePdfTextLayer]）：OCR /
+/// 向导 / 大模型识别产出的 payload 都不带文字层，直接覆写会把它冲掉。返回实际
+/// 落盘的 payload（调用方拿它刷新显示，而不是自己手里那份）。
+Future<MokuroPayload> writeMangaJsonAtomically(
   String mangaJsonPath,
   MokuroPayload payload,
 ) async {
+  final MokuroPayload merged = preservePdfTextLayer(
+    incoming: payload,
+    existing: await _readPdfTextLayerSource(mangaJsonPath),
+  );
   final File temporary = File('$mangaJsonPath.tmp');
   await temporary.writeAsString(
-    jsonEncode(mangaPayloadToJson(payload)),
+    jsonEncode(mangaPayloadToJson(merged)),
     flush: true,
   );
   await temporary.rename(mangaJsonPath);
+  return merged;
+}
+
+/// 磁盘上的旧 manga.json，只在它带文字层时才解析（大多数漫画没有，省一次整份
+/// JSON 解析）。读 / 解析失败按「没有」处理：覆写本来就会替换它。
+Future<MokuroPayload?> _readPdfTextLayerSource(String mangaJsonPath) async {
+  final File file = File(mangaJsonPath);
+  try {
+    if (!await file.exists()) return null;
+    final String source = await file.readAsString();
+    if (!source.contains('"pdf_text_layer')) return null;
+    return parseMangaJson(source);
+  } on Object {
+    return null;
+  }
 }
 
 /// 纯函数：回写块的 font_size 估算（页图像素单位）。

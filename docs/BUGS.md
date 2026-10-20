@@ -49,6 +49,7 @@
 | [BUG-3631](bugs/BUG-3631-apple-segmented-overflow.md) | ✅ | ✅ | iPhone 上 Apple 分段条放不下时右侧被裁、横拖滚不动 |
 | [BUG-3622](bugs/BUG-3622-gal-text-process-quotes-drops-narration.md) | ✅ | ✅ | gal-text-process-quotes-drops-narration |
 | [BUG-3622](bugs/BUG-3622-android-ort-sme2-sigill.md) | ✅ | ✅ | Android 本地推理在骁龙 8 Elite Gen 5 上 SIGILL 闪退（ORT 1.23 误用 KleidiAI SME2 内核） |
+| [BUG-3622](bugs/BUG-3622-pdf-manga-text-layer-drift.md) | ✅ | ✅ | pdf-manga-text-layer-drift |
 | [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
 | [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
 | [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
