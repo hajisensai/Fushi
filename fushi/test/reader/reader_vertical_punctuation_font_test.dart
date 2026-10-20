@@ -78,6 +78,36 @@ void main() {
       });
     }
 
+    // 子集是 Noto Serif JP：繁体中文竖排的 、。，． 惯例居中，换成日文右上字形反而错位。
+    for (final String lang in <String>['zh-Hant', 'zh-TW', 'zh-HK']) {
+      test('竖排 $lang：不注入', () async {
+        final ReaderSettings settings = await settingsFor(
+          writingMode: 'vertical-rl',
+          viewMode: 'paginated',
+        );
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          contentLanguage: lang,
+        );
+        expect(css, isNot(contains(family)));
+        expect(css, isNot(contains(ReaderVerticalPunctuationFont.urlPath)));
+      });
+    }
+
+    for (final String? lang in <String?>['ja', 'zh-Hans', null]) {
+      test('竖排 ${lang ?? '语言未知'}：照常注入', () async {
+        final ReaderSettings settings = await settingsFor(
+          writingMode: 'vertical-rl',
+          viewMode: 'paginated',
+        );
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          contentLanguage: lang,
+        );
+        expect(bodyFamilies(css).first, startsWith('"$family", '));
+      });
+    }
+
     test('用户字体仍紧跟在标点子集之后', () async {
       final ReaderSettings settings = await settingsFor(
         writingMode: 'vertical-rl',
@@ -93,27 +123,28 @@ void main() {
   });
 
   group('歌词竖排共用同一子集', () {
-    String lyrics({required bool vertical}) => LyricsModeHtml.generate(
-      cues: <AudioCue>[
-        AudioCue()
-          ..id = 1
-          ..bookKey = 'book'
-          ..chapterHref = 'chapter'
-          ..sentenceIndex = 0
-          ..textFragmentId = ''
-          ..text = '「床に」'
-          ..startMs = 0
-          ..endMs = 900
-          ..audioFileIndex = 0,
-      ],
-      currentIndex: 0,
-      backgroundColor: 'transparent',
-      textColor: '#888888',
-      accentColor: '#3366cc',
-      fontSize: 24,
-      vertical: vertical,
-      contentLanguage: 'ja',
-    );
+    String lyrics({required bool vertical, String language = 'ja'}) =>
+        LyricsModeHtml.generate(
+          cues: <AudioCue>[
+            AudioCue()
+              ..id = 1
+              ..bookKey = 'book'
+              ..chapterHref = 'chapter'
+              ..sentenceIndex = 0
+              ..textFragmentId = ''
+              ..text = '「床に」'
+              ..startMs = 0
+              ..endMs = 900
+              ..audioFileIndex = 0,
+          ],
+          currentIndex: 0,
+          backgroundColor: 'transparent',
+          textColor: '#888888',
+          accentColor: '#3366cc',
+          fontSize: 24,
+          vertical: vertical,
+          contentLanguage: language,
+        );
 
     test('竖排注入并排链首', () {
       final String html = lyrics(vertical: true);
@@ -123,6 +154,13 @@ void main() {
 
     test('横排不注入', () {
       expect(lyrics(vertical: false), isNot(contains(family)));
+    });
+
+    test('繁体中文竖排不注入', () {
+      expect(
+        lyrics(vertical: true, language: 'zh-Hant'),
+        isNot(contains(family)),
+      );
     });
   });
 

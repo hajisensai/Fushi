@@ -310,11 +310,15 @@ body.ly-themed .lyrics-container > .ly-gap {
     final String chainFontFamily = fontFamilyCss.isEmpty
         ? lyricsFallbackFonts
         : '$fontFamilyCss, $lyricsFallbackFonts';
-    // BUG-3606：竖排与正文同一套标点子集（链首 + unicode-range），横排不注入。
-    final String bodyFontFamily = vertical
+    // BUG-3606：竖排与正文同一套标点子集与同一判据（链首 + unicode-range）。
+    final bool verticalPunctuation = ReaderVerticalPunctuationFont.appliesTo(
+      vertical: vertical,
+      contentLanguage: contentLanguage,
+    );
+    final String bodyFontFamily = verticalPunctuation
         ? ReaderVerticalPunctuationFont.prependTo(chainFontFamily)
         : chainFontFamily;
-    final String bodyFontFaceCss = vertical
+    final String bodyFontFaceCss = verticalPunctuation
         ? '${ReaderVerticalPunctuationFont.fontFace()}\n$fontFaceCss'
         : fontFaceCss;
 

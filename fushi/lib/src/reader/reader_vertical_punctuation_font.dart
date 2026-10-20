@@ -1,3 +1,4 @@
+import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 竖排标点子集字体（BUG-3606）。
@@ -58,6 +59,13 @@ abstract final class ReaderVerticalPunctuationFont {
       '@font-face { font-family: "$family"; '
       'src: url("${ReaderCustomFontCss.resourceUrl(urlPath)}") format("woff2"); '
       'unicode-range: $unicodeRange; font-display: block; }';
+
+  /// 这段内容要不要注入子集——正文与歌词共用的唯一判据。横排不注入；繁体中文竖排
+  /// 惯例是 、。，． 居中，换成 Noto Serif JP 的右上字形反而错位，也不注入。语言
+  /// 未知照常注入（BUG-3606 的原场景就是没标语言的日文书）。
+  static bool appliesTo({required bool vertical, String? contentLanguage}) =>
+      vertical &&
+      cjkScriptForLanguageTag(contentLanguage) != CjkScript.traditionalChinese;
 
   /// 把子集放到 [chain]（一条 CSS `font-family` 值）最前面。
   static String prependTo(String chain) =>
