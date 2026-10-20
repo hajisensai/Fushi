@@ -81,7 +81,6 @@ bug.BranchScanner stubScanner(
     () async => bug.BranchScan(status, numbers, detail, refCount: refCount);
 
 void main() {
-  final Directory originalCwd = Directory.current;
   late List<String> out;
   late List<String> warn;
   final List<Directory> temps = <Directory>[];
@@ -94,7 +93,7 @@ void main() {
   });
 
   tearDown(() {
-    Directory.current = originalCwd;
+    bug.bugRepoRoot = null;
     bug.logOut = stdout.writeln;
     bug.logWarn = stderr.writeln;
     for (final d in temps) {
@@ -135,7 +134,7 @@ void main() {
     git(root, <String>['config', 'commit.gpgsign', 'false']);
     git(root, <String>['add', '-A']);
     git(root, <String>['commit', '-qm', 'fixture']);
-    Directory.current = root;
+    bug.bugRepoRoot = root.path;
     return root;
   }
 
@@ -370,7 +369,7 @@ void main() {
   group('bug.dart new --scan：跨分支取号', () {
     test('clone 之后别人才 push 的号也能扫到（真 fetch）→ 取全局最大 +1，无降级警告', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: false);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
 
       await bug.cmdNew(<String>['some-slug', '标题', '--scan']);
 
@@ -383,7 +382,7 @@ void main() {
 
     test('远端不可达（fetch 失败）→ 降级到已缓存的 remote-tracking 引用，并显式警告可能撞号', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       git(worker, <String>[
         'remote',
         'set-url',
@@ -404,7 +403,7 @@ void main() {
       final root = makeBareFixture('bug_nogit_');
       temps.add(root);
       writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       await bug.cmdNew(<String>['nogit-slug', '标题', '--scan']);
 
@@ -418,7 +417,7 @@ void main() {
       final root = makeBareFixture('bug_nogit_default_');
       temps.add(root);
       writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       await bug.cmdNew(<String>['nogit-slug', '标题']);
 
@@ -430,7 +429,7 @@ void main() {
       final root = makeBareFixture('bug_stub_');
       temps.add(root);
       writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       await bug.cmdNew(<String>[
         'stub-slug',
@@ -468,7 +467,7 @@ void main() {
   group('bug.dart new --scan：号池盲区（BUG-1429）', () {
     test('并发工作区里**未提交**的 bug 文件必须算已占（一天连撞六次的根因）', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       // 邻居工作区刚 `new` 出 BUG-050，还没 commit——任何 commit 树里都没有它。
       addSiblingWorktreeWithUncommittedBug(worker, 50, 'neighbour');
 
@@ -484,7 +483,7 @@ void main() {
 
     test('未提交文件的占用证据要写清「哪个工作区」，不是只给一个数字', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       final sibling = addSiblingWorktreeWithUncommittedBug(
         worker,
         50,
@@ -511,7 +510,7 @@ void main() {
 
     test('远端不可达（降级）时，本机并发工作区的未提交号仍然看得见', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       addSiblingWorktreeWithUncommittedBug(worker, 60, 'neighbour');
       git(worker, <String>[
         'remote',
@@ -534,7 +533,7 @@ void main() {
   group('bug.dart new：什么算「认领一个号」', () {
     test('已提交分支上 bug 文件的正文 H2 号也算已占（文件名与 H2 不一致的坏态）', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       // 邻居分支上有一份坏态文件：文件名说 030，正文 H2 说 031。两个号都被认领了。
       git(worker, <String>['checkout', '-q', '-b', 'mismatch']);
       writeFile(
@@ -557,7 +556,7 @@ void main() {
 
     test('代码/文档里的 BUG-NNN **引用**不算认领——否则每条 bug 白烧一批号', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       git(worker, <String>['checkout', '-q', '-b', 'refs-only']);
       writeFile(
         worker,
@@ -582,7 +581,7 @@ void main() {
     /// 不该报）；我的工作区有未提交的 BUG-050-mine.md，而邻居工作区也占了 050（该报）。
     Future<Directory> makeCheckFixture() async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       git(worker, <String>['checkout', '-q', '-b', 'stale']);
       writeFile(worker, 'docs/bugs/BUG-003-stale.md', bugDoc(3, '陈旧分支上的历史同号'));
       git(worker, <String>['add', '-A']);
@@ -628,7 +627,7 @@ void main() {
 
     test('没有跨源撞号时 --strict 也是 0', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       writeFile(worker, 'docs/bugs/BUG-099-mine.md', bugDoc(99, '没人抢的号'));
       bug.cmdReindex();
       out.clear();
@@ -716,7 +715,7 @@ void main() {
         'fushi/test/tools/bug_005_foo_test.dart',
         '// BUG-005 守卫\n',
       );
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       await bug.cmdRenumber(<String>[
         '5',
@@ -739,7 +738,7 @@ void main() {
   group('bug.dart new：默认口径（本地 + 基线树，不遍历）', () {
     test('看得见 origin/main 上的号，看不见别的分支与邻居工作区——那些交给合并时的 settle', () async {
       final worker = makeRemoteFixture(pushPeerBeforeClone: true);
-      Directory.current = worker;
+      bug.bugRepoRoot = worker.path;
       // 基线（origin/main）上再加一条 BUG-010：worker 只要 fetch 过就看得见。
       git(worker, <String>['checkout', '-q', '-b', 'tmp-base']);
       writeFile(worker, 'docs/bugs/BUG-010-on-base.md', bugDoc(10, '基线上的号'));
@@ -777,7 +776,7 @@ void main() {
       git(root, <String>['config', 'user.name', 'fixture']);
       // 本机全局 commit.gpgsign=true 会让 fixture 提交失败，显式关掉。
       git(root, <String>['config', 'commit.gpgsign', 'false']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
       bug.cmdReindex();
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'seed']);
@@ -925,7 +924,7 @@ void main() {
       git(root, <String>['config', 'user.email', 'fixture@example.com']);
       git(root, <String>['config', 'user.name', 'fixture']);
       git(root, <String>['config', 'commit.gpgsign', 'false']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
       bug.cmdReindex();
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'seed']);

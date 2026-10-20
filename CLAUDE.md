@@ -54,7 +54,7 @@
 - galgame 制卡：Flutter 侧 `fushi/lib/src/lookup/`（overlay 浮窗）+ `fushi/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip，再由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地，运行期不下载任何组件。helper **不链接进 `fushi.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
 - 动画刮削上游参考：`references/ShokoServer/`（官方 ShokoServer git submodule，只作只读架构参考，不参与本仓构建/运行）；Aniyomi / Mihon 扩展适配参考：`references/mangayomi/`（kodjodevf/mangayomi git submodule，同一 M-Extension-Server sidecar 血统，只读，看它的 `lib/eval/mihon/service.dart` 与 `lib/services/get_video_list.dart`）。
-- 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1`；`fushi/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart` / `pre_push_check.dart`（可选的本地预检，不是推送门）。
+- 工具脚本归属：根 `tool/` = `setup_worktree.ps1` / `bootstrap.ps1` / `bug.dart` / `check_release_policy.ps1`；`fushi/tool/` = `i18n_sync.dart` / `run_windows_itest.ps1` / `comprehensive_test_runner.dart` / `pre_push_check.dart`（可选的本地预检，不是推送门）/ `update_suite_timings.dart`（用 CI 单测分片上传的 `unit-test-events-*` 事件日志刷新 `tool/test_flow/suite_timings.json`，`--file-shard` 按它均衡各片；新增大量测试或分片明显不均时跑一次）。
 - 审查报告：`docs/reviews/YYYY-MM-DD-project-review.md`；已复现回归：`docs/REGRESSION_BUGS.md`（本地，不入库）；测试证据：`.codex-test/`（不入库）。
 
 ## 当前技术事实

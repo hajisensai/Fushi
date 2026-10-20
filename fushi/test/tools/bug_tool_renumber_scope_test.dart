@@ -144,7 +144,7 @@ Directory makeCollisionFixture(
     git(root, <String>['add', '-A']);
     git(root, <String>['commit', '-qm', 'feat: BUG-9246 reader-restore']);
   }
-  Directory.current = root;
+  bug.bugRepoRoot = root.path;
   return root;
 }
 
@@ -152,7 +152,6 @@ bug.BranchScanner stubScanner(Set<int> numbers) => () async =>
     bug.BranchScan(bug.BranchScanStatus.fresh, numbers, '', refCount: 2);
 
 void main() {
-  final Directory originalCwd = Directory.current;
   late List<String> out;
   late List<String> warn;
   final List<Directory> temps = <Directory>[];
@@ -165,7 +164,7 @@ void main() {
   });
 
   tearDown(() {
-    Directory.current = originalCwd;
+    bug.bugRepoRoot = null;
     bug.logOut = stdout.writeln;
     bug.logWarn = stderr.writeln;
     for (final d in temps) {
@@ -378,7 +377,7 @@ void main() {
       writeFile(root, 'docs/bugs/BUG-9246-reader-restore.md', prBugDoc);
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'both on base']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       await expectLater(
         bug.cmdRenumber(<String>['9246', '9250'],
@@ -435,7 +434,7 @@ void main() {
       writeFile(root, 'a.dart', '// BUG-9246 与 BUG-9246 两处\n');
       writeFile(root, 'bug_9246_test.dart', '// 无正文引用\n');
       writeFile(root, 'clean.dart', '// TODO-9246 不算\n');
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       final fp = bug.bugRefFingerprint(
         9246,
@@ -514,7 +513,7 @@ void main() {
       writeFile(root, 'docs/notes.bin', '漏网的引用 BUG-9246。\n');
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'single BUG-9246']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       // 前提：这是非撞号态（只有一份同号文件），自校验走全量 residualScanPaths()。
       expect(bug.locateBugFiles(9246), hasLength(1));
@@ -538,7 +537,7 @@ void main() {
       writeFile(root, 'UPSTREAM', '引用 BUG-9246 也在这里。\n');
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'seed']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       final scan = await bug.repoScanPaths();
       expect(scan, isNot(contains('docs/notes.bin')),
@@ -561,7 +560,7 @@ void main() {
           <int>[0x89, 0x50, 0x00, 0x01, ...'BUG-9246'.codeUnits]);
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'binary blob']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       expect(bug.looksTextual('assets/blob'), isFalse);
       expect(await bug.findResidualRefs(9246), isEmpty);
@@ -580,7 +579,7 @@ void main() {
           <int>[0xD6, 0xD0, 0xCE, 0xC4, 0x20, ...'BUG-9246'.codeUnits, 0x0A]);
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'gbk']);
-      Directory.current = root;
+      bug.bugRepoRoot = root.path;
 
       expect(await bug.findResidualRefs(9246), contains('legacy.txt:1'));
     });
