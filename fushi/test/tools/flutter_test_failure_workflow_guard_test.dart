@@ -22,6 +22,15 @@ void main() {
       contains('dart run tool/flutter_test_failures.dart '
           r'--file-shard=${{ matrix.part }}/4 --exclude-tags golden'),
     );
+    // Each shard compiles once (faster-testing) and runs as batches of fresh
+    // processes so leaked suites cannot pile up (see main.yml unit-tests).
+    for (final String workflow in <String>[mainWorkflow, releaseWorkflow]) {
+      expect(
+        workflow,
+        contains('--exclude-tags golden --experimental-faster-testing '
+            '--max-suites-per-run=400'),
+      );
+    }
     expect(mainWorkflow, contains('shard: [0, 1, 2, 3]'));
     expect(releaseWorkflow, contains("part: ['0', '1', '2', '3', checks]"));
     // Coverage was never uploaded or read by anything and roughly doubled the

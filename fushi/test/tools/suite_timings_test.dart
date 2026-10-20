@@ -79,6 +79,26 @@ void main() {
       },
     );
 
+    test('IDs restart per run when batches share one log', () {
+      final Map<String, int> durations = suiteDurationsFromEvents(
+        <Map<String, Object?>>[
+          <String, Object?>{'type': 'start', 'time': 0},
+          suite(0, 'test/a_test.dart'),
+          start(1, 0, 0),
+          done(1, 500),
+          <String, Object?>{'type': 'start', 'time': 0},
+          suite(0, 'test/sub/b_test.dart'),
+          start(1, 0, 100),
+          done(1, 400),
+        ],
+        known,
+      );
+      expect(durations, <String, int>{
+        'test/a_test.dart': 500,
+        'test/sub/b_test.dart': 300,
+      });
+    });
+
     test('a suite that never finished is not reported', () {
       final Map<String, int> durations = suiteDurationsFromEvents(
         <Map<String, Object?>>[suite(0, 'test/a_test.dart'), start(1, 0, 100)],

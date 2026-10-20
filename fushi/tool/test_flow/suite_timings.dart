@@ -61,6 +61,10 @@ void writeSuiteTimings(File file, Map<String, int> timings) {
 /// (`/home/runner/.../fushi/test/a_test.dart`, faster-testing on Windows also
 /// prefixes `/`); they are mapped onto [knownSuites] (paths relative to `fushi/`)
 /// by suffix, and suites that match none are dropped.
+///
+/// The stream may hold several runs back to back (a batched shard, see
+/// `splitIntoBatches`); test and suite IDs restart at every run's `start`
+/// event, so they are only resolved within one run.
 Map<String, int> suiteDurationsFromEvents(
   Iterable<Map<String, Object?>> events,
   Set<String> knownSuites,
@@ -69,9 +73,24 @@ Map<String, int> suiteDurationsFromEvents(
   final Map<int, int> testSuite = <int, int>{};
   final Map<int, int> start = <int, int>{};
   final Map<int, int> end = <int, int>{};
+  final Map<String, int> durations = <String, int>{};
+  void closeRun() {
+    for (final MapEntry<int, String> e in suitePaths.entries) {
+      if (start[e.key] != null && end[e.key] != null) {
+        durations[e.value] = end[e.key]! - start[e.key]!;
+      }
+    }
+    suitePaths.clear();
+    testSuite.clear();
+    start.clear();
+    end.clear();
+  }
+
   for (final Map<String, Object?> event in events) {
     final Object? time = event['time'];
     switch (event['type']) {
+      case 'start':
+        closeRun();
       case 'suite':
         final Object? suite = event['suite'];
         if (suite is Map<String, Object?> &&
@@ -102,11 +121,8 @@ Map<String, int> suiteDurationsFromEvents(
         }
     }
   }
-  return <String, int>{
-    for (final MapEntry<int, String> e in suitePaths.entries)
-      if (start[e.key] != null && end[e.key] != null)
-        e.value: end[e.key]! - start[e.key]!,
-  };
+  closeRun();
+  return durations;
 }
 
 String? _matchKnownSuite(String rawPath, Set<String> knownSuites) {
