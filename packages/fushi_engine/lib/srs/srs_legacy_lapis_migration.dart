@@ -28,6 +28,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -694,10 +695,16 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
   ///
   /// 给了 [targetDeckId] 就顺手把这些笔记连同迁移后的卡片移到该牌组（笔记的首选牌组也改过去，
   /// 以后按模板新生成的卡同样落在那里）；缺省 = 牌组不动。
+  ///
+  /// 换类型、补迁、移牌组在一个事务里：任何一步失败整次迁移都不落库，笔记仍是旧 Lapis、
+  /// 仍列在 [legacyLapisSources] 里，可以原样重试。分开写时，移牌组失败会留下「已是 Fushi
+  /// 卡片、却还在原牌组」的笔记——它们不再是迁移源，迁移入口再也够不到它们。
+  /// [debugOnStage] 只给测试在步骤之间注入失败。
   Future<int> migrateLegacyLapis(
     String sourceTypeId, {
     List<String>? noteIds,
     String? targetDeckId,
+    @visibleForTesting Future<void> Function(String stage)? debugOnStage,
   }) => runExclusive(() async {
     final SrsNoteTypeView? from = await noteType(sourceTypeId);
     if (from == null || srsDetectLapisVariant(from) == null) {
@@ -714,14 +721,26 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     }
     final SrsNoteTypeView to = await _fushiCardType();
     final SrsLapisFieldPlan plan = srsLapisFieldPlan(profileUid, from, to);
-    await changeNoteType(
-      noteIds: ids,
-      targetTypeId: to.id,
-      fieldMap: plan.fieldMap,
-      templateMap: srsLapisTemplateMap(from, to),
-    );
-    await applyLapisBackfill(noteIds: ids);
-    if (targetDeckId != null) await _moveNotesToDeck(ids, targetDeckId);
+    // 已在独占区里再开事务（与按时间点恢复同一顺序，见 [runExclusive]）。
+    try {
+      await db.transaction(() async {
+        await changeNoteType(
+          noteIds: ids,
+          targetTypeId: to.id,
+          fieldMap: plan.fieldMap,
+          templateMap: srsLapisTemplateMap(from, to),
+        );
+        await debugOnStage?.call('noteType');
+        await applyLapisBackfill(noteIds: ids);
+        await debugOnStage?.call('backfill');
+        if (targetDeckId != null) await _moveNotesToDeck(ids, targetDeckId);
+      });
+    } catch (_) {
+      // 事务回滚了库，但写入者的因果上下文 / 时钟 / 发件箱序号已在内存里前进：从库重读
+      // （见 [SrsDbStore.reloadLocal]）。
+      await reloadLocal();
+      rethrow;
+    }
     return ids.length;
   });
 
