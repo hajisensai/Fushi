@@ -1,0 +1,111 @@
+name: TEMP faster-testing crash bisect
+# TEMPORARY diagnostic for PR #2422 — delete before merge.
+# Shard 0 / batch 3 (fushi/tool/test_flow/zz_crash_bisect_files.txt, 365 suites) makes
+# flutter_tester SIGSEGV at teardown under --experimental-faster-testing in two runs in a
+# row. Each matrix entry runs one contiguous chunk of that list in the same mode and
+# reports whether the tester crashed, to find the suite that leaves the bad state behind.
+on:
+  pull_request:
+    branches: ['develop']
+    paths:
+      - '.github/workflows/zz-crash-bisect.yml'
+      - 'fushi/tool/test_flow/zz_crash_bisect_files.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  libs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushi-web-core-linux
+    - uses: ./.github/actions/test-native-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: bisect-native-linux-x64
+        path: |
+          native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+          native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+          native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+        if-no-files-found: error
+        retention-days: 1
+
+  chunk:
+    needs: libs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+      FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    name: chunk ${{ matrix.chunk }}/16
+    steps:
+    - uses: actions/checkout@v6
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      with:
+        flutter-version: '3.47.6'
+        cache: true
+    - uses: ./.github/actions/pdfium-hook-cache
+      with:
+        purpose: test
+    - name: Provide baked-in secret stubs
+      uses: ./.github/actions/provide-baked-secrets
+      with:
+        google-oauth-client-secret: ''
+        log-upload-endpoint: ''
+        log-upload-token: ''
+        dandanplay-app-id: ''
+        dandanplay-app-secret: ''
+        tmdb-api-key: ''
+        opensubtitles-api-key: ''
+    - name: Flutter pub get
+      working-directory: fushi
+      run: flutter pub get --enforce-lockfile
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+    - uses: actions/download-artifact@v7
+      with:
+        name: bisect-native-linux-x64
+        path: native
+    - name: Enable core dumps
+      run: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
+    - name: Run chunk
+      working-directory: fushi
+      shell: bash
+      env:
+        CHUNK: ${{ matrix.chunk }}
+      run: |
+        set -uo pipefail
+        ulimit -c unlimited
+        mapfile -t all < <(grep -v '^$' tool/test_flow/zz_crash_bisect_files.txt)
+        n=${#all[@]}; per=$(( (n + 15) / 16 )); start=$(( CHUNK * per ))
+        files=("${all[@]:start:per}")
+        echo "chunk $CHUNK: ${#files[@]} files (${files[0]} .. ${files[-1]})"
+        flutter test --no-pub -r json --experimental-faster-testing --concurrency=1 --exclude-tags golden "${files[@]}" > events.jsonl 2> stderr.log
+        code=$?
+        done_line=$(grep -c '"type":"done"' events.jsonl || true)
+        echo "::notice title=chunk $CHUNK::exit=$code done_events=$done_line first=${files[0]} last=${files[-1]}"
+        tail -5 stderr.log || true
+        if [ "$code" = 245 ] || [ "$code" = 139 ]; then exit 1; fi
+        exit 0
+    - name: Native backtrace
+      if: failure()
+      shell: bash
+      run: |
+        shopt -s nullglob
+        cores=(/tmp/core.*)
+        [ "${#cores[@]}" -eq 0 ] && { echo "No core dump."; exit 0; }
+        sudo apt-get install -y -qq gdb > /dev/null
+        for core in "${cores[@]}"; do
+          echo "::group::$core"
+          gdb -batch -q -ex 'info sharedlibrary' -ex 'thread apply all bt 40' "$FLUTTER_ROOT/bin/cache/artifacts/engine/linux-x64/flutter_tester" "$core" 2>&1 || true
+          echo "::endgroup::"
+        done
