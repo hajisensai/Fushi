@@ -8,10 +8,6 @@ import 'package:fushi/src/pages/implementations/video_web_sites_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiShellInlineTitle, kFushiFloatingChromeGap;
-import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
-    show FushiPageChromeTitle;
-import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
-    show FushiShellTitleScope;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
