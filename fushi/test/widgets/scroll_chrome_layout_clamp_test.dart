@@ -144,4 +144,56 @@ void main() {
     expect(scroll.offset, greaterThan(0));
     expect(chrome.hidden, isTrue);
   });
+  // 嵌套的竖向小列表（shrinkWrap + 禁止滚动）第一次布局也发 ScrollMetricsNotification，
+  // 且它自己的位置恒为 0：不按滚动区深度过滤，用户往下滚时懒加载出它的那一帧就被当成
+  // 「主列表回到了顶部」，页头弹回（同库页 BUG-3133 的 _ownerDepth 判据）。
+  testWidgets('随滚动收起的页头：懒加载出的嵌套竖向列表不当成主列表回顶', (WidgetTester tester) async {
+    final FushiScrollAwayController chrome = FushiScrollAwayController();
+    final ScrollController scroll = ScrollController();
+    addTearDown(chrome.dispose);
+    addTearDown(scroll.dispose);
+    int nestedMetrics = 0;
+    // 只看终态抓不到：误弹回后余下的拖动又会把页头收起。记下「收起后又弹回」。
+    bool wasHidden = false;
+    bool flashedBack = false;
+    chrome.addListener(() {
+      if (chrome.hidden) {
+        wasHidden = true;
+      } else if (wasHidden) {
+        flashedBack = true;
+      }
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NotificationListener<Notification>(
+            onNotification: (Notification n) {
+              if (n is ScrollMetricsNotification && n.depth > 0) {
+                nestedMetrics++;
+              }
+              return chrome.handleNotification(n);
+            },
+            child: ListView.builder(
+              controller: scroll,
+              itemExtent: 60,
+              itemCount: 100,
+              itemBuilder: (BuildContext context, int index) => index == 30
+                  ? ListView(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      children: const <Widget>[Text('Nested')],
+                    )
+                  : Text('Row $index'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await _dragUp(tester, 1400);
+    expect(scroll.offset, greaterThan(FushiScrollAwayController.revealZone));
+    expect(nestedMetrics, greaterThan(0), reason: '前提：嵌套列表确实冒出了 metrics 通知');
+    expect(chrome.hidden, isTrue);
+    expect(flashedBack, isFalse, reason: '一路往下滚，页头不该中途弹回');
+  });
 }
