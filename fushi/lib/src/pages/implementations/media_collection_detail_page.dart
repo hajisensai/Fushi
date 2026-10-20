@@ -831,17 +831,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   ImageProvider? get _heroCover {
     // 读 DB 快照而非进页副本：刮削刚写进去的新封面必须立刻生效（见 [_collectionRow]）。
-    final String? collectionCover =
-        (_collectionRow ?? widget.collection).coverPath;
-    if (collectionCover != null && collectionCover.isNotEmpty) {
+    // 每一级本地路径都要文件真实存在才算数，与库页合集卡
+    // （`home_video_page.dart` 的 `_buildCollectionCover`）同一条判据：剧集目录
+    // 搬家、备份恢复带来的悬空路径必须表现得像「没设过封面」，落到刮削封面 /
+    // 成员封面，而不是返回一张必坏的 FileImage 把后面的回退全挡掉。
+    final String? collectionCover = _existingLocalCover(
+      (_collectionRow ?? widget.collection).coverPath,
+    );
+    if (collectionCover != null) {
       return resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: collectionCover,
         decodeWidth: 1600,
       );
     }
-    if (_canonicalCoverPath case final String canonicalCover
-        when canonicalCover.isNotEmpty) {
+    if (_existingLocalCover(_canonicalCoverPath)
+        case final String canonicalCover) {
       return resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: canonicalCover,
@@ -853,14 +858,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return _resolveCanonicalImage(remoteCover, decodeWidth: 1600);
     }
     if (_members.isEmpty) return null;
-    final String? continueCover = _members[_continueIndex].coverPath;
-    String? fallbackCover = continueCover?.isNotEmpty == true
-        ? continueCover
-        : null;
+    String? fallbackCover = _existingLocalCover(
+      _members[_continueIndex].coverPath,
+    );
     if (fallbackCover == null) {
       for (final VideoBookRow row in _members) {
-        final String? candidate = row.coverPath;
-        if (candidate != null && candidate.isNotEmpty) {
+        final String? candidate = _existingLocalCover(row.coverPath);
+        if (candidate != null) {
           fallbackCover = candidate;
           break;
         }
@@ -871,6 +875,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       localPath: fallbackCover,
       decodeWidth: 1600,
     );
+  }
+
+  /// 本地封面路径非空且文件存在时原样返回，否则 null（[_heroCover] 的逐级判据）。
+  static String? _existingLocalCover(String? path) {
+    if (path == null || path.isEmpty) return null;
+    return File(path).existsSync() ? path : null;
   }
 
   /// 把当前 [_slots] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
