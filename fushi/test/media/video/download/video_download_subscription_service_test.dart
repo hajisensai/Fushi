@@ -130,6 +130,27 @@ VideoDownloadSubscriptionService _service({
   return service;
 }
 
+/// 等订阅行到达 [predicate]。轮询只是「等事件」，正确性不依赖等待时长；
+/// 截止时间只是失败时的活性上限。
+Future<VideoDownloadSubscriptionRow> _waitForSubscription(
+  FushiDatabase database,
+  String subscriptionId,
+  bool Function(VideoDownloadSubscriptionRow row) predicate,
+) async {
+  final DateTime deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (DateTime.now().isBefore(deadline)) {
+    final VideoDownloadSubscriptionRow? row =
+        await database.getVideoDownloadSubscription(subscriptionId);
+    if (row != null && predicate(row)) return row;
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  final VideoDownloadSubscriptionRow? last =
+      await database.getVideoDownloadSubscription(subscriptionId);
+  throw TimeoutException(
+    'subscription $subscriptionId did not reach expected state: $last',
+  );
+}
+
 void main() {
   test(
       'Nyaa strict rules include the selected first episode and persist outbox',
@@ -1524,31 +1545,52 @@ void main() {
         ),
       ],
     );
-    addTearDown(provider.releaseSearch);
+    // 租约到期是注入时钟上的算术：时钟只在测试显式推进时走，心跳计时器晚到
+    // 多久（CI 满载）都跨不过租约边界——断言的是「续期发生了」，不是「调度
+    // 够快」。
+    const int leaseMs = 90;
+    int clockAt = _nowAt;
     final VideoDownloadSubscriptionService service = _service(
       database: database,
       provider: provider,
       enqueue: (VideoDownloadEnqueueRequest request) =>
           _persistFakeJob(database, request, 'lease-job'),
-      leaseDuration: const Duration(milliseconds: 90),
-      now: DateTime.now,
+      leaseDuration: const Duration(milliseconds: leaseMs),
+      now: () => DateTime.fromMillisecondsSinceEpoch(clockAt),
     );
+    // tearDown 后进先出：必须登记在 _service（其 dispose 会等在途的 check）
+    // 之后，断言失败时才先放行被挂起的搜索，而不是让 dispose 卡到测试超时。
+    addTearDown(provider.releaseSearch);
 
     final Future<void> check = service.checkNow();
     await provider.searchEntered.future.timeout(const Duration(seconds: 2));
-    await Future<void>.delayed(const Duration(milliseconds: 240));
-
-    final VideoDownloadSubscriptionRow held =
+    final VideoDownloadSubscriptionRow claimed =
         (await database.getVideoDownloadSubscription('lease-heartbeat'))!;
-    expect(held.claimedBy, 'subscription-test-worker');
-    expect(
-      held.claimExpiresAt,
-      greaterThan(DateTime.now().millisecondsSinceEpoch),
+    expect(claimed.claimedBy, 'subscription-test-worker');
+    expect(claimed.claimExpiresAt, _nowAt + leaseMs);
+
+    // 两次推进，第二次越过最初的到期点 _nowAt + leaseMs：只有心跳把租约
+    // 续到新时刻之后，worker 才仍持有它。
+    clockAt = _nowAt + 60;
+    await _waitForSubscription(
+      database,
+      'lease-heartbeat',
+      (VideoDownloadSubscriptionRow row) =>
+          row.claimExpiresAt == clockAt + leaseMs,
     );
+    clockAt = _nowAt + 120;
+    final VideoDownloadSubscriptionRow held = await _waitForSubscription(
+      database,
+      'lease-heartbeat',
+      (VideoDownloadSubscriptionRow row) =>
+          row.claimExpiresAt == clockAt + leaseMs,
+    );
+    expect(held.claimedBy, 'subscription-test-worker');
+    expect(held.claimExpiresAt, greaterThan(_nowAt + leaseMs));
     final VideoDownloadSubscriptionRow? stolen =
         await database.claimNextVideoDownloadSubscription(
       workerId: 'competing-subscription-worker',
-      nowAt: DateTime.now().millisecondsSinceEpoch,
+      nowAt: clockAt,
       leaseDurationMs: 1000,
     );
     expect(stolen, isNull);

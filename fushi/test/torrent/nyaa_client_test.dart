@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -752,33 +753,137 @@ void main() {
       client.close();
     });
 
-    test('同一实例请求按 minRequestInterval 串行节流（并发调用也排队）', () async {
-      const Duration interval = Duration(milliseconds: 120);
-      final List<DateTime> startedAt = <DateTime>[];
-      final NyaaClient client = _clientWith(
-        (http.Request req) async {
-          startedAt.add(DateTime.now());
-          return http.Response(kNyaaNoResultsHtml, 200);
-        },
-        minRequestInterval: interval,
-      );
-      // 三个并发调用：不能同时打出去。
-      await Future.wait<List<NyaaTorrent>>(<Future<List<NyaaTorrent>>>[
-        client.search('a'),
-        client.search('b'),
-        client.search('c'),
-      ]);
-      expect(startedAt, hasLength(3));
-      for (int i = 1; i < startedAt.length; i++) {
-        final Duration gap = startedAt[i].difference(startedAt[i - 1]);
-        // 定时器精度留 20ms 余量；断言的是「至少隔开」，不是精确值。
-        expect(
-          gap,
-          greaterThanOrEqualTo(interval - const Duration(milliseconds: 20)),
-          reason: '第 $i 次与上一次只隔了 $gap',
+    test('同一实例请求按 minRequestInterval 串行节流（并发调用也排队）', () {
+      // 全程虚拟时间：节流的时钟与定时器都由 fake-async 驱动，断言精确间隔，
+      // 不依赖真实调度（CI 上 4 个 suite 同进程并发时真实 sleep 会被拉长）。
+      fakeAsync((FakeAsync async) {
+        const Duration interval = Duration(milliseconds: 120);
+        final List<Duration> startedAt = <Duration>[];
+        final NyaaClient client = NyaaClient(
+          // 独占 host：注入的虚拟时钟不能和别的用例共用节流表的同一格。
+          baseUrl: 'https://throttle-serial.nyaa.test',
+          client: MockClient((http.Request req) async {
+            startedAt.add(async.elapsed);
+            return http.Response(kNyaaNoResultsHtml, 200);
+          }),
+          minRequestInterval: interval,
+          monotonicNow: () => async.elapsed,
         );
-      }
-      client.close();
+        int completed = 0;
+        // 三个并发调用：不能同时打出去。
+        for (final String q in <String>['a', 'b', 'c']) {
+          client.search(q).then((_) => completed++);
+        }
+        async.flushMicrotasks();
+        expect(startedAt, <Duration>[Duration.zero]);
+
+        async.elapse(interval - const Duration(milliseconds: 1));
+        expect(startedAt, hasLength(1), reason: '间隔未满不得放行第二次');
+        async.elapse(const Duration(milliseconds: 1));
+        expect(startedAt, <Duration>[Duration.zero, interval]);
+
+        async.elapse(interval);
+        expect(startedAt, <Duration>[Duration.zero, interval, interval * 2]);
+        expect(completed, 3);
+        client.close();
+      });
+    });
+
+    test('定时器晚醒时下一次请求从实际放行时刻起算，不会贴着上一次一起打出', () {
+      // 负载下定时器会晚醒：计划在 120ms 放行的第二次请求，醒来时时钟已经走到
+      // 320ms。旧实现记录的是**计划**时刻 120ms，第三次请求拿它算间隔、发现早已
+      // 过了 120ms，于是与第二次同一时刻放行（间隔 0）。这里用虚拟时钟在第二次
+      // 的定时器到期前一刻拨快 200ms，确定性地复现「晚醒」。
+      fakeAsync((FakeAsync async) {
+        const Duration interval = Duration(milliseconds: 120);
+        const Duration lateWake = Duration(milliseconds: 200);
+        Duration skew = Duration.zero;
+        Duration clock() => async.elapsed + skew;
+        final List<Duration> startedAt = <Duration>[];
+        final NyaaClient client = NyaaClient(
+          baseUrl: 'https://throttle-late-wake.nyaa.test',
+          client: MockClient((http.Request req) async {
+            startedAt.add(clock());
+            return http.Response(kNyaaNoResultsHtml, 200);
+          }),
+          minRequestInterval: interval,
+          monotonicNow: clock,
+        );
+        int completed = 0;
+        for (final String q in <String>['a', 'b', 'c']) {
+          client.search(q).then((_) => completed++);
+        }
+        async.flushMicrotasks();
+        expect(startedAt, <Duration>[Duration.zero]);
+
+        async.elapse(interval - const Duration(milliseconds: 1));
+        skew = lateWake;
+        async.elapse(const Duration(milliseconds: 1));
+        expect(startedAt, <Duration>[Duration.zero, interval + lateWake]);
+
+        // 第三次必须从第二次的实际放行时刻再隔满一个 interval。
+        async.elapse(interval - const Duration(milliseconds: 1));
+        expect(startedAt, hasLength(2), reason: '第三次贴着晚醒的第二次放行了');
+        async.elapse(const Duration(milliseconds: 1));
+        expect(startedAt.last - startedAt[1], interval);
+        expect(completed, 3);
+        client.close();
+      });
+    });
+
+    test('同 host 的多个实例同时请求也按 minRequestInterval 顺延，不在同一时刻一起放行', () {
+      // 发现源 / 资源 provider / 订阅轮询各自 new 一个 client 打同一站点：节流表按
+      // host 共享，必须在调用进入时同步占坑。「先读 last、睡完再写」会让三个实例读到
+      // 同一个 last、睡到同一时刻、一起打出去。
+      fakeAsync((FakeAsync async) {
+        const Duration interval = Duration(milliseconds: 120);
+        final List<Duration> startedAt = <Duration>[];
+        final List<String> order = <String>[];
+        NyaaClient instance(String name) => NyaaClient(
+              // 三个实例共用这个独占 host（虚拟时钟不能和别的用例共用同一格）。
+              baseUrl: 'https://throttle-cross-instance.nyaa.test',
+              client: MockClient((http.Request req) async {
+                startedAt.add(async.elapsed);
+                order.add(name);
+                return http.Response(kNyaaNoResultsHtml, 200);
+              }),
+              minRequestInterval: interval,
+              monotonicNow: () => async.elapsed,
+            );
+        final List<NyaaClient> clients = <NyaaClient>[
+          instance('discovery'),
+          instance('provider'),
+          instance('subscription'),
+        ];
+        // 另一个实例先打一次把这一格占上，三个实例随后在间隔内同时请求。
+        final NyaaClient warmup = instance('warmup');
+        warmup.search('warmup');
+        async.flushMicrotasks();
+        expect(startedAt, <Duration>[Duration.zero]);
+
+        async.elapse(const Duration(milliseconds: 10));
+        int completed = 0;
+        for (final NyaaClient c in clients) {
+          c.search('q').then((_) => completed++);
+        }
+        async.flushMicrotasks();
+        expect(startedAt, hasLength(1), reason: '间隔内的跨实例请求被立刻放行了');
+
+        async.elapse(interval - const Duration(milliseconds: 10));
+        expect(startedAt, <Duration>[Duration.zero, interval]);
+        async.elapse(interval);
+        expect(startedAt, <Duration>[Duration.zero, interval, interval * 2]);
+        async.elapse(interval);
+        expect(
+          startedAt,
+          <Duration>[Duration.zero, interval, interval * 2, interval * 3],
+        );
+        expect(completed, 3);
+        expect(order.skip(1), <String>['discovery', 'provider', 'subscription']);
+        for (final NyaaClient c in <NyaaClient>[warmup, ...clients]) {
+          c.close();
+        }
+      });
     });
 
     test('底层网络异常（如握手失败）原样穿透，不吞成空列表', () async {
