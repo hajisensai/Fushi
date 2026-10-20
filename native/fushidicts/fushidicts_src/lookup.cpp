@@ -1,33 +1,20 @@
 #include "fushidicts/lookup.hpp"
 
 #include <utf8.h>
-#include <zstd.h>
 
 #include <algorithm>
 #include <climits>
-#include <glaze/glaze.hpp>
 #include <map>
 #include <optional>
 #include <ranges>
-#include <sstream>
-#include <tuple>
 #include <unordered_map>
 
 #include "scan/mixed_orthography.hpp"
 #include "scan/word_scan.hpp"
 #include "text_processor/text_processor.hpp"
+#include "util/redirect_glossary.hpp"
 
 namespace {
-std::vector<std::string> split_whitespace(const std::string& str) {
-  std::vector<std::string> result;
-  std::istringstream iss(str);
-  std::string token;
-  while (iss >> token) {
-    result.push_back(std::move(token));
-  }
-  return result;
-}
-
 // 上游 909c854 revert 了 4975788 的向量比较（作者自己否掉的实验：每次比较
 // 分配+排序一个 vector，partial_sort 下纯浪费）；后随 bc62d2b 演化为 optional +
 // 方向感知（Descending 时取该词典内最大值而非最小值）。
@@ -63,40 +50,13 @@ std::optional<int> get_freq_value_for_dict(const TermResult& term, std::string_v
 // 只会在弹窗里变成被 isRedirectGlossary 滤空的卡片——这正是 BUG-2853 的症状（高亮
 // 到了 `instead of`，卡片却只剩 `instead`）。与正文混排的自指标签（OALDPE10 的
 // `["give up", ["Redirected from give up"]]` + 释义，BUG-2566）不动。
-struct DictionaryRedirect {
-  std::string form_of;
-  std::vector<std::string> rules;
-};
-
-// 纯重定向记录的 glossary 很短（目标词头 + 一两条 rule 文本），先读 zstd 帧头里
-// 的原始大小做门槛：正常释义一条都不解压，只有小记录才解压 + 解析。
-constexpr unsigned long long kMaxRedirectGlossaryBytes = 1024;
-
-// 帧头里的原始大小过了门槛才值得解压（不解压，只读 zstd 帧头）。
-bool may_be_redirect_glossary(const GlossaryEntry& g) {
-  if (g.compressed_data == nullptr || g.compressed_size == 0) return false;
-  const unsigned long long raw_size = ZSTD_getFrameContentSize(g.compressed_data, g.compressed_size);
-  return raw_size != ZSTD_CONTENTSIZE_ERROR && raw_size != ZSTD_CONTENTSIZE_UNKNOWN &&
-         raw_size <= kMaxRedirectGlossaryBytes;
-}
-
-// 整条 glossary 都是 `[formOf, [rule, ...]]` 项时返回这些项，否则 nullopt。
-std::optional<std::vector<DictionaryRedirect>> parse_redirect_glossary(const std::string& json) {
-  // 廉价前置判据：必须以 `[[` 开头（容许空白），文本 / structured-content 都在这里出局。
-  std::size_t i = json.find_first_not_of(" \t\r\n");
-  if (i == std::string::npos || json[i] != '[') return std::nullopt;
-  i = json.find_first_not_of(" \t\r\n", i + 1);
-  if (i == std::string::npos || json[i] != '[') return std::nullopt;
-
-  std::vector<std::tuple<std::string, std::vector<std::string>>> items;
-  if (glz::read_json(items, json) || items.empty()) return std::nullopt;
-  std::vector<DictionaryRedirect> redirects;
-  redirects.reserve(items.size());
-  for (auto& [form_of, rules] : items) {
-    if (form_of.empty()) return std::nullopt;
-    redirects.push_back({.form_of = std::move(form_of), .rules = std::move(rules)});
-  }
-  return redirects;
+//
+// 判据（原始大小门槛 + `[[` 前置 + 整体解析）在 util/redirect_glossary.hpp 只写一次，
+// 导入端打标与迁移扫描共用。所属词典经 sidecar 确认无重定向（dict_redirect_free）时
+// 整条检测跳过：既不读帧头也不解压——冷页下这一步原本要把每个候选命中的每条
+// glossary 所在页都缺页读进来，而它们大多数随后被去重 / 截断丢掉、根本不会 materialize。
+bool redirect_check_needed(const GlossaryEntry& g) {
+  return !g.dict_redirect_free && fushi::redirect_glossary::may_be_redirect(g.compressed_data, g.compressed_size);
 }
 
 bool matches_primary_reading(const TermResult& term, std::string_view primary_reading) {
@@ -204,8 +164,8 @@ std::vector<LookupResult> Lookup::lookup(const std::string& lookup_string, int m
                              const std::vector<TransformGroup>& trace, bool follow) {
         for (auto& term : terms) {
           std::erase_if(term.glossaries, [&](const GlossaryEntry& g) {
-            if (!may_be_redirect_glossary(g)) return false;
-            auto redirects = parse_redirect_glossary(
+            if (!redirect_check_needed(g)) return false;
+            auto redirects = fushi::redirect_glossary::parse(
                 DictionaryQuery::decompress_glossary(g.compressed_data, g.compressed_size, g.zstd_dict));
             if (!redirects) return false;
             if (follow) {
@@ -495,7 +455,7 @@ void Lookup::filter_by_pos(std::vector<TermResult>& terms, const DeinflectionRes
     return;
   }
   std::erase_if(terms, [&](const TermResult& term) {
-    auto dict_conditions = deinflector_.pos_to_conditions(split_whitespace(term.rules));
+    auto dict_conditions = deinflector_.rules_to_conditions(term.rules);
     return (dict_conditions & d.conditions) == 0;
   });
 }

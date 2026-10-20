@@ -23,6 +23,7 @@
 #include "json/yomitan_parser.hpp"
 #include "memory/memory.hpp"
 #include "util/fs_utf8.hpp"
+#include "util/redirect_glossary.hpp"
 #include "util/term_rules_flag.hpp"
 
 namespace {
@@ -80,6 +81,9 @@ struct DictionaryQuery::DictionaryData {
   // 本词典没有任何 term 带词性（term_rules.flag = 0）：读侧把空 rules 当通配 "*"，
   // 否则 filter_by_pos 会把这种词典的每一个变形还原命中全部丢掉。
   bool rules_wildcard = false;
+  // redirect_glossary.flag 确认本词典没有任何纯重定向 glossary（见
+  // util/redirect_glossary.hpp）。false = 有，或未知（sidecar 缺失 / 失效）。
+  bool redirect_free = false;
 
   ~DictionaryData() {
     memory::unmap(blobs);
@@ -259,6 +263,12 @@ void DictionaryQuery::add_dict(const std::string& path, DictionaryType type) {
       fushi::term_rules_flag::write(path, *rules_present, blobs_size);
     }
     dict.data->rules_wildcard = !*rules_present;
+
+    // 纯重定向 glossary 的有无（util/redirect_glossary.hpp）：只读导入端 / 迁移扫描
+    // 写好的 sidecar，**不在这里扫**——add_*_dict 跑在调用方（Dart UI isolate）上，
+    // 整本扫描是百毫秒到秒级。缺 sidecar 就保持未知，查询期照旧逐条检测。
+    const std::optional<bool> redirects_present = fushi::redirect_glossary::read_flag(path, blobs_size);
+    dict.data->redirect_free = redirects_present.has_value() && !*redirects_present;
   }
 
   dict.data->media = memory::map_rd(path + "/media.bin");
@@ -387,6 +397,7 @@ std::vector<TermResult> DictionaryQuery::query_raw(const std::string& expression
       entry.compressed_data = data->blobs.data + glossary_offset;
       entry.compressed_size = glossary_size;
       entry.zstd_dict = data->zstd_dict;
+      entry.dict_redirect_free = data->redirect_free;
 
       auto [it, inserted] = term_map.try_emplace({expr, reading});
       if (inserted) {
@@ -814,6 +825,20 @@ std::vector<DictionaryStyle> DictionaryQuery::get_styles() const {
 
 std::vector<std::string> DictionaryQuery::get_freq_dict_order() const {
   return freq_dicts_ | std::views::transform([](const auto& d) { return d.name; }) | std::ranges::to<std::vector>();
+}
+
+int ensure_redirect_glossary_flag(const std::string& dir) {
+  std::error_code ec;
+  const uint64_t blobs_size = std::filesystem::file_size(fushi::fs_path(dir + "/blobs.bin"), ec);
+  if (ec) return -1;
+  if (const std::optional<bool> known = fushi::redirect_glossary::read_flag(dir, blobs_size)) {
+    return *known ? 1 : 0;
+  }
+  const std::optional<bool> present = fushi::redirect_glossary::scan_dict_dir(dir);
+  if (!present.has_value()) return -1;
+  // 写回失败（只读卷）不影响本次结论，下次再扫。
+  fushi::redirect_glossary::write_flag(dir, *present, blobs_size);
+  return *present ? 1 : 0;
 }
 
 // ── dictionary content probe (TODO-622) ─────────────────────────────
