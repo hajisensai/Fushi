@@ -932,16 +932,13 @@ class _Importer {
         idByName[full] = found;
         continue;
       }
-      String id = srsImportedDeckId(profileUid, full);
-      // 用户把先前导入的同名牌组改了名 / 挪了位置：不复用，按 createDeck 的派生另建（或沿用
-      // 同全名的那个）。它不算本次「首次新建」，不带牌组设置（与以前相同）。
-      final bool renamedImport = tree[id] != null;
-      if (renamedImport) {
-        final String parentPath = parent == null || tree[parent] == null
-            ? ''
-            : '${tree.fullName(parent)}::';
-        id = SrsIds.deck(profileUid, '$parentPath$leaf');
-      }
+      // 用户把先前导入的同名牌组改了名 / 挪了位置（全名派生的 ID 还活着、却不在这个全名上）：
+      // 不复用，按 createDeck 的规则另挑 ID（[SrsDbStore.deckIdForNew]：备选 ID，或沿用名字与
+      // 父牌组都一致的那个；以前这里重新派生出的还是同一个 ID，会把挪走的牌组改回来）。它不算
+      // 本次「首次新建」，不带牌组设置（与以前相同）。
+      final bool renamedImport =
+          tree[srsImportedDeckId(profileUid, full)] != null;
+      final String id = await store.deckIdForNew(leaf, parentId: parent);
       // 身份记录、名字 / 父牌组、牌组设置**同一个事务**落库（writeEdits）：以前先建牌组、全部
       // 建完再另起一轮写设置，中间失败或被杀时牌组已在、重跑不再算「新建」，设置永远不写（BUG-3552）。
       final Map<String, Object?> values = <String, Object?>{

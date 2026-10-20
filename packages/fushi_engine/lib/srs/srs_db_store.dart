@@ -2087,15 +2087,40 @@ class SrsDbStore implements SrsSyncReplica {
 
   // ------------------------------------------------------------------ 牌组
 
-  /// 新建牌组。ID 由「父::子」全名确定性派生（SrsIds.deck）：多台设备离线各建同名牌组不会出重复；
-  /// 同名牌组已存在（含已删除的）时复活并沿用它。身份记录不含本机时刻（createdAt = 0），同 ID 同内容。
+  /// 按名字 [name] 在 [parentId] 下（null = 顶层）新建或复活牌组时用的 ID（[createDeck] 与
+  /// Anki 导入共用）。先取「父::子」全名确定性派生的 [SrsIds.deck]：多台设备离线各建同名牌组
+  /// 落在同一个 ID 上。
+  ///
+  /// 「同名」按牌组此刻的名字与父牌组认，不按 ID：牌组改过名或挪过父牌组后 ID 不变，按它原来
+  /// 的全名再新建时派生 ID 落在它身上——那不是同一个牌组，沿用就会把它改名 / 拽回原处（BUG：
+  /// 拖放挪走 A 后再按「A」建牌组，挪走的那个被拽回顶层）。这时依次试 [SrsIds.deckAlternate]
+  /// 的备选 ID，取第一个没被用过的、或名字与父牌组都一致（可沿用 / 复活）的。只由本机牌组状态
+  /// 决定：看到同样牌组状态的设备（含收下了挪动 / 改名记录的其它设备）得到同一个 ID。
+  Future<String> deckIdForNew(String name, {String? parentId}) async {
+    final SrsDeckTree tree = await deckTree();
+    final String parentPath = parentId == null || tree[parentId] == null
+        ? ''
+        : '${tree.fullName(parentId)}::';
+    final String fullPath = '$parentPath$name';
+    final String trimmed = name.trim();
+    String id = SrsIds.deck(profileUid, fullPath);
+    for (int n = 1; ; n++) {
+      final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
+      if (current.keys.isEmpty ||
+          (current.value(SrsFieldKeys.name) == trimmed &&
+              current.value(SrsFieldKeys.deckParent) == parentId)) {
+        return id;
+      }
+      id = SrsIds.deckAlternate(profileUid, fullPath, n);
+    }
+  }
+
+  /// 新建牌组，ID 见 [deckIdForNew]；名字与父牌组都一致的牌组已存在（含已删除的）时复活并沿用它。
+  /// 身份记录不含本机时刻（createdAt = 0），同 ID 同内容。
   Future<String> createDeck(String name, {String? parentId}) => runExclusive(
     () async {
-      final SrsDeckTree tree = await deckTree();
-      final String parentPath = parentId == null || tree[parentId] == null
-          ? ''
-          : '${tree.fullName(parentId)}::';
-      final String id = SrsIds.deck(profileUid, '$parentPath$name');
+      final String trimmed = name.trim();
+      final String id = await deckIdForNew(name, parentId: parentId);
       final SrsEntityEdits current = await _entityEdits(SrsEntityKind.deck, id);
       // 身份记录与名字 / 父牌组记录同一个事务落库（以前分两次事务、两次缓存刷新）。
       await _emit(
@@ -2111,7 +2136,7 @@ class SrsDbStore implements SrsSyncReplica {
             ),
           ),
           ...newEditDrafts(SrsEntityKind.deck, id, <String, Object?>{
-            SrsFieldKeys.name: name.trim(),
+            SrsFieldKeys.name: trimmed,
             if (parentId != null) SrsFieldKeys.deckParent: parentId,
             if (current.deletedAt != null) SrsFieldKeys.deleted: null,
           }, current: current),

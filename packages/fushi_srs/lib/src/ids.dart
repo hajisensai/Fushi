@@ -148,9 +148,19 @@ abstract final class SrsIds {
   /// 牌组：UUIDv5(NS, profileUid/deck/<规范全名>)，全名按「父::子」，每段去首尾空白。
   ///
   /// 两台设备离线各建（或各导入）同名牌组，合并后是同一个牌组（与 Anki 按名字合并牌组一致）。
-  /// 改名不改 ID；之后有人再按旧名新建，会落到同一个 ID（行被复活并改回该名字），这是按名字认身份的代价。
+  /// 改名 / 挪父牌组不改 ID；之后有人再按旧全名新建时，这个 ID 已被一个全名不同的牌组占着，
+  /// 新建方改用 [deckAlternate]（见 SrsDbStore.createDeck），不会把挪走的牌组拽回来。
   static String deck(String profileUid, String fullPath) =>
       uuidV5(srsNamespace, '$profileUid/deck/${normalizeDeckPath(fullPath)}');
+
+  /// [deck] 派生的 ID 已被当前全名不同的牌组占着时，同一全名的第 [n] 个备选 ID（n ≥ 1）。
+  /// 只由全名与序号决定：看到同样牌组状态的两台设备按同一全名新建，得到同一个 ID。前缀与
+  /// [deck] 不同，任何真实全名都派生不到这里。
+  static String deckAlternate(String profileUid, String fullPath, int n) =>
+      uuidV5(
+        srsNamespace,
+        '$profileUid/deck-alt/$n/${normalizeDeckPath(fullPath)}',
+      );
 
   static String normalizeDeckPath(String fullPath) => fullPath
       .split('::')

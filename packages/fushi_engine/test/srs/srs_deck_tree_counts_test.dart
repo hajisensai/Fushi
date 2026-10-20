@@ -8,6 +8,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_fake_engine.dart';
 
 const String kTreeProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
@@ -251,6 +252,82 @@ void main() {
       expect(byName['JP']!.deck.id, jp);
       expect(byName['JP::Kanji']!.deck.id, kanji);
       expect(byName['JP']!.parentId, isNull);
+    });
+
+    test('挪走后按旧全名再建：得到新牌组，挪走的那个父牌组不变', () async {
+      final SrsDbStore s = await open();
+      final String jp = await s.ensureDeckPath('Lang::JP');
+      final String other = await s.createDeck('Other');
+      final List<String> cards = await addNew(s, jp, 1);
+      expect(await s.moveDeck(jp, other), SrsDeckMoveResult.moved);
+
+      final String again = await s.ensureDeckPath('Lang::JP');
+      expect(again, isNot(jp));
+      final SrsDeckTree tree = await s.deckTree();
+      expect(tree.fullName(jp), 'Other::JP');
+      expect(tree.parentOf(jp), other);
+      expect(tree.fullName(again), 'Lang::JP');
+      expect((await s.cardRow(cards.single))!.deckId, jp);
+      // 再按旧全名找：找到的是新建的那个，不再派生新的。
+      expect(await s.ensureDeckPath('Lang::JP'), again);
+      expect(await s.createDeck('JP', parentId: tree.parentOf(again)), again);
+    });
+
+    test('改名后按旧名再建：得到新牌组，改过名的那个名字不变', () async {
+      final SrsDbStore s = await open();
+      final String a = await s.createDeck('A');
+      await s.editField(SrsEntityKind.deck, a, SrsFieldKeys.name, 'B');
+      final String again = await s.createDeck('A');
+      expect(again, isNot(a));
+      final SrsDeckTree tree = await s.deckTree();
+      expect(tree.fullName(a), 'B');
+      expect(tree.fullName(again), 'A');
+    });
+
+    test('删掉后在原处按原名再建：仍复活沿用原 ID', () async {
+      final SrsDbStore s = await open();
+      final String a = await s.createDeck('A');
+      await s.deleteDeck(a);
+      expect((await s.deckTree())[a], isNull);
+      expect(await s.createDeck('A'), a);
+      expect((await s.deckTree()).fullName(a), 'A');
+    });
+
+    test('多设备：收下挪动记录的设备按旧全名新建，与挪动方得到同一个 ID', () async {
+      final SrsMemoryDir dir = SrsMemoryDir(() => t);
+      final SrsDbStore a = await open('a');
+      final SrsDbStore b = await open('b');
+      Future<void> syncAll() async {
+        for (int round = 0; round < 3; round++) {
+          for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+            await SrsSyncEngine(
+              directoryKey: 'test',
+              directory: dir,
+              replica: s,
+            ).syncOnce();
+          }
+        }
+      }
+
+      final String jp = await a.ensureDeckPath('Lang::JP');
+      final String other = await a.createDeck('Other');
+      await syncAll();
+      expect(await a.moveDeck(jp, other), SrsDeckMoveResult.moved);
+      await syncAll();
+      expect((await b.deckTree()).fullName(jp), 'Other::JP');
+
+      // 两边离线各按旧全名新建。
+      final String onA = await a.ensureDeckPath('Lang::JP');
+      final String onB = await b.ensureDeckPath('Lang::JP');
+      expect(onA, onB);
+      expect(onA, isNot(jp));
+      await syncAll();
+      for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+        final SrsDeckTree tree = await s.deckTree();
+        expect(tree.fullName(jp), 'Other::JP');
+        expect(tree.fullName(onA), 'Lang::JP');
+        expect(await s.syncConflicts(), isEmpty);
+      }
     });
 
     test('拒绝：挪进自己 / 子孙、目标下有同名、原地不动；都不写库', () async {
