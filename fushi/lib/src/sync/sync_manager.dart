@@ -110,7 +110,7 @@ SyncApplyOutcome classifySyncApply(SyncBookResult result) {
     case SyncResult.synced:
     case SyncResult.skipped:
     case SyncResult.conflict:
-      // 冲突被自动同步跳过、不写任何数据，属良性无操作；交由 compare 对话框裁决。
+      // 进度冲突不应用位置变更；书文件可独立补传，进度仍交由 compare 对话框裁决。
       return SyncApplyOutcome.noop;
   }
 }
@@ -159,6 +159,23 @@ class SyncManager {
     bool importOnly = false,
     RemoteListingSnapshot? listing,
   }) async {
+    SyncBookResult? progressResult;
+    SyncBookResult failure(String error) {
+      final SyncBookResult? conflict =
+          progressResult?.direction == SyncResult.conflict
+              ? progressResult
+              : null;
+      return SyncBookResult(
+        direction: conflict == null ? SyncResult.skipped : SyncResult.conflict,
+        title: book.title,
+        error: error,
+        conflictAssetKey: conflict?.conflictAssetKey,
+        conflictDimension: conflict?.conflictDimension,
+        conflictLocalVersion: conflict?.conflictLocalVersion,
+        conflictRemoteVersion: conflict?.conflictRemoteVersion,
+      );
+    }
+
     try {
       final result = await _syncBookOnce(
         book: book,
@@ -169,6 +186,7 @@ class SyncManager {
         syncContent: syncContent,
         importOnly: importOnly,
         listing: listing,
+        onProgressResult: (SyncBookResult result) => progressResult = result,
       );
       await _persistDriveCache();
       return result;
@@ -191,30 +209,23 @@ class SyncManager {
             // 重试是因为一次瞬时后端错误；此时快照多半已经陈旧，不再复用它，
             // 老老实实逐本列举拿最新状态。
             listing: null,
+            onProgressResult: (SyncBookResult result) => progressResult = result,
           );
           await _persistDriveCache();
           return result;
         } on SyncBackendError catch (retryError) {
-          return SyncBookResult(
-            direction: SyncResult.skipped,
-            title: book.title,
-            error: retryError.message,
-          );
+          return failure(retryError.message);
+        } on SyncAuthError {
+          rethrow;
+        } catch (retryError) {
+          return failure(retryError.toString());
         }
       }
-      return SyncBookResult(
-        direction: SyncResult.skipped,
-        title: book.title,
-        error: e.message,
-      );
+      return failure(e.message);
     } on SyncAuthError {
       rethrow;
     } catch (e) {
-      return SyncBookResult(
-        direction: SyncResult.skipped,
-        title: book.title,
-        error: e.toString(),
-      );
+      return failure(e.toString());
     }
   }
 
@@ -276,6 +287,7 @@ class SyncManager {
     bool syncContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
+    required void Function(SyncBookResult result) onProgressResult,
   }) async {
     // BUG-619 / TODO-1329: an empty sanitized title has no unique bookKey and no
     // per-book folder — `ensureBookFolder('')` collapses onto the sync root and
@@ -315,6 +327,51 @@ class SyncManager {
         ? listing.trioFor(assetKey)
         : await _backend.listSyncFiles(folderId);
 
+    final SyncBookResult result = await _syncBookProgress(
+      book: book,
+      assetKey: assetKey,
+      folderId: folderId,
+      syncFiles: syncFiles,
+      direction: direction,
+      syncStats: syncStats,
+      statsSyncMode: statsSyncMode,
+      syncAudioBook: syncAudioBook,
+      syncContent: syncContent,
+      importOnly: importOnly,
+    );
+
+    // 内容失败仍须上报已判定的进度冲突，不能被外层错误包装成普通 skipped。
+    onProgressResult(result);
+
+    // 阅读进度与书文件是独立维度：未读 / 同进度 / 进度冲突都不能证明远端
+    // 已有 EPUB。只补缺失的文件，不改进度或覆盖 sidecar；仅导入模式禁止上传。
+    // 放在进度落地之后，文件上传失败也不会阻断已确定的进度与基线更新。
+    if (syncContent && !importOnly) {
+      await _exportContentIfMissing(
+        book: book,
+        folderId: folderId,
+        remoteFileNames: listing?.entriesOf(assetKey)
+                .where((entry) => !entry.isFolder)
+                .map((entry) => entry.name)
+                .toSet() ??
+            const <String>{},
+      );
+    }
+    return result;
+  }
+
+  Future<SyncBookResult> _syncBookProgress({
+    required EpubBookRow book,
+    required String assetKey,
+    required String folderId,
+    required SyncFileTrio syncFiles,
+    required SyncDirection? direction,
+    required bool syncStats,
+    required StatisticsSyncMode statsSyncMode,
+    required bool syncAudioBook,
+    required bool syncContent,
+    required bool importOnly,
+  }) async {
     // v82：子表键 = 书稳定 uid（wire/assetKey 仍是 title 派生键，不动）。
     final localPosition = await _db.getReaderPosition(book.uid);
     // BUG-3537：有声书断点随本书进度方向一起导入，它的「决策时快照」就在这里取，
@@ -781,9 +838,9 @@ class SyncManager {
       // BUG-162: 导出不再回写精确缓存（ttuCharOffset 列已删）；本地阅读位置不变，无需写库。
     }
 
-    // Export EPUB file if content sync is enabled
+    // 权威 sidecar 仍只随导出写入；不能因补传文件覆盖冲突 / 导入方向的元数据。
     if (syncContent) {
-      await _exportContentIfMissing(book: book, folderId: folderId);
+      await _exportBookMetadata(book: book, folderId: folderId);
     }
 
     return SyncBookResult(
@@ -798,6 +855,7 @@ class SyncManager {
   Future<void> _exportContentIfMissing({
     required EpubBookRow book,
     required String folderId,
+    required Set<String> remoteFileNames,
   }) async {
     // Export EPUB. There is NO standalone .epub on disk — books are stored
     // extracted, and book.epubPath is only the original filename (it never
@@ -816,8 +874,10 @@ class SyncManager {
       // 要第二套命名：内容探针 / getRemoteBook / 对比弹窗的「远端有无内容」判据
       // 全部零改。
       final fileName = '${sanitizeTtuFilename(book.title)}.epub';
-      final existing = await _backend.findContentFile(folderId, fileName);
-      if (existing == null) {
+      // 快照已确认存在的文件无需逐本再探针；快照缺席 / 未命中时仍实时检查，
+      // 避免同轮并发上传或重试产生重复文件。
+      if (!remoteFileNames.contains(fileName) &&
+          await _backend.findContentFile(folderId, fileName) == null) {
         final Directory tmpDir =
             Directory.systemTemp.createTempSync('fushi_epub_export');
         final File epubTmp = File(p.join(tmpDir.path, fileName));
@@ -844,6 +904,30 @@ class SyncManager {
       }
     }
 
+    // Export audio files
+    final audioPaths = await _resolveAudioPaths(book.bookKey);
+    for (final audioPath in audioPaths) {
+      final audioFile = File(audioPath);
+      if (!audioFile.existsSync()) continue;
+      final audioName = p.basename(audioPath);
+      if (remoteFileNames.contains(audioName) ||
+          await _backend.findContentFile(folderId, audioName) != null) {
+        continue;
+      }
+      await _backend.uploadContentFile(
+        folderId: folderId,
+        fileName: audioName,
+        file: audioFile,
+        onProgress: onContentProgress,
+      );
+    }
+  }
+
+  /// 只在已决定导出时发布可变元数据；缺失文件修复不拥有这些 sidecar。
+  Future<void> _exportBookMetadata({
+    required EpubBookRow book,
+    required String folderId,
+  }) async {
     // TODO-1165 / tags 稳健档：书标签 sidecar（LWW-element-set v2）。标签每设备本地，
     // 跨设备按名带、落地端按名归一。与内容同属「书文件夹元数据」，同受 syncContent 门控
     // （本方法仅在 syncContent 开时被 _handleExport 调用）。putJsonAsset 覆盖写权威全量
@@ -894,22 +978,6 @@ class SyncManager {
           'updatedAt': readerOverride.updatedAt,
           'deleted': readerOverride.deleted,
         },
-      );
-    }
-
-    // Export audio files
-    final audioPaths = await _resolveAudioPaths(book.bookKey);
-    for (final audioPath in audioPaths) {
-      final audioFile = File(audioPath);
-      if (!audioFile.existsSync()) continue;
-      final audioName = p.basename(audioPath);
-      final existing = await _backend.findContentFile(folderId, audioName);
-      if (existing != null) continue;
-      await _backend.uploadContentFile(
-        folderId: folderId,
-        fileName: audioName,
-        file: audioFile,
-        onProgress: onContentProgress,
       );
     }
   }
