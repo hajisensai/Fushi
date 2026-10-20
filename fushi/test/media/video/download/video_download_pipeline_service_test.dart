@@ -279,9 +279,16 @@ void main() {
       snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.2)],
       pauseAdd: true,
     );
+    // 租约到期是注入时钟上的算术：时钟只在测试显式推进时走，心跳计时器晚到
+    // 多久（CI 满载）都跨不过租约边界——断言的是「续期发生了」，不是「调度
+    // 够快」。
+    const int leaseMs = 90;
+    final int startAt = DateTime.now().millisecondsSinceEpoch;
+    int clockAt = startAt;
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
       backend: backend,
-      leaseDuration: const Duration(milliseconds: 90),
+      leaseDuration: const Duration(milliseconds: leaseMs),
+      now: () => DateTime.fromMillisecondsSinceEpoch(clockAt),
     );
     addTearDown(environment.close);
 
@@ -289,19 +296,31 @@ void main() {
       environment.enqueueRequest(),
     );
     await backend.addEntered.future.timeout(const Duration(seconds: 2));
-    await Future<void>.delayed(const Duration(milliseconds: 240));
-
-    final VideoDownloadJobRow held =
+    final VideoDownloadJobRow claimed =
         (await environment.database.getVideoDownloadJob(jobId))!;
-    expect(held.claimedBy, 'pipeline-test-worker');
-    expect(
-      held.claimExpiresAt,
-      greaterThan(DateTime.now().millisecondsSinceEpoch),
+    expect(claimed.claimedBy, 'pipeline-test-worker');
+    expect(claimed.claimExpiresAt, startAt + leaseMs);
+
+    // 两次推进，第二次越过最初的到期点 startAt + leaseMs：只有心跳把租约
+    // 续到新时刻之后，worker 才仍持有它。
+    clockAt = startAt + 60;
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.claimExpiresAt == clockAt + leaseMs,
     );
+    clockAt = startAt + 120;
+    final VideoDownloadJobRow held = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) => row.claimExpiresAt == clockAt + leaseMs,
+    );
+    expect(held.claimedBy, 'pipeline-test-worker');
+    expect(held.claimExpiresAt, greaterThan(startAt + leaseMs));
     final VideoDownloadJobRow? stolen =
         await environment.database.claimNextVideoDownloadJob(
       workerId: 'competing-worker',
-      nowAt: DateTime.now().millisecondsSinceEpoch,
+      nowAt: clockAt,
       leaseDurationMs: 1000,
     );
     expect(stolen, isNull);
@@ -4614,6 +4633,7 @@ class _PipelineEnvironment {
     bool Function()? skipDownloadExtras,
     AutomaticSubtitleAligner? subtitleAligner,
     Future<int?> Function()? defaultTargetSourceId,
+    DateTime Function()? now,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -4666,6 +4686,7 @@ class _PipelineEnvironment {
       videoCoversDirectory: Directory(p.join(root.path, 'covers')),
       skipDownloadExtras: skipDownloadExtras,
       defaultTargetSourceId: defaultTargetSourceId,
+      now: now,
     );
     return _PipelineEnvironment._(
       database: database,

@@ -845,6 +845,7 @@ class AdminApi {
       reasoningEffort: effort == null ? null : AiReasoningEffort.fromStorageKey(effort),
       allowInsecureHttp: flag('allowInsecureHttp'),
       webKnowledge: flag('webKnowledge'),
+      libraryOrganize: flag('libraryOrganize'),
     );
     // 只缺 key / 模型算「没配全」，照存；地址 / 预设层面的错误直接拒。
     final String? invalid = next.invalidReason();

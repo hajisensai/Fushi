@@ -74,6 +74,8 @@ void main() {
           home: MediaCollectionDetailPage(
             database: db,
             collection: MediaCollectionRow(
+              origin: 'user',
+              organizeAliases: '',
               id: collectionId,
               name: 'Show',
               collectionType: 'playlist',

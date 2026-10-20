@@ -930,12 +930,14 @@ class VideoDownloadPipelineService {
     this.videoCoversDirectory,
     this.skipDownloadExtras,
     this.defaultTargetSourceId,
+    DateTime Function()? now,
   }) : preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
        workerId = workerId ?? 'video-${generateVideoDownloadInstallationId()}',
        _coverExtractor = coverExtractor ?? extractVideoCover,
-       _videoRepository = VideoBookRepository(database);
+       _videoRepository = VideoBookRepository(database),
+       _now = now ?? DateTime.now;
 
   final FushiDatabase database;
   final VideoResourceRegistry resourceRegistry;
@@ -1022,6 +1024,11 @@ class VideoDownloadPipelineService {
   final VideoBookRepository _videoRepository;
   final VideoDownloadOrganizer _organizer = const VideoDownloadOrganizer();
 
+  /// 所有落库时刻（claim / 续期 / CAS 推进 / updatedAt）的唯一时钟，与
+  /// [VideoDownloadSubscriptionService] 同形。租约到期是这个时钟上的算术，
+  /// 测试注入手动时钟后租约边界就与调度延迟无关。
+  final DateTime Function() _now;
+
   Timer? _timer;
   bool _running = false;
   bool _disposed = false;
@@ -1038,7 +1045,7 @@ class VideoDownloadPipelineService {
     }
     final String? revivedJobId = await _reviveOrphanedJobForRequest(request);
     if (revivedJobId != null) return revivedJobId;
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     final String jobId = generateVideoDownloadInstallationId();
     await database.upsertVideoDownloadJob(
       VideoDownloadJobsCompanion(
@@ -1106,7 +1113,7 @@ class VideoDownloadPipelineService {
       existing.jobId,
       VideoDownloadJobsCompanion(
         targetSourceId: Value<int?>(request.targetSourceId),
-        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
       ),
     );
     await retryJob(existing.jobId);
@@ -1226,7 +1233,7 @@ class VideoDownloadPipelineService {
         p.join(directory.path, '$jobId.torrent'),
       ).writeAsBytes(metainfo.bytes, flush: true);
     }
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     await database.transaction(() async {
       await database.upsertVideoDownloadJob(
         VideoDownloadJobsCompanion(
@@ -1384,7 +1391,7 @@ class VideoDownloadPipelineService {
         'Subtitles can only be attached before media import begins',
       );
     }
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     final String selectionKey = sha256.convert(<int>[
       ...candidate.providerId.codeUnits,
       0,
@@ -1434,7 +1441,7 @@ class VideoDownloadPipelineService {
     await database.setVideoDownloadJobPriority(
       jobId: jobId,
       priority: priority,
-      nowAt: DateTime.now().millisecondsSinceEpoch,
+      nowAt: _now().millisecondsSinceEpoch,
     );
     wake();
   }
@@ -1456,7 +1463,7 @@ class VideoDownloadPipelineService {
     }
     final bool changed = await database.retryVideoDownloadJobByUser(
       jobId: jobId,
-      nowAt: DateTime.now().millisecondsSinceEpoch,
+      nowAt: _now().millisecondsSinceEpoch,
       rewindToEnqueue: rewindToEnqueue,
     );
     if (!changed) {
@@ -1486,7 +1493,7 @@ class VideoDownloadPipelineService {
       job.jobId,
       VideoDownloadJobsCompanion(
         targetSourceId: Value<int?>(replacement),
-        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
       ),
     );
   }
@@ -1554,7 +1561,7 @@ class VideoDownloadPipelineService {
 
     final bool changed = await database.resumeCancelledVideoDownloadJobByUser(
       jobId: jobId,
-      nowAt: DateTime.now().millisecondsSinceEpoch,
+      nowAt: _now().millisecondsSinceEpoch,
       rewindToEnqueue: rewindToEnqueue,
     );
     if (!changed) {
@@ -1602,7 +1609,7 @@ class VideoDownloadPipelineService {
     }
     final bool changed = await database.cancelVideoDownloadJobByUser(
       jobId: jobId,
-      nowAt: DateTime.now().millisecondsSinceEpoch,
+      nowAt: _now().millisecondsSinceEpoch,
     );
     if (!changed) {
       final VideoDownloadJobRow? current = await database.getVideoDownloadJob(
@@ -1876,7 +1883,7 @@ class VideoDownloadPipelineService {
         VideoDownloadJobsCompanion(
           backendTaskId: const Value<String?>(null),
           torrentHash: const Value<String?>(null),
-          updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+          updatedAt: Value<int>(_now().millisecondsSinceEpoch),
         ),
       );
       released++;
@@ -1908,7 +1915,7 @@ class VideoDownloadPipelineService {
       // backend pause and make stale/missing torrents impossible to delete.
       final bool stopped = await database.cancelVideoDownloadJobByUser(
         jobId: jobId,
-        nowAt: DateTime.now().millisecondsSinceEpoch,
+        nowAt: _now().millisecondsSinceEpoch,
       );
       final VideoDownloadJobRow? current = await database.getVideoDownloadJob(
         jobId,
@@ -2094,7 +2101,7 @@ class VideoDownloadPipelineService {
 
   Future<void> _drain() async {
     for (int processed = 0; processed < 8 && !_disposed; processed++) {
-      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int now = _now().millisecondsSinceEpoch;
       final VideoDownloadJobRow? job = await database.claimNextVideoDownloadJob(
         workerId: workerId,
         nowAt: now,
@@ -2111,7 +2118,7 @@ class VideoDownloadPipelineService {
       renew: () => database.renewVideoDownloadJobClaim(
         jobId: job.jobId,
         workerId: workerId,
-        nowAt: DateTime.now().millisecondsSinceEpoch,
+        nowAt: _now().millisecondsSinceEpoch,
         leaseDurationMs: leaseDuration.inMilliseconds,
       ),
     );
@@ -2156,7 +2163,7 @@ class VideoDownloadPipelineService {
       _ensureLeaseHeld();
       final bool retryable =
           error is! ExternalProviderFailure || error.retryable;
-      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int now = _now().millisecondsSinceEpoch;
       // 刮削阶段只有「资料源暂时不可用」可重试；其余（映射不回来源、待确认…）
       // 重试也不会变，交给人处理。
       final bool scrapeNeedsHuman = job.stage == VideoDownloadJobStage.scrape &&
@@ -2261,7 +2268,7 @@ class VideoDownloadPipelineService {
         // 同包的上一卷还没下完：排队等它完成让出 torrent，不算失败、不耗重试
         // 预算。持有者被暂停/出错时也继续等——用户恢复、重试或删掉它之后这里
         // 自动接手。
-        final int now = DateTime.now().millisecondsSinceEpoch;
+        final int now = _now().millisecondsSinceEpoch;
         await _releaseLeaseWith(
           () => database.releaseVideoDownloadJobClaim(
             jobId: job.jobId,
@@ -2698,7 +2705,7 @@ class VideoDownloadPipelineService {
         // disk, invalid torrent, a snapshot that never persists) must reach a
         // terminal state instead of re-enqueueing itself forever while the UI
         // shows an eternally "active" job.
-        final int now = DateTime.now().millisecondsSinceEpoch;
+        final int now = _now().millisecondsSinceEpoch;
         await _releaseLeaseWith(
           () => database.rewindVideoDownloadJobToEnqueue(
             jobId: job.jobId,
@@ -2718,7 +2725,7 @@ class VideoDownloadPipelineService {
       );
     }
     if (!snapshot.isComplete) {
-      final int now = DateTime.now().millisecondsSinceEpoch;
+      final int now = _now().millisecondsSinceEpoch;
       _ensureLeaseHeld();
       await database.updateVideoDownloadJob(
         job.jobId,
@@ -2821,7 +2828,7 @@ class VideoDownloadPipelineService {
       return;
     }
     _ensureLeaseHeld();
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     await database.transaction(() async {
       for (final TorrentFileEntry file in files) {
         final bool selected = !extras.contains(file.index);
@@ -2905,7 +2912,7 @@ class VideoDownloadPipelineService {
     final bool selective = existing.any(
       (VideoDownloadJobFileRow row) => !row.selected,
     );
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     for (final TorrentFileEntry file in files) {
       _ensureLeaseHeld();
       final VideoDownloadJobFileRow? row = byIndex[file.index];
@@ -3052,7 +3059,7 @@ class VideoDownloadPipelineService {
             finalAbsolutePath: Value<String?>(file.finalLocalPath),
             season: Value<int?>(file.seasonNumber),
             episode: Value<int?>(file.episodeNumber),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value<int>(_now().millisecondsSinceEpoch),
           ),
         );
       },
@@ -3109,7 +3116,7 @@ class VideoDownloadPipelineService {
         'The download task has no selected files',
       );
     }
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     for (final VideoDownloadJobFileRow row in selectedRows) {
       _ensureLeaseHeld();
       final TorrentFileEntry? backendFile = row.backendFileIndex == null
@@ -3181,7 +3188,7 @@ class VideoDownloadPipelineService {
         () => database.completeVideoDownloadJob(
           jobId: job.jobId,
           workerId: workerId,
-          completedAt: DateTime.now().millisecondsSinceEpoch,
+          completedAt: _now().millisecondsSinceEpoch,
         ),
       );
       await _notifyDownloadOnlyCompleted(job);
@@ -3222,7 +3229,7 @@ class VideoDownloadPipelineService {
     final List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
     int videoCount = 0;
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     for (final VideoDownloadJobFileRow row in rows) {
       _ensureLeaseHeld();
       final TorrentFileEntry? backendFile = row.backendFileIndex == null
@@ -3311,7 +3318,7 @@ class VideoDownloadPipelineService {
         identityJson: job.identityJson == null
             ? Value<String?>(encodeVideoMediaReference(_mediaReference(job)))
             : const Value<String?>.absent(),
-        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
       ),
     );
     _ensureLeaseHeld();
@@ -3327,7 +3334,7 @@ class VideoDownloadPipelineService {
     final Map<int, TorrentFileEntry> files = <int, TorrentFileEntry>{
       for (final TorrentFileEntry file in backendFiles) file.index: file,
     };
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     for (final VideoOrganizationFilePlan file in plan.files) {
       _ensureLeaseHeld();
       final VideoDownloadJobFileRow? row = await _jobFileByIndex(
@@ -3390,7 +3397,7 @@ class VideoDownloadPipelineService {
   }
 
   Future<void> _markFilesOrganized(List<VideoDownloadJobFileRow> rows) async {
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     for (final VideoDownloadJobFileRow row in rows) {
       _ensureLeaseHeld();
       if (row.finalAbsolutePath == null) continue;
@@ -3597,7 +3604,7 @@ class VideoDownloadPipelineService {
           p.dirname(video.path),
           '${p.basenameWithoutExtension(video.path)}.$language$extension',
         );
-        final int now = DateTime.now().millisecondsSinceEpoch;
+        final int now = _now().millisecondsSinceEpoch;
         final String initialTempPath = '$initialTarget.${job.jobId}.fushi.tmp';
         // Persist the selected remote identity before downloading its temporary
         // payload. OpenSubtitles/Jimaku URLs themselves are never persisted.
@@ -3663,7 +3670,7 @@ class VideoDownloadPipelineService {
             originalFileName: Value<String?>(resolvedFileName),
             stagedPath: Value<String?>(tempPath),
             finalPath: Value<String?>(selectedTarget),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value<int>(_now().millisecondsSinceEpoch),
           ),
         );
         _ensureLeaseHeld();
@@ -3680,7 +3687,7 @@ class VideoDownloadPipelineService {
             finalPath: Value<String?>(installed),
             status: const Value<String>(VideoDownloadJobSubtitleStatus.placed),
             error: const Value<String?>(null),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value<int>(_now().millisecondsSinceEpoch),
           ),
         );
         anyInstalled = true;
@@ -3909,7 +3916,7 @@ class VideoDownloadPipelineService {
                   ? null
                   : 'A sidecar already exists; the legacy staging file was kept',
             ),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value<int>(_now().millisecondsSinceEpoch),
           ),
         );
         if (sameContent) installed = true;
@@ -3934,7 +3941,7 @@ class VideoDownloadPipelineService {
             error: const Value<String?>(
               'The subtitle target already exists; nothing was overwritten',
             ),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value<int>(_now().millisecondsSinceEpoch),
           ),
         );
         continue;
@@ -3955,7 +3962,7 @@ class VideoDownloadPipelineService {
             error: const Value<String?>(
               'The subtitle target changed while copying; nothing was overwritten',
             ),
-            updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            updatedAt: Value<int>(_now().millisecondsSinceEpoch),
           ),
         );
         continue;
@@ -3968,7 +3975,7 @@ class VideoDownloadPipelineService {
           finalPath: Value<String?>(target.path),
           status: const Value<String>(VideoDownloadJobSubtitleStatus.placed),
           error: const Value<String?>(null),
-          updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+          updatedAt: Value<int>(_now().millisecondsSinceEpoch),
         ),
       );
       installed = true;
@@ -3991,7 +3998,7 @@ class VideoDownloadPipelineService {
       jobFileId: Value<int?>(video?.id),
       status: const Value<String>(VideoDownloadJobSubtitleStatus.unavailable),
       error: Value<String?>(error),
-      updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      updatedAt: Value<int>(_now().millisecondsSinceEpoch),
     ),
   );
 
@@ -4049,7 +4056,7 @@ class VideoDownloadPipelineService {
     String error, {
     VideoDownloadJobSubtitleRow? existingSelection,
   }) async {
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     if (existingSelection != null) {
       await database.updateVideoDownloadJobSubtitle(
         subtitleId,
@@ -4266,7 +4273,7 @@ class VideoDownloadPipelineService {
               ),
               videoPath: Value<String>(file.finalAbsolutePath!),
               embeddedSubtitleTrack: const Value<int?>(0),
-              importedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
+              importedAt: Value<int?>(_now().millisecondsSinceEpoch),
             ),
             sourceId: source?.id,
           );
@@ -4298,7 +4305,7 @@ class VideoDownloadPipelineService {
         await _videoRepository.updateSubtitleSource(uid, subtitle.finalPath);
       }
     }
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     for (final VideoDownloadJobFileRow file in files) {
       await database.updateVideoDownloadJobFile(
         file.id,
@@ -4399,7 +4406,7 @@ class VideoDownloadPipelineService {
       '[manual-download] imported ${outcome.importedCount} item(s) '
       'as ${kind.name}${outcome.summary == null ? '' : ': ${outcome.summary}'}',
     );
-    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int now = _now().millisecondsSinceEpoch;
     // importedCount == 0（库里已有同一本）也算完成：文件就位、库里可见，用户
     // 无事可做。真正的失败在上面以异常表达。
     for (final VideoDownloadJobFileRow row in rows) {
@@ -4434,7 +4441,7 @@ class VideoDownloadPipelineService {
         () => database.completeVideoDownloadJob(
           jobId: job.jobId,
           workerId: workerId,
-          completedAt: DateTime.now().millisecondsSinceEpoch,
+          completedAt: _now().millisecondsSinceEpoch,
         ),
       );
       return;
@@ -4450,7 +4457,7 @@ class VideoDownloadPipelineService {
         () => database.completeVideoDownloadJob(
           jobId: job.jobId,
           workerId: workerId,
-          completedAt: DateTime.now().millisecondsSinceEpoch,
+          completedAt: _now().millisecondsSinceEpoch,
         ),
       );
       return;
@@ -4543,7 +4550,7 @@ class VideoDownloadPipelineService {
       () => database.completeVideoDownloadJob(
         jobId: job.jobId,
         workerId: workerId,
-        completedAt: DateTime.now().millisecondsSinceEpoch,
+        completedAt: _now().millisecondsSinceEpoch,
       ),
     );
   }
@@ -4562,7 +4569,7 @@ class VideoDownloadPipelineService {
       jobId: job.jobId,
       workerId: workerId,
       stage: stage,
-      nowAt: nowAt ?? DateTime.now().millisecondsSinceEpoch,
+      nowAt: nowAt ?? _now().millisecondsSinceEpoch,
       progress: 0,
       backendTaskId: backendTaskId,
       torrentHash: torrentHash,
@@ -4581,7 +4588,7 @@ class VideoDownloadPipelineService {
       jobId: job.jobId,
       workerId: workerId,
       error: error,
-      nowAt: nowAt ?? DateTime.now().millisecondsSinceEpoch,
+      nowAt: nowAt ?? _now().millisecondsSinceEpoch,
     ),
   );
 
@@ -4672,7 +4679,7 @@ class VideoDownloadPipelineService {
       job.jobId,
       VideoDownloadJobsCompanion(
         observedSavePath: Value<String?>(remoteSavePath),
-        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
       ),
     );
   }

@@ -83,6 +83,8 @@ void main() {
       );
 
   MediaCollectionRow collection(int id, {int? anilistId}) => MediaCollectionRow(
+        origin: 'user',
+        organizeAliases: '',
         id: id,
         name: 'C$id',
         collectionType: 'collection',

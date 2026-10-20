@@ -22,6 +22,24 @@ void main() {
       contains('dart run tool/flutter_test_failures.dart '
           r'--file-shard=${{ matrix.part }}/4 --exclude-tags golden'),
     );
+    // --experimental-faster-testing was tried and withdrawn: flutter_tester
+    // crashed with a random SIGSEGV in two of five CI rounds (PR #2422, root
+    // cause unknown). The sharded runs stay in normal mode (one process per
+    // suite, default concurrency) until that crash has a native backtrace and
+    // a fix; --concurrency=1 / --max-suites-per-run only made sense with it.
+    for (final String workflow in <String>[mainWorkflow, releaseWorkflow]) {
+      final List<String> shardRuns = workflow
+          .split('\n')
+          .where((String line) =>
+              line.contains('tool/flutter_test_failures.dart --file-shard='))
+          .toList();
+      expect(shardRuns, isNotEmpty);
+      for (final String line in shardRuns) {
+        expect(line, isNot(contains('--experimental-faster-testing')));
+        expect(line, isNot(contains('--concurrency=1')));
+        expect(line, isNot(contains('--max-suites-per-run')));
+      }
+    }
     expect(mainWorkflow, contains('shard: [0, 1, 2, 3]'));
     expect(releaseWorkflow, contains("part: ['0', '1', '2', '3', checks]"));
     // Coverage was never uploaded or read by anything and roughly doubled the

@@ -1000,6 +1000,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => FushiIcons.ocr,
     AiFeature.audiobookCast => FushiIcons.voice,
     AiFeature.collectionOrder => FushiIcons.sort,
+    AiFeature.libraryOrganize => FushiIcons.aiAssistant,
     AiFeature.subtitleProofread => FushiIcons.edit,
   };
 
@@ -1251,6 +1252,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => t.ai_feature_manga_ocr,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast,
     AiFeature.collectionOrder => t.ai_feature_collection_order,
+    AiFeature.libraryOrganize => t.ai_feature_library_organize,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
   };
 
@@ -1266,6 +1268,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => t.ai_feature_manga_ocr_summary,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast_summary,
     AiFeature.collectionOrder => t.ai_feature_collection_order_summary,
+    AiFeature.libraryOrganize => t.ai_feature_library_organize_summary,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
   };
 

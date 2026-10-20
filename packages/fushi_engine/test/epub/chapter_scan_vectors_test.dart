@@ -42,17 +42,22 @@ void main() {
     });
 
     // 3 个种子 × 3000 章的标签汤 + 真书常见片段；只入库整份转储的 SHA-256。
+    //
+    // 扫描转储的摘要在「章内图片引用按文件去重」时有意重算过一次：新旧转储逐行比对
+    // （20107 行），只有 427 行的 `refs=` 栏变化，且全是删掉同一文件的重复引用
+    // （`<img>` + SVG `<image>` 指同一张图、KCC Panel View 的隐藏放大区），其余
+    // 字段逐字未变。搜索转储不含 `refs=`，摘要不动。
     const Map<int, (String, String)> fuzzDigests = <int, (String, String)>{
       1: (
-        'c80b79ef6cc278f3f89d3c35657f3eba32ee5bee597a51915ad2137961fe422b',
+        '2d0086c227e05b7933ee06d9b32d5667db56c7ea3acc82c344f065c6300a2379',
         '29daa45314471b2cbd8674f44b3b899710c6c3428b47fa79e4f703edb075c420',
       ),
       2: (
-        '91e4f3748f497761d6d8165efcf19960d73fd3c6747e89e9616da3e837a4b1a7',
+        '54641c2af92e762acf5289366c638f5fbff3dc48b2be96569cb301c526607cea',
         '97f539eb874c51603e4bd286cfa0a625d99c4071c696c35be9234e4913a0d0fc',
       ),
       3: (
-        '2ae8170dc3477cef1a96c165b29f6509bfcfd835387b1557388e39410370f950',
+        '8409d009bd652da156126c404c899559b91f77cbe6c4e19d15f31d336dc21319',
         'cb072e9c441da5c65b623a28a7cba6ca0848fec956e4fec0422ff20f76fd773a',
       ),
     };

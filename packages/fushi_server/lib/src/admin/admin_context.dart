@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/library_scanner.dart';
@@ -64,6 +65,7 @@ class AdminContext {
       subtitleLanguage: config.subtitleLanguage,
       // 优先级：请求里显式给的 > 启动参数 > 配置里的 `scan_prune`（默认开）。
       pruneMissing: prune ?? pruneOverride ?? config.scanPrune,
+      organizer: serverLibraryOrganizer(db, config.ai),
     ).scanAll(config.libraries).then((ScanSummary s) {
       lastScan = s;
       lastScanAt = DateTime.now();

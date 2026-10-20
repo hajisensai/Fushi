@@ -449,13 +449,13 @@ Future<IptvPlaylistImportResult> importIptvChannels({
       int added = 0;
       for (final String uid in desired) {
         if (currentKeys.contains(uid)) continue;
-        await db.addToCollection(collectionId, MediaKind.video, uid);
+        await db.addToCollection(collectionId, MediaKind.video, uid, userIntent: false);
         added++;
       }
       for (final MediaCollectionItemRow item in current) {
         if (!ownsMember(item) || desiredSet.contains(item.entryKey)) continue;
         await db.removeFromCollection(
-            collectionId, MediaKind.video, item.entryKey);
+            collectionId, MediaKind.video, item.entryKey, userIntent: false);
         removed++;
       }
       // 有新频道加入时按列表顺序排本来源的成员（其余成员的相对位置不动）。
@@ -476,7 +476,7 @@ Future<IptvPlaylistImportResult> importIptvChannels({
       for (final MediaCollectionItemRow item
           in itemsByCollection[c.id] ?? const <MediaCollectionItemRow>[]) {
         if (!ownsMember(item)) continue;
-        await db.removeFromCollection(c.id, MediaKind.video, item.entryKey);
+        await db.removeFromCollection(c.id, MediaKind.video, item.entryKey, userIntent: false);
         removed++;
       }
     }
