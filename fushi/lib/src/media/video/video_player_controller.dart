@@ -1634,15 +1634,27 @@ class VideoPlayerController extends ChangeNotifier
   /// 字幕查词（`graphic_subtitle_ocr.dart`）靠这张合成帧做 OCR。PNG 无损——JPEG 的块
   /// 效应正落在字幕描边上，会拉低识别率。未 [load] 返回 null。
   Future<Uint8List?> captureFrameWithSubtitles() async {
-    return _player?.screenshot(
+    final Player? player = _player;
+    if (player == null) return null;
+    if (!hasNativePlayer) {
+      return player.screenshot(
+        format: 'image/png',
+        includeLibassSubtitles: true,
+      );
+    }
+    // 不占 Player 的串行锁（BUG-3622）：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
+    // play() / pause() 都得排队——暂停 OCR 开着时按继续播放要等截帧编完才响应。
+    // 公开的 Player.screenshot 不透传 synchronized，只能直接调 NativePlayer。截帧在
+    // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
+    // `_offThreadNativeCalls`）。
+    final dynamic native = player.platform;
+    if (native == null) return null;
+    final Object? bytes = await native.screenshot(
       format: 'image/png',
       includeLibassSubtitles: true,
-      // 不占 Player 的串行锁：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间 play() /
-      // pause() 都得排队——暂停 OCR 开着时按继续播放要等截帧编完才响应。截帧在
-      // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
-      // `_offThreadNativeCalls`）。
       synchronized: false,
     );
+    return bytes as Uint8List?;
   }
 
   /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件
