@@ -186,7 +186,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#13.
+Copy the new upstream version over this folder, then re-apply deltas #1–#14.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
@@ -269,6 +269,34 @@ the four project deployment targets and the guard test move with it.
     The download manifests (per-member sizes + SHA-256) and the startup core
     choice live in the app: `fushi/lib/src/asr_host/gpu_runtime_pack.dart` and
     `gpu_acceleration.dart`.
+
+14. Android ORT `1.23.0` -> **`1.28.0`**, and every Android session gets
+    `mlas.disable_kleidiai=1` (`android/build.gradle`,
+    `FlutterOnnxruntimePlugin.kt` `createSession`; BUG-3636). iOS/macOS stay on
+    `onnxruntime-objc` 1.23.0.
+
+    - 1.23.x MLAS picks KleidiAI's **SME2** kernels whenever the CPU reports
+      SME. Snapdragon 8 Elite Gen 5 (Oryon) has SME but not SME2, so
+      `OrtSession.run` died with SIGILL ILL_ILLOPC. Measured on the release
+      aar (BuildId `34a68042…`): the crash PC is `whilelt pn8.h, x11, x24,
+      vlx2` right after `smstart` — predicate-as-counter is SME2-only. The
+      1.23.0 binary ships only `_sme2_mopa` f32 matmul kernels; 1.28.0 ships
+      `_sme_mopa` and `_sme2_mopa` variants and dispatches between them
+      (microsoft/onnxruntime#26377, fixed by #27403).
+    - 1.28.0, not newer: sherpa-onnx measured 1.27.0 miscomputing on the same
+      SoC with 1.28.0 correct, and from 1.29 the official Android package sends
+      telemetry by default (#27379 / #29872). Upstream plugin PR #79 picked
+      1.28.0 for the same reason.
+    - KleidiAI stays off on Android even after the upgrade: it only engages on
+      SME phones, and there it still keeps per-thread MatMul buffers sized for
+      the largest input shape and never returns them (#29538, reproduced on
+      1.28.0 at GB scale; OCR inputs are dynamic-shape). The key exists from
+      ORT 1.25. Every Android device therefore runs the same NEON MLAS path
+      non-SME phones always ran. Remove the entry only once #29538 is fixed and
+      KleidiAI is verified on an SME-only device.
+    - Same 12 JNI `FindClass` descriptors and still `classes.jar`-only (no
+      consumer ProGuard rules) — `fushi/android/app/proguard-rules.pro` keeps
+      them unchanged. Guard: `fushi/test/ocr/onnxruntime_android_kleidiai_guard_test.dart`.
 
 Before bumping the bundled Windows core, bump the CUDA plugin EP to the release
 built against the same ORT revision (and its manifest in

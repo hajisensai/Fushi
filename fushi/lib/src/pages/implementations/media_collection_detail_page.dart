@@ -831,17 +831,22 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   ImageProvider? get _heroCover {
     // 读 DB 快照而非进页副本：刮削刚写进去的新封面必须立刻生效（见 [_collectionRow]）。
-    final String? collectionCover =
-        (_collectionRow ?? widget.collection).coverPath;
-    if (collectionCover != null && collectionCover.isNotEmpty) {
+    // 每一级本地路径都要文件真实存在才算数，与库页合集卡
+    // （`home_video_page.dart` 的 `_buildCollectionCover`）同一条判据：剧集目录
+    // 搬家、备份恢复带来的悬空路径必须表现得像「没设过封面」，落到刮削封面 /
+    // 成员封面，而不是返回一张必坏的 FileImage 把后面的回退全挡掉。
+    final String? collectionCover = _existingLocalCover(
+      (_collectionRow ?? widget.collection).coverPath,
+    );
+    if (collectionCover != null) {
       return resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: collectionCover,
         decodeWidth: 1600,
       );
     }
-    if (_canonicalCoverPath case final String canonicalCover
-        when canonicalCover.isNotEmpty) {
+    if (_existingLocalCover(_canonicalCoverPath)
+        case final String canonicalCover) {
       return resolveMediaCoverImage(
         kind: MediaKind.video,
         localPath: canonicalCover,
@@ -853,14 +858,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       return _resolveCanonicalImage(remoteCover, decodeWidth: 1600);
     }
     if (_members.isEmpty) return null;
-    final String? continueCover = _members[_continueIndex].coverPath;
-    String? fallbackCover = continueCover?.isNotEmpty == true
-        ? continueCover
-        : null;
+    String? fallbackCover = _existingLocalCover(
+      _members[_continueIndex].coverPath,
+    );
     if (fallbackCover == null) {
       for (final VideoBookRow row in _members) {
-        final String? candidate = row.coverPath;
-        if (candidate != null && candidate.isNotEmpty) {
+        final String? candidate = _existingLocalCover(row.coverPath);
+        if (candidate != null) {
           fallbackCover = candidate;
           break;
         }
@@ -871,6 +875,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       localPath: fallbackCover,
       decodeWidth: 1600,
     );
+  }
+
+  /// 本地封面路径非空且文件存在时原样返回，否则 null（[_heroCover] 的逐级判据）。
+  static String? _existingLocalCover(String? path) {
+    if (path == null || path.isEmpty) return null;
+    return File(path).existsSync() ? path : null;
   }
 
   /// 把当前 [_slots] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
@@ -1679,6 +1689,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     context.openEpisode(remote, members, members.indexOf(remote));
   }
 
+  /// 这一集看过没有：有播放位置且没看完。重看到一半的已打勾集同样是「继续观看」
+  /// （BUG-3491）。
+  bool _isEpisodeStarted(CollectionEpisodeSlot episode) =>
+      episode.positionMs > 0 && !_slotProgress(episode).isFinished;
+
+  /// 右下角「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集。
+  Widget? _buildResumeFab() {
+    if (_slots.isEmpty) return null;
+    final CollectionEpisodeSlot episode = _slots[_continueIndex];
+    return MediaDetailResumeFab(
+      buttonKey: const ValueKey<String>('collection-resume-fab'),
+      watching: true,
+      started: _isEpisodeStarted(episode),
+      itemLabel: _episodeDisplayTitle(episode),
+      onPressed: () => _openSlot(episode),
+    );
+  }
+
   /// 详情页 hero：数据求值留在本页（背景轮换 / 元信息 chip / 标签 / 人物 / 续播集 /
   /// 主操作），视觉交给共享的 [CollectionDetailHero]（与媒体服务器详情页同一套）。
   ///
@@ -1693,9 +1721,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 一份只会形成重复内容。旧 v68 资料没有规范详情宿主时才保留 hero 回退，
     // 避免老库凭空丢信息。简介只在 hero 里展示一份（可展开、可选中划词）。
     final bool useLegacyHeroDetails = _canonicalWork == null;
-    // 重看到一半的已打勾集同样是「继续观看」（BUG-3491）。
-    final bool started =
-        episode.positionMs > 0 && !_slotProgress(episode).isFinished;
+    final bool started = _isEpisodeStarted(episode);
     return CollectionDetailHero(
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,
@@ -1728,7 +1754,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       continueLabel:
           '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
           '${_episodeDisplayTitle(episode)}',
-      playLabel: started ? t.video_continue_watching : t.collection_play,
+      // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
+      playLabel: MediaDetailResumeFab.labelFor(
+        watching: true,
+        started: started,
+      ),
       playButtonKey: const ValueKey<String>('collection-hero-play'),
       onPlay: () => _openSlot(episode),
       // hero 不再挂「⋯」：它只是右上角管理菜单的子集，左右两处同样的按钮
@@ -2805,6 +2835,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ? double.infinity
               : kMediaDetailTwoPaneMinWidth,
           bottomPadding: tokens.spacing.page,
+          fab: _buildResumeFab(),
           header: _buildHero(),
           slivers: <Widget>[
             SliverToBoxAdapter(child: _buildEpisodeSection(tokens)),

@@ -96,12 +96,16 @@ class FushiWebCoreLibrary {
   /// 2. 环境变量 `FUSHI_WEB_CORE_LIB`；
   /// 3. 可执行文件同级（Windows 桌面包）；
   /// 4. `bin/../lib/<name>`（`dart build cli` 形态的 bundle）；
-  /// 5. 裸名（系统搜索路径）。Android 从 APK 的 native lib 目录、macOS 从
+  /// 5. 仅测试宿主（`dart` / `flutter_tester`，见 [isTestHost]）：从 [currentDirectory]
+  ///    向上找到的本仓 `native/fushi_web_core/prebuilt/<平台>/<name>`（`tool/bootstrap.ps1`
+  ///    编出或复用的产物），没调 `useDevFushiWebCoreLibrary` 的测试也能加载；
+  /// 6. 裸名（系统搜索路径）。Android 从 APK 的 native lib 目录、macOS 从
   ///    `Contents/Frameworks`、Linux 桌面从 `bundle/lib/`（`$ORIGIN/lib`）加载都走这条。
   static List<String> libraryCandidates({
     String? libraryPath,
     Map<String, String>? environment,
     String? executablePath,
+    String? currentDirectory,
   }) {
     final String name = defaultLibraryName();
     final Map<String, String> env = environment ?? Platform.environment;
@@ -109,13 +113,61 @@ class FushiWebCoreLibrary {
     final String binDir = File(exe).parent.path;
     final String sep = Platform.pathSeparator;
     final String? fromEnv = env[kFushiWebCoreLibEnv];
+    final String? prebuilt = isTestHost(exe)
+        ? _findRepoPrebuilt(currentDirectory ?? Directory.current.path, name)
+        : null;
     return <String>[
       if (libraryPath != null && libraryPath.isNotEmpty) libraryPath,
       if (fromEnv != null && fromEnv.isNotEmpty) fromEnv,
       '$binDir$sep$name',
       File('$binDir$sep..${sep}lib$sep$name').absolute.path,
+      if (prebuilt != null) prebuilt,
       name,
     ];
+  }
+
+  /// 进程是不是测试宿主（`dart test` / `flutter test`）。只有它才去仓库里找 prebuilt：
+  /// 正式 app 与服务端不能从当前目录的上级加载库（DLL 投毒面）。
+  static bool isTestHost(String executablePath) {
+    final String base = executablePath
+        .split(RegExp(r'[\\/]'))
+        .last
+        .toLowerCase();
+    return base == 'dart' ||
+        base == 'dart.exe' ||
+        base == 'flutter_tester' ||
+        base == 'flutter_tester.exe';
+  }
+
+  static String? _findRepoPrebuilt(String start, String name) {
+    final String? platformDir = Platform.isWindows
+        ? 'windows-x64'
+        : Platform.isMacOS
+        ? 'macos'
+        : Platform.isLinux
+        ? 'linux-x64'
+        : null;
+    if (platformDir == null) return null;
+    final String sep = Platform.pathSeparator;
+    Directory dir = Directory(start).absolute;
+    for (int depth = 0; depth < 8; depth++) {
+      final File candidate = File(
+        '${dir.path}${sep}native${sep}fushi_web_core${sep}prebuilt'
+        '$sep$platformDir$sep$name',
+      );
+      if (candidate.existsSync()) return candidate.path;
+      // 找到仓库根（worktree 的 `.git` 是文件）为止：本仓 worktree 嵌在主 checkout 里，
+      // 再往上找会悄悄加载主 checkout 用别的分支编出的库，掩盖「本 worktree 缺库」
+      // （原生库是硬依赖，缺了要明确失败）。
+      if (FileSystemEntity.typeSync('${dir.path}$sep.git') !=
+          FileSystemEntityType.notFound) {
+        break;
+      }
+      final Directory parent = dir.parent;
+      if (parent.path == dir.path) break;
+      dir = parent;
+    }
+    return null;
   }
 
   /// 原生库版本串（= native/fushi_web_core 的 crate 版本）。

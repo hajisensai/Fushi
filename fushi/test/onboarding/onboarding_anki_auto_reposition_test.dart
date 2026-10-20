@@ -15,7 +15,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('引导里默认开，而设置本身仍默认关（不是升级送的）', () {
-    expect(kOnboardingAnkiAutoRepositionDefault, isTrue);
+    expect(kOnboardingAutoRepositionDefault, isTrue);
     expect(const AnkiSettings().autoRepositionEnabled, isFalse);
     expect(
       AnkiSettings.fromJson(const <String, dynamic>{}).autoRepositionEnabled,
@@ -46,7 +46,7 @@ void main() {
     for (final String needle in <String>[
       't.anki_reposition_auto_title',
       't.onboarding_anki_auto_reposition_hint',
-      'value: _ankiAutoReposition',
+      'value: _autoReposition',
     ]) {
       expect(
         build.contains(needle),
@@ -55,11 +55,9 @@ void main() {
       );
     }
     expect(
-      src.contains(
-        'bool _ankiAutoReposition = kOnboardingAnkiAutoRepositionDefault;',
-      ),
+      src.contains('bool _autoReposition = kOnboardingAutoRepositionDefault;'),
       isTrue,
-      reason: '向导内初值必须取 kOnboardingAnkiAutoRepositionDefault',
+      reason: '向导内初值必须取 kOnboardingAutoRepositionDefault',
     );
 
     final String next = methodBody(src, 'Future<void> _goNextAsync() async {');
@@ -67,13 +65,54 @@ void main() {
       'if (_steps[_stepIndex] == OnboardingStepId.anki) {',
     );
     final int write = next.indexOf(
-      '.setAutoRepositionEnabled(_ankiAutoReposition)',
+      '.setAutoRepositionEnabled(_autoReposition)',
     );
     expect(ankiBranch, isNonNegative);
     expect(
       write,
       greaterThan(ankiBranch),
       reason: '离开 Anki 步时没把开关写进 AnkiSettings.autoRepositionEnabled',
+    );
+  });
+
+  // 所有者 2026-10-20：「制卡后自动重排 走新手教程那步的时候默认开启」——Fushi 复习
+  // 路径不经过 Anki 步，开关必须摆在复习方式一步里，并在离开那一步时写回。
+  test('Fushi 复习路径：开关挂在复习方式一步，离开时写回（产品代码判据）', () {
+    final String src = maskComments(
+      File(
+        'lib/src/pages/implementations/onboarding_wizard_page.dart',
+      ).readAsStringSync(),
+    );
+    final int stepCase = src.indexOf('case OnboardingStepId.reviewMethod:');
+    final int nextCase = src.indexOf('case OnboardingStepId.anki:', stepCase);
+    expect(stepCase, isNonNegative);
+    final String step = src.substring(stepCase, nextCase);
+    for (final String needle in <String>[
+      't.onboarding_review_fushi_auto_reposition_hint',
+      'value: _autoReposition',
+    ]) {
+      expect(
+        step.contains(needle),
+        isTrue,
+        reason: '复习方式一步里没有 `$needle`：Fushi 路径看不到自动重排开关',
+      );
+    }
+
+    final String next = methodBody(src, 'Future<void> _goNextAsync() async {');
+    final int reviewBranch = next.indexOf(
+      'if (_steps[_stepIndex] == OnboardingStepId.reviewMethod) {',
+    );
+    expect(reviewBranch, isNonNegative);
+    final String branch = next.substring(reviewBranch);
+    expect(
+      branch.contains('_applyReviewMethod(_reviewMethod)'),
+      isTrue,
+      reason: '照着默认按下一步时没把复习方式写进偏好',
+    );
+    expect(
+      branch.contains('.setAutoRepositionEnabled(_autoReposition)'),
+      isTrue,
+      reason: '离开复习方式一步时没把开关写进 AnkiSettings.autoRepositionEnabled',
     );
   });
 }

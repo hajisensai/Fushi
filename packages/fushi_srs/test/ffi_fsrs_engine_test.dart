@@ -130,6 +130,61 @@ void main() {
     expect(candidates[4], name);
   });
 
+  test(
+    'test hosts find the repository prebuilt; shipped executables do not',
+    () {
+      final String sep = Platform.pathSeparator;
+      final String name = FushiFsrs.defaultLibraryName();
+      final String platformDir = Platform.isWindows
+          ? 'windows-x64'
+          : Platform.isMacOS
+          ? 'macos'
+          : 'linux-x64';
+      final Directory repo = Directory.systemTemp.createTempSync(
+        'fushi_fsrs_repo',
+      );
+      addTearDown(() => repo.deleteSync(recursive: true));
+      final File lib = File(
+        '${repo.path}${sep}native${sep}fushi_fsrs${sep}prebuilt'
+        '$sep$platformDir$sep$name',
+      )..createSync(recursive: true);
+      final Directory cwd = Directory('${repo.path}${sep}fushi${sep}test')
+        ..createSync(recursive: true);
+
+      final List<String> asTest = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: cwd.path,
+      );
+      expect(asTest[asTest.length - 2], lib.path);
+      expect(asTest.last, name);
+
+      // 嵌在主 checkout 里的 worktree（根上是 `.git` 文件）自己缺库：不得越过它的
+      // 仓库根去拿主 checkout 的库（原生库是硬依赖，缺了要失败）。
+      final Directory worktree = Directory(
+        '${repo.path}$sep.claude${sep}worktrees${sep}wt',
+      )..createSync(recursive: true);
+      File('${worktree.path}$sep.git').writeAsStringSync('gitdir: x');
+      final Directory wtCwd = Directory('${worktree.path}${sep}fushi${sep}test')
+        ..createSync(recursive: true);
+      final List<String> inWorktree = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: wtCwd.path,
+      );
+      expect(inWorktree, isNot(contains(lib.path)));
+
+      final List<String> asApp = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}opt${sep}fushi${sep}bin${sep}fushi_server',
+        currentDirectory: cwd.path,
+      );
+      expect(asApp, isNot(contains(lib.path)));
+      expect(FushiFsrs.isTestHost(r'C:\sdk\bin\flutter_tester.exe'), isTrue);
+      expect(FushiFsrs.isTestHost(r'C:\app\fushi.exe'), isFalse);
+    },
+  );
+
   final String libraryPath = _libraryPath();
   final FfiFsrsEngine? engine = FfiFsrsEngine.tryCreate(
     libraryPath: libraryPath,

@@ -267,5 +267,29 @@ void main() {
         tmp.deleteSync(recursive: true);
       }
     }, skip: ffmpeg == null ? 'no ffmpeg available' : false);
+
+    // 波形面板把整条包络均匀铺在 [0, limitMs) 上：包络必须恰好覆盖上界。`-t` 作输出
+    // 选项时被末尾 6s 大帧 asetnsamples 拖过上界（实测 10s 上界抽出 900 帧 = 18s，
+    // 20 分钟上界抽出 1212s），整条波形被压缩、与字幕线 / 播放头错开。
+    test('limitMs bounds the envelope to exactly the probe window', () async {
+      final Directory tmp = Directory.systemTemp.createTempSync('energy_limit');
+      try {
+        final File wav = File('${tmp.path}${Platform.pathSeparator}in.wav')
+          ..writeAsBytesSync(_wav(<(double, double)>[(20.0, 0.5)]));
+        final _FixedCliBackend backend = _FixedCliBackend(ffmpeg!);
+        setFfmpegBackendForTesting(backend);
+
+        final List<double> env = await extractAudioEnergyEnvelope(
+          videoPath: wav.path,
+          windowMs: kSubtitleWaveformWindowMs,
+          limitMs: 10000,
+        );
+
+        expect(env.length, inInclusiveRange(499, 501),
+            reason: backend.lastOutput);
+      } finally {
+        tmp.deleteSync(recursive: true);
+      }
+    }, skip: ffmpeg == null ? 'no ffmpeg available' : false);
   });
 }

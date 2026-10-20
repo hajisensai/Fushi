@@ -114,6 +114,24 @@ class HomeToolbarScrollState extends ChangeNotifier {
     return false;
   }
 
+  /// 喂一条 [ScrollMetricsNotification]（内容长度 / 视口变化后的版面修正）。
+  ///
+  /// 版面把位置夹回顶部（窗口变大 / 面板收起后整页放得下）只发这类通知、**不发**
+  /// ScrollUpdate——[handle] 看不见它，栏会停在收起态，而列表已经滚不动，用户
+  /// 再也唤不回顶栏（同库页 BUG-3133）。位置落回顶部一屏栏高之内就弹回栏。
+  bool handleMetrics(ScrollMetricsNotification notification) {
+    if (notification.depth != 0) return false;
+    final ScrollMetrics metrics = notification.metrics;
+    if (metrics.axis != Axis.vertical) return false;
+    final double pixels = metrics.pixels;
+    if (pixels <= kHomeToolbarExtent) _accumulated = 0;
+    _set(
+      visible: pixels <= kHomeToolbarExtent ? true : _visible,
+      pastHero: pixels > fabRevealOffset,
+    );
+    return false;
+  }
+
   void _set({required bool visible, required bool pastHero}) {
     if (visible == _visible && pastHero == _pastHero) return;
     _visible = visible;

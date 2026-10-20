@@ -45,6 +45,17 @@ class AniListMedia {
           : (native?.isNotEmpty ?? false)
               ? native!
               : 'AniList #$id';
+
+  /// 界面展示用标题：日文原名 → 罗马字 → 英文 → id，与发现页 AniList 适配器
+  /// （`native ?? romaji ?? english`）同口径。[displayTitle] 的罗马字优先是给
+  /// nyaa / Jimaku 搜索用的，不能拿来给人看——中文 / 日文界面会整页罗马字。
+  String get nativeFirstTitle => (native?.isNotEmpty ?? false)
+      ? native!
+      : (romaji?.isNotEmpty ?? false)
+          ? romaji!
+          : (english?.isNotEmpty ?? false)
+              ? english!
+              : 'AniList #$id';
 }
 
 /// 罗马字长音符（macron）→ **双元音** 展开（修正 Hepburn）。番剧官方 romaji

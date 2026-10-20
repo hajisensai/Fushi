@@ -2352,6 +2352,18 @@ window.fushiSelection = {
     return { node: hit.node, offset: bounds.start, endNode: hit.node, endOffset: bounds.end - 1 };
   },
   getSentenceContext: function(startNode, startOffset) {
+    // BUG-3630：视觉小说模式只把一屏的切片克隆进 document，切屏可以落在一句话中间
+    // （「…ミステリ書」|「きと同じ…」）。在克隆上取句会把句子截在屏首 / 屏尾，制卡只拿到
+    // 半句。阅读器能把克隆位置换回源章节时，在源章节上按同一套标点规则取句——三种阅读
+    // 模式的句子边界因此一致（分页 / 连续本就是整章 DOM，没有这个钩子，原地取句）。
+    // 返回的 sStart / sEnd 节点随之是源节点，归一化 / 音频偏移由阅读器按源节点换算。
+    var reader = window.fushiReader;
+    if (reader && typeof reader.sourceTextPosition === 'function') {
+      var source = reader.sourceTextPosition(startNode, startOffset);
+      if (source && source.node && source.node !== startNode) {
+        return this.getSentenceContext(source.node, source.offset);
+      }
+    }
     var container = this.findParagraph(startNode) || document.body;
     var walker = this.createWalker(container);
     walker.currentNode = startNode;
@@ -3683,6 +3695,12 @@ window.fushiSelection = {
     if (!window.fushiReader) return null;
     var base = window.fushiReader.nodeStartOffsets
       ? window.fushiReader.nodeStartOffsets.get(targetNode) : undefined;
+    // BUG-3630：视觉小说模式取句回到源章节，句首 / 句尾是源节点（不在 document 里，下面
+    // 遍历 body 的兜底数不到它），用源节点自己的章内偏移。
+    if (base === undefined &&
+        typeof window.fushiReader.sourceTextOffsetForNode === 'function') {
+      base = window.fushiReader.sourceTextOffsetForNode(targetNode);
+    }
     if (base !== undefined) {
       var count = base || 0;
       var text = targetNode.textContent;

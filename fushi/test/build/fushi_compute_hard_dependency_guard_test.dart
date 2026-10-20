@@ -16,7 +16,7 @@ import '../helpers/source_guard.dart';
 /// - macOS Runner 构建阶段 `bundle_fushi_compute.sh`：缺库 `exit 1`；
 /// - iOS Runner 构建阶段 `check_fushi_compute.sh`（见 ios_native_umbrella_link_guard_test）；
 /// - Android：`checkFushiComputeNative` 挂在 `preBuild` 上，缺 ABI 抛 GradleException；
-/// - 本地新 worktree：`tool/bootstrap.ps1` / `bootstrap.sh` 编它；
+/// - 本地新 worktree：`tool/bootstrap.ps1`（经 `tool/native_libs.ps1`）/ `bootstrap.sh` 编它；
 /// - CI：凡是跑 `flutter test` / `flutter_test_failures.dart` 的 job 都用
 ///   `setup-fushi-compute` 或显式设 `FUSHI_COMPUTE_LIB`。
 void main() {
@@ -99,16 +99,31 @@ void main() {
     );
   });
 
-  test('本地 bootstrap 编 fushi_compute，缺 cargo 报错而不是跳过', () {
+  test('本地 bootstrap 备好全部 Rust 硬依赖，缺 cargo 报错而不是跳过', () {
+    // bootstrap.ps1 把备库交给 tool/native_libs.ps1（戳记复用 / 兄弟 worktree 拷贝 / 编译）。
     final String ps1 = maskHashComments(read('../tool/bootstrap.ps1'));
-    expect(ps1, contains("'build_windows_dll.ps1'"));
-    expect(ps1, contains("'build_macos_dylib.sh'"));
-    expect(ps1, contains("'build_linux_so.sh'"));
-    expect(ps1, contains('Get-Command cargo'));
     expect(ps1, contains(r'param([switch]$SkipNativeCompute)'));
+    expect(ps1, contains("'native_libs.ps1'"));
+    final String libs = maskHashComments(read('../tool/native_libs.ps1'));
+    expect(libs, contains("'build_windows_dll.ps1'"));
+    expect(libs, contains("'build_macos_dylib.sh'"));
+    expect(libs, contains("'build_linux_so.sh'"));
+    expect(libs, contains('Get-Command cargo'));
+    expect(
+      libs,
+      contains(
+        r"$NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core')",
+      ),
+    );
     final String sh = maskHashComments(read('../tool/bootstrap.sh'));
-    expect(sh, contains('bash native/fushi_compute/build_linux_so.sh'));
-    expect(sh, contains('bash native/fushi_compute/build_macos_dylib.sh'));
+    for (final String crate in <String>[
+      'fushi_compute',
+      'fushi_fsrs',
+      'fushi_web_core',
+    ]) {
+      expect(sh, contains('bash native/$crate/build_linux_so.sh'));
+      expect(sh, contains('bash native/$crate/build_macos_dylib.sh'));
+    }
     expect(sh, contains('command -v cargo'));
   });
 
