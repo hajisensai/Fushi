@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/subscription_check_schedule.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
@@ -19,9 +20,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
-typedef VideoDownloadSubscriptionEnqueue = Future<String> Function(
-  VideoDownloadEnqueueRequest request,
-);
+typedef VideoDownloadSubscriptionEnqueue =
+    Future<String> Function(VideoDownloadEnqueueRequest request);
 
 // Nyaa's upstream RESULTS_PER_PAGE default is 75. Keeping the subscription
 // window aligned lets a 75-item first page continue instead of being mistaken
@@ -114,14 +114,14 @@ class VideoDownloadSubscriptionService {
     this.autoRetryBudget = kVideoDownloadSubscriptionAutoRetryBudget,
     SubscriptionCheckCadence? cadence,
     DateTime Function()? now,
-  })  : cadence = cadence ??
-            SubscriptionCheckCadence(
-              baseInterval: checkInterval,
-            ),
-        _enqueue = enqueue,
-        workerId =
-            workerId ?? 'video-sub-${generateVideoDownloadInstallationId()}',
-        _now = now ?? DateTime.now {
+    int Function()? autoDisableAfterDays,
+  }) : _autoDisableAfterDays = autoDisableAfterDays,
+       cadence =
+           cadence ?? SubscriptionCheckCadence(baseInterval: checkInterval),
+       _enqueue = enqueue,
+       workerId =
+           workerId ?? 'video-sub-${generateVideoDownloadInstallationId()}',
+       _now = now ?? DateTime.now {
     // `cadence` 一旦给了，`checkInterval` 就被**静默忽略**（它只用来兜底造一个默认
     // cadence）。两个都传 = 调用方以为自己设了基准间隔、实际一点没生效 —— 正是
     // 「同一个数字两层两语义」那种运行期谜题。构造时就拒绝，别留到线上去猜。
@@ -181,6 +181,10 @@ class VideoDownloadSubscriptionService {
   Duration get checkInterval => cadence.baseInterval;
   final int autoRetryBudget;
   final DateTime Function() _now;
+
+  /// 追更订阅多久（天）没有新命中就自动关闭；每轮现读（设置改了下一轮生效），
+  /// null 或 ≤ 0 = 从不。
+  final int Function()? _autoDisableAfterDays;
 
   Timer? _timer;
   Future<void>? _activeCheck;
@@ -282,12 +286,12 @@ class VideoDownloadSubscriptionService {
   Future<void> _drain() async {
     for (int processed = 0; processed < 64 && !_disposed; processed++) {
       final int nowAt = _now().millisecondsSinceEpoch;
-      final VideoDownloadSubscriptionRow? subscription =
-          await database.claimNextVideoDownloadSubscription(
-        workerId: workerId,
-        nowAt: nowAt,
-        leaseDurationMs: leaseDuration.inMilliseconds,
-      );
+      final VideoDownloadSubscriptionRow? subscription = await database
+          .claimNextVideoDownloadSubscription(
+            workerId: workerId,
+            nowAt: nowAt,
+            leaseDurationMs: leaseDuration.inMilliseconds,
+          );
       if (subscription == null) return;
       await _process(subscription);
     }
@@ -323,6 +327,28 @@ class VideoDownloadSubscriptionService {
       final _SubscriptionCheckOutcome outcome = await _check(subscription);
       final int checkedAt = _now().millisecondsSinceEpoch;
       final Duration nextDelay = await _successDelay(subscription, checkedAt);
+      // 距最近一次发现新集（一集都没有就是添加时刻）已超过设定天数的追更订阅，
+      // 随这次结账一并关闭。本轮刚发现的新集已落库，discoveredAt≈now，不会误关。
+      final int autoDisableDays = _autoDisableAfterDays?.call() ?? 0;
+      bool stale = false;
+      if (autoDisableDays > 0 && subscription.mode != 'oneShot') {
+        int? latestDiscoveredAt;
+        for (final VideoDownloadSubscriptionItemRow item
+            in await database.getVideoDownloadSubscriptionItems(
+              subscription.subscriptionId,
+            )) {
+          if (latestDiscoveredAt == null ||
+              item.discoveredAt > latestDiscoveredAt) {
+            latestDiscoveredAt = item.discoveredAt;
+          }
+        }
+        stale = isVideoDownloadSubscriptionStale(
+          subscription,
+          nowAt: checkedAt,
+          days: autoDisableDays,
+          latestDiscoveredAt: latestDiscoveredAt,
+        );
+      }
       await _releaseLeaseWith(
         () => database.completeVideoDownloadSubscriptionCheck(
           subscriptionId: subscription.subscriptionId,
@@ -332,6 +358,7 @@ class VideoDownloadSubscriptionService {
           matchedAt: outcome.matched ? checkedAt : null,
           fulfillOneShot:
               subscription.mode == 'oneShot' && outcome.hasPersistentJob,
+          disable: stale,
         ),
       );
     } on Object catch (error) {
@@ -355,10 +382,8 @@ class VideoDownloadSubscriptionService {
   ) async {
     _ensureLeaseHeld();
     _validateSubscription(subscription);
-    final List<VideoDownloadSubscriptionItemRow> existingItems =
-        await database.getVideoDownloadSubscriptionItems(
-      subscription.subscriptionId,
-    );
+    final List<VideoDownloadSubscriptionItemRow> existingItems = await database
+        .getVideoDownloadSubscriptionItems(subscription.subscriptionId);
     // 一次性订阅「已经下过了」的判据只能看**整包那一条**（`batch` / 电影的
     // `movie`）。订阅 id 按作品稳定、`upsertVideoDownloadSubscription` 整行覆盖
     // 但**不清 items**：用户追更过某番（items 里已有带 jobId 的 `S01E01…`）、番完结
@@ -394,25 +419,24 @@ class VideoDownloadSubscriptionService {
     final VideoMediaReference media = _mediaReference(subscription);
     final List<VideoResourceCandidate> providerCandidates =
         await _searchSubscriptionCandidates(
-      media: media,
-      query: subscription.searchQuery,
-      season: subscription.season,
-      selectedProvider: selectedProvider,
-      providerBase: providerBase,
-    );
+          media: media,
+          query: subscription.searchQuery,
+          season: subscription.season,
+          selectedProvider: selectedProvider,
+          providerBase: providerBase,
+        );
 
     final Map<String, List<_SubscriptionRelease>> releasesByItem =
         <String, List<_SubscriptionRelease>>{};
     for (final VideoResourceCandidate candidate in providerCandidates) {
       if (!filter.matches(candidate)) continue;
-      final _SubscriptionLogicalItem? logicalItem =
-          _logicalItem(subscription, candidate.title);
+      final _SubscriptionLogicalItem? logicalItem = _logicalItem(
+        subscription,
+        candidate.title,
+      );
       if (logicalItem == null) continue;
       releasesByItem
-          .putIfAbsent(
-            logicalItem.key,
-            () => <_SubscriptionRelease>[],
-          )
+          .putIfAbsent(logicalItem.key, () => <_SubscriptionRelease>[])
           .add(_SubscriptionRelease(candidate, logicalItem));
     }
     if (releasesByItem.isEmpty) {
@@ -424,11 +448,12 @@ class VideoDownloadSubscriptionService {
 
     final Map<String, VideoDownloadSubscriptionItemRow> existingByKey =
         <String, VideoDownloadSubscriptionItemRow>{
-      for (final VideoDownloadSubscriptionItemRow item in existingItems)
-        item.logicalItemKey: item,
-    };
-    final Set<String> managedEpisodeKeys =
-        await _managedEpisodeKeys(subscription);
+          for (final VideoDownloadSubscriptionItemRow item in existingItems)
+            item.logicalItemKey: item,
+        };
+    final Set<String> managedEpisodeKeys = await _managedEpisodeKeys(
+      subscription,
+    );
     // BUG-1746：判「这一集还用不用管」必须看任务的真实下场，不能只看 jobId 在不在。
     final Map<String, String> lifecycleByJobId = <String, String>{
       for (final VideoDownloadJobRow job
@@ -469,7 +494,7 @@ class VideoDownloadSubscriptionService {
         }
         hasPersistentJob =
             await _enqueueItem(subscription, media, release.candidate, item) ||
-                hasPersistentJob;
+            hasPersistentJob;
       } on VideoDownloadLeaseLost {
         rethrow;
       } on Object catch (error) {
@@ -521,22 +546,20 @@ class VideoDownloadSubscriptionService {
       );
       final List<ProviderBatchResult<VideoResourceCandidate>> batches =
           await Future.wait(
-        providers.map(
-          (VideoResourceProvider provider) async {
-            try {
-              return await provider.search(request);
-            } on Object catch (error) {
-              return ProviderBatchResult<VideoResourceCandidate>.failure(
-                ExternalProviderFailure.fromException(
-                  providerId: provider.id,
-                  operation: 'subscription-search',
-                  error: error,
-                ),
-              );
-            }
-          },
-        ),
-      );
+            providers.map((VideoResourceProvider provider) async {
+              try {
+                return await provider.search(request);
+              } on Object catch (error) {
+                return ProviderBatchResult<VideoResourceCandidate>.failure(
+                  ExternalProviderFailure.fromException(
+                    providerId: provider.id,
+                    operation: 'subscription-search',
+                    error: error,
+                  ),
+                );
+              }
+            }),
+          );
       _ensureLeaseHeld();
       final ProviderBatchResult<VideoResourceCandidate> result =
           ProviderBatchResult.merge<VideoResourceCandidate>(batches);
@@ -600,10 +623,8 @@ class VideoDownloadSubscriptionService {
       ),
     );
     _ensureLeaseHeld();
-    final List<VideoDownloadSubscriptionItemRow> items =
-        await database.getVideoDownloadSubscriptionItems(
-      subscription.subscriptionId,
-    );
+    final List<VideoDownloadSubscriptionItemRow> items = await database
+        .getVideoDownloadSubscriptionItems(subscription.subscriptionId);
     return items.firstWhere(
       (VideoDownloadSubscriptionItemRow item) =>
           item.logicalItemKey == release.logicalItem.key,
@@ -621,8 +642,8 @@ class VideoDownloadSubscriptionService {
     // 这里**不再**重复写一遍 `item.jobId != null` —— 那份副本正是 BUG-1746 的
     // 第二道锁：放开上面的判定后它会照旧把重试挡在门外。判据只留一处。
     final String providerId = persistedVideoResourceProviderId(candidate);
-    final List<VideoDownloadJobRow> jobs =
-        await database.getVideoDownloadJobs();
+    final List<VideoDownloadJobRow> jobs = await database
+        .getVideoDownloadJobs();
     _ensureLeaseHeld();
     for (final VideoDownloadJobRow job in jobs) {
       if (job.fingerprint != subscription.fingerprint ||
@@ -732,10 +753,14 @@ class VideoDownloadSubscriptionService {
     }
     final int? current = job.targetSourceId;
     if (current != null &&
-        isUsableManagedVideoSource(await database.getMediaSourceById(current))) {
+        isUsableManagedVideoSource(
+          await database.getMediaSourceById(current),
+        )) {
       return;
     }
-    if (!isUsableManagedVideoSource(await database.getMediaSourceById(target))) {
+    if (!isUsableManagedVideoSource(
+      await database.getMediaSourceById(target),
+    )) {
       return;
     }
     _ensureLeaseHeld();
@@ -749,15 +774,12 @@ class VideoDownloadSubscriptionService {
   }
 
   Future<void> _markItemQueued(int itemId, String jobId) async {
-
     _ensureLeaseHeld();
     await database.updateVideoDownloadSubscriptionItem(
       itemId,
       VideoDownloadSubscriptionItemsCompanion(
         jobId: Value<String?>(jobId),
-        status: const Value<String>(
-          VideoDownloadSubscriptionItemStatus.queued,
-        ),
+        status: const Value<String>(VideoDownloadSubscriptionItemStatus.queued),
         error: const Value<String?>(null),
         updatedAt: Value<int>(_now().millisecondsSinceEpoch),
       ),
@@ -946,10 +968,7 @@ class _SubscriptionFilter {
         'The subscription version filter must remain strict',
       );
     }
-    final List<String> releaseGroups = _filterValues(
-      decoded,
-      'releaseGroup',
-    );
+    final List<String> releaseGroups = _filterValues(decoded, 'releaseGroup');
     final List<String> resolutions = _filterValues(decoded, 'resolution');
     final List<String> qualities = _filterValues(decoded, 'quality');
     final List<String> sources = _filterValues(decoded, 'source');
@@ -966,10 +985,14 @@ class _SubscriptionFilter {
     final bool? trustedOnly = _optionalBool(decoded, 'trustedOnly');
     // 用户在「编辑订阅」里填的标题关键词（包含全部 / 一个都不含），不算版本证据：
     // 下面「Nyaa / Torznab 至少要有一条版本规则」的门不认它们。
-    final List<String> titleIncludes =
-        _filterValues(decoded, kVideoSubscriptionTitleIncludeKey);
-    final List<String> titleExcludes =
-        _filterValues(decoded, kVideoSubscriptionTitleExcludeKey);
+    final List<String> titleIncludes = _filterValues(
+      decoded,
+      kVideoSubscriptionTitleIncludeKey,
+    );
+    final List<String> titleExcludes = _filterValues(
+      decoded,
+      kVideoSubscriptionTitleExcludeKey,
+    );
     if (providerBase == 'nyaa' &&
         (releaseGroups.isEmpty ||
             (resolutions.isEmpty && qualities.isEmpty) ||
@@ -1031,17 +1054,17 @@ class _SubscriptionFilter {
       return false;
     }
     if (resolutions.isNotEmpty &&
-        !_matchesVersionEvidence(
-          resolutions,
-          <String?>[candidate.resolution, candidate.title],
-        )) {
+        !_matchesVersionEvidence(resolutions, <String?>[
+          candidate.resolution,
+          candidate.title,
+        ])) {
       return false;
     }
     if (qualities.isNotEmpty &&
-        !_matchesVersionEvidence(
-          qualities,
-          <String?>[candidate.resolution, candidate.title],
-        )) {
+        !_matchesVersionEvidence(qualities, <String?>[
+          candidate.resolution,
+          candidate.title,
+        ])) {
       return false;
     }
     if (sources.isNotEmpty &&
@@ -1066,14 +1089,13 @@ class _SubscriptionFilter {
   }
 }
 
-VideoMediaReference _mediaReference(
-  VideoDownloadSubscriptionRow subscription,
-) {
+VideoMediaReference _mediaReference(VideoDownloadSubscriptionRow subscription) {
   // v94（BUG-2003）：优先入队快照，保留日文原名、罗马字别名和外部身份。
   // Nyaa 轮询使用持久化的 searchQuery，别名仅供未指定查询时选默认词。订阅列
   // （title/year/season/kind）仍是流程真值。旧行（NULL 快照）走修前重建。
-  final VideoMediaReference? stored =
-      decodeVideoMediaReference(subscription.identityJson);
+  final VideoMediaReference? stored = decodeVideoMediaReference(
+    subscription.identityJson,
+  );
   if (stored != null) {
     return VideoMediaReference(
       providerId: stored.providerId,
@@ -1096,8 +1118,8 @@ VideoMediaReference _mediaReference(
   }
   final String provider =
       subscription.metadataProvider?.trim().isNotEmpty == true
-          ? subscription.metadataProvider!.trim()
-          : 'subscription';
+      ? subscription.metadataProvider!.trim()
+      : 'subscription';
   final String mediaId = subscription.externalId?.trim().isNotEmpty == true
       ? subscription.externalId!.trim()
       : subscription.subscriptionId;
@@ -1209,25 +1231,25 @@ _SubscriptionLogicalItem? _logicalItem(
   );
 }
 
-
 _SubscriptionRelease? _bestRelease(List<_SubscriptionRelease> releases) {
   if (releases.isEmpty) return null;
-  final List<_SubscriptionRelease> sorted = List<_SubscriptionRelease>.of(
-    releases,
-  )..sort((_SubscriptionRelease a, _SubscriptionRelease b) {
-      final VideoResourceCandidate left = a.candidate;
-      final VideoResourceCandidate right = b.candidate;
-      if (left.trusted != right.trusted) return left.trusted ? -1 : 1;
-      final int bySeeders = right.seeders.compareTo(left.seeders);
-      if (bySeeders != 0) return bySeeders;
-      final int byDate = (right.publishedAt?.millisecondsSinceEpoch ?? 0)
-          .compareTo(left.publishedAt?.millisecondsSinceEpoch ?? 0);
-      if (byDate != 0) return byDate;
-      final int byPriority =
-          left.providerPriority.compareTo(right.providerPriority);
-      if (byPriority != 0) return byPriority;
-      return left.remoteId.compareTo(right.remoteId);
-    });
+  final List<_SubscriptionRelease> sorted =
+      List<_SubscriptionRelease>.of(releases)
+        ..sort((_SubscriptionRelease a, _SubscriptionRelease b) {
+          final VideoResourceCandidate left = a.candidate;
+          final VideoResourceCandidate right = b.candidate;
+          if (left.trusted != right.trusted) return left.trusted ? -1 : 1;
+          final int bySeeders = right.seeders.compareTo(left.seeders);
+          if (bySeeders != 0) return bySeeders;
+          final int byDate = (right.publishedAt?.millisecondsSinceEpoch ?? 0)
+              .compareTo(left.publishedAt?.millisecondsSinceEpoch ?? 0);
+          if (byDate != 0) return byDate;
+          final int byPriority = left.providerPriority.compareTo(
+            right.providerPriority,
+          );
+          if (byPriority != 0) return byPriority;
+          return left.remoteId.compareTo(right.remoteId);
+        });
   return sorted.first;
 }
 
@@ -1259,8 +1281,9 @@ bool _candidateBelongsToProvider(
   String selectedProvider,
 ) {
   final String selected = selectedProvider.trim().toLowerCase();
-  final String persisted =
-      persistedVideoResourceProviderId(candidate).toLowerCase();
+  final String persisted = persistedVideoResourceProviderId(
+    candidate,
+  ).toLowerCase();
   return selected.contains(':')
       ? selected == persisted
       : selected == candidate.providerId.toLowerCase();
@@ -1283,10 +1306,10 @@ List<String> _filterValues(Map<String, dynamic> raw, String key) {
   final Iterable<Object?> values = value is List<Object?>
       ? value
       : value is String
-          ? <Object?>[value]
-          : throw const VideoDownloadSubscriptionConfigurationError(
-              'The subscription version filter is invalid',
-            );
+      ? <Object?>[value]
+      : throw const VideoDownloadSubscriptionConfigurationError(
+          'The subscription version filter is invalid',
+        );
   final List<String> result = <String>[];
   for (final Object? item in values) {
     if (item is! String || item.trim().isEmpty) {
@@ -1324,10 +1347,7 @@ bool _matchesExact(List<String> expected, String? actual) {
 String _foldExact(String value) =>
     value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 
-bool _matchesVersionEvidence(
-  List<String> expected,
-  List<String?> evidence,
-) {
+bool _matchesVersionEvidence(List<String> expected, List<String?> evidence) {
   for (final String value in expected) {
     final String needle = _canonicalVersionText(value);
     for (final String? source in evidence) {
@@ -1349,18 +1369,9 @@ String _canonicalVersionText(String value) {
     RegExp(r'\b(?:h[ ._-]?264|x264|avc)\b'),
     ' avc ',
   );
-  normalized = normalized.replaceAll(
-    RegExp(r'\bweb[ ._-]?dl\b'),
-    ' webdl ',
-  );
-  normalized = normalized.replaceAll(
-    RegExp(r'\bweb[ ._-]?rip\b'),
-    ' webrip ',
-  );
-  normalized = normalized.replaceAll(
-    RegExp(r'\bblu[ ._-]?ray\b'),
-    ' bluray ',
-  );
+  normalized = normalized.replaceAll(RegExp(r'\bweb[ ._-]?dl\b'), ' webdl ');
+  normalized = normalized.replaceAll(RegExp(r'\bweb[ ._-]?rip\b'), ' webrip ');
+  normalized = normalized.replaceAll(RegExp(r'\bblu[ ._-]?ray\b'), ' bluray ');
   normalized = normalized.replaceAll(
     RegExp(r'\bdual[ ._-]?audio\b'),
     ' dualaudio ',

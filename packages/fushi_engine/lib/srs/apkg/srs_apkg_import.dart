@@ -992,8 +992,9 @@ class _Importer {
   }
 
   /// 首次建牌组 [full] 时随它一起写的设置（预设参数 / 继承方式 / 收起 / fushi-ext 的牌组键）。
-  /// [created] 是本次已新建的牌组全名（父牌组先于子牌组建）。不含牌组预设时什么也不写（新牌组用
-  /// 本机默认，同 Anki）。
+  /// [created] 是本次已新建的牌组全名（父牌组先于子牌组建）。牌组预设与 FSRS 参数各归一个开关
+  /// （[SrsAnkiImportOptions.withDeckConfigs] / [SrsAnkiImportOptions.withFsrsParams]）；两个
+  /// 都关时什么也不写（新牌组用本机默认，同 Anki）。
   Map<String, Object?> _newDeckSettings(
     String full,
     Map<String, SrsAnkiDeck> byName,
@@ -1002,7 +1003,16 @@ class _Importer {
   ) {
     final SrsAnkiDeck? src = byName[full];
     final Map<String, Object?> values = <String, Object?>{};
-    if (options.withDeckConfigs) {
+    final bool configs = options.withDeckConfigs;
+    final bool fsrs = options.withFsrsParams;
+    // 某个键归哪个开关：排程算法 / 参数 / 期望保留率归 FSRS 参数，其余（含继承方式）归预设；
+    // 继承方式决定参数从哪个牌组取，两个开关任一开着都要写。
+    bool wanted(String key) => key == SrsFieldKeys.deckParamsMode
+        ? true
+        : _fsrsDeckKeys.contains(key)
+        ? fsrs
+        : configs;
+    if (configs || fsrs) {
       final SrsAnkiPreset? preset = src == null
           ? null
           : col.presets[src.configId];
@@ -1033,7 +1043,7 @@ class _Importer {
         values[SrsFieldKeys.deckParamsMode] = inherit ? 'inherit' : 'own';
       }
       // Anki 里收起的牌组导入后同样收起（缺省展开，不写记录）。
-      if (src != null && src.collapsed) {
+      if (configs && src != null && src.collapsed) {
         values[SrsFieldKeys.deckCollapsed] = true;
       }
       final Map<String, Object?>? ext = _extDecks[full];
@@ -1042,9 +1052,18 @@ class _Importer {
           if (ext.containsKey(k)) values[k] = ext[k];
         }
       }
+      values.removeWhere((String k, Object? _) => !wanted(k));
     }
     return values;
   }
+
+  /// 归「FSRS 参数」开关管的牌组键（其余预设键归「牌组预设」开关）。
+  static const Set<String> _fsrsDeckKeys = <String>{
+    SrsFieldKeys.deckAlgorithm,
+    SrsFieldKeys.deckFsrs6Params,
+    SrsFieldKeys.deckFsrs7Params,
+    SrsFieldKeys.deckRetention,
+  };
 
   /// 身份记录已存在、却不在牌组树里 = 先前导入过、后来被删。
   Future<bool> _deckDeleted(String id) async {
@@ -1073,7 +1092,7 @@ class _Importer {
         for (final double s in src)
           if (!(s > 0 && s < 1440)) s,
       ];
-      if (removed.isNotEmpty && report) {
+      if (removed.isNotEmpty && report && options.withDeckConfigs) {
         this.report.truncatedSteps.add(
           SrsImportTruncatedSteps(
             preset: p.name,
@@ -1111,7 +1130,9 @@ class _Importer {
     SrsAlgorithm alg = srsDefaultAlgorithm;
     List<double>? params;
     if (col.fsrsEnabled) {
-      if (p.rwkvEnabled && report) this.report.rwkvPresetsFellBack.add(p.name);
+      if (p.rwkvEnabled && report && options.withFsrsParams) {
+        this.report.rwkvPresetsFellBack.add(p.name);
+      }
       if (p.fsrs7Params.length == SrsAlgorithm.fsrs7.paramCount &&
           (p.fsrsVersion ?? 0) == 0) {
         alg = SrsAlgorithm.fsrs7;
@@ -1128,7 +1149,9 @@ class _Importer {
     if (params != null) {
       final String? bad = _validate(alg, params);
       if (bad != null) {
-        if (report) this.report.invalidParams[p.name] = bad;
+        if (report && options.withFsrsParams) {
+          this.report.invalidParams[p.name] = bad;
+        }
       } else {
         v[alg == SrsAlgorithm.fsrs6
             ? SrsFieldKeys.deckFsrs6Params

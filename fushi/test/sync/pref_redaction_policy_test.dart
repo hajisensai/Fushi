@@ -94,6 +94,8 @@ void main() {
         // sync_* 里的行为开关（是用户设置，不是凭据——见 sync_repository 注释）。
         'sync_auto_enabled',
         'sync_content_enabled',
+        'sync_manga_content_enabled',
+        'interconnect_sync_manga_content',
         'sync_stats_enabled',
         // 'sync_dictionary_enabled' 曾在此：那个开关已随「词典改成显式上传 / 下载」
         // 删除，键没有读写方了，再列在这里只是一条钉住死数据的空断言。

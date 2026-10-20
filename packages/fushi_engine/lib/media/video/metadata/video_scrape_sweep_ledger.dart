@@ -7,11 +7,14 @@
 ///
 /// 这里把三样状态落成 support 目录下的一个小 JSON 文件：设备本地（不进备份 / 同步，
 /// 与 `anidb_anime/` XML 缓存同待遇），读写失败一律退化成进程内记账，绝不影响刮削。
+///
+/// 配置指纹只落 SHA-256 摘要：明文指纹里有 TMDB key 与 AniDB 账号密码。
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:path/path.dart' as p;
 
@@ -21,17 +24,20 @@ class VideoScrapeSweepLedger {
     File? file,
     this.retryAttemptAfter = const Duration(days: 7),
     this.transientRetryAfter = const Duration(hours: 1),
-  })  : _file = file,
-        _resolveFile = null;
+  }) : _file = file,
+       _resolveFile = null;
 
   /// 生产装配：`<support>/video_scrape_sweep_ledger.json`。
   VideoScrapeSweepLedger.inSupportDirectory({
     this.retryAttemptAfter = const Duration(days: 7),
     this.transientRetryAfter = const Duration(hours: 1),
-  })  : _file = null,
-        _resolveFile = (() async => File(p.join(
-            (await enginePaths.supportRootDirectory()).path,
-            'video_scrape_sweep_ledger.json')));
+  }) : _file = null,
+       _resolveFile = (() async => File(
+         p.join(
+           (await enginePaths.supportRootDirectory()).path,
+           'video_scrape_sweep_ledger.json',
+         ),
+       ));
 
   static const int _version = 1;
 
@@ -61,17 +67,25 @@ class VideoScrapeSweepLedger {
 
   /// 首次使用前读盘（幂等）。[fingerprint] 是刮削配置指纹：配置变了（开了哈希、
   /// 换了主源 / 账号），上一套配置下「试过没中」的结论不再成立，清掉重试。
+  ///
+  /// [fingerprint] 含凭据，内存与磁盘上都只留它的摘要（[fingerprintDigest]）。
+  /// 旧版本把明文原样落盘：读到与本次明文相等的旧值视为同一套配置，只换成摘要
+  /// 重写、不清账，免得升级后平白重刮一轮。
   Future<void> ensureLoaded({required String fingerprint}) async {
     await (_loading ??= _load());
-    if (_fingerprint != fingerprint) {
-      if (_fingerprint != null) {
-        _attemptedAt.clear();
-        _transientFailedAt.clear();
-      }
-      _fingerprint = fingerprint;
-      _dirty = true;
+    final String digest = fingerprintDigest(fingerprint);
+    if (_fingerprint == digest) return;
+    if (_fingerprint != null && _fingerprint != fingerprint) {
+      _attemptedAt.clear();
+      _transientFailedAt.clear();
     }
+    _fingerprint = digest;
+    _dirty = true;
   }
+
+  /// 配置指纹落盘形态：明文的 SHA-256 十六进制摘要。
+  static String fingerprintDigest(String fingerprint) =>
+      'sha256:${sha256.convert(utf8.encode(fingerprint))}';
 
   bool wasAttemptedRecently(String workKey, DateTime now) =>
       _within(_attemptedAt[workKey], now, retryAttemptAfter) ||
@@ -127,11 +141,14 @@ class VideoScrapeSweepLedger {
     // 过期条目不再有判定作用，顺手剪掉，文件大小只跟「近期碰过的作品」走。
     final int nowMs = now.millisecondsSinceEpoch;
     _attemptedAt.removeWhere(
-        (_, int at) => nowMs - at >= retryAttemptAfter.inMilliseconds);
+      (_, int at) => nowMs - at >= retryAttemptAfter.inMilliseconds,
+    );
     _transientFailedAt.removeWhere(
-        (_, int at) => nowMs - at >= transientRetryAfter.inMilliseconds);
-    _refreshedAt
-        .removeWhere((_, int at) => nowMs - at >= refreshWindow.inMilliseconds);
+      (_, int at) => nowMs - at >= transientRetryAfter.inMilliseconds,
+    );
+    _refreshedAt.removeWhere(
+      (_, int at) => nowMs - at >= refreshWindow.inMilliseconds,
+    );
     final String payload = jsonEncode(<String, Object?>{
       'v': _version,
       'fingerprint': _fingerprint,

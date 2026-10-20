@@ -140,6 +140,10 @@ void main() {
       )
       .data!;
 
+  /// 主按钮与右下角悬浮按钮同一份文案（[MediaDetailResumeFab.labelFor]）：没有
+  /// 阅读位置 →「开始阅读 · 首章」。
+  String startReading() => '${t.media_detail_start_reading} · Chapter one';
+
   testWidgets('加入书架只建在线书、不开阅读器；之后按钮变成「移出书架」，确认后退回', (
     WidgetTester tester,
   ) async {
@@ -150,7 +154,7 @@ void main() {
     });
     expect(find.byKey(addKey), findsOneWidget);
     expect(find.byKey(removeKey), findsNothing);
-    expect(buttonLabel(tester, readKey), t.novel_detail_read_online);
+    expect(buttonLabel(tester, readKey), startReading());
 
     await tester.runAsync(() async {
       await tester.tap(find.byKey(addKey));
@@ -165,8 +169,8 @@ void main() {
     );
     expect(
       buttonLabel(tester, readKey),
-      t.book_continue_reading,
-      reason: '在书架里时主操作是「继续阅读」。',
+      startReading(),
+      reason: '主按钮文案只看阅读位置、不看在不在书架：没打开过就是「开始阅读 · 首章」。',
     );
 
     final List<EpubBookRow> rows =
@@ -198,10 +202,10 @@ void main() {
       await tester.runAsync(() => db.getEpubBook(rows.single.bookKey)),
       isNull,
     );
-    expect(buttonLabel(tester, readKey), t.novel_detail_read_online);
+    expect(buttonLabel(tester, readKey), startReading());
   });
 
-  testWidgets('进页时已在书架：直接显示「移出书架」与「继续阅读」', (WidgetTester tester) async {
+  testWidgets('进页时已在书架：直接显示「移出书架」，没读过仍是「开始阅读」', (WidgetTester tester) async {
     await tester.runAsync(() async {
       // 走和页面同一条建书路径，免得手搓描述符与生产格式漂移。
       await pumpDetail(tester);
@@ -214,7 +218,7 @@ void main() {
     });
     expect(find.byKey(removeKey), findsOneWidget);
     expect(find.byKey(addKey), findsNothing);
-    expect(buttonLabel(tester, readKey), t.book_continue_reading);
+    expect(buttonLabel(tester, readKey), startReading());
   });
 
   testWidgets('「下载」弹章节范围对话框，取消后什么都不入库', (WidgetTester tester) async {

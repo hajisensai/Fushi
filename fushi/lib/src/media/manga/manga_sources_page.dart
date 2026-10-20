@@ -6,7 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/import/import_carrier.dart'
+    show kMangaCarrierFileExtensions;
 import 'package:fushi/src/media/import/quick_import_section.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart'
+    show kMangaImageExtensions;
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -82,7 +86,11 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         // 对话框内含文件 / 文件夹 / OCR 向导）。
         QuickImportSection(
           heroIcon: FushiIcons.manga,
-          formats: const <String>['CBZ', 'ZIP', 'PDF', 'MOKURO', 'JPG', 'PNG'],
+          // 单卷载体（导入框文件选择器同一份）+ 页图文件夹里认的图片格式。
+          formats: importFormatLabels(<Iterable<String>>[
+            kMangaCarrierFileExtensions,
+            kMangaImageExtensions,
+          ]),
           actions: <QuickImportAction>[
             QuickImportAction(
               icon: FushiIcons.manga,

@@ -148,7 +148,7 @@
  "lib/src/pages/implementations/texthooker_page.dart": 75,
  "lib/src/pages/implementations/updates_dashboard_banner.dart": 2,
  "lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart": 15,
- "lib/src/pages/implementations/video_discovery_page.dart": 15,
+ "lib/src/pages/implementations/video_discovery_page.dart": 12,
  "lib/src/pages/implementations/video_download_jobs_panel.dart": 24,
  "lib/src/pages/implementations/video_fushi/audio_track.part.dart": 3,
  "lib/src/pages/implementations/video_fushi/controls_popover.part.dart": 1,

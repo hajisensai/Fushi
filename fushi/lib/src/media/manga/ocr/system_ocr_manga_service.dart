@@ -9,9 +9,12 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
+import 'package:fushi_compute/fushi_compute.dart' show FfcImageFormat;
+import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
@@ -202,12 +205,13 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     required String relativeUrl,
     required String language,
   }) async {
-    final List<OcrRect> tiles = planSystemOcrTiles(bytes);
+    final Uint8List page = await systemOcrDecodableBytes(bytes);
+    final List<OcrRect> tiles = planSystemOcrTiles(page);
     // 单页超时放在这里而不是各平台原生侧：一处约束胜过四份各写一遍的实现，
     // 而且原生侧加超时要处理「回调已经发过一次」的双重回复风险。卡住的那一页
     // 按失败结束整个任务，用户能重试；不设上限则是整卷无声吊死。
     final SystemOcrPageResult result = await _platform.recognize(
-      bytes,
+      page,
       language: language,
       tiles: <Rect>[
         for (final OcrRect tile in tiles)
@@ -253,6 +257,19 @@ class SystemOcrMangaService implements SystemOcrMangaRunner {
     await writeMangaJsonAtomically(output, payload);
     return output;
   }
+}
+
+/// 系统 OCR 把页图字节交给平台自己的解码器（WIC / ImageIO / ImageDecoder），AVIF 在
+/// 旧系统与没装 AV1 扩展的 Windows 上解不开，整页识别失败。认出 AVIF 就先在原生内核
+/// （后台 isolate）转成 JPEG：irot / imir 已应用、不带 EXIF，切片与识别坐标都落在显示
+/// 方向上——与导入时记录的页面尺寸同一坐标系。其余格式原样返回；转换失败也原样返回，
+/// 由平台按原来的方式报错。
+Future<Uint8List> systemOcrDecodableBytes(Uint8List bytes) async {
+  if (probeImageNative(bytes)?.format != FfcImageFormat.avif) return bytes;
+  final Uint8List? jpeg = await Isolate.run(
+    () => encodeImageAsJpeg(bytes, quality: 95),
+  );
+  return jpeg ?? bytes;
 }
 
 /// 按页图的**原始像素尺寸**（只读文件头，不解码）规划切片。

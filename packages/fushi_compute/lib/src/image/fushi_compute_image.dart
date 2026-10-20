@@ -267,7 +267,7 @@ typedef _AiCropsDart =
     );
 
 /// 解码出的图像格式（与 image.rs 的 `FORMAT_*` 一致）。
-enum FfcImageFormat { jpeg, png, gif, webp, bmp, tiff, tga, ico, pnm }
+enum FfcImageFormat { jpeg, png, gif, webp, bmp, tiff, tga, ico, pnm, avif }
 
 /// [FushiComputeImage.decode] 的结果：行紧排 uint8，[channels] 为 3（RGB）或 4（RGBA）。
 typedef FfcDecodedImage = ({
@@ -710,7 +710,7 @@ class FushiComputeImage {
     }
   }
 
-  /// 解码（JPEG / PNG / GIF / WebP / BMP / TIFF / TGA / ICO / PNM，多帧取首帧）成 uint8
+  /// 解码（JPEG / PNG / GIF / WebP / BMP / TIFF / TGA / ICO / PNM / AVIF，多帧取首帧）成 uint8
   /// RGB（不透明）或 RGBA；[orient] 时按 EXIF 方向转正。认不出 / 解不开返回 null。
   FfcDecodedImage? decode(Uint8List bytes, {bool orient = true}) {
     final Pointer<Uint8> src = _copyIn(bytes);

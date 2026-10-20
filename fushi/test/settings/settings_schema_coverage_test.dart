@@ -822,6 +822,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
+  // 「上传漫画文件」（书籍和漫画分开，2026-10-21）：按格式分流的上传 / 不上传、旧名
+  // `.epub` 漫画包去重都在这条专项测试里咬住。
+  'syncBackup/Upload manga files':
+      'test/sync/cloud_manga_content_sync_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
   'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
@@ -1348,6 +1352,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 前四条写的是**互联专属**键（setInterconnectSync*Enabled），与 syncBackup/* 那套
   // 云侧开关是两套；不能复用云侧的 orchestrator 证据（那条只咬云通道）。
   'interconnect/Upload book files':
+      'test/sync/interconnect_upload_toggles_test.dart',
+  // 互联「上传漫画文件」：键路由与继承在 toggles 测试，live 上传按格式过滤在
+  // sync_orchestrator_live_book_test。
+  'interconnect/Upload manga files':
       'test/sync/interconnect_upload_toggles_test.dart',
   'interconnect/Upload dictionaries':
       'test/sync/interconnect_upload_toggles_test.dart',

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -136,8 +137,8 @@ class CloudRemoteBookClient implements RemoteBookClient {
     for (int attempt = 0;; attempt++) {
       try {
         final List<AssetEntry> children = await backend.listChildren(folderId);
-        return children.any((AssetEntry e) =>
-            !e.isFolder && e.name.toLowerCase().endsWith('.epub'));
+        return children.any(
+            (AssetEntry e) => !e.isFolder && isRemoteBookContentName(e.name));
       } catch (_) {
         if (attempt >= contentProbeRetries) return false;
         if (contentProbeRetryBackoff > Duration.zero) {
@@ -159,16 +160,14 @@ class CloudRemoteBookClient implements RemoteBookClient {
     void Function(double progress)? onProgress,
   }) async {
     final List<AssetEntry> children = await backend.listChildren(folderId);
-    AssetEntry? epub;
-    for (final AssetEntry e in children) {
-      if (!e.isFolder && e.name.toLowerCase().endsWith('.epub')) {
-        epub = e;
-        break;
-      }
-    }
+    // 漫画包新名 `.manga.zip` 优先，其次 `.epub`（EPUB / 旧版漫画包）。
+    final AssetEntry? epub = pickRemoteBookContentEntry<AssetEntry>(
+      children.where((AssetEntry e) => !e.isFolder),
+      (AssetEntry e) => e.name,
+    );
     if (epub == null) {
       throw SyncBackendError(
-        'remote book folder has no .epub content: $folderId',
+        'remote book folder has no book content: $folderId',
       );
     }
     await backend.getAsset(epub.id, destination,

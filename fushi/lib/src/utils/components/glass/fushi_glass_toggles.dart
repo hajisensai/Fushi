@@ -4181,30 +4181,59 @@ class _FushiAppleSegmentedControlState
                   math.max(_inset, width - _inset - segmentWidth),
                 )
               : _inset + segmentWidth * visualOf(selected.clamp(0, count - 1));
-          return GestureDetector(
+          // 滑块横拖与外层横向滚动区抢同一个横拖手势（BUG-3631）：控件比所在
+          // 横向滚动视口还宽时（窄屏 iPhone 上的长英文分段条），只有从选中滑块
+          // 上起手的横拖才拖滑块（iOS UISegmentedControl 同语义），其余横拖
+          // 让给外层滚动——否则内层识别器先过 slop 必胜，整条分段条滚不动，
+          // 视口外的段被裁掉、点不到。控件能整条放进视口（或不在横向滚动区）
+          // 时行为不变：在控件任意位置横拖都拖滑块。
+          final ScrollableState? hostScrollable = Scrollable.maybeOf(
+            context,
+            axis: Axis.horizontal,
+          );
+          bool allowsThumbDragFrom(Offset local) {
+            if (!_segmentedControlOverflowsHorizontalScrollable(
+              hostScrollable,
+              controlWidth: width,
+            )) {
+              return true;
+            }
+            if (selected < 0 || selected >= count) return false;
+            final double left = _inset + segmentWidth * visualOf(selected);
+            return local.dx >= left && local.dx <= left + segmentWidth;
+          }
+
+          return RawGestureDetector(
             behavior: HitTestBehavior.opaque,
-            dragStartBehavior: DragStartBehavior.down,
-            onHorizontalDragStart: _enabled
-                ? (DragStartDetails d) =>
-                      setState(() => _dragCenter = d.localPosition.dx)
-                : null,
-            onHorizontalDragUpdate: _enabled
-                ? (DragUpdateDetails d) =>
-                      setState(() => _dragCenter = d.localPosition.dx)
-                : null,
-            onHorizontalDragEnd: _enabled
-                ? (DragEndDetails _) {
-                    final double? center = _dragCenter;
-                    setState(() {
-                      _dragCenter = null;
-                      _pressedIndex = null;
-                    });
-                    if (center != null) _select(logicalIndexAt(center));
-                  }
-                : null,
-            onHorizontalDragCancel: _enabled
-                ? () => setState(() => _dragCenter = null)
-                : null,
+            gestures: <Type, GestureRecognizerFactory>{
+              if (_enabled)
+                _SegmentThumbDragRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                      _SegmentThumbDragRecognizer
+                    >(() => _SegmentThumbDragRecognizer(debugOwner: this), (
+                      _SegmentThumbDragRecognizer r,
+                    ) {
+                      r.allowStartAt = allowsThumbDragFrom;
+                      r.dragStartBehavior = DragStartBehavior.down;
+                      r.onStart = (DragStartDetails d) {
+                        setState(() => _dragCenter = d.localPosition.dx);
+                      };
+                      r.onUpdate = (DragUpdateDetails d) {
+                        setState(() => _dragCenter = d.localPosition.dx);
+                      };
+                      r.onEnd = (DragEndDetails _) {
+                        final double? center = _dragCenter;
+                        setState(() {
+                          _dragCenter = null;
+                          _pressedIndex = null;
+                        });
+                        if (center != null) _select(logicalIndexAt(center));
+                      };
+                      r.onCancel = () {
+                        setState(() => _dragCenter = null);
+                      };
+                    }),
+            },
             child: Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -4332,6 +4361,42 @@ class _FushiAppleSegmentedControlState
       cell = FushiTooltip(message: data.tooltip, child: cell);
     }
     return cell;
+  }
+}
+
+/// 宽 [controlWidth] 的分段控件是否放不进它最近的横向滚动视口 [scrollable]
+/// （`Scrollable.maybeOf(context, axis: Axis.horizontal)`，BUG-3631）。
+///
+/// 不在横向滚动区里、或滚动视口尺寸还没定时返回 false（按「放得下」处理，
+/// 不改变既有手势分工）。放得下的横向宿主（例如 PageView 的一页）同样返回
+/// false：那里滑块横拖照旧。
+bool _segmentedControlOverflowsHorizontalScrollable(
+  ScrollableState? scrollable, {
+  required double controlWidth,
+}) {
+  if (scrollable == null || !scrollable.mounted) return false;
+  final ScrollPosition position = scrollable.position;
+  if (!position.hasViewportDimension) return false;
+  return controlWidth > position.viewportDimension + 0.5;
+}
+
+/// [FushiAppleSegmentedControl] 的滑块横拖识别器：按下点不满足 [allowStartAt]
+/// 时不参与手势竞技，横拖交给外层滚动区（见 BUG-3631）。
+class _SegmentThumbDragRecognizer extends HorizontalDragGestureRecognizer {
+  _SegmentThumbDragRecognizer({super.debugOwner});
+
+  /// 按下点（控件局部坐标）是否允许起滑块横拖；null = 一律允许。
+  bool Function(Offset localPosition)? allowStartAt;
+
+  @override
+  bool isPointerAllowed(PointerEvent event) {
+    final bool Function(Offset)? allow = allowStartAt;
+    if (event is PointerDownEvent &&
+        allow != null &&
+        !allow(event.localPosition)) {
+      return false;
+    }
+    return super.isPointerAllowed(event);
   }
 }
 

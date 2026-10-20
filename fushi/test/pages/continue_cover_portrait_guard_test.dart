@@ -27,7 +27,8 @@ void main() {
     expect(
       source,
       isNot(contains('_kContinueVideoCoverWidth')),
-      reason: '不得回退成按媒体类型写死的视频 16:9 宽度常量：横竖只看实际用到的那张图'
+      reason:
+          '不得回退成按媒体类型写死的视频 16:9 宽度常量：横竖只看实际用到的那张图'
           '（用户 2026-10-14「卡片比例跟着实际用到的图走」，BUG-3360）',
     );
     // 本机 / 远端视频封面与游戏封面的渲染都收在 `_coverImage` 一处
@@ -58,7 +59,8 @@ void main() {
       expect(
         body,
         contains(delegate),
-        reason: '$fn 必须委托给 $delegate（统一来源解析 + 槽向自适应渲染），'
+        reason:
+            '$fn 必须委托给 $delegate（统一来源解析 + 槽向自适应渲染），'
             '不得自己另写一套封面渲染（BUG-1299）',
       );
       // 判据必须用带标识符边界的匹配，不能用裸子串 'Image('：
@@ -70,7 +72,8 @@ void main() {
       expect(
         containsIdentifierCall(body, 'Image'),
         isFalse,
-        reason: '$fn 不得绕过 _coverImage 直接构造 Image'
+        reason:
+            '$fn 不得绕过 _coverImage 直接构造 Image'
             '（含 Image.file / Image.memory / Image.network / Image.asset）',
       );
     }
@@ -83,14 +86,15 @@ void main() {
     expect(source, contains('HomeCoverOrientationProbe('));
   });
 
-  test('视频首页横滚行/hero：封面都走槽向自适应组件（BUG-1299 血缘）', () {
-    // TODO-2486 起旧「继续观看 hero」换形为 hero 轮播 + 横滚行：横滚行卡封面
-    // 必须走 PortraitCoverImage 槽向自适应（landscapeSlot 按探测朝向注入），
-    // hero 轮播背景必须走 LandscapeCoverImage（竖版海报模糊垫底）——两者都不得
-    // 回退到硬编码 fit 的裸 Image（旧 148×84 横槽让竖版海报两侧露灰带的祖病）。
+  test('视频首页横滚行/主卡：封面都走槽向自适应组件（BUG-1299 血缘）', () {
+    // 2026-10 首页重设计：横滚行卡**恒竖版 2:3**（不再按封面朝向探测横 / 竖卡，
+    // 横图进竖槽由 PortraitCoverImage 垫模糊底）；首屏主卡大图走
+    // LandscapeCoverImage（竖版海报回落时模糊垫底、不硬裁）。两者都不得回退到
+    // 硬编码 fit 的裸 Image（旧 148×84 横槽让竖版海报两侧露灰带的祖病）。
     final String source = File(videoHomePath).readAsStringSync();
     final String rowCard = _stripLineComments(
-        _functionSource(source, 'Widget _buildRowMediaCard('));
+      _functionSource(source, 'Widget _buildRowMediaCard('),
+    );
     expect(
       rowCard,
       contains('PortraitCoverImage('),
@@ -98,16 +102,37 @@ void main() {
     );
     expect(
       rowCard,
-      contains('landscapeSlot:'),
-      reason: '横滚行卡封面槽向必须随探测朝向注入（TODO-2486 朝向自适应）',
+      contains('videoCoverHeightForPortraitWidth(cardWidth)'),
+      reason: '横滚行卡封面区恒 2:3 竖槽：高度由卡宽按竖版换算',
+    );
+    expect(
+      rowCard,
+      isNot(contains('landscapeSlot:')),
+      reason: '首页行卡统一竖封面（2026-10 重设计），不得再按探测朝向切横槽',
     );
     expect(
       containsIdentifierCall(rowCard, 'Image'),
       isFalse,
       reason: '横滚行卡不得绕过槽向组件直接构造 Image',
     );
-    // hero 轮播页的 LandscapeCoverImage 断言已删（2026-10-04）：轮播随 #792
-    // dashboard 化不再渲染，`_buildHeroPage` 作为死代码一并移除。
+    final String heroImage = _stripLineComments(
+      _functionSource(source, 'Widget _buildHomeHeroImage('),
+    );
+    expect(
+      heroImage,
+      contains('LandscapeCoverImage('),
+      reason: '主卡大图必须走 LandscapeCoverImage（竖图回落时模糊垫底，不硬裁）',
+    );
+    expect(
+      containsIdentifierCall(heroImage, 'Image'),
+      isFalse,
+      reason: '主卡大图不得绕过槽向组件直接构造 Image',
+    );
+    expect(
+      heroImage,
+      isNot(contains('BoxFit.cover')),
+      reason: '主卡大图不得用 BoxFit.cover 硬裁',
+    );
   });
 
   test('合集详情单集缩略图：走 PortraitCoverImage 横槽自适应', () {
@@ -138,7 +163,8 @@ void main() {
     expect(
       body,
       contains('landscapeSlot: true'),
-      reason: 'collectionEpisodeThumb 是 16:9 横槽，必须声明 landscapeSlot——否则'
+      reason:
+          'collectionEpisodeThumb 是 16:9 横槽，必须声明 landscapeSlot——否则'
           '竖版海报仍按竖槽语义 cover 硬裁',
     );
     expect(
@@ -157,8 +183,9 @@ String _functionSource(String source, String startToken) {
   final RegExpMatch? next = nextWidget.firstMatch(
     source.substring(start + startToken.length),
   );
-  final int end =
-      next == null ? source.length : start + startToken.length + next.start + 1;
+  final int end = next == null
+      ? source.length
+      : start + startToken.length + next.start + 1;
   return source.substring(start, end);
 }
 

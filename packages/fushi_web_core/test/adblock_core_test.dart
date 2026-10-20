@@ -57,6 +57,47 @@ void main() {
     );
   });
 
+  test(
+    'test hosts find the repository prebuilt; shipped executables do not',
+    () {
+      final String sep = Platform.pathSeparator;
+      final String name = FushiWebCoreLibrary.defaultLibraryName();
+      final String platformDir = Platform.isWindows
+          ? 'windows-x64'
+          : Platform.isMacOS
+          ? 'macos'
+          : 'linux-x64';
+      final Directory repo = Directory.systemTemp.createTempSync('fwc_repo_');
+      addTearDown(() => repo.deleteSync(recursive: true));
+      final File lib = File(
+        '${repo.path}${sep}native${sep}fushi_web_core${sep}prebuilt'
+        '$sep$platformDir$sep$name',
+      )..createSync(recursive: true);
+      final Directory cwd = Directory('${repo.path}${sep}fushi${sep}test')
+        ..createSync(recursive: true);
+
+      final List<String> asTest = FushiWebCoreLibrary.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: cwd.path,
+      );
+      expect(asTest[asTest.length - 2], lib.path);
+      expect(asTest.last, name);
+
+      final List<String> asApp = FushiWebCoreLibrary.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}opt${sep}fushi${sep}bin${sep}fushi_server',
+        currentDirectory: cwd.path,
+      );
+      expect(asApp, isNot(contains(lib.path)));
+      expect(
+        FushiWebCoreLibrary.isTestHost(r'C:\sdk\bin\flutter_tester.exe'),
+        isTrue,
+      );
+      expect(FushiWebCoreLibrary.isTestHost(r'C:\app\fushi.exe'), isFalse);
+    },
+  );
+
   test('catalog lists the four built-in filter lists', () {
     final List<AdblockCatalogEntry> c = AdblockCore.catalog();
     expect(c.map((AdblockCatalogEntry e) => e.id), <String>[

@@ -1432,7 +1432,11 @@ void main() {
         (await first.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
         isTrue,
       );
-      expect(first.textProcessPipeline.steps, isEmpty, reason: '默认是空管线');
+      expect(
+        first.textProcessPipeline,
+        kGalDefaultTextProcessPipeline,
+        reason: '没存过管线的游戏用默认管线',
+      );
       await first.setTextProcessPipeline(pipeline);
       expect(
         store[r'd:nemoi\siglusengine.exe']?.textProcess.steps,
@@ -1459,7 +1463,7 @@ void main() {
 
       // 换游戏不得继承上一个游戏的管线（`_beginActivitySession` 复位记忆会话）。
       expect((await second.launchGame(r'D:\other\Game.exe')).launched, isTrue);
-      expect(second.textProcessPipeline.steps, isEmpty);
+      expect(second.textProcessPipeline, kGalDefaultTextProcessPipeline);
 
       await second.close();
       endpoints.dispose();
