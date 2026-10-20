@@ -64,6 +64,10 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
         await backend.putRemoteCollectionManifest(outcome.merged);
       }
       await repo.setCollectionsSyncBaselineMs(_scope, nextBaseline);
+      // v124：基线推进之后再收敛整理器合集（见 convergeCollectionsAfterSync）。
+      await runExclusiveWithSyncStateApply(
+        () => convergeCollectionsAfterSync(_db, baselineMs: nextBaseline),
+      );
     } catch (e) {
       report.noteError('collections live sync', e);
     }

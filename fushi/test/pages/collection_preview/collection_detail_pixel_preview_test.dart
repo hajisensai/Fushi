@@ -261,6 +261,8 @@ RemoteVideoInfo _remoteEpisode() => const RemoteVideoInfo(
 
 MediaCollectionRow _collectionRow(int id, String name, String coverPath) =>
     MediaCollectionRow(
+      origin: 'user',
+      organizeAliases: '',
       id: id,
       name: name,
       collectionType: 'playlist',

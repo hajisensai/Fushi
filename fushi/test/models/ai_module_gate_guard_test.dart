@@ -46,6 +46,16 @@ final List<_EntrySite> _sites = <_EntrySite>[
     RegExp(r'collectionAiSettings:\s*isAiModuleEnabled\('),
   ),
   _EntrySite(
+    '库页顶栏的「AI 整理」',
+    RegExp(r'onAiOrganize:(?!\s*widget\.)'),
+    RegExp(r'onAiOrganize:\s*isAiModuleEnabled\('),
+  ),
+  _EntrySite(
+    '库页多选的「AI 整理所选」',
+    RegExp(r't\.library_organize_selection_action'),
+    RegExp(r'if \(isAiModuleEnabled\([^\n]*\)\)\s*FushiIconButton\('),
+  ),
+  _EntrySite(
     '漫画 OCR 的 AI 档位面板',
     RegExp(r'aiModeGetter:'),
     RegExp(r'aiModeGetter:\s*isAiModuleEnabled\('),

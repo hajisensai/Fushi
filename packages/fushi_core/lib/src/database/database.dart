@@ -17,6 +17,7 @@ import '../utils/fushi_debug_print.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
+import 'collection_organize.dart';
 import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
@@ -815,6 +816,8 @@ void _requireOneVideoMetadataOwner({
   VideoSubtitleGlossaries,
   SrsSentBatches,
   MediaPrivacyFlags,
+  LibraryOrganizeRuns,
+  LibraryOrganizeChanges,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -848,7 +851,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 123;
+  int get schemaVersion => 124;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2363,6 +2366,52 @@ class FushiDatabase extends _$FushiDatabase
             if (await _tableExists('srs_cards_cache') &&
                 !await _columnExists('srs_cards_cache', 'new_position')) {
               await m.addColumn(srsCardsCache, srsCardsCache.newPosition);
+            }
+          }
+          if (from < 124) {
+            // v124（AI 整理库，docs/specs/2026-10-20-ai-library-organize-design.md §5）：
+            // ① media_collections.origin / organize_key / organize_aliases——合集由谁建
+            //   归谁管 + 整理分组身份。存量行一律 `user`（分不清的宁可当用户的，整理器
+            //   永不改它），目录自动合集（source_folder_path 非空）回填 `folder`。
+            // ② collection_member_tombstones.organize_key / organize_merged——合集级删除
+            //   哨兵上的分组键与「是被并掉还是用户删的」。存量 NULL / false。
+            // ③ library_organize_runs / library_organize_changes——本机整理记录（设备本地）。
+            // 幂等守卫同 v119。
+            if (await _tableExists('media_collections')) {
+              if (!await _columnExists('media_collections', 'origin')) {
+                await m.addColumn(mediaCollections, mediaCollections.origin);
+                await customStatement(
+                  "UPDATE media_collections SET origin = 'folder' "
+                  'WHERE source_folder_path IS NOT NULL',
+                );
+              }
+              if (!await _columnExists('media_collections', 'organize_key')) {
+                await m.addColumn(
+                    mediaCollections, mediaCollections.organizeKey);
+              }
+              if (!await _columnExists(
+                  'media_collections', 'organize_aliases')) {
+                await m.addColumn(
+                    mediaCollections, mediaCollections.organizeAliases);
+              }
+            }
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'organize_key')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.organizeKey);
+            }
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'organize_merged')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.organizeMerged);
+            }
+            if (!await _tableExists('library_organize_runs')) {
+              await m.createTable(libraryOrganizeRuns);
+            }
+            if (!await _tableExists('library_organize_changes')) {
+              await m.createTable(libraryOrganizeChanges);
             }
           }
         },
