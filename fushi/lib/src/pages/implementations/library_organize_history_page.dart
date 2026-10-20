@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/collections/library_organize/library_organize
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -22,7 +23,10 @@ Future<void> openLibraryOrganizeHistoryPage(
       context,
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => LibraryOrganizeHistoryPage(db: appModel.database),
+        builder: (_) => LibraryOrganizeHistoryPage(
+          db: appModel.database,
+          prefs: appModel.prefsRepo,
+        ),
       ),
     );
 
@@ -30,9 +34,14 @@ Future<void> openLibraryOrganizeHistoryPage(
 const int kLibraryOrganizeHistoryRuns = 50;
 
 class LibraryOrganizeHistoryPage extends StatefulWidget {
-  const LibraryOrganizeHistoryPage({required this.db, super.key});
+  const LibraryOrganizeHistoryPage({
+    required this.db,
+    required this.prefs,
+    super.key,
+  });
 
   final FushiDatabase db;
+  final PreferencesRepository prefs;
 
   @override
   State<LibraryOrganizeHistoryPage> createState() =>
@@ -66,16 +75,13 @@ class _LibraryOrganizeHistoryPageState
     final List<({LibraryOrganizeRunRow run, List<LibraryOrganizeChangeRow> changes})>
         history =
         await loadLibraryOrganizeHistory(db, limit: kLibraryOrganizeHistoryRuns);
-    final Set<String> rejectedKeys = await db.getRejectedOrganizeKeys();
+    final Set<String> allowed = widget.prefs.libraryOrganizeAllowedKeys;
     final List<({String key, String name})> rejected =
-        <({String key, String name})>[];
-    for (final CollectionMemberTombstoneRow t
-        in await db.getAllCollectionMemberTombstones()) {
-      final String? key = t.organizeKey;
-      if (key != null && rejectedKeys.remove(key)) {
-        rejected.add((key: key, name: t.collectionName));
-      }
-    }
+        <({String key, String name})>[
+      for (final MapEntry<String, String> e
+          in (await db.getRejectedOrganizeGroups()).entries)
+        if (!allowed.contains(e.key)) (key: e.key, name: e.value),
+    ];
     if (!mounted) return;
     setState(() {
       _runs = <_RunView>[
@@ -166,7 +172,8 @@ class _LibraryOrganizeHistoryPageState
                         onPressed: _busy
                             ? null
                             : () => unawaited(_guard(
-                                  () => widget.db.clearOrganizeRejection(r.key),
+                                  () => widget.prefs
+                                      .addLibraryOrganizeAllowedKey(r.key),
                                 )),
                         child: Text(t.library_organize_history_allow_again),
                       ),

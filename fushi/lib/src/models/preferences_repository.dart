@@ -5037,6 +5037,33 @@ class PreferencesRepository extends ChangeNotifier
   int get libraryOrganizeAutoSince =>
       getPref('library_organize_auto_since', defaultValue: 0) as int;
 
+  /// 本机「允许再次建议」的被拒分组键（AI 整理记录页）。
+  Set<String> get libraryOrganizeAllowedKeys {
+    final String raw =
+        getPref('library_organize_allowed_keys', defaultValue: '') as String;
+    if (raw.isEmpty) return const <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return <String>{
+          for (final Object? k in decoded)
+            if (k is String && k.isNotEmpty) k,
+        };
+      }
+    } on FormatException {
+      // 坏值当空。
+    }
+    return const <String>{};
+  }
+
+  Future<void> addLibraryOrganizeAllowedKey(String key) async {
+    final List<String> next = <String>{...libraryOrganizeAllowedKeys, key}
+        .toList()
+      ..sort();
+    await setPref('library_organize_allowed_keys', jsonEncode(next));
+    notifyListeners();
+  }
+
   /// 用户同意过 AI 整理「会发送什么」的说明。
   bool get libraryOrganizeConsented =>
       getPref('library_organize_consented', defaultValue: false) as bool;

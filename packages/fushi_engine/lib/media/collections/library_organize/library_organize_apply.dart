@@ -253,9 +253,16 @@ Future<int> undoLibraryOrganizeChanges(
         }
         did = true;
       case 'evict':
-        if (c == null) break;
+        // 移出最后一个成员时合集会被移空自删（不写合集墓碑）：按记录重建它。
+        final int id = c?.id ??
+            await db.createMediaCollection(
+              r.collectionName,
+              collectionType: r.collectionType,
+              origin: CollectionOrigin.ai,
+              organizeKey: r.organizeKey,
+            );
         for (final ({String t, String k}) m in _members(payload['members'])) {
-          await db.addToCollectionRaw(c.id, m.t, m.k, userIntent: false);
+          await db.addToCollectionRaw(id, m.t, m.k, userIntent: false);
         }
         did = true;
       case 'merge':
@@ -265,6 +272,9 @@ Future<int> undoLibraryOrganizeChanges(
               const <Object?>[]))
             if (k is String) k,
         };
+        // 合并时目标吸收了败方的分组键与别名：撤销要一并还回去，否则这个系列以后
+        // 还会按键被并进目标（用户刚说过「不是一个」）。
+        final Set<String> returnedKeys = <String>{};
         for (final Object? raw in (payload['sources'] as List<Object?>? ??
             const <Object?>[])) {
           if (raw is! Map) continue;
@@ -276,6 +286,17 @@ Future<int> undoLibraryOrganizeChanges(
             collectionType: type,
             origin: CollectionOrigin.user,
             organizeKey: s['key'] as String?,
+          );
+          final Set<String> sourceAliases =
+              decodeOrganizeAliases(s['aliases'] as String?);
+          returnedKeys
+            ..addAll(sourceAliases)
+            ..addAll(<String>[if (s['key'] is String) s['key'] as String]);
+          await db.setMediaCollectionOrganizeState(
+            id,
+            origin: CollectionOrigin.user,
+            organizeKey: s['key'] as String?,
+            organizeAliases: sourceAliases,
           );
           for (final ({String t, String k}) m in _members(s['members'])) {
             await db.addToCollectionRaw(id, m.t, m.k, userIntent: false);
@@ -290,7 +311,8 @@ Future<int> undoLibraryOrganizeChanges(
             target.id,
             origin: CollectionOrigin.user,
             organizeKey: target.organizeKey,
-            organizeAliases: decodeOrganizeAliases(target.organizeAliases),
+            organizeAliases: decodeOrganizeAliases(target.organizeAliases)
+              ..removeAll(returnedKeys),
           );
         }
         did = true;
@@ -304,11 +326,13 @@ Future<int> undoLibraryOrganizeChanges(
         }
         did = true;
     }
+    // 目标已不在（被删 / 改名）的那一处没撤成：不标「已撤销」，记录里照实留着。
+    if (!did) continue;
     await (db.update(db.libraryOrganizeChanges)..where((t) => t.id.equals(r.id)))
         .write(LibraryOrganizeChangesCompanion(
       undoneAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
     ));
-    if (did) undone++;
+    undone++;
   }
   return undone;
 }

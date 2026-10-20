@@ -167,7 +167,7 @@ void main() {
           collections: const <OrganizeCollectionFact>[],
           rejectedKeys: const <String>{},
           rejectedNames: const <String, String>{},
-          takenNames: const <String, String?>{},
+          takenNames: const <String, Set<String>>{},
         );
     OrganizeEntry video(String uid, String? work) => OrganizeEntry(
           mediaType: 'video',
@@ -198,6 +198,59 @@ void main() {
       );
       expect(plan.single.kind, OrganizeActionKind.tag);
       expect(plan.single.name, '系列:物語');
+    });
+
+    test('同一份回复里「合并 C1、C2」+「并入 C2」→ 改并进胜方', () {
+      OrganizeCollectionFact col(int id, String name) => OrganizeCollectionFact(
+            id: id,
+            name: name,
+            collectionType: 'playlist',
+            origin: CollectionOrigin.ai,
+            organizeKey: 'k-$name',
+            organizeAliases: const <String>{},
+            memberKeys: const <String>{},
+            sampleTitles: const <String>[],
+          );
+      final List<OrganizeCollectionFact> cols = <OrganizeCollectionFact>[
+        col(1, 'A'),
+        col(2, 'B'),
+      ];
+      final List<OrganizeEntry> entries = <OrganizeEntry>[video('x', null)];
+      final List<OrganizeAction> plan = planFromAiReply(
+        facts: LibraryOrganizeFacts(
+          domain: CollectionShelfDomain.video,
+          entries: entries,
+          collections: cols,
+          rejectedKeys: const <String>{},
+          rejectedNames: const <String, String>{},
+          takenNames: const <String, Set<String>>{},
+        ),
+        chunk: OrganizeChunk(entries: entries, collections: cols),
+        reply: const AiOrganizeReply(
+          merges: <AiOrganizeMergeProposal>[
+            AiOrganizeMergeProposal(
+              collections: <String>['C0', 'C1'],
+              confidence: AiOrganizeConfidence.high,
+            ),
+          ],
+          groups: <AiOrganizeGroupProposal>[
+            AiOrganizeGroupProposal(
+              members: <int>[0],
+              into: 'C1',
+              name: '',
+              level: AiOrganizeLevel.work,
+              confidence: AiOrganizeConfidence.high,
+            ),
+          ],
+        ),
+        trigger: OrganizeTrigger.manual,
+        tagPrefix: '',
+      );
+      final OrganizeAction merge =
+          plan.singleWhere((OrganizeAction a) => a.kind == OrganizeActionKind.merge);
+      final OrganizeAction add =
+          plan.singleWhere((OrganizeAction a) => a.kind == OrganizeActionKind.add);
+      expect(add.targetCollectionId, merge.targetCollectionId);
     });
 
     test('同一外部作品 → 合集键取外部 id；置信度 medium 自动时不落', () {
@@ -362,6 +415,66 @@ void main() {
       expect(await db.getAllMediaCollections(), hasLength(1));
     });
 
+    test('只整理指定条目时，整理器合集里没被点名的成员一条都不发', () async {
+      final int c = await db.createMediaCollection(
+        'Old',
+        collectionType: 'playlist',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-old',
+      );
+      for (int i = 0; i < 5; i++) {
+        await db.addToCollection(
+          c,
+          MediaKind.epub,
+          await book('old-$i'),
+          userIntent: false,
+        );
+      }
+      final String fresh = await book('fresh');
+      final _FakeAi ai = _FakeAi((_) => '{"groups": []}');
+      await service(ai).run(
+        CollectionShelfDomain.books,
+        trigger: OrganizeTrigger.auto,
+        onlyEntryKeys: <String>{'epub\u0000$fresh'},
+      );
+      expect(ai.prompts.single, contains('"title":"fresh"'));
+      expect(ai.prompts.single, isNot(contains('"title":"old-0"')));
+      // 合集本身照常带上（名字 + 样本），AI 能把新条目并进去。
+      expect(ai.prompts.single, contains('"name":"Old"'));
+    });
+
+    test('自动整理被额度截断 = partial，不推进水位', () async {
+      for (final String t in haruhi) {
+        await book(t);
+      }
+      await db.into(db.libraryOrganizeRuns).insert(
+            LibraryOrganizeRunsCompanion.insert(
+              domain: 'books',
+              trigger: 'auto',
+              startedAt: DateTime.now().millisecondsSinceEpoch,
+              status: 'done',
+              requestCount: const Value<int>(kLibraryOrganizeDailyAutoRequests),
+            ),
+          );
+      final LibraryOrganizeService s = service(_FakeAi(groupHaruhi));
+      final int? before = await s.lastCompletedAutoRunStartedAt(
+        CollectionShelfDomain.books,
+      );
+      final LibraryOrganizeResult r =
+          await s.run(CollectionShelfDomain.books, trigger: OrganizeTrigger.auto);
+      expect(r.status, LibraryOrganizeStatus.overBudget);
+      final LibraryOrganizeRunRow row = (await (db.select(db.libraryOrganizeRuns)
+                ..where((t) => t.id.equals(r.runId)))
+              .get())
+          .single;
+      expect(row.status, 'partial');
+      expect(
+        await s.lastCompletedAutoRunStartedAt(CollectionShelfDomain.books),
+        before,
+        reason: '截断的那次不算跑完',
+      );
+    });
+
     test('没指派提供商：不发请求、不改库', () async {
       for (final String t in haruhi) {
         await book(t);
@@ -448,6 +561,13 @@ void main() {
         <String>[a],
       );
       expect((await db.getMediaCollectionById(ca))!.origin, 'user');
+      expect(
+        decodeOrganizeAliases(
+          (await db.getMediaCollectionById(ca))!.organizeAliases,
+        ),
+        isNot(contains('k-b')),
+        reason: '撤销合并要把败方的键还回去',
+      );
     });
 
     test('新合集撞上别的分组删过的同名：换成确定性的名字', () async {

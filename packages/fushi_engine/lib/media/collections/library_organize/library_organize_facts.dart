@@ -14,12 +14,17 @@ import 'package:path/path.dart' as p;
 /// 读一个库页域的整理输入（spec §7.3）：散条目 + 整理器合集里的成员 + 本域合集 +
 /// 拒绝表 + 已占用的合集名。全部是整表一次读、内存里 join，不逐条查库。
 ///
-/// [onlyEntryKeys]（成员行键 `mediaType NUL entryKey`）：自动整理只看本次新导入的
-/// 散条目；已在整理器合集里的成员照常带上（AI 可能要把新卷并过去）。
+/// [onlyEntryKeys]（成员行键 `mediaType NUL entryKey`）：自动整理 / 「整理所选」只把
+/// 这些条目发给 AI（散的或在整理器合集里的都一样）；其余条目一条都不发——同意说明
+/// 讲的是「这些条目」，而且整域带上会把一本新书的自动整理撑成几次请求、吃光每日额度。
+/// 本域合集照常全部带上（只发名字与前几个成员标题），让 AI 能把新条目并进去。
+///
+/// [allowedKeys]：设备本地「允许再次建议」的分组键，从拒绝表里减掉。
 Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
   FushiDatabase db,
   CollectionShelfDomain domain, {
   Set<String>? onlyEntryKeys,
+  Set<String> allowedKeys = const <String>{},
 }) async {
   final CollectionBookIdentityIndex identities =
       await CollectionBookIdentityIndex.load(db);
@@ -94,9 +99,7 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
           ].fold<int?>(null, (int? a, int b) => a == null || b < a ? b : a);
     // 在用户 / 目录合集里的条目不交给 AI 动（AI 只往用户合集里加散条目）。
     if (holders.isNotEmpty && managed == null) continue;
-    if (onlyEntryKeys != null &&
-        managed == null &&
-        !onlyEntryKeys.contains(c.memberKey)) {
+    if (onlyEntryKeys != null && !onlyEntryKeys.contains(c.memberKey)) {
       continue;
     }
     entries.add(OrganizeEntry(
@@ -118,27 +121,31 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
     ));
   }
 
-  // 拒绝表与已占用的名字（活合集 + 带键的删除墓碑）。
-  final Set<String> rejected = await db.getRejectedOrganizeKeys();
-  final Map<String, String> rejectedNames = <String, String>{};
-  final Map<String, String?> taken = <String, String?>{
+  // 拒绝表（减掉本机放行的）与已占用的名字（活合集 + 删除墓碑；值是占着它的分组键
+  // 集合，空集 = 被不带键的合集占着）。
+  final Map<String, String> rejectedNames =
+      Map<String, String>.of(await db.getRejectedOrganizeGroups())
+        ..removeWhere((String k, String _) => allowedKeys.contains(k));
+  final Map<String, Set<String>> taken = <String, Set<String>>{
     for (final MediaCollectionRow c in allCollections)
-      '${c.name}\u0000${c.collectionType}': c.organizeKey,
+      '${c.name}\u0000${c.collectionType}': <String>{
+        if (c.organizeKey != null) c.organizeKey!,
+        ...decodeOrganizeAliases(c.organizeAliases),
+      },
   };
   for (final CollectionMemberTombstoneRow t
       in await db.getAllCollectionMemberTombstones()) {
     if (t.mediaType.isNotEmpty || t.entryKey.isNotEmpty) continue;
-    final String natural = '${t.collectionName}\u0000${t.collectionType}';
-    taken.putIfAbsent(natural, () => t.organizeKey);
-    if (t.organizeKey != null && rejected.contains(t.organizeKey)) {
-      rejectedNames[t.organizeKey!] = t.collectionName;
-    }
+    taken.putIfAbsent(
+      '${t.collectionName}\u0000${t.collectionType}',
+      () => decodeOrganizeAliases(t.organizeKey),
+    );
   }
   return LibraryOrganizeFacts(
     domain: domain,
     entries: entries,
     collections: collections,
-    rejectedKeys: rejected,
+    rejectedKeys: rejectedNames.keys.toSet(),
     rejectedNames: rejectedNames,
     takenNames: taken,
   );
@@ -295,6 +302,7 @@ Future<List<_Candidate>> _videoCandidates(
   return out;
 }
 
+/// 游戏：元数据来源按游戏逐个读（`getGalgameSources`，游戏库通常几十到几百个）。
 Future<List<_Candidate>> _gameCandidates(FushiDatabase db) async {
   final List<_Candidate> out = <_Candidate>[];
   for (final GalgameRow g in await db.getAllGalgames()) {

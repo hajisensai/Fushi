@@ -1199,11 +1199,11 @@ class CollectionMemberTombstones extends Table {
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
   IntColumn get deletedAt => integer()();
 
-  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键（schema
-  /// v124，spec §5.2）。键不在任何活合集的 [MediaCollections.organizeKey] /
-  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个 AI 分组（删了或撤销
-  /// 了），任何设备上的 AI 都不再建它；键在某个活合集的别名里 = 只是被合并掉了。
-  /// 成员墓碑行恒 NULL。
+  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键**集合**（schema
+  /// v124，spec §5.2）：主键 + 吸收过的别名，换行分隔（`encodeOrganizeAliases`）。用户删的
+  /// （[organizeMerged] = false）且键不在任何活合集的 [MediaCollections.organizeKey] /
+  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个分组，任何设备上的 AI 都
+  /// 不再建它。自动路径删的合集不记键。成员墓碑行恒 NULL。
   TextColumn get organizeKey => text().nullable()();
 
   /// 合集级删除哨兵行：这次删除是整理器把它**并进了别的合集**（true），还是用户删的

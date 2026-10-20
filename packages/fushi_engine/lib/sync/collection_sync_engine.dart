@@ -182,6 +182,10 @@ class CollectionSyncEngine {
           organizeMerged: l.organizeMerged && r.organizeMerged);
     }
     if (rDead != null) {
+      // v124：对侧是整理器把它「并掉」、本端用户已经接手了它 ⇒ 用户胜（两端同时发生：
+      // 用户在这边改它，那边的整理器还按旧状态把它当整理器合集并掉了）。用户的合集
+      // 永不当败方（AI 整理库 spec §8）。
+      if (r.organizeMerged && _isUserOwned(l)) return _prune(l.toEntry());
       // 本端活 / 对侧死：删除是新闻 ⇒ 生效；旧闻且本端活着 ⇒ 本端重建 ⇒ 活胜。
       return _deleteIsNews(rDead, r.deletedPublishedAt,
               peer: rPeer, baseline: lastSyncedAtMs)
@@ -191,6 +195,7 @@ class CollectionSyncEngine {
           : _prune(l.toEntry());
     }
     if (lDead != null) {
+      if (l.organizeMerged && _isUserOwned(r)) return _prune(r.toEntry());
       // 本端死 / 对侧活：本端删除未发布(新闻) ⇒ 死胜；已发布过 ⇒ 对侧重建 ⇒ 活胜。
       return _deleteIsNews(lDead, l.deletedPublishedAt,
               peer: lPeer, baseline: lastSyncedAtMs)
@@ -374,6 +379,10 @@ class CollectionSyncEngine {
         organizeKey: organizeKey,
         organizeMerged: organizeMerged,
       );
+
+  /// 活条目明确说了「归用户」（旧对端没说 = 未知，不算）。
+  static bool _isUserOwned(_NormalizedEntry e) =>
+      e.origin != null && CollectionOrigin.parse(e.origin) == CollectionOrigin.user;
 
   /// 两个可空分组键取规范的那个（与顺序无关）。
   static String? _minKey(String? a, String? b) {
@@ -1065,7 +1074,13 @@ class _FoldGroup {
   /// 折叠出该合集在远端并集里的最终条目（剪枝空壳返回 null）。
   CollectionManifestEntry? resolve() {
     // 合集级死活：任一文件在最新删除发布之后仍把它列为活（活文件时戳更晚）⇒ 重建胜。
-    if (_sawDelete && !(_aliveFileTimeMax > _deletePubMaxDecision)) {
+    // v124：整理器「并掉」的删除压不过用户接手（同 _mergeOne）。
+    final bool userKeeps = _deadOrganizeMerged &&
+        _origin != null &&
+        CollectionOrigin.parse(_origin) == CollectionOrigin.user;
+    if (_sawDelete &&
+        !userKeeps &&
+        !(_aliveFileTimeMax > _deletePubMaxDecision)) {
       return CollectionManifestEntry(
         name: name,
         collectionType: collectionType,

@@ -746,6 +746,11 @@ class BackupMergeEngine {
       final int? existing = targetIdByKey[key];
       if (existing != null) {
         srcToTargetId[srcId] = existing;
+        // v124：同名合集复用时整理身份也合并——来源按秩取大（用户接手过就是用户的）、
+        // 分组键取规范键、别名并集，与合集同步同一套规则。
+        if (srcHasOrganize) {
+          await _mergeOrganizeIdentityInto(existing, c);
+        }
         continue;
       }
       // v83：cover_source='<mediaType>|<entryKey>' 是隐藏 entryKey 载体（合集借
@@ -871,6 +876,37 @@ class BackupMergeEngine {
         )
         .getSingle();
     return row.read<int>('m') + 1;
+  }
+
+  /// 把备份里同名合集行 [src] 的整理身份并进本库合集 [targetId]。
+  Future<void> _mergeOrganizeIdentityInto(int targetId, QueryRow src) async {
+    final QueryRow? t = await _db.customSelect(
+      'SELECT origin, organize_key, organize_aliases FROM media_collections '
+      'WHERE id = ?',
+      variables: <Variable<Object>>[Variable<int>(targetId)],
+    ).getSingleOrNull();
+    if (t == null) return;
+    final ({String? key, Set<String> aliases}) identity = mergeOrganizeIdentity(
+      keyA: t.read<String?>('organize_key'),
+      aliasesA: decodeOrganizeAliases(t.read<String>('organize_aliases')),
+      keyB: src.read<String?>('organize_key'),
+      aliasesB: decodeOrganizeAliases(src.read<String>('organize_aliases')),
+    );
+    await _db.customUpdate(
+      'UPDATE media_collections SET origin = ?, organize_key = ?, '
+      'organize_aliases = ? WHERE id = ?',
+      variables: <Variable<Object>>[
+        Variable<String>(
+          CollectionOrigin.merge(
+            CollectionOrigin.parse(t.read<String>('origin')),
+            CollectionOrigin.parse(src.read<String>('origin')),
+          ).dbValue,
+        ),
+        Variable<String>(identity.key),
+        Variable<String>(encodeOrganizeAliases(identity.aliases)),
+        Variable<int>(targetId),
+      ],
+    );
   }
 
   /// src(备份)库的 [table] 是否有 [column] 列。

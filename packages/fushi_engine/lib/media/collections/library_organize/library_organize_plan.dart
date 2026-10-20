@@ -32,8 +32,8 @@ class OrganizeEntry {
 
   final AiOrganizeItem item;
 
-  /// 已刮到的作品级外部 id 键（`anilist:<id>` / `tmdb:tv:<id>:s<n>` / `tmdb:movie:<id>`
-  /// / `vndb:<id>`）；只用于本地成组与否决，不发给 AI。
+  /// 已刮到的作品级外部 id 键（`anilist:<id>` / `tmdb:<tv|movie>:<id>` / `anidb:<id>`，
+  /// 与刮削作品同粒度）；只用于本地成组与否决，不发给 AI。
   final String? externalWorkKey;
 
   /// 它所在的整理器合集（`ai` / `rule`）；null = 散条目。
@@ -125,9 +125,15 @@ class LibraryOrganizeFacts {
   final Set<String> rejectedKeys;
   final Map<String, String> rejectedNames;
 
-  /// `(name NUL type)` → 占着这个自然键的分组键（活合集或带键的删除墓碑；null =
-  /// 被不带键的合集占着）。新合集撞名时换名用。
-  final Map<String, String?> takenNames;
+  /// `(name NUL type)` → 占着这个自然键的分组键集合（活合集的主键与别名、删除墓碑上
+  /// 记的键；空集 = 被不带键的合集占着）。新合集撞名且不是同一个分组时换名用。
+  final Map<String, Set<String>> takenNames;
+
+  /// [natural] 被别的分组（不是 [key]）占着。
+  bool nameTakenByOther(String natural, String key) {
+    final Set<String>? holders = takenNames[natural];
+    return holders != null && !holders.contains(key);
+  }
 
   /// 已知分组键（活合集的键与别名）。
   Set<String> get knownKeys => <String>{
@@ -257,6 +263,9 @@ List<OrganizeAction> planFromAiReply({
   }
 
   // ── 合并已有合集 ────────────────────────────────────────────────────────
+  // 败方 → 胜方：同一份回复里「并入败方」的分组改并进胜方（执行时合并先于加入，
+  // 败方已不在了）。
+  final Map<int, int> mergedInto = <int, int>{};
   for (final AiOrganizeMergeProposal m in reply.merges) {
     if (!organizeConfidenceAccepted(m.confidence, trigger, isMerge: true)) {
       continue;
@@ -277,15 +286,20 @@ List<OrganizeAction> planFromAiReply({
     final OrganizeCollectionFact target = users.isNotEmpty
         ? users.single
         : (List<OrganizeCollectionFact>.of(cs)..sort(_mergeWinnerOrder)).first;
+    final List<int> sources = <int>[
+      for (final OrganizeCollectionFact c in cs)
+        if (c.id != target.id && !mergedInto.containsKey(c.id)) c.id,
+    ];
+    if (sources.isEmpty || mergedInto.containsKey(target.id)) continue;
+    for (final int id in sources) {
+      mergedInto[id] = target.id;
+    }
     out.add(OrganizeAction(
       kind: OrganizeActionKind.merge,
       source: 'ai',
       confidence: m.confidence,
       targetCollectionId: target.id,
-      sourceCollectionIds: <int>[
-        for (final OrganizeCollectionFact c in cs)
-          if (c.id != target.id) c.id,
-      ],
+      sourceCollectionIds: sources,
     ));
   }
 
@@ -299,7 +313,10 @@ List<OrganizeAction> planFromAiReply({
     if (members.isEmpty) continue;
 
     if (g.into != null) {
-      final OrganizeCollectionFact? target = chunk.collectionById(g.into!);
+      OrganizeCollectionFact? target = chunk.collectionById(g.into!);
+      if (target == null) continue;
+      final int? winner = mergedInto[target.id];
+      if (winner != null) target = byId[winner];
       if (target == null) continue;
       final List<OrganizeEntry> adds = <OrganizeEntry>[
         for (final OrganizeEntry e in members)
@@ -377,9 +394,7 @@ List<OrganizeAction> planFromAiReply({
     if (name.isEmpty) name = _clampName(g.originalTitle ?? '');
     if (name.isEmpty) continue;
     const String type = 'playlist';
-    final String natural = '$name\u0000$type';
-    if (facts.takenNames.containsKey(natural) &&
-        facts.takenNames[natural] != key) {
+    if (facts.nameTakenByOther('$name\u0000$type', key)) {
       name = disambiguatedOrganizeName(name, key);
     }
     out.addAll(_moveOut(members, null, byId, g.confidence));
@@ -427,9 +442,7 @@ List<OrganizeAction> planFromRules({
     if (members.length < 2) continue;
     String name = _clampName(nameOf(members));
     if (name.isEmpty) continue;
-    final String natural = '$name\u0000playlist';
-    if (facts.takenNames.containsKey(natural) &&
-        facts.takenNames[natural] != key) {
+    if (facts.nameTakenByOther('$name\u0000playlist', key)) {
       name = disambiguatedOrganizeName(name, key);
     }
     out.add(OrganizeAction(
@@ -489,9 +502,13 @@ String _keyFor({
 }
 
 OrganizeCollectionFact? _holderOf(LibraryOrganizeFacts facts, String key) {
+  // 用户合集只认主键（别名只是吸收记录，见 organize_convergence 的 holdsKey）。
   final List<OrganizeCollectionFact> holders = <OrganizeCollectionFact>[
     for (final OrganizeCollectionFact c in facts.collections)
-      if (c.identityKeys.contains(key)) c,
+      if (c.origin == CollectionOrigin.user
+          ? c.organizeKey == key
+          : c.identityKeys.contains(key))
+        c,
   ]..sort(_mergeWinnerOrder);
   return holders.isEmpty ? null : holders.first;
 }

@@ -1800,6 +1800,7 @@ class SyncRepository {
     'video_subtitle_ai_consented',
     // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
     // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
+    'library_organize_allowed_keys',
     'library_organize_auto',
     'library_organize_auto_since',
     'library_organize_consented',

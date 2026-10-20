@@ -59,6 +59,11 @@ class ConvergenceCollection {
   bool get participates =>
       origin.isOrganizerManaged ||
       (origin == CollectionOrigin.user && organizeKey != null);
+
+  /// 本合集算不算持有分组键 [key]：整理器合集认主键与别名，用户合集只认主键。
+  bool holdsKey(String key) => origin == CollectionOrigin.user
+      ? organizeKey == key
+      : identityKeys.contains(key);
 }
 
 /// 一次合并：[sourceIds] 并进 [targetId]。
@@ -108,17 +113,29 @@ List<ConvergenceMerge> planOrganizeConvergence(
     if (ra != rb) parent[ra < rb ? rb : ra] = ra < rb ? ra : rb;
   }
 
-  // 分组键 → 持有它的参与者（键或别名）。
+  // 分组键 → 持有它的参与者（[ConvergenceCollection.holdsKey]：整理器合集认键与
+  // 别名；用户合集只认主键——别名只是「吸收过」的去向记录，用户接手的合集被旧
+  // 状态并掉又被保下来后，吸收者的别名里留着它的键，不能凭这个把吸收者吞进用户合集）。
   final Map<String, List<int>> byKey = <String, List<int>>{};
   for (int i = 0; i < n; i++) {
     for (final String k in parts[i].identityKeys) {
-      (byKey[k] ??= <int>[]).add(i);
+      if (parts[i].holdsKey(k)) (byKey[k] ??= <int>[]).add(i);
     }
   }
-  for (final List<int> holders in byKey.values) {
-    for (int j = 1; j < holders.length; j++) {
-      if (_sameDomain(parts[holders[0]], parts[holders[j]])) {
-        union(holders[0], holders[j]);
+  for (final MapEntry<String, List<int>> e in byKey.entries) {
+    final List<int> holders = e.value;
+    for (int a = 0; a < holders.length; a++) {
+      for (int b = a + 1; b < holders.length; b++) {
+        final ConvergenceCollection x = parts[holders[a]];
+        final ConvergenceCollection y = parts[holders[b]];
+        if (!_sameDomain(x, y)) continue;
+        // 用户合集与别的合集相连只认双方主键相同。
+        final bool anyUser = x.origin == CollectionOrigin.user ||
+            y.origin == CollectionOrigin.user;
+        if (anyUser && (x.organizeKey != e.key || y.organizeKey != e.key)) {
+          continue;
+        }
+        union(holders[a], holders[b]);
       }
     }
   }
@@ -239,8 +256,13 @@ Future<void> rehomeDissolvedOrganizerCollections(
   for (final DissolvedOrganizerCollection d in dissolved) {
     final String? key = d.row.organizeKey;
     if (key == null) continue;
+    // 删除记录带的是被删分组的键集合（主键 + 吸收过的别名，见 deleteMediaCollection）。
+    final bool sameGroup = decodeOrganizeAliases(d.deadKey).contains(key);
+    // 同一个分组、用户删的：拒绝。成员回到散条目，不转给任何持有者——否则等于把
+    // 用户删掉的分组部分复活。
+    if (sameGroup && !d.deadMerged) continue;
     MediaCollectionRow? target = await _collectionHoldingKey(db, key);
-    if (target == null && (d.deadKey != key || d.deadMerged)) {
+    if (target == null) {
       final String name = disambiguatedOrganizeName(d.row.name, key);
       final int id = await db.createMediaCollection(
         name,
@@ -279,7 +301,7 @@ Future<MediaCollectionRow?> _collectionHoldingKey(
 ) async {
   final List<ConvergenceCollection> holders = <ConvergenceCollection>[
     for (final ConvergenceCollection c in await loadConvergenceCollections(db))
-      if (c.identityKeys.contains(key)) c,
+      if (c.participates && c.holdsKey(key)) c,
   ]..sort(_winnerOrder);
   if (holders.isEmpty) return null;
   return db.getMediaCollectionById(holders.first.id);

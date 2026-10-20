@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
@@ -260,6 +261,37 @@ void main() {
         expect(alive.map((_Snapshot s) => s.name), <String>['S']);
         expect(alive.single.members, contains('video|v5'));
         expect(alive.single.origin, 'user');
+      }
+    });
+
+    test('一端用户接手的同时另一端把它当整理器合集并掉 → 用户合集保住，吸收者不被吞', () async {
+      final _Device a = device();
+      final _Device b = device();
+      await aiCollection(a, 'L', 'k-l', <String>['v1', 'v2']);
+      await aiCollection(a, 'W', 'k-w', <String>['v9']);
+      await settle(Random(7));
+      // A：用户往 L 里加 v3（接手为 user），还没同步。
+      final MediaCollectionRow lOnA =
+          (await a.db.getMediaCollectionByNaturalKey('L', 'collection'))!;
+      await a.db.addToCollection(lOnA.id, MediaKind.video, 'v3');
+      // B：同时按旧状态把 L 并进 W。
+      await mergeMediaCollectionsInto(
+        b.db,
+        targetId:
+            (await b.db.getMediaCollectionByNaturalKey('W', 'collection'))!.id,
+        sourceIds: <int>[
+          (await b.db.getMediaCollectionByNaturalKey('L', 'collection'))!.id,
+        ],
+        userIntent: false,
+      );
+      await settle(Random(8));
+      for (final _Device d in devices) {
+        final Map<String, _Snapshot> byName = <String, _Snapshot>{
+          for (final _Snapshot s in await _snapshot(d.db)) s.name: s,
+        };
+        expect(byName['L']?.origin, 'user');
+        expect(byName['L']!.members, contains('video|v3'));
+        expect(byName['W'], isNotNull, reason: '吸收者不该因为别名里有 L 的键被并进 L');
       }
     });
 

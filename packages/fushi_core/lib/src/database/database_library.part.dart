@@ -882,8 +882,14 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   ///
   /// [organizeMerged]：整理器把它并进别的合集时传 true（删除哨兵记下「并掉」，不算
   /// 用户拒绝这个分组）。
+  ///
+  /// [userIntent]（默认 true）：用户删的整理器合集，删除哨兵记下它的分组键集合（主键 +
+  /// 吸收过的别名）= 用户拒绝了这个分组，任何设备上的 AI 都不再建。自动路径（刮削拆分、
+  /// 导入清理…）删合集不是用户表态，传 false 只写普通删除墓碑、不记键。
   Future<int> deleteMediaCollection(int id,
-          {int? deletedAt, bool organizeMerged = false}) =>
+          {int? deletedAt,
+          bool organizeMerged = false,
+          bool userIntent = true}) =>
       transaction(() async {
         final MediaCollectionRow? col = await getMediaCollectionById(id);
         await _carryCollectionPrivacyToMembers(
@@ -915,7 +921,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             deletedAt: deletedAt ?? DateTime.now().millisecondsSinceEpoch,
             // v124：带上分组键——键若已被别的活合集吸收（合并）就只是去向记录，
             // 否则就是用户拒绝了这个分组（spec §5.2）。
-            organizeKey: col.organizeKey,
+            organizeKey: organizeMerged || userIntent
+                ? _deadOrganizeKeySet(col)
+                : null,
             organizeMerged: organizeMerged,
           );
         }
@@ -1284,38 +1292,47 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   /// 被用户拒绝的整理分组键（spec §5.2 / §8.5）：带键、不是「并掉」的合集级删除
   /// 哨兵里，键不在任何活合集的 organizeKey / organizeAliases 里的那些。
-  Future<Set<String>> getRejectedOrganizeKeys() async {
+  Future<Set<String>> getRejectedOrganizeKeys() async =>
+      (await getRejectedOrganizeGroups()).keys.toSet();
+
+  /// 被用户拒绝的分组键 → 当时的合集名。哨兵上的键是**集合**（被删合集的主键 + 吸收过
+  /// 的别名，[encodeOrganizeAliases] 编码），集合里每个键都算拒绝——另一台设备的 AI
+  /// 用另一种原名算出别名里的那个键时，同样不再建。
+  ///
+  /// 「允许再次建议」不在这里清：同步会把对端仍带着键的哨兵写回来。它是设备本地的放行
+  /// 名单（app 偏好），由调用方从结果里减掉；放行后再建出的同键活合集让这个键从「拒绝」
+  /// 里自然消失（下面的 live 判据），并经同步传到每台设备。
+  Future<Map<String, String>> getRejectedOrganizeGroups() async {
     final Set<String> live = <String>{};
     for (final MediaCollectionRow c in await select(mediaCollections).get()) {
       if (c.organizeKey != null) live.add(c.organizeKey!);
       live.addAll(decodeOrganizeAliases(c.organizeAliases));
     }
-    return <String>{
-      for (final CollectionMemberTombstoneRow t
-          in await (select(collectionMemberTombstones)
-                ..where((t) =>
-                    t.mediaType
-                        .equals(FushiDatabase.collectionTombstoneSentinel) &
-                    t.entryKey
-                        .equals(FushiDatabase.collectionTombstoneSentinel) &
-                    t.organizeKey.isNotNull() &
-                    t.organizeMerged.equals(false)))
-              .get())
-        if (!live.contains(t.organizeKey)) t.organizeKey!,
-    };
+    final Map<String, String> out = <String, String>{};
+    for (final CollectionMemberTombstoneRow t
+        in await (select(collectionMemberTombstones)
+              ..where((t) =>
+                  t.mediaType
+                      .equals(FushiDatabase.collectionTombstoneSentinel) &
+                  t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel) &
+                  t.organizeKey.isNotNull() &
+                  t.organizeMerged.equals(false)))
+            .get()) {
+      for (final String k in decodeOrganizeAliases(t.organizeKey)) {
+        if (!live.contains(k)) out.putIfAbsent(k, () => t.collectionName);
+      }
+    }
+    return out;
   }
 
-  /// 允许再次建议某个被拒绝的分组（「整理记录」页）：清掉带该键的合集级哨兵上的键。
-  /// 只清键不清哨兵本身——合集删除照旧防复活，只是不再算「拒绝」。
-  Future<void> clearOrganizeRejection(String organizeKey) =>
-      (update(collectionMemberTombstones)
-            ..where((t) =>
-                t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
-                t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel) &
-                t.organizeKey.equals(organizeKey)))
-          .write(const CollectionMemberTombstonesCompanion(
-        organizeKey: Value<String?>(null),
-      ));
+  /// 删除哨兵上要记的分组键集合（主键 + 别名，编码成一个字符串）；都没有 → null。
+  static String? _deadOrganizeKeySet(MediaCollectionRow col) {
+    final Set<String> keys = <String>{
+      if (col.organizeKey != null) col.organizeKey!,
+      ...decodeOrganizeAliases(col.organizeAliases),
+    };
+    return keys.isEmpty ? null : encodeOrganizeAliases(keys);
+  }
 
   Future<String> _tombstoneEntryKeyOf(String mediaType, String entryKey) async {
     if (mediaType != MediaKind.epub.dbValue) return entryKey;

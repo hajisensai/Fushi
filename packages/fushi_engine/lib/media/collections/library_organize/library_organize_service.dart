@@ -65,8 +65,10 @@ class LibraryOrganizeService {
     required this.videoTagPrefix,
     AiChatClient Function()? clientFactory,
     DateTime Function()? clock,
+    Set<String> Function()? allowedRejectedKeys,
   })  : _clientFactory = clientFactory ?? AiChatClient.new,
-        _clock = clock ?? DateTime.now;
+        _clock = clock ?? DateTime.now,
+        _allowed = allowedRejectedKeys ?? (() => const <String>{});
 
   final FushiDatabase db;
   final AiSettingsSource settings;
@@ -78,6 +80,20 @@ class LibraryOrganizeService {
   final String videoTagPrefix;
   final AiChatClient Function() _clientFactory;
   final DateTime Function() _clock;
+
+  /// 设备本地「允许再次建议」的分组键（app 偏好；服务端没有）。
+  final Set<String> Function() _allowed;
+
+  Future<LibraryOrganizeFacts> _facts(
+    CollectionShelfDomain domain,
+    Set<String>? onlyEntryKeys,
+  ) =>
+      loadLibraryOrganizeFacts(
+        db,
+        domain,
+        onlyEntryKeys: onlyEntryKeys,
+        allowedKeys: _allowed(),
+      );
 
   AiProviderConfig? get provider => resolveLibraryOrganizeAiProvider(settings);
 
@@ -115,11 +131,7 @@ class LibraryOrganizeService {
 
     try {
       // ① 规则：刮到同一个作品的散条目成组（不花钱，没提供商也做）。
-      LibraryOrganizeFacts facts = await loadLibraryOrganizeFacts(
-        db,
-        domain,
-        onlyEntryKeys: onlyEntryKeys,
-      );
+      LibraryOrganizeFacts facts = await _facts(domain, onlyEntryKeys);
       touched.addAll(await applyOrganizeActions(
         db,
         runId: runId,
@@ -135,11 +147,7 @@ class LibraryOrganizeService {
         status = LibraryOrganizeStatus.overBudget;
         error = 'daily_budget';
       } else {
-        facts = await loadLibraryOrganizeFacts(
-          db,
-          domain,
-          onlyEntryKeys: onlyEntryKeys,
-        );
+        facts = await _facts(domain, onlyEntryKeys);
         final List<List<String>> plan = chunkOrganizeEntries(facts.entries);
         final AiChatClient client = _clientFactory();
         try {
@@ -157,11 +165,7 @@ class LibraryOrganizeService {
             }
             onProgress?.call(i, plan.length);
             // 上一块可能建了合集、改了名字占用：每块重读一次。
-            facts = await loadLibraryOrganizeFacts(
-              db,
-              domain,
-              onlyEntryKeys: onlyEntryKeys,
-            );
+            facts = await _facts(domain, onlyEntryKeys);
             final OrganizeChunk? chunk = buildOrganizeChunk(facts, plan[i]);
             if (chunk == null) continue;
             final AiLibraryOrganizeResponse response;
@@ -207,8 +211,24 @@ class LibraryOrganizeService {
           client.close();
         }
       }
-      // ③ 本机同系列整理器合集合成一个（与同步后同一套收敛）。
-      await convergeOrganizedCollections(db);
+      // ③ 本机同系列整理器合集合成一个（与同步后同一套收敛规划），并记进这次的整理
+      // 记录——撤销整次整理时这些合并也能还原。
+      touched.addAll(await applyOrganizeActions(
+        db,
+        runId: runId,
+        actions: <OrganizeAction>[
+          for (final ConvergenceMerge m in planOrganizeConvergence(
+            await loadConvergenceCollections(db),
+          ))
+            OrganizeAction(
+              kind: OrganizeActionKind.merge,
+              source: 'rule',
+              confidence: AiOrganizeConfidence.high,
+              targetCollectionId: m.targetId,
+              sourceCollectionIds: m.sourceIds,
+            ),
+        ],
+      ));
       changes = await countChanges();
     } on Object catch (e, stack) {
       engineLog.log('libraryOrganize.run', e, stack);
@@ -220,13 +240,15 @@ class LibraryOrganizeService {
     await (db.update(db.libraryOrganizeRuns)..where((t) => t.id.equals(runId)))
         .write(LibraryOrganizeRunsCompanion(
       finishedAt: Value<int?>(_clock().millisecondsSinceEpoch),
+      // 只有每一块都处理完才是 done——自动整理的水位只认 done（见
+      // [lastCompletedAutoRunStartedAt]），中途被额度 / 失败 / 取消截断的那批新条目
+      // 下一轮还会再看。
       status: Value<String>(switch (status) {
         LibraryOrganizeStatus.done => 'done',
         LibraryOrganizeStatus.cancelled => 'cancelled',
         LibraryOrganizeStatus.failed => 'failed',
-        LibraryOrganizeStatus.noProvider ||
-        LibraryOrganizeStatus.overBudget =>
-          changes > 0 ? 'done' : 'skipped',
+        LibraryOrganizeStatus.overBudget => 'partial',
+        LibraryOrganizeStatus.noProvider => 'skipped',
       }),
       requestCount: Value<int>(requests),
       inputTokens: Value<int>(inputTokens),
@@ -243,13 +265,17 @@ class LibraryOrganizeService {
     );
   }
 
-  /// [domain] 上最近一次自动整理的开始时刻；从没跑过返回 null。自动整理只看此后
-  /// 新入库的条目。
-  Future<int?> lastAutoRunStartedAt(CollectionShelfDomain domain) async {
+  /// [domain] 上最近一次**跑完**（status = done，每一块都处理了）的自动整理的开始
+  /// 时刻；没有返回 null。自动整理只看此后新入库的条目——被额度 / 失败 / 取消截断的
+  /// 那次不推进水位，没处理到的条目下一轮还在。
+  Future<int?> lastCompletedAutoRunStartedAt(
+    CollectionShelfDomain domain,
+  ) async {
     final LibraryOrganizeRunRow? row = await (db.select(db.libraryOrganizeRuns)
           ..where((t) =>
               t.domain.equals(domain.name) &
-              t.trigger.equals(OrganizeTrigger.auto.name))
+              t.trigger.equals(OrganizeTrigger.auto.name) &
+              t.status.equals('done'))
           ..orderBy(<OrderClauseGenerator<$LibraryOrganizeRunsTable>>[
             (t) => OrderingTerm.desc(t.startedAt),
           ])

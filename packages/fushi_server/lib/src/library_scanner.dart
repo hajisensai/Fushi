@@ -22,6 +22,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart' show organizeEntryKeysAddedSince;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart' show OrganizeTrigger;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -166,9 +167,23 @@ class LibraryScanner {
   Future<void> _organizeNewEntries(ScanSummary summary) async {
     final LibraryOrganizeService? service = organizer;
     if (service == null) return;
-    for (final MapEntry<CollectionShelfDomain, Set<String>> e
-        in _newMembers.entries) {
-      if (e.value.isEmpty) continue;
+    for (final CollectionShelfDomain domain in const <CollectionShelfDomain>[
+      CollectionShelfDomain.books,
+      CollectionShelfDomain.manga,
+      CollectionShelfDomain.video,
+    ]) {
+      // 本轮新入库的 + 上次**跑完**的自动整理之后入库、还没处理到的（被每日额度 /
+      // 失败截断的那批不丢，下一轮扫描接着整理）。从没跑完过时只看本轮新的——打开
+      // 开关不会把整个库发给 AI。
+      final int? last = await service.lastCompletedAutoRunStartedAt(domain);
+      final Set<String> keys = <String>{
+        ...?_newMembers[domain],
+        if (last != null)
+          ...await organizeEntryKeysAddedSince(db, domain, last),
+      };
+      if (keys.isEmpty) continue;
+      final MapEntry<CollectionShelfDomain, Set<String>> e =
+          MapEntry<CollectionShelfDomain, Set<String>>(domain, keys);
       try {
         final LibraryOrganizeResult r = await service.run(
           e.key,

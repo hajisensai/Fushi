@@ -2161,7 +2161,12 @@ class VideoSourceScrapeCoordinator
         item.mediaType == MediaKind.video.dbValue &&
         splitUids.contains(item.entryKey));
     if (wholeCollection) {
-      await deleteMediaCollectionWithAssets(database, collection.id);
+      // 刮削按 AniDB 作品拆分是自动整理，不是用户拒绝这个分组（不记整理分组键）。
+      await deleteMediaCollectionWithAssets(
+        database,
+        collection.id,
+        userIntent: false,
+      );
     } else {
       for (final String uid in splitUids) {
         await database.removeFromCollection(collection.id, MediaKind.video, uid, userIntent: false);

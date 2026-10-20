@@ -164,8 +164,34 @@ void main() {
         (await db.getCollectionItems(winner)).map((MediaCollectionItemRow m) => m.entryKey),
         <String>['a', 'b'],
       );
-      await db.clearOrganizeRejection('k-r');
-      expect(await db.getRejectedOrganizeKeys(), isEmpty);
+      // 拒绝覆盖被删合集吸收过的别名（另一台设备的 AI 用另一种原名算出别名里的键时
+      // 同样不再建）。
+      final int absorbed = await db.createMediaCollection(
+        'Z',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-z',
+      );
+      await db.addToCollection(absorbed, MediaKind.epub, 'z', userIntent: false);
+      await db.setMediaCollectionOrganizeState(
+        absorbed,
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-z',
+        organizeAliases: <String>{'k-z2'},
+      );
+      await db.deleteMediaCollection(absorbed);
+      expect(
+        await db.getRejectedOrganizeKeys(),
+        <String>{'k-r', 'k-z', 'k-z2'},
+      );
+      // 自动路径删合集不是用户表态：不记拒绝。
+      final int auto = await db.createMediaCollection(
+        'Auto',
+        origin: CollectionOrigin.rule,
+        organizeKey: 'k-auto',
+      );
+      await db.addToCollection(auto, MediaKind.epub, 'q', userIntent: false);
+      await db.deleteMediaCollection(auto, userIntent: false);
+      expect(await db.getRejectedOrganizeKeys(), isNot(contains('k-auto')));
     });
 
     test('合并不把胜方里用户移出过的成员并回来', () async {

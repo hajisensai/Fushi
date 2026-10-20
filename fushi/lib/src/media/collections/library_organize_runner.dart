@@ -38,6 +38,7 @@ LibraryOrganizeService _serviceFor({
   required AiSettingsSource settings,
   required String nameLanguage,
   AiChatClient Function()? clientFactory,
+  Set<String> Function()? allowedRejectedKeys,
 }) =>
     LibraryOrganizeService(
       db: db,
@@ -45,6 +46,7 @@ LibraryOrganizeService _serviceFor({
       nameLanguage: nameLanguage,
       videoTagPrefix: t.library_organize_series_tag_prefix,
       clientFactory: clientFactory,
+      allowedRejectedKeys: allowedRejectedKeys,
     );
 
 /// 「会发送什么」的一次性同意（照 `ocr_llm_default_consent.dart`）：点「开始」才记住；
@@ -113,6 +115,7 @@ Future<void> runLibraryOrganizeInteractive({
       db: appModel.database,
       settings: prefs,
       nameLanguage: appModel.appLocale.toLanguageTag(),
+      allowedRejectedKeys: () => prefs.libraryOrganizeAllowedKeys,
     ).run(
       domain,
       trigger: OrganizeTrigger.manual,
@@ -273,8 +276,10 @@ Future<LibraryOrganizeResult?> runAutomaticLibraryOrganize(
       settings: host.prefs,
       nameLanguage: host.nameLanguage(),
       clientFactory: host.clientFactory,
+      allowedRejectedKeys: () => host.prefs.libraryOrganizeAllowedKeys,
     );
-    final int lastRun = await service.lastAutoRunStartedAt(domain) ?? 0;
+    final int lastRun =
+        await service.lastCompletedAutoRunStartedAt(domain) ?? 0;
     final int since = lastRun > host.prefs.libraryOrganizeAutoSince
         ? lastRun
         : host.prefs.libraryOrganizeAutoSince;

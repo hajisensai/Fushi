@@ -72,6 +72,7 @@ Future<int> deleteMediaCollectionWithAssets(
   Directory? collectionCoversDirectory,
   int? deletedAt,
   bool organizeMerged = false,
+  bool userIntent = true,
 }) async {
   // 快照必须在删行**之前**取：行一删，coverPath / 附加图行就再也推导不出来。
   final MediaCollectionRow? snapshot =
@@ -82,6 +83,7 @@ Future<int> deleteMediaCollectionWithAssets(
     collectionId,
     deletedAt: deletedAt,
     organizeMerged: organizeMerged,
+    userIntent: userIntent,
   );
   await reclaimDeletedCollectionAssets(
     db,
