@@ -659,12 +659,14 @@ class LeaderboardClient {
   /// 安装统计心跳（`POST /v1/ping`，服务端 `services/leaderboard/src/installs.js`）：
   /// 不带账户签名，只出示安装证明（[InstallAttestation]，见 install_identity.dart）；同一
   /// installId 同一 UTC 日服务端只记一次。成功返回、失败抛 [LeaderboardApiException] /
-  /// [LeaderboardTimeoutException]，由调用方决定何时重试。
+  /// [LeaderboardTimeoutException]，由调用方决定何时重试。[locale] 是 App 当前界面语言
+  /// （BCP 47 标签），null 时不带这个字段（服务端记 NULL）。
   Future<void> ping({
     required InstallAttestation install,
     required String version,
     required String platform,
     required String channel,
+    String? locale,
   }) async {
     await _send(
       'POST',
@@ -674,6 +676,7 @@ class LeaderboardClient {
         'version': version,
         'platform': platform,
         'channel': channel,
+        'locale': ?locale,
       }),
       contentType: _json,
       withAccount: false,

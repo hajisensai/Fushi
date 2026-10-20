@@ -854,6 +854,27 @@ void main() {
       });
     });
 
+    test('ping 带界面语言时 body 多一个 locale 字段（仍在签名覆盖内）', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => http.Response('', 204),
+        identity: _id,
+      );
+      await h.client.ping(
+        install: install,
+        version: '2.10.0-debug.8',
+        platform: 'windows',
+        channel: 'debug',
+        locale: 'zh-CN',
+      );
+      final http.Request r = h.requests.single;
+      expect(verifyInstall(r), isTrue);
+      expect(
+        (jsonDecode(utf8.decode(r.bodyBytes))
+            as Map<String, dynamic>)['locale'],
+        'zh-CN',
+      );
+    });
+
     test('ping 失败按状态码抛错', () async {
       final _Harness h = _Harness(
         (http.Request r) async =>

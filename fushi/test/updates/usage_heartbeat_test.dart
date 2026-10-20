@@ -41,6 +41,7 @@ void main() {
     required String version,
     required String platform,
     required String channel,
+    String? locale,
   }) async {
     if (fail) throw StateError('offline');
     sent.add(<String, String>{
@@ -48,6 +49,7 @@ void main() {
       'version': version,
       'platform': platform,
       'channel': channel,
+      'locale': ?locale,
     });
   }
 
@@ -56,6 +58,7 @@ void main() {
     send: fakeSend,
     version: () => '2.10.0-debug.8',
     channel: () => 'debug',
+    locale: () => 'zh-CN',
     operatingSystem: os,
     now: () => clock,
     install: fakeResolve,
@@ -107,6 +110,7 @@ void main() {
       'version': '2.10.0-debug.8',
       'platform': 'windows',
       'channel': 'debug',
+      'locale': 'zh-CN',
     });
     expect(
       RegExp(

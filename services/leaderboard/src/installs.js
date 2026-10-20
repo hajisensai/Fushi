@@ -1,7 +1,7 @@
 // 安装统计：客户端每天一次的心跳与开发者处理台的统计数据（表结构见 migrations/0011_install_stats.sql、
 // 0013_install_verified.sql）。
 //
-//   POST /v1/ping  {installId, version, platform, channel} → 204
+//   POST /v1/ping  {installId, version, platform, channel, locale?} → 204
 //                  + 可选安装证明头 X-Fushi-Install-Key / -Time / -Sig / -Pow（见下）
 //
 // installId（2026-10-17 起，客户端 fushi_engine/lib/leaderboard/install_identity.dart）：
@@ -27,6 +27,10 @@
 // ①冒充不了已有安装（没有私钥签不出它的 id）②每造一个新 id 都要付钥匙生成 + PoW + 每 IP 限流的代价。
 // 旧随机 id → 新 id 不做关联：旧 id 没有任何持有证明，接受「旧 → 新」声明等于让任何人把任意旧轨迹
 // 嫁接到自己名下；旧 id 只在 2.10.0-debug 的心跳里存在过一天量级，按保留期自然过期。
+//
+// 地区与语言（迁移 0017）：country 取 Cloudflare 按连接 IP 判出的两位国家 / 地区码（request.cf.country，
+// 只存这两位码，城市 / 经纬度 / ASN 不落库）；locale 是客户端可选上报的 App 界面语言（BCP 47），
+// 旧客户端不发记 NULL。两者跟版本 / 平台一样按「当天第一次心跳」记，统计页按近 30 天活跃安装分组。
 //
 // 服务端不存 IP：限流靠 Workers Rate Limiting binding（worker.js 里按 IP 过 AUTH_LIMITER），不落 D1。
 // 心跳的处理顺序（recordPing）：先做证明的**无状态**检查（头齐全、id == fp(公钥)、时效、PoW，纯 CPU、
@@ -55,6 +59,10 @@ export const INSTALL_LIMITS = {
   dailyRows: 30,
   /** 版本分布最多列多少个版本。 */
   topVersions: 20,
+  /** 国家 / 地区分布最多列多少个。 */
+  topCountries: 60,
+  /** 界面语言分布最多列多少个（客户端只有 17 种界面语言，留余量给地区变体）。 */
+  topLocales: 30,
   /** 反馈详情里同一安装的其它反馈最多列多少条。 */
   relatedFeedback: 20,
 };
@@ -161,6 +169,30 @@ export async function verifyInstallProof(env, request, installId, bodyBytes, now
   return true;
 }
 const VERSION_RE = /^[A-Za-z0-9.+-]{1,64}$/;
+/** BCP 47 的够用子集：语言 2–3 字母 + 至多两个子标签（文字 / 地区），如 zh-Hant-TW、pt-BR。 */
+const LOCALE_RE = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8}){0,2}$/;
+/** Cloudflare 的国家码：ISO 3166-1 alpha-2，另有 T1（Tor）/ XX（未知）。 */
+const COUNTRY_RE = /^[A-Z][A-Z0-9]$/;
+
+/** request.cf.country → 两位大写码；本地 / 测试环境没有 cf 或值不合法 → null。 */
+export function requestCountry(request) {
+  const c = request?.cf?.country;
+  return typeof c === 'string' && COUNTRY_RE.test(c) ? c : null;
+}
+
+/**
+ * 心跳里的界面语言：没带 / null → null；带了但不是字符串或形状不对 → 400 bad_locale。
+ * 规范成「语言小写、文字首字母大写、地区大写」，下划线改连字符（zh_cn → zh-CN）。
+ */
+export function normalizeLocale(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string' || !LOCALE_RE.test(v)) throw new HttpError(400, 'bad_locale');
+  return v.split(/[-_]/).map((part, i) => {
+    if (i === 0) return part.toLowerCase();
+    if (part.length === 4 && /^[A-Za-z]+$/.test(part)) return part[0].toUpperCase() + part.slice(1).toLowerCase();
+    return part.length === 2 ? part.toUpperCase() : part;
+  }).join('-');
+}
 
 /** 合法的 installId（小写 UUID v4）原样返回，否则 null。 */
 export function normalizeInstallId(v) {
@@ -174,7 +206,13 @@ export function normalizePing(body) {
   if (typeof body.version !== 'string' || !VERSION_RE.test(body.version)) throw new HttpError(400, 'bad_version');
   if (!PING_PLATFORMS.includes(body.platform)) throw new HttpError(400, 'bad_platform');
   if (!PING_CHANNELS.includes(body.channel)) throw new HttpError(400, 'bad_channel');
-  return { installId, version: body.version, platform: body.platform, channel: body.channel };
+  return {
+    installId,
+    version: body.version,
+    platform: body.platform,
+    channel: body.channel,
+    locale: normalizeLocale(body.locale),
+  };
 }
 
 /**
@@ -190,23 +228,26 @@ export async function recordPing(env, request, bodyBytes, body, now) {
   if (seen && (seen.verified === 1 || !proof)) return;
   if (proof) await completeInstallProof(env, request, proof, bodyBytes);
   const verified = proof ? 1 : 0;
+  const country = requestCountry(request);
   await spend(env, 'ping', 1, now);
   // 未验证的心跳不改写已验证的行（DO UPDATE 的 WHERE）；已验证的心跳可以把同 id 的未验证行升级。
   await env.DB.batch([
     env.DB.prepare(
-      `INSERT INTO install_days (day, install_id, platform, channel, version, verified)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+      `INSERT INTO install_days (day, install_id, platform, channel, version, verified, country, locale)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
        ON CONFLICT (day, install_id) DO UPDATE SET
-         platform = ?3, channel = ?4, version = ?5, verified = ?6
+         platform = ?3, channel = ?4, version = ?5, verified = ?6, country = ?7, locale = ?8
        WHERE ?6 > install_days.verified`,
-    ).bind(day, p.installId, p.platform, p.channel, p.version, verified),
+    ).bind(day, p.installId, p.platform, p.channel, p.version, verified, country, p.locale),
     env.DB.prepare(
-      `INSERT INTO installs (install_id, first_seen, last_seen, platform, channel, version, verified)
-       VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6)
+      // country / locale 这次拿不到（本地开发无 cf、旧客户端不发 locale）就保留上次的值。
+      `INSERT INTO installs (install_id, first_seen, last_seen, platform, channel, version, verified, country, locale)
+       VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
        ON CONFLICT (install_id) DO UPDATE SET
-         last_seen = MAX(last_seen, ?2), platform = ?3, channel = ?4, version = ?5, verified = ?6
+         last_seen = MAX(last_seen, ?2), platform = ?3, channel = ?4, version = ?5, verified = ?6,
+         country = COALESCE(?7, installs.country), locale = COALESCE(?8, installs.locale)
        WHERE ?6 >= installs.verified`,
-    ).bind(p.installId, now, p.platform, p.channel, p.version, verified),
+    ).bind(p.installId, now, p.platform, p.channel, p.version, verified, country, p.locale),
   ]);
 }
 
@@ -223,7 +264,8 @@ function countBy(rows, key) {
 
 /**
  * 统计页数据。日活按 UTC 日；「活跃安装」= 窗口内至少发过一次心跳的安装。
- * 版本 / 平台 / 通道分布取近 30 天活跃安装各自最近一次上报的值。
+ * 版本 / 平台 / 通道 / 国家地区 / 界面语言分布取近 30 天活跃安装各自最近一次上报的值
+ * （country / locale 为 NULL 的归成 key = null：0017 之前的记录、没有 cf 的请求、旧客户端）。
  *
  * 默认口径只数**已验证**安装（verified = 1，出示了安装证明）：未验证的心跳只来自 2.10.0-debug
  * 的旧客户端或自报伪造，混进去会让刷量直接抬高主数字。未验证的另给一组计数（unverified），
@@ -276,6 +318,8 @@ export async function installStats(env, now) {
     platforms: await dist('platform', PING_PLATFORMS.length),
     channels: await dist('channel', PING_CHANNELS.length),
     versions: await dist('version', INSTALL_LIMITS.topVersions),
+    countries: await dist('country', INSTALL_LIMITS.topCountries),
+    locales: await dist('locale', INSTALL_LIMITS.topLocales),
   };
 }
 
@@ -340,6 +384,8 @@ export async function installTrail(env, installId, feedbackId, feedbackVerified 
         platform: install.platform,
         channel: install.channel,
         version: install.version,
+        country: install.country ?? null,
+        locale: install.locale ?? null,
       }
       : null,
     versions: versions.map((v) => ({ version: v.version, firstDay: v.first_day, lastDay: v.last_day })),

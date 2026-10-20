@@ -303,6 +303,32 @@ ${more}`, { signedIn: true }));
 
 const CHANNEL_LABEL = { debug: '调试版', beta: '测试版', stable: '正式版' };
 
+/** Intl.DisplayNames 的中文名；运行时不支持或码不认识 → null（调用方退回原码）。 */
+function displayName(type, code) {
+  try {
+    const name = new Intl.DisplayNames(['zh-CN'], { type, fallback: 'none' }).of(code);
+    return name && name !== code ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 两位国家 / 地区码 → 「中文名（码）」；T1 / XX 是 Cloudflare 的特殊值；null = 0017 之前或没有 cf。 */
+export function countryLabel(code) {
+  if (code === null || code === undefined) return '未记录';
+  if (code === 'T1') return 'Tor 出口（T1）';
+  if (code === 'XX') return '无法判断（XX）';
+  const name = displayName('region', code);
+  return name ? `${name}（${code}）` : code;
+}
+
+/** 界面语言标签 → 「中文名（标签）」；null = 旧客户端没上报。 */
+export function localeLabel(tag) {
+  if (tag === null || tag === undefined) return '未上报（旧客户端）';
+  const name = displayName('language', tag);
+  return name ? `${name}（${tag}）` : tag;
+}
+
 /** 修复追踪（只读）：修复 commit + 各通道 / 平台最早包含它的版本。未标记修复 → 空串。 */
 function fixSection(fix) {
   if (!fix) return '';
@@ -346,7 +372,11 @@ async function statsPage(env, now) {
 <div class="card">${daily ? `<table class="grid">${head}${daily}</table>` : '<p class="muted">还没有心跳。</p>'}</div>
 <h2>平台</h2><div class="card">${distTable(st.platforms)}</div>
 <h2>通道</h2><div class="card">${distTable(st.channels, (k) => CHANNEL_LABEL[k] || k)}</div>
-<h2>版本（前 20）</h2><div class="card">${distTable(st.versions)}</div>`, { signedIn: true }));
+<h2>版本（前 20）</h2><div class="card">${distTable(st.versions)}</div>
+<h2>国家 / 地区</h2>
+<p class="muted">Cloudflare 按心跳连接 IP 判出的国家 / 地区（只存两位码，不存 IP）；走代理 / VPN 的安装记到出口所在地。</p>
+<div class="card">${distTable(st.countries, countryLabel)}</div>
+<h2>界面语言</h2><div class="card">${distTable(st.locales, localeLabel)}</div>`, { signedIn: true }));
 }
 
 /** 修复是否已装到报告人那台（按该安装最近一次心跳的通道 / 平台 / 版本）。没有可比的发布 → 空串。 */
@@ -369,6 +399,7 @@ function installSection(trail, fix) {
     ? `<table>
 <tr><td>当前版本</td><td>${esc(i.version)}</td></tr>
 <tr><td>平台 / 通道</td><td>${esc(i.platform)} · ${esc(CHANNEL_LABEL[i.channel] || i.channel)}</td></tr>
+<tr><td>地区 / 界面语言</td><td>${esc(countryLabel(i.country))} · ${esc(localeLabel(i.locale))}</td></tr>
 <tr><td>首次心跳</td><td>${esc(fmtTime(i.firstSeen))}</td></tr>
 <tr><td>最近心跳</td><td>${esc(fmtTime(i.lastSeen))}</td></tr>
 </table>${fixOnInstall(fix, i)}`

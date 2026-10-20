@@ -229,6 +229,8 @@ export async function call(env, method, path, opts = {}) {
     headers,
     body: method === 'GET' || method === 'HEAD' ? undefined : bytes,
   });
+  // Workers 运行时在 request.cf 上给出边缘判出的地区等元数据；Node 的 Request 没有，按需补上。
+  if (opts.cf) Object.defineProperty(req, 'cf', { value: opts.cf });
   const realNow = Date.now;
   Date.now = () => now;
   try {

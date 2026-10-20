@@ -7484,7 +7484,7 @@
   "updates_system_notifications_hint": "Ayrıca bir sistem bildirimi gönder. Bunu kapatmak uygulama içi rozeti korur.",
   "url": "URL",
   "usage_stats_enabled": "Kullanım istatistiklerini paylaş",
-  "usage_stats_enabled_hint": "Günde bir kez bu cihazdan türetilen bir kurulum kimliğini (yeniden yüklemede değişmez), uygulama sürümünü, platformu ve güncelleme kanalını fushi.moe'ya göndererek aktif kullanıcıları saymamızı sağlar. Hesap, kitaplık veya okuma verisi içermez ve IP adresiniz saklanmaz. Geri bildirime cihaz bilgisi eklediğinizde kurulum kimliği de birlikte gönderilir.",
+  "usage_stats_enabled_hint": "Günde bir kez bu cihazdan türetilen bir kurulum kimliğini (yeniden yüklemede değişmez), uygulama sürümünü, platformu, güncelleme kanalını ve uygulama dilini fushi.moe'ya göndererek aktif kullanıcıları saymamızı sağlar. Hesap, kitaplık veya okuma verisi içermez ve IP adresiniz saklanmaz; yalnızca ondan belirlenen ülke veya bölge tutulur. Geri bildirime cihaz bilgisi eklediğinizde kurulum kimliği de birlikte gönderilir.",
   "video_air_season_autumn": "Sonbahar",
   "video_air_season_spring": "İlkbahar",
   "video_air_season_summer": "Yaz",

@@ -1,4 +1,4 @@
-// 安装统计心跳（迁移 0011 / 0013；POST /v1/ping、安装证明、/dev/stats、反馈详情的安装轨迹）。
+// 安装统计心跳（迁移 0011 / 0013 / 0017；POST /v1/ping、安装证明、/dev/stats、反馈详情的安装轨迹）。
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -12,8 +12,10 @@ import {
   installIdFromSpki,
   installPowValid,
   installStats,
+  normalizeLocale,
   versionIncludes,
 } from '../src/installs.js';
+import { countryLabel, localeLabel } from '../src/devconsole.js';
 import { signingString } from '../src/auth.js';
 import { b64urlDecode, b64urlEncode } from '../src/util.js';
 import worker from '../src/worker.js';
@@ -30,6 +32,7 @@ function ping(env, body = {}, opts = {}) {
     body: { installId: A, version: '2.10.0', platform: 'windows', channel: 'stable', ...body },
     headers: { 'CF-Connecting-IP': opts.ip ?? nextIp() },
     now: opts.now ?? NOW,
+    cf: opts.cf,
   });
 }
 
@@ -80,6 +83,7 @@ async function signedPing(env, inst, body = {}, opts = {}) {
     body: bytes,
     headers: { 'CF-Connecting-IP': opts.ip ?? nextIp(), ...headers, ...(opts.extraHeaders || {}) },
     now,
+    cf: opts.cf,
   });
 }
 
@@ -110,7 +114,10 @@ describe('POST /v1/ping（未验证 / 旧客户端）', () => {
       first_seen: NOW, last_seen: NOW, platform: 'windows', channel: 'stable', version: '2.10.0', verified: 0,
     });
     expect(env.DB.raw.prepare('SELECT * FROM install_days').all()).toEqual([
-      { day: '2026-10-17', install_id: A, platform: 'windows', channel: 'stable', version: '2.10.0', verified: 0 },
+      {
+        day: '2026-10-17', install_id: A, platform: 'windows', channel: 'stable', version: '2.10.0', verified: 0,
+        country: null, locale: null,
+      },
     ]);
     const dump = JSON.stringify([
       env.DB.raw.prepare('SELECT * FROM installs').all(),
@@ -145,6 +152,8 @@ describe('POST /v1/ping（未验证 / 旧客户端）', () => {
     ['iOS 不收', { platform: 'ios' }, 'bad_platform'],
     ['未知通道', { channel: 'nightly' }, 'bad_channel'],
     ['版本串含空格', { version: '2.10 beta' }, 'bad_version'],
+    ['界面语言不是字符串', { locale: 42 }, 'bad_locale'],
+    ['界面语言形状不对', { locale: 'zh CN' }, 'bad_locale'],
   ])('%s → 400', async (_name, body, code) => {
     const env = makeEnv();
     const r = await ping(env, body);
@@ -312,6 +321,95 @@ describe('安装证明', () => {
     // 隔天再来一条未验证、平台改成 android：installs 不被改写。
     expect((await ping(env, { installId: inst.installId, platform: 'android' }, { now: NOW + DAY })).status).toBe(204);
     expect(installRow(env, inst.installId)).toMatchObject({ verified: 1, platform: 'windows' });
+  });
+});
+
+describe('地区与界面语言（迁移 0017）', () => {
+  const geo = (env, id) => env.DB.raw.prepare('SELECT country, locale FROM installs WHERE install_id = ?').get(id);
+  const dayGeo = (env, id) => env.DB.raw
+    .prepare('SELECT day, country, locale FROM install_days WHERE install_id = ? ORDER BY day').all(id);
+
+  it('normalizeLocale：规范大小写与分隔符，没带 → null', () => {
+    expect(normalizeLocale(undefined)).toBeNull();
+    expect(normalizeLocale(null)).toBeNull();
+    expect(normalizeLocale('zh_cn')).toBe('zh-CN');
+    expect(normalizeLocale('ZH-hant-tw')).toBe('zh-Hant-TW');
+    expect(normalizeLocale('pt-BR')).toBe('pt-BR');
+    expect(normalizeLocale('ja')).toBe('ja');
+    expect(() => normalizeLocale('a')).toThrow();
+    expect(() => normalizeLocale('zh-CN-x-private-extra')).toThrow();
+  });
+
+  it('cf.country 与 locale 落进 installs 与 install_days；只存两位码', async () => {
+    const env = makeEnv();
+    const inst = await makeInstall();
+    const r = await signedPing(env, inst, { locale: 'zh_cn' }, {
+      ip: '203.0.113.9', cf: { country: 'JP', city: 'Tokyo', latitude: '35.6', asn: 2516 },
+    });
+    expect(r.status).toBe(204);
+    expect(geo(env, inst.installId)).toEqual({ country: 'JP', locale: 'zh-CN' });
+    expect(dayGeo(env, inst.installId)).toEqual([{ day: '2026-10-17', country: 'JP', locale: 'zh-CN' }]);
+    const dump = JSON.stringify([
+      env.DB.raw.prepare('SELECT * FROM installs').all(),
+      env.DB.raw.prepare('SELECT * FROM install_days').all(),
+    ]);
+    for (const leak of ['203.0.113.9', 'Tokyo', '35.6', '2516']) expect(dump).not.toContain(leak);
+  });
+
+  it('这次没有 cf / 没带 locale：installs 保留上次的值，install_days 当天记 NULL', async () => {
+    const env = makeEnv();
+    const inst = await makeInstall();
+    await signedPing(env, inst, { locale: 'ja' }, { cf: { country: 'JP' } });
+    await signedPing(env, inst, {}, { now: NOW + DAY });
+    expect(geo(env, inst.installId)).toEqual({ country: 'JP', locale: 'ja' });
+    expect(dayGeo(env, inst.installId)).toEqual([
+      { day: '2026-10-17', country: 'JP', locale: 'ja' },
+      { day: '2026-10-18', country: null, locale: null },
+    ]);
+    // 换了地方 / 语言就跟着更新。
+    await signedPing(env, inst, { locale: 'en' }, { now: NOW + 2 * DAY, cf: { country: 'US' } });
+    expect(geo(env, inst.installId)).toEqual({ country: 'US', locale: 'en' });
+  });
+
+  it('cf.country 不是两位大写码 → 当作没有', async () => {
+    const env = makeEnv();
+    await ping(env, {}, { cf: { country: 'japan' } });
+    expect(geo(env, A).country).toBeNull();
+    await ping(env, { installId: B }, { cf: { country: 'T1' } });
+    expect(geo(env, B).country).toBe('T1');
+  });
+
+  it('统计按近 30 天活跃的已验证安装分组；未记录的归 null', async () => {
+    const env = makeEnv();
+    const a = await makeInstall();
+    const b = await makeInstall();
+    const c = await makeInstall();
+    const d = await makeInstall();
+    await signedPing(env, a, { locale: 'zh-CN' }, { cf: { country: 'CN' } });
+    await signedPing(env, b, { locale: 'zh-CN' }, { cf: { country: 'CN' } });
+    await signedPing(env, c, { locale: 'ja' }, { cf: { country: 'JP' } });
+    await signedPing(env, d, {});
+    await signedPing(env, await makeInstall(), { locale: 'en' }, { now: NOW - 40 * DAY, cf: { country: 'US' } });
+    await ping(env, { locale: 'ko' }, { cf: { country: 'KR' } });
+    const st = await installStats(env, NOW);
+    expect(st.countries).toEqual([{ key: 'CN', n: 2 }, { key: null, n: 1 }, { key: 'JP', n: 1 }]);
+    expect(st.locales).toEqual([{ key: 'zh-CN', n: 2 }, { key: null, n: 1 }, { key: 'ja', n: 1 }]);
+
+    const page = await devPage(env, '/dev/stats');
+    expect(page.data).toContain('国家 / 地区');
+    expect(page.data).toContain('（CN）');
+    expect(page.data).toContain('界面语言');
+    expect(page.data).toContain('（zh-CN）');
+    expect(page.data).not.toContain('（KR）');
+  });
+
+  it('标签：特殊码与 null 有中文说明，不认识的码原样显示', () => {
+    expect(countryLabel(null)).toBe('未记录');
+    expect(countryLabel('T1')).toContain('Tor');
+    expect(countryLabel('XX')).toContain('XX');
+    expect(countryLabel('JP')).toContain('（JP）');
+    expect(localeLabel(null)).toContain('未上报');
+    expect(localeLabel('ja')).toContain('（ja）');
   });
 });
 
@@ -484,7 +582,9 @@ describe('反馈关联安装', () => {
     const env = makeEnv({ FEEDBACK_CI_TOKEN: 'ci-token-0123456789abcdef' });
     const inst = await makeInstall();
     await signedPing(env, inst, { version: '2.10.0-debug.5', channel: 'debug' }, { now: NOW - 2 * DAY });
-    await signedPing(env, inst, { version: '2.10.0-debug.8', channel: 'debug' }, { now: NOW });
+    await signedPing(env, inst, { version: '2.10.0-debug.8', channel: 'debug', locale: 'ja' }, {
+      now: NOW, cf: { country: 'JP' },
+    });
     const first = (await submitSigned(env, inst)).data;
     const second = (await submitSigned(env, inst)).data;
     const ci = { Authorization: 'Bearer ci-token-0123456789abcdef' };
@@ -500,6 +600,8 @@ describe('反馈关联安装', () => {
     expect(page.data).toContain('2.10.0-debug.5');
     expect(page.data).toContain(`/dev/f/${first.id}`);
     expect(page.data).toContain('已装上修复');
+    expect(page.data).toContain('地区 / 界面语言');
+    expect(page.data).toContain('（JP）');
     expect(page.data).toContain('已验证');
 
     const unverified = (await submit(env, A)).data;
