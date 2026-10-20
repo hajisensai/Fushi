@@ -7,7 +7,9 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use fushi_rwkv::{ReviewInput, RwkvModel, StatePrecision, MODEL_SHA256};
+use fushi_rwkv::{
+    ReviewInput, RwkvModel, StatePrecision, MODEL_SHA256, SMALL_MODEL_PACKAGE_SHA256,
+};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -59,6 +61,40 @@ pub fn model_bytes() -> &'static [u8] {
             hex,
             MODEL_SHA256,
             "RWKV weights at {} have the wrong SHA-256; re-run fetch_model.sh / fetch_model.ps1",
+            path.display()
+        );
+        bytes
+    })
+}
+
+/// 小模型发布包（`fetch_model.sh` / `fetch_model.ps1` 一并下载）；缺失或 SHA-256 不符时失败。
+/// `FUSHI_RWKV_SMALL_PACKAGE` 可指向别处的包。
+pub fn small_package() -> &'static [u8] {
+    static BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+    BYTES.get_or_init(|| {
+        let path = match std::env::var_os("FUSHI_RWKV_SMALL_PACKAGE") {
+            Some(path) => PathBuf::from(path),
+            None => PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("model")
+                .join("sm40v2-package.zip"),
+        };
+        let bytes = std::fs::read(&path).unwrap_or_else(|error| {
+            panic!(
+                "small RWKV model package not found at {} ({error}).\n\
+                 Run native/fushi_rwkv/fetch_model.sh (or fetch_model.ps1 on Windows) first, \
+                 or point FUSHI_RWKV_SMALL_PACKAGE at the zip.",
+                path.display()
+            )
+        });
+        let hex: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            hex,
+            SMALL_MODEL_PACKAGE_SHA256,
+            "small RWKV model package at {} has the wrong SHA-256; \
+             re-run fetch_model.sh / fetch_model.ps1",
             path.display()
         );
         bytes

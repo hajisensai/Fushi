@@ -7,7 +7,7 @@
 //!   默认 model/RWKV_trained_on_5000_10000.bin、5000 张卡、730 天、threads=0（全部核心）、两种精度。
 use std::time::Instant;
 
-use fushi_rwkv::{ReviewInput, RwkvModel, RwkvRuntime, StatePrecision};
+use fushi_rwkv::{Model, ReviewInput, RwkvRuntime, StatePrecision};
 
 struct Lcg(u64);
 
@@ -142,13 +142,14 @@ fn main() {
         .map(|p| match p {
             "f32" => StatePrecision::F32,
             "int8" => StatePrecision::Int8,
+            "int4" => StatePrecision::Int4,
             other => panic!("unknown precision {other}"),
         })
         .collect();
 
     let started = Instant::now();
     let bytes = std::fs::read(&model_path).expect("model file (run fetch_model.sh)");
-    let model = RwkvModel::from_bytes(&bytes).unwrap();
+    let model = Model::from_bytes(&bytes).unwrap();
     println!(
         "model load: {:.1} ms",
         started.elapsed().as_secs_f64() * 1e3

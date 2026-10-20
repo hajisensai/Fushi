@@ -178,7 +178,7 @@ fn c_abi_round_trip_matches_upstream_and_rust_api() {
         );
 
         // 与 Rust API 逐位一致
-        let mut rust = RwkvRuntime::new(model(), precision, 0).unwrap();
+        let mut rust = RwkvRuntime::new(&Model::from(model().clone()), precision, 0).unwrap();
         rust.restore(&snapshot).unwrap();
         let c = rust.query(&inputs(last_rows, true)).unwrap();
         assert_eq!(
@@ -209,8 +209,18 @@ fn c_abi_errors_are_codes_with_messages_not_panics() {
     assert!(unsafe { frwkv_model_load(bytes.as_ptr(), bytes.len() - 1) }.is_null());
 
     let handles = Handles::new(FRWKV_PRECISION_F32, 0);
-    assert!(unsafe { frwkv_runtime_new(handles.model, 4, 0) }.is_null());
-    assert!(last_error().contains("precision"));
+    for bad in [1, 16, -2] {
+        assert!(unsafe { frwkv_runtime_new(handles.model, bad, 0) }.is_null());
+        assert!(last_error().contains("precision"));
+    }
+    // ABI 2：模型种类、int4 与按模型取推荐精度。
+    assert_eq!(unsafe { frwkv_model_kind(handles.model) }, FRWKV_MODEL_LARGE);
+    assert_eq!(unsafe { frwkv_model_kind(std::ptr::null()) }, FRWKV_ERR_ARGUMENT);
+    for precision in [FRWKV_PRECISION_INT4, FRWKV_PRECISION_DEFAULT] {
+        let runtime = unsafe { frwkv_runtime_new(handles.model, precision, 0) };
+        assert!(!runtime.is_null());
+        unsafe { frwkv_runtime_free(runtime) };
+    }
     assert!(unsafe { frwkv_runtime_new(std::ptr::null(), 0, 0) }.is_null());
 
     let good = FrwkvReview {

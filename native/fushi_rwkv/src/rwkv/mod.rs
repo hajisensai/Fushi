@@ -11,6 +11,8 @@ use rayon::prelude::*;
 
 mod bulk;
 mod precision;
+// Fushi: the small RWKV model (not upstream; see small/mod.rs).
+pub mod small;
 pub use precision::StatePrecision;
 #[cfg(target_os = "macos")]
 mod matmul;
