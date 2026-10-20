@@ -111,7 +111,11 @@ void main() {
       // 行为断言证不了「中途没有不存在窗口」（测不到崩溃时刻），只能钉源码。
       final File source = File('lib/src/media/manga/manga_json_writeback.dart');
       final String body = source.readAsStringSync();
-      final int start = body.indexOf('Future<void> writeMangaJsonAtomically(');
+      // 返回落盘后的 payload（并进了 PDF 文字层），签名随之从 Future<void> 改成
+      // Future<MokuroPayload>。
+      final int start = body.indexOf(
+        'Future<MokuroPayload> writeMangaJsonAtomically(',
+      );
       expect(start, greaterThan(0));
       final int end = body.indexOf('\n}', start);
       expect(end, greaterThan(start));

@@ -496,12 +496,13 @@ class MangaOcrJobRegistry {
     // 整卷落盘与在线几何回填共用同一把 per-path 写锁：两者都是整份读-改-写，
     // 交叠会互相覆盖。
     final String target = running.mangaJsonPath;
-    await runExclusiveOnMangaJson<void>(
+    // 落盘的是并进 PDF 文字层之后的那份：阅读页拿 result 刷新显示，必须和磁盘一致。
+    final MokuroPayload written = await runExclusiveOnMangaJson<MokuroPayload>(
       target,
       () => writeMangaJsonAtomically(target, payload),
     );
-    running._result = payload;
-    follower?.onPersisted(target, payload);
+    running._result = written;
+    follower?.onPersisted(target, written);
     return event;
   }
 }

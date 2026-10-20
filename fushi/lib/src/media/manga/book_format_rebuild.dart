@@ -40,6 +40,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
+import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -199,6 +200,11 @@ abstract final class BookFormatRebuild {
           sourceFormat: sourceFormat,
           onProgress: onProgress,
         );
+    // PDF 自带文字层就直接写成文字块（真实逐字坐标），不必等 OCR。复用旧产物时
+    // 也补：那批产物可能是加这一步之前转出来的。失败只记日志，开书时会再试。
+    if (sourceFormat == BookFormat.pdf) {
+      await MangaPdfTextLayer.ensure(bookDir);
+    }
 
     await db.transaction(() async {
       // 单条 UPDATE 本就原子；包事务是为了让「转化落库是一个不可分单位」这条不变量
