@@ -162,4 +162,95 @@ void main() {
       );
     });
   });
+
+  group('hrSeekDemuxerOffsetForSeek（BUG-3618 HLS 往缓冲外 seek 落点晚）', () {
+    const List<MpvSeekableRange> ranges = <MpvSeekableRange>[
+      MpvSeekableRange(start: 150, end: 180),
+    ];
+
+    test('非 HLS（本地文件 / 有索引的直链）不前移', () {
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: false,
+          ranges: const <MpvSeekableRange>[],
+          targetSeconds: 147,
+        ),
+        0,
+      );
+    });
+
+    test('HLS 目标在缓冲段里：缓冲内 seek 本来精确，不前移（免得句子跳转白解帧）', () {
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: ranges,
+          targetSeconds: 157,
+        ),
+        0,
+      );
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: ranges,
+          targetSeconds: 180,
+        ),
+        0,
+      );
+    });
+
+    test('HLS 目标在缓冲段起点之前（续播 / 往前跳过后往回跳）：前移一个 GOP 上界', () {
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: ranges,
+          targetSeconds: 147,
+        ),
+        kHlsOutOfCacheSeekDemuxerOffsetSeconds,
+      );
+    });
+
+    test('贴着缓冲段起点（采样快照可能已被裁剪）按缓冲外处理', () {
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: ranges,
+          targetSeconds: 150 + kSeekableRangeStartMarginSeconds / 2,
+        ),
+        kHlsOutOfCacheSeekDemuxerOffsetSeconds,
+      );
+    });
+
+    test('HLS 目标在缓冲段之后 / 还没采到缓冲：前移', () {
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: ranges,
+          targetSeconds: 200,
+        ),
+        kHlsOutOfCacheSeekDemuxerOffsetSeconds,
+      );
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: const <MpvSeekableRange>[],
+          targetSeconds: 10,
+        ),
+        kHlsOutOfCacheSeekDemuxerOffsetSeconds,
+      );
+    });
+
+    test('多段缓冲：落在任一段内即不前移', () {
+      expect(
+        hrSeekDemuxerOffsetForSeek(
+          hlsStream: true,
+          ranges: const <MpvSeekableRange>[
+            MpvSeekableRange(start: 0, end: 40),
+            MpvSeekableRange(start: 150, end: 180),
+          ],
+          targetSeconds: 20,
+        ),
+        0,
+      );
+    });
+  });
 }
