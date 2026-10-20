@@ -30,6 +30,7 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
@@ -204,6 +205,9 @@ class ServerDownloadHost implements HostDownloadHost {
       resourceRegistry: registry,
       enqueue: pipeline.enqueue,
       workerId: 'fushi-server-sub-${identity.deviceId}',
+      // 与 app 读同一个设置：追更订阅久无新集自动停用。
+      autoDisableAfterDays: () =>
+          readVideoDownloadSubscriptionAutoDisableDays(prefs),
     );
     subscriptions.start();
     _subscriptionService = subscriptions;

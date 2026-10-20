@@ -4863,7 +4863,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   const PositionedDirectional(
                     top: 12,
                     end: 12,
-                    child: CoverBadge(icon: Icons.cloud_outlined),
+                    child: CoverBadge(icon: FushiIcons.cloud),
                   ),
               ],
             ),
@@ -4994,7 +4994,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             const PositionedDirectional(
               top: 16,
               end: 16,
-              child: CoverBadge(icon: Icons.cloud_outlined),
+              child: CoverBadge(icon: FushiIcons.cloud),
             ),
           Align(
             alignment: AlignmentDirectional.bottomStart,
@@ -5067,12 +5067,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 无图 / 解码失败画占位。
   Widget _buildHomeHeroImage(ImageProvider? image) {
     if (image == null) {
-      return ShelfCoverPlaceholder(icon: Icons.movie_outlined);
+      return ShelfCoverPlaceholder(icon: FushiIcons.video);
     }
     return LandscapeCoverImage(
       image: image,
       errorBuilder: (BuildContext _) =>
-          ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+          ShelfCoverPlaceholder(icon: FushiIcons.video),
     );
   }
 
@@ -5195,11 +5195,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             height: 60,
             child: ShelfCoverFrame(
               child: cover == null
-                  ? ShelfCoverPlaceholder(icon: Icons.movie_outlined)
+                  ? ShelfCoverPlaceholder(icon: FushiIcons.video)
                   : PortraitCoverImage(
                       image: cover,
                       errorBuilder: (BuildContext _) =>
-                          ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+                          ShelfCoverPlaceholder(icon: FushiIcons.video),
                     ),
             ),
           ),
@@ -5877,12 +5877,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                   fit: StackFit.expand,
                   children: <Widget>[
                     if (cover == null)
-                      ShelfCoverPlaceholder(icon: Icons.movie_outlined)
+                      ShelfCoverPlaceholder(icon: FushiIcons.video)
                     else
                       PortraitCoverImage(
                         image: cover,
                         errorBuilder: (BuildContext _) =>
-                            ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+                            ShelfCoverPlaceholder(icon: FushiIcons.video),
                       ),
                     if (newBadge || cornerLabel != null)
                       Positioned(
@@ -5914,7 +5914,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                       Positioned(
                         bottom: progressFraction == null ? 6 : 9,
                         right: 6,
-                        child: const CoverBadge(icon: Icons.cloud_outlined),
+                        child: const CoverBadge(icon: FushiIcons.cloud),
                       ),
                     // 底边进度条（YouTube 式），与墙卡同款视觉。
                     if (progressFraction != null)
@@ -7232,7 +7232,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         key: ValueKey<String>(
                           'home_video_collection_cloud_${collection.id}',
                         ),
-                        icon: Icons.cloud_outlined,
+                        icon: FushiIcons.cloud,
                         iconSize: 13,
                       ),
                     ),
@@ -7342,7 +7342,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         image: resizedFileImage(File(own)),
         landscapeSlot: landscapeSlot,
         errorBuilder: (BuildContext _) =>
-            ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+            ShelfCoverPlaceholder(icon: FushiIcons.video),
       );
     }
     final int? collectionId = group.collection?.id;
@@ -7355,7 +7355,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           image: canonical,
           landscapeSlot: landscapeSlot,
           errorBuilder: (BuildContext _) =>
-              ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+              ShelfCoverPlaceholder(icon: FushiIcons.video),
         );
       }
     }
@@ -7370,7 +7370,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           image: resizedFileImage(File(cover)),
           landscapeSlot: landscapeSlot,
           errorBuilder: (BuildContext _) =>
-              ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+              ShelfCoverPlaceholder(icon: FushiIcons.video),
         );
       }
     }
@@ -7387,7 +7387,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
       }
     }
-    return ShelfCoverPlaceholder(icon: Icons.movie_outlined);
+    return ShelfCoverPlaceholder(icon: FushiIcons.video);
   }
 
   /// 合集卡进度行：有观看痕迹且未整套看完 → 「继续看 第n集」；否则 →
@@ -7683,7 +7683,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 这里只管槽位形态。
     final ImageProvider? image = _remoteCoverProvider(video);
     if (image == null) {
-      return ShelfCoverPlaceholder(icon: Icons.movie_outlined);
+      return ShelfCoverPlaceholder(icon: FushiIcons.video);
     }
     // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：非 poster 槽位保留
     // contain 让非 16:9 源完整显示不裁切，露出的空带由 [_coverBacking] 垫
@@ -7694,7 +7694,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         landscapeSlot: landscapeSlot,
         imageKey: coverKey,
         errorBuilder: (BuildContext _) =>
-            ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+            ShelfCoverPlaceholder(icon: FushiIcons.video),
       );
     }
     return _coverBacking(
@@ -7704,7 +7704,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 非 16:9 源 contain 完整显示，同上衬底。
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) =>
-            ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+            ShelfCoverPlaceholder(icon: FushiIcons.video),
       ),
     );
   }
@@ -7733,7 +7733,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Widget _remoteVideoCloudBadge(String safeKey) {
     return CoverBadge(
       key: ValueKey<String>('remote_video_cloud_badge_$safeKey'),
-      icon: Icons.cloud_outlined,
+      icon: FushiIcons.cloud,
       iconSize: 13,
     );
   }
@@ -8630,7 +8630,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 空态同一句引导词，全 app 只教一个入库位置。
   Widget _buildEmpty() {
     return FushiPlaceholderMessage(
-      icon: Icons.movie_outlined,
+      icon: FushiIcons.video,
       message: t.video_library_empty_source_hint,
       action: widget.onOpenSources == null
           ? null
@@ -10065,7 +10065,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 单卡一次 stat 成本极小；首屏真正的开销是解码尺寸（下方 cacheWidth 降采样）
     // 与 _repairMovedCoverPaths 的全库 stat（已改异步）。
     if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
-      return ShelfCoverPlaceholder(icon: Icons.movie_outlined);
+      return ShelfCoverPlaceholder(icon: FushiIcons.video);
     }
     if (poster) {
       // 解码上限与下方 cacheWidth 同源（resizedFileImage 默认 720，BUG-959）。
@@ -10073,7 +10073,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         image: resizedFileImage(File(cover)),
         landscapeSlot: landscapeSlot,
         errorBuilder: (BuildContext _) =>
-            ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+            ShelfCoverPlaceholder(icon: FushiIcons.video),
       );
     }
     // TODO-616 phase C / BUG-926 后注释更新（UI 巡检 PR-4）：非 poster 槽位保留
@@ -10085,7 +10085,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // BUG-959: 按物理像素上限解码，避免视频原生分辨率(1080p/4K)整帧撑爆 ImageCache。
         cacheWidth: kLocalCoverDecodePixelWidth,
         errorBuilder: (_, __, ___) =>
-            ShelfCoverPlaceholder(icon: Icons.movie_outlined),
+            ShelfCoverPlaceholder(icon: FushiIcons.video),
       ),
     );
   }
