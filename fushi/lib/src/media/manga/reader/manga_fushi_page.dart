@@ -1187,6 +1187,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool _navigating = false;
   final MangaTurnQueue _turnQueue = MangaTurnQueue();
 
+  /// 翻页 / 换窗卡顿诊断（BUG-3623）：一步超过 [_kTurnStallLogAfter] 还没返回就
+  /// 记一条日志（卡在哪个 await + 闸门状态），**只记录不干预**。翻页队列是串行的，
+  /// 任何一步永不返回都会让之后所有滚轮 / 点击 / 滑动翻页静默失效直到重进，
+  /// 而那种挂起不抛异常、不进 error_log，此前无从定位。
+  String _turnStage = 'idle';
+  static const Duration _kTurnStallLogAfter = Duration(seconds: 5);
+
+  void _logTurnStall(String what, String stage) {
+    ErrorLogService.instance.log(
+      'MangaFushiPage.turnStall',
+      StateError(
+        '$what pending >${_kTurnStallLogAfter.inSeconds}s: stage=$stage '
+        'spread=$_currentSpread/${_spreads.length} navigating=$_navigating '
+        'switchingChapter=$_switchingChapter '
+        'pendingDelta=${_turnQueue.pendingDelta} '
+        'draining=${_turnQueue.isDraining} mode=${_mode.name}',
+      ),
+      StackTrace.current,
+    );
+  }
+
   /// 当前在飞窗口加载的收尾信号与排队等它的重装请求数（[_loadInitialWindow]）。
   Completer<void>? _windowLoadDone;
   int _windowLoadWaiters = 0;
@@ -2863,6 +2884,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       spreadDirection: _spreadDirection,
       spreadGutterPx: _spreadGutterPx,
       zoomPercent: _zoomPercent,
+      // 静止倍率 = 设置里的默认缩放；会话里捏出来的放大不算（BUG-3622）。
+      restZoomPercent: _readerPreferences.zoomStart.clamp(
+        kMangaZoomMinPercent,
+        kMangaZoomMaxPercent,
+      ),
       inlineSelectionJs: inlineSelectionJs,
       pageSpreadIndices: pageSpreadIndices,
       pagesPerSpread: pagesPerSpread,
@@ -2983,7 +3009,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final Completer<void> done = _windowLoadDone = Completer<void>();
     final Set<int> previousLoaded = Set<int>.of(_loadedSpreads);
     final MangaWindowLoadTicket ticket = _windowGate.begin();
+    String loadStage = 'buildDocument';
+    final Timer stall = Timer(
+      _kTurnStallLogAfter,
+      () => _logTurnStall('window load', loadStage),
+    );
     try {
+      loadStage = 'loadData';
       final String doc = _buildWindowDocument(
         ReaderSelectionScripts.source(),
         documentGeneration: ticket.generation,
@@ -2998,6 +3030,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // old document can remain visible for another event-loop turn (or a
       // stale onLoadStop can arrive), so keep navigation locked until the
       // loaded document proves it owns this exact generation.
+      loadStage = 'awaitDocumentGeneration';
       final MangaWindowLoadOutcome outcome = await ticket.outcome.timeout(
         const Duration(seconds: 10),
       );
@@ -3012,6 +3045,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _loadedSpreads = previousLoaded;
       rethrow;
     } finally {
+      stall.cancel();
       _windowGate.finish(ticket);
       _navigating = false;
       done.complete();
@@ -3189,10 +3223,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _applyMangaTurnStep(int delta) async {
+    final Timer stall = Timer(
+      _kTurnStallLogAfter,
+      () => _logTurnStall('turn step (delta=$delta)', _turnStage),
+    );
+    try {
+      await _applyMangaTurnStepStages(delta);
+    } finally {
+      stall.cancel();
+      _turnStage = 'idle';
+    }
+  }
+
+  Future<void> _applyMangaTurnStepStages(int delta) async {
     if (_splitWidePages && !_mode.isContinuous) {
       final InAppWebViewController? controller = _controller;
       final MangaReaderSession? session = _pageSession;
       final int spread = _currentSpread;
+      _turnStage = 'turnWithinPage';
       final Object? consumed = await controller?.evaluateJavascript(
         source:
             '(window.__mangaTurnWithinPage && '
@@ -3210,6 +3258,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       if (MangaWindowGeneration.parse(consumed) == 1) return;
     }
+    _turnStage = 'panelTurn';
     if (await _tryPanelTurn(delta > 0)) {
       return;
     }
@@ -3220,16 +3269,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 到头了。v88 前这里就是死钳位直接 return——于是在线漫画读完最后一页就
       // 走不动了，既不翻章也没有任何提示，配合「书架永远开同一章」构成了
       // 「加入书架后只能看第一章」。现在到头 = 换章信号。
+      _turnStage = 'chapterEdge';
       await _onReachedChapterEdge(delta);
       return;
     }
     _currentSpread = target;
     _panelCursor.reset();
+    _turnStage = 'applyTranslate';
     await _controller?.evaluateJavascript(
       source:
           'window.__mangaApplyTranslate && '
           'window.__mangaApplyTranslate($target);',
     );
+    _turnStage = 'replaceOcr';
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
