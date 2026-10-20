@@ -2182,15 +2182,43 @@ class SrsDbStore implements SrsSyncReplica {
   ///
   /// 以前每张卡一次 `editField`：各自读两次现值、一个事务、一次缓存刷新（含一次修改记录全表扫描）、
   /// 一次存本机状态，几千张卡的牌组要几万次往返、几十秒（BUG-3543）。[onProgress] 按卡数报进度。
-  Future<void> deleteDeck(String deckId, {SrsProgress? onProgress}) async {
+  ///
+  /// [deleteCards] 为真时（Anki「删除牌组」的语义）先删掉只在这个子树里有卡的笔记（每块一个独占区，
+  /// 进度里笔记数在前），之后照样把子树里的卡移走——删掉的笔记的卡已隐藏，移走只是让「恢复笔记」后
+  /// 卡不落在已删除的牌组里。Fushi 只能整条删笔记：在子树外还有卡的笔记不删，它在子树里的卡照常移走。
+  Future<void> deleteDeck(
+    String deckId, {
+    bool deleteCards = false,
+    SrsProgress? onProgress,
+  }) async {
     if (deckId == defaultDeckId) {
       throw StateError('the default deck cannot be deleted');
     }
     final SrsDeckTree tree = await deckTree();
     final List<String> sub = tree.subtree(deckId);
     final String target = tree.parentOf(deckId) ?? defaultDeckId;
+    final List<String> notes = deleteCards
+        ? await _notesOnlyInDecks(sub)
+        : const <String>[];
     final List<String> cards = await _cardIdsInDecks(sub);
-    onProgress?.call(0, cards.length);
+    final int total = notes.length + cards.length;
+    onProgress?.call(0, total);
+    final (int deletedAt, _) = now();
+    for (int i = 0; i < notes.length; i += _deleteDeckChunk) {
+      final List<String> chunk = notes.sublist(
+        i,
+        min(i + _deleteDeckChunk, notes.length),
+      );
+      await runExclusive(
+        () => _editEach(
+          SrsEntityKind.note,
+          chunk,
+          SrsFieldKeys.deleted,
+          deletedAt,
+        ),
+      );
+      onProgress?.call(i + chunk.length, total);
+    }
     for (int i = 0; i < cards.length; i += _deleteDeckChunk) {
       final List<String> chunk = cards.sublist(
         i,
@@ -2200,7 +2228,7 @@ class SrsDbStore implements SrsSyncReplica {
         () =>
             _editEach(SrsEntityKind.card, chunk, SrsFieldKeys.cardDeck, target),
       );
-      onProgress?.call(i + chunk.length, cards.length);
+      onProgress?.call(notes.length + i + chunk.length, total);
     }
     // 收尾在一个独占区里：子树、目标牌组、子树里还剩的卡都**在这里重读**——分块期间别的写入
     // （后台导入把卡放进这个子树、建了新的子牌组、挪走了父牌组）已经落库，按开头那份快照写删除
@@ -2210,6 +2238,17 @@ class SrsDbStore implements SrsSyncReplica {
       if (now0[deckId] == null) return; // 期间已被别处删掉
       final List<String> subNow = now0.subtree(deckId);
       final String targetNow = now0.parentOf(deckId) ?? defaultDeckId;
+      if (deleteCards) {
+        final List<String> lateNotes = await _notesOnlyInDecks(subNow);
+        for (int i = 0; i < lateNotes.length; i += _deleteDeckChunk) {
+          await _editEach(
+            SrsEntityKind.note,
+            lateNotes.sublist(i, min(i + _deleteDeckChunk, lateNotes.length)),
+            SrsFieldKeys.deleted,
+            deletedAt,
+          );
+        }
+      }
       final List<String> late = await _cardIdsInDecks(subNow);
       for (int i = 0; i < late.length; i += _deleteDeckChunk) {
         await _editEach(
@@ -2222,6 +2261,36 @@ class SrsDbStore implements SrsSyncReplica {
       final (int nowMs, _) = now();
       await _editEach(SrsEntityKind.deck, subNow, SrsFieldKeys.deleted, nowMs);
     });
+  }
+
+  /// 还没删、且卡全都归在 [deckIds] 这些牌组下的笔记（「连卡片一起删牌组」整条删掉的笔记）。
+  /// 有卡在别的牌组的笔记不算：删笔记会连带那些卡。
+  Future<List<String>> _notesOnlyInDecks(List<String> deckIds) async {
+    final Set<String> inside = <String>{
+      for (final SrsCardCacheRow c in await (db.select(
+        db.srsCardsCache,
+      )..where((c) => c.deckId.isIn(deckIds))).get())
+        c.noteId,
+    };
+    final Set<String> outside = <String>{};
+    for (final List<String> chunk in _chunks(inside)) {
+      for (final SrsCardCacheRow c
+          in await (db.select(
+                db.srsCardsCache,
+              )..where((c) => c.noteId.isIn(chunk) & c.deckId.isNotIn(deckIds)))
+              .get()) {
+        outside.add(c.noteId);
+      }
+    }
+    final List<String> out = <String>[];
+    for (final List<String> chunk in _chunks(inside.difference(outside))) {
+      for (final SrsNoteCacheRow n in await (db.select(
+        db.srsNotesCache,
+      )..where((n) => n.id.isIn(chunk) & n.deletedAt.isNull())).get()) {
+        out.add(n.id);
+      }
+    }
+    return out;
   }
 
   /// 缓存里归在 [deckIds] 这些牌组下的卡。

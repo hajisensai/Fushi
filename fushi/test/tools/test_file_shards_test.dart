@@ -69,6 +69,20 @@ void main() {
       expect(spread, lessThanOrEqualTo(heaviestFile), reason: '$loads');
     });
 
+    test('splitIntoBatches keeps order, caps size and balances the batches',
+        () {
+      final List<String> files = <String>[
+        for (int i = 0; i < 1093; i++) 'test/f${i.toString().padLeft(4, '0')}',
+      ];
+      final List<List<String>> batches = splitIntoBatches(files, 400);
+      expect(batches.map((List<String> b) => b.length), <int>[364, 364, 365]);
+      expect(<String>[for (final List<String> b in batches) ...b], files);
+      expect(splitIntoBatches(files.sublist(0, 400), 400).length, 1);
+      expect(splitIntoBatches(files.sublist(0, 401), 400).length, 2);
+      expect(splitIntoBatches(<String>[], 400), isEmpty);
+      expect(() => splitIntoBatches(files, 0), throwsArgumentError);
+    });
+
     test('partitions the real test/ tree with no shard left empty', () {
       final Map<String, int> files = <String, int>{
         for (final FileSystemEntity e

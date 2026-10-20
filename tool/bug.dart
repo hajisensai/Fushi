@@ -67,23 +67,136 @@
 //
 // 零外部依赖（只用 dart:*）。运行目录 = 仓库根（docs/ 在其下）。
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 
-const String bugsDir = 'docs/bugs'; // 仓库根相对路径，文件读写用
+const String bugsDir = 'docs/bugs'; // 仓库根相对路径，文件读写用（经 [repoPath]）
 const String linkDir = 'bugs'; // docs/BUGS.md 相对链接用（BUGS.md 在 docs/ 下）
 const String indexFile = 'docs/BUGS.md';
 const String beginMarker =
     '<!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->';
 const String endMarker = '<!-- BUGS-INDEX:END -->';
 
+/// 一次进程内调用（测试用）的仓库根与输出 sink，绑在 zone 上，见 [runInBugRepoScope]。
+final class BugRepoScope {
+  BugRepoScope({required this.logOut, required this.logWarn});
+
+  String? root;
+  final void Function(String) logOut;
+  final void Function(String) logWarn;
+}
+
+const Symbol _bugRepoScopeKey = #fushiBugRepoScope;
+
+BugRepoScope? get _currentBugRepoScope {
+  final scope = Zone.current[_bugRepoScopeKey];
+  return scope is BugRepoScope ? scope : null;
+}
+
+/// 在独立作用域里跑 [body]：其中设的 [bugRepoRoot] 与 [logOut] / [logWarn] 只对
+/// [body] 及它派生的全部异步续体可见。
+///
+/// 为什么不用全局变量：测试超时后 package:test 照样跑 tearDown 和下一条测试，但超时那条的
+/// body（还在等 git 子进程）**不会被取消**、会接着跑。全局根在 tearDown 被复位成 null 时，
+/// 它的下一个 git / 文件操作就落到进程 cwd——开发者或 CI 的真仓库；下一条测试的 setUp 设了
+/// 新根时，它又改到别人的 fixture 上（实测：超时那条的 `git mv` 落进下一条的 fixture，把
+/// 那条打红）。绑在 zone 上，残留的 body 只能碰到自己那份（已删的）fixture。
+/// 作用域内没设根就读 [bugRepoRoot] 直接抛错，绝不回落到进程 cwd。
+R runInBugRepoScope<R>(
+  R Function() body, {
+  required void Function(String) logOut,
+  required void Function(String) logWarn,
+}) => runZoned(
+  body,
+  zoneValues: <Object?, Object?>{_bugRepoScopeKey: BugRepoScope(logOut: logOut, logWarn: logWarn)},
+);
+
+/// 在后台 isolate 里、以 [root] 为仓库根跑一条命令；命令的输出在它返回后依次转给调用方
+/// 当前的 [logOut] / [logWarn]，抛出的错误原样重抛。
+///
+/// 测试用：`flutter test --experimental-faster-testing` 把一个分片的全部 suite 跑在同一个
+/// 进程里，它们的根 isolate **共用一条 UI 线程**（引擎 `Shell::Spawn` 复用父 shell 的
+/// task runner；实测两个 suite 各忙等 8 秒是首尾相接的 16 秒，不是并行的 8 秒）。命令里每个
+/// `await` git 子进程都要排队等别的 suite 跑完手头那段同步代码，几十次 await 就把本来 ~2 秒
+/// 的测试拖到 90~120 秒、撞上 30 秒的默认超时。`Isolate.run` 的 isolate 跑在 VM 线程池上，
+/// 不占那条线程（同一实测：两个 suite 的忙等改进 `Isolate.run` 后完全重叠），整条命令只在
+/// 起止各回 UI 线程一次。
+Future<T> runBugCommandIsolated<T>(String root, Future<T> Function() command) async {
+  final _IsolatedBugRun<T> run = await Isolate.run(() async {
+    final out = <String>[];
+    final warn = <String>[];
+    try {
+      final value = await runInBugRepoScope(() {
+        bugRepoRoot = root;
+        return command();
+      }, logOut: out.add, logWarn: warn.add);
+      return _IsolatedBugRun<T>(value, null, out, warn);
+    } on Object catch (error) {
+      return _IsolatedBugRun<T>(null, error, out, warn);
+    }
+  });
+  run.out.forEach(logOut);
+  run.warn.forEach(logWarn);
+  final error = run.error;
+  if (error != null) throw error;
+  return run.value as T;
+}
+
+final class _IsolatedBugRun<T> {
+  _IsolatedBugRun(this.value, this.error, this.out, this.warn);
+
+  final T? value;
+  final Object? error;
+  final List<String> out;
+  final List<String> warn;
+}
+
+/// 所有命令读写的仓库根；作用域外恒为 null = 进程当前目录（CLI 就这么用：运行目录 = 仓库根）。
+/// 测试在 [runInBugRepoScope] 里指向临时 fixture 仓库，**不改进程级 `Directory.current`**：
+/// 同一进程里并发跑的其它测试会跟着读错文件（`flutter test --experimental-faster-testing`
+/// 下实测一次打翻 15 个 suite）。文件读写一律经 [repoPath]，git 子进程以它为工作目录。
+String? get bugRepoRoot {
+  final scope = _currentBugRepoScope;
+  if (scope == null) return null;
+  final root = scope.root;
+  if (root == null) {
+    throw StateError('runInBugRepoScope 里还没设 bugRepoRoot：作用域内绝不回落到进程 cwd（那是真仓库）');
+  }
+  return root;
+}
+
+/// 只能在 [runInBugRepoScope] 里设：进程级的根没有安全的复位时机（见那里的说明）。
+set bugRepoRoot(String? value) {
+  final scope = _currentBugRepoScope;
+  if (scope == null) {
+    throw StateError('bugRepoRoot 只能在 runInBugRepoScope 里设');
+  }
+  scope.root = value;
+}
+
+/// 仓库根相对路径 → 实际要打开的路径（绝对路径原样返回）。
+String repoPath(String path) {
+  final root = bugRepoRoot;
+  if (root == null || _isAbsolutePath(path)) return path;
+  return '$root/$path';
+}
+
+bool _isAbsolutePath(String path) =>
+    path.startsWith('/') || path.startsWith(r'\') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+
+/// 仓库根的绝对路径。
+String repoRootPath() => Directory(bugRepoRoot ?? Directory.current.path).absolute.path;
+
 /// 本地不入库、但同样会引用 BUG 号的文件（`git ls-files` 看不到，改号时单独带上）。
 const List<String> extraScanPaths = <String>['docs/REGRESSION_BUGS.md'];
 
-/// 可注入的输出/警告 sink（测试替换用；默认写 stdout / stderr）。
-void Function(String) logOut = stdout.writeln;
-void Function(String) logWarn = stderr.writeln;
+/// 输出/警告 sink：默认写 stdout / stderr；测试经 [runInBugRepoScope] 注入
+/// （同样绑在 zone 上，超时残留的 body 写不进下一条测试的断言缓冲）。
+void Function(String) get logOut => _currentBugRepoScope?.logOut ?? stdout.writeln;
+void Function(String) get logWarn => _currentBugRepoScope?.logWarn ?? stderr.writeln;
 
 /// 工具级错误：`main` 捕获后写 stderr + 非 0 退出；测试可直接断言消息。
 class BugToolError implements Exception {
@@ -225,7 +338,7 @@ String padNum(int n) => n.toString().padLeft(3, '0');
 
 /// 扫 docs/bugs/*.md，解析成排好序（号降序）的条目列表。
 List<BugEntry> scanBugs() {
-  final dir = Directory(bugsDir);
+  final dir = Directory(repoPath(bugsDir));
   if (!dir.existsSync()) return <BugEntry>[];
   final entries = <BugEntry>[];
   for (final f in dir.listSync().whereType<File>()) {
@@ -272,7 +385,7 @@ String buildIndexTable(List<BugEntry> entries) {
 
 /// 把重建好的索引表写回 docs/BUGS.md 的 marker 之间。
 void writeIndex(List<BugEntry> entries) {
-  final file = File(indexFile);
+  final file = File(repoPath(indexFile));
   final content = file.readAsStringSync();
   final beginIdx = content.indexOf('BUGS-INDEX:BEGIN');
   final endIdx = content.indexOf('BUGS-INDEX:END');
@@ -295,7 +408,7 @@ void cmdReindex() {
 }
 
 void cmdMigrate() {
-  final file = File(indexFile);
+  final file = File(repoPath(indexFile));
   if (!file.existsSync()) {
     throw BugToolError('找不到 $indexFile');
   }
@@ -303,7 +416,7 @@ void cmdMigrate() {
   if (blocks.isEmpty) {
     throw BugToolError('$indexFile 里没有 `## BUG-NNN` 段落，无需迁移');
   }
-  Directory(bugsDir).createSync(recursive: true);
+  Directory(repoPath(bugsDir)).createSync(recursive: true);
   final seen = <String>{};
   for (final block in blocks) {
     final parsed = parseHeading(block);
@@ -315,7 +428,7 @@ void cmdMigrate() {
     if (!seen.add(pad)) {
       logWarn('警告：BUG-$pad 出现多次，后者覆盖前者');
     }
-    File('$bugsDir/BUG-$pad.md').writeAsStringSync(block);
+    File(repoPath('$bugsDir/BUG-$pad.md')).writeAsStringSync(block);
   }
   // 重写 docs/BUGS.md = 新头部 + 空索引 marker，再 reindex 填充。
   file.writeAsStringSync('$headerTemplate\n---\n\n$beginMarker\n$endMarker\n');
@@ -339,6 +452,7 @@ Future<ProcessResult?> runGit(
     final proc = await Process.start(
       'git',
       args,
+      workingDirectory: bugRepoRoot,
       environment: const <String, String>{'GIT_TERMINAL_PROMPT': '0'},
     );
     final out = StringBuffer();
@@ -590,14 +704,14 @@ Future<List<String>> gitWorktreePaths() async {
     'list',
     '--porcelain',
   ], timeout: const Duration(seconds: 60));
-  if (r == null || r.exitCode != 0) return <String>[Directory.current.path];
+  if (r == null || r.exitCode != 0) return <String>[repoRootPath()];
   final paths = <String>[];
   for (final line in (r.stdout as String).split('\n')) {
     final t = line.trim();
     if (t.startsWith('worktree ')) paths.add(normalizeRelPath(t.substring(9).trim()));
   }
   // 当前目录可能是某个 worktree 的子目录，也可能压根没被 git 列出来；总之要包含自己。
-  final self = normalizeRelPath(Directory.current.path);
+  final self = normalizeRelPath(repoRootPath());
   if (!paths.contains(self)) paths.add(self);
   return paths;
 }
@@ -615,7 +729,7 @@ Future<List<String>> gitWorktreePaths() async {
 int collectWorktreeBugNumbers(List<String> worktreePaths, BugNumberOccupancy occupancy) {
   var scanned = 0;
   for (final path in worktreePaths) {
-    final dir = Directory('$path/$bugsDir');
+    final dir = Directory(repoPath('$path/$bugsDir'));
     List<FileSystemEntity> entries;
     try {
       if (!dir.existsSync()) continue;
@@ -854,15 +968,15 @@ Future<void> cmdNew(List<String> args, {BranchScanner? scanner}) async {
 
 /// 落盘一条新 bug 骨架并重建索引，返回路径。
 String writeNewBug(int number, String slug, String title) {
-  Directory(bugsDir).createSync(recursive: true);
+  Directory(repoPath(bugsDir)).createSync(recursive: true);
   final path = '$bugsDir/BUG-${padNum(number)}-$slug.md';
-  if (File(path).existsSync()) {
+  if (File(repoPath(path)).existsSync()) {
     throw BugToolError('$path 已存在');
   }
   final now = DateTime.now();
   final dateIso =
       '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-  File(path).writeAsStringSync(bugSkeleton(padNum(number), title, dateIso));
+  File(repoPath(path)).writeAsStringSync(bugSkeleton(padNum(number), title, dateIso));
   cmdReindex();
   return path;
 }
@@ -877,7 +991,7 @@ int? fileNameBugNumber(String name) {
 /// （两者不一致的坏态下两个号都算占用）。
 Set<int> localBugNumbers() {
   final numbers = scanBugs().map((BugEntry e) => e.number).toSet();
-  final dir = Directory(bugsDir);
+  final dir = Directory(repoPath(bugsDir));
   if (!dir.existsSync()) return numbers;
   for (final f in dir.listSync().whereType<File>()) {
     final name = baseName(f.path);
@@ -1027,7 +1141,7 @@ bool bytesLookBinary(List<int> head) => head.contains(0);
 bool fileLooksBinary(String path) {
   RandomAccessFile? raf;
   try {
-    raf = File(path).openSync();
+    raf = File(repoPath(path)).openSync();
     final int len = raf.lengthSync();
     if (len <= 0) return false; // 空文件当文本，无害
     final int n = len < binarySniffBytes ? len : binarySniffBytes;
@@ -1100,7 +1214,7 @@ List<String> walkFallback() {
     }
   }
 
-  walk(Directory.current, '');
+  walk(Directory(repoRootPath()), '');
   return out;
 }
 
@@ -1125,10 +1239,10 @@ Future<List<String>> repoScanPaths() async {
     paths.addAll(walkFallback());
   }
   for (final extra in extraScanPaths) {
-    if (File(extra).existsSync()) paths.add(extra);
+    if (File(repoPath(extra)).existsSync()) paths.add(extra);
   }
   // 先 exists 再 looksTextual：后者要开文件做 NUL 嗅探，路径不存在时白扔一个异常。
-  final list = paths.where((String p) => File(p).existsSync()).where(looksTextual).toList()..sort();
+  final list = paths.where((String p) => File(repoPath(p)).existsSync()).where(looksTextual).toList()..sort();
   return list;
 }
 
@@ -1160,11 +1274,11 @@ Future<List<String>> residualScanPaths() async {
     paths.addAll(walkFallback().map(normalizeRelPath));
   }
   for (final extra in extraScanPaths) {
-    if (File(extra).existsSync()) paths.add(normalizeRelPath(extra));
+    if (File(repoPath(extra)).existsSync()) paths.add(normalizeRelPath(extra));
   }
   final list = paths
       .where((String p) => !p.startsWith('.git/'))
-      .where((String p) => File(p).existsSync())
+      .where((String p) => File(repoPath(p)).existsSync())
       .toList()
     ..sort();
   return list;
@@ -1330,7 +1444,7 @@ Map<String, String> bugRefFingerprint(int number, Iterable<String> paths) {
   final re = bugRefPattern(number);
   final out = <String, String>{};
   for (final p in paths) {
-    final f = File(p);
+    final f = File(repoPath(p));
     if (!f.existsSync()) continue;
     String content;
     try {
@@ -1358,7 +1472,7 @@ Future<List<String>> findResidualRefs(int number, {List<String>? paths}) async {
   final re = bugRefPattern(number);
   final hits = <String>[];
   for (final p in files) {
-    final f = File(p);
+    final f = File(repoPath(p));
     if (!f.existsSync()) continue;
     // 自校验自己判二进制（按字节，不看扩展名）：扩展名判据再退化，这里仍看得见。
     if (fileLooksBinary(p)) {
@@ -1395,7 +1509,7 @@ Future<RenumberPlan> buildRenumberPlan(int oldNumber, int newNumber, {List<Strin
   for (final p in paths) {
     String content;
     try {
-      content = File(p).readAsStringSync();
+      content = File(repoPath(p)).readAsStringSync();
     } on FileSystemException {
       continue;
     } on FormatException {
@@ -1427,7 +1541,7 @@ Future<RenumberPlan> buildRenumberPlan(int oldNumber, int newNumber, {List<Strin
 /// **撞号态返回多份是正常的**，不是错误：PR 侧和 base 侧各占一份同号，正是唯一需要
 /// `renumber` 的场景。消歧交给 [resolveCollisionGroup]，不在这里抛错退出。
 List<String> locateBugFiles(int number) {
-  final dir = Directory(bugsDir);
+  final dir = Directory(repoPath(bugsDir));
   if (!dir.existsSync()) throw BugToolError('找不到 $bugsDir 目录');
   final matches = <String>[];
   for (final f in dir.listSync().whereType<File>()) {
@@ -1676,7 +1790,7 @@ String clipLine(String s) => s.length <= 160 ? s : '${s.substring(0, 157)}...';
 Future<void> renameTracked(String from, String to) async {
   final mv = await runGit(<String>['mv', from, to]);
   if (mv != null && mv.exitCode == 0) return;
-  File(from).renameSync(to);
+  File(repoPath(from)).renameSync(repoPath(to));
 }
 
 /// 改号：文件名 + 正文 H2 + 代码注释 + 测试名 + 测试文件名内嵌号，**五类一把改**，
@@ -1850,7 +1964,7 @@ Future<void> applyRenumber({
 
   final plan = await buildRenumberPlan(oldNumber, newNumber, paths: effectivePaths);
   for (final r in plan.renames) {
-    if (File(r.to).existsSync()) {
+    if (File(repoPath(r.to)).existsSync()) {
       throw BugToolError('目标文件已存在：${r.to}——换一个号');
     }
   }
@@ -1889,7 +2003,7 @@ Future<void> applyRenumber({
   final newPad = padNum(newNumber);
   final touched = plan.edits.map((BugRefEdit e) => e.path).toSet();
   for (final path in touched) {
-    final f = File(path);
+    final f = File(repoPath(path));
     final content = f.readAsStringSync();
     f.writeAsStringSync(content.replaceAllMapped(re, (Match m) => '${m[1]}${m[2]}$newPad'));
   }
@@ -1961,7 +2075,7 @@ Future<void> applyRenumber({
 int cmdCheck() {
   var ok = true;
   // 1) docs/BUGS.md 不应再含任何 `## BUG-` 标题（全部已 per-file）。
-  final indexContent = File(indexFile).readAsStringSync();
+  final indexContent = File(repoPath(indexFile)).readAsStringSync();
   if (RegExp(r'^##\s+BUG-\d+', multiLine: true).hasMatch(indexContent)) {
     logWarn('✗ $indexFile 仍含 `## BUG-NNN` 标题——应只放索引表，正文须在 $bugsDir/');
     ok = false;
@@ -2144,7 +2258,7 @@ Future<int> cmdCheckAll(List<String> args, {BranchScanner? scanner}) async {
 /// 本地 `docs/bugs/` 里被 ≥2 个文件占用的号 → 承载它的文件（`docs/bugs/<name>`，已排序），
 /// 按号升序。合并 / rebase 之后的撞号就长这样；同一个号可以有 3 份以上。
 Map<int, List<String>> collidedBugGroups() {
-  final dir = Directory(bugsDir);
+  final dir = Directory(repoPath(bugsDir));
   if (!dir.existsSync()) return <int, List<String>>{};
   final owners = <int, Set<String>>{};
   for (final f in dir.listSync().whereType<File>()) {
