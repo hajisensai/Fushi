@@ -197,4 +197,70 @@ void main() {
       expect(ours.length, lessThanOrEqualTo(ref.length * 1.03));
     });
   }
+
+  // AVIF：原生侧 image/avif.rs（rav1d）。参考像素是 libavif 解码 / 按 HEIF 规范拼裁的 PNG，
+  // 生成脚本见 fixtures/avif/gen_avif_fixtures.py；逐像素容差的实测依据见 avif.rs 的单元测试。
+  group('AVIF', () {
+    const Map<String, (int, int, int)> cases = <String, (int, int, int)>{
+      // 名字: (宽, 高, 通道数)——orient6 / clap_rot 带 irot，宽高已按显示方向互换。
+      'rgb420': (61, 47, 3),
+      'rgb444': (64, 40, 3),
+      'rgba': (48, 36, 4),
+      'orient2': (40, 24, 3),
+      'orient6': (24, 40, 3),
+      'orient7': (24, 40, 3),
+      'ten_bit': (64, 48, 3),
+      'gray': (64, 48, 3),
+      'grid': (72, 60, 3),
+      'clap_rot': (30, 40, 3),
+    };
+    for (final MapEntry<String, (int, int, int)> e in cases.entries) {
+      test('${e.key} decodes through FFI to the libavif reference', () {
+        final Uint8List bytes = _fixture('avif/${e.key}.avif');
+        final (int w, int h, int ch) = e.value;
+        final ({img.Image image, FfcImageFormat format})? got =
+            decodeImageWithFormat(bytes);
+        expect(got, isNotNull);
+        expect(got!.format, FfcImageFormat.avif);
+        expect(
+          (got.image.width, got.image.height, got.image.numChannels),
+          (w, h, ch),
+        );
+        expect(probeImageNative(bytes), (
+          width: w,
+          height: h,
+          format: FfcImageFormat.avif,
+        ));
+        // orient: false 也应用 irot / imir（HEIF 的必选变换，不是 EXIF）。
+        final img.Image? raw = decodeImageNative(bytes, orient: false);
+        expect((raw!.width, raw.height), (w, h));
+        final img.Image ref = img.decodePng(
+          _fixture('avif/${e.key}.ref.png'),
+        )!;
+        final ({int max, double mean}) d = _diff(
+          got.image.toUint8List(),
+          _reference(ref, ch),
+        );
+        expect(d.max, lessThanOrEqualTo(4), reason: '${e.key} $d');
+        expect(d.mean, lessThanOrEqualTo(1.2), reason: '${e.key} $d');
+      });
+    }
+
+    test('truncated AVIF returns null instead of throwing', () {
+      final Uint8List bytes = _fixture('avif/grid.avif');
+      expect(
+        decodeImageNative(Uint8List.sublistView(bytes, 0, bytes.length - 40)),
+        isNull,
+      );
+      expect(probeImageNative(Uint8List.sublistView(bytes, 0, 24)), isNull);
+    });
+
+    test('AVIF crops through the same native pipeline (JPEG out)', () {
+      final Uint8List jpeg = encodeImageAsJpeg(
+        _fixture('avif/rgb444.avif'),
+        quality: 90,
+      )!;
+      expect(img.decodeJpg(jpeg)!.width, 64);
+    });
+  });
 }

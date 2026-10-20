@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -131,26 +132,27 @@ void main() {
   });
 
   Future<int> addSource(String root) => db.insertMediaSource(
-        MediaSourcesCompanion.insert(
-          label: root,
-          mediaKind: 'video',
-          rootPath: root,
-          createdAt: 1,
-        ),
-      );
+    MediaSourcesCompanion.insert(
+      label: root,
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1,
+    ),
+  );
 
   Future<void> addVideo(
     String uid,
     String path,
     int sourceId, {
     String? title,
-  }) =>
-      db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(uid),
-        title: Value<String>(title ?? uid),
-        videoPath: Value<String>(path),
-        sourceId: Value<int?>(sourceId),
-      ));
+  }) => db.upsertVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value<String>(uid),
+      title: Value<String>(title ?? uid),
+      videoPath: Value<String>(path),
+      sourceId: Value<int?>(sourceId),
+    ),
+  );
 
   /// 给某本书种上规范作品行 + 一条作品级身份（= 已刮削）。[tmdbId] 给了就再种
   /// 一条 TMDB 身份并把作品记成电视剧（刷新探针只看 tv + tmdb）。
@@ -159,7 +161,9 @@ void main() {
     int? tmdbId,
     int? updatedAt,
   }) async {
-    final int workId = await db.into(db.videoMetadataWorks).insert(
+    final int workId = await db
+        .into(db.videoMetadataWorks)
+        .insert(
           VideoMetadataWorksCompanion.insert(
             bookUid: Value<String?>(bookUid),
             mediaType: tmdbId == null ? 'movie' : 'tv',
@@ -168,7 +172,9 @@ void main() {
             updatedAt: updatedAt ?? DateTime.now().millisecondsSinceEpoch,
           ),
         );
-    await db.into(db.videoMetadataProviderIdentities).insert(
+    await db
+        .into(db.videoMetadataProviderIdentities)
+        .insert(
           VideoMetadataProviderIdentitiesCompanion.insert(
             identityKey: 'work:$workId:anidb',
             workId: Value<int?>(workId),
@@ -178,7 +184,9 @@ void main() {
           ),
         );
     if (tmdbId != null) {
-      await db.into(db.videoMetadataProviderIdentities).insert(
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
             VideoMetadataProviderIdentitiesCompanion.insert(
               identityKey: 'work:$workId:tmdb',
               workId: Value<int?>(workId),
@@ -195,21 +203,28 @@ void main() {
     bool Function()? isEnabled,
     bool Function()? isHashReady,
     String? Function()? aiCapabilityKey,
-  }) =>
-      VideoLibraryScrapeSweep(
-        database: db,
-        controller: controller,
-        isEnabled: isEnabled,
-        isHashReady: isHashReady,
-        aiCapabilityKey: aiCapabilityKey,
-      );
+  }) => VideoLibraryScrapeSweep(
+    database: db,
+    controller: controller,
+    isEnabled: isEnabled,
+    isHashReady: isHashReady,
+    aiCapabilityKey: aiCapabilityKey,
+  );
 
   test('只补刮无规范身份的作品，批次 scope 记 sweep', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
-    await addVideo('movie-b', 'D:/A/Scraped Movie (2021).mkv', sourceId,
-        title: 'Scraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Scraped Movie (2021).mkv',
+      sourceId,
+      title: 'Scraped Movie',
+    );
     await seedIdentityForBook('movie-b');
 
     await sweep().sweepOnce();
@@ -223,53 +238,78 @@ void main() {
   // 这部作品的挂起原因；没刮过的作品不编造原因。
   test('待确认作品带上最近一次运行记录里的挂起原因', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
-    await addVideo('movie-b', 'D:/A/Other Movie (2021).mkv', sourceId,
-        title: 'Other Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Other Movie (2021).mkv',
+      sourceId,
+      title: 'Other Movie',
+    );
     final VideoLibraryScrapeSweep service = sweep();
     final List<VideoPendingScrapeWork> planned = await service.pendingWorks();
     final String keyA = planned
         .singleWhere(
-            (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')
+          (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie',
+        )
         .work
         .stableKey;
     String note(VideoScrapePendingCause cause, VideoScrapeAiOutcome ai) =>
-        encodeVideoScrapePendingNote(VideoScrapePendingNote(
-          cause: cause,
-          aiOutcome: ai,
-          candidateCount: 3,
-          workKeys: <String>[keyA],
-          reason: 'r',
-        ));
-    Future<void> addRun(int startedAt, String message) =>
-        db.into(db.videoSourceScrapeRuns).insert(
-              VideoSourceScrapeRunsCompanion.insert(
-                sourceId: Value<int?>(sourceId),
-                scope: 'sweep',
-                status: 'completed',
-                startedAt: startedAt,
-                updatedAt: startedAt,
-                pendingConfirmations: const Value<int>(1),
-                summaryJson: Value<String?>(encodeSourceScrapeReport(
-                  SourceScrapeReport(
-                    sourceIds: <int>[sourceId],
-                    warnings: <SourceScrapeIssue>[
-                      SourceScrapeIssue(
-                          workTitle: 'Unscraped Movie', message: message),
-                    ],
-                  ),
-                )),
+        encodeVideoScrapePendingNote(
+          VideoScrapePendingNote(
+            cause: cause,
+            aiOutcome: ai,
+            candidateCount: 3,
+            workKeys: <String>[keyA],
+            reason: 'r',
+          ),
+        );
+    Future<void> addRun(int startedAt, String message) => db
+        .into(db.videoSourceScrapeRuns)
+        .insert(
+          VideoSourceScrapeRunsCompanion.insert(
+            sourceId: Value<int?>(sourceId),
+            scope: 'sweep',
+            status: 'completed',
+            startedAt: startedAt,
+            updatedAt: startedAt,
+            pendingConfirmations: const Value<int>(1),
+            summaryJson: Value<String?>(
+              encodeSourceScrapeReport(
+                SourceScrapeReport(
+                  sourceIds: <int>[sourceId],
+                  warnings: <SourceScrapeIssue>[
+                    SourceScrapeIssue(
+                      workTitle: 'Unscraped Movie',
+                      message: message,
+                    ),
+                  ],
+                ),
               ),
-            );
-    await addRun(1, note(VideoScrapePendingCause.notFound,
-        VideoScrapeAiOutcome.notAsked));
-    await addRun(2, note(VideoScrapePendingCause.awaitingConfirmation,
-        VideoScrapeAiOutcome.unassigned));
+            ),
+          ),
+        );
+    await addRun(
+      1,
+      note(VideoScrapePendingCause.notFound, VideoScrapeAiOutcome.notAsked),
+    );
+    await addRun(
+      2,
+      note(
+        VideoScrapePendingCause.awaitingConfirmation,
+        VideoScrapeAiOutcome.unassigned,
+      ),
+    );
     // 之后逐个导入的单作品刮削都成功了：它们不带挂起标记，也不能把上面那条
     // 原因挤出回看窗口。
     for (int i = 0; i < 25; i++) {
-      await db.into(db.videoSourceScrapeRuns).insert(
+      await db
+          .into(db.videoSourceScrapeRuns)
+          .insert(
             VideoSourceScrapeRunsCompanion.insert(
               sourceId: Value<int?>(sourceId),
               scope: 'single',
@@ -280,19 +320,24 @@ void main() {
           );
     }
 
-    final List<VideoPendingScrapeWork> pending =
-        await service.pendingWorksWithReasons();
+    final List<VideoPendingScrapeWork> pending = await service
+        .pendingWorksWithReasons();
     final VideoScrapePendingNote? a = pending
         .singleWhere(
-            (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie')
+          (VideoPendingScrapeWork e) => e.work.title == 'Unscraped Movie',
+        )
         .pendingNote;
-    expect(a?.cause, VideoScrapePendingCause.awaitingConfirmation,
-        reason: '取最近一次运行的原因');
+    expect(
+      a?.cause,
+      VideoScrapePendingCause.awaitingConfirmation,
+      reason: '取最近一次运行的原因',
+    );
     expect(a?.aiOutcome, VideoScrapeAiOutcome.unassigned);
     expect(
       pending
           .singleWhere(
-              (VideoPendingScrapeWork e) => e.work.title == 'Other Movie')
+            (VideoPendingScrapeWork e) => e.work.title == 'Other Movie',
+          )
           .pendingNote,
       isNull,
     );
@@ -304,10 +349,9 @@ void main() {
 
     final VideoLibraryScrapeSweep service = sweep();
     final List<VideoPendingScrapeWork> pending = await service.pendingWorks();
-    expect(
-      pending.map((VideoPendingScrapeWork e) => e.work.title),
-      <String>['特典 S00E01'],
-    );
+    expect(pending.map((VideoPendingScrapeWork e) => e.work.title), <String>[
+      '特典 S00E01',
+    ]);
 
     await service.sweepOnce();
     expect(runner.sourceIds, isEmpty);
@@ -325,37 +369,49 @@ void main() {
     expect(runner.plannedTitles.single, <String>['特典 S00E01']);
   });
 
-  test('AniDB 哈希就绪时已识别作品里没记过文件身份的成员也排队（不进待确认清单）',
-      () async {
+  test('AniDB 哈希就绪时已识别作品里没记过文件身份的成员也排队（不进待确认清单）', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-b', 'D:/A/Scraped Movie (2021).mkv', sourceId,
-        title: 'Scraped Movie');
+    await addVideo(
+      'movie-b',
+      'D:/A/Scraped Movie (2021).mkv',
+      sourceId,
+      title: 'Scraped Movie',
+    );
     await seedIdentityForBook('movie-b');
-    await addVideo('movie-c', 'D:/A/Known Movie (2022).mkv', sourceId,
-        title: 'Known Movie');
+    await addVideo(
+      'movie-c',
+      'D:/A/Known Movie (2022).mkv',
+      sourceId,
+      title: 'Known Movie',
+    );
     await seedIdentityForBook('movie-c');
-    await db.upsertAnidbFileIdentity(const AnidbFileIdentitiesCompanion(
-      ed2k: Value<String>('0123456789abcdef0123456789abcdef'),
-      fileSize: Value<int>(1),
-      anidbFileId: Value<int?>(1),
-      anidbAnimeId: Value<int?>(2),
-      anidbEpisodeId: Value<int?>(3),
-      filePath: Value<String?>('D:/A/Known Movie (2022).mkv'),
-      resolvedAt: Value<int>(1),
-      updatedAt: Value<int>(1),
-    ));
+    await db.upsertAnidbFileIdentity(
+      const AnidbFileIdentitiesCompanion(
+        ed2k: Value<String>('0123456789abcdef0123456789abcdef'),
+        fileSize: Value<int>(1),
+        anidbFileId: Value<int?>(1),
+        anidbAnimeId: Value<int?>(2),
+        anidbEpisodeId: Value<int?>(3),
+        filePath: Value<String?>('D:/A/Known Movie (2022).mkv'),
+        resolvedAt: Value<int>(1),
+        updatedAt: Value<int>(1),
+      ),
+    );
 
     final VideoLibraryScrapeSweep hashOff = sweep(isHashReady: () => false);
-    expect(await hashOff.sweepAndListPending(), isEmpty,
-        reason: '两部都有规范身份，待确认清单为空');
+    expect(
+      await hashOff.sweepAndListPending(),
+      isEmpty,
+      reason: '两部都有规范身份，待确认清单为空',
+    );
     expect(runner.sourceIds, isEmpty, reason: '哈希没就绪不排已识别作品');
 
     final VideoLibraryScrapeSweep hashOn = sweep(isHashReady: () => true);
-    expect(await hashOn.sweepAndListPending(), isEmpty,
-        reason: '哈希待补不改变待确认清单');
+    expect(await hashOn.sweepAndListPending(), isEmpty, reason: '哈希待补不改变待确认清单');
     expect(runner.sourceIds, <int>[sourceId]);
-    expect(runner.plannedTitles.single, <String>['Scraped Movie'],
-        reason: 'Known Movie 已有文件身份行，不重排');
+    expect(runner.plannedTitles.single, <String>[
+      'Scraped Movie',
+    ], reason: 'Known Movie 已有文件身份行，不重排');
 
     runner.sourceIds.clear();
     runner.plannedTitles.clear();
@@ -365,33 +421,52 @@ void main() {
 
   // 按 AniDB 作品拆成多部电影的目录：合集级作品行不存在，但每个成员都有自己带
   // 身份的电影作品行 → 已识别，不进待确认、不反复自动补刮。
-  test('成员各自拥有带身份的电影作品行的合集单元算已识别（电影拆分后不再悬着）',
-      () async {
+  test('成员各自拥有带身份的电影作品行的合集单元算已识别（电影拆分后不再悬着）', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('m1', 'D:/A/Bleach Movie 01.mkv', sourceId,
-        title: 'Bleach Movie 01');
-    await addVideo('m2', 'D:/A/Bleach Movie 02.mkv', sourceId,
-        title: 'Bleach Movie 02');
-    final int collectionId =
-        await db.createMediaCollection('Bleach Movies', collectionType: 'playlist');
+    await addVideo(
+      'm1',
+      'D:/A/Bleach Movie 01.mkv',
+      sourceId,
+      title: 'Bleach Movie 01',
+    );
+    await addVideo(
+      'm2',
+      'D:/A/Bleach Movie 02.mkv',
+      sourceId,
+      title: 'Bleach Movie 02',
+    );
+    final int collectionId = await db.createMediaCollection(
+      'Bleach Movies',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'm1');
     await db.addToCollection(collectionId, MediaKind.video, 'm2');
     await seedIdentityForBook('m1');
-    expect(await sweep().sweepAndListPending(), hasLength(1),
-        reason: '只有一个成员有作品行时仍是待确认');
+    expect(
+      await sweep().sweepAndListPending(),
+      hasLength(1),
+      reason: '只有一个成员有作品行时仍是待确认',
+    );
     expect(runner.sourceIds, <int>[sourceId]);
     runner.sourceIds.clear();
 
     await seedIdentityForBook('m2');
-    expect(await sweep().sweepAndListPending(), isEmpty,
-        reason: '两个成员都各自拥有带身份的作品行 = 已识别');
+    expect(
+      await sweep().sweepAndListPending(),
+      isEmpty,
+      reason: '两个成员都各自拥有带身份的作品行 = 已识别',
+    );
     expect(runner.sourceIds, isEmpty, reason: '不再自动补刮');
   });
 
   test('来源刮削开关关闭时既不进队列也不补刮', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
     await db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
         sourceId: Value<int>(sourceId),
@@ -408,8 +483,12 @@ void main() {
 
   test('自动刮削总闸关闭时不补刮（队列仍可见）', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
 
     final VideoLibraryScrapeSweep service = sweep(isEnabled: () => false);
     expect(await service.pendingWorks(), hasLength(1));
@@ -423,14 +502,18 @@ void main() {
   // 从设置页撤下，等于给一项后台联网行为配了个不存在的开关。
   group('自动补刮总闸是独立且用户可控的偏好', () {
     test('默认开，读写往返，且与旧的 video_auto_scrape 互不影响', () async {
-      final FushiDatabase prefsDb =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase prefsDb = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(prefsDb.close);
       final PreferencesRepository repo = PreferencesRepository(prefsDb);
       await repo.loadFromDb();
 
-      expect(repo.videoLibraryAutoBackfillScrape, isTrue,
-          reason: '默认开——存量用户升级后行为不变');
+      expect(
+        repo.videoLibraryAutoBackfillScrape,
+        isTrue,
+        reason: '默认开——存量用户升级后行为不变',
+      );
 
       await repo.setVideoLibraryAutoBackfillScrape(false);
       expect(repo.videoLibraryAutoBackfillScrape, isFalse);
@@ -442,8 +525,11 @@ void main() {
       expect(repo.videoLibraryAutoBackfillScrape, isTrue);
 
       await repo.loadFromDb();
-      expect(repo.videoLibraryAutoBackfillScrape, isTrue,
-          reason: '跨 reload 持久化');
+      expect(
+        repo.videoLibraryAutoBackfillScrape,
+        isTrue,
+        reason: '跨 reload 持久化',
+      );
     });
 
     test('sweep 的接线读新偏好，且设置页真画了这个开关', () {
@@ -456,8 +542,10 @@ void main() {
       ).readAsStringSync();
       expect(
         runtime,
-        contains('isAutoBackfillEnabled: () => '
-            'appModel.videoLibraryAutoBackfillScrape'),
+        contains(
+          'isAutoBackfillEnabled: () => '
+          'appModel.videoLibraryAutoBackfillScrape',
+        ),
         reason: 'sweep 必须挂在自己的总闸上',
       );
       expect(
@@ -491,8 +579,12 @@ void main() {
 
   test('同一作品每进程只自动尝试一次', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
 
     final VideoLibraryScrapeSweep service = sweep();
     await service.sweepOnce();
@@ -503,12 +595,15 @@ void main() {
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
   });
 
-  test(
-      '临时失败（504 / 握手失败）按短间隔退避：间隔内不重认领，过了就重试，'
+  test('临时失败（504 / 握手失败）按短间隔退避：间隔内不重认领，过了就重试，'
       '不挡 7 天（BUG-2796 / BUG-3072）', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
     runner.transientFailure = true;
     DateTime current = DateTime(2026, 10, 9, 12);
     final VideoScrapeSweepLedger ledger = VideoScrapeSweepLedger();
@@ -528,33 +623,40 @@ void main() {
     await service.sweepOnce();
     current = current.add(const Duration(minutes: 30));
     await service.sweepOnce();
-    expect(runner.sourceIds, hasLength(1),
-        reason: '临时失败也是一次尝试，退避间隔内不能被下一次触发重新认领');
+    expect(
+      runner.sourceIds,
+      hasLength(1),
+      reason: '临时失败也是一次尝试，退避间隔内不能被下一次触发重新认领',
+    );
 
     // 过了临时退避间隔就重试：一次资料源宕机不能把作品挡 7 天（BUG-2796）。
     current = current.add(ledger.transientRetryAfter);
     await service.sweepOnce();
-    expect(runner.sourceIds, hasLength(2),
-        reason: '临时故障不是「查无」，不能被记账挡 7 天');
+    expect(runner.sourceIds, hasLength(2), reason: '临时故障不是「查无」，不能被记账挡 7 天');
   });
 
   test('临时失败的退避跨进程：重启后间隔内不重刮（BUG-3072）', () async {
-    final Directory temp =
-        await Directory.systemTemp.createTemp('sweep_ledger_transient_');
+    final Directory temp = await Directory.systemTemp.createTemp(
+      'sweep_ledger_transient_',
+    );
     addTearDown(() => temp.delete(recursive: true));
     final File file = File('${temp.path}/ledger.json');
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
     runner.transientFailure = true;
     final DateTime t0 = DateTime(2026, 10, 9, 12);
 
     VideoLibraryScrapeSweep relaunch(DateTime now) => VideoLibraryScrapeSweep(
-          database: db,
-          controller: controller,
-          now: () => now,
-          ledger: VideoScrapeSweepLedger(file: file),
-        );
+      database: db,
+      controller: controller,
+      now: () => now,
+      ledger: VideoScrapeSweepLedger(file: file),
+    );
 
     await relaunch(t0).sweepOnce();
     await relaunch(t0.add(const Duration(minutes: 5))).sweepOnce();
@@ -563,17 +665,19 @@ void main() {
     expect(runner.sourceIds, hasLength(2));
   });
 
-  test('刮削结果变化只重算清单，不发起补刮：补刮批次自己的写入不会启动下一轮（BUG-3072）',
-      () async {
+  test('刮削结果变化只重算清单，不发起补刮：补刮批次自己的写入不会启动下一轮（BUG-3072）', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
     final VideoLibraryScrapeSweep service = sweep();
 
     // 结果落库 / 批次结束时视频页调的是它：作品还没自动试过也不在这里认领。
     expect(await service.refreshPendingAfterScrapeResults(), hasLength(1));
-    expect(runner.sourceIds, isEmpty,
-        reason: '展示层变更通知（含补刮批次自己写的运行记录）不是补刮请求');
+    expect(runner.sourceIds, isEmpty, reason: '展示层变更通知（含补刮批次自己写的运行记录）不是补刮请求');
 
     await service.sweepOnce();
     expect(runner.sourceIds, hasLength(1));
@@ -583,8 +687,7 @@ void main() {
     expect(runner.sourceIds, hasLength(1));
   });
 
-  test(
-      '批次期间被挡下的条目变化请求不丢：批次结束时调度器自己兑现，不依赖视频页'
+  test('批次期间被挡下的条目变化请求不丢：批次结束时调度器自己兑现，不依赖视频页'
       '（BUG-2199 / BUG-3072 / BUG-3085）', () async {
     final int sourceId = await addSource('D:/A');
     final _BlockingRunner blocking = _BlockingRunner();
@@ -597,13 +700,18 @@ void main() {
     );
     addTearDown(service.dispose);
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-    final Future<SourceScrapeReport> batch =
-        busyController.scrapeSource(source);
+    final Future<SourceScrapeReport> batch = busyController.scrapeSource(
+      source,
+    );
     expect(busyController.isBusy, isTrue);
 
     // 下载入库落在别的批次期间：这次补刮请求只能先记下。
-    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
-        title: 'Fresh Download');
+    await addVideo(
+      'movie-b',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      title: 'Fresh Download',
+    );
     await service.sweepAndListPending();
     expect(blocking.plannedTitles, hasLength(1), reason: '批次期间不发第二批');
     // 批次期间的结果变化通知只读：既不兑现也不发批次。
@@ -614,8 +722,9 @@ void main() {
     blocking.release.complete();
     await batch;
     await service.whenDeferredSettled();
-    expect(blocking.plannedTitles.last, <String>['Fresh Download'],
-        reason: '被挡下的是真实的条目变化，批次结束必须由调度器自己兑现');
+    expect(blocking.plannedTitles.last, <String>[
+      'Fresh Download',
+    ], reason: '被挡下的是真实的条目变化，批次结束必须由调度器自己兑现');
 
     // 兑现过一次就清掉：之后的结果变化回到只读，补刮批次自己的写入也不再起新一轮。
     await service.refreshPendingAfterScrapeResults();
@@ -624,8 +733,7 @@ void main() {
     expect(blocking.plannedTitles, hasLength(2));
   });
 
-  test('结果变化通知不再兑现被挡下的请求：与调度器自己的兑现叠在一起也只跑一轮',
-      () async {
+  test('结果变化通知不再兑现被挡下的请求：与调度器自己的兑现叠在一起也只跑一轮', () async {
     final int sourceId = await addSource('D:/A');
     final _BlockingRunner blocking = _BlockingRunner();
     final VideoSourceScrapeTaskController busyController =
@@ -637,10 +745,15 @@ void main() {
     );
     addTearDown(service.dispose);
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-    final Future<SourceScrapeReport> batch =
-        busyController.scrapeSource(source);
-    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
-        title: 'Fresh Download');
+    final Future<SourceScrapeReport> batch = busyController.scrapeSource(
+      source,
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      title: 'Fresh Download',
+    );
     await service.sweepAndListPending();
 
     blocking.release.complete();
@@ -651,8 +764,7 @@ void main() {
     expect(blocking.plannedTitles, hasLength(2));
   });
 
-  test('dispose 后在途批次结束不再由这一代调度器发起补刮（controller 换代 / 关停）',
-      () async {
+  test('dispose 后在途批次结束不再由这一代调度器发起补刮（controller 换代 / 关停）', () async {
     final int sourceId = await addSource('D:/A');
     final _BlockingRunner blocking = _BlockingRunner();
     final VideoSourceScrapeTaskController busyController =
@@ -663,10 +775,15 @@ void main() {
       controller: busyController,
     );
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-    final Future<SourceScrapeReport> batch =
-        busyController.scrapeSource(source);
-    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
-        title: 'Fresh Download');
+    final Future<SourceScrapeReport> batch = busyController.scrapeSource(
+      source,
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      title: 'Fresh Download',
+    );
     await service.sweepAndListPending();
     service.dispose();
 
@@ -677,15 +794,19 @@ void main() {
   });
 
   group('AI 能力进账本指纹（2026-10-01）', () {
-    test('配上 / 换掉 AI 后「试过没中」的作品下一轮立刻重试；能力键不变不重试',
-        () async {
+    test('配上 / 换掉 AI 后「试过没中」的作品下一轮立刻重试；能力键不变不重试', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-          title: 'Unscraped Movie');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
       String? aiKey;
       // 同一个实例：能力键必须每轮现取，而不是构造时快照。
-      final VideoLibraryScrapeSweep service =
-          sweep(aiCapabilityKey: () => aiKey);
+      final VideoLibraryScrapeSweep service = sweep(
+        aiCapabilityKey: () => aiKey,
+      );
 
       await service.sweepOnce();
       await service.sweepOnce();
@@ -693,8 +814,11 @@ void main() {
 
       aiKey = 'p1|openai|https://api.example|gpt-x';
       await service.sweepOnce();
-      expect(runner.sourceIds, hasLength(2),
-          reason: '配上 AI 后旧的「没中」不作数，不能再等 7 天');
+      expect(
+        runner.sourceIds,
+        hasLength(2),
+        reason: '配上 AI 后旧的「没中」不作数，不能再等 7 天',
+      );
       expect(runner.plannedTitles.last, <String>['Unscraped Movie']);
 
       await service.sweepOnce();
@@ -711,8 +835,12 @@ void main() {
 
     test('warnings 里标了临时不可用的 AI 失败只进短退避，过了间隔再试', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-          title: 'Unscraped Movie');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
       runner.aiWarning = 'ai:failed reason=timeout';
       DateTime current = DateTime(2026, 10, 9, 12);
       final VideoScrapeSweepLedger ledger = VideoScrapeSweepLedger();
@@ -729,24 +857,35 @@ void main() {
       expect(runner.sourceIds, hasLength(1), reason: '间隔内不重认领（BUG-3072）');
       current = current.add(ledger.transientRetryAfter);
       await service.sweepOnce();
-      expect(runner.sourceIds, hasLength(2),
-          reason: 'AI 请求失败记在 warnings（作品是待确认），仍是临时失败，不挡 7 天');
+      expect(
+        runner.sourceIds,
+        hasLength(2),
+        reason: 'AI 请求失败记在 warnings（作品是待确认），仍是临时失败，不挡 7 天',
+      );
     });
 
     test('warnings 里没标临时不可用的作品照常进退避（对照组）', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-          title: 'Unscraped Movie');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
       runner
         ..aiWarning = 'ai:declined confidence=0.40 reason=two seasons'
         ..aiWarningTransient = false;
 
-      final VideoLibraryScrapeSweep service =
-          sweep(aiCapabilityKey: () => 'p1|m');
+      final VideoLibraryScrapeSweep service = sweep(
+        aiCapabilityKey: () => 'p1|m',
+      );
       await service.sweepOnce();
       await service.sweepOnce();
-      expect(runner.sourceIds, hasLength(1),
-          reason: 'AI 给了结论但不采用 = 真「没中」，不能每轮重问');
+      expect(
+        runner.sourceIds,
+        hasLength(1),
+        reason: 'AI 给了结论但不采用 = 真「没中」，不能每轮重问',
+      );
     });
   });
 
@@ -791,8 +930,12 @@ void main() {
 
   test('同一进程内新入库的作品会被后续 sweep 认领（BUG-2199）', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
 
     final VideoLibraryScrapeSweep service = sweep();
     await service.sweepOnce();
@@ -801,8 +944,12 @@ void main() {
     // 下载管线的 import 落库必然晚于进页面那一轮 sweep（实测差 6 秒）。旧实现拿
     // 一个进程级 bool 当幂等键，于是这一条结构上永远刮不到，必须重启 app——正好
     // 废掉 BUG-2004 留下的「无 AniDB 身份的下载作品由自动补刮认领」承诺。
-    await addVideo('movie-b', 'D:/A/Fresh Download (2023).mkv', sourceId,
-        title: 'Fresh Download');
+    await addVideo(
+      'movie-b',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      title: 'Fresh Download',
+    );
     await service.sweepOnce();
 
     expect(runner.sourceIds, hasLength(2));
@@ -827,20 +974,23 @@ void main() {
       DateTime now, {
       String fingerprint = 'cfg-a',
       TmdbChangedTvIdsProbe? probe,
-    }) =>
-        VideoLibraryScrapeSweep(
-          database: db,
-          controller: controller,
-          now: () => now,
-          ledger: VideoScrapeSweepLedger(file: ledgerFile),
-          configFingerprint: fingerprint,
-          tmdbChangedTvIds: probe,
-        );
+    }) => VideoLibraryScrapeSweep(
+      database: db,
+      controller: controller,
+      now: () => now,
+      ledger: VideoScrapeSweepLedger(file: ledgerFile),
+      configFingerprint: fingerprint,
+      tmdbChangedTvIds: probe,
+    );
 
     test('查无的作品重启后不再自动重刮；过了重试期、或配置变了才再试', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-          title: 'Unscraped Movie');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
       final DateTime day0 = DateTime(2026, 9, 20, 12);
 
       await relaunch(day0).sweepOnce();
@@ -854,25 +1004,34 @@ void main() {
       expect(runner.sourceIds, hasLength(1));
 
       // 换了刮削配置（开了哈希 / 换主源）：上一套配置下的「没中」不作数。
-      await relaunch(day0.add(const Duration(days: 3)), fingerprint: 'cfg-b')
-          .sweepOnce();
+      await relaunch(
+        day0.add(const Duration(days: 3)),
+        fingerprint: 'cfg-b',
+      ).sweepOnce();
       expect(runner.sourceIds, hasLength(2));
 
       // 过了重试期：再自动试一次。
-      await relaunch(day0.add(const Duration(days: 11)), fingerprint: 'cfg-b')
-          .sweepOnce();
+      await relaunch(
+        day0.add(const Duration(days: 11)),
+        fingerprint: 'cfg-b',
+      ).sweepOnce();
       expect(runner.sourceIds, hasLength(3));
     });
 
     test('刷新与 TMDB 变更探针的时刻也跨进程：间隔内重启不再重刷 / 重问', () async {
       final int sourceId = await addSource('D:/A');
       final DateTime now = DateTime(2026, 9, 20, 12);
-      await addVideo('show-a', 'D:/A/Changed Show (2020).mkv', sourceId,
-          title: 'Changed Show');
-      await seedIdentityForBook('show-a',
-          tmdbId: 30984,
-          updatedAt:
-              now.subtract(const Duration(days: 3)).millisecondsSinceEpoch);
+      await addVideo(
+        'show-a',
+        'D:/A/Changed Show (2020).mkv',
+        sourceId,
+        title: 'Changed Show',
+      );
+      await seedIdentityForBook(
+        'show-a',
+        tmdbId: 30984,
+        updatedAt: now.subtract(const Duration(days: 3)).millisecondsSinceEpoch,
+      );
       int probes = 0;
       Future<Set<int>> probe({required DateTime since}) async {
         probes++;
@@ -883,16 +1042,76 @@ void main() {
       expect(probes, 1);
       expect(runner.plannedTitles.single, <String>['Changed Show']);
 
-      await relaunch(now.add(const Duration(hours: 2)), probe: probe)
-          .sweepOnce();
+      await relaunch(
+        now.add(const Duration(hours: 2)),
+        probe: probe,
+      ).sweepOnce();
       expect(probes, 1, reason: '探针间隔跨进程生效');
       expect(runner.sourceIds, hasLength(1), reason: '刚刷过的作品不重刷');
     });
 
+    // 配置指纹明文里有 TMDB key 与 AniDB 账号密码：账本只落摘要。
+    test('账本不落明文配置指纹（含凭据），只落摘要', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
+      const String secretFingerprint =
+          'tmdb-key-0123\u0000user\u0000anidb-secret-password';
+
+      await relaunch(
+        DateTime(2026, 9, 20),
+        fingerprint: secretFingerprint,
+      ).sweepOnce();
+
+      final String onDisk = await ledgerFile.readAsString();
+      expect(onDisk, isNot(contains('anidb-secret-password')));
+      expect(onDisk, isNot(contains('tmdb-key-0123')));
+      expect(
+        (jsonDecode(onDisk) as Map<String, Object?>)['fingerprint'],
+        VideoScrapeSweepLedger.fingerprintDigest(secretFingerprint),
+      );
+    });
+
+    test('旧版明文指纹的账本：同一套配置不清账、不重刮，并改写成摘要', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
+      final DateTime day0 = DateTime(2026, 9, 20, 12);
+      await relaunch(day0).sweepOnce();
+      expect(runner.sourceIds, hasLength(1));
+
+      // 还原成旧版本落盘的样子：fingerprint 字段是明文。
+      final Map<String, Object?> legacy =
+          jsonDecode(await ledgerFile.readAsString()) as Map<String, Object?>;
+      legacy['fingerprint'] = 'cfg-a';
+      await ledgerFile.writeAsString(jsonEncode(legacy));
+
+      await relaunch(day0.add(const Duration(hours: 1))).sweepOnce();
+      expect(runner.sourceIds, hasLength(1), reason: '升级后同一套配置不该平白重刮');
+      expect(
+        (jsonDecode(await ledgerFile.readAsString())
+            as Map<String, Object?>)['fingerprint'],
+        VideoScrapeSweepLedger.fingerprintDigest('cfg-a'),
+        reason: '旧明文要被改写成摘要',
+      );
+    });
+
     test('账本文件损坏时当作空账本，照常补刮', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-          title: 'Unscraped Movie');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
       await ledgerFile.writeAsString('{not json');
 
       await relaunch(DateTime(2026, 9, 20)).sweepOnce();
@@ -902,8 +1121,12 @@ void main() {
 
   test('批次在跑时重复触发直接回上一份清单，不重新规划也不发批次', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
     final _BlockingRunner blocking = _BlockingRunner();
     final VideoSourceScrapeTaskController busyController =
         VideoSourceScrapeTaskController(blocking);
@@ -916,13 +1139,18 @@ void main() {
     expect(await service.sweepAndListPending(), hasLength(1));
 
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-    final Future<SourceScrapeReport> batch =
-        busyController.scrapeSource(source);
+    final Future<SourceScrapeReport> batch = busyController.scrapeSource(
+      source,
+    );
     expect(busyController.isBusy, isTrue);
     // 批次期间新入库一部：清单先不重算（每次重算 = 全来源重新规划 + 逐作品
     // 查身份，批次里每写一部就触发一次），批次结束后库页会再触发一轮。
-    await addVideo('movie-b', 'D:/A/Another Movie (2021).mkv', sourceId,
-        title: 'Another Movie');
+    await addVideo(
+      'movie-b',
+      'D:/A/Another Movie (2021).mkv',
+      sourceId,
+      title: 'Another Movie',
+    );
     expect(await service.sweepAndListPending(), hasLength(1));
 
     blocking.release.complete();
@@ -937,12 +1165,21 @@ void main() {
 
     test('探针命中的已识别剧重刷，没变的不动，探针在间隔内只问一次', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('show-a', 'D:/A/Changed Show (2020).mkv', sourceId,
-          title: 'Changed Show');
-      await addVideo('show-b', 'D:/A/Quiet Show (2021).mkv', sourceId,
-          title: 'Quiet Show');
-      final int scrapedAt =
-          now.subtract(const Duration(days: 3)).millisecondsSinceEpoch;
+      await addVideo(
+        'show-a',
+        'D:/A/Changed Show (2020).mkv',
+        sourceId,
+        title: 'Changed Show',
+      );
+      await addVideo(
+        'show-b',
+        'D:/A/Quiet Show (2021).mkv',
+        sourceId,
+        title: 'Quiet Show',
+      );
+      final int scrapedAt = now
+          .subtract(const Duration(days: 3))
+          .millisecondsSinceEpoch;
       await seedIdentityForBook('show-a', tmdbId: 30984, updatedAt: scrapedAt);
       await seedIdentityForBook('show-b', tmdbId: 777, updatedAt: scrapedAt);
       final List<DateTime> probed = <DateTime>[];
@@ -957,8 +1194,11 @@ void main() {
       );
       await service.sweepOnce();
       expect(probed, hasLength(1));
-      expect(probed.single, DateTime.fromMillisecondsSinceEpoch(scrapedAt),
-          reason: 'since = 最早一次刮削');
+      expect(
+        probed.single,
+        DateTime.fromMillisecondsSinceEpoch(scrapedAt),
+        reason: 'since = 最早一次刮削',
+      );
       expect(runner.plannedTitles.single, <String>['Changed Show']);
       expect(runner.runScopes.single, 'sweep');
 
@@ -970,11 +1210,16 @@ void main() {
 
     test('上次刮削超过 staleAfter 的作品不问探针直接重刷，每轮有上限', () async {
       final int sourceId = await addSource('D:/A');
-      final int old =
-          now.subtract(const Duration(days: 40)).millisecondsSinceEpoch;
+      final int old = now
+          .subtract(const Duration(days: 40))
+          .millisecondsSinceEpoch;
       for (int i = 0; i < 3; i++) {
-        await addVideo('old-$i', 'D:/A/Old Show $i (2019).mkv', sourceId,
-            title: 'Old Show $i');
+        await addVideo(
+          'old-$i',
+          'D:/A/Old Show $i (2019).mkv',
+          sourceId,
+          title: 'Old Show $i',
+        );
         await seedIdentityForBook('old-$i', tmdbId: 100 + i, updatedAt: old);
       }
       int probes = 0;
@@ -995,14 +1240,22 @@ void main() {
 
     test('没有探针时只刷过期作品；探针抛错这一轮不刷、不炸', () async {
       final int sourceId = await addSource('D:/A');
-      await addVideo('show-a', 'D:/A/Recent Show (2020).mkv', sourceId,
-          title: 'Recent Show');
-      await seedIdentityForBook('show-a',
-          tmdbId: 30984,
-          updatedAt: now.subtract(const Duration(days: 1)).millisecondsSinceEpoch);
+      await addVideo(
+        'show-a',
+        'D:/A/Recent Show (2020).mkv',
+        sourceId,
+        title: 'Recent Show',
+      );
+      await seedIdentityForBook(
+        'show-a',
+        tmdbId: 30984,
+        updatedAt: now.subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+      );
       await VideoLibraryScrapeSweep(
-              database: db, controller: controller, now: () => now)
-          .sweepOnce();
+        database: db,
+        controller: controller,
+        now: () => now,
+      ).sweepOnce();
       expect(runner.sourceIds, isEmpty);
       await VideoLibraryScrapeSweep(
         database: db,
@@ -1017,27 +1270,38 @@ void main() {
 
   test('sweepAndListPending 回传待确认清单，总闸关时也照常回传', () async {
     final int sourceId = await addSource('D:/A');
-    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
-        title: 'Unscraped Movie');
-    await addVideo('movie-b', 'D:/A/Scraped Movie (2021).mkv', sourceId,
-        title: 'Scraped Movie');
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      title: 'Unscraped Movie',
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Scraped Movie (2021).mkv',
+      sourceId,
+      title: 'Scraped Movie',
+    );
     await seedIdentityForBook('movie-b');
 
-    final List<VideoPendingScrapeWork> pending =
-        await sweep(isEnabled: () => false).sweepAndListPending();
+    final List<VideoPendingScrapeWork> pending = await sweep(
+      isEnabled: () => false,
+    ).sweepAndListPending();
 
     // 「不自动刮」不等于「不告诉用户有东西待确认」：提醒条的数字来自这份清单。
     expect(runner.sourceIds, isEmpty);
-    expect(
-      pending.map((VideoPendingScrapeWork e) => e.work.title),
-      <String>['Unscraped Movie'],
-    );
+    expect(pending.map((VideoPendingScrapeWork e) => e.work.title), <String>[
+      'Unscraped Movie',
+    ]);
   });
 
   group('planScrapeWorksForCollection（「重刮这一个合集」的定位入口）', () {
     /// 建一个多成员合集并返回 id —— 计划器只把**多成员**合集当剧集作品单元。
-    Future<int> addCollection(String name, int sourceId,
-        {required List<String> uids}) async {
+    Future<int> addCollection(
+      String name,
+      int sourceId, {
+      required List<String> uids,
+    }) async {
       for (final String uid in uids) {
         await addVideo(uid, 'D:/A/$uid.mkv', sourceId, title: uid);
       }
@@ -1050,8 +1314,11 @@ void main() {
 
     test('按 stableKey 命中该合集的作品单元，并带回它所属的来源行', () async {
       final int sourceId = await addSource('D:/A');
-      final int id =
-          await addCollection('Show', sourceId, uids: <String>['s-e1', 's-e2']);
+      final int id = await addCollection(
+        'Show',
+        sourceId,
+        uids: <String>['s-e1', 's-e2'],
+      );
 
       final List<VideoPendingScrapeWork> planned =
           await planScrapeWorksForCollection(db, id);
@@ -1064,25 +1331,31 @@ void main() {
 
     test('同名合集不会认错——匹配的是 stableKey 不是标题', () async {
       final int sourceId = await addSource('D:/A');
-      final int first =
-          await addCollection('Show', sourceId, uids: <String>['a-e1', 'a-e2']);
-      final int second =
-          await addCollection('Show', sourceId, uids: <String>['b-e1', 'b-e2']);
+      final int first = await addCollection(
+        'Show',
+        sourceId,
+        uids: <String>['a-e1', 'a-e2'],
+      );
+      final int second = await addCollection(
+        'Show',
+        sourceId,
+        uids: <String>['b-e1', 'b-e2'],
+      );
 
       expect(
-          (await planScrapeWorksForCollection(db, first))
-              .single
-              .work
-              .collection
-              ?.id,
-          first);
+        (await planScrapeWorksForCollection(
+          db,
+          first,
+        )).single.work.collection?.id,
+        first,
+      );
       expect(
-          (await planScrapeWorksForCollection(db, second))
-              .single
-              .work
-              .collection
-              ?.id,
-          second);
+        (await planScrapeWorksForCollection(
+          db,
+          second,
+        )).single.work.collection?.id,
+        second,
+      );
     });
 
     test('合集不在任何本地来源的计划里时返回空列表（调用方据此给可见提示）', () async {
@@ -1090,8 +1363,7 @@ void main() {
       expect(await planScrapeWorksForCollection(db, orphan), isEmpty);
     });
 
-    test('单成员合集回落到成员的 book 单元，而不是报「不在刮削计划里」（BUG-2433）',
-        () async {
+    test('单成员合集回落到成员的 book 单元，而不是报「不在刮削计划里」（BUG-2433）', () async {
       // 用户真实数据形状：合集「<名> 播放列表」只有一个成员，成员标题是纯集号
       // 标签 S00E01。单成员被 multiMemberCollectionIdByVideoUid 的 >=2 判据剔除，
       // 计划里它是 book 单元；旧实现只认 collection:<id>，于是必然死胡同。
@@ -1107,7 +1379,10 @@ void main() {
         collectionType: 'playlist',
       );
       await db.addToCollection(
-          id, MediaKind.video, 'video/Kimi no Na wa - S00E01');
+        id,
+        MediaKind.video,
+        'video/Kimi no Na wa - S00E01',
+      );
 
       final List<VideoPendingScrapeWork> planned =
           await planScrapeWorksForCollection(db, id);
@@ -1115,16 +1390,26 @@ void main() {
       expect(planned, hasLength(1));
       expect(planned.single.source.id, sourceId);
       expect(planned.single.work.collection, isNull);
-      expect(planned.single.work.stableKey,
-          'book:video/Kimi no Na wa - S00E01');
+      expect(
+        planned.single.work.stableKey,
+        'book:video/Kimi no Na wa - S00E01',
+      );
     });
 
     test('多片无集号合集返回全部候选，调用方须让用户选而不是默选第一个', () async {
       final int sourceId = await addSource('/movies');
-      await addVideo('movie-a', '/movies/A Movie (2020).mkv', sourceId,
-          title: 'A Movie');
-      await addVideo('movie-b', '/movies/B Movie (2021).mkv', sourceId,
-          title: 'B Movie');
+      await addVideo(
+        'movie-a',
+        '/movies/A Movie (2020).mkv',
+        sourceId,
+        title: 'A Movie',
+      );
+      await addVideo(
+        'movie-b',
+        '/movies/B Movie (2021).mkv',
+        sourceId,
+        title: 'B Movie',
+      );
       final int id = await db.createMediaCollection(
         'Weekend playlist',
         collectionType: 'playlist',
@@ -1146,10 +1431,17 @@ void main() {
       // 同一合集里有集号的成员进合集级单元、无集号的成员各自成 book 单元；此时
       // 「重刮这个合集」的答案仍是合集级单元（既有行为一字不变）。
       final int sourceId = await addSource('D:/A');
-      final int id =
-          await addCollection('Show', sourceId, uids: <String>['s-e1', 's-e2']);
-      await addVideo('bonus', 'D:/A/Bonus Feature.mkv', sourceId,
-          title: 'Bonus Feature');
+      final int id = await addCollection(
+        'Show',
+        sourceId,
+        uids: <String>['s-e1', 's-e2'],
+      );
+      await addVideo(
+        'bonus',
+        'D:/A/Bonus Feature.mkv',
+        sourceId,
+        title: 'Bonus Feature',
+      );
       await db.addToCollection(id, MediaKind.video, 'bonus');
 
       final List<VideoPendingScrapeWork> planned =
@@ -1169,8 +1461,12 @@ void main() {
           transport: const Value<String>('interconnect'),
         ),
       );
-      await addVideo('remote-1', 'remote://lib/Movie.mkv', remoteId,
-          title: 'Movie');
+      await addVideo(
+        'remote-1',
+        'remote://lib/Movie.mkv',
+        remoteId,
+        title: 'Movie',
+      );
       final int id = await db.createMediaCollection('Remote only');
       await db.addToCollection(id, MediaKind.video, 'remote-1');
 
@@ -1190,8 +1486,10 @@ void main() {
         title: 'リズと青い鳥',
       );
 
-      final VideoPendingScrapeWork? planned =
-          await planScrapeWorkForVideoBook(db, 'liz');
+      final VideoPendingScrapeWork? planned = await planScrapeWorkForVideoBook(
+        db,
+        'liz',
+      );
 
       expect(planned, isNotNull);
       expect(planned!.source.id, sourceId);
@@ -1208,8 +1506,10 @@ void main() {
       await db.addToCollection(id, MediaKind.video, 's-e1');
       await db.addToCollection(id, MediaKind.video, 's-e2');
 
-      final VideoPendingScrapeWork? planned =
-          await planScrapeWorkForVideoBook(db, 's-e2');
+      final VideoPendingScrapeWork? planned = await planScrapeWorkForVideoBook(
+        db,
+        's-e2',
+      );
 
       expect(planned?.work.stableKey, 'collection:$id');
       expect(planned?.work.title, 'Show');
@@ -1221,8 +1521,10 @@ void main() {
       await addVideo('a-movie', 'D:/A/Movie.mkv', a, title: 'Movie');
       await addVideo('b-movie', 'D:/B/Movie.mkv', b, title: 'Movie');
 
-      final VideoPendingScrapeWork? planned =
-          await planScrapeWorkForVideoBook(db, 'b-movie');
+      final VideoPendingScrapeWork? planned = await planScrapeWorkForVideoBook(
+        db,
+        'b-movie',
+      );
 
       expect(planned?.source.id, b);
       expect(planned?.work.stableKey, 'book:b-movie');
@@ -1240,8 +1542,12 @@ void main() {
           transport: const Value<String>('interconnect'),
         ),
       );
-      await addVideo('remote-1', 'remote://lib/Movie.mkv', remoteId,
-          title: 'Movie');
+      await addVideo(
+        'remote-1',
+        'remote://lib/Movie.mkv',
+        remoteId,
+        title: 'Movie',
+      );
       expect(await planScrapeWorkForVideoBook(db, 'remote-1'), isNull);
     });
 
@@ -1273,11 +1579,13 @@ void main() {
       await addVideo('ost', 'D:/series/OST/01 - One more tea.flac', series);
       await addVideo('in-folder', 'D:/folder/Movie.mkv', folder);
       await addVideo('remote', 'remote://lib/Movie.mkv', remote);
-      await db.upsertVideoBook(const VideoBooksCompanion(
-        bookUid: Value<String>('manual'),
-        title: Value<String>('manual'),
-        videoPath: Value<String>('C:/Users/me/Videos/Movie.mkv'),
-      ));
+      await db.upsertVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value<String>('manual'),
+          title: Value<String>('manual'),
+          videoPath: Value<String>('C:/Users/me/Videos/Movie.mkv'),
+        ),
+      );
 
       final Map<String, bool> expected = <String, bool>{
         'movie': true,
@@ -1292,11 +1600,16 @@ void main() {
         final SourceLibraryRow? source = book.sourceId == null
             ? null
             : await db.getMediaSourceById(book.sourceId!);
-        expect(videoBookHasScrapePlan(book, source), entry.value,
-            reason: '${entry.key}：入口判据');
-        expect(await planScrapeWorkForVideoBook(db, entry.key) != null,
-            entry.value,
-            reason: '${entry.key}：计划器定位与入口判据必须一致');
+        expect(
+          videoBookHasScrapePlan(book, source),
+          entry.value,
+          reason: '${entry.key}：入口判据',
+        );
+        expect(
+          await planScrapeWorkForVideoBook(db, entry.key) != null,
+          entry.value,
+          reason: '${entry.key}：计划器定位与入口判据必须一致',
+        );
       }
     });
   });

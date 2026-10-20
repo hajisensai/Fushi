@@ -386,8 +386,15 @@ void main() {
     expect(btnSource, contains('Icons.horizontal_rule'));
     expect(btnSource, contains('Icons.unfold_more'));
     expect(btnSource, contains('Icons.unfold_less'));
-    expect(btnSource, contains('t.options_expand'));
-    expect(btnSource, contains('t.options_collapse'));
+    // tooltip 说的是**当前态**，与图标一致：以前说的是「点一下变成什么」，
+    // 折叠图标配「跟随全局设置」被读成当前态。文案与详情分段控件同一套状态词。
+    expect(btnSource, contains('t.dict_collapse_state_inherit'));
+    expect(btnSource, contains('t.dict_collapse_state_expanded'));
+    expect(btnSource, contains('t.dict_collapse_state_collapsed'));
+    expect(btnSource,
+        contains('t.dict_row_collapse_tooltip(state: stateLabel)'));
+    expect(btnSource, isNot(contains('t.options_expand')));
+    expect(btnSource, isNot(contains('t.options_collapse')));
   });
 
   // TODO-422：词典行尾的三点菜单（旧 buildDictionaryTileTrailing / getMenuItems）

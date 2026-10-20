@@ -29,6 +29,7 @@ class _FakePlatform implements SystemOcrPlatform {
   final bool available;
   final Map<String, List<SystemOcrTextLine>> _byPage;
   final List<int> requestSizes = <int>[];
+  final List<List<int>> requestHeads = <List<int>>[];
 
   @override
   Future<bool> isAvailable() async => available;
@@ -40,6 +41,7 @@ class _FakePlatform implements SystemOcrPlatform {
     List<Rect> tiles = const <Rect>[],
   }) async {
     requestSizes.add(imageBytes.length);
+    requestHeads.add(imageBytes.take(3).toList());
     // fake 图片字节的首字节当页号用，让每页拿到不同结果。
     final String key = String.fromCharCode(imageBytes.first);
     return SystemOcrPageResult(
@@ -335,6 +337,42 @@ void main() {
       ]);
       expect(calls[1].containsKey('tiles'), isFalse,
           reason: '不切片时不发空列表，旧平台实现收到的参数与从前逐字一致');
+    });
+  });
+
+  group('AVIF 页先在原生内核转 JPEG 再交平台', () {
+    Uint8List fixture(String name) => File(p.join('..', 'packages',
+            'fushi_engine', 'test', 'media', 'image_kernels', 'fixtures',
+            'avif', name))
+        .readAsBytesSync();
+
+    test('AVIF 转成显示方向的 JPEG（irot 已应用）', () async {
+      // orient6：40×24 编码、irot → 显示 24×40。平台解码器拿到的必须是显示方向，
+      // 否则切片 / 识别坐标与导入时记录的页面尺寸错位。
+      final Uint8List out =
+          await systemOcrDecodableBytes(fixture('orient6.avif'));
+      expect(out.sublist(0, 3), <int>[0xff, 0xd8, 0xff]);
+      final img.Image jpeg = img.decodeJpg(out)!;
+      expect((jpeg.width, jpeg.height), (24, 40));
+    });
+
+    test('非 AVIF 原样透传（同一对象，不重编码）', () async {
+      final Uint8List png =
+          Uint8List.fromList(img.encodePng(img.Image(width: 8, height: 4)));
+      expect(identical(await systemOcrDecodableBytes(png), png), isTrue);
+    });
+
+    test('recognizePageBytes 交给平台的是转好的 JPEG', () async {
+      final _FakePlatform platform = _FakePlatform();
+      final Uint8List avif = fixture('grid.avif');
+      await SystemOcrMangaService(platform: platform).recognizePageBytes(
+        avif,
+        relativeUrl: 'images/001.avif',
+        language: 'ja',
+      );
+      expect(platform.requestHeads, <List<int>>[
+        <int>[0xff, 0xd8, 0xff],
+      ]);
     });
   });
 

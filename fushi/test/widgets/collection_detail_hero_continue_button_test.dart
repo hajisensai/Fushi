@@ -11,7 +11,7 @@ import 'package:material_ui/material_ui.dart';
 // 根因是它用了扩展 FAB（内容按无界宽度排版后居中溢出，不随可用宽度收缩），
 // 修法是换成 M3E 尺寸档的填充按钮（文字 Flexible 收缩 + 省略号）。
 // 这里钉住：手机宽度 390 / 360、深浅主题下，图标与文字都在按钮内，左右内边距
-// 相等，长标题省略而不溢出；短标题按钮不被撑满。
+// 相等，长标题省略而不溢出；短标题时按钮占满整行、内容居中。
 void main() {
   const String longTitle = '[23卷] 無職転生 ~異世界行ったら本気だす~ 23 長い長いサブタイトルの続き';
 
@@ -109,7 +109,9 @@ void main() {
     }
   }
 
-  testWidgets('short title hugs its content and stays centered', (
+  // 2026-10 紧凑 hero：窄屏继续按钮与作品详情页主按钮同形、占满整行（fill）；
+  // 短标题时内容在按钮里居中、左右留白对称。
+  testWidgets('narrow: short title fills the row with centered content', (
     WidgetTester tester,
   ) async {
     await pumpHero(
@@ -127,7 +129,7 @@ void main() {
     final Rect text = tester.getRect(
       find.descendant(of: button, matching: find.textContaining('短い')),
     );
-    expect(btn.width, lessThan(card.width - 64));
+    expect(btn.width, greaterThan(card.width - 64));
     expect((btn.center.dx - card.center.dx).abs(), lessThanOrEqualTo(1));
     expect(
       ((icon.left - btn.left) - (btn.right - text.right)).abs(),

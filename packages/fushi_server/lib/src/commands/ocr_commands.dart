@@ -32,6 +32,7 @@ import 'package:fushi_asr_core/asr_core.dart' show DownloadableModelFile, ModelD
 import 'package:fushi_asr_onnx_ffi/asr_onnx_ffi.dart' show findUsableOrtRuntime;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
@@ -104,9 +105,19 @@ String _modelName(String key) => switch (key) {
 };
 
 /// 原子覆写 manga.json（tmp + rename 直接覆盖，不先删目标）。
+///
+/// 与 app 侧 `writeMangaJsonAtomically` 同口径：覆写前把旧文件里的 PDF 文字层块并进来，
+/// 服务端整卷 OCR 不会冲掉由 PDF 转来的卷的文字层。
 Future<void> _writeMangaJson(String path, MokuroPayload payload) async {
+  MokuroPayload? existing;
+  final File current = File(path);
+  if (await current.exists()) {
+    final String source = await current.readAsString();
+    if (source.contains('"pdf_text_layer')) existing = parseMangaJson(source);
+  }
+  final MokuroPayload merged = preservePdfTextLayer(incoming: payload, existing: existing);
   final File temporary = File('$path.${pid}_${DateTime.now().microsecondsSinceEpoch}.tmp');
-  await temporary.writeAsString(jsonEncode(mangaPayloadToJson(payload)), flush: true);
+  await temporary.writeAsString(jsonEncode(mangaPayloadToJson(merged)), flush: true);
   await temporary.rename(path);
 }
 

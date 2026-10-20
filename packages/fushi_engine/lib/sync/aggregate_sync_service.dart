@@ -359,11 +359,16 @@ class AggregateSyncService {
     // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2214）不上行（merged 是
     // local ∪ peer，peer 那份仍带本机已删媒体的旧段——与 BUG-1572 的 legacy 同病）；
     // 墓碑本身透传，删除才能传到对端。
+    // BUG-3644：别名形态的碑同样压制（对端名字的旧段不再经本机回传）。
     final Map<int, String> profileNameById = await _profileNameById();
+    final Map<int, Set<String>> aliases =
+        await _db.getStudyProfileNameAliases();
     final Map<String, int> segmentTombstoned = <String, int>{
       for (final StudySegmentTombstoneRow t
           in await _db.getStudySegmentTombstones())
-        _tombstoneRecordOf(t, profileNameById).key: t.deletedAt,
+        for (final StudyTombstoneRecord r
+            in _tombstoneRecordsOf(t, profileNameById, aliases))
+          r.key: t.deletedAt,
     };
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
@@ -884,6 +889,8 @@ class AggregateSyncService {
     final List<StudySegmentTombstoneRow> segmentTombstones =
         await _db.getStudySegmentTombstones();
     final Map<int, String> profileNameById = await _profileNameById();
+    final Map<int, Set<String>> aliases =
+        await _db.getStudyProfileNameAliases();
 
     return AggregateSnapshot(
       studySegments: <StudySegmentRecord>[
@@ -891,10 +898,11 @@ class AggregateSyncService {
           if (AggregateMergeService.isStudyKindSyncable(s.mediaKind))
             _segmentRecordOf(s, profileNameById),
       ],
+      // BUG-3644：碑连同落进本 Profile 的对端名字各发一份。
       studySegmentTombstones: <StudyTombstoneRecord>[
         for (final StudySegmentTombstoneRow t in segmentTombstones)
           if (AggregateMergeService.isStudyKindSyncable(t.mediaKind))
-            _tombstoneRecordOf(t, profileNameById),
+            ..._tombstoneRecordsOf(t, profileNameById, aliases),
       ],
       readingStats: <ReadingStatRecord>[
         for (final ReadingStatisticRow r in reading)
@@ -1014,6 +1022,31 @@ class AggregateSyncService {
         profileName: profileNameById[t.profileId] ?? '',
       );
 
+  /// 本机一块碑的全部 wire 形态（BUG-3644）：本 Profile 名字一份，外加落进本
+  /// Profile 的对端名字（[FushiDatabase.getStudyProfileNameAliases]）各一份——对端
+  /// 那批段只认它自己的 Profile 名，只发本机名字的碑在对端会被丢弃。别名若已是本机
+  /// 某个 Profile 的名字就不发（那个名字现在指本机另一个 Profile，发了会压错人）。
+  static List<StudyTombstoneRecord> _tombstoneRecordsOf(
+    StudySegmentTombstoneRow t,
+    Map<int, String> profileNameById,
+    Map<int, Set<String>> aliasesByProfileId,
+  ) {
+    final StudyTombstoneRecord own = _tombstoneRecordOf(t, profileNameById);
+    final Set<String> localNames = profileNameById.values.toSet();
+    return <StudyTombstoneRecord>[
+      own,
+      for (final String alias
+          in aliasesByProfileId[t.profileId] ?? const <String>{})
+        if (alias != own.profileName && !localNames.contains(alias))
+          StudyTombstoneRecord(
+            mediaKind: t.mediaKind,
+            mediaKey: t.mediaKey,
+            deletedAt: t.deletedAt,
+            profileName: alias,
+          ),
+    ];
+  }
+
   static StudySegmentsCompanion _segmentCompanionOf(
     StudySegmentRecord r, {
     required int profileId,
@@ -1046,6 +1079,13 @@ class AggregateSyncService {
   /// 没有同名 Profile → 落进当前激活 Profile（数据不丢，只是归属退化）。碑：名字
   /// 为空 → 当前激活 Profile（旧端整机就是一个 Profile，语义一致）；名字对不上 →
   /// **丢弃**（压错 Profile = 删别人的历史）。已有段的归属不随 LWW 改（DAO 保证）。
+  ///
+  /// BUG-3644：段按名字回退进激活 Profile 时，把「对端名字 → 激活 Profile」记成
+  /// 别名（[FushiDatabase.addStudyProfileNameAliases]），之后本机在该 Profile 立的碑
+  /// 导出时也以对端名字发一份（[_tombstoneRecordsOf]），对端才压得到这批段。否则：
+  /// 本机删这本书的统计 → 碑只带本机名字 → 对端丢弃 → 对端的段照常上行、又被本机
+  /// 的碑挡住，两端永久分叉（本机没了、对端还在）。别名对全快照记、不看段是否真
+  /// 落了地——已经分叉的存量（段被本机碑挡在门外）也要靠这一步在下一轮愈合。
   Future<void> _applyStudySegments(AggregateSnapshot snapshot) async {
     final Map<String, int> profileIdByName = await _profileIdByName();
     final int activeProfileId = await _db.resolveActiveProfileId();
@@ -1055,6 +1095,16 @@ class AggregateSyncService {
       if (id != null) return id;
       return fallbackToActive ? activeProfileId : null;
     }
+
+    await _db.addStudyProfileNameAliases(<int, Set<String>>{
+      activeProfileId: <String>{
+        for (final StudySegmentRecord r in snapshot.studySegments)
+          if (r.profileName.isNotEmpty &&
+              !profileIdByName.containsKey(r.profileName) &&
+              AggregateMergeService.isStudyKindSyncable(r.mediaKind))
+            r.profileName,
+      },
+    }..removeWhere((int _, Set<String> names) => names.isEmpty));
 
     for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
       if (!AggregateMergeService.isStudyKindSyncable(t.mediaKind)) continue;

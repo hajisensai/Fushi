@@ -23,6 +23,20 @@ const Set<String> kImageExtensionsBase = <String>{
   '.bmp',
 };
 
+/// 漫画页图扩展名：基集 + `.avif`。导入（`kMangaImageExtensions`）与整卷 OCR
+/// （`kMangaOcrImageExtensions`）两道关卡共用这一张（BUG-1121：两表漂移 = 某格式页
+/// OCR 静默缺页）。
+///
+/// `.avif` 不进基集：基集承诺「Flutter codec 也能解」，而 AVIF 只有原生内核
+/// （`decodeImageNative`，native/fushi_compute 的 image/avif.rs）与 WebView 认。漫画页
+/// 正文在 WebView 里显示，尺寸 / OCR / 裁图走原生内核，封面 / 缩略图走 app 侧的
+/// 原生解码 ImageProvider，所以漫画能收；视频海报、游戏封面等还直接交给 Flutter
+/// codec 的消费方不能收。
+const Set<String> kMangaPageImageExtensions = <String>{
+  ...kImageExtensionsBase,
+  '.avif',
+};
+
 /// 视频文件扩展名：导入 / 文件夹扫描 / torrent 选片 / 刮削剥扩展名共用一份
 /// （G10 第一步——此前刮削端 `FilenameParser` 另手写一张只有 9 项的小表，
 /// `.rmvb` 等能导入的格式在刮削时剥不掉、扩展名留在标题里拉低搜索相似度）。

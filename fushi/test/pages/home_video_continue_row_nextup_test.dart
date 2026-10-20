@@ -25,8 +25,12 @@ import '../helpers/test_platform_services.dart';
 /// 合集就从「继续观看」消失、只剩「下一集」行有它；中途退出的反而在。同一部番在
 /// 首页时有时无，而 hero 大卡的「继续看·第 N 集」早就是「看完 → 下一集」口径。
 ///
-/// 这里断言：最近播放那集已看完 → 继续行仍出该合集卡、指向下一集、文案是
-/// 「下一集 · 第 N 集」；整部看完 → 不进继续行。
+/// 这里断言：最近播放那集已看完 → 继续观看仍出该合集卡、指向下一集、文案是
+/// 「下一集 · 第 N 集」；整部看完 → 不进继续观看。
+///
+/// 2026-10 首页重设计：「下一集」行已并入「继续观看」（每部只出现一次），继续观看
+/// 的第一项提成首屏主卡（key 沿用继续观看卡）。本文件每条都只有一部在看，被测合集
+/// 就是主卡；横排版主卡把副标题与「已看 N 集」拼成一行，故文案用包含匹配。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -157,15 +161,24 @@ void main() {
     expect(
       find.descendant(
         of: continueCard(cid),
-        matching: find.text(t.video_home_next_episode_number(n: 2)),
+        matching: find.textContaining(t.video_home_next_episode_number(n: 2)),
       ),
       findsOneWidget,
       reason: '目标是还没开播的下一集，文案应是「下一集 · 第 2 集」而非「看到第 2 集」',
     );
     expect(
+      find.descendant(
+        of: continueCard(cid),
+        matching: find.textContaining(
+          t.video_home_continue_episode_number(n: 2),
+        ),
+      ),
+      findsNothing,
+    );
+    expect(
       find.byKey(ValueKey<String>('home_video_next_collection_$cid')),
-      findsOneWidget,
-      reason: '「下一集」行照旧有它——两行各放一份',
+      findsNothing,
+      reason: '2026-10 重设计：「下一集」行已并入「继续观看」，同一部不再两行各放一份',
     );
   });
 

@@ -201,6 +201,7 @@ void main() {
         syncStats: false,
         syncAudioBookPosition: false,
         syncContent: false,
+        syncMangaContent: false,
         syncAudioBookFiles: false,
         syncDictionary: false,
       ).syncCollectionsLiveForTest(report, backend);

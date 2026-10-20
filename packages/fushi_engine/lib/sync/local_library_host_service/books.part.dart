@@ -104,9 +104,12 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
         // 下——标 hasMangaChapters，对端以多章在线作品收下、逐章从这里拉。清单级
         // 只做一次目录列举（廉价判据），逐章完整性在按章端点上把关。
+        // 本机运行时能按需取页的在线条目（[OnlineMangaHostReader]）章章可读，
+        // 一章没下也要出现在对端——iPhone 没有在线源宿主，互联是它读这些漫画的
+        // 唯一途径。
         hasMangaChapters: format == BookFormat.manga &&
-            r.extractDir.isNotEmpty &&
-            hasAnyChapterDirSync(r.extractDir),
+            ((r.extractDir.isNotEmpty && hasAnyChapterDirSync(r.extractDir)) ||
+                _servesOnlineMangaChapters(_onlineMangaReader, r)),
         mangaReadingMode: r.mangaReadingMode,
         mangaReaderOverrides: _readerOverrideMap(readerOverridesByUid[r.uid]),
         mangaReaderOverrideUpdatedAt:

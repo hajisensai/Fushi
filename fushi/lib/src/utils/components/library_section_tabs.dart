@@ -848,6 +848,7 @@ class _FushiSectionTabBarState<T extends Object>
     if (widget.secondary) {
       return _CompactSecondaryTabsFrame(
         naturalWidth: _floatingNaturalWidth(context),
+        stretch: _stretchSecondary(context),
         child: bar,
       );
     }
@@ -861,6 +862,10 @@ class _FushiSectionTabBarState<T extends Object>
   /// Apple 设计系统沿用二级文字页签（下划线跟字走），只换成贴合内容宽。
   bool get _compactSecondary =>
       widget.floating && widget.secondary && !isGlassDesign(context);
+
+  /// 二级紧凑分段胶囊撑满整行、等分各段，与下方内容左右边缘对齐（2026-10-20
+  /// 用户：「这个做成全宽的」「横屏那个二级页也全宽吧」）。
+  bool _stretchSecondary(BuildContext context) => _compactSecondary;
 
   /// 浮动胶囊里整排页签的自然宽：与 [_resolveLayout] 同一把量尺（真实字体
   /// 量文字进距），加上各段内边距（Apple 还有文字内衬与页签条两端外边距）。
@@ -923,7 +928,23 @@ class _FushiSectionTabBarState<T extends Object>
     final int n = widget.tabs.length;
     // 浮动胶囊按自然宽贴左、摆不下在胶囊里横滑（M3E floating toolbar 的
     // 内容就是可横滑的一排），不走铺满 / 收紧 / 「更多」三档。
-    if (!widget.fill || widget.floating || !maxWidth.isFinite || n == 0) {
+    if (!widget.fill || !maxWidth.isFinite || n == 0) {
+      return const _SectionTabLayout(fit: _SectionTabFit.scroll);
+    }
+    if (widget.floating) {
+      // 二级紧凑胶囊撑满整行：最宽段 + 默认内边距在等分格里放得下就
+      // 等分铺满，放不下仍退回胶囊里横滑。
+      if (_stretchSecondary(context)) {
+        final double widest = _measureLabels(
+          context,
+          _labelStyleBase(
+            context,
+          ).copyWith(fontSize: _baseFontSize(context, false)),
+        ).reduce(math.max);
+        if ((widest + _kSectionTabHorizontalPadding * 2) * n <= maxWidth) {
+          return const _SectionTabLayout(fit: _SectionTabFit.fill);
+        }
+      }
       return const _SectionTabLayout(fit: _SectionTabFit.scroll);
     }
     final bool apple = isGlassDesign(context);
@@ -1175,8 +1196,8 @@ class _FushiSectionTabBarState<T extends Object>
         controller: controller,
         track: false,
         padding: EdgeInsets.zero,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
+        isScrollable: scrollable,
+        tabAlignment: alignment,
         dividerHeight: 0,
         labelStyle: labelStyle,
         unselectedLabelStyle: unselectedLabelStyle,
@@ -1432,10 +1453,14 @@ class _CompactSecondaryTabsFrame extends StatelessWidget {
   const _CompactSecondaryTabsFrame({
     required this.naturalWidth,
     required this.child,
+    this.stretch = false,
   });
 
   /// 整排页签的自然宽（不含胶囊内边距）。
   final double naturalWidth;
+
+  /// 撑满可用宽，不再按自然宽贴左。
+  final bool stretch;
   final Widget child;
 
   static const double _padding = 4;
@@ -1452,9 +1477,11 @@ class _CompactSecondaryTabsFrame extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double wanted = naturalWidth + (apple ? 0 : _padding * 2) + 2;
-        final double width = constraints.maxWidth.isFinite
-            ? math.min(wanted, constraints.maxWidth)
-            : wanted;
+        final double width = !constraints.maxWidth.isFinite
+            ? wanted
+            : stretch
+            ? constraints.maxWidth
+            : math.min(wanted, constraints.maxWidth);
         final Widget content = apple
             ? child
             : DecoratedBox(

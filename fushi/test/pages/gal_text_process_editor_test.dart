@@ -304,6 +304,93 @@ void main() {
     expect(recorder.saved, isEmpty);
   });
 
+  testWidgets('AI 建议的种类草稿里已有时就地打开那一步，不在末尾挂第二张同名卡', (WidgetTester tester) async {
+    _useWideWindow(tester);
+    final _SaveRecorder recorder = _SaveRecorder();
+    await _pumpEditor(
+      tester,
+      recorder: recorder,
+      initialPipeline: kGalDefaultTextProcessPipeline,
+      provider: _usableProvider(),
+      aiClientFactory: () => AiChatClient(
+        client: MockClient(
+          (http.Request request) async => _openAiReply(
+            '{"explanation":"去掉人名",'
+            '"steps":[{"kind":"keepJapaneseQuotes"},'
+            '{"kind":"replace","pattern":"x","replacement":"","isRegex":false}]}',
+          ),
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('gtp-ai-request')),
+      '去掉人名',
+    );
+    // 16 张默认步骤卡把 AI 区推到视口外，先滚到可见再点（真实用户同样要滚）。
+    final Finder generate = find.byKey(
+      const ValueKey<String>('gtp-ai-generate'),
+    );
+    await tester.ensureVisible(generate);
+    await tester.pumpAndSettle();
+    await tester.tap(generate);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('gtp-save')));
+    await tester.pumpAndSettle();
+    final List<GalTextProcessStep> saved = recorder.saved.single.steps;
+    final List<GalTextProcessStep> quotes = saved
+        .where(
+          (GalTextProcessStep s) =>
+              s.kind == GalTextProcessKind.keepJapaneseQuotes,
+        )
+        .toList();
+    expect(quotes, hasLength(1));
+    expect(quotes.single.id, 'keepJapaneseQuotes');
+    expect(quotes.single.enabled, isTrue);
+    // 位置不变：仍在默认表里它原来的下标。
+    expect(
+      saved.indexOf(quotes.single),
+      kGalDefaultTextProcessPipeline.steps.indexWhere(
+        (GalTextProcessStep s) =>
+            s.kind == GalTextProcessKind.keepJapaneseQuotes,
+      ),
+    );
+    // 允许重复的「替换」照常追加到末尾。
+    expect(saved.last.kind, GalTextProcessKind.replace);
+    expect(saved, hasLength(kGalDefaultTextProcessPipeline.steps.length + 1));
+  });
+
+  testWidgets('「恢复默认」把草稿换回默认步骤表，保存才落盘', (WidgetTester tester) async {
+    _useWideWindow(tester);
+    final _SaveRecorder recorder = _SaveRecorder();
+    await _pumpEditor(
+      tester,
+      recorder: recorder,
+      initialPipeline: const GalTextProcessPipeline(
+        steps: <GalTextProcessStep>[
+          GalTextProcessStep(
+            id: 'dedupeBlockFixed',
+            kind: GalTextProcessKind.dedupeBlockFixed,
+            repeatCount: 3,
+          ),
+        ],
+      ),
+    );
+
+    final Finder reset = find.byKey(
+      const ValueKey<String>('gtp-reset-defaults'),
+    );
+    await tester.ensureVisible(reset);
+    await tester.tap(reset);
+    await tester.pumpAndSettle();
+    expect(recorder.saved, isEmpty, reason: '恢复默认只改草稿');
+
+    await tester.tap(find.byKey(const ValueKey<String>('gtp-save')));
+    await tester.pumpAndSettle();
+    expect(recorder.saved.single, kGalDefaultTextProcessPipeline);
+  });
+
   testWidgets('自动去重与注音风险各自弹出对应提示', (WidgetTester tester) async {
     _useWideWindow(tester);
     final _SaveRecorder recorder = _SaveRecorder();

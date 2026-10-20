@@ -408,6 +408,7 @@ void main() {
           syncStats: false,
           syncAudioBookPosition: false,
           syncContent: false,
+          syncMangaContent: false,
           syncAudioBookFiles: false,
           syncDictionary: false,
         );
