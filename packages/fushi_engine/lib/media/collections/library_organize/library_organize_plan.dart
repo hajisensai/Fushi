@@ -224,6 +224,7 @@ List<OrganizeAction> planFromAiReply({
 }) {
   final String domainName = facts.domain.name;
   final List<OrganizeAction> out = <OrganizeAction>[];
+  final _OrganizeNameAllocator names = _OrganizeNameAllocator(facts);
   final Map<int, OrganizeCollectionFact> byId = <int, OrganizeCollectionFact>{
     for (final OrganizeCollectionFact c in facts.collections) c.id: c,
   };
@@ -390,13 +391,12 @@ List<OrganizeAction> planFromAiReply({
       continue;
     }
 
-    String name = _clampName(g.name);
-    if (name.isEmpty) name = _clampName(g.originalTitle ?? '');
-    if (name.isEmpty) continue;
+    String rawName = _clampName(g.name);
+    if (rawName.isEmpty) rawName = _clampName(g.originalTitle ?? '');
+    if (rawName.isEmpty) continue;
     const String type = 'playlist';
-    if (facts.nameTakenByOther('$name\u0000$type', key)) {
-      name = disambiguatedOrganizeName(name, key);
-    }
+    final String? name = names.allocate(rawName, type, key);
+    if (name == null) continue;
     out.addAll(_moveOut(members, null, byId, g.confidence));
     out.add(OrganizeAction(
       kind: OrganizeActionKind.create,
@@ -423,6 +423,7 @@ List<OrganizeAction> planFromRules({
     (byWork[e.externalWorkKey!] ??= <OrganizeEntry>[]).add(e);
   }
   final List<OrganizeAction> out = <OrganizeAction>[];
+  final _OrganizeNameAllocator names = _OrganizeNameAllocator(facts);
   final List<String> keys = byWork.keys.toList()..sort();
   for (final String key in keys) {
     if (facts.rejectedKeys.contains(key)) continue;
@@ -440,11 +441,10 @@ List<OrganizeAction> planFromRules({
       continue;
     }
     if (members.length < 2) continue;
-    String name = _clampName(nameOf(members));
-    if (name.isEmpty) continue;
-    if (facts.nameTakenByOther('$name\u0000playlist', key)) {
-      name = disambiguatedOrganizeName(name, key);
-    }
+    final String rawName = _clampName(nameOf(members));
+    if (rawName.isEmpty) continue;
+    final String? name = names.allocate(rawName, 'playlist', key);
+    if (name == null) continue;
     out.add(OrganizeAction(
       kind: OrganizeActionKind.create,
       source: 'rule',
@@ -455,6 +455,38 @@ List<OrganizeAction> planFromRules({
     ));
   }
   return out;
+}
+
+/// 一次裁决里给「新建」分配合集名：既避开库里已占用的自然键（[LibraryOrganizeFacts.
+/// nameTakenByOther]），也避开**本次已分配给别的分组**的名字——同一份回复里两组撞名
+/// 时，`createMediaCollection` 会按自然键把第二组落进第一组的行，两个分组被静默并成
+/// 一个。同一分组键重复出现照用原名（落盘时按自然键复用同一行，等于并入）。
+class _OrganizeNameAllocator {
+  _OrganizeNameAllocator(this._facts);
+
+  final LibraryOrganizeFacts _facts;
+
+  /// `(name NUL type)` → 本次把它分给了哪个分组键。
+  final Map<String, String> _claimed = <String, String>{};
+
+  bool _takenByOther(String name, String type, String key) {
+    final String natural = '$name\u0000$type';
+    final String? claimedBy = _claimed[natural];
+    return _facts.nameTakenByOther(natural, key) ||
+        (claimedBy != null && claimedBy != key);
+  }
+
+  /// 给分组 [key] 分配名字；原名被别的分组占着就加键哈希后缀，后缀名仍被占（哈希
+  /// 撞车）返回 null——丢掉这一条，不冒险落进别人的合集。
+  String? allocate(String name, String type, String key) {
+    String out = name;
+    if (_takenByOther(out, type, key)) {
+      out = disambiguatedOrganizeName(name, key);
+      if (_takenByOther(out, type, key)) return null;
+    }
+    _claimed['$out\u0000$type'] = key;
+    return out;
+  }
 }
 
 /// 组里已经在别的整理器合集里的成员：先从那里移出（整理器自己的合集才动）。

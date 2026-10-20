@@ -111,24 +111,45 @@ Future<Set<int>> applyOrganizeActions(
         await _record(db, runId, a, c.name, c.collectionType, c.organizeKey,
             <String, Object?>{'members': _rowsJson(added)});
       case OrganizeActionKind.create:
-        final int id = await db.createMediaCollection(
-          a.name!,
-          collectionType: a.collectionType,
-          origin: a.source == 'rule' ? CollectionOrigin.rule : CollectionOrigin.ai,
-          organizeKey: a.organizeKey,
-        );
-        final MediaCollectionRow c = (await db.getMediaCollectionById(id))!;
+        // `createMediaCollection` 遇到同 (name, type) 的已有行会直接返回它的 id。
+        // 查重与新建放进同一个事务，分清这次是真新建还是落进了已有合集：落进已有的
+        // 一律按「并入」处理——空合集清理与撤销只能删这次真正建出来的合集。
+        final ({int id, bool created}) made = await db.transaction(() async {
+          final MediaCollectionRow? existing =
+              await db.getMediaCollectionByNaturalKey(a.name!, a.collectionType);
+          if (existing != null) return (id: existing.id, created: false);
+          final int id = await db.createMediaCollection(
+            a.name!,
+            collectionType: a.collectionType,
+            origin:
+                a.source == 'rule' ? CollectionOrigin.rule : CollectionOrigin.ai,
+            organizeKey: a.organizeKey,
+          );
+          return (id: id, created: true);
+        });
+        final MediaCollectionRow c = (await db.getMediaCollectionById(made.id))!;
         final List<OrganizeMemberRow> added = await _addRows(db, c, a.entries);
         if (added.isEmpty) {
-          // 成员全被用户移出过：不留空合集。
-          if ((await db.getCollectionItems(id)).isEmpty) {
-            await db.deleteMediaCollectionRaw(id);
+          // 成员全被用户移出过：不留这次新建出来的空合集。
+          if (made.created && (await db.getCollectionItems(made.id)).isEmpty) {
+            await db.deleteMediaCollectionRaw(made.id);
           }
           continue;
         }
-        touched.add(id);
-        await _record(db, runId, a, c.name, c.collectionType, c.organizeKey,
-            <String, Object?>{'members': _rowsJson(added)});
+        touched.add(made.id);
+        await _record(
+          db,
+          runId,
+          a,
+          c.name,
+          c.collectionType,
+          c.organizeKey,
+          <String, Object?>{
+            'members': _rowsJson(added),
+            if (made.created) 'created': true,
+          },
+          kind: made.created ? OrganizeActionKind.create : OrganizeActionKind.add,
+        );
       case OrganizeActionKind.tag:
         final int tagId = await db.getOrCreateTagByName(a.name!);
         final List<String> hosts = <String>[];
@@ -190,12 +211,13 @@ Future<void> _record(
   String collectionName,
   String collectionType,
   String? organizeKey,
-  Map<String, Object?> payload,
-) =>
+  Map<String, Object?> payload, {
+  OrganizeActionKind? kind,
+}) =>
     db.into(db.libraryOrganizeChanges).insert(
           LibraryOrganizeChangesCompanion.insert(
             runId: runId,
-            kind: a.kind.name,
+            kind: (kind ?? a.kind).name,
             collectionName: collectionName,
             collectionType: collectionType,
             organizeKey: Value<String?>(organizeKey ?? a.organizeKey),
@@ -238,7 +260,12 @@ Future<int> undoLibraryOrganizeChanges(
     switch (r.kind) {
       case 'create':
         if (c == null) break;
-        if (CollectionOrigin.parse(c.origin).isOrganizerManaged) {
+        // 只删这次真正新建出来、仍归整理器管、分组键也对得上的那个合集；记录没有
+        // 「新建」标记（落进了同名的已有合集）或自然键已换了主人，一律只移出这次加的
+        // 成员，绝不删原本就在的合集。
+        if (payload['created'] == true &&
+            CollectionOrigin.parse(c.origin).isOrganizerManaged &&
+            c.organizeKey == r.organizeKey) {
           await db.deleteMediaCollection(c.id);
         } else {
           for (final ({String t, String k}) m in _members(payload['members'])) {

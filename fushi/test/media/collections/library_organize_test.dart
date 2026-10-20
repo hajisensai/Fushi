@@ -593,5 +593,178 @@ void main() {
         isNotNull,
       );
     });
+
+    test('同一份回复两组撞名：各建各的合集，不被按自然键并成一个；撤销两处都删', () async {
+      for (final String t in haruhi) {
+        await book(t);
+      }
+      await book('長門有希の消失 1');
+      await book('長門有希の消失 2');
+      final _FakeAi ai = _FakeAi((String prompt) => jsonEncode(<String, Object?>{
+            'groups': <Object?>[
+              <String, Object?>{
+                'members': <int>[
+                  for (final String t in haruhi) _indexOf(prompt, t),
+                ],
+                'name': 'SOS団',
+                'originalTitle': '涼宮ハルヒシリーズ',
+                'level': 'work',
+                'confidence': 'high',
+              },
+              <String, Object?>{
+                'members': <int>[
+                  _indexOf(prompt, '長門有希の消失 1'),
+                  _indexOf(prompt, '長門有希の消失 2'),
+                ],
+                'name': 'SOS団',
+                'originalTitle': '長門有希ちゃんの消失',
+                'level': 'work',
+                'confidence': 'high',
+              },
+            ],
+          }));
+      final LibraryOrganizeResult r = await service(ai)
+          .run(CollectionShelfDomain.books, trigger: OrganizeTrigger.manual);
+      final String haruhiKey = titleOrganizeKey('books', '涼宮ハルヒシリーズ')!;
+      final String nagatoKey = titleOrganizeKey('books', '長門有希ちゃんの消失')!;
+      expect(haruhiKey, isNot(nagatoKey));
+      final MediaCollectionRow first =
+          (await db.getMediaCollectionByNaturalKey('SOS団', 'playlist'))!;
+      final MediaCollectionRow second = (await db.getMediaCollectionByNaturalKey(
+        disambiguatedOrganizeName('SOS団', nagatoKey),
+        'playlist',
+      ))!;
+      expect(first.organizeKey, haruhiKey);
+      expect(second.organizeKey, nagatoKey);
+      expect(await db.getCollectionItems(first.id), hasLength(3));
+      expect(await db.getCollectionItems(second.id), hasLength(2));
+      expect(
+        (await db.select(db.libraryOrganizeChanges).get())
+            .map((LibraryOrganizeChangeRow c) => c.kind),
+        <String>['create', 'create'],
+      );
+
+      expect(await undoLibraryOrganizeRun(db, r.runId), 2);
+      expect(await db.getAllMediaCollections(), isEmpty);
+    });
+
+    test('新建落到同名已有合集：按并入记录，撤销只移出这次加的、不删原合集', () async {
+      final String a = await book('A1');
+      final String b = await book('B1');
+      final int user = await db.createMediaCollection(
+        'Shared',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(user, MediaKind.epub, a);
+      await applyOrganizeActions(
+        db,
+        runId: 1,
+        actions: <OrganizeAction>[
+          OrganizeAction(
+            kind: OrganizeActionKind.create,
+            source: 'ai',
+            confidence: AiOrganizeConfidence.high,
+            name: 'Shared',
+            organizeKey: 'k-new',
+            entries: <OrganizeEntry>[
+              OrganizeEntry(
+                mediaType: MediaKind.epub.dbValue,
+                entryKey: b,
+                tombstoneKey: 'epub\u0000$b',
+                item: const AiOrganizeItem(title: 'B1'),
+              ),
+            ],
+          ),
+        ],
+      );
+      final LibraryOrganizeChangeRow change =
+          (await db.select(db.libraryOrganizeChanges).get()).single;
+      expect(change.kind, 'add', reason: '复用了已有行就不是新建');
+      expect(jsonDecode(change.payloadJson), isNot(contains('created')));
+      expect((await db.getMediaCollectionById(user))!.origin, 'user');
+
+      expect(await undoLibraryOrganizeChanges(db, <int>[change.id]), 1);
+      expect(await db.getMediaCollectionById(user), isNotNull);
+      expect(
+        (await db.getCollectionItems(user))
+            .map((MediaCollectionItemRow m) => m.entryKey),
+        <String>[a],
+      );
+    });
+
+    test('旧的「新建」记录落在同名已有整理器合集上：撤销不删它', () async {
+      final String a = await book('A1');
+      final String b = await book('B1');
+      final int existing = await db.createMediaCollection(
+        'Old',
+        collectionType: 'playlist',
+        origin: CollectionOrigin.ai,
+        organizeKey: 'k-old',
+      );
+      await db.addToCollection(existing, MediaKind.epub, a, userIntent: false);
+      await db.addToCollection(existing, MediaKind.epub, b, userIntent: false);
+      // 修复前的落盘：复用了已有行，却记成「新建」（没有 created 标记）。
+      final int changeId = await db.into(db.libraryOrganizeChanges).insert(
+            LibraryOrganizeChangesCompanion.insert(
+              runId: 1,
+              kind: 'create',
+              collectionName: 'Old',
+              collectionType: 'playlist',
+              organizeKey: const Value<String?>('k-old'),
+              source: 'ai',
+              confidence: 'high',
+              payloadJson: jsonEncode(<String, Object?>{
+                'members': <Map<String, String>>[
+                  <String, String>{'t': 'epub', 'k': b},
+                ],
+              }),
+            ),
+          );
+      expect(await undoLibraryOrganizeChanges(db, <int>[changeId]), 1);
+      expect(await db.getMediaCollectionById(existing), isNotNull);
+      expect(
+        (await db.getCollectionItems(existing))
+            .map((MediaCollectionItemRow m) => m.entryKey),
+        <String>[a],
+      );
+    });
+
+    test('新建落到同名的空合集且成员全被移出过：不删那个原本就在的合集', () async {
+      final String b = await book('B1');
+      final int empty = await db.createMediaCollection(
+        'Empty',
+        collectionType: 'playlist',
+      );
+      await db.upsertCollectionMemberTombstone(
+        collectionName: 'Empty',
+        collectionType: 'playlist',
+        mediaType: 'epub',
+        entryKey: 'tomb-b',
+        deletedAt: 1,
+      );
+      await applyOrganizeActions(
+        db,
+        runId: 1,
+        actions: <OrganizeAction>[
+          OrganizeAction(
+            kind: OrganizeActionKind.create,
+            source: 'ai',
+            confidence: AiOrganizeConfidence.high,
+            name: 'Empty',
+            organizeKey: 'k-new',
+            entries: <OrganizeEntry>[
+              OrganizeEntry(
+                mediaType: MediaKind.epub.dbValue,
+                entryKey: b,
+                tombstoneKey: 'epub\u0000tomb-b',
+                item: const AiOrganizeItem(title: 'B1'),
+              ),
+            ],
+          ),
+        ],
+      );
+      expect(await db.getMediaCollectionById(empty), isNotNull);
+      expect(await db.select(db.libraryOrganizeChanges).get(), isEmpty);
+    });
   });
 }
