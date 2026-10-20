@@ -160,6 +160,22 @@ Rect mangaSelectionRectFromPayload(
   ).shift(viewportOrigin);
 }
 
+/// 被点字形的屏幕矩形（[ReaderSelectionData.glyphRect]，与 [mangaSelectionRectFromPayload]
+/// 同一套视口→屏幕换算）。payload 不带（非分组命中 / 旧 payload）时为 null。
+Rect? mangaGlyphRectFromPayload(
+  ReaderSelectionData data, {
+  Offset viewportOrigin = Offset.zero,
+}) {
+  final Map<String, double>? rect = data.glyphRect;
+  if (rect == null) return null;
+  return Rect.fromLTWH(
+    rect['x'] ?? 0,
+    rect['y'] ?? 0,
+    rect['width'] ?? 0,
+    rect['height'] ?? 0,
+  ).shift(viewportOrigin);
+}
+
 enum MangaReaderInputAction {
   previous,
   next,
@@ -344,6 +360,8 @@ Future<void> dispatchMangaSelection(
     bool verticalWriting,
   )
   search,
+  Rect Function(Rect groupRect, Rect? glyphRect, bool verticalWriting)?
+  chooseAnchor,
 }) async {
   if (data.text.isEmpty) {
     return;
@@ -354,11 +372,20 @@ Future<void> dispatchMangaSelection(
   // 不会覆盖新点击。返回前仍等它完成，调用方语义（返回即两者都落地）不变。
   final Future<void> miningPage = selectPageForMining(data.mangaPageIndex);
   setSentence(data.sentence);
-  final Rect rect = mangaSelectionRectFromPayload(
+  final Rect groupRect = mangaSelectionRectFromPayload(
     data,
     fallbackScreen: fallbackScreen,
     viewportOrigin: viewportOrigin,
   );
+  // BUG-3604：整句并集大到四周放不下弹窗（大段旁白 / 资料表、放大后超出屏幕）时，
+  // 按并集避让会把弹窗压成 0 高挤出屏外——由宿主按真实弹窗参数退回贴被点字形。
+  final Rect rect = chooseAnchor == null
+      ? groupRect
+      : chooseAnchor(
+          groupRect,
+          mangaGlyphRectFromPayload(data, viewportOrigin: viewportOrigin),
+          data.verticalWriting,
+        );
   await search(data.text, rect, data.verticalWriting);
   await miningPage;
 }
@@ -4524,6 +4551,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       fallbackScreen: Size(screen.width, screen.height - _chromeTopInset),
       viewportOrigin: Offset(0, _chromeTopInset),
       selectPageForMining: _selectPageForMining,
+      // 弹窗栈与 WebView 同是全出血 sibling（见 build 里的「屏幕尺寸 Stack」），
+      // 坐标空间就是整屏 [screen]。
+      chooseAnchor: (Rect groupRect, Rect? glyphRect, bool verticalWriting) =>
+          choosePopupAnchor(
+            preferred: groupRect,
+            fallback: glyphRect,
+            screen: screen,
+            verticalWriting: verticalWriting,
+          ),
       setSentence: (String sentence) {
         // TODO-956 下限兜底：句子派生不出时退回词本身，绝不让收藏/制卡拿到空句。
         final String resolved =

@@ -517,6 +517,72 @@ void main() {
     });
   });
 
+  group(
+    'BUG-3604: choosePopupAnchorRect falls back when avoidance collapses',
+    () {
+      const Size screen = Size(363, 792);
+      const Rect glyph = Rect.fromLTWH(300, 396, 15, 16);
+
+      Rect choose(
+        Rect preferred, {
+        Rect? fallback = glyph,
+        bool docked = false,
+      }) => choosePopupAnchorRect(
+        preferred: preferred,
+        fallback: fallback,
+        screen: screen,
+        bottomDocked: docked,
+        maxWidth: 480,
+        maxHeight: 480,
+      );
+
+      test('preferred rect taller than the screen -> fallback glyph', () {
+        expect(choose(const Rect.fromLTRB(0, -320, 363, 1180)), glyph);
+      });
+
+      test(
+        'preferred rect leaving only a sliver (< min height) -> fallback',
+        () {
+          // 上方 40、下方 40：按它避让弹窗只剩 ~36 高。
+          expect(choose(const Rect.fromLTRB(0, 50, 363, 742)), glyph);
+        },
+      );
+
+      test('roomy preferred rect is kept (bubble avoidance unchanged)', () {
+        const Rect bubble = Rect.fromLTWH(40, 520, 200, 120);
+        expect(choose(bubble), bubble);
+      });
+
+      test('tight but usable room keeps the preferred rect', () {
+        // 上方约 150：弹窗被压矮但仍可用（>=120），不放弃气泡避让。
+        const Rect bubble = Rect.fromLTRB(0, 160, 363, 700);
+        expect(choose(bubble), bubble);
+      });
+
+      test('no fallback / docked mode -> preferred untouched', () {
+        const Rect huge = Rect.fromLTRB(0, -320, 363, 1180);
+        expect(choose(huge, fallback: null), huge);
+        expect(choose(huge, docked: true), huge);
+      });
+
+      test('small max height setting does not count as collapse', () {
+        // 用户把最大高度设成 80：避让后高度 80 是「放得下」，不是被挤压。
+        const Rect bubble = Rect.fromLTWH(40, 520, 200, 120);
+        expect(
+          choosePopupAnchorRect(
+            preferred: bubble,
+            fallback: glyph,
+            screen: screen,
+            bottomDocked: false,
+            maxWidth: 480,
+            maxHeight: 80,
+          ),
+          bubble,
+        );
+      });
+    },
+  );
+
   group('TODO-108: dockedPopupRect pins a full-width bottom panel', () {
     const Size screen = Size(800, 600);
 

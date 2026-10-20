@@ -3,6 +3,7 @@ class ReaderSelectionData {
     required this.text,
     required this.sentence,
     this.rect,
+    this.glyphRect,
     this.handlesRect,
     this.handlesBoxes,
     this.normalizedOffset,
@@ -22,20 +23,11 @@ class ReaderSelectionData {
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
-    Map<String, double>? rect;
-    if (json['rect'] is Map) {
-      final Map<String, dynamic> r = json['rect'] as Map<String, dynamic>;
-      rect = <String, double>{
-        'x': (r['x'] as num?)?.toDouble() ?? 0,
-        'y': (r['y'] as num?)?.toDouble() ?? 0,
-        'width': (r['width'] as num?)?.toDouble() ?? 0,
-        'height': (r['height'] as num?)?.toDouble() ?? 0,
-      };
-    }
     return ReaderSelectionData(
       text: json['text'] as String? ?? '',
       sentence: json['sentence'] as String? ?? '',
-      rect: rect,
+      rect: _readRect(json['rect']),
+      glyphRect: _readRect(json['glyphRect']),
       handlesRect: _readHandlesRect(json['handlesRect']),
       handlesBoxes: _readHandlesBoxes(json['handlesBoxes']),
       normalizedOffset: (json['normalizedOffset'] as num?)?.toInt(),
@@ -65,6 +57,13 @@ class ReaderSelectionData {
   final String? audioCuePayload;
   final String sentence;
   final Map<String, double>? rect;
+
+  /// 被点那个字的视口矩形（WebView 视口 CSS 像素）。
+  ///
+  /// 只有漫画 OCR 命中时才有：漫画把 [rect] 换成整句分组的并集（让弹窗避开整个气泡），
+  /// 这里另带被点字形，供并集大到四周放不下弹窗时退回贴字定位（BUG-3604）。EPUB 与
+  /// 旧 payload 为 null（[rect] 本身就是字形）。
+  final Map<String, double>? glyphRect;
 
   /// Union of the two grip touch targets in WebView viewport CSS pixels.
   /// Separate from the glyph anchor used by dictionary lookup.
@@ -116,6 +115,18 @@ class ReaderSelectionData {
   ///
   /// 宿主据此把这次查词记成 `LookupOrigin.hover`。旧 payload 没有该字段 = false。
   final bool fromHover;
+}
+
+/// 选区锚点矩形：缺字段按 0 补（与历史 `rect` 解析逐字节一致）。
+Map<String, double>? _readRect(Object? raw) {
+  if (raw is! Map) return null;
+  double read(String key) => (raw[key] as num?)?.toDouble() ?? 0;
+  return <String, double>{
+    'x': read('x'),
+    'y': read('y'),
+    'width': read('width'),
+    'height': read('height'),
+  };
 }
 
 Map<String, double>? _readHandlesRect(Object? raw) {

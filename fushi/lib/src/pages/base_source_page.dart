@@ -1528,6 +1528,30 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return anchored;
   }
 
+  /// BUG-3604：顶层弹窗锚点在「优先避让的大矩形」与「被点字形」之间二选一（判据见
+  /// [choosePopupAnchorRect]），按本页实际的弹窗尺寸 / 边距 / 预留 / 底部固定参数判断，
+  /// 与 [_calculatePopupPosition] 同口径。[screen] 须是弹窗栈的坐标空间尺寸。
+  @protected
+  Rect choosePopupAnchor({
+    required Rect preferred,
+    required Rect? fallback,
+    required Size screen,
+    bool verticalWriting = false,
+  }) {
+    return choosePopupAnchorRect(
+      preferred: preferred,
+      fallback: fallback,
+      screen: screen,
+      bottomDocked: popupBottomDocked,
+      maxWidth: popupMaxWidth,
+      maxHeight: popupMaxHeight,
+      padding: popupPadding,
+      bottomReserve: popupBottomReserve,
+      topReserve: popupTopReserve,
+      verticalWriting: verticalWriting,
+    );
+  }
+
   bool get dictionaryPopupShown => _hasVisiblePopup(_popup.entries);
 
   /// Test-only snapshot of the popup stack (BUG-092): lets widget tests assert
