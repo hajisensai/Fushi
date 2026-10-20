@@ -159,6 +159,21 @@ void main() {
       expect(asTest[asTest.length - 2], lib.path);
       expect(asTest.last, name);
 
+      // 嵌在主 checkout 里的 worktree（根上是 `.git` 文件）自己缺库：不得越过它的
+      // 仓库根去拿主 checkout 的库（原生库是硬依赖，缺了要失败）。
+      final Directory worktree = Directory(
+        '${repo.path}$sep.claude${sep}worktrees${sep}wt',
+      )..createSync(recursive: true);
+      File('${worktree.path}$sep.git').writeAsStringSync('gitdir: x');
+      final Directory wtCwd = Directory('${worktree.path}${sep}fushi${sep}test')
+        ..createSync(recursive: true);
+      final List<String> inWorktree = FushiFsrs.libraryCandidates(
+        environment: const <String, String>{},
+        executablePath: '${sep}sdk${sep}bin${sep}dart',
+        currentDirectory: wtCwd.path,
+      );
+      expect(inWorktree, isNot(contains(lib.path)));
+
       final List<String> asApp = FushiFsrs.libraryCandidates(
         environment: const <String, String>{},
         executablePath: '${sep}opt${sep}fushi${sep}bin${sep}fushi_server',
