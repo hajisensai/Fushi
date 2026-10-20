@@ -243,6 +243,21 @@ class LibraryOrganizeService {
     );
   }
 
+  /// [domain] 上最近一次自动整理的开始时刻；从没跑过返回 null。自动整理只看此后
+  /// 新入库的条目。
+  Future<int?> lastAutoRunStartedAt(CollectionShelfDomain domain) async {
+    final LibraryOrganizeRunRow? row = await (db.select(db.libraryOrganizeRuns)
+          ..where((t) =>
+              t.domain.equals(domain.name) &
+              t.trigger.equals(OrganizeTrigger.auto.name))
+          ..orderBy(<OrderClauseGenerator<$LibraryOrganizeRunsTable>>[
+            (t) => OrderingTerm.desc(t.startedAt),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+    return row?.startedAt;
+  }
+
   /// 今天（本地日）自动整理在 [domain] 上已发的请求数。
   Future<int> autoRequestsToday(
     CollectionShelfDomain domain, {

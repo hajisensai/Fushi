@@ -313,6 +313,49 @@ Future<int> undoLibraryOrganizeChanges(
   return undone;
 }
 
+/// 撤销一次整理里还没撤销的全部改动。
+Future<int> undoLibraryOrganizeRun(FushiDatabase db, int runId) async {
+  final List<LibraryOrganizeChangeRow> rows =
+      await (db.select(db.libraryOrganizeChanges)
+            ..where((t) => t.runId.equals(runId) & t.undoneAt.isNull()))
+          .get();
+  return undoLibraryOrganizeChanges(
+    db,
+    <int>[for (final LibraryOrganizeChangeRow r in rows) r.id],
+  );
+}
+
+/// 整理记录页的数据：最近 [limit] 次运行（新的在前）与各自的改动。
+Future<List<({LibraryOrganizeRunRow run, List<LibraryOrganizeChangeRow> changes})>>
+    loadLibraryOrganizeHistory(FushiDatabase db, {int limit = 50}) async {
+  final List<LibraryOrganizeRunRow> runs =
+      await (db.select(db.libraryOrganizeRuns)
+            ..orderBy(<OrderClauseGenerator<$LibraryOrganizeRunsTable>>[
+              (t) => OrderingTerm.desc(t.startedAt),
+              (t) => OrderingTerm.desc(t.id),
+            ])
+            ..limit(limit))
+          .get();
+  if (runs.isEmpty) {
+    return const <({
+      LibraryOrganizeRunRow run,
+      List<LibraryOrganizeChangeRow> changes
+    })>[];
+  }
+  final Map<int, List<LibraryOrganizeChangeRow>> byRun =
+      <int, List<LibraryOrganizeChangeRow>>{};
+  for (final LibraryOrganizeChangeRow c in await (db.select(
+    db.libraryOrganizeChanges,
+  )..where((t) => t.runId.isIn(<int>[for (final r in runs) r.id])))
+      .get()) {
+    (byRun[c.runId] ??= <LibraryOrganizeChangeRow>[]).add(c);
+  }
+  return <({LibraryOrganizeRunRow run, List<LibraryOrganizeChangeRow> changes})>[
+    for (final LibraryOrganizeRunRow r in runs)
+      (run: r, changes: byRun[r.id] ?? const <LibraryOrganizeChangeRow>[]),
+  ];
+}
+
 List<({String t, String k})> _members(Object? raw) => <({String t, String k})>[
       if (raw is List)
         for (final Object? m in raw)

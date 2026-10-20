@@ -46,6 +46,8 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart'
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart'
+    show scheduleAutomaticLibraryOrganize;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show scheduleAutomaticCollectionAiOrder;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
@@ -977,6 +979,9 @@ class SourceLibraryScanner {
               ...grouping.updatedCollectionIds,
             ],
           );
+          // 规则归不了组的新视频：开了「导入后自动 AI 整理」时去抖后交 AI（spec
+          // 2026-10-20 §10.2，门在 runner 里），不阻塞扫描。
+          scheduleAutomaticLibraryOrganize(CollectionShelfDomain.video);
           mediaCount += await _importPlaylists(plan, source.id, files);
           mediaCount += await _importBlurayDiscs(plan, source.id);
           if (source.videoGroupingMode != 'folder') {

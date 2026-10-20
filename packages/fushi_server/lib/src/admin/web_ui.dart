@@ -468,7 +468,7 @@ const FIELDS = [
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
   ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],
   ['ai.model','AI 模型（空 = 预设起点模型）','text'],['ai.baseUrl','AI 接口地址（空 = 预设地址）','text'],['ai.protocol','AI 协议（空 = 跟随预设）','select:,openAiCompatible,anthropicMessages,geminiGenerateContent'],
-  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],
+  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],['ai.libraryOrganize','扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）','bool'],
 ];
 let settingsCache=null;
 async function loadSettings(){

@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
@@ -198,6 +199,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     await _repo.load();
     await _loadCollectionMaps();
     _refresh();
+    // 新加的游戏：开了「导入后自动 AI 整理」时去抖后交 AI（门在 runner）。
+    scheduleAutomaticLibraryOrganize(CollectionShelfDomain.games);
   }
 
   /// 预取合集分组三件套（照书架 `_loadShelfMaps` 的口径：一次 getAllCollectionItems
@@ -953,6 +956,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           onToggleFilter: _toggleTagFilter,
           onReorder: _reorderTags,
           onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+          // AI 整理库（spec 2026-10-20 §10.1）：过 AI 模块门。
+          onAiOrganize: isAiModuleEnabled(_appModel.moduleVisibility)
+              ? () => unawaited(runLibraryOrganizeInteractive(
+                    context: context,
+                    appModel: _appModel,
+                    domain: CollectionShelfDomain.games,
+                    onChanged: () {
+                      if (mounted) unawaited(_reload());
+                    },
+                  ))
+              : null,
         );
     return LibraryToolbar(
       compactKey: const ValueKey<String>('games_toolbar_compact'),

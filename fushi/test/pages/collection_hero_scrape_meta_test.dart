@@ -101,6 +101,8 @@ void main() {
           home: MediaCollectionDetailPage(
             database: db,
             collection: MediaCollectionRow(
+              origin: 'user',
+              organizeAliases: '',
               id: collectionId,
               name: 'Tensei Oujo v2 播放列表',
               collectionType: 'playlist',

@@ -6,6 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// v2 后本函数只折叠不排卡（卡片间序由页面按排序模式做）；组内序真相源 =
 /// memberSortIndex（[MediaCollectionItems].sortIndex），与详情页/播放器同源。
 MediaCollectionRow _col(int id, String name) => MediaCollectionRow(
+      origin: 'user',
+      organizeAliases: '',
       id: id,
       name: name,
       collectionType: 'playlist',

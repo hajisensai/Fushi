@@ -5014,6 +5014,36 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AI 整理库「导入后自动整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md
+  /// §10.2）。默认关：按量计费，绝不静默开启。
+  bool get libraryOrganizeAuto =>
+      getPref('library_organize_auto', defaultValue: false) as bool;
+
+  /// 打开时同时记下打开时刻：自动整理只看此后新入库的条目。
+  Future<void> setLibraryOrganizeAuto(bool value) async {
+    await setPref('library_organize_auto', value);
+    if (value) {
+      await setPref(
+        'library_organize_auto_since',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+    notifyListeners();
+  }
+
+  /// 最近一次打开自动整理的时刻（毫秒；0 = 没开过）。
+  int get libraryOrganizeAutoSince =>
+      getPref('library_organize_auto_since', defaultValue: 0) as int;
+
+  /// 用户同意过 AI 整理「会发送什么」的说明。
+  bool get libraryOrganizeConsented =>
+      getPref('library_organize_consented', defaultValue: false) as bool;
+
+  Future<void> setLibraryOrganizeConsented(bool value) async {
+    await setPref('library_organize_consented', value);
+    notifyListeners();
+  }
+
   Future<void> setMangaOnlineCatalogEnabled(bool value) async {
     await setPref('manga_online_catalog_enabled', value);
     notifyListeners();

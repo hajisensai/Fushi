@@ -1798,6 +1798,11 @@ class SyncRepository {
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
     'video_subtitle_ai_proofread',
     'video_subtitle_ai_consented',
+    // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
+    // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
+    'library_organize_auto',
+    'library_organize_auto_since',
+    'library_organize_consented',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show QueryRow;
+import 'package:drift/drift.dart' show QueryRow, Variable;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
@@ -324,6 +324,60 @@ Future<List<_Candidate>> _gameCandidates(FushiDatabase db) async {
         year: int.tryParse((g.releaseDate ?? '').split('-').first),
       ),
     ));
+  }
+  return out;
+}
+
+/// 本机在 [sinceMs] 之后新入库的条目（成员行键），给自动整理当 `onlyEntryKeys`。
+///
+/// 书 / 视频按 `local_added_at`（本机开始拥有的时刻，互联下载的书也是本机落地那一刻），
+/// 游戏按 `added_at`。不看 `imported_at`：那是对端的原始入库时刻。
+Future<Set<String>> organizeEntryKeysAddedSince(
+  FushiDatabase db,
+  CollectionShelfDomain domain,
+  int sinceMs,
+) async {
+  final String epub = MediaKind.epub.dbValue;
+  final List<(String, String)> queries = switch (domain) {
+    CollectionShelfDomain.books => <(String, String)>[
+        (
+          epub,
+          "SELECT uid AS k FROM epub_books WHERE uid != '' "
+              "AND format != 'manga' AND local_added_at > ?",
+        ),
+        (
+          MediaKind.srt.dbValue,
+          "SELECT uid AS k FROM srt_books WHERE book_key = '' "
+              'AND local_added_at > ?',
+        ),
+      ],
+    CollectionShelfDomain.manga => <(String, String)>[
+        (
+          epub,
+          "SELECT uid AS k FROM epub_books WHERE uid != '' "
+              "AND format = 'manga' AND local_added_at > ?",
+        ),
+      ],
+    CollectionShelfDomain.video => <(String, String)>[
+        (
+          MediaKind.video.dbValue,
+          'SELECT book_uid AS k FROM video_books WHERE local_added_at > ?',
+        ),
+      ],
+    CollectionShelfDomain.games => <(String, String)>[
+        (
+          MediaKind.game.dbValue,
+          'SELECT id AS k FROM galgames WHERE added_at > ?',
+        ),
+      ],
+  };
+  final Set<String> out = <String>{};
+  for (final (String mediaType, String sql) in queries) {
+    for (final QueryRow r in await db
+        .customSelect(sql, variables: <Variable<Object>>[Variable<int>(sinceMs)])
+        .get()) {
+      out.add('$mediaType\u0000${r.read<String>('k')}');
+    }
   }
   return out;
 }

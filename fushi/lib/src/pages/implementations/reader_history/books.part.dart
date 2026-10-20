@@ -517,6 +517,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           icon: Icons.playlist_add,
           tooltip: t.combine_into_series,
         ),
+        // AI 整理所选（spec 2026-10-20 §10.1）：只把选中的散卡与选中合集的成员交给 AI。
+        if (isAiModuleEnabled(_moduleVisibility))
+          FushiIconButton(
+            key: const ValueKey<String>('reader_shelf_batch_ai_organize'),
+            enabled: hasLocalSelection,
+            onTap: _batchAiOrganize,
+            icon: FushiIcons.aiAssistant,
+            tooltip: t.library_organize_selection_action,
+          ),
         FushiIconButton(
           // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
           key: const ValueKey<String>('reader_shelf_batch_tag'),
@@ -1029,6 +1038,27 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ref.mediaType == MediaKind.epub
           ? (_epubUidByKey[ref.entryKey] ?? ref.entryKey)
           : ref.entryKey;
+
+  /// 多选「AI 整理所选」：选中的散卡（成员行键，epub 换成 uid）+ 选中合集的成员。
+  Future<void> _batchAiOrganize() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final FushiDatabase db = appModel.database;
+    final Set<String> keys = <String>{};
+    for (final String key in _selectedLocalKeys) {
+      final ShelfEntryRef? ref =
+          shelfSelectionToEntry(key, ShelfSelectionSurface.books);
+      if (ref == null) continue;
+      keys.add('${ref.mediaType.dbValue}\u0000${_collectionEntryKeyFor(ref)}');
+    }
+    for (final int id in _selectedCollectionIds) {
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(id)) {
+        keys.add('${m.mediaType}\u0000${m.entryKey}');
+      }
+    }
+    if (keys.isEmpty || !mounted) return;
+    _exitSelectionMode();
+    await _aiOrganizeShelf(onlyEntryKeys: keys);
+  }
 
   /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。书架选择键经
   /// shelfSelectionToEntry 解码成 (mediaType, entryKey)：

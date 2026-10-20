@@ -83,6 +83,7 @@ import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.da
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -980,8 +981,28 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
       ],
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
+      // AI 整理库（spec 2026-10-20 §10.1）：过 AI 模块门；没指派提供商时入口照常
+      // 可见，点了引导去设置指派（BUG-2694 同口径）。
+      onAiOrganize: isAiModuleEnabled(_moduleVisibility)
+          ? () => unawaited(_aiOrganizeShelf())
+          : null,
     );
   }
+
+  /// 「AI 整理」整个书架 / 漫画库。
+  Future<void> _aiOrganizeShelf({Set<String>? onlyEntryKeys}) =>
+      runLibraryOrganizeInteractive(
+        context: context,
+        appModel: appModel,
+        domain:
+            _mangaOnly ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
+        onlyEntryKeys: onlyEntryKeys,
+        onChanged: () {
+          if (!mounted) return;
+          _shelfMapsFuture = _loadShelfMaps();
+          _rebuild(() {});
+        },
+      );
 
   /// 「排序与筛选」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头
   /// 动作组右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
@@ -1142,6 +1163,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ...grouped.createdCollectionIds,
         ...grouped.updatedCollectionIds,
       ],
+    );
+    // 规则归不了组的新书：开了「导入后自动 AI 整理」时去抖后交 AI（门在 runner）。
+    scheduleAutomaticLibraryOrganize(
+      _mangaOnly ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
     );
     final List<MediaCollectionRow> collections =
         await appModel.database.getAllMediaCollections();

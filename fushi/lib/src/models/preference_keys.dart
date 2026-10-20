@@ -255,6 +255,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 false）：AI 整理库「导入后自动整理」（设备本地：按量计费的同意只对
+  // 点它的那台设备成立；只在一台设备上开就够，结果靠同步传播）。
+  'library_organize_auto',
+  // int（毫秒，0 = 没开过）：最近一次打开自动整理的时刻。自动整理只看此后新入库的
+  // 条目，打开开关不会把整个库发给 AI（设备本地）。
+  'library_organize_auto_since',
+  // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
+  'library_organize_consented',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',
