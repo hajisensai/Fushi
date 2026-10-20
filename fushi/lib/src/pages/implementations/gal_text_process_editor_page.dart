@@ -644,7 +644,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                 onPressed: _draftPipeline == kGalDefaultTextProcessPipeline
                     ? null
                     : _resetToDefaults,
-                icon: const FushiIcon(Icons.restart_alt),
+                icon: const FushiIcon(FushiIcons.restart),
                 label: Text(t.game_text_process_reset_defaults),
               ),
             ],
