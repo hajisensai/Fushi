@@ -75,7 +75,7 @@ Directory onlineMangaPageCacheRoot() =>
 const int kOnlineMangaPageCacheChapters = 16;
 
 /// 按章有界清理 [root] 下的现取页缓存：只留最近写入的 [keepChapters] 个章目录
-/// （新近度 = 章目录里最新一个文件的修改时间），[keep] 这一章无论如何不删；删空
+/// （新近度 = 章目录里最新一个页文件的修改时间；空目录用目录自身时间），[keep] 这一章无论如何不删；删空
 /// 的书目录一并删掉。
 ///
 /// Windows 系统临时目录不会被自动回收，不清的话每读一章就永久多留一章页图。
@@ -94,13 +94,14 @@ void pruneOnlineMangaPageCache(
     books.add(book);
     for (final FileSystemEntity chapter in book.listSync()) {
       if (chapter is! Directory || p.equals(chapter.path, keep.path)) continue;
-      DateTime newest = chapter.statSync().modified;
+      DateTime? newest;
       for (final FileSystemEntity f in chapter.listSync()) {
         if (f is! File) continue;
         final DateTime modified = f.statSync().modified;
-        if (modified.isAfter(newest)) newest = modified;
+        if (newest == null || modified.isAfter(newest)) newest = modified;
       }
-      chapters.add((chapter, newest));
+      // 还没落页的章（别的请求刚建好目录）按目录自身时间算，自然是最新的。
+      chapters.add((chapter, newest ?? chapter.statSync().modified));
     }
   }
   // [keep] 本身占一个名额。

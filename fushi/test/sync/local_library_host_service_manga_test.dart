@@ -515,12 +515,13 @@ void main() {
         return dir;
       }
 
-      // 书 a 的两章最旧，书 b 的六章较新；当前章 = a 的最旧一章。
-      final Directory current = chapter('a', 'c0', 0);
-      chapter('a', 'c1', 1);
-      for (int i = 0; i < 6; i++) {
+      // 书 a 的两章最旧，书 b 的六章较新；当前章 = a 的最旧一章。新近度看页文件
+      // 的写入时间：倒序建目录，按目录创建先后排就会删错。
+      for (int i = 5; i >= 0; i--) {
         chapter('b', 'c$i', 10 + i);
       }
+      chapter('a', 'c1', 1);
+      final Directory current = chapter('a', 'c0', 0);
       pruneOnlineMangaPageCache(root, keep: current, keepChapters: 4);
       List<String> remaining(String book) {
         final Directory dir = Directory(p.join(root.path, book));
