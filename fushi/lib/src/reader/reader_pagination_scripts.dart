@@ -1697,19 +1697,11 @@ window.__fushiInstallShell = function(C) {
     }
     if (!targetNode) return false;
     var text = targetNode.textContent;
-    var charIdx = 0;
-    var textOffset = 0;
-    for (var i = 0; i < text.length && charIdx < remaining; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
-      if (cp > 0xFFFF) i++;
-      textOffset = i + 1;
-    }
-    // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：西文空格分词的
-    // 分隔空格、`<p>\n本文` 的前导折叠空白都落在这里。空白永远不是单元首字，而软换行
-    // 处的尾随空格还可能带着一个落在**前页末行**的非零 rect——先按码元跳过空白，
-    // 再交给 characterAnchorRect 跳零尺寸盒（scrollToCharOffset 同款）。
-    while (textOffset < text.length && /\s/.test(text[textOffset])) textOffset++;
+    // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：句读 / 括号（「。」）、
+    // 西文分词空格、`<p>\n本文` 的前导折叠空白都落在这里，且软换行处它们可能带着一个落在
+    // **前页末行**的非零 rect。unitStartOffset 直接给出目标单元首码点（BUG-3648），再交给
+    // characterAnchorRect 跳零尺寸盒（scrollToCharOffset 同款）。
+    var textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     if (textOffset >= text.length) return false;
     var cpAt = text.codePointAt(textOffset);
     var range = document.createRange();
@@ -3322,15 +3314,11 @@ $kReaderPageTurnJs
       runningOffset += nodeChars;
     }
     if (!targetNode) return;
-    var charIdx = 0;
-    var textOffset = 0;
     var text = targetNode.textContent;
-    for (var i = 0; i < text.length && charIdx < remaining; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
-      if (cp > 0xFFFF) i++;
-      textOffset = i + 1;
-    }
+    // BUG-3648：落到目标单元的首码点，不是「前一单元结束后的下一码元」——后者可能是句读 /
+    // 空白分隔符；页首字紧跟在前一页末行的「。」之后时，量到的是那个「。」的字形，整页
+    // 退回前一页（与 charOffsetOnCurrentPage / collapsedRangeAtCharOffset 同一个逆映射）。
+    var textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
     range.collapse(true);
@@ -4064,7 +4052,10 @@ $kSentenceAudioRubyGapJs
   // BUG-461：把章内绝对可匹配字符索引解析成一个塌缩到该字符起始边的 collapsed range。
   // 抽自 scrollToCharOffset 内联体，供「句首锚」与「句尾锚」共用（DRY），返回 null 表示
   // 该偏移落在正文之外（解析失败）。
-  collapsedRangeAtCharOffset: function(charOffset) {
+  // [afterPreviousUnit]（句尾锚用）：句尾偏移是**开区间**终点（句首 + 句长），塌缩到第
+  // charOffset 个单元结束之后（即句子最后一个单元之后、句末「。」之前），而不是下一句的
+  // 首字——后者可能已换到下一行。省略时（句首锚）塌缩到目标单元首码点（BUG-3648）。
+  collapsedRangeAtCharOffset: function(charOffset, afterPreviousUnit) {
     if (charOffset < 0) return null;
     var walker = this.createWalker();
     var node;
@@ -4077,14 +4068,20 @@ $kSentenceAudioRubyGapJs
     }
     if (!targetNode) return null;
     var remaining = charOffset - runningOffset;
-    var charIdx = 0;
-    var textOffset = 0;
     var text = targetNode.textContent;
-    for (var i = 0; i < text.length && charIdx < remaining; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
-      if (cp > 0xFFFF) i++;
-      textOffset = i + 1;
+    var textOffset;
+    if (afterPreviousUnit) {
+      textOffset = 0;
+      var charIdx = 0;
+      for (var i = 0; i < text.length && charIdx < remaining; i++) {
+        var cp = text.codePointAt(i);
+        if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
+        if (cp > 0xFFFF) i++;
+        textOffset = i + 1;
+      }
+    } else {
+      // BUG-3648：塌缩到目标单元的首码点，不停在它前面的句读 / 空白分隔符上。
+      textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     }
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
@@ -4149,7 +4146,7 @@ $kSentenceAudioRubyGapJs
     var pt = parseFloat(cs.paddingTop) || 0;
     // 句尾区间锚（BUG-461）：仅横排、且调用方给了句尾偏移时启用。
     if (typeof endCharOffset === 'number' && endCharOffset > charOffset) {
-      var endRange = this.collapsedRangeAtCharOffset(endCharOffset);
+      var endRange = this.collapsedRangeAtCharOffset(endCharOffset, true);
       var endRect = endRange ? this.characterAnchorRect(endRange) : null;
       if (endRect) {
         var lineH = parseFloat(cs.lineHeight);

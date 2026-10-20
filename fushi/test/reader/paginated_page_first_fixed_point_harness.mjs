@@ -59,6 +59,23 @@ const check = (expectAxis) => `(async () => {
   await settle();
   const ctx0 = r.getScrollContext();
   if (ctx0.axis !== ${JSON.stringify(expectAxis)}) fails.push('axis ' + ctx0.axis);
+  // Pages whose first unit directly follows a 「。」 in the same text node: the
+  // inverse unit -> text-offset lookup used to stop on that 「。」, which is drawn
+  // on the previous page (BUG-3648).
+  const followsStop = (f) => {
+    const w = r.createWalker();
+    let run = 0, n;
+    while ((n = w.nextNode())) {
+      const c = r.countChars(n.textContent);
+      if (run + c > f) {
+        const o = window.fushiStudyUnits.unitStartOffset(n.textContent, f - run);
+        return o > 0 && n.textContent[o - 1] === '。';
+      }
+      run += c;
+    }
+    return false;
+  };
+  let afterStop = 0;
   const forward = [];
   for (let i = 0; i < 300; i++) {
     const ctx = r.getScrollContext();
@@ -66,6 +83,7 @@ const check = (expectAxis) => `(async () => {
     forward.push(pos);
     const f = r.getFirstVisibleCharOffset();
     if (f > 0) {
+      if (followsStop(f)) afterStop++;
       if (!r.charOffsetOnCurrentPage(f)) fails.push('page ' + i + ': first char ' + f + ' not on page');
       await r.restoreToCharOffset(f);
       await settle();
@@ -87,7 +105,7 @@ const check = (expectAxis) => `(async () => {
     fails.push('backward walk ' + JSON.stringify(backward.map(Math.round))
       + ' != forward ' + JSON.stringify(forward.map(Math.round)));
   }
-  return { fails, pages: forward.length, pageSize: ctx0.pageSize };
+  return { fails, pages: forward.length, pageSize: ctx0.pageSize, afterStop };
 })()`;
 
 const CASES = [
@@ -101,23 +119,39 @@ const CASES = [
   // two more font sizes keep the spread geometry inside the mutation net.
   ['vertical spread 20px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20 }, 'xr'],
   ['vertical spread 26px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 26 }, 'xr'],
+  // BUG-3648: pinned viewport (Linux CI's headless window measured 1280 wide; the
+  // Windows one 1258x646 never hit it). At 1280x560 every spread holds exactly
+  // nine paragraphs, so every page starts right after the previous paragraph's
+  // closing 「。」; the old lookup stopped on that 「。」 and every reopen fell one
+  // page back. requireAfterStop keeps the case from going silently stale if
+  // font metrics shift the page breaks. Must stay last: the viewport override
+  // persists for the rest of the run.
+  ['vertical spread 20px @1280x560', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20 }, 'xr',
+    { viewport: [1280, 560], requireAfterStop: true }],
 ];
 
 const driver = await launchChromeDriver();
 let failed = 0;
 try {
   const supported = await driver.evalOnPage('<!doctype html><body></body>', "CSS.supports('column-wrap', 'wrap')");
-  for (const [name, opts, axis] of CASES) {
+  for (const [name, opts, axis, extra = {}] of CASES) {
     if (opts.spread && !supported) {
       console.log(`skip ${name}: Chrome lacks column-wrap (needs 145+)`);
       continue;
     }
+    if (extra.viewport) {
+      // snap() is the driver's only Emulation.setDeviceMetricsOverride entry.
+      await driver.snap('<!doctype html><body></body>', null, extra.viewport[0], extra.viewport[1]);
+    }
     const res = await driver.evalOnPage(page(opts), check(axis));
+    if (extra.requireAfterStop && res.afterStop === 0) {
+      res.fails.push('no page starts right after 「。」; the case no longer exercises BUG-3648');
+    }
     if (res.fails.length) {
       failed++;
       console.log(`FAIL ${name}: ${res.fails.join('; ')}`);
     } else {
-      console.log(`ok ${name}: ${res.pages} pages, pageSize ${res.pageSize}`);
+      console.log(`ok ${name}: ${res.pages} pages, pageSize ${res.pageSize}, ${res.afterStop} after 「。」`);
     }
   }
 } finally {
