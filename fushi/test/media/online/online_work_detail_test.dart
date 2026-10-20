@@ -61,8 +61,11 @@ void main() {
     final Rect c = rectOf(tester, 'c');
     expect(a.top, greaterThanOrEqualTo(cover.bottom));
     expect(a.left, lessThan(cover.right), reason: '占满整宽，从左边起排');
-    expect(b.top, a.top, reason: '同一行横排');
-    expect(c.top, a.top, reason: '同一行横排');
+    // 紧凑 hero（MediaDetailActionBar._buildCompact）：主按钮放不下最小宽时独占
+    // 一行，次按钮在它下面同一行横排——仍然不是每个按钮各占一行的竖条。
+    expect(b.top, greaterThanOrEqualTo(a.top));
+    expect(c.top, b.top, reason: '次按钮同一行横排');
+    expect(c.left, greaterThan(b.right), reason: '次按钮同一行横排');
   });
 
   testWidgets('宽屏：主操作区仍在封面右侧', (WidgetTester tester) async {

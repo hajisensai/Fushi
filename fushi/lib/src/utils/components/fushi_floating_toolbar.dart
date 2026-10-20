@@ -34,6 +34,8 @@
 /// （阅读器用纸色调和的面，让胶囊落在米色纸上不突兀）。
 library;
 
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -916,6 +918,19 @@ const double kFushiFloatingTopBarOverflowHysteresis = 24;
 /// 宁可早一颗收进「⋯」，也不让动作胶囊把标题挤没或溢出。
 const double _kTopBarActionSlot = 48 + kFushiFloatingToolbarItemGap;
 
+/// 当前主题下顶栏一颗图标按钮的实际横向占位（含 4 项间距）。M3 `IconButton`
+/// 本体 40×40，只有触屏平台（[MaterialTapTargetSize.padded]）才把命中区补到 48；
+/// 桌面是 shrinkWrap、实占 40。一律按 48 估会让桌面每颗多算 8，九颗就多出一大截，
+/// 明明放得下也被收进「⋯」（2026-10-20 用户截图「还是不够展开」）。Apple 的玻璃
+/// bar button 尺寸另算，沿用保守的 [_kTopBarActionSlot]。
+double fushiTopBarActionSlotWidth(BuildContext context) {
+  if (isGlassDesign(context)) return _kTopBarActionSlot;
+  final ThemeData theme = Theme.of(context);
+  final double button =
+      theme.materialTapTargetSize == MaterialTapTargetSize.padded ? 48 : 40;
+  return button + kFushiFloatingToolbarItemGap;
+}
+
 /// 组间分隔（1 宽 + 两侧各 6）。
 const double _kTopBarGroupDivider = 13;
 
@@ -1011,14 +1026,24 @@ int fushiTopBarFitCount(
 /// 顶部悬浮条里动作胶囊可用的宽度预算（纯函数）：整行宽减去 [leadingCount] 个
 /// 前置胶囊（返回等）、标题胶囊保底 [kFushiFloatingTopBarTitleMinWidth]（有标题时）
 /// 与标题和动作之间的 8 间距。
+///
+/// [titleWidth] 是标题胶囊的自然宽（量得出时给）：标题短于保底宽度时只预留它
+/// 实际占的宽，不再按保底宽多扣——「复习」这种两个字的标题按 160 预留会白白
+/// 挤掉两三颗放得下的按钮（2026-10-20 用户：「放得下的都没必要折叠吧」）。
 double fushiTopBarActionsBudget({
   required double maxWidth,
   int leadingCount = 0,
   required bool hasTitle,
+  double? titleWidth,
 }) =>
     maxWidth -
     leadingCount * _kTopBarLeadingSlot -
-    (hasTitle ? kFushiFloatingTopBarTitleMinWidth : 0) -
+    (hasTitle
+        ? math.min(
+            titleWidth ?? kFushiFloatingTopBarTitleMinWidth,
+            kFushiFloatingTopBarTitleMinWidth,
+          )
+        : 0) -
     8;
 
 /// 顶部悬浮条「默认展开、放不下才收进 ⋯」的平铺颗数决策（带展开回差）。
@@ -1255,7 +1280,11 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   final FushiTopBarOverflowFit _fit = FushiTopBarOverflowFit();
 
   /// 按可用宽度定平铺颗数（带展开回差）。
-  int _visibleFor(double maxWidth, {required bool hasTitle}) {
+  int _visibleFor(
+    double maxWidth, {
+    required bool hasTitle,
+    double? titleWidth,
+  }) {
     if (!widget.adaptiveOverflow) {
       int total = 0;
       for (final List<FushiToolbarItem> g in actions) {
@@ -1266,8 +1295,13 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
     return _fit.visibleFor(
       groups: actions,
       overflow: overflow,
-      budget: _actionsBudget(maxWidth, hasTitle: hasTitle),
+      budget: _actionsBudget(
+        maxWidth,
+        hasTitle: hasTitle,
+        titleWidth: titleWidth,
+      ),
       pinnedMenu: widget.menu.isNotEmpty,
+      slotWidth: fushiTopBarActionSlotWidth(context),
     );
   }
 
@@ -1277,13 +1311,48 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
   /// [FushiFloatingTopBar.actionsFollowLeading] 生效（无标题）时动作组紧跟前置
   /// 胶囊排、前面没有这段间距（前置胶囊那格的 8 已计入 leading slot；没有前置
   /// 胶囊时动作组就是行首），预算加回 8——与 build 里 `follow` 的 Row 排法一致。
-  double _actionsBudget(double maxWidth, {required bool hasTitle}) =>
+  double _actionsBudget(
+    double maxWidth, {
+    required bool hasTitle,
+    double? titleWidth,
+  }) =>
       fushiTopBarActionsBudget(
         maxWidth: maxWidth,
         leadingCount: leading.length,
         hasTitle: hasTitle,
+        titleWidth: titleWidth,
       ) +
       (widget.actionsFollowLeading && !hasTitle ? 8 : 0);
+
+  /// Material 标题胶囊的自然宽（文字 + 两侧各 16 内边距），与下面 build 里
+  /// 胶囊同字体、同文字缩放。带 [FushiFloatingTopBar.titleLeading]（宽度未知）
+  /// 或 Apple 设计系统时返回 null，测宽按保底宽预留。
+  double? _materialTitleWidth(BuildContext context, String t, String s) {
+    if (widget.titleLeading != null || isGlassDesign(context)) return null;
+    final TextTheme text = Theme.of(context).textTheme;
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double measure(String value, TextStyle? style) {
+      if (value.isEmpty) return 0;
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: value, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double width = painter.width;
+      painter.dispose();
+      return width;
+    }
+
+    final double textWidth = math.max(
+      measure(
+        t,
+        text.titleSmall?.copyWith(fontWeight: FontWeight.w700, height: 1.15),
+      ),
+      measure(s, text.labelSmall?.copyWith(height: 1.15)),
+    );
+    return textWidth.ceilToDouble() + 32 + 2;
+  }
 
   /// Apple 的标题：iOS 26 / macOS 26 导航栏的内联标题不装进玻璃——玻璃只给
   /// 栏上的控件。纯文字（移动 17 semibold / 桌面 15 semibold，label 色；
@@ -1475,7 +1544,13 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
             ? fushiTopBarSplitActions(
                 actions,
                 overflow,
-                _visibleFor(constraints.maxWidth, hasTitle: titlePill != null),
+                _visibleFor(
+                  constraints.maxWidth,
+                  hasTitle: titlePill != null,
+                  titleWidth: titlePill == null
+                      ? null
+                      : _materialTitleWidth(context, t, s),
+                ),
               )
             : (groups: actions, overflow: overflow);
         final Widget? toolbar = hasActions

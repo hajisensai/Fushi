@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart';
 import 'package:fushi_engine/media/video/acquisition/host_video_acquisition_assembly.dart'
     show videoDiscoveryIdentityMatches;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -46,32 +47,30 @@ List<String> videoDiscoveryLatinTitles(VideoDiscoveryItem item) {
 /// 标题 / 原名 / 别名兜底。
 DownloadTaskWorkFocus videoDiscoveryDownloadTaskFocus(
   VideoMediaReference reference,
-) =>
-    DownloadTaskWorkFocus(
-      title: reference.title,
-      titles: <String>[
-        if (reference.originalTitle != null) reference.originalTitle!,
-        ...reference.aliases,
-      ],
-      matchesIdentity: (DownloadTaskWorkIdentity identity) =>
-          videoDiscoveryIdentityMatches(
+) => DownloadTaskWorkFocus(
+  title: reference.title,
+  titles: <String>[
+    if (reference.originalTitle != null) reference.originalTitle!,
+    ...reference.aliases,
+  ],
+  matchesIdentity: (DownloadTaskWorkIdentity identity) =>
+      videoDiscoveryIdentityMatches(
         reference,
         identity.provider,
         identity.externalId,
       ),
+);
+
+typedef VideoDiscoveryAction =
+    Future<void> Function(BuildContext context, VideoDiscoveryItem item);
+
+typedef VideoDiscoveryDetailLoader =
+    Future<VideoDiscoveryDetailData> Function(VideoDiscoveryItem item);
+
+typedef VideoDiscoveryStatusWatch =
+    Stream<VideoDiscoveryAcquisitionState> Function(
+      VideoMediaReference reference,
     );
-
-typedef VideoDiscoveryAction = Future<void> Function(
-  BuildContext context,
-  VideoDiscoveryItem item,
-);
-
-typedef VideoDiscoveryDetailLoader = Future<VideoDiscoveryDetailData> Function(
-  VideoDiscoveryItem item,
-);
-
-typedef VideoDiscoveryStatusWatch = Stream<VideoDiscoveryAcquisitionState>
-    Function(VideoMediaReference reference);
 
 /// UI-facing action ports for an online work.
 ///
@@ -92,6 +91,7 @@ class VideoDiscoveryActions {
     this.onCancelDownloads,
     this.onAiAcquire,
     this.detailsUpdates,
+    this.loadAiringCalendar,
   });
 
   final VideoDiscoveryDetailLoader? loadDetails;
@@ -128,6 +128,11 @@ class VideoDiscoveryActions {
   /// 参数是搜索框里已经输入的文字（空 = 没输入）：对话页拿它直接开聊，用户不用
   /// 把刚打过的作品名再打一遍。
   final ValueChanged<String?>? onAiAcquire;
+
+  /// 放送日历取数端口（发现页「今日放送」小模块用；生产装配 =
+  /// `loadAiringCalendarWeek` 绑定 AppModel，与完整日历页同一条取数路径）。
+  /// null = 不渲染小模块（widget 测试 / 未接线的宿主）。
+  final AiringCalendarLoader? loadAiringCalendar;
 }
 
 class VideoDiscoveryAcquisitionState {
@@ -159,11 +164,7 @@ class VideoDiscoveryFact {
 }
 
 class VideoDiscoveryPerson {
-  const VideoDiscoveryPerson({
-    required this.name,
-    this.role,
-    this.imageUrl,
-  });
+  const VideoDiscoveryPerson({required this.name, this.role, this.imageUrl});
 
   final String name;
   final String? role;
@@ -176,9 +177,9 @@ class VideoDiscoveryDetailData {
     Iterable<VideoDiscoveryFact> facts = const <VideoDiscoveryFact>[],
     Iterable<VideoDiscoveryPerson> people = const <VideoDiscoveryPerson>[],
     Iterable<VideoDiscoveryItem> related = const <VideoDiscoveryItem>[],
-  })  : facts = List<VideoDiscoveryFact>.unmodifiable(facts),
-        people = List<VideoDiscoveryPerson>.unmodifiable(people),
-        related = List<VideoDiscoveryItem>.unmodifiable(related);
+  }) : facts = List<VideoDiscoveryFact>.unmodifiable(facts),
+       people = List<VideoDiscoveryPerson>.unmodifiable(people),
+       related = List<VideoDiscoveryItem>.unmodifiable(related);
 
   final VideoDiscoveryItem item;
   final List<VideoDiscoveryFact> facts;
@@ -235,20 +236,15 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   @override
   void didUpdateWidget(covariant VideoDiscoveryDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final bool itemChanged = oldWidget.item.reference.canonicalIdentityKey !=
+    final bool itemChanged =
+        oldWidget.item.reference.canonicalIdentityKey !=
         widget.item.reference.canonicalIdentityKey;
     if (itemChanged ||
-        !identical(
-          oldWidget.actions.loadDetails,
-          widget.actions.loadDetails,
-        )) {
+        !identical(oldWidget.actions.loadDetails, widget.actions.loadDetails)) {
       _detailsFuture = _loadDetails();
     }
     if (itemChanged ||
-        !identical(
-          oldWidget.actions.watchStatus,
-          widget.actions.watchStatus,
-        )) {
+        !identical(oldWidget.actions.watchStatus, widget.actions.watchStatus)) {
       _statusStream = _watchStatus();
     }
     if (!identical(
@@ -284,114 +280,124 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
       body: StreamBuilder<VideoDiscoveryAcquisitionState>(
         stream: _statusStream,
         initialData: const VideoDiscoveryAcquisitionState(),
-        builder: (
-          BuildContext context,
-          AsyncSnapshot<VideoDiscoveryAcquisitionState> statusSnapshot,
-        ) {
-          final VideoDiscoveryAcquisitionState state =
-              statusSnapshot.data ?? const VideoDiscoveryAcquisitionState();
-          return FutureBuilder<VideoDiscoveryDetailData>(
-            future: _detailsFuture,
-            initialData: VideoDiscoveryDetailData(item: widget.item),
-            builder: (
+        builder:
+            (
               BuildContext context,
-              AsyncSnapshot<VideoDiscoveryDetailData> snapshot,
+              AsyncSnapshot<VideoDiscoveryAcquisitionState> statusSnapshot,
             ) {
-              final VideoDiscoveryDetailData details =
-                  snapshot.data ?? VideoDiscoveryDetailData(item: widget.item);
-              final VideoDiscoveryItem item = details.item;
-              final ImageProvider? backdrop = _networkImage(item.backdropUrl) ??
-                  _networkImage(item.posterUrl);
-              // BUG-1901：整页一个 SelectionArea，而不是逐个把 Text 换成
-              // SelectableText。
-              //
-              // 用户报「这个界面，不能复制文件名，下面的简介可以」——根因不是包裹
-              // 范围问题，而是**逐 widget 手工选型**：谁被想起来写成 SelectableText
-              // 谁能选。页级 SelectionArea 让「可选」成为默认，特殊情况消失，还顺带
-              // 支持跨元素拖选（标题连着简介一起选）。按钮的点击不受影响。
-              //
-              // ⚠ 不变式：**懒加载列表不得裸露在这个 SelectionArea 里**。
-              //
-              // 上游 flutter#119355（本仓已吃过两次：BUG-694、BUG-1582）——
-              // SelectionArea 套 Scrollable 时，「选中文字 → 滚走（端点所在 item 被
-              // itemBuilder 回收）→ 再长按」会让 _ScrollableSelectionContainerDelegate
-              // 仍持有指向已回收 Selectable 的 currentSelectionEndIndex，
-              // _updateDragLocationsFromGeometries() 无条件读 endSelectionPoint! 抛
-              // 空断言。debug 下 assert(geometry.hasSelection) 先一步拦住，**只在
-              // release 崩**。
-              //
-              // M3E 详情骨架（MediaDetailLayout）的滚动视图只放 SliverToBoxAdapter /
-              // SingleChildScrollView（非懒加载，子节点不随滚动回收），本身不触发；
-              // 真正的懒加载只有人物条与相关作品条两条横向列表 —— 它们各自用
-              // SelectionContainer.disabled 把整条排除在选区外，Selectable 一个都
-              // 不注册，触发条件从源头消失。
-              //
-              // 新增横向/懒加载区块请照做，守卫见
-              // test/pages/video_discovery_detail_selectable_test.dart。
-              return Stack(
-                children: <Widget>[
-                  Positioned.fill(
-                    child: SelectionArea(
-                      child: FushiEntranceScope(
-                        child: MediaDetailLayout(
-                          key: const PageStorageKey<String>(
-                            'video-discovery-detail-scroll',
-                          ),
-                          backdrop: backdrop,
-                          backdropBlur: item.backdropUrl == null ? 28 : 16,
-                          header: _buildHero(item, state, backdrop),
-                          slivers: <Widget>[
-                            if (snapshot.hasError)
-                              SliverToBoxAdapter(child: _buildDetailsError())
-                            else ...<Widget>[
-                              if (snapshot.connectionState !=
-                                  ConnectionState.done)
-                                SliverToBoxAdapter(
-                                  child: _buildDetailsLoading(details),
-                                ),
-                              SliverToBoxAdapter(
-                                child: FushiStaggeredEntrance(
-                                  index: 0,
-                                  child: _buildOverview(details),
+              final VideoDiscoveryAcquisitionState state =
+                  statusSnapshot.data ?? const VideoDiscoveryAcquisitionState();
+              return FutureBuilder<VideoDiscoveryDetailData>(
+                future: _detailsFuture,
+                initialData: VideoDiscoveryDetailData(item: widget.item),
+                builder:
+                    (
+                      BuildContext context,
+                      AsyncSnapshot<VideoDiscoveryDetailData> snapshot,
+                    ) {
+                      final VideoDiscoveryDetailData details =
+                          snapshot.data ??
+                          VideoDiscoveryDetailData(item: widget.item);
+                      final VideoDiscoveryItem item = details.item;
+                      final ImageProvider? backdrop =
+                          _networkImage(item.backdropUrl) ??
+                          _networkImage(item.posterUrl);
+                      // BUG-1901：整页一个 SelectionArea，而不是逐个把 Text 换成
+                      // SelectableText。
+                      //
+                      // 用户报「这个界面，不能复制文件名，下面的简介可以」——根因不是包裹
+                      // 范围问题，而是**逐 widget 手工选型**：谁被想起来写成 SelectableText
+                      // 谁能选。页级 SelectionArea 让「可选」成为默认，特殊情况消失，还顺带
+                      // 支持跨元素拖选（标题连着简介一起选）。按钮的点击不受影响。
+                      //
+                      // ⚠ 不变式：**懒加载列表不得裸露在这个 SelectionArea 里**。
+                      //
+                      // 上游 flutter#119355（本仓已吃过两次：BUG-694、BUG-1582）——
+                      // SelectionArea 套 Scrollable 时，「选中文字 → 滚走（端点所在 item 被
+                      // itemBuilder 回收）→ 再长按」会让 _ScrollableSelectionContainerDelegate
+                      // 仍持有指向已回收 Selectable 的 currentSelectionEndIndex，
+                      // _updateDragLocationsFromGeometries() 无条件读 endSelectionPoint! 抛
+                      // 空断言。debug 下 assert(geometry.hasSelection) 先一步拦住，**只在
+                      // release 崩**。
+                      //
+                      // M3E 详情骨架（MediaDetailLayout）的滚动视图只放 SliverToBoxAdapter /
+                      // SingleChildScrollView（非懒加载，子节点不随滚动回收），本身不触发；
+                      // 真正的懒加载只有人物条与相关作品条两条横向列表 —— 它们各自用
+                      // SelectionContainer.disabled 把整条排除在选区外，Selectable 一个都
+                      // 不注册，触发条件从源头消失。
+                      //
+                      // 新增横向/懒加载区块请照做，守卫见
+                      // test/pages/video_discovery_detail_selectable_test.dart。
+                      return Stack(
+                        children: <Widget>[
+                          Positioned.fill(
+                            child: SelectionArea(
+                              child: FushiEntranceScope(
+                                child: MediaDetailLayout(
+                                  key: const PageStorageKey<String>(
+                                    'video-discovery-detail-scroll',
+                                  ),
+                                  backdrop: backdrop,
+                                  backdropBlur: item.backdropUrl == null
+                                      ? 28
+                                      : 16,
+                                  header: _buildHero(item, state, backdrop),
+                                  slivers: <Widget>[
+                                    if (snapshot.hasError)
+                                      SliverToBoxAdapter(
+                                        child: _buildDetailsError(),
+                                      )
+                                    else ...<Widget>[
+                                      if (snapshot.connectionState !=
+                                          ConnectionState.done)
+                                        SliverToBoxAdapter(
+                                          child: _buildDetailsLoading(details),
+                                        ),
+                                      SliverToBoxAdapter(
+                                        child: FushiStaggeredEntrance(
+                                          index: 0,
+                                          child: _buildOverview(details),
+                                        ),
+                                      ),
+                                      if (details.people.isNotEmpty)
+                                        SliverToBoxAdapter(
+                                          child: FushiStaggeredEntrance(
+                                            index: 1,
+                                            child: _buildPeople(details.people),
+                                          ),
+                                        ),
+                                      if (details.related.isNotEmpty)
+                                        SliverToBoxAdapter(
+                                          child: FushiStaggeredEntrance(
+                                            index: 2,
+                                            child: _buildRelated(
+                                              details.related,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ],
                                 ),
                               ),
-                              if (details.people.isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: FushiStaggeredEntrance(
-                                    index: 1,
-                                    child: _buildPeople(details.people),
-                                  ),
-                                ),
-                              if (details.related.isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: FushiStaggeredEntrance(
-                                    index: 2,
-                                    child: _buildRelated(details.related),
-                                  ),
-                                ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  // 返回键：悬浮圆胶囊（M3E 页头浮动工具栏同一形态 / Apple 玻璃
-                  // 圆钮），压在 hero 背景上、滚动时常驻。
-                  PositionedDirectional(
-                    top: 0,
-                    start: 0,
-                    child: SafeArea(
-                      child: Padding(
-                        padding: EdgeInsets.all(tokens.spacing.gap),
-                        child: const FushiRouteBackButton(),
-                      ),
-                    ),
-                  ),
-                ],
+                            ),
+                          ),
+                          // 返回键：悬浮圆胶囊（M3E 页头浮动工具栏同一形态 / Apple 玻璃
+                          // 圆钮），压在 hero 背景上、滚动时常驻。
+                          PositionedDirectional(
+                            top: 0,
+                            start: 0,
+                            child: SafeArea(
+                              child: Padding(
+                                padding: EdgeInsets.all(tokens.spacing.gap),
+                                child: const FushiRouteBackButton(),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
               );
             },
-          );
-        },
       ),
     );
   }
@@ -422,10 +428,7 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
             ),
       chips: <MediaDetailChip>[
         if (item.reference.year != null)
-          MediaDetailChip(
-            '${item.reference.year}',
-            icon: FushiIcons.calendar,
-          ),
+          MediaDetailChip('${item.reference.year}', icon: FushiIcons.calendar),
         MediaDetailChip(
           _kindLabel(item.reference.discoveryCategory),
           icon: FushiIcons.video,
@@ -471,8 +474,8 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     // 取消或者等下载结束」——那是个纯 UI 造出来的死局。
     final VoidCallback? onSearchResource =
         widget.actions.onSearchResource == null
-            ? null
-            : () => unawaited(widget.actions.onSearchResource!(context, item));
+        ? null
+        : () => unawaited(widget.actions.onSearchResource!(context, item));
     const Key resourceKey = ValueKey<String>('video-discovery-search-resource');
     final Widget primary = playPrimary
         ? MediaDetailPrimaryButton(
@@ -527,9 +530,8 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
           // 下载/订阅副作用的动作。
           onPressed: widget.actions.onSearchSubtitle == null
               ? null
-              : () => unawaited(
-                    widget.actions.onSearchSubtitle!(context, item),
-                  ),
+              : () =>
+                    unawaited(widget.actions.onSearchSubtitle!(context, item)),
         ),
       ],
       more: more.isEmpty
@@ -550,12 +552,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
     final VoidCallback? onPressed = state.isBusy
         ? null
         : state.isSubscribed && widget.actions.onOpenSubscriptions != null
-            ? widget.actions.onOpenSubscriptions
-            : widget.actions.onSubscribe == null
-                ? null
-                : () => unawaited(
-                      widget.actions.onSubscribe!(context, item),
-                    );
+        ? widget.actions.onOpenSubscriptions
+        : widget.actions.onSubscribe == null
+        ? null
+        : () => unawaited(widget.actions.onSubscribe!(context, item));
     return MediaDetailSecondaryButton(
       buttonKey: const ValueKey<String>('video-discovery-subscribe'),
       icon: FushiIcons.favorite,
@@ -897,10 +897,10 @@ class _VideoDiscoveryDetailPageState extends State<VideoDiscoveryDetailPage> {
   }
 
   String _kindLabel(VideoDiscoveryCategory category) => switch (category) {
-        VideoDiscoveryCategory.movie => t.collection_relation_movie,
-        VideoDiscoveryCategory.tv => t.series,
-        VideoDiscoveryCategory.anime => t.media_tracking_anime,
-      };
+    VideoDiscoveryCategory.movie => t.collection_relation_movie,
+    VideoDiscoveryCategory.tv => t.series,
+    VideoDiscoveryCategory.anime => t.media_tracking_anime,
+  };
 }
 
 class _RelatedWorkCard extends StatelessWidget {
@@ -936,9 +936,9 @@ class _RelatedWorkCard extends StatelessWidget {
   }
 
   String _relatedMetadata(VideoDiscoveryItem item) => <String>[
-        if (item.reference.year != null) '${item.reference.year}',
-        item.reference.discoveryCategory.name,
-      ].join(' · ');
+    if (item.reference.year != null) '${item.reference.year}',
+    item.reference.discoveryCategory.name,
+  ].join(' · ');
 }
 
 ImageProvider? _networkImage(String? url) {

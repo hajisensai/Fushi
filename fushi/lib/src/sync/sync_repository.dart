@@ -222,6 +222,9 @@ class SyncRepository {
   // ttu-reader-data + 完整 drive scope（[GoogleDriveSyncSpace]）。属设备本地（改的是
   // 本机 Drive 存储空间/scope），不随备份导入覆盖。
   static const _keySyncContent = 'sync_content_enabled';
+  // 「上传漫画文件」（所有者 2026-10-21：书籍和漫画分开）。从未设置过时继承同通道
+  // 「上传书籍文件」的当前值，升级后行为不变；设置过就按自己的值。
+  static const _keySyncMangaContent = 'sync_manga_content_enabled';
   // BUG-988：互联通道专属的「上传内容到互联对端」开关，独立于云备份的
   // sync_*_enabled（那套只管云通道）。互联解耦(PR#223)后互联通道曾复用云备份的
   // 共享开关，用户失去「只对互联单独控制上不上传」的能力；这几个键把互联通道的内容
@@ -229,6 +232,10 @@ class SyncRepository {
   // 词典原本也有一个（`interconnect_sync_dictionary`），BUG-2762 删掉了：互联词典只由
   // 设置页的显式上传 / 下载动作搬，库里残留的旧行不再有读取方。
   static const _keyInterconnectSyncContent = 'interconnect_sync_content';
+  // 互联通道的「上传漫画文件」，继承规则同 [_keySyncMangaContent]（继承的是
+  // [_keyInterconnectSyncContent]）。
+  static const _keyInterconnectSyncMangaContent =
+      'interconnect_sync_manga_content';
   static const _keyInterconnectSyncAudioBookFiles =
       'interconnect_sync_audiobook_files';
   static const _keyInterconnectSyncVideoFiles = 'interconnect_sync_video_files';
@@ -670,6 +677,17 @@ class SyncRepository {
   Future<void> setSyncContentEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncContent, v);
 
+  /// 云通道「上传漫画文件」。键从未写过时继承 [isSyncContentEnabled]。
+  Future<bool> isSyncMangaContentEnabled() async {
+    if (await _db.getPref(_keySyncMangaContent) == null) {
+      return isSyncContentEnabled();
+    }
+    return _db.getPrefTyped<bool>(_keySyncMangaContent, false);
+  }
+
+  Future<void> setSyncMangaContentEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keySyncMangaContent, v);
+
   // ── 互联通道专属上传开关（BUG-988） ────────────────────────────────
   // 只作用于互联通道（[_runSyncChannel] 的 isInterconnect==true），与上面的云备份
   // sync_*_enabled 完全解耦；默认 false，让用户独立控制「要不要把本设备内容上传到
@@ -681,6 +699,18 @@ class SyncRepository {
       _db.getPrefTyped<bool>(_keyInterconnectSyncContent, false);
   Future<void> setInterconnectSyncContentEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncContent, v);
+
+  /// 互联通道「上传漫画文件」。键从未写过时继承
+  /// [isInterconnectSyncContentEnabled]。
+  Future<bool> isInterconnectSyncMangaContentEnabled() async {
+    if (await _db.getPref(_keyInterconnectSyncMangaContent) == null) {
+      return isInterconnectSyncContentEnabled();
+    }
+    return _db.getPrefTyped<bool>(_keyInterconnectSyncMangaContent, false);
+  }
+
+  Future<void> setInterconnectSyncMangaContentEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSyncMangaContent, v);
 
   Future<bool> isInterconnectSyncAudioBookFilesEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectSyncAudioBookFiles, false);
@@ -1650,7 +1680,7 @@ class SyncRepository {
   ///
   /// 故意排除：
   /// - 行为开关 `sync_auto_enabled`/`sync_stats_enabled`/`sync_audiobook_enabled`/
-  ///   `sync_content_enabled` —— 当作用户设置，随备份恢复。
+  ///   `sync_content_enabled`/`sync_manga_content_enabled` —— 当作用户设置，随备份恢复。
   /// - 内容 `audiobook_pos_*` —— 随备份恢复。
   /// - folder cache `sync_root_folder_id`/`sync_folder_cache` —— 不还原，下次同步重建。
   ///
@@ -1697,6 +1727,8 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
+    kStudyProfileNameAliasesPrefKey,
     _keyBackendType,
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。

@@ -288,6 +288,26 @@ void main() {
       expect(b.hasContent, isFalse);
     });
 
+    test('a folder holding only a manga package `.manga.zip` has content',
+        () async {
+      // 所有者 2026-10-21：漫画包改传 `<title>.manga.zip`。内容探针不认它的话，
+      // 新版上传的漫画在书架「远端」里整本消失。
+      final backend = _ControllableSyncBackend(
+        folders: <SyncFileRef>[SyncFileRef(id: 'fid_m', name: 'Manga M')],
+        childrenByFolder: <String, List<AssetEntry>>{
+          'fid_m': <AssetEntry>[_epub('asset_m', 'Manga M.manga.zip')],
+        },
+      );
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+      );
+
+      final List<RemoteBookInfo> books = await client.listRemoteBooks();
+      expect(books.single.hasContent, isTrue);
+    });
+
     test('filters reserved namespaces (__dictionaries__/__local_audio__)',
         () async {
       final backend = _ControllableSyncBackend(
@@ -433,6 +453,32 @@ void main() {
       expect(dest.existsSync(), isTrue);
       expect(await dest.readAsBytes(), <int>[1, 2, 3]);
       expect(progress, isNotEmpty);
+    });
+
+    test('downloads the `.manga.zip` package, preferring it over a legacy .epub',
+        () async {
+      final backend = _ControllableSyncBackend(
+        folders: <SyncFileRef>[SyncFileRef(id: 'fid_m', name: 'Manga M')],
+        childrenByFolder: <String, List<AssetEntry>>{
+          'fid_m': <AssetEntry>[
+            _epub('legacy_asset', 'Manga M.epub'),
+            _epub('manga_asset', 'Manga M.manga.zip'),
+          ],
+        },
+      );
+      final client = CloudRemoteBookClient(
+        backend: backend,
+        rootFolderId: 'root',
+        backendType: SyncBackendType.webDav,
+      );
+      final Directory tmp =
+          Directory.systemTemp.createTempSync('cloud_remote_book_manga');
+      addTearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+
+      await client.getRemoteBook('fid_m', File('${tmp.path}/out.bin'));
+      expect(backend.getAssetCalls, <String>['manga_asset']);
     });
 
     test('throws when folder has no .epub content', () async {

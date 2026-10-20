@@ -404,20 +404,20 @@ void main() {
     expect(writes.last.speed, PageTurnAnimationSpeed.slow);
     expect(writes.last.animation, MangaPageAnimation.cover);
 
-    // 淡入淡出没有位移：跟手开关收起，速度保留。
+    // 淡入淡出：跟手与效果无关，开关仍在（BUG-3624）；速度保留。
     await tester.tap(
       find.byKey(const ValueKey<String>('manga_page_turn_animation_fade')),
     );
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey<String>('manga_page_turn_follow_drag')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey<String>('manga_page_turn_speed')),
       findsOneWidget,
     );
-    // 无动画：速度也收起。
+    // 无动画：速度收起，跟手开关仍在。
     await tester.tap(
       find.byKey(const ValueKey<String>('manga_page_turn_animation_none')),
     );
@@ -425,6 +425,10 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('manga_page_turn_speed')),
       findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_page_turn_follow_drag')),
+      findsOneWidget,
     );
     expect(writes.last.animation, MangaPageAnimation.none);
     expect(tester.takeException(), isNull);

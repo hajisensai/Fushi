@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('TODO-142: book progress metadata stays inside the book folder', () {
     test(
-        'SyncManager._handleExport uploads progress AND content with the SAME folderId',
+        'SyncManager uploads progress AND content with the SAME folderId',
         () {
       final File src = File('lib/src/sync/sync_manager.dart');
       expect(src.existsSync(), isTrue,
@@ -36,10 +36,26 @@ void main() {
         isTrue,
         reason: '进度必须上传到书文件夹 folderId，不得跑到外面（数据完整性）',
       );
+      // 进度与内容现在独立调度，但必须从同一个 per-book folderId 分派。
+      final int onceStart = body.indexOf(
+        'Future<SyncBookResult> _syncBookOnce(',
+      );
+      final int progressStart = body.indexOf(
+        'Future<SyncBookResult> _syncBookProgress(',
+      );
+      expect(onceStart, greaterThanOrEqualTo(0));
+      expect(progressStart, greaterThan(onceStart));
+      final String onceBody = body.substring(onceStart, progressStart);
+      expect(
+        RegExp(r'_syncBookProgress\([\s\S]*?folderId:\s*folderId')
+            .hasMatch(onceBody),
+        isTrue,
+        reason: '进度调度必须传递同一个书文件夹 folderId',
+      );
       // 内容（epub/音频）上传也收同一个 folderId（与进度同目录）。
       expect(
         RegExp(r'_exportContentIfMissing\(\s*book:\s*book,\s*folderId:\s*folderId')
-            .hasMatch(exportBody),
+            .hasMatch(onceBody),
         isTrue,
         reason: 'epub 内容必须与进度上传到同一个书文件夹 folderId（不是分开两处）',
       );

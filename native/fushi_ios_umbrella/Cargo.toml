@@ -70,3 +70,7 @@ opt-level = 3
 # WOFF2 解码（fushi_compute/src/font.rs）的 Brotli 是热点，同样按 3 编。
 [profile.release.package.brotli-decompressor]
 opt-level = 3
+
+# AVIF 的 AV1 解码（fushi_compute/src/image/avif.rs，纯 Rust、无 asm）整段是热点，同样按 3 编。
+[profile.release.package.rav1d]
+opt-level = 3

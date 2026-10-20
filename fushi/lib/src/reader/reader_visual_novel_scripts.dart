@@ -436,6 +436,35 @@ $imageRevealSemantics
       return entry.startMatchable + normalizeText(entry.text.slice(0, end)).length;
     },
 
+    // BUG-3630：章内 raw 偏移（码点计数，与 sourceTextRawOffsets 同一坐标）→ 源章节里的
+    // （文本节点, UTF-16 偏移）。屏是源章节的切片克隆，一句话可能被切屏切成两半；取句要回到
+    // 源章节才能拿到整句。落在两个节点交界时取「从这里开始的那个字」所在节点（下一节点的 0），
+    // 空节点跳过；超出末尾时落到最后一个节点的末尾。
+    sourcePositionForRawOffset: function(rawOffset) {
+      var target = Number(rawOffset);
+      var entries = this.textEntries;
+      if (!Number.isFinite(target) || target < 0 || !entries.length) return null;
+      var low = 0;
+      var high = entries.length - 1;
+      while (low < high) {
+        var mid = Math.ceil((low + high) / 2);
+        if (entries[mid].startRaw <= target) low = mid;
+        else high = mid - 1;
+      }
+      while (low > 0 && entries[low].startRaw === entries[low].endRaw &&
+          entries[low - 1].endRaw >= target) {
+        low--;
+      }
+      var entry = entries[low];
+      var remaining = Math.max(0, Math.min(target, entry.endRaw) - entry.startRaw);
+      var end = 0;
+      while (remaining > 0 && end < entry.text.length) {
+        end += String.fromCodePoint(entry.text.codePointAt(end)).length;
+        remaining--;
+      }
+      return { node: entry.node, offset: end };
+    },
+
     indexSourcePreorder: function() {
       var index = 0;
       var visit = (function(node) {
@@ -954,9 +983,26 @@ $kSentenceAudioRubyGapJs
   },
   getMatchableOffset: function(node, offset) {
     var rawStart = this.nodeStartRawOffsets.get(node);
+    // BUG-3630：取句回到源章节（见 sourceTextPosition），句首 / 句尾节点是源节点而不是
+    // 当前屏的克隆，按源节点自己的章内 raw 偏移换算。
+    if (rawStart === undefined) rawStart = this.sourceTextRawOffsetForNode(node);
     if (rawStart === undefined || !this.contentStream) return null;
     var prefix = (node.textContent || '').slice(0, offset);
     return this.contentStream.matchableOffsetForRawOffset(
+      rawStart + this.countRawChars(prefix));
+  },
+  // BUG-3630：当前屏克隆里的（文本节点, 偏移）→ 源章节里的同一位置。VN 只把一屏的切片
+  // 克隆进 document，切屏可以落在一句话中间（量尺装不下时按字切，ruby 是原子单元），
+  // 在克隆上取句会被屏首 / 屏尾截断——用户报「書|きと同じ…」制卡只拿到半句。选区脚本的
+  // getSentenceContext 先经这里回到源章节再按标点取句，句子边界与分页 / 连续模式一致。
+  // 不是当前屏克隆的节点（源节点本身、未登记偏移的节点）返回 null，调用方原地取句。
+  sourceTextPosition: function(node, offset) {
+    if (!node || !this.contentStream ||
+        typeof this.contentStream.sourcePositionForRawOffset !== 'function') return null;
+    var rawStart = this.nodeStartRawOffsets.get(node);
+    if (rawStart === undefined) return null;
+    var prefix = (node.textContent || '').slice(0, offset);
+    return this.contentStream.sourcePositionForRawOffset(
       rawStart + this.countRawChars(prefix));
   },
   waitForImages: function() {

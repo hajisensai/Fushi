@@ -123,6 +123,9 @@ void main() {
         // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
         // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
         'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,
+        // PDF 文字层：一页文字层字素数是否达到「整页正文就是文字层」门槛
+        // （kPdfTextLayerCompletePageMinChars），是覆盖判据不是学习计数。
+        'packages/fushi_engine/lib/media/manga/manga_pdf_text_layer.dart': 1,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':

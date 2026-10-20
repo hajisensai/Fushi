@@ -116,14 +116,14 @@ bool isMangaOcrRelayoutPending(
 /// 产物文件名（`manga_ocr_out/manga.json`）。
 const String kMangaOcrOutputFileName = 'manga.json';
 
-/// 页图扩展名白名单（小写比较）＝图片扩展名基集，与漫画导入的
-/// `kMangaImageExtensions`（manga_importer.dart）同源对齐。
+/// 页图扩展名白名单（小写比较）＝漫画页图共享表 [kMangaPageImageExtensions]，与漫画
+/// 导入的 `kMangaImageExtensions`（manga_importer.dart）同源对齐。
 ///
 /// BUG-1121：此前这里手写整表、比导入白名单少 `.bmp` / `.gif`——导入能收的
 /// bmp 漫画整卷 OCR 时 bmp 页被静默跳过、产物 manga.json 缺页无任何提示。
-/// 解码端非瓶颈：[decodeMangaPageFile] 走 `img.decodeImage` 内容嗅探，
-/// 本就支持这两种格式。
-const Set<String> kMangaOcrImageExtensions = kImageExtensionsBase;
+/// 解码端非瓶颈：[decodeMangaPageFile] 走原生解码（内容嗅探），表内格式（含 AVIF）
+/// 都认。
+const Set<String> kMangaOcrImageExtensions = kMangaPageImageExtensions;
 
 /// 一张待 OCR 的页图：磁盘文件 + manga.json 用的正斜杠相对 url。
 class MangaOcrPageFile {

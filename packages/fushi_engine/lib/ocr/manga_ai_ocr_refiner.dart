@@ -370,7 +370,12 @@ class MangaAiOcrRefiner {
 
   /// 这个块要不要送大模型。
   bool wants(MokuroBlock block) {
-    if (block.aiRecognized || block.lines.join().trim().isEmpty) return false;
+    // PDF 文字层块是排版真值，没有可让大模型改正的识别错误。
+    if (block.aiRecognized ||
+        block.pdfTextLayer ||
+        block.lines.join().trim().isEmpty) {
+      return false;
+    }
     return switch (mode) {
       MangaAiOcrMode.off => false,
       MangaAiOcrMode.all => true,

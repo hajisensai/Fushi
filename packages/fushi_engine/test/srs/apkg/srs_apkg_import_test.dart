@@ -1353,7 +1353,7 @@ void main() {
       expect(jsonEncode(rep.toJson()), contains('"cardsResetToNew":3'));
     });
 
-    test('不含牌组预设：新建牌组用本机默认设置', () async {
+    test('不含牌组预设也不含 FSRS 参数：新建牌组用本机默认设置', () async {
       final SrsDbStore s = await openTestStore(
         profileUid: kProfile,
         deviceId: 'a',
@@ -1362,7 +1362,10 @@ void main() {
       final SrsImportReport rep = await importInto(
         s,
         legacyApkg(t),
-        options: kFullOptions.copyWith(withDeckConfigs: false),
+        options: kFullOptions.copyWith(
+          withDeckConfigs: false,
+          withFsrsParams: false,
+        ),
       );
       expect(rep.deckPresetsSkipped, 1);
       expect(rep.truncatedSteps, isEmpty);
@@ -1460,19 +1463,37 @@ void main() {
       expect(rep.defaultAlgorithmPresets, isEmpty);
     });
 
-    test('不含牌组预设也不落到默认的 RWKV：顶层新牌组写 FSRS-7，子牌组随继承', () async {
-      final (_, SrsDeckView lang, SrsDeckView jp) = await run(
+    test('不含牌组预设也不含 FSRS 参数，也不落到默认的 RWKV：顶层新牌组写 FSRS-7，子牌组随继承', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(
+          withDeckConfigs: false,
+          withFsrsParams: false,
+          useRwkv: false,
+        ),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(lang.fsrs6, isNull);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      // 对照：开着 RWKV、两项都不含时新牌组用默认算法。
+      final (_, SrsDeckView langOn, _) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(withDeckConfigs: false, withFsrsParams: false),
+      );
+      expect(langOn.localAlgorithm, srsDefaultAlgorithm);
+    });
+
+    test('不含牌组预设但导入 FSRS 参数：关 RWKV 时保留包里的 FSRS-6 与参数', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
         legacyApkg(t),
         kFullOptions.copyWith(withDeckConfigs: false, useRwkv: false),
       );
-      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs6.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
       expect(jp.ownParams, isFalse);
-      // 对照：开着 RWKV、不含预设时新牌组用默认算法。
-      final (_, SrsDeckView langOn, _) = await run(
-        legacyApkg(t),
-        kFullOptions.copyWith(withDeckConfigs: false),
-      );
-      expect(langOn.localAlgorithm, srsDefaultAlgorithm);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
     });
 
     test('Fushi 自己导出的 RWKV 牌组回导时改回 FSRS-7', () async {
@@ -1512,6 +1533,111 @@ void main() {
         (SrsDeckView d) => tree.fullName(d.id) == 'R',
       );
       expect(r.algorithmWire, SrsAlgorithm.fsrs7.wire);
+    });
+  });
+
+  // 所有者 2026-10-20：导入时让用户分别选「牌组预设」与「FSRS 参数」。
+  group('FSRS 参数与牌组预设分开选', () {
+    Future<(SrsImportReport, SrsDeckView, SrsDeckView)> run(
+      SrsAnkiImportOptions options,
+    ) async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(
+        s,
+        legacyApkg(t),
+        options: options,
+      );
+      final SrsDeckTree tree = await s.deckTree();
+      SrsDeckView named(String n) =>
+          tree.decks.firstWhere((SrsDeckView d) => tree.fullName(d.id) == n);
+      return (rep, named('Lang'), named('Lang::JP'));
+    }
+
+    test('只要 FSRS 参数、关 RWKV：算法 / 参数 / 保留率照搬，步长与上限用本机默认', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(
+          withDeckConfigs: false,
+          withFsrsParams: true,
+          useRwkv: false,
+        ),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs6.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(lang.desiredRetention, 0.85);
+      // 子牌组仍按来源继承父牌组的参数。
+      expect(jp.ownParams, isFalse);
+      expect(jp.learnSteps, SrsDeckView.defaultLearnSteps);
+      expect(jp.newPerDay, 20);
+      expect(rep.truncatedSteps, isEmpty);
+      expect(rep.deckPresetsSkipped, 1);
+      // 留在 FSRS 上：没有「继续用 FSRS」可提供。
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+    });
+
+    test('只要 FSRS 参数、开 RWKV（默认）：用 RWKV，参数与保留率照样存下并报告可切回', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(withDeckConfigs: false, withFsrsParams: true),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.rwkv.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(lang.desiredRetention, 0.85);
+      expect(jp.ownParams, isFalse);
+      expect(jp.newPerDay, 20);
+      expect(rep.fsrsPresets, <String, SrsAlgorithm>{
+        'JP preset': SrsAlgorithm.fsrs6,
+      });
+      expect(rep.fsrsDecks, <String, SrsAlgorithm>{
+        lang.id: SrsAlgorithm.fsrs6,
+      });
+    });
+
+    test('只要牌组预设、开 RWKV：步长与上限照搬，算法用默认 RWKV，不报「FSRS 参数已保留」', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(withDeckConfigs: true, withFsrsParams: false),
+      );
+      expect(jp.learnSteps, <double>[1, 10]);
+      expect(jp.newPerDay, 15);
+      expect(rep.truncatedSteps, hasLength(1));
+      expect(lang.fsrs6, isNull);
+      expect(lang.desiredRetention, 0.8);
+      expect(lang.localAlgorithm, srsDefaultAlgorithm);
+      expect(lang.algorithmWire, isNot(SrsAlgorithm.fsrs6.wire));
+      // 参数没导入：报告不能说「参数保留了，可以继续用 FSRS」，也不提供切回。
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+    });
+
+    test('只要牌组预设、关 RWKV：算法落 FSRS-7（默认参数），不是默认的 RWKV', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(
+          withDeckConfigs: true,
+          withFsrsParams: false,
+          useRwkv: false,
+        ),
+      );
+      expect(jp.newPerDay, 15);
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(lang.fsrs6, isNull);
+      expect(lang.fsrs7, isNull);
+      expect(lang.desiredRetention, 0.8);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+    });
+
+    test('选项默认开 FSRS 参数；旧偏好里没有这一项时也按开', () {
+      expect(const SrsAnkiImportOptions().withFsrsParams, isTrue);
+      expect(
+        SrsAnkiImportOptions.fromJson(const <String, Object?>{
+          'withDeckConfigs': true,
+        }).withFsrsParams,
+        isTrue,
+      );
     });
   });
 

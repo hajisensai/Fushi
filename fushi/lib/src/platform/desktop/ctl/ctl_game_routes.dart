@@ -177,7 +177,7 @@ class GameCtlSessionSnapshot {
     this.events = const <GalHookEvent>[],
     this.endpoints = const <TexthookerEndpointStatus>[],
     this.recapturingLineId,
-    this.textProcessPipeline = const GalTextProcessPipeline(),
+    this.textProcessPipeline = kGalDefaultTextProcessPipeline,
     this.attachedExecutable,
     this.attachedMode,
   });

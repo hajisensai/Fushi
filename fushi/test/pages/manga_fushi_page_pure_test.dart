@@ -152,6 +152,45 @@ void main() {
     });
   });
 
+  group('spreadReachesLastPage', () {
+    test('双页展开最后一屏落首页 n-2 也判读完', () {
+      final List<MangaSpreadEntry> spreads = buildMangaSpreads(
+        6,
+        layout: MangaPageLayout.double,
+        spreadOffset: 0,
+      );
+      // 最后一屏 [4, 5]，mangaProgressForSpread 落 4。
+      final (int page, double _) = MangaFushiPage.mangaProgressForSpread(
+        spreads,
+        spreads.length - 1,
+        webtoonFraction: 0,
+        isWebtoon: false,
+      );
+      expect(page, 4);
+      expect(MangaFushiPage.spreadReachesLastPage(spreads, page, 6), isTrue);
+      expect(MangaFushiPage.spreadReachesLastPage(spreads, 2, 6), isFalse);
+    });
+
+    test('单页 / 空 spreads 按页码判', () {
+      final List<MangaSpreadEntry> single = buildMangaSpreads(
+        6,
+        layout: MangaPageLayout.single,
+        spreadOffset: 0,
+      );
+      expect(MangaFushiPage.spreadReachesLastPage(single, 4, 6), isFalse);
+      expect(MangaFushiPage.spreadReachesLastPage(single, 5, 6), isTrue);
+      expect(
+        MangaFushiPage.spreadReachesLastPage(const <MangaSpreadEntry>[], 5, 6),
+        isTrue,
+      );
+      expect(
+        MangaFushiPage.spreadReachesLastPage(const <MangaSpreadEntry>[], 4, 6),
+        isFalse,
+      );
+      expect(MangaFushiPage.spreadReachesLastPage(single, 0, 0), isFalse);
+    });
+  });
+
   group('restoreSpreadFromProgress', () {
     final List<MangaSpreadEntry> spreads = buildMangaSpreads(
       6,

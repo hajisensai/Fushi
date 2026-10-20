@@ -16,7 +16,8 @@ import '../helpers/source_guard.dart';
 /// - iOS：伞形静态库 `native/fushi_ios_umbrella` 依赖 fushi_rwkv，Runner 在编译前跑
 ///   `check_fushi_rwkv.sh`（伞形库缺失或不导出 `frwkv_abi_version` 时失败）；
 /// - Android：`checkFushiRwkvNative` 挂在 `preBuild` 上，缺 ABI 抛 GradleException；
-/// - 本地新 worktree：`tool/bootstrap.ps1` / `bootstrap.sh` 编它；
+/// - 本地新 worktree：`tool/bootstrap.ps1`（经 `tool/native_libs.ps1` 的 `$NativeTestCrates`）/
+///   `bootstrap.sh` 编它；
 /// - CI：凡是用 `setup-fushi-compute` 的 job 也用 `setup-fushi-rwkv`（同样的输入），其余
 ///   跑 Dart / Flutter 测试的 job 显式设 `FUSHI_RWKV_LIB`；出 app 包的 workflow 都编它、
 ///   出包后核对它在包里。
@@ -169,8 +170,20 @@ void main() {
   });
 
   test('本地 bootstrap 编 fushi_rwkv', () {
+    // bootstrap.ps1 把备库交给 tool/native_libs.ps1，crate 清单在它的 $NativeTestCrates。
     final String ps1 = maskHashComments(read('../tool/bootstrap.ps1'));
-    expect(ps1, contains("@('fushi_compute', 'fushi_rwkv')"));
+    expect(ps1, contains("'native_libs.ps1'"));
+    final String libs = maskHashComments(read('../tool/native_libs.ps1'));
+    final RegExpMatch? crates = RegExp(
+      r'^\$NativeTestCrates = @\(([^)]*)\)',
+      multiLine: true,
+    ).firstMatch(libs);
+    expect(
+      crates,
+      isNotNull,
+      reason: 'tool/native_libs.ps1 找不到 \$NativeTestCrates',
+    );
+    expect(crates!.group(1), contains("'fushi_rwkv'"));
     final String sh = maskHashComments(read('../tool/bootstrap.sh'));
     expect(sh, contains('bash native/fushi_rwkv/build_linux_so.sh'));
     expect(sh, contains('bash native/fushi_rwkv/build_macos_dylib.sh'));

@@ -2,7 +2,8 @@
 /// 读完数 + 整体进度（M3E 波浪条 + Display 级百分比；Apple 细线条）+ 「继续」主
 /// 按钮（M3E 尺寸档 M 填充按钮；Apple 填充胶囊）+ 彩色标签 chip 与「编辑标签」。
 ///
-/// 宽屏（[wide]）封面在左、信息在右；窄屏上下堆叠、封面居中。只吃纯值与回调，
+/// 宽屏（[wide]）封面在左、信息在右；窄屏与作品详情页同一套紧凑排法（小封面在
+/// 起始侧、合集名 / 项数在旁，进度 / 标签 / 继续按钮占满整宽）。只吃纯值与回调，
 /// 数据求值（续读是哪一本、进度怎么算）在页面与 `collection_member_view.dart`。
 library;
 
@@ -60,12 +61,12 @@ class CollectionDetailHeroCard extends StatelessWidget {
     final ColorScheme scheme = theme.colorScheme;
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
-    final double coverWidth = wide ? 184 : 132;
+    final double coverWidth = wide ? 184 : 96;
 
     final Widget cover = _StackedCovers(covers: covers, width: coverWidth);
 
     final TextStyle? titleStyle =
-        (wide ? theme.textTheme.headlineMedium : theme.textTheme.headlineSmall)
+        (wide ? theme.textTheme.headlineMedium : theme.textTheme.titleLarge)
             ?.copyWith(fontWeight: FontWeight.w800, height: 1.15);
 
     final List<String> meta = <String>[
@@ -74,10 +75,8 @@ class CollectionDetailHeroCard extends StatelessWidget {
         t.collection_detail_finished_count(done: finished!, total: memberCount),
     ];
 
-    final Widget info = Column(
-      crossAxisAlignment: wide
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
+    final Widget heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Text(
@@ -85,7 +84,6 @@ class CollectionDetailHeroCard extends StatelessWidget {
           key: const ValueKey<String>('collection_detail_hero_name'),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          textAlign: wide ? TextAlign.start : TextAlign.center,
           style: titleStyle,
         ),
         SizedBox(height: tokens.spacing.gap),
@@ -94,44 +92,46 @@ class CollectionDetailHeroCard extends StatelessWidget {
           key: const ValueKey<String>('collection_detail_hero_meta'),
           style: tokens.type.listSubtitle,
         ),
-        if (progress != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap * 1.5),
-          _HeroProgress(value: progress!),
-        ],
-        if (tags.isNotEmpty || onEditTags != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap * 1.5),
-          Wrap(
-            alignment: wide ? WrapAlignment.start : WrapAlignment.center,
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              for (final BookTagRow tag in tags)
-                FushiTagToggleChip(
-                  label: tag.name,
-                  color: Color(tag.colorValue),
-                  state: TagCheckState.all,
-                  onTap: onEditTags,
-                ),
-              if (onEditTags != null)
-                _HeroActionChip(
-                  key: const ValueKey<String>('collection_detail_edit_tags'),
-                  icon: FushiIcons.tag,
-                  label: t.collection_detail_edit_tags,
-                  onTap: onEditTags!,
-                ),
-            ],
-          ),
-        ],
-        if (onContinue != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap * 2),
-          _ContinueButton(
-            started: continueStarted,
-            subtitle: continueLabel,
-            onPressed: onContinue!,
-          ),
-        ],
       ],
     );
+    final List<Widget> details = <Widget>[
+      if (progress != null) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap * 1.5),
+        _HeroProgress(value: progress!),
+      ],
+      if (tags.isNotEmpty || onEditTags != null) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap * 1.5),
+        Wrap(
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            for (final BookTagRow tag in tags)
+              FushiTagToggleChip(
+                label: tag.name,
+                color: Color(tag.colorValue),
+                state: TagCheckState.all,
+                onTap: onEditTags,
+              ),
+            if (onEditTags != null)
+              _HeroActionChip(
+                key: const ValueKey<String>('collection_detail_edit_tags'),
+                icon: FushiIcons.tag,
+                label: t.collection_detail_edit_tags,
+                onTap: onEditTags!,
+              ),
+          ],
+        ),
+      ],
+      if (onContinue != null) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap * 2),
+        _ContinueButton(
+          started: continueStarted,
+          subtitle: continueLabel,
+          onPressed: onContinue!,
+          fill: !wide,
+        ),
+      ],
+    ];
 
     final Widget body = wide
         ? Row(
@@ -139,15 +139,28 @@ class CollectionDetailHeroCard extends StatelessWidget {
             children: <Widget>[
               cover,
               SizedBox(width: tokens.spacing.card * 1.5),
-              Expanded(child: info),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[heading, ...details],
+                ),
+              ),
             ],
           )
         : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              cover,
-              SizedBox(height: tokens.spacing.card),
-              info,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  cover,
+                  const SizedBox(width: 16),
+                  Expanded(child: heading),
+                ],
+              ),
+              ...details,
             ],
           );
 
@@ -258,11 +271,15 @@ class _ContinueButton extends StatelessWidget {
     required this.started,
     required this.subtitle,
     required this.onPressed,
+    this.fill = false,
   });
 
   final bool started;
   final String? subtitle;
   final VoidCallback onPressed;
+
+  /// 窄屏紧凑 hero：占满整行宽度（与作品详情页主按钮同形）。
+  final bool fill;
 
   @override
   Widget build(BuildContext context) {
@@ -273,7 +290,10 @@ class _ContinueButton extends StatelessWidget {
         ? label
         : '$label · $subtitle';
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 420),
+      constraints: BoxConstraints(
+        maxWidth: fill ? double.infinity : 420,
+        minWidth: fill ? double.infinity : 0,
+      ),
       child: FushiFilledButton.icon(
         key: const ValueKey<String>('collection_detail_continue'),
         size: FushiButtonSize.m,

@@ -1,8 +1,8 @@
 /// 「导入 Anki 包」的选项对话框（对齐 Anki 23.10+ 导入页）。
 ///
 /// - 顶部：标题「导入选项」+ 文件名，右上「?」逐项说明；
-/// - 两个开关：导入所有学习进度信息（with_scheduling）/ 导入所有牌组预设配置
-///   （with_deck_configs）；
+/// - 三个开关：导入所有学习进度信息（with_scheduling）/ 导入所有牌组预设配置
+///   （with_deck_configs）/ 导入 FSRS 参数与期望保留率（Fushi 自加，默认开）；
 /// - 可折叠分组「更新」：合并笔记模板（开关）、更新笔记 / 更新笔记模板（较新时 /
 ///   始终 / 从不），每项右侧「恢复默认」，值等于默认时不可点。
 ///
@@ -170,6 +170,10 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                 ),
                 item(t.srs_import_use_rwkv, t.srs_import_use_rwkv_help),
                 item(
+                  t.srs_import_with_fsrs_params,
+                  t.srs_import_with_fsrs_params_help,
+                ),
+                item(
                   t.srs_import_merge_notetypes,
                   t.srs_import_merge_notetypes_help,
                 ),
@@ -233,6 +237,12 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
               title: t.srs_import_with_deck_configs,
               value: o.withDeckConfigs,
               onChanged: (bool v) => _set(o.copyWith(withDeckConfigs: v)),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-import-with-fsrs-params'),
+              title: t.srs_import_with_fsrs_params,
+              value: o.withFsrsParams,
+              onChanged: (bool v) => _set(o.copyWith(withFsrsParams: v)),
             ),
             AdaptiveSettingsSwitchRow(
               key: const ValueKey<String>('srs-import-use-rwkv'),
