@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -471,6 +472,37 @@ void main() {
       );
     });
 
+    test('并发请求同一未下载页：两路都成功、只打一次源站、落同一个文件', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      // 阅读器显示 + 预取（或两台对端）同时要同一页：两路都要在取页那一步挂住，
+      // 才会真正并发地落盘 / 改名。
+      final Completer<void> gate = Completer<void>();
+      reader.gate = gate;
+      final Future<File> first =
+          online.mangaChapterPageFile('mihon-none', digest, 2);
+      final Future<File> second =
+          online.mangaChapterPageFile('mihon-none', digest, 2);
+      await pumpEventQueue();
+      gate.complete();
+      final List<File> files = await Future.wait(<Future<File>>[first, second]);
+      expect(files[0].path, files[1].path);
+      expect(files[0].readAsBytesSync(), _FakeOnlineReader.pageBytes(2));
+      expect(reader.pageFetches, 1);
+      // 不留下改名失败的暂存文件。
+      expect(
+        files[0]
+            .parent
+            .listSync()
+            .where((FileSystemEntity e) => e.path.endsWith('.part')),
+        isEmpty,
+      );
+    });
+
     test('运行时不认领的条目（iOS host / 二跳互联）照旧只给已下载的章', () async {
       reader.serves = false;
       await insertOnlineManga(
@@ -493,6 +525,7 @@ void main() {
 class _FakeOnlineReader implements OnlineMangaHostReader {
   bool serves = true;
   int pageFetches = 0;
+  Completer<void>? gate;
   Map<String, Object?>? lastChapter;
 
   static List<int> pageBytes(int index) =>
@@ -521,6 +554,7 @@ class _FakeOnlineReader implements OnlineMangaHostReader {
     lastChapter = chapter;
     RangeError.checkValidIndex(index, const <int>[0, 1, 2], 'index');
     pageFetches++;
+    await gate?.future;
     return Uint8List.fromList(pageBytes(index));
   }
 }
