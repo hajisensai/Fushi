@@ -211,6 +211,17 @@ void main() {
         lessThanOrEqualTo(bar.top),
         reason: '工具栏不叠在网页上：WebView 内容拿不到底部让位',
       );
+      expect(
+        tester
+            .getRect(find.byKey(const ValueKey<String>('web-browser-address')))
+            .top,
+        greaterThanOrEqualTo(
+          tester
+              .getRect(find.byKey(const ValueKey<String>('stub-webview')))
+              .bottom,
+        ),
+        reason: '手机竖屏：地址栏也在底部（网页下方）',
+      );
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const ValueKey<String>('web-browser-close')));
@@ -218,6 +229,62 @@ void main() {
       expect(find.byType(FushiWebBrowserPage), findsNothing);
       expect(find.text('Example'), findsOneWidget);
     });
+
+    testWidgets('手机横屏：地址栏与工具栏并成顶部一行、都在网页上方', (WidgetTester tester) async {
+      await pumpHome(tester);
+      await tester.tap(find.text('Example'));
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(780, 360);
+      await tester.pumpAndSettle();
+
+      final Rect web = tester.getRect(
+        find.byKey(const ValueKey<String>('stub-webview')),
+      );
+      final Rect address = tester.getRect(
+        find.byKey(const ValueKey<String>('web-browser-address')),
+      );
+      final Rect bar = tester.getRect(
+        find.byKey(const ValueKey<String>('web-browser-toolbar')),
+      );
+      expect(address.bottom, lessThanOrEqualTo(web.top));
+      expect(bar.bottom, lessThanOrEqualTo(web.top));
+      expect(address.right, lessThanOrEqualTo(bar.left), reason: '同一行，地址栏在左');
+      expect(bar.right, lessThanOrEqualTo(780));
+      expect(web.bottom, 360, reason: '底部不再留工具栏');
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  test('chrome 摆放：手机竖屏底部、横屏顶部，桌面不变', () {
+    const Size portrait = Size(390, 844);
+    const Size landscape = Size(844, 390);
+    for (final TargetPlatform p in <TargetPlatform>[
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
+      expect(
+        webBrowserChromeLayout(platform: p, size: portrait),
+        WebBrowserChromeLayout.mobileBottom,
+      );
+      expect(
+        webBrowserChromeLayout(platform: p, size: landscape),
+        WebBrowserChromeLayout.mobileTop,
+      );
+    }
+    for (final TargetPlatform p in <TargetPlatform>[
+      TargetPlatform.windows,
+      TargetPlatform.macOS,
+      TargetPlatform.linux,
+    ]) {
+      expect(
+        webBrowserChromeLayout(platform: p, size: portrait),
+        WebBrowserChromeLayout.desktop,
+      );
+      expect(
+        webBrowserChromeLayout(platform: p, size: landscape),
+        WebBrowserChromeLayout.desktop,
+      );
+    }
   });
 }
 

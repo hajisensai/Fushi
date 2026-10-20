@@ -76,6 +76,36 @@ WebBrowserBackStep webBrowserBackStep({
   return WebBrowserBackStep.leavePage;
 }
 
+/// 浏览页 chrome（地址栏 + 工具栏）摆在哪。
+enum WebBrowserChromeLayout {
+  /// 桌面：顶部整行地址栏 + 底部居中悬浮工具栏。
+  desktop,
+
+  /// 手机竖屏：地址栏与工具栏都收在底部（拇指区），顶部只留状态栏。
+  mobileBottom,
+
+  /// 手机横屏：地址栏与工具栏并成顶部一行，竖向空间全让给网页。
+  mobileTop,
+}
+
+/// 移动端（Android / iOS）按方向分：竖屏都放底部、横屏都放顶部（用户
+/// 2026-10-20）；桌面维持顶部地址栏 + 底部工具栏。
+@visibleForTesting
+WebBrowserChromeLayout webBrowserChromeLayout({
+  required TargetPlatform platform,
+  required Size size,
+}) {
+  final bool mobile =
+      platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+  if (!mobile) return WebBrowserChromeLayout.desktop;
+  return size.width > size.height
+      ? WebBrowserChromeLayout.mobileTop
+      : WebBrowserChromeLayout.mobileBottom;
+}
+
+/// 手机横屏顶部一行里地址栏至少留的宽度；工具栏只拿剩下的，放不下的收进「⋯」。
+const double _kMobileTopAddressMinWidth = 240;
+
 /// 推出全屏浏览页（[FushiWebBrowserPage]）。它是独立子页：盖住首页外壳的主导航
 /// 底栏 / 侧栏，网页独占整屏，退出回到入口页。
 Future<void> openFushiWebBrowser(BuildContext context, Uri url) =>
@@ -323,10 +353,11 @@ class _FushiWebBrowserHomePageState
 /// app 内通用浏览器的全屏浏览页（五端：Windows / macOS / Linux / Android / iOS），
 /// 由入口页 [FushiWebBrowserHomePage] 经 [openFushiWebBrowser] 推出。
 ///
-/// 版面（两套设计系统同构，组件各自分派）：顶部一整行地址栏（M3E search bar /
-/// iOS 搜索胶囊，左侧 ✕ 退出浏览页，尾部刷新）；网页独占中间；底部居中一条悬浮
-/// 工具栏（纯图标，文字进 tooltip / 语义）+ 网页漫画的「用 Fushi 阅读本章」FAB。
-/// 工具栏默认全部平铺，宽度不够才按优先级把低优先级的收进「⋯」。
+/// 版面（两套设计系统同构，组件各自分派）：地址栏（M3E search bar / iOS 搜索
+/// 胶囊，左侧 ✕ 退出浏览页，尾部刷新）+ 悬浮工具栏（纯图标，文字进 tooltip /
+/// 语义）+ 网页漫画的「用 Fushi 阅读本章」FAB，摆放见 [webBrowserChromeLayout]：
+/// 桌面顶部地址栏、底部工具栏；手机竖屏两者都在底部（紧凑档）；手机横屏并成顶部
+/// 一行。工具栏默认全部平铺，宽度不够才按优先级把低优先级的收进「⋯」。
 ///
 /// - **Fushi 查词**：复用复习卡面那一套（[SrsCardLookupHost] 弹窗栈 + 阅读器选区
 ///   脚本 [ReaderSelectionScripts] + 卡面取词监听 [kSrsCardLookupScript]）：点按
@@ -839,10 +870,49 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       ),
   ];
 
-  /// 顶部整行地址栏：左侧 ✕ 退出浏览页，尾部刷新。
-  Widget _buildAddressBar(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  /// 地址栏：左侧 ✕ 退出浏览页，尾部刷新。[compact] = 手机上的 40 高胶囊
+  /// （桌面是 56 高的独立搜索栏）。
+  Widget _buildAddressField(BuildContext context, {required bool compact}) {
     final InAppWebViewController? controller = _controller;
+    final double? iconSize = compact ? kFushiSearchFieldIconSize : null;
+    final EdgeInsets? iconPadding = compact ? const EdgeInsets.all(4) : null;
+    return FushiSearchField(
+      fieldKey: const ValueKey<String>('web-browser-address'),
+      controller: _address,
+      focusNode: _addressFocus,
+      hintText: t.web_browser_address_hint,
+      keyboardType: TextInputType.url,
+      size: compact ? FushiSearchFieldSize.regular : FushiSearchFieldSize.large,
+      leading: FushiSearchLeading(
+        child: FushiIconButton(
+          key: const ValueKey<String>('web-browser-close'),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          icon: FushiIcons.close,
+          size: iconSize,
+          padding: iconPadding,
+          onTap: _close,
+        ),
+      ),
+      trailing: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('web-browser-reload'),
+          tooltip: t.refresh,
+          icon: FushiIcons.refresh,
+          size: iconSize,
+          padding: iconPadding,
+          onTap: controller == null
+              ? null
+              : () => unawaited(controller.reload()),
+        ),
+      ],
+      onChanged: (String _) {},
+      onSubmitted: _openAddress,
+    );
+  }
+
+  /// 桌面：顶部整行地址栏。
+  Widget _buildDesktopHeader(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -850,40 +920,66 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         tokens.spacing.page,
         tokens.spacing.gap,
       ),
-      child: FushiSearchField(
-        fieldKey: const ValueKey<String>('web-browser-address'),
-        controller: _address,
-        focusNode: _addressFocus,
-        hintText: t.web_browser_address_hint,
-        keyboardType: TextInputType.url,
-        size: FushiSearchFieldSize.large,
-        leading: FushiSearchLeading(
-          child: FushiIconButton(
-            key: const ValueKey<String>('web-browser-close'),
-            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: FushiIcons.close,
-            onTap: _close,
-          ),
-        ),
-        trailing: <Widget>[
-          FushiIconButton(
-            key: const ValueKey<String>('web-browser-reload'),
-            tooltip: t.refresh,
-            icon: FushiIcons.refresh,
-            onTap: controller == null
-                ? null
-                : () => unawaited(controller.reload()),
-          ),
-        ],
-        onChanged: (String _) {},
-        onSubmitted: _openAddress,
+      child: _buildAddressField(context, compact: false),
+    );
+  }
+
+  /// 底部 chrome：桌面只有居中工具栏；手机竖屏是「地址栏 / 工具栏」两行紧凑档。
+  /// 整块落在网页下方的页面底色上，不叠在网页上——WebView 内容拿不到底部让位，
+  /// 叠上去末尾那段永远被挡。
+  Widget _buildBottomBar(BuildContext context, {required bool withAddress}) {
+    final double side = withAddress
+        ? FushiDesignTokens.of(context).spacing.gap
+        : kFushiFloatingToolbarEdgeMargin;
+    return Padding(
+      padding: withBottomSafeInset(
+        context,
+        withAddress
+            ? EdgeInsets.fromLTRB(side, 4, side, 4)
+            : EdgeInsets.fromLTRB(side, 8, side, 12),
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final Widget toolbar = Center(
+            child: _buildToolbar(budget: box.maxWidth, compact: withAddress),
+          );
+          if (!withAddress) return toolbar;
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildAddressField(context, compact: true),
+              const SizedBox(height: 4),
+              toolbar,
+            ],
+          );
+        },
       ),
     );
   }
 
-  /// 底部居中的悬浮工具栏 + 「阅读本章」FAB。整条落在网页下方的页面底色上，
-  /// 不叠在网页上——WebView 内容拿不到底部让位，叠上去末尾那段永远被挡。
-  Widget _buildBottomBar(BuildContext context) {
+  /// 手机横屏：地址栏与工具栏并成顶部一行，地址栏吃剩余宽度。
+  Widget _buildMobileTopBar(BuildContext context) {
+    final double side = FushiDesignTokens.of(context).spacing.gap;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(side, 4, side, 4),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) => Row(
+          children: <Widget>[
+            Expanded(child: _buildAddressField(context, compact: true)),
+            SizedBox(width: side),
+            _buildToolbar(
+              budget: box.maxWidth - _kMobileTopAddressMinWidth - side,
+              compact: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 悬浮工具栏 + 「阅读本章」FAB，在 [budget] 宽度里能平铺几颗就平铺几颗。
+  Widget _buildToolbar({required double budget, required bool compact}) {
     final bool canRead = _scanDriver != null && _controller != null;
     final Widget? fab = canRead
         ? FushiToolbarFab(
@@ -897,51 +993,32 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         : null;
     final List<FushiToolbarItem> items = _toolbarItems();
     final List<FushiToolbarItem> menu = _menuItems();
-    return Padding(
-      padding: withBottomSafeInset(
-        context,
-        const EdgeInsets.fromLTRB(
-          kFushiFloatingToolbarEdgeMargin,
-          8,
-          kFushiFloatingToolbarEdgeMargin,
-          12,
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints box) {
-          final double budget =
-              box.maxWidth -
-              (fab == null ? 0 : 56 + kFushiFloatingToolbarFabGap);
-          final int visible = _toolbarFit.visibleFor(
-            groups: <List<FushiToolbarItem>>[items],
-            budget: budget,
-            pinnedMenu: menu.isNotEmpty,
-            padding: 2 * kFushiFloatingToolbarPadding,
-          );
-          final ({
-            List<List<FushiToolbarItem>> groups,
-            List<FushiToolbarItem> overflow,
-          })
-          split = fushiTopBarSplitActions(
-            <List<FushiToolbarItem>>[items],
-            const <FushiToolbarItem>[],
-            visible,
-          );
-          return Center(
-            child: FushiFloatingToolbar(
-              key: const ValueKey<String>('web-browser-toolbar'),
-              // 一组：底部悬浮工具栏不画组间分隔线。
-              groups: <List<FushiToolbarItem>>[
-                <FushiToolbarItem>[
-                  for (final List<FushiToolbarItem> g in split.groups) ...g,
-                ],
-              ],
-              overflow: <FushiToolbarItem>[...split.overflow, ...menu],
-              fab: fab,
-            ),
-          );
-        },
-      ),
+    final int visible = _toolbarFit.visibleFor(
+      groups: <List<FushiToolbarItem>>[items],
+      budget: budget - (fab == null ? 0 : 56 + kFushiFloatingToolbarFabGap),
+      pinnedMenu: menu.isNotEmpty,
+      padding: 2 * (compact ? 4 : kFushiFloatingToolbarPadding),
+    );
+    final ({
+      List<List<FushiToolbarItem>> groups,
+      List<FushiToolbarItem> overflow,
+    })
+    split = fushiTopBarSplitActions(
+      <List<FushiToolbarItem>>[items],
+      const <FushiToolbarItem>[],
+      visible,
+    );
+    return FushiFloatingToolbar(
+      key: const ValueKey<String>('web-browser-toolbar'),
+      // 一组：悬浮工具栏不画组间分隔线。
+      groups: <List<FushiToolbarItem>>[
+        <FushiToolbarItem>[
+          for (final List<FushiToolbarItem> g in split.groups) ...g,
+        ],
+      ],
+      overflow: <FushiToolbarItem>[...split.overflow, ...menu],
+      fab: fab,
+      compact: compact,
     );
   }
 
@@ -1023,6 +1100,10 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
 
   @override
   Widget build(BuildContext context) {
+    final WebBrowserChromeLayout layout = webBrowserChromeLayout(
+      platform: Theme.of(context).platform,
+      size: MediaQuery.sizeOf(context),
+    );
     // 查词弹窗开合要重算 PopScope：弹窗栈挂在本页路由之内、没有自己的 PopScope。
     return ListenableBuilder(
       listenable: _lookup,
@@ -1043,14 +1124,23 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         controller: _lookup,
         child: FushiPageScaffold(
           title: _pageTitle.trim().isEmpty ? t.web_browser_title : _pageTitle,
-          header: _buildAddressBar(context),
+          header: switch (layout) {
+            WebBrowserChromeLayout.desktop => _buildDesktopHeader(context),
+            WebBrowserChromeLayout.mobileTop => _buildMobileTopBar(context),
+            // 竖屏顶部只留状态栏（脚手架的 SafeArea 已让出）。
+            WebBrowserChromeLayout.mobileBottom => const SizedBox.shrink(),
+          },
           // 正文是平台 WebView，内容在 WebView 内部滚动、拿不到页头让位：不叠放。
           extendBodyBehindHeader: false,
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               Expanded(child: _buildWebView(context)),
-              _buildBottomBar(context),
+              if (layout != WebBrowserChromeLayout.mobileTop)
+                _buildBottomBar(
+                  context,
+                  withAddress: layout == WebBrowserChromeLayout.mobileBottom,
+                ),
             ],
           ),
         ),
