@@ -9,6 +9,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart' show AssetEntry;
 import 'package:fushi_engine/sync/online_novel_book.dart';
+import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
@@ -108,6 +109,18 @@ class SyncBookResult {
   );
 }
 
+/// 本书生效的「上传文件」开关：漫画（[BookFormat.manga]）看 [syncMangaContent]，
+/// 其它格式看 [syncContent]（所有者 2026-10-21：书籍和漫画分开）。云盘补缺路径与互联
+/// live 上传共用这一个判据。
+bool isBookContentSyncEnabled(
+  EpubBookRow book, {
+  required bool syncContent,
+  required bool syncMangaContent,
+}) =>
+    BookFormat.parseOrEpub(book.format) == BookFormat.manga
+        ? syncMangaContent
+        : syncContent;
+
 /// 单本书一次同步的归类结果：成功应用 / 真失败 / 良性空操作。
 ///
 /// [SyncResult.skipped] 既可能是「无可传输内容」的良性跳过（`error == null`，
@@ -174,9 +187,17 @@ class SyncManager {
     required StatisticsSyncMode statsSyncMode,
     required bool syncAudioBook,
     bool syncContent = false,
+    bool syncMangaContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
   }) async {
+    // 书籍与漫画各有自己的「上传文件」开关：这里一次定下本书生效的那个，下游补缺 /
+    // 导出 sidecar 的门一律只看它（漫画开关关时这本漫画的书文件与 sidecar 都不碰）。
+    final bool contentEnabled = isBookContentSyncEnabled(
+      book,
+      syncContent: syncContent,
+      syncMangaContent: syncMangaContent,
+    );
     SyncBookResult? progressResult;
     // 进度已判定后才失败 = 失败的是补传书文件 / 元数据：保留已落地的进度结果（导入 /
     // 导出 / 冲突都照实上报），失败原因记进 contentError；进度判定前就失败才是整本失败。
@@ -197,7 +218,7 @@ class SyncManager {
         syncStats: syncStats,
         statsSyncMode: statsSyncMode,
         syncAudioBook: syncAudioBook,
-        syncContent: syncContent,
+        syncContent: contentEnabled,
         importOnly: importOnly,
         listing: listing,
         onProgressResult: (SyncBookResult result) => progressResult = result,
@@ -218,7 +239,7 @@ class SyncManager {
             syncStats: syncStats,
             statsSyncMode: statsSyncMode,
             syncAudioBook: syncAudioBook,
-            syncContent: syncContent,
+            syncContent: contentEnabled,
             importOnly: importOnly,
             // 重试是因为一次瞬时后端错误；此时快照多半已经陈旧，不再复用它，
             // 老老实实逐本列举拿最新状态。
@@ -254,6 +275,7 @@ class SyncManager {
     required StatisticsSyncMode statsSyncMode,
     required bool syncAudioBook,
     bool syncContent = false,
+    bool syncMangaContent = false,
     bool importOnly = false,
     RemoteListingSnapshot? listing,
     void Function(int done, int total, String title)? onBookProgress,
@@ -276,6 +298,7 @@ class SyncManager {
         statsSyncMode: statsSyncMode,
         syncAudioBook: syncAudioBook,
         syncContent: syncContent,
+        syncMangaContent: syncMangaContent,
         importOnly: importOnly,
         listing: listing,
       );
@@ -873,10 +896,11 @@ class SyncManager {
   ///
   /// [remoteFileNames] 是本轮列举快照里这本书文件夹的文件名；`null` = 没有快照（WebDAV /
   /// FTP / 单本同步路径），此时在确有东西要补时列一次目录，而不是逐个文件探针。快照
-  /// 说缺的 EPUB 上传前再实时确认一次（快照可能早于同轮的并发上传 / 重试，避免传出
-  /// 两份）。书文件夹里只放 EPUB（漫画包同名）与 sidecar：读取方
-  /// （`importRemoteBookFolder` / 对比弹窗）只认 `.epub` 与 `.fushiaudio`，有声书音频由
-  /// `.fushiaudio` 包负责，原始音频文件不往这里传。
+  /// 说缺的书文件上传前再实时确认一次（快照可能早于同轮的并发上传 / 重试，避免传出
+  /// 两份）。书文件夹里只放书内容资产（EPUB `<title>.epub` / 漫画包
+  /// `<title>.manga.zip`，命名见 `cloud_book_content_names.dart`）与 sidecar：读取方
+  /// （`importRemoteBookFolder` / 对比弹窗）只认这两种内容名与 `.fushiaudio`，有声书
+  /// 音频由 `.fushiaudio` 包负责，原始音频文件不往这里传。
   Future<void> _exportContentIfMissing({
     required EpubBookRow book,
     required String folderId,
@@ -906,13 +930,24 @@ class SyncManager {
         (format != BookFormat.manga ||
             hasExportableMangaContent(book.extractDir));
     if (exportable) {
-      // 漫画包与 EPUB 共用同一个资产名 `<title>.epub`——与互联通道同契约（扩展名
-      // 不参与判定，内容即真相，导入侧 isMangaPackage 嗅探分流）。云盘侧因此不需
-      // 要第二套命名：内容探针 / getRemoteBook / 对比弹窗的「远端有无内容」判据
-      // 全部零改。
-      final fileName = '${sanitizeTtuFilename(book.title)}.epub';
-      if (!(await remoteNames()).contains(fileName) &&
-          await _backend.findContentFile(folderId, fileName) == null) {
+      // 漫画包用漫画专属名 `<title>.manga.zip`（所有者 2026-10-21：书籍和漫画分开），
+      // EPUB 仍是 `<title>.epub`。旧版本把漫画包也传成 `<title>.epub`：远端已有那份
+      // 旧名就算已有，不再传第二份（读取方新旧名都认，导入一律按内容嗅探分流）。
+      final bool isManga = format == BookFormat.manga;
+      final String fileName = isManga
+          ? cloudMangaContentFileName(book.title)
+          : cloudEpubContentFileName(book.title);
+      final List<String> presentNames = <String>[
+        fileName,
+        if (isManga) cloudEpubContentFileName(book.title),
+      ];
+      final Set<String> listed = await remoteNames();
+      bool present = presentNames.any(listed.contains);
+      for (final String name in presentNames) {
+        if (present) break;
+        present = await _backend.findContentFile(folderId, name) != null;
+      }
+      if (!present) {
         final Directory tmpDir =
             Directory.systemTemp.createTempSync('fushi_epub_export');
         final File epubTmp = File(p.join(tmpDir.path, fileName));

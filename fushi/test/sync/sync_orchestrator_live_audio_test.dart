@@ -138,6 +138,7 @@ SyncOrchestrator _audioOrchestrator({
       syncStats: false,
       syncAudioBookPosition: false,
       syncContent: false,
+      syncMangaContent: false,
       syncAudioBookFiles: syncAudioBookFiles,
       syncDictionary: false,
       localAudioEntries: localAudioEntries,
