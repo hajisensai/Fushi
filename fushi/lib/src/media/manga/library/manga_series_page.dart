@@ -377,8 +377,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         : _isLocal
         ? _displayTitle
         : '';
+    // 远程引擎先上传再识别，两段各自从 0 数起：上传段用上传文案（BUG-3605）。
+    final bool uploading = event?.uploading ?? false;
     final List<String> lines = <String>[
-      if (job != null)
+      if (job != null && uploading) ...<String>[
+        if (runningLabel.isNotEmpty) runningLabel,
+        t.manga_remote_ocr_uploading(done: done, total: total),
+      ] else if (job != null)
         t.manga_series_ocr_running(
           chapter: runningLabel,
           done: '$done',
@@ -1579,6 +1584,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               : (
                   done: _ocrEvent?.pagesDone ?? 0,
                   total: _ocrEvent?.pagesTotal ?? 0,
+                  uploading: _ocrEvent?.uploading ?? false,
                 ),
           ocrQueuedChapterKeys: _ocrQueuedChapterKeys,
           languageScope: _languageScope,

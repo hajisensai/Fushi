@@ -82,6 +82,8 @@ Map<String, Object?> mangaOcrCtlJobJson({
   if (lastEvent != null) ...<String, Object?>{
     'pagesDone': lastEvent.pagesDone,
     'pagesTotal': lastEvent.pagesTotal,
+    // 远程引擎的上传段：计数是已上传页数，识别段会从 0 重数（BUG-3605）。
+    if (lastEvent.uploading) 'phase': 'uploading',
   },
   'queued': queuedDirectories.length,
   if (error != null) 'error': '$error',
