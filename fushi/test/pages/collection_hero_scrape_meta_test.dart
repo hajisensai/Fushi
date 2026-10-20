@@ -33,7 +33,7 @@ void main() {
   late Directory coverDir;
 
   /// 合集自有封面必须是磁盘上真实存在的文件——详情页与库页同样只认存在的本地
-  /// 封面，悬空路径按「没设过」处理（BUG-3622）。
+  /// 封面，悬空路径按「没设过」处理（BUG-3638）。
   late String existingCoverPath;
 
   setUp(() async {

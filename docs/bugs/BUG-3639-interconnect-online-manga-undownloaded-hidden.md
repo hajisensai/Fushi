@@ -1,4 +1,4 @@
-## BUG-3622 · interconnect-online-manga-undownloaded-hidden
+## BUG-3639 · interconnect-online-manga-undownloaded-hidden
 - **报告**：2026-10-20（用户：手机上看不见 Fushi 互联上的在线漫画（漫画源加入书架的作品）；iPhone 本机没有在线源，也要能经互联看）
 - **真实性**：✅ 真 bug。host 清单 `packages/fushi_engine/lib/sync/local_library_host_service/books.part.dart` 的 `hasMangaChapters` 只认 `hasAnyChapterDirSync`（host 已下载过至少一章），`manga.part.dart` 的 `_downloadedChapters` / `mangaChapterManifest` / `mangaChapterPageFile` 也只供已完整下载的章；在线条目（Mihon / 网页漫画）一章没下就整条不进 `/api/library/books`，对端漫画架与互联漫画源都看不见。iPhone 按合规没有在线源宿主，互联是它唯一途径，于是完全看不到。
 - **[x] ① 已修复** — 引擎新增注入点 `OnlineMangaHostReader`（`packages/fushi_engine/lib/sync/online_manga_host_reader.dart`），`LocalLibraryHostService(onlineMangaReader:)`：能被 host 本机运行时认领的在线条目进清单，页表列出 `chaptersJson` 全部章，没下载的章的页表 / 页图由 host 运行时现取（页图落系统临时目录、同页复用，不进书目录以免冒充已下载）。app 侧 `InterconnectOnlineMangaHostReader`（`fushi/lib/src/media/manga/interconnect/interconnect_online_manga_host_reader.dart`）走 `onlineMangaLibraryService` 的 `resolveChapterPages` / `fetchChapterPage`，最近 8 章页表缓存；iOS host、Aidoku 遗留条目、互联收来的条目不认领（不二跳），无头服务端不装配 = 旧行为。客户端（含 iPhone）协议不变，老 client 同样受益。

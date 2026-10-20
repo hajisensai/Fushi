@@ -1,4 +1,4 @@
-## BUG-3622 · pdf-manga-text-layer-drift
+## BUG-3637 · pdf-manga-text-layer-drift
 - **报告**：2026-10-20（用户：「这个怎么标准的pdf，字的位置还会偏移」——带文字层的竖排小说 PDF 进漫画库后，OCR 逐字框整体错位，越往列尾越偏）
 - **真实性**：✅ 真 bug。两层原因：
   1. PDF 进漫画库只栅格化页图、丢掉 PDF 自带文字层：`fushi/lib/src/media/manga/book_format_rebuild.dart` `_rasterizePdfPages`（只写 PNG）→ `MangaImporter.payloadFromImageFolder` 生成空块的 `manga.json`，字框全靠事后 OCR。

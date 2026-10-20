@@ -1,4 +1,4 @@
-## BUG-3622 · 漫画双页展开读到最后一页不标读完，卷一直留在首页继续阅读
+## BUG-3633 · 漫画双页展开读到最后一页不标读完，卷一直留在首页继续阅读
 - **报告**：2026-10-20（用户截图：首页「继续阅读」主角卡《志乃と恋》第 3 卷，进度条已满：「最后一页了，怎么还在继续阅读里面」）
 - **真实性**：✅ 真 bug（沿代码路径核实）
   - 首页「继续」区的书合集分支（`fushi/lib/src/pages/implementations/home_dashboard_page.dart` `_collectContinueEntries` → `dashboardBookCollectionContinueIndex`）判成员读完用 `classifyShelfReadStatus`：`completedAt` 非 null，或 `position >= duration`。

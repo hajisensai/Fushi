@@ -225,7 +225,7 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                         }
 
                         val ortSessionOptions = OrtSession.SessionOptions()
-                        // Fushi fork (PATCHES.md delta 14, BUG-3622): every Android session runs
+                        // Fushi fork (PATCHES.md delta 14, BUG-3636): every Android session runs
                         // the NEON MLAS path. KleidiAI only engages on SME phones, where it has
                         // SIGILLed (ORT 1.23) and still retains MatMul buffers per largest
                         // input shape (microsoft/onnxruntime#29538, unfixed in 1.28).

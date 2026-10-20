@@ -22,7 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// 清单来源（可复现）：解包
 /// `com.microsoft.onnxruntime:onnxruntime-android:1.28.0` 的 AAR（1.23.0 时清单相同，
-/// BUG-3622 升级时逐条比对过），对
+/// BUG-3636 升级时逐条比对过），对
 /// `jni/arm64-v8a/libonnxruntime4j_jni.so` 取 `ai/onnxruntime/...` 字符串：
 ///
 ///     unzip -p onnxruntime-android-1.28.0.aar jni/arm64-v8a/libonnxruntime4j_jni.so \

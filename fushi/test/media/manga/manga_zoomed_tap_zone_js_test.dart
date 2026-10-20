@@ -5,7 +5,7 @@ import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
-/// BUG-3622：用户放大看细节时，点左右热区不再翻页；阅读器自己放大的倍率
+/// BUG-3634：用户放大看细节时，点左右热区不再翻页；阅读器自己放大的倍率
 /// （默认缩放 / 宽页切半 / 宽页自动放大 / 分镜聚焦）不算「用户放大」。
 ///
 /// 跑的是生成文档里**真实的** `_userZoomedIn` / `_tapZoneTurn` / `_onTap` /

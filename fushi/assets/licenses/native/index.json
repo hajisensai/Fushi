@@ -10228,7 +10228,7 @@
         "android"
       ],
       "source": "third_party/flutter_onnxruntime/android/build.gradle com.microsoft.onnxruntime:onnxruntime-android:1.28.0 (Maven Central aar: jni/arm64-v8a/libonnxruntime.so 28637280 B); texts from raw.githubusercontent.com/microsoft/onnxruntime/v1.28.0/{LICENSE,ThirdPartyNotices.txt}",
-      "note": "Shared libonnxruntime.so + libonnxruntime4j_jni.so. The aar does not ship ThirdPartyNotices.txt. Moved off 1.23.0 by BUG-3622 (KleidiAI SME2 kernels SIGILL on SME-only CPUs)."
+      "note": "Shared libonnxruntime.so + libonnxruntime4j_jni.so. The aar does not ship ThirdPartyNotices.txt. Moved off 1.23.0 by BUG-3636 (KleidiAI SME2 kernels SIGILL on SME-only CPUs)."
     },
     {
       "name": "ONNX Runtime",

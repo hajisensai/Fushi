@@ -6,3 +6,4 @@
 - **[x] ① 已修复** — 新增 `AniListMedia.nativeFirstTitle`（日文原名优先，`displayTitle` 保持罗马字优先给搜索），日历标题与 `discoveryItemFromAiringEpisode` 改用它（罗马字留在 aliases）；新增纯函数 `anilistIdOfVideoDownloadSubscription`（identity_json 的 anilistId 优先，否则仅 metadata_provider=anilist 的 external_id；Bangumi / TMDB id 一律不当 AniList id），日历把两套订阅取并集；本周空态加「显示本季全部」按钮直达全量。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/airing_discovery_mapping_test.dart`（标题口径、订阅行 → anilistId 三种来源含 Bangumi 负例）。
 - **备注**：Bangumi 元数据的订阅（无 AniList id）仍不会进「相关」视图，需要 Bangumi → AniList 的 id 映射才能补，本轮不做。
+- **集成说明（2026-10-20 合批）**：同批的 #2423 按用户同日决定去掉了「显示本季全部」开关、放送表恒取当季全量，「相关」视图与它的空态按钮随之消失；两套订阅取并集的逻辑移进共享取数 `fushi/lib/src/media/video/airing_calendar_loader.dart` 的 `loadAiringCalendarWeek`（日历页与发现页「今日放送」共用），只驱动「订阅中」徽章。

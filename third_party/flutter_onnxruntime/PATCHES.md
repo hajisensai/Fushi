@@ -272,7 +272,7 @@ the four project deployment targets and the guard test move with it.
 
 14. Android ORT `1.23.0` -> **`1.28.0`**, and every Android session gets
     `mlas.disable_kleidiai=1` (`android/build.gradle`,
-    `FlutterOnnxruntimePlugin.kt` `createSession`; BUG-3622). iOS/macOS stay on
+    `FlutterOnnxruntimePlugin.kt` `createSession`; BUG-3636). iOS/macOS stay on
     `onnxruntime-objc` 1.23.0.
 
     - 1.23.x MLAS picks KleidiAI's **SME2** kernels whenever the CPU reports

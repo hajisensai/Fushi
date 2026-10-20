@@ -1,4 +1,4 @@
-// BUG-3622 守卫：Android 的 ONNX Runtime 不得回到会在 SME-only CPU 上 SIGILL 的版本，
+// BUG-3636 守卫：Android 的 ONNX Runtime 不得回到会在 SME-only CPU 上 SIGILL 的版本，
 // 且每个 Android 会话都必须关掉 KleidiAI。
 //
 // 崩溃形状：realme GT 8 Pro（骁龙 8 Elite Gen 5，Oryon 核只有 SME、没有 SME2）上，
@@ -89,7 +89,7 @@ void main() {
       greaterThanOrEqualTo(0),
       reason:
           'onnxruntime-android $version < 1.28.0：1.23.x 在 SME-only CPU（骁龙 8 Elite '
-          'Gen 5）上跑 KleidiAI SME2 内核直接 SIGILL（BUG-3622），1.27.0 在同一颗芯片上'
+          'Gen 5）上跑 KleidiAI SME2 内核直接 SIGILL（BUG-3636），1.27.0 在同一颗芯片上'
           '还会静默算错；`mlas.disable_kleidiai` 也要 1.25 起才认。',
     );
     expect(
@@ -143,7 +143,7 @@ void main() {
       allOf(greaterThan(optionsAt), lessThan(createAt)),
       reason:
           'createSession 分支必须在新建 SessionOptions 之后、ortEnvironment.createSession '
-          '之前设 mlas.disable_kleidiai=1（BUG-3622；理由见本文件头）',
+          '之前设 mlas.disable_kleidiai=1（BUG-3636；理由见本文件头）',
     );
   });
 

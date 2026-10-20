@@ -275,7 +275,7 @@ var document = {
   addEventListener: function(){},
   body: {appendChild: function(){}},
 };
-// 未放大（BUG-3622 的放大态判据住在 canvas zoom 段，本 harness 不截那段）。
+// 未放大（BUG-3634 的放大态判据住在 canvas zoom 段，本 harness 不截那段）。
 function _userZoomedIn(){ return false; }
 var calls = [];
 var window = {
