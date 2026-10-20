@@ -31,13 +31,20 @@ void main() {
     expect(shell, contains('MediaSourcesPage('));
   });
 
-  test('主页只组装继续观看、下一集和最近添加，系列与原始视频分流', () {
+  test('主页只组装主卡、继续观看（含下一集）、已更新未看和最近添加，系列与原始视频分流', () {
     final String page = File(
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
 
     expect(page, contains('_buildContinueRow('));
-    expect(page, contains('_buildNextEpisodeRow('));
+    expect(page, contains('_buildHomeHeroCard('));
+    expect(page, contains('_buildHomeHeroSplit('));
+    expect(page, contains('_buildSubscriptionUpdatesRow('));
+    expect(
+      page,
+      isNot(contains('_buildNextEpisodeRow(')),
+      reason: '「下一集」已并入继续观看（continueWatchingSeriesIndex 即 Next-Up 口径）',
+    );
     expect(page, contains('_buildRecentlyAddedRow('));
     expect(page, contains('_buildLocalVideoSlivers('));
     expect(page, contains('_buildAllVideoSlivers('));

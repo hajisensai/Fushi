@@ -30,13 +30,13 @@ void main() {
   });
 
   Future<AppModel> buildModel({bool withSessions = true}) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_game_detail_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_game_detail_',
+    );
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -44,7 +44,9 @@ void main() {
     });
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       ..wireDatabaseForTesting(db);
 
     await appModel.setGalgames(<GalgameEntry>[
@@ -101,9 +103,9 @@ void main() {
 
   /// 编辑 tab 的字段定位：按 key 而不是按标签文案（文案随 17 语言翻译漂移）。
   Finder editField(String fieldKey) => find.descendant(
-        of: find.byKey(ValueKey<String>('galgame-edit-$fieldKey')),
-        matching: find.byType(TextField),
-      );
+    of: find.byKey(ValueKey<String>('galgame-edit-$fieldKey')),
+    matching: find.byType(TextField),
+  );
 
   Future<void> pumpPage(
     WidgetTester tester,
@@ -144,7 +146,8 @@ void main() {
     // 折线图与会话流水都在（流水在折叠线以下，先滚上来）。
     expect(
       find.byWidgetPredicate(
-          (Widget w) => w is CustomPaint && w.painter is StatLineChartPainter),
+        (Widget w) => w is CustomPaint && w.painter is StatLineChartPainter,
+      ),
       findsOneWidget,
     );
     await tester.drag(find.byType(ListView), const Offset(0, -400));
@@ -162,13 +165,23 @@ void main() {
 
   testWidgets('简介 tab 展示 summary / 别名 / 发行日', (WidgetTester tester) async {
     await pumpPage(tester, await buildModel(), initialTab: 1);
-    expect(find.text('这是简介。'), findsOneWidget);
+    // 紧凑 hero 也垫一份折叠简介（galgame-hero-summary），这里只认简介 tab 那份。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('galgame-summary-text')),
+        matching: find.text('这是简介。'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text(t.game_summary_aliases), findsOneWidget);
     expect(find.text('アルファ'), findsOneWidget);
     // 简介与资料值可选择复制（反馈 2DmrXg-wtD）。
     expect(
       find.byWidgetPredicate(
-        (Widget w) => w is SelectableText && w.data == '这是简介。',
+        (Widget w) =>
+            w is SelectableText &&
+            w.data == '这是简介。' &&
+            w.key == const ValueKey<String>('galgame-summary-text'),
       ),
       findsOneWidget,
     );
@@ -264,10 +277,10 @@ void main() {
     final GalgameEntry saved = appModel.galgameRepo.byId('g1')!;
     expect(saved.launchArgs, r'-windowed --save="Z:\My Saves"');
     // 原样存的一行，拆出来才是 argv（injector 侧一个 token 一个 --arg）。
-    expect(
-      saved.launchArgumentTokens,
-      <String>['-windowed', r'--save=Z:\My Saves'],
-    );
+    expect(saved.launchArgumentTokens, <String>[
+      '-windowed',
+      r'--save=Z:\My Saves',
+    ]);
     // 逐字段重建的其余字段一个都不能丢。
     expect(saved.exePath, r'Z:\a\alpha.exe');
     expect(saved.workdir, r'Z:\a');

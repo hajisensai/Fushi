@@ -39,6 +39,24 @@
 |---|:--:|:--:|---|
 | [BUG-3623](bugs/BUG-3623-epub-zip-extra-field-padding-range-error.md) | ✅ | ✅ | EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读） |
 | [BUG-3622](bugs/BUG-3622-manga-cbz-avif-pages.md) | ✅ | ✅ | CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images） |
+> 共 3244 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3640](bugs/BUG-3640-scrape-ledger-plaintext-credentials.md) | ✅ | ✅ | 补刮账本把含凭据的配置指纹明文落盘 |
+| [BUG-3639](bugs/BUG-3639-interconnect-online-manga-undownloaded-hidden.md) | ✅ | ✅ | interconnect-online-manga-undownloaded-hidden |
+| [BUG-3638](bugs/BUG-3638-collection-hero-cover-dangling-path.md) | ✅ | ✅ | 系列封面路径悬空时详情页 hero 不回落到刮削封面 |
+| [BUG-3637](bugs/BUG-3637-pdf-manga-text-layer-drift.md) | ✅ | ✅ | pdf-manga-text-layer-drift |
+| [BUG-3636](bugs/BUG-3636-android-ort-sme2-sigill.md) | ✅ | ✅ | Android 本地推理在骁龙 8 Elite Gen 5 上 SIGILL 闪退（ORT 1.23 误用 KleidiAI SME2 内核） |
+| [BUG-3635](bugs/BUG-3635-gal-text-process-quotes-drops-narration.md) | ✅ | ✅ | gal-text-process-quotes-drops-narration |
+| [BUG-3634](bugs/BUG-3634-manga-zoomed-tap-zone-turns-page.md) | ✅ | ✅ | manga-zoomed-tap-zone-turns-page |
+| [BUG-3633](bugs/BUG-3633-manga-spread-last-page-not-completed.md) | ✅ | ✅ | 漫画双页展开读到最后一页不标读完，卷一直留在首页继续阅读 |
+| [BUG-3632](bugs/BUG-3632-waveform-probe-tail-overrun-shifts-waveform.md) | ✅ | ✅ | waveform-probe-tail-overrun-shifts-waveform |
+| [BUG-3631](bugs/BUG-3631-apple-segmented-overflow.md) | ✅ | ✅ | iPhone 上 Apple 分段条放不下时右侧被裁、横拖滚不动 |
+| [BUG-3630](bugs/BUG-3630-mining-sentence-truncated.md) | ✅ | ✅ | 视觉小说模式制卡句子被切屏截断成半句 |
+| [BUG-3624](bugs/BUG-3624-manga-swipe-follow-bound-to-page-animation.md) | ✅ | ✅ | manga-swipe-follow-bound-to-page-animation |
+| [BUG-3623](bugs/BUG-3623-manga-turn-queue-silent-stall.md) | 🚧 | 🚧 | manga-turn-queue-silent-stall |
+| [BUG-3622](bugs/BUG-3622-airing-calendar-romaji-and-empty-related.md) | ✅ | ✅ | 放送日历标题全是罗马字 + 关掉「显示本季全部」后为空 |
 | [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
 | [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
 | [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |

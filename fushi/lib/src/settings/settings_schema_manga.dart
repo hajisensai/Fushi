@@ -153,7 +153,8 @@ SettingsSection _mangaPagingSection() {
             c.appModel.setMangaPageAnimation(value),
         defaultValue: kMangaPageAnimationDefault.key,
       ),
-      // 速度 / 跟手只在有动画时才有意义，随效果显隐（同点击热区布局的口径）。
+      // 速度只在有动画时才有意义，随效果显隐（同点击热区布局的口径）；跟手与
+      // 效果无关（BUG-3624，对齐 Mihon），恒显示。
       SettingsSegmentedItem<String>(
         id: 'manga.page_animation_speed',
         title: t.page_turn_animation_speed,
@@ -185,9 +186,6 @@ SettingsSection _mangaPagingSection() {
         title: t.page_turn_follow_drag,
         subtitle: t.page_turn_follow_drag_description,
         icon: FushiIcons.swipe,
-        visible: (SettingsContext c) => mangaPageAnimationFromKey(
-          c.appModel.mangaPageAnimation,
-        ).isDirectional,
         value: (SettingsContext c) => c.appModel.mangaPageTurnFollowDrag,
         onChanged: (SettingsContext c, bool value) =>
             c.appModel.setMangaPageTurnFollowDrag(value),

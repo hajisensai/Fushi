@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -26,56 +27,85 @@ import 'package:flutter_test/flutter_test.dart';
 /// still guards getSentenceContext's presence).
 void main() {
   test(
-      'getSentenceContext boundary characterization (executes selection JS via '
-      'node)', () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS execution');
-      return;
-    }
+    'getSentenceContext boundary characterization (executes selection JS via '
+    'node)',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped('node not found on PATH; skipping JS execution');
+        return;
+      }
 
-    final File jsTest = File(
-      'test/reader/reader_get_sentence_context_boundary_test.js',
-    );
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'characterization harness ${jsTest.path} must exist');
+      final File jsTest = File(
+        'test/reader/reader_get_sentence_context_boundary_test.js',
+      );
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'characterization harness ${jsTest.path} must exist',
+      );
 
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
-    );
+      // BUG-3630：断言里有日文原句，按 UTF-8 解码（Windows 默认按系统代码页解码会乱码）。
+      final ProcessResult result = await Process.run(
+        nodeExe,
+        <String>[jsTest.path],
+        workingDirectory: Directory.current.path,
+        stdoutEncoding: utf8,
+        stderrEncoding: utf8,
+      );
 
-    expect(
-      result.exitCode,
-      0,
-      reason: 'getSentenceContext characterization failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-    final String stdout = result.stdout.toString();
-    expect(stdout, contains('all assertions passed'),
-        reason: 'harness must reach its success marker');
-    // The empty-sentence path must remain the whitespace-only case (the toast
-    // `card_mined_no_sentence_captured` keys off exactly this).
-    expect(stdout, contains('case4_whitespace_only :: {"sentence":""'),
-        reason: 'only the whitespace-only container yields an empty sentence');
-    // BUG-2196：源码硬换行不再切句。这一条钉的是用户报的原句——修复前它会停在
-    // 逗号后的换行处，制卡拿到半截话、按句裁的音频也跟着漏词。
-    expect(
-      stdout,
-      contains('case11_before_wrap :: {"sentence":"And there were in the same '
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'getSentenceContext characterization failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      final String stdout = result.stdout.toString();
+      expect(
+        stdout,
+        contains('all assertions passed'),
+        reason: 'harness must reach its success marker',
+      );
+      // The empty-sentence path must remain the whitespace-only case (the toast
+      // `card_mined_no_sentence_captured` keys off exactly this).
+      expect(
+        stdout,
+        contains('case4_whitespace_only :: {"sentence":""'),
+        reason: 'only the whitespace-only container yields an empty sentence',
+      );
+      // BUG-2196：源码硬换行不再切句。这一条钉的是用户报的原句——修复前它会停在
+      // 逗号后的换行处，制卡拿到半截话、按句裁的音频也跟着漏词。
+      expect(
+        stdout,
+        contains(
+          'case11_before_wrap :: {"sentence":"And there were in the same '
           'country shepherds abiding in the field,  keeping watch over their '
-          'flock by night."}'),
-      reason: 'a hard wrap inside one <p> must not end the sentence, and the '
-          'newline must be normalised to a space',
-    );
-  });
+          'flock by night."}',
+        ),
+        reason:
+            'a hard wrap inside one <p> must not end the sentence, and the '
+            'newline must be normalised to a space',
+      );
+      // BUG-3630：用户原句，「書」带注音。整章 DOM（分页 / 连续）上取句跨过 ruby、跳过
+      // <rt>，句子从开引号起，不会从「き」起。
+      expect(
+        stdout,
+        contains(
+          'case12_ruby_inside_sentence :: {"sentence":"「作中の探偵役が、'
+          '素人のミステリ書きと同じ思考なのをひけらかされるのだからな」","offset":26}',
+        ),
+        reason: 'a ruby inside the sentence must not cut it',
+      );
+    },
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

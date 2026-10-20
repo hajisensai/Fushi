@@ -147,7 +147,9 @@ void main() {
           ValueKey<String>('home_video_continue_collection_$cid'),
           skipOffstage: skipOffstage,
         ),
-        matching: find.text(
+        // 2026-10 首页重设计：唯一在看的这部被提成首屏主卡（key 沿用继续观看合集
+        // 卡），横排版主卡把「下一集 · 第 N 集」与「已看 M 集」拼成一行副标题。
+        matching: find.textContaining(
           t.video_home_next_episode_number(n: n),
           skipOffstage: skipOffstage,
         ),

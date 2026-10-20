@@ -67,6 +67,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
+import 'package:fushi/src/media/video/airing_calendar_loader.dart';
 import 'package:fushi/src/media/video/acquisition/remote_video_acquisition_session.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_service.dart';
 import 'package:fushi_engine/media/video/download/video_discovery_submit.dart';
@@ -2223,8 +2224,16 @@ class _HomePageState extends BasePageState<HomePage>
       onAiAcquire: _canAiAcquire && _aiAcquireModulesEnabled
           ? _openAiVideoAcquisition
           : null,
+      // 发现页「今日放送」小模块：与完整放送日历页同一条取数路径。
+      loadAiringCalendar: _loadAiringCalendarWeek,
     );
   }
+
+  /// 放送日历取数端口（[VideoDiscoveryActions.loadAiringCalendar]）：读的是
+  /// 调用时的 appModel，与日历页 `loadAiringCalendarWeek(_appModel, ...)` 同源。
+  Future<AiringCalendarSnapshot> _loadAiringCalendarWeek(
+    AiringCalendarRequest request,
+  ) => loadAiringCalendarWeek(appModelNoUpdate, request);
 
   /// 取消本作品当前在飞的下载任务。
   ///

@@ -130,7 +130,9 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Chapter 1'), findsOneWidget);
-      expect(find.text('Add to manga shelf'), findsOneWidget);
+      // 2048 宽走两栏（≥ kMediaDetailTwoPaneMinWidth）：左栏紧凑 hero 的次按钮
+      // 是图标钮，文案进 tooltip。
+      expect(find.byTooltip('Add to manga shelf'), findsOneWidget);
     },
   );
 

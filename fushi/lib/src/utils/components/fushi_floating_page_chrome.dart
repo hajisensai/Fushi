@@ -385,6 +385,29 @@ class _StrutScope extends StatelessWidget {
   }
 }
 
+/// 驱动页头的「主滚动区」深度：见过的最浅竖向 [ScrollUpdateNotification] 所在的
+/// [Notification] 深度（同首页浮动栏 [FushiFloatingChromeController] 的 `_ownerDepth`）。
+///
+/// 只拿来过滤 [ScrollMetricsNotification]：嵌套的竖向小列表（shrinkWrap + 禁止滚动）
+/// 第一次布局也发它，且自身位置恒为 0。不按深度过滤，用户往下滚、懒加载出这样一个
+/// 嵌套列表的那一帧就被当成「主列表回到了顶部」，页头 / 遮罩 / 标题跟着弹回。
+class FushiScrollOwnerDepth {
+  int? _depth;
+
+  /// 记下一条竖向滚动更新的深度（只往浅处改）。
+  void claim(ScrollUpdateNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return;
+    final int? depth = _depth;
+    if (depth == null || notification.depth < depth) {
+      _depth = notification.depth;
+    }
+  }
+
+  /// 这条版面修正通知来自主滚动区（或更外层）。还没见过滚动时只认最外层。
+  bool owns(ScrollMetricsNotification notification) =>
+      notification.depth <= (_depth ?? 0);
+}
+
 /// 页头「随滚动收起」的状态：内容被用户往下滚（看后面的内容）时收起，往回滚或
 /// 回到顶部时出现。焦点进入页头时由 [FushiScrollAwayChrome] 主动叫出。
 class FushiScrollAwayController extends ChangeNotifier {
@@ -400,6 +423,7 @@ class FushiScrollAwayController extends ChangeNotifier {
 
   bool _hidden = false;
   ScrollDirection _userDirection = ScrollDirection.idle;
+  final FushiScrollOwnerDepth _owner = FushiScrollOwnerDepth();
 
   /// 当前方向上累计的用户滚动位移：正 = 往下看（内容上移），负 = 往回。
   /// 方向一反就清零重新攒。
@@ -426,6 +450,18 @@ class FushiScrollAwayController extends ChangeNotifier {
   bool handleNotification(Notification notification) {
     // 平滑滚轮补间的「拉回起点」不是用户滚动（[SmoothWheelScrollScope.isRewinding]）。
     if (SmoothWheelScrollScope.isRewinding) return false;
+    // 版面修正（列表缩短 / 视口变高把位置夹回顶部）只发 ScrollMetricsNotification、
+    // 不发 ScrollUpdate：不在这里叫出页头，它会停在收起态而正文已滚不动，用户
+    // 再也唤不回来（同库页 BUG-3133）。
+    if (notification is ScrollMetricsNotification) {
+      final ScrollMetrics metrics = notification.metrics;
+      if (metrics.axis == Axis.vertical &&
+          _owner.owns(notification) &&
+          metrics.extentBefore <= 0) {
+        hidden = false;
+      }
+      return false;
+    }
     if (notification is! ScrollNotification) return false;
     if (notification.metrics.axis != Axis.vertical) return false;
     if (notification is UserScrollNotification) {
@@ -438,6 +474,7 @@ class FushiScrollAwayController extends ChangeNotifier {
       return false;
     }
     if (notification is! ScrollUpdateNotification) return false;
+    _owner.claim(notification);
     final ScrollMetrics metrics = notification.metrics;
     if (metrics.extentBefore <= 0) {
       hidden = false;

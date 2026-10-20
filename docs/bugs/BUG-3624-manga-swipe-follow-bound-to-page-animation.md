@@ -1,0 +1,6 @@
+## BUG-3624 · manga-swipe-follow-bound-to-page-animation
+- **报告**：2026-10-20（用户：漫画不跟手，「根本性修复」；对标 chimahon（Mihon fork）的「滑动流畅跟手，指哪打哪」）
+- **真实性**：✅ 真 bug（确定性场景）。`fushi/lib/src/media/manga/manga_overlay_html.dart` 的 `_followActive()` 要求 `_animMs() > 0 && PAGE_ANIM in (slide, cover)`：翻页效果选「无 / 淡入淡出」、墨水屏、系统「减弱动态效果」（`effectivePageTurnAnimation` 降成 none），以及旧版关过 Mihon 式「页面切换动画」被迁移成 none 的用户（`preferences_repository.dart` 的 `_legacyMangaAnimateTransitions() == false` 分支），拖动全程页面纹丝不动、松手才跳。设置页（`settings_schema_manga.dart`、`manga_reader_settings_sheet.dart`）在这些效果下还把「拖动跟手」开关隐藏，用户无法自救。Mihon / chimahon 的 ViewPager 拖动永远跟手，「页面切换动画」只管点按 / 按键翻页。
+- **[x] ① 已修复** — 跟手只看开关（`FOLLOW_DRAG && !IS_WEBTOON`），与效果解耦；效果只决定松手落位：无动画瞬时落位 / 瞬时回位，淡入淡出在被拖过之后按平移收尾（`__mangaApplyTranslate` 的 fade 分支加 `!handoff`），覆盖仍走克隆层。两处设置 UI 的跟手开关恒显示。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_swipe_follow_js_test.dart`（node 跑真实 JS：无动画逐像素跟手 + 提交瞬时落位 + 未过阈值瞬时回位；淡入淡出跟手 + 平移收尾无淡出；开关关仍不跟手）；`manga_reader_settings_sheet_test.dart` 改为断言淡入淡出 / 无动画下跟手开关仍在；`manga_overlay_html_test.dart` 钉新判据字面量。
+- **备注**：未在触屏真机上测手感（本轮 `adb devices` 为空）——属 implemented_unverified。WebView 方案的结构性延迟（Android hybrid composition 下触摸经 Dart UI 线程转发给平台视图、pointermove 在 WebView 主线程处理）本轮未动，需真机测出帧时延后再决定是否改合成模式或把翻页条改为合成器原生滚动。
