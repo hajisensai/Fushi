@@ -435,4 +435,31 @@ void main() {
       );
     });
   });
+
+  group('漫画误判时能否坚持按书导入', () {
+    test('只有图片型 .epub 可以（书籍管线吃得下）', () {
+      expect(
+        canImportMangaCarrierAsBook(
+          '/a/Picture Book.EPUB',
+          ImportCarrier.mangaArchive,
+        ),
+        isTrue,
+      );
+    });
+
+    test('书籍侧没有 importer 的漫画载体不给出口', () {
+      for (final (String path, ImportCarrier carrier) in <(
+        String,
+        ImportCarrier,
+      )>[
+        ('/a/v1.zip', ImportCarrier.mangaArchive),
+        ('/a/v1.cbz', ImportCarrier.mangaArchive),
+        ('/a/v1.mokuro', ImportCarrier.mangaMokuro),
+        ('/a/v1.epub', ImportCarrier.mangaFolder),
+      ]) {
+        expect(canImportMangaCarrierAsBook(path, carrier), isFalse,
+            reason: path);
+      }
+    });
+  });
 }

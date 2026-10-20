@@ -110,6 +110,7 @@ import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
+import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart'
     show AudiobookSleepTimer;
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
@@ -1922,9 +1923,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 上次写进正文 CSS 的 `fushiMotionEnabled`（didChangeDependencies 维护）。
   bool _readerMotionEnabled = true;
 
-  /// 折叠屏书本姿态（竖向折痕半开 / 双屏铰链，见 [FushiFoldState]）。横排翻页且每页
-  /// 列数为「自动」时据此排成两栏（[ReaderContentStyles.foldPageColumnsOverride]），
-  /// 折痕落在两栏之间；只影响本次排版，不写回偏好。
+  /// 折叠屏书本姿态（竖向折痕半开 / 双屏铰链，见 [FushiFoldState]）。翻页且每页列数为
+  /// 「自动」时据此一屏排两页：横排两栏（[ReaderContentStyles.foldPageColumnsOverride]）、
+  /// 竖排对开（[ReaderContentStyles.foldVerticalSpread]），折痕落在两页之间；只影响本次
+  /// 排版，不写回偏好。
   bool _foldBookPosture = false;
 
   /// 最近一次 [didChangeDependencies] 看到的折叠状态与窗口宽。
@@ -1958,10 +1960,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
         contentCenterX: _foldWindowWidth / 2,
       );
 
+  /// 竖排对开（一屏右页 + 左页）；与 [_foldPageColumns] 互斥（一个只管横排、一个只管竖排）。
+  bool get _foldVerticalSpread => ReaderContentStyles.foldVerticalSpread(
+        bookPosture: _foldBookPosture,
+        settings: _settings!,
+      );
+
   int? get _foldColumnGap => ReaderContentStyles.foldColumnGapPx(
         hingeGutterPx: _foldHingeGutterPx,
         effectivePageColumns: _foldPageColumns ?? _settings!.pageColumns,
         settings: _settings!,
+        verticalSpread: _foldVerticalSpread,
       );
   double _stableBottomInset = 0;
 
@@ -3898,17 +3907,20 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       final ReaderSettings? settings = _settings;
       final int? beforeColumns = settings == null ? null : _foldPageColumns;
       final int? beforeGap = settings == null ? null : _foldColumnGap;
+      final bool beforeVerticalSpread = settings != null && _foldVerticalSpread;
       final double beforeSpreadGutter = _foldSpreadGutterPx;
       _foldState = fold;
       _foldWindowWidth = windowWidth;
       _foldBookPosture = fold.isBook;
       final int? afterColumns = settings == null ? null : _foldPageColumns;
       final int? afterGap = settings == null ? null : _foldColumnGap;
+      final bool afterVerticalSpread = settings != null && _foldVerticalSpread;
       // 当前是图片跨页文档时，铰链缝变了也要重挂（同走 _reloadWithCurrentSettings）。
       final bool spreadChanged = _spreadDocumentLoaded &&
           beforeSpreadGutter != _foldSpreadGutterPx;
       final bool changed = beforeColumns != afterColumns ||
           beforeGap != afterGap ||
+          beforeVerticalSpread != afterVerticalSpread ||
           spreadChanged;
       if (settings != null && changed && _controller != null) {
         unawaited(
@@ -4364,6 +4376,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       motionEnabled: _readerMotionEnabled,
       pageColumnsOverride: _foldPageColumns,
       columnGapOverridePx: _foldColumnGap,
+      verticalSpread: _foldVerticalSpread,
     );
   }
 
@@ -4886,6 +4899,10 @@ $liveConfigJs
 
   List<AudioCue>? _cachedAllCues;
   bool _cachedSentenceAudio = false;
+
+  /// 查词时「音频坐标 → cue」反查的预解码索引（[_findCueForOffset]）；按播放器 cue 列表
+  /// 身份 + 章号自检失效，换书 / 换章 / 重设 cue 后首次查词重建。
+  AudioCueOffsetIndex? _cueOffsetIndex;
 
   // ── Spread (two-page) support ──────────────────────────────────────
 

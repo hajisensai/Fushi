@@ -35,9 +35,10 @@ SettingsDestination buildReadingDestination() {
   // 成两栏，所以要把当前窗口的折叠状态算进去（读 MediaQuery，姿态变化时宿主重建）。
   bool pageCreaseApplies(SettingsContext c) {
     final ReaderFushiSource source = c.readerSource;
+    final bool bookPosture = FushiFoldState.of(c.context).isBook;
     final int effectiveColumns =
         ReaderContentStyles.foldPageColumnsOverrideFor(
-              bookPosture: FushiFoldState.of(c.context).isBook,
+              bookPosture: bookPosture,
               viewMode: source.readerViewMode,
               writingMode: source.readerWritingMode,
               pageColumns: source.readerPageColumns,
@@ -46,6 +47,12 @@ SettingsDestination buildReadingDestination() {
     return ReaderContentStyles.pageCreaseApplies(
       viewMode: source.readerViewMode,
       effectivePageColumns: effectiveColumns,
+      verticalSpread: ReaderContentStyles.foldVerticalSpreadFor(
+        bookPosture: bookPosture,
+        viewMode: source.readerViewMode,
+        writingMode: source.readerWritingMode,
+        pageColumns: source.readerPageColumns,
+      ),
     );
   }
 

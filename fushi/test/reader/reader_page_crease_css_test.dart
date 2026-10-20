@@ -122,6 +122,157 @@ void main() {
     });
   });
 
+  group('foldVerticalSpread（竖排对开）', () {
+    const String spreadMarker = '竖排对开（折叠屏书本姿态）';
+
+    test('竖排翻页 + 每页列数自动 + 书本姿态 → 对开；其余不对开', () async {
+      final ReaderSettings vertical = await _settings(
+        writingMode: 'vertical-rl',
+      );
+      expect(
+        ReaderContentStyles.foldVerticalSpread(
+          bookPosture: true,
+          settings: vertical,
+        ),
+        isTrue,
+      );
+      expect(
+        ReaderContentStyles.foldVerticalSpread(
+          bookPosture: false,
+          settings: vertical,
+        ),
+        isFalse,
+      );
+      for (final ReaderSettings s in <ReaderSettings>[
+        await _settings(),
+        await _settings(writingMode: 'vertical-rl', pageColumns: 1),
+        await _settings(writingMode: 'vertical-rl', pageColumns: 2),
+        await _settings(writingMode: 'vertical-rl', viewMode: 'continuous'),
+        await _settings(writingMode: 'vertical-rl', viewMode: 'vn'),
+      ]) {
+        expect(
+          ReaderContentStyles.foldVerticalSpread(
+            bookPosture: true,
+            settings: s,
+          ),
+          isFalse,
+          reason: '横排走两栏；用户显式列数 / 滚动 / VN 不对开',
+        );
+      }
+      // 竖排不走「每页列数」覆盖：竖排的 2 栏是上下两条，挡不住竖向折痕。
+      expect(
+        ReaderContentStyles.foldPageColumnsOverride(
+          bookPosture: true,
+          settings: vertical,
+        ),
+        isNull,
+      );
+    });
+
+    test('对开几何：column-wrap 行换行，整段在 @supports 里，补一页空白页', () async {
+      final ReaderSettings s = await _settings(writingMode: 'vertical-rl');
+      expect(
+        ReaderContentStyles.css(settings: s),
+        isNot(contains(spreadMarker)),
+      );
+      final String css = ReaderContentStyles.css(
+        settings: s,
+        verticalSpread: true,
+      );
+      final int block = css.indexOf(spreadMarker);
+      expect(block, isNonNegative);
+      final String rule = css.substring(block);
+      expect(rule, contains('@supports (column-wrap: wrap) {'));
+      expect(rule, contains('column-count: 1 !important;'));
+      expect(rule, contains('column-wrap: wrap !important;'));
+      expect(rule, contains('row-gap: 22px !important;'));
+      expect(
+        rule,
+        contains(' - 22px) / 2)) !important;'),
+        reason: '一页宽 = (content-box 宽 − 页间隙) / 2，一屏右页 + 左页',
+      );
+      expect(rule, contains('break-before: column !important;'));
+      // 对开声明必须排在分页布局之后，才能压过布局里的 column-count。
+      expect(block, greaterThan(css.indexOf('column-fill: auto !important;')));
+    });
+
+    test('横排 / 滚动 / VN 下即使传了 verticalSpread 也不发', () async {
+      for (final ReaderSettings s in <ReaderSettings>[
+        await _settings(),
+        await _settings(writingMode: 'vertical-rl', viewMode: 'continuous'),
+        await _settings(writingMode: 'vertical-rl', viewMode: 'vn'),
+      ]) {
+        expect(
+          ReaderContentStyles.css(settings: s, verticalSpread: true),
+          isNot(contains(spreadMarker)),
+        );
+      }
+    });
+
+    test('铰链缝加宽的是两页之间的 row-gap', () async {
+      final ReaderSettings s = await _settings(writingMode: 'vertical-rl');
+      expect(
+        ReaderContentStyles.foldColumnGapPx(
+          hingeGutterPx: 24,
+          effectivePageColumns: 0,
+          settings: s,
+          verticalSpread: true,
+        ),
+        46,
+      );
+      expect(
+        ReaderContentStyles.foldColumnGapPx(
+          hingeGutterPx: 24,
+          effectivePageColumns: 0,
+          settings: s,
+        ),
+        isNull,
+        reason: '竖排单条没有「两页之间」',
+      );
+      final String css = ReaderContentStyles.css(
+        settings: s,
+        verticalSpread: true,
+        columnGapOverridePx: 46,
+      );
+      final String rule = css.substring(css.indexOf(spreadMarker));
+      expect(rule, contains('row-gap: 46px !important;'));
+      expect(rule, contains(' - 46px) / 2)) !important;'));
+    });
+
+    test('中缝折痕：对开时画竖线，且与对开几何同在 @supports 里', () async {
+      final ReaderSettings s = await _settings(
+        writingMode: 'vertical-rl',
+        crease: true,
+      );
+      expect(
+        ReaderContentStyles.css(settings: s),
+        isNot(contains(_creaseMarker)),
+      );
+      final String css = ReaderContentStyles.css(
+        settings: s,
+        verticalSpread: true,
+      );
+      final int crease = css.indexOf(_creaseMarker);
+      expect(crease, isNonNegative);
+      final String rule = css.substring(crease);
+      expect(rule, contains('linear-gradient(to right'));
+      expect(rule, contains('width: 22px'));
+      expect(
+        css.substring(0, css.indexOf('/* $_creaseMarker')).trimRight(),
+        endsWith('@supports (column-wrap: wrap) {'),
+        reason: '不支持 column-wrap 的 WebView 退回竖排单条，不能在正文中间画一道阴影',
+      );
+      expect(
+        ReaderContentStyles.pageCreaseApplies(
+          viewMode: 'paginated',
+          effectivePageColumns: 0,
+          verticalSpread: true,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   test('EPUB 图片跨页：铰链缝进两半之间，无缝时不发', () {
     String html(double gutter) => buildSpreadPageHtml(
       leftUrl: 'l.jpg',

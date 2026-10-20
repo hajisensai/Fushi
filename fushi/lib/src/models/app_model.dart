@@ -500,20 +500,23 @@ String buildSearchCacheKey({
   return '${term.length}:$term/$maxTerms/$maxResults';
 }
 
-/// 引擎原始结果（`FushiDicts.lookup`）缓存键的单一真相。格式：
-/// `<term.length>:<term>/<maxResults>`。
-///
-/// 🔴 **键必须带 [maxResults]**：引擎按该上限 `partial_sort` + `resize` 截断，
-/// 不同上限拿到的是**不同长度**的结果集。此前 `maxResults` 是硬编码常量，键里
-/// 省掉它是安全的；现在它等于调用方的词头预算（load-more 会以「已显示条数 +
-/// maximumTerms」为新上限重查同一个词），若键里不含上限，load-more 就会命中上
-/// 一轮的短结果集、拿不到新条目，`allLoaded` 随即为 true —— load-more 永久失灵。
-@visibleForTesting
-String buildFfiLookupCacheKey({
-  required String term,
-  required int maxResults,
-}) {
-  return '${term.length}:$term/$maxResults';
+/// [AppModel.searchDictionary] 本机部分的结局。
+class _LocalDictionaryLookup {
+  const _LocalDictionaryLookup(DictionarySearchResult this.result)
+      : isTerminal = false;
+
+  /// 本机没有命中：调用方可以继续问远端。
+  const _LocalDictionaryLookup.noMatch()
+      : result = null,
+        isTerminal = false;
+
+  /// 引擎未就绪，或请求在后台关停时被作废：直接以空结果收尾，不再问远端。
+  const _LocalDictionaryLookup.finalEmpty()
+      : result = null,
+        isTerminal = true;
+
+  final DictionarySearchResult? result;
+  final bool isTerminal;
 }
 
 /// 从 `blobs.bin` 头部字节解码词典实际类型（freq/pitch），供 term 词典的类型回填迁移。
@@ -2435,6 +2438,45 @@ class AppModel with ChangeNotifier {
     }
   }
 
+  /// 本进程是否已经跑过一轮 [_migrateDictionaryRedirectFlags]。
+  bool _redirectFlagsMigrated = false;
+
+  /// 给存量释义词典补写 `redirect_glossary.flag`（[FushiDicts.ensureRedirectFlags]）。
+  ///
+  /// 装载只读这份标记、不扫描（扫描是整本、单本最多约 1 s）；缺标记的旧词典在查词时
+  /// 只能逐条检测纯重定向 glossary。这里在首帧之后逐本放到后台 isolate 补写，下一次
+  /// 装载词典时生效。已有有效标记的由原生侧直接返回，第二次启动起基本零成本。
+  /// 与删 / 覆盖词典的串行化在 [FushiDicts.ensureRedirectFlags] 里（借用账本 + 映射
+  /// 释放作用域内不开新扫描）；本轮被推迟的下次启动再补。失败只记日志。
+  Future<void> _migrateDictionaryRedirectFlags() async {
+    if (_redirectFlagsMigrated) return;
+    _redirectFlagsMigrated = true;
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final List<String> dirs = <String>[
+        for (final Dictionary d in dictRepo.dictionaries)
+          if (d.type == DictionaryType.term)
+            path.join(dictionaryResourceDirectory.path, d.name),
+      ];
+      if (dirs.isEmpty) return;
+      final FushiRedirectFlagReport report =
+          await FushiDicts.ensureRedirectFlags(dirs);
+      final List<String> unreadable = <String>[
+        for (final String dir in report.unreadable)
+          // 扫描途中被删掉的目录读不了是正常的，不记。
+          if (await Directory(dir).exists()) path.basename(dir),
+      ];
+      if (unreadable.isNotEmpty) {
+        ErrorLogService.instance.log(
+          'AppModel.redirectFlagMigration',
+          'redirect_glossary.flag 补写失败（读不了）: ${unreadable.join(', ')}',
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.redirectFlagMigration', e, stack);
+    }
+  }
+
   /// 启动/Profile 切换用的词典引擎装载。
   ///
   /// 与同步的 [_rebuildDictPathsCache] 的区别不只是「用 await 包一层」：装载本身
@@ -3521,6 +3563,7 @@ class AppModel with ChangeNotifier {
       debugPrint(
           '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
+      unawaited(_migrateDictionaryRedirectFlags());
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
       unawaited(deleteRemovedMangaOcrModelDirs());
@@ -7308,18 +7351,6 @@ class AppModel with ChangeNotifier {
         (cp >= 0x2F800 && cp <= 0x2FA1F); // Compatibility Ideographs Supplement
   }
 
-  /// Queries the kanji dictionary bucket for a single-character lookup and
-  /// returns the per-character kanji results to attach to a
-  /// [DictionarySearchResult]. Returns an empty list for multi-character terms,
-  /// non-kanji singletons, or when no kanji dictionary is loaded — so the term
-  /// lookup path is never slowed for ordinary word lookups. The engine call is
-  /// only made for a real single kanji (TODO-094 S4).
-  List<FushiKanjiResult> queryKanjiForTerm(String searchTerm) {
-    if (!isSingleKanji(searchTerm)) return const <FushiKanjiResult>[];
-    if (!FushiDicts.isInitialized) return const <FushiKanjiResult>[];
-    return FushiDicts.instance.queryKanji(searchTerm);
-  }
-
   Future<DictionarySearchResult> searchDictionary({
     required String searchTerm,
     required bool searchWithWildcards,
@@ -7339,130 +7370,38 @@ class AppModel with ChangeNotifier {
     }
 
     final int effectiveMaxTerms = overrideMaximumTerms ?? maximumTerms;
-    final List<String> currentDictionaryOrder = termDictionaries
-        .map((Dictionary dictionary) => dictionary.name)
-        .toList();
     final bool tryRemoteFirst = allowRemoteLookup && remoteLookupEnabled;
-    if (tryRemoteFirst) {
-      final DictionarySearchResult? remoteResult =
-          await _searchRemoteDictionary(
-        searchTerm: searchTerm,
-        searchWithWildcards: searchWithWildcards,
-        maximumTerms: effectiveMaxTerms,
-      );
+    // 远端优先（瘦客户端经已配对电脑查词）：远端与本地**并发**发起，语义不变——远端
+    // 给出结果就用远端，远端没有（null）才用本地。以前是先等远端（最坏 3s × 候选数
+    // 的传输超时）再开始本地，两段时间串起来。
+    final Future<DictionarySearchResult?>? remote = tryRemoteFirst
+        ? _searchRemoteDictionary(
+            searchTerm: searchTerm,
+            searchWithWildcards: searchWithWildcards,
+            maximumTerms: effectiveMaxTerms,
+          )
+        : null;
+    final Future<_LocalDictionaryLookup> local = _searchLocalDictionary(
+      searchTerm: searchTerm,
+      effectiveMaxTerms: effectiveMaxTerms,
+      useCache: useCache,
+    );
+    if (remote != null) {
+      final DictionarySearchResult? remoteResult = await remote;
       if (remoteResult != null) {
+        // 远端赢：本地那份照常跑完（结果写进本地缓存，无害），这里不再等它；它的
+        // 失败与旧实现「远端命中就根本不跑本地」一样不影响本次结果。
+        local.ignore();
         return remoteResult;
       }
     }
 
-    // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算，见下方 lookup 调用
-    // 处），键格式保持不变以免旧键格式守卫漂移。
-    final String cacheKey = buildSearchCacheKey(
-      term: searchTerm,
-      maxTerms: effectiveMaxTerms,
-      maxResults: effectiveMaxTerms,
-    );
-    final String ffiCacheKey = buildFfiLookupCacheKey(
-      term: searchTerm,
-      maxResults: effectiveMaxTerms,
-    );
-
-    final cached = dictRepo.getCachedSearch(cacheKey);
-    if (useCache && cached != null) {
-      return cached;
-    }
-
-    if (!FushiDicts.isInitialized) {
+    final _LocalDictionaryLookup localLookup = await local;
+    final DictionarySearchResult? localResult = localLookup.result;
+    if (localResult != null) return localResult;
+    // 引擎未就绪：与旧实现「引擎未初始化直接返回空结果」同口径，不再去问远端。
+    if (localLookup.isTerminal) {
       return DictionarySearchResult(searchTerm: searchTerm);
-    }
-
-    // Kanji dictionary lookup is orthogonal to the term index: a single kanji
-    // can be both a term headword and a kanji entry, so we query the kanji
-    // bucket independently and attach the results to whatever term result comes
-    // back (or surface a kanji-only result when no term matches). Computed once
-    // here so all local FFI return paths below carry the same kanji payload.
-    final List<FushiKanjiResult> kanjiResults = queryKanjiForTerm(searchTerm);
-
-    List<FushiLookupResult>? ffiResults =
-        dictRepo.getCachedFfiLookup(ffiCacheKey);
-    DictionarySearchResult? result;
-
-    if (ffiResults != null) {
-      result = buildResultFromLookup(
-        searchTerm: searchTerm,
-        results: ffiResults,
-        maximumTerms: effectiveMaxTerms,
-        dictionaryOrder: currentDictionaryOrder,
-        hiddenDictionaries: hiddenDictionaryNames,
-      );
-      // 性能：popupJson 从已拿到的 ffiResults 在 Dart 侧生成（buildPopupJsonFromLookup
-      // 与 C++ build_popup_json 逐字段对齐，parity 测试见 dictionary_popup_webview_test）。
-      // 此前这里调 lookupPopupJson 让 C++ 把同一个词的完整查询管线（scan×文本变体×
-      // 去屈折×hash 查询×排序×zstd 解压）从零再跑一遍——FFI 缓存命中/load-more 每页
-      // 也照跑。同源生成还消除了「entries 来自缓存、popupJson 来自新查询」的双源分叉。
-      result.popupJson = buildPopupJsonFromLookup(
-        results: ffiResults,
-        maximumTerms: effectiveMaxTerms,
-        hiddenDictionaries: hiddenDictionaryNames,
-        dictionaryOrder: currentDictionaryOrder,
-      );
-      result = result.withKanjiResults(kanjiResults);
-    } else {
-      // 🔴 引擎上限 == 本次真正要消费的词头预算。
-      // `lookup.cpp` 在 `partial_sort` + `resize(max_results)` **之后**才对存活的
-      // 每条结果做 `materialize()`（逐 glossary zstd 解压，每条落在 blobs.bin 的
-      // 一个随机偏移上）。此前这里传硬编码 200，而下面的 buildResultFromLookup /
-      // buildPopupJsonFromLookup 只取 effectiveMaxTerms（默认 10）条 —— 相当于在
-      // 整条链路最贵的按需分页段上白解压 20 倍。
-      //
-      // 输出逐字不变，三条理由（改这里前必须逐条复核）：
-      // 1. `partial_sort` 的比较器没动，top-N 的集合与顺序不变；
-      // 2. `query.cpp` 的 `query_raw` 里 `glossaries.push_back` 无条件执行，故
-      //    每个返回的 term 至少带一条 glossary —— N 个结果必然凑够 N 条，
-      //    buildResultFromLookup 的 maximumTerms 预算先于结果数耗尽；
-      // 3. `bestLength` 取 `matched` 的最大 UTF-16 长度，而所有 `matched` 都是
-      //    同一个查询串的前缀（`scan_candidates` 只产出前缀），故「码点最长」与
-      //    「UTF-16 最长」是同一个元素，它必在 `partial_sort` 后排首位、
-      //    永远落在 top-N 内。
-      ffiResults = FushiDicts.instance.lookup(
-        searchTerm,
-        maxResults: effectiveMaxTerms,
-      );
-      if (ffiResults.isNotEmpty) {
-        dictRepo.cacheFfiLookup(ffiCacheKey, ffiResults);
-        result = buildResultFromLookup(
-          searchTerm: searchTerm,
-          results: ffiResults,
-          maximumTerms: effectiveMaxTerms,
-          dictionaryOrder: currentDictionaryOrder,
-          hiddenDictionaries: hiddenDictionaryNames,
-        );
-        // 同上：popupJson 由本次 lookup 的 ffiResults 直接生成，砍掉第二次
-        // 完整 C++ 查询（原生查词成本 ×2 → ×1）。
-        result.popupJson = buildPopupJsonFromLookup(
-          results: ffiResults,
-          maximumTerms: effectiveMaxTerms,
-          hiddenDictionaries: hiddenDictionaryNames,
-          dictionaryOrder: currentDictionaryOrder,
-        );
-        result = result.withKanjiResults(kanjiResults);
-      }
-    }
-
-    if (result != null && result.entries.isNotEmpty) {
-      dictRepo.cacheSearchResult(cacheKey, result);
-      return result;
-    }
-    // No term match, but a single-kanji lookup hit the kanji dictionary: return
-    // a kanji-only result so the popup can still render the kanji card. Cached
-    // like a term result so a repeat lookup is served from cache.
-    if (kanjiResults.isNotEmpty) {
-      final DictionarySearchResult kanjiOnly = DictionarySearchResult(
-        searchTerm: searchTerm,
-        kanjiResults: kanjiResults,
-      );
-      dictRepo.cacheSearchResult(cacheKey, kanjiOnly);
-      return kanjiOnly;
     }
     if (allowRemoteLookup && !tryRemoteFirst) {
       final DictionarySearchResult? remoteResult =
@@ -7476,6 +7415,69 @@ class AppModel with ChangeNotifier {
       }
     }
     return DictionarySearchResult(searchTerm: searchTerm);
+  }
+
+  /// [searchDictionary] 的本机部分：结果缓存 → 后台查词 isolate。
+  ///
+  /// 原生 lookup、FFI 结构转 Dart、[buildResultFromLookup]、[buildPopupJsonFromLookup]、
+  /// 汉字桶查询整段在常驻后台 isolate 里跑
+  /// （[FushiDicts.lookupInBackground]），UI isolate 只发请求、收成品——以前这段在
+  /// UI isolate 上同步跑，每次查词 10-60ms。
+  ///
+  /// 🔴 引擎上限 == 本次真正要消费的词头预算（[effectiveMaxTerms]，BUG-1307）：
+  /// `lookup.cpp` 在 `partial_sort` + `resize(max_results)` **之后**才逐条解压
+  /// glossary，传大于预算的上限就是在整条链路最贵的一段上白解压。后台原始结果缓存
+  /// 的键（[buildFfiLookupCacheKey]）同样带这个上限，load-more 才不会命中短结果集。
+  ///
+  /// 汉字桶与 term 索引正交（TODO-094 S4）：单个汉字（[isSingleKanji]）时后台顺带
+  /// 查汉字桶，结果经 `withKanjiResults(...)` 挂在词条结果上；没有词条命中时返回
+  /// 带 `kanjiResults: kanjiResults` 的纯汉字结果，照常缓存。
+  Future<_LocalDictionaryLookup> _searchLocalDictionary({
+    required String searchTerm,
+    required int effectiveMaxTerms,
+    required bool useCache,
+  }) async {
+    // maxTerms 与 maxResults 现在恒等（引擎上限已对齐词头预算），键格式保持不变以免
+    // 旧键格式守卫漂移。
+    final String cacheKey = buildSearchCacheKey(
+      term: searchTerm,
+      maxTerms: effectiveMaxTerms,
+      maxResults: effectiveMaxTerms,
+    );
+    final DictionarySearchResult? cached = dictRepo.getCachedSearch(cacheKey);
+    if (useCache && cached != null) {
+      return _LocalDictionaryLookup(cached);
+    }
+
+    if (!FushiDicts.isInitialized) {
+      return const _LocalDictionaryLookup.finalEmpty();
+    }
+
+    final DictionaryLookupFilters filters = dictRepo.lookupFilters;
+    // 查询在飞期间词典集合可能变了、缓存已清：回来时代次不同就不写缓存。
+    final int cacheEpoch = dictRepo.resultsCacheEpoch;
+    final FushiLookupOutcome? outcome =
+        await FushiDicts.instance.lookupInBackground(
+      FushiLookupRequest(
+        text: searchTerm,
+        maxResults: effectiveMaxTerms,
+        includeKanji: isSingleKanji(searchTerm),
+        hiddenDictionaries: filters.hiddenDictionaryNames,
+        dictionaryOrder: filters.termDictionaryOrder,
+        ffiCacheMaxBytes: dictRepo.ffiLookupCacheBudgetBytes,
+      ),
+    );
+    // 后台关停（disposeInstance）时还没开始的请求以 superseded 结束：没有结果，也
+    // 不得当成「查不到」写缓存。
+    if (outcome == null || outcome.superseded) {
+      return const _LocalDictionaryLookup.finalEmpty();
+    }
+    final DictionarySearchResult? result = outcome.result;
+    if (result == null) return const _LocalDictionaryLookup.noMatch();
+    if (dictRepo.resultsCacheEpoch == cacheEpoch) {
+      dictRepo.cacheSearchResult(cacheKey, result);
+    }
+    return _LocalDictionaryLookup(result);
   }
 
   /// 远端词典「全部配对候选不可达」后的冷却截止时刻（BUG-1302）；null = 不在冷却中。
@@ -9176,9 +9178,23 @@ class AppModel with ChangeNotifier {
   /// 偏好没就绪时返回空表而不是崩：弹窗注入链（`buildPopupStaticSettingsJs`）会
   /// 在偏好未初始化的裸 AppModel 上被 widget 测试调到，而「还没有偏好」的正确
   /// 语义就是「一条规则都没设」。
-  List<DictStyleRule> get dictStyleRules => isPreferencesReady
-      ? decodeDictStyleRules(prefsRepo.dictStyleRulesRaw)
-      : const <DictStyleRule>[];
+  List<DictStyleRule> get dictStyleRules {
+    if (!isPreferencesReady) return const <DictStyleRule>[];
+    // P2-E（2026-10-20）：按原文 memo。弹窗每次推结果都会读这里（effective* 两个
+    // getter 各一次），此前每次都整串 JSON 解码一遍。键是偏好原文本身——写入点
+    // [saveDictStyleRules]、备份恢复、Profile 切换改的都是同一个偏好值，原文一变
+    // 自然换键，无需在任何写入点手动失效。
+    final String raw = prefsRepo.dictStyleRulesRaw;
+    final ({String raw, List<DictStyleRule> rules})? cached =
+        _dictStyleRulesMemo;
+    if (cached != null && cached.raw == raw) return cached.rules;
+    final List<DictStyleRule> rules =
+        List<DictStyleRule>.unmodifiable(decodeDictStyleRules(raw));
+    _dictStyleRulesMemo = (raw: raw, rules: rules);
+    return rules;
+  }
+
+  ({String raw, List<DictStyleRule> rules})? _dictStyleRulesMemo;
 
   /// 保存规则表，并同步刷新 CSS 编译产物缓存。
   ///
@@ -9207,19 +9223,50 @@ class AppModel with ChangeNotifier {
   /// 手写那半走 [globalDictCSS] 而不是 `prefsRepo.globalDictCSS`：前者是可被子类
   /// 覆写的公开面，测试里的假 AppModel 正是靠覆写它来喂值的；直接穿透到
   /// prefsRepo 会把覆写全部绕过去（且在偏好未就绪时空指针）。
-  String get effectiveGlobalDictCSS => mergeGeneratedAndAuthoredCss(
-        buildGlobalDictStyleCss(dictStyleRules),
-        globalDictCSS,
-      );
+  String get effectiveGlobalDictCSS {
+    final List<DictStyleRule> rules = dictStyleRules;
+    final String authored = globalDictCSS;
+    // P2-E：规则表实例（上面按原文 memo，内容不变 ⇒ 同一实例）+ 手写原文都没变就
+    // 不重编译。
+    final ({List<DictStyleRule> rules, String authored, String css})? cached =
+        _effectiveGlobalDictCssMemo;
+    if (cached != null &&
+        identical(cached.rules, rules) &&
+        cached.authored == authored) {
+      return cached.css;
+    }
+    final String css = mergeGeneratedAndAuthoredCss(
+      buildGlobalDictStyleCss(rules),
+      authored,
+    );
+    _effectiveGlobalDictCssMemo = (rules: rules, authored: authored, css: css);
+    return css;
+  }
+
+  ({List<DictStyleRule> rules, String authored, String css})?
+      _effectiveGlobalDictCssMemo;
 
   /// 注入弹窗的单典 CSS：可视化产物 + 用户手写，逐本合并。
   ///
   /// 键集是两边的并集——只设了可视化规则、没写过手写 CSS 的词典也必须出现在
   /// 结果里，否则规则静默失效。
+  ///
+  /// P2-E：规则表实例与手写表内容都没变时返回**同一个**不可变 Map 实例——弹窗注入侧
+  /// 据实例身份跳过再次 jsonEncode（`buildPopupStaticSettingsJs`）。
   Map<String, String> get effectiveCustomDictCSS {
     final List<DictStyleRule> rules = dictStyleRules;
     // 同 [effectiveGlobalDictCSS]：走可覆写的公开 getter，别穿透 prefsRepo。
     final Map<String, String> authored = customDictCSS;
+    final ({
+      List<DictStyleRule> rules,
+      Map<String, String> authored,
+      Map<String, String> css,
+    })? cached = _effectiveCustomDictCssMemo;
+    if (cached != null &&
+        identical(cached.rules, rules) &&
+        mapEquals(cached.authored, authored)) {
+      return cached.css;
+    }
     final Set<String> names = <String>{
       ...authored.keys,
       ...dictionariesWithStyleRules(rules),
@@ -9233,8 +9280,20 @@ class AppModel with ChangeNotifier {
       if (merged.trim().isEmpty) continue;
       out[name] = merged;
     }
-    return out;
+    final Map<String, String> css = Map<String, String>.unmodifiable(out);
+    _effectiveCustomDictCssMemo = (
+      rules: rules,
+      authored: Map<String, String>.unmodifiable(authored),
+      css: css,
+    );
+    return css;
   }
+
+  ({
+    List<DictStyleRule> rules,
+    Map<String, String> authored,
+    Map<String, String> css,
+  })? _effectiveCustomDictCssMemo;
 
   // ── audio sources (delegated) ────────────────────────────────────────
 
@@ -11047,55 +11106,37 @@ class _AppModelRemoteLookupService
       }
 
       if (!FushiDicts.isInitialized) return null;
-      final String ffiCacheKey = buildFfiLookupCacheKey(
-        term: searchTerm,
-        maxResults: maximumTerms,
-      );
-      final Stopwatch? ffiCacheWatch = startPhase();
-      List<FushiLookupResult>? ffiResults =
-          _appModel.dictRepo.getCachedFfiLookup(ffiCacheKey);
-      if (timing != null) {
-        timing.ffiCacheMicros = finishPhase(ffiCacheWatch);
-      }
-      if (ffiResults != null && timing != null) timing.cache = 'ffi';
-      if (ffiResults == null) {
-        final Stopwatch? ffiLookupWatch = startPhase();
-        ffiResults = FushiDicts.instance.lookup(
-          searchTerm,
+      // 后台查词 isolate 只做 popupOnly：原始结果（后台缓存键带上限 maximumTerms，
+      // BUG-1307）→ buildPopupJsonFromLookup，不物化 DictionaryEntry（BUG-1525）。
+      final DictionaryLookupFilters filters = _appModel.dictRepo.lookupFilters;
+      final int cacheEpoch = _appModel.dictRepo.resultsCacheEpoch;
+      final FushiLookupOutcome? outcome =
+          await FushiDicts.instance.lookupInBackground(
+        FushiLookupRequest(
+          text: searchTerm,
           maxResults: maximumTerms,
-        );
-        if (timing != null) {
-          timing.ffiLookupMicros = finishPhase(ffiLookupWatch);
-        }
-        if (ffiResults.isNotEmpty) {
-          _appModel.dictRepo.cacheFfiLookup(ffiCacheKey, ffiResults);
-        }
-      }
-      if (ffiResults.isEmpty) return null;
-
-      int bestLength = 0;
-      for (final FushiLookupResult result in ffiResults) {
-        if (result.matched.length > bestLength) {
-          bestLength = result.matched.length;
-        }
-      }
-      final Stopwatch? popupJsonWatch = startPhase();
-      final String popupJson = buildPopupJsonFromLookup(
-        results: ffiResults,
-        maximumTerms: maximumTerms,
-        hiddenDictionaries: _appModel.hiddenDictionaryNames,
-        dictionaryOrder: _appModel.termDictionaries
-            .map((Dictionary dictionary) => dictionary.name)
-            .toList(),
+          popupOnly: true,
+          hiddenDictionaries: filters.hiddenDictionaryNames,
+          dictionaryOrder: filters.termDictionaryOrder,
+          ffiCacheMaxBytes: _appModel.dictRepo.ffiLookupCacheBudgetBytes,
+        ),
       );
-      if (timing != null) {
-        timing.popupJsonMicros = finishPhase(popupJsonWatch);
+      if (timing != null && outcome != null) {
+        if (outcome.ffiCacheHit) timing.cache = 'ffi';
+        timing.ffiCacheMicros = outcome.ffiCacheMicros;
+        timing.ffiLookupMicros = outcome.ffiLookupMicros;
+        timing.popupJsonMicros = outcome.buildMicros;
       }
+      final String? popupJson = outcome?.popupJson;
+      if (popupJson == null) return null;
+      final int bestLength = outcome!.bestLength;
       final DictionaryPopupCacheEntry entry = (
         popupJson: popupJson,
         bestLength: bestLength,
       );
-      _appModel.dictRepo.cachePopupSearch(searchCacheKey, entry);
+      if (_appModel.dictRepo.resultsCacheEpoch == cacheEpoch) {
+        _appModel.dictRepo.cachePopupSearch(searchCacheKey, entry);
+      }
       return RemoteDictionaryPopupLookup(
         popupJson: entry.popupJson,
         bestLength: entry.bestLength,

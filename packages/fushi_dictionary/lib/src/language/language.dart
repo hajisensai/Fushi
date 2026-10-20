@@ -98,10 +98,18 @@ List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
   );
 }
 
-String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
-  return jsonEncode({
-    'definitionTags': g.definitionTags,
-    'termTags': g.termTags,
+String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) =>
+    _lookupEntryExtraWithTail(g, _lookupEntryExtraTail(r));
+
+/// [buildLookupEntryExtra] 里与 glossary 无关、整个词头共用的后半段（从 `matched`
+/// 到结尾，不含开头的 `{`）。
+///
+/// 一个词头常带十几条 glossary（多本词典的释义），而 frequencies / pitches /
+/// deinflectionTrace 只属于词头：以前每条 glossary 都把这三样重新 jsonEncode 一遍。
+/// 现在每个词头编码一次、逐条拼接。输出逐字节不变：`jsonEncode(Map)` 按插入顺序、
+/// 以 `,` 无空白分隔输出，`definitionTags` / `termTags` 两个键原本就排在最前。
+String _lookupEntryExtraTail(FushiLookupResult r) {
+  final String full = jsonEncode({
     'matched': r.matched,
     'deinflected': r.deinflected,
     // 变形链带着语法说明一起随 entry 走。走 extra 的两条弹窗路径（原生弹窗、
@@ -135,7 +143,12 @@ String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
         )
         .toList(),
   });
+  return full.substring(1);
 }
+
+String _lookupEntryExtraWithTail(FushiGlossaryEntry g, String tail) =>
+    '{"definitionTags":${jsonEncode(g.definitionTags)},'
+    '"termTags":${jsonEncode(g.termTags)},$tail';
 
 DictionarySearchResult buildResultFromLookup({
   required String searchTerm,
@@ -190,6 +203,7 @@ DictionarySearchResult buildResultFromLookup({
       headword,
       () => headwords.length,
     );
+    final String extraTail = _lookupEntryExtraTail(r);
     for (final g in glossaries) {
       collected.add((
         entry: DictionaryEntry(
@@ -197,7 +211,7 @@ DictionarySearchResult buildResultFromLookup({
           word: r.term.expression,
           reading: reading,
           meaning: g.glossary,
-          extra: buildLookupEntryExtra(r, g),
+          extra: _lookupEntryExtraWithTail(g, extraTail),
         ),
         headword: headwordIndex,
       ));

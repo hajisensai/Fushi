@@ -206,7 +206,7 @@ class LibraryCtlImporter {
         if (isDirectory) {
           return _addSource(path, LibraryCtlKind.book, SourceLibraryKind.book);
         }
-        return _importBookLike(path);
+        return _importBookLike(path, explicitBook: true);
       case LibraryCtlKind.manga:
         return _importMangaCarrier(path, _carrierOf(path), allowPdf: true);
       case LibraryCtlKind.pdf:
@@ -235,7 +235,14 @@ class LibraryCtlImporter {
 
   /// 单个文件、没指定（或指定 book）种类：先过拖放分类筛掉非书非漫画的东西，
   /// 再按载体身份落到书或漫画。
-  Future<LibraryCtlImportResult> _importBookLike(String path) async {
+  ///
+  /// [explicitBook]：调用方显式 `--kind book`。漫画判据会误判插图小说 / 绘本，
+  /// 用户既然点名要书，书籍管线吃得下的载体（[canImportMangaCarrierAsBook]）就按书
+  /// 导，与书籍导入框的「仍按书籍导入」同义；没指定种类时仍按判定转漫画。
+  Future<LibraryCtlImportResult> _importBookLike(
+    String path, {
+    bool explicitBook = false,
+  }) async {
     final DroppedFiles dropped = classifyDroppedFiles(<String>[
       path,
     ], isImageArchive: MangaModule.isImageArchive);
@@ -245,6 +252,9 @@ class LibraryCtlImporter {
     if (dropped.books.isNotEmpty) {
       final ImportCarrier carrier = _carrierOf(path);
       if (carrier.isManga) {
+        if (explicitBook && canImportMangaCarrierAsBook(path, carrier)) {
+          return _importBookCarrier(path, ImportCarrier.epub);
+        }
         // 图片型 EPUB / zip：对话框同样把它转交漫画流程。
         return _importMangaCarrier(path, carrier, allowPdf: false);
       }

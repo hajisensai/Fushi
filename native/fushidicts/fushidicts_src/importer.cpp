@@ -35,6 +35,7 @@
 #include "stardict/stardict_reader.hpp"
 #include "util/fs_utf8.hpp"
 #include "util/import_breadcrumb.hpp"
+#include "util/redirect_glossary.hpp"
 #include "util/term_rules_flag.hpp"
 #include "zip/zip.hpp"
 
@@ -68,6 +69,11 @@ struct ProcessedFile {
   // Any written term record carried a non-empty `rules` (POS) string. Folded
   // into ImportResult::term_rules_present and persisted as term_rules.flag.
   bool rules_present = false;
+  // Any compressed glossary of this bank is a pure dictionary-deinflection
+  // redirect (util/redirect_glossary.hpp). Folded into
+  // ImportResult::redirect_glossary_present and persisted as
+  // redirect_glossary.flag.
+  bool redirects_present = false;
 };
 
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
@@ -345,6 +351,11 @@ ProcessedFile process_term_bank(const std::string& content, const ZSTD_CDict* cd
       }
       compressed.resize(compressed_size);
       processed.glossaries.emplace(glossary_hash, compressed);
+      // 与查询期同一判据（util/redirect_glossary.hpp）。宁多勿少：后面因 tags 过长
+      // 被跳过的条目也算进来只会让读侧照旧检测，不会漏掉真重定向。
+      if (!processed.redirects_present && fushi::redirect_glossary::is_redirect(glossary)) {
+        processed.redirects_present = true;
+      }
     }
 
     uint64_t offset = processed.data.size();
@@ -826,6 +837,9 @@ void write_terms(std::ofstream& file, std::vector<std::pair<uint64_t, uint64_t>>
     if (processed.rules_present) {
       result.term_rules_present = true;
     }
+    if (processed.redirects_present) {
+      result.redirect_glossary_present = true;
+    }
   };
 
   int bank_seq = 0;
@@ -1118,6 +1132,7 @@ struct SimpleDictRecords {
   std::vector<std::pair<uint64_t, uint64_t>> offsets;  // (headword hash, offset within data)
   uint64_t blob_region_size = 0;                       // bytes of glossary blobs written ahead of data
   size_t count = 0;
+  bool redirects_present = false;  // see ProcessedFile::redirects_present
 };
 
 // A simple dictionary's output directory, opened before any entry is processed
@@ -1209,6 +1224,9 @@ class SimpleEntryAccumulator {
           ZSTD_compressCCtx(cctx_, compressed_.data(), bound, glossary.data(), glossary.size(), 0);
       if (ZSTD_isError(compressed_size)) {
         throw std::runtime_error("failed to compress glossary");
+      }
+      if (!records_.redirects_present && fushi::redirect_glossary::is_redirect(glossary)) {
+        records_.redirects_present = true;
       }
       BlobRef ref{records_.blob_region_size, static_cast<uint32_t>(compressed_size)};
       blobs_.write(compressed_.data(), static_cast<std::streamsize>(compressed_size));
@@ -2021,8 +2039,11 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
     // rules 是「Yomitan 语义：非变形词」还是「转换器根本没产出词性 → 通配」。
     // 写在 marker 之前：marker 一落地读侧就会加载，flag 必须先就位。
     blobs.flush();
-    fushi::term_rules_flag::write(path, result.term_rules_present,
-                                  std::filesystem::file_size(fushi::fs_path(path + "/blobs.bin")));
+    const uint64_t blobs_size = std::filesystem::file_size(fushi::fs_path(path + "/blobs.bin"));
+    fushi::term_rules_flag::write(path, result.term_rules_present, blobs_size);
+    // redirect_glossary.flag：本词典有没有纯重定向 glossary（Lookup 据此决定要不要在
+    // 查询期逐条检测）。同样写在 marker 之前；写失败只是读侧照旧检测。
+    fushi::redirect_glossary::write_flag(path, result.redirect_glossary_present, blobs_size);
 
     // v2 = 本批引入的格式阶梯（fork 首个版本升级）：kanji 记录带 stats 追加段 +
     // term glossary 可能使用 dict.zstd 训练字典。旧引擎认不出 v2 marker 会整目录
@@ -2176,8 +2197,10 @@ void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, co
   // legacy record scan.
   sink.blobs.flush();
   result.term_rules_present = true;
-  fushi::term_rules_flag::write(path, true,
-                                std::filesystem::file_size(fushi::fs_path(path + "/blobs.bin")));
+  result.redirect_glossary_present = records.redirects_present;
+  const uint64_t blobs_size = std::filesystem::file_size(fushi::fs_path(path + "/blobs.bin"));
+  fushi::term_rules_flag::write(path, true, blobs_size);
+  fushi::redirect_glossary::write_flag(path, records.redirects_present, blobs_size);
 
   std::ofstream sui(fushi::fs_path(path + "/.fushidicts_1"), std::ios::binary);
 }

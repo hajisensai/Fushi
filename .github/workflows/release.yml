@@ -50,6 +50,7 @@ on:
       - '.github/actions/setup-fushi-rwkv/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/actions/test-native-linux/**'
+      - '.github/actions/fushidicts-linux/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -1641,6 +1642,23 @@ jobs:
         if-no-files-found: error
         retention-days: 3
 
+  # 词典引擎（native/fushidicts）Linux .so：packages/fushi_dictionary 的真原生库测试
+  # （background_tokenize_native_test.dart 的后台查词 / redirect 标记迁移两组）缺库直接失败、
+  # 不 skip，所以 tests (checks) 的包测试要它。与 web-core-linux 并行编一次、以 artifact 下发。
+  fushidicts-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushidicts-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
+        if-no-files-found: error
+        retention-days: 3
+
   # TODO-fast-release: the analyze/unit/package suites that used to run as
   # sequential steps at the top of the `build` job (gating `flutter build apk`)
   # now live here as an INDEPENDENT job. It shares the same trigger as `build`
@@ -1678,7 +1696,7 @@ jobs:
       matrix:
         part: ['0', '1', '2', '3', checks]
     name: tests (${{ matrix.part }})
-    needs: [web-core-linux, test-native-linux]
+    needs: [web-core-linux, test-native-linux, fushidicts-linux]
     env:
       FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
       FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
@@ -1724,6 +1742,12 @@ jobs:
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
+    - name: Fetch fushidicts linux-x64 library (hard dependency of the package tests)
+      if: matrix.part == 'checks'
+      uses: actions/download-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64
 
     - name: Run dart analyze
       if: matrix.part == 'checks'
@@ -1758,6 +1782,8 @@ jobs:
 
     - name: Run package tests
       if: matrix.part == 'checks'
+      env:
+        FUSHI_DICTS_LIB: ${{ github.workspace }}/native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
         # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里

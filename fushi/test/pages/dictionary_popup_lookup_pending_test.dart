@@ -206,8 +206,18 @@ void main() {
     ).readAsStringSync();
     expect(
       webView,
-      contains('idle: identical(widget.result, kPopupSearchingPlaceholderResult)'),
+      contains(
+        'identical(widget.result, kPopupSearchingPlaceholderResult);',
+      ),
       reason: 'in-app 推送必须按占位单例身份下发 lookupIdle',
+    );
+    // P1-B：字面量与拦截取回两条投递路径都必须带上同一个 idle（缺一条就会在大结果
+    // 时退回 BUG-3274 的假空态）。
+    expect(
+      RegExp(r'idle: idle,').allMatches(webView).length,
+      greaterThanOrEqualTo(2),
+      reason: '字面量（buildPopupEntriesJs）与取回（buildPopupFetchedEntriesJs）'
+          '两条路径都要下发 lookupIdle',
     );
   });
 }

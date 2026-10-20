@@ -89,6 +89,7 @@ add_library(fushidicts STATIC
     fushidicts_src/lookup.cpp
     fushidicts_src/popup_json.cpp
     fushidicts_src/tokenize.cpp
+    fushidicts_src/util/redirect_glossary.cpp
 )
 
 target_compile_features(fushidicts PUBLIC
