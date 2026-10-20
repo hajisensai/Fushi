@@ -5,8 +5,11 @@
 ///  * [VideoRemoteControlSlot.primary]：主控制组（竖屏底部浮动卡的大按钮组、
 ///    横屏左栏的主控制组）。出厂 上一句 / 播放暂停 / 下一句。
 ///  * [VideoRemoteControlSlot.secondary]：次组（竖屏卡片第二行的图标按钮、
-///    横屏左栏的按钮网格）。出厂 重播本句 / 收藏 / 回到当前句 / 制卡 / 选集 /
-///    字幕轨 / 音量。
+///    横屏左栏的按钮网格）。出厂 重播本句 / 收藏 / 回到当前句 / 选集 / 字幕轨 /
+///    在线字幕 / 音量。
+///
+/// 没有「制卡」按钮（用户 2026-10-21：点字幕里的字就能查词制卡，按钮多余）。旧存档
+/// 里的 `mine` 是未知值，解码时按未知按钮丢掉。
 ///
 /// 播放暂停是必需项：任何时候都不能移出（遥控器的核心动作）。
 ///
@@ -62,9 +65,6 @@ enum VideoRemoteControlItem implements ControlItemSpec<VideoRemoteControlSlot> {
     recoverySlot: VideoRemoteControlSlot.secondary,
   ),
 
-  /// 当前句制卡。
-  mine('mine', recoverySlot: VideoRemoteControlSlot.secondary),
-
   /// 倍速。
   speed('speed', recoverySlot: VideoRemoteControlSlot.secondary),
 
@@ -86,6 +86,12 @@ enum VideoRemoteControlItem implements ControlItemSpec<VideoRemoteControlSlot> {
   /// 切换电脑上的主字幕轨。
   subtitleTrack(
     'subtitleTrack',
+    recoverySlot: VideoRemoteControlSlot.secondary,
+  ),
+
+  /// 在电脑上搜索在线字幕并应用。
+  subtitleSearch(
+    'subtitleSearch',
     recoverySlot: VideoRemoteControlSlot.secondary,
   ),
 
@@ -151,7 +157,7 @@ class VideoRemoteControlLayout {
   final ControlLayout<VideoRemoteControlSlot, VideoRemoteControlItem> core;
 
   /// 出厂布局：主组 上一句 / 播放 / 下一句；次组 重播本句 / 收藏 / 回到当前句 /
-  /// 制卡 / 选集 / 字幕轨 / 音量；倍速、字幕显隐、±10 秒在托盘（用户可拖上来）。
+  /// 选集 / 字幕轨 / 在线字幕 / 音量；倍速、字幕显隐、±10 秒在托盘（用户可拖上来）。
   /// 旧存档里没有后三颗时由 [decode] 按这里的位置回填到次组末尾。
   static final VideoRemoteControlLayout defaults = VideoRemoteControlLayout._(
     ControlLayout<VideoRemoteControlSlot, VideoRemoteControlItem>.fromSlots(
@@ -166,9 +172,9 @@ class VideoRemoteControlLayout {
           VideoRemoteControlItem.replayCue,
           VideoRemoteControlItem.favorite,
           VideoRemoteControlItem.followCurrent,
-          VideoRemoteControlItem.mine,
           VideoRemoteControlItem.episodes,
           VideoRemoteControlItem.subtitleTrack,
+          VideoRemoteControlItem.subtitleSearch,
           VideoRemoteControlItem.volume,
         ],
       },

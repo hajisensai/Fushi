@@ -247,7 +247,6 @@ IconData videoRemoteControlIcon(
   VideoRemoteControlItem.favorite =>
     active ? FushiIcons.filled(FushiIcons.star) : FushiIcons.star,
   VideoRemoteControlItem.followCurrent => FushiIcons.myLocation,
-  VideoRemoteControlItem.mine => FushiIcons.ankiCard,
   VideoRemoteControlItem.speed => FushiIcons.speed,
   VideoRemoteControlItem.subtitleVisibility =>
     active ? FushiIcons.subtitles : FushiIcons.subtitlesOff,
@@ -255,6 +254,7 @@ IconData videoRemoteControlIcon(
   VideoRemoteControlItem.seekForward => FushiIcons.forward10,
   VideoRemoteControlItem.episodes => FushiIcons.playlist,
   VideoRemoteControlItem.subtitleTrack => FushiIcons.subtitles,
+  VideoRemoteControlItem.subtitleSearch => FushiIcons.manageSearch,
   VideoRemoteControlItem.volume =>
     active ? FushiIcons.volumeOff : FushiIcons.volumeUp,
 };
@@ -273,7 +273,6 @@ String videoRemoteControlLabel(
         ? t.video_remote_control_unfavorite
         : t.video_remote_control_favorite,
   VideoRemoteControlItem.followCurrent => t.video_remote_current,
-  VideoRemoteControlItem.mine => t.video_remote_control_mine,
   VideoRemoteControlItem.speed => t.playback_speed,
   VideoRemoteControlItem.subtitleVisibility =>
     t.video_remote_control_subtitle_visibility,
@@ -281,6 +280,8 @@ String videoRemoteControlLabel(
   VideoRemoteControlItem.seekForward => t.video_remote_control_seek_forward,
   VideoRemoteControlItem.episodes => t.video_episode_list,
   VideoRemoteControlItem.subtitleTrack => t.video_control_subtitle_track,
+  VideoRemoteControlItem.subtitleSearch =>
+    t.video_remote_control_subtitle_search,
   VideoRemoteControlItem.volume => t.audio_volume,
 };
 

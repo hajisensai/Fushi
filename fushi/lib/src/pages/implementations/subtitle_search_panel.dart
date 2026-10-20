@@ -319,8 +319,8 @@ const ValueKey<String> kSubtitleNoticeBannerKey = ValueKey<String>(
 /// 盖掉的那几条永远不会有人发现。
 ///
 /// 批量落盘路径（[runSubtitleBatch]）早就踩过同一个坑，用的是 bookUid 前缀；
-/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。
-@visibleForTesting
+/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。手机遥控「在线
+/// 字幕」的落盘（`video_remote_subtitle_search.dart`）同样走这里。
 String uniqueSubtitleDestination(String directory, String fileName) {
   final String ext = p.extension(fileName);
   final String stem = p.basenameWithoutExtension(fileName);
@@ -480,9 +480,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   bool get _multiSelecting => _selectedCandidates.isNotEmpty;
 
   Set<String> get _selectedIdentityKeys => <String>{
-        for (final VideoSubtitleCandidate c in _selectedCandidates)
-          c.identityKey,
-      };
+    for (final VideoSubtitleCandidate c in _selectedCandidates) c.identityKey,
+  };
 
   void _toggleCandidate(VideoSubtitleCandidate candidate) {
     setState(() {
@@ -496,6 +495,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       }
     });
   }
+
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
 
   /// true = 平铺文件列表（旧视图）；false（默认）= 版本卡视图。候选缺 source
@@ -1623,19 +1623,21 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             onSelectAll: () => setState(() {
               _selectedCandidates
                 ..clear()
-                ..addAll(_candidates
-                    .map((JimakuCandidate c) => c.source)
-                    .whereType<VideoSubtitleCandidate>());
+                ..addAll(
+                  _candidates
+                      .map((JimakuCandidate c) => c.source)
+                      .whereType<VideoSubtitleCandidate>(),
+                );
             }),
             onInvertSelection: () => setState(() {
               final Set<String> current = _selectedIdentityKeys;
               final List<VideoSubtitleCandidate> next =
                   <VideoSubtitleCandidate>[
-                for (final JimakuCandidate c in _candidates)
-                  if (c.source != null &&
-                      !current.contains(c.source!.identityKey))
-                    c.source!,
-              ];
+                    for (final JimakuCandidate c in _candidates)
+                      if (c.source != null &&
+                          !current.contains(c.source!.identityKey))
+                        c.source!,
+                  ];
               _selectedCandidates
                 ..clear()
                 ..addAll(next);
@@ -1772,6 +1774,5 @@ class JimakuCandidateList extends StatelessWidget {
         }),
       ),
     );
-
   }
 }

@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_cover_image.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show formatFushiPlaybackTime;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiListItem, FushiModalSheetFrame, FushiSearchField;
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
@@ -23,6 +25,7 @@ class VideoRemoteLibraryEntry {
     required this.title,
     this.collection,
     this.positionMs = 0,
+    this.hasCover = false,
   });
 
   factory VideoRemoteLibraryEntry.fromJson(Map<String, dynamic> json) =>
@@ -31,12 +34,16 @@ class VideoRemoteLibraryEntry {
         title: json['title']?.toString() ?? '',
         collection: json['collection']?.toString(),
         positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+        hasCover: json['hasCover'] == true,
       );
 
   final String bookUid;
   final String title;
   final String? collection;
   final int positionMs;
+
+  /// 电脑说这部有封面（旧版电脑不报 = 没有，不去问）。
+  final bool hasCover;
 }
 
 /// `library` 的一页结果。
@@ -70,16 +77,22 @@ class VideoRemoteLibraryPage {
 typedef VideoRemoteLibraryLoader =
     Future<VideoRemoteLibraryPage> Function(String query, int offset);
 
+/// 某部视频的封面；null = 没有（画占位）。
+typedef VideoRemoteLibraryCoverResolver =
+    ImageProvider? Function(VideoRemoteLibraryEntry entry);
+
 /// 点播弹层：列出电脑的视频库（最近播放在前），可搜索；选中返回该视频的
 /// `bookUid`，关掉返回 null。网络与错误提示归调用方，本组件只在清单里显示
 /// 加载失败。
 Future<String?> showVideoRemoteLibrarySheet({
   required BuildContext context,
   required VideoRemoteLibraryLoader load,
+  VideoRemoteLibraryCoverResolver? coverFor,
 }) => adaptiveModalSheet<String>(
   context: context,
   builder: (BuildContext sheetContext) => VideoRemoteLibrarySheet(
     load: load,
+    coverFor: coverFor,
     onPick: (String bookUid) => Navigator.of(sheetContext).pop(bookUid),
   ),
 );
@@ -90,10 +103,14 @@ class VideoRemoteLibrarySheet extends StatefulWidget {
     super.key,
     required this.load,
     required this.onPick,
+    this.coverFor,
   });
 
   final VideoRemoteLibraryLoader load;
   final ValueChanged<String> onPick;
+
+  /// 封面预览；null = 只画图标（不问电脑要封面）。
+  final VideoRemoteLibraryCoverResolver? coverFor;
 
   @override
   State<VideoRemoteLibrarySheet> createState() =>
@@ -267,10 +284,36 @@ class _VideoRemoteLibrarySheetState extends State<VideoRemoteLibrarySheet> {
       child: FushiListItem(
         key: ValueKey<String>('video-remote-library-${entry.bookUid}'),
         selected: current,
-        leading: FushiIcon(current ? FushiIcons.playCircle : FushiIcons.video),
+        leading: VideoRemoteCoverThumb(
+          key: ValueKey<String>('video-remote-library-cover-${entry.bookUid}'),
+          cover: entry.hasCover ? widget.coverFor?.call(entry) : null,
+          width: 48,
+          height: 68,
+          badge: current ? const _NowPlayingBadge() : null,
+        ),
         title: Text(entry.title, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: subtitle.isEmpty ? null : Text(subtitle),
-        onTap: () => widget.onPick(entry.bookUid),
+        onTap: () {
+          fushiSelectionHaptic(context);
+          widget.onPick(entry.bookUid);
+        },
+      ),
+    );
+  }
+}
+
+/// 封面右下角的「正在播放」小角标。
+class _NowPlayingBadge extends StatelessWidget {
+  const _NowPlayingBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: FushiIcon(FushiIcons.playCircle, size: 16, color: cs.onPrimary),
       ),
     );
   }
