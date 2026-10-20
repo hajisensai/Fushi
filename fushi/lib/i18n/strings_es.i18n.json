@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Descarga en cola y suscripción creada",
   "download_subscription_delete": "Eliminar suscripción",
   "download_subscription_delete_confirm": "¿Eliminar la suscripción de ${title}? Las tareas descargadas se conservan.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Descargar y suscribirse",
   "download_subscription_empty_body": "En Descubrir, elija un episodio individual y use Descargar y suscribirse.",
   "download_subscription_empty_title": "Aún no hay suscripciones",

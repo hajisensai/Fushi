@@ -2131,6 +2131,7 @@
   "download_subscription_created": "ダウンロードをキューに追加し、サブスクリプションを作成しました",
   "download_subscription_delete": "購読を削除",
   "download_subscription_delete_confirm": "「${title}」の購読を削除しますか？ダウンロード済みのタスクは保持されます。",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "ダウンロードして購読",
   "download_subscription_empty_body": "発見ページで単話リリースを選び、「ダウンロードして購読」を使ってください。",
   "download_subscription_empty_title": "サブスクリプションはまだありません",

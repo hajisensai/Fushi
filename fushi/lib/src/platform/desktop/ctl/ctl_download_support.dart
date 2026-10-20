@@ -25,9 +25,22 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_data_wire.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+
+/// 下载中心（含订阅）的门：合规门（iOS 无下载中心）+「浏览」模块开关（下载页签挂在
+/// 它下面）。
+void requireCtlDownloadCenter(AppModel appModel) {
+  if (!StoreRestrictedCapability.downloads.isAvailable) {
+    throw const CtlFailure.unsupported('本平台不提供下载中心');
+  }
+  if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
+    throw const CtlFailure.rejected('「浏览」模块已关闭（设置 › 功能模块）');
+  }
+}
 
 /// 执行设备的解析结果：本机，或某台宣告了代下载能力的互联 host。
 sealed class CtlDownloadDevice {

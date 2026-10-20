@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Đã xếp hàng tải xuống và tạo đăng ký",
   "download_subscription_delete": "Xóa đăng ký",
   "download_subscription_delete_confirm": "Xóa đăng ký cho ${title}? Các tác vụ đã tải được giữ lại.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Tải xuống và đăng ký",
   "download_subscription_empty_body": "Trong Khám phá, chọn bản phát hành tập đơn và sử dụng Tải xuống và đăng ký.",
   "download_subscription_empty_title": "Chưa có đăng ký nào",

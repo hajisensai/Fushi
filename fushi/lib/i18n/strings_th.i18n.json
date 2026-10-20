@@ -2131,6 +2131,7 @@
   "download_subscription_created": "เข้าคิวดาวน์โหลดและสร้างการติดตามแล้ว",
   "download_subscription_delete": "ลบการติดตาม",
   "download_subscription_delete_confirm": "ลบการติดตาม ${title}? งานที่ดาวน์โหลดแล้วจะยังคงอยู่",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "ดาวน์โหลดและติดตาม",
   "download_subscription_empty_body": "ในหน้าค้นพบ เลือกรีลีสตอนเดียวแล้วใช้ดาวน์โหลดและติดตาม",
   "download_subscription_empty_title": "ยังไม่มีการติดตาม",

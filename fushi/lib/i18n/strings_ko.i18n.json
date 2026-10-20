@@ -2131,6 +2131,7 @@
   "download_subscription_created": "다운로드 대기열에 추가 및 구독 생성됨",
   "download_subscription_delete": "구독 삭제",
   "download_subscription_delete_confirm": "${title}에 대한 구독을 삭제하시겠습니까? 다운로드된 작업은 유지됩니다.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "다운로드 및 구독",
   "download_subscription_empty_body": "탐색에서 단편 에피소드 릴리스를 선택하고 다운로드 및 구독을 사용하세요.",
   "download_subscription_empty_title": "아직 구독이 없습니다",

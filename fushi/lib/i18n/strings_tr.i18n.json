@@ -2131,6 +2131,7 @@
   "download_subscription_created": "İndirme sıraya alındı ve abonelik oluşturuldu",
   "download_subscription_delete": "Aboneliği sil",
   "download_subscription_delete_confirm": "${title} aboneliği silinsin mi? İndirilen görevler korunur.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "İndir ve abone ol",
   "download_subscription_empty_body": "Keşfet'te tekli bölüm yayını seçin ve İndir ve abone ol'u kullanın.",
   "download_subscription_empty_title": "Henüz abonelik yok",

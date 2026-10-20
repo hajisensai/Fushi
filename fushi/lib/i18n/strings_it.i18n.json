@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Download in coda e abbonamento creato",
   "download_subscription_delete": "Elimina abbonamento",
   "download_subscription_delete_confirm": "Eliminare l'abbonamento per ${title}? I download già effettuati vengono mantenuti.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Scarica e abbonati",
   "download_subscription_empty_body": "In Scopri, scegli un'uscita a episodio singolo e usa Scarica e abbonati.",
   "download_subscription_empty_title": "Nessun abbonamento",

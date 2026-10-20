@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Download queued and subscription created",
   "download_subscription_delete": "Delete subscription",
   "download_subscription_delete_confirm": "Delete the subscription for ${title}? Downloaded tasks are kept.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Download and subscribe",
   "download_subscription_empty_body": "In Discover, choose a single-episode release and use Download and subscribe.",
   "download_subscription_empty_title": "No subscriptions yet",

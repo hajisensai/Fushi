@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Загрузка добавлена в очередь и подписка создана",
   "download_subscription_delete": "Удалить подписку",
   "download_subscription_delete_confirm": "Удалить подписку на ${title}? Загруженные задачи сохранятся.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Скачать и подписаться",
   "download_subscription_empty_body": "В разделе «Обнаружение» выберите выпуск одной серии и нажмите «Скачать и подписаться».",
   "download_subscription_empty_title": "Подписок пока нет",

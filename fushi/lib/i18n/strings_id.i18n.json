@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Unduhan diantrean dan langganan dibuat",
   "download_subscription_delete": "Hapus langganan",
   "download_subscription_delete_confirm": "Hapus langganan untuk ${title}? Tugas yang sudah diunduh tetap ada.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Unduh dan berlangganan",
   "download_subscription_empty_body": "Di Jelajahi, pilih rilis satu episode dan gunakan Unduh dan berlangganan.",
   "download_subscription_empty_title": "Belum ada langganan",

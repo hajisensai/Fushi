@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Download in wachtrij en abonnement aangemaakt",
   "download_subscription_delete": "Abonnement verwijderen",
   "download_subscription_delete_confirm": "Het abonnement voor ${title} verwijderen? Gedownloade taken worden bewaard.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Downloaden en abonneren",
   "download_subscription_empty_body": "Kies in Ontdekken een afzonderlijke aflevering en gebruik Downloaden en abonneren.",
   "download_subscription_empty_title": "Nog geen abonnementen",

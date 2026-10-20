@@ -2131,6 +2131,7 @@
   "download_subscription_created": "已加入下載並創建訂閱",
   "download_subscription_delete": "刪除訂閱",
   "download_subscription_delete_confirm": "刪除“${title}”的訂閱嗎？已創建的下載任務會保留。",
+  "download_subscription_disabled_enable_first": "訂閱已停用，請先啟用",
   "download_subscription_download_and_create": "下載並訂閱",
   "download_subscription_empty_body": "在“發現”中選擇一個單集發布，然後使用“下載並訂閱”。",
   "download_subscription_empty_title": "還沒有訂閱",

@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Téléchargement en file d'attente et abonnement créé",
   "download_subscription_delete": "Supprimer l'abonnement",
   "download_subscription_delete_confirm": "Supprimer l'abonnement pour ${title} ? Les tâches téléchargées sont conservées.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Télécharger et s'abonner",
   "download_subscription_empty_body": "Dans Découvrir, choisissez une sortie d'épisode unique et utilisez Télécharger et s'abonner.",
   "download_subscription_empty_title": "Aucun abonnement",

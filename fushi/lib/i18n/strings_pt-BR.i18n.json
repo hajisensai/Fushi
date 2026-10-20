@@ -2131,6 +2131,7 @@
   "download_subscription_created": "Download enfileirado e assinatura criada",
   "download_subscription_delete": "Excluir assinatura",
   "download_subscription_delete_confirm": "Excluir a assinatura de ${title}? Tarefas já baixadas são mantidas.",
+  "download_subscription_disabled_enable_first": "This subscription is disabled. Enable it first.",
   "download_subscription_download_and_create": "Baixar e assinar",
   "download_subscription_empty_body": "Em Descobrir, escolha um lançamento de episódio único e use Baixar e assinar.",
   "download_subscription_empty_title": "Nenhuma assinatura ainda",
