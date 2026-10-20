@@ -80,6 +80,14 @@ impl ModelKind {
             Self::Small => StatePrecision::Int4,
         }
     }
+
+    /// 这个模型能不能用该精度。大模型不支持 int4：它 card 状态第一层的递推会放大量化误差，
+    /// int4 下高频卡的状态指数增长直到 f32 溢出（tests/long_history.rs：每卡 1 万次复习时峰值
+    /// 1.3e16，f32 为 3.7；最小二乘比例因子也救不回）。上游 kuma3 给大模型留了 int4 card 状态。
+    /// 小模型 int4 与大模型 int8 在同样的历史上与 f32 同量级。
+    pub fn supports(self, precision: StatePrecision) -> bool {
+        !(self == Self::Large && precision == StatePrecision::Int4)
+    }
 }
 
 /// 解析好的网络（大或小），可在多个 runtime 间共享。
@@ -245,6 +253,13 @@ impl RwkvRuntime {
     /// `threads == 0`：用 rayon 全局池；否则建一个专用池（墨水屏 / 低端机可传 1）。
     /// 线程数不影响数值：上游的并行全是逐行 map，没有跨线程浮点归约。
     pub fn new(model: &Model, precision: StatePrecision, threads: usize) -> Result<Self, RwkvError> {
+        if !model.kind().supports(precision) {
+            return Err(RwkvError::Input(format!(
+                "{:?} model does not support {precision:?} state (its card states diverge; \
+                 use int8)",
+                model.kind()
+            )));
+        }
         let pool = if threads == 0 {
             None
         } else {

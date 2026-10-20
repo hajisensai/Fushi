@@ -521,6 +521,31 @@ impl RwkvInference {
         Ok(state)
     }
 
+    /// Fushi: diagnostics for the long-history tests: the largest absolute
+    /// time-mixer matrix value over every card (`module_id` 0) or note (2)
+    /// state.
+    #[doc(hidden)]
+    pub fn stream_peak(&self, module_id: usize) -> f32 {
+        let map = match module_id {
+            0 => &self.warm_up_states.card,
+            2 => &self.warm_up_states.note,
+            _ => return f32::NAN,
+        };
+        map.ids()
+            .into_iter()
+            .filter_map(|id| map.state(&id))
+            .map(|state| {
+                state
+                    .decoded()
+                    .layers
+                    .iter()
+                    .filter_map(|layer| layer.time.as_ref())
+                    .flat_map(|time| time.matrix.iter())
+                    .fold(0.0f32, |m, v| m.max(v.abs()))
+            })
+            .fold(0.0, f32::max)
+    }
+
     /// The raw `day_offset` of the last replayed answer (None before any).
     pub fn last_day_offset(&self) -> Option<i64> {
         Some(self.features.first_day_offset? + self.features.previous_day_offset?)

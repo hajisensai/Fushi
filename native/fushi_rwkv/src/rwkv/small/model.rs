@@ -832,15 +832,36 @@ impl Layout {
             }
             let limit = limit(self.precision);
             let maximum = values.iter().fold(0.0f32, |m, v| m.max(v.abs()));
-            let scale = if maximum == 0.0 {
+            let step = if maximum == 0.0 {
                 1.0
             } else {
                 (maximum / limit).max(f32::from_bits(1))
             };
-            encoded[..4].copy_from_slice(&scale.to_le_bytes());
             let mut codes = [0i8; K];
-            for (code, v) in codes.iter_mut().zip(values.iter_mut()) {
-                *code = (*v / scale).round_ties_even().clamp(-limit, limit) as i8;
+            for (code, v) in codes.iter_mut().zip(values.iter()) {
+                *code = (*v / step).round_ties_even().clamp(-limit, limit) as i8;
+            }
+            // The scale is refitted to the codes by least squares, so the stored
+            // row is the orthogonal projection of the exact row onto its codes:
+            // never longer than the exact row. With the plain `max / limit`
+            // scale, rounding lifts components between half a step and a step
+            // to a full step (up to 2x) at every committed answer; the card
+            // stream's first layer does not damp that, and on a 1.2M-review
+            // history 101 heavily reviewed cards grew x1.06 per review under
+            // int4 (0.25 -> 7,962 in 175 reviews, on the way to f32 overflow).
+            let (dot, norm) = codes
+                .iter()
+                .zip(values.iter())
+                .fold((0.0f32, 0.0f32), |(dot, norm), (&c, &v)| {
+                    (dot + c as f32 * v, norm + (c as f32) * (c as f32))
+                });
+            let scale = if norm == 0.0 {
+                1.0
+            } else {
+                (dot / norm).max(f32::from_bits(1))
+            };
+            encoded[..4].copy_from_slice(&scale.to_le_bytes());
+            for (code, v) in codes.iter().zip(values.iter_mut()) {
                 *v = *code as f32 * scale;
             }
             if self.precision == StatePrecision::Int8 {
@@ -1270,5 +1291,60 @@ fn step_head(s: &[f32; K * K], p: &Prepared, h: usize, next: &mut [f32; K * K], 
             acc += new[j] * r[j];
         }
         out[i] = acc;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn layout(precision: StatePrecision) -> Layout {
+        Layout {
+            precision,
+            layers: Vec::new(),
+            slot_len: 0,
+        }
+    }
+
+    /// The stored row is never longer than the exact row (L2), for any row:
+    /// quantization must not feed energy into the recurrent state (see
+    /// `write_rows`). Rows mix a dominant value with small components just
+    /// above half a step, the case max-scaled rounding lifted to a full step.
+    #[test]
+    fn quantization_never_lengthens_a_row() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f32 / (1u64 << 53) as f32
+        };
+        for precision in [StatePrecision::Int8, StatePrecision::Int4] {
+            let layout = layout(precision);
+            let mut bytes = vec![0u8; layout.rows_bytes(1)];
+            for case in 0..20_000 {
+                let mut row = [0.0f32; K];
+                let big = (next() - 0.5) * 10f32.powi((case % 7) as i32 - 3);
+                for (j, v) in row.iter_mut().enumerate() {
+                    *v = if j == case % K {
+                        big
+                    } else {
+                        let step = big.abs() / limit(precision);
+                        (0.5 + next()) * step * if next() < 0.5 { -1.0 } else { 1.0 }
+                    };
+                }
+                let before: f32 = row.iter().map(|v| v * v).sum();
+                let mut stored = row;
+                layout.write_rows(&mut stored, &mut bytes);
+                let after: f32 = stored.iter().map(|v| v * v).sum();
+                assert!(
+                    after <= before * (1.0 + 1e-5),
+                    "{precision:?} case {case}: |q(x)|² {after} > |x|² {before} for {row:?}"
+                );
+                let mut decoded = [0.0f32; K];
+                layout.read_rows(&bytes, &mut decoded);
+                assert_eq!(decoded, stored, "{precision:?}: stored values read back differently");
+            }
+        }
     }
 }
