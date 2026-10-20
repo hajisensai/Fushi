@@ -17,6 +17,12 @@ if (!resolveChrome()) {
 }
 const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 
+// Screen capacity of the deterministic ruler below, in code points of visible
+// text (ruby annotations excluded). With 17 the dialogue splits as
+// 「作中の探偵役が、素人のミステリ書 | きと同じ思考なのをひけらかされるの | だからな」,
+// i.e. exactly the user's cut after the ruby 「書」, and the looked-up word
+// 「ひけらか」 sits whole on the second slice.
+const screenCapacity = 17;
 const before = '前の文。';
 const sentence = '「作中の探偵役が、素人のミステリ書きと同じ思考なのをひけらかされるのだからな」';
 const html = '<p>' + before + '「作中の探偵役が、素人のミステリ<ruby>書<rt>か</rt></ruby>' +
@@ -58,7 +64,24 @@ function pageFor() {
     'if(name==="onRestoreComplete")window.restoreCount++;}};' +
     scripts.units + '</script>' + scripts.shell +
     '<script>' + scripts.selection +
-    ';window.__fushiShells.vn(' + JSON.stringify(config) + ');</script>' +
+    ';window.__fushiShells.vn(' + JSON.stringify(config) + ');' +
+    // The production ruler (measureScreenFits -> real glyph rects) makes the
+    // split point depend on the host's fonts: on CI's Linux headless Chrome the
+    // whole dialogue fit the 240x64 box (different fallback glyph widths), so
+    // no split happened and the precondition below failed. Like vn_split_kinsoku_behavior_test.js, swap
+    // only the ruler for a font-independent stand-in ("fits" = visible code
+    // points <= capacity); the production split loop, kinsoku boundary, ruby
+    // atomic units, screen cloning and lookup paths all still run. The patch
+    // lands before initialize(), which only runs on window 'load'.
+    'if(typeof window.fushiReader.measureScreenFits!=="function")' +
+    'throw Error("VN reader lost measureScreenFits");' +
+    'window.fushiReader.measureScreenFits=function(screen,measurement){' +
+    'if(!screen||!measurement||!measurement.content)return true;' +
+    'measurement.content.replaceChildren(screen.render());' +
+    'const probe=measurement.content.cloneNode(true);' +
+    'probe.querySelectorAll("rt,rp").forEach((el)=>el.remove());' +
+    'return Array.from(probe.textContent).length<=' + screenCapacity + ';};' +
+    '</script>' +
     '</head><body>' + html + '</body></html>';
 }
 
@@ -90,6 +113,8 @@ try {
     const screenText = reader.screen.textContent;
     check(screenText.indexOf('「作中') < 0,
       'precondition: the word sits on a screen cut mid-sentence', screenText);
+    check(screenText.indexOf('きと同じ') === 0,
+      'precondition: the cut reproduces the user report (after the ruby 書)', screenText);
 
     function wordHit() {
       const walker = reader.createWalker();
