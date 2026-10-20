@@ -43,8 +43,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        chunk: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    name: chunk ${{ matrix.chunk }}/16
+        include:
+          - { slice: full, start: 0, count: 365 }
+          - { slice: half-a, start: 0, count: 183 }
+          - { slice: half-b, start: 183, count: 182 }
+          - { slice: quarter-1, start: 0, count: 92 }
+          - { slice: quarter-2, start: 92, count: 91 }
+          - { slice: quarter-3, start: 183, count: 91 }
+          - { slice: quarter-4, start: 274, count: 91 }
+    name: slice ${{ matrix.slice }}
     steps:
     - uses: actions/checkout@v6
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -81,13 +88,14 @@ jobs:
       working-directory: fushi
       shell: bash
       env:
-        CHUNK: ${{ matrix.chunk }}
+        CHUNK: ${{ matrix.slice }}
+        START: ${{ matrix.start }}
+        COUNT: ${{ matrix.count }}
       run: |
         set -uo pipefail
         ulimit -c unlimited
         mapfile -t all < <(grep -v '^$' tool/test_flow/zz_crash_bisect_files.txt)
-        n=${#all[@]}; per=$(( (n + 15) / 16 )); start=$(( CHUNK * per ))
-        files=("${all[@]:start:per}")
+        files=("${all[@]:START:COUNT}")
         echo "chunk $CHUNK: ${#files[@]} files (${files[0]} .. ${files[-1]})"
         flutter test --no-pub -r json --experimental-faster-testing --concurrency=1 --exclude-tags golden "${files[@]}" > events.jsonl 2> stderr.log
         code=$?
