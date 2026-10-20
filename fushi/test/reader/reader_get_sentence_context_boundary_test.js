@@ -472,5 +472,41 @@ let passed = 0;
   passed++;
 })();
 
+// CASE 12 (BUG-3630): the user's sentence, with the ruby on 書 that sits right
+// before the place the VN screen split cut it. On a whole-chapter DOM (paginated
+// / continuous) the walk crosses the <ruby> and skips its <rt>, so the sentence
+// starts at the quote, never at 「き」, and the offset still points at the word.
+(function case12_ruby_inside_sentence() {
+  const p = makeElement('p');
+  makeText('「作中の探偵役が、素人のミステリ', p);
+  const ruby = makeElement('ruby');
+  ruby.parentElement = p;
+  p.childNodes.push(ruby);
+  makeText('書', ruby);
+  const rt = makeElement('rt');
+  rt.parentElement = ruby;
+  ruby.childNodes.push(rt);
+  makeText('か', rt);
+  const tail = makeText('きと同じ思考なのをひけらかされるのだからな」', p);
+  const document = buildDocument(p);
+  const sel = loadFushiSelection(document);
+  const ctx = sel.getSentenceContext(tail, tail.textContent.indexOf('ひけらか'));
+  record('case12_ruby_inside_sentence', {
+    sentence: ctx.sentence,
+    offset: ctx.sentenceOffset,
+  });
+  assert.strictEqual(
+    ctx.sentence,
+    '「作中の探偵役が、素人のミステリ書きと同じ思考なのをひけらかされるのだからな」',
+    'CASE12: the walk crosses the ruby base and drops its reading',
+  );
+  assert.strictEqual(
+    ctx.sentence.substring(ctx.sentenceOffset).indexOf('ひけらか'),
+    0,
+    'CASE12: sentenceOffset points at the looked-up word in the full sentence',
+  );
+  passed++;
+})();
+
 console.log('passed ' + passed + ' cases');
 console.log('all assertions passed');

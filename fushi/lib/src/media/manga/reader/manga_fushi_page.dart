@@ -61,7 +61,10 @@ import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
+import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
+import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
@@ -861,6 +864,27 @@ class MangaFushiPage extends BaseSourcePage {
     return (page, isWebtoon ? webtoonFraction : 0.0);
   }
 
+  /// 纯函数：落库页码 [page] 所在的那一屏是否已经显示到最后一页（「已读完」判据）。
+  ///
+  /// [mangaProgressForSpread] 落的是 spread **首页**：双页展开的最后一屏是
+  /// `[n-2, n-1]`，落库页码恒为 `n-2`，旧判据 `page >= n - 1` 永远不成立——读到最后
+  /// 一页也不写 completedAt，卷一直留在首页「继续阅读」。判据改看这一屏里的页。
+  /// [spreads] 为空（payload 未就绪）时退回按页码判。
+  static bool spreadReachesLastPage(
+    List<MangaSpreadEntry> spreads,
+    int page,
+    int pageCount,
+  ) {
+    if (pageCount <= 0) return false;
+    if (page >= pageCount - 1) return true;
+    for (final MangaSpreadEntry s in spreads) {
+      if (s.pageIndices.contains(page)) {
+        return s.pageIndices.any((int p) => p >= pageCount - 1);
+      }
+    }
+    return false;
+  }
+
   /// 纯函数：持久化页码 → 恢复的 spread 序号（clamp 越界存档）。
   static int restoreSpreadFromProgress(
     List<MangaSpreadEntry> spreads,
@@ -1165,6 +1189,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 仍经 [_turnQueue] 串行化，避免快速反向操作交叠 DOM 更新。
   bool _navigating = false;
   final MangaTurnQueue _turnQueue = MangaTurnQueue();
+
+  /// 翻页 / 换窗卡顿诊断（BUG-3623）：一步超过 [_kTurnStallLogAfter] 还没返回就
+  /// 记一条日志（卡在哪个 await + 闸门状态），**只记录不干预**。翻页队列是串行的，
+  /// 任何一步永不返回都会让之后所有滚轮 / 点击 / 滑动翻页静默失效直到重进，
+  /// 而那种挂起不抛异常、不进 error_log，此前无从定位。
+  String _turnStage = 'idle';
+  static const Duration _kTurnStallLogAfter = Duration(seconds: 5);
+
+  void _logTurnStall(String what, String stage) {
+    ErrorLogService.instance.log(
+      'MangaFushiPage.turnStall',
+      StateError(
+        '$what pending >${_kTurnStallLogAfter.inSeconds}s: stage=$stage '
+        'spread=$_currentSpread/${_spreads.length} navigating=$_navigating '
+        'switchingChapter=$_switchingChapter '
+        'pendingDelta=${_turnQueue.pendingDelta} '
+        'draining=${_turnQueue.isDraining} mode=${_mode.name}',
+      ),
+      StackTrace.current,
+    );
+  }
 
   /// 当前在飞窗口加载的收尾信号与排队等它的重装请求数（[_loadInitialWindow]）。
   Completer<void>? _windowLoadDone;
@@ -1857,9 +1902,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String imagesDir = p.join(p.dirname(mangaJsonPath), 'images');
 
     final String jsonStr = await jsonFile.readAsString();
-    final MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(
-      jsonStr,
-    );
+    MokuroPayload payload = await MangaFushiPage.parseMangaJsonOffUi(jsonStr);
+    // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
+    // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
+    if (payload.pdfTextLayerVersion == null &&
+        File(
+          p.join(p.dirname(mangaJsonPath), PdfImporter.kPdfFileName),
+        ).existsSync()) {
+      payload =
+          await MangaPdfTextLayer.ensure(p.dirname(mangaJsonPath)) ?? payload;
+    }
     if (!mounted) return;
     await _presentPayload(
       row: row,
@@ -2107,9 +2159,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _bookRow = row;
       _imagesDir = imagesDir;
       _payload = payload;
-      _volumeOcrSettled =
-          payload.ocr != null ||
-          payload.images.any((MokuroImage image) => image.blocks.isNotEmpty);
+      // PDF 文字层块不算识别结果（见 mangaVolumeOcrSettled）。
+      _volumeOcrSettled = mangaVolumeOcrSettled(payload);
       _volumeOcrRelayoutCandidate = isMangaOcrRelayoutCandidate(payload.ocr);
       _mode = mode;
       _spreads = spreads;
@@ -2842,6 +2893,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       spreadDirection: _spreadDirection,
       spreadGutterPx: _spreadGutterPx,
       zoomPercent: _zoomPercent,
+      // 静止倍率 = 设置里的默认缩放；会话里捏出来的放大不算（BUG-3633）。
+      restZoomPercent: _readerPreferences.zoomStart.clamp(
+        kMangaZoomMinPercent,
+        kMangaZoomMaxPercent,
+      ),
       inlineSelectionJs: inlineSelectionJs,
       pageSpreadIndices: pageSpreadIndices,
       pagesPerSpread: pagesPerSpread,
@@ -2962,7 +3018,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final Completer<void> done = _windowLoadDone = Completer<void>();
     final Set<int> previousLoaded = Set<int>.of(_loadedSpreads);
     final MangaWindowLoadTicket ticket = _windowGate.begin();
+    String loadStage = 'buildDocument';
+    final Timer stall = Timer(
+      _kTurnStallLogAfter,
+      () => _logTurnStall('window load', loadStage),
+    );
     try {
+      loadStage = 'loadData';
       final String doc = _buildWindowDocument(
         ReaderSelectionScripts.source(),
         documentGeneration: ticket.generation,
@@ -2977,6 +3039,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // old document can remain visible for another event-loop turn (or a
       // stale onLoadStop can arrive), so keep navigation locked until the
       // loaded document proves it owns this exact generation.
+      loadStage = 'awaitDocumentGeneration';
       final MangaWindowLoadOutcome outcome = await ticket.outcome.timeout(
         const Duration(seconds: 10),
       );
@@ -2991,6 +3054,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _loadedSpreads = previousLoaded;
       rethrow;
     } finally {
+      stall.cancel();
       _windowGate.finish(ticket);
       _navigating = false;
       done.complete();
@@ -3168,10 +3232,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _applyMangaTurnStep(int delta) async {
+    final Timer stall = Timer(
+      _kTurnStallLogAfter,
+      () => _logTurnStall('turn step (delta=$delta)', _turnStage),
+    );
+    try {
+      await _applyMangaTurnStepStages(delta);
+    } finally {
+      stall.cancel();
+      _turnStage = 'idle';
+    }
+  }
+
+  Future<void> _applyMangaTurnStepStages(int delta) async {
     if (_splitWidePages && !_mode.isContinuous) {
       final InAppWebViewController? controller = _controller;
       final MangaReaderSession? session = _pageSession;
       final int spread = _currentSpread;
+      _turnStage = 'turnWithinPage';
       final Object? consumed = await controller?.evaluateJavascript(
         source:
             '(window.__mangaTurnWithinPage && '
@@ -3189,6 +3267,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       if (MangaWindowGeneration.parse(consumed) == 1) return;
     }
+    _turnStage = 'panelTurn';
     if (await _tryPanelTurn(delta > 0)) {
       return;
     }
@@ -3199,16 +3278,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 到头了。v88 前这里就是死钳位直接 return——于是在线漫画读完最后一页就
       // 走不动了，既不翻章也没有任何提示，配合「书架永远开同一章」构成了
       // 「加入书架后只能看第一章」。现在到头 = 换章信号。
+      _turnStage = 'chapterEdge';
       await _onReachedChapterEdge(delta);
       return;
     }
     _currentSpread = target;
     _panelCursor.reset();
+    _turnStage = 'applyTranslate';
     await _controller?.evaluateJavascript(
       source:
           'window.__mangaApplyTranslate && '
           'window.__mangaApplyTranslate($target);',
     );
+    _turnStage = 'replaceOcr';
     await _replaceSpreadOcr(target);
     _updateCurrentPageImagePath();
     _recordProgress();
@@ -4379,11 +4461,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     final List<MokuroImage> images = List<MokuroImage>.of(current.images);
-    images[pageIndex] = page;
+    // 逐页进度只带 OCR 块：保留这页的 PDF 文字层（与落盘时同一合并规则）。
+    final MokuroImage merged = preservePdfTextLayerPage(
+      current.images[pageIndex],
+      page,
+    );
+    images[pageIndex] = merged;
     setState(() {
       _payload = MokuroPayload(images: images, ocr: current.ocr);
     });
-    await _replacePageOcrOverlay(pageIndex, page);
+    await _replacePageOcrOverlay(pageIndex, merged);
   }
 
   /// 记录并（首次）提示本次任务真正生效的执行后端。
@@ -5120,9 +5207,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
     }
-    // 翻到最后一页 → 幂等写「已读完」（判据用总页数）。
+    // 翻到最后一页 → 幂等写「已读完」（判据用总页数；双页展开看整屏，见
+    // [MangaFushiPage.spreadReachesLastPage]）。
     final int pageCount = _payload?.images.length ?? 0;
-    final bool atLastPage = pageCount > 0 && page >= pageCount - 1;
+    final bool atLastPage = MangaFushiPage.spreadReachesLastPage(
+      isWebtoon ? const <MangaSpreadEntry>[] : _spreads,
+      page,
+      pageCount,
+    );
     if (atLastPage) {
       try {
         await db.markEpubBookCompletedIfUnset(widget.bookKey, DateTime.now());

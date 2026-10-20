@@ -28,6 +28,10 @@ import '../helpers/test_platform_services.dart';
 ///   那一集；
 /// * 同样的合集**没有订阅** → 不进本行（这一行只装订阅过的作品）；
 /// * 订阅作品全看完 → 不进本行。
+///
+/// 2026-10 首页重设计：横排版（内容宽 ≥ `kVideoHomeHeroSplitMinWidth`）有首屏主卡
+/// 时，「已更新未看」改画在主卡右侧的列表面板里、不再单独成行；竖排版仍是一条
+/// 横滚行。两种版面各测一遍「出现」，「不出现」两条两处一起断言。
 void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
@@ -85,25 +89,28 @@ void main() {
   });
 
   Widget buildApp() => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                section: VideoLibrarySection.home,
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            section: VideoLibrarySection.home,
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  Future<void> sizeUp(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1400, 1400);
+  /// 默认 1400 宽 = 横排版（面板）；[narrow] = 800 宽，内容宽不到横排版断点 → 竖排版（行）。
+  Future<void> sizeUp(WidgetTester tester, {bool narrow = false}) async {
+    tester.view.physicalSize = narrow
+        ? const Size(800, 1400)
+        : const Size(1400, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -184,7 +191,12 @@ void main() {
     );
   }
 
-  testWidgets('订阅作品有集没看 → 出现在「已更新未看」行，目标是第 3 集、1 集未看', (
+  Finder rowCard(int cid) =>
+      find.byKey(ValueKey<String>('home_video_subscription_collection_$cid'));
+  Finder panelTile(int cid) =>
+      find.byKey(ValueKey<String>('home_video_subscription_panel_$cid'));
+
+  testWidgets('横排版：订阅作品有集没看 → 出现在主卡旁「已更新未看」面板，目标第 3 集、1 集新', (
     WidgetTester tester,
   ) async {
     await sizeUp(tester);
@@ -195,11 +207,39 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_home_subscription_updates), findsOneWidget);
+    expect(panelTile(cid), findsOneWidget, reason: '订阅过、且第 3 集没看 → 面板里必须有这一条');
+    expect(rowCard(cid), findsNothing, reason: '横排版「已更新未看」在主卡旁面板里，不再重复成行');
     expect(
-      find.byKey(ValueKey<String>('home_video_subscription_collection_$cid')),
+      find.descendant(
+        of: panelTile(cid),
+        matching: find.textContaining(t.home_continue_episode(n: 3)),
+      ),
       findsOneWidget,
-      reason: '订阅过、且第 3 集没看 → 合集卡必须在本行',
+      reason: 'Next-Up：最近播放是第 2 集，目标第 3 集',
     );
+    expect(
+      find.descendant(
+        of: panelTile(cid),
+        matching: find.text(t.video_home_subscription_new_count(count: 1)),
+      ),
+      findsOneWidget,
+      reason: '未看数 1',
+    );
+  });
+
+  testWidgets('竖排版：订阅作品有集没看 → 出现在「已更新未看」行，目标是第 3 集、1 集未看', (
+    WidgetTester tester,
+  ) async {
+    await sizeUp(tester, narrow: true);
+    final int cid = await seedCollection(allWatched: false);
+    await seedSubscription(cid);
+
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_home_subscription_updates), findsOneWidget);
+    expect(rowCard(cid), findsOneWidget, reason: '订阅过、且第 3 集没看 → 合集卡必须在本行');
+    expect(panelTile(cid), findsNothing, reason: '竖排版没有主卡旁面板');
     expect(
       find.text(t.video_home_subscription_unwatched_episode(n: 3, count: 1)),
       findsOneWidget,
@@ -215,11 +255,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_home_subscription_updates), findsNothing);
-    expect(
-      find.byKey(ValueKey<String>('home_video_subscription_collection_$cid')),
-      findsNothing,
-      reason: '本行只装订阅过的作品，普通合集有未看集也不进',
-    );
+    expect(rowCard(cid), findsNothing, reason: '本行只装订阅过的作品，普通合集有未看集也不进');
+    expect(panelTile(cid), findsNothing, reason: '面板与行同一口径');
   });
 
   testWidgets('订阅作品全看完 → 不进本行', (WidgetTester tester) async {
@@ -231,10 +268,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_home_subscription_updates), findsNothing);
-    expect(
-      find.byKey(ValueKey<String>('home_video_subscription_collection_$cid')),
-      findsNothing,
-      reason: '收完的菜不该再摆在「已更新未看」里',
-    );
+    expect(rowCard(cid), findsNothing, reason: '收完的菜不该再摆在「已更新未看」里');
+    expect(panelTile(cid), findsNothing, reason: '面板与行同一口径');
   });
 }

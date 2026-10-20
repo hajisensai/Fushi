@@ -81,12 +81,20 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     if (!context.mounted) return;
-    // 站点入口没有库里的书，内置网页播放器页读不到它：只有底层合成档能开站点入口。
-    if (widget.webSite != null) {
-      _rebuild(() {
-        _failed = true;
-        _failReason = t.video_load_failed_generic;
-      });
+    // 站点入口没有库里的书，内置网页播放器页读不到它：只有底层合成档能在本页播站点
+    // 入口。拿不到底层合成（引擎没带合成器补丁的构建、或用户选了非窗口档）时改用
+    // app 内浏览器打开这个站点，而不是一张「无法加载该视频」的死页（2026-10-20
+    // 用户截图「视频站点这个打不开」：本地调试引擎不支持底层合成）。
+    final WebVideoSite? site = widget.webSite;
+    if (site != null) {
+      unawaited(
+        Navigator.of(context).pushReplacement(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => FushiWebBrowserPage(initialUrl: site.url),
+          ),
+        ),
+      );
       return;
     }
     // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。

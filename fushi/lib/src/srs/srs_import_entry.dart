@@ -5,8 +5,9 @@
 ///   （srs_import_task.dart；牌组列表顶上的任务条显示进度）→ 任务条「查看报告」看
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
 ///   [SrsMediaStore] 按内容哈希落盘。新格式包而排程内核不可用时报「需要排程内核」。
-/// - 导出：`exportAnkiPackage` → 桌面「另存为」/ 移动端系统分享；范围里有 FSRS-7
-///   牌组时先提示「Anki 里会改用 FSRS-6」。
+/// - 导出：选项（学习进度 / 牌组预设 / 兼容 Anki，见 srs_export_options_dialog.dart；
+///   记住上次的选择；范围里有 FSRS-7 牌组时对话框内提示「Anki 里会改用 FSRS-6」）→
+///   `exportAnkiPackage` → 桌面「另存为」/ 移动端系统分享。
 /// - 从制卡历史导入：`mined_sentences` → 当前 profile 的默认牌组（见
 ///   srs_mined_history_import.dart），确认框写明导入到哪个 profile。
 ///
@@ -21,6 +22,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
+import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -32,6 +34,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_export_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -142,11 +145,13 @@ Future<SrsAnkiExport> buildSrsAnkiExport({
   required SrsDbStore store,
   required SrsMediaStore? media,
   String? deckId,
+  SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
   final Uint8List bytes = await exportAnkiPackage(
     store: store,
     deckId: deckId,
     loadMedia: media == null ? null : (String name) => media.load(name),
+    options: options,
   );
   return SrsAnkiExport(
     bytes: bytes,
@@ -265,22 +270,21 @@ Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
     return;
   }
   final SrsMediaStore? media = await _readMedia(ref);
-  if (await srsExportScopeUsesFsrs7(store)) {
-    if (!context.mounted) return;
-    final bool go = await showFushiConfirmDialog(
-      context: context,
-      title: t.srs_export_apkg,
-      message: t.srs_export_fsrs7_note,
-      icon: FushiIcons.info,
-      confirmLabel: t.srs_export_apkg,
-      cancelLabel: t.cancel,
-    );
-    if (!go) return;
-  }
+  final bool usesFsrs7 = await srsExportScopeUsesFsrs7(store);
+  if (!context.mounted) return;
+  final PrefStore prefs = ref.read(appProvider).prefsRepo;
+  final SrsAnkiExportOptions? options = await showSrsExportOptionsDialog(
+    context: context,
+    initial: readSrsExportOptions(prefs),
+    usesFsrs7: usesFsrs7,
+  );
+  if (options == null || !context.mounted) return;
+  await writeSrsExportOptions(prefs, options);
   try {
     final SrsAnkiExport export = await buildSrsAnkiExport(
       store: store,
       media: media,
+      options: options,
     );
     if (!context.mounted) return;
     final bool saved = await _saveOrShareBytes(

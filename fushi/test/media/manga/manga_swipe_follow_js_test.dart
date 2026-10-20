@@ -304,19 +304,61 @@ assert.deepEqual(turns,['next'],'松手判定照旧');
     );
   });
 
-  test('跟手开关关 / 淡入淡出 / 无动画：拖动中页面不动，松手沿用固定阈值', () async {
+  test('跟手开关关：拖动中页面不动，松手沿用固定阈值', () async {
     await runJs(
       harness('''
 centerAt(1);
-for (const setup of [()=>{FOLLOW_DRAG=false;}, ()=>{PAGE_ANIM='fade';}, ()=>{PAGE_ANIM='none';}]) {
-  FOLLOW_DRAG=true; PAGE_ANIM='slide'; turns=[];
-  setup();
-  down(200,600);
-  for(let i=1;i<=10;i++) move(200+i*8,600,40);
-  assert.equal(tx(),BASE,'不跟手');
-  up(280,600);
-  assert.deepEqual(turns,['next'],'80px ≥ 72px 旧阈值');
-}
+FOLLOW_DRAG=false;
+down(200,600);
+for(let i=1;i<=10;i++) move(200+i*8,600,40);
+assert.equal(tx(),BASE,'不跟手');
+up(280,600);
+assert.deepEqual(turns,['next'],'80px ≥ 72px 旧阈值');
+'''),
+    );
+  });
+
+  // BUG-3624：跟手与翻页效果无关（对齐 Mihon）。无动画 = 墨水屏 / 系统「减弱动态
+  // 效果」/ 旧版关过「页面切换动画」的用户，此前拖动全程页面不动。
+  test('无动画也逐像素跟手；提交后瞬时落位，没过阈值瞬时回位', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='none';
+down(200,600);
+for(let i=1;i<=10;i++){ move(200+i*15,600); assert.equal(tx()-BASE,i*15,'第 '+i+' 步跟手'); }
+up(350,600);
+assert.deepEqual(turns,['next']);
+window.__mangaApplyTranslate(3);
+assert.equal(tx(),-412,'无动画：从手指位置瞬时落到目标');
+assert.equal(root.style.transition,'');
+turns=[];
+down(200,600);
+for(let i=1;i<=9;i++) move(200+i*10,600,100);
+assert.equal(tx(),-412+90,'慢拖照样跟手');
+up(290,600);
+assert.deepEqual(turns,[]);
+assert.equal(tx(),-412,'没过阈值：瞬时回位');
+'''),
+    );
+  });
+
+  test('淡入淡出也跟手；被拖过的翻页按平移收尾，不再叠一段淡出', () async {
+    await runJs(
+      harness('''
+centerAt(1);
+PAGE_ANIM='fade';
+let settled=null;
+dart=()=>new Promise(r=>{ settled=r; });
+down(200,600);
+for(let i=1;i<=10;i++) move(200+i*15,600);
+assert.equal(tx(),BASE+150,'跟手');
+up(350,600);
+window.__mangaApplyTranslate(3);
+settled();
+assert.equal(tx(),-412);
+assert.equal(msOf(root),Math.round(220*262/412),'从松手位置平移收尾');
+assert.notEqual(root.style.opacity,'0','没有淡出');
 '''),
     );
   });

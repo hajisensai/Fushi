@@ -1345,7 +1345,7 @@ void main() {
       expect(jsonEncode(rep.toJson()), contains('"cardsResetToNew":3'));
     });
 
-    test('不含牌组预设：新建牌组用本机默认设置', () async {
+    test('不含牌组预设也不含 FSRS 参数：新建牌组用本机默认设置', () async {
       final SrsDbStore s = await openTestStore(
         profileUid: kProfile,
         deviceId: 'a',
@@ -1354,7 +1354,10 @@ void main() {
       final SrsImportReport rep = await importInto(
         s,
         legacyApkg(t),
-        options: kFullOptions.copyWith(withDeckConfigs: false),
+        options: kFullOptions.copyWith(
+          withDeckConfigs: false,
+          withFsrsParams: false,
+        ),
       );
       expect(rep.deckPresetsSkipped, 1);
       expect(rep.truncatedSteps, isEmpty);
@@ -1372,6 +1375,65 @@ void main() {
       expect(jp.ownParams, isFalse);
       // 排程照常导入。
       expect(rep.anchorsWritten, 2);
+    });
+  });
+
+  // 所有者 2026-10-20：导入时让用户分别选「牌组预设」与「FSRS 参数」。
+  group('FSRS 参数与牌组预设分开选', () {
+    Future<(SrsImportReport, SrsDeckView, SrsDeckView)> run(
+      SrsAnkiImportOptions options,
+    ) async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(
+        s,
+        legacyApkg(t),
+        options: options,
+      );
+      final SrsDeckTree tree = await s.deckTree();
+      SrsDeckView named(String n) =>
+          tree.decks.firstWhere((SrsDeckView d) => tree.fullName(d.id) == n);
+      return (rep, named('Lang'), named('Lang::JP'));
+    }
+
+    test('只要 FSRS 参数：算法 / 参数 / 保留率照搬，步长与上限用本机默认', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(withDeckConfigs: false, withFsrsParams: true),
+      );
+      expect(lang.algorithmWire, 'fsrs6');
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(lang.desiredRetention, 0.85);
+      // 子牌组仍按来源继承父牌组的参数。
+      expect(jp.ownParams, isFalse);
+      expect(jp.learnSteps, SrsDeckView.defaultLearnSteps);
+      expect(jp.newPerDay, 20);
+      expect(rep.truncatedSteps, isEmpty);
+      expect(rep.deckPresetsSkipped, 1);
+    });
+
+    test('只要牌组预设：步长与上限照搬，算法 / 参数 / 保留率用本机默认', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(withDeckConfigs: true, withFsrsParams: false),
+      );
+      expect(jp.learnSteps, <double>[1, 10]);
+      expect(jp.newPerDay, 15);
+      expect(rep.truncatedSteps, hasLength(1));
+      expect(lang.fsrs6, isNull);
+      expect(lang.desiredRetention, 0.8);
+      expect(lang.algorithmWire, isNot('fsrs6'));
+    });
+
+    test('选项默认开 FSRS 参数；旧偏好里没有这一项时也按开', () {
+      expect(const SrsAnkiImportOptions().withFsrsParams, isTrue);
+      expect(
+        SrsAnkiImportOptions.fromJson(const <String, Object?>{
+          'withDeckConfigs': true,
+        }).withFsrsParams,
+        isTrue,
+      );
     });
   });
 

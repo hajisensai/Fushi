@@ -4,7 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
+import 'package:fushi_audio/fushi_audio.dart'
+    show Bookmark, ReaderPosition, ReaderPositionRepository;
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
@@ -79,6 +80,9 @@ class _LnReaderNovelDetailPageState
   /// 这部作品在书架上的在线书（null = 不在书架）。
   EpubBookRow? _shelfBook;
 
+  /// 书架书的阅读位置（null = 从没打开过）：决定「继续阅读 · 某章」还是「开始阅读」。
+  ReaderPosition? _position;
+
   @override
   void initState() {
     super.initState();
@@ -103,10 +107,12 @@ class _LnReaderNovelDetailPageState
         widget.plugin.id,
         widget.item.path,
       );
+      final ReaderPosition? position = await _readPosition(shelfBook);
       if (!mounted) return;
       setState(() {
         _novel = novel;
         _shelfBook = shelfBook;
+        _position = position;
         _loading = false;
       });
     } on Object catch (error, stack) {
@@ -154,6 +160,26 @@ class _LnReaderNovelDetailPageState
 
   static Future<void> _launchExternal(Uri url) async {
     await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<ReaderPosition?> _readPosition(EpubBookRow? shelfBook) async {
+    if (shelfBook == null || shelfBook.uid.isEmpty) return null;
+    return ReaderPositionRepository(
+      ref.read(appProvider).database,
+    ).findByBookUid(shelfBook.uid);
+  }
+
+  /// 读完回到作品页时刷新位置（「继续阅读」跟着落到新的章）。
+  Future<void> _refreshPosition() async {
+    final ReaderPosition? position = await _readPosition(_shelfBook);
+    if (mounted) setState(() => _position = position);
+  }
+
+  /// 「继续 / 开始阅读」落到哪一章（阅读器自己按存档恢复，这里只为文案）。
+  int _resumeChapterIndex(List<LnReaderChapter> chapters) {
+    final int? section = _position?.sectionIndex;
+    if (section == null || section < 0 || section >= chapters.length) return 0;
+    return section;
   }
 
   LnReaderOnlineLibrary _onlineLibrary() {
@@ -304,7 +330,6 @@ class _LnReaderNovelDetailPageState
       ref: ref,
       mediaSource: item.getMediaSource(appModel: appModel),
       item: item,
-      waitUntilClosed: false,
       initialBookmarkJump: chapterIndex == null
           ? null
           : Bookmark(
@@ -314,6 +339,8 @@ class _LnReaderNovelDetailPageState
               createdAt: DateTime.now(),
             ),
     );
+    // 等阅读页关掉再刷新阅读位置：「继续阅读 · 某章」跟着落到新读到的章。
+    await _refreshPosition();
   }
 
   Future<void> _download({int startIndex = 0}) async {
@@ -414,6 +441,16 @@ class _LnReaderNovelDetailPageState
     return MediaDetailLayout(
       backdrop: backdrop,
       backdropKey: _backdropUrl,
+      // 「继续 / 开始阅读」悬浮按钮：与 hero 主按钮同一动作（阅读器按存档恢复）。
+      fab: chapters.isEmpty
+          ? null
+          : MediaDetailResumeFab(
+              buttonKey: const ValueKey<String>('novel_detail_resume_fab'),
+              watching: false,
+              started: _position != null,
+              itemLabel: chapters[_resumeChapterIndex(chapters)].name,
+              onPressed: _opening ? null : () => unawaited(_readOnline()),
+            ),
       header: _buildHeader(chapters, backdrop),
       slivers: <Widget>[
         SliverPadding(
@@ -479,7 +516,13 @@ class _LnReaderNovelDetailPageState
       primaryAction: MediaDetailPrimaryButton(
         buttonKey: const ValueKey<String>('novel_detail_read_online'),
         icon: FushiIcons.readingMode,
-        label: inShelf ? t.book_continue_reading : t.novel_detail_read_online,
+        label: chapters.isEmpty
+            ? t.novel_detail_read_online
+            : MediaDetailResumeFab.labelFor(
+                watching: false,
+                started: _position != null,
+                itemLabel: chapters[_resumeChapterIndex(chapters)].name,
+              ),
         busy: readBusy,
         onPressed: chapters.isEmpty || _opening
             ? null
