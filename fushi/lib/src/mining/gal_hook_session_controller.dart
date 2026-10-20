@@ -176,7 +176,7 @@ class GalCaptureMemory {
     this.textThreadFingerprint,
     this.textThreadTypicalLength,
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
-    this.textProcess = const GalTextProcessPipeline(),
+    this.textProcess = kGalDefaultTextProcessPipeline,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -193,7 +193,11 @@ class GalCaptureMemory {
       audioFallbackPolicy: GalAudioFallbackPolicy.fromStorageKey(
         json['audioFallback'] as String?,
       ),
-      textProcess: GalTextProcessPipeline.fromJson(json['textProcess']),
+      // 没有这一项（从没改过管线）或脏值 → 默认管线；显式存的 `[]`（用户把步骤删光）
+      // 原样读成空管线，两者必须分得开。
+      textProcess: json['textProcess'] is List
+          ? GalTextProcessPipeline.fromJson(json['textProcess'])
+          : kGalDefaultTextProcessPipeline,
     );
   }
 
@@ -218,9 +222,10 @@ class GalCaptureMemory {
 
   /// 用户为这个游戏编排的文本处理管线（逐字重绘去重 / 注音花括号 / 正则替换等）。
   ///
-  /// 判空用 [GalTextProcessPipeline.steps] 而不是 [GalTextProcessPipeline.isEmpty]：
-  /// 后者只回答「有没有生效步骤」，把整条链**临时全禁用**的用户仍然有东西要记——
-  /// 按 isEmpty 记就等于「全部禁用一次 = 规则被磁盘悄悄删光」。
+  /// 从没改过的游戏是 [kGalDefaultTextProcessPipeline]，只有与它**值不等**时才落盘。
+  /// 判据刻意不用 [GalTextProcessPipeline.isEmpty]：后者只回答「有没有生效步骤」，
+  /// 把整条链**临时全禁用**或删光的用户仍然有东西要记——按 isEmpty 记就等于「全部
+  /// 禁用一次 = 下次启动又被默认管线顶回来」。
   final GalTextProcessPipeline textProcess;
 
   bool get isEmpty =>
@@ -228,7 +233,7 @@ class GalCaptureMemory {
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
       audioFallbackPolicy == GalAudioFallbackPolicy.full &&
-      textProcess.steps.isEmpty;
+      textProcess == kGalDefaultTextProcessPipeline;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
@@ -263,7 +268,8 @@ class GalCaptureMemory {
       'textThreadLen': textThreadTypicalLength,
     if (audioFallbackPolicy != GalAudioFallbackPolicy.full)
       'audioFallback': audioFallbackPolicy.storageKey,
-    if (textProcess.steps.isNotEmpty) 'textProcess': textProcess.toJson(),
+    if (textProcess != kGalDefaultTextProcessPipeline)
+      'textProcess': textProcess.toJson(),
   };
 }
 
@@ -1053,7 +1059,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 本会话生效的文本处理管线。真值随捕获记忆按游戏落盘，这里是热路径读的那一份
   /// 内存态——[_pollHookedText] 每条行都要问它，不能每次回偏好表取。
-  GalTextProcessPipeline _textProcessPipeline = const GalTextProcessPipeline();
+  GalTextProcessPipeline _textProcessPipeline = kGalDefaultTextProcessPipeline;
 
   /// 音轨记忆（排除集 + 语音轨）已对本会话首个非空快照应用过。
   bool _trackMemoryApplied = false;
@@ -3295,8 +3301,9 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 本会话当前生效的文本处理管线（来自每游戏记忆恢复或用户设置）。
   ///
-  /// 默认是空管线 = 恒等变换：不装配时 [_pollHookedText] 走 [GalTextProcessPipeline.
-  /// isEmpty] 短路，文本一个字符不动。
+  /// 没存过管线的游戏（以及没有游戏身份的窗口附着路径）是
+  /// [kGalDefaultTextProcessPipeline]；用户把步骤全关 / 删光后 [_pollHookedText] 走
+  /// [GalTextProcessPipeline.isEmpty] 短路，文本一个字符不动。
   GalTextProcessPipeline get textProcessPipeline => _textProcessPipeline;
 
   /// 设置文本处理管线，并按游戏记住（与选轨 / 选线程同规格）。
@@ -3322,10 +3329,10 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 对**所选线程的一行**套用用户编排的文本处理管线。
   ///
-  /// 返回 null = 管线把整行处理空了（例如「只保留「」内文本」遇到旁白），调用方按
+  /// 返回 null = 管线把整行处理空了（例如正则把整行替换掉），调用方按
   /// 系统 UI 行同样处置：推进 cursor、整行丢弃。
   ///
-  /// 空管线（默认）在第一行就短路返回原串：这是每条 hook 行都要过的热路径，
+  /// 空管线（步骤全关 / 删光）在第一行就短路返回原串：这是每条 hook 行都要过的热路径，
   /// 不装配时不允许产生任何额外拷贝或扫描。
   String? _processSelectedThreadText(String text) {
     final GalTextProcessPipeline pipeline = _textProcessPipeline;
@@ -3341,7 +3348,7 @@ class GalHookSessionController extends ChangeNotifier {
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
-    _textProcessPipeline = const GalTextProcessPipeline();
+    _textProcessPipeline = kGalDefaultTextProcessPipeline;
     _attachedCaptureExecutable = null;
   }
 
