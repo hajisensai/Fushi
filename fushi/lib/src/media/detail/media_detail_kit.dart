@@ -882,8 +882,13 @@ class MediaDetailActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 单列详情页的悬浮按钮按主按钮的实际位置决定显隐（[_MediaDetailFabHost]）。
+    final GlobalKey? anchor = _MediaDetailFabAnchorScope.of(context);
+    final Widget primary = anchor == null
+        ? this.primary
+        : KeyedSubtree(key: anchor, child: this.primary);
     if (alignment == null && _MediaDetailHeroAlignScope.compactOf(context)) {
-      return _buildCompact();
+      return _buildCompact(primary);
     }
     final WrapAlignment resolved =
         alignment ??
@@ -902,7 +907,7 @@ class MediaDetailActionBar extends StatelessWidget {
 
   /// 紧凑 hero：主按钮吃掉次按钮（紧凑下一律是图标按钮）之外的整行宽度，「⋯」
   /// 拿剩下的空间自己按宽度决定平铺几个；放不下最小主按钮时主按钮独占一行。
-  Widget _buildCompact() {
+  Widget _buildCompact(Widget primary) {
     const double gap = 8;
     const double iconExtent = 56;
     const double minPrimaryWidth = 200;
@@ -1935,6 +1940,7 @@ class MediaDetailLayout extends StatelessWidget {
     this.sidePaneWidth,
     this.controller,
     this.bottomPadding = 24,
+    this.fab,
   });
 
   final Widget header;
@@ -1958,6 +1964,10 @@ class MediaDetailLayout extends StatelessWidget {
   /// 正文（单列时整页 / 两栏时右栏）的滚动控制器。
   final ScrollController? controller;
   final double bottomPadding;
+
+  /// 右下角悬浮按钮（通常是 [MediaDetailResumeFab]），只在单列时出现；正文末尾
+  /// 多留出它的高度，最后一行不被挡住。
+  final Widget? fab;
 
   /// [context] 是否在两栏布局的左栏里。
   static bool isSidePane(BuildContext context) =>
@@ -2024,10 +2034,22 @@ class MediaDetailLayout extends StatelessWidget {
           );
           final double paneWidth =
               sidePaneWidth ?? sidePaneWidthFor(constraints.maxWidth);
+          // 悬浮按钮只在单列出现：两栏时左栏 hero 的主按钮一直在视野里，再挂一个
+          // 重复（用户 2026-10-20）。
+          final Widget? fab = twoPane ? null : this.fab;
           final Widget bottom = SliverSafeArea(
             top: false,
-            sliver: SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
+            sliver: SliverToBoxAdapter(
+              child: SizedBox(
+                height:
+                    bottomPadding +
+                    (fab == null ? 0 : kMediaDetailFabClearance),
+              ),
+            ),
           );
+          Widget withFab(Widget child) => fab == null
+              ? child
+              : _MediaDetailFabHost(fab: fab, topInset: topInset, child: child);
           // 顶部可读性遮罩**不在这里画**：内容滚到浮动顶栏下面时的渐隐归顶栏
           // 自己（[FushiAppBar] / [FushiPageScaffold] 页头，共享的
           // [FushiTopFadeScrim]）。布局曾经再叠一层 55% 底色渐变，与顶栏那层
@@ -2035,42 +2057,42 @@ class MediaDetailLayout extends StatelessWidget {
           final Widget? body = this.body;
           if (!twoPane && body != null) {
             // hero 最多占六成高度（展开长简介时在自己里面滚），页签区至少留四成。
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: constraints.maxHeight * 0.6,
-                  ),
-                  child: SingleChildScrollView(
-                    primary: false,
-                    child: _MediaDetailTopInsetScope(
-                      top: topInset,
-                      child: header,
+            return withFab(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight * 0.6,
                     ),
-                  ),
-                ),
-                Expanded(child: body),
-              ],
-            );
-          }
-          if (!twoPane) {
-            return Stack(
-              children: <Widget>[
-                CustomScrollView(
-                  controller: controller,
-                  slivers: <Widget>[
-                    SliverToBoxAdapter(
+                    child: SingleChildScrollView(
+                      primary: false,
                       child: _MediaDetailTopInsetScope(
                         top: topInset,
                         child: header,
                       ),
                     ),
-                    ...slivers,
-                    bottom,
-                  ],
-                ),
-              ],
+                  ),
+                  Expanded(child: body),
+                ],
+              ),
+            );
+          }
+          if (!twoPane) {
+            return withFab(
+              CustomScrollView(
+                controller: controller,
+                slivers: <Widget>[
+                  SliverToBoxAdapter(
+                    child: _MediaDetailTopInsetScope(
+                      top: topInset,
+                      child: header,
+                    ),
+                  ),
+                  ...slivers,
+                  bottom,
+                ],
+              ),
             );
           }
           return Stack(
@@ -2131,6 +2153,202 @@ class MediaDetailLayout extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// 布局下发给 hero 按钮组的锚点：主按钮挂上它，[_MediaDetailFabHost] 据它的
+/// 实际位置判断「主按钮还看得见吗」。
+class _MediaDetailFabAnchorScope extends InheritedWidget {
+  const _MediaDetailFabAnchorScope({required this.anchor, required super.child});
+
+  final GlobalKey anchor;
+
+  static GlobalKey? of(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_MediaDetailFabAnchorScope>()
+      ?.anchor;
+
+  @override
+  bool updateShouldNotify(_MediaDetailFabAnchorScope oldWidget) =>
+      anchor != oldWidget.anchor;
+}
+
+/// 单列详情页的悬浮按钮宿主：与 hero 主按钮**互斥显示**（用户 2026-10-20）——
+/// 主按钮还在视口里时隐藏；主按钮下边缘滚进浮动顶栏底下（[topInset] 线以上）
+/// 后淡入 + 轻微上滑出现，滚回来再隐藏。判据是主按钮的实际位置，不是固定的
+/// 像素阈值：窗口高度、hero 高度（简介展开 / 收起）变了照样准。
+class _MediaDetailFabHost extends StatefulWidget {
+  const _MediaDetailFabHost({
+    required this.fab,
+    required this.topInset,
+    required this.child,
+  });
+
+  final Widget fab;
+
+  /// 浮动顶栏 + 状态栏占掉的高度（主按钮滚到这条线以上就算被遮住）。
+  final double topInset;
+  final Widget child;
+
+  @override
+  State<_MediaDetailFabHost> createState() => _MediaDetailFabHostState();
+}
+
+class _MediaDetailFabHostState extends State<_MediaDetailFabHost> {
+  final GlobalKey _anchor = GlobalKey(debugLabel: 'media-detail-primary');
+  bool _visible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleEvaluate();
+  }
+
+  @override
+  void didUpdateWidget(_MediaDetailFabHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleEvaluate();
+  }
+
+  void _scheduleEvaluate() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _evaluate());
+  }
+
+  /// 主按钮下边缘是否已在顶栏线以上。找不到主按钮（页面没给主操作）时恒显示。
+  void _evaluate() {
+    if (!mounted) return;
+    final RenderObject? host = context.findRenderObject();
+    final RenderObject? anchor = _anchor.currentContext?.findRenderObject();
+    bool visible = true;
+    if (host is RenderBox &&
+        anchor is RenderBox &&
+        anchor.attached &&
+        anchor.hasSize) {
+      final double bottom = anchor
+          .localToGlobal(Offset(0, anchor.size.height), ancestor: host)
+          .dy;
+      visible = bottom <= widget.topInset;
+    }
+    if (visible != _visible) setState(() => _visible = visible);
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    if (notification.metrics.axis == Axis.vertical) _evaluate();
+    return false;
+  }
+
+  bool _onMetrics(ScrollMetricsNotification notification) {
+    if (notification.metrics.axis == Axis.vertical) _evaluate();
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: NotificationListener<ScrollMetricsNotification>(
+            onNotification: _onMetrics,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: _MediaDetailFabAnchorScope(
+                anchor: _anchor,
+                child: widget.child,
+              ),
+            ),
+          ),
+        ),
+        PositionedDirectional(
+          end: 16,
+          bottom: 16 + MediaQuery.paddingOf(context).bottom,
+          child: ExcludeFocus(
+            excluding: !_visible,
+            child: IgnorePointer(
+              ignoring: !_visible,
+              child: AnimatedSlide(
+                offset: _visible ? Offset.zero : const Offset(0, 0.25),
+                duration: duration,
+                curve: Curves.easeOutCubic,
+                child: AnimatedOpacity(
+                  opacity: _visible ? 1 : 0,
+                  duration: duration,
+                  curve: Curves.easeOut,
+                  child: widget.fab,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// [MediaDetailLayout.fab] 占掉的正文底部留白（56 高的悬浮按钮 + 上下间距）。
+const double kMediaDetailFabClearance = 80;
+
+/// 详情页右下角的「继续 / 开始」悬浮按钮（M3E primaryContainer 圆角方 FAB，
+/// Apple 强调色胶囊）：图标 + 文案的扩展 FAB。由
+/// [MediaDetailLayout.fab] 挂载，两栏时不出现。
+///
+/// 文案：有进度时「继续阅读 · 第 12 话」「继续观看 · 第 3 集」，一次都没打开过时
+/// 「开始阅读」「开始观看」（[itemLabel] 照样跟在后面，告诉用户从哪一话开始）。
+class MediaDetailResumeFab extends StatelessWidget {
+  const MediaDetailResumeFab({
+    required this.watching,
+    required this.started,
+    required this.onPressed,
+    super.key,
+    this.itemLabel,
+    this.buttonKey,
+  });
+
+  /// true = 视频（观看），false = 书 / 漫画 / 小说（阅读）。
+  final bool watching;
+
+  /// 已经有阅读 / 观看进度（「继续」）还是从没打开过（「开始」）。
+  final bool started;
+
+  /// 目标那一话 / 一集的名字；null / 空 = 只显示动作。
+  final String? itemLabel;
+  final VoidCallback? onPressed;
+  final Key? buttonKey;
+
+  /// 按钮文案（tooltip 与扩展态共用）。
+  static String labelFor({
+    required bool watching,
+    required bool started,
+    String? itemLabel,
+  }) {
+    final String verb = switch ((watching, started)) {
+      (true, true) => t.video_continue_watching,
+      (true, false) => t.media_detail_start_watching,
+      (false, true) => t.book_continue_reading,
+      (false, false) => t.media_detail_start_reading,
+    };
+    final String? item = itemLabel?.trim();
+    return item == null || item.isEmpty ? verb : '$verb · $item';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String label = labelFor(
+      watching: watching,
+      started: started,
+      itemLabel: itemLabel,
+    );
+    // 扩展 FAB（图标 + 文案）：一眼看出会从哪一话 / 集继续；过长的章名省略。
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 280),
+      child: FushiFab(
+        key: buttonKey,
+        heroTag: null,
+        icon: const FushiIcon(FushiIcons.play),
+        tooltip: label,
+        onPressed: onPressed,
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
   }

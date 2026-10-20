@@ -25,9 +25,6 @@ const double kMediaServerRowCardWidth = 150;
 /// 媒体库卡（16:9）的基准宽度：首页库网格的最大列宽按它推，库卡单测也按它给槽。
 const double kMediaServerLibraryCardWidth = 220;
 
-/// 媒体库卡外层卡与封面之间的内缩：20（卡）- 8 = 12（封面），同心圆角。
-const double kMediaServerLibraryCardInset = 8;
-
 /// 服务器条目封面（缩放到 [kLocalCoverDecodePixelWidth] 以内解码）。fetcher 就是
 /// 浏览器本身（[MediaServerBrowser] implements `RemoteCoverFetcher`）；无图返回 null，
 /// 页面画占位图，**不**拿一个必 404 的地址去请求。
@@ -673,80 +670,69 @@ class MediaServerLibraryCard extends StatelessWidget {
                       Shadow(color: Color(0x66000000), blurRadius: 6),
                     ],
             );
-    // M3E 分区卡（2026-10 扫尾）：外层是 20 圆角的抬升卡（悬停弹到 level2、按下
-    // 回弹，焦点环跟卡形），封面以 8 内缩成 12 圆角的同心小块——卡与封面两级
-    // 圆角是 M3E 的「容器 / 内容」层次。Apple 由 [FushiCard] 自己换玻璃卡。
+    // M3E 分区卡：20 圆角的抬升卡（悬停弹到 level2、按下回弹，焦点环跟卡形），
+    // 封面贴边铺满整张卡、由卡的圆角裁切，不留内缩边框（用户 2026-10-20）。
+    // Apple 由 [FushiCard] 自己换玻璃卡。
     return FushiCard(
       variant: FushiCardVariant.elevated,
-      padding: const EdgeInsets.all(kMediaServerLibraryCardInset),
+      padding: EdgeInsets.zero,
       onTap: onTap,
       focusId: focusId,
       child: AspectRatio(
         aspectRatio: 16 / 9,
-        child: ClipRRect(
-          borderRadius: FushiM3eShape.smallRadius,
-          child: Stack(
-            fit: StackFit.expand,
-            children: <Widget>[
-              if (image == null)
-                fallback
-              else
-                PortraitCoverImage(
-                  image: image,
-                  landscapeSlot: true,
-                  errorBuilder: (_) => fallback,
-                ),
-              IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: eink
-                        ? null
-                        : const LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            stops: <double>[0.35, 1],
-                            colors: <Color>[
-                              Color(0x00000000),
-                              Color(0xB3000000),
-                            ],
-                          ),
-                  ),
-                ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            if (image == null)
+              fallback
+            else
+              PortraitCoverImage(
+                image: image,
+                landscapeSlot: true,
+                errorBuilder: (_) => fallback,
               ),
-              PositionedDirectional(
-                start: 0,
-                end: 0,
-                bottom: 0,
-                child: ColoredBox(
-                  color: eink
-                      ? Theme.of(context).colorScheme.surface
-                      : Colors.transparent,
-                  child: Padding(
-                    padding: const EdgeInsetsDirectional.fromSTEB(
-                      12,
-                      6,
-                      12,
-                      10,
-                    ),
-                    child: Row(
-                      children: <Widget>[
-                        FushiIcon(icon, size: 18, color: labelColor),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            library.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: labelStyle,
-                          ),
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: eink
+                      ? null
+                      : const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          stops: <double>[0.35, 1],
+                          colors: <Color>[Color(0x00000000), Color(0xB3000000)],
                         ),
-                      ],
-                    ),
+                ),
+              ),
+            ),
+            PositionedDirectional(
+              start: 0,
+              end: 0,
+              bottom: 0,
+              child: ColoredBox(
+                color: eink
+                    ? Theme.of(context).colorScheme.surface
+                    : Colors.transparent,
+                child: Padding(
+                  padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 12, 10),
+                  child: Row(
+                    children: <Widget>[
+                      FushiIcon(icon, size: 18, color: labelColor),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          library.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: labelStyle,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1080,7 +1066,7 @@ class MediaServerLibraryCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const FushiCard(
-      padding: EdgeInsets.all(kMediaServerLibraryCardInset),
+      padding: EdgeInsets.zero,
       child: AspectRatio(aspectRatio: 16 / 9, child: FushiSkeleton()),
     );
   }

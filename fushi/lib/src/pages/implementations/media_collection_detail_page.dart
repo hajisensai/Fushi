@@ -1679,6 +1679,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     context.openEpisode(remote, members, members.indexOf(remote));
   }
 
+  /// 这一集看过没有：有播放位置且没看完。重看到一半的已打勾集同样是「继续观看」
+  /// （BUG-3491）。
+  bool _isEpisodeStarted(CollectionEpisodeSlot episode) =>
+      episode.positionMs > 0 && !_slotProgress(episode).isFinished;
+
+  /// 右下角「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集。
+  Widget? _buildResumeFab() {
+    if (_slots.isEmpty) return null;
+    final CollectionEpisodeSlot episode = _slots[_continueIndex];
+    return MediaDetailResumeFab(
+      buttonKey: const ValueKey<String>('collection-resume-fab'),
+      watching: true,
+      started: _isEpisodeStarted(episode),
+      itemLabel: _episodeDisplayTitle(episode),
+      onPressed: () => _openSlot(episode),
+    );
+  }
+
   /// 详情页 hero：数据求值留在本页（背景轮换 / 元信息 chip / 标签 / 人物 / 续播集 /
   /// 主操作），视觉交给共享的 [CollectionDetailHero]（与媒体服务器详情页同一套）。
   ///
@@ -1693,9 +1711,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 一份只会形成重复内容。旧 v68 资料没有规范详情宿主时才保留 hero 回退，
     // 避免老库凭空丢信息。简介只在 hero 里展示一份（可展开、可选中划词）。
     final bool useLegacyHeroDetails = _canonicalWork == null;
-    // 重看到一半的已打勾集同样是「继续观看」（BUG-3491）。
-    final bool started =
-        episode.positionMs > 0 && !_slotProgress(episode).isFinished;
+    final bool started = _isEpisodeStarted(episode);
     return CollectionDetailHero(
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,
@@ -1728,7 +1744,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       continueLabel:
           '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
           '${_episodeDisplayTitle(episode)}',
-      playLabel: started ? t.video_continue_watching : t.collection_play,
+      // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
+      playLabel: MediaDetailResumeFab.labelFor(
+        watching: true,
+        started: started,
+      ),
       playButtonKey: const ValueKey<String>('collection-hero-play'),
       onPlay: () => _openSlot(episode),
       // hero 不再挂「⋯」：它只是右上角管理菜单的子集，左右两处同样的按钮
@@ -2805,6 +2825,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ? double.infinity
               : kMediaDetailTwoPaneMinWidth,
           bottomPadding: tokens.spacing.page,
+          fab: _buildResumeFab(),
           header: _buildHero(),
           slivers: <Widget>[
             SliverToBoxAdapter(child: _buildEpisodeSection(tokens)),
