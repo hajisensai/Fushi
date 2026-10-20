@@ -53,9 +53,10 @@ class SrsAnswerPreview {
   final SrsAnswerPlan plan;
   final SrsMemory? memoryBefore;
 
-  /// 算出间隔与记忆状态的算法（牌组算法的 [SrsAlgorithm.memoryAlgorithm]：RWKV 牌组是 FSRS-7）。
-  /// 写进日志的 `alg`。RWKV-Instant 不给间隔：它决定的是卡**什么时候进队**（按此刻的回忆率），
-  /// 存下的到期日只供统计 / 同步 / RWKV 不可用时排队。
+  /// 这次作答的排程方式，写进日志的 `alg`：RWKV 牌组且 RWKV 可用（卡是按此刻的回忆率进的队）
+  /// 时是 [SrsAlgorithm.rwkv]，否则是牌组算法的 [SrsAlgorithm.memoryAlgorithm]。间隔与记忆状态
+  /// 一律由记忆算法算（RWKV 牌组是 FSRS-7）：RWKV-Instant 不给间隔，存下的到期日只在 RWKV
+  /// 不可用时排队、导出给 Anki 时用；统计据日志的 `alg` 区分按 R 排的复习。
   final SrsAlgorithm algorithm;
 
   /// 牌组设的是 RWKV，但现在没法用它排队（运行时未就绪 / 权重未下载 / 出错），这个牌组按存下的
@@ -74,7 +75,8 @@ class SrsCardOps {
 
   /// 算四个评分的结果（显示间隔预览，也是 [answer] 的第一步）。
   ///
-  /// [rwkvUnavailable] 只透传到结果里（见 [SrsAnswerPreview.rwkvUnavailable]），不影响计算。
+  /// [rwkvUnavailable]：RWKV 牌组现在没法按 R 排队（见 [SrsAnswerPreview.rwkvUnavailable]）；
+  /// 只决定日志的 `alg`，不影响间隔与记忆状态。
   SrsAnswerPreview preview({
     required String cardId,
     required SrsCardHistory history,
@@ -114,7 +116,9 @@ class SrsCardOps {
     return SrsAnswerPreview(
       plan: srsPlanAnswer(answerCtx, next),
       memoryBefore: memory,
-      algorithm: algorithm,
+      algorithm: config.algorithm.usesRwkv && !rwkvUnavailable
+          ? SrsAlgorithm.rwkv
+          : algorithm,
       params: params,
       nowMs: nowMs,
       timeSource: source,
@@ -130,6 +134,7 @@ class SrsCardOps {
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
     int durationMs = 0,
+    bool rwkvUnavailable = false,
   }) {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
@@ -141,6 +146,7 @@ class SrsCardOps {
       history: history,
       config: config,
       ctx: ctx,
+      rwkvUnavailable: rwkvUnavailable,
     );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);

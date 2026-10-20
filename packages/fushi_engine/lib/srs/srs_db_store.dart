@@ -2571,8 +2571,7 @@ class SrsDbStore implements SrsSyncReplica {
       history: await history(cardId),
       config: config,
       ctx: _logContext(day),
-      rwkvUnavailable:
-          config.algorithm.usesRwkv && !(rwkv?.ready ?? false),
+      rwkvUnavailable: config.algorithm.usesRwkv && !(rwkv?.ready ?? false),
     );
   }
 
@@ -2592,6 +2591,7 @@ class SrsDbStore implements SrsSyncReplica {
       config: config,
       ctx: _logContext(day),
       durationMs: durationMs,
+      rwkvUnavailable: config.algorithm.usesRwkv && !(rwkv?.ready ?? false),
     );
     await _emit(<SrsEvent>[SrsLogEvent(log)]);
     // RWKV 状态追加这一条（不等：它在后台 isolate 里串行执行，下一次预览前会对齐）。
@@ -3261,7 +3261,9 @@ class SrsDbStore implements SrsSyncReplica {
     // 间隔守卫只关心今天答过的卡；「别的卡的作答」只数 [decks] 里的卡。
     final int dayStart = ctx.day.dayStartMs(ctx.today);
     final Map<String, String> answeredDeck = <String, String>{};
-    if (rows.any((QueryRow r) => (r.read<int?>('last_reviewed_at') ?? 0) >= dayStart)) {
+    if (rows.any(
+      (QueryRow r) => (r.read<int?>('last_reviewed_at') ?? 0) >= dayStart,
+    )) {
       final Set<String> answered = <String>{
         for (final (String id, int _) in ctx.answersToday) id,
       };
@@ -3313,6 +3315,47 @@ class SrsDbStore implements SrsSyncReplica {
     final _Instant value = _Instant(targets.keys.toSet(), eligible);
     _instantCache = (key: key, atMs: ctx.nowMs, value: value);
     return value;
+  }
+
+  /// 牌组 [deckId] 现在按 RWKV-Instant 排队：算法是 RWKV 且 RWKV 可用。这时它的复习卡没有有意义的
+  /// 到期日（存下的那个只在 RWKV 不可用时排队），统计 / 浏览 / 词状态据此不按到期日解读。
+  bool instantActiveFor(SrsDeckTree tree, String deckId) =>
+      (rwkv?.ready ?? false) &&
+      _schedulingConfigIn(tree, deckId).algorithm.usesRwkv;
+
+  /// RWKV-Instant 此刻会出的复习卡（与 [nextCard] / 牌组计数同口径）：浏览器的 `is:due` 用。
+  /// RWKV 用不了时 null——RWKV 牌组这时照旧按存下的到期日排队，调用方也按到期日算。
+  Future<Set<String>?> instantDueCardIds() async {
+    final _CountContext ctx = await _countContext();
+    final _Instant? instant = await _instantReviews(ctx, <String>[
+      for (final SrsDeckView d in ctx.tree.decks) d.id,
+    ]);
+    return instant == null
+        ? null
+        : <String>{for (final _InstantCard c in instant.eligible) c.id};
+  }
+
+  /// [rows]（RWKV 牌组的复习卡）此刻的 RWKV 回忆率：统计页的可提取度用。RWKV 用不了时 null。
+  Future<Map<String, double>?> instantRetrievabilityOf(
+    List<SrsCardCacheRow> rows,
+  ) async {
+    final SrsRwkvScheduling? source = rwkv;
+    if (source == null || !source.ready) return null;
+    if (rows.isEmpty) return const <String, double>{};
+    final List<double>? scores = await source
+        .instantRetrievability(<SrsRwkvCandidate>[
+          for (final SrsCardCacheRow r in rows)
+            SrsRwkvCandidate(
+              id: r.id,
+              noteId: r.noteId,
+              deckId: r.deckId,
+              lastLogId: r.lastLogId,
+            ),
+        ], nowMs: now().$1);
+    if (scores == null || scores.length != rows.length) return null;
+    return <String, double>{
+      for (int i = 0; i < rows.length; i++) rows[i].id: scores[i],
+    };
   }
 
   /// 下一张要复习的卡：到期的学习卡 → 到期复习卡（可提取度从低到高）→ 新卡（[compareNewCardOrder]
@@ -3394,7 +3437,8 @@ class SrsDbStore implements SrsSyncReplica {
       // RWKV-Instant 的牌组：合格的卡已按 R 升序，取第一张路径上还有上限的。
       final Set<String> byR = instant?.decks ?? const <String>{};
       _InstantCard? instantBest;
-      for (final _InstantCard c in instant?.eligible ?? const <_InstantCard>[]) {
+      for (final _InstantCard c
+          in instant?.eligible ?? const <_InstantCard>[]) {
         if (exclude.contains(c.id)) continue;
         if (pathHasRoom(c.deckId, (_DeckCount x) => x.reviewRemaining)) {
           instantBest = c;
@@ -3424,7 +3468,8 @@ class SrsDbStore implements SrsSyncReplica {
         final SrsCardCacheRow? row = await cardRow(due.$1);
         final int? last = row?.lastReviewedAt;
         final double days = last == null ? 0 : (nowMs - last) / 86400000.0;
-        final double fsrsR = 1.0 / (1.0 + days / (9.0 * (row?.stability ?? 1.0)));
+        final double fsrsR =
+            1.0 / (1.0 + days / (9.0 * (row?.stability ?? 1.0)));
         return fsrsR < instantBest.r ? due.$1 : instantBest.id;
       }
     }
@@ -3551,6 +3596,7 @@ class SrsDbStore implements SrsSyncReplica {
               ))
               .get();
       if (cards.isEmpty) continue;
+      final SrsDeckTree tree = await deckTree();
       final List<SrsTermStatus> st = <SrsTermStatus>[
         for (final SrsCardCacheRow c in cards)
           SrsTermStatus(
@@ -3562,6 +3608,7 @@ class SrsDbStore implements SrsSyncReplica {
             cardCount: cards.length,
             dueDay: c.dueDay,
             dueAt: c.dueAt,
+            byRecall: instantActiveFor(tree, c.deckId),
           ),
       ]..sort(srsTermUrgencyCompare);
       out[q.expression] = st.first;

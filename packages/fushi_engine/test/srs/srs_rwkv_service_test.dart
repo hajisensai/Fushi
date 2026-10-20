@@ -9,11 +9,14 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_history.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
+import 'package:fushi_engine/srs/srs_stats.dart';
+import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
@@ -295,12 +298,13 @@ void main() {
       expect(next, isNotNull);
       expect(backend.queries, greaterThan(0));
       final SrsAnswerPreview preview = await f.store.preview(next!);
-      // 间隔与记忆状态是 FSRS-7 的（存下的到期日）；RWKV 决定的是进队时机。
-      expect(preview.algorithm, SrsAlgorithm.fsrs7);
+      // 这次是按 R 进的队：日志记 rwkv（统计据此区分）；间隔与记忆状态仍是 FSRS-7 算的。
+      expect(preview.algorithm, SrsAlgorithm.rwkv);
       expect(preview.rwkvUnavailable, isFalse);
+      expect(preview.params, hasLength(SrsAlgorithm.fsrs7.paramCount));
 
       final SrsReviewLog log = await f.store.answer(next, 3);
-      expect(log.algorithm, 'fsrs7');
+      expect(log.algorithm, 'rwkv');
       await service.refresh();
       expect(
         backend.resets,
@@ -337,6 +341,7 @@ void main() {
       final SrsRwkvService service = f.service(backend, ready: false);
       f.store.rwkv = service;
       final SrsAnswerPreview preview = await f.store.preview(cards.single);
+      // 没按 R 排：日志记 FSRS-7。
       expect(preview.algorithm, SrsAlgorithm.fsrs7);
       expect(preview.rwkvUnavailable, isTrue);
       // 还没到 FSRS 的到期日：照到期日排就没有复习卡（RWKV 的 R 再低也用不上）。
@@ -413,6 +418,18 @@ void main() {
       f.advance(kDay * 30); // FSRS 早就到期
       expect(await f.reviewCount(), 0);
       expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
+      // 只有一张合格时只出它：别的卡按到期日早就该复习、FSRS 的 R 还更低，也不出。
+      f.advance(31000);
+      backend.setR(cards[3], 0.7);
+      expect(await f.reviewCount(), 1);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[3]);
+      expect(
+        await f.store.nextCard(
+          f.store.defaultDeckId,
+          exclude: <String>{cards[3]},
+        ),
+        isNull,
+      );
       // 目标保留率是牌组设置：调高到 0.97，R 0.95 的卡全部合格。
       await f.store.editFields(
         SrsEntityKind.deck,
@@ -441,6 +458,56 @@ void main() {
       await service.refresh();
       f.advance(31000);
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
+    });
+  });
+
+  group('统计 / 浏览 / 词状态：按 R 排队的卡不按到期日解读', () {
+    test('未来到期不计、可提取度用 RWKV；`is:due` 与出卡同口径；词状态不写天数', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(3);
+      await f.graduate(cards);
+      final _FakeBackend backend = _FakeBackend()..defaultR = 0.95;
+      final SrsRwkvService service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      f.advance(kDay);
+      backend.setR(cards[0], 0.42);
+
+      final SrsStatsBundle stats = await loadSrsStats(f.store);
+      final SrsFutureDue due = stats.data.futureDue(30);
+      expect(due.byRecall, 3);
+      expect(due.total, 0);
+      expect(due.overdue, 0);
+      expect(due.dailyLoad, 0);
+      final SrsStatCard c0 = stats.data.cards.firstWhere(
+        (SrsStatCard c) => c.id == cards[0],
+      );
+      expect(c0.byRecall, isTrue);
+      expect(c0.retrievability, closeTo(0.42, 1e-6));
+
+      final SrsBrowseSnapshot browse = await SrsBrowseSnapshot.load(f.store);
+      final Map<String, SrsCardSearchSubject> byId =
+          <String, SrsCardSearchSubject>{
+            for (final SrsCardSearchSubject c in browse.cards) c.card.id: c,
+          };
+      expect(byId[cards[0]]!.isDue, isTrue);
+      expect(byId[cards[1]]!.isDue, isFalse);
+      expect(byId[cards[0]]!.dueInDays, isNull);
+      browse.dispose();
+
+      final Map<String, SrsTermStatus> term = await f.store.lookupTermStatus(
+        const <SrsTermQuery>[SrsTermQuery('w0', null)],
+      );
+      expect(term['w0']!.byRecall, isTrue);
+
+      // RWKV 用不了：照旧按存下的到期日（排队也是），统计也照旧。
+      await service.close();
+      final SrsFutureDue fallback = (await loadSrsStats(
+        f.store,
+      )).data.futureDue(30);
+      expect(fallback.byRecall, 0);
+      expect(fallback.total, 3);
     });
   });
 }

@@ -1,7 +1,7 @@
 // 新手引导「复习方式」一步的选择区（所有者 2026-10-16）：
 // - Fushi 复习是主路径、直接呈现、默认选中；
 // - Anki 收在「改用 Anki…」折叠里，展开前它的说明与选项都不在树上；
-// - 两项都不挂「推荐」徽标、文案里没有比较用语；FSRS-7 的说法与内核默认算法一致。
+// - 两项都不挂「推荐」徽标、文案里没有比较用语；RWKV 的说法与内核默认算法一致。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
@@ -91,11 +91,11 @@ void main() {
     });
   }
 
-  test('文案：写 FSRS-7（= 内核默认算法）、不写比较用语', () {
-    expect(srsDefaultAlgorithm, SrsAlgorithm.fsrs7);
+  test('文案：写 RWKV（= 内核默认算法）、不写比较用语', () {
+    expect(srsDefaultAlgorithm, SrsAlgorithm.rwkv);
     for (final AppLocale locale in <AppLocale>[AppLocale.en, AppLocale.zhCn]) {
       LocaleSettings.setLocale(locale);
-      expect(t.onboarding_review_fushi_desc, contains('FSRS-7'));
+      expect(t.onboarding_review_fushi_desc, contains('RWKV'));
       for (final String text in <String>[
         t.onboarding_review_fushi_title,
         t.onboarding_review_fushi_desc,

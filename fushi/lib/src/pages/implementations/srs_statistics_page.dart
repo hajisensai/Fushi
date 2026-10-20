@@ -684,6 +684,14 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             (t.srs_stats_future_load, _decimal(f.dailyLoad)),
             (t.srs_stats_future_overdue, '${f.overdue}'),
           ]),
+          if (f.byRecall > 0) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            Text(
+              t.srs_stats_future_due_by_recall(n: f.byRecall),
+              key: const ValueKey<String>('srs-stats-future-by-recall'),
+              style: context.fushiType.bodySmall,
+            ),
+          ],
           SizedBox(height: tokens.spacing.card),
           if (_futureCumulative)
             SrsLineChart(
