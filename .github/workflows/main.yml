@@ -40,6 +40,7 @@ on:
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/fushi-web-core-linux/**'
+      - '.github/actions/test-native-linux/**'
       - '.github/actions/setup-fushi-compute/**'
       # setup-fushi-compute 从这里读 Rust / cargo-ndk 钉版。
       - '.github/actions/native-store-names/names.sh'
@@ -72,6 +73,23 @@ jobs:
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+        if-no-files-found: error
+        retention-days: 3
+
+  # 单测矩阵的另两个 Rust 硬依赖（fushi_fsrs / fushi_compute）同理只编一次、与 web-core-linux
+  # 并行，以 artifact 交给各分片（原来每片各编一遍，约 2 分钟压在每片的关键路径上）。
+  test-native-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/test-native-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: |
+          native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+          native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
         if-no-files-found: error
         retention-days: 3
 
@@ -401,12 +419,20 @@ jobs:
   # 各片只把自己的 suite 路径交给 flutter test，并集恰好是整个 test/（契约测试
   # fushi/test/tools/test_file_shards_test.dart）。分片数改这里的 matrix 和下面
   # 的 --file-shard 分母，两处一起改。
+  # 2026-10-20：分片内再用 --experimental-faster-testing：本片全部 suite 合成一个
+  # dill 只编译一次，每个 suite 在同一个 flutter_tester 进程里各起一个 isolate。
+  # 普通模式下每个 suite 单独增量编译、单独起进程，编译排队正是 CI 冷编的大头
+  # （settings 目录 100 个文件实测 211 s → 117 s）。代价：suite 之间不再隔进程，
+  # 测试结束后还在跑的异步工作（没关的 socket / timer / 子进程）会落到别的 suite
+  # 头上——遇到按根因修泄漏，不要退回普通模式。
   unit-tests:
-    needs: web-core-linux
+    needs: [web-core-linux, test-native-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+      FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
     strategy:
       fail-fast: false
       matrix:
@@ -446,16 +472,6 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
-    # 主应用的 SRS 浏览页测试（test/srs/srs_browse_page_test.dart 等）同样走 Rust 搜索内核：
-    # 每片都编 .so（rust-cache 与 build job 同 key，命中时约 20 s），经 FUSHI_FSRS_LIB 指过去。
-    - name: Cache Rust build (fushi_fsrs)
-      uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: native/fushi_fsrs -> target
-        key: fushi-fsrs-linux-x64
-    - name: Build fushi_fsrs (Linux x64) for unit tests
-      run: bash native/fushi_fsrs/build_linux_so.sh
-
     # Golden image tests are gated to the reference platform (the dev host where
     # goldens were generated); Linux CI font/raster rendering differs and would
     # always mismatch, so exclude them here. They still run on a plain local
@@ -466,14 +482,27 @@ jobs:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
 
-    # 计算内核 fushi_compute 是硬依赖：先编 Linux .so 并导出 FUSHI_COMPUTE_LIB 给 flutter_tester。
-    - name: Build fushi_compute (Linux .so)
-      uses: ./.github/actions/setup-fushi-compute
+    # SRS 浏览页测试走 Rust 搜索内核（fushi_fsrs），计算内核 fushi_compute 是硬依赖：
+    # 都由 test-native-linux 编好，这里只下载（路径与 job 级 FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB 对应）。
+    - name: Fetch fushi_fsrs + fushi_compute linux-x64 libraries (hard dependencies of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: native
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
-      env:
-        FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing
+
+    # 逐 suite 耗时的唯一来源：tool/update_suite_timings.dart 读这些事件日志刷新
+    # tool/test_flow/suite_timings.json（--file-shard 按它均衡各片）。失败时也传，排障用。
+    - name: Upload test event log
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: unit-test-events-${{ matrix.shard }}
+        path: .codex-test/flutter-test/flutter_test.jsonl
+        if-no-files-found: warn
+        retention-days: 14
 
     # The compact summary omits RenderFlex creation sites. Print complete
     # diagnostics for failed tests into the job log (GitHub masks secrets here),

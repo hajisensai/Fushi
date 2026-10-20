@@ -1,0 +1,28 @@
+name: Rust test libraries (fushi_fsrs + fushi_compute, linux-x64)
+description: >-
+  Builds native/fushi_fsrs and native/fushi_compute for linux-x64 and verifies them. Both are
+  hard dependencies of the fushi/ unit tests and of packages/ tests (no Dart fallback; a
+  missing library fails the test instead of skipping). Producer jobs call this action and
+  upload the two .so files as the `fushi-test-native-linux-x64` artifact (paths relative to
+  native/); the test matrix downloads it into native/ and points FUSHI_FSRS_LIB /
+  FUSHI_COMPUTE_LIB at it.
+
+# Why one producer job instead of a build step in every shard: each of the four unit-test
+# shards used to build both crates itself (~2 min per shard, setup-fushi-compute 76 s +
+# fsrs 34 s measured 2026-10-20), on every shard's critical path. Built once, in parallel
+# with web-core-linux, the shards only download. Artifacts do not count against the Actions
+# cache quota (fushi/test/build/workflow_cache_quota_guard_test.dart).
+runs:
+  using: composite
+  steps:
+    # 用 runner 自带的 stable 工具链（不进持久库，不需要钉版），与原来各分片里的那一步相同。
+    - name: Cache Rust build (fushi_fsrs)
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_fsrs -> target
+        key: fushi-fsrs-linux-x64
+    - name: Build fushi_fsrs (linux-x64 .so)
+      shell: bash
+      run: bash native/fushi_fsrs/build_linux_so.sh
+    - name: Build fushi_compute (linux-x64 .so)
+      uses: ./.github/actions/setup-fushi-compute
