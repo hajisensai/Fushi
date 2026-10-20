@@ -242,6 +242,21 @@ endif()
 install(FILES "${FUSHI_COMPUTE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# === RWKV-Instant 排程推理（**硬依赖**，AGPL-3.0-or-later）===
+# native/fushi_rwkv/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_rwkv.dll，
+# 随包到 exe 同级（Dart 侧 packages/fushi_rwkv 的 FushiRwkv 按 exe 同级定位）。
+# 与 fushi_compute 同一语义：没有 Dart 回退实现，缺库时在配置期直接失败（Debug 也不例外）。
+set(FUSHI_RWKV_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll")
+if(NOT EXISTS "${FUSHI_RWKV_DLL}")
+  message(FATAL_ERROR
+    "fushi_rwkv is a required native dependency, but ${FUSHI_RWKV_DLL} is missing. "
+    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_rwkv/build_windows_dll.ps1 "
+    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
+endif()
+install(FILES "${FUSHI_RWKV_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be
 # produced while advertising an embedded backend that cannot open at runtime.

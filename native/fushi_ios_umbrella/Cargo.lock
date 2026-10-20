@@ -1110,6 +1110,7 @@ dependencies = [
  "fushi_compute",
  "fushi_fsrs",
  "fushi_p2p",
+ "fushi_rwkv",
  "fushi_web_core",
 ]
 
@@ -1123,6 +1124,14 @@ dependencies = [
  "iroh-mainline-address-lookup",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "fushi_rwkv"
+version = "0.1.0"
+dependencies = [
+ "half",
+ "rayon",
 ]
 
 [[package]]

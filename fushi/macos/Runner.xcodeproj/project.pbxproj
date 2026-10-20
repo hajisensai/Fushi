@@ -281,6 +281,7 @@
 				B20100000000000000000005 /* Bundle fushi_fsrs dylib */,
 				B20100000000000000000006 /* Bundle fushi_compute dylib */,
 				B20100000000000000000007 /* Bundle fushi_web_core dylib */,
+				B20100000000000000000008 /* Bundle fushi_rwkv dylib */,
 				6BD9B3C08D0CCB6379299F3A /* [CP] Embed Pods Frameworks */,
 				9B7ACE8C08531AD7CBBD7799 /* [CP] Copy Pods Resources */,
 			);
@@ -621,6 +622,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_web_core.sh\"\n";
+		};
+		B20100000000000000000008 /* Bundle fushi_rwkv dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle fushi_rwkv dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_rwkv.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -17,7 +17,10 @@
 # Linux CMake、macOS Runner、Android Gradle 缺库都直接构建失败，没有 Dart 回退。所以这里在
 # pub get 之后按主机平台编一次（Windows: build_windows_dll.ps1，Linux: build_linux_so.sh，
 # macOS: build_macos_dylib.sh），需要 cargo；没有 cargo 就报清楚的错并失败。
-# 显式跳过：-SkipNativeCompute（或设 FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1），之后再手动跑上面的脚本。
+# RWKV-Instant 排程推理 native/fushi_rwkv（Rust，AGPL-3.0-or-later）同为硬依赖、同一套脚本名，
+# 紧接着 fushi_compute 一起编。
+# 显式跳过：-SkipNativeCompute（或设 FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1，两个 crate 一起跳过），
+# 之后再手动跑上面的脚本。
 [CmdletBinding()]
 param([switch]$SkipNativeCompute)
 
@@ -429,8 +432,7 @@ function Invoke-FushiComputeBuild {
     [OutputType([void])]
     param([string]$RepoRoot, [string]$GitBash)
 
-    $nativeDir = Join-Path $RepoRoot 'native/fushi_compute'
-    $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $cargo =Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $cargo) {
         throw @"
 找不到 cargo：native/fushi_compute（Rust 计算内核）是 app 与 flutter test 的硬依赖，必须先编出来。
@@ -439,19 +441,23 @@ function Invoke-FushiComputeBuild {
     之后手动跑 native/fushi_compute/ 下对应平台的 build_* 脚本。
 "@
     }
-    Write-Host "Building native/fushi_compute (cargo: $($cargo.Source))..." -ForegroundColor Cyan
-    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-        & (Join-Path $nativeDir 'build_windows_dll.ps1')
-        return
+    # fushi_rwkv（RWKV-Instant 排程推理）同为硬依赖，脚本名与 fushi_compute 一一对应。
+    foreach ($crate in @('fushi_compute', 'fushi_rwkv')) {
+        $nativeDir = Join-Path $RepoRoot "native/$crate"
+        Write-Host "Building native/$crate (cargo: $($cargo.Source))..." -ForegroundColor Cyan
+        if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+            & (Join-Path $nativeDir 'build_windows_dll.ps1')
+            continue
+        }
+        $isMac = [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::OSX)
+        $script = if ($isMac) { 'build_macos_dylib.sh' } else { 'build_linux_so.sh' }
+        & $GitBash (Join-Path $nativeDir $script)
+        if ($LASTEXITCODE -ne 0) { throw "native/$crate/$script failed (exit $LASTEXITCODE)." }
     }
-    $isMac = [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::OSX)
-    $script = if ($isMac) { 'build_macos_dylib.sh' } else { 'build_linux_so.sh' }
-    & $GitBash (Join-Path $nativeDir $script)
-    if ($LASTEXITCODE -ne 0) { throw "native/fushi_compute/$script failed (exit $LASTEXITCODE)." }
 }
 
 if ($SkipNativeCompute -or $env:FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE) {
-    Write-Warning "已跳过 native/fushi_compute 构建（硬依赖）：flutter build / test 之前必须手动跑 native/fushi_compute/ 下对应平台的 build_* 脚本。"
+    Write-Warning "已跳过 native/fushi_compute 与 native/fushi_rwkv 构建（都是硬依赖）：flutter build / test 之前必须手动跑它们目录下对应平台的 build_* 脚本。"
 }
 else {
     Invoke-FushiComputeBuild -RepoRoot $root -GitBash $gitBash

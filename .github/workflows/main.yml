@@ -41,7 +41,8 @@ on:
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/actions/setup-fushi-compute/**'
-      # setup-fushi-compute 从这里读 Rust / cargo-ndk 钉版。
+      - '.github/actions/setup-fushi-rwkv/**'
+      # setup-fushi-compute / setup-fushi-rwkv 从这里读 Rust / cargo-ndk 钉版。
       - '.github/actions/native-store-names/names.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -203,6 +204,11 @@ jobs:
     # 否则 build.gradle 的 checkFushiComputeNative 让构建失败。
     - name: Build fushi_compute (Linux .so + Android arm64-v8a)
       uses: ./.github/actions/setup-fushi-compute
+      with:
+        android-abis: arm64-v8a
+    # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+    - name: Build fushi_rwkv (Linux .so + Android arm64-v8a)
+      uses: ./.github/actions/setup-fushi-rwkv
       with:
         android-abis: arm64-v8a
 
@@ -469,6 +475,9 @@ jobs:
     # 计算内核 fushi_compute 是硬依赖：先编 Linux .so 并导出 FUSHI_COMPUTE_LIB 给 flutter_tester。
     - name: Build fushi_compute (Linux .so)
       uses: ./.github/actions/setup-fushi-compute
+    # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+    - name: Build fushi_rwkv (Linux .so)
+      uses: ./.github/actions/setup-fushi-rwkv
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
       env:

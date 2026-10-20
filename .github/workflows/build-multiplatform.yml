@@ -55,6 +55,7 @@ on:
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/setup-fushi-rwkv/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -87,8 +88,8 @@ jobs:
   # 判据 = 各平台 job **实际读到的输入**（下面五组正则），不是「凡 fushi/** 都算」：
   #   * app_common：三个 app 平台共用——依赖锁 / 根 pubspec 的 overrides、ci/ 补丁与
   #     appSmoke 脚本、编进每个 app 的原生库（fushidicts / fushi_p2p / fushi_fsrs / fushi_compute /
-  #     fushi_web_core，各 verify_abi.sh 还读 packages/fushi_p2p / packages/fushi_srs /
-  #     packages/fushi_compute / packages/fushi_web_core 的 Dart 绑定）、本文件、三个平台 job 都
+  #     fushi_web_core / fushi_rwkv，各 verify_abi.sh 还读 packages/fushi_p2p / packages/fushi_srs /
+  #     packages/fushi_compute / packages/fushi_web_core / packages/fushi_rwkv 的 Dart 绑定）、本文件、三个平台 job 都
   #     uses 的本地 action，以及
   #     vendored 插件的 pubspec.yaml（原生依赖声明在那里）。
   #     fushi/pubspec.yaml 故意不在里面：原生插件的增删一定会改 pubspec.lock；单改它的 PR
@@ -157,12 +158,12 @@ jobs:
           echo "event=$EVENT all=$all changed files: $(wc -l < "$files")"
           cat "$files"
 
-          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core)/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute)/)'
+          app_common='^(pubspec\.(yaml|lock)$|ci/|third_party/[^/]+/pubspec\.yaml$|native/(fushidicts|fushi_p2p|fushi_aacs|fushi_fsrs|fushi_compute|fushi_web_core|fushi_rwkv)/|packages/(fushi_p2p|fushi_srs|fushi_compute|fushi_web_core|fushi_rwkv)/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(provide-baked-secrets|native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-compute|setup-fushi-rwkv)/)'
           smoke='^fushi/(integration_test/(app_smoke_test\.dart$|test_helpers\.dart$|support/|helpers/)|tool/(comprehensive_test_runner\.dart$|generate_test_fixtures\.dart$|test_flow/))'
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tool/engine_overlay\.ps1$|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/(setup-fushi-anki-sync|flutter-engine-overlay)/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|native/fushi_ios_umbrella/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
-          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p|fushi_srs|fushi_compute|fushi_rwkv)/|native/(fushi_torrent|fushi_p2p|fushi_fsrs|fushi_compute|fushi_rwkv|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|pdfium-hook-cache|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
           route() {
@@ -333,6 +334,11 @@ jobs:
         uses: ./.github/actions/setup-fushi-compute
         with:
           android-abis: x86_64
+      # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+      - name: Build fushi_rwkv (Linux .so + Android x86_64)
+        uses: ./.github/actions/setup-fushi-rwkv
+        with:
+          android-abis: x86_64
       - name: Run Android comprehensive automation contract
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -500,6 +506,21 @@ jobs:
           bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so nm
           # 硬依赖：本 job 之后所有 dart / flutter 测试都按这个绝对路径加载。
           echo "FUSHI_COMPUTE_LIB=$GITHUB_WORKSPACE/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so" >> "$GITHUB_ENV"
+      # RWKV-Instant 排程推理 Linux .so（硬依赖，AGPL-3.0-or-later）：服务端按
+      # bin/../lib/libfushi_rwkv.so 定位（经 fushi_srs → fushi_engine）。同 fushi_compute 口径。
+      - name: Cache Rust build (fushi_rwkv)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_rwkv -> target
+          key: fushi-rwkv-linux-x64
+      - name: Build fushi_rwkv (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_rwkv/build_linux_so.sh
+          bash native/fushi_rwkv/verify_abi.sh native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so nm
+          # 硬依赖：本 job 之后所有 dart / flutter 测试都按这个绝对路径加载。
+          echo "FUSHI_RWKV_LIB=$GITHUB_WORKSPACE/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so" >> "$GITHUB_ENV"
       # 纯 Dart，dart build 出带 native assets（sqlite3）的 CLI bundle。
       - name: Build headless fushi_server (Linux)
         shell: bash
@@ -703,6 +724,28 @@ jobs:
             echo "::error::fushi_compute tests were skipped: $FUSHI_COMPUTE_LIB did not load"
             exit 1
           fi
+      # (e') RWKV-Instant 排程推理 .so：装进服务端 bundle，对 bundle 里那一份做 dlopen 冒烟（ABI 版本取自
+      # src/lib.rs），并把 FUSHI_RWKV_LIB 改指向它，让之后的服务端测试加载随包的那一份。
+      - name: Bundle fushi_rwkv into fushi_server and smoke-load it (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="$GITHUB_WORKSPACE/build/fushi_server_linux/bundle/lib/libfushi_rwkv.so"
+          mkdir -p "$(dirname "$lib")"
+          cp "$GITHUB_WORKSPACE/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so" "$lib"
+          abi="$(sed -n 's/^pub const ABI_VERSION: i32 = \([0-9][0-9]*\);.*/\1/p' native/fushi_rwkv/src/lib.rs)"
+          test -n "$abi" || { echo "::error::cannot read ABI_VERSION from native/fushi_rwkv/src/lib.rs"; exit 1; }
+          RWKV_LIB="$lib" ABI_EXPECTED="$abi" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["RWKV_LIB"])
+          lib.frwkv_abi_version.restype = ctypes.c_int32
+          abi = lib.frwkv_abi_version()
+          if abi != int(os.environ["ABI_EXPECTED"]):
+              raise SystemExit(f"frwkv_abi_version returned {abi}")
+          print("fushi_rwkv .so smoke ok: abi", abi)
+          PY
+          echo "FUSHI_RWKV_LIB=$lib" >> "$GITHUB_ENV"
       - name: Bundle onnxruntime (CPU) for fushi_server (Linux)
         shell: bash
         run: |
@@ -757,6 +800,7 @@ jobs:
         env:
           FUSHI_DICTS_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
           FUSHI_COMPUTE_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_compute.so
+          FUSHI_RWKV_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_rwkv.so
         run: |
           set -euo pipefail
           test -f "$FUSHI_DICTS_LIB" || { echo "::error::.so not found at $FUSHI_DICTS_LIB"; exit 1; }
@@ -998,6 +1042,21 @@ jobs:
           bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/macos/libfushi_compute.dylib nm
           # 硬依赖：本 job 之后所有 dart / flutter 测试都按这个绝对路径加载。
           echo "FUSHI_COMPUTE_LIB=$GITHUB_WORKSPACE/native/fushi_compute/prebuilt/macos/libfushi_compute.dylib" >> "$GITHUB_ENV"
+      # RWKV-Instant 排程推理 arm64 dylib（硬依赖）：Runner 的「Bundle fushi_rwkv dylib」构建阶段
+      # （fushi/macos/bundle_fushi_rwkv.sh）拷进 Contents/Frameworks，缺库时整个构建失败。
+      - name: Cache Rust build (fushi_rwkv)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_rwkv -> target
+          key: fushi-rwkv-macos
+      - name: Build fushi_rwkv (macOS arm64 dylib)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_rwkv/build_macos_dylib.sh
+          bash native/fushi_rwkv/verify_abi.sh native/fushi_rwkv/prebuilt/macos/libfushi_rwkv.dylib nm
+          # 硬依赖：本 job 之后所有 dart / flutter 测试都按这个绝对路径加载。
+          echo "FUSHI_RWKV_LIB=$GITHUB_WORKSPACE/native/fushi_rwkv/prebuilt/macos/libfushi_rwkv.dylib" >> "$GITHUB_ENV"
       # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段（fushi/macos/bundle_fushi_torrent.sh）
       # copy-if-present 进 Contents/Frameworks。此前 macOS 从没编过它，app 把 macOS 算作
@@ -1243,6 +1302,29 @@ jobs:
               raise SystemExit(f"ffc_abi_version returned {abi}")
           print("fushi_compute dylib smoke ok: abi", abi)
           PY
+      - name: Verify macOS fushi_rwkv dylib bundle
+        working-directory: fushi
+        run: |
+          set -euo pipefail
+          app_dir="build/macos/Build/Products/Debug/fushi.app"
+          dylib="$app_dir/Contents/Frameworks/libfushi_rwkv.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_rwkv dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_rwkv.dylib"
+          test "$(lipo -archs "$dylib")" = "arm64"
+          otool -L "$dylib"
+          bash ../native/fushi_rwkv/verify_abi.sh "$dylib" nm
+          abi="$(sed -n 's/^pub const ABI_VERSION: i32 = \([0-9][0-9]*\);.*/\1/p' ../native/fushi_rwkv/src/lib.rs)"
+          test -n "$abi" || { echo "::error::cannot read ABI_VERSION from native/fushi_rwkv/src/lib.rs"; exit 1; }
+          RWKV_LIB="$dylib" ABI_EXPECTED="$abi" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["RWKV_LIB"])
+          lib.frwkv_abi_version.restype = ctypes.c_int32
+          abi = lib.frwkv_abi_version()
+          if abi != int(os.environ["ABI_EXPECTED"]):
+              raise SystemExit(f"frwkv_abi_version returned {abi}")
+          print("fushi_rwkv dylib smoke ok: abi", abi)
+          PY
       - name: Save fushi_p2p dylib to native artifact store
         if: steps.p2p_store.outputs.hit != 'true'
         continue-on-error: true
@@ -1410,7 +1492,7 @@ jobs:
       - name: Disable experimental Swift Package Manager (CocoaPods-managed iOS)
         run: flutter config --no-enable-swift-package-manager
       # iOS 伞形 Rust 静态库（互联 P2P 隧道 fushi_p2p + SRS 排程内核 fushi_fsrs + 计算内核
-      # fushi_compute 合一，std 只有一份）：iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进 Runner
+      # fushi_compute + 网页内容核心 fushi_web_core + RWKV 排程推理 fushi_rwkv 合一，std 只有一份）：iOS 不能加载自带 dylib，以 staticlib 经 -force_load 链进 Runner
       # （native/fushi_ios_umbrella/build_ios_staticlib.sh 生成的 xcconfig 由
       # fushi/ios/Flutter/*.xcconfig 可选 include，给 OTHER_LDFLAGS 的 $(FUSHI_IOS_NATIVE_LDFLAGS)）。
       # 两份单独的 Rust .a 同时 -force_load 会撞重复的 std 符号，所以 iOS 只链这一份。
@@ -1435,7 +1517,7 @@ jobs:
         with:
           workspaces: native/fushi_ios_umbrella -> target
           key: fushi-ios-umbrella
-      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core, device)
+      - name: Build iOS umbrella staticlib (fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv, device)
         if: steps.ios_native_store.outputs.hit != 'true'
         shell: bash
         run: |
@@ -1450,8 +1532,9 @@ jobs:
       # Xcode 的 debug 构建会把 app 代码放进 Runner.debug.dylib（ENABLE_DEBUG_DYLIB），有就查它。
       # 四组都查：fp2p_*（互联 P2P）、ffsrs_*（SRS 排程内核，缺了复习页报「排程内核不可用」）、
       # ffc_*（计算内核，缺了各域静默退回 Dart 慢路径）与 fwc_*（网页内容核心，硬依赖：缺了运行时
-      # FushiWebCoreLibraryMissing）。
-      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core symbols are linked into Runner (iOS)
+      # FushiWebCoreLibraryMissing），以及 frwkv_*（RWKV 排程推理，硬依赖：缺了运行时
+      # FushiRwkvUnavailableError）。
+      - name: Verify fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv symbols are linked into Runner (iOS)
         working-directory: fushi
         shell: bash
         run: |
@@ -1463,6 +1546,7 @@ jobs:
           bash ../native/fushi_fsrs/verify_abi.sh "$bin" nm
           bash ../native/fushi_compute/verify_abi.sh "$bin" nm
           bash ../native/fushi_web_core/verify_abi.sh "$bin" nm
+          bash ../native/fushi_rwkv/verify_abi.sh "$bin" nm
       - name: Save iOS umbrella staticlib to native artifact store
         if: steps.ios_native_store.outputs.hit != 'true'
         continue-on-error: true
@@ -1789,6 +1873,38 @@ jobs:
             echo "::error::fushi_compute tests were skipped: $FUSHI_COMPUTE_LIB did not load"
             exit 1
           fi
+      # RWKV-Instant 排程推理 Windows DLL（硬依赖）：产物落 native/fushi_rwkv/prebuilt/windows-x64/，
+      # fushi/windows/CMakeLists.txt 缺库即 FATAL_ERROR；构建失败即 job 失败。
+      - name: Cache Rust build (fushi_rwkv)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_rwkv -> target
+          key: fushi-rwkv-windows-x64
+      - name: Build fushi_rwkv DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_rwkv/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_rwkv) failed" }
+          # 硬依赖：本 job 之后所有 dart / flutter 测试都按这个绝对路径加载。
+          "FUSHI_RWKV_LIB=$env:GITHUB_WORKSPACE\native\fushi_rwkv\prebuilt\windows-x64\fushi_rwkv.dll" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Smoke-load the fushi_rwkv DLL
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll"
+          test -f "$lib" || { echo "::error::DLL not found at $lib"; exit 1; }
+          abi="$(sed -n 's/^pub const ABI_VERSION: i32 = \([0-9][0-9]*\);.*/\1/p' native/fushi_rwkv/src/lib.rs)"
+          test -n "$abi" || { echo "::error::cannot read ABI_VERSION from native/fushi_rwkv/src/lib.rs"; exit 1; }
+          RWKV_LIB="$(cygpath -w "$PWD/$lib")" ABI_EXPECTED="$abi" python - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["RWKV_LIB"])
+          lib.frwkv_abi_version.restype = ctypes.c_int32
+          abi = lib.frwkv_abi_version()
+          if abi != int(os.environ["ABI_EXPECTED"]):
+              raise SystemExit(f"frwkv_abi_version returned {abi}")
+          print("fushi_rwkv DLL smoke ok: abi", abi)
+          PY
       # Windows is the ONLY platform that renders EPUB via the forked
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).
@@ -1826,6 +1942,14 @@ jobs:
           $dll = "fushi\build\windows\x64\runner\Debug\fushi_compute.dll"
           if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
             throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_compute/prebuilt/windows-x64"
+          }
+          Get-Item -LiteralPath $dll | Select-Object FullName, Length
+      - name: Verify fushi_rwkv is in the Windows bundle
+        shell: pwsh
+        run: |
+          $dll = "fushi\build\windows\x64\runner\Debug\fushi_rwkv.dll"
+          if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
+            throw "$dll missing — fushi/windows/CMakeLists.txt did not bundle native/fushi_rwkv/prebuilt/windows-x64"
           }
           Get-Item -LiteralPath $dll | Select-Object FullName, Length
       - name: Verify fushi_aacs is in the Windows bundle

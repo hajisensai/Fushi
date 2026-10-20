@@ -25,12 +25,13 @@ on:
       - 'fushi/**'
       - 'packages/**'
       # Android 构建真正用到的原生源码：fushidicts 走 build.gradle 的 CMake，
-      # torrent / p2p / fsrs / compute / web_core 在本 workflow 里编成 .so 进 jniLibs。
+      # torrent / p2p / fsrs / compute / web_core / rwkv 在本 workflow 里编成 .so 进 jniLibs。
       - 'native/fushidicts/**'
       - 'native/fushi_torrent/**'
       - 'native/fushi_p2p/**'
       - 'native/fushi_fsrs/**'
       - 'native/fushi_compute/**'
+      - 'native/fushi_rwkv/**'
       - 'native/fushi_web_core/**'
       - 'ci/**'
       - 'third_party/**'
@@ -46,6 +47,7 @@ on:
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/setup-fushi-rwkv/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
@@ -815,6 +817,43 @@ jobs:
           bash native/fushi_compute/verify_abi.sh "$so" "$nm_bin"
         done
 
+    # RWKV-Instant 排程推理（native/fushi_rwkv，硬依赖，AGPL-3.0-or-later）的 Android .so：与上面
+    # fushi_compute 同一口径——cargo-ndk 三个 ABI，产物落 native/fushi_rwkv/prebuilt/android/<abi>/，
+    # build.gradle 的 checkFushiRwkvNative 缺 ABI 即失败；出包后逐 ABI 核对 APK 里确有 libfushi_rwkv.so。
+    - name: Cache Rust build (fushi_rwkv)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: native/fushi_rwkv -> target
+        key: fushi-rwkv-android
+    - name: Build fushi_rwkv Android .so (cargo-ndk)
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      timeout-minutes: 45
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_rwkv/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+    # 每个 ABI 的 .so：ELF 架构对得上，且导出全部 frwkv_* 符号（src/ 声明 ∪ Dart 绑定 lookup）。
+    - name: Verify fushi_rwkv Android .so
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+        if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+        for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+          abi="${pair%%:*}"; want="${pair#*:}"
+          so="native/fushi_rwkv/prebuilt/android/$abi/libfushi_rwkv.so"
+          test -f "$so" || { echo "::error::missing artifact $so"; exit 1; }
+          machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+          echo "$abi: ELF machine = $machine"
+          case "$machine" in
+            *"$want"*) : ;;
+            *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+          esac
+          bash native/fushi_rwkv/verify_abi.sh "$so" "$nm_bin"
+        done
+
     # TODO-fast-release: analyze/unit/package tests no longer gate this build job.
     # They ran here as sequential steps BEFORE `flutter build apk`, so a slow or
     # red suite delayed (and could block) the debug-channel APK the user is
@@ -1073,6 +1112,35 @@ jobs:
               exit 1
             fi
             echo "ok: $apk lib/$abi/libfushi_compute.so"
+          done
+        done
+
+    # 同上，fushi_rwkv（RWKV 排程推理，硬依赖）：逐包、逐 ABI 核对。
+    - name: Verify fushi_rwkv is packaged in every APK ABI
+      if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      working-directory: fushi
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        apks=(build/release-artifacts/fushi-*.apk)
+        if [ "${#apks[@]}" -eq 0 ]; then
+          echo "::error title=No APK to verify::build/release-artifacts has no fushi-*.apk"
+          exit 1
+        fi
+        for apk in "${apks[@]}"; do
+          listing="$(unzip -Z1 "$apk")"
+          abis="$(printf '%s\n' "$listing" | sed -n 's#^lib/\([^/]*\)/libflutter\.so$#\1#p' | sort -u)"
+          if [ -z "$abis" ]; then
+            echo "::error title=APK has no Flutter engine::$apk has no lib/<abi>/libflutter.so"
+            exit 1
+          fi
+          for abi in $abis; do
+            if ! grep -qx "lib/$abi/libfushi_rwkv.so" <<< "$listing"; then
+              echo "::error title=fushi_rwkv missing from APK::$apk lib/$abi/ has no libfushi_rwkv.so"
+              exit 1
+            fi
+            echo "ok: $apk lib/$abi/libfushi_rwkv.so"
           done
         done
 
@@ -1652,6 +1720,9 @@ jobs:
     # fushi_engine）都要 Linux .so；这一步编好并导出 FUSHI_COMPUTE_LIB。
     - name: Build fushi_compute (Linux .so)
       uses: ./.github/actions/setup-fushi-compute
+    # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+    - name: Build fushi_rwkv (Linux .so)
+      uses: ./.github/actions/setup-fushi-rwkv
 
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'

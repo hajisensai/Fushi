@@ -86,6 +86,9 @@ jobs:
       # 计算内核 fushi_compute 是硬依赖：先编 Windows DLL、导出 FUSHI_COMPUTE_LIB 给 flutter_tester。
       - name: Build fushi_compute (Windows DLL)
         uses: ./.github/actions/setup-fushi-compute
+      # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+      - name: Build fushi_rwkv (Windows DLL)
+        uses: ./.github/actions/setup-fushi-rwkv
       - name: Run golden tests
         working-directory: fushi
         run: flutter test --no-pub --tags golden test/goldens
