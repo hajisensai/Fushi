@@ -876,7 +876,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 一致；绝不删条目本身）。返回删除的合集行数。同事务写合集级删除墓碑（空哨兵行，
   /// schema v40 防对端并集同步复活），并清本合集残留成员墓碑（合集已删，成员墓碑
   /// 无意义；留着会误杀日后重建同名合集时对端的成员）。
-  Future<int> deleteMediaCollection(int id) => transaction(() async {
+  ///
+  /// [deletedAt]（缺省 now）：合集级墓碑时刻。整理收敛在同步基线推进后删败方时传
+  /// 「严格晚于基线」的值——同毫秒的墓碑会被下一轮判成旧闻（v124）。
+  Future<int> deleteMediaCollection(int id, {int? deletedAt}) =>
+      transaction(() async {
         final MediaCollectionRow? col = await getMediaCollectionById(id);
         await _carryCollectionPrivacyToMembers(
           id,
@@ -904,7 +908,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             collectionType: col.collectionType,
             mediaType: FushiDatabase.collectionTombstoneSentinel,
             entryKey: FushiDatabase.collectionTombstoneSentinel,
-            deletedAt: DateTime.now().millisecondsSinceEpoch,
+            deletedAt: deletedAt ?? DateTime.now().millisecondsSinceEpoch,
             // v124：带上分组键——键若已被别的活合集吸收（合并）就只是去向记录，
             // 否则就是用户拒绝了这个分组（spec §5.2）。
             organizeKey: col.organizeKey,

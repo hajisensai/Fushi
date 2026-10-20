@@ -231,11 +231,19 @@ Future<List<ConvergenceCollection>> loadConvergenceCollections(
 /// 在本机执行收敛。返回被并掉的合集数。
 ///
 /// 合并走 [mergeMediaCollectionsInto]（`userIntent: false`：不把胜方转成用户的；
-/// 跳过胜方里用户移出过的成员）。
-Future<int> convergeOrganizedCollections(FushiDatabase db) async {
+/// 跳过胜方里用户移出过的成员）。[notBeforeMs]：败方删除墓碑时刻至少取它（同步后
+/// 调用时传「新基线 + 1」，保证删除对下一轮是新闻）。
+Future<int> convergeOrganizedCollections(
+  FushiDatabase db, {
+  int? notBeforeMs,
+}) async {
   final List<ConvergenceMerge> plan = planOrganizeConvergence(
     await loadConvergenceCollections(db),
   );
+  if (plan.isEmpty) return 0;
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  final int stamp =
+      notBeforeMs != null && notBeforeMs > now ? notBeforeMs : now;
   int merged = 0;
   for (final ConvergenceMerge m in plan) {
     merged += await mergeMediaCollectionsInto(
@@ -244,6 +252,7 @@ Future<int> convergeOrganizedCollections(FushiDatabase db) async {
       sourceIds: m.sourceIds,
       userIntent: false,
       skipTombstonedInTarget: true,
+      deletedAt: stamp,
     );
   }
   if (merged > 0) {

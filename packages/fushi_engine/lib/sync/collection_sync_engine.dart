@@ -824,11 +824,21 @@ Future<int> applyCollectionLocalChanges(
     dissolved,
     ownedImagePaths: dissolvedImagePaths,
   );
-  // v124（AI 整理库 spec §8.4）：对端带来的同系列整理器合集在本机合成一个。
-  // 胜方只看 wire 字段，各端独立算出同一个；合并经下一轮同步照常传播。
-  await convergeOrganizedCollections(db);
   return changes.changedCollections;
 }
+
+/// 合集同步一轮**推进基线之后**调：把对端带来的同系列整理器合集在本机合成一个
+/// （v124，AI 整理库 spec §8.4，[convergeOrganizedCollections]）。
+///
+/// 必须在基线推进之后，且败方墓碑时刻**严格晚于**刚写下的基线 [baselineMs]：只有
+/// 晚于基线才是「新闻」，下一轮同步才会把删除推给对端；早于或同毫秒时墓碑被判成
+/// 旧闻、对端的活副本「重建胜」，败方复活又被并掉，两端永远来回。调用方须持与落盘
+/// 同一把同步状态锁。
+Future<int> convergeCollectionsAfterSync(
+  FushiDatabase db, {
+  required int baselineMs,
+}) =>
+    convergeOrganizedCollections(db, notBeforeMs: baselineMs + 1);
 
 /// 一条墓碑的知识：移出墙钟 [removedAt] + 首次进共享清单的发布戳 [publishedAt]
 /// （null = 本端尚未发布，一律视为新闻）。

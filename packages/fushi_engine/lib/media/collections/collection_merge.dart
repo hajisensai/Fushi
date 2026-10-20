@@ -12,7 +12,8 @@ import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 /// - 走 raw 版加成员：行值可能是对端未知种类，tryParse 丢弃会静默丢成员；
 /// - 目标合集里用户移出过的成员（成员墓碑）**不**并回来：加成员会清墓碑，等于替
 ///   用户撤销移出（[skipTombstonedInTarget]）；
-/// - [userIntent] 为 false（AI 整理、收敛）时不把目标合集转成用户所有。
+/// - [userIntent] 为 false（AI 整理、收敛）时不把目标合集转成用户所有；
+/// - [deletedAt]：源合集删除墓碑时刻（缺省 now，见 [FushiDatabase.deleteMediaCollection]）。
 ///
 /// 目标不存在、或源与目标重合的 id 跳过。返回实际解散的源合集数。
 Future<int> mergeMediaCollectionsInto(
@@ -21,6 +22,7 @@ Future<int> mergeMediaCollectionsInto(
   required Iterable<int> sourceIds,
   bool userIntent = true,
   bool skipTombstonedInTarget = false,
+  int? deletedAt,
 }) async {
   final MediaCollectionRow? target = await db.getMediaCollectionById(targetId);
   if (target == null) return 0;
@@ -54,7 +56,7 @@ Future<int> mergeMediaCollectionsInto(
       );
     }
     await db.absorbOrganizeIdentity(targetId: targetId, source: source);
-    await deleteMediaCollectionWithAssets(db, sourceId);
+    await deleteMediaCollectionWithAssets(db, sourceId, deletedAt: deletedAt);
     merged++;
   }
   return merged;

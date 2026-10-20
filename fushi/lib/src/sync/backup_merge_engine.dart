@@ -635,10 +635,18 @@ class BackupMergeEngine {
         !await _srcTableExists('media_collection_items')) {
       return; // 迁移前的旧备份无合集表：无可合并。
     }
+    // v124：来源 / 分组键 / 别名随合集走。正常导入时备份库已迁到当前 schema；
+    // 手搓的旧 schema 源库缺这几列就按默认（user / 无键）落库。
+    final bool srcHasOrganize = await _srcColumnExists(
+      'media_collections',
+      'organize_aliases',
+    );
     final List<QueryRow> srcCols = await _db
         .customSelect(
           'SELECT id, name, collection_type, cover_source, sort_order, '
-          'created_at FROM $_srcAlias.media_collections',
+          'created_at'
+          '${srcHasOrganize ? ', origin, organize_key, organize_aliases' : ''} '
+          'FROM $_srcAlias.media_collections',
         )
         .get();
     if (srcCols.isEmpty) return;
@@ -753,8 +761,9 @@ class BackupMergeEngine {
               : srcCover;
       final int newId = await _db.customInsert(
         'INSERT INTO media_collections '
-        '(name, collection_type, cover_source, sort_order, created_at) '
-        'VALUES (?, ?, ?, ?, ?)',
+        '(name, collection_type, cover_source, sort_order, created_at, '
+        'origin, organize_key, organize_aliases) '
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         variables: <Variable<Object>>[
           Variable<String>(name),
           Variable<String>(type),
@@ -762,6 +771,17 @@ class BackupMergeEngine {
           Variable<String>(coverForInsert),
           Variable<int>(nextSort++),
           Variable<int>(c.read<int>('created_at')),
+          Variable<String>(
+            srcHasOrganize
+                ? c.read<String>('origin')
+                : CollectionOrigin.user.dbValue,
+          ),
+          Variable<String>(
+            srcHasOrganize ? c.read<String?>('organize_key') : null,
+          ),
+          Variable<String>(
+            srcHasOrganize ? c.read<String>('organize_aliases') : '',
+          ),
         ],
       );
       srcToTargetId[srcId] = newId;
@@ -851,6 +871,14 @@ class BackupMergeEngine {
         )
         .getSingle();
     return row.read<int>('m') + 1;
+  }
+
+  /// src(备份)库的 [table] 是否有 [column] 列。
+  Future<bool> _srcColumnExists(String table, String column) async {
+    final List<QueryRow> rows = await _db
+        .customSelect('PRAGMA $_srcAlias.table_info($table)')
+        .get();
+    return rows.any((QueryRow r) => r.read<String>('name') == column);
   }
 
   /// src(备份)库是否有名为 [table] 的表（防旧备份缺合集表时 SELECT 崩溃）。
@@ -1729,6 +1757,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'srs_cards_cache',
       // v121：本机已冻结批次留存（多目录同步），与本机写入者绑定，同属设备本地。
       'srs_sent_batches',
+      // v124：AI 整理记录，设备本地。
+      'library_organize_runs',
+      'library_organize_changes',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →
