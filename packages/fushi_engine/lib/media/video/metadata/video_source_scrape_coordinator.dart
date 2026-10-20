@@ -2164,7 +2164,7 @@ class VideoSourceScrapeCoordinator
       await deleteMediaCollectionWithAssets(database, collection.id);
     } else {
       for (final String uid in splitUids) {
-        await database.removeFromCollection(collection.id, MediaKind.video, uid);
+        await database.removeFromCollection(collection.id, MediaKind.video, uid, userIntent: false);
       }
       await _store.removeCollectionOwnedWork(collection.id);
       await database.deleteCollectionScrapeMeta(collection.id);
@@ -2423,7 +2423,7 @@ class VideoSourceScrapeCoordinator
     final int newId =
         await database.createMediaCollection(name, collectionType: 'playlist');
     for (final VideoBookRow member in group.members) {
-      await database.addToCollection(newId, MediaKind.video, member.bookUid);
+      await database.addToCollection(newId, MediaKind.video, member.bookUid, userIntent: false);
     }
     final MediaCollectionRow row =
         (await database.getMediaCollectionById(newId))!;

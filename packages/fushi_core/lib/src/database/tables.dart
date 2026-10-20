@@ -1112,6 +1112,26 @@ class MediaCollections extends Table {
   /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
   /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致。
   TextColumn get subtitleReleaseGroup => text().nullable()();
+
+  /// 合集由谁建 / 归谁管（schema v124，AI 整理库 spec
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md` §5.1）：
+  /// `user`（用户或其它非整理器路径建的，整理器永不改它）/ `rule`（规则归组器）/
+  /// `ai`（AI 整理）/ `folder`（目录自动合集）。**只升不降**：`ai` / `rule` 合集一旦
+  /// 被用户编辑（加减成员、改名、手动排序、合并）就转成 `user`，跨端同步按秩取大
+  /// （[collectionOriginRank]），所以转过的永远转不回来。迁移时存量行一律 `user`、
+  /// `sourceFolderPath` 非空的回填 `folder`——分不清的宁可当用户的。
+  TextColumn get origin => text().withDefault(const Constant('user'))();
+
+  /// 整理分组身份键（schema v124，spec §6）：同一个系列在每台设备上算出同一个键
+  /// （外部 id 键 `anilist:` / `tmdb:` / `vndb:`，否则原语言标题归一化键 `t:`）。
+  /// 整理收敛（`organize_convergence.dart`）按它把各端各自建的同系列合集认成一个。
+  /// NULL = 不是整理器建的、也没从整理合集转来。
+  TextColumn get organizeKey => text().nullable()();
+
+  /// 本合集吸收过的其它分组键（schema v124，spec §8.3）：换行分隔、字典序、去重。
+  /// 只增不删（跨端按并集合并）：合并掉的合集即使被旧对端复活，它的键也仍指向本合集，
+  /// 下一轮收敛照样并回来。空串 = 没吸收过。
+  TextColumn get organizeAliases => text().withDefault(const Constant(''))();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────
@@ -1178,6 +1198,13 @@ class CollectionMemberTombstones extends Table {
 
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
   IntColumn get deletedAt => integer()();
+
+  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键（schema
+  /// v124，spec §5.2）。键不在任何活合集的 [MediaCollections.organizeKey] /
+  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个 AI 分组（删了或撤销
+  /// 了），任何设备上的 AI 都不再建它；键在某个活合集的别名里 = 只是被合并掉了。
+  /// 成员墓碑行恒 NULL。
+  TextColumn get organizeKey => text().nullable()();
 
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
@@ -3573,4 +3600,62 @@ class MediaPrivacyFlags extends Table {
 
   @override
   Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
+// ── library_organize_runs / library_organize_changes（AI 整理记录，schema v124）──
+// spec `docs/specs/2026-10-20-ai-library-organize-design.md` §5.3：本机这一次整理
+// 做了什么，供「整理记录」页与撤销用。**设备本地**：不同步、不进备份——别的设备有
+// 自己的记录，撤销的结果经合集墓碑 / 拒绝键跨端传播。
+@DataClassName('LibraryOrganizeRunRow')
+class LibraryOrganizeRuns extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// `CollectionShelfDomain.name`：books / manga / video / games。
+  TextColumn get domain => text()();
+
+  /// `manual` | `auto`。
+  TextColumn get trigger => text()();
+
+  IntColumn get startedAt => integer()();
+  IntColumn get finishedAt => integer().nullable()();
+
+  /// `running` | `done` | `failed` | `cancelled` | `skipped`。
+  TextColumn get status => text()();
+
+  TextColumn get providerName => text().withDefault(const Constant(''))();
+  TextColumn get model => text().withDefault(const Constant(''))();
+  IntColumn get requestCount => integer().withDefault(const Constant(0))();
+  IntColumn get inputTokens => integer().withDefault(const Constant(0))();
+  IntColumn get outputTokens => integer().withDefault(const Constant(0))();
+
+  /// 失败 / 跳过的脱敏原因码（`AiChatFailure.message` 或本地原因）；成功为 NULL。
+  TextColumn get error => text().nullable()();
+}
+
+@DataClassName('LibraryOrganizeChangeRow')
+class LibraryOrganizeChanges extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  IntColumn get runId => integer()
+      .references(LibraryOrganizeRuns, #id, onDelete: KeyAction.cascade)();
+
+  /// `create` | `add` | `merge` | `evict` | `tag`。
+  TextColumn get kind => text()();
+
+  /// 改动落在哪个合集（自然键；改名 / 合并后按记录时的名字找）。
+  TextColumn get collectionName => text()();
+  TextColumn get collectionType => text()();
+  TextColumn get organizeKey => text().nullable()();
+
+  /// `rule` | `ai`：这一处是规则定的还是 AI 定的。
+  TextColumn get source => text()();
+
+  /// `high` | `medium`（规则恒 high）。
+  TextColumn get confidence => text()();
+
+  /// 撤销所需的全部细节（JSON）：成员清单、被合并合集的快照、标签名等。
+  TextColumn get payloadJson => text()();
+
+  /// 撤销时刻；NULL = 未撤销。
+  IntColumn get undoneAt => integer().nullable()();
 }

@@ -23,6 +23,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart'
@@ -2682,21 +2683,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (name == null || !mounted) return;
     final int targetId = choice.targetId;
-    // 复查 #6（TOCTOU）：成员快照上面是在命名确认框「之前」取的，框开着期间若有新成员
-    // 同步进源合集，用旧快照迁移会漏掉这些新成员，随后 deleteMediaCollection 把它们连
-    // 同源合集一起删掉 → 分组丢失。确认后、迁移前对每个源合集「重取」最新成员再迁移，
-    // addToCollection 幂等去重，重复成员无副作用。
-    for (final int id in collectionIds) {
-      if (id == targetId) continue;
-      final List<MediaCollectionItemRow> members = await db.getCollectionItems(
-        id,
-      );
-      for (final MediaCollectionItemRow m in members) {
-        // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
-        await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
-      }
-      await deleteMediaCollectionWithAssets(db, id);
-    }
+    // 复查 #6（TOCTOU）：确认框开着期间同步进源合集的新成员，由合并入口按源合集
+    // 当前成员行搬家一并带上。
+    await mergeMediaCollectionsInto(
+      db,
+      targetId: targetId,
+      sourceIds: collectionIds,
+    );
     for (final ShelfEntryRef ref in refs) {
       await db.addToCollection(targetId, ref.mediaType, ref.entryKey);
     }

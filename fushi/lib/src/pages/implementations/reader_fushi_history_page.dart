@@ -83,6 +83,7 @@ import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.da
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';

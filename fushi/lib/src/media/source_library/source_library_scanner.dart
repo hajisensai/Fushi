@@ -1879,7 +1879,7 @@ class SourceLibraryScanner {
       if (item.mediaType != video || item.entryKey != stale.bookUid) continue;
       if (liveCollections.add(item.collectionId)) {
         await _db.addToCollection(
-            item.collectionId, MediaKind.video, live.bookUid);
+            item.collectionId, MediaKind.video, live.bookUid, userIntent: false);
       }
     }
     await _videoRepo.deleteVideoBooks(<String>[stale.bookUid]);

@@ -165,6 +165,15 @@ class BookSeriesGrouper {
       final int id = await _database.createMediaCollection(
         name,
         collectionType: 'playlist',
+        // v124（AI 整理库 spec §6）：规则建的合集归整理器管，分组键与 AI 整理同一
+        // 口径（系列名折叠），日文书 AI 给出的原名与它一致时天然认成一个。
+        origin: CollectionOrigin.rule,
+        organizeKey: titleOrganizeKey(
+          volumes.first.shelf == 'manga'
+              ? CollectionShelfDomain.manga.name
+              : CollectionShelfDomain.books.name,
+          name,
+        ),
       );
       created.add(id);
       collection = (await _database.getMediaCollectionById(id))!;
@@ -175,7 +184,12 @@ class BookSeriesGrouper {
     for (final _Volume v in volumes) {
       for (final _Member m in v.members) {
         if (removed.contains('${m.kind.dbValue}|${m.tombstoneKey}')) continue;
-        await _database.addToCollection(collection.id, m.kind, m.uid);
+        await _database.addToCollection(
+          collection.id,
+          m.kind,
+          m.uid,
+          userIntent: false,
+        );
         added = true;
       }
     }
