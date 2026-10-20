@@ -25,6 +25,13 @@ class BackgroundBorrowLedger {
   /// 当前未归还的借用数。
   int get inFlight => _inFlight.length;
 
+  /// 登记一段不借查询句柄、但同样映射着词典文件的后台工作（如 redirect 标记迁移的
+  /// 整本扫描）：[settled] 一并等它结束，「释放映射后再删 / 覆盖文件」照样成立。
+  Future<T> track<T>(Future<T> work) {
+    _track(work.then<void>((_) {}, onError: (Object _, StackTrace __) {}));
+    return work;
+  }
+
   /// 登记一个进行中的借用；[done] 完成（无论成功失败）即视为已归还。
   void _track(Future<void> done) {
     _inFlight.add(done);

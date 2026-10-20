@@ -146,20 +146,43 @@ void main() {
   }
 
   group('searchDictionary wires the kanji query', () {
-    test('searchDictionary computes kanji results and attaches them', () {
+    // 查词整段（含汉字桶）在后台查词 isolate 里跑：app 侧只判定「是不是单个汉字」
+    // 并随请求带过去，查汉字桶、挂到词条结果、纯汉字结果都在 background_lookup.dart。
+    late String worker;
+
+    setUpAll(() {
+      worker = File(
+        '../packages/fushi_dictionary/lib/src/engine/background_lookup.dart',
+      ).readAsStringSync();
+    });
+
+    test('searchDictionary asks for the kanji bucket only for a single kanji',
+        () {
       // `_searchRemoteDictionary` is the method immediately after
-      // `searchDictionary`, bounding its source region.
+      // `searchDictionary` (+ its local helper), bounding its source region.
       final String body = regionBetween(
         appModel,
         'Future<DictionarySearchResult> searchDictionary(',
         'Future<DictionarySearchResult?> _searchRemoteDictionary(',
       );
       expect(
-        body.contains('queryKanjiForTerm('),
+        body.contains('includeKanji: isSingleKanji(searchTerm),'),
         isTrue,
         reason:
-            'searchDictionary must query the kanji bucket for a '
-            'single-kanji lookup',
+            'must gate the kanji query on isSingleKanji so multi-char '
+            'terms and kana/latin singletons skip it',
+      );
+    });
+
+    test('the background lookup queries the kanji bucket and attaches it', () {
+      final int start = worker.indexOf('FushiLookupOutcome _computeLookupOutcome(');
+      expect(start, greaterThanOrEqualTo(0));
+      final String body = worker.substring(start);
+      expect(
+        body.contains('request.includeKanji') &&
+            body.contains('FushiDicts._queryKanjiWith('),
+        isTrue,
+        reason: 'must call the FFI queryKanji for a real single kanji',
       );
       expect(
         body.contains('withKanjiResults('),
@@ -174,25 +197,6 @@ void main() {
         reason:
             'a kanji-only lookup (no term match) must still return a '
             'result carrying the kanji card',
-      );
-    });
-
-    test('queryKanjiForTerm only queries the engine for a single kanji', () {
-      final String body = bodyOf(
-        appModel,
-        'List<FushiKanjiResult> queryKanjiForTerm(',
-      );
-      expect(
-        body.contains('isSingleKanji('),
-        isTrue,
-        reason:
-            'must gate the engine call on isSingleKanji so multi-char '
-            'terms and kana/latin singletons skip the kanji query',
-      );
-      expect(
-        body.contains('FushiDicts.instance.queryKanji('),
-        isTrue,
-        reason: 'must call the FFI queryKanji for a real single kanji',
       );
     });
   });

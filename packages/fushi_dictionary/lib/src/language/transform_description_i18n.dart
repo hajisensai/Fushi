@@ -23,8 +23,18 @@ class TransformDescriptionCatalog {
 
   static String? _localeTag;
 
+  /// 每次 [apply] / [clear] +1。后台查词 isolate（`FushiDicts.lookupInBackground`）
+  /// 有自己的一份静态表，靠比对这个代次决定要不要把当前译文表同步过去。
+  static int _revision = 0;
+
   /// 当前生效的译文语言标签（`zh-CN` 之类）；没装载译文时为 null。
   static String? get localeTag => _localeTag;
+
+  /// 译文表代次，见 [_revision]。
+  static int get revision => _revision;
+
+  /// 当前译文表（不可变）。只给需要把它带过 isolate 边界的调用方用。
+  static Map<String, String> get translations => _translations;
 
   /// 装载某个界面语言的译文表。再次调用直接整表替换（换界面语言即时生效，无需重启，
   /// 也不必重新初始化词典引擎——引擎里那份 JSON 始终是英文原文）。
@@ -34,12 +44,14 @@ class TransformDescriptionCatalog {
   }) {
     _localeTag = localeTag;
     _translations = Map<String, String>.unmodifiable(translations);
+    _revision++;
   }
 
   /// 卸载译文，回落英文原文（界面语言切到英文、或该语言没有译文资产时）。
   static void clear() {
     _localeTag = null;
     _translations = const <String, String>{};
+    _revision++;
   }
 
   /// 英文原文 → 译文；查不到原样返回。
