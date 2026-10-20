@@ -105,6 +105,7 @@ class _ContentSyncBackend implements SyncBackend {
   int contentUploadAttempts = 0;
   int cacheClearCalls = 0;
   int syncFileListCalls = 0;
+  int listChildrenCalls = 0;
   int statsWrites = 0;
   int audioBookWrites = 0;
   final List<String> contentLookups = <String>[];
@@ -315,9 +316,19 @@ class _ContentSyncBackend implements SyncBackend {
   @override
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
+
+  /// 书文件夹的直接子项：已存在的书文件 + JSON sidecar（无快照时补缺路径列一次）。
   @override
-  Future<List<AssetEntry>> listChildren(String namespaceId) async =>
-      throw UnimplementedError();
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    listChildrenCalls++;
+    return <AssetEntry>[
+      for (final String name in contentFiles.keys)
+        AssetEntry(id: 'content:$name', name: name),
+      for (final String name in jsonAssets.keys)
+        AssetEntry(id: 'json:$name', name: name),
+    ];
+  }
+
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
@@ -712,15 +723,17 @@ void main() {
   );
 
   test(
-    'content upload failure is reported instead of a successful no-op',
+    'content upload failure is reported as contentError, not swallowed',
     () async {
       backend.failContentUpload = true;
 
       final SyncBookResult result = await syncBook();
 
-      expect(result.direction, SyncResult.skipped);
-      expect(result.error, 'simulated content upload failure');
-      expect(classifySyncApply(result), SyncApplyOutcome.failed);
+      // 进度判定（未读 = synced）照实；补传失败单独上报，编排器把它计入报告错误。
+      expect(result.direction, SyncResult.synced);
+      expect(result.error, isNull);
+      expect(result.contentError, 'simulated content upload failure');
+      expect(classifySyncApply(result), SyncApplyOutcome.noop);
       expect(backend.contentUploadAttempts, 1);
       expect(backend.contentUploads, isEmpty);
       expect(backend.contentFiles, isEmpty);
@@ -749,8 +762,9 @@ void main() {
     expect(result.conflictDimension, 'progress');
     expect(result.conflictLocalVersion, 120);
     expect(result.conflictRemoteVersion, 100);
-    expect(result.error, 'simulated content upload failure');
-    expect(classifySyncApply(result), SyncApplyOutcome.failed);
+    expect(result.error, isNull);
+    expect(result.contentError, 'simulated content upload failure');
+    expect(classifySyncApply(result), SyncApplyOutcome.noop);
     expect(backend.contentUploadAttempts, 1);
     expect(backend.cacheClearCalls, 0);
     expect(backend.contentUploads, isEmpty);
@@ -808,8 +822,12 @@ void main() {
       expect(result.conflictDimension, 'progress');
       expect(result.conflictLocalVersion, 120);
       expect(result.conflictRemoteVersion, 100);
-      expect(result.error, contains('simulated generic failure after retry'));
-      expect(classifySyncApply(result), SyncApplyOutcome.failed);
+      expect(result.error, isNull);
+      expect(
+        result.contentError,
+        contains('simulated generic failure after retry'),
+      );
+      expect(classifySyncApply(result), SyncApplyOutcome.noop);
       expect(backend.cacheClearCalls, 1);
       expect(backend.contentUploadAttempts, 2);
       expect(backend.contentUploads, isEmpty);
@@ -833,8 +851,9 @@ void main() {
       expect(result.error, isNull);
       expect(backend.cacheClearCalls, 1);
       expect(backend.contentUploadAttempts, 1);
+      // 重试时没有快照：列一次目录就看到已存好的 EPUB，不再探针、不再上传。
+      expect(backend.listChildrenCalls, 2);
       expect(backend.contentLookups, <String>[
-        '${sanitizeTtuFilename(_title)}.epub',
         '${sanitizeTtuFilename(_title)}.epub',
       ]);
       _expectUploadedEpub(backend);
@@ -859,9 +878,14 @@ void main() {
 
       final SyncBookResult result = await syncBook();
 
-      expect(result.direction, SyncResult.skipped);
-      expect(result.error, 'simulated content upload failure');
-      expect(classifySyncApply(result), SyncApplyOutcome.failed);
+      // 进度已落地：结果照实为导入 / 导出（对比弹窗按它判「已应用」），上传失败另报。
+      expect(
+        result.direction,
+        importing ? SyncResult.imported : SyncResult.exported,
+      );
+      expect(result.error, isNull);
+      expect(result.contentError, 'simulated content upload failure');
+      expect(classifySyncApply(result), SyncApplyOutcome.applied);
       expect(backend.contentUploadAttempts, 1);
       expect(backend.contentUploads, isEmpty);
       final int landedTimestamp = importing ? 100 : 120;
@@ -906,5 +930,67 @@ void main() {
     final Map<String, Object?> reader =
         backend.jsonAssets[kSyncMangaReaderAssetName]! as Map<String, Object?>;
     expect(reader['overrides'], <String, Object?>{'readingDirection': 'ltr'});
+  });
+
+  // 书文件夹元数据只随导出写：未读的书补上了 EPUB，下载端却永远读不到标签 / CSS /
+  // 漫画阅读设置。补缺路径只写远端缺的，已有的不覆盖（覆盖仍只归导出方向）。
+  test('unread book fills missing remote sidecars, never overwrites', () async {
+    await _seedLocalSidecars(db, book);
+    backend.jsonAssets
+      ..remove(kSyncBookTagsAssetName)
+      ..remove(kSyncMangaReaderAssetName);
+
+    final SyncBookResult result = await syncBook();
+
+    expect(result.direction, SyncResult.synced);
+    expect(result.contentError, isNull);
+    _expectUploadedEpub(backend);
+    expect(backend.jsonWrites.toSet(), <String>{
+      kSyncBookTagsAssetName,
+      kSyncMangaReaderAssetName,
+    });
+    expect(
+      backend.jsonAssets[kSyncBookCssAssetName],
+      _remoteSidecars[kSyncBookCssAssetName],
+      reason: 'the remote CSS sidecar already existed and must stay as is',
+    );
+    expect(backend.progressWrites, isEmpty);
+  });
+
+  // 没有列举快照（WebDAV / FTP / 单本同步）时每本书列一次目录，而不是逐个文件探针。
+  test(
+    'without a snapshot one folder listing replaces per-file probes',
+    () async {
+      backend.contentFiles['${sanitizeTtuFilename(_title)}.epub'] = <int>[1];
+
+      final SyncBookResult result = await syncBook();
+
+      expect(result.direction, SyncResult.synced);
+      expect(backend.listChildrenCalls, 1);
+      expect(backend.contentLookups, isEmpty);
+      expect(backend.contentUploadAttempts, 0);
+    },
+  );
+
+  // 书文件夹里的原始有声书音频没有任何读取方（下载端只认 .epub / .fushiaudio），
+  // 有声书音频由 .fushiaudio 包负责：补缺路径不再往书文件夹传音频。
+  test('book folder repair never uploads raw audiobook audio', () async {
+    final File audio = File(p.join(temporaryDirectory.path, 'ch1.mp3'))
+      ..writeAsBytesSync(<int>[1, 2, 3]);
+    await db.upsertAudiobook(
+      AudiobooksCompanion.insert(
+        bookKey: book.bookKey,
+        alignmentFormat: 'srt',
+        alignmentPath: 'alignment.srt',
+        audioPathsJson: Value(jsonEncode(<String>[audio.path])),
+      ),
+    );
+
+    await syncBook();
+
+    expect(
+      backend.contentUploads.map((_ContentUpload u) => u.fileName),
+      <String>['${sanitizeTtuFilename(_title)}.epub'],
+    );
   });
 }

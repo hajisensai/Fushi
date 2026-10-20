@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show audiobookPositionAtPrefKey;
 import 'package:fushi_engine/sync/manga_sync_package.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart' show AssetEntry;
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -17,7 +18,6 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
-import 'package:fushi_audio/fushi_audio.dart' show AudiobookStorage;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/epub_repackage.dart';
@@ -74,12 +74,18 @@ class SyncBookResult {
     this.conflictDimension,
     this.conflictLocalVersion,
     this.conflictRemoteVersion,
+    this.contentError,
   });
 
   final SyncResult direction;
   final String title;
   final int? characterCount;
   final String? error;
+
+  /// 进度已判定（[direction] 照实）之后，补传书文件 / 元数据失败的原因。与 [error]
+  /// 分开：内容失败不能把已落地的导入 / 导出改判成失败（[classifySyncApply] 不看它），
+  /// 由编排器单独计入报告的错误。
+  final String? contentError;
 
   // Populated only when `direction == SyncResult.conflict`. The local/remote
   // versions are the diverging progress timestamps; downstream UI uses them
@@ -88,6 +94,18 @@ class SyncBookResult {
   final String? conflictDimension;
   final int? conflictLocalVersion;
   final int? conflictRemoteVersion;
+
+  SyncBookResult withContentError(String message) => SyncBookResult(
+    direction: direction,
+    title: title,
+    characterCount: characterCount,
+    error: error,
+    conflictAssetKey: conflictAssetKey,
+    conflictDimension: conflictDimension,
+    conflictLocalVersion: conflictLocalVersion,
+    conflictRemoteVersion: conflictRemoteVersion,
+    contentError: message,
+  );
 }
 
 /// 单本书一次同步的归类结果：成功应用 / 真失败 / 良性空操作。
@@ -160,19 +178,15 @@ class SyncManager {
     RemoteListingSnapshot? listing,
   }) async {
     SyncBookResult? progressResult;
+    // 进度已判定后才失败 = 失败的是补传书文件 / 元数据：保留已落地的进度结果（导入 /
+    // 导出 / 冲突都照实上报），失败原因记进 contentError；进度判定前就失败才是整本失败。
     SyncBookResult failure(String error) {
-      final SyncBookResult? conflict =
-          progressResult?.direction == SyncResult.conflict
-              ? progressResult
-              : null;
+      final SyncBookResult? decided = progressResult;
+      if (decided != null) return decided.withContentError(error);
       return SyncBookResult(
-        direction: conflict == null ? SyncResult.skipped : SyncResult.conflict,
+        direction: SyncResult.skipped,
         title: book.title,
         error: error,
-        conflictAssetKey: conflict?.conflictAssetKey,
-        conflictDimension: conflict?.conflictDimension,
-        conflictLocalVersion: conflict?.conflictLocalVersion,
-        conflictRemoteVersion: conflict?.conflictRemoteVersion,
       );
     }
 
@@ -344,17 +358,19 @@ class SyncManager {
     onProgressResult(result);
 
     // 阅读进度与书文件是独立维度：未读 / 同进度 / 进度冲突都不能证明远端
-    // 已有 EPUB。只补缺失的文件，不改进度或覆盖 sidecar；仅导入模式禁止上传。
+    // 已有 EPUB。只补缺失的文件，不改进度、不覆盖已有 sidecar；仅导入模式禁止上传。
     // 放在进度落地之后，文件上传失败也不会阻断已确定的进度与基线更新。
-    if (syncContent && !importOnly) {
+    // 互联文件箱只有本 client 写、host 从不读回：书内容走 live 端点，这里一律不传
+    // （单本同步路径 —— 退出书 / 对比弹窗 —— 也传 syncContent，门必须在这里）。
+    if (syncContent && !importOnly && !_fileBoxIsClientOwned) {
       await _exportContentIfMissing(
         book: book,
         folderId: folderId,
-        remoteFileNames: listing?.entriesOf(assetKey)
-                .where((entry) => !entry.isFolder)
-                .map((entry) => entry.name)
-                .toSet() ??
-            const <String>{},
+        remoteFileNames: listing
+            ?.entriesOf(assetKey)
+            .where((AssetEntry entry) => !entry.isFolder)
+            .map((AssetEntry entry) => entry.name)
+            .toSet(),
       );
     }
     return result;
@@ -838,8 +854,9 @@ class SyncManager {
       // BUG-162: 导出不再回写精确缓存（ttuCharOffset 列已删）；本地阅读位置不变，无需写库。
     }
 
-    // 权威 sidecar 仍只随导出写入；不能因补传文件覆盖冲突 / 导入方向的元数据。
-    if (syncContent) {
+    // 权威 sidecar 只随导出覆盖写入；补传路径只补缺失的（见 [_exportContentIfMissing]），
+    // 不能覆盖冲突 / 导入方向的元数据。互联文件箱无人读，不写。
+    if (syncContent && !_fileBoxIsClientOwned) {
       await _exportBookMetadata(book: book, folderId: folderId);
     }
 
@@ -852,11 +869,25 @@ class SyncManager {
 
   // ── Content file sync ─────────────────────────────────────────────
 
+  /// 补齐远端书文件夹里缺失的书文件与元数据 sidecar（与阅读进度无关）。
+  ///
+  /// [remoteFileNames] 是本轮列举快照里这本书文件夹的文件名；`null` = 没有快照（WebDAV /
+  /// FTP / 单本同步路径），此时在确有东西要补时列一次目录，而不是逐个文件探针。快照
+  /// 说缺的 EPUB 上传前再实时确认一次（快照可能早于同轮的并发上传 / 重试，避免传出
+  /// 两份）。书文件夹里只放 EPUB（漫画包同名）与 sidecar：读取方
+  /// （`importRemoteBookFolder` / 对比弹窗）只认 `.epub` 与 `.fushiaudio`，有声书音频由
+  /// `.fushiaudio` 包负责，原始音频文件不往这里传。
   Future<void> _exportContentIfMissing({
     required EpubBookRow book,
     required String folderId,
-    required Set<String> remoteFileNames,
+    required Set<String>? remoteFileNames,
   }) async {
+    Set<String>? names = remoteFileNames;
+    Future<Set<String>> remoteNames() async => names ??= <String>{
+      for (final AssetEntry e in await _backend.listChildren(folderId))
+        if (!e.isFolder) e.name,
+    };
+
     // Export EPUB. There is NO standalone .epub on disk — books are stored
     // extracted, and book.epubPath is only the original filename (it never
     // resolves to a real file, so the old `File(book.epubPath).existsSync()`
@@ -865,18 +896,22 @@ class SyncManager {
     final BookFormat format = BookFormat.parseOrEpub(book.format);
     // PDF 无内容同步通道（与互联侧 _syncBooksContentLive 同判据）：不打包、不上传。
     // 在线小说占位书（LNReader）不上传：对端拿到的会是一本补不全的书。
-    if (format != BookFormat.pdf &&
+    // 漫画先判本地有没有可导出的页（在线漫画占位书没有）再问远端，否则这类书每轮
+    // 白发一次探针（与互联 books.part 同顺序）。
+    final bool exportable =
+        format != BookFormat.pdf &&
         !isLnReaderOnlineBookMetadata(book.sourceMetadata) &&
         book.extractDir.isNotEmpty &&
-        Directory(book.extractDir).existsSync()) {
+        Directory(book.extractDir).existsSync() &&
+        (format != BookFormat.manga ||
+            hasExportableMangaContent(book.extractDir));
+    if (exportable) {
       // 漫画包与 EPUB 共用同一个资产名 `<title>.epub`——与互联通道同契约（扩展名
       // 不参与判定，内容即真相，导入侧 isMangaPackage 嗅探分流）。云盘侧因此不需
       // 要第二套命名：内容探针 / getRemoteBook / 对比弹窗的「远端有无内容」判据
       // 全部零改。
       final fileName = '${sanitizeTtuFilename(book.title)}.epub';
-      // 快照已确认存在的文件无需逐本再探针；快照缺席 / 未命中时仍实时检查，
-      // 避免同轮并发上传或重试产生重复文件。
-      if (!remoteFileNames.contains(fileName) &&
+      if (!(await remoteNames()).contains(fileName) &&
           await _backend.findContentFile(folderId, fileName) == null) {
         final Directory tmpDir =
             Directory.systemTemp.createTempSync('fushi_epub_export');
@@ -904,30 +939,27 @@ class SyncManager {
       }
     }
 
-    // Export audio files
-    final audioPaths = await _resolveAudioPaths(book.bookKey);
-    for (final audioPath in audioPaths) {
-      final audioFile = File(audioPath);
-      if (!audioFile.existsSync()) continue;
-      final audioName = p.basename(audioPath);
-      if (remoteFileNames.contains(audioName) ||
-          await _backend.findContentFile(folderId, audioName) != null) {
-        continue;
-      }
-      await _backend.uploadContentFile(
-        folderId: folderId,
-        fileName: audioName,
-        file: audioFile,
-        onProgress: onContentProgress,
-      );
-    }
+    // 书文件夹元数据：只补远端缺的，已有的绝不覆盖（覆盖写只归导出方向，见
+    // [_exportBookMetadata]）。此前它们只随导出写：未读的书 EPUB 补上了，下载端
+    // （importRemoteBookFolder）却永远读不到标签 / 自定义 CSS / 漫画阅读设置。
+    await _exportBookMetadata(
+      book: book,
+      folderId: folderId,
+      skip: (String assetName) async =>
+          (await remoteNames()).contains(assetName),
+    );
   }
 
   /// 只在已决定导出时发布可变元数据；缺失文件修复不拥有这些 sidecar。
+  ///
+  /// [skip] 非空时逐个 sidecar 问一次：返回 true 就不写（补缺路径用它跳过远端已有的）。
   Future<void> _exportBookMetadata({
     required EpubBookRow book,
     required String folderId,
+    Future<bool> Function(String assetName)? skip,
   }) async {
+    Future<bool> wanted(String assetName) async =>
+        skip == null || !await skip(assetName);
     // TODO-1165 / tags 稳健档：书标签 sidecar（LWW-element-set v2）。标签每设备本地，
     // 跨设备按名带、落地端按名归一。与内容同属「书文件夹元数据」，同受 syncContent 门控
     // （本方法仅在 syncContent 开时被 _handleExport 调用）。putJsonAsset 覆盖写权威全量
@@ -938,7 +970,8 @@ class SyncManager {
         await _db.bookTagAddedAtByName(book.bookKey);
     final Map<String, int> tagTombstones =
         await _db.tagTombstonesByName(book.bookKey, MediaKind.epub);
-    if (tagAddedAt.isNotEmpty || tagTombstones.isNotEmpty) {
+    if ((tagAddedAt.isNotEmpty || tagTombstones.isNotEmpty) &&
+        await wanted(kSyncBookTagsAssetName)) {
       await _backend
           .putJsonAsset(folderId, kSyncBookTagsAssetName, <String, Object?>{
         'schemaVersion': 2,
@@ -951,7 +984,7 @@ class SyncManager {
     // per-book 自定义 CSS sidecar（LWW by updatedAt）。用户改写的书内 CSS 存 book_css.json
     // 权威全量快照（含重置墓碑 deleted），供他端按 updatedAt 取较新落地。有行才写。
     final List<BookCustomCssRow> cssRows = await _db.getBookCssRows(book.uid);
-    if (cssRows.isNotEmpty) {
+    if (cssRows.isNotEmpty && await wanted(kSyncBookCssAssetName)) {
       await _backend
           .putJsonAsset(folderId, kSyncBookCssAssetName, <String, Object?>{
         'schemaVersion': 1,
@@ -968,7 +1001,7 @@ class SyncManager {
 
     final MangaReaderOverrideRow? readerOverride =
         await _db.getMangaReaderOverride(book.uid);
-    if (readerOverride != null) {
+    if (readerOverride != null && await wanted(kSyncMangaReaderAssetName)) {
       await _backend.putJsonAsset(
         folderId,
         kSyncMangaReaderAssetName,
@@ -980,41 +1013,6 @@ class SyncManager {
         },
       );
     }
-  }
-
-  Future<List<String>> _resolveAudioPaths(String bookKey) async {
-    final row = await _db.getAudiobookByBookKey(bookKey);
-    if (row == null) return const [];
-
-    if (row.audioPathsJson != null) {
-      // HBK-AUDIT-138: a malformed audioPathsJson row must not throw an
-      // unguarded Format/CastError that aborts content sync for the book.
-      // Parse defensively and fall through to the audioRoot scan on failure.
-      try {
-        final dynamic decoded = jsonDecode(row.audioPathsJson!);
-        if (decoded is List) {
-          return decoded.whereType<String>().toList();
-        }
-      } on FormatException catch (e) {
-        debugPrint('[sync] audioPathsJson decode failed for book $bookKey: $e');
-      }
-    }
-
-    if (row.audioRoot != null) {
-      final dir = Directory(row.audioRoot!);
-      if (dir.existsSync()) {
-        final paths = dir
-            .listSync()
-            .whereType<File>()
-            .where((f) => AudiobookStorage.isAudioFile(f.path))
-            .map((f) => f.path)
-            .toList()
-          ..sort();
-        return paths;
-      }
-    }
-
-    return const [];
   }
 
   // ── Statistics merge ──────────────────────────────────────────────

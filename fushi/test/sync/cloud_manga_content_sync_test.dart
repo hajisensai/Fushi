@@ -77,6 +77,11 @@ class _RecordingBackend implements SyncBackend {
           String folderId, String fileName) async =>
       null; // 远端还没有内容资产 → push 侧必须打包上传。
 
+  /// 补缺路径没有快照时列一次书文件夹：远端还是空的。
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async =>
+      const <AssetEntry>[];
+
   @override
   Future<void> uploadContentFile({
     required String folderId,

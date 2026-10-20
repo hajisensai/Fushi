@@ -684,6 +684,13 @@ class SyncOrchestrator {
       report.errors.add('books: $e');
     }
     _collectConflicts(bookResults, report);
+    // 进度已落地、补传书文件 / 元数据失败的书：单独进报告（进度结果照实，不改判失败）。
+    for (final SyncBookResult result in bookResults) {
+      final String? contentError = result.contentError;
+      if (contentError != null) {
+        report.errors.add('books: ${result.title}: $contentError');
+      }
+    }
 
     // 生产侧的自动 sweep 恒传 [syncDictionary]=false（两条通道的词典都改由设置页的
     // 显式上传 / 下载驱动，见 [runAssetTransferOnly]，BUG-2762）；这里只剩编排器自身
@@ -1643,7 +1650,12 @@ class SyncOrchestrator {
         final String bookKey = book.bookKey;
         final AudiobookRow? ab = await _db.getAudiobookByBookKey(bookKey);
         final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
-        final bool hasLocal = ab != null && srt != null;
+        // 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
+        // 这本书永远不再补传（与互联 BUG-2551 同判据）。
+        final bool hasLocal = ab != null &&
+            srt != null &&
+            await audiobookAudioIsIntact(
+                audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot);
 
         final String folderId = await _backend.ensureBookFolder(
           bookTitle: book.title,
