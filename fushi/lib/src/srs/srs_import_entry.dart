@@ -398,6 +398,8 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_sync_backend_unsupported,
   SrsSyncReportError(message: kSrsSyncDirectoryIdentityUnavailable) =>
     t.srs_sync_directory_unidentified,
+  SrsSyncReportError(message: kSrsSyncStoreUnavailable) =>
+    t.srs_sync_store_unavailable,
   _ => friendlySyncErrorDetail(error),
 };
 

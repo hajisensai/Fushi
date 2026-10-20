@@ -302,6 +302,32 @@ void main() {
       expect(r.errors.last, same(unreachable));
     });
 
+    test('立即同步：本机 SRS 副本打不开时如实报未同步，不算成功、也不说成没配置', () async {
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => null,
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(LocalDirectoryAssetStore(root));
+          return (ran: 1, errors: const <Object>[]);
+        },
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(root),
+          ),
+        ],
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+      );
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.ran, 0);
+      expect(r.unconfigured, isFalse);
+      expect(
+        r.errors.map((Object e) => (e as SrsSyncReportError).message),
+        <String>[kSrsSyncStoreUnavailable, kSrsSyncStoreUnavailable],
+      );
+    });
+
     test('立即同步：没有通道也没有本机目录 = 没配置', () async {
       final SrsSyncNowResult r = await scheduler(
         channels: (Future<void> Function(SyncAssetStore) body) async =>

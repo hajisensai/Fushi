@@ -6662,6 +6662,7 @@
   "srs_sync_no_backend": "No sync service is set up",
   "srs_sync_now": "Sync now",
   "srs_sync_setup_body": "Review data syncs along with cloud sync (Sync & backup) and Fushi Interconnect; there is no separate switch. Neither is set up on this device yet.",
+  "srs_sync_store_unavailable": "SRS data isn't open on this device right now",
   "srs_value_no": "No",
   "srs_value_yes": "Yes",
   "srs_visual_add_field": "Add field",

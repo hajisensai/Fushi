@@ -46,6 +46,13 @@ void main() {
     );
   });
 
+  test('本机 SRS 副本打不开：给人话原因', () {
+    expect(
+      srsSyncErrorReason(const SrsSyncReportError(kSrsSyncStoreUnavailable)),
+      t.srs_sync_store_unavailable,
+    );
+  });
+
   test('全部成功：提示已同步', () {
     final ({String msg, ToastSeverity severity}) toast = srsSyncNowToast(
       const SrsSyncNowResult(ran: 2),

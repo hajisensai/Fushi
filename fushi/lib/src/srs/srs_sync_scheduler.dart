@@ -46,6 +46,9 @@ const String kSrsSyncServerTimeUnavailable = 'server time unavailable';
 const String kSrsSyncDirectoryIdentityUnavailable =
     'directory identity unavailable';
 
+/// 本机的 SRS 副本此刻打不开（模块关着 / 还在打开 / 调度器已卸下）：这一轮没同步。
+const String kSrsSyncStoreUnavailable = 'srs store unavailable';
+
 /// 已配对设备往本机 host 的 SRS 目录写入后，等这么久没有新写入再跑一次本机目录。
 /// 一轮客户端同步会连写探针 / 批次 / cursor 几个文件，去抖把它们并成一次。
 const Duration kSrsHostWriteDebounce = Duration(seconds: 3);
@@ -207,20 +210,23 @@ class SrsSyncScheduler {
     return run;
   }
 
-  /// 用一个已认证后端跑一轮（常规同步的通道后置步骤直接调它）。store 打不开时返回 null。
+  /// 用一个已认证后端跑一轮（常规同步的通道后置步骤直接调它）。store 打不开（或调度器已卸下）
+  /// 时这一轮没跑，报告带 [kSrsSyncStoreUnavailable]——「立即同步」据此如实报未同步，不算成功。
   /// [directoryKey] 缺省时按后端算（[directoryKeyOf]）。
-  Future<SrsSyncReport?> syncWithBackend(
+  Future<SrsSyncReport> syncWithBackend(
     SyncAssetStore backend, {
     String? directoryKey,
   }) => _serially(() => _syncWithBackend(backend, directoryKey));
 
-  Future<SrsSyncReport?> _syncWithBackend(
+  Future<SrsSyncReport> _syncWithBackend(
     SyncAssetStore backend,
     String? directoryKey,
   ) async {
-    if (_disposed) return null;
+    if (_disposed) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
     final SrsDbStore? store = await _readStore();
-    if (store == null || _disposed) return null;
+    if (store == null || _disposed) {
+      return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+    }
     final String? key = directoryKey ?? await _directoryKeyOf(backend);
     if (key == null) {
       // 同一个物理目录换了个身份就会被当成新目录（重新起步、可能全量重发）：宁可这轮不同步。
@@ -284,7 +290,7 @@ class SrsSyncScheduler {
     final ({int ran, List<Object> errors}) channels = await _channels((
       SyncAssetStore backend,
     ) async {
-      final String? error = (await syncWithBackend(backend))?.error;
+      final String? error = (await syncWithBackend(backend)).error;
       if (error != null) {
         reportFailures++;
         errors.add(SrsSyncReportError(error));
@@ -310,7 +316,7 @@ class SrsSyncScheduler {
         final String? error = (await syncWithBackend(
           d.store,
           directoryKey: d.directoryKey,
-        ))?.error;
+        )).error;
         if (error != null) {
           errors.add(SrsSyncReportError(error));
         } else {
