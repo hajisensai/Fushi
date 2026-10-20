@@ -298,9 +298,10 @@ List<List<String>> chunkOrganizeEntries(List<OrganizeEntry> entries) {
   return out;
 }
 
-/// 用当前事实把一块成员行键还原成请求块：条目 + 相关合集（成员所在的整理器合集、
-/// 名字与块内标题有共同二字组的合集，按相关度取前 [kAiOrganizeMaxCollectionsPerRequest]）。
-/// 块里的条目都已不在（被删 / 进了用户合集）时返回 null。
+/// 用当前事实把一块成员行键还原成请求块：条目 + 合集。本域合集不超过
+/// [kAiOrganizeMaxCollectionsPerRequest] 个时全部带上——跨语言 / 繁简不同的合集名与块内
+/// 标题未必有共同字，正是要 AI 认的；超过时先带成员所在的整理器合集，再按与块内标题
+/// 共有二字组的多少取前若干。块里的条目都已不在（被删 / 进了用户合集）时返回 null。
 OrganizeChunk? buildOrganizeChunk(
   LibraryOrganizeFacts facts,
   List<String> memberKeys,
@@ -311,6 +312,9 @@ OrganizeChunk? buildOrganizeChunk(
       if (wanted.contains(e.memberKey)) e,
   ];
   if (entries.isEmpty) return null;
+  if (facts.collections.length <= kAiOrganizeMaxCollectionsPerRequest) {
+    return OrganizeChunk(entries: entries, collections: facts.collections);
+  }
   final Set<int> required = <int>{
     for (final OrganizeEntry e in entries)
       if (e.managedCollectionId != null) e.managedCollectionId!,
@@ -323,7 +327,6 @@ OrganizeChunk? buildOrganizeChunk(
       if (!required.contains(c.id))
         (c, _bigrams(c.name).where(grams.contains).length),
   ]
-    ..removeWhere(((OrganizeCollectionFact, int) s) => s.$2 == 0)
     ..sort(((OrganizeCollectionFact, int) a, (OrganizeCollectionFact, int) b) {
       final int c = b.$2.compareTo(a.$2);
       return c != 0 ? c : a.$1.id.compareTo(b.$1.id);
