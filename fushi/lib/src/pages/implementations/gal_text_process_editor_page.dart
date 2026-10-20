@@ -164,8 +164,42 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     final String id = _draftPipeline.nextIdFor(kind);
     _replaceSteps(<GalTextProcessStep>[
       ..._steps,
-      GalTextProcessStep(id: id, kind: kind),
+      defaultGalTextProcessStep(id, kind),
     ]);
+  }
+
+  /// 草稿换回 [kGalDefaultTextProcessPipeline]。存过管线的游戏不会自动拿到新的默认
+  /// 步骤表，这是它们回到默认的唯一入口；同样只改草稿，保存才生效。
+  void _resetToDefaults() => _replaceSteps(
+    List<GalTextProcessStep>.of(kGalDefaultTextProcessPipeline.steps),
+  );
+
+  /// 把 AI 建议并进草稿：不允许重复的种类若草稿里已有一步（默认步骤表里通常都有，
+  /// 只是关着），**就地**换成建议的参数并打开，而不是在末尾再挂一张同名卡——那样
+  /// 用户会看到两张「去除花括号注音」，一开一关，顺序还跟默认表对不上。
+  List<GalTextProcessStep> _mergeAiSteps(List<GalTextProcessStep> suggested) {
+    final List<GalTextProcessStep> next = List<GalTextProcessStep>.of(_steps);
+    for (final GalTextProcessStep step in suggested) {
+      final int existing = step.kind.allowsDuplicates
+          ? -1
+          : next.indexWhere((GalTextProcessStep s) => s.kind == step.kind);
+      if (existing < 0) {
+        next.add(step);
+        continue;
+      }
+      next[existing] = GalTextProcessStep(
+        id: next[existing].id,
+        kind: step.kind,
+        enabled: step.enabled,
+        repeatCount: step.repeatCount,
+        lineCount: step.lineCount,
+        fromEnd: step.fromEnd,
+        pattern: step.pattern,
+        replacement: step.replacement,
+        isRegex: step.isRegex,
+      );
+    }
+    return next;
   }
 
   /// 「item[from] 移到最终下标 to」——[FushiReorderableColumn] 的契约。
@@ -254,7 +288,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       }
       // 追加进**草稿**，不落盘：AI 给的规则和手写的一样，要先看预览再决定保不保存。
       setState(() {
-        _steps = <GalTextProcessStep>[..._steps, ...suggestion.steps];
+        _steps = _mergeAiSteps(suggestion.steps);
         _aiMessage = t.game_text_process_ai_added(
           count: suggestion.steps.length,
         );
@@ -595,14 +629,25 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
                   _buildStepCard(tokens, _steps[index], index, _steps.length),
             ),
           SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('gtp-add-step'),
-              onPressed: _promptAddStep,
-              icon: const FushiIcon(Icons.add),
-              label: Text(t.game_text_process_add_step),
-            ),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('gtp-add-step'),
+                onPressed: _promptAddStep,
+                icon: const FushiIcon(Icons.add),
+                label: Text(t.game_text_process_add_step),
+              ),
+              FushiTextButton.icon(
+                key: const ValueKey<String>('gtp-reset-defaults'),
+                onPressed: _draftPipeline == kGalDefaultTextProcessPipeline
+                    ? null
+                    : _resetToDefaults,
+                icon: const FushiIcon(Icons.restart_alt),
+                label: Text(t.game_text_process_reset_defaults),
+              ),
+            ],
           ),
           if (_hasAutoDedupe) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
@@ -961,7 +1006,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     GalTextProcessKind.filterAsciiPunctuation =>
       t.game_text_process_kind_filter_ascii_punctuation,
     GalTextProcessKind.keepJapaneseQuotes =>
-      t.game_text_process_kind_keep_japanese_quotes,
+      t.game_text_process_kind_strip_outside_quotes,
     GalTextProcessKind.stripCurlyBraces =>
       t.game_text_process_kind_strip_curly_braces,
     GalTextProcessKind.normalizeWidth =>
@@ -994,9 +1039,9 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
     GalTextProcessKind.filterAsciiPunctuation =>
       t.game_text_process_kind_filter_ascii_punctuation_desc,
     GalTextProcessKind.keepJapaneseQuotes =>
-      t.game_text_process_kind_keep_japanese_quotes_desc,
+      t.game_text_process_kind_strip_outside_quotes_desc,
     GalTextProcessKind.stripCurlyBraces =>
-      t.game_text_process_kind_strip_curly_braces_desc,
+      t.game_text_process_kind_strip_curly_braces_detail,
     GalTextProcessKind.normalizeWidth =>
       t.game_text_process_kind_normalize_width_desc,
     GalTextProcessKind.takeLines => t.game_text_process_kind_take_lines_desc,
