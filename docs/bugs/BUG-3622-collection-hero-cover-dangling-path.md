@@ -1,0 +1,6 @@
+## BUG-3622 · 系列封面路径悬空时详情页 hero 不回落到刮削封面
+- **报告**：2026-10-20（用户：「刚刚清理了所有刮削内容然后又刮了一次，有的系列封面图出不来」）
+- **真实性**：✅ 真 bug。安装版库拷贝：用户把剧集目录从 `D:\smb\<剧名>\` 挪进 `D:\smb\动漫\<剧名>\`，合集 11/12/13/26 的 `media_collections.cover_path` 仍指向旧位置 `D:\smb\<剧名>\poster.jpg`（文件已不存在）；重刮后 `video_metadata_images` 有 work 级 `cover` 行（TMDB `remote_url`，`local_path` NULL）。库页合集卡 `_buildCollectionCover`（`fushi/lib/src/pages/implementations/home_video_page.dart:6568`）对合集封面判了 `existsSync`，会落到刮削封面；详情页 `_heroCover`（`fushi/lib/src/pages/implementations/media_collection_detail_page.dart:816`，修前）只判非空，直接返回指向不存在文件的 FileImage，后面的刮削本地图 / 刮削远程图 / 成员封面回退全被挡掉，hero 封面空白。刮削本地图 `local_path` 与成员 `cover_path` 两级同样只判非空。
+- **[x] ① 根因修复** — `_heroCover` 每一级本地路径都经 `_existingLocalCover`（非空且文件存在）才采用，与库页合集卡同一条判据（`media_collection_detail_page.dart:832-884`）。
+- **[x] ② 自动化测试** — `fushi/test/pages/collection_hero_scrape_meta_test.dart`「合集封面路径悬空 → 详情页 hero 回落到刮削的规范封面」：合集封面与刮削本地图都悬空时，hero 封面必须是刮削远程 URL。修前代码上该用例红（拿到 FileImage），修后绿。同文件三条旧用例给 `cover_path` 写的是不存在的假路径、却断言出封面卡（恰好依赖本 bug），改成临时目录里的真实文件。
+- **备注**：重刮**不会**自愈悬空的 `cover_path`——`_writeLegacyImages`（`packages/fushi_engine/lib/media/video/metadata/video_source_scrape_coordinator.dart:4466-4478`）只在 `cover_path` 为空或指向「未改动的生成产物」时覆盖，文件不存在时 `isUnmodifiedGeneratedArtifact` 返回 false。本修复只保证展示层回退；悬空列本身由用户「恢复默认封面」清掉。同一现场的分集重复是 BUG-2979 存量数据（来源最后一次扫描在修复之前），重扫「动漫」来源即归并。
