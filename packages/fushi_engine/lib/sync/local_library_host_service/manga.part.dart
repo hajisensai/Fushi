@@ -205,8 +205,11 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// `serveFileWithRange`（与已下载页同一条响应路径，Range / Content-Type 不分叉）。
   ///
   /// 临时文件按 (bookKey, 章, 页) 定名、同页复用：对端翻回来不重复打源站。文件在
-  /// 系统临时目录下，由系统回收，不进书目录（那是「已下载」的判据，混进去会让半章
-  /// 冒充下载完成）。
+  /// [onlineMangaPageCacheRoot] 下、按章有界保留（[pruneOnlineMangaPageCache]），
+  /// 不进书目录（那是「已下载」的判据，混进去会让半章冒充下载完成）。
+  ///
+  /// 同一页的并发请求（阅读器显示 + 预取、或两台对端）合并成一次现取：各自落盘再
+  /// 改名会让两路在同一个目标上打架（Windows 上暂存文件还开着时改名直接拒绝）。
   Future<File> _onlineChapterPageFile(
     EpubBookRow row,
     String chapterDigest,
@@ -221,22 +224,34 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
     final Directory dir = Directory(
       p.join(
-        Directory.systemTemp.path,
-        'fushi_interconnect_manga',
+        onlineMangaPageCacheRoot().path,
         mangaChapterDigest(row.bookKey),
         chapterDigest,
       ),
     );
-    if (dir.existsSync()) {
-      for (final FileSystemEntity entity in dir.listSync()) {
-        if (entity is File &&
-            p.basenameWithoutExtension(entity.path) == '$index' &&
-            p.extension(entity.path) != '.part' &&
-            entity.lengthSync() > 0) {
-          return entity;
-        }
+    final File? cached = _cachedOnlinePage(dir, index);
+    if (cached != null) return cached;
+    // 判缓存与登记在途之间没有 await：同一 isolate 内这两步是原子的。
+    final String key = p.join(dir.path, '$index');
+    final Future<File>? running = _onlinePageFetches[key];
+    if (running != null) return running;
+    final Future<File> fetch = _fetchOnlinePage(source, row, dir, index);
+    _onlinePageFetches[key] = fetch;
+    try {
+      return await fetch;
+    } finally {
+      if (identical(_onlinePageFetches[key], fetch)) {
+        _onlinePageFetches.remove(key);
       }
     }
+  }
+
+  Future<File> _fetchOnlinePage(
+    _OnlineChapterSource source,
+    EpubBookRow row,
+    Directory dir,
+    int index,
+  ) async {
     final Uint8List bytes;
     try {
       bytes = await source.reader.chapterPage(
@@ -251,13 +266,46 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     if (bytes.isEmpty) {
       throw StateError('online manga page is empty: ${row.bookKey}#$index');
     }
-    await dir.create(recursive: true);
+    if (!dir.existsSync()) {
+      await dir.create(recursive: true);
+      // 新开一章才清一次：每页都扫整棵缓存树不值。
+      pruneOnlineMangaPageCache(onlineMangaPageCacheRoot(), keep: dir);
+    }
     final File file = File(
       p.join(dir.path, '$index${onlineMangaPageExtension(bytes)}'),
     );
-    final File staging = File('${file.path}.part');
+    // 暂存名带进程内唯一后缀：同进程的并发已在上面合并，这里防的是另一个进程
+    // （同机另开的 host）同时写同一页。扩展名仍是 `.part`，[_cachedOnlinePage] 不认。
+    final File staging = File(
+      '${file.path}.$pid-${DateTime.now().microsecondsSinceEpoch}-'
+      '${_onlinePageStagingSeq++}.part',
+    );
     await staging.writeAsBytes(bytes, flush: true);
-    return staging.rename(file.path);
+    try {
+      return await staging.rename(file.path);
+    } on FileSystemException {
+      // 另一个进程先产出了同一页（目标在、非空，且可能正被它 serve 着，Windows
+      // 上覆盖会被拒）：那份就是这一页，丢掉自己的暂存用它。其余情况照常抛。
+      if (file.existsSync() && file.lengthSync() > 0) {
+        await staging.delete();
+        return file;
+      }
+      rethrow;
+    }
+  }
+
+  /// [dir] 里第 [index] 页已落好的缓存文件（暂存 `.part` 与空文件不算）。
+  File? _cachedOnlinePage(Directory dir, int index) {
+    if (!dir.existsSync()) return null;
+    for (final FileSystemEntity entity in dir.listSync()) {
+      if (entity is File &&
+          p.extension(entity.path) != '.part' &&
+          p.basenameWithoutExtension(entity.path) == '$index' &&
+          entity.lengthSync() > 0) {
+        return entity;
+      }
+    }
+    return null;
   }
 
   /// [chapterDigest] 对应的、可由本机运行时现取的章；取不了一律 [StateError] → 404。
@@ -324,6 +372,12 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     );
   }
 }
+
+/// 在途的现取页（键 = 缓存目录 + 页号）：同页并发请求共用一次现取。缓存目录是
+/// 进程级共享的，所以这张表也是进程级的，而不是挂在某个 host 服务实例上。
+final Map<String, Future<File>> _onlinePageFetches = <String, Future<File>>{};
+
+int _onlinePageStagingSeq = 0;
 
 typedef _OnlineChapterSource = ({
   OnlineMangaHostReader reader,

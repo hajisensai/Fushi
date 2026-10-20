@@ -503,6 +503,45 @@ void main() {
       );
     });
 
+    test('现取页缓存按章有界：只留最近的章，当前章必留，删空的书目录', () {
+      final Directory root = Directory(p.join(tmp.path, 'page_cache'));
+      final DateTime base = DateTime(2026, 1, 1);
+      Directory chapter(String book, String name, int minute) {
+        final Directory dir = Directory(p.join(root.path, book, name))
+          ..createSync(recursive: true);
+        File(p.join(dir.path, '0.png'))
+          ..writeAsBytesSync(<int>[1])
+          ..setLastModifiedSync(base.add(Duration(minutes: minute)));
+        return dir;
+      }
+
+      // 书 a 的两章最旧，书 b 的六章较新；当前章 = a 的最旧一章。
+      final Directory current = chapter('a', 'c0', 0);
+      chapter('a', 'c1', 1);
+      for (int i = 0; i < 6; i++) {
+        chapter('b', 'c$i', 10 + i);
+      }
+      pruneOnlineMangaPageCache(root, keep: current, keepChapters: 4);
+      List<String> remaining(String book) {
+        final Directory dir = Directory(p.join(root.path, book));
+        if (!dir.existsSync()) return const <String>[];
+        return dir
+            .listSync()
+            .map((FileSystemEntity e) => p.basename(e.path))
+            .toList()
+          ..sort();
+      }
+
+      expect(remaining('a'), <String>['c0']);
+      expect(remaining('b'), <String>['c3', 'c4', 'c5']);
+
+      // 当前章换到书 b 后，书 a 删空即整目录删掉。
+      final Directory next = chapter('b', 'c6', 20);
+      pruneOnlineMangaPageCache(root, keep: next, keepChapters: 3);
+      expect(Directory(p.join(root.path, 'a')).existsSync(), isFalse);
+      expect(remaining('b'), <String>['c4', 'c5', 'c6']);
+    });
+
     test('运行时不认领的条目（iOS host / 二跳互联）照旧只给已下载的章', () async {
       reader.serves = false;
       await insertOnlineManga(
