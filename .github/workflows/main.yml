@@ -497,9 +497,34 @@ jobs:
       with:
         name: fushi-test-native-linux-x64
         path: native
+    # faster-testing 下 flutter_tester 偶发 SIGSEGV（exit 245；PR #2422 五轮里两次，第二次是
+    # 一批 suite 全部跑完、报告 done 之前，即进程收尾销毁各 suite 的 isolate / 引擎时）。
+    # 开 core dump，失败时由下面的 backtrace 步骤打全线程原生栈，看是哪个原生库。
+    - name: Enable core dumps
+      run: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
+      run: |
+        ulimit -c unlimited
+        dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden --experimental-faster-testing --concurrency=1 --max-suites-per-run=400
+    - name: Native backtrace of a crashed flutter_tester
+      if: failure()
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        cores=(/tmp/core.*)
+        if [ "${#cores[@]}" -eq 0 ]; then
+          echo "No core dump (the failure was not a native crash)."
+          exit 0
+        fi
+        sudo apt-get install -y -qq gdb > /dev/null
+        tester="$FLUTTER_ROOT/bin/cache/artifacts/engine/linux-x64/flutter_tester"
+        for core in "${cores[@]}"; do
+          echo "::group::$core"
+          gdb -batch -q -ex 'info sharedlibrary' -ex 'thread apply all bt 40' "$tester" "$core" 2>&1 || true
+          echo "::endgroup::"
+        done
 
     # 逐 suite 耗时的唯一来源：tool/update_suite_timings.dart 读这些事件日志刷新
     # tool/test_flow/suite_timings.json（--file-shard 按它均衡各片）。失败时也传，排障用。
