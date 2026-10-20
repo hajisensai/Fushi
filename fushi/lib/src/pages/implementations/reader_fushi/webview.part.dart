@@ -38,6 +38,26 @@ class _ReaderResourceResponse {
 extension _ReaderWebView on _ReaderFushiPageState {
   // ── URL & Resource Serving (mirrors Hoshi Android's fushi.local scheme) ──
 
+  /// 悬停查词背压的宿主侧显式释放（[ReaderSelectionScripts.hoverLookupSettledInvocation]）。
+  /// fire-and-forget：半销毁 WebView 上 eval 抛 MissingPluginException 时就地记日志——
+  /// 那时 JS 上下文也已随之作废，没有要释放的东西。
+  void _settleHoverLookupJs(
+    InAppWebViewController controller,
+    String invocation,
+  ) {
+    try {
+      controller.evaluateJavascript(source: invocation).catchError((
+        Object e,
+        StackTrace s,
+      ) {
+        ErrorLogService.instance.log('ReaderFushi.hoverLookupSettle', e, s);
+        return null;
+      });
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.hoverLookupSettle', e, stack);
+    }
+  }
+
   String _chapterUrl(int index) {
     if (_book == null || index < 0 || index >= _book!.chapters.length) {
       return 'about:blank';
@@ -1718,6 +1738,55 @@ $kContinuousWheelScrollJs
     _handlePagedWheelTick(e);
   }, {passive: false});
   var _shiftHoverLastX = -1, _shiftHoverLastY = -1;
+  // 查词卡顿（P0-2）：悬停查词原先三跳——mousemove → onShiftHover 进 Dart → Dart
+  // evaluateJavascript(selectText) 回 JS → 选中后 onTextSelected 再进 Dart。宿主那一跳
+  // 没有任何门控（onShiftHover 回调只是原样转发 selectText(x, y, 400, true)），所以与
+  // 点按快路（BUG-712）一样在 JS 里直接选词，只留 onTextSelected 一跳。
+  //
+  // 背压：一帧最多选一次（rAF 合并）；onTextSelected 发出后、宿主处理完（callHandler 的
+  // Promise 兑现）之前不再发新查词，只记最后一个指针位置；回执到达后若还挂着位置就补发
+  // 那一个。同一个词内的移动由 selectText 自己的 fromHover 同词短路吃掉，不占回执。
+  //
+  // 释放有两条独立的路，按 onTextSelected 的序号（payload.selectedSeq）对账：
+  //   ① 回执：callHandler 的 Promise 兑现或拒绝；
+  //   ② 宿主显式释放：Dart 的 onTextSelected 回调处理完（成功、失败、异常都在 finally 里）
+  //      调 window.__fushiHoverLookupSettled(seq)。
+  // 只靠 ①，平台把那个 Promise 弄丢（通道重建、handler 摘除）时悬停查词就永久卡死；有了
+  // ②，任一条先到就释放。序号不匹配的释放（上一次的迟到回执）一律忽略，不会放掉新一次。
+  var _fushiHoverLookupX = 0, _fushiHoverLookupY = 0;
+  var _fushiHoverLookupPending = false;
+  var _fushiHoverLookupFrame = false;
+  // 正在等的 onTextSelected 序号；0 = 没有在飞的悬停查词。
+  var _fushiHoverLookupAwaitSeq = 0;
+  function _fushiHoverLookupSchedule() {
+    if (_fushiHoverLookupFrame || _fushiHoverLookupAwaitSeq !== 0 || !_fushiHoverLookupPending) return;
+    _fushiHoverLookupFrame = true;
+    requestAnimationFrame(_fushiHoverLookupFlush);
+  }
+  function _fushiHoverLookupRelease(seq) {
+    if (_fushiHoverLookupAwaitSeq === 0 || seq !== _fushiHoverLookupAwaitSeq) return;
+    _fushiHoverLookupAwaitSeq = 0;
+    _fushiHoverLookupSchedule();
+  }
+  window.__fushiHoverLookupSettled = function(seq) {
+    _fushiHoverLookupRelease(seq);
+  };
+  function _fushiHoverLookupFlush() {
+    _fushiHoverLookupFrame = false;
+    if (_fushiHoverLookupAwaitSeq !== 0 || !_fushiHoverLookupPending) return;
+    _fushiHoverLookupPending = false;
+    var sel = window.fushiSelection;
+    var gate = window.__fushiTapGate;
+    var before = sel.textSelectedSeq || 0;
+    sel.selectText(_fushiHoverLookupX, _fushiHoverLookupY, (gate && gate.maxLen) || 400, true);
+    var fired = sel.textSelectedSeq || 0;
+    if (fired === before) return;
+    var ack = sel.lastTextSelectedAck;
+    if (!ack || typeof ack.then !== 'function') return;
+    _fushiHoverLookupAwaitSeq = fired;
+    var settle = function() { _fushiHoverLookupRelease(fired); };
+    ack.then(settle, settle);
+  }
   document.addEventListener('mousemove', function(e) {
     // BUG-2508：宿主腿活着的平台上本腿让路（macOS 上这里本来也收不到事件）。
     if (window.__fushiHostHoverLookup) return;
@@ -1727,6 +1796,13 @@ $kContinuousWheelScrollJs
     var dx = e.clientX - _shiftHoverLastX, dy = e.clientY - _shiftHoverLastY;
     if (dx * dx + dy * dy < 64) return;
     _shiftHoverLastX = e.clientX; _shiftHoverLastY = e.clientY;
+    if (window.fushiSelection && typeof window.fushiSelection.selectText === 'function') {
+      _fushiHoverLookupX = e.clientX; _fushiHoverLookupY = e.clientY;
+      _fushiHoverLookupPending = true;
+      _fushiHoverLookupSchedule();
+      return;
+    }
+    // 选区脚本未就绪：退回宿主转发链，行为与旧实现一致。
     window.flutter_inappwebview.callHandler('onShiftHover', e.clientX, e.clientY);
   }, {passive: true});
   // TODO-1078：桌面 Windows 阅读器裸 Space 被 WebView2 吞成 Chromium 默认
@@ -2207,9 +2283,13 @@ updateLive: function(patch) {
           handlerName: 'onTextSelected',
           callback: (args) async {
             if (args.isEmpty) return;
+            String? hoverSettle;
             try {
               final Map<String, dynamic> payload =
                   jsonDecode(args[0] as String) as Map<String, dynamic>;
+              hoverSettle = ReaderSelectionScripts.hoverLookupSettledInvocation(
+                payload,
+              );
               await _handleTextSelected(ReaderSelectionData.fromJson(payload));
             } catch (e, stack) {
               ErrorLogService.instance.log(
@@ -2218,6 +2298,11 @@ updateLive: function(patch) {
                 stack,
               );
               debugPrint('[ReaderFushi] onTextSelected error: $e');
+            } finally {
+              // 悬停查词背压的显式释放：不只靠本回调返回时 callHandler 的 Promise。
+              if (hoverSettle != null) {
+                _settleHoverLookupJs(controller, hoverSettle);
+              }
             }
           },
         );

@@ -20,6 +20,8 @@ class ReaderSelectionData {
     this.mangaSentenceGroup,
     this.audioCuePayload,
     this.fromHover = false,
+    this.carriesLyricsCueContext = false,
+    this.lyricsCueContext,
   });
 
   factory ReaderSelectionData.fromJson(Map<String, dynamic> json) {
@@ -48,6 +50,8 @@ class ReaderSelectionData {
       mangaSentenceGroup: (json['mangaSentenceGroup'] as num?)?.toInt(),
       audioCuePayload: json['audioCuePayload'] as String?,
       fromHover: json['fromHover'] as bool? ?? false,
+      carriesLyricsCueContext: json.containsKey('lyricsCueContext'),
+      lyricsCueContext: _readStringKeyedMap(json['lyricsCueContext']),
     );
   }
 
@@ -115,6 +119,22 @@ class ReaderSelectionData {
   ///
   /// 宿主据此把这次查词记成 `LookupOrigin.hover`。旧 payload 没有该字段 = false。
   final bool fromHover;
+
+  /// payload 是否带了 `lyricsCueContext` 键（歌词文档在选词时同步读的
+  /// `window.__lyricsCueContext`，可为 null）。为 false 时宿主没有这份上下文，
+  /// 仍需自己去歌词 WebView 读（旧 payload / 正文文档）。
+  final bool carriesLyricsCueContext;
+
+  /// 歌词文档选词那一刻的命中 cue：`{textFragmentId, cueIndex}`；没命中 cue 为 null。
+  final Map<String, dynamic>? lyricsCueContext;
+}
+
+Map<String, dynamic>? _readStringKeyedMap(Object? raw) {
+  if (raw is! Map) return null;
+  return <String, dynamic>{
+    for (final MapEntry<Object?, Object?> e in raw.entries)
+      if (e.key is String) e.key! as String: e.value,
+  };
 }
 
 /// 选区锚点矩形：缺字段按 0 补（与历史 `rect` 解析逐字节一致）。

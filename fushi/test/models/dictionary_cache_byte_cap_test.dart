@@ -34,32 +34,6 @@ DictionarySearchResult _bigSearchResult(String term, int popupJsonChars) {
   return result;
 }
 
-/// 造一条估算体积由 glossary 字符串主导的 FFI 查词结果。
-List<FushiLookupResult> _bigFfiResults(String term, int glossaryChars) {
-  return [
-    FushiLookupResult(
-      matched: term,
-      deinflected: term,
-      trace: const [],
-      preprocessorSteps: 0,
-      term: FushiTermResult(
-        expression: term,
-        reading: term,
-        rules: '',
-        glossaries: [
-          FushiGlossaryEntry(
-            dictName: 'test',
-            glossary: 'g' * glossaryChars,
-            definitionTags: '',
-            termTags: '',
-          ),
-        ],
-        frequencies: const [],
-        pitches: const [],
-      ),
-    ),
-  ];
-}
 
 void main() {
   group('size estimators', () {
@@ -100,17 +74,8 @@ void main() {
       expect(estimateDictionarySearchResultBytes(result),
           greaterThanOrEqualTo(1000));
     });
-
-    test(
-        'estimateFushiLookupResultsBytes counts glossary strings at 2 bytes '
-        'per code unit', () {
-      final int small = estimateFushiLookupResultsBytes(_bigFfiResults('a', 0));
-      final int big =
-          estimateFushiLookupResultsBytes(_bigFfiResults('a', 100000));
-      expect(big - small, 200000);
-      expect(estimateFushiLookupResultsBytes(const []), greaterThan(0),
-          reason: '空列表也有列表本身的开销，估算恒为正');
-    });
+    // estimateFushiLookupResultsBytes 随原始结果缓存搬进了 fushi_dictionary，
+    // 口径测试见 packages/fushi_dictionary/test/background_lookup_test.dart。
   });
 
   group('DictionaryRepository byte-capped caches', () {
@@ -150,24 +115,18 @@ void main() {
       repo.dispose();
     });
 
-    test('low-memory mode caps the ffi lookup cache at 8MB', () {
+    // 原始引擎结果缓存住在后台查词 isolate 里（FushiLookupFfiCache，淘汰规则见
+    // packages/fushi_dictionary/test/background_lookup_test.dart）；仓库只负责把
+    // 「此刻该用的上限」随每次请求带过去，低内存开关翻转即生效。
+    test('ffi lookup cache budget follows the low-memory signal', () {
+      bool lowMemory = true;
       final DictionaryRepository repo =
-          DictionaryRepository(db, isLowMemory: () => true);
-      repo.cacheFfiLookup('a', _bigFfiResults('a', bigChars));
-      expect(repo.getCachedFfiLookup('a'), isNotNull);
-      repo.cacheFfiLookup('b', _bigFfiResults('b', bigChars));
-      expect(repo.getCachedFfiLookup('a'), isNull);
-      expect(repo.getCachedFfiLookup('b'), isNotNull);
-      repo.dispose();
-    });
-
-    test('normal mode keeps both ffi lookup results', () {
-      final DictionaryRepository repo =
-          DictionaryRepository(db, isLowMemory: () => false);
-      repo.cacheFfiLookup('a', _bigFfiResults('a', bigChars));
-      repo.cacheFfiLookup('b', _bigFfiResults('b', bigChars));
-      expect(repo.getCachedFfiLookup('a'), isNotNull);
-      expect(repo.getCachedFfiLookup('b'), isNotNull);
+          DictionaryRepository(db, isLowMemory: () => lowMemory);
+      expect(repo.ffiLookupCacheBudgetBytes,
+          DictionaryRepository.ffiLookupCacheMaxBytesLowMemory);
+      lowMemory = false;
+      expect(repo.ffiLookupCacheBudgetBytes,
+          DictionaryRepository.ffiLookupCacheMaxBytes);
       repo.dispose();
     });
 
@@ -197,10 +156,11 @@ void main() {
       final DictionaryRepository repo =
           DictionaryRepository(db, isLowMemory: () => false);
       repo.cacheSearchResult('a', _bigSearchResult('a', 100));
-      repo.cacheFfiLookup('a', _bigFfiResults('a', 100));
+      final int epoch = repo.resultsCacheEpoch;
       repo.clearDictionaryResultsCache();
       expect(repo.getCachedSearch('a'), isNull);
-      expect(repo.getCachedFfiLookup('a'), isNull);
+      expect(repo.resultsCacheEpoch, isNot(epoch),
+          reason: '在飞的后台查词据代次判断能否写回缓存');
       // clear 后记账归零：再次写入仍能正常驻留。
       repo.cacheSearchResult('b', _bigSearchResult('b', 100));
       expect(repo.getCachedSearch('b'), isNotNull);

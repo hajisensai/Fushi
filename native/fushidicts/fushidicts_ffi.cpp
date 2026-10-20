@@ -434,6 +434,20 @@ int32_t fushidicts_probe_dict_content(const char* dir) {
   });
 }
 
+// 已导入词典的 redirect_glossary.flag 迁移（语义见 query.hpp
+// ensure_redirect_glossary_flag）：1 含纯重定向 / 0 不含 / -1 读不了。不需要句柄；
+// 整本扫描，宿主应在后台 isolate 调用。
+FUSHI_EXPORT
+int32_t fushidicts_ensure_redirect_flag(const char* dir) {
+  return ffi_guard_or(
+      "fushidicts_ensure_redirect_flag",
+      [&]() -> int32_t {
+        if (!dir) return -1;
+        return static_cast<int32_t>(ensure_redirect_glossary_flag(std::string(dir)));
+      },
+      []() -> int32_t { return -1; });
+}
+
 // ── query handle ────────────────────────────────────────────────────
 
 // 当前存活（尚未真正 delete）的句柄数；只给测试观测「退役后最后一次 release 才销毁、

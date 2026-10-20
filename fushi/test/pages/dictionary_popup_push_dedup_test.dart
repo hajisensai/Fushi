@@ -367,7 +367,10 @@ void main() {
           await tester.pump();
           final Completer<dynamic>? pending = harness.pendingViewportInjection;
           expect(pending, isNotNull);
-          expect(harness.pushCount, 0);
+          // P2-G：引导脚本（caret / 视口）与首推连发不等——视口注入还挂着时首推
+          // 已经发出（同一 WebView 的 eval 按发出顺序执行，宽度仍先于渲染生效）。
+          expect(harness.pushCount, 1,
+              reason: 'the first push must not wait on the bootstrap round trips');
 
           if (replaceController) harness.replaceController();
           harness.fireLoadStart();
@@ -376,14 +379,15 @@ void main() {
           await tester.pump();
           expect(
             harness.pushCount,
-            0,
+            1,
             reason: 'a prior bootstrap completion is not the new loadStop',
           );
 
           harness.fireLoadStop();
           await tester.pump();
           await tester.pump();
-          expect(harness.pushCount, 1);
+          expect(harness.pushCount, 2,
+              reason: 'only the new loadStop re-pushes into the new document');
           expect(
             harness.scripts.lastWhere(
               (String s) => s.contains('window.lookupEntries'),
@@ -545,20 +549,21 @@ void main() {
       await harness.firePopupRendered();
       await tester.pump();
 
-      // 再 reveal：_showPopupWaitingForRender 架盖板 + post-frame 探询。
+      // 再 reveal：P1-C 起 _revealPopupAfterRender 先挂起（不露最大高度的空壳、
+      // 也不架盖板），post-frame 探询。
       hostKey.currentState!.showDeferredPopup();
       await tester.pump();
-      // 本帧确实架过盖板（渲染进树），post-frame 已拿到 false 并清态……
-      expect(_activeLoadingCover(), findsOneWidget,
-          reason: '盖板在探询帧内确实架起过（结构没被绕开）');
+      expect(_activeLoadingCover(), findsNothing,
+          reason: '挂起等渲染期间不再带盖板翻出最大高度外壳（P1-C）');
       await tester.pump();
 
-      // ……下一帧（零时长）盖板必须已撤，弹窗可见——不等 1.8s failsafe。
+      // ……post-frame 拿到 false（已渲染完成）就地翻可见——不等 1.8s failsafe。
       final stack = hostKey.currentState!.debugPopupStack;
       expect(stack.single.visible, isTrue);
+      expect(stack.single.revealOnRender, isFalse);
       expect(_activeLoadingCover(), findsNothing,
           reason: 'refreshCurrentResult 返回 false（已渲染完成、信号不会再来）时，'
-              '宿主必须立即走 rendered 路径撤盖板，而不是空等 failsafe 超时');
+              '宿主必须立即走 rendered 路径翻出，而不是空等 failsafe 超时');
       expect(harness.pushCount, seedPushes + 1, reason: '兜底探询对已渲染结果零重推');
       // 全程零时长 pump：若撤盖板路径没取消 1.8s failsafe Timer，testWidgets 会以
       // pending timer 失败——测试干净结束本身就是「不等 failsafe」的证据。

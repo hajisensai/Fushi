@@ -38,7 +38,7 @@ void main() {
         reason: '浅快照仍必须复用缓存的 popupJson，不能重新物化弹框内容');
   });
 
-  test('popupOnly fast path builds directly from cached FFI results', () {
+  test('popupOnly fast path builds popup JSON only, in the background', () {
     final String source =
         File('lib/src/models/app_model.dart').readAsStringSync();
     final int start = source.indexOf(
@@ -52,9 +52,21 @@ void main() {
     expect(end, greaterThan(start));
     final String fastPath = source.substring(start, end);
     expect(fastPath, contains('getCachedPopupSearch'));
-    expect(fastPath, contains('getCachedFfiLookup'));
-    expect(fastPath, contains('buildPopupJsonFromLookup'));
+    // 原始结果缓存与构建都在后台查词 isolate：请求必须声明 popupOnly，后台据此
+    // 只跑 buildPopupJsonFromLookup（background_lookup.dart 的 popupOnly 分支）。
+    expect(fastPath, contains('lookupInBackground('));
+    expect(fastPath, contains('popupOnly: true,'));
     expect(fastPath, isNot(contains('buildResultFromLookup')),
         reason: 'popupOnly 不能再为每条 glossary 构造完整 DictionaryEntry/extra');
+    final String worker = File(
+      '../packages/fushi_dictionary/lib/src/engine/background_lookup.dart',
+    ).readAsStringSync();
+    final int popupBranch = worker.indexOf('if (request.popupOnly) {');
+    expect(popupBranch, greaterThanOrEqualTo(0));
+    final int branchEnd = worker.indexOf('\n  }\n', popupBranch);
+    final String branch = worker.substring(popupBranch, branchEnd);
+    expect(branch, contains('buildPopupJsonFromLookup('));
+    expect(branch, isNot(contains('buildResultFromLookup(')),
+        reason: 'popupOnly 分支不能物化 DictionaryEntry');
   });
 }

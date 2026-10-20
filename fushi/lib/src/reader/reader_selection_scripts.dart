@@ -50,6 +50,22 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.fushiSelection.clearSelection()';
 
+  /// 悬停查词背压的宿主侧显式释放（见 webview.part.dart 的 `_fushiHoverLookup*`）：
+  /// onTextSelected 回调处理完一次**悬停**查词（成功、失败、异常都算）后对正文 WebView
+  /// eval 这一句，按 payload 里的 `selectedSeq` 释放 JS 侧在等的那一次。不依赖
+  /// callHandler 的 Promise 是否送达；序号对不上（已被回执释放、又发了新一次）时 JS 侧忽略。
+  /// 非悬停查词（点按 / 键盘）或没有合法序号的 payload 返回 null，调用方什么也不做。
+  static String? hoverLookupSettledInvocation(Map<String, dynamic> payload) {
+    if (payload['fromHover'] != true) return null;
+    final Object? raw = payload['selectedSeq'];
+    if (raw is! num || !raw.isFinite || raw != raw.truncate() || raw <= 0) {
+      return null;
+    }
+    final int seq = raw.toInt();
+    return 'window.__fushiHoverLookupSettled && '
+        'window.__fushiHoverLookupSettled($seq)';
+  }
+
   /// TODO-1317: 移动端「长按拖选」手势 IIFE（注入进阅读器 setup script）。触屏在正文
   /// 长按 [delayMs] 毫秒即建立单字选区，继续拖动经
   /// `window.fushiSelection.updateRangeSelection`
@@ -1981,11 +1997,15 @@ window.fushiSelection = {
     var element = document.elementFromPoint(x, y);
     if (!element) return null;
     var container = element.closest('p, div, span, ruby, a') || document.body;
-    var walker = this.createWalker(container);
+    // 查词卡顿（P2）：容器常常就是整章（点在页边 / 段落间时 elementFromPoint 落到 body 或
+    // 正文外层 div），下面两遍逐字 getClientRects 会把全章每个字量两次。先按文本节点的行盒
+    // 剪枝（caretScanCandidates），只逐字扫「可能被两遍任何一遍采纳」的节点。
+    var candidates = this.caretScanCandidates(container, x, y, box);
     var range = document.createRange();
     var node;
     // 第一遍：精确包含（旧行为，零回归）。
-    while (node = walker.nextNode()) {
+    for (var ci = 0; ci < candidates.length; ci++) {
+      node = candidates[ci];
       for (var i = 0; i < node.textContent.length; i++) {
         range.setStart(node, i);
         range.setEnd(node, i + 1);
@@ -1999,11 +2019,11 @@ window.fushiSelection = {
     // 第二遍（TODO-916 症状④）：精确全 miss 时回退到「最近字符」——仅当该字符在一个
     // 保守容差内（半行高，约半个字宽）才采纳，避免点空白处误选远字。walker 已 REJECT
     // furigana（rt/rp），故振假名永不被兜底命中；只放宽正文字符命中精度。
-    var walker2 = this.createWalker(container);
     var bestNode = null;
     var bestOffset = -1;
     var bestDistSq = Infinity;
-    while (node = walker2.nextNode()) {
+    for (var cj = 0; cj < candidates.length; cj++) {
+      node = candidates[cj];
       for (var j = 0; j < node.textContent.length; j++) {
         range.setStart(node, j);
         range.setEnd(node, j + 1);
@@ -2028,6 +2048,51 @@ window.fushiSelection = {
       return range;
     }
     return document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+  },
+  // getCaretRange 逐字兜底的扫描范围：container 里 walker 接受的文本节点，去掉其中「没有
+  // 一个字可能被两遍采纳」的节点（文档序不变）。剪枝只用必要条件，不设经验上限，所以命中
+  // 结果与逐节点全扫逐位相同：
+  //   - 字形盒落在所属文本节点的某个行盒（整节点 Range 的 getClientRects）之内；
+  //   - 两遍都要求字可见（charRangeVisible：字形盒与可见正文盒 box 有正面积交集）⇒ 至少
+  //     一个行盒与 box 有正面积交集；
+  //   - 第一遍要点落在字形盒内（距离 0），第二遍要距离 <= tol = max(6, max(字宽, 字高)/2)，
+  //     而字形盒在行盒内 ⇒ 点到行盒的距离 <= 点到字形盒的距离，字宽高 <= 行盒宽高
+  //     ⇒ 点到该行盒的距离 <= max(6, max(行盒宽, 行盒高)/2)。
+  // 两个条件分开判（一个字跨行时，量距离的首个字形盒与可见的那块可能落在不同行盒）：节点
+  // 的行盒里既没有可见的、或没有够得着的，才跳过该节点。量不出行盒（空 / 隐藏节点）
+  // 的节点一律保留，交给逐字判定原样处理。分页模式下相邻页 / 整章其余列的节点都在可见盒
+  // 外，扫描面因此收敛到「当前页、点附近」的几行。
+  caretScanCandidates: function(container, x, y, box) {
+    var walker = this.createWalker(container);
+    var probe = document.createRange();
+    var out = [];
+    var node;
+    while (node = walker.nextNode()) {
+      var len = node.textContent.length;
+      if (!len) continue;
+      probe.setStart(node, 0);
+      probe.setEnd(node, len);
+      var rects = probe.getClientRects();
+      if (!rects || !rects.length) { out.push(node); continue; }
+      var visible = !box;
+      var near = false;
+      for (var i = 0; i < rects.length && !(visible && near); i++) {
+        var r = rects[i];
+        if (!r) continue;
+        if (!visible && Math.min(r.right, box.right) > Math.max(r.left, box.left) &&
+            Math.min(r.bottom, box.bottom) > Math.max(r.top, box.top)) {
+          visible = true;
+        }
+        if (!near) {
+          var reach = Math.max(6, Math.max(r.width, r.height) / 2);
+          var dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
+          var dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+          near = dx * dx + dy * dy <= reach * reach;
+        }
+      }
+      if (visible && near) out.push(node);
+    }
+    return out;
   },
   // BUG-长按选择不灵敏：命中测试拆成两层，因为**查词**和**选文本**对「这个点算不算
   // 命中」的要求根本不同。查词要的是一个可扫描的词首字，落在空白/标点上必须放弃
@@ -3101,7 +3166,23 @@ window.fushiSelection = {
     var payload = this.buildSelectionPayload(x, y);
     if (!payload) return null;
     payload.fromHover = !!fromHover;
-    window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
+    // 歌词文档（lyrics_mode_html 覆写 selectText / 歌词光标 _setCueContext）在选词前把
+    // 命中 cue 写进 window.__lyricsCueContext。随 payload 一起带走，宿主不必在查词前再
+    // 单独 eval 一次去读它（同一时刻的同一个值，少一个 JS 来回）。没有这个全局的文档
+    // （正文）不带这个键，宿主照旧行为。
+    if ('__lyricsCueContext' in window) {
+      payload.lyricsCueContext = window.__lyricsCueContext || null;
+    }
+    // 宿主处理完这次查词（callHandler 的 Promise 在 Dart 回调 await 完后兑现）的回执，
+    // 供悬停查词做背压：回执到之前只留最后一个悬停位置（见 webview.part.dart 的
+    // _fushiHoverLookup*）。点按路径不读它，行为不变。
+    // selectedSeq 随 payload 带给宿主：回执之外，宿主处理完（成功或失败）还会按这个序号
+    // 显式调 window.__fushiHoverLookupSettled(seq) 释放背压，两条释放路按序号对账。
+    var seq = (this.textSelectedSeq || 0) + 1;
+    this.textSelectedSeq = seq;
+    payload.selectedSeq = seq;
+    var ack = window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
+    this.lastTextSelectedAck = ack;
     return payload.text;
   },
   // TODO-1317: mobile long-press *drag*-select ends here instead of firing
@@ -3668,6 +3749,22 @@ window.fushiSelection = {
     if (typeof window.fushiReader.getMatchableOffset === 'function') {
       return window.fushiReader.getMatchableOffset(targetNode, offset);
     }
+    // 查词卡顿（P0-1）：旧实现每次都从 document.body 把整章文本节点逐码点走一遍，而
+    // buildSelectionPayload 一次查词要调 4 次（词首尾 + 句首尾），全在 onTextSelected
+    // 交给 Dart 之前同步执行，章越长越卡。现在按文本节点缓存「此节点之前的可匹配码元数」
+    // （matchableNodeStart），查词只数目标节点内 [0, offset) 这一段。数值口径与旧的整章
+    // 游走逐位相同：同一个 createWalker（拒振假名 / 纯空白节点）、同一个 isMatchableChar、
+    // 同样按码点步进累加 ch.length。
+    var base = this.matchableNodeStart(targetNode);
+    if (base === undefined) {
+      // 表不可用（无 MutationObserver）才会走到这里：退回旧的整章游走，结果不变。
+      return this.getMatchableOffsetByWalk(targetNode, offset);
+    }
+    if (base === null) return null; // 目标不是 walker 接受的文本节点：旧实现同样返回 null
+    return base + this.countMatchableUnits(targetNode.textContent || '', offset);
+  },
+  // 旧算法原样保留：无缓存表时的回退，也是一致性测试的参照实现。
+  getMatchableOffsetByWalk: function(targetNode, offset) {
     var walker = this.createWalker(document.body);
     var count = 0;
     var node;
@@ -3682,6 +3779,66 @@ window.fushiSelection = {
       if (node === targetNode) return count;
     }
     return null;
+  },
+  // text 的 [0, limit) 里可匹配字符的 UTF-16 码元数（逐码点步进，与旧游走同一循环）。
+  countMatchableUnits: function(text, limit) {
+    var count = 0;
+    for (var i = 0; i < limit;) {
+      var ch = String.fromCodePoint(text.codePointAt(i));
+      if (window.fushiReader.isMatchableChar(ch)) count += ch.length;
+      i += ch.length;
+    }
+    return count;
+  },
+  // 文本节点 → 它之前全部 walker 接受节点的可匹配码元总数。返回 number = 命中；
+  // null = 该节点不在 walker 序列里（振假名 / 纯空白 / 游离 / body 外）；undefined =
+  // 环境不支持缓存（调用方退回整章游走）。
+  //
+  // 失效：表只对「建表那一刻的 DOM」成立。建表后挂一个 MutationObserver（childList +
+  // characterData，subtree）看着整棵文档；任何节点增删 / 文本改写都让表作废——回调是
+  // 异步的，所以每次读表前先 takeRecords() 同步收掉还没派发的记录，保证同一任务里
+  // 「先改 DOM 再查词」（如非 CSS Highlights 环境的查词高亮包裹、有声书 cue 包裹）也读不到
+  // 旧表。作废即断开观察，下次查词时重建（一遍整章游走，仍比旧实现每次查词 4 遍少）。
+  // 不在 buildNodeOffsets 里顺手建：那条路在翻章 / 每次 cue 包裹后都跑，逐码点正则会直接
+  // 加到翻章耗时上；而且只靠「谁调了 buildNodeOffsets」来失效会漏掉不经它的 DOM 改动。
+  matchableNodeStart: function(targetNode) {
+    if (typeof MutationObserver !== 'function') return undefined;
+    var observer = this._matchableObserver;
+    if (observer && this._matchableStarts && observer.takeRecords().length) {
+      this.invalidateMatchableIndex();
+    }
+    if (!this._matchableStarts) this.buildMatchableIndex();
+    if (!this._matchableStarts) return undefined;
+    var base = this._matchableStarts.get(targetNode);
+    return base === undefined ? null : base;
+  },
+  buildMatchableIndex: function() {
+    var root = document.documentElement;
+    if (!document.body || !root) return;
+    var starts = new WeakMap();
+    var walker = this.createWalker(document.body);
+    var count = 0;
+    var node;
+    while ((node = walker.nextNode()) != null) {
+      starts.set(node, count);
+      var text = node.textContent || '';
+      count += this.countMatchableUnits(text, text.length);
+    }
+    var self = this;
+    if (!this._matchableObserver) {
+      this._matchableObserver = new MutationObserver(function() {
+        self.invalidateMatchableIndex();
+      });
+    }
+    this._matchableObserver.observe(root, { childList: true, characterData: true, subtree: true });
+    this._matchableStarts = starts;
+  },
+  invalidateMatchableIndex: function() {
+    this._matchableStarts = null;
+    if (this._matchableObserver) {
+      this._matchableObserver.takeRecords();
+      this._matchableObserver.disconnect();
+    }
   },
   matchableRange: function(startNode, startOffset, endNode, endOffset) {
     var start = this.getMatchableOffset(startNode, startOffset);

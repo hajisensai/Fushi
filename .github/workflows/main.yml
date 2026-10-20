@@ -41,6 +41,7 @@ on:
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/fushi-web-core-linux/**'
       - '.github/actions/test-native-linux/**'
+      - '.github/actions/fushidicts-linux/**'
       - '.github/actions/setup-fushi-compute/**'
       # setup-fushi-compute 从这里读 Rust / cargo-ndk 钉版。
       - '.github/actions/native-store-names/names.sh'
@@ -93,8 +94,24 @@ jobs:
         if-no-files-found: error
         retention-days: 3
 
+  # 词典引擎（native/fushidicts）Linux .so：packages/fushi_dictionary 的真原生库测试
+  # （background_tokenize_native_test.dart 的后台查词 / redirect 标记迁移两组）缺库直接失败、
+  # 不 skip，所以 packages/*/test 的 runner 要它。与 web-core-linux 并行编一次、以 artifact 下发。
+  fushidicts-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushidicts-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
+        if-no-files-found: error
+        retention-days: 3
+
   build:
-    needs: web-core-linux
+    needs: [web-core-linux, fushidicts-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -206,6 +223,11 @@ jobs:
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
+    - name: Fetch fushidicts linux-x64 library (hard dependency of the package tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64
     # Anki 搜索的逐卡求值与 AnkiConnect 查重规范形只有 Rust 实现（native/fushi_fsrs/src/search.rs）：
     # fushi_srs / fushi_engine 的搜索测试要真实 .so，库缺失时直接判红（不 skip）。
     # 用 runner 自带的 stable 工具链（不进持久库，不需要钉版）；冷编约 1 min。
@@ -227,6 +249,7 @@ jobs:
     - name: Run package tests
       env:
         FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+        FUSHI_DICTS_LIB: ${{ github.workspace }}/native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
         # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里

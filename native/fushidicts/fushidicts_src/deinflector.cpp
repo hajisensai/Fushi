@@ -295,6 +295,31 @@ uint64_t Deinflector::pos_to_conditions(const std::vector<std::string>& part_of_
   return result;
 }
 
+uint64_t Deinflector::rules_to_conditions(std::string_view rules) const {
+  // istringstream >> std::string 在 "C" locale 下以这六个字符为分隔（std::isspace）。
+  constexpr std::string_view kSpace = " \t\n\v\f\r";
+  uint64_t result = 0;
+  std::string token;
+  std::size_t pos = 0;
+  while (true) {
+    const std::size_t begin = rules.find_first_not_of(kSpace, pos);
+    if (begin == std::string_view::npos) break;
+    std::size_t end = rules.find_first_of(kSpace, begin);
+    if (end == std::string_view::npos) end = rules.size();
+    const std::string_view tok = rules.substr(begin, end - begin);
+    if (tok == "*") {
+      return ~uint64_t{0};  // 通配：见 pos_to_conditions
+    }
+    token.assign(tok);
+    auto it = pos_to_condition_cache_.find(token);
+    if (it != pos_to_condition_cache_.end()) {
+      result |= it->second;
+    }
+    pos = end;
+  }
+  return result;
+}
+
 std::vector<DeinflectionResult> Deinflector::deinflect(const std::string& text) const {
   std::vector<DeinflectionResult> results;
   std::vector<TransformGroup> trace;
