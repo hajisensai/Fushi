@@ -22,6 +22,7 @@ import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host_slot.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart' show EmbeddedTorrentHostOpenArgs;
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
@@ -91,11 +92,10 @@ class ServerDownloadHost implements HostDownloadHost {
   List<String> get availableResourceProviderIds => (_subscriptions ??= _buildSubscriptionHost()).availableProviderIds;
   TorrentBackend? _backend;
   /// 内置宿主（BUG-3571：跑在专用工作 isolate，本 isolate 只持客户端——服务端的
-  /// HTTP 事件循环同样不能被 libtorrent 的同步往返卡住）。
-  EmbeddedTorrentHostClient? _embedded;
-
-  /// 在途的懒建（并发解析后端时只起一个工作 isolate，不抢同一个监听端口）。
-  Future<EmbeddedTorrentHostClient?>? _embeddedOpening;
+  /// HTTP 事件循环同样不能被 libtorrent 的同步往返卡住）。槽位负责懒建去重（并发
+  /// 解析后端时只起一个工作 isolate，不抢同一个监听端口），并在工作 isolate 意外
+  /// 退出后摘下失效客户端，下一个任务解析后端时重建。
+  final EmbeddedTorrentHostSlot _embedded = EmbeddedTorrentHostSlot();
   int? _sourceId;
 
   /// 启动时解析定的后端：`embedded` / `qbittorrent` / null（都不可用）。
@@ -251,11 +251,13 @@ class ServerDownloadHost implements HostDownloadHost {
   }
 
   /// 内置引擎 session 懒建（幂等）；库/端口失败 → null，调用方报 ActionRequired。
-  Future<EmbeddedTorrentHostClient?> _ensureEmbedded() {
-    final EmbeddedTorrentHostClient? existing = _embedded;
-    if (existing != null) return Future<EmbeddedTorrentHostClient?>.value(existing);
-    return _embeddedOpening ??= _openEmbedded().whenComplete(() => _embeddedOpening = null);
-  }
+  Future<EmbeddedTorrentHostClient?> _ensureEmbedded() => _embedded.ensure(
+        _openEmbedded,
+        onLost: (EmbeddedTorrentHostClient _) => engineLog.logDiagnostic(
+          'ServerDownloadHost',
+          'embedded torrent worker exited unexpectedly; rebuilding on next job',
+        ),
+      );
 
   Future<EmbeddedTorrentHostClient?> _openEmbedded() async {
     await paths.torrentResume.create(recursive: true);
@@ -272,9 +274,9 @@ class ServerDownloadHost implements HostDownloadHost {
       engineLog.logDiagnostic('ServerDownloadHost', 'embedded torrent session failed to open');
       return null;
     }
-    unawaited(host.applySessionSettings(_qbConfig));
+    host.post('applySessionSettings', host.applySessionSettings(_qbConfig));
     engineLog.logDiagnostic('ServerDownloadHost', 'embedded libtorrent ${host.libtorrentVersion} on ${config.torrentListen}');
-    return _embedded = host;
+    return host;
   }
 
   VideoResourceRegistry _buildRegistry() {
@@ -319,9 +321,7 @@ class ServerDownloadHost implements HostDownloadHost {
     _registry = null;
     _backend?.close();
     _backend = null;
-    final Future<EmbeddedTorrentHostClient?>? opening = _embeddedOpening;
-    final EmbeddedTorrentHostClient? embedded = _embedded ?? await opening;
-    _embedded = null;
+    final EmbeddedTorrentHostClient? embedded = await _embedded.take();
     if (embedded != null) {
       await embedded.dispose(keepIds: await loadEmbeddedTorrentResumeIds(db));
     }

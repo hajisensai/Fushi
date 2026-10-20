@@ -1078,10 +1078,21 @@ class EmbeddedTorrentHost {
   /// TODO-1961-a：关 session **之前**强制存一次 resume —— 这是「下次启动能
   /// 续传/继续做种」的最后一道保存点，节流在这里必须让路（[force]）。
   /// [keepIds] 同 [saveResumeSnapshot]：当前仍存在的计划 id 集合。
+  ///
+  /// 幂等。保存抛错也照样关 session：这是 session 的最后一个释放点（工作
+  /// isolate 退出前的兜底也走这里），漏关 = 监听端口 / DHT / 文件句柄留在进程
+  /// 里直到退出。
   void dispose({Set<String>? keepIds}) {
-    saveResumeSnapshot(keepIds, force: true);
-    _session.close();
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      saveResumeSnapshot(keepIds, force: true);
+    } finally {
+      _session.close();
+    }
   }
+
+  bool _disposed = false;
 }
 
 /// TODO-1961-a：resume 目录里**无主**（不在 [keepIds] 里）的文件全删，返回删除数。

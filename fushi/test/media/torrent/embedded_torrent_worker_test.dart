@@ -18,19 +18,25 @@
 // ③ 后端代理往返：列表 / 用户暂停覆写显示态 / close 后兜底；
 // ④ 工作 isolate 里的 `[torrent]` 诊断日志回放到 UI isolate 的装配点；
 // ⑤ 退出 flush 用退出预算存 resume、不关 session；
-// ⑥ 宿主打不开 → open 返回 null；关闭后命令以 Closed 失败、代理按不可用作答。
+// ⑥ 宿主打不开 → open 返回 null；关闭后命令以 Closed 失败、代理按不可用作答；
+// ⑦ 工作 isolate 意外退出（未捕获异步错误 / 结果不可发送）前先关 session，主
+//    isolate 的客户端报 closed，槽位摘下失效客户端、下次 ensure 重建；
+// ⑧ 投递式命令（post）失败只进 engineLog，不产生 zone 未处理异步错误。
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host_slot.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_torrent/fushi_torrent.dart';
@@ -58,7 +64,19 @@ const String _torrentsJson =
 Pointer<Void> _sessionCreate(Pointer<Char> listen, int enableDht) =>
     _fakeSession;
 
-void _sessionDestroy(Pointer<Void> session) => _calls.add('destroy');
+/// 设了就在 session 销毁时往这个目录写 `session_destroyed`（工作 isolate 死后
+/// 它的内存读不到了，只能落盘给主 isolate 看）。
+String? _destroyMarkerDir;
+
+void _sessionDestroy(Pointer<Void> session) {
+  _calls.add('destroy');
+  final String? dir = _destroyMarkerDir;
+  if (dir != null) {
+    File('$dir/session_destroyed')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('x', mode: FileMode.append);
+  }
+}
 
 Pointer<Char> _listTorrents(Pointer<Void> session) =>
     _torrentsJson.toNativeUtf8().cast<Char>();
@@ -175,6 +193,47 @@ EmbeddedTorrentHost? _oldDllHostFactory(EmbeddedTorrentHostOpenArgs args) =>
 
 EmbeddedTorrentHost? _failingHostFactory(EmbeddedTorrentHostOpenArgs args) =>
     null;
+
+EmbeddedTorrentHost? _markedHostFactory(EmbeddedTorrentHostOpenArgs args) {
+  _destroyMarkerDir = args.resumeDir;
+  return _buildHost(args, withUploadControl: true);
+}
+
+/// 命令本身正常返回，但随后抛出一个谁也接不住的异步错误（宿主内部回调出错
+/// 的形态）。默认 errorsAreFatal 下它会当场打死工作 isolate。
+Object? _crashWithUncaughtAsyncError(EmbeddedTorrentWorkerState state) {
+  Timer.run(() => throw StateError('boom in worker'));
+  return null;
+}
+
+/// 结果不可发送：回应答时 `SendPort.send` 同步抛出，落在命令 try/catch 之外。
+Object? _unsendableResult(EmbeddedTorrentWorkerState state) =>
+    ReceivePort()..close();
+
+Object? _throwingCommand(EmbeddedTorrentWorkerState state) =>
+    throw StateError('command failed');
+
+int _destroyMarks(Directory dir) {
+  final File marker = File('${dir.path}/resume/session_destroyed');
+  return marker.existsSync() ? marker.readAsStringSync().length : 0;
+}
+
+class _RecordingEngineLog implements EngineLogSink {
+  final List<String> errors = <String>[];
+  final List<String> diagnostics = <String>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) =>
+      errors.add('$source: $error');
+
+  @override
+  void logDiagnostic(String source, Object info) =>
+      diagnostics.add('$source: $info');
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) =>
+      errors.add('$source: $error');
+}
 
 List<String> _readCalls(EmbeddedTorrentWorkerState state) =>
     List<String>.of(_calls);
@@ -410,5 +469,233 @@ void main() {
       isNot(contains('pause($_torrentId,1)')),
       reason: '下载中的种子绝不 pause',
     );
+  });
+
+  group('工作 isolate 意外退出', () {
+    late _RecordingEngineLog logs;
+    late EngineLogSink previousLog;
+
+    setUp(() {
+      previousLog = engineLog;
+      logs = _RecordingEngineLog();
+      engineLog = logs;
+    });
+
+    tearDown(() => engineLog = previousLog);
+
+    test('未捕获异步错误：退出前关 session，客户端报 closed', () async {
+      final EmbeddedTorrentHostClient client =
+          (await EmbeddedTorrentHostClient.open(
+            _args(dir),
+            factory: _markedHostFactory,
+          ))!;
+      addTearDown(client.dispose);
+
+      await client.runForTesting(_crashWithUncaughtAsyncError);
+      await client.closed.timeout(const Duration(seconds: 10));
+
+      expect(client.isClosed, isTrue);
+      expect(client.exitedUnexpectedly, isTrue);
+      expect(
+        _destroyMarks(dir),
+        1,
+        reason: '工作 isolate 死前没关 session = 监听端口 / DHT 泄漏到进程退出',
+      );
+      await expectLater(
+        client.sweepAntiLeech(),
+        throwsA(isA<EmbeddedTorrentWorkerClosed>()),
+      );
+      expect(
+        logs.errors.any((String e) => e.contains('boom in worker')),
+        isTrue,
+      );
+      expect(
+        logs.errors.any((String e) => e.contains('exited unexpectedly')),
+        isTrue,
+      );
+    });
+
+    test('结果不可发送（命令 try 之外的错误）：同样先关 session 再退出', () async {
+      final EmbeddedTorrentHostClient client =
+          (await EmbeddedTorrentHostClient.open(
+            _args(dir),
+            factory: _markedHostFactory,
+          ))!;
+      addTearDown(client.dispose);
+
+      await expectLater(
+        client.runForTesting(_unsendableResult),
+        throwsA(isA<EmbeddedTorrentWorkerClosed>()),
+      );
+      await client.closed.timeout(const Duration(seconds: 10));
+      expect(client.exitedUnexpectedly, isTrue);
+      expect(_destroyMarks(dir), 1);
+    });
+
+    test('正常 dispose 只关一次 session，且不算意外退出', () async {
+      final EmbeddedTorrentHostClient client =
+          (await EmbeddedTorrentHostClient.open(
+            _args(dir),
+            factory: _markedHostFactory,
+          ))!;
+      await client.dispose(keepIds: <String>{_torrentId});
+      // 关闭应答排在 session 真正关掉之后。
+      expect(_destroyMarks(dir), 1);
+      await client.closed.timeout(const Duration(seconds: 10));
+      expect(client.exitedUnexpectedly, isFalse);
+      expect(logs.errors, isEmpty);
+    });
+
+    test('槽位：并发 ensure 只起一个；意外退出后摘下、下次 ensure 重建', () async {
+      final EmbeddedTorrentHostSlot slot = EmbeddedTorrentHostSlot();
+      int opens = 0;
+      int opened = 0;
+      final List<EmbeddedTorrentHostClient> lost =
+          <EmbeddedTorrentHostClient>[];
+      final Completer<void> lostSignal = Completer<void>();
+      Future<EmbeddedTorrentHostClient?> ensure() => slot.ensure(
+        () {
+          opens++;
+          return EmbeddedTorrentHostClient.open(
+            _args(dir),
+            factory: _markedHostFactory,
+          );
+        },
+        onOpened: (EmbeddedTorrentHostClient _) => opened++,
+        onLost: (EmbeddedTorrentHostClient client) {
+          lost.add(client);
+          if (!lostSignal.isCompleted) lostSignal.complete();
+        },
+      );
+      addTearDown(() async => (await slot.take())?.dispose());
+
+      final List<EmbeddedTorrentHostClient?> first = await Future.wait(
+        <Future<EmbeddedTorrentHostClient?>>[ensure(), ensure()],
+      );
+      expect(opens, 1, reason: '两个 session 会抢同一个监听端口');
+      expect(opened, 1);
+      final EmbeddedTorrentHostClient dead = first[0]!;
+      expect(identical(first[1], dead), isTrue);
+      expect(identical(slot.current, dead), isTrue);
+
+      await dead.runForTesting(_crashWithUncaughtAsyncError);
+      await lostSignal.future.timeout(const Duration(seconds: 10));
+      expect(lost, <EmbeddedTorrentHostClient>[dead]);
+      expect(slot.current, isNull);
+
+      final EmbeddedTorrentHostClient rebuilt = (await ensure())!;
+      expect(opens, 2);
+      expect(opened, 2);
+      expect(identical(rebuilt, dead), isFalse);
+      expect(rebuilt.isClosed, isFalse);
+      final EmbeddedTorrentBackendProxy backend = rebuilt.backendView();
+      addTearDown(backend.close);
+      expect(await backend.listTorrents(), hasLength(1));
+    });
+
+    test('槽位：主动 take 不算丢失，不回调 onLost', () async {
+      final EmbeddedTorrentHostSlot slot = EmbeddedTorrentHostSlot();
+      int lost = 0;
+      final EmbeddedTorrentHostClient client = (await slot.ensure(
+        () => EmbeddedTorrentHostClient.open(
+          _args(dir),
+          factory: _plainHostFactory,
+        ),
+        onLost: (EmbeddedTorrentHostClient _) => lost++,
+      ))!;
+      final EmbeddedTorrentHostClient? taken = await slot.take();
+      expect(identical(taken, client), isTrue);
+      expect(slot.current, isNull);
+      await client.dispose();
+      await client.closed;
+      await Future<void>.delayed(Duration.zero);
+      expect(lost, 0);
+    });
+
+    test('槽位：懒建途中被 take 撤下，落地的客户端交给 take 方、不挂回槽位', () async {
+      final EmbeddedTorrentHostSlot slot = EmbeddedTorrentHostSlot();
+      int opened = 0;
+      final Future<EmbeddedTorrentHostClient?> opening = slot.ensure(
+        () => EmbeddedTorrentHostClient.open(
+          _args(dir),
+          factory: _plainHostFactory,
+        ),
+        onOpened: (EmbeddedTorrentHostClient _) => opened++,
+      );
+      expect(slot.isOpening, isTrue);
+      final EmbeddedTorrentHostClient? taken = await slot.take();
+      expect(taken, isNotNull);
+      expect(identical(await opening, taken), isTrue);
+      expect(slot.current, isNull);
+      expect(slot.isOpening, isFalse);
+      expect(opened, 0);
+      await taken!.dispose();
+    });
+
+    test('槽位：open 交 null（此刻建不了）不登记，下次再判', () async {
+      final EmbeddedTorrentHostSlot slot = EmbeddedTorrentHostSlot();
+      int opens = 0;
+      Future<EmbeddedTorrentHostClient?>? cannot() {
+        opens++;
+        return null;
+      }
+
+      expect(await slot.ensure(cannot), isNull);
+      expect(await slot.ensure(cannot), isNull);
+      expect(opens, 2);
+      expect(slot.isOpening, isFalse);
+      expect(
+        await slot.ensure(
+          () => EmbeddedTorrentHostClient.open(
+            _args(dir),
+            factory: _failingHostFactory,
+          ),
+        ),
+        isNull,
+      );
+      expect(slot.isOpening, isFalse);
+      expect(slot.current, isNull);
+    });
+
+    test('post：命令失败与已关都只进 engineLog，不产生未处理异步错误', () async {
+      final EmbeddedTorrentHostClient client =
+          (await EmbeddedTorrentHostClient.open(
+            _args(dir),
+            factory: _plainHostFactory,
+          ))!;
+      final List<Object> uncaught = <Object>[];
+      final Completer<void> settled = Completer<void>();
+      runZonedGuarded(() {
+        client.post('throwing', client.runForTesting(_throwingCommand));
+        // 往返一次确保上一条的失败已经回到本端再判。
+        client.runForTesting(_readCalls).then((_) => settled.complete());
+      }, (Object error, StackTrace stack) => uncaught.add(error));
+      await settled.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(uncaught, isEmpty);
+      expect(
+        logs.errors.where(
+          (String e) => e.startsWith('EmbeddedTorrentHostClient.throwing:'),
+        ),
+        hasLength(1),
+      );
+
+      await client.dispose();
+      runZonedGuarded(() {
+        for (int i = 0; i < 3; i++) {
+          client.post('sweepAntiLeech', client.sweepAntiLeech());
+          client.post('sweepUploadPolicy', client.sweepUploadPolicy());
+        }
+      }, (Object error, StackTrace stack) => uncaught.add(error));
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(uncaught, isEmpty, reason: 'unawaited(client.xxx()) 的老形态');
+      expect(
+        logs.diagnostics.where((String d) => d.contains('worker is closed')),
+        hasLength(1),
+        reason: '已关只记一次，不每 tick 刷屏',
+      );
+    });
   });
 }
