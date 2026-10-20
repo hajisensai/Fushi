@@ -2842,6 +2842,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       spreadDirection: _spreadDirection,
       spreadGutterPx: _spreadGutterPx,
       zoomPercent: _zoomPercent,
+      // 静止倍率 = 设置里的默认缩放；会话里捏出来的放大不算（BUG-3622）。
+      restZoomPercent: _readerPreferences.zoomStart.clamp(
+        kMangaZoomMinPercent,
+        kMangaZoomMaxPercent,
+      ),
       inlineSelectionJs: inlineSelectionJs,
       pageSpreadIndices: pageSpreadIndices,
       pagesPerSpread: pagesPerSpread,

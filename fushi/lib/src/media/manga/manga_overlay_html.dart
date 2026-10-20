@@ -747,6 +747,7 @@ String mangaWindowDocument(
   int currentSpread = 0,
   double restoreFraction = 0,
   int zoomPercent = 100,
+  int? restZoomPercent,
   int documentGeneration = 0,
   Set<int>? ocrPageIndices,
   int zoomMinPercent = kMangaZoomMinPercent,
@@ -1022,7 +1023,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
       '</script>'
       '</body></html>';
 }
@@ -1079,6 +1080,7 @@ String _mangaGestureJs({
   required int currentSpread,
   required double restoreFraction,
   required int zoomPercent,
+  required int restZoomPercent,
   required int zoomMinPercent,
   required int zoomMaxPercent,
   required int zoomSensitivity,
@@ -1130,6 +1132,16 @@ String _mangaGestureJs({
   // 灵敏度倍率（设置项，100% = 基准）。
   var ZOOM_SENS = ${zoomSensitivity / 100.0};
   var ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ${zoomPercent / 100.0}));
+  // 静止倍率（BUG-3622）：阅读器**自己**把页面放到的倍率——设置里的默认缩放、
+  // 宽页切半 / 宽页自动放大的适配、分镜聚焦。用户捏合 / 双击 / Ctrl+滚轮 /
+  // 右键菜单 ± 放大不改它。超出它就是「用户放大在看细节」，此时点左右热区
+  // 不翻页（见 _onTap）。默认值必须来自偏好而不是 ZOOM：跨窗口重建文档时
+  // ZOOM 带的是会话倍率，用它当基准会让放大态在重建后又能点翻页。
+  var ZOOM_REST_DEFAULT = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ${restZoomPercent / 100.0}));
+  var ZOOM_REST = ZOOM_REST_DEFAULT;
+  function _userZoomedIn(){
+    return ZOOM > Math.max(1, ZOOM_REST) + 0.01;
+  }
   var SPLIT_WIDE = $splitWidePages;
   var ROTATE_WIDE = $rotateWidePages;
   var AUTO_ZOOM_WIDE = $autoZoomWidePages;
@@ -1254,19 +1266,39 @@ String _mangaGestureJs({
     var ph = Number(page.getAttribute('data-ph') || 1);
     return pw > ph * 1.15;
   }
+  // 宽页自动放大的记账：{from: 放大前倍率, to: 自动放大到的倍率}，null = 没在放大。
+  var AUTO_ZOOM = null;
   function _applyWidePolicy(){
     if (SPLIT_WIDE && !ROTATE_WIDE && !IS_WEBTOON && _currentPageIsWide()) {
       _applyPageHalf(); return;
     }
+    ZOOM_REST = ZOOM_REST_DEFAULT;
     if(SPLIT_ACTIVE){
       SPLIT_ACTIVE=false;
       ZOOM=_clampZoom(${zoomPercent / 100.0});
       _recenterPan();_applyCanvas();
     }
-    if (!AUTO_ZOOM_WIDE || ! _currentPageIsWide()) return;
+    var autoWide = AUTO_ZOOM_WIDE && _currentPageIsWide();
+    // 宽页自动放大只属于那一页：翻离时倍率仍是自动放大的值（用户没再动过）就
+    // 还原。此前放大会一直带到后面的普通页上，把它们裁掉，而且静止倍率回到
+    // 默认后，这份残留会被当成「用户放大」，点热区翻不了页。
+    if (AUTO_ZOOM && !autoWide) {
+      if (Math.abs(ZOOM - AUTO_ZOOM.to) < 0.0005) {
+        ZOOM = AUTO_ZOOM.from;
+        if (ZOOM <= 1) { _recenterPan(); } else { _clampPan(); }
+        _applyCanvas();
+      }
+      AUTO_ZOOM = null;
+    }
+    if (!autoWide) return;
     var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
     if (!page || !(page.offsetWidth > 0)) return;
-    ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM, window.innerWidth / page.offsetWidth));
+    var fitWide = Math.min(ZOOM_MAX, window.innerWidth / page.offsetWidth);
+    ZOOM_REST = Math.max(ZOOM_REST, fitWide);
+    if (fitWide > ZOOM) {
+      if (AUTO_ZOOM) { AUTO_ZOOM.to = fitWide; } else { AUTO_ZOOM = {from: ZOOM, to: fitWide}; }
+      ZOOM = fitWide;
+    }
     _clampPan();
     _applyCanvas();
   }
@@ -1282,6 +1314,7 @@ String _mangaGestureJs({
     page.style.clipPath=physicalHalf===0 ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)';
     var halfWidth=page.offsetWidth/2;
     ZOOM=_clampZoom(Math.min(window.innerWidth/halfWidth,window.innerHeight/page.offsetHeight));
+    ZOOM_REST=ZOOM;
     var pageLeft=page.offsetLeft-spread.offsetLeft;
     PAN_X=(window.innerWidth-halfWidth*ZOOM)/2-(pageLeft+physicalHalf*halfWidth)*ZOOM;
     PAN_Y=(window.innerHeight-page.offsetHeight*ZOOM)/2-page.offsetTop*ZOOM;
@@ -1785,6 +1818,8 @@ String _mangaGestureJs({
     var vh = window.innerHeight;
     var fit = Math.min(vw / pw, vh / ph);
     var nextZoom = _clampZoom(Math.max(1, Math.min(ZOOM_MAX, fit * 0.90)));
+    // 分镜聚焦是阅读器自己放大的：点热区照常走下一格分镜。
+    ZOOM_REST = nextZoom;
     if (IS_WEBTOON) {
       var localX = (cx - PAN_X) / ZOOM;
       var localY = (window.scrollY + cy) / ZOOM;
@@ -2365,6 +2400,12 @@ String _mangaGestureJs({
     if (!b) return;
     if (_selectOcrChar(x, y, false)) return;
     var zone = _tapZoneTurn(x, y);
+    // 放大看细节时点左右不翻页（BUG-3622）：此时画面只露出页面的一块，热区
+    // 是按视口划的，点哪都可能落进翻页区，读者只想点一下收起工具栏或双击
+    // 缩回，却被翻走。放大态这一击落到下面的空白点语义（双击缩回 / 切悬浮栏）；
+    // 翻页靠贴边后继续拖（_end 的平移余量判据）。webtoon 的热区是纵向滚一屏，
+    // 放大后仍是导航，照常生效。
+    if (zone && !IS_WEBTOON && _userZoomedIn()) zone = null;
     if (zone) {
       if (IS_WEBTOON) { _tapScroll(zone === 'next' ? 1 : -1); return; }
       b.callHandler('onMangaTurn', zone);
