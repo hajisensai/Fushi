@@ -1,4 +1,4 @@
-## BUG-3641 · CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images）
+## BUG-3643 · CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images）
 - **报告**：2026-10-20（用户转述社区反馈：「It doesn't support cbz files that contains avif images」）
 - **真实性**：✅ 真 bug。AVIF 在整条漫画链路上都没接，失败点逐层叠：
   - 页图白名单 `kMangaImageExtensions = kImageExtensionsBase`（`packages/fushi_engine/lib/media/manga/manga_importer.dart:24`，基集无 `.avif`）→ `manga_archive_importer.dart:208` 把 AVIF 页当非图片跳过 → `:222` 抛 `Manga archive has no images`；
