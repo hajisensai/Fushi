@@ -101,6 +101,14 @@ class SrsBackupFormatException implements Exception {
   String toString() => 'SrsBackupFormatException(${reason.name}: $detail)';
 }
 
+/// [SrsBackupStore.create] 被 `shouldStop` 叫停（没有产出备份，暂存文件已删）。
+class SrsBackupCancelled implements Exception {
+  const SrsBackupCancelled();
+
+  @override
+  String toString() => 'SrsBackupCancelled';
+}
+
 /// 清单里的一个媒体文件。
 class SrsBackupMediaEntry {
   const SrsBackupMediaEntry({
@@ -542,17 +550,37 @@ class SrsBackupStore {
   }
 
   /// 做一份备份。[profileName] 只用于显示。
+  ///
+  /// 读快照的事务开着时，库上别的语句都要排在它后面（drift 单连接）：真实库三十万条复习
+  /// 日志要读二三十秒，复习页的查询全被挡住（BUG-3575）。[shouldStop] 每读完一页问一次，
+  /// 为 true 时抛 [SrsBackupCancelled]：事务回滚（只读，没有副作用）、暂存文件删掉。
   Future<SrsBackupInfo> create(
     SrsDbStore store, {
     required SrsBackupKind kind,
     required String profileName,
     int? nowMs,
+    bool Function()? shouldStop,
   }) async {
+    void checkStop() {
+      if (shouldStop?.call() ?? false) throw const SrsBackupCancelled();
+    }
+
     if (store.profileUid != profileUid) {
       throw ArgumentError('store belongs to ${store.profileUid}');
     }
     final int createdAt = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     await profileDir.create(recursive: true);
+    // 上一次没做完（进程在读快照 / 压缩时退出）留下的暂存文件：一份几百 MB，没人会再用。
+    // 同一 profile 的备份由控制器串行做，这里不会碰到另一份正在写的。
+    await for (final FileSystemEntity e in profileDir.list()) {
+      final String name = p.basename(e.path);
+      if (e is File &&
+          name.startsWith('.') &&
+          (name.endsWith('.events.tmp') ||
+              name.endsWith('.server_times.tmp'))) {
+        await _deleteQuietly(e);
+      }
+    }
     final String base = srsBackupFileStem(createdAt, kind);
     String id = base;
     for (int i = 2; File(_pathOf(id)).existsSync(); i++) {
@@ -570,10 +598,12 @@ class SrsBackupStore {
       int eventCount = 0;
       late final ({int notes, int cards, int reviews}) counts;
       await store.db.transaction(() async {
+        checkStop();
         fingerprint = await store.changeFingerprint();
         final IOSink ev = eventsTmp.openWrite();
         try {
           await store.forEachCanonicalLinePage((List<String> lines) async {
+            checkStop();
             final StringBuffer sb = StringBuffer();
             for (final String l in lines) {
               sb
@@ -592,6 +622,7 @@ class SrsBackupStore {
           st.write('{');
           bool first = true;
           await store.forEachServerTimePage((List<(String, int)> page) async {
+            checkStop();
             final StringBuffer sb = StringBuffer();
             for (final (String eventId, int s) in page) {
               if (!first) sb.write(',');

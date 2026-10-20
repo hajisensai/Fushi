@@ -21,7 +21,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
-    show isValidFontData;
+    show isValidFontData, kReaderWebViewCreationFailedSentinel;
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
@@ -639,6 +639,24 @@ String srsCardSetCardScript({
     'window.__fushiSrsSetCard(${jsonEncode(styleRefs)},${_jsString(bodyHtml)},'
     '${_jsString(classes)});';
 
+/// 一次下发的整段调用：外壳不在返回 `false`；各步依次执行、各自兜住异常（换主题出错
+/// 不能把换卡也拦下，否则卡面停在外壳底色、什么都不报，BUG-3575），全部成功返回 `true`，
+/// 有步骤抛错返回错误文本（宿主据此留痕）。
+@visibleForTesting
+String srsCardFaceCallsScript(List<String> steps) {
+  final StringBuffer out = StringBuffer(
+    '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
+    'return false;var errs=[];',
+  );
+  for (final String step in steps) {
+    out.write(
+      'try{$step}catch(e){errs.push(String(e&&e.stack||e).slice(0,500));}',
+    );
+  }
+  out.write('return errs.length?errs.join("\\n"):true;})()');
+  return out.toString();
+}
+
 /// 往外壳的样式注册表里登记一段样式（同一哈希只登记一次）。
 @visibleForTesting
 String srsCardDefineCssScript(SrsCardStyle style) =>
@@ -953,27 +971,29 @@ class SrsCardFaceSync {
   void _flush() {
     final SrsCardFaceDocument? doc = _wanted;
     if (!_ready || doc == null) return;
-    final StringBuffer calls = StringBuffer();
+    final List<String> steps = <String>[];
     final Set<String> defining = <String>{};
     final String themeKey = doc._themeKey;
     final String cardKey = doc._cardKey;
     if (themeKey != _appliedTheme) {
-      calls.write(doc.hostScript);
-      calls.write(
-        srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
+      steps.add(
+        doc.hostScript +
+            srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
       );
     }
     if (cardKey != _appliedCard) {
       final List<SrsCardStyle> styles = doc.styles;
+      final StringBuffer card = StringBuffer();
       for (final SrsCardStyle st in styles) {
         if (_definedStyles.contains(st.hash) || !defining.add(st.hash)) {
           continue;
         }
-        calls.write(srsCardDefineCssScript(st));
+        card.write(srsCardDefineCssScript(st));
       }
       // 开关先于换卡下发：新内容插入、卡片脚本重放时闸门已是这张卡的设置。
-      calls.write(srsCardSetAutoplayScript(autoplay: doc.autoplayMedia));
-      calls.write(
+      card.write(srsCardSetAutoplayScript(autoplay: doc.autoplayMedia));
+      steps.add(card.toString());
+      steps.add(
         srsCardSetCardScript(
           styleRefs: <String>[for (final SrsCardStyle st in styles) st.hash],
           bodyHtml: doc.bodyHtml,
@@ -981,35 +1001,52 @@ class SrsCardFaceSync {
         ),
       );
     }
-    if (calls.isEmpty) return;
+    if (steps.isEmpty) return;
     _appliedTheme = themeKey;
     _appliedCard = cardKey;
     _definedStyles.addAll(defining);
     final int generation = ++_generation;
-    final String source =
-        '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
-        'return false;$calls return true;})()';
+    void invalidate() {
+      // 同一代之后没有新下发时才作废：下次 update / 外壳就绪整份重发。
+      if (generation != _generation) return;
+      _appliedTheme = null;
+      _appliedCard = null;
+      _definedStyles.removeAll(defining);
+    }
+
     unawaited(
-      evaluate(source).then(
+      evaluate(srsCardFaceCallsScript(steps)).then(
         (Object? result) {
           if (generation != _generation) return;
-          if (result == false) {
+          if (result == true) {
+            _reloadedShell = false;
+          } else if (result == false) {
             // 页面已不是外壳（被卡片链接导航走了）：重载外壳一次，onLoadStop 后重放。
             if (_reloadedShell) return;
             _reloadedShell = true;
             detach();
             reloadShell();
-          } else if (result == true) {
-            _reloadedShell = false;
+          } else if (result is String) {
+            // 某一步在页内抛错（其余步骤照常执行，见 [srsCardFaceCallsScript]）：留痕。
+            ErrorLogService.instance.log(
+              'SrsWebCardFace.setCard',
+              StateError(result),
+              StackTrace.current,
+            );
+          } else {
+            // 调用整体没执行（平台视图没了 / 脚本没能运行，Windows 上页内顶层异常也是
+            // null）：这一份没有上屏，不能当作已下发。
+            ErrorLogService.instance.log(
+              'SrsWebCardFace.setCard',
+              StateError('card face calls returned $result'),
+              StackTrace.current,
+            );
+            invalidate();
           }
         },
         onError: (Object e, StackTrace stack) {
           ErrorLogService.instance.log('SrsWebCardFace.setCard', e, stack);
-          // 下发失败：下次 update 整份重发（同一代之后没有新下发时才作废）。
-          if (generation != _generation) return;
-          _appliedTheme = null;
-          _appliedCard = null;
-          _definedStyles.removeAll(defining);
+          invalidate();
         },
       ),
     );
@@ -1263,6 +1300,10 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
   @visibleForTesting
   static InAppWebViewController? debugController;
 
+  /// 集成测试探针：卡面每个经拦截器供出的媒体 / 字体请求（URL、字节数、耗时毫秒）。
+  @visibleForTesting
+  static void Function(Uri url, int bytes, int ms)? debugMediaServed;
+
   @override
   ConsumerState<SrsWebCardFace> createState() => _SrsWebCardFaceState();
 }
@@ -1277,6 +1318,13 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
 
   /// 当前外壳里已装好取词脚本（外壳重载 / renderer 重建后重装）。
   bool _lookupInstalled = false;
+
+  /// 平台视图创建失败后重建过一次（只重来一次，再失败只留痕）。
+  bool _recreatedAfterFailure = false;
+  int _creationAttempt = 0;
+
+  /// 外壳主文档加载失败后重载过一次。
+  bool _reloadedAfterLoadError = false;
 
   /// macOS 宿主侧悬停腿（页面收不到 mousemove，BUG-2508）。
   final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
@@ -1351,6 +1399,15 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   }
 
   Future<WebResourceResponse?> _intercept(Uri url) async {
+    final void Function(Uri, int, int)? probe = SrsWebCardFace.debugMediaServed;
+    if (probe == null) return _serve(url);
+    final Stopwatch sw = Stopwatch()..start();
+    final WebResourceResponse? r = await _serve(url);
+    if (r != null) probe(url, r.data?.length ?? 0, sw.elapsedMilliseconds);
+    return r;
+  }
+
+  Future<WebResourceResponse?> _serve(Uri url) async {
     if (srsFontPathFromUrl(url) != null) {
       return srsCardFontResponse(
         url,
@@ -1627,7 +1684,7 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   Widget build(BuildContext context) {
     final Widget webView = KeyedSubtree(
-      key: _deathGuard.rebuildKey,
+      key: ValueKey<(Key, int)>((_deathGuard.rebuildKey, _creationAttempt)),
       child: InAppWebView(
         // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
         initialData: InAppWebViewInitialData(
@@ -1759,6 +1816,40 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             },
           );
         },
+        // 外壳没能加载 / 平台视图没建起来时不会有 onLoadStop，卡面会一直停在空白：
+        // 留痕并各重来一次（BUG-3575；以前没接这个回调，失败完全无声）。
+        onReceivedError:
+            (
+              InAppWebViewController controller,
+              WebResourceRequest request,
+              WebResourceError error,
+            ) {
+              if (error.description.contains(
+                kReaderWebViewCreationFailedSentinel,
+              )) {
+                ErrorLogService.instance.log(
+                  'SrsWebCardFace.creationFailed',
+                  error.description,
+                  null,
+                );
+                if (_recreatedAfterFailure || !mounted) return;
+                _recreatedAfterFailure = true;
+                _controller = null;
+                _sync.detach();
+                setState(() => _creationAttempt++);
+                return;
+              }
+              if (request.isForMainFrame != true) return;
+              ErrorLogService.instance.log(
+                'SrsWebCardFace.shellLoadFailed',
+                '${error.type} ${error.description} ${request.url}',
+                null,
+              );
+              if (_reloadedAfterLoadError) return;
+              _reloadedAfterLoadError = true;
+              _sync.detach();
+              _reloadShell();
+            },
         onLoadStop: (InAppWebViewController controller, _) {
           // 死亡处置已丢弃 controller：等重建后的新平台视图自己的 onLoadStop。
           if (_controller == null) return;

@@ -105,6 +105,10 @@ class SrsReviewPage extends ConsumerStatefulWidget {
   final String deckId;
   final String deckName;
 
+  /// 集成测试探针：打开首张卡的各阶段（null = 不记）。
+  @visibleForTesting
+  static void Function(String phase)? debugPhase;
+
   @override
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
 }
@@ -171,9 +175,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   final List<_UndoStep> _undo = <_UndoStep>[];
 
   /// 卡面音频的自动播放 / 重播序列（换卡、翻面、离开本页都会打断）。
-  late final SrsCardAudioSequencer _audio = SrsCardAudioSequencer(
-    ref.read(srsCardAudioOutputProvider),
-  );
+  ///
+  /// 在 [initState] 里建好：以前是惰性初始化，首张卡还没出来就离开本页时它第一次被读是在
+  /// [dispose] 里，`ref.read` 在卸载中抛错，`super.dispose()` 被跳过、State 永远 mounted。
+  late final SrsCardAudioSequencer _audio;
 
   /// 当前卡的音频设置来自哪个牌组（卡所在牌组的 own 祖先）；随换卡 / 改设置重读。
   SrsDeckView? _audioOwner;
@@ -181,6 +186,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   void initState() {
     super.initState();
+    _audio = SrsCardAudioSequencer(ref.read(srsCardAudioOutputProvider));
     // 正在复习：自动优化让路（在跑的那一轮立即取消，见 srs_optimization_scheduler.dart）。
     srsActiveReviewSessions.value++;
     unawaited(_start());
@@ -206,13 +212,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       return;
     }
     _store = store;
+    SrsReviewPage.debugPhase?.call('store');
     await _loadNext();
   }
 
-  Future<SrsDeckSummary?> _deckSummary() async =>
-      (await _store!.deckSummaries())
-          .where((SrsDeckSummary s) => s.deck.id == widget.deckId)
-          .firstOrNull;
+  Future<SrsDeckSummary?> _deckSummary() => _store!.deckSummary(widget.deckId);
 
   void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
@@ -320,14 +324,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         unawaited(_completeShown(id, _shownGeneration));
         return;
       }
+      SrsReviewPage.debugPhase?.call('nextCard');
       await _refreshCounts();
+      SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
+      SrsReviewPage.debugPhase?.call('render');
       final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
       final SrsDayContext day = await store.dayContext();
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(id)
           : null;
+      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted) return;
       _show(
         detail,
@@ -356,6 +364,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     required SrsDeckView? audioOwner,
   }) {
     _shownGeneration++;
+    SrsReviewPage.debugPhase?.call('show');
     // 换卡：上一张卡上查的词弹窗收起。
     _lookup.closeAll();
     setState(() {

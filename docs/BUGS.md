@@ -44,6 +44,7 @@
 |---|:--:|:--:|---|
 | [BUG-3576](bugs/BUG-3576-interconnect-srs-writer-dir-hash-propfind-404.md) | ✅ | ✅ | 互联客户端复习同步第二轮起 PROPFIND 404（写入者目录名带 `#`） |
 | [BUG-3575](bugs/BUG-3575-srs-sync-now-failure-says-unconfigured.md) | ✅ | ✅ | 复习「立即同步」失败时提示「还没有配置同步服务」 |
+| [BUG-3575](bugs/BUG-3575-srs-deck-open-slow.md) | ✅ | ✅ | SRS 打开大牌组很慢（eggrolls 首张卡要等十几秒），首张卡出来前退出复习页时 State 卡成僵尸 |
 | [BUG-3574](bugs/BUG-3574-manga-source-scan-skips-cbz-zip.md) | ✅ | ✅ | 漫画来源扫描跳过 .cbz / .zip 卷（显示 0 卷），漫画来源里的 .epub / .pdf 卷也被丢掉 |
 | [BUG-3573](bugs/BUG-3573-mixed-dict-kanji-section-missing.md) | ✅ | ✅ | mixed-dict-kanji-section-missing |
 | [BUG-3572](bugs/BUG-3572-extension-asb-anki-dialog-no-lookup.md) | ✅ | ✅ | 浏览器扩展：asbplayer Mining History「Export to Anki」对话框的字段里查不了词 |
