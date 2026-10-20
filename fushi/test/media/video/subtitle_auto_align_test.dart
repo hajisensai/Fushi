@@ -234,8 +234,9 @@ void main() {
       expect(args[mapIdx + 1], '0:a:2');
     });
 
-    // TODO-413 档C：limitSeconds 加 ffmpeg `-t`（输出选项，须在 -i 之后）。
-    test('limitSeconds adds -t after input', () {
+    // TODO-413 档C：limitSeconds 加 ffmpeg `-t`。必须是输入选项（-i 之前）：作输出选项
+    // 会被末尾大帧 asetnsamples 拖过上界，包络比波形时间窗长、整条波形被压缩错位。
+    test('limitSeconds adds -t as an input option', () {
       final List<String> args = buildFfmpegPcmEnvelopeArgs(
         inputPath: '/tmp/v.mkv',
         limitSeconds: 1200,
@@ -243,8 +244,8 @@ void main() {
       final int tIdx = args.indexOf('-t');
       expect(tIdx, greaterThanOrEqualTo(0));
       expect(args[tIdx + 1], '1200');
-      expect(tIdx, greaterThan(args.indexOf('/tmp/v.mkv')),
-          reason: '-t 须在输入之后（裁解码后的音频时长）');
+      expect(tIdx, lessThan(args.indexOf('-i')),
+          reason: '-t 须在 -i 之前（输入端截断，包络帧数 = 上界 / 窗口）');
     });
 
     test('limitSeconds null/non-positive omits -t', () {

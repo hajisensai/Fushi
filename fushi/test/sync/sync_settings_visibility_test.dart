@@ -108,6 +108,7 @@ void main() {
       expect(idsOf(dest.sections[1]), <String>[
         'sync.statistics',
         'sync.content',
+        'sync.manga_content',
         'sync.audiobook_files',
         'sync.video_files',
         // 多端库联合视图（spec §2.1）：「显示远端条目」占位卡混排开关（纯显示偏好）。
@@ -163,6 +164,7 @@ void main() {
         );
         for (final String id in <String>[
           'sync.content',
+          'sync.manga_content',
           'sync.audiobook_files',
           'sync.video_files',
           'sync.dictionary_transfer',
@@ -189,6 +191,7 @@ void main() {
       ).readAsStringSync();
       for (final String id in <String>[
         'sync.content',
+        'sync.manga_content',
         'sync.audiobook_files',
         'sync.video_files',
         // 词典/本地音频两个传输动作行同理：它们只在云备份通道上跑（互联对端的
@@ -490,6 +493,7 @@ void main() {
         // 并排成两个「词典」，已删除。
         expect(idsOf(dest.sections[2]), <String>[
           'interconnect.upload_content',
+          'interconnect.upload_manga_content',
           'interconnect.dictionary_transfer',
           'interconnect.local_audio_transfer',
           'interconnect.fonts_transfer',

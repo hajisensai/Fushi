@@ -68,10 +68,24 @@ void main() {
       expect(restored.textProcess.apply('AABABCABCD'), 'ABCD');
     });
 
-    test('空管线不写进 JSON（保持「空值不写」的记忆风格）', () {
+    test('没改过的游戏用默认管线，且默认管线不写进 JSON（「默认值不写」）', () {
       const GalCaptureMemory memory = GalCaptureMemory();
+      expect(memory.textProcess, kGalDefaultTextProcessPipeline);
       expect(memory.toJson().containsKey('textProcess'), isFalse);
       expect(memory.isEmpty, isTrue);
+    });
+
+    test('用户把步骤删光是一个要记住的选择：写出 [] 并原样读回空管线', () {
+      const GalCaptureMemory memory = GalCaptureMemory(
+        textProcess: GalTextProcessPipeline(),
+      );
+      expect(memory.toJson()['textProcess'], isEmpty);
+      expect(memory.isEmpty, isFalse);
+      expect(
+        GalCaptureMemory.fromJson(memory.toJson()).textProcess.steps,
+        isEmpty,
+        reason: '删光后重启不能被默认管线顶回来',
+      );
     });
 
     test('步骤全部 disabled 仍然写出——禁用不是删除', () {
@@ -100,16 +114,16 @@ void main() {
       );
     });
 
-    test('缺字段 / 脏值退回空管线而不是抛', () {
+    test('缺字段 / 脏值退回默认管线而不是抛', () {
       expect(
-        GalCaptureMemory.fromJson(const <Object?, Object?>{}).textProcess.steps,
-        isEmpty,
+        GalCaptureMemory.fromJson(const <Object?, Object?>{}).textProcess,
+        kGalDefaultTextProcessPipeline,
       );
       expect(
         GalCaptureMemory.fromJson(const <Object?, Object?>{
           'textProcess': 'not-a-list',
-        }).textProcess.steps,
-        isEmpty,
+        }).textProcess,
+        kGalDefaultTextProcessPipeline,
       );
     });
   });

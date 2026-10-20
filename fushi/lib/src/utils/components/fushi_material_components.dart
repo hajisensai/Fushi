@@ -5071,23 +5071,39 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     setState(() => _headerHeight = height);
   }
 
+  /// 主滚动区深度：版面修正通知只认它（见 [FushiScrollOwnerDepth]）。
+  final FushiScrollOwnerDepth _scrollOwner = FushiScrollOwnerDepth();
+
+  /// 竖向滚动位置的来源：用户 / 动画滚动（[ScrollUpdateNotification]）与版面
+  /// 修正（[ScrollMetricsNotification]：列表缩短 / 视口变高把位置夹回顶部只发
+  /// 这一种，漏掉它遮罩与标题会停在「已滚动」态；只认主滚动区，嵌套小列表的首次
+  /// 布局不算）。其它通知返回 null。
+  ScrollMetrics? _verticalScrollMetrics(Notification notification) {
+    if (notification is ScrollUpdateNotification) {
+      _scrollOwner.claim(notification);
+    }
+    final ScrollMetrics? metrics = switch (notification) {
+      ScrollUpdateNotification(:final ScrollMetrics metrics) => metrics,
+      final ScrollMetricsNotification n when _scrollOwner.owns(n) => n.metrics,
+      _ => null,
+    };
+    if (metrics == null || metrics.axis != Axis.vertical) return null;
+    return metrics;
+  }
+
   void _trackTitleReveal(Notification notification) {
     final double? after = widget.revealTitleAfterScroll;
     if (after == null) return;
-    if (notification is ScrollUpdateNotification &&
-        notification.metrics.axis == Axis.vertical) {
-      _titleRevealed.value = notification.metrics.extentBefore > after;
-    }
+    final ScrollMetrics? metrics = _verticalScrollMetrics(notification);
+    if (metrics != null) _titleRevealed.value = metrics.extentBefore > after;
   }
 
   bool _trackScrolledUnder(Notification notification) {
     _trackTitleReveal(notification);
     // 只看竖向轴、不限深度：正文常是横向 TabBarView 套各页竖向列表（统计
     // 中心），竖向滚动的 depth 是 1。
-    if (notification is ScrollUpdateNotification &&
-        notification.metrics.axis == Axis.vertical) {
-      _scrolledUnder.value = notification.metrics.extentBefore > 0;
-    }
+    final ScrollMetrics? metrics = _verticalScrollMetrics(notification);
+    if (metrics != null) _scrolledUnder.value = metrics.extentBefore > 0;
     return false;
   }
 

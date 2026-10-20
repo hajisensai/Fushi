@@ -1,4 +1,4 @@
-## BUG-3622 · 视频订阅操作在订阅页与 host 各写一份、语义分叉；经 host 重新启用已完成 oneShot 撞 CHECK；CLI 没有订阅命令
+## BUG-3648 · 视频订阅操作在订阅页与 host 各写一份、语义分叉；经 host 重新启用已完成 oneShot 撞 CHECK；CLI 没有订阅命令
 - **报告**：2026-10-20（用户：用 fushi_cli 把《凶乱令嬢ニア・リストン》改成订阅后，CLI 查不到 / 管不了订阅，要求根本性修复）
 - **真实性**：✅ 真 bug。根因是同一组订阅操作有两份实现：
   - 订阅页把启停 / 检查 / 全部检查 / 删除 / 编辑写成 State 私有方法直接写库（`fushi/lib/src/pages/implementations/video_download_subscriptions_panel.dart` 旧 `_setEnabled` / `_checkOne` / `_checkAll` / `_delete` / `_edit`），桌面控制通道无从调「按钮背后的同一个方法」，CLI 因此整组漏接；

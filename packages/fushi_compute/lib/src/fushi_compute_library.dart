@@ -178,6 +178,13 @@ class FushiCompute {
         '$sep$platformDir$sep$name',
       );
       if (candidate.existsSync()) return candidate.path;
+      // 找到仓库根（worktree 的 `.git` 是文件）为止：本仓 worktree 嵌在主 checkout 里，
+      // 再往上找会悄悄加载主 checkout 用别的分支编出的库，掩盖「本 worktree 缺库」
+      // （原生库是硬依赖，缺了要明确失败）。
+      if (FileSystemEntity.typeSync('${dir.path}$sep.git') !=
+          FileSystemEntityType.notFound) {
+        break;
+      }
       final Directory parent = dir.parent;
       if (parent.path == dir.path) break;
       dir = parent;

@@ -23,6 +23,17 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "std"]
 crc32fast = "1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp", "tiff", "tga", "ico", "pnm"] }
 jpeg-encoder = "0.6"
+# image/avif.rs：AV1 解码（dav1d 的纯 Rust 移植，BSD-2-Clause）。关掉默认的 `asm` 特性：asm 要
+# nasm / 各架构汇编工具链，五端交叉编译时不可靠；纯 Rust 路径只慢在大图解码上，漫画页 / 封面够用。
+# 钉 git rev 而不是 crates.io 1.1.0：1.1.0 的出错路径 `on_error` 对 `frame_hdr` 直接 unwrap，坏码流
+# 会在 `extern "C"` 的 dav1d_send_data 里 panic → 不可 unwind → 整个进程 abort（catch_unwind 接
+# 不住）。上游 6c6f463785（2026-09-14）已修、尚未发版；发 1.1.0 之后的版本就换回 crates.io。
+# 指向 hajisensai/rav1d 分支 fushi/arm-stable-toolchain = 上游 0c851fa046 + 一行补丁：上游 lib.rs
+# 第一行只按 target_arch = "arm" 开 nightly 专属的 `#![feature(stdarch_arm_feature_detection)]`，
+# 不看 asm 特性，armeabi-v7a 在 stable 上必报 E0554（v1.0 / v1.1 / 最新提交都一样，换版本修不了）。
+# 补丁把它限定为 all(feature = "asm", target_arch = "arm")：该特性只给 asm 的 CPU 探测用。
+# 上游收了同样的修复后改回 memorysafety/rav1d。
+rav1d = { git = "https://github.com/hajisensai/rav1d", rev = "b757fbae698d1959d415d14e7c70da8dba36dc59", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
 md4 = "0.10"
 sha1 = "0.10"
 sha2 = "0.10"

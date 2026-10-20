@@ -374,6 +374,12 @@ class _StandaloneVideoWorkDetailState
           ),
           backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
           bottomPadding: tokens.spacing.page,
+          fab: MediaDetailResumeFab(
+            buttonKey: const ValueKey<String>('video-work-resume-fab'),
+            watching: true,
+            started: book.lastPositionMs > 0,
+            onPressed: () => _playBook(book),
+          ),
           header: CollectionDetailHero(
             backdrop: fanart,
             cover: poster,
@@ -397,9 +403,10 @@ class _StandaloneVideoWorkDetailState
                 ),
             ],
             summary: work?.overview,
-            playLabel: book.lastPositionMs > 0
-                ? t.video_continue_watching
-                : t.collection_play,
+            playLabel: MediaDetailResumeFab.labelFor(
+              watching: true,
+              started: book.lastPositionMs > 0,
+            ),
             playButtonKey: const ValueKey<String>('video-work-play'),
             onPlay: () => _playBook(book),
             secondaryActions: <Widget>[
@@ -734,6 +741,12 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
           ),
           backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
           bottomPadding: tokens.spacing.page,
+          fab: MediaDetailResumeFab(
+            buttonKey: const ValueKey<String>('remote-video-work-resume-fab'),
+            watching: true,
+            started: widget.info.positionMs > 0,
+            onPressed: widget.onPlay,
+          ),
           header: CollectionDetailHero(
             backdrop: fanart,
             cover: poster,
@@ -757,9 +770,10 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
                 ),
             ],
             summary: work?.plot,
-            playLabel: widget.info.positionMs > 0
-                ? t.video_continue_watching
-                : t.collection_play,
+            playLabel: MediaDetailResumeFab.labelFor(
+              watching: true,
+              started: widget.info.positionMs > 0,
+            ),
             playButtonKey: const ValueKey<String>('remote-video-work-play'),
             onPlay: widget.onPlay,
           ),

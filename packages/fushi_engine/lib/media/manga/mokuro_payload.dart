@@ -15,6 +15,7 @@ class MokuroPayload {
   const MokuroPayload({
     required this.images,
     this.ocr,
+    this.pdfTextLayerVersion,
   });
 
   /// All images in sequential order.
@@ -22,6 +23,11 @@ class MokuroPayload {
 
   /// Optional producer metadata. Older manga.json files omit it.
   final MangaOcrMetadata? ocr;
+
+  /// 这卷的页图来自 PDF，且已按这个版本的规则从 PDF 文字层提取过文字块
+  /// （`manga_pdf_text_layer.dart`）。null = 没提取过（不是 PDF 来的卷，或旧卷）。
+  /// 提取过但一页文字都没有（纯扫描 PDF）也会记版本，避免每次开书重提。
+  final int? pdfTextLayerVersion;
 
   @override
   String toString() {
@@ -87,6 +93,7 @@ class MokuroBlock {
     this.regions,
     this.confidence,
     this.aiRecognized = false,
+    this.pdfTextLayer = false,
   });
 
   /// Coordinates for this block (the `box` = `[x1, y1, x2, y2]`).
@@ -130,6 +137,11 @@ class MokuroBlock {
   /// 文字已由视觉大模型改写过（`manga_ai_ocr_refiner.dart`）。只是记账：再跑一遍
   /// AI 识别时跳过它，不重复花钱。
   final bool aiRecognized;
+
+  /// 块来自 PDF 自带的文字层（逐字坐标是 PDFium 给的真值），不是 OCR 识别的。
+  /// OCR 写回时保留它、盖掉与它重叠的识别块（`preservePdfTextLayer`），大模型
+  /// 识别也跳过它。
+  final bool pdfTextLayer;
 
   @override
   String toString() {
@@ -340,6 +352,7 @@ MokuroPayload parseMangaJson(String jsonStr) {
   return MokuroPayload(
     images: images,
     ocr: _parseOcrMetadata(decoded['ocr']),
+    pdfTextLayerVersion: (decoded['pdf_text_layer_version'] as num?)?.toInt(),
   );
 }
 
@@ -356,6 +369,8 @@ Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
         'engine_signature': payload.ocr!.engineSignature,
         'schema_version': payload.ocr!.schemaVersion,
       },
+    if (payload.pdfTextLayerVersion != null)
+      'pdf_text_layer_version': payload.pdfTextLayerVersion,
     'pages': <Map<String, Object?>>[
       for (final MokuroImage image in payload.images)
         <String, Object?>{
@@ -379,6 +394,7 @@ Map<String, Object?> mangaPayloadToJson(MokuroPayload payload) {
                   'lines_coords': block.linesCoords,
                 if (block.confidence != null) 'confidence': block.confidence,
                 if (block.aiRecognized) 'ai_recognized': true,
+                if (block.pdfTextLayer) 'pdf_text_layer': true,
                 if (block.regions != null)
                   'regions': <Map<String, Object?>>[
                     for (final MangaOcrTextRegion region in block.regions!)
@@ -459,6 +475,7 @@ MokuroBlock _parseBlock(
     confidence:
         raw['confidence'] is num ? (raw['confidence'] as num).toDouble() : null,
     aiRecognized: raw['ai_recognized'] == true,
+    pdfTextLayer: raw['pdf_text_layer'] == true,
   );
 }
 
