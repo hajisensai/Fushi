@@ -52,6 +52,7 @@
 | [BUG-3622](bugs/BUG-3622-pdf-manga-text-layer-drift.md) | ✅ | ✅ | pdf-manga-text-layer-drift |
 | [BUG-3630](bugs/BUG-3630-mining-sentence-truncated.md) | ✅ | ✅ | 视觉小说模式制卡句子被切屏截断成半句 |
 | [BUG-3622](bugs/BUG-3622-collection-hero-cover-dangling-path.md) | ✅ | ✅ | 系列封面路径悬空时详情页 hero 不回落到刮削封面 |
+| [BUG-3622](bugs/BUG-3622-interconnect-online-manga-undownloaded-hidden.md) | ✅ | ✅ | interconnect-online-manga-undownloaded-hidden |
 | [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
 | [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
 | [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
