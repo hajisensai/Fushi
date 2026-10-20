@@ -5024,6 +5024,7 @@
   "onboarding_review_anki_desc": "把卡片发到 Anki（AnkiDroid、AnkiMobile，或桌面版 Anki + AnkiConnect），在 Anki 里复习。下一步需要连接 Anki 并选好牌组和笔记类型。",
   "onboarding_review_anki_title": "Anki",
   "onboarding_review_anki_toggle": "改用 Anki…",
+  "onboarding_review_fushi_auto_reposition_hint": "制卡约 30 秒后，自动把该牌组的新卡按词频排序，常见词先学，不动复习卡。之后可在 设置 › 制卡 里更改。",
   "onboarding_review_fushi_desc": "内置间隔复习，排程默认使用 FSRS-7。无需安装 Anki，也不用任何配置，制的卡直接进入复习。",
   "onboarding_review_fushi_title": "Fushi SRS",
   "onboarding_review_method_body": "查词时制的卡在这里复习。之后随时可以在「设置 → 制卡」里更改。",
