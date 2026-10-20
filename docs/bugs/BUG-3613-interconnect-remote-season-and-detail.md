@@ -1,0 +1,15 @@
+## BUG-3613 · iPad 经互联：刮削后剧集不分季、独立作品点开直接播放无资料页
+- **报告**：2026-10-19（用户：应用内反馈 _sZllpFQWm，iPad 经 Windows 互联 host 看视频）
+- **真实性**：✅ 真 bug，两处根因：
+  - 分季：合集详情页按 `CollectionEpisodeSlot.filename` 现场派生季分组（`fushi/lib/src/pages/implementations/media_collection_detail_page.dart:431`），远端槽的 filename 原先是 host 下发的**标题**（`fushi/lib/src/media/collections/collection_episode_slot.dart:67`，旧实现 `remote!.title`）。host 刮削会把 `VideoBooks.title` 改写成分集名（`packages/fushi_engine/lib/media/video/metadata/video_metadata_database_store.dart:1063` `updateVideoBookTitle`），之后标题里没有季号，几十集落进同一组；同集归并 `pairRemoteEpisodesWithLocal` 也按标题解析，同样失效。缺口在 host API：它没有下发文件名。
+  - 资料页：本地「剧集」库页的独立作品点开走 `_openBookWorkDetail`（`home_video_page.dart` `_buildVideoSlotCard`），远端占位卡只走 `_openRemote` 直接播放，这是 UI 分支没走。而且独立作品的资料挂在 host 的视频行上，client 同步时 `resolveMetadataWorkTarget` 找不到本地 `video_books` 行就会延后（`packages/fushi_engine/lib/sync/video_metadata_work_target.dart:50`；`video_metadata_works.book_uid` 外键指向 `video_books`）。所以本机永远没有这部作品的资料：client 既落不了库，也没有按需请求。
+- **[x] ① 已修复**
+  - 分季：host 清单 `RemoteVideoInfo` 新增 `fileName`，只下发 basename、不带目录（`local_library_host_service/videos.part.dart` `_videoInfoFromRow`）。client 解析输入统一走 `RemoteVideoInfo.parseName`：有文件名用文件名，旧 host / 媒体服务器回落标题。`CollectionEpisodeSlot.filename` 与 `pairRemoteEpisodesWithLocal` 都改用它。
+  - 资料页：`GET /api/library/metadata` 加 `bookUid` 过滤（旧 host 忽略该参数，client 再按键筛一遍）。新增可选能力 `RemoteVideoWorkMetadataFetch`，由 `InterconnectSyncBackend` 实现。「剧集」库页的远端独立卡点开后进入新页面 `RemoteVideoWorkDetailPage`：按需取资料、不落库，主按钮沿用远端流播。
+  - 提交：待主会话拆分支后补。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_client_video_parity_test.dart`，用真 `LocalLibraryHostService` + 真 HTTP 覆盖：
+  - 刮削改标题后清单仍带 basename；client 按文件名分季得两组，按标题只有一组。
+  - 旧 host 不带 `fileName` 时回落标题。
+  - 同集归并按文件名识别。
+  - `metadata?bookUid=` 只回该视频的作品。
+- **备注**：待真机复测（iPad + Windows host）。远端资料页目前只显示 hero（封面 / 背景 / 年份 / 评分 / 片长 / 简介）和类型 / 制作 / 地区 / 关键词。人物表与附件没有接：本地页这两块读的是本机库。

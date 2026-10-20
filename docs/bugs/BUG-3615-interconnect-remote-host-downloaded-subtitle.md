@@ -1,0 +1,16 @@
+## BUG-3615 · iPad 经互联流播用不了电脑上已下载的字幕
+- **报告**：2026-10-19（用户：应用内反馈 _sZllpFQWm）
+- **真实性**：✅ 真 bug。
+  - 应用内「下载字幕」和手动导入会把字幕拷到 `<appDocs>/video_subtitles/`，并把绝对路径写进 `VideoBooks.subtitleSource`（`video_book_repository.dart` `saveSubtitleSelection`；`video_subtitle_source.dart` `isImportedExternalSubtitlePath`）。host 本机播放就按这个路径加载。
+  - 但 host 下发给 client 的字幕只扫视频同目录的 sidecar：清单 `_videoInfoFromRow` 用 `pickSidecar`，`resolveVideoSubtitle` 用 `findSidecarSubtitle`（都在 `packages/fushi_engine/lib/sync/local_library_host_service/videos.part.dart`），两处都不读 `subtitleSource`。
+  - 也就是 host API 没提供这份字幕，`/streamurl` 因此不给 `subtitleUrl`，client 只能自己再下一遍。
+- **[x] ① 已修复**
+  - 新增 `_persistedExternalSubtitlePath(row)`：`subtitleSource` 是外挂字幕文件且仍在磁盘上时，优先下发它。生效位置是清单的 `hasSubtitle` / `subtitleFileName`，以及 `resolveVideoSubtitle`（`/streamurl` 与 `/subtitle` 共用）。这样远端与 host 本机播放读的是同一份选择。
+  - 以下情况维持原来的 sidecar 口径：内嵌轨、关闭哨兵、文件已不在、多集播放列表行（这类行的 `subtitleSource` 只属于当前集）。
+  - 路径只来自 host 自己的 DB，扩展名还要过字幕白名单。
+  - 提交：待主会话拆分支后补。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_client_video_parity_test.dart` 覆盖：
+  - app 字幕目录里的下载字幕能经清单和真 HTTP `/subtitle` 下发。
+  - 它优先于 sidecar；文件删掉后回落到 sidecar。
+  - 内嵌轨与播放列表行不受影响。
+- **备注**：待真机复测。

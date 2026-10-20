@@ -438,6 +438,23 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       );
     }
 
+    // GET /api/library/videos/<id>/danmakukey?episode=N — 弹弹play 匹配指纹
+    // （BUG-3614）。client 远端流播时本机没有文件、算不出指纹，由 host 用自己的
+    // 文件算好下发。不实现 [VideoDanmakuKeyHost] / 老 host → 404，client 当作没有
+    // 弹幕来源。
+    final String? danmakuKeyId = _extractVideoId(reqPath, 'danmakukey');
+    if (danmakuKeyId != null) {
+      if (method != 'GET') return shelf.Response(405);
+      if (svc is! VideoDanmakuKeyHost) {
+        return shelf.Response.notFound('Video danmaku key not supported');
+      }
+      final DandanplayFileKey? key = await (svc as VideoDanmakuKeyHost)
+          .videoDanmakuKey(danmakuKeyId,
+              episodeIndex: _episodeIndexFromRequest(request));
+      if (key == null) return shelf.Response.notFound('Video not found');
+      return jsonResponse(key.toJson());
+    }
+
     // GET/PUT /api/library/videos/<id>/position — 跨设备播放断点（TODO-653）
     // GET 让 client 拉取 host 真相源进度；PUT 让 client 上报本端进度（host 取较新者）。
     final String? positionId = _extractVideoId(reqPath, 'position');

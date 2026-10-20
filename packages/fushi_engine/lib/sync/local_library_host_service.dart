@@ -22,6 +22,10 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show PlaylistEntry;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath, lacksLocalMediaFile;
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey, dandanplayFileKeyOf;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
+    show isImportedExternalSubtitlePath;
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
     show VideoPendingScrapeWork, planScrapeWorksForCollection;
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
@@ -126,6 +130,7 @@ abstract class _LocalLibraryHostBase
         DeletionTombstoneHost,
         VideoDeletionHost,
         VideoPlaybackSyncHost,
+        VideoDanmakuKeyHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
         VideoSubtitleDefaultHost,

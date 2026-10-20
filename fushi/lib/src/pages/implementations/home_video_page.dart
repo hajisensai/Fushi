@@ -6233,7 +6233,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : null,
       );
     }
-    return _buildRemoteVideoCard(slot.remote!, orientation: orientation);
+    final RemoteVideoInfo remote = slot.remote!;
+    // 远端独立作品与本地同口径：「剧集」库页点开先进资料页（BUG-3613）。资料只有
+    // 能按需取单部作品的来源（互联 host）才有；其余远端源照旧直接开播。
+    final RemoteVideoClient? client = _remoteVideoClient;
+    return _buildRemoteVideoCard(
+      remote,
+      orientation: orientation,
+      openOverride:
+          widget.section == VideoLibrarySection.series &&
+              client is RemoteVideoWorkMetadataFetch
+          ? () => _openRemoteWorkDetail(
+              remote,
+              client as RemoteVideoWorkMetadataFetch,
+            )
+          : null,
+    );
+  }
+
+  /// 远端独立作品的资料页（BUG-3613）；主按钮沿用远端流播 [_openRemote]。
+  void _openRemoteWorkDetail(
+    RemoteVideoInfo video,
+    RemoteVideoWorkMetadataFetch metadata,
+  ) {
+    Navigator.push<void>(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => RemoteVideoWorkDetailPage(
+          info: video,
+          metadata: metadata,
+          fallbackCover: _remoteCoverProvider(video),
+          onPlay: () => unawaited(_openRemote(video)),
+        ),
+      ),
+    );
   }
 
   /// 本地卡朝向探测/渲染共用封面 provider（缺失/悬空路径 = null → 占位 + 恒竖卡）。
@@ -6759,6 +6793,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<RemoteVideoInfo>? collectionMembers,
     int memberIndex = 0,
     VideoCardOrientation orientation = VideoCardOrientation.portrait,
+    VoidCallback? openOverride,
   }) {
     final String safeKey = _safeRemoteKey(video.id);
     final Widget? downloadBadge = _remoteDownloadBadge(video, safeKey);
@@ -6778,11 +6813,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 合集行内点远端成员：带合集成员上下文进播放器（连播）；散卡区无上下文（单视频）。
       onTap: () => _dispatchCardTap(
         selectionKey: selectable ? selectionKey : null,
-        open: () => _openRemote(
-          video,
-          collectionMembers: collectionMembers,
-          startIndex: memberIndex,
-        ),
+        open:
+            openOverride ??
+            () => _openRemote(
+              video,
+              collectionMembers: collectionMembers,
+              startIndex: memberIndex,
+            ),
       ),
       // 短按仍流式播放（_openRemote）；长按 / 桌面右键弹选项面板，与本地视频
       // 卡长按一致（TODO-768 / BUG-416）。原先远端视频卡无 onLongPress（长按

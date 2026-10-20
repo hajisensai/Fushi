@@ -9,7 +9,19 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
   // ── 7c：列出 ──────────────────────────────────────────────────────────────
 
   @override
-  Future<List<VideoMetadataWorkEntry>> listVideoMetadata({int? since}) async {
+  Future<List<VideoMetadataWorkEntry>> listVideoMetadata({
+    int? since,
+    String? bookUid,
+  }) async {
+    if (bookUid != null) {
+      final VideoMetadataWorkRow? row =
+          await _db.getVideoMetadataWorkByBook(bookUid);
+      if (row == null || (since != null && row.updatedAt <= since)) {
+        return const <VideoMetadataWorkEntry>[];
+      }
+      final VideoMetadataWorkEntry? entry = await _entryForWorkRow(row);
+      return <VideoMetadataWorkEntry>[if (entry != null) entry];
+    }
     final List<VideoMetadataWorkEntry> entries = <VideoMetadataWorkEntry>[];
     for (final VideoMetadataWorkRow row
         in await _db.getAllVideoMetadataWorks()) {
