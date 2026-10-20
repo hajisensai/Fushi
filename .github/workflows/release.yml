@@ -47,6 +47,7 @@ on:
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/fushi-web-core-linux/**'
+      - '.github/actions/test-native-linux/**'
       - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -1553,6 +1554,24 @@ jobs:
         if-no-files-found: error
         retention-days: 3
 
+  # 测试矩阵的另两个 Rust 硬依赖（fushi_fsrs / fushi_compute）同理只编一次、与 web-core-linux
+  # 并行，以 artifact 交给五份矩阵（原来每份各编一遍，约 2 分钟压在每份的关键路径上）。
+  test-native-linux:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && github.event.inputs.skip_tests == 'true') && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/test-native-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: |
+          native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+          native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+        if-no-files-found: error
+        retention-days: 3
+
   # TODO-fast-release: the analyze/unit/package suites that used to run as
   # sequential steps at the top of the `build` job (gating `flutter build apk`)
   # now live here as an INDEPENDENT job. It shares the same trigger as `build`
@@ -1582,15 +1601,19 @@ jobs:
     # 2026-09-30：已按文件分片（--file-shard，原理见 main.yml 的 unit-tests 注释）。
     # 矩阵 5 份：4 片主应用单测 + checks（analyze + 包测试），各自独立 runner 并行；
     # 分片数改 matrix 和 --file-shard 分母两处。
+    # 2026-10-21：--experimental-faster-testing 试过又撤回（随机 SIGSEGV，见 main.yml 的
+    # unit-tests 注释）；分片仍按实测 suite 耗时均衡，Rust 测试库由 test-native-linux 只编一次。
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         part: ['0', '1', '2', '3', checks]
     name: tests (${{ matrix.part }})
-    needs: web-core-linux
+    needs: [web-core-linux, test-native-linux]
     env:
       FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+      FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
     steps:
     - uses: actions/checkout@v6
 
@@ -1637,33 +1660,33 @@ jobs:
       working-directory: fushi
       run: flutter analyze
 
-    # Anki 搜索的逐卡求值与 AnkiConnect 查重规范形只有 Rust 实现（native/fushi_fsrs/src/search.rs）：
-    # fushi_srs / fushi_engine 的搜索测试与主应用的 SRS 浏览页测试都要真实 .so，库缺失时直接判红
-    # （不 skip），所以五份矩阵都编。用 runner 自带的 stable 工具链（不进持久库，不需要钉版）；
-    # 冷编约 1 min，rust-cache 命中时约 20 s。
-    - name: Cache Rust build (fushi_fsrs)
-      uses: Swatinem/rust-cache@v2
+    # Anki 搜索的逐卡求值与 AnkiConnect 查重规范形只有 Rust 实现（native/fushi_fsrs/src/search.rs），
+    # 计算内核 fushi_compute 是硬依赖：单测（flutter_tester）与包测试（fushi_srs / fushi_compute /
+    # fushi_engine）都要真实 .so，库缺失时直接判红（不 skip）。由 test-native-linux 编好，五份
+    # 矩阵只下载（路径与 job 级 FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB 对应）。
+    - name: Fetch fushi_fsrs + fushi_compute linux-x64 libraries (hard dependencies of the tests)
+      uses: actions/download-artifact@v7
       with:
-        workspaces: native/fushi_fsrs -> target
-        key: fushi-fsrs-linux-x64
-    - name: Build fushi_fsrs (Linux x64) for tests
-      run: bash native/fushi_fsrs/build_linux_so.sh
-    # 计算内核 fushi_compute 是硬依赖：单测（flutter_tester）与包测试（fushi_compute /
-    # fushi_engine）都要 Linux .so；这一步编好并导出 FUSHI_COMPUTE_LIB。
-    - name: Build fushi_compute (Linux .so)
-      uses: ./.github/actions/setup-fushi-compute
+        name: fushi-test-native-linux-x64
+        path: native
 
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
       working-directory: fushi
-      env:
-        FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
       run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.part }}/4 --exclude-tags golden
+
+    # 逐 suite 耗时（tool/update_suite_timings.dart 的输入），见 main.yml 同名步骤。
+    - name: Upload test event log
+      if: always() && matrix.part != 'checks'
+      uses: actions/upload-artifact@v7
+      with:
+        name: unit-test-events-${{ matrix.part }}
+        path: .codex-test/flutter-test/flutter_test.jsonl
+        if-no-files-found: warn
+        retention-days: 14
 
     - name: Run package tests
       if: matrix.part == 'checks'
-      env:
-        FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
         # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里

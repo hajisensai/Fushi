@@ -145,8 +145,11 @@ mixin _LocalLibraryHostSyncState
         lastSyncedAtMs: baseline,
       );
       await applyCollectionLocalChanges(_db, outcome.changes);
+      final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
       await writeCollectionsSyncBaselineMs(
-          _db, SyncChannelScope.host, DateTime.now().millisecondsSinceEpoch);
+          _db, SyncChannelScope.host, nextBaseline);
+      // v124：基线推进之后再收敛整理器合集（见 convergeCollectionsAfterSync）。
+      await convergeCollectionsAfterSync(_db, baselineMs: nextBaseline);
       merged = outcome.merged;
     });
     return merged;

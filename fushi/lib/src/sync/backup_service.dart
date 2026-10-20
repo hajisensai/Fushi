@@ -641,6 +641,10 @@ const List<String> _deviceLocalTables = <String>[
   'manga_download_jobs',
   'pending_mine_queue',
   'clipboard_history',
+  // v124：AI 整理记录（子表先删）。描述「这台设备做过哪些整理」，撤销按合集名找，
+  // 恢复后对不上的记录只是撤销时找不到目标，不会误删。
+  'library_organize_changes',
+  'library_organize_runs',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -662,6 +666,8 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_download_job_files',
   'video_download_job_subtitles',
   'video_download_subscription_items',
+  'library_organize_runs',
+  'library_organize_changes',
 ];
 
 /// v117 SRS 的**本机发布元信息 / 本机状态 / 可重建缓存**（docs/specs/2026-10-14-

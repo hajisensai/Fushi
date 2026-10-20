@@ -70,13 +70,21 @@ Future<int> deleteMediaCollectionWithAssets(
   FushiDatabase db,
   int collectionId, {
   Directory? collectionCoversDirectory,
+  int? deletedAt,
+  bool organizeMerged = false,
+  bool userIntent = true,
 }) async {
   // 快照必须在删行**之前**取：行一删，coverPath / 附加图行就再也推导不出来。
   final MediaCollectionRow? snapshot =
       await db.getMediaCollectionById(collectionId);
   final List<String> imagePaths =
       await collectionOwnedImagePaths(db, collectionId);
-  final int removed = await db.deleteMediaCollection(collectionId);
+  final int removed = await db.deleteMediaCollection(
+    collectionId,
+    deletedAt: deletedAt,
+    organizeMerged: organizeMerged,
+    userIntent: userIntent,
+  );
   await reclaimDeletedCollectionAssets(
     db,
     <MediaCollectionRow>[if (snapshot != null) snapshot],

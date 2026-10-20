@@ -1,7 +1,9 @@
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
 /// 合集同步引擎（多端库联合视图 §2.3 任务4）。
@@ -145,6 +147,10 @@ class CollectionSyncEngine {
       // 盖发布戳时重建整个 entry：必须透传 tagNames，否则每轮盖戳都会丢标签。
       tagNames: e.tagNames,
       episodeOrdered: e.episodeOrdered,
+      origin: e.origin,
+      organizeKey: e.organizeKey,
+      organizeAliases: e.organizeAliases,
+      organizeMerged: e.organizeMerged,
     );
   }
 
@@ -171,20 +177,31 @@ class CollectionSyncEngine {
       // 双死：取新 deletedAt（知识合并），publishedAt 取较早的真·首发戳。
       final int deadAt = lDead >= rDead ? lDead : rDead;
       return _deadEntry(
-          l, deadAt, _minPublished(l.deletedPublishedAt, r.deletedPublishedAt));
+          l, deadAt, _minPublished(l.deletedPublishedAt, r.deletedPublishedAt),
+          organizeKey: _minKey(l.organizeKey, r.organizeKey),
+          organizeMerged: l.organizeMerged && r.organizeMerged);
     }
     if (rDead != null) {
+      // v124：对侧是整理器把它「并掉」、本端用户已经接手了它 ⇒ 用户胜（两端同时发生：
+      // 用户在这边改它，那边的整理器还按旧状态把它当整理器合集并掉了）。用户的合集
+      // 永不当败方（AI 整理库 spec §8）。
+      if (r.organizeMerged && _isUserOwned(l)) return _prune(l.toEntry());
       // 本端活 / 对侧死：删除是新闻 ⇒ 生效；旧闻且本端活着 ⇒ 本端重建 ⇒ 活胜。
       return _deleteIsNews(rDead, r.deletedPublishedAt,
               peer: rPeer, baseline: lastSyncedAtMs)
-          ? _deadEntry(l, rDead, r.deletedPublishedAt)
+          ? _deadEntry(l, rDead, r.deletedPublishedAt,
+              organizeKey: r.organizeKey ?? l.organizeKey,
+              organizeMerged: r.organizeMerged)
           : _prune(l.toEntry());
     }
     if (lDead != null) {
+      if (l.organizeMerged && _isUserOwned(r)) return _prune(r.toEntry());
       // 本端死 / 对侧活：本端删除未发布(新闻) ⇒ 死胜；已发布过 ⇒ 对侧重建 ⇒ 活胜。
       return _deleteIsNews(lDead, l.deletedPublishedAt,
               peer: lPeer, baseline: lastSyncedAtMs)
-          ? _deadEntry(l, lDead, l.deletedPublishedAt)
+          ? _deadEntry(l, lDead, l.deletedPublishedAt,
+              organizeKey: l.organizeKey ?? r.organizeKey,
+              organizeMerged: l.organizeMerged)
           : _prune(r.toEntry());
     }
 
@@ -241,6 +258,13 @@ class CollectionSyncEngine {
     final int mergedOrderUpdatedAt = l.orderUpdatedAt > r.orderUpdatedAt
         ? l.orderUpdatedAt
         : r.orderUpdatedAt;
+    final ({String? key, Set<String> aliases}) identity =
+        mergeOrganizeIdentity(
+      keyA: l.organizeKey,
+      aliasesA: l.organizeAliases,
+      keyB: r.organizeKey,
+      aliasesB: r.organizeAliases,
+    );
     return _prune(CollectionManifestEntry(
       name: l.name,
       collectionType: l.collectionType,
@@ -258,6 +282,11 @@ class CollectionSyncEngine {
       // 双活标签并集（只增不删；确定性排序供 canonicalJson 幂等）。
       tagNames: <String>{...l.tagNames, ...r.tagNames}.toList()..sort(),
       episodeOrdered: l.episodeOrdered || r.episodeOrdered,
+      // v124（AI 整理库 spec §8）：来源按秩取大、分组键取规范键、别名并集——三者
+      // 都是交换 / 结合 / 幂等的，两端以任意顺序合并都落到同一结果。
+      origin: mergeWireOrigin(l.origin, r.origin),
+      organizeKey: identity.key,
+      organizeAliases: identity.aliases.toList()..sort(),
     ));
   }
 
@@ -289,6 +318,9 @@ class CollectionSyncEngine {
       memberTombstones: e.memberTombstones,
       tagNames: e.tagNames,
       episodeOrdered: true,
+      origin: e.origin,
+      organizeKey: e.organizeKey,
+      organizeAliases: e.organizeAliases,
     );
   }
 
@@ -337,13 +369,27 @@ class CollectionSyncEngine {
           : e;
 
   static CollectionManifestEntry _deadEntry(
-          _NormalizedEntry key, int at, int? publishedAt) =>
+          _NormalizedEntry key, int at, int? publishedAt,
+          {String? organizeKey, bool organizeMerged = false}) =>
       CollectionManifestEntry(
         name: key.name,
         collectionType: key.collectionType,
         deletedAt: at,
         deletedPublishedAt: publishedAt,
+        organizeKey: organizeKey,
+        organizeMerged: organizeMerged,
       );
+
+  /// 活条目明确说了「归用户」（旧对端没说 = 未知，不算）。
+  static bool _isUserOwned(_NormalizedEntry e) =>
+      e.origin != null && CollectionOrigin.parse(e.origin) == CollectionOrigin.user;
+
+  /// 两个可空分组键取规范的那个（与顺序无关）。
+  static String? _minKey(String? a, String? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return compareOrganizeKeys(a, b) <= 0 ? a : b;
+  }
 
   /// 本地现状 [l]（null = 本地全然不知）是否已与合并结果 [merged] 一致（一致则
   /// 无需产出本地变更；比较忽略 sortIndex 的具体数值，只看序列——本地可能是
@@ -358,7 +404,9 @@ class CollectionSyncEngine {
     if (m.deletedAt != null) {
       return l.deletedAt == m.deletedAt &&
           l.membersByKey.isEmpty &&
-          l.tombstones.isEmpty;
+          l.tombstones.isEmpty &&
+          (m.organizeKey == null || l.organizeKey == m.organizeKey) &&
+          l.organizeMerged == m.organizeMerged;
     }
     if (l.deletedAt != null) return false;
     // 成员序列一致？
@@ -388,6 +436,13 @@ class CollectionSyncEngine {
     if (localTags.length != m.tagNames.length) return false;
     for (final String tn in m.tagNames) {
       if (!localTags.contains(tn)) return false;
+    }
+    // 整理身份一致？（v124）合并结果没说的字段不算差异——本地有值即可。
+    if (m.origin != null && l.origin != m.origin) return false;
+    if (m.organizeKey != null && l.organizeKey != m.organizeKey) return false;
+    if (!l.organizeAliases.containsAll(m.organizeAliases) ||
+        l.organizeAliases.length != m.organizeAliases.toSet().length) {
+      return false;
     }
     return true;
   }
@@ -421,6 +476,8 @@ class CollectionSyncEngine {
           membersByKey: const <String, CollectionManifestMember>{},
           tombstones: const <String, _Tomb>{},
           tagNames: const <String>{}, // 死合集不带标签。
+          organizeKey: e.organizeKey,
+          organizeMerged: e.organizeMerged,
         );
         continue;
       }
@@ -456,6 +513,9 @@ class CollectionSyncEngine {
         tombstones: tombs,
         tagNames: e.tagNames.toSet(),
         episodeOrdered: e.episodeOrdered,
+        origin: e.origin,
+        organizeKey: e.organizeKey,
+        organizeAliases: e.organizeAliases.toSet(),
       );
     }
     return out;
@@ -469,6 +529,17 @@ class CollectionSyncEngine {
       memberKey.substring(0, memberKey.indexOf('\u0000'));
   static String _memberEntryKey(String memberKey) =>
       memberKey.substring(memberKey.indexOf('\u0000') + 1);
+}
+
+/// 两份清单各自说的来源 wire 值合并（v124）：只认说了的那份；都说了按
+/// [CollectionOrigin.rank] 取大。都没说返回 null（未知，落库时当 user）。
+String? mergeWireOrigin(String? a, String? b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return CollectionOrigin.merge(
+    CollectionOrigin.parse(a),
+    CollectionOrigin.parse(b),
+  ).dbValue;
 }
 
 /// [CollectionSyncEngine.merge] 的产物：合并后清单（写回远端）+ 本地变更集。
@@ -517,6 +588,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   final Map<String, List<CollectionMemberTombstoneRow>> memberTombsByKey =
       <String, List<CollectionMemberTombstoneRow>>{};
   final Map<String, int> deletedAtByKey = <String, int>{};
+  final Map<String, String> deletedKeyByKey = <String, String>{};
+  final Set<String> deletedMergedKeys = <String>{};
   String nk(String name, String type) => '$name\u0000$type';
   for (final CollectionMemberTombstoneRow t in tombRows) {
     final String key = nk(t.collectionName, t.collectionType);
@@ -525,6 +598,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
             t.entryKey == FushiDatabase.collectionTombstoneSentinel;
     if (isSentinel) {
       deletedAtByKey[key] = t.deletedAt;
+      if (t.organizeKey != null) deletedKeyByKey[key] = t.organizeKey!;
+      if (t.organizeMerged) deletedMergedKeys.add(key);
     } else {
       (memberTombsByKey[key] ??= <CollectionMemberTombstoneRow>[]).add(t);
     }
@@ -582,6 +657,12 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
       ],
       tagNames: <String>[for (final BookTagRow t in rowTags) t.name],
       episodeOrdered: episodeOrderedIds.contains(row.id),
+      // v124：本地行恒有来源；目录合集（folder）的目录身份不跨端，wire 上照实说
+      // folder，对端据此知道它不是整理器管的。
+      origin: row.origin,
+      organizeKey: row.organizeKey,
+      organizeAliases:
+          (decodeOrganizeAliases(row.organizeAliases).toList()..sort()),
     ));
   }
 
@@ -602,6 +683,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
       name: name,
       collectionType: type,
       deletedAt: deadAt,
+      organizeKey: deadAt != null ? deletedKeyByKey[key] : null,
+      organizeMerged: deadAt != null && deletedMergedKeys.contains(key),
       memberTombstones: deadAt != null
           ? const <CollectionMemberTombstone>[]
           : <CollectionMemberTombstone>[
@@ -636,6 +719,8 @@ Future<int> applyCollectionLocalChanges(
   // v68：附加图行随删行 cascade 消失，同一顺序约束，路径也在删前快照。
   final List<MediaCollectionRow> dissolved = <MediaCollectionRow>[];
   final List<String> dissolvedImagePaths = <String>[];
+  final List<DissolvedOrganizerCollection> dissolvedOrganizer =
+      <DissolvedOrganizerCollection>[];
   // v83：wire 清单 epub entryKey 恒为 bookKey，成员表本地面貌是 uid——落地前经
   // bookKey→uid 换算（一趟全表 map）。查不上**必须照抄透传，绝不丢弃**：合集清单
   // 是跨端 union，本机没有这本书也要替对端转发其归属（透传行，entry_key 保持
@@ -655,6 +740,16 @@ Future<int> applyCollectionLocalChanges(
       if (e.deletedAt != null) {
         // 目标态 = 已删：删本地行（若有），墓碑表只留哨兵（镜像 deletedAt）。
         if (row != null) {
+          // v124：整理器合集被对端「并掉」时，本机这份可能多出对端没见过的成员
+          // （本机也在并别的合集进来），删前快照，事务后转给吸收了它的合集。
+          if (CollectionOrigin.parse(row.origin).isOrganizerManaged) {
+            dissolvedOrganizer.add(DissolvedOrganizerCollection(
+              row: row,
+              members: await db.getCollectionItems(row.id),
+              deadKey: e.organizeKey,
+              deadMerged: e.organizeMerged,
+            ));
+          }
           dissolved.add(row);
           dissolvedImagePaths
               .addAll(await collectionOwnedImagePaths(db, row.id));
@@ -668,6 +763,9 @@ Future<int> applyCollectionLocalChanges(
             mediaType: FushiDatabase.collectionTombstoneSentinel,
             entryKey: FushiDatabase.collectionTombstoneSentinel,
             deletedAt: e.deletedAt!,
+            // v124：镜像被删合集的分组键与「是否并掉」。
+            organizeKey: Value<String?>(e.organizeKey),
+            organizeMerged: Value<bool>(e.organizeMerged),
           ),
         ]);
         continue;
@@ -685,7 +783,10 @@ Future<int> applyCollectionLocalChanges(
       } else {
         final int id = row?.id ??
             await db.createMediaCollection(e.name,
-                collectionType: e.collectionType);
+                collectionType: e.collectionType,
+                // v124：新建行按清单来源落库（默认 user 再按秩合并会把 ai 吞掉）。
+                origin: CollectionOrigin.parse(e.origin),
+                organizeKey: e.organizeKey);
         // 调和成员：删多余、按位置 upsert（sortIndex = 清单位置序号）。
         final List<MediaCollectionItemRow> current =
             await db.getCollectionItems(id);
@@ -714,6 +815,21 @@ Future<int> applyCollectionLocalChanges(
               id, localMembers[i].mediaType, localMembers[i].entryKey, i);
         }
         await db.setCollectionOrderUpdatedAt(id, e.orderUpdatedAt);
+        // v124：整理身份。清单没说的保留本地值（未知不是清空）；别名本地 ∪ 清单。
+        final MediaCollectionRow? fresh = await db.getMediaCollectionById(id);
+        if (fresh != null) {
+          await db.setMediaCollectionOrganizeState(
+            id,
+            origin: CollectionOrigin.parse(
+              mergeWireOrigin(fresh.origin, e.origin),
+            ),
+            organizeKey: e.organizeKey ?? fresh.organizeKey,
+            organizeAliases: <String>{
+              ...decodeOrganizeAliases(fresh.organizeAliases),
+              ...e.organizeAliases,
+            }..remove(e.organizeKey ?? fresh.organizeKey),
+          );
+        }
         // 合集清单里的标签名没有时钟：弱并入（addedAt=1），本机移除过的不复活；
         // 增删 / 改名的真实传播走互联标签清单（tag_sync.dart）的 LWW 时钟。
         await db.mergeRemoteCollectionTagNames(id, e.tagNames);
@@ -740,8 +856,22 @@ Future<int> applyCollectionLocalChanges(
     dissolved,
     ownedImagePaths: dissolvedImagePaths,
   );
+  await rehomeDissolvedOrganizerCollections(db, dissolvedOrganizer);
   return changes.changedCollections;
 }
+
+/// 合集同步一轮**推进基线之后**调：把对端带来的同系列整理器合集在本机合成一个
+/// （v124，AI 整理库 spec §8.4，[convergeOrganizedCollections]）。
+///
+/// 必须在基线推进之后，且败方墓碑时刻**严格晚于**刚写下的基线 [baselineMs]：只有
+/// 晚于基线才是「新闻」，下一轮同步才会把删除推给对端；早于或同毫秒时墓碑被判成
+/// 旧闻、对端的活副本「重建胜」，败方复活又被并掉，两端永远来回。调用方须持与落盘
+/// 同一把同步状态锁。
+Future<int> convergeCollectionsAfterSync(
+  FushiDatabase db, {
+  required int baselineMs,
+}) =>
+    convergeOrganizedCollections(db, notBeforeMs: baselineMs + 1);
 
 /// 一条墓碑的知识：移出墙钟 [removedAt] + 首次进共享清单的发布戳 [publishedAt]
 /// （null = 本端尚未发布，一律视为新闻）。
@@ -760,10 +890,20 @@ class _NormalizedEntry {
     required this.tombstones,
     required this.tagNames,
     this.episodeOrdered = false,
+    this.origin,
+    this.organizeKey,
+    this.organizeAliases = const <String>{},
+    this.organizeMerged = false,
   });
 
   final String name;
   final String collectionType;
+
+  /// v124 整理身份（见 [CollectionManifestEntry.origin] 等）。死条目只带 [organizeKey]。
+  final String? origin;
+  final String? organizeKey;
+  final Set<String> organizeAliases;
+  final bool organizeMerged;
 
   /// 见 [CollectionManifestEntry.episodeOrdered]（死条目恒 false）。
   final bool episodeOrdered;
@@ -812,6 +952,10 @@ class _NormalizedEntry {
         ],
         tagNames: tagNames.toList()..sort(),
         episodeOrdered: episodeOrdered,
+        origin: origin,
+        organizeKey: organizeKey,
+        organizeAliases: organizeAliases.toList()..sort(),
+        organizeMerged: organizeMerged,
       );
 }
 
@@ -850,6 +994,13 @@ class _FoldGroup {
       <String, int>{}; // 决策用 max(pub??removed)。
 
   final Set<String> _tagNames = <String>{}; // 各活文件标签并集（只增不删）。
+  // v124 整理身份：来源秩取大（只认说了的文件）、分组键规范化合并、别名并集；
+  // 死条目的键单独记（拒绝 / 合并去向）。都与折叠顺序无关。
+  String? _origin;
+  String? _organizeKey;
+  final Set<String> _organizeAliases = <String>{};
+  String? _deadOrganizeKey;
+  bool _deadOrganizeMerged = true; // 取与：任一份说「用户删的」就是用户删的。
   // 标了集号序（BUG-2941）的活文件中最新 lastWrittenAt；-1 = 没有。
   int _episodeOrderedFileTimeMax = -1;
 
@@ -866,9 +1017,23 @@ class _FoldGroup {
       if (p != null && (_deletePubMin == null || p < _deletePubMin!)) {
         _deletePubMin = p;
       }
+      _deadOrganizeKey =
+          CollectionSyncEngine._minKey(_deadOrganizeKey, e.organizeKey);
+      _deadOrganizeMerged = _deadOrganizeMerged && e.organizeMerged;
       return; // 归一化后的死条目不携带成员/墓碑/标签。
     }
     _tagNames.addAll(e.tagNames); // 活文件标签并集。
+    _origin = mergeWireOrigin(_origin, e.origin);
+    final ({String? key, Set<String> aliases}) identity = mergeOrganizeIdentity(
+      keyA: _organizeKey,
+      aliasesA: _organizeAliases,
+      keyB: e.organizeKey,
+      aliasesB: e.organizeAliases,
+    );
+    _organizeKey = identity.key;
+    _organizeAliases
+      ..clear()
+      ..addAll(identity.aliases);
     if (e.episodeOrdered && fileTime > _episodeOrderedFileTimeMax) {
       _episodeOrderedFileTimeMax = fileTime;
     }
@@ -909,12 +1074,20 @@ class _FoldGroup {
   /// 折叠出该合集在远端并集里的最终条目（剪枝空壳返回 null）。
   CollectionManifestEntry? resolve() {
     // 合集级死活：任一文件在最新删除发布之后仍把它列为活（活文件时戳更晚）⇒ 重建胜。
-    if (_sawDelete && !(_aliveFileTimeMax > _deletePubMaxDecision)) {
+    // v124：整理器「并掉」的删除压不过用户接手（同 _mergeOne）。
+    final bool userKeeps = _deadOrganizeMerged &&
+        _origin != null &&
+        CollectionOrigin.parse(_origin) == CollectionOrigin.user;
+    if (_sawDelete &&
+        !userKeeps &&
+        !(_aliveFileTimeMax > _deletePubMaxDecision)) {
       return CollectionManifestEntry(
         name: name,
         collectionType: collectionType,
         deletedAt: _deleteRemovedMax,
         deletedPublishedAt: _deletePubMin,
+        organizeKey: _deadOrganizeKey ?? _organizeKey,
+        organizeMerged: _deadOrganizeMerged,
       );
     }
 
@@ -973,6 +1146,9 @@ class _FoldGroup {
       // 离线设备的旧文件会把已删下载合集的标记带给同名新建的普通合集。
       episodeOrdered: _episodeOrderedFileTimeMax >
           (_sawDelete ? _deletePubMaxDecision : -1),
+      origin: _origin,
+      organizeKey: _organizeKey,
+      organizeAliases: _organizeAliases.toList()..sort(),
     ));
   }
 

@@ -21,6 +21,9 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart' show organizeEntryKeysAddedSince;
+import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart' show OrganizeTrigger;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -105,6 +108,7 @@ class LibraryScanner {
     this.pruneMissing = true,
     this.pruneThreshold = const LibraryPruneThreshold(),
     this.pruneForce = false,
+    this.organizer,
   }) : _videos = VideoBookRepository(db);
 
   final FushiDatabase db;
@@ -120,6 +124,15 @@ class LibraryScanner {
   /// 越过护栏阈值也照删（危险：库根整体不可达时会批量误删）。
   final bool pruneForce;
   final VideoBookRepository _videos;
+
+  /// 扫描后对本轮新入库、规则归不了组的条目跑一次自动 AI 整理（spec
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md` §10.2）；null = 不整理
+  /// （yaml `ai.library_organize` 没开）。
+  final LibraryOrganizeService? organizer;
+
+  /// 本轮新入库的成员行键（`mediaType NUL entryKey`），按库页域分。
+  final Map<CollectionShelfDomain, Set<String>> _newMembers =
+      <CollectionShelfDomain, Set<String>>{};
 
   Future<ScanSummary> scanAll(List<LibraryRootConfig> roots) async {
     final ScanSummary summary = ScanSummary();
@@ -146,8 +159,46 @@ class LibraryScanner {
           summary.errors.add('${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）');
       }
     }
+    await _organizeNewEntries(summary);
     engineLog.logDiagnostic('LibraryScanner', 'scan done: $summary');
     return summary;
+  }
+
+  Future<void> _organizeNewEntries(ScanSummary summary) async {
+    final LibraryOrganizeService? service = organizer;
+    if (service == null) return;
+    for (final CollectionShelfDomain domain in const <CollectionShelfDomain>[
+      CollectionShelfDomain.books,
+      CollectionShelfDomain.manga,
+      CollectionShelfDomain.video,
+    ]) {
+      // 本轮新入库的 + 上次**跑完**的自动整理之后入库、还没处理到的（被每日额度 /
+      // 失败截断的那批不丢，下一轮扫描接着整理）。从没跑完过时只看本轮新的——打开
+      // 开关不会把整个库发给 AI。
+      final int? last = await service.lastCompletedAutoRunStartedAt(domain);
+      final Set<String> keys = <String>{
+        ...?_newMembers[domain],
+        if (last != null)
+          ...await organizeEntryKeysAddedSince(db, domain, last),
+      };
+      if (keys.isEmpty) continue;
+      final MapEntry<CollectionShelfDomain, Set<String>> e =
+          MapEntry<CollectionShelfDomain, Set<String>>(domain, keys);
+      try {
+        final LibraryOrganizeResult r = await service.run(
+          e.key,
+          trigger: OrganizeTrigger.auto,
+          onlyEntryKeys: e.value,
+        );
+        if (r.status == LibraryOrganizeStatus.failed) {
+          summary.errors.add('AI 整理（${e.key.name}）中止: ${r.error}');
+        }
+      } catch (err, stack) {
+        summary.errors.add('AI 整理（${e.key.name}）失败: $err');
+        engineLog.log('LibraryScanner.organize', err, stack);
+      }
+    }
+    _newMembers.clear();
   }
 
   /// 扫描一个视频根，返回**磁盘上现存**的视频文件路径集合（归一）与导入前已在库
@@ -204,6 +255,8 @@ class LibraryScanner {
         ));
         createdPaths.add(file.path);
         summary.videosAdded++;
+        (_newMembers[CollectionShelfDomain.video] ??= <String>{})
+            .add('${MediaKind.video.dbValue}\u0000$bookUid');
         if (extractCovers) {
           final String? cover = await extractVideoCover(
             videoPath: file.path,
@@ -570,7 +623,13 @@ class LibraryScanner {
     }
     Future<void> record(String bookKey) async {
       final String? uid = await bookUidForKey(db, bookKey);
-      if (uid != null) scan.index.put(rel, uid);
+      if (uid != null) {
+        scan.index.put(rel, uid);
+        (_newMembers[isManga
+                ? CollectionShelfDomain.manga
+                : CollectionShelfDomain.books] ??= <String>{})
+            .add('${MediaKind.epub.dbValue}\u0000$uid');
+      }
       isManga ? summary.mangaAdded++ : summary.booksAdded++;
     }
 

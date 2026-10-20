@@ -8,6 +8,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
+import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_kit.dart' show settingsResetSpecFor;
@@ -255,6 +256,40 @@ SettingsDestination buildAiDestination() {
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadSubtitleLanguage(value),
             defaultValue: '',
+          ),
+        ],
+      ),
+      // AI 整理库（spec docs/specs/2026-10-20-ai-library-organize-design.md §10）：
+      // 导入后自动整理的开关（设备本地，默认关；副标题就是「会发送什么」的完整说明，
+      // 用户亲手打开即同意——不另弹模态框）+ 整理记录（按次 / 按处撤销、允许再次
+      // 建议被拒绝的分组）。
+      SettingsSection(
+        id: 'ai.library_organize',
+        title: t.ai_feature_library_organize,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.library_organize', c),
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'ai.library_organize_auto',
+            title: t.library_organize_auto_setting,
+            subtitle: t.library_organize_auto_setting_summary,
+            icon: FushiIcons.aiAssistant,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.libraryOrganizeAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setLibraryOrganizeAuto(value),
+            defaultValue: false,
+          ),
+          SettingsActionItem(
+            id: 'ai.library_organize_history',
+            title: t.library_organize_history_title,
+            icon: FushiIcons.history,
+            cli: const SettingsCliAction.unsupported(
+              '整理记录只在界面里看；命令行整理用 fushi_cli library organize',
+            ),
+            onTap: (SettingsContext c) =>
+                openLibraryOrganizeHistoryPage(c.context, c.appModel),
           ),
         ],
       ),

@@ -11,6 +11,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// [keepCollectionGroupUnderTagFilter]，书架与视频库共用。
 void main() {
   MediaCollectionRow collection(int id, String name) => MediaCollectionRow(
+        origin: 'user',
+        organizeAliases: '',
         id: id,
         name: name,
         collectionType: 'playlist',

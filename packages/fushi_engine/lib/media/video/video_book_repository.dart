@@ -278,7 +278,7 @@ class VideoBookRepository {
         collectionType: 'playlist',
       );
       for (final String uid in epUids) {
-        await _db.addToCollection(collectionId, MediaKind.video, uid);
+        await _db.addToCollection(collectionId, MediaKind.video, uid, userIntent: false);
       }
     });
     return (
@@ -382,6 +382,7 @@ class VideoBookRepository {
             collectionId,
             MediaKind.video,
             existing.bookUid,
+            userIntent: false,
           );
           memberBases.add(base);
           added++;
@@ -402,14 +403,14 @@ class VideoBookRepository {
           ),
           sourceId: sourceId,
         );
-        await _db.addToCollection(collectionId, MediaKind.video, uid);
+        await _db.addToCollection(collectionId, MediaKind.video, uid, userIntent: false);
         memberBases.add(base);
         added++;
       }
       // 后删：成员有、清单已删的基身份（只解绑，保留 VideoBook 本体）。
       for (final MapEntry<String, String> m in memberBaseByUid.entries) {
         if (manifestBases.contains(m.value)) continue;
-        await _db.removeFromCollection(collectionId, MediaKind.video, m.key);
+        await _db.removeFromCollection(collectionId, MediaKind.video, m.key, userIntent: false);
         removed++;
       }
     });

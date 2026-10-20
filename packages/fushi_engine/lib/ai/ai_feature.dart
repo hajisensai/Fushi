@@ -78,6 +78,15 @@ enum AiFeature {
   /// 自动路径只在用户没手动排过（`orderUpdatedAt == 0`）时落盘，绝不覆盖手动序。
   collectionOrder,
 
+  /// AI 整理库（`ai_library_organize_assistant.dart`，spec
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md`，所有者 2026-10-20 拍板直接
+  /// 改库、可自动运行）：把书架 / 漫画库 / 视频库 / 游戏库里规则认不出的「该在一起」的
+  /// 条目归进合集（新建 / 并入 / 合并 / 移出自己上次放错的）。AI 只给分组建议（局部
+  /// 下标 + 原语言正式名），落盘前本地逐条校验：不跨域、不碰用户的合集（只能往里加）、
+  /// 不复活用户拒绝过的分组、刮削 id 冲突降级；每处改动写进本机整理记录，可撤销。
+  /// 多端各自整理靠分组键收敛（`organize_convergence.dart`），不靠互斥。
+  libraryOrganize,
+
   /// 视频日语字幕 AI 校对（`media/video/subtitle/asr_proofread/`，spec
   /// `2026-10-19-video-asr-llm-subtitle-pipeline`）：作品专名表（S0）、逐批校对
   /// 语音识别稿（S3）、整作写法统一（S4）、短片段是否纯歌曲（S5）。
