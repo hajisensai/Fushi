@@ -1,7 +1,8 @@
 /// 复习模块主页：牌组列表（底栏 / 侧栏「复习」tab，见 `HomeTab.srs`）。
 ///
 /// 每行：牌组名（子牌组前面按层级画细竖线）+ 新卡 / 学习 / 到期三色计数；新卡被自动
-/// 缩减时多一行小字。点行进复习；行内菜单：新建子牌组 / 改名 / 牌组设置 / 删除（默认
+/// 缩减时多一行小字。点行进复习；行内菜单：浏览此牌组的卡片（带 `deck:"全名"` 打开
+/// 浏览页）/ 新建子牌组 / 改名 / 牌组设置 / 删除（默认
 /// 牌组不可删；空着又没有子牌组时不显示，见 [srsVisibleDecks]）。
 /// 顶栏动作默认平铺、放不下才按优先级收进「⋯」（MD3 = [FushiFloatingTopBar] 的
 /// 自适应溢出；Apple = 导航栏动作，由 [FushiPageHeader] 自己收）。
@@ -14,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
+import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -47,7 +49,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 
 /// 行内菜单动作。
-enum _DeckAction { addChild, rename, settings, delete }
+enum _DeckAction { browse, addChild, rename, settings, delete }
 
 class SrsDeckListPage extends ConsumerStatefulWidget {
   const SrsDeckListPage({super.key});
@@ -90,8 +92,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _addNote({String? deckId}) =>
       _push<void>((_) => SrsNoteEditorPage(initialDeckId: deckId));
 
-  Future<void> _openBrowse() => _push<void>(
-    (_) => const SrsBrowsePage(
+  /// [query] 非 null：带着初始查询打开（牌组菜单「浏览此牌组的卡片」= `deck:"全名"`）。
+  Future<void> _openBrowse({String? query}) => _push<void>(
+    (_) => SrsBrowsePage(
+      initialQuery: query,
       onChangeNoteType: showSrsChangeNoteTypeFlow,
       onMigrateToFushiCard: srsMigrateNotesToFushiCard,
     ),
@@ -177,6 +181,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 
   void _onDeckAction(SrsDeckSummary deck, _DeckAction action) {
     switch (action) {
+      case _DeckAction.browse:
+        srsRunLogged(
+          'SrsDeckList.browseDeck',
+          () => _openBrowse(query: srsDeckQuery(deck.fullName)),
+        );
       case _DeckAction.addChild:
         srsRunLogged(
           'SrsDeckList.addChild',
@@ -862,6 +871,11 @@ class _DeckRow extends StatelessWidget {
 
   List<PopupMenuEntry<_DeckAction>> _menuItems() =>
       <PopupMenuEntry<_DeckAction>>[
+        // 默认牌组同样可用：批量移动 / 删除错导的卡从这里进（反馈 SSfSHb5JNt）。
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.browse,
+          child: Text(t.srs_deck_browse_cards),
+        ),
         PopupMenuItem<_DeckAction>(
           value: _DeckAction.addChild,
           child: Text(t.srs_deck_new_child),

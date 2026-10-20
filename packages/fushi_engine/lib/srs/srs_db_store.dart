@@ -2097,7 +2097,7 @@ class SrsDbStore implements SrsSyncReplica {
       _schedulingConfigIn(await deckTree(), deckId);
 
   SrsSchedulingConfig _schedulingConfigIn(SrsDeckTree tree, String deckId) {
-    final String id = tree[deckId] == null ? defaultDeckId : deckId;
+    final String id = tree.effectiveDeckOf(deckId, fallback: defaultDeckId);
     return tree.schedulingConfig(id, defaultsOf: engine?.defaultParams);
   }
 
@@ -2835,7 +2835,7 @@ class SrsDbStore implements SrsSyncReplica {
       note: n,
       noteType: t,
       template: tpl,
-      deckName: tree[c.deckId] == null ? '' : tree.fullName(c.deckId),
+      deckName: tree.effectiveDeckNameOf(c.deckId, fallback: defaultDeckId),
     );
   }
 

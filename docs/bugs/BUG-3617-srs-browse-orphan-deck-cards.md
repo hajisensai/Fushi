@@ -1,0 +1,6 @@
+## BUG-3617 · 复习卡片浏览：牌组已不存在的卡不归默认牌组，deck:Default 筛不到
+- **报告**：2026-10-19（用户：反馈 SSfSHb5JNt「default 卡组不能批量移动和删除卡片」调查中发现）
+- **真实性**：✅ 真 bug。卡片的 `deckId` 指向本机牌组树里不存在的牌组（别的设备删了牌组、或卡片的移动先于牌组同步到）时，排程配置已按默认牌组算（`packages/fushi_engine/lib/srs/srs_db_store.dart:2100`、`srs_stats_loader.dart:144`），但浏览页装快照时把牌组名写成空串（`packages/fushi_engine/lib/srs/srs_browse.dart:313` `tree[c.deckId] == null ? '' : …`；统计页搜索索引 `srs_stats_loader.dart:63`、卡片详情 `srs_db_store.dart:2838` 同形）。结果这些卡在浏览页没有牌组名，`deck:Default` 与「浏览此牌组的卡片」都筛不到，只能在不筛选的全部列表里翻出来处理。
+- **[x] ① 已修复** — 判据收成一处：`SrsDeckTree.effectiveDeckOf` / `effectiveDeckNameOf`（`packages/fushi_srs/lib/src/deck.dart`），排程配置（`srs_db_store.dart` `_schedulingConfigIn`、`srs_stats_loader.dart` `configOf`）、浏览快照牌组名（`srs_browse.dart`）、统计页搜索索引（`SrsStatsIndex.defaultDeckId`）与卡片详情牌组名共用；孤儿卡显示为默认牌组、`deck:Default` 能筛到。提交：待主会话拆分支提交（pr/srs-browse-this-deck）。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_browse_page_test.dart`「BUG-3617：牌组已不存在的卡在浏览页归默认牌组，deck:Default 筛得到」（把卡移到不存在的牌组 → `deck:"Default"` 打开浏览页，孤儿卡在列、牌组名显示 Default、别的牌组的卡不在）。
+- **备注**：牌组列表计数（`srs_db_store.dart` `_countTree` 按 `own[c.deckId]` 计，不在树里的跳过）与复习取卡（`nextCard` 按子树 `deckId.isIn(sub)` 过滤）**仍不含**孤儿卡——这两处本次没改（热路径 SQL 过滤，改动面大），孤儿卡在浏览页可见、可批量移动 / 删除后自然回到正常计数。是否让计数与复习也把孤儿卡算进默认牌组待所有者拍板。待真机复测。

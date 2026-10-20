@@ -32,6 +32,11 @@ String srsFieldContainsQuery(String field, String text) {
   return '"${_searchLiteral(field)}:*${_searchLiteral(trimmed)}*"';
 }
 
+/// 「浏览此牌组的卡片」的查询：`deck:"全名"`（Anki 语义，含子牌组）。牌组名里的通配符
+/// （`*` `_`）、反斜杠与引号转义成字面量；层级分隔符 `::` 在引号内照原样保留。
+String srsDeckQuery(String deckFullName) =>
+    'deck:"${deckFullName.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
+
 /// 一张卡（连同笔记、笔记类型）作为 Anki 搜索的求值对象。
 class SrsCardSearchSubject implements SrsSearchSubject {
   SrsCardSearchSubject({
@@ -310,9 +315,12 @@ class SrsBrowseSnapshot {
           note: n,
           noteType: t,
           card: c,
-          deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
-              ? ''
-              : tree.fullName(c.deckId),
+          // 牌组已不存在的卡归默认牌组（与排程配置同一判据）：显示为默认牌组、
+          // `deck:Default` 能筛到（BUG-3617）。
+          deckName: deckNames[c.deckId] ??= tree.effectiveDeckNameOf(
+            c.deckId,
+            fallback: store.defaultDeckId,
+          ),
           day: day,
           nowMs: nowMs,
           todayDayIndex: today,
