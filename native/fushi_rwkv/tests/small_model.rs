@@ -145,22 +145,9 @@ fn vectors(user: u32) -> Vectors {
     }
 }
 
-/// INTEGRATION.md §9.1（含零 ahead 残差的 sigmoid(logit + 1e-5)）。
+/// 库里的 `p_curve`（INTEGRATION.md §9.1）：排程用的就是这一份，黄金向量直接钉它。
 fn p_curve(heads: &SmallHeads, seconds: f32) -> f32 {
-    let w = &heads.curve[0..3];
-    let max = w.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let e: Vec<f32> = w.iter().map(|v| (v - max).exp()).collect();
-    let sum: f32 = e.iter().sum();
-    let t = seconds.max(1.0);
-    let mut r = 0.0f32;
-    for i in 0..3 {
-        let s = heads.curve[3 + i].clamp(-25.0, 25.0).exp();
-        let d = heads.curve[6 + i].clamp(-25.0, 25.0).exp();
-        r += e[i] / sum * (-d * (t / (1e-7 + s)).ln_1p()).exp();
-    }
-    let raw = 1e-5 + (1.0 - 2e-5) * r;
-    let logit = (raw / (1.0 - raw)).ln() + 1e-5;
-    1.0 / (1.0 + (-logit).exp())
+    heads.curve_retrievability(seconds)
 }
 
 fn check(user: u32, weights_file: &str, prefix: &str, chunk: usize) -> f32 {

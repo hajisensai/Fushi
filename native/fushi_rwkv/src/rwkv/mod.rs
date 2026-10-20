@@ -1,6 +1,6 @@
 // Copyright: Ankitects Pty Ltd and contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
-// Adapted for Fushi from https://github.com/Pedrubik2000/kuma3-anki-core@c639bcec696f2317f9bb9a736d433b9d6c0d9c56 rslib/src/rwkv/mod.rs (trimmed to the RWKV-Instant inference core; every change is marked `Fushi:`).
+// Adapted for Fushi from https://github.com/Pedrubik2000/kuma3-anki-core@c639bcec696f2317f9bb9a736d433b9d6c0d9c56 rslib/src/rwkv/mod.rs (trimmed to the inference core and the curve head; every change is marked `Fushi:`).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -591,6 +591,23 @@ impl RwkvInference {
         Ok(out)
     }
 
+    /// Fushi: the RWKV-Curve heads of `answer` answered Again / Hard / Good /
+    /// Easy (upstream `answer_heads` + `simulated_answer_input`): one what-if
+    /// update row per rating from the current states, nothing kept. Each is the
+    /// 128-curve mixture weights; evaluate with [predict_curve].
+    pub fn answer_curves(&mut self, answer: &ReviewInput) -> io::Result<[Vec<f32>; 4]> {
+        let mut out: [Vec<f32>; 4] = Default::default();
+        for (index, slot) in out.iter_mut().enumerate() {
+            let mut answer = answer.clone();
+            answer.is_query = false;
+            answer.ease = Some(index as u8 + 1);
+            let features = self.features.features_for(&answer);
+            let view = self.warm_up_states.state_view(&answer);
+            *slot = self.model.review(&features, view.as_ref()).curve.weights;
+        }
+        Ok(out)
+    }
+
     /// Sizes of what has been built up so far.
     pub fn stats(&self) -> RwkvStats {
         let states = &self.warm_up_states;
@@ -1098,6 +1115,29 @@ fn append_day_offset_encoding(features: &mut Vec<f32>, day_offset: i64, first_da
         features.push((phase * first_day).sin());
         features.push((phase * first_day).cos());
     }
+}
+
+/// R of a 128-curve mixture (`ReviewCurve::weights`) `elapsed_seconds` after
+/// the answer. Verbatim upstream (`predict_curve`, which ignores the ahead
+/// logits); non-increasing in `elapsed_seconds`.
+pub fn predict_curve(weights: &[f32], elapsed_seconds: f32) -> f32 {
+    let elapsed_seconds = elapsed_seconds.max(1.0);
+    let mut raw_probability = 0.0;
+    for (index, weight) in weights.iter().enumerate() {
+        let s_space_raw = linspace_exp(index, NUM_CURVES, 18.5);
+        let s_space = 0.1 + (s_space_raw - 1.0) * (22.0_f32 - 18.5).exp();
+        raw_probability += weight * 0.9_f32.powf(elapsed_seconds / s_space);
+    }
+    1e-5 + (1.0 - 2e-5) * raw_probability
+}
+
+fn linspace_exp(index: usize, count: usize, point_spread: f32) -> f32 {
+    let value = if count <= 1 {
+        0.0
+    } else {
+        point_spread * index as f32 / (count - 1) as f32
+    };
+    value.exp()
 }
 
 /// Fushi: the query for `answer`'s card `days` scheduling days and `seconds`
@@ -1762,11 +1802,12 @@ struct ReviewHeads {
     next_state: SrsState,
 }
 
-// Fushi: the RWKV-Curve head output; computed by `SrsModel::review` as
-// upstream does but never read (Fushi schedules on retrievability only).
-#[allow(dead_code)]
+// The RWKV-Curve head output. Fushi schedules on `weights` (see
+// [RwkvInference::answer_curves]); `ahead_logits` is computed as upstream does
+// but, as upstream's `predict_curve`, never read.
 #[derive(Clone)]
 struct ReviewCurve {
+    #[allow(dead_code)]
     ahead_logits: Vec<f32>,
     weights: Vec<f32>,
 }

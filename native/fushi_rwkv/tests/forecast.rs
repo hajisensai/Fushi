@@ -5,7 +5,8 @@
 //! - 什么都不保存：预测前后快照逐字节相同；
 //! - 与真的作答一致：预测「以评分 g 作答后第 d 天的 R」= 从快照恢复、真的回放这条作答、
 //!   再在第 d 天查询得到的 R；
-//! - next_intervals：天数在 [1, 上限]、按评分单调不减，所选那天 R ≤ 目标、前一天 R > 目标。
+//! - next_intervals：读假设作答的遗忘曲线（单调不增）；天数在 [1, 上限]、按评分单调不减，
+//!   所选那天曲线上 R ≤ 目标、前一天 R > 目标。
 
 mod common;
 
@@ -119,34 +120,70 @@ fn forecast_keeps_nothing_and_matches_answering() {
     }
 }
 
+/// 排程读的是假设作答那一行的**遗忘曲线**（曲线头），不是即时头沿天数外推（见 src/curve.rs 头注释）。
 #[test]
-fn next_intervals_are_the_first_day_below_target() {
+fn next_intervals_are_the_first_day_below_target_on_the_answer_curve() {
+    const DAY: f32 = 86_400.0;
     let (reviews, answer) = history();
     for (name, model, precision) in runtimes() {
         let mut runtime = RwkvRuntime::new(&model, precision, 0).unwrap();
         runtime.replay(&reviews, false).unwrap();
         let before = runtime.snapshot().unwrap();
+        let curves = runtime.answer_curves(&answer).unwrap();
+        let grid = [0.01f32, 0.5, 1.0, 3.0, 10.0, 30.0, 100.0, 365.0, 3650.0, 36_500.0];
+        for (index, curve) in curves.iter().enumerate() {
+            let r: Vec<f32> = grid.iter().map(|&d| curve.retrievability(d * DAY)).collect();
+            assert!(
+                r.iter().all(|r| r.is_finite() && (0.0..=1.0).contains(r)),
+                "{name} {index}: {r:?}"
+            );
+            assert!(
+                r.windows(2).all(|w| w[1] <= w[0]),
+                "{name} rating {}: curve rises {r:?}",
+                index + 1
+            );
+        }
+        // 次日：Again 之后的 R 低于 Easy 之后的。更远处两条曲线可能交叉（大模型 f32 实测第 100 天
+        // 交叉），这正是上游用 PAVA 修正评分顺序的原因——顺序由下面对天数的单调断言钉。
+        let next_day = |index: usize| curves[index].retrievability(DAY);
+        eprintln!("{name}: R on day 1 after Again..Easy: {:?}", [0, 1, 2, 3].map(next_day));
+        assert!(
+            next_day(0) < next_day(3),
+            "{name}: R after Again not below R after Easy on day 1"
+        );
         for (target, max) in [(0.9f32, 36_500u32), (0.8, 36_500), (0.97, 36_500), (0.5, 20)] {
             let (days, at) = runtime.next_intervals(&answer, target, max).unwrap();
             assert!(days.windows(2).all(|w| w[0] <= w[1]), "{name} {target}: {days:?}");
-            assert!(days.iter().all(|&d| (1..=max).contains(&d)), "{name} {target}: {days:?}");
+            assert!(
+                days.iter().all(|&d| (1..=max).contains(&d)),
+                "{name} {target}: {days:?}"
+            );
             for (index, &d) in days.iter().enumerate() {
-                let rating = index as u8 + 1;
-                let r = runtime.forecast(&answer, &[rating], &[i64::from(d)]).unwrap()[0];
-                // 单调化可能把较低评分的天数抬高；只核对未被抬高的那些。
-                let lifted = index > 0 && d == days[index - 1];
-                if !lifted && d < max {
-                    assert!(r <= target, "{name} {target}: rating {rating} day {d}: R {r}");
-                    assert!((r - at[index]).abs() <= 1e-6, "{name}: {r} vs {}", at[index]);
+                let curve = &curves[index];
+                let r = curve.retrievability(d as f32 * DAY);
+                assert!((r - at[index]).abs() <= 1e-6, "{name}: {r} vs {}", at[index]);
+                // 评分顺序修正（PAVA）可能挪动相邻评分的越线点；只核对没被合并的那些。
+                let pooled = (index > 0 && d == days[index - 1]) || (index < 3 && d == days[index + 1]);
+                if !pooled && d < max {
+                    assert!(r <= target, "{name} {target}: rating {} day {d}: R {r}", index + 1);
                     if d > 1 {
-                        let before = runtime.forecast(&answer, &[rating], &[i64::from(d) - 1]).unwrap()[0];
-                        assert!(before > target, "{name} {target}: rating {rating} day {}: R {before}", d - 1);
+                        let earlier = curve.retrievability((d - 1) as f32 * DAY);
+                        assert!(
+                            earlier > target,
+                            "{name} {target}: rating {} day {}: R {earlier}",
+                            index + 1,
+                            d - 1
+                        );
                     }
                 }
             }
             eprintln!("{name} target {target}: {days:?} R {at:?}");
         }
-        assert_eq!(runtime.snapshot().unwrap(), before, "{name}: next_intervals changed the state");
+        assert_eq!(
+            runtime.snapshot().unwrap(),
+            before,
+            "{name}: next_intervals changed the state"
+        );
     }
 }
 

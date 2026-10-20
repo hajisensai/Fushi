@@ -1,6 +1,6 @@
 # fushi_rwkv
 
-Fushi 的 **RWKV-Instant** 原生推理库，两个网络：
+Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 - **大模型**（2,762,884 参数）：Anki 社区 RWKV 调度（[kuma3-anki-core](https://github.com/Pedrubik2000/kuma3-anki-core)
   的 `rslib/src/rwkv`，AGPL-3.0-or-later）的推理核心原样搬过来；来源、搬了什么 / 删了什么见
@@ -21,15 +21,15 @@ Fushi 的 **RWKV-Instant** 原生推理库，两个网络：
 
 ## 它算什么
 
-RWKV-Instant 不给间隔，只给 **R（回忆概率）**：
+模型有两个输出头：**即时头**给「此刻作答答对的概率」R，**曲线头**给「这次作答之后的遗忘曲线」R(t)：
 
 1. 把用户全部复习历史**按时间顺序**回放（`frwkv_runtime_replay`）进 RWKV 网络（通用预训练
    权重，不按用户训练），维护 card / note / deck / preset / global 五层循环状态，以及特征构造器的
    簿记（每卡累计间隔、当天计数、ID 随机编码）。
 2. 排队时对候选卡做一次只算 R 的批量查询（`frwkv_runtime_query`）。
-3. 上游的到期判据：**R ≤ 目标保留率**即可排入（`rslib/src/scheduler/rwkv.rs:944`，
-   `score > target` 判 Blocked；另有同日 / 最少间隔复习数等间距规则，`:964`）。这一步属于
-   排程层，不在本库。
+3. 作答时用**曲线头**排出四个评分的间隔（见「作答时排程」），卡片按间隔到期。上游 kuma3 的
+   RWKV-Instant 是另一种判据——每天对候选卡查即时 R，**R ≤ 目标保留率**即排入
+   （`rslib/src/scheduler/rwkv.rs:944`）；Fushi 不用它，原因同「作答时排程」里即时头不能外推。
 
 新答一题 = 追加回放这一条（增量，无需重放全史）。改写历史（删 revlog、Forget、改卡组归属
 等）则要 `reset` 后全量重放——上游 kuma3 用历史指纹判断能否只追加（`offline.rs:433`
@@ -65,13 +65,24 @@ RWKV-Instant 不给间隔，只给 **R（回忆概率）**：
 
 ### 作答时排程
 
-`frwkv_runtime_next_intervals` 把 RWKV-Instant 的到期规则（R ≤ 目标保留率）沿时间外推：对每个评分
-假设这张卡**现在**以该评分作答（不保存，特征簿记原样恢复），再在作答后第 1、2、…、30 天、之后每步
-×1.06 直到上限的网格上批量查询 R，取第一个 ≤ 目标的天，再在它与前一网格点之间逐日（≤ 48 点）细化；
-到上限仍高于目标给上限；最后按评分单调不减。预测值与「真的作答再查询」一致（`tests/forecast.rs`）。
+`frwkv_runtime_next_intervals` 读**曲线头**：对每个评分假设这张卡**现在**以该评分作答（一行不提交的
+更新行，什么都不保存），得到这次作答之后的遗忘曲线 R(t)（小模型：3 条幂曲线的混合
+`Σ w_i (1 + t/S_i)^(-d_i)`；大模型：128 条固定指数曲线的混合，上游 `predict_curve`），两者按构造
+随 t 不增；间隔 = R(t) 第一次 ≤ 目标保留率的天数，向上取整、限制在 [1, 上限]，到上限仍高于目标给
+上限；评分顺序用 PAVA 修正为不减。区间求解（网格 + 割线细化 + PAVA）与上游 RWKV-Curve 逐字相同
+（`src/curve.rs`）。这正是 SM40 INTEGRATION.md §9.2 规定的用法（`p_curve(t)` is the quantity to
+schedule on）。
 
-注意 Instant 的 R 是「下次不按 Again 的概率」，刚复习完时约等于该用户的整体通过率，不像 FSRS 那样
-从 1 开始衰减：目标保留率高于它时卡片会天天到期（上游 kuma3 同样如此）。
+**为什么不用即时头外推（2026-10-20 修正）**：之前的实现把即时头的 R 当遗忘曲线，查「作答后第 d 天」
+的 R 找越线点。即时头是「到期这一刻答对的概率」：训练数据里间隔越长的卡本来就越熟，它几乎不随假设
+的间隔下降，也不单调（Again 之后的曲线会回升），约等于该用户的整体通过率。在 20 个封存用户上实测
+（保留率 0.8，每人 300 张卡）：通过率高的用户 Good 间隔中位数顶到 36,500 天上限、连 Again 都排出
+上百年；通过率低的用户一半以上的 Good 只给 1 天。改读曲线头后间隔连续分布（`examples/interval_dist.rs`）。
+
+**仍然要知道的模型行为**：曲线头也是从该用户的历史学来的。几乎从不忘的用户（封存集里 Again 率
+1%–2% 的那些）曲线非常平，保留率 0.8 下 Good 的中位间隔可到几千天，Again（重学毕业后）也可能是
+几百天；通过率很低的用户则常是 1 天。大模型（上游实际发布的 RWKV-Curve）在同样输入上是同一量级，
+不是 Fushi 的实现问题。牌组的最大间隔照常生效。
 
 `frwkv_last_error` 存在**调用线程**的 thread-local 里。Dart isolate 只在一段同步执行内固定在
 同一个 OS 线程上，回到事件循环（`await`）后可能换线程：返回码 < 0 时必须在**同一段同步代码里、
@@ -276,7 +287,10 @@ cargo test --release --manifest-path native/fushi_rwkv/Cargo.toml
 - `tests/small_model.rs`：小模型与发布包 NumPy 参考实现的黄金向量（两位用户、14,403 行，f32 / int8
   权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的 p_curve，容差 1e-5（实测最大 3.4e-6）；
   块边界不改结果（三种精度逐位相同）；`layer_steps` 与 `architecture.json` 一致。
-- `tests/forecast.rs`：作答时排程不改状态、与真的作答一致、天数满足「当天 R ≤ 目标、前一天 > 目标」。
+- `tests/forecast.rs`：假设作答不改状态、与真的作答一致；排程读的遗忘曲线随时间不增、次日 Again
+  低于 Easy，天数是曲线上「当天 R ≤ 目标、前一天 > 目标」的那天；`src/curve.rs` 的单元测试用已知
+  形状的曲线钉住求解器（越线点向上取整、评分顺序、上限 / 下限）。
+- `examples/interval_dist.rs`：真实历史上排出的间隔分布（各保留率下 Good / Hard / Again 的分位数）。
 - `tests/long_history.rs`：长历史下紧凑状态有界（见「状态精度」），`LONG_DAYS=10000` 加长。
 - `examples/replay_eval.rs`、`examples/state_drift.rs`、`examples/bench.rs`：真实历史评测、状态峰值
   追踪、速度与内存。

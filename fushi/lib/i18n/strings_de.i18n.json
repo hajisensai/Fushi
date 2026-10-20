@@ -6566,7 +6566,7 @@
   "srs_settings_rwkv_download": "Download model ($size)",
   "srs_settings_rwkv_downloading": "Downloading… $percent%",
   "srs_settings_rwkv_failed": "RWKV is unavailable: $error. Intervals use FSRS-7 until this is fixed.",
-  "srs_settings_rwkv_hint": "RWKV-Instant predicts recall from your whole review history with a neural network; a card is due when its predicted recall drops to the desired retention. Stability and difficulty are still tracked with FSRS-7.",
+  "srs_settings_rwkv_hint": "RWKV predicts each card's forgetting curve from your whole review history with a neural network; every answer is scheduled for the day its predicted recall drops to the desired retention. Stability and difficulty are still tracked with FSRS-7.",
   "srs_settings_rwkv_license_small": "The small model is downloaded from its author's GitHub release; its license has not been declared yet.",
   "srs_settings_rwkv_model": "RWKV model (this device)",
   "srs_settings_rwkv_model_hint": "Small (recommended): about 2.9 KB of memory per card, and slightly more accurate in tests on real review histories. Large: about 25.7 KB per card and slower to prepare. Applies to every RWKV deck on this device.",

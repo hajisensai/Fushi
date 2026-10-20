@@ -506,7 +506,8 @@ struct Layer {
 }
 
 /// The heads of one row. `p_logits` always; the curve head only on request
-/// (Fushi schedules on the instant head; the curve is checked by the tests).
+/// (replay / R queries read the instant head; scheduling reads the curve of a
+/// what-if answer, INTEGRATION.md §9.2).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SmallHeads {
     pub p_logits: [f32; 4],
@@ -515,6 +516,26 @@ pub struct SmallHeads {
 }
 
 impl SmallHeads {
+    /// `p_curve(t)`, INTEGRATION.md §9.1 (with the zero ahead residual,
+    /// `sigmoid(logit + 1e-5)`): R `seconds` after this row's answer,
+    /// non-increasing in `seconds` (clamped to >= 1).
+    pub fn curve_retrievability(&self, seconds: f32) -> f32 {
+        let w = &self.curve[0..3];
+        let max = w.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let e = [(w[0] - max).exp(), (w[1] - max).exp(), (w[2] - max).exp()];
+        let sum = e[0] + e[1] + e[2];
+        let t = seconds.max(1.0);
+        let mut r = 0.0f32;
+        for (i, weight) in e.iter().enumerate() {
+            let s = self.curve[3 + i].clamp(-25.0, 25.0).exp();
+            let d = self.curve[6 + i].clamp(-25.0, 25.0).exp();
+            r += weight / sum * (-d * (t / (1e-7 + s)).ln_1p()).exp();
+        }
+        let raw = 1e-5 + (1.0 - 2e-5) * r;
+        let logit = (raw / (1.0 - raw)).ln() + 1e-5;
+        1.0 / (1.0 + (-logit).exp())
+    }
+
     /// `p_imm`: 1 - P(Again), clamped to [1e-5, 1 - 1e-5].
     pub fn retrievability(&self) -> f32 {
         let p = softmax4(&self.p_logits);

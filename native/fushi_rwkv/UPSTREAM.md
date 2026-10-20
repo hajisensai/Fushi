@@ -49,13 +49,16 @@
   `anki_io` / `blake3` / `tracing`。
 - **workload 模拟**（`simulate_workload*`、`RwkvWorkload*`、`SimulationStates`、`StreamIds`、
   `simulation_*`、`relative_overdueness` 引用）——不再依赖 `anki_proto`（`ReviewCardOrder`）。
-- **RWKV-Curve / 区间求解**：`interval_for_curve`、`unrounded_*`、`crossings_on_grid`、
-  `crossing_between`、`pava_non_decreasing`、`interval_search_days`、`clamped_interval_days`、
-  `current_curve_retrievability`、`predict_curve`、`linspace_exp`、`S90_TARGET_RETENTION`、
-  `answer_intervals` / `current_intervals` / `answer_heads`、`ReviewInput::target_retentions` /
-  `enforce_grade_order`；运行时不再按卡保存曲线（上游 `RwkvInference.curves`，≈1 KB/卡），
-  批量回放也不再在每次调用结束时为每张卡算曲线。网络里的曲线头（`curve_head`）仍按上游计算
-  （逐条参考路径会算出来但不读），数值路径不动。
+- **按卡保存的曲线与它的接口**：`RwkvInference.curves`（≈1 KB/卡）、`current_curve_retrievability`、
+  `answer_intervals` / `current_intervals`（带 S90 的双目标版本）、`S90_TARGET_RETENTION`、
+  `ReviewInput::target_retentions` / `enforce_grade_order`；批量回放也不在每次调用结束时为每张卡算
+  曲线。
+  - **2026-10-20 搬回**（作答时排程改读曲线头，见 README「作答时排程」）：`predict_curve`、
+    `linspace_exp` 逐字回到 `src/rwkv/mod.rs`；区间求解 `unrounded_intervals_for_answer_curves` /
+    `crossings_on_grid` / `crossing_between` / `pava_non_decreasing` / `interval_search_days` /
+    `clamped_interval_days` 逐字搬到 `src/curve.rs`（四个评分同一目标、`enforce_grade_order = true`）；
+    `answer_heads` 的等价物是 `RwkvInference::answer_curves`（读 `SrsModel::review` 已经算出的
+    `curve.weights`）。网络里的曲线头（`curve_head`）一直按上游计算，数值路径不动。
 - 其余 `RwkvInference` 接口：`review`（逐条带状态字节的老接口）、`predict_many`、
   `predict_retrievability_many`、`predict_retrievability_many_after_review(s)*`、
   `warm_up_snapshot` / `restore_warm_up_snapshot` / `warm_up_state` / `restore_warm_up_state`、
@@ -86,7 +89,8 @@
   大模型 int4 card 状态即使这样也发散，`lib.rs` 拒绝该组合。
 - **card / note 状态存储**（`SharedStateMap`）：紧凑状态改存定长槽位池（`slots.rs`），f32 状态照旧
   `Arc`；对外行为（`state` / `put` / `take`）不变，修的是回放导致的堆碎片（README「内存」）。
-- 新增：`forecast`（作答时排程的假设作答 + 查询，见 README）、`FeatureState::with_hypothetical_review`
+- 新增：`answer_curves`（作答时排程：每个评分一行假设作答的曲线头，见 README）、`forecast`（假设
+  作答后在若干天查询即时 R，测试与诊断用，不参与排程）、`FeatureState::with_hypothetical_review`
   （假设回放一条再撤销）、`forecast_query`、`stream_peak`（长历史测试诊断）。
 
 `src/lib.rs`（输入校验、线程池、作答时排程的天数搜索、C ABI）与 `src/rwkv/small/`、`src/rwkv/slots.rs`

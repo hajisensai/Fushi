@@ -238,6 +238,37 @@ impl SmallInference {
         Ok(out)
     }
 
+    /// The heads (with the curve) of `answer` answered Again / Hard / Good /
+    /// Easy: four what-if update rows from the current states in one call,
+    /// none committed (a row's own output does not depend on whether it
+    /// commits), nothing kept. INTEGRATION.md §9.2 "intervals for each
+    /// possible answer".
+    pub fn answer_curves(&mut self, answer: &ReviewInput) -> io::Result<[SmallHeads; 4]> {
+        let mut features = Vec::with_capacity(4 * CARD_FEATURES);
+        let mut keys = Vec::with_capacity(4);
+        for rating in 1..=4u8 {
+            let mut answer = answer.clone();
+            answer.is_query = false;
+            answer.ease = Some(rating);
+            features.extend(self.features.features_for(&answer));
+            keys.push(stream_keys(&answer));
+        }
+        let heads = model::run(
+            &self.model.net,
+            &self.layouts,
+            &mut self.stores,
+            &Rows {
+                features: &features,
+                keys: &keys,
+                commit: &[false; 4],
+                heads: &[true; 4],
+            },
+            true,
+            false,
+        );
+        Ok([heads[0], heads[1], heads[2], heads[3]])
+    }
+
     fn query_heads(&mut self, inputs: &[ReviewInput], curve: bool) -> io::Result<Vec<SmallHeads>> {
         if inputs.iter().any(|input| !input.is_query) {
             return Err(io::Error::new(

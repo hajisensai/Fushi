@@ -1,10 +1,10 @@
-/// 排程算法：FSRS-7 / FSRS-6 / RWKV-Instant。
+/// 排程算法：FSRS-7 / FSRS-6 / RWKV。
 ///
-/// RWKV-Instant（2026-10-19 用户定支持，只做 Instant 不做 Curve）：原生推理库在
-/// native/fushi_rwkv（AGPL-3.0-or-later），Dart 绑定 packages/fushi_rwkv。它只给 R（回忆概率），
-/// 间隔在作答时由「以该评分作答后 R 第一次 ≤ 目标保留率的天数」外推（见
-/// `SrsCardOps.preview` 的 `rwkvIntervalDays`）；记忆状态（stability / difficulty，出队排序与统计
-/// 用）照旧由 FSRS-7 维护，见 [SrsAlgorithm.memoryAlgorithm]。
+/// RWKV（2026-10-19 用户定支持）：原生推理库在 native/fushi_rwkv（AGPL-3.0-or-later），Dart 绑定
+/// packages/fushi_rwkv。间隔在作答时算：对每个评分假设作答一次，读模型给出的这次作答之后的遗忘曲线，
+/// 取 R 第一次 ≤ 目标保留率的天数（见 `SrsCardOps.preview` 的 `rwkvIntervalDays`；不用即时头的 R
+/// 沿天数外推，原因见 native/fushi_rwkv/src/curve.rs）。记忆状态（stability / difficulty，出队排序与
+/// 统计用）照旧由 FSRS-7 维护，见 [SrsAlgorithm.memoryAlgorithm]。
 ///
 /// 持久化名是 [wire]，冻结；不认识的值（更新版本的 app 写来的）原样保留、不改写，
 /// 本机按 [srsLocalAlgorithmFallbackOrder] 取第一个能用的算法排程（铁律 F）。
