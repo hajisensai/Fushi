@@ -1,4 +1,4 @@
-## BUG-3622 · 开了暂停 OCR 后，暂停 → 继续播放有明显延迟
+## BUG-3645 · 开了暂停 OCR 后，暂停 → 继续播放有明显延迟
 - **报告**：2026-10-20（用户：开了ocr以后，我暂停和取消暂停是不是中间有延迟啊）
 - **真实性**：✅ 真 bug。暂停 250 ms 后 `VideoGraphicSubtitleOcrOverlay._recognize`（`fushi/lib/src/media/video/video_graphic_subtitle_ocr_overlay.dart:253`）调 `VideoPlayerController.captureFrameWithSubtitles`（`fushi/lib/src/media/video/video_player_controller.dart:1620`），后者用 media_kit `Player.screenshot` 的默认 `synchronized: true`：整段 `compute(_screenshot)`（起 isolate + `screenshot-raw` + 纯 Dart `encodePng`，1080p 帧几百毫秒、4K 更久）都持着 Player 的 `lock`（`ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart` `screenshot()`）。`play()` / `pause()` / `playOrPause()` 也走同一把 `lock.synchronized`，于是截帧期间按继续播放要排到截帧编码完才执行。
 - **[x] ① 已修复** — 截帧改 `synchronized: false`，不再占 Player 串行锁；media_kit 补丁里 `screenshot()` 在 await 后复查 `disposed`，并把 `compute` 登记进 `_offThreadNativeCalls`（BUG-3507 已有的机制），`dispose` 在 `mpv_terminate_destroy` 前等它跑完，避免不持锁的截帧与销毁句柄竞争；登记的 future 吞错，截帧失败不会挡住句柄销毁。

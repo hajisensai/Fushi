@@ -33,20 +33,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3248 条。点号进各自文件。
+> 共 3251 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3647](bugs/BUG-3647-srs-deck-delete-no-delete-cards-option.md) | ✅ | ✅ | srs-deck-delete-no-delete-cards-option |
+| [BUG-3646](bugs/BUG-3646-epub-manga-duplicate-pages-kcc-panel-view.md) | ✅ | ✅ | 纯图 EPUB 转漫画重页（KCC Panel View 每页出 5 份） |
+| [BUG-3645](bugs/BUG-3645-pause-ocr-resume-delay.md) | ✅ | ✅ | 开了暂停 OCR 后，暂停 → 继续播放有明显延迟 |
 | [BUG-3644](bugs/BUG-3644-study-tombstone-profile-mismatch-diverges.md) | ✅ | ✅ | study-tombstone-profile-mismatch-diverges |
-| [BUG-3644](bugs/BUG-3644-srs-deck-delete-no-delete-cards-option.md) | ✅ | ✅ | srs-deck-delete-no-delete-cards-option |
 | [BUG-3643](bugs/BUG-3643-manga-cbz-avif-pages.md) | ✅ | ✅ | CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images） |
 | [BUG-3642](bugs/BUG-3642-epub-zip-extra-field-padding-range-error.md) | ✅ | ✅ | EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读） |
 | [BUG-3641](bugs/BUG-3641-unread-epub-content-sync.md) | ✅ | ✅ | 未读 EPUB 因无阅读进度被同步跳过，云端只有元数据 |
-> 共 3245 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3641](bugs/BUG-3641-epub-manga-duplicate-pages-kcc-panel-view.md) | ✅ | ✅ | 纯图 EPUB 转漫画重页（KCC Panel View 每页出 5 份） |
 | [BUG-3640](bugs/BUG-3640-scrape-ledger-plaintext-credentials.md) | ✅ | ✅ | 补刮账本把含凭据的配置指纹明文落盘 |
 | [BUG-3639](bugs/BUG-3639-interconnect-online-manga-undownloaded-hidden.md) | ✅ | ✅ | interconnect-online-manga-undownloaded-hidden |
 | [BUG-3638](bugs/BUG-3638-collection-hero-cover-dangling-path.md) | ✅ | ✅ | 系列封面路径悬空时详情页 hero 不回落到刮削封面 |
@@ -61,11 +58,6 @@
 | [BUG-3624](bugs/BUG-3624-manga-swipe-follow-bound-to-page-animation.md) | ✅ | ✅ | manga-swipe-follow-bound-to-page-animation |
 | [BUG-3623](bugs/BUG-3623-manga-turn-queue-silent-stall.md) | 🚧 | 🚧 | manga-turn-queue-silent-stall |
 | [BUG-3622](bugs/BUG-3622-airing-calendar-romaji-and-empty-related.md) | ✅ | ✅ | 放送日历标题全是罗马字 + 关掉「显示本季全部」后为空 |
-> 共 3231 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3622](bugs/BUG-3622-pause-ocr-resume-delay.md) | ✅ | ✅ | 开了暂停 OCR 后，暂停 → 继续播放有明显延迟 |
 | [BUG-3621](bugs/BUG-3621-shortcut-row-hides-other-device-bindings.md) | ✅ | ✅ | 快捷键列表当前设备无绑定时只显示点按分配，隐藏其它设备上的绑定 |
 | [BUG-3619](bugs/BUG-3619-gamepad-press-recorded-as-keyboard.md) | ✅ | ✅ | Android 手柄按键在键盘分段录成键盘绑定，绕过手柄冲突检测 |
 | [BUG-3618](bugs/BUG-3618-online-video-hls-backward-seek-lands-late.md) | ✅ | ✅ | 在线源视频往回跳（上一句 / 固定秒数后退）有时跳不动 |
