@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3247 条。点号进各自文件。
+> 共 3248 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3644](bugs/BUG-3644-srs-deck-delete-no-delete-cards-option.md) | ✅ | ✅ | srs-deck-delete-no-delete-cards-option |
 | [BUG-3643](bugs/BUG-3643-manga-cbz-avif-pages.md) | ✅ | ✅ | CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images） |
 | [BUG-3642](bugs/BUG-3642-epub-zip-extra-field-padding-range-error.md) | ✅ | ✅ | EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读） |
 | [BUG-3641](bugs/BUG-3641-unread-epub-content-sync.md) | ✅ | ✅ | 未读 EPUB 因无阅读进度被同步跳过，云端只有元数据 |
