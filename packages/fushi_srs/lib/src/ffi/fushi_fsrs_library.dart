@@ -51,7 +51,10 @@ class FushiFsrs {
   /// 2. 环境变量 `FUSHI_FSRS_LIB`；
   /// 3. 可执行文件同级（Windows / Linux 桌面包）；
   /// 4. `bin/../lib/<name>`（无头服务端 `dart build cli` bundle）；
-  /// 5. 裸名（系统搜索路径）。Android 从 APK 的 native lib 目录、macOS 从
+  /// 5. 仅测试宿主（`dart` / `flutter_tester`，见 [isTestHost]）：从 [currentDirectory]
+  ///    向上找到的本仓 `native/fushi_fsrs/prebuilt/<平台>/<name>`（`tool/bootstrap.ps1`
+  ///    编出或复用的产物），worktree 里跑测试不必再设环境变量；
+  /// 6. 裸名（系统搜索路径）。Android 从 APK 的 native lib 目录、macOS 从
   ///    `Contents/Frameworks`（Runner 的 `@executable_path/../Frameworks` rpath）、
   ///    Linux 桌面从 `bundle/lib/`（`$ORIGIN/lib`）加载都走这条。
   ///
@@ -60,6 +63,7 @@ class FushiFsrs {
     String? libraryPath,
     Map<String, String>? environment,
     String? executablePath,
+    String? currentDirectory,
   }) {
     final String name = defaultLibraryName();
     final Map<String, String> env = environment ?? Platform.environment;
@@ -67,24 +71,66 @@ class FushiFsrs {
     final String binDir = File(exe).parent.path;
     final String sep = Platform.pathSeparator;
     final String? fromEnv = env[kFushiFsrsLibEnv];
+    final String? prebuilt = isTestHost(exe)
+        ? _findRepoPrebuilt(currentDirectory ?? Directory.current.path, name)
+        : null;
     return <String>[
       if (libraryPath != null && libraryPath.isNotEmpty) libraryPath,
       if (fromEnv != null && fromEnv.isNotEmpty) fromEnv,
       '$binDir$sep$name',
       File('$binDir$sep..${sep}lib$sep$name').absolute.path,
+      if (prebuilt != null) prebuilt,
       name,
     ];
+  }
+
+  /// 进程是不是测试宿主（`dart test` / `flutter test`）。只有它才去仓库里找 prebuilt：
+  /// 正式 app 与服务端不能从当前目录的上级加载库（DLL 投毒面）。
+  static bool isTestHost(String executablePath) {
+    final String base = executablePath
+        .split(RegExp(r'[\\/]'))
+        .last
+        .toLowerCase();
+    return base == 'dart' ||
+        base == 'dart.exe' ||
+        base == 'flutter_tester' ||
+        base == 'flutter_tester.exe';
+  }
+
+  static String? _findRepoPrebuilt(String start, String name) {
+    final String? platformDir = Platform.isWindows
+        ? 'windows-x64'
+        : Platform.isMacOS
+        ? 'macos'
+        : Platform.isLinux
+        ? 'linux-x64'
+        : null;
+    if (platformDir == null) return null;
+    final String sep = Platform.pathSeparator;
+    Directory dir = Directory(start).absolute;
+    for (int depth = 0; depth < 8; depth++) {
+      final File candidate = File(
+        '${dir.path}${sep}native${sep}fushi_fsrs${sep}prebuilt'
+        '$sep$platformDir$sep$name',
+      );
+      if (candidate.existsSync()) return candidate.path;
+      final Directory parent = dir.parent;
+      if (parent.path == dir.path) break;
+      dir = parent;
+    }
+    return null;
   }
 
   /// 按 [libraryCandidates] 顺序加载原生库；全部失败返回 null（不抛）。
   ///
   /// 显式给了 [libraryPath] 时**只试这一个**：调用方点名要某个文件（测试、harness），
   /// 那个文件不能用就该报不可用，而不是悄悄换成系统里别的副本。
-  /// [environment] / [executablePath] 仅供测试覆盖定位输入。
+  /// [environment] / [executablePath] / [currentDirectory] 仅供测试覆盖定位输入。
   static FushiFsrs? tryLoad({
     String? libraryPath,
     Map<String, String>? environment,
     String? executablePath,
+    String? currentDirectory,
   }) {
     try {
       if (Platform.isIOS) {
@@ -97,6 +143,7 @@ class FushiFsrs {
           : libraryCandidates(
               environment: environment,
               executablePath: executablePath,
+              currentDirectory: currentDirectory,
             );
       for (final String candidate in candidates) {
         final bool isBareName =

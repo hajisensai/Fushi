@@ -33,8 +33,9 @@
   worktree 创建时同步阻塞数分钟；需要 flutter test 前再手动 tool/bootstrap.ps1。
 
 .PARAMETER SkipNativeCompute
-  透传给 tool/bootstrap.ps1：不编 native/fushi_compute（Rust 计算内核，app 与 flutter test 的
-  硬依赖，需要 cargo）。跳过后 flutter build / test 之前必须手动跑它的 build_* 脚本。
+  透传给 tool/bootstrap.ps1：不备 Rust 原生库（fushi_compute / fushi_fsrs / fushi_web_core，app 与
+  flutter test 的硬依赖；兄弟 worktree 有同源码产物时直接拷，否则需要 cargo 编）。跳过后
+  flutter build / test 之前必须手动跑 tool/native_libs.ps1。
 
 .PARAMETER SkipCacheSeed
   不从兄弟 worktree 复制 flutter test 的增量编译缓存(见下方「预热 flutter test
