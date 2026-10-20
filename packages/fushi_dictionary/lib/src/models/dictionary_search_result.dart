@@ -61,6 +61,15 @@ class DictionarySearchResult {
 
   String? popupJson;
 
+  /// 结果由已配对电脑查出时，那台电脑的词典自带样式（词典名 → CSS）；null = 本机
+  /// 结果，弹窗用本机 `FushiDicts.dictionaryStyles`。
+  ///
+  /// BUG-3612：瘦客户端（iPad 一部词典都没装）看电脑媒体库视频时，查词经
+  /// `AppModel` 的 remote-first 路径由电脑完成，但弹窗在本机渲染、Glossary 也在本机
+  /// 导出（`popup.js` 读 `window.dictionaryStyles`）——样式必须随结果一起带回来，
+  /// 不能用本机那份空表。不进 [toJson]：只活在本次渲染里，不进缓存与同步。
+  Map<String, String>? remoteDictionaryStyles;
+
   /// Returns a copy carrying [kanji] in [kanjiResults] while preserving the
   /// term [entries], [popupJson], [bestLength] and [scrollPosition]. Used by the
   /// search path to attach a single-kanji lookup's kanji-dictionary results to a
@@ -76,6 +85,7 @@ class DictionarySearchResult {
       headwordCount: headwordCount,
     );
     copy.popupJson = popupJson;
+    copy.remoteDictionaryStyles = remoteDictionaryStyles;
     return copy;
   }
 
