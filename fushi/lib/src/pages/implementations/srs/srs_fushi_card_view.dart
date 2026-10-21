@@ -477,26 +477,56 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  /// 词条 + 词条发音：发音按钮紧跟大字词条、与之垂直居中（不再挤在读音行的标签堆里）。
-  Widget _termRow(_SrsCardStyle s, BoxConstraints c) {
+  /// 词条区：「发音键｜词条 + 读音行」。左栏统一网格——卡片 / 图片通栏，词条区与底部
+  /// 元信息缩进一个卡片内边距，发音键与例句卡里的发音键落在同一条竖线上、后面的文字
+  /// 也从同一个 x 起头。[trailing] 是窄版式标题右侧的缩略图。
+  Widget _header(_SrsCardStyle s, BoxConstraints c, {Widget? trailing}) {
     final List<String> audio = srsSoundNames(
       widget.fields['ExpressionAudio'] ?? '',
     );
-    if (audio.isEmpty) return _term(s, c);
-    return Row(
+    final Widget main = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Flexible(child: _term(s, c)),
-        for (final String name in audio) ...<Widget>[
-          SizedBox(width: s.gap),
-          _AudioButton(
-            key: const ValueKey<String>('srs-fushi-word-audio'),
-            name: name,
-            style: s,
-            onPlay: _play,
-          ),
-        ],
+        _term(s, c),
+        const SizedBox(height: 4),
+        _readingRow(s),
       ],
+    );
+    final Widget body = audio.isEmpty
+        ? main
+        : Row(
+            children: <Widget>[
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 6,
+                children: <Widget>[
+                  for (final String name in audio)
+                    _AudioButton(
+                      key: const ValueKey<String>('srs-fushi-word-audio'),
+                      name: name,
+                      style: s,
+                      onPlay: _play,
+                    ),
+                ],
+              ),
+              SizedBox(width: s.gap),
+              Expanded(child: main),
+            ],
+          );
+    return Padding(
+      key: const ValueKey<String>('srs-fushi-header'),
+      padding: EdgeInsets.symmetric(horizontal: s.pad),
+      child: trailing == null
+          ? body
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(child: body),
+                SizedBox(width: s.gap),
+                trailing,
+              ],
+            ),
     );
   }
 
@@ -536,10 +566,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     return _MediaImage(
       key: const ValueKey<String>('srs-fushi-picture'),
       name: name,
-      // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
-      // 左栏图最高 220，矮视口（手机横屏）120。
+      // 窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）。宽版式左栏：
+      // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
+      // 照旧限高 220（矮视口 120）完整显示。
       maxWidth: wide ? null : s.thumb * 1.5,
       maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : s.thumb * 1.4,
+      fillWidth: wide && _viewport > 520,
       radius: s.tokens.radiusSmall,
     );
   }
@@ -805,22 +837,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final List<Widget> blocks = <Widget>[
       Padding(
         padding: EdgeInsets.fromLTRB(s.pad, s.pad, s.pad, 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _termRow(s, c),
-                  const SizedBox(height: 4),
-                  _readingRow(s),
-                ],
-              ),
-            ),
-            if (picture != null) ...<Widget>[SizedBox(width: s.gap), picture],
-          ],
-        ),
+        child: _header(s, c, trailing: picture),
       ),
       if (sentence != null)
         Padding(
@@ -868,8 +885,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: true);
     final List<Widget> left = <Widget>[
-      _termRow(s, c),
-      _readingRow(s),
+      _header(s, c),
       ?picture,
       ?sentence,
       ..._footer(s),
@@ -1240,19 +1256,23 @@ class _MetaRow extends StatelessWidget {
   final _SrsCardStyle style;
   final Widget child;
 
+  /// 与词条区同缩进（一个卡片内边距）：左栏的文字都落在卡片内容那条竖线上。
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: <Widget>[
-      Text(
-        label,
-        style: style
-            .text(style.tokens.label, color: style.muted, ui: true)
-            .copyWith(fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: 6),
-      child,
-    ],
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.symmetric(horizontal: style.pad),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: style
+              .text(style.tokens.label, color: style.muted, ui: true)
+              .copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    ),
   );
 }
 
@@ -1284,14 +1304,20 @@ class _AudioButton extends StatelessWidget {
   }
 }
 
+/// 铺满栏宽的图片比例范围（宽 / 高）：视频截图 16:9、4:3、方图都在内；竖长书封、超宽
+/// 横幅铺满会过高 / 过扁，照旧限高完整显示。
+const double kSrsPictureFillMinAspect = 0.9;
+const double kSrsPictureFillMaxAspect = 2.5;
+
 /// 媒体库里的图片：点按全屏查看。
-class _MediaImage extends ConsumerWidget {
+class _MediaImage extends ConsumerStatefulWidget {
   const _MediaImage({
     super.key,
     required this.name,
     required this.radius,
     this.maxWidth,
     this.maxHeight,
+    this.fillWidth = false,
   });
 
   final String name;
@@ -1299,27 +1325,102 @@ class _MediaImage extends ConsumerWidget {
   final double? maxWidth;
   final double? maxHeight;
 
+  /// 常见比例时铺满父级宽度（按原比例定高）；怪比例退回 [maxHeight] 限高。
+  final bool fillWidth;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ImageProvider<Object>? provider = srsCardImageProvider(
-      name,
+  ConsumerState<_MediaImage> createState() => _MediaImageState();
+}
+
+class _MediaImageState extends ConsumerState<_MediaImage> {
+  ImageProvider<Object>? _provider;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  /// 解码出的宽 / 高；未知（还没解码 / 失败）时 null。
+  double? _aspect;
+
+  @override
+  void dispose() {
+    _unlisten();
+    super.dispose();
+  }
+
+  void _unlisten() {
+    final ImageStreamListener? l = _listener;
+    if (l != null) _stream?.removeListener(l);
+    _stream = null;
+    _listener = null;
+  }
+
+  String? _providerName;
+  SrsMediaStore? _providerStore;
+
+  /// 同一张图（名字 + 媒体库不变）只建一次 provider：`MemoryImage` 按字节数组身份判等，
+  /// 每次 build 新建会让 Image 反复重载、尺寸监听反复重来。
+  ImageProvider<Object>? _providerFor(SrsMediaStore? store) {
+    if (_providerName != widget.name || !identical(_providerStore, store)) {
+      _providerName = widget.name;
+      _providerStore = store;
+      _unlisten();
+      _provider = srsCardImageProvider(widget.name, store);
+      _aspect = null;
+    }
+    return _provider;
+  }
+
+  /// 只在铺满模式下解析尺寸（决定铺不铺满）；同一 provider 只解析一次。
+  void _resolve(BuildContext context, ImageProvider<Object> provider) {
+    if (!widget.fillWidth || _stream != null) return;
+    final ImageStream stream = provider.resolve(
+      createLocalImageConfiguration(context),
+    );
+    final ImageStreamListener listener = ImageStreamListener((
+      ImageInfo info,
+      bool _,
+    ) {
+      final double w = info.image.width.toDouble();
+      final double h = info.image.height.toDouble();
+      info.dispose();
+      if (!mounted || h <= 0) return;
+      setState(() => _aspect = w / h);
+    }, onError: (Object _, StackTrace? _) {});
+    stream.addListener(listener);
+    _stream = stream;
+    _listener = listener;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double radius = widget.radius;
+    final ImageProvider<Object>? provider = _providerFor(
       ref.watch(srsMediaStoreProvider).valueOrNull,
     );
+    if (provider != null) _resolve(context, provider);
+    final double? aspect = _aspect;
+    final bool fill =
+        widget.fillWidth &&
+        aspect != null &&
+        aspect >= kSrsPictureFillMinAspect &&
+        aspect <= kSrsPictureFillMaxAspect;
     final Widget image = provider == null
         ? const SizedBox.shrink()
         : Image(
             image: provider,
+            fit: fill ? BoxFit.cover : null,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           );
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth ?? double.infinity,
-          maxHeight: maxHeight ?? 220,
-        ),
-        child: image,
-      ),
+      child: fill
+          ? AspectRatio(aspectRatio: aspect, child: image)
+          : ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: widget.maxWidth ?? double.infinity,
+                maxHeight: widget.maxHeight ?? 220,
+              ),
+              child: image,
+            ),
     );
     if (provider == null) return box;
     return FushiPressScale(
