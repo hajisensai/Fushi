@@ -11,3 +11,4 @@
   - `fushi/test/stats/study_char_count_parity_test.dart` / `.js`：对全部语料的每个 k 断言 `unitStartOffset` 前恰有 k 个单位结束、落点是字母数字、不在词中间，k == count 时落在文本末尾。
 - **备注**：
   - 未在真机复测：页边界要恰好落在「。」之后才触发，真机上无法稳定凑出；修复在真 Chrome 跑的生产 shell 上验证。
+  - 2026-10-21 更正：上面「钉住视口，平台无关」不成立。`@1280x560` 一例在 develop `930a8be206` 的 Linux CI（run 39489492150）上 `afterStop` 为 0、`requireAfterStop` 报 `no page starts right after 「。」`（其余 8 组全绿，修复本身没回归）。原因是段首前缀 `P8 ` 用平台的比例拉丁字体排，它的竖排进深随字体变（本机 Noto Sans SC 3 字 28.25px、Meiryo 31.1px、Verdana 31.8px），把它后面每一处软换行挪位；本机把正文字体换成 `Verdana,'Noto Sans SC'` 后旧 fixture 9 页命中掉到 1 页。改为该例用全角前缀 `Ｐ０８　`（`fullwidthPrefix`），每段 69 个码元、在任何 CJK 字体下都是 1em，视口改 1280×586：行长 530px = 26 码元，每段折成 26+26+17，第三行恰从码元 51（「。」之后）开始。本机实测 576..592 高度全部 9 页命中、596 起 0 页（与 floor((H−56)/20)=26 的算术区间一致）；MS Gothic / Yu Mincho / Meiryo / Verdana / Georgia 五种字体都是 9 页命中；把 `unitStartOffset` 的分隔符跳过改成 `break`（旧逻辑）后该例逐字红出原 CI 文本（`page 1: first char 551 not on page; ... restores to 0 not 1272`）。
