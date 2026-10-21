@@ -1026,10 +1026,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
 
   final String stylesJson = DictionaryPopupWebViewState.dictionaryStylesJson();
   final String collapsedNames = jsonEncode(
-    appModel.dictionaries
-        .where((d) => d.isCollapsed(JapaneseLanguage.instance))
-        .map((d) => d.name)
-        .toList(),
+    popupCollapsedDictionaryNames(appModel),
   );
   // BUG-2158：与 collapsedNames 成对的第二个名单。缺了它，popup.js 就只能在
   // 「显式折叠」和「没表态」之间二选一，用户点的「展开」无处可去。
@@ -1286,3 +1283,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   );
   return product;
 }
+
+/// 词典管理里逐本设成「折叠」的词典名：查词弹窗（`collapsedDictionaryNames`）与复习卡面
+/// 释义页共用这一个真相源。
+List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
+    .dictionaries
+    .where((d) => d.isCollapsed(JapaneseLanguage.instance))
+    .map((d) => d.name)
+    .toList();

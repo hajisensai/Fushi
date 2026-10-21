@@ -40,7 +40,7 @@ const String _metricsScript = '''
       display: cs.display, margin: cs.marginLeft + ' ' + cs.marginRight};
   }
   function tree(el, depth){
-    if (!el || depth > 4) return '';
+    if (!el || depth > 6) return '';
     var cs = getComputedStyle(el);
     var line = new Array(depth + 1).join('  ') + el.tagName.toLowerCase() +
       (el.className ? '.' + String(el.className).trim().split(/\\s+/).join('.') : '') +
@@ -59,6 +59,21 @@ const String _metricsScript = '''
     defs: box('.fc-defs'), first: box('.fc-defs > *'), more: box('.fc-more')});
 })()
 ''';
+
+/// 4 本其他词典（Fushi 制卡写进 Glossary 的形状：`li[data-dictionary]` + `<i>(标签, 词典名)</i>`）。
+const String _multiDictGlossary =
+    '<div class="yomitan-glossary" style="text-align: left;"><ol>'
+    '<li data-dictionary="大辞林 第四版"><i>(動五, 大辞林 第四版)</i> '
+    '<span>同じ所へ何度も行き来する。「病院に—・う」</span></li>'
+    '<li data-dictionary="大辞林 第四版"><i>(動五)</i> '
+    '<span>心が相手に伝わる。通じ合う。</span></li>'
+    '<li data-dictionary="明鏡国語辞典"><i>(動五, 明鏡国語辞典)</i> '
+    '<span>ある場所へ定期的に行き来する。</span></li>'
+    '<li data-dictionary="新明解国語辞典"><i>(新明解国語辞典)</i> '
+    '<span>決まった所へ繰り返し行く。</span></li>'
+    '<li data-dictionary="JMdict"><i>(v5u, JMdict)</i> '
+    '<span>to go to and from (a place); to commute</span></li>'
+    '</ol></div>';
 
 Future<void> _pumpFor(WidgetTester tester, Duration d) async {
   final Stopwatch sw = Stopwatch()..start();
@@ -89,6 +104,8 @@ void main() {
       ...srsSampleCardFields(),
       'ExpressionAudio': '[sound:word.mp3]',
       'SentenceAudio': '[sound:sentence.mp3]',
+      // 主词典之外再有 4 本：看分列网格与展开规则。
+      'Glossary': _multiDictGlossary,
     };
     await store.createNote(
       noteTypeId: store.fushiCardNoteTypeId,
@@ -126,11 +143,36 @@ void main() {
       source: _metricsScript,
     );
     debugPrint('[srs-back-layout] defs $metrics');
-    final Uint8List? png = await controller.takeScreenshot();
-    if (png != null) {
-      final String path = '${observeScreenshotDir().path}/03-back-defs.png';
+    Future<void> shotDefs(String name) async {
+      final Uint8List? png = await SrsWebCardFace.debugController!
+          .takeScreenshot();
+      if (png == null) return;
+      final String path = '${observeScreenshotDir().path}/$name.png';
       await File(path).writeAsBytes(png, flush: true);
       debugPrint('[srs-back-layout] screenshot $path');
     }
+
+    await shotDefs('03-back-defs-rows1');
+
+    // 自动展开 2 行：主词典一行 + 其他词典一整行（按列数）展开。重开复习页让卡面重建。
+    await appModel.setPopupAutoExpandDictionaries(2);
+    appModel.navigatorKey.currentState!.pop();
+    await _pumpFor(tester, const Duration(seconds: 1));
+    unawaited(
+      appModel.navigatorKey.currentState!.push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) =>
+              SrsReviewPage(deckId: store.defaultDeckId, deckName: 'layout'),
+        ),
+      ),
+    );
+    await _pumpFor(tester, const Duration(seconds: 4));
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await _pumpFor(tester, const Duration(seconds: 3));
+    await captureFlutterFrame(tester, '04-back-rows2');
+    final Object? metrics2 = await SrsWebCardFace.debugController!
+        .evaluateJavascript(source: _metricsScript);
+    debugPrint('[srs-back-layout] defs-rows2 $metrics2');
+    await shotDefs('05-back-defs-rows2');
   });
 }

@@ -6204,6 +6204,8 @@
   "srs_card_flag": "旗标",
   "srs_card_label_all_definitions": "全部释义",
   "srs_card_label_frequency": "词频",
+  "srs_card_label_main_dictionary": "主词典",
+  "srs_card_label_other_dictionaries": "其他词典",
   "srs_card_label_show_more": "展开全文",
   "srs_card_label_source": "来源",
   "srs_card_move": "移到牌组",

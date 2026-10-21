@@ -29,6 +29,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_defs_layout.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -770,7 +771,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     hostCss:
         '.fc.fc-back.fc-defs-only{flex-direction:column;align-items:stretch;'
         'max-width:none;margin:0;}'
-        '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
+        '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}'
+        // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
+        '${ref.watch(srsDefsLayoutCssProvider)}',
+    hostScript: kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
     autoplayMedia: widget.face.autoplayMedia,
