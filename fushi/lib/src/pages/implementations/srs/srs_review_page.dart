@@ -1475,9 +1475,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     final SrsDayContext? day = _day;
     String interval(int rating) {
       if (preview == null || day == null) return '';
+      final SrsScheduleResult next = preview.plan[rating];
+      // RWKV 正在排队（RWKV-Instant）：进复习队列的卡在估计回忆率降到目标时出现，不看到期日，
+      // FSRS-7 算的天数不是它真正回来的时间，不显示。学习 / 重学步仍按步长计时，照常显示；
+      // RWKV 没准备好时（rwkvUnavailable）真按存下的到期日排队，也照常显示。
+      if (preview.algorithm == SrsAlgorithm.rwkv &&
+          next.queue == SrsQueue.review) {
+        return '';
+      }
       return srsIntervalLabel(
         srsIntervalParts(
-          preview.plan[rating],
+          next,
           nowMs: preview.nowMs,
           today: day.dayIndexOf(preview.nowMs),
         ),

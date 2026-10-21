@@ -35,6 +35,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -1503,6 +1504,39 @@ void main() {
     }
   });
 
+  testWidgets('RWKV 排队时评分按钮不显示进复习队列的天数；学习步与 RWKV 没就绪时照常显示', (
+    WidgetTester tester,
+  ) async {
+    for (final bool ready in <bool>[true, false]) {
+      final SrsDbStore store = await _openStore(tester);
+      store.rwkv = _FakeRwkv(ready: ready);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      int texts(int rating) => find
+          .descendant(
+            of: find.byKey(ValueKey<String>('srs-rate-$rating')),
+            matching: find.byType(Text),
+          )
+          .evaluate()
+          .length;
+      // 新卡：「重来」进学习步（分钟），「简单」直接毕业进复习队列（天数）。
+      expect(texts(1), 2, reason: '学习步按步长计时，ready=$ready');
+      expect(
+        texts(4),
+        ready ? 1 : 2,
+        reason: ready ? 'RWKV 排队：天数不是它真正回来的时间' : 'RWKV 没就绪：按存下的到期日排队',
+      );
+      await _unmount(tester);
+    }
+  });
+
   group('卡面查词', () {
     setUpAll(installFakeInAppWebViewPlatform);
 
@@ -1596,6 +1630,23 @@ void main() {
 }
 
 /// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。
+/// RWKV 排程的替身：只决定「现在能不能按 R 排队」。
+class _FakeRwkv implements SrsRwkvScheduling {
+  _FakeRwkv({required this.ready});
+
+  @override
+  final bool ready;
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => ready ? List<double>.filled(cards.length, 0) : null;
+
+  @override
+  Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
+}
+
 class _RecordingAudio implements SrsCardAudioOutput {
   _RecordingAudio({this.holdOpen = false});
 
