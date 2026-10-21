@@ -38,13 +38,13 @@
       "sha256": "511e4bc150419fb201e140dcef53103aab692b726c24005d1b5ce7da48e289f3"
     },
     {
-      "name": "fushi-3.0.0-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-windows-setup.exe",
-      "releaseSequence": 19763,
-      "tag": "v3.0.0",
-      "version": "3.0.0",
-      "size": 303508616,
-      "sha256": "71b59d654ba9637c62fe0499da6d411bf90d8e95c5933a163dfd1b56444ed1ed"
+      "name": "fushi-3.0.1-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-windows-setup.exe",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 303511632,
+      "sha256": "bb565de7094966a6ab60c29367ec25275c3033f4df03e0259d83c6e533fbb495"
     }
   ]
 }
