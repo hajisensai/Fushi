@@ -138,7 +138,7 @@ Fushi, içe aktarılan kitapları, sözlükleri, yazı tiplerini, sesli kitap ve
 - **Anki** — kart oluşturma, AnkiDroid ile veya yapılandırdığınız AnkiConnect adresiyle iletişim kurar.
 - **Kullanım istatistikleri** — masaüstü ve Android sürümleri günde bir kez, etkin kullanıcıları saymak için fushi.moe'ye cihazdan türetilen bir kurulum kimliği (yeniden yüklemede değişmez), uygulama sürümü, platform ve güncelleme kanalını gönderir; hesap, kitaplık veya okuma verisi dahil değildir ve IP adresleri saklanmaz. Güncelleme ayarlarındaki *Kullanım istatistiklerini paylaş* ile kapatabilirsiniz. iOS sürümleri bunu göndermez.
 - **Yalnızca siz istediğinizde** — günlük yükleme (tek seferlik bir onay isteminden sonra), uygulama içi geri bildirim ve leaderboard (varsayılan olarak kapalı; kitaplık başlıklarınızı ve ilerlemenizi yalnızca siz katıldıktan sonra yükler).
-- **Manga OCR** — varsayılan motor, sayfa görüntüsünü Google'a gönderen Google Lens'tir; görüntüleri yerel tutmak için ayarlardan cihaz üstü modele veya sistem OCR'ına geçin.
+- **Manga OCR** — varsayılan motor cihaz üstü CTC modelidir, böylece sayfa görüntüleri yerelde kalır (ayarlardan bir kez indirin); Google Lens isteğe bağlıdır ve sayfa görüntüsünü Google'a gönderir.
 - **Yapay zekâ özellikleri** — istekler yalnızca sizin yapılandırdığınız ve bir özelliğe atadığınız LLM sağlayıcısına gider; atanmış sağlayıcı yoksa hiçbir şey gönderilmez.
 - **Üçüncü taraf hizmetler** — meta veri, altyazı ve çevrimiçi kaynak özellikleri, [İçerik kaynakları ve entegrasyonlar](#i̇çerik-kaynakları-ve-entegrasyonlar) altında listelenen hizmetlere yalnızca onları kullandığınızda bağlanır.
 

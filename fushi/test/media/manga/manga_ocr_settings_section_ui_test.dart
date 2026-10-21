@@ -251,8 +251,8 @@ void main() {
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => null,
       // 这条测的是「引擎用得到本地模型」时的完整块，必须把这个前提**显式**写出来。
-      // 以前它靠 `_readEnginePreference()` 的回退值隐式拿到 `auto`，而生产出厂默认
-      // 是 `google_lens`——测试因此长期在跑一条用户碰不到的分支（BUG-1780）。
+      // 以前它靠 `_readEnginePreference()` 的回退值隐式拿到 `auto`，而当时生产出厂
+      // 默认是 `google_lens`——测试因此长期在跑一条用户碰不到的分支（BUG-1780）。
       enginePreferenceGetter: () => 'auto',
     )));
     await tester.pumpAndSettle();
@@ -666,7 +666,7 @@ void main() {
     },
   );
 
-  testWidgets('default Lens disables deletion while model import is pending', (
+  testWidgets('Lens engine disables deletion while model import is pending', (
     WidgetTester tester,
   ) async {
     final Completer<void> imported = Completer<void>();
@@ -691,7 +691,7 @@ void main() {
           mokuroPathSetter: (String _) async {},
           probeExternal: (String _) async => null,
           systemOcrRunner: _FakeSystemOcr(false),
-          enginePreferenceGetter: () => kDefaultMangaOcrEnginePreference.key,
+          enginePreferenceGetter: () => 'google_lens',
           modelsDirProvider: () async => Directory.systemTemp,
           modelImporter: importer,
           pickImportPaths: (bool _) async => <String>['/picked/models'],
@@ -699,7 +699,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // 默认引擎（Lens）用不到本机模型：模型区先收起成摘要，点开才有删除 / 导入。
+    // 云端引擎（Lens）用不到本机模型：模型区先收起成摘要，点开才有删除 / 导入。
     await expandModelSummary(tester);
     final Finder deleteButton = find.widgetWithText(
       OutlinedButton,
@@ -738,10 +738,11 @@ void main() {
       mokuroPathGetter: () => '/usr/bin/mokuro',
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => 'mokuro 0.2.1',
+      enginePreferenceGetter: () => 'google_lens',
     )));
     await tester.pumpAndSettle();
 
-    // 出厂默认引擎用不到本机模型：先展开摘要；ready 时展示删除按钮。
+    // Lens 用不到本机模型：先展开摘要；ready 时展示删除按钮。
     await expandModelSummary(tester);
     expect(find.widgetWithText(OutlinedButton, t.manga_ocr_delete),
         findsOneWidget);
@@ -860,13 +861,13 @@ void main() {
 
   testWidgets('出厂默认引擎下，模型下载入口仍然可达（BUG-1780）',
       (WidgetTester tester) async {
-    // 「不劝你下」被实现成了「不给你下的机会」：引擎用不到本地模型且磁盘干净时，
-    // 这一整块曾经直接 SizedBox.shrink()。而出厂默认引擎恰恰就是用不到本地模型的
-    // Google Lens，于是「全新安装 + 从没下过模型」这条最常见的路径上，下载入口
-    // 根本不存在——想切到离线引擎的用户无处可点。
+    // BUG-1780：下载入口曾在出厂默认引擎（当时是 Google Lens）下整块消失。
+    // 2026-10-21 起出厂默认改成本机 CTC（local_onnx）：默认引擎本身就要本机模型，
+    // 新装机没下过模型时必须直接给出「未下载」与下载按钮，不能收起成摘要。
     //
-    // 这条守卫刻意用 kDefaultMangaOcrEnginePreference 而不是硬写 'google_lens'：
+    // 这条守卫刻意用 kDefaultMangaOcrEnginePreference 而不是硬写引擎 key：
     // 出厂默认值将来再改，这条也跟着改，不会重新分叉。
+    expect(kDefaultMangaOcrEnginePreference, MangaOcrEnginePreference.localOnnx);
     final _FakeOcrService service = _FakeOcrService(ready: false);
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(
       service: service,
@@ -878,29 +879,31 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    // M3E 设置页：引擎用不到本机模型时模型区收起成摘要卡——收起不等于藏起来，
-    // 摘要卡本身就是入口。
-    expect(find.byKey(modelSummaryKey), findsOneWidget);
-    expect(find.byKey(modelCardKey), findsNothing);
-    expect(
-        find.widgetWithText(FilledButton, t.manga_ocr_download), findsNothing);
-
-    await expandModelSummary(tester);
-
+    expect(find.byKey(modelCardKey), findsOneWidget);
+    expect(find.byKey(modelSummaryKey), findsNothing,
+        reason: '出厂默认引擎用得到本机模型，模型区不收起');
+    expect(find.text(t.manga_ocr_model_status_missing), findsOneWidget);
     expect(
       find.widgetWithText(FilledButton, t.manga_ocr_download),
       findsOneWidget,
-      reason: '出厂默认引擎下必须仍能找到下载入口（展开摘要后的次级色调按钮）',
+      reason: '出厂默认引擎下必须直接看到下载入口',
     );
-    // 分寸不能丢：当前引擎本来就不需要模型，那不是「缺陷状态」，不该喊「未下载」。
-    // 展开后是中性的「用不到」说明卡，而不是劝一个只用 Lens 的用户下模型的强调卡。
-    expect(find.text(t.manga_ocr_model_status_missing), findsNothing);
-    expect(
-      find.descendant(
-          of: find.byKey(modelCardKey),
-          matching: find.text(t.manga_ocr_model_unused_by_engine)),
-      findsOneWidget,
-    );
+  });
+
+  testWidgets('未注入 getter 时回退到出厂默认（与偏好仓库同源，BUG-1780）',
+      (WidgetTester tester) async {
+    final _FakeOcrService service = _FakeOcrService(ready: false);
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: service,
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+    )));
+    await tester.pumpAndSettle();
+
+    // 回退值 = local_onnx：与上一条同样直接展开模型卡。
+    expect(find.byKey(modelCardKey), findsOneWidget);
+    expect(find.byKey(modelSummaryKey), findsNothing);
   });
 
   testWidgets('local models left on disk stay deletable under a cloud engine',
@@ -955,7 +958,7 @@ void main() {
       mokuroPathGetter: () => '',
       mokuroPathSetter: (String _) async {},
       probeExternal: (String _) async => null,
-      // 就绪卡只在引擎用得到本机模型时直接展开（出厂默认 Lens 下是摘要）。
+      // 就绪卡只在引擎用得到本机模型时直接展开（Lens 等云端引擎下是摘要）。
       enginePreferenceGetter: () => 'auto',
     )));
     await tester.pumpAndSettle();

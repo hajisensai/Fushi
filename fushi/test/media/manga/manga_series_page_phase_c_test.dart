@@ -169,7 +169,7 @@ class _TestAppModel extends AppModel {
     OnlineMangaRuntimeKind runtime,
   ) => _library;
 
-  /// 出厂默认是 Google Lens（要过上传同意闸门）；这里钉成内置引擎走无交互路径。
+  /// 钉成内置引擎走无交互路径（不依赖出厂默认，Lens 要过上传同意闸门）。
   @override
   String get mangaOcrEnginePreference => MangaOcrEnginePreference.localOnnx.key;
 

@@ -138,7 +138,7 @@ Fushi lưu trữ sách, từ điển, phông chữ, dữ liệu sách nói, vide
 - **Anki**: việc tạo thẻ chỉ giao tiếp với AnkiDroid hoặc địa chỉ AnkiConnect do bạn cấu hình.
 - **Thống kê sử dụng**: mỗi ngày một lần, bản desktop và Android gửi tới fushi.moe một ID cài đặt được tạo từ thiết bị (không đổi khi cài lại), phiên bản ứng dụng, nền tảng và kênh cập nhật để đếm người dùng hoạt động; không kèm tài khoản, thư viện hay dữ liệu đọc, và địa chỉ IP không được lưu. Tắt bằng *Chia sẻ thống kê sử dụng* trong phần cài đặt cập nhật. Bản iOS không gửi.
 - **Chỉ khi bạn yêu cầu**: tải log lên (sau một lần hỏi đồng ý), phản hồi trong ứng dụng và bảng xếp hạng (mặc định tắt; chỉ tải tiêu đề thư viện và tiến độ của bạn sau khi bạn chủ động bật).
-- **OCR manga**: engine mặc định là Google Lens, gửi ảnh trang tới Google; hãy chuyển sang mô hình trên thiết bị hoặc OCR của hệ thống trong cài đặt để giữ ảnh ở máy.
+- **OCR manga**: engine mặc định là mô hình CTC trên thiết bị nên ảnh trang ở lại máy (tải một lần trong cài đặt); Google Lens là tùy chọn và sẽ gửi ảnh trang tới Google.
 - **Tính năng AI**: yêu cầu chỉ được gửi tới nhà cung cấp LLM mà bạn cấu hình và gán cho một tính năng; nếu chưa gán nhà cung cấp, sẽ không có gì được gửi đi.
 - **Dịch vụ bên thứ ba**: các tính năng siêu dữ liệu, phụ đề và nguồn trực tuyến chỉ liên hệ các dịch vụ được liệt kê tại [Nguồn nội dung và tích hợp](#nguồn-nội-dung-và-tích-hợp) khi bạn sử dụng chúng.
 
