@@ -291,6 +291,12 @@ enum OnboardingStepId {
 ///
 /// [srsEnabled]：复习模块（`ModuleId.srs`）此刻是否开着。只在**没有**复习方式一步时
 /// （制卡模块或制卡能力没勾）决定要不要出 [OnboardingStepId.srs] 介绍。
+///
+/// [srsAvailable]：本构建里 Fushi 复习是否存在（`ModuleId.srs` 的
+/// `availableOn`，正式版构建为 `false`，见 `PrereleaseOnlyCapability.srs`）。为
+/// `false` 时向导**不引导去 Fushi 复习**（所有者 2026-10-22）：不出
+/// [OnboardingStepId.reviewMethod] 与 [OnboardingStepId.srs]，制卡一律按
+/// [OnboardingReviewMethod.anki] 走 Anki 配置步骤（[reviewMethod] 被忽略）。
 List<OnboardingStepId> onboardingStepSequence({
   required Set<OnboardingFeature> selected,
   required bool browserExtensionAvailable,
@@ -298,19 +304,25 @@ List<OnboardingStepId> onboardingStepSequence({
   required bool ankiReady,
   OnboardingReviewMethod reviewMethod = OnboardingReviewMethod.fushi,
   bool srsEnabled = false,
+  bool srsAvailable = true,
 }) {
   final bool resourcesSelected = selected.any(
     kOnboardingResourceFeatures.contains,
   );
+  final OnboardingReviewMethod method = srsAvailable
+      ? reviewMethod
+      : OnboardingReviewMethod.anki;
   // 配置能力 + 它所属模块，两道门都过才出步骤。
   final bool cardReviewSelected =
       selected.contains(OnboardingFeature.anki) &&
       selected.contains(OnboardingFeature.cardCreation);
   final bool ankiSelected =
-      cardReviewSelected && reviewMethod == OnboardingReviewMethod.anki;
-  final bool srsIntro = cardReviewSelected
-      ? reviewMethod == OnboardingReviewMethod.fushi
-      : srsEnabled;
+      cardReviewSelected && method == OnboardingReviewMethod.anki;
+  final bool srsIntro =
+      srsAvailable &&
+      (cardReviewSelected
+          ? method == OnboardingReviewMethod.fushi
+          : srsEnabled);
   final bool syncModuleOn = selected.contains(OnboardingFeature.sync);
   return <OnboardingStepId>[
     OnboardingStepId.welcome,
@@ -319,7 +331,7 @@ List<OnboardingStepId> onboardingStepSequence({
       OnboardingStepId.recommendedPack,
     if (selected.contains(OnboardingFeature.manualResources))
       OnboardingStepId.manualResources,
-    if (cardReviewSelected) OnboardingStepId.reviewMethod,
+    if (cardReviewSelected && srsAvailable) OnboardingStepId.reviewMethod,
     if (ankiSelected) OnboardingStepId.anki,
     // 「在线服务」配置步骤同受它所属模块的总闸约束（与 anki/backup/interconnect
     // 同一范式）：模块都关了，向导不该再把它的配置页推到用户脸上。

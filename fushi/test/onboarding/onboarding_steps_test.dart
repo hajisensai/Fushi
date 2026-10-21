@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
@@ -430,6 +432,57 @@ void main() {
         }
       },
     );
+
+    // 所有者 2026-10-22：正式版新手引导不引导去 Fushi 复习。
+    test('formal builds (no SRS) never guide to Fushi review', () {
+      for (final OnboardingReviewMethod m in OnboardingReviewMethod.values) {
+        final List<OnboardingStepId> formal = onboardingStepSequence(
+          selected: all,
+          browserExtensionAvailable: true,
+          globalLookupAvailable: true,
+          ankiReady: true,
+          reviewMethod: m,
+          srsEnabled: true,
+          srsAvailable: false,
+        );
+        expect(formal, <OnboardingStepId>[
+          OnboardingStepId.welcome,
+          OnboardingStepId.features,
+          OnboardingStepId.recommendedPack,
+          OnboardingStepId.manualResources,
+          OnboardingStepId.anki,
+          OnboardingStepId.onlineServices,
+          OnboardingStepId.backup,
+          OnboardingStepId.interconnect,
+          OnboardingStepId.browserExtension,
+          OnboardingStepId.fonts,
+          OnboardingStepId.clickLookup,
+          OnboardingStepId.globalLookup,
+          OnboardingStepId.firstAnkiCard,
+          OnboardingStepId.finish,
+        ]);
+      }
+      final Set<OnboardingFeature> noCards = OnboardingFeature.values.toSet()
+        ..remove(OnboardingFeature.cardCreation);
+      expect(
+        onboardingStepSequence(
+          selected: noCards,
+          browserExtensionAvailable: false,
+          globalLookupAvailable: false,
+          ankiReady: false,
+          srsEnabled: true,
+          srsAvailable: false,
+        ),
+        isNot(contains(OnboardingStepId.srs)),
+      );
+    });
+
+    test('the wizard gates the review steps on SRS availability', () {
+      final String src = File(
+        'lib/src/pages/implementations/onboarding_wizard_page.dart',
+      ).readAsStringSync();
+      expect(src, contains('srsAvailable: _moduleAvailable(ModuleId.srs),'));
+    });
 
     test('initial choice mirrors the live state', () {
       expect(

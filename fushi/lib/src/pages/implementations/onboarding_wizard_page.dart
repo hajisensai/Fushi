@@ -244,6 +244,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           reviewMethod: _reviewMethod,
           // 只在没有「复习方式」一步（制卡没勾）时用得上：模块开着就出介绍步骤。
           srsEnabled: appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
+          // 正式版构建里复习不存在：不出「复习方式」与复习介绍，制卡直接配 Anki。
+          srsAvailable: _moduleAvailable(ModuleId.srs),
         );
 
   /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
