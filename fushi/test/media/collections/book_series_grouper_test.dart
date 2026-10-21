@@ -297,6 +297,44 @@ void main() {
       expect(await members(id), <String>['志乃と恋 2', '志乃と恋 外伝', '志乃と恋 1']);
     });
 
+    test('规则卷序是全序：同卷配了两条 SRT 时结果也与输入顺序无关', () async {
+      final String v1 = await addBook('志乃と恋 1', format: 'epub');
+      final String v2 = await addBook('志乃と恋 2', format: 'epub');
+      final String a = await addSrt('志乃と恋 2 a', bookKey: '志乃と恋 2');
+      final String b = await addSrt('志乃と恋 2 b', bookKey: '志乃と恋 2');
+      CollectionMemberKey epub(String uid) =>
+          (mediaType: MediaKind.epub.dbValue, entryKey: uid);
+      CollectionMemberKey srt(String uid) =>
+          (mediaType: MediaKind.srt.dbValue, entryKey: uid);
+      final BookSeriesOrder order = await BookSeriesOrder.load(db);
+
+      final List<CollectionMemberKey> expected = <CollectionMemberKey>[
+        epub(v1),
+        epub(v2),
+        srt(a),
+        srt(b),
+      ];
+      expect(
+        order.orderOf(<CollectionMemberKey>[
+          srt(b),
+          srt(a),
+          epub(v2),
+          epub(v1),
+        ]),
+        expected,
+      );
+      expect(
+        order.orderOf(<CollectionMemberKey>[
+          srt(a),
+          epub(v1),
+          srt(b),
+          epub(v2),
+        ]),
+        expected,
+        reason: '同卷同种类的并列按成员键定序，不靠 sort 稳定性',
+      );
+    });
+
     test('用户移出的卷不加回；删掉的合集不复活', () async {
       final String v1 = await addBook('志乃と恋 1');
       await addBook('志乃と恋 2');
