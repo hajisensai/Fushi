@@ -1390,6 +1390,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   /// 大按钮档）；两者都 ≥ 48dp 命中区。
   static const double _kBarButtonHeightApple = 50;
 
+  /// 「显示答案」的最小宽度（底部重播键再多也不把它挤得更窄）。
+  static const double _kShowAnswerMinWidth = 220;
+
   /// 「显示答案」：设计系统主按钮（MD3 = M3E 中号胶囊 + 按压变形，Apple = 强调色胶囊），
   /// 不再通栏铺满——居中、宽度封顶，与评分按钮同高，翻面时两者原地交替。
   Widget _buildShowAnswer(BuildContext context) {
@@ -1397,24 +1400,31 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     return Center(
       key: const ValueKey<String>('srs-show-answer-row'),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 220, maxWidth: 420),
+        constraints: const BoxConstraints(
+          minWidth: _kShowAnswerMinWidth,
+          maxWidth: 420,
+        ),
         child: FushiPressScale(
           enabled: !_busy,
-          child: SizedBox(
-            width: double.infinity,
-            child: FushiFilledButton.icon(
-              key: const ValueKey<String>('srs-show-answer'),
-              onPressed: _busy ? null : _showAnswer,
-              size: FushiButtonSize.m,
-              style: apple
-                  ? const ButtonStyle(
-                      minimumSize: WidgetStatePropertyAll<Size>(
-                        Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
-                      ),
-                    )
-                  : null,
-              icon: const FushiIcon(FushiIcons.visibility),
-              label: Text(t.srs_review_show_answer),
+          // 快捷键提示与评分按钮同一写法（空格 / Enter / 手柄 A 都翻面，见 _onKey）。
+          child: FushiTooltip(
+            message: '${t.srs_review_show_answer} (Space)',
+            child: SizedBox(
+              width: double.infinity,
+              child: FushiFilledButton.icon(
+                key: const ValueKey<String>('srs-show-answer'),
+                onPressed: _busy ? null : _showAnswer,
+                size: FushiButtonSize.m,
+                style: apple
+                    ? const ButtonStyle(
+                        minimumSize: WidgetStatePropertyAll<Size>(
+                          Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
+                        ),
+                      )
+                    : null,
+                icon: const FushiIcon(FushiIcons.visibility),
+                label: Text(t.srs_review_show_answer),
+              ),
             ),
           ),
         ),
@@ -1422,59 +1432,110 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
-  /// 底部操作行一端的重播键（⋯「复习布局」里选左 / 右，默认不放）。翻面前后同一位置；
-  /// 这张卡没有可重播的音频时照样占位、只是不可点，评分按钮不会左右跳。设计系统按钮：
-  /// MD3 = M3E 中号色调方钮（56），Apple = 50 高的色调胶囊，与「显示答案」/ 评分按钮同高。
+  /// 底部操作行一端的重播键（⋯「复习布局」里选左 / 右，默认不放）：**每段音频一个键**
+  /// （只想听例句就只点例句那颗；R 仍是整面重播）。键数按背面要重播的音频定，翻面前后
+  /// 同一位置、同样多——正面还没有的那段先不可点；这张卡没有音频时照样占一颗不可点的位，
+  /// 评分按钮不会左右跳。设计系统按钮：MD3 = M3E 中号色调方钮（56），Apple = 50 高的
+  /// 色调胶囊，与「显示答案」/ 评分按钮同高。
   Widget _withBottomReplay(BuildContext context, Widget row) {
     final SrsReviewReplayButton side = ref.watch(srsReviewReplayButtonProvider);
     if (side == SrsReviewReplayButton.off || _detail == null) return row;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool apple = isGlassDesign(context);
     final double extent = apple ? _kBarButtonHeightApple : 56;
-    final bool canReplay = _replayNames(
+    final SrsRenderedCard? rendered = _rendered;
+    final List<String> slots = rendered == null
+        ? const <String>[]
+        : srsReplaySounds(
+            questionHtml: rendered.question,
+            answerHtml: rendered.answer,
+            answerSide: true,
+            includeQuestion: _replayIncludesQuestion,
+          );
+    final Set<String> playable = _replayNames(
       includeQuestion: _replayIncludesQuestion,
-    ).isNotEmpty;
-    final VoidCallback? onPressed = canReplay && !_busy ? _replayAudio : null;
-    final Widget replay = FushiPressScale(
-      enabled: onPressed != null,
-      child: FushiTooltip(
-        message: '${t.srs_review_replay_audio} (R)',
-        child: SizedBox.square(
-          dimension: extent,
-          child: FushiFilledButton.tonal(
-            key: const ValueKey<String>('srs-bottom-replay'),
-            onPressed: onPressed,
-            size: FushiButtonSize.m,
-            style: ButtonStyle(
-              minimumSize: WidgetStatePropertyAll<Size>(Size(extent, extent)),
-              padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                EdgeInsets.zero,
+    ).toSet();
+    final int count = math.max(1, slots.length);
+    Widget replayButton(int i) {
+      final String? name = i < slots.length ? slots[i] : null;
+      final VoidCallback? onPressed =
+          name != null && playable.contains(name) && !_busy
+          ? () => srsRunLogged(
+              'SrsReviewPage.replayOne',
+              () => _audio.play(<String>[name]),
+            )
+          : null;
+      final String label = slots.length > 1
+          ? '${t.srs_review_replay_audio} ${i + 1}/${slots.length}'
+          : t.srs_review_replay_audio;
+      return FushiPressScale(
+        enabled: onPressed != null,
+        child: FushiTooltip(
+          message: slots.length > 1 ? label : '$label (R)',
+          child: SizedBox.square(
+            dimension: extent,
+            child: FushiFilledButton.tonal(
+              key: ValueKey<String>('srs-bottom-replay-$i'),
+              onPressed: onPressed,
+              size: FushiButtonSize.m,
+              style: ButtonStyle(
+                minimumSize: WidgetStatePropertyAll<Size>(Size(extent, extent)),
+                padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.zero,
+                ),
               ),
-            ),
-            child: FushiIcon(
-              FushiIcons.volumeUp,
-              semanticLabel: t.srs_review_replay_audio,
+              // 多段时图标旁标序号（与卡面上从上到下的顺序一致）。
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 2,
+                children: <Widget>[
+                  FushiIcon(FushiIcons.volumeUp, semanticLabel: label),
+                  if (slots.length > 1)
+                    ExcludeSemantics(child: Text('${i + 1}')),
+                ],
+              ),
             ),
           ),
         ),
-      ),
+      );
+    }
+
+    final Widget gap = SizedBox(width: tokens.spacing.gap);
+    final Widget replay = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (int i = 0; i < count; i++) ...<Widget>[
+          if (i > 0) gap,
+          replayButton(i),
+        ],
+      ],
     );
     // 「显示答案」是居中的定宽按钮：另一端留出与重播键同宽的空位，它才按整行居中——
     // 否则重播键放哪端就把它推向另一端。评分按钮铺满，不留空位（空位宽度动画过渡）。
-    final double slot = extent + tokens.spacing.gap;
-    final Widget mirror = AnimatedContainer(
-      duration: fushiMotionDuration(context, FushiMotion.short),
-      curve: FushiMotion.enter,
-      width: _showingAnswer ? 0 : slot,
-    );
-    final Widget gap = SizedBox(width: tokens.spacing.gap);
+    // 窄屏放不下对称空位时空位让步，「显示答案」至少保留 [_kShowAnswerMinWidth]。
+    final double slot = count * (extent + tokens.spacing.gap);
     final bool start = side == SrsReviewReplayButton.start;
-    return Row(
-      children: <Widget>[
-        if (start) ...<Widget>[replay, gap] else mirror,
-        Expanded(child: row),
-        if (!start) ...<Widget>[gap, replay] else mirror,
-      ],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final Widget mirror = AnimatedContainer(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.enter,
+          width: _showingAnswer
+              ? 0
+              : (c.maxWidth - 2 * slot >= _kShowAnswerMinWidth
+                    ? slot
+                    : math.max(0.0, c.maxWidth - slot - _kShowAnswerMinWidth)),
+        );
+        // 底边对齐：评分行上方可能多一行提示（RWKV 未就绪），居中会让重播键比评分按钮高出半行。
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: <Widget>[
+            if (start) ...<Widget>[replay, gap] else mirror,
+            Expanded(child: row),
+            if (!start) ...<Widget>[gap, replay] else mirror,
+          ],
+        );
+      },
     );
   }
 

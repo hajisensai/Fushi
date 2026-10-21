@@ -731,8 +731,11 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 窄版式释义 WebView 跟内容等高，页内 vh 不再是屏高：收起高度按外层视口给像素值。
     // 三个类名：宿主 CSS 排在卡片 CSS 之前，同为两类名的模板规则
     // （`.fc-back.fc-layout-wide{max-width:1160px}`）会后来居上，宽屏右侧又空出来。
+    // 宽版式还要 `align-items:stretch`：模板双栏网格的 `align-items:start` 在这里切成 flex
+    // 纵向后照样生效，释义块会按内容收缩成窄条（实测栏宽 785px、释义只有 325px）。
     hostCss:
-        '.fc.fc-back.fc-defs-only{flex-direction:column;max-width:none;margin:0;}'
+        '.fc.fc-back.fc-defs-only{flex-direction:column;align-items:stretch;'
+        'max-width:none;margin:0;}'
         '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
