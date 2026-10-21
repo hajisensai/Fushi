@@ -2518,7 +2518,6 @@
   "floating_ball_in_app_hint": "A draggable ball on every Fushi page. Tap it to expand the buttons picked below for the current page",
   "floating_ball_lookup_hint": "Enter a word",
   "floating_ball_notification": "Floating ball is active",
-  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "No text recognized",
   "floating_ball_ocr_failed": "Screen OCR failed",

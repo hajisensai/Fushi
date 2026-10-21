@@ -2518,7 +2518,6 @@
   "floating_ball_in_app_hint": "Una bola arrastrable en cada página de Fushi. Tócala para desplegar los botones elegidos abajo para la página actual",
   "floating_ball_lookup_hint": "Introduce una palabra",
   "floating_ball_notification": "La bola flotante está activa",
-  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "No se reconoció ningún texto",
   "floating_ball_ocr_failed": "Error en el OCR de pantalla",

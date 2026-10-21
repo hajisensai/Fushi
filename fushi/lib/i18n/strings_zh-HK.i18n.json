@@ -2518,7 +2518,6 @@
   "floating_ball_in_app_hint": "在 Fushi 的每個頁面顯示可拖動的懸浮球，點開展開下面為當前頁面勾選的按鈕",
   "floating_ball_lookup_hint": "輸入要查的詞",
   "floating_ball_notification": "懸浮球運行中",
-  "floating_ball_notification_tap_hint": "點按即可查詢剪貼簿中的文字",
   "floating_ball_ocr_close": "關閉",
   "floating_ball_ocr_empty": "沒有識別到文字",
   "floating_ball_ocr_failed": "截屏識字失敗",

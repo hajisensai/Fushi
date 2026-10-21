@@ -2518,7 +2518,6 @@
   "floating_ball_in_app_hint": "Fushi のすべてのページにドラッグできるボールを表示します。タップすると、現在のページ用に下で選んだボタンが展開されます",
   "floating_ball_lookup_hint": "単語を入力",
   "floating_ball_notification": "フローティングボールが有効です",
-  "floating_ball_notification_tap_hint": "タップしてコピーしたテキストを調べる",
   "floating_ball_ocr_close": "閉じる",
   "floating_ball_ocr_empty": "テキストを認識できませんでした",
   "floating_ball_ocr_failed": "画面 OCR に失敗しました",
