@@ -1,6 +1,7 @@
 ## BUG-3652 · dashboard-volume-badge-uses-collection-position
 - **报告**：2026-10-21（用户转述第三方反馈 + 截图：「weird ui, why does it say vol 17 here when I'm on volume 2/17」；首页「继续」主角卡封面是第 2 卷，进度条右侧徽标却是 `Vol. 17`）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/home_dashboard_page.dart` 书合集续读卡把 `idx + 1`（续读目标在合集排序里的**位置**）当卷号传给 `t.home_continue_volume`。合集顺序与卷号一错位，徽标就把位置当成卷号说出来；续读目标本身（锚点 = 最近读过的那卷）是对的。会让顺序错位的形态：手动「建系列 / 并入合集」按选择顺序尾插（`addToCollection` 不排序）、缺卷、只收了部分卷。用户这套书（オーバーラップ文庫 17 卷）的 dc:title 正是混写：1、2 卷是全角空格 + 全角数字 `まで　２`，3 卷起半角 `まで 3`。
-- **[x] ① 已修复** — 新增纯函数 `dashboardBookVolumeNumber`：优先取书名里的卷号（与 `BookSeriesGrouper` 同一判据 `parseBookSeriesKey`，全角已折半角），书名没有卷号才退回合集内位置。
-- **[x] ② 已加自动化测试** — `fushi/test/pages/home_dashboard_continue_book_test.dart` 的 `dashboardBookVolumeNumber` 组（用户原样书名、第 2 卷排在第 17 位 → 2；无卷号书名退回位置）。变异实测：helper 改回直接返回位置，用例变红。
-- **备注**：没有拿到该用户的数据库，无法确认他的合集具体是经哪条路径排成这样；徽标改按书名卷号后与合集顺序无关。
+- **连带后果**：续读推进（`continueMemberIndex`，锚点读完推 `anchor + 1`）同样依赖合集顺序。第 2 卷排在最后时，读完第 2 卷后 `anchor + 1` 越界、目标仍是读完的那卷，`dashboardBookCollectionContinueIndex` 返回 null，整套书从「继续」区消失、不推第 3 卷。
+- **[x] ① 已修复** — (a) 新增纯函数 `dashboardBookVolumeNumber`：徽标优先取书名里的卷号（与 `BookSeriesGrouper` 同一判据 `parseBookSeriesKey`，全角已折半角），书名没有卷号才退回合集内位置。(b) 修顺序本身：`BookSeriesGrouper.groupAll` 新增 `_healSeriesOrder`，对用户没手动排过（`orderUpdatedAt == 0`）、全员是同一系列分卷且卷号能完整定序的合集，顺序不对就按卷号自动重排（`reorderCollectionItemsAutomatically`，不接手用户排序）；混了外传 / 判不出卷号成员的合集留给 AI 排序，不碰。书架每次加载都跑 `groupAll`，存量错序合集打开书架即自愈。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_dashboard_continue_book_test.dart` 的 `dashboardBookVolumeNumber` 组（用户原样书名、第 2 卷排在第 17 位 → 2；无卷号书名退回位置）；`fushi/test/media/collections/book_series_grouper_test.dart` 三条（用户这 17 卷按「3..17, 1, 2」手动建合集 → 归组后 1..17 且二次幂等；手动排过不动；混外传不动）。变异实测：两处修复各自改回旧行为，对应用例变红。
+- **备注**：没有拿到该用户的数据库，无法确认他的合集具体是经哪条路径排成这样；他若手动拖过合集顺序（`orderUpdatedAt > 0`），自愈按约定不动，但徽标仍显示正确卷号。
