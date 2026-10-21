@@ -1231,6 +1231,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               )
             : _mineBlockedByModuleGate,
         onUpdateEntry: cardCreationEnabled ? onUpdateFromPopup : null,
+        // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
+        isSessionOnScreen: () => _popup.isEntryOnScreen(item),
         // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。
         showMiningTargetSwitch: cardCreationEnabled,
         // TODO-948②：阅读器/有声书弹窗收藏按钮接线（视频走 mixin，不经此处）。

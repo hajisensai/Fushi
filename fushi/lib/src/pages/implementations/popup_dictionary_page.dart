@@ -836,6 +836,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
       onMineEntry: isBase ? _mineBaseEntry : onMineEntry,
       onUpdateEntry: isBase ? _updateBaseEntry : onUpdateEntry,
+      // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
+      isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
     );

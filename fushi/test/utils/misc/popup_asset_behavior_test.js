@@ -108,9 +108,26 @@ class FakeElement {
   }
 
   set innerHTML(value) {
+    // 真 DOM 里清空内容会把旧子节点摘出文档（renderPopup 换词时的 `container.innerHTML
+    // = ''`）；BUG-3652 续的 reportMineFailure 靠 isConnected 识别这一刻。
+    for (const child of this.children) {
+      child._detached = true;
+      child.parentElement = null;
+      child.parentNode = null;
+    }
     this.children = [];
     this._extraNodes = [];
     this.textContent = String(value);
+  }
+
+  // BUG-3652 续：真 DOM 的 Node.isConnected。本桩里没挂进 document 的独立元素（测试
+  // 直接 createEntryHeader 出来的那棵）按「已渲染在页面上」算——那正是这些测试要模拟的
+  // 状态；只有被 remove() / 祖先 innerHTML 清空摘掉的节点才是 false。
+  get isConnected() {
+    for (let node = this; node; node = node.parentNode) {
+      if (node._detached) return false;
+    }
+    return true;
   }
 
   /// 真 DOM 里 `<a>言語</a>` 的 childNodes 是**一个文本节点**；本桩的 textContent
@@ -145,6 +162,7 @@ class FakeElement {
     if (!parent) return;
     const at = parent.children.indexOf(this);
     if (at >= 0) parent.children.splice(at, 1);
+    this._detached = true;
     this.parentElement = null;
     this.parentNode = null;
   }
@@ -206,6 +224,7 @@ class FakeElement {
     if (index >= 0) {
       siblings.splice(index, 1);
     }
+    this._detached = true;
     this.parentElement = null;
     this.parentNode = null;
   }
@@ -3110,6 +3129,102 @@ testLongMineFailureReasonStaysLongEnoughToRead().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+
+// ---------------------------------------------------------------------------
+// BUG-3652 续：制卡失败的原因恰好说一次（reportMineFailure）。
+//
+// 宿主（MineFailureNotice）负责「弹窗还在不在屏上」；popup.js 负责「还是不是发起的那一次」
+// ——发起制卡的按钮在回包到达前被重渲染摘掉（换词 / 原地跳转 / 热槽复用），提示无处
+// 可画，交回宿主 toast。宿主已 toast（hostReported）时弹窗闭嘴。
+// ---------------------------------------------------------------------------
+
+// 记下 mineFailureUnseen 的调用；mineEntry 的回包由 [settle] 控制何时到达。
+function mineFailureHarness(context, reply) {
+  const unseen = [];
+  let settle = null;
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name, args) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineFailureUnseen') {
+      unseen.push(JSON.parse(JSON.stringify(args)));
+      return Promise.resolve(null);
+    }
+    if (name === 'mineEntry') {
+      return new Promise((resolve) => { settle = () => resolve(reply); });
+    }
+    return Promise.resolve(null);
+  };
+  return { unseen, release: () => settle() };
+}
+
+function mountedMineButton(context) {
+  const mineButton = buildMineHeader(context);
+  let root = mineButton;
+  while (root.parentNode) root = root.parentNode;
+  const container = context.document.createElement('div');
+  container.appendChild(root);
+  return { mineButton, container };
+}
+
+async function testMineFailureSaidInlineWhileButtonStillOnPage() {
+  const context = loadPopup();
+  const reason = '没有选择卡组。';
+  const h = mineFailureHarness(context, { ankiConnect: false, noteId: null, message: reason });
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+  h.release();
+  await click;
+  await flush();
+  assert.equal(inlineHintText(context), reason, '弹窗还是那一次：原因就地说');
+  assert.equal(h.unseen.length, 0, '就地说了就不许再交回宿主 toast（双报）');
+}
+
+async function testMineFailureHandedBackWhenButtonReplaced() {
+  const context = loadPopup();
+  const reason = '这张卡的所有字段都是空的。';
+  const h = mineFailureHarness(context,
+    { ankiConnect: false, noteId: null, message: reason, duplicate: true });
+  const { mineButton, container } = mountedMineButton(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+  // 回包到达前同一个弹窗换了词：renderPopup 清空 #entries-container。
+  container.innerHTML = '';
+  assert.equal(mineButton.isConnected, false, '桩必须如实报告按钮已离开页面');
+  h.release();
+  await click;
+  await flush();
+  assert.equal(inlineHintText(context), null, '不能把提示锚到已不在页面上的按钮');
+  assert.equal(h.unseen.length, 1, '必须交回宿主 toast，且恰好一次');
+  assert.equal(h.unseen[0].message, reason);
+  assert.equal(h.unseen[0].duplicate, true, '重复卡的语义随回执带回（宿主据此选 toast 状态）');
+}
+
+async function testMineFailureSilentWhenHostAlreadyReported() {
+  const context = loadPopup();
+  const h = mineFailureHarness(context,
+    { ankiConnect: false, noteId: null, hostReported: true });
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  const click = mineButton.onclick();
+  await flush();
+  h.release();
+  await click;
+  await flush();
+  assert.equal(inlineHintText(context), null,
+    '宿主已 toast（弹窗当时不在屏上）：弹窗不得再说通用的「制卡失败」');
+  assert.equal(h.unseen.length, 0, '也不得再让宿主 toast 第二次');
+  assert.equal(mineButton.textContent, '+', '按钮态仍按失败处理');
+}
+
+Promise.all([
+  testMineFailureSaidInlineWhileButtonStillOnPage(),
+  testMineFailureHandedBackWhenButtonReplaced(),
+  testMineFailureSilentWhenHostAlreadyReported(),
+]).then(() => console.log('mine failure exactly-once tests passed'))
+  .catch((error) => { console.error(error); process.exitCode = 1; });
 
 async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
   const context = loadPopup();

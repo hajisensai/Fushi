@@ -14,6 +14,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -50,6 +51,11 @@ typedef OverlayMiningHandler = Future<Map<String, Object?>> Function({
 /// banner; here it doubles as the mine sentence (per the clipboard-panel spec
 /// intent). [resolveMineSentence] still prefers a JS-sent `fields['sentence']`
 /// when present, so this is a pure fallback and never overrides real data.
+///
+/// [isOriginOnScreen]（BUG-3652 续）：制卡 / 覆写回包这一刻，发起这次请求的那张查词卡
+/// 是否还在屏上（调用方在派发这条消息时捕获自己的查词 route，回包时核对它仍是当前
+/// 且未作废）。为假时失败原因改由宿主 toast（[MineFailureNotice.settle]）。null =
+/// 视为一直在屏上。
 bool maybeHandleOverlayDeferredBridge({
   required AppModel? model,
   required Object? handler,
@@ -57,6 +63,7 @@ bool maybeHandleOverlayDeferredBridge({
   required OverlayBridgeResolver resolveBridge,
   String sentenceContext = '',
   OverlayMiningHandler? miningHandler,
+  MineOriginOnScreen? isOriginOnScreen,
 }) {
   switch (handler) {
     // playWordAudio 桥已删：popup.js 三端统一自己用 HTML5 <audio> 播放解析好的
@@ -83,7 +90,16 @@ bool maybeHandleOverlayDeferredBridge({
         resolveBridge,
         sentenceContext,
         miningHandler,
+        isOriginOnScreen,
       ));
+      return true;
+    // BUG-3652 续：popup.js 收到失败回包时发起制卡的按钮已被换掉（同一窗口里换了词 /
+    // 嵌套卡复用），原因无处可画，交回宿主 toast。不是 deferred 桥（native 已即时回
+    // null），这里只消费。
+    case 'mineFailureUnseen':
+      final Object? args = message['args'];
+      MineFailureNotice.reportUnseen(
+          args is List && args.isNotEmpty ? args.first : null);
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
@@ -123,6 +139,7 @@ bool maybeHandleOverlayDeferredBridge({
         resolveBridge,
         sentenceContext,
         miningHandler,
+        isOriginOnScreen,
       ));
       return true;
     default:
@@ -351,6 +368,7 @@ Future<void> _handleMineBridge(
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
   OverlayMiningHandler? miningHandler,
+  MineOriginOnScreen? isOriginOnScreen,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -392,6 +410,9 @@ Future<void> _handleMineBridge(
       'message': t.card_export_failed,
     };
   }
+  // 失败原因恰好说一次：卡还在就交给它就地说，卡已关 / 换了词就宿主 toast。
+  reply = MineFailureNotice.settle(reply,
+      originOnScreen: isOriginOnScreen?.call() ?? true);
   if (id != null) {
     glog('mine: mineEntry -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
@@ -693,6 +714,7 @@ Future<void> _handleUpdateBridge(
   OverlayBridgeResolver resolveBridge,
   String sentenceContext,
   OverlayMiningHandler? miningHandler,
+  MineOriginOnScreen? isOriginOnScreen,
 ) async {
   final int? id = _bridgeIdOf(message);
   Map<String, Object?> reply = const <String, Object?>{
@@ -729,6 +751,8 @@ Future<void> _handleUpdateBridge(
       'message': t.card_export_failed,
     };
   }
+  reply = MineFailureNotice.settle(reply,
+      originOnScreen: isOriginOnScreen?.call() ?? true);
   if (id != null) {
     glog('update: updateEntry -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
