@@ -1347,6 +1347,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         applicationVersion: version,
         platform: Platform.operatingSystem,
         exportedAt: now,
+        grouping: await VideoGroupingSnapshot.load(_db),
       );
 
       if (isDesktop) {

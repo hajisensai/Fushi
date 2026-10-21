@@ -31,6 +31,39 @@ class VideoScrapeDiagnosticExportResult {
   final int omittedNfoCount;
 }
 
+/// 视频分组状态快照（BUG-3652）：「系列散成单集」只看目录树判断不了是谁拿掉了
+/// 分组，得看合集、成员、墓碑（合集级 + 成员级）、AI 整理记录与是否有互联对端。
+/// 用户不会查 SQL、整库又太大，所以随诊断包导出这一份。
+class VideoGroupingSnapshot {
+  const VideoGroupingSnapshot({
+    required this.collections,
+    required this.items,
+    required this.tombstones,
+    required this.organizeRuns,
+    required this.organizeChanges,
+    required this.pairedPeerCount,
+  });
+
+  final List<MediaCollectionRow> collections;
+  final List<MediaCollectionItemRow> items;
+  final List<CollectionMemberTombstoneRow> tombstones;
+  final List<LibraryOrganizeRunRow> organizeRuns;
+  final List<LibraryOrganizeChangeRow> organizeChanges;
+
+  /// 只记数量：对端的身份与凭据绝不进包。
+  final int pairedPeerCount;
+
+  static Future<VideoGroupingSnapshot> load(FushiDatabase db) async =>
+      VideoGroupingSnapshot(
+        collections: await db.getAllMediaCollections(),
+        items: await db.select(db.mediaCollectionItems).get(),
+        tombstones: await db.select(db.collectionMemberTombstones).get(),
+        organizeRuns: await db.select(db.libraryOrganizeRuns).get(),
+        organizeChanges: await db.select(db.libraryOrganizeChanges).get(),
+        pairedPeerCount: (await db.select(db.fushiPairedPeers).get()).length,
+      );
+}
+
 class VideoScrapeDiagnosticExporter {
   const VideoScrapeDiagnosticExporter({
     this.fileSystem = const LocalSourceFileSystem(),
@@ -54,6 +87,7 @@ class VideoScrapeDiagnosticExporter {
     required String applicationVersion,
     required String platform,
     DateTime? exportedAt,
+    VideoGroupingSnapshot? grouping,
   }) async {
     if (source.transport != 'local' || source.mediaKind != 'video') {
       throw ArgumentError('Diagnostics require a local video source');
@@ -229,6 +263,16 @@ class VideoScrapeDiagnosticExporter {
       'directory-tree.txt': '$treeText\n',
       'scrape-data.json':
           const JsonEncoder.withIndent('  ').convert(scrapeData),
+      if (grouping != null)
+        'grouping.json': const JsonEncoder.withIndent('  ').convert(
+          _groupingJson(
+            grouping,
+            source: source,
+            books: books,
+            root: root,
+            exportedAt: exportedAt ?? DateTime.now(),
+          ),
+        ),
     };
 
     await _writeZip(outputFile.path, textFiles, nfoFiles);
@@ -240,12 +284,133 @@ class VideoScrapeDiagnosticExporter {
     );
   }
 
+  /// grouping.json：本来源视频的入库时刻与归属、含视频（或已空）的合集、全部合集
+  /// 级与视频成员墓碑（新的在前）、视频域 AI 整理记录。成员一律写相对路径，不在本
+  /// 来源里的写 bookUid；合集的本机目录路径不出包。
+  static Map<String, Object?> _groupingJson(
+    VideoGroupingSnapshot g, {
+    required SourceLibraryRow source,
+    required List<VideoBookRow> books,
+    required String root,
+    required DateTime exportedAt,
+  }) {
+    final Map<String, String?> relativeByUid = <String, String?>{
+      for (final VideoBookRow b in books)
+        b.bookUid: _safeRelativePath(root, b.videoPath),
+    };
+    String member(String uid) => relativeByUid[uid] ?? 'uid:$uid';
+    final Map<int, List<MediaCollectionItemRow>> itemsByCollection =
+        <int, List<MediaCollectionItemRow>>{};
+    final Map<String, List<int>> collectionsByUid = <String, List<int>>{};
+    for (final MediaCollectionItemRow i in g.items) {
+      (itemsByCollection[i.collectionId] ??= <MediaCollectionItemRow>[])
+          .add(i);
+      if (i.mediaType == 'video') {
+        (collectionsByUid[i.entryKey] ??= <int>[]).add(i.collectionId);
+      }
+    }
+    final Set<int> organizeVideoRuns = <int>{
+      for (final LibraryOrganizeRunRow r in g.organizeRuns)
+        if (r.domain == 'video') r.id,
+    };
+    final List<CollectionMemberTombstoneRow> tombstones = g.tombstones
+        .where((CollectionMemberTombstoneRow t) =>
+            t.mediaType == FushiDatabase.collectionTombstoneSentinel ||
+            t.mediaType == 'video')
+        .toList()
+      ..sort((CollectionMemberTombstoneRow a, CollectionMemberTombstoneRow b) =>
+          b.deletedAt.compareTo(a.deletedAt));
+    return <String, Object?>{
+      'timezoneOffsetMinutes': exportedAt.toLocal().timeZoneOffset.inMinutes,
+      'groupingMode': source.videoGroupingMode,
+      'pairedPeerCount': g.pairedPeerCount,
+      'videos': <Map<String, Object?>>[
+        for (final VideoBookRow b in books)
+          <String, Object?>{
+            'member': member(b.bookUid),
+            'bookUid': b.bookUid,
+            'importedAt': _isoOrNull(b.importedAt),
+            'localAddedAt': _isoOrNull(b.localAddedAt),
+            'collectionIds': collectionsByUid[b.bookUid] ?? const <int>[],
+          },
+      ],
+      'collections': <Map<String, Object?>>[
+        for (final MediaCollectionRow c in g.collections)
+          if ((itemsByCollection[c.id] ?? const <MediaCollectionItemRow>[])
+                  .isEmpty ||
+              itemsByCollection[c.id]!
+                  .any((MediaCollectionItemRow i) => i.mediaType == 'video'))
+            <String, Object?>{
+              'id': c.id,
+              'name': _sanitizeText(c.name, root),
+              'type': c.collectionType,
+              'origin': c.origin,
+              'folderCollection': c.sourceFolderPath != null,
+              'createdAt': _isoOrNull(c.createdAt),
+              'memberCount': itemsByCollection[c.id]?.length ?? 0,
+              'videoMembers': <String>[
+                for (final MediaCollectionItemRow i
+                    in itemsByCollection[c.id] ??
+                        const <MediaCollectionItemRow>[])
+                  if (i.mediaType == 'video') member(i.entryKey),
+              ],
+            },
+      ],
+      'tombstones': <Map<String, Object?>>[
+        for (final CollectionMemberTombstoneRow t in tombstones)
+          <String, Object?>{
+            'collectionName': _sanitizeText(t.collectionName, root),
+            'collectionType': t.collectionType,
+            'scope': t.mediaType == FushiDatabase.collectionTombstoneSentinel
+                ? 'collection'
+                : 'member',
+            if (t.mediaType != FushiDatabase.collectionTombstoneSentinel)
+              'member': member(t.entryKey),
+            'deletedAt': _isoOrNull(t.deletedAt),
+            'organizeMerged': t.organizeMerged,
+            'hasOrganizeKey': t.organizeKey != null,
+          },
+      ],
+      'organizeRuns': <Map<String, Object?>>[
+        for (final LibraryOrganizeRunRow r in g.organizeRuns)
+          if (r.domain == 'video')
+            <String, Object?>{
+              'id': r.id,
+              'trigger': r.trigger,
+              'status': r.status,
+              'startedAt': _isoOrNull(r.startedAt),
+              'finishedAt': _isoOrNull(r.finishedAt),
+              'error': r.error,
+            },
+      ],
+      'organizeChanges': <Map<String, Object?>>[
+        for (final LibraryOrganizeChangeRow c in g.organizeChanges)
+          if (organizeVideoRuns.contains(c.runId))
+            <String, Object?>{
+              'runId': c.runId,
+              'kind': c.kind,
+              'collectionName': _sanitizeText(c.collectionName, root),
+              'collectionType': c.collectionType,
+              'source': c.source,
+              'confidence': c.confidence,
+              'undoneAt': _isoOrNull(c.undoneAt),
+            },
+      ],
+    };
+  }
+
+  static String? _isoOrNull(int? ms) => ms == null
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true).toIso8601String();
+
   static const String _readme = '''Fushi video scrape diagnostic package
 
-This package is an export-time snapshot for diagnosing video metadata scraping.
-It contains relative file/directory names, filename parsing results, scrape
-metadata summaries, and original NFO files. It does not contain video, subtitle,
-image, database, app configuration, app credential, or absolute source-path data.
+This package is an export-time snapshot for diagnosing video metadata scraping
+and series grouping. It contains relative file/directory names, filename parsing
+results, scrape metadata summaries, original NFO files, and (grouping.json) the
+library's collections, collection removal history, and automatic organize
+history. It does not contain video, subtitle, image, database, app
+configuration, app credential, or absolute source-path data.
 
 Privacy warning: original NFO files are preserved unchanged. File/directory names
 and NFO contents can contain personal information or secrets. Review the package

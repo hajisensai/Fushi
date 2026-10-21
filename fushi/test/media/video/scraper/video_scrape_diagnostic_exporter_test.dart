@@ -2,9 +2,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -156,7 +159,113 @@ void main() {
     expect(_readText(archive, 'manifest.json'),
         contains('"nfoFilesOverLimit": 1'));
   });
+
+  test(
+      'BUG-3652 grouping.json records collections, both tombstone scopes and '
+      'per-video membership without absolute paths', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final String first = p.join(sourceRoot.path, 'Season 01', 'Show - 01.mkv');
+    final String second = p.join(sourceRoot.path, 'Season 01', 'Show - 02.mkv');
+    await File(first).writeAsBytes(<int>[1]);
+    await File(second).writeAsBytes(<int>[2]);
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Anime',
+        mediaKind: 'video',
+        rootPath: sourceRoot.path,
+        createdAt: 1,
+      ),
+    );
+    final VideoBookRepository repository = VideoBookRepository(db);
+    for (final (String uid, String path) in <(String, String)>[
+      ('uid-1', first),
+      ('uid-2', second),
+    ]) {
+      await repository.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(uid),
+          title: Value<String>(p.basenameWithoutExtension(path)),
+          videoPath: Value<String>(path),
+        ),
+        sourceId: sourceId,
+      );
+    }
+    // 解散一个系列合集（合集级墓碑），再从目录合集移出一集（成员墓碑）。
+    final int dissolved =
+        await db.createMediaCollection('Show', collectionType: 'playlist');
+    await db.addToCollection(dissolved, MediaKind.video, 'uid-1');
+    await db.addToCollection(dissolved, MediaKind.video, 'uid-2');
+    await db.deleteMediaCollection(dissolved);
+    final int kept = await db.createMediaCollection('Season 01');
+    await db.addToCollection(kept, MediaKind.video, 'uid-1');
+    await db.addToCollection(kept, MediaKind.video, 'uid-2');
+    await db.removeFromCollection(kept, MediaKind.video, 'uid-2');
+
+    final File output = File(p.join(temp.path, 'grouping.zip'));
+    await const VideoScrapeDiagnosticExporter().export(
+      source: MediaSourceRow(
+        videoGroupingMode: 'series',
+        id: sourceId,
+        label: 'Anime',
+        mediaKind: 'video',
+        transport: 'local',
+        rootPath: sourceRoot.path,
+        mediaCount: 2,
+        recursive: true,
+        sortOrder: 0,
+        createdAt: 1,
+      ),
+      books: await db.allVideoBooks(),
+      scrapeMetadata: const <VideoScrapeMetaRow>[],
+      outputFile: output,
+      applicationVersion: 'test',
+      platform: 'windows',
+      grouping: await VideoGroupingSnapshot.load(db),
+    );
+
+    final Archive archive =
+        ZipDecoder().decodeBytes(await output.readAsBytes());
+    final String text = _readText(archive, 'grouping.json');
+    expect(text, isNot(contains(sourceRoot.path)));
+    expect(text, isNot(contains('private-user')));
+    final Map<String, Object?> grouping =
+        (jsonDecode(text) as Map<Object?, Object?>).cast<String, Object?>();
+    final List<Map<String, Object?>> tombstones = _maps(grouping['tombstones']);
+    expect(
+      tombstones.any((Map<String, Object?> t) =>
+          t['scope'] == 'collection' &&
+          t['collectionName'] == 'Show' &&
+          t['collectionType'] == 'playlist' &&
+          t['deletedAt'] != null),
+      isTrue,
+    );
+    expect(
+      tombstones.any((Map<String, Object?> t) =>
+          t['scope'] == 'member' &&
+          t['collectionName'] == 'Season 01' &&
+          t['member'] == 'Season 01/Show - 02.mkv'),
+      isTrue,
+    );
+    final Map<String, Object?> season = _maps(grouping['collections'])
+        .singleWhere((Map<String, Object?> c) => c['name'] == 'Season 01');
+    expect(season['videoMembers'], <String>['Season 01/Show - 01.mkv']);
+    final Map<String, Map<String, Object?>> videos =
+        <String, Map<String, Object?>>{
+      for (final Map<String, Object?> v in _maps(grouping['videos']))
+        v['bookUid']! as String: v,
+    };
+    expect(videos['uid-1']!['collectionIds'], <int>[kept]);
+    expect(videos['uid-2']!['collectionIds'], isEmpty);
+    expect(videos['uid-2']!['member'], 'Season 01/Show - 02.mkv');
+    expect(grouping['pairedPeerCount'], 0);
+  });
 }
+
+List<Map<String, Object?>> _maps(Object? raw) => <Map<String, Object?>>[
+      for (final Object? e in raw! as List<Object?>)
+        (e! as Map<Object?, Object?>).cast<String, Object?>(),
+    ];
 
 String _readText(Archive archive, String name) {
   final ArchiveFile file = archive.findFile(name)!;
