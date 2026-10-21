@@ -3,13 +3,22 @@
 // main dictionary full width with a badge, other dictionaries in a grid, open states
 // following the popup's rules. Payload is produced by srs_card_defs_layout_test.dart.
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
 
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
-const cases = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+// The Dart test writes the payload under the system temp directory; refuse anything else.
+const tempRoot = fs.realpathSync(os.tmpdir());
+const payloadPath = fs.realpathSync(path.resolve(process.argv[2] ?? ''));
+if (path.relative(tempRoot, payloadPath).startsWith('..') || path.isAbsolute(path.relative(tempRoot, payloadPath))) {
+  console.log('payload must live under ' + tempRoot);
+  process.exit(2);
+}
+const cases = JSON.parse(fs.readFileSync(payloadPath, 'utf8'));
 
 const driver = await launchChromeDriver();
 let passed = 0;
