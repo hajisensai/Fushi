@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 
@@ -214,6 +215,7 @@ class SrsDbStore implements SrsSyncReplica {
     required SrsTrustedClock trustedClock,
     required int Function() fallbackRolloverHour,
     this.styles,
+    this.nativeImageProbe,
   }) : _trusted = trustedClock,
        _fallbackRollover = fallbackRolloverHour;
 
@@ -226,6 +228,7 @@ class SrsDbStore implements SrsSyncReplica {
     SrsTrustedClock? trustedClock,
     int Function()? fallbackRolloverHour,
     SrsStyleStore? styles,
+    SrsNativeImageProbe? nativeImageProbe,
   }) async {
     final SrsDbStore s = SrsDbStore._(
       db: db,
@@ -236,6 +239,7 @@ class SrsDbStore implements SrsSyncReplica {
       fallbackRolloverHour:
           fallbackRolloverHour ?? () => SrsDayContext.defaultRolloverHour,
       styles: styles,
+      nativeImageProbe: nativeImageProbe,
     );
     final bool hadLocalState = await s._loadLocal();
     // 老版本存的本机状态没有纪元：当场落盘，否则每次打开都是新纪元、指纹每次都「变了」。
@@ -266,6 +270,10 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
   final SrsStyleStore? styles;
+
+  /// 媒体库文件原生图片解码器能否完整显示（app 装配：动图 AVIF → false）；null = 不探测文件。
+  /// 只用于 [renderCard] 判断 Fushi 卡片能否走原生卡面（[srsFushiCardMediaIsNative]）。
+  final SrsNativeImageProbe? nativeImageProbe;
   final SrsTrustedClock _trusted;
   final int Function() _fallbackRollover;
 
@@ -3664,11 +3672,14 @@ class SrsDbStore implements SrsSyncReplica {
       isCloze: d.noteType.isCloze,
       specials: specials,
     );
+    // 原生卡面只画得了 `<img>` 与 `[sound:]`：视频片段、动图 AVIF 等媒体留在整面 WebView
+    // （同一份模板），否则会被原生卡面静默丢成没有画面 / 一张静图（见 srs_fushi_card_native_media）。
     final bool nativeFushiCard =
         d.noteType.builtinKey == kSrsBuiltinFushiCardKey &&
         front == FushiCardNoteType.template.front &&
         back == FushiCardNoteType.template.back &&
-        d.noteType.css == FushiCardNoteType.template.css;
+        d.noteType.css == FushiCardNoteType.template.css &&
+        await srsFushiCardMediaIsNative(fields, nativeImage: nativeImageProbe);
     return SrsRenderedCard(
       question: r.question,
       answer: r.answer,

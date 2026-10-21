@@ -13,6 +13,8 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show srsIsAnimatedAvifHeader;
 import 'package:path/path.dart' as p;
 
 /// 支持目录下的媒体根目录名。
@@ -145,5 +147,34 @@ class SrsMediaStore {
     final File? file = resolve(name);
     if (file == null || !await file.exists()) return null;
     return file.readAsBytes();
+  }
+
+  /// [nativeImageDisplayable] 的结果缓存：文件名 = 内容哈希，同名字节不变，判一次即可。
+  final Map<String, bool> _nativeImageCache = <String, bool>{};
+
+  /// 原生图片解码器（Flutter）能否完整显示媒体文件 [name]：动图 AVIF（`ftyp` 品牌 `avis`）
+  /// 只能解出静态主图 → false；其余（含 GIF / WebP 动图，Flutter 自己会动）→ true。
+  /// 名字不安全 / 文件不在 / 读不了时 true：缺文件哪个渲染器都画不出来，不为此换渲染器。
+  /// 引擎据此决定 Fushi 卡片走不走原生卡面（`SrsDbStore.nativeImageProbe`）。
+  Future<bool> nativeImageDisplayable(String name) async {
+    if (extensionOf(name) != 'avif') return true;
+    final bool? cached = _nativeImageCache[name];
+    if (cached != null) return cached;
+    final File? file = resolve(name);
+    if (file == null) return true;
+    final List<int> head = <int>[];
+    try {
+      final RandomAccessFile raf = await file.open();
+      try {
+        head.addAll(await raf.read(64));
+      } finally {
+        await raf.close();
+      }
+    } on FileSystemException {
+      return true;
+    }
+    final bool displayable = !srsIsAnimatedAvifHeader(head);
+    _nativeImageCache[name] = displayable;
+    return displayable;
   }
 }

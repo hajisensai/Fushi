@@ -1570,7 +1570,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             r['width'] ?? 0,
             r['height'] ?? 0,
           );
-    final Rect anchor = box.localToGlobal(local.topLeft) & local.size;
+    // 整个矩形经同一变换：复习页不在 FushiAppUiScaleNeutralizer 之下，「全局左上角 & 局部
+    // 尺寸」会把高宽留在 1/界面缩放，弹窗按偏高的下沿摆、盖住被查的那一行。
+    final Rect anchor = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      local,
+    );
     lookup.lookup(
       SrsCardLookupRequest(
         term: data.text,

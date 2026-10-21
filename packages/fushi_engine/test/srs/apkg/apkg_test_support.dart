@@ -8,6 +8,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -127,6 +128,7 @@ Future<SrsDbStore> openTestStore({
   required String profileUid,
   required String deviceId,
   required int Function() now,
+  SrsNativeImageProbe? nativeImageProbe,
 }) {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   return SrsDbStore.open(
@@ -140,6 +142,7 @@ Future<SrsDbStore> openTestStore({
       bootId: 'boot-$deviceId',
     ),
     fallbackRolloverHour: () => 4,
+    nativeImageProbe: nativeImageProbe,
   );
 }
 
