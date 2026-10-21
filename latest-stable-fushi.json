@@ -1,74 +1,74 @@
 {
   "schemaVersion": 1,
-  "version": "3.0.1",
-  "tag": "v3.0.1",
+  "version": "3.0.0",
+  "tag": "v3.0.0",
   "channel": "formal",
   "prerelease": false,
-  "releaseSequence": 19816,
-  "notes": "## Fushi 3.0.1\n\n- **Onboarding**: the setup guide no longer offers Fushi Review in release builds; choosing card creation goes straight to Anki setup\n\n---\n\n## Fushi 3.0.1 更新公告\n\n- **新手引导**：正式版的新手引导不再引导使用 Fushi 复习，勾选制卡后直接进入 Anki 配置",
+  "releaseSequence": 19763,
+  "notes": "## Fushi 3.0.0\n\n- **Interface refresh**: Material and Cupertino designs, smoother interactions, reorderable modules and a selectable startup page; paged bottom navigation keeps lookup pinned at the bottom right\n- **Reader & manga**: page-turn animations, customizable highlights, improved position restoration and whole-volume OCR; experimental foldable layouts for dual-page reading and tabletop video playback\n- **Read-aloud & Audiobook Studio**: multiple voices, sentence highlighting, AI speaker annotation and M4B export; Audiobookshelf and automatic transcription; Windows gains in-app Irodori-TTS and GPT-SoVITS deployment\n- **Advanced mining**: adjust deck, context, audio boundaries, video frames and manga crops; mosaic card images and use configured TTS voices for missing word audio; improved Anki video-template compatibility\n- **Video & subtitles**: bitmap subtitle OCR, optional pause OCR, phone control for episodes, volume, subtitle tracks and mining; Windows HDR, Blu-ray menus and Dolby / DTS passthrough\n- **Collections & downloads**: automatic series grouping, batch actions and AI volume ordering; find a work's download tasks and optionally delete files when clearing completed jobs\n- **AI & models**: unified model settings, multiple API keys, rate controls and retries; improved automatic subtitles with Parakeet / Kitsune models and on-demand Windows GPU acceleration\n- **Sync & desktop**: fewer duplicate transfers, playback-progress conflict checks, recovery for removed remote books, and a fix for deleted books reappearing as remote placeholders; desktop screen OCR and `fushi_cli`\n- **Games**: experimental stream reception expands to iOS, macOS and Windows; more Windows galgame adapters. Streaming hosts and local hooking remain Windows-only\n- **Feedback & statistics**: reports with logs, screenshots and video, reply notifications and fix-release tracking; custom date ranges and per-title statistics\n- **Accounts & leaderboard**: sign in through a paired owner device; faster cover processing, confirmed cover votes with replacement safeguards, and improved email-alias handling\n- **Fixes & performance**: reduce Windows video UI stalls; improve subtitle timing, card audio, reading layout and sync; extension auto-updates, browser-overlay fixes and screenshot regression checks\n\n### Notes\n\n- Foldable layouts and in-app GPT-SoVITS deployment are experimental\n- The video \"pause at subtitle end\" mode has been removed\n- Very old Hibiki databases must first be opened with **2.9.1** before upgrading\n- iOS continues to exclude online extension sources, discovery and the general download center\n\n---\n\n## Fushi 3.0.0 更新公告\n\n- **界面焕新**：升级 Material 与 Cupertino 设计，完善动效；模块可排序、可选启动页，分页底栏保留右下角固定查词按钮\n- **阅读与漫画**：新增翻页动效、自定义高亮，改善位置恢复与整卷 OCR；新增折叠屏双页阅读、半折视频播放布局（实验性）\n- **朗读与有声书制作台**：多声音、逐句高亮、AI 说话人标注与 M4B 导出；接入 Audiobookshelf 和自动转录，Windows 支持应用内部署 Irodori-TTS 与 GPT-SoVITS\n- **高级制卡**：调整牌组、上下文、音频起止、视频静帧与漫画裁图，支持图片打码、自选 TTS 声音补全单词音频，改善 Anki 视频模板兼容\n- **视频与字幕**：图形字幕 OCR、可选暂停识别，手机可遥控选集、音量、字幕轨与制卡；新增 Windows HDR、蓝光菜单和 Dolby / DTS 直通\n- **合集与下载**：本地内容自动归组、批量操作与 AI 卷序排序；可定位作品下载任务，清理已完成任务时可选删除文件\n- **AI 与模型**：统一模型设置，支持多 Key、限速与重试；自动字幕接入 Parakeet / Kitsune 模型，Windows 可按需下载 GPU 加速组件\n- **同步与桌面**：减少重复传输、检查进度冲突，支持远程书籍恢复，修复删除的书以远端占位卡重新出现；新增桌面屏幕 OCR 与 `fushi_cli`\n- **游戏**：实验性串流接收扩展至 iOS、macOS 与 Windows，补充 Windows Galgame 适配；串流主机与本机 Hook 仍仅限 Windows\n- **反馈与统计**：反馈可附日志、截图与视频，支持回复通知和修复版本追踪；统计支持自定义日期与逐作品明细\n- **账号与排行榜**：支持通过已配对的本人设备登录，封面处理提速，完善封面确认投票、替换保护与邮箱别名处理\n- **修复与优化**：减少 Windows 视频界面卡顿，改善字幕时间轴、卡片音频、阅读排版与同步；支持扩展自动更新，修复浏览器覆盖层并完善界面截图回归检查\n\n### 注意事项\n\n- 折叠屏布局、应用内部署 GPT-SoVITS 属实验性\n- 已移除视频「字幕暂停播放模式」\n- 极旧的 Hibiki 数据库需先用 **2.9.1** 打开一次，再升级\n- iOS 仍不包含在线扩展源、发现与通用下载中心",
   "assets": [
     {
-      "name": "fushi-3.0.1-arm64-v8a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-arm64-v8a.apk",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
+      "name": "fushi-3.0.0-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-arm64-v8a.apk",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
       "size": 213640896,
-      "sha256": "460e24eb44743e1274ed82bd9f4c6fcf46c8d36772da78bc2fe64ca06580b7d4"
+      "sha256": "11c0c9e9f81345adb83f390d3b62332347285e539c4a9d225cc7a8231ef8beff"
     },
     {
-      "name": "fushi-3.0.1-armeabi-v7a.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-armeabi-v7a.apk",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
+      "name": "fushi-3.0.0-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-armeabi-v7a.apk",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
       "size": 207611179,
-      "sha256": "45a98cf7dec5f678abb49ffa5e5d855caac2868d12d77d7c9207314d85e74a99"
+      "sha256": "98ddb88a5a62f1aebca14f9e8c2bcb21e89cf16bce1877a33290884eaf07e8b5"
     },
     {
-      "name": "fushi-3.0.1-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-ios.ipa",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
-      "size": 83101371,
-      "sha256": "6ff2237f05667795aa1095df5367af422d2f4b166164becb2a0067c23db5ceb4"
+      "name": "fushi-3.0.0-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-ios.ipa",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
+      "size": 83110918,
+      "sha256": "7e15f41eae0fd4b0b9a0effa31f8da449fc37a61b52a62d752c079104c7998c0"
     },
     {
-      "name": "fushi-3.0.1-macos-arm64.dmg",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-macos-arm64.dmg",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
-      "size": 261068388,
-      "sha256": "f5f7bd8be09514f5f72606224038bd3feb438bf97a9fdb905536ef45f4682612"
+      "name": "fushi-3.0.0-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-macos-arm64.dmg",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
+      "size": 261082162,
+      "sha256": "0e055d422444e3c0ab259c2ef3e584b1987a0162328fd146ea03370e40527cdc"
     },
     {
-      "name": "fushi-3.0.1-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-macos-arm64.zip",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
-      "size": 248501448,
-      "sha256": "bb5a5fc6cd25d3a2294b2a4b04491016ff37b1a96886455bc449ccabbb3c550a"
+      "name": "fushi-3.0.0-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-macos-arm64.zip",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
+      "size": 248517225,
+      "sha256": "511e4bc150419fb201e140dcef53103aab692b726c24005d1b5ce7da48e289f3"
     },
     {
-      "name": "fushi-3.0.1-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-windows-setup.exe",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
-      "size": 303511632,
-      "sha256": "bb565de7094966a6ab60c29367ec25275c3033f4df03e0259d83c6e533fbb495"
+      "name": "fushi-3.0.0-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-windows-setup.exe",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
+      "size": 303508616,
+      "sha256": "71b59d654ba9637c62fe0499da6d411bf90d8e95c5933a163dfd1b56444ed1ed"
     },
     {
-      "name": "fushi-3.0.1-x86_64.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-x86_64.apk",
-      "releaseSequence": 19816,
-      "tag": "v3.0.1",
-      "version": "3.0.1",
+      "name": "fushi-3.0.0-x86_64.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.0/fushi-3.0.0-x86_64.apk",
+      "releaseSequence": 19763,
+      "tag": "v3.0.0",
+      "version": "3.0.0",
       "size": 197029474,
-      "sha256": "7c12fb6c097d3ffd296ed58c804fa25e35be2b2500e33ecd8ad6d302c1fbd07c"
+      "sha256": "248f349307c897df7aaaf62afa2a9992ea8f609d6b46ea0829855f7e271f7c68"
     }
   ]
 }
