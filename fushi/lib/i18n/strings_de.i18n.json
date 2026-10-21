@@ -2540,6 +2540,8 @@
   "floating_ball_system": "Über anderen Apps anzeigen",
   "floating_ball_system_hint": "Die Kugel nach dem Wechsel zu anderen Apps auf dem Bildschirm behalten. Benötigt die Berechtigung zum Anzeigen über anderen Apps",
   "floating_ball_system_hint_desktop": "Bleibt über anderen Programmen schweben, nachdem du von Fushi weggewechselt bist",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "Schließen",
   "floating_dict_title": "Wörterbuch",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

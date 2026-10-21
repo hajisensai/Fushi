@@ -2540,6 +2540,8 @@
   "floating_ball_system": "แสดงเหนือแอปอื่น",
   "floating_ball_system_hint": "คงปุ่มไว้บนหน้าจอหลังสลับไปแอปอื่น ต้องใช้สิทธิ์แสดงเหนือแอปอื่น",
   "floating_ball_system_hint_desktop": "ลอยเหนือโปรแกรมอื่นต่อไปหลังคุณสลับออกจาก Fushi",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "ปิด",
   "floating_dict_title": "พจนานุกรม",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

@@ -2540,6 +2540,8 @@
   "floating_ball_system": "Diğer uygulamaların üzerinde göster",
   "floating_ball_system_hint": "Başka uygulamalara geçtikten sonra topu ekranda tut. Diğer uygulamaların üzerinde görüntüleme izni gerekir",
   "floating_ball_system_hint_desktop": "Fushi'den ayrıldıktan sonra diğer programların üzerinde yüzer kalır",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "Kapat",
   "floating_dict_title": "Sözlük",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

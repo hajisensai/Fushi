@@ -2540,6 +2540,8 @@
   "floating_ball_system": "Tampilkan di atas aplikasi lain",
   "floating_ball_system_hint": "Pertahankan bola di layar setelah beralih ke aplikasi lain. Memerlukan izin tampil di atas aplikasi lain",
   "floating_ball_system_hint_desktop": "Tetap mengambang di atas program lain setelah Anda beralih dari Fushi",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "Tutup",
   "floating_dict_title": "Kamus",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

@@ -2540,6 +2540,8 @@
   "floating_ball_system": "應用外顯示",
   "floating_ball_system_hint": "切到其他應用後懸浮球仍留在螢幕上，需要「顯示在其他應用上層」權限",
   "floating_ball_system_hint_desktop": "切到其他程式後懸浮球仍浮在最上層",
+  "floating_ball_tap_clipboard": "點球查剪貼簿",
+  "floating_ball_tap_clipboard_hint": "應用外點按懸浮球直接查詢複製的文字，長按懸浮球展開按鈕",
   "floating_dict_close": "關閉",
   "floating_dict_title": "辭典",
   "floating_lyric_appearance_section": "懸浮字幕外觀與排版",

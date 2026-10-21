@@ -2540,6 +2540,8 @@
   "floating_ball_system": "Show over other apps",
   "floating_ball_system_hint": "Keep the ball on screen after switching to other apps. Needs the display-over-other-apps permission",
   "floating_ball_system_hint_desktop": "Keeps floating above other programs after you switch away from Fushi",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "Close",
   "floating_dict_title": "Dictionary",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

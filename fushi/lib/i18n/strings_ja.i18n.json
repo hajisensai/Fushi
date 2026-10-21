@@ -2540,6 +2540,8 @@
   "floating_ball_system": "他のアプリの上に表示",
   "floating_ball_system_hint": "他のアプリに切り替えた後も、ボールを画面に残します。他のアプリの上に重ねて表示する権限が必要です",
   "floating_ball_system_hint_desktop": "Fushi から切り替えた後も、他のプログラムの上に浮かんだままになります",
+  "floating_ball_tap_clipboard": "タップでクリップボードを検索",
+  "floating_ball_tap_clipboard_hint": "アプリ外でフローティングボールをタップするとコピーしたテキストをすぐに調べます。長押しでボタンを表示します",
   "floating_dict_close": "閉じる",
   "floating_dict_title": "辞書",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

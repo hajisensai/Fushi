@@ -278,6 +278,34 @@ void main() {
     },
   );
 
+  testWidgets('tap-clipboard setting resyncs the native ball with the flag', (
+    WidgetTester tester,
+  ) async {
+    await pumpHost(tester);
+    await enableSystemBall(tester);
+    final SettingsSwitchItem setting = buildFloatingBallDestination().sections
+        .expand((SettingsSection section) => section.items)
+        .whereType<SettingsSwitchItem>()
+        .singleWhere(
+          (SettingsSwitchItem item) => item.id == 'floating_ball.tap_clipboard',
+        );
+    final Object? originalActions = starts.single['actions'];
+    expect(setting.defaultValue, isFalse);
+    expect(setting.value(settingsContext), isFalse);
+    expect(starts.single['tapClipboard'], isFalse);
+
+    for (final bool on in <bool>[true, false]) {
+      final int count = starts.length;
+      await tester.runAsync(() async => setting.onChanged(settingsContext, on));
+      await expectStarts(tester, count + 1);
+      expect(setting.value(settingsContext), on);
+      expect(prefs.floatingBallTapClipboard, on);
+      expect(starts.last['tapClipboard'], on);
+      expect(starts.last['actions'], equals(originalActions));
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'labels ABA before asset preparation discards the stale false request',
     (WidgetTester tester) async {

@@ -74,6 +74,21 @@ SettingsDestination buildFloatingBallDestination() {
             defaultValue: false,
           ),
           SettingsSwitchItem(
+            id: 'floating_ball.tap_clipboard',
+            title: t.floating_ball_tap_clipboard,
+            subtitle: t.floating_ball_tap_clipboard_hint,
+            icon: Icons.content_paste_search,
+            // 只有 Android 原生系统球实现了「点球查剪贴板、长按展开」。
+            visible: (SettingsContext c) =>
+                Platform.isAndroid && _prefs(c).floatingBallSystem,
+            value: (SettingsContext c) => _prefs(c).floatingBallTapClipboard,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setFloatingBallTapClipboard(value);
+              c.refresh();
+            },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
             id: 'floating_ball.show_labels',
             title: t.floating_ball_show_labels,
             subtitle: t.floating_ball_show_labels_hint,

@@ -2540,6 +2540,8 @@
   "floating_ball_system": "Показывать поверх других приложений",
   "floating_ball_system_hint": "Оставлять кнопку на экране после переключения на другие приложения. Нужно разрешение на отображение поверх других приложений",
   "floating_ball_system_hint_desktop": "Остаётся поверх других программ после переключения из Fushi",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "Закрыть",
   "floating_dict_title": "Словарь",
   "floating_lyric_appearance_section": "Floating subtitle appearance",

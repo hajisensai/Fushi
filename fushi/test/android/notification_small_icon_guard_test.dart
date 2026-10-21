@@ -122,4 +122,45 @@ void main() {
     );
     expect(svc, contains('LABEL_NOTIFICATION_HINT = "notification_hint"'));
   });
+
+  test('悬浮球「点球查剪贴板」：收起态点 = 查剪贴板，长按 = 展开', () {
+    final String svc = File(
+      '$javaRoot/app/fushi/reader/FloatingBallService.java',
+    ).readAsStringSync();
+    final String channel = File(
+      '$javaRoot/app/fushi/reader/FloatingBallChannel.java',
+    ).readAsStringSync();
+    // Dart → 原生 → 落盘 → 服务重建时重放。
+    expect(channel, contains('call.argument("tapClipboard")'));
+    expect(svc, contains('editor.putBoolean(PREF_TAP_CLIPBOARD'));
+    expect(
+      svc,
+      contains('tapClipboard = prefs.getBoolean(PREF_TAP_CLIPBOARD, false)'),
+    );
+    final int start = svc.indexOf('protected void setupDragListener()');
+    final String touch = svc.substring(start, svc.indexOf('\n    }\n', start));
+    // 按下时排长按（系统长按时长），拖动 / 抬手 / 取消都要撤掉，免得拖着拖着弹出按钮。
+    expect(
+      touch,
+      contains(
+        'postDelayed(longPressExpand,\n'
+        '                                ViewConfiguration.getLongPressTimeout())',
+      ),
+    );
+    expect(
+      'mainHandler.removeCallbacks(longPressExpand);'.allMatches(touch).length,
+      4,
+    );
+    // 抬手：长按已展开就不再当点击；开关开着且收起态 → 查剪贴板，否则照旧展开 / 收起。
+    expect(touch, contains('} else if (!longPressFired) {'));
+    expect(
+      touch,
+      contains(
+        'if (tapClipboard && !expandTarget) {\n'
+        '                            runAction(ACTION_CLIPBOARD);\n'
+        '                        } else {\n'
+        '                            toggle();',
+      ),
+    );
+  });
 }

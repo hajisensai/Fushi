@@ -2540,6 +2540,8 @@
   "floating_ball_system": "다른 앱 위에 표시",
   "floating_ball_system_hint": "다른 앱으로 전환한 뒤에도 볼을 화면에 유지합니다. 다른 앱 위에 표시 권한이 필요합니다",
   "floating_ball_system_hint_desktop": "Fushi에서 다른 곳으로 전환한 뒤에도 다른 프로그램 위에 떠 있습니다",
+  "floating_ball_tap_clipboard": "Tap ball to look up copied text",
+  "floating_ball_tap_clipboard_hint": "Outside the app, tapping the floating ball looks up the copied text right away; long-press it to open the buttons",
   "floating_dict_close": "닫기",
   "floating_dict_title": "사전",
   "floating_lyric_appearance_section": "Floating subtitle appearance",
