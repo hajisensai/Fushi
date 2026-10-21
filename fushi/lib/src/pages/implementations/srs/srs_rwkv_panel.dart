@@ -1,21 +1,18 @@
-/// 牌组设置里 RWKV 的说明、模型选择（本机）与下载 / 准备状态。下载由 [SrsRwkvService] 自己发起
-/// （RWKV 是默认算法，不能要求用户先来这里点下载）；这里只显示进度，失败时给「重试」。
+/// 牌组设置里 RWKV 的说明与下载 / 准备状态。下载由 [SrsRwkvService] 自己发起（RWKV 是默认算法，
+/// 不能要求用户先来这里点下载）；这里只显示进度，失败时给「重试」。
 library;
 
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/utils.dart';
 
-/// 下载大小（显示用）。
-String _sizeOf(SrsRwkvModelChoice choice) =>
-    choice == SrsRwkvModelChoice.small ? '5.6 MB' : '11 MB';
+/// 下载大小（显示用，小模型发布包）。
+const String _downloadSize = '5.6 MB';
 
 class SrsRwkvPanel extends ConsumerStatefulWidget {
   const SrsRwkvPanel({super.key});
@@ -47,7 +44,6 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final SrsRwkvModelChoice choice = ref.watch(srsRwkvModelChoiceProvider);
     final SrsRwkvService? service = ref
         .watch(srsRwkvServiceProvider)
         .valueOrNull;
@@ -58,25 +54,6 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
     final List<Widget> children = <Widget>[
       Text(t.srs_settings_rwkv_hint, style: hintStyle),
       Text(t.srs_settings_rwkv_retention_note, style: hintStyle),
-      AdaptiveSettingsSegmentedRow<SrsRwkvModelChoice>(
-        key: const ValueKey<String>('srs-settings-rwkv-model'),
-        title: t.srs_settings_rwkv_model,
-        subtitle: t.srs_settings_rwkv_model_hint,
-        segments: <ButtonSegment<SrsRwkvModelChoice>>[
-          ButtonSegment<SrsRwkvModelChoice>(
-            value: SrsRwkvModelChoice.small,
-            label: Text(t.srs_settings_rwkv_model_small),
-          ),
-          ButtonSegment<SrsRwkvModelChoice>(
-            value: SrsRwkvModelChoice.large,
-            label: Text(t.srs_settings_rwkv_model_large),
-          ),
-        ],
-        selected: choice,
-        onChanged: (SrsRwkvModelChoice v) {
-          unawaited(ref.read(appProvider).setSrsRwkvModel(v.wire));
-        },
-      ),
     ];
     if (status != null) {
       final TextStyle errorStyle = hintStyle.copyWith(
@@ -121,7 +98,7 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
                           () => service.start(force: true),
                         ),
                   child: Text(
-                    t.srs_settings_rwkv_download(size: _sizeOf(choice)),
+                    t.srs_settings_rwkv_download(size: _downloadSize),
                   ),
                 ),
               ),

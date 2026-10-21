@@ -1030,13 +1030,17 @@ class _Importer {
       final SrsAnkiDeck? parentSrc = parentName == null
           ? null
           : byName[parentName];
-      // 同一预设：父牌组也是本次新建、且用同一预设 → 继承；否则 own（顶层恒 own）。
+      // 父牌组也是本次新建、且两者的排程设置相同 → 继承；否则 own（顶层恒 own）。「相同」不只
+      // 认同一个预设 id：Anki 里给子牌组复制一份内容一模一样的预设很常见，按 id 判会把这些子牌组
+      // 全落成「单独设置」，之后改父牌组的参数就得逐个子牌组去改。
+      final SrsAnkiPreset? parentPreset = parentSrc == null
+          ? null
+          : col.presets[parentSrc.configId];
       final bool inherit =
           preset != null &&
-          parentName != null &&
+          parentPreset != null &&
           created.contains(parentName) &&
-          parentSrc != null &&
-          parentSrc.configId == preset.id;
+          _sameInheritedSettings(preset, parentPreset);
       if (preset != null) {
         values.addAll(
           _presetValues(
@@ -1083,6 +1087,24 @@ class _Importer {
       }
     }
     return values;
+  }
+
+  /// 两个预设落到 Fushi 后、随参数继承的那部分（记忆率、音频、算法、参数组）是否一致。步长 /
+  /// 上限 / 最大间隔在 Fushi 里是每个牌组自己的，继承与否都照写，不参与比较；本次不导入的键
+  /// （按 [SrsAnkiImportOptions.withDeckConfigs] / [SrsAnkiImportOptions.withFsrsParams]）也不比。
+  bool _sameInheritedSettings(SrsAnkiPreset a, SrsAnkiPreset b) {
+    if (a.id == b.id) return true;
+    Map<String, Object?> inherited(SrsAnkiPreset p) =>
+        _presetValues(p, own: true, report: false)
+          ..remove(SrsFieldKeys.deckSteps)
+          ..remove(SrsFieldKeys.deckLimits)
+          ..remove(SrsFieldKeys.deckMaxInterval)
+          ..removeWhere(
+            (String k, Object? _) => _fsrsDeckKeys.contains(k)
+                ? !options.withFsrsParams
+                : !options.withDeckConfigs,
+          );
+    return jsonEncode(inherited(a)) == jsonEncode(inherited(b));
   }
 
   /// 归「FSRS 参数」开关管的牌组键（其余预设键归「牌组预设」开关）。

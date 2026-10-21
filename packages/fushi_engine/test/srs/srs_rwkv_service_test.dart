@@ -154,7 +154,7 @@ class _Fixture {
           throw const SocketException('network disabled in tests'),
     );
     if (ready) {
-      final File weights = models.weightsFile(SrsRwkvModelChoice.small)
+      final File weights = models.weightsFile
         ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
       File(
         '${weights.path}.verified',
@@ -167,9 +167,8 @@ class _Fixture {
       SrsRwkvService(
         store: store,
         models: models(ready: ready),
-        choice: SrsRwkvModelChoice.small,
         snapshotDir: Directory('${dir.path}/state'),
-        openBackend: (File weights, SrsRwkvModelChoice choice) async => backend,
+        openBackend: (File weights) async => backend,
       );
 
   Future<int> reviewCount() async =>
@@ -331,6 +330,64 @@ void main() {
       expect(second.resets, 0);
       expect(second.replayedCards, hasLength(3));
       await again.close();
+    });
+
+    test('两次对齐之间同一张卡答了两次（学习步「重来」后再答）：照样追加，不全量重建', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(2);
+      await f.graduate(cards);
+      final _FakeBackend backend = _FakeBackend();
+      final SrsRwkvService service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      expect(backend.resets, 1);
+      expect(backend.replayedCards, hasLength(2));
+
+      f.advance(kDay);
+      await f.store.answer(cards[0], 1);
+      f.advance(60000);
+      await f.store.answer(cards[0], 3);
+      f.advance(1000);
+      await f.store.answer(cards[1], 3);
+      expect(await service.refresh(), isTrue);
+      expect(backend.resets, 1, reason: '只追加新的三条');
+      expect(service.status.phase, SrsRwkvPhase.ready);
+      expect(backend.replayedCards, hasLength(5));
+      await service.close();
+    });
+
+    test('全量重建读历史途中用户还在答题：不重复回放、对齐时也不再触发第二次重建', () async {
+      final _Fixture f = await _Fixture.create();
+      final List<String> cards = await f.cards(3);
+      await f.graduate(cards);
+      final _FakeBackend backend = _FakeBackend();
+      final SrsRwkvService service = f.service(backend);
+      f.store.rwkv = service;
+      bool answered = false;
+      service.debugAfterRebuildFingerprint = () async {
+        if (answered) return;
+        answered = true;
+        // 记下指纹之后、读历史之前答了两张卡（先 0 后 1）。
+        f.advance(kDay);
+        await f.store.answer(cards[0], 3);
+        f.advance(1000);
+        await f.store.answer(cards[1], 3);
+      };
+      await service.start();
+      await _settled(service);
+      expect(backend.resets, 1);
+      expect(backend.replayedCards, hasLength(5), reason: '3 次毕业 + 2 次作答，各一次');
+
+      expect(await service.refresh(), isTrue);
+      expect(backend.resets, 1, reason: '不因「比已回放的最后一条更早」再重建');
+      expect(backend.replayedCards, hasLength(5), reason: '不把已回放的再追加一遍');
+
+      f.advance(1000);
+      await f.store.answer(cards[2], 3);
+      expect(await service.refresh(), isTrue);
+      expect(backend.replayedCards, hasLength(6));
+      await service.close();
     });
 
     test('权重没下载、下载失败：按存下的到期日排队并标出来，不碰网络', () async {

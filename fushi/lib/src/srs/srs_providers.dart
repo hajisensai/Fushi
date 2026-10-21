@@ -229,22 +229,13 @@ final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
       );
     });
 
-/// 本机选的 RWKV 网络（设备本地偏好，缺省小模型）。
-final Provider<SrsRwkvModelChoice> srsRwkvModelChoiceProvider =
-    Provider<SrsRwkvModelChoice>(
-      (Ref ref) => SrsRwkvModelChoice.parse(
-        ref.watch(appProvider.select((AppModel app) => app.srsRwkvModel)),
-      ),
-    );
-
 /// RWKV 排程服务：挂到 store 上（[SrsDbStore.rwkv]）。对象本身很轻；后台 isolate 与全量回放
 /// 只在有 RWKV 牌组、且权重已下载时启动（[SrsRwkvService.start]，或第一次给 RWKV 牌组排程时）。
-/// 由 `srsAppRuntimeProvider` 保活（模块开着时常驻）。换模型 / 换 profile / 关模块时关掉（存快照）。
+/// 由 `srsAppRuntimeProvider` 保活（模块开着时常驻）。换 profile / 关模块时关掉（存快照）。
 final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
     FutureProvider<SrsRwkvService?>((Ref ref) async {
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
-      final SrsRwkvModelChoice choice = ref.watch(srsRwkvModelChoiceProvider);
       final SrsRwkvModels models = await ref.watch(
         srsRwkvModelsProvider.future,
       );
@@ -252,7 +243,6 @@ final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
       final SrsRwkvService service = SrsRwkvService(
         store: store,
         models: models,
-        choice: choice,
         snapshotDir: Directory(p.join(support.path, 'srs_rwkv', 'state')),
         log: (String message) => ErrorLogService.instance.log(
           'SrsRwkvService',

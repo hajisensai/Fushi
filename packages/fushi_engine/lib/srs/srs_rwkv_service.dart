@@ -24,6 +24,7 @@ import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -115,39 +116,35 @@ class SrsRwkvService implements SrsRwkvScheduling {
   SrsRwkvService({
     required this.store,
     required this.models,
-    required this.choice,
     required this.snapshotDir,
     this.threads = 0,
-    Future<SrsRwkvBackend> Function(File weights, SrsRwkvModelChoice choice)?
-    openBackend,
+    Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
   }) : _open = openBackend ?? _openWorker,
        _log = log ?? ((String _) {});
 
   final SrsDbStore store;
   final SrsRwkvModels models;
-  final SrsRwkvModelChoice choice;
 
   /// 快照缓存目录。
   final Directory snapshotDir;
 
   /// 原生线程数：0 = 全部核心。
   final int threads;
-  final Future<SrsRwkvBackend> Function(File weights, SrsRwkvModelChoice choice)
-  _open;
+  final Future<SrsRwkvBackend> Function(File weights) _open;
   final void Function(String message) _log;
 
-  static Future<SrsRwkvBackend> _openWorker(
-    File weights,
-    SrsRwkvModelChoice choice,
-  ) async => _WorkerBackend(
-    await RwkvWorker.spawn(
-      modelPath: weights.path,
-      precision: choice == SrsRwkvModelChoice.small
-          ? RwkvPrecision.int4
-          : RwkvPrecision.int8,
-    ),
-  );
+  /// 测试钩子：全量重建记下日志指纹之后、开始读历史之前调用（模拟用户在重建途中答题）。
+  @visibleForTesting
+  Future<void> Function()? debugAfterRebuildFingerprint;
+
+  static Future<SrsRwkvBackend> _openWorker(File weights) async =>
+      _WorkerBackend(
+        await RwkvWorker.spawn(
+          modelPath: weights.path,
+          precision: RwkvPrecision.int4,
+        ),
+      );
 
   SrsRwkvBackend? _backend;
   _LogPrint? _replayed;
@@ -182,12 +179,21 @@ class SrsRwkvService implements SrsRwkvScheduling {
     return result;
   }
 
-  String get _modelKey =>
-      '${choice.wire}-${choice == SrsRwkvModelChoice.small ? 'int4' : 'int8'}';
-  File get _snapshotFile => File(
-    p.join(snapshotDir.path, 'rwkv-${store.profileUid}-$_modelKey.snap'),
-  );
+  /// 快照文件名里的模型键（沿用小模型 + int4 时的旧名，已有快照照样命中）。
+  static const String _modelKey = 'small-int4';
+  File _snapshotOf(String modelKey) =>
+      File(p.join(snapshotDir.path, 'rwkv-${store.profileUid}-$modelKey.snap'));
+  File get _snapshotFile => _snapshotOf(_modelKey);
   File get _snapshotMeta => File('${_snapshotFile.path}.json');
+
+  /// 已移除的大模型留下的回放快照（大的每卡约 25.7 KB）与权重：准备时顺手删掉。
+  Future<void> _deleteRetired() async {
+    final File large = _snapshotOf('large-int8');
+    for (final File f in <File>[large, File('${large.path}.json')]) {
+      if (await f.exists()) await f.delete();
+    }
+    await models.deleteRetired();
+  }
 
   /// 开始准备：权重没下载时先下载（RWKV 是新建牌组的默认算法，不能要求用户先去设置里点下载），
   /// 再恢复快照或全量回放。已在准备时什么都不做，已就绪时只对齐日志。失败后的自动重试（排队时
@@ -242,10 +248,15 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   Future<void> _prepare() async {
-    if (!models.isReady(choice)) {
+    try {
+      await _deleteRetired();
+    } catch (error) {
+      _log('RWKV retired model cleanup failed: $error');
+    }
+    if (!models.isReady) {
       _set(const SrsRwkvStatus(SrsRwkvPhase.downloading));
       try {
-        await for (final ModelDownloadEvent e in models.download(choice)) {
+        await for (final ModelDownloadEvent e in models.download()) {
           if (_closed) return;
           _set(
             SrsRwkvStatus(
@@ -265,8 +276,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
     try {
       final SrsRwkvBackend backend = _backend ??= await _open(
-        models.weightsFile(choice),
-        choice,
+        models.weightsFile,
       );
       final bool restored = await _serial(() => _restoreSnapshot(backend));
       if (!restored) await _rebuild(backend);
@@ -332,7 +342,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
 
   /// 全量重建：读全部卡的有效历史，按时间回放。
   Future<void> _rebuild(SrsRwkvBackend backend) async {
-    final _LogPrint fingerprint = await _fingerprint();
+    _LogPrint fingerprint = await _fingerprint();
+    await debugAfterRebuildFingerprint?.call();
     final SrsDayContext day = await store.dayContext();
     final SrsDeckTree tree = await store.deckTree();
     final List<SrsCardCacheRow> cards = await (store.db.select(
@@ -355,6 +366,28 @@ class SrsRwkvService implements SrsRwkvScheduling {
       _set(
         SrsRwkvStatus(SrsRwkvPhase.preparing, done: 0, total: builder.length),
       );
+    }
+    // 分块读历史要一段时间（大收藏几秒到几十秒），用户多半正停在复习页上继续答题：读到的历史
+    // 有的含这些新评分、有的不含，与开头的指纹对不上。之后对齐时它们会比已回放的最后一条还早，
+    // 又触发全量重建——边答边重建，一直显示「RWKV 还没准备好」。所以读完核对指纹：这期间有新
+    // 日志的卡丢掉已加入的行、按最新历史重读，直到指纹不再变。
+    for (int round = 0; round < 5; round++) {
+      final _LogPrint after = await _fingerprint();
+      if (after == fingerprint) break;
+      final List<String> changed = await _cardsWithLogsAfter(
+        fingerprint.maxRowId,
+      );
+      fingerprint = after;
+      final List<SrsCardCacheRow> part = <SrsCardCacheRow>[
+        for (final String id in changed) ?await store.cardRow(id),
+      ];
+      final List<SrsRwkvCard> fresh = _identities(
+        part,
+        await store.histories(part.map((SrsCardCacheRow c) => c.id)),
+        tree,
+      );
+      builder.dropCards(<int>{for (final SrsRwkvCard c in fresh) c.cardId});
+      fresh.forEach(builder.addCard);
     }
     final (RwkvRows rows, int? lastAt) = builder.build();
     await _serial(() async {
@@ -453,14 +486,23 @@ class SrsRwkvService implements SrsRwkvScheduling {
     // 先比 store 的内存修订号（零成本）：没变就不必扫日志表（每张卡出题都会走到这里）。
     final String revision = await store.changeFingerprint();
     if (revision == _checkedRevision) return true;
-    final _LogPrint now = await _fingerprint();
-    if (now == replayed) {
-      _checkedRevision = revision;
-      return true;
-    }
-    if (now.maxRowId > replayed.maxRowId &&
-        now.count - replayed.count == await _countNewRows(replayed.maxRowId) &&
-        await _appendNew(backend, replayed.maxRowId, now)) {
+    // 作答不等这里（`SrsDbStore.answer` 里 unawaited 的 onAnswered）：对齐途中用户可能又答了
+    // 一题，读到的日志就比指纹新。这时按新指纹再对一次，而不是当成「历史被改写」去全量重建
+    // ——连续答题时那样会一直退回「RWKV 还没准备好」。
+    for (int attempt = 0; attempt < 5; attempt++) {
+      final _LogPrint done = _replayed!;
+      final _LogPrint now = await _fingerprint();
+      if (now == done) {
+        _checkedRevision = revision;
+        return true;
+      }
+      if (now.maxRowId <= done.maxRowId ||
+          now.count - done.count != await _countNewRows(done.maxRowId)) {
+        break;
+      }
+      final bool? appended = await _appendNew(backend, done.maxRowId, now);
+      if (appended == null) continue;
+      if (!appended) break;
       _checkedRevision = revision;
       return true;
     }
@@ -477,6 +519,20 @@ class SrsRwkvService implements SrsRwkvScheduling {
     return false;
   }
 
+  Future<List<String>> _cardsWithLogsAfter(int afterRowId) async => <String>[
+    for (final r
+        in await store.db
+            .customSelect(
+              'SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ? AND rowid > ?',
+              variables: <Variable<Object>>[
+                Variable<String>(store.profileUid),
+                Variable<int>(afterRowId),
+              ],
+            )
+            .get())
+      r.read<String>('card_id'),
+  ];
+
   Future<int> _countNewRows(int afterRowId) async {
     final row = await store.db
         .customSelect(
@@ -490,9 +546,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
     return row.read<int>('c');
   }
 
-  /// rowid 之后的日志若全是评分、都不早于已回放的最后一条、且各是其卡最后一条保留评分，
-  /// 按时刻追加并返回 true；否则不动状态、返回 false。
-  Future<bool> _appendNew(
+  /// rowid 之后的日志若全是评分、都不早于已回放的最后一条、且各是其卡末尾的保留评分，
+  /// 按时刻追加并返回 true；否则不动状态、返回 false。读的途中日志表又变了（指纹不再是 [now]）
+  /// 返回 null，调用方按新指纹重来。
+  Future<bool?> _appendNew(
     SrsRwkvBackend backend,
     int afterRowId,
     _LogPrint now,
@@ -523,24 +580,41 @@ class SrsRwkvService implements SrsRwkvScheduling {
     )) {
       return false;
     }
-    if (rows.map((r) => r.cardId).toSet().length != rows.length) {
-      // 同一张卡来了多条：逐条追加需要每条之前的历史，交给重建。
-      return false;
+    // 同一张卡可能来了多条（两次对齐之间学习步「重来」后又答了一次）：按卡一次算出它末尾这几条
+    // 的行，再按全局时间顺序拼。以前一见到同卡多条就全量重建，复习中会反复退回「RWKV 还没准备好」。
+    final Map<String, List<String>> idsByCard = <String, List<String>>{};
+    for (final r in rows) {
+      (idsByCard[r.cardId] ??= <String>[]).add(r.id);
     }
     final SrsDayContext day = await store.dayContext();
+    final Map<String, SrsRwkvCard> cardOf = <String, SrsRwkvCard>{};
+    for (final String cardId in idsByCard.keys) {
+      final SrsRwkvCard? card = await _card(cardId);
+      if (card == null) return false;
+      cardOf[cardId] = card;
+    }
+    // 历史读完再核对：读的途中又写进了日志，读到的历史就比 [now] 新，按新指纹重来。
+    if (await _fingerprint() != now) return null;
+    final Map<String, RwkvRows> rowOf = <String, RwkvRows>{};
+    for (final MapEntry<String, List<String>> e in idsByCard.entries) {
+      final SrsRwkvCard card = cardOf[e.key]!;
+      for (final String id in e.value) {
+        final SrsReviewLog? log = card.history.effective
+            .where((SrsReviewLog l) => l.id == id)
+            .firstOrNull;
+        if (log == null || !log.isRatingReview || log.rating == null) {
+          return false;
+        }
+      }
+      final List<RwkvRows>? cardRows = srsRwkvAppendRows(card, e.value, day);
+      if (cardRows == null) return false;
+      for (int i = 0; i < e.value.length; i++) {
+        rowOf[e.value[i]] = cardRows[i];
+      }
+    }
     final RwkvRows batch = RwkvRows(rows.length);
     for (final r in rows) {
-      final SrsRwkvCard? card = await _card(r.cardId);
-      if (card == null) return false;
-      final SrsReviewLog? log = card.history.effective
-          .where((SrsReviewLog l) => l.id == r.id)
-          .firstOrNull;
-      if (log == null || !log.isRatingReview || log.rating == null) {
-        return false;
-      }
-      final RwkvRows? row = srsRwkvAppendRow(card, log, day);
-      if (row == null) return false;
-      batch.addRows(row);
+      batch.addRows(rowOf[r.id]!);
     }
     await _serial(() async {
       await backend.replay(batch);

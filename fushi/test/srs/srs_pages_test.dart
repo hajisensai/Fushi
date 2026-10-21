@@ -25,6 +25,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -34,6 +35,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -1350,6 +1352,64 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('牌组设置页：「让子牌组都继承这里」把整棵子树里单独设置的后代改成继承', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final (String kid, String grandKid, String plain) = (await tester
+          .runAsync(() async {
+            final String kid = await store.createDeck(
+              'Kid',
+              parentId: store.defaultDeckId,
+            );
+            final String grandKid = await store.createDeck(
+              'GrandKid',
+              parentId: kid,
+            );
+            final String plain = await store.createDeck(
+              'Plain',
+              parentId: store.defaultDeckId,
+            );
+            for (final String id in <String>[kid, grandKid]) {
+              await store.editField(
+                SrsEntityKind.deck,
+                id,
+                SrsFieldKeys.deckParamsMode,
+                'own',
+              );
+            }
+            return (kid, grandKid, plain);
+          }))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder button = find.byKey(
+        const ValueKey<String>('srs-settings-children-inherit'),
+      );
+      expect(button, findsOneWidget);
+      expect(find.text(t.srs_settings_children_inherit(n: 2)), findsOneWidget);
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await _settle(tester);
+      final String label = t.srs_settings_children_inherit(n: 2);
+      await tester.tap(
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiDialogAction && w.label == label,
+        ),
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      for (final String id in <String>[kid, grandKid, plain]) {
+        expect(tree[id]!.ownParams, isFalse);
+        expect(tree.paramsOwner(id).id, store.defaultDeckId);
+      }
+      expect(button, findsNothing, reason: '没有单独设置的后代了，按钮收起');
+      await _unmount(tester);
+    });
+
     testWidgets('牌组设置页：RWKV 排队设置（每天最少复习数 / 同日重复间隔）写进牌组，子牌组随继承', (
       WidgetTester tester,
     ) async {
@@ -1444,6 +1504,39 @@ void main() {
     }
   });
 
+  testWidgets('RWKV 排队时评分按钮不显示进复习队列的天数；学习步与 RWKV 没就绪时照常显示', (
+    WidgetTester tester,
+  ) async {
+    for (final bool ready in <bool>[true, false]) {
+      final SrsDbStore store = await _openStore(tester);
+      store.rwkv = _FakeRwkv(ready: ready);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      int texts(int rating) => find
+          .descendant(
+            of: find.byKey(ValueKey<String>('srs-rate-$rating')),
+            matching: find.byType(Text),
+          )
+          .evaluate()
+          .length;
+      // 新卡：「重来」进学习步（分钟），「简单」直接毕业进复习队列（天数）。
+      expect(texts(1), 2, reason: '学习步按步长计时，ready=$ready');
+      expect(
+        texts(4),
+        ready ? 1 : 2,
+        reason: ready ? 'RWKV 排队：天数不是它真正回来的时间' : 'RWKV 没就绪：按存下的到期日排队',
+      );
+      await _unmount(tester);
+    }
+  });
+
   group('卡面查词', () {
     setUpAll(installFakeInAppWebViewPlatform);
 
@@ -1534,6 +1627,23 @@ void main() {
       await _unmount(tester);
     });
   });
+}
+
+/// RWKV 排程的替身：只决定「现在能不能按 R 排队」。
+class _FakeRwkv implements SrsRwkvScheduling {
+  _FakeRwkv({required this.ready});
+
+  @override
+  final bool ready;
+
+  @override
+  Future<List<double>?> instantRetrievability(
+    List<SrsRwkvCandidate> cards, {
+    required int nowMs,
+  }) async => ready ? List<double>.filled(cards.length, 0) : null;
+
+  @override
+  Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
 }
 
 /// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。

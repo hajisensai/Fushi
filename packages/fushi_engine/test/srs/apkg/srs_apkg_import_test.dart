@@ -1814,6 +1814,66 @@ void main() {
     expect(deck('NoConf').reviewsPerDay, 250);
   });
 
+  group('子牌组参数继承', () {
+    /// 子牌组 Lang::JP 改用预设 3：JP preset 的复制品，[edit] 再改它。
+    Future<SrsDeckTree> importWithCopiedPreset(
+      void Function(Map<String, Object?> preset) edit,
+    ) async {
+      final Map<String, Object?> dconf = legacyDconf();
+      final Map<String, Object?> copy =
+          jsonDecode(jsonEncode(dconf['2'])) as Map<String, Object?>;
+      copy
+        ..['id'] = 3
+        ..['name'] = 'JP preset copy';
+      edit(copy);
+      dconf['3'] = copy;
+      final Map<String, Object?> decks = legacyDecks();
+      (decks['$kDeckJp']! as Map<String, Object?>)['conf'] = 3;
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      await importInto(
+        s,
+        zipOf(<String, List<int>>{
+          'collection.anki21': buildLegacyCollection(
+            crtSecs: crtSecs,
+            conf: <String, Object?>{'rollover': 4, 'localOffset': 0},
+            models: legacyModels(),
+            decks: decks,
+            dconf: dconf,
+            notes: fixtureNotes(t),
+          ),
+          'media': utf8.encode('{}'),
+        }),
+      );
+      return s.deckTree();
+    }
+
+    test('预设 id 不同但排程设置相同 → 继承（每日上限仍是子牌组自己的）', () async {
+      final SrsDeckTree tree = await importWithCopiedPreset(
+        (Map<String, Object?> p) =>
+            (p['new']! as Map<String, Object?>)['perDay'] = 30,
+      );
+      final String lang = srsImportedDeckId(kProfile, 'Lang');
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[jp]!.ownParams, isFalse);
+      expect(tree.paramsOwner(jp).id, lang);
+      expect(tree[jp]!.newPerDay, 30);
+      expect(tree[lang]!.newPerDay, 15);
+    });
+
+    test('记忆率不同 → 单独设置', () async {
+      final SrsDeckTree tree = await importWithCopiedPreset(
+        (Map<String, Object?> p) => p['desiredRetention'] = 0.9,
+      );
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[jp]!.ownParams, isTrue);
+      expect(tree[jp]!.desiredRetention, 0.9);
+    });
+  });
+
   group('牌组音频设置（Anki autoplay / replayq）', () {
     test('旧格式 JSON：预设的 autoplay / replayq 写到 own 牌组，子牌组随继承', () async {
       final Map<String, Object?> dconf = legacyDconf();

@@ -75,6 +75,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsDeckView? _deck;
   SrsDeckView? _owner;
   bool _hasParent = false;
+
+  /// 子树里自己管参数（own）的后代牌组：「子牌组都继承这里」要改的那些。
+  List<String> _ownDescendants = const <String>[];
   bool _loading = true;
   bool _saving = false;
   bool _optimizing = false;
@@ -144,6 +147,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _deck = deck;
         _owner = tree.paramsOwner(deck.id);
         _hasParent = tree.parentOf(deck.id) != null;
+        _ownDescendants = <String>[
+          for (final String id in tree.subtree(deck.id).skip(1))
+            if (tree[id]!.ownParams) id,
+        ];
         _conflictKeys = conflictKeys;
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
@@ -304,6 +311,40 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     if (!mounted) return;
     bumpSrsRevision(ref);
     FushiToast.show(msg: t.srs_settings_rescheduled(n: n));
+  }
+
+  /// 「子牌组都继承这里」：把子树里所有「单独设置」的后代一次改成「继承上级」，之后改这里的
+  /// 记忆率 / 算法 / 自动优化就对整棵子树生效（Anki 导入的子牌组常各带一份预设，逐个改太累）。
+  /// 后代自己的步长与每日上限不动。
+  Future<void> _childrenInherit() async {
+    final SrsDbStore? store = _store;
+    final List<String> targets = _ownDescendants;
+    if (store == null || targets.isEmpty) return;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_settings_children_inherit(n: targets.length),
+      message: t.srs_settings_children_inherit_confirm(n: targets.length),
+      confirmLabel: t.srs_settings_children_inherit(n: targets.length),
+      cancelLabel: t.cancel,
+      icon: FushiIcons.merge,
+    );
+    if (!ok || !mounted) return;
+    await store.writeEdits(<SrsEditSpec>[
+      for (final String id in targets)
+        SrsEditSpec(
+          SrsEntityKind.deck,
+          id,
+          SrsFieldKeys.deckParamsMode,
+          'inherit',
+        ),
+    ]);
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    FushiToast.show(
+      msg: t.srs_settings_children_inherit_done(n: targets.length),
+      severity: ToastSeverity.success,
+    );
+    await _load();
   }
 
   /// 「立即优化」：只跑本牌组所属的参数组；跳过样本门槛与触发基线（用户显式要求），
@@ -759,6 +800,31 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       );
       add(_conflictNote(context, SrsFieldKeys.deckParamsMode));
     }
+    if (_ownDescendants.isNotEmpty) {
+      add(
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiOutlinedButton.icon(
+              key: const ValueKey<String>('srs-settings-children-inherit'),
+              onPressed: () => srsRunLogged(
+                'SrsDeckSettings.childrenInherit',
+                _childrenInherit,
+              ),
+              icon: const FushiIcon(FushiIcons.merge),
+              label: Text(
+                t.srs_settings_children_inherit(n: _ownDescendants.length),
+              ),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            Text(
+              t.srs_settings_children_inherit_hint,
+              style: context.fushiType.bodySmall,
+            ),
+          ],
+        ),
+      );
+    }
     if (ownsParams) {
       add(Text(t.srs_settings_algorithm, style: tokens.type.sectionLabel));
       out.add(SizedBox(height: tokens.spacing.gap));
@@ -809,7 +875,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         AdaptiveSettingsSwitchRow(
           key: const ValueKey<String>('srs-settings-auto-optimize'),
           title: t.srs_settings_auto_optimize,
-          subtitle: t.srs_settings_auto_optimize_hint,
+          // RWKV 牌组优化的是影子记忆状态（FSRS-7）的参数（srsPrepareOptimization），要写明它管
+          // 什么，否则看着像「RWKV 还得手动点优化」。
+          subtitle: _algorithm.usesRwkv
+              ? t.srs_settings_auto_optimize_rwkv_hint
+              : t.srs_settings_auto_optimize_hint,
           value: _autoOptimize,
           onChanged: (bool v) => setState(() => _autoOptimize = v),
         ),
