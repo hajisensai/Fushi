@@ -153,6 +153,16 @@ class _LayoutApp extends AppModel {
   SrsReviewReplayButton replay = SrsReviewReplayButton.end;
   bool intervals = true;
   bool counts = true;
+  double volume = 1.0;
+
+  @override
+  double get srsReviewVolume => volume;
+
+  @override
+  Future<void> setSrsReviewVolume(double value) async {
+    volume = value;
+    notifyListeners();
+  }
 
   @override
   bool get srsReviewShowCounts => counts;
@@ -1274,6 +1284,15 @@ void main() {
       );
       await _settle(tester);
       expect(app.counts, isFalse);
+      // 音量滑杆：往左拖到底 = 静音，写穿偏好。
+      final Finder volume = find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-review-layout-volume')),
+        matching: find.byType(Slider),
+      );
+      expect(volume, findsOneWidget);
+      await tester.drag(volume, const Offset(-2000, 0));
+      await _settle(tester);
+      expect(app.volume, 0.0);
       // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
       final Finder left = find.text(t.srs_review_layout_replay_start);
       if (left.evaluate().isEmpty) {
