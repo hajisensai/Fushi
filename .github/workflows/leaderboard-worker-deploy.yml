@@ -14,6 +14,9 @@
 # 每次部署都先 `d1 migrations apply --remote` 再 `deploy`，不提供开关：迁移幂等，没有待执行迁移时是
 # 空操作；而「先部署、后迁移」会让新 Worker 读到缺列 / 缺表，心跳、反馈提交等接口 500（#2433）。
 # 回滚部署旧 ref 时它目录里的迁移都已应用过，同样是空操作（D1 迁移只进不退）。
+# 代价：迁移跑完到新 Worker 上线之间、以及回滚之后，在线的是旧 Worker，所以迁移必须对旧 Worker 向后兼容
+# （只加表 / 加可空或带默认值的列 / 加索引）；删列、改名、改约束要拆成「先发不再用它的 Worker，再迁移」两次部署。
+# token 缺「D1: Edit」时这一步报 `code: 7403`（not authorized to access this service），部署随之不执行。
 #
 # 部署命令一律 `--config services/leaderboard/wrangler.toml`：在没有 wrangler 配置的目录
 # 裸跑 wrangler deploy 曾误建过 Worker、把 docs/ 当静态资源上传（见 services/leaderboard/README.md）。

@@ -106,8 +106,9 @@ let seedSeq = 0;
 const seedId = () => `00000000-0000-4000-8000-${String((seedSeq += 1)).padStart(12, '0')}`;
 
 /**
- * 直接写一条心跳（跳过签名 + PoW）：只给统计**聚合**类用例用——每个 makeInstall 要现解一次 18 位 PoW，
- * 聚合用例一次造好几个安装会把并行跑的其它测试文件饿到超时。入库路径由签名心跳的用例覆盖。
+ * 直接写一条心跳（跳过签名 + 验签 + PoW 校验）：只给统计**聚合**类用例用——makeInstall 取自固定池、
+ * 不再现场解 PoW，但固定池只有 POOL.installs.length 个互不相同的安装，聚合用例要的安装数不受这个上限约束。
+ * 入库路径由签名心跳的用例覆盖。
  * 按时间顺序调用（installs 的最近值取最后一次调用）。
  */
 function seedPing(env, id, fields = {}) {
