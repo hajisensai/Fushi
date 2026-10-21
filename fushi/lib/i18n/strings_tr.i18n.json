@@ -8446,6 +8446,8 @@
   "video_source_grouping_mode": "Video düzeni",
   "video_source_grouping_series": "Esere göre",
   "video_source_grouping_series_hint": "Dosya adlarından eserleri ve bölümleri tanır, ardından meta verileri eşleştirir.",
+  "video_source_restore_grouping_action": "Restore automatic grouping",
+  "video_source_restore_grouping_confirm": "Series you dissolved will be grouped again by file name, the same way a fresh scan groups them. Collections you made yourself are not changed.",
   "video_source_scrape_action": "Bu kaynağı tara",
   "video_source_scrape_ai_identify": "Identify with AI",
   "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%",

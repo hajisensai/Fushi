@@ -41,12 +41,17 @@ class VideoFolderGroupCoordinator {
   /// - 多集优先复用成员重叠或同作品的 playlist 合集；
   /// - 重扫只补成员并按全集自然顺序整理，不移除本轮未发现的旧成员；
   /// - [sourceId] 非空时，只把尚无来源的复用视频归到当前来源。
+  /// - [restoreDissolvedGroups] 为 true 时不再尊重「用户解散过」的墓碑（BUG-1739
+  ///   那道门），按规则把散开的成员重新归组；新建合集经 `createMediaCollection`
+  ///   清掉同名墓碑、成员经 `addToCollection` 清成员墓碑。只给用户显式的「恢复
+  ///   自动分组」用（BUG-3652），普通重扫一律 false。
   Future<VideoFolderGroupSummary> groupPaths({
     required List<String> videoPaths,
     List<String> createdVideoPaths = const <String>[],
     int? sourceId,
     String groupingMode = 'series',
     String? sourceRoot,
+    bool restoreDissolvedGroups = false,
   }) async {
     final Map<String, String> uniquePaths = <String, String>{};
     for (final String path in videoPaths) {
@@ -136,6 +141,7 @@ class VideoFolderGroupCoordinator {
       collections: collections,
       createdCollectionIds: createdCollectionIds,
       updatedCollectionIds: updatedCollectionIds,
+      restoreDissolvedGroups: restoreDissolvedGroups,
     );
     if (groupingMode == 'folder') {
       final String root = sourceRoot!;
@@ -150,6 +156,7 @@ class VideoFolderGroupCoordinator {
         collections: collections,
         createdCollectionIds: createdCollectionIds,
         updatedCollectionIds: updatedCollectionIds,
+        restoreDissolvedGroups: restoreDissolvedGroups,
       );
       return (
         createdVideoUids: List<String>.unmodifiable(createdVideoUids),
@@ -235,10 +242,11 @@ class VideoFolderGroupCoordinator {
           // 「删除合集（保留条目）」会在成员文件仍在来源目录时被下一次扫描按
           // 自然键原样重建（createMediaCollection 还会清墓碑），删除永远不生效。
           // 成员视频本身照常入库/保留，只是不再被自动归组。
-          if (await _database.hasCollectionDeletionTombstone(
-            group.series,
-            'playlist',
-          )) {
+          if (!restoreDissolvedGroups &&
+              await _database.hasCollectionDeletionTombstone(
+                group.series,
+                'playlist',
+              )) {
             continue;
           }
           final int id = await _database.createMediaCollection(
@@ -334,6 +342,7 @@ class VideoFolderGroupCoordinator {
     required List<MediaCollectionRow> collections,
     required List<int> createdCollectionIds,
     required List<int> updatedCollectionIds,
+    required bool restoreDissolvedGroups,
   }) async {
     for (final MapEntry<String, List<VideoBookRow>> entry
         in folders.members.entries) {
@@ -361,16 +370,16 @@ class VideoFolderGroupCoordinator {
                 '$baseName (${p.posix.basename(p.posix.dirname(displayPath))}${suffix == 1 ? '' : ' $suffix'})';
             suffix++;
           }
-          if (await _database.hasCollectionDeletionTombstone(
-            name,
-            'collection',
-          )) {
+          if (!restoreDissolvedGroups &&
+              await _database.hasCollectionDeletionTombstone(
+                name,
+                'collection',
+              )) {
             return;
           }
-          final Set<String> removed = await _removedFolderMembers(
-            name,
-            'collection',
-          );
+          final Set<String> removed = restoreDissolvedGroups
+              ? const <String>{}
+              : await _removedFolderMembers(name, 'collection');
           if (entry.value.every(
             (VideoBookRow row) => removed.contains(row.bookUid),
           )) {

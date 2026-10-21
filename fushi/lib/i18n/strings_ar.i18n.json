@@ -8446,6 +8446,8 @@
   "video_source_grouping_mode": "تنظيم الفيديوهات",
   "video_source_grouping_series": "حسب العمل",
   "video_source_grouping_series_hint": "تحديد الأعمال والحلقات من أسماء الملفات، ثم مطابقة البيانات الوصفية.",
+  "video_source_restore_grouping_action": "Restore automatic grouping",
+  "video_source_restore_grouping_confirm": "Series you dissolved will be grouped again by file name, the same way a fresh scan groups them. Collections you made yourself are not changed.",
   "video_source_scrape_action": "جلب بيانات هذا المصدر",
   "video_source_scrape_ai_identify": "Identify with AI",
   "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%",
