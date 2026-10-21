@@ -131,6 +131,10 @@ class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
   @override
   Widget buildView() => Video(
     controller: _controller,
+    // 卡面片段没有视频页那套生命周期接管（BUG-2544）：用 media_kit 自带的对称策略——
+    // 进后台暂停、回前台只续播被它暂停的（序列等着的那段播完照常往下走）。
+    pauseUponEnteringBackgroundMode: true,
+    resumeUponEnteringForegroundMode: true,
     controls: NoVideoControls,
     fill: Colors.transparent,
     subtitleViewConfiguration: const SubtitleViewConfiguration(visible: false),

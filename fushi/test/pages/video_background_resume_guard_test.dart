@@ -18,6 +18,7 @@ const Map<String, String> kVideoConstructionSites = <String, String>{
 const Map<String, String> kSelfManagedVideoConstructionSites = <String, String>{
   'lib/src/pages/implementations/feedback/feedback_dev_video_page.dart':
       '反馈处理台视频预览',
+  'lib/src/pages/implementations/srs/srs_card_video_clip.dart': '复习卡面视频片段',
 };
 
 /// media_kit vendored fork 里 `Video` 的定义（默认值就长在这儿）。
@@ -138,8 +139,11 @@ void main() {
       final int start = src.indexOf(startSig);
       expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
       final int end = src.indexOf(endSig, start + startSig.length);
-      expect(end, greaterThan(start),
-          reason: 'missing $endSig after $startSig');
+      expect(
+        end,
+        greaterThan(start),
+        reason: 'missing $endSig after $startSig',
+      );
       return code.substring(start, end);
     }
 
@@ -168,13 +172,19 @@ void main() {
       );
       final int refresh = body.indexOf('_refreshDecodeAfterResumeIfNeeded()');
       final int resume = body.indexOf('_resumeAfterBackgroundIfNeeded()');
-      expect(resume, greaterThanOrEqualTo(0),
-          reason: '回前台必须走一次续播判断，否则就是 BUG-2544 本身');
+      expect(
+        resume,
+        greaterThanOrEqualTo(0),
+        reason: '回前台必须走一次续播判断，否则就是 BUG-2544 本身',
+      );
       expect(refresh, greaterThanOrEqualTo(0));
       // 先 seek 重建解码链再 play：反过来用户会看见一小段用残缺参考帧解出的灰画面
       // （BUG-1863），随即被 seek 打断。
-      expect(resume, greaterThan(refresh),
-          reason: '续播要排在解码链刷新之后（BUG-1863 + BUG-2544）');
+      expect(
+        resume,
+        greaterThan(refresh),
+        reason: '续播要排在解码链刷新之后（BUG-1863 + BUG-2544）',
+      );
     });
 
     test('续播标记无条件清除，不会攒到下一次 resume', () {
@@ -189,16 +199,24 @@ void main() {
       // 清除必须在任何 return 之前：塞进「判据成立」分支里，某次不满足条件的 resume
       // 就会把标记留到下一次，变成「某次切窗后视频莫名自己播起来」。
       final int firstReturn = body.indexOf('return');
-      expect(firstReturn, greaterThan(clear),
-          reason: '标记要在第一个 return 之前就清掉（BUG-2544）');
+      expect(
+        firstReturn,
+        greaterThan(clear),
+        reason: '标记要在第一个 return 之前就清掉（BUG-2544）',
+      );
     });
 
     test('判据不在页面里被重新实现一遍', () {
-      expect(code.contains('VideoFushiPage.shouldPauseForBackground('), isTrue,
-          reason: '暂停判据是页面上的纯函数（可单测），不得另写一份（BUG-2544）');
       expect(
-          code.contains('VideoFushiPage.shouldResumeAfterBackground('), isTrue,
-          reason: '续播判据是页面上的纯函数（可单测），不得另写一份（BUG-2544）');
+        code.contains('VideoFushiPage.shouldPauseForBackground('),
+        isTrue,
+        reason: '暂停判据是页面上的纯函数（可单测），不得另写一份（BUG-2544）',
+      );
+      expect(
+        code.contains('VideoFushiPage.shouldResumeAfterBackground('),
+        isTrue,
+        reason: '续播判据是页面上的纯函数（可单测），不得另写一份（BUG-2544）',
+      );
     });
   });
 
@@ -211,8 +229,9 @@ void main() {
       // 参数就会悄悄退回「后台暂停、回来不续」的构造器默认值，本条即为此而设。
       final List<String> sites = <String>[];
       final List<String> missing = <String>[];
-      for (final FileSystemEntity entity
-          in Directory('lib').listSync(recursive: true)) {
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
         final String path = entity.path.replaceAll(r'\', '/');
         // 生成文件不归这类守卫管（Slang 的 strings.g.dart 里恰好有个同名 getter）。
@@ -223,11 +242,13 @@ void main() {
         // 只看真正拿得到 media_kit `Video` 的文件：直接 import 的，或视频页的 part
         // （part 自己不写 import，符号来自主壳）。
         final bool importsMediaKit = raw.contains('media_kit_video');
-        final bool isVideoPagePart =
-            path.startsWith('lib/src/pages/implementations/video_fushi/');
+        final bool isVideoPagePart = path.startsWith(
+          'lib/src/pages/implementations/video_fushi/',
+        );
         if (!importsMediaKit && !isVideoPagePart) continue;
-        final String text =
-            maskCommentsAndScriptLines(raw.replaceAll('\r\n', '\n'));
+        final String text = maskCommentsAndScriptLines(
+          raw.replaceAll('\r\n', '\n'),
+        );
         if (!videoCtor.hasMatch(text)) continue;
         sites.add(path);
         if (!text.contains('pauseUponEnteringBackgroundMode:')) {
@@ -235,18 +256,24 @@ void main() {
         }
       }
       expect(sites, isNotEmpty, reason: '一个 Video 构造点都没扫到，扫描逻辑失效了');
-      expect(missing, isEmpty,
-          reason: '这些 Video 构造点没显式声明 pauseUponEnteringBackgroundMode，'
-              '会退回 media_kit「后台暂停、回前台不恢复」的默认值（BUG-2544）：$missing');
       expect(
-          sites.toSet(),
-          <String>{
-            ...kVideoConstructionSites.keys,
-            ...kSelfManagedVideoConstructionSites.keys,
-          },
-          reason: 'Video 构造点集合变了。新增的那处要先确认生命周期策略：由页面接管的登记进 '
-              'kVideoConstructionSites，用 media_kit 对称策略的登记进 '
-              'kSelfManagedVideoConstructionSites（BUG-2544）');
+        missing,
+        isEmpty,
+        reason:
+            '这些 Video 构造点没显式声明 pauseUponEnteringBackgroundMode，'
+            '会退回 media_kit「后台暂停、回前台不恢复」的默认值（BUG-2544）：$missing',
+      );
+      expect(
+        sites.toSet(),
+        <String>{
+          ...kVideoConstructionSites.keys,
+          ...kSelfManagedVideoConstructionSites.keys,
+        },
+        reason:
+            'Video 构造点集合变了。新增的那处要先确认生命周期策略：由页面接管的登记进 '
+            'kVideoConstructionSites，用 media_kit 对称策略的登记进 '
+            'kSelfManagedVideoConstructionSites（BUG-2544）',
+      );
     });
 
     for (final MapEntry<String, String> site
@@ -255,8 +282,11 @@ void main() {
         final String text = maskCommentsAndScriptLines(
           File(site.key).readAsStringSync().replaceAll('\r\n', '\n'),
         );
-        expect(text.contains('pauseUponEnteringBackgroundMode: false'), isTrue,
-            reason: '生命周期暂停/续播由页面接管，自带的那套要整个关掉（BUG-2544）');
+        expect(
+          text.contains('pauseUponEnteringBackgroundMode: false'),
+          isTrue,
+          reason: '生命周期暂停/续播由页面接管，自带的那套要整个关掉（BUG-2544）',
+        );
       });
     }
 
@@ -266,10 +296,16 @@ void main() {
         final String text = maskCommentsAndScriptLines(
           File(site.key).readAsStringSync().replaceAll('\r\n', '\n'),
         );
-        expect(text.contains('pauseUponEnteringBackgroundMode: true'), isTrue,
-            reason: '没有页面级接管时进后台要由 media_kit 暂停（BUG-2544）');
-        expect(text.contains('resumeUponEnteringForegroundMode: true'), isTrue,
-            reason: '暂停了就要在回前台时续上，否则就是「切屏暂停、切回来没续上」（BUG-2544）');
+        expect(
+          text.contains('pauseUponEnteringBackgroundMode: true'),
+          isTrue,
+          reason: '没有页面级接管时进后台要由 media_kit 暂停（BUG-2544）',
+        );
+        expect(
+          text.contains('resumeUponEnteringForegroundMode: true'),
+          isTrue,
+          reason: '暂停了就要在回前台时续上，否则就是「切屏暂停、切回来没续上」（BUG-2544）',
+        );
       });
     }
 
@@ -282,11 +318,15 @@ void main() {
         file.readAsStringSync().replaceAll('\r\n', '\n'),
       );
       expect(
-          text.contains('this.pauseUponEnteringBackgroundMode = true'), isTrue,
-          reason: '默认仍是「进后台暂停」');
-      expect(text.contains('this.resumeUponEnteringForegroundMode = false'),
-          isTrue,
-          reason: '默认仍是「回前台不恢复」——BUG-2544 的不对称就出在这里');
+        text.contains('this.pauseUponEnteringBackgroundMode = true'),
+        isTrue,
+        reason: '默认仍是「进后台暂停」',
+      );
+      expect(
+        text.contains('this.resumeUponEnteringForegroundMode = false'),
+        isTrue,
+        reason: '默认仍是「回前台不恢复」——BUG-2544 的不对称就出在这里',
+      );
     });
   });
 }

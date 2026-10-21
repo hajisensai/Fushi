@@ -130,19 +130,42 @@ const CASES = [
   // BUG-3651: every page must start right after the previous paragraph's
   // 「…並べています。」, where the old unit -> text-offset lookup stopped on that
   // 「。」 (drawn on the previous page) and every reopen fell one page back.
-  // The premise is pinned by arithmetic, not by a measured viewport: the prefix
-  // is fullwidth (see page()), so each paragraph is 69 code units at exactly
-  // 1em each; the viewport height 586 leaves a 530px line = 26 units, so every
-  // paragraph wraps 26 + 26 + 17 and its third line starts right after the
-  // 「。」 at code unit 51. Paragraph pitch = 3 x 36px + 20px margin = 128px,
-  // nine paragraphs per 1272px spread at width 1280 (the page breaks then fall
-  // on those third lines). The former 「P8 」 prefix at 1280x560 only hit on
-  // Windows: Linux CI's wider Latin face moved the wraps (0 pages after 「。」).
-  // requireAfterStop still guards the premise. Must stay last: the viewport
-  // override persists for the rest of the run.
-  ['vertical spread 20px @1280x586', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20, fullwidthPrefix: true }, 'xr',
-    { viewport: [1280, 586], requireAfterStop: true }],
+  // Each paragraph is 69 code units with that 「。」 at unit 51, so the line
+  // length must hold exactly 52 units: every paragraph then wraps 26 + 26 + 17
+  // and its third line starts right after the 「。」. The line length is MEASURED
+  // (fitLineUnits: one line = 26 units must fit and 27 must not, from the
+  // advance of the first 26 / 27 units in the real face, see fitLineScript), not assumed: neither 「P8 」 at 1280x560 nor an all-fullwidth
+  // prefix at a fixed 1280x586 (premise "1em per unit") held on Linux CI's CJK
+  // face (0 pages after 「。」 both times). Paragraph pitch = 3 x 36px + 20px
+  // margin = 128px whatever the face, nine paragraphs per 1272px spread at width
+  // 1280, so the page breaks then fall on those third lines. requireAfterStop
+  // still guards the premise. Must stay last: the viewport override persists for
+  // the rest of the run.
+  ['vertical spread 20px, measured 2-line paragraph wrap', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20, fullwidthPrefix: true }, 'xr',
+    { viewportWidth: 1280, fitLineUnits: 52, requireAfterStop: true }],
 ];
+
+// Inline advance (px) of the first n/2 and n/2 + 1 code units of the first
+// paragraph, set unwrapped in the page's own face and writing mode: a line length
+// between them holds exactly n/2 units, so n units take exactly two lines.
+const fitLineScript = (n) => `(() => {
+  const src = document.querySelector('p');
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;inline-size:max-content';
+  probe.textContent = src.textContent;
+  document.body.appendChild(probe);
+  const t = probe.firstChild;
+  const r = document.createRange();
+  const advance = (k) => {
+    r.setStart(t, 0);
+    r.setEnd(t, k);
+    const b = r.getBoundingClientRect();
+    return getComputedStyle(probe).writingMode.startsWith('vertical') ? b.height : b.width;
+  };
+  const out = { at: advance(${n} / 2), next: advance(${n} / 2 + 1) };
+  probe.remove();
+  return out;
+})()`;
 
 const driver = await launchChromeDriver();
 let failed = 0;
@@ -153,9 +176,14 @@ try {
       console.log(`skip ${name}: Chrome lacks column-wrap (needs 145+)`);
       continue;
     }
-    if (extra.viewport) {
+    if (extra.fitLineUnits) {
+      const m = await driver.evalOnPage(page(opts), fitLineScript(extra.fitLineUnits));
+      // Body padding takes PT + PB off the vertical line; land midway between the
+      // two advances so sub-pixel rounding cannot tip it either way.
+      const height = Math.round((m.at + m.next) / 2) + PT + PB;
+      console.log(`${name}: line holds ${extra.fitLineUnits / 2} units at ${m.at.toFixed(1)}..${m.next.toFixed(1)}px -> viewport ${extra.viewportWidth}x${height}`);
       // snap() is the driver's only Emulation.setDeviceMetricsOverride entry.
-      await driver.snap('<!doctype html><body></body>', null, extra.viewport[0], extra.viewport[1]);
+      await driver.snap('<!doctype html><body></body>', null, extra.viewportWidth, height);
     }
     const res = await driver.evalOnPage(page(opts), check(axis));
     if (extra.requireAfterStop && res.afterStop === 0) {
