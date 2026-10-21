@@ -45,8 +45,9 @@ void main() {
       for (final RegExpMatch m in RegExp(
         r'setSmallIcon\(([^)]*)\)',
       ).allMatches(src)) {
-        if (m.group(1)!.contains('mipmap'))
+        if (m.group(1)!.contains('mipmap')) {
           offenders.add('${e.path}: ${m.group(0)}');
+        }
       }
     }
     expect(offenders, isEmpty);
@@ -63,8 +64,9 @@ void main() {
       for (final RegExpMatch m in RegExp(
         r'(AndroidInitializationSettings\([^)]*\)|androidNotificationIcon:[^,]*,)',
       ).allMatches(src)) {
-        if (m.group(0)!.contains('mipmap'))
+        if (m.group(0)!.contains('mipmap')) {
           offenders.add('${e.path}: ${m.group(0)}');
+        }
       }
     }
     expect(offenders, isEmpty);
