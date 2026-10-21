@@ -482,6 +482,14 @@ void main() {
     expect(wide.width, moreOrLessEquals(block.width, epsilon: 0.5));
     expect(wide.width / wide.height, closeTo(1.6, 0.02));
 
+    // 视口矮（600）：原比例高 300 超过视口 40%（240）→ 整张等比缩小到高 240（不裁切），
+    // 比例不变、靠左对齐卡片边缘。
+    await pump(tester, answer: true, size: const Size(1280, 600));
+    final Rect capped = await pictureRect();
+    expect(capped.height, moreOrLessEquals(600 * 0.4, epsilon: 0.5));
+    expect(capped.width / capped.height, closeTo(1.6, 0.02));
+    expect(capped.left, moreOrLessEquals(block.left, epsilon: 0.5));
+
     // 竖长封面（1×3）不铺满：限高 220、按原比例完整显示。
     await pump(
       tester,

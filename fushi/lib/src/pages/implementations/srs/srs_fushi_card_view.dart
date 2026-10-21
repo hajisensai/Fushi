@@ -568,10 +568,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       name: name,
       // 窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）。宽版式左栏：
       // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
-      // 照旧限高 220（矮视口 120）完整显示。
+      // 照旧限高 220（矮视口 120）完整显示。铺满的图最高占视口的
+      // [kSrsPictureFillMaxViewportFraction]，再高就整张等比缩小（不裁切），不把例句挤出首屏。
       maxWidth: wide ? null : s.thumb * 1.5,
       maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : s.thumb * 1.4,
       fillWidth: wide && _viewport > 520,
+      maxFillHeight: _viewport * kSrsPictureFillMaxViewportFraction,
       radius: s.tokens.radiusSmall,
     );
   }
@@ -1309,6 +1311,9 @@ class _AudioButton extends StatelessWidget {
 const double kSrsPictureFillMinAspect = 0.9;
 const double kSrsPictureFillMaxAspect = 2.5;
 
+/// 铺满的图片最高占卡面视口高度的比例。
+const double kSrsPictureFillMaxViewportFraction = 0.4;
+
 /// 媒体库里的图片：点按全屏查看。
 class _MediaImage extends ConsumerStatefulWidget {
   const _MediaImage({
@@ -1318,6 +1323,7 @@ class _MediaImage extends ConsumerStatefulWidget {
     this.maxWidth,
     this.maxHeight,
     this.fillWidth = false,
+    this.maxFillHeight,
   });
 
   final String name;
@@ -1327,6 +1333,9 @@ class _MediaImage extends ConsumerStatefulWidget {
 
   /// 常见比例时铺满父级宽度（按原比例定高）；怪比例退回 [maxHeight] 限高。
   final bool fillWidth;
+
+  /// 铺满时的高度上限；按原比例超过它就封顶并居中裁切。null = 不封顶。
+  final double? maxFillHeight;
 
   @override
   ConsumerState<_MediaImage> createState() => _MediaImageState();
@@ -1407,13 +1416,28 @@ class _MediaImageState extends ConsumerState<_MediaImage> {
         ? const SizedBox.shrink()
         : Image(
             image: provider,
-            fit: fill ? BoxFit.cover : null,
+            // 框与原图同比例；contain 保证取整误差下也不裁掉边。
+            fit: fill ? BoxFit.contain : null,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           );
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
       child: fill
-          ? AspectRatio(aspectRatio: aspect, child: image)
+          // 铺满：按原比例定高；超过 [maxFillHeight] 就整张等比缩小到这个高度（不裁切），
+          // 靠左对齐卡片边缘。
+          ? LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) {
+                final double natural = c.maxWidth / aspect;
+                final double cap = widget.maxFillHeight ?? double.infinity;
+                return natural > cap
+                    ? SizedBox(width: cap * aspect, height: cap, child: image)
+                    : SizedBox(
+                        width: c.maxWidth,
+                        height: natural,
+                        child: image,
+                      );
+              },
+            )
           : ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: widget.maxWidth ?? double.infinity,
