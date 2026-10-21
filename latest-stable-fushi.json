@@ -8,6 +8,24 @@
   "notes": "## Fushi 3.0.1\n\n- **Onboarding**: the setup guide no longer offers Fushi Review in release builds; choosing card creation goes straight to Anki setup\n\n---\n\n## Fushi 3.0.1 更新公告\n\n- **新手引导**：正式版的新手引导不再引导使用 Fushi 复习，勾选制卡后直接进入 Anki 配置",
   "assets": [
     {
+      "name": "fushi-3.0.1-arm64-v8a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-arm64-v8a.apk",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 213640896,
+      "sha256": "460e24eb44743e1274ed82bd9f4c6fcf46c8d36772da78bc2fe64ca06580b7d4"
+    },
+    {
+      "name": "fushi-3.0.1-armeabi-v7a.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-armeabi-v7a.apk",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 207611179,
+      "sha256": "45a98cf7dec5f678abb49ffa5e5d855caac2868d12d77d7c9207314d85e74a99"
+    },
+    {
       "name": "fushi-3.0.1-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-ios.ipa",
       "releaseSequence": 19816,
@@ -42,6 +60,15 @@
       "version": "3.0.1",
       "size": 303511632,
       "sha256": "bb565de7094966a6ab60c29367ec25275c3033f4df03e0259d83c6e533fbb495"
+    },
+    {
+      "name": "fushi-3.0.1-x86_64.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-x86_64.apk",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 197029474,
+      "sha256": "7c12fb6c097d3ffd296ed58c804fa25e35be2b2500e33ecd8ad6d302c1fbd07c"
     }
   ]
 }
