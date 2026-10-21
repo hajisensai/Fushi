@@ -153,9 +153,9 @@ class _TaskRowState extends ConsumerState<_TaskRow>
       SrsImportTaskStatus.running => t.srs_import_task_running(
         name: task.displayName,
       ),
-      SrsImportTaskStatus.done => t.srs_import_task_done(
-        name: task.displayName,
-        n: task.report?.notesAdded ?? 0,
+      SrsImportTaskStatus.done => srsImportTaskDoneLabel(
+        task.displayName,
+        task.report,
       ),
       SrsImportTaskStatus.failed => t.srs_import_task_failed(
         name: task.displayName,

@@ -82,12 +82,7 @@ enum SrsRwkvPhase {
 }
 
 class SrsRwkvStatus {
-  const SrsRwkvStatus(
-    this.phase, {
-    this.done = 0,
-    this.total = 0,
-    this.error,
-  });
+  const SrsRwkvStatus(this.phase, {this.done = 0, this.total = 0, this.error});
 
   final SrsRwkvPhase phase;
 
@@ -214,6 +209,30 @@ class SrsRwkvService implements SrsRwkvScheduling {
     await (_preparing ??= _prepare().whenComplete(() => _preparing = null));
   }
 
+  /// 设置里「重建 RWKV 状态」：丢掉当前状态与快照，按全部复习历史重新回放。
+  ///
+  /// 平时不需要：作答增量追加、日志被改写时自动重建。但卡片换牌组、预设归属变化不触发重建（见
+  /// 文件头「已知近似」），在那之后想让状态跟上就靠这里（对应上游的「Build Cache」）。还没准备好
+  /// 时等同 [start]（force）。
+  Future<void> rebuild() async {
+    if (_closed) return;
+    final SrsRwkvBackend? backend = _backend;
+    if (backend == null || _current.phase != SrsRwkvPhase.ready) {
+      await start(force: true);
+      return;
+    }
+    _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
+    await (_preparing ??= () async {
+      try {
+        await _rebuild(backend);
+        _set(const SrsRwkvStatus(SrsRwkvPhase.ready));
+      } catch (error, stack) {
+        _log('RWKV rebuild failed: $error\n$stack');
+        _fail(error);
+      }
+    }().whenComplete(() => _preparing = null));
+  }
+
   static const Duration _retryAfter = Duration(minutes: 10);
   DateTime? _failedAt;
 
@@ -334,11 +353,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
         builder.addCard(card);
       }
       _set(
-        SrsRwkvStatus(
-          SrsRwkvPhase.preparing,
-          done: 0,
-          total: builder.length,
-        ),
+        SrsRwkvStatus(SrsRwkvPhase.preparing, done: 0, total: builder.length),
       );
     }
     final (RwkvRows rows, int? lastAt) = builder.build();
@@ -360,11 +375,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
           ),
         );
         _set(
-          SrsRwkvStatus(
-            SrsRwkvPhase.preparing,
-            done: end,
-            total: rows.length,
-          ),
+          SrsRwkvStatus(SrsRwkvPhase.preparing, done: end, total: rows.length),
         );
       }
       _replayed = fingerprint;
@@ -586,7 +597,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
 
   /// 每张候选卡的数字身份与最后保留评分（[SrsRwkvLastRating]）：只为第一次见到、换了牌组或
   /// 最后一条有效日志变了的卡读历史（一次作答后只剩那一张）。
-  final Map<String, _QueryIdentity> _queryIdentities = <String, _QueryIdentity>{};
+  final Map<String, _QueryIdentity> _queryIdentities =
+      <String, _QueryIdentity>{};
 
   Future<void> _refreshQueryIdentities(List<SrsRwkvCandidate> cards) async {
     bool current(SrsRwkvCandidate c) {

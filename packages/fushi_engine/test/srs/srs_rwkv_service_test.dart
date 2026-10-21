@@ -459,6 +459,62 @@ void main() {
       f.advance(31000);
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
     });
+
+    test('同日重复的间隔守卫可调：0 次 / 10 秒时 10 秒后就再出', () async {
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
+            repeatMinReviews: 0,
+            repeatMinSeconds: 10,
+          ).toValue(),
+        },
+      );
+      f.advance(kDay);
+      backend.setR(cards[0], 0.1);
+      await f.store.answer(cards[0], 3);
+      await service.refresh();
+      f.advance(5000);
+      expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
+      f.advance(6000);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[0]);
+    });
+
+    test('每天最少复习数：R 都高于目标时按 R 升序补足，今天复习过的算进去', () async {
+      f.advance(kDay);
+      backend
+        ..setR(cards[2], 0.85)
+        ..setR(cards[5], 0.82);
+      // 默认 0 = 不启用：R 全高于 0.8，不出。
+      expect(await f.reviewCount(), 0);
+      await f.store.editFields(
+        SrsEntityKind.deck,
+        f.store.defaultDeckId,
+        <String, Object?>{
+          SrsFieldKeys.deckRwkvQueue: const SrsRwkvQueueSettings(
+            minReviewsPerDay: 3,
+          ).toValue(),
+        },
+      );
+      expect(await f.reviewCount(), 3);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[5]);
+      await f.store.answer(cards[5], 3);
+      await service.refresh();
+      f.advance(1000);
+      // 今天已复习 1 张：只再补 2 张；刚答的那张被间隔守卫挡住。
+      expect(await f.reviewCount(), 2);
+      expect(await f.store.nextCard(f.store.defaultDeckId), cards[2]);
+    });
+
+    test('手动重建：重置后按全部历史重新回放，回到就绪', () async {
+      final int resetsBefore = backend.resets;
+      backend.replayedCards.clear();
+      await service.rebuild();
+      expect(service.status.phase, SrsRwkvPhase.ready);
+      expect(backend.resets, resetsBefore + 1);
+      expect(backend.replayedCards, isNotEmpty);
+    });
   });
 
   group('统计 / 浏览 / 词状态：按 R 排队的卡不按到期日解读', () {

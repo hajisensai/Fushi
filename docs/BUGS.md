@@ -39,6 +39,12 @@
 |---|:--:|:--:|---|
 | [BUG-3652](bugs/BUG-3652-anki-mine-all-fields-empty-reported-twice-clipped.md) | ✅ | ✅ | anki-mine-all-fields-empty-reported-twice-clipped |
 | [BUG-3652](bugs/BUG-3652-video-dissolved-series-cannot-regroup.md) | ✅ | ✅ | 整批解散合集后系列永久散成单集，重扫无法恢复 |
+> 共 3257 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3653](bugs/BUG-3653-srs-anki-migration-silent-options.md) | ✅ | ✅ | srs-anki-migration-silent-options |
+| [BUG-3652](bugs/BUG-3652-srs-reimport-deleted-notes-not-restored.md) | ✅ | ✅ | srs-reimport-deleted-notes-not-restored |
 | [BUG-3651](bugs/BUG-3651-paged-restore-page-first-after-stop-previous-page.md) | ✅ | ✅ | 页首字紧跟上一页末行的「。」时，存→取退回前一页（学习单位逆映射停在分隔符上） |
 | [BUG-3650](bugs/BUG-3650-paged-restore-page-first-caret-previous-page.md) | ✅ | ✅ | 翻页模式页首字在禁则换行处时重开退一页（分页 scrollToCharOffset 用塌缩光标锚） |
 | [BUG-3649](bugs/BUG-3649-manga-detected-epub-no-force-book-import.md) | ✅ | ✅ | manga-detected-epub-no-force-book-import |

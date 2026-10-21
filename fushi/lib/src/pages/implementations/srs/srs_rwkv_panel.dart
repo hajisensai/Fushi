@@ -48,7 +48,9 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
   @override
   Widget build(BuildContext context) {
     final SrsRwkvModelChoice choice = ref.watch(srsRwkvModelChoiceProvider);
-    final SrsRwkvService? service = ref.watch(srsRwkvServiceProvider).valueOrNull;
+    final SrsRwkvService? service = ref
+        .watch(srsRwkvServiceProvider)
+        .valueOrNull;
     _watch(service);
     final TextStyle hintStyle = context.fushiType.bodySmall;
     final SrsRwkvStatus? status = _status;
@@ -125,7 +127,24 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
               ),
             );
         case SrsRwkvPhase.ready:
-          children.add(Text(t.srs_settings_rwkv_ready, style: hintStyle));
+          children
+            ..add(Text(t.srs_settings_rwkv_ready, style: hintStyle))
+            ..add(
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiOutlinedButton(
+                  key: const ValueKey<String>('srs-settings-rwkv-rebuild'),
+                  onPressed: service == null
+                      ? null
+                      : () => srsRunLogged(
+                          'SrsRwkvService.rebuild',
+                          service.rebuild,
+                        ),
+                  child: Text(t.srs_settings_rwkv_rebuild),
+                ),
+              ),
+            )
+            ..add(Text(t.srs_settings_rwkv_rebuild_hint, style: hintStyle));
         case SrsRwkvPhase.preparing when status.total > 0:
           children.add(
             Text(
@@ -141,9 +160,6 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
             Text(t.srs_settings_rwkv_preparing_start, style: hintStyle),
           );
       }
-    }
-    if (choice == SrsRwkvModelChoice.small) {
-      children.add(Text(t.srs_settings_rwkv_license_small, style: hintStyle));
     }
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     return Column(

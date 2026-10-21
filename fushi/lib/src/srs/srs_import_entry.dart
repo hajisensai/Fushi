@@ -81,6 +81,10 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     updated: r.notesUpdated,
     skipped: r.notesSkipped,
   ),
+  if (r.notesRestored > 0) t.srs_import_report_restored(n: r.notesRestored),
+  if (r.lapisNotesMigrated > 0)
+    t.srs_import_report_lapis_migrated(n: r.lapisNotesMigrated),
+  if (r.lapisMigrationFailed) t.srs_import_report_lapis_failed,
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
   if (r.cardsResetToNew > 0)
     t.srs_import_report_reset_new(n: r.cardsResetToNew),

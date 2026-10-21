@@ -89,6 +89,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   final TextEditingController _learnSteps = TextEditingController();
   final TextEditingController _relearnSteps = TextEditingController();
   final TextEditingController _maxInterval = TextEditingController();
+  final TextEditingController _rwkvMinReviews = TextEditingController();
+  final TextEditingController _rwkvRepeatReviews = TextEditingController();
+  final TextEditingController _rwkvRepeatSeconds = TextEditingController();
   double _retention = 0.8;
   SrsAlgorithm _algorithm = srsDefaultAlgorithm;
   bool _autoOptimize = true;
@@ -114,6 +117,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       _learnSteps,
       _relearnSteps,
       _maxInterval,
+      _rwkvMinReviews,
+      _rwkvRepeatReviews,
+      _rwkvRepeatSeconds,
     ]) {
       c.dispose();
     }
@@ -151,6 +157,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _ownParams = deck.ownParams;
         _autoplayAudio = deck.autoplayAudio;
         _replayQuestionAudio = deck.replayQuestionAudio;
+        _rwkvMinReviews.text = '${deck.rwkvQueue.minReviewsPerDay}';
+        _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
+        _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
         _loading = false;
       });
     } catch (e, stack) {
@@ -163,6 +172,20 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
     }
   }
+
+  /// 输入框里的 RWKV 排队设置；空 / 非数字的项沿用 [current]，越界的夹到合法范围。
+  SrsRwkvQueueSettings _rwkvQueue(SrsRwkvQueueSettings current) =>
+      SrsRwkvQueueSettings.fromValue(<String, Object?>{
+        'minReviews':
+            int.tryParse(_rwkvMinReviews.text.trim()) ??
+            current.minReviewsPerDay,
+        'repeatReviews':
+            int.tryParse(_rwkvRepeatReviews.text.trim()) ??
+            current.repeatMinReviews,
+        'repeatSeconds':
+            int.tryParse(_rwkvRepeatSeconds.text.trim()) ??
+            current.repeatMinSeconds,
+      });
 
   /// 与物化视图逐项比较，只收改动过的键。步长不合法返回 null（并标出错误）。
   Map<String, Object?>? _changes() {
@@ -228,6 +251,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       }
       if (_replayQuestionAudio != deck.replayQuestionAudio) {
         out[SrsFieldKeys.deckReplayQuestion] = _replayQuestionAudio;
+      }
+      final SrsRwkvQueueSettings queue = _rwkvQueue(deck.rwkvQueue);
+      if (queue != deck.rwkvQueue) {
+        out[SrsFieldKeys.deckRwkvQueue] = queue.toValue();
       }
     }
     return out;
@@ -494,6 +521,41 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     ],
   );
 
+  /// RWKV-Instant 的排队设置（上游 kuma3 的 RWKV 牌组选项）。
+  Widget _rwkvQueueSection(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      key: const ValueKey<String>('srs-settings-rwkv-queue'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap * 1.5,
+      children: <Widget>[
+        Text(t.srs_settings_rwkv_queue, style: tokens.type.sectionLabel),
+        _numberField(
+          _rwkvMinReviews,
+          t.srs_settings_rwkv_min_reviews,
+          helper: t.srs_settings_rwkv_min_reviews_hint,
+          key: const ValueKey<String>('srs-settings-rwkv-min-reviews'),
+        ),
+        Text(
+          t.srs_settings_rwkv_repeat,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
+        _numberField(
+          _rwkvRepeatReviews,
+          t.srs_settings_rwkv_repeat_reviews,
+          key: const ValueKey<String>('srs-settings-rwkv-repeat-reviews'),
+        ),
+        _numberField(
+          _rwkvRepeatSeconds,
+          t.srs_settings_rwkv_repeat_seconds,
+          helper: t.srs_settings_rwkv_repeat_hint,
+          key: const ValueKey<String>('srs-settings-rwkv-repeat-seconds'),
+        ),
+        ?_conflictNote(context, SrsFieldKeys.deckRwkvQueue),
+      ],
+    );
+  }
+
   Widget _group(BuildContext context, List<Widget?> children) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiCard(
@@ -740,6 +802,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       );
       if (_algorithm == SrsAlgorithm.rwkv) {
         add(const SrsRwkvPanel(key: ValueKey<String>('srs-settings-rwkv')));
+        add(_rwkvQueueSection(context));
       }
       add(_conflictNote(context, SrsFieldKeys.deckAlgorithm));
       add(
