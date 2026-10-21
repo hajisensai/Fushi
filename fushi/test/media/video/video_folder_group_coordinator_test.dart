@@ -391,6 +391,19 @@ void main() {
     await db.removeFromCollection(
         collectionId, MediaKind.video, 'Episode A.mkv');
     await db.deleteMediaCollection(collectionId);
+    // deleteMediaCollection 会清掉该名下的成员墓碑、只留合集级哨兵；成员墓碑
+    // 仍可经同步落进来（对端清单带着它）。这里把两种墓碑都摆上，钉住「恢复」
+    // 对新建的目录合集两种都越过——只越过建合集前的全员检查、加成员时却仍按
+    // 成员墓碑跳过，会建出缺集甚至空的合集。
+    for (final String uid in <String>['Episode A.mkv', 'Episode B.mkv']) {
+      await db.upsertCollectionMemberTombstone(
+        collectionName: name,
+        collectionType: 'collection',
+        mediaType: MediaKind.video.dbValue,
+        entryKey: uid,
+        deletedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
 
     final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
       videoPaths: paths,

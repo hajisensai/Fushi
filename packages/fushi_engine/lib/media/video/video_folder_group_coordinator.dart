@@ -413,10 +413,15 @@ class VideoFolderGroupCoordinator {
                 .map((MediaCollectionItemRow item) => item.entryKey)
                 .toSet();
         bool changed = false;
-        final Set<String> removedMembers = await _removedFolderMembers(
-          collection.name,
-          collection.collectionType,
-        );
+        // 恢复自动分组新建的目录合集与上面建前检查同一口径越过成员墓碑：只在建前
+        // 越过、这里仍按墓碑跳过，会建出缺集甚至空的合集（BUG-3652）。已存在的
+        // 合集不是被解散的，用户从里面移出的集照旧尊重。
+        final Set<String> removedMembers = created && restoreDissolvedGroups
+            ? const <String>{}
+            : await _removedFolderMembers(
+                collection.name,
+                collection.collectionType,
+              );
         entry.value.sort(
           (VideoBookRow a, VideoBookRow b) =>
               a.videoPath.compareTo(b.videoPath),
