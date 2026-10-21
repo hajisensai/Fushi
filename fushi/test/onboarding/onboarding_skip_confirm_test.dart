@@ -63,7 +63,10 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
-Future<_HostAppModel> _pumpWizard(WidgetTester tester) async {
+Future<_HostAppModel> _pumpWizard(
+  WidgetTester tester, {
+  bool tutorialOnly = false,
+}) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
   final PreferencesRepository prefs = PreferencesRepository(db);
@@ -109,7 +112,8 @@ Future<_HostAppModel> _pumpWizard(WidgetTester tester) async {
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                       fullscreenDialog: true,
-                      builder: (_) => const OnboardingWizardPage(),
+                      builder: (_) =>
+                          OnboardingWizardPage(tutorialOnly: tutorialOnly),
                     ),
                   ),
                   child: const Text('open'),
@@ -193,6 +197,29 @@ void main() {
     await tester.tap(find.text(t.dialog_cancel));
     await _settle(tester);
   });
+
+  // 导入推荐包后只打开查词教程（tutorialOnly）：那不是「新手引导」，跳过 / 返回
+  // 沿用原语义直接退出，不弹「跳过新手引导」也不等 3 秒，也不改引导的两个标记。
+  for (final bool viaBack in <bool>[false, true]) {
+    testWidgets('只看查词教程：${viaBack ? '系统返回' : '跳过'}直接退出、不弹确认', (
+      WidgetTester tester,
+    ) async {
+      final _HostAppModel app = await _pumpWizard(tester, tutorialOnly: true);
+      if (viaBack) {
+        await tester.binding.handlePopRoute();
+      } else {
+        await tester.tap(find.byKey(const ValueKey<String>('onboarding_skip')));
+      }
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await _settle(tester);
+      expect(find.text(t.onboarding_skip_confirm_title), findsNothing);
+      expect(find.byType(OnboardingWizardPage), findsNothing);
+      expect(app.onboardingCompleted, isFalse);
+      expect(app.onboardingFinished, isFalse);
+    });
+  }
 
   group('homeOnboardingCardVisible', () {
     test('跳过了引导：库里有东西也显示', () {

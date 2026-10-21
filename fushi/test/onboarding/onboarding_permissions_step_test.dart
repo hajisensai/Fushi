@@ -1,6 +1,7 @@
 // 新手引导「系统权限」一步（用户 2026-10-21：安卓有些权限比如通知默认关着）：
 // 紧跟功能选择出现；每项显示现状，点了走既有申请路径，回来后按真实查询结果
 // 显示「已开启」。平台端口注入假实现，桌面 CI 上也跑得到这一步。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -15,6 +16,7 @@ import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
 import 'package:material_ui/material_ui.dart';
@@ -156,6 +158,24 @@ class _FakePermissions implements OnboardingSystemPermissions {
   }
 }
 
+/// 申请挂起不返回（系统弹窗还开着），由测试手动放行或让它失败。
+class _PendingPermissions implements OnboardingSystemPermissions {
+  final List<OnboardingSystemPermission> requested =
+      <OnboardingSystemPermission>[];
+  final List<Completer<void>> pending = <Completer<void>>[];
+
+  @override
+  Future<bool> isGranted(OnboardingSystemPermission permission) async => false;
+
+  @override
+  Future<void> request(OnboardingSystemPermission permission) {
+    requested.add(permission);
+    final Completer<void> c = Completer<void>();
+    pending.add(c);
+    return c.future;
+  }
+}
+
 Finder _granted(OnboardingSystemPermission p) =>
     find.byKey(ValueKey<String>('onboarding-permission-granted-${p.name}'));
 
@@ -210,5 +230,47 @@ void main() {
     );
     await _settle(tester);
     expect(permissions.requested, hasLength(1));
+  });
+
+  testWidgets('申请在途时连点同一行只申请一次；申请抛错进错误日志、不成未捕获错误', (WidgetTester tester) async {
+    final _PendingPermissions permissions = _PendingPermissions();
+    await _pumpWizard(tester, permissions);
+    for (int i = 0; i < 2; i++) {
+      await tester.tap(find.text(t.onboarding_action_next));
+      await _settle(tester);
+    }
+    expect(find.text(t.onboarding_step_permissions_title), findsOneWidget);
+
+    final Finder row = find.text(t.onboarding_permission_notifications_label);
+    await tester.tap(row);
+    await _settle(tester);
+    await tester.tap(row, warnIfMissed: false);
+    await _settle(tester);
+    expect(permissions.requested, <OnboardingSystemPermission>[
+      OnboardingSystemPermission.notifications,
+    ]);
+
+    // 平台报错（permission_handler 的「已有在途申请」等）：记进错误日志。
+    final int before = ErrorLogService.instance.entries.length;
+    permissions.pending.single.completeError(
+      PlatformException(code: 'ERROR_ALREADY_REQUESTING_PERMISSIONS'),
+    );
+    await _settle(tester);
+    expect(tester.takeException(), isNull);
+    expect(
+      ErrorLogService.instance.entries
+          .skip(before)
+          .where(
+            (ErrorLogEntry e) => e.source == 'onboarding.requestPermission',
+          ),
+      hasLength(1),
+    );
+
+    // 失败后该行恢复可点，可以再申请。
+    await tester.tap(row);
+    await _settle(tester);
+    expect(permissions.requested, hasLength(2));
+    permissions.pending.last.complete();
+    await _settle(tester);
   });
 }

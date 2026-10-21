@@ -293,11 +293,30 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     }
   }
 
+  /// 正在申请（系统弹窗 / 设置页还没返回）的权限：这些行置灰不可点。
+  /// permission_handler 同一时刻只允许一个在途申请，连点会抛 PlatformException。
+  final Set<OnboardingSystemPermission> _permissionRequesting =
+      <OnboardingSystemPermission>{};
+
   Future<void> _requestPermission(OnboardingSystemPermission permission) async {
     final OnboardingSystemPermissions? ops = _systemPermissions;
     if (ops == null) return;
-    await ops.request(permission);
-    await _refreshPermissions();
+    if (!_permissionRequesting.add(permission)) return;
+    if (mounted) setState(() {});
+    try {
+      await ops.request(permission);
+    } catch (e, stack) {
+      // 申请失败（平台拒绝 / 已有在途申请等）不打断向导，留痕后按真实状态刷新。
+      ErrorLogService.instance.log('onboarding.requestPermission', e, stack);
+    } finally {
+      _permissionRequesting.remove(permission);
+      if (mounted) setState(() {});
+    }
+    try {
+      await _refreshPermissions();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('onboarding.refreshPermissions', e, stack);
+    }
   }
 
   /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
@@ -384,8 +403,15 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 确认键强制倒计时 [kOnboardingSkipConfirmDelay]，倒计时内只能取消。
   bool _confirmingSkip = false;
 
+  ///
+  /// 只看查词教程（[OnboardingWizardPage.tutorialOnly]，导入推荐包后打开）时
+  /// 不弹：那不是「新手引导」，跳过它也丢不了任何配置入口，原本就是直接退出。
   Future<void> _confirmSkip() async {
     if (_confirmingSkip || _completing) return;
+    if (widget.tutorialOnly) {
+      await _complete();
+      return;
+    }
     _confirmingSkip = true;
     try {
       final bool skip = await showFushiConfirmDialog(
@@ -1116,6 +1142,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       required OnboardingActionNecessity necessity,
     }) {
       final bool granted = _permissionGranted[permission] ?? false;
+      final bool requesting = _permissionRequesting.contains(permission);
       return OnboardingAction(
         icon: icon,
         label: label,
@@ -1123,7 +1150,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             ? '${t.onboarding_permission_granted} · $description'
             : description,
         necessity: necessity,
-        onPressed: granted
+        onPressed: granted || requesting
             ? null
             : () => unawaited(_requestPermission(permission)),
         trailing: granted

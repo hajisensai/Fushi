@@ -753,6 +753,11 @@ enum FushiDialogActionKind { primary, secondary, destructive }
 
 /// 一枚标准对话框动作按钮。所有模板都经它出按钮，调用方手搓对话框时也可以
 /// 直接用（等价于设计系统分派的 adaptiveDialogAction）。
+///
+/// [countdown] 非空时按钮带强制倒计时：倒计时内置灰、标签显示「标签 (剩余秒数)」，
+/// 归零后才可点。倒计时是本组件自身的能力而不是另一种按钮类型——Apple 设计系统的
+/// [FushiAlertDialog] 只按「是不是标准动作键」决定 alert 胶囊排布，倒计时键必须
+/// 与其它动作键同型，才不会被当成自定义控件退回横排。
 class FushiDialogAction extends StatelessWidget {
   const FushiDialogAction({
     super.key,
@@ -760,6 +765,7 @@ class FushiDialogAction extends StatelessWidget {
     required this.onPressed,
     this.kind = FushiDialogActionKind.secondary,
     this.autofocus = false,
+    this.countdown,
   });
 
   final String label;
@@ -767,8 +773,30 @@ class FushiDialogAction extends StatelessWidget {
   final FushiDialogActionKind kind;
   final bool autofocus;
 
+  /// 强制等待时长；null 或不大于零 = 普通按钮。
+  final Duration? countdown;
+
   @override
   Widget build(BuildContext context) {
+    final Duration? delay = countdown;
+    if (delay != null && delay > Duration.zero) {
+      return _FushiDialogActionCountdown(
+        delay: delay,
+        builder: (BuildContext context, int remaining) => _buildButton(
+          context,
+          label: remaining > 0 ? '$label ($remaining)' : label,
+          onPressed: remaining > 0 ? null : onPressed,
+        ),
+      );
+    }
+    return _buildButton(context, label: label, onPressed: onPressed);
+  }
+
+  Widget _buildButton(
+    BuildContext context, {
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
     final Widget text = Text(label);
     switch (kind) {
       case FushiDialogActionKind.primary:
@@ -852,11 +880,11 @@ Future<bool> showFushiConfirmDialog({
           onPressed: () => Navigator.of(dialogContext).pop(false),
         ),
         if (delayed)
-          FushiCountdownDialogAction(
+          FushiDialogAction(
             key: const ValueKey<String>('fushi-confirm-countdown-action'),
             label: confirmLabel ?? t.dialog_ok,
             kind: confirmKind,
-            delay: confirmDelay,
+            countdown: confirmDelay,
             onPressed: () => Navigator.of(dialogContext).pop(true),
           )
         else
@@ -872,30 +900,24 @@ Future<bool> showFushiConfirmDialog({
   return result ?? false;
 }
 
-/// 带强制倒计时的对话框动作键：[delay] 内置灰、标签显示「标签 (剩余秒数)」，
-/// 归零后变成普通可点的 [FushiDialogAction]。倒计时按整秒走 [Timer.periodic]，
-/// 不随系统「减弱动态效果」归零——这是交互闸门，不是动效。
-class FushiCountdownDialogAction extends StatefulWidget {
-  const FushiCountdownDialogAction({
-    super.key,
-    required this.label,
+/// [FushiDialogAction.countdown] 的倒计时状态：按整秒走 [Timer.periodic]，每秒
+/// 用剩余秒数重建按钮。不随系统「减弱动态效果」归零——这是交互闸门，不是动效。
+class _FushiDialogActionCountdown extends StatefulWidget {
+  const _FushiDialogActionCountdown({
     required this.delay,
-    required this.onPressed,
-    this.kind = FushiDialogActionKind.primary,
+    required this.builder,
   });
 
-  final String label;
   final Duration delay;
-  final VoidCallback onPressed;
-  final FushiDialogActionKind kind;
+  final Widget Function(BuildContext context, int remaining) builder;
 
   @override
-  State<FushiCountdownDialogAction> createState() =>
-      _FushiCountdownDialogActionState();
+  State<_FushiDialogActionCountdown> createState() =>
+      _FushiDialogActionCountdownState();
 }
 
-class _FushiCountdownDialogActionState
-    extends State<FushiCountdownDialogAction> {
+class _FushiDialogActionCountdownState
+    extends State<_FushiDialogActionCountdown> {
   late int _remaining = (widget.delay.inMilliseconds / 1000).ceil();
   Timer? _timer;
 
@@ -918,14 +940,7 @@ class _FushiCountdownDialogActionState
   }
 
   @override
-  Widget build(BuildContext context) {
-    final bool ready = _remaining <= 0;
-    return FushiDialogAction(
-      label: ready ? widget.label : '${widget.label} ($_remaining)',
-      kind: widget.kind,
-      onPressed: ready ? widget.onPressed : null,
-    );
-  }
+  Widget build(BuildContext context) => widget.builder(context, _remaining);
 }
 
 /// 标准文本输入对话框。返回 null = 取消；否则返回（默认 trim 后的）文本。
