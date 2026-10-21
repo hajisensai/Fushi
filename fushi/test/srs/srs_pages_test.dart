@@ -1145,6 +1145,13 @@ void main() {
               .dx,
         ),
       );
+      // 重播键不把「显示答案」推离屏幕中线。
+      expect(
+        tester
+            .getCenter(find.byKey(const ValueKey<String>('srs-show-answer')))
+            .dx,
+        moreOrLessEquals(195, epsilon: 0.5),
+      );
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
       expect(
@@ -1258,6 +1265,11 @@ void main() {
       expect(
         tester.getCenter(replay).dx,
         lessThan(tester.getCenter(showAnswer).dx),
+      );
+      // 放左侧也一样：「显示答案」仍在屏幕中线。
+      expect(
+        tester.getCenter(showAnswer).dx,
+        moreOrLessEquals(195, epsilon: 0.5),
       );
       expect(
         tester.getSize(replay).height,

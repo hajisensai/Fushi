@@ -294,9 +294,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(
-          s.pad,
-        ).copyWith(top: s.pad + widget.topInset),
+        padding: EdgeInsets.all(s.pad).copyWith(top: s.pad + widget.topInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -471,15 +469,33 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             style: s,
             color: srsPitchColor(srsPitchType(p, morae, cats), dark: s.dark),
           ),
-        for (final String name in srsSoundNames(f['ExpressionAudio'] ?? ''))
+        // 下方「词频」区已列出各词典频次时不再重复显示排序频次。
+        if (srsFieldFilled(f['FreqSort']) &&
+            !srsFushiBlockVisible(FushiCardBlock.frequency, f, s.appearance))
+          _Chip(text: srsPlainText(f['FreqSort']!), style: s),
+      ],
+    );
+  }
+
+  /// 词条 + 词条发音：发音按钮紧跟大字词条、与之垂直居中（不再挤在读音行的标签堆里）。
+  Widget _termRow(_SrsCardStyle s, BoxConstraints c) {
+    final List<String> audio = srsSoundNames(
+      widget.fields['ExpressionAudio'] ?? '',
+    );
+    if (audio.isEmpty) return _term(s, c);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Flexible(child: _term(s, c)),
+        for (final String name in audio) ...<Widget>[
+          SizedBox(width: s.gap),
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-word-audio'),
             name: name,
             style: s,
             onPlay: _play,
           ),
-        if (srsFieldFilled(f['FreqSort']))
-          _Chip(text: srsPlainText(f['FreqSort']!), style: s),
+        ],
       ],
     );
   }
@@ -567,9 +583,18 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       padding: EdgeInsets.all(s.pad),
       pressScale: false,
       color: s.tokens.surface1(s.scheme),
+      // 发音按钮在句首、与整段垂直居中：贴着它播放的那句话，不再孤零零停在卡片右上角。
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          for (final String name in audio) ...<Widget>[
+            _AudioButton(
+              key: const ValueKey<String>('srs-fushi-sentence-audio'),
+              name: name,
+              style: s,
+              onPlay: _play,
+            ),
+            SizedBox(width: s.gap),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -617,13 +642,6 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               ],
             ),
           ),
-          for (final String name in audio)
-            _AudioButton(
-              key: const ValueKey<String>('srs-fushi-sentence-audio'),
-              name: name,
-              style: s,
-              onPlay: _play,
-            ),
         ],
       ),
     );
@@ -791,7 +809,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  _term(s, c),
+                  _termRow(s, c),
                   const SizedBox(height: 4),
                   _readingRow(s),
                 ],
@@ -847,7 +865,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: true);
     final List<Widget> left = <Widget>[
-      _term(s, c),
+      _termRow(s, c),
       _readingRow(s),
       ?picture,
       ?sentence,

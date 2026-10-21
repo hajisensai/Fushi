@@ -275,6 +275,52 @@ void main() {
     });
   }
 
+  for (final Size size in const <Size>[Size(390, 844), Size(1280, 800)]) {
+    testWidgets('${size.width.toInt()} 宽：发音按钮贴着词条 / 例句，排序频次不与词频区重复', (
+      WidgetTester tester,
+    ) async {
+      await pump(
+        tester,
+        answer: true,
+        size: size,
+        fields: _fields(<String, String>{
+          'ExpressionAudio': '[sound:word.mp3]',
+          'SentenceAudio': '[sound:sentence.mp3]',
+        }),
+      );
+      Rect rect(String key) =>
+          tester.getRect(find.byKey(ValueKey<String>(key)));
+      // 词条发音：紧跟大字词条右侧、与之垂直居中，不在读音行里。
+      final Rect term = rect('srs-fushi-term');
+      final Rect wordAudio = rect('srs-fushi-word-audio');
+      expect(wordAudio.left, greaterThanOrEqualTo(term.right));
+      expect(wordAudio.left - term.right, lessThan(32));
+      expect((wordAudio.center.dy - term.center.dy).abs(), lessThan(1));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-reading-row')),
+          matching: find.byKey(const ValueKey<String>('srs-fushi-word-audio')),
+        ),
+        findsNothing,
+      );
+      // 例句发音：在句首、在例句卡里垂直居中（例句 + 翻译整段）。
+      final Rect sentence = rect('srs-fushi-sentence');
+      final Rect block = rect('srs-fushi-sentence-block');
+      final Rect sentenceAudio = rect('srs-fushi-sentence-audio');
+      expect(sentenceAudio.right, lessThanOrEqualTo(sentence.left));
+      expect(sentence.left - sentenceAudio.right, lessThan(32));
+      expect((sentenceAudio.center.dy - block.center.dy).abs(), lessThan(1));
+      // 样例卡有「词频」区：读音行不再重复 FreqSort。
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-reading-row')),
+          matching: find.text('1840'),
+        ),
+        findsNothing,
+      );
+    });
+  }
+
   testWidgets('页面上报的内容高度撑开释义区', (WidgetTester tester) async {
     final List<SrsCardFace> faces = await pump(tester, answer: true);
     faces.last.onContentHeight!(1234);

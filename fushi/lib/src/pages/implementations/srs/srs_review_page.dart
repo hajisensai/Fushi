@@ -1459,12 +1459,21 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         ),
       ),
     );
+    // 「显示答案」是居中的定宽按钮：另一端留出与重播键同宽的空位，它才按整行居中——
+    // 否则重播键放哪端就把它推向另一端。评分按钮铺满，不留空位（空位宽度动画过渡）。
+    final double slot = extent + tokens.spacing.gap;
+    final Widget mirror = AnimatedContainer(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.enter,
+      width: _showingAnswer ? 0 : slot,
+    );
+    final Widget gap = SizedBox(width: tokens.spacing.gap);
+    final bool start = side == SrsReviewReplayButton.start;
     return Row(
-      spacing: tokens.spacing.gap,
       children: <Widget>[
-        if (side == SrsReviewReplayButton.start) replay,
+        if (start) ...<Widget>[replay, gap] else mirror,
         Expanded(child: row),
-        if (side == SrsReviewReplayButton.end) replay,
+        if (!start) ...<Widget>[gap, replay] else mirror,
       ],
     );
   }
