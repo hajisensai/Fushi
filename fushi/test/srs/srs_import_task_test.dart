@@ -451,7 +451,9 @@ void main() {
       runner.calls.single.done.complete(_report(12));
       await _settle(tester);
       expect(
-        find.text('Imported Japanese.apkg: 12 notes added'),
+        find.text(
+          'Imported Japanese.apkg: 12 new, 0 restored, 0 updated, 0 unchanged',
+        ),
         findsOneWidget,
       );
       expect(find.byType(FushiLinearProgressIndicator), findsNothing);
@@ -462,7 +464,12 @@ void main() {
       await tester.tap(dismiss);
       await _settle(tester);
       expect(c.tasks, isEmpty);
-      expect(find.text('Imported Japanese.apkg: 12 notes added'), findsNothing);
+      expect(
+        find.text(
+          'Imported Japanese.apkg: 12 new, 0 restored, 0 updated, 0 unchanged',
+        ),
+        findsNothing,
+      );
     });
 
     testWidgets('[$ds] 删牌组：进行中显示「正在删除」与进度条、行不可点；删完立即消失，卡移到默认牌组', (
