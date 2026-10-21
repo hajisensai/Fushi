@@ -1,4 +1,6 @@
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart'
+    show BookSeriesOrder;
 import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart';
@@ -26,6 +28,10 @@ import 'package:fushi_core/fushi_core.dart';
 ///   例外（BUG-2941）：[CollectionManifestEntry.episodeOrdered]（下载管理的合集）且
 ///   两端都为 0 时，视频成员按成员键里的季/集重排——远端序只是另一端的下载到达
 ///   顺序，不是任何人的意图；重排只依赖 wire 成员键，各端结果逐字节相同。
+///   书系列合集同理（BUG-3652）：两端都为 0 时远端序也不是意图，调用方注入的
+///   [CollectionRuleOrder]（本机书名 → 卷号，见 [loadBookSeriesRuleOrder]）给合并
+///   结果定规则序。书的 wire 成员键不带书名，只能由持有书架的一端解；本机解不了
+///   （有本机没有的书 / 混了外传）就保持 LWW 结果。
 /// - **合集删除墓碑**（deletedAt，清单 entry 级）防复活；与成员墓碑同一基线
 ///   规则：晚于基线 ⇒ 删除生效；早于基线且对端活着 ⇒ 对端重建了，合集复活。
 class CollectionSyncEngine {
@@ -39,6 +45,9 @@ class CollectionSyncEngine {
   /// 也当**对端已发布**清单裁决（用 publishedAt 而非 removedAt），供 [combinePeers] 折叠
   /// 多份 per-device 清单；缺省 false（[local] 是本端未发布快照，用 removedAt 本端裁决）。
   /// [stampPublish] 为 false 时不盖 publishedAt（折叠对端清单时保真，不冒充本端发布）。
+  /// [ruleOrder] 给无人手动排序（orderUpdatedAt == 0）的活合集定规则序（见类注释）；
+  /// 三个同步入口（云 / 互联 live / host POST）都必须传同一个
+  /// [loadBookSeriesRuleOrder]，否则本地归组自愈出的卷序会被平手取远端冲回旧序。
   static CollectionSyncOutcome merge({
     required CollectionManifest local,
     required CollectionManifest remote,
@@ -46,6 +55,7 @@ class CollectionSyncEngine {
     int? nowMs,
     bool localIsPeer = false,
     bool stampPublish = true,
+    CollectionRuleOrder? ruleOrder,
   }) {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final Map<String, _NormalizedEntry> lSide = _normalize(local);
@@ -66,6 +76,7 @@ class CollectionSyncEngine {
           _mergeOne(l, r, lastSyncedAtMs: lastSyncedAtMs, lPeer: localIsPeer);
       if (merged == null) continue; // 双方都无知识（不可达）或全空壳被剪枝。
       merged = _withEpisodeOrder(merged);
+      if (ruleOrder != null) merged = _withRuleOrder(merged, ruleOrder);
       // 首次发布盖时戳：把本端新造/新并入的（publishedAt 尚空的）墓碑/删除标记为
       // now，供对端用「基线 vs publishedAt」判新旧（§2.3 因果修复）。
       if (stampPublish) merged = _stampEntry(merged, now);
@@ -324,6 +335,56 @@ class CollectionSyncEngine {
     );
   }
 
+  /// 无人手动排序的活合集按 [ruleOrder] 重排（BUG-3652 书系列卷序）。规则序只换
+  /// 成员先后：返回的不是同一组成员是调用方的契约错误，直接抛，不静默吞掉。
+  static CollectionManifestEntry _withRuleOrder(
+    CollectionManifestEntry e,
+    CollectionRuleOrder ruleOrder,
+  ) {
+    if (e.orderUpdatedAt != 0 || e.deletedAt != null || e.members.length < 2) {
+      return e;
+    }
+    final List<String> current = <String>[
+      for (final CollectionManifestMember m
+          in List<CollectionManifestMember>.of(e.members)
+            ..sort((CollectionManifestMember a, CollectionManifestMember b) =>
+                a.sortIndex.compareTo(b.sortIndex)))
+        _memberKey(m.mediaType, m.entryKey),
+    ];
+    final List<CollectionMemberKey>? ordered = ruleOrder(e);
+    if (ordered == null) return e;
+    final List<String> next = <String>[
+      for (final CollectionMemberKey m in ordered)
+        _memberKey(m.mediaType, m.entryKey),
+    ];
+    if (next.length != current.length ||
+        !next.toSet().containsAll(current)) {
+      throw StateError(
+          'rule order for "${e.name}" is not a permutation of its members');
+    }
+    bool same = true;
+    for (int i = 0; i < next.length; i++) {
+      if (next[i] != current[i]) {
+        same = false;
+        break;
+      }
+    }
+    if (same) return e;
+    return CollectionManifestEntry(
+      name: e.name,
+      collectionType: e.collectionType,
+      orderUpdatedAt: e.orderUpdatedAt,
+      members: _reindexed(next),
+      memberTombstones: e.memberTombstones,
+      tagNames: e.tagNames,
+      episodeOrdered: e.episodeOrdered,
+      origin: e.origin,
+      organizeKey: e.organizeKey,
+      organizeAliases: e.organizeAliases,
+      organizeMerged: e.organizeMerged,
+    );
+  }
+
   /// 一条墓碑「对本端是不是新闻」：对端侧用 publishedAt（首次进共享清单的时刻，回退
   /// removedAt 兼容旧清单）判 `> 基线`；本端侧用 removedAt（与本端基线同一时钟轴，
   /// 本端未发布=removedAt>基线=新闻）。
@@ -540,6 +601,52 @@ String? mergeWireOrigin(String? a, String? b) {
     CollectionOrigin.parse(a),
     CollectionOrigin.parse(b),
   ).dbValue;
+}
+
+/// 合并后给无人手动排序的活合集定规则序：返回该合集成员（wire 键）的新顺序，
+/// null = 本机定不了序，保持合并结果。
+typedef CollectionRuleOrder = List<CollectionMemberKey>? Function(
+    CollectionManifestEntry entry);
+
+/// 书系列合集的规则卷序（BUG-3652），给 [CollectionSyncEngine.merge] 的 `ruleOrder`。
+///
+/// 与书架归组自愈（`BookSeriesGrouper` 的 `_healSeriesOrder`）同一判据
+/// [BookSeriesOrder]：wire 成员键经 [CollectionBookIdentityIndex] 换回本地键再判，
+/// 排好后按位置换回原 wire 键。本机只能解自己书架上有的书——合集里有本机没有的书
+/// （透传成员）就不定序，交给持有全套书的一端排。须在合并的同一把同步状态锁内、
+/// 读本地清单的同时加载，书架快照与本地清单同一时刻。
+Future<CollectionRuleOrder> loadBookSeriesRuleOrder(FushiDatabase db) async {
+  final CollectionBookIdentityIndex identities =
+      await CollectionBookIdentityIndex.load(db);
+  final BookSeriesOrder series = await BookSeriesOrder.load(db);
+  return (CollectionManifestEntry entry) {
+    final List<CollectionManifestMember> wire =
+        List<CollectionManifestMember>.of(entry.members)
+          ..sort((CollectionManifestMember a, CollectionManifestMember b) =>
+              a.sortIndex.compareTo(b.sortIndex));
+    final Map<String, CollectionMemberKey> wireByLocal =
+        <String, CollectionMemberKey>{};
+    final List<CollectionMemberKey> local = <CollectionMemberKey>[];
+    for (final CollectionManifestMember m in wire) {
+      final CollectionMemberKey key = (
+        mediaType: m.mediaType,
+        entryKey: identities.localKey(m.mediaType, m.entryKey),
+      );
+      // 两个 wire 键换到同一本地键（别名）：本地无法区分先后，不定序。
+      if (wireByLocal.containsKey('${key.mediaType}|${key.entryKey}')) {
+        return null;
+      }
+      wireByLocal['${key.mediaType}|${key.entryKey}'] =
+          (mediaType: m.mediaType, entryKey: m.entryKey);
+      local.add(key);
+    }
+    final List<CollectionMemberKey>? ordered = series.orderOf(local);
+    if (ordered == null) return null;
+    return <CollectionMemberKey>[
+      for (final CollectionMemberKey k in ordered)
+        wireByLocal['${k.mediaType}|${k.entryKey}']!,
+    ];
+  };
 }
 
 /// [CollectionSyncEngine.merge] 的产物：合并后清单（写回远端）+ 本地变更集。

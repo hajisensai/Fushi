@@ -120,4 +120,85 @@ void main() {
       );
     });
   });
+
+  group('dashboardBookVolumeNumber（「Vol. N」徽标）', () {
+    const String dm = '絶対に働きたくないダンジョンマスターが惰眠をむさぼるまで';
+    // 原样书名：1、2 卷 dc:title 用全角空格 + 全角数字，3 卷起半角。
+    final List<String> dmTitles = <String>[
+      '$dm　１',
+      '$dm　２',
+      for (int n = 3; n <= 17; n++) '$dm $n',
+    ];
+
+    test('用户实报：第 2 卷排在合集第 17 位时徽标仍是卷号 2，不是位置 17', () {
+      expect(
+        dashboardBookVolumeNumber(
+          title: '$dm　２',
+          memberTitles: dmTitles,
+          memberOrdinal: 17,
+        ),
+        2,
+      );
+      expect(
+        dashboardBookVolumeNumber(
+          title: '$dm 17',
+          memberTitles: dmTitles,
+          memberOrdinal: 1,
+        ),
+        17,
+      );
+    });
+
+    test('主题合集（成员不同系列）里书名尾数不当卷号：Fahrenheit 451 不是 Vol. 451', () {
+      const List<String> theme = <String>[
+        'Fahrenheit 451',
+        '1984',
+        'Brave New World',
+      ];
+      expect(
+        dashboardBookVolumeNumber(
+          title: 'Fahrenheit 451',
+          memberTitles: theme,
+          memberOrdinal: 1,
+        ),
+        1,
+      );
+      expect(
+        dashboardBookVolumeNumber(
+          title: '$dm　２',
+          memberTitles: <String>['$dm　２', '安達としまむら10'],
+          memberOrdinal: 2,
+        ),
+        2,
+        reason: '混了别的系列同样退回位置',
+      );
+      expect(
+        dashboardBookVolumeNumber(
+          title: '安達としまむら10',
+          memberTitles: <String>['$dm　２', '安達としまむら10'],
+          memberOrdinal: 1,
+        ),
+        1,
+      );
+    });
+
+    test('书名没有卷号时退回合集内第几个', () {
+      expect(
+        dashboardBookVolumeNumber(
+          title: '安達としまむら',
+          memberTitles: <String>['安達としまむら', '安達としまむら2'],
+          memberOrdinal: 1,
+        ),
+        1,
+      );
+      expect(
+        dashboardBookVolumeNumber(
+          title: '86',
+          memberTitles: <String>['86', '86'],
+          memberOrdinal: 3,
+        ),
+        3,
+      );
+    });
+  });
 }

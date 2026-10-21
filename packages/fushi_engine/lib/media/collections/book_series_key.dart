@@ -81,3 +81,18 @@ BookSeriesKey? parseBookSeriesKey(String title) {
     volume: volume,
   );
 }
+
+/// [titles] 是否全都是同一系列的分卷（每个都解析得出 [BookSeriesKey] 且 `key` 相同）：
+/// 是则返回该系列键，否则（含空输入、任一解析不出）null。
+///
+/// 系列合集的「同系列」判据只有这一份：`BookSeriesOrder` 判合集能否按卷号定序、
+/// 首页续读卡判书名尾数能否当卷号，都经它。
+String? sharedBookSeriesKey(Iterable<String> titles) {
+  String? shared;
+  for (final String title in titles) {
+    final String? key = parseBookSeriesKey(title)?.key;
+    if (key == null || (shared != null && key != shared)) return null;
+    shared = key;
+  }
+  return shared;
+}
