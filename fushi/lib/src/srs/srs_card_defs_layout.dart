@@ -50,21 +50,27 @@ class SrsDefsLayoutConfig {
 }
 
 /// 当前查词设置生成的释义页宿主 CSS（字符串判等：设置没变就不重建卡面）。
+///
+/// AppModel 还没初始化完（偏好 / 词典仓库未就绪）时按默认参数，与
+/// `AppModel.srsCardAppearance` 在偏好缺席时取默认外观同一约定。
 final Provider<String> srsDefsLayoutCssProvider = Provider<String>(
   (Ref ref) => ref.watch(
-    appProvider.select(
-      (AppModel app) => srsDefsLayoutCss(
+    appProvider.select((AppModel app) {
+      final bool ready = app.isInitialised;
+      return srsDefsLayoutCss(
         SrsDefsLayoutConfig(
-          columns: app.popupDictionaryColumns,
-          autoExpandRows: app.popupAutoExpandDictionaries,
-          collapseDictionaries: app.collapseDictionaries,
-          collapsedDictionaryNames: popupCollapsedDictionaryNames(app),
+          columns: ready ? app.popupDictionaryColumns : 1,
+          autoExpandRows: ready ? app.popupAutoExpandDictionaries : 1,
+          collapseDictionaries: !ready || app.collapseDictionaries,
+          collapsedDictionaryNames: ready
+              ? popupCollapsedDictionaryNames(app)
+              : const <String>[],
           mainLabel: t.srs_card_label_main_dictionary,
           othersLabel: t.srs_card_label_other_dictionaries,
           uiLanguageTag: LocaleSettings.currentLocale.languageTag,
         ),
-      ),
-    ),
+      );
+    }),
   ),
 );
 
