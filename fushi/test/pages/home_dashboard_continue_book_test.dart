@@ -120,4 +120,29 @@ void main() {
       );
     });
   });
+
+  group('dashboardBookVolumeNumber（「Vol. N」徽标）', () {
+    test('用户实报：第 2 卷排在合集第 17 位时徽标仍是卷号 2，不是位置 17', () {
+      // 原样书名：1、2 卷 dc:title 用全角空格 + 全角数字，3 卷起半角。
+      expect(
+        dashboardBookVolumeNumber(
+          title: '絶対に働きたくないダンジョンマスターが惰眠をむさぼるまで　２',
+          memberOrdinal: 17,
+        ),
+        2,
+      );
+      expect(
+        dashboardBookVolumeNumber(
+          title: '絶対に働きたくないダンジョンマスターが惰眠をむさぼるまで 17',
+          memberOrdinal: 1,
+        ),
+        17,
+      );
+    });
+
+    test('书名没有卷号时退回合集内第几个', () {
+      expect(dashboardBookVolumeNumber(title: '安達としまむら', memberOrdinal: 1), 1);
+      expect(dashboardBookVolumeNumber(title: '86', memberOrdinal: 3), 3);
+    });
+  });
 }

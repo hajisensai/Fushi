@@ -61,6 +61,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -121,6 +122,20 @@ int? dashboardBookCollectionContinueIndex(
   if (sorted[idx].completed) return null;
   return idx;
 }
+
+/// 书合集续读卡「Vol. N」徽标的卷号：优先取书名里的卷号（与分卷归组同一判据
+/// [parseBookSeriesKey]，全角数字已折半角），书名没有卷号才退回合集内第几个
+/// （[memberOrdinal]，1 起）。
+///
+/// 用户实报「我在读 2/17 卷，首页却显示 Vol. 17」：旧实现直接拿合集内位置当卷号，
+/// 合集顺序与卷号一错位（手动建系列按选择顺序尾插、缺卷、只收了后几卷），徽标
+/// 就把位置当成卷号说出来。
+@visibleForTesting
+num? dashboardBookVolumeNumber({
+  required String title,
+  required int memberOrdinal,
+}) =>
+    parseBookSeriesKey(title)?.volume ?? memberOrdinal;
 
 /// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
 /// 以上的桌面窗口）。竖屏手机 / 平板竖屏走单栏。
@@ -1612,16 +1627,22 @@ class _HomeDashboardPageState
       MediaItem item, {
       required int recentMs,
       required String? collectionName,
-      int? volume,
+      int? memberOrdinal,
     }) {
       final int percent = item.duration > 0
           ? ((item.position / item.duration) * 100).clamp(0, 100).round()
           : 0;
+      // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
+      // 首页「继续」区同步显示新名），不直接读 DB 原名。
+      final String title =
+          ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item);
+      final num? volume = memberOrdinal == null
+          ? null
+          : dashboardBookVolumeNumber(
+              title: title, memberOrdinal: memberOrdinal);
       return _ContinueEntry(
         kind: _bookMediaKind(item),
-        // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
-        // 首页「继续」区同步显示新名），不直接读 DB 原名。
-        title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
+        title: title,
         recentMs: recentMs,
         progress: percent / 100,
         // 合集里的第几卷优先（下一卷还没开读时 0% 没有信息量），进度条照画。
@@ -1683,7 +1704,7 @@ class _HomeDashboardPageState
         sorted[idx],
         recentMs: recent,
         collectionName: _collectionNamesById[ce.key],
-        volume: sorted.length >= 2 ? idx + 1 : null,
+        memberOrdinal: sorted.length >= 2 ? idx + 1 : null,
       ));
     }
     // 视频侧合集感知 Next-Up（用户实报：合集里看完一集，合集不该从「继续」消
