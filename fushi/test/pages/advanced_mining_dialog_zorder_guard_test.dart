@@ -27,43 +27,108 @@ void main() {
     return f.readAsStringSync();
   }
 
+  /// 从 [open]（必须是 `(`）起配平括号，返回到对应 `)` 为止的实参表源码。跳过
+  /// `//` / `/* */` 注释与引号字符串，免得注释或字面量里的括号打乱配平。
+  String callArguments(String src, int open) {
+    expect(src[open], '(', reason: 'callArguments 必须从左括号起算');
+    int depth = 0;
+    int i = open;
+    while (i < src.length) {
+      final String c = src[i];
+      if (src.startsWith('//', i)) {
+        final int nl = src.indexOf('\n', i);
+        i = nl < 0 ? src.length : nl + 1;
+        continue;
+      }
+      if (src.startsWith('/*', i)) {
+        final int close = src.indexOf('*/', i + 2);
+        i = close < 0 ? src.length : close + 2;
+        continue;
+      }
+      if (c == "'" || c == '"') {
+        i++;
+        while (i < src.length && src[i] != c) {
+          if (src[i] == r'\') i++;
+          i++;
+        }
+        i++;
+        continue;
+      }
+      if (c == '(') depth++;
+      if (c == ')') {
+        depth--;
+        if (depth == 0) return src.substring(open, i + 1);
+      }
+      i++;
+    }
+    fail('调用点 $open 的括号没有配平，守卫无法取实参表');
+  }
+
   void assertZOrderWiring(String src, String visibleExpr, String label) {
-    expect(src.contains('int _popupHidingDialogDepth = 0'), isTrue,
-        reason: '$label 缺「盖住弹窗的对话框」嵌套计数');
     expect(
-        RegExp(r'Future<(\w+)> runWithLookupPopupHidden<\1>\(Future<\1> Function\(\) body\)')
-            .hasMatch(src),
-        isTrue,
-        reason: '$label 缺统一停靠入口 runWithLookupPopupHidden');
+      src.contains('int _popupHidingDialogDepth = 0'),
+      isTrue,
+      reason: '$label 缺「盖住弹窗的对话框」嵌套计数',
+    );
+    expect(
+      RegExp(
+        r'Future<(\w+)> runWithLookupPopupHidden<\1>\(Future<\1> Function\(\) body\)',
+      ).hasMatch(src),
+      isTrue,
+      reason: '$label 缺统一停靠入口 runWithLookupPopupHidden',
+    );
     // 增减都必须经 setState，否则弹窗不会真的移动。
-    expect(src.contains('setState(() => _popupHidingDialogDepth++)'), isTrue,
-        reason: '$label 计数自增须走 setState');
-    expect(src.contains('setState(() => _popupHidingDialogDepth ='), isTrue,
-        reason: '$label 计数复位须走 setState');
+    expect(
+      src.contains('setState(() => _popupHidingDialogDepth++)'),
+      isTrue,
+      reason: '$label 计数自增须走 setState',
+    );
+    expect(
+      src.contains('setState(() => _popupHidingDialogDepth ='),
+      isTrue,
+      reason: '$label 计数复位须走 setState',
+    );
     // parkedPopupLayer 的 visible 与「无对话框」相与 → 对话框期间弹窗停靠屏外。
-    expect(src.contains(visibleExpr), isTrue,
-        reason:
-            '$label 的 parkedPopupLayer visible 必须与 _popupHidingDialogDepth == 0 相与');
+    expect(
+      src.contains(visibleExpr),
+      isTrue,
+      reason:
+          '$label 的 parkedPopupLayer visible 必须与 _popupHidingDialogDepth == 0 相与',
+    );
     // 每个会弹 Flutter 对话框的调用点都接上统一入口。
-    expect(src.contains('runWithLookupPopupHidden<void>('), isTrue,
-        reason: '$label 的句子上下文对话框必须走统一停靠入口');
-    final Iterable<Match> minedCalls =
-        RegExp(r'runAnkiMinedCardAction\(').allMatches(src);
-    expect(minedCalls, isNotEmpty,
-        reason: '$label 必须仍有 runAnkiMinedCardAction 调用点，'
-            '否则下面的逐点检查是空转');
+    expect(
+      src.contains('runWithLookupPopupHidden<void>('),
+      isTrue,
+      reason: '$label 的句子上下文对话框必须走统一停靠入口',
+    );
+    final Iterable<Match> minedCalls = RegExp(
+      r'runAnkiMinedCardAction\(',
+    ).allMatches(src);
+    expect(
+      minedCalls,
+      isNotEmpty,
+      reason:
+          '$label 必须仍有 runAnkiMinedCardAction 调用点，'
+          '否则下面的逐点检查是空转',
+    );
     for (final Match m in minedCalls) {
-      final int end = m.start + 800 > src.length ? src.length : m.start + 800;
+      // 取**这一次调用自己的实参表**（括号配平到对应的右括号），而不是从调用点往后
+      // 截固定字数：BUG-3652 在 add / overwrite 闭包里各加一行，runHidden 就被推出了
+      // 原先的 800 字窗口——实参一个没少，守卫却红了；反过来，固定窗口还可能越过本次
+      // 调用、误认下一处调用的 runHidden。
+      final String args = callArguments(src, m.end - 1);
       expect(
-          src
-              .substring(m.start, end)
-              .contains('runHidden: runWithLookupPopupHidden'),
-          isTrue,
-          reason: '$label 的 runAnkiMinedCardAction 调用点必须传 runHidden');
+        args.contains('runHidden: runWithLookupPopupHidden'),
+        isTrue,
+        reason: '$label 的 runAnkiMinedCardAction 调用点必须传 runHidden',
+      );
     }
     // ↗ 不得再拉起 Flutter 对话框（BUG-2051 后它只让 Anki 浏览器过滤到这个词）。
-    expect(src.contains('openMinedCardInAnki'), isFalse,
-        reason: '$label 的 ↗ 不得再弹 Flutter 对话框');
+    expect(
+      src.contains('openMinedCardInAnki'),
+      isFalse,
+      reason: '$label 的 ↗ 不得再弹 Flutter 对话框',
+    );
   }
 
   test('reader 车道 (base_source_page) 对话框期间停靠弹窗', () {
@@ -76,8 +141,9 @@ void main() {
   });
 
   test('video/首页车道 (dictionary_page_mixin) 对话框期间停靠弹窗', () {
-    final String src =
-        read('lib/src/pages/implementations/dictionary_page_mixin.dart');
+    final String src = read(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    );
     assertZOrderWiring(
       src,
       'visible: entry.visible && _popupHidingDialogDepth == 0',
@@ -97,8 +163,11 @@ void main() {
     expect(at, greaterThan(0), reason: '$label 必须接 onHostInputToken');
     // 取接线点之后的一小段：门必须就写在这条接线里，而不是散落在别处。
     final String wiring = src.substring(at, at + 420);
-    expect(wiring.contains(gate), isTrue,
-        reason: '$label 的 onHostInputToken 必须在对话框期间短路（门：$gate）');
+    expect(
+      wiring.contains(gate),
+      isTrue,
+      reason: '$label 的 onHostInputToken 必须在对话框期间短路（门：$gate）',
+    );
   }
 
   test('BUG-2627 reader 车道：对话框期间弹窗输入 token 不得关栈', () {
@@ -134,39 +203,61 @@ void main() {
         r'await\s+webViewKey\.currentState\?\.mineEntryByIndex\(\s*'
         r'entryIndex,[\s\S]{0,900}?\)\s*\?\?',
       );
-      expect(call.hasMatch(src), isTrue,
-          reason: '$label 的 onConfirm 必须 await 并回传 mineEntryByIndex 的结果');
+      expect(
+        call.hasMatch(src),
+        isTrue,
+        reason: '$label 的 onConfirm 必须 await 并回传 mineEntryByIndex 的结果',
+      );
       // BUG-2634 第二轮：能不能提前关窗是**宿主的担保**，每条车道必须显式表态
       // （参数是 required，漏了编译就过不去；这里再钉一道，防止有人图省事全填 true）。
-      expect(call.stringMatch(src), contains('releaseWhenPayloadConsumed:'),
-          reason: '$label 必须显式声明宿主是否在首个 await 之前读走草稿');
+      expect(
+        call.stringMatch(src),
+        contains('releaseWhenPayloadConsumed:'),
+        reason: '$label 必须显式声明宿主是否在首个 await 之前读走草稿',
+      );
     }
     expect(
-        RegExp(r'typedef AdvancedMiningConfirm\s*=\s*Future<bool> Function\(')
-            .hasMatch(read(
-                'lib/src/mining/advanced_mining/advanced_mining_capabilities.dart')),
-        isTrue,
-        reason: 'onConfirm 的契约必须是「回传有没有点到」，不是 VoidCallback');
+      RegExp(
+        r'typedef AdvancedMiningConfirm\s*=\s*Future<bool> Function\(',
+      ).hasMatch(
+        read(
+          'lib/src/mining/advanced_mining/advanced_mining_capabilities.dart',
+        ),
+      ),
+      isTrue,
+      reason: 'onConfirm 的契约必须是「回传有没有点到」，不是 VoidCallback',
+    );
   });
 
   // BUG-1040：对话框本体必须是**居中对话框**而非底部 sheet——这是「必须当场决定」的模态
   // 选择，贴屏幕下沿在视频页会被播放器控件/窗口边缘裁掉半截（用户附图里进度条已被切）。
   test('已制卡动作走居中对话框，不再是 bottom sheet', () {
     final String src = read('lib/src/anki/anki_mined_card_action_sheet.dart');
-    expect(src.contains('showModalBottomSheet'), isFalse,
-        reason: '同族模态选择不得再用 bottom sheet（BUG-1040）');
+    expect(
+      src.contains('showModalBottomSheet'),
+      isFalse,
+      reason: '同族模态选择不得再用 bottom sheet（BUG-1040）',
+    );
     // BUG-2051 后本文件只剩「点 ✓ 的动作选择」一个顶层入口（↗ 的多卡选择框已删），
     // 所以钉的是**那个入口本身**用 showAppDialog，而不是数出几个 showAppDialog——
     // 后者在入口增减时会自己变绿/变红，与「入口是否居中弹出」无关。
-    final int entry = src.indexOf('Future<AnkiMinedCardActionResult> '
-        'showAnkiMinedCardActionSheet(');
+    final int entry = src.indexOf(
+      'Future<AnkiMinedCardActionResult> '
+      'showAnkiMinedCardActionSheet(',
+    );
     expect(entry, greaterThan(-1), reason: '动作对话框入口不存在，守卫会空转');
     final int end = entry + 600 > src.length ? src.length : entry + 600;
     final String body = src.substring(entry, end);
-    expect(body.contains('showAppDialog<AnkiMinedCardActionResult>'), isTrue,
-        reason: '动作对话框须走 showAppDialog');
+    expect(
+      body.contains('showAppDialog<AnkiMinedCardActionResult>'),
+      isTrue,
+      reason: '动作对话框须走 showAppDialog',
+    );
     // 制卡/覆写有副作用，误触 barrier 不该丢掉整次操作。
-    expect(body.contains('barrierDismissible: false'), isTrue,
-        reason: '动作对话框须禁用 barrier 关闭');
+    expect(
+      body.contains('barrierDismissible: false'),
+      isTrue,
+      reason: '动作对话框须禁用 barrier 关闭',
+    );
   });
 }
