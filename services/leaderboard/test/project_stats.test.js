@@ -10,6 +10,7 @@ import {
   summarizeReleases,
 } from '../src/project_stats.js';
 import { hex, sha256 } from '../src/util.js';
+import { lineChart } from '../src/devconsole.js';
 
 const NOW = Date.UTC(2026, 9, 21, 12);
 const DAY = 24 * 3600 * 1000;
@@ -250,21 +251,49 @@ describe('/dev/project', () => {
     expect(page.data).toContain('<b>491</b>');
     expect(page.data).toContain('v3.0.0');
     expect(page.data).toContain('CF_ANALYTICS_TOKEN');
-    expect(page.data).toContain('GITHUB_TOKEN');
+    // 配置类说明不上页面（README 里有），页面只放数据。
+    expect(page.data).not.toContain('GITHUB_TOKEN');
     expect(page.data).not.toContain('<script');
   });
 
   it('官网与 traffic 有数据时渲染表格与折线', async () => {
     const up = fakeUpstream({
-      graphql: { data: { viewer: { zones: [{ httpRequests1dGroups: [siteGroup('2026-10-20', 4848), siteGroup('2026-10-21', 10)] }] } } },
+      graphql: { data: { viewer: { zones: [{ httpRequests1dGroups: [
+        siteGroup('2026-10-19', 3000), siteGroup('2026-10-20', 4848), siteGroup('2026-10-21', 10)] }] } } },
     });
     const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO, GITHUB_TOKEN: 't', CF_ANALYTICS_TOKEN: 'c', CF_ZONE_ID: 'z' });
     await refreshProjectStats(env, NOW);
     const page = await devCall(env, 'GET', '/dev/project');
     expect(page.data).toContain('4,848');
+    // 官网图只画已完结的 10-19、10-20；当天（10-21，10 次）不进图。
+    expect(page.data).toContain('<title>2026-10-20 · 浏览 4,848');
+    expect(page.data).not.toContain('<title>2026-10-21 · 浏览');
     expect(page.data).toContain('<polyline');
     expect(page.data).toContain('GitHub 访问（近 14 天）');
     expect(page.data).toContain('日本');
+  });
+
+  it('折线图：缺数据断线而不是画成 0；每天一个悬停提示；y 轴从 0 起', () => {
+    const svg = lineChart('每日下载', ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'],
+      [{ label: '下载', values: [5, null, 30, 40] }]);
+    // 只剩 10-03→10-04 一段（10-01 单点成不了线），且没有被拉到 y=98（0）的点。
+    expect(svg.match(/<polyline/g)).toHaveLength(1);
+    expect(svg).toContain('points="66.67,26.00 100.00,2.00"');
+    expect(svg.match(/<title>/g)).toHaveLength(4);
+    expect(svg).toContain('<title>2026-10-02 · 下载 —</title>');
+    expect(svg).toContain('<span>40</span><span>20</span><span>0</span>');
+    expect(svg).toContain('<span>10-01</span><span>10-04</span>');
+    expect(lineChart('Star', ['2026-10-01'], [{ label: 'Star', values: [3] }])).toContain('数据还不够画图');
+  });
+
+  it('折线图 y 轴取整刻度，顶部不留大片空白；累计量不从 0 起', () => {
+    const axis = (values, opts) => lineChart('t', ['2026-10-01', '2026-10-02'], [{ label: 'a', values }], opts)
+      .match(/<div class="yax">(.*?)<\/div>/)[1].replace(/<\/?span>/g, ' ').trim().split(/\s+/);
+    expect(axis([0, 2333])).toEqual(['3,000', '1,500', '0']);
+    expect(axis([0, 1248])).toEqual(['1,600', '800', '0']);
+    expect(axis([0, 7])).toEqual(['8', '4', '0']);
+    expect(axis([826, 987], { zero: false })).toEqual(['1,000', '900', '800']);
+    expect(axis([5, 5])).toEqual(['6', '3', '0']);
   });
 
   it('立即刷新：忽略节流重新取，回到页面', async () => {

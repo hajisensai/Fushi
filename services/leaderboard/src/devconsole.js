@@ -132,8 +132,8 @@ ${body}
 }
 
 const STYLE = `
-:root{--bg:#f7f6f3;--fg:#1d1c1a;--muted:#6b6862;--card:#fff;--line:#e4e1db;--accent:#b4532a;--ok:#2f7d4f}
-@media (prefers-color-scheme:dark){:root{--bg:#161514;--fg:#ecebe8;--muted:#a19d96;--card:#201f1d;--line:#34322f;--accent:#e58a5f;--ok:#6cc08f}}
+:root{--bg:#f7f6f3;--fg:#1d1c1a;--muted:#6b6862;--card:#fff;--line:#e4e1db;--accent:#b4532a;--ok:#2f7d4f;--c2:#3b6fb0}
+@media (prefers-color-scheme:dark){:root{--bg:#161514;--fg:#ecebe8;--muted:#a19d96;--card:#201f1d;--line:#34322f;--accent:#e58a5f;--ok:#6cc08f;--c2:#7eaee6}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI","Noto Sans CJK SC","PingFang SC",sans-serif}
 a{color:inherit}
@@ -186,8 +186,30 @@ nav.top{display:flex;gap:14px;align-items:baseline}
 .bar{display:inline-block;height:8px;border-radius:4px;background:var(--accent);vertical-align:middle;margin-right:6px}
 .err{color:var(--accent)}
 .up{color:var(--ok)}
-svg.spark{display:block;width:100%;height:80px;margin:4px 0 10px}
-svg.spark polyline{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
+.title{display:flex;align-items:center;justify-content:space-between;gap:12px}
+button.small{margin:0;padding:4px 12px;font-size:14px}
+details.card summary{cursor:pointer;color:var(--muted);font-size:14px}
+details.card[open] summary{margin-bottom:8px}
+.foot{font-size:12px;margin-top:24px}
+.scroll{overflow-x:auto}
+.scroll td,.scroll th{white-space:nowrap;word-break:normal}
+.scroll td:first-child{width:auto}
+.chart{margin:4px 0 18px}
+.chart:last-child{margin-bottom:4px}
+.chart figcaption{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 14px;font-size:13px;color:var(--muted)}
+.chart figcaption>b{color:var(--fg);font-size:14px;margin-right:auto}
+.chart figcaption span b{color:var(--fg);font-variant-numeric:tabular-nums}
+.chart i{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.plot{display:grid;grid-template-columns:auto 1fr;column-gap:8px;margin-top:8px}
+.yax{display:flex;flex-direction:column;justify-content:space-between;height:150px;font-size:11px;line-height:1;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.xax{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+svg.line{display:block;width:100%;height:150px;overflow:visible}
+svg.line polyline{fill:none;stroke-width:2;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+svg.line line.g{stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+svg.line rect.hit{fill:transparent}
+svg.line rect.hit:hover{fill:var(--line);opacity:.6}
+.l0{stroke:var(--accent);background:var(--accent)}
+.l1{stroke:var(--c2);background:var(--c2)}
 `;
 
 function readCookie(request, name) {
@@ -501,97 +523,116 @@ function fmtVolume(n) {
   return `${v.toFixed(i >= 3 ? 1 : 0)} ${units[i]}`;
 }
 
-/** 外部数据源的状态行：最近成功时刻 + 最近一次错误。 */
-function sourceStatus(status) {
-  if (!status) return '<p class="muted">还没取过。</p>';
-  const ok = status.okAt ? `最近成功 ${esc(fmtTime(status.okAt))}` : '还没成功过';
-  const err = status.error ? ` · <span class="err">最近一次失败：${esc(status.error)}</span>（${esc(fmtTime(status.at))}）` : '';
-  return `<p class="muted">${ok}${err}</p>`;
+/** 外部数据源只在出错时占一行；正常时什么都不显示。 */
+function sourceError(name, status) {
+  if (!status?.error) return '';
+  return `<p class="err">${esc(name)} 最近一次取数失败（${esc(fmtTime(status.at))}）：${esc(status.error)}</p>`;
 }
 
-/** star 走势折线（内联 SVG，无脚本）。少于两个点不画。 */
-function sparkline(values) {
-  if (values.length < 2) return '';
-  const lo = Math.min(...values);
-  const span = Math.max(1, Math.max(...values) - lo);
-  const pts = values.map((v, i) => `${((i * 100) / (values.length - 1)).toFixed(2)},${(38 - ((v - lo) * 36) / span).toFixed(2)}`);
-  return `<svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="star 走势">`
-    + `<polyline points="${pts.join(' ')}"/></svg>`;
+/**
+ * 按天的折线图（内联 SVG，无脚本）。days 升序；series = [{label, values}]，values 与 days 对齐，null = 缺数据（断线）。
+ * zero = y 轴从 0 起（每日计数）；否则从最小值起（累计量）。悬停某天显示当天各线数值。
+ */
+export function lineChart(title, days, series, { zero = true } = {}) {
+  const all = series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
+  const latest = series.map((s, k) => {
+    const v = fmtInt([...s.values].reverse().find((x) => x !== null && x !== undefined) ?? null);
+    // 只有一条线时标题就是图例，只留最新值。
+    return series.length === 1 ? `<span><b>${v}</b></span>` : `<span><i class="l${k}"></i>${esc(s.label)} <b>${v}</b></span>`;
+  }).join('');
+  const head = `<figcaption><b>${esc(title)}</b>${latest}</figcaption>`;
+  if (days.length < 2 || !all.length) return `<figure class="chart">${head}<p class="muted">数据还不够画图。</p></figure>`;
+  // 两格刻度，格宽取 {1, 1.5, 2, 2.5, 3, 4, 5, 6, 8} × 10ⁿ 里够用的最小整数，轴上标整数、顶部不留大片空白。
+  const rawLo = zero ? Math.min(0, ...all) : Math.min(...all);
+  const want = Math.max(1, (Math.max(...all) - rawLo) / 2);
+  const mag = 10 ** Math.floor(Math.log10(want));
+  const tick = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map((m) => m * mag).find((t) => t >= want && Number.isInteger(t));
+  const lo = Math.floor(rawLo / tick) * tick;
+  const hi = Math.max(lo + 2 * tick, Math.ceil(Math.max(...all) / tick) * tick);
+  const x = (i) => ((i * 100) / (days.length - 1)).toFixed(2);
+  const y = (v) => (98 - ((v - lo) * 96) / (hi - lo)).toFixed(2);
+  const lines = series.map((s, k) => {
+    // 遇到 null 断开成几段，不把缺数据画成 0。
+    const segs = [[]];
+    s.values.forEach((v, i) => {
+      if (v === null || v === undefined) segs.push([]);
+      else segs.at(-1).push(`${x(i)},${y(v)}`);
+    });
+    return segs.filter((p) => p.length > 1).map((p) => `<polyline class="l${k}" points="${p.join(' ')}"/>`).join('');
+  }).join('');
+  const step = 100 / (days.length - 1);
+  const hits = days.map((d, i) => `<rect class="hit" x="${(i * step - step / 2).toFixed(2)}" y="0" width="${step.toFixed(2)}" height="100">`
+    + `<title>${esc(d)}${series.map((s) => ` · ${esc(s.label)} ${fmtInt(s.values[i] ?? null)}`).join('')}</title></rect>`).join('');
+  const grid = [2, 50, 98].map((g) => `<line class="g" x1="0" x2="100" y1="${g}" y2="${g}"/>`).join('');
+  return `<figure class="chart">${head}
+<div class="plot"><div class="yax"><span>${fmtInt(hi)}</span><span>${fmtInt(Math.round((hi + lo) / 2))}</span><span>${fmtInt(lo)}</span></div>
+<svg class="line" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="${esc(title)}">${grid}${lines}${hits}</svg>
+<span></span><div class="xax"><span>${esc(days[0].slice(5))}</span><span>${esc(days.at(-1).slice(5))}</span></div></div></figure>`;
 }
 
 const RELEASE_PLATFORM_LABEL = {
   android: 'Android', windows: 'Windows', macos: 'macOS', ios: 'iOS', linux: 'Linux', other: '其它',
 };
 
-function repoSection(r) {
+function repoSection(r, today) {
   const l = r.latest;
   if (!l) return `<h2>${esc(r.repo)}</h2><div class="card"><p class="muted">还没有数据。</p></div>`;
   const kpi = (label, n, extra = '') => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${fmtInt(n)}</b>${extra}</div>`;
-  const kpis = `<div class="kpis">${kpi('Star', l.stars, `<span class="muted">7 天 ${fmtDelta(r.stars7)} · 30 天 ${fmtDelta(r.stars30)}</span>`)}`
-    + `${kpi('Fork', l.forks)}${kpi('关注', l.watchers)}${kpi('开放 Issue + PR', l.open_issues)}`
-    + `${kpi('App 下载（累计）', l.downloads, `<span class="muted">7 天 ${fmtDelta(r.downloads7)}</span>`)}</div>`;
-  const trend = r.trend.length
-    ? `${sparkline(r.trend.map((d) => d.stars).reverse())}<table class="grid"><tr><th>日期（UTC）</th><th>Star</th><th>当日新增</th><th>累计下载</th><th>当日下载</th></tr>
-${r.trend.map((d) => `<tr><td>${esc(d.day)}</td><td>${fmtInt(d.stars)}</td><td>${fmtDelta(d.starsDelta)}</td>`
-    + `<td>${fmtInt(d.downloads)}</td><td>${fmtDelta(d.downloadsDelta)}</td></tr>`).join('')}</table>`
-    : '';
+  const kpis = `<div class="kpis">${kpi('Star', l.stars, `<span class="muted">7 天 ${fmtDelta(r.stars7)}</span>`)}`
+    + `${kpi('App 下载（累计）', l.downloads, `<span class="muted">7 天 ${fmtDelta(r.downloads7)}</span>`)}`
+    + `${kpi('Fork', l.forks)}${kpi('开放 Issue + PR', l.open_issues)}</div>`;
+  const trend = [...r.trend].reverse();
+  // 当天的快照还会再涨，每日下载只画到昨天，免得末尾凭空掉一截。
+  const done = trend.filter((d) => d.day < today);
+  const charts = `${lineChart('Star', trend.map((d) => d.day), [{ label: 'Star', values: trend.map((d) => d.stars) }], { zero: false })}`
+    + `${lineChart('每日下载', done.map((d) => d.day), [{ label: '下载', values: done.map((d) => d.downloadsDelta) }])}`;
   const used = RELEASE_PLATFORMS.filter((p) => r.releases.some((x) => x.platforms[p] > 0));
   const releases = r.releases.length
-    ? `<table class="grid"><tr><th>版本</th><th>发布（UTC）</th><th>合计</th>${used.map((p) => `<th>${esc(RELEASE_PLATFORM_LABEL[p])}</th>`).join('')}</tr>
+    ? `<div class="scroll"><table class="grid"><tr><th>版本</th><th>发布（UTC）</th><th>合计</th>${used.map((p) => `<th>${esc(RELEASE_PLATFORM_LABEL[p])}</th>`).join('')}</tr>
 ${r.releases.map((x) => `<tr><td>${esc(x.tag)}${x.prerelease ? ' <span class="muted">预发布</span>' : ''}</td>`
     + `<td>${esc((x.publishedAt || '').slice(0, 10))}</td><td>${fmtInt(x.total)}</td>`
-    + `${used.map((p) => `<td>${fmtInt(x.platforms[p])}</td>`).join('')}</tr>`).join('')}</table>`
+    + `${used.map((p) => `<td>${fmtInt(x.platforms[p])}</td>`).join('')}</tr>`).join('')}</table></div>`
     : '<p class="muted">没有 App Release。</p>';
   let traffic = '';
   if (r.traffic) {
-    const clones = new Map((r.traffic.clones?.clones || []).map((c) => [c.timestamp.slice(0, 10), c]));
-    const views = [...(r.traffic.views?.views || [])].reverse();
-    traffic = `<h3>GitHub 访问（近 14 天）</h3>
-<p class="muted">浏览 ${fmtInt(r.traffic.views?.count)}（${fmtInt(r.traffic.views?.uniques)} 人）· clone ${fmtInt(r.traffic.clones?.count)}（${fmtInt(r.traffic.clones?.uniques)} 个来源）</p>
-<table class="grid"><tr><th>日期（UTC）</th><th>浏览</th><th>访客</th><th>clone</th></tr>
-${views.map((v) => {
-    const day = v.timestamp.slice(0, 10);
-    const c = clones.get(day);
-    return `<tr><td>${esc(day)}</td><td>${fmtInt(v.count)}</td><td>${fmtInt(v.uniques)}</td><td>${fmtInt(c ? c.count : 0)}</td></tr>`;
-  }).join('')}</table>`;
+    const clones = new Map((r.traffic.clones?.clones || []).map((c) => [c.timestamp.slice(0, 10), c.count]));
+    const views = r.traffic.views?.views || [];
+    const days = views.map((v) => v.timestamp.slice(0, 10));
+    traffic = lineChart('GitHub 访问（近 14 天）', days, [
+      { label: '浏览', values: views.map((v) => v.count) },
+      { label: 'clone', values: days.map((d) => clones.get(d) ?? 0) },
+    ]);
   }
   return `<h2><a href="https://github.com/${esc(r.repo)}">${esc(r.repo)}</a></h2>
-<div class="card">${kpis}${trend}</div>
-<div class="card"><h3>近期 App Release 下载</h3>${releases}${traffic}</div>`;
+${kpis}
+<div class="card">${charts}${traffic}</div>
+<details class="card"><summary>近期 App Release 下载</summary>${releases}</details>`;
 }
 
 async function projectPage(env, now) {
   const st = await projectStats(env, now);
+  const today = new Date(now).toISOString().slice(0, 10);
   const s = st.site;
-  const siteBody = !s.configured
-    ? `<p class="muted">没配置。要看官网访问量：在 Cloudflare 建一个 API token（权限 Zone · Analytics · Read，限定 zone fushi.moe），
-<code>wrangler secret put CF_ANALYTICS_TOKEN</code>，并在 wrangler.toml 的 [vars] 填 <code>CF_ZONE_ID</code>。</p>`
-    : `${sourceStatus(s.status)}
-${s.days.length ? `<div class="kpis">
-<div class="kpi"><span class="muted">昨日页面浏览</span><b>${fmtInt(s.yesterday?.page_views ?? null)}</b></div>
-<div class="kpi"><span class="muted">昨日独立访客</span><b>${fmtInt(s.yesterday?.visitors ?? null)}</b></div>
-<div class="kpi"><span class="muted">近 30 天页面浏览</span><b>${fmtInt(s.totals.pageViews)}</b></div>
-<div class="kpi"><span class="muted">近 30 天流量</span><b>${esc(fmtVolume(s.totals.bytes))}</b></div></div>
-${sparkline(s.days.map((d) => d.pageViews).reverse())}
-<table class="grid"><tr><th>日期（UTC）</th><th>页面浏览</th><th>独立访客</th><th>请求</th><th>流量</th></tr>
-${s.days.map((d) => `<tr><td>${esc(d.day)}</td><td>${fmtInt(d.pageViews)}</td><td>${fmtInt(d.visitors)}</td>`
-    + `<td>${fmtInt(d.requests)}</td><td>${esc(fmtVolume(d.bytes))}</td></tr>`).join('')}</table>` : '<p class="muted">还没有数据。</p>'}`;
-  const countries = s.configured && s.countries.length
-    ? `<h2>官网请求来源（近 30 天，按请求数）</h2><div class="card">${distTable(s.countries, countryLabel)}</div>`
-    : '';
-  return html(layout('项目', `<h1>项目数据</h1>
-<p class="muted">GitHub 与官网的每日快照，定时任务每几个小时取一次、存进库里画趋势（GitHub 只给当前值）。
-下载数只算 App Release（tag 以 v 开头）的安装包，不含 libmpv / 引擎 / 模型等内部构件，也不含官网 /releases 走 Cloudflare 镜像的下载。</p>
-<form method="post" action="/dev/project/refresh" class="inline"><button>立即刷新</button></form>
-<h2>GitHub</h2>
-${sourceStatus(st.githubStatus)}
-${st.githubToken ? '' : '<p class="muted">没配 GITHUB_TOKEN：走未认证配额（Cloudflare 共享出口 IP，偶尔 403），也看不到访问 / clone 数。<code>wrangler secret put GITHUB_TOKEN</code> 后补上。</p>'}
-${st.repos.map(repoSection).join('')}
+  let site = '<p class="muted">官网访问量未配置（CF_ANALYTICS_TOKEN / CF_ZONE_ID）。</p>';
+  if (s.configured) {
+    const days = [...s.days].reverse().filter((d) => d.day < today);
+    const kpi = (label, v) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${v}</b></div>`;
+    site = `${sourceError('官网', s.status)}
+<div class="kpis">${kpi('昨日浏览', fmtInt(s.yesterday?.page_views ?? null))}${kpi('昨日访客', fmtInt(s.yesterday?.visitors ?? null))}`
+      + `${kpi('近 30 天浏览', fmtInt(s.totals.pageViews))}${kpi('近 30 天流量', esc(fmtVolume(s.totals.bytes)))}</div>
+<div class="card">${lineChart('官网每日访问', days.map((d) => d.day), [
+        { label: '浏览', values: days.map((d) => d.pageViews) },
+        { label: '访客', values: days.map((d) => d.visitors) },
+      ])}</div>
+${s.countries.length ? `<details class="card"><summary>请求来源国家 / 地区（近 30 天）</summary>${distTable(s.countries, countryLabel)}</details>` : ''}`;
+  }
+  return html(layout('项目', `<div class="title"><h1>项目数据</h1>
+<form method="post" action="/dev/project/refresh" class="inline"><button class="small">刷新</button></form></div>
+${sourceError('GitHub', st.githubStatus)}
+${st.repos.map((r) => repoSection(r, today)).join('')}
 <h2>官网 fushi.moe</h2>
-<p class="muted">Cloudflare zone 级每日汇总，含同 zone 的 rank.fushi.moe（App 心跳 / 排行榜）与安装包下载：
-页面浏览只数 HTML 响应，基本是官网与处理台的页面；独立访客按 IP 去重，会混进发心跳的 App；流量大头是安装包。当天数字未完结。</p>
-<div class="card">${siteBody}</div>
-${countries}`, { signedIn: true }));
+${site}
+<p class="muted foot">日期按 UTC，当天未完结的不画进每日图。下载只算 App Release 安装包；官网数字含同 zone 的 rank.fushi.moe。</p>`, { signedIn: true }));
 }
 
 /** 修复是否已装到报告人那台（按该安装最近一次心跳的通道 / 平台 / 版本）。没有可比的发布 → 空串。 */
