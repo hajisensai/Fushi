@@ -192,19 +192,20 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
   }
 
   /// 卡面上挂着同名视频片段（`SrsCardVideoClip`，见 [SrsCardVideoChannel]）时交给它在画面里播，否则走共用音频播放器。
-  /// 两条路都在第一个 await 之前就登记了这次播放（片段通道同步登记；
+  /// 片段可能还没挂上（翻面后同步起的序列先于片段那一帧构建）：通道等这轮构建跑完再决定，
+  /// 不先退回只播音频（否则画面停在首帧、声音由后台播放器单独放）。
+  /// 每条路都在第一个 await 之前就登记了这次播放（片段通道同步登记 / 登记等待；
   /// [DesktopAudioPlayback.playFileToEnd] 先记激活代号再排队），随后的 [stop] 能取消它。
   @override
-  Future<bool> playToEnd(String path) {
-    final Future<bool>? clip = _ref
-        .read(srsCardVideoChannelProvider)
-        .playToEnd(p.basename(path));
-    if (clip != null) return clip;
-    return DesktopAudioPlayback.playFileToEnd(
-      path,
-      volume: _ref.read(srsReviewVolumeProvider),
-    );
-  }
+  Future<bool> playToEnd(String path) => _ref
+      .read(srsCardVideoChannelProvider)
+      .playToEndOrElse(
+        p.basename(path),
+        () => DesktopAudioPlayback.playFileToEnd(
+          path,
+          volume: _ref.read(srsReviewVolumeProvider),
+        ),
+      );
 
   @override
   Future<void> stop() async {

@@ -12,6 +12,7 @@ import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
@@ -2102,5 +2103,85 @@ void main() {
     expect(await s.entityIds(SrsEntityKind.note), hasLength(63));
     expect(rep.notesAdded, 62, reason: 'x59 落库时已存在，不算新增');
     expect(rep.cardsAdded, 5 + 59);
+  });
+
+  test('Lapis 牌组迁移改名成 Fushi Card 后再迁移：认回改名的牌组，不另建 Lapis、卡不拆走', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    // Anki 那边的牌组叫「Lapis」/「Lapis::JP」，迁移之后也一直叫这个名字。
+    Uint8List lapisApkg() => zipOf(<String, List<int>>{
+      'collection.anki21': buildLegacyCollection(
+        crtSecs: crtSecs,
+        conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': true},
+        models: legacyModels(),
+        decks: <String, Object?>{
+          ...legacyDecks(),
+          '$kDeckLang': <String, Object?>{
+            'id': kDeckLang,
+            'name': 'Lapis',
+            'dyn': 0,
+            'conf': 2,
+          },
+          '$kDeckJp': <String, Object?>{
+            'id': kDeckJp,
+            'name': 'Lapis::JP',
+            'dyn': 0,
+            'conf': 2,
+          },
+        },
+        dconf: legacyDconf(),
+        notes: fixtureNotes(t),
+      ),
+      'media': utf8.encode(jsonEncode(<String, String>{})),
+    });
+
+    await importInto(s, lapisApkg());
+    expect(await s.renameLapisDecks(), 1);
+    Map<String, String> cardDecks(
+      SrsDeckTree tree,
+      List<SrsCardCacheRow> rows,
+    ) => <String, String>{
+      for (final SrsCardCacheRow c in rows)
+        if (!c.hidden) c.id: tree.fullName(c.deckId),
+    };
+    final SrsDeckTree renamedTree = await s.deckTree();
+    final Map<String, String> before = cardDecks(
+      renamedTree,
+      await s.allCardRows(),
+    );
+    expect(
+      before.values,
+      containsAll(<String>['Fushi Card', 'Fushi Card::JP']),
+    );
+    final int deckCount = renamedTree.decks.length;
+
+    // 重跑迁移（导入 + 改名）两次：都落回改过名的牌组。
+    for (int round = 0; round < 2; round++) {
+      await importInto(s, lapisApkg());
+      expect(await s.renameLapisDecks(), 0, reason: 'round $round');
+      final SrsDeckTree tree = await s.deckTree();
+      expect(
+        <String>[for (final SrsDeckView d in tree.decks) tree.fullName(d.id)]
+          ..sort(),
+        <String>[
+          for (final SrsDeckView d in renamedTree.decks)
+            renamedTree.fullName(d.id),
+        ]..sort(),
+        reason: 'round $round: 没有另建 Lapis',
+      );
+      expect(tree.decks, hasLength(deckCount));
+      expect(
+        tree.decks.where((SrsDeckView d) => d.name == 'Fushi Card'),
+        hasLength(1),
+      );
+      expect(
+        tree.decks.where((SrsDeckView d) => d.name.toLowerCase() == 'lapis'),
+        isEmpty,
+      );
+      expect(cardDecks(tree, await s.allCardRows()), before);
+    }
   });
 }

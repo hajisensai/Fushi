@@ -26,6 +26,8 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart'
+    show SrsLegacyLapisMigrationOps, srsLapisDeckRenamed;
 
 export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show SrsImportException, SrsZstdDecoder;
@@ -939,6 +941,7 @@ class _Importer {
           break;
         }
       }
+      found ??= _renamedLapisDeck(tree, full, parent);
       if (found != null) {
         idByName[full] = found;
         continue;
@@ -996,6 +999,25 @@ class _Importer {
             byName[full]!.configId,
       }.where(col.presets.containsKey).length;
     }
+  }
+
+  /// Anki 牌组 [full]（本机父牌组 [parent]）先前导入过、又被 Lapis 迁移改名成了 Fushi Card
+  /// （[SrsLegacyLapisMigrationOps.renameLapisDecks]）时，本机那个牌组的 ID；否则 null。
+  ///
+  /// 导入按「名字 + 父牌组」找牌组，Anki 那边仍叫「Lapis」，对不上改过名的本机牌组；以前这里就
+  /// 另建一个「Lapis」并把卡挪进去，随后的改名又因同级已有「Fushi Card」被跳过——重跑迁移后
+  /// 牌组重复、卡被拆成两半。认回的判据是确定的：按 Anki 全名派生的导入 ID（[srsImportedDeckId]）
+  /// 还活着、仍在同一父牌组下、名字正是 [srsLapisDeckRenamed] 的结果——即它就是从这个 Anki 牌组
+  /// 导入、再由迁移改名的那个。用户手改成别的名字的不认（照旧另建，见 [_mapDecks]）。
+  String? _renamedLapisDeck(SrsDeckTree tree, String full, String? parent) {
+    final String? renamed = srsLapisDeckRenamed(_parts(full).last);
+    if (renamed == null) return null;
+    final String id = srsImportedDeckId(profileUid, full);
+    final SrsDeckView? d = tree[id];
+    if (d == null || d.name != renamed || tree.parentOf(id) != parent) {
+      return null;
+    }
+    return id;
   }
 
   /// 首次建牌组 [full] 时随它一起写的设置（预设参数 / 继承方式 / 收起 / fushi-ext 的牌组键）。

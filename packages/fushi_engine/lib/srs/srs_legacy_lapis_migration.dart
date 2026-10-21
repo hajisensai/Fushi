@@ -67,13 +67,16 @@ class SrsLapisFieldSlot {
   final SrsLapisFieldMatch match;
 }
 
-/// 牌组名里的「lapis」（不分大小写）换成「Fushi Card」（[FushiCardNoteType.modelName]）；
-/// 不含 lapis 时为 null。`Lapis` → `Fushi Card`，`Lapis Mining` → `Fushi Card Mining`。
+/// 牌组名里作为独立单词出现的「lapis」（不分大小写）换成「Fushi Card」
+/// （[FushiCardNoteType.modelName]）；没有时为 null。按词边界匹配而不是子串：
+/// `Lapis` → `Fushi Card`，`Lapis Mining` → `Fushi Card Mining`，`日语 LAPIS` →
+/// `日语 Fushi Card`；`Lapislazuli` 这类只是含这几个字母的名字不动。
 String? srsLapisDeckRenamed(String name) {
-  final RegExp lapis = RegExp('lapis', caseSensitive: false);
-  if (!lapis.hasMatch(name)) return null;
-  return name.replaceAll(lapis, FushiCardNoteType.modelName);
+  if (!_lapisWord.hasMatch(name)) return null;
+  return name.replaceAll(_lapisWord, FushiCardNoteType.modelName);
 }
+
+final RegExp _lapisWord = RegExp(r'\blapis\b', caseSensitive: false);
 
 /// 字段名归一：小写、去掉空白与常见分隔符（`Misc Info` = `misc_info` = `MiscInfo`）。
 String srsNormalizeLapisFieldName(String name) =>
@@ -752,9 +755,12 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     return ids.length;
   });
 
-  /// 把名字里带「lapis」的牌组（不分大小写，只看牌组自己那一级的名字）改名：「lapis」换成
-  /// 「Fushi Card」（[srsLapisDeckRenamed]）。改名后与同级已有牌组（或同级另一个改名结果）重名的
-  /// 跳过，不合并牌组。一次批量写入，返回改名的牌组数；重复执行不再写任何东西。
+  /// 把名字里带独立单词「lapis」的牌组（不分大小写，只看牌组自己那一级的名字）改名：
+  /// 「lapis」换成「Fushi Card」（[srsLapisDeckRenamed]）。改名后与同级已有牌组（或同级另一个改名结果）重名的跳过，不合并
+  /// 牌组。一次批量写入，返回改名的牌组数；重复执行不再写任何东西。
+  ///
+  /// 之后再从 Anki 迁移（Anki 那边仍叫「Lapis」）时，导入按导入 ID 把它认回这个改过名的牌组
+  /// （`srs_apkg_import.dart` 的 `_renamedLapisDeck`），不另建「Lapis」、不把卡挪走。
   Future<int> renameLapisDecks() => runExclusive(() async {
     final SrsDeckTree tree = await deckTree();
     final Map<String?, Set<String>> siblingNames = <String?, Set<String>>{};
