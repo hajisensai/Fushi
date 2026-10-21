@@ -1629,7 +1629,6 @@ void main() {
   });
 }
 
-/// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。
 /// RWKV 排程的替身：只决定「现在能不能按 R 排队」。
 class _FakeRwkv implements SrsRwkvScheduling {
   _FakeRwkv({required this.ready});
@@ -1647,6 +1646,7 @@ class _FakeRwkv implements SrsRwkvScheduling {
   Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
 }
 
+/// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。
 class _RecordingAudio implements SrsCardAudioOutput {
   _RecordingAudio({this.holdOpen = false});
 
