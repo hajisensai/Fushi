@@ -448,4 +448,37 @@ void main() {
       expect(c.backfill, 0);
     });
   });
+
+  group('Lapis deck rename', () {
+    test('name mapping: case-insensitive, null without lapis', () {
+      expect(srsLapisDeckRenamed('Lapis'), 'Fushi Card');
+      expect(srsLapisDeckRenamed('lapis mining'), 'Fushi Card mining');
+      expect(srsLapisDeckRenamed('日语 LAPIS'), '日语 Fushi Card');
+      expect(srsLapisDeckRenamed('Mining'), isNull);
+    });
+
+    test(
+      'renames own level only, skips sibling collisions, idempotent',
+      () async {
+        final SrsDbStore s = await device();
+        final String lapisTop = await s.createDeck('Lapis');
+        final String child = await s.createDeck(
+          'Lapis Mining',
+          parentId: lapisTop,
+        );
+        final String plain = await s.createDeck('Words', parentId: lapisTop);
+        // 「Lapis Old」改名会撞同级已有的「Fushi Card Old」：保持原名。
+        final String clash = await s.createDeck('Fushi Card Old');
+        final String clashSrc = await s.createDeck('Lapis Old');
+        expect(await s.renameLapisDecks(), 2);
+        final SrsDeckTree tree = await s.deckTree();
+        expect(tree.fullName(lapisTop), 'Fushi Card');
+        expect(tree.fullName(child), 'Fushi Card::Fushi Card Mining');
+        expect(tree.fullName(plain), 'Fushi Card::Words');
+        expect(tree.fullName(clash), 'Fushi Card Old');
+        expect(tree.fullName(clashSrc), 'Lapis Old');
+        expect(await s.renameLapisDecks(), 0);
+      },
+    );
+  });
 }

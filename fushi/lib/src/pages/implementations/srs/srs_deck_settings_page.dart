@@ -833,17 +833,18 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-algorithm'),
           showSelectedIcon: false,
           segments: <ButtonSegment<SrsAlgorithm>>[
+            // 默认算法（srsDefaultAlgorithm）排第一并标「推荐」，FSRS-7 次之。
+            ButtonSegment<SrsAlgorithm>(
+              value: SrsAlgorithm.rwkv,
+              label: Text(t.srs_settings_algorithm_rwkv_recommended),
+            ),
             ButtonSegment<SrsAlgorithm>(
               value: SrsAlgorithm.fsrs7,
-              label: Text(t.srs_settings_algorithm_fsrs7),
+              label: Text(_algorithmLabel(SrsAlgorithm.fsrs7)),
             ),
             ButtonSegment<SrsAlgorithm>(
               value: SrsAlgorithm.fsrs6,
               label: Text(_algorithmLabel(SrsAlgorithm.fsrs6)),
-            ),
-            ButtonSegment<SrsAlgorithm>(
-              value: SrsAlgorithm.rwkv,
-              label: Text(_algorithmLabel(SrsAlgorithm.rwkv)),
             ),
           ],
           selected: <SrsAlgorithm>{_algorithm},
