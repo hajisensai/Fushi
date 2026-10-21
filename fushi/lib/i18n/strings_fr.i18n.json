@@ -8447,6 +8447,8 @@
   "video_source_grouping_mode": "Organisation des vidéos",
   "video_source_grouping_series": "Par œuvre",
   "video_source_grouping_series_hint": "Identifie les œuvres et les épisodes à partir des noms de fichiers, puis recherche les métadonnées correspondantes.",
+  "video_source_restore_grouping_action": "Restore automatic grouping",
+  "video_source_restore_grouping_confirm": "Series you dissolved will be grouped again by file name, the same way a fresh scan groups them. Collections you made yourself are not changed.",
   "video_source_scrape_action": "Récupérer cette source",
   "video_source_scrape_ai_identify": "Identify with AI",
   "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%",

@@ -308,6 +308,129 @@ void main() {
     );
   });
 
+  test('BUG-3652 整批解散后普通重扫保持解散；恢复自动分组把每个系列归回', () async {
+    final int sourceId = await addSource('/library');
+    final List<String> paths = <String>[
+      '/library/Alpha S01E01.mkv',
+      '/library/Alpha S01E02.mkv',
+      '/library/Beta S01E01.mkv',
+      '/library/Beta S01E02.mkv',
+    ];
+    for (final String path in paths) {
+      await addVideo(
+        uid: path.split('/').last,
+        path: path,
+        sourceId: sourceId,
+      );
+    }
+    final VideoFolderGroupSummary first = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    expect(first.createdCollectionIds, hasLength(2));
+    final List<String> names = <String>[
+      for (final int id in first.createdCollectionIds)
+        (await db.getMediaCollectionById(id))!.name,
+    ];
+
+    // 库页多选整批「删除」= 逐个解散，每个系列留下合集级墓碑。
+    for (final int id in first.createdCollectionIds) {
+      await db.deleteMediaCollection(id);
+    }
+    final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    expect(rescan.createdCollectionIds, isEmpty,
+        reason: '普通重扫仍尊重用户的解散（BUG-1739）');
+
+    final VideoFolderGroupSummary restored = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      restoreDissolvedGroups: true,
+    );
+    expect(restored.createdCollectionIds, hasLength(2));
+    for (final String name in names) {
+      final MediaCollectionRow? collection =
+          await db.getMediaCollectionByNaturalKey(name, 'playlist');
+      expect(collection, isNotNull, reason: '$name 应被重新归组');
+      expect(await db.getCollectionItems(collection!.id), hasLength(2));
+      expect(await db.hasCollectionDeletionTombstone(name, 'playlist'), isFalse,
+          reason: '恢复后墓碑清掉，后续普通重扫不会再把它当解散');
+    }
+
+    final VideoFolderGroupSummary after = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+    );
+    expect(after.createdCollectionIds, isEmpty, reason: '恢复后重扫幂等');
+    expect(after.updatedCollectionIds, isEmpty);
+  });
+
+  test('BUG-3652 文件夹模式恢复自动分组越过合集墓碑与成员墓碑', () async {
+    final int sourceId = await addSource('/library');
+    final List<String> paths = <String>[
+      '/library/Show/Episode A.mkv',
+      '/library/Show/Episode B.mkv',
+    ];
+    for (final String path in paths) {
+      await addVideo(
+        uid: path.split('/').last,
+        path: path,
+        sourceId: sourceId,
+      );
+    }
+    final VideoFolderGroupSummary first = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: '/library',
+    );
+    final int collectionId = first.createdCollectionIds.single;
+    final String name = (await db.getMediaCollectionById(collectionId))!.name;
+    await db.removeFromCollection(
+        collectionId, MediaKind.video, 'Episode A.mkv');
+    await db.deleteMediaCollection(collectionId);
+    // deleteMediaCollection 会清掉该名下的成员墓碑、只留合集级哨兵；成员墓碑
+    // 仍可经同步落进来（对端清单带着它）。这里把两种墓碑都摆上，钉住「恢复」
+    // 对新建的目录合集两种都越过——只越过建合集前的全员检查、加成员时却仍按
+    // 成员墓碑跳过，会建出缺集甚至空的合集。
+    for (final String uid in <String>['Episode A.mkv', 'Episode B.mkv']) {
+      await db.upsertCollectionMemberTombstone(
+        collectionName: name,
+        collectionType: 'collection',
+        mediaType: MediaKind.video.dbValue,
+        entryKey: uid,
+        deletedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+
+    final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: '/library',
+    );
+    expect(rescan.createdCollectionIds, isEmpty);
+
+    await coordinator.groupPaths(
+      videoPaths: paths,
+      sourceId: sourceId,
+      groupingMode: 'folder',
+      sourceRoot: '/library',
+      restoreDissolvedGroups: true,
+    );
+    final MediaCollectionRow? restored =
+        await db.getMediaCollectionByNaturalKey(name, 'collection');
+    expect(restored, isNotNull);
+    expect(
+      (await db.getCollectionItems(restored!.id))
+          .map((MediaCollectionItemRow item) => item.entryKey)
+          .toSet(),
+      <String>{'Episode A.mkv', 'Episode B.mkv'},
+    );
+  });
+
   test('重扫幂等；新增与暂缺分集都复用原合集并对全集排序', () async {
     final int sourceId = await addSource('/library');
     for (final ({String uid, String path}) item in <({

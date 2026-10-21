@@ -8447,6 +8447,8 @@
   "video_source_grouping_mode": "Cách nhóm video",
   "video_source_grouping_series": "Theo tác phẩm",
   "video_source_grouping_series_hint": "Nhận diện tác phẩm và tập phim từ tên tệp, sau đó ghép siêu dữ liệu.",
+  "video_source_restore_grouping_action": "Restore automatic grouping",
+  "video_source_restore_grouping_confirm": "Series you dissolved will be grouped again by file name, the same way a fresh scan groups them. Collections you made yourself are not changed.",
   "video_source_scrape_action": "Quét nguồn này",
   "video_source_scrape_ai_identify": "Identify with AI",
   "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%",

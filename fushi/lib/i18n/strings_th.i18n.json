@@ -8447,6 +8447,8 @@
   "video_source_grouping_mode": "การจัดกลุ่มวิดีโอ",
   "video_source_grouping_series": "ตามผลงาน",
   "video_source_grouping_series_hint": "ระบุผลงานและตอนจากชื่อไฟล์ แล้วจับคู่ข้อมูลเมตา",
+  "video_source_restore_grouping_action": "Restore automatic grouping",
+  "video_source_restore_grouping_confirm": "Series you dissolved will be grouped again by file name, the same way a fresh scan groups them. Collections you made yourself are not changed.",
   "video_source_scrape_action": "ดึงข้อมูลแหล่งนี้",
   "video_source_scrape_ai_identify": "Identify with AI",
   "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%",

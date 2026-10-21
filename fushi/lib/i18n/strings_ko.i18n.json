@@ -8447,6 +8447,8 @@
   "video_source_grouping_mode": "동영상 정리 방식",
   "video_source_grouping_series": "작품별",
   "video_source_grouping_series_hint": "파일 이름에서 작품과 에피소드를 식별한 후 메타데이터를 일치시킵니다.",
+  "video_source_restore_grouping_action": "Restore automatic grouping",
+  "video_source_restore_grouping_confirm": "Series you dissolved will be grouped again by file name, the same way a fresh scan groups them. Collections you made yourself are not changed.",
   "video_source_scrape_action": "이 소스 스크래핑",
   "video_source_scrape_ai_identify": "Identify with AI",
   "video_source_scrape_ai_suggested": "AI suggestion · ${percent}%",

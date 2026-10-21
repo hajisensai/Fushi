@@ -8447,6 +8447,8 @@
   "video_source_grouping_mode": "视频分组方式",
   "video_source_grouping_series": "按作品",
   "video_source_grouping_series_hint": "按文件名识别作品与分集，再匹配作品资料。",
+  "video_source_restore_grouping_action": "恢复自动分组",
+  "video_source_restore_grouping_confirm": "你解散过的系列会按文件名重新归组，和首次扫描的分组方式一样。你自己建的合集不受影响。",
   "video_source_scrape_action": "刮削此来源",
   "video_source_scrape_ai_identify": "AI 识别",
   "video_source_scrape_ai_suggested": "AI 建议 · ${percent}%",
