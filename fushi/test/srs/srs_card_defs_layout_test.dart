@@ -37,11 +37,13 @@ SrsDefsLayoutConfig _config({
   int rows = 1,
   bool collapse = true,
   List<String> folded = const <String>[],
+  List<String> unfolded = const <String>[],
 }) => SrsDefsLayoutConfig(
   columns: columns,
   autoExpandRows: rows,
   collapseDictionaries: collapse,
   collapsedDictionaryNames: folded,
+  expandedDictionaryNames: unfolded,
   mainLabel: 'Main',
   othersLabel: 'Others',
   uiLanguageTag: 'zh-CN',
@@ -95,7 +97,12 @@ void main() {
   group('宿主 CSS', () {
     test('参数变量；列数 / 行数钳位；逐本折叠的词典名转义进属性选择器', () {
       final String css = srsDefsLayoutCss(
-        _config(columns: 9, rows: 99, folded: <String>['A "B" \\ C']),
+        _config(
+          columns: 9,
+          rows: 99,
+          folded: <String>['A "B" \\ C'],
+          unfolded: <String>['E'],
+        ),
       );
       expect(css, contains('--fushi-srs-dict-cols:4;'));
       expect(css, contains('--fushi-srs-dict-rows:6;'));
@@ -107,6 +114,10 @@ void main() {
         contains(
           r'.fc-dict[data-fc-dict="A \"B\" \\ C"]{--fushi-srs-dict-folded:1;}',
         ),
+      );
+      expect(
+        css,
+        contains('.fc-dict[data-fc-dict="E"]{--fushi-srs-dict-unfolded:1;}'),
       );
       expect(
         srsDefsLayoutCss(_config(columns: 0, collapse: false)),
@@ -188,6 +199,7 @@ void main() {
         return <String, Object?>{
           'shell': d.shellHtml,
           'calls': d.hostScript + d.fullCardScript,
+          'host': d.hostScript,
           'open': open,
           'cols': cols,
           'main': withMain,
@@ -212,6 +224,20 @@ void main() {
           false,
           false,
         ]),
+        // 词典管理里逐本显式展开的：自动展开窗口外也展开（BUG-2158 三态，与查词弹窗同序）。
+        'unfolded outside budget': page(
+          _config(unfolded: <String>['DictC']),
+          <bool>[false, false, true, false],
+        ),
+        // 显式展开压过显式折叠与自动展开行数。
+        'unfolded beats folded': page(
+          _config(
+            rows: 2,
+            folded: <String>['DictB'],
+            unfolded: <String>['DictD'],
+          ),
+          <bool>[true, false, false, true],
+        ),
         // 全局「折叠词典显示」关：全部展开（逐本折叠的照样收起）。
         'collapse off': page(
           _config(collapse: false, folded: <String>['DictC']),

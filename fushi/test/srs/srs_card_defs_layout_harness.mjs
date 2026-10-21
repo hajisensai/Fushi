@@ -95,6 +95,38 @@ try {
       window.__fushiSrsHostLayout();
       check(JSON.stringify(groups.map((g) => g.open)) === JSON.stringify(before), 'manual toggle kept');
       checkPacking('after toggle');
+
+      // 模板布局键变化（卡面宽度跨过 back.html 的 720px 门槛）：模板 applyLayout 把分组全部
+      // 重设开合；无论它与宿主谁先跑，最终都要回到宿主规则（逐本折叠 / 显式展开 / 自动展开）。
+      const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const setWide = (wide) => {
+        for (const el of [document.body, ...document.querySelectorAll('.card')]) {
+          el.classList.toggle('fushi-srs-layout-wide', wide);
+          el.classList.toggle('fushi-srs-layout-narrow', !wide);
+        }
+        window.dispatchEvent(new Event('resize'));
+      };
+      setWide(false);
+      await frame();
+      setWide(true);
+      await frame();
+      check(JSON.stringify(groups.map((g) => g.open)) === JSON.stringify(${JSON.stringify(page.open)}),
+        'open states after template layout key change ' + JSON.stringify(groups.map((g) => g.open)));
+      checkPacking('after key change');
+
+      // 主题变化会重跑宿主脚本：观察器是单例，一次尺寸变化只重排一次。
+      ${page.host}
+      window.__fushiSrsHostLayout();
+      await frame();
+      const realApply = window.__fushiSrsHostLayout;
+      let applies = 0;
+      window.__fushiSrsHostLayout = () => { applies++; realApply(); };
+      // ResizeObserver 默认看 content box：撑高内容区（padding 不算）。
+      groups[0].style.minHeight = (groups[0].offsetHeight + 40) + 'px';
+      await frame();
+      await new Promise((r) => setTimeout(r, 50));
+      check(applies === 1, 'resize applies after script rerun: ' + applies);
+      window.__fushiSrsHostLayout = realApply;
       return fails;
     })()`);
     if (result.length) {

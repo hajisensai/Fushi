@@ -1031,10 +1031,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // BUG-2158：与 collapsedNames 成对的第二个名单。缺了它，popup.js 就只能在
   // 「显式折叠」和「没表态」之间二选一，用户点的「展开」无处可去。
   final String expandedNames = jsonEncode(
-    appModel.dictionaries
-        .where((d) => d.isExplicitlyExpanded(JapaneseLanguage.instance))
-        .map((d) => d.name)
-        .toList(),
+    popupExpandedDictionaryNames(appModel),
   );
   // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
   final String hiddenNames = jsonEncode(
@@ -1289,5 +1286,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
 List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
     .dictionaries
     .where((d) => d.isCollapsed(JapaneseLanguage.instance))
+    .map((d) => d.name)
+    .toList();
+
+/// 词典管理里逐本设成「展开」的词典名（BUG-2158 三态里优先级最高的一档）：查词弹窗
+/// （`expandedDictionaryNames`）与复习卡面释义页共用这一个真相源。
+List<String> popupExpandedDictionaryNames(AppModel appModel) => appModel
+    .dictionaries
+    .where((d) => d.isExplicitlyExpanded(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();

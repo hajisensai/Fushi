@@ -1,5 +1,6 @@
 /// 复习页混合渲染的释义页排版：主词典通栏在上、其他词典分列（与查词弹窗同一套最短列
-/// 瀑布流），展开规则也与查词弹窗同一套（列数 / 自动展开行数 / 折叠词典显示 / 词典管理里逐本的折叠）。
+/// 瀑布流），展开规则也与查词弹窗同一套（列数 / 自动展开行数 / 折叠词典显示 / 词典管理里
+/// 逐本的三态：显式展开 > 显式折叠 > 继承）。
 ///
 /// 只作用于 Fushi 卡片混合渲染里单独进 WebView 的释义页（根节点 `.fc-defs-only`）；Anki
 /// 模板本身不动——原生渲染按「笔记类型 CSS 与内置模板逐字一致」判定，改模板会让库里已有
@@ -13,7 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
-    show popupCollapsedDictionaryNames;
+    show popupCollapsedDictionaryNames, popupExpandedDictionaryNames;
 
 /// 释义页的排版参数（来自查词设置）。
 @immutable
@@ -23,6 +24,7 @@ class SrsDefsLayoutConfig {
     required this.autoExpandRows,
     required this.collapseDictionaries,
     required this.collapsedDictionaryNames,
+    this.expandedDictionaryNames = const <String>[],
     required this.mainLabel,
     required this.othersLabel,
     required this.uiLanguageTag,
@@ -40,6 +42,10 @@ class SrsDefsLayoutConfig {
 
   /// 词典管理里逐本设成折叠的词典：始终收起，优先于自动展开（与 popup.js BUG-1264 同序）。
   final List<String> collapsedDictionaryNames;
+
+  /// 词典管理里逐本设成展开的词典：始终展开，优先级最高——压过逐本折叠、自动展开行数与
+  /// 全局折叠开关（与 popup.js `expandedDictionaryNames`、BUG-2158 同序）。
+  final List<String> expandedDictionaryNames;
 
   final String mainLabel;
   final String othersLabel;
@@ -64,6 +70,9 @@ final Provider<String> srsDefsLayoutCssProvider = Provider<String>(
           collapseDictionaries: !ready || app.collapseDictionaries,
           collapsedDictionaryNames: ready
               ? popupCollapsedDictionaryNames(app)
+              : const <String>[],
+          expandedDictionaryNames: ready
+              ? popupExpandedDictionaryNames(app)
               : const <String>[],
           mainLabel: t.srs_card_label_main_dictionary,
           othersLabel: t.srs_card_label_other_dictionaries,
@@ -131,17 +140,49 @@ String srsDefsLayoutCss(SrsDefsLayoutConfig c) {
       '.fc-dict[data-fc-dict=${_cssString(name)}]{--fushi-srs-dict-folded:1;}',
     );
   }
+  for (final String name in c.expandedDictionaryNames) {
+    out.write(
+      '.fc-dict[data-fc-dict=${_cssString(name)}]{--fushi-srs-dict-unfolded:1;}',
+    );
+  }
   return out.toString();
 }
 
 /// 释义页的宿主脚本（定义 `window.__fushiSrsHostLayout`，外壳在卡片脚本跑完、换主题后调）。
 /// 内容固定；参数从 [srsDefsLayoutCss] 的 CSS 变量读。只在参数 / 列数 / 模板折叠状态变了
 /// 时重排展开状态，用户手动开合过的不被覆盖；每次都按当前高度重新分列。
+///
+/// 模板脚本（back.html `applyLayout`）在布局键（全部释义默认展开 × 宽 / 窄）变化时会把
+/// 分组一律重设开合；它与本脚本都挂在 window `resize` 上，而本脚本随主题先于卡片脚本执行、
+/// 监听器先注册先跑。所以排版前先让模板把自己的布局键算到最新（`__fcApplyLayout`，键没变
+/// 时它不动开合），再读释义页根节点（`.fc-back`）上的 `__fcLayoutKey` 并入本脚本的键：
+/// 无论两边谁先跑，模板改过开合之后本脚本一定按自己的规则重排一次。
+///
+/// 高度监听是全页单例（`window.__fushiSrsDefsObserver`）：脚本重新执行时先断开旧的，
+/// 每次排版先 `disconnect` 再只观察当前卡的分组，换卡后旧节点不再被持有。
 const String kSrsDefsLayoutScript = r'''
 (function(){
   // 与 popup.js 同值：列间距 / 收起卡下方的行距 / 每列最小宽度（kSrsDefsMinColumnWidth）。
   var GAP = 6, COLLAPSED_GAP = 4, MIN_COL = 170;
-  var observer = null;
+  // 主题变化会重跑本脚本：断开上一次留下的观察器（它的回调绑着旧闭包）。
+  if (window.__fushiSrsDefsObserver) window.__fushiSrsDefsObserver.disconnect();
+  window.__fushiSrsDefsObserver = null;
+  function observer(){
+    if (typeof ResizeObserver !== 'function') return null;
+    if (!window.__fushiSrsDefsObserver) {
+      // 开合 / 图片载入改变卡片高度时重排（同 popup.js masonryObserver：高度没变不重排）。
+      window.__fushiSrsDefsObserver = new ResizeObserver(function(entries){
+        for (var e = 0; e < entries.length; e++) {
+          var t = entries[e].target;
+          if (t.__fushiSrsHeight !== t.offsetHeight) {
+            if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
+            return;
+          }
+        }
+      });
+    }
+    return window.__fushiSrsDefsObserver;
+  }
   function coarse(){
     try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); }
     catch (e) { return false; }
@@ -159,6 +200,8 @@ const String kSrsDefsLayoutScript = r'''
     for (var i = 0; i < items.length; i++) {
       items[i].style.width = '';
       items[i].style.transform = '';
+      // 记下高度：否则观察器把每次回调都当成高度变了，一列时无限重排。
+      items[i].__fushiSrsHeight = items[i].offsetHeight;
     }
   }
   // 最短列打包（popup.js layoutMasonry 相 2–4）：按顺序把每本放进当前最短的一列。
@@ -197,9 +240,15 @@ const String kSrsDefsLayoutScript = r'''
     list.style.height = bottom + 'px';
   }
   function apply(){
+    var obs = observer();
+    if (obs) obs.disconnect();
     var root = document.getElementById('fushi-card-root');
     var fc = root && root.querySelector('.fc-defs-only');
     if (!fc) return;
+    // 先让模板把布局键与它的开合更新到最新（键没变时是空操作），见上方说明。
+    if (typeof window.__fcApplyLayout === 'function') {
+      try { window.__fcApplyLayout(); } catch (err) { if (window.console) console.error(err); }
+    }
     var cs = getComputedStyle(document.documentElement);
     function num(name, d){
       var v = parseFloat(cs.getPropertyValue(name));
@@ -231,30 +280,25 @@ const String kSrsDefsLayoutScript = r'''
     var groups = list.querySelectorAll(':scope > .fc-dict');
     var lead = !main && groups.length > 1;
     var cols = columnsFor(list, configured, groups.length - (lead ? 1 : 0));
-    var key = rows + '|' + collapse + '|' + cols + '|' + groups.length + '|' + (root.__fcLayoutKey || '');
+    // 逐本三态（u = 显式展开、f = 显式折叠、- = 继承），并入键：词典管理里改了逐本设置也重排。
+    var states = '';
+    for (var s = 0; s < groups.length; s++) {
+      var gs = getComputedStyle(groups[s]);
+      states += gs.getPropertyValue('--fushi-srs-dict-unfolded').trim() === '1' ? 'u'
+        : gs.getPropertyValue('--fushi-srs-dict-folded').trim() === '1' ? 'f' : '-';
+    }
+    var key = rows + '|' + collapse + '|' + cols + '|' + states + '|' + (fc.__fcLayoutKey || '');
     if (more.__fushiSrsLayoutKey !== key) {
       more.__fushiSrsLayoutKey = key;
       // 自动展开按「行」计：主词典占第一行；没有主释义时第一本（通栏）同样占一行。
       var budget = !collapse ? Infinity : main ? (rows - 1) * cols : 1 + (rows - 1) * cols;
+      // 与 popup.js createGlossarySection 同序：显式展开 > 显式折叠 > 自动展开 / 全局开关。
       for (var i = 0; i < groups.length; i++) {
-        var g = groups[i];
-        var folded = getComputedStyle(g).getPropertyValue('--fushi-srs-dict-folded').trim() === '1';
-        g.open = !folded && i < budget;
+        groups[i].open = states[i] === 'u' || (states[i] !== 'f' && i < budget);
       }
     }
     pack(list, groups, cols, lead);
-    // 开合 / 图片载入改变卡片高度时重排（同 popup.js masonryObserver：高度没变不重排）。
-    if (typeof ResizeObserver === 'function') {
-      if (!observer) {
-        observer = new ResizeObserver(function(entries){
-          for (var e = 0; e < entries.length; e++) {
-            var t = entries[e].target;
-            if (t.__fushiSrsHeight !== t.offsetHeight) { apply(); return; }
-          }
-        });
-      }
-      for (var o = 0; o < groups.length; o++) observer.observe(groups[o]);
-    }
+    if (obs) for (var o = 0; o < groups.length; o++) obs.observe(groups[o]);
   }
   window.__fushiSrsHostLayout = apply;
   if (!window.__fushiSrsHostLayoutListen) {
