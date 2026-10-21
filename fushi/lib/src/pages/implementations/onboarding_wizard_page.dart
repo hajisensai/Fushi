@@ -16,6 +16,7 @@ import 'package:fushi/src/models/module_registry.dart'
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
@@ -152,9 +153,18 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// [OnboardingStepHero]（图标 + 标题 + 一句话）开头；动作走 [OnboardingActionList]
 /// ——必做/推荐的动作直接摊开，可选动作收进「其他方式」折叠组，避免一屏五个入口。
 class OnboardingWizardPage extends BasePage {
-  const OnboardingWizardPage({this.tutorialOnly = false, super.key});
+  const OnboardingWizardPage({
+    this.tutorialOnly = false,
+    this.systemPermissions,
+    super.key,
+  });
 
   final bool tutorialOnly;
+
+  /// 「系统权限」一步的查询 / 申请端口。null = 按平台取（Android 用
+  /// [AppOnboardingSystemPermissions]，其它平台没有这一步）；测试注入假实现时
+  /// 任何平台都出这一步。
+  final OnboardingSystemPermissions? systemPermissions;
 
   @override
   BasePageState<OnboardingWizardPage> createState() =>
@@ -249,7 +259,44 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           reviewMethod: _reviewMethod,
           // 只在没有「复习方式」一步（制卡没勾）时用得上：模块开着就出介绍步骤。
           srsEnabled: appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
+          systemPermissionsAvailable: _systemPermissions != null,
         );
+
+  // ── 系统权限（仅 Android） ─────────────────────────────────────────
+  late final OnboardingSystemPermissions? _systemPermissions =
+      widget.systemPermissions ??
+      (Platform.isAndroid
+          ? AppOnboardingSystemPermissions(
+              updateFeed: appModelNoUpdate.updateFeedService,
+              permissionService: appModelNoUpdate.platformServices.permission,
+            )
+          : null);
+
+  /// 各权限的最近一次查询结果；没查过的不在表里（行显示为未开启、可点）。
+  final Map<OnboardingSystemPermission, bool> _permissionGranted =
+      <OnboardingSystemPermission, bool>{};
+
+  /// 悬浮窗 / 所有文件访问是跳系统设置页授权的：申请调用早于用户做完决定返回，
+  /// 只能等回到应用时再查一遍。
+  AppLifecycleListener? _permissionResumeListener;
+
+  Future<void> _refreshPermissions() async {
+    final OnboardingSystemPermissions? ops = _systemPermissions;
+    if (ops == null) return;
+    for (final OnboardingSystemPermission p
+        in OnboardingSystemPermission.values) {
+      final bool granted = await ops.isGranted(p);
+      if (!mounted) return;
+      setState(() => _permissionGranted[p] = granted);
+    }
+  }
+
+  Future<void> _requestPermission(OnboardingSystemPermission permission) async {
+    final OnboardingSystemPermissions? ops = _systemPermissions;
+    if (ops == null) return;
+    await ops.request(permission);
+    await _refreshPermissions();
+  }
 
   /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
   /// [ModuleId.availableOn] 这一处，向导不再自己写 `Platform.isWindows`。
@@ -264,6 +311,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   void initState() {
     super.initState();
     if (widget.tutorialOnly) return;
+    if (_systemPermissions != null) {
+      _permissionResumeListener = AppLifecycleListener(
+        onResume: () => unawaited(_refreshPermissions()),
+      );
+      unawaited(_refreshPermissions());
+    }
     // 模块方格的初值 = 用户此刻的意愿（pref 真值，缺省全开）。遍历
     // [ModuleId.values] 而不是逐个 if：此前这里只覆盖 5 个模块，下载/查词等根本
     // 没被读也没被写，用户在引导里「只留阅读」压根做不到。
@@ -284,6 +337,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
     unawaited(_packController.prepareDiskState());
+  }
+
+  @override
+  void dispose() {
+    _permissionResumeListener?.dispose();
+    super.dispose();
   }
 
   // dispose 里**没有**取消下载：BUG-2097 的根因就是这里曾经有一句
@@ -1015,12 +1074,80 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     );
   }
 
+  /// 「系统权限」：每项一行，未开启的可点去开，已开启的置灰并挂勾。三项都标
+  /// 「推荐」而不是「可选」：可选项会被 [OnboardingActionList] 收进「其他方式」
+  /// 折叠，而这一步的全部意义就是让人看见哪几项还关着。
+  Widget _buildPermissionsStep() {
+    final Color grantedColor = Theme.of(context).colorScheme.primary;
+    OnboardingAction row(
+      OnboardingSystemPermission permission, {
+      required IconData icon,
+      required String label,
+      required String description,
+      required OnboardingActionNecessity necessity,
+    }) {
+      final bool granted = _permissionGranted[permission] ?? false;
+      return OnboardingAction(
+        icon: icon,
+        label: label,
+        description: granted
+            ? '${t.onboarding_permission_granted} · $description'
+            : description,
+        necessity: necessity,
+        onPressed: granted
+            ? null
+            : () => unawaited(_requestPermission(permission)),
+        trailing: granted
+            ? FushiIcon(
+                FushiIcons.check,
+                key: ValueKey<String>(
+                  'onboarding-permission-granted-'
+                  '${permission.name}',
+                ),
+                color: grantedColor,
+              )
+            : null,
+      );
+    }
+
+    return OnboardingStepView(
+      icon: FushiIcons.shield,
+      title: t.onboarding_step_permissions_title,
+      body: t.onboarding_step_permissions_body,
+      actions: <OnboardingAction>[
+        row(
+          OnboardingSystemPermission.notifications,
+          icon: FushiIcons.notifications,
+          label: t.onboarding_permission_notifications_label,
+          description: t.onboarding_permission_notifications_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+        row(
+          OnboardingSystemPermission.overlay,
+          icon: FushiIcons.floatingBall,
+          label: t.onboarding_permission_overlay_label,
+          description: t.onboarding_permission_overlay_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+        row(
+          OnboardingSystemPermission.storage,
+          icon: FushiIcons.folder,
+          label: t.onboarding_permission_storage_label,
+          description: t.onboarding_permission_storage_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+      ],
+    );
+  }
+
   Widget _buildStep(OnboardingStepId step) {
     switch (step) {
       case OnboardingStepId.welcome:
         return _buildWelcomeStep();
       case OnboardingStepId.features:
         return _buildFeaturesStep();
+      case OnboardingStepId.permissions:
+        return _buildPermissionsStep();
       case OnboardingStepId.recommendedPack:
         return _buildPackStep();
       case OnboardingStepId.manualResources:

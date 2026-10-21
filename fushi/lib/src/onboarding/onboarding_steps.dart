@@ -219,6 +219,9 @@ enum OnboardingStepId {
   /// 功能多选（库页模块 + 配置能力）。
   features,
 
+  /// 系统权限（仅 Android）：通知 / 悬浮窗 / 所有文件访问，安卓默认关着其中几项。
+  permissions,
+
   /// 推荐包下载与导入。
   recommendedPack,
 
@@ -291,6 +294,10 @@ enum OnboardingStepId {
 ///
 /// [srsEnabled]：复习模块（`ModuleId.srs`）此刻是否开着。只在**没有**复习方式一步时
 /// （制卡模块或制卡能力没勾）决定要不要出 [OnboardingStepId.srs] 介绍。
+///
+/// [systemPermissionsAvailable]：本平台有需要用户手动开的系统权限（当前仅 Android，
+/// 用户 2026-10-21：「有些权限比如通知是默认关闭的」）。紧跟功能选择出现——后面
+/// 推荐包下载的进度通知就要用到通知权限。
 List<OnboardingStepId> onboardingStepSequence({
   required Set<OnboardingFeature> selected,
   required bool browserExtensionAvailable,
@@ -298,6 +305,7 @@ List<OnboardingStepId> onboardingStepSequence({
   required bool ankiReady,
   OnboardingReviewMethod reviewMethod = OnboardingReviewMethod.fushi,
   bool srsEnabled = false,
+  bool systemPermissionsAvailable = false,
 }) {
   final bool resourcesSelected = selected.any(
     kOnboardingResourceFeatures.contains,
@@ -315,6 +323,7 @@ List<OnboardingStepId> onboardingStepSequence({
   return <OnboardingStepId>[
     OnboardingStepId.welcome,
     OnboardingStepId.features,
+    if (systemPermissionsAvailable) OnboardingStepId.permissions,
     if (selected.contains(OnboardingFeature.recommendedPack))
       OnboardingStepId.recommendedPack,
     if (selected.contains(OnboardingFeature.manualResources))
