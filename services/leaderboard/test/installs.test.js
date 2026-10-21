@@ -53,11 +53,19 @@ function solvePow(installId, bits = INSTALL_POW_BITS) {
   }
 }
 
-/** 一个新安装：WebCrypto 钥匙 + 指纹 id + 已求好的 PoW。 */
+// 固定安装池（test/gen_install_pool.mjs 生成）：现场给随机钥匙解 PoW 的耗时长尾很重，
+// 一条用例造 2~3 个安装就会随机超过 5 秒超时。池按顺序轮转，单条用例里取到的互不相同。
+const POOL = JSON.parse(readFileSync(new URL('./install_pool.json', import.meta.url), 'utf8'));
+let poolCursor = 0;
+
+/** 一个安装：WebCrypto 钥匙 + 指纹 id + 已求好的 PoW（取自固定池）。 */
 async function makeInstall() {
-  const key = await newKey();
-  const installId = await installIdFromSpki(key.spki);
-  return { key, installId, pow: solvePow(installId) };
+  const { jwk, installId, pow } = POOL.installs[poolCursor++ % POOL.installs.length];
+  const algo = { name: 'ECDSA', namedCurve: 'P-256' };
+  const privateKey = await crypto.subtle.importKey('jwk', jwk, algo, true, ['sign']);
+  const publicKey = await crypto.subtle.importKey('jwk', { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y }, algo, true, ['verify']);
+  const spki = new Uint8Array(await crypto.subtle.exportKey('spki', publicKey));
+  return { key: { privateKey, publicKey, spki, pubkey: b64urlEncode(spki) }, installId, pow };
 }
 
 /** 给一次请求构造安装证明头。override 可替换任一头（构造伪造请求用）。 */
@@ -559,6 +567,20 @@ describe('留存 / 版本升级进度 / 分国家趋势', () => {
 
     const page = await devPage(env, '/dev/stats');
     for (const text of ['分国家日活趋势', '留存', '版本升级进度']) expect(page.data).toContain(text);
+  });
+});
+
+describe('固定安装池', () => {
+  it('每条都按当前 INSTALL_POW_BITS 有效、指纹 id 对得上、互不相同（调高难度后重跑 gen_install_pool.mjs）', async () => {
+    expect(POOL.powBits).toBe(INSTALL_POW_BITS);
+    const ids = new Set();
+    for (let i = 0; i < POOL.installs.length; i += 1) {
+      const inst = await makeInstall();
+      expect(await installIdFromSpki(inst.key.spki)).toBe(inst.installId);
+      expect(await installPowValid(inst.installId, inst.pow)).toBe(true);
+      ids.add(inst.installId);
+    }
+    expect(ids.size).toBe(POOL.installs.length);
   });
 });
 
