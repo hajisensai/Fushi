@@ -1,4 +1,4 @@
-## BUG-3655 · srs-rwkv-rebuild-loop-while-reviewing
+## BUG-3659 · srs-rwkv-rebuild-loop-while-reviewing
 - **报告**：2026-10-21（群内用户截图：复习页一直显示「RWKV 还没准备好，这个牌组暂按 FSRS-7 存下的到期日排队」；同一用户的牌组设置停在「正在回放复习历史… 0/189666」，选的是大模型）
 - **真实性**：✅ 真 bug（用户机器上的日志拿不到，按代码路径与测试复现）。`packages/fushi_engine/lib/srs/srs_rwkv_service.dart` 有两处会让复习途中反复全量重建，重建期间 `ready=false`，每张卡都显示这条提示：
   1. `_rebuild` 先取日志指纹、再分块读全部历史（大收藏要几秒到几十秒）；用户这时还在复习页答题，新评分有的读进去、有的没读进去。重建完对齐时它们「早于已回放的最后一条」（`_appendNew` 的 `r.at < _lastAt`），又触发全量重建——边答边重建，形成循环；读进去的那条还会被再追加一遍。
