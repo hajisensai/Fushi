@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 1. 只在 `release.yml` 有这一步，`release-desktop.yml` 没有——两条正式版 workflow 并行，
 ///    各推一次就是两条合并提交。
 /// 2. 只在正式通道跑（`manifest_channel == 'formal'`）：debug / beta / 手动 prerelease
-///    绝不能动 main。
+///    绝不能动 main；从 main 发的正式版也不跑（main 本身就是正式版代码）。
 /// 3. 排在更新清单发布之后：清单落地 = 资产上传完，那才是「发布成功后」。
 /// 4. 合并方式是 `git merge --no-ff -X theirs`，失败走 `merge --abort` 报错；**绝不 force-push**：
 ///    main 上的机器人图表提交让它永远不是 develop 的祖先，纯快进永远失败；而 force 会
@@ -45,6 +45,8 @@ void main() {
     expect(body,
         contains("if: steps.channel.outputs.manifest_channel == 'formal'"),
         reason: 'debug / beta / 手动 prerelease 绝不能动 main');
+    expect(body, contains("&& github.ref_name != 'main'"),
+        reason: '从 main 发的正式版里 main 就是正式版代码，不能再把 develop 合进去');
     final int manifestAt =
         yaml.indexOf('- name: Publish mirror update manifest (Android assets)');
     final int syncAt = yaml.indexOf('- name: $stepName');

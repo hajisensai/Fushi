@@ -1343,8 +1343,11 @@ jobs:
     # 同步 main 才是「发布成功后」。用 GITHUB_WORKSPACE 当 --reference 借对象，不重新拉全库；
     # 不在工作树里直接 checkout main：烘密钥那步改过已入库的占位文件，切分支会被挡。
     # 守卫：fushi/test/build/release_workflow_main_sync_guard_test.dart。
+    #
+    # 从 main 发的正式版不同步（用户 2026-10-22：「正式版的代码应该是 main 的」）：
+    # 此时 main 本身就是正式版代码，再把 develop 合进来会让测试版代码整批落进 main。
     - name: Sync main to develop after formal release
-      if: steps.channel.outputs.manifest_channel == 'formal'
+      if: steps.channel.outputs.manifest_channel == 'formal' && github.ref_name != 'main'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
