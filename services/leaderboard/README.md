@@ -75,12 +75,12 @@ R2 `fushi-leaderboard-media`；D1 迁移已应用到 `0010_feedback_push_tokens.
 Workers Paid 账户用 Cloudflare Email Service（在 `wrangler.toml` 加 `[[send_email]] name = "EMAIL"`，并在
 dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wrangler secret put RESEND_API_KEY`）。
 
-> ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署勾上 `apply_migrations`，或本机先跑上面的 `d1 migrations apply --remote`）。
+> ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署每次都会自动先迁移再部署；本机部署则先跑上面的 `d1 migrations apply --remote`）。
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
-> `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 勾 `apply_migrations`）。
+> `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 部署自动先迁移）。
 > `0013_install_verified.sql`（`installs.verified` / `install_days.verified` / `feedback.install_verified`，安装证明）：没迁移就部署时心跳、反馈提交、`/dev/stats` 与反馈详情都会 500——**同样碰了反馈提交，务必先迁移**。只加带默认值的列，旧 Worker 在线时先迁移不受影响。
 > `0017_install_dimensions.sql`（`installs` / `install_days` 各加可空列 `country` / `locale` / `arch` / `os_version` / `source`）：没迁移就部署时心跳与 `/dev/stats` 会 500（反馈提交不受影响）——**先迁移**。纯增量，旧 Worker 在线时先迁移不受影响；迁移前的历史记录这些列为 NULL，统计页显示「未记录 / 未上报」。
 > `0018_project_stats.sql`（新表 `repo_daily` / `site_daily` / `project_meta`，处理台 `/dev/project`）：没迁移就部署时定时任务的最后一步与 `/dev/project` 会 500（其余接口不受影响）——**先迁移**。纯新表。
@@ -104,14 +104,15 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 `.github/workflows/leaderboard-worker-deploy.yml`，**只能手动触发**（Actions → leaderboard-worker-deploy →
 Run workflow），push / PR 永远不会部署。维护者不需要在自己机器上 `wrangler login`。
 
-- 输入：`ref`（要部署的分支 / tag / 提交，默认 `develop`）、`apply_migrations`（默认关；打开后先执行
-  `d1 migrations apply fushi-leaderboard --remote`，新增迁移的版本要勾上）。
-- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 打印 `wrangler whoami` 与将要部署的
-  提交号 →（可选）D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
+- 输入：`ref`（要部署的分支 / tag / 提交，默认 `develop`）。没有迁移开关：每次部署都先执行
+  `d1 migrations apply fushi-leaderboard --remote`（幂等，无待执行迁移时为空操作；迁移失败则不部署）。
+  原先的 `apply_migrations` 开关默认关，漏勾就是「先部署、后迁移」，心跳等接口 500（#2433），已移除。
+- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 校验 Cloudflare token（只打状态，不用会泄露账户邮箱的 `wrangler whoami`）并打印将要部署的
+  提交号 → D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
   `GET https://rank.fushi.moe/v1/health` 必须 200。用的是 `package-lock.json` 锁定的 wrangler，不走 `npx`。
 - 凭据：优先读 secret `CLOUDFLARE_WORKERS_API_TOKEN`，没配就回退到 `CLOUDFLARE_API_TOKEN`（原本给
   `mirror-releases.yml` 的 R2 镜像用）；账户 ID 读 `CLOUDFLARE_ACCOUNT_ID`。token 至少要有
-  「Account → Workers Scripts: Edit」，勾 `apply_migrations` 还要「Account → D1: Edit」；若 deploy 报
+  「Account → Workers Scripts: Edit」与「Account → D1: Edit」（每次都迁移）；若 deploy 报
   自定义域名 / route 相关的权限错误，再加限定 `fushi.moe` 的「Zone → Workers Routes: Edit」。
   现有 token 只有 R2 权限时，二选一：在 Cloudflare 后台给它加上述权限，或另建一个 token 存成
   `CLOUDFLARE_WORKERS_API_TOKEN`（推荐，R2 镜像与 Worker 部署权限分开）。
@@ -297,7 +298,7 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
 - 客户端比对的阈值标定（`packages/fushi_engine/test/leaderboard/cover_compare_test.dart`，样本含审查给的伪造图）：
   同图各种重编码 / 缩放 / 调色 / 小裁切 NCC ≥ 0.991、细节 NCC ≥ 0.862；老实伪造 NCC 最高 0.930、细节 ≤ 0.221；
   夹断藏质量的伪造 Dart 解码器直接解不开（按不符处理）。阈值取 NCC ≥ 0.95 且细节 ≥ 0.70。
-- 上线顺序：先 `apply_migrations`（0014）再部署 Worker，再发新客户端。新客户端遇到旧 Worker（响应里没有 `confirmed`）
+- 上线顺序：先迁移（0014，Actions 部署自动先做）再部署 Worker，再发新客户端。新客户端遇到旧 Worker（响应里没有 `confirmed`）
   会退化为旧的按哈希投票，每轮同步只为补确认试一次。
 - 处理台：`GET /admin/api/works/:id/covers` 列出候选的票数、确认票、不符数与状态（`current` / `eligible` /
   `cooldown`（带 `eligibleAt`）/ `needs_votes` / `first`）。

@@ -113,7 +113,7 @@ function githubHeaders(env) {
   return h;
 }
 
-async function fetchRepo(env, repo) {
+async function fetchRepo(env, repo, now) {
   const headers = githubHeaders(env);
   const base = `https://api.github.com/repos/${repo}`;
   const info = await getJson(env, base, { headers });
@@ -136,7 +136,34 @@ async function fetchRepo(env, repo) {
       if (!(e instanceof FetchError)) throw e;
     }
   }
-  return { info, releases: summarizeReleases(releases), traffic };
+  let starHistory = null;
+  try {
+    starHistory = await fetchStarHistory(env, base, headers, now);
+  } catch (e) {
+    if (!(e instanceof FetchError)) throw e;
+  }
+  return { info, releases: summarizeReleases(releases), traffic, starHistory };
+}
+
+/**
+ * 近 trendDays 天每天新增的 star，取自 GET /repos/{repo}/stargazers/history（公开仓库无需 token）：
+ * [{week: 周日 0 点的 Unix 秒, total, days: [周日..周六 7 天各自新增]}]。
+ * 仓库每日快照从上线那天才开始攒，这份让 star 走势一上来就有完整 30 天。
+ * 不用 /stargazers 列表：GitHub 2026 年起只对仓库管理员 / 协作者开放（匿名 401，细粒度只读 token 也拿不到）。
+ * 统计还没算好时 GitHub 可能回 202 + 非数组，按取不到处理，页面退回用每日快照。
+ */
+async function fetchStarHistory(env, base, headers, now) {
+  const weeks = await getJson(env, `${base}/stargazers/history`, { headers });
+  if (!Array.isArray(weeks)) throw new FetchError('stargazers/history: not ready');
+  const cutoff = utcDateKey(now - (PROJECT_LIMITS.trendDays - 1) * DAY_MS);
+  const byDay = {};
+  for (const w of weeks) {
+    (w.days || []).forEach((n, i) => {
+      const day = utcDateKey((Number(w.week) + i * 86400) * 1000);
+      if (day >= cutoff && n > 0) byDay[day] = (byDay[day] || 0) + n;
+    });
+  }
+  return { byDay, complete: true };
 }
 
 async function readMeta(env, key) {
@@ -162,13 +189,13 @@ async function refreshGithub(env, now, prev) {
   for (const repo of githubRepos(env)) {
     let got;
     try {
-      got = await fetchRepo(env, repo);
+      got = await fetchRepo(env, repo, now);
     } catch (e) {
       if (!(e instanceof FetchError)) throw e;
       errors.push(`${repo} ${e.message}`);
       continue;
     }
-    const { info, releases, traffic } = got;
+    const { info, releases, traffic, starHistory } = got;
     stmts.push(env.DB.prepare(`INSERT INTO repo_daily (day, repo, stars, forks, watchers, open_issues, downloads, fetched_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
       ON CONFLICT (day, repo) DO UPDATE SET stars = excluded.stars, forks = excluded.forks, watchers = excluded.watchers,
@@ -177,6 +204,7 @@ async function refreshGithub(env, now, prev) {
         info.open_issues_count | 0, releases.downloads, now));
     stmts.push(metaStmt(env, `releases:${repo}`, { recent: releases.recent }, now));
     if (traffic) stmts.push(metaStmt(env, `traffic:${repo}`, traffic, now));
+    if (starHistory) stmts.push(metaStmt(env, `stars:${repo}`, starHistory, now));
   }
   const ok = errors.length === 0 ? now : (prev?.okAt ?? null);
   stmts.push(metaStmt(env, 'status:github', { okAt: ok, error: errors.join('; ') || null }, now));
@@ -277,9 +305,23 @@ export async function projectStats(env, now) {
         downloadsDelta: prev && prev.downloads != null && rows[i].downloads != null ? rows[i].downloads - prev.downloads : null,
       });
     }
+    // star 走势：有完整的 stargazers 回补就按「今天的总数 − 之后每天新增」倒推每一天；否则用每日快照。
+    const history = await readMeta(env, `stars:${repo}`);
+    let starTrend = trend.map((d) => ({ day: d.day, stars: d.stars }));
+    if (latest && history?.complete) {
+      starTrend = [];
+      let stars = latest.stars;
+      for (let i = 0; i < PROJECT_LIMITS.trendDays; i += 1) {
+        const day = utcDateKey(now - i * DAY_MS);
+        starTrend.push({ day, stars });
+        stars -= history.byDay[day] || 0;
+      }
+      starTrend.reverse();
+    }
     repos.push({
       repo,
       latest,
+      starTrend,
       stars7: delta(7, 'stars'),
       stars30: delta(30, 'stars'),
       downloads7: delta(7, 'downloads'),

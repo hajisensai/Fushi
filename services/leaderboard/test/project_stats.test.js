@@ -10,6 +10,7 @@ import {
   summarizeReleases,
 } from '../src/project_stats.js';
 import { hex, sha256 } from '../src/util.js';
+import { lineChart } from '../src/devconsole.js';
 
 const NOW = Date.UTC(2026, 9, 21, 12);
 const DAY = 24 * 3600 * 1000;
@@ -34,9 +35,10 @@ const RELEASES = [
 ];
 
 /** 假上游：按 URL 回包，记下每次请求。stars 可变，用来模拟增长。 */
-function fakeUpstream({ stars = 491, failGithub = false, graphql = null } = {}) {
+function fakeUpstream({ stars = 491, failGithub = false, graphql = null, starHistory = null } = {}) {
   const calls = [];
-  const state = { stars, failGithub, graphql };
+  // starHistory：/stargazers/history 的回包（按周数组，或 202 时的非数组）；null = 该接口 404（不影响其余数字）。
+  const state = { stars, failGithub, graphql, starHistory };
   const f = async (url, init = {}) => {
     calls.push({ url, init });
     const u = new URL(url);
@@ -46,6 +48,9 @@ function fakeUpstream({ stars = 491, failGithub = false, graphql = null } = {}) 
         return Response.json({ stargazers_count: state.stars, forks_count: 30, subscribers_count: 4, open_issues_count: 33 });
       }
       if (u.pathname.endsWith('/releases')) return Response.json(u.searchParams.get('page') === '1' ? RELEASES : []);
+      if (u.pathname.endsWith('/stargazers/history') && state.starHistory) {
+        return Response.json(state.starHistory, { status: Array.isArray(state.starHistory) ? 200 : 202 });
+      }
       if (u.pathname.endsWith('/traffic/views')) {
         return Response.json({ count: 40, uniques: 12, views: [{ timestamp: '2026-10-20T00:00:00Z', count: 40, uniques: 12 }] });
       }
@@ -176,6 +181,50 @@ describe('refreshProjectStats：GitHub', () => {
     expect((await projectStats(env, NOW)).repos[0].traffic.views.count).toBe(40);
   });
 
+  it('star 走势从 /stargazers/history 回补：一次请求，按周展开到天，倒推每一天', async () => {
+    const week = (y, m, d, days) => ({ week: Date.UTC(y, m - 1, d) / 1000, total: days.reduce((a, b) => a + b, 0), days });
+    // GitHub 按周日起算、新的在前；08-02 那周在 30 天窗口（09-22 起）之外，不计入。
+    const up = fakeUpstream({
+      stars: 250,
+      starHistory: [
+        week(2026, 10, 18, [0, 0, 50, 10, 0, 0, 0]),
+        week(2026, 10, 4, [0, 40, 0, 0, 0, 0, 0]),
+        week(2026, 8, 2, [150, 0, 0, 0, 0, 0, 0]),
+      ],
+    });
+    const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
+    await refreshProjectStats(env, NOW);
+    const star = up.calls.filter((c) => c.url.includes('/stargazers'));
+    // 不碰只对管理员开放的 /stargazers 列表。
+    expect(star.map((c) => new URL(c.url).pathname)).toEqual([`/repos/${REPO}/stargazers/history`]);
+    const t = (await projectStats(env, NOW)).repos[0].starTrend;
+    expect(t).toHaveLength(PROJECT_LIMITS.trendDays);
+    expect(t[0]).toEqual({ day: '2026-09-22', stars: 150 });
+    expect(t.find((d) => d.day === '2026-10-04').stars).toBe(150);
+    expect(t.find((d) => d.day === '2026-10-05').stars).toBe(190);
+    expect(t.find((d) => d.day === '2026-10-19').stars).toBe(190);
+    expect(t.at(-2)).toEqual({ day: '2026-10-20', stars: 240 });
+    expect(t.at(-1)).toEqual({ day: '2026-10-21', stars: 250 });
+  });
+
+  it('GitHub 统计还没算好（202 + 非数组）：不写历史，退回每日快照，也不算取数失败', async () => {
+    const up = fakeUpstream({ starHistory: {} });
+    const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
+    await refreshProjectStats(env, NOW);
+    const st = await projectStats(env, NOW);
+    expect(st.githubStatus.error).toBeNull();
+    expect(st.repos[0].starTrend).toEqual([{ day: '2026-10-21', stars: 491 }]);
+  });
+
+  it('stargazers 取不到不影响其余数字', async () => {
+    const up = fakeUpstream(); // stargazers 404
+    const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
+    await refreshProjectStats(env, NOW);
+    const st = await projectStats(env, NOW);
+    expect(st.githubStatus.error).toBeNull();
+    expect(st.repos[0].starTrend).toEqual([{ day: '2026-10-21', stars: 491 }]);
+  });
+
   it('star 增量与每日趋势取自历史行', async () => {
     const env = makeEnv({ GITHUB_REPOS: REPO });
     const ins = env.DB.raw.prepare(`INSERT INTO repo_daily (day, repo, stars, forks, watchers, open_issues, downloads, fetched_at)
@@ -250,21 +299,53 @@ describe('/dev/project', () => {
     expect(page.data).toContain('<b>491</b>');
     expect(page.data).toContain('v3.0.0');
     expect(page.data).toContain('CF_ANALYTICS_TOKEN');
-    expect(page.data).toContain('GITHUB_TOKEN');
+    // App 用户放最上面；下载只有今天一条快照时说明从哪天开始记录，而不是只说「不够画图」。
+    expect(page.data.indexOf('App 用户')).toBeLessThan(page.data.indexOf(REPO));
+    expect(page.data).toContain('30 日活跃');
+    expect(page.data).toContain('从 10-21 开始每天记录');
+    // 配置类说明不上页面（README 里有），页面只放数据。
+    expect(page.data).not.toContain('GITHUB_TOKEN');
     expect(page.data).not.toContain('<script');
   });
 
   it('官网与 traffic 有数据时渲染表格与折线', async () => {
     const up = fakeUpstream({
-      graphql: { data: { viewer: { zones: [{ httpRequests1dGroups: [siteGroup('2026-10-20', 4848), siteGroup('2026-10-21', 10)] }] } } },
+      graphql: { data: { viewer: { zones: [{ httpRequests1dGroups: [
+        siteGroup('2026-10-19', 3000), siteGroup('2026-10-20', 4848), siteGroup('2026-10-21', 10)] }] } } },
     });
     const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO, GITHUB_TOKEN: 't', CF_ANALYTICS_TOKEN: 'c', CF_ZONE_ID: 'z' });
     await refreshProjectStats(env, NOW);
     const page = await devCall(env, 'GET', '/dev/project');
     expect(page.data).toContain('4,848');
+    // 官网图只画已完结的 10-19、10-20；当天（10-21，10 次）不进图。
+    expect(page.data).toContain('<title>2026-10-20 · 浏览 4,848');
+    expect(page.data).not.toContain('<title>2026-10-21 · 浏览');
     expect(page.data).toContain('<polyline');
     expect(page.data).toContain('GitHub 访问（近 14 天）');
     expect(page.data).toContain('日本');
+  });
+
+  it('折线图：缺数据断线而不是画成 0；每天一个悬停提示；y 轴从 0 起', () => {
+    const svg = lineChart('每日下载', ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'],
+      [{ label: '下载', values: [5, null, 30, 40] }]);
+    // 只剩 10-03→10-04 一段（10-01 单点成不了线），且没有被拉到 y=98（0）的点。
+    expect(svg.match(/<polyline/g)).toHaveLength(1);
+    expect(svg).toContain('points="66.67,26.00 100.00,2.00"');
+    expect(svg.match(/<title>/g)).toHaveLength(4);
+    expect(svg).toContain('<title>2026-10-02 · 下载 —</title>');
+    expect(svg).toContain('<span>40</span><span>20</span><span>0</span>');
+    expect(svg).toContain('<span>10-01</span><span>10-04</span>');
+    expect(lineChart('Star', ['2026-10-01'], [{ label: 'Star', values: [3] }])).toContain('数据还不够画图');
+  });
+
+  it('折线图 y 轴取整刻度，顶部不留大片空白；累计量不从 0 起', () => {
+    const axis = (values, opts) => lineChart('t', ['2026-10-01', '2026-10-02'], [{ label: 'a', values }], opts)
+      .match(/<div class="yax">(.*?)<\/div>/)[1].replace(/<\/?span>/g, ' ').trim().split(/\s+/);
+    expect(axis([0, 2333])).toEqual(['3,000', '1,500', '0']);
+    expect(axis([0, 1248])).toEqual(['1,600', '800', '0']);
+    expect(axis([0, 7])).toEqual(['8', '4', '0']);
+    expect(axis([826, 987], { zero: false })).toEqual(['1,000', '900', '800']);
+    expect(axis([5, 5])).toEqual(['6', '3', '0']);
   });
 
   it('立即刷新：忽略节流重新取，回到页面', async () => {

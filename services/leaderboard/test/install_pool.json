@@ -1,0 +1,357 @@
+{
+  "powBits": 18,
+  "installs": [
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "3XWaOBfNTWhEMVH-T4u6ut0pfB6Gj8xzW0MiJw-mCr0",
+        "x": "_AwD9RcU2EvUYY9h-UJ2dVrSRu23ZvwAfGET56ZyQtQ",
+        "y": "OYbO5ukYl1Ggiww2sqHNED3c5qj9-340XuB_m1kHCbA"
+      },
+      "installId": "3b69ce01-0013-4c46-805d-fb616fd20b91",
+      "pow": "237618"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "fu_sTFVsK1KDy4TjBSuDIHfSkYJl3O3OAcAMLJBW5bg",
+        "x": "p9nIGcmllDtE-DMz4xHomRLrl9JLVUg-dhuxg5QaXpE",
+        "y": "i8iR0DGIDZf01Q6CAmvcJ6lArcIDLN_HAAsw6IjD6hA"
+      },
+      "installId": "80d3a368-424c-4b79-86dd-43cc07f95dc3",
+      "pow": "82275"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "qyiZtQnbayb6fIB78bAH8306XSkTPuQ5lA_AkaAU_2I",
+        "x": "uOy9H-xqlswHRG-lQYBoW1a8bplA7rLT6QWIdakvouE",
+        "y": "pmGFhWxyz1N_LD_ZaA3DtYUXuC1lc8ierYroCob04BU"
+      },
+      "installId": "242d4d24-88fd-4529-a7e0-6ff399a4999d",
+      "pow": "51631"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "EHYHeftEEWg5sk-f7k9Q1AXmg7iTLGhxzp_CSnExqXA",
+        "x": "rOB39Cv4iBe2WbRXKWsf5fyzAK6UVtjx78qwrzBKX5c",
+        "y": "qiIdet0S4mpUcbi5eiU3fvxGcqsiZasg31jEWWcTvtA"
+      },
+      "installId": "04f3c8de-9056-4a78-beed-f4b695d457c4",
+      "pow": "244716"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "E1AT_JznlradJi3KiD7AhobV27QW1YLFZFH0BU4iuMw",
+        "x": "TZWenMLfROoHuL3eRLBZJJ4_NwoMUefaCm_zBKlYmZ4",
+        "y": "TiRjoIhu9lvwbw-aEmGmbA52e45AZ8GC3dtkqg_GoaQ"
+      },
+      "installId": "d8154c6d-e8a9-4857-8078-8dc9fcf7c139",
+      "pow": "133419"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "7n9OdiNcZdn2nHTo7kFcMQhUbiz-AKIJMYI41COpKjg",
+        "x": "eCObhShuYv7KLR1xkllQFoyYZgp2uvuCdWODgGGcXIU",
+        "y": "iKJ9Vaz2RXrXDfChPXXce0qExXk43WL-oIrbr8JeQm8"
+      },
+      "installId": "6c62667f-e7d7-450f-92db-bcccf715da09",
+      "pow": "24724"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "eZviTL1NRgQmqCO4qEvyL0HU8CThyVk5ShyBGB7AP_M",
+        "x": "-LtyqUmrQrpztsCuhZNmXaZzhAROfhA9DHRMEqphfPI",
+        "y": "gLbjk3LDSf9Hyb9OjNSJhM0oA788Q0FNIw7pFsvfo6c"
+      },
+      "installId": "c9194aeb-d212-487f-be73-57bb352bc0b2",
+      "pow": "105710"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "qH-DtPO_9rO5SQ6XMBfO4oYqdGeWLNNSPRFn0agNt18",
+        "x": "8naH41l-6lnDjLDpYjjkTCPziRRh2lP1tjS5B8X5f5M",
+        "y": "uYzyHrNjs41c-mnM7Zgh-Yr9ngvUCVMY9QxliedHLDA"
+      },
+      "installId": "23d1c62b-44dc-45fa-a48d-4f24ad4664d9",
+      "pow": "131778"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "FY29_BDTa8McX2L5Gma1MHp1yW7pAnUz4IOn12gpuN8",
+        "x": "YBzK2Bm6rfEbFU15Cyg_ajFhkzJ-nQkAzdbGj-sEW2k",
+        "y": "afuKpdPPCWhNKLIGoPGCpTKy5cgpwr2VCto9gqjnYD0"
+      },
+      "installId": "05683d08-fcd1-49d4-b226-ed4645ce7515",
+      "pow": "442958"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "w2DbVZuR2lT2UU_LWS4XtWqxTY-FO4c74ePeW66OuEY",
+        "x": "CbOhtSOjk-Lr-BLHOxOIQM3K7E_RaSNrZoOg8-6OyEc",
+        "y": "OfVxZm7vfTDXGVXcSfPRAl9t6E43A8UTR8s90DvrkYc"
+      },
+      "installId": "cab1a617-0c7e-4952-adb8-582dc9a9567d",
+      "pow": "468919"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "mBqmlnWJ3g-_JBnP0d3Q7cKEl19DIBaRiDC6ws88d9I",
+        "x": "uKzRsuR2uafWDroS6UoDYDDkC5P6ypT8w5k8sHbMMgI",
+        "y": "GdpqEXYTD08_hdVLyQ5gRZUDbpqliSy9vAYOQ4goMOU"
+      },
+      "installId": "80579eb7-592c-41f1-822b-b2028cde8e97",
+      "pow": "86553"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "0ztr_Irvzp-HWjD-JNqTIOwkBlZOtKhmHUKXpnYKAHU",
+        "x": "rX8rFYAt4ffpm4QbPMM1LcEZrzANDUnq8cv9CoQj5CY",
+        "y": "rrWk975GnAdWJYrWtrto2dDxEY_89DLRffSDYbTjePg"
+      },
+      "installId": "cec5c370-eb55-4a38-84bf-2b8a8e09d218",
+      "pow": "220575"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "WHZ7AkNg5zTLuY-9axZ7jIaPoUBTN8JiMcc_BlMKf50",
+        "x": "n5kZL4efubfT4jRVpli1YvtGUP_o9cpZrX6_9lrnaT0",
+        "y": "1E9oBSHD-sg1P4jCuq_V3mTLiLobpmotEy1uuBd9j48"
+      },
+      "installId": "ecb2ac33-4fe5-4120-a537-1d8195e2a1c2",
+      "pow": "116418"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "Jf_xWAuo2o5vt4h1ZOqd951rvihhvJbFFyTBKUVwWfs",
+        "x": "K35wg2i4exE0HFI2Hs7KTOZI9aQNM2UwwC151Di6AWA",
+        "y": "umYTqFpzZNHi2YdTXFrIt0B8pRfQNlTGZOC77-5gN_8"
+      },
+      "installId": "49fc3e88-5d30-427f-ac07-9656f202c723",
+      "pow": "416949"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "6UZLVtC-PFbEYTlramfknDhbba7mrQ80KhCdXnAtwME",
+        "x": "Nsv2qiwy0K6teC9PSmwaS1aKKYk4plwg4_ficjgKAC4",
+        "y": "EWJ3sz7AfUqiMx4cKfCxDsbH4ZYZ6_cKnM9EKvIynDc"
+      },
+      "installId": "dd20369c-7502-4a1b-8fb0-321c7dfee6c8",
+      "pow": "137602"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "WW47Bb_dkF4VQxE-XwM3dDkFKR4Q_dS2chu10u6orG4",
+        "x": "ZkcpsxMQvZeeEEhuIiyjYZ7cZ9An6N_oiKj2BX65-UY",
+        "y": "YSxphRoEWhXOtJ4ZCUZLsJgGkb3MHBEn23pqpzw7qzo"
+      },
+      "installId": "e30f77d7-6c6b-4423-90b6-58e055944947",
+      "pow": "150081"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "ugBj4O7CkugGIIXjvKBKLcQCBy3dSUZUUzfmULEMeJ4",
+        "x": "uHteLBcLInIacVdZD67ExhoT9_ROyxEU1bAHzeaDsuA",
+        "y": "_ix7TZd-Fw8Bw1sdR2EnAC8kOR6lo0tOVpnJ9EwCltI"
+      },
+      "installId": "df9db6ad-8add-4813-9f7b-2d25d47ef05b",
+      "pow": "545630"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "_qruUB2mFMet5AGgaoNZdfa2asu7kYfTlvLBGl91nzs",
+        "x": "A9QSYbc4Qk_YlBNsss3a9_hkJM-iY0uppvex8x48ELA",
+        "y": "XiMzzxExJG2ofMgjFLLe1m6X-Mw4d2CBetYvO0dBQE0"
+      },
+      "installId": "9edaff9e-f006-457a-954e-c2502ebdbd0e",
+      "pow": "377843"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "C5sjXzYT1t9xOfk42cjzpgqKWLyXmuVztTUFPuqwT_M",
+        "x": "KPWCq8UZctmuTJCtpIO51wnTMeC7xNY9Wwq-lXQ_Bhc",
+        "y": "aKNysM4y95FSU6aQJklLy1aJWzWzub1S9UKY_FHWvLs"
+      },
+      "installId": "adb6cf09-d52b-4466-81b9-18a1584bdea0",
+      "pow": "66200"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "seUpB9IEnFbGGsqSrz9pCa4G6BAY9pvj3my5UQaY1vg",
+        "x": "BQktXz_elvjd5lRbaFMd-BpywVeNZVXHDDKVUvzPcug",
+        "y": "NHC6PeQO-S_W0HaSGcHNWz3zLSGv8nBWOLjE8kU7yzA"
+      },
+      "installId": "c4ce6ede-40a5-46a9-b2ae-e43b1366d2e9",
+      "pow": "95527"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "2FwUL8GUzdQjnqyFIl0P1B67t-KNHOjfwgC2UaGX0pI",
+        "x": "iBuL595ABBJIC86RnZYosr5BeFdkorUXPMihy0mqK-k",
+        "y": "CNNCggKP8eO24RuADzIvJBqU4R_vhfwibx0B8fdru9c"
+      },
+      "installId": "ff13b597-6e50-4a84-8814-7529a7f54370",
+      "pow": "201656"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "Y48ZcR4P1t03PRZ6B7FItRs1DFuJin5XOf-ujDECsno",
+        "x": "KT0PaXaV2hNCcpcSpgSDcjG5gYWayrhmXzu_P9HbIPQ",
+        "y": "v7kpJbU-lRiV2vICyrML5dZtBe4H73Sr4zC1muywQnQ"
+      },
+      "installId": "41f56f9e-5bca-445a-b867-e551939d1a2e",
+      "pow": "558319"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "7Nt6uMW7g_ZkrwSsrobdK27xKLcyPMxwpqFROrdoe_s",
+        "x": "AABcBoCH_JMLEN0ZmNLR5f4j5nb_P80mR5uBW68iejI",
+        "y": "zKJno88xAUh4HMQc0s5tDdGLaA_r9-WupGkygbQiquM"
+      },
+      "installId": "394d23d4-d5c9-47a1-9e48-9e6b314a1acb",
+      "pow": "132548"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "B6E5FW0hgD1F2v-WfJCddohc6KuWaf6GwFmF7TvcOHo",
+        "x": "yveFA_29vslQjjqrgWcFAL5rxEA93ptJKsvTfRJIfgY",
+        "y": "CYAuwK1dJqu5VVFA80IrIs4vhSLeeq1pSlzFaN21O1I"
+      },
+      "installId": "407c8125-6893-490e-9a3a-511698e6dfc8",
+      "pow": "75327"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "Ih1K8pmar9peQhblL4E4zU0tzc2dpbrWs-ejiL4Cyv4",
+        "x": "KLVHMeSAK-P33F1gFCKd0CBUg0KynMmWs5j7kaLZsvU",
+        "y": "q1E4MChBCT4OOiwjiAY0zGOUdPZprlsPQnkch__sQ28"
+      },
+      "installId": "c0700134-0d70-4d88-a159-ec70f2e390c2",
+      "pow": "30736"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "UKVICAsOIEVvTfwsKtn0vS4F0KRYbHpqcb-SHU4kGLc",
+        "x": "Gh4MN_ZAh0N1nl6G268AExp-Gtn3R-zQnjOAePzuONo",
+        "y": "09kWGX339dAzRZvHWYiB_X8OmIafGSZoRKg6ywrs8IE"
+      },
+      "installId": "8dc4272b-d8a4-4220-a984-1d229953086b",
+      "pow": "70477"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "FPFMBNvX4_4SE1V7g_Shgy_OnRfEXz3A0DqEJcrMuhI",
+        "x": "Bjar8RnVOtLV2T_ee7L-V8Iwo7HOUM2XHUzhF7xdjy4",
+        "y": "Vbwzw3r8EQjks1WL4HbcRAE3bvLTIQSzazoI2Swk7S8"
+      },
+      "installId": "8dccbc9a-2282-4844-ab89-a1146fff9074",
+      "pow": "95869"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "CQzw7J3keYVaoZ93_zAHeJozevjQuxu0F6Drbp-ndlU",
+        "x": "2X2mr4RtkuCI9CLQkcpif-VXcEsX0AY__tQhMN4iKnc",
+        "y": "wJXcnuRMrhqQRBRkL_usjQ5bygJLH5J-OmwNSA6HUTE"
+      },
+      "installId": "6e6a0f95-a48f-4380-b9a0-fcab32f9b519",
+      "pow": "394562"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "mYPZmumTKP0F31tIYAXP3krRh2cGHgzsa59YKGU2q2E",
+        "x": "e8j8eByBDfU421e0vL9I7WZJPSwQJzETTyK2y5X_pRI",
+        "y": "ja2glZQOECj1LbFNfCCR8KBZk_L4vPdWvEosFe_Y9qo"
+      },
+      "installId": "54551afe-55b9-4206-98ad-15e631a67f7e",
+      "pow": "12741"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "5EpNMXFzvFEZge-yXE--O1oxPzUdlBLt4MwqtmD2LHc",
+        "x": "CsZJgfz8dCcoZU2U3HKdZglpAjdgNttyaaFqYZ9Db0A",
+        "y": "q8aNJW7WWxVhtahYg0vx4yJoicmILgo_sLFf63s_pYQ"
+      },
+      "installId": "0fb46faf-cd16-41d4-b15a-ea6ec5d2e27d",
+      "pow": "1575831"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "SmHwaXvnaB33FwpGZgZnF3KNQIdb8VM6YU_z5HCjGrk",
+        "x": "qxHpguAbBpHrtWpzaonCqmlKpA_1jpVJ14q2qQ58TJ8",
+        "y": "RzDqLIcgKKwx7BaPq0GaoiA6hjuvilx-1dY7vMK1VjQ"
+      },
+      "installId": "7a02cdda-dd48-43ab-8867-403a8eb898da",
+      "pow": "21646"
+    },
+    {
+      "jwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "d": "MPiWG3Nc16G4uy0PIrmPaoFTmXTfx_veI200gmiCOmw",
+        "x": "LjhgFFO0ypfu9X9bS6E6Sk1KJsp8CeLifkqbmNhI138",
+        "y": "6S1cPlaAt3wayEiCVLZc8WG1APcPOWQKXloGoBpr0G8"
+      },
+      "installId": "c72500ab-6358-4522-9983-656f446d9167",
+      "pow": "244720"
+    }
+  ]
+}
