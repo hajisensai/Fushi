@@ -1780,6 +1780,19 @@ jobs:
         if-no-files-found: warn
         retention-days: 14
 
+    # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip），与 main.yml 同名两步一致：
+    # 只读 native-rwkv-gate 写的同一个缓存条目（key 是两个钉死的 SHA-256，与 fetch_model.sh
+    # 一致），未命中时 fetch_model.sh 按钉死 URL 下载并校验（~16 MB）。
+    - name: Restore RWKV weights cache
+      if: matrix.part == 'checks'
+      uses: actions/cache/restore@v4
+      with:
+        path: native/fushi_rwkv/model
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2
+    - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
+      if: matrix.part == 'checks'
+      run: bash native/fushi_rwkv/fetch_model.sh
+
     - name: Run package tests
       if: matrix.part == 'checks'
       env:
