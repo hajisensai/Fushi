@@ -90,6 +90,12 @@ class SrsImportReport {
   /// 先前导入过、后来在本机删掉，这次恢复的笔记数（不计入 [notesAdded] / [notesUpdated]）。
   int notesRestored = 0;
 
+  /// 「从 Anki 迁移」选了「导入后把旧 Lapis 迁到 Fushi 卡片」：迁过去 / 补迁的笔记数。
+  int lapisNotesMigrated = 0;
+
+  /// 上面那一步失败（导入本身已落库；笔记仍是旧 Lapis，可在笔记类型页重试）。
+  bool lapisMigrationFailed = false;
+
   /// 本次用的选项。
   SrsAnkiImportOptions options = const SrsAnkiImportOptions();
 
@@ -168,6 +174,8 @@ class SrsImportReport {
     'notesUpdated': notesUpdated,
     'notesSkipped': notesSkipped,
     'notesRestored': notesRestored,
+    'lapisNotesMigrated': lapisNotesMigrated,
+    'lapisMigrationFailed': lapisMigrationFailed,
     'options': options.toJson(),
     'noteTypesUpdated': noteTypesUpdated,
     'noteTypesDuplicated': noteTypesDuplicated,

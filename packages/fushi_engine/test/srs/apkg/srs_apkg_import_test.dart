@@ -573,7 +573,8 @@ void main() {
     expect(rep.notesRestored, noteIds.length);
     expect(rep.notesSkipped, 0);
     expect(
-      <String>[for (final SrsNoteCacheRow n in await s.listNotes()) n.id]..sort(),
+      <String>[for (final SrsNoteCacheRow n in await s.listNotes()) n.id]
+        ..sort(),
       List<String>.of(noteIds)..sort(),
     );
     for (final MapEntry<String, String> e in deckOf.entries) {
