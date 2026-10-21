@@ -31,7 +31,7 @@ const CONFIG = {
   initialFragment: null, initialCharOffset: -1, initialProgress: 0, sentenceAudioCues: null,
 };
 
-function page({ writingMode, spread, paragraphs, fontSize = 22 }) {
+function page({ writingMode, spread, paragraphs, fontSize = 22, fullwidthPrefix = false }) {
   const vertical = writingMode === 'vertical-rl';
   const css = 'html,body{margin:0;padding:0}html{overflow:hidden}'
     + `body{width:100vw;height:100vh;box-sizing:border-box;padding:${PT}px ${PR}px ${PB}px ${PL}px;`
@@ -43,8 +43,16 @@ function page({ writingMode, spread, paragraphs, fontSize = 22 }) {
   // pushed back before 「章」 and that page-first 「章」 is exactly where the
   // collapsed caret is reported at the previous line's end. Varying the text
   // loses the case (a mutation run of the old caret anchor stayed green).
+  // fullwidthPrefix: 「Ｐ０８　」 instead of 「P8 」. The Latin prefix is set in the
+  // platform's proportional Latin face (its advance differs between Windows and
+  // Linux CI), so it shifts every soft wrap after it; all-fullwidth text advances
+  // exactly 1em per code unit in any CJK face, and the wraps fall on
+  // floor(line length / font size) code units on every platform.
+  const prefix = (i) => (fullwidthPrefix
+    ? `Ｐ${String(i).padStart(2, '0').replace(/[0-9]/g, (d) => String.fromCharCode(0xFF10 + Number(d)))}　`
+    : `P${i} `);
   const paras = Array.from({ length: paragraphs }, (_, i) =>
-    `<p>P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを`
+    `<p>${prefix(i)}これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを`
     + '並べています。文章文章文章文章文章文章文章文章。</p>').join('\n');
   return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style>`
     + (spread ? `<style>${payload.spreadCss}</style>` : '')
@@ -119,15 +127,21 @@ const CASES = [
   // two more font sizes keep the spread geometry inside the mutation net.
   ['vertical spread 20px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20 }, 'xr'],
   ['vertical spread 26px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 26 }, 'xr'],
-  // BUG-3651: pinned viewport (Linux CI's headless window measured 1280 wide; the
-  // Windows one 1258x646 never hit it). At 1280x560 every spread holds exactly
-  // nine paragraphs, so every page starts right after the previous paragraph's
-  // closing 「。」; the old lookup stopped on that 「。」 and every reopen fell one
-  // page back. requireAfterStop keeps the case from going silently stale if
-  // font metrics shift the page breaks. Must stay last: the viewport override
-  // persists for the rest of the run.
-  ['vertical spread 20px @1280x560', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20 }, 'xr',
-    { viewport: [1280, 560], requireAfterStop: true }],
+  // BUG-3651: every page must start right after the previous paragraph's
+  // 「…並べています。」, where the old unit -> text-offset lookup stopped on that
+  // 「。」 (drawn on the previous page) and every reopen fell one page back.
+  // The premise is pinned by arithmetic, not by a measured viewport: the prefix
+  // is fullwidth (see page()), so each paragraph is 69 code units at exactly
+  // 1em each; the viewport height 586 leaves a 530px line = 26 units, so every
+  // paragraph wraps 26 + 26 + 17 and its third line starts right after the
+  // 「。」 at code unit 51. Paragraph pitch = 3 x 36px + 20px margin = 128px,
+  // nine paragraphs per 1272px spread at width 1280 (the page breaks then fall
+  // on those third lines). The former 「P8 」 prefix at 1280x560 only hit on
+  // Windows: Linux CI's wider Latin face moved the wraps (0 pages after 「。」).
+  // requireAfterStop still guards the premise. Must stay last: the viewport
+  // override persists for the rest of the run.
+  ['vertical spread 20px @1280x586', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20, fullwidthPrefix: true }, 'xr',
+    { viewport: [1280, 586], requireAfterStop: true }],
 ];
 
 const driver = await launchChromeDriver();
