@@ -129,8 +129,10 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
   /// [DesktopAudioPlayback.playFileToEnd] 在第一个 await 之前就记下了激活代号并排进
   /// 串行队列，随后的 [DesktopAudioPlayback.stop] 会让它放弃开播。
   @override
-  Future<bool> playToEnd(String path) =>
-      DesktopAudioPlayback.playFileToEnd(path);
+  Future<bool> playToEnd(String path) => DesktopAudioPlayback.playFileToEnd(
+    path,
+    volume: _ref.read(srsReviewVolumeProvider),
+  );
 
   @override
   Future<void> stop() => DesktopAudioPlayback.stop();

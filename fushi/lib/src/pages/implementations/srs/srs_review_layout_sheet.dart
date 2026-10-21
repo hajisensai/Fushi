@@ -44,6 +44,7 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
     final bool intervals = ref.watch(srsReviewShowIntervalsProvider);
     final bool counts = ref.watch(srsReviewShowCountsProvider);
     final bool hideHardEasy = ref.watch(srsReviewHideHardEasyProvider);
+    final double volume = ref.watch(srsReviewVolumeProvider);
     // 「左 / 右」按视觉方向标：RTL 下行首在右边。
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
     return FushiModalSheetFrame(
@@ -83,6 +84,17 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             ],
             onChanged: (SrsReviewReplayButton v) =>
                 app.setSrsReviewReplayButton(v),
+          ),
+          AdaptiveSettingsSliderRow(
+            key: const ValueKey<String>('srs-review-layout-volume'),
+            title: t.srs_review_layout_volume,
+            subtitle: t.srs_review_layout_volume_hint,
+            icon: FushiIcons.volumeUp,
+            showIcon: true,
+            value: volume,
+            divisions: 20,
+            readout: '${(volume * 100).round()}%',
+            onChanged: (double v) => app.setSrsReviewVolume(v),
           ),
           AdaptiveSettingsSwitchRow(
             key: const ValueKey<String>('srs-review-layout-intervals'),

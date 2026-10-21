@@ -136,6 +136,12 @@ final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
       ref.watch(appProvider.select((AppModel app) => app.srsReviewShowCounts)),
 );
 
+/// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。
+final Provider<double> srsReviewVolumeProvider = Provider<double>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewVolume)),
+);
+
 /// 复习页卡面缩放倍率（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0），按 profile 偏好。
 final Provider<double> srsReviewZoomProvider = Provider<double>(
   (Ref ref) =>
@@ -215,6 +221,11 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
         fallbackRolloverHour: () => app.statDayResetHour,
         // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
         styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
+        // 动图 AVIF 原生解码器只解出静态主图：这类卡留在整面 WebView（见
+        // srs_fushi_card_native_media.dart）。
+        nativeImageProbe: SrsMediaStore(
+          SrsMediaStore.directoryFor(support, profileUid),
+        ).nativeImageDisplayable,
       );
       // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
       bool disposed = false;

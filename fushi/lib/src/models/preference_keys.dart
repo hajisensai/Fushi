@@ -484,6 +484,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：评分按钮显示下次间隔（小号副标签，误按 / 排程异常一眼可见）。
   // 非凭据、跨设备。
   'srs_review_show_intervals',
+  // double（默认 1.0，0–1）：复习卡面音频音量，点播与自动连播共用。非凭据、跨设备。
+  'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
   'startup_default_dictionary_tab',

@@ -6609,6 +6609,8 @@
   "srs_review_layout_show_intervals": "评分按钮显示下次间隔",
   "srs_review_layout_show_intervals_hint": "评价下方的小字，误按或排程异常一眼可见",
   "srs_review_layout_title": "复习选项",
+  "srs_review_layout_volume": "音频音量",
+  "srs_review_layout_volume_hint": "卡面音频的音量，点播和自动播放都按它",
   "srs_review_pending_decision": "待你决定",
   "srs_review_replay_audio": "重播音频",
   "srs_review_rwkv_unavailable": "RWKV 还没准备好，这个牌组暂按 FSRS-7 存下的到期日排队。",

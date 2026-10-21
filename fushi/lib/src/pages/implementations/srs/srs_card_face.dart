@@ -1056,11 +1056,15 @@ class SrsCardFaceSync {
 /// 卡面 `[sound:]` 的播放实现（测试覆写）。参数是本地文件路径；返回是否开始播放。
 typedef SrsSoundPlayer = Future<bool> Function(String path);
 
-/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]）。
+/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]），
+/// 音量取开播那一刻的 [srsReviewVolumeProvider]。
 final Provider<SrsSoundPlayer> srsSoundPlayerProvider =
     Provider<SrsSoundPlayer>(
       (Ref ref) =>
-          (String path) => DesktopAudioPlayback.playFile(path),
+          (String path) => DesktopAudioPlayback.playFile(
+            path,
+            volume: ref.read(srsReviewVolumeProvider),
+          ),
     );
 
 /// 卡面媒体请求的响应：[store] 里按名字取字节；不是卡面媒体 URL 时返回 null。

@@ -3114,6 +3114,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习卡面音频音量（0–1，手动点播与自动连播共用）。默认 1.0。
+  double get srsReviewVolume {
+    final Object? v = getPref('srs_review_volume', defaultValue: 1.0);
+    return v is num ? v.toDouble().clamp(0.0, 1.0) : 1.0;
+  }
+
+  Future<void> setSrsReviewVolume(double value) async {
+    await setPref('srs_review_volume', value.clamp(0.0, 1.0));
+    notifyListeners();
+  }
+
   // 复习页卡面缩放倍率。默认 1.0。
   double get srsReviewZoom =>
       (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();

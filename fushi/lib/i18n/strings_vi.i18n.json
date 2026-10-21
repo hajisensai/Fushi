@@ -6609,6 +6609,8 @@
   "srs_review_layout_show_intervals": "Show next interval on rating buttons",
   "srs_review_layout_show_intervals_hint": "A small label under each rating, so a mis-tap or an odd schedule stands out",
   "srs_review_layout_title": "Review options",
+  "srs_review_layout_volume": "Audio volume",
+  "srs_review_layout_volume_hint": "Volume of card audio, both when tapped and when played automatically",
   "srs_review_pending_decision": "Needs your decision",
   "srs_review_replay_audio": "Replay audio",
   "srs_review_rwkv_unavailable": "RWKV is not ready yet, so this deck follows the due dates stored by FSRS-7.",
