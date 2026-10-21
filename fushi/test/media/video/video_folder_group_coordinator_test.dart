@@ -308,7 +308,7 @@ void main() {
     );
   });
 
-  test('BUG-3652 整批解散后普通重扫保持解散；恢复自动分组把每个系列归回', () async {
+  test('BUG-3654 整批解散后普通重扫保持解散；恢复自动分组把每个系列归回', () async {
     final int sourceId = await addSource('/library');
     final List<String> paths = <String>[
       '/library/Alpha S01E01.mkv',
@@ -367,7 +367,7 @@ void main() {
     expect(after.updatedCollectionIds, isEmpty);
   });
 
-  test('BUG-3652 文件夹模式恢复自动分组越过合集墓碑与成员墓碑', () async {
+  test('BUG-3654 文件夹模式恢复自动分组越过合集墓碑与成员墓碑', () async {
     final int sourceId = await addSource('/library');
     final List<String> paths = <String>[
       '/library/Show/Episode A.mkv',

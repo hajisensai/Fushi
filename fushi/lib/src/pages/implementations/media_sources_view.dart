@@ -1124,7 +1124,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   ///
   /// 解散合集（库页多选删除合集卡、合集详情删除）会留下按合集名的墓碑，普通重扫
   /// 据此不再自动归组（BUG-1739）。整批解散后系列就永久散成单集、重扫也救不回来，
-  /// 而界面上看不到这层状态——这里是唯一的显式出路（BUG-3652）。
+  /// 而界面上看不到这层状态——这里是唯一的显式出路（BUG-3654）。
   Future<void> _restoreAutomaticGrouping(SourceLibraryRow row) async {
     final bool confirmed = await showFushiConfirmDialog(
       context: context,

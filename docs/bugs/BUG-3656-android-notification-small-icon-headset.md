@@ -1,4 +1,4 @@
-## BUG-3652 · android-notification-small-icon-headset
+## BUG-3656 · android-notification-small-icon-headset
 - **报告**：2026-10-21（用户：「fushi 无论是下载还是悬浮球正在运行，系统顶栏里显示的都是耳机图标」「有时候还能看见反相图标」，附状态栏截图）
 - **真实性**：✅ 真 bug，两个根因：
   1. `fushi/android/app/src/main/res/drawable/ic_stat_fushi.xml` 的路径就是 Material「headset」图标（当年给有声书媒体通知画的），后来下载保活 / 悬浮球 / 悬浮词典 / 悬浮字幕 / 屏幕 OCR 五个前台服务的 `setSmallIcon(R.drawable.ic_stat_fushi)` 全部复用它（`DownloadKeepAliveService.java:241`、`FloatingBallService.java:1517` 等），所以任何 Fushi 通知在状态栏都是耳机。

@@ -44,7 +44,7 @@ class VideoFolderGroupCoordinator {
   /// - [restoreDissolvedGroups] 为 true 时不再尊重「用户解散过」的墓碑（BUG-1739
   ///   那道门），按规则把散开的成员重新归组；新建合集经 `createMediaCollection`
   ///   清掉同名墓碑、成员经 `addToCollection` 清成员墓碑。只给用户显式的「恢复
-  ///   自动分组」用（BUG-3652），普通重扫一律 false。
+  ///   自动分组」用（BUG-3654），普通重扫一律 false。
   Future<VideoFolderGroupSummary> groupPaths({
     required List<String> videoPaths,
     List<String> createdVideoPaths = const <String>[],
@@ -414,7 +414,7 @@ class VideoFolderGroupCoordinator {
                 .toSet();
         bool changed = false;
         // 恢复自动分组新建的目录合集与上面建前检查同一口径越过成员墓碑：只在建前
-        // 越过、这里仍按墓碑跳过，会建出缺集甚至空的合集（BUG-3652）。已存在的
+        // 越过、这里仍按墓碑跳过，会建出缺集甚至空的合集（BUG-3654）。已存在的
         // 合集不是被解散的，用户从里面移出的集照旧尊重。
         final Set<String> removedMembers = created && restoreDissolvedGroups
             ? const <String>{}

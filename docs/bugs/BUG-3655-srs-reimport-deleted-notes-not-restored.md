@@ -1,4 +1,4 @@
-## BUG-3652 · srs-reimport-deleted-notes-not-restored
+## BUG-3655 · srs-reimport-deleted-notes-not-restored
 - **报告**：2026-10-21（用户：「我导入过来的卡片怎么没有了」——从 Anki 迁移「账户 1」后提示「新增 0 条笔记」，牌组全部 0/0/0，复习页显示「添加第一张卡」）
 - **真实性**：✅ 真 bug。用户正式库只读副本：14715 条笔记在 10-21 02:33:50 同一毫秒被软删除、24877 张卡 02:30 起全部被移进默认牌组（删牌组选了「保留卡片」）；10:39 再次迁移只写了 27 个牌组的 `deleted=null`，笔记 0 条写入。根因 `packages/fushi_engine/lib/srs/apkg/srs_apkg_import.dart` `_importNote`：已删除的笔记仍算「已存在」（`entityIds` 含删除的，`store.note()` 返回删除态视图），走「较新时更新」——本机内容修改时刻晚于来源 `mod` → `notesSkipped++`，从不清 `deleted`；`_importCardFlags` 的 `if (!isNew && !update) return;` 也不把卡移回原牌组。牌组同一情形早就按「重新导入即恢复」处理（`_importDecks` 的 `SrsFieldKeys.deleted: null`），笔记漏了。完成提示只报 `notesAdded`，跳过的 14715 条看不到。
 - **[x] ① 已修复** — `6f7546a587`：已删除的笔记按恢复处理（写 `deleted: null`，内容 / 标签 / 首选牌组回到来源），卡片的牌组与暂停按来源写回、不让「本机更新」挡住（那次本机改动正是删牌组时的移卡）；报告新增 `notesRestored`。`a1c9eb003e`：报告行「恢复之前删除的笔记」，任务条与完成提示改成「新增 / 恢复 / 更新 / 未改动」四个数。
