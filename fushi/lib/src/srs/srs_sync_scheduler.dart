@@ -232,6 +232,9 @@ class SrsSyncScheduler {
       // 同一个物理目录换了个身份就会被当成新目录（重新起步、可能全量重发）：宁可这轮不同步。
       return SrsSyncReport()..error = kSrsSyncDirectoryIdentityUnavailable;
     }
+    // 引擎在一轮开头写探针取服务器时间，整轮（上传 / 拉取 / 快照，大库能跑几十分钟）跑完才回来：
+    // 校时按开跑那一刻的单调时钟算，误差只剩探针前的一次列目录，而不是整轮耗时。
+    final int probedAtMono = store.trustedClock.monotonicNowMs();
     final SrsSyncReport report = await _runner(backend, store, key);
     for (final String f in report.skippedFiles) {
       if (_loggedSkipped.add('$key|$f')) {
@@ -244,7 +247,7 @@ class SrsSyncScheduler {
     }
     final int? serverTime = report.serverTimeMs;
     if (serverTime != null) {
-      await store.anchorTime(serverTime);
+      await store.anchorTime(serverTime, atMonotonicMs: probedAtMono);
       final int? skew = store.trustedClock.wallSkewMs;
       if (skew != null && skew.abs() > kSrsClockSkewWarnMs) {
         _noticeOnce(SrsSyncNotice.clockSkew);

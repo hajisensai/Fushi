@@ -128,11 +128,18 @@ class SrsTrustedClock {
   String? _anchorBootId;
 
   /// 同步成功、拿到服务器时间时调用。
-  void anchor({required int serverTimeMs}) {
+  ///
+  /// [atMonotonicMs]：服务器时间被观测到那一刻的单调时钟读数（[monotonicNowMs]）。服务器时间是
+  /// 一轮同步开头的探针取到的，这一轮跑完才校时：不带它就会把整轮同步的耗时算成「墙钟超前」，
+  /// 同步一久就误报「系统时间不准」，校出来的可信时间也落后同样的时长。
+  void anchor({required int serverTimeMs, int? atMonotonicMs}) {
     _anchorServerMs = serverTimeMs;
-    _anchorMonoMs = _mono();
+    _anchorMonoMs = atMonotonicMs ?? _mono();
     _anchorBootId = _bootId;
   }
+
+  /// 当前单调时钟读数，供调用方记下「服务器时间是何时取到的」再传给 [anchor]。
+  int monotonicNowMs() => _mono();
 
   /// 恢复持久化的锚点（只有同一次开机的锚点才有效）。
   void restoreAnchor({
