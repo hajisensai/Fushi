@@ -138,6 +138,33 @@ void main() {
       );
     });
 
+    test('分列参数与查词弹窗同值', () {
+      expect(
+        kSrsDefsLayoutScript,
+        contains('MIN_COL = $kSrsDefsMinColumnWidth'),
+      );
+      expect(kSrsDefsLayoutScript, contains('GAP = 6, COLLAPSED_GAP = 4'));
+      final String popup = File('assets/popup/popup.js').readAsStringSync();
+      expect(
+        popup,
+        contains('DICT_COLUMN_MIN_WIDTH = $kSrsDefsMinColumnWidth;'),
+      );
+      expect(
+        popup,
+        matches(
+          RegExp(r'function masonryGap\(\) \{[\s\S]{0,200}?return 6;\s*\}'),
+        ),
+      );
+      expect(
+        popup,
+        matches(
+          RegExp(
+            r'function masonryCollapsedRowGap\(\) \{[\s\S]{0,200}?return 4;\s*\}',
+          ),
+        ),
+      );
+    });
+
     test('SrsCardFace.hostScript 随主题下发；参数只在主题样式里', () {
       final SrsCardFaceDocument d = _doc(_config());
       expect(d.hostScript, contains('window.__fushiSrsHostLayout = apply;'));
@@ -155,6 +182,7 @@ void main() {
         List<bool> open, {
         bool withMain = true,
         int cols = 2,
+        List<int>? columnOf,
       }) {
         final SrsCardFaceDocument d = _doc(config, withMain: withMain);
         return <String, Object?>{
@@ -163,14 +191,20 @@ void main() {
           'open': open,
           'cols': cols,
           'main': withMain,
+          'columnOf': columnOf,
         };
       }
 
       final Map<String, Object?> cases = <String, Object?>{
         // 默认 1 行：主词典占满第一行，其他词典全部收成标题。
         'rows 1': page(_config(), <bool>[false, false, false, false]),
-        // 2 行：再展开一整行（= 列数 2 本）。
-        'rows 2': page(_config(rows: 2), <bool>[true, true, false, false]),
+        // 2 行：再展开一整行（= 列数 2 本）。DictA 两条释义比 DictB 高，收起的 DictC 进较矮的
+        // 第 2 列（查词弹窗的最短列瀑布流；按行排的网格会把它放回第 1 列、留出空洞）。
+        'rows 2': page(
+          _config(rows: 2),
+          <bool>[true, true, false, false],
+          columnOf: <int>[0, 1, 1],
+        ),
         // 词典管理里逐本折叠的优先于自动展开（BUG-1264 同序）。
         'folded wins': page(_config(rows: 2, folded: <String>['DictB']), <bool>[
           true,
