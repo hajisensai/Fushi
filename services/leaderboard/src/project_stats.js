@@ -37,8 +37,6 @@ export const PROJECT_LIMITS = {
   siteFirstDays: 30,
   /** 趋势表显示天数。 */
   trendDays: 30,
-  /** Star 历史最多往回翻几页 stargazers（每页 100，从最新一页往前，翻到 trendDays 之前为止）。 */
-  starPages: 5,
   /** 国家分布显示前几个。 */
   topCountries: 20,
 };
@@ -140,7 +138,7 @@ async function fetchRepo(env, repo, now) {
   }
   let starHistory = null;
   try {
-    starHistory = await fetchStarHistory(env, base, headers, info.stargazers_count | 0, now);
+    starHistory = await fetchStarHistory(env, base, headers, now);
   } catch (e) {
     if (!(e instanceof FetchError)) throw e;
   }
@@ -148,30 +146,24 @@ async function fetchRepo(env, repo, now) {
 }
 
 /**
- * 近 trendDays 天每天新增的 star（stargazers 带 starred_at，按时间升序分页）：从最后一页往前翻，翻到窗口之前为止。
+ * 近 trendDays 天每天新增的 star，取自 GET /repos/{repo}/stargazers/history（公开仓库无需 token）：
+ * [{week: 周日 0 点的 Unix 秒, total, days: [周日..周六 7 天各自新增]}]。
  * 仓库每日快照从上线那天才开始攒，这份让 star 走势一上来就有完整 30 天。
- * complete = 窗口内的 star 全数到了（没被 starPages 截断）；不完整时页面退回用每日快照。
- * 取消 star 的人不在列表里，所以这是「现存 star 的到达时间」，与当天快照的总数之差就是期间取消的数量。
+ * 不用 /stargazers 列表：GitHub 2026 年起只对仓库管理员 / 协作者开放（匿名 401，细粒度只读 token 也拿不到）。
+ * 统计还没算好时 GitHub 可能回 202 + 非数组，按取不到处理，页面退回用每日快照。
  */
-async function fetchStarHistory(env, base, headers, stars, now) {
-  const cutoff = Date.parse(`${utcDateKey(now - (PROJECT_LIMITS.trendDays - 1) * DAY_MS)}T00:00:00Z`);
+async function fetchStarHistory(env, base, headers, now) {
+  const weeks = await getJson(env, `${base}/stargazers/history`, { headers });
+  if (!Array.isArray(weeks)) throw new FetchError('stargazers/history: not ready');
+  const cutoff = utcDateKey(now - (PROJECT_LIMITS.trendDays - 1) * DAY_MS);
   const byDay = {};
-  let complete = false;
-  let page = Math.ceil(stars / 100);
-  if (page === 0) complete = true;
-  for (let i = 0; i < PROJECT_LIMITS.starPages && page >= 1; i += 1, page -= 1) {
-    const batch = await getJson(env, `${base}/stargazers?per_page=100&page=${page}`,
-      { headers: { ...headers, Accept: 'application/vnd.github.star+json' } });
-    const times = batch.map((s) => Date.parse(s.starred_at)).filter(Number.isFinite);
-    for (const t of times) {
-      if (t >= cutoff) byDay[utcDateKey(t)] = (byDay[utcDateKey(t)] || 0) + 1;
-    }
-    if (!times.length || Math.min(...times) < cutoff || page === 1) {
-      complete = true;
-      break;
-    }
+  for (const w of weeks) {
+    (w.days || []).forEach((n, i) => {
+      const day = utcDateKey((Number(w.week) + i * 86400) * 1000);
+      if (day >= cutoff && n > 0) byDay[day] = (byDay[day] || 0) + n;
+    });
   }
-  return { byDay, complete };
+  return { byDay, complete: true };
 }
 
 async function readMeta(env, key) {

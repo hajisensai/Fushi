@@ -35,10 +35,10 @@ const RELEASES = [
 ];
 
 /** 假上游：按 URL 回包，记下每次请求。stars 可变，用来模拟增长。 */
-function fakeUpstream({ stars = 491, failGithub = false, graphql = null, stargazers = null } = {}) {
+function fakeUpstream({ stars = 491, failGithub = false, graphql = null, starHistory = null } = {}) {
   const calls = [];
-  // stargazers：按 starred_at 升序的 ISO 时刻列表；null = 该接口 404（不影响其余数字）。
-  const state = { stars, failGithub, graphql, stargazers };
+  // starHistory：/stargazers/history 的回包（按周数组，或 202 时的非数组）；null = 该接口 404（不影响其余数字）。
+  const state = { stars, failGithub, graphql, starHistory };
   const f = async (url, init = {}) => {
     calls.push({ url, init });
     const u = new URL(url);
@@ -48,9 +48,8 @@ function fakeUpstream({ stars = 491, failGithub = false, graphql = null, stargaz
         return Response.json({ stargazers_count: state.stars, forks_count: 30, subscribers_count: 4, open_issues_count: 33 });
       }
       if (u.pathname.endsWith('/releases')) return Response.json(u.searchParams.get('page') === '1' ? RELEASES : []);
-      if (u.pathname.endsWith('/stargazers') && state.stargazers) {
-        const page = Number(u.searchParams.get('page'));
-        return Response.json(state.stargazers.slice((page - 1) * 100, page * 100).map((t) => ({ starred_at: t, user: {} })));
+      if (u.pathname.endsWith('/stargazers/history') && state.starHistory) {
+        return Response.json(state.starHistory, { status: Array.isArray(state.starHistory) ? 200 : 202 });
       }
       if (u.pathname.endsWith('/traffic/views')) {
         return Response.json({ count: 40, uniques: 12, views: [{ timestamp: '2026-10-20T00:00:00Z', count: 40, uniques: 12 }] });
@@ -182,20 +181,22 @@ describe('refreshProjectStats：GitHub', () => {
     expect((await projectStats(env, NOW)).repos[0].traffic.views.count).toBe(40);
   });
 
-  it('star 走势从 stargazers 回补：只从最后一页往前翻到 30 天窗口之前，倒推每一天', async () => {
-    const times = [
-      ...Array(150).fill('2026-08-01T00:00:00Z'),
-      ...Array(40).fill('2026-10-05T08:00:00Z'),
-      ...Array(50).fill('2026-10-20T08:00:00Z'),
-      ...Array(10).fill('2026-10-21T08:00:00Z'),
-    ];
-    const up = fakeUpstream({ stars: 250, stargazers: times });
+  it('star 走势从 /stargazers/history 回补：一次请求，按周展开到天，倒推每一天', async () => {
+    const week = (y, m, d, days) => ({ week: Date.UTC(y, m - 1, d) / 1000, total: days.reduce((a, b) => a + b, 0), days });
+    // GitHub 按周日起算、新的在前；08-02 那周在 30 天窗口（09-22 起）之外，不计入。
+    const up = fakeUpstream({
+      stars: 250,
+      starHistory: [
+        week(2026, 10, 18, [0, 0, 50, 10, 0, 0, 0]),
+        week(2026, 10, 4, [0, 40, 0, 0, 0, 0, 0]),
+        week(2026, 8, 2, [150, 0, 0, 0, 0, 0, 0]),
+      ],
+    });
     const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
     await refreshProjectStats(env, NOW);
-    const pages = up.calls.filter((c) => c.url.includes('/stargazers'));
-    // 共 3 页：第 3 页全在窗口内，翻到第 2 页碰到 08-01 就停，不碰第 1 页。
-    expect(pages.map((c) => new URL(c.url).searchParams.get('page'))).toEqual(['3', '2']);
-    expect(pages[0].init.headers.Accept).toBe('application/vnd.github.star+json');
+    const star = up.calls.filter((c) => c.url.includes('/stargazers'));
+    // 不碰只对管理员开放的 /stargazers 列表。
+    expect(star.map((c) => new URL(c.url).pathname)).toEqual([`/repos/${REPO}/stargazers/history`]);
     const t = (await projectStats(env, NOW)).repos[0].starTrend;
     expect(t).toHaveLength(PROJECT_LIMITS.trendDays);
     expect(t[0]).toEqual({ day: '2026-09-22', stars: 150 });
@@ -206,13 +207,13 @@ describe('refreshProjectStats：GitHub', () => {
     expect(t.at(-1)).toEqual({ day: '2026-10-21', stars: 250 });
   });
 
-  it('窗口内 star 多到翻不完（超过 starPages 页）：不当真，退回每日快照', async () => {
-    const n = (PROJECT_LIMITS.starPages + 2) * 100;
-    const up = fakeUpstream({ stars: n, stargazers: Array(n).fill('2026-10-20T00:00:00Z') });
+  it('GitHub 统计还没算好（202 + 非数组）：不写历史，退回每日快照，也不算取数失败', async () => {
+    const up = fakeUpstream({ starHistory: {} });
     const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
     await refreshProjectStats(env, NOW);
-    expect(up.calls.filter((c) => c.url.includes('/stargazers'))).toHaveLength(PROJECT_LIMITS.starPages);
-    expect((await projectStats(env, NOW)).repos[0].starTrend).toEqual([{ day: '2026-10-21', stars: n }]);
+    const st = await projectStats(env, NOW);
+    expect(st.githubStatus.error).toBeNull();
+    expect(st.repos[0].starTrend).toEqual([{ day: '2026-10-21', stars: 491 }]);
   });
 
   it('stargazers 取不到不影响其余数字', async () => {
