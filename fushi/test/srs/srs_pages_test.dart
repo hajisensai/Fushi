@@ -1345,6 +1345,48 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('复习布局：窄屏放不下逐段重播键时退回一颗整面重播键，不把底栏挤窄', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await addWithAudio(tester, store);
+      final _RecordingAudio audio = _RecordingAudio();
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: _LayoutApp(),
+        size: const Size(340, 700),
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+        overrides: <Override>[
+          srsCardAudioOutputProvider.overrideWithValue(audio),
+        ],
+      );
+      final Finder replay = find.byKey(
+        const ValueKey<String>('srs-bottom-replay-0'),
+      );
+      expect(replay, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-bottom-replay-1')),
+        findsNothing,
+        reason: '两段音频在 340 宽下放不下逐段键',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
+      await _settle(tester);
+      // 四颗评分键都保有 ≥ 48dp 命中区。
+      for (int r = 1; r <= 4; r++) {
+        final Finder rate = find.byKey(ValueKey<String>('srs-rate-$r'));
+        if (rate.evaluate().isEmpty) continue;
+        expect(tester.getSize(rate).width, greaterThanOrEqualTo(48));
+      }
+      // 单颗键是整面重播（同 R）。
+      audio.played.clear();
+      await tester.tap(replay);
+      await _settle(tester);
+      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+      await _unmount(tester);
+    });
+
     testWidgets('复习布局（Apple）：底部重播键与底栏按钮同高、放在选定那端、点了重播', (
       WidgetTester tester,
     ) async {

@@ -329,6 +329,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = await store.renderCard(id);
       SrsReviewPage.debugPhase?.call('render');
+      if (detail == null) {
+        // 排程选中的卡读不到（例如刚被同步删掉）：报错，不把 null 当「还在读」——
+        // 加载指示只认 detail == null，静默转圈且「显示答案」永远禁用。
+        throw StateError('SrsReviewPage: scheduled card $id has no detail');
+      }
       final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
       if (!mounted) return;
       // 问题面只要卡片内容：间隔预览（只在翻面后的评分键上）与日界在卡面上屏后补齐，
@@ -1434,10 +1439,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   }
 
   /// 底部操作行一端的重播键（⋯「复习选项」里选左 / 右，默认不放）：**每段音频一个键**
-  /// （只想听例句就只点例句那颗；R 仍是整面重播）。键数按背面要重播的音频定，翻面前后
-  /// 同一位置、同样多——正面还没有的那段先不可点；这张卡没有音频时照样占一颗不可点的位，
-  /// 评分按钮不会左右跳。设计系统按钮：MD3 = M3E 中号色调方钮（56），Apple = 50 高的
-  /// 色调胶囊，与「显示答案」/ 评分按钮同高。
+  /// （只想听例句就只点例句那颗；R 仍是整面重播）。键位按两面全部音频定（问题面在前，
+  /// 与背面从上到下的顺序一致），翻面前后同一位置、同样多——正面还没有的那段先不可点；
+  /// 「重播含问题音频」只管整面重播（R），逐段键在哪一面都能点问题面那段。放不下逐段键
+  /// （窄屏 / 段数多，否则会把「显示答案」/ 评分按钮挤到命中区以下甚至溢出）、只有一段或
+  /// 没有音频时退回一颗整面重播键（没有音频时照样占位、只是不可点），评分按钮不会左右跳。
+  /// 设计系统按钮：MD3 = M3E 中号色调方钮（56），Apple = 50 高的色调胶囊，与「显示答案」/
+  /// 评分按钮同高。
   Widget _withBottomReplay(BuildContext context, Widget row) {
     final SrsReviewReplayButton side = ref.watch(srsReviewReplayButtonProvider);
     if (side == SrsReviewReplayButton.off || _detail == null) return row;
@@ -1451,29 +1459,33 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
             questionHtml: rendered.question,
             answerHtml: rendered.answer,
             answerSide: true,
-            includeQuestion: _replayIncludesQuestion,
+            includeQuestion: true,
             inlineMedia: rendered.fushiCardDefinitions != null,
           );
-    final Set<String> playable = _replayNames(
+    final Set<String> playable = _replayNames(includeQuestion: true).toSet();
+    final bool canReplayFace = _replayNames(
       includeQuestion: _replayIncludesQuestion,
-    ).toSet();
-    final int count = math.max(1, slots.length);
-    Widget replayButton(int i) {
-      final String? name = i < slots.length ? slots[i] : null;
-      final VoidCallback? onPressed =
-          name != null && playable.contains(name) && !_busy
+    ).isNotEmpty;
+
+    Widget replayButton(int i, {required bool split}) {
+      final String? name = split ? slots[i] : null;
+      final VoidCallback? onPressed = _busy
+          ? null
+          : !split
+          ? (canReplayFace ? _replayAudio : null)
+          : playable.contains(name)
           ? () => srsRunLogged(
               'SrsReviewPage.replayOne',
-              () => _audio.play(<String>[name]),
+              () => _audio.play(<String>[name!]),
             )
           : null;
-      final String label = slots.length > 1
+      final String label = split
           ? '${t.srs_review_replay_audio} ${i + 1}/${slots.length}'
           : t.srs_review_replay_audio;
       return FushiPressScale(
         enabled: onPressed != null,
         child: FushiTooltip(
-          message: slots.length > 1 ? label : '$label (R)',
+          message: split ? label : '$label (R)',
           child: SizedBox.square(
             dimension: extent,
             child: FushiFilledButton.tonal(
@@ -1492,8 +1504,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                 spacing: 2,
                 children: <Widget>[
                   FushiIcon(FushiIcons.volumeUp, semanticLabel: label),
-                  if (slots.length > 1)
-                    ExcludeSemantics(child: Text('${i + 1}')),
+                  if (split) ExcludeSemantics(child: Text('${i + 1}')),
                 ],
               ),
             ),
@@ -1503,22 +1514,29 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     }
 
     final Widget gap = SizedBox(width: tokens.spacing.gap);
-    final Widget replay = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (int i = 0; i < count; i++) ...<Widget>[
-          if (i > 0) gap,
-          replayButton(i),
-        ],
-      ],
-    );
-    // 「显示答案」是居中的定宽按钮：另一端留出与重播键同宽的空位，它才按整行居中——
-    // 否则重播键放哪端就把它推向另一端。评分按钮铺满，不留空位（空位宽度动画过渡）。
-    // 窄屏放不下对称空位时空位让步，「显示答案」至少保留 [_kShowAnswerMinWidth]。
-    final double slot = count * (extent + tokens.spacing.gap);
     final bool start = side == SrsReviewReplayButton.start;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
+        final double unit = extent + tokens.spacing.gap;
+        // 逐段键只在放得下时用：整行扣掉全部键后，「显示答案」/ 评分按钮仍至少留
+        // [_kShowAnswerMinWidth]（四颗评分键各 ≥ 48dp 命中区）。
+        final bool split =
+            slots.length > 1 &&
+            c.maxWidth - slots.length * unit >= _kShowAnswerMinWidth;
+        final int count = split ? slots.length : 1;
+        final Widget replay = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (int i = 0; i < count; i++) ...<Widget>[
+              if (i > 0) gap,
+              replayButton(i, split: split),
+            ],
+          ],
+        );
+        // 「显示答案」是居中的定宽按钮：另一端留出与重播键同宽的空位，它才按整行居中——
+        // 否则重播键放哪端就把它推向另一端。评分按钮铺满，不留空位（空位宽度动画过渡）。
+        // 窄屏放不下对称空位时空位让步，「显示答案」至少保留 [_kShowAnswerMinWidth]。
+        final double slot = count * unit;
         final Widget mirror = AnimatedContainer(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: FushiMotion.enter,
