@@ -1177,11 +1177,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final VideoBookRow? row = _row;
     if (cue == null || row == null) {
       final MinePopupResult r = await super.onMineEntry(fields);
-      return <String, Object?>{
-        'ankiConnect': r.ankiConnect,
-        'noteId': r.noteId,
-        if (r.duplicate) 'duplicate': true,
-      };
+      return r.toJson();
     }
     await _enqueueMine(fields, cue, row);
     return <String, Object?>{

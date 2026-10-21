@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "선택한 덱 (하위 덱 포함)",
   "anki_duplicate_scope_deck_root": "최상위 덱 (모든 하위 덱)",
   "anki_duplicate_scope_hint": "카드가 이미 존재하는지 확인할 때 검색할 덱. AnkiConnect 전용; AnkiDroid는 항상 전체 컬렉션을 검색합니다.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid가 설치되어 있지 않거나 API가 비활성화되어 있어 카드 접근 권한을 부여할 수 없습니다. AnkiDroid를 설치하고 API를 활성화하거나 AnkiConnect로 전환하세요.",
   "anki_error_ankimobile_no_decks": "AnkiMobile에서 덱이나 노트 유형을 받지 못했습니다.",
   "anki_error_ankimobile_not_active": "Fushi가 제때 포그라운드로 돌아오지 않아 클립보드를 읽을 수 없었습니다. Fushi로 돌아와 다시 시도하세요.",

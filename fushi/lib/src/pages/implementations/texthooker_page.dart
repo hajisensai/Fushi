@@ -883,7 +883,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       unawaited(recordMined());
       unawaited(recordMinedSentence(effectiveFields, outcome.noteId));
     }
-    FushiToast.showMine(msg: described.message, status: described.status);
+    // 失败原因交给弹窗就地说，不另弹 toast（见 MinePopupResult.message）。
+    if (described.success) {
+      FushiToast.showMine(msg: described.message, status: described.status);
+    }
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。
       FushiToast.show(
@@ -903,7 +906,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (described.success) {
       return MinePopupResult.mined(outcome);
     }
-    return MinePopupResult.failed(outcome);
+    return MinePopupResult.failed(outcome, message: described.message);
   }
 
   Future<void> _toggleExternalWindowMode() async {

@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "Baralho selecionado (e sub-baralhos)",
   "anki_duplicate_scope_deck_root": "Baralho raiz (todos os sub-baralhos)",
   "anki_duplicate_scope_hint": "Quais baralhos são verificados ao checar se um cartão já existe. Apenas AnkiConnect; o AnkiDroid sempre busca na coleção inteira.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "O AnkiDroid não está instalado (ou sua API está desativada), então o acesso aos cartões não pôde ser concedido. Instale o AnkiDroid e ative a API dele, ou mude para o AnkiConnect.",
   "anki_error_ankimobile_no_decks": "O AnkiMobile não retornou nenhum baralho ou tipo de nota.",
   "anki_error_ankimobile_not_active": "O Fushi não voltou ao primeiro plano a tempo, então a área de transferência não pôde ser lida. Volte ao Fushi e tente novamente.",

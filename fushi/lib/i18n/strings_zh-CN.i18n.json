@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "所选卡组（含子卡组）",
   "anki_duplicate_scope_deck_root": "根卡组（含全部子卡组）",
   "anki_duplicate_scope_hint": "查询「这个词是否已经有卡」时搜索哪些卡组。仅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始终整库查重。",
+  "anki_error_all_fields_empty": "这张卡的所有字段都是空的，通常是所选笔记类型还没有配置字段映射。请在 Anki 设置里给它的字段配置映射。",
   "anki_error_ankidroid_unavailable": "未安装 AnkiDroid（或其 API 被禁用），无法授予卡片访问权限。请安装 AnkiDroid 并启用其 API，或改用 AnkiConnect。",
   "anki_error_ankimobile_no_decks": "AnkiMobile 没有回传任何牌组或笔记类型。",
   "anki_error_ankimobile_not_active": "Fushi 没能及时回到前台，剪贴板还没被读取。回到 Fushi 后重试即可。",

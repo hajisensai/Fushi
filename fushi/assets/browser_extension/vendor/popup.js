@@ -2783,7 +2783,14 @@ function showInlineHint(button, message) {
     setTimeout(() => {
         hint.classList.remove('visible');
         setTimeout(() => hint.remove(), 220);
-    }, 1800);
+    }, inlineHintDurationMs(message));
+}
+
+// 制卡失败的原因（宿主经 reply.message 带来的一整句）读完要时间：短提示照旧 1.8s，
+// 长句按字数延长，封顶 6s。宿主不再另弹 toast，这里是这次失败唯一的说法。
+function inlineHintDurationMs(message) {
+    const length = String(message || '').length;
+    return Math.min(6000, Math.max(1800, 1200 + length * 60));
 }
 
 // BUG-2051：↗「在 Anki 中打开这个词的卡」——**唯一**一条车道，app 内外同一根桥。

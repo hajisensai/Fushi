@@ -1724,6 +1724,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（queued 画 ✓、不回查
     // Anki），下面那个二元组装不下这个状态。
     MinePopupResult? minedNew;
+    // 新增 / 覆写失败时的原结果：失败原因（MinePopupResult.message）只在弹窗里说，
+    // 下面那个二元组装不下它，失败时原样交回。
+    MinePopupResult? failed;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
@@ -1737,16 +1740,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           AnkiMiningPayload.withAllowDuplicate(fields),
         );
         minedNew = res;
+        if (!res.accepted) failed = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
         final res = await onUpdateFromPopup(noteId, fields);
+        if (!res.accepted) failed = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
     if (minedNew?.queued ?? false) return minedNew!;
+    if (!r.ankiConnect && failed != null) return failed!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 

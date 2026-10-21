@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "Selected deck (and its subdecks)",
   "anki_duplicate_scope_deck_root": "Root deck (all subdecks)",
   "anki_duplicate_scope_hint": "Which decks are searched when checking whether a card already exists. AnkiConnect only; AnkiDroid always searches the whole collection.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid is not installed (or its API is disabled), so card access cannot be granted. Install AnkiDroid and enable its API, or switch to AnkiConnect.",
   "anki_error_ankimobile_no_decks": "AnkiMobile returned no decks or note types.",
   "anki_error_ankimobile_not_active": "Fushi did not come back to the foreground in time, so the clipboard could not be read. Return to Fushi and try again.",

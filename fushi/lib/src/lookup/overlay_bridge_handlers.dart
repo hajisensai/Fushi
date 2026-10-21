@@ -434,7 +434,7 @@ Future<Map<String, Object?>> _mineEntry(
   }
   final MinePopupResult reply = described.success
       ? MinePopupResult.mined(outcome)
-      : MinePopupResult.failed(outcome);
+      : MinePopupResult.failed(outcome, message: described.message);
   return <String, Object?>{
     ...reply.toJson(),
     // BUG-1908：失败原因必须回到浮窗。app 外的裸浮窗连 Flutter toast 都没有

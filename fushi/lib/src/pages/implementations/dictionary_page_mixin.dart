@@ -529,16 +529,17 @@ mixin DictionaryPageMixin {
     }
     // TODO-1325 #6：MD3 着色 + 图标 toast。着色状态由 describeMineOutcome 单一真相
     // 带出（added 绿 / duplicate 橙 / failed 红），此处不再本地 switch。
-    FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
+      FushiToast.showMine(msg: described.message, status: described.status);
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
       return MinePopupResult.mined(outcome);
     }
     // BUG-1908/1915：重复是「卡已在 Anki 里」而不是「没有卡」，把这个确定事实带回
     // 弹窗，否则 ✓ 被画成 ＋ 且 ↗ 入口消失（弹窗侧不许回查 Anki——TODO-448）。
-    // 判据只住在 .failed(outcome) 一处。
-    return MinePopupResult.failed(outcome);
+    // 判据只住在 .failed(outcome) 一处。失败原因交给弹窗就地说，不另弹 toast
+    // （见 MinePopupResult.message）。
+    return MinePopupResult.failed(outcome, message: described.message);
   }
 
   /// TODO-270 D：覆盖「最新制的那张卡」（[noteId]）的字段——走 repo.updateMinedNote
@@ -566,11 +567,11 @@ mixin DictionaryPageMixin {
     // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。
     final described = describeMineOutcome(outcome, overwrite: true);
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
-    FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
+      FushiToast.showMine(msg: described.message, status: described.status);
       return MinePopupResult.mined(outcome);
     }
-    return MinePopupResult.failed(outcome);
+    return MinePopupResult.failed(outcome, message: described.message);
   }
 
   /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
@@ -625,6 +626,8 @@ mixin DictionaryPageMixin {
     final reading = fields['reading'] ?? '';
     // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（同 base_source_page）。
     MinePopupResult? minedNew;
+    // 同 base_source_page：失败时原样交回，带着只在弹窗里说的失败原因。
+    MinePopupResult? failed;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
@@ -637,16 +640,19 @@ mixin DictionaryPageMixin {
           AnkiMiningPayload.withAllowDuplicate(fields),
         );
         minedNew = res;
+        if (!res.accepted) failed = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
         final res = await onUpdateEntry(noteId, fields);
+        if (!res.accepted) failed = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
     if (minedNew?.queued ?? false) return minedNew!;
+    if (!r.ankiConnect && failed != null) return failed!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
