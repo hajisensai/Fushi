@@ -258,23 +258,24 @@ void main() {
           false,
         ], withMain: false),
       };
-      final Directory temp = Directory.systemTemp.createTempSync('srs-defs-');
-      try {
-        final File payload = File('${temp.path}/payload.json')
-          ..writeAsStringSync(jsonEncode(cases));
-        final ProcessResult result = await Process.run(node, <String>[
-          'test/srs/srs_card_defs_layout_harness.mjs',
-          payload.path,
-        ]).timeout(const Duration(seconds: 80));
-        expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
-        );
-        expect(result.stdout, contains('PASS ${cases.length} browser cases'));
-      } finally {
-        temp.deleteSync(recursive: true);
-      }
+      // 用例经 stdin 交给 harness（不传文件路径）。
+      final Process proc = await Process.start(node, <String>[
+        'test/srs/srs_card_defs_layout_harness.mjs',
+      ]);
+      final Future<String> stdout = proc.stdout.transform(utf8.decoder).join();
+      final Future<String> stderr = proc.stderr.transform(utf8.decoder).join();
+      proc.stdin.add(utf8.encode(jsonEncode(cases)));
+      await proc.stdin.close();
+      final int exitCode = await proc.exitCode.timeout(
+        const Duration(seconds: 80),
+        onTimeout: () {
+          proc.kill();
+          return -1;
+        },
+      );
+      final String out = await stdout;
+      expect(exitCode, 0, reason: '$out\n${await stderr}');
+      expect(out, contains('PASS ${cases.length} browser cases'));
     },
     skip: browserRuntime.skipReason,
     timeout: const Timeout(Duration(seconds: 90)),
