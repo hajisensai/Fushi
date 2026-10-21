@@ -1140,6 +1140,8 @@ mixin DictionaryPageMixin {
               },
             ),
             onUpdateEntry: onUpdateEntry,
+            // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
+            isSessionOnScreen: () => controller.isEntryOnScreen(entry),
             // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。结果来自
             // 别的设备（[popupResourceSource] 非 null，如手机遥控电脑制卡）时卡片落在
             // 那台设备、用它的 Anki 配置，本机的切换对卡片不起作用，不显示。

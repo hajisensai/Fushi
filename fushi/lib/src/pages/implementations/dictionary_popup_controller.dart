@@ -351,6 +351,15 @@ class DictionaryPopupController extends ChangeNotifier {
   bool get hasVisiblePopup =>
       _entries.any((DictionaryPopupEntry e) => e.visible);
 
+  /// BUG-3652 续：[entry] 这一层此刻是否仍在屏上——仍在栈里（没被关 / 清栈）且未
+  /// 停驻（常驻热槽在两次查词之间 `visible=false` 隐身）。读的是模型而不是已建好的
+  /// widget 树：用户刚关掉弹窗、重建帧还没跑时，制卡回包看到的也是「已不在」。
+  ///
+  /// 对话框期间宿主把弹窗挪到屏外（`_popupHidingDialogDepth`）**不算**不在：那是同一
+  /// 次查词，对话框一关它就回来，失败原因仍该由它就地说。
+  bool isEntryOnScreen(DictionaryPopupEntry entry) =>
+      entry.visible && _entries.contains(entry);
+
   /// 最顶层**可见**条目的下标，无可见层返回 -1（常驻隐藏热槽不算）。
   int get lastVisibleIndex {
     for (int i = _entries.length - 1; i >= 0; i--) {

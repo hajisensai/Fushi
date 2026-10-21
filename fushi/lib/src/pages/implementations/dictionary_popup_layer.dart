@@ -1209,6 +1209,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onUpdateEntry,
+    this.isSessionOnScreen,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
@@ -1299,6 +1300,12 @@ class DictionaryPopupLayer extends StatelessWidget {
     Map<String, String> fields,
   )?
   onUpdateEntry;
+
+  /// BUG-3652 续：这一层此刻是否仍在屏上（宿主模型真值，通常是
+  /// `controller.isEntryOnScreen(entry)`）。透传给 [DictionaryPopupWebView]：制卡失败
+  /// 回包回来时弹窗已不在，原因就改由宿主 toast，而不是交给一个没人看的弹窗。null =
+  /// 挂载期间一直在屏上。
+  final bool Function()? isSessionOnScreen;
 
   /// 查重（词条渲染时问 Anki「这张卡已经有了吗」）。**可空**：与 [onMineEntry] 同
   /// 进同退——制卡不可用时传 null，弹窗既不画 ✓ 也不发查重探测。
@@ -2050,6 +2057,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onLinkClick: onLinkClick,
               onMineEntry: onMineEntry,
               onUpdateEntry: onUpdateEntry,
+              isSessionOnScreen: isSessionOnScreen,
               onDuplicateCheck: onDuplicateCheck,
               onOverwriteTargetNoteId: onOverwriteTargetNoteId,
               onMinedCardAction: onMinedCardAction,

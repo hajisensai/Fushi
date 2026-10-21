@@ -483,9 +483,41 @@ function parseMineResult(reply) {
             message,
             duplicate: reply.duplicate === true,
             queued: reply.queued === true,
+            // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
+            // （MineFailureNotice.settle）。这里就不能再说第二遍。
+            hostReported: reply.hostReported === true,
         };
     }
     return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
+}
+
+// BUG-3652 续：制卡失败的原因**恰好说一次**。
+//
+// 宿主把原因随回包带来（MinePopupResult.message），失败时不另弹 toast——否则同一次失败
+// 报两遍。但回包到达时，发起制卡的那颗按钮可能已经不在页面上了：同一个弹窗里换了词、
+// 原地跳转、热槽复用重渲染（renderPopup 清空 #entries-container）。这时把提示锚到一颗
+// 脱离文档的按钮上，要么画在错的地方、要么根本看不见，用户就什么都没收到。
+//
+//   * hostReported —— 宿主已经判定弹窗不在并 toast 过了，什么都不做；
+//   * 按钮还在页面上 —— 就地说（showInlineHint）；
+//   * 按钮已被摘掉 —— 不画，交回宿主（mineFailureUnseen）由它 toast 一次。
+function reportMineFailure(button, result) {
+    if (result && result.hostReported) return;
+    const message = (result && result.message) || window.i18nMineFailed || '制卡失败';
+    // 没有 isConnected 的老引擎按「还在页面上」处理（与改动前同样就地说）。
+    if (button.isConnected !== false) {
+        showInlineHint(button, message);
+        return;
+    }
+    try {
+        const pending = window.flutter_inappwebview.callHandler('mineFailureUnseen', {
+            message,
+            duplicate: !!(result && result.duplicate === true),
+        });
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+    } catch (e) {
+        console.error('mine failure: mineFailureUnseen failed', e);
+    }
 }
 
 // Records the just-mined word as the editable "latest" card when the backend
@@ -4715,9 +4747,7 @@ function createEntryHeader(entry, idx) {
                     // 都还在，所以 ✓ 是真的；失败时 result.noteId 为 null，上一行的
                     // rememberLatestMined 已经把「最新可改」降级回普通 ✓。要补的只是原因。
                     if (!result.ankiConnect) {
-                        showInlineHint(
-                            mineButton,
-                            result.message || window.i18nMineFailed || '制卡失败');
+                        reportMineFailure(mineButton, result);
                     }
                     setMineState(true);
                     return;
@@ -4765,7 +4795,7 @@ function createEntryHeader(entry, idx) {
                             // ——取消不带 message，所以判据是 message 非空，而不是
                             // !ankiConnect（否则取消会被误报成失败）。
                             if (action.result.message) {
-                                showInlineHint(mineButton, action.result.message);
+                                reportMineFailure(mineButton, action.result);
                             }
                             const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                             setMineState(stillMined);
@@ -4828,9 +4858,8 @@ function createEntryHeader(entry, idx) {
                     //
                     // showInlineHint 正是 BUG-1064 为「app 外没有 Flutter toast 可用」
                     // 建的页内车道，锚在按钮屏幕坐标上，窗口被裁到卡片 bbox 也可见。
-                    showInlineHint(
-                        mineButton,
-                        result.message || window.i18nMineFailed || '制卡失败');
+                    // BUG-3652 续：按钮已被换掉 / 宿主已 toast 时不在这里画，见 reportMineFailure。
+                    reportMineFailure(mineButton, result);
                     // TODO-448 原样保住：失败/不确定**绝不**回查 Anki 再把按钮翻成 ✓
                     // （addNote 到了 Anki 但响应连接断了那次，延迟 duplicateCheck 会让用户
                     // 先看到「失败」再看到 ✓）。所以这里不发任何 duplicateCheck。

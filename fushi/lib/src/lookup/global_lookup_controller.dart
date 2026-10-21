@@ -17,6 +17,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
@@ -1086,6 +1087,12 @@ class GlobalLookupController {
     return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
   }
 
+  /// BUG-3652 续：制卡回包时「发起它的那张卡还在不在」——[origin] 是派发时捕获的
+  /// 查词 route；真正关窗（[_onOverlayHidden]）与下一次查词（[_activateRoute]）都会
+  /// 作废它，所以「仍是当前 route 且有效」就是这张卡还在屏上。
+  MineOriginOnScreen _mineOriginProbe(GlobalLookupRoute origin) =>
+      () => origin == _activeRoute && GlobalLookupChannel.isRouteValid(origin);
+
   void _notifyRevealed(
     int width,
     int height, {
@@ -1873,6 +1880,9 @@ class GlobalLookupController {
       // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
       sentenceContext: _currentSentence,
       miningHandler: _currentMiningHandler,
+      // BUG-3652 续：本消息在发起它的查词 route 的 zone 里派发；回包时这张卡还在屏上
+      // ⇔ 那条 route 仍是当前 route 且未作废（关窗、换词都会作废它）。
+      isOriginOnScreen: _mineOriginProbe(GlobalLookupChannel.currentRoute),
     )) {
       return;
     }
