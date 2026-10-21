@@ -144,10 +144,35 @@ class SrsRwkvReplayBuilder {
   SrsRwkvReplayBuilder(this.day);
 
   final SrsDayContext day;
-  final RwkvRows _rows = RwkvRows(1024);
-  final List<int> _times = <int>[];
+  RwkvRows _rows = RwkvRows(1024);
+  List<int> _times = <int>[];
 
   int get length => _rows.length;
+
+  /// 去掉这些卡（数字 card id）已加入的行：全量重建读历史的途中这些卡又有了新评分，要按最新
+  /// 历史重新 [addCard]。
+  void dropCards(Set<int> cardIds) {
+    if (cardIds.isEmpty) return;
+    final Uint8List source = _rows.bytes;
+    final BytesBuilder kept = BytesBuilder(copy: false);
+    final List<int> times = <int>[];
+    for (int i = 0; i < _rows.length; i++) {
+      if (cardIds.contains(_rows.cardIdAt(i))) continue;
+      kept.add(
+        Uint8List.sublistView(
+          source,
+          i * kFrwkvReviewSize,
+          (i + 1) * kFrwkvReviewSize,
+        ),
+      );
+      times.add(_times[i]);
+    }
+    // 留出余量：之后还要 [addCard] 那些卡（fromBytes 的缓冲区正好满，长度 0 时也没法扩）。
+    final RwkvRows rows = RwkvRows(times.length + 1024);
+    if (times.isNotEmpty) rows.addRows(RwkvRows.fromBytes(kept.toBytes()));
+    _rows = rows;
+    _times = times;
+  }
 
   void addCard(SrsRwkvCard card) {
     final List<SrsReviewLog> kept = srsRwkvKeptRatings(card.history);
@@ -206,14 +231,38 @@ RwkvRows? srsRwkvAppendRow(
   SrsRwkvCard card,
   SrsReviewLog log,
   SrsDayContext day,
+) => srsRwkvAppendRows(card, <String>[log.id], day)?.single;
+
+/// [srsRwkvAppendRow] 的多条版：[logIds]（按时间先后）是这张卡新写入的几条评分，必须正好是它
+/// 保留评分的末尾几条（例如两次对齐之间学习步「重来」后又答了一次）。返回每条一行（同序）；
+/// 不成立时返回 null，调用方改做全量重建。
+List<RwkvRows>? srsRwkvAppendRows(
+  SrsRwkvCard card,
+  List<String> logIds,
+  SrsDayContext day,
 ) {
   final List<SrsReviewLog> kept = srsRwkvKeptRatings(card.history);
-  if (kept.isEmpty || kept.last.id != log.id) return null;
-  final int i = kept.length - 1;
-  if (i == 0 && card.history.effectiveRatings.length > 1) {
+  final int first = kept.length - logIds.length;
+  if (logIds.isEmpty || first < 0) return null;
+  for (int j = 0; j < logIds.length; j++) {
+    if (kept[first + j].id != logIds[j]) return null;
+  }
+  if (first == 0 && card.history.effectiveRatings.length > logIds.length) {
     // 学习序列重启：上游丢弃了这张卡更早的评分，增量追加无法撤回它们。
     return null;
   }
+  return <RwkvRows>[
+    for (int i = first; i < kept.length; i++) _appendOne(card, kept, i, day),
+  ];
+}
+
+RwkvRows _appendOne(
+  SrsRwkvCard card,
+  List<SrsReviewLog> kept,
+  int i,
+  SrsDayContext day,
+) {
+  final SrsReviewLog log = kept[i];
   final RwkvRows rows = RwkvRows(1);
   _add(
     rows,
