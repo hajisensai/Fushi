@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "Bola yang dapat diseret di setiap halaman Fushi. Ketuk untuk memperluas tombol yang dipilih di bawah untuk halaman saat ini",
   "floating_ball_lookup_hint": "Masukkan kata",
   "floating_ball_notification": "Bola mengambang aktif",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Tidak ada teks dikenali",
   "floating_ball_ocr_failed": "OCR layar gagal",

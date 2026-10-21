@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "Một quả bóng kéo được trên mọi trang của Fushi. Chạm vào nó để mở rộng các nút đã chọn bên dưới cho trang hiện tại",
   "floating_ball_lookup_hint": "Nhập một từ",
   "floating_ball_notification": "Bóng nổi đang hoạt động",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Không nhận dạng được văn bản",
   "floating_ball_ocr_failed": "OCR màn hình thất bại",

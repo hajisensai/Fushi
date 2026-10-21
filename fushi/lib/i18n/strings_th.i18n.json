@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "ปุ่มที่ลากได้ในทุกหน้าของ Fushi แตะเพื่อขยายปุ่มที่เลือกด้านล่างสำหรับหน้าปัจจุบัน",
   "floating_ball_lookup_hint": "ป้อนคำ",
   "floating_ball_notification": "ปุ่มลอยกำลังทำงาน",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "ไม่พบข้อความ",
   "floating_ball_ocr_failed": "OCR หน้าจอไม่สำเร็จ",

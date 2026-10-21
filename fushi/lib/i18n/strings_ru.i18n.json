@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "Перетаскиваемая кнопка на каждой странице Fushi. Коснитесь её, чтобы развернуть кнопки, выбранные ниже для текущей страницы",
   "floating_ball_lookup_hint": "Введите слово",
   "floating_ball_notification": "Плавающая кнопка активна",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Текст не распознан",
   "floating_ball_ocr_failed": "Не удалось выполнить OCR экрана",

@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "كرة قابلة للسحب في كل صفحة من Fushi. اضغط عليها لتوسيع الأزرار المختارة أدناه للصفحة الحالية",
   "floating_ball_lookup_hint": "أدخل كلمة",
   "floating_ball_notification": "الكرة العائمة نشطة",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "لم يتم التعرف على أي نص",
   "floating_ball_ocr_failed": "فشل OCR للشاشة",

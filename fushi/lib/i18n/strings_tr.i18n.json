@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "Her Fushi sayfasında sürüklenebilir bir top. Geçerli sayfa için aşağıda seçilen düğmeleri genişletmek üzere ona dokunun",
   "floating_ball_lookup_hint": "Bir kelime girin",
   "floating_ball_notification": "Yüzen top etkin",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Metin tanınmadı",
   "floating_ball_ocr_failed": "Ekran OCR başarısız oldu",

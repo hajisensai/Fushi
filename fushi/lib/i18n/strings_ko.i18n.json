@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "모든 Fushi 페이지에 드래그할 수 있는 볼이 표시됩니다. 탭하면 현재 페이지에 대해 아래에서 선택한 버튼이 펼쳐집니다",
   "floating_ball_lookup_hint": "단어를 입력하세요",
   "floating_ball_notification": "플로팅 볼이 활성화되어 있습니다",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "인식된 텍스트가 없습니다",
   "floating_ball_ocr_failed": "화면 OCR 실패",

@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "Een versleepbare knop op elke Fushi-pagina. Tik erop om de hieronder gekozen knoppen voor de huidige pagina uit te vouwen",
   "floating_ball_lookup_hint": "Voer een woord in",
   "floating_ball_notification": "Zwevende knop is actief",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Geen tekst herkend",
   "floating_ball_ocr_failed": "Scherm-OCR mislukt",

@@ -2517,6 +2517,7 @@
   "floating_ball_in_app_hint": "Un pulsante trascinabile su ogni pagina di Fushi. Toccalo per espandere i pulsanti scelti qui sotto per la pagina corrente",
   "floating_ball_lookup_hint": "Inserisci una parola",
   "floating_ball_notification": "Il pulsante flottante è attivo",
+  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Nessun testo riconosciuto",
   "floating_ball_ocr_failed": "OCR dello schermo non riuscito",

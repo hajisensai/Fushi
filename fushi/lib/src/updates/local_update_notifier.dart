@@ -26,6 +26,12 @@ const String kUpdateNotificationChannelId = 'fushi_updates';
 /// 换一个应用身份，已发出的通知与用户的通知设置一起失联。
 const String kWindowsNotificationGuid = '4f6a1c2e-8b3d-4a91-9c27-2d5b8e0f7a13';
 
+/// Android 状态栏小图标：单色白海兔剪影（`res/drawable/ic_stat_fushi.xml`，
+/// 由 `tool/android/gen_notification_icon.py` 从启动图标生成）。不能用
+/// `@mipmap/ic_launcher`：系统只取 alpha 画小图标，彩色启动图标会被剪影成
+/// 一团黑块。
+const String kAndroidNotificationSmallIcon = '@drawable/ic_stat_fushi';
+
 /// Windows toast 头部图标：随包 Flutter 资产（构建期已在 `data/flutter_assets`
 /// 下，五端同一张）。不传给插件就没有 `IconUri`，头部只剩文字。
 const String kWindowsNotificationIconAsset = 'assets/meta/icon.png';
@@ -172,7 +178,9 @@ class LocalUpdateNotifier implements UpdateNotifier {
   Future<bool> _initialise() async {
     final bool? initialised = await _plugin.initialize(
       settings: InitializationSettings(
-        android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: const AndroidInitializationSettings(
+          kAndroidNotificationSmallIcon,
+        ),
         iOS: const DarwinInitializationSettings(
           requestAlertPermission: false,
           requestBadgePermission: false,
