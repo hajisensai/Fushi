@@ -1056,11 +1056,15 @@ class SrsCardFaceSync {
 /// 卡面 `[sound:]` 的播放实现（测试覆写）。参数是本地文件路径；返回是否开始播放。
 typedef SrsSoundPlayer = Future<bool> Function(String path);
 
-/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]）。
+/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]），
+/// 音量取开播那一刻的 [srsReviewVolumeProvider]。
 final Provider<SrsSoundPlayer> srsSoundPlayerProvider =
     Provider<SrsSoundPlayer>(
       (Ref ref) =>
-          (String path) => DesktopAudioPlayback.playFile(path),
+          (String path) => DesktopAudioPlayback.playFile(
+            path,
+            volume: ref.read(srsReviewVolumeProvider),
+          ),
     );
 
 /// 卡面媒体请求的响应：[store] 里按名字取字节；不是卡面媒体 URL 时返回 null。
@@ -1566,7 +1570,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             r['width'] ?? 0,
             r['height'] ?? 0,
           );
-    final Rect anchor = box.localToGlobal(local.topLeft) & local.size;
+    // 整个矩形经同一变换：复习页不在 FushiAppUiScaleNeutralizer 之下，「全局左上角 & 局部
+    // 尺寸」会把高宽留在 1/界面缩放，弹窗按偏高的下沿摆、盖住被查的那一行。
+    final Rect anchor = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      local,
+    );
     lookup.lookup(
       SrsCardLookupRequest(
         term: data.text,

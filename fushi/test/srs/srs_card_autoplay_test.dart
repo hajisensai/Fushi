@@ -2,6 +2,11 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show
+        inlineVideoCoverHtml,
+        inlineVideoSentenceAudioHtml,
+        inlineVideoWordAudioHtml;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 
 /// 假播放出口：每段音频挂一个 completer，测试决定它「播完」还是「被打断」。
@@ -198,6 +203,56 @@ void main() {
       out.finishLast();
       await Future.wait(<Future<void>>[first, second]);
       expect(out.started, <String>['a', 'c']);
+    });
+  });
+
+  group('原生卡面的内嵌媒体（与模板页内脚本同一顺序）', () {
+    // 制卡链路真实写出的字段：WebM 片段 + 内嵌单词 / 句子音频。
+    final String word = inlineVideoWordAudioHtml('word.mp3');
+    final String sentence = inlineVideoSentenceAudioHtml('sentence.mp3');
+    final String clip = inlineVideoCoverHtml('clip.webm');
+
+    test('有片段：先单词音频、再片段，句子音频不播（片段自带）', () {
+      // 背面 Picture 渲染多份，同名只播一次。
+      final String back = '$clip<div>$word</div>$sentence$clip';
+      expect(srsCardMediaNames(back), <String>['word.mp3', 'clip.webm']);
+    });
+
+    test('无片段：单词、句子音频与 [sound:] 按出现顺序', () {
+      expect(srsCardMediaNames('$word [sound:x.mp3] $sentence'), <String>[
+        'word.mp3',
+        'x.mp3',
+        'sentence.mp3',
+      ]);
+    });
+
+    test('只有原生卡面才认内嵌标签；整面 WebView 仍只认 [sound:]', () {
+      final String back = '$word$clip';
+      expect(
+        srsAutoplaySounds(
+          questionHtml: '',
+          answerHtml: back,
+          answerSide: true,
+          inlineMedia: true,
+        ),
+        <String>['word.mp3', 'clip.webm'],
+      );
+      expect(
+        srsAutoplaySounds(questionHtml: '', answerHtml: back, answerSide: true),
+        isEmpty,
+      );
+    });
+
+    test('答案面扣掉问题面带过来的媒体', () {
+      expect(
+        srsAutoplaySounds(
+          questionHtml: word,
+          answerHtml: '$word$clip',
+          answerSide: true,
+          inlineMedia: true,
+        ),
+        <String>['clip.webm'],
+      );
     });
   });
 }

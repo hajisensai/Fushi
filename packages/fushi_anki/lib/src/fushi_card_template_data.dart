@@ -361,6 +361,10 @@ const String kFushiCardBackTemplate = r'''<!--
 
     /* ---------- 图片：点按放大，再点关闭；加载完重算左栏能否吸顶 ---------- */
     function setUpLightbox() {
+      /* 视频片段（制卡写进 Picture 的 <video>）尺寸要等元数据到了才知道，同样重算 */
+      root.querySelectorAll(".fc-picture video, .fc-def-picture video").forEach(function (v) {
+        if (v.readyState < 1) v.addEventListener("loadedmetadata", applyLayout, { once: true });
+      });
       var imgs = root.querySelectorAll(".fc-picture img, .fc-def-picture img");
       if (!imgs.length) return;
       imgs.forEach(function (img) {
@@ -563,7 +567,8 @@ const String kFushiCardStylingCss = r'''/*
   text-decoration: none;
 }
 
-.fc img {
+.fc img,
+.fc video {
   filter: var(--fc-image-filter);
 }
 
@@ -945,14 +950,17 @@ const String kFushiCardStylingCss = r'''/*
 .fc-pitch-num[data-type="kifuku"] { background: var(--fc-pitch-kifuku); }
 
 /* 图片：窄屏是标题区右上角的紧凑缩略图，按原比例完整显示（书封等竖图不裁切），
-   限高限宽不挤占词条行；点按放大看全图 */
+   限高限宽不挤占词条行；点按放大看全图。Picture 也可能是视频片段（<video>，视频制卡默认）
+   或动图（GIF / WebP / AVIF 都是 <img>）：视频与图片同一套尺寸 / 圆角 / 打码规则，
+   但不放大（控制条本身就要点按） */
 .fc-picture {
   flex: 0 0 auto;
   max-width: calc(var(--fc-thumb) * 1.5);
   margin: 0;
 }
 
-.fc-picture img {
+.fc-picture img,
+.fc-picture video {
   display: block;
   width: auto;
   height: auto;
@@ -961,6 +969,11 @@ const String kFushiCardStylingCss = r'''/*
   border-radius: var(--fc-radius-small);
   cursor: zoom-in;
   transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fc-picture video {
+  cursor: auto;
+  background: #000;
 }
 
 @media (hover: hover) {
@@ -972,13 +985,19 @@ const String kFushiCardStylingCss = r'''/*
 
 .fc-picture.nsfw img,
 .fc-picture.NSFW img,
-.fc-picture.Nsfw img {
+.fc-picture.Nsfw img,
+.fc-picture.nsfw video,
+.fc-picture.NSFW video,
+.fc-picture.Nsfw video {
   filter: blur(14px) var(--fc-image-filter);
 }
 
 .fc-picture.nsfw img:hover,
 .fc-picture.NSFW img:hover,
-.fc-picture.Nsfw img:hover {
+.fc-picture.Nsfw img:hover,
+.fc-picture.nsfw video:hover,
+.fc-picture.NSFW video:hover,
+.fc-picture.Nsfw video:hover {
   filter: var(--fc-image-filter);
 }
 
@@ -1051,7 +1070,8 @@ const String kFushiCardStylingCss = r'''/*
   font-size: var(--fc-size-gloss);
 }
 
-.fc-def-picture img {
+.fc-def-picture img,
+.fc-def-picture video {
   max-width: 100%;
   max-height: 200px;
   border-radius: var(--fc-radius-small);
@@ -1224,7 +1244,8 @@ const String kFushiCardStylingCss = r'''/*
   }
 
   /* 左栏图片在矮视口里收小（点按仍可放大），词条 + 例句尽量留在首屏。 */
-  .fc-back.fc-layout-wide .fc-picture img {
+  .fc-back.fc-layout-wide .fc-picture img,
+  .fc-back.fc-layout-wide .fc-picture video {
     max-height: 120px;
   }
 }
@@ -1329,7 +1350,8 @@ const String kFushiCardStylingCss = r'''/*
   max-width: 100%;
 }
 
-.fc-layout-wide .fc-picture img {
+.fc-layout-wide .fc-picture img,
+.fc-layout-wide .fc-picture video {
   width: auto;
   height: auto;
   max-width: 100%;

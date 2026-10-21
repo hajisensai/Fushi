@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 
@@ -3664,11 +3665,14 @@ class SrsDbStore implements SrsSyncReplica {
       isCloze: d.noteType.isCloze,
       specials: specials,
     );
+    // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
+    // （同一份模板），见 srs_fushi_card_native_media。
     final bool nativeFushiCard =
         d.noteType.builtinKey == kSrsBuiltinFushiCardKey &&
         front == FushiCardNoteType.template.front &&
         back == FushiCardNoteType.template.back &&
-        d.noteType.css == FushiCardNoteType.template.css;
+        d.noteType.css == FushiCardNoteType.template.css &&
+        srsFushiCardMediaIsNative(fields);
     return SrsRenderedCard(
       question: r.question,
       answer: r.answer,

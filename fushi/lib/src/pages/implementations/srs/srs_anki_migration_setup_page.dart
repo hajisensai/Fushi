@@ -227,6 +227,17 @@ class _SrsAnkiMigrationSetupPageState extends State<SrsAnkiMigrationSetupPage> {
                 () => _settings = _settings.copyWith(convertLapis: v),
               ),
             ),
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-anki-setup-rename-lapis-decks'),
+              title: t.srs_anki_migrate_setup_rename_lapis_decks,
+              subtitle: t.srs_anki_migrate_setup_rename_lapis_decks_desc,
+              value: _settings.convertLapis && _settings.renameLapisDecks,
+              onChanged: _settings.convertLapis
+                  ? (bool v) => setState(
+                      () => _settings = _settings.copyWith(renameLapisDecks: v),
+                    )
+                  : null,
+            ),
           ],
         ),
       ),

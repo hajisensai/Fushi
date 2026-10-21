@@ -84,6 +84,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
   if (r.notesRestored > 0) t.srs_import_report_restored(n: r.notesRestored),
   if (r.lapisNotesMigrated > 0)
     t.srs_import_report_lapis_migrated(n: r.lapisNotesMigrated),
+  if (r.lapisDecksRenamed > 0)
+    t.srs_import_report_lapis_decks_renamed(n: r.lapisDecksRenamed),
   if (r.lapisMigrationFailed) t.srs_import_report_lapis_failed,
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
   if (r.cardsResetToNew > 0)

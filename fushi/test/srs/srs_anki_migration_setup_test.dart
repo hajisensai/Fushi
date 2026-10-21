@@ -29,6 +29,7 @@ void main() {
       expect(d.options, kSrsAnkiMigrationOptions);
       expect(d.options.useRwkv, isTrue);
       expect(d.convertLapis, isTrue);
+      expect(d.renameLapisDecks, isTrue);
     });
 
     test('JSON 往返；缺项 / 坏值回落到默认', () {
@@ -38,17 +39,24 @@ void main() {
           withScheduling: false,
         ),
         convertLapis: false,
+        renameLapisDecks: false,
       );
       final SrsAnkiMigrationSettings back = SrsAnkiMigrationSettings.fromJson(
         s.toJson(),
       );
       expect(back.options, s.options);
       expect(back.convertLapis, isFalse);
+      expect(back.renameLapisDecks, isFalse);
       final SrsAnkiMigrationSettings broken = SrsAnkiMigrationSettings.fromJson(
-        <String, Object?>{'options': 'nope', 'convertLapis': 3},
+        <String, Object?>{
+          'options': 'nope',
+          'convertLapis': 3,
+          'renameLapisDecks': 'x',
+        },
       );
       expect(broken.options, kSrsAnkiMigrationOptions);
       expect(broken.convertLapis, isTrue);
+      expect(broken.renameLapisDecks, isTrue);
     });
   });
 
@@ -165,6 +173,9 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
+      // scrollUntilVisible 只保证露出一部分，按钮中心可能还在屏外。
+      await tester.ensureVisible(start);
+      await tester.pumpAndSettle();
       await tester.tap(start);
       await tester.pumpAndSettle();
 

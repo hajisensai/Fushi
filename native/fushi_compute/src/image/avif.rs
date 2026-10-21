@@ -19,12 +19,18 @@
 //! rav1d 的默认 logger 会把码流解析错误打到 stderr（Rust API 的 `Settings` 不暴露 logger）；只在
 //! 坏图上出现，GUI / 移动端 stderr 无人读，服务端终端里多几行，不另做处理。
 //!
+//! 动图（`avis` 图像序列）的逐帧解码在子模块 `sequence`（`ffc_image_avif_anim_*`）；本文件的
+//! [decode] / [probe] 只看静态主图（动图的 `pitm` 通常就是首帧）。
+//!
 //! 不支持（返回 BAD_INPUT）：只有图像序列没有静态主图的动图（`avis` 无 `pitm`）、构造方式 2、
 //! `iovl` 叠图、其它 `ipma` 标成必选而本解码器不认识的性质（按规范必须拒绝）。
 
 use crate::status;
 use std::mem::ManuallyDrop;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+
+mod sequence;
+pub(crate) use sequence::AvifAnimation;
 
 type R<T> = Result<T, i32>;
 
@@ -1063,6 +1069,14 @@ impl Av1Decoder {
         }
         copy_frame(&last.ok_or(status::BAD_INPUT)?)
     }
+
+    /// 丢弃解码器里在途的数据与帧（图像序列循环回第 0 个样本前调用）。
+    fn flush(&mut self) {
+        self.inner.flush();
+    }
+
+    /// rav1d panic 过之后调用：上下文状态不可信，不析构（inner 是 ManuallyDrop），只泄漏。
+    fn leak(self) {}
 
     fn close(mut self) {
         // SAFETY: 只在正常结束时调用一次，之后 `self` 被消耗。

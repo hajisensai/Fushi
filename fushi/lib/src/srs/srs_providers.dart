@@ -130,6 +130,18 @@ final Provider<bool> srsReviewShowIntervalsProvider = Provider<bool>(
   ),
 );
 
+/// 复习页页头是否显示剩余卡数（按 profile 偏好，默认显示；对齐 Anki「显示剩余卡片数量」）。
+final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewShowCounts)),
+);
+
+/// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。
+final Provider<double> srsReviewVolumeProvider = Provider<double>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewVolume)),
+);
+
 /// 复习页卡面缩放倍率（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0），按 profile 偏好。
 final Provider<double> srsReviewZoomProvider = Provider<double>(
   (Ref ref) =>

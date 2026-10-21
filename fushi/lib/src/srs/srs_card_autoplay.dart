@@ -18,7 +18,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -40,17 +42,73 @@ List<String> srsCardSoundNames(String html) => <String>[
       _htmlUnescape(m.group(1)!.trim()),
 ];
 
+final RegExp _inlineMediaTag = RegExp(
+  r'<(audio|video)\b([^>]*)>',
+  caseSensitive: false,
+);
+final RegExp _srcAttr = RegExp(
+  r'''\ssrc\s*=\s*(["'])([^"']*)\1''',
+  caseSensitive: false,
+);
+final RegExp _classAttr = RegExp(
+  r'''\sclass\s*=\s*(["'])([^"']*)\1''',
+  caseSensitive: false,
+);
+
+/// 原生卡面的媒体序列：`[sound:x]` 加制卡内嵌的 `<audio src>` / `<video src>`，按出现
+/// 顺序、同名只播一次（Lapis 背面把 Picture 渲染多份）。与模板里的页内脚本同一规则：
+/// 有视频片段时片段放最后（先单词音频、再片段），句子音频（`fushi-inline-audio`）不播——
+/// 片段自带句子声音。整面 WebView 卡面里这些标签由页内脚本自己播，不走这里。
+List<String> srsCardMediaNames(String html) {
+  final List<(int, String, String)> found = <(int, String, String)>[
+    for (final Match m in _soundTag.allMatches(html))
+      (m.start, _htmlUnescape(m.group(1)!.trim()), 'sound'),
+    for (final Match m in _inlineMediaTag.allMatches(html))
+      if (_srcAttr.firstMatch(m.group(2)!) case final Match src)
+        (
+          m.start,
+          _htmlUnescape(src.group(2)!.trim()),
+          m.group(1)!.toLowerCase() == 'video'
+              ? 'video'
+              : (_classAttr.firstMatch(m.group(2)!)?.group(2) ?? '').contains(
+                  'fushi-inline-audio',
+                )
+              ? 'sentence'
+              : 'audio',
+        ),
+  ]..sort((a, b) => a.$1.compareTo(b.$1));
+  final bool hasVideo = found.any(((int, String, String) f) => f.$3 == 'video');
+  final Set<String> seen = <String>{};
+  final List<String> out = <String>[];
+  final List<String> videos = <String>[];
+  for (final (int _, String name, String kind) in found) {
+    if (name.isEmpty || !seen.add(name)) continue;
+    if (kind == 'video') {
+      videos.add(name);
+    } else if (!(hasVideo && kind == 'sentence')) {
+      out.add(name);
+    }
+  }
+  return <String>[...out, ...videos];
+}
+
+/// 一面卡的媒体名：[inlineMedia]（原生卡面）走 [srsCardMediaNames]，否则只认 `[sound:]`。
+List<String> _faceNames(String html, bool inlineMedia) =>
+    inlineMedia ? srsCardMediaNames(html) : srsCardSoundNames(html);
+
 /// 答案面「新出现」的音频：从答案面音频里按次数扣掉问题面的（`{{FrontSide}}` 带过来的）。
+/// [inlineMedia] 见 [srsCardMediaNames]。
 List<String> srsAnswerOnlySounds({
   required String questionHtml,
   required String answerHtml,
+  bool inlineMedia = false,
 }) {
   final Map<String, int> fromQuestion = <String, int>{};
-  for (final String name in srsCardSoundNames(questionHtml)) {
+  for (final String name in _faceNames(questionHtml, inlineMedia)) {
     fromQuestion[name] = (fromQuestion[name] ?? 0) + 1;
   }
   final List<String> out = <String>[];
-  for (final String name in srsCardSoundNames(answerHtml)) {
+  for (final String name in _faceNames(answerHtml, inlineMedia)) {
     final int left = fromQuestion[name] ?? 0;
     if (left > 0) {
       fromQuestion[name] = left - 1;
@@ -66,9 +124,14 @@ List<String> srsAutoplaySounds({
   required String questionHtml,
   required String answerHtml,
   required bool answerSide,
+  bool inlineMedia = false,
 }) => answerSide
-    ? srsAnswerOnlySounds(questionHtml: questionHtml, answerHtml: answerHtml)
-    : srsCardSoundNames(questionHtml);
+    ? srsAnswerOnlySounds(
+        questionHtml: questionHtml,
+        answerHtml: answerHtml,
+        inlineMedia: inlineMedia,
+      )
+    : _faceNames(questionHtml, inlineMedia);
 
 /// 手动**重播**该播哪些音频。[includeQuestion] = 答案面上也先播问题音频（Anki 默认）。
 List<String> srsReplaySounds({
@@ -76,14 +139,16 @@ List<String> srsReplaySounds({
   required String answerHtml,
   required bool answerSide,
   required bool includeQuestion,
+  bool inlineMedia = false,
 }) {
-  if (!answerSide) return srsCardSoundNames(questionHtml);
+  if (!answerSide) return _faceNames(questionHtml, inlineMedia);
   final List<String> answerOnly = srsAnswerOnlySounds(
     questionHtml: questionHtml,
     answerHtml: answerHtml,
+    inlineMedia: inlineMedia,
   );
   return includeQuestion
-      ? <String>[...srsCardSoundNames(questionHtml), ...answerOnly]
+      ? <String>[..._faceNames(questionHtml, inlineMedia), ...answerOnly]
       : answerOnly;
 }
 
@@ -126,14 +191,26 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
     return file.path;
   }
 
-  /// [DesktopAudioPlayback.playFileToEnd] 在第一个 await 之前就记下了激活代号并排进
-  /// 串行队列，随后的 [DesktopAudioPlayback.stop] 会让它放弃开播。
+  /// 卡面上挂着同名视频片段（`SrsCardVideoClip`，见 [SrsCardVideoChannel]）时交给它在画面里播，否则走共用音频播放器。
+  /// 两条路都在第一个 await 之前就登记了这次播放（片段通道同步登记；
+  /// [DesktopAudioPlayback.playFileToEnd] 先记激活代号再排队），随后的 [stop] 能取消它。
   @override
-  Future<bool> playToEnd(String path) =>
-      DesktopAudioPlayback.playFileToEnd(path);
+  Future<bool> playToEnd(String path) {
+    final Future<bool>? clip = _ref
+        .read(srsCardVideoChannelProvider)
+        .playToEnd(p.basename(path));
+    if (clip != null) return clip;
+    return DesktopAudioPlayback.playFileToEnd(
+      path,
+      volume: _ref.read(srsReviewVolumeProvider),
+    );
+  }
 
   @override
-  Future<void> stop() => DesktopAudioPlayback.stop();
+  Future<void> stop() async {
+    await _ref.read(srsCardVideoChannelProvider).stopAll();
+    await DesktopAudioPlayback.stop();
+  }
 }
 
 final Provider<SrsCardAudioOutput> srsCardAudioOutputProvider =

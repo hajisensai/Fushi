@@ -38,6 +38,7 @@ class SrsAnkiMigrationSettings {
   const SrsAnkiMigrationSettings({
     this.options = kSrsAnkiMigrationOptions,
     this.convertLapis = true,
+    this.renameLapisDecks = true,
   });
 
   final SrsAnkiImportOptions options;
@@ -47,17 +48,24 @@ class SrsAnkiMigrationSettings {
   /// 要用 Fushi 卡片；设置页写明了它做什么、迁不过去的字段怎么处理，不想要可以关。
   final bool convertLapis;
 
+  /// [convertLapis] 开着时，再把名字里带 Lapis 的牌组改成 Fushi Card
+  /// （[SrsLegacyLapisMigrationOps.renameLapisDecks]）。[convertLapis] 关着时不生效。
+  final bool renameLapisDecks;
+
   SrsAnkiMigrationSettings copyWith({
     SrsAnkiImportOptions? options,
     bool? convertLapis,
+    bool? renameLapisDecks,
   }) => SrsAnkiMigrationSettings(
     options: options ?? this.options,
     convertLapis: convertLapis ?? this.convertLapis,
+    renameLapisDecks: renameLapisDecks ?? this.renameLapisDecks,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'options': options.toJson(),
     'convertLapis': convertLapis,
+    'renameLapisDecks': renameLapisDecks,
   };
 
   /// 缺项 / 坏值回落到默认值。
@@ -65,11 +73,13 @@ class SrsAnkiMigrationSettings {
     const SrsAnkiMigrationSettings d = SrsAnkiMigrationSettings();
     final Object? options = json['options'];
     final Object? convert = json['convertLapis'];
+    final Object? renameDecks = json['renameLapisDecks'];
     return SrsAnkiMigrationSettings(
       options: options is Map
           ? SrsAnkiImportOptions.fromJson(options.cast<String, Object?>())
           : d.options,
       convertLapis: convert is bool ? convert : d.convertLapis,
+      renameLapisDecks: renameDecks is bool ? renameDecks : d.renameLapisDecks,
     );
   }
 }
@@ -148,19 +158,24 @@ Future<SrsImportReport> runSrsAnkiMigration({
     shouldStop: shouldStop,
   );
   if (settings.convertLapis) {
-    await srsConvertLegacyLapisAfterImport(store, report);
+    await srsConvertLegacyLapisAfterImport(
+      store,
+      report,
+      renameDecks: settings.renameLapisDecks,
+    );
   }
   return report;
 }
 
 /// 迁移后的「旧 Lapis → Fushi 卡片」：逐个变体迁移（换类型 + 补迁，原牌组不动），再补迁以前
 /// 迁移遗漏的字段。每个变体各自一个事务（[SrsLegacyLapisMigrationOps.migrateLegacyLapis]），失败的
-/// 那个整体不落库、仍是旧 Lapis。导入本身已经落库，所以这一步失败不让整个任务失败，而是记日志并在
+/// 那个整体不落库、仍是旧 Lapis。[renameDecks] 时最后把名字带 Lapis 的牌组改成 Fushi Card。导入本身已经落库，所以这一步失败不让整个任务失败，而是记日志并在
 /// 报告里写明（[SrsImportReport.lapisMigrationFailed]），用户可以去笔记类型页重试。
 Future<void> srsConvertLegacyLapisAfterImport(
   SrsDbStore store,
-  SrsImportReport report,
-) async {
+  SrsImportReport report, {
+  bool renameDecks = false,
+}) async {
   try {
     for (final SrsLegacyLapisSource source
         in await store.legacyLapisSources()) {
@@ -169,6 +184,7 @@ Future<void> srsConvertLegacyLapisAfterImport(
       );
     }
     report.lapisNotesMigrated += await store.applyLapisBackfill();
+    if (renameDecks) report.lapisDecksRenamed = await store.renameLapisDecks();
   } catch (e, stack) {
     ErrorLogService.instance.log('SrsAnkiMigration.convertLapis', e, stack);
     report.lapisMigrationFailed = true;

@@ -284,6 +284,10 @@
 
     /* ---------- 图片：点按放大，再点关闭；加载完重算左栏能否吸顶 ---------- */
     function setUpLightbox() {
+      /* 视频片段（制卡写进 Picture 的 <video>）尺寸要等元数据到了才知道，同样重算 */
+      root.querySelectorAll(".fc-picture video, .fc-def-picture video").forEach(function (v) {
+        if (v.readyState < 1) v.addEventListener("loadedmetadata", applyLayout, { once: true });
+      });
       var imgs = root.querySelectorAll(".fc-picture img, .fc-def-picture img");
       if (!imgs.length) return;
       imgs.forEach(function (img) {

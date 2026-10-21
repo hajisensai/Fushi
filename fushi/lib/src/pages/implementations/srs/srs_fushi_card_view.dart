@@ -27,6 +27,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -36,6 +37,9 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/cover_image.dart'
+    show AvifFileImage, isAvifPath;
+import 'package:fushi/src/utils/animated_avif_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -265,7 +269,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-front-audio'),
             name:
-                srsSoundNames(
+                srsAudioSources(
                   srsFieldFilled(f['SentenceAudio'])
                       ? f['SentenceAudio']!
                       : f['ExpressionAudio'] ?? '',
@@ -294,9 +298,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(
-          s.pad,
-        ).copyWith(top: s.pad + widget.topInset),
+        padding: EdgeInsets.all(s.pad).copyWith(top: s.pad + widget.topInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -471,7 +473,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             style: s,
             color: srsPitchColor(srsPitchType(p, morae, cats), dark: s.dark),
           ),
-        for (final String name in srsSoundNames(f['ExpressionAudio'] ?? ''))
+        for (final String name in srsAudioSources(f['ExpressionAudio'] ?? ''))
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-word-audio'),
             name: name,
@@ -515,15 +517,32 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     )) {
       return null;
     }
-    final String? name = srsImageSources(widget.fields['Picture']!).firstOrNull;
+    final String picture = widget.fields['Picture']!;
+    final double? maxWidth = wide ? null : s.thumb * 1.5;
+    // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
+    // 左栏图最高 220，矮视口（手机横屏）120。
+    final double maxHeight = wide
+        ? (_viewport <= 520 ? 120 : 220)
+        : s.thumb * 1.4;
+    // 视频片段（WebM `<video>` / MP4 `[sound:]`）：在卡面上原生播，复习页的音频序列经
+    // 片段通道驱动它（先单词音频、再片段）。
+    final String? clip = srsVideoSources(picture).firstOrNull;
+    if (clip != null) {
+      return SrsCardVideoClip(
+        key: const ValueKey<String>('srs-fushi-picture'),
+        name: clip,
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        radius: s.tokens.radiusSmall,
+      );
+    }
+    final String? name = srsImageSources(picture).firstOrNull;
     if (name == null) return null;
     return _MediaImage(
       key: const ValueKey<String>('srs-fushi-picture'),
       name: name,
-      // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
-      // 左栏图最高 220，矮视口（手机横屏）120。
-      maxWidth: wide ? null : s.thumb * 1.5,
-      maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : s.thumb * 1.4,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
       radius: s.tokens.radiusSmall,
     );
   }
@@ -540,7 +559,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           : f['Sentence']!,
     );
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
-    final List<String> audio = srsSoundNames(f['SentenceAudio'] ?? '');
+    final List<String> audio = srsAudioSources(f['SentenceAudio'] ?? '');
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
@@ -1280,16 +1299,26 @@ class _MediaImage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ImageProvider<Object>? provider = srsCardImageProvider(
-      name,
-      ref.watch(srsMediaStoreProvider).valueOrNull,
-    );
-    final Widget image = provider == null
-        ? const SizedBox.shrink()
+    final SrsMediaStore? store = ref.watch(srsMediaStoreProvider).valueOrNull;
+    final ImageProvider<Object>? provider = srsCardImageProvider(name, store);
+    // AVIF（制卡默认的动图格式）：Rust 逐帧解码播放；静图同一个控件出首帧。
+    final File? avif = !name.startsWith('data:') && isAvifPath(name)
+        ? store?.resolve(name)
+        : null;
+    Widget picture({BoxFit? fit}) => avif != null
+        ? FushiAnimatedAvifImage(
+            file: avif,
+            fit: fit,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          )
         : Image(
-            image: provider,
+            image: provider!,
+            fit: fit,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           );
+    final Widget image = provider == null
+        ? const SizedBox.shrink()
+        : picture();
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
       child: ConstrainedBox(
@@ -1308,7 +1337,7 @@ class _MediaImage extends ConsumerWidget {
             context: context,
             builder: (BuildContext context) => GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: InteractiveViewer(child: Image(image: provider)),
+              child: InteractiveViewer(child: picture(fit: BoxFit.contain)),
             ),
           ),
         ),
@@ -1334,5 +1363,8 @@ ImageProvider<Object>? srsCardImageProvider(String src, SrsMediaStore? store) {
   }
   if (src.contains('://')) return null;
   final File? file = store?.resolve(src);
-  return file == null ? null : FileImage(file);
+  if (file == null) return null;
+  // AVIF 统一走原生内核（同 resizedFileImage / BUG-3643）：不依赖各平台引擎 codec 是否带
+  // AVIF；动图在这里只取首帧（全屏查看用），卡面上的动图播放见 FushiAnimatedAvifImage。
+  return isAvifPath(file.path) ? AvifFileImage(file) : FileImage(file);
 }

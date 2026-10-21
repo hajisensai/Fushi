@@ -106,6 +106,55 @@ List<String> srsSoundNames(String field) => <String>[
   for (final Match m in _sound.allMatches(field)) m.group(1)!.trim(),
 ];
 
+/// 视频片段的扩展名：Picture 字段里的 `[sound:x.mp4]`（MP4 片段，Anki 惯例）按视频算。
+const Set<String> kSrsVideoExtensions = <String>{
+  'webm',
+  'mp4',
+  'm4v',
+  'mov',
+  'mkv',
+};
+
+/// [name] 是不是视频文件（按扩展名）。
+bool srsIsVideoName(String name) {
+  final int dot = name.lastIndexOf('.');
+  return dot >= 0 &&
+      kSrsVideoExtensions.contains(name.substring(dot + 1).toLowerCase());
+}
+
+final RegExp _mediaTagSrc = RegExp(
+  r'''<(audio|video)\b[^>]*?\ssrc\s*=\s*(["'])([^"']*)\2''',
+  caseSensitive: false,
+);
+
+/// 字段里 `[sound:x]` 与 `<audio|video src>` 的文件名，按出现顺序、去重（制卡内嵌的
+/// 单词 / 句子音频是 `<audio class="fushi-*-audio" src>`，WebM 片段是 `<video src>`）。
+/// [tags] 限定取哪几种标签；`[sound:]` 总是算上。
+List<String> _mediaNames(String html, Set<String> tags) {
+  final List<(int, String)> found = <(int, String)>[
+    for (final Match m in _sound.allMatches(html))
+      (m.start, m.group(1)!.trim()),
+    for (final Match m in _mediaTagSrc.allMatches(html))
+      if (tags.contains(m.group(1)!.toLowerCase()))
+        (m.start, srsDecodeEntities(m.group(3)!).trim()),
+  ]..sort(((int, String) a, (int, String) b) => a.$1.compareTo(b.$1));
+  final Set<String> seen = <String>{};
+  return <String>[
+    for (final (int, String) f in found)
+      if (f.$2.isNotEmpty && seen.add(f.$2)) f.$2,
+  ];
+}
+
+/// 音频字段里能播的文件：`[sound:x]` 与 `<audio src>`，按出现顺序、去重。
+List<String> srsAudioSources(String field) =>
+    _mediaNames(field, const <String>{'audio'});
+
+/// Picture 字段里的视频片段：`<video src>`（WebM 内嵌）与视频扩展名的 `[sound:]`（MP4）。
+List<String> srsVideoSources(String html) => <String>[
+  for (final String name in _mediaNames(html, const <String>{'video'}))
+    if (srsIsVideoName(name)) name,
+];
+
 /// 字段里 `<img src>` 的值（按出现顺序，实体已解）。
 List<String> srsImageSources(String html) => <String>[
   for (final Match m in RegExp(
