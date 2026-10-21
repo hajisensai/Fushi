@@ -8,6 +8,33 @@
   "notes": "## Fushi 3.0.1\n\n- **Onboarding**: the setup guide no longer offers Fushi Review in release builds; choosing card creation goes straight to Anki setup\n\n---\n\n## Fushi 3.0.1 更新公告\n\n- **新手引导**：正式版的新手引导不再引导使用 Fushi 复习，勾选制卡后直接进入 Anki 配置",
   "assets": [
     {
+      "name": "fushi-3.0.1-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-ios.ipa",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 83101371,
+      "sha256": "6ff2237f05667795aa1095df5367af422d2f4b166164becb2a0067c23db5ceb4"
+    },
+    {
+      "name": "fushi-3.0.1-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-macos-arm64.dmg",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 261068388,
+      "sha256": "f5f7bd8be09514f5f72606224038bd3feb438bf97a9fdb905536ef45f4682612"
+    },
+    {
+      "name": "fushi-3.0.1-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-macos-arm64.zip",
+      "releaseSequence": 19816,
+      "tag": "v3.0.1",
+      "version": "3.0.1",
+      "size": 248501448,
+      "sha256": "bb5a5fc6cd25d3a2294b2a4b04491016ff37b1a96886455bc449ccabbb3c550a"
+    },
+    {
       "name": "fushi-3.0.1-windows-setup.exe",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.0.1/fushi-3.0.1-windows-setup.exe",
       "releaseSequence": 19816,
