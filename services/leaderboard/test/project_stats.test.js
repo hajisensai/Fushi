@@ -35,9 +35,10 @@ const RELEASES = [
 ];
 
 /** 假上游：按 URL 回包，记下每次请求。stars 可变，用来模拟增长。 */
-function fakeUpstream({ stars = 491, failGithub = false, graphql = null } = {}) {
+function fakeUpstream({ stars = 491, failGithub = false, graphql = null, stargazers = null } = {}) {
   const calls = [];
-  const state = { stars, failGithub, graphql };
+  // stargazers：按 starred_at 升序的 ISO 时刻列表；null = 该接口 404（不影响其余数字）。
+  const state = { stars, failGithub, graphql, stargazers };
   const f = async (url, init = {}) => {
     calls.push({ url, init });
     const u = new URL(url);
@@ -47,6 +48,10 @@ function fakeUpstream({ stars = 491, failGithub = false, graphql = null } = {}) 
         return Response.json({ stargazers_count: state.stars, forks_count: 30, subscribers_count: 4, open_issues_count: 33 });
       }
       if (u.pathname.endsWith('/releases')) return Response.json(u.searchParams.get('page') === '1' ? RELEASES : []);
+      if (u.pathname.endsWith('/stargazers') && state.stargazers) {
+        const page = Number(u.searchParams.get('page'));
+        return Response.json(state.stargazers.slice((page - 1) * 100, page * 100).map((t) => ({ starred_at: t, user: {} })));
+      }
       if (u.pathname.endsWith('/traffic/views')) {
         return Response.json({ count: 40, uniques: 12, views: [{ timestamp: '2026-10-20T00:00:00Z', count: 40, uniques: 12 }] });
       }
@@ -177,6 +182,48 @@ describe('refreshProjectStats：GitHub', () => {
     expect((await projectStats(env, NOW)).repos[0].traffic.views.count).toBe(40);
   });
 
+  it('star 走势从 stargazers 回补：只从最后一页往前翻到 30 天窗口之前，倒推每一天', async () => {
+    const times = [
+      ...Array(150).fill('2026-08-01T00:00:00Z'),
+      ...Array(40).fill('2026-10-05T08:00:00Z'),
+      ...Array(50).fill('2026-10-20T08:00:00Z'),
+      ...Array(10).fill('2026-10-21T08:00:00Z'),
+    ];
+    const up = fakeUpstream({ stars: 250, stargazers: times });
+    const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
+    await refreshProjectStats(env, NOW);
+    const pages = up.calls.filter((c) => c.url.includes('/stargazers'));
+    // 共 3 页：第 3 页全在窗口内，翻到第 2 页碰到 08-01 就停，不碰第 1 页。
+    expect(pages.map((c) => new URL(c.url).searchParams.get('page'))).toEqual(['3', '2']);
+    expect(pages[0].init.headers.Accept).toBe('application/vnd.github.star+json');
+    const t = (await projectStats(env, NOW)).repos[0].starTrend;
+    expect(t).toHaveLength(PROJECT_LIMITS.trendDays);
+    expect(t[0]).toEqual({ day: '2026-09-22', stars: 150 });
+    expect(t.find((d) => d.day === '2026-10-04').stars).toBe(150);
+    expect(t.find((d) => d.day === '2026-10-05').stars).toBe(190);
+    expect(t.find((d) => d.day === '2026-10-19').stars).toBe(190);
+    expect(t.at(-2)).toEqual({ day: '2026-10-20', stars: 240 });
+    expect(t.at(-1)).toEqual({ day: '2026-10-21', stars: 250 });
+  });
+
+  it('窗口内 star 多到翻不完（超过 starPages 页）：不当真，退回每日快照', async () => {
+    const n = (PROJECT_LIMITS.starPages + 2) * 100;
+    const up = fakeUpstream({ stars: n, stargazers: Array(n).fill('2026-10-20T00:00:00Z') });
+    const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
+    await refreshProjectStats(env, NOW);
+    expect(up.calls.filter((c) => c.url.includes('/stargazers'))).toHaveLength(PROJECT_LIMITS.starPages);
+    expect((await projectStats(env, NOW)).repos[0].starTrend).toEqual([{ day: '2026-10-21', stars: n }]);
+  });
+
+  it('stargazers 取不到不影响其余数字', async () => {
+    const up = fakeUpstream(); // stargazers 404
+    const env = makeEnv({ PROJECT_FETCH: up.f, GITHUB_REPOS: REPO });
+    await refreshProjectStats(env, NOW);
+    const st = await projectStats(env, NOW);
+    expect(st.githubStatus.error).toBeNull();
+    expect(st.repos[0].starTrend).toEqual([{ day: '2026-10-21', stars: 491 }]);
+  });
+
   it('star 增量与每日趋势取自历史行', async () => {
     const env = makeEnv({ GITHUB_REPOS: REPO });
     const ins = env.DB.raw.prepare(`INSERT INTO repo_daily (day, repo, stars, forks, watchers, open_issues, downloads, fetched_at)
@@ -251,6 +298,10 @@ describe('/dev/project', () => {
     expect(page.data).toContain('<b>491</b>');
     expect(page.data).toContain('v3.0.0');
     expect(page.data).toContain('CF_ANALYTICS_TOKEN');
+    // App 用户放最上面；下载只有今天一条快照时说明从哪天开始记录，而不是只说「不够画图」。
+    expect(page.data.indexOf('App 用户')).toBeLessThan(page.data.indexOf(REPO));
+    expect(page.data).toContain('30 日活跃');
+    expect(page.data).toContain('从 10-21 开始每天记录');
     // 配置类说明不上页面（README 里有），页面只放数据。
     expect(page.data).not.toContain('GITHUB_TOKEN');
     expect(page.data).not.toContain('<script');

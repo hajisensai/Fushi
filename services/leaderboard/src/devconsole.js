@@ -191,6 +191,7 @@ button.small{margin:0;padding:4px 12px;font-size:14px}
 details.card summary{cursor:pointer;color:var(--muted);font-size:14px}
 details.card[open] summary{margin-bottom:8px}
 .foot{font-size:12px;margin-top:24px}
+h2 .more{font-weight:400;font-size:13px;color:var(--muted);margin-left:8px}
 .scroll{overflow-x:auto}
 .scroll td,.scroll th{white-space:nowrap;word-break:normal}
 .scroll td:first-child{width:auto}
@@ -533,7 +534,7 @@ function sourceError(name, status) {
  * 按天的折线图（内联 SVG，无脚本）。days 升序；series = [{label, values}]，values 与 days 对齐，null = 缺数据（断线）。
  * zero = y 轴从 0 起（每日计数）；否则从最小值起（累计量）。悬停某天显示当天各线数值。
  */
-export function lineChart(title, days, series, { zero = true } = {}) {
+export function lineChart(title, days, series, { zero = true, empty = '数据还不够画图（至少要两天）。' } = {}) {
   const all = series.flatMap((s) => s.values).filter((v) => v !== null && v !== undefined);
   const latest = series.map((s, k) => {
     const v = fmtInt([...s.values].reverse().find((x) => x !== null && x !== undefined) ?? null);
@@ -541,7 +542,7 @@ export function lineChart(title, days, series, { zero = true } = {}) {
     return series.length === 1 ? `<span><b>${v}</b></span>` : `<span><i class="l${k}"></i>${esc(s.label)} <b>${v}</b></span>`;
   }).join('');
   const head = `<figcaption><b>${esc(title)}</b>${latest}</figcaption>`;
-  if (days.length < 2 || !all.length) return `<figure class="chart">${head}<p class="muted">数据还不够画图。</p></figure>`;
+  if (days.length < 2 || !all.length) return `<figure class="chart">${head}<p class="muted">${esc(empty)}</p></figure>`;
   // 两格刻度，格宽取 {1, 1.5, 2, 2.5, 3, 4, 5, 6, 8} × 10ⁿ 里够用的最小整数，轴上标整数、顶部不留大片空白。
   const rawLo = zero ? Math.min(0, ...all) : Math.min(...all);
   const want = Math.max(1, (Math.max(...all) - rawLo) / 2);
@@ -584,8 +585,10 @@ function repoSection(r, today) {
   const trend = [...r.trend].reverse();
   // 当天的快照还会再涨，每日下载只画到昨天，免得末尾凭空掉一截。
   const done = trend.filter((d) => d.day < today);
-  const charts = `${lineChart('Star', trend.map((d) => d.day), [{ label: 'Star', values: trend.map((d) => d.stars) }], { zero: false })}`
-    + `${lineChart('每日下载', done.map((d) => d.day), [{ label: '下载', values: done.map((d) => d.downloadsDelta) }])}`;
+  // GitHub 只给累计下载数，每日下载只能从每天的快照相减，历史补不回来。
+  const since = trend.length ? `从 ${trend[0].day.slice(5)} 开始每天记录，攒满两天后出图。` : undefined;
+  const charts = `${lineChart('Star', r.starTrend.map((d) => d.day), [{ label: 'Star', values: r.starTrend.map((d) => d.stars) }], { zero: false })}`
+    + `${lineChart('每日下载', done.map((d) => d.day), [{ label: '下载', values: done.map((d) => d.downloadsDelta) }], { empty: since })}`;
   const used = RELEASE_PLATFORMS.filter((p) => r.releases.some((x) => x.platforms[p] > 0));
   const releases = r.releases.length
     ? `<div class="scroll"><table class="grid"><tr><th>版本</th><th>发布（UTC）</th><th>合计</th>${used.map((p) => `<th>${esc(RELEASE_PLATFORM_LABEL[p])}</th>`).join('')}</tr>
@@ -612,11 +615,21 @@ ${kpis}
 async function projectPage(env, now) {
   const st = await projectStats(env, now);
   const today = new Date(now).toISOString().slice(0, 10);
+  const kpi = (label, v) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${v}</b></div>`;
+  // App 用户：与 /dev/stats 同口径（只数已验证安装），这里只放总数和每日走势。
+  const users = await installStats(env, now);
+  const ud = [...users.daily].reverse().filter((d) => d.day < today);
+  const usersSection = `<h2>App 用户 <a class="more" href="/dev/stats">详细统计 →</a></h2>
+<div class="kpis">${kpi('今日活跃', fmtInt(users.dau))}${kpi('7 日活跃', fmtInt(users.wau))}`
+    + `${kpi('30 日活跃', fmtInt(users.mau))}${kpi('累计安装', fmtInt(users.total))}</div>
+<div class="card">${lineChart('每日活跃 / 新增', ud.map((d) => d.day), [
+      { label: '活跃', values: ud.map((d) => d.n) },
+      { label: '新增', values: ud.map((d) => d.fresh) },
+    ])}</div>`;
   const s = st.site;
   let site = '<p class="muted">官网访问量未配置（CF_ANALYTICS_TOKEN / CF_ZONE_ID）。</p>';
   if (s.configured) {
     const days = [...s.days].reverse().filter((d) => d.day < today);
-    const kpi = (label, v) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${v}</b></div>`;
     site = `${sourceError('官网', s.status)}
 <div class="kpis">${kpi('昨日浏览', fmtInt(s.yesterday?.page_views ?? null))}${kpi('昨日访客', fmtInt(s.yesterday?.visitors ?? null))}`
       + `${kpi('近 30 天浏览', fmtInt(s.totals.pageViews))}${kpi('近 30 天流量', esc(fmtVolume(s.totals.bytes)))}</div>
@@ -628,6 +641,7 @@ ${s.countries.length ? `<details class="card"><summary>请求来源国家 / 地�
   }
   return html(layout('项目', `<div class="title"><h1>项目数据</h1>
 <form method="post" action="/dev/project/refresh" class="inline"><button class="small">刷新</button></form></div>
+${usersSection}
 ${sourceError('GitHub', st.githubStatus)}
 ${st.repos.map((r) => repoSection(r, today)).join('')}
 <h2>官网 fushi.moe</h2>

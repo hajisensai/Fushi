@@ -37,6 +37,8 @@ export const PROJECT_LIMITS = {
   siteFirstDays: 30,
   /** 趋势表显示天数。 */
   trendDays: 30,
+  /** Star 历史最多往回翻几页 stargazers（每页 100，从最新一页往前，翻到 trendDays 之前为止）。 */
+  starPages: 5,
   /** 国家分布显示前几个。 */
   topCountries: 20,
 };
@@ -113,7 +115,7 @@ function githubHeaders(env) {
   return h;
 }
 
-async function fetchRepo(env, repo) {
+async function fetchRepo(env, repo, now) {
   const headers = githubHeaders(env);
   const base = `https://api.github.com/repos/${repo}`;
   const info = await getJson(env, base, { headers });
@@ -136,7 +138,40 @@ async function fetchRepo(env, repo) {
       if (!(e instanceof FetchError)) throw e;
     }
   }
-  return { info, releases: summarizeReleases(releases), traffic };
+  let starHistory = null;
+  try {
+    starHistory = await fetchStarHistory(env, base, headers, info.stargazers_count | 0, now);
+  } catch (e) {
+    if (!(e instanceof FetchError)) throw e;
+  }
+  return { info, releases: summarizeReleases(releases), traffic, starHistory };
+}
+
+/**
+ * 近 trendDays 天每天新增的 star（stargazers 带 starred_at，按时间升序分页）：从最后一页往前翻，翻到窗口之前为止。
+ * 仓库每日快照从上线那天才开始攒，这份让 star 走势一上来就有完整 30 天。
+ * complete = 窗口内的 star 全数到了（没被 starPages 截断）；不完整时页面退回用每日快照。
+ * 取消 star 的人不在列表里，所以这是「现存 star 的到达时间」，与当天快照的总数之差就是期间取消的数量。
+ */
+async function fetchStarHistory(env, base, headers, stars, now) {
+  const cutoff = Date.parse(`${utcDateKey(now - (PROJECT_LIMITS.trendDays - 1) * DAY_MS)}T00:00:00Z`);
+  const byDay = {};
+  let complete = false;
+  let page = Math.ceil(stars / 100);
+  if (page === 0) complete = true;
+  for (let i = 0; i < PROJECT_LIMITS.starPages && page >= 1; i += 1, page -= 1) {
+    const batch = await getJson(env, `${base}/stargazers?per_page=100&page=${page}`,
+      { headers: { ...headers, Accept: 'application/vnd.github.star+json' } });
+    const times = batch.map((s) => Date.parse(s.starred_at)).filter(Number.isFinite);
+    for (const t of times) {
+      if (t >= cutoff) byDay[utcDateKey(t)] = (byDay[utcDateKey(t)] || 0) + 1;
+    }
+    if (!times.length || Math.min(...times) < cutoff || page === 1) {
+      complete = true;
+      break;
+    }
+  }
+  return { byDay, complete };
 }
 
 async function readMeta(env, key) {
@@ -162,13 +197,13 @@ async function refreshGithub(env, now, prev) {
   for (const repo of githubRepos(env)) {
     let got;
     try {
-      got = await fetchRepo(env, repo);
+      got = await fetchRepo(env, repo, now);
     } catch (e) {
       if (!(e instanceof FetchError)) throw e;
       errors.push(`${repo} ${e.message}`);
       continue;
     }
-    const { info, releases, traffic } = got;
+    const { info, releases, traffic, starHistory } = got;
     stmts.push(env.DB.prepare(`INSERT INTO repo_daily (day, repo, stars, forks, watchers, open_issues, downloads, fetched_at)
       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
       ON CONFLICT (day, repo) DO UPDATE SET stars = excluded.stars, forks = excluded.forks, watchers = excluded.watchers,
@@ -177,6 +212,7 @@ async function refreshGithub(env, now, prev) {
         info.open_issues_count | 0, releases.downloads, now));
     stmts.push(metaStmt(env, `releases:${repo}`, { recent: releases.recent }, now));
     if (traffic) stmts.push(metaStmt(env, `traffic:${repo}`, traffic, now));
+    if (starHistory) stmts.push(metaStmt(env, `stars:${repo}`, starHistory, now));
   }
   const ok = errors.length === 0 ? now : (prev?.okAt ?? null);
   stmts.push(metaStmt(env, 'status:github', { okAt: ok, error: errors.join('; ') || null }, now));
@@ -277,9 +313,23 @@ export async function projectStats(env, now) {
         downloadsDelta: prev && prev.downloads != null && rows[i].downloads != null ? rows[i].downloads - prev.downloads : null,
       });
     }
+    // star 走势：有完整的 stargazers 回补就按「今天的总数 − 之后每天新增」倒推每一天；否则用每日快照。
+    const history = await readMeta(env, `stars:${repo}`);
+    let starTrend = trend.map((d) => ({ day: d.day, stars: d.stars }));
+    if (latest && history?.complete) {
+      starTrend = [];
+      let stars = latest.stars;
+      for (let i = 0; i < PROJECT_LIMITS.trendDays; i += 1) {
+        const day = utcDateKey(now - i * DAY_MS);
+        starTrend.push({ day, stars });
+        stars -= history.byDay[day] || 0;
+      }
+      starTrend.reverse();
+    }
     repos.push({
       repo,
       latest,
+      starTrend,
       stars7: delta(7, 'stars'),
       stars30: delta(30, 'stars'),
       downloads7: delta(7, 'downloads'),
