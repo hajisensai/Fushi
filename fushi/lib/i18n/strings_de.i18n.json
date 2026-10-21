@@ -2518,7 +2518,6 @@
   "floating_ball_in_app_hint": "Eine verschiebbare Kugel auf jeder Fushi-Seite. Tippe darauf, um die unten gewählten Schaltflächen für die aktuelle Seite auszuklappen",
   "floating_ball_lookup_hint": "Wort eingeben",
   "floating_ball_notification": "Schwebende Kugel ist aktiv",
-  "floating_ball_notification_tap_hint": "Tap to look up copied text",
   "floating_ball_ocr_close": "Close",
   "floating_ball_ocr_empty": "Kein Text erkannt",
   "floating_ball_ocr_failed": "Bildschirm-OCR fehlgeschlagen",

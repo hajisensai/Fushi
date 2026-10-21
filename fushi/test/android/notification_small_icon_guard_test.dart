@@ -11,8 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 2. 偶尔出现一团黑色剪影——更新提醒把彩色 `@mipmap/ic_launcher` 当小图标，
 ///    系统只取 alpha 画小图标，彩色图标就成了一团。
 ///
-/// 另外钉住悬浮球常驻通知的「点按 = 查剪贴板」（同 Google「点按翻译」）：
-/// 必须是 `PendingIntent.getActivity` 直达查词窗——Android 12+ 禁止
+/// 另外钉住悬浮球常驻通知：点按 = 打开 Fushi（用户 2026-10-21 拍板回退），
+/// 「查剪贴板」是通知按钮（同 Google「点按翻译」），两者都必须是
+/// `PendingIntent.getActivity` 直达——Android 12+ 禁止
 /// 「通知 → Service → 启动 Activity」蹦床，绕道服务会被系统静默拦下。
 void main() {
   const String res = 'android/app/src/main/res';
@@ -85,42 +86,64 @@ void main() {
     );
   });
 
-  test('悬浮球常驻通知：点按直达查剪贴板，打开 Fushi 是按钮', () {
+  test('悬浮球常驻通知：点按 = 打开 Fushi，查剪贴板是直达按钮', () {
     final String svc = File(
       '$javaRoot/app/fushi/reader/FloatingBallService.java',
     ).readAsStringSync();
     final int start = svc.indexOf('protected Notification buildNotification()');
     expect(start, greaterThan(0));
     final String body = svc.substring(start);
+    // 点通知本身 = 打开 Fushi（用户 2026-10-21 拍板回退，BUG-3656）：contentIntent
+    // 只能有一处，且是启动 Intent 的 getActivity 直达。
     final int contentIntent = body.indexOf('builder.setContentIntent(');
     expect(contentIntent, greaterThan(0));
+    expect(
+      body.indexOf('builder.setContentIntent(', contentIntent + 1),
+      -1,
+      reason: '通知只该设置一次 contentIntent',
+    );
     final String content = body.substring(
       contentIntent,
       body.indexOf(';', contentIntent),
     );
     expect(content, contains('PendingIntent.getActivity('));
-    expect(content, contains('REQUEST_NOTIFICATION_CLIPBOARD'));
+    expect(content, contains('REQUEST_NOTIFICATION_OPEN_APP, launch'));
     expect(content, isNot(contains('getService')));
+    expect(content, isNot(contains('clipboard')));
     final String beforeContent = body.substring(0, contentIntent);
     expect(
       beforeContent,
-      contains('new Intent(this, PopupDictFlutterActivity.class)'),
+      contains('getLaunchIntentForPackage(getPackageName())'),
     );
+    expect(beforeContent, isNot(contains('PopupDictFlutterActivity')));
+    // 「查剪贴板」是通知按钮，同样 getActivity 直达查词窗（Android 12+ 禁通知蹦床）。
+    final int clipboardIntent = body.indexOf(
+      'new Intent(this, PopupDictFlutterActivity.class)',
+    );
+    expect(clipboardIntent, greaterThan(contentIntent));
+    final String clipboardPart = body.substring(clipboardIntent);
     expect(
-      beforeContent,
+      clipboardPart,
       contains('PopupDictFlutterActivity.EXTRA_READ_CLIPBOARD, true'),
     );
-    expect(body, contains('labelFor(ACTION_OPEN_APP), openPending'));
-    expect(body, contains('.setContentText(hint)'));
-    // 正文文案由 Dart 下发（原生不维护多语言）。
+    final int pendingAt = clipboardPart.indexOf('clipboardPending =');
+    expect(pendingAt, greaterThan(0));
+    final String pending = clipboardPart.substring(
+      pendingAt,
+      clipboardPart.indexOf(';', pendingAt),
+    );
+    expect(pending, contains('PendingIntent.getActivity('));
+    expect(pending, contains('REQUEST_NOTIFICATION_CLIPBOARD, clipboard'));
+    expect(pending, isNot(contains('getService')));
+    expect(body, contains('labelFor(ACTION_CLIPBOARD), clipboardPending'));
+    // 「打开 Fushi」不再是按钮；正文「点按即可查剪贴板」随语义回退一起删掉。
+    expect(body, isNot(contains('labelFor(ACTION_OPEN_APP)')));
+    expect(body, isNot(contains('setContentText(')));
+    expect(svc, isNot(contains('LABEL_NOTIFICATION_HINT')));
     final String host = File(
       'lib/src/floating_ball/app_floating_ball_host.dart',
     ).readAsStringSync();
-    expect(
-      host,
-      contains("'notification_hint': t.floating_ball_notification_tap_hint"),
-    );
-    expect(svc, contains('LABEL_NOTIFICATION_HINT = "notification_hint"'));
+    expect(host, isNot(contains('notification_hint')));
   });
 
   test('悬浮球「点球查剪贴板」：收起态点 = 查剪贴板，长按 = 展开', () {

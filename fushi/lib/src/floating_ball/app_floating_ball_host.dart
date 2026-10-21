@@ -119,8 +119,6 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'close': t.floating_ball_action_close,
   'ball': t.reader_floating_ball,
   'notification': t.floating_ball_notification,
-  // 常驻通知正文：点通知 = 查剪贴板（原生 FloatingBallService.LABEL_NOTIFICATION_HINT）。
-  'notification_hint': t.floating_ball_notification_tap_hint,
   'ocr_notification': t.floating_ball_ocr_notification,
   'ocr_hint': t.floating_ball_ocr_pick_hint,
   'ocr_no_text': t.floating_ball_ocr_empty,

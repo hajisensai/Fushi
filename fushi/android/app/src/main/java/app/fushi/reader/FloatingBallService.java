@@ -134,8 +134,6 @@ public class FloatingBallService extends BaseFloatingService {
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
-    /** labels 里常驻通知正文（「点按即可查剪贴板」）的键。 */
-    static final String LABEL_NOTIFICATION_HINT = "notification_hint";
     /** 通知上各 PendingIntent 的 requestCode：同类型 Intent 必须不同，否则互相覆盖。 */
     private static final int REQUEST_NOTIFICATION_CLIPBOARD = 1;
     private static final int REQUEST_NOTIFICATION_OPEN_APP = 2;
@@ -1538,25 +1536,27 @@ public class FloatingBallService extends BaseFloatingService {
                 ? new Notification.Builder(this, getNotificationChannelId())
                 : new Notification.Builder(this);
 
-        // 点通知本身 = 查剪贴板里的文字（同 Google「点按翻译」：复制 → 下拉点通知）。
-        // 必须 getActivity 直达查词窗：Android 12+ 禁止「通知 → Service → 启动
-        // Activity」的蹦床，绕道 runAction 会被系统静默拦下。剪贴板要等窗口拿到焦点
-        // 才读得到，PopupDictFlutterActivity 自己处理（onWindowFocusChanged）。
-        Intent clipboard = new Intent(this, PopupDictFlutterActivity.class);
-        clipboard.putExtra(PopupDictFlutterActivity.EXTRA_READ_CLIPBOARD, true);
-        clipboard.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        builder.setContentIntent(PendingIntent.getActivity(this, REQUEST_NOTIFICATION_CLIPBOARD,
-                clipboard, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
-
+        // 点通知本身 = 打开 Fushi（用户 2026-10-21 拍板回退 BUG-3656 里「点按 = 查剪贴板」）。
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (launch != null) {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            PendingIntent openPending = PendingIntent.getActivity(this,
+            builder.setContentIntent(PendingIntent.getActivity(this,
                     REQUEST_NOTIFICATION_OPEN_APP, launch,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(new Notification.Action.Builder(
-                    null, labelFor(ACTION_OPEN_APP), openPending).build());
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         }
+
+        // 「查剪贴板」是通知按钮（同 Google「点按翻译」：复制 → 下拉点按钮）。必须
+        // getActivity 直达查词窗：Android 12+ 禁止「通知 → Service → 启动 Activity」
+        // 的蹦床，绕道 runAction 会被系统静默拦下。剪贴板要等窗口拿到焦点才读得到，
+        // PopupDictFlutterActivity 自己处理（onWindowFocusChanged）。
+        Intent clipboard = new Intent(this, PopupDictFlutterActivity.class);
+        clipboard.putExtra(PopupDictFlutterActivity.EXTRA_READ_CLIPBOARD, true);
+        clipboard.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent clipboardPending = PendingIntent.getActivity(this,
+                REQUEST_NOTIFICATION_CLIPBOARD, clipboard,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        builder.addAction(new Notification.Action.Builder(
+                null, labelFor(ACTION_CLIPBOARD), clipboardPending).build());
 
         Intent closeIntent = new Intent(this, FloatingBallService.class);
         closeIntent.putExtra(EXTRA_COMMAND, COMMAND_CLOSE);
@@ -1565,12 +1565,9 @@ public class FloatingBallService extends BaseFloatingService {
 
         String title = labels.get(LABEL_NOTIFICATION);
         if (title == null || title.isEmpty()) title = "Fushi floating ball";
-        String hint = labels.get(LABEL_NOTIFICATION_HINT);
-        if (hint == null || hint.isEmpty()) hint = "Tap to look up copied text";
 
         return builder
                 .setContentTitle(title)
-                .setContentText(hint)
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setOngoing(true)
                 .addAction(new Notification.Action.Builder(
