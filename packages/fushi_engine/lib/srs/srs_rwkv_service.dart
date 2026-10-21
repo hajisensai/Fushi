@@ -115,39 +115,31 @@ class SrsRwkvService implements SrsRwkvScheduling {
   SrsRwkvService({
     required this.store,
     required this.models,
-    required this.choice,
     required this.snapshotDir,
     this.threads = 0,
-    Future<SrsRwkvBackend> Function(File weights, SrsRwkvModelChoice choice)?
-    openBackend,
+    Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
   }) : _open = openBackend ?? _openWorker,
        _log = log ?? ((String _) {});
 
   final SrsDbStore store;
   final SrsRwkvModels models;
-  final SrsRwkvModelChoice choice;
 
   /// 快照缓存目录。
   final Directory snapshotDir;
 
   /// 原生线程数：0 = 全部核心。
   final int threads;
-  final Future<SrsRwkvBackend> Function(File weights, SrsRwkvModelChoice choice)
-  _open;
+  final Future<SrsRwkvBackend> Function(File weights) _open;
   final void Function(String message) _log;
 
-  static Future<SrsRwkvBackend> _openWorker(
-    File weights,
-    SrsRwkvModelChoice choice,
-  ) async => _WorkerBackend(
-    await RwkvWorker.spawn(
-      modelPath: weights.path,
-      precision: choice == SrsRwkvModelChoice.small
-          ? RwkvPrecision.int4
-          : RwkvPrecision.int8,
-    ),
-  );
+  static Future<SrsRwkvBackend> _openWorker(File weights) async =>
+      _WorkerBackend(
+        await RwkvWorker.spawn(
+          modelPath: weights.path,
+          precision: RwkvPrecision.int4,
+        ),
+      );
 
   SrsRwkvBackend? _backend;
   _LogPrint? _replayed;
@@ -182,12 +174,21 @@ class SrsRwkvService implements SrsRwkvScheduling {
     return result;
   }
 
-  String get _modelKey =>
-      '${choice.wire}-${choice == SrsRwkvModelChoice.small ? 'int4' : 'int8'}';
-  File get _snapshotFile => File(
-    p.join(snapshotDir.path, 'rwkv-${store.profileUid}-$_modelKey.snap'),
-  );
+  /// 快照文件名里的模型键（沿用小模型 + int4 时的旧名，已有快照照样命中）。
+  static const String _modelKey = 'small-int4';
+  File _snapshotOf(String modelKey) =>
+      File(p.join(snapshotDir.path, 'rwkv-${store.profileUid}-$modelKey.snap'));
+  File get _snapshotFile => _snapshotOf(_modelKey);
   File get _snapshotMeta => File('${_snapshotFile.path}.json');
+
+  /// 已移除的大模型留下的回放快照（大的每卡约 25.7 KB）与权重：准备时顺手删掉。
+  Future<void> _deleteRetired() async {
+    final File large = _snapshotOf('large-int8');
+    for (final File f in <File>[large, File('${large.path}.json')]) {
+      if (await f.exists()) await f.delete();
+    }
+    await models.deleteRetired();
+  }
 
   /// 开始准备：权重没下载时先下载（RWKV 是新建牌组的默认算法，不能要求用户先去设置里点下载），
   /// 再恢复快照或全量回放。已在准备时什么都不做，已就绪时只对齐日志。失败后的自动重试（排队时
@@ -242,10 +243,15 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   Future<void> _prepare() async {
-    if (!models.isReady(choice)) {
+    try {
+      await _deleteRetired();
+    } catch (error) {
+      _log('RWKV retired model cleanup failed: $error');
+    }
+    if (!models.isReady) {
       _set(const SrsRwkvStatus(SrsRwkvPhase.downloading));
       try {
-        await for (final ModelDownloadEvent e in models.download(choice)) {
+        await for (final ModelDownloadEvent e in models.download()) {
           if (_closed) return;
           _set(
             SrsRwkvStatus(
@@ -265,8 +271,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _set(const SrsRwkvStatus(SrsRwkvPhase.preparing));
     try {
       final SrsRwkvBackend backend = _backend ??= await _open(
-        models.weightsFile(choice),
-        choice,
+        models.weightsFile,
       );
       final bool restored = await _serial(() => _restoreSnapshot(backend));
       if (!restored) await _rebuild(backend);

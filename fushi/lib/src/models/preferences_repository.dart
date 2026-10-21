@@ -3104,18 +3104,6 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// RWKV 排程用哪个网络（`SrsRwkvModelChoice.wire`：small / large，缺省 small）。设备本地：
-  /// 选择取决于这台设备的内存（大模型每卡约 25.7 KB 状态，小模型约 2.9 KB）。
-  static const String srsRwkvModelKey = 'srs_rwkv_model';
-
-  String get srsRwkvModel =>
-      getPref(srsRwkvModelKey, defaultValue: '') as String;
-
-  Future<void> setSrsRwkvModel(String value) async {
-    await setPref(srsRwkvModelKey, value);
-    notifyListeners();
-  }
-
   /// 复习自动备份开关（默认开）。设备本地。
   static const String srsBackupAutoKey = 'srs_backup_auto';
 

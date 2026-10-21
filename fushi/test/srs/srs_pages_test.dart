@@ -25,6 +25,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -1347,6 +1348,64 @@ void main() {
         page: SrsDeckSettingsPage(deckId: kid),
       );
       expect(autoplay, findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组设置页：「让子牌组都继承这里」把整棵子树里单独设置的后代改成继承', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final (String kid, String grandKid, String plain) = (await tester
+          .runAsync(() async {
+            final String kid = await store.createDeck(
+              'Kid',
+              parentId: store.defaultDeckId,
+            );
+            final String grandKid = await store.createDeck(
+              'GrandKid',
+              parentId: kid,
+            );
+            final String plain = await store.createDeck(
+              'Plain',
+              parentId: store.defaultDeckId,
+            );
+            for (final String id in <String>[kid, grandKid]) {
+              await store.editField(
+                SrsEntityKind.deck,
+                id,
+                SrsFieldKeys.deckParamsMode,
+                'own',
+              );
+            }
+            return (kid, grandKid, plain);
+          }))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      final Finder button = find.byKey(
+        const ValueKey<String>('srs-settings-children-inherit'),
+      );
+      expect(button, findsOneWidget);
+      expect(find.text(t.srs_settings_children_inherit(n: 2)), findsOneWidget);
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await _settle(tester);
+      final String label = t.srs_settings_children_inherit(n: 2);
+      await tester.tap(
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiDialogAction && w.label == label,
+        ),
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      for (final String id in <String>[kid, grandKid, plain]) {
+        expect(tree[id]!.ownParams, isFalse);
+        expect(tree.paramsOwner(id).id, store.defaultDeckId);
+      }
+      expect(button, findsNothing, reason: '没有单独设置的后代了，按钮收起');
       await _unmount(tester);
     });
 

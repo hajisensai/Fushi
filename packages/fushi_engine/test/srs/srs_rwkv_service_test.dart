@@ -154,7 +154,7 @@ class _Fixture {
           throw const SocketException('network disabled in tests'),
     );
     if (ready) {
-      final File weights = models.weightsFile(SrsRwkvModelChoice.small)
+      final File weights = models.weightsFile
         ..writeAsBytesSync(Uint8List(kSrsRwkvSmallWeightsBytes));
       File(
         '${weights.path}.verified',
@@ -167,9 +167,8 @@ class _Fixture {
       SrsRwkvService(
         store: store,
         models: models(ready: ready),
-        choice: SrsRwkvModelChoice.small,
         snapshotDir: Directory('${dir.path}/state'),
-        openBackend: (File weights, SrsRwkvModelChoice choice) async => backend,
+        openBackend: (File weights) async => backend,
       );
 
   Future<int> reviewCount() async =>
