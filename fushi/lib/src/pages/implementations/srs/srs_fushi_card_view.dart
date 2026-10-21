@@ -37,6 +37,9 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/cover_image.dart'
+    show AvifFileImage, isAvifPath;
+import 'package:fushi/src/utils/animated_avif_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -1296,16 +1299,26 @@ class _MediaImage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ImageProvider<Object>? provider = srsCardImageProvider(
-      name,
-      ref.watch(srsMediaStoreProvider).valueOrNull,
-    );
-    final Widget image = provider == null
-        ? const SizedBox.shrink()
+    final SrsMediaStore? store = ref.watch(srsMediaStoreProvider).valueOrNull;
+    final ImageProvider<Object>? provider = srsCardImageProvider(name, store);
+    // AVIF（制卡默认的动图格式）：Rust 逐帧解码播放；静图同一个控件出首帧。
+    final File? avif = !name.startsWith('data:') && isAvifPath(name)
+        ? store?.resolve(name)
+        : null;
+    Widget picture({BoxFit? fit}) => avif != null
+        ? FushiAnimatedAvifImage(
+            file: avif,
+            fit: fit,
+            errorBuilder: (_, _, _) => const SizedBox.shrink(),
+          )
         : Image(
-            image: provider,
+            image: provider!,
+            fit: fit,
             errorBuilder: (_, _, _) => const SizedBox.shrink(),
           );
+    final Widget image = provider == null
+        ? const SizedBox.shrink()
+        : picture();
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
       child: ConstrainedBox(
@@ -1324,7 +1337,7 @@ class _MediaImage extends ConsumerWidget {
             context: context,
             builder: (BuildContext context) => GestureDetector(
               onTap: () => Navigator.of(context).pop(),
-              child: InteractiveViewer(child: Image(image: provider)),
+              child: InteractiveViewer(child: picture(fit: BoxFit.contain)),
             ),
           ),
         ),
@@ -1350,5 +1363,8 @@ ImageProvider<Object>? srsCardImageProvider(String src, SrsMediaStore? store) {
   }
   if (src.contains('://')) return null;
   final File? file = store?.resolve(src);
-  return file == null ? null : FileImage(file);
+  if (file == null) return null;
+  // AVIF 统一走原生内核（同 resizedFileImage / BUG-3643）：不依赖各平台引擎 codec 是否带
+  // AVIF；动图在这里只取首帧（全屏查看用），卡面上的动图播放见 FushiAnimatedAvifImage。
+  return isAvifPath(file.path) ? AvifFileImage(file) : FileImage(file);
 }

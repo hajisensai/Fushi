@@ -221,11 +221,6 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
         fallbackRolloverHour: () => app.statDayResetHour,
         // 释义样式去重：共享样式文件与卡片媒体同目录（随媒体同步 / 备份走）。
         styles: SrsStyleStore(SrsStyleStore.directoryFor(support, profileUid)),
-        // 动图 AVIF 原生解码器只解出静态主图：这类卡留在整面 WebView（见
-        // srs_fushi_card_native_media.dart）。
-        nativeImageProbe: SrsMediaStore(
-          SrsMediaStore.directoryFor(support, profileUid),
-        ).nativeImageDisplayable,
       );
       // 存量去重在后台分批跑，不挡打开；store 换掉（切 profile / 关模块）时停下，下次从断点续。
       bool disposed = false;

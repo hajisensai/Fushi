@@ -10,26 +10,6 @@ import 'apkg/apkg_test_support.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-000000000002';
 
-/// 文件头样本：ISO BMFF `ftyp` box（size + 'ftyp' + 主品牌 + minor + 兼容品牌）。
-List<int> _ftyp(String major, List<String> compatible) {
-  final List<int> body = <int>[
-    ...'ftyp'.codeUnits,
-    ...major.codeUnits,
-    0, 0, 0, 0, // minor_version
-    for (final String b in compatible) ...b.codeUnits,
-  ];
-  final int size = body.length + 4;
-  return <int>[
-    (size >> 24) & 0xff,
-    (size >> 16) & 0xff,
-    (size >> 8) & 0xff,
-    size & 0xff,
-    ...body,
-    // ftyp 之后的下一个 box（meta）：不该被当成品牌读。
-    0, 0, 0, 12, ...'meta'.codeUnits, ...'avis'.codeUnits,
-  ];
-}
-
 /// BUG（用户 2026-10-21「我视频怎么没了」）：原生 Fushi 卡面只画 `<img>` 与 `[sound:]`，
 /// 视频片段卡（默认视频制卡模式）的 `<video>` / 页内 `<audio>` 与动图 AVIF 被静默丢成
 /// 「没有画面 / 一张静图」。判据钉在引擎 renderCard：画不全的卡留在整面 WebView。
@@ -45,7 +25,7 @@ void main() {
         'd.avif',
       ]) {
         expect(
-          await srsFushiCardMediaIsNative(<String, String>{
+          srsFushiCardMediaIsNative(<String, String>{
             'Picture': coverMediaRef(name),
             'SentenceAudio': '[sound:s.aac]',
             'ExpressionAudio': '[sound:w.mp3]',
@@ -55,19 +35,19 @@ void main() {
         );
       }
       expect(
-        await srsFushiCardMediaIsNative(<String, String>{
+        srsFushiCardMediaIsNative(<String, String>{
           'Picture': '<div><img src="a.png"><br></div>',
         }),
         isTrue,
       );
-      expect(await srsFushiCardMediaIsNative(<String, String>{}), isTrue);
+      expect(srsFushiCardMediaIsNative(<String, String>{}), isTrue);
     });
 
     test('clip cards (mining output) stay native', () async {
       // 与制卡链路同一组生成函数（anki_note_composer.dart）：WebM 片段 + 内嵌单词 /
       // 句子音频，原生卡面用片段播放器与音频按钮画全。
       expect(
-        await srsFushiCardMediaIsNative(<String, String>{
+        srsFushiCardMediaIsNative(<String, String>{
           'Picture': coverMediaRef('clip.webm'),
           'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
           'ExpressionAudio': inlineVideoWordAudioHtml('w.mp3'),
@@ -76,7 +56,7 @@ void main() {
       );
       // MP4 片段是 Picture 里的 [sound:clip.mp4]。
       expect(
-        await srsFushiCardMediaIsNative(<String, String>{
+        srsFushiCardMediaIsNative(<String, String>{
           'Picture': coverMediaRef('clip.mp4'),
         }),
         isTrue,
@@ -97,70 +77,13 @@ void main() {
           '<img alt="no source">',
         ]) {
           expect(
-            await srsFushiCardMediaIsNative(<String, String>{
-              'Picture': picture,
-            }),
+            srsFushiCardMediaIsNative(<String, String>{'Picture': picture}),
             isFalse,
             reason: picture,
           );
         }
       },
     );
-
-    test('probe vetoes images the native decoder cannot fully show', () async {
-      final List<String> asked = <String>[];
-      Future<bool> probe(String name) async {
-        asked.add(name);
-        return name != 'anim.avif';
-      }
-
-      expect(
-        await srsFushiCardMediaIsNative(<String, String>{
-          'Picture': '<img src="anim.avif">',
-        }, nativeImage: probe),
-        isFalse,
-      );
-      expect(
-        await srsFushiCardMediaIsNative(<String, String>{
-          'Picture': '<img src="still.avif">',
-        }, nativeImage: probe),
-        isTrue,
-      );
-      // data: URI 不是媒体库文件，不探测。
-      expect(
-        await srsFushiCardMediaIsNative(<String, String>{
-          'Picture': '<img src="data:image/png;base64,AAAA">',
-        }, nativeImage: probe),
-        isTrue,
-      );
-      expect(asked, <String>['anim.avif', 'still.avif']);
-    });
-  });
-
-  group('srsIsAnimatedAvifHeader', () {
-    test('avis in major or compatible brands = animated', () {
-      // 用户卡片的真实 AVIF 动图（ffmpeg 出）：主品牌 avis。
-      expect(
-        srsIsAnimatedAvifHeader(
-          _ftyp('avis', <String>['avis', 'avif', 'msf1', 'iso8', 'mif1']),
-        ),
-        isTrue,
-      );
-      expect(
-        srsIsAnimatedAvifHeader(_ftyp('avif', <String>['mif1', 'avis'])),
-        isTrue,
-      );
-    });
-
-    test('still AVIF, other formats and truncated heads = not animated', () {
-      expect(
-        srsIsAnimatedAvifHeader(_ftyp('avif', <String>['mif1', 'miaf'])),
-        isFalse,
-        reason: 'avis after the ftyp box (in meta) must not count',
-      );
-      expect(srsIsAnimatedAvifHeader('RIFF0000WEBPVP8 '.codeUnits), isFalse);
-      expect(srsIsAnimatedAvifHeader(<int>[0, 0, 0]), isFalse);
-    });
   });
 
   group('renderCard', () {
@@ -185,38 +108,33 @@ void main() {
       return (await s.renderCard(card.id))!;
     }
 
-    test(
-      'clip cards render natively; animated AVIF falls back to the WebView',
-      () async {
-        final SrsDbStore s = await openTestStore(
-          profileUid: kProfile,
-          deviceId: 'a',
-          now: () => t,
-          nativeImageProbe: (String name) async => name != 'anim.avif',
-        );
+    test('clip and animated AVIF cards render natively', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
 
-        final SrsRenderedCard still = await render(s, <String, String>{
-          'Picture': coverMediaRef('still.jpg'),
-          'SentenceAudio': '[sound:s.aac]',
-        });
-        expect(still.fushiCardDefinitions, isNotNull);
+      final SrsRenderedCard still = await render(s, <String, String>{
+        'Picture': coverMediaRef('still.jpg'),
+        'SentenceAudio': '[sound:s.aac]',
+      });
+      expect(still.fushiCardDefinitions, isNotNull);
 
-        final SrsRenderedCard clip = await render(s, <String, String>{
-          'Picture': coverMediaRef('clip.webm'),
-          'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
-        });
-        expect(clip.fushiCardDefinitions, isNotNull, reason: '片段卡走原生卡面');
-        expect(
-          clip.fields['Picture'],
-          contains('<video class="fushi-inline-video"'),
-        );
+      final SrsRenderedCard clip = await render(s, <String, String>{
+        'Picture': coverMediaRef('clip.webm'),
+        'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
+      });
+      expect(clip.fushiCardDefinitions, isNotNull, reason: '片段卡走原生卡面');
+      expect(
+        clip.fields['Picture'],
+        contains('<video class="fushi-inline-video"'),
+      );
 
-        final SrsRenderedCard anim = await render(s, <String, String>{
-          'Picture': coverMediaRef('anim.avif'),
-        });
-        expect(anim.fushiCardDefinitions, isNull);
-        expect(anim.answer, contains('anim.avif'));
-      },
-    );
+      final SrsRenderedCard anim = await render(s, <String, String>{
+        'Picture': coverMediaRef('anim.avif'),
+      });
+      expect(anim.fushiCardDefinitions, isNotNull, reason: '动图 AVIF 由原生逐帧解码播放');
+    });
   });
 }

@@ -2,6 +2,8 @@
 
     python -I gen_avif_fixtures.py <ffmpeg 可执行文件>
 
+sequence.avif（动图）另需 libsvtav1。
+
 依赖：Pillow >= 11.2（自带 libavif，2026-10 用 Pillow 12.2 / libavif 1.4.1 生成）、带 libaom-av1
 与 avif muxer 的 ffmpeg（10 位 / 单色样本）。参考像素来自 libavif 解码（与本仓 rav1d 解码相互独立）；
 irot / imir 由 Pillow 转成 EXIF 方向，参考图用 exif_transpose 转正。grid 与 clap 样本由本脚本按
@@ -213,6 +215,27 @@ def clap_fixture():
     save_ref("clap_rot", decoded.crop((x0, y0, x0 + cw, y0 + ch)).transpose(Image.Transpose.ROTATE_90))
 
 
+def sequence_fixture(ffmpeg):
+    """sequence.avif：64×36 四帧纯色动图（avis 图像序列），红 / 绿 / 蓝 / 白，时长 80 / 160 / 240 / 40 ms，
+    无限循环。编码参数同制卡（libsvtav1 preset 8，yuv420p，-loop 0；SVT 的随机访问 GOP 会产生
+    隐藏帧 + show_existing_frame 样本，正好覆盖逐样本顺序解码）。concat 的末帧时长取不到 duration
+    指令、由 muxer 按 25 fps 补 40 ms，所以末帧是 40 而不是列表里的 400。"""
+    tmp = Path(tempfile.mkdtemp())
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255)]
+    lines = []
+    for i, (c, d) in enumerate(zip(colors, (0.08, 0.16, 0.24, 0.4))):
+        Image.new("RGB", (64, 36), c).save(tmp / f"f{i}.png")
+        lines += [f"file 'f{i}.png'", f"duration {d}"]
+    lines.append("file 'f3.png'")
+    (tmp / "list.txt").write_text("\n".join(lines) + "\n")
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-i", str(tmp / "list.txt"),
+         "-fps_mode", "vfr", "-frames:v", "4", "-c:v", "libsvtav1", "-preset", "8", "-crf", "20",
+         "-pix_fmt", "yuv420p", "-loop", "0", str(OUT / "sequence.avif")],
+        check=True,
+    )
+
+
 def main():
     ffmpeg = sys.argv[1]
     pillow_avif("rgb420", synth(61, 47), quality=90, subsampling="4:2:0")
@@ -227,6 +250,7 @@ def main():
     ffmpeg_avif(ffmpeg, "gray", synth(64, 48).convert("L").convert("RGB"), "gray")
     grid_fixture()
     clap_fixture()
+    sequence_fixture(ffmpeg)
 
 
 if __name__ == "__main__":

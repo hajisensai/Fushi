@@ -14,10 +14,6 @@
 /// WebView，两边用的是同一份模板设计。
 library;
 
-/// 媒体库里的文件 [mediaName]（裸文件名）原生图片解码器能否完整显示（动图 AVIF → false）。
-/// 读不到文件时返回 true：缺文件两边都画不出来，不为此换渲染器。
-typedef SrsNativeImageProbe = Future<bool> Function(String mediaName);
-
 /// 原生卡面直接画的图片字段。
 const String kSrsFushiNativePictureField = 'Picture';
 
@@ -83,11 +79,7 @@ bool _nativeImageSource(String src) {
 }
 
 /// [fields]（按字段名，已展开）里的媒体原生卡面能否原样画全（见文件头）。
-/// [nativeImage] 为 null 时不探测文件（动图 AVIF 无法识别，按可画处理）。
-Future<bool> srsFushiCardMediaIsNative(
-  Map<String, String> fields, {
-  SrsNativeImageProbe? nativeImage,
-}) async {
+bool srsFushiCardMediaIsNative(Map<String, String> fields) {
   for (final String name in kSrsFushiNativeAudioFields) {
     final String? value = fields[name];
     if (value != null && _foreignAudioElement.hasMatch(value)) return false;
@@ -109,29 +101,6 @@ Future<bool> srsFushiCardMediaIsNative(
   if (rest.isNotEmpty) return false;
   for (final String src in sources) {
     if (!_nativeImageSource(src)) return false;
-    if (nativeImage != null &&
-        !src.toLowerCase().startsWith('data:') &&
-        !await nativeImage(src.trim())) {
-      return false;
-    }
   }
   return true;
-}
-
-/// 文件头是不是 AVIF **图像序列**（动图）：ISO BMFF 的首个 `ftyp` box，主品牌或兼容品牌
-/// 含 `avis`。静态 AVIF（只有 `avif` / `mif1`）返回 false。[head] 取文件开头若干字节即可
-/// （`ftyp` 总在最前；64 字节足够覆盖常见的品牌列表）。
-bool srsIsAnimatedAvifHeader(List<int> head) {
-  if (head.length < 16) return false;
-  final int size = (head[0] << 24) | (head[1] << 16) | (head[2] << 8) | head[3];
-  if (String.fromCharCodes(head.sublist(4, 8)) != 'ftyp') return false;
-  final int end = (size < 16 || size > head.length) ? head.length : size;
-  bool isAvis(int at) =>
-      at + 4 <= end && String.fromCharCodes(head.sublist(at, at + 4)) == 'avis';
-  // 主品牌（8..12），跳过 minor_version（12..16），其后每 4 字节一个兼容品牌。
-  if (isAvis(8)) return true;
-  for (int at = 16; at + 4 <= end; at += 4) {
-    if (isAvis(at)) return true;
-  }
-  return false;
 }
