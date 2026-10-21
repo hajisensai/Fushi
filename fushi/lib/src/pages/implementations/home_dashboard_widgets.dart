@@ -127,10 +127,15 @@ class HomeEmptyState extends StatelessWidget {
     required this.icon,
     required this.message,
     this.actions = const <Widget>[],
+    this.stateKey = 'home-empty-state',
   });
 
   final IconData icon;
   final String message;
+
+  /// 外层 Padding 的 key（测试定位用）。同一屏有两处说明块（「继续」空态 +
+  /// 新手引导卡）时各用各的，避免按 key 查找命中两个。
+  final String stateKey;
 
   /// 说明下方的引导按钮（新用户空库：去书架 / 去媒体库）；空 = 只有说明。
   final List<Widget> actions;
@@ -171,7 +176,7 @@ class HomeEmptyState extends StatelessWidget {
       ],
     );
     return Padding(
-      key: const ValueKey<String>('home-empty-state'),
+      key: ValueKey<String>(stateKey),
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: actions.isEmpty
           ? row
@@ -197,6 +202,15 @@ class HomeEmptyState extends StatelessWidget {
     );
   }
 }
+
+/// 首页「新手引导」卡是否出现：没点过「不再显示」，且（新手引导没走完，或
+/// 本地库还是空的）。[libraryEmpty] 只在首载结束后才有意义，调用方自己把关。
+bool homeOnboardingCardVisible({
+  required bool dismissed,
+  required bool onboardingFinished,
+  required bool libraryEmpty,
+}) =>
+    !dismissed && (!onboardingFinished || libraryEmpty);
 
 /// 每日目标环：今日学习字数 / 目标的环形进度（MD3 Expressive 波浪环 / Apple
 /// 原生环，分派在 [FushiCircularProgressIndicator] 里）。未设目标时环里放一面

@@ -360,6 +360,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'network_proxy_password',
   'network_proxy_username',
   'onboarding_completed',
+  // bool：新手引导是否**走完**（点了最后一步的「开始使用」；跳过 / 返回不算）。
+  // 缺省 true（老安装不受影响），全新安装首帧写 false。与 onboarding_completed
+  // 同族、不随 Profile 走。首页「新手引导」卡据此判定（见 homeOnboardingCardVisible）。
+  'onboarding_finished',
+  // bool：首页「新手引导」卡被用户点了「不再显示」。同族、不随 Profile 走。
+  'onboarding_home_card_dismissed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',

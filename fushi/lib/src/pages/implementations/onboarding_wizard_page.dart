@@ -129,6 +129,9 @@ List<OnboardingTutorialItem> fushiReviewFinishNextSteps() =>
 /// 步骤内容区最大宽度：桌面宽窗口下正文行长过长会难读，卡片也会被拉成长条。
 const double _kOnboardingContentMaxWidth = 720;
 
+/// 「跳过新手引导」确认键的强制等待（用户 2026-10-21：跳过前二次确认并强制三秒）。
+const Duration kOnboardingSkipConfirmDelay = Duration(seconds: 3);
+
 /// 功能选择页在多宽以上排两列。
 const double _kOnboardingTwoColumnMinWidth = 560;
 
@@ -310,12 +313,40 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       }
       if (!widget.tutorialOnly) {
         await appModelNoUpdate.setOnboardingCompleted(value: true);
+        // 只有走完才收首页的引导卡；跳过照旧留着它当回来的入口。
+        if (finished) {
+          await appModelNoUpdate.setOnboardingFinished(value: true);
+        }
       }
     } finally {
       _completing = false;
     }
     if (!mounted) return;
-    await Navigator.of(context).maybePop();
+    // 直接 pop：本页的 PopScope 拦的是「没确认就离开」，这里已经确认过了。
+    final NavigatorState navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  /// 跳过之前的二次确认（用户反馈：手滑点了「暂时跳过」就再也找不到引导）。
+  /// 确认键强制倒计时 [kOnboardingSkipConfirmDelay]，倒计时内只能取消。
+  bool _confirmingSkip = false;
+
+  Future<void> _confirmSkip() async {
+    if (_confirmingSkip || _completing) return;
+    _confirmingSkip = true;
+    try {
+      final bool skip = await showFushiConfirmDialog(
+        context: context,
+        title: t.onboarding_skip_confirm_title,
+        message: t.onboarding_skip_confirm_desc,
+        confirmLabel: t.onboarding_skip_confirm_action,
+        icon: FushiIcons.flag,
+        confirmDelay: kOnboardingSkipConfirmDelay,
+      );
+      if (skip && mounted) await _complete();
+    } finally {
+      _confirmingSkip = false;
+    }
   }
 
   /// 离开功能选择步骤时，把模块勾选写进 `module_*_enabled` 偏好（只写有变化的）。
@@ -955,23 +986,30 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 流程与 Apple 的引导页都只保留一组前进 / 后退 / 跳过控件；系统返回手势 / 键
     // 照旧可离开。关闭自动推导，避免本页在可返回 route 中被脚手架补回返回按钮。
     // 脚手架的 PrimaryScrollController / PageScrollRegistry（手柄 LB/RB 翻页）照旧保留。
-    return FushiPageScaffold(
-      automaticallyImplyLeading: false,
-      headerCompact: true,
-      title: t.onboarding_title,
-      headerBottom: OnboardingProgressBar(
-        current: _stepIndex,
-        total: steps.length,
-      ),
-      body: OnboardingWizardBody(
-        stepKey: step,
-        forward: _navigatingForward,
-        step: _buildStep(step),
-        navigationBar: OnboardingNavigationBar(
-          onSkip: isLast ? null : () => unawaited(_complete()),
-          onBack: _stepIndex > 0 ? _goBack : null,
-          onNext: _goNext,
-          isLast: isLast,
+    // 系统返回手势 / 返回键与「暂时跳过」同义（都是没走完就离开），走同一个确认。
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) unawaited(_confirmSkip());
+      },
+      child: FushiPageScaffold(
+        automaticallyImplyLeading: false,
+        headerCompact: true,
+        title: t.onboarding_title,
+        headerBottom: OnboardingProgressBar(
+          current: _stepIndex,
+          total: steps.length,
+        ),
+        body: OnboardingWizardBody(
+          stepKey: step,
+          forward: _navigatingForward,
+          step: _buildStep(step),
+          navigationBar: OnboardingNavigationBar(
+            onSkip: isLast ? null : () => unawaited(_confirmSkip()),
+            onBack: _stepIndex > 0 ? _goBack : null,
+            onNext: _goNext,
+            isLast: isLast,
+          ),
         ),
       ),
     );

@@ -8246,6 +8246,15 @@ class AppModel with ChangeNotifier {
   Future<void> setOnboardingCompleted({required bool value}) =>
       prefsRepo.setOnboardingCompleted(value: value);
 
+  bool get onboardingFinished => prefsRepo.onboardingFinished;
+  Future<void> setOnboardingFinished({required bool value}) =>
+      prefsRepo.setOnboardingFinished(value: value);
+
+  bool get onboardingHomeCardDismissed =>
+      prefsRepo.onboardingHomeCardDismissed;
+  Future<void> setOnboardingHomeCardDismissed({required bool value}) =>
+      prefsRepo.setOnboardingHomeCardDismissed(value: value);
+
   /// 「功能模块」用户意愿的读写。**平台判据不在这里**——见 [moduleVisibility]。
   ///
   /// 偏好仓库还没装配好时取出厂默认（[ModuleId.defaultEnabled]，fail-open）；复习

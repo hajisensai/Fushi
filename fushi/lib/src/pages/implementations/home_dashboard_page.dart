@@ -33,6 +33,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -1366,6 +1367,19 @@ class _HomeDashboardPageState
         int entrance = 0;
         Widget entering(Widget child) =>
             FushiStaggeredEntrance(index: entrance++, child: child);
+        // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
+        // 一个回到引导的入口）。排在最上面、最先进场。
+        final Widget? onboardingCard = _initialLoadDone &&
+                homeOnboardingCardVisible(
+                  dismissed: appModel.onboardingHomeCardDismissed,
+                  onboardingFinished: appModel.onboardingFinished,
+                  libraryEmpty: books.isEmpty &&
+                      _videos.isEmpty &&
+                      _games.isEmpty &&
+                      continueEntries.isEmpty,
+                )
+            ? entering(_buildOnboardingCard(tokens, appModel))
+            : null;
         final Widget body;
         if (twoColumn) {
           final Widget main = entering(continueCard);
@@ -1446,6 +1460,10 @@ class _HomeDashboardPageState
                   appModel.packageInfo.packageName !=
                       kHibikiPackageName) ...<Widget>[
                 _FushiMigrationBanner(appModel: appModel),
+              ],
+              if (onboardingCard != null) ...<Widget>[
+                onboardingCard,
+                SizedBox(height: tokens.spacing.card),
               ],
               body,
             ],
@@ -1822,6 +1840,52 @@ class _HomeDashboardPageState
       );
       if (mounted) bumpSrsRevision(ref);
     });
+  }
+
+  /// 「新手引导」卡：一句说明 + 「继续新手引导」主按钮，标题行尾是「不再显示」。
+  /// 走完向导（[AppModel.onboardingFinished]）且库里有了内容后自己消失。
+  Widget _buildOnboardingCard(FushiDesignTokens tokens, AppModel appModel) {
+    return _sectionCard(
+      tokens,
+      key: const ValueKey<String>('home-onboarding-card'),
+      title: t.onboarding_title,
+      icon: FushiIcons.flag,
+      trailing: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('home-onboarding-card-dismiss'),
+          icon: FushiIcons.close,
+          tooltip: t.home_onboarding_card_dismiss,
+          onTap: () async {
+            await appModel.setOnboardingHomeCardDismissed(value: true);
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+      child: HomeEmptyState(
+        stateKey: 'home-onboarding-card-body',
+        icon: FushiIcons.flag,
+        message: t.home_onboarding_card_desc,
+        actions: <Widget>[
+          FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('home-onboarding-card-start'),
+            onPressed: () => unawaited(_openOnboardingWizard()),
+            icon: const FushiIcon(FushiIcons.forward),
+            label: Text(t.home_onboarding_card_start),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openOnboardingWizard() async {
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const OnboardingWizardPage(),
+        fullscreenDialog: true,
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。
