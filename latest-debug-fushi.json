@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.0.0-debug.20634",
-  "tag": "v3.0.0-debug.20634+7df4aa3",
+  "version": "3.0.0-debug.20637",
+  "tag": "v3.0.0-debug.20637+1d8c836",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 20634,
-  "notes": "Automated release-signed debug-channel build from develop @ 7df4aa3. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 20637,
+  "notes": "Automated desktop debug-channel build from develop @ 1d8c836. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.0.0-debug.20622-ios.ipa",
@@ -35,15 +35,6 @@
       "sha256": "40c9634ea6c8b56577ce71a12c3e8bf884e532f47e59a51cc090bb75357259df"
     },
     {
-      "name": "fushi-3.0.0-debug.20622-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.0.0-debug.20622-windows-setup.exe",
-      "releaseSequence": 20622,
-      "tag": "v3.0.0-debug.20622+22a6c67",
-      "version": "3.0.0-debug.20622",
-      "size": 286814856,
-      "sha256": "0116f0d25aefc8100f82baa67e09ca5424aad435f386be2958d11ef16cdb64af"
-    },
-    {
       "name": "fushi-3.0.0-debug.20634-7df4aa3-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.0.0-debug.20634-7df4aa3-debug.apk",
       "releaseSequence": 20634,
@@ -51,6 +42,15 @@
       "version": "3.0.0-debug.20634",
       "size": 453787124,
       "sha256": "8d0befb60b4b6c357f33e668e17113776d655ef284f564dd19d10d1eb25ef9c9"
+    },
+    {
+      "name": "fushi-3.0.0-debug.20637-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.0.0-debug.20637-windows-setup.exe",
+      "releaseSequence": 20637,
+      "tag": "v3.0.0-debug.20637+1d8c836",
+      "version": "3.0.0-debug.20637",
+      "size": 286843472,
+      "sha256": "b311c75b1cac3c6fafc5baa7e22b442034352e1d2c656270c4d65b279189a9dd"
     }
   ]
 }
