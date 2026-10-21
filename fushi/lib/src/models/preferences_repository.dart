@@ -1508,6 +1508,26 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('onboarding_completed', value);
   }
 
+  /// 新手引导是否**走完**（最后一步点了「开始使用」）。与 [onboardingCompleted]
+  /// 的区别：后者是「首启自动弹过了」，跳过 / 返回关掉向导也算；本键只认走完。
+  /// 缺省 true（老安装不出首页引导卡），全新安装首帧显式写 false。
+  bool get onboardingFinished =>
+      getPref('onboarding_finished', defaultValue: true) as bool;
+
+  Future<void> setOnboardingFinished({required bool value}) async {
+    await setPref('onboarding_finished', value);
+    notifyListeners();
+  }
+
+  /// 首页「新手引导」卡被点了「不再显示」。
+  bool get onboardingHomeCardDismissed =>
+      getPref('onboarding_home_card_dismissed', defaultValue: false) as bool;
+
+  Future<void> setOnboardingHomeCardDismissed({required bool value}) async {
+    await setPref('onboarding_home_card_dismissed', value);
+    notifyListeners();
+  }
+
   final int defaultMaximumDictionaryTermsInResult = 10;
 
   int get maximumTerms => getPref('maximum_terms',

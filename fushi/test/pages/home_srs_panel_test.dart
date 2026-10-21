@@ -157,6 +157,8 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
+    // 空库首页会在最上面挂新手引导卡，窄列下把复习条挤出首屏；本文件只测复习条。
+    await prefs.setOnboardingHomeCardDismissed(value: true);
     storeDir = Directory.systemTemp.createTempSync('fushi_srs_home');
     platformServices = testPlatformServices();
     appModel = AppModel(platformServices)
