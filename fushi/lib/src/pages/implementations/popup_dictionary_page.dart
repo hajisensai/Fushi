@@ -577,6 +577,13 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     );
   }
 
+  /// 整张查词卡的不透明底色：外层卡片与基础层盖板（[DictionaryPopupLayer.coverFillColor]）
+  /// 共用这一个值。
+  Color _cardColor(FushiDesignTokens tokens) =>
+      (appModel.overrideDictionaryColor ?? tokens.surfaces.page).withValues(
+        alpha: 1.0,
+      );
+
   Widget _buildCard(FushiDesignTokens tokens) {
     // M3E 顶部区域（MD3 设计系统；Apple 与墨水屏维持各自原样）：关闭钮并进搜索栏
     // 同一枚 tonal 胶囊，顶栏与源文本条之间不再画硬分隔线、改用间距区分，源文本条
@@ -590,8 +597,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
         m3e &&
         (platform == TargetPlatform.android || platform == TargetPlatform.iOS);
     final Widget card = FushiPopupSurface(
-      color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
-          .withValues(alpha: 1.0),
+      color: _cardColor(tokens),
       // 独立的系统查词浮窗：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
       standaloneWindow: true,
       showBorder: !floatingSurface,
@@ -801,6 +807,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       overrideFillColor: isBase
           ? Colors.transparent
           : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),
+      // 基础层面板透明（整卡由外层画），盖板却必须不透明：否则热槽 WebView 里
+      // popup.js 自画的「未找到」透出来，与 Flutter 占位叠成两份。
+      coverFillColor: isBase ? _cardColor(tokens) : null,
       onDismiss: isBase ? _close : () => _popAt(index),
       onClose: isBase ? null : () => _popAt(index),
       onBack: null,

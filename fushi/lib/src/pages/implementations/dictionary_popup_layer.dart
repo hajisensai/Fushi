@@ -1233,6 +1233,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overlayWidget,
     this.isDark = false,
     this.overrideFillColor,
+    this.coverFillColor,
     this.showBorder = true,
     this.bottomDocked = false,
     this.webViewOverflowHeight = 0,
@@ -1381,6 +1382,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Widget? overlayWidget;
   final bool isDark;
   final Color? overrideFillColor;
+
+  /// 搜索中 / 真实空结果盖板的底色；缺省按 [overrideFillColor] 推导。面板本身透明
+  /// 的宿主（app 外查词窗基础层，卡片底色由外层画）必须显式给一个不透明色：盖板
+  /// 透明 = 没盖住热槽 WebView，popup.js 自己画的「未找到」会和 Flutter 占位叠成两份。
+  final Color? coverFillColor;
   final bool showBorder;
   final bool swipeDismissible;
 
@@ -1509,9 +1515,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     // secondarySystemGroupedBackground 材质色）。搜索中 / 空结果的不透明盖板要与
     // 玻璃同色系，否则深色下是一块纯黑（systemGroupedBackground）压在 #1C1C1E
     // 玻璃上，切换时闪一下。MD3 不变。
-    final Color coverColor = overrideFillColor == null && isGlassDesign(context)
-        ? appleColorsOf(context).secondaryGroupedBackground
-        : fillColor;
+    final Color coverColor =
+        coverFillColor ??
+        (overrideFillColor == null && isGlassDesign(context)
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : fillColor);
 
     final Widget? topBar = _buildTopBar(context);
     final Widget body = _buildContent(context, coverColor);
