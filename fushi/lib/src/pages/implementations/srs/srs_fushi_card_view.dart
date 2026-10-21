@@ -27,6 +27,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -513,15 +514,32 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     )) {
       return null;
     }
-    final String? name = srsImageSources(widget.fields['Picture']!).firstOrNull;
+    final String picture = widget.fields['Picture']!;
+    final double? maxWidth = wide ? null : s.thumb * 1.5;
+    // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
+    // 左栏图最高 220，矮视口（手机横屏）120。
+    final double maxHeight = wide
+        ? (_viewport <= 520 ? 120 : 220)
+        : s.thumb * 1.4;
+    // 视频片段（WebM `<video>` / MP4 `[sound:]`）：在卡面上原生播，复习页的音频序列经
+    // 片段通道驱动它（先单词音频、再片段）。
+    final String? clip = srsVideoSources(picture).firstOrNull;
+    if (clip != null) {
+      return SrsCardVideoClip(
+        key: const ValueKey<String>('srs-fushi-picture'),
+        name: clip,
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        radius: s.tokens.radiusSmall,
+      );
+    }
+    final String? name = srsImageSources(picture).firstOrNull;
     if (name == null) return null;
     return _MediaImage(
       key: const ValueKey<String>('srs-fushi-picture'),
       name: name,
-      // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
-      // 左栏图最高 220，矮视口（手机横屏）120。
-      maxWidth: wide ? null : s.thumb * 1.5,
-      maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : s.thumb * 1.4,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
       radius: s.tokens.radiusSmall,
     );
   }

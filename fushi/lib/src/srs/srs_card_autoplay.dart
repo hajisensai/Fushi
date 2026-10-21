@@ -18,7 +18,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -189,16 +191,26 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
     return file.path;
   }
 
-  /// [DesktopAudioPlayback.playFileToEnd] 在第一个 await 之前就记下了激活代号并排进
-  /// 串行队列，随后的 [DesktopAudioPlayback.stop] 会让它放弃开播。
+  /// 卡面上挂着同名视频片段（`SrsCardVideoClip`，见 [SrsCardVideoChannel]）时交给它在画面里播，否则走共用音频播放器。
+  /// 两条路都在第一个 await 之前就登记了这次播放（片段通道同步登记；
+  /// [DesktopAudioPlayback.playFileToEnd] 先记激活代号再排队），随后的 [stop] 能取消它。
   @override
-  Future<bool> playToEnd(String path) => DesktopAudioPlayback.playFileToEnd(
-    path,
-    volume: _ref.read(srsReviewVolumeProvider),
-  );
+  Future<bool> playToEnd(String path) {
+    final Future<bool>? clip = _ref
+        .read(srsCardVideoChannelProvider)
+        .playToEnd(p.basename(path));
+    if (clip != null) return clip;
+    return DesktopAudioPlayback.playFileToEnd(
+      path,
+      volume: _ref.read(srsReviewVolumeProvider),
+    );
+  }
 
   @override
-  Future<void> stop() => DesktopAudioPlayback.stop();
+  Future<void> stop() async {
+    await _ref.read(srsCardVideoChannelProvider).stopAll();
+    await DesktopAudioPlayback.stop();
+  }
 }
 
 final Provider<SrsCardAudioOutput> srsCardAudioOutputProvider =

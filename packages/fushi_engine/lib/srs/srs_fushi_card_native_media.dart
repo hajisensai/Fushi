@@ -1,17 +1,14 @@
 /// 「Fushi 卡片」的媒体字段能不能交给复习页的**原生**卡面画（见
 /// `SrsRenderedCard.fushiCardDefinitions` 与 app 侧 `srs_fushi_card_view.dart`）。
 ///
-/// 原生卡面只认两种媒体写法：图片字段（Picture）里的 `<img src>`（Flutter 图片解码器，
-/// PNG / JPEG / GIF 动图 / WebP 动图 / 静态 AVIF），音频字段（ExpressionAudio /
-/// SentenceAudio）里的 `[sound:]`。制卡链路还会写出另外几种形态，原生画不出来、会被**静默
-/// 丢掉**——这些卡必须留在整面 WebView（与 Anki 同一份 Fushi 卡片模板，Chromium 内核什么都
-/// 认）：
+/// 原生卡面认得制卡链路写出的全部媒体形态：Picture 里的 `<img src>`（栅格图片、GIF / WebP
+/// 动图、AVIF 静图与动图）、视频片段（WebM `<video>` / MP4 `[sound:]`，原生片段播放器），
+/// 音频字段里的 `[sound:]` 与内嵌重播按钮 + `<audio src>`。只有原生确实画不出来的形态才留在
+/// 整面 WebView（与 Anki 同一份 Fushi 卡片模板）：
 ///
-/// - 视频片段（默认的视频制卡模式）：Picture 是 `<video class="fushi-inline-video">`（WebM）
-///   或重播按钮（MP4），句子 / 单词音频是重播按钮 + 页内 `<audio>`，没有 `[sound:]`；
-/// - 动图 AVIF（`ftyp` 品牌 `avis`）：Flutter 的解码器只解出静态主图（实测 frameCount == 1），
-///   动图在原生卡面上变成一张截图；
-/// - SVG / 远程 URL 的 `<img>`、Picture 里的其它内容（文字、按钮、`[sound:]`）。
+/// - SVG / 远程 URL 的 `<img>`；
+/// - Picture 里图片、片段之外的其它内容（文字、按钮、非视频的 `[sound:]`）；
+/// - 音频字段里的 `<video>` / `<iframe>` 等嵌入元素。
 ///
 /// 判据是「原生能不能把这些字段**原样**画全」，不是挑卡型：画得全就原生，画不全就整面
 /// WebView，两边用的是同一份模板设计。
@@ -43,9 +40,22 @@ final RegExp _wrapperTag = RegExp(
 );
 final RegExp _nbsp = RegExp(r'&nbsp;|&#160;| ', caseSensitive: false);
 
-/// 原生音频按钮之外的页内媒体元素（视频片段卡的重播按钮 + `<audio>`）。
-final RegExp _inlineMediaElement = RegExp(
-  r'<(?:audio|video|source|button|object|embed|iframe)\b',
+/// 音频字段里原生卡面认不了的元素。制卡内嵌的重播按钮 + `<audio src>` 原生认得
+/// （app 侧 `srsAudioSources` 出按钮、`srsCardMediaNames` 排进自动播放）。
+final RegExp _foreignAudioElement = RegExp(
+  r'<(?:video|object|embed|iframe)\b',
+  caseSensitive: false,
+);
+
+/// Picture 里的视频片段：WebM 内嵌 `<video …></video>`（原生 `SrsCardVideoClip` 播）。
+final RegExp _videoElement = RegExp(
+  r'<video\b[^>]*>(?:\s*<source\b[^>]*>)*\s*(?:</video>)?',
+  caseSensitive: false,
+);
+
+/// Picture 里的 MP4 片段：`[sound:x.mp4]`（Anki 惯例），原生同样当视频片段播。
+final RegExp _videoSound = RegExp(
+  r'\[sound:[^\]]+\.(?:webm|mp4|m4v|mov|mkv)\]',
   caseSensitive: false,
 );
 
@@ -80,9 +90,11 @@ Future<bool> srsFushiCardMediaIsNative(
 }) async {
   for (final String name in kSrsFushiNativeAudioFields) {
     final String? value = fields[name];
-    if (value != null && _inlineMediaElement.hasMatch(value)) return false;
+    if (value != null && _foreignAudioElement.hasMatch(value)) return false;
   }
-  final String picture = fields[kSrsFushiNativePictureField] ?? '';
+  final String picture = (fields[kSrsFushiNativePictureField] ?? '')
+      .replaceAll(_videoElement, '')
+      .replaceAll(_videoSound, '');
   final List<String> sources = <String>[];
   for (final Match m in _img.allMatches(picture)) {
     final Match? src = _imgSrc.firstMatch(m.group(0)!);

@@ -11,6 +11,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -295,6 +296,28 @@ void main() {
           .getSize(find.byKey(const ValueKey<String>('srs-fushi-definitions')))
           .height,
       844,
+    );
+  });
+
+  testWidgets('片段卡原生显示：Picture 是片段播放器，内嵌单词音频出按钮', (WidgetTester tester) async {
+    // 制卡链路真实写出的字段（anki_note_composer.dart）。
+    await pump(
+      tester,
+      answer: true,
+      fields: _fields(<String, String>{
+        'Picture': coverMediaRef('clip.webm'),
+        'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
+        'ExpressionAudio': inlineVideoWordAudioHtml('word.mp3'),
+      }),
+    );
+    final Finder clip = find.byKey(const ValueKey<String>('srs-fushi-picture'));
+    expect(clip, findsOne);
+    expect(tester.widget(clip), isA<SrsCardVideoClip>());
+    expect(tester.widget<SrsCardVideoClip>(clip).name, 'clip.webm');
+    expect(
+      find.byKey(const ValueKey<String>('srs-fushi-word-audio')),
+      findsOne,
+      reason: '内嵌 <audio> 的单词音频照样有播放按钮',
     );
   });
 

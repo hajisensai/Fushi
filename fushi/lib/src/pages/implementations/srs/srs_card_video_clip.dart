@@ -1,0 +1,516 @@
+/// 原生 Fushi 卡面上的视频片段（视频制卡的 `<video class="fushi-inline-video">`）。
+///
+/// - 打开即停在第一帧当封面（`play: false`），按视频比例缩放进 [SrsCardVideoClip.maxWidth]
+///   × [SrsCardVideoClip.maxHeight]，圆角裁切。
+/// - **自己不自动播放**：片段自带句子音频，何时出声由复习页的音频序列决定——它经
+///   [SrsCardVideoChannel] 找到挂在卡面上的这段片段，从头播到尾（与 WebView 卡面里
+///   「先播单词音频、再从头播一次片段」同一顺序）。
+/// - 点按画面 = 播放 / 暂停；角上「重播」= 从头播。用户的任何点按都会打断正在进行的
+///   序列播放（与「手动点了别的音频，序列就此停下」一致）。
+/// - 卸载 / 换片段时暂停并释放播放器；文件不存在时什么也不画。
+///
+/// 播放器经 [srsCardVideoPlayerFactoryProvider] 创建：生产是 media_kit（libmpv），
+/// widget 测试换假实现（测试里加载不了 libmpv）。
+library;
+
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/srs/srs_card_video_channel.dart';
+import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/utils.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
+
+/// 卡面片段用的播放器（生产 = media_kit；测试换假实现）。
+abstract class SrsCardVideoPlayer {
+  /// 打开本地文件 [path]，停在开头（不出声）。
+  Future<void> open(String path);
+
+  Future<void> play();
+
+  Future<void> pause();
+
+  Future<void> seek(Duration position);
+
+  /// [volume] 取 0–1（与 `srsReviewVolumeProvider` 同一刻度）。
+  Future<void> setVolume(double volume);
+
+  /// 是否在播。
+  Stream<bool> get playingStream;
+
+  /// 播到结尾时发 true（重新 seek 后回到 false）。
+  Stream<bool> get completedStream;
+
+  /// 视频画面尺寸（像素；宽高都已知且 > 0 时才发）。
+  Stream<Size> get videoSizeStream;
+
+  /// 此刻是否已播到结尾（点按播放时据此先回到开头）。
+  bool get isCompleted;
+
+  /// 画面（只有画面，不带任何控件）。
+  Widget buildView();
+
+  Future<void> dispose();
+}
+
+/// 创建一个卡面片段播放器。
+typedef SrsCardVideoPlayerFactory = SrsCardVideoPlayer Function();
+
+/// 卡面片段播放器工厂（测试覆写成假播放器）。
+final Provider<SrsCardVideoPlayerFactory> srsCardVideoPlayerFactoryProvider =
+    Provider<SrsCardVideoPlayerFactory>(
+      (Ref ref) => _MediaKitSrsCardVideoPlayer.new,
+    );
+
+/// 生产实现：media_kit [Player] + [VideoController]。
+class _MediaKitSrsCardVideoPlayer implements SrsCardVideoPlayer {
+  _MediaKitSrsCardVideoPlayer() : _player = Player() {
+    // 与视频页 / 反馈视频页同一套硬解取值：Windows 上不让 CUDA 后端进解码链（BUG-1639）。
+    _controller = VideoController(
+      _player,
+      configuration: VideoControllerConfiguration(
+        hwdec: resolvePlatformHwdec('auto-safe'),
+      ),
+    );
+    _subs.add(_player.stream.width.listen((_) => _emitSize()));
+    _subs.add(_player.stream.height.listen((_) => _emitSize()));
+  }
+
+  final Player _player;
+  late final VideoController _controller;
+  final StreamController<Size> _size = StreamController<Size>.broadcast();
+  final List<StreamSubscription<Object?>> _subs =
+      <StreamSubscription<Object?>>[];
+
+  void _emitSize() {
+    final int w = _player.state.width ?? 0;
+    final int h = _player.state.height ?? 0;
+    if (w > 0 && h > 0 && !_size.isClosed) {
+      _size.add(Size(w.toDouble(), h.toDouble()));
+    }
+  }
+
+  @override
+  Future<void> open(String path) => _player.open(Media(path), play: false);
+
+  @override
+  Future<void> play() => _player.play();
+
+  @override
+  Future<void> pause() => _player.pause();
+
+  @override
+  Future<void> seek(Duration position) => _player.seek(position);
+
+  /// media_kit / mpv 的音量刻度是 0–100。
+  @override
+  Future<void> setVolume(double volume) =>
+      _player.setVolume(volume.clamp(0.0, 1.0) * 100);
+
+  @override
+  Stream<bool> get playingStream => _player.stream.playing;
+
+  @override
+  Stream<bool> get completedStream => _player.stream.completed;
+
+  @override
+  Stream<Size> get videoSizeStream => _size.stream;
+
+  @override
+  bool get isCompleted => _player.state.completed;
+
+  @override
+  Widget buildView() => Video(
+    controller: _controller,
+    controls: NoVideoControls,
+    fill: Colors.transparent,
+    subtitleViewConfiguration: const SubtitleViewConfiguration(visible: false),
+  );
+
+  @override
+  Future<void> dispose() async {
+    for (final StreamSubscription<Object?> s in _subs) {
+      await s.cancel();
+    }
+    await _size.close();
+    await _player.dispose();
+  }
+}
+
+/// 卡面上的一段视频片段。
+class SrsCardVideoClip extends ConsumerStatefulWidget {
+  const SrsCardVideoClip({
+    required this.name,
+    required this.radius,
+    this.maxWidth,
+    this.maxHeight,
+    super.key,
+  });
+
+  /// 媒体库里的文件名（`<video src>` 的值）。
+  final String name;
+
+  /// 最大宽度；null = 只受父级约束。
+  final double? maxWidth;
+
+  /// 最大高度；null = 220（与卡面图片同一默认）。
+  final double? maxHeight;
+
+  /// 圆角半径。
+  final double radius;
+
+  @override
+  ConsumerState<SrsCardVideoClip> createState() => _SrsCardVideoClipState();
+}
+
+/// 视频尺寸未知时（还没解出第一帧）按 16:9 占位。
+const double _kFallbackAspect = 16 / 9;
+
+/// 片段在 [maxWidth] × [maxHeight] 内按 [aspect] 能放下的最大尺寸。
+@visibleForTesting
+Size srsCardVideoClipSize({
+  required double aspect,
+  required double maxWidth,
+  required double maxHeight,
+}) {
+  final double byHeight = maxHeight * aspect;
+  final double width = maxWidth.isFinite
+      ? math.min(maxWidth, byHeight)
+      : byHeight;
+  return Size(width, width / aspect);
+}
+
+class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
+    implements SrsCardVideoHandle {
+  late final SrsCardVideoChannel _channel;
+
+  /// 当前挂在 [_channel] 上的名字（换片段时据此撤销旧登记）。
+  String? _attachedName;
+
+  SrsCardVideoPlayer? _player;
+
+  /// 打开中的播放器（序列播放要等它打开好）；null 结果 = 打不开 / 已作废。
+  Future<SrsCardVideoPlayer?>? _opening;
+
+  /// 每次（重新）加载自增；旧加载据此知道自己作废了。
+  int _loadToken = 0;
+
+  final List<StreamSubscription<Object?>> _subs =
+      <StreamSubscription<Object?>>[];
+
+  /// 文件已确认存在（之前什么也不画）。
+  bool _available = false;
+  bool _playing = false;
+  Size? _videoSize;
+
+  /// 序列播放：未完成的那次 [playFromStart]、它的代号、是否已开播（之后的
+  /// completed 才算它的结尾）。
+  Completer<bool>? _run;
+  int _runGeneration = 0;
+  bool _runArmed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _channel = ref.read(srsCardVideoChannelProvider);
+    _load(widget.name);
+  }
+
+  @override
+  void didUpdateWidget(SrsCardVideoClip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.name == widget.name) return;
+    _interruptRun();
+    _teardown();
+    setState(() {
+      _available = false;
+      _playing = false;
+      _videoSize = null;
+    });
+    _load(widget.name);
+  }
+
+  @override
+  void dispose() {
+    _interruptRun();
+    _teardown();
+    super.dispose();
+  }
+
+  /// 登记到 [_channel] 并开始加载 [name]。**同步**登记：卡面一挂上，序列就能找到
+  /// 这段片段并排队等它打开好，不会因为文件还在解析而退回只播音频。
+  void _load(String name) {
+    _attachedName = name;
+    _channel.attach(name, this);
+    _opening = _open(name, ++_loadToken);
+  }
+
+  /// 撤销登记、停掉订阅、释放播放器（释放即停止出声）。
+  void _teardown() {
+    _loadToken++;
+    final String? attached = _attachedName;
+    if (attached != null) _channel.detach(attached, this);
+    _attachedName = null;
+    _opening = null;
+    for (final StreamSubscription<Object?> s in _subs) {
+      unawaited(s.cancel());
+    }
+    _subs.clear();
+    final SrsCardVideoPlayer? player = _player;
+    _player = null;
+    if (player != null) unawaited(player.dispose());
+  }
+
+  bool _isCurrent(int token) => mounted && token == _loadToken;
+
+  Future<SrsCardVideoPlayer?> _open(String name, int token) async {
+    final SrsMediaStore? store = await ref.read(srsMediaStoreProvider.future);
+    final File? file = store?.resolve(name);
+    final bool exists = file != null && await file.exists();
+    if (!_isCurrent(token)) return null;
+    if (!exists) {
+      ErrorLogService.instance.logDiagnostic(
+        'SrsCardVideoClip.open',
+        'media missing: $name',
+      );
+      _giveUp(name);
+      return null;
+    }
+    final SrsCardVideoPlayer player = ref.read(
+      srsCardVideoPlayerFactoryProvider,
+    )();
+    _player = player;
+    _subs
+      ..add(
+        player.playingStream.listen((bool playing) {
+          if (mounted && playing != _playing) {
+            setState(() => _playing = playing);
+          }
+        }),
+      )
+      ..add(
+        player.completedStream.listen((bool completed) {
+          if (completed && _runArmed) _finishRun(true);
+        }),
+      )
+      ..add(
+        player.videoSizeStream.listen((Size size) {
+          if (mounted && size != _videoSize) {
+            setState(() => _videoSize = size);
+          }
+        }),
+      );
+    setState(() => _available = true);
+    try {
+      await player.setVolume(ref.read(srsReviewVolumeProvider));
+      await player.open(file.path);
+    } on Object catch (e) {
+      if (!_isCurrent(token)) return null;
+      ErrorLogService.instance.logDiagnostic(
+        'SrsCardVideoClip.open',
+        'open failed: $name: $e',
+      );
+      _teardown();
+      setState(() => _available = false);
+      _finishRun(false);
+      return null;
+    }
+    if (!_isCurrent(token)) return null;
+    return player;
+  }
+
+  /// 文件不存在：撤销登记（序列退回只播音频），未完成的序列播放以 false 结束。
+  void _giveUp(String name) {
+    _channel.detach(name, this);
+    if (_attachedName == name) _attachedName = null;
+    _finishRun(false);
+    if (mounted && _available) setState(() => _available = false);
+  }
+
+  void _finishRun(bool finished) {
+    final Completer<bool>? run = _run;
+    _run = null;
+    _runArmed = false;
+    if (run != null && !run.isCompleted) run.complete(finished);
+  }
+
+  /// 作废进行中的序列播放（未开播的不再开播，等待中的以 false 结束）。
+  void _interruptRun() {
+    _runGeneration++;
+    _finishRun(false);
+  }
+
+  // ---------------------------------------------------------- SrsCardVideoHandle
+
+  @override
+  Future<bool> playFromStart() {
+    _interruptRun();
+    final int generation = _runGeneration;
+    final Completer<bool> run = Completer<bool>();
+    _run = run;
+    unawaited(_startRun(generation));
+    return run.future;
+  }
+
+  Future<void> _startRun(int generation) async {
+    final SrsCardVideoPlayer? player = await _opening;
+    if (generation != _runGeneration) return;
+    if (player == null) {
+      _finishRun(false);
+      return;
+    }
+    try {
+      await player.setVolume(ref.read(srsReviewVolumeProvider));
+      if (generation != _runGeneration) return;
+      await player.seek(Duration.zero);
+      if (generation != _runGeneration) return;
+      _runArmed = true;
+      await player.play();
+    } on Object catch (e) {
+      ErrorLogService.instance.logDiagnostic(
+        'SrsCardVideoClip.play',
+        'play failed: ${widget.name}: $e',
+      );
+      if (generation == _runGeneration) _finishRun(false);
+    }
+  }
+
+  @override
+  Future<void> stop() async {
+    _interruptRun();
+    await _player?.pause();
+  }
+
+  // ---------------------------------------------------------------- 用户点按
+
+  Future<void> _toggle() async {
+    _interruptRun();
+    final SrsCardVideoPlayer? player = _player;
+    if (player == null) return;
+    if (_playing) {
+      await player.pause();
+      return;
+    }
+    await player.setVolume(ref.read(srsReviewVolumeProvider));
+    if (player.isCompleted) await player.seek(Duration.zero);
+    await player.play();
+  }
+
+  Future<void> _replay() async {
+    _interruptRun();
+    final SrsCardVideoPlayer? player = _player;
+    if (player == null) return;
+    await player.setVolume(ref.read(srsReviewVolumeProvider));
+    await player.seek(Duration.zero);
+    await player.play();
+  }
+
+  void _logged(String what, Future<void> Function() action) {
+    unawaited(
+      action().catchError((Object e) {
+        ErrorLogService.instance.logDiagnostic('SrsCardVideoClip.$what', '$e');
+      }),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<double>(srsReviewVolumeProvider, (double? _, double volume) {
+      final SrsCardVideoPlayer? player = _player;
+      if (player != null) _logged('volume', () => player.setVolume(volume));
+    });
+    if (!_available) return const SizedBox.shrink();
+    final SrsCardVideoPlayer? player = _player;
+    final Size? video = _videoSize;
+    final double aspect = video == null || video.height <= 0
+        ? _kFallbackAspect
+        : video.width / video.height;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final Size size = srsCardVideoClipSize(
+          aspect: aspect,
+          maxWidth: math.min(
+            widget.maxWidth ?? double.infinity,
+            constraints.maxWidth,
+          ),
+          maxHeight: widget.maxHeight ?? 220,
+        );
+        final Widget frame = ClipRRect(
+          borderRadius: BorderRadius.all(Radius.circular(widget.radius)),
+          child: SizedBox.fromSize(
+            size: size,
+            child: ColoredBox(
+              color: Colors.black,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  if (player != null) player.buildView(),
+                  if (!_playing)
+                    IgnorePointer(
+                      child: Center(
+                        child: DecoratedBox(
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: FushiIcon(
+                              FushiIcons.play,
+                              size: math.min(28, size.shortestSide * 0.35),
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Semantics(
+              button: true,
+              label: _playing ? t.srs_card_video_pause : t.srs_card_video_play,
+              child: FushiPressScale(
+                child: GestureDetector(
+                  key: const ValueKey<String>('srs-card-video-toggle'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _logged('toggle', _toggle),
+                  child: frame,
+                ),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: FushiIconButton(
+                key: const ValueKey<String>('srs-card-video-replay'),
+                icon: FushiIcons.replay,
+                tooltip: t.srs_card_video_replay,
+                size: 20,
+                // 20 + 2×14 = 48dp 命中区。
+                padding: const EdgeInsets.all(14),
+                backgroundColor: Colors.black45,
+                enabledColor: Colors.white,
+                onTap: () => _logged('replay', _replay),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}

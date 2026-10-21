@@ -63,39 +63,33 @@ void main() {
       expect(await srsFushiCardMediaIsNative(<String, String>{}), isTrue);
     });
 
-    test('inline WebM clip card (mining output) is not native', () async {
-      // 与制卡链路同一组生成函数（anki_note_composer.dart）。
+    test('clip cards (mining output) stay native', () async {
+      // 与制卡链路同一组生成函数（anki_note_composer.dart）：WebM 片段 + 内嵌单词 /
+      // 句子音频，原生卡面用片段播放器与音频按钮画全。
       expect(
         await srsFushiCardMediaIsNative(<String, String>{
           'Picture': coverMediaRef('clip.webm'),
           'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
           'ExpressionAudio': inlineVideoWordAudioHtml('w.mp3'),
         }),
-        isFalse,
+        isTrue,
       );
-      // 只看 Picture：<video> 本身就画不出来。
+      // MP4 片段是 Picture 里的 [sound:clip.mp4]。
       expect(
         await srsFushiCardMediaIsNative(<String, String>{
-          'Picture': inlineVideoCoverHtml('clip.webm'),
+          'Picture': coverMediaRef('clip.mp4'),
         }),
-        isFalse,
-      );
-      // 只看音频字段：页内 <audio> + 重播按钮原生没有对应按钮。
-      expect(
-        await srsFushiCardMediaIsNative(<String, String>{
-          'Picture': '<img src="a.jpg">',
-          'ExpressionAudio': inlineVideoWordAudioHtml('w.mp3'),
-        }),
-        isFalse,
+        isTrue,
       );
     });
 
     test(
-      'MP4 clip, svg, remote and mixed Picture content are not native',
+      'svg, remote, replay buttons and mixed Picture content are not native',
       () async {
         for (final String picture in <String>[
           synchronizedVideoReplayHtml,
-          coverMediaRef('clip.mp4'), // [sound:clip.mp4]
+          '[sound:a.mp3]', // 非视频的 [sound:]：原生 Picture 没有对应画法
+          '<audio src="a.mp3"></audio>',
           '<img src="a.svg">',
           '<img src="data:image/svg+xml;base64,AAAA">',
           '<img src="https://example.com/a.png">',
@@ -192,7 +186,7 @@ void main() {
     }
 
     test(
-      'clip / animated-AVIF Fushi cards fall back to the whole-face WebView',
+      'clip cards render natively; animated AVIF falls back to the WebView',
       () async {
         final SrsDbStore s = await openTestStore(
           profileUid: kProfile,
@@ -211,9 +205,11 @@ void main() {
           'Picture': coverMediaRef('clip.webm'),
           'SentenceAudio': inlineVideoSentenceAudioHtml('clip.webm'),
         });
-        expect(clip.fushiCardDefinitions, isNull);
-        // 整面 WebView 照样拿到原样的 <video>（同一份模板渲染）。
-        expect(clip.answer, contains('<video class="fushi-inline-video"'));
+        expect(clip.fushiCardDefinitions, isNotNull, reason: '片段卡走原生卡面');
+        expect(
+          clip.fields['Picture'],
+          contains('<video class="fushi-inline-video"'),
+        );
 
         final SrsRenderedCard anim = await render(s, <String, String>{
           'Picture': coverMediaRef('anim.avif'),
