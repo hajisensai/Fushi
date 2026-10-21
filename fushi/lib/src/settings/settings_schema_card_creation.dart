@@ -42,11 +42,9 @@ SettingsDestination buildCardCreationDestination() {
           ),
         ],
       ),
-      // 「Anki」分组：目标切换 + 全部 Anki 专属设置。当前发往 Anki 时默认展开，发往
-      // Fushi 复习时默认折叠、只剩「发往 Anki」这一行（和非空的待发队列）。两个变体
-      // 同一份条目、可见性互斥（展开态是 schema 静态属性，只能按目标分成两个分组）。
-      _ankiSection(current: true),
-      _ankiSection(current: false),
+      // 「Anki」分组：全部 Anki 专属设置，只在目标为 Anki 时出现（目标切换在正文顶部
+      // 的分段条里；发往 Fushi 复习时非空的待发队列在「Fushi 复习」分组末尾）。
+      _ankiSection(),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
       // 挖词目标（Anki / Fushi 复习，二选一）：只在复习模块开着时存在。目标为
@@ -64,13 +62,6 @@ SettingsDestination buildCardCreationDestination() {
         visible: _toReview,
         title: t.srs_card_appearance_title,
         subtitle: t.srs_mining_target_srs,
-        hasRevealTarget: true,
-      ),
-      SettingsBodySearchEntry(
-        id: 'card_creation.anki.target',
-        visible: (SettingsContext c) => !_toReview(c),
-        title: t.card_target_anki_title,
-        subtitle: t.card_target_anki_hint,
         hasRevealTarget: true,
       ),
       // 目标为 Fushi 复习时替代 Anki 牌组 / 笔记类型的两行。
@@ -493,15 +484,13 @@ bool _ankiDecksLoaded(SettingsContext c) {
   return s.isConfigured || s.settings.availableDecks.isNotEmpty;
 }
 
-/// 「Anki」分组里此刻出现的行（顺序即显示顺序）。目标为 Fushi 复习时只剩目标行与
-/// 待发队列（队列空时那行自己隐藏）。
+/// 「Anki」分组里此刻出现的行（顺序即显示顺序）。
 @visibleForTesting
 List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) {
   final bool review = _toReview(c);
   final AnkiUiState s = c.ref.watch(ankiViewModelProvider);
   final bool loaded = _ankiDecksLoaded(c);
   return <AnkiSectionRow>[
-    AnkiSectionRow.target,
     if (!review) ...<AnkiSectionRow>[
       AnkiSectionRow.profile,
       AnkiSectionRow.fetch,
@@ -529,19 +518,12 @@ List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) {
   ];
 }
 
-/// 「Anki」分组。[current] = 当前发往 Anki（展开、可见于 Anki 目标）；否则是发往
-/// Fushi 复习时的折叠变体。两者条目相同、可见性互斥。
-SettingsSection _ankiSection({required bool current}) => SettingsSection(
-  id: current ? 'card_creation.anki' : 'card_creation.anki_secondary',
+/// 「Anki」分组（目标为 Fushi 复习时整组不显示）。
+SettingsSection _ankiSection() => SettingsSection(
+  id: 'card_creation.anki',
   title: t.srs_mining_target_anki,
-  visible: current ? (SettingsContext c) => !_toReview(c) : _toReview,
-  // 折叠时分组头下给一行说明，看得出这里是什么。
-  summaryBuilder: current
-      ? null
-      : (SettingsContext c) => t.card_target_anki_hint,
-  presentation: current
-      ? SettingsSectionPresentation.expanded
-      : SettingsSectionPresentation.collapsed,
+  visible: (SettingsContext c) => !_toReview(c),
+  presentation: SettingsSectionPresentation.expanded,
   items: <SettingsItem>[
     SettingsCustomItem.rows(
       id: 'card_creation.anki.rows',
