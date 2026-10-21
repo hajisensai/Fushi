@@ -1198,6 +1198,15 @@ jobs:
           Get-Process -Name 'fushi' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Write-Host "[verify] 安装完成，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1))s"
           if (-not (Test-Path -LiteralPath "$dst\fushi.exe")) { throw "装出来的目录里没有 fushi.exe: $dst" }
+          # runner 的原生测试 exe 是构建期门禁，不是产品：3.0 及更早曾因与 fushi.exe 同输出目录
+          # 被 fushi.iss 整目录收进安装包（29 个 *_test.exe 装进用户 {app}）。
+          # 输出目录已在 fushi/windows/runner/CMakeLists.txt 末尾挪出 bundle，这里按用户实际拿到的东西回验。
+          [string[]] $shippedTests = Get-ChildItem -LiteralPath $dst -Recurse -File -Filter '*_test.exe' |
+            ForEach-Object { $_.FullName.Substring($dst.Length + 1) }
+          if ($shippedTests.Count -gt 0) {
+            $shippedTests | ForEach-Object { Write-Host "  测试程序进了安装包: $_" }
+            throw "安装包里混入了 $($shippedTests.Count) 个测试 exe。"
+          }
 
           $files = Get-ChildItem -LiteralPath $dst -Recurse -File |
             Where-Object { $_.Extension -in '.exe', '.dll' } |
