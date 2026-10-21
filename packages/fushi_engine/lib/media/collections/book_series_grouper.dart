@@ -82,9 +82,10 @@ class BookSeriesGrouper {
         if (id != null && !created.contains(id)) updated.add(id);
       }
     }
+    final BookSeriesOrder order = BookSeriesOrder._(byMember);
     for (final MediaCollectionRow c in collections) {
       if (created.contains(c.id) || updated.contains(c.id)) continue;
-      if (await _healSeriesOrder(c, items, byMember)) updated.add(c.id);
+      if (await _healSeriesOrder(c, items, order)) updated.add(c.id);
     }
     return (
       createdCollectionIds: List<int>.unmodifiable(created),
@@ -238,14 +239,13 @@ class BookSeriesGrouper {
   /// 读完第 2 卷就以为整套读完、不推第 3 卷）。手动「建系列 / 并入合集」按选择
   /// 顺序尾插，不经 [_sortMembers]；这里在之后任一次归组时补排。
   ///
-  /// 只动「规则能完整定序」的合集：用户没手动排过（`orderUpdatedAt == 0`）、每个
-  /// 成员都是同一系列（同书架）的分卷、卷号互不重复且至多一卷无卷号（当第 1 卷）。
-  /// 混了外传 / 汉字卷号 / 别的系列的合集留给 AI 排序（它同样只走自动落盘），
-  /// 这里不碰，免得两边互相覆盖。顺序已对时不写库。返回是否重排了。
+  /// 只动用户没手动排过（`orderUpdatedAt == 0`）、且 [BookSeriesOrder.orderOf]
+  /// 能完整定序的合集；顺序已对时不写库。返回是否重排了。合集同步合并时走同一判据
+  /// （`loadBookSeriesRuleOrder`），本地与共享清单不会各持一序来回翻。
   Future<bool> _healSeriesOrder(
     MediaCollectionRow collection,
     List<MediaCollectionItemRow> allItems,
-    Map<String, _Volume> byMember,
+    BookSeriesOrder order,
   ) async {
     if (collection.orderUpdatedAt != 0) return false;
     final List<MediaCollectionItemRow> rows =
@@ -259,41 +259,13 @@ class BookSeriesGrouper {
           final int k = a.entryKey.compareTo(b.entryKey);
           return k != 0 ? k : a.mediaType.compareTo(b.mediaType);
         });
-    final Set<_Volume> volumes = <_Volume>{};
-    for (final MediaCollectionItemRow i in rows) {
-      final _Volume? v = byMember['${i.mediaType}|${i.entryKey}'];
-      if (v == null) return false;
-      volumes.add(v);
-    }
-    if (volumes.length < 2) return false;
-    if (volumes.map((_Volume v) => v.groupKey).toSet().length != 1) {
-      return false;
-    }
-    final List<num?> numbers = <num?>[
-      for (final _Volume v in volumes) v.key.volume,
+    final List<CollectionMemberKey> current = <CollectionMemberKey>[
+      for (final MediaCollectionItemRow i in rows)
+        (mediaType: i.mediaType, entryKey: i.entryKey),
     ];
-    if (numbers.where((num? n) => n == null).length > 1) return false;
-    if (numbers.toSet().length != numbers.length) return false;
-    final List<MediaCollectionItemRow> sorted =
-        List<MediaCollectionItemRow>.of(rows)..sort(
-          (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
-              _compareMembers(a, b, byMember),
-        );
-    bool same = true;
-    for (int i = 0; i < rows.length; i++) {
-      if (!identical(rows[i], sorted[i])) {
-        same = false;
-        break;
-      }
-    }
-    if (same) return false;
-    await _database.reorderCollectionItemsAutomatically(
-      collection.id,
-      <CollectionMemberKey>[
-        for (final MediaCollectionItemRow i in sorted)
-          (mediaType: i.mediaType, entryKey: i.entryKey),
-      ],
-    );
+    final List<CollectionMemberKey>? sorted = order.orderOf(current);
+    if (sorted == null || _sameMemberOrder(current, sorted)) return false;
+    await _database.reorderCollectionItemsAutomatically(collection.id, sorted);
     return true;
   }
 
@@ -304,30 +276,94 @@ class BookSeriesGrouper {
       for (final _Volume v in await _loadVolumes())
         for (final _Member m in v.members) m.id: v,
     };
-    final List<MediaCollectionItemRow> members = <MediaCollectionItemRow>[
+    final List<CollectionMemberKey> members = <CollectionMemberKey>[
       for (final MediaCollectionItemRow i in await _database.getCollectionItems(
         collectionId,
       ))
-        if (byMember.containsKey('${i.mediaType}|${i.entryKey}')) i,
+        if (byMember.containsKey('${i.mediaType}|${i.entryKey}'))
+          (mediaType: i.mediaType, entryKey: i.entryKey),
     ];
     members.sort(
-      (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
+      (CollectionMemberKey a, CollectionMemberKey b) =>
           _compareMembers(a, b, byMember),
     );
-    await _database.reorderCollectionItemsAutomatically(
-      collectionId,
-      <CollectionMemberKey>[
-        for (final MediaCollectionItemRow i in members)
-          (mediaType: i.mediaType, entryKey: i.entryKey),
-      ],
+    await _database.reorderCollectionItemsAutomatically(collectionId, members);
+  }
+}
+
+/// 书系列合集的规则卷序判据（[BookSeriesGrouper] 归组自愈与合集同步合并共用一份，
+/// 不各写一套：两边判据一有出入，本地自愈与同步落盘就会各持一序、每轮来回翻）。
+///
+/// 成员键是**本地**键域（epub = `epub_books.uid`，srt = uid），与合集成员表一致。
+class BookSeriesOrder {
+  BookSeriesOrder._(this._byMember);
+
+  /// 读一次本机书架（EPUB / PDF / 漫画 + SRT），建好成员 → 分卷索引。
+  static Future<BookSeriesOrder> load(FushiDatabase db) async {
+    final List<_Volume> volumes = await BookSeriesGrouper(db)._loadVolumes();
+    return BookSeriesOrder._(<String, _Volume>{
+      for (final _Volume v in volumes)
+        for (final _Member m in v.members) m.id: v,
+    });
+  }
+
+  final Map<String, _Volume> _byMember;
+
+  /// [members]（当前顺序）是「规则能完整定序」的系列合集时，返回按卷号排好的
+  /// 顺序（可能与输入相同）；否则 null（不定序，调用方保持原序）。
+  ///
+  /// 能完整定序 = 每个成员都是本机书架上同一系列（同书架）的分卷、卷号互不重复且
+  /// 至多一卷无卷号（当第 1 卷）、成员键无重复。混了外传 / 汉字卷号 / 别的系列 /
+  /// 本机没有的书（透传成员）的合集留给 AI 排序或原序，这里不碰，免得互相覆盖。
+  /// 同卷多个成员（EPUB + SRT）按种类 → 成员键排，是全序：结果只取决于成员集合，
+  /// 不取决于输入顺序，也不受 `List.sort` 不稳定影响。
+  List<CollectionMemberKey>? orderOf(List<CollectionMemberKey> members) {
+    final Set<String> seen = <String>{};
+    final Set<_Volume> volumes = <_Volume>{};
+    for (final CollectionMemberKey m in members) {
+      final String id = '${m.mediaType}|${m.entryKey}';
+      if (!seen.add(id)) return null;
+      final _Volume? v = _byMember[id];
+      if (v == null) return null;
+      volumes.add(v);
+    }
+    if (volumes.length < 2) return null;
+    if (volumes.map((_Volume v) => v.shelf).toSet().length != 1) return null;
+    if (sharedBookSeriesKey(<String>[
+          for (final _Volume v in volumes) v.title,
+        ]) ==
+        null) {
+      return null;
+    }
+    final List<num?> numbers = <num?>[
+      for (final _Volume v in volumes) v.key.volume,
+    ];
+    if (numbers.where((num? n) => n == null).length > 1) return null;
+    if (numbers.toSet().length != numbers.length) return null;
+    return List<CollectionMemberKey>.of(members)..sort(
+      (CollectionMemberKey a, CollectionMemberKey b) =>
+          _compareMembers(a, b, _byMember),
     );
   }
 }
 
-/// 按卷号（无卷号当第 0 卷）→ natural 书名 → 种类排；同卷的 EPUB 与 SRT 相邻。
+bool _sameMemberOrder(
+  List<CollectionMemberKey> a,
+  List<CollectionMemberKey> b,
+) {
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// 按卷号（无卷号当第 0 卷）→ natural 书名 → 种类 → 成员键排；同卷的 EPUB 与 SRT
+/// 相邻。末位成员键让同卷同种类（同卷只有一个 EPUB，并列只出在配了多条 SRT 时）
+/// 也有确定先后：SRT uid 即 wire 键、跨端稳定，各端排出同一个序；不用行 id（各端不同）。
 int _compareMembers(
-  MediaCollectionItemRow a,
-  MediaCollectionItemRow b,
+  CollectionMemberKey a,
+  CollectionMemberKey b,
   Map<String, _Volume> byMember,
 ) {
   final _Volume va = byMember['${a.mediaType}|${a.entryKey}']!;
@@ -335,7 +371,9 @@ int _compareMembers(
   final int c = (va.key.volume ?? 0).compareTo(vb.key.volume ?? 0);
   if (c != 0) return c;
   final int t = naturalCompare(va.title, vb.title);
-  return t != 0 ? t : a.mediaType.compareTo(b.mediaType);
+  if (t != 0) return t;
+  final int k = a.mediaType.compareTo(b.mediaType);
+  return k != 0 ? k : a.entryKey.compareTo(b.entryKey);
 }
 
 /// 合集成员：[uid] 是成员行键，[tombstoneKey] 是移出墓碑的键域（EPUB = wire 键）。

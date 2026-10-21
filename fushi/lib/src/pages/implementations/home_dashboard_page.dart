@@ -123,19 +123,24 @@ int? dashboardBookCollectionContinueIndex(
   return idx;
 }
 
-/// 书合集续读卡「Vol. N」徽标的卷号：优先取书名里的卷号（与分卷归组同一判据
-/// [parseBookSeriesKey]，全角数字已折半角），书名没有卷号才退回合集内第几个
-/// （[memberOrdinal]，1 起）。
+/// 书合集续读卡「Vol. N」徽标的卷号：合集成员（[memberTitles]，含本卷）都是同一
+/// 系列的分卷时，取书名里的卷号（与分卷归组同一判据 [sharedBookSeriesKey] /
+/// [parseBookSeriesKey]，全角数字已折半角）；否则——主题合集、混了别的系列，或
+/// 书名没有卷号——退回合集内第几个（[memberOrdinal]，1 起）。
 ///
 /// 用户实报「我在读 2/17 卷，首页却显示 Vol. 17」：旧实现直接拿合集内位置当卷号，
 /// 合集顺序与卷号一错位（手动建系列按选择顺序尾插、缺卷、只收了后几卷），徽标
-/// 就把位置当成卷号说出来。
+/// 就把位置当成卷号说出来。只在同系列时认书名尾数：主题合集里的「Fahrenheit 451」
+/// 不是第 451 卷。
 @visibleForTesting
 num? dashboardBookVolumeNumber({
   required String title,
+  required List<String> memberTitles,
   required int memberOrdinal,
-}) =>
-    parseBookSeriesKey(title)?.volume ?? memberOrdinal;
+}) {
+  if (sharedBookSeriesKey(memberTitles) == null) return memberOrdinal;
+  return parseBookSeriesKey(title)?.volume ?? memberOrdinal;
+}
 
 /// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
 /// 以上的桌面窗口）。竖屏手机 / 平板竖屏走单栏。
@@ -1628,6 +1633,7 @@ class _HomeDashboardPageState
       required int recentMs,
       required String? collectionName,
       int? memberOrdinal,
+      List<MediaItem> collectionMembers = const <MediaItem>[],
     }) {
       final int percent = item.duration > 0
           ? ((item.position / item.duration) * 100).clamp(0, 100).round()
@@ -1639,7 +1645,13 @@ class _HomeDashboardPageState
       final num? volume = memberOrdinal == null
           ? null
           : dashboardBookVolumeNumber(
-              title: title, memberOrdinal: memberOrdinal);
+              title: title,
+              memberTitles: <String>[
+                for (final MediaItem m in collectionMembers)
+                  ReaderFushiSource.instance.getDisplayTitleFromMediaItem(m),
+              ],
+              memberOrdinal: memberOrdinal,
+            );
       return _ContinueEntry(
         kind: _bookMediaKind(item),
         title: title,
@@ -1705,6 +1717,7 @@ class _HomeDashboardPageState
         recentMs: recent,
         collectionName: _collectionNamesById[ce.key],
         memberOrdinal: sorted.length >= 2 ? idx + 1 : null,
+        collectionMembers: sorted,
       ));
     }
     // 视频侧合集感知 Next-Up（用户实报：合集里看完一集，合集不该从「继续」消
