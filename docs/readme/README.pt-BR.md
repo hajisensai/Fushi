@@ -138,7 +138,7 @@ O Fushi armazena os livros importados, dicionários, fontes, dados de audiolivro
 - **Anki** — a criação de cartões se comunica com o AnkiDroid ou com o endereço do AnkiConnect que você configurar.
 - **Estatísticas de uso** — uma vez por dia, as compilações para desktop e Android enviam ao fushi.moe um ID de instalação derivado do dispositivo (não muda ao reinstalar), a versão do aplicativo, a plataforma e o canal de atualização para contar os usuários ativos; nenhuma conta, biblioteca ou dado de leitura é incluído e os endereços IP não são armazenados. Desative com *Compartilhar estatísticas de uso* nas configurações de atualização. As compilações para iOS não as enviam.
 - **Somente quando você pede** — o envio de logs (após um aviso de consentimento único), o feedback dentro do aplicativo e o ranking (desativado por padrão; só envia os títulos da sua biblioteca e o seu progresso depois que você ativar).
-- **OCR de mangá** — o mecanismo padrão é o Google Lens, que envia a imagem da página ao Google; mude para o modelo no dispositivo ou para o OCR do sistema nas configurações para manter as imagens locais.
+- **OCR de mangá** — o mecanismo padrão é o modelo CTC no dispositivo, então as imagens das páginas ficam locais (baixe-o uma vez nas configurações); o Google Lens é opcional e envia a imagem da página ao Google.
 - **Recursos de IA** — as solicitações vão apenas para o provedor de LLM que você configurar e atribuir a um recurso; sem provedor atribuído, nada é enviado.
 - **Serviços de terceiros** — os recursos de metadados, legendas e fontes online só entram em contato com os serviços listados em [Fontes de conteúdo e integrações](#fontes-de-conteúdo-e-integrações) quando você os usa.
 

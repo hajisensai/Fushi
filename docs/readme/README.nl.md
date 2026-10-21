@@ -138,7 +138,7 @@ Fushi slaat geïmporteerde boeken, woordenboeken, lettertypen, audioboekgegevens
 - **Anki** — het maken van kaarten communiceert met AnkiDroid of het AnkiConnect-adres dat je configureert.
 - **Gebruiksstatistieken** — eenmaal per dag sturen desktop- en Android-builds een van het apparaat afgeleid installatie-ID (blijft gelijk na herinstallatie), de appversie, het platform en het updatekanaal naar fushi.moe om actieve gebruikers te tellen; er worden geen account-, bibliotheek- of leesgegevens meegestuurd en IP-adressen worden niet opgeslagen. Schakel het uit met *Gebruiksstatistieken delen* in de update-instellingen. iOS-builds sturen dit niet.
 - **Alleen als je erom vraagt** — het uploaden van logs (na een eenmalige toestemmingsvraag), feedback in de app en het leaderboard (standaard uit; uploadt je bibliotheektitels en voortgang pas nadat je je aanmeldt).
-- **Manga-OCR** — de standaardengine is Google Lens, die de pagina-afbeelding naar Google stuurt; schakel in de instellingen over op het model op het apparaat of systeem-OCR om afbeeldingen lokaal te houden.
+- **Manga-OCR** — de standaardengine is het CTC-model op het apparaat, dus pagina-afbeeldingen blijven lokaal (eenmalig downloaden in de instellingen); Google Lens is optioneel en stuurt de pagina-afbeelding naar Google.
 - **AI-functies** — verzoeken gaan alleen naar de LLM-provider die je configureert en aan een functie toewijst; zonder toegewezen provider wordt niets verzonden.
 - **Diensten van derden** — functies voor metadata, ondertitels en online bronnen contacteren de diensten onder [Contentbronnen en integraties](#contentbronnen-en-integraties) alleen wanneer je ze gebruikt.
 

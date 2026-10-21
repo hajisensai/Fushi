@@ -138,7 +138,7 @@ Fushi speichert importierte Bücher, Wörterbücher, Schriften, Hörbuchdaten, V
 - **Anki** — die Kartenerstellung kommuniziert mit AnkiDroid oder der von dir konfigurierten AnkiConnect-Adresse.
 - **Nutzungsstatistiken** — einmal täglich senden Desktop- und Android-Builds eine aus dem Gerät abgeleitete Installations-ID (bleibt bei Neuinstallation gleich), die App-Version, die Plattform und den Update-Kanal an fushi.moe, um aktive Nutzer zu zählen; Konto-, Bibliotheks- oder Lesedaten sind nicht enthalten und IP-Adressen werden nicht gespeichert. Mit *Nutzungsstatistiken teilen* in den Update-Einstellungen lässt sich das abschalten. iOS-Builds senden nichts davon.
 - **Nur auf deine Anfrage** — Log-Upload (nach einer einmaligen Einwilligungsabfrage), In-App-Feedback und die Bestenliste (standardmäßig aus; lädt die Titel deiner Bibliothek und deinen Fortschritt erst hoch, nachdem du zugestimmt hast).
-- **Manga-OCR** — die Standard-Engine ist Google Lens, die das Seitenbild an Google sendet; wechsle in den Einstellungen zum Modell auf dem Gerät oder zur System-OCR, um Bilder lokal zu halten.
+- **Manga-OCR** — die Standard-Engine ist das CTC-Modell auf dem Gerät, Seitenbilder bleiben also lokal (einmalig in den Einstellungen herunterladen); Google Lens ist optional und sendet das Seitenbild an Google.
 - **KI-Funktionen** — Anfragen gehen nur an den LLM-Anbieter, den du konfigurierst und einer Funktion zuweist; ohne zugewiesenen Anbieter wird nichts gesendet.
 - **Drittanbieterdienste** — Metadaten-, Untertitel- und Online-Quellen-Funktionen kontaktieren die unter [Inhaltsquellen und Integrationen](#inhaltsquellen-und-integrationen) aufgeführten Dienste nur, wenn du sie verwendest.
 

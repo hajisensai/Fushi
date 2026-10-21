@@ -29,8 +29,11 @@ enum MangaOcrEnginePreference {
 /// 显示错乱，而是**守卫恒绿**：UI 测试不注 getter 就走 `auto`，`auto` 算「用得到
 /// 本地模型」，于是「出厂默认引擎下模型下载入口整块消失」这个真实回归在测试里
 /// 永远复现不出来，一路进了 develop。默认值这种东西只能有一处。
+///
+/// 2026-10-21 用户拍板：出厂默认从 Google Lens 改成本机逐列 CTC 模型
+/// （`localOnnx`）——离线、不上传；模型未下载时走既有的「没有引擎」提示与下载入口。
 const MangaOcrEnginePreference kDefaultMangaOcrEnginePreference =
-    MangaOcrEnginePreference.googleLens;
+    MangaOcrEnginePreference.localOnnx;
 
 extension MangaOcrEnginePreferenceKey on MangaOcrEnginePreference {
   String get key {
@@ -127,9 +130,9 @@ MangaOcrEngineId? resolveMangaOcrEngine({
   }
   final Map<MangaOcrEngineId, MangaOcrEngineCapability> byId =
       <MangaOcrEngineId, MangaOcrEngineCapability>{
-    for (final MangaOcrEngineCapability capability in capabilities)
-      capability.id: capability,
-  };
+        for (final MangaOcrEngineCapability capability in capabilities)
+          capability.id: capability,
+      };
   // 回退顺序 = 质量优先、其次本机可用性。系统 OCR 排在本地模型之后（它识别
   // 竖排气泡明显更差），但排在外部 CLI 和远程主机之前（那两个要么只在桌面存在、
   // 要么要有另一台机器开着）。Lens 依旧刻意缺席：auto 的契约就是不自作主张上传。
