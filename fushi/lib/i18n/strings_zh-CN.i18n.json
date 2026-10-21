@@ -6636,7 +6636,6 @@
   "srs_settings_rwkv_downloading": "正在下载… $percent%",
   "srs_settings_rwkv_failed": "RWKV 不可用：$error。在此之前复习按 FSRS-7 存下的到期日排队。",
   "srs_settings_rwkv_hint": "RWKV 用神经网络根据整个复习历史估计每张卡此刻的回忆率；复习卡在估计回忆率降到目标保留率时出现，不看到期日。稳定性、难度与存下的到期日仍由 FSRS-7 维护。",
-  "srs_settings_rwkv_license_small": "小模型从作者的 GitHub 发布页下载；作者尚未声明它的许可。",
   "srs_settings_rwkv_model": "RWKV 模型（本机）",
   "srs_settings_rwkv_model_hint": "小模型（推荐）：每张卡约占 2.9 KB 内存，在真实复习记录上实测也略准一些。大模型：每张卡约 25.7 KB，准备也更慢。对本机所有 RWKV 牌组生效。",
   "srs_settings_rwkv_model_large": "大模型",

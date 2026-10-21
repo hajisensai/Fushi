@@ -142,9 +142,6 @@ class _SrsRwkvPanelState extends ConsumerState<SrsRwkvPanel> {
           );
       }
     }
-    if (choice == SrsRwkvModelChoice.small) {
-      children.add(Text(t.srs_settings_rwkv_license_small, style: hintStyle));
-    }
     final double gap = FushiDesignTokens.of(context).spacing.gap;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
