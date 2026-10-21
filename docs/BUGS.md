@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3258 条。点号进各自文件。
+> 共 3259 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3655](bugs/BUG-3655-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
 | [BUG-3654](bugs/BUG-3654-srs-subdecks-not-inheriting-parent-settings.md) | ✅ | ✅ | srs-subdecks-not-inheriting-parent-settings |
 | [BUG-3653](bugs/BUG-3653-srs-anki-migration-silent-options.md) | ✅ | ✅ | srs-anki-migration-silent-options |
 | [BUG-3652](bugs/BUG-3652-srs-reimport-deleted-notes-not-restored.md) | ✅ | ✅ | srs-reimport-deleted-notes-not-restored |
