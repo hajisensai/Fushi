@@ -330,19 +330,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       final SrsRenderedCard? rendered = await store.renderCard(id);
       SrsReviewPage.debugPhase?.call('render');
       final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
-      final SrsDayContext day = await store.dayContext();
-      final SrsAnswerPreview? preview = store.canSchedule
-          ? await store.preview(id)
-          : null;
-      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted) return;
-      _show(
-        detail,
-        rendered,
-        preview: preview,
-        day: day,
-        audioOwner: audioOwner,
-      );
+      // 问题面只要卡片内容：间隔预览（只在翻面后的评分键上）与日界在卡面上屏后补齐，
+      // 与预取命中同一条路径（[_completeShown]），不挡首张卡。
+      _show(detail, rendered, preview: null, day: _day, audioOwner: audioOwner);
+      unawaited(_completeShown(id, _shownGeneration));
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
       if (mounted) {
@@ -395,6 +387,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(cardId)
           : null;
+      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted || generation != _shownGeneration) return;
       setState(() {
         _applyCounts(sum);
@@ -1169,10 +1162,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
               switchInCurve: FushiMotion.enter,
               switchOutCurve: FushiMotion.exit,
               child: KeyedSubtree(
+                // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
+                // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
                 key: ValueKey<String>(
-                  _loading
-                      ? 'loading'
-                      : _error != null
+                  _error != null
                       ? 'error'
                       : _finished
                       ? 'finished'
@@ -1197,7 +1190,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _rendered?.fushiCardDefinitions != null;
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return const FushiLoadingView();
+    // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
+    // 外壳加载与读库并行，数据一到只在同一个平台视图里换内容（BUG-3579 实测这段在
+    // 数据之后串行要 0.8~1.3 s）。
+    if (_loading) return _buildCard(context);
     final Object? error = _error;
     if (error != null) {
       return Center(
@@ -1259,7 +1255,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   Widget _buildCard(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsCardDetail detail = _detail!;
+    // null = 首张卡还在读（[_buildBody]）：空卡面先建平台视图，上面压加载指示。
+    final SrsCardDetail? detail = _detail;
     final SrsRenderedCard? rendered = _rendered;
     final SrsCardFaceBuilder faceBuilder = ref.watch(
       srsCardFaceBuilderProvider,
@@ -1267,7 +1264,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     final String language = ref.read(appProvider).defaultContentLanguage;
     final double zoom = ref.watch(srsReviewZoomProvider);
     final SrsCardFace face = SrsCardFace(
-      cardId: detail.card.id,
+      cardId: detail?.card.id ?? '',
       showingAnswer: _showingAnswer,
       bodyHtml: rendered == null
           ? ''
@@ -1277,7 +1274,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       css: rendered?.css ?? '',
       languageCode: language.isEmpty ? null : language,
       onBridgeKey: _onBridgeKey,
-      fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+      fushiCard: detail?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
       pageZoom: zoom == 1 ? null : zoom,
       onZoomWheel: _zoomWheel,
       onSourceLink: _openSource,
@@ -1313,9 +1310,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                   key: const ValueKey<String>('srs-card-surface'),
                   padding: EdgeInsets.zero,
                   pressScale: false,
-                  // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
-                  child: rendered?.fushiCardDefinitions != null
-                      ? MediaQuery(
+                  // 结构恒定（卡面在 Stack 第一格）：读首张卡时建起的卡面平台视图出卡后
+                  // 原地复用，加载指示只是压在上面的第二格。
+                  child: Stack(
+                    fit: StackFit.passthrough,
+                    children: <Widget>[
+                      // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+                      if (rendered?.fushiCardDefinitions != null)
+                        MediaQuery(
                           // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
                           data: media.copyWith(
                             textScaler: TextScaler.linear(
@@ -1330,7 +1332,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                             topInset: media.padding.top,
                           ),
                         )
-                      : faceBuilder(context, face),
+                      else
+                        faceBuilder(context, face),
+                      IgnorePointer(
+                        child: AnimatedSwitcher(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.medium,
+                          ),
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          child: detail == null
+                              ? const FushiLoadingView(
+                                  key: ValueKey<String>('srs-card-loading'),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1370,17 +1390,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   /// 不再通栏铺满——居中、宽度封顶，与评分按钮同高，翻面时两者原地交替。
   Widget _buildShowAnswer(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    // 首张卡还在读时（卡面已先建着）不可按。
+    final bool enabled = !_busy && _detail != null;
     return Center(
       key: const ValueKey<String>('srs-show-answer-row'),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 220, maxWidth: 420),
         child: FushiPressScale(
-          enabled: !_busy,
+          enabled: enabled,
           child: SizedBox(
             width: double.infinity,
             child: FushiFilledButton.icon(
               key: const ValueKey<String>('srs-show-answer'),
-              onPressed: _busy ? null : _showAnswer,
+              onPressed: enabled ? _showAnswer : null,
               size: FushiButtonSize.m,
               style: apple
                   ? const ButtonStyle(
