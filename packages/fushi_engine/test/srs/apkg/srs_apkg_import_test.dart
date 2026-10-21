@@ -9,6 +9,7 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
+import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -523,6 +524,68 @@ void main() {
     expect(upd.notesUpdated, 1);
     expect(upd.notesSkipped, 2);
     expect((await s.note(n1))!.field(back), 'cat');
+  });
+
+  test('删牌组（保留卡片）+ 删笔记后再导入：笔记恢复、卡片回原牌组', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    await importInto(s, legacyApkg(t));
+    final List<SrsNoteCacheRow> imported = await s.listNotes();
+    final List<String> noteIds = <String>[
+      for (final SrsNoteCacheRow n in imported) n.id,
+    ];
+    final Map<String, String> deckOf = <String, String>{
+      for (final SrsCardCacheRow c in await s.allCardRows())
+        if (!c.hidden) c.id: c.deckId,
+    };
+    expect(deckOf, isNotEmpty);
+    // 用户的路径：先把导入的牌组都删掉（保留卡片 → 卡移到默认牌组），再批量删笔记。
+    final SrsDeckTree tree = await s.deckTree();
+    String rootOf(String id) {
+      String cur = id;
+      for (String? p = tree.parentOf(cur); p != null; p = tree.parentOf(cur)) {
+        cur = p;
+      }
+      return cur;
+    }
+
+    for (final String root in <String>{
+      for (final String deck in deckOf.values)
+        if (deck != s.defaultDeckId) rootOf(deck),
+    }) {
+      await s.deleteDeck(root);
+    }
+    expect(
+      <String>{
+        for (final SrsCardCacheRow c in await s.allCardRows())
+          if (!c.hidden) c.deckId,
+      },
+      <String>{s.defaultDeckId},
+    );
+    await srsBatchDeleteNotes(s, noteIds);
+    expect(await s.listNotes(), isEmpty);
+
+    final SrsImportReport rep = await importInto(s, legacyApkg(t));
+    expect(rep.notesAdded, 0);
+    expect(rep.notesRestored, noteIds.length);
+    expect(rep.notesSkipped, 0);
+    expect(
+      <String>[for (final SrsNoteCacheRow n in await s.listNotes()) n.id]..sort(),
+      List<String>.of(noteIds)..sort(),
+    );
+    for (final MapEntry<String, String> e in deckOf.entries) {
+      final SrsCardCacheRow? row = await s.cardRow(e.key);
+      expect(row, isNotNull);
+      expect(row!.hidden, isFalse, reason: 'card ${e.key} still hidden');
+      expect(row.deckId, e.value, reason: 'card ${e.key} not back in deck');
+    }
+    // 再导入一次：已经恢复的不再计入恢复。
+    final SrsImportReport again = await importInto(s, legacyApkg(t));
+    expect(again.notesRestored, 0);
+    expect(again.notesSkipped, noteIds.length);
   });
 
   test('笔记类型 kind 不一致（普通 ↔ 填空）：不更新，笔记进冲突报告', () async {

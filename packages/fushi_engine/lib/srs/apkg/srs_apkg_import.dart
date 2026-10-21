@@ -1346,6 +1346,11 @@ class _Importer {
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
 
     final bool isNew = existing == null;
+    // 先前导入过、后来在本机被删：重新导入即恢复（与牌组同一条规则，见 [_importDecks]；Anki
+    // 里删掉的笔记不留身份，再导入就是新加）。以前按「已存在、较新时更新」走，本机内容的
+    // 修改时刻晚于来源 mod → 记为未改动，删除标记永远不清：牌组复活了、笔记仍是删除态，
+    // 卡片留在删牌组时移去的默认牌组里且被隐藏。
+    final bool restored = existing != null && existing.deletedAt != null;
     bool update = false;
     if (isNew) {
       // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
@@ -1371,6 +1376,19 @@ class _Importer {
         ),
       );
       return;
+    } else if (restored) {
+      // 删除标记、内容、标签、首选牌组一律回到来源：用户要的是「把它导回来」，本机的旧内容
+      // 只是删除前的残留，不参与「较新时更新」的比较。
+      update = true;
+      await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
+        SrsFieldKeys.deleted: null,
+        for (final MapEntry<String, String> f in fields.entries)
+          if (existing.field(f.key) != f.value)
+            SrsFieldKeys.noteField(f.key): f.value,
+        if (!_sameList(existing.tags, tags)) SrsFieldKeys.noteTags: tags,
+        if (existing.deckId != firstDeck) SrsFieldKeys.noteDeck: firstDeck,
+      });
+      report.notesRestored++;
     } else if (options.updateNotes.shouldUpdate(
       localMs: _lastEditMs(
         existing.edits,
@@ -1418,6 +1436,7 @@ class _Importer {
         firstDeck,
         isNew: isNew,
         update: update,
+        restored: restored,
       );
       if (options.withScheduling) {
         await _importCardSchedule(cardId, c, revlogOf, noteExisted: !isNew);
@@ -1433,6 +1452,7 @@ class _Importer {
     String noteDeck, {
     required bool isNew,
     required bool update,
+    bool restored = false,
   }) async {
     if (!isNew && !update) return;
     final String deck = _deckOf[c.homeDeck] ?? store.defaultDeckId;
@@ -1459,8 +1479,9 @@ class _Importer {
       cardId,
     );
     final int sourceMs = c.mod * 1000;
+    // 恢复的笔记不比：本机那次改动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
     bool localNewer(String key) =>
-        _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
+        !restored && _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
     if (row.deckId != deck && !localNewer(SrsFieldKeys.cardDeck)) {
       await store.moveCard(cardId, deck);
     }

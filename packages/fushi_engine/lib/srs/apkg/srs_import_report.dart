@@ -87,6 +87,9 @@ class SrsImportReport {
   /// 已存在、按「更新笔记」选项没更新（或来源内容与本机相同）：本地字段不动。
   int notesSkipped = 0;
 
+  /// 先前导入过、后来在本机删掉，这次恢复的笔记数（不计入 [notesAdded] / [notesUpdated]）。
+  int notesRestored = 0;
+
   /// 本次用的选项。
   SrsAnkiImportOptions options = const SrsAnkiImportOptions();
 
@@ -164,6 +167,7 @@ class SrsImportReport {
     'notesAdded': notesAdded,
     'notesUpdated': notesUpdated,
     'notesSkipped': notesSkipped,
+    'notesRestored': notesRestored,
     'options': options.toJson(),
     'noteTypesUpdated': noteTypesUpdated,
     'noteTypesDuplicated': noteTypesDuplicated,
