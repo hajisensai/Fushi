@@ -68,6 +68,48 @@ void main() {
     expect(cloud.syncContent, isFalse, reason: '云通道不受互联专属开关影响');
   });
 
+  // 所有者 2026-10-21「书籍和漫画应该分开」：每条通道各有「上传漫画文件」，键从未
+  // 写过时继承同通道「上传书籍文件」（升级后行为不变），写过就各管各的。
+  group('上传漫画文件开关', () {
+    test('从未设置时继承同通道的书籍开关（两条通道各继承各的）', () async {
+      await repo.setSyncContentEnabled(true);
+      // 互联书籍开关保持默认关。
+      final ChannelSyncFlags cloud =
+          await resolveChannelSyncFlags(repo, isInterconnect: false);
+      final ChannelSyncFlags ic =
+          await resolveChannelSyncFlags(repo, isInterconnect: true);
+      expect(cloud.syncMangaContent, isTrue, reason: '升级前开着书籍上传的用户，漫画照传');
+      expect(ic.syncMangaContent, isFalse, reason: '互联继承的是互联书籍开关，不是云的');
+
+      await repo.setInterconnectSyncContentEnabled(true);
+      expect(await repo.isInterconnectSyncMangaContentEnabled(), isTrue);
+    });
+
+    test('写过之后与书籍开关互不牵连', () async {
+      await repo.setSyncContentEnabled(true);
+      await repo.setSyncMangaContentEnabled(false);
+      await repo.setInterconnectSyncContentEnabled(false);
+      await repo.setInterconnectSyncMangaContentEnabled(true);
+
+      final ChannelSyncFlags cloud =
+          await resolveChannelSyncFlags(repo, isInterconnect: false);
+      expect(cloud.syncContent, isTrue);
+      expect(cloud.syncMangaContent, isFalse);
+      final ChannelSyncFlags ic =
+          await resolveChannelSyncFlags(repo, isInterconnect: true);
+      expect(ic.syncContent, isFalse);
+      expect(ic.syncMangaContent, isTrue);
+
+      // 之后再动书籍开关，漫画开关不跟着变（不再继承）。
+      await repo.setSyncContentEnabled(false);
+      await repo.setInterconnectSyncContentEnabled(true);
+      expect(await repo.isSyncMangaContentEnabled(), isFalse);
+      expect(await repo.isInterconnectSyncMangaContentEnabled(), isTrue);
+      await repo.setSyncContentEnabled(true);
+      expect(await repo.isSyncMangaContentEnabled(), isFalse);
+    });
+  });
+
   // BUG-2762：互联页「上传到互联对端」一区里「上传词典」开关与「词典 · 传输」动作
   // 并排成两个「词典」。开关删了，它驱动的那轮自动双向 union 也必须一起走：只藏 UI
   // 会让开过它的存量用户永远关不掉（库里那行偏好还是 true）。

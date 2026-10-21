@@ -99,11 +99,48 @@ int resolveSubtitleBatchEpisode(SubtitleBatchTarget target) {
   return target.sortIndex + 1;
 }
 
+/// 前缀最多保留多少字符的 bookUid 原文：加上 8 位摘要与分隔符后仍远短于文件名上限。
+const int _kBatchPrefixChars = 32;
+
+/// 叶名（字幕文件名本身）裁剪上限：Windows 单个文件名不能超过 255 字符，且整条路径
+/// 还要留给保存目录。100 足够认人，也够长名字的 BD 命名。
+const int _kBatchLeafChars = 100;
+
 /// 批量下载落盘的文件名：以稳定 bookUid（清洗成合法文件名段）为前缀，避免多集拿到同名
 /// 文件（整季打包字幕对不同集同名）时互相覆盖。纯函数，便于单测。
+///
+/// 前缀必须**有上限**：流媒体成员的 bookUid 是整条 `anime-source://<扩展>/<id>/<签名>/
+/// …&epurl=…` 播放描述，实测 407 字符；原样拼进文件名会让单个文件名达到约 460 字符，
+/// 超过 Windows 每个文件名分段 255 字符的硬上限，`File.writeAsBytes` 抛 ERROR_INVALID_NAME
+/// （EINVAL）——表现就是**流媒体合集的「下载全部」每一集都「下载失败」，而本集面板
+/// （用 safeSubtitleFileName，不带 uid 前缀）和本地视频合集（bookUid 短）都正常**。
+/// 超长 uid 改用「前 32 字符 + 8 位 FNV-1a 摘要」：仍然稳定、仍然跨集唯一。
 String batchSubtitleFileName(String bookUid, String fileName) {
   final String safe = bookUid.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-  return '${safe}__$fileName';
+  final String prefix = safe.length <= _kBatchPrefixChars
+      ? safe
+      : '${safe.substring(0, _kBatchPrefixChars)}_${_fnv1aHex(safe)}';
+  return '${prefix}__${_clipSubtitleLeafName(fileName)}';
+}
+
+/// 32 位 FNV-1a（十六进制、定长 8 位）：只用来在截断前缀后保持跨集唯一，不做安全用途。
+String _fnv1aHex(String value) {
+  int hash = 0x811c9dc5;
+  for (final int unit in value.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 0x01000193) & 0xffffffff;
+  }
+  return hash.toRadixString(16).padLeft(8, '0');
+}
+
+/// 把远端文件名裁到 [_kBatchLeafChars]，保留扩展名（短扩展名才有意义）。
+String _clipSubtitleLeafName(String fileName) {
+  if (fileName.length <= _kBatchLeafChars) return fileName;
+  final int dot = fileName.lastIndexOf('.');
+  final String extension = dot > 0 && fileName.length - dot <= 8
+      ? fileName.substring(dot)
+      : '';
+  return fileName.substring(0, _kBatchLeafChars - extension.length) + extension;
 }
 
 /// 合集批量里的整季压缩包拆分：每个包只下载一次（registry 的下载结果带回包内全部

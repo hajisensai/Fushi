@@ -124,6 +124,9 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_no_text': t.floating_ball_ocr_empty,
   'ocr_model_unavailable': t.floating_ball_ocr_model_unavailable,
   'ocr_failed': t.floating_ball_ocr_failed,
+  // 截屏确认框的宿主 Activity 被系统静默拦下（vivo「后台弹出界面」等）时的提示
+  // （BUG-3603，原生 ScreenCaptureRequestActivity.LABEL_LAUNCH_BLOCKED）。
+  'ocr_launch_blocked': t.floating_ball_ocr_launch_blocked,
 };
 
 /// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
@@ -580,12 +583,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, int> colors = _systemBallColors;
     final bool animate = _systemBallAnimate;
     final bool showLabels = prefs.floatingBallShowLabels;
+    final bool tapClipboard = prefs.floatingBallTapClipboard;
     final bool tintMascot = appLogoFollowsAccent.value;
-    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关都进签名：切换界面语言、主题、
-    // 换色开关，或这些偏好切换（配色可能完全没变）后原生球也要换。
+    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 点球查剪贴板都进签名：切换
+    // 界面语言、主题、换色开关，或这些偏好切换（配色可能完全没变）后原生球也要换。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
-        '${colors.values.join(',')}|$tintMascot|$animate|$showLabels';
+        '${colors.values.join(',')}|$tintMascot|$animate|$showLabels|'
+        '$tapClipboard';
     // 与「在途目标」比（没有在途请求时才是稳态签名）：A→B→A 时最后的 A 与在途
     // 的 B 不同，必须开新一代取代 B；在途期间同签名的重复同步则直接跳过。
     if (!force && signature == (_systemInFlightSignature ?? _systemSignature)) {
@@ -674,6 +679,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         colors: colors,
         animate: animate,
         showLabels: showLabels,
+        tapClipboard: tapClipboard,
         ocrLanguage: kFloatingBallOcrLanguage,
         iconImages: iconImages,
         ballImage: ballImage,

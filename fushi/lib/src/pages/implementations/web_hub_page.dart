@@ -6,6 +6,8 @@ import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/pages/implementations/video_web_sites_page.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiShellInlineTitle, kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -15,8 +17,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 /// 2026-10-19 用户拍板：app 内直接浏览网站（Netflix / YouTube 等站点在原生播放器页
 /// 里看）取代「装浏览器扩展」成为主路径，浏览器扩展降为本模块的次级子页。
 enum WebHubSection {
-  /// 通用 app 内浏览器（[FushiWebBrowserPage]）：五端都有，网页上查词；漫画站上的
-  /// 「用 Fushi 阅读本章」由页内自己按在线漫画源合规门控。
+  /// 通用 app 内浏览器：模块页里是入口（[FushiWebBrowserHomePage]，地址栏 + 站点），
+  /// 打开网址推全屏浏览页（[FushiWebBrowserPage]）。五端都有，网页上查词；漫画站上
+  /// 的「用 Fushi 阅读本章」由浏览页自己按在线漫画源合规门控。
   browse,
 
   /// 网页视频站点（[VideoWebSitesPage]），仅 Windows（[webVideoSitesAvailable]）。
@@ -56,9 +59,9 @@ class _WebHubPageState extends State<WebHubPage> {
       if (webHubSectionAvailable(section)) section,
   ];
 
-  /// null = 本平台一个子页都没有（漫画 / 通用浏览子页接入前的移动端）。
-  late WebHubSection? _section = _sections.firstOrNull;
-  late final Set<WebHubSection> _visited = <WebHubSection>{?_section};
+  /// 通用浏览子页五端都有（[webHubSectionAvailable] 恒为 true），所以至少有一个子页。
+  late WebHubSection _section = _sections.first;
+  late final Set<WebHubSection> _visited = <WebHubSection>{_section};
 
   void _select(WebHubSection value) {
     if (value == _section) return;
@@ -74,9 +77,12 @@ class _WebHubPageState extends State<WebHubPage> {
     WebHubSection.browserExtension => t.nav_browser_extension,
   };
 
-  Widget? _navigation() {
+  /// 页头主位：与视频库 / 浏览页同一套门头——外壳页面名的标题胶囊（宽窗 M3E，
+  /// [FushiShellInlineTitle]）+ 贴合内容宽的悬浮页签胶囊（2026-10-20 用户截图：
+  /// 整宽轨道页签下面多出一截空底、也没有「浏览器」标题，和其它库页不一致）。
+  Widget? _navigation(BuildContext context) {
     if (_sections.length < 2) return null;
-    return LibrarySectionTabs<WebHubSection>(
+    final Widget tabs = LibrarySectionTabs<WebHubSection>(
       key: const ValueKey<String>('web-hub-sections'),
       tabs: <LibrarySectionTab<WebHubSection>>[
         for (final WebHubSection section in _sections)
@@ -85,15 +91,40 @@ class _WebHubPageState extends State<WebHubPage> {
             label: _label(section),
           ),
       ],
-      selected: _section!,
+      selected: _section,
       onChanged: _select,
       focusIdPrefix: 'web-hub-tab',
+      floating: true,
+    );
+    final String? shellTitle = FushiShellInlineTitle.of(context)
+        ? FushiShellTitleScope.maybeTitleOf(context)
+        : null;
+    if (shellTitle == null || shellTitle.isEmpty) return tabs;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) => Row(
+        children: <Widget>[
+          ConstrainedBox(
+            // 与 FushiFloatingChromeBar 同口径：标题胶囊限到行宽 1/3，超长名省略。
+            constraints: BoxConstraints(
+              maxWidth: constraints.maxWidth.isFinite
+                  ? constraints.maxWidth / 3
+                  : double.infinity,
+            ),
+            child: KeyedSubtree(
+              key: const ValueKey<String>('web-hub-shell-title'),
+              child: FushiPageChromeTitle(title: Text(shellTitle)),
+            ),
+          ),
+          const SizedBox(width: kFushiFloatingChromeGap),
+          Expanded(child: tabs),
+        ],
+      ),
     );
   }
 
   Widget _buildSection(WebHubSection section, Widget? navigation) =>
       switch (section) {
-        WebHubSection.browse => FushiWebBrowserPage(
+        WebHubSection.browse => FushiWebBrowserHomePage(
           key: const ValueKey<String>('web-hub-browse'),
           navigation: navigation,
         ),
@@ -110,18 +141,7 @@ class _WebHubPageState extends State<WebHubPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_section == null) {
-      return Scaffold(
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiPageHeader(title: t.nav_web),
-            Expanded(child: Center(child: Text(t.web_hub_empty))),
-          ],
-        ),
-      );
-    }
-    final Widget? navigation = _navigation();
+    final Widget? navigation = _navigation(context);
     return Stack(
       children: <Widget>[
         for (final WebHubSection section in _sections)

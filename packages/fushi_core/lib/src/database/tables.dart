@@ -1112,6 +1112,26 @@ class MediaCollections extends Table {
   /// **NULL = 没人配过**（消费方走默认选轨），非 NULL 覆盖每集。无损迁移：
   /// nullable 无 default → 旧库既有行全 NULL = 行为与旧版一致。
   TextColumn get subtitleReleaseGroup => text().nullable()();
+
+  /// 合集由谁建 / 归谁管（schema v124，AI 整理库 spec
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md` §5.1）：
+  /// `user`（用户或其它非整理器路径建的，整理器永不改它）/ `rule`（规则归组器）/
+  /// `ai`（AI 整理）/ `folder`（目录自动合集）。**只升不降**：`ai` / `rule` 合集一旦
+  /// 被用户编辑（加减成员、改名、手动排序、合并）就转成 `user`，跨端同步按秩取大
+  /// （[collectionOriginRank]），所以转过的永远转不回来。迁移时存量行一律 `user`、
+  /// `sourceFolderPath` 非空的回填 `folder`——分不清的宁可当用户的。
+  TextColumn get origin => text().withDefault(const Constant('user'))();
+
+  /// 整理分组身份键（schema v124，spec §6）：同一个系列在每台设备上算出同一个键
+  /// （外部 id 键 `anilist:` / `tmdb:` / `vndb:`，否则原语言标题归一化键 `t:`）。
+  /// 整理收敛（`organize_convergence.dart`）按它把各端各自建的同系列合集认成一个。
+  /// NULL = 不是整理器建的、也没从整理合集转来。
+  TextColumn get organizeKey => text().nullable()();
+
+  /// 本合集吸收过的其它分组键（schema v124，spec §8.3）：换行分隔、字典序、去重。
+  /// 只增不删（跨端按并集合并）：合并掉的合集即使被旧对端复活，它的键也仍指向本合集，
+  /// 下一轮收敛照样并回来。空串 = 没吸收过。
+  TextColumn get organizeAliases => text().withDefault(const Constant(''))();
 }
 
 // ── media_collection_items (合集成员引用 = Jellyfin LinkedChildren) ────
@@ -1178,6 +1198,19 @@ class CollectionMemberTombstones extends Table {
 
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
   IntColumn get deletedAt => integer()();
+
+  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键**集合**（schema
+  /// v124，spec §5.2）：主键 + 吸收过的别名，换行分隔（`encodeOrganizeAliases`）。用户删的
+  /// （[organizeMerged] = false）且键不在任何活合集的 [MediaCollections.organizeKey] /
+  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个分组，任何设备上的 AI 都
+  /// 不再建它。自动路径删的合集不记键。成员墓碑行恒 NULL。
+  TextColumn get organizeKey => text().nullable()();
+
+  /// 合集级删除哨兵行：这次删除是整理器把它**并进了别的合集**（true），还是用户删的
+  /// （false，默认）。只看键找不找得到吸收者分不清这两者——吸收者可能还没同步过来；
+  /// 分不清就会把并掉的当成用户拒绝、把成员丢回散条目（schema v124，spec §8.5）。
+  BoolColumn get organizeMerged =>
+      boolean().withDefault(const Constant(false))();
 
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
@@ -3432,6 +3465,24 @@ class SrsLocalState extends Table {
   Set<Column> get primaryKey => {profileUid};
 }
 
+/// v121：本机已冻结批次的留存（不同步、不进备份）。一台设备可以同时用几个同步目录
+/// （云盘、互联 host、本机作 host 时自己的目录），同一个批次要逐字节相同地传到每一个；
+/// 留存到最近同步过的所有目录都确认收到为止（fushi_srs 的 `SrsSyncEngine`）。
+@DataClassName('SrsSentBatchRow')
+class SrsSentBatches extends Table {
+  TextColumn get profileUid => text()();
+  TextColumn get writerId => text()();
+
+  /// 批次号（写入者内从 1 起连续）。
+  IntColumn get batchNo => integer()();
+
+  /// 冻结后的批次文件字节（自校验格式，见 fushi_srs `SrsBatch`）。
+  BlobColumn get bytes => blob()();
+
+  @override
+  Set<Column> get primaryKey => {profileUid, writerId, batchNo};
+}
+
 /// 笔记缓存（本机可重建，不同步）。
 @DataClassName('SrsNoteCacheRow')
 class SrsNotesCache extends Table {
@@ -3486,8 +3537,13 @@ class SrsCardsCache extends Table {
   TextColumn get lastLogId => text().nullable()();
   TextColumn get scheduler => text().withDefault(const Constant('fushi'))();
 
-  /// 新卡出卡顺序（笔记 createdAt, cardId）。
+  /// 新卡出卡顺序的兜底键（笔记 createdAt, cardId）：没有 [newPosition] 的新卡按它排。
   IntColumn get noteCreatedAt => integer().withDefault(const Constant(0))();
+
+  /// v123：新卡在出卡队列里的位置（卡片修改记录 `newPos` 的生效值，「按词频重排新卡」
+  /// 写它）。NULL = 从没排过：有位置的新卡先出（位置升序），没位置的排在后面并保持
+  /// 原有的（笔记 createdAt, cardId）顺序——老数据出卡顺序不变。
+  IntColumn get newPosition => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -3520,4 +3576,92 @@ class VideoSubtitleGlossaries extends Table {
 
   @override
   Set<Column> get primaryKey => <Column>{workKey};
+}
+
+// ── media_privacy_flags（v122：作品级「私密」标记）──────────────────────
+/// 用户手动把一部作品标成私密：不上传排行榜、不推 Bangumi 进度（也不拿它的标题去
+/// Bangumi 搜自动映射）。外部分级（扩展 contentWarning / 刮削 contentRating / 游戏
+/// nsfw）只能模糊封面，本地书 / 本地漫画根本没有分级信号，所以要一个用户自己说了算
+/// 的开关。
+///
+/// 键与 [TagAssignments] 同一套逻辑外键（[mediaKind] = `TagHostKind.dbValue`，
+/// [entryKey]：epub=bookKey / video=bookUid / collection=合集 id 字符串 /
+/// game=Galgames.id），跨端身份换算也复用互联标签同步（标签清单条目上的可选
+/// `privacy` 字段）：只有一台设备是排行榜上传设备，在别的设备上标的私密必须到得了它。
+///
+/// 一行两只时钟（LWW）：[privateAt] = 最近一次设为私密，[clearedAt] = 最近一次取消；
+/// 私密 ⇔ privateAt 非空且（clearedAt 为空或 privateAt > clearedAt），相等取消胜
+/// （与标签墓碑同口径）。取消不删行——删了就分不清「取消过」和「从没标过」，对端
+/// 旧的私密戳会把它复活。宿主删除不级联：同 bookKey 重新导入仍是私密（宁可多藏）。
+@DataClassName('MediaPrivacyFlagRow')
+class MediaPrivacyFlags extends Table {
+  TextColumn get mediaKind => text()();
+  TextColumn get entryKey => text()();
+
+  /// 最近一次设为私密的毫秒戳；NULL = 从没设过。
+  IntColumn get privateAt => integer().nullable()();
+
+  /// 最近一次取消私密的毫秒戳；NULL = 从没取消过。
+  IntColumn get clearedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{mediaKind, entryKey};
+}
+
+// ── library_organize_runs / library_organize_changes（AI 整理记录，schema v124）──
+// spec `docs/specs/2026-10-20-ai-library-organize-design.md` §5.3：本机这一次整理
+// 做了什么，供「整理记录」页与撤销用。**设备本地**：不同步、不进备份——别的设备有
+// 自己的记录，撤销的结果经合集墓碑 / 拒绝键跨端传播。
+@DataClassName('LibraryOrganizeRunRow')
+class LibraryOrganizeRuns extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// `CollectionShelfDomain.name`：books / manga / video / games。
+  TextColumn get domain => text()();
+
+  /// `manual` | `auto`。
+  TextColumn get trigger => text()();
+
+  IntColumn get startedAt => integer()();
+  IntColumn get finishedAt => integer().nullable()();
+
+  /// `running` | `done` | `failed` | `cancelled` | `skipped`。
+  TextColumn get status => text()();
+
+  TextColumn get providerName => text().withDefault(const Constant(''))();
+  TextColumn get model => text().withDefault(const Constant(''))();
+  IntColumn get requestCount => integer().withDefault(const Constant(0))();
+  IntColumn get inputTokens => integer().withDefault(const Constant(0))();
+  IntColumn get outputTokens => integer().withDefault(const Constant(0))();
+
+  /// 失败 / 跳过的脱敏原因码（`AiChatFailure.message` 或本地原因）；成功为 NULL。
+  TextColumn get error => text().nullable()();
+}
+
+@DataClassName('LibraryOrganizeChangeRow')
+class LibraryOrganizeChanges extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  IntColumn get runId => integer()
+      .references(LibraryOrganizeRuns, #id, onDelete: KeyAction.cascade)();
+
+  /// `create` | `add` | `merge` | `evict` | `tag`。
+  TextColumn get kind => text()();
+
+  /// 改动落在哪个合集（自然键；改名 / 合并后按记录时的名字找）。
+  TextColumn get collectionName => text()();
+  TextColumn get collectionType => text()();
+  TextColumn get organizeKey => text().nullable()();
+
+  /// `rule` | `ai`：这一处是规则定的还是 AI 定的。
+  TextColumn get source => text()();
+
+  /// `high` | `medium`（规则恒 high）。
+  TextColumn get confidence => text()();
+
+  /// 撤销所需的全部细节（JSON）：成员清单、被合并合集的快照、标签名等。
+  TextColumn get payloadJson => text()();
+
+  /// 撤销时刻；NULL = 未撤销。
+  IntColumn get undoneAt => integer().nullable()();
 }

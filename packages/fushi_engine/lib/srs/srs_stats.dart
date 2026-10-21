@@ -88,6 +88,7 @@ class SrsStatCard {
     this.addedDay = 0,
     this.label = '',
     this.desiredRetention = 0.8,
+    this.byRecall = false,
   });
 
   final String id;
@@ -124,6 +125,11 @@ class SrsStatCard {
 
   /// 所在牌组的目标保留率。
   final double desiredRetention;
+
+  /// 复习卡按 RWKV-Instant 排队（所在牌组是 RWKV 且 RWKV 可用）：此刻回忆率降到目标时出现，
+  /// 存下的到期日不代表什么时候复习——未来到期 / 逾期 / 负担不计它（[SrsFutureDue.byRecall]），
+  /// [retrievability] 是 RWKV 的。
+  final bool byRecall;
 
   bool get isReview =>
       state == SrsStatCardState.young || state == SrsStatCardState.mature;
@@ -248,7 +254,11 @@ class SrsFutureDue {
     required this.youngPerDay,
     required this.daily,
     required this.dailyLoad,
+    this.byRecall = 0,
   });
+
+  /// 不计在内的复习卡：按 RWKV-Instant 排队（[SrsStatCard.byRecall]），没有有意义的到期日。
+  final int byRecall;
 
   /// 逾期（到期日早于今天）的复习卡数。
   final int overdue;
@@ -563,9 +573,14 @@ class SrsStatsData {
     final List<int> perDay = List<int>.filled(n, 0);
     final List<int> young = List<int>.filled(n, 0);
     int overdue = 0;
+    int byRecall = 0;
     double load = 0;
     for (final SrsStatCard c in cards) {
       if (!c.fushiScheduled || c.suspended) continue;
+      if (c.byRecall && c.isReview) {
+        byRecall++;
+        continue;
+      }
       int? offset;
       bool isYoung = true;
       switch (c.state) {
@@ -596,6 +611,7 @@ class SrsStatsData {
       youngPerDay: young,
       daily: true,
       dailyLoad: load,
+      byRecall: byRecall,
     );
   }
 
@@ -603,7 +619,9 @@ class SrsStatsData {
   int furthestDueOffset() {
     int far = 30;
     for (final SrsStatCard c in cards) {
-      if (!c.fushiScheduled || c.suspended || !c.isReview) continue;
+      if (!c.fushiScheduled || c.suspended || !c.isReview || c.byRecall) {
+        continue;
+      }
       final int off = (c.dueDay ?? today) - today + 1;
       if (off > far) far = off;
     }
@@ -1025,7 +1043,9 @@ srsStatsFromHistory(SrsCardHistory history, SrsDayContext day) {
             rating: rating,
             kind: kind,
             durationMs: math.max(0, l.durationMs),
+            // 按回忆率排的复习（日志 alg = rwkv）不看到期日，无所谓「提前」。
             early:
+                l.algorithm != SrsAlgorithm.rwkv.wire &&
                 l.reviewType == SrsReviewType.review &&
                 prev.queue == SrsQueue.review &&
                 prev.dueDay != null &&

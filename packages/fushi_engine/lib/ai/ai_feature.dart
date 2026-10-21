@@ -28,6 +28,11 @@ enum AiFeature {
   /// Lapis 卡片样式：按自然语言描述生成可视化规则 + 用户区段 CSS（进编辑器草稿）。
   lapisStyle,
 
+  /// 复习卡片模板（`ai_srs_template_assistant.dart`）：按一句话生成 / 修改 Fushi 复习的
+  /// 可视化卡片布局，并给字段写说明。AI 只产出块列表与说明文字（字段只能引用已有字段、
+  /// 种类与样式只能取固定枚举），一律进模板编辑器草稿，用户看过预览、点保存才落库。
+  srsTemplate,
+
   /// 视频刮削身份消解：在线源给出多个候选时由 AI 在候选里选唯一命中，低置信仍进
   /// 「待确认」。
   videoIdentify,
@@ -72,6 +77,15 @@ enum AiFeature {
   /// 已有成员里决定插在哪。AI 只给下标排列，规则排得出的成员相对序由本地钉死；
   /// 自动路径只在用户没手动排过（`orderUpdatedAt == 0`）时落盘，绝不覆盖手动序。
   collectionOrder,
+
+  /// AI 整理库（`ai_library_organize_assistant.dart`，spec
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md`，所有者 2026-10-20 拍板直接
+  /// 改库、可自动运行）：把书架 / 漫画库 / 视频库 / 游戏库里规则认不出的「该在一起」的
+  /// 条目归进合集（新建 / 并入 / 合并 / 移出自己上次放错的）。AI 只给分组建议（局部
+  /// 下标 + 原语言正式名），落盘前本地逐条校验：不跨域、不碰用户的合集（只能往里加）、
+  /// 不复活用户拒绝过的分组、刮削 id 冲突降级；每处改动写进本机整理记录，可撤销。
+  /// 多端各自整理靠分组键收敛（`organize_convergence.dart`），不靠互斥。
+  libraryOrganize,
 
   /// 视频日语字幕 AI 校对（`media/video/subtitle/asr_proofread/`，spec
   /// `2026-10-19-video-asr-llm-subtitle-pipeline`）：作品专名表（S0）、逐批校对

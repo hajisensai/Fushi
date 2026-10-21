@@ -167,7 +167,9 @@ class SrsBackupController {
   /// 自动备份：开着、有变动，且（[leavingReview] 或距最近一份已满间隔）才备份。返回新备份；没备份为 null。
   Future<SrsBackupInfo?> autoBackup({bool leavingReview = false}) =>
       _serial(() async {
-        if (_disposed || !_autoEnabled()) return null;
+        // SRS 界面在用时不做自动备份：读快照的事务会把复习页的查询挡上二三十秒（BUG-3579），
+        // SRS 界面不再被使用时 [onSrsIdle] 再补。
+        if (_disposed || !_autoEnabled() || _reviewing) return null;
         final SrsDbStore? store = await _readStore();
         final SrsBackupStore? backups = await _readBackups();
         if (store == null || backups == null) return null;
@@ -185,7 +187,16 @@ class SrsBackupController {
         )) {
           return null;
         }
-        return _create(store, backups, SrsBackupKind.auto);
+        try {
+          return await _create(
+            store,
+            backups,
+            SrsBackupKind.auto,
+            shouldStop: () => _disposed || _reviewing,
+          );
+        } on SrsBackupCancelled {
+          return null;
+        }
       });
 
   /// 「立即备份」：不看间隔与变动。
@@ -199,13 +210,15 @@ class SrsBackupController {
   Future<SrsBackupInfo> _create(
     SrsDbStore store,
     SrsBackupStore backups,
-    SrsBackupKind kind,
-  ) async {
+    SrsBackupKind kind, {
+    bool Function()? shouldStop,
+  }) async {
     final SrsBackupInfo info = await backups.create(
       store,
       kind: kind,
       profileName: await _profileName(store.profileUid),
       nowMs: _now(),
+      shouldStop: shouldStop,
     );
     await backups.thin(
       limits: _limits(),
@@ -264,8 +277,19 @@ class SrsBackupController {
   int? get pendingTimerDueAtMs =>
       (_timer?.isActive ?? false) ? _timerDueAtMs : null;
 
-  /// 离开复习页：有变动、且距最近一份满 5 分钟就备份（不等 30 分钟的定时间隔）。
-  void onLeftReview() {
+  /// SRS 界面正在用（复习页开着 / SRS 底栏在显示）：不开始自动备份，正在做的自动备份读完
+  /// 当前这一页就停下（手动「立即备份」不受影响）。
+  bool _reviewing = false;
+
+  /// SRS 界面开始被使用。
+  void onSrsInUse() {
+    _reviewing = true;
+  }
+
+  /// SRS 界面不再被使用（离开复习页 / 切走 SRS 底栏）：有变动、且距最近一份满 5 分钟就备份
+  /// （不等 30 分钟的定时间隔）；复习中被叫停的那一份也在这里补上。
+  void onSrsIdle() {
+    _reviewing = false;
     srsRunLogged('SrsBackup.leftReview', () async {
       await autoBackup(leavingReview: true);
     });

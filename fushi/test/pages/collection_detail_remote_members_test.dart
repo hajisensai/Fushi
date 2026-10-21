@@ -65,6 +65,8 @@ void main() {
   }
 
   MediaCollectionRow collectionRow() => MediaCollectionRow(
+        origin: 'user',
+        organizeAliases: '',
         id: collectionId,
         name: 'Show',
         collectionType: 'playlist',

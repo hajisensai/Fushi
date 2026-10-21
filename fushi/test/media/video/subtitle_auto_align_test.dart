@@ -234,8 +234,9 @@ void main() {
       expect(args[mapIdx + 1], '0:a:2');
     });
 
-    // TODO-413 档C：limitSeconds 加 ffmpeg `-t`（输出选项，须在 -i 之后）。
-    test('limitSeconds adds -t after input', () {
+    // TODO-413 档C：limitSeconds 加 ffmpeg `-t`。必须是输入选项（-i 之前）：作输出选项
+    // 会被末尾大帧 asetnsamples 拖过上界，包络比波形时间窗长、整条波形被压缩错位。
+    test('limitSeconds adds -t as an input option', () {
       final List<String> args = buildFfmpegPcmEnvelopeArgs(
         inputPath: '/tmp/v.mkv',
         limitSeconds: 1200,
@@ -243,8 +244,8 @@ void main() {
       final int tIdx = args.indexOf('-t');
       expect(tIdx, greaterThanOrEqualTo(0));
       expect(args[tIdx + 1], '1200');
-      expect(tIdx, greaterThan(args.indexOf('/tmp/v.mkv')),
-          reason: '-t 须在输入之后（裁解码后的音频时长）');
+      expect(tIdx, lessThan(args.indexOf('-i')),
+          reason: '-t 须在 -i 之前（输入端截断，包络帧数 = 上界 / 窗口）');
     });
 
     test('limitSeconds null/non-positive omits -t', () {
@@ -284,9 +285,10 @@ void main() {
 
     // TODO-1244 回归守卫：波形抽取必须带 `-vn` 丢弃视频流。没有 `-map 0:a` 的默认回退路径
     // 下，若视频流也进 `-f null -`，ffmpeg 会用 null 复用器默认视频编码器 wrapped_avframe
-    // 编码它——桌面捆绑的最小 ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→
-    // 空包络→「对轴界面波形完全不显示」。`-vn` 让最小 ffmpeg 也能只抽音频能量。
-    test('always drops video with -vn (no-map default path) — ffmpeg-min safe',
+    // 编码它——旧桌面捆绑的最小 ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→
+    // 空包络→「对轴界面波形完全不显示」。统一 FFmpeg 已有该编码器；`-vn` 保留，
+    // 仍让最小构建的外部 ffmpeg 也能只抽音频能量。
+    test('always drops video with -vn (no-map default path) — minimal-build safe',
         () {
       // 无音轨参数 => 无 -map（默认轨回退路径），这正是最小 ffmpeg 会踩视频编码器的场景。
       final List<String> noMap =

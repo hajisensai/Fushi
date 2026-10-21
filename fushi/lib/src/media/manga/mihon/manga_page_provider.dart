@@ -188,5 +188,10 @@ String mangaImageContentType(Uint8List bytes) {
       String.fromCharCodes(bytes.skip(8).take(4)) == 'WEBP') {
     return 'image/webp';
   }
+  // AVIF（HEIF 容器）不在 Dart 里再嗅一遍：认不出的才问原生内核的头部探测（只解析
+  // 容器盒子、不解 AV1），与导入 / 解码同一个判据。
+  if (probeImageNative(bytes)?.format == FfcImageFormat.avif) {
+    return 'image/avif';
+  }
   return 'application/octet-stream';
 }

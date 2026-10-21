@@ -156,6 +156,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `.dock` / `.y` 分开存：两颗球可以同时在。
   'floating_ball.system_dock',
   'floating_ball.system_y',
+  // bool：Android 应用外悬浮球收起态点球 = 查剪贴板、长按展开，默认 false。
+  'floating_ball.tap_clipboard',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   // bool：悬浮字幕粗体（默认 true）。
@@ -188,6 +190,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_lyric_width',
   // String JSON：Windows 悬浮字幕窗口矩形（物理 px）。
   'floating_lyric_window_rect',
+  // String：Fushi API「允许谁连」（FushiApiAccessMode.wireName），缺省 `lan`。
+  'fushi_api_access_mode',
+  // String：「指定网段」模式的白名单原文（每行一个 IP / CIDR），非凭据。
+  'fushi_api_allowed_networks',
   'gal_card_lookup_independent_size',
   'gal_card_lookup_max_height',
   'gal_card_lookup_max_width',
@@ -251,6 +257,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
+  // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个
+  // 分组在每台设备上自然解除拒绝（设备本地）。
+  'library_organize_allowed_keys',
+  // bool（默认 false）：AI 整理库「导入后自动整理」（设备本地：按量计费的同意只对
+  // 点它的那台设备成立；只在一台设备上开就够，结果靠同步传播）。
+  'library_organize_auto',
+  // int（毫秒，0 = 没开过）：最近一次打开自动整理的时刻。自动整理只看此后新入库的
+  // 条目，打开开关不会把整个库发给 AI（设备本地）。
+  'library_organize_auto_since',
+  // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
+  'library_organize_consented',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',
@@ -463,6 +481,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
   // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
   'srs_review_hide_hard_easy',
+  // String（SrsReviewReplayButton.wire：'off' | 'start' | 'end'，默认 'off'）：复习页
+  // 底部操作行一端放一颗重播音频键（手机刷卡时拇指在屏幕下方，够不到顶栏）。非凭据、跨设备。
+  'srs_review_replay_button',
+  // bool（默认 true）：评分按钮显示下次间隔（小号副标签，误按 / 排程异常一眼可见）。
+  // 非凭据、跨设备。
+  'srs_review_show_intervals',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
   'startup_default_dictionary_tab',
@@ -671,8 +695,10 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'gal_capture_memory::',
   'gal_lookup_surface_v1::',
   'media_source_secret_',
-  // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid）。
-  // 目前只有无头服务端扫描写它（引擎 book_library_prune.dart，BUG-2816）。
+  // 书 / 漫画来源的扫描索引（后缀 = MediaSources.id，JSON：源相对路径 → 书 uid，
+  // 外加「不是本类媒体」的负向表 源相对路径 → 内容指纹）。无头服务端书 / 漫画根扫描
+  // （BUG-2816）与 app 漫画来源扫描（BUG-3574）共用（引擎 book_library_prune.dart）；
+  // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次

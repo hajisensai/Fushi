@@ -259,4 +259,56 @@ void main() {
       );
     });
   });
+
+  group('FlutterTestRunSummary.merge (batched shard)', () {
+    FlutterTestRunSummary run(bool? success, int tests,
+            [List<FlutterTestErrorEvent> errors =
+                const <FlutterTestErrorEvent>[]]) =>
+        FlutterTestRunSummary(
+            errors: errors, success: success, testsCompleted: tests);
+    const FlutterTestErrorEvent boom = FlutterTestErrorEvent(
+      testName: 't',
+      suitePath: 'test/a_test.dart',
+      error: 'boom',
+      stackTrace: '',
+    );
+
+    test('green only when every batch reported success', () {
+      final FlutterTestRunSummary merged =
+          FlutterTestRunSummary.merge(<FlutterTestRunSummary>[
+        run(true, 10),
+        run(true, 5),
+      ]);
+      expect(merged.success, isTrue);
+      expect(merged.testsCompleted, 15);
+      expect(merged.failureReason(), isNull);
+    });
+
+    test('a failed batch fails the shard and keeps its errors', () {
+      final FlutterTestRunSummary merged =
+          FlutterTestRunSummary.merge(<FlutterTestRunSummary>[
+        run(true, 10),
+        run(false, 5, <FlutterTestErrorEvent>[boom]),
+      ]);
+      expect(merged.success, isFalse);
+      expect(merged.errors, <FlutterTestErrorEvent>[boom]);
+    });
+
+    test('a batch that died without a verdict makes the shard verdict-less',
+        () {
+      final FlutterTestRunSummary merged =
+          FlutterTestRunSummary.merge(<FlutterTestRunSummary>[
+        run(false, 10),
+        run(null, 3),
+        run(true, 7),
+      ]);
+      expect(merged.success, isNull);
+      expect(merged.failureReason(), contains('never reported a result'));
+    });
+
+    test('no batches is not a pass', () {
+      expect(FlutterTestRunSummary.merge(<FlutterTestRunSummary>[]).success,
+          isFalse);
+    });
+  });
 }

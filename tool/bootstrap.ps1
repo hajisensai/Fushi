@@ -13,11 +13,14 @@
 #   3) <主 checkout>/tool/bootstrap.local.env（gitignore，本机私有，一次配置长期生效）
 # 三条都没有也照常跑（CI / 直连可用的机器不受影响）。
 #
-# 原生计算内核：native/fushi_compute（Rust）是 app 与 flutter test 的**硬依赖**——Windows /
-# Linux CMake、macOS Runner、Android Gradle 缺库都直接构建失败，没有 Dart 回退。所以这里在
-# pub get 之后按主机平台编一次（Windows: build_windows_dll.ps1，Linux: build_linux_so.sh，
-# macOS: build_macos_dylib.sh），需要 cargo；没有 cargo 就报清楚的错并失败。
-# 显式跳过：-SkipNativeCompute（或设 FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1），之后再手动跑上面的脚本。
+# Rust 原生库：$NativeTestCrates 里的每个 crate（fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv）都是
+# app 与 flutter test 的**硬依赖**——缺库时 CMake / Gradle 构建失败、测试成片报 *Unavailable*，
+# 没有 Dart 回退。所以这里在 pub get 之后按主机平台把每个都备好（Windows: build_windows_dll.ps1，
+# Linux: build_linux_so.sh，macOS: build_macos_dylib.sh）。新 worktree 不必每个都从零 cargo build：
+# 产物旁写一份戳记（native/<crate> 的 git 树哈希 + 产物大小 + mtime），本地戳记对得上就跳过，
+# 否则从兄弟 worktree 拷戳记对得上的产物，都没有才编（这时才需要 cargo）。
+# 逻辑在 tool/native_libs.ps1（可单独跑）。显式跳过：-SkipNativeCompute（或设 FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1），
+# 之后再手动跑 tool/native_libs.ps1。
 [CmdletBinding()]
 param([switch]$SkipNativeCompute)
 
@@ -422,39 +425,13 @@ if ($patchExit -ne 0) {
     throw "ci/apply-patches.sh failed (bash: $gitBash, exit $patchExit)."
 }
 
-# --- 原生计算内核 fushi_compute（硬依赖）---------------------------------------
-# 见文件头注释。缺 cargo 时直接失败而不是跳过：跳过的结果是之后 flutter build / test
-# 在 CMake / Gradle / 加载器里才报错，离原因更远。
-function Invoke-FushiComputeBuild {
-    [OutputType([void])]
-    param([string]$RepoRoot, [string]$GitBash)
-
-    $nativeDir = Join-Path $RepoRoot 'native/fushi_compute'
-    $cargo = Get-Command cargo -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $cargo) {
-        throw @"
-找不到 cargo：native/fushi_compute（Rust 计算内核）是 app 与 flutter test 的硬依赖，必须先编出来。
-  - 安装 Rust：https://rustup.rs （Windows 需 MSVC 工具链：rustup target add x86_64-pc-windows-msvc）
-  - 装好后重跑本脚本；或先用 -SkipNativeCompute（FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1）跳过，
-    之后手动跑 native/fushi_compute/ 下对应平台的 build_* 脚本。
-"@
-    }
-    Write-Host "Building native/fushi_compute (cargo: $($cargo.Source))..." -ForegroundColor Cyan
-    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-        & (Join-Path $nativeDir 'build_windows_dll.ps1')
-        return
-    }
-    $isMac = [Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([Runtime.InteropServices.OSPlatform]::OSX)
-    $script = if ($isMac) { 'build_macos_dylib.sh' } else { 'build_linux_so.sh' }
-    & $GitBash (Join-Path $nativeDir $script)
-    if ($LASTEXITCODE -ne 0) { throw "native/fushi_compute/$script failed (exit $LASTEXITCODE)." }
-}
-
+# --- Rust 原生硬依赖（fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv）------------------
+# 备库逻辑（戳记复用 / 兄弟 worktree 拷贝 / 编译）在 tool/native_libs.ps1，已有 worktree 缺库时也可单独跑它。
 if ($SkipNativeCompute -or $env:FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE) {
-    Write-Warning "已跳过 native/fushi_compute 构建（硬依赖）：flutter build / test 之前必须手动跑 native/fushi_compute/ 下对应平台的 build_* 脚本。"
+    Write-Warning "已跳过 Rust 原生库（硬依赖）：flutter build / test 之前必须跑 tool/native_libs.ps1（或 native/<crate>/ 下对应平台的 build_* 脚本）。"
 }
 else {
-    Invoke-FushiComputeBuild -RepoRoot $root -GitBash $gitBash
+    & (Join-Path $PSScriptRoot 'native_libs.ps1') -GitBash $gitBash
 }
 
 Write-Host "`nBootstrap complete. Build with, e.g.:" -ForegroundColor Green

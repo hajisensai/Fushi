@@ -1,5 +1,8 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:convert' show jsonDecode, utf8;
 import 'dart:ffi';
+import 'dart:io' show Directory;
 import 'dart:isolate';
 import 'dart:typed_data';
 
@@ -8,7 +11,12 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import '../ffi/fushidicts_ffi_bindings.dart';
+import '../language/language.dart'
+    show buildPopupJsonFromLookup, buildResultFromLookup;
+import '../language/transform_description_i18n.dart';
+import '../models/dictionary_search_result.dart';
 import 'background_borrow.dart';
+import 'lookup_scheduler.dart';
 // 变形表资源的读法按宿主分：Flutter app 走 rootBundle（`dart.library.ui` 分支），
 // 纯 Dart 宿主（无头服务端）落到 stub，改用 [FushiDicts.preloadTransformsFrom]
 // 自己读文件。本文件因此零 Flutter，可进 fushi_dictionary_core 子 barrel。
@@ -19,6 +27,9 @@ import 'fushidicts_models.dart';
 export 'fushidicts_models.dart';
 export 'background_borrow.dart'
     show BackgroundBorrowLedger, borrowNativeHandle;
+export 'lookup_scheduler.dart' show LookupJobScheduler;
+
+part 'background_lookup.dart';
 
 // ── conversion helpers ──────────────────────────────────────────────
 
@@ -171,6 +182,12 @@ class FushiDicts {
   }
   static FushidictsFfiBindings? _bindings;
   Pointer<Void>? _handle;
+
+  /// 引擎实例代次：每个新实例一个新号。后台查词 isolate 的原始结果缓存按它整体失效
+  /// ——词典集合的任何变化都换新实例（见 [_applyTyped] / [loadPendingAsync]）。
+  /// 不用句柄地址：旧句柄释放后新句柄可能复用同一地址。
+  final int _serial = ++_serialCounter;
+  static int _serialCounter = 0;
 
   // ── singleton ──────────────────────────────────────────────────
   static FushiDicts? _instance;
@@ -504,7 +521,20 @@ class FushiDicts {
     _instance?.dispose();
     _instance = null;
     _loadedDictCount = 0;
+    // 引擎没了，后台查词 isolate 与它的缓存一起收掉：未开始的请求作废，在飞那一个
+    // 等它回信（借着的句柄回信后才归还）再停。下一次查词按需重新拉起。
+    unawaited(shutdownBackgroundLookup());
   }
+
+  /// 停掉本 isolate 的后台查词 isolate（未开始的请求以「已作废」结束，在飞那一个
+  /// 跑完才停）。下一次 [lookupInBackground] 会重新拉起。
+  static Future<void> shutdownBackgroundLookup() =>
+      _BackgroundLookupClient.shutdown();
+
+  /// 让后台查词 isolate 丢掉原始引擎结果缓存。正常情况下缓存已按引擎实例代次失效，
+  /// 这里给「查词结果缓存整体失效」的调用点（词典元数据变更）一个对称的入口。
+  static void clearBackgroundLookupCache() =>
+      _BackgroundLookupClient._current?.clearCache();
 
   /// 释放**全部**已加载词典的文件映射，把引擎重置成空但可用的实例。
   ///
@@ -543,6 +573,10 @@ class FushiDicts {
   /// （BUG-1756）。删 / 覆盖词典文件用 [withMappingsReleased]，它已经等过了。
   static Future<void> whenBackgroundBorrowsSettled() =>
       _backgroundBorrows.settled();
+
+  /// 此刻登记在账本里、尚未归还的后台借用 / 扫描数。只给测试观测次序用。
+  @visibleForTesting
+  static int get debugBackgroundBorrowsInFlight => _backgroundBorrows.inFlight;
 
   /// 正在进行的 [withMappingsReleased] 作用域数（可嵌套）。大于 0 时待办不结算。
   static int _mappingHolds = 0;
@@ -650,6 +684,63 @@ class FushiDicts {
     }
   }
 
+  /// 给已导入的释义词典补写 `redirect_glossary.flag`（原生 `fushidicts_ensure_redirect_flag`）。
+  ///
+  /// 为什么要补：装载（`add_term_dict`）只读这份标记、不扫描；缺标记的旧词典查询期
+  /// 只能逐条检测纯重定向 glossary。新导入的词典由导入端写好标记，这里只处理存量。
+  /// 标记在**下一次装载**时生效，本函数不重载引擎。
+  ///
+  /// 逐本在后台 isolate 跑（单本整本扫描最多约 1 s，绝不上 UI isolate）。已有有效
+  /// 标记的词典由原生侧直接读标记返回（不重扫）。
+  ///
+  /// 与删 / 覆盖词典串行（Windows 上扫描期间映射着 blobs.bin，删不掉）：
+  /// * 每本扫描都登记进后台借用账本，[withMappingsReleased] / [whenBackgroundBorrowsSettled]
+  ///   会等在跑的那一本结束；
+  /// * 处于 [withMappingsReleased] 作用域内时不再开始新的一本，本轮剩下的标为
+  ///   [FushiRedirectFlagReport.deferred]（下次调用再补）；
+  /// * 开始前目录已不存在（刚被删）的跳过。
+  ///
+  /// 随包原生库没有这个导出时抛 [UnsupportedError]。
+  static Future<FushiRedirectFlagReport> ensureRedirectFlags(
+    List<String> termDictDirs,
+  ) async {
+    if (lookupEnsureRedirectFlag() == null) {
+      throw UnsupportedError(
+          'fushidicts_ensure_redirect_flag is not available in this build');
+    }
+    final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
+    final Map<String, int> results = <String, int>{};
+    final List<String> deferred = <String>[];
+    for (int i = 0; i < termDictDirs.length; i++) {
+      final String dir = termDictDirs[i];
+      if (!await Directory(dir).exists()) continue;
+      // 作用域检查与登记账本之间不能隔 await：withMappingsReleased 先同步 +1 再等
+      // 账本，这里同步看到 0 并立刻登记，它的 settled() 就一定等得到这次扫描。
+      if (_mappingHolds > 0) {
+        deferred.addAll(termDictDirs.sublist(i));
+        break;
+      }
+      results[dir] = await _backgroundBorrows.track(
+        Isolate.run(
+          () => _ensureRedirectFlagIn(libraryPath, dir),
+          debugName: kRedirectFlagIsolateName,
+        ),
+      );
+    }
+    return FushiRedirectFlagReport(results: results, deferred: deferred);
+  }
+
+  static int _ensureRedirectFlagIn(String? libraryPath, String dir) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final EnsureRedirectFlagDart ensure = lookupEnsureRedirectFlag()!;
+    final Pointer<Utf8> p = dir.toNativeUtf8(allocator: calloc);
+    try {
+      return ensure(p);
+    } finally {
+      calloc.free(p);
+    }
+  }
+
   void loadTransforms(String json) {
     final p = json.toNativeUtf8(allocator: calloc);
     try {
@@ -732,10 +823,18 @@ class FushiDicts {
   }
 
   // ── kanji query ─────────────────────────────────────────────────
-  List<FushiKanjiResult> queryKanji(String character) {
+  List<FushiKanjiResult> queryKanji(String character) =>
+      _queryKanjiWith(_bindings!, _handle!, character);
+
+  /// 同步路径（[queryKanji]）与后台查词共用的一次原生汉字查询。
+  static List<FushiKanjiResult> _queryKanjiWith(
+    FushidictsFfiBindings bindings,
+    Pointer<Void> handle,
+    String character,
+  ) {
     final cp = character.toNativeUtf8(allocator: calloc);
     try {
-      final r = _bindings!.queryKanji(_handle!, cp);
+      final r = bindings.queryKanji(handle, cp);
       final rPtr = calloc<FfiKanjiResults>();
       rPtr.ref = r;
       try {
@@ -745,7 +844,7 @@ class FushiDicts {
         }
         return results;
       } finally {
-        _bindings!.freeKanjiResults(rPtr);
+        bindings.freeKanjiResults(rPtr);
         calloc.free(rPtr);
       }
     } finally {
@@ -769,6 +868,28 @@ class FushiDicts {
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
+  }) =>
+      _lookupWith(
+        _bindings!,
+        _handle!,
+        text,
+        maxResults: maxResults,
+        scanLength: scanLength,
+        frequencyDictionary: frequencyDictionary,
+        frequencyOrder: frequencyOrder,
+        primaryReading: primaryReading,
+      );
+
+  /// 同步路径（[lookup]）与后台查词共用的一次原生 lookup（同一份封送与转换）。
+  static List<FushiLookupResult> _lookupWith(
+    FushidictsFfiBindings bindings,
+    Pointer<Void> handle,
+    String text, {
+    int maxResults = defaultMaxResults,
+    int scanLength = defaultScanLength,
+    String? frequencyDictionary,
+    FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
+    String? primaryReading,
   }) {
     final bool useOptions = frequencyDictionary != null ||
         frequencyOrder != FushiLookupFrequencyOrder.auto ||
@@ -778,9 +899,9 @@ class FushiDicts {
     final pr = (primaryReading ?? '').toNativeUtf8(allocator: calloc);
     try {
       final r = useOptions
-          ? _bindings!.lookupWithOptions(_handle!, tp, maxResults, scanLength,
-              fd, frequencyOrder.index, pr)
-          : _bindings!.lookup(_handle!, tp, maxResults, scanLength);
+          ? bindings.lookupWithOptions(handle, tp, maxResults, scanLength, fd,
+              frequencyOrder.index, pr)
+          : bindings.lookup(handle, tp, maxResults, scanLength);
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
@@ -805,7 +926,7 @@ class FushiDicts {
         }
         return results;
       } finally {
-        _bindings!.freeLookupResults(rPtr);
+        bindings.freeLookupResults(rPtr);
         calloc.free(rPtr);
       }
     } finally {
@@ -813,6 +934,32 @@ class FushiDicts {
       calloc.free(fd);
       calloc.free(pr);
     }
+  }
+
+  // ── lookup in the background isolate ────────────────────────────
+
+  /// 在常驻后台 isolate 里跑完整个查词（原生 lookup + 转换 + 结果 / 弹窗 JSON 构建，
+  /// 见 `background_lookup.dart`），UI isolate 只收成品。
+  ///
+  /// 句柄：本 isolate 上同步 retain，借到后台回信（或请求还没发出就被同 lane 的新
+  /// 请求取代）才 release；期间词典重载照常 dispose 本实例（[borrowNativeHandle]）。
+  /// 本实例已 dispose（借不到引用）时返回 null。
+  Future<FushiLookupOutcome?> lookupInBackground(FushiLookupRequest request) {
+    final Pointer<Void>? handle = _handle;
+    if (handle == null) return Future<FushiLookupOutcome?>.value();
+    final FushidictsFfiBindings bindings = _bindings!;
+    final _LookupJob job = _LookupJob(
+      address: handle.address,
+      libraryPath: FushidictsFfiBindings.libraryPathOverride,
+      engineSerial: _serial,
+      request: request,
+    );
+    return borrowNativeHandle<FushiLookupOutcome>(
+      ledger: _backgroundBorrows,
+      retain: () => bindings.retain(handle) == 1,
+      release: () => bindings.release(handle),
+      work: () => _BackgroundLookupClient.instance.submit(job),
+    );
   }
 
   // ── popup JSON (single source of truth — same C++ as JNI) ───────
@@ -1089,6 +1236,29 @@ class FushiDicts {
       h.dispose();
     }
   }
+}
+
+/// [FushiDicts.ensureRedirectFlags] 的后台 isolate debugName。
+const String kRedirectFlagIsolateName = 'fushi-dict-redirect-flag';
+
+/// [FushiDicts.ensureRedirectFlags] 的结果。
+class FushiRedirectFlagReport {
+  const FushiRedirectFlagReport({
+    required this.results,
+    required this.deferred,
+  });
+
+  /// 目录 → 原生返回值（1 含纯重定向 / 0 不含 / -1 读不了）。
+  final Map<String, int> results;
+
+  /// 因进入「映射保持释放」作用域（删 / 覆盖词典）而本轮没做的目录。
+  final List<String> deferred;
+
+  /// 读不了的目录（-1）。
+  List<String> get unreadable => <String>[
+        for (final MapEntry<String, int> e in results.entries)
+          if (e.value < 0) e.key,
+      ];
 }
 
 /// [FushiDicts.scheduleTyped] 排下的待装载词典集合（不可变快照）。

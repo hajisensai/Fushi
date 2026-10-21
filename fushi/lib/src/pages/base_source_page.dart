@@ -458,15 +458,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       trace?.mark('fill', detail: 'warm-reuse=$reuse defer=$deferDisplay');
       // TODO-058 / BUG-480：嵌套冷层继续挂起到 popupRendered；复用热槽也不能裸奔
       // 直显内容区。macOS 上隐藏/屏外热槽的 JS 注入可能没跑到当前结果，直 show 会露出
-      // 白色空 WebView。需要 WebView 渲染的结果先显示带盖板的壳，并在可见后一帧强制
-      // 重推当前结果，收到 popupRendered 后再撤盖板。空结果走 Flutter 占位，不靠 WebView。
+      // 白色空 WebView。P1-C：需要 WebView 渲染的结果一律挂起到首条渲染信号再翻出
+      // （[_revealPopupAfterRender]，含 macOS 补推与超时后带盖板的兜底）；空结果走
+      // Flutter 占位，不靠 WebView。
       final bool needsWebViewRender = _itemNeedsWebViewRender(item);
       final bool revealImmediately = reuse || dictionaryResult.entries.isEmpty;
       if (deferDisplay) {
         _deferredPopupItem = item;
         _deferredGeneration = gen;
       } else if (revealImmediately && needsWebViewRender) {
-        _showPopupWaitingForRender(item, gen);
+        _revealPopupAfterRender(item, gen);
       } else if (revealImmediately) {
         _popup.show(item);
       } else {
@@ -633,11 +634,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       if (selectionRect != null) {
         item.selectionRect = selectionRect;
       }
-      // item 已在栈内（beginTop 时加入，隐藏）。需要 WebView 渲染的结果先带盖板
-      // 翻可见，等当前结果 popupRendered 后再撤盖板，避免 macOS 隐藏热槽漏注入后露白。
+      // item 已在栈内（beginTop 时加入，隐藏）。需要 WebView 渲染的结果挂起到当前
+      // 结果 popupRendered 再翻出（P1-C，外壳第一帧即自适应高度）；macOS 隐藏热槽漏
+      // 注入的兜底见 [_revealPopupAfterRender]。
       LookupPerfTrace.current?.mark('shown');
       if (_itemNeedsWebViewRender(item)) {
-        _showPopupWaitingForRender(item, gen);
+        _revealPopupAfterRender(item, gen);
       } else {
         _popup.show(item);
         // 空结果走 Flutter 占位、不经 WebView，没有 rendered / reveal 两段。
@@ -673,6 +675,58 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return result.entries.isNotEmpty || result.kanjiResults.isNotEmpty;
   }
 
+  /// P1-C（2026-10-20）：需要 WebView 渲染的结果——复用热槽、阅读器 deferDisplay
+  /// 收尾——**先挂起不显示**（[DictionaryPopupController.markPendingReveal]），等这一层
+  /// 当前结果的首条渲染信号（`popupRendered` → [_onPopupLayerRendered]）再翻可见。
+  ///
+  /// 旧路径（[_showPopupWaitingForRender]）一上来就翻可见：热槽复用时
+  /// `autoFitHeight` 已被 `beginTop` 清成 null，外壳先按**最大高度**铺开、盖着加载
+  /// 盖板，渲染信号带回内容高度后再收缩——用户看到的是外壳跳一下。`popupRendered`
+  /// 先同步回调 `onContentMetrics`（写入 autoFitHeight）再回调 `onRendered`，所以挂起
+  /// 到渲染信号再翻出，第一帧就是自适应后的高度。
+  ///
+  /// macOS 漏注入兜底（BUG-480 / BUG-523）保留两层：① 挂起后一帧
+  /// `refreshCurrentResult()` 补推（结果已渲染完则立即翻出，不空等）；② 渲染信号在
+  /// [DictionaryPopupController.kRevealFailsafeTimeout] 内一直不来（隐藏/屏外热槽确实
+  /// 没跑到注入）时，被强制翻可见后**退回旧路径**——带盖板翻可见并在可见后一帧再补推，
+  /// 收到 popupRendered 才撤盖板，绝不露白壳。
+  void _revealPopupAfterRender(DictionaryPopupEntry item, int generation) {
+    _visibleRenderFailsafeTimer?.cancel();
+    _visibleRenderFailsafeTimer = null;
+    _visibleRenderPendingItem = item;
+    _visibleRenderPendingGeneration = generation;
+    _popup.markPendingReveal(
+      item,
+      onForcedReveal: () {
+        if (!mounted ||
+            _visibleRenderPendingItem != item ||
+            _visibleRenderPendingGeneration != generation ||
+            !_popup.entries.contains(item)) {
+          return;
+        }
+        _showPopupWaitingForRender(item, generation);
+      },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _visibleRenderPendingItem != item ||
+          _visibleRenderPendingGeneration != generation ||
+          !_popup.entries.contains(item) ||
+          !item.revealOnRender) {
+        return;
+      }
+      final bool renderPending =
+          item.webViewKey.currentState?.refreshCurrentResult() ?? true;
+      if (!renderPending) {
+        _onPopupLayerRendered(_popup.entries.indexOf(item), item);
+      }
+    });
+    // markPendingReveal 的 notify 已让 [buildDictionary] 排了帧；这里只是不依赖它。
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// 带加载盖板**立即**翻可见，等当前结果 `popupRendered` 再撤盖板（BUG-480 原路径）。
+  /// 现在只作 [_revealPopupAfterRender] 渲染信号超时后的兜底。
   void _showPopupWaitingForRender(
     DictionaryPopupEntry item,
     int generation,
@@ -1081,7 +1135,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           if ((nextHeight - (item.autoFitHeight ?? pos.height)).abs() < 1) {
             return;
           }
-          setState(() => item.autoFitHeight = nextHeight);
+          // P1-D：只 notify controller——[buildDictionary] 的 AnimatedBuilder 本来就
+          // 监听它，局部重建弹窗层。此前整页 setState（每次渲染信号两次：首词条一次、
+          // 尾批一次），阅读器整页跟着重建。
+          _popup.setAutoFitHeight(item, nextHeight);
         },
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
@@ -1174,6 +1231,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               )
             : _mineBlockedByModuleGate,
         onUpdateEntry: cardCreationEnabled ? onUpdateFromPopup : null,
+        // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
+        isSessionOnScreen: () => _popup.isEntryOnScreen(item),
         // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。
         showMiningTargetSwitch: cardCreationEnabled,
         // TODO-948②：阅读器/有声书弹窗收藏按钮接线（视频走 mixin，不经此处）。
@@ -1528,6 +1587,30 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return anchored;
   }
 
+  /// BUG-3604：顶层弹窗锚点在「优先避让的大矩形」与「被点字形」之间二选一（判据见
+  /// [choosePopupAnchorRect]），按本页实际的弹窗尺寸 / 边距 / 预留 / 底部固定参数判断，
+  /// 与 [_calculatePopupPosition] 同口径。[screen] 须是弹窗栈的坐标空间尺寸。
+  @protected
+  Rect choosePopupAnchor({
+    required Rect preferred,
+    required Rect? fallback,
+    required Size screen,
+    bool verticalWriting = false,
+  }) {
+    return choosePopupAnchorRect(
+      preferred: preferred,
+      fallback: fallback,
+      screen: screen,
+      bottomDocked: popupBottomDocked,
+      maxWidth: popupMaxWidth,
+      maxHeight: popupMaxHeight,
+      padding: popupPadding,
+      bottomReserve: popupBottomReserve,
+      topReserve: popupTopReserve,
+      verticalWriting: verticalWriting,
+    );
+  }
+
   bool get dictionaryPopupShown => _hasVisiblePopup(_popup.entries);
 
   /// Test-only snapshot of the popup stack (BUG-092): lets widget tests assert
@@ -1643,6 +1726,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（queued 画 ✓、不回查
     // Anki），下面那个二元组装不下这个状态。
     MinePopupResult? minedNew;
+    // 新增 / 覆写失败时的原结果：失败原因（MinePopupResult.message）只在弹窗里说，
+    // 下面那个二元组装不下它，失败时原样交回。
+    MinePopupResult? failed;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
@@ -1656,16 +1742,19 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           AnkiMiningPayload.withAllowDuplicate(fields),
         );
         minedNew = res;
+        if (!res.accepted) failed = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
         final res = await onUpdateFromPopup(noteId, fields);
+        if (!res.accepted) failed = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
     if (minedNew?.queued ?? false) return minedNew!;
+    if (!r.ankiConnect && failed != null) return failed!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 

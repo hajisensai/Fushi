@@ -215,8 +215,9 @@ void main() {
     // 新契约：制卡在队列之外等冻结窗口到点，第一次回取就是完整窗口。
     expect(
       loopback.backMsCalls.first,
-      fullBackMs,
-      reason: '制卡必须等这句语音的冻结窗口到点，而不是按已等时长拿半句',
+      greaterThanOrEqualTo(fullBackMs),
+      reason: '制卡必须等这句语音的冻结窗口到点，而不是按已等时长拿半句'
+          '（BUG-3575：之后窗口续张，制卡时刻还可能再收束到「现在」，只会更长）',
     );
     expect(
       waited.elapsedMilliseconds,
@@ -230,10 +231,13 @@ void main() {
     );
 
     await waitUntil(
-      () => session.service.entries.single.audioDurationMs == fullBackMs,
+      () => (session.service.entries.single.audioDurationMs ?? 0) >= fullBackMs,
       ticks: 400,
     );
-    expect(session.service.entries.single.audioDurationMs, fullBackMs);
+    expect(
+      session.service.entries.single.audioDurationMs,
+      greaterThanOrEqualTo(fullBackMs),
+    );
 
     await session.controller.close();
     session.endpoints.dispose();
@@ -338,7 +342,7 @@ void main() {
     endpoints.dispose();
   });
 
-  test('BUG-2127 冻结已到点的历史行：制卡不再多等', () async {
+  test('BUG-2127 冻结已到点、仍是当前句：制卡不多等，按「现在」收束续张一次', () async {
     const Duration freezeDelay = Duration(milliseconds: 100);
     final _ProportionalLoopback loopback = _ProportionalLoopback();
     final session = await startVoicedLoopbackSession(
@@ -361,8 +365,11 @@ void main() {
       lessThan(1000),
       reason: '窗口已到点就没有可等的东西，制卡立即入队',
     );
-    // 已冻结的切片直接复用，不需要再回取。
-    expect(loopback.backMsCalls.length, callsBefore);
+    // BUG-3575：暂定冻结之后窗口仍在续张（下一句还没到），制卡按真实已等待时长再收束
+    // 一次——玩家停在这句上念完长句再制卡，拿到的不能是 4s 冻结那份。下一句到达后
+    // 的历史行不再回取，见 gal_audio_degrade_track_test.dart 的长句用例。
+    expect(loopback.backMsCalls.length, callsBefore + 1);
+    expect(loopback.backMsCalls.last, greaterThanOrEqualTo(100 + 1000));
 
     await session.controller.close();
     session.endpoints.dispose();

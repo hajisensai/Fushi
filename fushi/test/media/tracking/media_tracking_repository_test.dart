@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/privacy/media_privacy.dart';
 
 void main() {
   late FushiDatabase db;
@@ -361,6 +362,85 @@ void main() {
 
     expect(await repository.pendingCount(), 1);
     expect((await repository.dueUpdates()).single.outbox.progress, 3);
+  });
+
+  group('私密作品', () {
+    Future<void> mapBook(String key) => repository.saveMapping(
+          mediaType: TrackingMediaType.book,
+          mediaKey: key,
+          mediaTitle: key,
+          kind: TrackingKind.novel,
+          subjectId: 10,
+          subjectName: 'Remote',
+          progressMode: TrackingProgressMode.chapter,
+          progressOffset: 0,
+        );
+
+    test('有映射但书是私密的：enqueueProgress 返回 false，outbox 保持为空', () async {
+      await seedBook('secret', BookFormat.epub);
+      await mapBook('secret');
+      await db.setMediaPrivate(TagHostKind.epub, 'secret', true);
+
+      final bool queued = await repository.enqueueProgress(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'secret',
+        localProgress: 3,
+        completed: false,
+      );
+
+      expect(queued, isFalse);
+      expect(await repository.pendingCount(), 0);
+      expect(await repository.dueUpdates(), isEmpty);
+    });
+
+    test('公开时入队、之后标私密：dueUpdates 不返回且删掉 outbox 行', () async {
+      await seedBook('later', BookFormat.epub);
+      await mapBook('later');
+      expect(
+        await repository.enqueueProgress(
+          mediaType: TrackingMediaType.book,
+          mediaKey: 'later',
+          localProgress: 3,
+          completed: false,
+        ),
+        isTrue,
+      );
+      expect(await repository.pendingCount(), 1);
+
+      await db.setMediaPrivate(TagHostKind.epub, 'later', true);
+
+      expect(await repository.dueUpdates(), isEmpty);
+      expect(await repository.pendingCount(), 0);
+    });
+
+    test('isTrackedMediaPrivate：私密合集里的视频 / 含私密成员的合集级追踪键', () async {
+      final int privateColl = await db.createMediaCollection('秘');
+      await db.addToCollection(privateColl, MediaKind.video, 'inPrivate');
+      await db.setMediaPrivate(
+        TagHostKind.collection,
+        collectionTagEntryKey(privateColl),
+        true,
+      );
+      final int memberColl = await db.createMediaCollection('混');
+      await db.addToCollection(memberColl, MediaKind.video, 'secretEp');
+      await db.addToCollection(memberColl, MediaKind.video, 'openEp');
+      await db.setMediaPrivate(TagHostKind.video, 'secretEp', true);
+      final int openColl = await db.createMediaCollection('公开');
+      await db.addToCollection(openColl, MediaKind.video, 'plain');
+
+      final MediaPrivacySnapshot snapshot = await repository.loadPrivacy();
+      bool check(TrackingMediaType t, String key) =>
+          isTrackedMediaPrivate(snapshot, t.value, key);
+
+      expect(check(TrackingMediaType.video, 'inPrivate'), isTrue);
+      expect(check(TrackingMediaType.video, 'secretEp'), isTrue);
+      expect(check(TrackingMediaType.video, 'openEp'), isFalse);
+      expect(check(TrackingMediaType.videoCollection, '$privateColl'), isTrue);
+      expect(check(TrackingMediaType.videoCollection, '$memberColl'), isTrue,
+          reason: '合集里任一集私密，合集级追踪键也私密');
+      expect(check(TrackingMediaType.videoCollection, '$openColl'), isFalse);
+      expect(check(TrackingMediaType.video, 'plain'), isFalse);
+    });
   });
 
   group('游戏收藏状态', () {

@@ -51,6 +51,8 @@ npx wrangler secret put ADMIN_PASS
 npx wrangler secret put EMAIL_PEPPER               # 随机长串（如 openssl rand -hex 32）；设了就别换，换了所有邮箱都对不上
 npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put FEEDBACK_CI_TOKEN          # 可选：CI 回填反馈修复 / 发布（随机长串；同一值存进 GitHub secret FEEDBACK_CI_TOKEN）
+npx wrangler secret put CF_ANALYTICS_TOKEN         # 可选：处理台 /dev/project 的官网访问量（API token，Zone · Analytics · Read，限 zone fushi.moe）
+npx wrangler secret put GITHUB_TOKEN               # 可选：/dev/project 走认证配额；token 有仓库 push 权限时另显示 GitHub 访问 / clone
 # 在 wrangler.toml 改 EMAIL_FROM 为 Resend 上已验证的发件地址；打开 routes 并填域名（建议 rank.fushi.moe）
 npx wrangler deploy
 ```
@@ -73,13 +75,15 @@ R2 `fushi-leaderboard-media`；D1 迁移已应用到 `0010_feedback_push_tokens.
 Workers Paid 账户用 Cloudflare Email Service（在 `wrangler.toml` 加 `[[send_email]] name = "EMAIL"`，并在
 dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wrangler secret put RESEND_API_KEY`）。
 
-> ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署勾上 `apply_migrations`，或本机先跑上面的 `d1 migrations apply --remote`）。
+> ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署每次都会自动先迁移再部署；本机部署则先跑上面的 `d1 migrations apply --remote`）。
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
-> `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 勾 `apply_migrations`）。
+> `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 部署自动先迁移）。
 > `0013_install_verified.sql`（`installs.verified` / `install_days.verified` / `feedback.install_verified`，安装证明）：没迁移就部署时心跳、反馈提交、`/dev/stats` 与反馈详情都会 500——**同样碰了反馈提交，务必先迁移**。只加带默认值的列，旧 Worker 在线时先迁移不受影响。
+> `0017_install_dimensions.sql`（`installs` / `install_days` 各加可空列 `country` / `locale` / `arch` / `os_version` / `source`）：没迁移就部署时心跳与 `/dev/stats` 会 500（反馈提交不受影响）——**先迁移**。纯增量，旧 Worker 在线时先迁移不受影响；迁移前的历史记录这些列为 NULL，统计页显示「未记录 / 未上报」。
+> `0018_project_stats.sql`（新表 `repo_daily` / `site_daily` / `project_meta`，处理台 `/dev/project`）：没迁移就部署时定时任务的最后一步与 `/dev/project` 会 500（其余接口不受影响）——**先迁移**。纯新表。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
@@ -100,14 +104,15 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 `.github/workflows/leaderboard-worker-deploy.yml`，**只能手动触发**（Actions → leaderboard-worker-deploy →
 Run workflow），push / PR 永远不会部署。维护者不需要在自己机器上 `wrangler login`。
 
-- 输入：`ref`（要部署的分支 / tag / 提交，默认 `develop`）、`apply_migrations`（默认关；打开后先执行
-  `d1 migrations apply fushi-leaderboard --remote`，新增迁移的版本要勾上）。
-- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 打印 `wrangler whoami` 与将要部署的
-  提交号 →（可选）D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
+- 输入：`ref`（要部署的分支 / tag / 提交，默认 `develop`）。没有迁移开关：每次部署都先执行
+  `d1 migrations apply fushi-leaderboard --remote`（幂等，无待执行迁移时为空操作；迁移失败则不部署）。
+  原先的 `apply_migrations` 开关默认关，漏勾就是「先部署、后迁移」，心跳等接口 500（#2433），已移除。
+- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 校验 Cloudflare token（只打状态，不用会泄露账户邮箱的 `wrangler whoami`）并打印将要部署的
+  提交号 → D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
   `GET https://rank.fushi.moe/v1/health` 必须 200。用的是 `package-lock.json` 锁定的 wrangler，不走 `npx`。
 - 凭据：优先读 secret `CLOUDFLARE_WORKERS_API_TOKEN`，没配就回退到 `CLOUDFLARE_API_TOKEN`（原本给
   `mirror-releases.yml` 的 R2 镜像用）；账户 ID 读 `CLOUDFLARE_ACCOUNT_ID`。token 至少要有
-  「Account → Workers Scripts: Edit」，勾 `apply_migrations` 还要「Account → D1: Edit」；若 deploy 报
+  「Account → Workers Scripts: Edit」与「Account → D1: Edit」（每次都迁移）；若 deploy 报
   自定义域名 / route 相关的权限错误，再加限定 `fushi.moe` 的「Zone → Workers Routes: Edit」。
   现有 token 只有 R2 权限时，二选一：在 Cloudflare 后台给它加上述权限，或另建一个 token 存成
   `CLOUDFLARE_WORKERS_API_TOKEN`（推荐，R2 镜像与 Worker 部署权限分开）。
@@ -149,7 +154,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/reports` `{targetKind, targetId, reason}` | 签名·写 | 举报账户 / 作品（理由 ≤ 500 字符、目标须存在）→ 201 `{id}`；同一目标未处理举报去重 |
 | GET | `/img/<key>` | — | R2 出图 |
 | GET | `/u/:id`、`/w/:id`、`/rank?metric&window` | — | 只读 HTML 落地页（分享链接；匿名渲染、无脚本、边缘缓存） |
-| POST | `/v1/ping` `{installId, version, platform, channel}` | 可选安装证明 | 安装统计心跳 → 204。`installId` 小写 UUID v4 形状，`platform` ∈ android / windows / macos / linux（iOS 不发），`channel` ∈ stable / beta / debug；`AUTH_LIMITER` 限流，日预算 `ping`；服务端不存 IP。新客户端的 `installId` 由系统机器标识经 HMAC 派生成 P-256 钥匙、再取公钥指纹（重装不变，原始机器标识不上传），并带 `X-Fushi-Install-Key / -Time / -Sig / -Pow` 安装证明：id == 公钥指纹、签名覆盖方法 + 路径 + 时刻 + 请求体哈希（±5 分钟，签名串防重放）、工作量证明 18 位前导 0，都过了记已验证，带了但不对 401（`install_id_mismatch` / `bad_install_signature` / `stale_install_time` / `install_replayed` / `install_pow_required` / `bad_install_proof`）；不带证明（旧客户端）照收、记未验证。开发者处理台 `/dev/stats` 看日活 / 周活 / 月活与分布（只数已验证，未验证另列）。细节见 `src/installs.js` 文件头 |
+| POST | `/v1/ping` `{installId, version, platform, channel, locale?, arch?, osVersion?, source?}` | 可选安装证明 | 安装统计心跳 → 204。`installId` 小写 UUID v4 形状，`platform` ∈ android / windows / macos / linux（iOS 不发），`channel` ∈ stable / beta / debug；`AUTH_LIMITER` 限流，日预算 `ping`；服务端不存 IP。新客户端的 `installId` 由系统机器标识经 HMAC 派生成 P-256 钥匙、再取公钥指纹（重装不变，原始机器标识不上传），并带 `X-Fushi-Install-Key / -Time / -Sig / -Pow` 安装证明：id == 公钥指纹、签名覆盖方法 + 路径 + 时刻 + 请求体哈希（±5 分钟，签名串防重放）、工作量证明 18 位前导 0，都过了记已验证，带了但不对 401（`install_id_mismatch` / `bad_install_signature` / `stale_install_time` / `install_replayed` / `install_pow_required` / `bad_install_proof`）；不带证明（旧客户端）照收、记未验证。可选维度：`locale` App 界面语言（BCP 47）、`arch` 宿主 CPU 架构、`osVersion` 系统大版本、`source` 安装来源类别，只校验形状不校验取值表（形状不对 400 `bad_locale` / `bad_arch` / `bad_os_version` / `bad_source`）；国家 / 地区取 Cloudflare 的 `request.cf.country`（只存两位码，不存 IP / 城市 / ASN）。开发者处理台 `/dev/stats` 看日活 / 周活 / 月活、分国家日活趋势、留存（次日 / 第 7–13 天 / 第 30–59 天）、版本升级进度，以及平台 / 通道 / 版本 / 国家地区 / 界面语言 / 架构 / 系统版本 / 安装来源分布（只数已验证，未验证另列）。细节见 `src/installs.js` 文件头 |
 | POST | `/v1/feedback` `{category, title, body, contact?, meta?, installId?}` | 可选签名 | 提交反馈 → 201 `{id, ticket}`（`installId` 同心跳，不合法当没带，处理台据此显示该安装的版本轨迹；可带同一套安装证明头，验过标「已验证」，带了但不对 401）（ticket 只返回这一次；带签名 = 关联账户）。每 IP 每小时 10 条，日预算 `feedback`；同来源同内容 1 小时内 409 `duplicate_feedback`；伪装字符剥掉、注入 / 链接 / 跨来源重复只打标记（`flags`，仅开发者可见） |
 | PUT | `/v1/feedback/:id/attachments/:slot` | `X-Fushi-Ticket` | 补传附件：`s0`..`s2` 截图（PNG/JPEG/WebP ≤ 1.5 MiB）、`log`（gzip ≤ 2 MiB）、`v0` 视频（mp4 / mov / webm ≤ 50MB，必须带 `Content-Length`，缺 411、超限 413、类型不对 415 `unsupported_video_type` / `not_a_video`、实际长度不符 400 `bad_length`；流式写 R2）；提交后 24 小时内、每槽一次（重复 409 `slot_taken`）。只认 ticket（签名覆盖不了流式请求体） |
 | POST | `/v1/feedback/status` `{items:[{id, ticket}] ≤ 50}` | — | 批量查进度（ticket 不对的条目不返回） |
@@ -167,7 +172,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/ci/feedback/fixed` `{sha, ids ≤ 50, scope: app\|none}` | Bearer `FEEDBACK_CI_TOKEN` | CI 标记修复 commit → `{updated, unchanged, missing}`（open / 处理中 → 已解决并记时间线；换了 sha 或 scope 会清空已发布记录，sha 与 scope 都没变的幂等跳过、进 `unchanged`）。没配 secret 时 `/v1/ci/**` 一律 404。手动兜底：`node scripts/feedback.mjs fixed <id> --sha <commit> [--no-app]` |
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
-| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin） |
+| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；无脚本、POST 验 Origin）：`/dev` 反馈、`/dev/stats` 安装统计、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头） |
 
 「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
 不存在 / 不是你的 / 匿名提交的 / 什么都没带一律 404（不区分）；匿名提交的反馈只能凭 ticket。
@@ -293,7 +298,7 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
 - 客户端比对的阈值标定（`packages/fushi_engine/test/leaderboard/cover_compare_test.dart`，样本含审查给的伪造图）：
   同图各种重编码 / 缩放 / 调色 / 小裁切 NCC ≥ 0.991、细节 NCC ≥ 0.862；老实伪造 NCC 最高 0.930、细节 ≤ 0.221；
   夹断藏质量的伪造 Dart 解码器直接解不开（按不符处理）。阈值取 NCC ≥ 0.95 且细节 ≥ 0.70。
-- 上线顺序：先 `apply_migrations`（0014）再部署 Worker，再发新客户端。新客户端遇到旧 Worker（响应里没有 `confirmed`）
+- 上线顺序：先迁移（0014，Actions 部署自动先做）再部署 Worker，再发新客户端。新客户端遇到旧 Worker（响应里没有 `confirmed`）
   会退化为旧的按哈希投票，每轮同步只为补确认试一次。
 - 处理台：`GET /admin/api/works/:id/covers` 列出候选的票数、确认票、不符数与状态（`current` / `eligible` /
   `cooldown`（带 `eligibleAt`）/ `needs_votes` / `first`）。

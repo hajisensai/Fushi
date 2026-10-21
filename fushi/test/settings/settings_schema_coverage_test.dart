@@ -22,12 +22,15 @@ import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi_web_core/fushi_web_core.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../../integration_test/helpers/effect_probes.dart';
 import '../../integration_test/helpers/focus_driver.dart';
@@ -822,6 +825,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
+  // 「上传漫画文件」（书籍和漫画分开，2026-10-21）：按格式分流的上传 / 不上传、旧名
+  // `.epub` 漫画包去重都在这条专项测试里咬住。
+  'syncBackup/Upload manga files':
+      'test/sync/cloud_manga_content_sync_test.dart',
   'syncBackup/Sync dictionaries': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync audiobook files': 'test/sync/sync_orchestrator_test.dart',
   'syncBackup/Sync local audio': 'test/sync/sync_orchestrator_test.dart',
@@ -1147,7 +1154,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
-  'lookup/Fushi API server':
+  // 「允许连接」三态：偏好 → AppModel.fushiApiAccessPolicy（seed 测试）→ 服务端监听地址与
+  // 逐请求放行判定（access 测试用本机局域网地址真连，非本机无密钥 403 / 白名单外 403 /
+  // 仅本机连 TCP 都建不起来）。harness 里不起真实非回环连接，观测不到。
+  'localServices/Allow connections from':
+      'test/sync/fushi_api_server_access_test.dart + test/models/fushi_api_key_seed_on_enable_test.dart',
+  'localServices/Fushi API server':
       'INTEGRATION: yomitan-api server lifecycle (test/sync/fushi_api_server_manager_test.dart)',
   'lookup/Texthooker (receive text)':
       'INTEGRATION: texthooker WS client lifecycle (test/sync/texthooker_ws_client_manager_test.dart)',
@@ -1344,6 +1356,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 云侧开关是两套；不能复用云侧的 orchestrator 证据（那条只咬云通道）。
   'interconnect/Upload book files':
       'test/sync/interconnect_upload_toggles_test.dart',
+  // 互联「上传漫画文件」：键路由与继承在 toggles 测试，live 上传按格式过滤在
+  // sync_orchestrator_live_book_test。
+  'interconnect/Upload manga files':
+      'test/sync/interconnect_upload_toggles_test.dart',
   'interconnect/Upload dictionaries':
       'test/sync/interconnect_upload_toggles_test.dart',
   'interconnect/Upload audiobook files':
@@ -1417,6 +1433,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/ai_video_download_settings_test.dart + '
       'test/media/video/download/video_download_pipeline_service_test.dart + '
       'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
+  // 导入后自动 AI 整理：生效点是自动路径每轮现读开关 / 同意 / 打开时刻（harness 里
+  // 没有导入与 AI 提供商），由专项测试咬住（关着不发请求、同意撤回不发、只看打开之后
+  // 新入库的）。
+  'ai/Organize with AI after import':
+      'test/media/collections/library_organize_runner_test.dart',
   // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
   // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
   // 测试咬住「只请求传入的站点」。
@@ -1490,6 +1511,18 @@ void main() {
       // debugSettingsForceExpandAllSections）。
       debugSettingsForceExpandAllSections = true;
       addTearDown(() => debugSettingsForceExpandAllSections = false);
+      // 「接收文本（texthooker）」切 ON 会让 TexthookerWsClientManager 连出去：换成永远
+      // 连不上的替身，不碰 testWidgets 的假 HttpClient（原因见 channelFactory 注释），
+      // 收尾停掉客户端——app 级单例不停就一直活到进程结束。
+      final TexthookerWsClientManager texthooker =
+          TexthookerWsClientManager.instance;
+      final WsChannelFactory previousTexthookerFactory =
+          texthooker.channelFactory;
+      texthooker.channelFactory = (String url) => _PendingWsChannel();
+      addTearDown(() async {
+        await texthooker.stop();
+        texthooker.channelFactory = previousTexthookerFactory;
+      });
       // cardCreation 详情页现在内联渲染 AnkiSettingsBody（扁平化后不再藏在子路由
       // 后），它经 ankiViewModelProvider → BaseAnkiRepository 调
       // SharedPreferences.getInstance()；host 无插件实现会抛 MissingPluginException。
@@ -2123,6 +2156,15 @@ List<String> _mapDiff(Map<String, String> before, Map<String, String> after) {
 }
 
 enum _RowKind { switchRow, slider, stepper, segmented, picker }
+
+/// 永远停在「连接中」的 WS 通道：`ready` 不完成，客户端既不监听 stream，也不排重连 timer。
+class _PendingWsChannel implements WebSocketChannel {
+  @override
+  Future<void> get ready => Completer<void>().future;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
 
 class _FocusedRow {
   const _FocusedRow({

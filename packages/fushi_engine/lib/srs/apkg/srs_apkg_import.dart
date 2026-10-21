@@ -8,8 +8,10 @@
 /// Anki 端在导出之后新增的 revlog 照常按来源规则导入。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -18,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
@@ -28,6 +31,15 @@ export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show SrsImportException, SrsZstdDecoder;
 export 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 export 'package:fushi_engine/srs/apkg/srs_import_report.dart';
+
+/// 导入被调用方叫停（`shouldStop` 在两批之间返回 true）。已落库的批保留：每批只含完整的
+/// 笔记（一条笔记的事件不会跨批），且导入幂等，重新导入同一份来源会补齐剩下的。
+class SrsImportStopped implements Exception {
+  const SrsImportStopped();
+
+  @override
+  String toString() => 'SrsImportStopped';
+}
 
 /// 媒体落盘回调：返回存储后的文件名（例如按内容哈希改名），字段里的引用按它改写。
 typedef SrsImportMediaSink =
@@ -47,14 +59,70 @@ Future<SrsImportReport> importAnkiPackage({
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
 }) async {
-  final SrsAnkiPackage pkg = SrsAnkiPackage.open(
-    bytes,
-    zstd: zstdDecompress ?? FfiFsrsEngine.zstdDecompress,
+  // 解 zip、解 zstd、解出集合 SQLite 是纯 CPU 活（几十 MB 的包要几百毫秒到数秒）：放后台
+  // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3549）。
+  final SrsZstdDecoder zstd = zstdDecompress ?? _defaultZstd;
+  final SrsAnkiPackage pkg = await Isolate.run(
+    () => SrsAnkiPackage.open(bytes, zstd: zstd),
+    debugName: 'srs-apkg-open',
   );
   final SrsAnkiCollection col = await SrsAnkiCollection.open(
     pkg.collectionBytes,
   );
+  return _importOpened(
+    store: store,
+    pkg: pkg,
+    col: col,
+    storeMedia: storeMedia,
+    options: options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
+}
+
+/// 导入本机 Anki 用户数据目录里的集合（[snapshot] = 集合文件的只读快照 + 原位媒体目录，
+/// 见 [snapshotAnkiCollection]）。与 [importAnkiPackage] 走同一条导入路径、同一套 ID 派生：
+/// 先迁移一次、之后又导入同一份集合导出的 .colpkg 不会出重复。
+///
+/// 用户的 Anki 数据只读：集合读的是快照，媒体只按字段引用逐个读。
+Future<SrsImportReport> importAnkiCollectionSnapshot({
+  required SrsDbStore store,
+  required AnkiCollectionSnapshot snapshot,
+  required SrsImportMediaSink storeMedia,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
+  void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
+  final AnkiMediaFolder media = AnkiMediaFolder(snapshot.mediaDir);
+  final SrsAnkiPackage pkg = SrsAnkiPackage.fromCollectionFolder(
+    mediaIndex: await media.index(),
+    loadEntry: media.read,
+  );
+  final SrsAnkiCollection col = await SrsAnkiCollection.openFile(
+    snapshot.collection,
+  );
+  return _importOpened(
+    store: store,
+    pkg: pkg,
+    col: col,
+    storeMedia: storeMedia,
+    options: options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
+}
+
+Future<SrsImportReport> _importOpened({
+  required SrsDbStore store,
+  required SrsAnkiPackage pkg,
+  required SrsAnkiCollection col,
+  required SrsImportMediaSink storeMedia,
+  required SrsAnkiImportOptions options,
+  required void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
   try {
     final _Importer imp = _Importer(
       store: store,
@@ -63,12 +131,16 @@ Future<SrsImportReport> importAnkiPackage({
       storeMedia: storeMedia,
       options: options,
       onProgress: onProgress,
+      shouldStop: shouldStop,
     );
-    return await imp.run();
+    return await store.bulkWrites(imp.run);
   } finally {
     await col.close();
   }
 }
+
+/// 缺省 zstd 解码（排程内核）。顶层函数：可随闭包送进后台 isolate。
+Uint8List? _defaultZstd(Uint8List data) => FfiFsrsEngine.zstdDecompress(data);
 
 /// 同 [importAnkiPackage]，从文件读。
 Future<SrsImportReport> importAnkiPackageFile({
@@ -78,6 +150,7 @@ Future<SrsImportReport> importAnkiPackageFile({
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   void Function(double progress)? onProgress,
   SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
 }) async => importAnkiPackage(
   store: store,
   bytes: await file.readAsBytes(),
@@ -85,6 +158,7 @@ Future<SrsImportReport> importAnkiPackageFile({
   options: options,
   onProgress: onProgress,
   zstdDecompress: zstdDecompress,
+  shouldStop: shouldStop,
 );
 
 /// 一个来源笔记类型映射到本机的结果。
@@ -116,6 +190,7 @@ class _SrcCard {
       did = r['did'] as int,
       odid = r['odid'] as int,
       ord = r['ord'] as int,
+      mod = (r['mod'] as int?) ?? 0,
       type = r['type'] as int,
       queue = r['queue'] as int,
       due = r['due'] as int,
@@ -130,6 +205,9 @@ class _SrcCard {
   final int did;
   final int odid;
   final int ord;
+
+  /// Anki 卡片修改时刻（秒）。
+  final int mod;
   final int type;
   final int queue;
   final int due;
@@ -182,6 +260,7 @@ class _Importer {
     required this.storeMedia,
     required this.options,
     required this.onProgress,
+    this.shouldStop,
   }) : srcDay = SrsDayContext(
          utcOffsetMin: col.utcOffsetMin,
          rolloverHour: col.rolloverHour,
@@ -194,6 +273,17 @@ class _Importer {
   final SrsAnkiImportOptions options;
   final void Function(double progress)? onProgress;
 
+  /// 调用方叫停（后台导入任务被取消）：两批之间检查，见 [_stopIfAsked]。
+  final bool Function()? shouldStop;
+
+  /// 叫停了就把已攒的（都是完整的笔记）落库、补上前身链接，再抛 [SrsImportStopped]。
+  Future<void> _stopIfAsked() async {
+    if (!(shouldStop?.call() ?? false)) return;
+    await _flush(force: true);
+    if (_historyLinks.isNotEmpty) await store.writeEdits(_historyLinks);
+    throw const SrsImportStopped();
+  }
+
   /// 来源集合的「今天」口径（日志里的 utcOffset / 翻日也取它，保证多台设备导出同一份内容）。
   final SrsDayContext srcDay;
   late final int crtDay;
@@ -202,8 +292,29 @@ class _Importer {
   final Map<int, _NtMap> _nts = <int, _NtMap>{};
   final Map<int, String> _deckOf = <int, String>{};
   final Map<String, String> _mediaRenames = <String, String>{};
-  final Set<String> _mediaDone = <String>{};
-  final List<SrsEvent> _pending = <SrsEvent>[];
+
+  /// 每个媒体条目只存一次：并发请求同一个名字共用同一个 future（预存与逐条导入可能
+  /// 同时要它；以前「先记已处理、再 await 存」会让并发的第二个请求拿到还没算出的名字）。
+  final Map<String, Future<String>> _mediaJobs = <String, Future<String>>{};
+
+  /// 预存媒体的并发度（见 [_prefetchMedia]）。
+  static const int _mediaConcurrency = 16;
+
+  /// 进度条分段：扫描引用 0 → [_scanShare]，预存媒体 → [_mediaShare]，其余归笔记导入。
+  /// 实测扫描约占 6%、媒体与笔记大致对半；没有要预存的媒体时媒体段长度为 0。
+  static const double _scanShare = 0.05;
+  double _mediaShare = 0;
+
+  /// [_prefetchMedia] 扫出的「有字段带共享样式或媒体引用」的笔记（Anki 笔记 id）；null =
+  /// 没扫过。不在其中的笔记逐条导入时字段原样用、不再扫一遍（含引用的字段只占约一成，
+  /// 而字段全文上亿字符，重扫一遍要好几秒）。
+  Set<int>? _notesWithRefs;
+
+  /// 扫描时连续占用 UI isolate 的上限（毫秒），到了就让出一次事件循环。
+  static const int _scanSliceMs = 8;
+
+  /// 本批攒下的事件草稿：修改记录的序号在落库时（[SrsDbStore.importDrafts]）才分配。
+  final List<SrsEventDraft> _pending = <SrsEventDraft>[];
 
   // fushi-ext
   bool _extSameProfile = false;
@@ -216,6 +327,9 @@ class _Importer {
 
   /// 同 profile 回导时补的「前身」链接（日志原样保留在前身卡上）。
   final List<SrsEditSpec> _historyLinks = <SrsEditSpec>[];
+
+  /// 带 FSRS 参数、导入后改用 RWKV 的来源预设 id → 原算法（报告的「继续用 FSRS」用）。
+  final Map<int, SrsAlgorithm> _fsrsOfPreset = <int, SrsAlgorithm>{};
   final Map<String, Map<String, Object?>> _extDecks =
       <String, Map<String, Object?>>{};
   final Map<String, Object?> _extNotes = <String, Object?>{};
@@ -237,7 +351,6 @@ class _Importer {
     );
     crtDay = srsDateToDay(crtDate.year, crtDate.month, crtDate.day);
     _readExt();
-
     for (final String name in pkg.mediaIndex.keys) {
       if (name.startsWith('_')) await _media(name);
     }
@@ -245,6 +358,8 @@ class _Importer {
       _nts[nt.id] = await _mapNoteType(nt);
     }
     await _mapDecks();
+    await _stopIfAsked();
+    await _prefetchMedia();
     await _importNotes();
     if (!options.withScheduling) {
       report.reviewLogsSkipped =
@@ -302,10 +417,97 @@ class _Importer {
 
   // ------------------------------------------------------------------ 媒体
 
-  Future<String> _media(String name) async {
-    if (_mediaDone.contains(name)) return _mediaRenames[name] ?? name;
-    _mediaDone.add(name);
-    final Uint8List? bytes = pkg.mediaBytes(name);
+  Future<String> _media(String name) => _mediaJobs[name] ??= _storeMedia(name);
+
+  /// 导入笔记前把笔记字段引用的媒体并发存好，逐条导入时 [_media] 直接命中。
+  ///
+  /// 以前每条笔记逐个 await 自己的媒体，4 万个媒体文件一个接一个读、写；并发
+  /// [_mediaConcurrency] 路后文件读写在 IO 线程池里重叠（实测从 Anki 迁移 1.5 万笔记 /
+  /// 4 万媒体：媒体阶段约 140 秒 → 约 30 秒，连同媒体存储不再逐文件 fsync，见
+  /// SrsMediaStore.store）。只是提前做、不改变存哪些：与 [_importNote] 同一批笔记（跳过
+  /// 笔记类型缺失 / 冲突的）、同一批字段、同一个引用判据；字段里带共享样式引用的留给
+  /// 逐条导入（样式展开后引用会变），漏掉的也照旧在逐条导入时补存。
+  Future<void> _prefetchMedia() async {
+    final List<String> names = <String>[];
+    final Set<String> seen = <String>{};
+    final Set<int> withRefs = <int>{};
+    // 导入跑在 UI isolate：逐行读，连续算满 [_scanSliceMs] 就让出一次事件循环（字段全文
+    // 上亿字符，一口气扫完要好几秒，期间界面不出帧）。
+    final PreparedStatement notes = col.db.prepare(
+      'SELECT id, mid, flds FROM notes',
+    );
+    final int total = max(
+      1,
+      col.db.select('SELECT count(*) AS n FROM notes').first['n'] as int,
+    );
+    final Stopwatch slice = Stopwatch()..start();
+    int scanned = 0;
+    try {
+      final IteratingCursor cur = notes.selectCursor();
+      while (cur.moveNext()) {
+        scanned++;
+        if (slice.elapsedMilliseconds >= _scanSliceMs) {
+          onProgress?.call(_scanShare * scanned / total);
+          await Future<void>.delayed(Duration.zero);
+          slice.reset();
+        }
+        final Row n = cur.current;
+        final _NtMap? nt = _nts[n['mid'] as int];
+        if (nt == null || nt.conflict != null) continue;
+        final List<String> raw = (n['flds'] as String).split('\x1f');
+        for (int i = 0; i < nt.fieldIds.length && i < raw.length; i++) {
+          final String html = raw[i];
+          if (srsStyleRefsIn(html).isNotEmpty) {
+            withRefs.add(n['id'] as int);
+            continue;
+          }
+          final Set<String> refs = srsMediaRefsIn(html);
+          if (refs.isEmpty) continue;
+          withRefs.add(n['id'] as int);
+          for (final String r in refs) {
+            if (pkg.mediaIndex.containsKey(r) && seen.add(r)) names.add(r);
+          }
+        }
+      }
+    } finally {
+      notes.close();
+    }
+    _notesWithRefs = withRefs;
+    _mediaShare = _scanShare;
+    if (names.isEmpty) return;
+    _mediaShare = 0.5;
+    int next = 0;
+    int done = 0;
+    // 一路叫停或出错后其余各路也停下：[Future.wait] 要等每一路都结束才报错，不停的话
+    // 剩下的几路会把余下的媒体全部存完。
+    bool halted = false;
+    Future<void> worker() async {
+      try {
+        while (!halted && next < names.length) {
+          await _media(names[next++]);
+          done++;
+          // 进度与叫停每 50 个文件一次（真实集合上约几十毫秒一次，叫停仍即时）；叫停时
+          // 只存了媒体、还没写笔记，重导照常补齐。
+          if (done % 50 == 0) {
+            onProgress?.call(
+              _scanShare + (_mediaShare - _scanShare) * done / names.length,
+            );
+            await _stopIfAsked();
+          }
+        }
+      } catch (_) {
+        halted = true;
+        rethrow;
+      }
+    }
+
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < min(_mediaConcurrency, names.length); i++) worker(),
+    ]);
+  }
+
+  Future<String> _storeMedia(String name) async {
+    final Uint8List? bytes = await pkg.mediaBytes(name);
     if (bytes == null) {
       report.mediaMissing.add(name);
       return name;
@@ -316,8 +518,18 @@ class _Importer {
     return stored;
   }
 
+  /// 笔记字段的 [_withMedia]：字段里既没有共享样式引用也没有媒体引用（绝大多数字段）时
+  /// 同步原样返回，不进异步流程——迁移 1.5 万笔记要处理 45 万个字段，逐个 await 本身就是
+  /// 秒级的开销。有引用时与 [_withMedia] 完全相同。
+  FutureOr<String> _fieldWithMedia(String html) {
+    if (srsStyleRefsIn(html).isEmpty && srsMediaRefsIn(html).isEmpty) {
+      return html;
+    }
+    return _withMedia(html);
+  }
+
   Future<String> _withMedia(String html, {bool includeStatic = false}) async {
-    html = _inlinePackagedStyles(html);
+    html = await _inlinePackagedStyles(html);
     final Set<String> refs = srsMediaRefsIn(html, includeStatic: includeStatic);
     if (refs.isEmpty) return html;
     for (final String r in refs) {
@@ -328,18 +540,26 @@ class _Importer {
 
   /// 包里带着共享样式文件、字段里是它的引用行（没展开就导出的包）：按包内文件展开回内联
   /// `<style>`，落库时再统一去重成本机的共享样式文件。文件缺失或内容与文件名的哈希不符时原样保留。
-  String _inlinePackagedStyles(String html) {
-    if (srsStyleRefsIn(html).isEmpty) return html;
-    return srsExpandStyles(html, (String name) {
-      final Uint8List? bytes = pkg.mediaBytes(name);
-      if (bytes == null) return null;
-      try {
-        final String css = utf8.decode(bytes);
-        return srsStyleMediaName(css) == name ? css : null;
-      } on FormatException {
-        return null;
+  ///
+  /// 包内文件先异步读齐（媒体读不卡 UI isolate），再用同步查表展开。
+  Future<String> _inlinePackagedStyles(String html) async {
+    final Set<String> names = srsStyleRefsIn(html);
+    if (names.isEmpty) return html;
+    final Map<String, String?> css = <String, String?>{};
+    for (final String name in names) {
+      final Uint8List? bytes = await pkg.mediaBytes(name);
+      String? text;
+      if (bytes != null) {
+        try {
+          final String decoded = utf8.decode(bytes);
+          if (srsStyleMediaName(decoded) == name) text = decoded;
+        } on FormatException {
+          text = null;
+        }
       }
-    });
+      css[name] = text;
+    }
+    return srsExpandStyles(html, (String name) => css[name]);
   }
 
   // ------------------------------------------------------------------ 笔记类型
@@ -593,6 +813,12 @@ class _Importer {
               srsCanonicalJson(want.toValue())) {
         edits[SrsFieldKeys.fieldDef(id)] = want.toValue();
       }
+      // 字段说明：本地从没写过（没有这个键的记录）才取 Anki 里的；本地写过（含主动清空）
+      // 一律保留，导入不覆盖也不复活。
+      final String descKey = SrsFieldKeys.fieldDescription(id);
+      if (f.description.isNotEmpty && view.edits[descKey] == null) {
+        edits[descKey] = f.description;
+      }
     }
 
     for (final SrsAnkiTemplate t in src.templates) {
@@ -699,6 +925,7 @@ class _Importer {
     SrsDeckTree tree = await store.deckTree();
     final Map<String, String> idByName = <String, String>{};
     final Set<String> created = <String>{};
+    final Set<int> reportedPresets = <int>{};
     for (final String full in ordered) {
       final List<String> parts = _parts(full);
       final String leaf = parts.last;
@@ -716,30 +943,43 @@ class _Importer {
         idByName[full] = found;
         continue;
       }
-      final String id = srsImportedDeckId(profileUid, full);
-      if (tree[id] != null) {
-        // 用户把先前导入的同名牌组改了名 / 挪了位置：不复用，另建一个。
-        idByName[full] = await store.createDeck(leaf, parentId: parent);
-      } else {
-        await store.importEvents(<SrsEvent>[
-          SrsEntityEvent(
-            SrsEntityRecord(
-              id: id,
-              profileUid: profileUid,
-              kind: SrsEntityKind.deck,
-              payload: const <String, Object?>{'createdAt': 0},
-            ),
+      // 用户把先前导入的同名牌组改了名 / 挪了位置（全名派生的 ID 还活着、却不在这个全名上）：
+      // 不复用，按 createDeck 的规则另挑 ID（[SrsDbStore.deckIdForNew]：备选 ID，或沿用名字与
+      // 父牌组都一致的那个；以前这里重新派生出的还是同一个 ID，会把挪走的牌组改回来）。它不算
+      // 本次「首次新建」，不带牌组设置（与以前相同）。
+      final bool renamedImport =
+          tree[srsImportedDeckId(profileUid, full)] != null;
+      final String id = await store.deckIdForNew(leaf, parentId: parent);
+      // 身份记录、名字 / 父牌组、牌组设置**同一个事务**落库（writeEdits）：以前先建牌组、全部
+      // 建完再另起一轮写设置，中间失败或被杀时牌组已在、重跑不再算「新建」，设置永远不写（BUG-3552）。
+      final Map<String, Object?> values = <String, Object?>{
+        SrsFieldKeys.name: leaf,
+        if (parent != null) SrsFieldKeys.deckParent: parent,
+        // 先前导入过（或同名建过）、后来被删：重新导入即恢复。
+        if (await _deckDeleted(id)) SrsFieldKeys.deleted: null,
+        if (!renamedImport)
+          ..._newDeckSettings(full, byName, created, reportedPresets),
+      };
+      await store.writeEdits(
+        <SrsEditSpec>[
+          for (final MapEntry<String, Object?> v in values.entries)
+            SrsEditSpec(SrsEntityKind.deck, id, v.key, v.value),
+        ],
+        records: <SrsEntityRecord>[
+          SrsEntityRecord(
+            id: id,
+            profileUid: profileUid,
+            kind: SrsEntityKind.deck,
+            payload: const <String, Object?>{'createdAt': 0},
           ),
-        ]);
-        await store.editFields(SrsEntityKind.deck, id, <String, Object?>{
-          SrsFieldKeys.name: leaf,
-          if (parent != null) SrsFieldKeys.deckParent: parent,
-          // 先前导入过、后来被删：重新导入即恢复。
-          if (await _deckDeleted(id)) SrsFieldKeys.deleted: null,
-        });
-        idByName[full] = id;
-        created.add(full);
+        ],
+      );
+      final SrsAlgorithm? fromFsrs = _fsrsOfPreset[byName[full]?.configId];
+      if (fromFsrs != null && values.containsKey(SrsFieldKeys.deckAlgorithm)) {
+        report.fsrsDecks[id] = fromFsrs;
       }
+      idByName[full] = id;
+      if (!renamedImport) created.add(full);
       tree = await store.deckTree();
     }
 
@@ -755,14 +995,31 @@ class _Importer {
           if (created.contains(full) && byName[full] != null)
             byName[full]!.configId,
       }.where(col.presets.containsKey).length;
-      return;
     }
+  }
 
-    // 牌组设置：只在首次建牌组时写。
-    final Set<int> reportedPresets = <int>{};
-    for (final String full in ordered) {
-      if (!created.contains(full)) continue;
-      final SrsAnkiDeck? src = byName[full];
+  /// 首次建牌组 [full] 时随它一起写的设置（预设参数 / 继承方式 / 收起 / fushi-ext 的牌组键）。
+  /// [created] 是本次已新建的牌组全名（父牌组先于子牌组建）。牌组预设与 FSRS 参数各归一个开关
+  /// （[SrsAnkiImportOptions.withDeckConfigs] / [SrsAnkiImportOptions.withFsrsParams]）；两个
+  /// 都关时什么也不写（新牌组用本机默认，同 Anki）。
+  Map<String, Object?> _newDeckSettings(
+    String full,
+    Map<String, SrsAnkiDeck> byName,
+    Set<String> created,
+    Set<int> reportedPresets,
+  ) {
+    final SrsAnkiDeck? src = byName[full];
+    final Map<String, Object?> values = <String, Object?>{};
+    final bool configs = options.withDeckConfigs;
+    final bool fsrs = options.withFsrsParams;
+    // 某个键归哪个开关：排程算法 / 参数 / 期望保留率归 FSRS 参数，其余（含继承方式）归预设；
+    // 继承方式决定参数从哪个牌组取，两个开关任一开着都要写。
+    bool wanted(String key) => key == SrsFieldKeys.deckParamsMode
+        ? true
+        : _fsrsDeckKeys.contains(key)
+        ? fsrs
+        : configs;
+    if (configs || fsrs) {
       final SrsAnkiPreset? preset = src == null
           ? null
           : col.presets[src.configId];
@@ -773,25 +1030,31 @@ class _Importer {
       final SrsAnkiDeck? parentSrc = parentName == null
           ? null
           : byName[parentName];
-      // 同一预设：父牌组也是本次新建、且用同一预设 → 继承；否则 own（顶层恒 own）。
+      // 父牌组也是本次新建、且两者的排程设置相同 → 继承；否则 own（顶层恒 own）。「相同」不只
+      // 认同一个预设 id：Anki 里给子牌组复制一份内容一模一样的预设很常见，按 id 判会把这些子牌组
+      // 全落成「单独设置」，之后改父牌组的参数就得逐个子牌组去改。
+      final SrsAnkiPreset? parentPreset = parentSrc == null
+          ? null
+          : col.presets[parentSrc.configId];
       final bool inherit =
           preset != null &&
-          parentName != null &&
+          parentPreset != null &&
           created.contains(parentName) &&
-          parentSrc != null &&
-          parentSrc.configId == preset.id;
-      final Map<String, Object?> values = preset == null
-          ? <String, Object?>{}
-          : _presetValues(
-              preset,
-              own: !inherit,
-              report: reportedPresets.add(preset.id),
-            );
+          _sameInheritedSettings(preset, parentPreset);
+      if (preset != null) {
+        values.addAll(
+          _presetValues(
+            preset,
+            own: !inherit,
+            report: reportedPresets.add(preset.id),
+          ),
+        );
+      }
       if (parentName != null) {
         values[SrsFieldKeys.deckParamsMode] = inherit ? 'inherit' : 'own';
       }
       // Anki 里收起的牌组导入后同样收起（缺省展开，不写记录）。
-      if (src != null && src.collapsed) {
+      if (configs && src != null && src.collapsed) {
         values[SrsFieldKeys.deckCollapsed] = true;
       }
       final Map<String, Object?>? ext = _extDecks[full];
@@ -800,11 +1063,57 @@ class _Importer {
           if (ext.containsKey(k)) values[k] = ext[k];
         }
       }
-      if (values.isNotEmpty) {
-        await store.editFields(SrsEntityKind.deck, idByName[full]!, values);
+      values.removeWhere((String k, Object? _) => !wanted(k));
+    }
+    // 关着「使用 RWKV」：自己管参数的新牌组一律落在 FSRS 上——Fushi 自己导出的 RWKV 牌组改回
+    // FSRS-7；没写算法的（两个开关都关、或不导入 FSRS 参数——算法键已在上面滤掉）也明确写
+    // FSRS-7，否则会落到默认算法 RWKV。必须在上面的按开关过滤之后，不然又被滤掉。
+    // 继承父牌组的子牌组不写，随父牌组。
+    if (!options.useRwkv) {
+      final Object? alg = values[SrsFieldKeys.deckAlgorithm];
+      final bool owns =
+          _parts(full).length == 1 ||
+          values[SrsFieldKeys.deckParamsMode] == 'own';
+      if (alg is Map && alg['alg'] == SrsAlgorithm.rwkv.wire) {
+        values[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
+          ...alg.cast<String, Object?>(),
+          'alg': SrsAlgorithm.fsrs7.wire,
+        };
+      } else if (alg == null && owns) {
+        values[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': true,
+        };
       }
     }
+    return values;
   }
+
+  /// 两个预设落到 Fushi 后、随参数继承的那部分（记忆率、音频、算法、参数组）是否一致。步长 /
+  /// 上限 / 最大间隔在 Fushi 里是每个牌组自己的，继承与否都照写，不参与比较；本次不导入的键
+  /// （按 [SrsAnkiImportOptions.withDeckConfigs] / [SrsAnkiImportOptions.withFsrsParams]）也不比。
+  bool _sameInheritedSettings(SrsAnkiPreset a, SrsAnkiPreset b) {
+    if (a.id == b.id) return true;
+    Map<String, Object?> inherited(SrsAnkiPreset p) =>
+        _presetValues(p, own: true, report: false)
+          ..remove(SrsFieldKeys.deckSteps)
+          ..remove(SrsFieldKeys.deckLimits)
+          ..remove(SrsFieldKeys.deckMaxInterval)
+          ..removeWhere(
+            (String k, Object? _) => _fsrsDeckKeys.contains(k)
+                ? !options.withFsrsParams
+                : !options.withDeckConfigs,
+          );
+    return jsonEncode(inherited(a)) == jsonEncode(inherited(b));
+  }
+
+  /// 归「FSRS 参数」开关管的牌组键（其余预设键归「牌组预设」开关）。
+  static const Set<String> _fsrsDeckKeys = <String>{
+    SrsFieldKeys.deckAlgorithm,
+    SrsFieldKeys.deckFsrs6Params,
+    SrsFieldKeys.deckFsrs7Params,
+    SrsFieldKeys.deckRetention,
+  };
 
   /// 身份记录已存在、却不在牌组树里 = 先前导入过、后来被删。
   Future<bool> _deckDeleted(String id) async {
@@ -833,7 +1142,7 @@ class _Importer {
         for (final double s in src)
           if (!(s > 0 && s < 1440)) s,
       ];
-      if (removed.isNotEmpty && report) {
+      if (removed.isNotEmpty && report && options.withDeckConfigs) {
         this.report.truncatedSteps.add(
           SrsImportTruncatedSteps(
             preset: p.name,
@@ -868,29 +1177,56 @@ class _Importer {
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }
-    SrsAlgorithm alg = srsDefaultAlgorithm;
+    // 带来的 FSRS 参数组（按它自己的算法存）。
+    SrsAlgorithm? fsrs;
     List<double>? params;
     if (col.fsrsEnabled) {
-      if (p.rwkvEnabled && report) this.report.rwkvPresetsFellBack.add(p.name);
       if (p.fsrs7Params.length == SrsAlgorithm.fsrs7.paramCount &&
           (p.fsrsVersion ?? 0) == 0) {
-        alg = SrsAlgorithm.fsrs7;
+        fsrs = SrsAlgorithm.fsrs7;
         params = p.fsrs7Params;
       } else if (p.fsrs6Params.length == SrsAlgorithm.fsrs6.paramCount) {
-        alg = SrsAlgorithm.fsrs6;
+        fsrs = SrsAlgorithm.fsrs6;
         params = p.fsrs6Params;
       }
     }
+    // 开着「使用 RWKV」（默认）：一律用默认算法 RWKV（RWKV fork 的 rwkvReviewEnabled 预设本来就是）。
+    // 带着 FSRS 参数来的预设参数照样存下、报告里写明，用户不要 RWKV 就在报告里「继续用 FSRS」或去
+    // 牌组设置切回，参数还在；没有参数的（SM-2 或没优化过）同样写进报告，不静默换算法。
+    // 关着：保留来源的 FSRS 算法，没有参数（含 Anki 里开了 RWKV 的）用 FSRS-7，同样进报告。
+    // 「参数保留了、可以切回 FSRS」只在导入 FSRS 参数（[SrsAnkiImportOptions.withFsrsParams]）时
+    // 成立：关着时算法 / 参数键在 [_newDeckSettings] 里整组滤掉，参数根本没落库，不能这样报。
+    final bool rwkv = options.useRwkv;
+    final bool keepsParams = options.withFsrsParams;
+    if (report) {
+      if (p.rwkvEnabled) {
+        (rwkv ? this.report.rwkvPresets : this.report.rwkvPresetsOnFsrs).add(
+          p.name,
+        );
+      } else if (fsrs == null) {
+        (rwkv
+                ? this.report.defaultAlgorithmPresets
+                : this.report.defaultFsrsPresets)
+            .add(p.name);
+      } else if (rwkv && keepsParams) {
+        this.report.fsrsPresets[p.name] = fsrs;
+      }
+    }
+    if (rwkv && keepsParams && fsrs != null && !p.rwkvEnabled) {
+      _fsrsOfPreset[p.id] = fsrs;
+    }
     v[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
-      'alg': alg.wire,
+      'alg': (rwkv ? srsDefaultAlgorithm : (fsrs ?? SrsAlgorithm.fsrs7)).wire,
       'auto': true,
     };
-    if (params != null) {
-      final String? bad = _validate(alg, params);
+    if (fsrs != null && params != null) {
+      final String? bad = _validate(fsrs, params);
       if (bad != null) {
-        if (report) this.report.invalidParams[p.name] = bad;
+        if (report && options.withFsrsParams) {
+          this.report.invalidParams[p.name] = bad;
+        }
       } else {
-        v[alg == SrsAlgorithm.fsrs6
+        v[fsrs == SrsAlgorithm.fsrs6
             ? SrsFieldKeys.deckFsrs6Params
             : SrsFieldKeys.deckFsrs7Params] = SrsParamSet(
           params: params,
@@ -916,8 +1252,8 @@ class _Importer {
       col.db.select('SELECT count(*) AS n FROM notes').first['n'] as int,
     );
     final PreparedStatement cardsOf = col.db.prepare(
-      'SELECT id, did, odid, ord, type, queue, due, odue, ivl, factor, reps, '
-      'lapses, data FROM cards WHERE nid = ? ORDER BY ord, id',
+      'SELECT id, did, odid, ord, mod, type, queue, due, odue, ivl, factor, '
+      'reps, lapses, data FROM cards WHERE nid = ? ORDER BY ord, id',
     );
     final PreparedStatement revlogOf = col.db.prepare(
       'SELECT id, ease, ivl, factor, time, type FROM revlog WHERE cid = ? ORDER BY id',
@@ -925,6 +1261,8 @@ class _Importer {
     final PreparedStatement notes = col.db.prepare(
       'SELECT id, guid, mid, mod, tags, flds FROM notes ORDER BY id',
     );
+    // 本机已有哪些笔记：一次读出 ID 集合，新笔记不必逐条查库（绝大多数导入全是新笔记）。
+    _existingNotes = await store.entityIds(SrsEntityKind.note);
     try {
       final IteratingCursor cur = notes.selectCursor();
       int done = 0;
@@ -934,8 +1272,11 @@ class _Importer {
           for (final Row r in cardsOf.select(<Object?>[n['id']])) _SrcCard(r),
         ], revlogOf);
         done++;
-        if (done % 50 == 0) onProgress?.call(done / total);
+        if (done % 50 == 0) {
+          onProgress?.call(_mediaShare + (1 - _mediaShare) * done / total);
+        }
         await _flush();
+        await _stopIfAsked();
       }
     } finally {
       cardsOf.close();
@@ -944,11 +1285,35 @@ class _Importer {
     }
   }
 
+  /// 一批攒多少条事件再落库（一个事务 + 一次缓存刷新）。太小则事务与刷新次数多；太大则单个
+  /// 事务占住连接太久（后台导入时用户仍在用复习页，别的写入要排在事务后面）。
+  static const int _batchEvents = 1000;
+
+  /// 导入开始时本机已有的笔记 ID（见 [_importNotes]）。
+  Set<String> _existingNotes = const <String>{};
+
+  /// 本批里当作新笔记攒下的（noteId, 卡数）：落库后按实际是否新建计入报告（BUG-3553）。
+  final List<(String, int)> _pendingNewNotes = <(String, int)>[];
+
   Future<void> _flush({bool force = false}) async {
-    if (_pending.isEmpty || (!force && _pending.length < 500)) return;
-    final List<SrsEvent> batch = List<SrsEvent>.of(_pending);
+    if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
+    final List<SrsEventDraft> batch = List<SrsEventDraft>.of(_pending);
+    final List<(String, int)> newNotes = List<(String, int)>.of(
+      _pendingNewNotes,
+    );
     _pending.clear();
-    await store.importEvents(batch);
+    _pendingNewNotes.clear();
+    final Set<String> existed = await store.importDrafts(batch);
+    for (final (String noteId, int cards) in newNotes) {
+      if (existed.contains(noteId)) {
+        // 攒批期间同一条笔记已被同步 / 别处建好：初值里键已有记录的没落（见
+        // SrsEditDraft.initial），不算新增。
+        report.notesSkipped++;
+      } else {
+        report.notesAdded++;
+        report.cardsAdded += cards;
+      }
+    }
   }
 
   Future<void> _importNote(
@@ -971,8 +1336,18 @@ class _Importer {
     }
     final List<String> raw = (n['flds'] as String).split('\x1f');
     final Map<String, String> fields = <String, String>{};
+    final bool hasRefs = _notesWithRefs?.contains(n['id'] as int) ?? true;
     for (int i = 0; i < nt.fieldIds.length; i++) {
-      fields[nt.fieldIds[i]] = i < raw.length ? await _withMedia(raw[i]) : '';
+      if (i >= raw.length) {
+        fields[nt.fieldIds[i]] = '';
+        continue;
+      }
+      if (!hasRefs) {
+        fields[nt.fieldIds[i]] = raw[i];
+        continue;
+      }
+      final FutureOr<String> v = _fieldWithMedia(raw[i]);
+      fields[nt.fieldIds[i]] = v is String ? v : await v;
     }
     final List<String> tags = (n['tags'] as String)
         .split(RegExp(r'\s+'))
@@ -985,25 +1360,35 @@ class _Importer {
         )
         .toList();
     final String noteId = SrsIds.note(profileUid, guid);
-    final SrsNoteView? existing = await store.note(noteId);
+    final SrsNoteView? existing = _existingNotes.contains(noteId)
+        ? await store.note(noteId)
+        : null;
     final String firstDeck = cards.isEmpty
         ? store.defaultDeckId
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
 
     final bool isNew = existing == null;
+    // 先前导入过、后来在本机被删：重新导入即恢复（与牌组同一条规则，见 [_importDecks]；Anki
+    // 里删掉的笔记不留身份，再导入就是新加）。以前按「已存在、较新时更新」走，本机内容的
+    // 修改时刻晚于来源 mod → 记为未改动，删除标记永远不清：牌组复活了、笔记仍是删除态，
+    // 卡片留在删牌组时移去的默认牌组里且被隐藏。
+    final bool restored = existing != null && existing.deletedAt != null;
     bool update = false;
     if (isNew) {
-      await store.createNote(
-        noteTypeId: nt.id,
-        fieldsById: fields,
-        deckId: firstDeck,
-        tags: tags,
-        source: SrsSourceRef.fromJson(_extNotes[guid]),
-        guid: guid,
-        createdAt: n['id'] as int,
+      // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
+      // 落两三次库、各刷新一遍缓存，见 BUG-3549）。
+      _pending.addAll(
+        store.newNoteDrafts(
+          noteTypeId: nt.id,
+          fieldsById: fields,
+          deckId: firstDeck,
+          tags: tags,
+          source: SrsSourceRef.fromJson(_extNotes[guid]),
+          guid: guid,
+          createdAt: n['id'] as int,
+        ),
       );
-      report.notesAdded++;
-      report.cardsAdded += cards.length;
+      _pendingNewNotes.add((noteId, cards.length));
     } else if (existing.noteTypeId != nt.id) {
       report.conflictNotes.add(
         SrsImportNoteIssue(
@@ -1013,6 +1398,19 @@ class _Importer {
         ),
       );
       return;
+    } else if (restored) {
+      // 删除标记、内容、标签、首选牌组一律回到来源：用户要的是「把它导回来」，本机的旧内容
+      // 只是删除前的残留，不参与「较新时更新」的比较。
+      update = true;
+      await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
+        SrsFieldKeys.deleted: null,
+        for (final MapEntry<String, String> f in fields.entries)
+          if (existing.field(f.key) != f.value)
+            SrsFieldKeys.noteField(f.key): f.value,
+        if (!_sameList(existing.tags, tags)) SrsFieldKeys.noteTags: tags,
+        if (existing.deckId != firstDeck) SrsFieldKeys.noteDeck: firstDeck,
+      });
+      report.notesRestored++;
     } else if (options.updateNotes.shouldUpdate(
       localMs: _lastEditMs(
         existing.edits,
@@ -1060,6 +1458,7 @@ class _Importer {
         firstDeck,
         isNew: isNew,
         update: update,
+        restored: restored,
       );
       if (options.withScheduling) {
         await _importCardSchedule(cardId, c, revlogOf, noteExisted: !isNew);
@@ -1075,6 +1474,7 @@ class _Importer {
     String noteDeck, {
     required bool isNew,
     required bool update,
+    bool restored = false,
   }) async {
     if (!isNew && !update) return;
     final String deck = _deckOf[c.homeDeck] ?? store.defaultDeckId;
@@ -1082,14 +1482,34 @@ class _Importer {
     final bool suspended = c.queue == -1;
     final bool withSuspend = options.withScheduling;
     if (isNew) {
-      if (deck != noteDeck) await store.moveCard(cardId, deck);
-      if (withSuspend && suspended) await store.setSuspended(cardId, true);
+      // 卡片随笔记在同一批里新建：修改记录直接攒进本批（本机没有这张卡的记录，不必读库判 no-op）。
+      _pending.addAll(
+        store.newEditDrafts(SrsEntityKind.card, cardId, <String, Object?>{
+          if (deck != noteDeck) SrsFieldKeys.cardDeck: deck,
+          if (withSuspend && suspended) SrsFieldKeys.suspended: true,
+        }),
+      );
       return;
     }
     final SrsCardCacheRow? row = await store.cardRow(cardId);
     if (row == null) return;
-    if (row.deckId != deck) await store.moveCard(cardId, deck);
-    if (withSuspend && row.suspended != suspended) {
+    // 本机在来源卡片最后修改之后改过的（用户在 Fushi 里挪过牌组 / 暂停过）不覆盖：按这个键的
+    // 修改记录时刻与 Anki 卡片 mod 比，新的赢（同 Anki 导入对已有卡片的「较新时更新」）。
+    // 以前笔记内容一更新就无条件改回 Anki 的牌组 / 暂停状态（BUG-3554）。
+    final SrsEntityEdits edits = await store.entityEdits(
+      SrsEntityKind.card,
+      cardId,
+    );
+    final int sourceMs = c.mod * 1000;
+    // 恢复的笔记不比：本机那次改动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
+    bool localNewer(String key) =>
+        !restored && _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
+    if (row.deckId != deck && !localNewer(SrsFieldKeys.cardDeck)) {
+      await store.moveCard(cardId, deck);
+    }
+    if (withSuspend &&
+        row.suspended != suspended &&
+        !localNewer(SrsFieldKeys.suspended)) {
       await store.setSuspended(cardId, suspended);
     }
   }
@@ -1122,7 +1542,7 @@ class _Importer {
       for (final SrsReviewLog l in extLogs) {
         final int? rid = _extRevlogIds[l.id];
         if (rid != null) extRevlogs.add(rid);
-        _pending.add(SrsLogEvent(_remapExtLog(l, cardId)));
+        _pending.add(SrsReadyDraft(SrsLogEvent(_remapExtLog(l, cardId))));
         report.fushiLogsRestored++;
       }
     }
@@ -1154,14 +1574,16 @@ class _Importer {
       }
       if (pkg.fushiExt != null) report.revlogsNotInExt++;
       _pending.add(
-        SrsLogEvent(
-          _revlogLog(
-            cardId,
-            r,
-            id: revlogIds[i],
-            reps: reps,
-            lapses: lapses,
-            lastRated: lastRated,
+        SrsReadyDraft(
+          SrsLogEvent(
+            _revlogLog(
+              cardId,
+              r,
+              id: revlogIds[i],
+              reps: reps,
+              lapses: lapses,
+              lastRated: lastRated,
+            ),
           ),
         ),
       );
@@ -1198,23 +1620,25 @@ class _Importer {
     final int t = d.anchorMs!;
     final SrsMemory? mem = _memoryOf(c.data);
     _pending.add(
-      SrsLogEvent(
-        SrsReviewLog(
-          id: SrsIds.importAnchor(cardId, t),
-          profileUid: profileUid,
-          cardId: cardId,
-          kind: SrsLogKind.importAnchor,
-          hlc: srsImportAnchorHlc(t),
-          occurredAt: t,
-          timeSource: SrsTimeSource.wall,
-          origin: SrsLogOrigin.anki,
-          reviewType: SrsReviewType.manual,
-          utcOffsetMin: srcDay.utcOffsetMin,
-          dayRolloverHour: srcDay.rolloverHour,
-          result: _cardState(c, lastRated, mem),
-          extra: mem == null
-              ? const <String, Object?>{}
-              : <String, Object?>{'memAlg': SrsAlgorithm.fsrs6.wire},
+      SrsReadyDraft(
+        SrsLogEvent(
+          SrsReviewLog(
+            id: SrsIds.importAnchor(cardId, t),
+            profileUid: profileUid,
+            cardId: cardId,
+            kind: SrsLogKind.importAnchor,
+            hlc: srsImportAnchorHlc(t),
+            occurredAt: t,
+            timeSource: SrsTimeSource.wall,
+            origin: SrsLogOrigin.anki,
+            reviewType: SrsReviewType.manual,
+            utcOffsetMin: srcDay.utcOffsetMin,
+            dayRolloverHour: srcDay.rolloverHour,
+            result: _cardState(c, lastRated, mem),
+            extra: mem == null
+                ? const <String, Object?>{}
+                : <String, Object?>{'memAlg': SrsAlgorithm.fsrs6.wire},
+          ),
         ),
       ),
     );

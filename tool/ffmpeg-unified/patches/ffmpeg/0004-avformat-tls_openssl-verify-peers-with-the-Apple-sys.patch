@@ -1,0 +1,170 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: fushi <fushi@localhost>
+Date: Mon, 19 Oct 2026 16:39:01 +0800
+Subject: [PATCH] avformat/tls_openssl: verify peers with the Apple system
+ trust store
+
+OpenSSL's compiled-in CA directory on Apple is the build machine's prefix,
+so with verify-by-default every public HTTPS handshake failed on iOS and
+macOS. Verify the peer chain with Security.framework (SecTrust + SSL policy
+bound to the host) instead, and link CoreFoundation/Security for openssl on
+darwin.
+---
+ configure                 |   5 ++
+ libavformat/tls_openssl.c | 105 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 110 insertions(+)
+
+diff --git a/configure b/configure
+index 374bd5c..28260d5 100755
+--- a/configure
++++ b/configure
+@@ -7555,6 +7555,11 @@ enabled openssl           && { { check_pkg_config openssl "openssl >= 3.0.0" ope
+                                check_lib openssl openssl/ssl.h DTLS_get_data_mtu -lssl -lcrypto ||
+                                check_lib openssl openssl/ssl.h DTLS_get_data_mtu -lssl -lcrypto -lws2_32 -lgdi32 ||
+                                die "ERROR: openssl (>= 1.1.1) not found"; }
++# Fushi: on Apple the OpenSSL backend verifies the peer chain with the system
++# trust store (Security.framework SecTrust, see tls_openssl.c) - OpenSSL's own
++# default CA path is the build machine's prefix and does not exist on devices.
++enabled openssl && test "$target_os" = "darwin" &&
++    append openssl_extralibs "-framework CoreFoundation -framework Security"
+ enabled pocketsphinx      && require_pkg_config pocketsphinx pocketsphinx pocketsphinx/pocketsphinx.h ps_init
+ enabled rkmpp             && { require_pkg_config rkmpp "rockchip_mpp >= 1.3.8" "rockchip/rk_mpi.h rockchip/mpp_buffer.h" "mpp_create mpp_buffer_sync_begin_f" &&
+                                { enabled libdrm ||
+diff --git a/libavformat/tls_openssl.c b/libavformat/tls_openssl.c
+index 56f1a6a..df7518b 100644
+--- a/libavformat/tls_openssl.c
++++ b/libavformat/tls_openssl.c
+@@ -746,6 +746,102 @@ static int openssl_load_android_system_cas(SSL_CTX *ctx)
+ }
+ #endif
+ 
++#ifdef __APPLE__
++#include <CoreFoundation/CoreFoundation.h>
++#include <Security/SecCertificate.h>
++#include <Security/SecPolicy.h>
++#include <Security/SecTrust.h>
++
++/* Fushi: OpenSSL on Apple has no usable trust store. Its compiled-in default
++ * CA directory (OPENSSLDIR) is the build machine's install prefix, e.g.
++ * /Users/runner/work/..., which exists on no user device, so with FFmpeg's
++ * verify-by-default every public HTTPS handshake would fail. Replace OpenSSL's
++ * chain verification with the system trust evaluation: hand the peer chain to
++ * SecTrust under an SSL server policy bound to the expected host name, so the
++ * system / user trust settings apply exactly as for URLSession. Installed only
++ * when verifying without a caller-supplied ca_file (that one stays OpenSSL's)
++ * and never with tls_pin_sha256 (the shared open path clears verify then). */
++static int openssl_apple_verify_cb(X509_STORE_CTX *store, void *arg)
++{
++    URLContext *h = arg;
++    TLSContext *c = h->priv_data;
++    TLSShared *s = &c->tls_shared;
++    X509 *leaf = X509_STORE_CTX_get0_cert(store);
++    STACK_OF(X509) *untrusted = X509_STORE_CTX_get0_untrusted(store);
++    CFMutableArrayRef certs = NULL;
++    CFStringRef host = NULL;
++    SecPolicyRef policy = NULL;
++    SecTrustRef trust = NULL;
++    CFErrorRef error = NULL;
++    int ok = 0;
++    int i, n;
++
++    certs = CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks);
++    if (!certs || !leaf)
++        goto end;
++    n = untrusted ? sk_X509_num(untrusted) : 0;
++    /* Leaf first, then the rest of what the peer sent (the leaf usually
++     * repeats at the head of that list). */
++    for (i = -1; i < n; i++) {
++        X509 *x = i < 0 ? leaf : sk_X509_value(untrusted, i);
++        unsigned char *der = NULL;
++        CFDataRef data;
++        SecCertificateRef cert;
++        int len;
++        if (i >= 0 && !X509_cmp(x, leaf))
++            continue;
++        len = i2d_X509(x, &der);
++        if (len <= 0 || !der)
++            goto end;
++        data = CFDataCreate(kCFAllocatorDefault, der, len);
++        OPENSSL_free(der);
++        if (!data)
++            goto end;
++        cert = SecCertificateCreateWithData(kCFAllocatorDefault, data);
++        CFRelease(data);
++        if (!cert)
++            goto end;
++        CFArrayAppendValue(certs, cert);
++        CFRelease(cert);
++    }
++    if (s->host)
++        host = CFStringCreateWithCString(kCFAllocatorDefault, s->host,
++                                         kCFStringEncodingUTF8);
++    policy = SecPolicyCreateSSL(true, host);
++    if (!policy)
++        goto end;
++    if (SecTrustCreateWithCertificates(certs, policy, &trust) != errSecSuccess || !trust)
++        goto end;
++    ok = SecTrustEvaluateWithError(trust, &error) ? 1 : 0;
++    if (!ok) {
++        char msg[256] = "unknown error";
++        CFStringRef desc = error ? CFErrorCopyDescription(error) : NULL;
++        if (desc) {
++            CFStringGetCString(desc, msg, sizeof(msg), kCFStringEncodingUTF8);
++            CFRelease(desc);
++        }
++        av_log(h, AV_LOG_ERROR, "System trust rejected the certificate of %s: %s\n",
++               s->host ? s->host : "(unknown host)", msg);
++    } else {
++        av_log(h, AV_LOG_DEBUG, "Certificate verified by the system trust store\n");
++    }
++end:
++    if (!ok)
++        X509_STORE_CTX_set_error(store, X509_V_ERR_CERT_UNTRUSTED);
++    if (error)
++        CFRelease(error);
++    if (trust)
++        CFRelease(trust);
++    if (policy)
++        CFRelease(policy);
++    if (host)
++        CFRelease(host);
++    if (certs)
++        CFRelease(certs);
++    return ok;
++}
++#endif
++
+ static av_cold int openssl_init_ca_key_cert(URLContext *h)
+ {
+     int ret;
+@@ -758,11 +854,16 @@ static av_cold int openssl_init_ca_key_cert(URLContext *h)
+         if (!SSL_CTX_load_verify_locations(c->ctx, s->ca_file, NULL))
+             av_log(h, AV_LOG_ERROR, "SSL_CTX_load_verify_locations %s\n", openssl_get_error(c));
+     } else {
++#ifndef __APPLE__
++        /* Fushi: not on Apple - the default paths point into the build
++         * machine's OpenSSL prefix there; openssl_apple_verify_cb() uses the
++         * system trust store instead. */
+         if (!SSL_CTX_set_default_verify_paths(c->ctx)) {
+             // Only log the failure but do not error out, as this is not fatal
+             av_log(h, AV_LOG_WARNING, "Failure setting default verify locations: %s\n",
+                 openssl_get_error(c));
+         }
++#endif
+ #ifdef __ANDROID__
+         if (s->verify) {
+             int n = openssl_load_android_system_cas(c->ctx);
+@@ -876,6 +977,10 @@ static int tls_open(URLContext *h, const char *uri, int flags, AVDictionary **op
+ 
+     if (s->verify)
+         SSL_CTX_set_verify(c->ctx, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, NULL);
++#ifdef __APPLE__
++    if (s->verify && !s->ca_file && !s->listen)
++        SSL_CTX_set_cert_verify_callback(c->ctx, openssl_apple_verify_cb, h);
++#endif
+ 
+     if (s->is_dtls && s->use_srtp) {
+         /**
+-- 
+2.55.0.windows.3
+

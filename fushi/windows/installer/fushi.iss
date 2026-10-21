@@ -135,6 +135,12 @@ Type: filesandordirs; Name: "{app}\galgame_helper"
 ; 变成「一个可执行文件都没有」（实测现场：{app} 下 hibiki.exe 与 fushi.exe 双双消失，
 ; 只剩 unins000.exe，快捷方式全成死链接）。这些条目已下沉到 [Code] 的
 ; CurStepChanged / ssPostInstall，即新文件全部落地之后才执行。
+;
+; 3.0 及更早的安装包把 runner 的原生测试 exe（fushi_windows_*_test.exe，改名前是
+; hibiki_windows_*_test.exe）当成产品装进了 {app}。它们只是构建期门禁，现已移出
+; bundle（runner/CMakeLists.txt 末尾）；升级时清掉旧版留下的那批。它们不是可执行入口，
+; 复制前删不影响可运行性，归属本段。
+Type: files; Name: "{app}\*_windows_*_test.exe"
 
 [Files]
 ; 包含 fushi_update_launcher.exe：应用内更新用它等待当前 fushi.exe 退出后再启动 Inno。
@@ -220,9 +226,12 @@ Root: HKCU; Subkey: "Software\Classes\.ts\OpenWithProgids"; ValueType: none; Val
 ; 数据存储位置引导文件（见 [Code] WriteDataRootBootstrap）。app 首启即消费并删除；
 ; 装完从没启动过就卸载时由这里收尾，别在安装目录留一个孤儿文件。
 Type: files; Name: "{app}\data_root.bootstrap"
+; 应用内更新提权安装时 Inno 日志写在安装目录（BUG-3567，见 platform_updater.dart
+; windowsElevatedInstallerLogPath；前缀与 kWindowsElevatedInstallLogPrefix 一致）。
+Type: files; Name: "{app}\fushi-update-install-*.log"
 
 [Run]
-Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall
+Filename: "{app}\fushi.exe"; Description: "启动 Fushi"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
 
 [Code]
 // -- TODO-549: app-internal self-update "AppMutex deadlock" root-cause layer --
@@ -683,6 +692,27 @@ begin
     Log('WriteDataRootBootstrap: 写入失败，app 将使用默认数据位置');
 end;
 
+{ BUG-3567：提权的应用内更新把 Inno 日志写进安装目录（用户不可写，防链接重定向），
+  文件名带交接时刻。安装成功后只留本次这份（Inno 的 log 常量指向的那个），其余历次的删掉，不在安装目录堆积。 }
+procedure CleanupStaleElevatedInstallLogs();
+var
+  FindRec: TFindRec;
+  Current: String;
+begin
+  Current := Lowercase(ExtractFileName(ExpandConstant('{log}')));
+  if FindFirst(ExpandConstant('{app}\fushi-update-install-*.log'), FindRec) then
+  begin
+    try
+      repeat
+        if Lowercase(FindRec.Name) <> Current then
+          DeleteFile(ExpandConstant('{app}\') + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 // Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
 // 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
 // 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
@@ -697,6 +727,7 @@ begin
     Exit;
 
   WriteDataRootBootstrap();
+  CleanupStaleElevatedInstallLogs();
 
   // 旧名可执行文件：Inno 只覆盖同名文件，改了名的旧 exe 不清就会与 fushi.exe
   // 并存，旧快捷方式还能把上一版拉起来。
@@ -760,6 +791,24 @@ begin
       Exit;
     Sleep(MutexReleasePollIntervalMs);
   end;
+end;
+
+{ [Run] 自启门：应用内更新发现安装目录普通权限不可写（手动提权装进 Program Files）时，
+  launcher 经 UAC 提权启动本安装器并带 /FUSHINORELAUNCH。此时由本安装器拉起的
+  fushi.exe 会继承管理员令牌（外部 runas 提权，Inno 不知道原用户，runasoriginaluser
+  不生效），所以跳过自启，改由仍是普通权限的 launcher 在安装结束后拉回 app。
+  开关名与 platform_updater.dart 的 kWindowsInstallerNoRelaunchSwitch 一致。 }
+function ShouldLaunchAppAfterInstall(): Boolean;
+var
+  I: Integer;
+begin
+  Result := True;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/FUSHINORELAUNCH') = 0 then
+    begin
+      Result := False;
+      Exit;
+    end;
 end;
 
 { BUG-1483: 选目录页写入预检。本安装器 PrivilegesRequired=lowest（不提权），

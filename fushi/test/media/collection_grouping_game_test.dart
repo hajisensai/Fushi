@@ -8,6 +8,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 折进合集组、与同名 entryKey 的其它 mediaType 不串键、组内按 sortIndex 排序、
 /// 散游戏保持输入序。
 MediaCollectionRow _collection(int id, String name) => MediaCollectionRow(
+      origin: 'user',
+      organizeAliases: '',
       id: id,
       name: name,
       collectionType: 'collection',

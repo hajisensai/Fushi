@@ -1040,6 +1040,7 @@ class DataRootMigrator {
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
+      await _rebaseVideoDownloadJobs(db, docs);
       await _rebaseVideoDownloadJobFiles(db, docs);
       await _rebaseVideoDownloadJobSubtitles(db, docs);
       await _rebaseMediaOpenHistory(db, docs);
@@ -1297,6 +1298,35 @@ class DataRootMigrator {
         'UPDATE video_metadata_extras SET thumbnail_path = ? '
         'WHERE extra_key = ?',
         <Object?>[rebased, key],
+      );
+    }
+  }
+
+  /// video_download_jobs：observed_save_path（BUG-3542）。
+  ///
+  /// 后端坐标的保存根。内置引擎用默认下载根 `<documents>/anime_downloads/content`
+  /// 时它是数据根内的本机路径：文件随根搬走、引擎 resume 也被改写（BUG-3541），
+  /// 这列不改写就停在旧根——已完成任务不再刷新它，任务删除 / 打开位置的兜底与
+  /// 持久化详情都会拿着一个不存在的目录。外接远端 qBittorrent 的远端坐标与用户
+  /// 自选的外部下载根不在旧根下，[DocumentsPathRebaser] 按搬移作用域原样跳过。
+  static Future<void> _rebaseVideoDownloadJobs(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT job_id, observed_save_path FROM video_download_jobs '
+          'WHERE observed_save_path IS NOT NULL',
+        )
+        .get();
+    for (final QueryRow row in rows) {
+      final String current = row.read<String>('observed_save_path');
+      final String rebased = docs.rebase(current);
+      if (rebased == current) continue;
+      await db.customStatement(
+        'UPDATE video_download_jobs SET observed_save_path = ? '
+        'WHERE job_id = ?',
+        <Object?>[rebased, row.read<String>('job_id')],
       );
     }
   }

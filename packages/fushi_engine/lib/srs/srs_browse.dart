@@ -32,6 +32,11 @@ String srsFieldContainsQuery(String field, String text) {
   return '"${_searchLiteral(field)}:*${_searchLiteral(trimmed)}*"';
 }
 
+/// 「浏览此牌组的卡片」的查询：`deck:"全名"`（Anki 语义，含子牌组）。牌组名里的通配符
+/// （`*` `_`）、反斜杠与引号转义成字面量；层级分隔符 `::` 在引号内照原样保留。
+String srsDeckQuery(String deckFullName) =>
+    'deck:"${deckFullName.replaceAllMapped(RegExp(r'[\\*_"]'), (Match m) => '\\${m.group(0)}')}"';
+
 /// 一张卡（连同笔记、笔记类型）作为 Anki 搜索的求值对象。
 class SrsCardSearchSubject implements SrsSearchSubject {
   SrsCardSearchSubject({
@@ -42,6 +47,7 @@ class SrsCardSearchSubject implements SrsSearchSubject {
     required this.day,
     required this.nowMs,
     required this.todayDayIndex,
+    this.instantDue,
     int Function(String uuid)? numericId,
   }) : _numericId = numericId ?? SrsIds.ankiNumericId;
 
@@ -51,6 +57,13 @@ class SrsCardSearchSubject implements SrsSearchSubject {
   final SrsDayContext day;
   final int nowMs;
   final int Function(String uuid) _numericId;
+
+  /// 这张卡所在牌组按 RWKV-Instant 排队时：此刻会出的卡（[SrsDbStore.instantDueCardIds]）。
+  /// null = 不按 R 排（非 RWKV 牌组，或 RWKV 不可用、照旧按存下的到期日）。
+  final Set<String>? instantDue;
+
+  /// 复习卡按此刻回忆率排队：没有有意义的到期日。
+  bool get _byRecall => instantDue != null && queue == SrsQueue.review;
 
   @override
   final String deckName;
@@ -100,6 +113,7 @@ class SrsCardSearchSubject implements SrsSearchSubject {
   @override
   bool get isDue => switch (queue) {
     SrsQueue.newCard => false,
+    SrsQueue.review when _byRecall => instantDue!.contains(card.id),
     SrsQueue.review => (card.dueDay ?? 0) <= todayDayIndex,
     SrsQueue.learning ||
     SrsQueue.relearning => (card.dueAt ?? 0) <= nowMs + 20 * 60000,
@@ -142,6 +156,8 @@ class SrsCardSearchSubject implements SrsSearchSubject {
     switch (queue) {
       case SrsQueue.newCard:
         return null;
+      case SrsQueue.review when _byRecall:
+        return null;
       case SrsQueue.review:
         final int? d = card.dueDay;
         return d == null ? null : d - todayDayIndex;
@@ -169,9 +185,13 @@ class SrsCardSearchSubject implements SrsSearchSubject {
   int get editedDayIndex => day.dayIndexOf(modifiedAt);
 
   /// 到期排序键：复习卡按到期日、学习中按到期时刻折成日序号（同一天里排在复习卡前面），
-  /// 新卡没有到期日，排在最后（按加入顺序）。
+  /// 新卡没有到期日，排在最后（按加入顺序）；按回忆率排队的复习卡此刻会出的排今天，其余排在新卡前。
   double get dueSortKey => switch (queue) {
     SrsQueue.newCard => double.infinity,
+    SrsQueue.review when _byRecall =>
+      instantDue!.contains(card.id)
+          ? todayDayIndex.toDouble()
+          : double.maxFinite,
     SrsQueue.review => (card.dueDay ?? todayDayIndex).toDouble(),
     SrsQueue.learning ||
     SrsQueue.relearning => day.dayIndexOf(card.dueAt ?? nowMs) - 0.5,
@@ -299,6 +319,8 @@ class SrsBrowseSnapshot {
     final (int nowMs, _) = store.now();
     final int today = day.dayIndexOf(nowMs);
     final Map<String, String> deckNames = <String, String>{};
+    final Set<String>? instantDue = await store.instantDueCardIds();
+    final Map<String, bool> byRecall = <String, bool>{};
     final List<SrsCardSearchSubject> out = <SrsCardSearchSubject>[];
     for (final SrsCardCacheRow c in await store.allCardRows()) {
       if (c.hidden) continue;
@@ -310,12 +332,23 @@ class SrsBrowseSnapshot {
           note: n,
           noteType: t,
           card: c,
-          deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
-              ? ''
-              : tree.fullName(c.deckId),
+          // 牌组已不存在的卡归默认牌组（与排程配置同一判据）：显示为默认牌组、
+          // `deck:Default` 能筛到（BUG-3617）。
+          deckName: deckNames[c.deckId] ??= tree.effectiveDeckNameOf(
+            c.deckId,
+            fallback: store.defaultDeckId,
+          ),
           day: day,
           nowMs: nowMs,
           todayDayIndex: today,
+          instantDue:
+              instantDue != null &&
+                  (byRecall[c.deckId] ??= store.instantActiveFor(
+                    tree,
+                    c.deckId,
+                  ))
+              ? instantDue
+              : null,
         ),
       );
     }

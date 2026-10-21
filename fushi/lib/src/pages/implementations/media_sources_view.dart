@@ -456,6 +456,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         icon: FushiIcons.rename,
         onTap: busy ? null : () => _rename(row),
       ),
+      if (isVideo)
+        _SourceRowMenuAction(
+          key: ValueKey<String>('video_source_restore_grouping_${row.id}'),
+          label: t.video_source_restore_grouping_action,
+          icon: FushiIcons.collections,
+          onTap: busy ? null : () => _restoreAutomaticGrouping(row),
+        ),
       if (isVideo && isLocal)
         _SourceRowMenuAction(
           key: ValueKey<String>('video_scrape_diagnostic_export_${row.id}'),
@@ -1113,9 +1120,28 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (fresh != null) await _rescan(fresh);
   }
 
+  /// 「恢复自动分组」：确认后带 `restoreDissolvedGroups` 重扫一次。
+  ///
+  /// 解散合集（库页多选删除合集卡、合集详情删除）会留下按合集名的墓碑，普通重扫
+  /// 据此不再自动归组（BUG-1739）。整批解散后系列就永久散成单集、重扫也救不回来，
+  /// 而界面上看不到这层状态——这里是唯一的显式出路（BUG-3654）。
+  Future<void> _restoreAutomaticGrouping(SourceLibraryRow row) async {
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.video_source_restore_grouping_action,
+      message: t.video_source_restore_grouping_confirm,
+      icon: FushiIcons.collections,
+    );
+    if (!mounted || !confirmed) return;
+    await _rescan(row, restoreDissolvedGroups: true);
+  }
+
   /// 重新扫描一个来源：行级 loading → scanner.scan（内部吞异常写 lastScanError）→
   /// 重读该行刷新统计/时间/错误。
-  Future<void> _rescan(SourceLibraryRow row) async {
+  Future<void> _rescan(
+    SourceLibraryRow row, {
+    bool restoreDissolvedGroups = false,
+  }) async {
     if (isBusy) return;
     final VoidCallback? onLibraryChanged = widget.onLibraryChanged;
     final Future<void> Function(SourceLibraryRow, SourceScanSummary)?
@@ -1123,7 +1149,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     SourceScanSummary? summary;
     setState(() => _scanning.add(row.id));
     try {
-      Future<SourceScanSummary> scan() => SourceLibraryScanner(_db).scan(row);
+      Future<SourceScanSummary> scan() => SourceLibraryScanner(_db).scan(
+            row,
+            restoreDissolvedGroups: restoreDissolvedGroups,
+          );
       final VideoSourceScrapeTaskController? controller =
           widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
       summary = controller == null

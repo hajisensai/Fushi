@@ -14,11 +14,16 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, ValueListenable, ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
+import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -28,6 +33,7 @@ import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -106,6 +112,21 @@ final Provider<List<String>> srsCardFontFamiliesProvider =
 final Provider<bool> srsReviewHideHardEasyProvider = Provider<bool>(
   (Ref ref) => ref.watch(
     appProvider.select((AppModel app) => app.srsReviewHideHardEasy),
+  ),
+);
+
+/// 复习页底部操作行一端的重播音频键（按 profile 偏好，默认不放）。
+final Provider<SrsReviewReplayButton> srsReviewReplayButtonProvider =
+    Provider<SrsReviewReplayButton>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsReviewReplayButton),
+      ),
+    );
+
+/// 评分按钮是否显示下次间隔（按 profile 偏好，默认显示）。
+final Provider<bool> srsReviewShowIntervalsProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewShowIntervals),
   ),
 );
 
@@ -198,6 +219,51 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       return store;
     });
 
+/// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理。
+final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
+    FutureProvider<SrsRwkvModels>((Ref ref) async {
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      return SrsRwkvModels(
+        dir: Directory(p.join(support.path, 'srs_rwkv', 'models')),
+        createClient: createAppHttpClient,
+      );
+    });
+
+/// RWKV 排程服务：挂到 store 上（[SrsDbStore.rwkv]）。对象本身很轻；后台 isolate 与全量回放
+/// 只在有 RWKV 牌组、且权重已下载时启动（[SrsRwkvService.start]，或第一次给 RWKV 牌组排程时）。
+/// 由 `srsAppRuntimeProvider` 保活（模块开着时常驻）。换 profile / 关模块时关掉（存快照）。
+final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
+    FutureProvider<SrsRwkvService?>((Ref ref) async {
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final SrsRwkvModels models = await ref.watch(
+        srsRwkvModelsProvider.future,
+      );
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      final SrsRwkvService service = SrsRwkvService(
+        store: store,
+        models: models,
+        snapshotDir: Directory(p.join(support.path, 'srs_rwkv', 'state')),
+        log: (String message) => ErrorLogService.instance.log(
+          'SrsRwkvService',
+          message,
+          StackTrace.current,
+        ),
+      );
+      store.rwkv = service;
+      ref.onDispose(() {
+        if (identical(store.rwkv, service)) store.rwkv = null;
+        unawaited(service.close());
+      });
+      final SrsDeckTree tree = await store.deckTree();
+      if (tree.decks.any(
+        (SrsDeckView d) => tree.paramsOwner(d.id).localAlgorithm.usesRwkv,
+      )) {
+        srsRunLogged('SrsRwkvService.start', service.start);
+      }
+      return service;
+    });
+
 /// SRS 媒体根所在的支持目录（测试覆写成临时目录）。
 final Provider<Future<Directory> Function()> srsSupportRootProvider =
     Provider<Future<Directory> Function()>(
@@ -229,19 +295,111 @@ void bumpSrsRevision(WidgetRef ref) {
   ref.read(srsRevisionProvider.notifier).state++;
 }
 
-/// 牌组列表数据（牌组行 + 待处理的同步冲突数 + 待裁决笔记数）。
+/// 删牌组的执行与进度（BUG-3543 的分块删除）：app 级，不随牌组列表页销毁。
+///
+/// 以前进度 notifier 与「删完重读」都挂在牌组列表页的 State 上；复习 tab 不常驻，删除途中
+/// 切走 tab 页面就被销毁——debug 下往已销毁的 notifier 写进度抛断言、从分块循环里冒出来
+/// 把删除停在一半；release 下 `if (mounted)` 把重读跳过，列表缓存里一直留着已删的牌组。
+/// 现在删除由本控制器跑完：进度 notifier 归控制器所有，页面只订阅；删完（或失败）一律让
+/// 列表重读，与页面在不在无关。
+class SrsDeckDeleteController extends ChangeNotifier {
+  SrsDeckDeleteController({required void Function() onDataChanged})
+    : _onDataChanged = onDataChanged;
+
+  final void Function() _onDataChanged;
+
+  /// 正在删（或已删完、列表还没重读掉它）的牌组 → 进度（0–1；null = 还不知道总数）。
+  final Map<String, ValueNotifier<double?>> _deleting =
+      <String, ValueNotifier<double?>>{};
+
+  /// 已经删完、等列表重读的牌组。
+  final Set<String> _deleted = <String>{};
+  bool _disposed = false;
+
+  /// 正在删的牌组及其进度（子牌组随父牌组一起显示删除中，由页面按层级查）。
+  Map<String, ValueListenable<double?>> get deleting =>
+      Map<String, ValueListenable<double?>>.unmodifiable(_deleting);
+
+  /// 这个牌组是否在删（删完、等重读的也算：行保持删除中，直到列表里没有它）。
+  bool isDeleting(String deckId) => _deleting.containsKey(deckId);
+
+  /// 删一个牌组（连同子牌组，见 `SrsDbStore.deleteDeck`；[deleteCards] 为真时连卡片一起删）。
+  /// 同一个牌组已经在删时直接返回。
+  /// 失败原样抛出（调用方记日志）；成功或失败都让列表重读（失败也可能已提交了前几块）。
+  Future<void> delete(
+    SrsDbStore store,
+    String deckId, {
+    bool deleteCards = false,
+  }) async {
+    if (_disposed || _deleting.containsKey(deckId)) return;
+    final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
+    _deleting[deckId] = progress;
+    _notify();
+    try {
+      await store.deleteDeck(
+        deckId,
+        deleteCards: deleteCards,
+        onProgress: (int done, int total) {
+          if (!_disposed && total > 0) progress.value = done / total;
+        },
+      );
+      _deleted.add(deckId);
+    } catch (_) {
+      if (identical(_deleting[deckId], progress)) {
+        _deleting.remove(deckId);
+        progress.dispose();
+      }
+      _notify();
+      rethrow;
+    } finally {
+      if (!_disposed) _onDataChanged();
+    }
+  }
+
+  /// 重读回来的列表里已经没有的、删完的牌组：撤掉删除中状态。不发通知——由正在用这份新
+  /// 列表建界面的页面调用，它这一帧本来就按新列表画（列表里没有这些行）。
+  void pruneDeleted(Iterable<String> presentDeckIds) {
+    if (_deleted.isEmpty) return;
+    final Set<String> present = presentDeckIds.toSet();
+    for (final String id in _deleted.toList()) {
+      if (present.contains(id)) continue;
+      _deleted.remove(id);
+      // 旧行若还挂着监听，卸载时对已销毁的 notifier 调 removeListener 是允许的。
+      _deleting.remove(id)?.dispose();
+    }
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    for (final ValueNotifier<double?> n in _deleting.values) {
+      n.dispose();
+    }
+    _deleting.clear();
+    super.dispose();
+  }
+}
+
+/// 进程内唯一的删牌组控制器（根容器里常驻，不随页面销毁）。
+final Provider<SrsDeckDeleteController> srsDeckDeleteControllerProvider =
+    Provider<SrsDeckDeleteController>((Ref ref) {
+      final SrsDeckDeleteController c = SrsDeckDeleteController(
+        onDataChanged: () => ref.read(srsRevisionProvider.notifier).state++,
+      );
+      ref.onDispose(c.dispose);
+      return c;
+    });
+
+/// 牌组列表数据（牌组行）。同步冲突数另见 [srsConflictCountProvider]。
 class SrsDeckListData {
-  const SrsDeckListData({
-    required this.store,
-    required this.decks,
-    required this.conflictCount,
-  });
+  const SrsDeckListData({required this.store, required this.decks});
 
   final SrsDbStore store;
   final List<SrsDeckSummary> decks;
-
-  /// 同步冲突（标志 / 设置类）+ 待裁决笔记，合计。
-  final int conflictCount;
 
   int get totalCards => _sumRoots((SrsDeckSummary d) => d.totalCards);
 
@@ -301,6 +459,10 @@ List<SrsDeckSummary> srsVisibleDecks(
 }
 
 /// 牌组列表（订阅 [srsRevisionProvider]，写操作后自动重读）。模块关着时为 null。
+///
+/// 只读牌组行：同步冲突数是另一个 provider（[srsConflictCountProvider]）。以前两者合在一个
+/// Future 里，新建 / 改名牌组后列表要等冲突扫描（读回并解析全部修改记录）跑完才换成新数据，
+/// 新牌组迟迟不出现（BUG-3548）。
 final FutureProvider<SrsDeckListData?> srsDeckListProvider =
     FutureProvider<SrsDeckListData?>((Ref ref) async {
       ref.watch(srsRevisionProvider);
@@ -310,14 +472,59 @@ final FutureProvider<SrsDeckListData?> srsDeckListProvider =
         await store.deckSummaries(),
         defaultDeckId: store.defaultDeckId,
       );
-      final int conflicts = (await store.syncConflicts()).length;
-      final int pending = (await store.notesPendingDecision()).length;
-      return SrsDeckListData(
-        store: store,
-        decks: decks,
-        conflictCount: conflicts + pending,
-      );
+      return SrsDeckListData(store: store, decks: decks);
     });
+
+/// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
+const String kSrsLapisMigrationReminderPrefKey = 'srs_lapis_migration_reminder';
+
+/// 是否显示旧 Lapis 迁移提醒（读写偏好 [kSrsLapisMigrationReminderPrefKey]）。
+final StateProvider<bool> srsLapisMigrationReminderProvider =
+    StateProvider<bool>((Ref ref) {
+      final AppModel app = ref.read(appProvider);
+      // 偏好还没装好（启动早期 / 未初始化的测试 AppModel）：按缺省提醒。
+      if (!app.isPreferencesReady) return true;
+      return app.prefsRepo.getPref(
+            kSrsLapisMigrationReminderPrefKey,
+            defaultValue: true,
+          ) !=
+          false;
+    });
+
+/// 关掉旧 Lapis 迁移提醒（「不再提醒」）：立即生效并落偏好。
+Future<void> dismissSrsLapisMigrationReminder(WidgetRef ref) async {
+  ref.read(srsLapisMigrationReminderProvider.notifier).state = false;
+  final AppModel app = ref.read(appProvider);
+  if (!app.isPreferencesReady) return;
+  await app.prefsRepo.setPref(kSrsLapisMigrationReminderPrefKey, false);
+}
+
+/// 还能迁到 Fushi 卡片的旧 Lapis 笔记 + 可补迁遗漏字段的笔记，合计（牌组列表的迁移提醒）。
+/// 提醒关着时不算（不为看不见的提示扫库）。
+final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
+  Ref ref,
+) async {
+  ref.watch(srsRevisionProvider);
+  if (!ref.watch(srsLapisMigrationReminderProvider)) return 0;
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return 0;
+  final ({int migratable, int backfill}) pending = await store
+      .legacyLapisPendingCounts();
+  return pending.migratable + pending.backfill;
+});
+
+/// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
+/// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。
+final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
+  Ref ref,
+) async {
+  ref.watch(srsRevisionProvider);
+  final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+  if (store == null) return 0;
+  final int conflicts = (await store.syncConflicts()).length;
+  final int pending = (await store.notesPendingDecision()).length;
+  return conflicts + pending;
+});
 
 /// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。
 Future<SrsDbStore?> readSrsStore(WidgetRef ref) async {

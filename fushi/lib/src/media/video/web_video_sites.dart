@@ -19,6 +19,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
+import 'package:fushi/src/webview/untrusted_page_urls.dart';
 
 /// 用户自己加的网站（JSON 数组，`[{title, url}]`）。预置站点不存这里。
 const String kWebVideoSitesPrefKey = 'video_web_sites';
@@ -155,7 +156,8 @@ bool webVideoEpisodeTitleIsPlaceholder(String title, String episodeUrl) {
 String? webVideoEpisodeCoverUrl(String episodeUrl, {String pageImage = ''}) {
   final String? ytId = youtubeVideoIdOrNull(episodeUrl);
   if (ytId != null && ytId.isNotEmpty) return youtubeThumbnailUrl(ytId);
-  return pageImage.isEmpty ? null : pageImage;
+  // 页面 og:image / 站点 metadata 剧照是不可信数据：只收 https 远端地址。
+  return safeRemoteImageUrl(pageImage)?.toString();
 }
 
 /// 补全这一集的书：占位书名换成站点给的真名、没封面的下一张。返回更新后的行（没变就是原行）。

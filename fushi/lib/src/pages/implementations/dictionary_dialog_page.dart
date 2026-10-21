@@ -889,7 +889,7 @@ class _DictionaryDialogPageState extends BasePageState {
       title: t.dialog_title_dictionary_delete(
         name: dictionary.effectiveDisplayName,
       ),
-      content: t.dialog_content_dictionary_delete,
+      content: _deleteConfirmContent(<Dictionary>[dictionary]),
       confirmLabel: t.dialog_delete,
       run: () => appModel.deleteDictionary(dictionary),
       progressName: dictionary.effectiveDisplayName,
@@ -1730,9 +1730,7 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget _buildListHeader(List<Dictionary> dictionaries) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = theme.colorScheme;
-    final int enabledCount = dictionaries
-        .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
-        .length;
+    final int enabledCount = dictionaries.where(_enabledInSection).length;
     final TargetPlatform platform = theme.platform;
     final bool desktop = platform == TargetPlatform.windows ||
         platform == TargetPlatform.linux ||
@@ -1927,7 +1925,7 @@ class _DictionaryDialogPageState extends BasePageState {
     required List<Dictionary> dictionaries,
     required bool split,
   }) {
-    final bool enabled = !dictionary.isHidden(JapaneseLanguage.instance);
+    final bool enabled = _enabledInSection(dictionary);
     final ColorScheme scheme = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
@@ -1941,10 +1939,11 @@ class _DictionaryDialogPageState extends BasePageState {
         fontWeight: FontWeight.w600,
       ),
     );
+    final String baseSubtitle = _isKanjiPart(dictionary)
+        ? '${_subtitleForDictionary(dictionary)} · ${t.dict_mixed_kanji_part}'
+        : _subtitleForDictionary(dictionary);
     final Widget subtitle = Text(
-      enabled
-          ? _subtitleForDictionary(dictionary)
-          : '${_subtitleForDictionary(dictionary)} · ${t.dict_status_disabled}',
+      enabled ? baseSubtitle : '$baseSubtitle · ${t.dict_status_disabled}',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
@@ -1961,7 +1960,9 @@ class _DictionaryDialogPageState extends BasePageState {
         : Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              _buildDictionaryCollapseButton(dictionary),
+              // 折叠管的是查词弹窗里这本的释义；汉字卡不折叠，「汉字」分区不给这个钮。
+              if (_hasCollapseControl(dictionary))
+                _buildDictionaryCollapseButton(dictionary),
               _buildDictionaryVisibilityButton(dictionary, enabled),
             ],
           );
@@ -2056,33 +2057,35 @@ class _DictionaryDialogPageState extends BasePageState {
   // collapse_dictionaries 默认 true，用户对自动展开窗口之外的词典点「展开」，
   // 视觉上毫无反应。现在是三态循环：继承 → 显式展开 → 显式折叠 → 继承。
   //
-  // 图标表示**当前态**（20+ 本词典要能一眼扫出谁被显式设过），tooltip 说的是
-  // **点一下会变成什么**——两者故意不同，别再把它们合成一个。
+  // 图标与 tooltip 都表示**当前态**（20+ 本词典要能一眼扫出谁被显式设过）。
+  // 以前 tooltip 说的是「点一下会变成什么」，折叠图标配「跟随全局设置」被读成
+  // 当前态。tooltip 带「默认展示」标题、用详情分段控件同一套状态词，免得中文
+  // 「折叠」被读成动作。
   Widget _buildDictionaryCollapseButton(Dictionary dictionary) {
     final DictionaryCollapseState state =
         dictionary.collapseStateFor(JapaneseLanguage.instance);
-    final (IconData icon, String tooltip) = switch (state) {
+    final (IconData icon, String stateLabel) = switch (state) {
       // 未表态：一条横杠，与两个「已表态」图标一眼可分。点下去 → 显式展开。
       DictionaryCollapseState.inherit => (
           Icons.horizontal_rule,
-          t.options_expand,
+          t.dict_collapse_state_inherit,
         ),
       // 显式展开：展开图标。点下去 → 显式折叠。
       DictionaryCollapseState.expanded => (
           Icons.unfold_more,
-          t.options_collapse,
+          t.dict_collapse_state_expanded,
         ),
       // 显式折叠：折叠图标。点下去 → 交还给全局。
       DictionaryCollapseState.collapsed => (
           Icons.unfold_less,
-          t.dictionary_collapse_follow_global,
+          t.dict_collapse_state_collapsed,
         ),
     };
     return FushiIconButton(
       key: ValueKey<String>('dict-row-collapse-${dictionary.name}'),
       icon: icon,
       size: 20,
-      tooltip: tooltip,
+      tooltip: t.dict_row_collapse_tooltip(state: stateLabel),
       onTap: () => _saveDictionaryChange(
         () => appModel.cycleDictionaryCollapseState(dictionary),
       ),
@@ -2146,6 +2149,14 @@ class _DictionaryDialogPageState extends BasePageState {
     final Dictionary item = cloneDictionaries.removeAt(oldIndex);
     cloneDictionaries.insert(newIndex, item);
 
+    // 「汉字」分区里混合词典只动汉字部分的位置，不能走按 order 整体重编号的路径
+    // （那会把它在「术语」分区的位置一起改掉）。
+    if (_selectedType == DictionaryType.kanji) {
+      return _saveDictionaryChange(
+        () => appModel.updateKanjiSectionOrder(cloneDictionaries),
+      );
+    }
+
     for (int i = 0; i < cloneDictionaries.length; i++) {
       cloneDictionaries[i] = cloneDictionaries[i].copyWith(order: i);
     }
@@ -2157,7 +2168,8 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 把 [dictionary] 挪到本类型列表的最终下标 [to]（详情里的四个排序按钮）。
   Future<bool> _moveDictionaryTo(Dictionary dictionary, int to) async {
-    final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
+    final List<Dictionary> dictionaries =
+        _dictionariesForType(_sectionTypeOf(dictionary));
     final int from =
         dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
     if (from < 0) return false;
@@ -2168,7 +2180,8 @@ class _DictionaryDialogPageState extends BasePageState {
   /// [_reorderDictionaries] 写入路径，焦点跟着被移动的词典走（列表所在路由是
   /// 当前路由时——窄屏从底部 sheet 里移动时焦点留在 sheet，sheet 内容自己刷新）。
   Future<void> _promptMoveDictionary(Dictionary dictionary) async {
-    final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
+    final List<Dictionary> dictionaries =
+        _dictionariesForType(_sectionTypeOf(dictionary));
     final int from =
         dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
     if (from < 0 || dictionaries.length < 2) return;
@@ -2276,7 +2289,7 @@ class _DictionaryDialogPageState extends BasePageState {
             final FushiDesignTokens tokens = FushiDesignTokens.of(context);
             return FushiModalSheetFrame(
               title: current.effectiveDisplayName,
-              subtitle: _typeLabel(current.type),
+              subtitle: _sectionTypeLabel(current),
               leadingIcon: DictionaryMediaType.instance.outlinedIcon,
               scrollable: true,
               maxHeightFactor: 0.9,
@@ -2315,7 +2328,8 @@ class _DictionaryDialogPageState extends BasePageState {
     required bool showHeader,
     required VoidCallback onDeleteRequested,
   }) {
-    final List<Dictionary> siblings = _dictionariesForType(dictionary.type);
+    final List<Dictionary> siblings =
+        _dictionariesForType(_sectionTypeOf(dictionary));
     final int position =
         siblings.indexWhere((Dictionary d) => d.name == dictionary.name);
     final DictionaryFormat? format =
@@ -2330,9 +2344,9 @@ class _DictionaryDialogPageState extends BasePageState {
     return DictionaryManagerDetail(
       key: ValueKey<String>('dict-detail-${dictionary.name}'),
       dictionary: dictionary,
-      enabled: !dictionary.isHidden(JapaneseLanguage.instance),
+      enabled: _enabledInSection(dictionary),
       collapseState: dictionary.collapseStateFor(JapaneseLanguage.instance),
-      typeLabel: _typeLabel(dictionary.type),
+      typeLabel: _sectionTypeLabel(dictionary),
       versionLabel: dictionary.revision,
       formatLabel: format?.name ?? dictionary.formatKey,
       languageLabel: languageLabel,
@@ -2341,8 +2355,10 @@ class _DictionaryDialogPageState extends BasePageState {
       showHeader: showHeader,
       onEnabledChanged: (bool enabled) =>
           _setDictionaryEnabled(dictionary, enabled),
-      onCollapseChanged: (DictionaryCollapseState state) =>
-          _setCollapseState(dictionary, state),
+      onCollapseChanged: _hasCollapseControl(dictionary)
+          ? (DictionaryCollapseState state) =>
+              _setCollapseState(dictionary, state)
+          : null,
       onRename: () => _renameDictionary(dictionary),
       onLanguage: () => _showDictionaryLanguageDialog(dictionary),
       // TODO-839：每本词典都给「更新」（消除「这本能更新那本不能」的断层），按
@@ -2422,7 +2438,11 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: icon,
         total: list.length,
         enabled: list
-            .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
+            .where(
+              (Dictionary d) => type == DictionaryType.kanji
+                  ? d.isKanjiSectionEnabled(JapaneseLanguage.instance)
+                  : !d.isHidden(JapaneseLanguage.instance),
+            )
             .length,
       );
     }
@@ -2547,9 +2567,17 @@ class _DictionaryDialogPageState extends BasePageState {
   Future<bool> _batchSetEnabled(bool enabled) =>
       _saveDictionaryChange(() async {
         for (final Dictionary dictionary in _selectedDictionaries) {
-          await appModel.setDictionaryHidden(dictionary, !enabled);
+          await _writeEnabledInSection(dictionary, enabled);
         }
       });
+
+  /// 删除确认正文。「汉字」分区里的混合词典行只是整本词典的汉字部分，删除却是
+  /// 整本删（术语词条一起没了），确认框必须说清楚并指向只关汉字部分的开关。
+  String _deleteConfirmContent(List<Dictionary> targets) =>
+      targets.any(_isKanjiPart)
+          ? '${t.dialog_content_dictionary_delete}\n\n'
+              '${t.dict_mixed_kanji_part_delete_note}'
+          : t.dialog_content_dictionary_delete;
 
   /// 批量删除：一次确认，逐本走与单本删除同一条 [AppModel.deleteDictionary]
   /// （同一进度页 / 失败提示），删完退出多选。
@@ -2558,7 +2586,7 @@ class _DictionaryDialogPageState extends BasePageState {
     if (targets.isEmpty) return Future<void>.value();
     return _showDictionaryActionConfirmDialog(
       title: t.dict_batch_delete_title(n: targets.length),
-      content: t.dialog_content_dictionary_delete,
+      content: _deleteConfirmContent(targets),
       confirmLabel: t.dialog_delete,
       run: () async {
         for (final Dictionary dictionary in targets) {
@@ -2588,11 +2616,39 @@ class _DictionaryDialogPageState extends BasePageState {
   List<Dictionary> _dictionariesForType(DictionaryType type) {
     return switch (type) {
       DictionaryType.term => appModel.termDictionaries,
-      DictionaryType.kanji => appModel.kanjiDictionaries,
+      DictionaryType.kanji => appModel.kanjiSectionDictionaries,
       DictionaryType.frequency => appModel.freqDictionaries,
       DictionaryType.pitch => appModel.pitchDictionaries,
     };
   }
+
+  /// 当前在「汉字」分区里看的是一本混合词典的汉字部分（Hoshi Reader 同款：附汉字
+  /// 表的 term 词典在「术语」「汉字」两个分区各占一行，开关与排序各管各的）。
+  bool _isKanjiPart(Dictionary dictionary) =>
+      _selectedType == DictionaryType.kanji && dictionary.hasEmbeddedKanji;
+
+  /// 这一行所在的分区：汉字部分算「汉字」，其余按词典自身类型。
+  DictionaryType _sectionTypeOf(Dictionary dictionary) =>
+      _isKanjiPart(dictionary) ? DictionaryType.kanji : dictionary.type;
+
+  /// 这一行给不给「折叠」控件（行内按钮与详情里的分段同一判据）：折叠只作用于查词
+  /// 弹窗里的释义，「汉字」分区的行对应汉字卡（不折叠），在那里给控件改的会是混合
+  /// 词典术语部分的状态。
+  bool _hasCollapseControl(Dictionary dictionary) =>
+      _sectionTypeOf(dictionary) != DictionaryType.kanji;
+
+  String _sectionTypeLabel(Dictionary dictionary) => _isKanjiPart(dictionary)
+      ? '${_typeLabel(DictionaryType.kanji)} · ${t.dict_mixed_kanji_part}'
+      : _typeLabel(dictionary.type);
+
+  bool _enabledInSection(Dictionary dictionary) => _isKanjiPart(dictionary)
+      ? !dictionary.isKanjiPartHidden
+      : !dictionary.isHidden(JapaneseLanguage.instance);
+
+  Future<void> _writeEnabledInSection(Dictionary dictionary, bool enabled) =>
+      _isKanjiPart(dictionary)
+          ? appModel.setDictionaryKanjiPartHidden(dictionary, !enabled)
+          : appModel.setDictionaryHidden(dictionary, !enabled);
 
   String _labelForType(DictionaryType type) {
     return switch (type) {
@@ -2604,8 +2660,7 @@ class _DictionaryDialogPageState extends BasePageState {
   }
 
   Future<bool> _setDictionaryEnabled(Dictionary dictionary, bool enabled) =>
-      _saveDictionaryChange(
-          () => appModel.setDictionaryHidden(dictionary, !enabled));
+      _saveDictionaryChange(() => _writeEnabledInSection(dictionary, enabled));
 
   FushiPopupMenuItem<VoidCallback> buildPopupItem({
     required String label,

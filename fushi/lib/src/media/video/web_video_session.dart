@@ -28,6 +28,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
+import 'package:fushi/src/webview/web_payload_limits.dart';
 
 /// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
 const String kWebVideoJsHandler = 'fushiWebVideo';
@@ -529,8 +530,21 @@ class WebVideoSession {
   /// 已采到的字幕轨整轨重投（换了书身份后 cue 的 bookKey 要跟着换）。
   Future<void> replayCues() => evaluate('window.__fushiWebVideo.replayCues()');
 
-  Future<void> setVideoOnly(bool on) =>
-      evaluate('window.__fushiWebVideo.setVideoOnly($on)');
+  /// YouTube 画质目标高度（设置「YouTube 画质」，0 = 自动 = 可用最高档）。每次进只留画面
+  /// 都随 [setVideoOnly] 带下去：整页导航后 glue 是新文档、状态从头来。
+  int qualityTargetHeight = 0;
+
+  Future<void> setVideoOnly(bool on) => evaluate(
+    'window.__fushiWebVideo.setVideoOnly($on, $qualityTargetHeight)',
+  );
+
+  /// 播放中改画质目标：记下（之后的 [setVideoOnly] 带它），并让页面当场重选。
+  Future<void> setQualityTarget(int height) {
+    qualityTargetHeight = height < 0 ? 0 : height;
+    return evaluate(
+      'window.__fushiWebVideo.setQualityTarget($qualityTargetHeight)',
+    );
+  }
 
   Future<void> setPlayerChromeHidden(bool hidden) =>
       evaluate('window.__fushiWebVideo.setPlayerChromeHidden($hidden)');
@@ -584,14 +598,22 @@ class WebVideoSession {
     _applyInputEnabled();
     controller.addJavaScriptHandler(
       handlerName: kWebVideoJsHandler,
-      callback: _onJsMessage,
+      callback: limitWebPayload(
+        kWebVideoJsHandler,
+        kWebPayloadLargeMaxChars,
+        _onJsMessage,
+      ),
     );
     controller.addJavaScriptHandler(
       handlerName: kWebVideoKeyBridgeHandler,
-      callback: (List<dynamic> args) {
-        if (args.isNotEmpty) onKeyToken?.call(args.first.toString());
-        return null;
-      },
+      callback: limitWebPayload(
+        kWebVideoKeyBridgeHandler,
+        kWebPayloadTinyMaxChars,
+        (List<dynamic> args) {
+          if (args.isNotEmpty) onKeyToken?.call(args.first.toString());
+          return null;
+        },
+      ),
     );
   }
 
@@ -621,7 +643,10 @@ class WebVideoSession {
         final WebVideoLookupRequest? request = parseWebVideoLookupPayload(msg);
         if (request != null) onPageLookup?.call(request);
       case 'state':
-        final WebVideoPlaybackState? state = parseWebVideoStatePayload(msg);
+        final WebVideoPlaybackState? state = parseWebVideoStatePayload(
+          msg,
+          webViewUrl: nav.value.url,
+        );
         if (state != null) {
           _lastState = state;
           onState?.call(state);

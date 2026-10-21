@@ -390,8 +390,8 @@ class VoiceHookReader {
                                std::vector<uint8_t>& out);
 
   // **按句取「整句」语音**（[GrabClipNear] 的整句版，替代 ~125ms 碎片）：游戏多条 source voice
-  // 并行流式，一次 SubmitSourceBuffer 只 ~60-136ms。本方法把同一 [source_ptr] 源在 [ts_ms-200,
-  // ts_ms+6000] 的所有段逐段从环形拼接、去首尾静音，产出整句 PCM 到 [out]。
+  // 并行流式，一次 SubmitSourceBuffer 只 ~60-136ms。本方法把同一 [source_ptr] 源在 [下界,
+  // ts_ms+kUtteranceMaxForwardMs（30s）；有 end_ts_ms 时收到下一句] 的所有段逐段从环形拼接、去首尾静音，产出整句 PCM 到 [out]。
   //   - [target_source] 非 0：**直接用该源**（用户手动选定的语音轨），跳过能量自动选源。
   //   - [target_source] 为 0：按能量自动选语音源（说话前静音、文本时刻突然有能量者），并排除
   //     [exclude_sources] 里的源（用户标记的 BGM）。自动选源在真机上可能误选 BGM，故提供手动。

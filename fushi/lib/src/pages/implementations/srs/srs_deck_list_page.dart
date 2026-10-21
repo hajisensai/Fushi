@@ -1,7 +1,8 @@
 /// 复习模块主页：牌组列表（底栏 / 侧栏「复习」tab，见 `HomeTab.srs`）。
 ///
 /// 每行：牌组名（子牌组前面按层级画细竖线）+ 新卡 / 学习 / 到期三色计数；新卡被自动
-/// 缩减时多一行小字。点行进复习；行内菜单：新建子牌组 / 改名 / 牌组设置 / 删除（默认
+/// 缩减时多一行小字。点行进复习；行内菜单：浏览此牌组的卡片（带 `deck:"全名"` 打开
+/// 浏览页）/ 新建子牌组 / 改名 / 牌组设置 / 删除（默认
 /// 牌组不可删；空着又没有子牌组时不显示，见 [srsVisibleDecks]）。
 /// 顶栏动作默认平铺、放不下才按优先级收进「⋯」（MD3 = [FushiFloatingTopBar] 的
 /// 自适应溢出；Apple = 导航栏动作，由 [FushiPageHeader] 自己收）。
@@ -9,27 +10,38 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
+import 'package:fushi_engine/srs/srs_browse.dart' show srsDeckQuery;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_backups_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
+import 'package:fushi/src/srs/srs_import_task.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -39,7 +51,46 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 
 /// 行内菜单动作。
-enum _DeckAction { addChild, rename, settings, delete }
+enum _DeckAction {
+  browse,
+  addChild,
+  rename,
+  move,
+  moveUp,
+  moveDown,
+  settings,
+  delete,
+}
+
+enum _ImportSource { anki, file, minedHistory }
+
+enum _DeckDeleteMode { moveCards, deleteCards }
+
+/// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
+List<SrsDeckSummary> _siblingsOf(
+  List<SrsDeckSummary> decks,
+  SrsDeckSummary deck,
+) => <SrsDeckSummary>[
+  for (final SrsDeckSummary d in decks)
+    if (d.parentId == deck.parentId) d,
+];
+
+/// [rootId] 及其全部子孙牌组的 id（「移动到…」排除目标、拖放判据共用）。
+@visibleForTesting
+Set<String> srsDeckSubtreeIds(List<SrsDeckSummary> decks, String rootId) {
+  final Map<String?, List<String>> children = <String?, List<String>>{};
+  for (final SrsDeckSummary d in decks) {
+    (children[d.parentId] ??= <String>[]).add(d.deck.id);
+  }
+  final Set<String> out = <String>{rootId};
+  final List<String> stack = <String>[rootId];
+  while (stack.isNotEmpty) {
+    for (final String c in children[stack.removeLast()] ?? const <String>[]) {
+      if (out.add(c)) stack.add(c);
+    }
+  }
+  return out;
+}
 
 class SrsDeckListPage extends ConsumerStatefulWidget {
   const SrsDeckListPage({super.key});
@@ -49,6 +100,27 @@ class SrsDeckListPage extends ConsumerStatefulWidget {
 }
 
 class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
+  /// Anki 一键迁移完成后：迁进来的笔记里有旧 Lapis（或此前迁移漏掉的字段）时，
+  /// 顺手问一句要不要迁到 Fushi 卡片。[context] 是迁移页的。
+  Future<void> _offerLegacyLapisMigration(
+    BuildContext context,
+    SrsImportReport report,
+  ) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !context.mounted) return;
+    final ({int migratable, int backfill}) pending = await store
+        .legacyLapisPendingCounts();
+    final int n = pending.migratable + pending.backfill;
+    if (n == 0 || !context.mounted) return;
+    final bool go = await showFushiConfirmDialog(
+      context: context,
+      title: t.srs_lapis_migration_title,
+      message: t.srs_lapis_migration_entry_summary(n: n),
+      confirmLabel: t.srs_lapis_migration_migrate,
+    );
+    if (go && context.mounted) await openSrsLegacyLapisMigrationPage(context);
+  }
+
   Future<T?> _push<T>(Widget Function(BuildContext context) builder) async {
     final T? result = await Navigator.of(
       context,
@@ -61,8 +133,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   Future<void> _addNote({String? deckId}) =>
       _push<void>((_) => SrsNoteEditorPage(initialDeckId: deckId));
 
-  Future<void> _openBrowse() => _push<void>(
-    (_) => const SrsBrowsePage(
+  /// [query] 非 null：带着初始查询打开（牌组菜单「浏览此牌组的卡片」= `deck:"全名"`）。
+  Future<void> _openBrowse({String? query}) => _push<void>(
+    (_) => SrsBrowsePage(
+      initialQuery: query,
       onChangeNoteType: showSrsChangeNoteTypeFlow,
       onMigrateToFushiCard: srsMigrateNotesToFushiCard,
     ),
@@ -116,21 +190,42 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (mounted) bumpSrsRevision(ref);
   }
 
+  /// 删牌组时卡片的去向二选一（Anki 的删除牌组是连卡片一起删；以前这里只能移走卡片）。
   Future<void> _delete(SrsDeckSummary deck) async {
-    final bool confirmed = await showFushiConfirmDialog(
+    final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
-      message: t.srs_deck_delete_confirm(name: deck.fullName),
-      confirmLabel: t.srs_deck_delete,
-      cancelLabel: t.cancel,
+      message: t.srs_deck_delete_prompt(name: deck.fullName),
       icon: FushiIcons.delete,
-      destructive: true,
+      options: <FushiChoiceOption<_DeckDeleteMode>>[
+        FushiChoiceOption<_DeckDeleteMode>(
+          value: _DeckDeleteMode.moveCards,
+          label: t.srs_deck_delete_move_cards,
+          subtitle: t.srs_deck_delete_move_cards_hint,
+          icon: FushiIcons.moveFile,
+        ),
+        FushiChoiceOption<_DeckDeleteMode>(
+          value: _DeckDeleteMode.deleteCards,
+          label: t.srs_deck_delete_with_cards,
+          subtitle: t.srs_deck_delete_with_cards_hint,
+          icon: FushiIcons.deleteSweep,
+        ),
+      ],
     );
-    if (!confirmed || !mounted) return;
+    if (mode == null || !mounted) return;
+    // 控制器先取出来：删除途中本页可能被销毁（复习 tab 不常驻），之后不能再碰 ref。
+    final SrsDeckDeleteController deleter = ref.read(
+      srsDeckDeleteControllerProvider,
+    );
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
-    await store.deleteDeck(deck.deck.id);
-    if (mounted) bumpSrsRevision(ref);
+    // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用。删除由 app 级
+    // 控制器跑完并让列表重读，与本页在不在无关。
+    await deleter.delete(
+      store,
+      deck.deck.id,
+      deleteCards: mode == _DeckDeleteMode.deleteCards,
+    );
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。
@@ -143,6 +238,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 
   void _onDeckAction(SrsDeckSummary deck, _DeckAction action) {
     switch (action) {
+      case _DeckAction.browse:
+        srsRunLogged(
+          'SrsDeckList.browseDeck',
+          () => _openBrowse(query: srsDeckQuery(deck.fullName)),
+        );
       case _DeckAction.addChild:
         srsRunLogged(
           'SrsDeckList.addChild',
@@ -150,6 +250,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         );
       case _DeckAction.rename:
         srsRunLogged('SrsDeckList.rename', () => _rename(deck));
+      case _DeckAction.move:
+        srsRunLogged('SrsDeckList.move', () => _pickMoveTarget(deck));
+      case _DeckAction.moveUp:
+        srsRunLogged('SrsDeckList.moveUp', () => _shift(deck, -1));
+      case _DeckAction.moveDown:
+        srsRunLogged('SrsDeckList.moveDown', () => _shift(deck, 1));
       case _DeckAction.settings:
         srsRunLogged(
           'SrsDeckList.settings',
@@ -160,17 +266,130 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     }
   }
 
-  /// 复习的「今天」从几点开始：与统计页共用日界（stats_day_reset_hour）。
-  Future<void> _showDayBoundary() async {
-    final int hour = ref.read(appProvider).statDayResetHour;
-    await showFushiConfirmDialog(
+  /// 「导入」：三种来源一个入口（以前「导入」「从 Anki 迁移」「从制卡历史导入」分散在
+  /// 顶栏与 ⋯ 里，看不出区别）。
+  Future<void> _openImport() async {
+    final _ImportSource? source = await showFushiChoiceDialog<_ImportSource>(
       context: context,
-      title: t.srs_day_boundary_title,
-      message: t.srs_day_boundary_body(hour: hour),
-      icon: FushiIcons.schedule,
-      confirmLabel: t.dialog_ok,
-      cancelLabel: t.cancel,
+      title: t.srs_import,
+      icon: FushiIcons.importFile,
+      options: <FushiChoiceOption<_ImportSource>>[
+        FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.anki,
+          label: t.srs_anki_migrate,
+          subtitle: t.srs_anki_migrate_hint,
+          icon: FushiIcons.moveFile,
+        ),
+        FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.file,
+          label: t.srs_import_file,
+          subtitle: t.srs_import_file_hint,
+          icon: FushiIcons.importFile,
+        ),
+        FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.minedHistory,
+          label: t.srs_history_import,
+          subtitle: t.srs_history_import_hint,
+          icon: FushiIcons.history,
+        ),
+      ],
     );
+    if (source == null || !mounted) return;
+    switch (source) {
+      case _ImportSource.anki:
+        await _push<void>(
+          (_) => SrsAnkiMigrationPage(onMigrated: _offerLegacyLapisMigration),
+        );
+      case _ImportSource.file:
+        await openSrsImport(context, ref);
+      case _ImportSource.minedHistory:
+        await openSrsMinedHistoryImport(context, ref);
+    }
+  }
+
+  Future<void> _syncNow() => openSrsSyncNow(
+    ref.read(srsAppRuntimeProvider)?.syncNow,
+    onNoChannel: () async {
+      if (!mounted) return;
+      await showSrsSyncSetupDialog(
+        context,
+        ref.read(appProvider).moduleVisibility,
+      );
+    },
+  );
+
+  /// 牌组拖放 / 「移动到… / 上移 / 下移」落地：拒绝时说明原因，成功后列表重读。
+  Future<void> _placeDeck(
+    SrsDeckSummary deck,
+    String? parentId, {
+    String? beforeId,
+  }) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null) return;
+    final SrsDeckMoveResult result = await store.placeDeck(
+      deck.deck.id,
+      parentId: parentId,
+      beforeId: beforeId,
+    );
+    switch (result) {
+      case SrsDeckMoveResult.moved:
+        if (mounted) bumpSrsRevision(ref);
+      case SrsDeckMoveResult.unchanged || SrsDeckMoveResult.missing:
+        break;
+      case SrsDeckMoveResult.intoOwnSubtree:
+        FushiToast.show(
+          msg: t.srs_deck_move_into_own_subdeck,
+          severity: ToastSeverity.warning,
+        );
+      case SrsDeckMoveResult.nameTaken:
+        FushiToast.show(
+          msg: t.srs_deck_move_name_taken,
+          severity: ToastSeverity.warning,
+        );
+    }
+  }
+
+  /// 行菜单「移动到…」：键盘 / 手柄 / 窄屏触摸（长按已是菜单）也能挪牌组。
+  /// 目标里不列它自己和它的子孙。
+  Future<void> _pickMoveTarget(SrsDeckSummary deck) async {
+    final SrsDeckListData? data = ref.read(srsDeckListProvider).valueOrNull;
+    if (data == null) return;
+    final Set<String> subtree = srsDeckSubtreeIds(data.decks, deck.deck.id);
+    const String topLevel = '';
+    final String? picked = await showFushiChoiceDialog<String>(
+      context: context,
+      title: t.srs_deck_move,
+      icon: FushiIcons.moveFile,
+      selected: deck.parentId ?? topLevel,
+      options: <FushiChoiceOption<String>>[
+        FushiChoiceOption<String>(
+          value: topLevel,
+          label: t.srs_deck_move_top_level,
+        ),
+        for (final SrsDeckSummary d in data.decks)
+          if (!subtree.contains(d.deck.id))
+            FushiChoiceOption<String>(value: d.deck.id, label: d.fullName),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    await _placeDeck(deck, picked == topLevel ? null : picked);
+  }
+
+  /// 「上移 / 下移」：在同级里挪一位（[delta] = -1 / +1）。
+  Future<void> _shift(SrsDeckSummary deck, int delta) async {
+    final SrsDeckListData? data = ref.read(srsDeckListProvider).valueOrNull;
+    if (data == null) return;
+    final List<SrsDeckSummary> level = _siblingsOf(data.decks, deck);
+    final int i = level.indexWhere(
+      (SrsDeckSummary d) => d.deck.id == deck.deck.id,
+    );
+    final int to = i + delta;
+    if (i < 0 || to < 0 || to >= level.length) return;
+    // 上移 = 排到前一个前面；下移 = 排到后一个的后面（即再后一个前面，没有就排最后）。
+    final String? beforeId = delta < 0
+        ? level[to].deck.id
+        : (to + 1 < level.length ? level[to + 1].deck.id : null);
+    await _placeDeck(deck, deck.parentId, beforeId: beforeId);
   }
 
   /// 低优先级动作（MD3 顶栏的 [FushiFloatingTopBar.overflow]：宽度够平铺、不够收进「⋯」；
@@ -180,19 +399,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       key: const ValueKey<String>('srs_sync_now'),
       icon: FushiIcons.sync,
       label: t.srs_sync_now,
-      onPressed: () => srsRunLogged(
-        'SrsDeckList.syncNow',
-        () => openSrsSyncNow(ref.read(srsAppRuntimeProvider)?.syncNow),
-      ),
-    ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_history_import'),
-      icon: FushiIcons.history,
-      label: t.srs_history_import,
-      onPressed: () => srsRunLogged(
-        'SrsDeckList.historyImport',
-        () => openSrsMinedHistoryImport(context, ref),
-      ),
+      onPressed: () => srsRunLogged('SrsDeckList.syncNow', _syncNow),
     ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_export_apkg'),
@@ -216,18 +423,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         () => _push<void>((_) => const SrsBackupsPage()),
       ),
     ),
-    FushiToolbarItem(
-      key: const ValueKey<String>('srs_day_boundary'),
-      icon: FushiIcons.schedule,
-      label: t.srs_day_boundary_title,
-      onPressed: () => srsRunLogged('SrsDeckList.day', _showDayBoundary),
-    ),
   ];
 
   @override
   Widget build(BuildContext context) {
     final AsyncValue<SrsDeckListData?> data = ref.watch(srsDeckListProvider);
-    final int conflicts = data.valueOrNull?.conflictCount ?? 0;
+    final int conflicts = ref.watch(srsConflictCountProvider).valueOrNull ?? 0;
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.nav_srs,
@@ -246,7 +447,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
                   ? 'error'
                   : 'list',
             ),
-            child: _buildBody(context, data),
+            // 后台导入任务增减（任务条在列表最前，见 [_DeckList.showImportTasks]）与删牌组
+            // 开始 / 结束时重建。
+            child: ListenableBuilder(
+              listenable: Listenable.merge(<Listenable>[
+                ref.watch(srsImportControllerProvider),
+                ref.watch(srsDeckDeleteControllerProvider),
+              ]),
+              builder: (BuildContext context, Widget? _) =>
+                  _buildBody(context, data),
+            ),
           ),
         ),
       ),
@@ -286,8 +496,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       key: const ValueKey<String>('srs_import'),
       icon: FushiIcons.importFile,
       label: t.srs_import,
-      onPressed: () =>
-          srsRunLogged('SrsDeckList.import', () => openSrsImport(context, ref)),
+      onPressed: () => srsRunLogged('SrsDeckList.import', _openImport),
     ),
   ];
 
@@ -362,13 +571,37 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     if (list == null) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
+    final SrsDeckDeleteController deleter = ref.read(
+      srsDeckDeleteControllerProvider,
+    );
+    // 删完、重读的列表里已经没有它之后才撤掉删除中状态（否则旧数据里的行会先「复原」一下
+    // 再消失）。
+    deleter.pruneDeleted(<String>[
+      for (final SrsDeckSummary d in list.decks) d.deck.id,
+    ]);
     return _DeckList(
       data: list,
+      deleting: deleter.deleting,
+      lapisPending: ref.watch(srsLegacyLapisPendingProvider).valueOrNull ?? 0,
+      onMigrateLapis: () => srsRunLogged(
+        'SrsDeckList.lapisMigration',
+        () => openSrsLegacyLapisMigrationPage(context),
+      ),
+      onDismissLapisReminder: () => srsRunLogged(
+        'SrsDeckList.lapisReminderDismiss',
+        () => dismissSrsLapisMigrationReminder(ref),
+      ),
+      showImportTasks: ref.read(srsImportControllerProvider).tasks.isNotEmpty,
       onOpen: (SrsDeckSummary d) =>
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
       onAction: _onDeckAction,
       onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
       onSetCollapsed: _setCollapsed,
+      onPlace: (SrsDeckSummary deck, String? parentId, String? beforeId) =>
+          srsRunLogged(
+            'SrsDeckList.drop',
+            () => _placeDeck(deck, parentId, beforeId: beforeId),
+          ),
     );
   }
 }
@@ -376,13 +609,34 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 class _DeckList extends StatefulWidget {
   const _DeckList({
     required this.data,
+    required this.deleting,
     required this.onOpen,
     required this.onAction,
     required this.onAddFirst,
     required this.onSetCollapsed,
+    required this.showImportTasks,
+    required this.lapisPending,
+    required this.onMigrateLapis,
+    required this.onDismissLapisReminder,
+    required this.onPlace,
   });
 
+  /// 拖放落地（见 [_DeckPlace]）。
+  final _DeckPlace onPlace;
+
   final SrsDeckListData data;
+
+  /// 正在删的牌组（及其进度）；子牌组随父牌组一起显示删除中。
+  final Map<String, ValueListenable<double?>> deleting;
+
+  /// 有后台导入任务（排队 / 运行中 / 结束未关）：列表最前显示任务条。
+  final bool showImportTasks;
+
+  /// 还能迁到 Fushi 卡片（或可补迁遗漏字段）的旧 Lapis 笔记数；> 0 时列表前显示迁移提醒
+  /// （提醒被「不再提醒」关掉时为 0，见 [srsLegacyLapisPendingProvider]）。
+  final int lapisPending;
+  final VoidCallback onMigrateLapis;
+  final VoidCallback onDismissLapisReminder;
   final void Function(SrsDeckSummary deck) onOpen;
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
   final VoidCallback onAddFirst;
@@ -398,6 +652,14 @@ class _DeckList extends StatefulWidget {
 class _DeckListState extends State<_DeckList> {
   /// 本机刚点过、数据还没重读回来的折叠状态：先按它动画，不等写库往返。
   final Map<String, bool> _pending = <String, bool>{};
+
+  /// 正在拖的牌组（拖着子牌组时列表顶上出现「移到顶层」落点）。
+  SrsDeckSummary? _dragging;
+
+  void _setDragging(SrsDeckSummary? deck) {
+    if (!mounted || identical(_dragging, deck)) return;
+    setState(() => _dragging = deck);
+  }
 
   @override
   void didUpdateWidget(_DeckList oldWidget) {
@@ -449,6 +711,59 @@ class _DeckListState extends State<_DeckList> {
     ];
     final int visibleCount = visible.where((bool v) => v).length;
     final List<Widget> items = <Widget>[
+      // 后台导入任务（BUG-3549）：有任务时排在最前。
+      if (widget.showImportTasks)
+        const SrsImportTasksBar(key: ValueKey<String>('srs-import-tasks')),
+      if (widget.lapisPending > 0)
+        FushiCard(
+          key: const ValueKey<String>('srs-lapis-migration-reminder'),
+          tone: FushiCardTone.primary,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              Row(
+                spacing: tokens.spacing.gap * 1.5,
+                children: <Widget>[
+                  const FushiIcon(FushiIcons.swap),
+                  Expanded(
+                    child: Text(
+                      t.srs_lapis_migration_reminder_title,
+                      style: context.fushiType.titleMediumEmphasized,
+                    ),
+                  ),
+                ],
+              ),
+              Text(t.srs_lapis_migration_entry_summary(n: widget.lapisPending)),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  FushiPressScale(
+                    child: FushiTextButton(
+                      key: const ValueKey<String>(
+                        'srs-lapis-migration-reminder-dismiss',
+                      ),
+                      onPressed: widget.onDismissLapisReminder,
+                      child: Text(t.srs_lapis_migration_reminder_dismiss),
+                    ),
+                  ),
+                  FushiPressScale(
+                    child: FushiFilledButton.icon(
+                      key: const ValueKey<String>(
+                        'srs-lapis-migration-reminder-open',
+                      ),
+                      onPressed: widget.onMigrateLapis,
+                      icon: const FushiIcon(FushiIcons.swap),
+                      label: Text(t.srs_lapis_migration_migrate),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       if (!widget.data.store.canSchedule)
         FushiCard(
           key: const ValueKey<String>('srs-engine-missing'),
@@ -487,7 +802,31 @@ class _DeckListState extends State<_DeckList> {
           ),
         ),
     ];
+    // 删除中的牌组连同它的子牌组一起显示删除中（子牌组随父牌组一并删除）。
+    ValueListenable<double?>? deletingOf(SrsDeckSummary d) {
+      String? id = d.deck.id;
+      int guard = 0;
+      while (id != null && guard++ < 64) {
+        final ValueListenable<double?>? p = widget.deleting[id];
+        if (p != null) return p;
+        id = byId[id]?.parentId;
+      }
+      return null;
+    }
+
     final int firstDeckItem = items.length;
+    // 每个牌组的前 / 后一个同级（列表是先序，同级已排好）：拖到行下缘、上移 / 下移用。
+    final Map<String, String> next = <String, String>{};
+    final Set<String> hasPrev = <String>{};
+    final Map<String?, String> lastOfLevel = <String?, String>{};
+    for (final SrsDeckSummary d in decks) {
+      final String? prev = lastOfLevel[d.parentId];
+      if (prev != null) {
+        next[prev] = d.deck.id;
+        hasPrev.add(d.deck.id);
+      }
+      lastOfLevel[d.parentId] = d.deck.id;
+    }
     int shown = 0;
     for (int i = 0; i < decks.length; i++) {
       final SrsDeckSummary d = decks[i];
@@ -497,43 +836,78 @@ class _DeckListState extends State<_DeckList> {
         _DeckReveal(
           key: ValueKey<String>('srs-deck-${d.deck.id}'),
           visible: visible[i],
-          child: _DeckRow(
+          child: _DeckDragShell(
+            key: ValueKey<String>('srs-drag-${d.deck.id}'),
             deck: d,
-            index: index,
-            count: visibleCount,
-            isDefault: d.deck.id == widget.data.store.defaultDeckId,
-            hasTree: parents.isNotEmpty,
-            hasChildren: parents.contains(d.deck.id),
-            collapsed: _collapsed(d),
-            onSetCollapsed: (bool c) => _setCollapsed(d, c),
-            onOpen: widget.onOpen,
-            onAction: widget.onAction,
+            decks: decks,
+            enabled: deletingOf(d) == null,
+            onDragStarted: () => _setDragging(d),
+            onDragEnded: () => _setDragging(null),
+            onPlace: widget.onPlace,
+            nextSiblingId: next[d.deck.id],
+            child: _DeckRow(
+              deck: d,
+              deleting: deletingOf(d),
+              index: index,
+              count: visibleCount,
+              isDefault: d.deck.id == widget.data.store.defaultDeckId,
+              hasTree: parents.isNotEmpty,
+              hasChildren: parents.contains(d.deck.id),
+              collapsed: _collapsed(d),
+              onSetCollapsed: (bool c) => _setCollapsed(d, c),
+              onOpen: widget.onOpen,
+              onAction: widget.onAction,
+              canMoveUp: hasPrev.contains(d.deck.id),
+              canMoveDown: next.containsKey(d.deck.id),
+            ),
           ),
         ),
       );
     }
-    return FushiEntranceScope(
-      child: ListView.separated(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
-            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
-            tokens.spacing.page,
-            tokens.spacing.section,
+    final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
+    return Stack(
+      children: <Widget>[
+        FushiEntranceScope(
+          child: ListView.separated(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+                top,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+            ),
+            itemCount: items.length,
+            // 牌组行是一组分段卡（行间 2px，由 FushiGroupedListItem 自己画），横幅与
+            // 牌组之间才留卡片间距。
+            separatorBuilder: (BuildContext context, int index) => SizedBox(
+              height: index >= firstDeckItem ? 0 : tokens.spacing.gap * 1.5,
+            ),
+            itemBuilder: fushiStaggeredItemBuilder(
+              (BuildContext context, int index) => items[index],
+            ),
           ),
         ),
-        itemCount: items.length,
-        // 牌组行是一组分段卡（行间 2px，由 FushiGroupedListItem 自己画），横幅与
-        // 牌组之间才留卡片间距。
-        separatorBuilder: (BuildContext context, int index) => SizedBox(
-          height: index >= firstDeckItem ? 0 : tokens.spacing.gap * 1.5,
+        // 「移到顶层」落点浮在列表顶上（列表滚到哪都够得着），只在拖着子牌组时出现。
+        PositionedDirectional(
+          top: top,
+          start: tokens.spacing.page,
+          end: tokens.spacing.page,
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            child: _dragging?.parentId == null
+                ? const SizedBox.shrink()
+                : _TopLevelDropZone(
+                    key: const ValueKey<String>('srs-drop-top-level'),
+                    onPlace: widget.onPlace,
+                  ),
+          ),
         ),
-        itemBuilder: fushiStaggeredItemBuilder(
-          (BuildContext context, int index) => items[index],
-        ),
-      ),
+      ],
     );
   }
 }
@@ -612,6 +986,7 @@ class _DeckRevealState extends State<_DeckReveal>
 class _DeckRow extends StatelessWidget {
   const _DeckRow({
     required this.deck,
+    required this.deleting,
     required this.index,
     required this.count,
     required this.isDefault,
@@ -621,9 +996,18 @@ class _DeckRow extends StatelessWidget {
     required this.onSetCollapsed,
     required this.onOpen,
     required this.onAction,
+    required this.canMoveUp,
+    required this.canMoveDown,
   });
 
   final SrsDeckSummary deck;
+
+  /// 同级里前 / 后还有牌组（菜单「上移 / 下移」）。
+  final bool canMoveUp;
+  final bool canMoveDown;
+
+  /// 非 null = 正在删除（本牌组或祖先）：行变淡、不可点 / 不进焦点，副标题换成进度条。
+  final ValueListenable<double?>? deleting;
   final int index;
   final int count;
   final bool isDefault;
@@ -711,13 +1095,70 @@ class _DeckRow extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) =>
-        _buildRow(context, compact: constraints.maxWidth < compactBelow),
-  );
+  Widget build(BuildContext context) {
+    final bool busy = deleting != null;
+    return ExcludeFocus(
+      excluding: busy,
+      child: IgnorePointer(
+        ignoring: busy,
+        child: AnimatedOpacity(
+          opacity: busy ? 0.6 : 1,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) =>
+                _buildRow(
+                  context,
+                  compact: constraints.maxWidth < compactBelow,
+                ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 删除中的副标题：「正在删除…」+ 进度条（总数未知时不定进度）。展开 / 收起带尺寸与淡入淡出。
+  Widget? _subtitle(BuildContext context, String? note) {
+    final ValueListenable<double?>? progress = deleting;
+    final Widget? body = progress == null
+        ? (note == null ? null : Text(note))
+        : Column(
+            key: ValueKey<String>('srs-deck-deleting-${deck.deck.id}'),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+            children: <Widget>[
+              Text(t.srs_deck_deleting),
+              ValueListenableBuilder<double?>(
+                valueListenable: progress,
+                builder: (BuildContext context, double? value, Widget? _) =>
+                    FushiLinearProgressIndicator(
+                      value: value,
+                      semanticsLabel: t.srs_deck_deleting,
+                    ),
+              ),
+            ],
+          );
+    if (body == null && note == null && progress == null) return null;
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        child: body ?? const SizedBox.shrink(),
+      ),
+    );
+  }
 
   List<PopupMenuEntry<_DeckAction>> _menuItems() =>
       <PopupMenuEntry<_DeckAction>>[
+        // 默认牌组同样可用：批量移动 / 删除错导的卡从这里进（反馈 SSfSHb5JNt）。
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.browse,
+          child: Text(t.srs_deck_browse_cards),
+        ),
         PopupMenuItem<_DeckAction>(
           value: _DeckAction.addChild,
           child: Text(t.srs_deck_new_child),
@@ -726,6 +1167,20 @@ class _DeckRow extends StatelessWidget {
           value: _DeckAction.rename,
           child: Text(t.srs_deck_rename),
         ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.move,
+          child: Text(t.srs_deck_move),
+        ),
+        if (canMoveUp)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveUp,
+            child: Text(t.srs_deck_move_up),
+          ),
+        if (canMoveDown)
+          PopupMenuItem<_DeckAction>(
+            value: _DeckAction.moveDown,
+            child: Text(t.srs_deck_move_down),
+          ),
         PopupMenuItem<_DeckAction>(
           value: _DeckAction.settings,
           child: Text(t.srs_deck_settings),
@@ -820,7 +1275,7 @@ class _DeckRow extends StatelessWidget {
                           message: deck.fullName,
                           child: Text(deck.deck.name),
                         ),
-                  subtitle: note == null ? null : Text(note),
+                  subtitle: _subtitle(context, note),
                   trailing: compact
                       ? SrsCountTriple(
                           dense: true,
@@ -853,6 +1308,322 @@ class _DeckRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 只认 [devices] 的 [Draggable]：鼠标按下即可拖（桌面列表不靠拖动滚动），触摸走长按
+/// 版（[_DeviceLongPressDraggable]），两者设备不重叠、互不抢手势；触摸的滑动照常滚列表。
+class _DeviceDraggable<T extends Object> extends Draggable<T> {
+  const _DeviceDraggable({
+    required this.devices,
+    required super.child,
+    required super.feedback,
+    super.data,
+    super.childWhenDragging,
+    super.onDragStarted,
+    super.onDragEnd,
+    super.onDraggableCanceled,
+    super.dragAnchorStrategy,
+  });
+
+  final Set<PointerDeviceKind> devices;
+
+  @override
+  MultiDragGestureRecognizer createRecognizer(
+    GestureMultiDragStartCallback onStart,
+  ) =>
+      ImmediateMultiDragGestureRecognizer(supportedDevices: devices)
+        ..onStart = onStart;
+}
+
+class _DeviceLongPressDraggable<T extends Object>
+    extends LongPressDraggable<T> {
+  const _DeviceLongPressDraggable({
+    required this.devices,
+    required super.child,
+    required super.feedback,
+    super.data,
+    super.childWhenDragging,
+    super.onDragStarted,
+    super.onDragEnd,
+    super.onDraggableCanceled,
+    super.dragAnchorStrategy,
+  });
+
+  final Set<PointerDeviceKind> devices;
+
+  @override
+  DelayedMultiDragGestureRecognizer createRecognizer(
+    GestureMultiDragStartCallback onStart,
+  ) =>
+      DelayedMultiDragGestureRecognizer(delay: delay, supportedDevices: devices)
+        ..onStart = (Offset position) {
+          final Drag? result = onStart(position);
+          if (result != null && hapticFeedbackOnStart) {
+            unawaited(HapticFeedback.selectionClick());
+          }
+          return result;
+        };
+}
+
+/// 拖放落地：把 dragged 放到 parentId 下（null = 顶层）、排在 beforeId 前（null = 末尾）。
+typedef _DeckPlace =
+    void Function(SrsDeckSummary dragged, String? parentId, String? beforeId);
+
+/// 指针在行里的落点区：上 / 下缘 = 排到本行前 / 后（同级），中间 = 挪成本行的子牌组。
+enum _DropZone { before, into, after }
+
+/// 牌组行的拖放外壳（Anki 拖放 + 同级手动排序）：拖起本行；别的牌组拖到本行上——
+/// 上缘四分之一 = 排到本行前面，下缘四分之一 = 排到本行后面（都与本行同级），中间 =
+/// 挪成本行的子牌组。拖到自己 / 自己的子孙上不接（不高亮）。
+///
+/// 鼠标：按下拖动即开始。触摸：宽屏长按开始；窄屏长按已是牌组菜单，触摸挪牌组走菜单
+/// 「移动到… / 上移 / 下移」。
+class _DeckDragShell extends StatefulWidget {
+  const _DeckDragShell({
+    super.key,
+    required this.deck,
+    required this.decks,
+    required this.nextSiblingId,
+    required this.enabled,
+    required this.onDragStarted,
+    required this.onDragEnded,
+    required this.onPlace,
+    required this.child,
+  });
+
+  final SrsDeckSummary deck;
+  final List<SrsDeckSummary> decks;
+
+  /// 同级里排在本行后面的那个（「排到本行后面」= 排到它前面；null = 本行是同级最后）。
+  final String? nextSiblingId;
+  final bool enabled;
+  final VoidCallback onDragStarted;
+  final VoidCallback onDragEnded;
+  final _DeckPlace onPlace;
+  final Widget child;
+
+  @override
+  State<_DeckDragShell> createState() => _DeckDragShellState();
+}
+
+class _DeckDragShellState extends State<_DeckDragShell> {
+  _DropZone? _zone;
+
+  /// 被拖的牌组不能落到它自己或它的子孙上（任何区都不行）。
+  bool _accepts(SrsDeckSummary dragged) =>
+      widget.enabled &&
+      !srsDeckSubtreeIds(
+        widget.decks,
+        dragged.deck.id,
+      ).contains(widget.deck.deck.id);
+
+  _DropZone _zoneAt(Offset global) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || box.size.height <= 0) {
+      return _DropZone.into;
+    }
+    final double y = box.globalToLocal(global).dy / box.size.height;
+    if (y < 0.25) return _DropZone.before;
+    if (y > 0.75) return _DropZone.after;
+    return _DropZone.into;
+  }
+
+  void _setZone(_DropZone? zone) {
+    if (_zone == zone || !mounted) return;
+    setState(() => _zone = zone);
+  }
+
+  void _place(SrsDeckSummary dragged, _DropZone zone) {
+    final SrsDeckSummary row = widget.deck;
+    switch (zone) {
+      case _DropZone.into:
+        widget.onPlace(dragged, row.deck.id, null);
+      case _DropZone.before:
+        widget.onPlace(dragged, row.parentId, row.deck.id);
+      case _DropZone.after:
+        // 排到下一个同级前面；下一个就是被拖的自己时，相当于原地不动。
+        final String? next = widget.nextSiblingId == dragged.deck.id
+            ? null
+            : widget.nextSiblingId;
+        widget.onPlace(dragged, row.parentId, next);
+    }
+  }
+
+  Widget _feedback(BuildContext context, double width) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.secondaryContainer,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(tokens.radii.group),
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal,
+            vertical: tokens.spacing.gap,
+          ),
+          child: Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiIcon(FushiIcons.folder, color: scheme.onSecondaryContainer),
+              Expanded(
+                child: Text(
+                  widget.deck.fullName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: scheme.onSecondaryContainer),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 落点指示：前 / 后 = 行上 / 下缘一条主色线（插入位置），中间 = 整行描边（成为子牌组）。
+  Decoration _indicator(ColorScheme scheme, FushiDesignTokens tokens) {
+    final BorderSide line = BorderSide(color: scheme.primary, width: 3);
+    return switch (_zone) {
+      null => const BoxDecoration(),
+      _DropZone.before => BoxDecoration(border: Border(top: line)),
+      _DropZone.after => BoxDecoration(border: Border(bottom: line)),
+      _DropZone.into => BoxDecoration(
+        border: Border.all(color: scheme.primary, width: 2),
+        borderRadius: BorderRadius.circular(tokens.radii.group),
+      ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool compact = constraints.maxWidth < _DeckRow.compactBelow;
+        // 拖影挂在指针左上方一点（锚点是指针本身，见 [_pointerOf]）。
+        final Widget feedback = FractionalTranslation(
+          translation: const Offset(-0.1, -0.5),
+          child: _feedback(
+            context,
+            constraints.maxWidth.isFinite
+                ? constraints.maxWidth.clamp(0, 360).toDouble()
+                : 360,
+          ),
+        );
+        final Widget dimmed = Opacity(opacity: 0.4, child: widget.child);
+        Widget row = widget.child;
+        if (widget.enabled) {
+          row = _DeviceDraggable<SrsDeckSummary>(
+            devices: const <PointerDeviceKind>{PointerDeviceKind.mouse},
+            data: widget.deck,
+            feedback: feedback,
+            dragAnchorStrategy: pointerDragAnchorStrategy,
+            childWhenDragging: dimmed,
+            onDragStarted: widget.onDragStarted,
+            onDragEnd: (_) => widget.onDragEnded(),
+            child: compact
+                ? row
+                : _DeviceLongPressDraggable<SrsDeckSummary>(
+                    devices: const <PointerDeviceKind>{
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.stylus,
+                    },
+                    data: widget.deck,
+                    feedback: feedback,
+                    dragAnchorStrategy: pointerDragAnchorStrategy,
+                    childWhenDragging: dimmed,
+                    onDragStarted: widget.onDragStarted,
+                    onDragEnd: (_) => widget.onDragEnded(),
+                    child: row,
+                  ),
+          );
+        }
+        return DragTarget<SrsDeckSummary>(
+          onWillAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
+              _accepts(d.data),
+          onMove: (DragTargetDetails<SrsDeckSummary> d) {
+            if (_accepts(d.data)) _setZone(_zoneAt(_pointerOf(d)));
+          },
+          onLeave: (_) => _setZone(null),
+          onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) {
+            final _DropZone zone = _zone ?? _zoneAt(_pointerOf(d));
+            _setZone(null);
+            _place(d.data, zone);
+          },
+          builder:
+              (
+                BuildContext context,
+                List<SrsDeckSummary?> candidates,
+                List<dynamic> _,
+              ) => AnimatedContainer(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                foregroundDecoration: candidates.isEmpty
+                    ? const BoxDecoration()
+                    : _indicator(scheme, tokens),
+                child: row,
+              ),
+        );
+      },
+    );
+  }
+
+  /// 拖起时用 [pointerDragAnchorStrategy]：[DragTargetDetails.offset] 就是指针位置
+  /// （拖影的视觉偏移另由 [FractionalTranslation] 做，不影响这里）。
+  Offset _pointerOf(DragTargetDetails<SrsDeckSummary> d) => d.offset;
+}
+
+/// 拖着子牌组时列表顶上出现的落点：放下 = 挪到顶层（末尾）。
+class _TopLevelDropZone extends StatelessWidget {
+  const _TopLevelDropZone({super.key, required this.onPlace});
+
+  final _DeckPlace onPlace;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return DragTarget<SrsDeckSummary>(
+      onWillAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
+          d.data.parentId != null,
+      onAcceptWithDetails: (DragTargetDetails<SrsDeckSummary> d) =>
+          onPlace(d.data, null, null),
+      builder:
+          (
+            BuildContext context,
+            List<SrsDeckSummary?> candidates,
+            List<dynamic> _,
+          ) {
+            final bool hovering = candidates.isNotEmpty;
+            return AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              padding: EdgeInsets.all(tokens.spacing.gap * 1.5),
+              decoration: BoxDecoration(
+                color: hovering
+                    ? scheme.primaryContainer
+                    : scheme.surfaceContainerHigh,
+                border: Border.all(
+                  color: hovering ? scheme.primary : scheme.outlineVariant,
+                  width: hovering ? 2 : 1,
+                ),
+                borderRadius: BorderRadius.circular(tokens.radii.group),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  const FushiIcon(FushiIcons.moveFile),
+                  Flexible(child: Text(t.srs_deck_move_drop_top_level)),
+                ],
+              ),
+            );
+          },
     );
   }
 }

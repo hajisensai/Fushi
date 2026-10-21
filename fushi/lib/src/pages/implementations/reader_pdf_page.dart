@@ -655,11 +655,12 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       if (described.record) {
         unawaited(_recordMinedCount());
       }
-      FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
+        FushiToast.showMine(msg: described.message, status: described.status);
         return MinePopupResult.mined(outcome);
       }
-      return MinePopupResult.failed(outcome);
+      // 失败原因交给弹窗就地说，不另弹 toast（见 MinePopupResult.message）。
+      return MinePopupResult.failed(outcome, message: described.message);
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderPdfPage.onMineFromPopup', e, stack);
       return const MinePopupResult();

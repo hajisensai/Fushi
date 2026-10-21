@@ -152,6 +152,7 @@ void main() {
     final Map<String, String> original = noteFields('雨', dicts);
     final String id = await addNote(a, '雨', dicts);
     Future<void> sync(SrsDbStore s) => SrsSyncEngine(
+      directoryKey: 'test',
       directory: SrsAssetStoreDirectory(store: backend, profileUid: kProfile),
       replica: s,
     ).syncOnce();
@@ -239,7 +240,10 @@ void main() {
     expect(flds, isNot(contains('_fushi_style_')));
     expect(flds, contains(original[fid('Glossary')]));
     expect(flds, contains(original[fid('MainDefinition')]));
-    expect(parsed.mediaBytes(srsStyleMediaName(_dictCss('JMdict'))), isNull);
+    expect(
+      await parsed.mediaBytes(srsStyleMediaName(_dictCss('JMdict'))),
+      isNull,
+    );
 
     final FushiDatabase db2 = memDb();
     final SrsDbStore other = await open(db2, 'other', styleDir: 'other');

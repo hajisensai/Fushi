@@ -1346,9 +1346,13 @@ class _FloatingActionsBody extends StatelessWidget {
       // 不再各自带玻璃底。不再外套 56 高的悬浮面（玻璃叠玻璃两圈折射边、
       // 比工具栏高一截）。放不下时与 MD3 同一套判据逐颗收进 ⋯，全收仍不够才
       // 横滑兜底；横滑视口不裁投影。
+      final FushiShellHeaderActions shellActions =
+          actions as FushiShellHeaderActions;
       return FushiShellHeaderActions(
-        actions: (actions as FushiShellHeaderActions).actions,
+        actions: shellActions.actions,
         appleFloating: true,
+        search: shellActions.search,
+        menuAnchor: shellActions.menuAnchor,
       );
     } else if (actions is FushiShellHeaderActions) {
       // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊（与页签

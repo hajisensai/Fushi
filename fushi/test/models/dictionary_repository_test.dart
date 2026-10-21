@@ -227,9 +227,9 @@ void main() {
       await repo.persistDictionary(_dict(name: 'A', order: 0));
       await repo.persistDictionary(_dict(name: 'B', order: 1));
       repo.cacheSearchResult('猫', _result(searchTerm: '猫'));
-      repo.cacheFfiLookup('猫', const []);
       expect(repo.getCachedSearch('猫'), isNotNull);
-      expect(repo.getCachedFfiLookup('猫'), isNotNull);
+      expect(repo.lookupFilters.termDictionaryOrder, <String>['A', 'B']);
+      final int epoch = repo.resultsCacheEpoch;
 
       await repo.updateDictionaryOrder([
         _dict(name: 'B', order: 0),
@@ -237,7 +237,10 @@ void main() {
       ]);
 
       expect(repo.getCachedSearch('猫'), isNull);
-      expect(repo.getCachedFfiLookup('猫'), isNull);
+      expect(repo.resultsCacheEpoch, isNot(epoch),
+          reason: '在飞的查词回来时不得把旧顺序的结果写回缓存');
+      expect(repo.lookupFilters.termDictionaryOrder, <String>['B', 'A'],
+          reason: '查词用的顺序快照必须随重排失效');
     });
   });
 
@@ -355,27 +358,17 @@ void main() {
       expect(repo.getCachedSearch('犬/10/100')?.searchTerm, '犬');
     });
 
-    test('getCachedFfiLookup returns null for missing key', () {
-      expect(repo.getCachedFfiLookup('missing'), isNull);
-    });
-
-    test('cacheFfiLookup stores and retrieves results', () {
-      repo.cacheFfiLookup('猫', []);
-      expect(repo.getCachedFfiLookup('猫'), isNotNull);
-      expect(repo.getCachedFfiLookup('猫'), isEmpty);
-    });
-
     test('clearDictionaryResultsCache clears all lookup caches', () {
       repo.cacheSearchResult('key', _result());
-      repo.cacheFfiLookup('term', []);
       repo.cachePopupSearch(
         'popup',
         (popupJson: '[{"expression":"猫"}]', bestLength: 1),
       );
+      final int epoch = repo.resultsCacheEpoch;
       repo.clearDictionaryResultsCache();
       expect(repo.getCachedSearch('key'), isNull);
-      expect(repo.getCachedFfiLookup('term'), isNull);
       expect(repo.getCachedPopupSearch('popup'), isNull);
+      expect(repo.resultsCacheEpoch, epoch + 1);
     });
   });
 

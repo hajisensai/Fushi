@@ -16,12 +16,61 @@ extension _VideoDanmaku on _VideoFushiPageState {
     _danmakuVisibleItems = filterVideoDanmaku(items, _danmakuBlockRules);
   }
 
+  /// 远端流播时弹幕的来源（BUG-3614）：远端视频 id + host 侧集下标。来源不能算
+  /// 弹弹play 指纹（[RemoteVideoDanmakuKeyFetch] 之外的媒体服务器 / 云盘 / 在线源）
+  /// 或不是远端 → null，与改动前一样没有弹幕。
+  ({String id, int episodeIndex})? get _remoteDanmakuTarget {
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (info == null || _effectiveRemoteClient is! RemoteVideoDanmakuKeyFetch) {
+      return null;
+    }
+    // 合集连播：每个成员是独立视频（host 侧集下标恒 0）；host 播放列表 / 单视频：
+    // 同一 id 换集下标（与 [_loadRemoteEpisode] 的取流口径一致）。
+    return (
+      id: info.id,
+      episodeIndex: _isRemoteCollection ? 0 : _currentEpisode,
+    );
+  }
+
+  /// 弹弹play 选集记忆的键。本地沿用 [_activeBookUid]；远端按「成员 id + 集下标」
+  /// 分开记——合集连播里 [_activeBookUid] 恒是起播那一集，按它记会让整部剧共用
+  /// 同一集的弹幕。
+  String get _danmakuEpisodeUid {
+    final ({String id, int episodeIndex})? remote = _remoteDanmakuTarget;
+    if (remote == null) return _activeBookUid;
+    return remote.episodeIndex == 0
+        ? remote.id
+        : '${remote.id}#${remote.episodeIndex}';
+  }
+
+  /// 弹幕是否有来源：本地文件，或能向 host 取指纹的远端流（控制条据此显示开关）。
+  bool get _hasDanmakuSource =>
+      _currentVideoPath != null || _remoteDanmakuTarget != null;
+
   Future<void> _loadDanmakuForVideo(String? videoPath) async {
     final int seq = ++_danmakuLoadSeq;
     if (mounted) {
       _rebuild(() => _applyDanmakuItems(const <VideoDanmakuItem>[]));
     }
-    if (videoPath == null || !appModel.videoDanmakuEnabled) return;
+    if (!appModel.videoDanmakuEnabled) return;
+    if (videoPath == null) {
+      // 远端流播：本机没有文件、没有同目录 sidecar，指纹由持有文件的 host 算
+      // （BUG-3614）；之后的在线匹配与本地文件同一条链路。
+      final ({String id, int episodeIndex})? remote = _remoteDanmakuTarget;
+      final RemoteVideoClient? remoteClient = _effectiveRemoteClient;
+      if (remote == null || remoteClient is! RemoteVideoDanmakuKeyFetch) return;
+      if (!appModel.videoDanmakuOnlineEnabled) return;
+      final RemoteVideoDanmakuKeyFetch keyFetch =
+          remoteClient as RemoteVideoDanmakuKeyFetch;
+      await _loadOnlineDanmaku(
+        seq,
+        () => keyFetch.remoteVideoDanmakuKey(
+          remote.id,
+          episodeIndex: remote.episodeIndex,
+        ),
+      );
+      return;
+    }
 
     final String? sidecarPath = findDanmakuSidecar(videoPath);
     if (sidecarPath != null) {
@@ -48,12 +97,31 @@ extension _VideoDanmaku on _VideoFushiPageState {
     if (!appModel.videoDanmakuOnlineEnabled) return;
     final File file = File(videoPath);
     if (!file.existsSync()) return;
+    await _loadOnlineDanmaku(seq, () => dandanplayFileKeyOf(file));
+  }
+
+  /// 弹弹play 在线弹幕：先试记住的那一集，没有 / 记错了再按文件指纹 [keyOf] 匹配。
+  /// [keyOf] 只在真要匹配时才算（本地要读 16 MiB、远端要问一次 host）；返回 null =
+  /// 拿不到指纹，当作没有弹幕。
+  Future<void> _loadOnlineDanmaku(
+    int seq,
+    Future<DandanplayFileKey?> Function() keyOf,
+  ) async {
+    final String episodeUid = _danmakuEpisodeUid;
     final DandanplayClient client = DandanplayClient();
+    Future<DandanplayFetchResult> matchByKey() async {
+      final DandanplayFileKey? key = await keyOf();
+      if (key == null) {
+        return const DandanplayFetchResult(
+          status: DandanplayFetchStatus.noMatch,
+        );
+      }
+      return client.fetchBestDanmakuForKey(key);
+    }
+
     try {
       DandanplayFetchResult result;
-      final int? savedEpisodeId = appModel.getVideoDanmakuEpisodeId(
-        _activeBookUid,
-      );
+      final int? savedEpisodeId = appModel.getVideoDanmakuEpisodeId(episodeUid);
       if (savedEpisodeId != null) {
         final DandanplayFetchResult cached = await client.fetchCommentsForMatch(
           DandanplayMatch(episodeId: savedEpisodeId),
@@ -63,17 +131,17 @@ extension _VideoDanmaku on _VideoFushiPageState {
         // 再失败一遍（BUG-1057：此前失败被吞成空列表，与 0 条弹幕无从区分）。
         result =
             cached.status == DandanplayFetchStatus.hit && cached.items.isEmpty
-            ? await client.fetchBestDanmakuForFile(file)
+            ? await matchByKey()
             : cached;
       } else {
-        result = await client.fetchBestDanmakuForFile(file);
+        result = await matchByKey();
       }
       if (seq != _danmakuLoadSeq || !mounted) return;
       if (result.status == DandanplayFetchStatus.hit &&
           result.items.isNotEmpty) {
         final int? episodeId = result.match?.episodeId;
         if (episodeId != null) {
-          await appModel.setVideoDanmakuEpisodeId(_activeBookUid, episodeId);
+          await appModel.setVideoDanmakuEpisodeId(episodeUid, episodeId);
         }
         if (seq != _danmakuLoadSeq || !mounted) return;
         _rebuild(() => _applyDanmakuItems(result.items));
@@ -197,7 +265,7 @@ extension _VideoDanmaku on _VideoFushiPageState {
         return;
       }
       await appModel.setVideoDanmakuEpisodeId(
-        _activeBookUid,
+        _danmakuEpisodeUid,
         episode.episodeId,
       );
       if (!appModel.videoDanmakuEnabled) {
@@ -236,12 +304,25 @@ extension _VideoDanmaku on _VideoFushiPageState {
     }
   }
 
+  /// 手动匹配的初始关键词：本地文件名；远端流播没有本地路径，用 host 下发的文件名
+  /// （旧 host 没有就用标题——标题不是文件名，不去「扩展名」）。
+  String _danmakuManualMatchKeyword() {
+    final String? path = _currentVideoPath;
+    if (path != null) return p.basenameWithoutExtension(path);
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (info == null) return '';
+    final String? fileName = info.fileName;
+    return fileName != null && fileName.isNotEmpty
+        ? p.basenameWithoutExtension(fileName)
+        : info.title;
+  }
+
   /// 手动匹配侧栏内容：以当前视频文件名为初始关键词，注入搜索/绑定回调。
   Widget _buildDanmakuMatchSidePanel() {
     // 配色读侧栏表面**内部**的主题（M3E = 面板中性深色主题），不是页面主题。
     return Builder(
       builder: (BuildContext panelContext) => DanmakuManualMatchPanel(
-        initialKeyword: p.basenameWithoutExtension(_currentVideoPath ?? ''),
+        initialKeyword: _danmakuManualMatchKeyword(),
         colorScheme: Theme.of(panelContext).colorScheme,
         onSearch: _searchDanmakuEpisodes,
         onEpisodeSelected: _bindDanmakuEpisode,

@@ -168,10 +168,10 @@ void main() {
     test('Cookie 只带作用域覆盖图片 host 的条目；host-only 只对页面 host', () {
       final Uri pageUrl = Uri.parse('https://www.demo.test/c/2');
       const List<WebComicCookie> cookies = <WebComicCookie>[
-        (name: 'sid', value: '1', domain: '.demo.test'),
-        (name: 'host', value: '2', domain: null),
-        (name: 'ads', value: '3', domain: 'tracker.example'),
-        (name: 'sid', value: 'dup', domain: '.demo.test'),
+        WebComicCookie(name: 'sid', value: '1', domain: '.demo.test'),
+        WebComicCookie(name: 'host', value: '2', domain: null),
+        WebComicCookie(name: 'ads', value: '3', domain: 'tracker.example'),
+        WebComicCookie(name: 'sid', value: 'dup', domain: '.demo.test'),
       ];
       expect(
         webComicCookieHeader(
@@ -197,6 +197,72 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('Cookie 按 RFC 6265 的 path-match 与 Secure 规则筛', () {
+      final Uri pageUrl = Uri.parse('https://www.demo.test/comic/c/2');
+      const List<WebComicCookie> cookies = <WebComicCookie>[
+        WebComicCookie(
+          name: 'root',
+          value: '1',
+          domain: 'demo.test',
+          path: '/',
+        ),
+        WebComicCookie(
+          name: 'comic',
+          value: '2',
+          domain: 'demo.test',
+          path: '/comic',
+        ),
+        WebComicCookie(
+          name: 'sec',
+          value: '3',
+          domain: 'demo.test',
+          secure: true,
+        ),
+        WebComicCookie(
+          name: 'plain',
+          value: '4',
+          domain: 'demo.test',
+          secure: false,
+        ),
+        WebComicCookie(name: 'unknown', value: '5', domain: 'demo.test'),
+      ];
+      expect(
+        webComicCookieHeader(
+          imageUrl: Uri.parse('https://img.demo.test/comic/1.jpg'),
+          pageUrl: pageUrl,
+          cookies: cookies,
+        ),
+        'root=1; comic=2; sec=3; plain=4; unknown=5',
+      );
+      // /comicx 不在 /comic 之下（path-match 要求边界是 /）。
+      expect(
+        webComicCookieHeader(
+          imageUrl: Uri.parse('https://img.demo.test/comicx/1.jpg'),
+          pageUrl: pageUrl,
+          cookies: cookies,
+        ),
+        'root=1; sec=3; plain=4; unknown=5',
+      );
+      // 明文 http：Secure 的不带；平台没报 Secure 而页面是 https 的，按可能 Secure 不降级。
+      expect(
+        webComicCookieHeader(
+          imageUrl: Uri.parse('http://img.demo.test/comic/1.jpg'),
+          pageUrl: pageUrl,
+          cookies: cookies,
+        ),
+        'plain=4',
+      );
+    });
+
+    test('path-match 边界', () {
+      expect(webComicCookiePathMatches('/a/b', '/a'), isTrue);
+      expect(webComicCookiePathMatches('/a/b', '/a/'), isTrue);
+      expect(webComicCookiePathMatches('/a', '/a'), isTrue);
+      expect(webComicCookiePathMatches('/ab', '/a'), isFalse);
+      expect(webComicCookiePathMatches('/x', null), isTrue);
+      expect(webComicCookiePathMatches('', '/'), isTrue);
     });
 
     test('Referer 四种模式', () {
@@ -234,7 +300,7 @@ void main() {
         rule: _rule,
         userAgent: 'UA/1',
         cookies: const <WebComicCookie>[
-          (name: 'sid', value: '1', domain: 'demo.test'),
+          WebComicCookie(name: 'sid', value: '1', domain: 'demo.test'),
         ],
       );
       expect(pages.map((HttpMangaPageRef p) => p.index), <int>[0, 1]);
@@ -267,7 +333,7 @@ void main() {
         scanner: scanner,
         rules: () async => const WebComicRuleSet(<WebComicSiteRule>[_rule]),
         cookies: (Uri _) async => const <WebComicCookie>[
-          (name: 'sid', value: '1', domain: 'demo.test'),
+          WebComicCookie(name: 'sid', value: '1', domain: 'demo.test'),
         ],
         httpGet: (Uri url, Map<String, String> headers) async {
           requests.add((url, headers));

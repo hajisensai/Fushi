@@ -4,7 +4,7 @@ part of '../fushi_sync_server.dart';
 ///
 /// | 方法 | 路径 | 语义 |
 /// |---|---|---|
-/// | GET  | `/api/library/metadata?since=<ms>` | 7c：host 全部作品（增量按 updatedAt） |
+/// | GET  | `/api/library/metadata?since=<ms>&bookUid=<uid>` | 7c：host 全部作品（增量按 updatedAt；带 bookUid 只回该视频的作品） |
 /// | POST | `/api/library/metadata/candidates` | 7a：`{key, query}` → 候选列表 |
 /// | POST | `/api/library/metadata/scrape` | 7a：`{key, lookup}` → host 重刮 |
 /// | PUT  | `/api/library/metadata` | 7b：`{key, lookup, work, replaceIdentity}` → host 落库 |
@@ -31,8 +31,12 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
         case 'GET':
           final int? since =
               int.tryParse(request.url.queryParameters['since'] ?? '');
+          final String? bookUid = request.url.queryParameters['bookUid'];
           final List<VideoMetadataWorkEntry> entries =
-              await host.listVideoMetadata(since: since);
+              await host.listVideoMetadata(
+            since: since,
+            bookUid: bookUid == null || bookUid.isEmpty ? null : bookUid,
+          );
           return jsonResponse(<String, Object?>{
             'works': <Object?>[
               for (final VideoMetadataWorkEntry e in entries) e.toJson(),

@@ -1,11 +1,14 @@
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
+import 'package:fushi_core/fushi_core.dart'
+    show kStatLegacyProfileIdPrefKey, kStudyProfileNameAliasesPrefKey;
 
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show kLyricsModeBookPrefDbPrefix;
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/media/source_library/book_library_prune.dart'
+    show kBookSourceScanIndexPrefKeyPrefix;
 import 'package:fushi_engine/profile/profile_document.dart'
     show kObsoleteGalgameUpscalingModePrefKey, kProfileSettingCategoryPref;
 import 'package:fushi/src/media/video/video_online_services_preferences.dart';
@@ -59,6 +62,8 @@ class ProfileKeys {
     // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
     // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
     kStatLegacyProfileIdPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同族。
+    kStudyProfileNameAliasesPrefKey,
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
@@ -158,6 +163,10 @@ class ProfileKeys {
     // 合集详情页每合集排序偏好：键里是本机合集自增 id（设备本地状态），换
     // Profile 不该剪掉或串到别的合集上。
     'collection_detail_sort_',
+    // 书 / 漫画来源的扫描索引（后缀 = 本机来源 id，JSON：源相对路径 → 书 uid +
+    // 「不是本类媒体」负向表）。是扫描器的设备本地状态，不是阅读偏好：进快照的话
+    // 切 Profile 会把它剪掉或换回旧值，下一次扫描就把已导入的卷当成新卷重判。
+    kBookSourceScanIndexPrefKeyPrefix,
     // 每本书独立记忆的歌词模式与 audiobook_follow_ 同族：按书的阅读状态，不是
     // 阅读偏好。进快照的话切 Profile（进出歌词模式本身就会切到 lyrics 媒体类型
     // 的 Profile）会把这本书刚写下的模式剪掉或换回旧值。

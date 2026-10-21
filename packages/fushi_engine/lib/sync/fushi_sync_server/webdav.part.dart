@@ -85,7 +85,7 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
     for (final entry in entries) {
       xml
         ..write('<d:response>\n')
-        ..write('<d:href>${_xmlEscape(Uri.encodeFull(entry.href))}</d:href>\n')
+        ..write('<d:href>${_xmlEscape(_encodeDavHref(entry.href))}</d:href>\n')
         ..write('<d:propstat>\n')
         ..write('<d:prop>\n')
         ..write(
@@ -190,3 +190,8 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
 
 String _xmlEscape(String s) =>
     s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+/// PROPFIND 的 href 逐段 percent-encode。`Uri.encodeFull` 不编码 `#` / `?`，名字里带它们的条目
+/// （复习同步写入者目录 `<deviceId>#<化身号>`）会被客户端当成 URL 片段 / 查询截掉（BUG-3576）。
+String _encodeDavHref(String href) =>
+    href.split('/').map(Uri.encodeComponent).join('/');

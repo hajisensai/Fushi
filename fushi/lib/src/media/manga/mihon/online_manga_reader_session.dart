@@ -384,6 +384,7 @@ String onlineMangaStreamPageFileName(int index, Uint8List bytes) {
     'image/jpeg' => '.jpg',
     'image/gif' => '.gif',
     'image/webp' => '.webp',
+    'image/avif' => '.avif',
     _ => '.img',
   };
   return '$stem$extension';

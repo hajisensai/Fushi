@@ -45,12 +45,17 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     this.onTagsChanged,
     this.sortMenuController,
     this.leadingChips = const <Widget>[],
+    this.onAiOrganize,
     super.key,
   });
 
   /// [FushiTagFilterBarPart.tags] 行首的额外 chip（库页生效中的筛选条件，带 ✕；
   /// 2026-10-14）。非空时即使没有标签也出这一行；与标签之间画一道竖分隔。
   final List<Widget> leadingChips;
+
+  /// 「AI 整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md §10.1）。
+  /// null = 不显示：调用方按 AI 模块门（`isAiModuleEnabled`）决定传不传。
+  final VoidCallback? onAiOrganize;
 
   /// 外部持有的排序菜单控制器（[FushiTagFilterBarPart.sortMenuAnchor] 用：页头
   /// 里的排序按钮经它打开本组件画的菜单）。null 时自建。
@@ -147,6 +152,15 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         tagManage,
     ];
     final List<Widget> viewActions = <Widget>[
+      if (widget.onAiOrganize != null && !widget.selectionMode)
+        KeyedSubtree(
+          key: const ValueKey<String>('library_ai_organize'),
+          child: _tagBarAction(
+            icon: FushiIcons.aiAssistant,
+            tooltip: t.library_organize_action,
+            onTap: widget.onAiOrganize!,
+          ),
+        ),
       if (widget.onToggleSelectionMode != null)
         _tagBarAction(
           icon: widget.selectionMode ? FushiIcons.close : FushiIcons.checklist,
@@ -656,8 +670,9 @@ enum FushiTagFilterBarPart {
   actions,
 
   /// 只出「排序（与筛选）」菜单的零尺寸常驻锚点（库页单行页头，2026-10-14）：
-  /// 排序按钮挪进页头动作后可能被收进「⋯」，菜单不能挂在按钮上——锚点常驻在
-  /// 页头下沿右侧，按钮（或 ⋯ 菜单里的那一项）经
+  /// 排序按钮挪进页头动作后可能被收进「⋯」，菜单不能挂在按钮上——锚点经
+  /// [FushiPageHeader.menuAnchor] 叠在页头动作组右下角（动作被外壳浮动工具栏
+  /// 代放时随那枚胶囊走），按钮（或 ⋯ 菜单里的那一项）经
   /// [FushiTagFilterBar.sortMenuController] 打开它。按钮由
   /// [libraryHeaderTagActions] 生成。
   sortMenuAnchor,

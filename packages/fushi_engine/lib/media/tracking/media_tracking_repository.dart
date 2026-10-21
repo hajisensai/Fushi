@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isMultiSeasonGrouped;
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
+import 'package:fushi_engine/privacy/media_privacy.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 const String kTrackingProviderBangumi = 'bangumi';
@@ -18,6 +19,31 @@ enum TrackingMediaType {
 
   const TrackingMediaType(this.value);
   final String value;
+}
+
+/// 追踪键（`TrackingMediaType.value` + mediaKey）对应的作品是否被用户标成私密。
+/// 私密作品不推进度、不建自动映射（自动映射会拿本地标题去 Bangumi 搜索）。
+bool isTrackedMediaPrivate(
+  MediaPrivacySnapshot privacy,
+  String mediaType,
+  String mediaKey,
+) {
+  if (mediaType == TrackingMediaType.book.value ||
+      mediaType == TrackingMediaType.bookChapter.value) {
+    return privacy.isBookPrivate(mediaKey);
+  }
+  if (mediaType == TrackingMediaType.video.value) {
+    return privacy.isVideoPrivate(mediaKey);
+  }
+  if (mediaType == TrackingMediaType.videoCollection.value) {
+    final int? collectionId = int.tryParse(mediaKey);
+    return collectionId != null &&
+        privacy.isVideoCollectionPrivate(collectionId);
+  }
+  if (mediaType == TrackingMediaType.game.value) {
+    return privacy.isGamePrivate(mediaKey);
+  }
+  return false;
 }
 
 enum TrackingKind {
@@ -252,6 +278,9 @@ class MediaTrackingRepository {
   const MediaTrackingRepository(this._db);
 
   final FushiDatabase _db;
+
+  /// 作品级私密标记快照（口径见 [MediaPrivacySnapshot]）。
+  Future<MediaPrivacySnapshot> loadPrivacy() => MediaPrivacySnapshot.load(_db);
 
   Future<List<MediaTrackingMappingRow>> listMappings() =>
       (_db.select(_db.mediaTrackingMappings)
@@ -907,8 +936,8 @@ class MediaTrackingRepository {
         .go();
   }
 
-  /// 将本地 0-based [localProgress] 翻译为远端进度并入队。没有映射返回 false；
-  /// 调用方据此无声跳过，播放/阅读主路径不受外部服务影响。
+  /// 将本地 0-based [localProgress] 翻译为远端进度并入队。没有映射、或作品被标成
+  /// 私密时返回 false；调用方据此无声跳过，播放/阅读主路径不受外部服务影响。
   ///
   /// [monotonic] 为 true（默认）时沿用“进度只增不减”的合并：观看/阅读进度天然单调，
   /// 取 max 可以让乱序到达的事件收敛到最新位置。收藏状态类事件必须传 false——它是
@@ -926,6 +955,9 @@ class MediaTrackingRepository {
       mediaKey: mediaKey,
     );
     if (mapping == null) return false;
+    if (isTrackedMediaPrivate(await loadPrivacy(), mediaType.value, mediaKey)) {
+      return false;
+    }
     final int progress = math.max(0, localProgress + mapping.progressOffset);
     final int now = DateTime.now().millisecondsSinceEpoch;
     await _db.transaction(() async {
@@ -985,7 +1017,7 @@ class MediaTrackingRepository {
       ])
       ..limit(limit);
     final List<TypedResult> rows = await query.get();
-    return rows
+    final List<PendingTrackingUpdate> updates = rows
         .map(
           (TypedResult row) => PendingTrackingUpdate(
             outbox: row.readTable(_db.mediaTrackingOutbox),
@@ -993,6 +1025,26 @@ class MediaTrackingRepository {
           ),
         )
         .toList(growable: false);
+    if (updates.isEmpty) return updates;
+    // 入队之后才被标成私密的作品：丢弃其待发行，绝不发出去（留着还会一直占发送名额）。
+    final MediaPrivacySnapshot privacy = await loadPrivacy();
+    if (privacy.isEmpty) return updates;
+    final List<PendingTrackingUpdate> due = <PendingTrackingUpdate>[];
+    final List<int> discarded = <int>[];
+    for (final PendingTrackingUpdate u in updates) {
+      if (isTrackedMediaPrivate(
+          privacy, u.mapping.mediaType, u.mapping.mediaKey)) {
+        discarded.add(u.outbox.id);
+      } else {
+        due.add(u);
+      }
+    }
+    if (discarded.isNotEmpty) {
+      await (_db.delete(_db.mediaTrackingOutbox)
+            ..where((t) => t.id.isIn(discarded)))
+          .go();
+    }
+    return due;
   }
 
   /// 全部待同步行（**不**按 `nextAttemptAt` 过滤），带各自的映射。

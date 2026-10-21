@@ -1366,12 +1366,15 @@ class ReaderCustomFontCss {
   // WKWebView 与 Linux 的 WPE WebKit 只能注册自定义 scheme、拦不到 https，
   // 与 `webViewUsesCustomSchemeTransport` 同一判据（这里用 defaultTargetPlatform
   // 以便测试覆写平台）。
-  static String fontUrl(String path) => '${switch (defaultTargetPlatform) {
-        TargetPlatform.macOS ||
-        TargetPlatform.iOS ||
-        TargetPlatform.linux =>
-          kReaderResourceScheme,
+  static String fontUrl(String path) =>
+      resourceUrl('/fonts/${Uri.encodeComponent(path)}');
+
+  /// 阅读器资源 URL：[urlPath] 以 `/` 开头，走与 [fontUrl] 相同的 scheme / host，
+  /// 由阅读器的请求拦截器下发。
+  static String resourceUrl(String urlPath) =>
+      '${switch (defaultTargetPlatform) {
+        TargetPlatform.macOS || TargetPlatform.iOS || TargetPlatform.linux => kReaderResourceScheme,
         _ => 'https',
       }}'
-      '://$kReaderResourceHost/fonts/${Uri.encodeComponent(path)}';
+      '://$kReaderResourceHost$urlPath';
 }

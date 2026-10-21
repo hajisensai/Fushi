@@ -8,11 +8,11 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter/return_code.dart';
-import 'package:ffmpeg_kit_flutter/session.dart';
-import 'package:ffmpeg_kit_flutter/statistics.dart';
+import 'package:ffmpeg_kit_next_flutter/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_next_flutter/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_next_flutter/return_code.dart';
+import 'package:ffmpeg_kit_next_flutter/session.dart';
+import 'package:ffmpeg_kit_next_flutter/statistics.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
@@ -42,12 +42,12 @@ enum KitSessionPhase {
   final String detail;
 }
 
-/// 移动端（Android/iOS）后端：进程内调用「自编」的 ffmpeg-kit（arthenica 源码 +
-/// NDK r25 重编的最小变体；TODO-2357 起带 `--enable-gpl --enable-x264`，产物许可为
-/// GPLv3，与 Fushi 自身一致），经其 `package:ffmpeg_kit_flutter` API 跑
-/// 同一套 ffmpeg 命令。替代崩溃的第三方预编译 ffmpeg-kit 变体（其
-/// `libffmpegkit_abidetect.so` 在 Android 16/API36 JNI_OnLoad 返回非法版本，启动即崩，
-/// BUG-122）。自编 AAR vendored 在 third_party/ffmpeg_kit_flutter/android/libs。
+/// 移动端（Android/iOS）后端：进程内调用统一 FFmpeg（tool/ffmpeg-unified，FFmpeg
+/// 9.0.1 + Fushi 补丁，GPLv3 与 Fushi 自身一致）的 FFmpegKitNext 运行器，经
+/// `package:ffmpeg_kit_next_flutter` API 跑同一套 ffmpeg 命令。播放器 libmpv 链接的
+/// 是**同一份** FFmpeg 共享库，所以能播的就能制卡；两边共用进程级日志回调，靠
+/// 补丁 0002 的主 / 副回调分流（FFmpegKit 占主回调，libmpv 的日志转给副回调）。
+/// 产物 vendored 在 third_party/ffmpeg_kit_next_flutter（Android AAR / iOS xcframework）。
 ///
 /// 与 [CliFfmpegBackend] **同契约**（args→退出码+合并日志），5 个 extract 函数 +
 /// （替代的崩溃包是第三方预编译 ffmpeg-kit 变体，见 BUG-122）。

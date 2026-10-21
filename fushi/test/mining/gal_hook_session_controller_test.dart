@@ -1432,7 +1432,11 @@ void main() {
         (await first.launchGame(r'D:nemoi\SiglusEngine.exe')).launched,
         isTrue,
       );
-      expect(first.textProcessPipeline.steps, isEmpty, reason: '默认是空管线');
+      expect(
+        first.textProcessPipeline,
+        kGalDefaultTextProcessPipeline,
+        reason: '没存过管线的游戏用默认管线',
+      );
       await first.setTextProcessPipeline(pipeline);
       expect(
         store[r'd:nemoi\siglusengine.exe']?.textProcess.steps,
@@ -1459,7 +1463,7 @@ void main() {
 
       // 换游戏不得继承上一个游戏的管线（`_beginActivitySession` 复位记忆会话）。
       expect((await second.launchGame(r'D:\other\Game.exe')).launched, isTrue);
-      expect(second.textProcessPipeline.steps, isEmpty);
+      expect(second.textProcessPipeline, kGalDefaultTextProcessPipeline);
 
       await second.close();
       endpoints.dispose();
@@ -1774,8 +1778,11 @@ void main() {
       );
       expect(
         loopback.grabRecentCalls,
-        1,
-        reason: 'mining must reuse the line cache instead of recording later',
+        2,
+        reason:
+            'the line is still current (no next line yet), so mining closes '
+            'its window at "now" once (BUG-3575); a line already superseded '
+            'is never re-recorded (gal_audio_degrade_track_test)',
       );
       expect(
         engine.utteranceTimestamps,
@@ -2125,9 +2132,14 @@ void main() {
         sentence: entry.text,
         outputExtension: 'aac',
       );
-      expect(engine.utteranceTimestamps, <int>[
-        654321,
-      ], reason: 'mining reuses the exact cached utterance for this line');
+      expect(
+        engine.utteranceTimestamps,
+        <int>[654321, 654321],
+        reason:
+            'mining does one closing grab for this exact line timestamp '
+            '(BUG-3575: tail that arrived after settle stopped); it never '
+            'grabs any other line',
+      );
 
       await controller.close();
       endpoints.dispose();
@@ -3122,6 +3134,80 @@ void _playTrackerLaunchWiring() {
     expect(tracker.isRunning, isFalse);
     expect(ExitFlushRegistry.instance.callbackCount, flushBaseline);
     expect(await db.getGalgameSessions('galgame-row-42'), hasLength(1));
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-3616：串流远端在场时游戏留在主机后台也计时，结算落 galgame_sessions', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    // 串流默认只把输入投递到游戏窗口，主机前台是别的进程（不在游戏目录下）。
+    harness.probe.foregroundPid = 9999;
+
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      )).launched,
+      isTrue,
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(
+      tracker.machine?.activeSeconds ?? 0,
+      0,
+      reason: '无远端在场时主机后台不计时（既有前台语义不变）',
+    );
+
+    // 接收端连上：串流宿主转告在场，计时器按前台同等计时。
+    harness.controller.setRemotePlayPresence(true);
+    expect(tracker.remotePresent, isTrue);
+    await accrueUntil(tracker, kMinSessionSeconds);
+
+    // 断开：不再计时。
+    harness.controller.setRemotePlayPresence(false);
+    expect(tracker.remotePresent, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    final int frozen = tracker.machine!.activeSeconds;
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(tracker.machine!.activeSeconds, frozen);
+
+    await harness.controller.close();
+    final List<GalgameSessionRow> sessions = await db.getGalgameSessions(
+      'galgame-row-42',
+    );
+    expect(sessions, hasLength(1));
+    expect(
+      sessions.single.durationSeconds,
+      greaterThanOrEqualTo(kMinSessionSeconds),
+    );
+    harness.endpoints.dispose();
+  });
+
+  test('BUG-3616：在场标记先于计时器设置时，新启动的计时器起步即带上', () async {
+    final FushiDatabase db = await openDbWithGame();
+    final harness = buildHarness(db);
+    harness.probe.foregroundPid = 9999;
+
+    harness.controller.setRemotePlayPresence(true);
+    expect(
+      (await harness.controller.launchGame(
+        gameExe,
+        gameId: 'galgame-row-42',
+        gameTitle: '统一后的显示名',
+      )).launched,
+      isTrue,
+    );
+    final GalgamePlayTracker tracker = harness.controller.playTracker!;
+    expect(tracker.remotePresent, isTrue);
+    expect(tracker.machine?.remotePresent, isTrue);
+    await accrueUntil(tracker, 1);
+
+    await harness.controller.close();
     harness.endpoints.dispose();
   });
 

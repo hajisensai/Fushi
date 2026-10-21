@@ -13,7 +13,6 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart'
     show hasAnyNavigationModule;
-import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
@@ -33,6 +32,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
     show InputBinding, ShortcutBindingSet;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/shortcuts/visual/key_cap_widget.dart';
+import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
@@ -44,12 +44,14 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/web_browser/web_module_capabilities.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiDeck, AnkiNoteType, AnkiSettings;
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, SrtBookRepository;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show Dictionary;
+import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDbStore;
 import 'package:url_launcher/url_launcher.dart';
 
 /// Anki 生态外链（Anki 步骤「先把 Anki 装起来」的出口；AnkiConnect 插件不走
@@ -184,7 +186,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   /// 「复习方式」的当前选择（初值见 initState：用户此刻的真实状态，全新安装 = Fushi
   /// 复习）。点选即写偏好（[applyOnboardingReviewMethod]），跳过向导也不丢。
-  OnboardingReviewMethod _reviewMethod = OnboardingReviewMethod.fushi;
+  OnboardingReviewMethod _reviewMethod = kOnboardingDefaultReviewMethod;
 
   /// 「改用 Anki…」折叠的展开态。当前已是 Anki（老用户从设置重开向导）时初始展开，
   /// 否则用户看不到自己现在选中的是哪一项。
@@ -326,14 +328,6 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       if (feature == null) continue;
       if (appModelNoUpdate.moduleEnabled(module)) _selected.add(feature);
     }
-    _reviewMethod = onboardingReviewMethodOf(
-      // 经模块可见性（含正式版判据）：正式版里复习不存在，复习方式按 Anki 起步。
-      srsModuleEnabled: appModelNoUpdate.moduleVisibility.isEnabled(
-        ModuleId.srs,
-      ),
-      miningTarget: appModelNoUpdate.srsMiningTarget,
-    );
-    _ankiOptionExpanded = _reviewMethod == OnboardingReviewMethod.anki;
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
     unawaited(_packController.prepareDiskState());
@@ -450,8 +444,20 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       // 不能是升级送的）。
       await ref
           .read(ankiViewModelProvider.notifier)
-          .setAutoRepositionEnabled(_ankiAutoReposition);
+          .setAutoRepositionEnabled(_autoReposition);
       if (!mounted) return;
+    }
+    if (_steps[_stepIndex] == OnboardingStepId.reviewMethod) {
+      // 照着默认（Fushi 复习）直接按下一步也是显式选择：初值进页时不写，这里补写。
+      await _applyReviewMethod(_reviewMethod);
+      if (!mounted) return;
+      // Fushi 复习路径的自动重排开关同理此刻写入（Anki 路径在 Anki 步写）。
+      if (_reviewMethod == OnboardingReviewMethod.fushi) {
+        await ref
+            .read(ankiViewModelProvider.notifier)
+            .setAutoRepositionEnabled(_autoReposition);
+        if (!mounted) return;
+      }
     }
     final List<OnboardingStepId> steps = _steps;
     if (steps[_stepIndex] == OnboardingStepId.features) {
@@ -484,13 +490,34 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   void _selectReviewMethod(OnboardingReviewMethod method) {
     if (_reviewMethod == method) return;
     setState(() => _reviewMethod = method);
-    unawaited(
+    unawaited(_applyReviewMethod(method));
+  }
+
+  Future<void> _applyReviewMethod(OnboardingReviewMethod method) =>
       applyOnboardingReviewMethod(
         method,
         setModuleEnabled: appModelNoUpdate.setModuleEnabled,
         setMiningTarget: appModelNoUpdate.setSrsMiningTarget,
-      ),
-    );
+        // 换笔记类型要先打开复习库（首次会建表、播种内置项），不让「下一步」等它。
+        adoptFushiCard: () async => unawaited(_adoptFushiCard()),
+      );
+
+  /// 选了 Fushi 复习：制卡笔记类型落到内置 Fushi 卡片（所有者 2026-10-20「用户默认
+  /// 制卡到 fushi card」）。只把旧默认 Lapis 换回「没选过」（空 id = Fushi 卡片，见
+  /// `resolveSrsMiningDestination`）；用户自建的笔记类型不替他改。打开 store 这一步
+  /// 同时播种内置默认牌组与笔记类型（`SrsDbStore.ensureBuiltins`）。
+  Future<void> _adoptFushiCard() async {
+    try {
+      final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+      if (store == null) return;
+      if (appModelNoUpdate.srsMiningDestination.noteTypeId ==
+          store.lapisNoteTypeId) {
+        await appModelNoUpdate.setSrsMiningNoteTypeId('');
+      }
+    } catch (e, stack) {
+      // 复习库打不开时制卡照样回落默认（见 resolveSrsMiningDestination），只留痕。
+      ErrorLogService.instance.log('onboarding.adoptFushiCard', e, stack);
+    }
   }
 
   void _toggleFeature(OnboardingFeature feature) {
@@ -654,9 +681,11 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 「第一张卡」教程。重开向导不会拿旧缓存冒充本次连接成功。
   bool _ankiConnectionVerified = false;
 
-  /// 「制卡后自动按词频重排」的向导内选择，初值 [kOnboardingAnkiAutoRepositionDefault]；
-  /// 离开 Anki 步时写进 `AnkiSettings.autoRepositionEnabled`（见 [_goNextAsync]）。
-  bool _ankiAutoReposition = kOnboardingAnkiAutoRepositionDefault;
+  /// 「制卡后自动按词频重排」的向导内选择（复习方式一步与 Anki 步共用），初值
+  /// [kOnboardingAutoRepositionDefault]；
+  /// 离开复习方式一步（选了 Fushi 复习）或 Anki 步时写进
+  /// `AnkiSettings.autoRepositionEnabled`（见 [_goNextAsync]）。
+  bool _autoReposition = kOnboardingAutoRepositionDefault;
 
   /// 移动端「本机改用 AnkiConnect」次级说明的展开态（默认收起）。
   bool _mobileAnkiConnectExpanded = false;
@@ -959,8 +988,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
             title: t.anki_reposition_auto_title,
             subtitle: t.onboarding_anki_auto_reposition_hint,
             subtitleMaxLines: 4,
-            value: _ankiAutoReposition,
-            onChanged: (bool v) => setState(() => _ankiAutoReposition = v),
+            value: _autoReposition,
+            onChanged: (bool v) => setState(() => _autoReposition = v),
           ),
         ),
         if (_ankiAddonNotice != null) ...<Widget>[
@@ -1168,6 +1197,22 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
               onToggleAnki: () =>
                   setState(() => _ankiOptionExpanded = !_ankiOptionExpanded),
             ),
+            // Fushi 复习路径的「制卡后自动按词频重排」（引导里默认开，离开本步时写入
+            // 设置，见 [_goNextAsync]）。Anki 路径的同一颗开关在 Anki 步里。
+            if (_reviewMethod == OnboardingReviewMethod.fushi) ...<Widget>[
+              SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
+              FushiCard(
+                child: AdaptiveSettingsSwitchRow(
+                  icon: FushiIcons.sync,
+                  showIcon: true,
+                  title: t.anki_reposition_auto_title,
+                  subtitle: t.onboarding_review_fushi_auto_reposition_hint,
+                  subtitleMaxLines: 4,
+                  value: _autoReposition,
+                  onChanged: (bool v) => setState(() => _autoReposition = v),
+                ),
+              ),
+            ],
           ],
         );
       case OnboardingStepId.anki:
@@ -1856,11 +1901,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.books:
         return t.onboarding_feature_books_hint;
       case OnboardingFeature.web:
-        // 浏览器模块五端都有，但网页漫画 / 小说导入是在线源能力（App Store 合规门），
-        // 门关着的平台（iOS）只介绍浏览 + 查词，不宣传不存在的能力。
-        return StoreRestrictedCapability.onlineMangaSource.isAvailable
-            ? t.onboarding_feature_web_hint
-            : t.onboarding_feature_web_basic_hint;
+        // 浏览器模块五端都有，但视频站点 / 网页阅读 / 浏览器扩展各有平台判据：只介绍
+        // 本平台真有的能力。
+        return webModuleOnboardingHint(WebModuleCapabilities.current());
       case OnboardingFeature.manga:
         return t.onboarding_feature_manga_hint;
       case OnboardingFeature.video:

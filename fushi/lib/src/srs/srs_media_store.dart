@@ -28,6 +28,9 @@ class SrsMediaStore {
   /// 本 profile 的媒体目录（`.../srs_media/<profileUid>`）。
   final Directory root;
 
+  /// [root] 已建好（批量存媒体时不必每个文件都 create 一次）。
+  bool _rootReady = false;
+
   /// [supportRoot] 下全部 profile 的媒体根（`<support>/srs_media`，不创建）。
   /// 备份的「复习」类别按这个根原样打包 / 恢复各 profile 子目录。
   static Directory mediaRootFor(Directory supportRoot) =>
@@ -66,26 +69,63 @@ class SrsMediaStore {
   }
 
   /// 存一份字节，返回存储后的文件名（同内容已存在时不重写）。
-  Future<String> store(String name, Uint8List bytes) async {
-    final String stored = contentName(name, bytes);
-    final File target = File(p.join(root.path, stored));
-    if (await target.exists() && await target.length() == bytes.length) {
-      return stored;
-    }
-    await root.create(recursive: true);
-    // 先写临时文件再改名：进程中途被杀不会留下一个半截的「内容哈希」文件。
-    final File tmp = File(
-      '${target.path}.${Random().nextInt(1 << 30).toRadixString(36)}.tmp',
-    );
-    await tmp.writeAsBytes(bytes, flush: true);
+  ///
+  /// 不逐文件 fsync：Windows 上每次 FlushFileBuffers 约 2 ms 且按卷串行，从 Anki 迁移
+  /// 4 万个媒体时光这一项就要 80 秒（并发也只快 1.4 倍）。改名前不落盘的代价是断电后
+  /// 可能留下「名字对、内容没写进去」的文件；名字就是内容哈希，所以已存在的同名文件要
+  /// 核对内容（不只比长度），不对就重写——下次存同一份内容（重新迁移 / 重新导入）即自愈。
+  /// 进程被杀（非断电）时系统缓存照样写回，先写临时文件再改名保证不出现半截文件。
+  ///
+  /// 同一份内容并发存（Anki 集合里常有多个文件名同一内容，迁移时并发预存）只有一个
+  /// 写入者，其余等它（[_writing]）：否则一个在改名、另一个在核对读同一个目标文件，
+  /// Windows 上会撞共享冲突。
+  Future<String> store(String name, Uint8List bytes) {
+    final String digest = sha1.convert(bytes).toString();
+    final String ext = extensionOf(name);
+    final String stored = ext.isEmpty ? digest : '$digest.$ext';
+    return _writing[stored] ??= _write(stored, digest, bytes);
+  }
+
+  /// 进行中的写入（按存储文件名）。
+  final Map<String, Future<String>> _writing = <String, Future<String>>{};
+
+  Future<String> _write(String stored, String digest, Uint8List bytes) async {
     try {
-      await tmp.rename(target.path);
-    } on FileSystemException {
-      // 并发写同一内容（Windows 上目标已存在时 rename 失败）：内容一样，留现有的即可。
-      if (await tmp.exists()) await tmp.delete();
-      if (!await target.exists()) rethrow;
+      final File target = File(p.join(root.path, stored));
+      final bool exists = await target.exists();
+      if (exists &&
+          await target.length() == bytes.length &&
+          sha1.convert(await target.readAsBytes()).toString() == digest) {
+        return stored;
+      }
+      if (!_rootReady) {
+        await root.create(recursive: true);
+        _rootReady = true;
+      }
+      // 先写临时文件再改名：进程中途被杀不会留下一个半截的「内容哈希」文件。
+      final File tmp = File(
+        '${target.path}.${Random().nextInt(1 << 30).toRadixString(36)}.tmp',
+      );
+      try {
+        await tmp.writeAsBytes(bytes);
+      } on PathNotFoundException {
+        // 目录在本实例建好之后被删了（恢复备份会整体替换媒体目录）：重建再写。
+        await root.create(recursive: true);
+        await tmp.writeAsBytes(bytes);
+      }
+      // 同名但内容不对（断电留下的坏文件）：先删掉，改名才会替换它。
+      if (exists && await target.exists()) await target.delete();
+      try {
+        await tmp.rename(target.path);
+      } on FileSystemException {
+        // 别的进程同时写了同一内容（Windows 上目标已存在时改名失败）：内容一样，留现有的。
+        if (await tmp.exists()) await tmp.delete();
+        if (!await target.exists()) rethrow;
+      }
+      return stored;
+    } finally {
+      _writing.remove(stored);
     }
-    return stored;
   }
 
   /// 读一个本地文件存进来（文件不存在返回 null）。

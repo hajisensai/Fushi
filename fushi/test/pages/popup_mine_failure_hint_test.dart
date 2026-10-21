@@ -27,17 +27,19 @@ void main() {
     expect(popupJs.contains('reply.message'), isTrue,
         reason: 'parseMineResult 必须把失败原因取出来，否则宿主算了也没人看');
 
-    // 失败分支必须真的调 showInlineHint —— 那是 app 外唯一可见的提示通道。
+    // 失败分支必须真的走页内提示车道 —— 那是 app 外唯一可见的提示通道。
+    // BUG-3652 续起统一经 reportMineFailure（按钮还在页面上就 showInlineHint，
+    // 已被换掉才交回宿主 toast），见文件末「reportMineFailure」那条。
     // 锚点用失败分支自身的注释（`BUG-1908` 在本文件出现多次，第一处是
     // parseMineResult，拿它当锚会量到文件另一头去）。
     final int marker = popupJs.indexOf('制卡失败必须');
     expect(marker, greaterThanOrEqualTo(0), reason: 'popup.js 的制卡失败分支必须存在');
-    final int hintCall = popupJs.indexOf('showInlineHint(', marker);
+    final int hintCall = popupJs.indexOf('reportMineFailure(mineButton', marker);
     expect(hintCall, greaterThanOrEqualTo(0),
-        reason: '失败分支必须调用 showInlineHint');
+        reason: '失败分支必须调用 reportMineFailure');
     // 就在同一段里（而不是文件别处某个不相干的调用）。
     expect(hintCall - marker, lessThan(1200),
-        reason: 'showInlineHint 必须紧跟在失败分支里');
+        reason: 'reportMineFailure 必须紧跟在失败分支里');
 
     // 兜底文案由宿主注入（i18n），不硬编码中文/英文进 JS。
     expect(popupJs.contains('window.i18nMineFailed'), isTrue);
@@ -103,10 +105,10 @@ void main() {
     );
     expect(overwrite.contains('!result.ankiConnect'), isTrue,
         reason: 'ankiConnect 才是覆写的真成败位；无条件画 ✓ 等于把失败画成成功');
-    expect(overwrite.contains('showInlineHint('), isTrue,
+    expect(overwrite.contains('reportMineFailure(mineButton, result)'), isTrue,
         reason: '覆写失败必须走页内提示车道——gal 浮窗是独立 native 窗口，'
             '宿主的 Flutter toast 在游戏全屏时用户一个也看不见');
-    expect(overwrite.contains('result.message'), isTrue,
+    expect(popupJs.contains('(result && result.message)'), isTrue,
         reason: '宿主为覆写失败专门算了本地化文案'
             '（toPopupReply(message: failureMessage)，updateNoteId != null 那条路）；'
             '丢掉它就等于让那段 Dart 变成死代码');
@@ -146,7 +148,8 @@ void main() {
     );
     expect(handled.contains('action.result.message'), isTrue,
         reason: '覆写/新增重复卡失败时宿主的原因不能在这条路上被丢掉');
-    expect(handled.contains('showInlineHint('), isTrue,
+    expect(handled.contains('reportMineFailure(mineButton, action.result)'),
+        isTrue,
         reason: '同上，必须落到页内提示车道');
   });
 
@@ -172,9 +175,31 @@ void main() {
     ).readAsStringSync();
     // 裸浮窗的回包由 MinePopupResult 构造（duplicate / queued 位随 toJson 带出），
     // 不再手拼字段。
-    expect(bridge.contains('MinePopupResult.failed(outcome)'), isTrue,
+    // BUG-3652：失败回包同时带上原因（MinePopupResult.message）。
+    expect(
+        bridge.contains(
+            'MinePopupResult.failed(outcome, message: described.message)'),
+        isTrue,
         reason: 'app 外裸浮窗的制卡回程同样要带 duplicate 位');
     expect(bridge.contains('...reply.toJson()'), isTrue,
         reason: '回包字段必须来自 MinePopupResult.toJson');
+  });
+
+  // BUG-3652 续：失败原因恰好说一次。行为覆盖在 popup_asset_behavior_test.js
+  // （testMineFailure* 三条，node 真跑）；这里是 CI 里拦回归的源码层。
+  test('reportMineFailure：按钮还在就就地说，被换掉交回宿主，宿主已报就闭嘴', () {
+    final String fn = region(
+      'function reportMineFailure(',
+      '// Records the just-mined word',
+    );
+    expect(fn.contains('result.hostReported'), isTrue,
+        reason: '宿主已 toast（弹窗不在屏上）时弹窗不得再说第二遍');
+    expect(fn.contains('button.isConnected'), isTrue,
+        reason: '「还是不是同一次查词」由发起按钮还在不在页面上判');
+    expect(fn.contains('showInlineHint(button, message)'), isTrue);
+    expect(fn.contains("callHandler('mineFailureUnseen'"), isTrue,
+        reason: '按钮已被换掉时必须交回宿主 toast，不能静默');
+    expect(popupJs.contains('hostReported: reply.hostReported === true'), isTrue,
+        reason: 'hostReported 必须来自宿主回包');
   });
 }

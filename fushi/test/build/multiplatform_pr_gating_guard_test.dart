@@ -192,7 +192,12 @@ void main() {
       'native/fushi_compute/build_linux_so.sh': all,
       'packages/fushi_compute/lib/src/fushi_compute_library.dart': all,
       'packages/fushi_compute/lib/src/hash/ffc_hash.dart': all,
-      // iOS 伞形静态库（fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core 合一）只有 iOS job 编。
+      // RWKV-Instant 排程推理（硬依赖，AGPL）：同 fushi_compute，三个 app 随包 + 服务端随包；
+      // verify_abi.sh 递归读 packages/fushi_rwkv/lib 下的 Dart 绑定。
+      'native/fushi_rwkv/src/lib.rs': all,
+      'native/fushi_rwkv/build_linux_so.sh': all,
+      'packages/fushi_rwkv/lib/src/fushi_rwkv_library.dart': all,
+      // iOS 伞形静态库（fushi_p2p + fushi_fsrs + fushi_compute + fushi_web_core + fushi_rwkv 合一）只有 iOS job 编。
       'native/fushi_ios_umbrella/src/lib.rs': <String>{'ios'},
       // fushidicts 编进三个 app，也随无头服务端包（linux-server 编 .so + 冒烟）。
       'native/fushidicts/src/fushidicts.cpp': all,
@@ -227,9 +232,8 @@ void main() {
       },
       'third_party/media_kit_libs_windows_video/windows/CMakeLists.txt':
           <String>{'windows'},
-      'third_party/ffmpeg_kit_flutter/ios/ffmpeg_kit_flutter.podspec': <String>{
-        'ios',
-      },
+      'third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter.podspec':
+          <String>{'ios'},
       'third_party/media_kit_video/pubspec.yaml': apps,
       'third_party/media_kit_video/lib/media_kit_video.dart': <String>{},
       'third_party/media_kit_libs_android_video/android/build.gradle':
@@ -258,6 +262,7 @@ void main() {
       '.github/actions/native-artifact-store/action.yml': all,
       '.github/actions/provide-baked-secrets/action.yml': apps,
       '.github/actions/setup-fushi-compute/action.yml': apps,
+      '.github/actions/setup-fushi-rwkv/action.yml': apps,
       '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
     };
     final List<String> wrong = <String>[

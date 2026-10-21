@@ -674,8 +674,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 新建合集，返回自增 id。sortOrder 默认排末尾（现有最大 +1，空表 0）。同事务清
   /// 同自然键的合集级删除墓碑（重建 = 撤销删除，仿插书清书墓碑 [insertEpubBook]
   /// 一律；不清成员墓碑——成员重加走 [addToCollection] 逐键清）。
+  ///
+  /// [origin] / [organizeKey]：整理器（规则归组、AI 整理）建合集时标明来源与分组键
+  /// （schema v124）；复用已有同名合集时**不**改它们（已有合集的来源归它自己）。
   Future<int> createMediaCollection(String name,
-          {String collectionType = 'collection'}) =>
+          {String collectionType = 'collection',
+          CollectionOrigin origin = CollectionOrigin.user,
+          String? organizeKey}) =>
       transaction(() async {
         // 先按自然键查重：已存在同 (name, collectionType) 行则复用其 id，绝不再造重复
         // 自然键行（否则同名两行让合集同步引擎每轮判不一致永不收敛，BUG 修复）。
@@ -696,6 +701,70 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           collectionType: Value(collectionType),
           sortOrder: Value(nextOrder),
           createdAt: DateTime.now().millisecondsSinceEpoch,
+          origin: Value(origin.dbValue),
+          organizeKey: Value(organizeKey),
+        ));
+      });
+
+  /// 用户接手整理器管着的合集（schema v124，spec §5.1）：`ai` / `rule` → `user`，
+  /// 永不回退。用户写入口（加减成员、改名、手动排序、合并）都经这里；整理器、同步、
+  /// 扫描等自动路径传 `userIntent: false` 绕开。已是 `user` / `folder` 的不动。
+  Future<void> _claimCollectionForUser(int id) => customUpdate(
+        'UPDATE media_collections SET origin = ? '
+        "WHERE id = ? AND origin IN ('ai', 'rule')",
+        variables: <Variable<Object>>[
+          Variable<String>(CollectionOrigin.user.dbValue),
+          Variable<int>(id),
+        ],
+        updates: {mediaCollections},
+      );
+
+  /// 写整理身份（同步应用端 / 整理器专用）：来源、分组键、别名原样落库。
+  Future<void> setMediaCollectionOrganizeState(
+    int id, {
+    required CollectionOrigin origin,
+    required String? organizeKey,
+    required Set<String> organizeAliases,
+  }) =>
+      (update(mediaCollections)..where((t) => t.id.equals(id))).write(
+        MediaCollectionsCompanion(
+          origin: Value(origin.dbValue),
+          organizeKey: Value(organizeKey),
+          organizeAliases: Value(encodeOrganizeAliases(organizeAliases)),
+        ),
+      );
+
+  /// 合并时让目标合集吸收 [source] 的分组身份（spec §8.3）：源的键与别名并进目标
+  /// 别名；目标还没有键时取两者里的规范键。必须在删源合集**之前**调——删除墓碑上
+  /// 的键落在某个活合集的别名里，才不会被读成「用户拒绝」。
+  Future<void> absorbOrganizeIdentity({
+    required int targetId,
+    required MediaCollectionRow source,
+  }) =>
+      transaction(() async {
+        final MediaCollectionRow? target = await getMediaCollectionById(
+          targetId,
+        );
+        if (target == null) return;
+        final Set<String> sourceAliases =
+            decodeOrganizeAliases(source.organizeAliases);
+        if (source.organizeKey == null && sourceAliases.isEmpty) return;
+        final ({String? key, Set<String> aliases}) merged =
+            mergeOrganizeIdentity(
+          keyA: target.organizeKey,
+          aliasesA: decodeOrganizeAliases(target.organizeAliases),
+          keyB: source.organizeKey,
+          aliasesB: sourceAliases,
+        );
+        // 目标已有自己的键时保持它为主键（展示与刮削都跟着它），源键只进别名。
+        final String? key = target.organizeKey ?? merged.key;
+        await (update(mediaCollections)..where((t) => t.id.equals(targetId)))
+            .write(MediaCollectionsCompanion(
+          organizeKey: Value(key),
+          organizeAliases: Value(encodeOrganizeAliases(
+            <String>{...merged.aliases, if (merged.key != null) merged.key!}
+              ..remove(key),
+          )),
         ));
       });
 
@@ -714,8 +783,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 故改名事务 = 改 name + 旧 (oldName,type) 清墓碑后写哨兵（同 deleteMediaCollection，
   /// 让对端删掉旧名副本）+ 清新 (name,type) 哨兵墓碑（同 createMediaCollection，
   /// 让新名不被自己旧删除墓碑秒杀）。改成同名(no-op)或目标 id 不存在时不动墓碑。
-  Future<void> renameMediaCollection(int id, String name) =>
+  Future<void> renameMediaCollection(int id, String name,
+          {bool userIntent = true}) =>
       transaction(() async {
+        if (userIntent) await _claimCollectionForUser(id);
         final MediaCollectionRow? col = await getMediaCollectionById(id);
         if (col == null || col.name == name) {
           await (update(mediaCollections)..where((t) => t.id.equals(id)))
@@ -769,12 +840,65 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (update(mediaCollections)..where((t) => t.id.equals(id)))
           .write(MediaCollectionsCompanion(coverPath: Value(coverPath)));
 
+  /// 私密合集（v122 `media_privacy_flags`）的成员离开它之前，把私密落到成员自己
+  /// 身上（fail-closed）。成员的私密原本只是「在私密合集里」继承来的：合集被删 /
+  /// 合并解散 / 按季或按 AniDB 作品拆走 / 成员被移出时，继承随成员关系一起消失，
+  /// 那部作品就会在下一轮排行榜上传、Bangumi 推送里静默变回公开——其中 AniDB 拆分
+  /// 是刮削后台自动做的，用户根本没表达过「公开」。取消私密只认用户在作品自己的私密
+  /// 开关上拨回去。合集本身不私密时什么都不做；成员已私密的不重写（不推进时钟）。
+  Future<void> _carryCollectionPrivacyToMembers(
+    int collectionId,
+    Iterable<({String mediaType, String entryKey})> leaving,
+  ) async {
+    if (!await isMediaPrivate(
+      TagHostKind.collection,
+      collectionTagEntryKey(collectionId),
+    )) {
+      return;
+    }
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final (:String mediaType, :String entryKey) in leaving) {
+      final MediaKind? kind = MediaKind.tryParse(mediaType);
+      // 对端未知种类：本机没有对应宿主、也没有出站路径，无从落标记。
+      if (kind == null) continue;
+      // EPUB 成员键 v83 起是 uid，私密标记键是 bookKey；反查不上 = 透传行（原值
+      // 本就是 bookKey），照抄。
+      final String hostKey = kind == MediaKind.epub
+          ? (await resolveEpubBookKeyByUid(entryKey) ?? entryKey)
+          : entryKey;
+      final TagHostKind host = tagHostKindOfMediaKind(kind);
+      if (await isMediaPrivate(host, hostKey)) continue;
+      await setMediaPrivate(host, hostKey, true, at: now);
+    }
+  }
+
   /// 删合集：显式先删本合集全部成员引用行、再删合集（不依赖 FK cascade，测试/生产
   /// 一致；绝不删条目本身）。返回删除的合集行数。同事务写合集级删除墓碑（空哨兵行，
   /// schema v40 防对端并集同步复活），并清本合集残留成员墓碑（合集已删，成员墓碑
   /// 无意义；留着会误杀日后重建同名合集时对端的成员）。
-  Future<int> deleteMediaCollection(int id) => transaction(() async {
+  ///
+  /// [deletedAt]（缺省 now）：合集级墓碑时刻。整理收敛在同步基线推进后删败方时传
+  /// 「严格晚于基线」的值——同毫秒的墓碑会被下一轮判成旧闻（v124）。
+  ///
+  /// [organizeMerged]：整理器把它并进别的合集时传 true（删除哨兵记下「并掉」，不算
+  /// 用户拒绝这个分组）。
+  ///
+  /// [userIntent]（默认 true）：用户删的整理器合集，删除哨兵记下它的分组键集合（主键 +
+  /// 吸收过的别名）= 用户拒绝了这个分组，任何设备上的 AI 都不再建。自动路径（刮削拆分、
+  /// 导入清理…）删合集不是用户表态，传 false 只写普通删除墓碑、不记键。
+  Future<int> deleteMediaCollection(int id,
+          {int? deletedAt,
+          bool organizeMerged = false,
+          bool userIntent = true}) =>
+      transaction(() async {
         final MediaCollectionRow? col = await getMediaCollectionById(id);
+        await _carryCollectionPrivacyToMembers(
+          id,
+          <({String mediaType, String entryKey})>[
+            for (final MediaCollectionItemRow m in await getCollectionItems(id))
+              (mediaType: m.mediaType, entryKey: m.entryKey),
+          ],
+        );
         await (delete(mediaCollectionItems)
               ..where((t) => t.collectionId.equals(id)))
             .go();
@@ -794,7 +918,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             collectionType: col.collectionType,
             mediaType: FushiDatabase.collectionTombstoneSentinel,
             entryKey: FushiDatabase.collectionTombstoneSentinel,
-            deletedAt: DateTime.now().millisecondsSinceEpoch,
+            deletedAt: deletedAt ?? DateTime.now().millisecondsSinceEpoch,
+            // v124：带上分组键——键若已被别的活合集吸收（合并）就只是去向记录，
+            // 否则就是用户拒绝了这个分组（spec §5.2）。
+            organizeKey: organizeMerged || userIntent
+                ? _deadOrganizeKeySet(col)
+                : null,
+            organizeMerged: organizeMerged,
           );
         }
         return deleted;
@@ -1078,16 +1208,23 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 再删掉，防复活变成禁重加）。
   ///
   /// P5：本机已知种类的类型化入口；转移/合并对端未知种类走 [addToCollectionRaw]。
+  ///
+  /// [userIntent]（默认 true）：用户加成员即接手整理器管着的合集（v124
+  /// [_claimCollectionForUser]）。规则归组、AI 整理、同步、扫描等自动路径传 false。
   Future<void> addToCollection(
-          int collectionId, MediaKind mediaType, String entryKey) =>
-      addToCollectionRaw(collectionId, mediaType.dbValue, entryKey);
+          int collectionId, MediaKind mediaType, String entryKey,
+          {bool userIntent = true}) =>
+      addToCollectionRaw(collectionId, mediaType.dbValue, entryKey,
+          userIntent: userIntent);
 
   /// [addToCollection] 的裸串版：合集合并/转移把**现有成员行原样搬家**时用——
   /// 行值可能是对端未来新增的未知种类（或旧值域残留），tryParse 丢弃会静默丢
   /// 成员（Never break userspace）。新增本机成员一律走类型化 [addToCollection]。
   Future<void> addToCollectionRaw(
-          int collectionId, String mediaType, String entryKey) =>
+          int collectionId, String mediaType, String entryKey,
+          {bool userIntent = true}) =>
       transaction(() async {
+        if (userIntent) await _claimCollectionForUser(collectionId);
         final int next = await _nextCollectionSortIndex(collectionId);
         await into(mediaCollectionItems).insert(
           MediaCollectionItemsCompanion.insert(
@@ -1128,6 +1265,75 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 跨端防复活证据，必须在成员行消亡后仍可与对端（bookKey 键）直比。epub 成
   /// 员行键是本机 uid → 写/清墓碑前反查 bookKey；反查不上 = 透传行（原值本就
   /// 是对端 bookKey）照抄即闭环。非 epub 域键原样。
+  /// 成员行键 → 与 [collectionMemberTombstoneKeysFor] 可直比的墓碑键
+  /// （`mediaType NUL 墓碑域 entryKey`）。
+  Future<String> collectionMemberTombstoneKeyOf(
+    String mediaType,
+    String entryKey,
+  ) async =>
+      '$mediaType\u0000${await _tombstoneEntryKeyOf(mediaType, entryKey)}';
+
+  /// 某合集自然键下的全部成员移出墓碑键（`mediaType NUL entryKey`，墓碑域）。
+  /// 合并 / 整理把成员并进来前用它跳过用户移出过的成员。
+  Future<Set<String>> collectionMemberTombstoneKeysFor(
+    String collectionName,
+    String collectionType,
+  ) async =>
+      <String>{
+        for (final CollectionMemberTombstoneRow t
+            in await (select(collectionMemberTombstones)
+                  ..where((t) =>
+                      t.collectionName.equals(collectionName) &
+                      t.collectionType.equals(collectionType)))
+                .get())
+          if (t.mediaType.isNotEmpty && t.entryKey.isNotEmpty)
+            '${t.mediaType}\u0000${t.entryKey}',
+      };
+
+  /// 被用户拒绝的整理分组键（spec §5.2 / §8.5）：带键、不是「并掉」的合集级删除
+  /// 哨兵里，键不在任何活合集的 organizeKey / organizeAliases 里的那些。
+  Future<Set<String>> getRejectedOrganizeKeys() async =>
+      (await getRejectedOrganizeGroups()).keys.toSet();
+
+  /// 被用户拒绝的分组键 → 当时的合集名。哨兵上的键是**集合**（被删合集的主键 + 吸收过
+  /// 的别名，[encodeOrganizeAliases] 编码），集合里每个键都算拒绝——另一台设备的 AI
+  /// 用另一种原名算出别名里的那个键时，同样不再建。
+  ///
+  /// 「允许再次建议」不在这里清：同步会把对端仍带着键的哨兵写回来。它是设备本地的放行
+  /// 名单（app 偏好），由调用方从结果里减掉；放行后再建出的同键活合集让这个键从「拒绝」
+  /// 里自然消失（下面的 live 判据），并经同步传到每台设备。
+  Future<Map<String, String>> getRejectedOrganizeGroups() async {
+    final Set<String> live = <String>{};
+    for (final MediaCollectionRow c in await select(mediaCollections).get()) {
+      if (c.organizeKey != null) live.add(c.organizeKey!);
+      live.addAll(decodeOrganizeAliases(c.organizeAliases));
+    }
+    final Map<String, String> out = <String, String>{};
+    for (final CollectionMemberTombstoneRow t
+        in await (select(collectionMemberTombstones)
+              ..where((t) =>
+                  t.mediaType
+                      .equals(FushiDatabase.collectionTombstoneSentinel) &
+                  t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel) &
+                  t.organizeKey.isNotNull() &
+                  t.organizeMerged.equals(false)))
+            .get()) {
+      for (final String k in decodeOrganizeAliases(t.organizeKey)) {
+        if (!live.contains(k)) out.putIfAbsent(k, () => t.collectionName);
+      }
+    }
+    return out;
+  }
+
+  /// 删除哨兵上要记的分组键集合（主键 + 别名，编码成一个字符串）；都没有 → null。
+  static String? _deadOrganizeKeySet(MediaCollectionRow col) {
+    final Set<String> keys = <String>{
+      if (col.organizeKey != null) col.organizeKey!,
+      ...decodeOrganizeAliases(col.organizeAliases),
+    };
+    return keys.isEmpty ? null : encodeOrganizeAliases(keys);
+  }
+
   Future<String> _tombstoneEntryKeyOf(String mediaType, String entryKey) async {
     if (mediaType != MediaKind.epub.dbValue) return entryKey;
     final EpubBookRow? book = await (select(
@@ -1152,16 +1358,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// P5：本机已知种类的类型化入口；按成员**行值**移出（可能未知种类）走
   /// [removeFromCollectionRaw]。
   Future<void> removeFromCollection(
-          int collectionId, MediaKind mediaType, String entryKey) =>
-      removeFromCollectionRaw(collectionId, mediaType.dbValue, entryKey);
+          int collectionId, MediaKind mediaType, String entryKey,
+          {bool userIntent = true}) =>
+      removeFromCollectionRaw(collectionId, mediaType.dbValue, entryKey,
+          userIntent: userIntent);
 
   /// [removeFromCollection] 的裸串版：详情页按现有成员行移出时，行值可能是对端
   /// 未来新增的未知种类——必须能原样移出，tryParse 丢弃会让该成员永远移不掉。
   Future<void> removeFromCollectionRaw(
-          int collectionId, String mediaType, String entryKey) =>
+          int collectionId, String mediaType, String entryKey,
+          {bool userIntent = true}) =>
       transaction(() async {
+        if (userIntent) await _claimCollectionForUser(collectionId);
         final MediaCollectionRow? col =
             await getMediaCollectionById(collectionId);
+        await _carryCollectionPrivacyToMembers(
+          collectionId,
+          <({String mediaType, String entryKey})>[
+            (mediaType: mediaType, entryKey: entryKey),
+          ],
+        );
         await (delete(mediaCollectionItems)
               ..where((t) =>
                   t.collectionId.equals(collectionId) &
@@ -1239,6 +1455,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     required bool bumpOrderUpdatedAt,
   }) =>
       transaction(() async {
+        // 手动排序 = 用户接手（v124）；自动整理序不接手。
+        if (bumpOrderUpdatedAt) await _claimCollectionForUser(collectionId);
         // 事务内取当前全表顺序作槽位基准（[getCollectionItems] 的
         // sortIndex→entryKey→mediaType 全序 = 用户此刻看到的顺序；那三段键就是成员
         // 身份，无并列，故本次冻结出的致密序确定、不随查询计划变）。
@@ -1368,6 +1586,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     required String mediaType,
     required String entryKey,
     required int deletedAt,
+    String? organizeKey,
+    bool organizeMerged = false,
   }) =>
       into(collectionMemberTombstones).insertOnConflictUpdate(
         CollectionMemberTombstonesCompanion.insert(
@@ -1376,6 +1596,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           mediaType: mediaType,
           entryKey: entryKey,
           deletedAt: deletedAt,
+          organizeKey: Value(organizeKey),
+          organizeMerged: Value(organizeMerged),
         ),
       );
 
@@ -1446,6 +1668,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 墓碑状态由同步应用端按合并后清单镜像（对比用户路径
   /// [deleteMediaCollection] 会写 now 时间戳的合集级墓碑）。
   Future<void> deleteMediaCollectionRaw(int id) => transaction(() async {
+        await _carryCollectionPrivacyToMembers(
+          id,
+          <({String mediaType, String entryKey})>[
+            for (final MediaCollectionItemRow m in await getCollectionItems(id))
+              (mediaType: m.mediaType, entryKey: m.entryKey),
+          ],
+        );
         await (delete(mediaCollectionItems)
               ..where((t) => t.collectionId.equals(id)))
             .go();

@@ -176,7 +176,9 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   function paged(position = 0, pageSize = 100) {
     delete reader.scrollToChapterEnd;
     body.scrollLeft = body.scrollTop = position;
-    const context = {vertical, scrollEl: body, physicalMaxScroll: 200, pageSize};
+    // Mirrors production getScrollContext, including its turn axis ('y' for the
+    // vertical single strip, 'x' for horizontal; 'xr' is the foldable spread).
+    const context = {vertical, axis: vertical ? 'y' : 'x', scrollEl: body, physicalMaxScroll: 200, pageSize};
     Object.assign(reader, {getScrollContext: () => context,
       paginationMetrics: {minScroll: 0, maxScroll: 200}, pageStepPosition: x => x});
     for (const name of ['getPagePosition', 'lockRootViewport', 'assignPagePosition',
@@ -482,7 +484,8 @@ for (const writingMode of ['horizontal-tb', 'vertical-rl', 'vertical-lr']) {
         const f = fixture({continuous: false, writingMode}); const ctx = f.paged(100);
         for (const name of ['contentFirstPageScroll', 'contentLastPageScroll', 'alignToPage',
           'scrollToProgressPaged', 'scrollToCharOffset', 'alignToFragmentTarget',
-          '_alignRangeToPage', '_settleAndNotify']) f.reader[name] = f.fn('pagination', name);
+          '_alignRangeToPage', '_settleAndNotify', 'turnSpan', 'pagedAxisOf'])
+          f.reader[name] = f.fn('pagination', name);
         // Geometry only: the target is on the preceding page; all navigation,
         // landing, drag validity and cleanup are the current production methods.
         f.reader.getRect = () => ({top: -100, left: -100});

@@ -100,37 +100,46 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
   final SrsDeckView owner = tree.paramsOwner(deckId);
   final Set<String> scope = tree.paramsScope(owner.id).toSet();
   final SrsDayContext day = await store.dayContext();
-  final SrsAlgorithm alg = owner.localAlgorithm;
+  // RWKV 牌组优化的是它的影子记忆状态（FSRS-7）参数。
+  final SrsAlgorithm alg = owner.localAlgorithm.memoryAlgorithm;
   final SrsParamSet? set = owner.paramSetFor(alg);
 
   final List<(int, List<SrsFsrsReview>, int)> rows =
       <(int, List<SrsFsrsReview>, int)>[];
   int count = 0;
   final List<String> cardIds = await store.cardIdsInDecks(scope);
-  for (final String cardId in cardIds) {
-    final SrsCardHistory h = await store.history(cardId);
-    final SrsMemoryInput input = srsCollectMemoryInput(
-      h,
-      algorithm: alg,
-      dayIndexOf: day.dayIndexOf,
+  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3543）；分块取，内存里只留一块的历史。
+  for (int start = 0; start < cardIds.length; start += 1000) {
+    final List<String> part = cardIds.sublist(
+      start,
+      start + 1000 > cardIds.length ? cardIds.length : start + 1000,
     );
-    if (!input.complete || input.reviews.isEmpty) continue;
-    final List<SrsReviewLog> ratings = <SrsReviewLog>[
-      for (final SrsReviewLog l in h.effectiveRatings)
-        if (!_timeUncertain(l, h)) l,
-    ];
-    if (ratings.length != input.reviews.length) {
-      // 有可证明时间错误的日志：这张卡整卡不进训练集（间隔算不准）。
-      continue;
-    }
-    final int numericId = SrsIds.ankiNumericId(cardId);
-    for (int i = 1; i < input.reviews.length; i++) {
-      rows.add((
-        ratings[i].occurredAt,
-        input.reviews.sublist(0, i + 1),
-        numericId,
-      ));
-      count++;
+    final Map<String, SrsCardHistory> histories = await store.histories(part);
+    for (final String cardId in part) {
+      final SrsCardHistory h = histories[cardId]!;
+      final SrsMemoryInput input = srsCollectMemoryInput(
+        h,
+        algorithm: alg,
+        dayIndexOf: day.dayIndexOf,
+      );
+      if (!input.complete || input.reviews.isEmpty) continue;
+      final List<SrsReviewLog> ratings = <SrsReviewLog>[
+        for (final SrsReviewLog l in h.effectiveRatings)
+          if (!_timeUncertain(l, h)) l,
+      ];
+      if (ratings.length != input.reviews.length) {
+        // 有可证明时间错误的日志：这张卡整卡不进训练集（间隔算不准）。
+        continue;
+      }
+      final int numericId = SrsIds.ankiNumericId(cardId);
+      for (int i = 1; i < input.reviews.length; i++) {
+        rows.add((
+          ratings[i].occurredAt,
+          input.reviews.sublist(0, i + 1),
+          numericId,
+        ));
+        count++;
+      }
     }
   }
   rows.sort(
@@ -264,7 +273,7 @@ Future<void> srsResetParams(
 }) async {
   final (int nowMs, _) = store.now();
   await store.editFields(SrsEntityKind.deck, deckId, <String, Object?>{
-    algorithm == SrsAlgorithm.fsrs7
+    algorithm.memoryAlgorithm == SrsAlgorithm.fsrs7
             ? SrsFieldKeys.deckFsrs7Params
             : SrsFieldKeys.deckFsrs6Params:
         null,

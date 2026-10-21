@@ -16,6 +16,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -282,6 +283,14 @@ void main() {
       findsNothing,
       reason: '首页没有墙格，骨架不能画网格',
     );
+    // 2026-10 首页重设计后首屏可能有主卡（继续观看第一项）：库里一条播放痕迹都
+    // 没有时真实首页不会有主卡，骨架也不得画主卡位——否则换真行时整段下跳一个
+    // 主卡高（重设计后实测 611 → 219）。
+    expect(
+      find.byKey(const ValueKey<String>('home_video_hero_skeleton')),
+      findsNothing,
+      reason: '没有任何播放痕迹 → 真实首页无主卡，骨架不画主卡位',
+    );
     final Rect skeletonCard = tester.getRect(
       find.byKey(const ValueKey<String>('home_video_row_skeleton_0_0')),
     );
@@ -296,7 +305,79 @@ void main() {
     expect(realCard, findsOneWidget);
     final Rect real = tester.getRect(realCard);
     expect(real.topLeft, skeletonCard.topLeft, reason: '骨架卡与真卡同位，换场不跳');
-    expect(real.width, skeletonCard.width, reason: '无封面真卡是竖卡，骨架同宽');
+    expect(real.width, skeletonCard.width, reason: '行卡恒竖版 2:3，骨架同宽');
+  });
+
+  // 同一几何门的「有主卡」分支：库里有在看的条目 → 骨架画主卡位，主卡位与真主卡
+  // 同位同高，主卡下第一条行的骨架卡与真行首卡同位。
+  testWidgets('首页分区骨架：有在看条目时主卡位与真主卡、首行与真行同几何', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    // 在看的旧片（提成主卡；入库早，不进「最近添加」）+ 刚入库的新片（「最近添加」）。
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/watching'),
+        title: const Value<String>('在看'),
+        videoPath: const Value<String>('/abs/video/watching.mp4'),
+        importedAt: Value<int>(DateTime(2026, 1, 4).millisecondsSinceEpoch),
+        lastPositionMs: const Value<int>(60000),
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/fresh'),
+        title: const Value<String>('新片'),
+        videoPath: const Value<String>('/abs/video/fresh.mp4'),
+        importedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    db.hold();
+
+    await tester.pumpWidget(buildApp(VideoLibrarySection.home));
+    for (int i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(skeleton, findsOneWidget);
+    final Finder heroSkeleton = find.byKey(
+      const ValueKey<String>('home_video_hero_skeleton'),
+    );
+    expect(heroSkeleton, findsOneWidget, reason: '有播放痕迹 → 骨架画主卡位');
+    // 主卡位 KeyedSubtree 包着「主卡 + 下边距」，取其子孙里第一个骨架块当主卡本体。
+    final Rect skeletonHero = tester.getRect(
+      find
+          .descendant(of: heroSkeleton, matching: find.byType(FushiSkeleton))
+          .first,
+    );
+    final Rect skeletonCard = tester.getRect(
+      find.byKey(const ValueKey<String>('home_video_row_skeleton_0_0')),
+    );
+
+    db.release();
+    await tester.pumpAndSettle();
+
+    expect(skeleton, findsNothing);
+    final Finder realHero = find.byKey(
+      const ValueKey<String>('home_video_continue_video/watching'),
+    );
+    expect(realHero, findsOneWidget);
+    expect(
+      find.descendant(
+        of: realHero,
+        matching: find.byKey(const ValueKey<String>('home_video_hero_play')),
+      ),
+      findsOneWidget,
+      reason: '前提：在看那部被提成了首屏主卡',
+    );
+    final Rect hero = tester.getRect(realHero);
+    expect(hero.topLeft, skeletonHero.topLeft, reason: '主卡位与真主卡同位');
+    expect(hero.size, skeletonHero.size, reason: '横排版主卡位与真主卡同尺寸');
+    final Rect real = tester.getRect(
+      find.byKey(const ValueKey<String>('home_video_recent_video/fresh')),
+    );
+    expect(real.topLeft, skeletonCard.topLeft, reason: '主卡下首行：骨架卡与真卡同位');
+    expect(real.width, skeletonCard.width);
   });
 
   // 审查阻塞点 3：骨架期间可见序必须为空——「全选」不能落到看不见的条目上。

@@ -526,7 +526,19 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   Widget _buildBody(BuildContext context) {
     final double page = FushiDesignTokens.of(context).spacing.page;
     final bool selecting = _selection != null;
+    final int resume = _resumeIndex;
+    final bool started = resume >= 0 && resume < _episodes.length;
     return MediaDetailLayout(
+      // 「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一集；没有分集 / 多选时不出。
+      fab: _loading || _episodes.isEmpty || selecting
+          ? null
+          : MediaDetailResumeFab(
+              buttonKey: const ValueKey<String>('anime_source_resume_fab'),
+              watching: true,
+              started: started,
+              itemLabel: _episodeTitle(_episodes[started ? resume : 0]),
+              onPressed: () => unawaited(_play(started ? resume : 0)),
+            ),
       header: _buildHeader(),
       slivers: <Widget>[
         SliverPadding(
@@ -608,10 +620,17 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       primaryAction: MediaDetailPrimaryButton(
         buttonKey: const ValueKey<String>('anime_source_play'),
         icon: FushiIcons.play,
-        label: resume >= 0 && resume < _episodes.length
-            ? '${t.video_continue_watching} · '
-                  '${_episodeTitle(_episodes[resume])}'
-            : t.play,
+        label: _episodes.isEmpty
+            ? t.play
+            : MediaDetailResumeFab.labelFor(
+                watching: true,
+                started: resume >= 0 && resume < _episodes.length,
+                itemLabel: _episodeTitle(
+                  _episodes[resume >= 0 && resume < _episodes.length
+                      ? resume
+                      : 0],
+                ),
+              ),
         progress: downloads != null && downloads.isRunning
             ? downloads.percent / 100
             : null,

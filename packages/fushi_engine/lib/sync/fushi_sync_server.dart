@@ -29,6 +29,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey;
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_device_link.dart';
 import 'package:fushi_engine/sync/interconnect_leaderboard_link.dart';
@@ -458,6 +460,12 @@ class FushiSyncServer {
   /// null（未接线，如纯协议单测）时 confirm 回退派发共享 [_token]，不落 per-peer 行
   /// ——既有 pair_v2 行为零变化（Never break userspace）。
   Future<void> Function(FushiPairedPeerRegistration registration)? onPeerPaired;
+
+  /// 已鉴权的对端经 WebDAV 成功写入（PUT）或删除（DELETE）了同步目录里的一个文件后回调，
+  /// 参数是相对 [syncDataDir] 的路径（`/` 分隔，如 `fushi-data/fushi-srs/<profile>/<writer>/cursor`）。
+  /// host 自己也参与同一套资产协议时（复习同步：app 作为 host 直接读写这块目录）据此去抖触发
+  /// 一轮本机同步。host 经本机文件系统写，不走这里，所以不会自己触发自己。
+  void Function(String relativePath)? onClientWrite;
 
   /// TODO-961 M1b: 供给当前全部未吊销的 per-peer token（auth 校验入站请求时，除共享
   /// [_token] 外接受任一 peer token）。注入而非直连 DB。首次 auth 时惰性加载并缓存；
@@ -1009,11 +1017,13 @@ class FushiSyncServer {
       // BUG-908(d)：改动文件系统的写操作按目标路径串行化，避免并发 PUT/DELETE/MKCOL
       // 同一路径互相踩（截断/半写/删了又建的竞态）。读操作（PROPFIND/GET/HEAD）不入闸。
       case 'PUT':
-        return _serializeDavWrite(fsPath, () => _handlePut(request, fsPath));
+        return _reportClientWrite(reqPath,
+            await _serializeDavWrite(fsPath, () => _handlePut(request, fsPath)));
       case 'MKCOL':
         return _serializeDavWrite(fsPath, () => _handleMkcol(fsPath));
       case 'DELETE':
-        return _serializeDavWrite(fsPath, () => _handleDelete(fsPath));
+        return _reportClientWrite(reqPath,
+            await _serializeDavWrite(fsPath, () => _handleDelete(fsPath)));
       case 'HEAD':
         return _handleHead(fsPath);
       case 'OPTIONS':
@@ -1027,6 +1037,19 @@ class FushiSyncServer {
       default:
         return shelf.Response(405);
     }
+  }
+
+  /// 写成功（2xx）才回调 [onClientWrite]；回调异常不影响响应。
+  shelf.Response _reportClientWrite(String reqPath, shelf.Response response) {
+    final void Function(String relativePath)? cb = onClientWrite;
+    if (cb != null && response.statusCode >= 200 && response.statusCode < 300) {
+      try {
+        cb(reqPath.startsWith('/') ? reqPath.substring(1) : reqPath);
+      } catch (e, stack) {
+        engineLog.log('FushiSyncServer.onClientWrite', e, stack);
+      }
+    }
+    return response;
   }
 
   Future<shelf.Response> _handleVideoRemote(

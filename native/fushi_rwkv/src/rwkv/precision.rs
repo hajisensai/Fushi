@@ -233,17 +233,35 @@ fn encode_matrix(precision: StatePrecision, values: &[f32], out: &mut Vec<u8>) {
     out.reserve(values.len() / HEAD_SIZE * precision.row_bytes());
     for row in values.chunks_exact(HEAD_SIZE) {
         let maximum = row.iter().map(|v| v.abs()).fold(0.0_f32, f32::max);
-        let scale = if maximum == 0.0 {
+        let step = if maximum == 0.0 {
             1.0
         } else {
             (maximum / precision.limit()).max(f32::from_bits(1))
         };
-        out.extend_from_slice(&scale.to_le_bytes());
         let codes: [i8; HEAD_SIZE] = std::array::from_fn(|i| {
-            (row[i] / scale)
+            (row[i] / step)
                 .round_ties_even()
                 .clamp(-precision.limit(), precision.limit()) as i8
         });
+        // Fushi: the scale is refitted to the codes by least squares, so the
+        // stored row is the orthogonal projection of the row onto its codes and
+        // never longer than it. Upstream stored `step`: rounding then lifts
+        // components between half a step and a step to a full step at every
+        // answer, which pumps energy into card and note states; under int4 it
+        // grew them without bound (upstream's own 3.5M-review note overflow;
+        // Fushi measured the same on cards, see small/model.rs `write_rows`).
+        let (dot, norm) = codes
+            .iter()
+            .zip(row)
+            .fold((0.0f32, 0.0f32), |(dot, norm), (&c, &v)| {
+                (dot + c as f32 * v, norm + (c as f32) * (c as f32))
+            });
+        let scale = if norm == 0.0 {
+            1.0
+        } else {
+            (dot / norm).max(f32::from_bits(1))
+        };
+        out.extend_from_slice(&scale.to_le_bytes());
         if precision == StatePrecision::Int8 {
             out.extend_from_slice(&codes.map(|code| code as u8));
         } else {

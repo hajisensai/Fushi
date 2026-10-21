@@ -23,9 +23,13 @@ class SrsStatsIndex {
     required this.noteTypes,
     required this.day,
     required this.nowMs,
+    this.defaultDeckId = '',
   });
 
   final SrsDeckTree tree;
+
+  /// 默认牌组：牌组已不存在的卡在搜索里归到它（BUG-3617）；空串 = 不归并。
+  final String defaultDeckId;
 
   /// 可见卡片缓存行。
   final List<SrsCardCacheRow> cards;
@@ -60,9 +64,10 @@ class SrsStatsIndex {
               note: n,
               noteType: t,
               card: c,
-              deckName: deckNames[c.deckId] ??= tree[c.deckId] == null
-                  ? ''
-                  : tree.fullName(c.deckId),
+              deckName: deckNames[c.deckId] ??= tree.effectiveDeckNameOf(
+                c.deckId,
+                fallback: defaultDeckId,
+              ),
               day: day,
               nowMs: nowMs,
               todayDayIndex: today,
@@ -141,7 +146,10 @@ Future<SrsStatsBundle> loadSrsStats(
       <String, SrsSchedulingConfig>{};
   SrsSchedulingConfig configOf(String deckId) =>
       configs.putIfAbsent(deckId, () {
-        final String id = tree[deckId] == null ? store.defaultDeckId : deckId;
+        final String id = tree.effectiveDeckOf(
+          deckId,
+          fallback: store.defaultDeckId,
+        );
         if (tree[id] == null) return const SrsSchedulingConfig();
         return tree.schedulingConfig(id, defaultsOf: engine?.defaultParams);
       });
@@ -198,7 +206,7 @@ Future<SrsStatsBundle> loadSrsStats(
       try {
         final List<double> r = srsRetrievabilityBatch(
           engine,
-          algorithm: e.key.algorithm,
+          algorithm: e.key.algorithm.memoryAlgorithm,
           params: e.key.params,
           memories: g.memories,
           elapsedDays: g.elapsedDays,
@@ -213,13 +221,34 @@ Future<SrsStatsBundle> loadSrsStats(
     }
   }
 
+  // RWKV-Instant 排队的复习卡：可提取度用 RWKV 此刻的回忆率（排队用的就是它）。RWKV 用不了时
+  // 这些牌组照旧按存下的到期日排队，统计也照旧（FSRS 的可提取度、按到期日计）。
+  final Map<String, bool> byRecallDeck = <String, bool>{};
+  bool byRecallCard(int i) =>
+      states[i] != SrsStatCardState.newCard &&
+      SrsQueue.parse(cardRows[i].queue) == SrsQueue.review &&
+      (byRecallDeck[cardRows[i].deckId] ??= store.instantActiveFor(
+        tree,
+        cardRows[i].deckId,
+      ));
+  final Map<String, double>? rwkvR = await store.instantRetrievabilityOf(
+    <SrsCardCacheRow>[
+      for (int i = 0; i < cardCount; i++)
+        if (byRecallCard(i)) cardRows[i],
+    ],
+  );
+
   final List<SrsStatCard> cards = <SrsStatCard>[];
   for (int i = 0; i < cardCount; i++) {
     final SrsCardCacheRow c = cardRows[i];
     final SrsStatCardState state = states[i];
     final SrsSchedulingConfig config = configOf(c.deckId);
     final SrsMemory? memory = memories[i];
-    final double? r = retrievability[i];
+    final bool byRecall = rwkvR != null && byRecallCard(i);
+    final double? rr = byRecall ? rwkvR[c.id] : null;
+    final double? r = byRecall
+        ? (rr != null && rr.isFinite ? rr : null)
+        : retrievability[i];
     final SrsNoteCacheRow? n = noteCache[c.noteId];
     cards.add(
       SrsStatCard(
@@ -241,6 +270,7 @@ Future<SrsStatsBundle> loadSrsStats(
         addedDay: dayCtx.dayIndexOf(n?.createdAt ?? c.noteCreatedAt),
         label: n?.sortField ?? '',
         desiredRetention: config.desiredRetention,
+        byRecall: byRecall,
       ),
     );
     if (i % 500 == 499) await Future<void>.delayed(Duration.zero);
@@ -265,6 +295,7 @@ Future<SrsStatsBundle> loadSrsStats(
       noteTypes: types,
       day: dayCtx,
       nowMs: now,
+      defaultDeckId: store.defaultDeckId,
     ),
   );
 }

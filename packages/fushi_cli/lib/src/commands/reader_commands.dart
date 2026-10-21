@@ -516,7 +516,9 @@ CtlRequestSpec _buildOcrCancel(CtlCommandContext context) =>
 String _ocrLine(Map<Object?, Object?> job) {
   final StringBuffer out = StringBuffer('${job['key']}  ${job['state']}');
   if (job['pagesTotal'] != null) {
-    out.write(' ${job['pagesDone']}/${job['pagesTotal']} 页');
+    // 远程引擎先上传再识别，两段各自从 0 数起（BUG-3605）。
+    final String phase = job['phase'] == 'uploading' ? ' 上传' : '';
+    out.write('$phase ${job['pagesDone']}/${job['pagesTotal']} 页');
   }
   if (job['directory'] != null) out.write('（${job['directory']}）');
   final Object? queued = job['queued'];

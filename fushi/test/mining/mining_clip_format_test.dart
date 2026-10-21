@@ -61,10 +61,10 @@ void main() {
       );
     });
 
-    test('设置页文案：五端都编得出 VP9（标推荐），AV1 写明仅桌面端', () {
-      // 所有者 #1717 b94ecd1a1ed 起 iOS xcframework 也带 libvpx-vp9 + libopus，两档 WebM
-      // 不再有「本机编不出、退回 MP4」的平台分支；AV1 在移动端（无 SVT-AV1）降级 VP9，
-      // 仍内嵌播放，文案里的「desktop only」就是它的全部平台差异。
+    test('设置页文案：五端都编得出 VP9（标推荐）与 AV1，AV1 不再标平台限制', () {
+      // 统一 FFmpeg（tool/ffmpeg-unified）五端都带 libvpx-vp9 + SVT-AV1 + libopus，
+      // 三档都没有平台分支；AV1 文案只剩体积 / 耗时取舍，曾经的「desktop only」已不成立
+      // （移动端产物字节由 ffmpeg_unified_mobile_guard_test 钉住）。
       LocaleSettings.setLocale(AppLocale.en);
       expect(
         miningClipFormatLabel(MiningClipFormat.webmVp9),
@@ -72,7 +72,7 @@ void main() {
       );
       expect(
         miningClipFormatLabel(MiningClipFormat.webmAv1),
-        contains('desktop only'),
+        allOf(contains('AV1'), isNot(contains('desktop only'))),
       );
       expect(miningClipFormatLabel(MiningClipFormat.mp4H264), contains('MP4'));
     });

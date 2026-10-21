@@ -26,6 +26,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_r
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show asrAudioProfileForJob, parseAsrAudioProfile;
+import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/admin/admin_server.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
@@ -378,6 +379,7 @@ Future<int> _scan(ServerRuntime rt, {bool? prune, bool? scrape}) async {
     db: rt.db,
     subtitleLanguage: rt.config.subtitleLanguage,
     pruneMissing: prune ?? rt.config.scanPrune,
+    organizer: serverLibraryOrganizer(rt.db, rt.config.ai),
   ).scanAll(rt.config.libraries);
   stdout.writeln('库扫描完成: $summary');
   for (final String err in summary.errors) {

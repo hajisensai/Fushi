@@ -134,8 +134,10 @@ void main() {
           reason: 'the popup must measure its actual Flutter constraints');
       final int completeLoadAt =
           source.indexOf('Future<void> _completePopupLoad');
+      // P2-G：视口注入与首推连发不等（同一 WebView 的 evaluateJavascript 按发出顺序
+      // 执行），所以「先固定宽度再 renderPopup」靠的是**发出顺序**，不再靠 await。
       final int applyAt = source.indexOf(
-        'await _applyPopupViewportSize();',
+        'unawaited(_applyPopupViewportSize());',
         completeLoadAt,
       );
       final int pushAt = source.indexOf('_pushResults();', applyAt);
@@ -321,7 +323,17 @@ void main() {
       final int staticAt = evalTemplate.indexOf(r'$staticSettingsJs');
       final int extrasAt = evalTemplate.indexOf(r'$inAppExtrasJs');
       final int entriesJsAt = evalTemplate.indexOf(r'$entriesJs');
-      final int beforeRenderAt = evalTemplate.indexOf(r'$beforeRenderJs');
+      // P1-B：渲染收尾（含 $beforeRenderJs）收进 afterEntriesJs——字面量投递时紧跟
+      // 词条段同步执行，拦截取回时由取回回调执行。顺序语义不变：收尾在词条之后。
+      final int afterDefAt = pushBody.indexOf('final String afterEntriesJs =');
+      expect(afterDefAt, greaterThanOrEqualTo(0));
+      expect(
+        pushBody.substring(afterDefAt, evalAt),
+        contains(r'$beforeRenderJs'),
+        reason: 'beforeRenderJs（renderPopup / updatePopupIncremental）属于'
+            '「词条就绪后」的收尾',
+      );
+      final int beforeRenderAt = evalTemplate.indexOf('afterEntriesJs');
       expect(staticAt, greaterThanOrEqualTo(0),
           reason:
               'the (conditional) static settings payload must be emitted into '

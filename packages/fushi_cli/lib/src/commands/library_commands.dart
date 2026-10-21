@@ -76,6 +76,27 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         render: _renderScan,
       ),
       CtlCommandSpec(
+        name: 'organize',
+        summary: 'AI 整理库：把该在一起的条目归进合集（直接改库，可用 organize-undo 撤销）',
+        configure: _configureOrganize,
+        build: _buildOrganize,
+        render: _renderOrganize,
+      ),
+      CtlCommandSpec(
+        name: 'organize-history',
+        summary: '列出最近的 AI 整理记录与每处改动',
+        configure: _configureOrganizeHistory,
+        build: _buildOrganizeHistory,
+        render: _renderOrganizeHistory,
+      ),
+      CtlCommandSpec(
+        name: 'organize-undo',
+        summary: '撤销一次 AI 整理里还没撤销的全部改动',
+        usage: '<记录 id>',
+        build: _buildOrganizeUndo,
+        render: _renderOrganizeUndo,
+      ),
+      CtlCommandSpec(
         name: 'source-add',
         summary: '把本机目录登记成来源库并扫描',
         usage: '<目录>',
@@ -410,6 +431,99 @@ void _configureScan(ArgParser parser) {
   _configureSourceKind(parser);
   parser.addOption('source', help: '只扫这个来源（id 见 library sources）');
 }
+
+// ── AI 整理库（app 侧路由见 ctl_library_organize_routes.dart）────────────────
+
+const String _organizeRoot = '/api/admin/library/organize';
+
+/// `--domain` 的值域（与 `CollectionShelfDomain` 同名）。
+const List<String> kLibraryOrganizeDomains = <String>[
+  'books',
+  'manga',
+  'video',
+  'games',
+];
+
+void _configureOrganize(ArgParser parser) {
+  parser
+    ..addOption(
+      'domain',
+      help: '哪个库：books（书架）| manga（漫画库）| video（媒体库）| games（游戏库）',
+      allowed: kLibraryOrganizeDomains,
+    )
+    ..addFlag(
+      'yes',
+      negatable: false,
+      help: '同意把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
+          '界面里同意过就不必加',
+    );
+}
+
+CtlRequestSpec _buildOrganize(CtlCommandContext context) {
+  final String? domain = context.option('domain');
+  if (domain == null) throw const CtlUsageError('缺少 --domain');
+  return CtlRequestSpec.post(
+    _organizeRoot,
+    body: <String, Object?>{
+      'domain': domain,
+      if (context.flag('yes')) 'yes': true,
+    },
+  );
+}
+
+String _renderOrganize(Object? data) {
+  if (data is! Map) return '$data';
+  final String error = data['error'] == null ? '' : '（${data['error']}）';
+  return '整理记录 #${data['runId']} · ${data['status']}$error · '
+      '${data['changes']} 处改动 · ${data['requests']} 次请求';
+}
+
+void _configureOrganizeHistory(ArgParser parser) {
+  parser.addOption('limit', help: '最多列几次（默认 20）');
+}
+
+CtlRequestSpec _buildOrganizeHistory(CtlCommandContext context) {
+  final int? limit = context.intOption('limit');
+  return CtlRequestSpec.get(
+    '/api/admin/library/organize/runs',
+    query: <String, String>{if (limit != null) 'limit': '$limit'},
+  );
+}
+
+String _renderOrganizeHistory(Object? data) {
+  final Object? runs = data is Map ? data['runs'] : null;
+  if (runs is! List || runs.isEmpty) return '还没有整理过';
+  final StringBuffer out = StringBuffer();
+  for (final Object? raw in runs) {
+    if (raw is! Map) continue;
+    final DateTime at =
+        DateTime.fromMillisecondsSinceEpoch((raw['startedAt'] as num?)?.toInt() ?? 0);
+    out.writeln(
+      '#${raw['id']} ${at.toIso8601String().substring(0, 16)} '
+      '${raw['domain']} · ${raw['trigger']} · ${raw['status']}'
+      '${raw['error'] == null ? '' : '（${raw['error']}）'}',
+    );
+    for (final Object? c in (raw['changes'] as List?) ?? const <Object?>[]) {
+      if (c is! Map) continue;
+      out.writeln(
+        '    ${c['kind']} 「${c['collection']}」 ${c['source']}/${c['confidence']}'
+        '${c['undone'] == true ? ' · 已撤销' : ''}',
+      );
+    }
+  }
+  return out.toString().trimRight();
+}
+
+CtlRequestSpec _buildOrganizeUndo(CtlCommandContext context) {
+  final String raw = context.positional(0, '记录 id');
+  if (!RegExp(r'^[1-9]\d*$').hasMatch(raw)) {
+    throw CtlUsageError('记录 id 必须是正整数：$raw');
+  }
+  return CtlRequestSpec.post('/api/admin/library/organize/runs/$raw/undo');
+}
+
+String _renderOrganizeUndo(Object? data) =>
+    data is Map ? '已撤销 ${data['undone']} 处' : '$data';
 
 CtlRequestSpec _buildScan(CtlCommandContext context) {
   final String? kind = context.option('kind');

@@ -167,11 +167,11 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - **音频**：`just_audio: ^0.9.31`（通过 `fushi_audio`）
 - **国际化**：`slang: ^3.13.0` / `slang_flutter`，17 种语言
 - **内部包**：`fushi_core` / `fushi_dictionary` / `fushi_anki` / `fushi_audio` / `fushi_platform`
-- **dependency_overrides**：`flutter_inappwebview_windows` / `flutter_inappwebview_android` / `network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `ffmpeg_kit_flutter` / `media_kit_*` 等 vendored 本地包（见 `fushi/pubspec.yaml` 与 `docs/agent/build.md`）；`file_picker` 用 pub.dev 版（**不是** fork）
+- **dependency_overrides**：`flutter_inappwebview_windows` / `flutter_inappwebview_android` / `network_to_file_image` / `carousel_slider` / `fading_edge_scrollview` / `ffmpeg_kit_next_flutter`（统一 FFmpeg，`tool/ffmpeg-unified`）/ `media_kit_*` 等 vendored 本地包（见 `fushi/pubspec.yaml` 与 `docs/agent/build.md`）；`file_picker` 用 pub.dev 版（**不是** fork）
 
 ## 数据模型
 
-数据模型全部定义在 `fushi_core`（99 张 Drift 表，schema v119），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
+数据模型全部定义在 `fushi_core`（101 张 Drift 表，schema v123），本模块仅消费。互联配对设备表 `FushiPairedPeers` 也在其中。
 
 ## 测试与质量
 

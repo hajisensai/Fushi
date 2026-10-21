@@ -21,12 +21,16 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/builtin_video_resource_providers.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host_slot.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart' show EmbeddedTorrentHostOpenArgs;
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
@@ -88,7 +92,11 @@ class ServerDownloadHost implements HostDownloadHost {
   /// 当前 registry 下可用的 provider id（能力位同源；WebUI 保存索引器后回显用）。
   List<String> get availableResourceProviderIds => (_subscriptions ??= _buildSubscriptionHost()).availableProviderIds;
   TorrentBackend? _backend;
-  EmbeddedTorrentHost? _embedded;
+  /// 内置宿主（BUG-3577：跑在专用工作 isolate，本 isolate 只持客户端——服务端的
+  /// HTTP 事件循环同样不能被 libtorrent 的同步往返卡住）。槽位负责懒建去重（并发
+  /// 解析后端时只起一个工作 isolate，不抢同一个监听端口），并在工作 isolate 意外
+  /// 退出后摘下失效客户端，下一个任务解析后端时重建。
+  final EmbeddedTorrentHostSlot _embedded = EmbeddedTorrentHostSlot();
   int? _sourceId;
 
   /// 启动时解析定的后端：`embedded` / `qbittorrent` / null（都不可用）。
@@ -197,6 +205,9 @@ class ServerDownloadHost implements HostDownloadHost {
       resourceRegistry: registry,
       enqueue: pipeline.enqueue,
       workerId: 'fushi-server-sub-${identity.deviceId}',
+      // 与 app 读同一个设置：追更订阅久无新集自动停用。
+      autoDisableAfterDays: () =>
+          readVideoDownloadSubscriptionAutoDisableDays(prefs),
     );
     subscriptions.start();
     _subscriptionService = subscriptions;
@@ -244,26 +255,32 @@ class ServerDownloadHost implements HostDownloadHost {
   }
 
   /// 内置引擎 session 懒建（幂等）；库/端口失败 → null，调用方报 ActionRequired。
-  Future<EmbeddedTorrentHost?> _ensureEmbedded() async {
-    final EmbeddedTorrentHost? existing = _embedded;
-    if (existing != null) return existing;
+  Future<EmbeddedTorrentHostClient?> _ensureEmbedded() => _embedded.ensure(
+        _openEmbedded,
+        onLost: (EmbeddedTorrentHostClient _) => engineLog.logDiagnostic(
+          'ServerDownloadHost',
+          'embedded torrent worker exited unexpectedly; rebuilding on next job',
+        ),
+      );
+
+  Future<EmbeddedTorrentHostClient?> _openEmbedded() async {
     await paths.torrentResume.create(recursive: true);
     // 计划集合 = video_download_jobs 里仍活着的 embedded 任务；resume 目录只是它的镜像。
     final Set<String> restoreIds = await loadEmbeddedTorrentResumeIds(db);
-    final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+    final EmbeddedTorrentHostClient? host = await EmbeddedTorrentHostClient.open(EmbeddedTorrentHostOpenArgs(
       libraryPath: _torrentLibraryPath,
       baseSavePath: downloadRoot.path,
       resumeDir: paths.torrentResume.path,
       restoreIds: restoreIds,
       listenInterfaces: config.torrentListen,
-    );
+    ));
     if (host == null) {
       engineLog.logDiagnostic('ServerDownloadHost', 'embedded torrent session failed to open');
       return null;
     }
-    host.applySessionSettings(_qbConfig);
+    host.post('applySessionSettings', host.applySessionSettings(_qbConfig));
     engineLog.logDiagnostic('ServerDownloadHost', 'embedded libtorrent ${host.libtorrentVersion} on ${config.torrentListen}');
-    return _embedded = host;
+    return host;
   }
 
   VideoResourceRegistry _buildRegistry() {
@@ -308,10 +325,9 @@ class ServerDownloadHost implements HostDownloadHost {
     _registry = null;
     _backend?.close();
     _backend = null;
-    final EmbeddedTorrentHost? embedded = _embedded;
-    _embedded = null;
+    final EmbeddedTorrentHostClient? embedded = await _embedded.take();
     if (embedded != null) {
-      embedded.dispose(keepIds: await loadEmbeddedTorrentResumeIds(db));
+      await embedded.dispose(keepIds: await loadEmbeddedTorrentResumeIds(db));
     }
   }
 
@@ -344,7 +360,7 @@ class ServerDownloadHost implements HostDownloadHost {
     if (override != null) return VideoDownloadBackendBinding(backend: override, identity: _identity());
     switch (_resolvedBackend) {
       case ServerConfig.torrentEngineEmbedded:
-        final EmbeddedTorrentHost? host = await _ensureEmbedded();
+        final EmbeddedTorrentHostClient? host = await _ensureEmbedded();
         if (host == null) {
           throw const VideoDownloadPipelineActionRequired('embedded torrent engine unavailable on this host');
         }

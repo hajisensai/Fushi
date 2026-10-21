@@ -17,6 +17,7 @@ import '../utils/fushi_debug_print.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
+import 'collection_organize.dart';
 import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
@@ -813,6 +814,10 @@ void _requireOneVideoMetadataOwner({
   SrsNotesCache,
   SrsCardsCache,
   VideoSubtitleGlossaries,
+  SrsSentBatches,
+  MediaPrivacyFlags,
+  LibraryOrganizeRuns,
+  LibraryOrganizeChanges,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -846,7 +851,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 119;
+  int get schemaVersion => 124;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2324,6 +2329,89 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('video_subtitle_glossaries')) {
               await m.createTable(videoSubtitleGlossaries);
+            }
+          }
+          if (from < 120) {
+            // v120（BUG-3543）：srs_field_edits 加前身链接的部分覆盖索引
+            // idx_srs_field_edits_history_from（见 _ensureSrsIndexes）。只加索引、不动数据；
+            // 全部 IF NOT EXISTS，幂等。v117 之前的库在 v117 步已建表连同全部索引，这里再
+            // 跑一次也无害；表在阶梯上不存在（合成库）则跳过。
+            if (await _tableExists('srs_field_edits')) {
+              await _ensureSrsIndexes();
+            }
+          }
+          if (from < 121) {
+            // v121（Fushi SRS 多目录同步；原定 v119 / v120，被并行合入的视频字幕 AI 校对与
+            // SRS 批量修复的索引步占用后顺延）：
+            // srs_sent_batches——本机已冻结批次的留存，同一批次逐字节相同地传到每个同步目录
+            // （云盘 / 互联 host / 本机 host 目录），到最近同步过的目录都确认为止。设备本地、
+            // 不进备份、无外键；存量库没有留存可迁（旧版本冻结中的批次由 SrsDbStore 读本机
+            // 状态时搬进来）。
+            if (!await _tableExists('srs_sent_batches')) {
+              await m.createTable(srsSentBatches);
+            }
+          }
+          if (from < 122) {
+            // v122：作品级「私密」标记表 media_privacy_flags（不上传排行榜、不推
+            // Bangumi）。纯新表、不动数据；幂等守卫同 v119。
+            if (!await _tableExists('media_privacy_flags')) {
+              await m.createTable(mediaPrivacyFlags);
+            }
+          }
+          if (from < 123) {
+            // v123：srs_cards_cache.new_position——新卡出卡位置（卡片修改记录 `newPos`
+            // 的生效值，「按词频重排新卡」写它）。这里只加列、留 NULL：旧版本设备可能已从
+            // 对端收下 `newPos` 修改记录，那些卡由 SrsDbStore 打开时按本机缓存版本定向重算
+            // （fushi_engine `SrsDbStore._upgradeCaches`）。幂等守卫同 v119。
+            if (await _tableExists('srs_cards_cache') &&
+                !await _columnExists('srs_cards_cache', 'new_position')) {
+              await m.addColumn(srsCardsCache, srsCardsCache.newPosition);
+            }
+          }
+          if (from < 124) {
+            // v124（AI 整理库，docs/specs/2026-10-20-ai-library-organize-design.md §5）：
+            // ① media_collections.origin / organize_key / organize_aliases——合集由谁建
+            //   归谁管 + 整理分组身份。存量行一律 `user`（分不清的宁可当用户的，整理器
+            //   永不改它），目录自动合集（source_folder_path 非空）回填 `folder`。
+            // ② collection_member_tombstones.organize_key / organize_merged——合集级删除
+            //   哨兵上的分组键与「是被并掉还是用户删的」。存量 NULL / false。
+            // ③ library_organize_runs / library_organize_changes——本机整理记录（设备本地）。
+            // 幂等守卫同 v119。
+            if (await _tableExists('media_collections')) {
+              if (!await _columnExists('media_collections', 'origin')) {
+                await m.addColumn(mediaCollections, mediaCollections.origin);
+                await customStatement(
+                  "UPDATE media_collections SET origin = 'folder' "
+                  'WHERE source_folder_path IS NOT NULL',
+                );
+              }
+              if (!await _columnExists('media_collections', 'organize_key')) {
+                await m.addColumn(
+                    mediaCollections, mediaCollections.organizeKey);
+              }
+              if (!await _columnExists(
+                  'media_collections', 'organize_aliases')) {
+                await m.addColumn(
+                    mediaCollections, mediaCollections.organizeAliases);
+              }
+            }
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'organize_key')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.organizeKey);
+            }
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'organize_merged')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.organizeMerged);
+            }
+            if (!await _tableExists('library_organize_runs')) {
+              await m.createTable(libraryOrganizeRuns);
+            }
+            if (!await _tableExists('library_organize_changes')) {
+              await m.createTable(libraryOrganizeChanges);
             }
           }
         },

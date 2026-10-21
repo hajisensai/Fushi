@@ -21,13 +21,16 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
-    show isValidFontData;
+    show isValidFontData, kReaderWebViewCreationFailedSentinel;
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart'
+    show kSrsCardAutoplayGateScript, srsCardSetAutoplayScript;
+import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -56,6 +59,7 @@ class SrsCardFace {
     this.onZoomWheel,
     this.hostCss = '',
     this.onSourceLink,
+    this.autoplayMedia = true,
   });
 
   final String cardId;
@@ -107,6 +111,11 @@ class SrsCardFace {
   /// 链接一律不导航（卡面外壳不能被链接带走）。
   final void Function(CardSourceLink link)? onSourceLink;
 
+  /// 卡面页面自己发起的媒体播放（同步片段的 `oncanplay`、`autoplay` 属性）是否放行。
+  /// false = 只放行用户在卡面上点按 / 按键直接引起的播放（牌组关了自动播放，
+  /// 见 srs_card_autoplay.dart 的 [kSrsCardAutoplayGateScript]，BUG-3546）。
+  final bool autoplayMedia;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -125,6 +134,7 @@ class SrsCardFace {
         onZoomWheel: onZoomWheel,
         hostCss: hostCss,
         onSourceLink: onSourceLink,
+        autoplayMedia: autoplayMedia,
       );
 }
 
@@ -223,6 +233,8 @@ const List<String> kSrsReviewBridgeKeys = <String>[
   'Numpad2',
   'Numpad3',
   'Numpad4',
+  // 重播音频（对齐 Anki 的 R）。
+  'KeyR',
   'Ctrl+KeyZ',
   'Meta+KeyZ',
   // 卡面缩放（Ctrl / ⌘ + 加号 / 减号 / 0）。
@@ -519,16 +531,27 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 设计系统样式覆盖（srs_card_design_skin.dart）：只在覆盖开着时随主题下发定义；卡片脚本
+  // 与钩子都跑完、DOM 定型后再判定。
+  function designSkin(){
+    try {
+      if (window.__fushiSrsDesignSkin) window.__fushiSrsDesignSkin();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
     dictStyle();
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
+    designSkin();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
     document.getElementById('fushi-theme-css').textContent = themeCss;
     setClasses(classes);
     dictStyle();
+    designSkin();
     // 卡片脚本可据此跟随外观变化（例如「全部释义默认展开」），不必重跑。
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
@@ -589,6 +612,8 @@ String srsCardShellHtml({required String themeCss, required String classes}) {
       '<style id="fushi-theme-css">$themeCss</style>'
       '<style>$kSrsCardMediaCss</style>'
       '<script>$kSrsCardMediaScript</script>'
+      // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）。
+      '<script>$kSrsCardAutoplayGateScript</script>'
       // 样式注册表的两个锚点：模板 / 笔记类型 CSS 在前，卡片正文里抽出的样式在后
       // （与它们原本在文档里的先后一致）。
       '<style id="fushi-css-tpl"></style><style id="fushi-css-body"></style>'
@@ -613,6 +638,24 @@ String srsCardSetCardScript({
 }) =>
     'window.__fushiSrsSetCard(${jsonEncode(styleRefs)},${_jsString(bodyHtml)},'
     '${_jsString(classes)});';
+
+/// 一次下发的整段调用：外壳不在返回 `false`；各步依次执行、各自兜住异常（换主题出错
+/// 不能把换卡也拦下，否则卡面停在外壳底色、什么都不报，BUG-3579），全部成功返回 `true`，
+/// 有步骤抛错返回错误文本（宿主据此留痕）。
+@visibleForTesting
+String srsCardFaceCallsScript(List<String> steps) {
+  final StringBuffer out = StringBuffer(
+    '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
+    'return false;var errs=[];',
+  );
+  for (final String step in steps) {
+    out.write(
+      'try{$step}catch(e){errs.push(String(e&&e.stack||e).slice(0,500));}',
+    );
+  }
+  out.write('return errs.length?errs.join("\\n"):true;})()');
+  return out.toString();
+}
 
 /// 往外壳的样式注册表里登记一段样式（同一哈希只登记一次）。
 @visibleForTesting
@@ -759,6 +802,8 @@ class SrsCardFaceDocument {
     required this.cardCss,
     required this.bodyHtml,
     this.bodyStyles = const <String>[],
+    this.autoplayMedia = true,
+    this.hostScript = '',
   });
 
   /// 由一面卡与主题算出（媒体引用改写、`lang` 包裹都在这里做）。
@@ -773,40 +818,46 @@ class SrsCardFaceDocument {
     required bool themedScrollbar,
     String appearanceCss = '',
     String appearanceClasses = '',
-  }) => SrsCardFaceDocument(
-    themeCss: srsCardThemeCss(
-      dark: dark,
-      background: background,
-      foreground: foreground,
-      accent: accent,
-      onAccent: onAccent,
-      themedScrollbar: themedScrollbar,
-      appearanceCss:
-          (face.pageZoom == null
-              ? appearanceCss
-              : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
-          face.hostCss,
-    ),
-    classes: srsCardHostClasses(
-      dark: dark,
-      appearanceClasses: <String>[
-        appearanceClasses,
-        face.layout.hostClass,
-      ].where((String c) => c.isNotEmpty).join(' '),
-    ),
-    cardId: face.cardId,
-    showingAnswer: face.showingAnswer,
-    cardCss: _memo(
-      _localizedCssMemo,
-      '$mediaUrlPrefix\u0000${face.css}',
-      () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
-    ),
-    bodyHtml: wrapAnkiCardHtmlWithLang(
-      srsPrepareCardBody(face.bodyHtml, mediaUrlPrefix).body,
-      face.languageCode,
-    ),
-    bodyStyles: srsPrepareCardBody(face.bodyHtml, mediaUrlPrefix).styles,
-  );
+    String hostScript = '',
+  }) {
+    final ({String body, List<String> styles}) prepared = srsPrepareCardBody(
+      face.bodyHtml,
+      mediaUrlPrefix,
+    );
+    return SrsCardFaceDocument(
+      hostScript: hostScript,
+      themeCss: srsCardThemeCss(
+        dark: dark,
+        background: background,
+        foreground: foreground,
+        accent: accent,
+        onAccent: onAccent,
+        themedScrollbar: themedScrollbar,
+        appearanceCss:
+            (face.pageZoom == null
+                ? appearanceCss
+                : '${appearanceCss}html{zoom:${face.pageZoom!.toStringAsFixed(4)};}') +
+            face.hostCss,
+      ),
+      classes: srsCardHostClasses(
+        dark: dark,
+        appearanceClasses: <String>[
+          appearanceClasses,
+          face.layout.hostClass,
+        ].where((String c) => c.isNotEmpty).join(' '),
+      ),
+      cardId: face.cardId,
+      showingAnswer: face.showingAnswer,
+      cardCss: _memo(
+        _localizedCssMemo,
+        '$mediaUrlPrefix\u0000${face.css}',
+        () => srsLocalizeCardCss(face.css, urlPrefix: mediaUrlPrefix),
+      ),
+      bodyHtml: wrapAnkiCardHtmlWithLang(prepared.body, face.languageCode),
+      bodyStyles: prepared.styles,
+      autoplayMedia: face.autoplayMedia,
+    );
+  }
 
   final String themeCss;
   final String classes;
@@ -822,6 +873,13 @@ class SrsCardFaceDocument {
   /// 正文里抽出的样式块（文档顺序）。
   final List<String> bodyStyles;
 
+  /// 见 [SrsCardFace.autoplayMedia]。
+  final bool autoplayMedia;
+
+  /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）。目前只有
+  /// 设计系统样式覆盖的判定脚本：覆盖关着时外壳里连脚本都没有（零注入）。
+  final String hostScript;
+
   /// 这张卡用到的全部样式（注册表项）：笔记类型 CSS 在前，正文样式在后。
   List<SrsCardStyle> get styles => <SrsCardStyle>[
     if (cardCss.isNotEmpty) SrsCardStyle.of('t', cardCss),
@@ -834,6 +892,7 @@ class SrsCardFaceDocument {
     final List<SrsCardStyle> all = styles;
     return <String>[
       for (final SrsCardStyle st in all) srsCardDefineCssScript(st),
+      srsCardSetAutoplayScript(autoplay: autoplayMedia),
       srsCardSetCardScript(
         styleRefs: <String>[for (final SrsCardStyle st in all) st.hash],
         bodyHtml: bodyHtml,
@@ -842,13 +901,16 @@ class SrsCardFaceDocument {
     ].join();
   }
 
-  String get _themeKey => '$themeCss\u0000$classes';
+  String get _themeKey => '$themeCss\u0000$classes\u0000${hostScript.length}';
 
   /// 换了卡（哪怕正文一字不差）也要重放：滚回顶部、重跑卡片脚本。夜间类名与外观
   /// （变量、类名、字体）都不在里面：只换主题 / 外观时走 `__fushiSrsSetTheme`，不重跑
   /// 卡片脚本。
+  /// 自动播放开关也在里面：复习中改了牌组设置，当前这一面按新开关重放（刚打开 →
+  /// 片段按新设置自己播一次；刚关掉 → 重放时停掉正在播的媒体），与宿主侧
+  /// `[sound:]` 的处理一致。
   String get _cardKey =>
-      '$cardId\u0000$showingAnswer\u0000'
+      '$cardId\u0000$showingAnswer\u0000$autoplayMedia\u0000'
       '${styles.map((SrsCardStyle s) => s.hash).join(',')}\u0000$bodyHtml';
 
   String get shellHtml =>
@@ -909,22 +971,29 @@ class SrsCardFaceSync {
   void _flush() {
     final SrsCardFaceDocument? doc = _wanted;
     if (!_ready || doc == null) return;
-    final StringBuffer calls = StringBuffer();
-    if (doc._themeKey != _appliedTheme) {
-      calls.write(
-        srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
+    final List<String> steps = <String>[];
+    final Set<String> defining = <String>{};
+    final String themeKey = doc._themeKey;
+    final String cardKey = doc._cardKey;
+    if (themeKey != _appliedTheme) {
+      steps.add(
+        doc.hostScript +
+            srsCardSetThemeScript(themeCss: doc.themeCss, classes: doc.classes),
       );
     }
-    final Set<String> defining = <String>{};
-    if (doc._cardKey != _appliedCard) {
+    if (cardKey != _appliedCard) {
       final List<SrsCardStyle> styles = doc.styles;
+      final StringBuffer card = StringBuffer();
       for (final SrsCardStyle st in styles) {
         if (_definedStyles.contains(st.hash) || !defining.add(st.hash)) {
           continue;
         }
-        calls.write(srsCardDefineCssScript(st));
+        card.write(srsCardDefineCssScript(st));
       }
-      calls.write(
+      // 开关先于换卡下发：新内容插入、卡片脚本重放时闸门已是这张卡的设置。
+      card.write(srsCardSetAutoplayScript(autoplay: doc.autoplayMedia));
+      steps.add(card.toString());
+      steps.add(
         srsCardSetCardScript(
           styleRefs: <String>[for (final SrsCardStyle st in styles) st.hash],
           bodyHtml: doc.bodyHtml,
@@ -932,35 +1001,52 @@ class SrsCardFaceSync {
         ),
       );
     }
-    if (calls.isEmpty) return;
-    _appliedTheme = doc._themeKey;
-    _appliedCard = doc._cardKey;
+    if (steps.isEmpty) return;
+    _appliedTheme = themeKey;
+    _appliedCard = cardKey;
     _definedStyles.addAll(defining);
     final int generation = ++_generation;
-    final String source =
-        '(function(){if(typeof window.__fushiSrsSetCard!=="function")'
-        'return false;$calls return true;})()';
+    void invalidate() {
+      // 同一代之后没有新下发时才作废：下次 update / 外壳就绪整份重发。
+      if (generation != _generation) return;
+      _appliedTheme = null;
+      _appliedCard = null;
+      _definedStyles.removeAll(defining);
+    }
+
     unawaited(
-      evaluate(source).then(
+      evaluate(srsCardFaceCallsScript(steps)).then(
         (Object? result) {
           if (generation != _generation) return;
-          if (result == false) {
+          if (result == true) {
+            _reloadedShell = false;
+          } else if (result == false) {
             // 页面已不是外壳（被卡片链接导航走了）：重载外壳一次，onLoadStop 后重放。
             if (_reloadedShell) return;
             _reloadedShell = true;
             detach();
             reloadShell();
-          } else if (result == true) {
-            _reloadedShell = false;
+          } else if (result is String) {
+            // 某一步在页内抛错（其余步骤照常执行，见 [srsCardFaceCallsScript]）：留痕。
+            ErrorLogService.instance.log(
+              'SrsWebCardFace.setCard',
+              StateError(result),
+              StackTrace.current,
+            );
+          } else {
+            // 调用整体没执行（平台视图没了 / 脚本没能运行，Windows 上页内顶层异常也是
+            // null）：这一份没有上屏，不能当作已下发。
+            ErrorLogService.instance.log(
+              'SrsWebCardFace.setCard',
+              StateError('card face calls returned $result'),
+              StackTrace.current,
+            );
+            invalidate();
           }
         },
         onError: (Object e, StackTrace stack) {
           ErrorLogService.instance.log('SrsWebCardFace.setCard', e, stack);
-          // 下发失败：下次 update 整份重发（同一代之后没有新下发时才作废）。
-          if (generation != _generation) return;
-          _appliedTheme = null;
-          _appliedCard = null;
-          _definedStyles.removeAll(defining);
+          invalidate();
         },
       ),
     );
@@ -1056,6 +1142,88 @@ Future<WebResourceResponse?> srsCardFontResponse(
   );
 }
 
+/// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
+final String srsCardMediaUrlPrefix = srsMediaUrlPrefix(
+  customScheme: webViewUsesCustomSchemeTransport,
+);
+
+/// [srsCardFaceDocumentFor] 的输入（卡面 State 据此判断文档要不要重算）。字符串字段按值比
+/// （同一张卡的正文是同一个对象，`==` 先比引用）；主题 / 外观按各自的 `==`；字体链按引用
+/// （provider 换链才换列表）。
+@immutable
+class SrsCardFaceDocumentInputs {
+  const SrsCardFaceDocumentInputs({
+    required this.face,
+    required this.theme,
+    required this.appearance,
+    required this.labels,
+    required this.fonts,
+    required this.fontRoot,
+  });
+
+  final SrsCardFace face;
+  final ThemeData theme;
+  final SrsCardAppearance appearance;
+  final SrsCardLabels labels;
+  final List<Map<String, dynamic>> fonts;
+  final String? fontRoot;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! SrsCardFaceDocumentInputs) return false;
+    final SrsCardFace a = face, b = other.face;
+    return a.cardId == b.cardId &&
+        a.showingAnswer == b.showingAnswer &&
+        a.fushiCard == b.fushiCard &&
+        a.layout == b.layout &&
+        a.pageZoom == b.pageZoom &&
+        a.languageCode == b.languageCode &&
+        a.bodyHtml == b.bodyHtml &&
+        a.css == b.css &&
+        a.hostCss == b.hostCss &&
+        // 复习中改牌组「自动播放」要立即重下发（BUG-3547）：不比它会命中旧文档。
+        a.autoplayMedia == b.autoplayMedia &&
+        identical(fonts, other.fonts) &&
+        fontRoot == other.fontRoot &&
+        appearance == other.appearance &&
+        labels.allDefinitions == other.labels.allDefinitions &&
+        labels.frequency == other.labels.frequency &&
+        labels.source == other.labels.source &&
+        labels.showMore == other.labels.showMore &&
+        theme == other.theme;
+  }
+
+  @override
+  int get hashCode => Object.hash(face.cardId, face.showingAnswer, theme);
+}
+
+/// 卡面 State 的文档缓存：输入 + 文档 + 外壳 HTML（外壳只在平台视图创建时用，懒算）。
+class SrsCardFaceDocumentCache {
+  SrsCardFaceDocumentCache(this.inputs, this.document);
+
+  final SrsCardFaceDocumentInputs inputs;
+  final SrsCardFaceDocument document;
+  late final String shellHtml = document.shellHtml;
+}
+
+/// 预取到的下一张卡：提前把它的笔记类型样式与两面正文的预处理（媒体引用改写、抽 `<style>`、
+/// 样式哈希）算进记忆表。真正显示时 [SrsCardFaceDocument.of] 全部命中，主 isolate 上只剩
+/// 拼主题样式与下发。
+void srsWarmCardFace({required String css, required List<String> bodies}) {
+  final String prefix = srsCardMediaUrlPrefix;
+  final String localizedCss = _memo(
+    _localizedCssMemo,
+    '$prefix\u0000$css',
+    () => srsLocalizeCardCss(css, urlPrefix: prefix),
+  );
+  if (localizedCss.isNotEmpty) srsCardStyleHash(localizedCss);
+  for (final String body in bodies) {
+    for (final String style in srsPrepareCardBody(body, prefix).styles) {
+      srsCardStyleHash(style);
+    }
+  }
+}
+
 /// 一面卡在给定主题 / 外观下的外壳文档。外观设置只属于 Fushi 卡片
 /// （[SrsCardFace.fushiCard]）：别的类型拿不到它的变量、类名、字体与自定义配色，按自身
 /// HTML/CSS 原样渲染（与 Anki 一致）。
@@ -1072,6 +1240,8 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
 }) {
   final bool dark = theme.brightness == Brightness.dark;
   final bool fushi = face.fushiCard;
+  // 其它卡片类型的设计系统样式覆盖（关 = 零注入：不加样式、类名与脚本）。
+  final bool skin = !fushi && appearance.designSkin;
   final ColorScheme scheme = fushi
       ? srsCardColorScheme(appearance, theme.colorScheme)
       : theme.colorScheme;
@@ -1095,8 +1265,18 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
             fonts: fonts,
             fontRoot: fontRoot,
           )
+        : skin
+        ? srsCardDesignSkinCss(
+            scheme: scheme,
+            tokens: SrsCardTokens.fromTheme(theme),
+          )
         : '',
-    appearanceClasses: fushi ? srsCardAppearanceClasses(appearance) : '',
+    appearanceClasses: fushi
+        ? srsCardAppearanceClasses(appearance)
+        : skin
+        ? kSrsDesignSkinClass
+        : '',
+    hostScript: skin ? kSrsCardDesignSkinScript : '',
   );
 }
 
@@ -1120,6 +1300,10 @@ class SrsWebCardFace extends ConsumerStatefulWidget {
   @visibleForTesting
   static InAppWebViewController? debugController;
 
+  /// 集成测试探针：卡面每个经拦截器供出的媒体 / 字体请求（URL、字节数、耗时毫秒）。
+  @visibleForTesting
+  static void Function(Uri url, int bytes, int ms)? debugMediaServed;
+
   @override
   ConsumerState<SrsWebCardFace> createState() => _SrsWebCardFaceState();
 }
@@ -1135,17 +1319,19 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   /// 当前外壳里已装好取词脚本（外壳重载 / renderer 重建后重装）。
   bool _lookupInstalled = false;
 
+  /// 平台视图创建失败后重建过一次（只重来一次，再失败只留痕）。
+  bool _recreatedAfterFailure = false;
+  int _creationAttempt = 0;
+
+  /// 外壳主文档加载失败后重载过一次。
+  bool _reloadedAfterLoadError = false;
+
   /// macOS 宿主侧悬停腿（页面收不到 mousemove，BUG-2508）。
   final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
 
   /// 取词脚本整段（选区脚本 + 卡面监听）只拼一次。
   static final String _lookupInstallScript = srsCardLookupInstallScript(
     ReaderSelectionScripts.source(),
-  );
-
-  /// 本平台卡面媒体的 URL 前缀（自定义 scheme 平台与拦截 https 的平台不同）。
-  static final String _mediaPrefix = srsMediaUrlPrefix(
-    customScheme: webViewUsesCustomSchemeTransport,
   );
 
   late final SrsCardFaceSync _sync = SrsCardFaceSync(
@@ -1171,18 +1357,37 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     },
   );
 
-  SrsCardFaceDocument _document(BuildContext context) => srsCardFaceDocumentFor(
-    widget.face,
-    theme: Theme.of(context),
-    appearance: ref.read(srsCardAppearanceProvider),
-    labels: srsCardLabels(),
-    mediaUrlPrefix: _mediaPrefix,
-    themedScrollbar: srsCardUsesThemedScrollbar,
-    fontUrl: (String path) =>
-        srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
-    fonts: ref.read(srsCardFontsProvider),
-    fontRoot: ref.read(srsCardFontRootProvider),
-  );
+  /// 上一次算文档用的输入与结果：复习页换一张卡要重建这面卡 4~5 次（忙碌态开 / 新卡 /
+  /// 忙碌态关 / 补算预览），每次 didUpdateWidget 与 build 都要文档；输入没变就原样复用，
+  /// 不再每次重拼主题样式、外壳 HTML 与几十 KB 的卡片键。
+  SrsCardFaceDocumentCache? _docCache;
+
+  SrsCardFaceDocument _document(BuildContext context) {
+    final SrsCardFaceDocumentInputs inputs = SrsCardFaceDocumentInputs(
+      face: widget.face,
+      theme: Theme.of(context),
+      appearance: ref.read(srsCardAppearanceProvider),
+      labels: srsCardLabels(),
+      fonts: ref.read(srsCardFontsProvider),
+      fontRoot: ref.read(srsCardFontRootProvider),
+    );
+    final SrsCardFaceDocumentCache? hit = _docCache;
+    if (hit != null && hit.inputs == inputs) return hit.document;
+    final SrsCardFaceDocument document = srsCardFaceDocumentFor(
+      inputs.face,
+      theme: inputs.theme,
+      appearance: inputs.appearance,
+      labels: inputs.labels,
+      mediaUrlPrefix: srsCardMediaUrlPrefix,
+      themedScrollbar: srsCardUsesThemedScrollbar,
+      fontUrl: (String path) =>
+          srsCardFontUrl(path, customScheme: webViewUsesCustomSchemeTransport),
+      fonts: inputs.fonts,
+      fontRoot: inputs.fontRoot,
+    );
+    _docCache = SrsCardFaceDocumentCache(inputs, document);
+    return document;
+  }
 
   Future<SrsMediaStore?> _mediaStore() async {
     try {
@@ -1194,6 +1399,15 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   }
 
   Future<WebResourceResponse?> _intercept(Uri url) async {
+    final void Function(Uri, int, int)? probe = SrsWebCardFace.debugMediaServed;
+    if (probe == null) return _serve(url);
+    final Stopwatch sw = Stopwatch()..start();
+    final WebResourceResponse? r = await _serve(url);
+    if (r != null) probe(url, r.data?.length ?? 0, sw.elapsedMilliseconds);
+    return r;
+  }
+
+  Future<WebResourceResponse?> _serve(Uri url) async {
     if (srsFontPathFromUrl(url) != null) {
       return srsCardFontResponse(
         url,
@@ -1470,11 +1684,11 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
   @override
   Widget build(BuildContext context) {
     final Widget webView = KeyedSubtree(
-      key: _deathGuard.rebuildKey,
+      key: ValueKey<(Key, int)>((_deathGuard.rebuildKey, _creationAttempt)),
       child: InAppWebView(
         // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
         initialData: InAppWebViewInitialData(
-          data: _document(context).shellHtml,
+          data: _docCache?.shellHtml ?? _document(context).shellHtml,
           mimeType: 'text/html',
           encoding: 'utf-8',
         ),
@@ -1491,6 +1705,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           // 堆着上一张卡 / 正面，侧滑会把画面退回旧卡面而复习状态没动。卡面切换完全由
           // 宿主拥有，关掉。只作用于 iOS / macOS。
           allowsBackForwardNavigationGestures: false,
+          // 页面自己发起的播放由外壳里的自动播放闸门按牌组开关决定（BUG-3546），
+          // 不再交给各平台默认策略：Android / iOS 默认「要手势」会让开着自动播放的
+          // 同步片段也不出声，Windows 默认放行又让关掉的照样出声。iOS 内嵌播放
+          // （片段带 playsinline）不全屏接管。
+          mediaPlaybackRequiresUserGesture: false,
+          allowsInlineMediaPlayback: true,
           // 链接不许把外壳导航走；来源链接交给宿主（[srsCardNavigationPolicy]）。
           // Windows 的实现是给每个文档请求开 DevTools Fetch 拦截（整页加载都要绕
           // 一圈宿主），卡面上不值：那边只靠页内链接脚本（[kSrsCardLinkScript]）拦，
@@ -1596,6 +1816,40 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             },
           );
         },
+        // 外壳没能加载 / 平台视图没建起来时不会有 onLoadStop，卡面会一直停在空白：
+        // 留痕并各重来一次（BUG-3579；以前没接这个回调，失败完全无声）。
+        onReceivedError:
+            (
+              InAppWebViewController controller,
+              WebResourceRequest request,
+              WebResourceError error,
+            ) {
+              if (error.description.contains(
+                kReaderWebViewCreationFailedSentinel,
+              )) {
+                ErrorLogService.instance.log(
+                  'SrsWebCardFace.creationFailed',
+                  error.description,
+                  null,
+                );
+                if (_recreatedAfterFailure || !mounted) return;
+                _recreatedAfterFailure = true;
+                _controller = null;
+                _sync.detach();
+                setState(() => _creationAttempt++);
+                return;
+              }
+              if (request.isForMainFrame != true) return;
+              ErrorLogService.instance.log(
+                'SrsWebCardFace.shellLoadFailed',
+                '${error.type} ${error.description} ${request.url}',
+                null,
+              );
+              if (_reloadedAfterLoadError) return;
+              _reloadedAfterLoadError = true;
+              _sync.detach();
+              _reloadShell();
+            },
         onLoadStop: (InAppWebViewController controller, _) {
           // 死亡处置已丢弃 controller：等重建后的新平台视图自己的 onLoadStop。
           if (_controller == null) return;

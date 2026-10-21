@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
-import 'package:fushi_engine/media/torrent/embedded_torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -695,7 +695,7 @@ class _TorrentTaskDetailDialogState
         widget.networkIssue;
     return <Widget>[
       // BUG-2950：诊断是内置引擎会话级的结论，qBittorrent 任务不套用。
-      if (networkIssue != null && _backend is EmbeddedTorrentBackend)
+      if (networkIssue != null && _backend is EmbeddedTorrentBackendProxy)
         ValueListenableBuilder<TorrentNetworkIssue>(
           valueListenable: networkIssue,
           builder: (BuildContext context, TorrentNetworkIssue issue, _) =>

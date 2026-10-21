@@ -78,6 +78,8 @@ void main() {
           home: MediaCollectionDetailPage(
             database: db,
             collection: MediaCollectionRow(
+              origin: 'user',
+              organizeAliases: '',
               id: collectionId,
               name: '某番剧',
               collectionType: 'playlist',

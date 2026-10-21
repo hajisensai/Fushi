@@ -685,6 +685,22 @@ class VideoPlayerController extends ChangeNotifier
   bool get isNetworkSource => _sourceIsNetwork;
   bool _sourceIsNetwork = false;
 
+  /// 当前网络流被 libmpv 识别成 HLS（`file-format`）；由网络流采样（
+  /// [_startCacheSpeedSampling]）在 open 后读出，每次 [load] 复位。决定往缓冲外
+  /// seek 要不要给 demuxer 前移量（[hrSeekDemuxerOffsetForSeek]，BUG-3618）。
+  bool _seekStreamIsHls = false;
+
+  /// 最近一次采样到的 `demuxer-cache-state.seekable-ranges`（≤1 s 旧，仅 HLS 网络流采）。
+  List<MpvSeekableRange> _seekableRangesSnapshot = const <MpvSeekableRange>[];
+
+  /// 已下发给 libmpv 的 `hr-seek-demuxer-offset`（秒）；null = 本次 [load] 还没下发过
+  /// （属性挂在复用的 Player 上，上一集 HLS 留下的值要在第一次 seek 前改回来）。
+  double? _appliedHrSeekDemuxerOffset;
+
+  /// `hr-seek-demuxer-offset` 写请求的代次：异步回执只在仍是最新请求时改
+  /// [_appliedHrSeekDemuxerOffset]。
+  int _hrSeekDemuxerOffsetGeneration = 0;
+
   /// [networkReadBytesPerSecond] 的 1 秒轮询；不用 `observeProperty`——换集复用同一
   /// `Player`，同名重复 observe 会抛 `Already observed`，而 mpv 该值本就是 1 秒窗口。
   Timer? _cacheSpeedTimer;
@@ -1618,10 +1634,27 @@ class VideoPlayerController extends ChangeNotifier
   /// 字幕查词（`graphic_subtitle_ocr.dart`）靠这张合成帧做 OCR。PNG 无损——JPEG 的块
   /// 效应正落在字幕描边上，会拉低识别率。未 [load] 返回 null。
   Future<Uint8List?> captureFrameWithSubtitles() async {
-    return _player?.screenshot(
+    final Player? player = _player;
+    if (player == null) return null;
+    if (!hasNativePlayer) {
+      return player.screenshot(
+        format: 'image/png',
+        includeLibassSubtitles: true,
+      );
+    }
+    // 不占 Player 的串行锁（BUG-3645）：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
+    // play() / pause() 都得排队——暂停 OCR 开着时按继续播放要等截帧编完才响应。
+    // 公开的 Player.screenshot 不透传 synchronized，只能直接调 NativePlayer。截帧在
+    // 辅助 isolate 上跑，句柄销毁前会等它（media_kit 补丁登记进
+    // `_offThreadNativeCalls`）。
+    final dynamic native = player.platform;
+    if (native == null) return null;
+    final Object? bytes = await native.screenshot(
       format: 'image/png',
       includeLibassSubtitles: true,
+      synchronized: false,
     );
+    return bytes as Uint8List?;
   }
 
   /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件
@@ -3107,6 +3140,9 @@ class VideoPlayerController extends ChangeNotifier
                     : mediaUriForVideoPath(localPlaybackSource)),
     );
     _sourceIsNetwork = isNetworkStreamUri(sourceUri);
+    // 换源即作废上一条流的 HLS / 缓冲判据（BUG-3618），由网络流采样重新读。
+    _seekStreamIsHls = false;
+    _seekableRangesSnapshot = const <MpvSeekableRange>[];
     // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
     debugPrint(
       '[video-load] cues=${cues.length} '
@@ -4447,6 +4483,58 @@ class VideoPlayerController extends ChangeNotifier
     _beginPlainSeekInFlight(clampedMs);
     _noteSeekIssued(clampedMs);
     _syncCueForPosition(clampedMs, persistPosition: false);
+    // fork 在 onSeekEnd 之后才 `player.seek`，此刻下发的前移量正好赶在这次 seek 前。
+    _applyHrSeekDemuxerOffsetFor(clampedMs);
+  }
+
+  /// 按 [targetMs] 给这次 seek 下发 `hr-seek-demuxer-offset`（BUG-3618，判据见
+  /// [hrSeekDemuxerOffsetForSeek]）。必须在 `player.seek` **之前**同步调用：libmpv
+  /// 只保证同一 client 的异步请求「可能乱序」，这里靠的是 seek 在 Dart 侧多过一层
+  /// `lock.synchronized`（属性请求先入队）加 mpv 按 FIFO 派发，且 mpv 真正执行 seek
+  /// 时才读这个属性；不在 seek 前 await，免得让并发 seek 的令牌交错。与上次**写成功**
+  /// 的值相同就不再发。非 libmpv 后端维持默认行为；写失败记日志并作废缓存，下一次
+  /// seek 按当时的判据重新下发（只退回 mpv 默认行为，不影响 seek 本身）。
+  void _applyHrSeekDemuxerOffsetFor(int targetMs) {
+    if (_webBackend) return;
+    final dynamic native = _player?.platform;
+    if (native == null) return;
+    final double offset = hrSeekDemuxerOffsetForSeek(
+      hlsStream: _seekStreamIsHls,
+      ranges: _seekableRangesSnapshot,
+      targetSeconds: targetMs / 1000,
+    );
+    if (offset == _appliedHrSeekDemuxerOffset) return;
+    // 只认最新一次请求的结局：较早请求晚到的成功不能覆盖较新的值。
+    final int generation = ++_hrSeekDemuxerOffsetGeneration;
+    final Object? pending;
+    try {
+      pending = native.setProperty('hr-seek-demuxer-offset', offset.toString());
+    } catch (e) {
+      // 非 libmpv 后端没有 setProperty（NoSuchMethodError）：维持默认行为。
+      debugPrint('VideoPlayerController: hr-seek-demuxer-offset skipped: $e');
+      return;
+    }
+    if (pending is! Future) {
+      _appliedHrSeekDemuxerOffset = offset;
+      return;
+    }
+    unawaited(
+      pending.then(
+        (_) {
+          if (generation == _hrSeekDemuxerOffsetGeneration) {
+            _appliedHrSeekDemuxerOffset = offset;
+          }
+        },
+        onError: (Object e) {
+          if (generation == _hrSeekDemuxerOffsetGeneration) {
+            _appliedHrSeekDemuxerOffset = null;
+          }
+          debugPrint(
+            'VideoPlayerController: hr-seek-demuxer-offset=$offset failed: $e',
+          );
+        },
+      ),
+    );
   }
 
   /// 外部 seek（[notifyExternalSeek] 登记过目标的那次 `player.seek`）的下发 Future：
@@ -4793,6 +4881,13 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   void debugSetSubtitleCuesLoadingForTesting(bool loading) {
     _setSubtitleCuesLoading(loading);
+  }
+
+  /// 测试可见：模拟网页播放后端（[isWebBackend]；widget 测试起不了 WebView2）。
+  @visibleForTesting
+  void debugSetWebBackendForTesting(bool web) {
+    _webBackend = web;
+    notifyListeners();
   }
 
   @visibleForTesting
@@ -5282,7 +5377,13 @@ class VideoPlayerController extends ChangeNotifier
   /// 样本不能写进新片的 notifier（与黑闪采样、章节读取同一条防 UAF 纪律）。
   void _startCacheSpeedSampling(Player player, int loadToken) {
     _stopCacheSpeedSampling();
+    _seekStreamIsHls = false;
+    _seekableRangesSnapshot = const <MpvSeekableRange>[];
+    _appliedHrSeekDemuxerOffset = null;
+    _hrSeekDemuxerOffsetGeneration++;
     if (!_sourceIsNetwork) return;
+    // 「容器是不是 HLS」open 后才读得到，读到为止每拍试一次（见 [_seekStreamIsHls]）。
+    bool formatKnown = false;
     _cacheSpeedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_cacheSpeedSampleInFlight) return;
       if (!_isCurrentLoad(player, loadToken)) return;
@@ -5299,6 +5400,20 @@ class VideoPlayerController extends ChangeNotifier
           if (!_isCurrentLoad(player, loadToken)) return;
           final double? cached = double.tryParse(cacheRaw);
           if (cached != null) networkCacheSeconds.value = cached;
+          // BUG-3618：HLS 往缓冲外 seek 要给 demuxer 前移量，判据要知道容器与缓冲段。
+          if (!formatKnown) {
+            final String format = await _getMpvProperty('file-format');
+            if (!_isCurrentLoad(player, loadToken)) return;
+            if (format.isNotEmpty) {
+              formatKnown = true;
+              _seekStreamIsHls = format.split(',').contains('hls');
+            }
+          }
+          if (_seekStreamIsHls) {
+            final String state = await _getMpvProperty('demuxer-cache-state');
+            if (!_isCurrentLoad(player, loadToken)) return;
+            _seekableRangesSnapshot = parseMpvSeekableRanges(state);
+          }
         } finally {
           _cacheSpeedSampleInFlight = false;
         }
@@ -5538,6 +5653,7 @@ class VideoPlayerController extends ChangeNotifier
     final int token = _noteSeekIssued(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
     _syncCueForPosition(clampedMs, persistPosition: false);
+    _applyHrSeekDemuxerOffsetFor(clampedMs);
     await _awaitSeekDispatch(
       token,
       _player?.seek(Duration(milliseconds: clampedMs)),
@@ -5558,6 +5674,7 @@ class VideoPlayerController extends ChangeNotifier
     _oneShotHoldUntilMs = null;
     final int clampedMs = positionMs.clamp(0, 1 << 30);
     final int token = _noteSeekIssued(clampedMs);
+    _applyHrSeekDemuxerOffsetFor(clampedMs);
     await _awaitSeekDispatch(
       token,
       _player?.seek(Duration(milliseconds: clampedMs)),

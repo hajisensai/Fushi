@@ -45,6 +45,73 @@ class SrsParamSet {
   }
 }
 
+/// RWKV-Instant 的排队设置（[SrsFieldKeys.deckRwkvQueue]），默认值 = 上游 kuma3 默认。
+class SrsRwkvQueueSettings {
+  const SrsRwkvQueueSettings({
+    this.minReviewsPerDay = 0,
+    this.repeatMinReviews = 5,
+    this.repeatMinSeconds = 30,
+  });
+
+  /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
+  /// 的复习卡里按回忆率从低到高补足。0 = 不启用。
+  final int minReviewsPerDay;
+
+  /// 同日重复：今天答过的卡，之后这组牌组里别的卡至少要有这么多次作答才再出。
+  final int repeatMinReviews;
+
+  /// 同日重复：今天答过的卡，距上次作答至少这么多秒才再出。
+  final int repeatMinSeconds;
+
+  static const int maxMinReviewsPerDay = 9999;
+  static const int maxRepeatMinReviews = 999;
+  static const int maxRepeatMinSeconds = 86400;
+
+  /// 缺项 / 坏值回落到默认值，越界的夹到合法范围。
+  static SrsRwkvQueueSettings fromValue(Object? v) {
+    const SrsRwkvQueueSettings d = SrsRwkvQueueSettings();
+    if (v is! Map) return d;
+    int read(String key, int fallback, int max) => switch (v[key]) {
+      final int n => n.clamp(0, max),
+      _ => fallback,
+    };
+    return SrsRwkvQueueSettings(
+      minReviewsPerDay: read(
+        'minReviews',
+        d.minReviewsPerDay,
+        maxMinReviewsPerDay,
+      ),
+      repeatMinReviews: read(
+        'repeatReviews',
+        d.repeatMinReviews,
+        maxRepeatMinReviews,
+      ),
+      repeatMinSeconds: read(
+        'repeatSeconds',
+        d.repeatMinSeconds,
+        maxRepeatMinSeconds,
+      ),
+    );
+  }
+
+  Map<String, Object?> toValue() => <String, Object?>{
+    'minReviews': minReviewsPerDay,
+    'repeatReviews': repeatMinReviews,
+    'repeatSeconds': repeatMinSeconds,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsRwkvQueueSettings &&
+      other.minReviewsPerDay == minReviewsPerDay &&
+      other.repeatMinReviews == repeatMinReviews &&
+      other.repeatMinSeconds == repeatMinSeconds;
+
+  @override
+  int get hashCode =>
+      Object.hash(minReviewsPerDay, repeatMinReviews, repeatMinSeconds);
+}
+
 /// 物化后的牌组。
 class SrsDeckView {
   SrsDeckView({
@@ -65,6 +132,7 @@ class SrsDeckView {
     required this.maxIntervalDays,
     this.autoplayAudio = true,
     this.replayQuestionAudio = true,
+    this.rwkvQueue = const SrsRwkvQueueSettings(),
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -72,6 +140,7 @@ class SrsDeckView {
     required this.createdAt,
     required this.edits,
     this.collapsed = false,
+    this.position,
   });
 
   static const List<double> defaultLearnSteps = <double>[1, 10];
@@ -100,6 +169,18 @@ class SrsDeckView {
   /// 牌组列表里收起了子牌组（缺省 = 展开，与 Anki 一致）。
   final bool collapsed;
 
+  /// 同级里的手动排序位（[SrsFieldKeys.deckPosition]）；null = 没排过。
+  final double? position;
+
+  /// 同级排序：有位置的按位置在前，其余按名字；最后按 id 定序（全确定性，各端一致）。
+  static int compareSiblings(SrsDeckView a, SrsDeckView b) {
+    final double pa = a.position ?? double.infinity;
+    final double pb = b.position ?? double.infinity;
+    if (pa != pb) return pa.compareTo(pb);
+    final int byName = a.name.compareTo(b.name);
+    return byName != 0 ? byName : a.id.compareTo(b.id);
+  }
+
   /// 复习时自动播放卡面音频（Anki「自动播放音频」）。只看 own 祖先上的值
   /// （[SrsDeckTree.paramsOwner]）。
   final bool autoplayAudio;
@@ -107,6 +188,9 @@ class SrsDeckView {
   /// 答案面重播时先播问题音频（Anki 默认；false = 「重播答案时跳过问题」）。
   /// 只看 own 祖先上的值。
   final bool replayQuestionAudio;
+
+  /// RWKV-Instant 排队设置。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
+  final SrsRwkvQueueSettings rwkvQueue;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;
@@ -120,9 +204,9 @@ class SrsDeckView {
   bool get algorithmUnknownLocally =>
       SrsAlgorithm.tryParse(algorithmWire) == null;
 
-  SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a) {
+  SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a.memoryAlgorithm) {
     SrsAlgorithm.fsrs6 => fsrs6,
-    SrsAlgorithm.fsrs7 => fsrs7,
+    SrsAlgorithm.fsrs7 || SrsAlgorithm.rwkv => fsrs7,
   };
 
   static SrsDeckView materialize(SrsEntityRecord record, SrsEntityEdits edits) {
@@ -165,9 +249,16 @@ class SrsDeckView {
       maxIntervalDays:
           (edits.value(SrsFieldKeys.deckMaxInterval) as int?) ?? 36500,
       collapsed: edits.value(SrsFieldKeys.deckCollapsed) == true,
+      position: switch (edits.value(SrsFieldKeys.deckPosition)) {
+        final num v when v.isFinite => v.toDouble(),
+        _ => null,
+      },
       autoplayAudio: edits.value(SrsFieldKeys.deckAutoplay) != false,
       replayQuestionAudio:
           edits.value(SrsFieldKeys.deckReplayQuestion) != false,
+      rwkvQueue: SrsRwkvQueueSettings.fromValue(
+        edits.value(SrsFieldKeys.deckRwkvQueue),
+      ),
       optimizeBaselineAt: baseline is Map ? baseline['at'] as int? : null,
       optimizeBaselineCount: baseline is Map ? baseline['n'] as int? : null,
       deletedAt: edits.deletedAt,
@@ -223,6 +314,18 @@ class SrsDeckTree {
   }
 
   String? parentOf(String id) => _parent[id];
+
+  /// 卡片的有效牌组：[deckId] 不在本树里（牌组在别的设备删了、或卡片的移动先于牌组同步到）
+  /// 时归到 [fallback]（默认牌组）。排程配置、浏览页 / 统计页的牌组名与 `deck:` 搜索共用
+  /// 这一判据（BUG-3617），不要各写一份。
+  String effectiveDeckOf(String deckId, {required String fallback}) =>
+      _byId.containsKey(deckId) ? deckId : fallback;
+
+  /// [effectiveDeckOf] 的全名；连 [fallback] 也不在树里时为空串。
+  String effectiveDeckNameOf(String deckId, {required String fallback}) {
+    final String id = effectiveDeckOf(deckId, fallback: fallback);
+    return _byId.containsKey(id) ? fullName(id) : '';
+  }
 
   /// 「父::子」全名。
   String fullName(String id) {
@@ -282,7 +385,7 @@ class SrsDeckTree {
     final List<double> params =
         (set != null && set.params.length == alg.paramCount)
         ? set.params
-        : (defaultsOf?.call(alg) ?? const <double>[]);
+        : (defaultsOf?.call(alg.memoryAlgorithm) ?? const <double>[]);
     return SrsSchedulingConfig(
       learnStepsMinutes: self.learnSteps,
       relearnStepsMinutes: self.relearnSteps,

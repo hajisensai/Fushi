@@ -190,6 +190,96 @@ void main() {
     );
   });
 
+  // BUG-3612：iPad 看电脑媒体库视频制卡——查词走 `AppModel` 的 remote-first 路径
+  // （不钉候选），弹窗在本机渲染、Glossary 在本机导出。结果必须自带 host 样式，
+  // 弹窗按结果逐次判断用哪份（同一表面下一次可能是本机结果）。
+  group('BUG-3612 remote results carry the host styles', () {
+    test('tracked lookups attach the host styles to every result', () async {
+      final host = newHost(revision: () => 'r1');
+      final FushiRemoteLookupClient client = FushiRemoteLookupClient(
+        repo: repo,
+        httpClient: host.client,
+        trackDictionaryStyles: true,
+      );
+      final DictionarySearchResult? first = await client.searchDictionary(
+        term: '猫',
+        wildcards: false,
+        maximumTerms: 5,
+      );
+      expect(first!.remoteDictionaryStyles, <String, String>{
+        '明鏡': '.gloss-r1{}',
+        '大辞泉': '.sense{}',
+      });
+
+      final DictionarySearchResult? second = await client.searchDictionary(
+        term: '猫',
+        wildcards: false,
+        maximumTerms: 5,
+      );
+      // 指纹没变：host 只回指纹，结果仍带同一个实例（弹窗按身份去重，不重注入）。
+      expect(
+        identical(second!.remoteDictionaryStyles, first.remoteDictionaryStyles),
+        isTrue,
+      );
+      expect(
+        host.lookups.map((Map<String, dynamic> b) => b['stylesRevision']),
+        <String>['', 'r1'],
+      );
+      // kanji 附加等拷贝路径不丢样式。
+      expect(
+        identical(
+          second.withKanjiResults(const <FushiKanjiResult>[])
+              .remoteDictionaryStyles,
+          first.remoteDictionaryStyles,
+        ),
+        isTrue,
+      );
+    });
+
+    test('untracked lookups and old hosts leave results local', () async {
+      final host = newHost(revision: () => 'r1');
+      final DictionarySearchResult? untracked = await FushiRemoteLookupClient(
+        repo: repo,
+        httpClient: host.client,
+      ).searchDictionary(term: '猫', wildcards: false, maximumTerms: 5);
+      expect(untracked!.remoteDictionaryStyles, isNull);
+
+      final DictionarySearchResult? oldHost = await FushiRemoteLookupClient(
+        repo: repo,
+        httpClient: MockClient(
+          (http.Request request) async => json(<String, dynamic>{
+            'type': 'dictionaryResult',
+            'result': resultJson(),
+          }),
+        ),
+        trackDictionaryStyles: true,
+      ).searchDictionary(term: '猫', wildcards: false, maximumTerms: 5);
+      expect(oldHost!.remoteDictionaryStyles, isNull);
+    });
+
+    test('AppModel remote-first lookups reuse one style-tracking client', () {
+      final String source = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      String block(String head) {
+        final int start = source.indexOf(head);
+        expect(start, isNonNegative, reason: head);
+        return source.substring(start, source.indexOf('\n  }\n', start));
+      }
+
+      final String body = block(
+        'Future<DictionarySearchResult?> _searchRemoteDictionary(',
+      );
+      // 每次查词新建客户端 = 指纹缓存随实例丢掉、结果不带样式（BUG-3612 的根因）。
+      expect(body, isNot(contains('FushiRemoteLookupClient(')));
+      expect(body, contains('_remoteDictionaryLookup.searchDictionary('));
+      expect(
+        block('FushiRemoteLookupClient get _remoteDictionaryLookup'),
+        contains('trackDictionaryStyles: true'),
+      );
+    });
+  });
+
   group('InterconnectGameStreamDictionaryLookup', () {
     test(
       'popup resources carry the host styles and are not re-downloaded',

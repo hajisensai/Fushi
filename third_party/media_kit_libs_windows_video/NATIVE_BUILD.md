@@ -6,11 +6,41 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1.7z` (45,379,793 bytes).
-SHA-256: `3e2fda6200dcef9ceb657c4b7350df387e764c7ccc1ad3cf63e671ee2dd8ae88`.
-The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2.7z` (42,951,609 bytes).
+SHA-256: `9187cf8594bee5c90432ddbedd719dbca6e3d24c9741c17ecf71dfa0a5f147f1`.
+The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
+
+`ffu1` (2026-10-17): built against the **unified FFmpeg** (`tool/ffmpeg-unified`,
+FFmpeg 9.0.1 + Fushi patches, see `docs/specs/2026-10-17-unified-ffmpeg.md`)
+instead of MSYS2's `mingw-w64-ffmpeg` package, and the archive also ships that
+build's `ffmpeg.exe` / `ffprobe.exe`. They import the same renamed `fbd*.dll`
+as `libmpv-2.dll` and are listed in `runtime-files.cmake`, so card mining runs
+on exactly the FFmpeg the player decodes with (the separate
+`third_party/ffmpeg-min/windows` build is gone). The closure shrank from 123 to
+103 files: the unified configure mirrors MSYS2's minus whisper (ggml),
+librsvg (glib/cairo/pango), frei0r, libcaca and openal.
+
+`dovi1-ffu1` (2026-10-19): the `ffu1` unified-FFmpeg build and the `dovi1`
+Dolby Vision reshaping (below) were developed in parallel; this archive is one
+rebuild carrying both (same unified FFmpeg recipe and MSYS2 package set as
+`ffu1`, plus `mpv-gl-dovi-p5.patch` under `render_patches`). The build script
+ran every verifier below on it: capability floor, `smoke-test.sh`,
+`probe_libmpv.py`, `verify_mkv_lace_dump.py` and `verify_dovi_p5.py` (P5 mean
+error 0.36 / 255 under all three hwdec modes, P8.1 base layer 0.27 - the same
+numbers as the `dovi1` archive).
+
+`ffu2` (2026-10-19): rebuilt for the recipe's patch 0004 (Apple-only system
+trust verification; `#ifdef __APPLE__`, so the Windows code is unchanged)
+so the archive matches the whole recipe patch set, and it now ships
+`licenses/ffmpeg-unified/SOURCE.txt` (GPL corresponding-source notice from
+`tool/ffmpeg-unified/source_notice.py`). Same MSYS2 package set; all
+verifiers passed again (P5 0.36 / 255, P8.1 0.27), plus
+`tool/ffmpeg-unified/https_trust_smoke.sh` (public HTTPS opens with
+`tls_verify=1`; self-signed / expired / wrong-host rejected by gnutls; since
+fix/ffmpeg-https-smoke-hermetic the negative cases run against local
+`openssl s_server` certificates, re-run on this archive: PASS).
 
 `patches/mkv-laced-audio-timestamps.patch` (BUG-3499) fixes upstream
 `handle_block()` in `demux/demux_mkv.c`: when an audio track has no
@@ -54,13 +84,10 @@ Android / macOS / iOS ship) makes the texture renderer (`gl_video`, what
 IPT -> LMS -> RGB decode. Without it P5 shows inverted purple / green colours,
 which is why Windows used to switch DV sources to a separate `vo=gpu-next`
 host window. Profiles 7 / 8 are left alone and show their HDR10 base layer.
-The `-dovi1` rebuild differs from the `mkvdts1` archive only in
-`libmpv-2.dll`, `runtime-manifest.json` and `source-provenance.json` (which
-records the patch under `render_patches`). `verify_dovi_p5.py` renders
-`tests/dovi-p5.mkv` / `tests/dovi-p81.mkv` through the render API with
-d3d11va zero-copy, d3d11va-copy and software decoding and compares them with
-libplacebo's own rendering (measured: P5 mean error 0.36 / 255, the previous
-archive 114; P8.1 matches the base layer, 0.27).
+`verify_dovi_p5.py` renders `tests/dovi-p5.mkv` / `tests/dovi-p81.mkv` through
+the render API with d3d11va zero-copy, d3d11va-copy and software decoding and
+compares them with libplacebo's own rendering (measured: P5 mean error
+0.36 / 255, an archive without the patch 114; P8.1 matches the base layer, 0.27).
 
 `patches/gpu-dumb-mode-hwdec-crop.patch` (BUG-3296) fixes upstream
 `pass_render_frame_dumb()` in `video/out/gpu/video.c`: the vo=gpu "dumb mode"
@@ -105,13 +132,22 @@ zero-based, `-1` unknown; nonzero angles require matching export support.
 
 ## Build and package
 
-`tool/bluray/build_libmpv.ps1` checks out the pinned upstream revision, applies
-the patch and builds with MSYS2 mingw64. It uses the existing vendored ANGLE
-headers and enables EGL/D3D11 interop. Native compilation holds the repository's
-heavy-work lease; the default is three compiler processes.
+First build the unified FFmpeg into a private prefix (MSYS2 MINGW64 shell):
 
-The runtime uses MSYS2 FFmpeg 9.0.1, libbluray 1.5.0 and libplacebo 7.360.1.
-Its `msys2-packages.json` records the exact dependency package versions.
+    tool/ffmpeg-unified/windows/build_ffmpeg_msys2.sh <ffmpeg-work-dir>
+
+then `tool/bluray/build_libmpv.ps1 -FfmpegWorkDirectory <ffmpeg-work-dir>`
+checks out the pinned upstream revision, applies the patches and builds with
+MSYS2 mingw64 against that prefix (it wins over MSYS2's own FFmpeg for both
+pkg-config and the runtime closure; `package_libmpv.py` refuses a stray MSYS2
+FFmpeg DLL and a source tree whose applied patches differ from the recipe). It
+uses the existing vendored ANGLE headers and enables EGL/D3D11 interop. Native
+compilation holds the repository's heavy-work lease.
+
+The runtime uses the unified FFmpeg 9.0.1, libbluray 1.5.0 and libplacebo
+7.360.1. Its `msys2-packages.json` records the exact MSYS2 dependency package
+versions plus a `fushi-unified-ffmpeg` entry (version, upstream and patched
+commit, SHA-256 of every applied patch).
 `package_libmpv.py` follows PE imports recursively, fails on unresolved imports,
 includes package licenses and records each DLL's size and SHA-256. This closure
 includes the TrueHD decoder. Lua player scripts are built in with `-Dlua=luajit`
@@ -121,9 +157,10 @@ subtitle-end pause (BUG-3325); the `lua1` suffix marks the rebuild. JavaScript
 scripts remain disabled. Fushi's Flutter controls and C client/render APIs do
 not depend on either.
 
-The packager requires Python's `pefile` module. It gives all 122 non-system
+The packager requires Python's `pefile` module. It gives all non-system
 dependencies fixed, same-length `fbd` module names, preserving the public
-`libmpv-2.dll` entry point. Normal imports, delay imports, export forwarders and
+`libmpv-2.dll` entry point; `ffmpeg.exe` / `ffprobe.exe` keep their names and
+only their DLL references are rewritten. Normal imports, delay imports, export forwarders and
 literal ANSI/UTF-16 dynamic-library names are rewritten without shifting PE
 RVAs. It rejects name collisions and leftover original dependency references.
 `private-dll-map.json`, the runtime source/new hashes and
@@ -144,8 +181,44 @@ component bundle and its single-source installer are installed under
 `<application>/bluray/bdj/`. See [bdj/README.md](bdj/README.md) for the pinned
 private JRE, hashes, source and license details.
 
+## Why this archive is built locally, not in CI
+
+The mobile and macOS FFmpeg are CI builds (`ffmpeg-unified-mobile.yml`); this
+Windows runtime is built on a developer machine, as every libmpv archive here
+has been. A CI job was evaluated (2026-10-19) and not added, because it could
+not deliver what it would be for - a reproducible, reviewable rebuild:
+
+* The build links MSYS2's rolling `mingw-w64-x86_64-*` packages (headers and
+  DLLs of ~90 libraries). MSYS2 has no dated snapshot repository; mirrors
+  carry the current versions, so a CI run builds against whatever MSYS2 ships
+  that day, not against the versions recorded here. Pinning would mean
+  re-hosting ~90 exact package files ourselves.
+* Even with identical inputs the archive is not byte-identical: FFmpeg embeds
+  its configure line (install prefix) in `avutil`, and the 7z carries
+  timestamps. A CI artifact could only be compared at manifest level, which
+  `native-runtime-manifest.json` / `native-dependency-packages.json` already
+  record for the committed archive.
+* `verify_dovi_p5.py` and `verify_menu_render.py` render through ANGLE on
+  D3D11; hosted Windows runners only offer WARP, so the render verifiers - the
+  checks that caught BUG-2691 / BUG-3296 - would be skipped or untrustworthy
+  there.
+
+What keeps the local build honest instead: `native-dependency-packages.json`
+records every MSYS2 package version in the closure plus the
+`fushi-unified-ffmpeg` entry (upstream commit, patched commit, SHA-256 of each
+applied patch, which `ffmpeg_unified_windows_runtime_guard_test.dart` compares
+with `tool/ffmpeg-unified/patches/ffmpeg`), `package_libmpv.py` refuses a
+source tree whose applied patches differ from the recipe, and
+`build_libmpv.ps1` runs every verifier below before an archive can be
+re-pinned. Revisit if MSYS2 gains dated snapshots.
+
 ## Verification
 
+* `tool/ffmpeg-unified/verify_ffmpeg_capabilities.py` runs the packaged
+  `ffmpeg.exe` / `ffprobe.exe` with a system-only `PATH` (so only the renamed
+  DLLs beside them can load) against the capability floor, and
+  `tool/ffmpeg-unified/smoke-test.sh` exercises every mining / export / ASR /
+  transcode argument shape with self-authored fixtures.
 * `probe_libmpv.py` probes the loaded binary's options, command signatures,
   properties, Blu-ray protocol, TrueHD decoder and render API, and runs a real
   Lua script through `load-script` (it fails unless the script's own log line

@@ -38,6 +38,7 @@ void main() {
     required _RecordingLoopback loopback,
     required DateTime Function() now,
     Duration loopbackFreezeDelay = const Duration(milliseconds: 20),
+    Duration loopbackLineMax = const Duration(seconds: 30),
   }) =>
       GalHookSessionController(
         textService: service,
@@ -62,6 +63,7 @@ void main() {
         loopbackSourceFactory: () => loopback,
         textPollInterval: const Duration(milliseconds: 5),
         loopbackFreezeDelay: loopbackFreezeDelay,
+        loopbackLineMax: loopbackLineMax,
         now: now,
         endpointListenable: endpoints,
         endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
@@ -283,6 +285,131 @@ void main() {
       2500 + 1000,
       reason: '提前收束按真实已等待时长回取',
     );
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('长句 loopback：下一句到达时按真实时长定稿上一句，不再定格在 4s+1s', () async {
+    // 用户报：句子长的卡音频被截在约 5 秒（4s 冻结 + 1s 预卷），短句完整。
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    DateTime clock = DateTime(2020, 1, 1, 12);
+    final _FakeEngine engine = _FakeEngine(
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '三位一体説を三角形という図形を使って証明する試みだけど',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final _RecordingLoopback loopback = _RecordingLoopback(sizedByBackMs: true);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      loopback: loopback,
+      now: () => clock,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    await controller.selectTextThread(5);
+    await waitUntil(() => loopback.backMsCalls.isNotEmpty);
+    expect(loopback.backMsCalls, <int>[20 + 1000], reason: '暂定冻结照旧先给一份');
+    final String firstId = service.entries.single.id;
+
+    // 这句念了 9 秒，玩家才推进到下一句。
+    clock = clock.add(const Duration(seconds: 9));
+    engine.enqueue(
+      const GalHookedLine(
+        seq: 2,
+        timestampMs: 10000,
+        text: '次の台詞',
+        threadId: 5,
+        hookName: 'fake',
+      ),
+    );
+    await waitUntil(() => loopback.backMsCalls.contains(9000 + 1000));
+    await waitUntil(
+      () => service.entryById(firstId)?.audioDurationMs == 10000,
+    );
+    expect(
+      service.entryById(firstId)?.audioDurationMs,
+      10000,
+      reason: '上一句的右界是下一句到达：取 [t0-preRoll, 下一句]，不是固定的 4s+1s',
+    );
+
+    // BUG-1101 的不变量：已被下一句取代的行，过多久再制卡都不能再回取「现在」的混音。
+    clock = clock.add(const Duration(seconds: 7));
+    final int callsBeforeMine = loopback.backMsCalls
+        .where((int b) => b > 10000)
+        .length;
+    final TexthookerLineEntry first = service.entryById(firstId)!;
+    await controller.captureAudioBytes(
+      lineId: firstId,
+      sentence: first.text,
+      outputExtension: 'aac',
+    );
+    expect(
+      loopback.backMsCalls.where((int b) => b > 10000).length,
+      callsBeforeMine,
+      reason: '历史行窗口已定稿，制卡只能复用，不得把后面几句的声音配给它',
+    );
+    expect(service.entryById(firstId)?.audioDurationMs, 10000);
+
+    await controller.close();
+    endpoints.dispose();
+  });
+
+  test('长句 loopback：停在一句上很久再制卡，取到整段而不是暂定冻结那 5 秒', () async {
+    final TexthookerService service = TexthookerService.test();
+    final ChangeNotifier endpoints = ChangeNotifier();
+    DateTime clock = DateTime(2020, 1, 1, 12);
+    final _FakeEngine engine = _FakeEngine(
+      lines: const <GalHookedLine>[
+        GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '長い台詞で単語を調べてから制カードする',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      ],
+    );
+    final _RecordingLoopback loopback = _RecordingLoopback(sizedByBackMs: true);
+    final GalHookSessionController controller = build(
+      service: service,
+      endpoints: endpoints,
+      engine: engine,
+      loopback: loopback,
+      now: () => clock,
+    );
+
+    await controller.startAttachedCapture(
+      const ExternalWindowInfo(hwnd: 3, pid: 4242, title: 'Game'),
+    );
+    await controller.selectTextThread(5);
+    await waitUntil(() => loopback.backMsCalls.isNotEmpty);
+    final TexthookerLineEntry line = service.entries.single;
+
+    clock = clock.add(const Duration(seconds: 12));
+    final Stopwatch waited = Stopwatch()..start();
+    await controller.captureAudioBytes(
+      lineId: line.id,
+      sentence: line.text,
+      outputExtension: 'aac',
+    );
+    waited.stop();
+    expect(loopback.backMsCalls.last, 12000 + 1000,
+        reason: '续张中的窗口在制卡时按真实已等待时长收束');
+    expect(service.entryById(line.id)?.audioDurationMs, 13000);
+    expect(waited.elapsed, lessThan(const Duration(seconds: 3)),
+        reason: '续张不该让制卡干等到上限');
 
     await controller.close();
     endpoints.dispose();
@@ -853,6 +980,12 @@ class _FakeEngine extends EngineHookGalAudioSource {
 
 /// 记录每次 `grabRecent` 的回取长度，用来断言窗口而不是只断言「调了没」。
 class _RecordingLoopback extends LoopbackGalAudioSource {
+  _RecordingLoopback({this.sizedByBackMs = false});
+
+  /// true = 返回恰好 backMs 长、恒定幅度（尾部裁剪不会动它）的 PCM，用来断言窗口长度
+  /// 真的落进了行缓存；false = 旧的固定 1024 字节。
+  final bool sizedByBackMs;
+
   int startCalls = 0;
   int stopCalls = 0;
   final List<int> backMsCalls = <int>[];
@@ -876,6 +1009,20 @@ class _RecordingLoopback extends LoopbackGalAudioSource {
   @override
   Future<GalAudioSlice?> grabRecent(int backMs) async {
     backMsCalls.add(backMs);
+    if (sizedByBackMs) {
+      const PcmFormat format = PcmFormat(
+        sampleRate: 44100,
+        channels: 2,
+        bitsPerSample: 16,
+        isFloat: false,
+      );
+      return GalAudioSlice(
+        pcm: Uint8List.fromList(
+          List<int>.filled(backMs * format.byteRate ~/ 1000, 40),
+        ),
+        format: format,
+      );
+    }
     return GalAudioSlice(
       pcm: Uint8List.fromList(List<int>.filled(1024, 5)),
       format: const PcmFormat(

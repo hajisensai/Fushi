@@ -1,5 +1,9 @@
 import 'dart:io';
 
+import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
+    show DandanplayFileKey;
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
+    show VideoMetadataWork;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 
@@ -321,6 +325,32 @@ abstract interface class RemoteVideoDetailFetch {
   /// 用单条目详情补齐 [listInfo]（同 id）。失败时由调用方 best-effort 退回
   /// [listInfo] —— 补字段是锦上添花，不该把下载/信息弹窗整条路径拖死。
   Future<RemoteVideoInfo> remoteVideoDetail(RemoteVideoInfo listInfo);
+}
+
+/// 「远端文件的弹幕匹配指纹」的**可选**能力（BUG-3614）。
+///
+/// 弹幕（弹弹play）按文件名 + 前 16 MiB md5 + 字节数匹配；远端流播时本机没有
+/// 文件、算不出指纹，播放页的弹幕于是整条短路——下载到本机后才有弹幕。只有持有
+/// 文件的互联 host 能算（媒体服务器 / 云盘 / 在线源没有这个端点），故单列能力，
+/// 播放页用 `client is RemoteVideoDanmakuKeyFetch` 判据。
+abstract interface class RemoteVideoDanmakuKeyFetch {
+  /// 远端视频 [id] 第 [episodeIndex] 集的弹弹play 指纹；host 不支持 / 视频没有
+  /// 本地文件返回 null（调用方当作没有弹幕来源，与改动前相同）。
+  Future<DandanplayFileKey?> remoteVideoDanmakuKey(
+    String id, {
+    int episodeIndex = 0,
+  });
+}
+
+/// 「远端单条视频自己的刮削资料」的**可选**能力（BUG-3613）。
+///
+/// 合集作品的资料随同步落进本机库（合集行本机有），但独立电影 / 单集作品挂在
+/// host 的视频行上，本机没有那一行（`video_metadata_works.book_uid` 外键指向
+/// `video_books`），同步只能跳过——远端单条视频因此在库页点开就直接播放，看不到
+/// 资料页。资料页改为按需向 host 取这一部的资料。
+abstract interface class RemoteVideoWorkMetadataFetch {
+  /// 远端视频 [id] 自己拥有的作品资料；host 没刮过 / 不支持返回 null。
+  Future<VideoMetadataWork?> remoteVideoWorkMetadata(String id);
 }
 
 /// 「播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好同步泛化批

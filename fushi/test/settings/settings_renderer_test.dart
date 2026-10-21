@@ -804,7 +804,7 @@ void main() {
     },
   );
 
-  testWidgets('lookup settings can edit the Yomitan API key', (
+  testWidgets('local services settings can edit the Fushi API key', (
     WidgetTester tester,
   ) async {
     final FushiDatabase db = _testDb();
@@ -820,14 +820,14 @@ void main() {
         database: db,
         appModel: appModel,
         builder: (SettingsContext settingsContext) {
-          final SettingsDestination lookup =
+          final SettingsDestination localServices =
               buildSettingsSchema(settingsContext).firstWhere(
                 (SettingsDestination destination) =>
-                    destination.id == SettingsDestinationId.lookup,
+                    destination.id == SettingsDestinationId.localServices,
               );
           return MaterialSettingsRenderer().buildDetailPage(
             settingsContext: settingsContext,
-            destination: lookup,
+            destination: localServices,
           );
         },
       ),

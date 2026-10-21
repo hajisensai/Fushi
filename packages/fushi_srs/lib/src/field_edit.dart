@@ -70,6 +70,12 @@ abstract final class SrsFieldKeys {
   // notetype
   static const String name = 'name';
   static String fieldDef(String fieldId) => 'fieldDef/$fieldId';
+
+  /// 字段说明（字符串；空串 = 清空）。与 [fieldDef] 分开：改名 / 调序与改说明互不冲突，
+  /// 不认识它的旧版本只是不显示，不会在改名时把它抹掉。
+  static String fieldDescription(String fieldId) =>
+      '$fieldDescriptionPrefix$fieldId';
+  static const String fieldDescriptionPrefix = 'fieldDesc/';
   static String templateDef(String templateId) => 'tmplDef/$templateId';
   static const String css = 'css';
   static const String termField = 'termField';
@@ -79,6 +85,11 @@ abstract final class SrsFieldKeys {
   static const String buriedUntilDay = 'buried';
   static const String flag = 'flag';
   static const String cardDeck = 'deck';
+
+  /// 新卡在出卡队列里的位置（int；null / 没有记录 = 没排过，按笔记创建时刻出卡）。
+  /// 「按词频重排新卡」写它，对应 Anki 新卡的 `due`（队列位置）。只影响新卡的出卡
+  /// 顺序：学过的卡排程只来自日志，这个值留着也不起作用。
+  static const String cardNewPosition = 'newPos';
 
   /// 卡片的「前身」：更改笔记类型时新卡继承旧卡的复习历史与标志（值恒为 true）。
   /// 每个前身一个键（集合语义）：两台设备各自加同一个前身是同值，不冲突。
@@ -104,6 +115,10 @@ abstract final class SrsFieldKeys {
   /// 牌组列表里是否收起子牌组（对应 Anki deck 的 `collapsed` / Deck.Common.study_collapsed）。
   static const String deckCollapsed = 'collapsed';
 
+  /// 牌组在同级里的手动排序位（num，小的在前；缺省 = 排在有位置的之后、按名字排）。
+  /// Anki 没有这一项（它只按名字排），导出时不带。
+  static const String deckPosition = 'position';
+
   /// 复习时自动播放卡面音频（bool，缺省 = true；对应 Anki 预设的 autoplay /
   /// disable_autoplay）。随参数继承走 own 祖先。
   static const String deckAutoplay = 'autoplay';
@@ -111,6 +126,11 @@ abstract final class SrsFieldKeys {
   /// 答案面重播时先播问题音频（bool，缺省 = true；对应 Anki 的 replayq /
   /// skip_question_when_replaying_answer 取反）。随参数继承走 own 祖先。
   static const String deckReplayQuestion = 'replayQuestion';
+
+  /// RWKV-Instant 排队设置（Map，三项一起写、一起合并，见 [SrsRwkvQueueSettings]）：
+  /// `minReviews` 每天最少复习数、`repeatReviews` / `repeatSeconds` 同日重复的间隔守卫。
+  /// 对应上游 kuma3 的 RWKV 牌组选项；缺省 = 上游默认。随参数继承走 own 祖先。
+  static const String deckRwkvQueue = 'rwkvQueue';
 
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
@@ -132,9 +152,15 @@ SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
       }
       return SrsFieldClass.content;
     case SrsEntityKind.card:
+      // 新卡位置是一整批机械重排的产物：两台设备各自重排同一牌组是常态，每张卡都进
+      // 「同步冲突记录」只会刷屏，所以同折叠状态一样按界面状态处理（最后修改生效）。
+      if (fieldKey == SrsFieldKeys.cardNewPosition) {
+        return SrsFieldClass.viewState;
+      }
       return SrsFieldClass.flag;
     case SrsEntityKind.deck:
-      if (fieldKey == SrsFieldKeys.deckCollapsed) {
+      if (fieldKey == SrsFieldKeys.deckCollapsed ||
+          fieldKey == SrsFieldKeys.deckPosition) {
         return SrsFieldClass.viewState;
       }
       return SrsFieldClass.setting;

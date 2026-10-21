@@ -16,6 +16,8 @@ import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/unified_ffmpeg.dart';
+
 /// BUG-2692：Emby / Jellyfin 能播放、制不了卡（截图 / 动图 / 句子音频三条抽取全报
 /// `ffmpeg exit 1; executable=ffmpeg-kit; ... stream?static=true&...: I/O error`）。
 ///
@@ -115,7 +117,7 @@ void main() {
     });
   });
 
-  // 端到端：真捆绑 ffmpeg-min + 真本机中继 + 自签 https 的 Emby 形状原点
+  // 端到端：真随包统一 FFmpeg + 真本机中继 + 自签 https 的 Emby 形状原点
   // （`/Videos/{id}/stream?static=true&…&api_key=`，mp4 整文件 + Range）。
   // ffmpeg 拿到的是中继的明文形式、只经 `-http_proxy` 取字节，TLS 全由中继做——
   // 与播放器同一条路径。
@@ -250,7 +252,7 @@ void main() {
         reason: '查询串（api_key / PlaySessionId）经中继原样送达',
       );
     },
-    skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
+    skip: bundled == null ? '只在带随包统一 FFmpeg 的平台跑（Windows / macOS）' : false,
     timeout: const Timeout(Duration(seconds: 90)),
   );
 }
@@ -258,12 +260,5 @@ void main() {
 /// [A] 是否是 [B] 的子类型（不用实例，生产 client 的构造要一堆依赖）。
 bool _implements<A, B>() => <A>[] is List<B>;
 
-String? _bundledFfmpeg() {
-  final String? rel = Platform.isWindows
-      ? p.join('..', 'third_party', 'ffmpeg-min', 'windows', 'ffmpeg.exe')
-      : Platform.isMacOS
-      ? p.join('..', 'third_party', 'ffmpeg-min', 'macos', 'ffmpeg')
-      : null;
-  if (rel == null) return null;
-  return File(rel).existsSync() ? File(rel).absolute.path : null;
-}
+String? _bundledFfmpeg() =>
+    resolveBundledUnifiedFfmpegForTests()?.ffmpeg;

@@ -117,6 +117,13 @@ void main() {
       expect(meta.coverFor('99'), 'https://img/box-l.jpg');
     });
 
+    test('describes：只认原文里真有的那一集 / 作品（页面伪造回执的判据）', () {
+      final NetflixTitleMetadata meta = parseNetflixMetadata(_showJson())!;
+      expect(meta.describes('80077210'), isTrue);
+      expect(meta.describes(meta.id), isTrue);
+      expect(meta.describes('99999999'), isFalse);
+    });
+
     test('电影：没有剧集，标记在作品上', () {
       final NetflixTitleMetadata meta = parseNetflixMetadata(
         jsonEncode(<String, Object?>{

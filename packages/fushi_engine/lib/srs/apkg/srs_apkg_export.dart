@@ -20,6 +20,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show srsFushiExtEntry;
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
+import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 
@@ -62,12 +63,14 @@ CREATE INDEX ix_notes_csum ON notes (csum);
 /// 导出 [deckId] 子树（null = 全部）里的笔记为 .apkg 字节。
 ///
 /// 一条笔记只要有一张卡在范围内就整条导出（含它在范围外的卡，Anki 的笔记不能拆）。
+/// [options] 决定带不带学习进度 / 牌组预设、附不附带 fushi-ext（见 [SrsAnkiExportOptions]）。
 Future<Uint8List> exportAnkiPackage({
   required SrsDbStore store,
   String? deckId,
   SrsMediaLoad? loadMedia,
+  SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
-  final _Exporter ex = _Exporter(store);
+  final _Exporter ex = _Exporter(store, options);
   return ex.run(deckId: deckId, loadMedia: loadMedia);
 }
 
@@ -77,9 +80,15 @@ Future<void> exportAnkiPackageFile({
   required File file,
   String? deckId,
   SrsMediaLoad? loadMedia,
+  SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
   await file.writeAsBytes(
-    await exportAnkiPackage(store: store, deckId: deckId, loadMedia: loadMedia),
+    await exportAnkiPackage(
+      store: store,
+      deckId: deckId,
+      loadMedia: loadMedia,
+      options: options,
+    ),
     flush: true,
   );
 }
@@ -92,9 +101,10 @@ class _ExportCard {
 }
 
 class _Exporter {
-  _Exporter(this.store);
+  _Exporter(this.store, this.options);
 
   final SrsDbStore store;
+  final SrsAnkiExportOptions options;
 
   int _ankiDeckId(String id) =>
       id == store.defaultDeckId ? 1 : SrsIds.ankiNumericId(id);
@@ -118,16 +128,29 @@ class _Exporter {
       for (final SrsCardCacheRow c in all)
         if (!c.hidden && (scope == null || scope.contains(c.deckId))) c.noteId,
     };
-    final List<SrsNoteView> notes = <SrsNoteView>[];
-    for (final String id in noteIds) {
-      final SrsNoteView? n = await store.note(id);
-      if (n != null && n.deletedAt == null) notes.add(n);
-    }
+    // 笔记、卡片历史各按块一次预读；卡按笔记先分好组（以前每条笔记各查三次、每张卡各查四五次，
+    // 每条笔记还把全部卡片行过滤一遍——平方级，BUG-3543）。
+    final List<SrsNoteView> notes = <SrsNoteView>[
+      for (final SrsNoteView? n in (await store.notes(noteIds)).values)
+        if (n != null && n.deletedAt == null) n,
+    ];
     notes.sort((SrsNoteView a, SrsNoteView b) {
       final int c = a.createdAt.compareTo(b.createdAt);
       return c != 0 ? c : a.id.compareTo(b.id);
     });
 
+    final Map<String, List<SrsCardCacheRow>> visibleCardsOf =
+        <String, List<SrsCardCacheRow>>{};
+    for (final SrsCardCacheRow c in all) {
+      if (!c.hidden) (visibleCardsOf[c.noteId] ??= <SrsCardCacheRow>[]).add(c);
+    }
+    final Map<String, SrsCardHistory> histories = await store
+        .histories(<String>[
+          for (final SrsNoteView n in notes)
+            for (final SrsCardCacheRow c
+                in visibleCardsOf[n.id] ?? const <SrsCardCacheRow>[])
+              c.id,
+        ]);
     final Map<String, SrsNoteTypeView> types = <String, SrsNoteTypeView>{};
     final Map<String, List<_ExportCard>> cardsOf =
         <String, List<_ExportCard>>{};
@@ -139,10 +162,9 @@ class _Exporter {
       if (t == null) continue;
       types[n.noteTypeId] = t;
       final List<_ExportCard> cs = <_ExportCard>[];
-      for (final SrsCardCacheRow c in all.where(
-        (SrsCardCacheRow c) => c.noteId == n.id && !c.hidden,
-      )) {
-        final SrsCardHistory h = await store.history(c.id);
+      for (final SrsCardCacheRow c
+          in visibleCardsOf[n.id] ?? const <SrsCardCacheRow>[]) {
+        final SrsCardHistory h = histories[c.id]!;
         cs.add(_ExportCard(c, h));
         String? d = tree[c.deckId] == null ? store.defaultDeckId : c.deckId;
         while (d != null) {
@@ -150,7 +172,9 @@ class _Exporter {
           d = tree.parentOf(d);
         }
         final int? due = h.state.dueDay;
-        if (h.state.queue == SrsQueue.review && due != null) {
+        if (options.withScheduling &&
+            h.state.queue == SrsQueue.review &&
+            due != null) {
           minDueDay = min(minDueDay, due);
         }
       }
@@ -230,12 +254,13 @@ class _Exporter {
             final String deck = tree[c.deckId] == null
                 ? store.defaultDeckId
                 : c.deckId;
-            final List<Object?> sched = _cardSchedule(
-              s,
-              crtDay: crtDay,
-              newPos: newPos,
-            );
-            if (s.queue == SrsQueue.newCard) newPos++;
+            // 不带学习进度：一律作为新卡（按出卡顺序排位）、去掉暂停，同 Anki「不含学习
+            // 进度」导出。
+            final bool asNew = !options.withScheduling;
+            final List<Object?> sched = asNew
+                ? <Object?>[0, 0, newPos, 0]
+                : _cardSchedule(s, crtDay: crtDay, newPos: newPos);
+            if (asNew || s.queue == SrsQueue.newCard) newPos++;
             insCard.execute(<Object?>[
               cid,
               nid,
@@ -244,18 +269,19 @@ class _Exporter {
               nowSecs,
               -1,
               sched[0], // type
-              c.suspended ? -1 : sched[1], // queue
+              c.suspended && !asNew ? -1 : sched[1], // queue
               sched[2], // due
-              s.scheduledDays,
+              asNew ? 0 : s.scheduledDays,
               sched[3], // factor
-              s.reps,
-              s.lapses,
+              asNew ? 0 : s.reps,
+              asNew ? 0 : s.lapses,
               0,
               0,
               0,
               c.flag,
               '',
             ]);
+            if (asNew) continue;
             for (final SrsReviewLog l in ec.history.all) {
               extLogs.add(l.toJson());
               // 「更改笔记类型」继承来的前身卡日志：记下它在包里归哪张卡，回导时跟到这张卡上。
@@ -349,7 +375,7 @@ class _Exporter {
       ext['notes'] = extNotes;
       ext['decks'] = <Map<String, Object?>>[
         for (final String d in usedDecks)
-          if (tree[d] != null)
+          if (options.withDeckConfigs && tree[d] != null)
             <String, Object?>{
               'name': tree.fullName(d),
               'values': <String, Object?>{
@@ -383,8 +409,11 @@ class _Exporter {
     }
     final List<int> media = utf8.encode(jsonEncode(mediaJson));
     archive.addFile(nativeDeflatedArchiveFile('media', media));
-    final List<int> extBytes = utf8.encode(jsonEncode(ext));
-    archive.addFile(nativeDeflatedArchiveFile(srsFushiExtEntry, extBytes));
+    // 兼容 Anki：只写 Anki 认识的条目，不附带 fushi-ext。
+    if (!options.ankiCompatible) {
+      final List<int> extBytes = utf8.encode(jsonEncode(ext));
+      archive.addFile(nativeDeflatedArchiveFile(srsFushiExtEntry, extBytes));
+    }
     // 条目已用原生 zlib 压好（nativeDeflatedArchiveFile），ZipEncoder 原样透传，
     // 不再跑纯 Dart Deflate。
     return Uint8List.fromList(ZipEncoder().encode(archive)!);
@@ -491,7 +520,7 @@ class _Exporter {
             'rtl': false,
             'font': 'Arial',
             'size': 20,
-            'description': '',
+            'description': t.fields[i].description,
             'plainText': false,
             'collapsed': false,
             'excludeFromSearch': false,
@@ -525,7 +554,8 @@ class _Exporter {
           ? 'Default'
           : (d == null ? 'Default' : tree.fullName(id));
       final String ownerId = d == null ? id : tree.paramsOwner(id).id;
-      final int confId = _ankiDeckId(ownerId);
+      // 不带牌组预设：所有牌组共用 Anki 的默认预设（id 1，全部取默认值）。
+      final int confId = options.withDeckConfigs ? _ankiDeckId(ownerId) : 1;
       decks['${_ankiDeckId(id)}'] = <String, Object?>{
         'id': _ankiDeckId(id),
         'mod': nowSecs,
@@ -544,13 +574,15 @@ class _Exporter {
         'extendRev': 0,
       };
       if (!dconf.containsKey('$confId')) {
-        dconf['$confId'] = _dconfJson(
-          confId,
-          tree[ownerId],
-          d,
-          tree[ownerId]?.name ?? 'Default',
-          nowSecs,
-        );
+        dconf['$confId'] = options.withDeckConfigs
+            ? _dconfJson(
+                confId,
+                tree[ownerId],
+                d,
+                tree[ownerId]?.name ?? 'Default',
+                nowSecs,
+              )
+            : _dconfJson(confId, null, null, 'Default', nowSecs);
       }
     }
     return (decks, dconf);
@@ -611,6 +643,8 @@ class _Exporter {
       'fsrsParams6': fsrs6.length == SrsAlgorithm.fsrs6.paramCount
           ? fsrs6
           : <double>[],
+      // Anki RWKV fork 认这个键（导入时读的就是它）；Anki 主线忽略。
+      if (o?.localAlgorithm == SrsAlgorithm.rwkv) 'rwkvReviewEnabled': true,
       'desiredRetention': o?.desiredRetention ?? 0.9,
       'ignoreRevlogsBeforeDate': '',
       'easyDaysPercentages': <double>[1, 1, 1, 1, 1, 1, 1],

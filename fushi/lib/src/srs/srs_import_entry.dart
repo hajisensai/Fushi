@@ -1,11 +1,13 @@
 /// 复习牌组列表的「导入」/「导出（.apkg）」/「从制卡历史导入」三个入口。
 ///
 /// - 导入：选 .apkg / .colpkg → 选项（对齐 Anki 导入页，见
-///   srs_import_options_dialog.dart；记住上次的选择）→ 进度 →
+///   srs_import_options_dialog.dart；记住上次的选择）→ 排进后台导入队列
+///   （srs_import_task.dart；牌组列表顶上的任务条显示进度）→ 任务条「查看报告」看
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
 ///   [SrsMediaStore] 按内容哈希落盘。新格式包而排程内核不可用时报「需要排程内核」。
-/// - 导出：`exportAnkiPackage` → 桌面「另存为」/ 移动端系统分享；范围里有 FSRS-7
-///   牌组时先提示「Anki 里会改用 FSRS-6」。
+/// - 导出：选项（学习进度 / 牌组预设 / 兼容 Anki，见 srs_export_options_dialog.dart；
+///   记住上次的选择；范围里有 FSRS-7 牌组时对话框内提示「Anki 里会改用 FSRS-6」）→
+///   `exportAnkiPackage` → 桌面「另存为」/ 移动端系统分享。
 /// - 从制卡历史导入：`mined_sentences` → 当前 profile 的默认牌组（见
 ///   srs_mined_history_import.dart），确认框写明导入到哪个 profile。
 ///
@@ -20,6 +22,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
+import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -31,10 +34,14 @@ import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/srs/srs_export_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
+import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sync_scheduler.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
@@ -74,6 +81,10 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     updated: r.notesUpdated,
     skipped: r.notesSkipped,
   ),
+  if (r.notesRestored > 0) t.srs_import_report_restored(n: r.notesRestored),
+  if (r.lapisNotesMigrated > 0)
+    t.srs_import_report_lapis_migrated(n: r.lapisNotesMigrated),
+  if (r.lapisMigrationFailed) t.srs_import_report_lapis_failed,
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
   if (r.cardsResetToNew > 0)
     t.srs_import_report_reset_new(n: r.cardsResetToNew),
@@ -97,8 +108,19 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
       preset: s.preset,
       removed: _formatSteps(s.removed),
     ),
-  for (final String preset in r.rwkvPresetsFellBack)
+  for (final MapEntry<String, SrsAlgorithm> e in r.fsrsPresets.entries)
+    t.srs_import_report_fsrs(
+      preset: e.key,
+      alg: e.value == SrsAlgorithm.fsrs6 ? 'FSRS-6' : 'FSRS-7',
+    ),
+  for (final String preset in r.defaultAlgorithmPresets)
+    t.srs_import_report_default_algorithm(preset: preset),
+  for (final String preset in r.rwkvPresets)
     t.srs_import_report_rwkv(preset: preset),
+  for (final String preset in r.rwkvPresetsOnFsrs)
+    t.srs_import_report_rwkv_on_fsrs(preset: preset),
+  for (final String preset in r.defaultFsrsPresets)
+    t.srs_import_report_default_fsrs(preset: preset),
   for (final String preset in r.invalidParams.keys)
     t.srs_import_report_invalid_params(preset: preset),
   if (r.conflictNotes.isNotEmpty)
@@ -128,7 +150,11 @@ Future<bool> srsExportScopeUsesFsrs7(SrsDbStore store, {String? deckId}) async {
       ? tree.decks.map((SrsDeckView d) => d.id)
       : tree.subtree(deckId);
   for (final String id in ids) {
-    if (tree.paramsOwner(id).localAlgorithm == SrsAlgorithm.fsrs7) return true;
+    // RWKV 牌组的参数组也是 FSRS-7 的（影子记忆状态），Anki 里同样改用 FSRS-6。
+    if (tree.paramsOwner(id).localAlgorithm.memoryAlgorithm ==
+        SrsAlgorithm.fsrs7) {
+      return true;
+    }
   }
   return false;
 }
@@ -138,11 +164,13 @@ Future<SrsAnkiExport> buildSrsAnkiExport({
   required SrsDbStore store,
   required SrsMediaStore? media,
   String? deckId,
+  SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
   final Uint8List bytes = await exportAnkiPackage(
     store: store,
     deckId: deckId,
     loadMedia: media == null ? null : (String name) => media.load(name),
+    options: options,
   );
   return SrsAnkiExport(
     bytes: bytes,
@@ -186,92 +214,124 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
   await writeSrsImportOptions(prefs, options);
   if (!context.mounted) return;
 
-  final ValueNotifier<double> progress = ValueNotifier<double>(0);
-  final NavigatorState navigator = Navigator.of(context, rootNavigator: true);
-  unawaited(
-    showAppDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) => PopScope(
-        canPop: false,
-        child: FushiAlertDialog(
-          title: Text(t.srs_import_running),
-          content: ValueListenableBuilder<double>(
-            valueListenable: progress,
-            builder: (BuildContext context, double value, Widget? _) =>
-                FushiLinearProgressIndicator(value: value <= 0 ? null : value),
-          ),
-        ),
+  // 后台导入（BUG-3549）：排进 app 级队列立即返回，不再用模态进度框挡住页面；进度在牌组
+  // 列表顶上的任务条里，完成 / 失败由控制器弹全局提示，牌组列表随之重读。
+  final SrsImportTask? task = await startSrsBackgroundImport(
+    ref,
+    file: File(path),
+    options: options,
+  );
+  if (task == null) {
+    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    return;
+  }
+  FushiToast.show(msg: t.srs_import_background_started);
+}
+
+/// 导入失败原因 → 给人看的一句话。
+String srsImportFailureMessage(Object failure) =>
+    failure is SrsImportException &&
+        failure.code == SrsImportException.needsKernel
+    ? t.srs_import_needs_kernel
+    : t.srs_import_failed(
+        error: failure is SrsImportException ? failure.message : '$failure',
+      );
+
+/// 用户不要 RWKV：把导入时由 FSRS 预设改用 RWKV 的牌组（[SrsImportReport.fsrsDecks]）切回各自
+/// 原来的 FSRS 算法，返回切了几个。导入时参数已经按原算法存下，切回即用。
+///
+/// 只改仍然自己管参数、仍是 RWKV 的牌组：导入后被删、改成继承、或用户已经自己换过算法的跳过。
+Future<int> srsKeepImportedDecksOnFsrs(
+  SrsDbStore store,
+  Map<String, SrsAlgorithm> decks,
+) async {
+  final SrsDeckTree tree = await store.deckTree();
+  int switched = 0;
+  for (final MapEntry<String, SrsAlgorithm> e in decks.entries) {
+    final SrsDeckView? deck = tree[e.key];
+    if (deck == null || tree.paramsOwner(e.key).id != e.key) continue;
+    if (!deck.localAlgorithm.usesRwkv) continue;
+    await store.editFields(SrsEntityKind.deck, e.key, <String, Object?>{
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': e.value.wire,
+        'auto': false,
+      },
+    });
+    switched++;
+  }
+  return switched;
+}
+
+/// 导入报告对话框（任务条「查看报告」）。
+///
+/// 有由 FSRS 预设改用 RWKV 的牌组且给了 [onKeepFsrs] 时多一个「继续用 FSRS」按钮。
+Future<void> showSrsImportReportDialog(
+  BuildContext context,
+  SrsImportReport report, {
+  VoidCallback? onKeepFsrs,
+}) => showAppDialog<void>(
+  context: context,
+  builder: (BuildContext dialogContext) => FushiAlertDialog(
+    icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
+    title: Text(t.srs_import_report_title),
+    content: SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final String line in srsImportReportLines(report))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(line),
+            ),
+        ],
       ),
     ),
-  );
-  SrsImportReport? report;
-  Object? failure;
-  try {
-    report = await runSrsAnkiImport(
-      store: store,
-      media: media,
-      file: File(path),
-      options: options,
-      onProgress: (double p) => progress.value = p.clamp(0.0, 1.0),
-    );
-  } catch (e, stack) {
-    ErrorLogService.instance.log('openSrsImport', e, stack);
-    failure = e;
-  } finally {
-    if (navigator.mounted) navigator.pop();
-    progress.dispose();
+    actions: <Widget>[
+      if (onKeepFsrs != null && report.fsrsDecks.isNotEmpty)
+        FushiDialogAction(
+          label: t.srs_import_report_keep_fsrs,
+          kind: FushiDialogActionKind.secondary,
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            onKeepFsrs();
+          },
+        ),
+      FushiDialogAction(
+        label: t.dialog_ok,
+        kind: FushiDialogActionKind.primary,
+        autofocus: true,
+        onPressed: () => Navigator.of(dialogContext).pop(),
+      ),
+    ],
+  ),
+);
+
+/// 导入报告「继续用 FSRS」：切完提示切了几个，并让牌组列表重读。
+Future<void> srsKeepImportedDecksOnFsrsFromReport(
+  WidgetRef ref,
+  SrsImportReport report,
+) async {
+  final SrsDbStore? store = await readSrsStore(ref);
+  if (store == null) {
+    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    return;
   }
+  final int n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
   bumpSrsRevision(ref);
-  if (!context.mounted) return;
-  if (failure != null) {
-    final String message =
-        failure is SrsImportException &&
-            failure.code == SrsImportException.needsKernel
-        ? t.srs_import_needs_kernel
-        : t.srs_import_failed(
-            error: failure is SrsImportException ? failure.message : '$failure',
-          );
-    await showFushiConfirmDialog(
+  FushiToast.show(msg: t.srs_import_kept_fsrs(n: n));
+}
+
+/// 导入失败对话框（任务条上点失败的任务）。
+Future<void> showSrsImportFailureDialog(BuildContext context, Object failure) =>
+    showFushiConfirmDialog(
       context: context,
       title: t.srs_import_pick_title,
-      message: message,
+      message: srsImportFailureMessage(failure),
       icon: FushiIcons.error,
       confirmLabel: t.dialog_ok,
       cancelLabel: t.cancel,
     );
-    return;
-  }
-  final SrsImportReport done = report!;
-  await showAppDialog<void>(
-    context: context,
-    builder: (BuildContext dialogContext) => FushiAlertDialog(
-      icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
-      title: Text(t.srs_import_report_title),
-      content: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (final String line in srsImportReportLines(done))
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Text(line),
-              ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        FushiDialogAction(
-          label: t.dialog_ok,
-          kind: FushiDialogActionKind.primary,
-          autofocus: true,
-          onPressed: () => Navigator.of(dialogContext).pop(),
-        ),
-      ],
-    ),
-  );
-}
 
 /// 牌组列表 ⋯「导出（.apkg）」：导出全部牌组（Anki 与 Fushi 自己的「导入」都能吃）。
 Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
@@ -281,22 +341,21 @@ Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
     return;
   }
   final SrsMediaStore? media = await _readMedia(ref);
-  if (await srsExportScopeUsesFsrs7(store)) {
-    if (!context.mounted) return;
-    final bool go = await showFushiConfirmDialog(
-      context: context,
-      title: t.srs_export_apkg,
-      message: t.srs_export_fsrs7_note,
-      icon: FushiIcons.info,
-      confirmLabel: t.srs_export_apkg,
-      cancelLabel: t.cancel,
-    );
-    if (!go) return;
-  }
+  final bool usesFsrs7 = await srsExportScopeUsesFsrs7(store);
+  if (!context.mounted) return;
+  final PrefStore prefs = ref.read(appProvider).prefsRepo;
+  final SrsAnkiExportOptions? options = await showSrsExportOptionsDialog(
+    context: context,
+    initial: readSrsExportOptions(prefs),
+    usesFsrs7: usesFsrs7,
+  );
+  if (options == null || !context.mounted) return;
+  await writeSrsExportOptions(prefs, options);
   try {
     final SrsAnkiExport export = await buildSrsAnkiExport(
       store: store,
       media: media,
+      options: options,
     );
     if (!context.mounted) return;
     final bool saved = await _saveOrShareBytes(
@@ -391,15 +450,53 @@ Future<void> openSrsMinedHistoryImport(
   }
 }
 
-/// 牌组列表 ⋯「立即同步」：没配置同步后端时提示一句。
-Future<void> openSrsSyncNow(Future<int> Function()? syncNow) async {
+/// 牌组列表 ⋯「立即同步」的结果提示：没配置、失败（带原因）、成功三种分开说。
+/// 配置了但这轮失败不能说成「没配置」——用户会去找一个其实已经配好的设置。
+({String msg, ToastSeverity severity}) srsSyncNowToast(
+  SrsSyncNowResult result,
+) {
+  if (result.errors.isNotEmpty) {
+    return (
+      msg: t.srs_sync_failed(reason: srsSyncErrorReason(result.errors.first)),
+      severity: ToastSeverity.error,
+    );
+  }
+  if (result.unconfigured) {
+    return (msg: t.srs_sync_no_backend, severity: ToastSeverity.info);
+  }
+  return (msg: t.srs_sync_done, severity: ToastSeverity.success);
+}
+
+/// 一个目录没同步成的原因（给用户看的一句话）。
+String srsSyncErrorReason(Object error) => switch (error) {
+  SrsSyncReportError(message: kSrsSyncServerTimeUnavailable) =>
+    t.srs_sync_backend_unsupported,
+  SrsSyncReportError(message: kSrsSyncDirectoryIdentityUnavailable) =>
+    t.srs_sync_directory_unidentified,
+  SrsSyncReportError(message: kSrsSyncStoreUnavailable) =>
+    t.srs_sync_store_unavailable,
+  _ => friendlySyncErrorDetail(error),
+};
+
+/// 牌组列表 ⋯「立即同步」。
+///
+/// [onNoChannel]：没配置任何同步通道时调用（页面借它直达同步设置）；不给就只弹提示。
+/// 配置了但失败时照常报失败原因，不跳设置。
+Future<void> openSrsSyncNow(
+  Future<SrsSyncNowResult> Function()? syncNow, {
+  Future<void> Function()? onNoChannel,
+}) async {
   if (syncNow == null) return;
   try {
-    final int channels = await syncNow();
-    FushiToast.show(
-      msg: channels == 0 ? t.srs_sync_no_backend : t.srs_sync_done,
-      severity: channels == 0 ? ToastSeverity.info : ToastSeverity.success,
+    final SrsSyncNowResult result = await syncNow();
+    if (result.unconfigured && onNoChannel != null) {
+      await onNoChannel();
+      return;
+    }
+    final ({String msg, ToastSeverity severity}) toast = srsSyncNowToast(
+      result,
     );
+    FushiToast.show(msg: toast.msg, severity: toast.severity);
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsSyncNow', e, stack);
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);

@@ -243,6 +243,98 @@ void main() {
       ]);
     });
 
+    // 用户实报：17 卷合集里第 2 卷排在最后，首页续读读完第 2 卷就判整套读完。
+    // 书名原样：1、2 卷是全角空格 + 全角数字，3 卷起半角。
+    const String dm = '絶対に働きたくないダンジョンマスターが惰眠をむさぼるまで';
+    List<String> dmTitles() => <String>[
+      '$dm　１',
+      '$dm　２',
+      for (int n = 3; n <= 17; n++) '$dm $n',
+    ];
+
+    test('手动按错序建的系列合集在下次归组时按卷号自愈，且幂等', () async {
+      final List<String> titles = dmTitles();
+      final Map<String, String> uidByTitle = <String, String>{
+        for (final String t in titles) t: await addBook(t, format: 'epub'),
+      };
+      final int id = await db.createMediaCollection('ダンマス');
+      // 手动「建系列」按选择顺序尾插：3..17 在前，1、2 在最后。
+      for (final String t in <String>[...titles.skip(2), ...titles.take(2)]) {
+        await db.addToCollection(id, MediaKind.epub, uidByTitle[t]!);
+      }
+
+      final summary = await grouper.groupAll();
+      expect(summary.updatedCollectionIds, <int>[id]);
+      expect(await members(id), titles);
+
+      final again = await grouper.groupAll();
+      expect(again.updatedCollectionIds, isEmpty, reason: '顺序已对不再写库');
+    });
+
+    test('用户手动排过的系列合集不自愈', () async {
+      final List<String> titles = dmTitles().take(3).toList();
+      final int id = await db.createMediaCollection('ダンマス');
+      for (final String t in titles.reversed) {
+        await db.addToCollection(
+          id,
+          MediaKind.epub,
+          await addBook(t, format: 'epub'),
+        );
+      }
+      await db.reorderCollectionItems(id, <CollectionMemberKey>[]);
+
+      expect((await grouper.groupAll()).updatedCollectionIds, isEmpty);
+      expect(await members(id), titles.reversed.toList());
+    });
+
+    test('混了判不出卷号的成员（外传）不自愈，留给 AI 排序', () async {
+      final int id = await db.createMediaCollection('志乃と恋');
+      for (final String t in <String>['志乃と恋 2', '志乃と恋 外伝', '志乃と恋 1']) {
+        await db.addToCollection(id, MediaKind.epub, await addBook(t));
+      }
+
+      expect((await grouper.groupAll()).updatedCollectionIds, isEmpty);
+      expect(await members(id), <String>['志乃と恋 2', '志乃と恋 外伝', '志乃と恋 1']);
+    });
+
+    test('规则卷序是全序：同卷配了两条 SRT 时结果也与输入顺序无关', () async {
+      final String v1 = await addBook('志乃と恋 1', format: 'epub');
+      final String v2 = await addBook('志乃と恋 2', format: 'epub');
+      final String a = await addSrt('志乃と恋 2 a', bookKey: '志乃と恋 2');
+      final String b = await addSrt('志乃と恋 2 b', bookKey: '志乃と恋 2');
+      CollectionMemberKey epub(String uid) =>
+          (mediaType: MediaKind.epub.dbValue, entryKey: uid);
+      CollectionMemberKey srt(String uid) =>
+          (mediaType: MediaKind.srt.dbValue, entryKey: uid);
+      final BookSeriesOrder order = await BookSeriesOrder.load(db);
+
+      final List<CollectionMemberKey> expected = <CollectionMemberKey>[
+        epub(v1),
+        epub(v2),
+        srt(a),
+        srt(b),
+      ];
+      expect(
+        order.orderOf(<CollectionMemberKey>[
+          srt(b),
+          srt(a),
+          epub(v2),
+          epub(v1),
+        ]),
+        expected,
+      );
+      expect(
+        order.orderOf(<CollectionMemberKey>[
+          srt(a),
+          epub(v1),
+          srt(b),
+          epub(v2),
+        ]),
+        expected,
+        reason: '同卷同种类的并列按成员键定序，不靠 sort 稳定性',
+      );
+    });
+
     test('用户移出的卷不加回；删掉的合集不复活', () async {
       final String v1 = await addBook('志乃と恋 1');
       await addBook('志乃と恋 2');

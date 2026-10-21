@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -13,6 +14,7 @@ class SettingsSecretField extends StatefulWidget {
     required this.onChanged,
     this.obscureText = false,
     this.revealToggle = false,
+    this.copyable = false,
     this.keyboardType = TextInputType.text,
     this.hintText,
     this.subtitle,
@@ -30,6 +32,9 @@ class SettingsSecretField extends StatefulWidget {
   /// true 时在行尾提供眼睛按钮切换 [obscureText] 的显隐（SettingsTextItem 的
   /// secret 走此路径）；false 保持既有调用点行为（固定遮蔽、无切换）。
   final bool revealToggle;
+
+  /// true 时行尾提供复制按钮（复制输入框当前内容，遮蔽态也复制明文）。
+  final bool copyable;
   final TextInputType keyboardType;
 
   /// 可选占位提示（传给内部 TextField 的 decoration.hintText）。null = 不显示提示。
@@ -59,6 +64,23 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
     super.initState();
     _controller = TextEditingController(text: widget.initialValue);
     _obscured = widget.obscureText;
+  }
+
+  /// 值被别处改写（如「生成密钥」按钮播种了 key）时回填输入框。此前输入框只在
+  /// initState 读一次初值，播种后仍显示旧的空值。防抖未落（用户还有没提交的输入）
+  /// 时不覆盖；已落盘的输入写穿后与新初值相同，自然不动。
+  @override
+  void didUpdateWidget(SettingsSecretField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialValue == oldWidget.initialValue) return;
+    if (widget.initialValue == _controller.text) return;
+    if (_debounce?.isActive ?? false) return;
+    _controller.text = widget.initialValue;
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: _controller.text));
+    FushiToast.show(msg: t.copied_to_clipboard);
   }
 
   @override
@@ -103,10 +125,15 @@ class SettingsSecretFieldState extends State<SettingsSecretField> {
         FushiIconButton(
           tooltip: _obscured ? t.settings_secret_show : t.settings_secret_hide,
           size: 18,
-          icon: _obscured
-              ? FushiIcons.visibility
-              : FushiIcons.visibilityOff,
+          icon: _obscured ? FushiIcons.visibility : FushiIcons.visibilityOff,
           onTap: () => setState(() => _obscured = !_obscured),
+        ),
+      if (widget.copyable)
+        FushiIconButton(
+          tooltip: t.copy,
+          size: 18,
+          icon: FushiIcons.copy,
+          onTap: () => unawaited(_copy()),
         ),
       if (widget.resetValue != null && widget.onReset != null)
         FushiIconButton(

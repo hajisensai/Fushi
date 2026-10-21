@@ -20,16 +20,24 @@ import 'package:fushi/utils.dart';
 
 /// 打开重排配置弹窗。[loadedFrequencyDictionaries] = 引擎当前装载的词频词典名
 /// （隐藏的不在里面）。
+///
+/// [decks] / [initialDeckId]：可选的牌组清单与初选项。不给时用 Anki 拉到的牌组
+/// （`availableDecks` / `selectedDeckId`）；挖词目标 = Fushi 复习时由调用方传复习的
+/// 牌组（重排只按牌组**名字**取卡，id 只是下拉项的键）。
 Future<void> showAnkiDeckRepositionDialog(
   BuildContext context, {
   required AnkiViewModel viewModel,
   required List<String> loadedFrequencyDictionaries,
+  List<AnkiDeck>? decks,
+  int? initialDeckId,
 }) {
   return showAppDialog<void>(
     context: context,
     builder: (BuildContext ctx) => _RepositionDialog(
       viewModel: viewModel,
       loadedDictionaries: loadedFrequencyDictionaries,
+      decks: decks,
+      initialDeckId: initialDeckId,
     ),
   );
 }
@@ -38,10 +46,14 @@ class _RepositionDialog extends StatefulWidget {
   const _RepositionDialog({
     required this.viewModel,
     required this.loadedDictionaries,
+    this.decks,
+    this.initialDeckId,
   });
 
   final AnkiViewModel viewModel;
   final List<String> loadedDictionaries;
+  final List<AnkiDeck>? decks;
+  final int? initialDeckId;
 
   @override
   State<_RepositionDialog> createState() => _RepositionDialogState();
@@ -63,9 +75,11 @@ class _RepositionDialogState extends State<_RepositionDialog> {
   void initState() {
     super.initState();
     _settings = widget.viewModel.settings;
-    final List<AnkiDeck> decks = _settings.availableDecks;
-    _deckId = decks.any((AnkiDeck d) => d.id == _settings.selectedDeckId)
-        ? _settings.selectedDeckId
+    final List<AnkiDeck> decks = _decks;
+    final int? initial =
+        widget.decks == null ? _settings.selectedDeckId : widget.initialDeckId;
+    _deckId = decks.any((AnkiDeck d) => d.id == initial)
+        ? initial
         : (decks.isEmpty ? null : decks.first.id);
     _source = _settings.repositionSource;
     // 只保留还装着的词典；一本都不剩就回到「全部」。
@@ -77,7 +91,9 @@ class _RepositionDialogState extends State<_RepositionDialog> {
     unawaited(_refreshSnapshot());
   }
 
-  String? get _deckName => _settings.availableDecks
+  List<AnkiDeck> get _decks => widget.decks ?? _settings.availableDecks;
+
+  String? get _deckName => _decks
       .where((AnkiDeck d) => d.id == _deckId)
       .map((AnkiDeck d) => d.name)
       .firstOrNull;
@@ -113,7 +129,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
     final ThemeData theme = Theme.of(context);
     final TextStyle? hintStyle = theme.textTheme.bodySmall
         ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
-    final List<AnkiDeck> decks = _settings.availableDecks;
+    final List<AnkiDeck> decks = _decks;
     final bool dictsMode = _source == AnkiRepositionSource.dictionaries;
     final bool canRun = !_busy &&
         _deckName != null &&

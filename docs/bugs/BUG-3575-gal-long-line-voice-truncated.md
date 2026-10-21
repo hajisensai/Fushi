@@ -1,0 +1,12 @@
+## BUG-3575 · gal-long-line-voice-truncated
+- **报告**：2026-10-20（用户反馈，附 apkg：《素晴らしき日々》gal 制卡「三位一体説を三角形という図形を使ってその正当性を証明する試みだけど……」。原话：句子长的卡音频被截断、短句完整；卡上显示十几秒，音频几秒就结束）
+- **真实性**：✅ 真 bug。拆 apkg：句子音频是 `SentenceAudio`/`Picture` 共用的 WebM 同步片段，视频轨 20.24s、opus 音轨 5.04s；逐 250ms RMS 显示 0–0.75s 底噪（≈ -41dB，即 1s 预卷）、4.5–4.75s 仍是 -22dB 人声、5.04s 硬截断——话没说完。5.04s = loopback 暂定冻结 `loopbackFreezeDelay` 4000ms + `_loopbackPreRollMs` 1000ms（opus 帧对齐）。三处同族「一句语音不超过 N 秒」的写死上限：
+  - loopback：`fushi/lib/src/mining/gal_hook_session_controller.dart` `_scheduleLoopbackFreeze` 到 4s 冻结后**永久定格**（`_scheduleLoopbackSettle` 也只补到原 4s 到期点），窗口 = `[t0-1s, t0+4s]`；
+  - 引擎 PCM：`fushi/windows/runner/voice_hook_reader.cpp` `GrabUtterance` 前向窗口写死 `forward_ms = 6000`，Dart 收敛 `utteranceSettleMax` 也是 6s——流式提交的引擎在台词后 6s 才提交的段永远进不了缓存；
+  - 视频片段：`fushi/lib/src/mining/galgame_window_video.dart` 片段终点 = 下一句 / 制卡时刻，音频只占前几秒，停留越久静帧越长（「显示十几秒、音频几秒就没了」）。
+- **[x] ① 已修复** — 一句话的右界是**下一句到达**，上限改为 `kGalLineVoiceMaxMs` = 30s（native `kUtteranceMaxForwardMs` 同值）：
+  - loopback：4s 冻结降为暂定稿，随后「窗口续张」（`_scheduleLoopbackExtension`）；新台词到达时 `_closeEarlierLoopbackWindows` 以到达时刻为右界定稿上一句（取完切掉排队期间录进来的下一句开头）；制卡时续张按真实已等待时长收束、不干等；`trimLoopbackTrailingFloor` 按底噪基线裁语音结束后的 BGM/静音尾巴（判据不明确时不裁）。`_LoopbackFreeze` 自带窗口起点 / 到期点，修掉旧补全定时器被制卡收束时因起点已被清掉而按 elapsed=0 回取 1s、又重排满 4s 补全的隐患。
+  - 引擎 PCM：native 前向窗口改 `UtteranceForwardMs`（无下一句 30s、有下一句收到下一句）；Dart 收敛 6s 内无条件、之后仍在变长才继续（静默 2s 收手），制卡时再做一次带下一句上界的封口 grab；制卡等收敛的兜底超时跟随收敛上限。
+  - 视频片段：有音频时终点收到 `from + 音频时长 + 1s`（`galWindowVideoEndTick`）。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/galgame_line_voice_window_test.dart`（尾部切除 / 底噪裁剪五种形状 / 片段终点）、`fushi/test/mining/gal_audio_degrade_track_test.dart`（长句 loopback：下一句到达定稿为 10s 而非 5s；停留 12s 再制卡取 13s 且不干等）、`fushi/test/mining/gal_utterance_settle_test.dart`（越过收敛窗仍在变长继续收到整句、静默后收手；制卡封口 grab 拿回后半句）、`native/galgame_hook/tests/utterance_window_test.cpp` ⑦（前向窗口上限 / 下一句收口）。
+- **备注**：只有用户 apkg，无现场日志；未在原游戏上真机复测（loopback 路径在《素晴らしき日々》上的引擎 hook 状态未知）。动图封面 `kGalAnimatedMaxDuration`（8s，无音频）不在本次范围。

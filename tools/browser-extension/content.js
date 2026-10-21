@@ -2446,6 +2446,8 @@ function fushiShowConnectionFailure(resp) {
     message = fushiTr('conn_yomitan_conflict', { port: c.port || 19633 });
   } else if (c && c.state === 'unauthorized') {
     message = fushiTr('conn_unauthorized');
+  } else if (c && c.state === 'forbidden') {
+    message = fushiTr('conn_forbidden');
   } else if (c && c.state === 'wrong-service') {
     message = fushiTr('conn_wrong_service');
   } else if (c && c.state === 'no-response') {

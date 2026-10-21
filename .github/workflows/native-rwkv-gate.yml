@@ -8,13 +8,19 @@
 #   三种 CPU 内核各跑一遍：x86_64（AVX2+FMA / 标量）、aarch64 Linux（NEON + 批量查询，
 #   即 Android / iOS 走的路径）、macOS arm64（Accelerate cblas_sgemm）。夹具在 x86_64-windows
 #   生成，另两种内核的求和顺序不同，靠测试里的容差吸收（见 tests/common/mod.rs）。
-#   cross-check：其余随包目标（armv7 / x86_64 Android、iOS）只做 cargo check，确保按目标
-#   条件编译的内核都能编过。
+#   android：与 native-compute-gate.yml 同一形态——随包的 Android .so（build_android_so.sh，
+#            cargo-ndk 三个 ABI）是唯一没有别的 pull_request workflow 编的产物，这里真编一遍，
+#            核对 ELF 架构与 frwkv_* 符号（verify_abi.sh：src/ 声明 ∪ Dart 绑定 lookup）；
+#            iOS 目标只 cargo check（真正的 iOS 伞形库由 build-multiplatform.yml 的 ios job 编，
+#            路径门把 native/fushi_rwkv/** 路由给它）。
 #
 # ── 不负责什么 ────────────────────────────────────────────────────────────────────
-#   * 不构建 / 不上传各平台产物，不碰发布路径（随包是后续任务）；不跑 tools/oracle。
-#   * 权重（~11 MB）不入库：fetch_model.sh 按钉死 URL 下载并校验 SHA-256，actions/cache 按哈希缓存。
-#     权重缺失时测试直接失败（不会静默跳过）。
+#   * Windows / Linux / macOS / iOS 的随包产物由 build-multiplatform.yml 的四个平台 job 编和核对
+#     （fushi_rwkv 是 app 的硬依赖，见 fushi/test/build/fushi_rwkv_hard_dependency_guard_test.dart），
+#     这里不重复；不碰发布路径（全程只读，不上传产物）；不跑 tools/oracle。
+#   * 权重不入库：fetch_model.sh 按钉死 URL 下载大模型权重（~11 MB）与小模型发布包
+#     （sm40v2-package.zip，权重 + 黄金向量）并校验 SHA-256，actions/cache 的 key 带两者的哈希。
+#     缺失时测试直接失败（不会静默跳过）。
 #
 # ── 退出码纪律 ────────────────────────────────────────────────────────────────────
 # `shell: bash` + `set -euo pipefail`，无 `continue-on-error`；缓存未命中只会变慢。
@@ -26,6 +32,8 @@ on:
     branches: ['main', 'develop']
     paths:
       - 'native/fushi_rwkv/**'
+      # verify_abi.sh 的期望符号集也取自 Dart 绑定的 lookup 名：绑定新增符号要重新核对 .so。
+      - 'packages/fushi_rwkv/**'
       # 门自己改了也要跑一遍。
       - '.github/workflows/native-rwkv-gate.yml'
 
@@ -37,7 +45,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # 与 fetch_model.sh 钉的两个 SHA-256 一致：大模型权重、小模型（SM40）发布包。任一变化都换缓存。
   RWKV_MODEL_SHA256: 749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec
+  RWKV_SMALL_PACKAGE_SHA256: 9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2
 
 jobs:
   rust-tests:
@@ -70,7 +80,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: native/fushi_rwkv/model
-          key: fushi-rwkv-model-${{ env.RWKV_MODEL_SHA256 }}
+          key: fushi-rwkv-model-${{ env.RWKV_MODEL_SHA256 }}-${{ env.RWKV_SMALL_PACKAGE_SHA256 }}
       - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
         shell: bash
         run: |
@@ -83,28 +93,51 @@ jobs:
           set -euo pipefail
           cargo test --release --locked -- --nocapture
 
-  cross-check:
+  android:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Rust (fushi_rwkv, cross targets)
+      # 工具链钉法与 native-compute-gate.yml 一致（Rust 1.95.0、cargo-ndk 4.1.2）。
+      - name: Set up Rust (fushi_rwkv, Android + iOS targets)
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.95.0'
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,aarch64-apple-ios
-      - name: Cache Rust build (fushi_rwkv cross-check)
+      - name: Cache Rust build (fushi_rwkv Android)
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_rwkv -> target
-          key: fushi-rwkv-cross-check
-      - name: cargo check per target (no linking)
+          key: fushi-rwkv-android
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - name: Build fushi_rwkv Android .so (arm64-v8a, armeabi-v7a, x86_64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_rwkv/build_android_so.sh "$ANDROID_NDK_LATEST_HOME" arm64-v8a armeabi-v7a x86_64
+      - name: Verify .so architecture and exported C ABI surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          nm_bin="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          if [ ! -x "$nm_bin" ]; then nm_bin=nm; fi
+          for pair in arm64-v8a:AArch64 armeabi-v7a:ARM x86_64:X86-64; do
+            abi="${pair%%:*}"; want="${pair#*:}"
+            so="native/fushi_rwkv/prebuilt/android/$abi/libfushi_rwkv.so"
+            machine="$(readelf -h "$so" | sed -n 's/^[[:space:]]*Machine:[[:space:]]*//p')"
+            echo "$abi: ELF machine = $machine"
+            case "$machine" in
+              *"$want"*) : ;;
+              *) echo "::error title=wrong target arch::$abi 期望 $want，实际 $machine"; exit 1 ;;
+            esac
+            bash native/fushi_rwkv/verify_abi.sh "$so" "$nm_bin"
+          done
+      - name: cargo check aarch64-apple-ios (no linking)
         shell: bash
         working-directory: native/fushi_rwkv
         run: |
           set -euo pipefail
-          for target in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android aarch64-apple-ios; do
-            echo "::group::$target"
-            cargo check --release --locked --lib --target "$target"
-            echo "::endgroup::"
-          done
+          cargo check --release --locked --lib --target aarch64-apple-ios

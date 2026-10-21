@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/sync/epub_repackage.dart';
+import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
@@ -82,6 +83,8 @@ import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.da
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart';
+import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
@@ -785,8 +788,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                         // 管理标签，搜索点开整行换成搜索栏；标签 chip 只在有
                         // 标签时在下面占一行。Cupertino 旧版面保留常驻搜索行。
                         if (!isCupertinoPlatform(context)) ...<Widget>[
-                          _buildPageHeader(),
-                          _buildSortMenuAnchor(allTags.valueOrNull ?? const []),
+                          _buildPageHeader(allTags.valueOrNull ?? const []),
                           _buildTagBar(allTags.valueOrNull ?? const []),
                         ] else
                           _buildSearchBar(allTags.valueOrNull ?? const []),
@@ -979,32 +981,44 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
       ],
       onTagsChanged: () => ref.invalidate(bookTagMapProvider),
+      // AI 整理库（spec 2026-10-20 §10.1）：过 AI 模块门；没指派提供商时入口照常
+      // 可见，点了引导去设置指派（BUG-2694 同口径）。
+      onAiOrganize: isAiModuleEnabled(_moduleVisibility)
+          ? () => unawaited(_aiOrganizeShelf())
+          : null,
     );
   }
 
-  /// 「排序与筛选」菜单的零尺寸常驻锚点（贴在页头下沿右侧）：页头里的排序
-  /// 按钮可能被收进「⋯」，菜单挂在这里才总能打开。
+  /// 「AI 整理」整个书架 / 漫画库。
+  Future<void> _aiOrganizeShelf({Set<String>? onlyEntryKeys}) =>
+      runLibraryOrganizeInteractive(
+        context: context,
+        appModel: appModel,
+        domain:
+            _mangaOnly ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
+        onlyEntryKeys: onlyEntryKeys,
+        onChanged: () {
+          if (!mounted) return;
+          _shelfMapsFuture = _loadShelfMaps();
+          _rebuild(() {});
+        },
+      );
+
+  /// 「排序与筛选」菜单的零尺寸锚点（[FushiPageHeader.menuAnchor]，叠在页头
+  /// 动作组右下角）：页头里的排序按钮可能被收进「⋯」，菜单挂在这里才总能打开。
   Widget _buildSortMenuAnchor(List<BookTagRow> allTags) {
-    return Align(
-      alignment: AlignmentDirectional.topEnd,
-      child: Padding(
-        padding: EdgeInsetsDirectional.only(
-          end: FushiDesignTokens.of(context).spacing.page,
-        ),
-        child: FushiTagFilterBar(
-          tags: allTags,
-          part: FushiTagFilterBarPart.sortMenuAnchor,
-          sortMenuController: _sortMenu,
-          onToggleFilter: _toggleFilter,
-          onReorder: _reorderTags,
-          sortMode: _sortMode,
-          sortModeLabel: _sortModeLabel,
-          onSortModeChanged: _setSortMode,
-          filterOptionsTitle: t.shelf_filter_read_status,
-          filterActive: _readStatusFilter != null,
-          filterOptions: _readStatusFilterOptions(),
-        ),
-      ),
+    return FushiTagFilterBar(
+      tags: allTags,
+      part: FushiTagFilterBarPart.sortMenuAnchor,
+      sortMenuController: _sortMenu,
+      onToggleFilter: _toggleFilter,
+      onReorder: _reorderTags,
+      sortMode: _sortMode,
+      sortModeLabel: _sortModeLabel,
+      onSortModeChanged: _setSortMode,
+      filterOptionsTitle: t.shelf_filter_read_status,
+      filterActive: _readStatusFilter != null,
+      filterOptions: _readStatusFilterOptions(),
     );
   }
 
@@ -1025,7 +1039,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
       ];
 
-  Widget _buildPageHeader() {
+  Widget _buildPageHeader(List<BookTagRow> allTags) {
+    final Widget sortMenuAnchor = _buildSortMenuAnchor(allTags);
     final List<Widget> actions = <Widget>[
       // 原工具行行尾的「批量选择 / 排序与筛选 / 管理标签」并进页头（单行页头，
       // 2026-10-14），放不下时按优先级逐颗收进 ⋯：多选 > 排序 > 管理标签。
@@ -1093,12 +1108,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         title: navigation,
         actions: actions,
         search: _headerSearch,
+        menuAnchor: sortMenuAnchor,
       );
     }
     return FushiPageHeader(
       title: _mangaOnly ? t.manga_library : t.books,
       actions: actions,
       search: _headerSearch,
+      menuAnchor: sortMenuAnchor,
     );
   }
 
@@ -1146,6 +1163,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         ...grouped.createdCollectionIds,
         ...grouped.updatedCollectionIds,
       ],
+    );
+    // 规则归不了组的新书：开了「导入后自动 AI 整理」时去抖后交 AI（门在 runner）。
+    scheduleAutomaticLibraryOrganize(
+      _mangaOnly ? CollectionShelfDomain.manga : CollectionShelfDomain.books,
     );
     final List<MediaCollectionRow> collections =
         await appModel.database.getAllMediaCollections();
@@ -3158,6 +3179,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         icon: Icons.sell_outlined,
         onPressed: () => _openMediaTagPicker(
           MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+        ),
+      ),
+      // 私密：不上传排行榜、不推 Bangumi（本地书 / 漫画没有外部分级可依）。
+      DialogListAction(
+        label: t.media_privacy_action,
+        icon: FushiIcons.lock,
+        onPressed: () => showMediaPrivacyDialog(
+          context,
+          db: appModel.database,
+          kind: TagHostKind.epub,
+          entryKey: bookKey,
+          title: item.title,
         ),
       ),
       DialogListAction(

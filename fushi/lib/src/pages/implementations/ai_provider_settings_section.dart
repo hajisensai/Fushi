@@ -992,6 +992,7 @@ class _AiProviderSettingsSectionState
     AiFeature.galgameTextProcess => FushiIcons.game,
     AiFeature.dictStyle => FushiIcons.ankiCard,
     AiFeature.lapisStyle => FushiIcons.dashboardCustomize,
+    AiFeature.srsTemplate => FushiIcons.textFields,
     AiFeature.videoIdentify => FushiIcons.video,
     AiFeature.videoSearch => FushiIcons.subtitles,
     AiFeature.customTheme => FushiIcons.appearance,
@@ -999,6 +1000,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => FushiIcons.ocr,
     AiFeature.audiobookCast => FushiIcons.voice,
     AiFeature.collectionOrder => FushiIcons.sort,
+    AiFeature.libraryOrganize => FushiIcons.aiAssistant,
     AiFeature.subtitleProofread => FushiIcons.edit,
   };
 
@@ -1242,6 +1244,7 @@ class _AiProviderSettingsSectionState
     AiFeature.galgameTextProcess => t.ai_feature_galgame_text_process,
     AiFeature.dictStyle => t.ai_feature_dict_style,
     AiFeature.lapisStyle => t.ai_feature_lapis_style,
+    AiFeature.srsTemplate => t.ai_feature_srs_template,
     AiFeature.videoIdentify => t.ai_feature_video_identify,
     AiFeature.videoSearch => t.ai_feature_video_search,
     AiFeature.customTheme => t.ai_feature_custom_theme,
@@ -1249,6 +1252,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => t.ai_feature_manga_ocr,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast,
     AiFeature.collectionOrder => t.ai_feature_collection_order,
+    AiFeature.libraryOrganize => t.ai_feature_library_organize,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
   };
 
@@ -1256,6 +1260,7 @@ class _AiProviderSettingsSectionState
     AiFeature.galgameTextProcess => t.ai_feature_galgame_text_process_summary,
     AiFeature.dictStyle => t.ai_feature_dict_style_summary,
     AiFeature.lapisStyle => t.ai_feature_lapis_style_summary,
+    AiFeature.srsTemplate => t.ai_feature_srs_template_summary,
     AiFeature.videoIdentify => t.ai_feature_video_identify_assist_summary,
     AiFeature.videoSearch => t.ai_feature_video_search_subtitle_summary,
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
@@ -1263,6 +1268,7 @@ class _AiProviderSettingsSectionState
     AiFeature.mangaOcr => t.ai_feature_manga_ocr_summary,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast_summary,
     AiFeature.collectionOrder => t.ai_feature_collection_order_summary,
+    AiFeature.libraryOrganize => t.ai_feature_library_organize_summary,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
   };
 

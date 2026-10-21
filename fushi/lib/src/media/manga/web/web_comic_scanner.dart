@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/manga/web/web_comic_chapter.dart';
 import 'package:fushi/src/media/manga/web/web_comic_scan.dart';
 import 'package:fushi/src/media/manga/web/web_comic_site_rule.dart';
+import 'package:fushi/src/webview/web_payload_limits.dart';
 
 /// 扫图脚本（随包资产）。
 const String kWebComicScannerAsset = 'assets/web_comic/web_comic_scanner.js';
@@ -92,16 +93,22 @@ class WebComicScanDriver {
   void attach(InAppWebViewController controller) {
     controller.addJavaScriptHandler(
       handlerName: kWebComicScanHandler,
-      callback: (List<dynamic> args) {
-        final Object? payload = args.isEmpty ? null : args.first;
-        if (payload is Map) {
-          final Completer<Object?>? waiter = _pending.remove(
-            payload['requestId']?.toString(),
-          );
-          if (waiter != null && !waiter.isCompleted) waiter.complete(payload);
-        }
-        return true;
-      },
+      callback: limitWebPayload(
+        kWebComicScanHandler,
+        kWebPayloadMediumMaxChars,
+        (List<dynamic> args) {
+          final Object? payload = args.isEmpty ? null : args.first;
+          if (payload is Map) {
+            final Completer<Object?>? waiter = _pending.remove(
+              payload['requestId']?.toString(),
+            );
+            if (waiter != null && !waiter.isCompleted) {
+              waiter.complete(payload);
+            }
+          }
+          return true;
+        },
+      ),
     );
   }
 
@@ -228,10 +235,12 @@ Future<List<WebComicCookie>> readWebComicCookies(Uri pageUrl) async {
   ).getCookies(url: WebUri.uri(pageUrl));
   return <WebComicCookie>[
     for (final Cookie cookie in cookies)
-      (
+      WebComicCookie(
         name: cookie.name,
         value: cookie.value?.toString() ?? '',
         domain: cookie.domain?.toString(),
+        path: cookie.path?.toString(),
+        secure: cookie.isSecure,
       ),
   ];
 }

@@ -1,14 +1,15 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi RWKV-Instant 原生推理库：上游 RWKV 调度（kuma3-anki-core 的
-//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + C ABI。
+//! Fushi RWKV 排程原生推理库：上游 RWKV 调度（kuma3-anki-core 的
+//! `rslib/src/rwkv`，AGPL-3.0-or-later）推理核心的薄封装 + SM40 小模型 + C ABI。
 //!
 //! 设计：
-//! - 只做 **RWKV-Instant**：整段复习历史按时间顺序回放（[RwkvRuntime::replay]）进模型，
-//!   维护 card / note / deck / preset / global 五层循环状态；排队时对候选卡做一次只算
-//!   R（回忆概率）的批量查询（[RwkvRuntime::query]），R ≤ 目标保留率即到期。
-//!   不做 RWKV-Curve（区间求解 / PAVA）、不做 workload 模拟、不碰 SQLite。
+//! - 整段复习历史按时间顺序回放（[RwkvRuntime::replay]）进模型，维护 card / note / deck /
+//!   preset / global 五层循环状态；R（此刻回忆概率，即时头）用批量查询（[RwkvRuntime::query]）。
+//! - 作答时排程读**曲线头**（[RwkvRuntime::next_intervals]，`curve.rs`）：每个评分一次假设作答，
+//!   取这次作答之后的遗忘曲线第一次 ≤ 目标保留率的天数（上游 RWKV-Curve 的区间求解与 PAVA）。
+//!   不做 workload 模拟、不碰 SQLite。
 //! - 数值代码在 `src/rwkv/`，逐字搬自上游（见 UPSTREAM.md）；本文件只做输入校验、
 //!   线程数控制、快照封装与 C ABI，**不含任何数值计算**。
 //! - C ABI 热路径用 `#[repr(C)]` 结构体数组（[FrwkvReview]）而不是 JSON：
@@ -21,8 +22,9 @@
 //!
 //! 导出符号：
 //!   frwkv_abi_version / frwkv_review_struct_size /
-//!   frwkv_model_load / frwkv_model_free /
+//!   frwkv_model_load / frwkv_model_kind / frwkv_model_free /
 //!   frwkv_runtime_new / frwkv_runtime_free / frwkv_runtime_replay / frwkv_runtime_query /
+//!   frwkv_runtime_next_intervals /
 //!   frwkv_runtime_snapshot / frwkv_runtime_restore / frwkv_runtime_reset / frwkv_runtime_stats /
 //!   frwkv_last_error / frwkv_free_string / frwkv_free_bytes
 
@@ -38,25 +40,189 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg_attr(test, allow(dead_code))]
 #[allow(clippy::let_and_return, clippy::manual_is_multiple_of)]
 mod rwkv;
+mod curve;
 
-pub use rwkv::{ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision};
+pub use curve::{answer_intervals, AnswerCurve};
+pub use rwkv::small::{SmallHeads, SmallInference, SmallModel};
+pub use rwkv::{
+    forecast_query, predict_curve, ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision,
+};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
-pub const ABI_VERSION: i32 = 1;
+/// 2：加小模型（[ModelKind::Small]）、int4 精度、[FRWKV_PRECISION_DEFAULT]、`frwkv_model_kind`、
+/// `frwkv_runtime_next_intervals`。
+pub const ABI_VERSION: i32 = 2;
 
 /// 搬运来源（写进 UPSTREAM.md，运行时可查）。
 pub const UPSTREAM_REPO: &str = "https://github.com/Pedrubik2000/kuma3-anki-core";
 pub const UPSTREAM_SHA: &str = "c639bcec696f2317f9bb9a736d433b9d6c0d9c56";
 /// 通用预训练权重（`RWKV_trained_on_5000_10000.bin`，11,082,637 字节）的 SHA-256。
 pub const MODEL_SHA256: &str = "749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec";
+/// 小模型 SM40 发布包 `sm40v2-package.zip`（JSchoreels/anki-rwkv release
+/// `small-model-sm40-2026-10-19`，5,582,672 字节）的 SHA-256。权重是包里的
+/// `sm40v2/weights.int8.bin`（推荐，436,391 字节）或 `sm40v2/weights.f32.bin`。
+pub const SMALL_MODEL_PACKAGE_SHA256: &str =
+    "9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2";
 
 // ---------------------------------------------------------------------------
 // Rust API
 // ---------------------------------------------------------------------------
 
+/// 哪个网络。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModelKind {
+    /// 2,762,884 参数的上游模型（质量优先）。
+    Large,
+    /// 331,511 参数的 SM40 小模型（省内存；298 个留出用户上 LogLoss 比大模型高约 1%）。
+    Small,
+}
+
+impl ModelKind {
+    /// 推荐的状态精度：大模型 int8（与 f32 的 LogLoss 差 < 0.01%），小模型 int4。
+    pub fn default_precision(self) -> StatePrecision {
+        match self {
+            Self::Large => StatePrecision::Int8,
+            Self::Small => StatePrecision::Int4,
+        }
+    }
+
+    /// 这个模型能不能用该精度。大模型不支持 int4：它 card 状态第一层的递推会放大量化误差，
+    /// int4 下高频卡的状态指数增长直到 f32 溢出（tests/long_history.rs：每卡 1 万次复习时峰值
+    /// 1.3e16，f32 为 3.7；最小二乘比例因子也救不回）。上游 kuma3 给大模型留了 int4 card 状态。
+    /// 小模型 int4 与大模型 int8 在同样的历史上与 f32 同量级。
+    pub fn supports(self, precision: StatePrecision) -> bool {
+        !(self == Self::Large && precision == StatePrecision::Int4)
+    }
+}
+
+/// 解析好的网络（大或小），可在多个 runtime 间共享。
+#[derive(Clone)]
+pub enum Model {
+    Large(RwkvModel),
+    Small(SmallModel),
+}
+
+impl Model {
+    /// 按权重文件内容识别大 / 小模型：`ARWKVWEIGHTS1`（f32，大小模型都可）或
+    /// `ARWKVWEIGHTS8PC1`（int8 逐行，小模型）。
+    pub fn from_bytes(bytes: &[u8]) -> io::Result<Self> {
+        if SmallModel::is_small_model_file(bytes)? {
+            Ok(Self::Small(SmallModel::from_bytes(bytes)?))
+        } else {
+            Ok(Self::Large(RwkvModel::from_bytes(bytes)?))
+        }
+    }
+
+    pub fn kind(&self) -> ModelKind {
+        match self {
+            Self::Large(_) => ModelKind::Large,
+            Self::Small(_) => ModelKind::Small,
+        }
+    }
+}
+
+impl From<RwkvModel> for Model {
+    fn from(model: RwkvModel) -> Self {
+        Self::Large(model)
+    }
+}
+
+impl From<SmallModel> for Model {
+    fn from(model: SmallModel) -> Self {
+        Self::Small(model)
+    }
+}
+
+enum Engine {
+    Large(RwkvInference),
+    Small(SmallInference),
+}
+
+impl Engine {
+    fn precision(&self) -> StatePrecision {
+        match self {
+            Self::Large(inference) => inference.precision(),
+            Self::Small(inference) => inference.precision(),
+        }
+    }
+
+    fn last_day_offset(&self) -> Option<i64> {
+        match self {
+            Self::Large(inference) => inference.last_day_offset(),
+            Self::Small(inference) => inference.last_day_offset(),
+        }
+    }
+
+    fn warm_up_reviews(
+        &mut self,
+        reviews: Vec<ReviewInput>,
+        record_predictions: bool,
+    ) -> io::Result<Vec<(usize, f32)>> {
+        match self {
+            Self::Large(inference) => inference.warm_up_reviews(reviews, record_predictions),
+            Self::Small(inference) => inference.warm_up_reviews(reviews, record_predictions),
+        }
+    }
+
+    fn predict(&mut self, inputs: Vec<ReviewInput>) -> io::Result<Vec<f32>> {
+        match self {
+            Self::Large(inference) => inference.predict_retrievability_many_from_warm_up(inputs),
+            Self::Small(inference) => inference.predict_retrievability_many_from_warm_up(inputs),
+        }
+    }
+
+    fn forecast(
+        &mut self,
+        answer: &ReviewInput,
+        ratings: &[u8],
+        queries: &[ReviewInput],
+    ) -> io::Result<Vec<f32>> {
+        match self {
+            Self::Large(inference) => inference.forecast(answer, ratings, queries),
+            Self::Small(inference) => inference.forecast(answer, ratings, queries),
+        }
+    }
+
+    fn answer_curves(&mut self, answer: &ReviewInput) -> io::Result<[AnswerCurve; 4]> {
+        Ok(match self {
+            Self::Large(inference) => inference.answer_curves(answer)?.map(AnswerCurve::Large),
+            Self::Small(inference) => inference.answer_curves(answer)?.map(AnswerCurve::Small),
+        })
+    }
+
+    fn snapshot(&self) -> Vec<u8> {
+        match self {
+            Self::Large(inference) => inference.snapshot(),
+            Self::Small(inference) => inference.snapshot(),
+        }
+    }
+
+    fn restore_snapshot(&mut self, bytes: &[u8]) -> io::Result<()> {
+        match self {
+            Self::Large(inference) => inference.restore_snapshot(bytes),
+            Self::Small(inference) => inference.restore_snapshot(bytes),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Large(inference) => inference.reset(),
+            Self::Small(inference) => inference.reset(),
+        }
+    }
+
+    fn stats(&self) -> RwkvStats {
+        match self {
+            Self::Large(inference) => inference.stats(),
+            Self::Small(inference) => inference.stats(),
+        }
+    }
+}
+
 /// 一个用户（一个 collection）的 RWKV 状态 + 跑它用的线程池。
 pub struct RwkvRuntime {
-    inference: RwkvInference,
+    inference: Engine,
+    kind: ModelKind,
     /// `None` = rayon 全局池（核数个线程）。
     pool: Option<rayon::ThreadPool>,
     /// 回放途中 panic 过：状态可能只更新了一半。
@@ -98,11 +264,14 @@ impl From<io::Error> for RwkvError {
 impl RwkvRuntime {
     /// `threads == 0`：用 rayon 全局池；否则建一个专用池（墨水屏 / 低端机可传 1）。
     /// 线程数不影响数值：上游的并行全是逐行 map，没有跨线程浮点归约。
-    pub fn new(
-        model: &RwkvModel,
-        precision: StatePrecision,
-        threads: usize,
-    ) -> Result<Self, RwkvError> {
+    pub fn new(model: &Model, precision: StatePrecision, threads: usize) -> Result<Self, RwkvError> {
+        if !model.kind().supports(precision) {
+            return Err(RwkvError::Input(format!(
+                "{:?} model does not support {precision:?} state (its card states diverge; \
+                 use int8)",
+                model.kind()
+            )));
+        }
         let pool = if threads == 0 {
             None
         } else {
@@ -114,8 +283,13 @@ impl RwkvRuntime {
                     .map_err(|error| RwkvError::Data(format!("thread pool: {error}")))?,
             )
         };
+        let inference = match model {
+            Model::Large(model) => Engine::Large(RwkvInference::new(model, precision)),
+            Model::Small(model) => Engine::Small(SmallInference::new(model, precision)),
+        };
         Ok(Self {
-            inference: RwkvInference::new(model, precision),
+            inference,
+            kind: model.kind(),
             pool,
             poisoned: false,
         })
@@ -123,6 +297,20 @@ impl RwkvRuntime {
 
     pub fn precision(&self) -> StatePrecision {
         self.inference.precision()
+    }
+
+    pub fn model_kind(&self) -> ModelKind {
+        self.kind
+    }
+
+    /// Diagnostics: largest absolute WKV state value over every entity of
+    /// each stream (card, deck, note, preset, user); small model only.
+    #[doc(hidden)]
+    pub fn state_peaks(&self) -> Option<[f32; 5]> {
+        match &self.inference {
+            Engine::Small(inference) => Some(std::array::from_fn(|s| inference.stream_peak(s))),
+            Engine::Large(_) => None,
+        }
     }
 
     /// 按时间顺序追加一批已答复习（`is_query` 被忽略并当作 false）。
@@ -159,6 +347,7 @@ impl RwkvRuntime {
             inference,
             pool,
             poisoned,
+            ..
         } = self;
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             install(pool, || {
@@ -207,11 +396,10 @@ impl RwkvRuntime {
             inference,
             pool,
             poisoned,
+            ..
         } = self;
         let outcome = catch_unwind(AssertUnwindSafe(|| {
-            install(pool, || {
-                inference.predict_retrievability_many_from_warm_up(inputs)
-            })
+            install(pool, || inference.predict(inputs))
         }));
         let values = match outcome {
             Ok(result) => result?,
@@ -227,6 +415,103 @@ impl RwkvRuntime {
             }
         }
         Ok(out)
+    }
+
+    /// 「如果这张卡现在以各个评分作答」之后，在 `horizons`（作答后的调度日数，同一时刻）
+    /// 各处查询的 R：`ratings.len() * horizons.len()` 个值，按评分分组。什么都不保存
+    /// （状态与特征簿记原样）。`answer` 的校验同 [Self::replay]（`ease` 被逐个替换）。
+    pub fn forecast(
+        &mut self,
+        answer: &ReviewInput,
+        ratings: &[u8],
+        horizons: &[i64],
+    ) -> Result<Vec<f32>, RwkvError> {
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        if ratings.iter().any(|r| !(1..=4).contains(r)) {
+            return Err(RwkvError::Input("ratings must be 1..=4".into()));
+        }
+        if horizons.iter().any(|&d| d < 1) {
+            return Err(RwkvError::Input("horizons must be >= 1 day".into()));
+        }
+        let mut answer = answer.clone();
+        answer.is_query = false;
+        answer.ease = Some(1);
+        validate_answer(&answer, self.inference.last_day_offset())
+            .map_err(|message| RwkvError::Input(format!("answer: {message}")))?;
+        let queries: Vec<ReviewInput> = horizons
+            .iter()
+            .map(|&days| forecast_query(&answer, days, days * 86_400))
+            .collect();
+        let Self {
+            inference,
+            pool,
+            poisoned,
+            ..
+        } = self;
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            install(pool, || inference.forecast(&answer, ratings, &queries))
+        }));
+        match outcome {
+            Ok(result) => Ok(result?
+                .into_iter()
+                .map(|r| if r.is_finite() && (0.0..=1.0).contains(&r) { r } else { f32::NAN })
+                .collect()),
+            Err(panic) => {
+                *poisoned = true;
+                std::panic::resume_unwind(panic)
+            }
+        }
+    }
+
+    /// 作答时排程（RWKV-Curve，见 `curve.rs`）：对 Again / Hard / Good / Easy 各做一次假设作答
+    /// （不保存），读那一行曲线头给出的遗忘曲线，间隔 = R 第一次 ≤ `target_retention` 的天数
+    /// （向上取整，1..=`max_interval_days`；到上限仍高于目标给上限），评分顺序修正为不减。
+    /// 返回天数与曲线在该天的 R。`answer` 的校验同 [Self::replay]（`ease` 被逐个替换）。
+    pub fn next_intervals(
+        &mut self,
+        answer: &ReviewInput,
+        target_retention: f32,
+        max_interval_days: u32,
+    ) -> Result<([u32; 4], [f32; 4]), RwkvError> {
+        if !(target_retention > 0.0 && target_retention < 1.0) {
+            return Err(RwkvError::Input("target_retention must be in (0, 1)".into()));
+        }
+        let max = max_interval_days.max(1);
+        let curves = self.answer_curves(answer)?;
+        let days = curve::answer_intervals(&curves, target_retention, max);
+        let at = std::array::from_fn(|index| curves[index].retrievability(days[index] as f32 * 86_400.0));
+        if at.iter().any(|r: &f32| !r.is_finite()) {
+            return Err(RwkvError::Data("non-finite forgetting curve".into()));
+        }
+        Ok((days, at))
+    }
+
+    /// [Self::next_intervals] 用的四条遗忘曲线（Again..Easy 的假设作答，不保存）。测试 / 评测用。
+    #[doc(hidden)]
+    pub fn answer_curves(&mut self, answer: &ReviewInput) -> Result<[AnswerCurve; 4], RwkvError> {
+        if self.poisoned {
+            return Err(RwkvError::Poisoned);
+        }
+        let mut answer = answer.clone();
+        answer.is_query = false;
+        answer.ease = Some(1);
+        validate_answer(&answer, self.inference.last_day_offset())
+            .map_err(|message| RwkvError::Input(format!("answer: {message}")))?;
+        let Self {
+            inference,
+            pool,
+            poisoned,
+            ..
+        } = self;
+        match catch_unwind(AssertUnwindSafe(|| install(pool, || inference.answer_curves(&answer)))) {
+            Ok(curves) => Ok(curves?),
+            Err(panic) => {
+                *poisoned = true;
+                std::panic::resume_unwind(panic)
+            }
+        }
     }
 
     /// 无损快照（格式见 [RwkvInference::snapshot]）。
@@ -330,9 +615,16 @@ pub const FRWKV_HAS_ELAPSED_DAYS: u32 = 1 << 6;
 pub const FRWKV_HAS_ELAPSED_SECONDS: u32 = 1 << 7;
 const FRWKV_KNOWN_BITS: u32 = (1 << 8) - 1;
 
-/// precision 参数：f32 状态 / int8 紧凑 card+note 状态。
+/// precision 参数：f32 状态 / int8 / int4 紧凑 card+note 状态 / 按模型取推荐值
+/// （[ModelKind::default_precision]：大模型 int8、小模型 int4）。
 pub const FRWKV_PRECISION_F32: i32 = 0;
 pub const FRWKV_PRECISION_INT8: i32 = 8;
+pub const FRWKV_PRECISION_INT4: i32 = 4;
+pub const FRWKV_PRECISION_DEFAULT: i32 = -1;
+
+/// [frwkv_model_kind] 的返回值。
+pub const FRWKV_MODEL_LARGE: i32 = 1;
+pub const FRWKV_MODEL_SMALL: i32 = 2;
 
 /// 一条复习（回放）或一条查询，80 字节，字段语义见 README.md。
 /// 可选字段由 `present` 位标记；`ease == 0` 表示无评分（回放时跳过，查询时忽略）。
@@ -438,8 +730,8 @@ pub struct FrwkvStats {
     pub feature_state_bytes: u64,
 }
 
-/// 不透明句柄：解析好的网络。
-pub struct FrwkvModel(RwkvModel);
+/// 不透明句柄：解析好的网络（大或小）。
+pub struct FrwkvModel(Model);
 
 /// 不透明句柄：一个 [RwkvRuntime]。
 pub struct FrwkvRuntime(RwkvRuntime);
@@ -518,7 +810,8 @@ pub extern "C" fn frwkv_review_struct_size() -> usize {
     std::mem::size_of::<FrwkvReview>()
 }
 
-/// 从内存里的 `ARWKVWEIGHTS1` 权重文件建模型。失败返回空指针（见 [frwkv_last_error]）。
+/// 从内存里的权重文件建模型（`ARWKVWEIGHTS1` 大 / 小模型，`ARWKVWEIGHTS8PC1` 小模型），
+/// 按内容自动识别。失败返回空指针（见 [frwkv_last_error]）。
 /// 返回的句柄用 [frwkv_model_free] 释放；runtime 持有自己的引用，释放 model 不影响已建的 runtime。
 ///
 /// # Safety
@@ -528,7 +821,7 @@ pub unsafe extern "C" fn frwkv_model_load(bytes: *const u8, len: usize) -> *mut 
     let mut model = None;
     let code = guarded(|| {
         let bytes = slice_or_empty(bytes, len).ok_or_else(|| argument("null weights"))?;
-        let parsed = RwkvModel::from_bytes(bytes)
+        let parsed = Model::from_bytes(bytes)
             .map_err(|error| (FRWKV_ERR_DATA, format!("weights: {error}")))?;
         model = Some(Box::new(FrwkvModel(parsed)));
         Ok(())
@@ -536,6 +829,21 @@ pub unsafe extern "C" fn frwkv_model_load(bytes: *const u8, len: usize) -> *mut 
     match model {
         Some(model) if code == FRWKV_OK => Box::into_raw(model),
         _ => std::ptr::null_mut(),
+    }
+}
+
+/// [FRWKV_MODEL_LARGE] / [FRWKV_MODEL_SMALL]；空指针返回 [FRWKV_ERR_ARGUMENT]。
+///
+/// # Safety
+/// `model` 为空或是有效的 [FrwkvModel] 句柄。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_model_kind(model: *const FrwkvModel) -> i32 {
+    match model.as_ref() {
+        Some(model) => match model.0.kind() {
+            ModelKind::Large => FRWKV_MODEL_LARGE,
+            ModelKind::Small => FRWKV_MODEL_SMALL,
+        },
+        None => FRWKV_ERR_ARGUMENT,
     }
 }
 
@@ -548,7 +856,8 @@ pub unsafe extern "C" fn frwkv_model_free(model: *mut FrwkvModel) {
     }
 }
 
-/// 新建 runtime。`precision`：[FRWKV_PRECISION_F32] / [FRWKV_PRECISION_INT8]；
+/// 新建 runtime。`precision`：[FRWKV_PRECISION_F32] / [FRWKV_PRECISION_INT8] /
+/// [FRWKV_PRECISION_INT4] / [FRWKV_PRECISION_DEFAULT]；
 /// `threads`：0 = 全部核心，1 = 单线程（墨水屏 / 省电）。失败返回空指针。
 ///
 /// # Safety
@@ -565,6 +874,8 @@ pub unsafe extern "C" fn frwkv_runtime_new(
         let precision = match precision {
             FRWKV_PRECISION_F32 => StatePrecision::F32,
             FRWKV_PRECISION_INT8 => StatePrecision::Int8,
+            FRWKV_PRECISION_INT4 => StatePrecision::Int4,
+            FRWKV_PRECISION_DEFAULT => model.0.kind().default_precision(),
             other => return Err(argument(&format!("unsupported precision {other}"))),
         };
         let created =
@@ -668,6 +979,49 @@ pub unsafe extern "C" fn frwkv_runtime_query(
         let values = runtime.0.query(&inputs).map_err(rwkv_error)?;
         if count > 0 {
             std::slice::from_raw_parts_mut(out_retrievability, count).copy_from_slice(&values);
+        }
+        Ok(())
+    })
+}
+
+/// 作答时排程（[RwkvRuntime::next_intervals]）：`answer` 是这次作答的复习行（`ease` 被忽略，
+/// 依次替换为 1..4；`duration` 通常未知、不置位），写 4 个天数到 `out_days`（Again / Hard /
+/// Good / Easy；该评分作答后的遗忘曲线第一次 ≤ 目标的天数），`out_retrievability` 可空，非空时
+/// 写 4 条曲线「在该日的 R」（到上限仍高于目标时是上限那天的 R）。什么都不保存。`answer` 不合法
+/// → [FRWKV_ERR_INPUT]。
+///
+/// # Safety
+/// `runtime`、`answer` 有效；`out_days` 可写 4 个 u32；`out_retrievability` 为空或可写 4 个 f32。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_next_intervals(
+    runtime: *mut FrwkvRuntime,
+    answer: *const FrwkvReview,
+    target_retention: f32,
+    max_interval_days: u32,
+    out_days: *mut u32,
+    out_retrievability: *mut f32,
+) -> i32 {
+    guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let answer = answer.as_ref().ok_or_else(|| argument("null answer"))?;
+        if out_days.is_null() {
+            return Err(argument("null output"));
+        }
+        let mut row = *answer;
+        row.ease = 1;
+        let input = row.to_input(false).ok_or_else(|| {
+            (
+                FRWKV_ERR_INPUT,
+                "invalid input: answer: unknown present bits".to_owned(),
+            )
+        })?;
+        let (days, retrievability) = runtime
+            .0
+            .next_intervals(&input, target_retention, max_interval_days)
+            .map_err(rwkv_error)?;
+        std::slice::from_raw_parts_mut(out_days, 4).copy_from_slice(&days);
+        if !out_retrievability.is_null() {
+            std::slice::from_raw_parts_mut(out_retrievability, 4).copy_from_slice(&retrievability);
         }
         Ok(())
     })

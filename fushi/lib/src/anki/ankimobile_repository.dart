@@ -565,6 +565,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to create a blank card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
 

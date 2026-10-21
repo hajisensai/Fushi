@@ -81,12 +81,20 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     if (!context.mounted) return;
-    // 站点入口没有库里的书，内置网页播放器页读不到它：只有底层合成档能开站点入口。
-    if (widget.webSite != null) {
-      _rebuild(() {
-        _failed = true;
-        _failReason = t.video_load_failed_generic;
-      });
+    // 站点入口没有库里的书，内置网页播放器页读不到它：只有底层合成档能在本页播站点
+    // 入口。拿不到底层合成（引擎没带合成器补丁的构建、或用户选了非窗口档）时改用
+    // app 内浏览器打开这个站点，而不是一张「无法加载该视频」的死页（2026-10-20
+    // 用户截图「视频站点这个打不开」：本地调试引擎不支持底层合成）。
+    final WebVideoSite? site = widget.webSite;
+    if (site != null) {
+      unawaited(
+        Navigator.of(context).pushReplacement(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => FushiWebBrowserPage(initialUrl: site.url),
+          ),
+        ),
+      );
       return;
     }
     // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
@@ -133,7 +141,7 @@ extension _VideoWebSource on _VideoFushiPageState {
           _webPlatform?.applyCommandFailed(command),
       onTrackFailed: _onWebTrackFailed,
       onNetflixMetadata: _onWebNetflixMetadata,
-    );
+    )..qualityTargetHeight = appModel.youtubeQualityTargetHeight;
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
       evaluate: session.evaluate,
@@ -721,6 +729,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     if (!state.hasVideo || !_webNetflixMetaRequested.add(watchId)) return;
+    _webNetflixMetaInFlight.add(watchId);
     unawaited(
       _webSession?.evaluate(
         'window.__fushiWebVideo.fetchNetflixMetadata(${jsonEncode(watchId)})',
@@ -729,8 +738,18 @@ extension _VideoWebSource on _VideoFushiPageState {
   }
 
   void _onWebNetflixMetadata(String movieId, String? text, String error) {
+    // 回执来自页面（不可信）：只认本页确实发出过、还没回的那个 id，且原文里真有这一集
+    // ——否则页面可以随手投一份伪造的剧集 / 剧照 / 片头标记给任意 id。
+    if (!_webNetflixMetaInFlight.remove(movieId)) return;
     if (!mounted || text == null) return;
     final NetflixTitleMetadata? meta = parseNetflixMetadata(text);
+    if (meta != null && !meta.describes(movieId)) {
+      ErrorLogService.instance.log(
+        'VideoFushi.web',
+        'netflix metadata $movieId: response does not contain that episode',
+      );
+      return;
+    }
     if (meta == null) {
       ErrorLogService.instance.log(
         'VideoFushi.web',

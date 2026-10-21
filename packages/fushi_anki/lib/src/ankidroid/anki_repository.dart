@@ -307,6 +307,7 @@ class AnkiRepository extends BaseAnkiRepository {
       return MineOutcome.failure(
         'All fields are empty — refusing to create a blank card. '
         'Check your note type field mappings.',
+        errorCode: AnkiErrorCode.allFieldsEmpty,
       );
     }
     // BUG-1900：Anki 的 `fields_check()` **只看第一个字段**——其余字段填得再满，首字段
@@ -521,6 +522,7 @@ class AnkiRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
 

@@ -493,6 +493,9 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // BUG-3602/3603：截屏 OCR 的宿主 Activity 被 ROM 静默丢弃、或 screenOcrFinished
+        // 在主界面销毁期间没送到时，应用内悬浮球会一直藏着；回到前台时按真实状态收尾。
+        FloatingBallChannel.onHostResumed();
         // BUG-438/TODO-889: re-apply the system focus-highlight suppression on
         // resume. disableSystemFocusHighlight() runs once in onCreate. With
         // navigation now in android:configChanges a gamepad plug/unplug is kept

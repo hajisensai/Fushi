@@ -30,16 +30,21 @@ on:
       - 'native/**'
       - 'ci/**'
       # 根 pubspec.yaml 的 dependency_overrides 把一批插件 path 指向 third_party/
-      # （ffmpeg_kit_flutter / flutter_inappwebview_android / media_kit_* /
+      # （ffmpeg_kit_next_flutter / flutter_inappwebview_android / media_kit_* /
       # flutter_onnxruntime …），改它们直接改变 Android 构建产物，以前却不触发本门。
       - 'third_party/**'
+      # 统一 FFmpeg 配方（版本 / 补丁 / 能力清单）：播放器与制卡共用，守卫在 fushi/test。
+      - 'tool/ffmpeg-unified/**'
       - 'tool/release_sequence.sh'
       - '.github/workflows/main.yml'
       - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/fushi-web-core-linux/**'
+      - '.github/actions/test-native-linux/**'
+      - '.github/actions/fushidicts-linux/**'
       - '.github/actions/setup-fushi-compute/**'
-      # setup-fushi-compute 从这里读 Rust / cargo-ndk 钉版。
+      - '.github/actions/setup-fushi-rwkv/**'
+      # setup-fushi-compute / setup-fushi-rwkv 从这里读 Rust / cargo-ndk 钉版。
       - '.github/actions/native-store-names/names.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
@@ -73,8 +78,42 @@ jobs:
         if-no-files-found: error
         retention-days: 3
 
+  # 单测矩阵的另几个 Rust 硬依赖（fushi_fsrs / fushi_compute / fushi_rwkv）同理只编一次、与
+  # web-core-linux 并行，以 artifact 交给各分片（原来每片各编一遍，约 2 分钟压在每片的关键路径上）。
+  test-native-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/test-native-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: |
+          native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+          native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+          native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+        if-no-files-found: error
+        retention-days: 3
+
+  # 词典引擎（native/fushidicts）Linux .so：packages/fushi_dictionary 的真原生库测试
+  # （background_tokenize_native_test.dart 的后台查词 / redirect 标记迁移两组）缺库直接失败、
+  # 不 skip，所以 packages/*/test 的 runner 要它。与 web-core-linux 并行编一次、以 artifact 下发。
+  fushidicts-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ./.github/actions/fushidicts-linux
+    - uses: actions/upload-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
+        if-no-files-found: error
+        retention-days: 3
+
   build:
-    needs: web-core-linux
+    needs: [web-core-linux, fushidicts-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -186,6 +225,11 @@ jobs:
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
+    - name: Fetch fushidicts linux-x64 library (hard dependency of the package tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushidicts-linux-x64
+        path: native/fushidicts/prebuilt/linux-x64
     # Anki 搜索的逐卡求值与 AnkiConnect 查重规范形只有 Rust 实现（native/fushi_fsrs/src/search.rs）：
     # fushi_srs / fushi_engine 的搜索测试要真实 .so，库缺失时直接判红（不 skip）。
     # 用 runner 自带的 stable 工具链（不进持久库，不需要钉版）；冷编约 1 min。
@@ -203,10 +247,26 @@ jobs:
       uses: ./.github/actions/setup-fushi-compute
       with:
         android-abis: arm64-v8a
+    # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+    - name: Build fushi_rwkv (Linux .so + Android arm64-v8a)
+      uses: ./.github/actions/setup-fushi-rwkv
+      with:
+        android-abis: arm64-v8a
+    # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip）。只读 native-rwkv-gate 写的
+    # 同一个缓存条目（key 是两个钉死的 SHA-256，与 fetch_model.sh 一致），不另占配额；未命中时
+    # fetch_model.sh 按钉死 URL 下载并校验（~16 MB）。
+    - name: Restore RWKV weights cache
+      uses: actions/cache/restore@v4
+      with:
+        path: native/fushi_rwkv/model
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2
+    - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
+      run: bash native/fushi_rwkv/fetch_model.sh
 
     - name: Run package tests
       env:
         FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+        FUSHI_DICTS_LIB: ${{ github.workspace }}/native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
       run: |
         # 扫描面按磁盘枚举，不写死包清单：这里是 packages/*/test 的**唯一** runner，
         # 上一版把五个包名写成字面量，于是任何新加的自有包连同它的测试在 CI 里
@@ -399,12 +459,22 @@ jobs:
   # 各片只把自己的 suite 路径交给 flutter test，并集恰好是整个 test/（契约测试
   # fushi/test/tools/test_file_shards_test.dart）。分片数改这里的 matrix 和下面
   # 的 --file-shard 分母，两处一起改。
+  # 2026-10-21：试过分片内加 --experimental-faster-testing（全片 suite 合成一个 dill 只编译
+  # 一次、同一个 flutter_tester 进程里各起一个 isolate），已撤回：PR #2422 五轮 CI 里两次
+  # flutter_tester 随机 SIGSEGV（exit 245，一次在批次全部 suite 跑完、进程收尾时），根因未明，
+  # 单测门不能带随机原生崩溃上线。现在回到普通模式（每个 suite 独立进程、默认并发），
+  # 保留的提速是：Rust 测试库由 test-native-linux 只编一次、按实测 suite 耗时
+  # （tool/test_flow/suite_timings.json）均衡分片。重新启用前先拿到崩溃的原生栈定根因；
+  # 届时 --concurrency=1 与 --max-suites-per-run 的理由见 git 历史（PR #2422）。
   unit-tests:
-    needs: web-core-linux
+    needs: [web-core-linux, test-native-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
+      FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
+      FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
     strategy:
       fail-fast: false
       matrix:
@@ -444,16 +514,6 @@ jobs:
         chmod +x ci/apply-patches.sh
         bash ci/apply-patches.sh
 
-    # 主应用的 SRS 浏览页测试（test/srs/srs_browse_page_test.dart 等）同样走 Rust 搜索内核：
-    # 每片都编 .so（rust-cache 与 build job 同 key，命中时约 20 s），经 FUSHI_FSRS_LIB 指过去。
-    - name: Cache Rust build (fushi_fsrs)
-      uses: Swatinem/rust-cache@v2
-      with:
-        workspaces: native/fushi_fsrs -> target
-        key: fushi-fsrs-linux-x64
-    - name: Build fushi_fsrs (Linux x64) for unit tests
-      run: bash native/fushi_fsrs/build_linux_so.sh
-
     # Golden image tests are gated to the reference platform (the dev host where
     # goldens were generated); Linux CI font/raster rendering differs and would
     # always mismatch, so exclude them here. They still run on a plain local
@@ -464,14 +524,52 @@ jobs:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
 
-    # 计算内核 fushi_compute 是硬依赖：先编 Linux .so 并导出 FUSHI_COMPUTE_LIB 给 flutter_tester。
-    - name: Build fushi_compute (Linux .so)
-      uses: ./.github/actions/setup-fushi-compute
+    # SRS 浏览页测试走 Rust 搜索内核（fushi_fsrs），计算内核 fushi_compute 与 RWKV-Instant 排程推理
+    # fushi_rwkv 是硬依赖（无 Dart 回退）：都由 test-native-linux 编好，这里只下载（路径与 job 级
+    # FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB / FUSHI_RWKV_LIB 对应）。
+    - name: Fetch fushi_fsrs + fushi_compute + fushi_rwkv linux-x64 libraries (hard dependencies of the unit tests)
+      uses: actions/download-artifact@v7
+      with:
+        name: fushi-test-native-linux-x64
+        path: native
+    # flutter_tester 原生崩溃（SIGSEGV 等）时留 core dump，失败时由下面的 backtrace 步骤打
+    # 全线程原生栈，看是哪个原生库（PR #2422 撤回 faster-testing 时根因就卡在没有这份栈）。
+    - name: Enable core dumps
+      run: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
-      env:
-        FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
-      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
+      run: |
+        ulimit -c unlimited
+        dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
+    - name: Native backtrace of a crashed flutter_tester
+      if: failure()
+      shell: bash
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        cores=(/tmp/core.*)
+        if [ "${#cores[@]}" -eq 0 ]; then
+          echo "No core dump (the failure was not a native crash)."
+          exit 0
+        fi
+        sudo apt-get install -y -qq gdb > /dev/null
+        tester="$FLUTTER_ROOT/bin/cache/artifacts/engine/linux-x64/flutter_tester"
+        for core in "${cores[@]}"; do
+          echo "::group::$core"
+          gdb -batch -q -ex 'info sharedlibrary' -ex 'thread apply all bt 40' "$tester" "$core" 2>&1 || true
+          echo "::endgroup::"
+        done
+
+    # 逐 suite 耗时的唯一来源：tool/update_suite_timings.dart 读这些事件日志刷新
+    # tool/test_flow/suite_timings.json（--file-shard 按它均衡各片）。失败时也传，排障用。
+    - name: Upload test event log
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: unit-test-events-${{ matrix.shard }}
+        path: .codex-test/flutter-test/flutter_test.jsonl
+        if-no-files-found: warn
+        retention-days: 14
 
     # The compact summary omits RenderFlex creation sites. Print complete
     # diagnostics for failed tests into the job log (GitHub masks secrets here),
@@ -488,28 +586,33 @@ jobs:
         if not path.is_file():
             print('No test event log was produced.')
             raise SystemExit(0)
-        events = []
+        # A batched shard (--max-suites-per-run) appends several runs to one
+        # log; test IDs restart at each run's `start` event.
+        runs = [[]]
         for line in path.read_text(encoding='utf-8').splitlines():
             try:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
             if isinstance(event, dict):
-                events.append(event)
-        failed = {
-            event.get('testID') for event in events
-            if event.get('type') == 'error' or (
-                event.get('type') == 'testDone'
-                and event.get('result') in ('failure', 'error')
-            )
-        }
-        for event in events:
-            if event.get('type') == 'testStart' and event['test']['id'] in failed:
-                print('\nFAILED TEST:', event['test']['name'])
-            elif event.get('testID') in failed:
-                if event.get('type') == 'print':
-                    print(event.get('message', ''))
-                elif event.get('type') == 'error':
-                    print(event.get('error', ''))
-                    print(event.get('stackTrace', ''))
+                if event.get('type') == 'start' and runs[-1]:
+                    runs.append([])
+                runs[-1].append(event)
+        for events in runs:
+            failed = {
+                event.get('testID') for event in events
+                if event.get('type') == 'error' or (
+                    event.get('type') == 'testDone'
+                    and event.get('result') in ('failure', 'error')
+                )
+            }
+            for event in events:
+                if event.get('type') == 'testStart' and event['test']['id'] in failed:
+                    print('\nFAILED TEST:', event['test']['name'])
+                elif event.get('testID') in failed:
+                    if event.get('type') == 'print':
+                        print(event.get('message', ''))
+                    elif event.get('type') == 'error':
+                        print(event.get('error', ''))
+                        print(event.get('stackTrace', ''))
         PY

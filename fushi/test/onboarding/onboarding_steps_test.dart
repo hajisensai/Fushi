@@ -431,28 +431,9 @@ void main() {
       },
     );
 
-    test('initial choice mirrors the live state', () {
-      expect(
-        onboardingReviewMethodOf(
-          srsModuleEnabled: true,
-          miningTarget: SrsMiningTarget.srs,
-        ),
-        OnboardingReviewMethod.fushi,
-      );
-      for (final (bool module, SrsMiningTarget target)
-          in <(bool, SrsMiningTarget)>[
-            (false, SrsMiningTarget.srs),
-            (true, SrsMiningTarget.anki),
-            (false, SrsMiningTarget.anki),
-          ]) {
-        expect(
-          onboardingReviewMethodOf(
-            srsModuleEnabled: module,
-            miningTarget: target,
-          ),
-          OnboardingReviewMethod.anki,
-        );
-      }
+    test('initial choice is Fushi SRS regardless of the live state', () {
+      // 所有者 2026-10-20：新手教程默认 Fushi 复习（此前老用户重开向导默认 Anki）。
+      expect(kOnboardingDefaultReviewMethod, OnboardingReviewMethod.fushi);
     });
 
     test('choosing writes module + mining target', () async {
@@ -461,21 +442,28 @@ void main() {
       Future<void> setModule(ModuleId m, bool v) async => modules[m] = v;
       Future<void> setTarget(SrsMiningTarget t) async => targets.add(t);
 
+      int adopted = 0;
+      Future<void> adopt() async => adopted++;
+
       await applyOnboardingReviewMethod(
         OnboardingReviewMethod.fushi,
         setModuleEnabled: setModule,
         setMiningTarget: setTarget,
+        adoptFushiCard: adopt,
       );
       expect(modules, <ModuleId, bool>{ModuleId.srs: true});
       expect(targets.last, SrsMiningTarget.srs);
+      expect(adopted, 1, reason: '选 Fushi 复习要把制卡笔记类型落到 Fushi 卡片');
 
       await applyOnboardingReviewMethod(
         OnboardingReviewMethod.anki,
         setModuleEnabled: setModule,
         setMiningTarget: setTarget,
+        adoptFushiCard: adopt,
       );
       expect(modules, <ModuleId, bool>{ModuleId.srs: false});
       expect(targets.last, SrsMiningTarget.anki);
+      expect(adopted, 1, reason: '选 Anki 不碰 Fushi 复习的笔记类型');
     });
 
     test('the wizard offers no SRS checkbox (the choice step writes it)', () {

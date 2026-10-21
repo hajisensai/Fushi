@@ -26,6 +26,39 @@ CtlRequestSpec _build(
 }
 
 void main() {
+  group('library organize（AI 整理库）', () {
+    test('organize：--domain 必填、--yes 才带同意', () {
+      expect(() => _build('organize', <String>[]), throwsA(isA<CtlUsageError>()));
+      final CtlRequestSpec r = _build('organize', <String>['--domain', 'books']);
+      expect(r.method, 'POST');
+      expect(r.path, '/api/admin/library/organize');
+      expect(r.body, <String, Object?>{'domain': 'books'});
+      expect(
+        _build('organize', <String>['--domain', 'video', '--yes']).body,
+        <String, Object?>{'domain': 'video', 'yes': true},
+      );
+      expect(
+        () => _build('organize', <String>['--domain', 'music']),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('organize-history / organize-undo 的路径', () {
+      final CtlRequestSpec h =
+          _build('organize-history', <String>['--limit', '5']);
+      expect(h.method, 'GET');
+      expect(h.path, '/api/admin/library/organize/runs');
+      expect(h.query, <String, String>{'limit': '5'});
+      final CtlRequestSpec u = _build('organize-undo', <String>['12']);
+      expect(u.method, 'POST');
+      expect(u.path, '/api/admin/library/organize/runs/12/undo');
+      expect(
+        () => _build('organize-undo', <String>['x']),
+        throwsA(isA<CtlUsageError>()),
+      );
+    });
+  });
+
   test('命令组与子命令齐全', () {
     expect(libraryCommandGroups.map((CtlCommandGroup g) => g.name), <String>[
       'library',
@@ -48,6 +81,9 @@ void main() {
         'history',
         'sources',
         'scan',
+        'organize',
+        'organize-history',
+        'organize-undo',
         'source-add',
         'source-rename',
         'source-rm',

@@ -332,6 +332,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 不再每章重查全书 cue）。
     _cachedAllCues = null;
     _cachedSentenceAudio = false;
+    _cueOffsetIndex = null;
   }
 
   /// 歌词层在场时换接了控制器（重导入强制重载等）：把覆盖层期间的正文强制跟随
@@ -1094,23 +1095,19 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         : null;
   }
 
+  /// 查词卡顿（P2）：旧实现每次查词把全书 cue 解码两轮（先按章过滤、再比区间）。现在
+  /// 用 [AudioCueOffsetIndex] 缓存本章解码结果，cue 列表实例或章号变了才重建；与
+  /// `sentenceAudioCuesForSection` + 顺序首个命中的旧语义逐位相同。
   AudioCue? _findCueForOffset(int matchableOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
-    final List<AudioCue> cues = ctrl.sentenceAudioCuesForSection(
-      _currentChapter,
-    );
-    for (final AudioCue cue in cues) {
-      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-        cue.textFragmentId,
-      );
-      if (frag == null) continue;
-      if (frag.normCharStart <= matchableOffset &&
-          frag.normCharEnd > matchableOffset) {
-        return cue;
-      }
+    final List<AudioCue> cues = ctrl.chapterCuesSnapshot;
+    AudioCueOffsetIndex? index = _cueOffsetIndex;
+    if (index == null || !index.matches(cues, _currentChapter)) {
+      index = AudioCueOffsetIndex.build(cues, _currentChapter);
+      _cueOffsetIndex = index;
     }
-    return null;
+    return index.cueAt(matchableOffset);
   }
 
   AudioCue? _findCueForSentence(String sentence) {
@@ -1620,8 +1617,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     Directory? framesDir;
     final bool isDesktop =
         Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-    // TODO-2357：**全平台 H.264**，无编码器平台分支。移动端 ffmpeg-kit 已重编入
-    // libx264（--enable-gpl --enable-x264），与桌面 ffmpeg-min 同一个编码器；此前
+    // TODO-2357：**全平台 H.264**，无编码器平台分支。移动端 ffmpeg_kit_next_flutter 与
+    // 桌面统一 FFmpeg 同含 libx264（GPL 构建）；此前
     // 的移动 mpeg4 回退（BUG-1322）规格上限低于本导出的 1080×1920，会静默产出解不了
     // 的文件，与更早的 mjpeg/.mov（BUG-809）同型失败。两端统一 .mp4 容器（faststart）。
     // isDesktop 仍用于产物落盘位置与清理策略（桌面存盘 / 移动走系统分享），与编码无关。
@@ -1652,10 +1649,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
       // M2：裁完整音频片段（AAC/ADTS）。动态多句时裁**整段** [globalStart, globalEnd]
       // （单一真相源，含 head/放宽的 tail padding）；否则裁单句 range。
-      // 输出 .aac（adts 容器）而非 .m4a：捆绑的精简 ffmpeg（--disable-everything）
+      // 输出 .aac（adts 容器）而非 .m4a：旧捆绑的精简 ffmpeg-min（--disable-everything）
       // 只编入 adts/gif/mjpeg/image2 muxer，没有 ipod/mov/m4a muxer，写 .m4a 会让
-      // ffmpeg 自动选不存在的 mov muxer → exit -22（EINVAL）。adts 是 ffmpeg-min
-      // build 契约里句子音频的指定容器（docs/specs/2026-06-07-ffmpeg-min-build-pipeline.md）。
+      // ffmpeg 自动选不存在的 mov muxer → exit -22（EINVAL）。统一 FFmpeg 已含这些 muxer；
+      // adts 作为句子音频的既有容器（兼容 Linux 系统 ffmpeg / 外部 ffmpeg，历史原因）保留。
       final int clipStartMs = dynamicPlan?.globalStartMs ?? startMs;
       final int clipEndMs = dynamicPlan?.globalEndMs ?? endMs;
       // BUG-1320：上限放宽到 300s 后，固定 3 分钟合成超时可能小于片段本身时长。
@@ -1782,10 +1779,10 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           }
           return;
         }
-        // BUG-543：移动端 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），
-        // 桌面 ffmpeg-min 同样含 mjpeg decoder。Flutter 只能直出 png/rawRgba，故把
-        // 渲出的 png 帧在 Dart 层重编码为 jpeg，让两端 ffmpeg 都走 mjpeg 解码，
-        // 绕开缺失的 png decoder（此前移动端合成 exit 1 / "unspecified size"）。
+        // BUG-543：旧移动端 ffmpeg-kit min 变体无 png decoder（有 mjpeg decoder），
+        // 旧桌面 ffmpeg-min 同样（统一 FFmpeg 已含 png decoder）。Flutter 只能直出 png/rawRgba，
+        // 故把渲出的 png 帧在 Dart 层重编码为 jpeg 再走 mjpeg 解码（既有输出契约，历史原因保留；
+        // 此前移动端合成 exit 1 / "unspecified size"）。
         // TODO-1167：静态回退单帧编码同样卸到后台 isolate（UI 线程不被 2MP 解码/编码阻塞）。
         final Uint8List? jpgBytes = await encodeClipTextFrameAsJpgAsync(
           pngBytes,

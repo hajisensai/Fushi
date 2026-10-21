@@ -126,7 +126,17 @@ class DictionaryPopupEntry {
 
   /// BUG-1651：本层按 DOM 内容测量得到的外壳总高度（Flutter 逻辑像素）。null 表示
   /// 尚未测量，先按用户最大高度布局；每次新顶层查词重置，增量结果则在当前高度上伸缩。
+  ///
+  /// 宿主改它一律走 [DictionaryPopupController.setAutoFitHeight]：那里 notify，
+  /// 监听 controller 的那一层就地重建，不再整页 setState（每次渲染信号两次）。
   double? autoFitHeight;
+
+  /// 本层「查词会话」代次。热槽复用 / 关栈复位 / 原地跳转换页都**不换 entry 身份**，
+  /// 只靠 `entries.contains(entry)` 判不出「这条 entry 已经换成别的词了」——远程查词
+  /// 真异步时，慢回来的旧词结果会灌进新词那一层。发起异步查询前记下它，结果回来用
+  /// [DictionaryPopupController.isCurrentLookup] 核对。只由 controller 递增。
+  int get lookupGeneration => _lookupGeneration;
+  int _lookupGeneration = 0;
 
   /// 查询已结束、且没有任何可渲染结果（无词条也无汉字卡）。与
   /// `DictionaryPopupLayer` 画「未找到」的判据同口径：搜索期占位单例不算空。
@@ -275,7 +285,11 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 冷的。现在被裁掉的嵌套层把 WebView 键停到这里，宿主继续在屏外挂着它，下一条嵌套
   /// 层直接接管。上限 1：绝大多数嵌套只有两层，多停一个 realm 就多一份 WebView 进程
   /// 内存；更深层次仍冷建。低内存模式不停驻（与热槽同一策略）。
-  static const int kMaxParkedRealms = 1;
+  ///
+  /// P2-G（2026-10-20）：上限 1 → 2。上限 1 时第三层起每次都冷建（约 300KB 内联
+  /// HTML/CSS/JS 解析 + 等 onLoadStop + 全量静态段），而「词条里点词再点词」三层
+  /// 是常见操作。多停一个 realm 换掉这次冷建；低内存模式仍一个都不停（见 [_retireEntries]）。
+  static const int kMaxParkedRealms = 2;
 
   final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealms =
       <GlobalKey<DictionaryPopupWebViewState>>[];
@@ -336,6 +350,15 @@ class DictionaryPopupController extends ChangeNotifier {
 
   bool get hasVisiblePopup =>
       _entries.any((DictionaryPopupEntry e) => e.visible);
+
+  /// BUG-3652 续：[entry] 这一层此刻是否仍在屏上——仍在栈里（没被关 / 清栈）且未
+  /// 停驻（常驻热槽在两次查词之间 `visible=false` 隐身）。读的是模型而不是已建好的
+  /// widget 树：用户刚关掉弹窗、重建帧还没跑时，制卡回包看到的也是「已不在」。
+  ///
+  /// 对话框期间宿主把弹窗挪到屏外（`_popupHidingDialogDepth`）**不算**不在：那是同一
+  /// 次查词，对话框一关它就回来，失败原因仍该由它就地说。
+  bool isEntryOnScreen(DictionaryPopupEntry entry) =>
+      entry.visible && _entries.contains(entry);
 
   /// 最顶层**可见**条目的下标，无可见层返回 -1（常驻隐藏热槽不算）。
   int get lastVisibleIndex {
@@ -442,7 +465,31 @@ class DictionaryPopupController extends ChangeNotifier {
       ..isSearching = false
       ..allLoaded = false;
     e.autoFitHeight = null;
+    _bumpLookupGeneration(e);
     _clearHistory(e);
+  }
+
+  /// [e] 换成一个新的查词会话：代次 +1，在途的旧查询回来后 [isCurrentLookup] 落 false。
+  void _bumpLookupGeneration(DictionaryPopupEntry e) {
+    e._lookupGeneration++;
+  }
+
+  /// [e] 仍在栈内、且仍是发起查询时（代次 [generation]）的那一次查词会话。
+  ///
+  /// 异步查词结果回填前必须过这道门：热槽复用时新旧查词是**同一个** entry，只核
+  /// `entries.contains` 会让慢回来的旧结果覆盖新词。
+  bool isCurrentLookup(DictionaryPopupEntry e, int generation) =>
+      e._lookupGeneration == generation && _entries.contains(e);
+
+  /// 写入 [e] 按内容测得的外壳高度并通知监听者（P1-D）。与旧值相差不足 1 逻辑像素、
+  /// 或 [e] 已不在栈内时 no-op——不白白重建。返回是否真的改了。
+  bool setAutoFitHeight(DictionaryPopupEntry e, double height) {
+    if (!_entries.contains(e)) return false;
+    final double? current = e.autoFitHeight;
+    if (current != null && (current - height).abs() < 1) return false;
+    e.autoFitHeight = height;
+    notifyListeners();
+    return true;
   }
 
   /// 清掉 [e] 的原地跳转历史与待恢复滚动位。所有「本层换成一个新查词会话」的路径
@@ -495,6 +542,7 @@ class DictionaryPopupController extends ChangeNotifier {
         ..isSearching = true
         ..revealOnRender = false
         ..visible = visible;
+      _bumpLookupGeneration(e);
       _clearHistory(e);
     } else {
       if (replaceStack) {
@@ -629,6 +677,8 @@ class DictionaryPopupController extends ChangeNotifier {
       ..allLoaded = page.allLoaded
       ..isSearching = false
       ..restoreScrollTop = restoreScrollTop;
+    // 换页 = 换查词会话：本层在途的 load-more 等旧词查询回来后一律作废。
+    _bumpLookupGeneration(e);
     // 弹窗不动：selectionRect / autoFitHeight 都保留。高度由新内容的
     // onContentMetrics 再伸缩，先重置会让外壳先跳到最大高再收回来。
   }
@@ -717,7 +767,10 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 零跳变。
   void reanchorEntry(DictionaryPopupEntry e, Rect rect) {
     if (!_entries.contains(e)) return;
-    if (!e.visible && e.isWarmSlot) return;
+    // 隐身且**没被任何查词认领**的热槽才不动：P1-C 起热槽命中也先挂起
+    // （[markPendingReveal]，`revealOnRender=true`）等首条渲染信号再翻可见，这段
+    // 窗口里高亮 eval 回来的重锚必须落地，翻可见时才一次到位。
+    if (!e.visible && e.isWarmSlot && !e.revealOnRender) return;
     if (e.selectionRect == rect) return;
     e.selectionRect = rect;
     notifyListeners();

@@ -10,6 +10,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 
 class LyricsModeHtml {
   LyricsModeHtml._();
@@ -306,9 +307,20 @@ body.ly-themed .lyrics-container > .ly-gap {
       platform: platform ?? defaultTargetPlatform,
       themed: theme != null,
     );
-    final String bodyFontFamily = fontFamilyCss.isEmpty
+    final String chainFontFamily = fontFamilyCss.isEmpty
         ? lyricsFallbackFonts
         : '$fontFamilyCss, $lyricsFallbackFonts';
+    // BUG-3606：竖排与正文同一套标点子集与同一判据（链首 + unicode-range）。
+    final bool verticalPunctuation = ReaderVerticalPunctuationFont.appliesTo(
+      vertical: vertical,
+      contentLanguage: contentLanguage,
+    );
+    final String bodyFontFamily = verticalPunctuation
+        ? ReaderVerticalPunctuationFont.prependTo(chainFontFamily)
+        : chainFontFamily;
+    final String bodyFontFaceCss = verticalPunctuation
+        ? '${ReaderVerticalPunctuationFont.fontFace()}\n$fontFaceCss'
+        : fontFaceCss;
 
     return '''
 <!DOCTYPE html>
@@ -336,7 +348,7 @@ html, body {
   scrollbar-width: thin;
   scrollbar-color: $textColor transparent;
 }
-$fontFaceCss
+$bodyFontFaceCss
 body { font-family: $bodyFontFamily; }
 ::-webkit-scrollbar {
   width: 8px;

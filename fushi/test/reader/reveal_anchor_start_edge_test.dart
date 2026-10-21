@@ -158,14 +158,23 @@ void main() {
       );
     });
 
-    test('scrollToRange 用起始边锚（竖排 rect.top、横排 rect.left）', () {
+    test('scrollToRange 用起始边锚（竖排 rect.top、横排 rect.left、竖排对开 rect.right）', () {
       final String body = scrollToRangeBody();
       expect(
-        RegExp(r'context\.vertical\s*\?\s*rect\.top\s*:\s*rect\.left')
-            .hasMatch(body),
+        body.contains('var startEdge = this.turnSpan(context.axis, rect).start;'),
         isTrue,
-        reason: '落页锚必须与 restoreToCharOffset / jumpToFragment 起始边轴向一致',
+        reason: '落页锚必须与 restoreToCharOffset / jumpToFragment 起始边轴向一致'
+            '（三者统一走 turnSpan）',
       );
+      // turnSpan 的起始边：竖排单条 rect.top、横排 rect.left、竖排对开（xr）到右缘的距离
+      // 取 rect.right——都是「起始边」，不是中点。
+      final int start = scripts.indexOf('turnSpan: function(axisOrVertical, rect) {');
+      expect(start, isNonNegative, reason: '找不到 turnSpan 定义');
+      final String turnSpan =
+          scripts.substring(start, scripts.indexOf('\n  },', start));
+      expect(turnSpan, contains('return { start: right - rect.right, end: right - rect.left };'));
+      expect(turnSpan, contains('? { start: rect.top, end: rect.bottom }'));
+      expect(turnSpan, contains(': { start: rect.left, end: rect.right };'));
     });
   });
 }

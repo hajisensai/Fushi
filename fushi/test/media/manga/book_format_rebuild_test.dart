@@ -20,6 +20,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
+import 'package:fushi/src/media/manga/pdf_text_layer_backfill.dart';
+import 'package:fushi_engine/media/manga/manga_pdf_text_layer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
@@ -40,12 +42,20 @@ void main() {
     bookDir = p.join(root.path, bookKey);
     Directory(bookDir).createSync(recursive: true);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
+    // 文字层提取同样碰 PDFium：默认给一份「每页都没字」的假实现。
+    MangaPdfTextLayer.debugGlyphLoader =
+        (String pdfPath, List<MokuroSize> sizes) async =>
+            <List<PdfTextLayerGlyph>>[
+              for (int i = 0; i < sizes.length; i++)
+                const <PdfTextLayerGlyph>[],
+            ];
   });
 
   tearDown(() async {
     await db.close();
     BookFormatRebuild.debugPdfPageStager = null;
     BookFormatRebuild.debugPdfPageCounter = null;
+    MangaPdfTextLayer.debugGlyphLoader = null;
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
@@ -376,6 +386,63 @@ void main() {
     );
     expect(payload.images.map((MokuroImage e) => e.size.width).toList(),
         <double>[50, 51, 52]);
+  });
+
+  test('PDF 转成漫画：带文字层的页直接写成文字块（真实逐字坐标），不等 OCR', () async {
+    File(p.join(bookDir, PdfImporter.kPdfFileName))
+        .writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
+    await seedRow(
+      format: BookFormat.pdf,
+      epubPath: PdfImporter.kPdfFileName,
+      chapterCount: 2,
+      chaptersJson: '[]',
+    );
+    BookFormatRebuild.debugPdfPageStager = (
+      String pdfPath,
+      Directory staging,
+      void Function(int, int)? onProgress,
+    ) async {
+      for (int i = 0; i < 2; i++) {
+        File(p.join(staging.path, 'page_${i.toString().padLeft(6, '0')}.png'))
+            .writeAsBytesSync(pngBytes(100, 200));
+      }
+      return 2;
+    };
+    List<MokuroSize>? requestedSizes;
+    MangaPdfTextLayer.debugGlyphLoader =
+        (String pdfPath, List<MokuroSize> sizes) async {
+      requestedSizes = sizes;
+      return <List<PdfTextLayerGlyph>>[
+        <PdfTextLayerGlyph>[
+          for (int i = 0; i < 3; i++)
+            PdfTextLayerGlyph(
+              text: '字',
+              rect: MokuroRect.fromLTWH(80, 10.0 + i * 12, 10, 10),
+            ),
+        ],
+        const <PdfTextLayerGlyph>[],
+      ];
+    };
+
+    await BookFormatRebuild.convert(
+      db: db,
+      row: await row(),
+      target: BookFormatTarget.manga,
+    );
+
+    expect(requestedSizes, const <MokuroSize>[
+      MokuroSize(100, 200),
+      MokuroSize(100, 200),
+    ], reason: '文字层按页图像素尺寸换算');
+    final MokuroPayload payload = parseMangaJson(
+      File(p.join(bookDir, MangaStorage.kMangaJsonFileName)).readAsStringSync(),
+    );
+    expect(payload.pdfTextLayerVersion, kPdfTextLayerVersion);
+    final MokuroBlock block = payload.images.first.blocks.single;
+    expect(block.pdfTextLayer, isTrue);
+    expect(block.lines, <String>['字字字']);
+    expect(block.isVertical, isTrue);
+    expect(payload.images.last.blocks, isEmpty);
   });
 
   test('漫画转回 PDF：指回 document.pdf、页数由 PDF 现算、封面回到 cover.png', () async {

@@ -26,6 +26,12 @@ const Map<String, Set<String>> _allowSameAsEnglish = <String, Set<String>>{
   'fr': <String>{'home_session_count', 'collections'},
 };
 
+/// 所有语言都与英文同形的 key（专名 / 缩写），不逐语言列。
+const Set<String> _allowSameAsEnglishEverywhere = <String>{
+  // 模块专名 SRS，所有语言统一用缩写（PR #2386）。
+  'nav_srs',
+};
+
 const List<String> _sources = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/home_dashboard_widgets.dart',
@@ -72,6 +78,7 @@ void main() {
         if (enValue is! String || !RegExp('[A-Za-z]{3}').hasMatch(enValue)) {
           continue;
         }
+        if (_allowSameAsEnglishEverywhere.contains(key)) continue;
         if (_allowSameAsEnglish[locale]?.contains(key) ?? false) continue;
         if (values[key] == enValue) untranslated.add('$locale:$key');
       }

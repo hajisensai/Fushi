@@ -332,7 +332,20 @@ void main() {
         final String child = await store.createDeck('一巻', parentId: parent);
         await addNote('走る', deckId: child);
       });
-      await tester.pumpWidget(app(dashboard(), apple: apple));
+      // 首页与牌组列表挂在同一个 ProviderScope 里换页：两个 scope 都覆盖成同一个
+      // [appModel] 时，各自卸载都会 dispose 它一次（ChangeNotifierProvider 拥有它）。
+      final ValueNotifier<Widget> page = ValueNotifier<Widget>(dashboard());
+      addTearDown(page.dispose);
+      await tester.pumpWidget(
+        app(
+          ValueListenableBuilder<Widget>(
+            valueListenable: page,
+            builder: (BuildContext context, Widget current, Widget? _) =>
+                current,
+          ),
+          apple: apple,
+        ),
+      );
       await settle(tester);
       final SrsCountTriple home = tester.widget<SrsCountTriple>(
         find.descendant(of: panel, matching: find.byType(SrsCountTriple)),
@@ -342,8 +355,7 @@ void main() {
       final List<SrsDeckSummary> decks = (await tester.runAsync(
         store.deckSummaries,
       ))!;
-      await unmount(tester);
-      await tester.pumpWidget(app(const SrsDeckListPage(), apple: apple));
+      page.value = const SrsDeckListPage();
       await settle(tester);
       int sumNew = 0, sumLearn = 0, sumReview = 0;
       for (final SrsDeckSummary d in decks.where(

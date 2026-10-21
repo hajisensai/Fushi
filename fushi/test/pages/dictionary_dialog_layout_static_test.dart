@@ -156,7 +156,12 @@ void main() {
 
     expect(source, contains('BatchActionBar('));
     expect(source, contains('Future<bool> _batchSetEnabled(bool enabled)'));
-    expect(source, contains('await appModel.setDictionaryHidden(dictionary, !enabled)'));
+    // 批量启停逐本走「按所在分区写目标态」（BUG-3573：「汉字」分区里混合词典只写
+    // 汉字部分的开关），两条写入都必须是幂等的目标态 setter。
+    expect(source, contains('await _writeEnabledInSection(dictionary, enabled)'));
+    expect(source, contains('appModel.setDictionaryHidden(dictionary, !enabled)'));
+    expect(source,
+        contains('appModel.setDictionaryKanjiPartHidden(dictionary, !enabled)'));
     expect(source, isNot(contains('appModel.toggleDictionaryHidden(dictionary)')),
         reason: '启停是幂等的目标状态操作，不能靠旧 snapshot 再翻转一次');
     expect(source, contains('appModel.setDictionaryCollapseState(dictionary, target)'));
@@ -381,8 +386,15 @@ void main() {
     expect(btnSource, contains('Icons.horizontal_rule'));
     expect(btnSource, contains('Icons.unfold_more'));
     expect(btnSource, contains('Icons.unfold_less'));
-    expect(btnSource, contains('t.options_expand'));
-    expect(btnSource, contains('t.options_collapse'));
+    // tooltip 说的是**当前态**，与图标一致：以前说的是「点一下变成什么」，
+    // 折叠图标配「跟随全局设置」被读成当前态。文案与详情分段控件同一套状态词。
+    expect(btnSource, contains('t.dict_collapse_state_inherit'));
+    expect(btnSource, contains('t.dict_collapse_state_expanded'));
+    expect(btnSource, contains('t.dict_collapse_state_collapsed'));
+    expect(btnSource,
+        contains('t.dict_row_collapse_tooltip(state: stateLabel)'));
+    expect(btnSource, isNot(contains('t.options_expand')));
+    expect(btnSource, isNot(contains('t.options_collapse')));
   });
 
   // TODO-422：词典行尾的三点菜单（旧 buildDictionaryTileTrailing / getMenuItems）

@@ -29,13 +29,39 @@ import '../helpers/source_guard.dart';
 
 void main() {
   late String appModel;
+  // DictPathEntry / dictPathEntryOf / hasEmbeddedKanjiIn 自 c93f413131 起收进
+  // fushi_dictionary（app 与无头服务端共用）。
+  late String buckets;
 
   setUpAll(() {
     final File f = File('lib/src/models/app_model.dart');
-    expect(f.existsSync(), isTrue,
-        reason: 'app_model.dart not found at ${f.absolute.path}');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: 'app_model.dart not found at ${f.absolute.path}',
+    );
     appModel = f.readAsStringSync();
+    final File b = File(
+      '../packages/fushi_dictionary/lib/src/engine/dictionary_buckets.dart',
+    );
+    expect(
+      b.existsSync(),
+      isTrue,
+      reason: 'dictionary_buckets.dart not found at ${b.absolute.path}',
+    );
+    buckets = b.readAsStringSync();
   });
+
+  // 箭头函数（`=> ...;`）的声明切片：从签名到第一个 `;\n`。命名参数的 `{...}`
+  // 会让花括号配平截到参数表，所以不能复用 [bodyOf]。
+  String arrowDeclOf(String rawSrc, String sig) {
+    final String src = maskComments(rawSrc);
+    final int start = src.indexOf(sig);
+    expect(start, greaterThanOrEqualTo(0), reason: '$sig not found');
+    final int end = src.indexOf(';\n', start);
+    expect(end, greaterThan(start), reason: 'no ; after $sig');
+    return src.substring(start, end);
+  }
 
   // 先剥注释再取函数体：本文件的判据全是「函数体里必须出现某字面量」，而这些
   // 字面量在同一段代码的中文注释里逐字出现过好几次（本仓一天抓到过 6 起这种
@@ -61,51 +87,106 @@ void main() {
   group('TODO-622 mixed dictionary reclassification', () {
     test('_migrateDictionaryTypes self-heals stored kanji dicts via probe', () {
       final String body = bodyOf(appModel, 'void _migrateDictionaryTypes(');
-      expect(body.contains('d.type == DictionaryType.kanji'), isTrue,
-          reason: 'must single out already-imported type==kanji dictionaries');
-      expect(body.contains('FushiDicts.probeDictContent('), isTrue,
-          reason: 'classification must come from the native single source of '
-              'truth (probe blobs.bin), not a fragile Dart blob header read');
+      expect(
+        body.contains('d.type == DictionaryType.kanji'),
+        isTrue,
+        reason: 'must single out already-imported type==kanji dictionaries',
+      );
+      expect(
+        body.contains('FushiDicts.probeDictContent('),
+        isTrue,
+        reason:
+            'classification must come from the native single source of '
+            'truth (probe blobs.bin), not a fragile Dart blob header read',
+      );
       // 锚到**降级表达式本身**，不是裸的 `DictionaryType.term`：后者会被同一
       // 函数体里无关的 `if (d.type != DictionaryType.term) continue;` 满足，于是
       // 把降级整个删成 `type: d.type` 这条断言仍然绿——恒真，零覆盖。
-      expect(body.contains('mixed ? DictionaryType.term'), isTrue,
-          reason: 'a kanji dict that actually contains term records must be '
-              'demoted back to term so word lookup hits again');
+      expect(
+        body.contains('mixed ? DictionaryType.term'),
+        isTrue,
+        reason:
+            'a kanji dict that actually contains term records must be '
+            'demoted back to term so word lookup hits again',
+      );
       // 探测结果必须落库——包括「探过、结论是不用改」。少了这一步，「没探过」和
       // 「探过、无需改判」在数据上不可区分，纯 kanji 词典每次启动都要把整张 hash
       // 表重扫一遍（同步 FFI + 随机跳读 blobs.bin），词典一多启动直接卡死。
-      expect(body.contains('kDictTypeProbeKey'), isTrue,
-          reason: 'the probe result must be recorded so the scan runs once '
-              'per dictionary, not once per launch');
-      expect(body.contains("'hasKanji'"), isTrue,
-          reason:
-              'the demoted mixed dict must be tagged hasKanji so the bucket '
-              'router also registers it as a kanji dict');
+      expect(
+        body.contains('kDictTypeProbeKey'),
+        isTrue,
+        reason:
+            'the probe result must be recorded so the scan runs once '
+            'per dictionary, not once per launch',
+      );
+      expect(
+        body.contains("'hasKanji'"),
+        isTrue,
+        reason:
+            'the demoted mixed dict must be tagged hasKanji so the bucket '
+            'router also registers it as a kanji dict',
+      );
     });
 
-    test('path-cache rebuild reads metadata[hasKanji] into DictPathEntry', () {
+    // c93f413131 起 DictPathEntry 的构造收口到 fushi_dictionary 的
+    // dictPathEntryOf（app 与无头服务端共用），metadata → hasKanji 的判据只在
+    // 那里写一次；app 侧两条重建路径必须把整份 metadata 交给它。
+    test('path-cache rebuild hands metadata to dictPathEntryOf', () {
       for (final m in <String>[
         'void _rebuildDictPathsCache(',
         'Future<void> _rebuildDictPathsCacheAsync(',
       ]) {
         final String body = bodyOf(appModel, m);
-        expect(body.contains("metadata['hasKanji']"), isTrue,
-            reason: '$m must read metadata[hasKanji] so a mixed dictionary is '
-                'routed into the kanji bucket');
-        expect(body.contains('hasKanji:'), isTrue,
-            reason: '$m must populate the DictPathEntry.hasKanji field');
+        expect(
+          body.contains('dictPathEntryOf('),
+          isTrue,
+          reason: '$m must build entries via the shared dictPathEntryOf',
+        );
+        expect(
+          body.contains('metadata:'),
+          isTrue,
+          reason:
+              '$m must pass the dictionary metadata so a mixed '
+              'dictionary is routed into the kanji bucket',
+        );
       }
     });
 
+    test('dictPathEntryOf derives hasKanji from metadata[hasKanji]', () {
+      final String body = arrowDeclOf(
+        buckets,
+        'DictPathEntry dictPathEntryOf(',
+      );
+      expect(
+        body.contains('hasKanji: hasEmbeddedKanjiIn('),
+        isTrue,
+        reason: 'DictPathEntry.hasKanji must come from hasEmbeddedKanjiIn',
+      );
+      final String probe = arrowDeclOf(buckets, 'bool hasEmbeddedKanjiIn(');
+      expect(
+        probe.contains('metadata[kDictHasKanjiKey]'),
+        isTrue,
+        reason: 'hasEmbeddedKanjiIn must read the hasKanji metadata key',
+      );
+      expect(
+        buckets.contains("const String kDictHasKanjiKey = 'hasKanji';"),
+        isTrue,
+        reason:
+            'the key must stay the persisted literal hasKanji that '
+            '_migrateDictionaryTypes writes',
+      );
+    });
+
     test('DictPathEntry carries a hasKanji field', () {
-      final int idx = appModel.indexOf('typedef DictPathEntry = ({');
+      final int idx = buckets.indexOf('typedef DictPathEntry = ({');
       expect(idx, greaterThanOrEqualTo(0));
-      final int close = appModel.indexOf('});', idx);
-      final String decl = appModel.substring(idx, close);
-      expect(decl.contains('bool hasKanji'), isTrue,
-          reason:
-              'DictPathEntry must declare hasKanji for double-bucket route');
+      final int close = buckets.indexOf('});', idx);
+      final String decl = buckets.substring(idx, close);
+      expect(
+        decl.contains('bool hasKanji'),
+        isTrue,
+        reason: 'DictPathEntry must declare hasKanji for double-bucket route',
+      );
     });
   });
 }

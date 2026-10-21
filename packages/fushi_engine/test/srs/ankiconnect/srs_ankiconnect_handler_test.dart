@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -638,6 +639,80 @@ void main() {
         }))['error'],
         'Note was not found: 1',
       );
+    });
+
+    test('setSpecificValueOfCard：只认新卡的 due（队列位置），形状照插件', () async {
+      // 直接经 store 建笔记：本用例只测位置读写，不依赖查重用的原生搜索内核。
+      final String noteId = await h.store.createNote(
+        noteTypeId: h.store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kAcProfile, 'Expression'): '猫',
+        },
+      );
+      final int card = SrsIds.ankiNumericId(
+        (await h.store.cardsOfNote(noteId)).single.id,
+      );
+      Future<Map<String, Object?>> info() async =>
+          (((await h.ok('cardsInfo', <String, Object?>{
+                            'cards': <int>[card],
+                          }))!
+                          as List)
+                      .single!
+                  as Map)
+              .cast<String, Object?>();
+      expect((await info())['due'], 0, reason: '没排过的新卡 due 报 0');
+
+      expect(
+        await h.ok('setSpecificValueOfCard', <String, Object?>{
+          'card': card,
+          'keys': <String>['due', 'ivl'],
+          'newValues': <Object?>[7, 3],
+          'warning_check': true,
+        }),
+        <Object?>[
+          true,
+          <Object?>[false, 'Fushi review cannot set "ivl" on a card'],
+        ],
+      );
+      expect((await info())['due'], 7);
+      final String? cardId = await h.store.cardIdForAnkiNumericId(card);
+      expect((await h.store.cardRow(cardId!))!.newPosition, 7);
+
+      // 长度不一致：裸 false；卡不存在：[[false, 原因]]。
+      expect(
+        await h.ok('setSpecificValueOfCard', <String, Object?>{
+          'card': card,
+          'keys': <String>['due'],
+          'newValues': <Object?>[],
+        }),
+        isFalse,
+      );
+      final List<Object?> missing =
+          (await h.ok('setSpecificValueOfCard', <String, Object?>{
+                'card': 1,
+                'keys': <String>['due'],
+                'newValues': <Object?>[1],
+              }))!
+              as List;
+      expect((missing.single! as List).first, isFalse);
+
+      // 空卡（生成门隐藏）按不存在处理。「学过的卡不接受」在 store 层
+      // （srs_new_card_position_test）测：本 harness 没装排程内核，答不了题。
+      await h.store.updateNote(
+        noteId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kAcProfile, 'Expression'): '',
+        },
+      );
+      final List<Object?> learned =
+          (await h.ok('setSpecificValueOfCard', <String, Object?>{
+                'card': card,
+                'keys': <String>['due'],
+                'newValues': <Object?>[1],
+              }))!
+              as List;
+      expect((learned.single! as List).first, isFalse);
+      expect((await h.store.cardRow(cardId))!.newPosition, 7);
     });
 
     test('guiBrowse / guiEditNote 交给宿主回调', () async {

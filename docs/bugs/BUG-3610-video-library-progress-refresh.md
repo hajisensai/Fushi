@@ -1,0 +1,12 @@
+## BUG-3610 · 视频媒体库页从详情页退回后观看进度不刷新
+- **报告**：2026-10-19（用户：应用内反馈 `EciHRjr41R`，Android vivo V2339FA，3.0.0-debug.19770：「退出播放页那个页面会立即更新的问题修好了，但再退出来到媒体库页面也没同步，看到第七集还显示第六集，得下拉同步（同步失败也行）或杀后台重进才刷新」；同一反馈人上一轮 `UvnU4AYh_t` 即 BUG-3491）
+- **真实性**：✅ 真 bug（基线 `77d829658b`，沿代码路径核实）
+  - 库页（`HomeVideoPage`）的书架列表 `_future = widget.repo.listForShelf()` 是一次性快照，卡片 / 合集卡 / 「继续观看」「下一集」行的观看进度全从它（`lastPositionMs` / `completedAt` / `currentEpisode` / `playlistJson`）和最近观看映射派生。
+  - 只有库页**自己**开播（`_open`）返回时会重读（`fushi/lib/src/pages/implementations/home_video_page.dart:2729` `_refreshAfterPlayback()`）。点合集卡进详情页走 `_openCollectionDetail`（同文件 `:8857`），fire-and-forget push，回来不重读；详情页里开播、退回详情页的刷新是 BUG-3491 只在详情页内做的（`media_collection_detail_page.dart` 的路由边沿重读），库页不知道。
+  - 唯一的数据层监听 `watchVideoBookUids`（BUG-793）在消费端按 uid 集合去重，**刻意**丢掉纯列更新（`home_video_page.dart:784` `if (setEquals(next, _knownVideoUids)) return;`），进度回写正属此类。
+  - 下拉刷新 `_pullToRefresh` 先跑同步、不论成败都重换 `_future`，所以「同步失败也行」；杀进程重进是重新 `initState` 首载——与反馈完全吻合。同样受影响的还有：从首页 dashboard 续播、`fushi_cli` 改进度、互联 / 云同步把对端进度写回本机行之后。
+- **[x] ① 根因修复** — 数据层新增「观看进度变了」信号 `FushiDatabase.watchVideoWatchProgressChanged()`（`packages/fushi_core/lib/src/database/database_video_domain.part.dart`，`tableUpdates(videoBooks)` 触发后按 `bookUid` + 断点 / 断点时刻 / 看完标记 / 集指针 / 逐集进度算签名，变了才 emit；首查只登记基线；封面回写、字幕源等其余列写入不改签名，不会形成自愈重刷环），经 `VideoBookRepository.watchVideoWatchProgressChanged()` 暴露。库页 `initState` 订阅它：本页在前台（路由在栈顶且视频 tab 是当前 tab）→ 300 ms 防抖后走播放返回同一条窄刷新 `_refreshAfterPlayback`（书架列表 + 最近观看，不碰远端、不跑封面回填）；不在前台 → 只记 `_watchProgressStale`，等路由重新露出（`didChangeDependencies` 里 `ModalRoute.isCurrentOf` 的边沿）或切回视频 tab（`onTabActivated`）时补刷一次——播放期间不会每次断点落库都在后台重列书架。播放页退出时最后一次断点写入若晚于退回边沿落库，信号会在前台再触发一次，不存在读早了的窗口。不靠返回时手动触发同步。
+- **[x] ② 自动化测试** — `fushi/test/database/video_books_test.dart`（`watchVideoWatchProgressChanged` 组：基线不发、断点 / 看完 / 集指针变化各发一次；封面 / 字幕源 / 空通知 / 同值重写不发）、`fushi/test/pages/home_video_watch_progress_refresh_test.dart`（库页在前台时别处写进度 → 「继续观看」从第 2 集变第 3 集；库页被盖住时写进度 → 盖住期间保持旧值、pop 回来即刷新；只改封面不重读）。
+- **备注**：
+  - 只覆盖本机 `video_books` 行上的进度。互联远端占位卡的进度来自 host 清单（`RemoteLibraryCache` TTL），不在本信号内，与本反馈（下拉时同步失败也能刷新 = 本地数据）无关。
+  - 未在真机（Android vivo）复测原始路径，待真机复测；验证为 DB 单测 + widget 测试。

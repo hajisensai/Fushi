@@ -32,6 +32,8 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
  *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
+ *   <li>{@code startSystemBall.tapClipboard}：收起态点球直接查剪贴板、长按才展开按钮，
+ *       缺省 false（点球展开）。</li>
  *   <li>{@code startSystemBall.icons}：按钮 id → Material Icons 码位（与应用内球同一颗
  *       IconData），{@code startSystemBall.colors}：{@code surface / onSurface / primary}
  *       的 ARGB。都用来把系统球画得和应用内球一样（BUG-2793），缺省回退首字 / 默认配色。</li>
@@ -59,12 +61,6 @@ final class FloatingBallChannel {
     /** channel 绑定的引擎；detach 只拆自己这台，防止重建顺序颠倒时拆掉新引擎的通道。 */
     @Nullable
     private static FlutterEngine channelEngine;
-
-    /**
-     * 有一次 Dart 发起、返回了 true 的 startScreenOcr 还欠一个 screenOcrFinished。
-     * 只在主线程读写。悬浮球发起的 OCR 不置位——Dart 没藏球，也就不需要回调。
-     */
-    private static boolean dartOcrPending = false;
 
     /**
      * 系统球「查词」发生时主引擎不在（MainActivity 已销毁）：先记下，等新引擎上的 Dart
@@ -110,18 +106,41 @@ final class FloatingBallChannel {
 
     /**
      * 截到帧 / 流程无截屏地结束时调用（主线程）。每次 Dart 发起的 startScreenOcr 至多
-     * 回调一次：第一次调用消费掉 {@link #dartOcrPending}，之后（例如截到帧后选取层
-     * 关闭时的收尾）都是 no-op。主引擎已不在就只清标记、不发送。
+     * 回调一次（欠账记在 {@link ScreenCaptureRequestActivity#LATCH}；悬浮球发起的 OCR
+     * 不记账——Dart 没藏球，也就不需要回调），之后（例如截到帧后选取层关闭时的收尾）
+     * 都是 no-op。
+     *
+     * <p>主引擎通道此刻不在（MainActivity 已销毁，但 audio_service 的缓存引擎与 Dart
+     * isolate 还活着、应用内球还藏着）时不能丢：记成未送达，等 {@link #onHostResumed}
+     * 通道重新挂上后补发（BUG-3602）。
      */
     static void notifyScreenOcrFinished() {
-        if (!dartOcrPending) return;
-        dartOcrPending = false;
+        if (!ScreenCaptureRequestActivity.LATCH.finish(channel != null)) return;
+        deliverScreenOcrFinished();
+    }
+
+    /**
+     * Fushi 主界面回到前台（{@code MainActivity.onResume}，此时通道已在 configureFlutterEngine
+     * 里挂好）：被系统丢掉的截屏发起按结束收尾，没送达的 screenOcrFinished 补发。主线程。
+     */
+    static void onHostResumed() {
+        ScreenCaptureRequestActivity.onHostAppResumed();
+        if (ScreenCaptureRequestActivity.LATCH.takeUndelivered(channel != null)) {
+            deliverScreenOcrFinished();
+        }
+    }
+
+    private static void deliverScreenOcrFinished() {
         MethodChannel ch = channel;
-        if (ch == null) return;
+        if (ch == null) {
+            ScreenCaptureRequestActivity.LATCH.onDeliveryFailed();
+            return;
+        }
         try {
             ch.invokeMethod(METHOD_SCREEN_OCR_FINISHED, null);
         } catch (RuntimeException e) {
-            Log.w(TAG, "screenOcrFinished could not be delivered", e);
+            Log.w(TAG, "screenOcrFinished could not be delivered; retrying on next resume", e);
+            ScreenCaptureRequestActivity.LATCH.onDeliveryFailed();
         }
     }
 
@@ -245,7 +264,8 @@ final class FloatingBallChannel {
                         stringMap(call.argument("labels")),
                         intMap(call.argument("icons")),
                         intMap(call.argument("colors")),
-                        call.argument("ocrLanguage"));
+                        call.argument("ocrLanguage"),
+                        call.argument("tapClipboard"));
                 if (FloatingBallService.getInstance() == null) {
                     Intent svc = new Intent(app, FloatingBallService.class);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -306,7 +326,7 @@ final class FloatingBallChannel {
                 Map<String, String> labels = stringMap(call.argument("labels"));
                 if (labels.isEmpty()) labels = FloatingBallService.storedLabels(app);
                 boolean started = ScreenCaptureRequestActivity.launch(context, language, labels);
-                if (started) dartOcrPending = true;
+                if (started) ScreenCaptureRequestActivity.LATCH.onDartStarted();
                 result.success(started);
                 return;
             }

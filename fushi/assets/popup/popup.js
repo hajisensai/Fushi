@@ -483,9 +483,41 @@ function parseMineResult(reply) {
             message,
             duplicate: reply.duplicate === true,
             queued: reply.queued === true,
+            // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
+            // （MineFailureNotice.settle）。这里就不能再说第二遍。
+            hostReported: reply.hostReported === true,
         };
     }
     return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
+}
+
+// BUG-3652 续：制卡失败的原因**恰好说一次**。
+//
+// 宿主把原因随回包带来（MinePopupResult.message），失败时不另弹 toast——否则同一次失败
+// 报两遍。但回包到达时，发起制卡的那颗按钮可能已经不在页面上了：同一个弹窗里换了词、
+// 原地跳转、热槽复用重渲染（renderPopup 清空 #entries-container）。这时把提示锚到一颗
+// 脱离文档的按钮上，要么画在错的地方、要么根本看不见，用户就什么都没收到。
+//
+//   * hostReported —— 宿主已经判定弹窗不在并 toast 过了，什么都不做；
+//   * 按钮还在页面上 —— 就地说（showInlineHint）；
+//   * 按钮已被摘掉 —— 不画，交回宿主（mineFailureUnseen）由它 toast 一次。
+function reportMineFailure(button, result) {
+    if (result && result.hostReported) return;
+    const message = (result && result.message) || window.i18nMineFailed || '制卡失败';
+    // 没有 isConnected 的老引擎按「还在页面上」处理（与改动前同样就地说）。
+    if (button.isConnected !== false) {
+        showInlineHint(button, message);
+        return;
+    }
+    try {
+        const pending = window.flutter_inappwebview.callHandler('mineFailureUnseen', {
+            message,
+            duplicate: !!(result && result.duplicate === true),
+        });
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+    } catch (e) {
+        console.error('mine failure: mineFailureUnseen failed', e);
+    }
 }
 
 // Records the just-mined word as the editable "latest" card when the backend
@@ -2783,7 +2815,14 @@ function showInlineHint(button, message) {
     setTimeout(() => {
         hint.classList.remove('visible');
         setTimeout(() => hint.remove(), 220);
-    }, 1800);
+    }, inlineHintDurationMs(message));
+}
+
+// 制卡失败的原因（宿主经 reply.message 带来的一整句）读完要时间：短提示照旧 1.8s，
+// 长句按字数延长，封顶 6s。宿主不再另弹 toast，这里是这次失败唯一的说法。
+function inlineHintDurationMs(message) {
+    const length = String(message || '').length;
+    return Math.min(6000, Math.max(1800, 1200 + length * 60));
 }
 
 // BUG-2051：↗「在 Anki 中打开这个词的卡」——**唯一**一条车道，app 内外同一根桥。
@@ -4708,9 +4747,7 @@ function createEntryHeader(entry, idx) {
                     // 都还在，所以 ✓ 是真的；失败时 result.noteId 为 null，上一行的
                     // rememberLatestMined 已经把「最新可改」降级回普通 ✓。要补的只是原因。
                     if (!result.ankiConnect) {
-                        showInlineHint(
-                            mineButton,
-                            result.message || window.i18nMineFailed || '制卡失败');
+                        reportMineFailure(mineButton, result);
                     }
                     setMineState(true);
                     return;
@@ -4758,7 +4795,7 @@ function createEntryHeader(entry, idx) {
                             // ——取消不带 message，所以判据是 message 非空，而不是
                             // !ankiConnect（否则取消会被误报成失败）。
                             if (action.result.message) {
-                                showInlineHint(mineButton, action.result.message);
+                                reportMineFailure(mineButton, action.result);
                             }
                             const stillMined = await window.flutter_inappwebview.callHandler('duplicateCheck', { expression, reading });
                             setMineState(stillMined);
@@ -4821,9 +4858,8 @@ function createEntryHeader(entry, idx) {
                     //
                     // showInlineHint 正是 BUG-1064 为「app 外没有 Flutter toast 可用」
                     // 建的页内车道，锚在按钮屏幕坐标上，窗口被裁到卡片 bbox 也可见。
-                    showInlineHint(
-                        mineButton,
-                        result.message || window.i18nMineFailed || '制卡失败');
+                    // BUG-3652 续：按钮已被换掉 / 宿主已 toast 时不在这里画，见 reportMineFailure。
+                    reportMineFailure(mineButton, result);
                     // TODO-448 原样保住：失败/不确定**绝不**回查 Anki 再把按钮翻成 ✓
                     // （addNote 到了 Anki 但响应连接断了那次，延迟 duplicateCheck 会让用户
                     // 先看到「失败」再看到 ✓）。所以这里不发任何 duplicateCheck。
@@ -6349,23 +6385,62 @@ function rubyUnitsAreTouching(a, b) {
     return node === b;
 }
 
-function applyCustomCSS() {
-    __fushiOverlayParent().querySelectorAll('style.fushi-custom-css').forEach(el => el.remove());
+// P2-F（2026-10-20）：自定义 CSS 按「键 → <style> 节点」diff 落地，未变的一个都不动。
+// 旧实现每次渲染（首词条、尾批、增量追加各一次）都把全部 style.fushi-custom-css 删掉
+// 再整批重插——哪怕内容一字未变，每次增删 <style> 都让整个文档的样式失效重算，词条
+// 越多越贵。现在与 ensureDictionaryStyle 同一思路：节点按键常驻，文本变了才改
+// textContent，键集合或顺序变了才重排。键：全局 CSS 用以 NUL 开头的保留键（词典名
+// 不可能含 NUL，不会撞车），词典 CSS 用词典名。
+const __FUSHI_GLOBAL_CUSTOM_CSS_KEY = '\u0000global';
+// 已落地的节点，按应在文档里出现的顺序（全局在前，词典按 customDictCSS 的键序）。
+let __fushiCustomCssNodes = [];
+function __fushiDesiredCustomCss() {
+    const desired = [];
     if (window.globalDictCSS) {
-        const style = document.createElement('style');
-        style.className = 'fushi-custom-css';
-        style.textContent = window.globalDictCSS;
-        __fushiOverlayParent().appendChild(style);
+        desired.push({ key: __FUSHI_GLOBAL_CUSTOM_CSS_KEY, raw: window.globalDictCSS, dictName: null });
     }
     if (window.customDictCSS && typeof window.customDictCSS === 'object') {
         for (const [dictName, css] of Object.entries(window.customDictCSS)) {
             if (!css) continue;
-            const style = document.createElement('style');
-            style.className = 'fushi-custom-css';
-            style.textContent = constructDictCss(css, dictName);
-            __fushiOverlayParent().appendChild(style);
+            desired.push({ key: dictName, raw: css, dictName: dictName });
         }
     }
+    return desired;
+}
+function applyCustomCSS() {
+    const parent = __fushiOverlayParent();
+    const desired = __fushiDesiredCustomCss();
+    const current = __fushiCustomCssNodes;
+    // 原位更新的前提：同一组键、同一顺序、节点都还挂在当前 realm 根下。任一不满足就
+    // 整批重建（键集合变化 = 用户改了设置，罕见），保持「全局在前」的层叠顺序不变。
+    let inPlace = current.length === desired.length;
+    for (let i = 0; inPlace && i < desired.length; i++) {
+        const node = current[i];
+        inPlace = node.key === desired[i].key && node.style.parentNode === parent;
+    }
+    if (inPlace) {
+        for (let i = 0; i < desired.length; i++) {
+            const node = current[i];
+            if (node.raw === desired[i].raw) continue;
+            node.raw = desired[i].raw;
+            node.style.textContent = desired[i].dictName === null
+                ? desired[i].raw
+                : constructDictCss(desired[i].raw, desired[i].dictName);
+        }
+        return;
+    }
+    // 连同不在表里的遗留节点（换过 realm 根、旧版本插入的）一起清掉，再按序重建。
+    parent.querySelectorAll('style.fushi-custom-css').forEach(el => el.remove());
+    for (const node of current) {
+        try { node.style.remove(); } catch (_) { /* 已随旧 realm 根一起移除 */ }
+    }
+    __fushiCustomCssNodes = desired.map((d) => {
+        const style = document.createElement('style');
+        style.className = 'fushi-custom-css';
+        style.textContent = d.dictName === null ? d.raw : constructDictCss(d.raw, d.dictName);
+        parent.appendChild(style);
+        return { key: d.key, raw: d.raw, style: style };
+    });
 }
 
 // TODO-094 S5: kanji dictionary card. A single-character lookup carries

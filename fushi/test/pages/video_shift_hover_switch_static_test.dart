@@ -143,6 +143,15 @@ void main() {
         isTrue,
         reason: '两条 hover 路径共用同句同 grapheme 去重键',
       );
+      // 查词卡顿：去重判据是「同一个词」（命中当前查词高亮，或同句同查词起点），
+      // 划过一个多字词只查一次；判据收在可单测的纯函数里。
+      expect(
+        funnel.contains('isSameSubtitleHoverWord(') &&
+            funnel.contains('_activeSubtitleLookupHighlight') &&
+            funnel.contains('subtitleLookupSpan('),
+        isTrue,
+        reason: '悬停去重必须按命中词（高亮 / 查词起点），而不是只认同一个字',
+      );
       expect(funnel.contains('_handleSubtitleLookupTap('), isTrue);
     });
 

@@ -11,6 +11,7 @@ import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart';
 
@@ -42,6 +43,9 @@ AudioCue _cue(int i, String text) => AudioCue()
   ..startMs = i * 1000
   ..endMs = i * 1000 + 900
   ..audioFileIndex = 0;
+
+/// 竖排时链首的标点子集（BUG-3606）；BUG-3281 的链断言比的是它后面的部分。
+const String _vp = '"${ReaderVerticalPunctuationFont.family}", ';
 
 String _html({
   bool vertical = true,
@@ -191,7 +195,7 @@ void main() {
         style: CjkFontStyle.sansSerif,
       );
       expect(chain, isNotEmpty);
-      expect(html, contains('body { font-family: $chain; }'));
+      expect(html, contains('body { font-family: $_vp$chain; }'));
       final String bodyFont = RegExp(
         r'body \{ font-family: ([^;]*); \}',
       ).firstMatch(html)!.group(1)!;
@@ -201,7 +205,7 @@ void main() {
 
     test('用户正文字体仍排在链首', () {
       final String html = _html(fontFamilyCss: '"MyFont"');
-      expect(html, contains('body { font-family: "MyFont", '));
+      expect(html, contains('body { font-family: $_vp"MyFont", '));
     });
 
     test('无主题（旧观感）用衬线链', () {
@@ -211,7 +215,7 @@ void main() {
         platform: TargetPlatform.android,
         style: CjkFontStyle.serif,
       );
-      expect(html, contains('body { font-family: $chain; }'));
+      expect(html, contains('body { font-family: $_vp$chain; }'));
     });
 
     test('非 CJK / 未知内容语言不套日文 CJK 链（没有全局学习语言）', () {
@@ -225,7 +229,7 @@ void main() {
       };
       String bodyFont(String html) => RegExp(
         r'body \{ font-family: ([^;]*); \}',
-      ).firstMatch(html)!.group(1)!;
+      ).firstMatch(html)!.group(1)!.replaceFirst(_vp, '');
       String head(String chain) =>
           chain.split(',').first.trim().replaceAll('"', '');
 

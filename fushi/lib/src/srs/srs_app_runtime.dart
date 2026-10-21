@@ -12,6 +12,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
@@ -22,6 +23,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -31,12 +33,14 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_backup.dart';
+import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 
 /// 模块开着时的常驻装配（见文件头）；关着时为 null。
@@ -70,6 +74,12 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
     ref.listen<int>(
       srsRevisionProvider,
       (int? previous, int next) => runtime.backup.onDataChanged(),
+    );
+    // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
+    ref.listen<AsyncValue<Object?>>(
+      srsRwkvServiceProvider,
+      (AsyncValue<Object?>? previous, AsyncValue<Object?> next) {},
+      fireImmediately: true,
     );
     runtime.install();
     ref.onDispose(runtime.dispose);
@@ -105,11 +115,8 @@ class SrsAppRuntime {
   final FsrsEngine? Function() _engine;
   final void Function() _bumpRevision;
 
-  /// 自动备份（离开复习页、库有变动时触发；见 srs_backup.dart）。
+  /// 自动备份（离开 SRS 界面、库有变动时触发；见 srs_backup.dart）。
   final SrsBackupController backup;
-
-  /// 上一次看到的复习页数量（从 >0 回到 0 = 离开复习页）。
-  int _reviewSessions = 0;
 
   late final SrsSyncScheduler sync = SrsSyncScheduler(
     readStore: _readStore,
@@ -118,6 +125,9 @@ class SrsAppRuntime {
           db: app.database,
           body: (SyncBackend backend) => body(backend),
         ),
+    directoryKeyOf: (SyncAssetStore backend) =>
+        srsDirectoryKeyOf(backend, SyncRepository(app.database)),
+    localDirectories: _localDirectories,
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
@@ -147,6 +157,30 @@ class SrsAppRuntime {
     await sync.syncWithBackend(backend);
   }
 
+  /// 本机开着互联服务时，客户端经互联写进来的同步目录（host 自己不是任何一条通道的客户端，
+  /// 不在这里同步，它的复习数据就到不了连它的设备、也读不到它们的）。目录身份与客户端看到的
+  /// hostId 相同（host 的 hostId 就是本机设备 id）。
+  Future<List<SrsLocalDirectory>> _localDirectories() async {
+    final Directory? root = app.syncServerController.clientSyncRoot;
+    if (root == null) return const <SrsLocalDirectory>[];
+    final String hostId = await SyncRepository(
+      app.database,
+    ).getOrCreateDeviceId();
+    return <SrsLocalDirectory>[
+      SrsLocalDirectory(
+        directoryKey: srsInterconnectDirectoryKey(hostId),
+        store: LocalDirectoryAssetStore(root),
+      ),
+    ];
+  }
+
+  StreamSubscription<String>? _hostWrites;
+
+  /// 已配对设备往本机 host 的 SRS 目录写了文件（只看 SRS 命名空间，书 / 视频等同步不触发）。
+  void _onHostClientWrite(String relativePath) {
+    if (srsIsHostSrsPath(relativePath)) sync.notifyLocalDirectoryWritten();
+  }
+
   /// AnkiConnect 兼容端点的本实例 id（防自环）。
   final String instanceId = srsAnkiConnectNewInstanceId();
 
@@ -168,7 +202,11 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
-    _reviewSessions = srsActiveReviewSessions.value;
+    _hostWrites = app.syncServerController.clientSyncWrites.listen(
+      _onHostClientWrite,
+    );
+    // 启动就停在 SRS 底栏时自动备份先让路（离开时补）。
+    _syncBackupUse();
     // 启动时看一次：上次退出前的改动还没备份、且已满间隔就补一份。
     backup.onDataChanged();
   }
@@ -181,6 +219,8 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    unawaited(_hostWrites?.cancel());
+    _hostWrites = null;
     sync.dispose();
     if (identical(syncChannelPostRunHook, _postRunHook)) {
       syncChannelPostRunHook = null;
@@ -213,7 +253,7 @@ class SrsAppRuntime {
         onSync: () => unawaited(
           sync.syncNow().catchError((Object e, StackTrace stack) {
             ErrorLogService.instance.log('SrsAnkiConnect.sync', e, stack);
-            return 0;
+            return const SrsSyncNowResult(ran: 0);
           }),
         ),
         onGuiBrowse: (String? query, List<String> cardIds) async {
@@ -231,10 +271,35 @@ class SrsAppRuntime {
     );
   }
 
-  /// 牌组列表「立即同步」：对所有已认证通道跑一轮。返回跑过的通道数（0 = 没配置）。
-  Future<int> syncNow() => sync.syncNow();
+  /// 牌组列表「立即同步」：对所有已认证通道跑一轮（结果区分没配置 / 失败 / 成功）。
+  Future<SrsSyncNowResult> syncNow() => sync.syncNow();
+
+  /// SRS 界面正在用：app 在前台，且有复习页开着或 SRS 底栏在显示（牌组列表的计数同样会被
+  /// 备份读快照的事务挡住）。
+  bool get _srsInUse {
+    final AppLifecycleState? state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return false;
+    return srsActiveReviewSessions.value > 0 ||
+        homeShellTabNotifier.value == HomeTab.srs;
+  }
+
+  bool _lastSrsInUse = false;
+
+  /// 自动备份让路：开始用时叫停在做的那一份；不用了（离开 SRS 界面 / app 退到后台）立即补一份
+  /// （BUG-3579：以前离开复习页就开始备份，回到牌组列表、再点下一个牌组全被挡二三十秒）。
+  void _syncBackupUse() {
+    final bool inUse = _srsInUse;
+    if (inUse == _lastSrsInUse) return;
+    _lastSrsInUse = inUse;
+    if (inUse) {
+      backup.onSrsInUse();
+    } else {
+      backup.onSrsIdle();
+    }
+  }
 
   void _onHomeTabChanged() {
+    _syncBackupUse();
     if (homeShellTabNotifier.value != HomeTab.srs) return;
     unawaited(
       sync.syncThrottled().catchError((Object e, StackTrace stack) {
@@ -247,12 +312,11 @@ class SrsAppRuntime {
   void _onReviewSessionsChanged() {
     final int now = srsActiveReviewSessions.value;
     if (now > 0) optimizer.cancel();
-    // 离开复习页：有变动就立即备份一份（不等间隔）。
-    if (now == 0 && _reviewSessions > 0) backup.onLeftReview();
-    _reviewSessions = now;
+    _syncBackupUse();
   }
 
   void _onLifecycle(AppLifecycleState state) {
+    _syncBackupUse();
     if (state != AppLifecycleState.resumed) optimizer.cancel();
   }
 

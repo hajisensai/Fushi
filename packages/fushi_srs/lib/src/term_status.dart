@@ -45,6 +45,7 @@ class SrsTermStatus {
     required this.cardCount,
     this.dueDay,
     this.dueAt,
+    this.byRecall = false,
   });
 
   final String cardId;
@@ -56,6 +57,9 @@ class SrsTermStatus {
   final String deckId;
   final int cardCount;
 
+  /// 所在牌组按 RWKV-Instant 排队：复习卡在此刻回忆率降到目标时出现，[dueDay] 不代表什么时候复习。
+  final bool byRecall;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'cardId': cardId,
     'noteId': noteId,
@@ -65,6 +69,7 @@ class SrsTermStatus {
     if (dueAt != null) 'dueAt': dueAt,
     'deckId': deckId,
     'cardCount': cardCount,
+    if (byRecall) 'byRecall': true,
   };
 }
 

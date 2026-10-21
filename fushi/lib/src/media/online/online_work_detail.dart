@@ -182,27 +182,58 @@ class _OnlineWorkFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? summary = this.summary;
     final Widget? extra = this.extra;
+    // 紧凑 hero（窄屏单列 / 两栏左栏）：简介在前（折叠成两行）、标签在后；
+    // 窄屏标签收成一行横滑，不让一长串类型把章节挤出首屏。
+    final bool compact = MediaDetailHero.isCompact(context);
+    final bool singleLineTags =
+        compact && !MediaDetailLayout.isSidePane(context);
+    final Widget? tagsView = tags.isEmpty
+        ? null
+        : singleLineTags
+        ? HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              key: const ValueKey<String>('online_work_tags'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < tags.length; i++) ...<Widget>[
+                    if (i > 0) const SizedBox(width: 6),
+                    FushiTagChip(label: tags[i]),
+                  ],
+                ],
+              ),
+            ),
+          )
+        : Wrap(
+            key: const ValueKey<String>('online_work_tags'),
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              for (final String genre in tags) FushiTagChip(label: genre),
+            ],
+          );
+    final Widget? summaryView = summary == null || summary.isEmpty
+        ? null
+        : MediaDetailSynopsis(
+            key: const ValueKey<String>('online_work_description'),
+            text: summary,
+            selectable: selectable,
+          );
+    final List<Widget> ordered = <Widget>[
+      if (compact) ...<Widget>[?summaryView, ?tagsView] else ...<Widget>[
+        ?tagsView,
+        ?summaryView,
+      ],
+    ];
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 760),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (tags.isNotEmpty)
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: <Widget>[
-                for (final String genre in tags) FushiTagChip(label: genre),
-              ],
-            ),
-          if (summary != null && summary.isNotEmpty) ...<Widget>[
-            if (tags.isNotEmpty) const SizedBox(height: 16),
-            MediaDetailSynopsis(
-              key: const ValueKey<String>('online_work_description'),
-              text: summary,
-              selectable: selectable,
-            ),
+          for (int i = 0; i < ordered.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(height: compact ? 10 : 16),
+            ordered[i],
           ],
           if (extra != null) ...<Widget>[const SizedBox(height: 12), extra],
         ],

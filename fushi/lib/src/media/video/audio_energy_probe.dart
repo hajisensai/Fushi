@@ -80,15 +80,21 @@ const int _kEnvelopeOutputFrameSeconds = 6;
 ///   轨——外挂音轨场景 mpv 轨序号未必 = ffmpeg `0:a:N`，越界会让 ffmpeg `Stream map matches
 ///   no streams` 硬失败→空包络→上层 noData 安全降级（不误移），故宁可回退默认轨。
 /// - `-t <limitSeconds>`（可选）：只抽前 [limitSeconds] 秒音频（大文件性能截断，与字幕
-///   cue 栅格化上界同步，见 [kSubtitleAutoAlignProbeLimitMs]）。须置于输入**之后**（输出
-///   选项），裁的是已解码音频时长。
+///   cue 栅格化上界同步，见 [kSubtitleAutoAlignProbeLimitMs]）。**必须是输入选项**（置于
+///   `-i` **之前**）：作输出选项时它只在输出端按帧截断，而末尾的大帧
+///   `asetnsamples`（见下）要攒满 [_kEnvelopeOutputFrameSeconds] 秒、滤镜图还会预读，
+///   `ametadata` 在输出端停下前已多打了一截逐帧行——实测 20 分钟上界抽出 1212 秒
+///   （60600 帧），10 秒上界抽出 18 秒。波形面板把整条包络均匀铺在
+///   `[0, 上界)` 上，多出的尾巴把整条波形压缩约 1%，3 分半处就与字幕线 / 播放头错开
+///   2 秒（BUG：有声段画成静音）。输入端截断让解复用在上界停下，帧数恰为上界 / 窗口。
 /// - `-vn`：丢弃视频流（TODO-1244 回归修复）。**必须**加——否则没有 `-map 0:a`（越界/无
 ///   显式音轨的默认回退路径）时，ffmpeg 会把输入的视频流也映射进 `-f null -` 输出，并试图
-///   用 null 复用器的默认视频编码器 `wrapped_avframe` 编码它。桌面发布捆绑的**最小
+///   用 null 复用器的默认视频编码器 `wrapped_avframe` 编码它。旧桌面捆绑的**最小
 ///   ffmpeg-min**（TODO-1214，编码器白名单只留 libx264/pcm）**没有** `wrapped_avframe`
 ///   → 整条命令在打开输出阶段 `Encoder not found` 硬失败 → 零逐帧 RMS 行 → 空包络 →
-///   **对轴界面波形完全不显示**。`-vn` 只喂音频给 astats，与最小 ffmpeg 兼容，且省掉无谓的
-///   视频解码/编码（本就只要音频能量）。全量 ffmpeg 有 `wrapped_avframe` 也不受影响。
+///   **对轴界面波形完全不显示**。`-vn` 只喂音频给 astats，且省掉无谓的
+///   视频解码/编码（本就只要音频能量）。统一 FFmpeg 为全量构建、有 `wrapped_avframe`，
+///   不加 `-vn` 也不会失败；`-vn` 仍保留（省视频解码，兼容系统 ffmpeg）。
 /// - 末尾再一个 `asetnsamples=n=<rate*[_kEnvelopeOutputFrameSeconds]>:p=0`：`ametadata`
 ///   已经逐小块记完，**再把音频拼回大帧**才交给编码器 / null 复用器：6 万个 20ms 小帧
 ///   逐帧过 pcm 编码器与 null 复用器的开销比 astats 本身还大，拼成 6s 一帧后 20 分钟只剩
@@ -114,22 +120,20 @@ List<String> buildFfmpegPcmEnvelopeArgs({
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
   );
-  final List<String> args = <String>[
-    '-hide_banner',
-    '-nostats',
-    '-i',
-    inputPath,
-  ];
-  if (mapIndex != null) {
-    args.addAll(<String>['-map', '0:a:$mapIndex']);
-  }
-  // 性能截断：只解码前 limitSeconds 秒（输出选项，须在 -i 之后）。
+  final List<String> args = <String>['-hide_banner', '-nostats'];
+  // 性能截断：只读前 limitSeconds 秒。必须是输入选项（-i 之前），作输出选项会被末尾
+  // 大帧 asetnsamples 拖过上界、包络比时间窗长，见上方文档。
   if (limitSeconds != null && limitSeconds > 0) {
     args.addAll(<String>['-t', '$limitSeconds']);
   }
+  args.addAll(<String>['-i', inputPath]);
+  if (mapIndex != null) {
+    args.addAll(<String>['-map', '0:a:$mapIndex']);
+  }
   // TODO-1244 回归修复：丢弃视频流。没有 `-map 0:a` 时若不加 `-vn`，ffmpeg 会把视频流也
-  // 送进 `-f null -`，用 null 复用器的默认视频编码器 wrapped_avframe 编码——桌面捆绑的最小
-  // ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→空包络→波形不显示。只要音频。
+  // 送进 `-f null -`，用 null 复用器的默认视频编码器 wrapped_avframe 编码——旧桌面捆绑的最小
+  // ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→空包络→波形不显示（统一
+  // FFmpeg 已有该编码器）。只要音频，`-vn` 保留。
   args.add('-vn');
   // 逐帧行写文件（移动端日志通道不可靠，见文件头）；不给路径则沿旧行为打 stderr。
   final String printTarget = metadataFilePath == null

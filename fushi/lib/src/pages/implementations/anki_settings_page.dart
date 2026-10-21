@@ -95,9 +95,9 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-/// 片段格式选项的文案。五端随包 ffmpeg 都带 libvpx-vp9 + libopus（桌面 ffmpeg-min、
-/// Android AAR、iOS xcframework），两档 WebM 在各端都能内嵌；AV1 只有桌面有 SVT-AV1，
-/// 移动端按 [MiningClipFormat.encodeAttempts] 降级 VP9——文案本身已写明「仅桌面端」。
+/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
+/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
+/// 用户自带的外部 ffmpeg 兜底。
 @visibleForTesting
 String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
   MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
@@ -661,6 +661,37 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                   ),
           ),
         ),
+      ),
+      // 新卡按词频重排：复习层同样支持（读写卡片的新卡位置），弹窗里选的是复习牌组。
+      ..._buildSrsRepositionRows(choices),
+    ];
+  }
+
+  /// 「Fushi 复习」分组里的两行重排（手动重排 + 制卡后自动重排）。行本身与 Anki 目标
+  /// 时同一套（同一个 reveal target id，两种目标下只出现一处）。
+  List<Widget> _buildSrsRepositionRows(SrsMiningChoices choices) {
+    final AnkiViewModel vm = ref.read(ankiViewModelProvider.notifier);
+    final AnkiSettings settings = ref.watch(ankiViewModelProvider).settings;
+    // 下拉项的 id 只是键（重排按牌组全名取卡），用下标即可。
+    final List<AnkiDeck> decks = <AnkiDeck>[
+      for (int i = 0; i < choices.decks.length; i++)
+        AnkiDeck(id: i, name: choices.decks[i].$2),
+    ];
+    final int initial = choices.decks.indexWhere(
+      ((String, String) d) => d.$1 == choices.resolved.deckId,
+    );
+    return <Widget>[
+      SettingsSearchTarget(
+        id: 'card_creation.anki.reposition',
+        child: _buildDeckRepositionRow(
+          vm,
+          decks: decks,
+          initialDeckId: initial < 0 ? null : initial,
+        ),
+      ),
+      SettingsSearchTarget(
+        id: 'card_creation.anki.reposition_auto',
+        child: _buildAutoRepositionRow(settings, vm),
       ),
     ];
   }
@@ -2157,7 +2188,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   /// 「按词频重排新卡」入口。只有 AnkiConnect 有卡片级读写；其它后端把行
   /// 置灰并说明原因，而不是隐藏——隐藏会让用户以为功能不存在。
-  Widget _buildDeckRepositionRow(AnkiViewModel vm) {
+  Widget _buildDeckRepositionRow(
+    AnkiViewModel vm, {
+    List<AnkiDeck>? decks,
+    int? initialDeckId,
+  }) {
     final bool supported = vm.supportsDeckReposition;
     return AdaptiveSettingsRow(
       icon: FushiIcons.sort,
@@ -2167,7 +2202,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ? t.anki_reposition_hint
           : t.anki_reposition_unsupported,
       subtitleMaxLines: 3,
-      onTap: supported ? () => _openDeckReposition(vm) : null,
+      onTap: supported
+          ? () => _openDeckReposition(
+              vm,
+              decks: decks,
+              initialDeckId: initialDeckId,
+            )
+          : null,
     );
   }
 
@@ -2187,13 +2228,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  Future<void> _openDeckReposition(AnkiViewModel vm) {
+  Future<void> _openDeckReposition(
+    AnkiViewModel vm, {
+    List<AnkiDeck>? decks,
+    int? initialDeckId,
+  }) {
     // 隐藏的词频词典根本不进引擎（AppModel.bucketDictPaths），列表只给已装载的。
     final List<String> loaded = loadedFrequencyDictionaryNames(appModel);
     return showAnkiDeckRepositionDialog(
       context,
       viewModel: vm,
       loadedFrequencyDictionaries: loaded,
+      decks: decks,
+      initialDeckId: initialDeckId,
     );
   }
 

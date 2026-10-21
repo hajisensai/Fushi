@@ -6,6 +6,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -114,7 +115,11 @@ class FushiApiServerManager {
   bool get isRunning => _server?.isRunning ?? false;
   int? get port => _server?.port;
 
-  Future<void> start({required int port, required String apiKey}) async {
+  Future<void> start({
+    required int port,
+    required String apiKey,
+    FushiApiAccessPolicy accessPolicy = FushiApiAccessPolicy.localOnly,
+  }) async {
     if (_server != null) return;
     final FushiApiServer server = FushiApiServer(
       port: port,
@@ -140,7 +145,7 @@ class FushiApiServerManager {
       fontApi: _fontApi,
       srsApiProvider: _srsApiProvider,
       apiKey: apiKey.isEmpty ? null : apiKey,
-      allowLan: true,
+      accessPolicy: accessPolicy,
       ankiConnectEndpoint: _ankiConnectEndpoint,
     );
     // 先登记再 await 绑端口：绑定是 I/O、会让出事件循环，启动期间（app 冷启动时

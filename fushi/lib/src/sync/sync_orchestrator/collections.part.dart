@@ -52,6 +52,8 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
           remote: remote,
           lastSyncedAtMs: baseline,
           nowMs: nextBaseline,
+          // BUG-3657：书系列合集按卷号定序，与书架归组自愈同一判据。
+          ruleOrder: await loadBookSeriesRuleOrder(_db),
         );
 
         report.collectionsUpdated +=
@@ -64,6 +66,10 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
         await backend.putRemoteCollectionManifest(outcome.merged);
       }
       await repo.setCollectionsSyncBaselineMs(_scope, nextBaseline);
+      // v124：基线推进之后再收敛整理器合集（见 convergeCollectionsAfterSync）。
+      await runExclusiveWithSyncStateApply(
+        () => convergeCollectionsAfterSync(_db, baselineMs: nextBaseline),
+      );
     } catch (e) {
       report.noteError('collections live sync', e);
     }

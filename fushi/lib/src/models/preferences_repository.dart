@@ -881,6 +881,25 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Fushi API「允许谁连」（[FushiApiAccessMode.wireName]）。缺省 = `lan`：改造前
+  /// 服务恒绑 0.0.0.0，升级的老用户保持原样不断连（用户 2026-10-20 拍板）。
+  String get fushiApiAccessMode =>
+      getPref('fushi_api_access_mode', defaultValue: 'lan') as String;
+
+  Future<void> setFushiApiAccessMode(String value) async {
+    await setPref('fushi_api_access_mode', value);
+    notifyListeners();
+  }
+
+  /// 「指定网段」模式的白名单原文（每行一个 IP / CIDR）。
+  String get fushiApiAllowedNetworks =>
+      getPref('fushi_api_allowed_networks', defaultValue: '') as String;
+
+  Future<void> setFushiApiAllowedNetworks(String value) async {
+    await setPref('fushi_api_allowed_networks', value);
+    notifyListeners();
+  }
+
   // ── 实验性：键盘/手柄焦点导航 ──────────────────────────────────────────
   // 整套自定义焦点导航（FushiFocusRoot/Ring + 手柄/方向键焦点移动）默认关闭，
   // 关闭时回退到 Flutter 原生焦点遍历。空格不再确认焦点的行为不受此开关影响。
@@ -995,6 +1014,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setFloatingBallShowLabels(bool value) async {
     await setPref('floating_ball.show_labels', value);
+    notifyListeners();
+  }
+
+  /// 应用外悬浮球（Android）：收起态点球直接查剪贴板，长按才展开按钮
+  /// （同 Google「点按翻译」的「自动翻译复制的文字」）。默认关 = 点球展开。
+  bool get floatingBallTapClipboard =>
+      getPref('floating_ball.tap_clipboard', defaultValue: false);
+
+  Future<void> setFloatingBallTapClipboard(bool value) async {
+    await setPref('floating_ball.tap_clipboard', value);
     notifyListeners();
   }
 
@@ -3078,6 +3107,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页底部重播键的位置（SrsReviewReplayButton.wire）。默认 'off'。
+  String get srsReviewReplayButton =>
+      getPref('srs_review_replay_button', defaultValue: 'off') as String;
+
+  Future<void> setSrsReviewReplayButton(String wire) async {
+    await setPref('srs_review_replay_button', wire);
+    notifyListeners();
+  }
+
+  // 复习页评分按钮显示下次间隔。默认 true。
+  bool get srsReviewShowIntervals =>
+      getPref('srs_review_show_intervals', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewShowIntervals(bool value) async {
+    await setPref('srs_review_show_intervals', value);
+    notifyListeners();
+  }
+
   // 复习页卡面缩放倍率。默认 1.0。
   double get srsReviewZoom =>
       (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();
@@ -4992,6 +5039,65 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaDownloadAutoOcr(bool value) async {
     await setPref('manga_download_auto_ocr', value);
+    notifyListeners();
+  }
+
+  /// AI 整理库「导入后自动整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md
+  /// §10.2）。默认关：按量计费，绝不静默开启。
+  bool get libraryOrganizeAuto =>
+      getPref('library_organize_auto', defaultValue: false) as bool;
+
+  /// 打开时同时记下打开时刻（自动整理只看此后新入库的条目），并记为已同意：开关
+  /// 的副标题就是「会发送什么」的完整说明，用户亲手打开即同意。
+  Future<void> setLibraryOrganizeAuto(bool value) async {
+    await setPref('library_organize_auto', value);
+    if (value) {
+      await setPref(
+        'library_organize_auto_since',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      await setPref('library_organize_consented', true);
+    }
+    notifyListeners();
+  }
+
+  /// 最近一次打开自动整理的时刻（毫秒；0 = 没开过）。
+  int get libraryOrganizeAutoSince =>
+      getPref('library_organize_auto_since', defaultValue: 0) as int;
+
+  /// 本机「允许再次建议」的被拒分组键（AI 整理记录页）。
+  Set<String> get libraryOrganizeAllowedKeys {
+    final String raw =
+        getPref('library_organize_allowed_keys', defaultValue: '') as String;
+    if (raw.isEmpty) return const <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return <String>{
+          for (final Object? k in decoded)
+            if (k is String && k.isNotEmpty) k,
+        };
+      }
+    } on FormatException {
+      // 坏值当空。
+    }
+    return const <String>{};
+  }
+
+  Future<void> addLibraryOrganizeAllowedKey(String key) async {
+    final List<String> next = <String>{...libraryOrganizeAllowedKeys, key}
+        .toList()
+      ..sort();
+    await setPref('library_organize_allowed_keys', jsonEncode(next));
+    notifyListeners();
+  }
+
+  /// 用户同意过 AI 整理「会发送什么」的说明。
+  bool get libraryOrganizeConsented =>
+      getPref('library_organize_consented', defaultValue: false) as bool;
+
+  Future<void> setLibraryOrganizeConsented(bool value) async {
+    await setPref('library_organize_consented', value);
     notifyListeners();
   }
 

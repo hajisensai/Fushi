@@ -72,6 +72,35 @@ int main() {
     fail("wildcard must overlap real condition bits");
   }
 
+  // --- Part 1b: rules_to_conditions == pos_to_conditions(split on whitespace) --
+  // Lookup::filter_by_pos 改走原地切分（不再 istringstream + vector）。口径必须与
+  // 旧的「istringstream >> token 切开再 pos_to_conditions」逐位相同：C locale 的
+  // 六个空白字符都算分隔、连续空白不产生空 token、"*" 在任何位置都短路成通配。
+  {
+    struct Case {
+      const char* rules;
+      std::vector<std::string> tokens;
+    };
+    const Case cases[] = {
+        {"", {}},
+        {"   ", {}},
+        {"v1", {"v1"}},
+        {"*", {"*"}},
+        {"totally-unknown-tag", {"totally-unknown-tag"}},
+        {" v1\t\n\v\f\rv1 ", {"v1", "v1"}},
+        {"unknown v1", {"unknown", "v1"}},
+        {"v1 *", {"v1", "*"}},
+        {"* v1", {"*", "v1"}},
+        {"v1*", {"v1*"}},
+    };
+    for (const Case& c : cases) {
+      if (d.rules_to_conditions(c.rules) != d.pos_to_conditions(c.tokens)) {
+        std::fprintf(stderr, "FAIL: rules_to_conditions(\"%s\") differs from the split pos_to_conditions\n", c.rules);
+        ++g_fail;
+      }
+    }
+  }
+
   // --- Part 2: write_simple_dict stores rules == "*" ----------------------
   const std::string out_dir = fushi_test::temp_dir() + "/hoshi_simple_deinf_out";
   std::vector<SimpleEntry> entries = {{kTaberu, "to eat"}};

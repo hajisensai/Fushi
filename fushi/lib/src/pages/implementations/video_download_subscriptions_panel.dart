@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
@@ -17,30 +18,35 @@ import 'package:fushi_core/fushi_core.dart'
         MediaSourceRow,
         VideoDownloadSubscriptionItemRow,
         VideoDownloadSubscriptionItemStatus,
-        VideoDownloadSubscriptionRow,
-        VideoDownloadSubscriptionsCompanion;
+        VideoDownloadSubscriptionRow;
+import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
+    show HostSubscriptionRejected;
+import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart'
+    show PipelineSubscriptionHost, VideoDownloadSubscriptionRuleEdit;
 
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi/src/pages/implementations/remote_subscriptions_section.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
+import 'package:fushi/src/sync/app_download_host.dart' show AppSubscriptionHost;
 import 'package:fushi/utils.dart';
 
-typedef VideoDownloadSubscriptionAction = Future<void> Function(
-  VideoDownloadSubscriptionRow subscription,
-);
+typedef VideoDownloadSubscriptionAction =
+    Future<void> Function(VideoDownloadSubscriptionRow subscription);
 
-typedef VideoDownloadSubscriptionToggle = Future<void> Function(
-  VideoDownloadSubscriptionRow subscription,
-  bool enabled,
-);
+typedef VideoDownloadSubscriptionToggle =
+    Future<void> Function(
+      VideoDownloadSubscriptionRow subscription,
+      bool enabled,
+    );
 
 /// 订阅逐集历史的窄读端口（面板卡片展开时接 DB stream；测试可注入假流）。
-typedef VideoDownloadSubscriptionItemsWatcher
-    = Stream<List<VideoDownloadSubscriptionItemRow>> Function(
-  String subscriptionId,
-);
+typedef VideoDownloadSubscriptionItemsWatcher =
+    Stream<List<VideoDownloadSubscriptionItemRow>> Function(
+      String subscriptionId,
+    );
 
 /// 订阅列表的排序维度（会话级）。
 enum VideoDownloadSubscriptionSort {
@@ -54,13 +60,11 @@ enum VideoDownloadSubscriptionSort {
 List<VideoDownloadSubscriptionRow> filterVideoDownloadSubscriptions(
   List<VideoDownloadSubscriptionRow> subscriptions,
   String query,
-) =>
-    filterByMediaSearch(
-      subscriptions,
-      query,
-      (VideoDownloadSubscriptionRow row) =>
-          <String>[row.title, row.searchQuery],
-    );
+) => filterByMediaSearch(
+  subscriptions,
+  query,
+  (VideoDownloadSubscriptionRow row) => <String>[row.title, row.searchQuery],
+);
 
 /// 按 [sort] 返回新的有序列表。纯函数，稳定 tiebreak createdAt 倒序 + id。
 List<VideoDownloadSubscriptionRow> sortedVideoDownloadSubscriptions(
@@ -90,21 +94,28 @@ List<VideoDownloadSubscriptionRow> sortedVideoDownloadSubscriptions(
     case VideoDownloadSubscriptionSort.createdDesc:
       out.sort(byCreatedDesc);
     case VideoDownloadSubscriptionSort.titleAsc:
-      out.sort(
-          (VideoDownloadSubscriptionRow a, VideoDownloadSubscriptionRow b) {
-        final int byTitle =
-            a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      out.sort((
+        VideoDownloadSubscriptionRow a,
+        VideoDownloadSubscriptionRow b,
+      ) {
+        final int byTitle = a.title.toLowerCase().compareTo(
+          b.title.toLowerCase(),
+        );
         return byTitle != 0 ? byTitle : byCreatedDesc(a, b);
       });
     case VideoDownloadSubscriptionSort.lastCheckedDesc:
-      out.sort(
-          (VideoDownloadSubscriptionRow a, VideoDownloadSubscriptionRow b) {
+      out.sort((
+        VideoDownloadSubscriptionRow a,
+        VideoDownloadSubscriptionRow b,
+      ) {
         final int byChecked = byNullableDesc(a.lastCheckedAt, b.lastCheckedAt);
         return byChecked != 0 ? byChecked : byCreatedDesc(a, b);
       });
     case VideoDownloadSubscriptionSort.lastMatchedDesc:
-      out.sort(
-          (VideoDownloadSubscriptionRow a, VideoDownloadSubscriptionRow b) {
+      out.sort((
+        VideoDownloadSubscriptionRow a,
+        VideoDownloadSubscriptionRow b,
+      ) {
         final int byMatched = byNullableDesc(a.lastMatchedAt, b.lastMatchedAt);
         return byMatched != 0 ? byMatched : byCreatedDesc(a, b);
       });
@@ -117,8 +128,9 @@ List<VideoDownloadSubscriptionRow> sortedVideoDownloadSubscriptions(
 ///
 /// 2026-08 重做（B3，参照 RSS-Subtitle-Manager）：卡片富信息化（封面/调度/
 /// 逐集计数）、编辑走窄合并（[showVideoDownloadSubscriptionEditDialog] +
-/// `updateVideoDownloadSubscription` 白名单列，items 历史绝不清）、卡内逐集
-/// 状态视图、搜索 + 排序。
+/// [AppSubscriptionHost.update] 白名单列，items 历史绝不清）、卡内逐集
+/// 状态视图、搜索 + 排序。所有写操作只经 [AppSubscriptionHost]（与桌面控制通道
+/// 同一份），页面不直接写库。
 class VideoDownloadSubscriptionsPanel extends ConsumerStatefulWidget {
   const VideoDownloadSubscriptionsPanel({super.key});
 
@@ -131,74 +143,61 @@ class _VideoDownloadSubscriptionsPanelState
     extends ConsumerState<VideoDownloadSubscriptionsPanel> {
   bool _checkingAll = false;
 
-  Future<void> _setEnabled(
-    VideoDownloadSubscriptionRow subscription,
-    bool enabled,
-  ) async {
-    final AppModel appModel = ref.read(appProvider);
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await appModel.database.updateVideoDownloadSubscription(
-      subscription.subscriptionId,
-      VideoDownloadSubscriptionsCompanion(
-        enabled: Value<bool>(enabled),
-        nextCheckAt: enabled ? Value<int?>(now) : const Value<int?>.absent(),
-        // oneShot 完成位只在 disabled 态合法（表级 CHECK）；重新启用必须同时
-        // 清掉，否则写入直接抛。
-        fulfilledAt:
-            enabled ? const Value<int?>(null) : const Value<int?>.absent(),
-        updatedAt: Value<int>(now),
-      ),
-    );
-    if (enabled) {
-      await appModel.videoDownloadSubscriptionService?.checkNow();
+  /// 本机订阅操作的唯一入口（与桌面控制通道同一份，见 [AppSubscriptionHost]）。
+  AppSubscriptionHost get _host =>
+      ref.read(appProvider).appDownloadHost.subscriptions;
+
+  /// host 拒绝（没有下载后端 / 订阅已停用等）→ 提示，不当成未捕获错误。
+  Future<void> _guard(Future<void> Function() action) async {
+    try {
+      await action();
+    } on HostSubscriptionRejected catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        FushiSnackBar(
+          content: Text(switch (e.reason) {
+            'unsupported' => t.download_backend_not_configured,
+            'disabled' => t.download_subscription_disabled_enable_first,
+            _ => e.message,
+          }),
+        ),
+      );
     }
   }
 
-  Future<void> _checkOne(
-    VideoDownloadSubscriptionRow subscription,
-  ) async {
-    if (!subscription.enabled) return;
-    final AppModel appModel = ref.read(appProvider);
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    await appModel.database.updateVideoDownloadSubscription(
-      subscription.subscriptionId,
-      VideoDownloadSubscriptionsCompanion(
-        nextCheckAt: Value<int?>(now),
-        updatedAt: Value<int>(now),
-      ),
+  int get _autoDisableDays => readVideoDownloadSubscriptionAutoDisableDays(
+    ref.read(appProvider).prefsRepo,
+  );
+
+  Future<void> _setAutoDisableDays(int days) async {
+    await writeVideoDownloadSubscriptionAutoDisableDays(
+      ref.read(appProvider).prefsRepo,
+      days,
     );
-    await appModel.videoDownloadSubscriptionService?.checkNow();
+    if (mounted) setState(() {});
   }
 
-  Future<void> _checkAll(
-    List<VideoDownloadSubscriptionRow> subscriptions,
-  ) async {
+  Future<void> _setEnabled(
+    VideoDownloadSubscriptionRow subscription,
+    bool enabled,
+  ) => _guard(() => _host.setEnabled(subscription.subscriptionId, enabled));
+
+  Future<void> _checkOne(VideoDownloadSubscriptionRow subscription) async {
+    if (!subscription.enabled) return;
+    await _guard(() => _host.checkNow(subscription.subscriptionId));
+  }
+
+  Future<void> _checkAll() async {
     if (_checkingAll) return;
     setState(() => _checkingAll = true);
     try {
-      final AppModel appModel = ref.read(appProvider);
-      final int now = DateTime.now().millisecondsSinceEpoch;
-      for (final VideoDownloadSubscriptionRow subscription
-          in subscriptions.where(
-        (VideoDownloadSubscriptionRow row) => row.enabled,
-      )) {
-        await appModel.database.updateVideoDownloadSubscription(
-          subscription.subscriptionId,
-          VideoDownloadSubscriptionsCompanion(
-            nextCheckAt: Value<int?>(now),
-            updatedAt: Value<int>(now),
-          ),
-        );
-      }
-      await appModel.videoDownloadSubscriptionService?.checkNow();
+      await _guard(() => _host.checkNow(null));
     } finally {
       if (mounted) setState(() => _checkingAll = false);
     }
   }
 
-  Future<void> _delete(
-    VideoDownloadSubscriptionRow subscription,
-  ) async {
+  Future<void> _delete(VideoDownloadSubscriptionRow subscription) async {
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
       title: t.download_subscription_delete,
@@ -210,19 +209,16 @@ class _VideoDownloadSubscriptionsPanelState
       destructive: true,
     );
     if (!confirmed) return;
-    await ref
-        .read(appProvider)
-        .database
-        .deleteVideoDownloadSubscription(subscription.subscriptionId);
+    await _guard(() => _host.delete(subscription.subscriptionId));
   }
 
-  /// 编辑订阅（窄合并）：只写白名单列（搜索词 / 起始集 / 字幕策略 / 目标
-  /// 来源）+ `nextCheckAt=now` 让新规则尽快跑一轮 + 清 `lastError`。
-  /// items 历史与调度状态其余字段一概不动——「改规则不清历史」。
+  /// 编辑订阅（窄合并，见 [PipelineSubscriptionHost.update]）：只写白名单列（搜索词 /
+  /// 起始集 / 字幕策略 / 目标来源 / 版本规则），items 历史与其余调度状态一概不动——
+  /// 「改规则不清历史」。
   Future<void> _edit(VideoDownloadSubscriptionRow subscription) async {
     final AppModel appModel = ref.read(appProvider);
-    final List<MediaSourceRow> sources =
-        await appModel.getManagedVideoDownloadSources();
+    final List<MediaSourceRow> sources = await appModel
+        .getManagedVideoDownloadSources();
     if (!mounted) return;
     if (sources.isEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
@@ -232,43 +228,31 @@ class _VideoDownloadSubscriptionsPanelState
     }
     final VideoDownloadSubscriptionEdit? result =
         await showVideoDownloadSubscriptionEditDialog(
-      context: context,
-      subscription: subscription,
-      sources: sources,
-    );
+          context: context,
+          subscription: subscription,
+          sources: sources,
+        );
     if (result == null || !mounted) return;
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    // 改了目标来源时，该订阅已派出、还没进整理的任务一起改过去（BUG-2755），
-    // 否则它们下载完照旧整理进旧来源。
-    await appModel.database.updateVideoDownloadSubscriptionRetargetingJobs(
-      subscription.subscriptionId,
-      VideoDownloadSubscriptionsCompanion(
-        searchQuery: Value<String>(result.searchQuery),
-        startAfterEpisode: Value<int?>(result.startAfterEpisode),
-        subtitlePolicy: Value<String>(result.subtitlePolicy.name),
-        // 用户没动过目标来源就**不写这一列**（result.targetSourceId 为 null）。
-        // 无条件写会在原绑定当前不可用时把它改写成别的库，见
-        // [VideoDownloadSubscriptionEdit.targetSourceId] 的说明。
-        targetSourceId: result.targetSourceId == null
-            ? const Value<int?>.absent()
-            : Value<int?>(result.targetSourceId),
-        // 字幕组 / 分辨率 / 标题关键词：同样只在用户改过时写（null = 没动）。
-        filterJson: result.filterJson == null
-            ? const Value<String>.absent()
-            : Value<String>(result.filterJson!),
-        nextCheckAt: Value<int?>(now),
-        lastError: const Value<String?>(null),
-        updatedAt: Value<int>(now),
+    await _guard(
+      () => _host.update(
+        subscription.subscriptionId,
+        VideoDownloadSubscriptionRuleEdit(
+          searchQuery: Value<String>(result.searchQuery),
+          startAfterEpisode: Value<int?>(result.startAfterEpisode),
+          subtitlePolicy: Value<String>(result.subtitlePolicy.name),
+          // 用户没动过目标来源就**不写这一列**（result.targetSourceId 为 null）。
+          // 无条件写会在原绑定当前不可用时把它改写成别的库，见
+          // [VideoDownloadSubscriptionEdit.targetSourceId] 的说明。
+          targetSourceId: result.targetSourceId == null
+              ? const Value<int?>.absent()
+              : Value<int?>(result.targetSourceId),
+          // 字幕组 / 分辨率 / 标题关键词：同样只在用户改过时写（null = 没动）。
+          filterJson: result.filterJson == null
+              ? const Value<String>.absent()
+              : Value<String>(result.filterJson!),
+        ),
       ),
-      nowAt: now,
     );
-    // 已完成的集还在旧来源里做种：一并摘掉种子（不删文件），否则用户删掉旧目录后
-    // 引擎续传会在原处重下（BUG-2776）。
-    if (result.targetSourceId != null) {
-      await appModel.videoDownloadPipelineService
-          ?.releaseSubscriptionSeedsOutsideTarget(subscription.subscriptionId);
-    }
-    await appModel.videoDownloadSubscriptionService?.checkNow();
   }
 
   @override
@@ -276,34 +260,40 @@ class _VideoDownloadSubscriptionsPanelState
     final FushiDatabase database = ref.read(appProvider).database;
     return StreamBuilder<List<VideoDownloadSubscriptionRow>>(
       stream: database.watchVideoDownloadSubscriptions(),
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<List<VideoDownloadSubscriptionRow>> snapshot,
-      ) {
-        if (snapshot.hasError) {
-          return _VideoDownloadSubscriptionMessage(
-            icon: FushiIcons.error,
-            title: t.error_load_failed,
-          );
-        }
-        if (!snapshot.hasData) {
-          return const FushiLoadingView();
-        }
-        final List<VideoDownloadSubscriptionRow> subscriptions = snapshot.data!;
-        return VideoDownloadSubscriptionsView(
-          subscriptions: subscriptions,
-          checkingAll: _checkingAll,
-          onCheckAll: () => _checkAll(subscriptions),
-          onToggle: _setEnabled,
-          onCheck: _checkOne,
-          onDelete: _delete,
-          onEdit: _edit,
-          itemsWatcher: database.watchVideoDownloadSubscriptionItems,
-          itemCountsLoader:
-              database.getVideoDownloadSubscriptionItemStatusCounts,
-          remoteSection: const RemoteSubscriptionsSection(),
-        );
-      },
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<List<VideoDownloadSubscriptionRow>> snapshot,
+          ) {
+            if (snapshot.hasError) {
+              return _VideoDownloadSubscriptionMessage(
+                icon: FushiIcons.error,
+                title: t.error_load_failed,
+              );
+            }
+            if (!snapshot.hasData) {
+              return const FushiLoadingView();
+            }
+            final List<VideoDownloadSubscriptionRow> subscriptions =
+                snapshot.data!;
+            return VideoDownloadSubscriptionsView(
+              subscriptions: subscriptions,
+              checkingAll: _checkingAll,
+              onCheckAll: _checkAll,
+              onToggle: _setEnabled,
+              onCheck: _checkOne,
+              onDelete: _delete,
+              onEdit: _edit,
+              autoDisableDays: _autoDisableDays,
+              onAutoDisableDaysChanged: _setAutoDisableDays,
+              itemsWatcher: database.watchVideoDownloadSubscriptionItems,
+              itemCountsLoader:
+                  database.getVideoDownloadSubscriptionItemStatusCounts,
+              latestDiscoveredLoader:
+                  database.getVideoDownloadSubscriptionLatestDiscoveredAt,
+              remoteSection: const RemoteSubscriptionsSection(),
+            );
+          },
     );
   }
 }
@@ -321,6 +311,9 @@ class VideoDownloadSubscriptionsView extends StatefulWidget {
     this.itemsWatcher,
     this.itemCountsLoader,
     this.remoteSection,
+    this.autoDisableDays = 0,
+    this.onAutoDisableDaysChanged,
+    this.latestDiscoveredLoader,
     super.key,
   });
 
@@ -336,6 +329,15 @@ class VideoDownloadSubscriptionsView extends StatefulWidget {
 
   /// null = 宿主不支持编辑（旧测试宿主），卡片不渲染编辑入口。
   final VideoDownloadSubscriptionAction? onEdit;
+
+  /// 追更订阅多久（天）没更新就自动关闭；0 = 从不。
+  final int autoDisableDays;
+
+  /// null = 不显示「自动关闭」档位菜单。
+  final ValueChanged<int>? onAutoDisableDaysChanged;
+
+  /// 每个订阅最近一次发现新集的时刻；null = 停用卡不标「多久未更新」。
+  final Future<Map<String, int>> Function()? latestDiscoveredLoader;
 
   /// null = 不支持逐集视图。
   final VideoDownloadSubscriptionItemsWatcher? itemsWatcher;
@@ -358,6 +360,7 @@ class _VideoDownloadSubscriptionsViewState
   VideoDownloadSubscriptionSort _sort =
       VideoDownloadSubscriptionSort.createdDesc;
   Map<String, Map<String, int>> _itemCounts = <String, Map<String, int>>{};
+  Map<String, int>? _latestDiscovered;
 
   @override
   void initState() {
@@ -379,11 +382,19 @@ class _VideoDownloadSubscriptionsViewState
     final Future<Map<String, Map<String, int>>> Function()? loader =
         widget.itemCountsLoader;
     if (loader == null) return;
-    loader().then((Map<String, Map<String, int>> counts) {
-      if (mounted) setState(() => _itemCounts = counts);
-    }).catchError((Object _) {
-      // 计数是增强信息，查询失败不影响订阅列表本体。
-    });
+    loader()
+        .then((Map<String, Map<String, int>> counts) {
+          if (mounted) setState(() => _itemCounts = counts);
+        })
+        .catchError((Object _) {
+          // 计数是增强信息，查询失败不影响订阅列表本体。
+        });
+    widget.latestDiscoveredLoader
+        ?.call()
+        .then((Map<String, int> latest) {
+          if (mounted) setState(() => _latestDiscovered = latest);
+        })
+        .catchError((Object _) {});
   }
 
   @override
@@ -416,6 +427,14 @@ class _VideoDownloadSubscriptionsViewState
         VideoDownloadSubscriptionSort.lastMatchedDesc =>
           t.subscription_sort_last_matched,
       };
+
+  static String autoDisablePeriodLabel(int days) => days >= 365
+      ? t.subscription_auto_disable_one_year
+      : t.subscription_auto_disable_half_year;
+
+  static String _autoDisableChoiceLabel(int days) => days <= 0
+      ? t.subscription_auto_disable_never
+      : autoDisablePeriodLabel(days);
 
   Widget _buildToolbar() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -465,6 +484,33 @@ class _VideoDownloadSubscriptionsViewState
               label: Text(_sortLabel(_sort)),
             ),
           ),
+          if (widget.onAutoDisableDaysChanged != null) ...<Widget>[
+            const SizedBox(width: 8),
+            FushiOverflowMenu<int>(
+              key: const ValueKey<String>('video-subscription-auto-disable'),
+              tooltip: t.subscription_auto_disable_tooltip,
+              onSelected: widget.onAutoDisableDaysChanged!,
+              items: <PopupMenuEntry<int>>[
+                for (final int days
+                    in kVideoDownloadSubscriptionAutoDisableChoices)
+                  FushiPopupMenuItem<int>(
+                    value: days,
+                    label: _autoDisableChoiceLabel(days),
+                    selected: widget.autoDisableDays == days,
+                  ),
+              ],
+              child: FushiOutlinedButton.icon(
+                onPressed: null,
+                style: kFushiMenuTriggerButtonStyle,
+                icon: const FushiIcon(FushiIcons.schedule, size: 18),
+                label: Text(
+                  t.subscription_auto_disable_label(
+                    period: _autoDisableChoiceLabel(widget.autoDisableDays),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -477,8 +523,10 @@ class _VideoDownloadSubscriptionsViewState
     final int enabled = widget.subscriptions
         .where((VideoDownloadSubscriptionRow row) => row.enabled)
         .length;
-    final Color? onContainer =
-        fushiCardToneColors(context, FushiCardTone.secondary)?.onContainer;
+    final Color? onContainer = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    )?.onContainer;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -535,8 +583,9 @@ class _VideoDownloadSubscriptionsViewState
             ),
             FushiFilledButton.icon(
               key: const ValueKey<String>('video-subscription-check-all'),
-              onPressed:
-                  widget.checkingAll || enabled == 0 ? null : widget.onCheckAll,
+              onPressed: widget.checkingAll || enabled == 0
+                  ? null
+                  : widget.onCheckAll,
               icon: widget.checkingAll
                   ? const SizedBox.square(
                       dimension: 16,
@@ -559,6 +608,9 @@ class _VideoDownloadSubscriptionsViewState
       ),
       subscription: subscription,
       busy: busy,
+      autoDisableDays: widget.autoDisableDays,
+      showStale: _latestDiscovered != null,
+      latestDiscoveredAt: _latestDiscovered?[subscription.subscriptionId],
       itemCounts:
           _itemCounts[subscription.subscriptionId] ?? const <String, int>{},
       expanded: _expanded.contains(subscription.subscriptionId),
@@ -566,10 +618,10 @@ class _VideoDownloadSubscriptionsViewState
       onToggleExpanded: widget.itemsWatcher == null
           ? null
           : () => setState(() {
-                if (!_expanded.add(subscription.subscriptionId)) {
-                  _expanded.remove(subscription.subscriptionId);
-                }
-              }),
+              if (!_expanded.add(subscription.subscriptionId)) {
+                _expanded.remove(subscription.subscriptionId);
+              }
+            }),
       onToggle: (bool enabled) =>
           _run(subscription, () => widget.onToggle(subscription, enabled)),
       onCheck: subscription.enabled
@@ -589,9 +641,9 @@ class _VideoDownloadSubscriptionsViewState
   Widget build(BuildContext context) {
     final List<VideoDownloadSubscriptionRow> visible =
         sortedVideoDownloadSubscriptions(
-      filterVideoDownloadSubscriptions(widget.subscriptions, _searchQuery),
-      _sort,
-    );
+          filterVideoDownloadSubscriptions(widget.subscriptions, _searchQuery),
+          _sort,
+        );
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
     final double gap = tokens.spacing.gap;
@@ -601,7 +653,6 @@ class _VideoDownloadSubscriptionsViewState
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = constraints.maxWidth >= _kGridBreakpoint ? 2 : 1;
-        final int rowCount = (visible.length + columns - 1) ~/ columns;
         final Widget body;
         if (widget.subscriptions.isEmpty || visible.isEmpty) {
           body = SliverFillRemaining(
@@ -618,35 +669,22 @@ class _VideoDownloadSubscriptionsViewState
                   ),
           );
         } else {
+          // 卡片 builder 恒返回非空，错峰进场包装后也恒非空。
+          final NullableIndexedWidgetBuilder entrance =
+              fushiStaggeredItemBuilder(
+                (BuildContext context, int index) => _buildCard(visible[index]),
+              );
           body = SliverPadding(
             padding: EdgeInsets.fromLTRB(page, gap, page, 24),
-            sliver: SliverList.builder(
-              itemCount: rowCount,
-              itemBuilder: fushiStaggeredItemBuilder((
-                BuildContext context,
-                int row,
-              ) {
-                final int start = row * columns;
-                final Widget content = columns == 1
-                    ? _buildCard(visible[start])
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          for (int c = 0; c < columns; c++) ...<Widget>[
-                            if (c > 0) SizedBox(width: gap + 4),
-                            Expanded(
-                              child: start + c < visible.length
-                                  ? _buildCard(visible[start + c])
-                                  : const SizedBox.shrink(),
-                            ),
-                          ],
-                        ],
-                      );
-                return Padding(
-                  padding: EdgeInsets.only(bottom: gap + 4),
-                  child: content,
-                );
-              }),
+            // 两列时按瀑布流排：每张卡落进当前较短的一列，卡高不一（规则多、
+            // 展开逐集状态）时不再按行顶对齐留出大块空白（2026-10-20 用户截图）。
+            sliver: SliverMasonryGrid.count(
+              crossAxisCount: columns,
+              mainAxisSpacing: gap + 4,
+              crossAxisSpacing: gap + 4,
+              childCount: visible.length,
+              itemBuilder: (BuildContext context, int index) =>
+                  entrance(context, index)!,
             ),
           );
         }
@@ -674,11 +712,7 @@ class _VideoDownloadSubscriptionsViewState
 
 /// 订阅卡上的一枚信息 chip（调度 / 模式 / 来源）。
 class _SubscriptionChip extends StatelessWidget {
-  const _SubscriptionChip({
-    required this.icon,
-    required this.label,
-    this.tone,
-  });
+  const _SubscriptionChip({required this.icon, required this.label, this.tone});
 
   final IconData icon;
   final String label;
@@ -690,9 +724,11 @@ class _SubscriptionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
-    final FushiCardColors? toned =
-        tone == null ? null : fushiCardToneColors(context, tone!);
-    final Color background = toned?.container ??
+    final FushiCardColors? toned = tone == null
+        ? null
+        : fushiCardToneColors(context, tone!);
+    final Color background =
+        toned?.container ??
         (glass ? appleColorsOf(context).fill : cs.surfaceContainerHigh);
     final Color foreground = toned?.onContainer ?? cs.onSurfaceVariant;
     return Container(
@@ -731,6 +767,9 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     required this.onCheck,
     required this.onDelete,
     this.onEdit,
+    this.autoDisableDays = 0,
+    this.latestDiscoveredAt,
+    this.showStale = false,
     this.itemCounts = const <String, int>{},
     this.expanded = false,
     this.itemsWatcher,
@@ -743,6 +782,15 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
   final VoidCallback? onCheck;
   final VoidCallback onDelete;
   final VoidCallback? onEdit;
+
+  /// 追更订阅自动关闭的天数（0 = 从不），用来给停用卡标出原因。
+  final int autoDisableDays;
+
+  /// 最近一次发现新集的时刻；null = 一集都没发现过。
+  final int? latestDiscoveredAt;
+
+  /// 新集时刻已加载，可以判「多久未更新」。
+  final bool showStale;
 
   /// status → count（[VideoDownloadSubscriptionItemStatus] 值域）。
   final Map<String, int> itemCounts;
@@ -760,18 +808,18 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
   }
 
   static String itemStatusLabel(String status) => switch (status) {
-        VideoDownloadSubscriptionItemStatus.discovered =>
-          t.subscription_item_status_discovered,
-        VideoDownloadSubscriptionItemStatus.queued =>
-          t.subscription_item_status_queued,
-        VideoDownloadSubscriptionItemStatus.processed =>
-          t.subscription_item_status_processed,
-        VideoDownloadSubscriptionItemStatus.skipped =>
-          t.subscription_item_status_skipped,
-        VideoDownloadSubscriptionItemStatus.failed =>
-          t.subscription_item_status_failed,
-        _ => status,
-      };
+    VideoDownloadSubscriptionItemStatus.discovered =>
+      t.subscription_item_status_discovered,
+    VideoDownloadSubscriptionItemStatus.queued =>
+      t.subscription_item_status_queued,
+    VideoDownloadSubscriptionItemStatus.processed =>
+      t.subscription_item_status_processed,
+    VideoDownloadSubscriptionItemStatus.skipped =>
+      t.subscription_item_status_skipped,
+    VideoDownloadSubscriptionItemStatus.failed =>
+      t.subscription_item_status_failed,
+    _ => status,
+  };
 
   /// 逐集计数摘要（`已入库 5 · 排队中 1 · 失败 2`）；零计数状态跳过。
   String get _itemCountsLine {
@@ -796,9 +844,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     final String url = subscription.coverUrl?.trim() ?? '';
     final Widget placeholder = ColoredBox(
       color: FushiDesignTokens.of(context).surfaces.group,
-      child: const Center(
-        child: FushiIcon(FushiIcons.video, size: 24),
-      ),
+      child: const Center(child: FushiIcon(FushiIcons.video, size: 24)),
     );
     final FushiMotionScheme motion = context.fushiMotion;
     // 停用的订阅封面降饱和（透明度走 effects 弹簧，不过冲）。
@@ -831,8 +877,9 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     final ColorScheme cs = theme.colorScheme;
     final FushiTypography type = context.fushiType;
     final FushiMotionScheme motion = context.fushiMotion;
-    final List<String> strictParts =
-        videoDownloadSubscriptionFilterSummary(subscription.filterJson);
+    final List<String> strictParts = videoDownloadSubscriptionFilterSummary(
+      subscription.filterJson,
+    );
     final String mediaLabel = subscription.mediaKind == 'movie'
         ? t.collection_relation_movie
         : t.series;
@@ -920,6 +967,32 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
                               time: _formatTime(subscription.lastMatchedAt),
                             ),
                             tone: FushiCardTone.tertiary,
+                          ),
+                        // 停用原因：单次订阅下到即关；追更订阅超过设定时长
+                        // 没有更新（服务据此自动关闭）。
+                        if (!subscription.enabled &&
+                            subscription.fulfilledAt != null)
+                          _SubscriptionChip(
+                            icon: FushiIcons.downloadDone,
+                            label: t.subscription_fulfilled_chip,
+                          ),
+                        if (!subscription.enabled &&
+                            showStale &&
+                            isVideoDownloadSubscriptionStale(
+                              subscription,
+                              nowAt: DateTime.now().millisecondsSinceEpoch,
+                              days: autoDisableDays,
+                              latestDiscoveredAt: latestDiscoveredAt,
+                            ))
+                          _SubscriptionChip(
+                            icon: FushiIcons.schedule,
+                            label: t.subscription_stale_chip(
+                              period:
+                                  _VideoDownloadSubscriptionsViewState.autoDisablePeriodLabel(
+                                    autoDisableDays,
+                                  ),
+                            ),
+                            tone: FushiCardTone.error,
                           ),
                         if (subscription.startAfterEpisode != null)
                           _SubscriptionChip(
@@ -1127,19 +1200,19 @@ class _SubscriptionItemsSection extends StatelessWidget {
       subscription.lastMatchedAt == null;
 
   static FushiCardTone _toneOf(String status) => switch (status) {
-        VideoDownloadSubscriptionItemStatus.processed => FushiCardTone.tertiary,
-        VideoDownloadSubscriptionItemStatus.queued => FushiCardTone.primary,
-        VideoDownloadSubscriptionItemStatus.failed => FushiCardTone.error,
-        _ => FushiCardTone.secondary,
-      };
+    VideoDownloadSubscriptionItemStatus.processed => FushiCardTone.tertiary,
+    VideoDownloadSubscriptionItemStatus.queued => FushiCardTone.primary,
+    VideoDownloadSubscriptionItemStatus.failed => FushiCardTone.error,
+    _ => FushiCardTone.secondary,
+  };
 
   static IconData _iconOf(String status) => switch (status) {
-        VideoDownloadSubscriptionItemStatus.processed => FushiIcons.success,
-        VideoDownloadSubscriptionItemStatus.queued => FushiIcons.downloading,
-        VideoDownloadSubscriptionItemStatus.failed => FushiIcons.error,
-        VideoDownloadSubscriptionItemStatus.skipped => FushiIcons.block,
-        _ => FushiIcons.schedule,
-      };
+    VideoDownloadSubscriptionItemStatus.processed => FushiIcons.success,
+    VideoDownloadSubscriptionItemStatus.queued => FushiIcons.downloading,
+    VideoDownloadSubscriptionItemStatus.failed => FushiIcons.error,
+    VideoDownloadSubscriptionItemStatus.skipped => FushiIcons.block,
+    _ => FushiIcons.schedule,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -1147,114 +1220,117 @@ class _SubscriptionItemsSection extends StatelessWidget {
     final FushiTypography type = context.fushiType;
     return StreamBuilder<List<VideoDownloadSubscriptionItemRow>>(
       stream: itemsWatcher(subscription.subscriptionId),
-      builder: (
-        BuildContext context,
-        AsyncSnapshot<List<VideoDownloadSubscriptionItemRow>> snapshot,
-      ) {
-        if (!snapshot.hasData) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: FushiSkeletonShimmer(
-              child: Column(
-                children: <Widget>[
-                  for (int i = 0; i < 2; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: <Widget>[
-                          const FushiSkeleton(width: 32, height: 32),
-                          const SizedBox(width: 12),
-                          Expanded(child: FushiSkeleton.line(widthFactor: 0.6)),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          );
-        }
-        final List<VideoDownloadSubscriptionItemRow> items = snapshot.data!;
-        final Widget heading = Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 8),
-          child: Text(
-            t.subscription_history_title,
-            style: type.labelMediumEmphasized.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        );
-        if (items.isEmpty) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              heading,
-              Text(
-                t.subscription_items_empty,
-                style: type.bodySmall.copyWith(
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<List<VideoDownloadSubscriptionItemRow>> snapshot,
+          ) {
+            if (!snapshot.hasData) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: FushiSkeletonShimmer(
+                  child: Column(
+                    children: <Widget>[
+                      for (int i = 0; i < 2; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Row(
+                            children: <Widget>[
+                              const FushiSkeleton(width: 32, height: 32),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: FushiSkeleton.line(widthFactor: 0.6),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }
+            final List<VideoDownloadSubscriptionItemRow> items = snapshot.data!;
+            final Widget heading = Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              child: Text(
+                t.subscription_history_title,
+                style: type.labelMediumEmphasized.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
-              if (_ongoingNeverMatched) ...<Widget>[
-                const SizedBox(height: 4),
-                Text(
-                  key: const ValueKey<String>(
-                    'video-subscription-never-matched-hint',
+            );
+            if (items.isEmpty) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  heading,
+                  Text(
+                    t.subscription_items_empty,
+                    style: type.bodySmall.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                  t.subscription_items_empty_ongoing_hint,
-                  style: type.bodySmall.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  if (_ongoingNeverMatched) ...<Widget>[
+                    const SizedBox(height: 4),
+                    Text(
+                      key: const ValueKey<String>(
+                        'video-subscription-never-matched-hint',
+                      ),
+                      t.subscription_items_empty_ongoing_hint,
+                      style: type.bodySmall.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                ],
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                heading,
+                FushiGroupedList(
+                  children: <Widget>[
+                    for (final VideoDownloadSubscriptionItemRow item in items)
+                      FushiListItem(
+                        key: ValueKey<String>(
+                          'video-subscription-item-${item.id}',
+                        ),
+                        density: FushiListDensity.compact,
+                        leading: FushiListLeadingIcon(
+                          _iconOf(item.status),
+                          shape: FushiLeadingShape.square,
+                          tone: _toneOf(item.status),
+                          size: 32,
+                          iconSize: 18,
+                        ),
+                        title: Text(
+                          item.title,
+                          maxLines: 2,
+                          softWrap: true,
+                          overflow: TextOverflow.fade,
+                        ),
+                        titleMaxLines: 2,
+                        subtitle: Text(
+                          <String>[
+                            item.logicalItemKey,
+                            _VideoDownloadSubscriptionCard.itemStatusLabel(
+                              item.status,
+                            ),
+                            if (item.error?.trim().isNotEmpty ?? false)
+                              item.error!.trim(),
+                          ].join(' · '),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitleMaxLines: 2,
+                      ),
+                  ],
                 ),
               ],
-              const SizedBox(height: 4),
-            ],
-          );
-        }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            heading,
-            FushiGroupedList(
-              children: <Widget>[
-                for (final VideoDownloadSubscriptionItemRow item in items)
-                  FushiListItem(
-                    key: ValueKey<String>(
-                      'video-subscription-item-${item.id}',
-                    ),
-                    density: FushiListDensity.compact,
-                    leading: FushiListLeadingIcon(
-                      _iconOf(item.status),
-                      shape: FushiLeadingShape.square,
-                      tone: _toneOf(item.status),
-                      size: 32,
-                      iconSize: 18,
-                    ),
-                    title: Text(
-                      item.title,
-                      maxLines: 2,
-                      softWrap: true,
-                      overflow: TextOverflow.fade,
-                    ),
-                    titleMaxLines: 2,
-                    subtitle: Text(
-                      <String>[
-                        item.logicalItemKey,
-                        _VideoDownloadSubscriptionCard.itemStatusLabel(
-                          item.status,
-                        ),
-                        if (item.error?.trim().isNotEmpty ?? false)
-                          item.error!.trim(),
-                      ].join(' · '),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitleMaxLines: 2,
-                  ),
-              ],
-            ),
-          ],
-        );
-      },
+            );
+          },
     );
   }
 }

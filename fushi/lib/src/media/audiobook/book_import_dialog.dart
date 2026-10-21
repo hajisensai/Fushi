@@ -249,36 +249,58 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// 选/拖进来的路径若其实是漫画载体，弹一次明确确认并转交 [MangaImportDialog]。
   ///
   /// 返回 `true` 表示「本路径已被漫画流程接手，书籍侧不要再收下它」——用户在确认
-  /// 框里点取消也算接手（不继续按书导入，那只会产出一本乱码书）。
+  /// 框里点取消也算接手。用户选「仍按书籍导入」（仅 [canImportMangaCarrierAsBook]
+  /// 放行的载体才有这个按钮）时返回 `false`，并把该路径记进 [_forcedBookPath]。
   ///
   /// 为什么书籍入口还要认漫画：图片型 `.zip` / 扫描版 `.epub` 与词典包/普通电子书
   /// 同形，拖到书架时分类层按扩展名归 books（它刻意不为每次拖 EPUB 白开一次包）。
   /// 此前这里是**静默**转漫画导入；现在改成用户可见的一次确认——识别照旧，分派不
   /// 再背着用户发生。
   Future<bool> _handoffIfManga(String path) async {
-    if (!_classifyCarrier(path).isManga) return false;
-    final bool? go = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        icon: const FushiDialogHeroIcon(
-          icon: FushiIcons.manga,
-          tone: FushiHeroTone.tertiary,
-        ),
-        title: Text(t.manga_import_detected_title),
-        content: Text(t.manga_import_detected_message(name: p.basename(path))),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
+    final ImportCarrier carrier = _classifyCarrier(path);
+    if (!carrier.isManga) return false;
+    final bool canImportAsBook = canImportMangaCarrierAsBook(path, carrier);
+    final _MangaDetectedChoice? choice =
+        await showAppDialog<_MangaDetectedChoice>(
+          context: context,
+          builder: (BuildContext ctx) => FushiAlertDialog(
+            icon: const FushiDialogHeroIcon(
+              icon: FushiIcons.manga,
+              tone: FushiHeroTone.tertiary,
+            ),
+            title: Text(t.manga_import_detected_title),
+            content: Text(
+              t.manga_import_detected_message(name: p.basename(path)),
+            ),
+            actions: <Widget>[
+              FushiTextButton(
+                onPressed: () =>
+                    Navigator.pop(ctx, _MangaDetectedChoice.cancel),
+                child: Text(t.dialog_cancel),
+              ),
+              // 漫画判据会误判（插图小说 / 绘本 / 图文书），书籍管线吃得下时必须
+              // 让用户坚持按书导入，否则这本书在 Fushi 里根本进不了书架。
+              if (canImportAsBook)
+                FushiTextButton(
+                  onPressed: () =>
+                      Navigator.pop(ctx, _MangaDetectedChoice.asBook),
+                  child: Text(t.manga_import_detected_import_as_book),
+                ),
+              FushiFilledButton(
+                onPressed: () =>
+                    Navigator.pop(ctx, _MangaDetectedChoice.asManga),
+                child: Text(t.manga_import_detected_confirm),
+              ),
+            ],
           ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.manga_import_detected_confirm),
-          ),
-        ],
-      ),
-    );
-    if (go != true || !mounted) return true;
+        );
+    if (choice == _MangaDetectedChoice.asBook) {
+      // 记住这次覆盖：后面 `_doImport` 兜底闸门与 `_importEpubOnly` 分派都经
+      // [_classifyCarrier] 问同一个问题，覆盖必须在那里生效，否则会再弹一次。
+      _forcedBookPath = path;
+      return false;
+    }
+    if (choice != _MangaDetectedChoice.asManga || !mounted) return true;
 
     final bool? imported = await showAppDialog<bool>(
       context: context,
@@ -299,7 +321,12 @@ class _BookImportDialogState extends State<BookImportDialog>
   /// ——它不进 `_importEpubOnly`，那几次开包纯属白开。记忆按路径失效，换文件会重算。
   late final ImportCarrierResolver _carrierResolver;
 
-  ImportCarrier _classifyCarrier(String path) => _carrierResolver.resolve(path);
+  /// 用户在「这看起来是漫画」确认框里坚持按书籍导入的路径（见 [_handoffIfManga]）。
+  String? _forcedBookPath;
+
+  ImportCarrier _classifyCarrier(String path) => path == _forcedBookPath
+      ? ImportCarrier.epub
+      : _carrierResolver.resolve(path);
 
   /// 拖文件进本对话框 → 分类 → 按字段覆盖（仅填命中类，不清用户已选）。
   /// 纯解析交给 [resolveBookDialogDrop]；此处只 setState + sidecar/封面副作用。
@@ -1584,3 +1611,6 @@ class ImportProgressCard extends StatelessWidget {
     );
   }
 }
+
+/// 「这看起来是漫画」确认框的三种答复。
+enum _MangaDetectedChoice { cancel, asBook, asManga }

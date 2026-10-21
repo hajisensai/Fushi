@@ -56,6 +56,8 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
+import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
+    show FushiWebBrowserPage;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -566,6 +568,36 @@ String subtitleLookupTerm(String sentence, int graphemeIndex) =>
   String sentence,
   int graphemeIndex,
 ) => subtitleTranscriptLookupSpan(sentence, graphemeIndex);
+
+/// 画面字幕悬停查词的「同一个词」判据（查词卡顿：划过一个多字词只查一次）。
+///
+/// 两条任一成立即视为同一个词、不再发起查词：
+/// 1. 命中字位落在当前查词高亮 [activeHighlight] 里——高亮是引擎回报的命中词（与阅读器
+///    悬停「落在 matchedRanges 内即同词」同语义），只在弹窗栈可见时非空；
+/// 2. 与上次悬停同句，且查词起点 [spanStart]（[subtitleLookupSpan]：拉丁词回退到词首，
+///    其余脚本即命中字位）与上次 [lastSpanStart] 相同——查询串完全相同，重查只会得到同一
+///    结果；覆盖引擎结果回来之前（高亮尚未写入）在同一个拉丁词里移动的情形。
+@visibleForTesting
+bool isSameSubtitleHoverWord({
+  required String sentence,
+  required int graphemeIndex,
+  required int spanStart,
+  required int? cueStartMs,
+  required String lastSentence,
+  required int lastSpanStart,
+  required SubtitleLookupHighlight? activeHighlight,
+}) {
+  if (activeHighlight != null &&
+      cueStartMs != null &&
+      activeHighlight.covers(
+        sentence: sentence,
+        cueStartMs: cueStartMs,
+        graphemeIndex: graphemeIndex,
+      )) {
+    return true;
+  }
+  return sentence == lastSentence && spanStart == lastSpanStart;
+}
 
 /// 引擎回报的匹配长度是**码点**数（`bestLength` / [lookupHighlightCharCount]），
 /// 字幕逐字登记按 **grapheme**；把查询串 [term] 的前 [matchedRunes] 个码点折算成
@@ -2194,6 +2226,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final Map<String, NetflixTitleMetadata> _webNetflixMeta =
       <String, NetflixTitleMetadata>{};
   final Set<String> _webNetflixMetaRequested = <String>{};
+
+  /// 已向站点要过、还没回执的 Netflix metadata id（回执只认这里面的）。
+  final Set<String> _webNetflixMetaInFlight = <String>{};
 
   /// 剧集面板（[_episodes]）里每一集对应的站点播放地址。
   List<String> _webEpisodeUrls = const <String>[];
@@ -6525,6 +6560,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String _barrierHoverLastSentence = '';
   int _barrierHoverLastGrapheme = -1;
 
+  /// 画面字幕悬停最后一次发起查词的查词起点（[subtitleLookupSpan] 的 start），与
+  /// [_barrierHoverLastSentence] 一起构成「同一个词」的去重键；复位时机同上两个键。
+  int _barrierHoverLastSpanStart = -1;
+
   /// 桌面 Shift-鼠标悬停在查词浮层 dismiss barrier 上「连续切换查词」（BUG-861，与阅读器
   /// [ReaderFushiPage.onDismissBarrierHover] 同语义）。
   ///
@@ -6556,6 +6595,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
       _barrierHoverLastGrapheme = -1;
+      _barrierHoverLastSpanStart = -1;
       return;
     }
     final double dx = event.position.dx - _barrierHoverLastPos.dx;
@@ -6599,6 +6639,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }
       _barrierHoverLastSentence = listHit.cue.text;
       _barrierHoverLastGrapheme = listHit.graphemeIndex;
+      // 列表这条仍按「同句同 grapheme」去重；画面字幕的「同词」键随之作废，免得回到画面
+      // 同一句时拿列表查词之前的起点误判成同一个词。
+      _barrierHoverLastSpanStart = -1;
       _handleSubtitleListLookup(
         listHit.cue,
         listHit.graphemeIndex,
@@ -6613,18 +6656,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 到这里。首弹后 barrier 盖不住的字符可能被两条路径同时命中，用「同句同 grapheme」短路
   /// 去重，保证一次移动只换一次词（否则同词双 `replaceStack` 会闪烁 / 重复刷 FFI）。点击查词
   /// （`onCharTap` → [_handleSubtitleLookupTap]）不经此入口，故重复点同字仍照常重查。
+  ///
+  /// 查词卡顿：去重键从「同句同 grapheme」放宽为「同一个词」——划过一个三字词原先要连查
+  /// 三次（每个字各一次 replaceStack + FFI）。判据见 [isSameSubtitleHoverWord]：命中字位落
+  /// 在当前查词高亮（引擎回报的命中词）里，或与上次悬停的查词起点（[subtitleLookupSpan]，
+  /// 拉丁词回退到词首）相同，都视为同一个词。
   void _handleSubtitleHoverLookup(
     String sentence,
     int graphemeIndex,
     Rect charRect,
     AudioCue? cue,
   ) {
-    if (sentence == _barrierHoverLastSentence &&
-        graphemeIndex == _barrierHoverLastGrapheme) {
+    final int spanStart = subtitleLookupSpan(sentence, graphemeIndex).start;
+    if (isSameSubtitleHoverWord(
+      sentence: sentence,
+      graphemeIndex: graphemeIndex,
+      spanStart: spanStart,
+      cueStartMs: (cue ?? _lastLookupCue)?.startMs,
+      lastSentence: _barrierHoverLastSentence,
+      lastSpanStart: _barrierHoverLastSpanStart,
+      activeHighlight: _activeSubtitleLookupHighlight,
+    )) {
       return;
     }
     _barrierHoverLastSentence = sentence;
     _barrierHoverLastGrapheme = graphemeIndex;
+    _barrierHoverLastSpanStart = spanStart;
     _handleSubtitleLookupTap(
       sentence,
       graphemeIndex,
@@ -7080,6 +7137,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
       _barrierHoverLastGrapheme = -1;
+      _barrierHoverLastSpanStart = -1;
       // 悬停离开那条会话状态同在此收尾：会话已结束，来源标记与意图确认表都不该跨到下
       // 一次查词（否则上一轮悬停会话的标记会让下一次**点击**查词也被自动关掉）。
       _lookupOpenedByHover = false;
@@ -9165,11 +9223,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
         return _hasChapters;
-      // 弹幕只对本地文件加载（sidecar / Dandanplay 按文件 hash 匹配，见
-      // `_loadDanmakuForVideo`）；远端流没有本地路径 = 没有弹幕来源，与章节 / 选集
-      // 一样直接不渲染，免得放一个按了也不会有弹幕的开关。
+      // 弹幕来源是本地文件（sidecar / Dandanplay 按文件 hash 匹配），或能向 host
+      // 取文件指纹的互联远端流（BUG-3614，见 `_loadDanmakuForVideo`）；其余远端流
+      // 没有弹幕来源，与章节 / 选集一样直接不渲染，免得放一个按了也不会有弹幕的开关。
       case VideoControlItem.danmaku:
-        return _currentVideoPath != null;
+        return _hasDanmakuSource;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -10454,6 +10512,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     await appModel.setVideoHdrOutputMode(mode);
   }
 
+  /// 「YouTube 画质」目标：落盘；网页档（Windows 上 YouTube 走站点播放器）当场下发给站点
+  /// 播放器重选档位。mpv 路径播放中换档走画质侧栏，这里的目标对下次打开生效。
+  Future<void> _setYoutubeQualityTargetHeight(int height) async {
+    await appModel.setYoutubeQualityTargetHeight(height);
+    await _webSession?.setQualityTarget(height);
+  }
+
   /// Persist + apply a new 9-slot control button layout (TODO-274/312 phase 2).
   /// This is the single write path the quick-settings editor calls; it stores
   /// the v3 layout (same pref key, auto-migrating old v1/v2 blobs). Keep the
@@ -11070,6 +11135,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onLockWindowAspectRatioChanged: _setLockWindowAspectRatio,
       onVideoFitModeChanged: _setVideoFitMode,
       onHdrOutputModeChanged: _setVideoHdrOutputMode,
+      onYoutubeQualityChanged: _setYoutubeQualityTargetHeight,
       onImmersiveModeChanged: appModel.setVideoImmersiveMode,
       onDanmakuEnabledChanged: _setVideoDanmakuEnabled,
       onDanmakuOnlineEnabledChanged: _setVideoDanmakuOnlineEnabled,

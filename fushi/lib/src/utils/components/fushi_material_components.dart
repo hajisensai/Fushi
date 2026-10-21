@@ -1025,7 +1025,15 @@ class FushiSearchField extends StatelessWidget {
     this.trailing = const <Widget>[],
     this.leading,
     this.autofocus = false,
+    this.keyboardType = TextInputType.text,
   });
+
+  /// 软键盘类型。地址栏传 [TextInputType.url]：移动端给出带「/」「.」的网址键盘，
+  /// 且不对网址做自动更正 / 首字母大写（[TextInputType.url] 下 autocorrect 关闭）。
+  /// 提交动作仍是 [TextInputAction.search]（见下方 BUG-2620 的说明）。
+  final TextInputType keyboardType;
+
+  bool get _autocorrect => keyboardType != TextInputType.url;
 
   /// 替换前置放大镜的控件（M3E search bar 的 leading：返回箭头 / 菜单钮）。
   /// 为空时是放大镜。会被包进 [FushiSearchLeading]，两套设计系统都仍认得出
@@ -1226,6 +1234,8 @@ class FushiSearchField extends StatelessWidget {
           ),
           contentPadding: const EdgeInsetsDirectional.only(end: 16),
         ),
+        keyboardType: keyboardType,
+        autocorrect: _autocorrect,
         textInputAction: TextInputAction.search,
         onEditingComplete: _finishSubmit,
         onChanged: onChanged,
@@ -1273,6 +1283,8 @@ class FushiSearchField extends StatelessWidget {
                   ? null
                   : Row(mainAxisSize: MainAxisSize.min, children: trailing),
             ),
+            keyboardType: keyboardType,
+            autocorrect: _autocorrect,
             textInputAction: TextInputAction.search,
             onEditingComplete: _finishSubmit,
             onChanged: onChanged,
@@ -1290,6 +1302,8 @@ class FushiSearchField extends StatelessWidget {
         focusNode: focusNode,
         autofocus: autofocus,
         placeholder: hintText,
+        keyboardType: keyboardType,
+        autocorrect: _autocorrect,
         prefix: Padding(
           padding: const EdgeInsets.only(left: 6, right: 2),
           child: leading ?? const MacosIcon(CupertinoIcons.search),
@@ -1352,6 +1366,8 @@ class FushiSearchField extends StatelessWidget {
               style: tokens.type.listTitle,
               textAlignVertical: TextAlignVertical.center,
               decoration: decoration,
+              keyboardType: keyboardType,
+              autocorrect: _autocorrect,
               // 搜索框的提交动作必须显式声明：不声明时软键盘/IME 给的是
               // 「完成」，而 `TextInputAction.done` 的默认收尾是 unfocus——焦点
               // 一掉，[FushiFocusRoot] 的修复链又会把它以编程方式还回来，桌面端
@@ -3599,6 +3615,7 @@ class FushiPageHeader extends StatelessWidget {
     this.compact = false,
     this.titleRevealed,
     this.search,
+    this.menuAnchor,
   }) : titleWidget = null;
 
   /// 用任意组件占据页头主位。适合把分段导航直接放进页头动作同一行，避免再渲染
@@ -3611,6 +3628,7 @@ class FushiPageHeader extends StatelessWidget {
     this.padding,
     this.compact = false,
     this.search,
+    this.menuAnchor,
   }) : title = null,
        titleWidget = title,
        subtitle = null,
@@ -3641,6 +3659,7 @@ class FushiPageHeader extends StatelessWidget {
        compact = false,
        titleRevealed = null,
        search = null,
+       menuAnchor = null,
        leading = FushiRouteBackButton(key: backButtonKey, onPressed: onBack);
 
   final String? title;
@@ -3657,6 +3676,13 @@ class FushiPageHeader extends StatelessWidget {
   /// （[FushiHeaderSearchBar]）——在库页外壳里由外壳的浮动工具栏行换，独立
   /// 使用时由本页头这一行换。
   final FushiHeaderSearchController? search;
+
+  /// 跟着动作组走的零尺寸菜单锚点（库页「排序」菜单）：叠在动作组右下角，
+  /// 动作画在本行就随本行、登记进外壳浮动工具栏就随那枚胶囊
+  /// （[fushiHeaderActionsWithMenuAnchor]）。动作可能被收进 ⋯，菜单不能挂在
+  /// 某颗按钮上；但也不能锚在页头这一行——动作交给外壳时这一行只剩页签，
+  /// 菜单会弹在按钮下方老远的地方。
+  final Widget? menuAnchor;
 
   @override
   Widget build(BuildContext context) {
@@ -3837,6 +3863,7 @@ class FushiPageHeader extends StatelessWidget {
                 : null,
             shellActions: shellActions,
             search: search,
+            menuAnchor: menuAnchor,
           ),
           if (bottom != null)
             Padding(
@@ -3904,9 +3931,13 @@ class _FushiPageHeaderRow extends StatefulWidget {
     this.appleNavBarHeight,
     this.shellActions,
     this.search,
+    this.menuAnchor,
   });
 
   final FushiDesignTokens tokens;
+
+  /// 见 [FushiPageHeader.menuAnchor]。
+  final Widget? menuAnchor;
 
   /// 可展开搜索（见 [FushiPageHeader.search]）：动作交给外壳时随动作一起登记，
   /// 外壳的浮动工具栏行据此整行换成搜索栏；独立使用时本行自己换。
@@ -3984,6 +4015,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
       actions: FushiShellHeaderActions(
         actions: widget.actionItems,
         search: widget.search,
+        menuAnchor: widget.menuAnchor,
       ),
     );
   }
@@ -4120,34 +4152,37 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
           final List<Widget> resolvedItems = resolved.items;
           final bool expandLabels = resolved.expandLabels;
 
-          trailing = ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: (maxActionsWidth - navLeadingReserve).clamp(
-                0.0,
-                double.infinity,
+          trailing = fushiHeaderActionsWithMenuAnchor(
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: (maxActionsWidth - navLeadingReserve).clamp(
+                  0.0,
+                  double.infinity,
+                ),
               ),
-            ),
-            child: HorizontalDragScrollable(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const ClampingScrollPhysics(),
-                child: FushiHeaderLabelScope(
-                  expandLabels: expandLabels,
-                  child: widget.floatingActions
-                      ? fushiFloatingHeaderActionGroups(
-                          resolvedItems,
-                          _buildActionRow,
-                          expandLabels: expandLabels,
-                        )
-                      : widget.appleActions
-                      ? fushiAppleHeaderActionGroups(
-                          resolvedItems,
-                          expandLabels: expandLabels,
-                        )
-                      : _buildActionRow(resolvedItems),
+              child: HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: FushiHeaderLabelScope(
+                    expandLabels: expandLabels,
+                    child: widget.floatingActions
+                        ? fushiFloatingHeaderActionGroups(
+                            resolvedItems,
+                            _buildActionRow,
+                            expandLabels: expandLabels,
+                          )
+                        : widget.appleActions
+                        ? fushiAppleHeaderActionGroups(
+                            resolvedItems,
+                            expandLabels: expandLabels,
+                          )
+                        : _buildActionRow(resolvedItems),
+                  ),
                 ),
               ),
             ),
+            widget.menuAnchor,
           );
           children
             ..add(SizedBox(width: actionsGap))
@@ -4816,10 +4851,15 @@ class FushiShellHeaderActions extends StatefulWidget {
     required this.actions,
     this.appleFloating = false,
     this.search,
+    this.menuAnchor,
     super.key,
   });
 
   final List<Widget> actions;
+
+  /// 这份动作所属页头的菜单锚点（见 [FushiPageHeader.menuAnchor]）：叠在本
+  /// 动作组右下角，菜单从外壳浮动工具栏的胶囊下方弹出。
+  final Widget? menuAnchor;
 
   /// 这份动作所属页头的可展开搜索（见 [FushiPageHeader.search]）：库页外壳的
   /// 浮动工具栏行在它展开时整行换成搜索栏。
@@ -4840,6 +4880,13 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    return fushiHeaderActionsWithMenuAnchor(
+      _buildActions(context, apple),
+      widget.menuAnchor,
+    );
+  }
+
+  Widget _buildActions(BuildContext context, bool apple) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // −16：Apple 工具栏胶囊两端的内边距与 MD3 按钮组胶囊内边距的余量。
@@ -4884,6 +4931,19 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
       },
     );
   }
+}
+
+/// 把零尺寸菜单锚点 [menuAnchor] 叠在动作组 [actions] 的右下角（RTL 为左下角）：
+/// 菜单从动作组下沿弹出，水平方向由 MenuAnchor 自己夹进屏幕。null 时原样返回。
+Widget fushiHeaderActionsWithMenuAnchor(Widget actions, Widget? menuAnchor) {
+  if (menuAnchor == null) return actions;
+  return Stack(
+    clipBehavior: Clip.none,
+    children: <Widget>[
+      actions,
+      PositionedDirectional(end: 0, bottom: 0, child: menuAnchor),
+    ],
+  );
 }
 
 /// 底部安全区（iOS home indicator / Android 手势条）的高度。
@@ -5011,23 +5071,39 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     setState(() => _headerHeight = height);
   }
 
+  /// 主滚动区深度：版面修正通知只认它（见 [FushiScrollOwnerDepth]）。
+  final FushiScrollOwnerDepth _scrollOwner = FushiScrollOwnerDepth();
+
+  /// 竖向滚动位置的来源：用户 / 动画滚动（[ScrollUpdateNotification]）与版面
+  /// 修正（[ScrollMetricsNotification]：列表缩短 / 视口变高把位置夹回顶部只发
+  /// 这一种，漏掉它遮罩与标题会停在「已滚动」态；只认主滚动区，嵌套小列表的首次
+  /// 布局不算）。其它通知返回 null。
+  ScrollMetrics? _verticalScrollMetrics(Notification notification) {
+    if (notification is ScrollUpdateNotification) {
+      _scrollOwner.claim(notification);
+    }
+    final ScrollMetrics? metrics = switch (notification) {
+      ScrollUpdateNotification(:final ScrollMetrics metrics) => metrics,
+      final ScrollMetricsNotification n when _scrollOwner.owns(n) => n.metrics,
+      _ => null,
+    };
+    if (metrics == null || metrics.axis != Axis.vertical) return null;
+    return metrics;
+  }
+
   void _trackTitleReveal(Notification notification) {
     final double? after = widget.revealTitleAfterScroll;
     if (after == null) return;
-    if (notification is ScrollUpdateNotification &&
-        notification.metrics.axis == Axis.vertical) {
-      _titleRevealed.value = notification.metrics.extentBefore > after;
-    }
+    final ScrollMetrics? metrics = _verticalScrollMetrics(notification);
+    if (metrics != null) _titleRevealed.value = metrics.extentBefore > after;
   }
 
   bool _trackScrolledUnder(Notification notification) {
     _trackTitleReveal(notification);
     // 只看竖向轴、不限深度：正文常是横向 TabBarView 套各页竖向列表（统计
     // 中心），竖向滚动的 depth 是 1。
-    if (notification is ScrollUpdateNotification &&
-        notification.metrics.axis == Axis.vertical) {
-      _scrolledUnder.value = notification.metrics.extentBefore > 0;
-    }
+    final ScrollMetrics? metrics = _verticalScrollMetrics(notification);
+    if (metrics != null) _scrolledUnder.value = metrics.extentBefore > 0;
     return false;
   }
 
@@ -5260,11 +5336,11 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条
   /// 只有 44 高，它在外层用 `SizedBox.square(40)` 自己撑命中盒，塞不下 48。
   ///
-  /// [Navigator.maybeOf]：脚手架被用在没有 Navigator 的场景（裸组件测试 /
-  /// 嵌入式外壳）时只是没有返回键，不该整页抛异常。
+  /// 判据是 [fushiRouteImpliesBack]（本页路由，不是整个导航栈：弹出菜单压栈时
+  /// 根页不该长出返回键）；没有 Navigator 的场景（裸组件测试 / 嵌入式外壳）只是
+  /// 没有返回键，不该整页抛异常。
   Widget? _defaultLeading(BuildContext context) {
-    final NavigatorState? navigator = Navigator.maybeOf(context);
-    if (navigator == null || !navigator.canPop()) return null;
+    if (!fushiRouteImpliesBack(context)) return null;
     // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
     if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(
@@ -5462,7 +5538,7 @@ class FushiToolScaffold extends StatelessWidget {
   }
 
   Widget? _defaultLeading(BuildContext context) {
-    if (!Navigator.of(context).canPop()) return null;
+    if (!fushiRouteImpliesBack(context)) return null;
     // Apple：返回键统一为导航栏的玻璃圆钮（SF chevron，44pt）。
     if (isGlassDesign(context)) return const FushiRouteBackButton();
     return FushiIconButton(

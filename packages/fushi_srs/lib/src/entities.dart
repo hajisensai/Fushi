@@ -66,6 +66,7 @@ class SrsFieldDef {
     required this.name,
     required this.ord,
     this.ankiNum,
+    this.description = '',
     this.deleted = false,
   });
 
@@ -75,13 +76,27 @@ class SrsFieldDef {
 
   /// Anki 的 Field.Config.id。按名字回退生成的字段后来带上 ankiNum 时，只把它记在这里当别名，ID 不换。
   final int? ankiNum;
+
+  /// 用户写的字段说明（这个字段装什么、在卡面哪里出现）；空串 = 没写。对应 Anki 的
+  /// Field.Config.description。
+  ///
+  /// **不在字段定义的值里**（[toValue] 不写它）：说明是独立的修改记录键
+  /// [SrsFieldKeys.fieldDescription]，物化时并进来。分开存是为了改名 / 调序与改说明互不
+  /// 冲突，也让不认识说明的旧版本改名时不会把它抹掉。
+  final String description;
   final bool deleted;
 
-  SrsFieldDef copyWith({String? name, int? ord, bool? deleted}) => SrsFieldDef(
+  SrsFieldDef copyWith({
+    String? name,
+    int? ord,
+    String? description,
+    bool? deleted,
+  }) => SrsFieldDef(
     id: id,
     name: name ?? this.name,
     ord: ord ?? this.ord,
     ankiNum: ankiNum,
+    description: description ?? this.description,
     deleted: deleted ?? this.deleted,
   );
 
@@ -302,6 +317,16 @@ class SrsNoteTypeView {
         templates[id] = SrsTemplateDef.fromValue(id, edits.value(key));
       }
     }
+    // 字段说明是独立键，定义都物化完再并进去（键的遍历顺序不保证定义在前）。
+    for (final String key in edits.keys) {
+      if (!key.startsWith(SrsFieldKeys.fieldDescriptionPrefix)) continue;
+      final String id = key.substring(
+        SrsFieldKeys.fieldDescriptionPrefix.length,
+      );
+      final SrsFieldDef? f = fields[id];
+      final Object? v = edits.value(key);
+      if (f != null) fields[id] = f.copyWith(description: v is String ? v : '');
+    }
     int byOrd(dynamic a, dynamic b) {
       final int c = (a.ord as int).compareTo(b.ord as int);
       return c != 0 ? c : (a.id as String).compareTo(b.id as String);
@@ -407,12 +432,16 @@ class SrsCardFlags {
     required this.suspended,
     required this.buriedUntilDay,
     required this.flag,
+    this.newPosition,
   });
 
   final String deckId;
   final bool suspended;
   final int? buriedUntilDay;
   final int flag;
+
+  /// 新卡出卡位置（[SrsFieldKeys.cardNewPosition]）；null = 没排过。
+  final int? newPosition;
 
   /// [noteDeckId] 是笔记的首选牌组；卡片没有自己的 deck 修改记录时用它，再没有就用 [fallbackDeckId]（默认牌组）。
   /// 卡片的生成本身不写任何记录：两台设备各自为新模板生成同一张卡，初始 deckId 确定性相同。
@@ -428,5 +457,10 @@ class SrsCardFlags {
     suspended: edits.value(SrsFieldKeys.suspended) == true,
     buriedUntilDay: edits.value(SrsFieldKeys.buriedUntilDay) as int?,
     flag: (edits.value(SrsFieldKeys.flag) as int?) ?? 0,
+    newPosition: switch (edits.value(SrsFieldKeys.cardNewPosition)) {
+      final int v => v,
+      final num v => v.toInt(),
+      _ => null,
+    },
   );
 }

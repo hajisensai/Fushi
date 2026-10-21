@@ -252,6 +252,8 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'getDictAsset',
   'listWordAudioSources',
   'mineEntry',
+  // BUG-3652 续：制卡失败回包到达时发起按钮已被换掉 → 交回宿主 toast；预览不制卡。
+  'mineFailureUnseen',
   'minedCardAction',
   'onLinkClick',
   'openAdvancedMining',
