@@ -107,7 +107,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 - 输入：`ref`（要部署的分支 / tag / 提交，默认 `develop`）。没有迁移开关：每次部署都先执行
   `d1 migrations apply fushi-leaderboard --remote`（幂等，无待执行迁移时为空操作；迁移失败则不部署）。
   原先的 `apply_migrations` 开关默认关，漏勾就是「先部署、后迁移」，心跳等接口 500（#2433），已移除。
-- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 打印 `wrangler whoami` 与将要部署的
+- 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 校验 Cloudflare token（只打状态，不用会泄露账户邮箱的 `wrangler whoami`）并打印将要部署的
   提交号 → D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
   `GET https://rank.fushi.moe/v1/health` 必须 200。用的是 `package-lock.json` 锁定的 wrangler，不走 `npx`。
 - 凭据：优先读 secret `CLOUDFLARE_WORKERS_API_TOKEN`，没配就回退到 `CLOUDFLARE_API_TOKEN`（原本给

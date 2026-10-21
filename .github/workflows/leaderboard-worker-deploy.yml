@@ -9,7 +9,7 @@
 # 「Account → Workers Scripts: Edit」与「Account → D1: Edit」（每次部署都先跑 D1 迁移）；
 # wrangler.toml 的 routes 把自定义域名 rank.fushi.moe 绑在 zone fushi.moe 上，部署时会一并
 # 同步；若 deploy 报 zone / route 相关的权限错误，再给 token 加限定 fushi.moe 的
-# 「Zone → Workers Routes: Edit」。只有 R2 权限的 token 会在 whoami / deploy 步骤报鉴权错误。
+# 「Zone → Workers Routes: Edit」。只有 R2 权限的 token 会在后续步骤报鉴权错误（token 校验 / 迁移 / deploy）。
 #
 # 每次部署都先 `d1 migrations apply --remote` 再 `deploy`，不提供开关：迁移幂等，没有待执行迁移时是
 # 空操作；而「先部署、后迁移」会让新 Worker 读到缺列 / 缺表，心跳、反馈提交等接口 500（#2433）。
@@ -101,7 +101,21 @@ jobs:
           echo "ref: $INPUT_REF"
           echo "commit: $sha"
           git log -1 --format='%h %s (%an, %ad)' --date=iso
-          $WRANGLER whoami
+          # 不用 `wrangler whoami`：它把账户邮箱打进公开仓库的 Actions 日志。
+          # 只校验 token 是否有效，输出状态字段；用户 token 与账户 token 各走一个端点。
+          verify() {
+            curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$1" 2>/dev/null \
+              | jq -r 'select(.success == true) | .result.status' || true
+          }
+          status="$(verify https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          if [ -z "$status" ]; then
+            status="$(verify "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify")"
+          fi
+          if [ "$status" != "active" ]; then
+            echo "::error::Cloudflare API token 校验失败（status='${status:-unknown}'）"
+            exit 1
+          fi
+          echo "Cloudflare API token: $status"
           {
             echo "### leaderboard-worker-deploy"
             echo "- ref: \`$INPUT_REF\`"
