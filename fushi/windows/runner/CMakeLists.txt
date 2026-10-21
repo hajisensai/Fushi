@@ -644,3 +644,18 @@ add_custom_target(fushi_windows_game_stream_input_gate
   DEPENDS fushi_windows_game_stream_input_test
   VERBATIM
 )
+
+# 原生测试 exe 只是构建期门禁（上面各 *_gate 经 $<TARGET_FILE:> 调用），不是产品。
+# 它们与 fushi.exe 同在一个 CMakeLists 里，默认输出到同一个 runner/<Config>/——
+# 而那个目录就是 Flutter 的 bundle，fushi.iss 用 `Source: "{#SourceDir}\*"` 整目录
+# 收包，于是 29 个 *_test.exe 曾随安装包装进用户的 {app}（全局鼠标钩子 / PrintWindow
+# 截屏 / 读剪贴板之类的测试程序，徒增安装体积与杀软启发式命中面）。
+# 统一改输出到 bundle 之外；放在文件末尾，按命名约定兜住上面及 include 进来的全部测试目标，
+# 新增测试不必逐个记得设置。
+get_property(_fushi_runner_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(_fushi_target IN LISTS _fushi_runner_targets)
+  if(_fushi_target MATCHES "^fushi_windows_.+_test$")
+    set_target_properties(${_fushi_target} PROPERTIES
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native_tests")
+  endif()
+endforeach()

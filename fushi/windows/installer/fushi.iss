@@ -135,6 +135,12 @@ Type: filesandordirs; Name: "{app}\galgame_helper"
 ; 变成「一个可执行文件都没有」（实测现场：{app} 下 hibiki.exe 与 fushi.exe 双双消失，
 ; 只剩 unins000.exe，快捷方式全成死链接）。这些条目已下沉到 [Code] 的
 ; CurStepChanged / ssPostInstall，即新文件全部落地之后才执行。
+;
+; 3.0 及更早的安装包把 runner 的原生测试 exe（fushi_windows_*_test.exe，改名前是
+; hibiki_windows_*_test.exe）当成产品装进了 {app}。它们只是构建期门禁，现已移出
+; bundle（runner/CMakeLists.txt 末尾）；升级时清掉旧版留下的那批。它们不是可执行入口，
+; 复制前删不影响可运行性，归属本段。
+Type: files; Name: "{app}\*_windows_*_test.exe"
 
 [Files]
 ; 包含 fushi_update_launcher.exe：应用内更新用它等待当前 fushi.exe 退出后再启动 Inno。
