@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "Mazo seleccionado (y sus submazos)",
   "anki_duplicate_scope_deck_root": "Mazo raíz (todos los submazos)",
   "anki_duplicate_scope_hint": "Qué mazos se buscan al verificar si una tarjeta ya existe. Solo AnkiConnect; AnkiDroid siempre busca en toda la colección.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid no está instalado (o su API está desactivada), por lo que no se puede conceder el acceso a las tarjetas. Instala AnkiDroid y activa su API, o cambia a AnkiConnect.",
   "anki_error_ankimobile_no_decks": "AnkiMobile no devolvió ningún mazo ni tipo de nota.",
   "anki_error_ankimobile_not_active": "Fushi no volvió a primer plano a tiempo, así que no se pudo leer el portapapeles. Vuelve a Fushi e inténtalo de nuevo.",

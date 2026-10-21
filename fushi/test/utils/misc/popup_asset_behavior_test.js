@@ -3070,6 +3070,47 @@ testBridgeRejectionIsNeverSilent().catch((error) => {
   process.exitCode = 1;
 });
 
+// BUG-3652：弹窗发起的制卡失败，宿主不再另弹 Flutter toast，按钮旁这条提示是唯一的
+// 说法，而原因可能是一整句（「所有字段都是空的……」）。短提示仍是 1.8s，长句按字数
+// 延长、封顶 6s——停 1.8s 的长句根本读不完。
+async function testLongMineFailureReasonStaysLongEnoughToRead() {
+  const context = loadPopup();
+  const reason = '这张卡的所有字段都是空的，通常是所选笔记类型还没有配置字段映射。'
+    + '请在 Anki 设置里给它的字段配置映射。';
+  const delays = [];
+  const realSetTimeout = context.setTimeout;
+  context.setTimeout = (fn, ms) => {
+    delays.push(ms);
+    return realSetTimeout(() => {}, 0);
+  };
+  context.window.allowDupes = false;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'mineEntry') {
+      return Promise.resolve({ ankiConnect: false, noteId: null, message: reason });
+    }
+    return Promise.resolve(true);
+  };
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+
+  assert.equal(inlineHintText(context), reason, '原因原样显示在按钮旁');
+  assert.ok(delays.includes(context.inlineHintDurationMs(reason)),
+    '提示的停留时长取自 inlineHintDurationMs');
+  assert.ok(context.inlineHintDurationMs(reason) >= 4000,
+    `长句至少停 4s，实际 ${context.inlineHintDurationMs(reason)}ms`);
+  assert.equal(context.inlineHintDurationMs('制卡失败'), 1800, '短提示时长不变');
+  assert.equal(context.inlineHintDurationMs('x'.repeat(500)), 6000, '封顶 6s');
+}
+
+testLongMineFailureReasonStaysLongEnoughToRead().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
 async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
   const context = loadPopup();
   let queued = false;

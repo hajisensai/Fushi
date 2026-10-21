@@ -1,0 +1,14 @@
+## BUG-3652 · anki-mine-all-fields-empty-reported-twice-clipped
+- **报告**：2026-10-21（用户：反馈 #AGLC0BuaKB「无法导入anki」，iOS 3.0.0-debug.20409 / AnkiMobile，韩语词制卡；所有者补截图：报错位置显示不对）
+- **真实性**：✅ 真 bug，两层：
+  - **空映射 → 每次制卡必失败、英文原文直给用户**：选了非 Lapis 笔记类型时映射被重置成 `LapisPreset.applyDefaults(noteType, {})`（`fushi/lib/src/anki/anki_view_model.dart:183`），它对非 Lapis 类型原样返回 `{}`（`packages/fushi_anki/lib/src/lapis_preset.dart:22`）；渲染后字段表为空，空卡门 `fushi/lib/src/anki/ankimobile_repository.dart:563` 拒收（AnkiConnect / AnkiDroid / 互联 Anki 同步同一道门）。这条失败**不带错误码**，`logMineFailure`（`fushi/lib/src/utils/misc/error_log_service.dart:562`）只能把后端英文原文 `All fields are empty — refusing to create a blank card…` 拼进 toast。用户日志里 10-20～10-21 连续十几次同一条。
+  - **同一次失败报两遍、iOS 上被裁掉**：弹窗发起的制卡，宿主先 `FushiToast.show`（如 `reader_fushi/mining.part.dart:382`），弹窗再在 else 分支 `showInlineHint(mineButton, result.message || window.i18nMineFailed)`（`fushi/assets/popup/popup.js:4824`）；而 `MinePopupResult.toJson()` 从不带 `message`，弹窗永远只能说通用的「导出卡片失败。」（重复卡也这么说）。宿主那条 toast 在 iOS 固定画在底边上方 96pt（`fushi_toast.dart:177`），正落在底部停靠的查词弹窗上，截图里被弹窗下边缘裁掉半截（推测是 Flutter 浮层叠在两个 WKWebView 平台视图上的合成问题，无 iOS 真机未能实测确认机制）。
+- **[x] ① 已修复** — 本分支 `worktree-fix-anki-mine-empty-fields`：
+  - 新增 `AnkiErrorCode.allFieldsEmpty`，挂到全部 7 处空卡门（AnkiMobile / AnkiConnect 新制+覆写 / AnkiDroid 新制+覆写 / 互联 Anki 同步 / 内置复习覆写），`localizeAnkiMineError` 映射为 i18n `anki_error_all_fields_empty`（指明是字段映射没配、去 Anki 设置里配）。
+  - `MinePopupResult.failed(outcome, message:)` 把本地化原因随回包带给 popup.js；弹窗发起制卡的 6 个表面（词典弹窗 mixin 新制 / 覆写、阅读器新制 / 覆写、漫画、PDF、texthooker、gal 浮窗回包）失败时**只在弹窗按钮旁说一次**，结果 toast 只在被收下（成功 / 进待发队列）时弹；「已制卡动作」对话框（`base_source_page` / mixin）失败时原样交回带原因的结果；网页视频全局查词窗口的回包改用 `toJson()` 一并带出。
+  - popup.js `showInlineHint` 停留时长随字数延长（短提示仍 1.8s，封顶 6s），`.inline-hint` 允许换行、宽度不超出弹窗；扩展 vendor 副本与 `fushi/assets/browser_extension` 镜像已同步。
+- **[x] ② 已加自动化测试** — `fushi/test/anki/mine_failure_reported_in_popup_test.dart`（AnkiMobile 非 Lapis + 空映射 → `allFieldsEmpty` 且不打开 Anki；本地化文案不含英文原文；`MinePopupResult` 序列化 `message`；6 个表面失败回包带原因且结果 toast 只在成功分支；已制卡动作交回原结果）+ `fushi/test/utils/misc/popup_asset_behavior_test.js` `testLongMineFailureReasonStaysLongEnoughToRead`。变异实测：去掉 AnkiMobile 的 errorCode、把 texthooker 的 toast 挪出成功分支 → 新测试 2 条红；把停留时长写死 1800ms → JS 测试红。
+- **备注**：
+  - 未覆盖：视频页（失败走播放器居中 OSD，弹窗仍显示通用文案）与串流页（自己的状态行）不在本次改动内。
+  - 没做：非 Lapis 笔记类型按字段名自动猜映射（内置复习已有 `srsGuessFieldMapping`，Anki 这条路没有）；默认制卡目标——2026-10-16 所有者拍板「新装默认 Fushi 复习、老用户继续发 Anki」，本反馈用户日志始于 09-03，被判为老用户留在 Anki；Anki 路径没有 Fushi Card 选项，AnkiMobile 也建不了笔记类型（`ankimobile_repository.dart:815`）。两项都待所有者决定。
+  - iOS 真机未复测（本机无 iOS 设备）；裁切机制只是推测，本修法不依赖它——失败不再画 Flutter toast。

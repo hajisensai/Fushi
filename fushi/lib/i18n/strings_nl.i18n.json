@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "Geselecteerd deck (en subdekken)",
   "anki_duplicate_scope_deck_root": "Hoofddeck (alle subdekken)",
   "anki_duplicate_scope_hint": "Welke dekken worden doorzocht bij het controleren of een kaart al bestaat. Alleen AnkiConnect; AnkiDroid doorzoekt altijd de gehele collectie.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid is niet geïnstalleerd (of de API is uitgeschakeld), dus er kan geen toegang tot kaarten worden verleend. Installeer AnkiDroid en schakel de API in, of schakel over naar AnkiConnect.",
   "anki_error_ankimobile_no_decks": "AnkiMobile heeft geen stapels of notitietypen teruggegeven.",
   "anki_error_ankimobile_not_active": "Fushi kwam niet op tijd terug op de voorgrond, dus het klembord kon niet worden gelezen. Ga terug naar Fushi en probeer het opnieuw.",

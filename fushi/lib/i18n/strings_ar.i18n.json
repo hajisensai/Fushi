@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "الرزمة المحددة (ورزمها الفرعية)",
   "anki_duplicate_scope_deck_root": "الرزمة الجذرية (جميع الفرعية)",
   "anki_duplicate_scope_hint": "أي الرزم يتم البحث فيها عند التحقق من وجود بطاقة مسبقاً. لـ AnkiConnect فقط؛ AnkiDroid يبحث دائماً في المجموعة بأكملها.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid غير مثبّت (أو أن واجهته البرمجية معطّلة)، لذا لا يمكن منح الوصول إلى البطاقات. ثبّت AnkiDroid وفعّل واجهته البرمجية، أو بدّل إلى AnkiConnect.",
   "anki_error_ankimobile_no_decks": "لم يُرجع AnkiMobile أي مجموعات أو أنواع ملاحظات.",
   "anki_error_ankimobile_not_active": "لم يعد Fushi إلى المقدمة في الوقت المناسب، لذا تعذّرت قراءة الحافظة. عد إلى Fushi وحاول مرة أخرى.",

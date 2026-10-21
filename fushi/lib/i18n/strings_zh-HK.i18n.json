@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "所選卡組（含子卡組）",
   "anki_duplicate_scope_deck_root": "根卡組（含全部子卡組）",
   "anki_duplicate_scope_hint": "查詢「這個詞是否已經有卡」時搜索哪些卡組。僅 AnkiConnect（桌面 Anki）生效；AnkiDroid 始終整庫查重。",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "未安裝 AnkiDroid（或其 API 被停用），無法授予卡片訪問權限。請安裝 AnkiDroid 並啟用其 API，或改用 AnkiConnect。",
   "anki_error_ankimobile_no_decks": "AnkiMobile 沒有回傳任何牌組或筆記類型。",
   "anki_error_ankimobile_not_active": "Fushi 沒能及時回到前台，剪貼簿還沒被讀取。回到 Fushi 後重試即可。",

@@ -879,6 +879,14 @@ html.global-lookup .mine-button:not(:disabled) {
     transition: opacity 0.18s ease;
 }
 
+/* 制卡失败原因是一整句（宿主经 reply.message 带来）：允许换行，宽度不超出弹窗。
+   短提示仍是一行——只放开换行，宽度按内容。 */
+.inline-hint {
+    max-width: min(300px, calc(100vw - 8px));
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 .audio-hint.visible,
 .inline-hint.visible,
 .fushi-btn-tip.visible {

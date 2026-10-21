@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "Mazzo selezionato (e sottogruppi)",
   "anki_duplicate_scope_deck_root": "Mazzo radice (tutti i sottogruppi)",
   "anki_duplicate_scope_hint": "Quali mazzi vengono cercati per verificare se una carta esiste già. Solo AnkiConnect; AnkiDroid cerca sempre nell'intera collezione.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid non è installato (o la sua API è disattivata), quindi non è possibile concedere l'accesso alle carte. Installa AnkiDroid e attiva la sua API, oppure passa ad AnkiConnect.",
   "anki_error_ankimobile_no_decks": "AnkiMobile non ha restituito mazzi o tipi di nota.",
   "anki_error_ankimobile_not_active": "Fushi non è tornato in primo piano in tempo, quindi non è stato possibile leggere gli appunti. Torna a Fushi e riprova.",

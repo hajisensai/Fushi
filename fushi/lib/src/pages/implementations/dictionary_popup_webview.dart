@@ -94,7 +94,8 @@ class MinePopupResult {
     this.ankiConnect = false,
     this.noteId,
     this.duplicate = false,
-  }) : queued = false;
+  }) : queued = false,
+       message = null;
 
   /// 制卡请求已接下、在后台进行（在线视频：抽媒体要时间，弹窗不陪着等）。
   ///
@@ -105,7 +106,8 @@ class MinePopupResult {
       : ankiConnect = false,
         noteId = null,
         duplicate = false,
-        queued = true;
+        queued = true,
+        message = null;
 
   /// 一次**被收下**的制卡结果（成功，或进了待发制卡队列）。
   ///
@@ -134,7 +136,10 @@ class MinePopupResult {
   /// 正文与覆写 / PDF / texthooker / 视频页 / gal 浮窗）此前各自散写
   /// `MinePopupResult(duplicate: outcome.result == MineResult.duplicate)`，
   /// 漏一处就是漏一个用户可见的表面——用户实报的正是被漏掉的视频页。
-  MinePopupResult.failed(MineOutcome outcome)
+  ///
+  /// [message] 是给用户看的失败原因（`describeMineOutcome(...).message`，已本地化），
+  /// 弹窗在制卡按钮旁就地显示它；不传则弹窗退回通用的「导出卡片失败」。
+  MinePopupResult.failed(MineOutcome outcome, {this.message})
       : ankiConnect = false,
         noteId = null,
         duplicate = outcome.result == MineResult.duplicate,
@@ -161,6 +166,14 @@ class MinePopupResult {
   /// 见 [MinePopupResult.queued]。
   final bool queued;
 
+  /// 失败原因（仅 [MinePopupResult.failed] 传入时非空），见那里。
+  ///
+  /// 弹窗发起的制卡，失败**只在弹窗里**说一次（宿主只在被收下时弹 toast）：此前
+  /// 宿主另弹一条 Flutter toast、弹窗再冒一个不带原因的「导出卡片失败。」，同一次失败
+  /// 报两遍；iOS 上那条 toast 还落在底部停靠的弹窗上，被弹窗边缘裁掉半截（用户
+  /// 2026-10-21 截图）。
+  final String? message;
+
   /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
@@ -169,6 +182,7 @@ class MinePopupResult {
         // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
         if (duplicate) 'duplicate': true,
         if (queued) 'queued': true,
+        if (message != null && message!.isNotEmpty) 'message': message,
       };
 
   /// 这次制卡被收下了：成功落卡（[MinePopupResult.mined] 恒带 `ankiConnect: true`，

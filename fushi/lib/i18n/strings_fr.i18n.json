@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "Paquet sélectionné (et ses sous-paquets)",
   "anki_duplicate_scope_deck_root": "Paquet racine (tous les sous-paquets)",
   "anki_duplicate_scope_hint": "Quels paquets sont recherchés pour vérifier si une carte existe déjà. AnkiConnect uniquement ; AnkiDroid recherche toujours dans toute la collection.",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "AnkiDroid n'est pas installé (ou son API est désactivée) : l'accès aux cartes ne peut donc pas être accordé. Installez AnkiDroid et activez son API, ou passez à AnkiConnect.",
   "anki_error_ankimobile_no_decks": "AnkiMobile n'a renvoyé aucun paquet ni type de note.",
   "anki_error_ankimobile_not_active": "Fushi n'est pas revenu au premier plan à temps, le presse-papiers n'a donc pas pu être lu. Revenez dans Fushi et réessayez.",

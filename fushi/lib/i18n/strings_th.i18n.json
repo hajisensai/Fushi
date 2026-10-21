@@ -395,6 +395,7 @@
   "anki_duplicate_scope_deck": "สำรับที่เลือก (และสำรับย่อย)",
   "anki_duplicate_scope_deck_root": "สำรับหลัก (ทุกสำรับย่อย)",
   "anki_duplicate_scope_hint": "กำหนดว่าจะค้นหาสำรับใดเมื่อตรวจสอบว่าบัตรมีอยู่แล้วหรือไม่ เฉพาะ AnkiConnect เท่านั้น; AnkiDroid จะค้นหาทั้งคอลเลกชันเสมอ",
+  "anki_error_all_fields_empty": "Every field of this card came out empty — usually the selected note type has no field mappings yet. Map its fields in Anki settings.",
   "anki_error_ankidroid_unavailable": "ไม่ได้ติดตั้ง AnkiDroid (หรือ API ถูกปิดอยู่) จึงให้สิทธิ์เข้าถึงการ์ดไม่ได้ ติดตั้ง AnkiDroid และเปิดใช้ API หรือเปลี่ยนไปใช้ AnkiConnect",
   "anki_error_ankimobile_no_decks": "AnkiMobile ไม่ส่งสำรับหรือประเภทโน้ตกลับมา",
   "anki_error_ankimobile_not_active": "Fushi ไม่ได้กลับมาอยู่เบื้องหน้าทันเวลา จึงอ่านคลิปบอร์ดไม่ได้ กลับมาที่ Fushi แล้วลองอีกครั้ง",
