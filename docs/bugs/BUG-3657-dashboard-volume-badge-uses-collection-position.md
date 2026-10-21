@@ -1,4 +1,4 @@
-## BUG-3652 · dashboard-volume-badge-uses-collection-position
+## BUG-3657 · dashboard-volume-badge-uses-collection-position
 - **报告**：2026-10-21（用户转述第三方反馈 + 截图：「weird ui, why does it say vol 17 here when I'm on volume 2/17」；首页「继续」主角卡封面是第 2 卷，进度条右侧徽标却是 `Vol. 17`）
 - **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/home_dashboard_page.dart` 书合集续读卡把 `idx + 1`（续读目标在合集排序里的**位置**）当卷号传给 `t.home_continue_volume`。合集顺序与卷号一错位，徽标就把位置当成卷号说出来；续读目标本身（锚点 = 最近读过的那卷）是对的。会让顺序错位的形态：手动「建系列 / 并入合集」按选择顺序尾插（`addToCollection` 不排序）、缺卷、只收了部分卷。用户这套书（オーバーラップ文庫 17 卷）的 dc:title 正是混写：1、2 卷是全角空格 + 全角数字 `まで　２`，3 卷起半角 `まで 3`。
 - **连带后果**：续读推进（`continueMemberIndex`，锚点读完推 `anchor + 1`）同样依赖合集顺序。第 2 卷排在最后时，读完第 2 卷后 `anchor + 1` 越界、目标仍是读完的那卷，`dashboardBookCollectionContinueIndex` 返回 null，整套书从「继续」区消失、不推第 3 卷。

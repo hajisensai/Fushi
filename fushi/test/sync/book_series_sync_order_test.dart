@@ -15,7 +15,7 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 
-/// BUG-3652：书系列合集的卷序在同步里收敛。
+/// BUG-3657：书系列合集的卷序在同步里收敛。
 ///
 /// 原路径：书架归组（`BookSeriesGrouper._healSeriesOrder`）把错序的系列合集按卷号
 /// 重排，但（刻意）不动 orderUpdatedAt；下一轮同步两端都为 0 → 平手取远端 → 远端

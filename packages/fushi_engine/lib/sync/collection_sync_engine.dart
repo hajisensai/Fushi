@@ -28,7 +28,7 @@ import 'package:fushi_core/fushi_core.dart';
 ///   例外（BUG-2941）：[CollectionManifestEntry.episodeOrdered]（下载管理的合集）且
 ///   两端都为 0 时，视频成员按成员键里的季/集重排——远端序只是另一端的下载到达
 ///   顺序，不是任何人的意图；重排只依赖 wire 成员键，各端结果逐字节相同。
-///   书系列合集同理（BUG-3652）：两端都为 0 时远端序也不是意图，调用方注入的
+///   书系列合集同理（BUG-3657）：两端都为 0 时远端序也不是意图，调用方注入的
 ///   [CollectionRuleOrder]（本机书名 → 卷号，见 [loadBookSeriesRuleOrder]）给合并
 ///   结果定规则序。书的 wire 成员键不带书名，只能由持有书架的一端解；本机解不了
 ///   （有本机没有的书 / 混了外传）就保持 LWW 结果。
@@ -335,7 +335,7 @@ class CollectionSyncEngine {
     );
   }
 
-  /// 无人手动排序的活合集按 [ruleOrder] 重排（BUG-3652 书系列卷序）。规则序只换
+  /// 无人手动排序的活合集按 [ruleOrder] 重排（BUG-3657 书系列卷序）。规则序只换
   /// 成员先后：返回的不是同一组成员是调用方的契约错误，直接抛，不静默吞掉。
   static CollectionManifestEntry _withRuleOrder(
     CollectionManifestEntry e,
@@ -608,7 +608,7 @@ String? mergeWireOrigin(String? a, String? b) {
 typedef CollectionRuleOrder = List<CollectionMemberKey>? Function(
     CollectionManifestEntry entry);
 
-/// 书系列合集的规则卷序（BUG-3652），给 [CollectionSyncEngine.merge] 的 `ruleOrder`。
+/// 书系列合集的规则卷序（BUG-3657），给 [CollectionSyncEngine.merge] 的 `ruleOrder`。
 ///
 /// 与书架归组自愈（`BookSeriesGrouper` 的 `_healSeriesOrder`）同一判据
 /// [BookSeriesOrder]：wire 成员键经 [CollectionBookIdentityIndex] 换回本地键再判，

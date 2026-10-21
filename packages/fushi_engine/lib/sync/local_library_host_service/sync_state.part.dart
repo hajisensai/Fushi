@@ -143,7 +143,7 @@ mixin _LocalLibraryHostSyncState
         local: local,
         remote: incoming,
         lastSyncedAtMs: baseline,
-        // BUG-3652：书系列合集按卷号定序，与书架归组自愈同一判据；返回给
+        // BUG-3657：书系列合集按卷号定序，与书架归组自愈同一判据；返回给
         // client 的合并清单因此也是卷序。
         ruleOrder: await loadBookSeriesRuleOrder(_db),
       );

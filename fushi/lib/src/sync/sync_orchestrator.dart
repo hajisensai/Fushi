@@ -1016,7 +1016,7 @@ class SyncOrchestrator {
           remote: remote,
           lastSyncedAtMs: baseline,
           nowMs: nextBaseline,
-          // BUG-3652：书系列合集按卷号定序，与书架归组自愈同一判据。
+          // BUG-3657：书系列合集按卷号定序，与书架归组自愈同一判据。
           ruleOrder: await loadBookSeriesRuleOrder(_db),
         );
 
