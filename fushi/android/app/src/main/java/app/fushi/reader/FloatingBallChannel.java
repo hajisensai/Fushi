@@ -32,6 +32,8 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
  *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
+ *   <li>{@code startSystemBall.tapClipboard}：收起态点球直接查剪贴板、长按才展开按钮，
+ *       缺省 false（点球展开）。</li>
  *   <li>{@code startSystemBall.icons}：按钮 id → Material Icons 码位（与应用内球同一颗
  *       IconData），{@code startSystemBall.colors}：{@code surface / onSurface / primary}
  *       的 ARGB。都用来把系统球画得和应用内球一样（BUG-2793），缺省回退首字 / 默认配色。</li>
@@ -262,7 +264,8 @@ final class FloatingBallChannel {
                         stringMap(call.argument("labels")),
                         intMap(call.argument("icons")),
                         intMap(call.argument("colors")),
-                        call.argument("ocrLanguage"));
+                        call.argument("ocrLanguage"),
+                        call.argument("tapClipboard"));
                 if (FloatingBallService.getInstance() == null) {
                     Intent svc = new Intent(app, FloatingBallService.class);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

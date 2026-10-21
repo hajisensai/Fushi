@@ -36,8 +36,10 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewOutlineProvider;
 import android.view.WindowInsets;
 import android.view.WindowManager;
@@ -132,6 +134,11 @@ public class FloatingBallService extends BaseFloatingService {
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
+    /** labels 里常驻通知正文（「点按即可查剪贴板」）的键。 */
+    static final String LABEL_NOTIFICATION_HINT = "notification_hint";
+    /** 通知上各 PendingIntent 的 requestCode：同类型 Intent 必须不同，否则互相覆盖。 */
+    private static final int REQUEST_NOTIFICATION_CLIPBOARD = 1;
+    private static final int REQUEST_NOTIFICATION_OPEN_APP = 2;
     /** labels 里球本身的无障碍名。 */
     static final String LABEL_BALL = "ball";
 
@@ -155,6 +162,8 @@ public class FloatingBallService extends BaseFloatingService {
     private static final String PREF_ICONS = "ball_icons";
     private static final String PREF_COLORS = "ball_colors";
     private static final String PREF_OCR_LANGUAGE = "ball_ocr_language";
+    /** 点球 = 直接查剪贴板（长按才展开按钮），同 Google「点按翻译」的「自动翻译复制的文字」。 */
+    private static final String PREF_TAP_CLIPBOARD = "ball_tap_clipboard";
     private static final String PREF_DOCK = "ball_dock";
     private static final String PREF_FRACTION = "ball_fraction";
     /** 用户在球 / 通知上点了关闭、Dart 还没来得及把「应用外」开关关掉。 */
@@ -244,7 +253,8 @@ public class FloatingBallService extends BaseFloatingService {
             @Nullable Map<String, String> labels,
             @Nullable Map<String, Integer> icons,
             @Nullable Map<String, Integer> colors,
-            @Nullable String ocrLanguage) {
+            @Nullable String ocrLanguage,
+            @Nullable Boolean tapClipboard) {
         List<String> sanitized = new ArrayList<>();
         if (actions == null) {
             sanitized.addAll(CONFIGURABLE_ACTIONS);
@@ -272,6 +282,8 @@ public class FloatingBallService extends BaseFloatingService {
         if (ocrLanguage != null && !ocrLanguage.isEmpty()) {
             editor.putString(PREF_OCR_LANGUAGE, ocrLanguage);
         }
+        // 旧 Dart 不传 = 默认关（点球展开按钮）。
+        editor.putBoolean(PREF_TAP_CLIPBOARD, tapClipboard != null && tapClipboard);
         editor.apply();
         FloatingBallService svc = getInstance();
         if (svc != null) svc.reloadConfig();
@@ -327,6 +339,8 @@ public class FloatingBallService extends BaseFloatingService {
     private int colorBallOpen = DEFAULT_PRIMARY;
     private int colorOnBallOpen = Color.WHITE;
     private String ocrLanguage = DEFAULT_OCR_LANGUAGE;
+    /** 收起态点球 = 查剪贴板、长按展开（{@link #PREF_TAP_CLIPBOARD}）。 */
+    private boolean tapClipboard = false;
 
     /** 停靠边 + 球在活动范围里的纵向比例（持久化值，不存 px）。 */
     private boolean dockLeft = false;
@@ -357,6 +371,16 @@ public class FloatingBallService extends BaseFloatingService {
     @Nullable private ValueAnimator snapAnimator;
 
     private boolean dragging = false;
+    /** 这次按下已经触发过长按展开：抬手不再当点击。 */
+    private boolean longPressFired = false;
+    private final Runnable longPressExpand = () -> {
+        if (dragging || expandTarget) return;
+        longPressFired = true;
+        if (ballView != null) {
+            ballView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        }
+        setExpanded(true);
+    };
     private float downRawX;
     private float downRawY;
     private int dragStartBallLeft;
@@ -981,6 +1005,9 @@ public class FloatingBallService extends BaseFloatingService {
      * 自己的手势：点一下 = 展开 / 收起；越过系统 tap/drag 边界（{@link #dragSlopPx}）就
      * 是拖动——先收起（按钮跟着球飞没有意义），球跟手，纵向夹在活动范围内；松手按球心
      * 落在哪一半决定停靠边，动画吸附过去并落盘（应用内 _onPan* 同一语义）。
+     *
+     * <p>「点球查剪贴板」开着时（{@link #tapClipboard}）：收起态点一下 = 查剪贴板，
+     * 长按（系统长按时长、没越过拖动边界）= 展开按钮；展开态点球照旧收起。
      */
     @Override
     protected void setupDragListener() {
@@ -990,6 +1017,12 @@ public class FloatingBallService extends BaseFloatingService {
                     downRawX = event.getRawX();
                     downRawY = event.getRawY();
                     dragging = false;
+                    longPressFired = false;
+                    mainHandler.removeCallbacks(longPressExpand);
+                    if (tapClipboard && !expandTarget) {
+                        mainHandler.postDelayed(longPressExpand,
+                                ViewConfiguration.getLongPressTimeout());
+                    }
                     return true;
                 case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - downRawX;
@@ -997,6 +1030,7 @@ public class FloatingBallService extends BaseFloatingService {
                     if (!dragging) {
                         int slop = dragSlopPx();
                         if (Math.abs(dx) <= slop && Math.abs(dy) <= slop) return true;
+                        mainHandler.removeCallbacks(longPressExpand);
                         beginDrag();
                     }
                     FloatingBallGeometry g = geometry();
@@ -1009,14 +1043,20 @@ public class FloatingBallService extends BaseFloatingService {
                     return true;
                 }
                 case MotionEvent.ACTION_UP:
+                    mainHandler.removeCallbacks(longPressExpand);
                     if (dragging) {
                         endDrag();
-                    } else {
+                    } else if (!longPressFired) {
                         v.performClick();
-                        toggle();
+                        if (tapClipboard && !expandTarget) {
+                            runAction(ACTION_CLIPBOARD);
+                        } else {
+                            toggle();
+                        }
                     }
                     return true;
                 case MotionEvent.ACTION_CANCEL:
+                    mainHandler.removeCallbacks(longPressExpand);
                     if (dragging) endDrag();
                     return true;
                 default:
@@ -1212,6 +1252,7 @@ public class FloatingBallService extends BaseFloatingService {
         colorBallOpen = colorOr(colors, COLOR_BALL_OPEN, colorPrimary);
         colorOnBallOpen = colorOr(colors, COLOR_ON_BALL_OPEN, Color.WHITE);
         ocrLanguage = prefs.getString(PREF_OCR_LANGUAGE, DEFAULT_OCR_LANGUAGE);
+        tapClipboard = prefs.getBoolean(PREF_TAP_CLIPBOARD, false);
     }
 
     private static int colorOr(Map<String, Integer> colors, String key, int fallback) {
@@ -1497,11 +1538,24 @@ public class FloatingBallService extends BaseFloatingService {
                 ? new Notification.Builder(this, getNotificationChannelId())
                 : new Notification.Builder(this);
 
+        // 点通知本身 = 查剪贴板里的文字（同 Google「点按翻译」：复制 → 下拉点通知）。
+        // 必须 getActivity 直达查词窗：Android 12+ 禁止「通知 → Service → 启动
+        // Activity」的蹦床，绕道 runAction 会被系统静默拦下。剪贴板要等窗口拿到焦点
+        // 才读得到，PopupDictFlutterActivity 自己处理（onWindowFocusChanged）。
+        Intent clipboard = new Intent(this, PopupDictFlutterActivity.class);
+        clipboard.putExtra(PopupDictFlutterActivity.EXTRA_READ_CLIPBOARD, true);
+        clipboard.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        builder.setContentIntent(PendingIntent.getActivity(this, REQUEST_NOTIFICATION_CLIPBOARD,
+                clipboard, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
         if (launch != null) {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            builder.setContentIntent(PendingIntent.getActivity(this, 0, launch,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+            PendingIntent openPending = PendingIntent.getActivity(this,
+                    REQUEST_NOTIFICATION_OPEN_APP, launch,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            builder.addAction(new Notification.Action.Builder(
+                    null, labelFor(ACTION_OPEN_APP), openPending).build());
         }
 
         Intent closeIntent = new Intent(this, FloatingBallService.class);
@@ -1511,9 +1565,12 @@ public class FloatingBallService extends BaseFloatingService {
 
         String title = labels.get(LABEL_NOTIFICATION);
         if (title == null || title.isEmpty()) title = "Fushi floating ball";
+        String hint = labels.get(LABEL_NOTIFICATION_HINT);
+        if (hint == null || hint.isEmpty()) hint = "Tap to look up copied text";
 
         return builder
                 .setContentTitle(title)
+                .setContentText(hint)
                 .setSmallIcon(R.drawable.ic_stat_fushi)
                 .setOngoing(true)
                 .addAction(new Notification.Action.Builder(

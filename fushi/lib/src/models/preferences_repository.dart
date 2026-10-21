@@ -1017,6 +1017,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 应用外悬浮球（Android）：收起态点球直接查剪贴板，长按才展开按钮
+  /// （同 Google「点按翻译」的「自动翻译复制的文字」）。默认关 = 点球展开。
+  bool get floatingBallTapClipboard =>
+      getPref('floating_ball.tap_clipboard', defaultValue: false);
+
+  Future<void> setFloatingBallTapClipboard(bool value) async {
+    await setPref('floating_ball.tap_clipboard', value);
+    notifyListeners();
+  }
+
   /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
   /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {

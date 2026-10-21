@@ -45,6 +45,7 @@
 |---|:--:|:--:|---|
 | [BUG-3653](bugs/BUG-3653-srs-anki-migration-silent-options.md) | ✅ | ✅ | srs-anki-migration-silent-options |
 | [BUG-3652](bugs/BUG-3652-srs-reimport-deleted-notes-not-restored.md) | ✅ | ✅ | srs-reimport-deleted-notes-not-restored |
+| [BUG-3652](bugs/BUG-3652-android-notification-small-icon-headset.md) | ✅ | ✅ | android-notification-small-icon-headset |
 | [BUG-3651](bugs/BUG-3651-paged-restore-page-first-after-stop-previous-page.md) | ✅ | ✅ | 页首字紧跟上一页末行的「。」时，存→取退回前一页（学习单位逆映射停在分隔符上） |
 | [BUG-3650](bugs/BUG-3650-paged-restore-page-first-caret-previous-page.md) | ✅ | ✅ | 翻页模式页首字在禁则换行处时重开退一页（分页 scrollToCharOffset 用塌缩光标锚） |
 | [BUG-3649](bugs/BUG-3649-manga-detected-epub-no-force-book-import.md) | ✅ | ✅ | manga-detected-epub-no-force-book-import |
