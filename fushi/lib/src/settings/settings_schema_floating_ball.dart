@@ -77,7 +77,7 @@ SettingsDestination buildFloatingBallDestination() {
             id: 'floating_ball.tap_clipboard',
             title: t.floating_ball_tap_clipboard,
             subtitle: t.floating_ball_tap_clipboard_hint,
-            icon: Icons.content_paste_search,
+            icon: FushiIcons.paste,
             // 只有 Android 原生系统球实现了「点球查剪贴板、长按展开」。
             visible: (SettingsContext c) =>
                 Platform.isAndroid && _prefs(c).floatingBallSystem,

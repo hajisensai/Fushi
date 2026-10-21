@@ -156,6 +156,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `.dock` / `.y` 分开存：两颗球可以同时在。
   'floating_ball.system_dock',
   'floating_ball.system_y',
+  // bool：Android 应用外悬浮球收起态点球 = 查剪贴板、长按展开，默认 false。
+  'floating_ball.tap_clipboard',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   // bool：悬浮字幕粗体（默认 true）。
