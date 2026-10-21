@@ -450,6 +450,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       questionHtml: rendered.question,
       answerHtml: rendered.answer,
       answerSide: _showingAnswer,
+      // 原生 Fushi 卡片：内嵌的 <audio>/<video> 也由宿主播（整面 WebView 由页内脚本播）。
+      inlineMedia: rendered.fushiCardDefinitions != null,
     );
     srsRunLogged('SrsReviewPage.autoplay', () => _audio.play(names));
   }
@@ -463,6 +465,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       answerHtml: rendered.answer,
       answerSide: _showingAnswer,
       includeQuestion: includeQuestion,
+      inlineMedia: rendered.fushiCardDefinitions != null,
     );
   }
 

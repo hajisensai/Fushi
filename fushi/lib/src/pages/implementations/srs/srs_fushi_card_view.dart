@@ -265,7 +265,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-front-audio'),
             name:
-                srsSoundNames(
+                srsAudioSources(
                   srsFieldFilled(f['SentenceAudio'])
                       ? f['SentenceAudio']!
                       : f['ExpressionAudio'] ?? '',
@@ -294,9 +294,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(
-          s.pad,
-        ).copyWith(top: s.pad + widget.topInset),
+        padding: EdgeInsets.all(s.pad).copyWith(top: s.pad + widget.topInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -471,7 +469,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             style: s,
             color: srsPitchColor(srsPitchType(p, morae, cats), dark: s.dark),
           ),
-        for (final String name in srsSoundNames(f['ExpressionAudio'] ?? ''))
+        for (final String name in srsAudioSources(f['ExpressionAudio'] ?? ''))
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-word-audio'),
             name: name,
@@ -540,7 +538,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           : f['Sentence']!,
     );
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
-    final List<String> audio = srsSoundNames(f['SentenceAudio'] ?? '');
+    final List<String> audio = srsAudioSources(f['SentenceAudio'] ?? '');
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
