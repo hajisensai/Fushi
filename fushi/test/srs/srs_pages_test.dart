@@ -1349,6 +1349,52 @@ void main() {
       expect(autoplay, findsNothing);
       await _unmount(tester);
     });
+
+    testWidgets('牌组设置页：RWKV 排队设置（每天最少复习数 / 同日重复间隔）写进牌组，子牌组随继承', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String kid = (await tester.runAsync(
+        () => store.createDeck('Kid', parentId: store.defaultDeckId),
+      ))!;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: store.defaultDeckId),
+      );
+      Future<void> enter(String key, String value) async {
+        final Finder field = find.byKey(ValueKey<String>(key));
+        await tester.ensureVisible(field);
+        await tester.enterText(
+          find.descendant(of: field, matching: find.byType(EditableText)),
+          value,
+        );
+        await tester.pump();
+      }
+
+      // 默认算法是 RWKV：排队设置显示上游默认值。
+      expect(
+        find.byKey(const ValueKey<String>('srs-settings-rwkv-queue')),
+        findsOneWidget,
+      );
+      await enter('srs-settings-rwkv-min-reviews', '7');
+      await enter('srs-settings-rwkv-repeat-reviews', '2');
+      await enter('srs-settings-rwkv-repeat-seconds', '15');
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_settings_save')).first,
+      );
+      await _settle(tester);
+      final SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      const SrsRwkvQueueSettings want = SrsRwkvQueueSettings(
+        minReviewsPerDay: 7,
+        repeatMinReviews: 2,
+        repeatMinSeconds: 15,
+      );
+      expect(tree[store.defaultDeckId]!.rwkvQueue, want);
+      expect(tree.paramsOwner(kid).rwkvQueue, want, reason: '子牌组随继承');
+      await _unmount(tester);
+    });
   });
 
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {
