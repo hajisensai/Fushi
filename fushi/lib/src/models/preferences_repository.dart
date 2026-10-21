@@ -3105,6 +3105,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页页头显示剩余卡数（新 / 学习 / 复习）。默认 true。
+  bool get srsReviewShowCounts =>
+      getPref('srs_review_show_counts', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewShowCounts(bool value) async {
+    await setPref('srs_review_show_counts', value);
+    notifyListeners();
+  }
+
   // 复习页卡面缩放倍率。默认 1.0。
   double get srsReviewZoom =>
       (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();

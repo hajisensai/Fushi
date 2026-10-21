@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -30,6 +31,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
@@ -150,6 +152,16 @@ class _LayoutApp extends AppModel {
 
   SrsReviewReplayButton replay = SrsReviewReplayButton.end;
   bool intervals = true;
+  bool counts = true;
+
+  @override
+  bool get srsReviewShowCounts => counts;
+
+  @override
+  Future<void> setSrsReviewShowCounts(bool value) async {
+    counts = value;
+    notifyListeners();
+  }
 
   @override
   SrsReviewReplayButton get srsReviewReplayButton => replay;
@@ -659,10 +671,12 @@ void main() {
       );
       final String lapisLabel = t.srs_card_edit_template(name: 'Lapis');
       // 菜单项在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮（文字进 tooltip）。
-      Future<bool> hasItem(String label) async {
-        final String key = label == t.srs_card_appearance_title
-            ? 'srs_review_appearance'
-            : 'srs_review_edit_template';
+      Future<bool> hasItem(String label, {String? itemKey}) async {
+        final String key =
+            itemKey ??
+            (label == t.srs_card_appearance_title
+                ? 'srs_review_appearance'
+                : 'srs_review_edit_template');
         if (find.text(label).evaluate().isNotEmpty ||
             find.byKey(ValueKey<String>(key)).evaluate().isNotEmpty) {
           return true;
@@ -691,6 +705,35 @@ void main() {
           : lapisLabel;
       expect(await hasItem(expected), isTrue);
       expect(await hasItem(unexpected), isFalse);
+      // 顶栏只剩一个卡面样式入口：「卡面跟随设计系统」「只留重来 / 良好」两个显示开关
+      // 收进了「复习选项」面板，不再各占一颗（以前与模板入口同用调色板图标、并排两颗）。
+      expect(
+        await hasItem(
+          t.srs_card_appearance_design_skin,
+          itemKey: 'srs_review_design_skin',
+        ),
+        isFalse,
+      );
+      expect(
+        await hasItem(
+          t.srs_review_hide_hard_easy,
+          itemKey: 'srs_review_hide_hard_easy',
+        ),
+        isFalse,
+      );
+      // 模板编辑器入口用代码图标，不与卡面外观的调色板图标撞成一样。
+      final Finder tpl = find.byKey(
+        const ValueKey<String>('srs_review_edit_template'),
+      );
+      if (tpl.evaluate().isNotEmpty) {
+        expect(
+          find.descendant(
+            of: tpl.first,
+            matching: find.byIcon(FushiIcons.appearance),
+          ),
+          findsNothing,
+        );
+      }
       await _unmount(tester);
     });
 
@@ -770,10 +813,10 @@ void main() {
         expect(rate(r), findsOneWidget, reason: '默认四个按钮：$r');
       }
 
-      // 开关在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮。
+      // 开关在「复习选项」面板里；面板入口在 MD3 可能平铺、可能收进 ⋯，Apple 平铺为图标按钮。
       Future<void> toggle() async {
         final Finder flat = find.byKey(
-          const ValueKey<String>('srs_review_hide_hard_easy'),
+          const ValueKey<String>('srs_review_layout'),
         );
         if (flat.evaluate().isNotEmpty) {
           await tester.tap(flat.first);
@@ -786,8 +829,17 @@ void main() {
                 .first,
           );
           await _settle(tester);
-          await tester.tap(find.text(t.srs_review_hide_hard_easy).last);
+          await tester.tap(find.text(t.srs_review_layout_title).last);
         }
+        await _settle(tester);
+        // 设置行整行可点（两套设计系统的开关控件不同，点行最稳）。
+        await tester.tap(
+          find.byKey(
+            const ValueKey<String>('srs-review-layout-hide-hard-easy'),
+          ),
+        );
+        await _settle(tester);
+        Navigator.of(tester.element(find.byType(SrsReviewLayoutSheet))).pop();
         await _settle(tester);
       }
 
@@ -1198,6 +1250,13 @@ void main() {
         await _settle(tester);
       }
 
+      // 页头剩余卡数（对齐 Anki「显示剩余卡片数量」）：默认显示。
+      Finder countsText() => find.byWidgetPredicate(
+        (Widget w) =>
+            w is Text && (w.data ?? '').startsWith('${t.srs_count_new} '),
+      );
+      expect(countsText(), findsWidgets, reason: '默认显示剩余卡数');
+
       await openLayout();
       await tester.tap(
         find.descendant(
@@ -1207,6 +1266,14 @@ void main() {
       );
       await _settle(tester);
       expect(app.intervals, isFalse);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-review-layout-counts')),
+          matching: find.byType(Switch),
+        ),
+      );
+      await _settle(tester);
+      expect(app.counts, isFalse);
       // 行宽放不下分段时设置行降级成菜单（设计系统行为）：先点开再选。
       final Finder left = find.text(t.srs_review_layout_replay_start);
       if (left.evaluate().isEmpty) {
@@ -1221,6 +1288,15 @@ void main() {
       await tester.tapAt(const Offset(195, 40));
       await _settle(tester);
       expect(rateTexts(), 1, reason: '间隔关掉后只剩评价词');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-rate-3')),
+          matching: find.textContaining(RegExp(r'\d')),
+        ),
+        findsNothing,
+        reason: '间隔关掉后评分按钮上不再有任何时间文字',
+      );
+      expect(countsText(), findsNothing, reason: '剩余卡数关掉后页头不显示');
       expect(
         tester.getCenter(replay).dx,
         lessThan(

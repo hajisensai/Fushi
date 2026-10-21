@@ -41,7 +41,6 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
-import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -948,7 +947,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     if (tpl == null) return null;
     return FushiToolbarItem(
       key: const ValueKey<String>('srs_review_edit_template'),
-      icon: FushiIcons.appearance,
+      // 模板编辑器（正面 / 背面 / 样式源码）用代码图标，不与卡面外观的调色板混成一样。
+      icon: FushiIcons.code,
       label: t.srs_card_edit_template(name: detail.noteType.name),
       onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
         await Navigator.of(context).push<void>(
@@ -965,99 +965,72 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
-  List<FushiToolbarItem> _menuItems() => _detail == null
-      ? const <FushiToolbarItem>[]
-      : <FushiToolbarItem>[
-          FushiToolbarItem(
-            key: const ValueKey<String>('srs_review_browse'),
-            icon: FushiIcons.search,
-            label: t.srs_browse_title,
-            onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.pause,
-            label: t.srs_card_suspend,
-            onPressed: () => unawaited(_onCardAction(_CardAction.suspend)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.schedule,
-            label: t.srs_card_bury,
-            onPressed: () => unawaited(_onCardAction(_CardAction.bury)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.flag,
-            label: t.srs_card_flag,
-            onPressed: () => unawaited(_onCardAction(_CardAction.flag)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.moveFile,
-            label: t.srs_card_move,
-            onPressed: () => unawaited(_onCardAction(_CardAction.move)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.restart,
-            label: t.srs_card_reset,
-            onPressed: () => unawaited(_onCardAction(_CardAction.reset)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.delete,
-            label: t.srs_note_delete,
-            onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
-          ),
-          ?_appearanceItem,
-          ?_designSkinItem,
-          _hideHardEasyItem,
-          FushiToolbarItem(
-            key: const ValueKey<String>('srs_review_layout'),
-            icon: FushiIcons.dashboardCustomize,
-            label: t.srs_review_layout_title,
-            onPressed: () => srsRunLogged(
-              'SrsReview.layout',
-              () => _focusOwnership.guardOverlay(
-                () => showSrsReviewLayoutSheet(context),
-              ),
-            ),
-          ),
-          ..._audioSettingItems(),
-        ];
-
-  /// 「卡面跟随设计系统」开关（只对非 Fushi 卡片显示：Fushi 卡片本身就按设计系统画）。
-  /// 勾选态 = 覆盖开着；写进卡面外观偏好，当前卡面经外观监听原地换主题、立即生效。
-  FushiToolbarItem? get _designSkinItem {
+  /// 低优先级的卡片操作与设置，按优先级从高到低排（宽度不够时从**末尾**起先收进「⋯」）：
+  /// 复习中常用的标记 / 埋卡 / 暂停在前，浏览与设置居中，低频又带破坏性的移牌组 / 重置 /
+  /// 删除最后、最先收起。显示类开关（只留重来 / 良好、卡面跟随设计系统、间隔、剩余数）
+  /// 不再各占一颗顶栏按钮，统一在「复习选项」面板里（[showSrsReviewLayoutSheet]）。
+  List<FushiToolbarItem> _menuItems() {
     final SrsCardDetail? detail = _detail;
-    if (detail == null ||
-        detail.noteType.builtinKey == kSrsBuiltinFushiCardKey) {
-      return null;
-    }
-    final SrsCardAppearance a = ref.watch(srsCardAppearanceProvider);
-    return FushiToolbarItem(
-      key: const ValueKey<String>('srs_review_design_skin'),
-      icon: FushiIcons.appearance,
-      label: t.srs_card_appearance_design_skin,
-      selected: a.designSkin,
-      onPressed: () => srsRunLogged(
-        'SrsReview.designSkin',
-        () => ref
-            .read(appProvider)
-            .setSrsCardAppearance(a.copyWith(designSkin: !a.designSkin)),
+    if (detail == null) return const <FushiToolbarItem>[];
+    final bool fushiCard =
+        detail.noteType.builtinKey == kSrsBuiltinFushiCardKey;
+    return <FushiToolbarItem>[
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_flag'),
+        icon: FushiIcons.flag,
+        label: t.srs_card_flag,
+        onPressed: () => unawaited(_onCardAction(_CardAction.flag)),
       ),
-    );
-  }
-
-  /// 评分栏只留「重来 / 良好」的开关（对齐 AnkiDroid 的 hideHardAndEasy；键盘 2/4
-  /// 照样有效）。勾选态 = 已隐藏；点了立即生效、写进按 profile 的偏好。
-  FushiToolbarItem get _hideHardEasyItem {
-    final bool hidden = ref.watch(srsReviewHideHardEasyProvider);
-    return FushiToolbarItem(
-      key: const ValueKey<String>('srs_review_hide_hard_easy'),
-      icon: FushiIcons.visibilityOff,
-      label: t.srs_review_hide_hard_easy,
-      selected: hidden,
-      onPressed: () => srsRunLogged(
-        'SrsReview.hideHardEasy',
-        () => ref.read(appProvider).setSrsReviewHideHardEasy(!hidden),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_bury'),
+        icon: FushiIcons.schedule,
+        label: t.srs_card_bury,
+        onPressed: () => unawaited(_onCardAction(_CardAction.bury)),
       ),
-    );
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_suspend'),
+        icon: FushiIcons.pause,
+        label: t.srs_card_suspend,
+        onPressed: () => unawaited(_onCardAction(_CardAction.suspend)),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_browse'),
+        icon: FushiIcons.search,
+        label: t.srs_browse_title,
+        onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_layout'),
+        icon: FushiIcons.dashboardCustomize,
+        label: t.srs_review_layout_title,
+        onPressed: () => srsRunLogged(
+          'SrsReview.layout',
+          () => _focusOwnership.guardOverlay(
+            () => showSrsReviewLayoutSheet(context, showDesignSkin: !fushiCard),
+          ),
+        ),
+      ),
+      ..._audioSettingItems(),
+      ?_appearanceItem,
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_move'),
+        icon: FushiIcons.moveFile,
+        label: t.srs_card_move,
+        onPressed: () => unawaited(_onCardAction(_CardAction.move)),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_reset'),
+        icon: FushiIcons.restart,
+        label: t.srs_card_reset,
+        onPressed: () => unawaited(_onCardAction(_CardAction.reset)),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_delete'),
+        icon: FushiIcons.delete,
+        label: t.srs_note_delete,
+        onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
+      ),
+    ];
   }
 
   /// 「牌组设置」：打开当前卡的音频 / 排程设置所在的牌组（own 祖先）。音频两项是
@@ -1125,7 +1098,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
       child: FushiFloatingTopBar(
         title: _title,
-        subtitle: _finished ? '' : _countsText,
+        subtitle: _finished || !ref.watch(srsReviewShowCountsProvider)
+            ? ''
+            : _countsText,
         leading: <FushiToolbarItem>[
           if (navigator != null && navigator.canPop())
             FushiToolbarItem(
@@ -1170,7 +1145,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         title: _title,
         header: apple ? null : _buildTopBar(context),
         actions: apple ? _buildAppleActions() : const <Widget>[],
-        headerBottom: apple && !_finished
+        headerBottom:
+            apple && !_finished && ref.watch(srsReviewShowCountsProvider)
             ? SrsCountTriple(
                 newCount: _newCount,
                 learnCount: _learnCount,
@@ -1422,7 +1398,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
-  /// 底部操作行一端的重播键（⋯「复习布局」里选左 / 右，默认不放）。翻面前后同一位置；
+  /// 底部操作行一端的重播键（⋯「复习选项」里选左 / 右，默认不放）。翻面前后同一位置；
   /// 这张卡没有可重播的音频时照样占位、只是不可点，评分按钮不会左右跳。设计系统按钮：
   /// MD3 = M3E 中号色调方钮（56），Apple = 50 高的色调胶囊，与「显示答案」/ 评分按钮同高。
   Widget _withBottomReplay(BuildContext context, Widget row) {
@@ -1492,7 +1468,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       );
     }
 
-    // 评分按钮的下次间隔可在 ⋯「复习布局」里关掉；关掉或调度器给不出间隔（预览缺失）
+    // 评分按钮的下次间隔可在 ⋯「复习选项」里关掉；关掉或调度器给不出间隔（预览缺失）
     // 时按钮只剩评价词一行。
     final bool showIntervals = ref.watch(srsReviewShowIntervalsProvider);
     Widget button(int rating, String label, SrsRatingTone tone) => Expanded(
