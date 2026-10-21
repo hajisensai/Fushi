@@ -6202,6 +6202,8 @@
   "srs_card_flag": "Flag",
   "srs_card_label_all_definitions": "All definitions",
   "srs_card_label_frequency": "Frequency",
+  "srs_card_label_main_dictionary": "Main",
+  "srs_card_label_other_dictionaries": "Other dictionaries",
   "srs_card_label_show_more": "Show more",
   "srs_card_label_source": "Source",
   "srs_card_move": "Move to deck",

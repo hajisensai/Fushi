@@ -1195,10 +1195,18 @@ void main() {
         ],
       );
       final Finder replay = find.byKey(
-        const ValueKey<String>('srs-bottom-replay'),
+        const ValueKey<String>('srs-bottom-replay-0'),
       );
-      // 翻面前后同一位置：「显示答案」行右端就有。
+      final Finder replaySentence = find.byKey(
+        const ValueKey<String>('srs-bottom-replay-1'),
+      );
+      // 每段音频一个键（单词 + 例句两颗），翻面前后同一位置：「显示答案」行右端就有。
       expect(replay, findsOneWidget);
+      expect(replaySentence, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('srs-bottom-replay-2')),
+        findsNothing,
+      );
       expect(
         tester.getCenter(replay).dx,
         greaterThan(
@@ -1206,6 +1214,13 @@ void main() {
               .getCenter(find.byKey(const ValueKey<String>('srs-show-answer')))
               .dx,
         ),
+      );
+      // 窄屏放不下对称空位：「显示答案」不被两颗重播键挤到最小宽度以下。
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey<String>('srs-show-answer')))
+            .width,
+        greaterThanOrEqualTo(219.5),
       );
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
@@ -1229,10 +1244,15 @@ void main() {
         lessThanOrEqualTo(64),
       );
 
+      // 各键只播自己那一段（只想听例句就只点例句那颗）。
       audio.played.clear();
       await tester.tap(replay);
       await _settle(tester);
-      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+      expect(audio.played, <String>['word.mp3']);
+      audio.played.clear();
+      await tester.tap(replaySentence);
+      await _settle(tester);
+      expect(audio.played, <String>['sent.mp3']);
 
       audio.played.clear();
       await tester.sendKeyEvent(LogicalKeyboardKey.keyR);
@@ -1337,14 +1357,14 @@ void main() {
         store: store,
         apple: true,
         app: app,
-        size: const Size(390, 844),
+        size: const Size(1024, 768),
         page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
         overrides: <Override>[
           srsCardAudioOutputProvider.overrideWithValue(audio),
         ],
       );
       final Finder replay = find.byKey(
-        const ValueKey<String>('srs-bottom-replay'),
+        const ValueKey<String>('srs-bottom-replay-0'),
       );
       expect(replay, findsOneWidget);
       final Finder showAnswer = find.byKey(
@@ -1353,6 +1373,11 @@ void main() {
       expect(
         tester.getCenter(replay).dx,
         lessThan(tester.getCenter(showAnswer).dx),
+      );
+      // 放得下对称空位时，重播键放哪端都不把「显示答案」推离屏幕中线。
+      expect(
+        tester.getCenter(showAnswer).dx,
+        moreOrLessEquals(512, epsilon: 0.5),
       );
       expect(
         tester.getSize(replay).height,
@@ -1370,10 +1395,22 @@ void main() {
           epsilon: 0.5,
         ),
       );
+      // 与评分按钮上下对齐（评分行上方有提示行时也不错位）。
+      final Rect rate = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-rate-1')),
+      );
+      expect(
+        tester.getRect(replay).top,
+        moreOrLessEquals(rate.top, epsilon: 0.5),
+      );
+      expect(
+        tester.getRect(replay).bottom,
+        moreOrLessEquals(rate.bottom, epsilon: 0.5),
+      );
       audio.played.clear();
       await tester.tap(replay);
       await _settle(tester);
-      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+      expect(audio.played, <String>['word.mp3']);
       await _unmount(tester);
     });
 

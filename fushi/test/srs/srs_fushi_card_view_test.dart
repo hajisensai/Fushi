@@ -49,6 +49,10 @@ const Map<FushiCardBlock, String> _blockKeys = <FushiCardBlock, String>{
   FushiCardBlock.source: 'srs-fushi-source',
 };
 
+/// 10×30 的竖长灰图（宽高比 1:3，铺满会过高）。
+const String _tallPng =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAeCAIAAACaFxhnAAAAFUlEQVR4nGNowAsYRqVHpUelB1IaAJWBwhBdiRX8AAAAAElFTkSuQmCC';
+
 Map<String, String> _fields([Map<String, String> extra = const {}]) =>
     <String, String>{
       for (final String f in FushiCardNoteType.fields) f: '',
@@ -276,6 +280,70 @@ void main() {
     });
   }
 
+  for (final Size size in const <Size>[Size(390, 844), Size(1280, 800)]) {
+    testWidgets('${size.width.toInt()} 宽：左栏对齐网格——两个发音键同一竖线、文字同一起点', (
+      WidgetTester tester,
+    ) async {
+      await pump(
+        tester,
+        answer: true,
+        size: size,
+        fields: _fields(<String, String>{
+          'ExpressionAudio': '[sound:word.mp3]',
+          'SentenceAudio': '[sound:sentence.mp3]',
+        }),
+      );
+      Rect rect(String key) =>
+          tester.getRect(find.byKey(ValueKey<String>(key)));
+      final Rect term = rect('srs-fushi-term');
+      final Rect reading = rect('srs-fushi-reading-row');
+      final Rect wordAudio = rect('srs-fushi-word-audio');
+      final Rect sentence = rect('srs-fushi-sentence');
+      final Rect block = rect('srs-fushi-sentence-block');
+      final Rect sentenceAudio = rect('srs-fushi-sentence-audio');
+      // 词条发音在词条区最前面、与「词条 + 读音」整块垂直居中，不在读音行里。
+      expect(wordAudio.right, lessThanOrEqualTo(term.left));
+      expect(
+        (wordAudio.center.dy - (term.top + reading.bottom) / 2).abs(),
+        lessThan(1),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-reading-row')),
+          matching: find.byKey(const ValueKey<String>('srs-fushi-word-audio')),
+        ),
+        findsNothing,
+      );
+      // 例句发音在句首、在例句卡里垂直居中。
+      expect(sentenceAudio.right, lessThanOrEqualTo(sentence.left));
+      expect((sentenceAudio.center.dy - block.center.dy).abs(), lessThan(1));
+      // 两个发音键同一条竖线，后面的文字从同一个 x 起头。
+      expect(
+        wordAudio.left,
+        moreOrLessEquals(sentenceAudio.left, epsilon: 0.5),
+      );
+      expect(term.left, moreOrLessEquals(sentence.left, epsilon: 0.5));
+      // 词频 / 来源与发音键同缩进（卡片内容那条线）。
+      final Rect freqLabel = tester.getRect(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey<String>('srs-fushi-frequency')),
+              matching: find.byType(Text),
+            )
+            .first,
+      );
+      expect(freqLabel.left, moreOrLessEquals(wordAudio.left, epsilon: 0.5));
+      // 样例卡有「词频」区：读音行不再重复 FreqSort。
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-fushi-reading-row')),
+          matching: find.text('1840'),
+        ),
+        findsNothing,
+      );
+    });
+  }
+
   testWidgets('页面上报的内容高度撑开释义区', (WidgetTester tester) async {
     final List<SrsCardFace> faces = await pump(tester, answer: true);
     faces.last.onContentHeight!(1234);
@@ -407,6 +475,54 @@ void main() {
     expect(size.width / size.height, closeTo(1.6, 0.02));
     expect(size.width, lessThanOrEqualTo(84 * 1.5));
     expect(size.height, lessThanOrEqualTo(84 * 1.4));
+  });
+
+  testWidgets('宽屏左栏：常见比例的图与例句卡等宽；竖长封面照旧限高', (WidgetTester tester) async {
+    Future<Rect> pictureRect() async {
+      final Finder pic = find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-fushi-picture')),
+        matching: find.byType(Image),
+      );
+      await tester.runAsync(
+        () =>
+            precacheImage(tester.widget<Image>(pic).image, tester.element(pic)),
+      );
+      // 尺寸监听在 runAsync 里回调、setState 后再 pump 一帧才换成铺满。
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      return tester.getRect(pic);
+    }
+
+    await pump(tester, answer: true, size: const Size(1280, 800));
+    final Rect block = tester.getRect(
+      find.byKey(const ValueKey<String>('srs-fushi-sentence-block')),
+    );
+    // 样例图 320×200（1.6）：铺满栏宽，左右边与例句卡对齐，按原比例定高。
+    final Rect wide = await pictureRect();
+    expect(wide.left, moreOrLessEquals(block.left, epsilon: 0.5));
+    expect(wide.width, moreOrLessEquals(block.width, epsilon: 0.5));
+    expect(wide.width / wide.height, closeTo(1.6, 0.02));
+
+    // 视口矮（600）：原比例高 300 超过视口 40%（240）→ 整张等比缩小到高 240（不裁切），
+    // 比例不变、靠左对齐卡片边缘。
+    await pump(tester, answer: true, size: const Size(1280, 600));
+    final Rect capped = await pictureRect();
+    expect(capped.height, moreOrLessEquals(600 * 0.4, epsilon: 0.5));
+    expect(capped.width / capped.height, closeTo(1.6, 0.02));
+    expect(capped.left, moreOrLessEquals(block.left, epsilon: 0.5));
+
+    // 竖长封面（1×3）不铺满：限高 220、按原比例完整显示。
+    await pump(
+      tester,
+      answer: true,
+      size: const Size(1280, 800),
+      fields: _fields(<String, String>{'Picture': '<img src="$_tallPng">'}),
+    );
+    final Rect tall = await pictureRect();
+    expect(tall.height, lessThanOrEqualTo(220.5));
+    expect(tall.width, lessThan(block.width / 2));
   });
 
   test('图片来源：光栅 data URI → 内存；SVG / 远程 / 无媒体库 → 不画', () {
