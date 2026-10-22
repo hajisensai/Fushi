@@ -33,6 +33,14 @@ describe('triggerDrift', () => {
     expect(triggerDrift({ ...CONFIG, workers_dev: true }, LIVE)[0]).toMatch(/^workers\.dev:/);
   });
 
+  it('ignores preview urls while workers.dev is off, compares them while it is on', () => {
+    // wrangler 3 的 unstable_readConfig 把 preview_urls 缺省成 true；workers.dev 关着时线上恒为 false。
+    expect(triggerDrift({ ...CONFIG, preview_urls: true }, LIVE)).toEqual([]);
+    const on = { ...CONFIG, workers_dev: true, preview_urls: true };
+    expect(triggerDrift(on, { ...LIVE, subdomain: { enabled: true, previews_enabled: false } })[0])
+      .toMatch(/^preview urls:/);
+  });
+
   it('cannot verify plain zone routes without zone access', () => {
     expect(() => triggerDrift({ ...CONFIG, routes: ['rank.fushi.moe/*'] }, LIVE)).toThrow(/zone routes/);
   });

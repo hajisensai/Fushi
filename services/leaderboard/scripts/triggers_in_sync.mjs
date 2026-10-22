@@ -41,7 +41,10 @@ export function triggerDrift(config, live) {
   if (wantWorkersDev !== live.subdomain.enabled) {
     drift.push(`workers.dev: want ${wantWorkersDev}, live ${live.subdomain.enabled}`);
   }
-  if (config.preview_urls !== undefined && config.preview_urls !== live.subdomain.previews_enabled) {
+  // preview URL 挂在 workers.dev 上：workers.dev 关着时线上恒为 false（wrangler 每次照样提交
+  // previews_enabled: true 也开不起来），这时不比，否则每次都判漂移。
+  if (wantWorkersDev && config.preview_urls !== undefined
+    && config.preview_urls !== live.subdomain.previews_enabled) {
     drift.push(`preview urls: want ${config.preview_urls}, live ${live.subdomain.previews_enabled}`);
   }
   return drift;
