@@ -1,0 +1,6 @@
+## BUG-3661 · leaderboard-deploy-red-on-zone-routes-permission
+- **报告**：2026-10-22（用户：排行榜部署 workflow 每次都红）
+- **真实性**：✅ 真 bug。`leaderboard-worker-deploy.yml` 的 Deploy 步骤跑 `wrangler deploy`；wrangler 3.114 的 `triggersDeploy`（`node_modules/wrangler/wrangler-dist/cli.js` 约 106156–106176 行）只要配置里有路由，就无条件先 `GET /zones/<zone>/workers/routes` 查路由冲突，**只配了 `custom_domain` 也照读**。部署 token 没有 fushi.moe zone 的「Workers Routes」权限 → `No access to the specified resource` → 步骤失败、冒烟测试被跳过。但 Worker 版本在这一步之前已上传并 100% 生效（run 39761814585：版本 `862bafe0` 已上线，workflow 却是 failure），workflow 结论与线上状态不符。10-21 的四次失败是 token 权限逐项补齐的过程（D1 7403 → workers/services → zone routes），这个 workflow 至此从未绿过。
+- **[ ] ① 未修复** —
+- **[x] ② 已加自动化测试** — `services/leaderboard/test/triggers_in_sync.test.js`（触发器一致性判据：一致 / 自定义域名增减 / crons 变更 / workers.dev 缺省值 / 普通 zone 路由判「核不了」）。
+- **备注**：修法是把 `wrangler deploy` 拆成 `versions upload`（`keepSecrets: true`，保留 SMTP / Resend 等 secrets）+ `versions deploy <id>@100%`（不碰触发器），再由 `services/leaderboard/scripts/triggers_in_sync.mjs` 只读账户级 API（`/workers/domains`、`/schedules`、`/subdomain`）核对触发器：一致就跳过 `triggers deploy`；不一致或核不了才跑它——那一步仍需 zone 权限，缺了照样报红，因为那时确实有触发器变更没生效。根治权限缺口要给 `CLOUDFLARE_WORKERS_API_TOKEN` 加限定 fushi.moe 的「Zone → Workers Routes: Edit」（以后改 `routes` 才需要）。
