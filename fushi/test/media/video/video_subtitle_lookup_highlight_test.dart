@@ -40,6 +40,71 @@ Dialogue: 0,0:02:23.10,0:02:24.47,Default,,0,0,0,,{\fscx50\fscy200}Scaled
 
 const int _kPosMs = 143500;
 
+/// BUG-3662：特效字幕把同一句拆成两层同文本、同起点的事件同位叠画（Layer 0 金色底、
+/// Layer 1 白字）。查词高亮按「句文本 + 起点」认 cue，两层都会命中。
+const String _kAssTwoLayers = r'''
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Gold,Trebuchet MS,45,&H0040C0F0,&H000000FF,&H00104060,&H00000000,-1,0,0,0,100,100,0,0,1,3,0,2,10,10,15,1
+Style: White,Trebuchet MS,45,&H00FFFFFF,&H000000FF,&H00020713,&H00000000,-1,0,0,0,100,100,0,0,1,1.7,0,2,10,10,15,1
+
+[Events]
+Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:02:23.10,0:02:24.47,Gold,,0,0,0,,Knocking
+Dialogue: 1,0:02:23.10,0:02:24.47,White,,0,0,0,,Knocking
+''';
+
+/// 左右分屏卡拉 OK（BUG-1775 形态）：两条同文本事件各 `\clip` 半边、不同 Layer 同位拼成一行。
+const String _kAssSplitClip = r'''
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Trebuchet MS,45,&H00FFFFFF,&H000000FF,&H00020713,&H00000000,-1,0,0,0,100,100,0,0,1,1.7,0,2,10,10,15,1
+
+[Events]
+Format: Layer, Start, End, Style, Actor, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:02:23.10,0:02:24.47,Default,,0,0,0,,{\clip(0,0,640,720)}Knocking
+Dialogue: 1,0:02:23.10,0:02:24.47,Default,,0,0,0,,{\clip(640,0,1280,720)}Knocking
+''';
+
+Future<List<AudioCue>> _pumpAss(
+  WidgetTester tester,
+  String ass, {
+  required SubtitleLookupHighlight? Function(List<AudioCue> cues) highlight,
+}) async {
+  final List<AudioCue> cues = AssParser.parseString(
+    content: ass,
+    bookKey: 'layers',
+  );
+  final VideoPlayerController c = VideoPlayerController();
+  addTearDown(c.dispose);
+  c.setCues(cues);
+  c.debugSetPositionForTesting(_kPosMs);
+  c.debugUpdateCueForPosition(_kPosMs);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          respectAssStyle: true,
+          lookupHighlight: highlight(cues),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+  return cues;
+}
+
 Future<VideoPlayerController> _pump(
   WidgetTester tester, {
   required SubtitleLookupHighlight? highlight,
@@ -265,6 +330,114 @@ void main() {
         boxes.every(
             (SubtitleLookupHighlightBox b) => b.bleedX == 0 && b.bleedY == 0),
         isTrue);
+  });
+  // BUG-3662：两层同文本事件各自认领高亮时，底色在每层描边遍各画一次——半透明叠成
+  // 近乎不透明，且上层那份画在下层填充遍之上，把下层字形整块盖住（用户截图）。
+  testWidgets('多层同文本事件：高亮只画一份，且归最底层', (WidgetTester tester) async {
+    final List<AudioCue> cues = await _pumpAss(
+      tester,
+      _kAssTwoLayers,
+      highlight: (List<AudioCue> cues) => SubtitleLookupHighlight(
+        sentence: 'Knocking',
+        cueStartMs: cues.first.startMs,
+        graphemeStart: 2,
+        graphemeCount: 1,
+      ),
+    );
+    expect(cues, hasLength(2));
+    // 两层都在屏上（各 8 个字形的填充遍 'o'）。
+    expect(find.text('o'), findsNWidgets(4));
+    final List<Text> texts = _highlightedTexts(tester);
+    expect(texts.map((Text t) => t.data).toList(), <String>['o']);
+    // 认领的是 Layer 0（金色样式：描边色 &H00104060）——它的描边遍在整组最底。
+    expect(texts.single.style?.foreground?.color.toARGB32(), 0xFF604010);
+  });
+
+  testWidgets('左右分屏 \clip：每个裁剪窗各画自己那半，拼成整段', (WidgetTester tester) async {
+    await _pumpAss(
+      tester,
+      _kAssSplitClip,
+      highlight: (List<AudioCue> cues) => SubtitleLookupHighlight(
+        sentence: 'Knocking',
+        cueStartMs: cues.first.startMs,
+        graphemeStart: 0,
+        graphemeCount: 8,
+      ),
+    );
+    // 两个互不重叠的裁剪窗各认领一次（只认一条会只剩半边高亮）。
+    expect(find.byType(SubtitleLookupHighlightBox), findsNWidgets(16));
+  });
+
+  group('resolveLookupHighlightOwners', () {
+    AudioCue cue(int i, {String text = 'A', int start = 100}) => AudioCue()
+      ..text = text
+      ..startMs = start
+      ..endMs = start + 1000
+      ..sentenceIndex = i;
+    const SubtitleLookupHighlight h = SubtitleLookupHighlight(
+      sentence: 'A',
+      cueStartMs: 100,
+      graphemeStart: 0,
+      graphemeCount: 1,
+    );
+
+    test('无裁剪：只认绘制顺序里最先画的那条同身份 cue', () {
+      final AudioCue a = cue(0), b = cue(1), other = cue(2, text: 'B');
+      final Set<AudioCue> owners = resolveLookupHighlightOwners(
+        highlight: h,
+        cuesInPaintOrder: <AudioCue>[other, a, b],
+        clipKeyOf: (_) => null,
+      );
+      expect(owners, hasLength(1));
+      expect(identical(owners.single, a), isTrue);
+    });
+
+    test('全带裁剪：不同裁剪窗各认一条，同裁剪窗只认最底那条', () {
+      final AudioCue l0 = cue(0), r0 = cue(1), l1 = cue(2);
+      final Map<AudioCue, String> clip = <AudioCue, String>{
+        l0: 'left',
+        r0: 'right',
+        l1: 'left',
+      };
+      final Set<AudioCue> owners = resolveLookupHighlightOwners(
+        highlight: h,
+        cuesInPaintOrder: <AudioCue>[l0, r0, l1],
+        clipKeyOf: (AudioCue c) => clip[c],
+      );
+      expect(owners.length, 2);
+      expect(owners.contains(l0) && owners.contains(r0), isTrue);
+      expect(owners.contains(l1), isFalse);
+    });
+
+    test('有无裁剪的同身份 cue：只认那一条（它覆盖整段）', () {
+      final AudioCue clipped = cue(0), full = cue(1);
+      final Set<AudioCue> owners = resolveLookupHighlightOwners(
+        highlight: h,
+        cuesInPaintOrder: <AudioCue>[clipped, full],
+        clipKeyOf: (AudioCue c) => identical(c, clipped) ? 'left' : null,
+      );
+      expect(owners, hasLength(1));
+      expect(identical(owners.single, full), isTrue);
+    });
+
+    test('null / 空区间 / 起点不同：谁都不认', () {
+      expect(
+        resolveLookupHighlightOwners(
+          highlight: null,
+          cuesInPaintOrder: <AudioCue>[cue(0)],
+          clipKeyOf: (_) => null,
+        ),
+        isEmpty,
+      );
+      expect(
+        resolveLookupHighlightOwners(
+          highlight: h,
+          cuesInPaintOrder: <AudioCue>[cue(0, start: 101)],
+          clipKeyOf: (_) => null,
+        ),
+        isEmpty,
+      );
+    });
   });
 }
 

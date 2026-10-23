@@ -146,6 +146,44 @@ class SubtitleLookupHighlight {
       Object.hash(sentence, cueStartMs, graphemeStart, graphemeCount);
 }
 
+/// 一层字幕里**由谁**画查词高亮（BUG-3662）。返回按身份比较的 cue 集合。
+///
+/// [SubtitleLookupHighlight] 按「句文本 + 起点」认 cue，而特效 ASS 常把同一句拆成多条
+/// 同文本、同起点、不同 `Layer` 的事件同位叠画（底层金色描边 + 上层白字、渐变 / 卡拉 OK
+/// 用 `\clip` 拼色……）。逐条都认领高亮时，底色在每一层的描边遍各画一次：半透明主题色
+/// 叠成近乎不透明，且上层那份画在**下层填充遍之上**——蓝块压住下层字形（用户截图：
+/// 「心臓をノックしている」两层字幕上，被查字整块被蓝色盖住）。
+///
+/// 规则（[cuesInPaintOrder] 须是实际绘制顺序，先画的在下）：
+/// * 有不带裁剪的同身份 cue：只由**最先画**的那条认领——它的描边遍是这一组里最底的一层，
+///   高亮因此垫在所有层的字形之下，且只画一次。
+/// * 全部都带 `\clip`（左右分屏卡拉 OK：两条同文本事件各裁半边拼成一行，BUG-1775）：
+///   每个**不同**裁剪窗的最底一条各认领一次。裁剪窗互不重叠，拼起来仍是整段高亮，
+///   不会因为只认一条而只剩半边；同一裁剪窗的重复事件仍只画一次。
+///
+/// [clipKeyOf] 返回 cue 的裁剪指纹（无裁剪 / 不尊重 .ass 样式时为 null）。
+@visibleForTesting
+Set<AudioCue> resolveLookupHighlightOwners({
+  required SubtitleLookupHighlight? highlight,
+  required Iterable<AudioCue> cuesInPaintOrder,
+  required String? Function(AudioCue cue) clipKeyOf,
+}) {
+  final Set<AudioCue> owners = HashSet<AudioCue>.identity();
+  if (highlight == null || highlight.graphemeCount <= 0) return owners;
+  final Set<String> claimedClips = <String>{};
+  for (final AudioCue cue in cuesInPaintOrder) {
+    if (cue.startMs != highlight.cueStartMs || cue.text != highlight.sentence) {
+      continue;
+    }
+    final String? clipKey = clipKeyOf(cue);
+    if (clipKey == null) {
+      return HashSet<AudioCue>.identity()..add(cue);
+    }
+    if (claimedClips.add(clipKey)) owners.add(cue);
+  }
+  return owners;
+}
+
 /// 被查词高亮的单字底色盒（BUG-2091）。画在字形**之下**（background，不是
 /// foreground——盖在字上会把白字染色），只在区间首/尾字位收圆角，中间字位方角相接，
 /// 整词看起来是一条连续的选区带。不改布局几何（只画不占位），字幕排版与逐字命中矩形
@@ -854,6 +892,11 @@ const double _kWindowsMissingAssFontRasterYScale = 1.055;
 
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
+  /// 主 / 副字幕层里认领查词高亮的 cue（BUG-3662，按身份比较）。每帧在
+  /// [_buildSubtitleLayer] 按绘制顺序重算。
+  Set<AudioCue> _lookupHighlightOwnersMain = HashSet<AudioCue>.identity();
+  Set<AudioCue> _lookupHighlightOwnersSecondary = HashSet<AudioCue>.identity();
+
   List<String>? _cjkFallbackChain;
   String? _cjkFallbackLanguage;
 
@@ -1440,6 +1483,25 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
               : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))],
         );
+        // BUG-3662：同一句被拆成多层同文本事件时，查词高亮只由一层认领（按绘制顺序，
+        // 规则见 [resolveLookupHighlightOwners]）。本 builder 早于层内字符 Builder 求值，
+        // 同帧写入即被 [_buildCueBox] 的 charWidget 读到。
+        final Set<AudioCue> owners = resolveLookupHighlightOwners(
+          highlight: widget.lookupHighlight,
+          cuesInPaintOrder: <AudioCue>[
+            for (final (String _, List<AudioCue> group) in groups) ...group,
+          ],
+          clipKeyOf: (AudioCue cue) {
+            final SubtitleClip? clip =
+                widget.respectAssStyle ? cue.markup?.clip : null;
+            return clip == null ? null : clipGroupFingerprint(clip);
+          },
+        );
+        if (isSecondary) {
+          _lookupHighlightOwnersSecondary = owners;
+        } else {
+          _lookupHighlightOwnersMain = owners;
+        }
 
         final List<(String, Widget)> positioned = <(String, Widget)>[
           for (final (String key, List<AudioCue> group) in groups)
@@ -2234,6 +2296,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               !blurred &&
               pass != _GlyphPass.fillOnly &&
               highlight != null &&
+              (isSecondary
+                      ? _lookupHighlightOwnersSecondary
+                      : _lookupHighlightOwnersMain)
+                  .contains(cue) &&
               highlight.covers(
                 sentence: text,
                 cueStartMs: cue.startMs,
