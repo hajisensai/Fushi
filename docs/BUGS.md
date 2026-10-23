@@ -33,15 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3335 条。点号进各自文件。
+> 共 3338 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3731](bugs/BUG-3731-srs-apkg-export-memory-reimport-batching.md) | ✅ | ✅ | srs-apkg-export-memory-reimport-batching |
-> 共 3337 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3734](bugs/BUG-3734-srs-apkg-export-memory-reimport-batching.md) | ✅ | ✅ | srs-apkg-export-memory-reimport-batching |
 | [BUG-3733](bugs/BUG-3733-srs-expanded-clip-error-box-covers-video.md) | ✅ | ✅ | 复习卡片段「放大查看」被错误盒整块盖住，关闭键缺失 |
 | [BUG-3732](bugs/BUG-3732-srs-note-editor-preview-not-native-fushi-card.md) | ✅ | ✅ | 笔记编辑页实时预览与复习页不是同一张卡（Fushi 卡片退回整面 WebView，片段 / 图片画法不同） |
 | [BUG-3731](bugs/BUG-3731-popup-mining-target-switch-hidden-on-base-layer.md) | ✅ | ✅ | 应用外查词窗基础层不显示「制卡目标」切换按钮 |

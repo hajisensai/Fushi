@@ -1,4 +1,4 @@
-## BUG-3731 · srs-apkg-export-memory-reimport-batching
+## BUG-3734 · srs-apkg-export-memory-reimport-batching
 - **报告**：2026-10-23（SRS 后续任务清单 F：apkg 导出占内存、已存在笔记重导入逐条开事务、新格式整块解 zstd）
 - **真实性**：✅ 真 bug（大库实测见下）。根因（行号均为基线 `2f7f28ea63`，即 hajisensai/Fushi#2472 头；按文件流式打开包是 #2464 已做的，不在本条）：
   - 导出整包在内存：`packages/fushi_engine/lib/srs/apkg/srs_apkg_export.dart:391-419` 把集合 SQLite 读回内存、全部媒体逐个 `addFile` 进 `Archive`，`ZipEncoder().encode` 出整包后再 `Uint8List.fromList` 复制一份，`exportAnkiPackageFile`（:85）才 `writeAsBytes`；fushi-ext 的全部日志先攒成 `List<Map>` 再整份 `jsonEncode`。app 侧 `fushi/lib/src/srs/srs_import_entry.dart` 拿到字节后又写一遍暂存文件。
