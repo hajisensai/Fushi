@@ -53,7 +53,6 @@ import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -95,6 +94,8 @@ import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
+import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
@@ -3581,18 +3582,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 统一三库页卡菜单次序：重命名 → 封面/刮削 → 媒体特有 → 加入合集 →
         // 标签 → 删除（与书卡/游戏卡同一约定；「标签」原在首位，移到合集后）。
         quickActions: <DialogQuickAction>[
-          if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
+          if (collectDiscRefs(<VideoBookRow>[book])
+              case final List<DiscRef> discs when discs.isNotEmpty)
             DialogQuickAction(
               label: t.video_disc_open_menu,
               icon: FushiIcons.toc,
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(
-                  openLocalVideoBook(
+                  openDiscSessionWithPicker(
                     context: context,
                     repo: widget.repo,
-                    bookUid: book.bookUid,
-                    openBlurayMenu: true,
+                    discs: discs,
+                    cover: _coverBackdropFor(book.coverPath),
                   ),
                 );
               },
@@ -8956,16 +8958,39 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       (VideoBookRow b) =>
           memberUids.contains(b.bookUid) && videoBookHasLocalFiles(b),
     );
+    // 原盘合集：菜单第一项「进入原盘菜单」，多张盘时展开成选盘子菜单（按盘号 /
+    // 目录名排序，见 [collectDiscRefs]）。
+    final List<DiscRef> discs = collectDiscRefs(<VideoBookRow>[
+      for (final VideoBookRow b in library)
+        if (memberUids.contains(b.bookUid)) b,
+    ]);
+    final ImageProvider? coverImage = _collectionMenuCoverImage(
+      collection,
+      memberUidOrder,
+      library,
+    );
     if (!mounted) return;
     return showCollectionContextDialog(
       context: context,
       db: db,
       collection: collection,
-      coverImage: _collectionMenuCoverImage(
-        collection,
-        memberUidOrder,
-        library,
-      ),
+      coverImage: coverImage,
+      leadingListActions: <DialogListAction>[
+        if (discs.isNotEmpty)
+          DialogListAction(
+            label: t.video_disc_open_menu,
+            icon: FushiIcons.toc,
+            onPressed: () => unawaited(
+              openDiscSessionWithPicker(
+                context: context,
+                repo: repo,
+                discs: discs,
+                collectionId: collection.id,
+                cover: coverImage,
+              ),
+            ),
+          ),
+      ],
       onOpenDetail: () => _openCollectionDetail(collection),
       onChanged: () {
         ref.invalidate(collectionTagMapProvider);

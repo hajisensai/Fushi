@@ -48,6 +48,47 @@ Android 和 iOS 不做 BD-J：遇到 BD-J 盘时，主按钮退回普通「播�
 不能区分：在 libbluray 的图形控制器里加一个小补丁回报命中结果，三端原生库一起重编。
 BD-J 盘拿不到按钮的几何信息，降级方案：点屏幕顶部 10% 的条带、或者双指点击，来呼出控制栏。
 把结论写进 spec，再做第 7 项。
+
+#### 第 0 步结论（2026-10-24 实测）：能区分，不改原生
+
+**源码语义**（libbluray 1.5.0，与 Windows 随包 `fbdbluray-4.dll` / MSYS2 `libbluray-4.dll` 同版本）：
+
+- `bd_mouse_select` → HDMV 走 `_run_gc(GC_CTRL_MOUSE_MOVE)` → `graphics_controller.c` 的 `_mouse_move`：
+  落在某个可选按钮（SELECTED 态对象）矩形内返回 `1`（`valid_mouse_position = 1`）；
+  菜单已绘制但没落在任何按钮上返回 `0`；IG 未绘制（`!gc->ig_drawn`）、按钮动画进行中、页面不存在返回 `-1`。
+- `bd_user_input(BD_VK_MOUSE_ACTIVATE)` 在 `valid_mouse_position == 0` 时直接返回 `-1`（`_user_input` 开头），否则按 ENTER 激活。
+- BD-J 标题走 `_bdj_event(BDJ_EVENT_MOUSE)`，返回值是 Xlet 监听器的接收与否，**没有按钮几何**。
+
+**现有补丁已经透出**：`disc-navigation-state.patch` 的 `STREAM_NAV_MOUSE_CLICK` 分支把
+`bd_mouse_select < 0` 与 `bd_user_input < 0` 都转成 `STREAM_ERROR`，`cmd_discnav` 再转成命令失败
+（`MPV_ERROR_COMMAND = -12`）。于是 `discnav mouse-click x y`：点中按钮 = 成功；点空白 = select 得 0、
+activate 被拒 = `-12`。Dart 侧 `runVideoDiscInputCommand` 早已把它当「盘未接收」返回 `false`。
+
+**实测**（只读：Python ctypes 直接调 libbluray 与随包 libmpv，盘为 `D:/video/Cosmic Princess Kaguya/Disc 2 - Fushi menu test`，HDMV；Disc 1 是 AACS 加密副本，无 libaacs 时读不出画面，不计入）：
+
+| 层 | 操作 | 结果 |
+|---|---|---|
+| libbluray 1.5.0 | 菜单出现后 IG 绘制 4 个按钮，矩形 `(294,918) (642,918) (990,918) (1338,918)` 各 292×85 | — |
+| libbluray | `bd_mouse_select` 于 (2,2)、(1917,1077)、(2,1077) | `0`、`0`、`0` |
+| libbluray | 空白处之后 `bd_user_input(BD_VK_MOUSE_ACTIVATE)` | `-1` |
+| libbluray | 按钮中心 (440,960)、(788,960) | `1`；再次同点仍为 `1` |
+| libbluray | 按钮上 `BD_VK_MOUSE_ACTIVATE` | `1` |
+| libbluray | 1920×1080 按 120 px 网格扫描 | 只有底行按钮带为 `1`，其余全 `0` |
+| 随包 libmpv `v0.41.0-1109-g36abaa32d`（`D:/APP/Hibiki/libmpv-2.dll`，只加载不写入、不启动 app） | `discnav mouse-click` 于 (0.001,0.002)、(0.99,0.046)、(0.5,0.5) | `-12`、`-12`、`-12` |
+| 随包 libmpv | `discnav mouse-click 0.2292 0.8889`（按钮 1），紧接着点按钮 2 两次 | `0`、`0`、`0` |
+
+**第 7 项按「能区分」实现，不改 `disc-navigation-state.patch`、不 bump 快照版本**：命中结果已经是命令返回值，
+再在快照里加字段只会让三端预编译制品（Android / Darwin 的 `provenance.json` 钉了补丁 SHA256、Windows 钉了运行时归档）
+全部失配、必须重编，却不带来新信息。Dart 规则（`fushi/lib/src/media/video/disc/disc_session_controls.dart`）：
+
+- 先关浮层（页面浮层 → 控制栏），这一下不再做别的；
+- HDMV：把点击交给盘，盘接收 = 点中按钮；未接收时，导航标题在 1..65534（正片上的弹出菜单）→ 发 `popup` 关掉盘的弹出菜单，
+  否则（顶层菜单 / first-play）→ 呼出控制栏；点在黑边上直接算空白；
+- BD-J（快照 `bdj-detected`）：点击一律交给盘、从不推断空白；屏幕顶部 10% 条带或双指点击呼出控制栏。
+
+**残余歧义（已知、未消除）**：按钮动画进行中（`button_effect_running`）的点击也返回 `-1`，会被当成空白。
+本盘实测连续快速点按钮都返回成功，未触发；有按钮动画的盘上可能偶发一次误呼出控制栏（只显示控制栏，不会误操作盘）。
+真要消除得给快照加 `pointer-hit`（区分 0 / -1）并三端重编，留给 DVD 补丁那次重编时一起评估。
 第 1–10 项
 
 盘规格模型：在引擎侧（packages/fushi_engine/lib/media/video/bluray/ 或同级的 disc 目录）新建 DiscFormat { bluray, uhdBluray, dvd }，用纯路径判据，禁止 import Flutter（纯度守卫）。BD 规格直接从成员路径推，不改 schema。

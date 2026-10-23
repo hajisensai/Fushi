@@ -4606,6 +4606,23 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
 
+  /// 原盘会话三项（落 Drift preferences，默认都开）：桌面自动全屏 / 启动动画 /
+  /// 详情页主按钮默认进菜单。
+  bool get videoDiscAutoFullscreen => prefsRepo.videoDiscAutoFullscreen;
+
+  Future<void> setVideoDiscAutoFullscreen(bool value) =>
+      prefsRepo.setVideoDiscAutoFullscreen(value);
+
+  bool get videoDiscLaunchAnimation => prefsRepo.videoDiscLaunchAnimation;
+
+  Future<void> setVideoDiscLaunchAnimation(bool value) =>
+      prefsRepo.setVideoDiscLaunchAnimation(value);
+
+  bool get videoDiscOpenMenuByDefault => prefsRepo.videoDiscOpenMenuByDefault;
+
+  Future<void> setVideoDiscOpenMenuByDefault(bool value) =>
+      prefsRepo.setVideoDiscOpenMenuByDefault(value);
+
   /// 底部细进度条开关（落 Drift preferences，默认关）：控制条淡出后在视频最下方
   /// 留一条主题色细线。小窗档恒显、不受它管，见 `videoSlimProgressBarVisible`。
   bool get videoSlimProgressBar => prefsRepo.videoSlimProgressBar;

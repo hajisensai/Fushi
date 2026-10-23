@@ -24,7 +24,7 @@ void main() {
   test('disc input commands report consumption instead of throwing', () {
     final String body = _member(
       _read('lib/src/media/video/video_disc_menu.part.dart'),
-      'Future<void> _sendDiscCommand(',
+      'Future<bool> _sendDiscCommand(',
     );
     expect(body, contains('isVideoDiscInputCommand(command)'));
     expect(body, contains('runVideoDiscInputCommand(native, command)'));

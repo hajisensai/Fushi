@@ -7,6 +7,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
+import 'package:fushi/src/media/video/disc/disc_session_controls.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
@@ -694,6 +695,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialSubtitleListVisible = false,
     this.initialFullscreen = false,
     this.openBlurayMenu = false,
+    this.discLaunchCover,
+    this.discLaunchOrigin,
     this.webSite,
     super.key,
   }) : remoteInfo = null,
@@ -717,6 +720,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        remoteClient = client,
        initialFullscreen = false,
        openBlurayMenu = false,
+       discLaunchCover = null,
+       discLaunchOrigin = null,
        webSite = null,
        playlistCollectionId = null;
 
@@ -752,6 +757,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// Open the disc-authored menu, without loading the representative title.
   final bool openBlurayMenu;
 
+  /// 原盘会话启动动画的封面与起点（卡片的全局矩形；null = 居中卡片大小）。只在
+  /// [openBlurayMenu] 且「原盘启动动画」设置开着时使用。
+  final ImageProvider? discLaunchCover;
+  final Rect? discLaunchOrigin;
+
   /// 「在线源 › 网站」的站点入口：不读库，按 [webVideoSiteRow] 的伪书在网页档打开站点；
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
@@ -776,6 +786,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     bool initialSubtitleListVisible = false,
     bool initialFullscreen = false,
     bool openBlurayMenu = false,
+    ImageProvider? discLaunchCover,
+    Rect? discLaunchOrigin,
     WebVideoSite? webSite,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
@@ -790,6 +802,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialSubtitleListVisible: initialSubtitleListVisible,
       initialFullscreen: initialFullscreen,
       openBlurayMenu: openBlurayMenu,
+      discLaunchCover: discLaunchCover,
+      discLaunchOrigin: discLaunchOrigin,
       webSite: webSite,
     ),
   );
@@ -2518,6 +2532,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Timer? _discMenuChromeHideTimer;
   bool _discMenuChromeHovered = false;
   bool _discMenuChromeFocused = false;
+
+  /// 原盘会话的「按住 Esc / 手柄 B 约 1 秒直接退出」：短按交给 [_discSessionBack]，
+  /// 按满直接 [_exitDiscSession]，按住期间画圆环进度。
+  late final DiscExitHold _discExitHold = DiscExitHold(
+    onExit: () => unawaited(_exitDiscSession()),
+  );
+
+  /// 原盘画面上同时按下的指针数：两指点击 = 呼出 / 收起控制栏（BD-J 盘拿不到按钮
+  /// 几何，单指点击全交给盘）。
+  int _discSurfacePointers = 0;
+  bool _discMultiTouch = false;
+
+  /// 用户已要求退出原盘会话（按满 / Cmd+W / 「退出原盘」）：之后的返回链不再走
+  /// 「先呼出控制栏」那一步。页面随即 pop，不需要复位。
+  bool _discSessionExitRequested = false;
   List<SubtitleTrack>? _discLastSubtitleTracks;
   int _discSubtitleTracksRevision = 0;
   String get _activeBookUid =>
@@ -6227,6 +6256,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lockButtonVisible.dispose();
     _discMenuChromeHideTimer?.cancel();
     _discMenuChromeVisible.dispose();
+    _discExitHold.dispose();
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
@@ -7503,6 +7533,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 键盘 / 系统返回 / 手柄三条输入通道共用同一份语义，不再各写一份。
   Future<void> _handleBackOrExit() async {
     if (_dismissTopForegroundLayer()) return;
+    // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
+    if (_discSessionShowBarOnBack()) return;
     // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页（同步判定，
     // 退出路径不 await，BUG-2119）。
     if (_webBackStep()) return;
@@ -8055,6 +8087,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 手柄按钮松开沿（BUG-3330）：桌面轮询经 [GamepadButtonReleaseIntent]、Android
   /// 经原生 [KeyUpEvent] 到这里。只有「按住」类动作关心松开，目前只有按住临时倍速。
   bool _handleVideoGamepadButtonRelease(GamepadButton button) =>
+      _handleDiscMenuGamepadRelease(button) ||
       _handleHoldSpeedGamepadEdge(HoldSpeedEdge.release, button);
 
   /// 手柄的按住临时倍速：与键盘 [_handleHoldSpeedKey] 共用纯状态机
@@ -11450,7 +11483,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 压一条浅色带。零布局。
           child: FushiTitleBarColorScope(
             colors: _desktopTitleBarColors(controller, videoController, cs),
-            child: _buildScaffold(controller, videoController, cs),
+            child: _wrapDiscLaunchTransition(
+              _buildScaffold(controller, videoController, cs),
+            ),
           ),
         ),
       ),

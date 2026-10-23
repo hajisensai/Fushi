@@ -435,6 +435,7 @@ extension _VideoLayout on _VideoFushiPageState {
                   children: <Widget>[
                     Positioned.fill(child: _buildDiscMenuSurface(controller)),
                     _buildDiscMenuChrome(controller),
+                    Positioned.fill(child: _buildDiscExitHoldRing()),
                     _buildOsdOverlay(),
                   ],
                 ),
