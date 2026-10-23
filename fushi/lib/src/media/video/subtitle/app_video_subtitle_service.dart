@@ -24,6 +24,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_audio/fushi_audio_core.dart' show AudioCue;
 import 'package:fushi_core/fushi_core.dart'
     show
         FushiDatabase,
@@ -115,6 +116,7 @@ class AppVideoSubtitleEpisode {
     required this.videoPath,
     required this.title,
     this.registersSubtitleSource = true,
+    this.replacesSubtitleSelection = false,
   });
 
   final String bookUid;
@@ -124,6 +126,13 @@ class AppVideoSubtitleEpisode {
   /// 导出后能否把字幕登记到这一行的 `subtitleSource`：播放列表里的子集共用一行，
   /// 那一行的字幕选择不属于其中某一集，不登记。
   final bool registersSubtitleSource;
+
+  /// 登记时是否**替换**这一行已有的字幕选择。视频页对当前这一集点「生成日语字幕」
+  /// 是用户明确要用生成的字幕：转录要好几分钟，用户常常先退出播放页，任务结束时页面
+  /// 已不在、页面那条「结束后切成当前字幕」走不到，产物只能靠这里登记；若照整季 /
+  /// CLI 的口径「已有选择不覆盖」，条目原本选着内嵌轨或下载字幕时，生成的字幕重进
+  /// 播放页也不会被用上（用户反馈 DEStBY5I66）。整季与 CLI 仍不覆盖。
+  final bool replacesSubtitleSelection;
 }
 
 /// 本机处理不了的一集（远端 / 文件不存在）。
@@ -549,7 +558,13 @@ class AppVideoSubtitleService {
     final List<AppVideoSubtitleEpisode> episodes = <AppVideoSubtitleEpisode>[];
     final List<AppVideoSubtitleUnavailable> unavailable =
         <AppVideoSubtitleUnavailable>[];
-    await _collectEpisodes(row, episodes, unavailable, onlyPath: videoPath);
+    await _collectEpisodes(
+      row,
+      episodes,
+      unavailable,
+      onlyPath: videoPath,
+      replaceSelection: videoPath != null,
+    );
     // 播放页的当前路径可能是重定位后的（盘符换了 / 数据根搬了），与库里记的写法
     // 对不上：文件确实在就照样处理这一集，只是不替这一行登记字幕选择（页面自己选）。
     if (videoPath != null &&
@@ -625,6 +640,7 @@ class AppVideoSubtitleService {
     List<AppVideoSubtitleEpisode> out,
     List<AppVideoSubtitleUnavailable> unavailable, {
     String? onlyPath,
+    bool replaceSelection = false,
   }) async {
     final List<String> candidates = localVideoFileCandidates(
       videoPath: row.videoPath,
@@ -661,6 +677,7 @@ class AppVideoSubtitleService {
           videoPath: path,
           title: playlist ? p.basenameWithoutExtension(path) : row.title,
           registersSubtitleSource: p.equals(path, row.videoPath) && !playlist,
+          replacesSubtitleSelection: replaceSelection,
         ),
       );
     }
@@ -1063,7 +1080,11 @@ class AppVideoSubtitleService {
             .where((AppVideoSubtitleEpisode e) => e.videoPath == r.videoPath)
             .firstOrNull;
         if (episode == null || !episode.registersSubtitleSource) continue;
-        if (await _registerSubtitleSource(episode.bookUid, output)) {
+        if (await _registerSubtitleSource(
+          episode.bookUid,
+          output,
+          replace: episode.replacesSubtitleSelection,
+        )) {
           job.registeredBookUids.add(episode.bookUid);
         }
       }
@@ -1106,13 +1127,30 @@ class AppVideoSubtitleService {
   }
 
   /// 条目还没有字幕选择（null / 空）时把 [output] 登记成它的外挂字幕。用户选过的
-  /// 字幕与显式关闭（`off:` 哨兵）都不覆盖。返回是否写了。
-  Future<bool> _registerSubtitleSource(String bookUid, String output) async {
+  /// 字幕与显式关闭（`off:` 哨兵）都不覆盖——除非 [replace]（视频页单集入口，见
+  /// [AppVideoSubtitleEpisode.replacesSubtitleSelection]）。替换时连同库里缓存的旧
+  /// 字幕 cue 一起清掉（与播放页选字幕同一事务写法）：单视频重进时先读 cue 缓存，
+  /// 留着旧源的 cue，外挂档案解析失败时会把旧字幕当成新选择显示出来。返回是否写了。
+  Future<bool> _registerSubtitleSource(
+    String bookUid,
+    String output, {
+    bool replace = false,
+  }) async {
     final VideoBookRow? row = await database.getVideoBookByBookUid(bookUid);
     if (row == null) return false;
     final String? current = row.subtitleSource;
+    final VideoBookRepository repo = VideoBookRepository(database);
+    if (replace) {
+      if (current == output) return false;
+      await repo.saveSubtitleSelection(
+        bookUid: bookUid,
+        subtitleSource: output,
+        cues: const <AudioCue>[],
+      );
+      return true;
+    }
     if (current != null && current.trim().isNotEmpty) return false;
-    await VideoBookRepository(database).updateSubtitleSource(bookUid, output);
+    await repo.updateSubtitleSource(bookUid, output);
     return true;
   }
 }

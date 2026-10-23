@@ -36,12 +36,13 @@ void main() {
       );
     });
 
-    test('lib gate is per ecosystem: manga 1.4/1.6, anime 14 only', () {
+    test('lib gate is per ecosystem: manga 1.4/1.6, anime 14 to 17', () {
       expect(MihonMediaKind.manga.supportedLibVersions, <String>['1.4', '1.6']);
       expect(MihonMediaKind.anime.supportedLibVersions, <String>[
         '14',
         '15',
         '16',
+        '17',
       ]);
       expect(MihonMediaKind.fromDbValue('anime'), MihonMediaKind.anime);
       expect(MihonMediaKind.fromDbValue(null), MihonMediaKind.manga);

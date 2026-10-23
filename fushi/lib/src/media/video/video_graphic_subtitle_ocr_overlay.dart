@@ -67,6 +67,7 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
     required this.prepare,
     required this.onCharTap,
     this.scope = VideoPauseOcrScope.graphicSubtitles,
+    this.manualRequestSerial = 0,
     this.onEnableRequested,
     this.onUnavailable,
     this.onError,
@@ -86,6 +87,14 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   /// 哪些视频暂停时识别（用户设置）。
   final VideoPauseOcrScope scope;
 
+  /// 「识别一次当前画面」请求序号（反馈 X3ozgOAx8v：按钮 / 快捷键手动识别）。
+  ///
+  /// 页面每次触发 +1；本层看到序号变化，就把**下一个暂停帧**（已暂停则是当前帧）标成
+  /// 手动豁免——即使 [scope] 不识别这类帧也识别它一次。豁免只认那一帧：继续播放 /
+  /// seek / 换轨（帧键变化）即解除，之后照 [scope] 办。[scope] 本来就会识别该帧时不重复
+  /// 识别。
+  final int manualRequestSerial;
+
   /// 用户点了「开启」提示（BUG-3342）。识别关着、暂停在图片字幕帧上时才出现提示；
   /// null 时不提示。页面负责把范围写成开启并以新 [scope] 重建本层。
   final VoidCallback? onEnableRequested;
@@ -94,8 +103,9 @@ class VideoGraphicSubtitleOcrOverlay extends StatefulWidget {
   final void Function(String sentence, int graphemeIndex, Rect globalRect)
   onCharTap;
 
-  /// 引擎不可用（每个会话只报一次；只在图形字幕帧上报——普通视频的暂停识别是
-  /// 顺带的，没配 OCR 的用户不该每看一部片都被提示一次）。
+  /// 引擎不可用（自动识别每个会话只报一次，且只在图形字幕帧上报——普通视频的暂停
+  /// 识别是顺带的，没配 OCR 的用户不该每看一部片都被提示一次）。手动识别
+  /// （[manualRequestSerial]）是用户主动要求，每次都报。
   final void Function(GraphicSubtitleOcrUnavailableReason reason)?
   onUnavailable;
 
@@ -146,6 +156,18 @@ class _VideoGraphicSubtitleOcrOverlayState
   /// 用户关掉了本次播放的开启提示。
   bool _enableHintDismissed = false;
 
+  /// 手动识别已请求、但还没落到一个暂停帧上（请求时正在播放，页面先发了暂停）。
+  bool _manualPending = false;
+
+  /// 手动豁免的那一帧；帧键一变就清空。
+  _FrameKey? _manualKey;
+
+  /// 当前帧有一次识别在途（截帧 / 识别 / 退避重截）。
+  bool _inFlight = false;
+
+  /// 当前帧的识别是不是手动豁免出来的（决定「没有字」与不可用提示照报）。
+  bool get _manualFrame => _manualKey != null && _manualKey == _key;
+
   @override
   void initState() {
     super.initState();
@@ -163,12 +185,46 @@ class _VideoGraphicSubtitleOcrOverlayState
       widget.controller.addListener(_onControllerChanged);
       _reset();
       _key = null;
+      _manualKey = null;
+      _manualPending = false;
       _onControllerChanged();
+    } else if (oldWidget.manualRequestSerial != widget.manualRequestSerial) {
+      _requestManualRecognition();
     } else if (oldWidget.scope != widget.scope) {
       _onControllerChanged();
     } else {
       _syncEnableHint();
     }
+  }
+
+  /// 手动识别一次：已经暂停就落到当前帧；正在播放（页面刚发了暂停、状态还没回来）就
+  /// 挂起，等第一次停下来的那一帧。没有可识别的帧（未出首帧 / 网页后端）直接作废。
+  void _requestManualRecognition() {
+    final VideoPlayerController c = widget.controller;
+    if (c.isPlaying) {
+      _manualPending = true;
+      return;
+    }
+    final _FrameKey? raw = _pausedFrameKey();
+    if (raw == null) return;
+    _manualKey = raw;
+    if (raw != _key) {
+      _onControllerChanged();
+      return;
+    }
+    // 当前帧已经在识别 / 识别过：不重复识别，只把结果再亮一次给用户看。
+    if (_inFlight || _settle != null) return;
+    final GraphicSubtitleOcrFrame? frame = _frame;
+    if (frame != null) {
+      _setStatus(
+        frame.isEmpty
+            ? GraphicSubtitlePauseOcrStatus.empty
+            : GraphicSubtitlePauseOcrStatus.ready,
+      );
+      return;
+    }
+    // 上一次在这一帧上没拿到结果（引擎不可用 / 出错）：用户主动要求，再跑一次。
+    unawaited(_recognize());
   }
 
   @override
@@ -182,25 +238,49 @@ class _VideoGraphicSubtitleOcrOverlayState
     super.dispose();
   }
 
-  _FrameKey? _currentKey() {
+  /// 暂停着、能截帧时的帧键（不看 [VideoGraphicSubtitleOcrOverlay.scope]）。
+  _FrameKey? _pausedFrameKey() {
     final VideoPlayerController c = widget.controller;
     if (c.isPlaying || !c.hasFirstFrame) return null;
     // 网页播放后端没有 mpv，截帧恒为 null：识别不了，不截、不重截。
     if (c.isWebBackend) return null;
-    if (!widget.scope.shouldRecognize(
-      graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
-    )) {
-      return null;
-    }
     final int? position = c.positionMs;
     if (position == null) return null;
     return (positionMs: position, trackId: c.activeSubtitleTrackId);
+  }
+
+  /// 该识别的帧键：暂停帧且（范围允许，或是手动豁免的那一帧）。
+  _FrameKey? _currentKey() {
+    final _FrameKey? raw = _pausedFrameKey();
+    if (raw == null) return null;
+    if (raw == _manualKey) return raw;
+    if (!widget.scope.shouldRecognize(
+      graphicSubtitleActive: widget.controller.isPlayerRenderedSubtitleActive,
+    )) {
+      return null;
+    }
+    return raw;
+  }
+
+  /// 手动豁免的生命周期：挂起的请求落到第一次停下的帧上；豁免帧之外的任何帧
+  /// （继续播放 / seek / 换轨）一出现就解除。
+  void _syncManualRequest() {
+    if (_manualPending && !widget.controller.isPlaying) {
+      _manualPending = false;
+      _manualKey = _pausedFrameKey();
+      return;
+    }
+    if (_manualKey != null && _pausedFrameKey() != _manualKey) {
+      _manualKey = null;
+    }
   }
 
   bool _enableHintWanted() {
     final VideoPlayerController c = widget.controller;
     if (widget.onEnableRequested == null || _enableHintDismissed) return false;
     if (c.isPlaying || !c.hasFirstFrame) return false;
+    // 这一帧已经按用户要求手动识别了，不再劝「开启」。
+    if (_manualKey != null && _manualKey == _pausedFrameKey()) return false;
     return widget.scope.offersEnableHint(
       graphicSubtitleActive: c.isPlayerRenderedSubtitleActive,
     );
@@ -222,6 +302,7 @@ class _VideoGraphicSubtitleOcrOverlayState
   }
 
   void _onControllerChanged() {
+    _syncManualRequest();
     _syncEnableHint();
     final _FrameKey? key = _currentKey();
     if (key == _key) return;
@@ -236,6 +317,7 @@ class _VideoGraphicSubtitleOcrOverlayState
     _settle?.cancel();
     _settle = null;
     _generation++;
+    _inFlight = false;
     _setStatus(GraphicSubtitlePauseOcrStatus.idle);
     if (_frame != null && mounted) setState(() => _frame = null);
     _frame = null;
@@ -265,13 +347,17 @@ class _VideoGraphicSubtitleOcrOverlayState
     final int generation = _generation;
     bool stale() => !mounted || generation != _generation;
     final bool graphic = widget.controller.isPlayerRenderedSubtitleActive;
+    final bool manual = _manualFrame;
+    _settle = null;
+    _inFlight = true;
+    bool retrying = false;
     try {
       final Uint8List? bytes =
           await (widget.captureFrame ??
               widget.controller.captureFrameWithSubtitles)();
       if (stale()) return;
       if (bytes == null) {
-        _retryCapture(attempt);
+        retrying = _retryCapture(attempt);
         return;
       }
       _statusGraphic = graphic;
@@ -283,31 +369,36 @@ class _VideoGraphicSubtitleOcrOverlayState
       if (frame == null || stale()) return;
       setState(() => _frame = frame);
       // 「这一帧没有字」只对图形字幕有意义（那里本该有字幕）；普通画面没字是常态。
-      _setStatus(switch ((frame.isEmpty, graphic)) {
+      // 手动识别是用户点名要看这一帧，没字也要告诉他。
+      _setStatus(switch ((frame.isEmpty, graphic || manual)) {
         (false, _) => GraphicSubtitlePauseOcrStatus.ready,
         (true, true) => GraphicSubtitlePauseOcrStatus.empty,
         (true, false) => GraphicSubtitlePauseOcrStatus.idle,
       });
     } on GraphicSubtitleOcrUnavailable catch (e) {
       if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
-      if (_unavailableReported || !mounted || !graphic) return;
+      if (!mounted) return;
+      if (!manual && (_unavailableReported || !graphic)) return;
       _unavailableReported = true;
       widget.onUnavailable?.call(e.reason);
     } catch (error, stack) {
       if (!stale()) _setStatus(GraphicSubtitlePauseOcrStatus.idle);
       if (mounted) widget.onError?.call(error, stack);
+    } finally {
+      if (!stale() && !retrying) _inFlight = false;
     }
   }
 
   /// 这一帧截帧没拿到图：按退避重截；重截机会用完就记一条错误（截帧失败本身不抛异常，
   /// 不记就没有任何证据）。重截挂在 [_settle] 上，帧一变由 [_reset] 一起取消。
-  void _retryCapture(int attempt) {
+  /// 返回是否排了重截。
+  bool _retryCapture(int attempt) {
     if (attempt < kGraphicSubtitleOcrCaptureRetryDelays.length) {
       _settle = Timer(
         kGraphicSubtitleOcrCaptureRetryDelays[attempt],
         () => _recognize(attempt: attempt + 1),
       );
-      return;
+      return true;
     }
     widget.onError?.call(
       StateError(
@@ -316,6 +407,7 @@ class _VideoGraphicSubtitleOcrOverlayState
       ),
       StackTrace.current,
     );
+    return false;
   }
 
   Future<GraphicSubtitleOcrFrame?> _recognizeBytes(

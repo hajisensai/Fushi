@@ -146,7 +146,19 @@ class _VideoSubtitleMossSettingsRowState
   void initState() {
     super.initState();
     unawaited(_refresh());
+    // 下载归全应用登记表（kZZmXQBv7E）：离开设置页再回来接回进行中的那条。
+    final Stream<ModelDownloadEvent>? running = widget.port.resumeEnsure();
+    if (running != null) {
+      _download = _starting;
+      unawaited(_follow(running));
+    }
   }
+
+  static const ModelDownloadEvent _starting = ModelDownloadEvent(
+    fileName: '',
+    receivedBytes: 0,
+    totalBytes: 0,
+  );
 
   @override
   void didUpdateWidget(VideoSubtitleMossSettingsRow oldWidget) {
@@ -175,27 +187,27 @@ class _VideoSubtitleMossSettingsRowState
     }
   }
 
-  Future<void> _ensure() async {
+  Future<void> _ensure() {
     setState(() {
       _error = null;
-      _download = const ModelDownloadEvent(
-        fileName: '',
-        receivedBytes: 0,
-        totalBytes: 0,
-      );
+      _download = _starting;
     });
+    return _follow(widget.port.ensure(widget.backend));
+  }
+
+  /// 跟一条 MOSS 下载的进度；离开页面只摘掉监听，下载本身继续。
+  Future<void> _follow(Stream<ModelDownloadEvent> download) async {
     try {
-      await for (final ModelDownloadEvent e in widget.port.ensure(
-        widget.backend,
-      )) {
-        if (mounted) setState(() => _download = e);
+      await for (final ModelDownloadEvent e in download) {
+        if (!mounted) return;
+        setState(() => _download = e);
       }
     } catch (error) {
       if (mounted) setState(() => _error = '$error');
-    } finally {
-      if (mounted) setState(() => _download = null);
-      await _refresh();
     }
+    if (!mounted) return;
+    setState(() => _download = null);
+    await _refresh();
   }
 
   /// 删除：确认框写清会释放多少，删完重新读状态。

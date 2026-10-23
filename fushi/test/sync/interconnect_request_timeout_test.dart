@@ -100,6 +100,92 @@ void main() {
     });
   });
 
+  group('XVEF3huDTF 文件箱小请求封顶 + 掉线后换路', () {
+    late FushiDatabase db;
+    late ServerSocket server;
+    final List<Socket> accepted = <Socket>[];
+    late int probeCalls;
+
+    /// host 接受连接但永不回包（掉线 / 半开连接的形态）。超时在 restoreAuth 之前设好，
+    /// 让暂定句柄与解析后的句柄拿到同一份封顶。
+    Future<InterconnectSyncBackend> buildStalledBackend() async {
+      server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((Socket socket) {
+        accepted.add(socket);
+        socket.listen((_) {});
+      });
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: 'http://127.0.0.1:${server.port}'),
+      ]);
+      await repo.setFushiClientToken('tok');
+      probeCalls = 0;
+      final InterconnectSyncBackend backend =
+          InterconnectSyncBackend.withProbe((String u, String t) async {
+        probeCalls++;
+        return true;
+      })
+            ..requestTimeout = const Duration(milliseconds: 300);
+      await backend.restoreAuth(repo);
+      return backend;
+    }
+
+    setUp(() {
+      db = _testDb();
+    });
+
+    tearDown(() async {
+      for (final Socket s in accepted) {
+        s.destroy();
+      }
+      accepted.clear();
+      await server.close();
+      await db.close();
+    });
+
+    test('WebDAV 文件箱请求（同步根 PROPFIND）在 requestTimeout 内失败', () async {
+      final InterconnectSyncBackend backend = await buildStalledBackend();
+      final Stopwatch watch = Stopwatch()..start();
+      await expectLater(
+        backend.findOrCreateRootFolder(),
+        throwsA(isA<TimeoutException>()),
+      );
+      watch.stop();
+      expect(watch.elapsedMilliseconds, lessThan(5000),
+          reason: '文件箱小请求不得等到 60s connect 上限或 OS 级 TCP 超时');
+    });
+
+    test('落在候选[0]（沿用暂定句柄）的会话掉线后，下一次操作重新选路', () async {
+      final InterconnectSyncBackend backend = await buildStalledBackend();
+      await expectLater(
+        backend.findOrCreateRootFolder(),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(probeCalls, 1);
+      await expectLater(
+        backend.findOrCreateRootFolder(),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(probeCalls, 2,
+          reason: '超时必须把会话置脏：暂定句柄也要带 onConnectivityError，'
+              '否则会话钉死在死地址上，每个请求各等一次超时');
+    });
+
+    test('互联端点（_sendBounded）超时同样把会话置脏', () async {
+      final InterconnectSyncBackend backend = await buildStalledBackend();
+      await expectLater(
+        backend.listRemoteBooks(),
+        throwsA(isA<TimeoutException>()),
+      );
+      final int afterFirst = probeCalls;
+      await expectLater(
+        backend.listRemoteBooks(),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(probeCalls, afterFirst + 1);
+    });
+  });
+
   group('BUG-1567 源码枚举守卫', () {
     test('裸 await req.close() 只允许出现在流式传输白名单', () {
       final File f = File('lib/src/sync/interconnect_sync_backend.dart');

@@ -156,6 +156,7 @@ VideoPlayerShortcutActions _actions(List<String> log) {
     nextFrame: () => record('nextFrame'),
     screenshot: () => record('screenshot'),
     screenshotSubtitled: () => record('screenshotSubtitled'),
+    ocrFrame: () => record('ocrFrame'),
     toggleFullscreen: () => record('toggleFullscreen'),
     toggleMiniWindow: () => record('toggleMiniWindow'),
     toggleMiniChrome: () => record('toggleMiniChrome'),

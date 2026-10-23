@@ -163,6 +163,42 @@ void main() {
     expect(await store.count(), 1);
   });
 
+  // 反馈 _eqP_ypmq8：批量制卡攒的卡被「回前台」的自动补发发走，待发卡片显示为空。
+  test('批量模式：自动补发（非交互）不发送，用户点「全部发送」才发', () async {
+    final _FakeBackend backend = _FakeBackend(batchMining: true);
+    final PendingMiningAnkiRepository repo = repoOver(backend);
+    await mine(repo, 'p');
+    await mine(repo, 'q');
+    expect(await store.count(), 2);
+
+    final PendingFlushReport auto = await repo.flush();
+    expect(auto.skipped, isTrue);
+    expect(auto.remaining, 2);
+    expect(backend.expressions, isEmpty, reason: '回前台 / 启动的自动补发不得发走批量攒的卡');
+    expect(await store.count(), 2);
+
+    final PendingMineRow first = (await store.all()).first;
+    final PendingFlushReport autoOne = await repo.flushOne(first.id);
+    expect(autoOne.skipped, isTrue);
+    expect(backend.expressions, isEmpty);
+
+    final PendingFlushReport manual = await repo.flush(interactive: true);
+    expect(manual.delivered, 2);
+    expect(backend.expressions, <String>['p', 'q']);
+    expect(await store.count(), 0);
+  });
+
+  test('非批量模式：自动补发照常发送', () async {
+    final PendingMiningAnkiRepository offlineRepo = repoOver(
+      _FakeBackend(outcomes: <MineOutcome>[_refused()]),
+    );
+    await mine(offlineRepo, 'n');
+    final _FakeBackend online = _FakeBackend();
+    final PendingFlushReport report = await repoOver(online).flush();
+    expect(report.skipped, isFalse);
+    expect(online.expressions, <String>['n']);
+  });
+
   test('补发：按入队顺序重放、媒体还原；送达出队，不可达就停下', () async {
     final _FakeBackend offline = _FakeBackend(
       outcomes: <MineOutcome>[_refused(), _refused(), _refused()],

@@ -108,6 +108,66 @@ void main() {
     });
   });
 
+  // ── BUG-3662: cross-process metadata reload ─────────────────────────
+
+  group('reloadMetadataIfChangedInDb (BUG-3662)', () {
+    // `repo` 扮演主进程、`popupRepo` 扮演 Android `:popup` 查词进程：同一份
+    // DB、各自的内存缓存。主进程改了顺序 / 折叠，热复用的 popup 必须在下一次
+    // 查词前看见，而不是等进程被杀。
+    test('no change in DB -> false, cache untouched', () async {
+      await repo.persistDictionary(_dict(name: 'A', order: 0));
+      final popupRepo = DictionaryRepository(db);
+      await popupRepo.loadFromDb();
+      expect(await popupRepo.reloadMetadataIfChangedInDb(), isFalse);
+      expect(popupRepo.dictionaries.map((d) => d.name), ['A']);
+      popupRepo.dispose();
+    });
+
+    test('order / collapse edited by another repo -> reloaded', () async {
+      await repo.persistDictionary(_dict(name: 'A', order: 0));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
+      final popupRepo = DictionaryRepository(db);
+      await popupRepo.loadFromDb();
+      expect(popupRepo.termDictionaries.map((d) => d.name), ['A', 'B']);
+
+      await repo.updateDictionaryOrder(<Dictionary>[
+        for (final Dictionary d in repo.dictionaries)
+          d..order = d.name == 'A' ? 1 : 0,
+      ]);
+      await repo.setDictionaryCollapseState(
+        repo.dictionaries.firstWhere((d) => d.name == 'A'),
+        'ja',
+        DictionaryCollapseState.collapsed,
+      );
+
+      expect(await popupRepo.reloadMetadataIfChangedInDb(), isTrue);
+      expect(popupRepo.termDictionaries.map((d) => d.name), ['B', 'A']);
+      expect(popupRepo.lookupFilters.termDictionaryOrder, ['B', 'A']);
+      expect(
+        popupRepo.dictionaries
+            .firstWhere((d) => d.name == 'A')
+            .collapsedLanguages,
+        repo.dictionaries.firstWhere((d) => d.name == 'A').collapsedLanguages,
+      );
+      // 已对账：再问一次不再重载。
+      expect(await popupRepo.reloadMetadataIfChangedInDb(), isFalse);
+      popupRepo.dispose();
+    });
+
+    test('dictionary deleted by another repo -> dropped', () async {
+      await repo.persistDictionary(_dict(name: 'A', order: 0));
+      await repo.persistDictionary(_dict(name: 'B', order: 1));
+      final popupRepo = DictionaryRepository(db);
+      await popupRepo.loadFromDb();
+
+      await repo.deleteDictionaryMeta('A');
+
+      expect(await popupRepo.reloadMetadataIfChangedInDb(), isTrue);
+      expect(popupRepo.dictionaries.map((d) => d.name), ['B']);
+      popupRepo.dispose();
+    });
+  });
+
   // ── dictionary getters ───────────────────────────────────────────────
 
   group('dictionary getters', () {

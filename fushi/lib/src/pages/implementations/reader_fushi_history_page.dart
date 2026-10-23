@@ -24,6 +24,7 @@ import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
 import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
+import 'package:fushi/src/media/import/srt_book_attach_epub.dart';
 import 'package:fushi/src/media/import/srt_book_reimport.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/drag_drop/card_drop_registry.dart';

@@ -180,8 +180,13 @@ class WebDavOps {
     String? pinnedFingerprint,
     void Function()? onConnectivityError,
     SyncAuthFailureKind unauthorizedKind = SyncAuthFailureKind.credentials,
+    Duration? requestTimeout,
   }) : _baseUrl = baseUrl,
-       _connectionTimeout = connectionTimeout,
+       _requestTimeout = requestTimeout,
+       _connectionTimeout =
+           requestTimeout != null && requestTimeout < connectionTimeout
+           ? requestTimeout
+           : connectionTimeout,
        _pinnedFingerprint = pinnedFingerprint,
        _onConnectivityError = onConnectivityError,
        _unauthorizedKind = unauthorizedKind,
@@ -195,6 +200,17 @@ class WebDavOps {
   final String _baseUrl;
   final String? _authHeader;
   final Duration _connectionTimeout;
+
+  /// XVEF3huDTF：本类自有的小请求（PROPFIND / MKCOL / MOVE / JSON GET / PUT 字节 /
+  /// HEAD / DELETE，请求体都在内存里、响应体 ≤ [maxJsonDownloadSize]）的单阶段封顶：
+  /// 连接、等响应头、读响应体各自不超过它。null = 不封顶（云 WebDAV 维持原语义）。
+  ///
+  /// 没有它时，一条已建立的连接在对端掉线（host 换 IP、Wi-Fi 休眠、NAT 半开）后，
+  /// 读写要等到 OS 级 TCP 重传超时（Android 上是分钟级，日志里的 `errno = 110`）
+  /// 才失败；整轮同步串行地发几十个这样的小请求，一次挂起就是几分钟。超时按连接类
+  /// 失败上报 [_onConnectivityError]，互联会话随即换路。只作用于本类的方法——经
+  /// [buildRequest] 自行发送的流式传输不受影响。
+  final Duration? _requestTimeout;
 
   /// BUG-1693（审计项：故障切换失效）：连接类失败（拒连/握手失败/超时/断流）的
   /// 通知回调。互联 backend 用它把 `_sessionResolved` 置脏——已解析地址一掉线，
@@ -264,12 +280,28 @@ class WebDavOps {
   /// 握手失败/传输中断流）先通知 [_onConnectivityError] 再原样 rethrow。
   Future<HttpClientResponse> closeRequest(HttpClientRequest request) async {
     try {
-      return await request.close();
+      final Duration? limit = _requestTimeout;
+      if (limit == null) return await request.close();
+      return await request.close().timeout(
+        limit,
+        onTimeout: () {
+          request.abort();
+          throw TimeoutException(
+            'WebDAV request timed out after $limit: ${request.method} '
+            '${request.uri.path}',
+            limit,
+          );
+        },
+      );
     } on Object catch (e) {
       _notifyIfConnectivity(e);
       rethrow;
     }
   }
+
+  /// 让经 [buildRequest] 自行发送请求的调用方（互联端点）也走同一条连接类失败
+  /// 通知：[e] 是连接类失败时触发 `onConnectivityError`，否则什么也不做。
+  void reportConnectivityFailure(Object e) => _notifyIfConnectivity(e);
 
   void _notifyIfConnectivity(Object e) {
     if (e is SocketException ||
@@ -280,6 +312,21 @@ class WebDavOps {
     }
   }
 
+  /// 在 [_requestTimeout] 内消费完 [response] 的响应体（null = 不封顶）。超时同样
+  /// 按连接类失败上报：响应头到了但体断流，与连不上是同一种「这条路坏了」。
+  Future<T> _bounded<T>(Future<T> body) async {
+    final Duration? limit = _requestTimeout;
+    try {
+      return limit == null ? await body : await body.timeout(limit);
+    } on TimeoutException catch (e) {
+      _notifyIfConnectivity(e);
+      rethrow;
+    }
+  }
+
+  Future<void> _drain(HttpClientResponse response) =>
+      _bounded(response.drain<void>());
+
   Future<void> testConnection() async {
     try {
       final request = await buildRequest('PROPFIND', _baseUrl);
@@ -289,7 +336,7 @@ class WebDavOps {
       final response = await closeRequest(request);
 
       if (response.statusCode == 401) {
-        await response.drain<void>();
+        await _drain(response);
         throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
       }
       // BUG-1323：403 是服务端的策略拒绝，用户要看到的是**服务端说了什么**，而不是
@@ -303,7 +350,7 @@ class WebDavOps {
           serverReason: await readSyncErrorBody(response),
         );
       }
-      await response.drain<void>();
+      await _drain(response);
       if (response.statusCode >= 400) {
         throw SyncBackendError('Server returned ${response.statusCode}');
       }
@@ -322,12 +369,12 @@ class WebDavOps {
     checkReq.headers.set('Content-Type', 'application/xml; charset=utf-8');
     checkReq.add(utf8.encode(propfindBody));
     final checkResp = await closeRequest(checkReq);
-    await checkResp.drain<void>();
+    await _drain(checkResp);
     if (checkResp.statusCode == 207) return;
 
     final mkcolReq = await buildRequest('MKCOL', path);
     final mkcolResp = await closeRequest(mkcolReq);
-    await mkcolResp.drain<void>();
+    await _drain(mkcolResp);
     if (mkcolResp.statusCode >= 400 && mkcolResp.statusCode != 405) {
       throw SyncBackendError(
         'Failed to create folder: ${mkcolResp.statusCode}',
@@ -344,7 +391,7 @@ class WebDavOps {
     request.headers.set('Content-Type', 'application/xml; charset=utf-8');
     request.add(utf8.encode(propfindBody));
     final response = await closeRequest(request);
-    await response.drain<void>();
+    await _drain(response);
     return response.statusCode == 207;
   }
 
@@ -356,7 +403,7 @@ class WebDavOps {
     request.headers.set('Destination', toPath);
     request.headers.set('Overwrite', 'F');
     final response = await closeRequest(request);
-    await response.drain<void>();
+    await _drain(response);
     checkStatus(response.statusCode, 'MOVE $fromPath -> $toPath');
   }
 
@@ -389,7 +436,7 @@ class WebDavOps {
       );
     }
 
-    final body = await response.transform(utf8.decoder).join();
+    final body = await _bounded(response.transform(utf8.decoder).join());
     if (response.statusCode != 207) {
       throw SyncBackendError(
         'PROPFIND failed: ${response.statusCode}',
@@ -503,12 +550,14 @@ class WebDavOps {
     final response = await closeRequest(request);
     checkStatus(response.statusCode, 'GET $fileId');
     final BytesBuilder builder = BytesBuilder(copy: false);
-    await for (final List<int> chunk in response) {
-      builder.add(chunk);
-      if (builder.length > maxJsonDownloadSize) {
-        throw SyncBackendError('GET $fileId failed: response too large');
+    await _bounded(() async {
+      await for (final List<int> chunk in response) {
+        builder.add(chunk);
+        if (builder.length > maxJsonDownloadSize) {
+          throw SyncBackendError('GET $fileId failed: response too large');
+        }
       }
-    }
+    }());
     return jsonDecode(utf8.decode(builder.takeBytes()));
   }
 
@@ -532,21 +581,21 @@ class WebDavOps {
     request.headers.set('Content-Length', '${bytes.length}');
     request.add(bytes);
     final response = await closeRequest(request);
-    await response.drain<void>();
+    await _drain(response);
     checkStatus(response.statusCode, 'PUT $path');
   }
 
   Future<bool> headFile(String path) async {
     final request = await buildRequest('HEAD', path);
     final response = await closeRequest(request);
-    await response.drain<void>();
+    await _drain(response);
     return response.statusCode >= 200 && response.statusCode < 300;
   }
 
   Future<void> deleteFile(String path) async {
     final request = await buildRequest('DELETE', path);
     final response = await closeRequest(request);
-    await response.drain<void>();
+    await _drain(response);
     if (response.statusCode >= 400 && response.statusCode != 404) {
       throw SyncBackendError('DELETE failed: ${response.statusCode}');
     }

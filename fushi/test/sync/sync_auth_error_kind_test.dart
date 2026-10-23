@@ -530,8 +530,14 @@ void main() {
           'unauthorizedKind: SyncAuthFailureKind.pairingRejected'
               .allMatches(src)
               .length;
-      expect(constructions, greaterThanOrEqualTo(5),
-          reason: '互联后端至少有 5 处 WebDavOps 构造点');
+      // 下限只防「文件改名/扫描面丢了」导致的空扫描恒真。XVEF3huDTF 把暂定句柄与
+      // 已解析句柄两处收进唯一构造点 `_sessionOps`，构造点由 5 处合并为 4 处
+      // （默认探测 / 钉指纹探测 / _sessionOps / testConnection）——凭据语义覆盖不变。
+      expect(constructions, greaterThanOrEqualTo(4),
+          reason: '互联后端至少有 4 处 WebDavOps 构造点');
+      expect(RegExp(r'_sessionOps\(').allMatches(src).length,
+          greaterThanOrEqualTo(3),
+          reason: '暂定句柄与解析后句柄都必须经 _sessionOps 构造（定义 + 两处调用）');
       expect(declared, constructions,
           reason: '有 WebDavOps 构造点没声明 unauthorizedKind —— '
               '那条路径上的对端 401 会重新被说成「登录已过期」');

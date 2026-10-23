@@ -1049,6 +1049,59 @@ async function fushiResolveBilibiliPgcPlayurl(tabId, epId) {
   return (typeof body === 'string' && body) ? body : null;
 }
 
+// 反馈 Atbl_kOuZK：B 站稿件（`/video/BV...`）的 view + playurl 也改在**页面主世界**里取，
+// 回传 playurl 原始响应体，服务端只挑音轨。
+//
+// 为什么不再让服务端匿名去取：服务端发的是不带 cookie 的裸请求，B 站风控对它回
+// HTTP 412（海外 IP / 代理出口尤其常见），而同一台机器、同一个出口上的页面本身能正常
+// 播放——页面的请求带着用户自己的会话 cookie。这里发的就是页面自己会发的那两个请求
+// （同源 Origin、浏览器自动带 cookie），不改 UA、不伪造任何头，凭据不出浏览器，只回传
+// 响应体。取不到（注入被拦 / 接口改版 / 超时）返回 null，调用方照旧让服务端自己解析。
+async function fushiResolveBilibiliUgcPlayurl(tabId, bvid, page) {
+  let results = null;
+  try {
+    results = await Promise.race([
+      chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        world: 'MAIN',
+        // func 被序列化后注入另一个世界，**不得闭包引用本作用域**的任何变量。
+        args: [String(bvid), Number.isInteger(page) && page >= 1 ? page : 1],
+        func: async (bv, p) => {
+          try {
+            const viewRes = await fetch(
+              'https://api.bilibili.com/x/web-interface/view?bvid='
+                + encodeURIComponent(bv),
+              { credentials: 'include' });
+            if (!viewRes.ok) return null;
+            const view = await viewRes.json();
+            if (!view || view.code !== 0 || !view.data) return null;
+            const pages = Array.isArray(view.data.pages) ? view.data.pages : [];
+            const entry = (p >= 1 && p <= pages.length) ? pages[p - 1] : pages[0];
+            const cid = (entry && entry.cid) || view.data.cid;
+            if (!cid) return null;
+            const playRes = await fetch(
+              'https://api.bilibili.com/x/player/playurl?bvid='
+                + encodeURIComponent(bv) + '&cid=' + encodeURIComponent(String(cid))
+                + '&fnval=4048&fourk=1',
+              { credentials: 'include' });
+            if (!playRes.ok) return null;
+            return await playRes.text();
+          } catch (_) {
+            return null;
+          }
+        },
+      }),
+      new Promise((resolve) => {
+        setTimeout(() => resolve(null), FUSHI_BILIBILI_PGC_RESOLVE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (_) {
+    return null;
+  }
+  const body = results && results[0] ? results[0].result : null;
+  return (typeof body === 'string' && body) ? body : null;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // 发给 offscreen 的消息由 offscreen 处理，background 不插手。
   if (msg && msg.target === 'offscreen') return false;
@@ -1519,11 +1572,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // B 站番剧（PGC）的音轨由页面主世界解析（见 `fushiResolveBilibiliPgcPlayurl`）。
         // **解析不到就连 kind 一起不发**：服务端落到通用兜底（解码帧 + 例句、无句子音频），
         // 与改动前番剧页的行为逐字一致——既不谎报「有音频」去出坏卡，也不新增失败提示。
+        // 稿件（'bilibili'）同样先在页面主世界里取（服务端匿名请求会被 B 站风控 412，
+        // 反馈 Atbl_kOuZK）；取不到就不带响应体，kind 照发，服务端回落到自己解析。
         let pgcPlayurlBody = null;
         if (msg.clipSourceKind === 'bilibili-pgc' && msg.clipSourceId &&
             _sender && _sender.tab && Number.isInteger(_sender.tab.id)) {
           pgcPlayurlBody = await fushiResolveBilibiliPgcPlayurl(
             _sender.tab.id, msg.clipSourceId);
+        } else if (msg.clipSourceKind === 'bilibili' && msg.clipSourceId &&
+            _sender && _sender.tab && Number.isInteger(_sender.tab.id)) {
+          pgcPlayurlBody = await fushiResolveBilibiliUgcPlayurl(
+            _sender.tab.id, msg.clipSourceId, msg.clipSourcePart);
         }
         const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
           ? null

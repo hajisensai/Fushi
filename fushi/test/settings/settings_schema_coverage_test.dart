@@ -598,6 +598,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Favorite current sentence': _kFloatingBallSceneButtons,
   'floatingBall/Screenshot': _kFloatingBallSceneButtons,
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
+  // 截屏识字制卡带图：生效点是制卡那一刻（词典弹窗 mixin / 覆盖窗委托读偏好、按截图
+  // 裁卡图），设置页里没有制卡面。裁图与通道载荷由专项测试钉住。
+  'floatingBall/Add screenshot to cards':
+      'test/floating_ball/screen_ocr_card_image_test.dart + '
+      'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
@@ -716,6 +721,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/anki/anki_overwrite_scope_test.dart + test/srs/srs_mining_test.dart',
   'cardCreation/Compact glossaries':
       'test/anki/anki_compact_glossaries_guard_test.dart',
+  // 「制卡提示」两个开关（反馈 zNuGKLIhmT / aK5wv0CnWf）：写的是内存 DB 里的偏好，
+  // changed / persisted 已由本测试证实；效果（哪类 toast 不弹）在 widget 树里看不见
+  // （FushiToast 走全局 navigatorKey 的 overlay），由纯函数裁决 + 接线源码守卫咬住。
+  'cardCreation/Show mining confirmations':
+      'test/anki/mine_notice_toggle_test.dart',
+  'cardCreation/Show duplicate-card notices':
+      'test/anki/mine_notice_toggle_test.dart',
+  // 「动图只播放一次」（反馈 ZxyIMK-C5V）：效果在 ffmpeg 产物的循环计数里，widget
+  // 树看不到；参数映射与两条动图链的接线由专项测试咬住（-loop 口径已实测）。
+  'cardCreation/Play animated images once':
+      'test/mining/mining_animated_play_once_test.dart',
   'cardCreation/Add "fushi" tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
@@ -941,6 +957,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 直通：下发值由 mpv 配置测试咬住；真正的码流直通要接功放 / 回音壁才能验。
   'video/Dolby / DTS passthrough':
       'test/media/video/video_mpv_config_test.dart',
+  // 音量上限（W-qZRr3lwK）：volume-max 下发与编解码由 mpv 配置测试咬住，各音量入口
+  // 按上限 clamp 由控制器测试咬住；实际放大响度要真机听。
+  'video/Volume limit': 'test/media/video/video_player_controller_test.dart',
   // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
   // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
   "video/Respect subtitle's own style":
@@ -1372,6 +1391,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/sync/interconnect_share_scope_test.dart',
   'interconnect/Share favorites':
       'test/sync/interconnect_share_scope_test.dart',
+  // 互联通道自己的自动同步（反馈 5nWEirdCs2 / BUG-3668）：开关写 interconnect_sync_auto，
+  // 效果是自动路径只跑开着的通道（关互联云照跑 / 关云互联照跑），迁移三态在
+  // sync_repository_test。
+  'interconnect/Auto sync': 'test/sync/sync_channel_isolation_test.dart',
   // service-config 同步：开关是请求前的进场门（关 = 连请求都不发），且是设备本地键。
   'interconnect/Sync service configuration from host':
       'test/sync/interconnect_service_config_test.dart',

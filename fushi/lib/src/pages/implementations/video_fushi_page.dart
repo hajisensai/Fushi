@@ -88,6 +88,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/source_review_remote_report_gate.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -389,6 +390,8 @@ import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart'
+    show nativeOpenFailureDiagnosis;
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
@@ -914,6 +917,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   ///   离开。
   /// - [caretHoldsPause]：字级选词光标会话激活时暂停由它接管（与
   ///   [shouldResumeAfterLookupDismiss] 同一条让位），鼠标放哪儿都不该替它决定续播。
+  /// - [pointerOverFloatingBall]：指针停在应用内悬浮球上（[appFloatingBallPointerInside]）
+  ///   = 要操作应用（反馈 / 截图……），不是离开去看视频（反馈 5yWS2o6U6q）。
   /// - [hiddenByDialog]：制卡 / 选句上下文 / 打开卡片这类对话框期间，浮层被**停靠到
   ///   屏外**（BUG-797/1040/1327 同族：`_popupHidingDialogDepth`），它那层 MouseRegion
   ///   随之离开指针并报 exit，而 `hasVisiblePopup` 看的是 controller 级 visible、仍为
@@ -930,6 +935,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required bool overSubtitle,
     bool caretHoldsPause = false,
     bool hiddenByDialog = false,
+    bool pointerOverFloatingBall = false,
   }) =>
       enabled &&
       openedByHover &&
@@ -937,7 +943,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       !pointerOverPopup &&
       !overSubtitle &&
       !caretHoldsPause &&
-      !hiddenByDialog;
+      !hiddenByDialog &&
+      !pointerOverFloatingBall;
 
   /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
   /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
@@ -2127,6 +2134,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
+
+  /// 「识别一次当前画面」请求序号（反馈 X3ozgOAx8v）：[_ocrCurrentFrame] 每次 +1，
+  /// 暂停 OCR 覆盖层看到变化就手动识别当前暂停帧（见
+  /// [VideoGraphicSubtitleOcrOverlay.manualRequestSerial]）。
+  final ValueNotifier<int> _manualFrameOcrRequests = ValueNotifier<int>(0);
 
   /// 在线视频后台制卡在途数（弹窗已返回「已加入」、媒体还在准备）。驱动右上角角标
   /// （见 mine_queue.part.dart），与 OSD 一样用 notifier，全屏路由也跟着刷新。
@@ -3336,6 +3348,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _registerExternalNavigation();
     // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
     sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
+    appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
     if (Platform.isWindows) {
@@ -3687,7 +3700,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           'network stream never opened within '
               '${2500 + _kNetworkMediaOpenGraceMs}ms '
               '(duration/position stayed 0); '
-              'lastPlayerError=${_lastPlaybackErrorMessage ?? "<none>"}',
+              '${nativeOpenFailureDiagnosis(_lastPlaybackErrorMessage)}',
           StackTrace.current,
         );
         controller.removeListener(_promoteVideoReadyOnFirstFrame);
@@ -4591,7 +4604,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final double v = raw is num
         ? raw.toDouble()
         : double.tryParse(raw?.toString() ?? '') ?? 100.0;
-    return v.clamp(0.0, 100.0).toDouble();
+    // 上限随 mpv 配置的「音量上限」；controller 开片时还会按同一上限再 clamp 一次。
+    final double max = VideoMpvConfig.decode(
+      appModel.videoMpvConfig,
+    ).volumeMax.toDouble();
+    return v.clamp(0.0, max).toDouble();
   }
 
   /// 读 per-book/per-episode 远端断点位置（无则 0，从头）。
@@ -4989,6 +5006,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 载入单视频（无播放列表）：优先用 DB 已存 cue；否则先尝试恢复用户上次选的
   /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
   Future<void> _loadSingle(VideoBookRow row) async {
+    // iOS：下面先要读同目录字幕 / 封面等原文件，访问窗口得在第一次读盘前就位
+    // （BUG-3697；控制器 load 里还有一道，覆盖不经这里的打开路径）。
+    await SourceFolderAccess.instance.ensureForPath(row.videoPath);
     final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
     final ({String videoPath, String? subtitleSource}) paths =
         await _relocateSingleMediaPaths(row);
@@ -6080,6 +6100,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
     sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
+    appFloatingBallPointerInside.removeListener(_onFloatingBallPointerChanged);
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
@@ -6212,6 +6233,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _manualFrameOcrRequests.dispose();
     _minesInFlight.dispose();
     _stagedMineCount.dispose();
     _longPressSpeedBadge.dispose();
@@ -6747,6 +6769,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _hoverLeaveResumeTimer = null;
   }
 
+  /// 指针进 / 出应用内悬浮球（反馈 5yWS2o6U6q）。进球撤表：移到球上是要操作应用，
+  /// 不是离开去看视频。出球重新起表：球外可能是空白（随后 barrier 的 hover 会接着
+  /// 判），也可能直接出了窗口（之后不会再有任何 hover 事件，不起表视频就卡在暂停）；
+  /// 到期由 [_fireHoverLeaveResume] 复核全部门控（回到字幕 / 浮层上、宿主路由被
+  /// 反馈页盖住都会挡下）。
+  void _onFloatingBallPointerChanged() {
+    if (!mounted) return;
+    if (appFloatingBallPointerInside.value) {
+      _cancelHoverLeaveResume();
+    } else {
+      _armHoverLeaveResume();
+    }
+  }
+
   /// 指针离开了「字幕 + 浮层」这整片查词面（全屏 barrier 的 [MouseRegion] exit = 指针
   /// 离开窗口，或浮层的 exit = 指针移出浮层）。起表而不直接关：指针可能只是从浮层挪回
   /// 字幕上继续查下一个词，到期复核会把那种情况挡掉。
@@ -6798,6 +6834,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _subtitleListHitTester.hitTest(_lastGlobalPointerPos) != null,
       caretHoldsPause: _videoCaretActive,
       hiddenByDialog: lookupPopupHiddenByDialog,
+      pointerOverFloatingBall: appFloatingBallPointerInside.value,
     )) {
       return;
     }
@@ -6938,10 +6975,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 图形字幕 OCR 查词层。引擎解析与漫画在线直读同一口径（引擎偏好 / Lens 上传
   /// 同意 / 低置信度交 AI 重读），见 `graphic_subtitle_ocr.dart`。
   Widget _buildGraphicSubtitleOcrOverlay(VideoPlayerController controller) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _manualFrameOcrRequests,
+      builder: (BuildContext context, int manualSerial, Widget? _) =>
+          _buildGraphicSubtitleOcrOverlayWith(controller, manualSerial),
+    );
+  }
+
+  Widget _buildGraphicSubtitleOcrOverlayWith(
+    VideoPlayerController controller,
+    int manualSerial,
+  ) {
     return VideoGraphicSubtitleOcrOverlay(
       controller: controller,
       fit: videoFitModeToBoxFit(_videoFitMode),
       scope: appModel.videoPauseOcrScope,
+      manualRequestSerial: manualSerial,
       onEnableRequested: () => unawaited(_enablePauseOcrForGraphicSubtitles()),
       prepare: _prepareGraphicSubtitleOcr,
       onCharTap: (String sentence, int graphemeIndex, Rect globalRect) =>
@@ -6965,6 +7014,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _videoButtonBarHeight +
           8 * _videoUiScale,
     );
+  }
+
+  /// 识别一次当前画面（反馈 X3ozgOAx8v，控制条按钮 / 快捷键 videoOcrFrame）：正在播放
+  /// 就先暂停，再让暂停 OCR 覆盖层把这一帧当手动请求识别——不看「暂停时自动识别」范围
+  /// （默认关）。网页站点后端没有 mpv 截帧，诚实提示不可用。
+  void _ocrCurrentFrame() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    if (controller.isWebBackend) {
+      _showOsd(t.video_ocr_frame_web_unsupported, icon: FushiIcons.ocr);
+      return;
+    }
+    if (controller.isPlaying) unawaited(controller.pause());
+    _manualFrameOcrRequests.value++;
   }
 
   /// BUG-3339：暂停 OCR 默认关闭，用户在图片字幕帧的提示上点「开启」——只开到
@@ -7202,6 +7265,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 词头 / 链接 / 汉字点击原地跳转也自动朗读，与上面嵌套查词的 autoRead 同口径。
       autoReadOnNavigate: true,
     );
+  }
+
+  /// BUG-3685：查词浮层跟随的路由——窗口模式是本页路由，全屏期间是全屏路由（与键盘
+  /// 所有者同一口径，见 [_handleWindowsImeSpaceDown]）。别的路由（反馈 / 设置等整页、
+  /// 根导航上的对话框）压上来时它不再是栈顶，[DictionaryPageMixin] 据此把浮层停靠屏外、
+  /// 撤掉整屏 barrier；查词会话与「因查词暂停」原样保留，回到本页即复原。
+  @override
+  ModalRoute<Object?>? get lookupOwnerRoute {
+    if (!mounted) return null;
+    return _videoFullscreenActive
+        ? _videoFullscreenRoute
+        : ModalRoute.of(context);
+  }
+
+  /// [LookupOwnerRouteProbe] 回报宿主路由栈顶状态变了：帧后刷新根 Overlay 浮层 entry
+  /// （它只在自己 build 时读 [lookupOwnerRoute]）。探针回调发生在 build 阶段，不能同步
+  /// 刷新——与 [_buildVideoBody] 每帧的同步走同一个帧后收口。
+  void _onLookupOwnerRouteChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
   }
 
   /// 把查词浮层栈同步到根 Overlay：栈非空且未插入则插入、栈空则移除、否则
@@ -7752,6 +7834,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : () => _runWhenImmersiveAllowsShortcuts(
               () => unawaited(_saveScreenshot(withSubtitles: true)),
             ),
+      // 网页档也走 [_ocrCurrentFrame]：它会给 OSD 说明不可用，而不是静默 no-op。
+      ocrFrame: () => _runWhenImmersiveAllowsShortcuts(_ocrCurrentFrame),
       toggleFullscreen: () => _runWhenImmersiveAllowsShortcuts(() {
         final BuildContext? ctx = _videoControlsContext;
         if (ctx != null && ctx.mounted) {
@@ -9078,6 +9162,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
       case VideoControlItem.danmaku:
+      case VideoControlItem.ocrFrame:
       // 自定义「快捷键」按钮就是一个普通图标按钮：图标 / tooltip 由绑定动作决定
       // （见 `_videoControlItemIcon` / `_videoControlItemTooltip`），点击走
       // `_activateVideoControlItem` 查动作表。没有任何专属渲染需求。
@@ -9258,6 +9343,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.nextCue:
       case VideoControlItem.replayCue:
       case VideoControlItem.screenshot:
+      case VideoControlItem.ocrFrame:
       case VideoControlItem.clipExport:
       case VideoControlItem.subtitleTrack:
       case VideoControlItem.audioTrack:
@@ -9479,6 +9565,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.fullscreen;
       case VideoControlItem.screenshot:
         return Icons.photo_camera_outlined;
+      case VideoControlItem.ocrFrame:
+        return FushiIcons.ocr;
       case VideoControlItem.clipExport:
         return _clipExportIcon;
       case VideoControlItem.subtitleTrack:
@@ -9559,6 +9647,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return t.video_control_fullscreen;
       case VideoControlItem.screenshot:
         return t.video_control_screenshot;
+      case VideoControlItem.ocrFrame:
+        return t.video_control_ocr_frame;
       case VideoControlItem.clipExport:
         return _clipExportTooltip;
       case VideoControlItem.subtitleTrack:
@@ -9698,6 +9788,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.screenshot:
         unawaited(_saveScreenshot());
+        break;
+      case VideoControlItem.ocrFrame:
+        _ocrCurrentFrame();
         break;
       case VideoControlItem.clipExport:
         unawaited(_toggleClipExport());
@@ -9875,6 +9968,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 弹幕开关只在用户亲手拖上播放器时出现（默认不出现，也不进「⋯」）；
             // 设置面板里另有同一个开关。
             item != VideoControlItem.danmaku &&
+            // 识别当前画面同理：默认不出现、不进「⋯」，用户拖上播放器才有。
+            item != VideoControlItem.ocrFrame &&
             item.isChipRenderable &&
             _shouldRenderControlItem(item))
           VideoBarEntry(
@@ -11121,7 +11216,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       onMpvConfigChanged: (VideoMpvConfig cfg) async {
         await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
-        await _controller?.applyMpvConfig(cfg);
+        final VideoPlayerController? controller = _controller;
+        await controller?.applyMpvConfig(cfg);
+        // 「音量上限」调低时 controller 已把音量收进新上限：显示与持久化跟上。
+        if (controller != null && identical(controller, _controller)) {
+          final double target = controller.requestedVolume;
+          if (_playbackVolume > target) {
+            _playbackVolume = target;
+            _queuePersistVideoVolume(target);
+          }
+          _syncVolumeDisplay(controller.muted ? 0.0 : target);
+        }
         final List<String> paths = cfg.highQuality
             ? await resolveEnabledShaderPaths(
                 decodeEnabledShaders(appModel.videoShadersEnabled),

@@ -74,9 +74,10 @@ void main() {
         '2.3.0-debug.150',
         '2.3.0-debug.200',
         '2.3.0-debug.200+200', // build metadata 不影响
-        // 更高基版本也要序号不小于发布序号：序号是全通道同一把尺（`git rev-list
-        // --count`），基版本高但序号小的构建早于含修复的那次构建（50ae205e81）。
-        '2.4.0-debug.151',
+        // 更高基版本、序号不低：仍已包含。序号（git rev-list --count，三通道同尺）
+        // 先于基版本判先后（50ae205e81）——更高基但序号更低的构建更早，
+        // 并不含修复，见下一条。
+        '2.4.0-debug.150',
       ]) {
         final FeedbackFixProgress p = _progress(
           fix,
@@ -86,6 +87,7 @@ void main() {
         expect(p, isA<FeedbackFixInstalled>(), reason: local);
         expect((p as FeedbackFixInstalled).version, '2.3.0-debug.150');
       }
+      // 50ae205e81：基版本更高但序号更低 = 更早构建，不含这次修复。
       expect(
         _progress(fix, channel: UpdateChannel.debug, local: '2.4.0-debug.10'),
         isA<FeedbackFixUpdateAvailable>(),

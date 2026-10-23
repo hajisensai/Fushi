@@ -82,10 +82,15 @@ void main() {
       expect(entries.every((SourceFileEntry e) => !e.isDirectory), isTrue);
     });
 
-    test('listFiles 不存在的目录返回空列表（不抛）', () async {
-      final List<SourceFileEntry> entries =
-          await fs.listFiles(p.join(tmp.path, 'nope'));
-      expect(entries, isEmpty);
+    // 契约反转（Tz04dfBf2f）：以前回空列表，扫描根读不到（iOS 沙盒外未授权路径、
+    // 盘没挂上）时来源被记成「0 个媒体、无错误」。现在必须抛，由扫描器落 lastScanError。
+    test('listFiles 不存在 / 读不到的目录抛 FileSystemException（带路径）', () async {
+      final String missing = p.join(tmp.path, 'nope');
+      await expectLater(
+        fs.listFiles(missing),
+        throwsA(isA<FileSystemException>()
+            .having((FileSystemException e) => e.path, 'path', missing)),
+      );
     });
 
     test('listSiblingNames 返回同目录所有文件 basename（含自身，供 sidecar 匹配）', () async {

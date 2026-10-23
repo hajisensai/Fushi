@@ -81,6 +81,31 @@ JellyfinApi _settingsJellyfinApi({
   client: httpClientFactory?.call(),
 );
 
+/// 在 [probe] 给出的根地址上跑真正的认证请求 [op]，返回定案的根地址与结果。
+///
+/// 探测已确认时只有一个根地址，[op] 的任何异常原样抛。探测未确认（公开端点
+/// 全 404，WMxpfrPXJp）时按候选根地址依次试：认证请求回 404 说明这个根地址下
+/// 没有 API，换下一个；其它答复（成功、401 账号错、403 白名单……）都是服务器
+/// 的明确回应，就此定案。所有候选都 404 才判「连不上」，报探测时的那条 404。
+Future<(String, T)> _runOnServerBase<T>({
+  required JellyfinServerProbe probe,
+  required String typedUrl,
+  required JellyfinApi Function(String baseUrl) apiFor,
+  required Future<T> Function(JellyfinApi api) op,
+}) async {
+  for (final String base in probe.baseCandidates) {
+    final JellyfinApi api = apiFor(base);
+    try {
+      return (base, await op(api));
+    } on JellyfinApiException catch (e) {
+      if (probe.confirmed || e.statusCode != 404) rethrow;
+    } finally {
+      api.close();
+    }
+  }
+  throw JellyfinConnectFailure(typedUrl, probe.unconfirmedBy!);
+}
+
 /// 地址 + 用户名 + 密码登录一台 Jellyfin / Emby 服务器并落库（配置页「登录」与
 /// CLI `config items ... add` 共用）。同账号重复登录只换令牌、保留库选择与线路。
 ///
@@ -101,72 +126,68 @@ Future<JellyfinServerConfig> signInJellyfinServer(
   // 设备身份：本机 per-install id（见 JellyfinApi.deviceId），令牌与它绑定、随
   // 配置一起持久化。
   final String deviceId = await syncRepo.getOrCreateDeviceId();
-  JellyfinApi api = _settingsJellyfinApi(
+  final JellyfinApi probeApi = _settingsJellyfinApi(
     serverUrl: typedUrl,
     deviceId: deviceId,
     httpClientFactory: httpClientFactory,
   );
+  // 先探连通性再登录：连不上与账号错是两种完全不同的处置。探测会按 Emby 官方
+  // 客户端的顺序在 `/emby` 前缀与 `/System/Ping` 之间回落（BUG-3137），探出来的
+  // 根地址才是之后登录与存盘用的地址；公开端点全 404 时由登录请求本身定案
+  // （WMxpfrPXJp，见 [_runOnServerBase]）。
+  final JellyfinServerProbe probe;
   try {
-    // 先探连通性再登录：连不上与账号错是两种完全不同的处置。探测会按 Emby 官方
-    // 客户端的顺序在 `/emby` 前缀与 `/System/Ping` 之间回落（BUG-3137），探出来的
-    // 根地址才是之后登录与存盘用的地址。
-    final JellyfinServerProbe probe;
-    try {
-      probe = await api.probeServer();
-    } catch (e) {
-      throw JellyfinConnectFailure(typedUrl, e);
-    }
-    final String serverUrl = probe.baseUrl;
-    if (serverUrl != api.serverUrl) {
-      api.close();
-      api = _settingsJellyfinApi(
-        serverUrl: serverUrl,
-        deviceId: deviceId,
-        httpClientFactory: httpClientFactory,
-      );
-    }
-    final JellyfinAuthResult auth = await api.authenticateByName(
-      user,
-      password,
-    );
-    if (auth.accessToken.isEmpty || auth.userId.isEmpty) {
-      throw JellyfinApiException(0, '/Users/AuthenticateByName');
-    }
-    final JellyfinServerConfig fresh = JellyfinServerConfig(
-      serverUrl: serverUrl,
-      username: user,
-      userId: auth.userId,
-      accessToken: auth.accessToken,
-      serverName: auth.serverName,
-      deviceId: deviceId,
-    );
-    // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
-    // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
-    // 「同一台」按线路认（登录地址或任一备用线路命中），不然从公网线路重登会多出
-    // 一条 serverUrl=公网 的记录：两个 sourceId、两套封面 namespace、两张卡。
-    final List<JellyfinServerConfig> existing = await syncRepo
-        .getJellyfinServers();
-    JellyfinServerConfig? previous;
-    for (final JellyfinServerConfig s in existing) {
-      if (s.userId == auth.userId && s.ownsRoute(serverUrl)) {
-        previous = s;
-        break;
-      }
-    }
-    final JellyfinServerConfig saved = previous == null
-        ? fresh
-        : previous.withRefreshedSession(
-            username: user,
-            accessToken: auth.accessToken,
-            deviceId: deviceId,
-            signedInUrl: serverUrl,
-            serverName: auth.serverName,
-          );
-    await syncRepo.upsertJellyfinServer(saved);
-    return saved;
+    probe = await probeApi.probeServer();
+  } catch (e) {
+    throw JellyfinConnectFailure(typedUrl, e);
   } finally {
-    api.close();
+    probeApi.close();
   }
+  final (String serverUrl, JellyfinAuthResult auth) = await _runOnServerBase(
+    probe: probe,
+    typedUrl: typedUrl,
+    apiFor: (String base) => _settingsJellyfinApi(
+      serverUrl: base,
+      deviceId: deviceId,
+      httpClientFactory: httpClientFactory,
+    ),
+    op: (JellyfinApi api) => api.authenticateByName(user, password),
+  );
+  if (auth.accessToken.isEmpty || auth.userId.isEmpty) {
+    throw JellyfinApiException(0, '/Users/AuthenticateByName');
+  }
+  final JellyfinServerConfig fresh = JellyfinServerConfig(
+    serverUrl: serverUrl,
+    username: user,
+    userId: auth.userId,
+    accessToken: auth.accessToken,
+    serverName: auth.serverName,
+    deviceId: deviceId,
+  );
+  // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
+  // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
+  // 「同一台」按线路认（登录地址或任一备用线路命中），不然从公网线路重登会多出
+  // 一条 serverUrl=公网 的记录：两个 sourceId、两套封面 namespace、两张卡。
+  final List<JellyfinServerConfig> existing = await syncRepo
+      .getJellyfinServers();
+  JellyfinServerConfig? previous;
+  for (final JellyfinServerConfig s in existing) {
+    if (s.userId == auth.userId && s.ownsRoute(serverUrl)) {
+      previous = s;
+      break;
+    }
+  }
+  final JellyfinServerConfig saved = previous == null
+      ? fresh
+      : previous.withRefreshedSession(
+          username: user,
+          accessToken: auth.accessToken,
+          deviceId: deviceId,
+          signedInUrl: serverUrl,
+          serverName: auth.serverName,
+        );
+  await syncRepo.upsertJellyfinServer(saved);
+  return saved;
 }
 
 /// 给一台服务器添加一条备用线路（配置页「添加线路」与 CLI 共用）。
@@ -186,46 +207,52 @@ Future<JellyfinServerConfig> addJellyfinRoute(
   final String url = JellyfinApi.normalizeServerUrl(rawUrl);
   if (url.isEmpty) throw ArgumentError('线路地址不能为空');
   if (config.routeUrls.contains(url)) throw JellyfinRouteExistsException(url);
-  JellyfinApi api = _settingsJellyfinApi(
+  final JellyfinApi probeApi = _settingsJellyfinApi(
     serverUrl: url,
     accessToken: config.accessToken,
     deviceId: config.deviceId,
     httpClientFactory: httpClientFactory,
   );
+  final JellyfinServerProbe probe;
   try {
-    final JellyfinServerProbe probe;
-    try {
-      probe = await api.probeServer();
-    } catch (e) {
-      throw JellyfinConnectFailure(url, e);
-    }
-    // 探测可能补上 / 去掉 `/emby` 前缀（BUG-3137）：存的是探出来的根地址。
-    if (probe.baseUrl != url) {
-      api.close();
-      api = _settingsJellyfinApi(
-        serverUrl: probe.baseUrl,
+    probe = await probeApi.probeServer();
+  } catch (e) {
+    throw JellyfinConnectFailure(url, e);
+  } finally {
+    probeApi.close();
+  }
+  // 探测可能补上 / 去掉 `/emby` 前缀（BUG-3137）：存的是探出来的根地址。
+  if (probe.baseUrl != url && config.routeUrls.contains(probe.baseUrl)) {
+    throw JellyfinRouteExistsException(probe.baseUrl);
+  }
+  final String routeUrl;
+  try {
+    final (String resolved, _) = await _runOnServerBase(
+      probe: probe,
+      typedUrl: url,
+      apiFor: (String base) => _settingsJellyfinApi(
+        serverUrl: base,
         accessToken: config.accessToken,
         deviceId: config.deviceId,
         httpClientFactory: httpClientFactory,
-      );
-    }
-    final String routeUrl = probe.baseUrl;
-    if (routeUrl != url && config.routeUrls.contains(routeUrl)) {
-      throw JellyfinRouteExistsException(routeUrl);
-    }
-    try {
-      await api.views(config.userId);
-    } catch (e) {
-      throw JellyfinRouteVerifyFailure(routeUrl, e);
-    }
-    final JellyfinServerConfig next = config.copyWithRoutes(
-      alternateUrls: <String>[...config.alternateUrls, routeUrl],
+      ),
+      op: (JellyfinApi api) => api.views(config.userId),
     );
-    await syncRepo.upsertJellyfinServer(next);
-    return next;
-  } finally {
-    api.close();
+    routeUrl = resolved;
+  } on JellyfinConnectFailure {
+    rethrow;
+  } catch (e) {
+    throw JellyfinRouteVerifyFailure(probe.baseUrl, e);
   }
+  // 未确认的探测由读媒体库定案根地址（WMxpfrPXJp），定案后再查一次重复。
+  if (routeUrl != url && config.routeUrls.contains(routeUrl)) {
+    throw JellyfinRouteExistsException(routeUrl);
+  }
+  final JellyfinServerConfig next = config.copyWithRoutes(
+    alternateUrls: <String>[...config.alternateUrls, routeUrl],
+  );
+  await syncRepo.upsertJellyfinServer(next);
+  return next;
 }
 
 /// 一台服务器上的视频域媒体库清单（`/Users/{uid}/Views`，滤掉音乐 / 图书 / 照片）。
@@ -580,16 +607,18 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   /// 「在视频库中混排显示」（B4，全局偏好，默认关）：开了才把服务器条目拍平混进
   /// 首页 / 系列 / 全部视频；关着时条目只在「媒体服务器」分区按服务器自己的树浏览。
   Future<void> _setShowInLibrary(bool value) async {
-    await widget.settingsContext.appModel.prefsRepo
-        .setJellyfinShowInLibrary(value);
+    await widget.settingsContext.appModel.prefsRepo.setJellyfinShowInLibrary(
+      value,
+    );
     if (mounted) setState(() {});
   }
 
   /// 「进入视频页时自动列出条目」（全局偏好，非每服务器——它是用户对枚举行为的
   /// 取舍，换服务器重登也该保持）。只在混排开着时才有意义。
   Future<void> _setAutoList(bool value) async {
-    await widget.settingsContext.appModel.prefsRepo
-        .setJellyfinAutoListVideos(value);
+    await widget.settingsContext.appModel.prefsRepo.setJellyfinAutoListVideos(
+      value,
+    );
     if (mounted) setState(() {});
   }
 
@@ -649,8 +678,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   /// 两种可能都说出来。只追加不切换：用户在列表里点单选才换当前线路。
   Future<void> _addRoute(JellyfinServerConfig config) async {
     final String id = _idOf(config);
-    final String url =
-        JellyfinApi.normalizeServerUrl(_routeControllerFor(id).text);
+    final String url = JellyfinApi.normalizeServerUrl(
+      _routeControllerFor(id).text,
+    );
     if (url.isEmpty) {
       FushiToast.show(
         msg: t.jellyfin_route_add_failed,
@@ -753,88 +783,100 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   Widget build(BuildContext context) {
     return FutureBuilder<List<JellyfinServerConfig>>(
       future: _serversFuture,
-      builder: (BuildContext context,
-          AsyncSnapshot<List<JellyfinServerConfig>> snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Padding(
-            padding: EdgeInsets.all(16),
-            child: Center(child: FushiLoadingView(compact: true)),
-          );
-        }
-        final List<JellyfinServerConfig> servers =
-            snapshot.data ?? const <JellyfinServerConfig>[];
-        final TextTheme textTheme = Theme.of(context).textTheme;
-        final bool showInLibrary =
-            widget.settingsContext.appModel.prefsRepo.jellyfinShowInLibrary;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(t.jellyfin_settings_hint, style: textTheme.bodySmall),
-              const SizedBox(height: 8),
-              // B4：混排是显式 opt-in（默认关）。关着时下面的「自动列出」没有意义
-              // ——库页根本不会去问服务器要拍平清单——所以一并禁用而不是藏起来，
-              // 用户能看出两者的从属关系。
-              AdaptiveSettingsSwitchRow(
-                title: t.jellyfin_show_in_library_title,
-                subtitle: t.jellyfin_show_in_library_hint,
-                horizontalPadding: 0,
-                value: showInLibrary,
-                onChanged: _busy ? null : _setShowInLibrary,
-              ),
-              // BUG-1891 止血阀 ①：进页面自动枚举的总开关（默认开，小库无感）。
-              // 全局偏好，一处、放列表上方，不随服务器条目重复。
-              AdaptiveSettingsSwitchRow(
-                title: t.jellyfin_auto_list_title,
-                subtitle: t.jellyfin_auto_list_hint,
-                horizontalPadding: 0,
-                value: widget
-                    .settingsContext.appModel.prefsRepo.jellyfinAutoListVideos,
-                onChanged: (_busy || !showInLibrary) ? null : _setAutoList,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                t.jellyfin_servers_signed_in_title,
-                style: FushiSectionTitle.styleOf(
-                  context, FushiSectionTitleLevel.group),
-              ),
-              const SizedBox(height: 8),
-              if (servers.isEmpty)
-                SettingsEmptyState(
-                  icon: FushiIcons.server,
-                  title: t.jellyfin_servers_empty_hint,
-                )
-              else
-                // M3E：已登录服务器是一组分段卡片（首尾大圆角、行间 2），错峰进场。
-                FushiEntranceScope(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      for (int i = 0; i < servers.length; i++)
-                        FushiStaggeredEntrance(
-                          index: i,
-                          child: FushiGroupedListItem(
-                            index: i,
-                            count: servers.length,
-                            child: _buildServerRow(servers[i]),
-                          ),
-                        ),
-                    ],
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<List<JellyfinServerConfig>> snapshot,
+          ) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: FushiLoadingView(compact: true)),
+              );
+            }
+            final List<JellyfinServerConfig> servers =
+                snapshot.data ?? const <JellyfinServerConfig>[];
+            final TextTheme textTheme = Theme.of(context).textTheme;
+            final bool showInLibrary =
+                widget.settingsContext.appModel.prefsRepo.jellyfinShowInLibrary;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(t.jellyfin_settings_hint, style: textTheme.bodySmall),
+                  const SizedBox(height: 8),
+                  // B4：混排是显式 opt-in（默认关）。关着时下面的「自动列出」没有意义
+                  // ——库页根本不会去问服务器要拍平清单——所以一并禁用而不是藏起来，
+                  // 用户能看出两者的从属关系。
+                  AdaptiveSettingsSwitchRow(
+                    title: t.jellyfin_show_in_library_title,
+                    subtitle: t.jellyfin_show_in_library_hint,
+                    horizontalPadding: 0,
+                    value: showInLibrary,
+                    onChanged: _busy ? null : _setShowInLibrary,
                   ),
-                ),
-              const SizedBox(height: 16),
-              Text(t.jellyfin_servers_add_title,
-                  style: FushiSectionTitle.styleOf(
-                      context, FushiSectionTitleLevel.group)),
-              const SizedBox(height: 8),
-              _buildSignInForm(),
-            ],
-          ),
-        );
-      },
+                  // BUG-1891 止血阀 ①：进页面自动枚举的总开关（默认开，小库无感）。
+                  // 全局偏好，一处、放列表上方，不随服务器条目重复。
+                  AdaptiveSettingsSwitchRow(
+                    title: t.jellyfin_auto_list_title,
+                    subtitle: t.jellyfin_auto_list_hint,
+                    horizontalPadding: 0,
+                    value: widget
+                        .settingsContext
+                        .appModel
+                        .prefsRepo
+                        .jellyfinAutoListVideos,
+                    onChanged: (_busy || !showInLibrary) ? null : _setAutoList,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    t.jellyfin_servers_signed_in_title,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (servers.isEmpty)
+                    SettingsEmptyState(
+                      icon: FushiIcons.server,
+                      title: t.jellyfin_servers_empty_hint,
+                    )
+                  else
+                    // M3E：已登录服务器是一组分段卡片（首尾大圆角、行间 2），错峰进场。
+                    FushiEntranceScope(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          for (int i = 0; i < servers.length; i++)
+                            FushiStaggeredEntrance(
+                              index: i,
+                              child: FushiGroupedListItem(
+                                index: i,
+                                count: servers.length,
+                                child: _buildServerRow(servers[i]),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+                  Text(
+                    t.jellyfin_servers_add_title,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildSignInForm(),
+                ],
+              ),
+            );
+          },
     );
   }
 
@@ -852,10 +894,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
           keyboardType: TextInputType.url,
         ),
         const SizedBox(height: 12),
-        FushiTextField(
-          controller: _userController,
-          labelText: t.sync_username,
-        ),
+        FushiTextField(controller: _userController, labelText: t.sync_username),
         const SizedBox(height: 12),
         FushiTextField(
           controller: _passwordController,
@@ -1052,31 +1091,29 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       count: config.routeUrls.length,
       selected: url == activeUrl,
       child: FushiListItem(
-            key: ValueKey<String>('jellyfin-route-$id-$url'),
-            leading: FushiRadio<String>(
-              value: url,
-              groupValue: activeUrl,
-              onChanged: _busy
-                  ? null
-                  : (String? v) {
-                      if (v != null) unawaited(_switchRoute(config, v));
-                    },
-            ),
-            title: Text(url),
-            subtitle: url == config.serverUrl
-                ? Text(t.jellyfin_route_primary_label)
-                : (url == activeUrl
-                    ? Text(t.jellyfin_route_active_label)
-                    : null),
-            trailing: url == config.serverUrl
-                ? null
-                : FushiIconButton(
-                    icon: FushiIcons.delete,
-                    tooltip: t.jellyfin_route_remove,
-                    onTap: _busy ? null : () => _removeRoute(config, url),
-                  ),
-            onTap: _busy ? null : () => _switchRoute(config, url),
-          ),
+        key: ValueKey<String>('jellyfin-route-$id-$url'),
+        leading: FushiRadio<String>(
+          value: url,
+          groupValue: activeUrl,
+          onChanged: _busy
+              ? null
+              : (String? v) {
+                  if (v != null) unawaited(_switchRoute(config, v));
+                },
+        ),
+        title: Text(url),
+        subtitle: url == config.serverUrl
+            ? Text(t.jellyfin_route_primary_label)
+            : (url == activeUrl ? Text(t.jellyfin_route_active_label) : null),
+        trailing: url == config.serverUrl
+            ? null
+            : FushiIconButton(
+                icon: FushiIcons.delete,
+                tooltip: t.jellyfin_route_remove,
+                onTap: _busy ? null : () => _removeRoute(config, url),
+              ),
+        onTap: _busy ? null : () => _switchRoute(config, url),
+      ),
     );
   }
 
@@ -1086,67 +1123,70 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   Widget _buildLibraryPicker(JellyfinServerConfig config) {
     final String id = _idOf(config);
     _selectedLibraryIds.putIfAbsent(id, () => config.libraryIds.toSet());
-    final Future<List<JellyfinLibraryView>> viewsFuture =
-        _viewsFutures.putIfAbsent(id, () => _loadViews(config));
+    final Future<List<JellyfinLibraryView>> viewsFuture = _viewsFutures
+        .putIfAbsent(id, () => _loadViews(config));
     return FutureBuilder<List<JellyfinLibraryView>>(
       future: viewsFuture,
-      builder: (BuildContext context,
-          AsyncSnapshot<List<JellyfinLibraryView>> snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Padding(
-            padding: EdgeInsets.all(12),
-            child: Center(child: FushiLoadingView(compact: true)),
-          );
-        }
-        if (snapshot.hasError) {
-          // 错误态：errorContainer 小色块（墨水屏只留描边）。
-          final ColorScheme cs = Theme.of(context).colorScheme;
-          final bool eink = isEinkTheme(context);
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: eink ? cs.surface : cs.errorContainer,
-                borderRadius: FushiM3eShape.smallRadius,
-                border: eink ? Border.all(color: cs.outline) : null,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(
-                      FushiIcons.error,
-                      size: 18,
-                      color: eink ? cs.onSurface : cs.onErrorContainer,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        t.jellyfin_libraries_load_failed,
-                        style: context.fushiType.bodySmall.copyWith(
+      builder:
+          (
+            BuildContext context,
+            AsyncSnapshot<List<JellyfinLibraryView>> snapshot,
+          ) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const Padding(
+                padding: EdgeInsets.all(12),
+                child: Center(child: FushiLoadingView(compact: true)),
+              );
+            }
+            if (snapshot.hasError) {
+              // 错误态：errorContainer 小色块（墨水屏只留描边）。
+              final ColorScheme cs = Theme.of(context).colorScheme;
+              final bool eink = isEinkTheme(context);
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: eink ? cs.surface : cs.errorContainer,
+                    borderRadius: FushiM3eShape.smallRadius,
+                    border: eink ? Border.all(color: cs.outline) : null,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: <Widget>[
+                        FushiIcon(
+                          FushiIcons.error,
+                          size: 18,
                           color: eink ? cs.onSurface : cs.onErrorContainer,
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            t.jellyfin_libraries_load_failed,
+                            style: context.fushiType.bodySmall.copyWith(
+                              color: eink ? cs.onSurface : cs.onErrorContainer,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
-          );
-        }
-        final List<JellyfinLibraryView> views =
-            snapshot.data ?? const <JellyfinLibraryView>[];
-        final Set<String> selected =
-            _selectedLibraryIds[id] ?? const <String>{};
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (int i = 0; i < views.length; i++)
-              _libraryRow(config, views, i, selected),
-          ],
-        );
-      },
+              );
+            }
+            final List<JellyfinLibraryView> views =
+                snapshot.data ?? const <JellyfinLibraryView>[];
+            final Set<String> selected =
+                _selectedLibraryIds[id] ?? const <String>{};
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int i = 0; i < views.length; i++)
+                  _libraryRow(config, views, i, selected),
+              ],
+            );
+          },
     );
   }
 
@@ -1162,15 +1202,15 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       index: index,
       count: views.length,
       child: FushiListItem(
-                title: Text(view.name),
-                trailing: FushiCheckbox(
-                  value: selected.contains(view.id),
-                  onChanged: _busy
-                      ? null
-                      : (bool? _) => _toggleLibrary(config, view.id),
-                ),
-                onTap: _busy ? null : () => _toggleLibrary(config, view.id),
-              ),
+        title: Text(view.name),
+        trailing: FushiCheckbox(
+          value: selected.contains(view.id),
+          onChanged: _busy
+              ? null
+              : (bool? _) => _toggleLibrary(config, view.id),
+        ),
+        onTap: _busy ? null : () => _toggleLibrary(config, view.id),
+      ),
     );
   }
 

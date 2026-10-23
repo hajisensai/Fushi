@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
@@ -16,6 +17,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/section_tab_order.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 /// MD3 tab 的左右内边距（逻辑像素，单侧）。
 ///
@@ -89,10 +92,16 @@ class LibrarySectionTab<T> {
     required this.value,
     required this.label,
     this.labelKey,
+    this.orderId,
   });
 
   final T value;
   final String label;
+
+  /// 用户自定义顺序里这一段的稳定身份（见 [LibrarySectionTabs.orderKey]）。值
+  /// 会随状态变的段（如「在线源」组页签的值是组内上次停留的分区）必须给；
+  /// null = 用 `value.toString()`。
+  final String? orderId;
 
   /// 挂在这一段文字上的稳定 key（测试 / 焦点驱动按 id 命中某段，不依赖文案）；
   /// null 不挂。
@@ -135,6 +144,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     this.secondary = false,
     this.fill = true,
     this.floating = false,
+    this.orderKey,
     super.key,
   }) : controller = null;
 
@@ -155,7 +165,8 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     this.floating = false,
     super.key,
   }) : selected = null,
-       onChanged = null;
+       onChanged = null,
+       orderKey = null;
 
   final List<LibrarySectionTab<T>> tabs;
 
@@ -187,7 +198,14 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// focusId 前缀（如 `game-library-tab`），焦点停靠点 id 为 `<prefix>-sections`。
   final String focusIdPrefix;
 
+  /// 非 null = 用户可自定义这排页签的顺序（反馈 ndQ5eXLcqp）：长按 / 右键页签栏
+  /// 弹出排序面板，顺序按页签 id 存在 `section_tab_order::<orderKey>`
+  /// （见 section_tab_order.dart）。只在自持形态可用——[controlled] 形态的下标
+  /// 绑着宿主的 [TabBarView]，重排会让两者对不上。
+  final String? orderKey;
+
   Widget _focusShell({
+    required List<LibrarySectionTab<T>> tabs,
     required T selectedValue,
     required ValueChanged<T> onSelect,
     required Widget child,
@@ -202,31 +220,44 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     );
   }
 
+  /// 自持形态按 [shownTabs]（可能已按用户顺序重排）画出整排。
+  Widget _buildSelfHeld(
+    BuildContext context,
+    List<LibrarySectionTab<T>> shownTabs,
+  ) {
+    final T selectedValue = selected as T;
+    final ValueChanged<T> onSelect = onChanged!;
+    return _focusShell(
+      tabs: shownTabs,
+      selectedValue: selectedValue,
+      onSelect: onSelect,
+      child: isGlassDesign(context)
+          ? _AppleSectionSegments<T>(
+              tabs: shownTabs,
+              selected: selectedValue,
+              onChanged: onSelect,
+              fill: fill && !floating,
+            )
+          : FushiSectionTabBar<T>(
+              tabs: shownTabs,
+              selected: selectedValue,
+              onChanged: onSelect,
+              secondary: secondary,
+              fill: fill,
+              floating: floating,
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final TabController? host = controller;
     if (host == null) {
-      final T selectedValue = selected as T;
-      final ValueChanged<T> onSelect = onChanged!;
-      return _focusShell(
-        selectedValue: selectedValue,
-        onSelect: onSelect,
-        child: isGlassDesign(context)
-            ? _AppleSectionSegments<T>(
-                tabs: tabs,
-                selected: selectedValue,
-                onChanged: onSelect,
-                fill: fill && !floating,
-              )
-            : FushiSectionTabBar<T>(
-                tabs: tabs,
-                selected: selectedValue,
-                onChanged: onSelect,
-                secondary: secondary,
-                fill: fill,
-                floating: floating,
-              ),
-      );
+      final String? key = orderKey;
+      if (key != null) {
+        return _OrderableSectionTabs<T>(owner: this, orderKey: key);
+      }
+      return _buildSelfHeld(context, tabs);
     }
     // 焦点外壳要的是「当前值 + 怎么切」，从宿主 controller 就地派生；监听它才能让
     // 横滑 / 外部 animateTo 之后方向键的起点跟着走。
@@ -242,6 +273,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
         }
 
         return _focusShell(
+          tabs: tabs,
           selectedValue: tabs[index].value,
           onSelect: select,
           child: isGlassDesign(context)
@@ -260,6 +292,116 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
                 ),
         );
       },
+    );
+  }
+}
+
+/// 可自定义顺序的自持页签（[LibrarySectionTabs.orderKey]）：按存储的 id 顺序
+/// 重排后交给常规呈现层；长按 / 右键整排弹出排序面板，调整即时落库、即时重排。
+/// 重排时页签胶囊整体做一次 effects 弹簧的淡入缩放（[AnimatedSwitcher]），不
+/// 是瞬间跳变；墨水屏 / 减弱动态效果下时长归零。
+class _OrderableSectionTabs<T extends Object> extends StatefulWidget {
+  const _OrderableSectionTabs({required this.owner, required this.orderKey});
+
+  final LibrarySectionTabs<T> owner;
+  final String orderKey;
+
+  @override
+  State<_OrderableSectionTabs<T>> createState() =>
+      _OrderableSectionTabsState<T>();
+}
+
+class _OrderableSectionTabsState<T extends Object>
+    extends State<_OrderableSectionTabs<T>> {
+  /// 落库前的乐观顺序（面板里每调一次就先重排，不等偏好写完）。
+  List<String>? _pending;
+
+  List<String> _storedIds(SectionTabOrderStore? store) =>
+      _pending ?? store?.read(widget.orderKey) ?? const <String>[];
+
+  Future<void> _openSheet(
+    SectionTabOrderStore store,
+    List<LibrarySectionTab<T>> shown,
+  ) {
+    return showSectionTabOrderSheet<T>(
+      context: context,
+      tabs: shown,
+      defaultOrder: widget.owner.tabs,
+      onChanged: (List<LibrarySectionTab<T>> next) {
+        final List<String> ids = <String>[
+          for (final LibrarySectionTab<T> tab in next) sectionTabOrderId(tab),
+        ];
+        setState(() => _pending = ids);
+        unawaited(_persist(store, ids));
+      },
+      onReset: () {
+        setState(() => _pending = const <String>[]);
+        unawaited(_persist(store, const <String>[]));
+      },
+    );
+  }
+
+  Future<void> _persist(SectionTabOrderStore store, List<String> ids) async {
+    try {
+      await store.write(widget.orderKey, ids);
+    } catch (error, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stack,
+          library: 'library_section_tabs',
+          context: ErrorDescription('while saving the section tab order'),
+        ),
+      );
+    } finally {
+      // 落库后以存储真值为准；失败时也撤掉乐观顺序，不挂一个没存上的顺序。
+      if (mounted) setState(() => _pending = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SectionTabOrderStore? store = resolveSectionTabOrderStore(context);
+    final List<LibrarySectionTab<T>> shown = orderSectionTabs(
+      widget.owner.tabs,
+      _storedIds(store),
+    );
+    final Widget row = AnimatedSwitcher(
+      duration: context.fushiMotion.effectsDefault.duration,
+      switchInCurve: context.fushiMotion.effectsDefault.curve,
+      switchOutCurve: context.fushiMotion.effectsDefault.curve,
+      layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+        alignment: AlignmentDirectional.centerStart,
+        children: <Widget>[...previous, ?current],
+      ),
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.96, end: 1).animate(animation),
+              alignment: Alignment.centerLeft,
+              child: child,
+            ),
+          ),
+      child: KeyedSubtree(
+        key: ValueKey<String>(shown.map(sectionTabOrderId).join(',')),
+        child: widget.owner._buildSelfHeld(context, shown),
+      ),
+    );
+    if (store == null || widget.owner.tabs.length < 2) return row;
+    return Semantics(
+      onLongPressHint: t.section_tabs_order_title,
+      // 右键走绑定表（ContextMenuTrigger），长按交给 GestureDetector：次按钮不硬绑，
+      // 被用户改绑时不双触发。
+      child: ContextMenuTrigger(
+        key: ValueKey<String>('section-tab-order-trigger-${widget.orderKey}'),
+        onInvoke: contextMenuInvoker(() => unawaited(_openSheet(store, shown))),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPress: () => unawaited(_openSheet(store, shown)),
+          child: row,
+        ),
+      ),
     );
   }
 }
