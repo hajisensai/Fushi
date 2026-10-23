@@ -29,6 +29,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
@@ -267,6 +268,45 @@ class SyncRunReport {
   int pendingMinesReceived = 0;
 
   final List<String> errors = <String>[];
+
+  /// XVEF3huDTF：本轮各阶段耗时（毫秒，按执行顺序）。慢同步的反馈只附带错误日志，
+  /// 看不出时间花在哪一步；[SyncOrchestrator.run] 跑完把它连同最慢的几本书写进
+  /// 诊断日志（见 [describeTiming]），下一份反馈就能直接定位。
+  final Map<String, int> phaseMs = <String, int>{};
+
+  /// 「阅读数据」阶段里每本书的耗时（毫秒），只留最慢的 [_slowBookKeep] 本。
+  final List<({String title, int ms})> slowestBooks =
+      <({String title, int ms})>[];
+
+  static const int _slowBookKeep = 5;
+
+  /// 记一本书在阅读数据阶段的耗时，只保留最慢的几本。
+  void noteBookDuration(String title, int ms) {
+    slowestBooks
+      ..add((title: title, ms: ms))
+      ..sort((a, b) => b.ms.compareTo(a.ms));
+    if (slowestBooks.length > _slowBookKeep) {
+      slowestBooks.removeRange(_slowBookKeep, slowestBooks.length);
+    }
+  }
+
+  /// 一行可读的耗时摘要：`total=…ms; phase=…ms, …; slowest books: …=…ms, …`。
+  String describeTiming({required int totalMs}) {
+    final StringBuffer out = StringBuffer('total=${totalMs}ms; ')
+      ..write(<String>[
+        for (final MapEntry<String, int> e in phaseMs.entries)
+          '${e.key}=${e.value}ms',
+      ].join(', '));
+    if (slowestBooks.isNotEmpty) {
+      out
+        ..write('; slowest books: ')
+        ..write(<String>[
+          for (final ({String title, int ms}) b in slowestBooks)
+            '${b.title}=${b.ms}ms',
+        ].join(', '));
+    }
+    return out.toString();
+  }
 
   /// 本轮遇到的**鉴权类**失败，带类型（去重后）。BUG-1324。
   ///
@@ -598,6 +638,14 @@ class SyncOrchestrator {
   /// statistics, and audiobook-position conflicts remain visible.
   Future<SyncRunReport> run() async {
     final SyncRunReport report = SyncRunReport();
+    // XVEF3huDTF：分阶段计时。每个 [mark] 把「上一个 mark 到此刻」记成一个阶段。
+    final Stopwatch total = Stopwatch()..start();
+    int lastMarkMs = 0;
+    void mark(String phase) {
+      final int now = total.elapsedMilliseconds;
+      report.phaseMs[phase] = (report.phaseMs[phase] ?? 0) + now - lastMarkMs;
+      lastMarkMs = now;
+    }
 
     // ── 增量同步（TODO-2656）：把 O(书数) 次列举压成一次 ──────────────────
     //
@@ -618,7 +666,9 @@ class SyncOrchestrator {
     // residue, which piles into many duplicate copies. Runs before the per-book
     // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
     // remote state.
+    mark('resolve+listing');
     await pruneRootSpill(root, report);
+    mark('pruneRootSpill');
 
     // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
     // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
@@ -633,6 +683,7 @@ class SyncOrchestrator {
       if (syncContent || syncMangaContent) {
         await _syncBooksContentLive(report, b);
       }
+      mark('serviceConfig+booksContentLive');
     }
 
     // Existing per-book progress / stats / content / audiobook-position sync
@@ -654,6 +705,15 @@ class SyncOrchestrator {
     int readingDone = 0;
     int readingTotal = 0;
     String? readingTitle;
+    // 当前这本书开始的时刻；下一本开始（或阶段结束）时结算上一本的耗时。
+    int? readingBookStartMs;
+    void settleReadingBook() {
+      final int? start = readingBookStartMs;
+      final String? title = readingTitle;
+      if (start == null || title == null) return;
+      report.noteBookDuration(title, total.elapsedMilliseconds - start);
+      readingBookStartMs = null;
+    }
     // 书阶段与后续各阶段（词典/音频/进度/合集/墓碑）互相独立，但它是整条流水线里
     // 唯一没有自带 try/catch 的阶段——它一抛，合集/墓碑等后续阶段整轮到不了
     // （客户端设备从不本机建合集、watcher 轻量路径也永远不触发，于是 host 合集
@@ -681,12 +741,14 @@ class SyncOrchestrator {
         syncContent: managerSyncContent,
         syncMangaContent: managerSyncMangaContent,
         listing: listing,
-        onBookProgress: (int done, int total, String title) {
+        onBookProgress: (int done, int itemTotal, String title) {
+          settleReadingBook();
+          readingBookStartMs = total.elapsedMilliseconds;
           readingDone = done;
-          readingTotal = total;
+          readingTotal = itemTotal;
           readingTitle = title;
           _emit(SyncPhase.readingData,
-              itemIndex: done, itemTotal: total, title: title);
+              itemIndex: done, itemTotal: itemTotal, title: title);
         },
       );
     } on SyncAuthError {
@@ -694,6 +756,8 @@ class SyncOrchestrator {
     } catch (e) {
       report.errors.add('books: $e');
     }
+    settleReadingBook();
+    mark('readingData');
     _collectConflicts(bookResults, report);
     // 进度已落地、补传书文件 / 元数据失败的书：单独进报告（进度结果照实，不改判失败）。
     for (final SyncBookResult result in bookResults) {
@@ -708,6 +772,7 @@ class SyncOrchestrator {
     // 能力。
     if (syncDictionary) {
       await syncDictionaries(report, direction: SyncAssetDirection.both);
+      mark('dictionaries');
     }
 
     // 本地音频源数据库两条通道都不再自动传（无论互联还是云）：它没有任何开关了，
@@ -727,6 +792,7 @@ class SyncOrchestrator {
       // 视频文件走上面 _syncVideosLive 的 host API 上传，不走此云后端分支。
       if (syncVideoFiles) await syncVideoAssets(report);
     }
+    mark('audiobook+videoFiles');
 
     // 互联书籍 + 视频进度走 live 端点双向同步（TODO-767）。
     //
@@ -741,8 +807,11 @@ class SyncOrchestrator {
     // 进度都同步。
     if (isInterconnect) {
       await _syncBookProgressLive(report, b);
+      mark('bookProgressLive');
       await _syncVideoProgressLive(report, b);
+      mark('videoProgressLive');
       await _syncAudiobookProgressLive(report, b);
+      mark('audiobookProgressLive');
       // 互联聚合（统计 + 收藏）live 双向合并（TODO-1056 phase C）。两族各自由互联
       // 页的「共享统计 / 共享收藏夹」开关控制（默认均 true = 拆开关前的行为），裁剪
       // 在 [AggregateSyncService.syncOverClient] 内按族做，两族都关时整轮不发请求。
@@ -759,6 +828,7 @@ class SyncOrchestrator {
     if (!isInterconnect && syncStats && deviceId.isNotEmpty) {
       await _syncAggregate(report);
     }
+    mark('aggregate');
 
     // 合集双向同步（多端库联合视图 §2.3）：
     // - 云后端走 sync 根下 `__collections__/collections.json` 共享清单的读-合并-写；
@@ -776,6 +846,7 @@ class SyncOrchestrator {
     } else {
       await syncCollections(report);
     }
+    mark('collections+tags+metadata');
 
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
     // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
@@ -785,6 +856,7 @@ class SyncOrchestrator {
     } else {
       await syncDeletionTombstones(report);
     }
+    mark('deletionTombstones');
 
     // 待发制卡跨设备中转：云与互联同走资产层（__pending_mines__ 命名空间）。失败只记
     // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。
@@ -796,6 +868,7 @@ class SyncOrchestrator {
       } catch (e) {
         report.errors.add('pending mines: $e');
       }
+      mark('pendingMines');
     }
 
     // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度
@@ -807,8 +880,20 @@ class SyncOrchestrator {
     await SyncRepository(_db)
         .setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
 
+    total.stop();
+    if (total.elapsed >= slowRunDiagnosticThreshold) {
+      engineLog.logDiagnostic(
+        'SyncRunReport.timing',
+        '${isInterconnect ? 'interconnect' : 'cloud'}: '
+            '${report.describeTiming(totalMs: total.elapsedMilliseconds)}',
+      );
+    }
     return report;
   }
+
+  /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
+  /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
+  static const Duration slowRunDiagnosticThreshold = Duration(seconds: 30);
 
   /// 测试入口：直接调用 [_syncAggregateLive]（private 方法对测试文件不可见）。
   @visibleForTesting
