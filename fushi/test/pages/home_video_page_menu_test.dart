@@ -66,6 +66,8 @@ class _CoverSearchScrapeRunner extends _IdleScrapeRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     queries.add(query);
     return const <VideoSourceScrapeConfirmationCandidate>[];

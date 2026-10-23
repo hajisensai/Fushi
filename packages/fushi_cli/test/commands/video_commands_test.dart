@@ -121,6 +121,15 @@ void main() {
         _usageError(),
       );
       expect(() => _build('candidates', <String>['x']), _usageError());
+      // --type 透传给 app，只按该形态搜（剧场版被计划当成剧集时按电影搜）。
+      expect(
+        _build('candidates', <String>['book:x', '--type', 'Movie']).query,
+        <String, String>{'type': 'movie'},
+      );
+      expect(
+        () => _build('candidates', <String>['book:x', '--type', 'ova']),
+        _usageError(),
+      );
     });
 
     test('identify：provider / id / type 校验与 body', () {

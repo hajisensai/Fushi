@@ -144,6 +144,41 @@ void main() {
     expect(tmdb.searchCalls, 0);
   });
 
+  // CLI `video candidates --provider tmdb --type movie`：主源 MAL 明明有候选，
+  // 显式指定的兜底源也必须真的被搜（旧实现只拿主源结果再按 provider 过滤，
+  // 恒为空），且按指定形态搜而不是按来源计划猜的形态。
+  test('explicit provider and media kind search only that source and kind',
+      () async {
+    final SourceLibraryRow source = await seedSource();
+    final _RecordingProvider mal =
+        _RecordingProvider(VideoMetadataProviderKind.mal);
+    final _RecordingProvider tmdb =
+        _RecordingProvider(VideoMetadataProviderKind.tmdb);
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(
+          primaryProvider: VideoMetadataProviderKind.mal),
+      registry:
+          VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
+    );
+    addTearDown(coordinator.close);
+    final List<VideoSourceScrapeConfirmationCandidate> candidates =
+        await coordinator.searchManualCandidates(
+      source: source,
+      workTitle: 'Show',
+      query: 'Show',
+      provider: VideoMetadataProviderKind.tmdb,
+      mediaKind: VideoMetadataMediaKind.movie,
+    );
+    expect(candidates, hasLength(1));
+    expect(candidates.single.lookup.provider, VideoMetadataProviderKind.tmdb);
+    expect(candidates.single.lookup.mediaKind, VideoMetadataMediaKind.movie);
+    expect(mal.searchCalls, 0);
+    expect(tmdb.searchedKinds,
+        <VideoMetadataMediaKind>[VideoMetadataMediaKind.movie]);
+  });
+
   test('config parses the primary provider preference safely', () {
     expect(
       parseSelectableVideoMetadataProvider('tmdb'),
@@ -179,6 +214,8 @@ class _RecordingProvider implements VideoMetadataProvider {
   @override
   final VideoMetadataProviderKind providerKind;
   int searchCalls = 0;
+  final List<VideoMetadataMediaKind> searchedKinds =
+      <VideoMetadataMediaKind>[];
 
   @override
   bool get isAvailable => true;
@@ -197,6 +234,7 @@ class _RecordingProvider implements VideoMetadataProvider {
   Future<List<VideoMetadataWork>> search(
       VideoMetadataSearchRequest request) async {
     searchCalls++;
+    searchedKinds.add(request.mediaKind);
     return <VideoMetadataWork>[_work('42', request.mediaKind)];
   }
 

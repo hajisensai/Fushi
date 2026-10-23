@@ -858,6 +858,8 @@ class _ConfirmRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     manualQueries.add(query);
     manualSourceIds.add(source?.id);

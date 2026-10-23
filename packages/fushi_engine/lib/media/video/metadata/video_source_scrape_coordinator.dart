@@ -302,6 +302,8 @@ class VideoSourceScrapeCoordinator
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) {
@@ -318,8 +320,8 @@ class VideoSourceScrapeCoordinator
             workStableKey: workStableKey);
     final List<VideoMetadataLookup> explicit = parseExplicitVideoMetadataIds(
       <String>[trimmed],
-      fallbackMediaKind:
-          work == null ? VideoMetadataMediaKind.tv : _manualMediaKind(work),
+      fallbackMediaKind: mediaKind ??
+          (work == null ? VideoMetadataMediaKind.tv : _manualMediaKind(work)),
     );
     final bool identityInput = explicit.isNotEmpty ||
         trimmed.contains('://') ||
@@ -328,7 +330,12 @@ class VideoSourceScrapeCoordinator
             .hasMatch(trimmed);
     final VideoMetadataProviderKind selected =
         source == null ? primaryProvider : await _sourceProvider(source);
-    final List<VideoMetadataProviderKind> chain = _providerChain(selected);
+    // 用户显式指定资料源时只搜它（不在可选主源白名单里的照样当查无）。
+    final List<VideoMetadataProviderKind> chain = provider == null
+        ? _providerChain(selected)
+        : <VideoMetadataProviderKind>[
+            if (kSelectableVideoMetadataProviders.contains(provider)) provider,
+          ];
     if (identityInput) {
       final VideoMetadataLookup? lookup =
           explicit.length == 1 ? explicit.single : null;
@@ -344,12 +351,12 @@ class VideoSourceScrapeCoordinator
           !<String>{'http', 'https'}.contains(Uri.tryParse(trimmed)?.scheme)) {
         throw const FormatException('Invalid video metadata work URL');
       }
-      final VideoMetadataProvider? provider =
+      final VideoMetadataProvider? idProvider =
           _manualSearchProvider(lookup.provider);
-      if (provider == null) {
+      if (idProvider == null) {
         return const <VideoSourceScrapeConfirmationCandidate>[];
       }
-      final VideoMetadataWork? result = await provider.fetchWork(lookup);
+      final VideoMetadataWork? result = await idProvider.fetchWork(lookup);
       return <VideoSourceScrapeConfirmationCandidate>[
         if (result != null)
           VideoSourceScrapeConfirmationCandidate(
@@ -363,26 +370,28 @@ class VideoSourceScrapeCoordinator
               work: result),
       ];
     }
-    final List<VideoMetadataMediaKind> kinds = work == null
-        ? const <VideoMetadataMediaKind>[
-            VideoMetadataMediaKind.tv,
-            VideoMetadataMediaKind.movie,
-          ]
-        : <VideoMetadataMediaKind>[_manualMediaKind(work)];
+    final List<VideoMetadataMediaKind> kinds = mediaKind != null
+        ? <VideoMetadataMediaKind>[mediaKind]
+        : work == null
+            ? const <VideoMetadataMediaKind>[
+                VideoMetadataMediaKind.tv,
+                VideoMetadataMediaKind.movie,
+              ]
+            : <VideoMetadataMediaKind>[_manualMediaKind(work)];
     final List<VideoSourceScrapeConfirmationCandidate> candidates =
         <VideoSourceScrapeConfirmationCandidate>[];
     final Set<String> seenLookups = <String>{};
     for (final VideoMetadataProviderKind providerKind in chain) {
-      final VideoMetadataProvider? provider =
+      final VideoMetadataProvider? searchProvider =
           _manualSearchProvider(providerKind);
-      if (provider == null) continue;
+      if (searchProvider == null) continue;
       try {
         for (final VideoMetadataMediaKind kind in kinds) {
-          final List<VideoMetadataWork> results = await provider.search(
+          final List<VideoMetadataWork> results = await searchProvider.search(
             VideoMetadataSearchRequest(title: trimmed, mediaKind: kind),
           );
           for (final VideoMetadataWork candidate in results) {
-            if (_lookupForCandidate(candidate, provider.providerKind)
+            if (_lookupForCandidate(candidate, searchProvider.providerKind)
                 case final VideoMetadataLookup lookup) {
               if (!seenLookups.add(
                   '${lookup.provider.name}:${lookup.mediaKind.name}:${lookup.externalId}')) {
