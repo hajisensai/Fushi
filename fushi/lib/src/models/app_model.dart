@@ -8883,6 +8883,11 @@ class AppModel with ChangeNotifier {
 
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       prefsRepo.galMiningAnimatedFormat;
+
+  /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
+  bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
+  Future<void> setMiningAnimatedPlayOnce(bool value) =>
+      prefsRepo.setMiningAnimatedPlayOnce(value);
   void setGalMiningAnimatedFormat(MiningAnimatedFormat format) =>
       prefsRepo.setGalMiningAnimatedFormat(format);
 
@@ -8932,6 +8937,18 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
   bool get compactGlossaries => prefsRepo.compactGlossaries;
+
+  /// 制卡提示开关（设置 → 制卡 → 制卡提示，反馈 zNuGKLIhmT / aK5wv0CnWf）。
+  bool get mineNoticeSuccess => prefsRepo.mineNoticeSuccess;
+  Future<void> setMineNoticeSuccess(bool value) =>
+      prefsRepo.setMineNoticeSuccess(value);
+  bool get mineNoticeDuplicate => prefsRepo.mineNoticeDuplicate;
+  Future<void> setMineNoticeDuplicate(bool value) =>
+      prefsRepo.setMineNoticeDuplicate(value);
+
+  /// [FushiToast.mineNoticeFilter] 的接线：偏好还没载入（启动最早期）时一律弹。
+  bool mineNoticeShown(MineToastStatus status) =>
+      _prefsRepo?.mineNoticeShown(status) ?? true;
   void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
   bool get dictionaryUnifiedStyle => prefsRepo.dictionaryUnifiedStyle;
   void toggleDictionaryUnifiedStyle() =>
@@ -10784,6 +10801,13 @@ class _AppModelRemoteLookupService
     // kind 都不发 → 根本进不到这个分支，行为与改动前逐字一致（照常出卡，无句子音频）。
     final bool isBilibiliPgc = payload.clipSourceKind == 'bilibili-pgc' &&
         payload.clipSourcePlayurlBody != null;
+    // 反馈 Atbl_kOuZK：稿件的 playurl 也由扩展在页面主世界里取回（带用户自己的会话，
+    // 服务端匿名请求会被 B 站风控 HTTP 412）。带了响应体就只挑流、不发网络请求；没带
+    // （旧扩展 / 页面里没取到）才由服务端自己解析。
+    final bool usePagePlayurl =
+        isBilibiliPgc ||
+        (payload.clipSourceKind == 'bilibili' &&
+            payload.clipSourcePlayurlBody != null);
     if ((payload.clipSourceKind == 'bilibili' || isBilibiliPgc) &&
         payload.clipSourceId != null &&
         payload.clipStartMs != null &&
@@ -10805,7 +10829,7 @@ class _AppModelRemoteLookupService
       try {
         // 番剧：音轨是扩展在页面里解析好回传的，这里不发任何网络请求（见 buildPgcRequest）。
         // 稿件：服务端自己用 bvid 查 cid 再取 playurl（未登录也拿得到最高档音轨）。
-        bi = isBilibiliPgc
+        bi = usePagePlayurl
             ? _bilibiliClipMiner.buildPgcRequest(
                 playurlBody: payload.clipSourcePlayurlBody!,
                 startMs: payload.clipStartMs!,
@@ -10830,7 +10854,11 @@ class _AppModelRemoteLookupService
         // /api/mine 只 catch FormatException，这里不兜住会 500 整张卡。
         return remoteMineError(
           'Anki.mineImmersion.bilibili',
-          'bilibili 视频流解析失败，未制卡',
+          // 反馈 Atbl_kOuZK：412 = B 站风控拦了服务端的匿名请求。走到这里说明扩展没在页面
+          // 里取到 playurl（旧扩展 / 页面注入失败），单独说清楚，别和「视频不可用」混在一起。
+          e is BilibiliApiHttpException && e.statusCode == 412
+              ? 'bilibili 拒绝了匿名请求（HTTP 412 风控），未制卡。请把浏览器扩展更新到最新版本后重试'
+              : 'bilibili 视频流解析失败，未制卡',
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,

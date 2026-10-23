@@ -643,7 +643,9 @@ String? localizeAnkiMineError(String? code) {
       final String baseMessage = overwrite
           ? t.card_overwritten(deck: deckName)
           : t.card_exported(deck: deckName);
-      final String message = audioWarning != null && audioWarning.isNotEmpty
+      final bool hasAudioWarning =
+          audioWarning != null && audioWarning.isNotEmpty;
+      final String message = hasAudioWarning
           ? '$baseMessage ${t.card_exported_audio_failed(reason: audioWarning)}'
           : baseMessage;
       return (
@@ -652,7 +654,10 @@ String? localizeAnkiMineError(String? code) {
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
         // TODO-1325 #6：新制与覆写成功都是绿色 added（覆写用 card_overwritten 文案区分）。
-        status: MineToastStatus.added,
+        // 带音频缺失提示的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
+        status: hasAudioWarning
+            ? MineToastStatus.addedWithWarning
+            : MineToastStatus.added,
       );
     case MineResult.duplicate:
       return (

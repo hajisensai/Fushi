@@ -39,6 +39,9 @@ void popupMain() {
 
       await FushiDicts.preloadTransforms();
       final appModel = container.read(appProvider);
+      // 弹窗进程的制卡结果 toast 同样听「制卡提示」开关（偏好在 initialise 后才有值，
+      // 闭包每次现读）。
+      FushiToast.mineNoticeFilter = appModel.mineNoticeShown;
       unawaited(appModel.initialiseForDictionaryPopup());
     },
     (exception, stack) {

@@ -336,7 +336,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：启动时在后台把签名未变的 Mihon 漫画 / 视频扩展更新到
   // 仓库新版（`kMihonExtensionAutoUpdatePref`，update_probes.dart）。
   'mihon_extension_auto_update',
+  // bool（默认 true）：制卡提示——查重拦下（「重复卡片，未导出」）时弹 toast
+  // （反馈 aK5wv0CnWf）。失败与「成功但缺音频」不受开关影响。
+  'mine_notice_duplicate',
+  // bool（默认 true）：制卡提示——成功 / 制卡中 / 已存入待发卡片的 toast
+  // （反馈 zNuGKLIhmT：阅读时挡住正文）。
+  'mine_notice_success',
   'mine_to_server',
+  // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
+  // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
+  'mining_animated_play_once',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
