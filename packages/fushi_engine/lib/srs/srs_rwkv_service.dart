@@ -9,6 +9,10 @@
 /// - 没准备好（权重没下载 / 正在重建 / 出错）时 [instantRetrievability] 返回 null，调用方按存下的
 ///   到期日排队并在界面上说明（`SrsAnswerPreview.rwkvUnavailable`）。
 ///
+/// - **取数**：回放行（保留评分、card_type、间隔，规则同上游 kuma3，见 native/fushi_rwkv/README.md）、
+///   日志指纹与尾巴都由 Rust 在 srs.db 上直读算出（native/fushi_fsrs/src/projection.rs、
+///   src/store/projections.rs），日志不经 Dart；这里只编排。
+///
 /// 已知近似：卡片换牌组、预设归属变化不触发重建（上游 kuma3 把它们当改写历史）；这类变化在下次
 /// 全量重建（日志指纹变了、快照失效、换模型）时才进入状态。
 library;
@@ -19,7 +23,6 @@ import 'dart:io';
 import 'dart:math' show min;
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show Variable;
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
@@ -28,7 +31,7 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_rwkv_history.dart';
+import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 
@@ -109,7 +112,7 @@ class _QueryIdentity {
   final SrsRwkvLastRating? last;
 }
 
-/// `srs_review_logs` 的指纹：行数与最大 rowid（日志只追加，所以「只多了新行」= 行数与 rowid 同增）。
+/// 复习日志表的指纹：行数与最大 rowid（日志只追加，所以「只多了新行」= 行数与 rowid 同增）。
 typedef _LogPrint = ({int count, int maxRowId});
 
 class SrsRwkvService implements SrsRwkvScheduling {
@@ -134,7 +137,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
   final Future<SrsRwkvBackend> Function(File weights) _open;
   final void Function(String message) _log;
 
-  /// 测试钩子：全量重建记下日志指纹之后、开始读历史之前调用（模拟用户在重建途中答题）。
+  /// 测试钩子：全量重建记下日志指纹（列卡之前）之后、开始取回放行之前调用（模拟用户在重建途中答题）。
   @visibleForTesting
   Future<void> Function()? debugAfterRebuildFingerprint;
 
@@ -288,13 +291,8 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   Future<_LogPrint> _fingerprint() async {
-    final row = await store.db
-        .customSelect(
-          'SELECT COUNT(*) AS c, COALESCE(MAX(rowid), 0) AS m FROM srs_review_logs WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(store.profileUid)],
-        )
-        .getSingle();
-    return (count: row.read<int>('c'), maxRowId: row.read<int>('m'));
+    final SrsRwkvLogTail t = await store.rwkvLogTail(since: 0);
+    return (count: t.count, maxRowId: t.maxRowId);
   }
 
   Future<bool> _restoreSnapshot(SrsRwkvBackend backend) async {
@@ -340,56 +338,47 @@ class SrsRwkvService implements SrsRwkvScheduling {
     _appendsSinceSnapshot = 0;
   }
 
-  /// 全量重建：读全部卡的有效历史，按时间回放。
+  /// 全量重建：全部卡的保留评分行由 Rust 一次取出、排好序（[SrsDbStore.rwkvReplay]），按时间回放。
   Future<void> _rebuild(SrsRwkvBackend backend) async {
     _LogPrint fingerprint = await _fingerprint();
     await debugAfterRebuildFingerprint?.call();
     final SrsDayContext day = await store.dayContext();
     final SrsDeckTree tree = await store.deckTree();
-    final List<SrsCardCacheRow> cards = await (store.db.select(
-      store.db.srsCardsCache,
-    )..where((c) => c.profileUid.equals(store.profileUid))).get();
+    final List<SrsCardCacheRow> cards = await store.allCardRows();
     cards.sort((SrsCardCacheRow a, SrsCardCacheRow b) => a.id.compareTo(b.id));
-    final SrsRwkvReplayBuilder builder = SrsRwkvReplayBuilder(day);
-    const int chunk = 2000;
-    for (int i = 0; i < cards.length; i += chunk) {
-      final List<SrsCardCacheRow> part = cards.sublist(
-        i,
-        i + chunk > cards.length ? cards.length : i + chunk,
-      );
-      final Map<String, SrsCardHistory> histories = await store.histories(
-        part.map((SrsCardCacheRow c) => c.id),
-      );
-      for (final SrsRwkvCard card in _identities(part, histories, tree)) {
-        builder.addCard(card);
+    // 回放行与指纹出自同一个快照：列卡之后用户还在答题也对得上，之后对齐不会把已回放的再追加、也不会因
+    // 「比已回放的最后一条更早」再重建。唯一要补的是列卡之后才新建（并已作答）的卡：Rust 把它们当
+    // 「漏掉的卡」报出来，补进卡表再取一次。
+    SrsRwkvReplay replay = await store.rwkvReplay(
+      <String>[for (final SrsCardCacheRow c in cards) c.id],
+      _identities(cards, tree),
+      day,
+      since: fingerprint.maxRowId,
+    );
+    for (int round = 0; round < 5 && replay.strays.isNotEmpty; round++) {
+      final Set<String> known = <String>{
+        for (final SrsCardCacheRow c in cards) c.id,
+      };
+      bool added = false;
+      for (final String id in replay.strays) {
+        if (known.contains(id)) continue;
+        final SrsCardCacheRow? row = await store.cardRow(id);
+        if (row == null) continue;
+        cards.add(row);
+        added = true;
       }
-      _set(
-        SrsRwkvStatus(SrsRwkvPhase.preparing, done: 0, total: builder.length),
+      if (!added) break;
+      fingerprint = (count: replay.count, maxRowId: replay.maxRowId);
+      replay = await store.rwkvReplay(
+        <String>[for (final SrsCardCacheRow c in cards) c.id],
+        _identities(cards, tree),
+        day,
+        since: fingerprint.maxRowId,
       );
     }
-    // 分块读历史要一段时间（大收藏几秒到几十秒），用户多半正停在复习页上继续答题：读到的历史
-    // 有的含这些新评分、有的不含，与开头的指纹对不上。之后对齐时它们会比已回放的最后一条还早，
-    // 又触发全量重建——边答边重建，一直显示「RWKV 还没准备好」。所以读完核对指纹：这期间有新
-    // 日志的卡丢掉已加入的行、按最新历史重读，直到指纹不再变。
-    for (int round = 0; round < 5; round++) {
-      final _LogPrint after = await _fingerprint();
-      if (after == fingerprint) break;
-      final List<String> changed = await _cardsWithLogsAfter(
-        fingerprint.maxRowId,
-      );
-      fingerprint = after;
-      final List<SrsCardCacheRow> part = <SrsCardCacheRow>[
-        for (final String id in changed) ?await store.cardRow(id),
-      ];
-      final List<SrsRwkvCard> fresh = _identities(
-        part,
-        await store.histories(part.map((SrsCardCacheRow c) => c.id)),
-        tree,
-      );
-      builder.dropCards(<int>{for (final SrsRwkvCard c in fresh) c.cardId});
-      fresh.forEach(builder.addCard);
-    }
-    final (RwkvRows rows, int? lastAt) = builder.build();
+    fingerprint = (count: replay.count, maxRowId: replay.maxRowId);
+    final RwkvRows rows = replay.rows;
+    _set(SrsRwkvStatus(SrsRwkvPhase.preparing, done: 0, total: rows.length));
     await _serial(() async {
       await backend.reset();
       const int block = 65536;
@@ -412,38 +401,21 @@ class SrsRwkvService implements SrsRwkvScheduling {
         );
       }
       _replayed = fingerprint;
-      _lastAt = lastAt;
+      _lastAt = replay.lastAt;
       await _saveSnapshot(backend);
     });
   }
 
-  /// 卡缓存行 + 历史 → 数字身份（53 位 hash，与 Anki 导出同一套），预设 = 参数归属牌组。
-  List<SrsRwkvCard> _identities(
-    List<SrsCardCacheRow> rows,
-    Map<String, SrsCardHistory> histories,
-    SrsDeckTree tree,
-  ) {
-    final List<String> ids = <String>[];
-    for (final SrsCardCacheRow c in rows) {
-      ids
-        ..add(c.id)
-        ..add(c.noteId)
-        ..add(c.deckId)
-        ..add(_presetOf(tree, c.deckId));
-    }
-    final List<int> numeric = SrsIds.ankiNumericIds(ids);
-    return <SrsRwkvCard>[
-      for (int i = 0; i < rows.length; i++)
-        if (histories[rows[i].id] case final SrsCardHistory history)
-          SrsRwkvCard(
-            cardId: numeric[4 * i],
-            noteId: numeric[4 * i + 1],
-            deckId: numeric[4 * i + 2],
-            presetId: numeric[4 * i + 3],
-            history: history,
-          ),
-    ];
-  }
+  /// 卡缓存行 → 数字身份（53 位 hash，与 Anki 导出同一套），每卡 4 个：卡 / 笔记 / 牌组 / 预设（= 参数归属牌组）。
+  List<int> _identities(List<SrsCardCacheRow> rows, SrsDeckTree tree) =>
+      SrsIds.ankiNumericIds(<String>[
+        for (final SrsCardCacheRow c in rows) ...<String>[
+          c.id,
+          c.noteId,
+          c.deckId,
+          _presetOf(tree, c.deckId),
+        ],
+      ]);
 
   static String _presetOf(SrsDeckTree tree, String deckId) {
     try {
@@ -451,18 +423,6 @@ class SrsRwkvService implements SrsRwkvScheduling {
     } on Object {
       return deckId;
     }
-  }
-
-  Future<SrsRwkvCard?> _card(String cardId) async {
-    final SrsCardCacheRow? row = await store.cardRow(cardId);
-    if (row == null) return null;
-    final SrsDeckTree tree = await store.deckTree();
-    final List<SrsRwkvCard> cards = _identities(
-      <SrsCardCacheRow>[row],
-      <String, SrsCardHistory>{cardId: await store.history(cardId)},
-      tree,
-    );
-    return cards.single;
   }
 
   /// 对齐日志：只多了能追加的新评分 → 追加，返回 true（状态是最新的）；需要全量重建时在后台
@@ -522,37 +482,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
     return false;
   }
 
-  Future<List<String>> _cardsWithLogsAfter(int afterRowId) async => <String>[
-    for (final r
-        in await store.db
-            .customSelect(
-              'SELECT DISTINCT card_id FROM srs_review_logs WHERE profile_uid = ? AND rowid > ?',
-              variables: <Variable<Object>>[
-                Variable<String>(store.profileUid),
-                Variable<int>(afterRowId),
-              ],
-            )
-            .get())
-      r.read<String>('card_id'),
-  ];
-
   /// [_fingerprint] 连同 rowid 在 [afterRowId] 之后的行数，一条语句（同一个快照）取出。
   Future<(_LogPrint, int)> _fingerprintSince(int afterRowId) async {
-    final row = await store.db
-        .customSelect(
-          'SELECT COUNT(*) AS c, COALESCE(MAX(rowid), 0) AS m, '
-          'COALESCE(SUM(rowid > ?), 0) AS n '
-          'FROM srs_review_logs WHERE profile_uid = ?',
-          variables: <Variable<Object>>[
-            Variable<int>(afterRowId),
-            Variable<String>(store.profileUid),
-          ],
-        )
-        .getSingle();
-    return (
-      (count: row.read<int>('c'), maxRowId: row.read<int>('m')),
-      row.read<int>('n'),
-    );
+    final SrsRwkvLogTail t = await store.rwkvLogTail(since: afterRowId);
+    return ((count: t.count, maxRowId: t.maxRowId), t.newRows);
   }
 
   /// rowid 之后的日志若全是评分、都不早于已回放的最后一条、且各是其卡末尾的保留评分，
@@ -563,66 +496,49 @@ class SrsRwkvService implements SrsRwkvScheduling {
     int afterRowId,
     _LogPrint now,
   ) async {
-    final List<({String id, String cardId, String kind, int at})>
-    rows = <({String id, String cardId, String kind, int at})>[
-      for (final r
-          in await store.db
-              .customSelect(
-                'SELECT id, card_id, kind, occurred_at FROM srs_review_logs '
-                'WHERE profile_uid = ? AND rowid > ? ORDER BY occurred_at, rowid',
-                variables: <Variable<Object>>[
-                  Variable<String>(store.profileUid),
-                  Variable<int>(afterRowId),
-                ],
-              )
-              .get())
-        (
-          id: r.read<String>('id'),
-          cardId: r.read<String>('card_id'),
-          kind: r.read<String>('kind'),
-          at: r.read<int>('occurred_at'),
-        ),
-    ];
+    final SrsRwkvLogTail tail = await store.rwkvLogTail(
+      since: afterRowId,
+      withRows: true,
+    );
+    if ((count: tail.count, maxRowId: tail.maxRowId) != now) return null;
+    final List<SrsRwkvTailLog> rows = tail.logs;
     if (rows.any(
-      (r) =>
-          r.kind != SrsLogKind.review || (_lastAt != null && r.at < _lastAt!),
+      (SrsRwkvTailLog r) => !r.isReview || (_lastAt != null && r.at < _lastAt!),
     )) {
       return false;
     }
     // 同一张卡可能来了多条（两次对齐之间学习步「重来」后又答了一次）：按卡一次算出它末尾这几条
     // 的行，再按全局时间顺序拼。以前一见到同卡多条就全量重建，复习中会反复退回「RWKV 还没准备好」。
     final Map<String, List<String>> idsByCard = <String, List<String>>{};
-    for (final r in rows) {
+    for (final SrsRwkvTailLog r in rows) {
       (idsByCard[r.cardId] ??= <String>[]).add(r.id);
     }
     final SrsDayContext day = await store.dayContext();
-    final Map<String, SrsRwkvCard> cardOf = <String, SrsRwkvCard>{};
+    final SrsDeckTree tree = await store.deckTree();
+    final List<SrsCardCacheRow> cardRows = <SrsCardCacheRow>[];
     for (final String cardId in idsByCard.keys) {
-      final SrsRwkvCard? card = await _card(cardId);
-      if (card == null) return false;
-      cardOf[cardId] = card;
+      final SrsCardCacheRow? row = await store.cardRow(cardId);
+      if (row == null) return false;
+      cardRows.add(row);
     }
-    // 历史读完再核对：读的途中又写进了日志，读到的历史就比 [now] 新，按新指纹重来。
+    final List<SrsRwkvCardRows> cards = await store.rwkvCardRows(
+      <String>[for (final SrsCardCacheRow c in cardRows) c.id],
+      _identities(cardRows, tree),
+      day,
+    );
+    // 取完再核对：取的途中又写进了日志，取到的行就比 [now] 新，按新指纹重来。
     if (await _fingerprint() != now) return null;
     final Map<String, RwkvRows> rowOf = <String, RwkvRows>{};
-    for (final MapEntry<String, List<String>> e in idsByCard.entries) {
-      final SrsRwkvCard card = cardOf[e.key]!;
-      for (final String id in e.value) {
-        final SrsReviewLog? log = card.history.effective
-            .where((SrsReviewLog l) => l.id == id)
-            .firstOrNull;
-        if (log == null || !log.isRatingReview || log.rating == null) {
-          return false;
-        }
-      }
-      final List<RwkvRows>? cardRows = srsRwkvAppendRows(card, e.value, day);
-      if (cardRows == null) return false;
-      for (int i = 0; i < e.value.length; i++) {
-        rowOf[e.value[i]] = cardRows[i];
+    for (int k = 0; k < cardRows.length; k++) {
+      final List<String> ids = idsByCard[cardRows[k].id]!;
+      final List<RwkvRows>? appended = cards[k].appendRows(ids);
+      if (appended == null) return false;
+      for (int i = 0; i < ids.length; i++) {
+        rowOf[ids[i]] = appended[i];
       }
     }
     final RwkvRows batch = RwkvRows(rows.length);
-    for (final r in rows) {
+    for (final SrsRwkvTailLog r in rows) {
       batch.addRows(rowOf[r.id]!);
     }
     await _serial(() async {
@@ -654,21 +570,23 @@ class SrsRwkvService implements SrsRwkvScheduling {
       if (cards.isEmpty) return const <double>[];
       await _refreshQueryIdentities(cards);
       final SrsDayContext day = await store.dayContext();
-      final RwkvRows rows = RwkvRows(cards.length);
-      for (final SrsRwkvCandidate c in cards) {
-        final _QueryIdentity q = _queryIdentities[c.id]!;
-        srsRwkvAddNowRow(
-          rows,
-          cardId: q.ids[0],
-          noteId: q.ids[1],
-          deckId: q.ids[2],
-          presetId: q.ids[3],
-          last: q.last,
-          queue: SrsQueue.review,
-          nowMs: nowMs,
-          day: day,
-        );
-      }
+      final RwkvRows rows = srsRwkvNowRows(
+        <SrsRwkvNowCard>[
+          for (final _QueryIdentity q in <_QueryIdentity>[
+            for (final SrsRwkvCandidate c in cards) _queryIdentities[c.id]!,
+          ])
+            (
+              cardId: q.ids[0],
+              noteId: q.ids[1],
+              deckId: q.ids[2],
+              presetId: q.ids[3],
+              last: q.last,
+              queue: SrsQueue.review,
+            ),
+        ],
+        nowMs: nowMs,
+        day: day,
+      );
       final Float32List r = await _serial(() => backend.query(rows));
       return <double>[for (final double v in r) v];
     } catch (error, stack) {
@@ -694,13 +612,11 @@ class SrsRwkvService implements SrsRwkvScheduling {
         .toList();
     if (stale.isEmpty) return;
     final SrsDeckTree tree = await store.deckTree();
+    final SrsDayContext day = await store.dayContext();
     for (int at = 0; at < stale.length; at += 500) {
       final List<SrsRwkvCandidate> chunk = stale.sublist(
         at,
         min(at + 500, stale.length),
-      );
-      final Map<String, SrsCardHistory> histories = await store.histories(
-        chunk.map((SrsRwkvCandidate c) => c.id),
       );
       final List<int> numeric = SrsIds.ankiNumericIds(<String>[
         for (final SrsRwkvCandidate c in chunk) ...<String>[
@@ -710,14 +626,19 @@ class SrsRwkvService implements SrsRwkvScheduling {
           _presetOf(tree, c.deckId),
         ],
       ]);
+      // 最后一条保留评分由 Rust 从日志直读（一块一次）。
+      final List<SrsRwkvCardRows> kept = await store.rwkvCardRows(
+        <String>[for (final SrsRwkvCandidate c in chunk) c.id],
+        numeric,
+        day,
+      );
       for (int i = 0; i < chunk.length; i++) {
         final SrsRwkvCandidate c = chunk[i];
-        final SrsCardHistory? history = histories[c.id];
         _queryIdentities[c.id] = _QueryIdentity(
           lastLogId: c.lastLogId,
           deckId: c.deckId,
           ids: numeric.sublist(4 * i, 4 * i + 4),
-          last: history == null ? null : SrsRwkvLastRating.of(history),
+          last: kept[i].last,
         );
       }
     }

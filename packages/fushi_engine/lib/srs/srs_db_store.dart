@@ -20,6 +20,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
+import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 
@@ -2008,6 +2009,115 @@ class SrsDbStore implements SrsSyncReplica {
     }
     return out;
   }
+
+  // ------------------------------------------------------------------ P6 直读命令（统计 / 优化器 / RWKV）
+  //
+  // 日志不经 Dart：Rust 在 srs.db 的读连接上一个读事务里直读日志与服务器时刻、选取、投影，只回结果列
+  // （docs/specs/2026-10-23-srs-rust-store.md §7）。血统仍由 Dart 算（字段寄存器内核要修改记录预读，与
+  // 缓存刷新同一形态，不预读日志）。命令在后台 isolate 执行，UI isolate 不做同步 FFI 读库。
+
+  /// 一组卡各自的血统（自己 + 全部前身的卡 ID），与输入同序。只预读修改记录。
+  Future<List<List<String>>> lineagesOf(List<String> cardIds) async {
+    final List<List<String>> out = <List<String>>[];
+    for (int i = 0; i < cardIds.length; i += 1000) {
+      final List<String> chunk = cardIds.sublist(
+        i,
+        min(i + 1000, cardIds.length),
+      );
+      final _RefreshPrefetch pre = _RefreshPrefetch();
+      await _readWith(pre, () async {
+        await _prefetchLineage(pre, chunk, withLogs: false);
+        for (final SrsCardLineage l in _lineagesIn(pre, <SrsCardWant>[
+          for (final String id in chunk)
+            SrsCardWant(id, noteDeckId: null, fallbackDeckId: defaultDeckId),
+        ]).wants) {
+          out.add(l.lineage);
+        }
+      });
+    }
+    return out;
+  }
+
+  /// 优化器训练集：[cardIds] 这些卡（按给定顺序）的有效评分（[srsPrepareOptimization] 的规则在 Rust）。
+  Future<SrsTrainingSet> optimizerTrainingSet(
+    List<String> cardIds, {
+    required SrsAlgorithm algorithm,
+    required SrsDayContext day,
+  }) async {
+    if (cardIds.isEmpty) return SrsTrainingSet.empty();
+    final List<List<String>> lineages = await lineagesOf(cardIds);
+    final List<int> numeric = SrsIds.ankiNumericIds(cardIds);
+    return SrsTrainingSet(
+      await _coreOptimizerItems(
+        core.address,
+        core.libraryPath,
+        lineages,
+        numeric,
+        srsProjectionAlgorithmCode(algorithm),
+        day.utcOffsetMin,
+        day.rolloverHour,
+      ),
+    );
+  }
+
+  /// RWKV 逐卡：每张卡（[ids] 每卡 4 个数字 id：卡 / 笔记 / 牌组 / 预设）的保留评分行与摘要。
+  Future<List<SrsRwkvCardRows>> rwkvCardRows(
+    List<String> cardIds,
+    List<int> ids,
+    SrsDayContext day,
+  ) async {
+    if (cardIds.isEmpty) return const <SrsRwkvCardRows>[];
+    final List<List<String>> lineages = await lineagesOf(cardIds);
+    return srsDecodeRwkvCards(
+      await _coreRwkvCards(
+        core.address,
+        core.libraryPath,
+        lineages,
+        ids,
+        day.utcOffsetMin,
+        day.rolloverHour,
+      ),
+    );
+  }
+
+  /// RWKV 全量回放：[cardIds]（回放的加入顺序）的保留评分行按评分时刻排好序，连同同一快照里的日志指纹；
+  /// [since] 之后出现、不在这些卡血统里的卡作为 [SrsRwkvReplay.strays] 返回。
+  Future<SrsRwkvReplay> rwkvReplay(
+    List<String> cardIds,
+    List<int> ids,
+    SrsDayContext day, {
+    required int since,
+  }) async => srsDecodeRwkvReplay(
+    await _coreRwkvReplay(
+      core.address,
+      core.libraryPath,
+      profileUid,
+      await lineagesOf(cardIds),
+      ids,
+      day.utcOffsetMin,
+      day.rolloverHour,
+      since,
+    ),
+  );
+
+  /// RWKV 对齐：本 profile 日志的指纹与 rowid 在 [since] 之后的行数（同一个快照），[withRows] 时连同这些行。
+  Future<SrsRwkvLogTail> rwkvLogTail({
+    required int since,
+    bool withRows = false,
+  }) async => srsDecodeRwkvLogTail(
+    await _coreRwkvLogTail(
+      core.address,
+      core.libraryPath,
+      profileUid,
+      since,
+      withRows,
+    ),
+  );
+
+  /// 统计页：本 profile 每张卡的有效日志列与当前记忆状态。
+  Future<SrsStatsColumns> statsColumns() async => SrsStatsColumns(
+    await _coreStatsReviews(core.address, core.libraryPath, profileUid),
+  );
 
   Future<SrsCardHistory> _historyOf(List<String> cardIds) async {
     final (List<SrsReviewLog> logs, int? Function(String)? s) =
@@ -4908,3 +5018,85 @@ class _BulkWriteState {
   int depth = 0;
   int restore = 1000;
 }
+
+// ------------------------------------------------------------------ P6 命令的后台 isolate 入口
+//
+// 写成顶层函数：闭包只捕获句柄地址、库路径与入参（都可发送），不把 store（持有 Drift 连接）带过 isolate 边界。
+
+Future<Uint8List> _coreOptimizerItems(
+  int address,
+  String? libraryPath,
+  List<List<String>> lineages,
+  List<int> cardIds,
+  int algorithm,
+  int utcOffsetMin,
+  int rolloverHour,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(address, libraryPath: libraryPath).optimizerItems(
+    lineages,
+    cardIds,
+    algorithm: algorithm,
+    utcOffsetMin: utcOffsetMin,
+    rolloverHour: rolloverHour,
+  ),
+);
+
+Future<Uint8List> _coreRwkvCards(
+  int address,
+  String? libraryPath,
+  List<List<String>> lineages,
+  List<int> ids,
+  int utcOffsetMin,
+  int rolloverHour,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(address, libraryPath: libraryPath).rwkvCards(
+    lineages,
+    ids,
+    utcOffsetMin: utcOffsetMin,
+    rolloverHour: rolloverHour,
+  ),
+);
+
+Future<Uint8List> _coreRwkvReplay(
+  int address,
+  String? libraryPath,
+  String profileUid,
+  List<List<String>> lineages,
+  List<int> ids,
+  int utcOffsetMin,
+  int rolloverHour,
+  int since,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(address, libraryPath: libraryPath).rwkvReplay(
+    profileUid,
+    lineages,
+    ids,
+    utcOffsetMin: utcOffsetMin,
+    rolloverHour: rolloverHour,
+    since: since,
+  ),
+);
+
+Future<Uint8List> _coreRwkvLogTail(
+  int address,
+  String? libraryPath,
+  String profileUid,
+  int since,
+  bool withRows,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(
+    address,
+    libraryPath: libraryPath,
+  ).rwkvLogTail(profileUid, since: since, withRows: withRows),
+);
+
+Future<Uint8List> _coreStatsReviews(
+  int address,
+  String? libraryPath,
+  String profileUid,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(
+    address,
+    libraryPath: libraryPath,
+  ).statsReviews(profileUid),
+);

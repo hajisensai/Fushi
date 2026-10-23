@@ -1,10 +1,10 @@
 /// 复习统计的装载：从 [SrsDbStore]（当前 profile）一次读出日志、卡片缓存、笔记与
 /// 牌组，归一成 [SrsStatsData]，另附牌组 / 搜索筛选用的索引 [SrsStatsIndex]。
 ///
-/// 只读：不写任何事件、不刷新缓存。日志按卡用 [SrsCardHistory] 判有效。
+/// 只读：不写任何事件、不刷新缓存。日志不经 Dart：Rust 在 srs.db 上直读、按卡选取（与缓存刷新同一套
+/// 选取规则，含服务器时刻钳位），只回统计投影要的列（[SrsDbStore.statsColumns]）；投影在 [srsStatsFromLogs]。
 library;
 
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -12,6 +12,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 
 /// 统计页的筛选索引：牌组树、笔记与笔记类型（Anki 搜索语法求值用）。
@@ -108,20 +109,7 @@ Future<SrsStatsBundle> loadSrsStats(
   final int today = dayCtx.dayIndexOf(now);
   final SrsDeckTree tree = await store.deckTree();
 
-  final List<SrsReviewLogRow> logRows = await (db.select(
-    db.srsReviewLogs,
-  )..where((t) => t.profileUid.equals(store.profileUid))).get();
-  final Map<String, List<SrsReviewLog>> logsByCard =
-      <String, List<SrsReviewLog>>{};
-  for (int i = 0; i < logRows.length; i++) {
-    final SrsReviewLogRow r = logRows[i];
-    (logsByCard[r.cardId] ??= <SrsReviewLog>[]).add(
-      SrsReviewLog.fromJson(
-        (jsonDecode(r.json) as Map).cast<String, Object?>(),
-      ),
-    );
-    if (i % 4000 == 3999) await Future<void>.delayed(Duration.zero);
-  }
+  final SrsStatsColumns columns = await store.statsColumns();
 
   final List<SrsCardCacheRow> cardRows = <SrsCardCacheRow>[
     for (final SrsCardCacheRow c in await store.allCardRows())
@@ -157,15 +145,37 @@ Future<SrsStatsBundle> loadSrsStats(
   final List<SrsStatReview> reviews = <SrsStatReview>[];
   final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
   final Map<String, SrsMemory?> memoryByCard = <String, SrsMemory?>{};
-  int processed = 0;
-  for (final MapEntry<String, List<SrsReviewLog>> e in logsByCard.entries) {
-    final SrsCardHistory h = SrsCardHistory(e.value);
+  int at = 0;
+  for (int k = 0; k < columns.cardCount; k++) {
+    final String cardId = columns.cardIds[k];
+    final List<SrsStatLog> effective = <SrsStatLog>[];
+    for (; at < columns.logCount && columns.cardOf(at) == k; at++) {
+      effective.add(
+        SrsStatLog(
+          cardId: cardId,
+          isReviewKind: columns.isReviewKindOf(at),
+          rating: columns.ratingOf(at),
+          reviewType: columns.reviewTypeOf(at),
+          at: columns.atOf(at),
+          utcOffsetMin: columns.utcOffsetMinOf(at),
+          durationMs: columns.durationMsOf(at),
+          rwkv: columns.rwkvOf(at),
+          result: columns.hasResultOf(at)
+              ? (
+                  queue: columns.queueOf(at),
+                  scheduledDays: columns.scheduledDaysOf(at),
+                  dueDay: columns.dueDayOf(at),
+                )
+              : null,
+        ),
+      );
+    }
     final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-    one = srsStatsFromHistory(h, dayCtx);
+    one = srsStatsFromLogs(effective, dayCtx);
     reviews.addAll(one.reviews);
     maturity.addAll(one.maturity);
-    memoryByCard[e.key] = h.state.memory;
-    if (++processed % 1000 == 0) await Future<void>.delayed(Duration.zero);
+    memoryByCard[cardId] = columns.memoryOf(k);
+    if (k % 1000 == 999) await Future<void>.delayed(Duration.zero);
   }
 
   final int cardCount = cardRows.length;

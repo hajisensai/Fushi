@@ -38,7 +38,6 @@ const Map<String, String> _kAllowed = <String, String>{
   'packages/fushi_engine/lib/srs/srs_legacy_store_migration.dart': '一次性搬迁',
   'packages/fushi_engine/lib/srs/srs_backup_merge.dart': '备份合并（新老两种来源）',
   'packages/fushi_engine/lib/srs/srs_legacy_lapis_migration.dart': 'SRS 子系统',
-  'packages/fushi_engine/lib/srs/srs_rwkv_service.dart': 'SRS 子系统',
   'packages/fushi_engine/lib/srs/srs_stats.dart': 'SRS 子系统',
   // 通用备份里老形态（SRS 表还在主库 / 老备份主库条目里）的唯一处置点。
   'fushi/lib/src/sync/backup_srs_tables.dart': '老形态备份兼容',
