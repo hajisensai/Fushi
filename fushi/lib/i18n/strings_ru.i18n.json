@@ -1905,6 +1905,7 @@
   "discovery_alist_url_needs_http_optin": "Для обычного HTTP нужен переключатель ниже",
   "discovery_alist_username": "Имя пользователя",
   "discovery_alist_username_hint": "Оставьте пустым, чтобы просматривать как гость",
+  "discovery_alist_video_hint": "Videos on an AList / OpenList site are added in Video › Import: add a source and pick AList. They play online without downloading.",
   "discovery_all_sources": "Все источники",
   "discovery_audiobookshelf_api_key_hint": "With an API key, username and password are not needed",
   "discovery_audiobookshelf_api_key_label": "API key (optional)",
