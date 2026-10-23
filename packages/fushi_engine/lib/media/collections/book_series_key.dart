@@ -62,6 +62,8 @@ String _foldWidth(String s) => String.fromCharCodes(<int>[
 BookSeriesKey? parseBookSeriesKey(String title) {
   final String folded = _foldWidth(title);
   int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
+  final BookSeriesKey? labelled = _seriesFromTrailingLabel(title, folded, end);
+  if (labelled != null) return labelled;
   RegExpMatch? m = _volumeSuffix.firstMatch(folded.substring(0, end));
   if (m == null) {
     end = _trailingLabel.firstMatch(folded.substring(0, end))?.start ?? end;
@@ -79,6 +81,37 @@ BookSeriesKey? parseBookSeriesKey(String title) {
     key: key.replaceAll(RegExp(r'\s+'), ' ').toLowerCase(),
     seriesTitle: title.substring(0, end).trim(),
     volume: volume,
+  );
+}
+
+/// 结尾标签就是系列名：`青春ブタ野郎はバニーガール先輩の夢を見ない<青春ブタ野郎>`。
+///
+/// 日文轻小说常见写法——每卷副标题各不相同、没有卷号，系列名放在结尾的 `<…>` /
+/// `(…)` 里。以前标签一律当出版标签丢掉，各卷 key 互不相同，整套散在书架上
+/// （n4KC1azJvw）。判据只认「标签内容是正文的**真前缀**」：`(電撃文庫)`、`<上>`
+/// 不是正文前缀，照旧按出版标签处理；不用「多卷共享同一标签」当判据，否则同一文库
+/// 的不同作品会被并成一组。正文末尾若还有卷号，照常读成卷号。
+BookSeriesKey? _seriesFromTrailingLabel(String title, String folded, int end) {
+  final String head = folded.substring(0, end);
+  final RegExpMatch? label = _trailingLabel.firstMatch(head);
+  if (label == null) return null;
+  final int close = head.trimRight().length - 1;
+  final int open = head.lastIndexOf(RegExp(r'[(\[【<]'), close);
+  if (open < label.start || open >= close) return null;
+  final String inner = head.substring(open + 1, close).trim();
+  final String body = head.substring(0, label.start).trim();
+  // 至少两个字符：单字标签（`<上>`）碰巧是正文首字（`上野さんは…<上>`）不算系列名。
+  if (inner.length < 2 ||
+      body.length <= inner.length ||
+      !body.startsWith(inner)) {
+    return null;
+  }
+  final RegExpMatch? volume = _volumeSuffix.firstMatch(body);
+  final int innerStart = head.indexOf(inner, open + 1);
+  return BookSeriesKey(
+    key: inner.replaceAll(RegExp(r'\s+'), ' ').toLowerCase(),
+    seriesTitle: title.substring(innerStart, innerStart + inner.length),
+    volume: volume == null ? null : num.parse(volume.group(1)!),
   );
 }
 
