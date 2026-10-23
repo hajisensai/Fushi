@@ -164,6 +164,20 @@ BookSeriesKey? _seriesFromTrailingLabel(String title, String folded, int end) {
   return null;
 }
 
+/// 书包里**声明**的系列（EPUB OPF `belongs-to-collection` / `calibre:series`，见
+/// `epub_series.dart`）的系列身份：比较键与 [parseBookSeriesKey] 同一套归一化，
+/// 声明名与标题解析出的系列名相同时两条路归到同一组。[index] 为空时退回从
+/// [title] 解析卷号。
+BookSeriesKey declaredBookSeriesKey({
+  required String name,
+  required num? index,
+  required String title,
+}) => BookSeriesKey(
+  key: _normalizeSeriesKey(_foldWidth(name)),
+  seriesTitle: name.trim(),
+  volume: index ?? parseBookSeriesKey(title)?.volume,
+);
+
 /// [titles] 是否全都是同一系列的分卷（每个都解析得出 [BookSeriesKey] 且 `key` 相同）：
 /// 是则返回该系列键，否则（含空输入、任一解析不出）null。
 ///

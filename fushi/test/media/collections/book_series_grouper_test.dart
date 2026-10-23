@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 
@@ -170,6 +171,49 @@ void main() {
           titleByUid[item.entryKey] ?? item.entryKey,
       ];
     }
+
+    // n4KC1azJvw：每卷副标题各不相同、书名里没有系列线索，只有 OPF 声明了系列。
+    test('EPUB 声明的系列优先于书名：副标题各异的分卷按声明归组、按卷序排', () async {
+      String declared(String name, num index) =>
+          encodeEpubSeriesMetadata(EpubSeries(name: name, index: index));
+      await addBook(
+        'ココロコネクト キズランダム',
+        format: 'epub',
+        sourceMetadata: declared('ココロコネクト', 2),
+      );
+      await addBook(
+        'ココロコネクト ヒトランダム',
+        format: 'epub',
+        sourceMetadata: declared('ココロコネクト', 1),
+      );
+      await addBook(
+        'ココロコネクト カコランダム',
+        format: 'epub',
+        sourceMetadata: declared('ココロコネクト', 3),
+      );
+      // 读过 OPF、没有声明：照旧走书名启发式，不被并进去。
+      await addBook(
+        'ココロコネクト アスランダム 上',
+        format: 'epub',
+        sourceMetadata: encodeEpubSeriesMetadata(null),
+      );
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, hasLength(1));
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        summary.createdCollectionIds.single,
+      ))!;
+      expect(collection.name, 'ココロコネクト');
+      expect(await members(collection.id), <String>[
+        'ココロコネクト ヒトランダム',
+        'ココロコネクト キズランダム',
+        'ココロコネクト カコランダム',
+      ]);
+      // 幂等：再跑一次不新建、不改动。
+      final again = await grouper.groupAll();
+      expect(again.createdCollectionIds, isEmpty);
+    });
 
     test('漫画四卷叠成一个 playlist 合集，按卷号排；在线漫画与单卷不进', () async {
       await addBook('志乃と恋 ４', importedAt: 1);
