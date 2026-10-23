@@ -17,14 +17,17 @@ NM="${2:-nm}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BINDINGS="$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart"
+# srs.db 句柄（ffsrs_store_*）的 lookup 在 SrsCoreBindings 里。
+STORE_BINDINGS="$SCRIPT_DIR/../../packages/fushi_srs/lib/src/store/srs_core.dart"
 
 [[ -f "$BIN" ]] || { echo "::error::artifact not found: $BIN" >&2; exit 1; }
 [[ -f "$BINDINGS" ]] || { echo "::error::bindings not found: $BINDINGS" >&2; exit 1; }
+[[ -f "$STORE_BINDINGS" ]] || { echo "::error::bindings not found: $STORE_BINDINGS" >&2; exit 1; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-grep -oE "'ffsrs_[a-z0-9_]+'" "$BINDINGS" | tr -d "'" | sort -u > "$work/expected.txt"
+grep -ohE "'ffsrs_[a-z0-9_]+'" "$BINDINGS" "$STORE_BINDINGS" | tr -d "'" | sort -u > "$work/expected.txt"
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "ffsrs_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」

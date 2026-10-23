@@ -28,6 +28,12 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_history_select(const i64* ints, usize n_logs, const u8* text, usize, const u32* offs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | 卡片历史内核（列模式）：排序与每条日志的选取标记（有效 / 撤销 / 等价导入 / 撤销者 / 排序键被钳位），批量 |
 | `ffsrs_import_equivalent(const u8* text, usize, const u32* offs, usize n_logs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | Anki 导入器入库前判重：每组（导入日志, 原生日志…）的落库 JSON → 每组一个字节；判据与卡片历史的等价导入是同一个函数 |
 | `ffsrs_materialize(const u8* header, usize, const u8* text, usize, const u32* offs, const i64* servers, usize n_items, usize* out_len, char** err) -> u8*` | 字段寄存器内核（`src/registers.rs`）：组描述 JSON + 修改记录落库原文 / 服务器时刻 → 寄存器（支配、排序键、冲突候选、删除优先）与笔记 / 卡片标志（按前身血统继承）/ 笔记类型 / 牌组的物化视图，以及落库支配裁剪、no-op 的「值相同」；结果是 JSON，批量。排序键（`src/ordering.rs`）与释义样式去重规范形（`src/style_dedup.rs`）与卡片历史 / 查重共用一份 |
+| `ffsrs_store_open(const u8* path, usize, SrsCore** out, char** err) -> i32` / `ffsrs_store_close(SrsCore*)` | 打开 / 关闭 Rust 独占的 `srs.db`（`src/store/`，rusqlite bundled；设计 `docs/specs/2026-10-23-srs-rust-store.md`）。一条写连接 + 一条读连接，WAL；只开 srs.db，绝不开主库 |
+| `ffsrs_store_exec` / `ffsrs_store_exec_batch` / `ffsrs_store_in_transaction` | Drift 执行器后端：写连接上执行语句（行页编码见 `src/store/rows.rs`）|
+| `ffsrs_store_history_states(SrsCore*, const u8* groups, usize, usize n_groups, u8** out, usize*, char**) -> i32` | 缓存刷新：Rust 在写连接上直读日志 + 服务器时刻并选取（含事务里未提交的行），输出布局同 `ffsrs_history_states` |
+| `ffsrs_store_legacy_state` / `_legacy_begin` / `_legacy_page` / `_legacy_commit` / `_legacy_abort` / `_legacy_mark_none` | 主库旧 srs_* 表的一次性搬迁（Dart 读、Rust 写，一个事务）|
+| `ffsrs_store_snapshot(SrsCore*, const u8* path, usize, i32 strip_device_local, char**) -> i32` | 备份快照（`VACUUM INTO`，可清空设备本地表）|
+| `ffsrs_store_debug_query` | 只读调试查询（测试 / 诊断）|
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
