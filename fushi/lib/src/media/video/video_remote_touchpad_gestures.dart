@@ -162,8 +162,9 @@ class VideoRemotePadGestureTracker {
     if (_consumed) return const <VideoRemotePadGesture>[];
     final Offset travel = p.last - p.origin;
     if (!p.moved) {
-      if (at - p.downAt >= longPressAfter)
+      if (at - p.downAt >= longPressAfter) {
         return const <VideoRemotePadGesture>[];
+      }
       return _tap(p.origin, at);
     }
     if (stepping) return const <VideoRemotePadGesture>[];

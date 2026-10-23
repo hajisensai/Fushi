@@ -1935,9 +1935,18 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         unawaited(nextRow());
       case VideoRemotePadAction.volumeUp:
       case VideoRemotePadAction.volumeDown:
-        if (!capabilities.contains(videoRemoteCapabilityVolume)) return false;
+        final int? current = volume;
+        if (!capabilities.contains(videoRemoteCapabilityVolume) ||
+            current == null) {
+          return false;
+        }
         final int step = action == VideoRemotePadAction.volumeUp ? 10 : -10;
-        unawaited(setVolume((volume ?? 100) + step));
+        final int next = (current + step).clamp(0, 100);
+        // 已到头：不发、不震。
+        if (next == current) return false;
+        // 先记下本地值：连着快滑时下一档在这一档上加，不等电脑的快照回来。
+        setState(() => _state = <String, dynamic>{..._state, 'volume': next});
+        unawaited(setVolume(next));
     }
     return true;
   }
