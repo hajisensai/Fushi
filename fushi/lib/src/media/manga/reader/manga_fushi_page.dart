@@ -3519,6 +3519,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     } finally {
       if (mounted) setState(() => _switchingChapter = false);
+      // 跳章的闪现计时从入栈那一刻起；换章装载可能就吃掉大半，落地后重新亮满。
+      if (mounted && _jumpPillFlashing) _onMangaJumpHistoryChanged();
     }
   }
 
