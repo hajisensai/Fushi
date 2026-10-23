@@ -228,7 +228,7 @@ void main() {
           request.headers['Authorization'],
           'Basic ${base64Encode(utf8.encode('hibiki:secret'))}',
         );
-        if (request.url.path == '/api/library/videos/video/a b/cover') {
+        if (request.url.path == '/api/library/videos/video/a%20b/cover') {
           return http.Response.bytes(<int>[1, 2, 3], 200);
         }
         return http.Response('Video cover not found', 404);
