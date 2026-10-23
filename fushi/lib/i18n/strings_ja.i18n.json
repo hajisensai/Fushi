@@ -5772,6 +5772,7 @@
   "settings_modified_hint": "Changed from default",
   "settings_module_keep_one_navigation": "Keep at least one page in the navigation bar",
   "settings_module_nav_order": "Navigation bar order",
+  "settings_module_nav_settings_always_on": "常に表示（オフにできません）",
   "settings_page_reset_all_default": "Everything on this page is at its default",
   "settings_page_reset_confirm": "Reset",
   "settings_page_reset_menu": "Reset page to defaults",

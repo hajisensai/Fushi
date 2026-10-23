@@ -5772,6 +5772,7 @@
   "settings_modified_hint": "已改过默认值",
   "settings_module_keep_one_navigation": "导航栏里至少要保留一个页面",
   "settings_module_nav_order": "导航栏顺序",
+  "settings_module_nav_settings_always_on": "始终显示，不能关闭",
   "settings_page_reset_all_default": "本页均为默认值",
   "settings_page_reset_confirm": "恢复",
   "settings_page_reset_menu": "恢复本页默认",

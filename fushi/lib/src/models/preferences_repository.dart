@@ -1492,8 +1492,21 @@ class PreferencesRepository extends ChangeNotifier
         getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
       );
 
-  Future<void> setModuleOrder(List<ModuleId> order) async {
-    await setPref(ModuleId.orderPrefKey, ModuleId.encodeOrder(order));
+  /// 「设置」tab 在用户排序里的位置（[ModuleId.parseSettingsSlot]）；null = 最后。
+  int? get moduleSettingsSlot => ModuleId.parseSettingsSlot(
+        getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
+      );
+
+  /// 写模块顺序。[settingsSlot] 必须显式给（保留现状就传 [moduleSettingsSlot]）：
+  /// 顺序与设置位置存在同一个键里，漏传就会把用户排好的设置位置悄悄抹掉。
+  Future<void> setModuleOrder(
+    List<ModuleId> order, {
+    required int? settingsSlot,
+  }) async {
+    await setPref(
+      ModuleId.orderPrefKey,
+      ModuleId.encodeOrder(order, settingsSlot: settingsSlot),
+    );
     notifyListeners();
   }
 
