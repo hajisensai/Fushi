@@ -207,6 +207,82 @@ impl SrsCore {
         Ok(())
     }
 
+    // ------------------------------------------------------------ Drift 执行器（§5 过渡层）
+
+    /// 在写连接上执行一条语句（Drift `QueryDelegate` 的后端；事务由 Drift 用 BEGIN / COMMIT
+    /// 语句开关，同一条连接上的 Rust 命令看得见事务里未提交的行）。
+    ///
+    /// 返回页：查询 = 首行列名 + 结果行；其它 = 一行 `[变更行数, last_insert_rowid]`。
+    pub fn exec(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        let w = self.writer()?;
+        Self::exec_on(&w, sql, params, select)
+    }
+
+    fn exec_on(conn: &Connection, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+        let mut stmt = conn.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
+        if !select {
+            let changes = stmt
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .map_err(|e| format!("{e} in {sql}"))?;
+            return Ok(rows::encode(
+                2,
+                &[vec![
+                    Value::Integer(changes as i64),
+                    Value::Integer(conn.last_insert_rowid()),
+                ]],
+            ));
+        }
+        let n = stmt.column_count();
+        let names: Vec<Value> = stmt
+            .column_names()
+            .iter()
+            .map(|c| Value::Text((*c).to_string()))
+            .collect();
+        let mut out = Vec::with_capacity(4096);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&(n as u32).to_le_bytes());
+        for v in &names {
+            rows::push_value(&mut out, v.into());
+        }
+        let mut count: u32 = 1;
+        let mut q = stmt
+            .query(rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("{e} in {sql}"))?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            for i in 0..n {
+                rows::push_value(&mut out, row.get_ref(i).map_err(|e| e.to_string())?);
+            }
+            count += 1;
+        }
+        out[0..4].copy_from_slice(&count.to_le_bytes());
+        Ok(out)
+    }
+
+    /// Drift 的批量语句：`statements[i]` 配若干组参数，按给定顺序执行（调用方已在事务里）。
+    pub fn exec_batch(&self, statements: &[&str], applications: &[(usize, Vec<Value>)]) -> Result<(), String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        let w = self.writer()?;
+        for (index, args) in applications {
+            let sql = statements
+                .get(*index)
+                .ok_or_else(|| format!("batch statement index {index} out of range"))?;
+            let mut stmt = w.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
+            stmt.execute(rusqlite::params_from_iter(args.iter()))
+                .map_err(|e| format!("{e} in {sql}"))?;
+        }
+        Ok(())
+    }
+
+    /// 写连接当前是否在事务里（Drift 打开时校验、测试用）。
+    pub fn in_transaction(&self) -> Result<bool, String> {
+        Ok(!self.writer()?.is_autocommit())
+    }
+
     // ------------------------------------------------------------ 测试 / 诊断
 
     /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
@@ -354,5 +430,47 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0][0], Value::Text("key".into()));
         assert_eq!(rows[1][1], Value::Text("1".into()));
+    }
+}
+
+#[cfg(test)]
+mod exec_tests {
+    use super::*;
+
+    #[test]
+    fn exec_select_insert_and_transactions() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_exec_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        core.exec("BEGIN", &[], false).unwrap();
+        assert!(core.in_transaction().unwrap());
+        let r = core
+            .exec(
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)",
+                &[Value::Text("a".into()), Value::Text("p".into()), Value::Text("{}".into())],
+                false,
+            )
+            .unwrap();
+        let (_, rows) = rows::decode(&r).unwrap();
+        assert_eq!(rows[0][0], Value::Integer(1));
+        // 同一条连接，事务里看得见。
+        let s = core.exec("SELECT id FROM srs_unknown_events", &[], true).unwrap();
+        let (cols, rows) = rows::decode(&s).unwrap();
+        assert_eq!(cols, 1);
+        assert_eq!(rows.len(), 2);
+        core.exec("ROLLBACK", &[], false).unwrap();
+        assert!(!core.in_transaction().unwrap());
+        core.exec_batch(
+            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?, 'p', '{}')"],
+            &[(0, vec![Value::Text("b".into())]), (0, vec![Value::Text("c".into())])],
+        )
+        .unwrap();
+        let s = core.exec("SELECT COUNT(*) FROM srs_unknown_events", &[], true).unwrap();
+        let (_, rows) = rows::decode(&s).unwrap();
+        assert_eq!(rows[1][0], Value::Integer(2));
+        assert!(core.exec("SELECT nope", &[], true).is_err());
     }
 }

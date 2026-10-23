@@ -212,3 +212,102 @@ pub extern "C" fn ffsrs_store_debug_query(
         Ok(())
     })
 }
+
+fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
+    if page.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (_, mut rows) = super::rows::decode(page)?;
+    if rows.len() > 1 {
+        return Err("params page must hold at most one row".into());
+    }
+    Ok(rows.pop().unwrap_or_default())
+}
+
+/// Drift 执行器：写连接上执行一条语句。`select != 0` 返回「列名行 + 结果行」，否则返回
+/// 一行 `[变更行数, last_insert_rowid]`；缓冲区用 `ffsrs_free_bytes` 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_exec(
+    core: *const SrsCore,
+    sql: *const u8,
+    sql_len: usize,
+    params: *const u8,
+    params_len: usize,
+    select: i32,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let s = utf8(sql, sql_len)?;
+        let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
+        hand_out(c.exec(s, &values, select != 0)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// Drift 批量语句。`statements` 是单列文本页（每行一条 SQL）；`applications` 是两列页：
+/// `[语句下标 i64, 参数页 blob]`（参数页是一行的 rows.rs 页，可为空字节）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_exec_batch(
+    core: *const SrsCore,
+    statements: *const u8,
+    statements_len: usize,
+    applications: *const u8,
+    applications_len: usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    use rusqlite::types::Value;
+    run(core, error_out, |c| {
+        let (_, stmt_rows) =
+            super::rows::decode(bytes(statements, statements_len).ok_or("null statements")?)?;
+        let mut sqls: Vec<String> = Vec::with_capacity(stmt_rows.len());
+        for r in stmt_rows {
+            match r.into_iter().next() {
+                Some(Value::Text(t)) => sqls.push(t),
+                _ => return Err("statement page row must be one text value".into()),
+            }
+        }
+        let (_, app_rows) = super::rows::decode(
+            bytes(applications, applications_len).ok_or("null applications")?,
+        )?;
+        let mut apps: Vec<(usize, Vec<Value>)> = Vec::with_capacity(app_rows.len());
+        for r in app_rows {
+            let mut it = r.into_iter();
+            let index = match it.next() {
+                Some(Value::Integer(i)) if i >= 0 => i as usize,
+                _ => return Err("application row needs a statement index".into()),
+            };
+            let args = match it.next() {
+                Some(Value::Blob(b)) => one_row(&b)?,
+                Some(Value::Null) | None => Vec::new(),
+                _ => return Err("application args must be a blob".into()),
+            };
+            apps.push((index, args));
+        }
+        let refs: Vec<&str> = sqls.iter().map(String::as_str).collect();
+        c.exec_batch(&refs, &apps)
+    })
+}
+
+/// `*out` = 1 写连接在事务里。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_in_transaction(
+    core: *const SrsCore,
+    out: *mut i32,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let v = c.in_transaction()?;
+        unsafe { *out = v as i32 };
+        Ok(())
+    })
+}
