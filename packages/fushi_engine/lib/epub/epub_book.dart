@@ -13,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as html_dom;
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/reader_resource_host.dart';
 
 class EpubBook {
@@ -27,6 +28,7 @@ class EpubBook {
     this.language,
     this.isbn,
     this.renditionSpread,
+    this.series,
   });
 
   final String title;
@@ -40,6 +42,9 @@ class EpubBook {
   /// Book-level `rendition:spread` value: `landscape`, `both`, `portrait`,
   /// `none`, or `null` when the OPF does not declare one.
   final String? renditionSpread;
+
+  /// OPF 声明的系列（`belongs-to-collection` / `calibre:series`），没有为 null。
+  final EpubSeries? series;
 
   final List<EpubChapter> chapters;
   final List<EpubTocItem> toc;

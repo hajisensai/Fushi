@@ -5,9 +5,15 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart'
+    show DuplicatePolicy;
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/manga/manga_importer.dart'
+    show MangaImporter;
 import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/source_library/book_library_prune.dart'
+    show BookSourceIndex;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/server_paths.dart';
@@ -188,6 +194,70 @@ void main() {
     for (final EpubBookRow book in books) {
       await expectMangaArtifacts(book);
     }
+  });
+
+  // 反馈 n4KC1azJvw（manga-series-volume-folders-flattened）：与 app 来源扫描同一份
+  // 归组 + 回收逻辑。
+  test('库根/系列/Vol01..03 → 3 卷「系列名 卷名」，同在系列合集', () async {
+    for (final String v in <String>['Vol01', 'Vol02', 'Vol03']) {
+      _writePage(p.join(libraryRoot.path, 'ONE PIECE', v), '001.png');
+    }
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.mangaAdded, 3);
+    final Map<String, String> titleByUid = <String, String>{
+      for (final EpubBookRow b in await db.getAllEpubBooks()) b.uid: b.title,
+    };
+    expect(titleByUid.values.toList()..sort(),
+        <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03']);
+    final MediaCollectionRow series =
+        (await db.getAllMediaCollections()).single;
+    expect(series.name, 'ONE PIECE');
+    expect(
+      <String?>[
+        for (final MediaCollectionItemRow i
+            in await db.getCollectionItems(series.id))
+          titleByUid[i.entryKey],
+      ],
+      <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03'],
+    );
+  });
+
+  test('旧版整本导入的合订本：重扫被分卷取代、计入 mangaPruned，不留重复', () async {
+    for (final String v in <String>['Vol01', 'Vol02']) {
+      _writePage(p.join(libraryRoot.path, 'ONE PIECE', v), '001.png');
+    }
+    // 先扫一次拿到来源行，再把库还原成旧规则的落库结果：整个系列目录一本、标题 =
+    // 系列目录名、索引只登记 `ONE PIECE` → 这本书。
+    await scan();
+    final int sourceId = (await db.getAllEpubBooks()).first.sourceId!;
+    for (final EpubBookRow b in await db.getAllEpubBooks()) {
+      await db.deleteEpubBook(b.bookKey);
+    }
+    final String oldKey = await MangaImporter.importFromImageFolder(
+      db: db,
+      imageDirPath: p.join(libraryRoot.path, 'ONE PIECE'),
+      title: 'ONE PIECE',
+      sourceId: sourceId,
+      policy: const DuplicatePolicy.skip(),
+    );
+    final BookSourceIndex index = BookSourceIndex.empty(sourceId)
+      ..put('ONE PIECE', (await db.getEpubBook(oldKey))!.uid);
+    await index.save(db);
+
+    final ScanSummary summary = await scan();
+
+    expect(summary.errors, isEmpty);
+    expect(summary.mangaAdded, 2);
+    expect(summary.mangaPruned, 1);
+    expect(await db.getEpubBook(oldKey), isNull);
+    expect(
+      (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
+        ..sort(),
+      <String>['ONE PIECE Vol01', 'ONE PIECE Vol02'],
+    );
   });
 
   test('.mokuro 卷按 manifest 导入，其页图目录不再重复成裸图卷', () async {

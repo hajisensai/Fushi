@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
     show kMangaArchiveFileExtensions;
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
@@ -233,6 +234,296 @@ void main() {
       expect(plan.isEmpty, isTrue);
       expect(
         planMangaFolders(rootPath: root, filePaths: const <String>[]).isEmpty,
+        isTrue,
+      );
+    });
+  });
+
+  // 反馈 n4KC1azJvw（manga-series-volume-folders-flattened）：`库根/系列/卷N/页图`
+  // 被整个系列合成一本 ~2000 页的漫画。系列目录下的卷子目录全都像卷号时下探一层。
+  group('planMangaFolders 系列目录下探一层', () {
+    final String root = p.join('library');
+    final String series = p.join(root, 'ONE PIECE');
+
+    test('库/系列/Vol01..03 → 3 卷，各带系列归属与「系列名 卷名」标题', () {
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          for (final String v in <String>[
+            'Vol01',
+            'Vol02',
+            'Vol03',
+          ]) ...<String>[
+            p.join(series, v, '001.jpg'),
+            // 卷目录更深处的子目录仍归属这一卷。
+            p.join(series, v, 'ch1', '002.jpg'),
+          ],
+        ],
+      );
+
+      expect(plan.imageFolders, <String>[
+        p.join(series, 'Vol01'),
+        p.join(series, 'Vol02'),
+        p.join(series, 'Vol03'),
+      ]);
+      expect(
+        plan.seriesVolumes[p.join(series, 'Vol02')],
+        MangaSeriesVolume(
+          seriesDir: series,
+          seriesTitle: 'ONE PIECE',
+          title: 'ONE PIECE Vol02',
+          volume: 2,
+        ),
+      );
+      expect(plan.seriesVolumeDirs, <String, List<String>>{
+        series: plan.imageFolders,
+      });
+      expect(plan.imageFolders.map(plan.imageFolderTitle).toList(), <String>[
+        'ONE PIECE Vol01',
+        'ONE PIECE Vol02',
+        'ONE PIECE Vol03',
+      ]);
+    });
+
+    test('第N巻 / v01 / 纯数字 / （N） / Volume N / 已带系列名 都算卷号', () {
+      final Map<List<String>, List<String>> cases =
+          <List<String>, List<String>>{
+            <String>['第1巻', '第2巻']: <String>['ONE PIECE 第1巻', 'ONE PIECE 第2巻'],
+            <String>['v01', 'v02']: <String>['ONE PIECE v01', 'ONE PIECE v02'],
+            <String>['01', '02', '10']: <String>[
+              'ONE PIECE 01',
+              'ONE PIECE 02',
+              'ONE PIECE 10',
+            ],
+            <String>['（1）', '（2）']: <String>['ONE PIECE （1）', 'ONE PIECE （2）'],
+            <String>['Volume 1', 'Volume 2']: <String>[
+              'ONE PIECE Volume 1',
+              'ONE PIECE Volume 2',
+            ],
+            <String>['第1卷', '第2册']: <String>['ONE PIECE 第1卷', 'ONE PIECE 第2册'],
+            <String>['#1', '#2']: <String>['ONE PIECE #1', 'ONE PIECE #2'],
+            // 卷目录名已带系列名：标题原样，不再拼成「ONE PIECE ONE PIECE 01」。
+            <String>['ONE PIECE 01', 'one piece 02']: <String>[
+              'ONE PIECE 01',
+              'one piece 02',
+            ],
+          };
+      cases.forEach((List<String> names, List<String> titles) {
+        final MangaFolderPlan plan = planMangaFolders(
+          rootPath: root,
+          filePaths: <String>[
+            for (final String n in names) p.join(series, n, '001.png'),
+          ],
+        );
+        expect(plan.imageFolders, hasLength(names.length), reason: '$names');
+        expect(
+          plan.imageFolders.map(plan.imageFolderTitle).toList(),
+          titles,
+          reason: '$names',
+        );
+        for (final String folder in plan.imageFolders) {
+          expect(
+            plan.seriesVolumes[folder]?.seriesTitle,
+            'ONE PIECE',
+            reason: folder,
+          );
+        }
+      });
+    });
+
+    test('拼出的标题经 parseBookSeriesKey 解析回同一系列与卷号（合集归组靠它）', () {
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          for (final String n in <String>['Vol01', '第2巻', '03'])
+            p.join(series, n, '001.png'),
+        ],
+      );
+      final List<BookSeriesKey> keys = <BookSeriesKey>[
+        for (final String folder in plan.imageFolders)
+          parseBookSeriesKey(plan.imageFolderTitle(folder))!,
+      ];
+      expect(keys.map((BookSeriesKey k) => k.seriesTitle).toSet(), <String>{
+        'ONE PIECE',
+      });
+      expect(keys.map((BookSeriesKey k) => k.volume).toList()..sort(), <num>[
+        1,
+        2,
+        3,
+      ]);
+    });
+
+    test('反例：系列/ch01..ch03 章节目录 → 整个系列一卷（不拆）', () {
+      for (final List<String> names in <List<String>>[
+        <String>['ch01', 'ch02', 'ch03'],
+        <String>['Chapter 01', 'Chapter 02'],
+        <String>['第1話', '第2話'],
+        <String>['Extra 1', 'Extra 2'],
+      ]) {
+        final MangaFolderPlan plan = planMangaFolders(
+          rootPath: root,
+          filePaths: <String>[
+            for (final String n in names) p.join(series, n, '001.png'),
+          ],
+        );
+        expect(plan.imageFolders, <String>[series], reason: '$names');
+        expect(plan.seriesVolumes, isEmpty, reason: '$names');
+        expect(plan.imageFolderTitle(series), 'ONE PIECE');
+      }
+    });
+
+    test('混合（部分像卷号、部分不像）→ 维持现状，整个系列一卷', () {
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          p.join(series, 'Vol01', '001.png'),
+          p.join(series, 'Vol02', '001.png'),
+          p.join(series, 'extra', '001.png'),
+        ],
+      );
+      expect(plan.imageFolders, <String>[series]);
+      expect(plan.seriesVolumes, isEmpty);
+    });
+
+    test('系列目录自己有直接页图 / 只有一个卷目录 → 维持现状', () {
+      final MangaFolderPlan withCover = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          p.join(series, 'cover.jpg'),
+          p.join(series, 'Vol01', '001.png'),
+          p.join(series, 'Vol02', '001.png'),
+        ],
+      );
+      expect(withCover.imageFolders, <String>[series]);
+      expect(withCover.seriesVolumes, isEmpty);
+
+      final MangaFolderPlan single = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[p.join(series, 'Vol01', '001.png')],
+      );
+      expect(single.imageFolders, <String>[series]);
+      expect(single.seriesVolumes, isEmpty);
+    });
+
+    test('多个系列并存：各自下探，与普通卷 / 章节系列互不影响', () {
+      final String other = p.join(root, 'Bleach');
+      final String chapters = p.join(root, 'Oneshots');
+      final String plain = p.join(root, 'Standalone');
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          p.join(series, 'Vol01', '001.png'),
+          p.join(series, 'Vol02', '001.png'),
+          p.join(other, '01', '001.png'),
+          p.join(other, '02', '001.png'),
+          p.join(chapters, 'ch01', '001.png'),
+          p.join(chapters, 'ch02', '001.png'),
+          p.join(plain, '001.png'),
+        ],
+      );
+      expect(plan.imageFolders, <String>[
+        p.join(other, '01'),
+        p.join(other, '02'),
+        p.join(series, 'Vol01'),
+        p.join(series, 'Vol02'),
+        chapters,
+        plain,
+      ]);
+      expect(plan.seriesVolumeDirs.keys.toSet(), <String>{series, other});
+      expect(plan.imageFolderTitle(p.join(other, '01')), 'Bleach 01');
+      expect(plan.imageFolderTitle(chapters), 'Oneshots');
+    });
+
+    test('卷目录被 .mokuro 认领时让位，其余卷照常下探', () {
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: root,
+        filePaths: <String>[
+          p.join(series, 'Vol01', 'Vol01.mokuro'),
+          p.join(series, 'Vol01', '001.png'),
+          p.join(series, 'Vol02', '001.png'),
+        ],
+      );
+      expect(plan.mokuroPaths, <String>[
+        p.join(series, 'Vol01', 'Vol01.mokuro'),
+      ]);
+      expect(plan.imageFolders, <String>[p.join(series, 'Vol02')]);
+      expect(plan.seriesVolumes.keys, <String>[p.join(series, 'Vol02')]);
+    });
+
+    test('网络来源（URL 路径语义）同样下探', () {
+      const String remoteRoot = 'https://dav.example/manga';
+      final MangaFolderPlan plan = planMangaFolders(
+        rootPath: remoteRoot,
+        context: p.url,
+        filePaths: <String>[
+          '$remoteRoot/ONE PIECE/Vol01/001.png',
+          '$remoteRoot/ONE PIECE/Vol02/001.png',
+        ],
+      );
+      expect(plan.imageFolders, <String>[
+        '$remoteRoot/ONE PIECE/Vol01',
+        '$remoteRoot/ONE PIECE/Vol02',
+      ]);
+      expect(
+        plan.imageFolderTitle('$remoteRoot/ONE PIECE/Vol01', context: p.url),
+        'ONE PIECE Vol01',
+      );
+    });
+  });
+
+  group('parseBookVolumeFolderName', () {
+    test('裸卷号与「系列名 + 卷号」算卷目录，章节 / 附录不算', () {
+      const String s = 'ONE PIECE';
+      for (final String yes in <String>[
+        'Vol01',
+        'Vol.1',
+        'vol_02',
+        'Volume 3',
+        'v04',
+        '第5巻',
+        '6巻',
+        '第7卷',
+        '第8册',
+        '#9',
+        '(10)',
+        '（11）',
+        '１２',
+        '13',
+        'ONE PIECE 14',
+        'ＯＮＥ ＰＩＥＣＥ 第15巻',
+      ]) {
+        expect(
+          parseBookVolumeFolderName(yes, seriesFolderName: s),
+          isNotNull,
+          reason: yes,
+        );
+      }
+      for (final String no in <String>[
+        'ch01',
+        'Chapter 1',
+        'Episode 2',
+        '第1話',
+        'extra',
+        'Extra 2',
+        'images',
+        'Bleach 01',
+        'Catch22',
+      ]) {
+        expect(
+          parseBookVolumeFolderName(no, seriesFolderName: s),
+          isNull,
+          reason: no,
+        );
+      }
+      expect(
+        parseBookVolumeFolderName('Vol01', seriesFolderName: s)!.volume,
+        1,
+      );
+      expect(
+        parseBookVolumeFolderName(
+          'ONE PIECE 14',
+          seriesFolderName: s,
+        )!.namesSeries,
         isTrue,
       );
     });

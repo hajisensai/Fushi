@@ -127,6 +127,29 @@ void main() {
               '匿名打 playurl —— 大会员内容必然解析失败。');
     });
 
+    test('稿件带了页面内 playurl 就用它（反馈 Atbl_kOuZK：服务端匿名请求被 412）', () {
+      final String segment = bilibiliSegment();
+      expect(segment, contains('usePagePlayurl'),
+          reason: '稿件的页面响应体没接上：扩展取回了 playurl，服务端却还去匿名请求，'
+              '海外 / 代理出口下被 B 站风控 412，整张卡失败。');
+      expect(segment, contains('bi = usePagePlayurl'),
+          reason: '选「页面响应体 vs 服务端自己解析」的判据必须是 usePagePlayurl。');
+      final String bg = File(
+        '../tools/browser-extension/background.js',
+      ).readAsStringSync();
+      expect(bg, contains('async function fushiResolveBilibiliUgcPlayurl('));
+      expect(
+        bg,
+        contains("msg.clipSourceKind === 'bilibili' && msg.clipSourceId"),
+        reason: '扩展没给稿件（kind=bilibili）在页面主世界里取 playurl',
+      );
+      expect(
+        File('assets/browser_extension/background.js').readAsStringSync(),
+        bg,
+        reason: 'app 内置的扩展副本必须与 tools/browser-extension 同步',
+      );
+    });
+
     test('本段不得下发动图格式 / 静态帧模式两个恒不生效的参数', () {
       final String segment = bilibiliSegment();
       expect(segment.contains('imageMode:'), isFalse,

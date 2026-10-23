@@ -174,11 +174,12 @@ void main() {
       bool covered(int cp) => ReaderVerticalPunctuationFont.codepointRanges.any(
         ((int, int) r) => cp >= r.$1 && cp <= r.$2,
       );
-      for (final int cp in '「」『』、。（）'.runes) {
+      // ー 与「」同属 Tr：缺 vert 的字体里同样画成横线（反馈 mTof77pMTe），必须收。
+      for (final int cp in '「」『』、。（）ー'.runes) {
         expect(covered(cp), isTrue, reason: 'U+${cp.toRadixString(16)}');
       }
       // 本来就按旋转处理、与 vert 无关的字符不收，免得无谓换字形。
-      for (final int cp in 'ー…‥—―'.runes) {
+      for (final int cp in '…‥—―'.runes) {
         expect(covered(cp), isFalse, reason: 'U+${cp.toRadixString(16)}');
       }
     });

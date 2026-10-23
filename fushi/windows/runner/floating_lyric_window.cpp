@@ -33,8 +33,8 @@ constexpr float kHorizontalPaddingDip = 20.0f;
 constexpr float kButtonSizeDip = 30.0f;
 constexpr float kButtonGapDip = 10.0f;
 // Hook toolbar: 32dp hit areas with a compact 4dp rhythm. Keeping these
-// separate from the audiobook/clipboard controls lets the nine-icon row use a
-// deliberate 320dp width instead of inheriting the old sparse 350dp layout.
+// separate from the audiobook/clipboard controls lets the ten-icon row use a
+// deliberate 356dp width instead of inheriting the old sparse 350dp layout.
 constexpr float kHookTextButtonSizeDip = 32.0f;
 constexpr float kHookTextButtonGapDip = 4.0f;
 constexpr float kControlsTopDip = 8.0f;
@@ -42,13 +42,13 @@ constexpr float kControlsTopDip = 8.0f;
 constexpr float kResizeGripDip = 18.0f;
 constexpr float kMinStripWidthDip = 280.0f;
 // Hook mode draws a centred toolbar whose slot count depends on the profile
-// (gal hook 9 槽 = 9 * 32 + 8 * 4 = 320dip，有声书 8 槽更窄). The generic 280dip
+// (gal hook 10 槽 = 10 * 32 + 9 * 4 = 356dip，有声书 6 槽更窄). The generic 280dip
 // floor would let the user drag the window narrower than its own controls,
 // clipping the leading buttons; hook mode therefore floors at the widest
 // toolbar's width plus a small margin. Bump this whenever
 // hook_toolbar::kMaxSlotCount grows — the floor is derived from that row width,
 // not from a taste-based round number（守卫按 kMaxSlotCount 复核）。
-constexpr float kHookTextMinStripWidthDip = 340.0f;
+constexpr float kHookTextMinStripWidthDip = 376.0f;
 // Shift-悬停查词的轮询表（只在鼠标停在浮窗里时挂着，见
 // StartHoverLookupPolling）。 60ms ≈
 // 一次按键的最短可感知延迟，且远低于用户「按下 Shift 想看词」的心理预期；
@@ -119,7 +119,7 @@ constexpr float kBaseStripHeightForFontDip = 96.0f;
 // lock, close. The lock button (slot 3) is the TODO-136 addition; both Render()
 // and ControlActionAt() derive their geometry from this single count so the
 // hit areas can never drift from what is drawn.
-// 工具条槽数不再是编译期常量：同一个窗口类现在服务两张槽表（galgame hook 9 槽 /
+// 工具条槽数不再是编译期常量：同一个窗口类现在服务两张槽表（galgame hook 10 槽 /
 // 有声书 8 槽），槽数只能在运行时按 toolbar_profile_ 问 hook_toolbar::SlotCount。
 // 几何（RowWidth）、命中（SlotAt）、绘制三处一律走它，谁也不许自己数。
 // BUG-951: padding between the standalone pass-through toolbar window's edge
@@ -2714,7 +2714,7 @@ void FloatingLyricWindow::DispatchControlAction(const std::string& action) {
   }
   if (action == "topmost") {
     // 按钮按下 = 翻转，落地走 SetTopmost（与 Dart 的会话复位同一条路径）。
-    // Pin button (galgame hook toolbar slot 7): toggle
+    // Pin button (galgame hook toolbar slot 8): toggle
     // always-on-top locally (LunaTranslator #36). Handled natively — no Dart
     // round-trip — and every window-Z SetWindowPos reads topmost_ so the new
     // state sticks. Re-pinning also re-asserts HWND_TOPMOST, which is the way

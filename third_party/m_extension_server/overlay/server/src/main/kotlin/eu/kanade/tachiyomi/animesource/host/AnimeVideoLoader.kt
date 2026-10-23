@@ -2,7 +2,9 @@ package eu.kanade.tachiyomi.animesource.host
 
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.model.Hoster
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Track
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import kotlinx.coroutines.CancellationException
@@ -28,7 +30,11 @@ import kotlinx.coroutines.sync.withPermit
  *     lazy hosters are only expanded when nothing eager produced a video;
  *  3. per video, `resolveVideo` when not yet `initialized`, then the lib-14
  *     `getVideoUrl` step when the url is still unresolved. Videos that fail to
- *     resolve are dropped, not fatal: one dead mirror must not hide the others.
+ *     resolve are dropped, not fatal: one dead mirror must not hide the others;
+ *  4. lib 17: urls on [HttpServer.PLACEHOLDER_URL] are rebased onto the
+ *     extension's own local server (`createHttpServer`), which the caller-supplied
+ *     `localServer` starts. A host that cannot run one (Android) records the
+ *     candidate as a failure instead of handing the player an unreachable url.
  *
  * Only when *nothing* survives is the first failure rethrown, so the UI shows
  * the real cause (an HTTP status, a parser exception) instead of an empty list.
@@ -71,9 +77,15 @@ object AnimeVideoLoader {
         val failures: List<Throwable>,
     )
 
+    /**
+     * @param localServer starts (or reuses) the extension's lib-17 local server and
+     *   returns its base url (`http://127.0.0.1:port`), or null when the source has
+     *   none. The default is a host without that capability.
+     */
     suspend fun loadVideos(
         source: AnimeSource,
         episode: SEpisode,
+        localServer: (AnimeHttpSource) -> String? = { null },
     ): List<Video> {
         val hosters = source.getHosterList(episode)
         val ordered = if (source is AnimeHttpSource) source.applyHosterSort(hosters) else hosters
@@ -85,7 +97,7 @@ object AnimeVideoLoader {
             val expansions =
                 coroutineScope {
                     group
-                        .map { hoster -> async(Dispatchers.IO) { expandHoster(source, hoster, gate) } }
+                        .map { hoster -> async(Dispatchers.IO) { expandHoster(source, hoster, gate, localServer) } }
                         .awaitAll()
                 }
             failures += expansions.flatMap { it.failures }
@@ -106,6 +118,7 @@ object AnimeVideoLoader {
         source: AnimeSource,
         hoster: Hoster,
         gate: Semaphore,
+        localServer: (AnimeHttpSource) -> String?,
     ): Expansion {
         val list =
             try {
@@ -123,7 +136,7 @@ object AnimeVideoLoader {
         // refused. Aniyomi parallelises hosters and no further, for the same reason.
         for (video in sorted) {
             try {
-                resolve(source, video)?.let { videos += it }
+                resolve(source, video, localServer)?.let { videos += it }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
@@ -142,6 +155,7 @@ object AnimeVideoLoader {
     suspend fun resolve(
         source: AnimeSource,
         video: Video,
+        localServer: (AnimeHttpSource) -> String? = { null },
     ): Video? {
         var current = video
         if (source is AnimeHttpSource) {
@@ -155,7 +169,46 @@ object AnimeVideoLoader {
                 current.videoUrl = source.getVideoUrl(current)
             }
         }
-        return if (current.isVideoUrlUnresolved) null else withSourceHeaders(source, current)
+        if (current.isVideoUrlUnresolved) return null
+        if (source is AnimeHttpSource) current = onLocalServer(source, current, localServer)
+        return withSourceHeaders(source, current)
+    }
+
+    /**
+     * lib 17: rebase [HttpServer.PLACEHOLDER_URL] urls (video and tracks) onto the
+     * extension's running local server. Throws when the video needs one and none
+     * can be had, so the candidate is recorded as a failure with a readable cause.
+     */
+    private fun onLocalServer(
+        source: AnimeHttpSource,
+        video: Video,
+        localServer: (AnimeHttpSource) -> String?,
+    ): Video {
+        val needsServer =
+            isPlaceholder(video.videoUrl) ||
+                video.subtitleTracks.any { isPlaceholder(it.url) } ||
+                video.audioTracks.any { isPlaceholder(it.url) }
+        if (!needsServer) return video
+        val base =
+            localServer(source)
+                ?: throw IllegalStateException("This video is served by the extension's local server, which this host cannot run")
+
+        fun rebase(url: String): String = if (isPlaceholder(url)) base + url.substring(HttpServer.PLACEHOLDER_URL.length) else url
+
+        fun rebase(tracks: List<Track>): List<Track> = tracks.map { Track(rebase(it.url), it.lang) }
+        return video
+            .copy(
+                videoUrl = rebase(video.videoUrl),
+                subtitleTracks = rebase(video.subtitleTracks),
+                audioTracks = rebase(video.audioTracks),
+            ).also { it.url = video.url }
+    }
+
+    /** `http://localhost:1`, alone or followed by a path / query / fragment (not `:10`). */
+    fun isPlaceholder(url: String): Boolean {
+        val placeholder = HttpServer.PLACEHOLDER_URL
+        if (!url.startsWith(placeholder)) return false
+        return url.length == placeholder.length || url[placeholder.length] in "/?#"
     }
 
     /**

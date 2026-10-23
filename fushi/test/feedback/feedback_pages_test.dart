@@ -808,6 +808,29 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('feedback-category-suggestion')),
     );
+    await tester.pump();
+    // 反馈 SDN2yTecu9 / LmIRnau_Fa：换成「建议」后默认不带日志、自动截图退回成
+    // 「附上当时画面」；用户手动加回来的照常上传。
+    expect(find.byKey(const ValueKey<String>('feedback-shot-0')), findsNothing);
+    expect(
+      tester
+          .widget<FushiSwitchListTile>(
+            find.byKey(const ValueKey<String>('feedback-include-logs')),
+          )
+          .value,
+      isFalse,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-attach-auto-shot')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('feedback-include-logs')),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('feedback-shot-0')),
+      findsOneWidget,
+    );
     await tester.enterText(
       find.byKey(const ValueKey<String>('feedback-title')),
       '想要深色图标',

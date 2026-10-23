@@ -1,6 +1,6 @@
 package app.fushi.reader;
 
-import android.app.Activity;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
@@ -36,9 +36,25 @@ import io.flutter.plugin.common.MethodChannel;
 public class TtsChannelHandler {
     private static final String CHANNEL = ChannelNames.TTS;
 
-    private final Activity activity;
+    // BUG-3663：不再要求 Activity。本 handler 既挂在主 Activity 的引擎上，也挂在
+    // `:popup` 进程的 app 外查词引擎上（[FloatingDictPluginRegistrant]，那里只有
+    // applicationContext）。它对 Context 的用法只有 TextToSpeech 与 getCacheDir，
+    // 主线程回帖改走 [mainHandler]。
+    private final Context context;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts;
-    private boolean ttsReady = false;
+    // 引擎初始化状态（BUG-3669）：以前只有 setLanguage(Locale.JAPAN) 成功才算
+    // ready，没装日语语音数据的设备上整条通道对所有语言都静默返回 null。现在
+    // 「引擎能不能用」与「这次要的语言支不支持」分开：初始化只看引擎，语言按每次
+    // 请求设置并回传明确的失败码。只在主线程读写（channel 回调与 init 回调都 post
+    // 到主线程）。
+    private static final int TTS_INIT_PENDING = 0;
+    private static final int TTS_INIT_OK = 1;
+    private static final int TTS_INIT_FAILED = 2;
+    private int ttsInitState = TTS_INIT_PENDING;
+    // 引擎初始化完成前到达的合成请求：初始化回调里统一补跑（而不是当成失败）。
+    private final List<Runnable> pendingTtsCalls = new ArrayList<>();
+    private final Handler ttsMainHandler = new Handler(Looper.getMainLooper());
     // 复用单个 MediaPlayer 实例（reset() 重置而非 new）以省去每次 new 的分配 +
     // 状态机重建开销（TODO-744）。所有 play/stop 入口都跑在 method-channel 的
     // 主线程上，天然串行，无需额外锁。
@@ -62,15 +78,16 @@ public class TtsChannelHandler {
     private final ExecutorService dbSetupExecutor = Executors.newSingleThreadExecutor();
     private volatile Future<?> indexFuture;
 
-    public TtsChannelHandler(Activity activity) {
-        this.activity = activity;
-        tts = new TextToSpeech(activity, status -> {
-            if (status == TextToSpeech.SUCCESS) {
-                int langResult = tts.setLanguage(Locale.JAPAN);
-                ttsReady = (langResult != TextToSpeech.LANG_MISSING_DATA
-                        && langResult != TextToSpeech.LANG_NOT_SUPPORTED);
-            }
-        });
+    public TtsChannelHandler(Context context) {
+        this.context = context;
+        tts = new TextToSpeech(context, status -> ttsMainHandler.post(() -> {
+            ttsInitState = status == TextToSpeech.SUCCESS
+                    ? TTS_INIT_OK
+                    : TTS_INIT_FAILED;
+            List<Runnable> waiting = new ArrayList<>(pendingTtsCalls);
+            pendingTtsCalls.clear();
+            for (Runnable r : waiting) r.run();
+        }));
     }
 
     public void register(@NonNull FlutterEngine engine) {
@@ -136,38 +153,64 @@ public class TtsChannelHandler {
             tts.shutdown();
             tts = null;
         }
+        // 引擎还没初始化完就被拆掉：排队中的合成请求不能永远不答复。
+        ttsInitState = TTS_INIT_FAILED;
+        List<Runnable> waiting = new ArrayList<>(pendingTtsCalls);
+        pendingTtsCalls.clear();
+        for (Runnable r : waiting) r.run();
     }
 
+    /**
+     * 合成到文件。失败一律以错误码回 Dart（BUG-3669，以前全部 success(null)）：
+     * ENGINE_UNAVAILABLE（引擎初始化失败）/ LANGUAGE_MISSING_DATA /
+     * LANGUAGE_NOT_SUPPORTED（setLanguage 的结果）/ SYNTHESIS_FAILED /
+     * INVALID_ARGUMENT。languageTag 为 null = 用引擎默认语言，不再写死日语。
+     */
     private void handleTtsToFile(MethodCall call, MethodChannel.Result result) {
         String text = call.argument("text");
-        String locale = call.argument("locale");
+        String languageTag = call.argument("languageTag");
         String outputPath = call.argument("outputPath");
-        if (text == null || text.isEmpty() || outputPath == null || !ttsReady) {
-            result.success(null);
+        if (text == null || text.isEmpty() || outputPath == null) {
+            result.error("INVALID_ARGUMENT", "text and outputPath are required", null);
             return;
         }
-        if (locale != null && !locale.isEmpty()) {
-            String[] parts = locale.split("-");
-            Locale loc = parts.length >= 2 ? new Locale(parts[0], parts[1]) : new Locale(parts[0]);
-            tts.setLanguage(loc);
+        if (ttsInitState == TTS_INIT_PENDING) {
+            pendingTtsCalls.add(() -> handleTtsToFile(call, result));
+            return;
+        }
+        if (ttsInitState != TTS_INIT_OK || tts == null) {
+            result.error("ENGINE_UNAVAILABLE", "TextToSpeech engine failed to initialise", null);
+            return;
+        }
+        Locale target = (languageTag != null && !languageTag.isEmpty())
+                ? Locale.forLanguageTag(languageTag)
+                : engineDefaultLocale();
+        int langResult = tts.setLanguage(target);
+        if (langResult == TextToSpeech.LANG_MISSING_DATA) {
+            result.error("LANGUAGE_MISSING_DATA", target.toLanguageTag(), null);
+            return;
+        }
+        if (langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+            result.error("LANGUAGE_NOT_SUPPORTED", target.toLanguageTag(), null);
+            return;
         }
         // Guard against double-invocation: the listener callback runs on a TTS
         // background thread, and synthesizeToFile may fail synchronously below.
-        // Without this guard, both paths could call result.success().
+        // Without this guard, both paths could reply to result.
         final AtomicBoolean resultSent = new AtomicBoolean(false);
-        final Handler mainHandler = new Handler(Looper.getMainLooper());
         tts.setOnUtteranceProgressListener(new android.speech.tts.UtteranceProgressListener() {
             @Override public void onStart(String utteranceId) {}
             @Override public void onDone(String utteranceId) {
                 tts.setOnUtteranceProgressListener(null);
                 if (resultSent.compareAndSet(false, true)) {
-                    mainHandler.post(() -> result.success(outputPath));
+                    ttsMainHandler.post(() -> result.success(outputPath));
                 }
             }
             @Override public void onError(String utteranceId) {
                 tts.setOnUtteranceProgressListener(null);
                 if (resultSent.compareAndSet(false, true)) {
-                    mainHandler.post(() -> result.success(null));
+                    ttsMainHandler.post(() -> result.error(
+                            "SYNTHESIS_FAILED", "utterance error", null));
                 }
             }
         });
@@ -176,13 +219,24 @@ public class TtsChannelHandler {
         if (r != TextToSpeech.SUCCESS) {
             tts.setOnUtteranceProgressListener(null);
             if (resultSent.compareAndSet(false, true)) {
-                result.success(null);
+                result.error("SYNTHESIS_FAILED", "synthesizeToFile returned " + r, null);
             }
         }
     }
 
+    /** 引擎自己的默认语言（用户在系统 TTS 设置里选的）；取不到再用系统区域。 */
+    private Locale engineDefaultLocale() {
+        try {
+            android.speech.tts.Voice voice = tts.getDefaultVoice();
+            if (voice != null && voice.getLocale() != null) return voice.getLocale();
+        } catch (RuntimeException ignored) {
+            // 个别引擎 getDefaultVoice 未实现会抛；退回系统区域，不影响合成。
+        }
+        return Locale.getDefault();
+    }
+
     private void handleStop(MethodChannel.Result result) {
-        if (ttsReady) tts.stop();
+        if (ttsInitState == TTS_INIT_OK && tts != null) tts.stop();
         // 让任何在途的 prepareAsync/completion 回调失效，再 reset() 回 Idle 复用，
         // 不 release（实例留到 destroy 才释放）。
         playGeneration++;
@@ -395,7 +449,7 @@ public class TtsChannelHandler {
                         ensureQueryIndexes(path);
                     }
                 });
-                activity.runOnUiThread(() -> result.success(true));
+                mainHandler.post(() -> result.success(true));
             }
         });
     }
@@ -651,7 +705,7 @@ public class TtsChannelHandler {
             return;
         }
         final int dbIndex = (dbIndexArg != null) ? dbIndexArg : 0;
-        final File cacheDir = activity.getCacheDir();
+        final File cacheDir = context.getCacheDir();
         ioExecutor.execute(() -> {
             synchronized (dbLock) {
                 if (dbIndex < 0 || dbIndex >= localAudioDbs.size()) {

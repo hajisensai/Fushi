@@ -167,6 +167,11 @@ class _FushiServerConfigWidget extends StatefulWidget {
       _FushiServerConfigWidgetState();
 }
 
+/// 53NT7G_tSO：已配对地址行把全部动作平铺在行尾所需的最小宽度。更窄时（手机竖屏）
+/// 次要动作挪到地址下方，免得标题被挤成 0 宽。行尾五个控件约 260dp，再给地址
+/// 留出能认出主机的宽度。
+const double _kInterconnectPeerRowWideMinWidth = 520;
+
 class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     with _PairingV2FlowMixin<_FushiServerConfigWidget> {
   @override
@@ -182,6 +187,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   List<FushiClientUrl> _urls = <FushiClientUrl>[];
   // url -> last test-connection result (null = not tested this session).
   final Map<String, bool> _reachable = <String, bool>{};
+  // 53NT7G_tSO：url -> 上一次测试失败的**原因**（凭据被拒 / 证书未记录 / 超时 / 连不上）。
+  // 只给 ✗ 不给原因时，用户分不出「token 不对」和「地址不通」，只能瞎试。
+  final Map<String, String> _failureReason = <String, String>{};
   bool _isTesting = false;
   bool _loaded = false;
   // BUG-1562：「已连接 ✓」那一行的判据是 token 非空，而 token 活在
@@ -340,11 +348,27 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               tone: ok ? FushiCardTone.tertiary : FushiCardTone.error,
             ),
           );
-    if (parseInterconnectP2pUrl(url) == null) return reach;
+    final String? reason = ok == false ? _failureReason[url] : null;
+    final Widget? why = reason == null
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              reason,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.error),
+            ),
+          );
+    final bool p2p = parseInterconnectP2pUrl(url) != null;
+    if (!p2p && why == null) return reach;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: <Widget>[?reach, InterconnectP2pPathBadge(url: url)],
+      children: <Widget>[
+        ?reach,
+        ?why,
+        if (p2p) InterconnectP2pPathBadge(url: url),
+      ],
     );
   }
 
@@ -366,6 +390,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       // 冒充新测）。收在这里：所有 URL 变更都必经本方法。
       _reachable.removeWhere(
           (String url, bool _) => !stored.any((FushiClientUrl u) => u.url == url));
+      _failureReason.removeWhere((String url, String _) =>
+          !stored.any((FushiClientUrl u) => u.url == url));
     });
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
@@ -602,6 +628,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         baseUrl: baseUrl,
         fingerprint: fingerprint,
         deviceName: ping.deviceName,
+        hostId: ping.hostId,
       );
     } finally {
       _setPairV2Busy(false);
@@ -680,6 +707,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       // 地址行都带着自己的有效凭据。
       final String? token = interconnectTokenFor(u, globalToken);
       bool ok = false;
+      String? reason = token == null ? t.sync_err_not_paired : null;
       if (token != null) {
         try {
           // 必须带上该地址钉扎的证书指纹：新版 host 默认走 https 自签证书，漏传指纹会
@@ -696,11 +724,22 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // Record why an address probe failed (auth vs network vs timeout)
           // instead of only showing a generic ✗ (HBK-AUDIT-165).
           ErrorLogService.instance.log('SyncTestAll:${u.url}', e, stack);
+          reason = interconnectTestFailureReason(
+            e,
+            hasPinnedCertificate: (u.fingerprintSha256 ?? '').isNotEmpty,
+          );
         }
       }
       // token == null：两头都拿不出凭据，不发必然 401 的请求，直接标失败。
       if (!mounted) return;
-      setState(() => _reachable[u.url] = ok);
+      setState(() {
+        _reachable[u.url] = ok;
+        if (ok || reason == null) {
+          _failureReason.remove(u.url);
+        } else {
+          _failureReason[u.url] = reason;
+        }
+      });
     }
     if (mounted) setState(() => _isTesting = false);
   }
@@ -749,6 +788,48 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               itemBuilder: (BuildContext context, int index) {
                 final FushiClientUrl u = _urls[index];
                 final bool? ok = _reachable[u.url];
+                // 53NT7G_tSO：窄屏（手机竖屏 ~360dp）上一排五个控件把标题挤到 0 宽，
+                // 地址整行看不见、认不出是哪台。放不下时把次要动作挪到地址下方一行，
+                // 只有开关留在行尾；宽屏照旧平铺在行尾。
+                final List<Widget> actions = <Widget>[
+                  // Gamepad/keyboard reorder equivalent for the drag handle.
+                  FushiIconButton(
+                    icon: FushiIcons.expandLess,
+                    size: 18,
+                    tooltip: t.move_up,
+                    enabled: index > 0,
+                    onTap: () => _reorderUrls(index, index - 1),
+                  ),
+                  FushiIconButton(
+                    icon: FushiIcons.expandMore,
+                    size: 18,
+                    tooltip: t.move_down,
+                    enabled: index < _urls.length - 1,
+                    onTap: () => _reorderUrls(index, index + 1),
+                  ),
+                  // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
+                  // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
+                  // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
+                  // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
+                  FushiIconButton(
+                    icon: FushiIcons.sync,
+                    size: 18,
+                    tooltip: t.sync_pair_repair,
+                    enabled: !lockedByServer && !_pairingManual,
+                    onTap: () => _attemptManualPair(u.url),
+                  ),
+                  FushiIconButton(
+                    icon: FushiIcons.delete,
+                    size: 18,
+                    tooltip: t.dialog_delete,
+                    onTap: () => _deleteUrl(index),
+                  ),
+                ];
+                final Widget toggle = adaptiveSwitch(
+                  context: context,
+                  value: u.enabled,
+                  onChanged: (_) => _toggleUrl(index),
+                );
                 return FushiReorderDragListener(
                   key: ValueKey<String>(u.url),
                   index: index,
@@ -756,73 +837,60 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                     index: index,
                     count: _urls.length,
                     includeGap: false,
-                    child: FushiListItem(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      leading: FushiListLeadingIcon(
-                        FushiIcons.server,
-                        tone: ok == null
-                            ? FushiCardTone.secondary
-                            : (ok ? FushiCardTone.tertiary : FushiCardTone.error),
-                      ),
-                      // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis 在窄屏
-                      // 上只显示得到 `http…`，等于认不出是哪台设备。行高自由，放宽两行。
-                      titleMaxLines: 2,
-                      title: Text(
-                        u.url,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: u.enabled
-                              ? theme.colorScheme.onSurface
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      subtitle: _urlRowSubtitle(theme, u.url, ok),
-                      onTap: lockedByServer
-                          ? null
-                          : () => _addOrEditUrl(index: index),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          // Gamepad/keyboard reorder equivalent for the drag handle.
-                          FushiIconButton(
-                            icon: FushiIcons.expandLess,
-                            size: 18,
-                            tooltip: t.move_up,
-                            enabled: index > 0,
-                            onTap: () => _reorderUrls(index, index - 1),
+                    child: LayoutBuilder(
+                      builder: (BuildContext context, BoxConstraints box) {
+                        final bool compact =
+                            box.maxWidth < _kInterconnectPeerRowWideMinWidth;
+                        final Widget? status =
+                            _urlRowSubtitle(theme, u.url, ok);
+                        return FushiListItem(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          leading: FushiListLeadingIcon(
+                            FushiIcons.server,
+                            tone: ok == null
+                                ? FushiCardTone.secondary
+                                : (ok
+                                    ? FushiCardTone.tertiary
+                                    : FushiCardTone.error),
                           ),
-                          FushiIconButton(
-                            icon: FushiIcons.expandMore,
-                            size: 18,
-                            tooltip: t.move_down,
-                            enabled: index < _urls.length - 1,
-                            onTap: () => _reorderUrls(index, index + 1),
+                          // BUG-1184：标题是对端 URL，右侧还有一排控件；单行 ellipsis
+                          // 在窄屏上只显示得到 `http…`，等于认不出是哪台设备。放宽两行。
+                          titleMaxLines: 2,
+                          title: Text(
+                            u.url,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: u.enabled
+                                  ? theme.colorScheme.onSurface
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
-                          adaptiveSwitch(
-                            context: context,
-                            value: u.enabled,
-                            onChanged: (_) => _toggleUrl(index),
-                          ),
-                          // TODO-1330：失败后「重新配对」入口——复用 _attemptManualPair
-                          // 的 v2 编排（探测 → 确认身份 → 按需输 PIN → 落 token+指纹），
-                          // 不必删地址再手动重加。LAN 免 PIN 会话重配对无需任何输入；公网
-                          // 会话仍需按对方 PIN（安全设计使然，host 屏此时会常驻显示 PIN）。
-                          FushiIconButton(
-                            icon: FushiIcons.sync,
-                            size: 18,
-                            tooltip: t.sync_pair_repair,
-                            enabled: !lockedByServer && !_pairingManual,
-                            onTap: () => _attemptManualPair(u.url),
-                          ),
-                          FushiIconButton(
-                            icon: FushiIcons.delete,
-                            size: 18,
-                            tooltip: t.dialog_delete,
-                            onTap: () => _deleteUrl(index),
-                          ),
-                        ],
-                      ),
+                          subtitle: compact
+                              ? Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    ?status,
+                                    Wrap(children: actions),
+                                  ],
+                                )
+                              : status,
+                          onTap: lockedByServer
+                              ? null
+                              : () => _addOrEditUrl(index: index),
+                          trailing: compact
+                              ? toggle
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    ...actions.take(2),
+                                    toggle,
+                                    ...actions.skip(2),
+                                  ],
+                                ),
+                        );
+                      },
                     ),
                   ),
                 );
@@ -966,10 +1034,14 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 第一步弹窗确认 host 身份（展示名 + 指纹），第二步收 6 位 PIN（host pinRequired
   /// 时），随后跑 [FushiPairV2Client.pair]，成功后经 TOFU 记录器落 url+指纹+token。
   /// [fingerprint] 为 null 表示明文 http（无钉扎，pinned 探测退化为普通连接）。
+  ///
+  /// [hostId] 是 `/api/ping` 回报的 host 身份（老 host 为 null）：新 token 要同步到
+  /// 这台 host 的全部地址（53NT7G_tSO，见 [SyncRepository.setFushiClientTokenForUrl]）。
   Future<void> _runPairingV2({
     required String baseUrl,
     required String? fingerprint,
     String? deviceName,
+    String? hostId,
   }) async {
     // BUG-1557：**最先**拿已存指纹比。旧顺序是先用新指纹把整套跑完（确认身份 →
     // 输 PIN → pair/v2 把本机设备名/deviceId 送给对方 → host 都把 peer 行落了库），
@@ -1011,7 +1083,12 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
       if (!mounted) return;
       switch (outcome) {
         case FushiPairV2Success(:final String token):
-          message = await _onPairSuccess(baseUrl, token, fingerprint);
+          message = await _onPairSuccess(
+            baseUrl,
+            token,
+            fingerprint,
+            hostId: hostId,
+          );
         case FushiPairV2Failure(:final String reason):
           // 'cancelled' = 用户在 PIN 输入框点了取消，静默收场不弹提示。
           message =
@@ -1139,8 +1216,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   Future<String> _onPairSuccess(
     String baseUrl,
     String token,
-    String? fingerprint,
-  ) async {
+    String? fingerprint, {
+    String? hostId,
+  }) async {
     try {
       await _pairRepo.addFushiClientUrl(
         baseUrl,
@@ -1154,7 +1232,9 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // BUG-1550：per-peer token 落在**这条地址**上（同时写全局键作老配置回落）。
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
-    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token);
+    // 53NT7G_tSO：重新配对会作废本机在这台 host 上的旧 token，新 token 要落到这台
+    // host 的全部地址（内网 / 外网 / IPv6 …），否则其余地址一律 401。
+    await _pairRepo.setFushiClientTokenForUrl(baseUrl, token, hostId: hostId);
     // 配对成功立即学一次 host 的地址集（IPv6 / 组网 / 公网 / P2P）：出了这个
     // 局域网也连得回来。失败只留痕，不影响配对结果。
     for (final FushiClientUrl u in await _pairRepo.getFushiClientUrls()) {
@@ -1901,6 +1981,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           deviceName: (probe.ping.deviceName?.trim().isNotEmpty ?? false)
               ? probe.ping.deviceName
               : device.name,
+          hostId: probe.ping.hostId,
         );
         return;
       }

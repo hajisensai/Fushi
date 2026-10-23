@@ -31,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -206,6 +207,91 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
+  Future<void> _saveSites(List<WebBrowserSite> next) async {
+    setState(() => _sites = next);
+    await _appModel.prefsRepo.setWebBrowserSitesJson(
+      encodeWebBrowserSites(next),
+    );
+  }
+
+  /// 手动添加 / 编辑站点（5wWlKU_Rir：以前只能先打开网页再「加入站点」，本机
+  /// 服务这类地址也没法编辑）。两步输入：地址（与地址栏同一份判据
+  /// [parseWebBrowserAddress]，不像网址不让确认）→ 名称（留空用域名）。
+  /// [previous] 非 null 为编辑。返回 null = 取消。
+  Future<WebBrowserSite?> _promptSite({WebBrowserSite? previous}) async {
+    final String title = previous == null
+        ? t.web_browser_site_new
+        : t.web_browser_site_edit;
+    final String? rawUrl = await showFushiTextInputDialog(
+      context: context,
+      title: title,
+      labelText: t.web_browser_site_url,
+      hintText: 'https://',
+      initialValue: previous?.url.toString() ?? '',
+      keyboardType: TextInputType.url,
+      icon: FushiIcons.link,
+      validator: (String value) =>
+          value.isEmpty || parseWebBrowserAddress(value) != null
+          ? null
+          : t.web_browser_site_url_invalid,
+    );
+    if (rawUrl == null || !mounted) return null;
+    final Uri? url = parseWebBrowserAddress(rawUrl);
+    if (url == null) return null;
+    final String? name = await showFushiTextInputDialog(
+      context: context,
+      title: title,
+      labelText: t.web_browser_site_name,
+      hintText: url.host,
+      message: t.web_browser_site_name_hint,
+      initialValue: previous?.name ?? '',
+      allowEmpty: true,
+    );
+    if (name == null) return null;
+    return WebBrowserSite(name: name.isEmpty ? url.host : name, url: url);
+  }
+
+  Future<void> _addSite() async {
+    final WebBrowserSite? site = await _promptSite();
+    if (site == null || !mounted) return;
+    await _saveSites(addWebBrowserSite(_sites, site));
+  }
+
+  Future<void> _editSite(WebBrowserSite site) async {
+    final WebBrowserSite? next = await _promptSite(previous: site);
+    if (next == null || !mounted) return;
+    await _saveSites(replaceWebBrowserSite(_sites, site, next));
+  }
+
+  /// 长按 / 右键站点：编辑或移除。
+  Future<void> _siteActions(WebBrowserSite site) async {
+    final _SiteAction? action = await showFushiChoiceDialog<_SiteAction>(
+      context: context,
+      title: site.name,
+      options: <FushiChoiceOption<_SiteAction>>[
+        FushiChoiceOption<_SiteAction>(
+          value: _SiteAction.edit,
+          label: t.web_browser_site_edit,
+          icon: FushiIcons.edit,
+        ),
+        FushiChoiceOption<_SiteAction>(
+          value: _SiteAction.remove,
+          label: t.web_browser_site_remove,
+          icon: FushiIcons.delete,
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _SiteAction.edit:
+        await _editSite(site);
+      case _SiteAction.remove:
+        await _removeSite(site);
+      case null:
+        break;
+    }
+  }
+
   Future<void> _removeSite(WebBrowserSite site) async {
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
@@ -215,11 +301,7 @@ class _FushiWebBrowserHomePageState
       destructive: true,
     );
     if (!confirmed || !mounted) return;
-    final List<WebBrowserSite> next = removeWebBrowserSite(_sites, site);
-    setState(() => _sites = next);
-    await _appModel.prefsRepo.setWebBrowserSitesJson(
-      encodeWebBrowserSites(next),
-    );
+    await _saveSites(removeWebBrowserSite(_sites, site));
   }
 
   Widget _buildAddressBar(BuildContext context) {
@@ -248,8 +330,8 @@ class _FushiWebBrowserHomePageState
       key: ValueKey<String>('web-browser-site-${site.url}'),
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       onTap: () => unawaited(_open(site.url)),
-      onLongPress: () => unawaited(_removeSite(site)),
-      onSecondaryTap: () => unawaited(_removeSite(site)),
+      onLongPress: () => unawaited(_siteActions(site)),
+      onSecondaryTap: () => unawaited(_siteActions(site)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -310,14 +392,26 @@ class _FushiWebBrowserHomePageState
             tokens.spacing.gap,
           ),
           sliver: SliverToBoxAdapter(
-            child: Text(
-              t.web_browser_sites_title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: isGlassDesign(context)
-                    ? appleColorsOf(context).secondaryLabel
-                    : theme.colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    t.web_browser_sites_title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: isGlassDesign(context)
+                          ? appleColorsOf(context).secondaryLabel
+                          : theme.colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                FushiTextButton.icon(
+                  key: const ValueKey<String>('web-browser-site-new'),
+                  onPressed: () => unawaited(_addSite()),
+                  icon: const FushiIcon(FushiIcons.add),
+                  label: Text(t.web_browser_site_new),
+                ),
+              ],
             ),
           ),
         ),
@@ -380,6 +474,9 @@ class _FushiWebBrowserHomePageState
     );
   }
 }
+
+/// 站点卡片长按 / 右键菜单的动作。
+enum _SiteAction { edit, remove }
 
 /// app 内通用浏览器的全屏浏览页（五端：Windows / macOS / Linux / Android / iOS），
 /// 由入口页 [FushiWebBrowserHomePage] 经 [openFushiWebBrowser] 推出。

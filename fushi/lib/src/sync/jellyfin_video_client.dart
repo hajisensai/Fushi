@@ -105,8 +105,8 @@ class JellyfinServerConfig implements MediaServerConfig {
   @override
   String get effectiveServerUrl =>
       activeServerUrl.isNotEmpty && routeUrls.contains(activeServerUrl)
-          ? activeServerUrl
-          : serverUrl;
+      ? activeServerUrl
+      : serverUrl;
   final String username;
   final String userId;
   final String accessToken;
@@ -146,17 +146,17 @@ class JellyfinServerConfig implements MediaServerConfig {
   /// 逐字相同（旧版本读回无差别）。
   @override
   Map<String, Object?> toJson() => <String, Object?>{
-        'serverUrl': serverUrl,
-        'username': username,
-        'userId': userId,
-        'accessToken': accessToken,
-        if (serverName != null) 'serverName': serverName,
-        if (libraryIds.isNotEmpty) 'libraryIds': libraryIds,
-        if (deviceId != JellyfinApi.kLegacyDeviceId) 'deviceId': deviceId,
-        if (alternateUrls.isNotEmpty) 'alternateUrls': alternateUrls,
-        if (activeServerUrl.isNotEmpty && activeServerUrl != serverUrl)
-          'activeServerUrl': activeServerUrl,
-      };
+    'serverUrl': serverUrl,
+    'username': username,
+    'userId': userId,
+    'accessToken': accessToken,
+    if (serverName != null) 'serverName': serverName,
+    if (libraryIds.isNotEmpty) 'libraryIds': libraryIds,
+    if (deviceId != JellyfinApi.kLegacyDeviceId) 'deviceId': deviceId,
+    if (alternateUrls.isNotEmpty) 'alternateUrls': alternateUrls,
+    if (activeServerUrl.isNotEmpty && activeServerUrl != serverUrl)
+      'activeServerUrl': activeServerUrl,
+  };
 
   static JellyfinServerConfig? fromJson(Map<String, dynamic> json) {
     final String serverUrl = (json['serverUrl'] as String?) ?? '';
@@ -167,14 +167,12 @@ class JellyfinServerConfig implements MediaServerConfig {
     }
     // 与 _addRoute 同口径先归一化（手改 JSON / 备份还原带尾斜杠或大写 scheme
     // 时，否则 contains 不中、active 静默回落主地址）。
-    final List<String> alternateUrls = normalizeAlternateUrls(
-      serverUrl,
-      <String>[
-        for (final Object? raw
-            in (json['alternateUrls'] as List?) ?? const <Object?>[])
-          if (raw is String) JellyfinApi.normalizeServerUrl(raw),
-      ],
-    );
+    final List<String> alternateUrls =
+        normalizeAlternateUrls(serverUrl, <String>[
+          for (final Object? raw
+              in (json['alternateUrls'] as List?) ?? const <Object?>[])
+            if (raw is String) JellyfinApi.normalizeServerUrl(raw),
+        ]);
     return JellyfinServerConfig(
       serverUrl: serverUrl,
       username: (json['username'] as String?) ?? '',
@@ -182,7 +180,8 @@ class JellyfinServerConfig implements MediaServerConfig {
       accessToken: accessToken,
       serverName: json['serverName'] as String?,
       libraryIds: <String>[
-        for (final Object? raw in (json['libraryIds'] as List?) ?? const <Object?>[])
+        for (final Object? raw
+            in (json['libraryIds'] as List?) ?? const <Object?>[])
           if (raw is String && raw.isNotEmpty) raw,
       ],
       deviceId: ((json['deviceId'] as String?) ?? '').isEmpty
@@ -259,9 +258,10 @@ class JellyfinServerConfig implements MediaServerConfig {
         : normalizeAlternateUrls(serverUrl, alternateUrls);
     final String requestedActive = activeServerUrl ?? this.activeServerUrl;
     final String nextActive =
-        requestedActive == serverUrl || !nextAlternates.contains(requestedActive)
-            ? ''
-            : requestedActive;
+        requestedActive == serverUrl ||
+            !nextAlternates.contains(requestedActive)
+        ? ''
+        : requestedActive;
     return JellyfinServerConfig(
       serverUrl: serverUrl,
       username: username,
@@ -327,8 +327,13 @@ class JellyfinLibraryView {
   /// 是否值得出现在视频域（音乐/图书/照片库不展示）。
   bool get isVideoish =>
       collectionType == null ||
-      const <String>{'movies', 'tvshows', 'homevideos', 'musicvideos', 'mixed'}
-          .contains(collectionType);
+      const <String>{
+        'movies',
+        'tvshows',
+        'homevideos',
+        'musicvideos',
+        'mixed',
+      }.contains(collectionType);
 }
 
 /// 条目里的一条字幕流（外挂或内嵌）。
@@ -405,27 +410,27 @@ class JellyfinMediaSource {
 
   /// 浏览层的版本投影（详情页「版本」选择与播放页线路菜单共用）。
   MediaServerVersion toVersion() => MediaServerVersion(
-        id: id,
-        name: name,
-        container: container,
-        sizeBytes: sizeBytes,
-        bitrate: bitrate,
-        width: width,
-        height: height,
-        videoCodec: videoCodec,
-        videoRange: videoRange,
-        audioTracks: audioStreams,
-        subtitleTracks: <MediaServerStreamTrack>[
-          for (final JellyfinSubtitleStream s in subtitleStreams)
-            MediaServerStreamTrack(
-              index: s.index,
-              displayTitle: s.title,
-              language: s.language,
-              codec: s.codec,
-              isExternal: s.isExternal,
-            ),
-        ],
-      );
+    id: id,
+    name: name,
+    container: container,
+    sizeBytes: sizeBytes,
+    bitrate: bitrate,
+    width: width,
+    height: height,
+    videoCodec: videoCodec,
+    videoRange: videoRange,
+    audioTracks: audioStreams,
+    subtitleTracks: <MediaServerStreamTrack>[
+      for (final JellyfinSubtitleStream s in subtitleStreams)
+        MediaServerStreamTrack(
+          index: s.index,
+          displayTitle: s.title,
+          language: s.language,
+          codec: s.codec,
+          isExternal: s.isExternal,
+        ),
+    ],
+  );
 }
 
 /// 一个库条目（电影 / 剧 / 季 / 集 / 文件夹）。只保留视频域消费的字段。
@@ -566,45 +571,45 @@ class JellyfinItem {
   /// 把派生的「当前媒体源」字段换成 [source]（它必须是 [mediaSources] 之一）。
   /// 取流 / 字幕 / 下载都读派生字段，换版本只在这一处发生。
   JellyfinItem withMediaSource(JellyfinMediaSource source) => JellyfinItem(
-        id: id,
-        name: name,
-        type: type,
-        isFolder: isFolder,
-        originalTitle: originalTitle,
-        seriesName: seriesName,
-        seasonNumber: seasonNumber,
-        episodeNumber: episodeNumber,
-        durationMs: durationMs,
-        hasPrimaryImage: hasPrimaryImage,
-        positionMs: positionMs,
-        playedPercentage: playedPercentage,
-        mediaSourceId: source.id,
-        subtitleStreams: source.subtitleStreams,
-        hasTextSubtitle: source.subtitleStreams.isEmpty
-            ? hasTextSubtitle
-            : source.subtitleStreams
-                .any((JellyfinSubtitleStream s) => s.isTextSubtitleStream),
-        videoRequiresDolbyVisionReshape:
-            source.videoRequiresDolbyVisionReshape,
-        sizeBytes: source.sizeBytes,
-        lastPlayedAtMs: lastPlayedAtMs,
-        childCount: childCount,
-        recursiveItemCount: recursiveItemCount,
-        productionYear: productionYear,
-        seriesId: seriesId,
-        seasonId: seasonId,
-        played: played,
-        unplayedChildCount: unplayedChildCount,
-        hasBackdrop: hasBackdrop,
-        hasThumbImage: hasThumbImage,
-        hasLogoImage: hasLogoImage,
-        parentThumbItemId: parentThumbItemId,
-        parentBackdropItemId: parentBackdropItemId,
-        overview: overview,
-        communityRating: communityRating,
-        genres: genres,
-        mediaSources: mediaSources,
-      );
+    id: id,
+    name: name,
+    type: type,
+    isFolder: isFolder,
+    originalTitle: originalTitle,
+    seriesName: seriesName,
+    seasonNumber: seasonNumber,
+    episodeNumber: episodeNumber,
+    durationMs: durationMs,
+    hasPrimaryImage: hasPrimaryImage,
+    positionMs: positionMs,
+    playedPercentage: playedPercentage,
+    mediaSourceId: source.id,
+    subtitleStreams: source.subtitleStreams,
+    hasTextSubtitle: source.subtitleStreams.isEmpty
+        ? hasTextSubtitle
+        : source.subtitleStreams.any(
+            (JellyfinSubtitleStream s) => s.isTextSubtitleStream,
+          ),
+    videoRequiresDolbyVisionReshape: source.videoRequiresDolbyVisionReshape,
+    sizeBytes: source.sizeBytes,
+    lastPlayedAtMs: lastPlayedAtMs,
+    childCount: childCount,
+    recursiveItemCount: recursiveItemCount,
+    productionYear: productionYear,
+    seriesId: seriesId,
+    seasonId: seasonId,
+    played: played,
+    unplayedChildCount: unplayedChildCount,
+    hasBackdrop: hasBackdrop,
+    hasThumbImage: hasThumbImage,
+    hasLogoImage: hasLogoImage,
+    parentThumbItemId: parentThumbItemId,
+    parentBackdropItemId: parentBackdropItemId,
+    overview: overview,
+    communityRating: communityRating,
+    genres: genres,
+    mediaSources: mediaSources,
+  );
 
   /// 可下钻的容器条目（剧 / 季 / 合集 / 文件夹）。
   ///
@@ -626,7 +631,7 @@ class JellyfinItem {
     }
     final String code = (seasonNumber != null && episodeNumber != null)
         ? ' S${seasonNumber.toString().padLeft(2, '0')}'
-            'E${episodeNumber.toString().padLeft(2, '0')}'
+              'E${episodeNumber.toString().padLeft(2, '0')}'
         : '';
     return '$seriesName$code $name';
   }
@@ -730,8 +735,11 @@ class JellyfinPlaybackSession {
 
 /// Jellyfin HTTP 异常：状态码 + 端点，供 UI 按连接失败呈现。
 class JellyfinApiException implements Exception {
-  const JellyfinApiException(this.statusCode, this.endpoint,
-      {this.serverMessage});
+  const JellyfinApiException(
+    this.statusCode,
+    this.endpoint, {
+    this.serverMessage,
+  });
 
   final int statusCode;
   final String endpoint;
@@ -757,7 +765,8 @@ class JellyfinApiException implements Exception {
       try {
         final Object? decoded = jsonDecode(text);
         if (decoded is! Map) return null;
-        final Object? message = decoded['message'] ??
+        final Object? message =
+            decoded['message'] ??
             decoded['Message'] ??
             decoded['title'] ??
             decoded['error'];
@@ -777,9 +786,13 @@ class JellyfinApiException implements Exception {
 
   /// 带响应体说明构造（[res] 为非 2xx 响应）。
   factory JellyfinApiException.fromResponse(
-          http.Response res, String endpoint) =>
-      JellyfinApiException(res.statusCode, endpoint,
-          serverMessage: serverMessageFromBody(res.bodyBytes));
+    http.Response res,
+    String endpoint,
+  ) => JellyfinApiException(
+    res.statusCode,
+    endpoint,
+    serverMessage: serverMessageFromBody(res.bodyBytes),
+  );
 
   @override
   String toString() => serverMessage == null
@@ -789,13 +802,39 @@ class JellyfinApiException implements Exception {
 
 /// [JellyfinApi.probeServer] 的结果：之后所有请求该用的根地址 + 服务器自报名。
 class JellyfinServerProbe {
-  const JellyfinServerProbe({required this.baseUrl, this.serverName});
+  const JellyfinServerProbe({required this.baseUrl, this.serverName})
+    : unconfirmedBy = null;
 
-  /// 实际可用的根地址（可能比用户填的多 / 少一段 `/emby`）。
+  /// 公开端点（`/System/Info/Public` 与 `/System/Ping`，根路径与 `/emby` 前缀）
+  /// 全部 404：探测**没能确认**，也没有否定（WMxpfrPXJp）。
+  ///
+  /// 这两条端点不是 Emby / Jellyfin 客户端协议的必需品：部分部署（网关只放行
+  /// 客户端真正要用的路由）把它们整片砍掉，而 Emby 官方客户端 / SenPlayer 照常能
+  /// 登录。所以全 404 不能判「连不上」，交给调用方用真正要发的那条认证请求
+  /// （登录 / 读媒体库）在候选根地址间定案，见 [baseCandidates]。
+  const JellyfinServerProbe.unconfirmed({
+    required this.baseUrl,
+    required JellyfinApiException this.unconfirmedBy,
+  }) : serverName = null;
+
+  /// 实际可用的根地址（可能比用户填的多 / 少一段 `/emby`）。未确认时是用户填的
+  /// 地址，真正的根地址由调用方在 [baseCandidates] 里试出来。
   final String baseUrl;
 
   /// `/System/Info/Public` 的 `ServerName`；只靠 `/System/Ping` 确认时为 null。
   final String? serverName;
+
+  /// 未确认时的第一条 404（根路径 Info/Public）；已确认为 null。认证请求在每个
+  /// 候选根地址上也都 404 时，报的就是它。
+  final JellyfinApiException? unconfirmedBy;
+
+  /// 探测是否确认了这是媒体服务器。
+  bool get confirmed => unconfirmedBy == null;
+
+  /// 之后的认证请求该依次尝试的根地址：已确认只有 [baseUrl]；未确认是
+  /// [JellyfinApi.probeBaseCandidates]（用户填的在前）。
+  List<String> get baseCandidates =>
+      confirmed ? <String>[baseUrl] : JellyfinApi.probeBaseCandidates(baseUrl);
 }
 
 /// 薄 HTTP 封装。所有 JSON 解析走纯静态方法（离线可测）。
@@ -874,8 +913,10 @@ class JellyfinApi {
     if (url.isEmpty) return url;
     // scheme 不分大小写（手机输入法 / 粘贴常给 `HTTP://`）：此前大小写敏感，
     // `HTTP://nas:8096` 会被再套一层成 `http://HTTP://nas:8096`，连接必失败。
-    final RegExpMatch? scheme =
-        RegExp(r'^(https?)://', caseSensitive: false).firstMatch(url);
+    final RegExpMatch? scheme = RegExp(
+      r'^(https?)://',
+      caseSensitive: false,
+    ).firstMatch(url);
     if (scheme == null) {
       url = 'http://$url';
     } else if (scheme.group(1) != scheme.group(1)!.toLowerCase()) {
@@ -907,8 +948,14 @@ class JellyfinApi {
   ///    （原版回 `Emby Server` / `Jellyfin Server`）证明这里确实是媒体服务器。
   ///
   /// 只有 404 才继续往下试：401 / 403（客户端白名单，BUG-2848）、5xx、非 JSON 都是
-  /// 服务器明确的答复，原样抛出。全部 404 时抛第一条（根路径 Info/Public）的异常。
-  /// 返回的 [JellyfinServerProbe.baseUrl] 就是之后所有请求该用的根地址。
+  /// 服务器明确的答复，原样抛出。Ping 回网页（反代 / SPA）是「这里不是媒体服务器」
+  /// 的正面证据，抛第一条（根路径 Info/Public）的异常。
+  ///
+  /// 全部 404 不再判失败（WMxpfrPXJp）：这两条公开端点不是客户端协议的必需品，
+  /// 网关只放行业务路由的部署会把它们整片砍掉。返回
+  /// [JellyfinServerProbe.unconfirmed]，由调用方用真正的认证请求在
+  /// [JellyfinServerProbe.baseCandidates] 间定案。
+  /// 已确认时返回的 [JellyfinServerProbe.baseUrl] 就是之后所有请求该用的根地址。
   Future<JellyfinServerProbe> probeServer() async {
     final List<String> bases = probeBaseCandidates(serverUrl);
     JellyfinApiException? first;
@@ -918,14 +965,16 @@ class JellyfinApi {
           base,
           '/System/Info/Public',
         );
-        final String? name =
-            decoded is Map ? decoded['ServerName'] as String? : null;
+        final String? name = decoded is Map
+            ? decoded['ServerName'] as String?
+            : null;
         return JellyfinServerProbe(baseUrl: base, serverName: name);
       } on JellyfinApiException catch (e) {
         if (e.statusCode != 404) rethrow;
         first ??= e;
       }
     }
+    bool sawWebPage = false;
     for (final String base in bases) {
       final http.Response res;
       try {
@@ -935,20 +984,27 @@ class JellyfinApi {
       } on http.ClientException catch (e) {
         throw Exception(redactCredentialsInText(e.toString()));
       }
-      final String body =
-          utf8.decode(res.bodyBytes, allowMalformed: true).trim();
+      final String body = utf8
+          .decode(res.bodyBytes, allowMalformed: true)
+          .trim();
+      final bool ok = res.statusCode >= 200 && res.statusCode < 300;
       // 反代 / SPA 对任何路由都回 200 网页：那不是媒体服务器。
-      if (res.statusCode >= 200 &&
-          res.statusCode < 300 &&
-          !body.startsWith('<')) {
+      if (ok && !body.startsWith('<')) {
         return JellyfinServerProbe(baseUrl: base);
       }
-      if (res.statusCode != 404 &&
-          (res.statusCode < 200 || res.statusCode >= 300)) {
+      if (ok) {
+        sawWebPage = true;
+        continue;
+      }
+      if (res.statusCode != 404) {
         throw JellyfinApiException.fromResponse(res, '/System/Ping');
       }
     }
-    throw first!;
+    if (sawWebPage) throw first!;
+    return JellyfinServerProbe.unconfirmed(
+      baseUrl: serverUrl,
+      unconfirmedBy: first!,
+    );
   }
 
   /// **纯函数**：[probeServer] 依次尝试的根地址（已归一化的 [serverUrl] 在前）。
@@ -975,7 +1031,11 @@ class JellyfinApi {
       }
       final int? code = error.osError?.errorCode;
       // EAI_NONAME / WSAHOST_NOT_FOUND / EAI_AGAIN / EAI_NODATA。
-      return code == 7 || code == 11001 || code == 8 || code == -2 || code == -3;
+      return code == 7 ||
+          code == 11001 ||
+          code == 8 ||
+          code == -2 ||
+          code == -3;
     }
     final String text = error.toString().toLowerCase();
     return text.contains('failed host lookup') ||
@@ -998,10 +1058,10 @@ class JellyfinApi {
       '${accessToken == null ? '' : ', Token="$accessToken"'}';
 
   Map<String, String> get _headers => <String, String>{
-        'Authorization': authHeaderFor(accessToken, deviceId),
-        'X-Emby-Authorization': authHeaderFor(accessToken, deviceId),
-        'Content-Type': 'application/json',
-      };
+    'Authorization': authHeaderFor(accessToken, deviceId),
+    'X-Emby-Authorization': authHeaderFor(accessToken, deviceId),
+    'Content-Type': 'application/json',
+  };
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$serverUrl$path').replace(queryParameters: query);
@@ -1009,10 +1069,7 @@ class JellyfinApi {
   /// GET + JSON 解码，不管顶层形状（`/Items/Latest` 回裸数组，其余回对象）。
   /// 非 JSON 响应体抛 [FormatException]——飞牛对不认识的路由回 SPA index.html
   /// 且状态 200（BUG-2254 备注④），这是那种情况唯一能被察觉的信号。
-  Future<Object?> _getDecoded(
-    String path, [
-    Map<String, String>? query,
-  ]) =>
+  Future<Object?> _getDecoded(String path, [Map<String, String>? query]) =>
       _getDecodedAt(serverUrl, path, query);
 
   /// [_getDecoded] 的「指定根地址」版（连接探测要在候选根地址之间试，见
@@ -1060,8 +1117,10 @@ class JellyfinApi {
         .post(
           _uri('/Users/AuthenticateByName'),
           headers: _headers,
-          body: jsonEncode(
-              <String, String>{'Username': username, 'Pw': password}),
+          body: jsonEncode(<String, String>{
+            'Username': username,
+            'Pw': password,
+          }),
         )
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -1069,9 +1128,10 @@ class JellyfinApi {
     }
     final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
     final JellyfinAuthResult result = parseAuthResult(
-        decoded is Map<String, dynamic>
-            ? decoded.cast<String, Object?>()
-            : <String, Object?>{});
+      decoded is Map<String, dynamic>
+          ? decoded.cast<String, Object?>()
+          : <String, Object?>{},
+    );
     accessToken = result.accessToken;
     return result;
   }
@@ -1100,21 +1160,25 @@ class JellyfinApi {
     String? sortBy = 'SortName',
     String? sortOrder = 'Ascending',
   }) async {
-    assert(!(includeItemType?.contains(',') ?? false),
-        'IncludeItemTypes 必须单值（BUG-2254）');
-    final Map<String, Object?> json =
-        await _getJson('/Users/$userId/Items', <String, String>{
-      if (parentId != null) 'ParentId': parentId,
-      if (recursive) 'Recursive': 'true',
-      if (includeItemType != null) 'IncludeItemTypes': includeItemType,
-      if (searchTerm != null) 'SearchTerm': searchTerm,
-      'StartIndex': '$startIndex',
-      'Limit': '$limit',
-      'Fields': fields,
-      // null = 不指定排序，交给服务器（带 SearchTerm 时就是相关度序）。
-      if (sortBy != null) 'SortBy': sortBy,
-      if (sortOrder != null) 'SortOrder': sortOrder,
-    });
+    assert(
+      !(includeItemType?.contains(',') ?? false),
+      'IncludeItemTypes 必须单值（BUG-2254）',
+    );
+    final Map<String, Object?> json = await _getJson(
+      '/Users/$userId/Items',
+      <String, String>{
+        if (parentId != null) 'ParentId': parentId,
+        if (recursive) 'Recursive': 'true',
+        if (includeItemType != null) 'IncludeItemTypes': includeItemType,
+        if (searchTerm != null) 'SearchTerm': searchTerm,
+        'StartIndex': '$startIndex',
+        'Limit': '$limit',
+        'Fields': fields,
+        // null = 不指定排序，交给服务器（带 SearchTerm 时就是相关度序）。
+        if (sortBy != null) 'SortBy': sortBy,
+        if (sortOrder != null) 'SortOrder': sortOrder,
+      },
+    );
     return parseItemsPage(json);
   }
 
@@ -1132,16 +1196,15 @@ class JellyfinApi {
     int limit = 200,
     String sortBy = 'SortName',
     String sortOrder = 'Ascending',
-  }) =>
-      items(
-        userId: userId,
-        parentId: parentId,
-        startIndex: startIndex,
-        limit: limit,
-        fields: 'ChildCount,RecursiveItemCount,ProductionYear',
-        sortBy: sortBy,
-        sortOrder: sortOrder,
-      );
+  }) => items(
+    userId: userId,
+    parentId: parentId,
+    startIndex: startIndex,
+    limit: limit,
+    fields: 'ChildCount,RecursiveItemCount,ProductionYear',
+    sortBy: sortBy,
+    sortOrder: sortOrder,
+  );
 
   /// 一部剧的季清单（GET /Shows/{seriesId}/Seasons）。季是个位数，不分页；
   /// `ChildCount` 给每季集数。
@@ -1149,11 +1212,10 @@ class JellyfinApi {
     required String userId,
     required String seriesId,
   }) async {
-    final Map<String, Object?> json =
-        await _getJson('/Shows/$seriesId/Seasons', <String, String>{
-      'UserId': userId,
-      'Fields': 'ChildCount',
-    });
+    final Map<String, Object?> json = await _getJson(
+      '/Shows/$seriesId/Seasons',
+      <String, String>{'UserId': userId, 'Fields': 'ChildCount'},
+    );
     return parseItemsPage(json);
   }
 
@@ -1168,12 +1230,12 @@ class JellyfinApi {
   }) async {
     final Map<String, Object?> json =
         await _getJson('/Shows/$seriesId/Episodes', <String, String>{
-      'UserId': userId,
-      if (seasonId != null) 'SeasonId': seasonId,
-      'StartIndex': '$startIndex',
-      'Limit': '$limit',
-      'Fields': 'ProductionYear',
-    });
+          'UserId': userId,
+          if (seasonId != null) 'SeasonId': seasonId,
+          'StartIndex': '$startIndex',
+          'Limit': '$limit',
+          'Fields': 'ProductionYear',
+        });
     return parseItemsPage(json);
   }
 
@@ -1182,11 +1244,10 @@ class JellyfinApi {
     required String userId,
     int limit = 20,
   }) async {
-    final Map<String, Object?> json =
-        await _getJson('/Users/$userId/Items/Resume', <String, String>{
-      'Limit': '$limit',
-      'MediaTypes': 'Video',
-    });
+    final Map<String, Object?> json = await _getJson(
+      '/Users/$userId/Items/Resume',
+      <String, String>{'Limit': '$limit', 'MediaTypes': 'Video'},
+    );
     return parseItemsPage(json);
   }
 
@@ -1195,11 +1256,10 @@ class JellyfinApi {
     required String userId,
     int limit = 20,
   }) async {
-    final Map<String, Object?> json =
-        await _getJson('/Shows/NextUp', <String, String>{
-      'UserId': userId,
-      'Limit': '$limit',
-    });
+    final Map<String, Object?> json = await _getJson(
+      '/Shows/NextUp',
+      <String, String>{'UserId': userId, 'Limit': '$limit'},
+    );
     return parseItemsPage(json);
   }
 
@@ -1217,13 +1277,15 @@ class JellyfinApi {
     String? parentId,
     int limit = 20,
   }) async {
-    final Object? decoded =
-        await _getDecoded('/Users/$userId/Items/Latest', <String, String>{
-      if (parentId != null) 'ParentId': parentId,
-      'Limit': '$limit',
-      'GroupItems': 'true',
-      'Fields': 'ProductionYear,ChildCount,RecursiveItemCount,OriginalTitle',
-    });
+    final Object? decoded = await _getDecoded(
+      '/Users/$userId/Items/Latest',
+      <String, String>{
+        if (parentId != null) 'ParentId': parentId,
+        'Limit': '$limit',
+        'GroupItems': 'true',
+        'Fields': 'ProductionYear,ChildCount,RecursiveItemCount,OriginalTitle',
+      },
+    );
     if (decoded is List) return parseItemList(decoded);
     if (decoded is Map) {
       return parseItemList((decoded['Items'] as List?) ?? const <Object?>[]);
@@ -1355,11 +1417,11 @@ class JellyfinApi {
   }) async {
     final Map<String, Object?> json =
         await _getJson('/Shows/$seriesId/Episodes', <String, String>{
-      'UserId': userId,
-      'StartIndex': '$startIndex',
-      'Limit': '$limit',
-      'Fields': 'ProductionYear',
-    });
+          'UserId': userId,
+          'StartIndex': '$startIndex',
+          'Limit': '$limit',
+          'Fields': 'ProductionYear',
+        });
     return parseItemsPage(json);
   }
 
@@ -1476,26 +1538,34 @@ class JellyfinApi {
         try {
           await drainSeries(container.id);
         } catch (e) {
-          debugPrint('[jellyfin] /Shows/${container.id}/Episodes failed, '
-              'falling back to children(): $e');
+          debugPrint(
+            '[jellyfin] /Shows/${container.id}/Episodes failed, '
+            'falling back to children(): $e',
+          );
           await drainChildren(container.id);
         }
       } catch (e) {
         truncated = true;
-        debugPrint('[jellyfin] container ${container.id} '
-            '(${container.type}) failed, skipping: $e');
+        debugPrint(
+          '[jellyfin] container ${container.id} '
+          '(${container.type}) failed, skipping: $e',
+        );
       }
     }
 
     if (budgetExhausted) {
-      debugPrint('[jellyfin] hierarchical enumeration hit its request budget '
-          '($requests requests / ${leaves.length} items); pick specific '
-          'libraries in settings to narrow it.');
+      debugPrint(
+        '[jellyfin] hierarchical enumeration hit its request budget '
+        '($requests requests / ${leaves.length} items); pick specific '
+        'libraries in settings to narrow it.',
+      );
     } else if (truncated) {
       // 预算没用完却不完整 = 有容器被跳过。两种原因写成两句，别让排查的人
       // 对着「stopped early」去查根本没触发的预算闸。
-      debugPrint('[jellyfin] hierarchical enumeration finished with some '
-          'containers skipped ($requests requests / ${leaves.length} items).');
+      debugPrint(
+        '[jellyfin] hierarchical enumeration finished with some '
+        'containers skipped ($requests requests / ${leaves.length} items).',
+      );
     }
     return JellyfinRecursiveResult(
       items: leaves,
@@ -1522,8 +1592,9 @@ class JellyfinApi {
     required String userId,
     required String itemId,
   }) async {
-    final Map<String, Object?> json =
-        await _getJson('/Users/$userId/Items/$itemId');
+    final Map<String, Object?> json = await _getJson(
+      '/Users/$userId/Items/$itemId',
+    );
     return parseItem(json);
   }
 
@@ -1551,23 +1622,29 @@ class JellyfinApi {
             'UserId': userId,
           }),
           headers: _headers,
-          body: jsonEncode(buildPlaybackInfoRequest(
-            userId: userId,
-            mediaSourceId: mediaSourceId,
-            startPositionMs: startPositionMs,
-            maxStreamingBitrate: maxStreamingBitrate,
-            maxWidth: maxWidth,
-          )),
+          body: jsonEncode(
+            buildPlaybackInfoRequest(
+              userId: userId,
+              mediaSourceId: mediaSourceId,
+              startPositionMs: startPositionMs,
+              maxStreamingBitrate: maxStreamingBitrate,
+              maxWidth: maxWidth,
+            ),
+          ),
         )
         .timeout(kRequestTimeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw JellyfinApiException.fromResponse(
-          res, '/Items/$itemId/PlaybackInfo');
+        res,
+        '/Items/$itemId/PlaybackInfo',
+      );
     }
     final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
-    return parsePlaybackInfo(decoded is Map<String, dynamic>
-        ? decoded.cast<String, Object?>()
-        : <String, Object?>{});
+    return parsePlaybackInfo(
+      decoded is Map<String, dynamic>
+          ? decoded.cast<String, Object?>()
+          : <String, Object?>{},
+    );
   }
 
   /// PlaybackInfo 请求体（纯函数，离线可测）。
@@ -1580,25 +1657,23 @@ class JellyfinApi {
     int startPositionMs = 0,
     int? maxStreamingBitrate,
     int? maxWidth,
-  }) =>
-      <String, Object?>{
-        'UserId': userId,
-        if (mediaSourceId != null) 'MediaSourceId': mediaSourceId,
-        'StartTimeTicks': startPositionMs * kTicksPerMs,
-        if (maxStreamingBitrate != null)
-          'MaxStreamingBitrate': maxStreamingBitrate,
-        'AutoOpenLiveStream': true,
-        'EnableDirectPlay': true,
-        'EnableDirectStream': true,
-        'EnableTranscoding': true,
-        'AllowVideoStreamCopy': true,
-        'AllowAudioStreamCopy': true,
-        'IsPlayback': true,
-        'DeviceProfile': buildDeviceProfile(
-          maxStreamingBitrate: maxStreamingBitrate,
-          maxWidth: maxWidth,
-        ),
-      };
+  }) => <String, Object?>{
+    'UserId': userId,
+    if (mediaSourceId != null) 'MediaSourceId': mediaSourceId,
+    'StartTimeTicks': startPositionMs * kTicksPerMs,
+    if (maxStreamingBitrate != null) 'MaxStreamingBitrate': maxStreamingBitrate,
+    'AutoOpenLiveStream': true,
+    'EnableDirectPlay': true,
+    'EnableDirectStream': true,
+    'EnableTranscoding': true,
+    'AllowVideoStreamCopy': true,
+    'AllowAudioStreamCopy': true,
+    'IsPlayback': true,
+    'DeviceProfile': buildDeviceProfile(
+      maxStreamingBitrate: maxStreamingBitrate,
+      maxWidth: maxWidth,
+    ),
+  };
 
   /// 本客户端的 DeviceProfile（纯函数）。播放内核是 libmpv，容器 / 编解码基本无所
   /// 不能，所以直播放 profile 不限容器与编码（`Container` 留空 = 全部，Jellyfin 与
@@ -1608,64 +1683,63 @@ class JellyfinApi {
   static Map<String, Object?> buildDeviceProfile({
     int? maxStreamingBitrate,
     int? maxWidth,
-  }) =>
+  }) => <String, Object?>{
+    'Name': 'Hibiki',
+    'MaxStreamingBitrate': maxStreamingBitrate ?? kUnlimitedBitrate,
+    'MaxStaticBitrate': kUnlimitedBitrate,
+    'MusicStreamingTranscodingBitrate': 320000,
+    'DirectPlayProfiles': <Object?>[
+      <String, Object?>{'Type': 'Video'},
+      <String, Object?>{'Type': 'Audio'},
+    ],
+    'TranscodingProfiles': <Object?>[
       <String, Object?>{
-        'Name': 'Hibiki',
-        'MaxStreamingBitrate': maxStreamingBitrate ?? kUnlimitedBitrate,
-        'MaxStaticBitrate': kUnlimitedBitrate,
-        'MusicStreamingTranscodingBitrate': 320000,
-        'DirectPlayProfiles': <Object?>[
-          <String, Object?>{'Type': 'Video'},
-          <String, Object?>{'Type': 'Audio'},
-        ],
-        'TranscodingProfiles': <Object?>[
-          <String, Object?>{
-            'Type': 'Video',
-            'Container': 'ts',
-            'Protocol': 'hls',
-            'VideoCodec': 'h264',
-            'AudioCodec': 'aac,mp3,ac3',
-            'Context': 'Streaming',
-            'MaxAudioChannels': '6',
-            'MinSegments': 1,
-            'BreakOnNonKeyFrames': true,
-          },
-          <String, Object?>{
-            'Type': 'Audio',
-            'Container': 'mp3',
-            'AudioCodec': 'mp3',
-            'Protocol': 'http',
-            'Context': 'Streaming',
-          },
-        ],
-        'CodecProfiles': <Object?>[
-          if (maxWidth != null)
+        'Type': 'Video',
+        'Container': 'ts',
+        'Protocol': 'hls',
+        'VideoCodec': 'h264',
+        'AudioCodec': 'aac,mp3,ac3',
+        'Context': 'Streaming',
+        'MaxAudioChannels': '6',
+        'MinSegments': 1,
+        'BreakOnNonKeyFrames': true,
+      },
+      <String, Object?>{
+        'Type': 'Audio',
+        'Container': 'mp3',
+        'AudioCodec': 'mp3',
+        'Protocol': 'http',
+        'Context': 'Streaming',
+      },
+    ],
+    'CodecProfiles': <Object?>[
+      if (maxWidth != null)
+        <String, Object?>{
+          'Type': 'Video',
+          'Conditions': <Object?>[
             <String, Object?>{
-              'Type': 'Video',
-              'Conditions': <Object?>[
-                <String, Object?>{
-                  'Condition': 'LessThanEqual',
-                  'Property': 'Width',
-                  'Value': '$maxWidth',
-                  'IsRequired': false,
-                },
-              ],
+              'Condition': 'LessThanEqual',
+              'Property': 'Width',
+              'Value': '$maxWidth',
+              'IsRequired': false,
             },
-        ],
-        'SubtitleProfiles': <Object?>[
-          for (final String format in const <String>[
-            'srt',
-            'subrip',
-            'ass',
-            'ssa',
-            'vtt',
-            'webvtt',
-          ])
-            <String, Object?>{'Format': format, 'Method': 'External'},
-          for (final String format in const <String>['pgssub', 'pgs', 'dvdsub'])
-            <String, Object?>{'Format': format, 'Method': 'Encode'},
-        ],
-      };
+          ],
+        },
+    ],
+    'SubtitleProfiles': <Object?>[
+      for (final String format in const <String>[
+        'srt',
+        'subrip',
+        'ass',
+        'ssa',
+        'vtt',
+        'webvtt',
+      ])
+        <String, Object?>{'Format': format, 'Method': 'External'},
+      for (final String format in const <String>['pgssub', 'pgs', 'dvdsub'])
+        <String, Object?>{'Format': format, 'Method': 'Encode'},
+    ],
+  };
 
   /// 「不限」码率的 profile 值（120 Mbps，与 Jellyfin web 的顶档一致）。
   static const int kUnlimitedBitrate = 120000000;
@@ -1690,17 +1764,19 @@ class JellyfinApi {
           deliveryUrls[index.toInt()] = url.trim();
         }
       }
-      sources.add(JellyfinPlaybackMediaSource(
-        id: id,
-        subtitleDeliveryUrls: deliveryUrls,
-        supportsDirectPlay: (src['SupportsDirectPlay'] as bool?) ?? false,
-        supportsDirectStream: (src['SupportsDirectStream'] as bool?) ?? false,
-        supportsTranscoding: (src['SupportsTranscoding'] as bool?) ?? false,
-        transcodingUrl: src['TranscodingUrl'] as String?,
-        transcodingSubProtocol: src['TranscodingSubProtocol'] as String?,
-        container: src['Container'] as String?,
-        bitrate: (src['Bitrate'] as num?)?.toInt(),
-      ));
+      sources.add(
+        JellyfinPlaybackMediaSource(
+          id: id,
+          subtitleDeliveryUrls: deliveryUrls,
+          supportsDirectPlay: (src['SupportsDirectPlay'] as bool?) ?? false,
+          supportsDirectStream: (src['SupportsDirectStream'] as bool?) ?? false,
+          supportsTranscoding: (src['SupportsTranscoding'] as bool?) ?? false,
+          transcodingUrl: src['TranscodingUrl'] as String?,
+          transcodingSubProtocol: src['TranscodingSubProtocol'] as String?,
+          container: src['Container'] as String?,
+          bitrate: (src['Bitrate'] as num?)?.toInt(),
+        ),
+      );
     }
     return JellyfinPlaybackInfo(
       playSessionId: json['PlaySessionId'] as String?,
@@ -1714,14 +1790,13 @@ class JellyfinApi {
   Future<void> reportStarted({
     required JellyfinPlaybackSession session,
     required int positionMs,
-  }) =>
-      _postSession('/Sessions/Playing', <String, Object?>{
-        ..._sessionBody(session.itemId, session),
-        'PositionTicks': positionMs * kTicksPerMs,
-        'IsPaused': false,
-        'IsMuted': false,
-        'CanSeek': true,
-      });
+  }) => _postSession('/Sessions/Playing', <String, Object?>{
+    ..._sessionBody(session.itemId, session),
+    'PositionTicks': positionMs * kTicksPerMs,
+    'IsPaused': false,
+    'IsMuted': false,
+    'CanSeek': true,
+  });
 
   /// 播放中的周期进度上报（POST /Sessions/Playing/Progress）。
   ///
@@ -1736,13 +1811,12 @@ class JellyfinApi {
     JellyfinPlaybackSession? session,
     bool isPaused = false,
     String? eventName,
-  }) =>
-      _postSession('/Sessions/Playing/Progress', <String, Object?>{
-        ..._sessionBody(itemId, session),
-        'PositionTicks': positionMs * kTicksPerMs,
-        'IsPaused': isPaused,
-        if (eventName != null) 'EventName': eventName,
-      });
+  }) => _postSession('/Sessions/Playing/Progress', <String, Object?>{
+    ..._sessionBody(itemId, session),
+    'PositionTicks': positionMs * kTicksPerMs,
+    'IsPaused': isPaused,
+    if (eventName != null) 'EventName': eventName,
+  });
 
   /// 转码任务清理（DELETE /Videos/ActiveEncodings）：停止播放后服务器不会立刻停
   /// ffmpeg，要客户端按 `(DeviceId, PlaySessionId)` 显式停，否则转码继续跑到服务器
@@ -1765,15 +1839,14 @@ class JellyfinApi {
   static Map<String, Object?> _sessionBody(
     String itemId,
     JellyfinPlaybackSession? session,
-  ) =>
-      <String, Object?>{
-        'ItemId': itemId,
-        if (session != null) ...<String, Object?>{
-          'MediaSourceId': session.mediaSourceId,
-          'PlaySessionId': session.playSessionId,
-          'PlayMethod': session.playMethod,
-        },
-      };
+  ) => <String, Object?>{
+    'ItemId': itemId,
+    if (session != null) ...<String, Object?>{
+      'MediaSourceId': session.mediaSourceId,
+      'PlaySessionId': session.playSessionId,
+      'PlayMethod': session.playMethod,
+    },
+  };
 
   Future<void> _postSession(String path, Map<String, Object?> body) async {
     final http.Response res = await _client
@@ -1794,11 +1867,10 @@ class JellyfinApi {
     required String itemId,
     required int positionMs,
     JellyfinPlaybackSession? session,
-  }) =>
-      _postSession('/Sessions/Playing/Stopped', <String, Object?>{
-        ..._sessionBody(itemId, session),
-        'PositionTicks': positionMs * kTicksPerMs,
-      });
+  }) => _postSession('/Sessions/Playing/Stopped', <String, Object?>{
+    ..._sessionBody(itemId, session),
+    'PositionTicks': positionMs * kTicksPerMs,
+  });
 
   /// 直连播放流 URL（static=true 原文件直出，内嵌字幕/音轨全保留；`api_key`
   /// 查询参数自带认证——[RemoteVideoStreamUrls] 没有 HTTP 头通道）。
@@ -1872,16 +1944,17 @@ class JellyfinApi {
   /// 把服务器签发的字幕 `DeliveryUrl`（相对根路径或绝对地址）补成可直接请求的绝对
   /// URL，并在缺令牌时附上 `api_key`（与 [subtitleUrl] 一样交给下载器 / libmpv）。
   String subtitleDeliveryUrl(String deliveryUrl) {
-    final String absolute = deliveryUrl.startsWith('http://') ||
-            deliveryUrl.startsWith('https://')
+    final String absolute =
+        deliveryUrl.startsWith('http://') || deliveryUrl.startsWith('https://')
         ? deliveryUrl
         : '$serverUrl${deliveryUrl.startsWith('/') ? '' : '/'}$deliveryUrl';
     final Uri uri = Uri.parse(absolute);
     final String? token = accessToken;
     if (token == null ||
         token.isEmpty ||
-        uri.queryParameters.keys
-            .any((String k) => k.toLowerCase() == 'api_key')) {
+        uri.queryParameters.keys.any(
+          (String k) => k.toLowerCase() == 'api_key',
+        )) {
       return absolute;
     }
     return '$absolute${uri.hasQuery ? '&' : '?'}api_key=$token';
@@ -1907,8 +1980,10 @@ class JellyfinApi {
   /// 拉取 [url] 的全部字节（封面用）。非 2xx 抛 [JellyfinApiException]。
   Future<Uint8List> fetchBytes(String url) async {
     try {
-      final http.Response res =
-          await _client.get(Uri.parse(url), headers: _headers);
+      final http.Response res = await _client.get(
+        Uri.parse(url),
+        headers: _headers,
+      );
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw JellyfinApiException(res.statusCode, Uri.parse(url).path);
       }
@@ -1939,8 +2014,9 @@ class JellyfinApi {
       req.headers.addAll(_headers);
       // 只给「拿到响应头」挂超时；下面的 body 流刻意不挂整体超时——整片下载几十
       // 分钟是正常的，套上去就是误杀。
-      final http.StreamedResponse res =
-          await _client.send(req).timeout(kRequestTimeout);
+      final http.StreamedResponse res = await _client
+          .send(req)
+          .timeout(kRequestTimeout);
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw JellyfinApiException(res.statusCode, Uri.parse(url).path);
       }
@@ -2038,7 +2114,7 @@ class JellyfinApi {
   static JellyfinItem parseItem(Map<String, Object?> json) {
     final Map<String, Object?> userData =
         (json['UserData'] as Map?)?.cast<String, Object?>() ??
-            <String, Object?>{};
+        <String, Object?>{};
     final int? runTimeTicks = (json['RunTimeTicks'] as num?)?.toInt();
     final int positionTicks =
         (userData['PlaybackPositionTicks'] as num?)?.toInt() ?? 0;
@@ -2050,8 +2126,9 @@ class JellyfinApi {
           in (json['MediaSources'] as List?) ?? const <Object?>[])
         if (raw is Map) parseMediaSource(raw.cast<String, Object?>()),
     ];
-    final JellyfinMediaSource? primary =
-        mediaSources.isEmpty ? null : mediaSources.first;
+    final JellyfinMediaSource? primary = mediaSources.isEmpty
+        ? null
+        : mediaSources.first;
     final String? mediaSourceId = primary?.id;
     final int? sizeBytes = primary?.sizeBytes;
     final bool videoRequiresDolbyVisionReshape =
@@ -2061,7 +2138,7 @@ class JellyfinApi {
 
     final Map<String, Object?> imageTags =
         (json['ImageTags'] as Map?)?.cast<String, Object?>() ??
-            <String, Object?>{};
+        <String, Object?>{};
     final List<Object?> backdropTags =
         (json['BackdropImageTags'] as List?) ?? const <Object?>[];
     final List<Object?> genres = (json['Genres'] as List?) ?? const <Object?>[];
@@ -2093,9 +2170,10 @@ class JellyfinApi {
       sizeBytes: sizeBytes,
       videoRequiresDolbyVisionReshape: videoRequiresDolbyVisionReshape,
       lastPlayedAtMs:
-          DateTime.tryParse((userData['LastPlayedDate'] as String?) ?? '')
-                  ?.millisecondsSinceEpoch ??
-              0,
+          DateTime.tryParse(
+            (userData['LastPlayedDate'] as String?) ?? '',
+          )?.millisecondsSinceEpoch ??
+          0,
       childCount: (json['ChildCount'] as num?)?.toInt(),
       recursiveItemCount: (json['RecursiveItemCount'] as num?)?.toInt(),
       productionYear: (json['ProductionYear'] as num?)?.toInt(),
@@ -2139,35 +2217,41 @@ class JellyfinApi {
           video ??= s;
           if (mediaStreamRequiresDolbyVisionReshape(s)) requiresReshape = true;
         case 'Audio':
-          audio.add(MediaServerStreamTrack(
-            index: (s['Index'] as num?)?.toInt() ?? 0,
-            displayTitle: s['DisplayTitle'] as String?,
-            language: s['Language'] as String?,
-            codec: s['Codec'] as String?,
-            isDefault: (s['IsDefault'] as bool?) ?? false,
-            isExternal: (s['IsExternal'] as bool?) ?? false,
-          ));
+          audio.add(
+            MediaServerStreamTrack(
+              index: (s['Index'] as num?)?.toInt() ?? 0,
+              displayTitle: s['DisplayTitle'] as String?,
+              language: s['Language'] as String?,
+              codec: s['Codec'] as String?,
+              isDefault: (s['IsDefault'] as bool?) ?? false,
+              isExternal: (s['IsExternal'] as bool?) ?? false,
+            ),
+          );
         case 'Subtitle':
-          subs.add(JellyfinSubtitleStream(
-            index: (s['Index'] as num?)?.toInt() ?? 0,
-            codec: (s['Codec'] as String?) ?? '',
-            language: s['Language'] as String?,
-            title: s['DisplayTitle'] as String?,
-            isExternal: (s['IsExternal'] as bool?) ?? false,
-            isTextSubtitleStream: (s['IsTextSubtitleStream'] as bool?) ?? true,
-          ));
+          subs.add(
+            JellyfinSubtitleStream(
+              index: (s['Index'] as num?)?.toInt() ?? 0,
+              codec: (s['Codec'] as String?) ?? '',
+              language: s['Language'] as String?,
+              title: s['DisplayTitle'] as String?,
+              isExternal: (s['IsExternal'] as bool?) ?? false,
+              isTextSubtitleStream:
+                  (s['IsTextSubtitleStream'] as bool?) ?? true,
+            ),
+          );
       }
     }
     final String? range = video == null
         ? null
         : (video['VideoRangeType'] as String?) ??
-            (video['VideoRange'] as String?);
+              (video['VideoRange'] as String?);
     return JellyfinMediaSource(
       id: (src['Id'] as String?) ?? '',
       name: src['Name'] as String?,
       container: src['Container'] as String?,
       sizeBytes: (src['Size'] as num?)?.toInt(),
-      bitrate: (src['Bitrate'] as num?)?.toInt() ??
+      bitrate:
+          (src['Bitrate'] as num?)?.toInt() ??
           (video?['BitRate'] as num?)?.toInt(),
       width: (video?['Width'] as num?)?.toInt(),
       height: (video?['Height'] as num?)?.toInt(),
@@ -2230,17 +2314,32 @@ class JellyfinVideoClient
   /// 宽度上限让服务器转码时真的缩到那一档，而不是只降码率不降分辨率。
   static const List<MediaServerQualityPreset> kQualityPresets =
       <MediaServerQualityPreset>[
-    MediaServerQualityPreset(
-        label: '1080p · 20 Mbps', maxBitrate: 20000000, maxWidth: 1920),
-    MediaServerQualityPreset(
-        label: '1080p · 10 Mbps', maxBitrate: 10000000, maxWidth: 1920),
-    MediaServerQualityPreset(
-        label: '720p · 6 Mbps', maxBitrate: 6000000, maxWidth: 1280),
-    MediaServerQualityPreset(
-        label: '720p · 3 Mbps', maxBitrate: 3000000, maxWidth: 1280),
-    MediaServerQualityPreset(
-        label: '480p · 1.5 Mbps', maxBitrate: 1500000, maxWidth: 854),
-  ];
+        MediaServerQualityPreset(
+          label: '1080p · 20 Mbps',
+          maxBitrate: 20000000,
+          maxWidth: 1920,
+        ),
+        MediaServerQualityPreset(
+          label: '1080p · 10 Mbps',
+          maxBitrate: 10000000,
+          maxWidth: 1920,
+        ),
+        MediaServerQualityPreset(
+          label: '720p · 6 Mbps',
+          maxBitrate: 6000000,
+          maxWidth: 1280,
+        ),
+        MediaServerQualityPreset(
+          label: '720p · 3 Mbps',
+          maxBitrate: 3000000,
+          maxWidth: 1280,
+        ),
+        MediaServerQualityPreset(
+          label: '480p · 1.5 Mbps',
+          maxBitrate: 1500000,
+          maxWidth: 854,
+        ),
+      ];
 
   @override
   List<MediaServerQualityPreset> get qualityPresets => kQualityPresets;
@@ -2251,8 +2350,8 @@ class JellyfinVideoClient
 
   MediaServerQualityPreset? get _activeQualityPreset =>
       qualityPresetIndex >= 0 && qualityPresetIndex < kQualityPresets.length
-          ? kQualityPresets[qualityPresetIndex]
-          : null;
+      ? kQualityPresets[qualityPresetIndex]
+      : null;
 
   /// 把条目的「当前媒体源」换成用户为它（或同剧）记住的版本
   /// （[resolveMediaServerVersionIndex]）；单版本 / 没选过原样返回（服务器默认
@@ -2286,7 +2385,9 @@ class JellyfinVideoClient
     }
     return <RemoteVideoStreamVariant>[
       for (final JellyfinMediaSource source in item.mediaSources)
-        RemoteVideoStreamVariant(label: mediaServerVersionLabel(source.toVersion())),
+        RemoteVideoStreamVariant(
+          label: mediaServerVersionLabel(source.toVersion()),
+        ),
     ];
   }
 
@@ -2367,8 +2468,7 @@ class JellyfinVideoClient
   static String sourceIdFor({
     required String serverUrl,
     required String userId,
-  }) =>
-      'jellyfin:$serverUrl|$userId';
+  }) => 'jellyfin:$serverUrl|$userId';
 
   @override
   String get remoteLibrarySourceId =>
@@ -2403,8 +2503,9 @@ class JellyfinVideoClient
         mediaServerTypeOf(item) ?? MediaServerItemType.movie,
       ),
       sizeBytes: item.sizeBytes,
-      subtitleFileName:
-          subtitle == null ? null : _subtitleFileName(item, subtitle),
+      subtitleFileName: subtitle == null
+          ? null
+          : _subtitleFileName(item, subtitle),
     );
   }
 
@@ -2412,20 +2513,19 @@ class JellyfinVideoClient
     MediaServerItem item, {
     int? sizeBytes,
     String? subtitleFileName,
-  }) =>
-      RemoteVideoInfo(
-        id: item.id,
-        title: displayTitleOf(item),
-        sizeBytes: sizeBytes,
-        hasSubtitle: item.hasSubtitle,
-        subtitleFileName: subtitleFileName,
-        durationMs: item.durationMs,
-        hasCover: item.hasCover,
-        coverUrl: coverUrl(item),
-        positionMs: item.positionMs,
-        positionUpdatedAtMs: item.lastPlayedAtMs,
-        collection: _collectionOf(item),
-      );
+  }) => RemoteVideoInfo(
+    id: item.id,
+    title: displayTitleOf(item),
+    sizeBytes: sizeBytes,
+    hasSubtitle: item.hasSubtitle,
+    subtitleFileName: subtitleFileName,
+    durationMs: item.durationMs,
+    hasCover: item.hasCover,
+    coverUrl: coverUrl(item),
+    positionMs: item.positionMs,
+    positionUpdatedAtMs: item.lastPlayedAtMs,
+    collection: _collectionOf(item),
+  );
 
   // ── MediaServerBrowser：JellyfinItem → MediaServerItem 纯函数投影 ─────────
 
@@ -2484,55 +2584,54 @@ class JellyfinVideoClient
   static MediaServerItem mediaServerItemFrom(
     JellyfinItem item,
     MediaServerItemType type,
-  ) =>
-      MediaServerItem(
-        id: item.id,
-        name: item.name,
-        type: type,
-        originalTitle: item.originalTitle,
-        seriesId: item.seriesId,
-        seriesName: item.seriesName,
-        seasonId: item.seasonId,
-        // 季自己的序号在 IndexNumber 上；集的季号在 ParentIndexNumber 上。
-        seasonNumber: type == MediaServerItemType.season
-            ? item.episodeNumber
-            : item.seasonNumber,
-        episodeNumber:
-            type == MediaServerItemType.season ? null : item.episodeNumber,
-        productionYear: item.productionYear,
-        durationMs: item.durationMs,
-        positionMs: item.positionMs,
-        lastPlayedAtMs: item.lastPlayedAtMs,
-        played: item.played,
-        playedPercentage: item.playedPercentage,
-        childCount: item.childCount,
-        episodeCount: item.recursiveItemCount,
-        unplayedChildCount: item.unplayedChildCount,
-        hasCover: item.hasPrimaryImage,
-        hasBackdrop: item.hasBackdrop,
-        hasThumb: item.hasThumbImage,
-        hasLogo: item.hasLogoImage,
-        parentThumbItemId: item.parentThumbItemId,
-        parentBackdropItemId: item.parentBackdropItemId,
-        overview: item.overview,
-        communityRating: item.communityRating,
-        genres: item.genres,
-        hasSubtitle: item.hasTextSubtitle,
-        versions: <MediaServerVersion>[
-          for (final JellyfinMediaSource source in item.mediaSources)
-            if (source.id.isNotEmpty) source.toVersion(),
-        ],
-      );
+  ) => MediaServerItem(
+    id: item.id,
+    name: item.name,
+    type: type,
+    originalTitle: item.originalTitle,
+    seriesId: item.seriesId,
+    seriesName: item.seriesName,
+    seasonId: item.seasonId,
+    // 季自己的序号在 IndexNumber 上；集的季号在 ParentIndexNumber 上。
+    seasonNumber: type == MediaServerItemType.season
+        ? item.episodeNumber
+        : item.seasonNumber,
+    episodeNumber: type == MediaServerItemType.season
+        ? null
+        : item.episodeNumber,
+    productionYear: item.productionYear,
+    durationMs: item.durationMs,
+    positionMs: item.positionMs,
+    lastPlayedAtMs: item.lastPlayedAtMs,
+    played: item.played,
+    playedPercentage: item.playedPercentage,
+    childCount: item.childCount,
+    episodeCount: item.recursiveItemCount,
+    unplayedChildCount: item.unplayedChildCount,
+    hasCover: item.hasPrimaryImage,
+    hasBackdrop: item.hasBackdrop,
+    hasThumb: item.hasThumbImage,
+    hasLogo: item.hasLogoImage,
+    parentThumbItemId: item.parentThumbItemId,
+    parentBackdropItemId: item.parentBackdropItemId,
+    overview: item.overview,
+    communityRating: item.communityRating,
+    genres: item.genres,
+    hasSubtitle: item.hasTextSubtitle,
+    versions: <MediaServerVersion>[
+      for (final JellyfinMediaSource source in item.mediaSources)
+        if (source.id.isNotEmpty) source.toVersion(),
+    ],
+  );
 
   /// 只保留视频域条目的投影（[mediaServerTypeOf] 为 null 的丢掉）。
   static List<MediaServerItem> mediaServerItemsFrom(
     Iterable<JellyfinItem> items,
-  ) =>
-      <MediaServerItem>[
-        for (final JellyfinItem item in items)
-          if (mediaServerTypeOf(item) case final MediaServerItemType type)
-            mediaServerItemFrom(item, type),
-      ];
+  ) => <MediaServerItem>[
+    for (final JellyfinItem item in items)
+      if (mediaServerTypeOf(item) case final MediaServerItemType type)
+        mediaServerItemFrom(item, type),
+  ];
 
   /// 展示标题（与 [JellyfinItem.displayTitle] 同一口径：单集拼
   /// `剧名 S01E02 集名`，其余用条目名）。播放页的合集面板 / 通知栏都吃它。
@@ -2578,22 +2677,21 @@ class JellyfinVideoClient
   /// [MediaServerSort] → 服务器 `SortBy` / `SortOrder`（单值，BUG-2254 谨慎）。
   static ({String sortBy, String sortOrder}) sortParamsFor(
     MediaServerSort sort,
-  ) =>
-      switch (sort) {
-        MediaServerSort.name => (sortBy: 'SortName', sortOrder: 'Ascending'),
-        MediaServerSort.dateAdded => (
-            sortBy: 'DateCreated',
-            sortOrder: 'Descending'
-          ),
-        MediaServerSort.premiereDate => (
-            sortBy: 'PremiereDate',
-            sortOrder: 'Descending'
-          ),
-        MediaServerSort.communityRating => (
-            sortBy: 'CommunityRating',
-            sortOrder: 'Descending'
-          ),
-      };
+  ) => switch (sort) {
+    MediaServerSort.name => (sortBy: 'SortName', sortOrder: 'Ascending'),
+    MediaServerSort.dateAdded => (
+      sortBy: 'DateCreated',
+      sortOrder: 'Descending',
+    ),
+    MediaServerSort.premiereDate => (
+      sortBy: 'PremiereDate',
+      sortOrder: 'Descending',
+    ),
+    MediaServerSort.communityRating => (
+      sortBy: 'CommunityRating',
+      sortOrder: 'Descending',
+    ),
+  };
 
   /// 服务器一页 → 契约一页：客户端滤掉非视频域类型后，下一页起点仍按服务器
   /// **实际返回的行数**推（被滤掉的条目在服务器那边照样占序号）。
@@ -2682,8 +2780,10 @@ class JellyfinVideoClient
       page = await api.seasons(userId: userId, seriesId: seriesId);
     } catch (e) {
       if (!_isEndpointUnavailable(e)) rethrow;
-      debugPrint('[jellyfin] /Shows/$seriesId/Seasons unavailable ($e); '
-          'falling back to /Items?ParentId=');
+      debugPrint(
+        '[jellyfin] /Shows/$seriesId/Seasons unavailable ($e); '
+        'falling back to /Items?ParentId=',
+      );
       page = await api.items(
         userId: userId,
         parentId: seriesId,
@@ -2720,8 +2820,10 @@ class JellyfinVideoClient
       );
     } catch (e) {
       if (!_isEndpointUnavailable(e)) rethrow;
-      debugPrint('[jellyfin] /Shows/$seriesId/Episodes unavailable ($e); '
-          'falling back to recursive /Items?ParentId=');
+      debugPrint(
+        '[jellyfin] /Shows/$seriesId/Episodes unavailable ($e); '
+        'falling back to recursive /Items?ParentId=',
+      );
       // 与全库枚举同一条已在三家验过的请求形态（递归 + 单值 Episode）；集不
       // 一定直接挂在季下（无季文件夹的剧由服务器造虚拟季），递归才全。
       page = await api.items(
@@ -2774,30 +2876,27 @@ class JellyfinVideoClient
   @override
   Future<List<MediaServerItem>> listResume({
     int limit = kMediaServerRowLimit,
-  }) =>
-      _rowOrEmpty(
-        '/Items/Resume',
-        () async => (await api.resume(userId: userId, limit: limit)).items,
-      );
+  }) => _rowOrEmpty(
+    '/Items/Resume',
+    () async => (await api.resume(userId: userId, limit: limit)).items,
+  );
 
   @override
   Future<List<MediaServerItem>> listNextUp({
     int limit = kMediaServerRowLimit,
-  }) =>
-      _rowOrEmpty(
-        '/Shows/NextUp',
-        () async => (await api.nextUp(userId: userId, limit: limit)).items,
-      );
+  }) => _rowOrEmpty(
+    '/Shows/NextUp',
+    () async => (await api.nextUp(userId: userId, limit: limit)).items,
+  );
 
   @override
   Future<List<MediaServerItem>> listLatest({
     String? libraryId,
     int limit = kMediaServerRowLimit,
-  }) =>
-      _rowOrEmpty(
-        '/Items/Latest',
-        () => api.latest(userId: userId, parentId: libraryId, limit: limit),
-      );
+  }) => _rowOrEmpty(
+    '/Items/Latest',
+    () => api.latest(userId: userId, parentId: libraryId, limit: limit),
+  );
 
   /// 搜索按类型分轮的顺序：电影在前、剧在后（单值 IncludeItemTypes，BUG-2254）。
   static const List<String> kSearchRounds = <String>['Movie', 'Series'];
@@ -2837,10 +2936,9 @@ class JellyfinVideoClient
     required int reportedTotal,
     required int startIndex,
     required int rows,
-  }) =>
-      rows > 0
-          ? reportedTotal < startIndex + rows
-          : startIndex > 0 && reportedTotal == 0;
+  }) => rows > 0
+      ? reportedTotal < startIndex + rows
+      : startIndex > 0 && reportedTotal == 0;
 
   /// [page]（从 [startIndex] 起、要了 [requested] 行）所在这一轮的真实总数。
   ///
@@ -2997,11 +3095,17 @@ class JellyfinVideoClient
   Future<MediaServerItem> itemDetail(String itemId) async {
     // `/Users/{uid}/Items/{id}` 不看 Fields、全量返回（Overview / Genres /
     // MediaSources 都在），与播放路径用的是同一发请求，不另加参数。
-    final JellyfinItem item = await api.itemDetail(userId: userId, itemId: itemId);
+    final JellyfinItem item = await api.itemDetail(
+      userId: userId,
+      itemId: itemId,
+    );
     final MediaServerItemType? type = mediaServerTypeOf(item);
     if (type == null) {
-      throw ArgumentError.value(itemId, 'itemId',
-          'Jellyfin item type "${item.type}" is outside the video domain');
+      throw ArgumentError.value(
+        itemId,
+        'itemId',
+        'Jellyfin item type "${item.type}" is outside the video domain',
+      );
     }
     return mediaServerItemFrom(item, type);
   }
@@ -3026,14 +3130,16 @@ class JellyfinVideoClient
   String? libraryCoverUrl(
     MediaServerLibrary library, {
     int maxWidth = kMediaServerCoverMaxWidth,
-  }) =>
-      library.hasCover ? api.imageUrl(library.id, maxWidth: maxWidth) : null;
+  }) => library.hasCover ? api.imageUrl(library.id, maxWidth: maxWidth) : null;
 
   @override
   RemoteVideoInfo toRemoteVideoInfo(MediaServerItem item) {
     if (!item.isPlayable) {
       throw ArgumentError.value(
-          item.type, 'item', 'only Movie / Episode leaves are playable');
+        item.type,
+        'item',
+        'only Movie / Episode leaves are playable',
+      );
     }
     return _remoteVideoInfoFor(item);
   }
@@ -3077,8 +3183,10 @@ class JellyfinVideoClient
       ];
       if (videoish.isNotEmpty) return videoish;
     } catch (e) {
-      debugPrint('[jellyfin] views() failed, falling back to whole-server '
-          'recursion: $e');
+      debugPrint(
+        '[jellyfin] views() failed, falling back to whole-server '
+        'recursion: $e',
+      );
     }
     return const <String?>[null];
   }
@@ -3091,8 +3199,10 @@ class JellyfinVideoClient
     bool truncated = false;
     int totalCount = 0;
     for (final String? parentId in parents) {
-      final JellyfinRecursiveResult page =
-          await api.recursiveVideoItems(userId: userId, parentId: parentId);
+      final JellyfinRecursiveResult page = await api.recursiveVideoItems(
+        userId: userId,
+        parentId: parentId,
+      );
       truncated = truncated || page.truncated;
       totalCount += page.totalCount;
       for (final JellyfinItem item in page.items) {
@@ -3103,9 +3213,11 @@ class JellyfinVideoClient
     }
     if (truncated) {
       // 静默截断是「以为拉全了、其实没有」——至少要在日志里看得见。
-      debugPrint('[jellyfin] library enumeration truncated at '
-          '${JellyfinApi.kMaxRecursiveItems} items (server reported '
-          '$totalCount); pick specific libraries in settings to narrow it.');
+      debugPrint(
+        '[jellyfin] library enumeration truncated at '
+        '${JellyfinApi.kMaxRecursiveItems} items (server reported '
+        '$totalCount); pick specific libraries in settings to narrow it.',
+      );
     }
     return out;
   }
@@ -3114,8 +3226,10 @@ class JellyfinVideoClient
   /// （MediaSources → 文件大小 / 精确文本字幕轨 / 字幕文件名）补齐。
   @override
   Future<RemoteVideoInfo> remoteVideoDetail(RemoteVideoInfo listInfo) async {
-    final JellyfinItem item =
-        await api.itemDetail(userId: userId, itemId: listInfo.id);
+    final JellyfinItem item = await api.itemDetail(
+      userId: userId,
+      itemId: listInfo.id,
+    );
     return infoFromItem(item);
   }
 
@@ -3175,7 +3289,7 @@ class JellyfinVideoClient
   ///   服务器补上端点即自动恢复，不需要本端改动。网络类异常照常抛出（详情请求
   ///   同样会失败，不该只吞这一个）。
   Future<({String streamUrl, JellyfinPlaybackSession? session})>
-      _negotiatePlayback(String id, JellyfinItem item) async {
+  _negotiatePlayback(String id, JellyfinItem item) async {
     final MediaServerQualityPreset? preset = _activeQualityPreset;
     JellyfinPlaybackInfo info;
     try {
@@ -3229,7 +3343,8 @@ class JellyfinVideoClient
     _subtitleDeliveryUrls[_deliveryKey(id, source.id)] =
         source.subtitleDeliveryUrls;
     final String? transcodingUrl = source.transcodingUrl;
-    final bool direct = source.supportsDirectPlay || source.supportsDirectStream;
+    final bool direct =
+        source.supportsDirectPlay || source.supportsDirectStream;
     final JellyfinPlaybackSession session;
     final String streamUrl;
     if (direct || transcodingUrl == null || transcodingUrl.isEmpty) {
@@ -3284,17 +3399,19 @@ class JellyfinVideoClient
       if (!s.isTextSubtitleStream || mediaSourceId == null) continue;
       final String url = _subtitleUrlCandidates(id, mediaSourceId, s).first;
       external ??= s.isExternal ? s : null;
-      tracks.add(RemoteVideoEmbeddedSubtitleTrack(
-        streamIndex: s.index,
-        codec: s.codec,
-        language: s.language,
-        title: s.title,
-        url: url,
-        fileName: _subtitleFileName(item, s),
-        containerTrackOrdinal: ordinals[s.index],
-        // 外挂字幕文件不在直出的容器里：抽取失败时不能交给 libmpv 自绘。
-        isExternalFile: s.isExternal,
-      ));
+      tracks.add(
+        RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: s.index,
+          codec: s.codec,
+          language: s.language,
+          title: s.title,
+          url: url,
+          fileName: _subtitleFileName(item, s),
+          containerTrackOrdinal: ordinals[s.index],
+          // 外挂字幕文件不在直出的容器里：抽取失败时不能交给 libmpv 自绘。
+          isExternalFile: s.isExternal,
+        ),
+      );
     }
 
     return RemoteVideoStreamUrls(
@@ -3304,8 +3421,9 @@ class JellyfinVideoClient
       subtitleUrl: external == null || mediaSourceId == null
           ? null
           : _subtitleUrlCandidates(id, mediaSourceId, external).first,
-      subtitleFileName:
-          external == null ? null : _subtitleFileName(item, external),
+      subtitleFileName: external == null
+          ? null
+          : _subtitleFileName(item, external),
       // direct play 是单条 muxed 流（自带音轨）。
       miningVideoHasAudio: true,
       embeddedSubtitleTracks: tracks,
@@ -3313,7 +3431,8 @@ class JellyfinVideoClient
       // 播放页的「交给 libmpv 自绘」回落只对直出原始容器有效（BUG-2590）。
       streamIsOriginalContainer: playback.session?.playMethod != 'Transcode',
       // 转码流由服务器重新编码，不再是 DV（BUG-2691）。
-      sourceRequiresDolbyVisionReshape: item.videoRequiresDolbyVisionReshape &&
+      sourceRequiresDolbyVisionReshape:
+          item.videoRequiresDolbyVisionReshape &&
           playback.session?.playMethod != 'Transcode',
     );
   }
@@ -3327,11 +3446,14 @@ class JellyfinVideoClient
   static Map<int, int> containerSubtitleOrdinals(
     List<JellyfinSubtitleStream> streams,
   ) {
-    final List<JellyfinSubtitleStream> inContainer = streams
-        .where((JellyfinSubtitleStream s) => !s.isExternal)
-        .toList(growable: false)
-      ..sort((JellyfinSubtitleStream a, JellyfinSubtitleStream b) =>
-          a.index.compareTo(b.index));
+    final List<JellyfinSubtitleStream> inContainer =
+        streams
+            .where((JellyfinSubtitleStream s) => !s.isExternal)
+            .toList(growable: false)
+          ..sort(
+            (JellyfinSubtitleStream a, JellyfinSubtitleStream b) =>
+                a.index.compareTo(b.index),
+          );
     return <int, int>{
       for (int i = 0; i < inContainer.length; i++) inContainer[i].index: i,
     };
@@ -3480,8 +3602,9 @@ class JellyfinVideoClient
   @override
   Future<void> stopRemoteVideoPlayback(String id, int positionMs) async {
     final List<JellyfinPlaybackSession>? list = _sessions[id];
-    final JellyfinPlaybackSession? session =
-        list == null || list.isEmpty ? null : list.removeAt(0);
+    final JellyfinPlaybackSession? session = list == null || list.isEmpty
+        ? null
+        : list.removeAt(0);
     if (list != null && list.isEmpty) _sessions.remove(id);
     try {
       await api.reportStopped(

@@ -1140,6 +1140,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   static GalHookTextEventHandler? _onTogglePassThrough;
   static GalHookTextEventHandler? _onToggleTransparency;
   static GalHookTextEventHandler? _onOpenWorkbench;
+  static GalHookTextEventHandler? _onCopyLine;
   static GalHookTextEventHandler? _onClose;
   // native 的 HWND 生命周期终点（WM_NCDESTROY）。消费端的可见性镜像靠它被动
   // 复位，而不是每行台词打一次 isShowing() 往返去轮询同一件事。
@@ -1164,6 +1165,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     GalHookTextEventHandler? onTogglePassThrough,
     GalHookTextEventHandler? onToggleTransparency,
     GalHookTextEventHandler? onOpenWorkbench,
+    GalHookTextEventHandler? onCopyLine,
     GalHookTextEventHandler? onClose,
     GalHookTextEventHandler? onOverlayDestroyed,
     GalHookTextEventHandler? onReplayVoice,
@@ -1184,6 +1186,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onTogglePassThrough = onTogglePassThrough;
     _onToggleTransparency = onToggleTransparency;
     _onOpenWorkbench = onOpenWorkbench;
+    _onCopyLine = onCopyLine;
     _onClose = onClose;
     _onOverlayDestroyed = onOverlayDestroyed;
     _onReplayVoice = onReplayVoice;
@@ -1207,6 +1210,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     _onTogglePassThrough = null;
     _onToggleTransparency = null;
     _onOpenWorkbench = null;
+    _onCopyLine = null;
     _onClose = null;
     _onOverlayDestroyed = null;
     _onReplayVoice = null;
@@ -1256,6 +1260,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
         break;
       case 'openWorkbench':
         await _onOpenWorkbench?.call();
+        break;
+      case 'copyLine':
+        await _onCopyLine?.call();
         break;
       case 'replayVoice':
         await _onReplayVoice?.call();

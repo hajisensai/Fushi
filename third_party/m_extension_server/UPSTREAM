@@ -97,11 +97,43 @@ nothing at all survives. DalvikHandler routes `getVideoList` here instead of
 MihonInvoker.invokeGetVideoList (which returned the raw legacy list), and
 projects the lib-16 fields (videoTitle / resolution / bitrate / preferred /
 mpvArgs) next to the lib-14 ones on the wire. InspectHandler accepts anime
-lib 14 / 15 / 16.
+lib 14 / 15 / 16 / 17.
 
-Compatibility ceiling: the Aniyomi main line has since added HttpServer /
-ThumbnailInfo / SAnimeEpisodeUpdate / AnimeRelation (lib 17 territory); those
-are not vendored and such an APK is refused at inspect time.
+extensions-lib 17 (2026-10-23, aniyomiorg/extensions-lib 971ce96e "v17",
+released 2026-09-14; feedback gRSPNbJjqT was a lib-17 APK refused at inspect):
+  model/Video.kt        no longer a data class: lib 17 appended `memo:
+                        JsonObject` to the primary constructor, and real lib-16
+                        APKs call the 14-parameter `copy$default`, so both
+                        constructors, both `copy` overloads and component1..15
+                        are spelled out by hand
+  model/Hoster.kt       overlay copy of upstream's with `memo` + the lib-16
+                        constructor kept
+  SAnime / SEpisode     + `memo` (not serialised; not carried across bridge
+                        calls -- the wire format has no slot for it)
+  AnimeSource           + getAnimeEpisodeUpdate / getAnimeSeasonUpdate,
+                        supportsRelatedAnime, getRelatedAnimeList(anime)
+  AnimeHttpSource       request / parse helpers abstract -> open (lib 17 made
+                        them optional); getAnimeDetails / getEpisodeList /
+                        getSeasonList route onto the combined calls when the
+                        extension implements only those (reflection, same as
+                        the hoster switch), the combined defaults fall back to
+                        the legacy overrides without looping through `super`;
+                        + getHomeUrl / getVideoThumbnails / getImageTile /
+                        createHttpServer
+  model/HttpServer.kt   NanoHTTPD bound to loopback; AnimeVideoLoader rebases
+                        `http://localhost:1` urls onto it, the sidecar's
+                        ExtensionHttpServers owns the lifecycle. The Android
+                        app compiles its own NanoHTTPD-free HttpServer and
+                        reports such videos as unplayable.
+  AnimeRelation / SAnimeEpisodeUpdate / SAnimeSeasonUpdate / ThumbnailInfo,
+  torrentutils/**       new classes; TorrentUtils is Java because the
+                        komikku-app lib links a plain and lib 17 a `suspend`
+                        getTorrentInfo, which Kotlin cannot declare together.
+  InspectHandler        also reads lib 17's `aniyomix.extensionLib` /
+                        `aniyomix.name` metadata keys.
+AnimeExtensionAbiTest resolves every host member that real lib 14 / 16 / 17
+APKs link against (src/test/resources/anime-extension-abi-refs.txt, extracted
+from their dex tables without running them).
 
 upstream_src/ excludes exactly two things from the upstream commit:
   .git/       clone metadata, not source

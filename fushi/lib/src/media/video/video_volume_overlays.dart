@@ -29,12 +29,16 @@ class VideoVolumePopoverCard extends StatelessWidget {
     required this.tooltip,
     required this.onToggleMute,
     required this.onChanged,
+    this.maximum = 100.0,
     this.frameKey = videoVolumePopoverFrameKey,
     this.sliderKey = videoVolumePopoverSliderKey,
   });
 
   final double width;
   final double value;
+
+  /// 滑条上限（百分比）：音量上限设置（100 / 150 / 200），超过 100 即放大。
+  final double maximum;
   final double uiScale;
   final ColorScheme colorScheme;
   final IconData icon;
@@ -47,7 +51,8 @@ class VideoVolumePopoverCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double scale = math.max(0.1, uiScale);
-    final double clamped = value.clamp(0.0, 100.0).toDouble();
+    final double max = math.max(100.0, maximum);
+    final double clamped = value.clamp(0.0, max).toDouble();
     final double controlHeight = 40 * scale;
     return Material(
       color: Colors.transparent,
@@ -108,7 +113,7 @@ class VideoVolumePopoverCard extends StatelessWidget {
                           key: sliderKey,
                           value: clamped,
                           min: 0,
-                          max: 100,
+                          max: max,
                           onChanged: onChanged,
                         ),
                       ),
@@ -150,9 +155,14 @@ class VideoLevelHudCard extends StatelessWidget {
     required this.shadowColor,
     required this.frameKey,
     required this.progressKey,
+    this.maximum = 100.0,
   });
 
   final double value;
+
+  /// 电平满格对应的值：亮度恒 100；音量是音量上限（150 / 200 时 100% 不再满格，
+  /// 数字照实显示放大后的百分比）。
+  final double maximum;
   final double uiScale;
   final IconData icon;
   final AlignmentGeometry alignment;
@@ -166,11 +176,12 @@ class VideoLevelHudCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double scale = math.max(0.1, uiScale);
-    final double clamped = value.clamp(0.0, 100.0).toDouble();
+    final double max = math.max(100.0, maximum);
+    final double clamped = value.clamp(0.0, max).toDouble();
     final double rowHeight = 24 * scale;
     final double progressHeight = 4 * scale;
     if (videoAppleChrome(context)) {
-      return _buildApple(context, scale: scale, clamped: clamped);
+      return _buildApple(context, scale: scale, fraction: clamped / max);
     }
     return Align(
       alignment: alignment,
@@ -239,7 +250,7 @@ class VideoLevelHudCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(999),
                       child: FushiLinearProgressIndicator(
                         key: progressKey,
-                        value: clamped / 100.0,
+                        value: clamped / max,
                         minHeight: progressHeight,
                         backgroundColor: textColor.withValues(alpha: 0.24),
                         valueColor: AlwaysStoppedAnimation<Color>(textColor),
@@ -261,7 +272,7 @@ class VideoLevelHudCard extends StatelessWidget {
   Widget _buildApple(
     BuildContext context, {
     required double scale,
-    required double clamped,
+    required double fraction,
   }) {
     final double width = 48 * scale;
     return Align(
@@ -295,7 +306,7 @@ class VideoLevelHudCard extends StatelessWidget {
                           child: FractionallySizedBox(
                             key: progressKey,
                             widthFactor: 1,
-                            heightFactor: clamped / 100.0,
+                            heightFactor: fraction,
                             child: const ColoredBox(color: Colors.white),
                           ),
                         ),
