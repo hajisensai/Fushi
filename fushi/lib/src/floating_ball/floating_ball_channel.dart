@@ -68,7 +68,8 @@ class FloatingBallChannel {
     required String ocrLanguage,
     bool animate = true,
     bool showLabels = true,
-    bool tapClipboard = false,
+    bool showOpenApp = true,
+    String tapAction = '',
     Map<String, Uint8List>? iconImages,
     Uint8List? ballImage,
     String? dock,
@@ -82,8 +83,10 @@ class FloatingBallChannel {
         'ocrLanguage': ocrLanguage,
         'animate': animate,
         'showLabels': showLabels,
-        // 只有 Android 原生球消费（点球查剪贴板、长按展开）；桌面端忽略。
-        'tapClipboard': tapClipboard,
+        // 菜单里有没有「打开 Fushi」：Android / Windows / macOS 原生球都认。
+        'showOpenApp': showOpenApp,
+        // 只有 Android 原生球消费（点球直接执行该动作、长按展开）；桌面端忽略。
+        'tapAction': tapAction,
         if (iconImages != null) 'iconImages': iconImages,
         if (ballImage != null) 'ballImage': ballImage,
         if (dock != null) 'dock': dock,

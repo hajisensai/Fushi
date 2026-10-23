@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3265 条。点号进各自文件。
+> 共 3266 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3662](bugs/BUG-3662-android-system-ball-ignores-show-labels.md) | ✅ | ✅ | Android 应用外悬浮球不认「显示按钮文字」，「打开 Fushi」关不掉 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

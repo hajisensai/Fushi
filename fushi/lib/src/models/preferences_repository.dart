@@ -1017,13 +1017,28 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 应用外悬浮球（Android）：收起态点球直接查剪贴板，长按才展开按钮
-  /// （同 Google「点按翻译」的「自动翻译复制的文字」）。默认关 = 点球展开。
-  bool get floatingBallTapClipboard =>
-      getPref('floating_ball.tap_clipboard', defaultValue: false);
+  /// 应用外悬浮球（Android）收起态点一下做什么（[FloatingBallTapAction]）：出厂
+  /// 展开按钮；选了剪贴板查词 / 截屏识字时直接执行、长按才展开。旧版 bool
+  /// `floating_ball.tap_clipboard`（「点球查剪贴板」）在新键没写过时折成剪贴板。
+  FloatingBallTapAction get floatingBallTapAction =>
+      FloatingBallTapAction.fromStorage(
+        getPref('floating_ball.tap_action', defaultValue: null),
+        legacyTapClipboard:
+            getPref('floating_ball.tap_clipboard', defaultValue: false) == true,
+      );
 
-  Future<void> setFloatingBallTapClipboard(bool value) async {
-    await setPref('floating_ball.tap_clipboard', value);
+  Future<void> setFloatingBallTapAction(FloatingBallTapAction value) async {
+    await setPref('floating_ball.tap_action', value.storageValue);
+    notifyListeners();
+  }
+
+  /// 应用外悬浮球菜单里有没有「打开 Fushi」。默认有；习惯切屏回 Fushi 的人可以
+  /// 关掉（反馈 9bdhVTgq3A）。
+  bool get floatingBallSystemOpenApp =>
+      getPref('floating_ball.system_open_app', defaultValue: true);
+
+  Future<void> setFloatingBallSystemOpenApp(bool value) async {
+    await setPref('floating_ball.system_open_app', value);
     notifyListeners();
   }
 

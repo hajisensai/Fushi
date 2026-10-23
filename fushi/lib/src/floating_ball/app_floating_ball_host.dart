@@ -583,14 +583,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, int> colors = _systemBallColors;
     final bool animate = _systemBallAnimate;
     final bool showLabels = prefs.floatingBallShowLabels;
-    final bool tapClipboard = prefs.floatingBallTapClipboard;
+    final bool showOpenApp = prefs.floatingBallSystemOpenApp;
+    final String tapAction = prefs.floatingBallTapAction.storageValue;
     final bool tintMascot = appLogoFollowsAccent.value;
-    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 点球查剪贴板都进签名：切换
-    // 界面语言、主题、换色开关，或这些偏好切换（配色可能完全没变）后原生球也要换。
+    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 「打开 Fushi」开关 / 点球动作
+    // 都进签名：切换界面语言、主题、换色开关，或这些偏好切换（配色可能完全没变）后
+    // 原生球也要换。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
         '${colors.values.join(',')}|$tintMascot|$animate|$showLabels|'
-        '$tapClipboard';
+        '$showOpenApp|$tapAction';
     // 与「在途目标」比（没有在途请求时才是稳态签名）：A→B→A 时最后的 A 与在途
     // 的 B 不同，必须开新一代取代 B；在途期间同签名的重复同步则直接跳过。
     if (!force && signature == (_systemInFlightSignature ?? _systemSignature)) {
@@ -679,7 +681,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         colors: colors,
         animate: animate,
         showLabels: showLabels,
-        tapClipboard: tapClipboard,
+        showOpenApp: showOpenApp,
+        tapAction: tapAction,
         ocrLanguage: kFloatingBallOcrLanguage,
         iconImages: iconImages,
         ballImage: ballImage,

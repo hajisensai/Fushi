@@ -80,8 +80,8 @@ import io.flutter.FlutterInjector;
  * 几何全部在 {@link FloatingBallGeometry}（与 Dart 同一套公式）。
  *
  * <p>按钮：Dart 下发的动作（{@code lookup} / {@code popup_lookup} / {@code clipboard} /
- * {@code screen_ocr} / {@code camera_ocr} / {@code sync}）+ 固定的 {@code open_app} /
- * {@code close}。
+ * {@code screen_ocr} / {@code camera_ocr} / {@code sync}）+ 可由用户关掉的 {@code open_app}
+ * （{@link #showOpenApp}）+ 固定的 {@code close}。
  * 图标是 Dart 下发的 Material Icons 码位（与应用内同一颗 IconData，字体取 app 自带的
  * Flutter 资源），颜色是 Dart 下发的主题色。契约见 docs/specs/2026-09-28-floating-ball.md。
  *
@@ -126,11 +126,14 @@ public class FloatingBallService extends BaseFloatingService {
     static final String ACTION_OPEN_APP = "open_app";
     static final String ACTION_CLOSE = "close";
 
-    /** Dart 可下发的动作；{@code open_app} / {@code close} 恒在，不受配置控制。 */
+    /** Dart 可下发的动作；{@code close} 恒在，{@code open_app} 由 {@link #PREF_SHOW_OPEN_APP} 控制。 */
     private static final List<String> CONFIGURABLE_ACTIONS =
             Arrays.asList(
                     ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR,
                     ACTION_CAMERA_OCR, ACTION_SYNC);
+
+    /** 收起态点球可以直接执行的动作（Dart FloatingBallTapAction 同一组 id）。 */
+    static final List<String> TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR);
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
@@ -160,8 +163,20 @@ public class FloatingBallService extends BaseFloatingService {
     private static final String PREF_ICONS = "ball_icons";
     private static final String PREF_COLORS = "ball_colors";
     private static final String PREF_OCR_LANGUAGE = "ball_ocr_language";
-    /** 点球 = 直接查剪贴板（长按才展开按钮），同 Google「点按翻译」的「自动翻译复制的文字」。 */
+    /**
+     * 旧版 bool：点球 = 直接查剪贴板。只在还没写过 {@link #PREF_TAP_ACTION} 时读一次作迁移，
+     * Dart 下次起球即写入新键。
+     */
     private static final String PREF_TAP_CLIPBOARD = "ball_tap_clipboard";
+    /**
+     * 收起态点球直接执行的动作 id（{@link #TAP_ACTIONS} 之一；空 = 点球展开按钮），此时长按
+     * 才展开——给只用一个功能的人一步直达（反馈 9bdhVTgq3A：只用截屏识字）。
+     */
+    private static final String PREF_TAP_ACTION = "ball_tap_action";
+    /** 展开时按钮旁显示文字（Dart「显示按钮文字」，BUG-3662：旧实现原生恒显示）。 */
+    private static final String PREF_SHOW_LABELS = "ball_show_labels";
+    /** 菜单里有没有「打开 Fushi」（Dart 应用外按钮组里的开关，默认有）。 */
+    private static final String PREF_SHOW_OPEN_APP = "ball_show_open_app";
     private static final String PREF_DOCK = "ball_dock";
     private static final String PREF_FRACTION = "ball_fraction";
     /** 用户在球 / 通知上点了关闭、Dart 还没来得及把「应用外」开关关掉。 */
@@ -252,7 +267,9 @@ public class FloatingBallService extends BaseFloatingService {
             @Nullable Map<String, Integer> icons,
             @Nullable Map<String, Integer> colors,
             @Nullable String ocrLanguage,
-            @Nullable Boolean tapClipboard) {
+            @Nullable String tapAction,
+            @Nullable Boolean showLabels,
+            @Nullable Boolean showOpenApp) {
         List<String> sanitized = new ArrayList<>();
         if (actions == null) {
             sanitized.addAll(CONFIGURABLE_ACTIONS);
@@ -280,11 +297,20 @@ public class FloatingBallService extends BaseFloatingService {
         if (ocrLanguage != null && !ocrLanguage.isEmpty()) {
             editor.putString(PREF_OCR_LANGUAGE, ocrLanguage);
         }
-        // 旧 Dart 不传 = 默认关（点球展开按钮）。
-        editor.putBoolean(PREF_TAP_CLIPBOARD, tapClipboard != null && tapClipboard);
+        // 不传 / 不认识的值 = 点球展开按钮。
+        editor.putString(PREF_TAP_ACTION, sanitizeTapAction(tapAction));
+        editor.remove(PREF_TAP_CLIPBOARD);
+        // 不传 = 出厂值（显示文字、有「打开 Fushi」）。
+        editor.putBoolean(PREF_SHOW_LABELS, showLabels == null || showLabels);
+        editor.putBoolean(PREF_SHOW_OPEN_APP, showOpenApp == null || showOpenApp);
         editor.apply();
         FloatingBallService svc = getInstance();
         if (svc != null) svc.reloadConfig();
+    }
+
+    /** 点球动作只认 {@link #TAP_ACTIONS}；其余（含空）= 点球展开。 */
+    static String sanitizeTapAction(@Nullable String id) {
+        return id != null && TAP_ACTIONS.contains(id) ? id : "";
     }
 
     private static JSONObject toJson(@Nullable Map<String, ?> map) {
@@ -337,8 +363,12 @@ public class FloatingBallService extends BaseFloatingService {
     private int colorBallOpen = DEFAULT_PRIMARY;
     private int colorOnBallOpen = Color.WHITE;
     private String ocrLanguage = DEFAULT_OCR_LANGUAGE;
-    /** 收起态点球 = 查剪贴板、长按展开（{@link #PREF_TAP_CLIPBOARD}）。 */
-    private boolean tapClipboard = false;
+    /** 收起态点球直接执行的动作（{@link #PREF_TAP_ACTION}）；空 = 点球展开、没有长按。 */
+    private String tapAction = "";
+    /** 展开时带标签胶囊（{@link #PREF_SHOW_LABELS}）。 */
+    private boolean showLabels = true;
+    /** 菜单里有「打开 Fushi」（{@link #PREF_SHOW_OPEN_APP}）。 */
+    private boolean showOpenApp = true;
 
     /** 停靠边 + 球在活动范围里的纵向比例（持久化值，不存 px）。 */
     private boolean dockLeft = false;
@@ -621,12 +651,12 @@ public class FloatingBallService extends BaseFloatingService {
         return root;
     }
 
-    /** 按钮自上而下的顺序：固定的关闭 / 打开 Fushi 在最上（离球最远，防误触），
+    /** 按钮自上而下的顺序：固定的关闭 / （没被关掉的）打开 Fushi 在最上（离球最远，防误触），
      *  用户勾选的动作在下、末颗紧贴球顶——与应用内「列表末颗离球最近」同序。 */
     private List<String> menuIds() {
         List<String> ids = new ArrayList<>();
         ids.add(ACTION_CLOSE);
-        ids.add(ACTION_OPEN_APP);
+        if (showOpenApp) ids.add(ACTION_OPEN_APP);
         ids.addAll(actions);
         return ids;
     }
@@ -740,7 +770,8 @@ public class FloatingBallService extends BaseFloatingService {
         int available = g.viewport.width() - 2 * g.margin - g.button - dp(LABEL_GAP_DP);
         int cap = Math.min(dp(LABEL_MAX_WIDTH_DP), available);
         int padding = dp(LABEL_PADDING_DP);
-        boolean show = !ids.isEmpty() && g.columnCount() == 1 && cap >= 2 * padding + dp(24);
+        boolean show = showLabels && !ids.isEmpty() && g.columnCount() == 1
+                && cap >= 2 * padding + dp(24);
         for (String id : ids) {
             out.add(show ? buildLabel(id, cap, padding) : null);
         }
@@ -1004,8 +1035,8 @@ public class FloatingBallService extends BaseFloatingService {
      * 是拖动——先收起（按钮跟着球飞没有意义），球跟手，纵向夹在活动范围内；松手按球心
      * 落在哪一半决定停靠边，动画吸附过去并落盘（应用内 _onPan* 同一语义）。
      *
-     * <p>「点球查剪贴板」开着时（{@link #tapClipboard}）：收起态点一下 = 查剪贴板，
-     * 长按（系统长按时长、没越过拖动边界）= 展开按钮；展开态点球照旧收起。
+     * <p>设了「点按悬浮球」动作时（{@link #tapAction}，剪贴板查词 / 截屏识字）：收起态点一下
+     * = 直接执行它，长按（系统长按时长、没越过拖动边界）= 展开按钮；展开态点球照旧收起。
      */
     @Override
     protected void setupDragListener() {
@@ -1017,7 +1048,7 @@ public class FloatingBallService extends BaseFloatingService {
                     dragging = false;
                     longPressFired = false;
                     mainHandler.removeCallbacks(longPressExpand);
-                    if (tapClipboard && !expandTarget) {
+                    if (!tapAction.isEmpty() && !expandTarget) {
                         mainHandler.postDelayed(longPressExpand,
                                 ViewConfiguration.getLongPressTimeout());
                     }
@@ -1046,8 +1077,8 @@ public class FloatingBallService extends BaseFloatingService {
                         endDrag();
                     } else if (!longPressFired) {
                         v.performClick();
-                        if (tapClipboard && !expandTarget) {
-                            runAction(ACTION_CLIPBOARD);
+                        if (!tapAction.isEmpty() && !expandTarget) {
+                            runAction(tapAction);
                         } else {
                             toggle();
                         }
@@ -1250,7 +1281,12 @@ public class FloatingBallService extends BaseFloatingService {
         colorBallOpen = colorOr(colors, COLOR_BALL_OPEN, colorPrimary);
         colorOnBallOpen = colorOr(colors, COLOR_ON_BALL_OPEN, Color.WHITE);
         ocrLanguage = prefs.getString(PREF_OCR_LANGUAGE, DEFAULT_OCR_LANGUAGE);
-        tapClipboard = prefs.getBoolean(PREF_TAP_CLIPBOARD, false);
+        // 新键没写过（升级后 Dart 还没重新起球）：沿用旧版「点球查剪贴板」。
+        tapAction = prefs.contains(PREF_TAP_ACTION)
+                ? sanitizeTapAction(prefs.getString(PREF_TAP_ACTION, ""))
+                : (prefs.getBoolean(PREF_TAP_CLIPBOARD, false) ? ACTION_CLIPBOARD : "");
+        showLabels = prefs.getBoolean(PREF_SHOW_LABELS, true);
+        showOpenApp = prefs.getBoolean(PREF_SHOW_OPEN_APP, true);
     }
 
     private static int colorOr(Map<String, Integer> colors, String key, int fallback) {

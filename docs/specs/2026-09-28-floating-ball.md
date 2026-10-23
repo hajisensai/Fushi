@@ -31,9 +31,18 @@
 原有点击操作；重新开启即时恢复。偏好存入设置数据库，重启后沿用，不改按钮勾选或球的位置。
 
 - Flutter 应用内球：全部支持平台生效；保持原有多列 / 极窄视口下只显示图标的布局规则。
-- Windows / macOS 应用外球：随 `startSystemBall.showLabels` 更新；旧调用未传时默认开启。
-- Android 原生应用外球：现有设计只有图标按钮，没有可见文字胶囊；此开关不改变它，
-  tooltip / contentDescription 继续保留。Android 应用内球与其它 Flutter 平台一样响应开关。
+- Windows / macOS / Android 应用外球：随 `startSystemBall.showLabels` 更新；旧调用未传时
+  默认开启。Android 原生球后来补了标签胶囊（M3E FAB menu），旧实现把这个参数丢掉、恒显示
+  文字（BUG-3662），现落盘 `ball_show_labels` 并在建按钮窗时生效；contentDescription 保留。
+
+应用外球菜单里的「打开 Fushi」：设置 → 悬浮球 → 应用外按钮组第一项，偏好
+`floating_ball.system_open_app`（bool，默认开），经 `startSystemBall.showOpenApp` 下发，
+三端原生按它增删（位置固定在「关闭」之下，不进 `actions`）。
+
+Android 应用外球「点按悬浮球」：偏好 `floating_ball.tap_action`（`FloatingBallTapAction`：
+空串 = 展开按钮 / `clipboard` / `screen_ocr`），经 `startSystemBall.tapAction` 下发；非空时
+收起态点一下直接执行该动作、长按才展开。取代旧 bool `floating_ball.tap_clipboard`
+（新键没写过时按它折成 `clipboard`）。
 - iOS / Linux 没有原生应用外球，此设置只影响应用内球。
 
 验证：`floating_ball_labels_test.dart`（文件 DB 重开 / 三平台 widget）、

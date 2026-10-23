@@ -155,8 +155,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
   // `.dock` / `.y` 分开存：两颗球可以同时在。
   'floating_ball.system_dock',
+  // bool：应用外悬浮球菜单里有没有「打开 Fushi」，默认 true。
+  'floating_ball.system_open_app',
   'floating_ball.system_y',
-  // bool：Android 应用外悬浮球收起态点球 = 查剪贴板、长按展开，默认 false。
+  // String：Android 应用外悬浮球收起态点一下做什么（FloatingBallTapAction：
+  // '' 展开 / clipboard / screen_ocr），非展开时长按才展开。没写过时沿用下面的旧键。
+  'floating_ball.tap_action',
+  // bool（旧，只读作迁移）：收起态点球 = 查剪贴板，已由 tap_action 取代。
   'floating_ball.tap_clipboard',
   'floating_ball.y',
   'floating_lyric_bg_opacity',

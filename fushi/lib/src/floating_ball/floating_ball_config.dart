@@ -280,6 +280,39 @@ enum FloatingBallGlobalAction {
   }
 }
 
+/// Android 应用外悬浮球收起态「点一下」做什么。除 [expand] 外都是一步直达的单个
+/// 功能，此时长按才展开按钮（只用某一个功能的人不必点两下，反馈 9bdhVTgq3A）。
+/// 线协议值即动作 id（原生 `FloatingBallService.TAP_ACTIONS`），[expand] 发空串。
+enum FloatingBallTapAction {
+  /// 出厂：点球展开按钮。
+  expand(''),
+
+  /// 直接查剪贴板（旧版「点球查剪贴板」开关）。
+  clipboard('clipboard'),
+
+  /// 直接截屏识字。
+  screenOcr('screen_ocr');
+
+  const FloatingBallTapAction(this.storageValue);
+
+  final String storageValue;
+
+  static const FloatingBallTapAction fallback = expand;
+
+  /// 持久化值 → 档位。[legacyTapClipboard] 是旧版 bool 偏好
+  /// `floating_ball.tap_clipboard`：新键从没写过（null）时沿用它。
+  static FloatingBallTapAction fromStorage(
+    Object? raw, {
+    bool legacyTapClipboard = false,
+  }) {
+    if (raw is! String) return legacyTapClipboard ? clipboard : fallback;
+    for (final FloatingBallTapAction value in values) {
+      if (value.storageValue == raw) return value;
+    }
+    return fallback;
+  }
+}
+
 /// 用户点了「关闭悬浮球」之后，哪些球在回到 Fushi 时自动重新出现。
 ///
 /// - [both]：应用内与应用外都恢复——应用外球的关闭只管到下次打开 Fushi（冷启动
