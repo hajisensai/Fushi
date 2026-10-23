@@ -17,6 +17,9 @@ import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_library_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtitle_search_sheet.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_touchpad.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show fushiMotionDuration;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_control_editor.dart'
     show showVideoRemoteControlEditor;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -117,6 +120,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   bool _favoritesLoading = false;
   int _active = -1, _revision = 0, _generation = 0;
   VideoRemoteTab _tab = VideoRemoteTab.transcript;
+
+  /// 触控板模式（整屏手势遥控）是否打开。
+  bool _touchpad = false;
 
   /// 脚手架行号 → [_cues] 里的主轨行（每次 build 由 [_projectTranscript] 重算）。
   List<Map<String, dynamic>> _lineRows = <Map<String, dynamic>>[];
@@ -1776,102 +1782,164 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     final _TranscriptProjection projection = _projectTranscript();
     _lineRows = projection.rows;
     return PopScope(
-      // 弹框开着时返回键先关弹框（逐层），不退出遥控页。
-      canPop: !lookupOpen,
+      // 弹框开着时返回键先关弹框（逐层），触控板开着时先退回遥控器，不退出遥控页。
+      canPop: !lookupOpen && !_touchpad,
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (didPop) return;
+        if (_touchpad) {
+          setTouchpad(false);
+          return;
+        }
         final int top = _popup.lastVisibleIndex;
         _popAt(top >= 0 ? top : 0);
       },
       child: Scaffold(
-        body: VideoRemoteScaffold(
-          nowPlaying: _nowPlaying(),
-          lines: projection.lines,
-          activeIndex: projection.activeLine,
-          favorites: _favoriteEntries(),
-          favoritesScope: _all
-              ? VideoRemoteFavoritesScope.allVideos
-              : VideoRemoteFavoritesScope.currentVideo,
-          favoritesLoading: _favoritesLoading,
-          controlLayout: _controlLayout(),
-          clock: _playbackClock,
-          notice: _notice(),
-          initialTab: _tab,
-          onTabChanged: (VideoRemoteTab tab) {
-            _tab = tab;
-            if (tab == VideoRemoteTab.favorites) {
-              unawaited(_guard(_loadFavorites));
-            }
-          },
-          isControlEnabled: controlEnabled,
-          transcriptReplayKey:
-              '${_state['sessionId']}|${_state['subtitleVersion']}',
-          lookupHighlight: lookupHighlight,
-          // 弹框开着时列表区不响应横滑切页（不和弹框的横滑关闭 / 逐字点击抢手势）。
-          pageSwipeEnabled: !lookupOpen,
-          callbacks: VideoRemoteCallbacks(
-            onBack: () => unawaited(Navigator.of(context).maybePop()),
-            onControl: (VideoRemoteControlItem item) =>
-                unawaited(_onControl(item)),
-            // 锚点是字幕组件回传的被点词矩形（与视频页字幕侧栏同口径）：弹框
-            // 贴着词的正上方 / 正下方，不盖住它。
-            onLookup: (int line, int charOffset, Rect anchor) {
-              if (line < 0 || line >= _lineRows.length) return;
-              unawaited(
-                openLookup(_lineRows[line], charOffset, anchor: anchor),
-              );
-            },
-            onLineTap: (int line) => _withLine(line, seekToRow),
-            onReplayLine: (int line) => _withLine(line, seekToRow),
-            onToggleFavoriteLine: (int line) =>
-                _withLine(line, toggleRowFavorite),
-            // 制卡要先选词：打开这一句的查词弹框，在弹框里点 ＋。
-            onMineLine: (int line) => _withLine(
-              line,
-              (Map<String, dynamic> row) => openLookup(row, 0),
-            ),
-            onFavoritesScopeChanged: (VideoRemoteFavoritesScope scope) =>
-                unawaited(
-                  setFavoritesAllVideos(
-                    scope == VideoRemoteFavoritesScope.allVideos,
-                  ),
-                ),
-            onOpenFavorite: (VideoRemoteFavoriteEntry entry) {
-              final Map<String, dynamic>? favorite = _favoriteById(entry.id);
-              if (favorite != null) unawaited(openFavorite(favorite));
-            },
-            onLookupFavorite:
-                (VideoRemoteFavoriteEntry entry, int offset, Rect anchor) {
-                  final Map<String, dynamic>? favorite = _favoriteById(
-                    entry.id,
-                  );
-                  if (favorite == null) return;
-                  unawaited(
-                    _openFavorite(
-                      favorite,
-                      lookup: true,
-                      charOffset: offset,
-                      anchor: anchor,
-                    ),
-                  );
-                },
-            onRemoveFavorites: (Set<String> ids) =>
-                unawaited(removeFavorites(ids)),
-            onRefresh: () => unawaited(reconnect()),
-            onPickVideo: canPickVideo ? () => unawaited(pickVideo()) : null,
-            onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
-            onCustomizeControls: _prefs == null
-                ? null
-                : () => unawaited(
-                    runWithLookupPopupHidden<void>(
-                      () =>
-                          showVideoRemoteControlEditor(context, prefs: _prefs),
-                    ),
-                  ),
+        body: AnimatedSwitcher(
+          duration: fushiMotionDuration(
+            context,
+            const Duration(milliseconds: 220),
           ),
+          child: _touchpad ? _touchpadView() : _scaffold(projection),
         ),
       ),
     );
+  }
+
+  /// 触控板：整屏手势遥控（不看手机也能按），见 [VideoRemoteTouchpad]。
+  Widget _touchpadView() {
+    final Map<String, dynamic>? current = _active >= 0 && _active < _cues.length
+        ? _cues[_active]
+        : null;
+    return VideoRemoteTouchpad(
+      key: const ValueKey<String>('video-remote-touchpad-view'),
+      line: current?['text']?.toString() ?? '',
+      playing: playing,
+      onAction: _onTouchpadAction,
+      onExit: () => setTouchpad(false),
+    );
+  }
+
+  Widget _scaffold(_TranscriptProjection projection) {
+    return KeyedSubtree(
+      key: const ValueKey<String>('video-remote-scaffold-view'),
+      child: VideoRemoteScaffold(
+        nowPlaying: _nowPlaying(),
+        lines: projection.lines,
+        activeIndex: projection.activeLine,
+        favorites: _favoriteEntries(),
+        favoritesScope: _all
+            ? VideoRemoteFavoritesScope.allVideos
+            : VideoRemoteFavoritesScope.currentVideo,
+        favoritesLoading: _favoritesLoading,
+        controlLayout: _controlLayout(),
+        clock: _playbackClock,
+        notice: _notice(),
+        initialTab: _tab,
+        onTabChanged: (VideoRemoteTab tab) {
+          _tab = tab;
+          if (tab == VideoRemoteTab.favorites) {
+            unawaited(_guard(_loadFavorites));
+          }
+        },
+        isControlEnabled: controlEnabled,
+        transcriptReplayKey:
+            '${_state['sessionId']}|${_state['subtitleVersion']}',
+        lookupHighlight: lookupHighlight,
+        // 弹框开着时列表区不响应横滑切页（不和弹框的横滑关闭 / 逐字点击抢手势）。
+        pageSwipeEnabled: !lookupOpen,
+        callbacks: VideoRemoteCallbacks(
+          onBack: () => unawaited(Navigator.of(context).maybePop()),
+          onControl: (VideoRemoteControlItem item) =>
+              unawaited(_onControl(item)),
+          // 锚点是字幕组件回传的被点词矩形（与视频页字幕侧栏同口径）：弹框
+          // 贴着词的正上方 / 正下方，不盖住它。
+          onLookup: (int line, int charOffset, Rect anchor) {
+            if (line < 0 || line >= _lineRows.length) return;
+            unawaited(openLookup(_lineRows[line], charOffset, anchor: anchor));
+          },
+          onLineTap: (int line) => _withLine(line, seekToRow),
+          onReplayLine: (int line) => _withLine(line, seekToRow),
+          onToggleFavoriteLine: (int line) =>
+              _withLine(line, toggleRowFavorite),
+          // 制卡要先选词：打开这一句的查词弹框，在弹框里点 ＋。
+          onMineLine: (int line) =>
+              _withLine(line, (Map<String, dynamic> row) => openLookup(row, 0)),
+          onFavoritesScopeChanged: (VideoRemoteFavoritesScope scope) =>
+              unawaited(
+                setFavoritesAllVideos(
+                  scope == VideoRemoteFavoritesScope.allVideos,
+                ),
+              ),
+          onOpenFavorite: (VideoRemoteFavoriteEntry entry) {
+            final Map<String, dynamic>? favorite = _favoriteById(entry.id);
+            if (favorite != null) unawaited(openFavorite(favorite));
+          },
+          onLookupFavorite:
+              (VideoRemoteFavoriteEntry entry, int offset, Rect anchor) {
+                final Map<String, dynamic>? favorite = _favoriteById(entry.id);
+                if (favorite == null) return;
+                unawaited(
+                  _openFavorite(
+                    favorite,
+                    lookup: true,
+                    charOffset: offset,
+                    anchor: anchor,
+                  ),
+                );
+              },
+          onRemoveFavorites: (Set<String> ids) =>
+              unawaited(removeFavorites(ids)),
+          onRefresh: () => unawaited(reconnect()),
+          onPickVideo: canPickVideo ? () => unawaited(pickVideo()) : null,
+          onOpenTouchpad: available ? () => setTouchpad(true) : null,
+          onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
+          onCustomizeControls: _prefs == null
+              ? null
+              : () => unawaited(
+                  runWithLookupPopupHidden<void>(
+                    () => showVideoRemoteControlEditor(context, prefs: _prefs),
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  /// 是否在触控板模式（[setTouchpad]）。
+  bool get touchpadOpen => _touchpad;
+
+  /// 进 / 出触控板。进入时收起查词弹框（触控板盖住了它所属的字幕行）。
+  void setTouchpad(bool open) {
+    if (open == _touchpad) return;
+    if (open) closeLookup();
+    setState(() => _touchpad = open);
+  }
+
+  /// 触控板操作 → 遥控命令；返回 false = 这一下做不了（不震、不闪图标）。
+  bool _onTouchpadAction(VideoRemotePadAction action) {
+    if (!available) return false;
+    final Map<String, dynamic>? current = _active >= 0 && _active < _cues.length
+        ? _cues[_active]
+        : null;
+    switch (action) {
+      case VideoRemotePadAction.playPause:
+        unawaited(togglePlay());
+      case VideoRemotePadAction.replayLine:
+        if (current == null) return false;
+        unawaited(seekToRow(current));
+      case VideoRemotePadAction.previousLine:
+        if (previousRowIndex < 0) return false;
+        unawaited(previousRow());
+      case VideoRemotePadAction.nextLine:
+        if (nextRowIndex < 0) return false;
+        unawaited(nextRow());
+      case VideoRemotePadAction.volumeUp:
+      case VideoRemotePadAction.volumeDown:
+        if (!capabilities.contains(videoRemoteCapabilityVolume)) return false;
+        final int step = action == VideoRemotePadAction.volumeUp ? 10 : -10;
+        unawaited(setVolume((volume ?? 100) + step));
+    }
+    return true;
   }
 
   // ── 展示投影：协议快照 → `video_remote/` 的不可变数据 ─────────────────────
