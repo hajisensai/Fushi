@@ -98,6 +98,10 @@ class AudiobookshelfApi {
   /// 当前令牌（登录前 / 未配置为 null）。
   AudiobookshelfTokens? get tokens => _tokens;
 
+  /// 换上外部给的令牌（用户在设置里重新登录之类）。**不**触发 [onTokensChanged]：
+  /// 令牌本来就是从持久层来的，再写回去只会造成回声。
+  void adoptTokens(AudiobookshelfTokens tokens) => _tokens = tokens;
+
   /// 归一化用户输入的服务器地址：折全角、补 scheme（缺省 http——自建 ABS 多在
   /// 局域网 `http://192.168.x.x:13378`）、去查询/片段与尾斜杠。无法解析或没有
   /// 主机时返回 null。

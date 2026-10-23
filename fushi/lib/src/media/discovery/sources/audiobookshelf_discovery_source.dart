@@ -55,16 +55,24 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
     this.priority = 30,
     AudiobookshelfTokensChanged? onTokensChanged,
     http.Client? client,
-  }) : _api = AudiobookshelfApi(
-         serverUrl: config.serverUrl,
-         providerId: audiobookshelfSourceIdFor(config.id),
-         tokens: config.tokens,
-         onTokensChanged: onTokensChanged,
-         client: client,
-       );
+    AudiobookshelfApi? sharedApi,
+  }) : _api =
+           sharedApi ??
+           AudiobookshelfApi(
+             serverUrl: config.serverUrl,
+             providerId: audiobookshelfSourceIdFor(config.id),
+             tokens: config.tokens,
+             onTokensChanged: onTokensChanged,
+             client: client,
+           ),
+       _ownsApi = sharedApi == null;
 
   final AudiobookshelfServerConfig config;
   final AudiobookshelfApi _api;
+
+  /// 借来的共享实例（[AudiobookshelfApiRegistry]）归注册表管：refresh token 会轮换，
+  /// 全 app 对同一台服务器只能有一个实例，这里关掉它会把别的调用方一起拖下水。
+  final bool _ownsApi;
 
   /// 有声书库清单缓存。null = 还没取到（失败也保持 null，下次重取）。
   List<AudiobookshelfLibrary>? _bookLibraries;
@@ -235,7 +243,9 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
       ];
 
   @override
-  void close() => _api.close();
+  void close() {
+    if (_ownsApi) _api.close();
+  }
 }
 
 /// 条目的一行标注：作者 · 演播 · 系列 · 时长（缺的项跳过）。

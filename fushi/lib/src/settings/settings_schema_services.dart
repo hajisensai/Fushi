@@ -252,16 +252,6 @@ SettingsDestination buildServicesDestination() {
                 : t.settings_service_configured,
             body: (SettingsContext c) => const AListSiteSettingsSection(),
           ),
-          _servicePage(
-            id: 'services.audiobookshelf_servers',
-            title: t.discovery_audiobookshelf_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) =>
-                const AudiobookshelfServerSettingsSection(),
-          ),
         ],
       ),
       SettingsSection(
@@ -522,6 +512,19 @@ SettingsDestination buildServicesDestination() {
             cliList: buildPlexCliList(),
             builder: (SettingsContext c) =>
                 _PlexSettingsLink(settingsContext: c),
+          ),
+          // Audiobookshelf 是用户自己的服务器（同 Jellyfin / Plex），流式播放不属于
+          // [StoreRestrictedCapability.externalDiscovery]：放在这一节而不是 iOS 上整节
+          // 隐藏的「资源」里，iOS 才配得了服务器。下载按钮另走 downloads 能力门。
+          _servicePage(
+            id: 'services.audiobookshelf_servers',
+            title: t.discovery_audiobookshelf_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) =>
+                const AudiobookshelfServerSettingsSection(),
           ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',

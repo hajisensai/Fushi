@@ -40,8 +40,9 @@ List<CtlBodyPage> buildCtlDiscoveryBodyPages() => <CtlBodyPage>[
     items: <SettingsItem>[_alistList(), _alistTest()],
   ),
   CtlBodyPage(
-    breadcrumb: _crumb(t.discovery_audiobookshelf_settings_title),
-    visible: _discoveryAvailable,
+    breadcrumb: _mediaServersCrumb(t.discovery_audiobookshelf_settings_title),
+    // 与 schema 一致：ABS 住在「媒体服务器」节，不受发现源的 iOS 合规门影响。
+    visible: _always,
     items: <SettingsItem>[_absList(), _absSignIn(), _absSignOut(), _absTest()],
   ),
 ];
@@ -60,6 +61,11 @@ const String kCtlAbsTestId = 'services.audiobookshelf_servers.cli.test';
 
 String _crumb(String leaf) =>
     '${t.settings_destination_services} › ${t.section_services_resources} › $leaf';
+
+String _mediaServersCrumb(String leaf) =>
+    '${t.settings_destination_services} › ${t.video_library_media_servers} › $leaf';
+
+bool _always(SettingsContext _) => true;
 
 /// 与 schema 里「资源」分组同一判据：iOS 合规版不登记任何发现源。
 bool _discoveryAvailable(SettingsContext _) =>

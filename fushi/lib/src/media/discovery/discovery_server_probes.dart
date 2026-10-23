@@ -161,6 +161,28 @@ Future<AudiobookshelfConnectOutcome> connectAudiobookshelfServer(
   );
   String resolvedUser = currentTokens == null ? username : config.username;
   try {
+    if (currentTokens == null) {
+      // 先问一句免鉴权的 /status：地址填错（对面不是 ABS）和「只开了 OpenID、没有
+      // 账号密码登录」这两种情况，用一句能照着改的话报出来，而不是登录失败的 401。
+      // 只对**明确**的信号下结论；超时 / 404 / 网络错误交给后面的登录去报。
+      final ({AudiobookshelfServerStatus? status, bool notAbs}) probe =
+          await _probeStatus(api);
+      final AudiobookshelfServerStatus? status = probe.status;
+      if (probe.notAbs) {
+        return AudiobookshelfConnectOutcome(
+          ok: false,
+          message: t.discovery_audiobookshelf_not_abs,
+          username: resolvedUser,
+        );
+      }
+      if (status != null && !useApiKey && !status.supportsPasswordLogin) {
+        return AudiobookshelfConnectOutcome(
+          ok: false,
+          message: t.discovery_audiobookshelf_password_login_unavailable,
+          username: resolvedUser,
+        );
+      }
+    }
     if (useApiKey) {
       resolvedUser = (await api.me()).username;
     } else if (currentTokens == null) {
@@ -186,5 +208,20 @@ Future<AudiobookshelfConnectOutcome> connectAudiobookshelfServer(
     );
   } finally {
     api.close();
+  }
+}
+
+/// `/status` 探测：[status] 非空 = 确认是 ABS；[notAbs] = 对面明确不是 ABS（响应
+/// 不是 ABS 的状态载荷）。两者都假 = 没结论（超时 / 404 / 网络错误）。
+Future<({AudiobookshelfServerStatus? status, bool notAbs})> _probeStatus(
+  AudiobookshelfApi api,
+) async {
+  try {
+    return (status: await api.status(), notAbs: false);
+  } on ExternalProviderFailure catch (failure) {
+    return (
+      status: null,
+      notAbs: failure.kind == ExternalProviderFailureKind.invalidResponse,
+    );
   }
 }

@@ -319,7 +319,9 @@ class AudiobookshelfServerStatus {
   /// `local` / `openid`。没有 `local` 就不能用账号密码登录，只能贴 API key。
   final List<String> authMethods;
 
-  bool get supportsPasswordLogin => authMethods.contains('local');
+  /// 旧版本不报 `authMethods`：空表按「支持」处理，别把老服务器挡在门外。
+  bool get supportsPasswordLogin =>
+      authMethods.isEmpty || authMethods.contains('local');
 
   /// 响应不是 ABS（`app` 不是 audiobookshelf）时返回 null。
   static AudiobookshelfServerStatus? parse(Map<String, Object?> json) {

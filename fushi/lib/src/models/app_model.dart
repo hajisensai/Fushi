@@ -194,6 +194,7 @@ import 'package:fushi/src/media/discovery/import/discovery_import_production.dar
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_api_registry.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
@@ -7324,8 +7325,8 @@ class AppModel with ChangeNotifier {
             if (server.enabled && server.isSignedIn)
               AudiobookshelfDiscoverySource(
                 config: server,
-                onTokensChanged: (AudiobookshelfTokens tokens) =>
-                    persistAudiobookshelfTokens(server.id, tokens),
+                // 共享实例：与书库里的 ABS 标签页、流式播放共用同一份轮换中的令牌。
+                sharedApi: audiobookshelfApis.apiFor(server),
               ),
       ],
     );
@@ -7372,6 +7373,7 @@ class AppModel with ChangeNotifier {
     Iterable<AudiobookshelfServerConfig> servers,
   ) async {
     await prefsRepo.setDiscoveryAudiobookshelfServers(servers);
+    audiobookshelfApis.retainOnly(prefsRepo.discoveryAudiobookshelfServers);
     await reloadDiscoverySources();
   }
 
@@ -7385,6 +7387,14 @@ class AppModel with ChangeNotifier {
               ? server.copyWith(catalogUrl: catalogUrl)
               : server,
       ]);
+
+  /// 每台 Audiobookshelf 服务器一个共享协议层实例（令牌轮换不能被多个实例踩）。
+  /// 其它地方要访问 ABS 一律经它借，见 [AudiobookshelfApiRegistry]。
+  AudiobookshelfApiRegistry get audiobookshelfApis =>
+      _audiobookshelfApis ??= AudiobookshelfApiRegistry(
+        persistTokens: persistAudiobookshelfTokens,
+      );
+  AudiobookshelfApiRegistry? _audiobookshelfApis;
 
   /// 协议层刷新令牌后的持久化：refresh token 每次刷新都轮换，不写回的话下次冷
   /// 启动拿的是已作废的旧值，宽限期一过就只能重新登录。
@@ -9502,6 +9512,7 @@ class AppModel with ChangeNotifier {
     _discoveryDownloadKeepAlive = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
+    _audiobookshelfApis?.close();
     _mediaDiscoveryService?.close();
     _mediaDiscoveryService = null;
     _mihonManager?.dispose();
