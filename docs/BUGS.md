@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3291 条。点号进各自文件。
+> 共 3293 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3704](bugs/BUG-3704-srs-anki-import-drops-new-card-position.md) | ✅ | ✅ | 从 Anki 迁移 / 导入不带新卡位置，新卡按笔记创建时刻出、丢了 Anki 里排好的顺序 |
+| [BUG-3703](bugs/BUG-3703-srs-stats-miss-inherited-history-after-type-change.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片（或换笔记类型）后，牌组统计里复习记录全空 |
 | [BUG-3687](bugs/BUG-3687-srs-rwkv-purged-card-scores-not-evicted.md) | ✅ | ✅ | 永久清除的卡仍留在 RWKV 常驻分数表里 |
 | [BUG-3686](bugs/BUG-3686-srs-rwkv-score-requery-counts-cache-hits.md) | ✅ | ✅ | RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答 |
 | [BUG-3685](bugs/BUG-3685-srs-purge-media-delete-race.md) | ✅ | ✅ | 墓碑清除回收媒体时，扫描与删除之间新加的引用照样被删 |
