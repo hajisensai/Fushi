@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3288 条。点号进各自文件。
+> 共 3291 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3687](bugs/BUG-3687-srs-rwkv-purged-card-scores-not-evicted.md) | ✅ | ✅ | 永久清除的卡仍留在 RWKV 常驻分数表里 |
+| [BUG-3686](bugs/BUG-3686-srs-rwkv-score-requery-counts-cache-hits.md) | ✅ | ✅ | RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答 |
+| [BUG-3685](bugs/BUG-3685-srs-purge-media-delete-race.md) | ✅ | ✅ | 墓碑清除回收媒体时，扫描与删除之间新加的引用照样被删 |
 | [BUG-3684](bugs/BUG-3684-srs-sync-snapshot-freezes-ui.md) | ✅ | ✅ | 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死 |
 | [BUG-3683](bugs/BUG-3683-anki-settings-stale-in-popup-process.md) | ✅ | ✅ | 应用外查词制卡用旧牌组/配置，且无法在应用外切换 |
 | [BUG-3682](bugs/BUG-3682-anki-non-lapis-note-type-empty-mappings.md) | ✅ | ✅ | 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡 |
