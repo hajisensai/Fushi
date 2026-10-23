@@ -442,6 +442,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // bool：截屏识字 / 拍照查词制卡带所点文本块的截图（默认 true）。
+  'screen_ocr.card_image',
+  // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
+  'screen_ocr.keep_capture_session',
   // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
   // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
   'shelf_collection_layout',

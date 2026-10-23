@@ -1032,6 +1032,26 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 截屏识字 / 拍照查词制卡时把所点文字所在文本块的截图放进卡片图片字段（与漫画卡图
+  /// 同一通道，反馈 Gz7z6Y6Mbr）。默认开。
+  bool get screenOcrCardImage =>
+      getPref('screen_ocr.card_image', defaultValue: true);
+
+  Future<void> setScreenOcrCardImage(bool value) async {
+    await setPref('screen_ocr.card_image', value);
+    notifyListeners();
+  }
+
+  /// Android 截屏识字「保持截屏会话」：第一次同意后录屏会话常驻，之后截屏识字直接取
+  /// 最新帧，不再弹系统确认框（反馈 9bdhVTgq3A / LHyeNKyYjH）。默认关。
+  bool get screenOcrKeepCaptureSession =>
+      getPref('screen_ocr.keep_capture_session', defaultValue: false);
+
+  Future<void> setScreenOcrKeepCaptureSession(bool value) async {
+    await setPref('screen_ocr.keep_capture_session', value);
+    notifyListeners();
+  }
+
   /// 应用外悬浮球菜单里有没有「打开 Fushi」。默认有；习惯切屏回 Fushi 的人可以
   /// 关掉（反馈 9bdhVTgq3A）。
   bool get floatingBallSystemOpenApp =>

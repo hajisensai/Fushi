@@ -14,6 +14,8 @@ import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
+    show OverlayMiningHandler;
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -1596,6 +1598,8 @@ void main() {
             const Rect.fromLTRB(2220, 200, 2320, 250),
           );
           expect(called('stopScreenOcr'), isFalse, reason: '查词时冻结层留着');
+          // 反馈 Gz7z6Y6Mbr：制卡走带截图卡图的委托，而不是默认的无图路径。
+          expect(call.miningHandler, isNotNull);
         });
 
         testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {
@@ -1782,10 +1786,12 @@ class _LookupTextCall {
     this.anchorScreenRect,
     this.physicalPlacement, {
     this.sentence = '',
+    this.miningHandler,
   });
 
   final String text;
   final String sentence;
+  final OverlayMiningHandler? miningHandler;
   final Rect? anchorScreenRect;
   final GlobalLookupPhysicalPlacement? physicalPlacement;
 }
@@ -1808,6 +1814,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
     String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
+    OverlayMiningHandler? miningHandler,
   }) async {
     log.add('lookupText');
     lookups.add(
@@ -1816,6 +1823,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         anchorScreenRect,
         physicalPlacement,
         sentence: sentence,
+        miningHandler: miningHandler,
       ),
     );
     return true;

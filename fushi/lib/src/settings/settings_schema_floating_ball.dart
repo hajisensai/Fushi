@@ -102,6 +102,33 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: FloatingBallTapAction.fallback,
           ),
+          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_image',
+            title: t.screen_ocr_card_image,
+            subtitle: t.screen_ocr_card_image_hint,
+            icon: Icons.add_photo_alternate_outlined,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrCardImage(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_keep_session',
+            title: t.screen_ocr_keep_session,
+            subtitle: t.screen_ocr_keep_session_hint,
+            icon: Icons.screen_share_outlined,
+            visible: (SettingsContext c) => Platform.isAndroid,
+            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrKeepCaptureSession(value);
+              c.refresh();
+            },
+            defaultValue: false,
+          ),
           SettingsSwitchItem(
             id: 'floating_ball.show_labels',
             title: t.floating_ball_show_labels,

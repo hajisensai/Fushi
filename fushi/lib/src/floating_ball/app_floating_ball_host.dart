@@ -31,7 +31,10 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
+    show OverlayMiningHandler, screenOcrOverlayMiningHandler;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -127,6 +130,10 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   // 截屏确认框的宿主 Activity 被系统静默拦下（vivo「后台弹出界面」等）时的提示
   // （BUG-3603，原生 ScreenCaptureRequestActivity.LABEL_LAUNCH_BLOCKED）。
   'ocr_launch_blocked': t.floating_ball_ocr_launch_blocked,
+  // 保持截屏会话时的常驻通知（原生 ScreenOcrService.LABEL_SESSION_*）。
+  'ocr_session_notification': t.screen_ocr_session_notification,
+  'ocr_session_hint': t.screen_ocr_session_hint,
+  'ocr_session_stop': t.screen_ocr_session_stop,
 };
 
 /// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
@@ -243,11 +250,13 @@ class DesktopSystemBallActionTarget {
     String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
+    OverlayMiningHandler? miningHandler,
   }) => GlobalLookupController.instance.lookupText(
     text,
     sentence: sentence,
     anchorScreenRect: anchorScreenRect,
     physicalPlacement: physicalPlacement,
+    miningHandler: miningHandler,
   );
 
   /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
@@ -483,6 +492,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   void _onPrefsChanged() {
     _settleClosedBalls();
     _syncSystemBall();
+    _pushScreenOcrOptions();
     // 「应用内显示」开关一变，应用外球让不让位跟着变。
     _pushSystemBallYield();
     if (mounted) setState(() {});
@@ -797,6 +807,32 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _prefs = prefs;
     prefs.addListener(_onPrefsChanged);
     _syncSystemBall(force: true);
+    _sentScreenOcrOptions = null;
+    _pushScreenOcrOptions();
+  }
+
+  /// 上一次下发给 Android 原生的截屏识字选项（保持截屏会话 / 制卡带图）。
+  ({bool keepSession, bool cardImage})? _sentScreenOcrOptions;
+
+  /// Android：截屏识字的两个选项由原生在截屏服务里直接读（应用外截屏识字时主引擎
+  /// 不一定在），值变了就下发。关掉「保持」时原生立刻停掉常驻会话，关掉「带图」时
+  /// 清掉缓存里的定格帧。
+  void _pushScreenOcrOptions() {
+    if (!Platform.isAndroid) return;
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null) return;
+    final ({bool keepSession, bool cardImage}) options = (
+      keepSession: prefs.screenOcrKeepCaptureSession,
+      cardImage: prefs.screenOcrCardImage,
+    );
+    if (options == _sentScreenOcrOptions) return;
+    _sentScreenOcrOptions = options;
+    unawaited(
+      FloatingBallChannel.setScreenOcrOptions(
+        keepSession: options.keepSession,
+        cardImage: options.cardImage,
+      ),
+    );
   }
 
   /// 桌面系统球上点了某个动作（原生只画与报事件，动作都在这里执行）。[anchor] 是
@@ -919,7 +955,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       );
       return;
     }
-    final _DesktopScreenOcrSession session = _DesktopScreenOcrSession(screen);
+    final _DesktopScreenOcrSession session = _DesktopScreenOcrSession(
+      screen,
+      png,
+    );
     _desktopOcr = session;
     String? message;
     List<SystemOcrTextLine> lines = const <SystemOcrTextLine>[];
@@ -970,6 +1009,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         sentence: text,
         physicalPlacement: GlobalLookupPhysicalPlacement(
           anchorScreenRect: hit.charRect.shift(session.screen.topLeft),
+        ),
+        // 反馈 Gz7z6Y6Mbr：制卡带上截图里所点文字所在的文本块。
+        miningHandler: screenOcrOverlayMiningHandler(
+          model: ref.read(appProvider),
+          cardImage: screenOcrCardImageForHit(
+            bytes: session.png,
+            lines: lines,
+            hit: hit.line,
+          ),
+          sentenceContext: text,
         ),
       ),
     );
@@ -1462,10 +1511,13 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
 
 /// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
 class _DesktopScreenOcrSession {
-  _DesktopScreenOcrSession(this.screen);
+  _DesktopScreenOcrSession(this.screen, this.png);
 
   /// 那块显示器的屏幕矩形（物理像素、左上原点）；截图像素 + 它的左上 = 屏幕坐标。
   final Rect screen;
+
+  /// 识别用的整屏截图：点字制卡时裁出所点文本块当卡图（反馈 Gz7z6Y6Mbr）。
+  final Uint8List png;
 
   List<SystemOcrTextLine>? lines;
 }

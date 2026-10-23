@@ -39,6 +39,19 @@
 `floating_ball.system_open_app`（bool，默认开），经 `startSystemBall.showOpenApp` 下发，
 三端原生按它增删（位置固定在「关闭」之下，不进 `actions`）。
 
+截屏识字两个选项（设置 → 悬浮球）：
+
+- 「截屏识字制卡带截图」`screen_ocr.card_image`（默认开，反馈 Gz7z6Y6Mbr）：四条识字
+  链路（Android MediaProjection、iOS 截自己窗口、拍照、桌面冻结层）制卡时把所点文字所在
+  文本块（Android 用 ML Kit block，其余平台按 `screenOcrTextBlockRect` 把相邻同向的行并
+  成块）留白后按制卡图片质量档裁成卡图，走 `AnkiMiningContext.coverPath`（与漫画卡图同
+  一通道，`lib/src/floating_ball/screen_ocr_card_image.dart`）。Android 查词窗在 `:popup`
+  进程：原生把定格帧写进 app 缓存 `screen_ocr_card/`，Intent 只带路径 + 块框 / 行框。
+- 「保持截屏会话」`screen_ocr.keep_capture_session`（Android，默认关）：经
+  `setScreenOcrOptions` 下发原生 `ScreenOcrOptions`。同意一次后 MediaProjection 常驻，截完帧
+  只摘 VirtualDisplay 的 surface；下一次截屏识字直接挂回 surface 取帧，不弹确认框、不起
+  Activity。常驻通知说明并带「停止」；系统停掉投屏时回到每次申请。
+
 Android 应用外球「点按悬浮球」：偏好 `floating_ball.tap_action`（`FloatingBallTapAction`：
 空串 = 展开按钮 / `clipboard` / `screen_ocr`），经 `startSystemBall.tapAction` 下发；非空时
 收起态点一下直接执行该动作、长按才展开。取代旧 bool `floating_ball.tap_clipboard`

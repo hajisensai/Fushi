@@ -121,6 +121,17 @@ class FloatingBallChannel {
       }) ??
       false;
 
+  /// Android：截屏识字的两个用户选项（原生 `ScreenOcrOptions`）。[keepSession] =
+  /// 保持截屏会话（之后不再弹系统确认框），[cardImage] = 制卡带图（把定格帧写进缓存
+  /// 给查词窗裁卡图）。
+  static Future<void> setScreenOcrOptions({
+    required bool keepSession,
+    required bool cardImage,
+  }) => _invoke<void>('setScreenOcrOptions', <String, Object?>{
+    'keepSession': keepSession,
+    'cardImage': cardImage,
+  });
+
   /// 「应用外查词」：弹出独立查词窗（与系统「处理文本」、截屏识字同一个
   /// `PopupDictFlutterActivity`），只有搜索栏。
   static Future<void> openPopupLookup() => _invoke<void>('openPopupLookup');

@@ -298,6 +298,15 @@ final class FloatingBallChannel {
                 FloatingBallService.startPopupLookup(context);
                 result.success(null);
                 return;
+            case "setScreenOcrOptions": {
+                // 截屏识字的两个用户选项（保持截屏会话 / 制卡带图），见 ScreenOcrOptions。
+                Boolean keep = call.argument("keepSession");
+                Boolean cardImage = call.argument("cardImage");
+                ScreenOcrOptions.save(app, keep != null && keep,
+                        cardImage == null || cardImage);
+                result.success(null);
+                return;
+            }
             case "takePendingOpenLookupPage": {
                 boolean pending = pendingOpenLookupPage;
                 pendingOpenLookupPage = false;

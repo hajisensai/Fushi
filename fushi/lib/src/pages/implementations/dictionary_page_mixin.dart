@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory;
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
@@ -501,10 +503,42 @@ mixin DictionaryPageMixin {
   @protected
   DictionaryPopupResourceSource? get popupResourceSource => null;
 
+  /// 制卡卡图的来源（反馈 Gz7z6Y6Mbr）：截屏识字 / 拍照查词的查词宿主覆写成「这次
+  /// 点字用的那张图 + 文本块」，制卡时裁出卡图走 [AnkiMiningContext.coverPath]（与漫画
+  /// 卡图同一通道）。默认 null = 不带图；偏好「截屏识字制卡带图」关着时也不带。
+  @protected
+  ScreenOcrCardImage? get miningCardImage => null;
+
+  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出返回 null。
+  Future<({String path, Directory dir})?> _prepareMiningCover() async {
+    final ScreenOcrCardImage? source = miningCardImage;
+    if (source == null) return null;
+    final AppModel model = mixinAppModel;
+    if (!model.prefsRepo.screenOcrCardImage) return null;
+    return writeScreenOcrCardImage(
+      source,
+      imageTier: model.miningImageQuality,
+    );
+  }
+
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
+    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    try {
+      return await _mineEntryWithCover(repo, fields, cover?.path);
+    } finally {
+      if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+    }
+  }
+
+  Future<MinePopupResult> _mineEntryWithCover(
+    BaseAnkiRepository repo,
+    Map<String, String> fields,
+    String? coverPath,
+  ) async {
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
+      coverPath: coverPath,
       source: miningSource,
     );
     // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
@@ -550,8 +584,23 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async {
     final repo = ref.read(ankiRepositoryProvider);
+    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    try {
+      return await _updateEntryWithCover(repo, noteId, fields, cover?.path);
+    } finally {
+      if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+    }
+  }
+
+  Future<MinePopupResult> _updateEntryWithCover(
+    BaseAnkiRepository repo,
+    int noteId,
+    Map<String, String> fields,
+    String? coverPath,
+  ) async {
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
+      coverPath: coverPath,
       source: miningSource,
     );
     // TODO-1325 #6：覆写同样先弹 pending。
