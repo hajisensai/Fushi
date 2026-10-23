@@ -1,6 +1,6 @@
 # 音乐模块设计（Music）
 
-状态：方案稿（2026-10-23），待所有者拍板「待决策」一节后分期落地。
+状态：方案稿（2026-10-23），决策已于 2026-10-24 拍板（§15），D6 待确认。
 
 ## 0. 一句话
 
@@ -141,6 +141,34 @@ MV 合集 / KTV 盘」播放；所有歌词都能点词查词、制卡，和 Fus
   不全、无独占、无法插滤镜图，满足不了「音质最好」与卡拉 OK 音频处理。
 - 代价：iOS / Android 后台播放与媒体会话要自己接（mpv 不管），由 audio_service
   承担（已有依赖），见 §7.5。
+
+#### 4.2.1 主流 HiFi 播放器怎么做（调研，2026-10-24）
+
+| 播放器 | 播放引擎 | 输出 |
+|---|---|---|
+| foobar2000 | 自研 | WASAPI 独占（组件）/ ASIO 组件 |
+| Audirvana | 自研 | **只用独占**（为控制设备采样率、绕过系统混音）；macOS 有 integer mode |
+| Roon / JRiver | 自研 | 独占 / ASIO / 自有网络协议 |
+| MusicBee | BASS（商业音频库） | WASAPI / ASIO |
+| USB Audio Player Pro / HiBy | 自研 + **自写 USB 驱动**（绕过整个 Android 音频栈） | USB DAC 直出、原生 DSD / DoP |
+| Symfonium | 自研 | Android 14+ USB bit-perfect（官方标注实验性）+ USB 独占（原生 DSD / DoP） |
+| Feishin（Navidrome 客户端） | **libmpv** | mpv 自带输出 |
+
+结论：
+
+1. 头部 HiFi 播放器几乎都是**自研引擎**，差异不在解码（大家都用 libFLAC /
+   FFmpeg 一类），而在**输出端**：独占、跟随采样率、ASIO、DoP / 原生 DSD、
+   Android USB 直出。
+2. mpv 能覆盖的：全格式解码（统一 FFmpeg）、WASAPI / CoreAudio 独占、
+   采样率跟随、gapless、ReplayGain、零 DSP 时整数直通。
+3. mpv 覆盖不了的：**ASIO、DoP / 原生 DSD 输出、Android 自写 USB 驱动**、
+   macOS integer mode。DSD 在 mpv 里只能先转 PCM。
+4. 决策（所有者 2026-10-24 拍板「先走 libmpv」）：v1 全用 libmpv；但
+   `MusicPlayerEngine` 的输出层抽成 `MusicOutputBackend` 接口，留出将来的
+   **「HiFi 直出后端」**（Rust：解码仍链接统一 FFmpeg 的 libav*，不引入第二份
+   FFmpeg；输出用 ASIO / WASAPI 独占 / Android USB，支持 DoP）。只有当实测
+   （信号路径面板 + DAC 指示灯）证明 mpv 输出端不够时才启动，不预先做。
+   MV / DVD / ASS 原样渲染始终走 mpv。
 - 音乐使用**独立的 `Player` 实例**（`vo=null` 纯音频；有 MV / DVD 时切到带
   纹理的视频实例，见 §9），不和视频页抢同一个 mpv。
 
@@ -211,7 +239,7 @@ LyricTimeline
 2. 同目录 sidecar（同名 `.ttml` > `.ass` > `.lys/.qrc/.krc/.yrc` > `.lrc` >
    `.srt/.vtt` > `.txt`；同名 + 语言后缀 `.zh.lrc` 视为翻译）
 3. 文件内嵌
-4. 在线 provider（默认只装配 **LRCLIB**；其它见 D3），按「标题 + 艺人 + 专辑 +
+4. 在线 provider（只装配 **LRCLIB**；国内平台暂不做，见 D3），按「标题 + 艺人 + 专辑 +
    时长 ±2 s」精确匹配，失败再模糊搜索并让用户挑
 5. 自动打轴产物（§6.4）
 
@@ -325,8 +353,9 @@ LyricTimeline
   与守卫一起改，五端重编。**不引入第二份 FFmpeg**。
 - CUE：整轨 + `.cue`、FLAC 内嵌 `CUESHEET`，曲库层拆成虚拟曲目（起止样本），播放
   走 mpv `start`/`end` 或 cue demuxer，**拆轨点无缝**。
-- DSD：默认 DSD→PCM（352.8 kHz / 24bit 等可配）；独占 + 支持 DoP 的设备可选 DoP
-  直通（Windows WASAPI 独占），信号路径如实显示。
+- DSD：mpv 不支持 DoP / 原生 DSD 输出，v1 一律 DSD→PCM（176.4 / 352.8 kHz 可配，
+  按设备能力取上限），信号路径面板标「DSD→PCM 转换」，不标 bit-perfect。
+  DoP / 原生 DSD 留给 §4.2.1 的 HiFi 直出后端。
 
 ### 7.2 无缝与队列
 
@@ -409,8 +438,8 @@ mpv 属性（`audio-params`、`audio-out-params`、`af`、`current-ao`），不�
 MV 播放切到带纹理的 mpv 实例，**音频源可选**：用 MV 自带音轨，或用本地无损音轨
 + MV 画面（按偏移同步，画面静音）——后者是「看 MV 听无损」。
 
-iOS：在线 MV（YouTube 解析）需按 `StoreRestrictedCapability` 判定是否属于受限
-能力（D5），本地 MV 不受影响。
+iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D5 拍板），
+五端一致。
 
 ## 9. 光盘：DVD（含菜单）/ 蓝光 / CD
 
@@ -483,8 +512,10 @@ iOS：在线 MV（YouTube 解析）需按 `StoreRestrictedCapability` 判定是�
 ### 11.1 模块注册
 
 - `ModuleId.music`（`prefKey: module_music_enabled`），五端可用；新增 `HomeTab.music`
-  与 `module_registry` 映射；设置分类「音乐」。iOS 受限能力仅限在线 MV / 在线歌词
-  的灰色 provider（判据只写在 `store_compliance.dart`）。
+  与 `module_registry` 映射；设置分类「音乐」。音乐模块不新增受限能力。
+- 与 `ModuleId.listening` 的关系：`listening` 是**有声书 / 听书**的模块开关
+  （`prefKey: module_listening_enabled`，`ShortcutScope.audiobook` 归它，没有
+  底栏 tab，入口在书架里），音乐是独立的新底栏模块，两者不合并。
 - i18n key 前缀 `music_`，一律 `i18n_sync.dart --add`。
 
 ### 11.2 页面
@@ -544,17 +575,20 @@ iOS：在线 MV（YouTube 解析）需按 `StoreRestrictedCapability` 判定是�
 - **统一 FFmpeg 重编**：五端二进制都要换，守卫 `ffmpeg_unified_*` 与配方一起改。
 - **CLAUDE.md 漂移**：schema 版本 / 表数已与代码不一致，P0 一并修正。
 
-## 15. 待决策（需要所有者拍板）
+## 15. 决策记录（所有者 2026-10-24 拍板）
 
-- **D1 模块位置**：音乐作为独立底栏模块（推荐），还是并入现有「听力 / listening」
-  模块？
-- **D2 播放引擎**：音乐统一走 libmpv（推荐，见 §4.2），iOS 仅在实测不行时退
-  AVPlayer？
-- **D3 国内平台歌词**：是否装配网易云 / QQ / 酷狗歌词 provider（音节级质量最好，
-  但属非官方接口）；推荐默认不装配、做成用户手动开启的实验项，iOS 永不开。
-- **D4 学习统计口径**：听歌是否默认计入学习时长？推荐只有发生学习动作或用户开启
-  「听歌计入学习」时才计。
-- **D5 iOS 在线 MV**：YouTube 解析在 iOS 上是否归入受限能力。
-- **D6 libdvdcss**：是否随包（推荐不随包；桌面端允许用户自行放置系统库）。
-- **D7 人声分离模型**：选型与许可（Demucs MIT / MDX-Net 各模型许可不一），以及是否
-  允许走互联 host 代算。
+- **D1 模块位置**：独立底栏模块。（`listening` 是有声书模块，见 §11.1。）
+- **D2 播放引擎**：先走 libmpv；iOS 实测不行再说。HiFi 直出后端只留接口（§4.2.1）。
+- **D3 国内平台歌词**：暂时不做；在线歌词只装配 LRCLIB。本地已有的 KRC / QRC /
+  YRC 文件照常解析。
+- **D4 学习统计口径**：只有发生学习动作或用户开启「听歌计入学习」时才计。
+- **D5 iOS 在线 MV**：不归入受限能力。
+- **D6 libdvdcss**：**未答复**，按推荐暂定不随包（桌面端允许用户自行放置系统库），
+  P6 动工前再确认。
+- **D7 人声分离**：选实测效果最好的模型（P3 先做对比基准再定，许可须允许随应用
+  分发）；允许由互联 host / 无头服务端代算。
+
+## 16. 设计稿
+
+视觉稿（桌面 6 张 + 手机 3 张 + 信号路径面板）：
+<https://claude.ai/artifact/YKRDyRgaDhxsgSnpBbN2qC>（私有，需所有者分享后他人可见）。
