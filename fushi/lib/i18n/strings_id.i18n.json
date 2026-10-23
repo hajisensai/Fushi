@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "Saturasi",
   "video_setting_mpv_sigmoid": "Upscaling sigmoid",
   "video_setting_mpv_sigmoid_hint": "Upscaling kurva sigmoid mengurangi ringing tetapi memakan GPU. Mati secara default untuk performa; aktifkan jika Anda menginginkan upscaling lebih tajam.",
+  "video_setting_mpv_volume_max": "Batas volume",
+  "video_setting_mpv_volume_max_hint": "Di atas 100% pemutar memperkuat audio secara perangkat lunak; nilai terlalu tinggi bisa membuat suara pecah",
   "video_setting_mpv_zoom": "Zoom",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "饱和度",
   "video_setting_mpv_sigmoid": "S形上采样",
   "video_setting_mpv_sigmoid_hint": "S 形曲线上采样可减少振铃，但会增加显卡负担。为性能默认关闭；想要更锐利的放大画质可开启。",
+  "video_setting_mpv_volume_max": "音量上限",
+  "video_setting_mpv_volume_max_hint": "超过 100% 由播放器软件放大音量；过高可能失真",
   "video_setting_mpv_zoom": "缩放",
   "video_setting_pause_ocr_scope": "暂停时识别画面文字",
   "video_setting_pause_ocr_scope_all": "所有视频",

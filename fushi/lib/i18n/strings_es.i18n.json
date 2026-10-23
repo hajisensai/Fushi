@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "Saturación",
   "video_setting_mpv_sigmoid": "Escalado sigmoidal",
   "video_setting_mpv_sigmoid_hint": "El escalado con curva sigmoide reduce el ringing pero consume GPU. Apagado por defecto por rendimiento; actívelo si quiere escalado más nítido.",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "Zoom",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

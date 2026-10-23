@@ -133,7 +133,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       touchVolumeGesture: _asbConfig.volumeSwipeGesture,
       onVolumeChanged: _onMediaKitVolumeChanged,
       currentVolume: () =>
-          (controller.volume / 100.0).clamp(0.0, 1.0).toDouble(),
+          (controller.volume / controller.maxVolume)
+              .clamp(0.0, 1.0)
+              .toDouble(),
       touchBrightnessGesture:
           _brightness.canControl && _asbConfig.brightnessSwipeGesture,
       onBrightnessChanged: _onMediaKitBrightnessChanged,
@@ -442,7 +444,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           _buildSeekIndicator(controller, delta),
       onVolumeChanged: _onMediaKitVolumeChanged,
       onBrightnessChanged: _onMediaKitBrightnessChanged,
-      initialVolume: (controller.volume / 100.0).clamp(0.0, 1.0).toDouble(),
+      initialVolume: (controller.volume / controller.maxVolume)
+          .clamp(0.0, 1.0)
+          .toDouble(),
       initialBrightness: _enterBrightness,
       onBrightnessReset: () =>
           unawaited(_brightness.restore(previous: _enterBrightness)),

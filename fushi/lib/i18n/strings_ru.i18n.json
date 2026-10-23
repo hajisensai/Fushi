@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "Насыщенность",
   "video_setting_mpv_sigmoid": "Сигмоидное увеличение",
   "video_setting_mpv_sigmoid_hint": "Сигмоидное масштабирование уменьшает артефакты, но нагружает GPU. Отключено по умолчанию; включите, если хотите более чёткое масштабирование.",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "Масштаб",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

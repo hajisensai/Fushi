@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "채도",
   "video_setting_mpv_sigmoid": "시그모이드 업스케일링",
   "video_setting_mpv_sigmoid_hint": "시그모이드 곡선 업스케일링은 링잉을 줄이지만 GPU를 사용합니다. 성능을 위해 기본적으로 꺼져 있으며, 더 선명한 업스케일링을 원하면 켜세요.",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "확대/축소",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

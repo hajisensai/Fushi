@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "ความอิ่มสี",
   "video_setting_mpv_sigmoid": "ขยายภาพแบบ Sigmoid",
   "video_setting_mpv_sigmoid_hint": "การอัปสเกลแบบ Sigmoid ลดริงกิ้งแต่ใช้ GPU มากขึ้น ปิดโดยค่าเริ่มต้นเพื่อประสิทธิภาพ; เปิดหากต้องการการอัปสเกลที่คมชัดขึ้น",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "ซูม",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

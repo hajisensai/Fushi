@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "Sättigung",
   "video_setting_mpv_sigmoid": "Sigmoid-Hochskalierung",
   "video_setting_mpv_sigmoid_hint": "Sigmoid-Kurven-Hochskalierung reduziert Klingeln, kostet aber GPU-Leistung. Standardmäßig aus für bessere Leistung; aktivieren Sie es für schärfere Hochskalierung.",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "Zoom",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "彩度",
   "video_setting_mpv_sigmoid": "シグモイドアップスケール",
   "video_setting_mpv_sigmoid_hint": "シグモイド曲線アップスケーリングはリンギングを低減しますがGPU負荷がかかります。パフォーマンスのためデフォルトはオフ。よりシャープなアップスケーリングが必要な場合はオンにしてください。",
+  "video_setting_mpv_volume_max": "音量の上限",
+  "video_setting_mpv_volume_max_hint": "100% を超える分はプレーヤーがソフトウェアで増幅します。上げすぎると音割れすることがあります",
   "video_setting_mpv_zoom": "ズーム",
   "video_setting_pause_ocr_scope": "一時停止時に画面の文字を認識",
   "video_setting_pause_ocr_scope_all": "すべての動画",

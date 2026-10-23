@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "Độ bão hòa",
   "video_setting_mpv_sigmoid": "Upscale Sigmoid",
   "video_setting_mpv_sigmoid_hint": "Nâng cấp đường cong Sigmoid giảm hiện tượng ringing nhưng tốn GPU. Tắt mặc định để tối ưu hiệu năng; bật nếu bạn muốn nâng cấp sắc nét hơn.",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "Phóng to",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

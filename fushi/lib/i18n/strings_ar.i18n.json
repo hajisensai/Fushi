@@ -8307,6 +8307,8 @@
   "video_setting_mpv_saturation": "التشبع",
   "video_setting_mpv_sigmoid": "تكبير سيجمويدي",
   "video_setting_mpv_sigmoid_hint": "تقليل التموجات عند تكبير الصورة بمنحنى سيغمويد يستهلك GPU. معطّل افتراضياً للأداء؛ فعّله لتكبير أوضح.",
+  "video_setting_mpv_volume_max": "Volume limit",
+  "video_setting_mpv_volume_max_hint": "Above 100% the player boosts the audio in software; very high values can distort",
   "video_setting_mpv_zoom": "التكبير/التصغير",
   "video_setting_pause_ocr_scope": "Recognize on-screen text when paused",
   "video_setting_pause_ocr_scope_all": "All videos",

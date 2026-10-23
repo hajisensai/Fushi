@@ -4591,7 +4591,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final double v = raw is num
         ? raw.toDouble()
         : double.tryParse(raw?.toString() ?? '') ?? 100.0;
-    return v.clamp(0.0, 100.0).toDouble();
+    // 上限随 mpv 配置的「音量上限」；controller 开片时还会按同一上限再 clamp 一次。
+    final double max = VideoMpvConfig.decode(
+      appModel.videoMpvConfig,
+    ).volumeMax.toDouble();
+    return v.clamp(0.0, max).toDouble();
   }
 
   /// 读 per-book/per-episode 远端断点位置（无则 0，从头）。
@@ -11118,7 +11122,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       },
       onMpvConfigChanged: (VideoMpvConfig cfg) async {
         await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
-        await _controller?.applyMpvConfig(cfg);
+        final VideoPlayerController? controller = _controller;
+        await controller?.applyMpvConfig(cfg);
+        // 「音量上限」调低时 controller 已把音量收进新上限：显示与持久化跟上。
+        if (controller != null && identical(controller, _controller)) {
+          final double target = controller.requestedVolume;
+          if (_playbackVolume > target) {
+            _playbackVolume = target;
+            _queuePersistVideoVolume(target);
+          }
+          _syncVolumeDisplay(controller.muted ? 0.0 : target);
+        }
         final List<String> paths = cfg.highQuality
             ? await resolveEnabledShaderPaths(
                 decodeEnabledShaders(appModel.videoShadersEnabled),
