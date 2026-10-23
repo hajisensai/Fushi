@@ -20,8 +20,16 @@ import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
+import 'package:fushi_engine/asr/asr_transcript_proofreader.dart';
+import 'package:fushi_engine/asr/cloud_whisper_transcription_service.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show preferredTranscriptExportPath;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
+    show SubtitleAiRequestFailure;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
+import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/asr_host/asr_ai_hosts.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/apple_speech_transcription_service.dart';
 import 'package:fushi/src/asr_host/asr_engine_options.dart';
@@ -62,6 +70,8 @@ Future<String?> showAsrTranscribeSheet({
   AsrModelCatalog Function()? catalogGetter,
   Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
   Future<String?> Function()? directoryPicker,
+  AsrTranscriptionService Function()? cloudService,
+  AsrProofreadHost? proofreadHost,
 }) {
   final AsrTranscriptionService effective =
       service ?? createAsrTranscriptionService();
@@ -70,7 +80,9 @@ Future<String?> showAsrTranscribeSheet({
   AppModel? appModel;
   if (languageGetter == null ||
       languageSetter == null ||
-      remoteClient == null) {
+      remoteClient == null ||
+      cloudService == null ||
+      proofreadHost == null) {
     try {
       appModel = ProviderScope.containerOf(
         context,
@@ -91,6 +103,17 @@ Future<String?> showAsrTranscribeSheet({
       (appModel == null
           ? null
           : InterconnectJobClient(repo: SyncRepository(appModel.database)));
+  // 云端转录 / AI 校对：提供商按 AI 设置里的功能指派现取（见 asr_ai_hosts.dart）。
+  // 没有 app 模型（测试宿主）就两样都不提供。
+  final AppModel? model = appModel;
+  final AsrTranscriptionService Function()? cloud =
+      cloudService ??
+      (model == null
+          ? null
+          : () => createAppCloudTranscriptionService(model.prefsRepo));
+  final AsrProofreadHost? proofread =
+      proofreadHost ??
+      (model == null ? null : appAsrProofreadHost(model.prefsRepo));
   Widget build(BuildContext ctx) => AsrTranscribeSheet(
     audioPaths: audioPaths,
     service: effective,
@@ -102,6 +125,8 @@ Future<String?> showAsrTranscribeSheet({
     catalogGetter: catalogGetter,
     catalogSetter: catalogSetter,
     directoryPicker: directoryPicker,
+    cloudService: cloud,
+    proofreadHost: proofread,
   );
   if (isDesktopPlatform) {
     return showAppDialog<String>(
@@ -367,6 +392,9 @@ enum _Phase {
   pausing,
   paused,
   finished,
+
+  /// 转录已完成，正在用 AI 校对转录稿（完成后回到 [finished]）。
+  proofreading,
   error,
 }
 
@@ -384,6 +412,8 @@ class AsrTranscribeSheet extends StatefulWidget {
     Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
     this.directoryPicker,
     this.systemSpeechService,
+    this.cloudService,
+    this.proofreadHost,
     super.key,
   }) : catalogGetter = catalogGetter ?? _readAsrModelCatalog,
        catalogSetter = catalogSetter ?? saveAsrModelCatalog;
@@ -423,6 +453,13 @@ class AsrTranscribeSheet extends StatefulWidget {
   /// 选中「系统语音识别」时用哪个服务；null = 真的 [AppleSpeechTranscriptionService]。
   /// 测试注入 fake，免得 widget 测试去碰 method channel。
   final AsrTranscriptionService Function()? systemSpeechService;
+
+  /// 云端转录服务（生产是 [createAppCloudTranscriptionService]）；null = 下拉里
+  /// 不出「云端转录」这一项。
+  final AsrTranscriptionService Function()? cloudService;
+
+  /// 转录稿 AI 校对（生产是 [appAsrProofreadHost]）；null = 完成态不出「AI 校对」。
+  final AsrProofreadHost? proofreadHost;
 
   @override
   State<AsrTranscribeSheet> createState() => _AsrTranscribeSheetState();
@@ -493,6 +530,21 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   Stopwatch? _runClock;
   Duration? _elapsedTotal;
   OnnxProviderResolution? _resolution;
+
+  /// 云端转录服务实例：弹层生命周期内只建一次（换引擎来回切不重建）。
+  late final AsrTranscriptionService? _cloudService = widget.cloudService
+      ?.call();
+
+  // AI 校对。
+  int _proofreadDone = 0;
+  int _proofreadTotal = 0;
+  SubtitleCancelSource? _proofreadCancel;
+
+  /// 当前结果有校对前的原稿备份（可「还原原稿」）。
+  bool _hasProofreadBackup = false;
+
+  /// 最近一次校对 / 还原的结果说明，显示在完成态状态卡里；换结果时清掉。
+  String? _proofreadNote;
 
   /// 远程 host（能力位含 asr）；null = 只有本机。
   HostJobTarget? _remoteTarget;
@@ -573,6 +625,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   @override
   void dispose() {
+    // 关弹层 = 放弃在途的 AI 校对（原稿未动：校对只在整份完成后才写回）。
+    _proofreadCancel?.cancel();
     _downloadSub?.cancel();
     _remoteSub?.cancel();
     // 关闭弹层不等于取消：请求在下一个检查点暂停，暂停后释放会话；进度已落盘。
@@ -650,6 +704,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           _knownGpuProviders = plan.availableProviders;
         }
         _finishedSrt = finished;
+        _hasProofreadBackup =
+            finished != null && asrTranscriptHasProofreadBackup(finished);
         if (finished != null) {
           _phase = _Phase.finished;
         } else if (!plan.modelReady) {
@@ -683,7 +739,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 这里，两边互相调用，不设闸门的话「规划本身报同类错误」会转成死循环。第二
   /// 次就老老实实落错误态，把原文给出去。
   void _failWith(Object error) {
-    final String text = '$error';
+    // 云端转录的失败是 AI 调用层的脱敏短码（鉴权 / 额度 / 限流 / 网络 / 协议不对），
+    // 按 AI 模块同一份映射给文案，不把 `AiChatFailure: unauthorized` 原样甩给用户。
+    final String text = error is AiChatFailure
+        ? aiFailureText(error.message)
+        : '$error';
     if (!_modelDiscarded && isOnnxUnreadableModelFailure(text)) {
       _modelDiscarded = true;
       _refreshPlan();
@@ -847,7 +907,9 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _optionsChangedSinceResult = false;
     _runClock = Stopwatch()..start();
     _elapsedTotal = null;
-    if (_runRemote && _remoteTarget != null) return _startRemoteTranscription();
+    if (_runRemote && _remoteTarget != null && !_cloudEngine) {
+      return _startRemoteTranscription();
+    }
     final AsrTranscribePlan? plan = _plan;
     if (plan == null) return;
     setState(() {
@@ -892,6 +954,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               setState(() {
                 _result = r;
                 _finishedSrt = r.srtPath;
+                _hasProofreadBackup = asrTranscriptHasProofreadBackup(
+                  r.srtPath,
+                );
+                _proofreadNote = null;
                 _elapsedTotal = _runClock?.elapsed;
                 _phase = _Phase.finished;
               });
@@ -1052,24 +1118,30 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   /// 这门语言当前能选哪些引擎（ONNX 包在前，系统语音在后）。
   List<AsrEngineOption> _engineOptions() => asrEngineOptions(
-        language: _language,
-        registry: asrModelRegistry,
-        systemSpeechAvailable: _systemSpeechAvailable,
-        systemSpeechLabel: t.audiobook_transcribe_engine_system,
-        profile: _profile,
-      );
+    language: _language,
+    registry: asrModelRegistry,
+    systemSpeechAvailable: _systemSpeechAvailable,
+    systemSpeechLabel: t.audiobook_transcribe_engine_system,
+    profile: _profile,
+    cloudLabel: _cloudService == null
+        ? null
+        : t.audiobook_transcribe_engine_cloud,
+  );
 
   /// 当前选中的引擎 id。
   String? _selectedEngineId() => selectedAsrEngineId(
-        language: _language,
-        catalog: widget.catalogGetter(),
-        options: _engineOptions(),
-        profile: _profile,
-      );
+    language: _language,
+    catalog: widget.catalogGetter(),
+    options: _engineOptions(),
+    profile: _profile,
+  );
 
   /// 按选中的引擎给出服务实例。ONNX 走注入进来的那份（生产是
   /// `createAsrTranscriptionService()`，测试是 fake）；系统语音走另一份实现。
   AsrTranscriptionService _serviceFor(String? engineId) {
+    if (engineId == kCloudWhisperEngineId) {
+      return _cloudService ?? widget.service;
+    }
     if (engineId != kAppleSpeechEngineId) return widget.service;
     final AsrTranscriptionService Function()? factory =
         widget.systemSpeechService;
@@ -1101,6 +1173,12 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 那个——把大的报给用户会让「Omnilingual 在手机上要 4 GB」这种吓人的数字出现在
   /// 一个根本不会下 fp32 的设备上。
   String _modelSubtitle(AsrEngineOption option) {
+    if (option.isCloud) {
+      final String? name = _cloudProviderName;
+      return name == null
+          ? t.audiobook_transcribe_engine_cloud_unset
+          : t.audiobook_transcribe_engine_cloud_hint(name: name);
+    }
     final AsrModelPack? pack = option.pack;
     // 系统语音没有包、没有大小可报——说清它的真实代价（系统会下自己的语言资产），
     // 别编一个字节数，也别吹成零下载。
@@ -1129,12 +1207,34 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 当前选中的是不是系统语音引擎。
   bool get _systemSpeech => _selectedEngineId() == kAppleSpeechEngineId;
 
+  /// 当前选中的是不是云端转录。
+  bool get _cloudEngine =>
+      _cloudService != null && _selectedEngineId() == kCloudWhisperEngineId;
+
+  /// 云端转录当前指派的提供商名；null = 没在 AI 设置里指派（或配不全）。
+  /// 每次现取：用户开着弹层去设置里配好，回来就能用。
+  String? get _cloudProviderName {
+    final AsrTranscriptionService? cloud = _cloudService;
+    return cloud is CloudWhisperTranscriptionService
+        ? cloud.provider?.displayName
+        : null;
+  }
+
+  /// 选了云端转录但还没指派提供商：不给「开始」，状态卡说清去哪里配。
+  bool get _cloudUnconfigured => _cloudEngine && _cloudProviderName == null;
+
   /// 就绪行里那段「用哪个模型跑」的描述。
   ///
   /// 系统语音没有变体（fp32 / int8 是 ONNX 编码器的概念），报变体等于报一个假事实，
   /// 所以只报引擎名。
   String _readyEngineLabel(AsrTranscribePlan plan) {
     if (_systemSpeech) return t.audiobook_transcribe_engine_system;
+    if (_cloudEngine) {
+      final String? name = _cloudProviderName;
+      return name == null
+          ? t.audiobook_transcribe_engine_cloud
+          : '${t.audiobook_transcribe_engine_cloud} · $name';
+    }
     return '${asrModelPackFor(plan.language, profile: _profile).displayName} · '
         '${_variantLabel(plan.variant)}';
   }
@@ -1169,8 +1269,9 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (pack == null || !mounted) return;
     // withLocalPack 而不是 withCustomPack：id 由显示名派生，两个不同文件夹很容易
     // 撞上同一个 id，撞了要加后缀而不是把先前那份覆盖掉（连同指向它的选择）。
-    final ({AsrModelCatalog catalog, AsrModelPack pack}) added =
-        widget.catalogGetter().withLocalPack(pack);
+    final ({AsrModelCatalog catalog, AsrModelPack pack}) added = widget
+        .catalogGetter()
+        .withLocalPack(pack);
     await _updateCatalog(
       added.catalog.withChoice(_language, added.pack.id, profile: _profile),
     );
@@ -1228,7 +1329,73 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _finishedSrt = null;
     _progress = null;
     _optionsChangedSinceResult = false;
+    _proofreadNote = null;
+    _hasProofreadBackup = false;
     await _refreshPlan();
+  }
+
+  /// 用 AI 校对完成的转录稿（修错字、补标点；行数与时间轴不变）。整份校对完才写回
+  /// （原稿留备份），失败 / 关弹层时字幕不动。
+  Future<void> _proofread() async {
+    final AsrProofreadHost? host = widget.proofreadHost;
+    final String? srt = _finishedSrt;
+    if (host == null || srt == null) return;
+    if (host.providerName() == null) {
+      setState(() => _proofreadNote = t.audiobook_transcribe_proofread_unset);
+      return;
+    }
+    final SubtitleCancelSource cancel = SubtitleCancelSource();
+    _proofreadCancel = cancel;
+    setState(() {
+      _phase = _Phase.proofreading;
+      _proofreadDone = 0;
+      _proofreadTotal = 0;
+      _proofreadNote = null;
+    });
+    String note;
+    try {
+      final AsrTranscriptProofreadFileOutcome outcome = await host.run(
+        srtPath: srt,
+        languageTag: _language.tag,
+        cancel: cancel,
+        onProgress: (int done, int total) {
+          if (!mounted) return;
+          setState(() {
+            _proofreadDone = done;
+            _proofreadTotal = total;
+          });
+        },
+      );
+      note = t.audiobook_transcribe_proofread_done(
+        changed: outcome.changedCues,
+        skipped: outcome.skippedBatches,
+      );
+    } on SubtitlePipelineCancelled {
+      return;
+    } on SubtitleAiRequestFailure catch (failure) {
+      note = t.audiobook_transcribe_proofread_failed(
+        reason: aiFailureText(failure.reason),
+      );
+    } on Object catch (error) {
+      note = t.audiobook_transcribe_proofread_failed(reason: '$error');
+    } finally {
+      if (identical(_proofreadCancel, cancel)) _proofreadCancel = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _phase = _Phase.finished;
+      _proofreadNote = note;
+      _hasProofreadBackup = asrTranscriptHasProofreadBackup(srt);
+    });
+  }
+
+  /// 把 AI 校对前的原稿还原回去（备份仍保留，可再校对）。
+  Future<void> _restoreOriginal() async {
+    final String? srt = _finishedSrt;
+    if (srt == null) return;
+    final bool restored = await restoreAsrTranscriptOriginal(srt);
+    if (!mounted || !restored) return;
+    setState(() => _proofreadNote = t.audiobook_transcribe_proofread_restored);
   }
 
   /// 按眼下的选项重新转录：放掉现成结果再直接开跑（BUG-3138）。新选项需要先下载
@@ -1300,6 +1467,11 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           variant: plan == null ? '' : _readyEngineLabel(plan),
         );
         final StringBuffer sb = StringBuffer(ready);
+        if (_cloudUnconfigured) {
+          sb
+            ..writeln()
+            ..write(t.audiobook_transcribe_engine_cloud_unset);
+        }
         if (_systemSpeech) {
           sb
             ..writeln()
@@ -1408,7 +1580,17 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 ? t.audiobook_transcribe_options_changed_hint
                 : t.audiobook_transcribe_retranscribe_hint,
           );
+        if (widget.proofreadHost != null) {
+          sb
+            ..writeln()
+            ..write(_proofreadNote ?? t.audiobook_transcribe_proofread_hint);
+        }
         return sb.toString();
+      case _Phase.proofreading:
+        return t.audiobook_transcribe_proofread_running(
+          done: _proofreadDone,
+          total: _proofreadTotal == 0 ? '—' : '$_proofreadTotal',
+        );
       case _Phase.error:
         final String error = _error ?? '';
         final String failed = t.audiobook_transcribe_failed(error: error);
@@ -1441,6 +1623,10 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         return _runRemote ? _remoteProgress : _progress?.fraction;
       case _Phase.finished:
         return 1;
+      case _Phase.proofreading:
+        return _proofreadTotal > 0
+            ? (_proofreadDone / _proofreadTotal).clamp(0.0, 1.0)
+            : null;
       case _Phase.checking:
       case _Phase.loading:
         return null;
@@ -1457,7 +1643,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       _phase == _Phase.downloading ||
       _phase == _Phase.loading ||
       _phase == _Phase.running ||
-      _phase == _Phase.pausing;
+      _phase == _Phase.pausing ||
+      _phase == _Phase.proofreading;
 
   /// 完成态也能改（BUG-3138）：改了只是让现成结果过期，由「重新转录」生效。
   bool get _canChangePreference =>
@@ -1479,6 +1666,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.loading:
       case _Phase.running:
       case _Phase.pausing:
+      case _Phase.proofreading:
         return FushiCardTone.primary;
       case _Phase.checking:
       case _Phase.needDownload:
@@ -1498,6 +1686,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         return FushiIcons.downloading;
       case _Phase.running:
         return FushiIcons.voice;
+      case _Phase.proofreading:
+        return FushiIcons.aiAssistant;
       case _Phase.pausing:
       case _Phase.paused:
         return FushiIcons.pause;
@@ -1549,7 +1739,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         _phase == _Phase.running ||
         _phase == _Phase.pausing ||
         _phase == _Phase.loading ||
-        _phase == _Phase.checking;
+        _phase == _Phase.checking ||
+        _phase == _Phase.proofreading;
     final List<(String, Widget)> options = <(String, Widget)>[
       (
         t.audiobook_transcribe_language_label,
@@ -1604,7 +1795,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                   // 东西）——留着可点会让用户以为接进来就能给系统语音用。
                   onPressed:
                       _canChangePreference &&
-                          _selectedEngineId() != kAppleSpeechEngineId
+                          _selectedEngineId() != kAppleSpeechEngineId &&
+                          !_cloudEngine
                       ? _addLocalModel
                       : null,
                 ),
@@ -1658,8 +1850,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
             selected: <AsrAccelerationPreference>{_preference},
             showSelectedIcon: false,
             // 不能改时传 null：分段按钮按禁用态画。曾经传一个空回调，按钮看着能点、
-            // 点了没反应（BUG-3138）。
-            onSelectionChanged: !_canChangePreference
+            // 点了没反应（BUG-3138）。云端转录不在本机算，加速无从谈起。
+            onSelectionChanged: !_canChangePreference || _cloudEngine
                 ? null
                 : (Set<AsrAccelerationPreference> s) =>
                       unawaited(_setPreference(s.first)),
@@ -1667,7 +1859,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           tokens,
         ),
       ),
-      if (_remoteTarget != null)
+      // 云端转录本来就不在本机跑：不给「在互联 host 上运行」。
+      if (_remoteTarget != null && !_cloudEngine)
         (
           t.audiobook_transcribe_run_location,
           GamepadMenuDropdown<bool>(
@@ -1876,7 +2069,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           FushiFilledButton.icon(
             icon: const FushiIcon(FushiIcons.play, size: 18),
             label: Text(t.audiobook_transcribe_start),
-            onPressed: _startTranscription,
+            onPressed: _cloudUnconfigured ? null : _startTranscription,
           ),
         );
       case _Phase.paused:
@@ -1915,6 +2108,25 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                   child: Text(t.audiobook_transcribe_discard),
                 ),
         );
+        if (_hasProofreadBackup) {
+          add(
+            FushiTextButton(
+              key: const ValueKey<String>('asr-transcribe-proofread-restore'),
+              onPressed: _finishedSrt == null ? null : _restoreOriginal,
+              child: Text(t.audiobook_transcribe_proofread_restore),
+            ),
+          );
+        }
+        if (widget.proofreadHost != null) {
+          add(
+            FushiOutlinedButton.icon(
+              key: const ValueKey<String>('asr-transcribe-proofread'),
+              icon: const FushiIcon(FushiIcons.aiAssistant, size: 18),
+              label: Text(t.audiobook_transcribe_proofread),
+              onPressed: _finishedSrt == null ? null : _proofread,
+            ),
+          );
+        }
         add(
           FushiOutlinedButton.icon(
             icon: const FushiIcon(FushiIcons.save, size: 18),
@@ -1943,6 +2155,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.downloading:
       case _Phase.loading:
       case _Phase.pausing:
+      case _Phase.proofreading:
         break;
     }
     if (_busy && _phase != _Phase.running) {
