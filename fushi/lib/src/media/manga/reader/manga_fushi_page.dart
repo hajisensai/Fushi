@@ -1857,6 +1857,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final EpubBookRow? row = await db.getEpubBook(widget.bookKey);
     if (!mounted) return;
     if (row == null) {
+      // 书架行不存在：以前静默置失败，反馈里只有「打不开」而日志空白（PcMiHjNbaB）。
+      ErrorLogService.instance.log(
+        'MangaFushiPage.load',
+        StateError('manga shelf row missing: bookKey=${widget.bookKey}'),
+        StackTrace.current,
+      );
       _releaseWebView();
       setState(() => _loadFailed = true);
       return;
@@ -1893,6 +1899,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }) async {
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.load',
+        StateError(
+          'manga.json missing: bookKey=${row.bookKey} '
+          'extractDir=${row.extractDir} path=$mangaJsonPath',
+        ),
+        StackTrace.current,
+      );
       _releaseWebView();
       setState(() {
         _bookRow = row;
