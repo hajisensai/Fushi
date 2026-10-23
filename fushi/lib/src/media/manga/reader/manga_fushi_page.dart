@@ -6212,12 +6212,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       right: kMangaChromeEdgeInset + 4,
                       child: Align(alignment: Alignment.topRight, child: badge),
                     ),
-                  // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
-                  // WebView 持焦后会吞掉翻页键。
-                  Positioned.fill(
-                    key: const ValueKey<String>('manga_dictionary_host'),
-                    child: buildDictionary(),
-                  ),
                   // 顶栏 = 返回键 + 标题/页码 + 动作组。
                   //
                   // 返回键是本页**唯一**的出口，它的可见性只能由用户意图
@@ -6321,6 +6315,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                         ),
                       ),
                     ),
+                  // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
+                  // WebView 持焦后会吞掉翻页键。
+                  //
+                  // 必须是本 Stack 的**最后一个**孩子（反馈 8HcJchWAcr）：弹窗是模态
+                  // 浮层，它的全屏 dismiss barrier 要盖住 chrome——此前 chrome 排在
+                  // 弹窗之后，弹窗开着时点底栏按钮直接打开快捷设置 / 页面网格。iOS 上
+                  // 后果更重：弹窗是带圆角裁剪的平台视图，engine 把排在它**之后**的
+                  // Flutter 内容（chrome、由 chrome 打开的面板）并进**这一个**平台视图
+                  // 的 overlay 层，再按它的圆角形状裁剪（`flow/view_slicer.cc`
+                  // SliceViews 对 j<=i 的平台视图取并集挂到第 i 个视图上 +
+                  // `FlutterPlatformViewsController.mm` ApplyNonRectClipToOverlayCanvas），
+                  // 弹窗外的 chrome 整块消失、只在弹窗圆角矩形里露出来。弹窗排最后，
+                  // chrome 只叠在正文 WebView（无非矩形裁剪）之上，弹窗之后没有 Flutter
+                  // 内容。守卫：test/pages/manga_fushi_page_test.dart。
+                  Positioned.fill(
+                    key: const ValueKey<String>('manga_dictionary_host'),
+                    child: buildDictionary(),
+                  ),
                 ],
               ),
             ),
