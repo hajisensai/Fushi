@@ -13,7 +13,6 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
