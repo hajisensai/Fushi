@@ -699,6 +699,19 @@ BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
 
 /// [repo] 的重排快照目录名：装饰链里有 SRS 层（挖词目标 = Fushi 复习）时用复习的
 /// 目录，否则用 Anki 的（见 [AnkiDeckRepositionRunner.kSrsSnapshotFolder]）。
+/// 诊断日志用：装饰链从外到内的类型名（`SrsMining… > PendingMining… > AnkiRepository`），
+/// 只看最外层的 runtimeType 分不出实际落卡的是哪个后端。
+String ankiRepositoryChainLabel(BaseAnkiRepository repo) {
+  final List<String> names = <String>[];
+  BaseAnkiRepository cur = repo;
+  while (cur is DelegatingAnkiRepository) {
+    names.add('${cur.runtimeType}');
+    cur = cur.inner;
+  }
+  names.add('${cur.runtimeType}');
+  return names.join(' > ');
+}
+
 String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   BaseAnkiRepository cur = repo;
   while (true) {
