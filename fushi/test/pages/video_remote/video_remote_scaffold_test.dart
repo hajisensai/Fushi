@@ -264,7 +264,7 @@ void main() {
       'replayCue',
       'favorite',
       'followCurrent',
-      'mine',
+      'episodes',
     ]) {
       final Finder button = find.byKey(
         ValueKey<String>('video-remote-control-$id'),

@@ -90,6 +90,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(offsets, <int>[0, 30]);
+    // 行带封面后更高：第二页到了再拉到底才进构建范围。
+    await tester.drag(
+      find.byKey(const ValueKey<String>('video-remote-library-list')),
+      const Offset(0, -5000),
+    );
+    await tester.pumpAndSettle();
+    expect(offsets, <int>[0, 30]);
     expect(find.text('Video 34', skipOffstage: false), findsOneWidget);
   });
 

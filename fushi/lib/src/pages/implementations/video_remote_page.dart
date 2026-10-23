@@ -14,7 +14,10 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_cover_image.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_episode_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_library_sheet.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtitle_search_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_control_editor.dart'
     show showVideoRemoteControlEditor;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -46,13 +49,16 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceVideo, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show
         videoRemoteActionUnsupported,
+        videoRemoteCapabilityCloseVideo,
         videoRemoteCapabilityEpisodes,
         videoRemoteCapabilityOpenVideo,
+        videoRemoteCapabilitySubtitleSearch,
         videoRemoteCapabilitySubtitleTracks,
         videoRemoteCapabilityVolume;
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -725,6 +731,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     closeLookup();
     final String? picked = await showVideoRemoteLibrarySheet(
       context: context,
+      coverFor: (VideoRemoteLibraryEntry entry) => _cover(
+        'book:${entry.bookUid}',
+        <String, dynamic>{'bookUid': entry.bookUid},
+      ),
       load: (String query, int offset) async => VideoRemoteLibraryPage.fromJson(
         await _client.call('library', <String, dynamic>{
           'query': query,
@@ -741,6 +751,43 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     });
   });
 
+  /// 电脑能否从手机关掉正在放的视频。
+  bool get canCloseVideo =>
+      available && capabilities.contains(videoRemoteCapabilityCloseVideo);
+
+  /// 关闭电脑上正在放的视频（电脑走视频页自己的退出流程，进度照常保存）。
+  Future<void> closeVideo() => _guard(() async {
+    if (!canCloseVideo || !context.mounted) return;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.video_remote_close_video,
+      message: t.video_remote_close_video_confirm,
+      confirmLabel: t.video_remote_close_video,
+      icon: FushiIcons.stop,
+    );
+    if (!confirmed || !mounted) return;
+    // 正在查的词属于要被关掉的视频：先收起弹框、结束电脑上的查词上下文。
+    closeLookup();
+    await _client.call('closeVideo', <String, dynamic>{
+      'requestId': _client.requestId(),
+    });
+    if (context.mounted) fushiRemoteActionHaptic(context);
+    await _apply(await _client.snapshot());
+  });
+
+  /// 电脑上的一张封面（[key] 区分条目，[body] 是 `cover` 请求体）。缓存键带上电脑
+  /// 身份：换一台电脑同名条目不串图。
+  ImageProvider _cover(String key, Map<String, dynamic> body) =>
+      VideoRemoteCoverImage(
+        cacheKey:
+            'video-remote-cover|${widget.peer.hostId ?? widget.peer.url}|$key',
+        load: () async {
+          final Map<String, dynamic> result = await _client.call('cover', body);
+          final Object? data = result['data'];
+          return data is String ? base64Decode(data) : null;
+        },
+      );
+
   /// 电脑当前作品的集数（单视频 / 旧版电脑为 0）。
   int get episodeCount => (_state['episodeCount'] as num?)?.toInt() ?? 0;
 
@@ -751,33 +798,28 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<Map<String, dynamic>> _playbackOptions() =>
       _client.call('playbackOptions', <String, dynamic>{..._session});
 
-  /// 选集：列出电脑上这部作品的各集，点选后电脑与剧集列表点选同一入口换集。
+  /// 选集：列出电脑上这部作品的各集（带封面），点选后电脑与剧集列表点选同一入口换集。
   Future<void> pickEpisode() => _guard(() async {
+    final Map<String, dynamic> session = _session;
     final Map<String, dynamic> options = await _playbackOptions();
     if (!context.mounted) return;
-    final List<Map<String, dynamic>> episodes = <Map<String, dynamic>>[
+    final List<VideoRemoteEpisodeEntry> episodes = <VideoRemoteEpisodeEntry>[
       for (final Object? item in options['episodes'] as List? ?? <Object?>[])
-        if (item is Map) Map<String, dynamic>.from(item),
+        if (item is Map)
+          VideoRemoteEpisodeEntry.fromJson(Map<String, dynamic>.from(item)),
     ];
-    int? current;
-    for (final Map<String, dynamic> episode in episodes) {
-      if (episode['current'] == true) {
-        current = (episode['index'] as num?)?.toInt();
-      }
-    }
-    final int? picked = await showFushiChoiceDialog<int>(
+    final int? current = episodes
+        .where((VideoRemoteEpisodeEntry e) => e.current)
+        .map((VideoRemoteEpisodeEntry e) => e.index)
+        .firstOrNull;
+    final int? picked = await showVideoRemoteEpisodeSheet(
       context: context,
-      title: t.video_episode_list,
-      icon: FushiIcons.playlist,
-      selected: current,
-      message: episodes.isEmpty ? t.video_episode_list_empty : null,
-      options: <FushiChoiceOption<int>>[
-        for (final Map<String, dynamic> episode in episodes)
-          FushiChoiceOption<int>(
-            value: (episode['index'] as num).toInt(),
-            label: episode['title']?.toString() ?? '',
-          ),
-      ],
+      episodes: episodes,
+      // 封面按这次会话取：同一部作品换了集（新会话），同一下标就是另一集的图。
+      coverFor: (VideoRemoteEpisodeEntry entry) => _cover(
+        'episode:${session['sessionId']}:${entry.index}',
+        <String, dynamic>{...session, 'episodeIndex': entry.index},
+      ),
     );
     if (picked == null || picked == current || !mounted) return;
     await _command('episode', extra: <String, dynamic>{'episodeIndex': picked});
@@ -818,6 +860,37 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       'subtitleTrack',
       extra: <String, dynamic>{'trackId': picked == off ? null : picked},
     );
+  });
+
+  /// 在线字幕：在电脑上用它的字幕来源搜（预填番名与当前集），选中一条后电脑
+  /// 下载并应用为主字幕，新字幕经事件流推回手机。
+  Future<void> searchSubtitles() => _guard(() async {
+    if (!context.mounted) return;
+    final Map<String, dynamic> session = _session;
+    final VideoRemoteSubtitleResult? picked =
+        await showVideoRemoteSubtitleSearchSheet(
+          context: context,
+          search: (String? query, int? episode) async =>
+              VideoRemoteSubtitleSearchPage.fromJson(
+                await _client.call('subtitleSearch', <String, dynamic>{
+                  ...session,
+                  if (query != null) 'query': query,
+                  if (episode != null) 'episode': episode,
+                }),
+              ),
+        );
+    if (picked == null || !mounted) return;
+    await _command(
+      'subtitleDownload',
+      extra: <String, dynamic>{'handle': picked.handle},
+    );
+    if (context.mounted && _error.isEmpty) {
+      fushiRemoteActionHaptic(context);
+      FushiToast.show(
+        msg: t.video_remote_subtitle_applied,
+        severity: ToastSeverity.success,
+      );
+    }
   });
 
   /// 把电脑音量设成 [value]（0..100）。
@@ -1737,6 +1810,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
                 unawaited(removeFavorites(ids)),
             onRefresh: () => unawaited(reconnect()),
             onPickVideo: canPickVideo ? () => unawaited(pickVideo()) : null,
+            onCloseVideo: canCloseVideo ? () => unawaited(closeVideo()) : null,
             onSeek: available ? (Duration to) => unawaited(seekTo(to)) : null,
             onCustomizeControls: _prefs == null
                 ? null
@@ -1876,13 +1950,14 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
           capabilities.contains(videoRemoteCapabilityEpisodes),
     VideoRemoteControlItem.subtitleTrack =>
       available && capabilities.contains(videoRemoteCapabilitySubtitleTracks),
+    VideoRemoteControlItem.subtitleSearch =>
+      available && capabilities.contains(videoRemoteCapabilitySubtitleSearch),
     VideoRemoteControlItem.volume =>
       available && capabilities.contains(videoRemoteCapabilityVolume),
     VideoRemoteControlItem.previousCue => previousRowIndex >= 0,
     VideoRemoteControlItem.nextCue => nextRowIndex >= 0,
     VideoRemoteControlItem.replayCue ||
-    VideoRemoteControlItem.favorite ||
-    VideoRemoteControlItem.mine => _active >= 0,
+    VideoRemoteControlItem.favorite => _active >= 0,
     _ => available,
   };
 
@@ -1901,9 +1976,6 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         if (current != null) await seekToRow(current);
       case VideoRemoteControlItem.favorite:
         if (current != null) await toggleRowFavorite(current);
-      case VideoRemoteControlItem.mine:
-        // 制卡要先选词：打开当前句的查词弹框。
-        if (current != null) await openLookup(current, 0);
       case VideoRemoteControlItem.seekBack:
         await seekTo(Duration(milliseconds: positionMs.round() - 10000));
       case VideoRemoteControlItem.seekForward:
@@ -1912,6 +1984,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         await pickEpisode();
       case VideoRemoteControlItem.subtitleTrack:
         await pickSubtitleTrack();
+      case VideoRemoteControlItem.subtitleSearch:
+        await searchSubtitles();
       case VideoRemoteControlItem.volume:
         await showVolume();
       case VideoRemoteControlItem.followCurrent:
@@ -2019,6 +2093,10 @@ String videoRemoteErrorText(Object error) {
     case 'subtitle_track_missing':
     case 'subtitle_track_unavailable':
       return t.video_remote_error_subtitle_track_unavailable;
+    case 'subtitle_candidate_missing':
+      return t.video_remote_error_subtitle_candidate_missing;
+    case 'subtitle_download_failed':
+      return t.video_remote_error_subtitle_download_failed;
     case VideoRemoteError.unreachableCode:
       return t.video_remote_error_unreachable;
     case VideoRemoteError.certificateMismatchCode:

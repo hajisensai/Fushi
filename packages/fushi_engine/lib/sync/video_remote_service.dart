@@ -64,6 +64,26 @@ const Set<String> videoRemoteOperations = <String>{
   //   showing something that cannot be closed from the phone, e.g. a dialog).
   'library',
   'openVideo',
+  // `closeVideo` — `{requestId}` ([videoRemoteCapabilityCloseVideo]): closes
+  // the open video page through its normal exit (position saved), leaving
+  // the computer on its library. Errors: `409 no_video`, `409 host_busy`.
+  'closeVideo',
+  // Cover preview for the on-demand list and the episode picker. Body is one
+  // of `{bookUid}` (a `library` item that says `hasCover`) or `{sessionId,
+  // subtitleVersion, episodeIndex}` (a `playbackOptions` episode that says
+  // `hasCover`) -> `{mime, data}` (base64 image, bounded to a small preview).
+  // Errors: `404 cover_missing`. Phones only ask for items that advertise a
+  // cover, so hosts that predate the field never receive it.
+  'cover',
+  // Online subtitle search ([videoRemoteCapabilitySubtitleSearch]):
+  // `{sessionId, subtitleVersion, query?, episode?}` -> `{query, episode?,
+  // candidates: [{handle, provider, fileName, language, episode?,
+  // downloadCount?, aiTranslated?, hearingImpaired?}], error?}`. With no
+  // `query` the computer searches with the same seed its own subtitle
+  // workbench would prefill and reports it back as `query` / `episode`.
+  // `handle` names the candidate for the `subtitleDownload` command and
+  // lives as long as the video page that answered.
+  'subtitleSearch',
   'disconnect',
 };
 
@@ -76,8 +96,12 @@ const Set<String> videoRemoteOperations = <String>{
 /// * `episode` — `{episodeIndex: int}` ([videoRemoteCapabilityEpisodes]).
 /// * `subtitleTrack` — `{trackId: String?}`, null turns the primary subtitle
 ///   off ([videoRemoteCapabilitySubtitleTracks]).
+/// * `subtitleDownload` — `{handle: String}` from `subtitleSearch`: the
+///   computer downloads that subtitle and applies it as the primary subtitle
+///   ([videoRemoteCapabilitySubtitleSearch]). Errors: `404
+///   subtitle_candidate_missing`, `502 subtitle_download_failed`.
 ///
-/// The last three are newer than the protocol itself: a host that predates
+/// The last four are newer than the protocol itself: a host that predates
 /// them answers `400 invalid_action`, a host whose player cannot do one
 /// answers `409 action_unsupported`. Phones only offer an action when the
 /// snapshot's `capabilities` list names it, so neither reaches a user.
@@ -89,6 +113,7 @@ const Set<String> videoRemoteCommandActions = <String>{
   'volume',
   'episode',
   'subtitleTrack',
+  'subtitleDownload',
 };
 
 /// Snapshot `capabilities` entries: optional controls this host's player
@@ -96,6 +121,10 @@ const Set<String> videoRemoteCommandActions = <String>{
 const String videoRemoteCapabilityVolume = 'volume';
 const String videoRemoteCapabilityEpisodes = 'episodes';
 const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
+const String videoRemoteCapabilitySubtitleSearch = 'subtitleSearch';
+
+/// The open video can be closed from the phone (`closeVideo`).
+const String videoRemoteCapabilityCloseVideo = 'closeVideo';
 
 /// Host-level capability (present with or without an open video): the host
 /// answers `library` / `openVideo`.

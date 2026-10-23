@@ -324,10 +324,7 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 结果按输入身份 memo（见 [_episodePanelEntriesMemo]）：面板常驻在树里、页面
   /// 每次 setState 都重建它，不 memo 就是每帧对全部 N 集重跑正则 + 重建 provider。
   List<VideoEpisodeEntry> _episodePanelEntries() {
-    // 网页档的剧集剧照来自站点公开 CDN（Netflix metadata），用站点取图器。
-    final RemoteCoverFetcher? fetcher = _webMode
-        ? const WebVideoCoverFetcher()
-        : remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
+    final RemoteCoverFetcher? fetcher = _episodeCoverFetcher;
     final List<VideoEpisodeEntry>? memo = _episodePanelEntriesMemo;
     if (memo != null &&
         identical(_episodePanelEntriesEpisodes, _episodes) &&
@@ -378,6 +375,13 @@ extension _VideoEpisode on _VideoFushiPageState {
     _episodePanelEntriesImages = _playlistCollectionImages;
     return _episodePanelEntriesMemo = entries;
   }
+
+  /// 远端集封面（[_PlaylistEpisodeRef.coverUrl]）的取图器：网页档的剧集剧照来自
+  /// 站点公开 CDN（Netflix metadata），用站点取图器；其余按来源客户端。剧集面板与
+  /// 手机遥控选集共用。
+  RemoteCoverFetcher? get _episodeCoverFetcher => _webMode
+      ? const WebVideoCoverFetcher()
+      : remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
 
   /// 季 chip 文案：`s<N>` → 「第 N 季」；extras → 「PV·特典」（与合集详情页
   /// `_groupLabel` 同一套 i18n）。

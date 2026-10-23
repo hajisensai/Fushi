@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/sync/video_remote_cover.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/sync/video_remote_service.dart';
@@ -69,16 +70,80 @@ final class VideoRemoteEpisode {
     required this.index,
     required this.title,
     required this.current,
+    this.hasCover = false,
   });
 
   /// Position in the player's episode list (what `episode` commands name).
   final int index;
   final String title;
   final bool current;
+
+  /// Whether `cover` can answer for this episode (the phone only asks then).
+  final bool hasCover;
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,
     'title': title,
     'current': current,
+    if (hasCover) 'hasCover': true,
+  };
+}
+
+/// One online subtitle candidate of a `subtitleSearch` answer. [handle] is
+/// opaque to the phone and only valid on the page that answered.
+final class VideoRemoteSubtitleCandidate {
+  const VideoRemoteSubtitleCandidate({
+    required this.handle,
+    required this.provider,
+    required this.fileName,
+    required this.language,
+    this.episode,
+    this.downloadCount = 0,
+    this.aiTranslated = false,
+    this.hearingImpaired = false,
+  });
+  final String handle;
+  final String provider;
+  final String fileName;
+  final String language;
+  final int? episode;
+  final int downloadCount;
+  final bool aiTranslated;
+  final bool hearingImpaired;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'handle': handle,
+    'provider': provider,
+    'fileName': fileName,
+    'language': language,
+    if (episode != null) 'episode': episode,
+    if (downloadCount > 0) 'downloadCount': downloadCount,
+    if (aiTranslated) 'aiTranslated': true,
+    if (hearingImpaired) 'hearingImpaired': true,
+  };
+}
+
+/// A `subtitleSearch` answer: the query and episode the computer actually
+/// searched with (its own prefill when the phone sent none), the candidates,
+/// and a machine [error] when no candidate came back because no source could
+/// be asked or every source failed (`no_source` / `search_failed`).
+final class VideoRemoteSubtitleSearchResult {
+  const VideoRemoteSubtitleSearchResult({
+    required this.query,
+    required this.candidates,
+    this.episode,
+    this.error,
+  });
+  final String query;
+  final int? episode;
+  final List<VideoRemoteSubtitleCandidate> candidates;
+  final String? error;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'query': query,
+    if (episode != null) 'episode': episode,
+    'candidates': <Map<String, Object?>>[
+      for (final VideoRemoteSubtitleCandidate candidate in candidates)
+        candidate.toJson(),
+    ],
+    if (error != null) 'error': error,
   };
 }
 
@@ -118,9 +183,13 @@ final class VideoRemoteLibraryItem {
     this.collection,
     this.positionMs = 0,
     this.lastPlayedAt,
+    this.hasCover = false,
   });
   final String bookUid;
   final String title;
+
+  /// Whether `cover` can answer for [bookUid] (the phone only asks then).
+  final bool hasCover;
 
   /// Title of the collection the video plays in (its episode list), if any.
   final String? collection;
@@ -132,6 +201,7 @@ final class VideoRemoteLibraryItem {
     if (collection != null) 'collection': collection,
     'positionMs': positionMs,
     if (lastPlayedAt != null) 'lastPlayedAt': lastPlayedAt,
+    if (hasCover) 'hasCover': true,
   };
 }
 
@@ -139,7 +209,12 @@ final class VideoRemoteLibraryItem {
 /// (`library` / `openVideo`). Unlike [VideoRemotePlaybackBinding] it does not
 /// depend on a video page being open: the phone uses it to start one.
 final class VideoRemoteLibrary {
-  const VideoRemoteLibrary({required this.list, required this.open});
+  const VideoRemoteLibrary({
+    required this.list,
+    required this.open,
+    this.cover,
+    this.close,
+  });
 
   /// The library in display order (most recently played first).
   final Future<List<VideoRemoteLibraryItem>> Function() list;
@@ -147,6 +222,14 @@ final class VideoRemoteLibrary {
   /// Closes the open video page through its normal exit and opens [bookUid].
   /// Fails with a [VideoRemoteException] (`video_missing` / `host_busy`).
   final Future<void> Function(String bookUid) open;
+
+  /// The cover image bytes of [bookUid] (null: it has none). Null: covers are
+  /// unavailable.
+  final Future<Uint8List?> Function(String bookUid)? cover;
+
+  /// Closes the open video page through its normal exit. Fails with a
+  /// [VideoRemoteException] (`host_busy`). Null: `closeVideo` is unsupported.
+  final Future<void> Function()? close;
 }
 
 /// App-owned callbacks; the HTTP layer never sees media paths or widget state.
@@ -171,6 +254,9 @@ final class VideoRemotePlaybackBinding {
     this.switchEpisode,
     this.subtitleTracks,
     this.selectSubtitleTrack,
+    this.episodeCover,
+    this.searchSubtitles,
+    this.downloadSubtitle,
   });
   final String Function() identity;
   final String Function() title;
@@ -220,6 +306,22 @@ final class VideoRemotePlaybackBinding {
   /// it off when null. Fails with a [VideoRemoteException].
   final Future<void> Function(String? trackId)? selectSubtitleTrack;
 
+  /// The cover image bytes of episode [index] (null: it has none).
+  final Future<Uint8List?> Function(int index)? episodeCover;
+
+  /// Searches the configured online subtitle sources for the playing video.
+  /// Null [query] / [episode]: the page's own prefill. Together with
+  /// [downloadSubtitle] it enables `subtitleSearch` / `subtitleDownload`.
+  final Future<VideoRemoteSubtitleSearchResult> Function({
+    String? query,
+    int? episode,
+  })?
+  searchSubtitles;
+
+  /// Downloads the [searchSubtitles] candidate [handle] and applies it as the
+  /// primary subtitle. Fails with a [VideoRemoteException].
+  final Future<void> Function(String handle)? downloadSubtitle;
+
   /// Optional controls this player supports (snapshot `capabilities`).
   List<String> get capabilities => <String>[
     if (setVolume != null) videoRemoteCapabilityVolume,
@@ -227,6 +329,8 @@ final class VideoRemotePlaybackBinding {
       videoRemoteCapabilityEpisodes,
     if (subtitleTracks != null && selectSubtitleTrack != null)
       videoRemoteCapabilitySubtitleTracks,
+    if (searchSubtitles != null && downloadSubtitle != null)
+      videoRemoteCapabilitySubtitleSearch,
   ];
 }
 
@@ -369,6 +473,8 @@ final class VideoRemoteHost implements VideoRemoteService {
     'capabilities': <String>[
       ...?_binding?.capabilities,
       if (_library != null) videoRemoteCapabilityOpenVideo,
+      if (_binding != null && _library?.close != null)
+        videoRemoteCapabilityCloseVideo,
     ],
     ...?_binding?.state(),
   };
@@ -466,6 +572,12 @@ final class VideoRemoteHost implements VideoRemoteService {
     }
     if (operation == 'library') {
       return _listLibrary(body);
+    }
+    if (operation == 'cover') {
+      return _cover(body);
+    }
+    if (operation == 'subtitleSearch') {
+      return _subtitleSearch(body);
     }
     if (operation == 'mineStatus') {
       _RemoteMineTask? task = _tasks[body['taskId']];
@@ -609,6 +721,17 @@ final class VideoRemoteHost implements VideoRemoteService {
       await library.open(bookUid);
       return <String, Object?>{'ok': true};
     }
+    if (operation == 'closeVideo') {
+      final Future<void> Function()? close = _library?.close;
+      if (close == null) {
+        throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+      }
+      if (_binding == null) throw const VideoRemoteException(409, 'no_video');
+      // The closing page's lookup pause ends with the page; never resume it.
+      _lookup = null;
+      await close();
+      return <String, Object?>{'ok': true};
+    }
     if (operation == 'lookupContext') {
       return _lookupContext(_requireLookup(body, peerId), body);
     }
@@ -719,6 +842,22 @@ final class VideoRemoteHost implements VideoRemoteService {
         }
         _lookup = null;
         await select(trackId as String?);
+        _refresh();
+        _publish();
+        return <String, Object?>{'ok': true};
+      }
+      if (action == 'subtitleDownload') {
+        final Future<void> Function(String)? download =
+            binding.downloadSubtitle;
+        if (binding.searchSubtitles == null || download == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? handle = body['handle'];
+        if (handle is! String || handle.isEmpty) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        _lookup = null;
+        await download(handle);
         _refresh();
         _publish();
         return <String, Object?>{'ok': true};
@@ -872,6 +1011,74 @@ final class VideoRemoteHost implements VideoRemoteService {
         (VideoRemoteSubtitleOption track) => track.selected,
       ),
     };
+  }
+
+  /// `cover`: a small preview of a library video's or an episode's cover.
+  Future<Map<String, Object?>> _cover(Map<String, dynamic> body) async {
+    final Object? bookUid = body['bookUid'];
+    final Uint8List? bytes;
+    if (bookUid != null) {
+      if (bookUid is! String || bookUid.isEmpty) {
+        throw const VideoRemoteException(400, 'invalid_argument');
+      }
+      final Future<Uint8List?> Function(String)? cover = _library?.cover;
+      if (cover == null) {
+        throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+      }
+      bytes = await cover(bookUid);
+    } else {
+      final VideoRemotePlaybackBinding binding = _requireSession(body);
+      final Future<Uint8List?> Function(int)? cover = binding.episodeCover;
+      if (cover == null) {
+        throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+      }
+      final Object? index = body['episodeIndex'];
+      if (index is! int) {
+        throw const VideoRemoteException(400, 'invalid_number');
+      }
+      bytes = await cover(index);
+    }
+    final VideoRemoteCoverPreview? preview = bytes == null
+        ? null
+        : await videoRemoteCoverPreview(bytes);
+    if (preview == null) {
+      throw const VideoRemoteException(404, 'cover_missing');
+    }
+    return <String, Object?>{
+      'mime': preview.mime,
+      'data': base64Encode(preview.bytes),
+    };
+  }
+
+  /// `subtitleSearch`: online subtitle candidates for the playing video. Re-
+  /// validated after the (slow) network search like [_playbackOptions].
+  Future<Map<String, Object?>> _subtitleSearch(
+    Map<String, dynamic> body,
+  ) async {
+    final VideoRemotePlaybackBinding binding = _requireSession(body);
+    final Future<VideoRemoteSubtitleSearchResult> Function({
+      String? query,
+      int? episode,
+    })?
+    search = binding.searchSubtitles;
+    if (search == null || binding.downloadSubtitle == null) {
+      throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+    }
+    final Object? query = body['query'];
+    final Object? episode = body['episode'];
+    if ((query != null && query is! String) ||
+        (episode != null && (episode is! int || episode < 0))) {
+      throw const VideoRemoteException(400, 'invalid_argument');
+    }
+    final String? trimmed = (query as String?)?.trim();
+    final VideoRemoteSubtitleSearchResult result = await search(
+      query: trimmed == null || trimmed.isEmpty ? null : trimmed,
+      episode: episode as int?,
+    );
+    if (!identical(binding, _requireSession(body))) {
+      throw const VideoRemoteException(409, 'session_changed');
+    }
+    return result.toJson();
   }
 
   /// The open lookup [body] names, still bound to the current session and

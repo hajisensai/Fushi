@@ -349,6 +349,7 @@ import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
+import 'package:fushi/src/media/video/subtitle/video_remote_subtitle_search.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show VideoRemoteException;
 import 'package:fushi/src/sync/sync_backend.dart'
@@ -2893,6 +2894,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final Set<String> _favoritedVideoSentences = <String>{};
   VideoRemotePlaybackBinding? _videoRemoteBinding;
   final _VideoRemoteCueCache _videoRemoteCueCache = _VideoRemoteCueCache();
+
+  /// 手机遥控「在线字幕」：与字幕工作台同一个来源注册表、落盘目录与对轴钩子。
+  late final VideoRemoteSubtitleSearcher _videoRemoteSubtitleSearcher =
+      VideoRemoteSubtitleSearcher(
+        registry: appModel.subtitleSearchRegistry,
+        saveDirectory: () async =>
+            (await AppPaths.videoSubtitlesDirectory()).path,
+        aligner: () => appModel.alignDownloadedSubtitle,
+      );
   bool _initialRemoteFavoriteApplied = false;
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────

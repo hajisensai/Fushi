@@ -13,6 +13,7 @@ import 'package:fushi/src/pages/implementations/video_remote/video_remote_models
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_transcript_view.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
+import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
@@ -44,6 +45,7 @@ class VideoRemoteCallbacks {
     this.onLookupFavorite,
     this.onCustomizeControls,
     this.onPickVideo,
+    this.onCloseVideo,
   });
 
   /// 返回（退出遥控）。
@@ -83,6 +85,10 @@ class VideoRemoteCallbacks {
   /// 顶栏「点播」：从电脑视频库里选片让电脑播放；null = 电脑不支持（旧版），
   /// 不显示该按钮。
   final VoidCallback? onPickVideo;
+
+  /// 顶栏「关闭视频」：让电脑关掉正在放的视频；null = 电脑没开视频或不支持，
+  /// 不显示该按钮。
+  final VoidCallback? onCloseVideo;
 }
 
 /// 手机字幕遥控器的整页脚手架（纯展示）。
@@ -268,6 +274,7 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
 
   void _setTab(VideoRemoteTab tab) {
     if (tab == _tab) return;
+    fushiSelectionHaptic(context);
     setState(() => _tab = tab);
     widget.onTabChanged?.call(tab);
     _goToPage(videoRemotePageIndex(tab, widget.favoritesScope));
@@ -315,6 +322,7 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
       }
     }
     if (tab != _tab) {
+      fushiSelectionHaptic(context);
       setState(() => _tab = tab);
       widget.onTabChanged?.call(tab);
     }
@@ -322,6 +330,8 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
   }
 
   void _onControl(VideoRemoteControlItem item) {
+    // 遥控器按键：每按一下都轻震确认（眼睛多半在电脑屏幕上）。
+    fushiRemoteActionHaptic(context);
     if (item == VideoRemoteControlItem.followCurrent) {
       _setTab(VideoRemoteTab.transcript);
       _controller.returnToCurrent();
@@ -338,6 +348,7 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
     final VideoRemoteCallbacks callbacks = widget.callbacks;
     final VoidCallback? customize = callbacks.onCustomizeControls;
     final VoidCallback? pickVideo = callbacks.onPickVideo;
+    final VoidCallback? closeVideo = callbacks.onCloseVideo;
     final List<FushiToolbarItem> pickGroup = <FushiToolbarItem>[
       if (pickVideo != null)
         FushiToolbarItem(
@@ -345,6 +356,13 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
           icon: FushiIcons.video,
           label: t.video_remote_library_title,
           onPressed: pickVideo,
+        ),
+      if (closeVideo != null)
+        FushiToolbarItem(
+          key: const ValueKey<String>('video-remote-close-video'),
+          icon: FushiIcons.stop,
+          label: t.video_remote_close_video,
+          onPressed: closeVideo,
         ),
     ];
     return FushiFloatingTopBar(
@@ -503,6 +521,7 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
                       if (next.isEmpty || next.first == widget.favoritesScope) {
                         return;
                       }
+                      fushiSelectionHaptic(context);
                       widget.callbacks.onFavoritesScopeChanged(next.first);
                     },
                     segments: <ButtonSegment<VideoRemoteFavoritesScope>>[

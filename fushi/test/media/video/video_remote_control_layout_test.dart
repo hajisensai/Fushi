@@ -11,7 +11,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 必需项、编解码与偏好持久化。
 void main() {
   group('模型', () {
-    test('出厂：主组 上一句 / 播放 / 下一句，次组 重播 / 收藏 / 回到当前句 / 制卡 / 选集 / 字幕轨 / 音量', () {
+    test('出厂：主组 上一句 / 播放 / 下一句，次组 重播 / 收藏 / 回到当前句 / 选集 / 字幕轨 / 在线字幕 / 音量', () {
       final VideoRemoteControlLayout layout = VideoRemoteControlLayout.defaults;
       expect(layout.primaryItems, <VideoRemoteControlItem>[
         VideoRemoteControlItem.previousCue,
@@ -22,9 +22,9 @@ void main() {
         VideoRemoteControlItem.replayCue,
         VideoRemoteControlItem.favorite,
         VideoRemoteControlItem.followCurrent,
-        VideoRemoteControlItem.mine,
         VideoRemoteControlItem.episodes,
         VideoRemoteControlItem.subtitleTrack,
+        VideoRemoteControlItem.subtitleSearch,
         VideoRemoteControlItem.volume,
       ]);
       expect(
@@ -89,7 +89,10 @@ void main() {
             VideoRemoteControlSlot.primary,
             index: 0,
           )
-          .moveItem(VideoRemoteControlItem.mine, VideoRemoteControlSlot.hidden);
+          .moveItem(
+            VideoRemoteControlItem.subtitleSearch,
+            VideoRemoteControlSlot.hidden,
+          );
       final VideoRemoteControlLayout decoded = VideoRemoteControlLayout.decode(
         layout.encode(),
       );
@@ -98,7 +101,7 @@ void main() {
       final Map<String, dynamic> json =
           jsonDecode(layout.encode()) as Map<String, dynamic>;
       expect(json['version'], 1);
-      expect(json['removed'], contains('mine'));
+      expect(json['removed'], contains('subtitleSearch'));
     });
 
     test('空 / 坏 JSON 回出厂布局', () {
@@ -134,7 +137,29 @@ void main() {
         VideoRemoteControlItem.nextCue,
       ]);
       expect(decoded.secondaryItems.first, VideoRemoteControlItem.speed);
-      expect(decoded.secondaryItems, contains(VideoRemoteControlItem.mine));
+      expect(
+        decoded.secondaryItems,
+        contains(VideoRemoteControlItem.subtitleSearch),
+      );
+    });
+
+    test('旧存档里的「制卡」按钮（已删除）解码时丢掉，其余按钮原位', () {
+      final VideoRemoteControlLayout decoded = VideoRemoteControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 1,
+          'slots': <String, List<String>>{
+            'primary': <String>['previousCue', 'playPause', 'nextCue'],
+            'secondary': <String>['replayCue', 'mine', 'favorite'],
+          },
+          'removed': <String>['mine', 'volume'],
+        }),
+      );
+      expect(decoded.secondaryItems.take(2), <VideoRemoteControlItem>[
+        VideoRemoteControlItem.replayCue,
+        VideoRemoteControlItem.favorite,
+      ]);
+      expect(decoded.removedItems, contains(VideoRemoteControlItem.volume));
+      expect(decoded.encode(), isNot(contains('"mine"')));
     });
 
     test('存档把播放暂停写进 removed 也会被恢复到主组', () {

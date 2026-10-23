@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 152949 (8997 per locale)
+/// Strings: 153187 (9011 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -11615,6 +11615,9 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String video_quality_switched({required Object label}) => 'Quality: ${label}';
   String get video_recently_added_badge => 'NEW';
   String get video_remote_all => 'All videos';
+  String get video_remote_close_video => 'Close video';
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
   String get video_remote_control_customize => 'Customize buttons';
   String get video_remote_control_editor_hint =>
       'Drag buttons between the main controls and more buttons. Play/pause always stays.';
@@ -11628,6 +11631,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_remote_control_slot_hidden => 'Removed';
   String get video_remote_control_slot_primary => 'Main controls';
   String get video_remote_control_slot_secondary => 'More buttons';
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
   String get video_remote_control_unfavorite => 'Remove from favorites';
@@ -11671,6 +11675,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'The computer is busy; try again shortly';
   String get video_remote_error_subtitle_busy =>
       'Subtitles are still loading on the computer. Try again shortly';
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   String get video_remote_error_subtitle_track_unavailable =>
       'That subtitle track can\'t be selected';
   String get video_remote_error_subtitles_changed =>
@@ -11723,6 +11731,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_remote_remove => 'Remove selected favorites';
   String get video_remote_retry => 'Reconnect';
   String get video_remote_sentence => 'Sentence';
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   String get video_remote_subtitle_refetch_default =>
       'Server\'s default subtitles';
@@ -11733,6 +11743,18 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get video_remote_subtitle_refetch_pick => 'Choose subtitles to fetch';
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  String get video_remote_subtitle_search_episode => 'Episode';
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  String get video_remote_subtitle_search_hint => 'Title';
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   String get video_remote_subtitles => 'Subtitles';
   String get video_remote_title => 'Video remote';
   String get video_remote_transcript_empty => 'No subtitles yet';
@@ -32513,6 +32535,11 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -32536,6 +32563,8 @@ class _StringsAr extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -32602,6 +32631,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'لا تزال الترجمات قيد التحميل على الكمبيوتر. حاول مرة أخرى بعد قليل';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'لا يمكن اختيار مسار الترجمة هذا';
@@ -32692,6 +32727,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -32707,6 +32745,26 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -54714,6 +54772,11 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -54737,6 +54800,8 @@ class _StringsDe extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -54803,6 +54868,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Die Untertitel werden auf dem Computer noch geladen. Versuche es gleich noch einmal';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Diese Untertitelspur kann nicht ausgewählt werden';
@@ -54893,6 +54964,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -54908,6 +54982,26 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -77005,6 +77099,11 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -77028,6 +77127,8 @@ class _StringsEs extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -77094,6 +77195,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Los subtítulos aún se están cargando en el ordenador. Inténtalo de nuevo en breve';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'No se puede seleccionar esa pista de subtítulos';
@@ -77184,6 +77291,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -77199,6 +77309,26 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -99373,6 +99503,11 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -99396,6 +99531,8 @@ class _StringsFr extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -99462,6 +99599,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Les sous-titres sont encore en cours de chargement sur l\'ordinateur. Réessayez dans un instant';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Cette piste de sous-titres ne peut pas être sélectionnée';
@@ -99552,6 +99695,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -99567,6 +99713,26 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -121462,6 +121628,11 @@ class _StringsId extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -121485,6 +121656,8 @@ class _StringsId extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -121551,6 +121724,12 @@ class _StringsId extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Subtitel masih dimuat di komputer. Coba lagi sebentar lagi';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Trek subtitel itu tidak dapat dipilih';
@@ -121641,6 +121820,9 @@ class _StringsId extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -121656,6 +121838,26 @@ class _StringsId extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -143640,6 +143842,11 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -143663,6 +143870,8 @@ class _StringsIt extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -143729,6 +143938,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'I sottotitoli sono ancora in caricamento sul computer. Riprova tra poco';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Impossibile selezionare quella traccia di sottotitoli';
@@ -143819,6 +144034,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -143834,6 +144052,26 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -164952,6 +165190,11 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -164975,6 +165218,8 @@ class _StringsJa extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -165040,6 +165285,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'パソコンで字幕を読み込み中です。しばらくしてからもう一度お試しください';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'その字幕トラックは選択できません';
@@ -165125,6 +165376,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -165140,6 +165394,26 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -186148,6 +186422,11 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -186171,6 +186450,8 @@ class _StringsKo extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -186236,6 +186517,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       '컴퓨터에서 아직 자막을 불러오는 중입니다. 잠시 후 다시 시도하세요';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       '해당 자막 트랙을 선택할 수 없습니다';
@@ -186326,6 +186613,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -186341,6 +186631,26 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -208195,6 +208505,11 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -208218,6 +208533,8 @@ class _StringsNl extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -208284,6 +208601,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'De ondertitels worden nog geladen op de computer. Probeer het zo opnieuw';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Dat ondertitelspoor kan niet worden geselecteerd';
@@ -208374,6 +208697,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -208389,6 +208715,26 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -230400,6 +230746,11 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -230423,6 +230774,8 @@ class _StringsPtBr extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -230489,6 +230842,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'As legendas ainda estão carregando no computador. Tente novamente em instantes';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Essa faixa de legenda não pode ser selecionada';
@@ -230579,6 +230938,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -230594,6 +230956,26 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -252566,6 +252948,11 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -252589,6 +252976,8 @@ class _StringsRu extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -252655,6 +253044,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Субтитры на компьютере ещё загружаются. Повторите попытку чуть позже';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Эту дорожку субтитров нельзя выбрать';
@@ -252745,6 +253140,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -252760,6 +253158,26 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -274457,6 +274875,11 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -274480,6 +274903,8 @@ class _StringsTh extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -274546,6 +274971,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'คำบรรยายบนคอมพิวเตอร์ยังโหลดอยู่ โปรดลองอีกครั้งในอีกสักครู่';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'ไม่สามารถเลือกแทร็กคำบรรยายนั้นได้';
@@ -274636,6 +275067,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -274651,6 +275085,26 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -296477,6 +296931,11 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -296500,6 +296959,8 @@ class _StringsTr extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -296565,6 +297026,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Altyazılar bilgisayarda hâlâ yükleniyor. Birazdan tekrar deneyin';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Bu altyazı parçası seçilemez';
@@ -296655,6 +297122,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -296670,6 +297140,26 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -318462,6 +318952,11 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -318485,6 +318980,8 @@ class _StringsVi extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -318551,6 +319048,12 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_remote_error_subtitle_busy =>
       'Phụ đề trên máy tính vẫn đang tải. Vui lòng thử lại sau giây lát';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable =>
       'Không thể chọn bản phụ đề đó';
@@ -318641,6 +319144,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -318656,6 +319162,26 @@ class _StringsVi extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -338780,6 +339306,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_remote_all => '全部视频';
   @override
+  String get video_remote_close_video => '关闭视频';
+  @override
+  String get video_remote_close_video_confirm => '关闭电脑上正在播放的视频？播放进度会保存。';
+  @override
   String get video_remote_control_customize => '自定义按钮';
   @override
   String get video_remote_control_editor_hint =>
@@ -338802,6 +339332,8 @@ class _StringsZhCn extends _StringsEn {
   String get video_remote_control_slot_primary => '主控制组';
   @override
   String get video_remote_control_slot_secondary => '更多按钮';
+  @override
+  String get video_remote_control_subtitle_search => '搜索在线字幕';
   @override
   String get video_remote_control_subtitle_visibility => '显示或隐藏字幕';
   @override
@@ -338850,6 +339382,10 @@ class _StringsZhCn extends _StringsEn {
   String get video_remote_error_requests_busy => '电脑忙，请稍后再试';
   @override
   String get video_remote_error_subtitle_busy => '电脑上的字幕还在加载，请稍后再试';
+  @override
+  String get video_remote_error_subtitle_candidate_missing => '搜索结果已过期，请重新搜索';
+  @override
+  String get video_remote_error_subtitle_download_failed => '电脑下载这条字幕失败';
   @override
   String get video_remote_error_subtitle_track_unavailable => '这条字幕当前无法选择';
   @override
@@ -338926,6 +339462,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_remote_sentence => '例句';
   @override
+  String get video_remote_subtitle_applied => '电脑已下载并应用字幕';
+  @override
   String get video_remote_subtitle_refetch => '重新从服务端拉取字幕';
   @override
   String get video_remote_subtitle_refetch_default => '服务端默认字幕';
@@ -338937,6 +339475,24 @@ class _StringsZhCn extends _StringsEn {
   String get video_remote_subtitle_refetch_pick => '选择要拉取的字幕';
   @override
   String get video_remote_subtitle_refetched => '已从服务端重新拉取字幕';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '下载 ${n} 次';
+  @override
+  String get video_remote_subtitle_search_empty => '没有找到字幕';
+  @override
+  String get video_remote_subtitle_search_episode => '集数';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      '第 ${n} 集';
+  @override
+  String get video_remote_subtitle_search_failed => '字幕来源没有响应，请在电脑上检查字幕来源与密钥';
+  @override
+  String get video_remote_subtitle_search_hint => '番名';
+  @override
+  String get video_remote_subtitle_search_no_query => '输入番名再搜索';
+  @override
+  String get video_remote_subtitle_search_no_source => '电脑上还没有可用的在线字幕来源';
   @override
   String get video_remote_subtitles => '字幕';
   @override
@@ -359291,6 +359847,11 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_remote_all => 'All videos';
   @override
+  String get video_remote_close_video => 'Close video';
+  @override
+  String get video_remote_close_video_confirm =>
+      'Close the video playing on the computer? Its position is saved.';
+  @override
   String get video_remote_control_customize => 'Customize buttons';
   @override
   String get video_remote_control_editor_hint =>
@@ -359314,6 +359875,8 @@ class _StringsZhHk extends _StringsEn {
   String get video_remote_control_slot_primary => 'Main controls';
   @override
   String get video_remote_control_slot_secondary => 'More buttons';
+  @override
+  String get video_remote_control_subtitle_search => 'Search subtitles online';
   @override
   String get video_remote_control_subtitle_visibility =>
       'Show or hide subtitles';
@@ -359377,6 +359940,12 @@ class _StringsZhHk extends _StringsEn {
       'The computer is busy; try again shortly';
   @override
   String get video_remote_error_subtitle_busy => '電腦上的字幕仍在載入，請稍後再試';
+  @override
+  String get video_remote_error_subtitle_candidate_missing =>
+      'This search result expired, search again';
+  @override
+  String get video_remote_error_subtitle_download_failed =>
+      'The computer could not download this subtitle';
   @override
   String get video_remote_error_subtitle_track_unavailable => '目前無法選擇這條字幕';
   @override
@@ -359461,6 +360030,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_remote_sentence => 'Sentence';
   @override
+  String get video_remote_subtitle_applied =>
+      'Subtitle downloaded and applied on the computer';
+  @override
   String get video_remote_subtitle_refetch => 'Re-fetch subtitles from server';
   @override
   String get video_remote_subtitle_refetch_default =>
@@ -359476,6 +360048,26 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_remote_subtitle_refetched =>
       'Subtitles re-fetched from server';
+  @override
+  String video_remote_subtitle_search_downloads({required Object n}) =>
+      '${n} downloads';
+  @override
+  String get video_remote_subtitle_search_empty => 'No subtitles found';
+  @override
+  String get video_remote_subtitle_search_episode => 'Episode';
+  @override
+  String video_remote_subtitle_search_episode_n({required Object n}) =>
+      'Ep. ${n}';
+  @override
+  String get video_remote_subtitle_search_failed =>
+      'Subtitle sources did not respond. Check the sources and keys on the computer';
+  @override
+  String get video_remote_subtitle_search_hint => 'Title';
+  @override
+  String get video_remote_subtitle_search_no_query => 'Enter a title to search';
+  @override
+  String get video_remote_subtitle_search_no_source =>
+      'No subtitle source is set up on the computer';
   @override
   String get video_remote_subtitles => 'Subtitles';
   @override
@@ -378219,6 +378811,10 @@ extension on _StringsEn {
         return 'NEW';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -378241,6 +378837,8 @@ extension on _StringsEn {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -378288,6 +378886,10 @@ extension on _StringsEn {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Subtitles are still loading on the computer. Try again shortly';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'That subtitle track can\'t be selected';
       case 'video_remote_error_subtitles_changed':
@@ -378362,6 +378964,8 @@ extension on _StringsEn {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -378374,6 +378978,22 @@ extension on _StringsEn {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -396917,6 +397537,10 @@ extension on _StringsAr {
         return 'جديد';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -396939,6 +397563,8 @@ extension on _StringsAr {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -396986,6 +397612,10 @@ extension on _StringsAr {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'لا تزال الترجمات قيد التحميل على الكمبيوتر. حاول مرة أخرى بعد قليل';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'لا يمكن اختيار مسار الترجمة هذا';
       case 'video_remote_error_subtitles_changed':
@@ -397060,6 +397690,8 @@ extension on _StringsAr {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -397072,6 +397704,22 @@ extension on _StringsAr {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -415691,6 +416339,10 @@ extension on _StringsDe {
         return 'NEU';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -415713,6 +416365,8 @@ extension on _StringsDe {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -415760,6 +416414,10 @@ extension on _StringsDe {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Die Untertitel werden auf dem Computer noch geladen. Versuche es gleich noch einmal';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Diese Untertitelspur kann nicht ausgewählt werden';
       case 'video_remote_error_subtitles_changed':
@@ -415834,6 +416492,8 @@ extension on _StringsDe {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -415846,6 +416506,22 @@ extension on _StringsDe {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -434450,6 +435126,10 @@ extension on _StringsEs {
         return 'NUEVO';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -434472,6 +435152,8 @@ extension on _StringsEs {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -434519,6 +435201,10 @@ extension on _StringsEs {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Los subtítulos aún se están cargando en el ordenador. Inténtalo de nuevo en breve';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'No se puede seleccionar esa pista de subtítulos';
       case 'video_remote_error_subtitles_changed':
@@ -434593,6 +435279,8 @@ extension on _StringsEs {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -434605,6 +435293,22 @@ extension on _StringsEs {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -453225,6 +453929,10 @@ extension on _StringsFr {
         return 'NOUVEAU';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -453247,6 +453955,8 @@ extension on _StringsFr {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -453294,6 +454004,10 @@ extension on _StringsFr {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Les sous-titres sont encore en cours de chargement sur l\'ordinateur. Réessayez dans un instant';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Cette piste de sous-titres ne peut pas être sélectionnée';
       case 'video_remote_error_subtitles_changed':
@@ -453368,6 +454082,8 @@ extension on _StringsFr {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -453380,6 +454096,22 @@ extension on _StringsFr {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -471948,6 +472680,10 @@ extension on _StringsId {
         return 'BARU';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -471970,6 +472706,8 @@ extension on _StringsId {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -472017,6 +472755,10 @@ extension on _StringsId {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Subtitel masih dimuat di komputer. Coba lagi sebentar lagi';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Trek subtitel itu tidak dapat dipilih';
       case 'video_remote_error_subtitles_changed':
@@ -472091,6 +472833,8 @@ extension on _StringsId {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -472103,6 +472847,22 @@ extension on _StringsId {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -490701,6 +491461,10 @@ extension on _StringsIt {
         return 'NUOVO';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -490723,6 +491487,8 @@ extension on _StringsIt {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -490770,6 +491536,10 @@ extension on _StringsIt {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'I sottotitoli sono ancora in caricamento sul computer. Riprova tra poco';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Impossibile selezionare quella traccia di sottotitoli';
       case 'video_remote_error_subtitles_changed':
@@ -490844,6 +491614,8 @@ extension on _StringsIt {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -490856,6 +491628,22 @@ extension on _StringsIt {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -509339,6 +510127,10 @@ extension on _StringsJa {
         return 'NEW';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -509361,6 +510153,8 @@ extension on _StringsJa {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -509408,6 +510202,10 @@ extension on _StringsJa {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'パソコンで字幕を読み込み中です。しばらくしてからもう一度お試しください';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'その字幕トラックは選択できません';
       case 'video_remote_error_subtitles_changed':
@@ -509482,6 +510280,8 @@ extension on _StringsJa {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -509494,6 +510294,22 @@ extension on _StringsJa {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -527971,6 +528787,10 @@ extension on _StringsKo {
         return 'NEW';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -527993,6 +528813,8 @@ extension on _StringsKo {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -528040,6 +528862,10 @@ extension on _StringsKo {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return '컴퓨터에서 아직 자막을 불러오는 중입니다. 잠시 후 다시 시도하세요';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return '해당 자막 트랙을 선택할 수 없습니다';
       case 'video_remote_error_subtitles_changed':
@@ -528114,6 +528940,8 @@ extension on _StringsKo {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -528126,6 +528954,22 @@ extension on _StringsKo {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -546709,6 +547553,10 @@ extension on _StringsNl {
         return 'NIEUW';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -546731,6 +547579,8 @@ extension on _StringsNl {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -546778,6 +547628,10 @@ extension on _StringsNl {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'De ondertitels worden nog geladen op de computer. Probeer het zo opnieuw';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Dat ondertitelspoor kan niet worden geselecteerd';
       case 'video_remote_error_subtitles_changed':
@@ -546852,6 +547706,8 @@ extension on _StringsNl {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -546864,6 +547720,22 @@ extension on _StringsNl {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -565454,6 +566326,10 @@ extension on _StringsPtBr {
         return 'NOVO';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -565476,6 +566352,8 @@ extension on _StringsPtBr {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -565523,6 +566401,10 @@ extension on _StringsPtBr {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'As legendas ainda estão carregando no computador. Tente novamente em instantes';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Essa faixa de legenda não pode ser selecionada';
       case 'video_remote_error_subtitles_changed':
@@ -565597,6 +566479,8 @@ extension on _StringsPtBr {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -565609,6 +566493,22 @@ extension on _StringsPtBr {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -584203,6 +585103,10 @@ extension on _StringsRu {
         return 'НОВОЕ';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -584225,6 +585129,8 @@ extension on _StringsRu {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -584272,6 +585178,10 @@ extension on _StringsRu {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Субтитры на компьютере ещё загружаются. Повторите попытку чуть позже';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Эту дорожку субтитров нельзя выбрать';
       case 'video_remote_error_subtitles_changed':
@@ -584346,6 +585256,8 @@ extension on _StringsRu {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -584358,6 +585270,22 @@ extension on _StringsRu {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -602909,6 +603837,10 @@ extension on _StringsTh {
         return 'ใหม่';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -602931,6 +603863,8 @@ extension on _StringsTh {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -602978,6 +603912,10 @@ extension on _StringsTh {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'คำบรรยายบนคอมพิวเตอร์ยังโหลดอยู่ โปรดลองอีกครั้งในอีกสักครู่';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'ไม่สามารถเลือกแทร็กคำบรรยายนั้นได้';
       case 'video_remote_error_subtitles_changed':
@@ -603052,6 +603990,8 @@ extension on _StringsTh {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -603064,6 +604004,22 @@ extension on _StringsTh {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -621641,6 +622597,10 @@ extension on _StringsTr {
         return 'YENİ';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -621663,6 +622623,8 @@ extension on _StringsTr {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -621710,6 +622672,10 @@ extension on _StringsTr {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Altyazılar bilgisayarda hâlâ yükleniyor. Birazdan tekrar deneyin';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Bu altyazı parçası seçilemez';
       case 'video_remote_error_subtitles_changed':
@@ -621784,6 +622750,8 @@ extension on _StringsTr {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -621796,6 +622764,22 @@ extension on _StringsTr {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -640362,6 +641346,10 @@ extension on _StringsVi {
         return 'MỚI';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -640384,6 +641372,8 @@ extension on _StringsVi {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -640431,6 +641421,10 @@ extension on _StringsVi {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return 'Phụ đề trên máy tính vẫn đang tải. Vui lòng thử lại sau giây lát';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return 'Không thể chọn bản phụ đề đó';
       case 'video_remote_error_subtitles_changed':
@@ -640505,6 +641499,8 @@ extension on _StringsVi {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -640517,6 +641513,22 @@ extension on _StringsVi {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':
@@ -658878,6 +659890,10 @@ extension on _StringsZhCn {
         return '新';
       case 'video_remote_all':
         return '全部视频';
+      case 'video_remote_close_video':
+        return '关闭视频';
+      case 'video_remote_close_video_confirm':
+        return '关闭电脑上正在播放的视频？播放进度会保存。';
       case 'video_remote_control_customize':
         return '自定义按钮';
       case 'video_remote_control_editor_hint':
@@ -658900,6 +659916,8 @@ extension on _StringsZhCn {
         return '主控制组';
       case 'video_remote_control_slot_secondary':
         return '更多按钮';
+      case 'video_remote_control_subtitle_search':
+        return '搜索在线字幕';
       case 'video_remote_control_subtitle_visibility':
         return '显示或隐藏字幕';
       case 'video_remote_control_unfavorite':
@@ -658947,6 +659965,10 @@ extension on _StringsZhCn {
         return '电脑忙，请稍后再试';
       case 'video_remote_error_subtitle_busy':
         return '电脑上的字幕还在加载，请稍后再试';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return '搜索结果已过期，请重新搜索';
+      case 'video_remote_error_subtitle_download_failed':
+        return '电脑下载这条字幕失败';
       case 'video_remote_error_subtitle_track_unavailable':
         return '这条字幕当前无法选择';
       case 'video_remote_error_subtitles_changed':
@@ -659021,6 +660043,8 @@ extension on _StringsZhCn {
         return '重新连接';
       case 'video_remote_sentence':
         return '例句';
+      case 'video_remote_subtitle_applied':
+        return '电脑已下载并应用字幕';
       case 'video_remote_subtitle_refetch':
         return '重新从服务端拉取字幕';
       case 'video_remote_subtitle_refetch_default':
@@ -659033,6 +660057,22 @@ extension on _StringsZhCn {
         return '选择要拉取的字幕';
       case 'video_remote_subtitle_refetched':
         return '已从服务端重新拉取字幕';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '下载 ${n} 次';
+      case 'video_remote_subtitle_search_empty':
+        return '没有找到字幕';
+      case 'video_remote_subtitle_search_episode':
+        return '集数';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => '第 ${n} 集';
+      case 'video_remote_subtitle_search_failed':
+        return '字幕来源没有响应，请在电脑上检查字幕来源与密钥';
+      case 'video_remote_subtitle_search_hint':
+        return '番名';
+      case 'video_remote_subtitle_search_no_query':
+        return '输入番名再搜索';
+      case 'video_remote_subtitle_search_no_source':
+        return '电脑上还没有可用的在线字幕来源';
       case 'video_remote_subtitles':
         return '字幕';
       case 'video_remote_title':
@@ -677429,6 +678469,10 @@ extension on _StringsZhHk {
         return '新';
       case 'video_remote_all':
         return 'All videos';
+      case 'video_remote_close_video':
+        return 'Close video';
+      case 'video_remote_close_video_confirm':
+        return 'Close the video playing on the computer? Its position is saved.';
       case 'video_remote_control_customize':
         return 'Customize buttons';
       case 'video_remote_control_editor_hint':
@@ -677451,6 +678495,8 @@ extension on _StringsZhHk {
         return 'Main controls';
       case 'video_remote_control_slot_secondary':
         return 'More buttons';
+      case 'video_remote_control_subtitle_search':
+        return 'Search subtitles online';
       case 'video_remote_control_subtitle_visibility':
         return 'Show or hide subtitles';
       case 'video_remote_control_unfavorite':
@@ -677498,6 +678544,10 @@ extension on _StringsZhHk {
         return 'The computer is busy; try again shortly';
       case 'video_remote_error_subtitle_busy':
         return '電腦上的字幕仍在載入，請稍後再試';
+      case 'video_remote_error_subtitle_candidate_missing':
+        return 'This search result expired, search again';
+      case 'video_remote_error_subtitle_download_failed':
+        return 'The computer could not download this subtitle';
       case 'video_remote_error_subtitle_track_unavailable':
         return '目前無法選擇這條字幕';
       case 'video_remote_error_subtitles_changed':
@@ -677572,6 +678622,8 @@ extension on _StringsZhHk {
         return 'Reconnect';
       case 'video_remote_sentence':
         return 'Sentence';
+      case 'video_remote_subtitle_applied':
+        return 'Subtitle downloaded and applied on the computer';
       case 'video_remote_subtitle_refetch':
         return 'Re-fetch subtitles from server';
       case 'video_remote_subtitle_refetch_default':
@@ -677584,6 +678636,22 @@ extension on _StringsZhHk {
         return 'Choose subtitles to fetch';
       case 'video_remote_subtitle_refetched':
         return 'Subtitles re-fetched from server';
+      case 'video_remote_subtitle_search_downloads':
+        return ({required Object n}) => '${n} downloads';
+      case 'video_remote_subtitle_search_empty':
+        return 'No subtitles found';
+      case 'video_remote_subtitle_search_episode':
+        return 'Episode';
+      case 'video_remote_subtitle_search_episode_n':
+        return ({required Object n}) => 'Ep. ${n}';
+      case 'video_remote_subtitle_search_failed':
+        return 'Subtitle sources did not respond. Check the sources and keys on the computer';
+      case 'video_remote_subtitle_search_hint':
+        return 'Title';
+      case 'video_remote_subtitle_search_no_query':
+        return 'Enter a title to search';
+      case 'video_remote_subtitle_search_no_source':
+        return 'No subtitle source is set up on the computer';
       case 'video_remote_subtitles':
         return 'Subtitles';
       case 'video_remote_title':

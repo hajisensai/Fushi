@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/media/video/video_resource_check.dart';
@@ -21,6 +23,10 @@ import 'package:material_ui/material_ui.dart';
 ///
 /// 一切「这次打不开」的判断（行不存在、文件缺失、迁移只读）都排在 closeActive 之前：
 /// 打不开就不能先把电脑上正在放的视频关掉。
+///
+/// 封面（选片清单的预览图）读库页同一份 `video_books.coverPath`；关闭视频
+/// （`closeVideo`）与打开走同一条队列和同一个 [ExternalMediaNavigation.closeActive]
+/// 退出流程，关不掉同样回 `host_busy`。
 VideoRemoteLibrary createVideoRemoteLibrary({
   required FushiDatabase Function() database,
   required GlobalKey<NavigatorState> navigatorKey,
@@ -38,7 +44,26 @@ VideoRemoteLibrary createVideoRemoteLibrary({
         bookUid: bookUid,
       ),
     ),
+    cover: (String bookUid) => readVideoRemoteLibraryCover(database(), bookUid),
+    close: () => ExternalMediaNavigation.instance.navigate(() async {
+      if (!await ExternalMediaNavigation.instance.closeActive()) {
+        throw const VideoRemoteException(409, 'host_busy');
+      }
+    }),
   );
+}
+
+/// 选片清单里 [bookUid] 的封面字节；没有封面 / 文件已不在 → null。
+Future<Uint8List?> readVideoRemoteLibraryCover(
+  FushiDatabase db,
+  String bookUid,
+) async {
+  final VideoBookRow? row = await VideoBookRepository(db).getByBookUid(bookUid);
+  final String? path = row?.coverPath;
+  if (path == null || path.isEmpty) return null;
+  final File file = File(path);
+  if (!await file.exists()) return null;
+  return file.readAsBytes();
 }
 
 /// 点播清单：库页同一份视频行（[VideoBookRepository.listForShelf]），最近播放在前，
@@ -64,6 +89,7 @@ Future<List<VideoRemoteLibraryItem>> listVideoRemoteLibrary(
             collectionNames[primary[MediaKind.video.compositeKey(row.bookUid)]],
         positionMs: row.lastPositionMs,
         lastPlayedAt: row.lastPlayedAt,
+        hasCover: row.coverPath?.isNotEmpty ?? false,
       ),
   ];
 }

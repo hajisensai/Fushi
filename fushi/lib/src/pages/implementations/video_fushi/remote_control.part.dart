@@ -150,6 +150,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       switchEpisode: _switchRemoteControlledEpisode,
       subtitleTracks: _remoteSubtitleOptions,
       selectSubtitleTrack: _selectRemoteSubtitleOption,
+      episodeCover: _remoteEpisodeCover,
+      searchSubtitles: _searchRemoteSubtitles,
+      downloadSubtitle: _downloadRemoteSubtitle,
     );
     _videoRemoteBinding = binding;
     appModel.videoRemoteHost.register(binding);
@@ -162,8 +165,86 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         index: i,
         title: _episodes[i].displayTitle ?? _episodes[i].title,
         current: i == _currentEpisode,
+        hasCover: _remoteEpisodeHasCover(_episodes[i]),
       ),
   ];
+
+  /// 这一集有没有可给手机预览的封面（与剧集面板同一份图源）。
+  bool _remoteEpisodeHasCover(_PlaylistEpisodeRef episode) =>
+      (episode.coverPath?.isNotEmpty ?? false) ||
+      ((episode.coverUrl?.isNotEmpty ?? false) && _episodeCoverFetcher != null);
+
+  /// 手机选集的封面字节：本地集读 `coverPath`，远端集经剧集面板同一个取图器拉
+  /// `coverUrl`；拿不到返回 null（手机显示占位）。
+  Future<Uint8List?> _remoteEpisodeCover(int index) async {
+    if (index < 0 || index >= _episodes.length) return null;
+    final _PlaylistEpisodeRef episode = _episodes[index];
+    final String? path = episode.coverPath;
+    if (path != null && path.isNotEmpty) {
+      final File file = File(path);
+      if (await file.exists()) return file.readAsBytes();
+    }
+    final String? url = episode.coverUrl;
+    final RemoteCoverFetcher? fetcher = _episodeCoverFetcher;
+    if (url == null || url.isEmpty || fetcher == null) return null;
+    try {
+      return await fetcher.fetchRemoteCover(url);
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage.remoteEpisodeCover',
+        error,
+      );
+      return null;
+    }
+  }
+
+  /// 手机「在线字幕」搜索：与字幕工作台同一份预填（番名 + 身份种子 + 集号 / 季号）
+  /// 与同一套来源。算不出番名且手机也没给搜索词时回 `no_query`，手机让用户自己输。
+  Future<VideoRemoteSubtitleSearchResult> _searchRemoteSubtitles({
+    String? query,
+    int? episode,
+  }) async {
+    final String? initial = _jimakuQuery() ?? query;
+    if (initial == null) {
+      return VideoRemoteSubtitleSearchResult(
+        query: '',
+        episode: episode,
+        candidates: const <VideoRemoteSubtitleCandidate>[],
+        error: 'no_query',
+      );
+    }
+    final SubtitleSearchSeed seed = await _buildJimakuSeed(initial);
+    final String seriesKey = initial.trim().toLowerCase();
+    return _videoRemoteSubtitleSearcher.search(
+      VideoRemoteSubtitleTarget(
+        initialQuery: initial,
+        seed: seed,
+        episode: _jimakuEpisodeNumber(),
+        season: _jimakuSeasonNumber(),
+        videoPath: _isRemote ? null : _currentVideoPath,
+        preferredLanguage:
+            appModel.jimakuPreferredLanguages[seriesKey] ??
+            appModel.jimakuDefaultLanguageOrNull,
+      ),
+      query: query,
+      episode: episode,
+    );
+  }
+
+  /// 手机选中一条在线字幕：电脑下载落盘后与字幕工作台「本集」下载同一个收尾
+  /// （[_applyDownloadedSubtitles]：登记进字幕轨列表并应用为主字幕）。
+  Future<void> _downloadRemoteSubtitle(String handle) async {
+    final VideoPlayerController? controller = _controller;
+    if (!mounted || controller == null) {
+      throw const VideoRemoteException(409, 'no_video');
+    }
+    final String path = await _videoRemoteSubtitleSearcher.download(
+      handle,
+      videoPath: _isRemote ? null : _currentVideoPath,
+    );
+    if (!mounted) throw const VideoRemoteException(409, 'no_video');
+    await _applyDownloadedSubtitles(controller, <String>[path]);
+  }
 
   /// 手机选集：与剧集列表点选同一入口（[_switchEpisode]，listSelect）。不等它
   /// 完成——本地换集是 pushReplacement 到新页，其 Future 要等新页退出才 settle，
