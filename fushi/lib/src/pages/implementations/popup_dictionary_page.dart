@@ -10,6 +10,7 @@ import 'package:fushi/src/lookup/ocr_block_sentence.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show resolveMineSentence;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -849,6 +850,15 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       isSessionOnScreen: () => _popup.isEntryOnScreen(entry),
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
+      // 用户建议 #fiwDIpFep7：应用外查词也能就地切配置 / 牌组，与 in-app 宿主同一判据
+      // （随制卡模块开关）。此前这里不出：Anki 设置存在 SharedPreferences，本进程
+      // （Android `:popup` 独立进程）读写的是自己那份缓存，在这里切了主 app 看不到、
+      // 主 app 改了这里也看不到。设置迁进 Drift、热复用路径按 prefs_version 失效
+      // Anki 派生状态之后，两边读写同一行。本窗口的结果恒来自本机（没有
+      // resourceSource），不需要 in-app 那条「远端结果不显示」的排除。
+      showMiningTargetSwitch: appModel.moduleVisibility.isEnabled(
+        ModuleId.cardCreation,
+      ),
     );
 
     // TODO-951 症状C：可见层满卡渲染（BUG-051）；隐藏层（常驻热槽 / 挂起冷层）交给共享

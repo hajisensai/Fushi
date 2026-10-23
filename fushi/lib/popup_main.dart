@@ -12,6 +12,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/profile/profile_view_model.dart'
+    show invalidateAnkiStateAfterPrefsChange;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
@@ -103,7 +105,12 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
               // 紧随其后投递新词的 setState——否则常驻热页收不到新词、didUpdateWidget 不触发，
               // 弹窗卡在旧词甚至配合 _isClosing 残留一并关不掉。记日志后带旧偏好缓存继续。
               try {
-                await appModel.refreshPrefCacheIfChanged();
+                // 偏好真变过（主 app 改了牌组 / Anki 后端 / 切了 Profile）：再丢掉
+                // 本进程里由 Anki 设置派生的 Riverpod 状态，下一个词才用新配置
+                // （fiwDIpFep7）。
+                if (await appModel.refreshPrefCacheIfChanged() && mounted) {
+                  invalidateAnkiStateAfterPrefsChange(ref);
+                }
               } on Object catch (e, stack) {
                 ErrorLogService.instance.log(
                   'popupMain.refreshPrefCacheIfChanged',

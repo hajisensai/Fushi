@@ -81,6 +81,7 @@ import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show ExtensionDictionaryFont, browserExtensionDictionaryFont;
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/anki/anki_settings_drift_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
@@ -3241,7 +3242,6 @@ class AppModel with ChangeNotifier {
       /// Prepare entities that may be repeatedly used at runtime.
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
-      await platformServices.init();
 
       debugPrint('[Fushi] init: directories (early, needed for DB)');
       // TODO-1260：这一步内部解析数据根（含对自定义数据根盘的 stat）。盘掉线时最易 hang，
@@ -3317,6 +3317,12 @@ class AppModel with ChangeNotifier {
         prefs: _prefsRepo!,
         nameLanguage: () => appLocale.toLanguageTag(),
       ));
+      // Anki 制卡设置的存储换成 Drift（并把 SharedPreferences 旧值一次性搬过来），
+      // 再做依赖它的后端选择（[PlatformServices.init] 读设置选 AnkiConnect / 同步
+      // 客户端）。两步都必须早于下面任何 loadSettings（ensureDefaultProfile 会快照
+      // Anki 设置），否则读到的是 SP 那份进程内旧缓存（反馈 fiwDIpFep7）。
+      await installDriftAnkiSettingsStore(() => _database);
+      await platformServices.init();
       final BaseAnkiRepository ankiRepo =
           platformServices.createAnkiRepository();
       final profileRepo = ProfileRepository(
@@ -3799,7 +3805,6 @@ class AppModel with ChangeNotifier {
       debugPrint('[Fushi-popup] init: PackageInfo + DeviceInfo');
       _packageInfo = await PackageInfo.fromPlatform();
       _mediaTrackingAppVersion = _packageInfo.version;
-      await platformServices.init();
 
       debugPrint('[Fushi-popup] init: directories');
       await _prepareRuntimeDirectories();
@@ -3812,6 +3817,10 @@ class AppModel with ChangeNotifier {
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
+      // 同主进程：Anki 设置改读 Drift（:popup 与悬浮词典是另外的进程 / engine，
+      // SP 缓存看不到主 app 的修改），之后才做读设置的后端选择。本进程绝不改 SP。
+      await installDriftAnkiSettingsStore(() => _database);
+      await platformServices.init();
       await installAppNetworkBindings();
       _applyStatDayResetHour();
       prefsRepo.addListener(notifyListeners);
@@ -3930,6 +3939,11 @@ class AppModel with ChangeNotifier {
       }
     }
     await themeNotifier.refreshFromDb();
+    // The Anki backend choice (AnkiConnect on mobile / sync client) is process
+    // state derived from the Anki settings row; re-derive it so a backend switch
+    // made in another process (main app ↔ :popup / floating dict) or by a profile
+    // switch takes effect here too (fiwDIpFep7).
+    await platformServices.restoreAnkiBackendSelection();
     // Shortcut bindings are profile-scoped: reload the live registry from the
     // (now-refreshed) source preference so a profile switch takes effect
     // immediately instead of only after an app restart.
@@ -3952,14 +3966,20 @@ class AppModel with ChangeNotifier {
   /// [PreferencesRepository.readPrefsVersionFromDb] row read replaces the
   /// previous unconditional full-table [refreshPrefCache] on every lookup; the
   /// expensive reload now happens only when something actually changed.
-  Future<void> refreshPrefCacheIfChanged() async {
+  ///
+  /// Returns whether a reload happened. Callers that hold Riverpod state derived
+  /// from preferences outside the pref cache (the Anki view model / repository
+  /// chain and the profile view model, which snapshot the Anki settings) must
+  /// invalidate it on `true` — see [invalidateAnkiStateAfterPrefsChange].
+  Future<bool> refreshPrefCacheIfChanged() async {
     final int dbVersion = await prefsRepo.readPrefsVersionFromDb();
-    if (dbVersion == _lastSeenPrefsVersion) return;
+    if (dbVersion == _lastSeenPrefsVersion) return false;
     await refreshPrefCache();
     // refreshPrefCache already advanced _lastSeenPrefsVersion from the reloaded
     // cache; align it to the value we just read so a concurrent writer between
     // the read and the reload can still be detected on the next call.
     _lastSeenPrefsVersion = dbVersion;
+    return true;
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────

@@ -135,6 +135,41 @@ mixin _FushiDbPrefsMedia
     });
   }
 
+  /// Inserts [key] only when no row exists yet; returns whether it wrote.
+  ///
+  /// One-shot migrations that seed a preference from an external source (e.g.
+  /// the Anki settings moving out of SharedPreferences) run in every entry
+  /// point, including the separate Android `:popup` process, so two processes
+  /// can race on first launch. A read-then-[setPref] pair would let the loser
+  /// overwrite the winner's value (and, in WAL, a deferred read transaction
+  /// that later upgrades to a write fails with a stale snapshot). The insert is
+  /// therefore a single `INSERT OR IGNORE` — the transaction's FIRST statement
+  /// is the write, so it takes the write lock (honouring busy_timeout) before
+  /// looking at anything, and the existence check is the primary-key conflict
+  /// itself. The prefs-version bump rides the same transaction only when a row
+  /// actually landed, so other processes reload exactly when something changed.
+  Future<bool> insertPrefIfAbsent(String key, String value) {
+    return transaction(() async {
+      final int inserted = await customUpdate(
+        'INSERT OR IGNORE INTO preferences (key, value, updated_at) '
+        'VALUES (?, ?, ?)',
+        variables: <Variable<Object>>[
+          Variable<String>(key),
+          Variable<String>(value),
+          // BUG-1502: a local write stamps `now`, same as [setPref].
+          Variable<int>(DateTime.now().millisecondsSinceEpoch),
+        ],
+        updates: <TableInfo<Table, Object?>>{preferences},
+        updateKind: UpdateKind.insert,
+      );
+      if (inserted != 1) return false;
+      if (key != FushiDatabase.prefsVersionKey) {
+        await _bumpPrefsVersion();
+      }
+      return true;
+    });
+  }
+
   /// Atomically increment the persisted prefs-version directly in the DB so the
   /// next cross-process read observes a strictly larger value. Encoded as a
   /// PrefCodec int (`i:N`) so it round-trips identically to every other int
@@ -142,8 +177,9 @@ mixin _FushiDbPrefsMedia
   /// [setPref]) to avoid re-entering the recursion guard above.
   ///
   /// BUG-906 (A): this read-modify-write is NOT atomic on its own. It MUST be
-  /// called from within an enclosing transaction — which its only two callers
-  /// ([setPref] and [compareAndSetPref]) now both provide — so that drift's
+  /// called from within an enclosing transaction — which every caller
+  /// ([setPref] / [setPrefs] / [compareAndSetPref] / [setPrefIfNewer] /
+  /// [insertPrefIfAbsent]) provides — so that drift's
   /// single-writer transaction lock serializes the read+write against every
   /// other pref write. Called bare (outside a transaction) it can lose
   /// increments under concurrency; do not add such a caller.

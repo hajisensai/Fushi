@@ -15,6 +15,8 @@ import 'package:fushi/src/media/video/video_online_services_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kAnkiSettingsPrefKey;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
@@ -137,6 +139,11 @@ class ProfileKeys {
     // into a profile (and restoring/wiping it on profile switch) would make
     // the counter non-monotonic and break change detection.
     PreferencesRepository.prefsVersionKey,
+    // Anki 制卡设置整份 JSON（含 AnkiConnect apiKey）：牌组 / 笔记类型 / 映射等
+    // 字段已由 [ankiSettingsToMap] 按字段随 Profile 走；整行进快照的话，切到迁 Drift
+    // 之前建的老 Profile 会因「快照里没有这个键」把它删掉，Anki 设置整份清空。
+    // （它同时在设备本地名单里，[isExcludedPref] 第一道判定已拦；这里点名防名单漂移。）
+    kAnkiSettingsPrefKey,
   };
 
   static const List<String> _excludedPrefPrefixes = [

@@ -22,6 +22,13 @@ library;
 /// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
 const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 
+/// Anki 制卡设置（整份 `AnkiSettings` JSON，String）。原先存在 SharedPreferences
+/// `fushi_anki_settings`，迁进 Drift 是为了让 `:popup` 进程 / 悬浮词典与主 app
+/// 读到同一份（见 `anki_settings_drift_store.dart`）。含 AnkiConnect apiKey 明文 →
+/// 凭据 + 设备本地：不进备份 / 同步 / Profile 快照（牌组、映射等字段由
+/// `ProfileKeys.ankiSettingsToMap` 按字段随 Profile 走，与迁移前一致）。
+const String kAnkiSettingsPrefKey = 'anki_settings';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -58,6 +65,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'ai_web_knowledge_disabled_sites',
   // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
+  // String（AnkiSettings JSON）：见 [kAnkiSettingsPrefKey]。凭据 + 设备本地。
+  kAnkiSettingsPrefKey,
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',
@@ -733,6 +742,8 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 const Set<String> kCredentialPreferenceKeys = <String>{
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // AnkiSettings JSON 里的 AnkiConnect apiKey（明文）。
+  kAnkiSettingsPrefKey,
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
   'discovery_alist_sites',
   // 每条 Audiobookshelf 服务器记录里带 base64 的 access / refresh token。

@@ -11,6 +11,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_native.dart';
+import 'package:fushi/src/profile/profile_view_model.dart'
+    show invalidateAnkiStateAfterPrefsChange;
 import 'package:fushi/utils.dart';
 
 class FloatingDictPage extends ConsumerStatefulWidget {
@@ -68,12 +70,31 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     }
   }
 
+  /// 悬浮词典是同进程的另一个 engine、自有一份 AppModel 偏好缓存：常驻期间主 app
+  /// 改了偏好（牌组 / Anki 后端 / Profile 等）它看不到。与 `:popup` 的热复用路径同
+  /// 一口径——单行读跨进程 prefs_version，变了才全量重载并丢掉 Anki 派生状态
+  /// （fiwDIpFep7）。DB 读失败不拦查词 / 制卡：记日志后带旧缓存继续（同 TODO-1336）。
+  Future<void> _syncPrefsChangedElsewhere() async {
+    try {
+      if (await appModel.refreshPrefCacheIfChanged() && mounted) {
+        invalidateAnkiStateAfterPrefsChange(ref);
+      }
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log(
+        'FloatingDict.refreshPrefCacheIfChanged',
+        e,
+        stack,
+      );
+    }
+  }
+
   Future<void> _doSearch(String term) async {
     if (term.trim().isEmpty) return;
     final query = term.trim();
     if (query == _lastSearch && _result != null) return;
     _lastSearch = query;
     setState(() => _isSearching = true);
+    await _syncPrefsChangedElsewhere();
 
     try {
       final result = await appModel.searchDictionary(
@@ -96,6 +117,8 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
   }
 
   Future<void> _exportToAnki(Map<String, String> fields) async {
+    await _syncPrefsChangedElsewhere();
+    if (!mounted) return;
     final repo = ref.read(ankiRepositoryProvider);
     const miningContext = AnkiMiningContext(sentence: '');
     final outcome = await repo.mineEntry(
