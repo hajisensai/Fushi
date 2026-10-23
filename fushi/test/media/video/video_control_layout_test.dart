@@ -1159,6 +1159,48 @@ void main() {
     });
   });
 
+  // 反馈 X3ozgOAx8v：「识别当前画面」按钮默认不在任何布局里，用户自行加。
+  group('ocrFrame control item', () {
+    test('round-trips its storage id', () {
+      expect(VideoControlItem.ocrFrame.storageValue, 'ocrFrame');
+      expect(
+          VideoControlItem.fromStorage('ocrFrame'), VideoControlItem.ocrFrame);
+    });
+
+    test('is offered in the editor palette', () {
+      expect(VideoControlItem.customizableItems,
+          contains(VideoControlItem.ocrFrame));
+    });
+
+    test('factory, current and old saved layouts all leave it off the player',
+        () {
+      expect(VideoControlLayout.defaults.isOnPlayer(VideoControlItem.ocrFrame),
+          isFalse);
+      final VideoControlLayout fresh = VideoControlLayout.decode('');
+      expect(fresh.isOnPlayer(VideoControlItem.ocrFrame), isFalse);
+      expect(fresh.removedItems, contains(VideoControlItem.ocrFrame));
+      final VideoControlLayout decoded = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 3,
+          'slots': <String, List<String>>{
+            'bottomCenter': <String>['playPause'],
+            'bottomRight': <String>['volume', 'fullscreen'],
+          },
+        }),
+      );
+      expect(decoded.isOnPlayer(VideoControlItem.ocrFrame), isFalse);
+    });
+
+    test('can be dragged onto the player and survives encode/decode', () {
+      final VideoControlLayout placed = VideoControlLayout.currentChrome
+          .moveItem(VideoControlItem.ocrFrame, VideoControlSlot.bottomRight);
+      final VideoControlLayout reloaded =
+          VideoControlLayout.decode(placed.encode());
+      expect(reloaded.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.ocrFrame));
+    });
+  });
+
   // 2026-10-06 用户请求：弹幕开关是可选控件——默认不出现，但能拖进任意可编辑槽位。
   group('danmaku toggle control item', () {
     test('round-trips its storage id', () {

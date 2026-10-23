@@ -126,6 +126,12 @@ keep-open=yes
         expect(resolveAudioSpdif(passthrough: true, outputVolume: 0.0), '');
       });
 
+      // W-qZRr3lwK：音量放大（> 100%）同样是按采样乘增益，压缩码流放大不了。
+      test('boosted volume above 100 falls back to local decode', () {
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 150.0), '');
+        expect(resolveAudioSpdif(passthrough: true, outputVolume: 200.0), '');
+      });
+
       test('buildMpvProperties applies the same rule', () {
         final VideoMpvConfig on =
             VideoMpvConfig.defaults.copyWith(audioPassthrough: true);
@@ -441,6 +447,37 @@ keep-open=yes
         isApple: true,
       );
       expect(m['target-trc'], 'gamma2.2');
+    });
+  });
+
+  // W-qZRr3lwK：音量上限 100 / 150 / 200（mpv `volume-max`）。
+  group('volumeMax (W-qZRr3lwK)', () {
+    test('defaults to 100 and is sent to mpv as volume-max', () {
+      expect(VideoMpvConfig.defaults.volumeMax, 100);
+      expect(
+        buildMpvProperties(VideoMpvConfig.defaults)['volume-max'],
+        '100',
+      );
+      expect(
+        buildMpvProperties(
+          VideoMpvConfig.defaults.copyWith(volumeMax: 200),
+        )['volume-max'],
+        '200',
+      );
+    });
+
+    test('round-trips and rejects values outside the whitelist', () {
+      for (final int max in kVideoVolumeMaxValues) {
+        final VideoMpvConfig decoded = VideoMpvConfig.decode(
+          VideoMpvConfig.encode(
+            VideoMpvConfig.defaults.copyWith(volumeMax: max),
+          ),
+        );
+        expect(decoded.volumeMax, max);
+      }
+      expect(VideoMpvConfig.decode('{"volumeMax": 1000}').volumeMax, 100);
+      expect(VideoMpvConfig.decode('{"volumeMax": "200"}').volumeMax, 100);
+      expect(VideoMpvConfig.decode('{"hwdec": "no"}').volumeMax, 100);
     });
   });
 

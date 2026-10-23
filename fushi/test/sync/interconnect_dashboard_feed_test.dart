@@ -325,6 +325,232 @@ void main() {
       expect(game.isVideo, isFalse);
     });
 
+    group('反馈 GonyeE75Kd：远端合集在「继续」区一合集一卡', () {
+      const RemoteCollectionMembership kon = RemoteCollectionMembership(
+        collectionName: 'K-ON! 播放列表',
+        collectionType: 'playlist',
+        sortIndex: 0,
+      );
+      RemoteCollectionMembership at(RemoteCollectionMembership m, int i) =>
+          RemoteCollectionMembership(
+            collectionName: m.collectionName,
+            collectionType: m.collectionType,
+            sortIndex: i,
+          );
+      const int minute = 60000;
+
+      test('一个播放列表看过多集只出一张卡，落在最近看的那集', () {
+        // 实报形态：host 上播放列表每看过一集就一条 positionMs > 0 的行（播放
+        // 不再自动打勾，BUG-3491），旧实现逐行出卡 → N 张同名卡。
+        final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+          localBookKeys: const <String>{},
+          localVideoUids: const <String>{},
+          remoteBooks: const <RemoteBookInfo>[],
+          remoteVideos: <RemoteVideoInfo>[
+            for (int i = 0; i < 4; i++)
+              RemoteVideoInfo(
+                id: 'video/kon-$i',
+                title: 'ep$i',
+                positionMs: 5 * minute,
+                positionUpdatedAtMs: 100 + i,
+                durationMs: 24 * minute,
+                collection: at(kon, i),
+              ),
+          ],
+        );
+        expect(out, hasLength(1), reason: '同一合集在「继续」区最多一张卡');
+        expect(out.single.id, 'video/kon-3', reason: '锚点 = 最近播放的那集');
+        expect(out.single.collectionName, 'K-ON! 播放列表');
+        expect(out.single.recentMs, 103);
+      });
+
+      test('最近一集看到片尾 → 推进到下一集（Next-Up，与本地合集同判据）', () {
+        final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+          localBookKeys: const <String>{},
+          localVideoUids: const <String>{},
+          remoteBooks: const <RemoteBookInfo>[],
+          remoteVideos: <RemoteVideoInfo>[
+            RemoteVideoInfo(
+              id: 'video/kon-0',
+              title: 'ep0',
+              positionMs: 24 * minute - 1000,
+              positionUpdatedAtMs: 50,
+              durationMs: 24 * minute,
+              collection: at(kon, 0),
+            ),
+            RemoteVideoInfo(
+              id: 'video/kon-1',
+              title: 'ep1',
+              durationMs: 24 * minute,
+              collection: at(kon, 1),
+            ),
+            RemoteVideoInfo(
+              id: 'video/kon-2',
+              title: 'ep2',
+              durationMs: 24 * minute,
+              collection: at(kon, 2),
+            ),
+          ],
+        );
+        expect(out.map((RemoteContinueCandidate c) => c.id),
+            <String>['video/kon-1']);
+        expect(out.single.recentMs, 50, reason: '单元活跃时刻含刚看完的那集');
+      });
+
+      test('整组看完 / 整组没开始过都不出卡', () {
+        final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+          localBookKeys: const <String>{},
+          localVideoUids: const <String>{},
+          remoteBooks: const <RemoteBookInfo>[],
+          remoteVideos: <RemoteVideoInfo>[
+            for (int i = 0; i < 3; i++)
+              RemoteVideoInfo(
+                id: 'video/done-$i',
+                title: 'd$i',
+                positionMs: minute,
+                positionUpdatedAtMs: 10 + i,
+                completedAt: 10 + i,
+                collection: RemoteCollectionMembership(
+                  collectionName: 'Done',
+                  collectionType: 'collection',
+                  sortIndex: i,
+                ),
+              ),
+            for (int i = 0; i < 3; i++)
+              RemoteVideoInfo(
+                id: 'video/fresh-$i',
+                title: 'f$i',
+                collection: RemoteCollectionMembership(
+                  collectionName: 'Fresh',
+                  collectionType: 'collection',
+                  sortIndex: i,
+                ),
+              ),
+          ],
+        );
+        expect(out, isEmpty);
+      });
+
+      test('不同合集各一张；看完的散卡不进（与本地散卡同口径）', () {
+        final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+          localBookKeys: const <String>{},
+          localVideoUids: const <String>{},
+          remoteBooks: const <RemoteBookInfo>[],
+          remoteVideos: <RemoteVideoInfo>[
+            RemoteVideoInfo(
+              id: 'video/kon-0',
+              title: 'ep0',
+              positionMs: minute,
+              positionUpdatedAtMs: 1,
+              collection: at(kon, 0),
+            ),
+            const RemoteVideoInfo(
+              id: 'video/other-0',
+              title: 'o0',
+              positionMs: minute,
+              positionUpdatedAtMs: 2,
+              collection: RemoteCollectionMembership(
+                collectionName: 'Other',
+                collectionType: 'collection',
+                sortIndex: 0,
+              ),
+            ),
+            const RemoteVideoInfo(
+              id: 'video/loose-watched',
+              title: 'lw',
+              positionMs: minute,
+              completedAt: 3,
+            ),
+            const RemoteVideoInfo(
+              id: 'video/loose',
+              title: 'l',
+              positionMs: minute,
+            ),
+          ],
+        );
+        expect(
+          out.map((RemoteContinueCandidate c) => c.id).toSet(),
+          <String>{'video/kon-0', 'video/other-0', 'video/loose'},
+        );
+      });
+
+      test('书合集同样一合集一卡：最近读的卷读完 → 续读下一卷', () {
+        const RemoteCollectionMembership series = RemoteCollectionMembership(
+          collectionName: 'Series',
+          collectionType: 'collection',
+          sortIndex: 0,
+        );
+        final List<RemoteContinueCandidate> out = remoteContinueCandidates(
+          localBookKeys: const <String>{},
+          localVideoUids: const <String>{},
+          remoteBooks: <RemoteBookInfo>[
+            const RemoteBookInfo(
+              title: 'v1',
+              bookKey: 'v1',
+              hasContent: true,
+              progressPercent: 100,
+              progressUpdatedAtMs: 20,
+              collection: series,
+            ),
+            RemoteBookInfo(
+              title: 'v2',
+              bookKey: 'v2',
+              hasContent: true,
+              progressPercent: 30,
+              progressUpdatedAtMs: 10,
+              collection: at(series, 1),
+            ),
+            RemoteBookInfo(
+              title: 'v3',
+              bookKey: 'v3',
+              hasContent: true,
+              progressPercent: 5,
+              progressUpdatedAtMs: 5,
+              collection: at(series, 2),
+            ),
+          ],
+          remoteVideos: const <RemoteVideoInfo>[],
+        );
+        expect(out.map((RemoteContinueCandidate c) => c.id), <String>['v2'],
+            reason: '锚点 = 最近读的卷 1（已读完）→ 推进到 v2；v3 不另出卡');
+        expect(out.single.percent, 30);
+        expect(out.single.recentMs, 20);
+      });
+
+      test('本地已出同名合集卡时去掉远端合集单元；散卡与异侧同名不受影响', () {
+        const List<RemoteContinueCandidate> remote = <RemoteContinueCandidate>[
+          RemoteContinueCandidate(
+            kind: MediaKind.video,
+            id: 'video/kon-5',
+            title: 'ep5',
+            recentMs: 1,
+            collectionName: 'K-ON! 播放列表',
+          ),
+          RemoteContinueCandidate(
+            kind: MediaKind.epub,
+            id: 'kon-book',
+            title: 'book',
+            recentMs: 1,
+            collectionName: 'K-ON! 播放列表',
+          ),
+          RemoteContinueCandidate(
+            kind: MediaKind.video,
+            id: 'video/loose',
+            title: 'loose',
+            recentMs: 1,
+          ),
+        ];
+        final List<RemoteContinueCandidate> kept =
+            withoutLocallyCoveredCollections(
+          remote,
+          localVideoCollectionNames: <String>{'K-ON! 播放列表'},
+          localBookCollectionNames: const <String>{},
+        );
+        expect(kept.map((RemoteContinueCandidate c) => c.id),
+            <String>['kon-book', 'video/loose']);
+      });
+    });
+
     test('mergeActivityEvents：按时刻倒序混排并截断', () {
       final List<ActivityEventRow> merged = mergeActivityEvents(
         <ActivityEventRow>[_row(title: 'a', timestampMs: 100)],

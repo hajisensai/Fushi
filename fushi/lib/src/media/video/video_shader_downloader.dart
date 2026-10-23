@@ -286,12 +286,7 @@ const Anime4kPreset kAnime4kMobileRestoreMSoftPreset = Anime4kPreset(
 /// - **gh 加速代理前缀**：套在 `raw.githubusercontent.com` 直链前的反代（BUG-319 名单）。
 ///
 /// 顺序：jsDelivr 多节点（最稳、中国可达）→ 代理前缀 → raw 官方直连兜底。
-const List<String> _kJsDelivrHosts = <String>[
-  'cdn.jsdelivr.net',
-  'fastly.jsdelivr.net',
-  'gcore.jsdelivr.net',
-  'testingcf.jsdelivr.net',
-];
+const List<String> _kJsDelivrHosts = kJsDelivrHosts;
 
 /// 为仓库相对路径 [repoPath] 生成按优先级排序的下载 URL 列表（多镜像回退）。纯函数。
 ///
@@ -306,14 +301,7 @@ List<String> anime4kMirrorUrls(
   String ref = 'master',
 }) {
   // jsDelivr / 代理 / raw 都不需要对路径里的 `+`（如 Upscale+Denoise 目录）做转义。
-  final String rawUrl =
-      'https://raw.githubusercontent.com/$repo/$ref/$repoPath';
-  return <String>[
-    for (final String host in _kJsDelivrHosts)
-      'https://$host/gh/$repo@$ref/$repoPath',
-    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
-    rawUrl,
-  ];
+  return gitHubRepoFileUrls(repoPath, repo: repo, ref: ref);
 }
 
 /// **纯函数**：把用户粘贴的着色器链接规整成「按优先级尝试的 URL 列表」。

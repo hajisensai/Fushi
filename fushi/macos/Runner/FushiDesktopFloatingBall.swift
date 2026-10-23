@@ -693,6 +693,8 @@ final class DesktopFloatingBallController: NSObject {
   private var actions: [String] = []
   private var labels: [String: String] = [:]
   private var showsActionLabels = true
+  /// 菜单里有没有「打开 Fushi」（Dart 应用外按钮组里的开关；旧调用缺字段 = 有）。
+  private var showsOpenApp = true
   private var icons: [String: NSImage] = [:]
   private var ballImage: CGImage?
   private var surface = DesktopFloatingBallColor(argb: 0xFFFF_FFFF)
@@ -803,6 +805,7 @@ final class DesktopFloatingBallController: NSObject {
     actions = (args["actions"] as? [String]) ?? []
     labels = (args["labels"] as? [String: String]) ?? [:]
     showsActionLabels = (args["showLabels"] as? Bool) ?? true
+    showsOpenApp = (args["showOpenApp"] as? Bool) ?? true
     var decodedIcons: [String: NSImage] = [:]
     if let raw = args["iconImages"] as? [String: Any] {
       for (id, value) in raw {
@@ -1014,8 +1017,10 @@ final class DesktopFloatingBallController: NSObject {
   }
 
   private var menuIds: [String] {
-    // 固定的关闭 / 打开 Fushi 在最上（离球最远，防误触），用户勾选的动作在下。
-    return [kFloatingBallActionClose, kFloatingBallActionOpenApp] + actions
+    // 固定的关闭 / （没被关掉的）打开 Fushi 在最上（离球最远，防误触），用户勾选的动作在下。
+    return [kFloatingBallActionClose]
+      + (showsOpenApp ? [kFloatingBallActionOpenApp] : [])
+      + actions
   }
 
   private func geometry(on screen: NSScreen?, dockLeft: Bool) -> DesktopFloatingBallGeometry {

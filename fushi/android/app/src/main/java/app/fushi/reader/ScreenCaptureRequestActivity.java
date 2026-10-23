@@ -60,6 +60,18 @@ public class ScreenCaptureRequestActivity extends Activity {
             @Nullable Map<String, String> labels) {
         if (!Settings.canDrawOverlays(context)) return false;
         if (flowActive) return false;
+        // 保持着截屏会话（「保持截屏会话」开着、之前同意过且系统没停掉）：直接取帧，不弹
+        // 确认框、不从后台起本 Activity——也就不会被 ROM 的后台弹窗管控拦下。
+        if (ScreenOcrService.hasKeptSession()) {
+            flowActive = true;
+            if (ScreenOcrService.captureWithKeptSession(language, labels)) {
+                // 挂上取帧之后再藏球：藏球那次合成必然再出一帧，取到的是不带球的画面。
+                FloatingBallService.setCaptureHidden(true);
+                return true;
+            }
+            // 会话复用失败（已被收掉）：照常走确认框。
+            flowActive = false;
+        }
         // 上一次发起交给了系统、宿主 Activity 却一直没起来：被 ROM 静默丢了（BUG-3603，
         // vivo「后台弹出界面」没开时后台 startActivity 无声无息地失败）。这次照发，但先
         // 告诉用户原因——否则在同一台机器上每点一次都是「没反应」。

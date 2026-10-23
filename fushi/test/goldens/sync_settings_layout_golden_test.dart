@@ -25,7 +25,7 @@ import '../helpers/test_platform_services.dart';
 /// 同步/互联设置页排版的 golden 基线（C 系列重组的改前/改后对照）。
 ///
 /// 两页各出宽窄两档：900 宽 ≈ 桌面主从布局的详情 pane，400 宽 ≈ 手机单列。
-/// 高度按档给足（宽 2400、窄 3400），让整页内容一次落在图里（详情容器是非懒
+/// 高度按档给足（宽 2400、窄 3800），让整页内容一次落在图里（详情容器是非懒
 /// 加载的 SingleChildScrollView，见 BUG-037），改前/改后的总长度一眼可比。
 /// 页面长高到装不下时 [_expectWholePageVisible] 直接报红，而不是让 golden
 /// 悄悄只截到上半页（BUG-3494：窄档曾被截掉约 650px 无人察觉）。
@@ -186,7 +186,7 @@ void main() {
   for (final ({String name, double width, double height}) size
       in <({String name, double width, double height})>[
         (name: 'wide', width: 900, height: 2400),
-        (name: 'narrow', width: 400, height: 3400),
+        (name: 'narrow', width: 400, height: 3800),
       ]) {
     testWidgets('sync & backup page · ${size.name}', (
       WidgetTester tester,

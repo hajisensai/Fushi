@@ -42,6 +42,11 @@ object ScreenOcrLayout {
         @JvmField val vertical: Boolean,
         @JvmField val blockText: String = text,
         @JvmField val blockOffset: Int = 0,
+        /** 所属 text block 的包围盒（屏幕物理像素），截屏识字制卡带图按它裁卡图。 */
+        @JvmField val blockLeft: Int = left,
+        @JvmField val blockTop: Int = top,
+        @JvmField val blockRight: Int = right,
+        @JvmField val blockBottom: Int = bottom,
     ) {
         fun contains(x: Int, y: Int, slop: Int): Boolean =
             x >= left - slop && x <= right + slop && y >= top - slop && y <= bottom + slop

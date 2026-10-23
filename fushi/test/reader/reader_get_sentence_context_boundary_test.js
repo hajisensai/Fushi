@@ -63,6 +63,7 @@ function makeElement(tag, opts) {
     nodeType: Node.ELEMENT_NODE,
     tagName: tag.toUpperCase(),
     className: opts.className || '',
+    attrs: opts.attrs || {},
     parentElement: null,
     childNodes: [],
     // Real DOM elements expose textContent (concatenation of descendant text);
@@ -82,7 +83,11 @@ function makeElement(tag, opts) {
       let cur = this;
       while (cur) {
         for (const part of parts) {
-          if (part.startsWith('.')) {
+          if (part.startsWith('[') && part.endsWith(']')) {
+            if (Object.prototype.hasOwnProperty.call(cur.attrs || {}, part.slice(1, -1))) {
+              return cur;
+            }
+          } else if (part.startsWith('.')) {
             const cls = part.slice(1);
             if ((cur.className || '').split(/\s+/).includes(cls)) return cur;
           } else if (
@@ -505,6 +510,70 @@ let passed = 0;
     0,
     'CASE12: sentenceOffset points at the looked-up word in the full sentence',
   );
+  passed++;
+})();
+
+// Builds the DOM `CuesToEpub` emits for a subtitle-synthesised book: one <p>
+// per run of cues (gap < 2 s), one [data-cue-id] span per cue, with the
+// indentation whitespace text nodes between spans that the generator writes.
+function cueParagraph(texts) {
+  const p = makeElement('p');
+  const nodes = [];
+  texts.forEach(function(text, i) {
+    makeText('\n    ', p);
+    const span = makeElement('span', { attrs: { 'data-cue-id': String(i) } });
+    span.parentElement = p;
+    p.childNodes.push(span);
+    nodes.push(makeText(text, span));
+  });
+  makeText('\n  ', p);
+  return { p: p, nodes: nodes };
+}
+
+// CASE 13 (BUG feedback fvrYPia3kW): an ASR transcript with NO punctuation at
+// all. BEFORE: the walk only stops at delimiters / the <p> edge, so the card
+// sentence was the whole paragraph (every cue). AFTER: the boundary between two
+// unpunctuated cues is a sentence boundary -> the sentence is exactly the cue.
+(function case13_unpunctuated_asr_cues_split_on_cue_boundary() {
+  const built = cueParagraph([
+    'きょうはいいてんきですね',
+    'さんぽにいきましょうか',
+    'そうしましょう',
+  ]);
+  const document = buildDocument(built.p);
+  const sel = loadFushiSelection(document);
+  const ctx = sel.getSentenceContext(built.nodes[1], 3);
+  record('case13_unpunctuated_cues', {
+    sentence: ctx.sentence,
+    offset: ctx.sentenceOffset,
+  });
+  assert.strictEqual(
+    ctx.sentence,
+    'さんぽにいきましょうか',
+    'CASE13: an unpunctuated transcript must not turn the whole paragraph into one sentence',
+  );
+  assert.strictEqual(ctx.sentenceOffset, 3, 'CASE13 offset is relative to the cue');
+  assert.strictEqual(ctx.sStartNode, built.nodes[1], 'CASE13 starts at the cue');
+  assert.strictEqual(ctx.sEndNode, built.nodes[1], 'CASE13 ends at the cue');
+  passed++;
+})();
+
+// CASE 14: punctuated transcript whose sentence was split across two cues by a
+// pause ("今日は天気が" | "いいですね。"). One side of that boundary has a
+// delimiter, so it is NOT a sentence boundary: the sentence still spans both
+// cues and stops at the previous cue's 。 -- punctuated books are unchanged.
+(function case14_punctuated_sentence_across_cues_unchanged() {
+  const built = cueParagraph(['前の文です。', '今日は天気が', 'いいですね。', '次の文。']);
+  const document = buildDocument(built.p);
+  const sel = loadFushiSelection(document);
+  const fromFirstHalf = sel.getSentenceContext(built.nodes[1], 1);
+  const fromSecondHalf = sel.getSentenceContext(built.nodes[2], 2);
+  record('case14_split_sentence', {
+    first: fromFirstHalf.sentence,
+    second: fromSecondHalf.sentence,
+  });
+  assert.strictEqual(fromFirstHalf.sentence, '今日は天気がいいですね。');
+  assert.strictEqual(fromSecondHalf.sentence, '今日は天気がいいですね。');
   passed++;
 })();
 

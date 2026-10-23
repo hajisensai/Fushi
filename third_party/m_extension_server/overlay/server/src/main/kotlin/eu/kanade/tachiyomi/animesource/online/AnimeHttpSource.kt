@@ -1,12 +1,17 @@
 package eu.kanade.tachiyomi.animesource.online
 
+import android.graphics.Bitmap
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.Hoster.Companion.toHosterList
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SAnimeEpisodeUpdate
+import eu.kanade.tachiyomi.animesource.model.SAnimeSeasonUpdate
 import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.ThumbnailInfo
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.NetworkHelper
@@ -24,17 +29,23 @@ import uy.kohesive.injekt.injectLazy
 import java.net.URI
 import java.net.URISyntaxException
 import java.security.MessageDigest
+import kotlin.coroutines.Continuation
 
 /**
  * A simple implementation for sources from a website.
  *
- * Fushi host ABI: the union of extensions-lib 14 and extensions-lib 16 (as compiled
- * against by the yuzono / Anikku ecosystem and the Aniyomi main line). Every member
- * that one generation declares abstract and the other never heard of is `open` with
- * a throwing default here, otherwise the JVM would refuse to instantiate the other
- * generation's extension classes. The hoster API is the single entry point the host
- * drives: [getHosterList] detects at runtime which generation a source implements
- * and routes the legacy video list through a [Hoster.NO_HOSTER_LIST] hoster.
+ * Fushi host ABI: the union of extensions-lib 14, 16 and 17 (as compiled against by
+ * the yuzono / Anikku ecosystem and the Aniyomi main line). Every member that one
+ * generation declares abstract and another does not (lib 17 turned all request /
+ * parse helpers into `open`) is `open` with a throwing default here, otherwise a
+ * lib-17 extension that implements only the suspend API would hit
+ * `AbstractMethodError` in the host's defaults. The hoster API is the single entry
+ * point the host drives: [getHosterList] detects at runtime which generation a
+ * source implements and routes the legacy video list through a
+ * [Hoster.NO_HOSTER_LIST] hoster. The same reflection routes the details /
+ * episodes / seasons calls the host makes onto lib 17's combined
+ * [getAnimeEpisodeUpdate] / [getAnimeSeasonUpdate] when that is what an extension
+ * implements.
  */
 @Suppress("unused")
 abstract class AnimeHttpSource : AnimeCatalogueSource {
@@ -140,14 +151,16 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      *
      * @param page the page number to retrieve.
      */
-    protected abstract fun popularAnimeRequest(page: Int): Request
+    protected open fun popularAnimeRequest(page: Int): Request =
+        throw UnsupportedOperationException("popularAnimeRequest is not implemented by this source")
 
     /**
      * Parses the response from the site and returns a [AnimesPage] object.
      *
      * @param response the response from the site.
      */
-    protected abstract fun popularAnimeParse(response: Response): AnimesPage
+    protected open fun popularAnimeParse(response: Response): AnimesPage =
+        throw UnsupportedOperationException("popularAnimeParse is not implemented by this source")
 
     /**
      * Returns an observable containing a page with a list of anime. Normally it's not needed to
@@ -186,18 +199,19 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      * @param query the search query.
      * @param filters the list of filters to apply.
      */
-    protected abstract fun searchAnimeRequest(
+    protected open fun searchAnimeRequest(
         page: Int,
         query: String,
         filters: AnimeFilterList,
-    ): Request
+    ): Request = throw UnsupportedOperationException("searchAnimeRequest is not implemented by this source")
 
     /**
      * Parses the response from the site and returns a [AnimesPage] object.
      *
      * @param response the response from the site.
      */
-    protected abstract fun searchAnimeParse(response: Response): AnimesPage
+    protected open fun searchAnimeParse(response: Response): AnimesPage =
+        throw UnsupportedOperationException("searchAnimeParse is not implemented by this source")
 
     /**
      * Returns an observable containing a page with a list of latest anime updates.
@@ -221,14 +235,16 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      *
      * @param page the page number to retrieve.
      */
-    protected abstract fun latestUpdatesRequest(page: Int): Request
+    protected open fun latestUpdatesRequest(page: Int): Request =
+        throw UnsupportedOperationException("latestUpdatesRequest is not implemented by this source")
 
     /**
      * Parses the response from the site and returns a [AnimesPage] object.
      *
      * @param response the response from the site.
      */
-    protected abstract fun latestUpdatesParse(response: Response): AnimesPage
+    protected open fun latestUpdatesParse(response: Response): AnimesPage =
+        throw UnsupportedOperationException("latestUpdatesParse is not implemented by this source")
 
     /**
      * Get the updated details for a anime.
@@ -238,7 +254,70 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      * @return the updated anime.
      */
     @Suppress("DEPRECATION")
-    override suspend fun getAnimeDetails(anime: SAnime): SAnime = fetchAnimeDetails(anime).awaitSingle()
+    override suspend fun getAnimeDetails(anime: SAnime): SAnime =
+        if (implementsEpisodeUpdate) {
+            getAnimeEpisodeUpdate(anime, emptyList(), fetchDetails = true, fetchEpisodes = false).anime
+        } else {
+            fetchAnimeDetails(anime).awaitSingle()
+        }
+
+    /**
+     * lib 17 combined details + episodes call. Default for extensions that predate it:
+     * their own [getAnimeDetails] / [getEpisodeList] when they override those,
+     * otherwise the request / parse helpers. It never routes back through the host's
+     * own [getAnimeDetails] / [getEpisodeList], which forward here for lib-17
+     * sources: a lib-17 override that calls `super` must not loop.
+     *
+     * @since extensions-lib 17
+     */
+    @Suppress("DEPRECATION")
+    override suspend fun getAnimeEpisodeUpdate(
+        anime: SAnime,
+        episodes: List<SEpisode>,
+        fetchDetails: Boolean,
+        fetchEpisodes: Boolean,
+    ): SAnimeEpisodeUpdate {
+        val details =
+            when {
+                !fetchDetails -> anime
+                overridesLegacyDetails -> getAnimeDetails(anime)
+                else -> fetchAnimeDetails(anime).awaitSingle()
+            }
+        val list =
+            when {
+                !fetchEpisodes -> episodes
+                overridesLegacyEpisodes -> getEpisodeList(anime)
+                else -> legacyEpisodeList(anime)
+            }
+        return SAnimeEpisodeUpdate(details, list)
+    }
+
+    /**
+     * lib 17 combined details + seasons call; see [getAnimeEpisodeUpdate].
+     *
+     * @since extensions-lib 17
+     */
+    @Suppress("DEPRECATION")
+    override suspend fun getAnimeSeasonUpdate(
+        anime: SAnime,
+        seasons: List<SAnime>,
+        fetchDetails: Boolean,
+        fetchSeasons: Boolean,
+    ): SAnimeSeasonUpdate {
+        val details =
+            when {
+                !fetchDetails -> anime
+                overridesLegacyDetails -> getAnimeDetails(anime)
+                else -> fetchAnimeDetails(anime).awaitSingle()
+            }
+        val list =
+            when {
+                !fetchSeasons -> seasons
+                overridesLegacySeasons -> getSeasonList(anime)
+                else -> legacySeasonList(anime)
+            }
+        return SAnimeSeasonUpdate(details, list)
+    }
 
     @Deprecated("Use the non-RxJava API instead", replaceWith = ReplaceWith("getAnimeDetails"))
     override fun fetchAnimeDetails(anime: SAnime): Observable<SAnime> =
@@ -262,7 +341,8 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      *
      * @param response the response from the site.
      */
-    protected abstract fun animeDetailsParse(response: Response): SAnime
+    protected open fun animeDetailsParse(response: Response): SAnime =
+        throw UnsupportedOperationException("animeDetailsParse is not implemented by this source")
 
     // KMK -->
     override val supportsRelatedAnimes: Boolean get() = true
@@ -292,8 +372,15 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      * @return the chapters for the manga.
      * @throws LicensedEntryItemsException if a anime is licensed and therefore no episodes are available.
      */
+    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> =
+        if (implementsEpisodeUpdate) {
+            getAnimeEpisodeUpdate(anime, emptyList(), fetchDetails = false, fetchEpisodes = true).episodes
+        } else {
+            legacyEpisodeList(anime)
+        }
+
     @Suppress("DEPRECATION")
-    override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
+    private suspend fun legacyEpisodeList(anime: SAnime): List<SEpisode> {
         if (anime.status == SAnime.LICENSED) {
             throw LicensedEntryItemsException()
         }
@@ -325,7 +412,8 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      *
      * @param response the response from the site.
      */
-    protected abstract fun episodeListParse(response: Response): List<SEpisode>
+    protected open fun episodeListParse(response: Response): List<SEpisode> =
+        throw UnsupportedOperationException("episodeListParse is not implemented by this source")
 
     /**
      * Parses the response from the site and returns a SEpisode Object.
@@ -346,6 +434,13 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      * @return the seasons for the anime.
      */
     override suspend fun getSeasonList(anime: SAnime): List<SAnime> =
+        if (implementsSeasonUpdate) {
+            getAnimeSeasonUpdate(anime, emptyList(), fetchDetails = false, fetchSeasons = true).seasons
+        } else {
+            legacySeasonList(anime)
+        }
+
+    private suspend fun legacySeasonList(anime: SAnime): List<SAnime> =
         client
             .newCall(seasonListRequest(anime))
             .awaitSuccess()
@@ -454,6 +549,36 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      * @return the resolved video, or null on failure
      */
     open suspend fun resolveVideo(video: Video): Video? = video
+
+    /**
+     * Seek-preview thumbnails. The host never asks for them.
+     *
+     * @since extensions-lib 17
+     */
+    open suspend fun getVideoThumbnails(video: Video): ThumbnailInfo? = null
+
+    /**
+     * Image tile for [getVideoThumbnails]. The host never asks for them.
+     *
+     * @since extensions-lib 17
+     */
+    open suspend fun getImageTile(url: String): Bitmap? = null
+
+    /**
+     * Extension-provided local server. When this returns one, video / track urls
+     * starting with [HttpServer.PLACEHOLDER_URL] are served by it; the host starts
+     * it and substitutes its address (`AnimeVideoLoader`).
+     *
+     * @since extensions-lib 17
+     */
+    open fun createHttpServer(): HttpServer? = null
+
+    /**
+     * Website home page ("Open in WebView" in Aniyomi).
+     *
+     * @since extensions-lib 17
+     */
+    open fun getHomeUrl(): String = baseUrl
 
     /**
      * Get the list of videos a episode has. Videos should be returned
@@ -684,6 +809,42 @@ abstract class AnimeHttpSource : AnimeCatalogueSource {
      */
     protected open val implementsHosterParser: Boolean by lazy {
         declaresOverride("hosterListParse", Response::class.java)
+    }
+
+    /** The extension implements lib 17's combined details + episodes call. */
+    private val implementsEpisodeUpdate: Boolean by lazy {
+        declaresOverride(
+            "getAnimeEpisodeUpdate",
+            SAnime::class.java,
+            List::class.java,
+            java.lang.Boolean.TYPE,
+            java.lang.Boolean.TYPE,
+            Continuation::class.java,
+        )
+    }
+
+    /** The extension implements lib 17's combined details + seasons call. */
+    private val implementsSeasonUpdate: Boolean by lazy {
+        declaresOverride(
+            "getAnimeSeasonUpdate",
+            SAnime::class.java,
+            List::class.java,
+            java.lang.Boolean.TYPE,
+            java.lang.Boolean.TYPE,
+            Continuation::class.java,
+        )
+    }
+
+    private val overridesLegacyDetails: Boolean by lazy {
+        declaresOverride("getAnimeDetails", SAnime::class.java, Continuation::class.java)
+    }
+
+    private val overridesLegacyEpisodes: Boolean by lazy {
+        declaresOverride("getEpisodeList", SAnime::class.java, Continuation::class.java)
+    }
+
+    private val overridesLegacySeasons: Boolean by lazy {
+        declaresOverride("getSeasonList", SAnime::class.java, Continuation::class.java)
     }
 
     /**

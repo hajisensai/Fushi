@@ -103,6 +103,17 @@ void main() {
           .whereType<AListDiscoverySource>()
           .where((AListDiscoverySource s) => s.isUserConfigured);
 
+  // 3-enoE7FpS：「显示在」没有视频（发现页下载源不收视频），设置区要指明视频的
+  // 入口在视频库的 AList 来源。
+  testWidgets('设置区写明 AList 视频的入口', (WidgetTester tester) async {
+    await pumpSection(tester);
+    expect(
+      find.byKey(const ValueKey<String>('alist-site-video-hint')),
+      findsOneWidget,
+    );
+    expect(find.text(t.discovery_alist_video_hint), findsOneWidget);
+  });
+
   testWidgets('加一个游客站：账号留空也写穿偏好，并立刻进注册表', (WidgetTester tester) async {
     await pumpSection(tester);
     expect(prefs.discoveryAListSites, isEmpty);

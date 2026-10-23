@@ -10,6 +10,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/media/image_kernels.dart';
 import 'package:fushi_engine/media/manga/import/image_size_probe.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
@@ -39,6 +40,11 @@ const Set<String> kMangaImageExtensions = kMangaPageImageExtensions;
 /// 纯判定（仅同步文件系统探测，无平台通道、无 async），便于单测与对话框即时禁用按钮。
 bool mangaImportCanImport(List<String> paths) {
   for (final String path in paths) {
+    // mokuro 旧版产物（`.html` + `_ocr/`）：页图就在同名卷目录里。
+    if (isLegacyMokuroHtmlVolume(path)) {
+      if (_dirHasMangaImage(Directory(legacyMokuroImageDir(path)))) return true;
+      continue;
+    }
     if (p.extension(path).toLowerCase() != '.mokuro') continue;
     final Directory parent = Directory(p.dirname(path));
     if (!parent.existsSync()) continue;
@@ -56,6 +62,15 @@ bool mangaImportCanImport(List<String> paths) {
     }
   }
   return false;
+}
+
+bool _dirHasMangaImage(Directory dir) {
+  try {
+    return dir.listSync(recursive: true).any(
+        (FileSystemEntity e) => e is File && _isMangaImageFile(e.path));
+  } catch (_) {
+    return false;
+  }
 }
 
 bool _isMangaImageFile(String path) =>
@@ -233,7 +248,10 @@ class MangaImporter {
     if (!mokuroFile.existsSync()) {
       throw MangaImportException('Mokuro file not found: $mokuroPath');
     }
-    final String jsonStr = await mokuroFile.readAsString();
+    // mokuro 0.1 旧版产物（`.html` + `_ocr/`）先拼回 `.mokuro` 形状，之后同一条管线。
+    final String jsonStr = isMokuroLegacyHtmlPath(mokuroPath)
+        ? await legacyMokuroJson(mokuroPath)
+        : await mokuroFile.readAsString();
     final MokuroPayload payload = parseMokuro(jsonStr);
     if (payload.images.isEmpty) {
       throw const MangaImportException('Mokuro file has no pages');
@@ -435,6 +453,65 @@ class MangaImporter {
       }
       rethrow;
     }
+  }
+
+  /// mokuro 0.1 旧版产物 [htmlPath]（`<父>/<卷名>.html`）→ 一份 `.mokuro` 形状的
+  /// JSON 文本（见 `mokuro_legacy_html.dart`）。
+  ///
+  /// 页序与 mokuro 一致：卷目录 `<父>/<卷名>/` 下的页图按自然序枚举（与
+  /// [payloadFromImageFolder] 同一个 [enumerateMangaPages]）；每页的文字层取
+  /// `<父>/_ocr/<卷名>/<页相对路径去扩展名>.json`，宽高 / 框原样搬过来，`img_path`
+  /// 写成相对 `.html` 所在目录的 `<卷名>/<页>`（`.mokuro` 惯例 A），于是下游的页图根
+  /// 解析、逐页校验、拷贝与普通 `.mokuro` 卷逐字节同构。某页没有 JSON（mokuro 半途
+  /// 失败）时该页照常入卷、文字层为空、宽高从页图头部探测——少一页字好过整卷失败。
+  ///
+  /// 卷目录或 `_ocr/<卷名>/` 不在，抛 [MangaImportException] 并指出缺的是哪个目录。
+  static Future<String> legacyMokuroJson(String htmlPath) async {
+    final Directory imageDir = Directory(legacyMokuroImageDir(htmlPath));
+    final Directory ocrDir = Directory(legacyMokuroOcrDir(htmlPath));
+    for (final Directory required in <Directory>[imageDir, ocrDir]) {
+      if (!required.existsSync()) {
+        throw MangaImportException(
+          'Not a mokuro volume: missing folder ${required.path}',
+        );
+      }
+    }
+    final String volumeName = p.basename(imageDir.path);
+    final List<MangaOcrPageFile> files = enumerateMangaPages(imageDir);
+    if (files.isEmpty) {
+      throw MangaImportException(
+        'Manga image folder has no pages: ${imageDir.path}',
+      );
+    }
+    final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
+    for (final MangaOcrPageFile page in files) {
+      final File json = File(p.joinAll(<String>[
+        ocrDir.path,
+        ...legacyMokuroPageJsonRel(page.relativeUrl).split('/'),
+      ]));
+      Map<String, Object?>? ocr;
+      if (json.existsSync()) {
+        final Object? decoded = jsonDecode(await json.readAsString());
+        if (decoded is Map) ocr = decoded.cast<String, Object?>();
+      }
+      final Object? width = ocr?['img_width'];
+      final Object? height = ocr?['img_height'];
+      final MokuroSize size =
+          width is num && height is num && width > 0 && height > 0
+              ? MokuroSize(width.toDouble(), height.toDouble())
+              : _pageSize(await page.file.readAsBytes(), page.relativeUrl);
+      final Object? blocks = ocr?['blocks'];
+      pages.add(<String, Object?>{
+        'img_path': '$volumeName/${page.relativeUrl}',
+        'img_width': size.width,
+        'img_height': size.height,
+        'blocks': blocks is List ? blocks : const <Object?>[],
+      });
+    }
+    return jsonEncode(<String, Object?>{
+      ...legacyMokuroRoot(htmlPath),
+      'pages': pages,
+    });
   }
 
   /// 把相对 [rawUrl]（正斜杠或反斜杠）解析成 [srcDirPath] 下的源图 [File]。

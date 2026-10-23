@@ -286,7 +286,7 @@ class _Importer {
             await MangaImporter.importFromImageFolder(
               db: db,
               imageDirPath: folder,
-              title: single ?? p.basename(folder),
+              title: single ?? plan.imageFolderTitle(folder),
               policy: const DuplicatePolicy.skip(),
             ),
           ),

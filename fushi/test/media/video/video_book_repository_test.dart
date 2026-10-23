@@ -36,9 +36,13 @@ class _PausingDeleteVideoBookRepository extends VideoBookRepository {
   Future<List<VideoBookRow>> deleteVideoBooks(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool removeFromCollections = true,
   }) async {
-    final List<VideoBookRow> deleted =
-        await super.deleteVideoBooks(bookUids, scope: scope);
+    final List<VideoBookRow> deleted = await super.deleteVideoBooks(
+      bookUids,
+      scope: scope,
+      removeFromCollections: removeFromCollections,
+    );
     rowDeleted.complete();
     await allowReclaim.future;
     return deleted;

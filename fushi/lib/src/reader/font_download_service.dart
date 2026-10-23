@@ -37,15 +37,44 @@ class FontDownloadResult {
     this.files = const <ImportedFontFile>[],
     this.error,
     this.cancelled = false,
+    this.unreachable = false,
   });
 
   final List<ImportedFontFile> files;
   final String? error;
   final bool cancelled;
 
+  /// 所有下载源都在传输层失败（连不上 / 超时 / TLS），没有一个源真正答复过。
+  /// 这是「网络到不了下载源」，UI 据此提示配置网络代理或手动导入字体文件，而不是
+  /// 只报一个失败计数（反馈 f4ybrMM0mP「要自己配置，也没提醒」）。
+  final bool unreachable;
+
   int get importedCount => files.length;
 
   bool get succeeded => error == null && !cancelled && files.isNotEmpty;
+}
+
+/// 这次失败是不是「请求根本没送到 / 没拿到答复」的传输层失败（连接超时、连接
+/// 错误、收发超时、证书失败，或底层是 socket / TLS 异常）。服务端已经答复的
+/// 4xx/5xx 不算——那不是网络到不了，换代理也没用。
+@visibleForTesting
+bool isFontDownloadTransportFailure(DioError e) {
+  switch (e.type) {
+    case DioErrorType.connectionTimeout:
+    case DioErrorType.sendTimeout:
+    case DioErrorType.receiveTimeout:
+    case DioErrorType.connectionError:
+    case DioErrorType.badCertificate:
+      return true;
+    case DioErrorType.unknown:
+      final Object? cause = e.error;
+      return cause is SocketException ||
+          cause is TlsException ||
+          cause is HttpException;
+    case DioErrorType.badResponse:
+    case DioErrorType.cancel:
+      return false;
+  }
 }
 
 /// 字体文件的下载 / 导入执行体：从 `CustomFontsPage` 里搬出来的纯文件层——
@@ -305,6 +334,11 @@ class FontDownloadService {
 
       String? downloadedUrl;
       Object? lastError;
+      // 每个源的失败原因（全部失败时整段写进错误日志——以前只走 debugPrint，
+      // 用户附带的日志里看不到任何字体下载记录，无从诊断）。
+      final List<String> attempts = <String>[];
+      // 是否每个源都败在传输层（没有任何一个源真正答复过）。
+      bool allUnreachable = true;
       for (int i = 0; i < urls.length; i++) {
         final String currentUrl = urls[i];
         debugPrint(
@@ -329,6 +363,8 @@ class FontDownloadService {
             lastError = Exception(
               'Downloaded file is not a valid font or archive',
             );
+            allUnreachable = false;
+            attempts.add('$currentUrl -> not a font or archive');
             await tempFile.delete();
             continue;
           }
@@ -337,16 +373,31 @@ class FontDownloadService {
         } on DioError catch (e) {
           if (e.type == DioErrorType.cancel) rethrow;
           lastError = e;
+          if (!isFontDownloadTransportFailure(e)) allUnreachable = false;
+          final int? status = e.response?.statusCode;
+          attempts.add(
+            '$currentUrl -> ${e.type.name}'
+            '${status == null ? '' : ' $status'}'
+            '${e.error == null ? '' : ' (${e.error})'}',
+          );
           debugPrint('[fushi-fonts] source ${i + 1} failed: ${e.type.name}');
           await discardTemp();
         }
       }
 
       if (downloadedUrl == null) {
-        final Object err = lastError ?? Exception('All sources failed');
-        if (err is Exception) throw err;
-        if (err is Error) throw err;
-        throw Exception(err.toString());
+        ErrorLogService.instance.log(
+          'FontDownloadService.download',
+          Exception(
+            'all ${urls.length} font sources failed:\n${attempts.join('\n')}',
+          ),
+        );
+        await discardTemp();
+        final Object? err = lastError;
+        return FontDownloadResult(
+          error: err is DioError ? err.type.name : '${err ?? 'no source'}',
+          unreachable: allUnreachable && urls.isNotEmpty,
+        );
       }
 
       final List<ImportedFontFile> files = await importFile(

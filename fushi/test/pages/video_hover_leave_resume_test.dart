@@ -23,16 +23,17 @@ void main() {
       bool overSubtitle = false,
       bool caretHoldsPause = false,
       bool hiddenByDialog = false,
-    }) =>
-        VideoFushiPage.shouldAutoResumeOnHoverLeave(
-          enabled: enabled,
-          openedByHover: openedByHover,
-          hasVisiblePopup: hasVisiblePopup,
-          pointerOverPopup: pointerOverPopup,
-          overSubtitle: overSubtitle,
-          caretHoldsPause: caretHoldsPause,
-          hiddenByDialog: hiddenByDialog,
-        );
+      bool pointerOverFloatingBall = false,
+    }) => VideoFushiPage.shouldAutoResumeOnHoverLeave(
+      enabled: enabled,
+      openedByHover: openedByHover,
+      hasVisiblePopup: hasVisiblePopup,
+      pointerOverPopup: pointerOverPopup,
+      overSubtitle: overSubtitle,
+      caretHoldsPause: caretHoldsPause,
+      hiddenByDialog: hiddenByDialog,
+      pointerOverFloatingBall: pointerOverFloatingBall,
+    );
 
     test('全部条件成立 ⇒ 关栈续播', () {
       expect(call(), isTrue);
@@ -68,6 +69,10 @@ void main() {
       // true。不挡这条，用户点「制卡」后 320ms 就会被整栈关掉：草稿清空、视频在对话框
       // 背后播起来。
       expect(call(hiddenByDialog: true), isFalse);
+    });
+
+    test('指针停在应用内悬浮球上 ⇒ 要操作应用，不是离开（反馈 5yWS2o6U6q）', () {
+      expect(call(pointerOverFloatingBall: true), isFalse);
     });
 
     test('意图确认窗口是正数且不至于长到让人以为卡住', () {
@@ -220,8 +225,9 @@ void main() {
         contains('MouseRegion('),
       );
       // 反向：层构造函数自己的函数体里不得再套 MouseRegion（那就又回到层外了）。
-      final int buildAt =
-          pageSource.indexOf('Widget _buildNestedPopupLayer(int');
+      final int buildAt = pageSource.indexOf(
+        'Widget _buildNestedPopupLayer(int',
+      );
       expect(buildAt, greaterThanOrEqualTo(0));
       expect(
         pageSource.substring(buildAt, pageSource.indexOf(';', buildAt)),
@@ -231,10 +237,17 @@ void main() {
 
     test('mixin 的 wrapContent 只作用在 parkedPopupLayer 的 child 上', () {
       expect(
-          mixinSource, contains('Widget Function(Widget child)? wrapContent'));
+        mixinSource,
+        contains('Widget Function(Widget child)? wrapContent'),
+      );
       final int parkedAt = mixinSource.indexOf('return parkedPopupLayer(');
       expect(parkedAt, greaterThanOrEqualTo(0));
-      final String layer = mixinSource.substring(parkedAt, parkedAt + 1200);
+      // 截到这个层构造函数结束为止（不按固定字数截：parkedPopupLayer 的实参会随修复
+      // 增长，BUG-3699 加了 occluders 筛选与 onEntranceSettled 后 1200 字已截不到 child）。
+      final String layer = mixinSource.substring(
+        parkedAt,
+        mixinSource.indexOf('\n  }', parkedAt),
+      );
       expect(
         layer.replaceAll(RegExp(r'\s+'), ''),
         contains('child:_wrapPopupContent(wrapContent'),
@@ -255,6 +268,45 @@ void main() {
         pageSource.substring(fireAt, end),
         contains('hiddenByDialog: lookupPopupHiddenByDialog'),
       );
+    });
+
+    // 反馈 5yWS2o6U6q：移到悬浮球（点反馈 / 截图）不算离开。到期复核读悬浮球指针态，
+    // 进球撤表、出球重新起表（出了窗口之后不会再有 hover 事件）。
+    test('到期复核读悬浮球指针态，进出球撤表 / 起表', () {
+      final int fireAt = pageSource.indexOf('void _fireHoverLeaveResume()');
+      final int end = pageSource.indexOf('\n  }', fireAt);
+      expect(
+        pageSource.substring(fireAt, end),
+        contains('pointerOverFloatingBall: appFloatingBallPointerInside.value'),
+      );
+      expect(
+        pageSource,
+        contains(
+          'appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged)',
+        ),
+      );
+      expect(
+        pageSource,
+        contains(
+          'appFloatingBallPointerInside.removeListener(_onFloatingBallPointerChanged)',
+        ),
+      );
+      final int onBall = pageSource.indexOf(
+        'void _onFloatingBallPointerChanged()',
+      );
+      expect(onBall, greaterThanOrEqualTo(0));
+      final String body = pageSource.substring(
+        onBall,
+        pageSource.indexOf('\n  }', onBall),
+      );
+      expect(body, contains('_cancelHoverLeaveResume()'));
+      expect(body, contains('_armHoverLeaveResume()'));
+      final String host = File(
+        'lib/src/floating_ball/app_floating_ball_host.dart',
+      ).readAsStringSync();
+      expect(host, contains('appFloatingBallPointerInside.value = true'));
+      expect(host, contains('appFloatingBallPointerInside.value = false'));
+      expect(host, contains('HitTestBehavior.deferToChild'));
     });
   });
 }

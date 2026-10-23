@@ -145,4 +145,89 @@ void main() {
       );
     });
   });
+
+  // 反馈 TqJ_xq3UlO：「设置」也能参与底栏排序，可拖不可关。它不是 ModuleId，在
+  // 顺序键里只是一个标记，旧版本解析时当未知键跳过。
+  group('设置 tab 的位置', () {
+    test('标记往返一致，且 parseOrder（旧版解析）忽略它', () {
+      const List<ModuleId> order = <ModuleId>[
+        ModuleId.home,
+        ModuleId.books,
+        ModuleId.video,
+      ];
+      final String encoded = ModuleId.encodeOrder(order, settingsSlot: 1);
+      expect(encoded.split(','), contains(ModuleId.settingsOrderToken));
+      expect(ModuleId.parseOrder(encoded), order);
+      expect(ModuleId.parseSettingsSlot(encoded), 1);
+      // 没标记 / 在最后都不写标记，与升级前的存储值一致。
+      expect(
+        ModuleId.encodeOrder(order),
+        ModuleId.encodeOrder(order, settingsSlot: 3),
+      );
+      expect(ModuleId.parseSettingsSlot(ModuleId.encodeOrder(order)), isNull);
+      expect(ModuleId.parseSettingsSlot(null), isNull);
+    });
+
+    test('未知键与重复项不计入设置的位置', () {
+      final String stored = <String>[
+        ModuleId.home.prefKey,
+        'module_from_the_future',
+        ModuleId.home.prefKey,
+        ModuleId.settingsOrderToken,
+        ModuleId.books.prefKey,
+      ].join(',');
+      expect(ModuleId.parseSettingsSlot(stored), 1);
+    });
+
+    test('homeActiveTabs 把设置放在用户排的位置，且只出现一次', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        const ModuleVisibility(
+          <ModuleId>{ModuleId.home, ModuleId.books},
+          order: <ModuleId>[ModuleId.home, ModuleId.books],
+          settingsSlot: 1,
+        ),
+      );
+      expect(tabs, <HomeTab>[HomeTab.home, HomeTab.settings, HomeTab.books]);
+      expect(tabs.where((HomeTab t) => t == HomeTab.settings), hasLength(1));
+      // 默认（没排过）：设置在最后。
+      expect(
+        homeActiveTabs(const ModuleVisibility(<ModuleId>{ModuleId.books})).last,
+        HomeTab.settings,
+      );
+    });
+
+    test('设置被拖到最前也不会成为落地 tab', () {
+      final List<HomeTab> tabs = homeActiveTabs(
+        const ModuleVisibility(
+          <ModuleId>{ModuleId.books},
+          order: <ModuleId>[ModuleId.books],
+          settingsSlot: 0,
+        ),
+      );
+      expect(tabs.first, HomeTab.settings);
+      expect(homeLandingTab(tabs), HomeTab.books);
+      expect(
+        homeLandingTab(const <HomeTab>[HomeTab.settings]),
+        HomeTab.settings,
+      );
+    });
+
+    test('reorderVisibleNavEntries 只动显示的行', () {
+      final List<ModuleId?> full = <ModuleId?>[
+        ModuleId.home,
+        ModuleId.manga,
+        ModuleId.books,
+        null,
+      ];
+      expect(
+        reorderVisibleNavEntries(
+          full: full,
+          visible: <ModuleId?>[ModuleId.home, ModuleId.books, null],
+          from: 2,
+          to: 0,
+        ),
+        <ModuleId?>[null, ModuleId.manga, ModuleId.home, ModuleId.books],
+      );
+    });
+  });
 }

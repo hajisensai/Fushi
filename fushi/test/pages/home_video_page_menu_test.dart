@@ -106,10 +106,12 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   Future<List<VideoBookRow>> deleteVideoBooks(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool removeFromCollections = true,
   }) async {
     final List<VideoBookRow> deleted = await super.deleteVideoBooks(
       bookUids,
       scope: scope,
+      removeFromCollections: removeFromCollections,
     );
     deleteCalls += deleted.length;
     if (deleteCalls >= pauseAfterDeleteCount && !deletesCommitted.isCompleted) {

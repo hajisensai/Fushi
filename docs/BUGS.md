@@ -42,6 +42,51 @@
 | [BUG-3664](bugs/BUG-3664-anidb-catalog-only-auto-matches-wrong-kind.md) | ✅ | ✅ | anidb-catalog-only-auto-matches-wrong-kind |
 | [BUG-3663](bugs/BUG-3663-movie-keyword-single-file-scraped-as-tv.md) | ✅ | ✅ | movie-keyword-single-file-scraped-as-tv |
 | [BUG-3662](bugs/BUG-3662-cli-candidates-provider-only-filters.md) | ✅ | ✅ | cli-candidates-provider-only-filters |
+> 共 3306 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
+| [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
+| [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |
+| [BUG-3699](bugs/BUG-3699-nested-popup-occluder-see-through.md) | ✅ | ✅ | nested-popup-occluder-see-through |
+| [BUG-3698](bugs/BUG-3698-interconnect-download-unmanageable-without-browse.md) | ✅ | ✅ | interconnect-download-unmanageable-without-browse |
+| [BUG-3697](bugs/BUG-3697-ios-source-folder-bookmark.md) | ✅ | ✅ | ios-source-folder-bookmark |
+| [BUG-3696](bugs/BUG-3696-mokuro-legacy-html-import-dropped-ocr.md) | ✅ | ✅ | mokuro-legacy-html-import-dropped-ocr |
+| [BUG-3695](bugs/BUG-3695-video-subtitle-kana-kanji-baseline.md) | ✅ | ✅ | video-subtitle-kana-kanji-baseline |
+| [BUG-3694](bugs/BUG-3694-remote-collection-continue-duplicate-cards.md) | ✅ | ✅ | 首页「继续」远端合集每集一张同名卡 |
+| [BUG-3693](bugs/BUG-3693-model-download-concurrent-writers-416.md) | ✅ | ✅ | 识别模型 / MOSS 下载挂在弹层上：关掉再开会起第二条写者，`.part` 写坏后永远 HTTP 416 |
+| [BUG-3692](bugs/BUG-3692-aniyomi-extensions-lib-17-refused.md) | ✅ | ✅ | 视频源扩展（Aniyomi extensions-lib 17）装不上：Unsupported extension-lib version |
+| [BUG-3691](bugs/BUG-3691-video-lookup-highlight-multi-layer-ass.md) | ✅ | ✅ | 视频字幕查词高亮在多层 ASS 同文本事件上重复画、压住下层字形 |
+| [BUG-3690](bugs/BUG-3690-onedrive-large-upload-restarts-every-sync.md) | ✅ | ✅ | onedrive-large-upload-restarts-every-sync |
+| [BUG-3689](bugs/BUG-3689-paginated-audio-lane-drops-wrapped-lines.md) | ✅ | ✅ | 翻页模式当前句高亮只亮第一行，折行部分全丢 |
+| [BUG-3688](bugs/BUG-3688-book-series-trailing-label-dropped.md) | ✅ | ✅ | 结尾 `<系列名>` 被当出版标签丢掉，日文轻小说整套散在书架上 |
+| [BUG-3687](bugs/BUG-3687-system-ball-yields-to-in-app-ball-without-buttons.md) | ✅ | ✅ | 本场景按钮全取消时应用外球仍给（不画的）应用内球让位，Fushi 里一颗球都没有 |
+| [BUG-3686](bugs/BUG-3686-browser-address-bar-local-hosts-searched.md) | ✅ | ✅ | 应用内浏览器地址栏把本机 / 局域网网址当成搜索，站点也不能手动添加编辑 |
+| [BUG-3685](bugs/BUG-3685-video-lookup-overlay-over-later-routes.md) | ✅ | ✅ | 视频页查词浮层压在之后推入的页面之上，点击被 barrier 吃掉并续播 |
+| [BUG-3684](bugs/BUG-3684-interconnect-repair-leaves-sibling-addresses-revoked-token.md) | ✅ | ✅ | interconnect-repair-leaves-sibling-addresses-revoked-token |
+| [BUG-3683](bugs/BUG-3683-video-home-filtered-by-hidden-tag.md) | ✅ | ✅ | video-home-filtered-by-hidden-tag |
+| [BUG-3682](bugs/BUG-3682-manga-double-tap-zoom-window-measured-on-up.md) | ✅ | ✅ | 漫画双击缩放很难触发，总是切出悬浮栏（只有快速三击偶尔成功） |
+| [BUG-3681](bugs/BUG-3681-bilibili-mining-412-anonymous-api.md) | ✅ | ✅ | bilibili-mining-412-anonymous-api |
+| [BUG-3680](bugs/BUG-3680-recommended-fonts-unreachable-in-china.md) | ✅ | ✅ | 中国大陆网络下推荐字体下载失败，且失败时不说原因 |
+| [BUG-3679](bugs/BUG-3679-source-root-unreadable-scans-silently-empty.md) | ✅ | ✅ | 常驻来源的扫描根读不到时静默记成「0 个媒体、无错误」 |
+| [BUG-3678](bugs/BUG-3678-android-system-ball-ignores-show-labels.md) | ✅ | ✅ | Android 应用外悬浮球不认「显示按钮文字」，「打开 Fushi」关不掉 |
+| [BUG-3677](bugs/BUG-3677-emby-public-endpoints-all-404.md) | ✅ | ✅ | 部分 Emby 服务器公开端点全 404，添加服务器失败 |
+| [BUG-3676](bugs/BUG-3676-video-generated-subtitle-not-applied-after-leaving-page.md) | ✅ | ✅ | video-generated-subtitle-not-applied-after-leaving-page |
+| [BUG-3675](bugs/BUG-3675-interconnect-session-pinned-on-dead-address.md) | ✅ | ✅ | interconnect-session-pinned-on-dead-address |
+| [BUG-3674](bugs/BUG-3674-button-group-squeeze-wraps-neighbour.md) | ✅ | ✅ | button-group-squeeze-wraps-neighbour |
+| [BUG-3673](bugs/BUG-3673-manga-chrome-clipped-into-ios-popup.md) | ✅ | ✅ | 漫画 chrome 开着时查词，chrome 被「画进」查词弹窗（iOS）且弹窗开着仍能点到 chrome |
+| [BUG-3672](bugs/BUG-3672-batch-mining-auto-flush.md) | ✅ | ✅ | batch-mining-auto-flush |
+| [BUG-3671](bugs/BUG-3671-asr-unpunctuated-card-sentence-whole-paragraph.md) | ✅ | ✅ | asr-unpunctuated-card-sentence-whole-paragraph |
+| [BUG-3670](bugs/BUG-3670-srt-book-cannot-attach-epub.md) | ✅ | ✅ | 下载并自动转录的有声书无法再配上对应的 EPUB |
+| [BUG-3669](bugs/BUG-3669-system-tts-japanese-only-silent.md) | ✅ | ✅ | 系统语音写死日语，失败时静默无音频 |
+| [BUG-3668](bugs/BUG-3668-interconnect-auto-sync-default-off.md) | ✅ | ✅ | interconnect-auto-sync-default-off |
+| [BUG-3667](bugs/BUG-3667-extension-grammar-tooltip-no-background.md) | ✅ | ✅ | extension-grammar-tooltip-no-background |
+| [BUG-3666](bugs/BUG-3666-extension-popup-columns-use-page-width.md) | ✅ | ✅ | extension-popup-columns-use-page-width |
+| [BUG-3665](bugs/BUG-3665-lookup-anchor-spans-split-word-fragments.md) | ✅ | ✅ | lookup-anchor-spans-split-word-fragments |
+| [BUG-3664](bugs/BUG-3664-hyphen-compound-tap-looks-up-front-half.md) | ✅ | ✅ | hyphen-compound-tap-looks-up-front-half |
+| [BUG-3663](bugs/BUG-3663-popup-local-audio-channel-missing.md) | ✅ | ✅ | popup-local-audio-channel-missing |
+| [BUG-3662](bugs/BUG-3662-popup-dictionary-metadata-stale.md) | ✅ | ✅ | popup-dictionary-metadata-stale |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

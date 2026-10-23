@@ -182,6 +182,10 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   // 出厂布局 / 老布局回填一律落 removed，且不进「⋯」溢出菜单；只有用户在控件布局
   // 编辑器里把它拖进某个槽位才出现。当前视频没有弹幕来源（远端流）时不渲染。
   danmaku('danmaku'),
+  // 识别一次当前画面（反馈 X3ozgOAx8v）：手动对当前帧做 OCR 点字查词，不依赖「暂停时
+  // 自动识别」范围设置（默认关）。与快捷键 videoOcrFrame 同一实现。**默认不在播放器
+  // 上**，也不进「⋯」——同弹幕开关，用户在控件布局编辑器里拖进槽位才出现。
+  ocrFrame('ocrFrame'),
   title('title', isSpecialRender: true),
   positionIndicator('positionIndicator', isSpecialRender: true),
 
@@ -468,6 +472,8 @@ class VideoControlLayout {
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
       // 弹幕开关默认不在播放器上（用户拍板：可自定义加上去，默认不出现）。
       VideoControlItem.danmaku: VideoControlSlot.hidden,
+      // 识别当前画面：同弹幕开关，默认不在播放器上，用户自行加。
+      VideoControlItem.ocrFrame: VideoControlSlot.hidden,
       // 自定义「快捷键」按钮默认落底栏右区，未绑定也显示——空槽位点一下即弹动作
       // 选择器，是手机上最短的配置路径。与 [currentChrome] 保持一致（那份还兼任老
       // 布局的解码兜底）。
@@ -572,6 +578,8 @@ class VideoControlLayout {
       // 弹幕开关：默认移出播放器，且**不**进「⋯」（见 `_foldedBarEntries`）——只有
       // 用户在布局编辑器里拖进槽位才出现。
       VideoControlItem.danmaku: VideoControlSlot.hidden,
+      // 识别当前画面：同弹幕开关（默认移出、不进「⋯」）。
+      VideoControlItem.ocrFrame: VideoControlSlot.hidden,
       // 自定义「快捷键 1..4」按钮：默认在右下「⋯」里（已绑的 + 第一个未绑的「加号」，
       // 门控在 `_shouldRenderControlItem`），点它就地配动作。
       VideoControlItem.customAction1: VideoControlSlot.hidden,
@@ -814,6 +822,7 @@ class VideoControlLayout {
         VideoControlItem.nextChapter: VideoControlSlot.hidden,
         // 新增的弹幕开关：老布局解码时同样落 removed，升级后不会凭空冒出来。
         VideoControlItem.danmaku: VideoControlSlot.hidden,
+        VideoControlItem.ocrFrame: VideoControlSlot.hidden,
       };
 
   static Map<VideoControlItem, VideoControlSlot> _currentChromeAssignments() =>
