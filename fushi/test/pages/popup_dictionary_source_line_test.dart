@@ -17,6 +17,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-2899 / BUG-2900：截屏识字 / 悬浮字幕点字把「被点字所在的整行 + 被点字下标」
 /// 交给 app 外查词窗。查词窗必须：
@@ -153,6 +154,7 @@ Widget _buildApp({
     overrides: [
       appProvider.overrideWith((ref) => appModel),
       ankiRepositoryProvider.overrideWithValue(repo),
+      ...popupMiningTargetTestOverrides(anki: false),
     ],
     child: TranslationProvider(
       child: MaterialApp(
@@ -189,6 +191,7 @@ Widget _buildHostedApp({
     overrides: [
       appProvider.overrideWith((ref) => appModel),
       ankiRepositoryProvider.overrideWithValue(repo),
+      ...popupMiningTargetTestOverrides(anki: false),
     ],
     child: TranslationProvider(
       child: MaterialApp(
@@ -587,7 +590,10 @@ void main() {
       );
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [appProvider.overrideWith((ref) => appModel)],
+          overrides: [
+            appProvider.overrideWith((ref) => appModel),
+            ...popupMiningTargetTestOverrides(),
+          ],
           child: const PopupDictApp(),
         ),
       );

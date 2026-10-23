@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// TODO-1379：app 外查词窗（PopupDictionaryPage）的常驻隐藏热槽是 Android 原生
 /// InAppWebView 平台视图——IgnorePointer 只挡 Flutter 命中测试，挡不住原生视图直接
@@ -73,7 +74,10 @@ class ParkedPopupTestAppModel extends AppModel {
 
 Widget _buildApp(AppModel appModel) {
   return ProviderScope(
-    overrides: [appProvider.overrideWith((ref) => appModel)],
+    overrides: [
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         navigatorKey: appModel.navigatorKey,
