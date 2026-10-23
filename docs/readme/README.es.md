@@ -14,6 +14,7 @@
 
 [![Descargar la última versión](https://img.shields.io/badge/%E2%AC%87%20Descargar%20la%20%C3%BAltima%20versi%C3%B3n-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Únete a Discord](https://img.shields.io/badge/%C3%9Anete%20a%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
 
 </div>
 
