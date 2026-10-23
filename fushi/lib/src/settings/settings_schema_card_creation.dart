@@ -191,6 +191,19 @@ SettingsDestination buildCardCreationDestination() {
         title: t.anki_compact_glossaries,
         subtitle: t.anki_compact_glossaries_hint,
       ),
+      // 「制卡提示」分组：两种目标都生效。
+      SettingsBodySearchEntry(
+        id: 'card_creation.notice.success',
+        hasRevealTarget: true,
+        title: t.card_creation_notice_success,
+        subtitle: t.card_creation_notice_success_hint,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.notice.duplicate',
+        hasRevealTarget: true,
+        title: t.card_creation_notice_duplicate,
+        subtitle: t.card_creation_notice_duplicate_hint,
+      ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.tags',
         hasRevealTarget: true,

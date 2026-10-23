@@ -314,6 +314,40 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               ],
             ),
           ),
+          // 制卡提示：制卡结果 toast 的开关组，两种目标都生效（toast 出口只有
+          // FushiToast.showMine 一处）。失败与「成功但缺音频」不受开关影响。
+          enter(
+            'card_section_notices',
+            AdaptiveSettingsSection(
+              title: t.card_creation_section_notices,
+              children: <Widget>[
+                SettingsSearchTarget(
+                  id: 'card_creation.notice.success',
+                  child: AdaptiveSettingsSwitchRow(
+                    title: t.card_creation_notice_success,
+                    subtitle: t.card_creation_notice_success_hint,
+                    value: appModel.mineNoticeSuccess,
+                    onChanged: (bool value) async {
+                      await appModel.setMineNoticeSuccess(value);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+                SettingsSearchTarget(
+                  id: 'card_creation.notice.duplicate',
+                  child: AdaptiveSettingsSwitchRow(
+                    title: t.card_creation_notice_duplicate,
+                    subtitle: t.card_creation_notice_duplicate_hint,
+                    value: appModel.mineNoticeDuplicate,
+                    onChanged: (bool value) async {
+                      await appModel.setMineNoticeDuplicate(value);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
           // 默认标签区（TODO-135）：「自动给卡片加什么标签」的开关并到一处，与目标
           // 无关——SRS 制卡同样经 buildNoteTags 打这些标签。
           enter(

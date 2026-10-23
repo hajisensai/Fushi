@@ -26,6 +26,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart'
+    show MineToastStatus, mineToastShown;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
     show HiddenRemoteBook, decodeHiddenRemoteBooks, encodeHiddenRemoteBooks;
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -3605,6 +3607,32 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('collapse_dictionaries', !collapseDictionaries);
     notifyListeners();
   }
+
+  /// 制卡提示：成功 / 制卡中 / 已存入待发卡片的 toast 是否弹出（反馈 zNuGKLIhmT）。
+  /// 默认开 = 存量行为。见 [mineToastShown]。
+  bool get mineNoticeSuccess =>
+      getPref('mine_notice_success', defaultValue: true) as bool;
+
+  Future<void> setMineNoticeSuccess(bool value) async {
+    await setPref('mine_notice_success', value);
+    notifyListeners();
+  }
+
+  /// 制卡提示：查重拦下时的「重复卡片」toast 是否弹出（反馈 aK5wv0CnWf）。
+  bool get mineNoticeDuplicate =>
+      getPref('mine_notice_duplicate', defaultValue: true) as bool;
+
+  Future<void> setMineNoticeDuplicate(bool value) async {
+    await setPref('mine_notice_duplicate', value);
+    notifyListeners();
+  }
+
+  /// 按上面两个开关判断这条制卡结果 toast 该不该弹。
+  bool mineNoticeShown(MineToastStatus status) => mineToastShown(
+        status,
+        showSuccess: mineNoticeSuccess,
+        showDuplicate: mineNoticeDuplicate,
+      );
 
   // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：释义列表由每条一行改成
   // inline + ` | ` 分隔的紧凑排版（popup.js createDictionaryBlock 的 compactCss）。

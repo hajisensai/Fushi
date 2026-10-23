@@ -360,6 +360,22 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateCompactGlossaries(v),
     ),
+    SettingsSwitchItem(
+      id: _id('notice_success'),
+      title: t.card_creation_notice_success,
+      subtitle: t.card_creation_notice_success_hint,
+      value: (SettingsContext c) => c.appModel.mineNoticeSuccess,
+      onChanged: (SettingsContext c, bool v) =>
+          c.appModel.setMineNoticeSuccess(v),
+    ),
+    SettingsSwitchItem(
+      id: _id('notice_duplicate'),
+      title: t.card_creation_notice_duplicate,
+      subtitle: t.card_creation_notice_duplicate_hint,
+      value: (SettingsContext c) => c.appModel.mineNoticeDuplicate,
+      onChanged: (SettingsContext c, bool v) =>
+          c.appModel.setMineNoticeDuplicate(v),
+    ),
     _action(
       id: 'backup_import',
       title: t.anki_backup_import,

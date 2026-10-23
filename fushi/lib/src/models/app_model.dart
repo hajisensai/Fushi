@@ -8911,6 +8911,18 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
   bool get compactGlossaries => prefsRepo.compactGlossaries;
+
+  /// 制卡提示开关（设置 → 制卡 → 制卡提示，反馈 zNuGKLIhmT / aK5wv0CnWf）。
+  bool get mineNoticeSuccess => prefsRepo.mineNoticeSuccess;
+  Future<void> setMineNoticeSuccess(bool value) =>
+      prefsRepo.setMineNoticeSuccess(value);
+  bool get mineNoticeDuplicate => prefsRepo.mineNoticeDuplicate;
+  Future<void> setMineNoticeDuplicate(bool value) =>
+      prefsRepo.setMineNoticeDuplicate(value);
+
+  /// [FushiToast.mineNoticeFilter] 的接线：偏好还没载入（启动最早期）时一律弹。
+  bool mineNoticeShown(MineToastStatus status) =>
+      _prefsRepo?.mineNoticeShown(status) ?? true;
   void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
   bool get dictionaryUnifiedStyle => prefsRepo.dictionaryUnifiedStyle;
   void toggleDictionaryUnifiedStyle() =>
