@@ -739,7 +739,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 结果恒来自本机（没有 resourceSource），不需要 in-app 那条「远端结果不显示」的排除。
   ///
   /// 放在搜索条 / 关闭行上（在横滑区之外，点它不会连带滑动判定），而不是层顶栏：基础层
-  /// 的层顶栏整条不画（BUG-3703）。制卡模块关着时返回 null。
+  /// 的层顶栏整条不画（BUG-3731）。制卡模块关着时返回 null。
   Widget? _buildMiningTargetButton() {
     if (!appModel.moduleVisibility.isEnabled(ModuleId.cardCreation)) {
       return null;
@@ -888,7 +888,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
       // 制卡目标切换不放层顶栏：基础层没有 header / 关闭 / 返回 / 历史，层顶栏整条不画，
-      // 按钮跟着消失（BUG-3703）。本窗口在自己的搜索条上给一颗（[_buildMiningTargetButton]），
+      // 按钮跟着消失（BUG-3731）。本窗口在自己的搜索条上给一颗（[_buildMiningTargetButton]），
       // 基础层与嵌套层共用，不在子层顶栏里重复出现。
       showMiningTargetSwitch: false,
     );

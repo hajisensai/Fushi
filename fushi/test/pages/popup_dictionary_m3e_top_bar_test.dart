@@ -175,7 +175,7 @@ void main() {
     expect(find.byKey(_toolbarKey), findsOneWidget);
   });
 
-  // BUG-3703：「制卡目标」切换此前只交给层顶栏，基础层的层顶栏整条不画（没有
+  // BUG-3731：「制卡目标」切换此前只交给层顶栏，基础层的层顶栏整条不画（没有
   // header / 关闭 / 返回 / 历史），应用外查词窗里永远看不到这颗按钮。
   testWidgets('MD3: mining target switch sits in the search pill, once', (
     WidgetTester tester,

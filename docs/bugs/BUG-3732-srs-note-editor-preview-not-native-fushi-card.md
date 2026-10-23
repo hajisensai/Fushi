@@ -1,4 +1,4 @@
-## BUG-3704 · 笔记编辑页实时预览与复习页不是同一张卡（Fushi 卡片退回整面 WebView，片段 / 图片画法不同）
+## BUG-3732 · 笔记编辑页实时预览与复习页不是同一张卡（Fushi 卡片退回整面 WebView，片段 / 图片画法不同）
 - **报告**：2026-10-23（来源：任务 P 真机验证「跳转打开的编辑页视频是否比复习页糊」；Windows 离屏 runner，`integration_test/srs_review_media_editor_itest.dart`，1280×720 测试片段）
 - **现象**：从复习页顶栏「编辑」跳到笔记编辑页，右栏预览切到背面：复习页里是原生卡面 + media_kit 片段画面（`SrsCardVideoClip`，纹理按片段原生尺寸、`FilterQuality.low`），编辑页预览却是整面 WebView 渲染的 Fushi 卡片模板——`[sound:clip.mp4]` 只剩一颗 ▶ 播放键、没有画面；`<video>` 形态的 WebM 片段交给 WebView 自己按 CSS 尺寸缩放播放，与复习页的画质 / 尺寸都不同（用户说的「编辑页视频比复习页糊」）。实测编辑页背面预览区里没有 `SrsCardVideoClip`，只有预览 WebView 的纹理。
 - **真实性**：✅ 真 bug。根因：复习页（`packages/fushi_engine/lib/srs/srs_db_store.dart` `renderCard` 里 `nativeFushiCard` 判定 → `fushiCardDefinitions`）与外观页（`srs_card_appearance_page.dart:482` `_faceView`）在「内置 Fushi 卡片、模板与样式未改、媒体原生画得全」时走原生混合渲染 `SrsFushiCardView`；笔记编辑页预览 `fushi/lib/src/pages/implementations/srs/srs_note_preview.dart` `_face` 无条件走 `srsCardFaceBuilderProvider`（整面 WebView），判据只写在引擎 `renderCard` 里一份、预览没有接。

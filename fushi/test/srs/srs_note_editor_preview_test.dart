@@ -209,7 +209,7 @@ void main() {
         findsOneWidget,
       );
       expect(_key('srs_note_preview'), findsNothing, reason: '宽窗不需要顶栏预览按钮');
-      // BUG-3704：模板未改的 Fushi 卡片与复习页同一个原生混合卡面，不退回整面 WebView。
+      // BUG-3732：模板未改的 Fushi 卡片与复习页同一个原生混合卡面，不退回整面 WebView。
       expect(_inPreview(_key('srs-note-preview-native')), findsOneWidget);
       expect(_inPreview(find.textContaining('食べる')), findsWidgets);
       await tester.enterText(

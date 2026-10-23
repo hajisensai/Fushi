@@ -602,7 +602,7 @@ class SrsCardVideoExpandedView extends StatelessWidget {
     );
     // 对话框路由下面没有 Material：关闭键（InkWell）缺 Material 祖先会构建失败，被错误盒
     // 替换——错误盒在 Positioned 里按最大约束铺满整个画面（debug 半透明红、release 灰块），
-    // 视频被盖住、关闭键也没了（BUG-3705）。透明 Material 只提供墨水层，不画任何东西。
+    // 视频被盖住、关闭键也没了（BUG-3733）。透明 Material 只提供墨水层，不画任何东西。
     return Center(
       child: SizedBox.fromSize(
         size: size,

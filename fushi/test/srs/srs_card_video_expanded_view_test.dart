@@ -1,4 +1,4 @@
-// BUG-3705：复习卡片段「放大查看」走 showAppDialog，路由下面没有 Material。关闭键（InkWell）
+// BUG-3733：复习卡片段「放大查看」走 showAppDialog，路由下面没有 Material。关闭键（InkWell）
 // 缺 Material 祖先时构建失败、被错误盒替换，错误盒在 Positioned 里铺满整个画面盖住视频。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
