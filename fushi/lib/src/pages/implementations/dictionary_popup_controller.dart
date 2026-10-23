@@ -109,6 +109,15 @@ class DictionaryPopupEntry {
   /// 都重新判定，不跨查词沿用。
   Duration? searchPlaceholderShownFor;
 
+  /// 本层的入场淡入是否已走完、满不透明地画在屏上（隐藏即复位 false）。由
+  /// `parkedPopupLayer` 的 `onEntranceSettled` 回报、宿主写入。
+  ///
+  /// 只有满足它的层才进更下层的 `occluders`（`PopupOccluderClip` 把下层被盖住的部分
+  /// 整块裁掉）。反馈 iZupbhhdNV：曾按 [visible] 判，上层一翻可见、下层同一帧就被挖洞，
+  /// 而上层此时正从透明度 0 淡入——那 200ms 里洞口什么都不挡，视频画面直接透出来
+  /// （「视频查词框内出现播放画面，很短的一下，次级查词才有」）。
+  bool entranceSettled = false;
+
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
 

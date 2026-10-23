@@ -344,17 +344,22 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
             LibrarySectionTab<MediaLibraryViewKind>(
               value: spec.kind,
               label: spec.label,
+              orderId: spec.kind.name,
             )
           else if (identical(spec, online.first))
             LibrarySectionTab<MediaLibraryViewKind>(
               value: onlineValue,
               label: t.media_import_segment_sources,
+              // 组页签的值随组内停留的视图变，顺序身份认组。
+              orderId: 'online',
             ),
       ],
       selected: selected,
       onChanged: _select,
       focusIdPrefix: widget.focusIdPrefix,
       floating: true,
+      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序（书 / 漫画各一份）。
+      orderKey: widget.focusIdPrefix,
     );
   }
 

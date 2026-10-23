@@ -3,6 +3,7 @@ package app.fushi.reader;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -16,6 +17,7 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.drawable.Icon;
 import android.graphics.RectF;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
@@ -55,11 +57,15 @@ import com.google.mlkit.common.MlKitException;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.Text;
 
+import java.io.File;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 import app.fushi.reader.constants.NotificationIds;
 
@@ -92,6 +98,19 @@ import app.fushi.reader.constants.NotificationIds;
  *
  * <p>整条流程的「进行中」锁与悬浮球的隐藏由 {@link ScreenCaptureRequestActivity} 持有，
  * 本服务在任何出口（选取层关闭 / 失败 / 被系统停掉）都经 {@link #finishFlow} 收尾。
+ *
+ * <p><b>保持截屏会话</b>（{@link ScreenOcrOptions#keepSession}，默认关；反馈 9bdhVTgq3A /
+ * LHyeNKyYjH）：截到帧后不 stop 投屏，只把 VirtualDisplay 的 surface 摘掉（不再合成、不
+ * 耗电），服务留在 mediaProjection 前台、常驻通知说明会话在保持并给「停止」按钮。下一次
+ * 截屏识字由 {@link #captureWithKeptSession} 直接把 surface 挂回去取帧——不弹系统确认框、
+ * 不从后台起 Activity（vivo 等 ROM 的「后台弹窗」管控也就无从拦截）。屏幕尺寸变了就
+ * {@code resize} 虚拟屏、换一个同尺寸的 ImageReader。系统停掉投屏（锁屏、用户从状态栏
+ * 停止共享、撤销授权）时 {@link MediaProjection.Callback#onStop} 收掉会话，下一次截屏识字
+ * 干净地回到「每次申请」。
+ *
+ * <p><b>制卡带图</b>（{@link ScreenOcrOptions#cardImage}，默认开；反馈 Gz7z6Y6Mbr）：识别
+ * 成功后把定格帧写成 app 缓存里的 JPEG，点字时把路径与所点文本块 / 行框随 Intent 交给
+ * 查词窗（{@code :popup} 进程按路径读，裁成卡图）。
  */
 public class ScreenOcrService extends Service {
     private static final String TAG = "ScreenOcrService";
@@ -107,6 +126,12 @@ public class ScreenOcrService extends Service {
     static final String LABEL_MODEL_UNAVAILABLE = "ocr_model_unavailable";
     static final String LABEL_FAILED = "ocr_failed";
     static final String LABEL_NOTIFICATION = "ocr_notification";
+    static final String LABEL_SESSION_NOTIFICATION = "ocr_session_notification";
+    static final String LABEL_SESSION_HINT = "ocr_session_hint";
+    static final String LABEL_SESSION_STOP = "ocr_session_stop";
+
+    /** 常驻会话通知上的「停止」。 */
+    static final String ACTION_STOP_SESSION = "app.fushi.reader.SCREEN_OCR_STOP_SESSION";
 
     // 查词窗（:popup 进程）→ 本服务的会话回报，经 setPackage 定向、接收端不导出。
     static final String ACTION_LOOKUP_SHOWN = "app.fushi.reader.SCREEN_OCR_LOOKUP_SHOWN";
@@ -124,6 +149,16 @@ public class ScreenOcrService extends Service {
     private static final int LINE_SLOP_DP = 12;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+
+    /** 保持着截屏会话、此刻可以直接取帧的实例（主线程读写）。 */
+    @Nullable private static ScreenOcrService keptInstance;
+    /** 本次投屏截完帧后是否保持会话（拿到授权时按选项定，用户关掉选项时清掉）。 */
+    private boolean keepSession = false;
+    /** 制卡带图：定格帧写盘（与回收同一条单线程队列，写完才回收）。 */
+    private final ExecutorService cardWriter = Executors.newSingleThreadExecutor();
+    /** 本次定格帧的卡图文件；制卡带图关着时为 null。 */
+    @Nullable private File cardFrameFile;
+
     private HandlerThread captureThread;
     private Handler captureHandler;
 
@@ -222,11 +257,17 @@ public class ScreenOcrService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP_SESSION.equals(intent.getAction())) {
+            stopSessionNow();
+            return START_NOT_STICKY;
+        }
         if (projection != null || intent == null) {
             // 已有一次截屏在进行（流程锁本应挡住），或系统重投空 intent：不接新活。
             if (projection == null && selectionView == null) finishFlow();
             return START_NOT_STICKY;
         }
+        // 新的一次流程（服务可能是上一次停掉会话后还没销毁就被重新拉起的那个实例）。
+        finished = false;
         String lang = intent.getStringExtra(EXTRA_LANGUAGE);
         if (lang != null && !lang.isEmpty()) language = lang;
         labels = ScreenCaptureRequestActivity.fromBundle(intent.getBundleExtra(EXTRA_LABELS));
@@ -263,6 +304,7 @@ public class ScreenOcrService extends Service {
             finishFlow();
             return START_NOT_STICKY;
         }
+        keepSession = ScreenOcrOptions.keepSession(this);
         startCapture();
         return START_NOT_STICKY;
     }
@@ -276,6 +318,7 @@ public class ScreenOcrService extends Service {
 
     @Override
     public void onDestroy() {
+        if (keptInstance == this) keptInstance = null;
         if (receiverRegistered) {
             unregisterReceiver(lookupReceiver);
             receiverRegistered = false;
@@ -284,6 +327,7 @@ public class ScreenOcrService extends Service {
         releaseCapture();
         removeSelectionView();
         releaseFrame();
+        cardWriter.shutdown();
         if (captureThread != null) {
             captureThread.quitSafely();
             captureThread = null;
@@ -306,46 +350,33 @@ public class ScreenOcrService extends Service {
         session.onCaptureStarted(new ScreenOcrSelectionSession.ScreenIdentity(
                 screenWidth, screenHeight, displayRotation()));
 
-        captureThread = new HandlerThread("fushi-screen-ocr");
-        captureThread.start();
-        captureHandler = new Handler(captureThread.getLooper());
+        // 上一次会话停掉后服务没来得及销毁就又接了新授权：沿用同一条截屏线程。
+        if (captureThread == null) {
+            captureThread = new HandlerThread("fushi-screen-ocr");
+            captureThread.start();
+            captureHandler = new Handler(captureThread.getLooper());
+        }
+        captureDone = false;
 
         // Android 14+ 规定 createVirtualDisplay 之前必须先注册回调。
-        projection.registerCallback(new MediaProjection.Callback() {
+        final MediaProjection current = projection;
+        current.registerCallback(new MediaProjection.Callback() {
             @Override
             public void onStop() {
-                // 用户从系统面板停止共享 / 系统收回授权：还没截到就当失败收尾。
+                // 用户从系统面板停止共享 / 系统收回授权 / 锁屏：截到一半就当失败收尾；
+                // 保持着的空闲会话则干净收掉，下一次截屏识字回到「每次申请」。
                 captureHandler.post(() -> {
-                    if (!captureDone) {
+                    final boolean inCapture = !captureDone;
+                    if (inCapture) {
                         captureDone = true;
                         closeLatestImage();
-                        mainHandler.post(() -> {
-                            releaseCapture();
-                            finishFlow();
-                        });
                     }
+                    mainHandler.post(() -> onProjectionStopped(current, inCapture));
                 });
             }
         }, captureHandler);
 
-        // maxImages = 3：手里压着 latestImage 时 acquireLatestImage 仍有余量。
-        imageReader = ImageReader.newInstance(
-                screenWidth, screenHeight, PixelFormat.RGBA_8888, 3);
-        imageReader.setOnImageAvailableListener(reader -> {
-            if (captureDone) return;
-            Image next;
-            try {
-                closeLatestImage();
-                next = reader.acquireLatestImage();
-            } catch (RuntimeException e) {
-                Log.w(TAG, "acquireLatestImage failed", e);
-                return;
-            }
-            if (next == null) return;
-            latestImage = next;
-            captureHandler.removeCallbacks(settleTimeout);
-            captureHandler.postDelayed(settleTimeout, SETTLE_MS);
-        }, captureHandler);
+        imageReader = newImageReader();
 
         try {
             virtualDisplay = projection.createVirtualDisplay(
@@ -361,6 +392,125 @@ public class ScreenOcrService extends Service {
             return;
         }
         captureHandler.postDelayed(maxWaitTimeout, MAX_WAIT_MS);
+    }
+
+    /** maxImages = 3：手里压着 latestImage 时 acquireLatestImage 仍有余量。 */
+    private ImageReader newImageReader() {
+        ImageReader reader = ImageReader.newInstance(
+                screenWidth, screenHeight, PixelFormat.RGBA_8888, 3);
+        reader.setOnImageAvailableListener(r -> {
+            if (captureDone) return;
+            Image next;
+            try {
+                closeLatestImage();
+                next = r.acquireLatestImage();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "acquireLatestImage failed", e);
+                return;
+            }
+            if (next == null) return;
+            latestImage = next;
+            captureHandler.removeCallbacks(settleTimeout);
+            captureHandler.postDelayed(settleTimeout, SETTLE_MS);
+        }, captureHandler);
+        return reader;
+    }
+
+    /** 主线程：投屏被系统 / 用户停掉。 */
+    private void onProjectionStopped(@NonNull MediaProjection stopped, boolean inCapture) {
+        if (stopped != projection) return;
+        keepSession = false;
+        if (keptInstance == this) keptInstance = null;
+        releaseCapture();
+        // 截到一半：失败收尾。空闲的保持会话（没有流程在跑）：停服务。选取层还开着的
+        // 那次流程照常用下去，收尾时（keepSession 已清）自然停服务。
+        if (inCapture || finished) finishFlow();
+    }
+
+    // ── 保持截屏会话 ──────────────────────────────────────────────────────────
+
+    /** 有保持着、此刻空闲（没有流程在跑）的截屏会话。主线程。 */
+    static boolean hasKeptSession() {
+        ScreenOcrService s = keptInstance;
+        return s != null && s.keepSession && s.finished
+                && s.projection != null && s.virtualDisplay != null;
+    }
+
+    /**
+     * 用保持着的会话截一帧（不弹确认框、不起 Activity）。没有可用会话返回 false，
+     * 调用方走「每次申请」。主线程。
+     */
+    static boolean captureWithKeptSession(
+            @Nullable String language, @Nullable Map<String, String> labels) {
+        if (!hasKeptSession()) return false;
+        return keptInstance.beginKeptCapture(language, labels);
+    }
+
+    /** 用户关掉「保持截屏会话」：空闲就立刻停；有流程在跑就等它收尾时停。主线程。 */
+    static void stopKeptSession() {
+        ScreenOcrService s = keptInstance;
+        if (s != null) s.stopSessionNow();
+    }
+
+    private void stopSessionNow() {
+        keepSession = false;
+        if (keptInstance == this) keptInstance = null;
+        if (finished || projection == null) {
+            releaseCapture();
+            stopSelf();
+        }
+    }
+
+    private boolean beginKeptCapture(
+            @Nullable String lang, @Nullable Map<String, String> newLabels) {
+        if (lang != null && !lang.isEmpty()) language = lang;
+        if (newLabels != null && !newLabels.isEmpty()) labels = newLabels;
+        try {
+            Rect bounds = realScreenBounds();
+            int dpi = getResources().getDisplayMetrics().densityDpi;
+            if (bounds.width() != screenWidth || bounds.height() != screenHeight
+                    || dpi != screenDensityDpi) {
+                // 转屏 / 分辨率变了：虚拟屏跟着改尺寸，换一个同尺寸的 ImageReader。
+                screenWidth = bounds.width();
+                screenHeight = bounds.height();
+                screenDensityDpi = dpi;
+                final ImageReader old = imageReader;
+                imageReader = newImageReader();
+                virtualDisplay.resize(screenWidth, screenHeight, screenDensityDpi);
+                if (old != null) captureHandler.post(old::close);
+            }
+            session.onCaptureStarted(new ScreenOcrSelectionSession.ScreenIdentity(
+                    screenWidth, screenHeight, displayRotation()));
+            // 先在截屏线程上清状态，再挂 surface：挂上之后的帧都排在这条消息后面。
+            captureHandler.post(() -> {
+                captureDone = false;
+                closeLatestImage();
+            });
+            finished = false;
+            // surface 一挂回去，系统就重新合成这块虚拟屏、出新帧；悬浮球随后藏起的那次
+            // 合成也会再出一帧，「画面静止」判据取的是它之后的最后一帧。
+            virtualDisplay.setSurface(imageReader.getSurface());
+            captureHandler.postDelayed(maxWaitTimeout, MAX_WAIT_MS);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "kept screen-capture session could not be reused", e);
+            finished = true;
+            stopSessionNow();
+            return false;
+        }
+        notifyForeground(buildNotification());
+        return true;
+    }
+
+    /** 截完帧、会话保持：摘掉 surface（虚拟屏不再合成），通知换成「会话保持中」。主线程。 */
+    private void pauseCapture() {
+        if (virtualDisplay != null) virtualDisplay.setSurface(null);
+        keptInstance = this;
+        notifyForeground(buildSessionNotification());
+    }
+
+    private void notifyForeground(@NonNull Notification notification) {
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm != null) nm.notify(NotificationIds.SCREEN_OCR, notification);
     }
 
     /** captureThread 上执行：定格最新一帧，立刻停投屏，转交主线程识别。 */
@@ -380,7 +530,11 @@ public class ScreenOcrService extends Service {
         closeLatestImage();
         final Bitmap frame = bitmap;
         mainHandler.post(() -> {
-            releaseCapture();
+            if (keepSession && projection != null) {
+                pauseCapture();
+            } else {
+                releaseCapture();
+            }
             // 画面已定格：Dart 可以立刻放回自己的 Flutter 球（识别与选取层不再截屏）。
             FloatingBallChannel.notifyScreenOcrFinished();
             if (frame == null) {
@@ -418,6 +572,7 @@ public class ScreenOcrService extends Service {
 
     /** 主线程：停掉投屏相关的一切，并退出前台（之后只剩选取层，不再持有录屏能力）。 */
     private void releaseCapture() {
+        if (keptInstance == this) keptInstance = null;
         if (virtualDisplay != null) {
             virtualDisplay.release();
             virtualDisplay = null;
@@ -467,6 +622,7 @@ public class ScreenOcrService extends Service {
                     }
                     // 框是在这一帧上识别出来的：选取层就画这一帧，框与画面恒对齐。
                     frozenFrame = bitmap;
+                    writeCardFrame(bitmap);
                     showSelection(lines);
                 })
                 .addOnFailureListener(error -> {
@@ -489,6 +645,20 @@ public class ScreenOcrService extends Service {
                         BackgroundActivityLauncher.bringAppToFront(this);
                     }
                 });
+    }
+
+    /** 制卡带图开着：定格帧落盘（后台单线程，写完前不回收）。 */
+    private void writeCardFrame(@NonNull Bitmap frame) {
+        cardFrameFile = null;
+        if (!ScreenOcrOptions.cardImage(this)) return;
+        final File target = ScreenOcrOptions.newCardFrameFile(
+                this, SystemClock.elapsedRealtimeNanos());
+        try {
+            cardWriter.execute(() -> ScreenOcrOptions.writeCardFrame(frame, target));
+            cardFrameFile = target;
+        } catch (RejectedExecutionException e) {
+            Log.w(TAG, "card frame writer is shut down", e);
+        }
     }
 
     private static List<ScreenOcrLayout.Line> toLines(@NonNull Text text) {
@@ -527,10 +697,16 @@ public class ScreenOcrService extends Service {
             for (ScreenOcrLayout.Line l : blockLines) blockTexts.add(l.text);
             String blockText = TextUtils.join("\n", blockTexts);
             int[] offsets = ScreenOcrLayout.blockLineOffsets(blockTexts);
+            // 块包围盒 = 本块留下的各行之并（制卡卡图按它裁，反馈 Gz7z6Y6Mbr）。
+            Rect blockBox = new Rect();
+            for (ScreenOcrLayout.Line l : blockLines) {
+                blockBox.union(l.left, l.top, l.right, l.bottom);
+            }
             for (int i = 0; i < blockLines.size(); i++) {
                 ScreenOcrLayout.Line l = blockLines.get(i);
                 out.add(new ScreenOcrLayout.Line(l.text, l.left, l.top, l.right, l.bottom,
-                        l.glyphs, l.vertical, blockText, offsets[i]));
+                        l.glyphs, l.vertical, blockText, offsets[i],
+                        blockBox.left, blockBox.top, blockBox.right, blockBox.bottom));
             }
         }
         return out;
@@ -597,6 +773,17 @@ public class ScreenOcrService extends Service {
         // {sentence}；EXTRA_PROCESS_TEXT 仍是整行（源文本条与扫描查词不变）。
         intent.putExtra(PopupDictFlutterActivity.EXTRA_SOURCE_BLOCK, line.blockText);
         intent.putExtra(PopupDictFlutterActivity.EXTRA_SOURCE_BLOCK_OFFSET, line.blockOffset);
+        // 反馈 Gz7z6Y6Mbr：定格帧文件 + 文本块 / 行框（截图像素 = 屏幕物理像素），查词窗
+        // 制卡时裁成卡图。
+        File cardFrame = cardFrameFile;
+        if (cardFrame != null) {
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_CARD_IMAGE_PATH,
+                    cardFrame.getAbsolutePath());
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_CARD_IMAGE_BLOCK, new int[] {
+                    line.blockLeft, line.blockTop, line.blockRight, line.blockBottom});
+            intent.putExtra(PopupDictFlutterActivity.EXTRA_CARD_IMAGE_LINE, new int[] {
+                    line.left, line.top, line.right, line.bottom});
+        }
         if (glyph != null) {
             intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_LEFT, glyph.left);
             intent.putExtra(PopupDictFlutterActivity.EXTRA_ANCHOR_TOP, glyph.top);
@@ -681,9 +868,15 @@ public class ScreenOcrService extends Service {
     }
 
     private void releaseFrame() {
-        if (frozenFrame != null) {
-            frozenFrame.recycle();
-            frozenFrame = null;
+        cardFrameFile = null;
+        final Bitmap frame = frozenFrame;
+        frozenFrame = null;
+        if (frame == null) return;
+        // 卡图可能还在写：排在写盘之后回收（同一条单线程队列）。
+        try {
+            cardWriter.execute(frame::recycle);
+        } catch (RejectedExecutionException e) {
+            frame.recycle();
         }
     }
 
@@ -696,6 +889,12 @@ public class ScreenOcrService extends Service {
         if (!finished) {
             finished = true;
             ScreenCaptureRequestActivity.onFlowFinished();
+        }
+        if (keepSession && projection != null && virtualDisplay != null) {
+            // 会话保持：服务留着（前台通知说明会话在保持），下一次截屏识字直接取帧。
+            keptInstance = this;
+            notifyForeground(buildSessionNotification());
+            return;
         }
         stopSelf();
     }
@@ -891,6 +1090,31 @@ public class ScreenOcrService extends Service {
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(channel);
         }
+    }
+
+    /** 保持会话时的常驻通知：说明会话在保持、何时结束，带「停止」。 */
+    private Notification buildSessionNotification() {
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, NotificationIds.CHANNEL_SCREEN_OCR)
+                : new Notification.Builder(this);
+        Intent stop = new Intent(this, ScreenOcrService.class).setAction(ACTION_STOP_SESSION);
+        PendingIntent stopIntent = PendingIntent.getService(this, 0, stop,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Action stopAction = new Notification.Action.Builder(
+                Icon.createWithResource(this, R.drawable.ic_stat_fushi),
+                label(LABEL_SESSION_STOP, "Stop"),
+                stopIntent).build();
+        String hint = label(LABEL_SESSION_HINT,
+                "Screen OCR won't ask again until you stop sharing or lock the screen");
+        return builder
+                .setContentTitle(label(LABEL_SESSION_NOTIFICATION,
+                        "Screen capture session kept for Screen OCR"))
+                .setContentText(hint)
+                .setStyle(new Notification.BigTextStyle().bigText(hint))
+                .setSmallIcon(R.drawable.ic_stat_fushi)
+                .setOngoing(true)
+                .addAction(stopAction)
+                .build();
     }
 
     private Notification buildNotification() {

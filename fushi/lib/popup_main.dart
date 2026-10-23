@@ -41,6 +41,9 @@ void popupMain() {
 
       await FushiDicts.preloadTransforms();
       final appModel = container.read(appProvider);
+      // 弹窗进程的制卡结果 toast 同样听「制卡提示」开关（偏好在 initialise 后才有值，
+      // 闭包每次现读）。
+      FushiToast.mineNoticeFilter = appModel.mineNoticeShown;
       unawaited(appModel.initialiseForDictionaryPopup());
     },
     (exception, stack) {
@@ -108,12 +111,12 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
                 // 偏好真变过（主 app 改了牌组 / Anki 后端 / 切了 Profile）：再丢掉
                 // 本进程里由 Anki 设置派生的 Riverpod 状态，下一个词才用新配置
                 // （fiwDIpFep7）。
-                if (await appModel.refreshPrefCacheIfChanged() && mounted) {
+                if (await appModel.refreshForWarmDictionaryPopup() && mounted) {
                   invalidateAnkiStateAfterPrefsChange(ref);
                 }
               } on Object catch (e, stack) {
                 ErrorLogService.instance.log(
-                  'popupMain.refreshPrefCacheIfChanged',
+                  'popupMain.refreshForWarmDictionaryPopup',
                   e,
                   stack,
                 );
@@ -236,6 +239,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           sourceCharIndex: _sourceCharIndex,
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
+          cardImage: _sourceBlock?.cardImage,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),

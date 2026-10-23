@@ -71,7 +71,9 @@ void main() {
       expect(
         _flat(page),
         contains(
-          _flat('String get _activeBookUid => _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;'),
+          _flat(
+            'String get _activeBookUid => _discBookUid ?? _webEpisodeBookUid ?? widget.bookUid;',
+          ),
         ),
         reason:
             'ordinary local and remote videos retain their existing bookUid key',
@@ -98,7 +100,7 @@ void main() {
       );
     });
 
-    test('default is 100 and persisted values clamp to 0..100', () {
+    test('default is 100 and persisted values clamp to the volume limit', () {
       expect(
         page,
         contains('double _playbackVolume = 100.0'),
@@ -111,7 +113,9 @@ void main() {
         _flat(read),
         contains(_flat('getPref(_volumePrefKey, defaultValue: 100.0)')),
       );
-      expect(_flat(read), contains(_flat('clamp(0.0, 100.0)')));
+      // 上限随 mpv 配置的「音量上限」（W-qZRr3lwK：100 / 150 / 200）。
+      expect(_flat(read), contains(_flat('.volumeMax.toDouble()')));
+      expect(_flat(read), contains(_flat('clamp(0.0, max)')));
     });
 
     test('local and remote init read volume before loading media', () {

@@ -370,6 +370,130 @@ void main() {
       expect(tester.takeException(), null);
     });
   });
+
+  // 1PKqUbCed7：同一扩展里同名的多个语言源（E-Hentai JA / EN / ZH …）合成一行；
+  // 数据仍是一源一行，开关 / 语言选择逐源写穿。
+  group('多语言同名源合成一行', () {
+    const String pkg = 'org.example.ehentai';
+    setUp(() async {
+      await database.replaceMangaOnlineSources(
+        pkg,
+        <MangaOnlineSourcesCompanion>[
+          for (final (int i, String lang) in <String>[
+            'ja',
+            'en',
+            'zh',
+            'fr',
+          ].indexed)
+            MangaOnlineSourcesCompanion.insert(
+              extensionPackage: pkg,
+              sourceId: '${i + 1}',
+              name: 'E-Hentai',
+              language: lang,
+              sortOrder: Value<int>(i),
+            ),
+          MangaOnlineSourcesCompanion.insert(
+            extensionPackage: pkg,
+            sourceId: '9',
+            name: 'ExHentai',
+            language: 'all',
+            sortOrder: const Value<int>(9),
+          ),
+        ],
+      );
+      await manager.reload();
+    });
+
+    Future<Map<String, bool>> enabledById() async => <String, bool>{
+      for (final MangaOnlineSourceRow row
+          in await database.getMangaOnlineSources())
+        if (row.extensionPackage == pkg) row.sourceId: row.enabled,
+    };
+
+    test('合组：按扩展 + 名称，语言摘要超出三个记 +N', () {
+      final List<MihonSourceGroup> groups = groupMihonSources(manager.sources);
+      expect(groups, hasLength(2));
+      expect(
+        groups.first.members.map((MangaOnlineSourceRow s) => s.sourceId),
+        <String>['1', '2', '3', '4'],
+      );
+      expect(mihonSourceGroupLanguageSummary(groups.first), 'JA · EN · ZH +1');
+      expect(groups.last.isMulti, isFalse);
+    });
+
+    testWidgets('一行显示；开关控整组；点行先选语言再进源；菜单「语言」逐语言启停', (
+      WidgetTester tester,
+    ) async {
+      Finder inDialog(String text) =>
+          find.descendant(of: find.byType(Dialog), matching: find.text(text));
+      final List<String> opened = <String>[];
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(
+          manager: manager,
+          onOpenSource: (MangaOnlineSourceRow source) =>
+              opened.add(source.sourceId),
+        ),
+      ]);
+      expect(find.text('E-Hentai'), findsOneWidget);
+      expect(find.text('JA · EN · ZH +1'), findsOneWidget);
+      expect(find.text('ExHentai'), findsOneWidget);
+
+      // 点行：弹语言选择，选 EN 进的是 EN 那个源。
+      await tester.tap(find.text('E-Hentai'));
+      await tester.pumpAndSettle();
+      expect(find.text(t.mihon_source_pick_language), findsOneWidget);
+      await tester.tap(inDialog('EN'));
+      await tester.pumpAndSettle();
+      expect(opened, <String>['2']);
+
+      // 菜单「语言」：取消 JA、ZH、FR，只留 EN。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('mihon_source_menu_${pkg}_1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.mihon_source_languages));
+      await tester.pumpAndSettle();
+      for (final String label in <String>['JA', 'ZH', 'FR']) {
+        await tester.tap(inDialog(label));
+        await tester.pump();
+      }
+      await tester.tap(inDialog(t.dialog_ok));
+      await tester.pumpAndSettle();
+      expect(await enabledById(), <String, bool>{
+        '1': false,
+        '2': true,
+        '3': false,
+        '4': false,
+        '9': true,
+      });
+
+      // 只剩一个启用的语言：点行直接进它，不再弹选择。
+      await tester.tap(find.text('E-Hentai'));
+      await tester.pumpAndSettle();
+      expect(opened, <String>['2', '2']);
+
+      // 组开关：关掉整组（写穿所有语言源），再打开整组。
+      final Finder groupSwitch = find.descendant(
+        of: find.byKey(const ValueKey<String>('mihon_source_row_${pkg}_1')),
+        matching: find.byType(Switch),
+      );
+      await tester.tap(groupSwitch);
+      await tester.pumpAndSettle();
+      expect((await enabledById()).values.where((bool v) => v), <bool>[
+        true,
+      ], reason: '只剩 ExHentai 开着');
+      await tester.tap(groupSwitch);
+      await tester.pumpAndSettle();
+      expect(await enabledById(), <String, bool>{
+        '1': true,
+        '2': true,
+        '3': true,
+        '4': true,
+        '9': true,
+      });
+      expect(tester.takeException(), null);
+    });
+  });
 }
 
 MihonAvailableExtension _extension({

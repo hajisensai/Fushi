@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
+import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
+    show selectedTagIdsProvider;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -419,6 +421,29 @@ void main() {
       ),
       findsOneWidget,
       reason: '补标签不能把字幕角标挤掉——两者并成一列，谁都不遮谁',
+    );
+  });
+
+  // 反馈 ZjKzpkfZ1N：首页分区没有任何筛选入口，标签选中状态却与系列 / 全部视频
+  // （以及书架）共享。在系列页选中一个首页条目都没打的标签后切回首页，首页不能
+  // 被静默筛空——继续观看主卡 / 行照常出现。
+  testWidgets('在别的分区选中的标签不筛首页', (WidgetTester tester) async {
+    await seedHeroDecoy();
+    await seedInProgress('video/untagged', 'Untagged Show');
+    final int tagId = await db.createTag('Elsewhere', 0xFF607D8B);
+
+    await pumpHome(tester);
+    final ProviderContainer container = ProviderScope.containerOf(
+      tester.element(find.byType(HomeVideoPage)),
+    );
+    container.read(selectedTagIdsProvider.notifier).state = <int>{tagId};
+    await tester.pumpAndSettle();
+
+    expect(container.read(selectedTagIdsProvider), <int>{tagId});
+    expect(
+      find.byKey(const ValueKey<String>('home_video_continue_video/untagged')),
+      findsOneWidget,
+      reason: '首页不吃标签筛选：没打该标签的在看条目照样出现在继续观看',
     );
   });
 }

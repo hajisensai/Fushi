@@ -360,6 +360,22 @@ CtlBodyPage _deckPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateCompactGlossaries(v),
     ),
+    SettingsSwitchItem(
+      id: _id('notice_success'),
+      title: t.card_creation_notice_success,
+      subtitle: t.card_creation_notice_success_hint,
+      value: (SettingsContext c) => c.appModel.mineNoticeSuccess,
+      onChanged: (SettingsContext c, bool v) =>
+          c.appModel.setMineNoticeSuccess(v),
+    ),
+    SettingsSwitchItem(
+      id: _id('notice_duplicate'),
+      title: t.card_creation_notice_duplicate,
+      subtitle: t.card_creation_notice_duplicate_hint,
+      value: (SettingsContext c) => c.appModel.mineNoticeDuplicate,
+      onChanged: (SettingsContext c, bool v) =>
+          c.appModel.setMineNoticeDuplicate(v),
+    ),
     _action(
       id: 'backup_import',
       title: t.anki_backup_import,
@@ -375,6 +391,13 @@ CtlBodyPage _deckPage() => CtlBodyPage(
 CtlBodyPage _tagsPage() => CtlBodyPage(
   breadcrumb: _crumb(t.anki_tag_default_section),
   items: <SettingsItem>[
+    SettingsTextItem(
+      id: _id('global_tags'),
+      title: t.anki_tags_global,
+      subtitle: t.anki_tags_global_hint,
+      value: (SettingsContext c) => _cfg(c).globalTags,
+      onChanged: (SettingsContext c, String v) => _vm(c).updateGlobalTags(v),
+    ),
     SettingsTextItem(
       id: _id('tags'),
       title: t.anki_tags,
@@ -634,6 +657,14 @@ CtlBodyPage _mediaPage() {
         read: (SettingsContext c) => c.appModel.videoMiningAnimatedFormat,
         write: (SettingsContext c, MiningAnimatedFormat v) =>
             c.appModel.setVideoMiningAnimatedFormat(v),
+      ),
+      SettingsSwitchItem(
+        id: _id('mining_animated_play_once'),
+        title: t.mining_animated_play_once,
+        subtitle: t.mining_animated_play_once_hint,
+        value: (SettingsContext c) => c.appModel.miningAnimatedPlayOnce,
+        onChanged: (SettingsContext c, bool v) =>
+            c.appModel.setMiningAnimatedPlayOnce(v),
       ),
       _stillFormatChoice(
         id: 'video_mining_still_format',

@@ -28,17 +28,19 @@ enum MihonMediaKind {
 
   /// 本生态可安装的 extensions-lib 版本标签（`MihonExtensionInspection.libVersion`）。
   ///
-  /// 漫画：Mihon 1.4 / 1.6。视频：Aniyomi **14 / 15 / 16**——桌面 sidecar 与 Android
-  /// 宿主编入的 `animesource` ABI（`third_party/m_extension_server/overlay`）是 lib 14
-  /// 与 lib 16 的并集：老构造 `Video(url, quality, videoUrl, …)` + `getVideoList(episode)`
-  /// 与新 data class `Video(videoUrl, videoTitle, resolution, …)` + Hoster API +
-  /// `SEpisode.fillermark` / `SAnime.fetch_type` 同时存在。yuzono / Anikku 仓库里
-  /// versionName 仍写 14 的 APK，dex 实际编译目标已是 lib 16 面（实测 KickAssAnime
-  /// 在纯 lib 14 宿主上 `NoSuchMethodError: Video.getVideoTitle()`、AniDB 写
-  /// `fillermark`），所以版本标签本身从不决定能不能播；只有 14..16 之外的世代才拒。
+  /// 漫画：Mihon 1.4 / 1.6。视频：Aniyomi **14 / 15 / 16 / 17**——桌面 sidecar 与
+  /// Android 宿主编入的 `animesource` ABI（`third_party/m_extension_server/overlay`）是
+  /// lib 14、16、17 的并集：老构造 `Video(url, quality, videoUrl, …)` +
+  /// `getVideoList(episode)`、lib 16 的 `Video(videoUrl, videoTitle, resolution, …)` +
+  /// Hoster API + `SEpisode.fillermark` / `SAnime.fetch_type`、lib 17 的 `memo` +
+  /// 合并式 `getAnimeEpisodeUpdate` + `HttpServer` 同时存在（扩展按 JVM 描述符链接，
+  /// sidecar 的 `AnimeExtensionAbiTest` 拿真 APK 的 dex 引用逐条钉死）。yuzono / Anikku
+  /// 仓库里 versionName 仍写 14 的 APK，dex 实际编译目标已是 lib 16 面（实测
+  /// KickAssAnime 在纯 lib 14 宿主上 `NoSuchMethodError: Video.getVideoTitle()`），所以
+  /// 版本标签本身从不决定能不能播；只有 14..17 之外的世代才拒。
   List<String> get supportedLibVersions => switch (this) {
     MihonMediaKind.manga => const <String>['1.4', '1.6'],
-    MihonMediaKind.anime => const <String>['14', '15', '16'],
+    MihonMediaKind.anime => const <String>['14', '15', '16', '17'],
   };
 }
 

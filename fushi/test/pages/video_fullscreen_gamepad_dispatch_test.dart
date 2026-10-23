@@ -211,6 +211,7 @@ class _Rig {
       nextFrame: _noop,
       screenshot: _noop,
       screenshotSubtitled: _noop,
+      ocrFrame: _noop,
       toggleFullscreen: _noop,
       toggleMiniWindow: _noop,
       toggleMiniChrome: _noop,

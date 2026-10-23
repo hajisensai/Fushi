@@ -40,6 +40,9 @@ class _SourceLineAppModel extends AppModel {
   Future<bool> refreshPrefCacheIfChanged() async => false;
 
   @override
+  Future<bool> refreshForWarmDictionaryPopup() async => false;
+
+  @override
   ThemeData get theme => ThemeData.light();
 
   @override

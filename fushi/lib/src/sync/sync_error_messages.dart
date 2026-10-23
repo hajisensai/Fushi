@@ -166,3 +166,28 @@ String friendlySyncError(Object error) =>
 /// message so nothing is hidden, without double-wrapping in [t.sync_error].
 String friendlySyncErrorDetail(Object error) =>
     _friendlyClause(error) ?? _rawMessage(error);
+
+/// 53NT7G_tSO：互联「测试连接」里一条地址失败的**原因**（显示在那一行下面）。
+///
+/// 以前失败一律只是一个 ✗：token 被对端作废、地址根本没记录证书、超时、连不上，
+/// 在界面上一模一样，用户无从知道该重新配对还是该查网络。
+///
+/// [hasPinnedCertificate] = 这条地址是否记录了对端证书指纹。没记录却要走 https
+/// （手动补的外网地址最常见）时，自签证书必然校验失败——要说的是「这条地址没配对
+/// 过、点重新配对」，而不是笼统的「无法连接」。
+String interconnectTestFailureReason(
+  Object error, {
+  required bool hasPinnedCertificate,
+}) {
+  if (error is SyncAuthError) return friendlySyncErrorDetail(error);
+  final String l = _rawMessage(error).toLowerCase();
+  final bool tls = l.contains('handshakeexception') ||
+      l.contains('certificate_verify_failed') ||
+      l.contains('certificate verify failed');
+  if (tls) {
+    return hasPinnedCertificate
+        ? t.sync_pair_tls_failed
+        : t.interconnect_peer_certificate_unpinned;
+  }
+  return friendlySyncErrorDetail(error);
+}

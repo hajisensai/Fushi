@@ -1014,6 +1014,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       unawaited(_startCtlServer());
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    FushiToast.mineNoticeFilter = ref.read(appProvider).mineNoticeShown;
     installAnkiVideoTemplateFallbackNotice(
       navigatorKey: ref.read(appProvider).navigatorKey,
       prefs: () => ref.read(appProvider).prefsRepo,

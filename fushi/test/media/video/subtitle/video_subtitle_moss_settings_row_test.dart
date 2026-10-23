@@ -31,6 +31,9 @@ class _Moss implements VideoSubtitleMossPort {
       const Stream<ModelDownloadEvent>.empty();
 
   @override
+  Stream<ModelDownloadEvent>? resumeEnsure() => null;
+
+  @override
   Future<int> diskBytes() async => disk;
 
   @override

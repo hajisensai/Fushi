@@ -1,4 +1,4 @@
-// 源码守卫：galgame hook 浮窗工具条的 9 槽悬停提示 + 槽位几何单一真相。
+// 源码守卫：galgame hook 浮窗工具条的 10 槽悬停提示 + 槽位几何单一真相。
 //
 // 工具条是 runner 自有的 Win32 自绘分层窗（Direct2D 直绘 + 手动 hit-test），
 // C++ 在 Dart 测试里跑不起来，所以在源码层锁死这套东西赖以成立的结构性前提：
@@ -248,7 +248,7 @@ void main() {
     checkTable(
       countName: 'kGalHookSlotCount',
       tableName: 'kGalHookSlotActions',
-      expectedSlots: 9,
+      expectedSlots: 10,
       tooltipSource: controller,
       keyPrefix: 'game_hook_btn_',
     );

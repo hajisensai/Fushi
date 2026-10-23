@@ -570,7 +570,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       }
 
       final tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,

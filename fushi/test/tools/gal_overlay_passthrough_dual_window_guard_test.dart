@@ -453,6 +453,7 @@ void main() {
           'toggleTransparency',
           'lock',
           'openWorkbench',
+          'copyLine',
           'topmost',
           'close',
         ],

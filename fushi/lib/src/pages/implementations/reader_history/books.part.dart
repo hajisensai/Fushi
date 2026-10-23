@@ -322,6 +322,18 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             await _openSrtBookReimport(book);
           },
         ),
+      // 「添加书籍文件」：下载 + 自动转录出来的有声书正文是 cue 生成的，拿到对应
+      // EPUB 后此前无处可配（反馈 Q0kWQNkF2f / Ulw9gIyZGk）。EPUB 有声书的配对行
+      // 已有用户的正文，不给。
+      if (modules.isEnabled(ModuleId.listening) && srtBookCanAttachEpub(book))
+        DialogQuickAction(
+          label: t.srt_book_attach_epub,
+          icon: FushiIcons.books,
+          onPressed: () async {
+            Navigator.pop(dialogContext);
+            await _attachEpubToSrtBook(book);
+          },
+        ),
       if (bookKey.isNotEmpty) ...[
         // 与 EPUB 卡菜单对称：手动「标记为已读完 / 取消」。有声书完成状态与 EPUB 共用
         // 同一 EpubBooks.completedAt（按配对 bookKey），故复用同一 [_toggleBookCompleted]。
@@ -1548,6 +1560,39 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     _refreshSrtBooks();
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _rebuild(() {});
+  }
+
+  /// 给正文由 cue 生成（或根本没生成正文）的字幕书配上用户的书籍文件。
+  ///
+  /// 预填这本书现有的音频与字幕（都在 App 私有目录里，用户在选择器里找不到），
+  /// 用户只选 EPUB，走书籍导入对话框唯一的对齐导入路径。新书自带音频 / 字幕的
+  /// 副本，所以导入成功后原字幕书成了重复条目——交给标准删除确认让用户决定。
+  Future<void> _attachEpubToSrtBook(SrtBook book) async {
+    final SrtBookEpubAttachPrefill prefill =
+        await resolveSrtBookEpubAttachPrefill(book);
+    if (!mounted) return;
+    final bool? imported = await showAppDialog<bool>(
+      context: context,
+      builder: (_) => BookImportDialog(
+        prefs: appModel.prefsRepo,
+        repo: SrtBookRepository(appModel.database),
+        audiobookRepo: AudiobookRepository(appModel.database),
+        db: appModel.database,
+        requireBook: true,
+        initialSubtitlePath: prefill.subtitlePath,
+        initialAudioPaths:
+            prefill.audioPaths.isEmpty ? null : prefill.audioPaths,
+      ),
+    );
+    if (imported != true || !mounted) return;
+    _refreshSrtBooks();
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    _rebuild(() {});
+    FushiToast.show(
+      msg: t.srt_book_attach_epub_remove_old_hint,
+      severity: ToastSeverity.info,
+    );
+    await _confirmDeleteSrtBook(book);
   }
 
   Future<List<String>> _pickSrtAudioFiles() async {
