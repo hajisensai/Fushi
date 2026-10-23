@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 
@@ -118,7 +119,7 @@ final class VideoRemoteLibraryItem {
     this.collection,
     this.positionMs = 0,
     this.lastPlayedAt,
-    this.coverVersion,
+    this.coverPath,
   });
   final String bookUid;
   final String title;
@@ -128,12 +129,12 @@ final class VideoRemoteLibraryItem {
   final int positionMs;
   final int? lastPlayedAt;
 
-  /// Modification time (ms) of the video's cover file; null when it has none.
-  /// The phone fetches the cover from the library's own cover endpoint only
-  /// when this is set, and keys its cache by it (a re-scraped cover changes
-  /// it).
-  final int? coverVersion;
-  Map<String, Object?> toJson() => <String, Object?>{
+  /// The cover file on this computer. Never sent: only its modification time
+  /// goes out as `coverVersion` ([videoRemoteCoverVersion]), computed for the
+  /// requested page only.
+  final String? coverPath;
+
+  Map<String, Object?> toJson({int? coverVersion}) => <String, Object?>{
     'bookUid': bookUid,
     'title': title,
     if (collection != null) 'collection': collection,
@@ -141,6 +142,17 @@ final class VideoRemoteLibraryItem {
     if (lastPlayedAt != null) 'lastPlayedAt': lastPlayedAt,
     if (coverVersion != null) 'coverVersion': coverVersion,
   };
+}
+
+/// Modification time (ms) of a cover file as its version; null without a
+/// cover or when the file is gone. The phone fetches a cover (from the
+/// interconnect library's cover endpoint, same `coverPath`) only when this is
+/// set and keys its cache by it, so a re-scraped cover is fetched again.
+Future<int?> videoRemoteCoverVersion(String? coverPath) async {
+  if (coverPath == null || coverPath.isEmpty) return null;
+  final FileStat stat = await FileStat.stat(coverPath);
+  if (stat.type != FileSystemEntityType.file) return null;
+  return stat.modified.millisecondsSinceEpoch;
 }
 
 /// App-owned access to the computer's video library for on-demand playback
@@ -1065,11 +1077,18 @@ final class VideoRemoteHost implements VideoRemoteService {
       'total': all.length,
       'offset': offset,
       'currentBookUid': _binding?.bookUid(),
-      'items': all
-          .skip(offset)
-          .take(limit)
-          .map((VideoRemoteLibraryItem item) => item.toJson())
-          .toList(),
+      // Cover versions only for the page being sent: a stat per row of the
+      // whole library on every search keystroke is slow on network drives.
+      'items': await Future.wait(
+        all
+            .skip(offset)
+            .take(limit)
+            .map(
+              (VideoRemoteLibraryItem item) async => item.toJson(
+                coverVersion: await videoRemoteCoverVersion(item.coverPath),
+              ),
+            ),
+      ),
     };
   }
 

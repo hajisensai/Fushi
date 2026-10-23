@@ -113,13 +113,25 @@ void main() {
   test(
     'library items carry the cover version only when there is a cover',
     () async {
-      library = const <VideoRemoteLibraryItem>[
-        VideoRemoteLibraryItem(bookUid: 'a', title: 'A', coverVersion: 1234),
-        VideoRemoteLibraryItem(bookUid: 'b', title: 'B'),
+      final Directory dir = await Directory.systemTemp.createTemp('vr_cover');
+      addTearDown(() => dir.delete(recursive: true));
+      final File cover = File('${dir.path}/a.jpg')..writeAsBytesSync(<int>[1]);
+      cover.setLastModifiedSync(DateTime.fromMillisecondsSinceEpoch(1234000));
+      library = <VideoRemoteLibraryItem>[
+        VideoRemoteLibraryItem(bookUid: 'a', title: 'A', coverPath: cover.path),
+        VideoRemoteLibraryItem(
+          bookUid: 'b',
+          title: 'B',
+          coverPath: '${dir.path}/gone.jpg',
+        ),
+        const VideoRemoteLibraryItem(bookUid: 'c', title: 'C'),
       ];
       final List<Object?> items = (await call('library'))['items']! as List;
-      expect(items.first, containsPair('coverVersion', 1234));
-      expect(items.last, isNot(contains('coverVersion')));
+      expect(items[0], containsPair('coverVersion', 1234000));
+      // 本机路径永不外发。
+      expect(items[0].toString(), isNot(contains(dir.path)));
+      expect(items[1], isNot(contains('coverVersion')));
+      expect(items[2], isNot(contains('coverVersion')));
     },
   );
 

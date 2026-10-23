@@ -171,14 +171,20 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // 解码失败要真实异步跑完才回到 errorBuilder。
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 200)),
-    );
-    await tester.pumpAndSettle();
     final Finder cover = find.byKey(
       const ValueKey<String>('video-remote-library-cover-bad'),
     );
+    final Finder fallback = find.descendant(
+      of: cover,
+      matching: find.byType(FushiIcon),
+    );
+    // 解码失败要真实异步跑完才回到 errorBuilder：按条件等，不按固定时长。
+    for (int i = 0; i < 20 && fallback.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump();
+    }
     expect(cover, findsOneWidget);
     expect(
       find.descendant(of: cover, matching: find.byType(FushiIcon)),

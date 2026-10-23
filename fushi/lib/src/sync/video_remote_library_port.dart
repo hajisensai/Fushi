@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/media/video/video_resource_check.dart';
@@ -65,18 +64,9 @@ Future<List<VideoRemoteLibraryItem>> listVideoRemoteLibrary(
             collectionNames[primary[MediaKind.video.compositeKey(row.bookUid)]],
         positionMs: row.lastPositionMs,
         lastPlayedAt: row.lastPlayedAt,
-        coverVersion: await videoRemoteCoverVersion(row.coverPath),
+        coverPath: row.coverPath,
       ),
   ];
-}
-
-/// 封面文件的修改时间（毫秒）作版本；没有封面 / 文件已不在为 null（手机端据此
-/// 决定要不要拉图，拉图走互联库的封面端点，与这里同一个 `coverPath`）。
-Future<int?> videoRemoteCoverVersion(String? coverPath) async {
-  if (coverPath == null || coverPath.isEmpty) return null;
-  final FileStat stat = await FileStat.stat(coverPath);
-  if (stat.type != FileSystemEntityType.file) return null;
-  return stat.modified.millisecondsSinceEpoch;
 }
 
 /// 点播清单排序：播过的按最近播放新→旧排在前面，没播过的按入库时间新→旧，

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
     show interconnectPersistedUrl;
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
@@ -189,12 +190,13 @@ class VideoRemoteClient implements RemoteCoverFetcher {
   }
 
   /// Pairing identity of the host: another host or a re-pairing (new token)
-  /// must not reuse cached covers; a changed address must.
+  /// must not reuse cached covers; a changed address must. A content digest,
+  /// not `Object.hash` (seeded per process): the disk cache outlives restarts.
   @override
   String get coverCacheNamespace {
     final String host = peer.hostId ?? '${peer.url}|${peer.fingerprintSha256}';
-    final int hash = Object.hash(host, peer.token);
-    return 'vr${hash.toUnsigned(32).toRadixString(16)}';
+    final Digest digest = sha256.convert(utf8.encode('$host|${peer.token}'));
+    return 'vr${digest.toString().substring(0, 16)}';
   }
 
   /// `GET` [path] on the first address of the selected host that answers 200
@@ -234,6 +236,9 @@ class VideoRemoteClient implements RemoteCoverFetcher {
               },
             )
             .timeout(timeout);
+        // 404 is the host's answer (e.g. no cover), not a bad address: asking
+        // its other addresses would get the same answer, each after a timeout.
+        if (response.statusCode == 404) return null;
         if (response.statusCode != 200) continue;
         return response;
       } catch (_) {

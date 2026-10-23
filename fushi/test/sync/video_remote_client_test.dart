@@ -256,6 +256,8 @@ void main() {
       peer: peer,
     ).coverCacheNamespace;
     final String base = namespace(selected);
+    // 内容摘要，跨进程不变（磁盘缓存要在重启后还读得中）。
+    expect(base, 'vrc3da0ba5e1b68bfa');
     expect(
       namespace(
         const FushiClientUrl(
