@@ -16,18 +16,26 @@
 /// - 下载 `GET /api/items/:id/download`：多文件条目现场打 zip 流式回（无
 ///   Content-Length），单文件条目直接回原文件；用户没有 `permissions.download`
 ///   时 403。
+/// - 播放 `POST /api/items/:id/play[/:episodeId]`（forceDirectPlay）开会话，音轨
+///   文件 `GET /api/items/:id/file/:ino` 支持 Range；进度走会话 `sync` / `close`
+///   或 `PATCH /api/me/progress/:id[/:episodeId]`；
+/// - 服务端不认 `.srt`：字幕在 `libraryFiles` 里 `fileType` 是 `unknown`，按扩展名认；
+/// - `x-return-tokens` 在部分部署（反代剥头）下不生效，refresh token 只在
+///   `Set-Cookie: refresh_token=` 里，登录时要兜底取；
 /// - 服务器可挂在子路径下（`RouterBasePath`，如 `https://host/audiobookshelf`），
 ///   所有端点都相对用户填的根地址拼接。
 library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
 /// 令牌变化（登录 / 刷新轮换）后的持久化回调。
@@ -278,25 +286,357 @@ class AudiobookshelfApi {
     return '$base.zip';
   }
 
+  /// 服务器状态（免鉴权）：确认对面是 ABS，并看支持哪些登录方式。
+  Future<AudiobookshelfServerStatus> status() async {
+    const String operation = 'status';
+    final http.Response response = await _rawSend(
+      'GET',
+      uri('/status'),
+      operation: operation,
+    );
+    _ensureOk(response, operation);
+    final AudiobookshelfServerStatus? parsed = AudiobookshelfServerStatus.parse(
+      _decodeObject(response, operation),
+    );
+    if (parsed == null) throw _invalid(operation);
+    return parsed;
+  }
+
+  /// 条目详情（音轨 / 文件 / 章节 / 单集 / 进度）。
+  ///
+  /// 播客请传 `expanded: false`：展开形状带整套单集的 audioTrack，实测 176 KB 以上、
+  /// 慢服务器上会超时；非展开形状已含每集 `audioFile.ino`，足够拼文件地址。
+  Future<AudiobookshelfItemDetail> itemDetail(
+    String itemId, {
+    bool expanded = true,
+  }) async {
+    const String operation = 'itemDetail';
+    final AudiobookshelfItemDetail? parsed = AudiobookshelfItemDetail.parse(
+      await _getJson(
+        '/api/items/${Uri.encodeComponent(itemId)}',
+        operation: operation,
+        query: <String, String>{
+          if (expanded) 'expanded': '1',
+          'include': 'progress',
+        },
+        timeout: requestTimeout * 2,
+      ),
+    );
+    if (parsed == null) throw _invalid(operation);
+    return parsed;
+  }
+
+  /// 开播放会话（direct play）。返回音轨表与服务端记的续播位置。
+  Future<AudiobookshelfPlaySession> startPlay(
+    String itemId, {
+    required String deviceId,
+    String? episodeId,
+    String clientName = 'Fushi',
+  }) async {
+    const String operation = 'play';
+    final String episodePart = episodeId == null
+        ? ''
+        : '/${Uri.encodeComponent(episodeId)}';
+    final http.Response response = await _authorizedSend(
+      'POST',
+      uri('/api/items/${Uri.encodeComponent(itemId)}/play$episodePart'),
+      operation: operation,
+      headers: const <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, Object?>{
+        'deviceInfo': <String, String>{
+          'clientName': clientName,
+          'deviceId': deviceId,
+        },
+        'forceDirectPlay': true,
+        'forceTranscode': false,
+        'mediaPlayer': 'just_audio',
+        'supportedMimeTypes': const <String>[
+          'audio/flac',
+          'audio/mpeg',
+          'audio/mp4',
+          'audio/x-m4b',
+          'audio/aac',
+          'audio/ogg',
+          'audio/opus',
+          'audio/wav',
+        ],
+      }),
+    );
+    final AudiobookshelfPlaySession? parsed = AudiobookshelfPlaySession.parse(
+      _decodeObject(response, operation),
+    );
+    if (parsed == null || parsed.tracks.isEmpty) throw _invalid(operation);
+    return parsed;
+  }
+
+  /// 会话同步：[timeListenedSeconds] 是距上次同步新增的收听秒数（不是累计）。
+  /// 会话已被服务端清掉时抛 `notFound`，调用方退回 [patchProgress]。
+  Future<void> syncSession(
+    String sessionId, {
+    required double currentTimeSeconds,
+    required double timeListenedSeconds,
+    required double durationSeconds,
+  }) => _sessionCall(
+    'sync',
+    sessionId,
+    currentTimeSeconds: currentTimeSeconds,
+    timeListenedSeconds: timeListenedSeconds,
+    durationSeconds: durationSeconds,
+  );
+
+  /// 结束会话（附最后一次位置）。
+  Future<void> closeSession(
+    String sessionId, {
+    required double currentTimeSeconds,
+    required double timeListenedSeconds,
+    required double durationSeconds,
+  }) => _sessionCall(
+    'close',
+    sessionId,
+    currentTimeSeconds: currentTimeSeconds,
+    timeListenedSeconds: timeListenedSeconds,
+    durationSeconds: durationSeconds,
+  );
+
+  Future<void> _sessionCall(
+    String action,
+    String sessionId, {
+    required double currentTimeSeconds,
+    required double timeListenedSeconds,
+    required double durationSeconds,
+  }) async {
+    await _authorizedSend(
+      'POST',
+      uri('/api/session/${Uri.encodeComponent(sessionId)}/$action'),
+      operation: 'session.$action',
+      headers: const <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, num>{
+        'currentTime': currentTimeSeconds,
+        'timeListening': timeListenedSeconds,
+        'duration': durationSeconds,
+      }),
+    );
+  }
+
+  /// 没有开会话时直接写进度（离线补写、会话过期后的兜底）。
+  Future<void> patchProgress(
+    String itemId, {
+    String? episodeId,
+    required double currentTimeSeconds,
+    required double durationSeconds,
+    bool isFinished = false,
+  }) async {
+    await _authorizedSend(
+      'PATCH',
+      uri(_progressPath(itemId, episodeId)),
+      operation: 'patchProgress',
+      headers: const <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, Object>{
+        'currentTime': currentTimeSeconds,
+        'duration': durationSeconds,
+        'progress': durationSeconds > 0
+            ? (currentTimeSeconds / durationSeconds).clamp(0.0, 1.0)
+            : 0.0,
+        'isFinished': isFinished,
+      }),
+    );
+  }
+
+  /// 读进度；服务端没有记录（404）时返回 null。
+  Future<AudiobookshelfMediaProgress?> getProgress(
+    String itemId, {
+    String? episodeId,
+  }) async {
+    try {
+      return AudiobookshelfMediaProgress.parse(
+        await _getJson(
+          _progressPath(itemId, episodeId),
+          operation: 'getProgress',
+        ),
+      );
+    } on ExternalProviderFailure catch (failure) {
+      if (failure.kind == ExternalProviderFailureKind.notFound) return null;
+      rethrow;
+    }
+  }
+
+  /// 「继续收听」：进行中的条目（播客带最近收听的那一集）。
+  Future<List<AudiobookshelfInProgressEntry>> itemsInProgress() async =>
+      AudiobookshelfInProgressEntry.parseList(
+        await _getJson('/api/me/items-in-progress', operation: 'inProgress'),
+      );
+
+  static String _progressPath(String itemId, String? episodeId) {
+    final String episodePart = episodeId == null
+        ? ''
+        : '/${Uri.encodeComponent(episodeId)}';
+    return '/api/me/progress/${Uri.encodeComponent(itemId)}$episodePart';
+  }
+
+  /// 条目内某个文件的地址（inline，支持 Range；需鉴权头）。
+  Uri fileUri(String itemId, String ino) => uri(
+    '/api/items/${Uri.encodeComponent(itemId)}/file/${Uri.encodeComponent(ino)}',
+  );
+
+  /// 条目内某个文件的下载地址（需 `permissions.download`）。
+  Uri fileDownloadUri(String itemId, String ino) => uri(
+    '/api/items/${Uri.encodeComponent(itemId)}/file/'
+    '${Uri.encodeComponent(ino)}/download',
+  );
+
+  /// 带「马上就能用」的鉴权头：access token 快过期（[minValidity] 内）就先刷新。
+  ///
+  /// 给一次性读取（ffmpeg 切句、单句回放）用——它们把头交给外部进程后就不再受
+  /// 本类 401 重试管辖。无法判断过期时间的令牌（API key / 旧版永久 token）原样返回。
+  Future<Map<String, String>> freshAuthorizationHeaders({
+    Duration minValidity = const Duration(minutes: 2),
+  }) async {
+    const String operation = 'token';
+    final AudiobookshelfTokens used = _requireTokens(operation);
+    final DateTime? expiry = audiobookshelfTokenExpiry(used.accessToken);
+    final bool nearExpiry =
+        expiry != null &&
+        expiry.difference(DateTime.now()).compareTo(minValidity) <= 0;
+    if (nearExpiry && await _refreshAfter(used, operation)) {
+      return _bearer(_tokens!);
+    }
+    return _bearer(_tokens ?? used);
+  }
+
+  /// 读 [target] 的字节区间 `[start, end]`（闭区间，均可省）。返回的是未消费的
+  /// 流式响应，**调用方负责读完或取消**。
+  ///
+  /// 复用 401 → 刷新 → 重试，所以长时间播放中令牌过期不会让 seek 失败。鉴权头只
+  /// 发往本服务器同 origin 的地址。
+  Future<http.StreamedResponse> openRange(
+    Uri target, {
+    int? start,
+    int? end,
+  }) async {
+    const String operation = 'stream';
+    if (!isServerOrigin(target)) {
+      throw ExternalProviderFailure(
+        providerId: providerId,
+        operation: operation,
+        kind: ExternalProviderFailureKind.forbidden,
+        message: 'refusing to send credentials to another origin',
+      );
+    }
+    final String? range = start == null && end == null
+        ? null
+        : 'bytes=${start ?? 0}-${end ?? ''}';
+    Map<String, String> headersFor(AudiobookshelfTokens tokens) =>
+        <String, String>{if (range != null) 'Range': range, ..._bearer(tokens)};
+
+    final AudiobookshelfTokens used = _requireTokens(operation);
+    http.StreamedResponse response = await _rawSendStreamed(
+      target,
+      operation: operation,
+      headers: headersFor(used),
+    );
+    if (response.statusCode == 401) {
+      // 每个响应的流只能消费一次：这一枚 401 排空后就不再碰它。
+      await response.stream.drain<void>();
+      if (!await _refreshAfter(used, operation)) {
+        throw _sessionExpired(operation);
+      }
+      response = await _rawSendStreamed(
+        target,
+        operation: operation,
+        headers: headersFor(_tokens!),
+      );
+    }
+    final int status = response.statusCode;
+    if (status < 200 || status >= 300) {
+      await response.stream.drain<void>();
+      throw status == 401
+          ? _sessionExpired(operation)
+          : _failureForStatus(status, operation);
+    }
+    return response;
+  }
+
+  ExternalProviderFailure _sessionExpired(String operation) =>
+      ExternalProviderFailure(
+        providerId: providerId,
+        operation: operation,
+        kind: ExternalProviderFailureKind.unauthorized,
+        message: 'server session expired; sign in again',
+        statusCode: 401,
+      );
+
+  /// 取条目里的小文本文件（字幕）。超过 [maxBytes] 抛 `invalidResponse`，不会先把
+  /// 整份读进内存——条目文件夹里可能有任意大的文件。
+  Future<Uint8List> fetchLibraryTextFile(
+    String itemId,
+    String ino, {
+    int maxBytes = 8 * 1024 * 1024,
+  }) async {
+    const String operation = 'fetchFile';
+    final http.StreamedResponse response = await openRange(
+      fileUri(itemId, ino),
+    );
+    try {
+      return await readBoundedBytes(
+        response.stream,
+        maxBytes,
+      ).timeout(requestTimeout * 2);
+    } on BodyTooLargeException {
+      throw ExternalProviderFailure(
+        providerId: providerId,
+        operation: operation,
+        kind: ExternalProviderFailureKind.invalidResponse,
+        message: 'file is larger than $maxBytes bytes',
+      );
+    } on TimeoutException {
+      throw _timeoutFailure(operation);
+    } on http.ClientException {
+      throw _networkFailure(operation);
+    }
+  }
+
+  /// 单个文件（播客单集的音频 / 条目内的字幕）的下载物化。同 [prepareDownload]：
+  /// 先核下载权限，让「没有权限」以一句能看懂的话报出来，而不是下载队列里的裸 403。
+  Future<AudiobookshelfDownloadTarget> prepareFileDownload(
+    String itemId,
+    String ino, {
+    required String fileName,
+    int? sizeBytes,
+  }) async {
+    final AudiobookshelfUser user = await me();
+    if (!user.canDownload) {
+      throw ExternalProviderFailure(
+        providerId: providerId,
+        operation: 'download',
+        kind: ExternalProviderFailureKind.forbidden,
+        message: 'account lacks download permission',
+        statusCode: 403,
+      );
+    }
+    return AudiobookshelfDownloadTarget(
+      url: fileDownloadUri(itemId, ino),
+      headers: authorizationHeaders,
+      fileName: fileName,
+      sizeBytes: sizeBytes,
+    );
+  }
+
   Future<Map<String, Object?>> _getJson(
     String path, {
     required String operation,
     Map<String, String>? query,
+    Duration? timeout,
   }) async {
     final http.Response response = await _authorizedSend(
       'GET',
       uri(path, query),
       operation: operation,
+      timeout: timeout,
     );
     return _decodeObject(response, operation);
   }
 
-  /// 带鉴权发送；401 时刷新一次令牌再重试一次，仍 401 即判会话失效。
-  Future<http.Response> _authorizedSend(
-    String method,
-    Uri target, {
-    required String operation,
-  }) async {
+  AudiobookshelfTokens _requireTokens(String operation) {
     final AudiobookshelfTokens? used = _tokens;
     if (used == null) {
       throw ExternalProviderFailure(
@@ -306,18 +646,35 @@ class AudiobookshelfApi {
         message: 'not signed in to the server',
       );
     }
+    return used;
+  }
+
+  /// 带鉴权发送；401 时刷新一次令牌再重试一次，仍 401 即判会话失效。
+  Future<http.Response> _authorizedSend(
+    String method,
+    Uri target, {
+    required String operation,
+    Map<String, String> headers = const <String, String>{},
+    String? body,
+    Duration? timeout,
+  }) async {
+    final AudiobookshelfTokens used = _requireTokens(operation);
     http.Response response = await _rawSend(
       method,
       target,
       operation: operation,
-      headers: _bearer(used),
+      headers: <String, String>{...headers, ..._bearer(used)},
+      body: body,
+      timeout: timeout,
     );
     if (response.statusCode == 401 && await _refreshAfter(used, operation)) {
       response = await _rawSend(
         method,
         target,
         operation: operation,
-        headers: _bearer(_tokens!),
+        headers: <String, String>{...headers, ..._bearer(_tokens!)},
+        body: body,
+        timeout: timeout,
       );
     }
     if (response.statusCode == 401) {
@@ -386,7 +743,9 @@ class AudiobookshelfApi {
     required String operation,
     Map<String, String> headers = const <String, String>{},
     String? body,
+    Duration? timeout,
   }) async {
+    final Duration limit = timeout ?? requestTimeout;
     final http.Request request = http.Request(method, target)
       ..headers.addAll(<String, String>{
         'Accept': 'application/json',
@@ -396,57 +755,110 @@ class AudiobookshelfApi {
     try {
       final http.StreamedResponse streamed = await _client
           .send(request)
-          .timeout(requestTimeout);
-      return await http.Response.fromStream(streamed).timeout(requestTimeout);
+          .timeout(limit);
+      return await http.Response.fromStream(streamed).timeout(limit);
     } on TimeoutException {
-      throw ExternalProviderFailure(
+      throw _timeoutFailure(operation);
+    } on http.ClientException {
+      throw _networkFailure(operation);
+    }
+  }
+
+  ExternalProviderFailure _timeoutFailure(String operation) =>
+      ExternalProviderFailure(
         providerId: providerId,
         operation: operation,
         kind: ExternalProviderFailureKind.timeout,
         message: 'server request timed out',
         retryable: true,
       );
-    } on http.ClientException {
-      // 原始异常文本里带完整 URL，不往上带。
-      throw ExternalProviderFailure(
+
+  // 原始异常文本里带完整 URL，不往上带。
+  ExternalProviderFailure _networkFailure(String operation) =>
+      ExternalProviderFailure(
         providerId: providerId,
         operation: operation,
         kind: ExternalProviderFailureKind.network,
         message: 'could not reach the server',
         retryable: true,
       );
+
+  /// 只等响应头（正文留给调用方按流消费），用于音频区间读取。
+  Future<http.StreamedResponse> _rawSendStreamed(
+    Uri target, {
+    required String operation,
+    required Map<String, String> headers,
+  }) async {
+    final http.Request request = http.Request('GET', target)
+      ..headers.addAll(<String, String>{'Accept': '*/*', ...headers});
+    try {
+      return await _client.send(request).timeout(requestTimeout);
+    } on TimeoutException {
+      throw _timeoutFailure(operation);
+    } on http.ClientException {
+      throw _networkFailure(operation);
     }
   }
 
   void _ensureOk(http.Response response, String operation) {
     final int status = response.statusCode;
     if (status >= 200 && status < 300) return;
-    throw ExternalProviderFailure(
-      providerId: providerId,
-      operation: operation,
-      kind: switch (status) {
-        401 => ExternalProviderFailureKind.unauthorized,
-        403 => ExternalProviderFailureKind.forbidden,
-        404 => ExternalProviderFailureKind.notFound,
-        429 => ExternalProviderFailureKind.rateLimited,
-        _ => ExternalProviderFailureKind.unavailable,
-      },
-      message: 'http status $status',
-      statusCode: status,
-      retryable: status >= 500 || status == 429,
-    );
+    throw _failureForStatus(status, operation);
   }
+
+  ExternalProviderFailure _failureForStatus(int status, String operation) =>
+      ExternalProviderFailure(
+        providerId: providerId,
+        operation: operation,
+        kind: switch (status) {
+          401 => ExternalProviderFailureKind.unauthorized,
+          403 => ExternalProviderFailureKind.forbidden,
+          404 => ExternalProviderFailureKind.notFound,
+          429 => ExternalProviderFailureKind.rateLimited,
+          _ => ExternalProviderFailureKind.unavailable,
+        },
+        message: 'http status $status',
+        statusCode: status,
+        retryable: status >= 500 || status == 429,
+      );
 
   AudiobookshelfSession _parseSession(
     http.Response response,
     String operation,
   ) {
     final Map<String, Object?> json = _decodeObject(response, operation);
+    final AudiobookshelfSession session;
     try {
-      return AudiobookshelfSession.parse(json);
+      session = AudiobookshelfSession.parse(json);
     } on FormatException {
       throw _invalid(operation);
     }
+    if (session.tokens.canRefresh) return session;
+    // 部分部署（反代剥掉 x-return-tokens）只通过 Set-Cookie 下发 refresh token。
+    final String? cookieToken = refreshTokenFromSetCookie(
+      response.headers['set-cookie'],
+    );
+    if (cookieToken == null) return session;
+    return AudiobookshelfSession(
+      tokens: AudiobookshelfTokens(
+        accessToken: session.tokens.accessToken,
+        refreshToken: cookieToken,
+      ),
+      user: session.user,
+      defaultLibraryId: session.defaultLibraryId,
+      serverVersion: session.serverVersion,
+    );
+  }
+
+  /// 从（可能被 IOClient 用逗号拼成一行的）`Set-Cookie` 里取 `refresh_token`。
+  /// JWT 的字符集里没有逗号 / 分号 / 空白，用它们做边界是安全的。
+  static String? refreshTokenFromSetCookie(String? header) {
+    if (header == null) return null;
+    final Match? match = RegExp(
+      r'(?:^|[;,]\s*)refresh_token=([^;,\s]+)',
+    ).firstMatch(header);
+    final String? value = match?.group(1);
+    return value == null || value.isEmpty ? null : value;
   }
 
   Map<String, Object?> _decodeObject(http.Response response, String operation) {
