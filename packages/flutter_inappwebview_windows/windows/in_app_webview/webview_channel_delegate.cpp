@@ -106,7 +106,9 @@ namespace flutter_inappwebview_plugin
       result->Success(make_fl_value(webView->getUrl()));
     }
     else if (string_equals(methodName, "getTitle")) {
-      result->Success(make_fl_value(webView->getUrl()));
+      // 上游 0.6.0 这里误调了 getUrl()：Windows 上 controller.getTitle() 恒返回地址，
+      // 浏览器标签名 / 书签名全变成网址。
+      result->Success(make_fl_value(webView->getTitle()));
     }
     else if (string_equals(methodName, "loadUrl")) {
       auto urlRequest = std::make_unique<URLRequest>(get_fl_map_value<flutter::EncodableMap>(arguments, "urlRequest"));

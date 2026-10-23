@@ -702,6 +702,11 @@ namespace flutter_inappwebview_plugin
                     std::optional<std::map<std::string, std::string>>{},
                     std::optional<std::vector<uint8_t>>{});
                   channelDelegate->onReceivedHttpError(std::move(webResourceRequest), std::move(webResourceResponse));
+                  // WebView2 把主框架 4xx/5xx 一律报成 IsSuccess=FALSE，但文档其实已经加载
+                  // 完（网站自己的 404 页，或空响应体时 Chromium 换上的 HTTP ERROR 页）。
+                  // Android / iOS 在 HTTP 错误后照常回 onLoadStop；这里不补，Dart 侧就永远
+                  // 停在 loading、加载后钩子（标题、历史、取词脚本、空白页判定）一个都不跑。
+                  channelDelegate->onLoadStop(url);
                 }
                 else if (httpStatusCode < 400) {
                   auto webResourceError = std::make_unique<WebResourceError>(WebErrorStatusDescription[webErrorType], webErrorType);

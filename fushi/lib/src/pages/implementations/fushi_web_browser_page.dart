@@ -1323,6 +1323,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     ];
   }
 
+  /// 测试钩子：标签区域的右键菜单只认鼠标次键（[ContextMenuTrigger]），集成测试
+  /// 禁止坐标点击，经它在标签 [globalPosition] 处弹同一份菜单。
+  @visibleForTesting
+  void debugShowTabContextMenu(WebBrowserTab tab, Offset globalPosition) =>
+      _showTabContextMenu(tab, globalPosition);
+
   /// 标签区域右键 / 长按菜单。
   void _showTabContextMenu(WebBrowserTab tab, Offset position) {
     final bool wide =

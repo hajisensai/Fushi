@@ -82,8 +82,13 @@ bool shouldShowWebBrowserHttpError({
     mediaElementCount == 0;
 
 /// 取页面「有没有东西」的探针：可见文字长度与图片 / 视频 / iframe 数。
+///
+/// 空响应体的 HTTP 错误在 Chromium 系引擎（WebView2）里会被换成引擎自带的
+/// 「HTTP ERROR 404」页（`chrome-error://` 文档，带 Edge 品牌与正文），按正文判
+/// 就永远不是空白、我们的失败页永远盖不上去：这种文档按空白报。
 const String kWebBrowserBlankPageProbeScript = '''
 (function(){
+  if (location.protocol === 'chrome-error:') return JSON.stringify({text: 0, media: 0});
   var b = document.body;
   if (!b) return JSON.stringify({text: 0, media: 0});
   var text = (b.innerText || '').trim().length;
