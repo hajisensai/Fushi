@@ -50,6 +50,14 @@ import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
 
 /// 作品页要显示**哪一部**作品。
 ///
@@ -1528,6 +1536,20 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ),
               ),
             ),
+            // 跨模块「同一作品」（作品图谱 media_links）：只对已入库的漫画（有 bookKey）。
+            if (_bookKey case final String bookKey)
+              SliverToBoxAdapter(
+                child: MediaLinksSection(
+                  database: _appModel.database,
+                  self: (kind: MediaLinkKind.book, key: bookKey),
+                  onOpen: (MediaLinkEntry e) =>
+                      openMediaLinkEntry(context: context, ref: ref, entry: e),
+                  onInfer: mediaLinkInferCallback(
+                    ref: ref,
+                    self: (kind: MediaLinkKind.book, key: bookKey),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

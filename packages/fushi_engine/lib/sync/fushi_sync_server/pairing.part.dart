@@ -529,6 +529,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
         // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
         'tags': _libraryService is TagSyncHost,
+        // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
+        // → client 跳过作品图谱维度。
+        'mediaLinks': _libraryService is MediaLinkSyncHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。

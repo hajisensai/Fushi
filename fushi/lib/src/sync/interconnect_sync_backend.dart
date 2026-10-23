@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -1713,6 +1714,43 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'POST /api/library/tags');
     final String body = await _readBodyBounded(res);
     return TagManifest.fromJson(jsonDecode(body));
+  }
+
+  // ── Live media links (interconnect-only) ──────────────────────────────
+  // 互联作品图谱同步（`media_link_sync.dart`）：直打 /api/library/media-links。
+
+  /// GET 对端 host 作品图谱清单。老 host 无端点（404）返回 null，调用方跳过。
+  Future<MediaLinkManifest?> getRemoteMediaLinkManifest() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/media-links',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/media-links');
+    final String body = await _readBodyBounded(res);
+    return MediaLinkManifest.fromJson(jsonDecode(body));
+  }
+
+  /// POST 本机作品图谱清单到 host，host 按整行 LWW 并入并回并入后的清单。
+  Future<MediaLinkManifest> putRemoteMediaLinkManifest(
+    MediaLinkManifest manifest,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'POST',
+      '$_apiBase/api/library/media-links',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(manifest.canonicalJson()));
+    final HttpClientResponse res = await _sendBounded(req);
+    _ops!.checkStatus(res.statusCode, 'POST /api/library/media-links');
+    final String body = await _readBodyBounded(res);
+    return MediaLinkManifest.fromJson(jsonDecode(body));
   }
 
   // ── Live video metadata (interconnect-only, #7) ────────────────────────

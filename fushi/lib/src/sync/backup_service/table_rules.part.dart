@@ -194,6 +194,13 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_tracking_mappings': BackupTableRule.follows(_bookOrVideo),
   'series': BackupTableRule.follows(_bookOrVideo),
   'collection_member_tombstones': BackupTableRule.follows(_bookOrVideo),
+  // v125 作品图谱：连接跨书 / 视频 / 游戏三类内容，任一勾选就随包（端点本机不在
+  // 的连接照常保留，详情页显示「未入库」灰卡），三类全不勾整表清空。
+  'media_links': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
+    BackupCategory.videos,
+    BackupCategory.games,
+  }),
 
   // ── 合集 / 书架 / 标签 / 同步墓碑（按 media_type 行级裁剪）──
   'collection_scrape_meta': BackupTableRule.rowLevel(

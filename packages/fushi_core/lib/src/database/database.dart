@@ -22,6 +22,7 @@ import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
+import 'media_link_kind.dart';
 import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
@@ -38,6 +39,7 @@ part 'database_tags_sync.part.dart';
 part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
+part 'database_media_links.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -818,6 +820,7 @@ void _requireOneVideoMetadataOwner({
   MediaPrivacyFlags,
   LibraryOrganizeRuns,
   LibraryOrganizeChanges,
+  MediaLinks,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -830,7 +833,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbStatistics,
         _FushiDbVideoDomain,
         _FushiDbUpdateFeed,
-        _FushiDbMangaDownload {
+        _FushiDbMangaDownload,
+        _FushiDbMediaLinks {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -851,7 +855,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 124;
+  int get schemaVersion => 125;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2412,6 +2416,14 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('library_organize_changes')) {
               await m.createTable(libraryOrganizeChanges);
+            }
+          }
+          if (from < 125) {
+            // v125（跨模块作品图谱，docs/specs/2026-10-24-cross-media-links.md）：
+            // media_links——本地条目之间的连接（手动连接 + 推断建议 + 否决墓碑），
+            // 随互联同步与备份走。幂等守卫同 v119。
+            if (!await _tableExists('media_links')) {
+              await m.createTable(mediaLinks);
             }
           }
         },

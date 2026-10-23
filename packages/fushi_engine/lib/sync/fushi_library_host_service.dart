@@ -5,6 +5,7 @@ import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
@@ -2887,6 +2888,18 @@ abstract interface class TagSyncHost {
 
   /// 把 client 上报的标签清单按 LWW 并入 host DB，返回并入后的 host 清单。
   Future<TagManifest> mergeTagManifest(TagManifest incoming);
+}
+
+/// host 端「作品图谱清单」的**可选**能力（互联作品图谱同步，`media_link_sync.dart`）。
+///
+/// 与 [TagSyncHost] 同范式：server 用 `is` 探测，不实现 → `/api/library/media-links`
+/// 404，能力位 `liveLibrary.mediaLinks=false`，client 记一条「对端版本过旧」后跳过。
+abstract interface class MediaLinkSyncHost {
+  /// host 全部作品连接（含建议与墓碑）的清单。纯读。
+  Future<MediaLinkManifest> getMediaLinkManifest();
+
+  /// 把 client 上报的清单按 LWW 并入 host DB，返回并入后的 host 清单。
+  Future<MediaLinkManifest> mergeMediaLinkManifest(MediaLinkManifest incoming);
 }
 
 /// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。
