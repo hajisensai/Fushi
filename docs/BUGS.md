@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3287 条。点号进各自文件。
+> 共 3288 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3684](bugs/BUG-3684-srs-sync-snapshot-freezes-ui.md) | ✅ | ✅ | 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死 |
 | [BUG-3683](bugs/BUG-3683-anki-settings-stale-in-popup-process.md) | ✅ | ✅ | 应用外查词制卡用旧牌组/配置，且无法在应用外切换 |
 | [BUG-3682](bugs/BUG-3682-anki-non-lapis-note-type-empty-mappings.md) | ✅ | ✅ | 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡 |
 | [BUG-3681](bugs/BUG-3681-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
