@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3272 条。点号进各自文件。
+> 共 3273 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3669](bugs/BUG-3669-system-tts-japanese-only-silent.md) | ✅ | ✅ | 系统语音写死日语，失败时静默无音频 |
 | [BUG-3668](bugs/BUG-3668-interconnect-auto-sync-default-off.md) | ✅ | ✅ | interconnect-auto-sync-default-off |
 | [BUG-3667](bugs/BUG-3667-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3666](bugs/BUG-3666-interconnect-download-unmanageable-without-browse.md) | ✅ | ✅ | interconnect-download-unmanageable-without-browse |

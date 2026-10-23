@@ -1,0 +1,19 @@
+## BUG-3669 · 系统语音写死日语，失败时静默无音频
+- **报告**：2026-10-23（应用内反馈 -5lhI1miwl，Android vivo 3.0.0：制卡进 Anki 后单词没有发音；反馈人看起来在学英语——发音库名 `android_english…`、Edge 声音 `en-US-AriaNeural`）
+- **真实性**：✅ 真 bug。制卡单词音频兜底链的最后一步「系统语音」（默认）：
+  - Android `TtsChannelHandler.java:69`（旧）初始化只认 `Locale.JAPAN`，`ttsReady` = 日语是否可用；没装日语语音数据的设备上 `handleTtsToFile` 对**所有语言**都 `success(null)`；
+  - Dart `TtsChannel.ttsToFile` 默认 `locale = 'ja-JP'`，调用方（`LocalAudioEnhancement`、系统语音预设 `SystemTtsProvider`）都不传语言，英语 / 韩语词也按日语念；
+  - 失败在 Dart 侧不记日志、不提示（`synthesizeMiningTtsFallback` 系统分支直接 `return null`）；自动制卡路径完全看不出原因；
+  - 桌面同类问题：Linux 只有日语引擎（Open JTalk / espeak-ng `-v ja`），别的语言也拿日语声音念；Windows SAPI / macOS `say` 忽略语言，一律默认声音；全部失败返回 null。
+  - `PopupDictActivity.kt` 里还有一份从不出声、只把语言钉成日语的 TextToSpeech（死代码）。
+- **[x] ① 已修复** —
+  - 语言判据 `resolveSystemTtsLanguageTag`（`fushi/lib/src/utils/misc/system_tts.dart`）：① 这次查词所用词典的 `effectiveSourceLanguage` → ② 文字里有假名 = ja、有谚文 = ko → ③ 已装词典的词头语言只有一种时用它 → ④ 都拿不到 = null，交给引擎默认语言，不回落日语。制卡（`LocalAudioEnhancement`，词条预览 `PlayAudioAction` 带上词典名）与系统语音预设（`SystemTtsProvider`，经 `systemTtsDictionaryLanguages` 装配点读已装词典）都走它。
+  - Android：初始化只看引擎；每次按请求的语言 `setLanguage`（null = 引擎默认声音的语言），`LANG_MISSING_DATA` / `LANG_NOT_SUPPORTED` / 合成失败 / 引擎不可用都回传错误码；初始化完成前到达的请求排队补跑。
+  - 桌面：Windows 按 `Culture` 选该语言的已启用 SAPI 声音，没有则报不支持；macOS 从 `say -v ?` 挑该语言的声音；Linux 非日语直接报不支持。
+  - Dart 侧所有失败抛 `SystemTtsFailure`（是一种 `TtsFailure`）；制卡兜底把它包成带原因的 `WordAudioUnavailable`，`WordAudioFailureReporter` 一律记 `ErrorLogService`，手动触发每次提示，自动触发按「原因 + 语言」在本进程内只提示一次（批量制卡不刷屏）；朗读声音体系的 `ttsFailureText` 对它给具体文案。
+  - 删掉 `PopupDictActivity` 里的死 TextToSpeech。
+  - 提交见本分支 `fix(tts): stop hard-coding Japanese for the system voice and report its failures`。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/system_tts_test.dart`（判据顺序、原生通道 languageTag 透传与错误码映射、空结果 / 无 handler 不静默、失败文案、上报去重、SAPI 脚本 / `say` 声音挑选 / Linux 语言门）、`fushi/test/creator/mining_tts_fallback_test.dart`（系统分支透传语言、失败抛带原因异常）。变异实测：去掉去重、把 `languageTag` 改回写死 `ja-JP` 的 `locale`，对应 2 条转红。
+- **备注**：
+  - Android 原生改动只做了编译验证（`:app:compileDebugJavaWithJavac`，含 Kotlin），未做真机复测；`assembleRelease` 本机缺 `key.properties`，`build.gradle` 拒绝构建。
+  - 查词弹窗的一键制卡与点词朗读本来就只走已配置音源（与 Hoshi 一致，无 TTS 兜底），本条不改变这一点。

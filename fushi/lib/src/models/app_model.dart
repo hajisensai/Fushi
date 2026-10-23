@@ -40,6 +40,8 @@ import 'package:http/io_client.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart'
+    show systemTtsDictionaryLanguages;
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -2121,6 +2123,26 @@ class AppModel with ChangeNotifier {
 
   List<Dictionary> get dictionaries => dictRepo.dictionaries;
 
+  /// 已装词典声明的词头语言（[Dictionary.effectiveSourceLanguage]，未声明为
+  /// null）。系统语音兜底定语言用（`resolveSystemTtsLanguageTag` 第 3 级，
+  /// BUG-3669）；词典仓库还没就位时为空。
+  List<String?> get installedDictionarySourceLanguages => _dictionaryRepoReady
+      ? <String?>[
+          for (final Dictionary d in dictionaries) d.effectiveSourceLanguage,
+        ]
+      : const <String?>[];
+
+  /// 名为 [dictionaryName] 的已装词典声明的词头语言；名字为空、没装这本或它没
+  /// 声明时为 null。
+  String? dictionarySourceLanguageOf(String? dictionaryName) {
+    if (dictionaryName == null || dictionaryName.isEmpty) return null;
+    if (!_dictionaryRepoReady) return null;
+    for (final Dictionary d in dictionaries) {
+      if (d.name == dictionaryName) return d.effectiveSourceLanguage;
+    }
+    return null;
+  }
+
   /// 词典改名投影（真名 -> 显示名，只含改过名的）。推导在
   /// [dictionaryDisplayNameOverridesOf] 单点完成。
   ///
@@ -3331,6 +3353,9 @@ class AppModel with ChangeNotifier {
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
+      // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
+      // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
+      systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
       debugPrint('[Fushi] init: repositories (parallel)');
@@ -3811,6 +3836,9 @@ class AppModel with ChangeNotifier {
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
+      // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
+      // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
+      systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       await dictRepo.loadFromDb();
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
