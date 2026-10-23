@@ -126,6 +126,31 @@ typedef _QueryDart =
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
 
+typedef _ExecC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Int32,
+      ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _ExecDart =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      int,
+      ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+
 /// `ffsrs_store_*` 的绑定。
 final class SrsCoreBindings {
   SrsCoreBindings._(FushiFsrs lib)
@@ -157,6 +182,13 @@ final class SrsCoreBindings {
       ),
       debugQuery = lib.library.lookupFunction<_QueryC, _QueryDart>(
         'ffsrs_store_debug_query',
+      ),
+      exec = lib.library.lookupFunction<_ExecC, _ExecDart>('ffsrs_store_exec'),
+      execBatch = lib.library.lookupFunction<_PageC, _PageDart>(
+        'ffsrs_store_exec_batch',
+      ),
+      inTransaction = lib.library.lookupFunction<_StateC, _StateDart>(
+        'ffsrs_store_in_transaction',
       );
 
   final FushiFsrs _fsrs;
@@ -170,6 +202,9 @@ final class SrsCoreBindings {
   final _SimpleDart legacyMarkNone;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
+  final _ExecDart exec;
+  final _PageDart execBatch;
+  final _StateDart inTransaction;
 
   static SrsCoreBindings? _instance;
 
@@ -317,6 +352,89 @@ final class SrsCore {
         },
     ];
   });
+
+  /// 在写连接上执行一条语句（Drift 执行器后端，见 fushi_engine `srs_database_executor.dart`）。
+  /// [select] 时返回「列名行 + 结果行」，否则返回一行 `[变更行数, last_insert_rowid]`；都是
+  /// [srsDecodeRows] 的页。
+  Uint8List exec(String sql, List<Object?> params, {required bool select}) =>
+      using((Arena arena) {
+        final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
+        final Uint8List encoded = params.isEmpty
+            ? Uint8List(0)
+            : srsEncodeRows(params.length, <List<Object?>>[params]);
+        final ffi.Pointer<ffi.Uint8> pp = _copy(arena, encoded);
+        final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
+        final ffi.Pointer<ffi.Size> outLen = arena();
+        final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+        err.value = ffi.nullptr;
+        _check(
+          _b,
+          _b.exec(
+            _h,
+            s,
+            sn,
+            pp,
+            encoded.length,
+            select ? 1 : 0,
+            out,
+            outLen,
+            err,
+          ),
+          err,
+        );
+        final int len = outLen.value;
+        final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+        _b._freeBytes(out.value, len);
+        return bytes;
+      });
+
+  /// 批量语句：[applications] 每项是（语句下标, 参数）。
+  void execBatch(
+    List<String> statements,
+    List<(int, List<Object?>)> applications,
+  ) => using((Arena arena) {
+    final Uint8List stmts = srsEncodeRows(1, <List<Object?>>[
+      for (final String s in statements) <Object?>[s],
+    ]);
+    final Uint8List apps = srsEncodeRows(2, <List<Object?>>[
+      for (final (int i, List<Object?> args) in applications)
+        <Object?>[
+          i,
+          args.isEmpty
+              ? Uint8List(0)
+              : srsEncodeRows(args.length, <List<Object?>>[args]),
+        ],
+    ]);
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(
+      _b,
+      _b.execBatch(
+        _h,
+        _copy(arena, stmts),
+        stmts.length,
+        _copy(arena, apps),
+        apps.length,
+        err,
+      ),
+      err,
+    );
+  });
+
+  /// 写连接当前是否在事务里。
+  bool get inTransaction => using((Arena arena) {
+    final ffi.Pointer<ffi.Int32> out = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(_b, _b.inTransaction(_h, out, err), err);
+    return out.value != 0;
+  });
+
+  static ffi.Pointer<ffi.Uint8> _copy(Arena arena, Uint8List bytes) {
+    final ffi.Pointer<ffi.Uint8> p = arena(bytes.isEmpty ? 1 : bytes.length);
+    p.asTypedList(bytes.length).setAll(0, bytes);
+    return p;
+  }
 
   void _simple(_SimpleDart f) => using((Arena arena) {
     final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();

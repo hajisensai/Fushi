@@ -102,7 +102,7 @@ Future<SrsStatsBundle> loadSrsStats(
   SrsDayContext? day,
   int? nowMs,
 }) async {
-  final FushiDatabase db = store.db;
+  final SrsDatabase db = store.db;
   final SrsDayContext dayCtx = day ?? await store.dayContext();
   final int now = nowMs ?? store.now().$1;
   final int today = dayCtx.dayIndexOf(now);

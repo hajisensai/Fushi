@@ -7,7 +7,6 @@
 library;
 
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_srs/fushi_srs.dart';

@@ -220,7 +220,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   /// 打开（或首次初始化）某 profile 的 SRS 副本。
   static Future<SrsDbStore> open({
-    required FushiDatabase db,
+    required SrsDatabase db,
     required String profileUid,
     required String deviceId,
     FsrsEngine? engine,
@@ -254,7 +254,7 @@ class SrsDbStore implements SrsSyncReplica {
     return s;
   }
 
-  final FushiDatabase db;
+  final SrsDatabase db;
   final String profileUid;
   final String deviceId;
 
