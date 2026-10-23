@@ -104,6 +104,8 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         'volume': _volumeDisplay.value.round(),
         'episodeIndex': _currentEpisode,
         'episodeCount': _episodes.length,
+        // 选词光标在哪（手机触控板据此切换手势）。
+        'caret': _remoteCaretSurface,
       },
       command: (String action, Map<String, dynamic> body) async {
         switch (action) {
@@ -155,6 +157,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       searchSubtitles: _searchRemoteOnlineSubtitles,
       downloadSubtitle: (String id) =>
           _downloadRemoteOnlineSubtitle(controller, id),
+      // 手机触控板驱动的是本页的字幕选词光标（与键盘 / 手柄同一套），查词卡弹在
+      // 电脑屏幕上。
+      caret: (String step) => _runRemoteCaretStep(controller, step),
     );
     _videoRemoteBinding = binding;
     appModel.videoRemoteHost.register(binding);
@@ -234,6 +239,40 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     } on VideoRemoteFailure catch (failure) {
       throw _remoteSubtitleException(failure);
     }
+  }
+
+  /// 选词光标所在的表面，按遥控协议的取值（`none` / `video` / `popup`）。
+  String get _remoteCaretSurface => switch (_videoCaret.surface) {
+    CaretSurface.video => 'video',
+    CaretSurface.popup => 'popup',
+    CaretSurface.none || CaretSurface.reader || CaretSurface.lyrics => 'none',
+  };
+
+  /// 手机触控板的一步（`videoRemoteCaretActions`）→ 字幕选词光标动作。与手柄
+  /// 同一个执行体（[_enterSubtitleCaret] / [_runVideoCaretAction]）：主面上左右
+  /// 按阅读顺序逐字挪、确认即查词（查词卡弹出后光标转进卡里），卡里确认按下
+  /// 光标所在的按钮（＋ = 制卡），后退逐层关卡、最后退出光标并恢复它暂停的播放。
+  /// 光标没开时只认 `enter`，其余步是空操作（手机据回报的 `none` 退回空闲手势）。
+  Future<String> _runRemoteCaretStep(
+    VideoPlayerController controller,
+    String step,
+  ) async {
+    if (!mounted) throw const VideoRemoteException(409, 'no_video');
+    if (step == 'enter') {
+      if (!_videoCaretActive) _enterSubtitleCaret(controller);
+      return _remoteCaretSurface;
+    }
+    if (!_videoCaretActive) return _remoteCaretSurface;
+    await _runVideoCaretAction(switch (step) {
+      'left' => CaretAction.stepBackward,
+      'right' => CaretAction.stepForward,
+      'up' => CaretAction.moveUp,
+      'down' => CaretAction.moveDown,
+      'activate' => CaretAction.activate,
+      'longPress' => CaretAction.longPress,
+      _ => CaretAction.dismissOrExit,
+    });
+    return _remoteCaretSurface;
   }
 
   /// 手机「在线搜索字幕」：默认值取本页的番名 / 身份种子 / 集号 / 季号（与

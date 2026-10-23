@@ -57,6 +57,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show
         videoRemoteActionUnsupported,
+        videoRemoteCapabilityCaret,
         videoRemoteCapabilityEpisodes,
         videoRemoteCapabilityOpenVideo,
         videoRemoteCapabilitySubtitleSearch,
@@ -1814,9 +1815,55 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       key: const ValueKey<String>('video-remote-touchpad-view'),
       line: current?['text']?.toString() ?? '',
       playing: playing,
+      caretActive: caretActive,
+      caretAvailable: canDriveCaret,
       onAction: _onTouchpadAction,
       onExit: () => setTouchpad(false),
     );
+  }
+
+  /// 电脑上字幕选词光标在哪（快照 `caret`：`none` / `video` / `popup`）；旧版
+  /// 电脑不上报 = `none`。
+  String get caretSurface => _state['caret']?.toString() ?? 'none';
+
+  /// 电脑上的选词光标开着（触控板据此切到选词手势）。
+  bool get caretActive => caretSurface != 'none';
+
+  /// 电脑支持从手机驱动选词光标（查词卡弹在电脑屏幕上）。
+  bool get canDriveCaret =>
+      available && capabilities.contains(videoRemoteCapabilityCaret);
+
+  /// 选词光标命令按发出顺序一条接一条发（连拖时一格一条，不能乱序）。
+  Future<void> _caretTail = Future<void>.value();
+
+  /// 发一步选词光标命令；电脑回报光标落在哪，本页据此切换触控板手势（电脑上
+  /// 有人用键盘退了光标时，下一步会回 `none`，触控板随之退回空闲手势）。
+  void _sendCaret(String step) {
+    _caretTail = _caretTail.then((_) async {
+      if (!mounted || !available) return;
+      try {
+        final Map<String, dynamic> result = await _client
+            .call('command', <String, dynamic>{
+              ..._session,
+              'requestId': _client.requestId(),
+              'action': 'caret',
+              'caret': step,
+            });
+        if (!mounted) return;
+        final String surface = result['caret']?.toString() ?? 'none';
+        setState(() => _state = <String, dynamic>{..._state, 'caret': surface});
+        if (step == 'enter' && surface == 'none') {
+          FushiToast.show(
+            msg: t.video_remote_touchpad_caret_unavailable,
+            severity: ToastSeverity.warning,
+          );
+        }
+      } catch (error) {
+        if (!mounted) return;
+        final String text = videoRemoteErrorText(error);
+        if (text.isNotEmpty) setState(() => _error = text);
+      }
+    });
   }
 
   Widget _scaffold(_TranscriptProjection projection) {
@@ -1947,6 +1994,26 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         // 先记下本地值：连着快滑时下一档在这一档上加，不等电脑的快照回来。
         setState(() => _state = <String, dynamic>{..._state, 'volume': next});
         unawaited(setVolume(next));
+      case VideoRemotePadAction.caretEnter:
+        if (!canDriveCaret) return false;
+        _sendCaret('enter');
+      case VideoRemotePadAction.caretLeft:
+      case VideoRemotePadAction.caretRight:
+      case VideoRemotePadAction.caretUp:
+      case VideoRemotePadAction.caretDown:
+      case VideoRemotePadAction.caretActivate:
+      case VideoRemotePadAction.caretLongPress:
+      case VideoRemotePadAction.caretBack:
+        if (!canDriveCaret || !caretActive) return false;
+        _sendCaret(switch (action) {
+          VideoRemotePadAction.caretLeft => 'left',
+          VideoRemotePadAction.caretRight => 'right',
+          VideoRemotePadAction.caretUp => 'up',
+          VideoRemotePadAction.caretDown => 'down',
+          VideoRemotePadAction.caretActivate => 'activate',
+          VideoRemotePadAction.caretLongPress => 'longPress',
+          _ => 'back',
+        });
     }
     return true;
   }

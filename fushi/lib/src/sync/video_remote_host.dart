@@ -244,6 +244,7 @@ final class VideoRemotePlaybackBinding {
     this.selectSubtitleTrack,
     this.searchSubtitles,
     this.downloadSubtitle,
+    this.caret,
   });
   final String Function() identity;
   final String Function() title;
@@ -306,6 +307,12 @@ final class VideoRemotePlaybackBinding {
   /// as the primary subtitle. Fails with a [VideoRemoteException].
   final Future<void> Function(String candidateId)? downloadSubtitle;
 
+  /// Runs one step from [videoRemoteCaretActions] on the computer's subtitle
+  /// word cursor and returns its surface afterwards (one of
+  /// [videoRemoteCaretSurfaces]). The binding's `state` should report the
+  /// same surface as `caret`. Null: the `caret` action is unsupported.
+  final Future<String> Function(String action)? caret;
+
   /// Optional controls this player supports (snapshot `capabilities`).
   List<String> get capabilities => <String>[
     if (setVolume != null) videoRemoteCapabilityVolume,
@@ -315,6 +322,7 @@ final class VideoRemotePlaybackBinding {
       videoRemoteCapabilitySubtitleTracks,
     if (searchSubtitles != null && downloadSubtitle != null)
       videoRemoteCapabilitySubtitleSearch,
+    if (caret != null) videoRemoteCapabilityCaret,
   ];
 }
 
@@ -438,6 +446,8 @@ final class VideoRemoteHost implements VideoRemoteService {
         // Volume has no periodic tick of its own: a paused player would
         // otherwise keep the phone's volume stale until the next change.
         state['volume'] != _lastState['volume'] ||
+        // The word cursor moves with no player tick (see `caret`).
+        state['caret'] != _lastState['caret'] ||
         state['controlRevision'] != _lastState['controlRevision'];
     if (immediate ||
         _lastPublish == null ||
@@ -839,6 +849,21 @@ final class VideoRemoteHost implements VideoRemoteService {
         _refresh();
         _publish();
         return <String, Object?>{'ok': true};
+      }
+      if (action == 'caret') {
+        final Future<String> Function(String)? caret = binding.caret;
+        if (caret == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? step = body['caret'];
+        if (step is! String || !videoRemoteCaretActions.contains(step)) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        // The phone's own lookup (if any) is untouched: the cursor works on
+        // the computer screen, the pause it takes is the page's own.
+        final String surface = await caret(step);
+        _publish();
+        return <String, Object?>{'ok': true, 'caret': surface};
       }
       _lookup = null; // Explicit playback intent supersedes automatic resume.
       final Map<String, dynamic> command = <String, dynamic>{};
