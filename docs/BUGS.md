@@ -49,6 +49,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3662](bugs/BUG-3662-mokuro-legacy-html-import-dropped-ocr.md) | ✅ | ✅ | mokuro-legacy-html-import-dropped-ocr |
+> 共 3266 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3662](bugs/BUG-3662-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

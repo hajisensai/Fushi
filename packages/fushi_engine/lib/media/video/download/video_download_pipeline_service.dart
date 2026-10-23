@@ -1530,13 +1530,8 @@ class VideoDownloadPipelineService {
       final VideoDownloadBackendBinding? binding = await backendResolver(job);
       _validateBackendBinding(job, binding);
       final TorrentBackend backend = binding!.backend;
-      final List<TorrentSnapshot> snapshots = await backend.listTorrents(
-        category: job.category,
-      );
-      final bool backendTaskExists = snapshots.any(
-        (TorrentSnapshot snapshot) =>
-            snapshot.hash.toLowerCase() == torrentId.toLowerCase(),
-      );
+      final bool backendTaskExists =
+          await _findBackendTorrent(backend, torrentId) != null;
       if (backendTaskExists) {
         if (backend is TorrentPauseBackend && backend.pauseControlAvailable) {
           final bool resumed = await backend.resumeTorrent(torrentId);
@@ -1724,15 +1719,7 @@ class VideoDownloadPipelineService {
         _validateBackendBinding(job, binding);
         backend = binding!.backend;
         backendOnline = true;
-        final List<TorrentSnapshot> snapshots = await backend.listTorrents(
-          category: job.category,
-        );
-        for (final TorrentSnapshot snapshot in snapshots) {
-          if (snapshot.hash.toLowerCase() == torrentId.toLowerCase()) {
-            liveSnapshot = snapshot;
-            break;
-          }
-        }
+        liveSnapshot = await _findBackendTorrent(backend, torrentId);
         final List<TorrentFileEntry> backendFiles = await backend.listFiles(
           torrentId,
         );
@@ -1992,11 +1979,45 @@ class VideoDownloadPipelineService {
     }
   }
 
+  /// 列出 [backend] 里**全部**种子，供按任务行记的 info hash 精确认领。
+  ///
+  /// 任务行的身份是「后端身份（[_validateBackendBinding] 已核对）+ info hash」，
+  /// 同一后端里一个 hash 只可能对应一颗种子，分类过滤对认领没有任何信息量，
+  /// 只会制造漏认：内置引擎的分类是「下载根/分类」目录（目录即真相），而整理
+  /// 阶段会把完成的受管种子 moveStorage 到来源根继续做种——挪走后它不在任何
+  /// 分类目录下，按分类列就整批「missingFromBackend」，任务页上传恒 0、「做种中」
+  /// 恒空（BUG-3662）。外接 qBittorrent 的分类是标签、setLocation 不改它，但用户
+  /// 在 qB 里改分类同样会让任务失联；按 hash 认领对两种后端一致。
+  ///
+  /// 分类只在**投递**新种子时决定落点（[TorrentBackend.addTorrent]），不参与认领。
+  static Future<List<TorrentSnapshot>> _listBackendTorrentsForJobs(
+    TorrentBackend backend,
+  ) =>
+      backend.listTorrents();
+
+  /// 在 [backend] 里按 info hash 找任务行记的那颗种子；不在返回 null。
+  static Future<TorrentSnapshot?> _findBackendTorrent(
+    TorrentBackend backend,
+    String torrentId,
+  ) async {
+    final String id = torrentId.trim().toLowerCase();
+    if (id.isEmpty) return null;
+    final List<TorrentSnapshot> snapshots =
+        await _listBackendTorrentsForJobs(backend);
+    for (final TorrentSnapshot snapshot in snapshots) {
+      if (snapshot.hash.toLowerCase() == id) return snapshot;
+    }
+    return null;
+  }
+
   /// 读取任务页所需的真实后端快照。
   ///
-  /// 按后端身份与分类分组，每组只列一次 torrent；返回值以持久任务 id 为键。
+  /// 按后端身份分组，每组只列一次 torrent；返回值以持久任务 id 为键。
   /// 已完成但仍在做种的任务也会被观察，所以任务页能继续显示上传速度、节点与
   /// 分享率。配置已切换或后端不可用的组安全降级为空，由 UI 显示未知值。
+  ///
+  /// 按任务行记的 info hash 认领（[_listBackendTorrentsForJobs]），不按分类过滤：
+  /// 整理后挪到来源根继续做种的种子不在任何「下载根/分类」目录下（BUG-3662）。
   Future<Map<String, TorrentSnapshot>> loadTaskSnapshots(
     Iterable<VideoDownloadJobRow> jobs,
   ) async {
@@ -2011,7 +2032,6 @@ class VideoDownloadPipelineService {
         job.backendKind,
         job.backendProfileId,
         job.fingerprint,
-        job.category,
       ].map((String? value) => value ?? '').join('\u0000');
       groups.putIfAbsent(key, () => <VideoDownloadJobRow>[]).add(job);
     }
@@ -2024,8 +2044,8 @@ class VideoDownloadPipelineService {
           first,
         );
         _validateBackendBinding(first, binding);
-        final List<TorrentSnapshot> snapshots = await binding!.backend
-            .listTorrents(category: first.category);
+        final List<TorrentSnapshot> snapshots =
+            await _listBackendTorrentsForJobs(binding!.backend);
         final Map<String, TorrentSnapshot> byHash = <String, TorrentSnapshot>{
           for (final TorrentSnapshot snapshot in snapshots)
             snapshot.hash.toLowerCase(): snapshot,
@@ -2311,12 +2331,12 @@ class VideoDownloadPipelineService {
       ).add(payload, category: category, savePath: savePath);
       _ensureLeaseHeld();
       if (!added) {
-        final List<TorrentSnapshot> current = await binding.backend
-            .listTorrents(category: category);
+        final TorrentSnapshot? present = await _findBackendTorrent(
+          binding.backend,
+          hash,
+        );
         _ensureLeaseHeld();
-        if (!current.any(
-          (TorrentSnapshot value) => value.hash.toLowerCase() == hash,
-        )) {
+        if (present == null) {
           throw StateError('download backend rejected the torrent');
         }
       }
@@ -2686,17 +2706,11 @@ class VideoDownloadPipelineService {
         'The backend torrent id is missing',
       );
     }
-    final List<TorrentSnapshot> snapshots = await binding.backend.listTorrents(
-      category: job.category,
+    final TorrentSnapshot? snapshot = await _findBackendTorrent(
+      binding.backend,
+      hash,
     );
     _ensureLeaseHeld();
-    TorrentSnapshot? snapshot;
-    for (final TorrentSnapshot value in snapshots) {
-      if (value.hash.toLowerCase() == hash.toLowerCase()) {
-        snapshot = value;
-        break;
-      }
-    }
     if (snapshot == null) {
       if (job.backendKind == QbConnectionConfig.backendEmbedded) {
         // The embedded engine can legitimately lose a task whose fast-resume
