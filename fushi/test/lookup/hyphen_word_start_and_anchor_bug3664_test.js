@@ -214,7 +214,10 @@ function runAnchorSuite(label, src) {
   sandbox.window.innerWidth = 360;
   sandbox.window.innerHeight = 772;
   const sel = sandbox.window.fushiSelection;
-  const bounds = (rects, point, vertical) => sel.anchoredWordBounds(rects, point, !!vertical);
+  // 结果对象生在 vm 沙箱的 realm 里，原型与本 realm 不同，deepStrictEqual 会因原型不等判红；
+  // 先过一遍 JSON 变成本 realm 的普通对象再比。
+  const bounds = (rects, point, vertical) =>
+    JSON.parse(JSON.stringify(sel.anchoredWordBounds(rects, point, !!vertical)));
 
   // ① 翻页模式断在两页：上一页那段在屏外（x<0、贴页底），本页那段在页顶。
   //    旧并集 top=60 bottom=716，弹窗只剩贴底一条；锚点必须只剩本页那段。
