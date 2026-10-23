@@ -6680,6 +6680,8 @@
   "srs_review_done_detail": "本次复习了 $n 张",
   "srs_review_hide_hard_easy": "隐藏「困难」和「简单」按钮",
   "srs_review_hide_hard_easy_hint": "键盘 2 / 4 仍可评「困难」「简单」",
+  "srs_review_layout_floating_top_bar": "悬浮顶栏",
+  "srs_review_layout_floating_top_bar_hint": "默认收起，点卡面空白处或右键唤出，再点一次收起",
   "srs_review_layout_replay_button": "底部重播键",
   "srs_review_layout_replay_button_hint": "手机刷卡时拇指够得到；顶栏的重播照旧保留",
   "srs_review_layout_replay_end": "右侧",

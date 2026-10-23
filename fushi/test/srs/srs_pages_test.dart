@@ -284,6 +284,9 @@ Future<void> _pumpPage(
           (BuildContext context, SrsCardFace face) =>
               SrsPlainCardFace(face: face),
         ),
+        // 这里的用例按固定页头断言顶栏按钮；悬浮顶栏（默认）见
+        // srs_review_floating_chrome_test.dart。
+        srsReviewChromeFloatingProvider.overrideWithValue(false),
         ...overrides,
       ],
       child: TranslationProvider(

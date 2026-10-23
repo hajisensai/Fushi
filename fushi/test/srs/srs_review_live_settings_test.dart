@@ -104,6 +104,8 @@ Future<void> _pumpReview(
           (Ref ref) => storeLoad ?? Future<SrsDbStore?>.value(store),
         ),
         srsCardAudioOutputProvider.overrideWithValue(audio),
+        // 用例经固定页头的按钮操作；悬浮顶栏（默认）见 srs_review_floating_chrome_test.dart。
+        srsReviewChromeFloatingProvider.overrideWithValue(false),
         srsCardFaceBuilderProvider.overrideWithValue((
           BuildContext context,
           SrsCardFace face,

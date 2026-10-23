@@ -18,7 +18,13 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
-    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
+    show
+        GestureBinding,
+        PointerDeviceKind,
+        PointerDownEvent,
+        PointerScrollEvent,
+        PointerSignalEvent,
+        kSecondaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -153,6 +159,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   bool _busy = false;
   bool _finished = false;
   Object? _error;
+
+  /// 悬浮顶栏（[srsReviewChromeFloatingProvider]，默认开）当前是否被唤出。默认收起；
+  /// 点卡面空白 / 右键在唤出与收起间切换，不自动收起（与小说、漫画阅读器同一口径：
+  /// 点击是唯一的开关）。固定页头时不用它。
+  bool _chromeShown = false;
 
   SrsCardDetail? _detail;
   SrsRenderedCard? _rendered;
@@ -1087,6 +1098,35 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     if (mounted && wasAutoplay != _autoplayEnabled) _autoplayAudio();
   }
 
+  /// 悬浮态下没有卡面可点（读失败 / 复习完 / 排程不可用）：顶栏常驻，不然连返回键都
+  /// 唤不出来。
+  bool get _chromeForced =>
+      _error != null ||
+      _finished ||
+      (!_loading && !(_store?.canSchedule ?? false));
+
+  void _toggleChrome() {
+    if (!mounted || !ref.read(srsReviewChromeFloatingProvider)) return;
+    setState(() => _chromeShown = !_chromeShown);
+  }
+
+  /// 卡面空白处被点（WebView 卡面经页内取词脚本、原生卡面经 [SrsBlankTapRegion] 回报）。
+  /// 查词弹窗开着时这一下是关弹窗，不切换顶栏。
+  void _onCardTapEmpty() {
+    if (_lookup.isOpen) return;
+    _toggleChrome();
+  }
+
+  /// 鼠标右键（卡面已关掉 WebView 自带右键菜单，复习页上右键别无他用）：切换悬浮顶栏。
+  void _onPagePointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse ||
+        (event.buttons & kSecondaryMouseButton) == 0 ||
+        _lookup.isOpen) {
+      return;
+    }
+    _toggleChrome();
+  }
+
   Widget _buildTopBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final NavigatorState? navigator = Navigator.maybeOf(context);
@@ -1138,16 +1178,24 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    // 悬浮顶栏：页头不占布局（空页头），两套设计系统都改由正文上层的悬浮胶囊栏
+    // （[_buildTopBar]）承载，默认收起、点空白 / 右键唤出。
+    final bool floating = ref.watch(srsReviewChromeFloatingProvider);
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: _onKey,
       child: FushiPageScaffold(
         title: _title,
-        header: apple ? null : _buildTopBar(context),
-        actions: apple ? _buildAppleActions() : const <Widget>[],
+        header: floating
+            ? const SizedBox.shrink()
+            : (apple ? null : _buildTopBar(context)),
+        actions: apple && !floating ? _buildAppleActions() : const <Widget>[],
         headerBottom:
-            apple && !_finished && ref.watch(srsReviewShowCountsProvider)
+            apple &&
+                !floating &&
+                !_finished &&
+                ref.watch(srsReviewShowCountsProvider)
             ? SrsCountTriple(
                 newCount: _newCount,
                 learnCount: _learnCount,
@@ -1156,34 +1204,67 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
               )
             : null,
         body: Builder(
-          builder: (BuildContext context) => Padding(
-            // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
-            // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
-            // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
-            padding: EdgeInsets.only(
-              top: _cardScrollsUnderHeader
-                  ? 0
-                  : MediaQuery.paddingOf(context).top,
-            ),
-            child: AnimatedSwitcher(
-              duration: fushiMotionDuration(context, FushiMotion.medium),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              child: KeyedSubtree(
-                // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
-                // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
-                key: ValueKey<String>(
-                  _error != null
-                      ? 'error'
-                      : _finished
-                      ? 'finished'
-                      : 'review',
+          builder: (BuildContext context) => _withFloatingChrome(
+            context,
+            floating: floating,
+            child: Padding(
+              // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+              // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+              // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+              padding: EdgeInsets.only(
+                top: _cardScrollsUnderHeader
+                    ? 0
+                    : MediaQuery.paddingOf(context).top,
+              ),
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                child: KeyedSubtree(
+                  // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
+                  // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
+                  key: ValueKey<String>(
+                    _error != null
+                        ? 'error'
+                        : _finished
+                        ? 'finished'
+                        : 'review',
+                  ),
+                  child: _buildBody(context),
                 ),
-                child: _buildBody(context),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 悬浮态：正文之上压一条悬浮顶栏（与小说、漫画阅读器同款弹簧滑入 / 淡出），右键
+  /// 切换显隐。固定页头时原样返回 [child]。
+  Widget _withFloatingChrome(
+    BuildContext context, {
+    required bool floating,
+    required Widget child,
+  }) {
+    if (!floating) return child;
+    return Listener(
+      onPointerDown: _onPagePointerDown,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          child,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: FushiChromeReveal(
+              key: const ValueKey<String>('srs-review-floating-chrome'),
+              visible: _chromeShown || _chromeForced,
+              child: SafeArea(bottom: false, child: _buildTopBar(context)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1289,6 +1370,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       // 卡面页内自己出声的媒体（视频制卡的同步片段等）同样服从牌组的自动播放开关
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,
+      onTapEmpty: _onCardTapEmpty,
     );
     final MediaQueryData media = MediaQuery.of(context);
     return SrsCardLookupHost(

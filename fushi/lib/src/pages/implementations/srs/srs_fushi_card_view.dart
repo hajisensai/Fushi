@@ -217,31 +217,36 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
       child: SelectionArea(
         focusNode: _selectionFocus,
-        child: SrsNativeLookupRegion(
-          key: _lookupRegion,
-          child: ColoredBox(
-            color: scheme.surface,
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) {
-                if (c.maxHeight.isFinite) {
-                  _viewport = math.max(0, c.maxHeight - widget.topInset);
-                }
-                final bool wide = switch (widget.face.layout) {
-                  SrsCardLayout.wide => true,
-                  SrsCardLayout.narrow => false,
-                  SrsCardLayout.auto =>
-                    c.maxWidth >= kSrsFushiCardWideBreakpoint,
-                };
-                return FushiEntranceScope(
-                  replayKey:
-                      '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
-                  child: widget.face.showingAnswer
-                      ? (wide
-                            ? _buildWideBack(context, style, c)
-                            : _buildNarrowBack(context, style, c))
-                      : _frontWithWarmDefs(context, style, c, wide: wide),
-                );
-              },
+        // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
+        child: SrsBlankTapRegion(
+          onTapEmpty: widget.face.onTapEmpty,
+          tapTookLookup: () => _tapTookLookup,
+          child: SrsNativeLookupRegion(
+            key: _lookupRegion,
+            child: ColoredBox(
+              color: scheme.surface,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints c) {
+                  if (c.maxHeight.isFinite) {
+                    _viewport = math.max(0, c.maxHeight - widget.topInset);
+                  }
+                  final bool wide = switch (widget.face.layout) {
+                    SrsCardLayout.wide => true,
+                    SrsCardLayout.narrow => false,
+                    SrsCardLayout.auto =>
+                      c.maxWidth >= kSrsFushiCardWideBreakpoint,
+                  };
+                  return FushiEntranceScope(
+                    replayKey:
+                        '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
+                    child: widget.face.showingAnswer
+                        ? (wide
+                              ? _buildWideBack(context, style, c)
+                              : _buildNarrowBack(context, style, c))
+                        : _frontWithWarmDefs(context, style, c, wide: wide),
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -801,6 +806,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
     autoplayMedia: widget.face.autoplayMedia,
+    // 释义区的空白点按由页内取词脚本回报（原生区那一层见 [SrsBlankTapRegion]）。
+    onTapEmpty: widget.face.onTapEmpty,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -816,7 +823,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       key: _defsKey,
       child: KeyedSubtree(
         key: const ValueKey<String>('srs-fushi-definitions'),
-        child: builder(context, _defsFace(wide: wide)),
+        // 释义 WebView 上的点按归页内脚本判空白，原生区的空白判定跳过这块。
+        child: SrsBlankTapRegion.excluded(
+          child: builder(context, _defsFace(wide: wide)),
+        ),
       ),
     );
   }

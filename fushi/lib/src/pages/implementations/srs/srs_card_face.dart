@@ -61,6 +61,7 @@ class SrsCardFace {
     this.hostScript = '',
     this.onSourceLink,
     this.autoplayMedia = true,
+    this.onTapEmpty,
   });
 
   final String cardId;
@@ -122,6 +123,10 @@ class SrsCardFace {
   /// 见 srs_card_autoplay.dart 的 [kSrsCardAutoplayGateScript]，BUG-3546）。
   final bool autoplayMedia;
 
+  /// 卡面空白处被点了一下（页内取词脚本判定：没点在字、链接、按钮上）。复习页据此唤出 /
+  /// 收起悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同一口径）。null = 不响应。
+  final VoidCallback? onTapEmpty;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -142,6 +147,7 @@ class SrsCardFace {
         hostScript: hostScript,
         onSourceLink: onSourceLink,
         autoplayMedia: autoplayMedia,
+        onTapEmpty: onTapEmpty,
       );
 }
 
@@ -1827,7 +1833,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           );
           controller.addJavaScriptHandler(
             handlerName: 'onTapEmpty',
-            callback: (List<dynamic> _) => null,
+            callback: (List<dynamic> _) {
+              if (mounted) widget.face.onTapEmpty?.call();
+              return null;
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: kSrsPlaySoundHandler,

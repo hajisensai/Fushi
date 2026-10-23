@@ -1000,3 +1000,103 @@ class SrsNativeLookupRegionState extends State<SrsNativeLookupRegion>
     );
   }
 }
+
+/// [SrsBlankTapRegion.excluded] 在命中路径上留下的标记。
+const Object _kSrsBlankTapExcluded = Object();
+
+/// 原生卡面上的「点空白」：一次没有拖动的主键点按，落点上没有取词命中、没有带点击 /
+/// 长按处理的子控件（按钮、图片、来源链接、例句注音切换），也不在 [excluded] 圈出的
+/// 子树上（释义 WebView：那里的空白由页内取词脚本回报 `onTapEmpty`）——满足才调
+/// [onTapEmpty]。复习页据此切换悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同口径）。
+///
+/// 只旁观指针（Listener），不进手势竞技场：卡面的拖选、点按、滚动一概不受影响。命中
+/// 在按下时判（抬起时可滚动的卡面正处在拖动活动里，子树暂不参与命中测试）。必须包在
+/// [SrsNativeLookupRegion] **外面**：同一次抬起时取词区先处理，[tapTookLookup] 才已定。
+class SrsBlankTapRegion extends StatefulWidget {
+  const SrsBlankTapRegion({
+    super.key,
+    required this.onTapEmpty,
+    required this.tapTookLookup,
+    required this.child,
+  });
+
+  /// 圈出一块「点按不归原生区判空白」的子树。
+  static Widget excluded({required Widget child}) =>
+      MetaData(metaData: _kSrsBlankTapExcluded, child: child);
+
+  final VoidCallback? onTapEmpty;
+
+  /// 这一下点按是否已被原生取词用掉。
+  final bool Function() tapTookLookup;
+  final Widget child;
+
+  @override
+  State<SrsBlankTapRegion> createState() => _SrsBlankTapRegionState();
+}
+
+class _SrsBlankTapRegionState extends State<SrsBlankTapRegion> {
+  int? _pointer;
+  Offset? _down;
+  bool _moved = false;
+
+  /// 按下点 [global] 是否落在某个自己处理点按的子控件上（只看本区域以内的命中）。
+  bool _hitsTapTarget(Offset global) {
+    final RenderObject? self = context.findRenderObject();
+    if (self == null) return true;
+    final HitTestResult result = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(
+      result,
+      global,
+      View.of(context).viewId,
+    );
+    for (final HitTestEntry entry in result.path) {
+      final HitTestTarget target = entry.target;
+      if (identical(target, self)) return false;
+      if (target is RenderSemanticsGestureHandler &&
+          (target.onTap != null || target.onLongPress != null)) {
+        return true;
+      }
+      if (target is RenderMetaData &&
+          identical(target.metaData, _kSrsBlankTapExcluded)) {
+        return true;
+      }
+    }
+    return true;
+  }
+
+  void _onDown(PointerDownEvent e) {
+    _pointer = null;
+    if (widget.onTapEmpty == null) return;
+    final bool primary =
+        e.kind != PointerDeviceKind.mouse || e.buttons == kPrimaryButton;
+    // 查词弹窗开着时这一下是关弹窗，不切换顶栏。
+    final bool lookupOpen = SrsCardLookupScope.of(context)?.isOpen ?? false;
+    if (!primary || lookupOpen || _hitsTapTarget(e.position)) return;
+    _pointer = e.pointer;
+    _down = e.position;
+    _moved = false;
+  }
+
+  void _onMove(PointerMoveEvent e) {
+    final Offset? d = _down;
+    if (e.pointer == _pointer && d != null) {
+      if ((e.position - d).distance > kTouchSlop) _moved = true;
+    }
+  }
+
+  void _onUp(PointerUpEvent e) {
+    if (e.pointer != _pointer) return;
+    _pointer = null;
+    if (_moved || widget.tapTookLookup()) return;
+    widget.onTapEmpty?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: _onDown,
+    onPointerMove: _onMove,
+    onPointerUp: _onUp,
+    onPointerCancel: (_) => _pointer = null,
+    child: widget.child,
+  );
+}

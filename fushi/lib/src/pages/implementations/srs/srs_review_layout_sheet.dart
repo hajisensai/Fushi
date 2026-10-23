@@ -43,6 +43,7 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
     );
     final bool intervals = ref.watch(srsReviewShowIntervalsProvider);
     final bool counts = ref.watch(srsReviewShowCountsProvider);
+    final bool floating = ref.watch(srsReviewChromeFloatingProvider);
     final bool hideHardEasy = ref.watch(srsReviewHideHardEasyProvider);
     final double volume = ref.watch(srsReviewVolumeProvider);
     // 「左 / 右」按视觉方向标：RTL 下行首在右边。
@@ -116,6 +117,13 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             subtitle: t.srs_review_hide_hard_easy_hint,
             value: hideHardEasy,
             onChanged: (bool v) => app.setSrsReviewHideHardEasy(v),
+          ),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-review-layout-floating-top-bar'),
+            title: t.srs_review_layout_floating_top_bar,
+            subtitle: t.srs_review_layout_floating_top_bar_hint,
+            value: floating,
+            onChanged: (bool v) => app.setSrsReviewChromeFloating(v),
           ),
           if (showDesignSkin) _designSkinRow(ref, app),
         ],
