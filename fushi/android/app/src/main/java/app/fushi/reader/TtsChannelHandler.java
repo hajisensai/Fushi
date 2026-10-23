@@ -533,8 +533,17 @@ public class TtsChannelHandler {
         String expression = call.argument("expression");
         String reading = call.argument("reading");
         Integer dbIndexArg = call.argument("dbIndex");
+        // 「选择音频源」菜单：只查 dbIndex 这一个库，回该库全部启用子来源命中的列表
+        // （按子来源优先级排序，首项即单条查询会回的那条），与 Dart 侧
+        // LocalAudioDb.queryMetaAll 同一语义。
+        boolean all = Boolean.TRUE.equals(call.argument("all"));
         if (localAudioDbs.isEmpty() || expression == null) {
-            result.success(null);
+            result.success(all ? new ArrayList<Object>() : null);
+            return;
+        }
+        if (all) {
+            handleQueryLocalAudioAll(expression, reading,
+                dbIndexArg != null ? dbIndexArg : 0, result);
             return;
         }
         ioExecutor.execute(() -> {
@@ -582,6 +591,65 @@ public class TtsChannelHandler {
                 new Handler(Looper.getMainLooper()).post(() -> result.success(null));
             }
         });
+    }
+
+    private void handleQueryLocalAudioAll(
+            String expression, String reading, int dbIndex, MethodChannel.Result result) {
+        ioExecutor.execute(() -> {
+            List<Map<String, Object>> out = new ArrayList<>();
+            synchronized (dbLock) {
+                SQLiteDatabase db = (dbIndex >= 0 && dbIndex < localAudioDbs.size())
+                    ? localAudioDbs.get(dbIndex) : null;
+                if (db != null && db.isOpen()) {
+                    List<String> order = (dbIndex < localAudioDbOrders.size())
+                        ? localAudioDbOrders.get(dbIndex) : null;
+                    Cursor cursor = null;
+                    try {
+                        cursor = db.rawQuery(
+                            "SELECT file, source FROM entries WHERE expression = ? AND reading = ?",
+                            new String[]{expression, reading != null ? reading : ""});
+                        if (cursor == null || !cursor.moveToFirst()) {
+                            if (cursor != null) cursor.close();
+                            cursor = db.rawQuery(
+                                "SELECT file, source FROM entries WHERE expression = ?",
+                                new String[]{expression});
+                        }
+                        for (String[] row : sortByOrder(cursor, order)) {
+                            Map<String, Object> info = new HashMap<>();
+                            info.put("file", row[0]);
+                            info.put("source", row[1]);
+                            info.put("dbIndex", dbIndex);
+                            out.add(info);
+                        }
+                    } catch (Exception e) {
+                        android.util.Log.w("fushi-audio",
+                            "queryLocalAudio(all) failed on DB " + dbIndex, e);
+                    } finally {
+                        if (cursor != null) cursor.close();
+                    }
+                }
+            }
+            new Handler(Looper.getMainLooper()).post(() -> result.success(out));
+        });
+    }
+
+    /// 全部候选行按 [order] 稳定排序：禁用 / 未列入的 source 跳过；order 为空保持库内顺序。
+    /// 首项与 [pickByOrder] 的结果一致。
+    private static List<String[]> sortByOrder(Cursor cursor, List<String> order) {
+        List<String[]> rows = new ArrayList<>();
+        if (cursor == null || !cursor.moveToFirst()) return rows;
+        do {
+            String file = cursor.getString(0);
+            String source = cursor.getString(1);
+            if (file == null || source == null) continue;
+            if (order != null && !order.isEmpty() && order.indexOf(source) < 0) continue;
+            rows.add(new String[]{file, source});
+        } while (cursor.moveToNext());
+        if (order != null && !order.isEmpty()) {
+            // List.sort 是稳定排序（TimSort）：同级保持库内顺序。
+            rows.sort((a, b) -> Integer.compare(order.indexOf(a[1]), order.indexOf(b[1])));
+        }
+        return rows;
     }
 
     /// 从候选行里按 [order] 选 source 优先级最高（rank 最小且 >=0）的一行。

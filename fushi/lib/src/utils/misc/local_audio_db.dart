@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:fushi_core/fushi_core.dart' show fnv1a32Hex;
 import 'package:sqlite3/sqlite3.dart';
 
@@ -107,8 +108,11 @@ class LocalAudioDb {
       // 至少一行音频字节，否则是「结构对但没内容」的空库 = 用不了。
       return db.select('SELECT 1 FROM android LIMIT 1').isNotEmpty;
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('LocalAudioDb.isUsableAudioSource', e, stack);
+      ErrorLogService.instance.log(
+        'LocalAudioDb.isUsableAudioSource',
+        e,
+        stack,
+      );
       return false;
     } finally {
       db?.dispose();
@@ -146,7 +150,7 @@ class LocalAudioDb {
   /// （本注释刻意不写出建索引 DDL 的字面量：`local_audio_query_offload_test` 会扫
   /// 全文件断言该字面量只出现在建索引区段内，注释里写一次就会把守卫弄红。）
   static const List<({String name, String table, List<String> columns})>
-      _indexSpecs = <({String name, String table, List<String> columns})>[
+  _indexSpecs = <({String name, String table, List<String> columns})>[
     (
       name: 'idx_entries_expr_read',
       table: 'entries',
@@ -173,8 +177,9 @@ class LocalAudioDb {
     if (dbPath != null) {
       return _pendingIndexing[dbPath] ?? Future<void>.value();
     }
-    return Future.wait(_pendingIndexing.values.toList())
-        .then((List<void> _) {});
+    return Future.wait(
+      _pendingIndexing.values.toList(),
+    ).then((List<void> _) {});
   }
 
   /// 绑定期一次性把 [dbPath] 缺失的两条查询索引补上（根因修复：导入的 Yomitan
@@ -247,8 +252,10 @@ class LocalAudioDb {
           for (final ({String name, String table, List<String> columns}) spec
               in missing) {
             try {
-              db.execute('CREATE INDEX IF NOT EXISTS ${spec.name} '
-                  'ON ${spec.table}(${spec.columns.join(', ')})');
+              db.execute(
+                'CREATE INDEX IF NOT EXISTS ${spec.name} '
+                'ON ${spec.table}(${spec.columns.join(', ')})',
+              );
             } catch (_) {
               // 目标表不存在等：建不了不致命，不牵连另一条。
             }
@@ -322,8 +329,39 @@ class LocalAudioDb {
     String reading, {
     List<String> order = const <String>[],
   }) {
+    final List<({String file, String source})> metas = _queryMetas(
+      dbPath,
+      expression,
+      reading,
+      order: order,
+      firstOnly: true,
+    );
+    return metas.isEmpty ? null : metas.first;
+  }
+
+  /// 「选择音频源」菜单用：[queryMeta] 的全量版——同样的 reading 精确优先 / 回落
+  /// 规则与子来源过滤，但返回**全部**命中行，按 [order] 优先级排好（同级保持库内
+  /// 顺序），首项就是 [queryMeta] 会挑的那条。一个 Yomitan 本地音频库（android.db）
+  /// 里有 forvo / nhk16 / jpod 等多个子来源，只回一条的话菜单里永远只露出一个。
+  static List<({String file, String source})> queryMetaAll(
+    String dbPath,
+    String expression,
+    String reading, {
+    List<String> order = const <String>[],
+  }) =>
+      _queryMetas(dbPath, expression, reading, order: order, firstOnly: false);
+
+  static List<({String file, String source})> _queryMetas(
+    String dbPath,
+    String expression,
+    String reading, {
+    required List<String> order,
+    required bool firstOnly,
+  }) {
+    const List<({String file, String source})> none =
+        <({String file, String source})>[];
     if (expression.isEmpty || dbPath.isEmpty || !File(dbPath).existsSync()) {
-      return null;
+      return none;
     }
     Database? db;
     try {
@@ -334,8 +372,8 @@ class LocalAudioDb {
       // catch 吞成 null；让 sqlite 自己等写者放锁（提交是瞬态）。
       db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
       db.execute('PRAGMA busy_timeout = 3000');
-      // order 为空走快路径（LIMIT 1）；非空要取全部候选行再按序挑。
-      final String limit = order.isEmpty ? ' LIMIT 1' : '';
+      // 只要首条且 order 为空走快路径（LIMIT 1）；否则取全部候选行再按序挑。
+      final String limit = order.isEmpty && firstOnly ? ' LIMIT 1' : '';
       ResultSet rows = db.select(
         'SELECT file, source FROM entries '
         'WHERE expression = ? AND reading = ?$limit',
@@ -347,28 +385,31 @@ class LocalAudioDb {
           <Object?>[expression],
         );
       }
-      if (rows.isEmpty) return null;
+      if (rows.isEmpty) return none;
 
       final List<({String file, String source})> cands =
           <({String file, String source})>[
-        for (final Row r in rows)
-          if (r['file'] is String && r['source'] is String)
-            (file: r['file'] as String, source: r['source'] as String),
-      ];
-      if (cands.isEmpty) return null;
-      if (order.isEmpty) return cands.first;
+            for (final Row r in rows)
+              if (r['file'] is String && r['source'] is String)
+                (file: r['file'] as String, source: r['source'] as String),
+          ];
+      if (cands.isEmpty) return none;
+      if (order.isEmpty) return firstOnly ? cands.sublist(0, 1) : cands;
 
-      ({String file, String source})? best;
-      int bestRank = 1 << 30;
-      for (final ({String file, String source}) c in cands) {
-        final int rank = order.indexOf(c.source);
-        if (rank < 0) continue; // 禁用 / 未列入 → 跳过
-        if (rank < bestRank) {
-          bestRank = rank;
-          best = c;
-        }
-      }
-      return best; // 全被过滤 → null（该库无启用源命中）
+      // 禁用 / 未列入的子来源跳过；其余按优先级稳定排序（同级保持库内顺序，
+      // 首项与旧「rank 最小的第一个」逐字一致）。全被过滤 → 空（该库无启用源命中）。
+      final List<({String file, String source})> ranked =
+          <({String file, String source})>[
+            for (final ({String file, String source}) c in cands)
+              if (order.contains(c.source)) c,
+          ];
+      mergeSort(
+        ranked,
+        compare: (a, b) =>
+            order.indexOf(a.source).compareTo(order.indexOf(b.source)),
+      );
+      if (firstOnly && ranked.length > 1) return ranked.sublist(0, 1);
+      return ranked;
     } on SqliteException catch (e, stack) {
       // BUG-1413：撞锁**不是**「库里没这个词」。旧实现在这里 `return null`，与上面
       // 三处真·未命中的 null 完全同形，调用方（WordAudioResolver）只能当 miss 处理
@@ -384,10 +425,10 @@ class LocalAudioDb {
       // 其余 sqlite 错误（缺表 / 损坏 / 无权限）是**稳定**故障，不是瞬态：库要么
       // 一直答不了要么导入时就被 [isUsableAudioSource] 拦下。保持既有 log + null。
       ErrorLogService.instance.log('LocalAudioDb.queryMeta', e, stack);
-      return null;
+      return none;
     } catch (e, stack) {
       ErrorLogService.instance.log('LocalAudioDb.queryMeta', e, stack);
-      return null;
+      return none;
     } finally {
       db?.dispose();
     }
@@ -475,8 +516,11 @@ class LocalAudioDb {
     required Directory cacheDir,
   }) {
     for (final String dbPath in dbPaths) {
-      final ({String file, String source})? meta =
-          queryMeta(dbPath, expression, reading);
+      final ({String file, String source})? meta = queryMeta(
+        dbPath,
+        expression,
+        reading,
+      );
       if (meta == null) continue;
       final String? path = extractBlob(
         dbPath: dbPath,
@@ -506,5 +550,4 @@ String _localAudioCacheKey({required String file, required String source}) =>
 String _legacyLocalAudioCacheKey({
   required String file,
   required String source,
-}) =>
-    fnv1a32Hex('$source\n$file'.codeUnits);
+}) => fnv1a32Hex('$source\n$file'.codeUnits);

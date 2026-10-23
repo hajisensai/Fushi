@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3265 条。点号进各自文件。
+> 共 3267 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3663](bugs/BUG-3663-local-audio-menu-one-subsource.md) | ✅ | ✅ | 「选择音频源」菜单里本地音频库（android.db）只露出一个子来源 |
+| [BUG-3662](bugs/BUG-3662-lookup-audio-ignores-tts-fallback.md) | ✅ | ✅ | 查词 ♪ 不走已配置的 TTS 兜底，制卡却走 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

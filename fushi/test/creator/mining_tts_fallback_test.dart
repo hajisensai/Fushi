@@ -235,6 +235,23 @@ void main() {
       );
     });
 
+    test('查词兜底只认显式选过的声音（没碰过设置 / 选了不使用 = 不兜底）', () {
+      final _MemoryPrefs prefs = _MemoryPrefs();
+      expect(lookupTtsFallbackVoiceOf(prefs), isNull);
+      prefs.values[kMiningTtsFallbackVoicePref] = 'none';
+      expect(lookupTtsFallbackVoiceOf(prefs), isNull);
+      prefs.values[kMiningTtsFallbackVoicePref] = 'system';
+      expect(
+        lookupTtsFallbackVoiceOf(prefs),
+        const MiningTtsFallbackVoice.system(),
+      );
+      prefs.values[kMiningTtsFallbackVoicePref] = 'preset:sovits';
+      expect(
+        lookupTtsFallbackVoiceOf(prefs),
+        const MiningTtsFallbackVoice.preset('sovits'),
+      );
+    });
+
     test('三种选择往返', () async {
       final _MemoryPrefs prefs = _MemoryPrefs();
       for (final MiningTtsFallbackVoice v in <MiningTtsFallbackVoice>[

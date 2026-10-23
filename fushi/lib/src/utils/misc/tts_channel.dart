@@ -22,8 +22,10 @@ import 'package:fushi/src/utils/misc/local_audio_db.dart';
 /// 空表示「该库不限制」——退回 DB 自然顺序、全部启用（向后兼容无配置的旧库）。
 @immutable
 class LocalAudioDbConfig {
-  const LocalAudioDbConfig(
-      {required this.path, this.sourceOrder = const <String>[]});
+  const LocalAudioDbConfig({
+    required this.path,
+    this.sourceOrder = const <String>[],
+  });
 
   final String path;
   final List<String> sourceOrder;
@@ -121,10 +123,12 @@ class TtsChannel {
         // 'paths' 保留兼容旧逻辑；'dbConfigs' 携带每库启用源优先级。
         'paths': dbs.map((LocalAudioDbConfig c) => c.path).toList(),
         'dbConfigs': dbs
-            .map((LocalAudioDbConfig c) => <String, Object?>{
-                  'path': c.path,
-                  'order': c.sourceOrder,
-                })
+            .map(
+              (LocalAudioDbConfig c) => <String, Object?>{
+                'path': c.path,
+                'order': c.sourceOrder,
+              },
+            )
             .toList(),
       });
       return result == true;
@@ -134,9 +138,11 @@ class TtsChannel {
     }
   }
 
-  Future<bool> setLocalAudioDb(String path) => setLocalAudioDbs(path.isEmpty
-      ? const <LocalAudioDbConfig>[]
-      : <LocalAudioDbConfig>[LocalAudioDbConfig(path: path)]);
+  Future<bool> setLocalAudioDb(String path) => setLocalAudioDbs(
+    path.isEmpty
+        ? const <LocalAudioDbConfig>[]
+        : <LocalAudioDbConfig>[LocalAudioDbConfig(path: path)],
+  );
 
   /// 枚举一个本地音频库内的全部子来源名（`SELECT DISTINCT source`）。
   /// Android 走 native；桌面直接读 sqlite。返回空表示库为空 / 读失败。
@@ -144,11 +150,16 @@ class TtsChannel {
     if (!_isSupported) return LocalAudioDb.listSources(dbPath);
     try {
       final Object? r = await _channel.invokeMethod(
-          'listLocalAudioSources', <String, Object?>{'path': dbPath});
+        'listLocalAudioSources',
+        <String, Object?>{'path': dbPath},
+      );
       return (r as List<Object?>?)?.cast<String>() ?? const <String>[];
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('TtsChannel.listLocalAudioSources', e, stack);
+      ErrorLogService.instance.log(
+        'TtsChannel.listLocalAudioSources',
+        e,
+        stack,
+      );
       return const <String>[];
     }
   }
@@ -168,9 +179,9 @@ class TtsChannel {
       // 弹窗独立 isolate 也会调进来：Isolate.run 嵌套是允许的。
       final List<({String path, List<String> order})> configs =
           <({String path, List<String> order})>[
-        for (final LocalAudioDbConfig c in _desktopDbConfigs)
-          (path: c.path, order: List<String>.of(c.sourceOrder)),
-      ];
+            for (final LocalAudioDbConfig c in _desktopDbConfigs)
+              (path: c.path, order: List<String>.of(c.sourceOrder)),
+          ];
       // 绑定期 [setLocalAudioDbs] 对同一批库文件 unawaited 派出了
       // [LocalAudioDb.ensureIndexes]——那是**我们自己**开的 readWrite 连接。
       // 在它收尾前发查询，两条连接就在同一个 inode 上抢锁：CREATE INDEX 提交
@@ -228,8 +239,71 @@ class TtsChannel {
     }
   }
 
-  Future<String?> extractLocalAudio(String file, String source,
-      {int dbIndex = 0}) async {
+  /// 「选择音频源」菜单用：第 [dbIndex] 个本地音频库里 [expression] / [reading]
+  /// 的**全部**启用子来源命中（`{file, source, dbIndex}`，按子来源优先级排好，
+  /// 首项即 [queryLocalAudio] 会回的那条）。语义见 [LocalAudioDb.queryMetaAll]；
+  /// 撞锁同样抛 [LocalAudioUnavailableError]。
+  Future<List<Map<String, dynamic>>> queryLocalAudioAll(
+    String expression,
+    String reading, {
+    required int dbIndex,
+  }) async {
+    if (!_isSupported) {
+      if (dbIndex < 0 || dbIndex >= _desktopDbConfigs.length) {
+        return const <Map<String, dynamic>>[];
+      }
+      final LocalAudioDbConfig config = _desktopDbConfigs[dbIndex];
+      final String path = config.path;
+      final List<String> order = List<String>.of(config.sourceOrder);
+      // 同 [queryLocalAudio]：排在自家绑定期建索引之后（BUG-1365）。
+      await LocalAudioDb.waitForPendingIndexing(path);
+      try {
+        return await Isolate.run(
+          () => <Map<String, dynamic>>[
+            for (final ({String file, String source}) meta
+                in LocalAudioDb.queryMetaAll(
+                  path,
+                  expression,
+                  reading,
+                  order: order,
+                ))
+              <String, dynamic>{
+                'file': meta.file,
+                'source': meta.source,
+                'dbIndex': dbIndex,
+              },
+          ],
+        );
+      } on LocalAudioUnavailableError {
+        rethrow; // 同 [queryLocalAudio]（BUG-1413）。
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtsChannel.queryLocalAudioAll', e, stack);
+        return const <Map<String, dynamic>>[];
+      }
+    }
+    try {
+      final Object? result = await _channel.invokeMethod('queryLocalAudio', {
+        'expression': expression,
+        'reading': reading,
+        'dbIndex': dbIndex,
+        'all': true,
+      });
+      if (result is! List) return const <Map<String, dynamic>>[];
+      return <Map<String, dynamic>>[
+        for (final Object? row in result)
+          if (row is Map) Map<String, dynamic>.from(row),
+      ];
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.queryLocalAudioAll', e, stack);
+      return const <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<String?> extractLocalAudio(
+    String file,
+    String source, {
+    int dbIndex = 0,
+  }) async {
     if (!_isSupported) {
       if (dbIndex < 0 || dbIndex >= _desktopDbPaths.length) return null;
       final String dbPath = _desktopDbPaths[dbIndex];
@@ -243,12 +317,14 @@ class TtsChannel {
       // ＝已查到词条却「音频提取失败」（BUG-1365）。
       await LocalAudioDb.waitForPendingIndexing(dbPath);
       try {
-        return await Isolate.run(() => LocalAudioDb.extractBlob(
-              dbPath: dbPath,
-              file: file,
-              source: source,
-              cacheDir: Directory(cacheDirPath),
-            ));
+        return await Isolate.run(
+          () => LocalAudioDb.extractBlob(
+            dbPath: dbPath,
+            file: file,
+            source: source,
+            cacheDir: Directory(cacheDirPath),
+          ),
+        );
       } on LocalAudioUnavailableError {
         rethrow; // 同 [queryLocalAudio]（BUG-1413）：没答上 ≠ 没有音频。
       } catch (e, stack) {
@@ -315,8 +391,9 @@ class TtsChannel {
       case ResolvedAudioPlayback.url:
         return playUrl(ref, volume: volume);
       case ResolvedAudioPlayback.file:
-        final String path =
-            ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+        final String path = ref.startsWith('file://')
+            ? Uri.parse(ref).toFilePath()
+            : ref;
         return playFile(path, volume: volume);
     }
   }
@@ -349,9 +426,7 @@ class TtsChannel {
   /// 移动端 KitFfmpegBackend 走 `FFprobeKit.executeWithArguments`。缺 ffprobe / 无 tag
   /// 时返回 null（[extractAudioMetadataViaFfprobe] 内部吞异常降级），调用方保留文件名
   /// 兜底，绝不崩。
-  Future<AudioMetadata?> extractAudioMetadata({
-    required String audioPath,
-  }) {
+  Future<AudioMetadata?> extractAudioMetadata({required String audioPath}) {
     return extractAudioMetadataViaFfprobe(inputPath: audioPath);
   }
 
@@ -400,8 +475,11 @@ class TtsChannel {
     );
   }
 
-  Future<String?> ttsToFile(String text, String outputPath,
-      {String locale = 'ja-JP'}) async {
+  Future<String?> ttsToFile(
+    String text,
+    String outputPath, {
+    String locale = 'ja-JP',
+  }) async {
     if (!_isSupported) {
       // No native TextToSpeech off Android: use the OS speech engine
       // (macOS `say` / Windows SAPI / Linux Open JTalk or espeak-ng). Returns
