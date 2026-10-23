@@ -10,6 +10,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
@@ -209,6 +210,7 @@ typedef SrsProgress = void Function(int done, int total);
 class SrsDbStore implements SrsSyncReplica {
   SrsDbStore._({
     required this.db,
+    required this.core,
     required this.profileUid,
     required this.deviceId,
     required this.engine,
@@ -221,6 +223,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 打开（或首次初始化）某 profile 的 SRS 副本。
   static Future<SrsDbStore> open({
     required SrsDatabase db,
+    required SrsCore core,
     required String profileUid,
     required String deviceId,
     FsrsEngine? engine,
@@ -230,6 +233,7 @@ class SrsDbStore implements SrsSyncReplica {
   }) async {
     final SrsDbStore s = SrsDbStore._(
       db: db,
+      core: core,
       profileUid: profileUid,
       deviceId: deviceId,
       engine: engine,
@@ -255,6 +259,10 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   final SrsDatabase db;
+
+  /// [db] 底下的 Rust 句柄：缓存刷新等热路径直接在同一条写连接上读（看得见当前事务里未提交的
+  /// 行），日志原文不跨 isolate、不回 Dart（docs/specs/2026-10-23-srs-rust-store.md）。
+  final SrsCore core;
   final String profileUid;
   final String deviceId;
 
@@ -1512,7 +1520,7 @@ class SrsDbStore implements SrsSyncReplica {
       for (final _NotePlan p in plans)
         for (final String c in p.expected.keys) c: p.note.deckId,
     };
-    await _prefetchLineage(pre, noteDeckOf.keys, blobs: true);
+    await _prefetchLineage(pre, noteDeckOf.keys, withLogs: false);
     final Map<String, _CardMaterial> materials = await _cardMaterials(
       noteDeckOf,
     );
@@ -1541,7 +1549,7 @@ class SrsDbStore implements SrsSyncReplica {
       }
     }
     final _RefreshPrefetch pre = _RefreshPrefetch();
-    await _prefetchLineage(pre, rows.keys, blobs: true);
+    await _prefetchLineage(pre, rows.keys, withLogs: false);
     final _CacheWrites out = _CacheWrites();
     await _readWith(pre, () async {
       final Map<String, _CardMaterial> materials = await _cardMaterials(
@@ -1595,11 +1603,11 @@ class SrsDbStore implements SrsSyncReplica {
   /// 上一轮新发现的前身一起读（前身链通常一两层）。只多读不少读：前身键的值是否为 true 由
   /// [_cardLineage] 照常判断。
   ///
-  /// [blobs] = 日志只取原文（缓存刷新，见 [_prefetchLogBlobs]），不取 Drift 行。
+  /// [withLogs] = false：不预读日志（缓存刷新的日志由 Rust 在写连接上直读，见 [_cardMaterials]）。
   Future<void> _prefetchLineage(
     _RefreshPrefetch pre,
     Iterable<String> cardIds, {
-    bool blobs = false,
+    bool withLogs = true,
   }) async {
     const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
     final String kind = SrsEntityKind.card.wire;
@@ -1609,7 +1617,7 @@ class SrsDbStore implements SrsSyncReplica {
     };
     for (int round = 0; next.isNotEmpty && round < 256; round++) {
       await _prefetchEdits(pre, SrsEntityKind.card, next);
-      await (blobs ? _prefetchLogBlobs(pre, next) : _prefetchLogs(pre, next));
+      if (withLogs) await _prefetchLogs(pre, next);
       final Set<String> preds = <String>{};
       for (final String c in next) {
         for (final String fieldKey in pre.editKeys['$kind/$c']!) {
@@ -1721,40 +1729,6 @@ class SrsDbStore implements SrsSyncReplica {
         final SrsReviewLogRow r = db.srsReviewLogs.map(q.data);
         pre.logsByCard[r.cardId]!.add(r);
         _noteServerTime(pre, r.id, q.readNullable<int>('st__'));
-      }
-    }
-  }
-
-  /// 一组卡的复习日志**原文**（canonical JSON 的 UTF-8 字节）+ 服务器时刻：缓存刷新交给原生
-  /// 卡片历史内核（[srsHistoryStatesFromJson]），日志不在 Dart 侧解码。
-  Future<void> _prefetchLogBlobs(
-    _RefreshPrefetch pre,
-    Iterable<String> cardIds,
-  ) async {
-    for (final List<String> chunk in _chunks(cardIds)) {
-      for (final String id in chunk) {
-        pre.logBlobsByCard[id] = <(Uint8List, int?)>[];
-      }
-      for (final QueryRow q
-          in await db
-              .customSelect(
-                'SELECT l.card_id AS c, CAST(l.json AS BLOB) AS j, '
-                'e.server_time AS st FROM srs_review_logs l '
-                'LEFT JOIN srs_event_local e ON e.event_id = l.id '
-                'WHERE l.card_id IN (${_marks(chunk)})',
-                variables: <Variable<Object>>[
-                  for (final String id in chunk) Variable<String>(id),
-                ],
-                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                  db.srsReviewLogs,
-                  db.srsEventLocal,
-                },
-              )
-              .get()) {
-        pre.logBlobsByCard[q.read<String>('c')]!.add((
-          q.read<Uint8List>('j'),
-          q.readNullable<int>('st'),
-        ));
       }
     }
   }
@@ -2063,15 +2037,15 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 一组卡的缓存行原料：血统（自己 + 全部前身的修改记录）与卡片历史内核算出的当前状态。
-  /// 整组的日志原文一次交给原生侧（[srsHistoryStatesFromJson]，一次 FFI 调用）；日志原文先查
-  /// 预读（[_prefetchLogBlobs]），预读里没有的血统卡一条语句补读。
+  /// 整组一次 Rust 调用（[SrsCore.historyStates]）：日志原文与服务器时刻由 Rust 在写连接上直读并选取，
+  /// 不经 Dart。
   Future<Map<String, _CardMaterial>> _cardMaterials(
     Map<String, String?> noteDeckOf,
   ) async {
     final List<String> ids = noteDeckOf.keys.toList();
     final _RefreshPrefetch pre = _RefreshPrefetch.current ?? _RefreshPrefetch();
     // 已预读的血统跳过；血统与继承标志整组一次内核调用（字段寄存器内核）。
-    await _prefetchLineage(pre, ids, blobs: true);
+    await _prefetchLineage(pre, ids, withLogs: false);
     final List<SrsCardLineage> lineages = _lineagesIn(pre, <SrsCardWant>[
       for (final String id in ids)
         SrsCardWant(
@@ -2080,19 +2054,23 @@ class SrsDbStore implements SrsSyncReplica {
           fallbackDeckId: defaultDeckId,
         ),
     ]).wants;
-    final Set<String> missing = <String>{
-      for (final SrsCardLineage l in lineages)
-        for (final String c in l.lineage)
-          if (!pre.logBlobsByCard.containsKey(c)) c,
-    };
-    if (missing.isNotEmpty) await _prefetchLogBlobs(pre, missing);
-    final List<SrsHistoryState> states = srsHistoryStatesFromJson(
-      <SrsStoredHistory>[
-        for (final SrsCardLineage l in lineages)
-          <(Uint8List, int?)>[
-            for (final String c in l.lineage) ...pre.logBlobsByCard[c]!,
-          ],
-      ],
+    final List<List<String>> groups = <List<String>>[
+      for (final SrsCardLineage l in lineages) l.lineage,
+    ];
+    // Rust 在写连接上直读日志 + 服务器时刻并选取（一次调用）；放后台 isolate，不挡 UI。同一条
+    // 连接上 Drift 正开着的事务（本次落库的新日志）它看得见：调用期间 Drift 不会插进别的语句
+    // （缓存刷新在写锁 + 事务里）。
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
+    final Uint8List raw = await Isolate.run<Uint8List>(
+      () => SrsCore.fromAddress(
+        address,
+        libraryPath: libraryPath,
+      ).historyStates(groups),
+    );
+    final List<SrsHistoryState> states = srsDecodeHistoryStates(
+      raw,
+      groups.length,
     );
     return <String, _CardMaterial>{
       for (int i = 0; i < ids.length; i++)
@@ -4876,9 +4854,6 @@ class _RefreshPrefetch {
   final Map<String, List<SrsReviewLogRow>> logsByCard =
       <String, List<SrsReviewLogRow>>{};
 
-  /// 卡 → 日志原文 + 服务器时刻（[SrsDbStore._prefetchLogBlobs]）。
-  final Map<String, List<(Uint8List, int?)>> logBlobsByCard =
-      <String, List<(Uint8List, int?)>>{};
   final Map<String, List<SrsCardCacheRow>> cardsByNote =
       <String, List<SrsCardCacheRow>>{};
   final Map<String, int> serverTimes = <String, int>{};

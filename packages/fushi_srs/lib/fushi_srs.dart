@@ -20,6 +20,7 @@ export 'src/history_kernel.dart'
         SrsHistoryState,
         SrsStoredHistory,
         SrsHistoryInput,
+        srsDecodeHistoryStates,
         srsHistoryStatesFromJson,
         srsImportEquivalentAny;
 export 'src/hlc.dart';

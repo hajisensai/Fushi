@@ -151,6 +151,27 @@ typedef _ExecDart =
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
 
+typedef _HistC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Size,
+      ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistDart =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      int,
+      ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+
 /// `ffsrs_store_*` 的绑定。
 final class SrsCoreBindings {
   SrsCoreBindings._(FushiFsrs lib)
@@ -189,6 +210,9 @@ final class SrsCoreBindings {
       ),
       inTransaction = lib.library.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_in_transaction',
+      ),
+      historyStates = lib.library.lookupFunction<_HistC, _HistDart>(
+        'ffsrs_store_history_states',
       );
 
   final FushiFsrs _fsrs;
@@ -205,6 +229,7 @@ final class SrsCoreBindings {
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
+  final _HistDart historyStates;
 
   static SrsCoreBindings? _instance;
 
@@ -419,6 +444,36 @@ final class SrsCore {
       ),
       err,
     );
+  });
+
+  /// 卡片历史的当前状态，Rust 直接从写连接读日志（含事务里未提交的行）。[lineages] 每项是一份
+  /// 历史的血统（自己 + 全部前身的卡 ID）。返回 `srsDecodeHistoryStates` 的布局。
+  Uint8List historyStates(List<List<String>> lineages) => using((Arena arena) {
+    final Uint8List page = srsEncodeRows(2, <List<Object?>>[
+      for (int g = 0; g < lineages.length; g++)
+        for (final String c in lineages[g]) <Object?>[g, c],
+    ]);
+    final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
+    final ffi.Pointer<ffi.Size> outLen = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(
+      _b,
+      _b.historyStates(
+        _h,
+        _copy(arena, page),
+        page.length,
+        lineages.length,
+        out,
+        outLen,
+        err,
+      ),
+      err,
+    );
+    final int len = outLen.value;
+    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    _b._freeBytes(out.value, len);
+    return bytes;
   });
 
   /// 写连接当前是否在事务里。

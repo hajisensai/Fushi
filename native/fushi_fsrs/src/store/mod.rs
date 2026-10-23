@@ -283,6 +283,57 @@ impl SrsCore {
         Ok(!self.writer()?.is_autocommit())
     }
 
+    // ------------------------------------------------------------ 直读命令
+
+    /// 卡片历史的当前状态，直接从写连接读日志（看得见 Drift 事务里未提交的行）：
+    /// `groups[g]` 是第 g 份历史的血统（自己 + 全部前身的卡 ID）。输出布局同
+    /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
+    pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let w = self.writer()?;
+        let mut wanted: Vec<&str> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for g in groups {
+            for c in g {
+                if seen.insert(c.as_str()) {
+                    wanted.push(c.as_str());
+                }
+            }
+        }
+        let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
+            std::collections::HashMap::with_capacity(wanted.len());
+        for chunk in wanted.chunks(500) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+            );
+            let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
+            let mut q = stmt
+                .query(rusqlite::params_from_iter(chunk.iter()))
+                .map_err(|e| e.to_string())?;
+            while let Some(row) = q.next().map_err(|e| e.to_string())? {
+                let card: String = row.get(0).map_err(|e| e.to_string())?;
+                let json: String = row.get(1).map_err(|e| e.to_string())?;
+                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+                logs.entry(card).or_default().push((json, st));
+            }
+        }
+        drop(w);
+        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let mut states = Vec::with_capacity(groups.len());
+        for g in groups {
+            let mut jsons: Vec<&str> = Vec::new();
+            let mut servers: Vec<Option<i64>> = Vec::new();
+            for c in g {
+                for (j, s) in logs.get(c).unwrap_or(&empty) {
+                    jsons.push(j);
+                    servers.push(*s);
+                }
+            }
+            states.push(crate::history::state_from_json(&jsons, &servers)?);
+        }
+        Ok(crate::history::encode_states(&states))
+    }
+
     // ------------------------------------------------------------ 测试 / 诊断
 
     /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
@@ -472,5 +523,38 @@ mod exec_tests {
         let (_, rows) = rows::decode(&s).unwrap();
         assert_eq!(rows[1][0], Value::Integer(2));
         assert!(core.exec("SELECT nope", &[], true).is_err());
+    }
+}
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+
+    #[test]
+    fn history_states_reads_uncommitted_logs_on_the_writer() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_hist_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        // 没有日志：新卡状态。
+        let empty = core.history_states(&[vec!["c1".into()]]).unwrap();
+        let expect_new = crate::history::encode_states(&[
+            crate::history::state_from_json(&[], &[]).unwrap(),
+        ]);
+        assert_eq!(empty, expect_new);
+        core.exec("BEGIN", &[], false).unwrap();
+        core.exec(
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
+             review_type, origin, duration_ms, json) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
+            &[],
+            false,
+        )
+        .unwrap();
+        // 事务里新插的那行（坏 JSON）被读到了 → 解析报错。
+        assert!(core.history_states(&[vec!["c1".into()]]).is_err());
+        core.exec("ROLLBACK", &[], false).unwrap();
+        assert_eq!(core.history_states(&[vec!["c1".into()]]).unwrap(), expect_new);
     }
 }

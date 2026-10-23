@@ -25,6 +25,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 只读地读一份备份里的 SRS 数据。
 ///
@@ -254,7 +255,7 @@ const List<String> _kSrsProfileTables = <String>[
 Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
   required SrsBackupSource source,
   required FushiDatabase local,
-  required SrsDatabase localSrs,
+  required SrsStorage localSrs,
   required String deviceId,
   required SrsCreateProfile createProfile,
 }) async {
@@ -279,7 +280,7 @@ Future<List<SrsBackupMergeResult>> mergeSrsFromBackup({
           await _canAdoptUid(localSrs, sameName.uid, deviceId)) {
         final String? oldUid = sameName.uid;
         if (oldUid != null && oldUid.isNotEmpty) {
-          await _deleteProfileRows(localSrs, oldUid);
+          await _deleteProfileRows(localSrs.db, oldUid);
         }
         await local.adoptProfileUid(sameName.id, bp.uid);
         localId = sameName.id;
@@ -341,7 +342,8 @@ Future<List<_LocalProfile>> _localProfiles(
 ];
 
 /// 本机 profile（当前 uid [uid]）能否改用备份的 uid：没有用户笔记，且从未发布过批次。
-Future<bool> _canAdoptUid(SrsDatabase db, String? uid, String deviceId) async {
+Future<bool> _canAdoptUid(SrsStorage srs, String? uid, String deviceId) async {
+  final SrsDatabase db = srs.db;
   if (uid == null || uid.isEmpty) return true;
   final bool hasNotes =
       await db
@@ -369,6 +371,7 @@ Future<bool> _canAdoptUid(SrsDatabase db, String? uid, String deviceId) async {
   if (!hasLocalState) return true;
   final SrsDbStore store = await SrsDbStore.open(
     db: db,
+    core: srs.core,
     profileUid: uid,
     deviceId: deviceId,
   );
@@ -378,7 +381,7 @@ Future<bool> _canAdoptUid(SrsDatabase db, String? uid, String deviceId) async {
 /// 本机 profile（当前 uid [currentUid]）能否改用另一个 uid：没有用户笔记、也从未发布过批次（铁律 E）。
 /// 复习备份页「从文件恢复」另一台设备的备份时用：新装的设备可以直接接上那个 profile。
 Future<bool> srsCanAdoptProfileUid(
-  SrsDatabase db,
+  SrsStorage db,
   String currentUid,
   String deviceId,
 ) => _canAdoptUid(db, currentUid, deviceId);
@@ -390,12 +393,12 @@ Future<bool> srsCanAdoptProfileUid(
 /// 旧 uid 下只剩空（内置行随下次打开重建），重跑即收敛。
 Future<void> srsAdoptProfileUid(
   FushiDatabase db,
-  SrsDatabase srs, {
+  SrsStorage srs, {
   required int profileId,
   required String oldUid,
   required String newUid,
 }) async {
-  await _deleteProfileRows(srs, oldUid);
+  await _deleteProfileRows(srs.db, oldUid);
   await db.adoptProfileUid(profileId, newUid);
 }
 
@@ -444,19 +447,20 @@ Future<Set<String>> _existingEventIds(SrsDatabase db, List<String> ids) async {
 
 /// 经本机副本合并一组事件，返回新落下的事件数（这些事件重新进发件箱）。
 Future<int> _mergeEvents({
-  required SrsDatabase local,
+  required SrsStorage local,
   required String profileUid,
   required String deviceId,
   required List<SrsEvent> events,
 }) async {
   final SrsDbStore store = await SrsDbStore.open(
-    db: local,
+    db: local.db,
+    core: local.core,
     profileUid: profileUid,
     deviceId: deviceId,
   );
   if (events.isEmpty) return 0;
   final List<String> ids = <String>[for (final SrsEvent e in events) e.id];
-  final Set<String> before = await _existingEventIds(local, ids);
+  final Set<String> before = await _existingEventIds(local.db, ids);
   await store.applyRemote(events);
   final List<String> fresh = <String>[
     for (final String id in ids)
@@ -464,7 +468,7 @@ Future<int> _mergeEvents({
   ];
   if (fresh.isEmpty) return 0;
   // 被本机更晚的修改支配而丢掉的记录不在库里，不进发件箱（否则发件箱留下永远发不出的行）。
-  final Set<String> landed = await _existingEventIds(local, fresh);
+  final Set<String> landed = await _existingEventIds(local.db, fresh);
   final List<String> requeue = <String>[
     for (final String id in fresh)
       if (landed.contains(id)) id,

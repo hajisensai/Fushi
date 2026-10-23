@@ -311,3 +311,39 @@ pub extern "C" fn ffsrs_store_in_transaction(
         Ok(())
     })
 }
+
+/// 卡片历史的当前状态（直读写连接）。`groups` 是两列页 `[历史下标 i64, 卡 ID 文本]`，共
+/// `n_groups` 份历史；输出布局同 `ffsrs_history_states`，用 `ffsrs_free_bytes` 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_history_states(
+    core: *const SrsCore,
+    groups: *const u8,
+    groups_len: usize,
+    n_groups: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    use rusqlite::types::Value;
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let (_, rows) = super::rows::decode(bytes(groups, groups_len).ok_or("null groups")?)?;
+        let mut lineages: Vec<Vec<String>> = vec![Vec::new(); n_groups];
+        for r in rows {
+            let mut it = r.into_iter();
+            match (it.next(), it.next()) {
+                (Some(Value::Integer(g)), Some(Value::Text(card)))
+                    if g >= 0 && (g as usize) < n_groups =>
+                {
+                    lineages[g as usize].push(card)
+                }
+                _ => return Err("bad history group row".into()),
+            }
+        }
+        hand_out(c.history_states(&lineages)?, out, out_len);
+        Ok(())
+    })
+}

@@ -143,6 +143,10 @@ String _takeError(FushiFsrs lib, Pointer<Pointer<Char>> error) {
   }
 }
 
+/// 解出 [n] 份历史的状态（`ffsrs_history_states` / `ffsrs_store_history_states` 的同一布局）。
+List<SrsHistoryState> srsDecodeHistoryStates(Uint8List bytes, int n) =>
+    _decodeStates(bytes, n);
+
 List<SrsHistoryState> _decodeStates(Uint8List bytes, int n) {
   final ByteData d = ByteData.sublistView(bytes);
   final int strTable = n * _stateWords * 8;
