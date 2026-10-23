@@ -894,6 +894,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<void> searchSubtitlesOnline() async {
     if (!canSearchSubtitles || !context.mounted) return;
     closeLookup();
+    final Map<String, Map<String, dynamic>> downloads =
+        <String, Map<String, dynamic>>{};
     final bool applied = await showVideoRemoteSubtitleSearchSheet(
       context: context,
       search: (String? query, int? episode) async =>
@@ -905,13 +907,29 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
             }),
           ),
       // 不走 [_command]：它把错误收进页面错误条，这里要让弹层就地显示原因。
+      // 同一条候选重试时原样重发第一次的请求（同 requestId、同会话）：电脑那边
+      // 下载若还在跑（超过手机的请求超时）就并进去，不会再下一份、再应用一次。
+      // 电脑明确回了错误（有状态码）就丢掉：那个结果会按 requestId 重放，重试
+      // 要发新请求。
       download: (String candidateId) async {
-        await _client.call('command', <String, dynamic>{
-          ..._session,
-          'requestId': _client.requestId(),
-          'action': 'subtitleDownload',
-          'candidateId': candidateId,
-        });
+        try {
+          await _client.call(
+            'command',
+            downloads.putIfAbsent(
+              candidateId,
+              () => <String, dynamic>{
+                ..._session,
+                'requestId': _client.requestId(),
+                'action': 'subtitleDownload',
+                'candidateId': candidateId,
+              },
+            ),
+          );
+        } on VideoRemoteError catch (error) {
+          if (error.statusCode != null) downloads.remove(candidateId);
+          rethrow;
+        }
+        downloads.remove(candidateId);
         await _apply(await _client.snapshot());
       },
       errorText: videoRemoteErrorText,

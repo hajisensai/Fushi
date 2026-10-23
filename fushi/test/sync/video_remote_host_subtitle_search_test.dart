@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -146,6 +148,43 @@ void main() {
       );
     },
   );
+
+  test(
+    'a slow download neither blocks playback commands nor runs twice',
+    () async {
+      final _FakePlayer player = await connect(search: true);
+      player.downloadGate = Completer<void>();
+      final Map<String, dynamic> body = <String, dynamic>{
+        'sessionId': snapshot['sessionId'],
+        'subtitleVersion': snapshot['subtitleVersion'],
+        'requestId': 'download-1',
+        'action': 'subtitleDownload',
+        'candidateId': '1.0',
+      };
+      final Future<Map<String, Object?>> first = host.handle(
+        'command',
+        body,
+        'phone',
+      );
+      await pumpEventQueue();
+      expect(player.downloads, <String>['1.0']);
+
+      // 下载还卡着：暂停照常执行，不排在它后面。
+      await call('command', <String, dynamic>{'action': 'pause'});
+      expect(player.commands, <String>['pause']);
+
+      // 手机超时后原样重发：并进正在跑的那次，不再下载第二份。
+      final Future<Map<String, Object?>> retry = host.handle(
+        'command',
+        Map<String, dynamic>.of(body),
+        'phone',
+      );
+      player.downloadGate!.complete();
+      expect(await first, <String, Object?>{'ok': true});
+      expect(await retry, <String, Object?>{'ok': true});
+      expect(player.downloads, <String>['1.0']);
+    },
+  );
 }
 
 final class _FakePlayer {
@@ -155,7 +194,11 @@ final class _FakePlayer {
   final List<VoidCallback> listeners = <VoidCallback>[];
   final List<(String?, int?)> searches = <(String?, int?)>[];
   final List<String> downloads = <String>[];
+  final List<String> commands = <String>[];
   VideoRemoteException? downloadError;
+
+  /// 非空时下载卡在这里，直到测试放行。
+  Completer<void>? downloadGate;
 
   VideoRemotePlaybackBinding binding() => VideoRemotePlaybackBinding(
     identity: () => 'video-one',
@@ -164,7 +207,8 @@ final class _FakePlayer {
     sectionIndex: () => 0,
     cues: () => const <VideoRemoteCue>[],
     state: () => <String, Object?>{'playing': false, 'positionMs': 0},
-    command: (String action, Map<String, dynamic> body) async {},
+    command: (String action, Map<String, dynamic> body) async =>
+        commands.add(action),
     mine:
         (
           VideoRemoteCue cue,
@@ -197,6 +241,7 @@ final class _FakePlayer {
             final VideoRemoteException? error = downloadError;
             if (error != null) throw error;
             downloads.add(id);
+            await downloadGate?.future;
           }
         : null,
   );

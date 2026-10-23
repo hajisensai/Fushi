@@ -593,24 +593,33 @@ final class VideoRemoteHost implements VideoRemoteService {
         }
       }
     }
+    Future<Map<String, Object?>> run() async {
+      // Queued commands revalidate their owner/session at execution time.
+      await _core.assertOwner(peerId);
+      final Map<String, Object?> result = await _mutate(
+        operation,
+        body,
+        peerId,
+      );
+      // A successful controller operation supersedes an earlier failure.
+      if (_playbackError != null) {
+        _playbackError = null;
+        _publish();
+      }
+      return result;
+    }
+
+    // A subtitle download (network, archive, alignment against the embedded
+    // track) can take longer than the phone's request timeout; queued behind
+    // it, play / pause / seek would stall just as long. It runs beside the
+    // queue: its result only replaces the subtitle, and a phone retry with the
+    // same request ID joins it instead of downloading again.
+    final bool beside =
+        operation == 'command' && body['action'] == 'subtitleDownload';
     return _core.runIdempotent(
       peerId,
       requestId,
-      () => _serialize(() async {
-        // Queued commands revalidate their owner/session at execution time.
-        await _core.assertOwner(peerId);
-        final Map<String, Object?> result = await _mutate(
-          operation,
-          body,
-          peerId,
-        );
-        // A successful controller operation supersedes an earlier failure.
-        if (_playbackError != null) {
-          _playbackError = null;
-          _publish();
-        }
-        return result;
-      }),
+      () => beside ? run() : _serialize(run),
       fingerprint: fingerprint,
     );
   }
