@@ -6440,7 +6440,11 @@ class AppModel with ChangeNotifier {
           serviceFactory: createAsrTranscriptionService,
           preferredLanguageTag: () => prefsRepo.asrTranscribeLanguage,
         ),
-        importer: (AudiobookTranscribeJob job, String subtitlePath) =>
+        importer: (
+          AudiobookTranscribeJob job,
+          String subtitlePath,
+          AudiobookTranscribeImportSink sink,
+        ) =>
             importTranscribedAudiobook(
           db: database,
           srtBookRepo: SrtBookRepository(database),
@@ -6450,6 +6454,8 @@ class AppModel with ChangeNotifier {
           contentPath: job.contentPath,
           targetBookKey: job.targetBookKey,
           title: job.title,
+          onStep: sink.step,
+          onCoverage: sink.coverage,
         ),
       );
   AudiobookTranscribeImportQueue? _audiobookTranscribeImportQueue;

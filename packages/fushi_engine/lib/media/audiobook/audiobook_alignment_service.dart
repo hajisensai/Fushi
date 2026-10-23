@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/subtitle_rematch_policy.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart'
@@ -18,6 +19,25 @@ import 'package:meta/meta.dart';
 /// 是给用户看的步骤文案（service 不持有 i18n，文案由调用方喂）。
 typedef AudiobookAlignmentProgress =
     void Function(double fraction, String message);
+
+/// 对齐落库走到了哪一步（[alignAndPersistAudiobook] 的 `onStep`）。与
+/// [AudiobookAlignmentProgress] 的 fraction 不同，这里**不给数值**：匹配器在 isolate
+/// 里一次跑完、中途不报进度，各步的 fraction 只是排版用的固定刻度，UI 要的是
+/// 「现在在干什么」——[readingText] .. [finishing] 是「匹配正文」，[persisting] /
+/// [saving] 是「入库」。
+enum AudiobookAlignmentStep {
+  readingText,
+  parsingSubtitle,
+  matching,
+  finishing,
+  persisting,
+  saving,
+  done,
+}
+
+/// [AudiobookAlignmentStep] 回调；[detail] 是正在复制的文件名（[persisting] 时）。
+typedef AudiobookAlignmentStepCallback =
+    void Function(AudiobookAlignmentStep step, {String? detail});
 
 /// 对齐 / 重新导入在**写盘之前**的检查点上发现已被取消。
 ///
@@ -42,6 +62,7 @@ class AudiobookAlignmentResult {
     required this.health,
     required this.cueCount,
     required this.persistedAudioPaths,
+    this.coverage,
   });
 
   /// 对齐健康度（matcher 命中率 / notApplicable / failed）。
@@ -52,6 +73,9 @@ class AudiobookAlignmentResult {
 
   /// 落盘后的音频绝对路径（复制导入后位于持久目录；可空）。
   final List<String> persistedAudioPaths;
+
+  /// 正文覆盖情况（见 [AudiobookTextCoverage]）；没跑匹配器时 null。
+  final AudiobookTextCoverage? coverage;
 }
 
 /// 解析步骤的可注入文案集合，使 service 不依赖 i18n（t.*）。各字段对应原
@@ -222,6 +246,11 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
       } else if (speechFile.existsSync()) {
         await speechFile.delete();
       }
+      // 转录弹层再打开时显示「上次匹配」的覆盖情况。
+      await writeAsrCoverageSidecar(
+        subtitlePath,
+        computeAudiobookTextCoverage(sections: sections, result: result),
+      );
     } catch (e, stack) {
       engineLog.log('AudiobookAlignmentService.writeAlignedSrt', e, stack);
     }
@@ -486,10 +515,14 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   AudiobookAlignmentProgress? onProgress,
   AudiobookAlignmentMessages messages = const AudiobookAlignmentMessages(),
   bool Function()? isCancelled,
+  AudiobookAlignmentStepCallback? onStep,
 }) async {
   void report(double f, String m) => onProgress?.call(f, m);
+  void step(AudiobookAlignmentStep s, {String? detail}) =>
+      onStep?.call(s, detail: detail);
 
   throwIfAlignmentCancelled(isCancelled);
+  step(AudiobookAlignmentStep.readingText);
   report(0.35, messages.readingIdb);
   List<EpubSection> sections = const <EpubSection>[];
   try {
@@ -501,6 +534,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
     fushiDebugPrint('[fushi-import] parseFromExtracted failed: $e');
   }
   throwIfAlignmentCancelled(isCancelled);
+  step(AudiobookAlignmentStep.parsingSubtitle);
   report(0.45, messages.parsing);
   final String ext = subtitlePath.split('.').last.toLowerCase();
   List<AudioCue> cues = await parseCuesForFormat(
@@ -511,9 +545,11 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   // 转录产物：把 sidecar 里的逐 token 时间挂上（非产物 / 缺失时 false）。
   final bool hasTokenTiming = await attachAsrCueTokenTiming(cues, subtitlePath);
   AudiobookHealth health;
+  AudiobookTextCoverage? coverage;
   final bool runMatcher = SubtitleRematchPolicy.supportedFormats.contains(ext);
   throwIfAlignmentCancelled(isCancelled);
   if (runMatcher && sections.isNotEmpty && cues.isNotEmpty) {
+    step(AudiobookAlignmentStep.matching);
     report(0.55, messages.matching);
     MatchResult? matchResult;
     int chosenWindow = searchWindow;
@@ -534,6 +570,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       searchWindow: chosenWindow,
       similarityThreshold: similarityThreshold,
     );
+    step(AudiobookAlignmentStep.finishing);
     final ({List<AudioCue> cues, MatchResult result}) finalized =
         await finalizeAlignedCues(
           sections: sections,
@@ -544,6 +581,15 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
         );
     cues = finalized.cues;
     matchResult = finalized.result;
+    try {
+      coverage = computeAudiobookTextCoverage(
+        sections: sections,
+        result: matchResult,
+      );
+    } catch (e, stack) {
+      // 覆盖率只是展示用的读数，算不出来不能挡住落库。
+      engineLog.log('AudiobookAlignmentService.coverage', e, stack);
+    }
     final int pct = (matchResult.matchRate * 100).round();
     health = AudiobookHealth.fromRatePct(
       ratePct: pct,
@@ -563,6 +609,7 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
 
   // 最后一个检查点：之后是提交阶段（同步持久目录 + 写库），不再中断。
   throwIfAlignmentCancelled(isCancelled);
+  step(AudiobookAlignmentStep.persisting, detail: p.basename(subtitlePath));
   report(0.8, messages.persisting);
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(bookKey);
   final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
@@ -578,9 +625,13 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
       await AudiobookStorage.syncAudioFiles(
         persistDir,
         audioPaths,
-        onFile: (String name) => report(0.85, messages._copying(name)),
+        onFile: (String name) {
+          step(AudiobookAlignmentStep.persisting, detail: name);
+          report(0.85, messages._copying(name));
+        },
       );
 
+  step(AudiobookAlignmentStep.saving);
   report(0.9, messages.saving);
   // 窄写入：一次只说一件事，没有整行入口可以误清别的列（BUG-1678）。
   await audiobookRepo.replaceAlignment(
@@ -605,11 +656,13 @@ Future<AudiobookAlignmentResult> alignAndPersistAudiobook({
   );
   await audiobookRepo.saveCues(bookKey: bookKey, cues: cues);
   await audiobookRepo.updateHealthOverlay(bookKey: bookKey, health: health);
+  step(AudiobookAlignmentStep.done);
   report(1, messages.done);
 
   return AudiobookAlignmentResult(
     health: health,
     cueCount: cues.length,
     persistedAudioPaths: persistedAudioPaths,
+    coverage: coverage,
   );
 }

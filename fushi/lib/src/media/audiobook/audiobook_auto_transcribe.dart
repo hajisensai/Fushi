@@ -92,13 +92,16 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
     }
     if (cancel.isCancelled) throw const AudiobookTranscribeCancelled();
 
-    onProgress(AudiobookTranscribeJobPhase.transcribing, 0);
+    // 装模型（建推理会话）单独成一步：大模型在 CPU 上要十几秒，此前算在
+    // 「转录中 0%」里看着像卡住。
+    onProgress(AudiobookTranscribeJobPhase.loadingModel, null);
     final AsrRunningTranscription running = await service.start(
       audioPaths: job.audioPaths,
       language: language,
       variant: plan.variant,
       preference: _preference,
     );
+    onProgress(AudiobookTranscribeJobPhase.transcribing, 0);
     cancel.onCancel(running.requestPause);
     AsrTranscribeResult? result;
     try {
