@@ -11,7 +11,8 @@ import 'fushi_fsrs_library.dart';
 
 /// [FsrsEngine] 的唯一生产实现：native/fushi_fsrs（fsrs-rs）的 FFI 绑定。
 ///
-/// 请求 / 响应走 JSON（见 lib.rs 的 `dispatch`）；原生侧报的错误（参数不合法、数据不足、
+/// 请求 / 响应走 JSON（见 lib.rs 的 `dispatch`），参数优化 / 评估的训练集走打包的 TypedData
+/// （[SrsFsrsTrainingSet]，见 lib.rs 的 `ffsrs_fit`）；原生侧报的错误（参数不合法、数据不足、
 /// 被取消、panic）一律转成 [SrsFsrsException]。所有调用都是同步阻塞的，参数优化 /
 /// 外样本评估请放后台 isolate：别的 isolate 用 [FfiFsrsEngine.tryCreate] 自己再建一个
 /// 引擎（同一个库，各 isolate 各自 open），取消 / 进度通道用
@@ -208,45 +209,33 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   @override
   List<double> computeParameters({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
-    List<int>? cardIds,
+    required SrsFsrsTrainingSet items,
     SrsOptimizerControl? control,
   }) {
     if (control != null && control.cancelled) {
       throw const SrsFsrsException('cancelled');
     }
-    final String request = _encode(<String, Object?>{
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'items': _itemsJson(items),
-      'cardIds': cardIds,
-    });
-    final NativeSrsOptimizerControl? native =
-        control is NativeSrsOptimizerControl ? control : null;
-    final Pointer<Char> req = request.toNativeUtf8().cast<Char>();
-    try {
-      final Pointer<Char> resp = _b.ffsrs_compute_parameters(
-        req,
-        native?.cancelPointer ?? nullptr,
-        native?.progressPointer ?? nullptr,
-      );
-      final Object? result = _decodeResponse(resp);
-      final Object? params = result is Map ? result['params'] : null;
-      return _doubleList(params, 'compute_parameters');
-    } finally {
-      calloc.free(req);
-    }
+    final Object? result = _fit(
+      <String, Object?>{
+        'op': 'compute_parameters',
+        'algorithm': algorithm.memoryAlgorithm.wire,
+      },
+      items,
+      control is NativeSrsOptimizerControl ? control : null,
+    );
+    final Object? params = result is Map ? result['params'] : null;
+    return _doubleList(params, 'compute_parameters');
   }
 
   @override
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) {
-    final Object? result = _call(<String, Object?>{
+    final Object? result = _fit(<String, Object?>{
       'op': 'evaluate_tss',
       'algorithm': algorithm.memoryAlgorithm.wire,
-      'items': _itemsJson(items),
-    });
+    }, items);
     return _evaluation(result, 'evaluate_tss');
   }
 
@@ -254,16 +243,69 @@ class FfiFsrsEngine implements FsrsBatchEngine {
   SrsEvaluation evaluate({
     required SrsAlgorithm algorithm,
     required List<double> params,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) {
-    final Object? result = _call(<String, Object?>{
+    final Object? result = _fit(<String, Object?>{
       'op': 'evaluate',
       'algorithm': algorithm.memoryAlgorithm.wire,
       'params': params,
-      'items': _itemsJson(items),
-    });
+    }, items);
     return _evaluation(result, 'evaluate');
   }
+
+  /// 一次 `ffsrs_fit`：请求头走 JSON（几十字节），训练集的六段 TypedData 各拷一次进原生内存。
+  /// 前缀在原生侧展开，这里只有 O(总评分数) 的数据。
+  Object? _fit(
+    Map<String, Object?> request,
+    SrsFsrsTrainingSet set, [
+    NativeSrsOptimizerControl? control,
+  ]) {
+    final Pointer<Char> req = _encode(request).toNativeUtf8().cast<Char>();
+    final Int64List? ids = set.cardIds;
+    // 长度为 0 时也分配 1 个元素，原生侧拿到的永远是合法指针。
+    final Pointer<Uint8> ratings = calloc<Uint8>(_slots(set.ratings.length));
+    final Pointer<Float> deltas = calloc<Float>(_slots(set.deltaDays.length));
+    final Pointer<Uint32> offsets = calloc<Uint32>(set.cardOffsets.length);
+    final Pointer<Int64> cardIds = ids == null
+        ? nullptr
+        : calloc<Int64>(_slots(ids.length));
+    final Pointer<Uint32> itemCards = calloc<Uint32>(_slots(set.length));
+    final Pointer<Uint32> itemLengths = calloc<Uint32>(_slots(set.length));
+    try {
+      ratings.asTypedList(set.ratings.length).setAll(0, set.ratings);
+      deltas.asTypedList(set.deltaDays.length).setAll(0, set.deltaDays);
+      offsets.asTypedList(set.cardOffsets.length).setAll(0, set.cardOffsets);
+      if (ids != null) cardIds.asTypedList(ids.length).setAll(0, ids);
+      itemCards.asTypedList(set.length).setAll(0, set.itemCards);
+      itemLengths.asTypedList(set.length).setAll(0, set.itemLengths);
+      return _decodeResponse(
+        _b.ffsrs_fit(
+          req,
+          ratings,
+          deltas,
+          set.ratings.length,
+          offsets,
+          cardIds,
+          set.cardCount,
+          itemCards,
+          itemLengths,
+          set.length,
+          control?.cancelPointer ?? nullptr,
+          control?.progressPointer ?? nullptr,
+        ),
+      );
+    } finally {
+      calloc.free(req);
+      calloc.free(ratings);
+      calloc.free(deltas);
+      calloc.free(offsets);
+      if (cardIds != nullptr) calloc.free(cardIds);
+      calloc.free(itemCards);
+      calloc.free(itemLengths);
+    }
+  }
+
+  static int _slots(int n) => n == 0 ? 1 : n;
 
   /// zstd 解码（.apkg 新格式的 collection.anki21b / 媒体清单 / 媒体文件）。
   ///
@@ -340,13 +382,6 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     return body['ok'];
   }
 
-  static List<List<Map<String, Object?>>> _itemsJson(
-    List<List<SrsFsrsReview>> items,
-  ) => <List<Map<String, Object?>>>[
-    for (final List<SrsFsrsReview> item in items)
-      <Map<String, Object?>>[for (final SrsFsrsReview r in item) r.toJson()],
-  ];
-
   static List<double> _doubleList(Object? value, String op) {
     if (value is! List) throw SrsFsrsException('bad $op response: $value');
     return <double>[
@@ -390,7 +425,7 @@ class FfiFsrsEngine implements FsrsBatchEngine {
 }
 
 /// 原生内存实现的优化器取消 / 进度通道：一个 int32 取消标志 + int64[2] 进度
-/// `[已处理, 总数]`，由 `ffsrs_compute_parameters` 的看门线程读写。
+/// `[已处理, 总数]`，由 `ffsrs_fit`（参数优化）的看门线程读写。
 ///
 /// 跨 isolate：在 UI isolate 建一个（拥有内存），把 [cancelAddress] / [progressAddress]
 /// 两个 int 传给后台 isolate，那边用 [NativeSrsOptimizerControl.fromAddress] 包一层
