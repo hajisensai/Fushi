@@ -161,8 +161,7 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
 
 /// 可证明时间有错：墙钟来源，且排序键被钳位（物理时间超过它所在批次的 S + 10 分钟）。
 bool _timeUncertain(SrsReviewLog l, SrsCardHistory h) =>
-    l.timeSource == SrsTimeSource.wall &&
-    h.sortKeyOf(l).physical < l.hlc.physical;
+    l.timeSource == SrsTimeSource.wall && h.isClamped(l);
 
 /// 纯计算（可在后台 isolate 跑）。被取消时抛 [SrsFsrsException]（isCancelled）。
 SrsOptimizationResult srsRunOptimization(

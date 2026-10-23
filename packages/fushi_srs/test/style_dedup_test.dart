@@ -83,11 +83,27 @@ void main() {
   test('合并口径：内联样式与引用行同值，内容不同仍不同', () {
     final String raw = gloss(dictA, 'snow');
     final String linked = srsDedupStyles(raw).html;
-    expect(srsSameFieldText(raw, linked), isTrue);
-    expect(srsSameFieldText(linked, raw), isTrue);
-    expect(srsSameFieldText(raw, gloss(dictB, 'snow')), isFalse);
-    expect(srsSameFieldText(linked, gloss(dictA, 'rain')), isFalse);
-    expect(srsSameFieldText('a', 'b'), isFalse);
+    expect(
+      srsSameEditValues(<(Object?, Object?)>[(raw, linked)]).single,
+      isTrue,
+    );
+    expect(
+      srsSameEditValues(<(Object?, Object?)>[(linked, raw)]).single,
+      isTrue,
+    );
+    expect(
+      srsSameEditValues(<(Object?, Object?)>[
+        (raw, gloss(dictB, 'snow')),
+      ]).single,
+      isFalse,
+    );
+    expect(
+      srsSameEditValues(<(Object?, Object?)>[
+        (linked, gloss(dictA, 'rain')),
+      ]).single,
+      isFalse,
+    );
+    expect(srsSameEditValues(<(Object?, Object?)>[('a', 'b')]).single, isFalse);
   });
 
   test('修改记录：同一内容两种表示并发写下不算冲突，也算 no-op', () {
@@ -104,20 +120,20 @@ void main() {
       hlc: Hlc(1000, 0, writer),
       timeSource: SrsTimeSource.wall,
     );
-    final SrsRegister same = srsResolveRegister('k', <SrsFieldEdit>[
+    final SrsRegister same = SrsEntityEdits.build(<SrsFieldEdit>[
       edit('a', raw),
       edit('b', linked),
-    ]);
+    ])[SrsFieldKeys.noteField('g')]!;
     expect(same.live, hasLength(2));
     expect(same.conflicted, isFalse);
     expect(same.visibleLosers, isEmpty);
     expect(srsEditIsNoop(same, raw), isTrue);
     expect(srsEditIsNoop(same, linked), isTrue);
 
-    final SrsRegister diff = srsResolveRegister('k', <SrsFieldEdit>[
+    final SrsRegister diff = SrsEntityEdits.build(<SrsFieldEdit>[
       edit('a', raw),
       edit('b', srsDedupStyles(gloss(dictA, 'rain')).html),
-    ]);
+    ])[SrsFieldKeys.noteField('g')]!;
     expect(diff.conflicted, isTrue);
   });
 }

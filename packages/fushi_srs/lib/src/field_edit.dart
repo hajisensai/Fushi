@@ -1,18 +1,20 @@
-/// 可编辑字段的修改记录与合并（铁律 H）。
+/// 可编辑字段的修改记录与合并结果（铁律 H）。
 ///
 /// 每次修改一个字段键产生一条不可变记录：dot = (writerId, seq)，ctx = 修改时本机已应用的因果上下文
 /// （含闭包，见 causal_context.dart）。记录 b 支配 a ⇔ b.ctx 含 a.dot。每个字段键保留没被支配的记录
 /// （多值寄存器）：只剩一条或值都相同 = 无冲突；多条且值不同 = 并发冲突，当前生效值取 sortKey 较大者，
 /// 候选全部留在集合里，按字段类别决定要不要用户处理。
+///
+/// 合并规则（支配、排序键与钳位、「值相同」、删除优先、冲突候选）只在 Rust 里写一份
+/// （native/fushi_fsrs/src/registers.rs，见 register_kernel.dart）；这里的 [SrsRegister] 只是结果视图。
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'causal_context.dart';
 import 'hlc.dart';
 import 'ids.dart';
-import 'ordering.dart';
-import 'style_dedup.dart';
 
 /// 被修改的实体种类。持久化名冻结。
 enum SrsEntityKind {
@@ -203,10 +205,6 @@ class SrsFieldEdit {
 
   String get registerKey => '${entityKind.wire}/$entityId/$fieldKey';
 
-  /// b 支配 a ⇔ b 的作者修改时已经看见了 a。
-  bool dominates(SrsFieldEdit other) =>
-      other.dot != dot && ctx.contains(other.dot);
-
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'p': profileUid,
@@ -246,6 +244,41 @@ class SrsFieldEdit {
     return edit;
   }
 
+  SrsFieldEdit._verified({
+    required this.id,
+    required this.profileUid,
+    required this.entityKind,
+    required this.entityId,
+    required this.fieldKey,
+    required this.dot,
+    required this.ctx,
+    required this.value,
+    required this.hlc,
+    required this.timeSource,
+    required this.machine,
+  });
+
+  /// 原生内核已校验过的落库原文（kind 认识、必填键齐全、ID 与 dot 相符）：ID 直接取原文里的，
+  /// 不再逐条派生（派生要一次 FFI）。
+  static SrsFieldEdit _fromVerifiedJson(Map<String, Object?> json) {
+    final String writer = json['w']! as String;
+    final int seq = json['s']! as int;
+    final Object? id = json['id'];
+    return SrsFieldEdit._verified(
+      id: id is String ? id : SrsIds.fieldEdit(writer, seq),
+      profileUid: json['p']! as String,
+      entityKind: SrsEntityKind.tryParse(json['k'] as String?)!,
+      entityId: json['e']! as String,
+      fieldKey: json['f']! as String,
+      dot: SrsDot(writer, seq),
+      ctx: SrsCausalContext.fromJson(json['ctx']),
+      value: json['v'],
+      hlc: Hlc.decode(json['hlc']! as String),
+      timeSource: SrsTimeSource.parse(json['ts'] as String?),
+      machine: json['m'] == true,
+    );
+  }
+
   /// 规范编码（内容哈希 / 逐字节比较用）。
   String canonical() => srsCanonicalJson(toJson());
 
@@ -268,102 +301,64 @@ Object? _canonicalize(Object? value) {
   return value;
 }
 
-/// 「值相同」的唯一口径（冲突判定、no-op 判定都用它）。字段文本按去重规范形比较：
-/// 内联 `<style>` 与它的共享样式引用行是同一内容（见 style_dedup.dart），所以同一份内容
-/// 无论哪台设备、去没去重写下，都不会被判成并发冲突。
-bool _sameValue(Object? a, Object? b) {
-  if (a is String && b is String) return srsSameFieldText(a, b);
-  return srsCanonicalJson(a) == srsCanonicalJson(b);
+/// 一条修改记录在原生内核批次里的形态：落库原文（canonical JSON 的 UTF-8）与 S(e)。
+/// 内存里已有对象的（[SrsFieldEdit] 直接构造 / 刚解析的）带着对象；落库原文按需才在 Dart 侧解析
+/// （缓存刷新只用物化视图，不解析修改记录）。
+final class SrsEditItem {
+  /// 落库原文。
+  SrsEditItem.stored(this.json, this.serverTime) : _edit = null;
+
+  /// 内存里的记录（规范编码后交给内核）。
+  SrsEditItem.of(SrsFieldEdit edit, this.serverTime)
+    : json = utf8.encode(edit.canonical()),
+      _edit = edit;
+
+  final Uint8List json;
+  final int? serverTime;
+  SrsFieldEdit? _edit;
+
+  /// 解析好的记录。只对内核已校验过的批次调用（见 register_kernel.dart）。
+  SrsFieldEdit get edit => _edit ??= SrsFieldEdit._fromVerifiedJson(
+    (jsonDecode(utf8.decode(json)) as Map).cast<String, Object?>(),
+  );
 }
 
-/// 一个字段键的合并结果。
+/// 一个字段键的合并结果（原生内核算好的视图）。
 class SrsRegister {
-  SrsRegister._(this.key, this.live);
+  /// 由内核结果构造：[liveIndices] 是没被支配的记录（按 sortKey 从大到小）在 [items] 里的下标，
+  /// [loserIndices] 是要进「同步冲突记录」/「待裁决」的被覆盖候选。
+  SrsRegister.fromKernel(
+    this.key,
+    List<SrsEditItem> items,
+    List<int> liveIndices, {
+    required this.conflicted,
+    required List<int> loserIndices,
+  }) : _items = items,
+       _live = liveIndices,
+       _losers = loserIndices;
 
   final String key;
+  final List<SrsEditItem> _items;
+  final List<int> _live;
+  final List<int> _losers;
 
   /// 没被支配的记录，按 sortKey 从大到小。第一条是当前生效值。
-  final List<SrsFieldEdit> live;
+  late final List<SrsFieldEdit> live = List<SrsFieldEdit>.unmodifiable(
+    <SrsFieldEdit>[for (final int i in _live) _items[i].edit],
+  );
 
-  bool get isEmpty => live.isEmpty;
+  bool get isEmpty => _live.isEmpty;
 
-  SrsFieldEdit? get winner => live.isEmpty ? null : live.first;
+  SrsFieldEdit? get winner => _live.isEmpty ? null : _items[_live.first].edit;
 
   Object? get value => winner?.value;
 
-  /// 并发且值不同。
-  bool get conflicted {
-    for (int i = 1; i < live.length; i++) {
-      if (!_sameValue(live[i].value, live.first.value)) return true;
-    }
-    return false;
-  }
+  /// 并发且值不同（「值相同」的口径见 registers.rs `same_value`：字段文本按释义样式去重的规范形比较）。
+  final bool conflicted;
 
   /// 要进「同步冲突记录」/「待裁决」的被覆盖候选：值与生效值不同、且不全是机器产出。
-  List<SrsFieldEdit> get visibleLosers {
-    final SrsFieldEdit? w = winner;
-    if (w == null) return const <SrsFieldEdit>[];
-    final List<SrsFieldEdit> losers = <SrsFieldEdit>[
-      for (int i = 1; i < live.length; i++)
-        if (!_sameValue(live[i].value, w.value)) live[i],
-    ];
-    if (losers.isEmpty) return losers;
-    if (w.machine && losers.every((SrsFieldEdit e) => e.machine)) {
-      return const <SrsFieldEdit>[];
-    }
-    return losers;
-  }
-}
-
-/// 合并一个字段键上的全部记录（顺序无关、幂等）。
-///
-/// [serverTimeOf] 返回事件的 S(e)（未知 = null），只影响生效值的选取，不影响支配关系。
-SrsRegister srsResolveRegister(
-  String key,
-  Iterable<SrsFieldEdit> edits, {
-  int? Function(String eventId)? serverTimeOf,
-}) {
-  final Map<String, SrsFieldEdit> byId = <String, SrsFieldEdit>{
-    for (final SrsFieldEdit e in edits) e.id: e,
-  };
-  final List<SrsFieldEdit> all = byId.values.toList();
-  final List<SrsFieldEdit> live = <SrsFieldEdit>[
-    for (final SrsFieldEdit a in all)
-      if (!all.any((SrsFieldEdit b) => b.dominates(a))) a,
-  ];
-  SrsSortKey keyOf(SrsFieldEdit e) =>
-      srsSortKey(e.hlc, e.id, serverTimeOf?.call(e.id));
-  live.sort((SrsFieldEdit a, SrsFieldEdit b) => keyOf(b).compareTo(keyOf(a)));
-  return SrsRegister._(key, List<SrsFieldEdit>.unmodifiable(live));
-}
-
-/// 「删除优先」：删除寄存器里只要有一条没被支配的记录值非空，行就是已删。
-/// 返回生效的删除时刻（非空候选里 sortKey 最大的那条的值），未删返回 null。
-int? srsEffectiveDeletedAt(SrsRegister deleted) {
-  for (final SrsFieldEdit e in deleted.live) {
-    final Object? v = e.value;
-    if (v is int) return v;
-  }
-  return null;
-}
-
-/// 与删除记录并发（谁也没看见谁）的内容修改：删除优先，但这些修改留在行里，
-/// 作为一条内容类待裁决项「另一台设备删除了这条笔记，这里有未同步的修改：恢复 / 确认删除」。
-List<SrsFieldEdit> srsEditsConcurrentWithDelete(
-  SrsRegister deleted,
-  Iterable<SrsFieldEdit> contentLive,
-) {
-  final List<SrsFieldEdit> deletes = <SrsFieldEdit>[
-    for (final SrsFieldEdit e in deleted.live)
-      if (e.value is int) e,
-  ];
-  if (deletes.isEmpty) return const <SrsFieldEdit>[];
-  return <SrsFieldEdit>[
-    for (final SrsFieldEdit c in contentLive)
-      if (deletes.any(
-        (SrsFieldEdit d) => !d.ctx.contains(c.dot) && !c.ctx.contains(d.dot),
-      ))
-        c,
+  List<SrsFieldEdit> get visibleLosers => <SrsFieldEdit>[
+    for (final int i in _losers) _items[i].edit,
   ];
 }
 
@@ -424,9 +419,3 @@ class SrsEditWriter {
     return edit;
   }
 }
-
-/// 值没变且没有冲突的编辑不产生记录（no-op 不递增 seq，避免云盘文件被无意义刷新）。
-bool srsEditIsNoop(SrsRegister current, Object? newValue) =>
-    !current.isEmpty &&
-    !current.conflicted &&
-    _sameValue(current.value, newValue);

@@ -24,11 +24,10 @@ use serde_json::value::RawValue;
 use serde_json::{json, Map, Value};
 use sha1::{Digest, Sha1};
 
+use crate::history::{parse_hlc, NONE_I64};
 use crate::ordering::{cmp_utf16, SortKey};
 use crate::style_dedup::same_field_text;
 
-/// 「没有服务器时刻」在 i64 列里的哨兵（与 history.rs 同值）。
-pub const NONE_I64: i64 = i64::MIN;
 
 /// 修改记录 ID 的 UUIDv5 命名空间（Dart `srsNamespace`，冻结）。
 const SRS_NAMESPACE: &str = "6f1c8a2e-4b7d-5e3f-9a10-2d4c6e8f0b13";
@@ -196,18 +195,6 @@ fn uuid_v5(namespace: &[u8; 16], name: &str) -> String {
     )
 }
 
-/// Dart `Hlc.decode`（与 history.rs 同一规则）：`<physical>:<counter>:<writerId>`，writerId 可含冒号。
-fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
-    let mut it = text.splitn(3, ':');
-    let (p, c, w) = match (it.next(), it.next(), it.next()) {
-        (Some(p), Some(c), Some(w)) => (p, c, w),
-        _ => return Err(format!("bad hlc: {text}")),
-    };
-    let p: i64 = p.parse().map_err(|_| format!("bad hlc: {text}"))?;
-    let c: i64 = c.parse().map_err(|_| format!("bad hlc: {text}"))?;
-    Ok((p, c, w))
-}
-
 /// Dart `SrsFieldEdit.fromJson`：kind 不认识 / 必填键缺失或类型不对 / ID 与 dot 不符 → 坏数据。
 fn parse_edit<'a>(
     json: &'a str,
@@ -350,7 +337,7 @@ impl<'e, 'a> Entity<'e, 'a> {
         r.live.iter().find_map(|&i| self.edits[i].value.as_i64())
     }
 
-    /// 与删除记录并发（谁也没看见谁）的内容修改（Dart `srsEditsConcurrentWithDelete`）。
+    /// 与删除记录并发（谁也没看见谁）的内容修改（原 Dart `srsEditsConcurrentWithDelete`）。
     fn concurrent_with_delete(&self) -> Vec<usize> {
         let Some(del) = self.reg(KEY_DELETED) else {
             return Vec::new();
@@ -394,7 +381,7 @@ impl<'e, 'a> Entity<'e, 'a> {
     }
 }
 
-/// 合并一个字段键上的全部记录（Dart `srsResolveRegister`；顺序无关、幂等）。
+/// 合并一个字段键上的全部记录（原 Dart `srsResolveRegister`；顺序无关、幂等）。
 fn resolve(key: &str, edits: &[Edit<'_>], idx: &[usize]) -> Register {
     // 同 ID 留最后一条。
     let mut all: Vec<usize> = Vec::with_capacity(idx.len());
@@ -875,8 +862,8 @@ fn cards_group(
 
 // ---------------------------------------------------------------- 落库前的支配裁剪
 
-/// 已有的记录（前 [existing] 条）+ 依次到达的记录：每条到达的落不落库，哪些（已有的或先到的）被它支配、
-/// 要从库里删掉。与 Dart 旧 `_storeLocalBatch` / `SrsEventStore._applyEdit` 同语义：同 ID 已在（不论哪个
+/// 已有的记录（前 [existing] 条）+ 依次到达的记录：每条到达的落不落库，以及它支配了哪些（已有的或
+/// 先到的）、要从库里删掉（下标指向全部项，与到达顺序对齐）。与 Dart 旧 `_storeLocalBatch` / `SrsEventStore._applyEdit` 同语义：同 ID 已在（不论哪个
 /// 字段键）或被同字段键上现存的记录支配 → 不落；落了就删掉同字段键上被它支配的。
 fn land(edits: &[Edit<'_>], existing: usize) -> Value {
     let mut regs: HashMap<(&str, &str, &str), Vec<usize>> = HashMap::new();
@@ -886,12 +873,14 @@ fn land(edits: &[Edit<'_>], existing: usize) -> Value {
         ids.insert(&e.id, ());
     }
     let mut landed = Vec::with_capacity(edits.len() - existing);
-    let mut deleted = Vec::new();
+    // 每条到达的记录删掉了谁（没落库的是空列表），与到达顺序对齐。
+    let mut deleted: Vec<Vec<usize>> = Vec::with_capacity(edits.len() - existing);
     for (i, e) in edits.iter().enumerate().skip(existing) {
         let reg = regs.entry((e.kind, &e.entity, &e.key)).or_default();
         let ok = !ids.contains_key(e.id.as_str()) && !reg.iter().any(|&b| edits[b].dominates(e));
         landed.push(u8::from(ok));
         if !ok {
+            deleted.push(Vec::new());
             continue;
         }
         let dominated: Vec<usize> = reg
@@ -903,7 +892,7 @@ fn land(edits: &[Edit<'_>], existing: usize) -> Value {
         for &a in &dominated {
             ids.remove(edits[a].id.as_str());
         }
-        deleted.extend_from_slice(&dominated);
+        deleted.push(dominated);
         reg.push(i);
         ids.insert(&e.id, ());
     }

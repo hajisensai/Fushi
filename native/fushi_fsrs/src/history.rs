@@ -270,8 +270,8 @@ struct WireLog<'a> {
     _fv: Option<i64>,
 }
 
-/// Dart `Hlc.decode`：`<physical>:<counter>:<writerId>`，writerId 可含冒号，只切前两段。
-fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
+/// Dart `Hlc.decode`：`<physical>:<counter>:<writerId>`，writerId 可含冒号，只切前两段（字段寄存器同用这一份）。
+pub(crate) fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
     let mut it = text.splitn(3, ':');
     let (p, c, w) = match (it.next(), it.next(), it.next()) {
         (Some(p), Some(c), Some(w)) => (p, c, w),
