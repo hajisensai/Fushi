@@ -75,10 +75,16 @@ void main() {
         '${voices.map((TtsVoice v) => '${v.id}[${v.locale}]').join(', ')}',
       );
       final TtsVoice oneCore = voices.firstWhere(
-        (TtsVoice v) => v.id.startsWith(kWindowsOneCoreVoicePrefix),
+        (TtsVoice v) =>
+            v.id.startsWith(kWindowsOneCoreVoicePrefix) &&
+            v.locale.startsWith('ja'),
       );
       final TtsVoice? sapi = voices
-          .where((TtsVoice v) => v.id.startsWith(kWindowsSapiVoicePrefix))
+          .where(
+            (TtsVoice v) =>
+                v.id.startsWith(kWindowsSapiVoicePrefix) &&
+                v.locale.startsWith('ja'),
+          )
           .firstOrNull;
       final Directory dir = Directory.systemTemp.createTempSync('fushi_wtts_');
       addTearDown(() => dir.deleteSync(recursive: true));

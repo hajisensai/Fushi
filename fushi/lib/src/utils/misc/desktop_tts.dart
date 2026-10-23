@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
 import 'package:fushi/src/utils/misc/system_tts_voices.dart';
 import 'package:fushi/src/utils/misc/windows_speech_worker.dart';
+import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// Desktop TTS-to-file (the system voice: read-aloud presets and the term-audio
@@ -82,7 +83,7 @@ Future<List<TtsVoice>> listDesktopTtsVoices() async {
           ? mergeWindowsSpeechVoices(reply['voices'])
           : const <TtsVoice>[];
     }
-    if (Platform.isLinux) return listLinuxTtsVoices();
+    if (Platform.isLinux) return await listLinuxTtsVoices();
   } on Object catch (e, stack) {
     ErrorLogService.instance.log('listDesktopTtsVoices', e, stack);
   }
@@ -154,7 +155,7 @@ Future<String> _sayMacOS(
       'say',
       sayMacOSArguments(outputPath: outputPath, text: text, voice: voice),
     );
-    if (r.exitCode == 0 && out.existsSync() && out.lengthSync() > 0) {
+    if (r.exitCode == 0 && hasAudibleWav(out)) {
       return outputPath;
     }
     if (chosenVoice != null) {
@@ -187,6 +188,17 @@ Future<String> _sayMacOS(
     SystemTtsFailureReason.synthesisFailed,
     languageTag: languageTag,
   );
+}
+
+/// [out] 是有实际音频数据的 WAV：头完整、data 段非空。系统引擎点了念不了这段文字的
+/// 声音时会「成功」写出只有头（或只有填充块）的空 WAV。
+@visibleForTesting
+bool hasAudibleWav(File out) {
+  if (!out.existsSync() || out.lengthSync() == 0) return false;
+  final Uint8List bytes = out.readAsBytesSync();
+  if (sniffTtsAudioFormat(bytes) != TtsAudioFormat.wav) return false;
+  final int? ms = probeTtsAudioDurationMs(bytes, TtsAudioFormat.wav);
+  return ms != null && ms > 0;
 }
 
 /// [WindowsSpeechWorker] 的 `speak` 请求体。点名的声音按 id 拆成引擎 + 键交给脚本；
@@ -250,8 +262,15 @@ Future<String> synthesizeWindowsSpeech({
       languageTag: languageTag,
     );
   }
-  if (reply['ok'] == true && out.existsSync() && out.lengthSync() > 0) {
-    return outputPath;
+  if (reply['ok'] == true && hasAudibleWav(out)) return outputPath;
+  if (reply['ok'] == true) {
+    // 引擎说成功、文件里却没有音频：点了与文字语言不符的声音时 OneCore / SAPI
+    // 都这样（实测英语声音念日文 = 46 字节的空 WAV）。按合成失败报，不把空文件
+    // 交给制卡 / 缓存。
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.synthesisFailed,
+      languageTag: languageTag,
+    );
   }
   final Object? code = reply['code'];
   if (code != 'VOICE_UNAVAILABLE' && code != 'LANGUAGE_NOT_SUPPORTED') {

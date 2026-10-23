@@ -2,9 +2,9 @@
 ///
 /// 兜底链（[LocalAudioEnhancement]）：本地 Yomitan 音频库 → 配置的音频源 → 这里。
 /// 声音可选：
-/// - 系统语音（默认，沿用 `TtsChannel.ttsToFile` 的既有行为与平台差异：Android
-///   TextToSpeech、Windows SAPI、macOS say（AIFF）、Linux Open JTalk / espeak-ng，
-///   iOS 没有）；
+/// - 系统语音（默认，`TtsChannel.ttsToFile`，按文字语言自动挑声音：Android
+///   TextToSpeech、iOS AVSpeechSynthesizer、Windows OneCore / SAPI、macOS say、
+///   Linux Open JTalk / espeak-ng，一律出 WAV）；想固定引擎 / 声音就选一份系统语音预设；
 /// - 用户在「朗读声音」里配置的任一预设（在线 / 本机服务 / 系统），经引擎注册表
 ///   取 provider，合成走全应用共用的 [TtsAudioCache]（同词同音色不重复合成）；
 /// - 不使用 TTS 兜底。

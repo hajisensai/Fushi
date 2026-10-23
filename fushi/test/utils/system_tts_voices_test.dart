@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
@@ -210,7 +211,7 @@ void main() {
         if (req['voiceKind'] == 'sapi') {
           return <String, Object?>{'ok': false, 'code': 'VOICE_UNAVAILABLE'};
         }
-        File(out).writeAsBytesSync(<int>[1, 2, 3]);
+        File(out).writeAsBytesSync(_wav(dataBytes: 3200));
         return <String, Object?>{'ok': true, 'path': out};
       });
       final WindowsSpeechWorker worker = WindowsSpeechWorker(
@@ -262,6 +263,37 @@ void main() {
       ]);
       expect(fake.tokensSeen, hasLength(1));
       expect(fake.tokensSeen.single, matches(RegExp(r'^[0-9a-f]{32}$')));
+      fake.kill();
+    });
+
+    test('引擎说成功却只写出空 WAV（声音念不了这段文字）= 合成失败', () async {
+      final _FakeWorkerProcess fake = _FakeWorkerProcess((
+        Map<String, Object?> req,
+      ) {
+        File(req['out']! as String).writeAsBytesSync(_wav(dataBytes: 0));
+        return <String, Object?>{'ok': true, 'path': req['out']};
+      });
+      final WindowsSpeechWorker worker = WindowsSpeechWorker(
+        startProcess: (String exe, List<String> args) => fake.launch(args),
+      );
+      final Directory dir = Directory.systemTemp.createTempSync('fushi_win_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      await expectLater(
+        synthesizeWindowsSpeech(
+          worker: worker,
+          text: 'あ',
+          outputPath: '${dir.path}/a.wav',
+          languageTag: 'ja',
+          voice: 'onecore:MSTTS_V110_enUS_DavidM',
+        ),
+        throwsA(
+          isA<SystemTtsFailure>().having(
+            (SystemTtsFailure f) => f.reason,
+            'reason',
+            SystemTtsFailureReason.synthesisFailed,
+          ),
+        ),
+      );
       fake.kill();
     });
 
@@ -504,6 +536,32 @@ void main() {
       expect(provider.voice, 'xiaoyan');
     });
   });
+}
+
+/// 16-bit 单声道 16 kHz 的 WAV，data 段 [dataBytes] 字节。
+List<int> _wav({required int dataBytes}) {
+  final ByteData header = ByteData(44)
+    ..setUint32(4, 36 + dataBytes, Endian.little)
+    ..setUint32(16, 16, Endian.little)
+    ..setUint16(20, 1, Endian.little)
+    ..setUint16(22, 1, Endian.little)
+    ..setUint32(24, 16000, Endian.little)
+    ..setUint32(28, 32000, Endian.little)
+    ..setUint16(32, 2, Endian.little)
+    ..setUint16(34, 16, Endian.little)
+    ..setUint32(40, dataBytes, Endian.little);
+  final List<int> bytes = header.buffer.asUint8List();
+  void ascii(int at, String tag) {
+    for (int i = 0; i < 4; i++) {
+      bytes[at + i] = tag.codeUnitAt(i);
+    }
+  }
+
+  ascii(0, 'RIFF');
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  ascii(36, 'data');
+  return <int>[...bytes, ...List<int>.filled(dataBytes, 0)];
 }
 
 /// 假的 PowerShell 工作进程：从 `-EncodedCommand` 里取出口令，在回环口上开一个

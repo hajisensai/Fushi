@@ -41,17 +41,23 @@ void main() {
         (TtsVoice v) => v.locale.toLowerCase().startsWith('ja'),
         orElse: () => voices.first,
       );
+      // 按所挑声音的语言念对应文字（设备可能没有日语声音：小米自带引擎只有中英）。
+      final String lang = pick.locale.split(RegExp('[-_]')).first.toLowerCase();
       int i = 0;
-      for (final (String? voice, String? lang) in <(String?, String?)>[
+      for (final (String? voice, String? langTag) in <(String?, String?)>[
         (pick.id, null),
-        (null, 'ja'),
+        (null, lang),
         (null, null),
       ]) {
         final Stopwatch sw = Stopwatch()..start();
         final String out = await channel.ttsToFile(
-          pick.locale.startsWith('ja') ? 'こんにちは、今日はいい天気ですね。' : 'Hello there.',
+          switch (lang) {
+            'ja' => 'こんにちは、今日はいい天気ですね。',
+            'zh' => '你好，今天天气很好。',
+            _ => 'Hello, the weather is nice today.',
+          },
           '${dir.path}/systts_${i++}.audio',
-          languageTag: lang,
+          languageTag: langTag,
           engine: engine,
           voice: voice,
         );
@@ -63,7 +69,7 @@ void main() {
             : probeTtsAudioDurationMs(bytes, format);
         // ignore: avoid_print
         print(
-          'SYSTTS voice=$voice lang=$lang → $format ${bytes.length}B ${ms}ms (${sw.elapsedMilliseconds}ms wall)',
+          'SYSTTS voice=$voice lang=$langTag → $format ${bytes.length}B ${ms}ms (${sw.elapsedMilliseconds}ms wall)',
         );
         expect(format, TtsAudioFormat.wav);
         expect(ms, greaterThan(300));
