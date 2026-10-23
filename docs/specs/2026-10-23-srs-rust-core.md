@@ -96,7 +96,7 @@ isolate（或核心自己的工作线程 + `SendPort` 回推）上跑，不阻�
 | 阶段 | 范围 | 删除的 Dart | 回归向量 | 端到端验收 |
 |---|---|---|---|---|
 | **P1（本 PR）卡片历史内核** | 复习日志 → 排序 / 撤销 / 等价导入 / 排程归属 / 当前状态；缓存刷新把日志原文直接交给 Rust；预读里服务器时刻改为 JOIN | `SrsCardHistory._computeEffective` / `lastEffective` / `scheduler` 的 Dart 实现；按事件 ID 另查服务器时刻 | 1500 份随机历史 × 两条入口（§4.2） | `rebuildCaches` / `histories(全部)` / 单卡交互（§6） |
-| P2 寄存器物化 | 字段修改记录 → 寄存器（因果上下文合并、`srsResolveRegister`、删除并发）→ `SrsNoteView` / `SrsCardFlags` / `SrsNoteTypeView`；排序键 `srsSortKey`；导入器的等价判重并进内核 | `field_edit.dart` 的寄存器合并、`ordering.dart`、`entities.dart` 的 materialize、`srsImportEquivalent` | 随机修改记录集（含并发 / 支配 / 删除并发 / 前身链）→ 物化视图 JSON | 打开 1 万笔记库的笔记物化、批量改标签 |
+| **P2（已完成，见 §7）寄存器物化** | 字段修改记录 → 寄存器（因果上下文合并、`srsResolveRegister`、删除并发）→ `SrsNoteView` / `SrsCardFlags` / `SrsNoteTypeView`；排序键 `srsSortKey`；导入器的等价判重并进内核 | `field_edit.dart` 的寄存器合并、`ordering.dart`、`entities.dart` 的 materialize、`srsImportEquivalent` | 随机修改记录集（含并发 / 支配 / 删除并发 / 前身链）→ 物化视图 JSON | 打开 1 万笔记库的笔记物化、批量改标签 |
 | P3 缓存刷新整段 | 笔记缓存行 + 卡片生成（`isAnkiCardEmpty` / cloze 序号）+ 卡片缓存行一次算完；Dart 只做预读与写 batch | `_planNote` / `_applyNotePlan` / `_cardCacheRow` | 用 P1+P2 之后的 Dart 刷新路径生成「事件集 → 缓存行」向量 | 导入 1 万笔记、`rebuildCaches`、单卡作答 |
 | P4 事件库归 Rust | Rust 自持 SQLite 连接，事务边界与写入全在 Rust；计数 / 选卡 / 牌组树改为核心命令；Drift 对 `srs_*` 只读或不碰 | `SrsDbStore` 的写路径与 `_countContext` | 同步模拟器（`simulator_test`）整套改为驱动核心；现有往返次数守卫改为「命令次数」守卫 | 作答、打开复习页、应用一批对端事件 |
 | P5 AnkiConnect 镜像收编 | 整库笔记、`_dupeNorms`、查询身份、搜索语料改为核心常驻索引，随变更事件增量更新 | handler 里的四份镜像与按请求重建 | AnkiConnect 现有契约测试 + 用镜像版生成的 `findNotes` / `canAddNotes` 向量 | Yomitan 连续 `findNotes` / `canAddNotes` 一千次 |
@@ -146,8 +146,8 @@ Rust 是纯函数内核」，事务语义不变；P4 之后 Rust 持有连接。
 事件不可变、线格式不变（`SrsReviewLog.toJson` / canonical JSON），核心读的正是落库原文。P1–P3 期间
 `SrsSyncReplica` 仍由 `SrsDbStore` 实现；P4 起由核心实现同一接口（批次冻结、留存、转发、S(e) 合并都在
 核心事务里），`fushi_srs` 的同步引擎（目录进度、文件 IO、多目录转发）留在 Dart——它是 IO 编排，
-只经 `SrsSyncReplica` 的粗粒度方法与核心交互。排序键钳位规则（S(e) + 10 分钟）P1 起在 Rust 选取里已有
-一份、在 Dart 寄存器排序里还有一份，P2 收编后只剩 Rust。
+只经 `SrsSyncReplica` 的粗粒度方法与核心交互。排序键钳位规则（S(e) + 10 分钟）P2 起只剩 Rust 一份
+（`native/fushi_fsrs/src/ordering.rs`，卡片历史与字段寄存器共用）。
 
 ### 5.2 备份
 
@@ -209,3 +209,97 @@ P5 之前，整库快照会话（`srs_ankiconnect_handler.dart`）按 `SrsDbStor
 落在两条之间时新行数比指纹多一条，被当成「历史被改写」去全量重建，连续答题时 RWKV 反复退回「还没准备好」。
 本 PR 让作答少了两次往返、时序变了，`srs_rwkv_service_test`「同日重复的间隔守卫」稳定复现。修法：两个值
 同一条语句取（`_fingerprintSince`），同一个快照。
+
+## 7. 第二阶段：寄存器物化
+
+### 7.1 实现
+
+- `native/fushi_fsrs/src/registers.rs`：合并规则唯一实现，一个批量入口 `ffsrs_materialize`（组描述 JSON +
+  修改记录落库原文 / 服务器时刻 → JSON 结果）。组类型：
+  - `edits`：寄存器（同 ID 留最后一条 → 去掉被支配的 → 按排序键从大到小；并发且值不同 = 冲突；可见的被覆盖候选，
+    生效值与候选全是机器产出时不进冲突记录）、删除优先的删除时刻、与删除并发的内容修改；
+  - `note` / `notetype`（带内置类型的代码默认值）/ `deck`：再加物化视图。笔记类型额外给出 `definedFields` /
+    `definedTemplates`（Anki 导入解析字段 ID 用，替掉导入器里那份用 `SrsFieldDef.fromValue` 的重算）；
+  - `cards`：一块卡（要的卡 + 预读到的全部前身）各自的寄存器，以及每张要的卡的血统（广度优先、前身按 UTF-16
+    序、最多 256 张、防环）与沿血统继承后的标志；
+  - `land`：落库前的支配裁剪（`SrsDbStore._storeLocalBatch` / `SrsEventStore._applyEdit` 共用），与读路径同一个
+    支配判据，每条到达的记录给出它删掉了谁；
+  - `same`：no-op 判定的「值相同」（字段文本按释义样式去重规范形，其它值按规范 JSON：`1` ≠ `1.0`、`-0.0` ≠ `0.0`）。
+  修改记录的解析与 Dart `SrsFieldEdit.fromJson` 对齐（kind / 必填键 / 类型 / ID 与 dot 不符都判坏数据；ID 的
+  UUIDv5 在内核里算，Dart 侧不再逐条派生）；物化里的强转与 Dart `as T?` 同语义（类型不对判坏数据）。
+- 共用模块：`ordering.rs`（排序键与钳位，history.rs 改用它）、`style_dedup.rs`（`<script>` 扫描与样式去重规范形，
+  search.rs 的查重规范形改用它）。`history.rs` 的 `import_equivalent` 是「导入日志与原生日志是同一次复习」的唯一
+  判据，历史选取与新入口 `ffsrs_import_equivalent`（Anki 导入器入库前判重）都调它；列模式选取多一个「排序键被
+  钳位」位（`STATUS_CLAMPED`）。
+- Dart：`packages/fushi_srs/lib/src/register_kernel.dart`（打包 / 解包，缺库抛
+  `SrsRegisterKernelUnavailableError`）。`SrsRegister` / `SrsEntityEdits` 变成内核结果的视图，修改记录按需才在
+  Dart 侧解析（`SrsEditItem`）；`SrsCardHistory` 的排序比较改为 `isAfter` / `isClamped`（来自内核）。
+- `SrsDbStore`：`_prefetchEdits` 改取原文（`CAST(json AS BLOB)` + `LEFT JOIN srs_event_local`），笔记 / 笔记类型 /
+  牌组 / 实体寄存器按块一次 FFI；缓存刷新每块：笔记一次、用到的笔记类型一次、卡片血统与标志一次（再加 P1 的卡片
+  历史一次）；no-op 判定（`editFields` / `writeEdits` / `editFieldsBatch` / `_editEach` / `newEditDrafts`）与按时间点
+  恢复整批一次；落库裁剪每批一次；`syncConflicts` / `allNoteViews` 一条 JOIN 取原文、整批一次。对外方法签名不变。
+- 删除的 Dart：`srsResolveRegister`、`SrsFieldEdit.dominates`、`_sameValue`、`srsSameFieldText`、
+  `srsEditsConcurrentWithDelete`、`srsEffectiveDeletedAt`、`SrsNoteView` / `SrsNoteTypeView` / `SrsDeckView` /
+  `SrsCardFlags` 的 `materialize`、`SrsFieldDef.fromValue` / `SrsTemplateDef.fromValue`、`SrsSortKey` / `srsSortKey` /
+  `srsTimeUncertain`、`Hlc` 的比较、`srsImportEquivalent` / `srsImportEquivalenceToleranceMs`、
+  `SrsCardHistory.sortKeyOf`，以及 `SrsDbStore._cardLineage` / `_inheritedCardEdits`。
+- 回归向量：`packages/fushi_srs/test/registers/fixtures/register_vectors.json.gz`，由删除前的 Dart 实现在
+  `34834441d7` 上生成（脚本留档 `gen_register_vectors.dart.txt`）：2400 个用例（笔记 / 笔记类型 / 牌组 / profile
+  的修改记录集、卡片血统、落库裁剪、导入判重、钳位标记、坏数据）。变异实测：UTF-16 序改码点序、浮点按值比较
+  （`-0.0` = `0.0`）都让向量变红；样式门槛 512 → 511 向量抓不到（生成器没造「不到门槛的样式的引用行」），另加契约
+  测试 `style_dedup_test`「去重门槛按 UTF-16 码元」钉住，变异后变红。
+
+### 7.2 端到端耗时
+
+口径同 §6（`srs_cache_rebuild_bench_test.dart`，本机 Windows x64，每次三轮）；新增两项验收：`notes(全部)`（全部
+笔记的寄存器 + 视图）与「给全部笔记加一个标签」（`srsBatchEditTags`：读现值 → 判 no-op → 写修改记录 → 刷缓存）。
+改前 = `be98b27ced`（Dart 寄存器，P1 已在），改后 = 本阶段。**测量期间本机有其他 agent 并发，波动很大**，第二组
+是同一时段交替跑的：
+
+| 规模 | 操作 | 改前 | 改后 |
+|---|---|---:|---:|
+| 3000 笔记 / 6000 卡（第一组，先后各跑一次） | `rebuildCaches()` | 960–1028 ms | 1228–1252 ms |
+| | `notes(全部)` | 173–178 ms | 171–246 ms |
+| | 批量改标签 | 1602–1704 ms | 1883–2087 ms |
+| 3000（第二组，旧、旧、新、新交替） | `rebuildCaches()` | 1397–1692 ms | 1241–1732 ms |
+| | `notes(全部)` | 275–337 ms | 212–335 ms |
+| | 批量改标签 | 2283–2914 ms | 2296–3168 ms |
+| 10000 笔记 / 20000 卡 | `rebuildCaches()` | 4025–4162 ms | 3980–4925 ms |
+| | `histories(全部)` | 2945–3175 ms | 3014–3798 ms |
+| | `notes(全部)` | 616–760 ms | 678–737 ms |
+| | 批量改标签 | 6469–7261 ms | 7224–7505 ms |
+| | `setFlag` | 7–9 ms | 7–12 ms |
+
+改后 3000 笔记 `rebuildCaches()` 的分段（临时打点，未入库）：
+
+| 段 | 耗时 |
+|---|---:|
+| 预读卡片血统（日志原文 + 服务器时刻，P1 的 JOIN） | ≈ 494–779 ms |
+| 卡片材料（血统与标志一次内核调用 + 卡片历史内核） | ≈ 149–205 ms |
+| 预读修改记录原文 + 服务器时刻（JOIN） | ≈ 106–169 ms |
+| 笔记物化（寄存器 + 视图，每块一次 FFI） | ≈ 53–84 ms |
+| 笔记类型 / 计划卡片集合 | ≈ 33–55 ms |
+
+结论（如实）：
+
+- **本阶段端到端没有测出提速**，差异落在并发负载的波动里。寄存器 / 物化本来就不是热点：§6 里「笔记物化」约
+  84 ms、「预读修改记录」约 220 ms，改后这两段约 50–80 ms 与 100–170 ms，省下的几十到一百多毫秒被波动淹没。
+  内核单测热态（3000 笔记 × 4 条记录，一次调用）约 56–71 ms，与原 Dart 物化同一量级——内核里多了每条记录的
+  UUIDv5（SHA-1）校验与完整 JSON 解析，结果以 JSON 交回 Dart 解码。
+- 搬的理由是规则只能有一份（支配、排序键、值相同、血统继承、导入判重此前在 Dart 与 Rust 各有一份或几份），
+  按 CLAUDE.md 的口径写明：边界加粗后端到端与 Dart 持平，没有变快。
+- 剩下的大头仍是「日志原文跨 isolate 搬运」（血统预读 ≈ 0.5 s / 3000 笔记）与写缓存；批量改标签 ≈ 写修改记录 +
+  一次缓存刷新。都要等 P4（Rust 自持连接）。
+
+### 7.3 仍未收编
+
+- 本机写入者的因果上下文维护（`SrsEditWriter` 的合并 / 闭包，`SrsCausalContext` 的 `merge` / `add` / `covers`）仍在
+  Dart：这是写路径状态，内核只读上下文（判含不含某个 dot）。随 P4 写路径进 Rust。
+- 写库时的样式去重（`srsDedupStyles`：换引用 + 落共享样式文件）在 Dart；`style_dedup.rs` 是同算法的第二份，只用于
+  比较 / 查重，两份由向量与契约测试钉齐。
+- 值对象解析留在 Dart（`SrsParamSet.fromValue`、`SrsRwkvQueueSettings.fromValue`、`srsSanitizeSteps`、
+  `SrsSourceRef.fromJson`、算法缺省值 `srsDefaultAlgorithm`）：内核给原值，设置页 / 导入也用同一份。
+- `SrsEventStore`（内存副本 / 同步模拟器）每应用一条修改记录调一次 `srsLandEdits`；Anki 导入器每张已有历史的来源卡
+  一次 `srsImportEquivalentAny`（与它本来就逐卡的 `store.history()` 同粒度）。
+- `ffsrs_materialize` 的结果是 JSON，不是列式二进制；P3 把缓存行整段搬进内核时一并换。
+- 单实体路径（`editFields` / `dayContext` 等，一次用户操作）每次一两次 FFI。
