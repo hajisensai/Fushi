@@ -220,10 +220,15 @@ void main() {
     }
     expect(find.text(t.onboarding_features_title), findsOneWidget);
     expect(label(t.onboarding_action_scroll_more), findsOneWidget);
-    expect(
-      find.text(t.onboarding_features_setup_title).hitTestable(),
-      findsNothing,
-    );
+    ScrollPosition body() => tester
+        .stateList<ScrollableState>(find.byType(Scrollable))
+        .map((ScrollableState s) => s.position)
+        .firstWhere(
+          (ScrollPosition p) =>
+              p.axis == Axis.vertical && p.maxScrollExtent > 0,
+        );
+    expect(body().pixels, 0);
+    expect(body().extentAfter, greaterThan(kOnboardingMoreBelowSlop));
 
     int presses = 0;
     while (label(t.onboarding_action_scroll_more).evaluate().isNotEmpty) {
@@ -233,16 +238,18 @@ void main() {
       expect(presses, lessThan(10), reason: '一直翻不到底');
     }
     expect(presses, greaterThan(0));
-    // 还在功能步，而且「接下来配置」已经翻进视口。
-    expect(
-      find.text(t.onboarding_features_setup_title).hitTestable(),
-      findsOneWidget,
-    );
+    // 一直停在功能步：被翻的始终是同一个正文（最大滚动范围就是功能步的），
+    // 而且已经翻到底。
+    expect(body().pixels, body().maxScrollExtent);
+    expect(body().extentAfter, lessThanOrEqualTo(kOnboardingMoreBelowSlop));
     expect(label(t.onboarding_action_next), findsOneWidget);
 
     await tester.tap(next);
     await _settle(tester);
+    // 翻到底之后「下一步」才真的换步。
     expect(find.text(t.onboarding_features_setup_title), findsNothing);
+    expect(find.text(t.onboarding_features_title), findsNothing);
+    expect(find.byType(OnboardingStepHero), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 10));
