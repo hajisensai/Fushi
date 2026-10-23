@@ -84,3 +84,40 @@
   `srs_entities` 等 9 个表名（Rust 源码与搬迁代码白名单）；Drift `tables.dart` 不得声明 `Srs*` 表；
   Rust 源码不得出现 `fushi.db`。
 - `backup_table_rules_guard_test` 的「每表必登记」随表声明删除自然不再包含这 9 张。
+
+## 7. 落地状态与实测（2026-10-24）
+
+已落地：
+- srs.db（`native/fushi_fsrs/src/store/`）：建表 / 版本、旧库搬迁事务、`VACUUM INTO` 快照、只读调试查询、
+  Drift 执行器后端（`ffsrs_store_exec` / `_exec_batch`）、缓存刷新的直读命令 `ffsrs_store_history_states`。
+- 主库 Drift 不再声明 9 张 srs_* 表（schema 版本不变，仍 124）；迁移阶梯上的老库仍按 `kLegacySrsTableDdl`
+  建出旧表，由 `srsMigrateLegacyStore` 搬走后删除。
+- `SrsDatabase`（fushi_core）+ `srsDatabaseConnection`（fushi_engine）：Dart 的查询构造器不变，语句在 Rust
+  写连接上执行；`SrsDbStore.open(db:, core:)`。app 侧进程级 `SrsStorage`（`fushi/lib/src/srs/srs_storage_host.dart`）。
+- 缓存刷新：血统修改记录仍由 Dart 预读（寄存器内核要它们），**日志不再经过 Dart**：每块一次
+  `ffsrs_store_history_states`（后台 isolate），Rust 在同一条写连接上 JOIN 读日志与服务器时刻、选取、只回状态。
+- 备份 / 恢复 / 合并按 §4（新备份带 `srs.db` 条目，老备份照旧）。
+- 连接设置：`mmap_size = 256 MB`、`cache_size = 64 MB`；结构体字段顺序保证写连接最后关闭（WAL 并回主文件，
+  测试 `closing_folds_the_wal_back_into_the_main_file`）。
+
+实测（Windows x64，`FUSHI_SRS_CACHE_BENCH=<笔记数> dart test test/srs/srs_cache_rebuild_bench_test.dart`，每卡 10 条日志；
+改前 = `534c1f6ebf`（P1+P2，Drift 唯一连接），改后 = 本阶段；同一时段新旧交替各跑两遍、每遍三轮）：
+
+| 规模 | 操作 | 改前 | 改后 |
+|---|---|---:|---:|
+| 3000 笔记 / 6000 卡 / 6.6 万日志 | `rebuildCaches()` | 976–1081 ms | 564–761 ms |
+| | `histories(全部)` | 830–969 ms | 601–883 ms |
+| | 全部笔记批量改标签 | 1531–1758 ms | 954–1315 ms |
+| 10000 笔记 / 20000 卡 | `rebuildCaches()` | 4156–5112 ms | 2024–2384 ms |
+| | `histories(全部)` | 2965–4188 ms | 2190–3126 ms |
+| | 全部笔记批量改标签 | 6093–8013 ms | 3557–5796 ms |
+
+- 执行器本身与 Drift 自带的 NativeDatabase 同速（`srs_executor_ab_bench_test.dart`：6 万行全表 + 200 次按卡查询，
+  两边 650–730 ms 交替持平）；收益来自两处：日志不再跨 isolate、Rust 连接的 mmap + 大页缓存（直读命令里 SQLite
+  读 6.6 万行从 260–400 ms 降到约 160 ms；`opt-level` 3 / z 无差别）。
+
+仍未收编（下一步）：
+- 统计页（`srs_stats_loader.dart`）、RWKV 全量回放（`srs_rwkv_service.dart` / `srs_rwkv_history.dart`）、优化器训练集
+  （`srs_optimizer.dart`）仍把整份历史读进 Dart；按「Rust 直读、只回需要的列」逐个改成命令。
+- 这几处与 Lapis 迁移里还有直接 SQL，`srs_store_ownership_guard_test` 按文件白名单放行；改成命令后从白名单删掉。
+- 写路径（事件落库、支配判定、写入者状态）仍是 Dart 组语句、Rust 执行；收编为 Rust 事务命令后删除 Dart 的 `runExclusive`。

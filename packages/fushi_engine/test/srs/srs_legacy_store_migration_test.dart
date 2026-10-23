@@ -188,7 +188,7 @@ void main() {
 
   test('a failed page rolls the whole import back', () async {
     await db.customStatement(
-      "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) "
+      'INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) '
       "VALUES ('e', 'p', 'deck', '{}', 0)",
     );
     // 主键冲突：同一个事件 ID 两行（旧库不可能这样，这里只为让第二页失败）。
