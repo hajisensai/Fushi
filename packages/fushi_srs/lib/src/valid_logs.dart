@@ -1,13 +1,19 @@
-/// 有效日志选取与 S/D 输入收集（铁律 A / B）。只做两件事：按 sortKey 找出最后一条有效日志；
-/// 收集 S/D 的输入交给 FFI。不做状态机重放。
+/// 有效日志选取与 S/D 输入收集（铁律 A / B）的 Dart 视图。两条规则都只在 Rust 里写一份
+/// （native/fushi_fsrs/src/history.rs 选取、src/projection.rs 记忆状态输入），这里只做打包 / 解包。
+/// 不做状态机重放。
 library;
 
+import 'dart:ffi';
+import 'dart:typed_data';
+
+import 'package:ffi/ffi.dart';
+
 import 'algorithm.dart';
+import 'day.dart';
+import 'ffi/fushi_fsrs_library.dart';
 import 'fsrs_engine.dart';
 import 'history_kernel.dart';
 import 'review_log.dart';
-
-const int _dayMs = 24 * 60 * 60 * 1000;
 
 /// 一张卡的日志视图。[serverTimeOf] 给出事件的 S(e)。
 ///
@@ -103,21 +109,6 @@ class SrsCardHistory {
   ];
 }
 
-/// 「重置」：manual 且结果是新卡、reps 归零。是记忆状态的新起点。
-bool srsIsReset(SrsReviewLog log) =>
-    log.kind == SrsLogKind.manual &&
-    log.result != null &&
-    log.result!.queue == SrsQueue.newCard &&
-    log.result!.reps == 0;
-
-/// 「恢复到备份时间点」照抄状态的 manual 日志（restore_plan.dart `srsPlanStateRestore`）：
-/// 结果是备份那一刻的卡片状态（含记忆状态），作为 S/D 的起点，与导入锚点同一种处理（铁律 A ③′）。
-bool srsIsRestoreState(SrsReviewLog log) =>
-    log.kind == SrsLogKind.manual &&
-    log.result != null &&
-    log.extra[srsRestoreLogExtraKey] != null &&
-    !srsIsReset(log);
-
 /// 交给 FSRS 的记忆状态输入。
 class SrsMemoryInput {
   const SrsMemoryInput({
@@ -139,126 +130,166 @@ class SrsMemoryInput {
   final bool complete;
 }
 
-/// 两次评分之间的 elapsed（天）。
-///
-/// FSRS-7 用小数天（含当天复习的优势，第六轮审查第 12 条）；FSRS-6 与 Anki 一致按翻日后的日序号差取整天。
-double srsElapsedDays({
-  required SrsAlgorithm algorithm,
-  required int fromMs,
-  required int toMs,
-  required int Function(int ms) dayIndexOf,
-}) {
-  if (toMs <= fromMs) return 0;
-  return switch (algorithm.memoryAlgorithm) {
-    SrsAlgorithm.fsrs7 || SrsAlgorithm.rwkv => (toMs - fromMs) / _dayMs,
-    SrsAlgorithm.fsrs6 => (dayIndexOf(toMs) - dayIndexOf(fromMs)).toDouble(),
-  };
-}
-
 /// 收集 S/D 的输入（铁律 A ①～③）。锚点只决定队列与到期，不截断 S/D 的历史。
 ///
+/// 规则只在 Rust 里写一份（native/fushi_fsrs/src/projection.rs `memory_input`；优化器训练集在 srs.db 上
+/// 直读时用同一个函数）：
 /// ① 取最近一次重置之后的全部有效评分日志（含导入的；被判等价的导入日志已排除）。
 /// ② 第一条是学习类评分 → 历史完整，从新卡算起。
 /// ③ 不完整 → 以最近一条（在这段历史开头之前的）导入锚点为起点：锚点有同算法的 FSRS 记忆状态就直接用，
 ///    否则由锚点 ease + 间隔做 SM-2 换算，再接上锚点之后的评分。
+/// ③′ 「恢复到备份时间点」照抄状态的 manual 日志与锚点同一种处理。
+///
+/// elapsed：FSRS-7 / RWKV 用小数天（含当天复习的优势，第六轮审查第 12 条）；FSRS-6 与 Anki 一致按 [day]
+/// 翻日后的日序号差取整天。一次调用一次 FFI（这里只有一张卡的有效日志）。
 SrsMemoryInput srsCollectMemoryInput(
   SrsCardHistory history, {
   required SrsAlgorithm algorithm,
-  required int Function(int ms) dayIndexOf,
+  required SrsDayContext day,
+  FushiFsrs? library,
 }) {
+  final FushiFsrs lib =
+      library ??
+      FushiFsrs.instance ??
+      (throw SrsHistoryKernelUnavailableError());
   final List<SrsReviewLog> eff = history.effective;
-  int start = 0;
-  for (int i = eff.length - 1; i >= 0; i--) {
-    if (srsIsReset(eff[i])) {
-      start = i + 1;
-      break;
-    }
-  }
-  final List<SrsReviewLog> window = eff.sublist(start);
-  final List<SrsReviewLog> ratings = <SrsReviewLog>[
-    for (final SrsReviewLog l in window)
-      if (l.isRatingReview && l.rating != null) l,
-  ];
-
-  List<SrsFsrsReview> toReviews(List<SrsReviewLog> rs, int? previousMs) {
-    final List<SrsFsrsReview> out = <SrsFsrsReview>[];
-    int? prev = previousMs;
-    for (final SrsReviewLog r in rs) {
-      final double delta = prev == null
-          ? 0
-          : srsElapsedDays(
-              algorithm: algorithm,
-              fromMs: prev,
-              toMs: r.occurredAt,
-              dayIndexOf: dayIndexOf,
-            );
-      out.add(SrsFsrsReview(rating: r.rating!, deltaDays: delta));
-      prev = r.occurredAt;
-    }
-    return out;
-  }
-
-  // ③′ 恢复照抄的状态：被撤销的评分已不在有效历史里，从这条日志的结果（含记忆状态）接着算，
-  // 之后的评分接在后面；与「从锚点起算」同一套规则（同算法直接用，否则 SM-2 换算）。
-  for (int i = window.length - 1; i >= 0; i--) {
-    final SrsReviewLog l = window[i];
-    if (!srsIsRestoreState(l)) continue;
-    final List<SrsReviewLog> after = <SrsReviewLog>[
-      for (final SrsReviewLog r in ratings)
-        if (history.isAfter(r, l)) r,
-    ];
-    return _fromAnchor(l, after, algorithm, toReviews);
-  }
-  if (ratings.isEmpty) {
-    final SrsReviewLog? anchor = _lastAnchor(window);
-    if (anchor == null) {
-      return const SrsMemoryInput(reviews: <SrsFsrsReview>[], complete: true);
-    }
-    return _fromAnchor(anchor, const <SrsReviewLog>[], algorithm, toReviews);
-  }
-  if (ratings.first.reviewType == SrsReviewType.learn) {
-    return SrsMemoryInput(reviews: toReviews(ratings, null), complete: true);
-  }
-  final SrsReviewLog? anchor = _lastAnchor(window);
-  if (anchor == null) {
-    // 没有锚点也不完整（旧集合没有 revlog 的第一段）：当作从第一条评分起的新历史。
-    return SrsMemoryInput(reviews: toReviews(ratings, null), complete: false);
-  }
-  final List<SrsReviewLog> after = <SrsReviewLog>[
-    for (final SrsReviewLog r in ratings)
-      if (history.isAfter(r, anchor)) r,
-  ];
-  return _fromAnchor(anchor, after, algorithm, toReviews);
-}
-
-SrsReviewLog? _lastAnchor(List<SrsReviewLog> window) {
-  for (int i = window.length - 1; i >= 0; i--) {
-    if (window[i].kind == SrsLogKind.importAnchor) return window[i];
-  }
-  return null;
-}
-
-SrsMemoryInput _fromAnchor(
-  SrsReviewLog anchor,
-  List<SrsReviewLog> after,
-  SrsAlgorithm algorithm,
-  List<SrsFsrsReview> Function(List<SrsReviewLog>, int?) toReviews,
-) {
-  final SrsScheduleResult res = anchor.result ?? SrsScheduleResult.initial;
-  final int? since = res.lastReviewedAt ?? anchor.occurredAt;
-  final List<SrsFsrsReview> reviews = toReviews(after, since);
-  final SrsMemory? mem = res.memory;
-  final String? anchorAlg = anchor.extra['memAlg'] as String?;
-  if (mem != null && anchorAlg == algorithm.wire) {
-    return SrsMemoryInput(reviews: reviews, starting: mem, complete: false);
-  }
-  final double ease = (res.ease ?? 2500) / 1000.0;
-  final double ivl = res.scheduledDays <= 0 ? 1 : res.scheduledDays.toDouble();
-  return SrsMemoryInput(
-    reviews: reviews,
-    sm2Start: (ease: ease, intervalDays: ivl),
-    complete: false,
+  final int n = eff.length;
+  final Pointer<Int64> ints = malloc<Int64>(
+    n == 0 ? 1 : n * _memoryColumnWords,
   );
+  final Pointer<Size> outLen = calloc<Size>();
+  final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
+  try {
+    final Int64List c = ints.asTypedList(n == 0 ? 1 : n * _memoryColumnWords);
+    final ByteData bits = ByteData(8);
+    int f64(double v) {
+      bits.setFloat64(0, v, Endian.little);
+      return bits.getInt64(0, Endian.little);
+    }
+
+    for (int i = 0; i < n; i++) {
+      final SrsReviewLog l = eff[i];
+      final SrsScheduleResult? r = l.result;
+      final SrsMemory? m = r?.memory;
+      final int b = i * _memoryColumnWords;
+      c[b] = _kindCode(l.kind);
+      c[b + 1] = _reviewTypeCode(l.reviewType);
+      c[b + 2] = l.rating ?? _noneI64;
+      c[b + 3] = l.occurredAt;
+      c[b + 4] =
+          (r != null ? 1 : 0) |
+          (m != null ? 2 : 0) |
+          (l.extra[srsRestoreLogExtraKey] != null ? 4 : 0);
+      c[b + 5] = r?.queue.index ?? 0;
+      c[b + 6] = r?.scheduledDays ?? 0;
+      c[b + 7] = r?.reps ?? 0;
+      c[b + 8] = r?.lastReviewedAt ?? _noneI64;
+      c[b + 9] = r?.ease ?? _noneI64;
+      c[b + 10] = m == null ? 0 : f64(m.stability);
+      c[b + 11] = m == null ? 0 : f64(m.difficulty);
+      c[b + 12] = m == null ? 0 : f64(m.stabilityFast);
+      c[b + 13] = _memAlgCode(l.extra['memAlg']);
+    }
+    final Pointer<Uint8> out = lib.bindings.ffsrs_memory_input(
+      ints,
+      n,
+      _algorithmCode(algorithm),
+      day.utcOffsetMin,
+      day.rolloverHour,
+      outLen,
+      error,
+    );
+    if (out == nullptr) throw FormatException(_takeError(lib, error));
+    final int len = outLen.value;
+    try {
+      return _decodeMemoryInput(out.asTypedList(len));
+    } finally {
+      lib.bindings.ffsrs_free_bytes(out, len);
+    }
+  } finally {
+    malloc.free(ints);
+    calloc
+      ..free(outLen)
+      ..free(error);
+  }
+}
+
+/// projection.rs `MEMORY_COLUMN_WORDS`。
+const int _memoryColumnWords = 14;
+
+/// 「没有」在 i64 列里的哨兵（history.rs `NONE_I64`）。
+const int _noneI64 = -0x8000000000000000;
+
+/// projection.rs `Alg` 的编码。
+int _algorithmCode(SrsAlgorithm a) => switch (a) {
+  SrsAlgorithm.fsrs6 => 0,
+  SrsAlgorithm.fsrs7 => 1,
+  SrsAlgorithm.rwkv => 2,
+};
+
+/// history.rs `Kind` 的编码（与卡片历史的列模式同一张表）。
+int _kindCode(String kind) => switch (kind) {
+  SrsLogKind.review => 0,
+  SrsLogKind.manual => 1,
+  SrsLogKind.reschedule => 2,
+  SrsLogKind.importAnchor => 3,
+  SrsLogKind.handOff => 4,
+  SrsLogKind.undo => 5,
+  _ => 6,
+};
+
+/// history.rs `RType` 的编码。
+int _reviewTypeCode(String reviewType) => switch (reviewType) {
+  SrsReviewType.learn => 0,
+  SrsReviewType.review => 1,
+  SrsReviewType.relearn => 2,
+  SrsReviewType.filtered => 3,
+  SrsReviewType.manual => 4,
+  SrsReviewType.rescheduled => 5,
+  _ => 6,
+};
+
+/// projection.rs `MemAlg` 的编码：缺失 -1、算法名 0..2、别的字符串 3、不是字符串 4（用到时 Rust 判坏数据）。
+int _memAlgCode(Object? v) => switch (v) {
+  null => -1,
+  'fsrs6' => 0,
+  'fsrs7' => 1,
+  'rwkv' => 2,
+  String() => 3,
+  _ => 4,
+};
+
+SrsMemoryInput _decodeMemoryInput(Uint8List bytes) {
+  final ByteData d = ByteData.sublistView(bytes);
+  final int flags = d.getInt64(0, Endian.little);
+  final int n = d.getInt64(8, Endian.little);
+  double f(int k) => d.getFloat64(16 + 8 * k, Endian.little);
+  const int ratings = 56;
+  final int deltas = ratings + 8 * n;
+  return SrsMemoryInput(
+    reviews: <SrsFsrsReview>[
+      for (int i = 0; i < n; i++)
+        SrsFsrsReview(
+          rating: d.getInt64(ratings + 8 * i, Endian.little),
+          deltaDays: d.getFloat64(deltas + 8 * i, Endian.little),
+        ),
+    ],
+    starting: flags & 2 != 0
+        ? SrsMemory(stability: f(0), difficulty: f(1), stabilityFast: f(2))
+        : null,
+    sm2Start: flags & 4 != 0 ? (ease: f(3), intervalDays: f(4)) : null,
+    complete: flags & 1 != 0,
+  );
+}
+
+String _takeError(FushiFsrs lib, Pointer<Pointer<Char>> error) {
+  final Pointer<Char> p = error.value;
+  if (p == nullptr) return 'memory input kernel failed';
+  try {
+    return p.cast<Utf8>().toDartString();
+  } finally {
+    lib.bindings.ffsrs_free_string(p);
+  }
 }
 
 /// 用 [engine] 把输入算成当前记忆状态（新卡返回 null）。

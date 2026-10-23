@@ -223,6 +223,44 @@ typedef _ImportEquivalentDart =
       ffi.Pointer<ffi.Size>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
+typedef _MemoryInputC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Int32,
+      ffi.Int32,
+      ffi.Int32,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MemoryInputDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      int,
+      int,
+      int,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _RwkvNowRowsC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Int32,
+      ffi.Int32,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _RwkvNowRowsDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      int,
+      int,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
 typedef _MaterializeC =
     ffi.Pointer<ffi.Uint8> Function(
       ffi.Pointer<ffi.Uint8>,
@@ -318,6 +356,12 @@ class FushiFsrsBindings {
           ),
       ffsrs_materialize = lib.lookupFunction<_MaterializeC, _MaterializeDart>(
         'ffsrs_materialize',
+      ),
+      ffsrs_memory_input = lib.lookupFunction<_MemoryInputC, _MemoryInputDart>(
+        'ffsrs_memory_input',
+      ),
+      ffsrs_rwkv_now_rows = lib.lookupFunction<_RwkvNowRowsC, _RwkvNowRowsDart>(
+        'ffsrs_rwkv_now_rows',
       );
 
   /// 请求 JSON → 响应 JSON（`{"ok":…}` / `{"error":"…"}`）。
@@ -509,4 +553,29 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Pointer<ffi.Char>> error,
   )
   ffsrs_materialize;
+
+  /// 记忆状态输入（铁律 A，`projection.rs` `memory_input_columns`）：一份历史的有效日志（列模式，
+  /// 已排序）→ 评审序列与起点。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Int64> ints,
+    int nLogs,
+    int algorithm,
+    int utcOffsetMin,
+    int rolloverHour,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_memory_input;
+
+  /// RWKV「此刻」行（ease 0，`projection.rs` `rwkv_now_rows`）：每行 9 个 i64 → 80 字节的
+  /// `FrwkvReview`。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Int64> ints,
+    int nRows,
+    int utcOffsetMin,
+    int rolloverHour,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_rwkv_now_rows;
 }

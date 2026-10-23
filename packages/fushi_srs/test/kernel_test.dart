@@ -42,6 +42,14 @@ SrsReviewLog _log({
           : const SrsScheduleResult(queue: SrsQueue.review, dueDay: 1)),
 );
 
+/// 「恢复到备份时间点」照抄状态的 manual 日志（判据在 native/fushi_fsrs/src/projection.rs
+/// `is_restore_state`；测试只用它断言恢复计划写出的日志形状）。
+bool _isRestoreState(SrsReviewLog l) =>
+    l.kind == SrsLogKind.manual &&
+    l.result != null &&
+    l.extra[srsRestoreLogExtraKey] != null &&
+    !(l.result!.queue == SrsQueue.newCard && l.result!.reps == 0);
+
 void main() {
   group('确定性 ID', () {
     test('UUIDv5 与 RFC 测试向量一致', () {
@@ -295,7 +303,7 @@ void main() {
       final SrsMemoryInput input = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[a, anchor, b]),
         algorithm: SrsAlgorithm.fsrs7,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(input.complete, isTrue);
       expect(input.reviews.map((SrsFsrsReview r) => r.deltaDays), <double>[
@@ -305,7 +313,7 @@ void main() {
       final SrsMemoryInput six = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[a, anchor, b]),
         algorithm: SrsAlgorithm.fsrs6,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(
         six.reviews.last.deltaDays,
@@ -336,7 +344,7 @@ void main() {
       final SrsMemoryInput input = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[anchor, r]),
         algorithm: SrsAlgorithm.fsrs7,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(input.complete, isFalse);
       expect(input.sm2Start, isNotNull);
@@ -368,7 +376,7 @@ void main() {
       final SrsMemoryInput input = srsCollectMemoryInput(
         SrsCardHistory(<SrsReviewLog>[a, reset, b]),
         algorithm: SrsAlgorithm.fsrs7,
-        dayIndexOf: kDayCtx.dayIndexOf,
+        day: kDayCtx,
       );
       expect(input.reviews.map((SrsFsrsReview r) => r.rating), <int>[4]);
     });
@@ -765,11 +773,8 @@ void main() {
     List<(int, double)> shape(SrsMemoryInput m) => <(int, double)>[
       for (final SrsFsrsReview r in m.reviews) (r.rating, r.deltaDays),
     ];
-    SrsMemoryInput memory(SrsCardHistory h) => srsCollectMemoryInput(
-      h,
-      algorithm: SrsAlgorithm.fsrs7,
-      dayIndexOf: kDayCtx.dayIndexOf,
-    );
+    SrsMemoryInput memory(SrsCardHistory h) =>
+        srsCollectMemoryInput(h, algorithm: SrsAlgorithm.fsrs7, day: kDayCtx);
 
     test('被撤销的是备份时有效历史的尾巴：重放副本，有效历史与备份逐条同构、不需要 ③′', () {
       final SrsReviewLog r1 = _log(
@@ -821,7 +826,7 @@ void main() {
       expect(after.state, backup.state);
       expect(srsSameEffectiveShape(after.effective, backup.effective), isTrue);
       // 不靠 ③′：没有任何一条是「照抄状态」日志，旧版本按原规则算出的记忆输入与备份时相同。
-      expect(after.all.any(srsIsRestoreState), isFalse);
+      expect(after.all.any(_isRestoreState), isFalse);
       expect(shape(memory(after)), shape(memory(backup)));
       expect(memory(after).complete, memory(backup).complete);
     });
@@ -865,7 +870,7 @@ void main() {
       );
       expect(plan, hasLength(1));
       expect(plan.single.kind, SrsLogKind.manual);
-      expect(srsIsRestoreState(plan.single), isTrue);
+      expect(_isRestoreState(plan.single), isTrue);
       expect(plan.single.result, imp.result);
     });
 

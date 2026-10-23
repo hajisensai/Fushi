@@ -21,6 +21,15 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 const String kProfile = '01928c3e-0000-7000-8000-0000000000b1';
 
 /// 复习自动备份与按时间点恢复（docs/specs/2026-10-17-srs-auto-backup-restore.md）。
+
+/// 「恢复到备份时间点」照抄状态的 manual 日志（判据在 native/fushi_fsrs/src/projection.rs
+/// `is_restore_state`；测试只用它断言恢复计划写出的日志形状）。
+bool _isRestoreState(SrsReviewLog l) =>
+    l.kind == SrsLogKind.manual &&
+    l.result != null &&
+    l.extra[srsRestoreLogExtraKey] != null &&
+    !(l.result!.queue == SrsQueue.newCard && l.result!.reps == 0);
+
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
@@ -324,7 +333,7 @@ void main() {
       for (final SrsEvent e in await a.exportAll())
         if (e is SrsLogEvent) e.log,
     ];
-    expect(logs.any(srsIsRestoreState), isFalse);
+    expect(logs.any(_isRestoreState), isFalse);
     expect(
       logs.where(
         (SrsReviewLog l) =>
