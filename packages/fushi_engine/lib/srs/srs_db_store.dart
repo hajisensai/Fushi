@@ -3538,24 +3538,37 @@ class SrsDbStore implements SrsSyncReplica {
     int today,
   ) async {
     final int from = day.dayStartMs(today);
-    final List<SrsReviewLogRow> rows =
-        await (db.select(db.srsReviewLogs)..where(
-              (t) =>
-                  t.profileUid.equals(profileUid) &
-                  t.kind.equals(SrsLogKind.review) &
-                  t.occurredAt.isBiggerOrEqualValue(from),
-            ))
-            .get();
+    // 只取要的列；正文 json 只有学习步那几条要看（是不是第一次学），其余行不读不解码。
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT card_id, occurred_at, review_type, '
+          'CASE WHEN review_type = ? THEN json END AS j '
+          'FROM srs_review_logs '
+          'WHERE profile_uid = ? AND kind = ? AND occurred_at >= ? '
+          'ORDER BY occurred_at',
+          variables: <Variable<Object>>[
+            Variable<String>(SrsReviewType.learn),
+            Variable<String>(profileUid),
+            Variable<String>(SrsLogKind.review),
+            Variable<int>(from),
+          ],
+          readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+            db.srsReviewLogs,
+          },
+        )
+        .get();
     final Set<String> introduced = <String>{};
     final Set<String> reviewed = <String>{};
-    final List<(String, int)> answers = <(String, int)>[
-      for (final SrsReviewLogRow r in rows) (r.cardId, r.occurredAt),
-    ]..sort(((String, int) a, (String, int) b) => a.$2.compareTo(b.$2));
-    for (final SrsReviewLogRow r in rows) {
-      if (r.reviewType == SrsReviewType.review) reviewed.add(r.cardId);
-      if (r.reviewType != SrsReviewType.learn) continue;
-      final Object? res = (jsonDecode(r.json) as Map)['res'];
-      if (res is Map && res['reps'] == 1) introduced.add(r.cardId);
+    final List<(String, int)> answers = <(String, int)>[];
+    for (final QueryRow r in rows) {
+      final String cardId = r.read<String>('card_id');
+      answers.add((cardId, r.read<int>('occurred_at')));
+      final String type = r.read<String>('review_type');
+      if (type == SrsReviewType.review) reviewed.add(cardId);
+      final String? j = r.read<String?>('j');
+      if (j == null) continue;
+      final Object? res = (jsonDecode(j) as Map)['res'];
+      if (res is Map && res['reps'] == 1) introduced.add(cardId);
     }
     return (introduced, reviewed, answers);
   }
@@ -4039,8 +4052,14 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 渲染卡面（模板正文里的 fieldId 引用换回名字后交给 Anki 渲染器）。
-  Future<SrsRenderedCard?> renderCard(String cardId) async {
-    final SrsCardDetail? d = await cardDetail(cardId);
+  ///
+  /// 调用方刚取过这张卡的 [cardDetail] 时传进来（[detail]），不再读第二遍（复习页出题 / 预取）。
+  Future<SrsRenderedCard?> renderCard(
+    String cardId, {
+    SrsCardDetail? detail,
+  }) async {
+    assert(detail == null || detail.card.id == cardId);
+    final SrsCardDetail? d = detail ?? await cardDetail(cardId);
     final SrsTemplateDef? tpl = d?.template;
     if (d == null || tpl == null) return null;
     final Map<String, String> idToName = _idToName(d.noteType);

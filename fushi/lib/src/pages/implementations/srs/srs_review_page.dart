@@ -299,7 +299,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         if (id == null) return null;
         final SrsCardDetail? detail = await store.cardDetail(id);
         if (detail == null) return null;
-        final SrsRenderedCard? rendered = await store.renderCard(id);
+        final SrsRenderedCard? rendered = await store.renderCard(
+          id,
+          detail: detail,
+        );
         // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
         if (rendered != null) {
           srsWarmCardFace(
@@ -377,7 +380,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       await _refreshCounts();
       SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
-      final SrsRenderedCard? rendered = await store.renderCard(id);
+      final SrsRenderedCard? rendered = detail == null
+          ? null
+          : await store.renderCard(id, detail: detail);
       SrsReviewPage.debugPhase?.call('render');
       if (detail == null) {
         // 排程选中的卡读不到（例如刚被同步删掉）：报错，不把 null 当「还在读」——
@@ -836,7 +841,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       return;
     }
     final SrsCardDetail? fresh = await store.cardDetail(id);
-    final SrsRenderedCard? rendered = await store.renderCard(id);
+    final SrsRenderedCard? rendered = fresh == null
+        ? null
+        : await store.renderCard(id, detail: fresh);
     final SrsDeckView? audioOwner = await _audioOwnerOf(store, fresh);
     final SrsDeckSummary? sum = await _deckSummary();
     final SrsDayContext day = await store.dayContext();
