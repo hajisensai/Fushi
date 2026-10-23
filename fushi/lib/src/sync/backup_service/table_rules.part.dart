@@ -320,6 +320,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v124：AI 整理记录（本机做过哪些整理、供撤销），设备本地。
   'library_organize_runs': BackupTableRule.deviceLocal(),
   'library_organize_changes': BackupTableRule.deviceLocal(),
+  // v126：SRS 有效复习投影（可重建缓存），设备本地、恢复后清空。
+  'srs_stat_reviews': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

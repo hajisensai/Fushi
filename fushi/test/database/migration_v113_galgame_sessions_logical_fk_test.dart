@@ -119,7 +119,7 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(migrated.close);
-      expect(migrated.schemaVersion, 124);
+      expect(migrated.schemaVersion, 126);
 
       expect(
         await migrated

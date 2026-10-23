@@ -224,6 +224,8 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
         (t.home_filter_read, Icons.menu_book_outlined, kActivityMediaBook),
         (t.home_filter_watch, Icons.movie_outlined, kActivityMediaVideo),
         (t.home_filter_game, Icons.sports_esports_outlined, kActivityMediaGame),
+        // 统计中心总览读时并进来的 SRS 复习时长（BUG-3663）。
+        (t.nav_srs, Icons.style_outlined, kStatMediaReview),
       ])
         if (_section(context, tokens, label, icon, kind) case final Widget w) w,
     ];
@@ -339,8 +341,11 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
             ? '${formatStatChars(e.chars)} · ${formatStatTime(e.ms)}'
             : formatStatTime(e.ms))
         : formatStatChars(e.chars);
-    final Future<void> Function(String, String)? onTap = _resolvers.onEntryTap;
-    final bool canDelete = _resolvers.onEntryDelete != null;
+    // 复习时长归 SRS 管（读的是复习日志的有效投影）：这里既不能删，也没有可打开的作品。
+    final bool review = e.mediaKind == kStatMediaReview;
+    final Future<void> Function(String, String)? onTap =
+        review ? null : _resolvers.onEntryTap;
+    final bool canDelete = !review && _resolvers.onEntryDelete != null;
     // 2026-10 体验优化：删除入口统一成可见按钮（会话列表本就有），不再只藏在
     // 长按 / 右键里；行最小高度 48，满足触控目标。长按 / 右键仍保留。
     final Widget row = ConstrainedBox(
