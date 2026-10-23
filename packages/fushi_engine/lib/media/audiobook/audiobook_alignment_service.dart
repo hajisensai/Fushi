@@ -194,7 +194,8 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
     if (computed.snappedBoundaries != null) {
       fushiDebugPrint(
         '[fushi-import] energy snap: ${computed.snappedBoundaries} '
-        'boundaries, ${computed.refinedEdges} edges',
+        'boundaries, ${computed.refinedEdges} edges, '
+        '${computed.mergedFragments} fragments merged',
       );
     }
   }
@@ -280,6 +281,7 @@ class AlignedCueComputation {
     this.resegmentStats,
     this.snappedBoundaries,
     this.refinedEdges,
+    this.mergedFragments,
   });
 
   final List<AudioCue> cues;
@@ -294,6 +296,9 @@ class AlignedCueComputation {
   /// 做了能量吸附时移动的句界数 / 修整的首尾数。
   final int? snappedBoundaries;
   final int? refinedEdges;
+
+  /// 设备端转录产物并回相邻 cue 的句内碎片数（`CueFragmentMerger`）。
+  final int? mergedFragments;
 }
 
 /// [finalizeAlignedCues] 的后台 isolate debugName。
@@ -331,6 +336,7 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
   }
   int? moved;
   int? edges;
+  int? fragments;
   if (request.asrGenerated) {
     replaceMatchedCueTextWithBookText(
       sections: request.sections,
@@ -346,6 +352,13 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
       moved = snapper.snap(cues, energy);
       edges = snapper.refineEdges(cues, energy);
     }
+    // 句内短碎片（「何か、」「おかしい。」）并回一条，免得半句一闪而过。放在吸附之后：
+    // 合并只取前条起点、后条终点，吸附过的边界原样沿用。
+    final ({List<AudioCue> cues, MatchResult result, int merged}) merged =
+        const CueFragmentMerger().merge(cues: cues, result: result);
+    cues = merged.cues;
+    result = merged.result;
+    fragments = merged.merged;
   }
   return AlignedCueComputation(
     cues: cues,
@@ -354,6 +367,7 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
     resegmentStats: stats,
     snappedBoundaries: moved,
     refinedEdges: edges,
+    mergedFragments: fragments,
   );
 }
 
