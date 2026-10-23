@@ -1,8 +1,11 @@
 package eu.kanade.tachiyomi.animesource
 
+import eu.kanade.tachiyomi.animesource.model.AnimeRelation
 import eu.kanade.tachiyomi.animesource.model.Hoster
 import eu.kanade.tachiyomi.animesource.model.Hoster.Companion.toHosterList
 import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SAnimeEpisodeUpdate
+import eu.kanade.tachiyomi.animesource.model.SAnimeSeasonUpdate
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.util.lang.awaitSingle
@@ -12,11 +15,14 @@ import rx.Observable
  * A basic interface for creating a source. It could be an online source, a local source, etc...
  *
  * Fushi host ABI: the union of extensions-lib 14 (`getVideoList(episode)` and the
- * Rx `fetch*` shapes) and extensions-lib 16 (`getSeasonList`, `getHosterList`,
- * `getVideoList(hoster)`) plus the Anikku/KMK `getRelatedAnimeList` slot. Every
- * lib-16 member has a default body so a lib-14 extension that never heard of it
- * still loads; the defaults route the hoster API onto the legacy video list so the
- * host can drive both generations through one entry point.
+ * Rx `fetch*` shapes), extensions-lib 16 (`getSeasonList`, `getHosterList`,
+ * `getVideoList(hoster)`), extensions-lib 17 (the combined `getAnimeEpisodeUpdate` /
+ * `getAnimeSeasonUpdate` and `getRelatedAnimeList(anime)`) plus the Anikku/KMK
+ * `getRelatedAnimeList` slot. Every newer member has a default body so an older
+ * extension that never heard of it still loads; the defaults route the newer API
+ * onto the older one, and `AnimeHttpSource` routes the older entry points the host
+ * calls (`getAnimeDetails` / `getEpisodeList` / `getSeasonList`) onto the lib-17
+ * combined calls when an extension implements only those.
  */
 interface AnimeSource {
     /**
@@ -95,6 +101,57 @@ interface AnimeSource {
      */
     @Suppress("DEPRECATION")
     suspend fun getVideoList(episode: SEpisode): List<Video> = fetchVideoList(episode).awaitSingle()
+
+    /**
+     * Fetches refreshed details and/or the episode list in one call.
+     *
+     * Default: the lib-14/16 [getAnimeDetails] / [getEpisodeList] pair, exactly as
+     * Aniyomi's lib-17 host does for older extensions.
+     *
+     * @since extensions-lib 17
+     */
+    suspend fun getAnimeEpisodeUpdate(
+        anime: SAnime,
+        episodes: List<SEpisode>,
+        fetchDetails: Boolean,
+        fetchEpisodes: Boolean,
+    ): SAnimeEpisodeUpdate =
+        SAnimeEpisodeUpdate(
+            anime = if (fetchDetails) getAnimeDetails(anime) else anime,
+            episodes = if (fetchEpisodes) getEpisodeList(anime) else episodes,
+        )
+
+    /**
+     * Fetches refreshed details and/or the season list in one call.
+     *
+     * @since extensions-lib 17
+     */
+    suspend fun getAnimeSeasonUpdate(
+        anime: SAnime,
+        seasons: List<SAnime>,
+        fetchDetails: Boolean,
+        fetchSeasons: Boolean,
+    ): SAnimeSeasonUpdate =
+        SAnimeSeasonUpdate(
+            anime = if (fetchDetails) getAnimeDetails(anime) else anime,
+            seasons = if (fetchSeasons) getSeasonList(anime) else seasons,
+        )
+
+    /**
+     * Whether [getRelatedAnimeList] is meaningful for this source. The host never
+     * shows related entries; the member exists so lib-17 extensions link.
+     *
+     * @since extensions-lib 17
+     */
+    val supportsRelatedAnime: Boolean
+        get() = false
+
+    /**
+     * Related anime grouped by relation label.
+     *
+     * @since extensions-lib 17
+     */
+    suspend fun getRelatedAnimeList(anime: SAnime): List<AnimeRelation> = emptyList()
 
     // KMK -->
 
