@@ -863,6 +863,32 @@ List<String> subtitleCjkFontFallbacks(TargetPlatform platform) =>
         ? _kWindowsSubtitleCjkFallback
         : _kDefaultSubtitleCjkFallback;
 
+/// 字幕逐字 [Text] 的**强制行盒**（反馈 qMZ00M6ESi：「字幕假名和文字没对齐」）。
+///
+/// 字幕逐 grapheme 渲染成独立 [Text]，再由 Wrap / Row **顶对齐**排成一行。每个
+/// [Text] 的行盒高恒为 `fontSize × height`，但基线在盒内的位置取决于**该字实际
+/// 落到的字体**的 ascent/descent 比例。主字体缺字时汉字与假名会各自落到不同字体
+/// （Android 上 `fontFamilyFallback` 的 `Noto Sans CJK JP` 之类按名字解析不到——
+/// 系统 CJK 回退族在 fonts.xml 里没有名字——由引擎按字符各挑一个；OEM 系统字体
+/// 只带汉字不带假名时就是两套字体），两套 ascent 比例不同 → 同一行里汉字和假名
+/// 的基线错开几个像素（用户截图：假名整体比汉字低 3~4px）。
+///
+/// [forceStrutHeight] 让每个字的行盒都按**同一个 strut 字体**（本字样式的
+/// fontFamily + 回退链首个可解析的字体）定 ascent/descent，字形一律落在 strut 的
+/// 基线上：不论字形来自哪个字体，同字号的相邻字共用一条基线（与 libass / 浏览器
+/// 整行排版同语义）。行盒尺寸不变（仍是 `fontSize × height`），布局与命中零位移。
+@visibleForTesting
+StrutStyle subtitleGlyphStrut(TextStyle style) => StrutStyle(
+      fontFamily: style.fontFamily,
+      fontFamilyFallback: style.fontFamilyFallback,
+      fontSize: style.fontSize,
+      height: style.height,
+      leadingDistribution: style.leadingDistribution,
+      fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      forceStrutHeight: true,
+    );
+
 /// Windows 上作者字体缺失时，Flutter/Skia 以同一 YaHei UI face 渲染仍比
 /// mpv/libass FreeType REAL_DIM 的实像素偏窄、偏矮。BUG-929 用用户原片黑底帧校准：
 /// 字号补 1.09、仅纵轴再补 1.055，可把 `きれえ` 从 146×50 对齐到 158×56
@@ -1037,6 +1063,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return _charSizeCache.putIfAbsent(key, () {
       final TextPainter tp = TextPainter(
         text: TextSpan(text: char, style: style),
+        strutStyle: subtitleGlyphStrut(style),
         textDirection: TextDirection.ltr,
       )..layout();
       final Size size = tp.size;
@@ -2650,6 +2677,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return fade.opacityAt(pos - cue.startMs, cue.endMs - cue.startMs);
   }
 
+  /// 单个字幕字形的 [Text]：一律挂 [subtitleGlyphStrut]（强制行盒），见该函数注释。
+  Text _glyphText(String char, TextStyle style) =>
+      Text(char, style: style, strutStyle: subtitleGlyphStrut(style));
+
   /// 渲染单个字幕字符。两条外观路径：
   ///
   /// **① 默认统一外观**（`!respectAssStyle` 或非 .ass 字幕 markup==null）：单层 fill [Text]
@@ -2690,9 +2721,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         widget.shadowColor ?? Theme.of(context).colorScheme.shadow,
         widget.shadowThickness,
       );
-      glyph = Text(
+      glyph = _glyphText(
         char,
-        style: soft.isEmpty ? fillStyle : fillStyle.copyWith(shadows: soft),
+        soft.isEmpty ? fillStyle : fillStyle.copyWith(shadows: soft),
       );
     } else {
       // 尊重 .ass：\bord/\3c 真描边 + \shad ASS 硬投影（TODO-1105/1246），保持原样。
@@ -2718,9 +2749,9 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         // 仍要占同一格（几何同构）：画一个宽 0 的透明描边占位，不产出可见像素。
         if (pass == _GlyphPass.strokeOnly) {
           return _applySpanScale(
-            Text(
+            _glyphText(
               char,
-              style: fillStyle.copyWith(
+              fillStyle.copyWith(
                 color: null,
                 foreground: Paint()
                   ..style = PaintingStyle.stroke
@@ -2736,7 +2767,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             fillStyle,
           );
         }
-        glyph = Text(char, style: fillStyle);
+        glyph = _glyphText(char, fillStyle);
       } else {
         // 描边层：复制 fill 的所有几何属性，但用 foreground 画笔取代 color（Flutter 断言
         // foreground 与 color 不可共存，故显式重建而非 copyWith——copyWith 无法把 color 清空）。
@@ -2754,7 +2785,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             : fillStyle;
         // \bord>0 + \blur：只糊描边层（阴影挂在描边层上，随之同糊——libass 的阴影本就是
         // 模糊后描边位图的平移拷贝）；fill 层留在 ImageFiltered 外保持锐利。
-        Widget strokeLayer = Text(char, style: strokeStyle);
+        Widget strokeLayer = _glyphText(char, strokeStyle);
         if (sigma > 0) {
           strokeLayer = ImageFiltered(
             imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
@@ -2767,14 +2798,14 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
         }
         if (pass == _GlyphPass.fillOnly) {
           return _applySpanScale(
-              Text(char, style: fillTopStyle), char, i, markup, fillStyle);
+              _glyphText(char, fillTopStyle), char, i, markup, fillStyle);
         }
         // 底层 stroke 先画（在下），上层 fill 后画（在上）盖住描边内缘，露出外缘成轮廓。
         return _applySpanScale(
           Stack(
             children: <Widget>[
               strokeLayer,
-              Text(char, style: fillTopStyle),
+              _glyphText(char, fillTopStyle),
             ],
           ),
           char,
