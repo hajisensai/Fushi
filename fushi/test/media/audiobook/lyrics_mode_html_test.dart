@@ -778,10 +778,9 @@ function _lyricsBaseFontPx() { return 24; }
 function _lyricsAvailExtent() { return Math.max(1, window.innerHeight - 40); }
 function _lyricsCenterDelta(el) { return 10; }
 function _lyricsScrollByAxis(d) { scrolls++; }
-// 竖排逐列扫过（BUG-3366）在 fit 末尾为当前句重铺一次；这里只计数，不计入 fit
-// 自身的强制布局次数。
+// 逐字扫过层在 fit 末尾按此刻进度重搭一次；这里只计数，不计入 fit 自身的强制布局次数。
 var sweeps = 0;
-function _lyLayoutSweepColumns(el) { sweeps++; }
+function _lySweepRelayout() { sweeps++; }
 var _lyInitPending = true;
 """;
 

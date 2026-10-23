@@ -62,23 +62,20 @@ String _lyricsHtml({required bool vertical, bool sweep = true}) =>
       sweep: sweep,
     );
 
-/// 生成 CSS 里所有给当前行 `.tx` 铺渐变背景的规则（选择器 → 声明块）。
-Map<String, String> _sweepBackgroundRules(String html) {
+/// 生成 CSS 里所有「扫过进行中」才生效的当前行规则（选择器 → 声明块）：底层
+/// `.tx` 的未读色、注音色、上层 `.ly-sw` 的显示。
+Map<String, String> _sweepActiveRules(String html) {
   final Map<String, String> rules = <String, String>{};
   final RegExp rule = RegExp(r'([^{}]+)\{([^{}]*)\}');
   for (final RegExpMatch m in rule.allMatches(html)) {
     final String selector = m.group(1)!.trim().split('\n').last.trim();
     final String body = m.group(2)!;
-    if (selector.contains('.cue.current') &&
-        selector.contains('.tx') &&
-        body.contains('background-image')) {
+    if (selector.contains('.cue.current') && selector.contains('.ly-sw-on')) {
       rules[selector] = body;
     }
   }
   return rules;
 }
-
-int _classCount(String selector) => '.'.allMatches(selector).length;
 
 void main() {
   group('resolveAudioHighlightStyle', () {
@@ -245,24 +242,18 @@ void main() {
   });
 
   group('BUG-3105 歌词竖排逐字推进 / 暂停不盖字', () {
-    test('每条给当前行铺渐变的规则都带「播放中、非查词」门', () {
+    test('每条扫过生效规则都带「播放中、非查词」门', () {
       for (final bool vertical in <bool>[false, true]) {
-        final Map<String, String> rules = _sweepBackgroundRules(
+        final Map<String, String> rules = _sweepActiveRules(
           _lyricsHtml(vertical: vertical),
         );
-        expect(rules, hasLength(2), reason: '横排 + 竖排各一条');
+        expect(rules, hasLength(3), reason: '上层显示 + 底层未读色 + 注音色');
         for (final String selector in rules.keys) {
-          expect(
-            selector,
-            contains(':not(.ly-paused)'),
-            reason:
-                '暂停时没有 background-clip:text，渐变会画成实心块盖住字：'
-                '$selector',
-          );
+          expect(selector, startsWith('body.ly-sweep:not(.ly-paused)'));
           expect(
             selector,
             contains(':not(.ly-nosweep)'),
-            reason: '查词时同理：$selector',
+            reason: '查词时整行点亮、不盖查词底块：$selector',
           );
         }
       }
@@ -284,23 +275,20 @@ void main() {
       expect(html, isNot(contains('direction: rtl')));
     });
 
-    test('竖排规则特异性高于横排规则（播放中改走 to bottom）', () {
-      final Map<String, String> rules = _sweepBackgroundRules(
-        _lyricsHtml(vertical: true),
-      );
-      final String vertical = rules.keys.singleWhere(
-        (String s) => s.contains('.ly-vertical'),
-      );
-      final String horizontal = rules.keys.singleWhere(
-        (String s) => !s.contains('.ly-vertical'),
-      );
-      expect(rules[vertical], contains('to bottom'));
-      expect(rules[horizontal], contains('to right'));
-      expect(
-        _classCount(vertical),
-        greaterThan(_classCount(horizontal)),
-        reason: '同为 body 元素选择器，类数更多者胜；否则竖排被 to right 压掉',
-      );
+    test('横竖排同一套扫过规则，不再铺 background-clip 渐变', () {
+      for (final bool vertical in <bool>[false, true]) {
+        final String html = _lyricsHtml(vertical: vertical);
+        // 竖排的阅读顺序（右起逐列、列内自上而下）由 JS 量列 + translateY 决定，
+        // 见 lyrics_sweep_compositor_test；CSS 不再分横竖两条渐变。
+        expect(html, isNot(contains('background-clip: text')));
+        expect(html, isNot(contains('-webkit-text-fill-color: transparent')));
+        expect(
+          _sweepActiveRules(
+            html,
+          ).keys.where((String k) => k.contains('.ly-vertical')),
+          isEmpty,
+        );
+      }
     });
   });
 }

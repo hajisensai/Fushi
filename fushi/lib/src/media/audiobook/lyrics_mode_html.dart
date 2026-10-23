@@ -331,9 +331,6 @@ body.ly-themed .lyrics-container > .ly-gap {
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root { --cue-scale: 1.15; --cue-font-size: ${fontSize}px; $themeVarsCss }
-/* 逐字扫过的进度（0%–100%）。注册成 <percentage> 才能被 transition 插值；不支持
-   @property 的旧内核上它不动画、直接落到 100%（整行点亮），只是少了扫过效果。 */
-@property --ly-p { syntax: '<percentage>'; inherits: true; initial-value: 100%; }
 html, body {
   width: 100%;
   height: 100%;
@@ -502,51 +499,36 @@ body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
 @media (hover: hover) {
   body.ly-themed .cue:not(.current):hover { opacity: 0.84; }
 }
-/* 逐字扫过：当前行按播放进度从左到右点亮（未读部分 = 当前色 × 0.4）。.tx 是行内
-   元素，slice 让多行渐变按阅读顺序接续。暂停 / 查词时整行直接点亮。 */
-body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
-  background-image: linear-gradient(to right, var(--ly-current) calc(var(--ly-p) - 4%),
-      var(--ly-upcoming) calc(var(--ly-p) + 4%));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  -webkit-box-decoration-break: slice;
-  box-decoration-break: slice;
+/* 逐字扫过（Niratan line progress）：当前行按播放进度沿阅读方向点亮，未读部分 =
+   当前色 × 0.4。只用合成器能独立推进的属性（transform）实现，播放全程不重绘：
+   - 底层 = 行内文字本身，扫过期间整行画成未读色（.tx 的 color，静态）；
+   - 上层 = .ly-sw 宿主（shadow DOM，不进文本遍历 / 选区 / textContent）里每个视觉行
+     （竖排是每列）一个窗口，窗口里是整句的当前色副本，排版与底层逐像素重合；窗口
+     沿行方向平移、里面的副本反向平移同样距离（副本相对屏幕不动），窗口前沿的遮罩
+     渐变就是扫过的软边。两个平移都是 Web Animations 的 transform 关键帧，Blink 与
+     WebKit 都交给合成器线程插值；主线程只在换句 / seek / 起播 / 重排时搭一次。
+   以前是注册自定义属性（@property 进度变量）+ transition：自定义属性动画不能上合成器，每帧主线程
+   重算样式、重画当前行，WebView 全程 60fps 出帧（WebView2 每帧逼 Flutter 整帧重合成）。
+   门与旧规则相同：暂停 / 查词（.ly-nosweep）/ 关掉扫过时整行直接点亮；.ly-sw-on
+   由 JS 在上层搭好后挂上，没搭好（不支持 Web Animations / 尚未下发进度）时也整行点亮。 */
+.ly-sw {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
 }
-body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx rt {
-  -webkit-text-fill-color: var(--ly-current);
+body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) > .ly-sw {
+  display: block;
 }
-/* BUG-3105：竖排规则必须带上与横排同样的「播放中、非查词」门，且特异性要高于
-   横排规则（多一个 .ly-vertical）。旧选择器 `body.ly-sweep.ly-vertical .cue.current .tx`
-   既不认 .ly-paused / .ly-nosweep——暂停或查词时只剩这条背景、没有 background-clip:text，
-   当前句被一整块当前色盖住；特异性又低于横排规则——播放中被 `to right` 压掉，
-   竖排一列文字只按列宽左右扫，看不到逐字推进。 */
-body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
-  background-image: linear-gradient(to bottom, var(--ly-current) calc(var(--ly-p) - 4%),
-      var(--ly-upcoming) calc(var(--ly-p) + 4%));
+body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) .tx {
+  color: var(--ly-upcoming);
 }
-/* BUG-3280 / BUG-3346：WebKit（iOS / macOS WKWebView）画不出折成多列的竖排行内盒
-   上的 background-clip: text——文字是透明填充、背景又没画上，长句在播放（扫过生效）
-   时整列消失或只剩一截；暂停时扫过规则不生效，所以又完整了。iOS 模拟器实测：
-   box-decoration-break 取 slice 或 clone 都一样消失（BUG-3280 的 clone 回退
-   无效），单列短句正常；.tx 改成 inline-block（一个原子盒，渐变铺在整块上）后整句
-   可见、扫过照常。
-   BUG-3366：整块铺一条 to bottom 渐变会让各列同步自上而下扫（屏上是一条横带，
-   每列上半亮、下半暗），不按阅读顺序。JS（_lyLayoutSweepColumns）量出每列的
-   位置与长度，给每列铺一层自己的渐变：--ly-cols-* 三个变量一一对应，全局进度
-   --ly-p 按累计列长映射到该列内，与 Blink slice 的跨列接续逐像素等价，仍由同一个
-   --ly-p transition 驱动。量到之前（变量未设）退回整块渐变，文字始终可见。
-   按能力判：只有不认识无前缀 slice 的引擎（WebKit）走这里，Blink 保持行内盒 + slice。
-   只限竖排，与 BUG-3105 竖排规则同门同特异性。 */
-@supports not (box-decoration-break: slice) {
-  body.ly-sweep.ly-vertical:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
-    display: inline-block;
-    background-image: var(--ly-cols-bg, linear-gradient(to bottom,
-        var(--ly-current) calc(var(--ly-p) - 4%), var(--ly-upcoming) calc(var(--ly-p) + 4%)));
-    background-position: var(--ly-cols-pos, 0 0);
-    background-size: var(--ly-cols-size, 100% 100%);
-    background-repeat: no-repeat;
-  }
+body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) .tx rt {
+  color: var(--ly-current);
 }
 /* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
    遮罩挂在它的盒上、不随内容滚动。 */
@@ -969,8 +951,8 @@ function __lyricsFitCues() {
   // by --cue-scale) applies uniformly to current and non-current cues alike.
   for (i = 0; i < n; i++) { el = _cues[i]; measured[i] = __lyricsVertical ? el.offsetHeight : el.offsetWidth; }
   for (i = 0; i < n; i++) _lyricsFitCue(_cues[i], measured[i], avail, base);
-  // 字号变了列就变了（BUG-3366）。
-  if (_currentIdx >= 0 && _currentIdx < _cues.length) _lyLayoutSweepColumns(_cues[_currentIdx]);
+  // 字号变了行就变了：按此刻进度重搭扫过层。
+  _lySweepRelayout();
 }
 window.__lyricsFitCues = __lyricsFitCues;
 // Re-fit on viewport changes (rotation / window resize) so a cue that fit at the
@@ -1006,8 +988,8 @@ function setCue(index, scroll) {
     if (d === 0) _cues[i].classList.add('current');
     else _cues[i].classList.add('near-' + d);
   }
-  // 加粗换了字宽，按新句的列重新铺扫过层（BUG-3366）。
-  _lyLayoutSweepColumns(_cues[index]);
+  // 新句的扫过层等同一次同步里紧跟着的 __lyricsSetProgress 按真实进度搭；只换句
+  // 不下发进度时整行点亮（.ly-sw-on 未挂）。
   // 焦点 caret 激活时，播放推进只换高亮，不把屏幕从用户正读的行拽走；跟随关闭(scroll===false)时也不滚。
   if (scroll !== false && !window.__lyricsCaretActive) scrollToCenter(_cues[index]);
 }
@@ -1075,114 +1057,230 @@ window.__lyricsScrollToCue = function(index) {
 })();
 
 // ── 逐字扫过（Niratan line progress）──
-// Dart 在 cue 推进 / 播放态翻转 / seek 时下发「当前行已播比例 + 每秒推进量」，
-// JS 只用一次 CSS transition 把 --ly-p 从该比例线性推到 100%，不逐帧回传。
+// Dart 在 cue 推进 / 播放态翻转 / seek / 倍速变化时下发「当前行已播比例 + 每秒推进量」，
+// JS 量一次当前句的视觉行（竖排是列），给每行搭一个「当前色副本 + 平移窗口」，用
+// Web Animations 的 transform 关键帧把窗口从该比例线性推到 100%，不逐帧回传。transform
+// 动画在 Blink 与 WebKit 都由合成器线程插值：播放中当前行不重绘、主线程不出帧。
+// 几何只在换句 / 起播 / seek / 重新适配字号 / 字体加载完成时量（_lySweepRelayout）。
 function _lyTx(el) { return el ? el.querySelector('.tx') : null; }
+// 影子树里的副本吃不到文档样式表，把影响 .tx 排版的规则（全局重置、振假名）照抄一份。
+var _LY_SW_CSS = '* { margin: 0; padding: 0; box-sizing: border-box; }' +
+    '.w { position: absolute; overflow: visible; }' +
+    '.i { position: absolute; }' +
+    '.tx { color: var(--ly-current); }' +
+    'ruby { ruby-align: center; }' +
+    'rt { font-size: 0.5em; line-height: 1; }';
+// 当前一次扫过的请求（换句前一直有效，用来在重排时按「此刻进度」重搭）。
+var _lySw = null;
+function _lySweepClearCue(el) {
+  if (!el) return;
+  el.classList.remove('ly-sw-on');
+  for (var i = el.children.length - 1; i >= 0; i--) {
+    var c = el.children[i];
+    if (!c.classList.contains('ly-sw')) continue;
+    var anims = c._lyAnims || [];
+    for (var j = 0; j < anims.length; j++) anims[j].cancel();
+    el.removeChild(c);
+  }
+}
 function _lySweepReset(el) {
+  _lySweepClearCue(el);
+  if (_lySw && _lySw.cue === el) _lySw = null;
+}
+// 只在扫过真会显示时搭：隐藏着的 transform 动画没有合成层，会退回主线程逐帧跑。
+function _lySweepWanted(el) {
+  var b = document.body.classList;
+  return _lyPlaying && b.contains('ly-sweep') && !b.contains('ly-paused') &&
+      el.classList.contains('current') && !el.classList.contains('ly-nosweep');
+}
+// 纯函数：当前句局部坐标下的字形矩形 {l,r,t,b} → 按阅读顺序排好的视觉行。
+// u = 行内方向（横排 x / 竖排 y），v = 交叉方向；b0/b1 = 该行窗口在交叉方向的条带
+// （相邻两行取中线分界，首尾各外扩半行，盖住字形墨迹）。
+function __lyricsSweepLines(rects, vertical) {
+  var lines = [];
+  for (var i = 0; i < rects.length; i++) {
+    var r = rects[i];
+    var c = vertical ? {u0: r.t, u1: r.b, v0: r.l, v1: r.r}
+                     : {u0: r.l, u1: r.r, v0: r.t, v1: r.b};
+    if (!(c.u1 > c.u0 && c.v1 > c.v0)) continue;
+    var hit = null;
+    for (var j = 0; j < lines.length; j++) {
+      var ov = Math.min(lines[j].v1, c.v1) - Math.max(lines[j].v0, c.v0);
+      if (ov > 0.5 * Math.min(lines[j].v1 - lines[j].v0, c.v1 - c.v0)) { hit = lines[j]; break; }
+    }
+    if (hit) {
+      hit.u0 = Math.min(hit.u0, c.u0); hit.u1 = Math.max(hit.u1, c.u1);
+      hit.v0 = Math.min(hit.v0, c.v0); hit.v1 = Math.max(hit.v1, c.v1);
+    } else {
+      lines.push(c);
+    }
+  }
+  // 横排自上而下；竖排 vertical-rl 右边的列先读。
+  lines.sort(function(a, b) { return vertical ? b.v1 - a.v1 : a.v0 - b.v0; });
+  for (var n = 0; n < lines.length; n++) {
+    var ln = lines[n], ext = (ln.v1 - ln.v0) / 2;
+    var prev = lines[n - 1], next = lines[n + 1];
+    if (vertical) {
+      ln.b1 = prev ? (ln.v1 + prev.v0) / 2 : ln.v1 + ext;
+      ln.b0 = next ? (ln.v0 + next.v1) / 2 : ln.v0 - ext;
+    } else {
+      ln.b0 = prev ? (prev.v1 + ln.v0) / 2 : ln.v0 - ext;
+      ln.b1 = next ? (ln.v1 + next.v0) / 2 : ln.v1 + ext;
+    }
+  }
+  return lines;
+}
+// 纯函数：整句进度 p（0–1）下，某行窗口沿行方向的位移（px）。该行占全句累计长度
+// [start, end)，长 len px，全句 total px，软边半宽 half px（= 全句 4%，与旧渐变
+// calc(p ± 4%) 同宽）。窗口静止位置让软边中心落在行尾；位移 = (p − end)·total，
+// 钳在「软边整个落到行首之前」与「软边整个越过行尾」之间——相邻行的软边因此跨行
+// 接续，与旧的 slice 渐变一致。
+function __lyricsSweepOffset(p, end, len, total, half) {
+  return Math.max(-(len + half), Math.min(half, (p - end) * total));
+}
+// 纯函数：从进度 p0 线性推到 1 的关键帧（offset 0–1 + 位移），拐点在该行软边进入
+// 行首与离开行尾的两个进度上。
+function __lyricsSweepFrames(p0, start, end, len, total, half) {
+  var pts = [p0, start - half / total, end + half / total, 1];
+  pts.sort(function(a, b) { return a - b; });
+  var out = [];
+  for (var i = 0; i < pts.length; i++) {
+    var p = pts[i];
+    if (p < p0 || p > 1) continue;
+    var off = p0 >= 1 ? 1 : (p - p0) / (1 - p0);
+    if (out.length && Math.abs(out[out.length - 1].offset - off) < 1e-6) continue;
+    out.push({offset: off, shift: __lyricsSweepOffset(p, end, len, total, half)});
+  }
+  return out;
+}
+// 当前句此刻的 scale（transform 过渡中途也准）：客户区坐标 ÷ 它 = 布局像素。
+// 计算值是 matrix(a, b, c, d, e, f)；只有等比缩放，取 a。
+function _lyCueScale(el) {
+  var t = getComputedStyle(el).transform || '';
+  var open = t.indexOf('(');
+  var a = open < 0 ? 1 : parseFloat(t.slice(open + 1));
+  return (isFinite(a) && a > 0) ? a : 1;
+}
+function _lySweepBuild(el, p, rate) {
+  _lySweepClearCue(el);
+  _lySw = {cue: el, p0: p, rate: rate, t0: performance.now()};
+  if (!_lySweepWanted(el) || typeof el.animate !== 'function' || !el.attachShadow) return;
   var tx = _lyTx(el);
   if (!tx) return;
-  tx.style.transition = 'none';
-  tx.style.removeProperty('--ly-p');
-}
-// BUG-3366：WebKit 竖排回退里 .tx 是 inline-block（BUG-3346），整块一条渐变会让
-// 各列同步扫。这里把当前句按列量出来，给每列铺一层渐变：第 i 列占全句累计长度
-// [s, s+len)，列内位置 = (p - s) / len，软边与整块渐变一样是全长的 ±4%。几何
-// 只在换句 / 起播 / 重新适配字号时量一次，进度推进仍只靠 --ly-p 的 transition。
-function _lyColumnSweepActive() {
-  return __lyricsVertical && !!(window.CSS && CSS.supports) &&
-      !CSS.supports('box-decoration-break', 'slice');
-}
-function _lyLayoutSweepColumns(el) {
-  if (!_lyColumnSweepActive()) return;
-  var tx = _lyTx(el);
-  if (!tx) return;
-  // 只在回退规则生效（inline-block）时量：暂停 / 查词时 .tx 是行内盒，坐标系不同。
-  if (getComputedStyle(tx).display !== 'inline-block') return;
-  var box = tx.getBoundingClientRect();
-  if (!(box.width > 0) || !(tx.offsetWidth > 0)) return;
-  // 当前句带 transform: scale，客户区坐标要换回 .tx 自己的布局像素。
-  var k = tx.offsetWidth / box.width;
-  var cols = [];
+  var box = el.getBoundingClientRect();
+  var k = _lyCueScale(el);
+  if (!(box.width > 0 && box.height > 0)) return;
+  var vertical = __lyricsVertical;
+  var rects = [];
   var walker = document.createTreeWalker(tx, NodeFilter.SHOW_TEXT, null);
   var range = document.createRange();
   var node;
   while ((node = walker.nextNode())) {
-    // 注音（rt / rp）贴在基字侧边，自己另算颜色，不参与列划分。
+    // 注音（rt / rp）贴在基字侧边，两层都是当前色，不参与行划分。
     if (node.parentElement && node.parentElement.closest('rt, rp')) continue;
     range.selectNodeContents(node);
-    var rects = range.getClientRects();
-    for (var i = 0; i < rects.length; i++) {
-      var r = rects[i];
-      if (!(r.width > 0 && r.height > 0)) continue;
-      var c = {
-        l: (r.left - box.left) * k, r: (r.right - box.left) * k,
-        t: (r.top - box.top) * k, b: (r.bottom - box.top) * k
-      };
-      var hit = null;
-      for (var j = 0; j < cols.length; j++) {
-        var ov = Math.min(cols[j].r, c.r) - Math.max(cols[j].l, c.l);
-        if (ov > 0.5 * Math.min(cols[j].r - cols[j].l, c.r - c.l)) { hit = cols[j]; break; }
-      }
-      if (hit) {
-        hit.l = Math.min(hit.l, c.l); hit.r = Math.max(hit.r, c.r);
-        hit.t = Math.min(hit.t, c.t); hit.b = Math.max(hit.b, c.b);
-      } else {
-        cols.push(c);
-      }
+    var rs = range.getClientRects();
+    for (var i = 0; i < rs.length; i++) {
+      rects.push({l: (rs[i].left - box.left) / k, r: (rs[i].right - box.left) / k,
+                  t: (rs[i].top - box.top) / k, b: (rs[i].bottom - box.top) / k});
     }
   }
-  if (!cols.length) return;
-  // vertical-rl：右边的列先读。
-  cols.sort(function(a, b) { return b.r - a.r; });
+  var lines = __lyricsSweepLines(rects, vertical);
   var total = 0;
-  for (var m = 0; m < cols.length; m++) total += cols[m].b - cols[m].t;
+  for (var n = 0; n < lines.length; n++) total += lines[n].u1 - lines[n].u0;
   if (!(total > 0)) return;
-  var bg = [], pos = [], size = [], acc = 0;
-  for (var n = 0; n < cols.length; n++) {
-    var col = cols[n];
-    var len = col.b - col.t;
-    var s = acc / total * 100;
-    var scale = (total / len).toFixed(4);
+  var half = total * 0.04, margin = 6;
+  var cs = getComputedStyle(el);
+  var host = document.createElement('span');
+  host.className = 'ly-sw';
+  host.setAttribute('aria-hidden', 'true');
+  var root = host.attachShadow({mode: 'open'});
+  var style = document.createElement('style');
+  style.textContent = _LY_SW_CSS;
+  root.appendChild(style);
+  el.appendChild(host);
+  // 副本的排版盒与当前句的盒逐像素一致：同宽高（布局像素，不取整）、同内边距。
+  var boxCss = 'width:' + (box.width / k) + 'px;height:' + (box.height / k) + 'px;' +
+      'padding:' + cs.paddingTop + ' ' + cs.paddingRight + ' ' + cs.paddingBottom +
+      ' ' + cs.paddingLeft + ';';
+  var fn = vertical ? 'translateY(' : 'translateX(';
+  var dur = (rate > 0 && p < 1) ? (1 - p) / rate * 1000 : 0;
+  var anims = [];
+  var acc = 0;
+  for (var m = 0; m < lines.length; m++) {
+    var ln = lines[m], len = ln.u1 - ln.u0;
+    var start = acc / total, end = (acc + len) / total;
     acc += len;
-    bg.push('linear-gradient(to bottom, var(--ly-current) calc((var(--ly-p) - ' +
-        (s + 4).toFixed(3) + '%) * ' + scale + '), var(--ly-upcoming) calc((var(--ly-p) - ' +
-        (s - 4).toFixed(3) + '%) * ' + scale + '))');
-    // 列宽只量到字形框，两侧各放 2px 盖住字形墨迹。
-    pos.push((col.l - 2).toFixed(1) + 'px ' + col.t.toFixed(1) + 'px');
-    size.push((col.r - col.l + 4).toFixed(1) + 'px ' + len.toFixed(1) + 'px');
+    var a0 = ln.u0 - half - margin, a1 = ln.u1 + half;
+    var L = vertical ? ln.b0 : a0, T = vertical ? a0 : ln.b0;
+    var W = vertical ? ln.b1 - ln.b0 : a1 - a0, H = vertical ? a1 - a0 : ln.b1 - ln.b0;
+    var mask = 'linear-gradient(to ' + (vertical ? 'bottom' : 'right') +
+        ', #000 calc(100% - ' + (2 * half) + 'px), transparent)';
+    var win = document.createElement('div');
+    win.className = 'w';
+    win.style.cssText = 'left:' + L + 'px;top:' + T + 'px;width:' + W + 'px;height:' + H + 'px;' +
+        '-webkit-mask-image:' + mask + ';mask-image:' + mask + ';';
+    var inner = document.createElement('div');
+    inner.className = 'i';
+    inner.style.cssText = 'left:' + (-L) + 'px;top:' + (-T) + 'px;' + boxCss;
+    inner.appendChild(tx.cloneNode(true));
+    win.appendChild(inner);
+    root.appendChild(win);
+    var frames = __lyricsSweepFrames(p, start, end, len, total, half);
+    if (dur > 0 && frames.length > 1) {
+      var fw = [], fi = [];
+      for (var f = 0; f < frames.length; f++) {
+        fw.push({offset: frames[f].offset, transform: fn + frames[f].shift + 'px)'});
+        fi.push({offset: frames[f].offset, transform: fn + (-frames[f].shift) + 'px)'});
+      }
+      var opts = {duration: dur, fill: 'forwards', easing: 'linear'};
+      anims.push(win.animate(fw, opts), inner.animate(fi, opts));
+    } else {
+      var s0 = __lyricsSweepOffset(p, end, len, total, half);
+      win.style.transform = fn + s0 + 'px)';
+      inner.style.transform = fn + (-s0) + 'px)';
+    }
   }
-  // 兜底层：没量到的字（不该有）按未读色画出来，绝不变透明。
-  bg.push('linear-gradient(var(--ly-upcoming), var(--ly-upcoming))');
-  pos.push('0 0');
-  size.push('100% 100%');
-  tx.style.setProperty('--ly-cols-bg', bg.join(', '));
-  tx.style.setProperty('--ly-cols-pos', pos.join(', '));
-  tx.style.setProperty('--ly-cols-size', size.join(', '));
+  host._lyAnims = anims;
+  el.classList.add('ly-sw-on');
 }
-window.__lyricsLayoutSweepColumns = function() {
-  if (_currentIdx >= 0 && _currentIdx < _cues.length) _lyLayoutSweepColumns(_cues[_currentIdx]);
-};
+// 排版变了（字号适配 / 主题 / 字体加载完成）：按此刻的进度重搭，进度不跳。
+function _lySweepProgressNow(s) {
+  if (!_lyPlaying) return s.p0;
+  return Math.min(1, s.p0 + Math.max(0, performance.now() - s.t0) / 1000 * s.rate);
+}
+function _lySweepRelayout() {
+  var s = _lySw;
+  if (!s || !s.cue) return;
+  _lySweepBuild(s.cue, _lySweepProgressNow(s), s.rate);
+}
+window.__lyricsRelayoutSweep = _lySweepRelayout;
+if (document.fonts && document.fonts.addEventListener) {
+  document.fonts.addEventListener('loadingdone', function() { _lySweepRelayout(); });
+}
 window.__lyricsSetProgress = function(index, fraction, ratePerSec) {
   if (index !== _currentIdx || !_lyPlaying) return;
-  var tx = _lyTx(_cues[index]);
-  if (!tx) return;
+  var el = _cues[index];
+  if (!el) return;
   var f = Math.max(0, Math.min(1, fraction || 0));
-  _lyLayoutSweepColumns(_cues[index]);
-  tx.style.transition = 'none';
-  tx.style.setProperty('--ly-p', (f * 100).toFixed(2) + '%');
-  void tx.offsetWidth;
-  if (ratePerSec > 0 && f < 1) {
-    var ms = Math.max(0, (1 - f) / ratePerSec * 1000);
-    tx.style.transition = '--ly-p ' + ms.toFixed(0) + 'ms linear';
-    tx.style.setProperty('--ly-p', '100%');
-  }
+  _lySweepBuild(el, f, ratePerSec > 0 ? ratePerSec : 0);
 };
 // 播放态：暂停时当前行整行点亮（不扫）、并停掉自动回到当前行的计时；继续播放时
 // 若用户正停在别处浏览，重新起 4 秒回中计时。
 window.__lyricsSetPlaying = function(playing) {
+  var was = _lyPlaying;
+  // 暂停：把进度冻在此刻并拆掉扫过层（隐藏着的动画会退回主线程空转）；继续：从冻结
+  // 处接着推（随后的 __lyricsSetProgress 会再按真实播放位置校准一次）。
+  if (was && !playing && _lySw) _lySw.p0 = _lySweepProgressNow(_lySw);
   _lyPlaying = !!playing;
   document.body.classList.toggle('ly-paused', !_lyPlaying);
-  if (_lyPlaying) window.__lyricsLayoutSweepColumns();
+  // 播放态没变（Dart 每次同步都会先下发一次）：不动扫过层，进度由紧随的
+  // __lyricsSetProgress 校准。
+  if (_lySw && was !== _lyPlaying) {
+    _lySw.t0 = performance.now();
+    if (_lyPlaying) _lySweepRelayout();
+    else _lySweepClearCue(_lySw.cue);
+  }
   if (_lyPlaying) _lyScheduleResume();
   else clearTimeout(_lyResumeTimer);
 };
@@ -1350,6 +1448,7 @@ _lc.addEventListener('mousedown', function(e) {
       // 查词高亮落在这一行：停掉逐字扫过（扫过用透明字 + 背景裁切，会把查词底块
       // 里的字一起「挖空」），换行后自动恢复。
       cueEl.classList.add('ly-nosweep');
+      _lySweepClearCue(cueEl);
       window.__lyricsCueContext = {
         textFragmentId: cueEl.getAttribute('data-text-fragment-id'),
         cueIndex: parseInt(cueEl.getAttribute('data-cue-index'), 10),
