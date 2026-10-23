@@ -1,4 +1,4 @@
-## BUG-3662 · mokuro-legacy-html-import-dropped-ocr
+## BUG-3665 · mokuro-legacy-html-import-dropped-ocr
 - **报告**：2026-10-23（用户：应用内反馈 NdpewUzW1C，Android 3.0.0 / Galaxy Tab S7 FE，从 jidoujisho 迁来；截图里阅读器在跑 `OCR 6/853 · CPU`）
 - **真实性**：✅ 真 bug。mokuro 0.1.x 的产物是 `<卷名>.html` + `<卷名>/` 页图 + `_ocr/<卷名>/<页>.json`（没有 `.mokuro`，jidoujisho 的 mokuro 阅读器吃的就是这个 html），Fushi 只认 `.mokuro`：
   - 选装着它的文件夹：`classifyImportCarrier` 目录分支（`fushi/lib/src/media/import/import_carrier.dart` 的 `directoryMokuroFileCount`）数的 `mangaMokuroFilesIn`（`fushi/lib/src/media/manga/import/manga_folder_batch.dart:48`）只认 `.mokuro` → 计 0 → 落到 `directoryHasPageImages`（递归）→ `mangaFolder`，把整个目录（多卷时所有卷）压平成一本**没字**的纯页图漫画；
