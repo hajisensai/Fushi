@@ -217,6 +217,23 @@ class RemoteAudioBindingRepository {
             b.srtBookUid: b,
       };
 
+  /// 某台服务器上某个条目（播客再加单集）已经建好的绑定；没有为 null。书库标签页
+  /// 用它避免对同一本书重复导入。绑定表很小（每本流式书一行），直接扫。
+  Future<RemoteAudioBinding?> findForItem({
+    required String serverConfigId,
+    required String itemId,
+    String? episodeId,
+  }) async {
+    for (final RemoteAudioBinding binding in (await listAll()).values) {
+      if (binding.serverConfigId == serverConfigId &&
+          binding.itemId == itemId &&
+          binding.episodeId == episodeId) {
+        return binding;
+      }
+    }
+    return null;
+  }
+
   Future<void> save(RemoteAudioBinding binding) =>
       _db.upsertRemoteAudioBinding(binding.toCompanion());
 

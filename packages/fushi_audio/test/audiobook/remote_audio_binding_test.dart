@@ -141,6 +141,38 @@ void main() {
       expect((await repo.listAll()).keys, <String>['good']);
     });
 
+    test('findForItem：按（服务器、条目、单集）精确命中，别的组合不命中', () async {
+      await repo.save(_binding(uid: 'book'));
+      await repo.save(_binding(uid: 'episode', episodeId: 'ep_1'));
+      expect(
+        (await repo.findForItem(
+          serverConfigId: 'srv',
+          itemId: 'item_1',
+        ))?.srtBookUid,
+        'book',
+      );
+      expect(
+        (await repo.findForItem(
+          serverConfigId: 'srv',
+          itemId: 'item_1',
+          episodeId: 'ep_1',
+        ))?.srtBookUid,
+        'episode',
+      );
+      expect(
+        await repo.findForItem(serverConfigId: 'other', itemId: 'item_1'),
+        isNull,
+      );
+      expect(
+        await repo.findForItem(
+          serverConfigId: 'srv',
+          itemId: 'item_1',
+          episodeId: 'ep_2',
+        ),
+        isNull,
+      );
+    });
+
     test('delete 返回删掉的行数', () async {
       await repo.save(_binding());
       expect(await repo.delete('srtbook_1'), 1);

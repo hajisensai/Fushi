@@ -4,7 +4,10 @@ import 'package:fushi/pages.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
+import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart';
+import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
@@ -41,6 +44,15 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
     final bool online = isOnlineSourcesDomainAvailable(
       OnlineSourcesDomain.novel,
     );
+    // 用户自己的 Audiobookshelf 服务器：有已启用且已登录的才出标签页。它是用户自己的
+    // 服务器（同 Jellyfin / Plex），流式播放不属于 App Store 受限的「外部发现源」，
+    // 所以不过 externalDiscovery 门——iOS 上也能用；下载另受下载中心的门限制。
+    final List<AudiobookshelfServerConfig> absServers =
+        appModel.isPreferencesReady
+        ? audiobookshelfTabServers(
+            appModel.prefsRepo.discoveryAudiobookshelfServers,
+          )
+        : const <AudiobookshelfServerConfig>[];
     return MediaLibraryShell(
       focusIdPrefix: 'book-library-view',
       views: <MediaLibraryViewSpec>[
@@ -79,6 +91,19 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
                 onlineDomain: OnlineSourcesDomain.novel,
               ),
             ),
+          ),
+        if (absServers.isNotEmpty)
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.audiobookshelf,
+            // 主滚动视图自己把浮动工具区高度加成顶部内边距。
+            handlesChromeInset: true,
+            label: t.library_view_audiobookshelf,
+            builder: (BuildContext context, Widget navigation) =>
+                AudiobookshelfLibraryView(
+                  servers: absServers,
+                  apiFor: (AudiobookshelfServerConfig server) =>
+                      appModelNoUpdate.audiobookshelfApis.apiFor(server),
+                ),
           ),
         if (online)
           MediaLibraryViewSpec(
