@@ -15,6 +15,8 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show asrDownloadKeyFor, sharedModelDownloads;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
@@ -714,9 +716,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     int lastFileTotal = 0;
     _downloadSub =
         withGpuRuntimeDownload(
-          _service.downloadModel(
-            language: plan.language,
-            variant: plan.variant,
+          // 单飞（kZZmXQBv7E）：同一个包在设置页 / 视频字幕弹层 / 另一次弹层里已在
+          // 下时只挂上去，不另起写者；关弹层只摘监听，下载继续。
+          sharedModelDownloads.join(
+            asrDownloadKeyFor(plan.language, _service.audioProfile),
+            () => _service.downloadModel(
+              language: plan.language,
+              variant: plan.variant,
+            ),
           ),
           gpu,
           onGpuRuntimeError: (Object error) => FushiToast.show(
@@ -1052,20 +1059,20 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
 
   /// 这门语言当前能选哪些引擎（ONNX 包在前，系统语音在后）。
   List<AsrEngineOption> _engineOptions() => asrEngineOptions(
-        language: _language,
-        registry: asrModelRegistry,
-        systemSpeechAvailable: _systemSpeechAvailable,
-        systemSpeechLabel: t.audiobook_transcribe_engine_system,
-        profile: _profile,
-      );
+    language: _language,
+    registry: asrModelRegistry,
+    systemSpeechAvailable: _systemSpeechAvailable,
+    systemSpeechLabel: t.audiobook_transcribe_engine_system,
+    profile: _profile,
+  );
 
   /// 当前选中的引擎 id。
   String? _selectedEngineId() => selectedAsrEngineId(
-        language: _language,
-        catalog: widget.catalogGetter(),
-        options: _engineOptions(),
-        profile: _profile,
-      );
+    language: _language,
+    catalog: widget.catalogGetter(),
+    options: _engineOptions(),
+    profile: _profile,
+  );
 
   /// 按选中的引擎给出服务实例。ONNX 走注入进来的那份（生产是
   /// `createAsrTranscriptionService()`，测试是 fake）；系统语音走另一份实现。
@@ -1169,8 +1176,9 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (pack == null || !mounted) return;
     // withLocalPack 而不是 withCustomPack：id 由显示名派生，两个不同文件夹很容易
     // 撞上同一个 id，撞了要加后缀而不是把先前那份覆盖掉（连同指向它的选择）。
-    final ({AsrModelCatalog catalog, AsrModelPack pack}) added =
-        widget.catalogGetter().withLocalPack(pack);
+    final ({AsrModelCatalog catalog, AsrModelPack pack}) added = widget
+        .catalogGetter()
+        .withLocalPack(pack);
     await _updateCatalog(
       added.catalog.withChoice(_language, added.pack.id, profile: _profile),
     );
