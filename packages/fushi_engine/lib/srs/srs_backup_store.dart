@@ -19,6 +19,7 @@
 ///   清理旧备份后，没有任何清单引用的媒体随之删除。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -31,6 +32,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
+import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
 
@@ -551,9 +553,10 @@ class SrsBackupStore {
 
   /// 做一份备份。[profileName] 只用于显示。
   ///
-  /// 读快照的事务开着时，库上别的语句都要排在它后面（drift 单连接）：真实库三十万条复习
-  /// 日志要读二三十秒，复习页的查询全被挡住（BUG-3579）。[shouldStop] 每读完一页问一次，
-  /// 为 true 时抛 [SrsBackupCancelled]：事务回滚（只读，没有副作用）、暂存文件删掉。
+  /// 真实库三十万条复习日志要读二三十秒。库在文件上时在后台 isolate 的独立只读连接里读
+  /// （[SrsBackupSnapshotReader]），主连接上的复习查询与写入不排在它后面（BUG-3579 起先只是让路）。
+  /// [shouldStop] 每读完一页（后台读时约每 100 ms）问一次，为 true 时抛 [SrsBackupCancelled]：
+  /// 读事务回滚（只读，没有副作用）、暂存文件删掉。
   Future<SrsBackupInfo> create(
     SrsDbStore store, {
     required SrsBackupKind kind,
@@ -593,54 +596,52 @@ class SrsBackupStore {
       p.join(profileDir.path, '.$id.server_times.tmp'),
     );
     try {
-      // 指纹、事件、服务器时间、计数在同一个事务里读：中间插不进别的写入，四者是同一个快照。
+      // 指纹、事件、服务器时间、计数必须是同一个快照。
       late final String fingerprint;
-      int eventCount = 0;
-      late final ({int notes, int cards, int reviews}) counts;
-      await store.db.transaction(() async {
-        checkStop();
-        fingerprint = await store.changeFingerprint();
-        final IOSink ev = eventsTmp.openWrite();
+      late final ({int eventCount, SrsBackupCounts counts}) snap;
+      final String? dbPath = await store.databaseFilePath();
+      if (dbPath != null) {
+        // 库在文件上：写锁里取指纹并让后台独立只读连接拿到快照（这一刻没有进行中的 SRS 写入，
+        // 两者一致），锁一放开就把主连接还给复习页；读取全在后台 isolate，主连接不等它。
+        late final SrsBackupSnapshotReader reader;
+        await store.runExclusive(() async {
+          checkStop();
+          fingerprint = await store.changeFingerprint();
+          reader = await SrsBackupSnapshotReader.start(
+            dbPath: dbPath,
+            profileUid: profileUid,
+            eventsPath: eventsTmp.path,
+            serverTimesPath: serverTimesTmp.path,
+          );
+        });
+        final Timer poll = Timer.periodic(const Duration(milliseconds: 100), (
+          _,
+        ) {
+          if (shouldStop?.call() ?? false) reader.cancel();
+        });
         try {
-          await store.forEachCanonicalLinePage((List<String> lines) async {
-            checkStop();
-            final StringBuffer sb = StringBuffer();
-            for (final String l in lines) {
-              sb
-                ..write(l)
-                ..write('\n');
-            }
-            ev.add(utf8.encode(sb.toString()));
-            eventCount += lines.length;
-            await ev.flush();
-          });
+          snap = await reader.done;
+        } on SrsSnapshotCancelled {
+          throw const SrsBackupCancelled();
         } finally {
-          await ev.close();
+          poll.cancel();
         }
-        final IOSink st = serverTimesTmp.openWrite();
-        try {
-          st.write('{');
-          bool first = true;
-          await store.forEachServerTimePage((List<(String, int)> page) async {
-            checkStop();
-            final StringBuffer sb = StringBuffer();
-            for (final (String eventId, int s) in page) {
-              if (!first) sb.write(',');
-              first = false;
-              sb
-                ..write(jsonEncode(eventId))
-                ..write(':')
-                ..write(s);
-            }
-            st.write(sb.toString());
-            await st.flush();
-          });
-          st.write('}');
-        } finally {
-          await st.close();
-        }
-        counts = await store.backupCounts();
-      });
+      } else {
+        // 内存库（测试）开不了第二条连接：在主连接的事务里读，中间插不进别的写入。
+        await store.db.transaction(() async {
+          checkStop();
+          fingerprint = await store.changeFingerprint();
+          snap = await srsWriteSnapshotFiles(
+            store.backupSelect,
+            profileUid,
+            eventsPath: eventsTmp.path,
+            serverTimesPath: serverTimesTmp.path,
+            checkStop: checkStop,
+          );
+        });
+      }
+      final int eventCount = snap.eventCount;
+      final SrsBackupCounts counts = snap.counts;
       final List<SrsBackupMediaEntry> media = await _captureMedia();
       final SrsBackupManifest template = SrsBackupManifest(
         createdAt: createdAt,
