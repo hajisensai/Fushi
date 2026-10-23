@@ -321,13 +321,17 @@ const CHECK = String.raw`(async () => {
       if (cr && span(cr)[0] >= colStart - 1) hi = m; else lo = m + 1;
     }
     let from = -1;
-    for (let i = lo; i < Math.min(node.data.length - 1, lo + 8); i++) {
+    for (let i = lo; i < Math.min(node.data.length - 1, lo + 64); i++) {
       const cr = charRect(i);
       if (cr && span(cr)[0] >= colStart + 3 * em - 1 && span(cr)[1] <= colStart + colW) { from = i; break; }
     }
     ok(from >= 0, 'found a mid-line character on page ' + targetPage);
     if (from >= 0) {
-      const perLine = Math.floor(colW / em);
+      // Size the range by the measured glyph advance, not an assumed 1em: without a CJK font
+      // (Linux CI) 国 falls back to a narrower glyph, so 2 * floor(colW / em) characters
+      // stay on one line and the "wraps" precondition never holds.
+      const adv = Math.max(1, span(charRect(from))[1] - span(charRect(from))[0]);
+      const perLine = Math.ceil(colW / adv);
       const wr = document.createRange();
       wr.setStart(node, from);
       wr.setEnd(node, Math.min(node.data.length, from + 2 * perLine));
