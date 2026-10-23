@@ -15,6 +15,8 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show asrDownloadKeyFor, sharedModelDownloads;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
@@ -776,9 +778,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     int lastFileTotal = 0;
     _downloadSub =
         withGpuRuntimeDownload(
-          _service.downloadModel(
-            language: plan.language,
-            variant: plan.variant,
+          // 单飞（kZZmXQBv7E）：同一个包在设置页 / 视频字幕弹层 / 另一次弹层里已在
+          // 下时只挂上去，不另起写者；关弹层只摘监听，下载继续。
+          sharedModelDownloads.join(
+            asrDownloadKeyFor(plan.language, _service.audioProfile),
+            () => _service.downloadModel(
+              language: plan.language,
+              variant: plan.variant,
+            ),
           ),
           gpu,
           onGpuRuntimeError: (Object error) => FushiToast.show(

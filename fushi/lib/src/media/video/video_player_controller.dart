@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
@@ -3059,6 +3060,12 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
+    // （BUG-3665）。其它平台 / 不在任何来源下的文件 no-op。
+    if (videoFile != null) {
+      await SourceFolderAccess.instance.ensureForPath(videoFile.path);
+      if (loadToken != _loadToken) return;
+    }
     _resetDiscMenu();
     if (openBlurayMenu) {
       final String? root = videoFile == null
