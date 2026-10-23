@@ -33,17 +33,20 @@ class SrsMediaSyncReport {
   final Set<String> missing = <String>{};
 }
 
-/// 本 profile 全部笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
+/// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
+///
+/// 字段值按页从修改记录里读（[SrsDbStore.forEachNoteFieldValuePage]，生效值口径），不物化笔记。
+/// 不按 [SrsDbStore.changeFingerprint] 缓存：存量样式去重（compactStoredStyles）改写字段里的
+/// 样式引用而不动指纹，缓存会漏掉新的共享样式文件。
 Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
   final Set<String> out = <String>{};
-  for (final SrsNoteView n in await store.allNoteViews()) {
-    if (n.deletedAt != null) continue;
-    for (final String v in n.fields.values) {
+  await store.forEachNoteFieldValuePage((List<String> values) async {
+    for (final String v in values) {
       out.addAll(srsMediaRefsIn(v));
       // 释义样式去重的共享样式文件（`_fushi_style_<sha1>.css`，见 srs_style_store.dart）。
       out.addAll(srsStyleRefsIn(v));
     }
-  }
+  }, currentOnly: true);
   for (final SrsNoteTypeView t in await store.noteTypes()) {
     for (final SrsTemplateDef tpl in t.templates) {
       out.addAll(srsMediaRefsIn(tpl.front, includeStatic: true));
@@ -57,19 +60,16 @@ Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
 /// 回收媒体文件前的「存活引用」全集：比 [srsReferencedMedia] 更保守——
 /// 已删除但还没清除的笔记（可能被恢复）、字段的并发候选值（可能被裁决选中）、
 /// 已删除的笔记类型的模板 / CSS 都算引用。只有物理清除了的笔记（身份记录已删）不算。
+///
+/// 字段值按页读（[SrsDbStore.forEachNoteFieldValuePage] 的保守口径），不物化笔记。
 Future<Set<String>> srsAllMediaReferences(SrsDbStore store) async {
   final Set<String> out = <String>{};
-  for (final SrsNoteView n in await store.allNoteViews()) {
-    for (final SrsRegister r in n.edits.registers) {
-      if (!r.key.startsWith('f/')) continue;
-      for (final SrsFieldEdit e in r.live) {
-        final Object? v = e.value;
-        if (v is! String) continue;
-        out.addAll(srsMediaRefsIn(v));
-        out.addAll(srsStyleRefsIn(v));
-      }
+  await store.forEachNoteFieldValuePage((List<String> values) async {
+    for (final String v in values) {
+      out.addAll(srsMediaRefsIn(v));
+      out.addAll(srsStyleRefsIn(v));
     }
-  }
+  }, currentOnly: false);
   final Map<String, SrsNoteTypeView?> types = await store.noteTypesById(
     await store.entityIds(SrsEntityKind.noteType),
   );

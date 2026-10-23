@@ -8580,6 +8580,40 @@ class AppModel with ChangeNotifier {
     // 或 stop 落在已关闭连接上抛「connection was closed」。幂等，可与
     // stopFushiApiServer 重复调。
     await _browserVideoStudyBridge?.stopAll();
+    // 由 Riverpod 侧子系统登记的写手（SRS 同步）：AppModel 不持有它们，只在这里等。
+    for (final Future<void> Function() quiesce in List<Future<void> Function()>.of(
+      _databaseCloseQuiescers,
+    )) {
+      try {
+        await quiesce();
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'AppModel.quiesceBackgroundDatabaseWriters',
+          e,
+          stack,
+        );
+      }
+    }
+  }
+
+  /// 关库前要等的后台写手（不归 AppModel 构造的子系统，如 SRS 同步调度器）。
+  ///
+  /// [closeDatabase] 先把 [isInitialised] 置 false 再逐个等：登记方据此不开新一轮，
+  /// 等在跑的一轮收尾，连接才关。否则半截同步打在已关闭的连接上（反馈 OMWOurRQKb 日志
+  /// `SrsDbStore._loadLocal`「connection was closed」）。
+  final List<Future<void> Function()> _databaseCloseQuiescers =
+      <Future<void> Function()>[];
+
+  /// 登记一个关库前要等的写手（幂等按身份）。
+  void addDatabaseCloseQuiescer(Future<void> Function() quiesce) {
+    if (!_databaseCloseQuiescers.contains(quiesce)) {
+      _databaseCloseQuiescers.add(quiesce);
+    }
+  }
+
+  /// 撤销 [addDatabaseCloseQuiescer] 的登记。
+  void removeDatabaseCloseQuiescer(Future<void> Function() quiesce) {
+    _databaseCloseQuiescers.remove(quiesce);
   }
 
   Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {

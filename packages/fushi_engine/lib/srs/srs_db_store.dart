@@ -373,6 +373,8 @@ class SrsDbStore implements SrsSyncReplica {
   /// 可重入：独占区里再调别的写方法直接执行（按 Zone 认）。在外面先开了数据库事务、再在事务里调
   /// 写方法的调用方（按时间点恢复）必须先进独占区再开事务，否则与排队等锁的写入互相等待。
   Future<T> runExclusive<T>(Future<T> Function() body) async {
+    final StateError? unusable = _unusable;
+    if (unusable != null) throw unusable;
     if (identical(Zone.current[_writeZoneKey], this)) return body();
     final Future<void>? prev = _writeTail;
     final Completer<void> mine = Completer<void>();
@@ -4402,21 +4404,40 @@ class SrsDbStore implements SrsSyncReplica {
   /// 发件箱里的事件，按入箱顺序。事件正文按 ID 分块从四张事件表各一次读回（以前每条事件最多
   /// 查四次，同步一次几万次往返，BUG-3543）。本机未发布的修改记录可能已被（本机更晚的）修改支配
   /// 而丢弃：它在本机已不存在，后一条记录的 ctx 覆盖它，无需再发——跳过。
+  ///
+  /// [limit]：按发件箱序号键集分页，凑够这么多条还在的事件为止（冻结逐批取，不把几万条一次读进内存）。
   @override
-  Future<List<SrsEvent>> unpublishedEvents() async {
-    final List<SrsEventLocalRow> rows =
-        await (db.select(db.srsEventLocal)
-              ..where(
-                (t) =>
-                    t.profileUid.equals(profileUid) & t.outboxSeq.isNotNull(),
-              )
-              ..orderBy(<OrderClauseGenerator<$SrsEventLocalTable>>[
-                (t) => OrderingTerm.asc(t.outboxSeq),
-              ]))
-            .get();
-    final List<String> ids = <String>[
-      for (final SrsEventLocalRow r in rows) r.eventId,
-    ];
+  Future<List<SrsEvent>> unpublishedEvents({int? limit}) async {
+    final List<SrsEvent> out = <SrsEvent>[];
+    int after = -1 << 62;
+    while (true) {
+      final int? want = limit == null ? null : limit - out.length;
+      final SimpleSelectStatement<$SrsEventLocalTable, SrsEventLocalRow> q =
+          db.select(db.srsEventLocal)
+            ..where(
+              (t) =>
+                  t.profileUid.equals(profileUid) &
+                  t.outboxSeq.isBiggerThanValue(after),
+            )
+            ..orderBy(<OrderClauseGenerator<$SrsEventLocalTable>>[
+              (t) => OrderingTerm.asc(t.outboxSeq),
+            ]);
+      if (want != null) q.limit(want);
+      final List<SrsEventLocalRow> rows = await q.get();
+      out.addAll(
+        await _eventsByIds(<String>[
+          for (final SrsEventLocalRow r in rows) r.eventId,
+        ]),
+      );
+      if (want == null || rows.length < want || out.length >= limit!) {
+        return out;
+      }
+      after = rows.last.outboxSeq!;
+    }
+  }
+
+  /// [ids] 对应的事件（按给定顺序；库里已不存在的跳过）。
+  Future<List<SrsEvent>> _eventsByIds(List<String> ids) async {
     final Map<String, SrsEvent> found = <String, SrsEvent>{};
     for (final List<String> chunk in _chunks(ids)) {
       // 与逐条查找同一优先级：身份记录 → 修改记录 → 日志 → 不认识的事件。
@@ -4657,17 +4678,32 @@ class SrsDbStore implements SrsSyncReplica {
   /// 序号 / 已并进因果上下文的 dot、推进过的时钟与发件箱序号、攒下的影响面都要丢掉，否则
   /// applied 里留着不存在的 dot，之后真正同步来的同 dot 记录会被误判「已看见」而丢弃（与
   /// [reloadLocal] 同一理由）。调用方已在独占区里。
+  ///
+  /// 抛出的永远是事务本身的错误。重读也失败（典型是连接已经关了：app 退出时同步还在跑）时，
+  /// 内存状态已无从与库对齐：副本标为作废（[_unusable]），之后的写入一律明确失败，不在过期的
+  /// 因果上下文 / 序号上继续写；也不拿重读的错误顶替原错误——以前日志里只剩 `_loadLocal` 上的
+  /// 「connection was closed」，看不出是哪一步写失败。
   Future<void> _transactionOrReload(Future<void> Function() body) async {
     try {
       await db.transaction(body);
-    } catch (_) {
+    } catch (error, stack) {
       _dirtyNotes.clear();
       _dirtyCards.clear();
       _dirtyNoteTypes.clear();
-      await _loadLocal();
-      rethrow;
+      try {
+        await _loadLocal();
+      } on Object catch (reloadError) {
+        _unusable = StateError(
+          'SRS store is unusable: reloading local state after a failed '
+          'write failed ($reloadError); original error: $error',
+        );
+      }
+      Error.throwWithStackTrace(error, stack);
     }
   }
+
+  /// 写失败后重读本机状态也失败时置上（见 [_transactionOrReload]）；之后进独占区的写入都抛它。
+  StateError? _unusable;
 
   @override
   Future<List<SrsEvent>> exportAll() async {
@@ -4708,6 +4744,38 @@ class SrsDbStore implements SrsSyncReplica {
     }
     return out;
   }
+
+  /// 全部事件的 ID，与 [exportAll] 同序（身份记录 → 修改记录 → 日志 → 不认识的事件，表内按 rowid）。
+  /// 全量重新发布只要 ID：只读 id 列，不把正文读回来解析。
+  @override
+  Future<List<String>> exportAllIds() async {
+    final List<String> out = <String>[];
+    for (final String table in const <String>[
+      'srs_entities',
+      'srs_field_edits',
+      'srs_review_logs',
+      'srs_unknown_events',
+    ]) {
+      await _pageRows(table, 'id', 20000, (List<QueryRow> rows) async {
+        for (final QueryRow r in rows) {
+          out.add(r.read<String>('id'));
+        }
+      });
+    }
+    return out;
+  }
+
+  /// 写快照用的分页导出（[SrsSyncReplica.exportSnapshotPages]）：事件规范行与服务器时间在同一个
+  /// 事务里按页读（中间插不进别的写入，两者是同一份状态），与备份同一套分页设施。
+  @override
+  Future<void> exportSnapshotPages({
+    required Future<void> Function(List<String> canonicalLines) onEvents,
+    required Future<void> Function(List<(String, int)> serverTimes)
+    onServerTimes,
+  }) => db.transaction(() async {
+    await forEachCanonicalLinePage(onEvents);
+    await forEachServerTimePage(onServerTimes);
+  });
 
   /// 全部事件的规范 JSON 行（与 `SrsEvent.canonical()` 逐字节相同；按表、表内按 rowid 排）。
   /// 一次全进内存，只给测试 / 小规模调用；备份走分页的 [forEachCanonicalLinePage]。
@@ -4862,9 +4930,18 @@ class SrsDbStore implements SrsSyncReplica {
         : _incarnation + 1;
     _sync = SrsSyncLocalState(writerId: '$deviceId#$_incarnation');
     _writer = SrsEditWriter(writerId: _sync.writerId);
-    for (final SrsEvent e in await exportAll()) {
-      if (e is SrsEditEvent) _writer.apply(e.edit);
-    }
+    // 因果上下文只由修改记录决定：按页读修改记录，不把整库事件一次物化。
+    await _pageRows('srs_field_edits', 'json', 2000, (
+      List<QueryRow> rows,
+    ) async {
+      for (final QueryRow r in rows) {
+        _writer.apply(
+          SrsFieldEdit.fromJson(
+            (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
+          ),
+        );
+      }
+    });
     _clock = HlcClock(
       _sync.writerId,
       last: _rehome(_clock.last, _sync.writerId),
@@ -4878,7 +4955,7 @@ class SrsDbStore implements SrsSyncReplica {
     await (db.delete(
       db.srsSentBatches,
     )..where((t) => t.profileUid.equals(profileUid))).go();
-    await requeue(<String>[for (final SrsEvent e in await exportAll()) e.id]);
+    await requeue(await exportAllIds());
     await rebuildCaches();
   }
 
@@ -4921,6 +4998,111 @@ class SrsDbStore implements SrsSyncReplica {
           ),
         ),
     ];
+  }
+
+  /// 笔记字段（`f/` 键）的值，按页交出（媒体引用扫描用）：直接按 rowid 分页读修改记录，
+  /// 不物化笔记——以前每轮同步后都经 [allNoteViews] 把整库笔记连同每条修改记录、整张服务器时间表
+  /// 一次读进调用方 isolate（大库上单段阻塞数百毫秒、每轮都来一次，反馈 OMWOurRQKb）。
+  ///
+  /// 只看有身份记录的笔记（与 [allNoteViews] 同一范围）。被支配的修改记录落库时就删了，一个字段键上
+  /// 留下的每一条都是生效候选（[SrsRegister.live]）。
+  ///
+  /// - [currentOnly] 为假（回收媒体前的保守口径）：已删未清的笔记也算，每个字段的全部候选值都交出；
+  /// - 为真（同步口径，与 [allNoteViews] 物化后 `deletedAt == null` 的笔记的 `fields` 同值）：跳过已删
+  ///   笔记（删除键上有任一候选值是时刻，见 [srsEffectiveDeletedAt]），每个字段只交生效值——只有一条
+  ///   候选的直接取它，有并发候选的（少数）按 [srsResolveRegister] 裁决后取胜者。
+  Future<void> forEachNoteFieldValuePage(
+    Future<void> Function(List<String> values) onPage, {
+    required bool currentOnly,
+    int pageSize = 1000,
+  }) async {
+    final String noteKind = SrsEntityKind.note.wire;
+    final String scope =
+        "entity_kind = '$noteKind' AND EXISTS (SELECT 1 FROM srs_entities n "
+        "WHERE n.id = srs_field_edits.entity_id AND n.kind = '$noteKind')";
+    final Set<String> deleted = <String>{};
+    final Set<String> contested = <String>{};
+    String reg(String noteId, String key) => '$noteId\u0000$key';
+    if (currentOnly) {
+      await _pageRows('srs_field_edits', 'entity_id, json', pageSize, (
+        List<QueryRow> rows,
+      ) async {
+        for (final QueryRow r in rows) {
+          final Object? v = (jsonDecode(r.read<String>('json')) as Map)['v'];
+          if (v is int) deleted.add(r.read<String>('entity_id'));
+        }
+      }, extraWhere: "$scope AND field_key = '${SrsFieldKeys.deleted}'");
+      for (final QueryRow r
+          in await db
+              .customSelect(
+                'SELECT entity_id, field_key FROM srs_field_edits '
+                "WHERE profile_uid = ? AND entity_kind = '$noteKind' "
+                "AND substr(field_key, 1, 2) = 'f/' "
+                'GROUP BY entity_id, field_key HAVING COUNT(*) > 1',
+                variables: <Variable<Object>>[Variable<String>(profileUid)],
+              )
+              .get()) {
+        contested.add(
+          reg(r.read<String>('entity_id'), r.read<String>('field_key')),
+        );
+      }
+    }
+    await _pageRows('srs_field_edits', 'entity_id, field_key, json', pageSize, (
+      List<QueryRow> rows,
+    ) async {
+      final List<String> values = <String>[];
+      for (final QueryRow r in rows) {
+        final String id = r.read<String>('entity_id');
+        if (currentOnly &&
+            (deleted.contains(id) ||
+                contested.contains(reg(id, r.read<String>('field_key'))))) {
+          continue;
+        }
+        final Object? v = (jsonDecode(r.read<String>('json')) as Map)['v'];
+        if (v is String) values.add(v);
+      }
+      await onPage(values);
+    }, extraWhere: "$scope AND substr(field_key, 1, 2) = 'f/'");
+    if (contested.isEmpty) return;
+    // 有并发候选的字段：读回这些笔记的候选、按服务器时间裁决（与物化同一规则）。
+    final Set<String> notes = <String>{
+      for (final String k in contested)
+        if (!deleted.contains(k.substring(0, k.indexOf('\u0000'))))
+          k.substring(0, k.indexOf('\u0000')),
+    };
+    for (final List<String> chunk in _chunks(notes)) {
+      final Map<String, List<SrsFieldEdit>> byReg =
+          <String, List<SrsFieldEdit>>{};
+      for (final SrsFieldEditRow r
+          in await (db.select(db.srsFieldEdits)..where(
+                (t) =>
+                    t.profileUid.equals(profileUid) &
+                    t.entityKind.equals(noteKind) &
+                    t.entityId.isIn(chunk),
+              ))
+              .get()) {
+        final String k = reg(r.entityId, r.fieldKey);
+        if (!contested.contains(k)) continue;
+        (byReg[k] ??= <SrsFieldEdit>[]).add(
+          SrsFieldEdit.fromJson(
+            (jsonDecode(r.json) as Map).cast<String, Object?>(),
+          ),
+        );
+      }
+      final List<String> values = <String>[];
+      for (final List<SrsFieldEdit> edits in byReg.values) {
+        final Map<String, int> s = await _serverTimesFor(
+          edits.map((SrsFieldEdit e) => e.id),
+        );
+        final Object? v = srsResolveRegister(
+          edits.first.fieldKey,
+          edits,
+          serverTimeOf: (String id) => s[id],
+        ).value;
+        if (v is String) values.add(v);
+      }
+      await onPage(values);
+    }
   }
 
   /// 本 profile 的全部卡片缓存行（含隐藏）。
