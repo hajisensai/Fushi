@@ -92,7 +92,7 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 同时 `-force_load` 进 Runner 会撞重复符号（`rust_eh_personality`、`__rdl_alloc` …），不
 `-force_load` 又会被当无用成员整个丢掉。所以 iOS 走 `native/fushi_ios_umbrella`：一个 crate
 依赖两个 path crate、re-export 两边，编成**一个** staticlib，std 只有一份，同时导出
-`fp2p_*`（12 个）与 `ffsrs_*`（17 个）。为此 `native/fushi_p2p/Cargo.toml` 的 crate-type 加了
+`fp2p_*`（12 个）与 `ffsrs_*`（18 个）。为此 `native/fushi_p2p/Cargo.toml` 的 crate-type 加了
 `rlib`（只用来被伞形 crate 依赖，其余平台产物不变）。伞形 crate 的 `Cargo.lock` 以两个 crate
 各自的锁文件合并为种子再解析：fushi_p2p 那边的版本全部保持；fushi_fsrs 那边有 7 个
 semver 兼容的小版本被统一到 fushi_p2p 锁的版本（libc、serde_json、syn 3.x、unicode-ident、
