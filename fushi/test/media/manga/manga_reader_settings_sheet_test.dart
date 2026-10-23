@@ -250,7 +250,8 @@ void main() {
       host(
         MangaReaderSettingsSheet(
           globalDefaults: const MangaReaderPreferences(),
-          overrides: const <String, Object?>{},
+          // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
+          overrides: const <String, Object?>{'mode': 'paged_vertical'},
           onChanged: (Map<String, Object?> next) async {},
         ),
         width: null,
@@ -284,6 +285,45 @@ void main() {
     expect(seen, <String>{
       for (final MangaReaderPreferenceDescriptor d in all) d.key,
     });
+  });
+
+  testWidgets('page-gap switch only shows in paged-vertical mode (BUG-3703)', (
+    WidgetTester tester,
+  ) async {
+    // 长条漫的间距由「条漫 / 带间距长条漫」两个模式本身决定，开关只剩纵向分页
+    // 在用；其它模式下还摆着它，会让人以为它控制条漫的黑缝。
+    tester.view.physicalSize = const Size(400, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final String gaps = mangaReaderPreferenceDescriptors(const <String>{})
+        .firstWhere(
+          (MangaReaderPreferenceDescriptor d) => d.key == 'showPageGaps',
+        )
+        .title;
+    for (final (String mode, bool shown) in <(String, bool)>[
+      ('webtoon', false),
+      ('webtoon_gaps', false),
+      ('spread', false),
+      ('paged_vertical', true),
+    ]) {
+      await tester.pumpWidget(
+        host(
+          MangaReaderSettingsSheet(
+            key: ValueKey<String>(mode),
+            globalDefaults: const MangaReaderPreferences(),
+            overrides: <String, Object?>{'mode': mode},
+            onChanged: (Map<String, Object?> next) async {},
+          ),
+          width: null,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(gaps),
+        shown ? findsOneWidget : findsNothing,
+        reason: 'mode $mode',
+      );
+    }
   });
 
   testWidgets('list leaves room for the floating scope bar', (

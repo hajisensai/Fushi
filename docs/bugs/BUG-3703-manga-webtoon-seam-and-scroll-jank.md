@@ -8,4 +8,5 @@
 - **[x] ① 已修复** — 长条漫页间距只由阅读模式决定（条漫无缝 / 带间距长条漫留间距，用户 2026-10-23 拍板；`showPageGaps` 只管纵向分页）；页高对齐物理像素、无间距时后一页上压一个物理像素；恒等滤镜写 `none`；松手速度取最近约 100ms 窗口（停住 >50ms 不带惯性），惯性时间常数约 330ms，帧间隔用 rAF 时间戳。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_reader_transforms_js_test.dart`（模式决定间距；node 跑生成的真 JS：页高对齐 / 重叠 / 有间距不压 / 速度窗口 / 停住不滑；恒等滤镜为 none），`fushi/test/media/manga/manga_overlay_html_test.dart` 同步惯性字面量。
 - **真机证据**（改前 / 改后同一生成器的真实阅读页，平板 Chrome 155 打开，`adb shell input swipe` 注入，探针回传）：页交界截图——改前 27~28px 黑带、改前关间距 1px 暗线、改后 0（3 种小数滚动偏移 × 2 个交界全部为 0）；惯性距离——改前 171~785 px，改后 772~832 px；帧间隔两边 p50/p95 均 16.7/16.8 ms（测试图较轻，这台机器上看不出滤镜对帧率的影响）。
-- **备注**：没在真 app 里验（测的是同一份生成文档在同版本 Chromium 上）；「显示页间距」开关仍放在设置「长条」分组，现在只对纵向分页生效，分组位置待后续调整。
+- **设置面板**：「显示页间距」从「长条」分组挪到「布局」分组，且只在阅读模式为纵向分页时出现（`manga_reader_settings_sheet.dart` 的 `_appliesToCurrentMode`），测试 `fushi/test/media/manga/manga_reader_settings_sheet_test.dart`。
+- **真 app 真机 A/B**（2026-10-24，小米 Pad 5 横屏，120Hz，`fushi/integration_test/manga_webtoon_strip_itest.dart` 打 profile 包并行安装 + adb input swipe）：改前页间距 12px、交界截图 27~28px 黑带（6/6）、恒等滤镜仍下发、8 次相同滑动惯性 52~1044px；改后间距 0、页高 8297.0002 物理像素、交界重叠 0.98 物理像素、交界截图 0/6、filter none、惯性 643~791px（首次 346）。帧间隔 p50 两边都是 8.3~8.4ms。
