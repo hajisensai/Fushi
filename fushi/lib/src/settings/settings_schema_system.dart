@@ -423,6 +423,18 @@ SettingsDestination buildSystemDestination() {
               );
             },
           ),
+          SettingsActionItem(
+            id: 'system.ko_fi',
+            title: t.options_ko_fi,
+            icon: FushiIcons.favorite,
+            cli: const SettingsCliAction.tap(),
+            onTap: (_) async {
+              await launchUrl(
+                Uri.parse(kKoFiUrl),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+          ),
           // TMDB 署名 —— **合约义务，不是可选的致谢**。
           //
           // 视频封面/元数据刮削使用 TMDB API（内置 key，见 tmdb_default_key.dart），

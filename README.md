@@ -15,6 +15,7 @@
 [![Download Latest](https://img.shields.io/badge/%E2%AC%87%20Download%20Latest-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![Join our Discord](https://img.shields.io/badge/Join%20our%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 [![Sponsor on GitHub](https://img.shields.io/badge/Sponsor%20on%20GitHub-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![Support on Ko-fi](https://img.shields.io/badge/Support%20on%20Ko-fi-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -248,7 +249,7 @@ Distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) fo
 
 ## Maintainer
 
-Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe). If Fushi helps you, you can support development, distribution and maintenance through [GitHub Sponsors](https://github.com/sponsors/hajisensai).
+Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe). If Fushi helps you, you can support development, distribution and maintenance through [GitHub Sponsors](https://github.com/sponsors/hajisensai) or [Ko-fi](https://ko-fi.com/hajisensai).
 
 <div align="center">
 

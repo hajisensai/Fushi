@@ -15,6 +15,7 @@
 [![下载最新版本](https://img.shields.io/badge/%E2%AC%87%20%E4%B8%8B%E8%BD%BD%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC-2EA44F?style=for-the-badge)](https://fushi.moe/)
 [![加入 Discord 社区](https://img.shields.io/badge/%E5%8A%A0%E5%85%A5%20Discord%20%E7%A4%BE%E5%8C%BA-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/WhjwyGmm7f)
 [![赞助 Fushi](https://img.shields.io/badge/%E8%B5%9E%E5%8A%A9%20Fushi-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/hajisensai)
+[![在 Ko-fi 赞助](https://img.shields.io/badge/%E5%9C%A8%20Ko-fi%20%E8%B5%9E%E5%8A%A9-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/hajisensai)
 
 </div>
 
@@ -246,7 +247,7 @@ Fushi 基于以下项目与生态：
 
 ## 维护者
 
-Fushi 由 [hajisensai](https://github.com/hajisensai) 维护。官网：[fushi.moe](https://fushi.moe)。联系：[contact@fushi.moe](mailto:contact@fushi.moe)。如果 Fushi 对你有帮助，欢迎通过 [GitHub Sponsors](https://github.com/sponsors/hajisensai) 赞助，帮助承担开发、分发与维护成本。
+Fushi 由 [hajisensai](https://github.com/hajisensai) 维护。官网：[fushi.moe](https://fushi.moe)。联系：[contact@fushi.moe](mailto:contact@fushi.moe)。如果 Fushi 对你有帮助，欢迎通过 [GitHub Sponsors](https://github.com/sponsors/hajisensai) 或 [Ko-fi](https://ko-fi.com/hajisensai) 赞助，帮助承担开发、分发与维护成本。
 
 <div align="center">
 
