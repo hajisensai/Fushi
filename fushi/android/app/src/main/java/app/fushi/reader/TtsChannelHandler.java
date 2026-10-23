@@ -1,6 +1,6 @@
 package app.fushi.reader;
 
-import android.app.Activity;
+import android.content.Context;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
@@ -36,7 +36,12 @@ import io.flutter.plugin.common.MethodChannel;
 public class TtsChannelHandler {
     private static final String CHANNEL = ChannelNames.TTS;
 
-    private final Activity activity;
+    // BUG-3663：不再要求 Activity。本 handler 既挂在主 Activity 的引擎上，也挂在
+    // `:popup` 进程的 app 外查词引擎上（[FloatingDictPluginRegistrant]，那里只有
+    // applicationContext）。它对 Context 的用法只有 TextToSpeech 与 getCacheDir，
+    // 主线程回帖改走 [mainHandler]。
+    private final Context context;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TextToSpeech tts;
     private boolean ttsReady = false;
     // 复用单个 MediaPlayer 实例（reset() 重置而非 new）以省去每次 new 的分配 +
@@ -62,9 +67,9 @@ public class TtsChannelHandler {
     private final ExecutorService dbSetupExecutor = Executors.newSingleThreadExecutor();
     private volatile Future<?> indexFuture;
 
-    public TtsChannelHandler(Activity activity) {
-        this.activity = activity;
-        tts = new TextToSpeech(activity, status -> {
+    public TtsChannelHandler(Context context) {
+        this.context = context;
+        tts = new TextToSpeech(context, status -> {
             if (status == TextToSpeech.SUCCESS) {
                 int langResult = tts.setLanguage(Locale.JAPAN);
                 ttsReady = (langResult != TextToSpeech.LANG_MISSING_DATA
@@ -395,7 +400,7 @@ public class TtsChannelHandler {
                         ensureQueryIndexes(path);
                     }
                 });
-                activity.runOnUiThread(() -> result.success(true));
+                mainHandler.post(() -> result.success(true));
             }
         });
     }
@@ -651,7 +656,7 @@ public class TtsChannelHandler {
             return;
         }
         final int dbIndex = (dbIndexArg != null) ? dbIndexArg : 0;
-        final File cacheDir = activity.getCacheDir();
+        final File cacheDir = context.getCacheDir();
         ioExecutor.execute(() -> {
             synchronized (dbLock) {
                 if (dbIndex < 0 || dbIndex >= localAudioDbs.size()) {

@@ -103,10 +103,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
               // 紧随其后投递新词的 setState——否则常驻热页收不到新词、didUpdateWidget 不触发，
               // 弹窗卡在旧词甚至配合 _isClosing 残留一并关不掉。记日志后带旧偏好缓存继续。
               try {
-                await appModel.refreshPrefCacheIfChanged();
+                await appModel.refreshForWarmDictionaryPopup();
               } on Object catch (e, stack) {
                 ErrorLogService.instance.log(
-                  'popupMain.refreshPrefCacheIfChanged',
+                  'popupMain.refreshForWarmDictionaryPopup',
                   e,
                   stack,
                 );
