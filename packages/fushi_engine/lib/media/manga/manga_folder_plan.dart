@@ -1,4 +1,5 @@
-/// 漫画扫描根的**卷归组**规则：一棵目录树里哪些是 `.mokuro` 卷、哪些是单文件卷
+/// 漫画扫描根的**卷归组**规则：一棵目录树里哪些是 `.mokuro` 卷（含 mokuro 0.1 旧版
+/// `<卷名>.html` + `_ocr/` 产物，见 `mokuro_legacy_html.dart`）、哪些是单文件卷
 /// （`.cbz` / `.zip` / `.rar` …）、哪些目录该当作一卷纯页图导入。
 ///
 /// 这是 app 源库扫描（`SourceLibraryScanner`）与无头服务端库扫描
@@ -33,6 +34,8 @@ import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
         mangaArchiveMokuroSidecarPaths;
 import 'package:fushi_engine/media/manga/manga_importer.dart'
     show kMangaImageExtensions;
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
+    show legacyMokuroHtmlPathsIn;
 import 'package:path/path.dart' as p;
 
 /// `.mokuro` 卷 manifest 的扩展名（含点、小写）。
@@ -47,7 +50,8 @@ class MangaFolderPlan {
     this.mokuroSidecars = const <String, String>{},
   });
 
-  /// 应各自作为一卷导入的 `.mokuro` 文件完整路径，按小写字典序。已被某个单文件卷
+  /// 应各自作为一卷导入的 `.mokuro` 文件完整路径（含 mokuro 旧版 `.html` manifest，
+  /// 交 `MangaImporter.importFromMokuroPath` 同样能导），按小写字典序。已被某个单文件卷
   /// 认领为 sidecar 的不在其中（见 [mokuroSidecars]）。
   final List<String> mokuroPaths;
 
@@ -119,6 +123,15 @@ MangaFolderPlan planMangaFolders({
     }
   }
   carrierPaths.sort(_compareIgnoreCase);
+  // mokuro 0.1 旧版产物（`<卷名>.html` + `_ocr/<卷名>/`）同样是一卷的 manifest：
+  // 不认它，同名页图目录就会被当成一卷没字的纯页图导入，文字层白白丢掉、读的时候
+  // 再在设备上跑一遍 OCR。导入器（`importFromMokuroPath`）认得 `.html` 路径。
+  allMokuroPaths.addAll(
+    legacyMokuroHtmlPathsIn(filePaths, context: ctx).where((String path) {
+      final String relative = ctx.relative(ctx.normalize(path), from: root);
+      return ctx.split(relative).first != '..';
+    }),
+  );
 
   // 包旁 sidecar 划给 ZIP 容器卷。候选路径与导入器找 sidecar 用同一个函数，
   // 「这里认领了」与「导入器真会读到」才是同一件事。

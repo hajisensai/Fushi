@@ -44,6 +44,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3662](bugs/BUG-3662-aniyomi-extensions-lib-17-refused.md) | ✅ | ✅ | 视频源扩展（Aniyomi extensions-lib 17）装不上：Unsupported extension-lib version |
+> 共 3266 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3662](bugs/BUG-3662-mokuro-legacy-html-import-dropped-ocr.md) | ✅ | ✅ | mokuro-legacy-html-import-dropped-ocr |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
