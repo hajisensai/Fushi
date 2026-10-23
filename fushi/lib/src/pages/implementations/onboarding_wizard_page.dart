@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
@@ -194,6 +195,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   /// 最近一次换步的方向：决定共享轴转场往哪边滑（[OnboardingStepSwitcher]）。
   bool _navigatingForward = true;
+
+  /// 当前步骤正文下方是否还有没滚到的内容（反馈 VtbEJzUEYL：功能步「接下来
+  /// 配置」一节在视口外，用户看不到就直接按了下一步）。为真时底栏主按钮变成
+  /// 「往下看」，按一下先把正文往下翻一屏，滚到底才恢复「下一步」。
+  bool _stepHasMoreBelow = false;
+
+  /// 当前步骤正文的滚动体（随滚动通知更新，换步清空）。
+  ScrollableState? _stepScrollable;
   final OnboardingTutorialProgress _tutorialProgress =
       OnboardingTutorialProgress();
   bool _completing = false;
@@ -459,6 +468,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 变成硬门）。但建成了的话 `_steps` 会因为 Anki 变 ready 而多出一步，所以 await
   /// 之后必须重新取一次序列，不能沿用进函数时那份。
   Future<void> _goNextAsync() async {
+    if (_revealMoreOfStep()) return;
     if (_steps[_stepIndex] == OnboardingStepId.anki) {
       await promptCreateLapisIfCannotMine(
         context: context,
@@ -499,6 +509,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     setState(() {
       _navigatingForward = true;
       _stepIndex += 1;
+      _resetStepScroll();
     });
   }
 
@@ -507,7 +518,79 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     setState(() {
       _navigatingForward = false;
       _stepIndex -= 1;
+      _resetStepScroll();
     });
+  }
+
+  void _resetStepScroll() {
+    _stepHasMoreBelow = false;
+    _stepScrollable = null;
+  }
+
+  /// 正文下方还有没看到的内容时，把它往下翻约一屏并返回 true（这一下不换步）。
+  bool _revealMoreOfStep() {
+    final ScrollableState? scrollable = _stepScrollable;
+    if (!_stepHasMoreBelow || scrollable == null || !scrollable.mounted) {
+      return false;
+    }
+    final ScrollPosition position = scrollable.position;
+    if (!position.hasContentDimensions || !position.hasViewportDimension) {
+      return false;
+    }
+    final double target = math.min(
+      position.maxScrollExtent,
+      position.pixels + position.viewportDimension * 0.8,
+    );
+    if (target <= position.pixels) return false;
+    final Duration duration = fushiMotionDuration(
+      context,
+      const Duration(milliseconds: 360),
+    );
+    if (duration == Duration.zero) {
+      position.jumpTo(target);
+    } else {
+      unawaited(
+        position.animateTo(
+          target,
+          duration: duration,
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+    return true;
+  }
+
+  /// 收当前步骤正文（深度 0 的竖向滚动体）的滚动 / 尺寸通知，维护
+  /// [_stepHasMoreBelow]。[owner] 是发出通知的那一步：换步转场期间旧步骤还在树
+  /// 里，它的通知不能改写新步骤的状态。
+  bool _onStepScrollNotification(
+    OnboardingStepId owner,
+    Notification notification,
+  ) {
+    final ScrollMetrics metrics;
+    final BuildContext? source;
+    final int depth;
+    if (notification is ScrollNotification) {
+      metrics = notification.metrics;
+      source = notification.context;
+      depth = notification.depth;
+    } else if (notification is ScrollMetricsNotification) {
+      metrics = notification.metrics;
+      source = notification.context;
+      depth = notification.depth;
+    } else {
+      return false;
+    }
+    if (depth != 0 || metrics.axis != Axis.vertical) return false;
+    if (owner != _steps[_stepIndex]) return false;
+    _stepScrollable = source?.findAncestorStateOfType<ScrollableState>();
+    final bool more =
+        metrics.hasContentDimensions &&
+        metrics.extentAfter > kOnboardingMoreBelowSlop;
+    if (more != _stepHasMoreBelow && mounted) {
+      setState(() => _stepHasMoreBelow = more);
+    }
+    return false;
   }
 
   /// 「复习方式」点选：立即写偏好（模块开关 + 挖词目标），步骤序列随之重算（选 Fushi
@@ -1117,12 +1200,17 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         body: OnboardingWizardBody(
           stepKey: step,
           forward: _navigatingForward,
-          step: _buildStep(step),
+          step: NotificationListener<Notification>(
+            onNotification: (Notification n) =>
+                _onStepScrollNotification(step, n),
+            child: _buildStep(step),
+          ),
           navigationBar: OnboardingNavigationBar(
             onSkip: isLast ? null : () => unawaited(_confirmSkip()),
             onBack: _stepIndex > 0 ? _goBack : null,
             onNext: _goNext,
             isLast: isLast,
+            moreBelow: _stepHasMoreBelow,
           ),
         ),
       ),
@@ -2115,17 +2203,25 @@ class _OnboardingSharedAxisX extends StatelessWidget {
 ///
 /// M3E 按钮尺寸随宽度换档：宽屏（≥ 480）用 M（56 高），窄屏用 S（40 高），手机上
 /// 三颗按钮 + 中文 / 英文标签都放得下。
+/// 正文离底还剩多少逻辑像素以内算「已看到底」（吸收亚像素与回弹误差）。
+const double kOnboardingMoreBelowSlop = 8;
+
 class OnboardingNavigationBar extends StatelessWidget {
   const OnboardingNavigationBar({
     required this.onNext,
     required this.isLast,
     this.onSkip,
     this.onBack,
+    this.moreBelow = false,
     super.key,
   });
 
   final VoidCallback onNext;
   final bool isLast;
+
+  /// 当前步骤正文下方还有没看到的内容：主按钮显示「往下看」（向下箭头），
+  /// [onNext] 此时先翻正文而不换步（反馈 VtbEJzUEYL）。
+  final bool moreBelow;
 
   /// null = 不显示「跳过」（最后一步）。
   final VoidCallback? onSkip;
@@ -2175,10 +2271,16 @@ class OnboardingNavigationBar extends StatelessWidget {
                   onPressed: onNext,
                   iconAlignment: IconAlignment.end,
                   icon: FushiIcon(
-                    isLast ? FushiIcons.check : FushiIcons.forward,
+                    moreBelow
+                        ? FushiIcons.arrowDown
+                        : isLast
+                        ? FushiIcons.check
+                        : FushiIcons.forward,
                   ),
                   label: Text(
-                    isLast
+                    moreBelow
+                        ? t.onboarding_action_scroll_more
+                        : isLast
                         ? t.onboarding_action_start
                         : t.onboarding_action_next,
                   ),

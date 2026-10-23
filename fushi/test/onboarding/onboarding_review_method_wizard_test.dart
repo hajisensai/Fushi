@@ -198,4 +198,53 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 10));
   });
+
+  // 反馈 VtbEJzUEYL：功能步「接下来配置」一节落在视口外，用户看不到就按了下一步。
+  // 正文下方还有没看到的内容时，主按钮是「往下看」：按一下往下翻、不换步；翻到底
+  // 才变回「下一步」。
+  testWidgets('正文没看完时主按钮先往下翻，翻到底才换步', (WidgetTester tester) async {
+    await _pumpWizard(tester);
+    tester.view.physicalSize = const Size(1280, 560);
+    await _settle(tester);
+    final Finder next = find.byKey(const ValueKey<String>('onboarding_next'));
+    Finder label(String text) =>
+        find.descendant(of: next, matching: find.text(text));
+
+    for (
+      int i = 0;
+      i < 12 && find.text(t.onboarding_features_title).evaluate().isEmpty;
+      i++
+    ) {
+      await tester.tap(next);
+      await _settle(tester);
+    }
+    expect(find.text(t.onboarding_features_title), findsOneWidget);
+    expect(label(t.onboarding_action_scroll_more), findsOneWidget);
+    expect(
+      find.text(t.onboarding_features_setup_title).hitTestable(),
+      findsNothing,
+    );
+
+    int presses = 0;
+    while (label(t.onboarding_action_scroll_more).evaluate().isNotEmpty) {
+      await tester.tap(next);
+      await _settle(tester);
+      presses++;
+      expect(presses, lessThan(10), reason: '一直翻不到底');
+    }
+    expect(presses, greaterThan(0));
+    // 还在功能步，而且「接下来配置」已经翻进视口。
+    expect(
+      find.text(t.onboarding_features_setup_title).hitTestable(),
+      findsOneWidget,
+    );
+    expect(label(t.onboarding_action_next), findsOneWidget);
+
+    await tester.tap(next);
+    await _settle(tester);
+    expect(find.text(t.onboarding_features_setup_title), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 10));
+  });
 }
