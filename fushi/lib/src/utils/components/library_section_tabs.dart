@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/section_tab_order.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 /// MD3 tab 的左右内边距（逻辑像素，单侧）。
 ///
@@ -390,12 +391,16 @@ class _OrderableSectionTabsState<T extends Object>
     if (store == null || widget.owner.tabs.length < 2) return row;
     return Semantics(
       onLongPressHint: t.section_tabs_order_title,
-      child: GestureDetector(
+      // 右键走绑定表（ContextMenuTrigger），长按交给 GestureDetector：次按钮不硬绑，
+      // 被用户改绑时不双触发。
+      child: ContextMenuTrigger(
         key: ValueKey<String>('section-tab-order-trigger-${widget.orderKey}'),
-        behavior: HitTestBehavior.translucent,
-        onLongPress: () => unawaited(_openSheet(store, shown)),
-        onSecondaryTap: () => unawaited(_openSheet(store, shown)),
-        child: row,
+        onInvoke: contextMenuInvoker(() => unawaited(_openSheet(store, shown))),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onLongPress: () => unawaited(_openSheet(store, shown)),
+          child: row,
+        ),
       ),
     );
   }
