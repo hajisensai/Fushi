@@ -542,18 +542,16 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       position.pixels + position.viewportDimension * 0.8,
     );
     if (target <= position.pixels) return false;
-    final Duration duration = fushiMotionDuration(
-      context,
-      const Duration(milliseconds: 360),
-    );
-    if (duration == Duration.zero) {
+    // 与步骤切换同一条 spatial 弹簧；墨水屏 / 减弱动态效果下时长归零，直接跳。
+    final FushiSpringSpec spatial = context.fushiMotion.spatialDefault;
+    if (spatial.duration == Duration.zero) {
       position.jumpTo(target);
     } else {
       unawaited(
         position.animateTo(
           target,
-          duration: duration,
-          curve: Curves.easeOutCubic,
+          duration: spatial.duration,
+          curve: spatial.curve,
         ),
       );
     }
