@@ -40,7 +40,7 @@ Dialogue: 0,0:02:23.10,0:02:24.47,Default,,0,0,0,,{\fscx50\fscy200}Scaled
 
 const int _kPosMs = 143500;
 
-/// BUG-3662：特效字幕把同一句拆成两层同文本、同起点的事件同位叠画（Layer 0 金色底、
+/// BUG-3664：特效字幕把同一句拆成两层同文本、同起点的事件同位叠画（Layer 0 金色底、
 /// Layer 1 白字）。查词高亮按「句文本 + 起点」认 cue，两层都会命中。
 const String _kAssTwoLayers = r'''
 [Script Info]
@@ -331,7 +331,7 @@ void main() {
             (SubtitleLookupHighlightBox b) => b.bleedX == 0 && b.bleedY == 0),
         isTrue);
   });
-  // BUG-3662：两层同文本事件各自认领高亮时，底色在每层描边遍各画一次——半透明叠成
+  // BUG-3664：两层同文本事件各自认领高亮时，底色在每层描边遍各画一次——半透明叠成
   // 近乎不透明，且上层那份画在下层填充遍之上，把下层字形整块盖住（用户截图）。
   testWidgets('多层同文本事件：高亮只画一份，且归最底层', (WidgetTester tester) async {
     final List<AudioCue> cues = await _pumpAss(

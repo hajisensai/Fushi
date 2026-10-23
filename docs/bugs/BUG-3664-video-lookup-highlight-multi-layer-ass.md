@@ -1,4 +1,4 @@
-## BUG-3662 · 视频字幕查词高亮在多层 ASS 同文本事件上重复画、压住下层字形
+## BUG-3664 · 视频字幕查词高亮在多层 ASS 同文本事件上重复画、压住下层字形
 - **报告**：2026-10-23（用户：反馈 5yWS2o6U6q「查词时蓝色高亮重叠了」，Windows 3.0.0-debug.20677；截图是「心臓をノックしている」，被查字上一块几乎不透明的蓝色圆角块，字形在蓝块里看不清，同句还叠着一层金色字）
 - **真实性**：✅ 真 bug（代码路径 + widget 测试复现；截图里那句确实是多层事件属推测——金色层与白字层错位叠印是多层特效字幕的典型形态，用户只给了一张截图）。高亮按「句文本 + 起点」认 cue（`fushi/lib/src/media/video/video_subtitle_overlay.dart:120` `SubtitleLookupHighlight.covers`），而特效 ASS 常把同一句拆成同文本、同起点、不同 `Layer` 的多条事件同位叠画，分组键带 Layer（`_positionKey` 的 `:L<layer>`），各层成组、按 Layer 升序 `Stack` 叠放（`sortCueGroupsForPaint`）。逐字构建时每层都命中 `covers`（`video_subtitle_overlay.dart:2305` 附近的门控），于是底色在**每一层**的描边遍各画一次：① 半透明主题色（α 0.45）叠成近乎不透明；② 上层那份画在下层**填充遍之上**——BUG-3287 的「底色 < 描边 < 填充」只在单层内成立，跨层后蓝块直接压住下层字形。
 - **[x] ① 已修复** — 新增 `resolveLookupHighlightOwners`（`video_subtitle_overlay.dart:166`）：每层字幕按实际绘制顺序选出唯一认领高亮的 cue——有不带 `\clip` 的同身份 cue 时只由最先画（最底）的那条认领，高亮垫在所有层字形之下且只画一次；全部带 `\clip`（左右分屏卡拉 OK，BUG-1775）时每个不同裁剪窗的最底一条各认领一次，拼起来仍是整段。`_buildSubtitleLayer` 每帧算出认领集，`charWidget` 的高亮门控多一条「本 cue 是认领者」。

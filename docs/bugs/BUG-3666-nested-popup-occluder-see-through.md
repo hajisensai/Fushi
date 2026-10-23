@@ -1,4 +1,4 @@
-## BUG-3663 · nested-popup-occluder-see-through
+## BUG-3666 · nested-popup-occluder-see-through
 - **报告**：2026-10-23（用户反馈 iZupbhhdNV，Windows 11 2.10.0-debug.19353：「视频查词框内出现播放画面 — 透视了，就很短的一下，次级查词才有」，附件视频未能下载）
 - **真实性**：✅ 真 bug（代码路径推出，未取得用户录屏；与描述的三个特征——只在次级查词、很短、透出的是视频画面——逐条吻合）。`fushi/lib/src/pages/implementations/dictionary_page_mixin.dart` `_buildNestedPopupLayerFor` 与 `fushi/lib/src/pages/base_source_page.dart` `_buildPopupLayer` 的 `occluders` 按上层 `visible` 判：上层一翻可见，下层同一帧就被 `PopupOccluderClip`（`dictionary_popup_layer.dart`，玻璃叠玻璃修正，仅 Windows / Linux 生效，2026-10-05 `bd61054a45` 引入）把被盖住的区域整块裁掉；而上层此刻正由 `_PopupEntranceFade` 从透明度 0 淡入（200ms）。这段时间洞口里既没有下层卡也几乎没有上层卡，底下的视频直接露出来。第一层查词没有下层，所以只有次级查词才出现。
 - **[x] ① 已修复** — 随本提交：`DictionaryPopupEntry.entranceSettled`（入场淡入走完、满不透明在屏上）；`_PopupEntranceFade` 在淡入完成 / 隐藏复位 / 墨水屏即时显示时经 `parkedPopupLayer(onEntranceSettled:)` 在帧末回报，两个宿主写入并重建；`occluders` 只收 `visible && entranceSettled` 的上层。淡入期间下层完整保留（短暂玻璃叠玻璃），淡完才挖洞。

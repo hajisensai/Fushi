@@ -146,7 +146,7 @@ class SubtitleLookupHighlight {
       Object.hash(sentence, cueStartMs, graphemeStart, graphemeCount);
 }
 
-/// 一层字幕里**由谁**画查词高亮（BUG-3662）。返回按身份比较的 cue 集合。
+/// 一层字幕里**由谁**画查词高亮（BUG-3664）。返回按身份比较的 cue 集合。
 ///
 /// [SubtitleLookupHighlight] 按「句文本 + 起点」认 cue，而特效 ASS 常把同一句拆成多条
 /// 同文本、同起点、不同 `Layer` 的事件同位叠画（底层金色描边 + 上层白字、渐变 / 卡拉 OK
@@ -918,7 +918,7 @@ const double _kWindowsMissingAssFontRasterYScale = 1.055;
 
 class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     with SingleTickerProviderStateMixin {
-  /// 主 / 副字幕层里认领查词高亮的 cue（BUG-3662，按身份比较）。每帧在
+  /// 主 / 副字幕层里认领查词高亮的 cue（BUG-3664，按身份比较）。每帧在
   /// [_buildSubtitleLayer] 按绘制顺序重算。
   Set<AudioCue> _lookupHighlightOwnersMain = HashSet<AudioCue>.identity();
   Set<AudioCue> _lookupHighlightOwnersSecondary = HashSet<AudioCue>.identity();
@@ -1510,7 +1510,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
               ? _groupMainCuesByPosition(cues, isSecondary: isSecondary)
               : <(String, List<AudioCue>)>[('plain', _uniqueByText(cues))],
         );
-        // BUG-3662：同一句被拆成多层同文本事件时，查词高亮只由一层认领（按绘制顺序，
+        // BUG-3664：同一句被拆成多层同文本事件时，查词高亮只由一层认领（按绘制顺序，
         // 规则见 [resolveLookupHighlightOwners]）。本 builder 早于层内字符 Builder 求值，
         // 同帧写入即被 [_buildCueBox] 的 charWidget 读到。
         final Set<AudioCue> owners = resolveLookupHighlightOwners(
