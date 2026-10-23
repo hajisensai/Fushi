@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3285 条。点号进各自文件。
+> 共 3286 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3682](bugs/BUG-3682-host-mining-ignores-srs-target.md) | ✅ | ✅ | 互联主机替对端制卡仍写 Anki，不遵守 Fushi 复习挖词目标 |
 | [BUG-3681](bugs/BUG-3681-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
 | [BUG-3680](bugs/BUG-3680-srs-editor-no-preview-visual-ai.md) | ✅ | ✅ | 编辑卡片缺预览与可视化编辑，字段名无翻译说明，编辑与模板无 AI |
 | [BUG-3679](bugs/BUG-3679-srs-deck-delete-never-purged.md) | ✅ | ✅ | 删除牌组（含连卡片删除）只写墓碑，永不物理清除 |

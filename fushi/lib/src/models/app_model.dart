@@ -10515,8 +10515,8 @@ class _AppModelRemoteLookupService
     // overlay_bridge_handlers）制卡前都先把字节落进 Anki 媒体缓存，远程这条路此前漏了
     // 这一步 → repo 读不到缓存 → 外字永远退化成 alt 文本。与本地入口同一步骤。
     await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo =
-        _appModel.platformServices.createAnkiRepository();
+    // 替对端制卡：遵守本机挖词目标（目标 = Fushi 复习时落复习，不写 Anki）。
+    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
     final MineOutcome outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
       context: AnkiMiningContext(sentence: sentence),
@@ -10550,16 +10550,14 @@ class _AppModelRemoteLookupService
   }
 
   @override
-  Future<AnkiSourceNote?> readSourceNote(String sourceId) => _appModel
-      .platformServices
-      .createAnkiRepository()
-      .readSourceNote(sourceId);
+  Future<AnkiSourceNote?> readSourceNote(String sourceId) =>
+      _appModel.hostMiningAnkiRepository.readSourceNote(sourceId);
 
   @override
   Future<void> patchSourceNote({
     required AnkiSourceNote original,
     required Map<String, String> fields,
-  }) => _appModel.platformServices.createAnkiRepository().patchSourceNote(
+  }) => _appModel.hostMiningAnkiRepository.patchSourceNote(
     original: original,
     fields: fields,
   );
@@ -10585,8 +10583,7 @@ class _AppModelRemoteLookupService
     )
     action,
   ) {
-    final BaseAnkiRepository repo =
-        _appModel.platformServices.createAnkiRepository();
+    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
     return withMaterializedMiningContext<T>(
       payload,
       (String raw, AnkiMiningContext context) => action(repo, raw, context),
@@ -10594,7 +10591,8 @@ class _AppModelRemoteLookupService
   }
 
   // ── 互联 Lapis 客制化：客户端（手机等）经互联读写本机 Anki 的 note type。
-  // 与 mineForwarded 同语义地用**本机**平台仓库（主机自己的 AnkiConnect），
+  // 有意用**裸**本机平台仓库（主机自己的 AnkiConnect），不跟挖词目标走：这是对端在
+  // 配置主机的 Anki 本身，挖词目标是 Fushi 复习时 SRS 层会把它们一律降级成不支持。
   // 后端不支持时按 BaseAnkiRepository 的降级契约回 null/false（不抛）。
 
   @override
@@ -10653,8 +10651,7 @@ class _AppModelRemoteLookupService
   }) async {
     // TODO-1176：与 app 内 dictionary_page_mixin.checkDuplicate 走同一 repo.isDuplicate
     // 路径（AnkiConnect findNotes / AnkiDroid findDuplicateNotes），repo 内部已 fail-soft。
-    final BaseAnkiRepository repo =
-        _appModel.platformServices.createAnkiRepository();
+    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
     return repo.isDuplicate(expression, reading);
   }
 
@@ -10666,8 +10663,7 @@ class _AppModelRemoteLookupService
     // Issue #1409：与 app 内 openInAnki 桥（_handleOpenInAnkiBridge）同一
     // repo.openWordInAnki；抛出一律按 failed（弹窗提示打不开，绝不静默）。
     try {
-      final BaseAnkiRepository repo =
-          _appModel.platformServices.createAnkiRepository();
+      final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
       return await repo.openWordInAnki(expression, reading);
     } catch (e, st) {
       ErrorLogService.instance.log('Anki.openWordInAnki.extension', e, st);
@@ -10679,8 +10675,7 @@ class _AppModelRemoteLookupService
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
     // BUG-2190：同 [mineEntry]——外字字节先落缓存，三条沉浸分支最终都走 repo 渲染。
     await writeDictionaryMediaCache(payload.fields['dictionaryMedia'] ?? '');
-    final BaseAnkiRepository repo =
-        _appModel.platformServices.createAnkiRepository();
+    final BaseAnkiRepository repo = _appModel.hostMiningAnkiRepository;
     // 远端制卡（浏览器扩展的 YouTube / Netflix）语义上就是视频制卡，读同一条动图格式
     // 偏好。BUG-1330：这里过去既不传 format 给 resolve、也不传 animatedFormat 给引擎，
     // 用户拍板的 AVIF 默认在扩展这条链路上完全没落地（恒出 GIF）。
