@@ -11,6 +11,7 @@ import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/font_download_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
 Uint8List _bytes(List<int> header, {int pad = 16}) =>
@@ -245,7 +246,35 @@ void main() {
       expect(r.error, isNotNull);
       expect(r.files, isEmpty);
       expect(r.succeeded, isFalse);
+      // 源都答复了（HTML / 404）：不是「网络到不了」，不该提示配代理。
+      expect(r.unreachable, isFalse);
       expect(fontsDir.listSync(), isEmpty);
+    });
+
+    // 反馈 f4ybrMM0mP：全部源连不上时要能区分出来（UI 据此提示配代理 / 手动导入），
+    // 且把每个源的失败原因写进错误日志（以前只走 debugPrint，用户日志里无迹可查）。
+    test('全部源连不上 → unreachable，并写错误日志', () async {
+      final ServerSocket probe =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int deadPort = probe.port;
+      await probe.close();
+      final int before = ErrorLogService.instance.entries.length;
+
+      final FontDownloadResult r = await service.download(
+        <String>['http://127.0.0.1:$deadPort/a.ttf'],
+      );
+
+      expect(r.error, isNotNull);
+      expect(r.unreachable, isTrue);
+      expect(r.files, isEmpty);
+      final List<ErrorLogEntry> added =
+          ErrorLogService.instance.entries.skip(before).toList();
+      expect(
+        added.where((ErrorLogEntry e) =>
+            e.source == 'FontDownloadService.download' &&
+            e.error.contains('127.0.0.1:$deadPort')),
+        isNotEmpty,
+      );
     });
 
     test('zip 源按 overrideName 解出一份', () async {

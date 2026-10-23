@@ -43,6 +43,13 @@
 | [BUG-3664](bugs/BUG-3664-hyphen-compound-tap-looks-up-front-half.md) | ✅ | ✅ | hyphen-compound-tap-looks-up-front-half |
 | [BUG-3663](bugs/BUG-3663-popup-local-audio-channel-missing.md) | ✅ | ✅ | popup-local-audio-channel-missing |
 | [BUG-3662](bugs/BUG-3662-popup-dictionary-metadata-stale.md) | ✅ | ✅ | popup-dictionary-metadata-stale |
+> 共 3268 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3664](bugs/BUG-3664-paginated-audio-lane-drops-wrapped-lines.md) | ✅ | ✅ | 翻页模式当前句高亮只亮第一行，折行部分全丢 |
+| [BUG-3663](bugs/BUG-3663-recommended-fonts-unreachable-in-china.md) | ✅ | ✅ | 中国大陆网络下推荐字体下载失败，且失败时不说原因 |
+| [BUG-3662](bugs/BUG-3662-srt-book-cannot-attach-epub.md) | ✅ | ✅ | 下载并自动转录的有声书无法再配上对应的 EPUB |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
