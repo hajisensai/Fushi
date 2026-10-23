@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -225,7 +226,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
         (t.home_filter_watch, Icons.movie_outlined, kActivityMediaVideo),
         (t.home_filter_game, Icons.sports_esports_outlined, kActivityMediaGame),
         // 统计中心总览读时并进来的 SRS 复习时长（BUG-3704）。
-        (t.nav_srs, Icons.style_outlined, kStatMediaReview),
+        (t.nav_srs, FushiIcons.repeat, kStatMediaReview),
       ])
         if (_section(context, tokens, label, icon, kind) case final Widget w) w,
     ];
