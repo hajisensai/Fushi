@@ -201,6 +201,52 @@ typedef _HistorySelectDart =
       ffi.Pointer<ffi.Size>,
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
+typedef _ImportEquivalentC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _ImportEquivalentDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MaterializeC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MaterializeDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
 typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
 
@@ -265,7 +311,14 @@ class FushiFsrsBindings {
       ffsrs_history_select = lib
           .lookupFunction<_HistorySelectC, _HistorySelectDart>(
             'ffsrs_history_select',
-          );
+          ),
+      ffsrs_import_equivalent = lib
+          .lookupFunction<_ImportEquivalentC, _ImportEquivalentDart>(
+            'ffsrs_import_equivalent',
+          ),
+      ffsrs_materialize = lib.lookupFunction<_MaterializeC, _MaterializeDart>(
+        'ffsrs_materialize',
+      );
 
   /// 请求 JSON → 响应 JSON（`{"ok":…}` / `{"error":"…"}`）。
   final ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char> request)
@@ -427,4 +480,33 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Pointer<ffi.Char>> error,
   )
   ffsrs_history_select;
+
+  /// Anki 导入器入库前判重（每组：导入日志 + 原生日志，落库 JSON）→ 每组一个字节，批量；
+  /// 布局见 history.rs `import_equivalent_any`。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    int nLogs,
+    ffi.Pointer<ffi.Uint32> groups,
+    int nGroups,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_import_equivalent;
+
+  /// 修改记录（落库 JSON）→ 寄存器与物化视图，批量；布局见 registers.rs `materialize`
+  /// （组描述 JSON + 项原文 + 服务器时刻，结果是 JSON）。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> header,
+    int headerLen,
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    ffi.Pointer<ffi.Int64> serverTimes,
+    int nItems,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_materialize;
 }

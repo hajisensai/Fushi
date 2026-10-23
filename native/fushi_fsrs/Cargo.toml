@@ -20,6 +20,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 # Anki 搜索的正则与去 HTML（search.rs）：与 Anki 桌面版 rslib 同一个正则引擎，`re:` 语义以它为准。
 regex = "1"
+# 字段寄存器（registers.rs）：修改记录 ID 的 UUIDv5 与「释义样式去重」规范形的样式文件名（与 native/fushi_compute 同一个包）。
+sha1 = "0.10"
 
 [profile.release]
 opt-level = "z"

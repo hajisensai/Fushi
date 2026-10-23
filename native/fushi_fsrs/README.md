@@ -24,6 +24,10 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_search_corpus_set_ints / _set_floats(Corpus*, i32 col, const i64*/const f64*, usize n) -> i32` | 卡片数值列（状态位、id、日序号、间隔、到期、复习 / 遗忘次数；稳定性 / 难度，NaN = 无），查询用到才传；成功 0 |
 | `ffsrs_search_corpus_match(const Corpus*, const char* query, u8* out, usize n) -> char*` | 整批求值一条搜索（语法树 JSON，由 Dart 解析器产出）：`out[i]` 写 1 / 0；返回 `{"ok":命中数}` / `{"error","kind":"syntax"\|"internal","at"}`。最近一次结果缓存在句柄里（语料一改就清），后台 isolate 预求值后 UI isolate 再调只是取结果 |
 | `ffsrs_search_dupe_norm_batch(const u8*, usize, const u32* offs, usize n, usize* out_len) -> u8*` | AnkiConnect 查重的首字段规范形（样式去重 → 去 HTML → trim），批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，用 `ffsrs_free_bytes` 释放 |
+| `ffsrs_history_states(const u8* text, usize, const u32* offs, const i64* servers, usize n_logs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | 卡片历史内核（`src/history.rs`）：落库日志原文 + 服务器时刻 → 每份历史的当前排程状态（定长记录 + 串表），批量；失败返回 NULL 并写 `err` |
+| `ffsrs_history_select(const i64* ints, usize n_logs, const u8* text, usize, const u32* offs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | 卡片历史内核（列模式）：排序与每条日志的选取标记（有效 / 撤销 / 等价导入 / 撤销者 / 排序键被钳位），批量 |
+| `ffsrs_import_equivalent(const u8* text, usize, const u32* offs, usize n_logs, const u32* groups, usize n_groups, usize* out_len, char** err) -> u8*` | Anki 导入器入库前判重：每组（导入日志, 原生日志…）的落库 JSON → 每组一个字节；判据与卡片历史的等价导入是同一个函数 |
+| `ffsrs_materialize(const u8* header, usize, const u8* text, usize, const u32* offs, const i64* servers, usize n_items, usize* out_len, char** err) -> u8*` | 字段寄存器内核（`src/registers.rs`）：组描述 JSON + 修改记录落库原文 / 服务器时刻 → 寄存器（支配、排序键、冲突候选、删除优先）与笔记 / 卡片标志（按前身血统继承）/ 笔记类型 / 牌组的物化视图，以及落库支配裁剪、no-op 的「值相同」；结果是 JSON，批量。排序键（`src/ordering.rs`）与释义样式去重规范形（`src/style_dedup.rs`）与卡片历史 / 查重共用一份 |
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
