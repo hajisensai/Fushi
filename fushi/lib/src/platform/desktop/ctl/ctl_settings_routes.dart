@@ -1122,7 +1122,7 @@ Future<Object?> _setModuleOrder(DesktopCtlContext context, CtlCall call) async {
     ...head,
     for (final ModuleId module in appModel.moduleVisibility.ordered)
       if (!head.contains(module)) module,
-  ]);
+  ], settingsSlot: appModel.moduleSettingsSlot);
   return _listModules(context);
 }
 

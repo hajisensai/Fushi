@@ -8443,8 +8443,15 @@ class AppModel with ChangeNotifier {
   List<ModuleId> get moduleOrder =>
       isPreferencesReady ? prefsRepo.moduleOrder : const <ModuleId>[];
 
-  Future<void> setModuleOrder(List<ModuleId> order) async {
-    await prefsRepo.setModuleOrder(order);
+  /// 「设置」tab 在用户排序里的位置；null = 最后（见 [ModuleVisibility.settingsSlot]）。
+  int? get moduleSettingsSlot =>
+      isPreferencesReady ? prefsRepo.moduleSettingsSlot : null;
+
+  Future<void> setModuleOrder(
+    List<ModuleId> order, {
+    required int? settingsSlot,
+  }) async {
+    await prefsRepo.setModuleOrder(order, settingsSlot: settingsSlot);
     notifyListeners();
   }
 
@@ -8459,6 +8466,7 @@ class AppModel with ChangeNotifier {
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
         prefOf: moduleEnabled,
         order: moduleOrder,
+        settingsSlot: moduleSettingsSlot,
         isWindows: platformServices.isWindows,
         isDesktop: platformServices.isDesktop,
         isIOS: platformServices.isIOS,

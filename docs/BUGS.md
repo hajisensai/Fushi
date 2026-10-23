@@ -67,6 +67,12 @@
 |---|:--:|:--:|---|
 | [BUG-3663](bugs/BUG-3663-manga-double-tap-zoom-window-measured-on-up.md) | ✅ | ✅ | 漫画双击缩放很难触发，总是切出悬浮栏（只有快速三击偶尔成功） |
 | [BUG-3662](bugs/BUG-3662-manga-chrome-clipped-into-ios-popup.md) | ✅ | ✅ | 漫画 chrome 开着时查词，chrome 被「画进」查词弹窗（iOS）且弹窗开着仍能点到 chrome |
+> 共 3267 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3663](bugs/BUG-3663-video-home-filtered-by-hidden-tag.md) | ✅ | ✅ | video-home-filtered-by-hidden-tag |
+| [BUG-3662](bugs/BUG-3662-button-group-squeeze-wraps-neighbour.md) | ✅ | ✅ | button-group-squeeze-wraps-neighbour |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

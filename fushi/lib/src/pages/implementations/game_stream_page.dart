@@ -1480,6 +1480,52 @@ class _GameStreamPageState extends State<GameStreamPage>
     );
   }
 
+  /// The current line's font size in a line area [area] big: the largest size
+  /// at which the whole line fits under the area's title (feedback
+  /// eXmW0_Kjer), floored at the proportional [GameStreamLookupLayout.fontSizeFor].
+  double _fittedLineFontSize(
+    BuildContext context,
+    ThemeData theme,
+    String text,
+    Size area,
+  ) {
+    final double floor = GameStreamLookupLayout.fontSizeFor(area.height);
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextDirection direction = Directionality.of(context);
+    final TextPainter title = TextPainter(
+      text: TextSpan(
+        text: t.game_stream_line,
+        style: context.fushiType.titleSmallEmphasized,
+      ),
+      textScaler: scaler,
+      textDirection: direction,
+    )..layout(maxWidth: math.max(0, area.width - 24));
+    final double titleHeight = title.height + 24;
+    title.dispose();
+    return gameStreamFitLineFontSize(
+      text: text,
+      styleFor: (double size) => subtitleTranscriptTextStyle(
+        fontSize: size,
+        selected: true,
+        fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+      ),
+      width:
+          area.width -
+          kSubtitleRowPaddingLeft -
+          kSubtitleRowPaddingRight -
+          kSubtitleRowScrollbarGutter -
+          _lineCopyActionExtent,
+      height:
+          area.height -
+          titleHeight -
+          kSubtitleRowPaddingVertical -
+          _lineAreaBottomPadding,
+      floor: floor,
+      textScaler: scaler,
+      textDirection: direction,
+    );
+  }
+
   Widget _buildLookupRailContent(ThemeData theme, double lineHeight) {
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
@@ -1489,83 +1535,94 @@ class _GameStreamPageState extends State<GameStreamPage>
       children: <Widget>[
         SizedBox(
           height: lineHeight,
-          child: SingleChildScrollView(
-            // The resize handle's touch target reaches this far up into the
-            // area; keep the last line of text clear of it.
-            padding: const EdgeInsets.only(
-              bottom: _resizeHitExtent / 2 - _lineGapHeight / 2,
-            ),
-            child: Column(
-              key: GameStreamPage.transcriptKey,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    t.game_stream_line,
-                    style: context.fushiType.titleSmallEmphasized,
-                  ),
-                ),
-                if (line == null)
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(t.game_stream_line_empty),
-                  )
-                else
-                  SubtitleTranscriptRow(
-                    colorScheme: theme.colorScheme,
-                    selected: true,
-                    text: SubtitleTranscriptText(
-                      key: ValueKey<String>('game-stream-line-${line.lineId}'),
-                      textKey: GameStreamPage.transcriptTextKey,
-                      text: line.text,
-                      style: subtitleTranscriptTextStyle(
-                        fontSize: GameStreamLookupLayout.fontSizeFor(
-                          lineHeight,
-                        ),
-                        selected: true,
-                        fontFamily: theme.textTheme.bodyMedium?.fontFamily,
-                        color: SubtitleTranscriptRow.textColorOf(
-                          context,
-                          theme.colorScheme,
-                          selected: true,
-                        ),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) {
+              final double fontSize = line == null
+                  ? GameStreamLookupLayout.fontSizeFor(lineHeight)
+                  : _fittedLineFontSize(
+                      context,
+                      theme,
+                      line.text,
+                      Size(box.maxWidth, lineHeight),
+                    );
+              return SingleChildScrollView(
+                // The resize handle's touch target reaches this far up into the
+                // area; keep the last line of text clear of it.
+                padding: const EdgeInsets.only(bottom: _lineAreaBottomPadding),
+                child: Column(
+                  key: GameStreamPage.transcriptKey,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        t.game_stream_line,
+                        style: context.fushiType.titleSmallEmphasized,
                       ),
-                      keyboardLookup: true,
-                      onLookup: (int index, Rect anchor) {
-                        final ({int start, String term}) span =
-                            subtitleTranscriptLookupSpan(line.text, index);
-                        if (span.start < 0 ||
-                            controller?.currentLine?.lineId != line.lineId ||
-                            controller?.currentLine?.text != line.text) {
-                          return;
-                        }
-                        unawaited(
-                          controller?.lookup(
-                            span.term,
-                            displayTerm: line.text.characters.elementAt(
-                              span.start,
+                    ),
+                    if (line == null)
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(t.game_stream_line_empty),
+                      )
+                    else
+                      SubtitleTranscriptRow(
+                        colorScheme: theme.colorScheme,
+                        selected: true,
+                        text: SubtitleTranscriptText(
+                          key: ValueKey<String>(
+                            'game-stream-line-${line.lineId}',
+                          ),
+                          textKey: GameStreamPage.transcriptTextKey,
+                          text: line.text,
+                          style: subtitleTranscriptTextStyle(
+                            fontSize: fontSize,
+                            selected: true,
+                            fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                            color: SubtitleTranscriptRow.textColorOf(
+                              context,
+                              theme.colorScheme,
+                              selected: true,
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    trailing: SubtitleTranscriptAction(
-                      icon: FushiIcons.copy,
-                      tooltip: t.copy,
-                      color: SubtitleTranscriptRow.secondaryColorOf(
-                        context,
-                        theme.colorScheme,
-                        selected: true,
+                          keyboardLookup: true,
+                          onLookup: (int index, Rect anchor) {
+                            final ({int start, String term}) span =
+                                subtitleTranscriptLookupSpan(line.text, index);
+                            if (span.start < 0 ||
+                                controller?.currentLine?.lineId !=
+                                    line.lineId ||
+                                controller?.currentLine?.text != line.text) {
+                              return;
+                            }
+                            unawaited(
+                              controller?.lookup(
+                                span.term,
+                                displayTerm: line.text.characters.elementAt(
+                                  span.start,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        trailing: SubtitleTranscriptAction(
+                          icon: FushiIcons.copy,
+                          tooltip: t.copy,
+                          color: SubtitleTranscriptRow.secondaryColorOf(
+                            context,
+                            theme.colorScheme,
+                            selected: true,
+                          ),
+                          size: _lineCopyIconSize,
+                          onPressed: () => unawaited(
+                            Clipboard.setData(ClipboardData(text: line.text)),
+                          ),
+                        ),
                       ),
-                      size: 16,
-                      onPressed: () => unawaited(
-                        Clipboard.setData(ClipboardData(text: line.text)),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(
@@ -1633,6 +1690,61 @@ const double _lineGapHeight = 16;
 
 /// Touch target across a resize handle's drag axis (Material minimum).
 const double _resizeHitExtent = 48;
+
+/// The resize handle's touch target reaches this far up into the line area;
+/// the line text keeps clear of it.
+const double _lineAreaBottomPadding = _resizeHitExtent / 2 - _lineGapHeight / 2;
+
+/// The line row's copy action: icon plus its 2px padding on both sides.
+const double _lineCopyIconSize = 16;
+const double _lineCopyActionExtent = _lineCopyIconSize + 4;
+
+/// Largest font size in [floor]..[GameStreamLookupLayout.maxFitFontSize] at
+/// which [text] laid out [width] wide stays within [height]. A line that does
+/// not fit even at [floor] keeps [floor] (the area scrolls). Half-point steps.
+@visibleForTesting
+double gameStreamFitLineFontSize({
+  required String text,
+  required TextStyle Function(double size) styleFor,
+  required double width,
+  required double height,
+  required double floor,
+  TextScaler textScaler = TextScaler.noScaling,
+  TextDirection textDirection = TextDirection.ltr,
+}) {
+  final double ceiling = math.max(floor, GameStreamLookupLayout.maxFitFontSize);
+  if (text.isEmpty || width <= 0 || height <= 0) return floor;
+  final TextPainter painter = TextPainter(
+    textScaler: textScaler,
+    textDirection: textDirection,
+  );
+  bool fits(double size) {
+    painter
+      ..text = TextSpan(text: text, style: styleFor(size))
+      ..layout(maxWidth: width);
+    return painter.height <= height && painter.width <= width;
+  }
+
+  try {
+    if (!fits(floor)) return floor;
+    int lo = (floor * 2).ceil();
+    int hi = (ceiling * 2).floor();
+    if (lo >= hi || !fits(lo / 2)) return floor;
+    if (fits(hi / 2)) return hi / 2;
+    // Invariant: lo/2 fits, hi/2 does not.
+    while (hi - lo > 1) {
+      final int mid = (lo + hi) ~/ 2;
+      if (fits(mid / 2)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return math.max(floor, lo / 2);
+  } finally {
+    painter.dispose();
+  }
+}
 
 /// Length of the rail grip's 48dp-wide touch band along the edge.
 const double _railGripBand = 160;

@@ -4578,6 +4578,22 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                           _effectiveSourceFilter == null)
                         v,
                 ];
+                // 反馈 ZjKzpkfZ1N：首页分区没有任何筛选入口（标签栏、筛选面板、
+                // 页头搜索都只在系列 / 全部视频出现），而筛选状态与那两个分区
+                // 共享（标签还与书架共享）。首页若吃过滤后的列表，在别处选中的
+                // 标签会把首页静默筛空、连空态都不出。首页一律取未过滤的全量：
+                // 本地取 [all]（骨架期为空，同 [ordered] 口径），远端只保留
+                // 「显示远端条目」开关与本机已有同集去重，不过任何筛选。
+                final List<VideoBookRow> homeLocal = firstPaintPending
+                    ? const <VideoBookRow>[]
+                    : all;
+                final List<RemoteVideoInfo> homeRemote = <RemoteVideoInfo>[
+                  for (final RemoteVideoInfo v in _visibleRemoteVideos(
+                    snapState ?? _lastRemoteState,
+                    null,
+                  ))
+                    if (!mirroredRemote.contains(v.id)) v,
+                ];
                 // 下拉刷新：保活后切回不再隐式重拉远端，给用户显式强制刷新入口。
                 // AlwaysScrollableScrollPhysics 保证内容不足一屏时也能下拉触发。
                 // UI v2：散卡网格与合集横排行统一卡宽（用户实报合集卡大一截）——
@@ -4664,12 +4680,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                                 // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
                                 if (widget.section ==
                                         VideoLibrarySection.home &&
-                                    (all.isNotEmpty || remoteVideos.isNotEmpty))
+                                    (all.isNotEmpty || homeRemote.isNotEmpty))
                                   SliverToBoxAdapter(
                                     child: _buildOverviewSection(
                                       all,
-                                      remoteVideos,
-                                      ordered,
+                                      homeRemote,
+                                      homeLocal,
                                       constraints.maxWidth,
                                     ),
                                   ),
@@ -4699,7 +4715,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                                 if (widget.section ==
                                         VideoLibrarySection.home &&
                                     all.isEmpty &&
-                                    remoteVideos.isEmpty)
+                                    homeRemote.isEmpty)
                                   SliverFillRemaining(
                                     hasScrollBody: false,
                                     child: _buildEmpty(),
@@ -4738,7 +4754,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// - 「下一集」不再单独成行：[continueWatchingSeriesIndex] 本身就是 Next-Up 口径
   ///   （最近那集没看完停它、看完取下一集），每部作品在继续观看里只出现一次。
   ///
-  /// 主卡与各行都取过滤后 [filtered] + [remoteVideos]（筛选条对行与墙同时生效）。
+  /// 主卡与各行取 [filtered] + [remoteVideos]：调用方（首页分区）传的是**未过滤**
+  /// 的全量——首页没有筛选入口，不能被别的分区选中的标签筛空（反馈 ZjKzpkfZ1N）。
   /// 远端占位（BUG-995 血缘）照常进继续观看：只看互联远端视频（无本地视频）时也
   /// 有续播入口。没有任何继续观看项时不画主卡，「已更新未看」回到行里；全空时
   /// 整段隐藏。
