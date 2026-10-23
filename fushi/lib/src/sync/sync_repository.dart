@@ -195,6 +195,9 @@ class SyncRepository {
   static const _keySyncAudioBookFiles = 'sync_audiobook_files_enabled';
   static const _keySyncVideoFiles = 'sync_video_files_enabled';
   static const _keyAutoSync = 'sync_auto_enabled';
+  // 互联通道专属的自动同步开关（反馈 5nWEirdCs2）；迁移规则见
+  // [isInterconnectAutoSyncEnabled]。与 [_keyAutoSync] 同为行为开关，随备份恢复。
+  static const _keyInterconnectAutoSync = 'interconnect_sync_auto';
   static const _keyLastSyncMs = 'sync_last_sync_ms';
   static const _keyCollectionsBaselineMs = 'sync_collections_baseline_ms';
   // 删除墓碑消费的因果基线：描述「本设备见过远端删除标记到什么时刻」。远端墓碑
@@ -423,10 +426,46 @@ class SyncRepository {
   Future<void> setSyncVideoFilesEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keySyncVideoFiles, v);
 
+  /// **云同步通道**的自动同步开关（默认关：云盘流量 / 配额由用户显式 opt-in）。
+  ///
+  /// 反馈 5nWEirdCs2 起它只管云通道；互联通道读自己的
+  /// [isInterconnectAutoSyncEnabled]。
   Future<bool> isAutoSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyAutoSync, false);
-  Future<void> setAutoSyncEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keyAutoSync, v);
+
+  /// 写云通道开关前先把互联开关落成显式值（[isInterconnectAutoSyncEnabled] 的
+  /// 一次性迁移）：否则一个从没碰过两个开关的用户此刻关掉云同步，互联开关的「继承
+  /// 旧值」判据就会把这次写入当成历史意愿，把互联也跟着关掉——两个开关从此不再独立。
+  Future<void> setAutoSyncEnabled(bool v) async {
+    await isInterconnectAutoSyncEnabled();
+    await _db.setPrefTyped<bool>(_keyAutoSync, v);
+  }
+
+  /// **互联通道**的自动同步开关（反馈 5nWEirdCs2）。默认开：互联页向用户承诺统计 /
+  /// 收藏「与已配对设备双向合并、默认开启」，而合并只发生在同步轮次里；互联通道的
+  /// 重内容上传开关又全默认关，自动轮次只搬进度、统计、收藏、合集这类轻量数据。
+  ///
+  /// 迁移（只迁一次，读即落盘）：本键缺行时按旧的全局开关 [_keyAutoSync]
+  /// （拆开关前它同时管两条通道）**是否存在**决定——
+  /// - 旧键缺行 = 用户从没动过自动同步 → 取新默认 true；
+  /// - 旧键有行 = 用户显式设过 → 继承它的值（关过的老用户升级后不被静默打开）。
+  ///
+  /// 判据只看「偏好行是否存在」，不看值是否等于默认。结论当场写进本键，此后旧键再怎么
+  /// 写（用户只想关云同步）都不再影响互联；[setAutoSyncEnabled] 写旧键前也先调本方法
+  /// 落盘，堵住「迁移还没发生就先写了旧键」的窗口。
+  Future<bool> isInterconnectAutoSyncEnabled() async {
+    if (await _db.getPref(_keyInterconnectAutoSync) != null) {
+      return _db.getPrefTyped<bool>(_keyInterconnectAutoSync, true);
+    }
+    final bool migrated = await _db.getPref(_keyAutoSync) == null
+        ? true
+        : await isAutoSyncEnabled();
+    await _db.setPrefTyped<bool>(_keyInterconnectAutoSync, migrated);
+    return migrated;
+  }
+
+  Future<void> setInterconnectAutoSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectAutoSync, v);
 
   /// 「与 Hoshi/ッツ 共享 Google Drive」开关。默认关（老用户云端数据留在隐藏
   /// appDataFolder 原地不动）。

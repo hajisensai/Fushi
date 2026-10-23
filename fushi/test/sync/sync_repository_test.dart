@@ -95,6 +95,78 @@ void main() {
     expect(await repo.isAutoSyncEnabled(), isFalse);
   });
 
+  // 反馈 5nWEirdCs2：互联通道自动同步拆成独立键 `interconnect_sync_auto`。迁移判据
+  // 只看旧全局键 `sync_auto_enabled` 这一**行**是否存在。旧值用裸 setPrefTyped 写，
+  // 模拟升级前就存在的数据（setAutoSyncEnabled 会先落迁移，不能拿它造前置状态）。
+  group('interconnect auto sync migration (5nWEirdCs2)', () {
+    const String oldKey = 'sync_auto_enabled';
+    const String newKey = 'interconnect_sync_auto';
+
+    test('old switch never touched → interconnect defaults on', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      expect(await db.getPref(oldKey), isNull);
+
+      expect(await repo.isInterconnectAutoSyncEnabled(), isTrue);
+      expect(await repo.isAutoSyncEnabled(), isFalse,
+          reason: '云通道默认仍是关');
+      expect(await db.getPrefTyped<bool>(newKey, false), isTrue,
+          reason: '迁移结论读即落盘');
+    });
+
+    test('old switch explicitly on → interconnect inherits on', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      await db.setPrefTyped<bool>(oldKey, true);
+      expect(await SyncRepository(db).isInterconnectAutoSyncEnabled(), isTrue);
+    });
+
+    test('old switch explicitly off → interconnect inherits off', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      // 显式写成默认值 false 也算「动过」：判据是行存在，不是值不等于默认。
+      await db.setPrefTyped<bool>(oldKey, false);
+      expect(await SyncRepository(db).isInterconnectAutoSyncEnabled(), isFalse);
+    });
+
+    test('migrates once: later cloud writes do not move interconnect',
+        () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      await db.setPrefTyped<bool>(oldKey, false);
+      final SyncRepository repo = SyncRepository(db);
+      expect(await repo.isInterconnectAutoSyncEnabled(), isFalse);
+
+      await repo.setAutoSyncEnabled(true);
+      expect(await repo.isInterconnectAutoSyncEnabled(), isFalse,
+          reason: '迁移只发生一次，之后旧键只管云通道');
+    });
+
+    test('writing the cloud switch first cannot leak into interconnect',
+        () async {
+      // 迁移还没被读触发时用户先关了云同步：setAutoSyncEnabled 必须先落迁移结论，
+      // 否则这次写会被当成「历史显式值」把互联一起关掉。
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setAutoSyncEnabled(false);
+      expect(await repo.isInterconnectAutoSyncEnabled(), isTrue);
+      expect(await repo.isAutoSyncEnabled(), isFalse);
+    });
+
+    test('interconnect switch round-trips independently', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setInterconnectAutoSyncEnabled(false);
+      expect(await repo.isInterconnectAutoSyncEnabled(), isFalse);
+      expect(await repo.isAutoSyncEnabled(), isFalse);
+      await repo.setInterconnectAutoSyncEnabled(true);
+      expect(await repo.isInterconnectAutoSyncEnabled(), isTrue);
+    });
+  });
+
   group('interconnect client url list', () {
     test('round-trips order and enabled flags', () async {
       final FushiDatabase db = _testDb();
