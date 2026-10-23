@@ -37,8 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3663](bugs/BUG-3663-stats-overview-missing-srs-review-time.md) | 🚧 | 🚧 | 统计中心总览看不到 SRS 复习时长（含导入的 Anki 复习时长） |
-| [BUG-3662](bugs/BUG-3662-srs-stats-full-log-decode.md) | 🚧 | 🚧 | SRS 统计页每次全量读复习日志逐条 jsonDecode，随日志量线性变慢 |
+| [BUG-3663](bugs/BUG-3663-stats-overview-missing-srs-review-time.md) | ✅ | ✅ | 统计中心总览看不到 SRS 复习时长（含导入的 Anki 复习时长） |
+| [BUG-3662](bugs/BUG-3662-srs-stats-full-log-decode.md) | ✅ | ✅ | SRS 统计页每次全量读复习日志逐条 jsonDecode，随日志量线性变慢 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

@@ -2,7 +2,9 @@
 //
 // FUSHI_SRS_STATS_BENCH=<笔记数> dart test test/srs/srs_stats_bench_test.dart
 //
-// 每条笔记两张卡、每卡 3 条导入 revlog（+ 导入锚点），33334 条笔记 ≈ 20 万条复习。
+// 每条笔记两张卡、每卡 3 条导入 revlog + 1 条导入锚点：25000 条笔记 = 20 万条日志 / 15 万条复习。
+// phases 是旧装载路径（全量读日志 → jsonDecode → 按卡重放）各段的耗时，作对照；
+// loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3662）。
 // 库开在临时文件上、走 createInBackground（与 app 同一种连接）。
 import 'dart:convert';
 import 'dart:io';
@@ -115,29 +117,22 @@ void main() {
       // ignore: avoid_print
       print('BENCH other: ${other.join(' ')}');
 
+      // 存量库升级（缓存修订号 1 → 2）时一次性补算投影的耗时。
+      await db.customStatement('DELETE FROM srs_stat_reviews');
       await db.customStatement(
-        'CREATE TABLE tmp_proj (log_id TEXT PRIMARY KEY, profile_uid TEXT, '
-        'card_id TEXT, occurred_at INT, utc_offset_min INT, rating INT, '
-        'kind INT, duration_ms INT, prev_due_day INT, maturity INT)',
-      );
-      await db.customStatement(
-        'INSERT INTO tmp_proj SELECT id, profile_uid, card_id, occurred_at, '
-        '540, rating, 1, duration_ms, NULL, 0 FROM srs_review_logs '
-        "WHERE kind = 'review'",
+        "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
       );
       sw.reset();
-      final int projRows =
-          (await db
-                  .customSelect(
-                    'SELECT card_id, occurred_at, utc_offset_min, rating, kind, '
-                    'duration_ms, prev_due_day, maturity FROM tmp_proj '
-                    'WHERE profile_uid = ?',
-                    variables: <Variable<Object>>[Variable<String>(kBulkUid)],
-                  )
-                  .get())
-              .length;
+      await SrsDbStore.open(
+        db: db,
+        profileUid: kBulkUid,
+        deviceId: 'bench',
+        engine: const FakeFsrsEngine(),
+        trustedClock: fixedTrustedClock(),
+        fallbackRolloverHour: () => 4,
+      );
       // ignore: avoid_print
-      print('BENCH proj($projRows)=${sw.elapsedMilliseconds}ms');
+      print('BENCH upgradeBackfill=${sw.elapsedMilliseconds}ms');
 
       sw.reset();
       final int rss0 = ProcessInfo.currentRss;
