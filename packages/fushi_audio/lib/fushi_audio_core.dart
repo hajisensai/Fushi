@@ -28,6 +28,7 @@ export 'src/audiobook/audiobook_playback_files.dart';
 export 'src/audiobook/audiobook_path_relocator.dart';
 export 'src/audiobook/audiobook_position_rebase.dart';
 export 'src/audiobook/audio_file_sort.dart';
+export 'src/audiobook/audiobook_track_timeline.dart';
 export 'src/audiobook/remote_audio_binding.dart';
 export 'src/audiobook/srt_book_model.dart';
 export 'src/audiobook/srt_book_repository.dart';

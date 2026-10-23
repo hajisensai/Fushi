@@ -43,6 +43,8 @@ typedef StandaloneSubtitleBookProgress =
 /// - [copyAudio]：false = 引用原始路径（桌面「不复制」模式）。
 /// - [persistCover]：拿到持久目录后写封面，返回封面路径（写不了返回 null）。
 /// - [tempDir]：生成 EPUB 的临时目录；缺省取 `enginePaths` 的临时根。
+/// - [cueTransform]：解析出 cue 之后、生成正文与落库之前对 cue 做一次改写。远端
+///   （流式）音频用它把整本书时间轴上的字幕按音轨切成各文件内的本地时间；缺省不改。
 ///
 /// 字幕解析出 0 条 cue 时与对话框历史行为一致：不生成正文，仍落一条只有字幕
 /// 与音频的书（`bookKey` 为空串）。需要「0 条即失败」语义的调用方（转录产物）
@@ -58,6 +60,7 @@ Future<SrtBook> importStandaloneSubtitleBook({
   required DuplicatePolicy policy,
   Directory? tempDir,
   Future<String?> Function(Directory persistDir)? persistCover,
+  List<AudioCue> Function(List<AudioCue> cues)? cueTransform,
   StandaloneSubtitleBookProgress? onProgress,
 }) async {
   void report(double f, StandaloneSubtitleBookStep step, [String? name]) =>
@@ -66,11 +69,12 @@ Future<SrtBook> importStandaloneSubtitleBook({
   final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
   report(0.1, StandaloneSubtitleBookStep.parsing);
 
-  final List<AudioCue> cues = await parseCuesForFormat(
+  final List<AudioCue> parsed = await parseCuesForFormat(
     File(subtitlePath),
     uid,
     0,
   );
+  final List<AudioCue> cues = cueTransform?.call(parsed) ?? parsed;
   fushiDebugPrint('[fushi-import] subtitleBook: parsed ${cues.length} cues');
 
   String bookKey = '';

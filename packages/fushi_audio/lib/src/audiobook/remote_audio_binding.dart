@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
+import 'audiobook_track_timeline.dart';
+
 /// 远端音频的一条音轨（Audiobookshelf 的一个音频文件）。
 ///
 /// [startOffsetMs] 是该轨在整本书时间轴上的起点（累计值）。整本字幕的时间轴是
@@ -25,6 +27,9 @@ class RemoteAudioTrack {
   final String? filename;
 
   int get endOffsetMs => startOffsetMs + durationMs;
+
+  AudioTrackSpan get span =>
+      (startOffsetMs: startOffsetMs, durationMs: durationMs);
 
   Map<String, Object?> toJson() => <String, Object?>{
     'ino': ino,
@@ -100,6 +105,11 @@ class RemoteAudioBinding {
   final String subtitleOrigin;
   final int createdAt;
   final int updatedAt;
+
+  /// 各音轨在全书时间轴上的位置，喂给 [splitCuesAcrossTracks]。
+  List<AudioTrackSpan> get spans => <AudioTrackSpan>[
+    for (final RemoteAudioTrack t in tracks) t.span,
+  ];
 
   /// 服务器上字幕文件的 ino（`server:<ino>`）；本机文件为 null。
   String? get serverSubtitleIno => subtitleOrigin.startsWith('server:')
