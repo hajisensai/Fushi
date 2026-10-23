@@ -25,6 +25,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show isDvdTitlePath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
@@ -94,6 +95,9 @@ List<String> localVideoFileCandidates({
     // 「删这条的文件」在 BD 上根本没有对应物，所以一条候选都不给：删除确认框据此
     // 连「同时删除本地文件」的勾选框都不会摆出来。
     if (isBlurayPlaylistPath(raw)) continue;
+    // DVD 标题同理，而且它的成员路径是虚拟的（`VIDEO_TS/TITLE_nn.dvdtitle`），
+    // 盘上没有这个文件可删；一张盘的各 title 共用 VTS 的 VOB。
+    if (isDvdTitlePath(raw)) continue;
     if (seen.add(platformPathKey(raw))) out.add(raw.trim());
   }
   return out;

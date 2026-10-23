@@ -32,6 +32,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_playlist.dart';
+import 'package:fushi_engine/media/video/disc/disc_title_selection.dart';
 
 /// 标题的绝对时长下限。低于此的几乎只可能是厂标、警告画面或菜单循环。
 const Duration kBlurayMinimumTitleDuration = Duration(seconds: 60);
@@ -473,16 +474,11 @@ List<BlurayTitle> selectBlurayTitles(
   // 的 NCOP / 预告 / 过场就漏网存活；若再拿它当锚，7 集以上的盘 0.15 × 总长就超过
   // 单集，各集全部出局、库里只剩一条几小时的 play-all。锚点退到「不是别人超集」的
   // 最长者，play-all 本身照旧按下限判（PR #1604 审查）。
-  int longest = 0;
-  for (final BlurayPlaylist playlist in unique) {
-    if (_supersetOfOthers(playlist, unique) >= 2) continue;
-    if (playlist.durationTicks > longest) longest = playlist.durationTicks;
-  }
-  if (longest == 0) {
-    for (final BlurayPlaylist playlist in unique) {
-      if (playlist.durationTicks > longest) longest = playlist.durationTicks;
-    }
-  }
+  final int longest = discRelativeFloorAnchor<BlurayPlaylist>(
+    unique,
+    _clipIdsOf,
+    (BlurayPlaylist playlist) => playlist.durationTicks,
+  );
   final int relativeFloor = (longest * relativeDurationFloor).round();
   final List<BlurayPlaylist> kept =
       unique
@@ -513,46 +509,20 @@ List<BlurayTitle> selectBlurayTitles(
 }
 
 /// 内容签名：片段多重集（排序后）+ 总时长。顺序被打乱的诱饵播放列表在这里与正片同签名。
-String _contentSignature(BlurayPlaylist playlist) {
-  final List<String> ids = playlist.clipIds.toList()..sort();
-  return '${ids.join(",")}@${playlist.durationTicks}';
-}
+String _contentSignature(BlurayPlaylist playlist) =>
+    discContentSignature(playlist.clipIds, playlist.durationTicks);
 
 /// 同签名里谁更可能是「真正那条」：章节多的优先，其次编号小的。
-bool _prefersOver(BlurayPlaylist candidate, BlurayPlaylist incumbent) {
-  if (candidate.chapters.length != incumbent.chapters.length) {
-    return candidate.chapters.length > incumbent.chapters.length;
-  }
-  return candidate.id.compareTo(incumbent.id) < 0;
-}
+bool _prefersOver(BlurayPlaylist candidate, BlurayPlaylist incumbent) =>
+    discPrefersOver(
+      candidateChapters: candidate.chapters.length,
+      candidateId: candidate.id,
+      incumbentChapters: incumbent.chapters.length,
+      incumbentId: incumbent.id,
+    );
 
-/// [pool] 里有几条别的播放列表的片段集合被 [playlist] 严格包住（集合比较）。
-int _supersetOfOthers(BlurayPlaylist playlist, List<BlurayPlaylist> pool) {
-  final Set<String> own = playlist.clipIds.toSet();
-  int count = 0;
-  for (final BlurayPlaylist other in pool) {
-    if (identical(other, playlist)) continue;
-    final Set<String> ids = other.clipIds.toSet();
-    if (ids.isEmpty || ids.length >= own.length) continue;
-    if (own.containsAll(ids)) count++;
-  }
-  return count;
-}
+List<String> _clipIdsOf(BlurayPlaylist playlist) => playlist.clipIds;
 
 /// [playlist] 是否只是把 [pool] 里另外两条及以上播放列表串起来的「全部播放」。
-bool _isPlayAllOf(BlurayPlaylist playlist, List<BlurayPlaylist> pool) {
-  if (playlist.clips.length < 2) return false;
-  final Set<String> own = playlist.clipIds.toSet();
-  if (own.length != playlist.clips.length) return false;
-
-  final Set<String> covered = <String>{};
-  int parts = 0;
-  for (final BlurayPlaylist other in pool) {
-    if (identical(other, playlist)) continue;
-    final Set<String> ids = other.clipIds.toSet();
-    if (ids.isEmpty || !own.containsAll(ids)) continue;
-    covered.addAll(ids);
-    parts++;
-  }
-  return parts >= 2 && covered.length == own.length;
-}
+bool _isPlayAllOf(BlurayPlaylist playlist, List<BlurayPlaylist> pool) =>
+    discIsPlayAllOf<BlurayPlaylist>(playlist, pool, _clipIdsOf);
