@@ -24,6 +24,17 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering anki channel", e);
         }
+        // BUG-3663：本地音频库（发音）查询走 `app.fushi.reader/tts` 的 queryLocalAudio。
+        // 该 channel 原先同样只在 MainActivity 的主 engine 注册：app 外查词里
+        // TtsChannel.queryLocalAudio 抛 MissingPluginException 被吞成 null，配了本地
+        // 音频库的用户点 ♪ 只得到「暂无发音」，而 app 内同一个词有发音。:popup 进程里
+        // 这个 engine 被缓存到进程结束，handler 随它常驻（库句柄由 Dart 侧
+        // setLocalAudioDb 绑定，进程退出时随进程释放）。
+        try {
+            new TtsChannelHandler(context).register(flutterEngine);
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering tts channel", e);
+        }
         try {
             flutterEngine.getPlugins().add(
                 new dev.fluttercommunity.plus.device_info.DeviceInfoPlusPlugin());

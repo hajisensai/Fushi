@@ -136,10 +136,18 @@ void main() {
     );
     await settle(tester, () => true);
     await tester.tap(key('feedback-category-suggestion'));
+    await tester.pump();
+    // 反馈 SDN2yTecu9 / LmIRnau_Fa：建议默认不带日志、不带自动截图（截图可一键附上）。
+    expect(
+      tester.widget<FushiSwitchListTile>(key('feedback-include-logs')).value,
+      isFalse,
+    );
+    expect(shotCount(), 0);
     await tester.enterText(key('feedback-title'), '想要深色图标');
     await tester.enterText(key('feedback-body'), '写了一半');
     await tester.enterText(key('feedback-contact'), 'tg @me');
-    await tester.tap(key('feedback-include-logs'));
+    await tester.tap(key('feedback-attach-auto-shot'));
+    await tester.pump();
     await tester.tap(key('feedback-paste-image'));
     await settle(tester, () => shotCount() == 2);
     expect(shotCount(), 2);
@@ -181,6 +189,10 @@ void main() {
     expect(find.text('想要深色图标'), findsOneWidget);
     expect(find.text('写了一半'), findsOneWidget);
     expect(find.text('tg @me'), findsOneWidget);
+    // 草稿是「建议」：本次的自动截图不自动接上，而是给出「附上当时画面」。
+    expect(shotCount(), 2);
+    await tester.tap(key('feedback-attach-auto-shot'));
+    await tester.pump();
     expect(shotCount(), 3);
     expect(
       tester

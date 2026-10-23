@@ -457,6 +457,45 @@ String? _ipv6PrefixKey(String url) {
   return '${uri.scheme}|$prefix|${uri.port}';
 }
 
+/// 53NT7G_tSO：把 host 刚签发给本机的 per-peer token 落到 [url] 那一行，**并同步到
+/// 同一台 host 的全部地址**（纯函数）。
+///
+/// host 按设备记 token（`upsertPairedPeer` 以 deviceId 为键）：经任一地址重新配对，
+/// 这台设备的旧 token 当场作废。以前只改了配对用的那一行，同组其余地址（内网 /
+/// 外网 / IPv6 / P2P）还拿着旧 token 撞 401——用户看到的就是「内网和外网 token
+/// 不同」，而 UI 又不提供逐地址配置。
+///
+/// [hostId] 是配对时 `/api/ping` 回报的 host 身份：这一行还没有 hostId 时，按
+/// 与地址学习同一判据（[_anchorMayClaimHostId]：同组已钉扎的证书指纹必须相同）
+/// 给它补标，再按组同步。不满足判据（对不上指纹 / 明文地址想并入已有组）就只改
+/// 这一行，绝不把 token 发去另一台机器。[url] 不在列表里 → 原样返回。
+List<FushiClientUrl> applyIssuedInterconnectToken(
+  List<FushiClientUrl> list, {
+  required String url,
+  required String token,
+  String? hostId,
+}) {
+  final int index = list.indexWhere((FushiClientUrl u) => u.url == url);
+  if (index < 0) return list;
+  FushiClientUrl row = list[index];
+  if (hostId != null &&
+      hostId.isNotEmpty &&
+      (row.hostId == null || row.hostId!.isEmpty) &&
+      _anchorMayClaimHostId(list, index, hostId)) {
+    row = row.copyWith(hostId: hostId);
+  }
+  final String? group = row.hostId;
+  return <FushiClientUrl>[
+    for (int i = 0; i < list.length; i++)
+      if (i == index)
+        row.copyWith(token: token)
+      else if (group != null && group.isNotEmpty && list[i].hostId == group)
+        list[i].copyWith(token: token)
+      else
+        list[i],
+  ];
+}
+
 /// 把 host 公布的地址集合并进候选列表（纯函数，便于单测）。
 ///
 /// - [anchorUrl] 是本次拿到地址集时用的那条地址；它被标上 [hostId]。列表里找不
@@ -489,6 +528,15 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     for (final InterconnectHostAddress a in kept) a.url,
   };
 
+  // 53NT7G_tSO：锚点刚用自己的 token 从 host 取到了地址集（`/api/host/addresses`
+  // 要鉴权），所以它手里的就是 host 此刻认的那一份。同组其余地址若还拿着重新配对前
+  // 的旧 token（已被 host 作废），在这里一并换新——已经坏掉的老配置也能自愈。
+  final String? anchorToken = anchor.token;
+  FushiClientUrl withAnchorToken(FushiClientUrl u) =>
+      anchorToken == null || u.token == anchorToken
+      ? u
+      : u.copyWith(token: anchorToken);
+
   final List<FushiClientUrl> out = <FushiClientUrl>[];
   for (int i = 0; i < list.length; i++) {
     final FushiClientUrl u = i == anchorIndex ? anchor : list[i];
@@ -496,10 +544,11 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       continue; // host 不再公布的学到地址：删。
     }
     if (u.hostId == null && !u.learned && published.contains(u.url)) {
-      out.add(u.copyWith(hostId: hostId)); // 手输的同一台机器：归组。
+      // 手输的同一台机器：归组。
+      out.add(withAnchorToken(u.copyWith(hostId: hostId)));
       continue;
     }
-    out.add(u);
+    out.add(u.hostId == hostId ? withAnchorToken(u) : u);
   }
 
   for (final InterconnectHostAddress a in kept) {

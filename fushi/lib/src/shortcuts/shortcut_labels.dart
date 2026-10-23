@@ -144,6 +144,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_screenshot;
       case ShortcutAction.videoScreenshotSubtitled:
         return t.shortcut_action_video_screenshot_subtitled;
+      case ShortcutAction.videoOcrFrame:
+        return t.shortcut_action_video_ocr_frame;
       case ShortcutAction.videoToggleFullscreen:
         return t.shortcut_action_video_toggle_fullscreen;
       case ShortcutAction.videoToggleMiniWindow:
@@ -204,6 +206,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_external_lookup;
       case ShortcutAction.globalExternalOpenLookupPage:
         return t.shortcut_action_global_external_open_lookup_page;
+      case ShortcutAction.globalExternalScreenOcr:
+        return t.shortcut_action_global_external_screen_ocr;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:
@@ -425,6 +429,8 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.camera;
       case ShortcutAction.videoScreenshotSubtitled:
         return FushiIcons.subtitles;
+      case ShortcutAction.videoOcrFrame:
+        return FushiIcons.ocr;
       case ShortcutAction.videoToggleShaderCompare:
         return FushiIcons.compare;
       case ShortcutAction.videoToggleImmersiveLock:

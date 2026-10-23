@@ -853,6 +853,32 @@ function openExternalLink(url) {
 /** 当前钉住的那枚 .deinflection-tag；null = 未钉住（hover 预览态或已收起）。 */
 let _grammarPinnedAnchor = null;
 
+// BUG-3667：浏览器扩展把弹窗画在网页的 shadow root 里，浮层挂在 shadow root 顶层
+// （__fushiOverlayParent），**不是** #entries-container 的后代；而主题变量（--surface-
+// container-high / --outline-variant / --text-color …）只落在 #entries-container 上。
+// 语法说明浮层于是拿不到底色和描边：点「被动形」这类变形标签，说明文字直接叠在词典
+// 正文上读不了。与「选择音频源」菜单（applyAudioMenuTheme）同一修法：每次显示前从弹窗
+// 容器把浮层用到的变量与明暗抄过来。app 内 / app 外整窗 WebView 浮层挂在 <body> 下、
+// 本来就继承 <html> 上的变量，这里不动它们。
+const GRAMMAR_TOOLTIP_THEME_VARS = [
+    '--text-color', '--surface-container-high', '--outline-variant',
+    '--on-surface-variant',
+];
+function applyGrammarTooltipTheme(tooltip) {
+    const container = __fushiContainer();
+    if (!window.__fushiRoot || !container || !tooltip || !tooltip.style) return;
+    try {
+        const cs = getComputedStyle(container);
+        for (const name of GRAMMAR_TOOLTIP_THEME_VARS) {
+            const v = cs.getPropertyValue(name);
+            if (v && v.trim()) tooltip.style.setProperty(name, v.trim());
+        }
+        if (cs.fontFamily) tooltip.style.fontFamily = cs.fontFamily;
+    } catch (_) { /* 无样式信息：保持现状 */ }
+    const theme = container.getAttribute && container.getAttribute('data-theme');
+    if (theme) tooltip.setAttribute('data-theme', theme);
+}
+
 /** 语法说明是否处于钉住（点击）态。可观测状态，供 dismiss 分支与测试使用。 */
 function isGrammarTooltipPinned() {
     return _grammarPinnedAnchor != null;
@@ -930,6 +956,7 @@ function showGrammarTooltip(element, pinned) {
     if (!description) return;
 
     const tooltip = ensureGrammarTooltip();
+    applyGrammarTooltipTheme(tooltip);
     const root = __fushiRootNode();
     const bodyEl = root.querySelector('.grammar-tooltip-body');
     const titleEl = root.querySelector('.grammar-tooltip-title');
@@ -7258,6 +7285,8 @@ window.__fushiPrepareRealmForReuse = () => {
 
 // 宿主改列数 / 外部触发时可调；渲染钩子已在 _firePopupRendered / updatePopupIncremental 里调。
 window.fushiRelayoutDictionaries = () => {
+    // 宿主改了弹窗宽（扩展拖拽把手 / 尺寸设置）：grid 列数跟着重算（BUG-3666）。
+    updateEffectiveDictColumns();
     observeMasonryTargets();
     scheduleMasonryAll();
 };
@@ -7321,11 +7350,32 @@ function effectiveDictColumns() {
     // 列宽门槛是 CSS px，比较对象必须是**布局**宽度：A−/A+（documentElement.style.zoom）
     // 改的是 CSS px 与屏幕 px 的比例，视口物理宽不变、可排版的 CSS px 却按 1/zoom 变化。
     // 拿物理宽比，放大字号后仍按小字号时的列数排，卡片被挤成一字一行（反向缩小时少排列）。
-    const width = __fushiViewportWidth() / __fushiDocumentZoom();
+    const width = __fushiColumnLayoutWidth();
     const fit = width > 0
         ? Math.max(1, Math.floor(width / colFloor))
         : configured;
     return Math.min(configured, fit);
+}
+// 词典列实际分到的布局宽度（CSS px）。
+// BUG-3666：浏览器扩展把弹窗画进网页里的 shadow root（window.__fushiRoot），这时
+// window.innerWidth 是**整张网页**的宽度（桌面上 1000+ px），按它算「装得下几列」永远
+// 装得下用户设的上限——370px 宽的弹窗里硬挤三列词典，每列一百来 px、一字一行。
+// shadow 宿主的 style.width 是弹窗基准宽（未乘宿主自己的 zoom，正是内容排版用的 CSS px），
+// 再按 `max-width: calc(100vw - 16px)` 的视口上限折算；其余宿主（app 内 / app 外整窗
+// WebView）弹窗即视口，沿用视口宽 ÷ 文档 zoom。
+function __fushiColumnLayoutWidth() {
+    const root = window.__fushiRoot;
+    const host = root && root.host;
+    if (host && host.style) {
+        const base = parseFloat(host.style.width);
+        if (base > 0) {
+            const hostZoom = parseFloat(host.style.zoom);
+            const z = (hostZoom > 0 && isFinite(hostZoom)) ? hostZoom : 1;
+            const vw = window.innerWidth || 0;
+            return vw > 0 ? Math.min(base, Math.max(0, vw - 16) / z) : base;
+        }
+    }
+    return __fushiViewportWidth() / __fushiDocumentZoom();
 }
 // documentElement 上的 CSS zoom（A−/A+ 与「词典字号」注入写在这里）；非法值按 1。
 function __fushiDocumentZoom() {

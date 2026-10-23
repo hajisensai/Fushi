@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart'
     show AnkiOpenWordOutcome, MineOutcome, MineResult, MiningRequestOverrides;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/anki/anki_view_model.dart'
+    show ankiRepositoryChainLabel, ankiRepositoryProvider;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -3094,6 +3096,19 @@ JSON.stringify((function(){
                 final reading = (data['reading'] ?? '').toString();
                 final AnkiOpenWordOutcome outcome =
                     await widget.onOpenInAnki!(expression, reading);
+                if (outcome == AnkiOpenWordOutcome.failed) {
+                  // 反馈 6lORfLyhXd：「找到了卡却打不开」此前只在弹窗里提示一句、日志里
+                  // 什么都没有，反馈带回来的日志无从判断是哪一步、哪个后端。
+                  final String backend = ankiRepositoryChainLabel(
+                    ref.read(ankiRepositoryProvider),
+                  );
+                  ErrorLogService.instance.log(
+                    'DictPopupWebview.openInAnki',
+                    'openWordInAnki failed '
+                        '(backend: $backend, expression: $expression)',
+                    null,
+                  );
+                }
                 return outcome.name;
               }
             } catch (e, stack) {

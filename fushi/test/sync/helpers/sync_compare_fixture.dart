@@ -129,6 +129,11 @@ class FakeCompareBackend implements SyncBackend {
       throw UnimplementedError('${invocation.memberName} not on the load path');
 }
 
+/// 导入时刻用固定递增值而不是 `DateTime.now()`：连续插入有时落在同一毫秒、有时
+/// 不同，按导入时刻排序的列表顺序就在两种之间翻，golden 随之在两张固定图之间翻
+/// （sync_compare_dialog_wide 1.19% / 14338px 时红时绿）。
+int _nextCompareImportedAt = 1700000000000;
+
 Future<EpubBookRow> seedCompareBook(FushiDatabase db, String title) async {
   await db.insertEpubBook(EpubBooksCompanion.insert(
     bookKey: title,
@@ -137,7 +142,7 @@ Future<EpubBookRow> seedCompareBook(FushiDatabase db, String title) async {
     extractDir: '/fake/$title',
     chapterCount: 1,
     chaptersJson: kCompareChaptersJson,
-    importedAt: DateTime.now().millisecondsSinceEpoch,
+    importedAt: _nextCompareImportedAt++,
   ));
   return (await db.getAllEpubBooks()).firstWhere((b) => b.title == title);
 }

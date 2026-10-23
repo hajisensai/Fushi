@@ -59,7 +59,20 @@ class _Probe {
     return Uint8List.fromList(<int>[1, 2, 3]);
   }
 
-  Future<GraphicSubtitleOcrFrame?> recognize(Uint8List _) async => _frame;
+  int recognitions = 0;
+
+  /// 识别抛「引擎不可用」（没配 OCR 引擎）。
+  bool unavailable = false;
+
+  Future<GraphicSubtitleOcrFrame?> recognize(Uint8List _) async {
+    recognitions++;
+    if (unavailable) {
+      throw const GraphicSubtitleOcrUnavailable(
+        GraphicSubtitleOcrUnavailableReason.noEngine,
+      );
+    }
+    return _frame;
+  }
 }
 
 Widget _overlay(
@@ -68,6 +81,8 @@ Widget _overlay(
   VideoPauseOcrScope scope = VideoPauseOcrScope.graphicSubtitles,
   VoidCallback? onEnableRequested,
   void Function(Object error, StackTrace stack)? onError,
+  int manualRequestSerial = 0,
+  void Function(GraphicSubtitleOcrUnavailableReason reason)? onUnavailable,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -84,6 +99,8 @@ Widget _overlay(
           scope: scope,
           onEnableRequested: onEnableRequested,
           onError: onError,
+          manualRequestSerial: manualRequestSerial,
+          onUnavailable: onUnavailable,
         ),
       ),
     ),
@@ -456,6 +473,237 @@ void main() {
         find.text(t.video_subtitle_graphic_ocr_status_ready),
         findsNothing,
       );
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+  });
+
+  // 反馈 X3ozgOAx8v：按钮 / 快捷键「识别一次当前画面」，不依赖暂停自动识别范围。
+  group('手动识别当前帧（manualRequestSerial）', () {
+    Future<void> settle(WidgetTester tester) async {
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    testWidgets('关闭档：请求后识别当前暂停帧；继续播放即解除，再暂停不自动识别', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.off),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      expect(probe.captures, 0, reason: '前提：关闭档不自动识别');
+
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          manualRequestSerial: 1,
+        ),
+      );
+      await settle(tester);
+      expect(probe.captures, 1, reason: '手动请求无视范围识别这一帧');
+      expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+      expect(
+        find.text(t.video_subtitle_frame_ocr_status_ready),
+        findsOneWidget,
+      );
+
+      c.debugSetIsPlayingForTesting(true);
+      await tester.pump();
+      expect(_hitBoxes, findsNothing, reason: '继续播放丢弃结果');
+
+      c.debugSetPositionForTesting(9000);
+      c.debugSetIsPlayingForTesting(false);
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(probe.captures, 1, reason: '豁免只认请求的那一帧，之后照范围（关）办');
+      expect(_hitBoxes, findsNothing);
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    testWidgets('关闭档 + 暂停中 seek 到别处：豁免解除，不识别新帧', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.off),
+      );
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          manualRequestSerial: 1,
+        ),
+      );
+      await settle(tester);
+      expect(probe.captures, 1);
+
+      c.debugSetPositionForTesting(12000);
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(probe.captures, 1);
+      expect(_hitBoxes, findsNothing);
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    testWidgets('播放中请求：等第一次停下的那一帧再识别', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.off),
+      );
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          manualRequestSerial: 1,
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay * 2);
+      expect(probe.captures, 0, reason: '还在播放（暂停命令在途）时不截帧');
+
+      c.debugSetIsPlayingForTesting(false);
+      await settle(tester);
+      expect(probe.captures, 1);
+      expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    testWidgets('范围本来就会识别这一帧：不重复识别，只把结果标记再亮一次', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.all),
+      );
+      await settle(tester);
+      expect(probe.captures, 1);
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+      await tester.pump(const Duration(seconds: 1));
+      expect(_pill, findsNothing, reason: '前提：结果标记已淡出');
+
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.all,
+          manualRequestSerial: 1,
+        ),
+      );
+      await settle(tester);
+      expect(probe.captures, 1, reason: '同一帧已识别过');
+      expect(probe.recognitions, 1);
+      expect(
+        find.text(t.video_subtitle_frame_ocr_status_ready),
+        findsOneWidget,
+      );
+      expect(_hitBoxes, findsNWidgets(_frame.chars.length));
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    testWidgets('引擎不可用：普通画面也报，且每次手动请求都报', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe()..unavailable = true;
+      final List<GraphicSubtitleOcrUnavailableReason> reports =
+          <GraphicSubtitleOcrUnavailableReason>[];
+      Widget build(int serial) => _overlay(
+        c,
+        probe,
+        scope: VideoPauseOcrScope.off,
+        manualRequestSerial: serial,
+        onUnavailable: reports.add,
+      );
+
+      await tester.pumpWidget(build(0));
+      await tester.pumpWidget(build(1));
+      await settle(tester);
+      expect(reports, <GraphicSubtitleOcrUnavailableReason>[
+        GraphicSubtitleOcrUnavailableReason.noEngine,
+      ]);
+
+      await tester.pumpWidget(build(2));
+      await settle(tester);
+      expect(probe.recognitions, 2, reason: '上次没拿到结果，用户再要就再跑一次');
+      expect(reports, hasLength(2));
+    });
+
+    testWidgets('自动识别（所有视频档）普通画面引擎不可用：仍不打扰', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe()..unavailable = true;
+      final List<GraphicSubtitleOcrUnavailableReason> reports =
+          <GraphicSubtitleOcrUnavailableReason>[];
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.all,
+          onUnavailable: reports.add,
+        ),
+      );
+      await settle(tester);
+      expect(probe.recognitions, 1);
+      expect(reports, isEmpty);
+    });
+
+    testWidgets('网页播放后端：手动请求也不截帧', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: false);
+      addTearDown(c.dispose);
+      c.debugSetWebBackendForTesting(true);
+      final _Probe probe = _Probe();
+      await tester.pumpWidget(
+        _overlay(c, probe, scope: VideoPauseOcrScope.off),
+      );
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          manualRequestSerial: 1,
+        ),
+      );
+      await tester.pump(const Duration(seconds: 5));
+      expect(probe.captures, 0);
+    });
+
+    testWidgets('关闭档 + 图片字幕：手动识别后不再显示「可开启」提示', (tester) async {
+      final VideoPlayerController c = _pausedController(graphic: true);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe();
+      final Finder hint = find.byKey(
+        const ValueKey<String>('graphic_subtitle_ocr_enable_hint'),
+      );
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          onEnableRequested: () {},
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hint, findsOneWidget);
+
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          scope: VideoPauseOcrScope.off,
+          onEnableRequested: () {},
+          manualRequestSerial: 1,
+        ),
+      );
+      await settle(tester);
+      expect(probe.captures, 1);
+      expect(hint, findsNothing);
+      expect(_hitBoxes, findsNWidgets(_frame.chars.length));
       await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
     });
   });

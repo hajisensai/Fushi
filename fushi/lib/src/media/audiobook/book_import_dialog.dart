@@ -70,6 +70,7 @@ class BookImportDialog extends StatefulWidget {
     this.initialSubtitlePath,
     this.initialAudioPaths,
     this.imageArchiveProbe,
+    this.requireBook = false,
     super.key,
   });
 
@@ -94,6 +95,12 @@ class BookImportDialog extends StatefulWidget {
   /// 记住「引用原文件（不复制）」上次选择的偏好仓库（[PreferencesRepository.
   /// audiobookImportReferenceOriginal]）。null = 不读不写（测试 / 无应用上下文）。
   final PreferencesRepository? prefs;
+
+  /// 本次导入必须带书籍文件（「给字幕书添加书籍文件」入口，见
+  /// `srt_book_attach_epub.dart`）：字幕与音频已由原书预填，没选书时点导入若照常
+  /// 落进字幕书分支，就会悄悄再生成一本与原书一模一样的字幕书。为真时没选书就
+  /// 先弹书籍选择器，选了才继续。
+  final bool requireBook;
   @override
   State<BookImportDialog> createState() => _BookImportDialogState();
 }
@@ -1047,6 +1054,10 @@ class _BookImportDialogState extends State<BookImportDialog>
   }
 
   Future<void> _doImport() async {
+    if (widget.requireBook && _epubPath == null) {
+      await _pickEpub();
+      if (!mounted || _epubPath == null) return;
+    }
     final AudioOnlyImportHint audioOnly = _audioOnlyHint;
     if (audioOnly == AudioOnlyImportHint.transcribeToBook) {
       // 只有音频：没有书也能导入——转录出字幕后接着走字幕书路径自动生成书籍，

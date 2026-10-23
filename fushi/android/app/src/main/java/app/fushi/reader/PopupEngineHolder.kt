@@ -62,7 +62,10 @@ object PopupEngineHolder {
      * 截屏识字（BUG-3487）：被点字所在 text block 的全文与本行在块里的起点。Dart 查词窗
      * 据此截出整句作制卡 `{sentence}`；null = 入口没给（回落为整行）。
      */
-    class SourceBlock(val text: String, val offset: Int)
+    class SourceBlock(val text: String, val offset: Int, val cardImage: CardImage? = null)
+
+    /** 截屏识字制卡带图（反馈 Gz7z6Y6Mbr）：定格帧文件 + 文本块 / 被点行像素框。 */
+    class CardImage(val path: String, val block: IntArray, val line: IntArray)
 
     @Volatile
     private var pendingSourceBlock: SourceBlock? = null
@@ -241,5 +244,9 @@ object PopupEngineHolder {
         if (sourceBlock == null) return
         map["sourceBlock"] = sourceBlock.text
         map["sourceBlockOffset"] = sourceBlock.offset
+        val image = sourceBlock.cardImage ?: return
+        map["cardImagePath"] = image.path
+        map["cardImageBlock"] = image.block.toList()
+        map["cardImageLine"] = image.line.toList()
     }
 }

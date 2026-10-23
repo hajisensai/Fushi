@@ -121,10 +121,18 @@ void main() {
     final String videoSrc =
         File('lib/src/pages/implementations/home_video_page.dart')
             .readAsStringSync();
-    // 概览门控必须含 remoteVideos（否则无本地视频时整块消失）。
+    // 概览门控必须含远端条目（否则无本地视频时整块消失）。反馈 ZjKzpkfZ1N
+    // （13bf9d1b01）起首页分区吃未过滤的远端全量 `homeRemote`（首页没有筛选入口，
+    // 不能被别的分区选中的标签筛空），门控随之改成并入 homeRemote。
     expect(
-        videoSrc.contains('all.isNotEmpty || remoteVideos.isNotEmpty'), isTrue,
-        reason: 'BUG-995：概览门控必须并入 remoteVideos');
+        videoSrc.contains('all.isNotEmpty || homeRemote.isNotEmpty'), isTrue,
+        reason: 'BUG-995：概览门控必须并入远端条目（homeRemote）');
+    expect(
+        RegExp(r'final List<RemoteVideoInfo> homeRemote = <RemoteVideoInfo>\[\s*'
+                r'for \(final RemoteVideoInfo v in _visibleRemoteVideos\(')
+            .hasMatch(videoSrc),
+        isTrue,
+        reason: 'BUG-995：homeRemote 必须取自远端可见条目（_visibleRemoteVideos）');
     // _buildOverviewSection 必须接收 remoteVideos 并把它们并进概览 entries。
     expect(
         RegExp(r'_buildOverviewSection\(\s*[\s\S]*?List<RemoteVideoInfo>')

@@ -1,0 +1,9 @@
+## BUG-3693 · 识别模型 / MOSS 下载挂在弹层上：关掉再开会起第二条写者，`.part` 写坏后永远 HTTP 416
+- **报告**：2026-10-23（用户：应用内反馈 kZZmXQBv7E，Windows 3.0.0-debug.20677「下载不完，而且出去的时候会停止下载」；截图是视频「生成日语字幕」弹层，下载 `model.onnx_data` 报 `HTTP 416`）
+- **真实性**：✅ 真 bug（机制沿代码验证；客户端日志里没有这次下载的记录，「两条写者把 `.part` 写长」是由 416 反推的高置信推测）。
+  - 下载订阅挂在页面上：`video_subtitle_generate_sheet.dart` `_downloadAsr` / `_downloadMoss` 用 `await for` 直接消费 `asrModelPort.download()` / `mossPort.ensure()`；关掉弹层后流仍在后台写，但重开的弹层 `_asrDownload == null`、按钮又亮，看起来就是「出去就停了」。再点一次起第二条 `ModelFileDownloader`，两条都以 `FileMode.append` 往同一个 `.part` 写（上游 `fushi_asr_core` `model_file_downloader.dart` `_downloadFileFrom`），`.part` 长过真实文件；之后每次 `Range: bytes=<len>-` 都拿到 416，下载器只在 `offset == expectedBytes` 时把 416 当完成（同文件 `_downloadFileFrom` 416 分支），其余一律抛 `HTTP 416`，坏 `.part` 也不删，于是永远下不完。
+  - 同一个包另外还有四个各自直接调 `downloadModel` 的入口：有声书转录弹层（`asr_transcribe_sheet.dart` `_startDownload`，dispose 时取消订阅——真的「出去就停」）、导入后自动转录（`audiobook_auto_transcribe.dart` `_downloadModel`）、设置页 / `fushi_cli`（`asr_model_downloads.dart`）、MOSS 设置行（`video_subtitle_settings.dart` `_ensure`）——任意两处同时下同一个包都会撞同一个 `.part`。
+- **[x] ① 已修复（本仓部分）** — 新增全应用单飞登记表 `fushi/lib/src/asr_host/shared_model_downloads.dart`（`sharedModelDownloads`）：按模型目录键（`asr:<packId>` / `moss`）单飞，已在下时 `join` 只挂上去（先补最近一条进度），监听方取消不停下载，只有 `cancel` 才停；页面重开用 `attach` 接回。上述五个入口全部改经它；视频字幕弹层与 MOSS 设置行初始化时接回进行中的下载，按钮随之置灰。
+- **[ ] 上游待修** — `fushi_asr_core` 的 `ModelFileDownloader` 对「`.part` 比预期长 / 416 且 `offset != expectedBytes`」应删掉坏 `.part` 从 0 重下（或先用 `Content-Range: bytes */<total>` 核对）。改在 `hajisensai/fushi-subtitles`，钉 sha 的七处一起升。已经卡在 416 的用户在此之前需到「设置 › 模型」删除该模型后重下。
+- **[x] ② 已加自动化测试** — `fushi/test/asr_host/shared_model_downloads_test.dart`（单飞不另起写者 / 监听方取消不停下载 + attach 接回 / cancel 才停 / 失败释放键）、`fushi/test/media/video/subtitle/video_subtitle_generate_sheet_test.dart`（重开弹层接回进行中的下载：显示进度、下载钮不可点、不重新发起）。
+- **备注**：上游 416 自愈未做，故本条只算部分修复。

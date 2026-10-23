@@ -485,6 +485,28 @@ void main() {
       expect(c.muted, isFalse);
     });
 
+    // W-qZRr3lwK：音量上限跟 mpv 配置走；调低上限时音量目标与静音前音量一起收回。
+    test('volume clamps follow the configured volume limit', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+
+      expect(c.maxVolume, 100);
+      await c.setVolume(180);
+      expect(c.volume, 100, reason: 'default limit keeps the old 0..100 range');
+
+      await c.applyMpvConfig(VideoMpvConfig.defaults.copyWith(volumeMax: 200));
+      expect(c.maxVolume, 200);
+      await c.setVolume(180);
+      expect(c.volume, 180);
+      expect(await c.adjustVolume(50), 200);
+
+      expect(await c.toggleMute(), 0);
+      await c.applyMpvConfig(VideoMpvConfig.defaults.copyWith(volumeMax: 150));
+      expect(c.requestedVolume, 150);
+      expect(await c.toggleMute(), 150,
+          reason: 'pre-mute volume is pulled into the lowered limit too');
+    });
+
     // TODO-433：静音真生效 + 独立「静音前音量」字段，根因修复
     // ① 静音期间调音量不污染静音前音量 ② 取消静音恢复到静音前值
     // ③ 静音期间加音量从 0 起、正确解除静音。

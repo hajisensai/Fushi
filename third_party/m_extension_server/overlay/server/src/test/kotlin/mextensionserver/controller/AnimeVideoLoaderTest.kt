@@ -4,11 +4,18 @@ import eu.kanade.tachiyomi.animesource.host.AnimeVideoLoader
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.Hoster
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.SAnime
+import eu.kanade.tachiyomi.animesource.model.SAnimeEpisodeUpdate
 import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Track
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import okhttp3.Headers
 import okhttp3.Request
 import okhttp3.Response
@@ -343,5 +350,196 @@ class AnimeVideoLoaderTest {
             java.lang.Integer.TYPE,
             marker,
         )
+    }
+
+    @Test
+    fun `lib 16 and lib 17 Video and Hoster descriptors coexist for extension dex linking`() {
+        // 描述符取自真 APK 的 dex（2026-10-23 扫 yuzono lib16 47 个 / salmanbappi lib17）：
+        // lib16 的 resolveVideo 用 14 参 copy$default（47 个里 23 个），lib17 用带 memo
+        // 的 15 参构造。两代任一描述符缺失，对应 APK 在取流处 NoSuchMethodError。
+        val marker = Class.forName("kotlin.jvm.internal.DefaultConstructorMarker")
+        val lib16Video =
+            arrayOf<Class<*>>(
+                String::class.java,
+                String::class.java,
+                Integer::class.java,
+                Integer::class.java,
+                okhttp3.Headers::class.java,
+                java.lang.Boolean.TYPE,
+                List::class.java,
+                List::class.java,
+                List::class.java,
+                List::class.java,
+                List::class.java,
+                List::class.java,
+                String::class.java,
+                java.lang.Boolean.TYPE,
+            )
+        val lib17Video = lib16Video + JsonObject::class.java
+        val int = java.lang.Integer.TYPE
+        Video::class.java.getDeclaredConstructor(*lib16Video)
+        Video::class.java.getDeclaredConstructor(*lib16Video, int, marker)
+        Video::class.java.getDeclaredConstructor(*lib17Video, int, marker)
+        Video::class.java.getDeclaredMethod("copy\$default", Video::class.java, *lib16Video, int, Any::class.java)
+        Video::class.java.getDeclaredMethod("copy\$default", Video::class.java, *lib17Video, int, Any::class.java)
+        Video::class.java.getDeclaredMethod("getMemo")
+
+        val lib16Hoster =
+            arrayOf<Class<*>>(String::class.java, String::class.java, List::class.java, String::class.java, java.lang.Boolean.TYPE)
+        Hoster::class.java.getDeclaredConstructor(*lib16Hoster)
+        Hoster::class.java.getDeclaredConstructor(*lib16Hoster, int, marker)
+        Hoster::class.java.getDeclaredConstructor(*lib16Hoster, JsonObject::class.java, int, marker)
+    }
+
+    @Test
+    fun `lib 16 style copy keeps the lib 17 memo`() {
+        val memo = buildJsonObject { put("token", "abc") }
+        val video = Video(videoUrl = "", videoTitle = "x", memo = memo)
+        val copied = video.copy(videoUrl = "https://cdn.example/x.m3u8")
+        assertEquals(memo, copied.memo)
+        assertEquals("https://cdn.example/x.m3u8", copied.videoUrl)
+        assertEquals(video.copy(videoUrl = "https://cdn.example/x.m3u8"), copied)
+    }
+
+    @Test
+    fun `lib 17 resolveVideo reads memo set by getVideoList`() {
+        val source =
+            object : FakeSource() {
+                override fun hosterListParse(response: Response): List<Hoster> = throw UnsupportedOperationException()
+
+                override suspend fun getHosterList(episode: SEpisode): List<Hoster> =
+                    listOf(Hoster(hosterName = "h", memo = buildJsonObject { put("server", "s1") }))
+
+                override suspend fun getVideoList(hoster: Hoster): List<Video> =
+                    listOf(Video(videoTitle = "auto", memo = buildJsonObject { put("id", hoster.memo["server"]!!.jsonPrimitive.content) }))
+
+                override suspend fun resolveVideo(video: Video): Video? =
+                    video.copy(videoUrl = "https://cdn.example/${video.memo["id"]!!.jsonPrimitive.content}.m3u8")
+            }
+        val videos = runBlocking { AnimeVideoLoader.loadVideos(source, episode) }
+        assertEquals(listOf("https://cdn.example/s1.m3u8"), videos.map { it.videoUrl })
+    }
+
+    @Test
+    fun `lib 17 source implementing only getAnimeEpisodeUpdate answers the host details and episode calls`() {
+        val source =
+            object : FakeSource() {
+                val calls = mutableListOf<String>()
+
+                override suspend fun getAnimeEpisodeUpdate(
+                    anime: SAnime,
+                    episodes: List<SEpisode>,
+                    fetchDetails: Boolean,
+                    fetchEpisodes: Boolean,
+                ): SAnimeEpisodeUpdate {
+                    calls += "update(details=$fetchDetails, episodes=$fetchEpisodes)"
+                    val details = SAnime.create().apply {
+                        url = anime.url
+                        title = "Detailed"
+                        initialized = true
+                    }
+                    val list = listOf(SEpisode.create().apply {
+                        url = "/ep/9"
+                        name = "Nine"
+                    })
+                    return SAnimeEpisodeUpdate(if (fetchDetails) details else anime, if (fetchEpisodes) list else episodes)
+                }
+            }
+        val anime = SAnime.create().apply {
+            url = "/anime/1"
+            title = "Bare"
+        }
+        // The host (MihonInvoker / MihonChannelHandler) still calls the lib-14/16
+        // entry points; the request / parse helpers of this source all throw.
+        val details = runBlocking { source.getAnimeDetails(anime) }
+        val episodes = runBlocking { source.getEpisodeList(anime) }
+        assertEquals("Detailed", details.title)
+        assertEquals(listOf("/ep/9"), episodes.map { it.url })
+        assertEquals(
+            listOf("update(details=true, episodes=false)", "update(details=false, episodes=true)"),
+            source.calls,
+        )
+    }
+
+    @Test
+    fun `lib 17 override calling super falls back to the legacy helpers without looping`() {
+        val source =
+            object : FakeSource() {
+                override val client = okhttp3.OkHttpClient()
+
+                override fun animeDetailsRequest(anime: SAnime): Request = throw IllegalStateException("legacy details reached")
+
+                override suspend fun getAnimeEpisodeUpdate(
+                    anime: SAnime,
+                    episodes: List<SEpisode>,
+                    fetchDetails: Boolean,
+                    fetchEpisodes: Boolean,
+                ): SAnimeEpisodeUpdate = super.getAnimeEpisodeUpdate(anime, episodes, fetchDetails, fetchEpisodes)
+            }
+        val anime = SAnime.create().apply {
+            url = "/anime/1"
+            title = "Bare"
+        }
+        val error = assertFailsWith<IllegalStateException> { runBlocking { source.getAnimeDetails(anime) } }
+        assertEquals("legacy details reached", error.message)
+    }
+
+    @Test
+    fun `lib 14 and 16 sources answer the combined call through their own overrides`() {
+        val source =
+            object : FakeSource() {
+                override suspend fun getAnimeDetails(anime: SAnime): SAnime = SAnime.create().apply {
+                    url = anime.url
+                    title = "From getAnimeDetails"
+                }
+
+                override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> =
+                    listOf(SEpisode.create().apply {
+                        url = "/ep/legacy"
+                        name = "Legacy"
+                    })
+            }
+        val anime = SAnime.create().apply {
+            url = "/anime/1"
+            title = "Bare"
+        }
+        val update = runBlocking { source.getAnimeEpisodeUpdate(anime, emptyList(), fetchDetails = true, fetchEpisodes = true) }
+        assertEquals("From getAnimeDetails", update.anime.title)
+        assertEquals(listOf("/ep/legacy"), update.episodes.map { it.url })
+    }
+
+    @Test
+    fun `placeholder urls are rebased onto the extension local server or fail when the host has none`() {
+        val source =
+            object : FakeSource() {
+                override fun hosterListParse(response: Response): List<Hoster> = throw UnsupportedOperationException()
+
+                override suspend fun getHosterList(episode: SEpisode): List<Hoster> =
+                    listOf(
+                        Hoster(
+                            hosterName = "local",
+                            videoList =
+                                listOf(
+                                    Video(
+                                        videoUrl = "${HttpServer.PLACEHOLDER_URL}/stream/1.mkv",
+                                        videoTitle = "local",
+                                        subtitleTracks = listOf(Track("${HttpServer.PLACEHOLDER_URL}/sub/1.vtt", "en")),
+                                        initialized = true,
+                                    ),
+                                ),
+                        ),
+                    )
+            }
+        val videos =
+            runBlocking { AnimeVideoLoader.loadVideos(source, episode) { "http://127.0.0.1:40000" } }
+        assertEquals(listOf("http://127.0.0.1:40000/stream/1.mkv"), videos.map { it.videoUrl })
+        assertEquals("http://127.0.0.1:40000/sub/1.vtt", videos.single().subtitleTracks.single().url)
+
+        val error = assertFailsWith<IllegalStateException> { runBlocking { AnimeVideoLoader.loadVideos(source, episode) } }
+        assertTrue(error.message!!.contains("local server"))
+
+        assertTrue(AnimeVideoLoader.isPlaceholder("http://localhost:1"))
+        assertTrue(AnimeVideoLoader.isPlaceholder("http://localhost:1?x=1"))
+        assertTrue(!AnimeVideoLoader.isPlaceholder("http://localhost:10/x"))
     }
 }

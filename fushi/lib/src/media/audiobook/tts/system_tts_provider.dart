@@ -11,6 +11,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 
+import 'package:fushi/src/utils/misc/system_tts.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 
 class SystemTtsDescriptor extends TtsProviderDescriptor {
@@ -64,14 +65,18 @@ class SystemTtsProvider extends TtsProvider {
     required TtsCancelToken cancel,
   }) async {
     cancel.throwIfCancelled();
-    final String? written = await TtsChannel.instance.ttsToFile(
+    // 这条通道拿不到「这句来自哪本词典 / 哪本书」，按文字本身与已装词典定语言
+    // （判据见 [resolveSystemTtsLanguageTag]，BUG-3669）。失败抛
+    // [SystemTtsFailure]——它就是 [TtsFailure]，朗读 / 制卡两边照常按失败处理。
+    final String written = await TtsChannel.instance.ttsToFile(
       text,
       outputPath,
+      languageTag: resolveSystemTtsLanguageTag(
+        text: text,
+        installedDictionaryLanguages: systemTtsDictionaryLanguages(),
+      ),
     );
     cancel.throwIfCancelled();
-    if (written == null) {
-      throw const TtsFailure(TtsFailureCode.unsupported, 'system engine');
-    }
     if (written != outputPath) {
       await File(written).rename(outputPath);
     }

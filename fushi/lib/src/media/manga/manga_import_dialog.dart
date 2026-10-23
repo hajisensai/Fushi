@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -18,6 +17,8 @@ import 'package:fushi/src/media/manga/import/manga_folder_batch.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
+    show isLegacyMokuroHtmlVolume, kMokuroLegacyHtmlExtension;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/utils.dart';
@@ -155,7 +156,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         for (final String path in paths)
           if (Directory(path).existsSync() ||
               kMangaCarrierFileExtensions
-                  .contains(p.extension(path).toLowerCase()))
+                  .contains(p.extension(path).toLowerCase()) ||
+              isLegacyMokuroHtmlVolume(path))
             path,
       ];
 
@@ -283,8 +285,15 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   /// `.zip` / `.epub` 在此列是因为图片型压缩包与词典包/普通电子书同形，选中后由
   /// [classifyImportCarrier] 真读包定性；不是漫画的会被 [_adoptPath] 挡回。
   /// `.pdf` 在此列是因为一卷扫描版漫画常常就是一份 PDF（逐页栅格化即页图）。
-  static final Set<String> _mangaFileExtensions =
-      kMangaCarrierFileExtensions.map((String ext) => ext.substring(1)).toSet();
+  /// `.html` 只在选择器这里多收：mokuro 0.1 旧版产物的 manifest 就是 `<卷名>.html`
+  /// （jidoujisho 用户手里的多是这种）。它不进 [kMangaCarrierFileExtensions]——目录
+  /// 批量里随便一个 html 不该算一卷，旧版产物在那边由 [mangaCarrierFilesIn] 按
+  /// 同级 `_ocr/` 判据单独认。选中的 html 不是 mokuro 产物时由 [_isOrphanedMokuro]
+  /// 挡回。
+  static final Set<String> _mangaFileExtensions = <String>{
+    for (final String ext in kMangaCarrierFileExtensions) ext.substring(1),
+    kMokuroLegacyHtmlExtension.substring(1),
+  };
 
   Future<void> _pickFile() async {
     if (_pickerActive) return;
@@ -298,9 +307,9 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         allowedExtensions: _mangaFileExtensions,
       );
       if (path == null || !mounted) return;
-      if (_isOrphanedIosMokuro(path)) {
+      if (_isOrphanedMokuro(path)) {
         FushiToast.show(
-          msg: t.manga_import_ios_mokuro_needs_folder,
+          msg: t.manga_import_mokuro_needs_folder,
           severity: ToastSeverity.error,
         );
         return;
@@ -311,14 +320,21 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     }
   }
 
-  /// iOS 单选的 `.mokuro` 是被 file_picker 挪进 `NSTemporaryDirectory()` 的**孤零零
-  /// 一个文件**，同级页图不会跟过来（BUG-2786）。收下它只会在点「导入」时才炸一句
-  /// 缺图——在选中这一刻就说清楚该怎么选。判据与导入门同一个
-  /// （[MangaModule.canImportPath]），同级真有页图时照常放行。
-  bool _isOrphanedIosMokuro(String path) =>
-      defaultTargetPlatform == TargetPlatform.iOS &&
-      p.extension(path).toLowerCase() == '.mokuro' &&
-      !MangaModule.canImportPath(path);
+  /// 单选的 mokuro manifest（`.mokuro` / 旧版 `.html`）旁边没有它的页图：收下它只会
+  /// 在点「导入」时才炸一句缺图（错误里还是一串缓存路径）——在选中这一刻就说清楚
+  /// 该怎么选。判据与导入门同一个（[MangaModule.canImportPath]），同级真有页图时
+  /// 照常放行。
+  ///
+  /// 不分平台：iOS 的 file_picker 把单个文件挪进 `NSTemporaryDirectory()`
+  /// （BUG-2786）；Android 的 SAF 在 provider 给不出真实路径时（「下载」「最近」等
+  /// 入口、云盘）同样只交回 `cache/saf_pick/` 里的一份单文件副本。两种都是「文件
+  /// 孤零零地来了」。不是 mokuro 产物的普通 `.html` 也走这里——漫画框只为 mokuro
+  /// 收 html。
+  bool _isOrphanedMokuro(String path) {
+    final String ext = p.extension(path).toLowerCase();
+    return (ext == '.mokuro' || ext == kMokuroLegacyHtmlExtension) &&
+        !MangaModule.canImportPath(path);
+  }
 
   Future<void> _pickFolder() async {
     if (_pickerActive) return;

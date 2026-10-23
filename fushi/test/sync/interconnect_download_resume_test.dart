@@ -435,6 +435,121 @@ void main() {
       expect(keepAlive.stops, 1, reason: '整批结束后撤一次');
     });
   });
+
+  // 反馈 _sZllpFQWm / BUG-3698：iOS 没有「浏览 → 下载」，互联下载要能在任何平台
+  // 直接取消；整批下载（下载远端集）要能停下来，重开 app 也不再自动续传。
+  group('取消 / 停整批', () {
+    test('取消在跑的任务：先等传输停下，再删 part 与续传清单、移出任务', () async {
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      final File file = dest('c.mp4');
+      final Completer<void> release = Completer<void>();
+      final Future<InterconnectDownloadTask> running =
+          manager.startVideoDownload(
+        id: 'v1',
+        title: 'Title v1',
+        dest: file,
+        run: fakeTransfer(total: 100, blockAt: 40, release: release),
+        resumeRecord: recordFor(file),
+      );
+      unawaited(running.then((_) {}, onError: (Object _) {}));
+      while ((manager.taskFor('v1')?.receivedBytes ?? 0) < 40) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      expect(manager.canCancel('v1'), isTrue);
+
+      expect(await manager.cancel('v1'), isTrue);
+
+      expect(manager.taskFor('v1'), isNull, reason: '取消后任务不再列出');
+      expect(await File('${file.path}.part').exists(), isFalse);
+      expect(await InterconnectVideoResumeStore.read(file.path), isNull,
+          reason: '清单删掉，重开 app 时不会被自动续传接回来');
+      expect(await InterconnectVideoResumeStore.scan(dir), isEmpty);
+    });
+
+    test('取消暂停中的任务同样删半成品；不可暂停的书在跑时不能取消', () async {
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      final File file = dest('p.mp4');
+      final Completer<void> release = Completer<void>();
+      final Future<InterconnectDownloadTask> first = manager.startVideoDownload(
+        id: 'v1',
+        title: 'Title v1',
+        dest: file,
+        run: fakeTransfer(total: 100, blockAt: 30, release: release),
+        resumeRecord: recordFor(file),
+      );
+      while ((manager.taskFor('v1')?.receivedBytes ?? 0) < 30) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      manager.pause('v1');
+      await expectLater(first, throwsA(isA<RemoteDownloadCancelled>()));
+      expect(manager.canCancel('v1'), isTrue);
+      expect(await manager.cancel('v1'), isTrue);
+      expect(manager.taskFor('v1'), isNull);
+      expect(await File('${file.path}.part').exists(), isFalse);
+
+      final Completer<void> gate = Completer<void>();
+      final Future<void> book = manager.startBookDownload(
+        downloadId: 'b1',
+        title: 'Book',
+        dest: dest('b.epub'),
+        run: (File target, {void Function(double progress)? onProgress}) =>
+            gate.future,
+      );
+      final String bookId = InterconnectDownloadManager.bookTaskId('b1');
+      expect(manager.canCancel(bookId), isFalse);
+      expect(await manager.cancel(bookId), isFalse);
+      expect(manager.isRunning(bookId), isTrue);
+      gate.complete();
+      await book;
+    });
+
+    test('暂停整批里正在跑的那一集 = 停掉整批，后面的集不再起跑', () async {
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      final Completer<void> release = Completer<void>();
+      final List<String> started = <String>[];
+      Future<void> Function() member(String id, {bool block = false}) =>
+          () async {
+            started.add(id);
+            final File file = dest('$id.mp4');
+            await manager.startVideoDownload(
+              id: id,
+              title: id,
+              dest: file,
+              run: fakeTransfer(
+                total: 100,
+                blockAt: block ? 20 : null,
+                release: block ? release : null,
+              ),
+              resumeRecord: recordFor(file, id: id),
+            );
+          };
+      final Future<InterconnectDownloadBatch> batch = manager.startBatch(
+        id: 'batch',
+        title: 'Batch',
+        starters: <Future<void> Function()>[
+          member('e1', block: true),
+          member('e2'),
+          member('e3'),
+        ],
+      );
+      while ((manager.taskFor('e1')?.receivedBytes ?? 0) < 20) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      manager.pause('e1');
+      final InterconnectDownloadBatch done = await batch;
+
+      expect(started, <String>['e1'], reason: '停整批后排队的集不能再起跑');
+      expect(done.isRunning, isFalse);
+      expect(done.failed, 1);
+      expect(done.skipped, 2);
+      expect(manager.isBatchRunning('batch'), isFalse);
+      expect(manager.taskFor('e1')!.status, InterconnectDownloadStatus.paused);
+      expect(manager.taskFor('e2'), isNull);
+    });
+  });
 }
 
 class _RecordingKeepAlive implements DownloadKeepAlive {

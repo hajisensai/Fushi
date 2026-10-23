@@ -61,6 +61,15 @@ class PopupDictFlutterActivity : FlutterActivity() {
         const val EXTRA_SOURCE_BLOCK_OFFSET: String = "sourceBlockOffset"
 
         /**
+         * 截屏识字制卡带图（反馈 Gz7z6Y6Mbr）：定格帧在 app 缓存里的文件路径（大图不走
+         * Intent，`:popup` 进程按路径读），以及所点文本块 / 被点行在那张图里的像素框
+         * （各 4 个 int：left, top, right, bottom）。「截屏识字制卡带图」关着时不带。
+         */
+        const val EXTRA_CARD_IMAGE_PATH: String = "cardImagePath"
+        const val EXTRA_CARD_IMAGE_BLOCK: String = "cardImageBlock"
+        const val EXTRA_CARD_IMAGE_LINE: String = "cardImageLine"
+
+        /**
          * 悬浮球「剪贴板查词」：activity 拿到窗口焦点后**自己**读剪贴板再查。
          * Android 10+ 只有前台且有输入焦点的 app 能读剪贴板，后台的悬浮球服务读不到，
          * 所以不能由服务读好再塞进 EXTRA_PROCESS_TEXT。剪贴板为空时留一个只有搜索栏
@@ -307,7 +316,16 @@ class PopupDictFlutterActivity : FlutterActivity() {
         val block: String = intent.getStringExtra(EXTRA_SOURCE_BLOCK) ?: return null
         val offset: Int = intent.getIntExtra(EXTRA_SOURCE_BLOCK_OFFSET, -1)
         if (offset < 0 || offset > block.length) return null
-        return PopupEngineHolder.SourceBlock(block, offset)
+        val imagePath: String? = intent.getStringExtra(EXTRA_CARD_IMAGE_PATH)
+        val imageBlock: IntArray? = intent.getIntArrayExtra(EXTRA_CARD_IMAGE_BLOCK)
+        val imageLine: IntArray? = intent.getIntArrayExtra(EXTRA_CARD_IMAGE_LINE)
+        val cardImage: PopupEngineHolder.CardImage? =
+            if (imagePath.isNullOrEmpty() || imageBlock?.size != 4 || imageLine?.size != 4) {
+                null
+            } else {
+                PopupEngineHolder.CardImage(imagePath, imageBlock, imageLine)
+            }
+        return PopupEngineHolder.SourceBlock(block, offset, cardImage)
     }
 
     /**

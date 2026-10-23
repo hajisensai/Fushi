@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/isbn.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
@@ -122,6 +123,21 @@ class EpubParser {
     return _parseIsbn(XmlDocument.parse(_readText(opfFile)));
   }
 
+  /// 只读**已解压**目录里的 container.xml + OPF，返回 OPF 声明的系列（见
+  /// [parseEpubSeries]）；给存量书回填系列用（`backfillEpubSeries`）。缺 container /
+  /// OPF 或没有声明返回 null；XML 坏了照常抛。
+  static EpubSeries? readSeriesFromExtracted(String extractDir) {
+    final File? containerFile = _findContainerXml(extractDir);
+    if (containerFile == null) return null;
+    final String? rootfilePath = _findRootfilePath(
+      XmlDocument.parse(_readText(containerFile)),
+    );
+    if (rootfilePath == null) return null;
+    final File opfFile = File(p.join(extractDir, rootfilePath));
+    if (!opfFile.existsSync()) return null;
+    return parseEpubSeries(XmlDocument.parse(_readText(opfFile)));
+  }
+
   /// Parse an already-extracted EPUB directory.
   static EpubBook parseFromExtracted(String extractDir) {
     final File? containerFile = _findContainerXml(extractDir);
@@ -210,6 +226,7 @@ class EpubParser {
       resources: resources,
       rootDirectory: extractDir,
       renditionSpread: renditionSpread,
+      series: parseEpubSeries(opfXml),
     );
   }
 
