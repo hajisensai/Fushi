@@ -15,8 +15,9 @@
 /// **本机布局**（`<备份根>/`，app 里是数据根的 documents 根下 `srs_backups/`——与 Anki 一样放在用户看得到、
 /// 卸载 / 换设备时能带走的位置；不进同步，通用备份按类别显式收文件、不会收它）：
 /// - `<profileUid>/fushi-review-<日期_时刻>-<种类>.fushisrs` + 隐藏的 `.<同名>.json`（清单副本，列表时不用解压）；
-/// - `media/<sha256>`：所有备份共享的媒体池，按内容哈希存，同一个文件只存一份；
-///   清理旧备份后，没有任何清单引用的媒体随之删除。
+/// - `media/<sha256>`：所有备份共享的媒体池，按内容哈希存，同一个文件只存一份；与媒体目录同卷时是
+///   媒体文件的硬链接（不占第二份空间；跨卷 / 文件系统不支持时退回复制）。媒体文件一律「先写临时文件
+///   再改名」，换的是新文件，不会经链接改到池里那份。清理旧备份后，没有任何清单引用的媒体随之删除。
 library;
 
 import 'dart:async';
@@ -31,6 +32,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/platform/file_hard_link.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -541,7 +543,8 @@ class SrsBackupStore {
     return SrsBackupInfo(file: f, manifest: m, fileBytes: await f.length());
   }
 
-  /// 本机所有备份占用的磁盘空间（全部 profile 的备份文件 + 共享媒体池）。
+  /// 本机所有备份占用的磁盘空间（全部 profile 的备份文件 + 共享媒体池）。媒体池里与媒体目录硬链接的
+  /// 文件也按全尺寸计（Dart 读不到链接数），实际多占的空间比这个数小。
   Future<int> diskUsage() async {
     if (!await root.exists()) return 0;
     int total = 0;
@@ -845,7 +848,8 @@ class SrsBackupStore {
         sha = cached['sha256']! as String;
       }
       sha ??= await ffcSha256File(f.path);
-      if (cached is! Map || cached['sha256'] != sha) {
+      final bool sameEntry = cached is Map && cached['sha256'] == sha;
+      if (!sameEntry) {
         index[key] = <String, Object?>{
           'size': st.size,
           'mtime': st.modified.millisecondsSinceEpoch,
@@ -853,11 +857,23 @@ class SrsBackupStore {
         };
         dirty = true;
       }
+      // 池文件与媒体文件同卷时是硬链接（不占第二份空间）。旧版本复制进池的文件在这里换成
+      // 链接；换过的在索引里记一笔（`linked`），之后不再每次重链。
       final File pooled = File(p.join(mediaPool.path, sha));
-      if (!await pooled.exists() || await pooled.length() != st.size) {
+      final bool present =
+          await pooled.exists() && await pooled.length() == st.size;
+      if (!present || !(sameEntry && cached['linked'] == true)) {
         final File tmp = File('${pooled.path}.tmp');
-        await f.copy(tmp.path);
-        await tmp.rename(pooled.path);
+        await _deleteQuietly(tmp);
+        final bool linked = tryCreateHardLink(f.path, tmp.path);
+        if (linked || !present) {
+          if (!linked) await f.copy(tmp.path);
+          await tmp.rename(pooled.path);
+        }
+        if (linked) {
+          (index[key]! as Map<String, Object?>)['linked'] = true;
+          dirty = true;
+        }
       }
       out.add(SrsBackupMediaEntry(name: name, sha256: sha, size: st.size));
     }
@@ -1248,8 +1264,14 @@ class SrsBackupStore {
       bool poolCorrupt = false;
       if (await pooled.exists()) {
         if (await _sha256Of(pooled) == m.sha256) {
-          await pooled.copy(tmp.path);
-          ok = await _sha256Of(tmp) == m.sha256;
+          // 同卷时硬链接回去（与入池同理）；不行再复制、复制后再核一次哈希。
+          await _deleteQuietly(tmp);
+          if (tryCreateHardLink(pooled.path, tmp.path)) {
+            ok = true;
+          } else {
+            await pooled.copy(tmp.path);
+            ok = await _sha256Of(tmp) == m.sha256;
+          }
         } else {
           poolCorrupt = true;
           await _deleteQuietly(pooled);
