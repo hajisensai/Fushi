@@ -464,13 +464,21 @@ void main() {
         // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
         // 主页只留一行带已配对数摘要的入口；其后是「加入游戏串流」入口
         // （PR #1611）——每个平台都能当接收端，所以该行不带平台门控。
+        // _sZllpFQWm：两者之间是「互联下载」任务页入口——iOS 没有浏览模块，
+        // 互联下载又不是商店受限能力，这一行同样不带任何门控。
         expect(idsOf(dest.sections[1]), <String>[
           'interconnect.devices',
+          'interconnect.download_tasks',
           'interconnect.game_stream',
         ]);
         expect(dest.sections[1].visible, isNotNull);
         expect(
           dest.sections[1].items[1].visible,
+          isNull,
+          reason: '互联下载不是商店受限能力，入口不该按平台藏起来',
+        );
+        expect(
+          dest.sections[1].items[2].visible,
           isNull,
           reason: '串流接收端覆盖全部平台，入口不该再按平台藏起来',
         );
