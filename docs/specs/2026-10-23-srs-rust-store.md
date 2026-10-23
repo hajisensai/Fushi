@@ -52,8 +52,12 @@
 4. 标记已在 → Dart 在主库 `DROP TABLE IF EXISTS` 9 张旧表与其索引（Drift schema v125 不再声明它们；
    迁移步只建 / 删别的东西，不碰这 9 张表，**删表只在搬迁标记写入之后发生**）。
 
-`:popup` 进程不搬迁：它发现标记未写时只读旧表还是等主进程？——它不碰 SRS 写路径；查词状态读
-`srs.db`，标记未写时返回空（主进程启动必先完成搬迁）。
+只有主进程搬迁。`:popup` 进程（`isMainProcess: false`）只读 `srs.db`；标记还没写（主进程尚未
+完成首次搬迁）时它当作没有 SRS 数据，不去读主库旧表。
+
+实现：`packages/fushi_engine/lib/srs/srs_legacy_store_migration.dart`（列序表 `kSrsLegacyTables`
+与 Rust `schema.rs` 的 `TABLES` 逐项相同，`srs_legacy_store_migration_test.dart` 钉住它与 Drift
+表的 `PRAGMA table_info` 一致、搬迁逐行逐字节相同、失败整体回滚且旧表不删）。
 
 ## 4. 跨库编排
 
