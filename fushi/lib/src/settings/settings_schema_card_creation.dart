@@ -191,6 +191,25 @@ SettingsDestination buildCardCreationDestination() {
         title: t.anki_compact_glossaries,
         subtitle: t.anki_compact_glossaries_hint,
       ),
+      // 「制卡提示」分组：两种目标都生效。
+      SettingsBodySearchEntry(
+        id: 'card_creation.notice.success',
+        hasRevealTarget: true,
+        title: t.card_creation_notice_success,
+        subtitle: t.card_creation_notice_success_hint,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.notice.duplicate',
+        hasRevealTarget: true,
+        title: t.card_creation_notice_duplicate,
+        subtitle: t.card_creation_notice_duplicate_hint,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.global_tags',
+        hasRevealTarget: true,
+        title: t.anki_tags_global,
+        subtitle: t.anki_tag_default_section,
+      ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.tags',
         hasRevealTarget: true,
@@ -336,6 +355,12 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
         SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_animated_format',
           title: t.video_mining_animated_format,
+          hasRevealTarget: true,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_animated_play_once',
+          title: t.mining_animated_play_once,
+          subtitle: t.mining_animated_play_once_hint,
           hasRevealTarget: true,
         ),
         SettingsBodySearchEntry(

@@ -905,7 +905,9 @@ class MinedSentences extends Table {
 /// TODO-817 网络/本地来源库：一个「来源」是一个媒体根（本地文件夹或网络根），
 /// 扫描后产出多本书/视频（[EpubBooks].sourceId / [VideoBooks].sourceId 反向指向）。
 ///
-/// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源恒 NULL；网络来源（SFTP/
+/// 🔴 凭据红线：[configJson] **绝不裸存明文密码**。本地来源只在 iOS 上带一条安全
+/// 作用域书签（`iosBookmark`，不是凭据，见 `kSourceConfigIosBookmarkKey`），其余
+/// 平台恒 NULL；网络来源（SFTP/
 /// FTP，TODO-1274 已接入）只存**非敏感连接参数** JSON（host/port/username/useTls）；
 /// 密码/私钥经 SourceLibraryCredentialStore 以 base64 单独落 Preferences（键
 /// `media_source_secret_<id>`，按行 id 隐式引用），绝不进入 configJson。
@@ -933,7 +935,8 @@ class MediaSources extends Table {
   TextColumn get rootPath => text()();
 
   /// 非敏感网络连接参数 JSON（host/port/username/useTls）。**绝不裸存明文密码/
-  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL。
+  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL（iOS 例外：
+  /// 存 `iosBookmark` 安全作用域书签）。
   TextColumn get configJson => text().nullable()();
 
   /// 截图「媒体数」：上次扫描产出的条目数。

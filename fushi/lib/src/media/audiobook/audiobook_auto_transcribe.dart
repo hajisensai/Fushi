@@ -21,6 +21,8 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
     show audiobookTitleForAudioPaths, discoveryImportFileName;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show asrDownloadKeyFor, sharedModelDownloads;
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 
@@ -151,8 +153,16 @@ class AppAudiobookTranscriber implements AudiobookTranscriber {
     );
     final Completer<void> done = Completer<void>();
     late final StreamSubscription<ModelDownloadEvent> sub;
-    sub = service
-        .downloadModel(language: plan.language, variant: plan.variant)
+    // 单飞（kZZmXQBv7E）：与设置页 / 转录弹层下同一个包时挂上去，不另起写者；
+    // 取消本任务只摘监听，已在下的模型照常下完（下次直接可用）。
+    sub = sharedModelDownloads
+        .join(
+          asrDownloadKeyFor(plan.language, service.audioProfile),
+          () => service.downloadModel(
+            language: plan.language,
+            variant: plan.variant,
+          ),
+        )
         .listen(
           (ModelDownloadEvent e) {
             // 逐文件事件：把「之前文件」的字节累计起来算总进度（同转录弹层）。

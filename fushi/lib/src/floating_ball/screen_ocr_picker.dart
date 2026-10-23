@@ -9,6 +9,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
@@ -211,6 +212,12 @@ class ScreenOcrPickerPage extends StatelessWidget {
                 hit.line.text,
                 hit.charIndex,
                 selectionRect: hit.charRect.shift(layout.origin),
+                // 反馈 Gz7z6Y6Mbr：识别用的这张图 + 所点文本块，制卡时裁成卡图。
+                cardImage: screenOcrCardImageForHit(
+                  bytes: imageBytes,
+                  lines: result.lines,
+                  hit: hit.line,
+                ),
               );
             },
             child: Stack(

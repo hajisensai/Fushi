@@ -12,9 +12,11 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -434,8 +436,10 @@ Future<void> _handleMineBridge(
 Future<Map<String, Object?>> _mineEntry(
   AppModel model,
   Map<String, String> fields,
-  String sentenceContext,
-) async {
+  String sentenceContext, {
+  String? coverPath,
+  bool recordStats = true,
+}) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.miningAnkiRepository;
@@ -443,6 +447,7 @@ Future<Map<String, Object?>> _mineEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
       sentence: sentence,
+      coverPath: coverPath,
       source: AnkiMiningSource.book,
     ),
   );
@@ -450,7 +455,7 @@ Future<Map<String, Object?>> _mineEntry(
   // 回包由 MinePopupResult 构造——成功回 ankiConnect + noteId，进了待发队列回
   // queued（popup.js 画 ✓ 不回查），重复回 duplicate（BUG-1908）。
   final described = describeMineOutcome(outcome);
-  if (described.record) {
+  if (recordStats && described.record) {
     unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
   }
   final MinePopupResult reply = described.success
@@ -462,6 +467,46 @@ Future<Map<String, Object?>> _mineEntry(
     // （FushiToast 在拿不到 Overlay 时直接 return），此前失败就是纯静默。
     if (!described.success && described.message.isNotEmpty)
       'message': described.message,
+  };
+}
+
+/// 桌面截屏识字（冻结层点字）的制卡委托（反馈 Gz7z6Y6Mbr）：与默认的 [_mineEntry] /
+/// [_updateEntry] 同一条写入路径，只多带一张卡图——识别用的整屏截图里所点文字所在的
+/// 文本块（[ScreenOcrCardImage]），按制卡图片质量档裁好走 `coverPath`。偏好「截屏识字
+/// 制卡带图」关着时不带图。统计由桥接层在委托返回成功后统一记（委托路径的约定），
+/// 这里不再记一遍。
+OverlayMiningHandler screenOcrOverlayMiningHandler({
+  required AppModel model,
+  required ScreenOcrCardImage cardImage,
+  required String sentenceContext,
+}) {
+  return ({required Map<String, String> fields, int? updateNoteId}) async {
+    final ({String path, Directory dir})? cover =
+        model.prefsRepo.screenOcrCardImage
+        ? await writeScreenOcrCardImage(
+            cardImage,
+            imageTier: model.miningImageQuality,
+          )
+        : null;
+    try {
+      return updateNoteId == null
+          ? await _mineEntry(
+              model,
+              fields,
+              sentenceContext,
+              coverPath: cover?.path,
+              recordStats: false,
+            )
+          : await _updateEntry(
+              model,
+              updateNoteId,
+              fields,
+              sentenceContext,
+              coverPath: cover?.path,
+            );
+    } finally {
+      if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+    }
   };
 }
 
@@ -767,8 +812,9 @@ Future<Map<String, Object?>> _updateEntry(
   AppModel model,
   int noteId,
   Map<String, String> fields,
-  String sentenceContext,
-) async {
+  String sentenceContext, {
+  String? coverPath,
+}) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final BaseAnkiRepository repo = model.miningAnkiRepository;
   final MineOutcome outcome = await repo.updateMinedNote(
@@ -776,6 +822,7 @@ Future<Map<String, Object?>> _updateEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
       sentence: resolveMineSentence(fields, sentenceContext),
+      coverPath: coverPath,
       source: AnkiMiningSource.book,
     ),
   );

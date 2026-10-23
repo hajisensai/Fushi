@@ -323,7 +323,7 @@ class AnkiRepository extends BaseAnkiRepository {
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.
     final tags = buildNoteTags(
-      settings.tags,
+      settings.noteTags,
       source: context.source,
       includeHibiki: settings.tagIncludeHibiki,
       includeCategory: settings.tagIncludeCategory,
@@ -528,7 +528,7 @@ class AnkiRepository extends BaseAnkiRepository {
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper。
       final List<String> tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,

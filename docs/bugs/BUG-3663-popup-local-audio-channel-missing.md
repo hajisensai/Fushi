@@ -1,0 +1,6 @@
+## BUG-3663 · popup-local-audio-channel-missing
+- **报告**：2026-10-22（用户反馈 bMJ0YZkY8W，Android 3.0.0-debug.20679：「在 app 外查词英语音频显示暂无发音，app 内查词有发音」）
+- **真实性**：✅ 真 bug。发音解析的本地音频库一路走 `TtsChannel.queryLocalAudio` → `app.fushi.reader/tts` MethodChannel（`fushi/lib/src/utils/misc/lookup_audio_playback.dart` `_buildLookupAudioResolver`），原生 `TtsChannelHandler` 只在 `MainActivity.configureFlutterEngine` 的主引擎注册；app 外查词的 `:popup` 引擎由 `PopupEngineHolder.ensureEngine` → `FloatingDictPluginRegistrant.registerWith` 装插件，那里没有它。副引擎上 `invokeMethod('queryLocalAudio')` 抛 MissingPluginException，被 `TtsChannel.queryLocalAudio` 的 catch 吞成 null（`tts_channel.dart`），本地音频库源对每个词都「没有」，♪ 只能弹「暂无发音」；app 内主引擎同一个词正常。`TtsChannelHandler` 构造器要求 Activity（`runOnUiThread` / `getCacheDir`），也是副引擎没注册它的原因。
+- **[x] ① 已修复** — `TtsChannelHandler` 改为只要 `Context`（主线程回帖走自带 `Handler(Looper.getMainLooper())`）；`FloatingDictPluginRegistrant` 用 applicationContext 给 :popup 引擎注册一份（引擎缓存到进程结束，handler 随它常驻）。单词音频仍走弹窗 WebView `<audio>`（`markHostPlaybackRegistered` 依旧只在主入口调）。
+- **[x] ② 已加自动化测试** — `fushi/test/android/popup_engine_tts_channel_guard_test.dart`：源码守卫，副引擎注册点必须 `new TtsChannelHandler(context).register(flutterEngine)`，handler 构造器只要 Context、不得再调 Activity API（MethodChannel 注册在原生层，host 单测跑不了）。
+- **备注**：未跑 `gradlew assembleRelease`、未真机复测（需要 Android 真机 + 本地音频库）。

@@ -64,15 +64,21 @@ def prepareMihonSourceApi = tasks.register("prepareMihonSourceApi") {
 // are vendored with the desktop sidecar (third_party/m_extension_server);
 // compiling the same files here keeps Android and the desktop sidecar on one
 // ABI. The sidecar build layers `overlay/` over `upstream_src/` (overlay wins),
-// and so does this task: the overlay holds Fushi's lib 14 + lib 16 union of
-// the ABI (data-class `Video`, hoster API, `SEpisode.fillermark`, ...) plus the
-// shared host loader `animesource/host/AnimeVideoLoader.kt`. It is a plain
-// copy of files already in the repository: no download, no hash.
+// and so does this task: the overlay holds Fushi's lib 14 + 16 + 17 union of
+// the ABI (`Video` with and without `memo`, hoster API, `SEpisode.fillermark`,
+// combined `getAnimeEpisodeUpdate`, ...) plus the shared host loader
+// `animesource/host/AnimeVideoLoader.kt` and the `torrentutils` helper that
+// extensions link against. It is a plain copy of files already in the
+// repository: no download, no hash. The one file not shared is the lib-17
+// `animesource/model/HttpServer.kt`: the sidecar's extends NanoHTTPD, which
+// the app does not ship, so the app compiles its own (same FQCN) from
+// src/main/kotlin and the loader reports local-server videos as unplayable.
 // `util/lang/CoroutinesExtensions.kt` comes along because the anime sources
 // import `eu.kanade.tachiyomi.util.lang.awaitSingle`, which Mihon's source-api
 // does not provide (its awaitSingle lives in `eu.kanade.tachiyomi.util`).
 def aniyomiSourceRoot = rootProject.file("../../third_party/m_extension_server/upstream_src/server/src/main/kotlin")
 def aniyomiOverlayRoot = rootProject.file("../../third_party/m_extension_server/overlay/server/src/main/kotlin")
+def aniyomiOverlayJavaRoot = rootProject.file("../../third_party/m_extension_server/overlay/server/src/main/java")
 def aniyomiSourceOutput = layout.buildDirectory.dir("generated/aniyomiSourceApi")
 def prepareAniyomiSourceApi = tasks.register("prepareAniyomiSourceApi", Sync) {
     File upstreamAnime = new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/animesource")
@@ -87,11 +93,18 @@ def prepareAniyomiSourceApi = tasks.register("prepareAniyomiSourceApi", Sync) {
     }
     from(overlayAnime) {
         into "eu/kanade/tachiyomi/animesource"
+        exclude "model/HttpServer.kt"
+    }
+    from(new File(aniyomiOverlayRoot, "eu/kanade/tachiyomi/torrentutils")) {
+        into "eu/kanade/tachiyomi/torrentutils"
+    }
+    from(new File(aniyomiOverlayJavaRoot, "eu/kanade/tachiyomi/torrentutils")) {
+        into "eu/kanade/tachiyomi/torrentutils"
     }
     from(new File(aniyomiSourceRoot, "eu/kanade/tachiyomi/util/lang")) {
         into "eu/kanade/tachiyomi/util/lang"
     }
-    include "**/*.kt"
+    include "**/*.kt", "**/*.java"
     into aniyomiSourceOutput
 }
 
