@@ -293,6 +293,84 @@ const CHECK = String.raw`(async () => {
     CSS.highlights.delete('fushi-search');
     over.remove();
     await frames();
+
+    // DEHOXVOYVQ: on a later page (body scrolled by whole pages) a highlight that wraps
+    // onto following lines must get a lane on every line, not just the first one.
+    const longP = document.createElement('p');
+    longP.textContent = '国'.repeat(64);
+    root().appendChild(longP);
+    const pages = () => vertical ? document.body.scrollHeight / step : document.body.scrollWidth / step;
+    for (let i = 0; i < 12 && pages() < 6; i++) longP.textContent += longP.textContent;
+    await frames();
+    const targetPage = 4;
+    if (vertical) document.body.scrollTop = targetPage * step; else document.body.scrollLeft = targetPage * step;
+    await frames();
+    const box2 = document.body.getBoundingClientRect();
+    const start2 = vertical
+      ? box2.top + parseFloat(bcs.paddingTop) - document.body.scrollTop
+      : box2.left + parseFloat(bcs.paddingLeft) - document.body.scrollLeft;
+    const colStart = start2 + targetPage * step;
+    const node = longP.firstChild;
+    const charRect = (i) => { const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 1); return r.getClientRects()[0]; };
+    // Characters run column by column, so "starts at or after this page" is monotonic in
+    // the offset: binary-search the page's first character, then step into the line.
+    let lo = 0, hi = node.data.length - 1;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      const cr = charRect(m);
+      if (cr && span(cr)[0] >= colStart - 1) hi = m; else lo = m + 1;
+    }
+    let from = -1;
+    for (let i = lo; i < Math.min(node.data.length - 1, lo + 8); i++) {
+      const cr = charRect(i);
+      if (cr && span(cr)[0] >= colStart + 3 * em - 1 && span(cr)[1] <= colStart + colW) { from = i; break; }
+    }
+    ok(from >= 0, 'found a mid-line character on page ' + targetPage);
+    if (from >= 0) {
+      const perLine = Math.floor(colW / em);
+      const wr = document.createRange();
+      wr.setStart(node, from);
+      wr.setEnd(node, Math.min(node.data.length, from + 2 * perLine));
+      CSS.highlights.set('fushi-search', new Highlight(wr));
+      await frames();
+      const lines = Array.from(wr.getClientRects()).filter((r) => r.width > 0.5 && r.height > 0.5 &&
+        span(r)[0] >= colStart - 1 && span(r)[1] <= colStart + colW + 1);
+      ok(lines.length >= 2, 'wrapped highlight spans several lines on page ' + targetPage + ' (' + lines.length + ')');
+      const fullLanes = (label) => {
+        const ls = lanes('fushi-search');
+        lines.forEach((r, li) => {
+          const hit = ls.some((l) => Math.abs(mid(l) - mid(r)) < em / 2 &&
+            span(l)[0] <= span(r)[0] + 1 && span(l)[1] >= span(r)[1] - 1);
+          ok(hit, label + ': line ' + li + ' of a wrapped highlight on page ' + targetPage + ' has a full lane');
+        });
+      };
+      fullLanes('exact grid');
+      // Blink lays columns out in 1/64px fixed point while the computed column-width is the
+      // float calc result, so on fractional-DPR phones the JS grid drifts a little per column
+      // and lands line starts left of the computed column start after a few dozen pages.
+      // Simulate that drift (0.3px per column here) and the wrapped lines must still be lit.
+      const realGcs = window.getComputedStyle;
+      window.getComputedStyle = function(el, pseudo) {
+        const s = realGcs.call(window, el, pseudo);
+        if (el !== document.body) return s;
+        return new Proxy(s, { get: (t, k) => k === 'columnWidth'
+          ? (parseFloat(t.columnWidth) + 0.3) + 'px'
+          : (typeof t[k] === 'function' ? t[k].bind(t) : t[k]) });
+      };
+      try {
+        CSS.highlights.delete('fushi-search');
+        await frames();
+        CSS.highlights.set('fushi-search', new Highlight(wr));
+        await frames();
+        fullLanes('drifted grid');
+      } finally {
+        window.getComputedStyle = realGcs;
+      }
+      CSS.highlights.delete('fushi-search');
+    }
+    longP.remove();
+    if (vertical) document.body.scrollTop = 0; else document.body.scrollLeft = 0;
+    await frames();
   }
   return { errors, checks };
 })()`;

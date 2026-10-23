@@ -1082,7 +1082,8 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var start = vertical
         ? box.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) - body.scrollTop
         : box.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) - body.scrollLeft;
-      return { v: vertical, start: start, step: width + (parseFloat(cs.columnGap) || 0), width: width };
+      var gap = parseFloat(cs.columnGap) || 0;
+      return { v: vertical, start: start, step: width + gap, width: width, gap: gap };
     };
     var lanes = function(pieces, join) {
       var annCache = [];
@@ -1099,10 +1100,21 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
           rubies: p.ruby ? [p.ruby] : []
         };
         if (frame && frame.v === p.v && frame.step > 0) {
-          // 按片段起点归栏（悬挂字形只会伸出栏尾），再把两端收进这一栏。
-          it.col = Math.floor((it.a + 0.5 - frame.start) / frame.step);
+          // 按片段起点归栏（悬挂字形只会伸出栏尾），只把栏尾收进这一栏。
+          //
+          // DEHOXVOYVQ（安卓翻页：当前句只亮第一行，折到下一行的部分全没了）：算出来的栏
+          // 网格 start + k·step 与浏览器真实排出的栏并不逐像素重合——计算样式里的
+          // column-width 是 calc 的浮点结果，而 Blink 排栏用 1/64px 的定点数，每一栏差
+          // 不到 1/64px，翻到第 k 页就累积 k 倍；scrollLeft 又按设备像素取整。几十页后
+          // 每行行首（恰在真实栏起点）就落到算出的栏起点左边超过 0.5px，旧的 `+ 0.5`
+          // 容差把它归进前一栏，再被收到前一栏栏尾、宽度归零被滤掉——一句话折行后只剩
+          // 第一行（行中起头的那段起点离栏界远，不受影响）。
+          // 正文片段的起点永远在某一栏内（悬挂标点也只从栏尾往外伸），从不落在列间距
+          // 前半段之外，所以归栏容差放宽到半个列间距：网格误差远小于它，归栏不再错。
+          // 栏头不再收（片段不会从栏头之前开始，收它只会把漂移量削进字里）。
+          var tol = Math.max(0.5, Math.min(frame.gap / 2, frame.step / 4));
+          it.col = Math.floor((it.a + tol - frame.start) / frame.step);
           var colStart = frame.start + it.col * frame.step;
-          it.a = Math.max(it.a, colStart);
           it.b = Math.min(it.b, colStart + frame.width);
         }
         return it;

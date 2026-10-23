@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3267 条。点号进各自文件。
+> 共 3268 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3664](bugs/BUG-3664-paginated-audio-lane-drops-wrapped-lines.md) | ✅ | ✅ | 翻页模式当前句高亮只亮第一行，折行部分全丢 |
 | [BUG-3663](bugs/BUG-3663-recommended-fonts-unreachable-in-china.md) | ✅ | ✅ | 中国大陆网络下推荐字体下载失败，且失败时不说原因 |
 | [BUG-3662](bugs/BUG-3662-srt-book-cannot-attach-epub.md) | ✅ | ✅ | 下载并自动转录的有声书无法再配上对应的 EPUB |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
