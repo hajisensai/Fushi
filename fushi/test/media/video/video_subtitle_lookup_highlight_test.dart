@@ -353,7 +353,7 @@ void main() {
     expect(texts.single.style?.foreground?.color.toARGB32(), 0xFF604010);
   });
 
-  testWidgets('左右分屏 \clip：每个裁剪窗各画自己那半，拼成整段', (WidgetTester tester) async {
+  testWidgets('左右分屏 clip：每个裁剪窗各画自己那半，拼成整段', (WidgetTester tester) async {
     await _pumpAss(
       tester,
       _kAssSplitClip,
