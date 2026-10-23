@@ -78,9 +78,11 @@ void main() {
       isTrue,
       reason: '手动 IP 未接入共享配对编排 _runPairingV2',
     );
-    // 配对成功后自动落 token（免用户手粘）。
+    // 配对成功后自动落 token（免用户手粘）。53NT7G_tSO 起还带上 ping 回报的
+    // hostId，让新 token 同步到这台 host 的全部地址。
     expect(
-      source.contains('await _onPairSuccess(baseUrl, token, fingerprint)'),
+      RegExp(r'await _onPairSuccess\(\s*baseUrl,\s*token,\s*fingerprint,')
+          .hasMatch(source),
       isTrue,
       reason: '配对成功后未自动落 token（_onPairSuccess）',
     );

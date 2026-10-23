@@ -14,6 +14,8 @@ import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
+    show applyIssuedInterconnectToken;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
@@ -1601,12 +1603,23 @@ class SyncRepository {
   ///
   /// [url] 不在列表里时只写全局键（配对流程会在此之前把地址 append 进去，正常路径
   /// 不会走到；防御性处理避免凭据丢失）。
-  Future<void> setFushiClientTokenForUrl(String url, String token) async {
-    await updateFushiClientUrls((List<FushiClientUrl> urls) {
-      final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
-      if (idx < 0 || urls[idx].token == token) return urls;
-      return <FushiClientUrl>[...urls]..[idx] = urls[idx].copyWith(token: token);
-    });
+  ///
+  /// 53NT7G_tSO：host 按设备只认一份 token（重新配对即作废旧的），所以新 token 同时
+  /// 写到**同一台 host 的全部地址**；[hostId]（配对时 ping 回报的身份）让还没归组的
+  /// 新地址先按指纹判据归组，见 [applyIssuedInterconnectToken]。
+  Future<void> setFushiClientTokenForUrl(
+    String url,
+    String token, {
+    String? hostId,
+  }) async {
+    await updateFushiClientUrls(
+      (List<FushiClientUrl> urls) => applyIssuedInterconnectToken(
+        urls,
+        url: url,
+        token: token,
+        hostId: hostId,
+      ),
+    );
     await setFushiClientToken(token);
   }
 
