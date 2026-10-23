@@ -914,6 +914,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   ///   离开。
   /// - [caretHoldsPause]：字级选词光标会话激活时暂停由它接管（与
   ///   [shouldResumeAfterLookupDismiss] 同一条让位），鼠标放哪儿都不该替它决定续播。
+  /// - [pointerOverFloatingBall]：指针停在应用内悬浮球上（[appFloatingBallPointerInside]）
+  ///   = 要操作应用（反馈 / 截图……），不是离开去看视频（反馈 5yWS2o6U6q）。
   /// - [hiddenByDialog]：制卡 / 选句上下文 / 打开卡片这类对话框期间，浮层被**停靠到
   ///   屏外**（BUG-797/1040/1327 同族：`_popupHidingDialogDepth`），它那层 MouseRegion
   ///   随之离开指针并报 exit，而 `hasVisiblePopup` 看的是 controller 级 visible、仍为
@@ -930,6 +932,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required bool overSubtitle,
     bool caretHoldsPause = false,
     bool hiddenByDialog = false,
+    bool pointerOverFloatingBall = false,
   }) =>
       enabled &&
       openedByHover &&
@@ -937,7 +940,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       !pointerOverPopup &&
       !overSubtitle &&
       !caretHoldsPause &&
-      !hiddenByDialog;
+      !hiddenByDialog &&
+      !pointerOverFloatingBall;
 
   /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
   /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
@@ -3341,6 +3345,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _registerExternalNavigation();
     // 字幕列表侧栏按刘海 / 灵动岛所在边让位（BUG-3411）：横屏左 ↔ 右翻转时只有它变。
     sensorHousingEdge.addListener(_onSensorHousingEdgeChanged);
+    appFloatingBallPointerInside.addListener(_onFloatingBallPointerChanged);
     // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
     videoPlaybackRemotes.register(_playbackRemote);
     if (Platform.isWindows) {
@@ -6086,6 +6091,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
     sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
+    appFloatingBallPointerInside.removeListener(_onFloatingBallPointerChanged);
     _unregisterVideoRemote();
     // 退页时高级制卡对话框可能还开着：它的缓冲副本 / 缩略图缓存跟着页面走。
     _discardAdvancedMiningSession();
@@ -6754,6 +6760,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _hoverLeaveResumeTimer = null;
   }
 
+  /// 指针进 / 出应用内悬浮球（反馈 5yWS2o6U6q）。进球撤表：移到球上是要操作应用，
+  /// 不是离开去看视频。出球重新起表：球外可能是空白（随后 barrier 的 hover 会接着
+  /// 判），也可能直接出了窗口（之后不会再有任何 hover 事件，不起表视频就卡在暂停）；
+  /// 到期由 [_fireHoverLeaveResume] 复核全部门控（回到字幕 / 浮层上、宿主路由被
+  /// 反馈页盖住都会挡下）。
+  void _onFloatingBallPointerChanged() {
+    if (!mounted) return;
+    if (appFloatingBallPointerInside.value) {
+      _cancelHoverLeaveResume();
+    } else {
+      _armHoverLeaveResume();
+    }
+  }
+
   /// 指针离开了「字幕 + 浮层」这整片查词面（全屏 barrier 的 [MouseRegion] exit = 指针
   /// 离开窗口，或浮层的 exit = 指针移出浮层）。起表而不直接关：指针可能只是从浮层挪回
   /// 字幕上继续查下一个词，到期复核会把那种情况挡掉。
@@ -6805,6 +6825,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _subtitleListHitTester.hitTest(_lastGlobalPointerPos) != null,
       caretHoldsPause: _videoCaretActive,
       hiddenByDialog: lookupPopupHiddenByDialog,
+      pointerOverFloatingBall: appFloatingBallPointerInside.value,
     )) {
       return;
     }

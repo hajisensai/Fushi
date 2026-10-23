@@ -349,4 +349,36 @@ void main() {
       expect(gate, lessThan(push), reason: '门控必须在推浮层之前');
     });
   });
+
+  // 首页词典页与 texthooker 的浮层同样手动插在根 Overlay 上，同一机制接上：覆写
+  // lookupOwnerRoute 为本页路由 + 挂栈顶探针（探针回调帧后刷新浮层 entry）。
+  group('首页词典页 / texthooker 接线（BUG-3663 源码守卫）', () {
+    for (final String page in <String>[
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+      'lib/src/pages/implementations/texthooker_page.dart',
+    ]) {
+      test(page, () {
+        final String src = File(page).readAsStringSync();
+        final int at = src.indexOf('get lookupOwnerRoute');
+        expect(at, greaterThan(0), reason: '必须覆写 lookupOwnerRoute');
+        expect(
+          src.substring(at, src.indexOf(';', at)),
+          contains('ModalRoute.of(context)'),
+        );
+        final int build = src.indexOf('Widget build(BuildContext context) {');
+        expect(build, greaterThan(0));
+        expect(
+          src.substring(build, src.indexOf('\n  }', build)),
+          contains('LookupOwnerRouteProbe('),
+          reason: '探针包住整页',
+        );
+        final int changed = src.indexOf('void _onLookupOwnerRouteChanged()');
+        expect(changed, greaterThan(0));
+        expect(
+          src.substring(changed, src.indexOf('\n  }', changed)),
+          contains('_syncPopupOverlay()'),
+        );
+      });
+    }
+  });
 }
