@@ -92,7 +92,43 @@ def unified_ffmpeg_provenance(closure, ffmpeg_prefix, ffmpeg_source, output):
     }
 
 
-def package_sources(closure, prefix, output, unified=None):
+# tool/dvd: one copy of each, linked by libmpv (dvd://) and libavformat (dvdvideo).
+DVD_LIBRARIES = ("libdvdcss-", "libdvdread-", "libdvdnav-")
+
+
+def dvd_provenance(closure, ffmpeg_prefix, output):
+    """Record the DVD libraries (tool/dvd/recipe.env) and ship their licenses.
+
+    They live in the unified FFmpeg prefix; resolving any of them from MSYS2
+    (or not at all) would mean libmpv and the dvdvideo demuxer no longer share
+    one copy, or that libdvdread lost its link to libdvdcss.
+    """
+    recipe_dir = Path(__file__).resolve().parents[1] / "dvd"
+    recipe = dict(line.split("=", 1) for line in (recipe_dir / "recipe.env").read_text().splitlines()
+                  if line and not line.startswith("#") and "=" in line)
+    files = {}
+    for stem in DVD_LIBRARIES:
+        matches = [p for p in closure if p.name.lower().startswith(stem)]
+        if len(matches) != 1 or matches[0].parent != ffmpeg_prefix / "bin":
+            raise RuntimeError(f"{stem}*.dll must resolve exactly once from the unified FFmpeg "
+                               f"prefix (tool/dvd/build_dvd_libs.sh), got {matches}")
+        files[stem.rstrip("-")] = matches[0].name
+    license_dir = output / "licenses" / "fushi-dvd"
+    license_dir.mkdir(parents=True, exist_ok=True)
+    for source in sorted((ffmpeg_prefix / "share/licenses/fushi-dvd").glob("*-COPYING")):
+        shutil.copy2(source, license_dir / source.name)
+    if len(list(license_dir.iterdir())) != len(DVD_LIBRARIES):
+        raise RuntimeError("DVD library licenses missing from the unified FFmpeg prefix")
+    return {
+        "name": "fushi-dvd",
+        "license": "GPL-2.0-or-later",
+        "versions": {name: recipe[f"{name.upper()}_VERSION"] for name in files},
+        "tarball_sha256": {name: recipe[f"{name.upper()}_SHA256"] for name in files},
+        "files": sorted(files.values()),
+    }
+
+
+def package_sources(closure, prefix, output, private=()):
     """Record the package versions and licenses behind every imported DLL."""
     msys = prefix.parent
     wanted = {"mingw64/bin/" + path.name: path.name for path in closure if path.parent == prefix / "bin"}
@@ -120,8 +156,8 @@ def package_sources(closure, prefix, output, unified=None):
                 shutil.copy2(source, target)
     if missing := wanted.keys() - owned:
         raise RuntimeError(f"DLLs without package provenance: {sorted(missing)}")
-    if unified is not None:
-        packages.append(unified)
+    # Builds outside pacman: the unified FFmpeg and the tool/dvd libraries.
+    packages.extend(private)
     (output / "msys2-packages.json").write_text(json.dumps(sorted(packages, key=lambda p: p["name"]), indent=2) + "\n")
 
 
@@ -161,8 +197,10 @@ def main():
     # CMake uses the explicit closure, never a glob that might include old DLLs.
     (args.output / "runtime-files.cmake").write_text(
         "set(LIBMPV_RUNTIME_NAMES\n" + "".join(f'  "{row["name"]}"\n' for row in manifest) + ")\n")
-    package_sources(closure, args.prefix, args.output,
-                    unified_ffmpeg_provenance(closure, args.ffmpeg_prefix, args.ffmpeg_source, args.output))
+    package_sources(closure, args.prefix, args.output, [
+        unified_ffmpeg_provenance(closure, args.ffmpeg_prefix, args.ffmpeg_source, args.output),
+        dvd_provenance(closure, args.ffmpeg_prefix, args.output),
+    ])
     shutil.copy2(args.source / "LICENSE.GPL", args.output / "licenses/MPV-GPL.txt")
     shutil.copy2(args.source / "LICENSE.LGPL", args.output / "licenses/MPV-LGPL.txt")
     commit = subprocess.check_output(["git", "-C", str(args.source), "rev-parse", "HEAD"], text=True).strip()
@@ -180,7 +218,8 @@ def main():
         "mpv_commit": commit, "patch_sha256": sha256(patch_file),
         "render_patches": {name: sha256(path) for name, path in render_patches.items()},
         "demux_patches": {name: sha256(patches / name) for name in demux_patches},
-        "native_menu_schema": 1, "runtime_manifest": "runtime-manifest.json",
+        # 2: disc-navigation-state v2 (disc-type + dvd-state branch).
+        "native_menu_schema": 2, "runtime_manifest": "runtime-manifest.json",
         "dependency_packages": "msys2-packages.json",
     }, indent=2) + "\n")
     print(json.dumps({"files": len(manifest), "bytes": sum(row["bytes"] for row in manifest)}))

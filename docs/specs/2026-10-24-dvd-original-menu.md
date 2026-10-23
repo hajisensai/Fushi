@@ -108,3 +108,23 @@
   回退办法是 iOS 构建不链 libdvdcss（只播无加密 / 已解密的 ISO），判据写进
   `store_compliance.dart`，不在各处散写 `Platform.isIOS`。
 - 高亮渲染正确性：mpv 当年删 DVD 菜单就是因为高亮画不对，验收必须逐张截图对拍。
+
+## 落地：原生依赖与导航快照 v2（2026-10-24）
+
+实测与未完成项见 `tool/dvd/README.md`。
+
+- 版本：libdvdcss 1.6.0 / libdvdread 7.1.1 / libdvdnav 7.0.0（`tool/dvd/recipe.env`）。
+  mpv `36abaa32` 要求 dvdnav ≥ 6.1.0；`-Ddvda` 显式关闭（DVD-Audio 不在本方案内）。
+- `disc-navigation-state` **v2**（`disc-navigation-state.patch`）：保留 v1 全部字段，新增
+  `disc-type`（`bluray` / `dvd`）；DVD 时 `playlist` 恒为 -1，`title` 为 VM 的全局标题号（菜单里
+  为 0），另有 `dvd-state`：`domain`（`FP` / `VMGM` / `VTSM` / `VTS`）、`vts`、`title`、`part`、
+  `pgc`、`pg`、`cell`、`still`、`button`、`button-count`、`title-menu-allowed`、
+  `root-menu-allowed`，有焦点按钮时还有 `highlight`（源像素矩形 `x0/y0/x1/y1` + 4 个选中态颜色
+  `palette`，0xAARRGGBB）。`generation` 在 domain / title / PGC 变化时 +1（同一标题内换章节
+  不变）。Dart 解析同时接受 v1 与 v2（`video_disc_menu.dart`）。
+- DVD 的 `discnav` 输入：未被盘消费的按键、被 UOP 禁止或盘上不存在的菜单调用都报命令失败
+  （与蓝光一致）；`menu` = `DVD_MENU_Root`，`title-menu` = `DVD_MENU_Title`，`popup` =
+  `DVD_MENU_Part`，`prev` = `DVD_MENU_Escape`。键位表见 `videoDiscMenuKeyActions`。
+- 片段导出 / 截图 / 字幕提取：`DvdFfmpegBackend`（`fushi_engine/.../ffmpeg_backend.dart`）把
+  `encodeDvdTitleInput(...)` 改写成 `-f dvdvideo -title N [-chapter_start/-chapter_end/-angle]`，
+  直接读 `VIDEO_TS/*.VOB` 一律拒绝。

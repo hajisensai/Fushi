@@ -2,6 +2,9 @@
 # libmpv-2.dll + ffmpeg.exe + ffprobe.exe on ONE set of fbd*.dll: the player and
 # card mining share the same FFmpeg. Build the FFmpeg first:
 #   MINGW64> tool/ffmpeg-unified/windows/build_ffmpeg_msys2.sh <ffmpeg-work-dir>
+# That prefix also holds the DVD libraries (tool/dvd: libdvdcss, libdvdread
+# linked against it, libdvdnav); libmpv's dvd:// navigation links the same
+# copies as the FFmpeg dvdvideo demuxer.
 param(
   [Parameter(Mandatory = $true)][string]$FfmpegWorkDirectory,
   [string]$MsysRoot = 'C:\msys64',
@@ -19,7 +22,8 @@ $ffmpegWork = [IO.Path]::GetFullPath($FfmpegWorkDirectory)
 $ffmpegPrefix = Join-Path $ffmpegWork 'prefix'
 $ffmpegSource = Join-Path $ffmpegWork 'src'
 foreach ($required in @("$ffmpegPrefix\bin\ffmpeg.exe", "$ffmpegPrefix\bin\ffprobe.exe",
-    "$ffmpegPrefix\lib\pkgconfig\libavcodec.pc")) {
+    "$ffmpegPrefix\lib\pkgconfig\libavcodec.pc", "$ffmpegPrefix\lib\pkgconfig\dvdnav.pc",
+    "$ffmpegPrefix\lib\pkgconfig\dvdread.pc", "$ffmpegPrefix\lib\pkgconfig\libdvdcss.pc")) {
   if (-not (Test-Path $required)) { throw "Unified FFmpeg is not built: missing $required" }
 }
 # The unified FFmpeg must win over MSYS2's own ffmpeg package for both meson's
@@ -59,7 +63,8 @@ try { Run 'cmake' @('-E', 'tar', 'xzf', (Join-Path $repoRoot 'third_party\media_
 finally { Pop-Location }
 $include = (Join-Path $angle 'include').Replace('\', '/')
 Run 'meson' @('setup', $build, $source, '--buildtype=release', '-Dlibmpv=true',
-  '-Dcplayer=false', '-Dlibbluray=enabled', '-Dlua=luajit', '-Djavascript=disabled',
+  '-Dcplayer=false', '-Dlibbluray=enabled', '-Ddvdnav=enabled', '-Ddvda=disabled',
+  '-Dlua=luajit', '-Djavascript=disabled',
   '-Dtests=true', '-Degl-angle=enabled', "-Dc_args=-I$include")
 Push-Location (Join-Path $repoRoot 'fushi')
 try { Run 'dart' @('tool/heavy.dart', '--', 'ninja', '-C', $build, '-j', "$Jobs") }
@@ -72,7 +77,8 @@ Copy-Item (Join-Path $repoRoot 'third_party\media_kit_libs_windows_video\bdj\lib
 # load the renamed fbd*.dll next to them (proves the shared runtime is closed).
 $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
 Run $python @('-I', (Join-Path $repoRoot 'tool\ffmpeg-unified\verify_ffmpeg_capabilities.py'),
-  '--ffmpeg', (Join-Path $package 'ffmpeg.exe'), '--ffprobe', (Join-Path $package 'ffprobe.exe'))
+  '--ffmpeg', (Join-Path $package 'ffmpeg.exe'), '--ffprobe', (Join-Path $package 'ffprobe.exe'),
+  '--require-staged')
 Run $python @((Join-Path $PSScriptRoot 'probe_libmpv.py'), (Join-Path $package 'libmpv-2.dll'))
 # BUG-3499 / BUG-3500: dump-cache must keep every frame of laced Matroska audio
 # and of Matroska B-frame video.
@@ -83,4 +89,5 @@ Run $python @((Join-Path $PSScriptRoot 'verify_mkv_lace_dump.py'), '--library', 
 Run $python @((Join-Path $PSScriptRoot 'verify_dovi_p5.py'), '--library', $package,
   '--angle', $angle, '--work', (Join-Path $out 'verify-dovi'))
 Write-Output "Verified native runtime directory: $package"
-Write-Output 'Run verify_menu_render.py against a readable real disc before repinning an archive.'
+Write-Output 'Run verify_menu_render.py against a readable real disc (Blu-ray: --disc, DVD: --dvd;'
+Write-Output 'tool/dvd/make_test_dvd.py authors an unencrypted menu DVD) before repinning an archive.'

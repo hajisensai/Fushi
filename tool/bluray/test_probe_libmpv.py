@@ -41,14 +41,14 @@ class RuntimeClosureTests(unittest.TestCase):
                 path.touch()
             graph = {mpv.name: [a.name, "kernel32.dll"], a.name: [b.name], b.name: [a.name]}
             with patch("package_libmpv.imports", side_effect=lambda path: graph[path.name]):
-                self.assertEqual(set(collect(mpv, prefix, system)), {mpv, a, b})
+                self.assertEqual(set(collect([mpv], [prefix], system)), {mpv, a, b})
 
     def test_missing_transitive_dependency_is_a_hard_failure(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             with patch("package_libmpv.imports", return_value=["missing-codec.dll"]):
                 with self.assertRaisesRegex(RuntimeError, "missing-codec"):
-                    collect(root / "libmpv-2.dll", root, root / "system")
+                    collect([root / "libmpv-2.dll"], [root], root / "system")
 
 
 @unittest.skipUnless(os.environ.get("FUSHI_MPV_LIBRARY"), "Set FUSHI_MPV_LIBRARY to test the actual runtime")
@@ -69,6 +69,9 @@ class NativeAbiTests(unittest.TestCase):
         # BUG-3325: Lua player scripts must actually execute, not just load.
         self.assertIn("-Dlua=luajit", report["configuration"])
         self.assertTrue(report["lua_script"]["message"], report["lua_script"])
+        # DVD menus: dvd:// plus libdvdnav / libdvdread / libdvdcss loaded with
+        # libmpv (docs/specs/2026-10-24-dvd-original-menu.md).
+        self.assertEqual(report["dvd"]["errors"], [], report["dvd"])
 
     def test_unavailable_state_and_invalid_navigation_are_not_success(self):
         code = """

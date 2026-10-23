@@ -14,6 +14,10 @@
 #   <work-dir>/src     patched FFmpeg source (prepare_ffmpeg_src.sh)
 #   <work-dir>/deps    header-only deps (nv-codec-headers, AMF)
 #   <work-dir>/prefix  installed FFmpeg (bin/*.dll, ffmpeg.exe, include, lib/pkgconfig)
+#                      plus the DVD libraries (tool/dvd): libmpv resolves dvdnav /
+#                      dvdread from this same prefix, so the player and the
+#                      dvdvideo demuxer link ONE copy of them
+#   <work-dir>/dvd     DVD library tarballs and build trees
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -51,6 +55,11 @@ PREFIX_NATIVE="$(cygpath -m "${PREFIX}")"
 
 bash "${ROOT}/prepare_ffmpeg_src.sh" "${SRC}"
 
+# DVD libraries first, into the FFmpeg prefix itself (docs/specs/
+# 2026-10-24-dvd-original-menu.md): one shared libdvdcss / libdvdread /
+# libdvdnav for the dvdvideo demuxer and libmpv's dvd:// navigation.
+bash "${ROOT}/../dvd/build_dvd_libs.sh" "${WORK}/dvd" "${PREFIX_NATIVE}"
+
 git clone --quiet --depth 1 --branch "${NV_CODEC_HEADERS_TAG}" \
   https://github.com/FFmpeg/nv-codec-headers.git "${WORK}/nv-codec-headers"
 make -C "${WORK}/nv-codec-headers" PREFIX="${DEPS}" install > /dev/null
@@ -82,6 +91,8 @@ config=(
   --enable-libaom
   --enable-libass
   --enable-libbluray
+  --enable-libdvdnav
+  --enable-libdvdread
   --enable-libdav1d
   --enable-libfontconfig
   --enable-libfreetype
@@ -134,7 +145,7 @@ config=(
 
 mkdir -p "${BUILD}"
 cd "${BUILD}"
-export PKG_CONFIG_PATH="${DEPS}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig:${DEPS}/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
 "${SRC}/configure" "${config[@]}"
 make -j"${JOBS}"
 make install
