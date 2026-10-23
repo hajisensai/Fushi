@@ -77,9 +77,10 @@ class CollectionSyncEngine {
       if (merged == null) continue; // 双方都无知识（不可达）或全空壳被剪枝。
       merged = _withEpisodeOrder(merged);
       if (ruleOrder != null) merged = _withRuleOrder(merged, ruleOrder);
-      // 首次发布盖时戳：把本端新造/新并入的（publishedAt 尚空的）墓碑/删除标记为
-      // now，供对端用「基线 vs publishedAt」判新旧（§2.3 因果修复）。
-      if (stampPublish) merged = _stampEntry(merged, now);
+      // 首次发布盖时戳：只给**远端清单还没有**的墓碑/删除（本端带进共享清单的新知识）
+      // 标记 now，供对端用「基线 vs publishedAt」判新旧（§2.3 因果修复）。远端已有的
+      // 知识不是本端首次发布，publishedAt 照远端原样（含 null）。
+      if (stampPublish) merged = _stampEntry(merged, now, remote: r);
       mergedEntries.add(merged);
       if (!_localMatches(l, merged)) toReconcile.add(merged);
     }
@@ -121,16 +122,36 @@ class CollectionSyncEngine {
     return CollectionManifest(collections: out);
   }
 
-  /// 给合并结果条目里 publishedAt 尚空的墓碑/删除盖上 [nowMs]（本端首次发布）。
+  /// 给合并结果条目里**本端首次发布**的墓碑/删除盖上 [nowMs]。
+  ///
+  /// 「首次发布」= publishedAt 尚空 **且** [remote]（同键的远端清单条目）还不含这条
+  /// 知识。远端已有该合集删除 / 该成员墓碑时，它早已在共享清单里、本端不是发布者，
+  /// publishedAt 照远端原样保留（远端是 null 就保持 null，对端裁决回退
+  /// removedAt/deletedAt）。
+  ///
+  /// 不能给「远端已有但 publishedAt 为 null」的知识盖戳：互联 host 的 DB 不存
+  /// publishedAt（[loadLocalCollectionManifest] 不输出），GET 永远回 null；本端若每轮
+  /// 都盖 now，合并结果就永远与 host 清单字节不等 ⇒ 稳态每轮整份 POST。这个戳对 host
+  /// 也没有信息量：host 本地已有该墓碑/删除，按本端侧 removedAt/deletedAt 裁决，用不到
+  /// incoming 的 publishedAt。云通道的远端是对端文件折叠，受影响的只有旧版写出的无戳
+  /// 知识——给它伪造「now 才发布」反而会让对端把旧闻当新闻。
+  ///
   /// publishedAt 已有值（来自对端清单）的原样保留——发布时刻一经确定绝不刷新，
   /// 否则每轮都重盖会破坏「字节相等 ⇒ 跳过回写」的幂等。
   static CollectionManifestEntry _stampEntry(
-      CollectionManifestEntry e, int nowMs) {
-    final bool deadNeedsStamp =
-        e.deletedAt != null && e.deletedPublishedAt == null;
+      CollectionManifestEntry e, int nowMs,
+      {required _NormalizedEntry? remote}) {
+    final Map<String, _Tomb> remoteTombs =
+        remote?.tombstones ?? const <String, _Tomb>{};
+    bool stampTomb(CollectionMemberTombstone t) =>
+        t.publishedAt == null &&
+        !remoteTombs.containsKey(_memberKey(t.mediaType, t.entryKey));
+    final bool deadNeedsStamp = e.deletedAt != null &&
+        e.deletedPublishedAt == null &&
+        remote?.deletedAt == null;
     bool tombNeedsStamp = false;
     for (final CollectionMemberTombstone t in e.memberTombstones) {
-      if (t.publishedAt == null) {
+      if (stampTomb(t)) {
         tombNeedsStamp = true;
         break;
       }
@@ -141,12 +162,11 @@ class CollectionSyncEngine {
       collectionType: e.collectionType,
       orderUpdatedAt: e.orderUpdatedAt,
       deletedAt: e.deletedAt,
-      deletedPublishedAt:
-          e.deletedAt != null ? (e.deletedPublishedAt ?? nowMs) : null,
+      deletedPublishedAt: deadNeedsStamp ? nowMs : e.deletedPublishedAt,
       members: e.members,
       memberTombstones: <CollectionMemberTombstone>[
         for (final CollectionMemberTombstone t in e.memberTombstones)
-          t.publishedAt == null
+          stampTomb(t)
               ? CollectionMemberTombstone(
                   mediaType: t.mediaType,
                   entryKey: t.entryKey,

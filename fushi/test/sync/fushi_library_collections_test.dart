@@ -5,10 +5,12 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
+import 'package:fushi/src/sync/sync_backend.dart' show syncChannelScopeOf;
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -558,4 +560,148 @@ void main() {
       expect(await orderOf(hostDb, 'S'), <String>['v3', 'v1', 'v2']);
     });
   });
+
+  // ── 稳态不回写：host 不存 publishedAt，client 不得每轮重盖 now 再整份 POST ──
+  group('合集 live 同步稳态零 POST（publishedAt 不再每轮重盖）', () {
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
+    late _CountingCollectionsHostService hostSvc;
+    const String token = 'collections-steady-token';
+    late String base;
+
+    setUp(() async {
+      hostDb = memDb();
+      hostSvc = _CountingCollectionsHostService(
+        db: hostDb,
+        dictionaryResourceRoot: Directory.systemTemp,
+        packages: SyncAssetPackageService(db: hostDb),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+      );
+      server = FushiSyncServer(
+        syncDataDir:
+            Directory.systemTemp.createTempSync('hbk_coll_steady').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: hostSvc,
+      );
+      await server.start();
+      base = 'http://127.0.0.1:${server.port}';
+    });
+
+    tearDown(() async => server.stop());
+
+    Future<void> tick() =>
+        Future<void>.delayed(const Duration(milliseconds: 3));
+
+    test('host 与 client 各造合集删除 + 成员墓碑，收敛后下一轮不 POST', () async {
+      // host 侧知识：活合集 S{v1,v3}（v2 已移出 → 成员墓碑）+ 已删除合集 HD。
+      final int hs =
+          await hostDb.createMediaCollection('S', collectionType: 'playlist');
+      await hostDb.addToCollection(hs, MediaKind.video, 'v1');
+      await hostDb.addToCollection(hs, MediaKind.video, 'v2');
+      await hostDb.addToCollection(hs, MediaKind.video, 'v3');
+      await hostDb.removeFromCollection(hs, MediaKind.video, 'v2');
+      final int hd =
+          await hostDb.createMediaCollection('HD', collectionType: 'playlist');
+      await hostDb.addToCollection(hd, MediaKind.video, 'h1');
+      await hostDb.deleteMediaCollection(hd);
+      await tick();
+
+      // client 侧知识：已删除合集 CD + 活合集 C{c1}（c2 已移出 → 成员墓碑）。
+      final FushiDatabase clientDb = memDb();
+      final SyncRepository repo = SyncRepository(clientDb);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: base, enabled: true),
+      ]);
+      await repo.setFushiClientToken(token);
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+          (String url, String tok) async => true);
+      await backend.restoreAuth(repo);
+      await backend.authenticate(repo: repo);
+      final int cd =
+          await clientDb.createMediaCollection('CD', collectionType: 'playlist');
+      await clientDb.addToCollection(cd, MediaKind.video, 'd1');
+      await clientDb.deleteMediaCollection(cd);
+      final int cc =
+          await clientDb.createMediaCollection('C', collectionType: 'playlist');
+      await clientDb.addToCollection(cc, MediaKind.video, 'c1');
+      await clientDb.addToCollection(cc, MediaKind.video, 'c2');
+      await clientDb.removeFromCollection(cc, MediaKind.video, 'c2');
+      await tick();
+
+      final SyncOrchestrator orch = SyncOrchestrator(
+        db: clientDb,
+        backend: backend,
+        dictionaryResourceRoot: Directory.systemTemp,
+        audioDatabaseRoot: Directory.systemTemp,
+        tempDir: Directory.systemTemp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncMangaContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+      );
+
+      // 第一轮：client 独有的删除 / 墓碑要发布 → 回写一次。
+      final SyncRunReport first = SyncRunReport();
+      await orch.syncCollectionsLiveForTest(first, backend);
+      expect(first.errors, isEmpty);
+      expect(hostSvc.mergePosts, 1, reason: '首轮有 client 独有知识，应回写一次');
+      expect(await hostDb.getMediaCollectionByNaturalKey('CD', 'playlist'),
+          isNull,
+          reason: 'client 的合集删除经 POST 在 host 生效');
+      expect(await clientDb.getMediaCollectionByNaturalKey('HD', 'playlist'),
+          isNull);
+      await tick();
+
+      // 第二轮：两端知识已一致。host 不存 publishedAt（GET 回 null）；client 若给
+      // 远端已有的删除 / 墓碑再盖 now，合并结果永远与 host 清单字节不等 → 每轮整份 POST。
+      final CollectionManifest hostBefore =
+          (await backend.getRemoteCollectionManifest())!;
+      final CollectionSyncOutcome replay = CollectionSyncEngine.merge(
+        local: await loadLocalCollectionManifest(clientDb),
+        remote: hostBefore,
+        lastSyncedAtMs:
+            await repo.getCollectionsSyncBaselineMs(syncChannelScopeOf(backend)),
+        nowMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      expect(replay.merged.canonicalJson(), hostBefore.canonicalJson(),
+          reason: '稳态合并结果与 host 清单逐字节相等（不靠比较时忽略字段）');
+
+      final SyncRunReport second = SyncRunReport();
+      await orch.syncCollectionsLiveForTest(second, backend);
+      expect(second.errors, isEmpty);
+      expect(second.collectionsUpdated, 0);
+      expect(hostSvc.mergePosts, 1, reason: '稳态第二轮不得 POST');
+
+      // 第三轮依旧零 POST。
+      await tick();
+      await orch.syncCollectionsLiveForTest(SyncRunReport(), backend);
+      expect(hostSvc.mergePosts, 1);
+    });
+  });
+}
+
+/// 记录 host 收到几次合集清单 POST（[mergeCollectionManifest]）。
+class _CountingCollectionsHostService extends LocalLibraryHostService {
+  _CountingCollectionsHostService({
+    required super.db,
+    required super.dictionaryResourceRoot,
+    required super.packages,
+    required super.refreshDictionaryCache,
+    required super.runExclusive,
+  });
+
+  int mergePosts = 0;
+
+  @override
+  Future<CollectionManifest> mergeCollectionManifest(
+    CollectionManifest incoming,
+  ) {
+    mergePosts++;
+    return super.mergeCollectionManifest(incoming);
+  }
 }

@@ -149,7 +149,9 @@ class AggregateSyncService {
     );
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
-    if (!identical(merged, localSnapshot)) {
+    //    合并结果与本地内容相等（[localDelta] 为 null）时整步跳过：mergeSnapshots
+    //    每次都返回新对象，旧的 `identical` 判据恒真，稳态每轮都要整库重写。
+    if (localDelta(merged, localSnapshot) != null) {
       await _applyMergedLocally(merged);
     }
 
@@ -284,7 +286,8 @@ class AggregateSyncService {
     final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
-    if (!identical(merged, localSnapshot)) {
+    //    与云通道同一判据：内容相等就不进锁、不重读本地、不写库。
+    if (localDelta(merged, localSnapshot) != null) {
       await _applyMergedLocally(merged);
     }
 
@@ -317,16 +320,111 @@ class AggregateSyncService {
         ..write(jsonEncode(key))
         ..write(':');
       if (value is List) {
-        final List<String> items = <String>[
-          for (final Object? item in value) jsonEncode(item),
-        ]..sort();
-        buffer.write(jsonEncode(items));
+        buffer.write(jsonEncode(_encodeItems(value)..sort()));
       } else {
         buffer.write(jsonEncode(value));
       }
       buffer.write(';');
     }
     return _stableHash(buffer.toString());
+  }
+
+  /// 快照一个家族逐条记录的 JSON 编码——[unorderedSnapshotFingerprint]（PUT 侧
+  /// 跳过判据）与 [localDelta]（写回侧跳过判据）共用的**唯一**比较口径。
+  static List<String> _encodeItems(List<Object?> items) =>
+      <String>[for (final Object? item in items) jsonEncode(item)];
+
+  /// 写回时有跨行副作用、只能整族下发的收藏族（墓碑会删本地收藏词行、收藏句是
+  /// pref 整表重写）：任一族有变化就四族一起按 [merged] 原样下发。
+  static const Set<String> _favoriteFamilyKeys = <String>{
+    'favoriteWords',
+    'favoriteSentences',
+    'favoriteWordTombstones',
+    'favoriteSentenceTombstones',
+  };
+
+  /// [merged]（= `mergeSnapshots(local, X)`）相对 [local] 的**写回增量**；两者内容
+  /// 相等时返回 null（调用方据此整步不写库）。
+  ///
+  /// 比较口径与 [unorderedSnapshotFingerprint] 相同：每个家族是逐条记录 JSON 编码
+  /// 的**多重集**，与列表顺序无关。某家族「相等」⇔ 两侧多重集相同 ⇔ 该家族指纹分量
+  /// 相同；所以「全部家族相等」与「两份快照指纹相等」是同一个命题，不另立规则。
+  ///
+  /// 增量的构成（为什么跳过的部分一定不需要落库）：
+  ///   - 行家族（阅读/视频统计、逐时桶、制卡计数、查词/制卡计数、学习段）：只下发
+  ///     [merged] 里**不在** [local] 多重集中的记录。被跳过的记录逐字节等于本地
+  ///     materialize 出来的那一条，而这些家族的写入原语对「与本地相等的值」都是
+  ///     no-op（覆盖写同值 / MAX 不抬升 / setLookupCount、setVideoWatchStatistic 的
+  ///     「wire ≤ 本地和」守卫 / 段按 uid 的 LWW 严格更新才写）。逐时总量的差额归因
+  ///     对未变化的总量行恒 ≤ 0（本地总量 = 本地分桶和，分桶只会被抬高）。
+  ///   - 学习段墓碑：段或碑任一有变化就整族下发（重放已有碑是 no-op，但它会顺带
+  ///     删掉同身份下更早开始的本地段——与修前每轮整库写回的效果保持一致）。
+  ///   - 收藏族：见 [_favoriteFamilyKeys]，有变化就整族下发。
+  ///
+  /// [merged] 从 [local] **删掉**的记录（仲裁压制的收藏 / 段）也会让该家族判为
+  /// 「有变化」，于是删除照常经整族下发的墓碑生效；行家族是按键 MAX，[merged] 的键
+  /// 恒 ⊇ [local]，不存在「只删不增」的情况。
+  @visibleForTesting
+  static AggregateSnapshot? localDelta(
+    AggregateSnapshot merged,
+    AggregateSnapshot local,
+  ) {
+    final Map<String, Object?> m = merged.toJson();
+    final Map<String, Object?> l = local.toJson();
+    final Map<String, List<int>> addedIndexes = <String, List<int>>{};
+    final Set<String> changed = <String>{};
+    for (final MapEntry<String, Object?> entry in m.entries) {
+      final Object? mv = entry.value;
+      if (mv is! List) continue;
+      final Object? lv = l[entry.key];
+      final List<Object?> localItems = lv is List ? lv : const <Object?>[];
+      final Map<String, int> remaining = <String, int>{};
+      for (final String e in _encodeItems(localItems)) {
+        remaining[e] = (remaining[e] ?? 0) + 1;
+      }
+      final List<String> encoded = _encodeItems(mv);
+      final List<int> added = <int>[];
+      for (int i = 0; i < encoded.length; i++) {
+        final int n = remaining[encoded[i]] ?? 0;
+        if (n > 0) {
+          remaining[encoded[i]] = n - 1;
+        } else {
+          added.add(i);
+        }
+      }
+      if (added.isNotEmpty || remaining.values.any((int n) => n > 0)) {
+        changed.add(entry.key);
+      }
+      addedIndexes[entry.key] = added;
+    }
+    if (changed.isEmpty) return null;
+
+    final bool favoritesChanged = changed.any(_favoriteFamilyKeys.contains);
+    final bool segmentsChanged = changed.contains('studySegments') ||
+        changed.contains('studySegmentTombstones');
+    List<T> added<T>(String key, List<T> all) =>
+        <T>[for (final int i in addedIndexes[key]!) all[i]];
+    List<T> whole<T>(bool include, List<T> all) => include ? all : <T>[];
+    return AggregateSnapshot(
+      readingStats: added('readingStats', merged.readingStats),
+      videoStats: added('videoStats', merged.videoStats),
+      readingHourly: added('readingHourly', merged.readingHourly),
+      readingHourlyByFormat:
+          added('readingHourlyByFormat', merged.readingHourlyByFormat),
+      videoHourly: added('videoHourly', merged.videoHourly),
+      miningStats: added('miningStats', merged.miningStats),
+      lookupMiningCounters:
+          added('lookupMiningCounters', merged.lookupMiningCounters),
+      studySegments: added('studySegments', merged.studySegments),
+      studySegmentTombstones:
+          whole(segmentsChanged, merged.studySegmentTombstones),
+      favoriteWords: whole(favoritesChanged, merged.favoriteWords),
+      favoriteSentences: whole(favoritesChanged, merged.favoriteSentences),
+      favoriteWordTombstones:
+          whole(favoritesChanged, merged.favoriteWordTombstones),
+      favoriteSentenceTombstones:
+          whole(favoritesChanged, merged.favoriteSentenceTombstones),
+    );
   }
 
   /// 按本机删除墓碑裁剪一份**将要上行**的快照，规则与 [applySnapshotToLocal] 写回
@@ -1354,11 +1452,17 @@ class AggregateSyncService {
   /// into what the client sent, so it must fold here), keeping the never-shrinks /
   /// idempotent invariants on the host side too. Returns nothing; local DB is the
   /// side effect.
+  ///
+  /// 只把 [localDelta]（合并结果相对本地真正变化的部分）交给
+  /// [applySnapshotToLocal]：与整份写回效果相同（理由见 [localDelta]），但稳态
+  /// 零写入、增量只写变化行。
   Future<void> foldIntoLocal(AggregateSnapshot incoming) async {
     if (incoming.isEmpty) return; // Nothing to fold: no-op (idempotent).
     final AggregateSnapshot local = await materializeLocalSnapshot();
     final AggregateSnapshot merged = mergeSnapshots(local, incoming);
-    await applySnapshotToLocal(merged);
+    final AggregateSnapshot? delta = localDelta(merged, local);
+    if (delta == null) return;
+    await applySnapshotToLocal(delta);
   }
 
   /// Reads the favorite-sentence pref blob into models, tolerating a
