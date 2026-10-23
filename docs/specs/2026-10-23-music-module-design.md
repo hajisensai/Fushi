@@ -1,6 +1,6 @@
 # 音乐模块设计（Music）
 
-状态：方案稿（2026-10-23），决策已于 2026-10-24 拍板（§15），D6 待确认。
+状态：方案稿（2026-10-23），决策已于 2026-10-24 拍板（§15）。
 
 ## 0. 一句话
 
@@ -431,10 +431,10 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 `disc-navigation-state` 快照与 `video_disc_menu*` 输入 / 焦点宿主已为蓝光落地。
 需要做的：
 
-1. **原生**：五端 libmpv 构建开 `-Ddvdnav=enabled`，编入 libdvdnav / libdvdread
-   （libdvdcss 不随包：解 CSS 的合法性因地区而异，见 D6；无 CSS 的自制盘 /
-   已解密 ISO / VIDEO_TS 直接可用）。Darwin 的 `-Ddvdnav=disabled` 改掉。
-   探针 `probe_libmpv.py` / `verify_menu_render.py` 增加 DVD 用例。
+1. **原生**：五端 libmpv 构建开 `-Ddvdnav=enabled`，编入 libdvdcss / libdvdread /
+   libdvdnav（**libdvdcss 随包**，D6），统一 FFmpeg 链同一组库并开 `dvdvideo`
+   demuxer。Darwin 的 `-Ddvdnav=disabled` 改掉。详见
+   `docs/specs/2026-10-24-dvd-original-menu.md`（视频与音乐共用）。
 2. **快照扩展**：`disc-navigation-state` 加 `dvd_state` 分支（域 FP / VMGM / VTSM /
    VTS、title / PGC / cell、still 状态、高亮按钮矩形与调色板），版本号 +1，
    与蓝光同一套「生成代数」规则：迟到的库查询 / 制卡结果不得写入新标题。
@@ -561,13 +561,15 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   YRC 文件照常解析。
 - **D4 学习统计口径**：只有发生学习动作或用户开启「听歌计入学习」时才计。
 - **D5 iOS 在线 MV**：不归入受限能力。
-- **D6 libdvdcss**：**未答复**，按推荐暂定不随包（桌面端允许用户自行放置系统库），
-  P5 动工前再确认。
+- **D6 libdvdcss**：随包，五端一致；视频模块同样支持 DVD（独立方案
+  `2026-10-24-dvd-original-menu.md`）。
+- **D10 跨模块联动**：音乐 ↔ 视频联动保留，并推广到各模块（独立方案
+  `2026-10-24-cross-media-links.md`）。
 - **D7 人声分离**：作废——卡拉 OK 只做字幕兼容，不做人声分离（范围澄清见 §0）。
 - **D8 DVD 菜单**：与 BD 原盘菜单同一套体验（§9.1）。
 - **D9 曲库统计卡**：不要。
 
 ## 16. 设计稿
 
-视觉稿（桌面 5 张 + 手机 3 张 + 信号路径面板）：
+视觉稿（桌面 5 张 + 手机 3 张 + 信号路径面板 + 跨模块联动 2 张 + 视频 DVD 入库 1 张）：
 <https://claude.ai/artifact/YKRDyRgaDhxsgSnpBbN2qC>（私有，需所有者分享后他人可见）。
