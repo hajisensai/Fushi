@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -3303,6 +3304,12 @@ class AppModel with ChangeNotifier {
       await SyncRepository(_database).migrateSmbToWebDav();
       await SyncRepository(_database).migrateInterconnectBackendToToggle();
       await SyncRepository(_database).migrateFolderCacheToPerChannel();
+
+      // iOS 常驻来源文件夹：按书签恢复安全作用域访问并在 app 生命周期内持有
+      // （BUG-3665）。视频来源是原地播放，播放器 / 字幕 / 制卡都要读原文件。不阻塞
+      // 启动：扫描与播放前会各自等它跑完（`ensureSourceAccess` / `ensureForPath`）。
+      // 其它平台 no-op；弹窗词典 / 悬浮词典进程不经 initialise()，那边不读来源。
+      SourceFolderAccess.instance.activateAllOnStartup(_database);
 
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).

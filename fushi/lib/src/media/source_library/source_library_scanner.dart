@@ -77,6 +77,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart';
@@ -757,10 +758,15 @@ class SourceLibraryScanner {
   SourceLibraryScanner(
     this._db, {
     MangaSevenZipExtractor? mangaSevenZipExtractor,
+    SourceFolderAccess? folderAccess,
   })  : _videoRepo = VideoBookRepository(_db),
-        _mangaSevenZipExtractor = mangaSevenZipExtractor;
+        _mangaSevenZipExtractor = mangaSevenZipExtractor,
+        _folderAccess = folderAccess ?? SourceFolderAccess.instance;
 
   final FushiDatabase _db;
+
+  /// iOS 本地来源的安全作用域访问（BUG-3665）；测试注入 fake。
+  final SourceFolderAccess _folderAccess;
   final VideoBookRepository _videoRepo;
   final MangaSevenZipExtractor? _mangaSevenZipExtractor;
 
@@ -857,6 +863,26 @@ class SourceLibraryScanner {
     SourceFileSystem? fs,
     bool restoreDissolvedGroups = false,
   }) async {
+    // iOS：本地来源在沙盒外，不先激活书签 `dart:io` 一个文件都列不出（BUG-3665）。
+    // 激活失败（没存书签 / 解析失败 / 文件夹被挪走）是**整次扫描**读不了，写明原因
+    // 后直接收尾，不把「读不到」伪装成「0 个媒体」。其它平台恒返回 null。
+    final String? accessError =
+        await _folderAccess.ensureSourceAccess(_db, source);
+    if (accessError != null) {
+      await _db.updateMediaSourceScanResult(
+        id: source.id,
+        mediaCount: 0,
+        lastScannedAt: DateTime.now(),
+        lastScanError: accessError,
+      );
+      return SourceScanSummary(
+        sourceId: source.id,
+        mediaKind: source.mediaKind,
+        discoveredPaths: const <String>[],
+        importedMediaCount: 0,
+        error: accessError,
+      );
+    }
     final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;

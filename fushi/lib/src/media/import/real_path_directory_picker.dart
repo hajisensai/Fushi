@@ -16,6 +16,11 @@ import 'package:path/path.dart' as p;
 @visibleForTesting
 String? debugRealDirectoryPathOverride;
 
+/// 集成测试是否注入了目录选择结果（release 构建恒 false）。给要绕开平台专用选择器
+/// （如 iOS 来源书签选择器，BUG-3665）、改走 [pickRealDirectoryPath] 吃注入值的调用方用。
+bool get isRealDirectoryPathOverridden =>
+    kDebugMode && debugRealDirectoryPathOverride != null;
+
 /// 「选一个文件夹并返回它的**真实文件系统绝对路径**」的统一入口。
 ///
 /// 为什么不直接到处调 `FilePicker.getDirectoryPath()`：在安卓上 file_picker 的
