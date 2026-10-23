@@ -110,6 +110,57 @@ final class VideoRemoteSubtitleOption {
   };
 }
 
+/// One online subtitle the computer found for the playing video. [id] is
+/// opaque and only valid until the next search.
+final class VideoRemoteOnlineSubtitle {
+  const VideoRemoteOnlineSubtitle({
+    required this.id,
+    required this.fileName,
+    required this.provider,
+    this.language,
+    this.episode,
+    this.aiTranslated = false,
+    this.hearingImpaired = false,
+  });
+  final String id;
+  final String fileName;
+  final String provider;
+  final String? language;
+  final int? episode;
+  final bool aiTranslated;
+  final bool hearingImpaired;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'fileName': fileName,
+    'provider': provider,
+    if (language != null) 'language': language,
+    if (episode != null) 'episode': episode,
+    'aiTranslated': aiTranslated,
+    'hearingImpaired': hearingImpaired,
+  };
+}
+
+/// Result of a `subtitleSearch`: the query / episode the computer actually
+/// searched with (its own defaults when the phone sent none) and the hits.
+final class VideoRemoteOnlineSubtitleSearch {
+  const VideoRemoteOnlineSubtitleSearch({
+    required this.query,
+    required this.candidates,
+    this.episode,
+  });
+  final String query;
+  final int? episode;
+  final List<VideoRemoteOnlineSubtitle> candidates;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'query': query,
+    if (episode != null) 'episode': episode,
+    'candidates': <Map<String, Object?>>[
+      for (final VideoRemoteOnlineSubtitle candidate in candidates)
+        candidate.toJson(),
+    ],
+  };
+}
+
 /// One video of the computer's library, as the phone's on-demand picker lists
 /// it. Library identity and display text only, never media paths.
 final class VideoRemoteLibraryItem {
@@ -191,6 +242,8 @@ final class VideoRemotePlaybackBinding {
     this.switchEpisode,
     this.subtitleTracks,
     this.selectSubtitleTrack,
+    this.searchSubtitles,
+    this.downloadSubtitle,
   });
   final String Function() identity;
   final String Function() title;
@@ -240,6 +293,19 @@ final class VideoRemotePlaybackBinding {
   /// it off when null. Fails with a [VideoRemoteException].
   final Future<void> Function(String? trackId)? selectSubtitleTrack;
 
+  /// Searches online subtitles for the playing video; null [query] /
+  /// [episode] use the computer's own defaults. Together with
+  /// [downloadSubtitle] it enables `subtitleSearch` / `subtitleDownload`.
+  final Future<VideoRemoteOnlineSubtitleSearch> Function(
+    String? query,
+    int? episode,
+  )?
+  searchSubtitles;
+
+  /// Downloads hit [candidateId] of the last [searchSubtitles] and applies it
+  /// as the primary subtitle. Fails with a [VideoRemoteException].
+  final Future<void> Function(String candidateId)? downloadSubtitle;
+
   /// Optional controls this player supports (snapshot `capabilities`).
   List<String> get capabilities => <String>[
     if (setVolume != null) videoRemoteCapabilityVolume,
@@ -247,6 +313,8 @@ final class VideoRemotePlaybackBinding {
       videoRemoteCapabilityEpisodes,
     if (subtitleTracks != null && selectSubtitleTrack != null)
       videoRemoteCapabilitySubtitleTracks,
+    if (searchSubtitles != null && downloadSubtitle != null)
+      videoRemoteCapabilitySubtitleSearch,
   ];
 }
 
@@ -486,6 +554,9 @@ final class VideoRemoteHost implements VideoRemoteService {
     }
     if (operation == 'library') {
       return _listLibrary(body);
+    }
+    if (operation == 'subtitleSearch') {
+      return _searchSubtitles(body);
     }
     if (operation == 'mineStatus') {
       _RemoteMineTask? task = _tasks[body['taskId']];
@@ -743,6 +814,23 @@ final class VideoRemoteHost implements VideoRemoteService {
         _publish();
         return <String, Object?>{'ok': true};
       }
+      if (action == 'subtitleDownload') {
+        final Future<void> Function(String)? download =
+            binding.downloadSubtitle;
+        if (binding.searchSubtitles == null || download == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? candidateId = body['candidateId'];
+        if (candidateId is! String || candidateId.isEmpty) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        // Applying a subtitle replaces the cue list the lookup is bound to.
+        _lookup = null;
+        await download(candidateId);
+        _refresh();
+        _publish();
+        return <String, Object?>{'ok': true};
+      }
       _lookup = null; // Explicit playback intent supersedes automatic resume.
       final Map<String, dynamic> command = <String, dynamic>{};
       if (action == 'seekCue') {
@@ -892,6 +980,35 @@ final class VideoRemoteHost implements VideoRemoteService {
         (VideoRemoteSubtitleOption track) => track.selected,
       ),
     };
+  }
+
+  /// `subtitleSearch`: online subtitles for the playing video. Re-validated
+  /// after the (slow, networked) search like [_playbackOptions].
+  Future<Map<String, Object?>> _searchSubtitles(
+    Map<String, dynamic> body,
+  ) async {
+    final VideoRemotePlaybackBinding binding = _requireSession(body);
+    final Future<VideoRemoteOnlineSubtitleSearch> Function(String?, int?)?
+    search = binding.searchSubtitles;
+    if (search == null || binding.downloadSubtitle == null) {
+      throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+    }
+    final Object? query = body['query'];
+    if (query != null && (query is! String || query.length > 200)) {
+      throw const VideoRemoteException(400, 'invalid_argument');
+    }
+    final Object? episode = body['episode'];
+    if (episode != null && (episode is! int || episode < 0)) {
+      throw const VideoRemoteException(400, 'invalid_number');
+    }
+    final VideoRemoteOnlineSubtitleSearch result = await search(
+      query as String?,
+      episode as int?,
+    );
+    if (!identical(binding, _requireSession(body))) {
+      throw const VideoRemoteException(409, 'session_changed');
+    }
+    return result.toJson();
   }
 
   /// The open lookup [body] names, still bound to the current session and

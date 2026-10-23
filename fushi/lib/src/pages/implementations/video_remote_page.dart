@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_library_sheet.dart';
+import 'package:fushi/src/pages/implementations/video_remote/video_remote_subtitle_search_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_control_editor.dart'
     show showVideoRemoteControlEditor;
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_models.dart';
@@ -55,6 +56,7 @@ import 'package:fushi_engine/sync/video_remote_service.dart'
         videoRemoteActionUnsupported,
         videoRemoteCapabilityEpisodes,
         videoRemoteCapabilityOpenVideo,
+        videoRemoteCapabilitySubtitleSearch,
         videoRemoteCapabilitySubtitleTracks,
         videoRemoteCapabilityVolume;
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -843,8 +845,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
           in options['subtitleTracks'] as List? ?? <Object?>[])
         if (item is Map) Map<String, dynamic>.from(item),
     ];
-    // 「关闭字幕」用空串占位（轨 id 永不为空）。
+    // 「关闭字幕」用空串占位（轨 id 永不为空）；「在线搜索字幕」用一个不可能是
+    // 轨 id 的值（轨 id 是十六进制摘要）。
     const String off = '';
+    const String searchOnline = '\u0000search';
     String? current = options['subtitleOff'] == true ? off : null;
     for (final Map<String, dynamic> track in tracks) {
       if (track['selected'] == true) current = track['id'].toString();
@@ -862,14 +866,63 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
             label: track['label']?.toString() ?? '',
             enabled: track['selectable'] != false,
           ),
+        if (canSearchSubtitles)
+          FushiChoiceOption<String>(
+            value: searchOnline,
+            label: t.video_subtitle_search_open,
+            icon: FushiIcons.search,
+          ),
       ],
     );
+    if (picked == searchOnline) {
+      await searchSubtitlesOnline();
+      return;
+    }
     if (picked == null || picked == current || !mounted) return;
     await _command(
       'subtitleTrack',
       extra: <String, dynamic>{'trackId': picked == off ? null : picked},
     );
   });
+
+  /// 电脑能否在线搜字幕（快照 `capabilities`）。
+  bool get canSearchSubtitles =>
+      available && capabilities.contains(videoRemoteCapabilitySubtitleSearch);
+
+  /// 在线搜字幕：电脑按当前视频检索、手机挑一条、电脑下载并应用为主字幕。新字幕
+  /// 经事件流（字幕版本变化）推回本页。
+  Future<void> searchSubtitlesOnline() async {
+    if (!canSearchSubtitles || !context.mounted) return;
+    closeLookup();
+    final bool applied = await showVideoRemoteSubtitleSearchSheet(
+      context: context,
+      search: (String? query, int? episode) async =>
+          VideoRemoteSubtitleSearchResult.fromJson(
+            await _client.call('subtitleSearch', <String, dynamic>{
+              ..._session,
+              if (query != null) 'query': query,
+              if (episode != null) 'episode': episode,
+            }),
+          ),
+      // 不走 [_command]：它把错误收进页面错误条，这里要让弹层就地显示原因。
+      download: (String candidateId) async {
+        await _client.call('command', <String, dynamic>{
+          ..._session,
+          'requestId': _client.requestId(),
+          'action': 'subtitleDownload',
+          'candidateId': candidateId,
+        });
+        await _apply(await _client.snapshot());
+      },
+      errorText: videoRemoteErrorText,
+    );
+    if (applied && mounted) {
+      FushiToast.show(
+        msg: t.video_remote_subtitle_search_applied,
+        severity: ToastSeverity.success,
+      );
+    }
+  }
 
   /// 把电脑音量设成 [value]（0..100）。
   Future<void> setVolume(int value) => _command(
@@ -2071,6 +2124,14 @@ String videoRemoteErrorText(Object error) {
     case 'subtitle_track_missing':
     case 'subtitle_track_unavailable':
       return t.video_remote_error_subtitle_track_unavailable;
+    case 'subtitle_source_missing':
+      return t.video_remote_error_subtitle_source_missing;
+    case 'subtitle_search_failed':
+      return t.video_remote_error_subtitle_search_failed;
+    case 'subtitle_candidate_missing':
+      return t.video_remote_error_subtitle_candidate_missing;
+    case 'subtitle_download_failed':
+      return t.video_jimaku_download_failed;
     case VideoRemoteError.unreachableCode:
       return t.video_remote_error_unreachable;
     case VideoRemoteError.certificateMismatchCode:
