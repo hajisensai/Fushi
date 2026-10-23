@@ -31,7 +31,7 @@ void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
 
-  // BUG-3663：封面存在性改为 async 探测后，测试要用 runAsync 让真实 IO 回话；同一
+  // BUG-3704：封面存在性改为 async 探测后，测试要用 runAsync 让真实 IO 回话；同一
   // 窗口里远程封面（CachedNetworkImage）的磁盘缓存管理器也会真的起来，要
   // path_provider 应答。
   late Directory pathProviderDir;
@@ -162,7 +162,7 @@ void main() {
     ),
   );
 
-  /// BUG-3663：hero 封面链的存在性改为 async 探测（build 里不再同步 stat），真实
+  /// BUG-3704：hero 封面链的存在性改为 async 探测（build 里不再同步 stat），真实
   /// IO 在 fakeAsync 下不会完成。链上每级一次探测 + 一次重建，按链深各给一轮。
   Future<void> settleCoverProbes(WidgetTester tester, {int rounds = 4}) async {
     // 封面链每级一次探测 + 一次重建；之后封面图源的真实文件读取（打开 → 读 → 关）
@@ -473,7 +473,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-3663：合集海报在网络盘上 → hero build 零同步文件调用', (
+  testWidgets('BUG-3704：合集海报在网络盘上 → hero build 零同步文件调用', (
     WidgetTester tester,
   ) async {
     // 合集海报 / 刮削本地图落在「网络盘」（rclone / SMB 挂载）上：旧实现 hero getter
@@ -536,7 +536,7 @@ void main() {
   });
 }
 
-/// BUG-3663 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
+/// BUG-3704 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
 class _NetMountFile implements File {
   _NetMountFile(this.path, this.syncCalls, this.asyncProbes);
 

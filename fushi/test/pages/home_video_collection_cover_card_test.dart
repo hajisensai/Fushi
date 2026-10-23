@@ -152,7 +152,7 @@ void main() {
     return cid;
   }
 
-  /// BUG-3663：封面存在性改为 async 探测（build 里不再同步 stat），真实 IO 在
+  /// BUG-3704：封面存在性改为 async 探测（build 里不再同步 stat），真实 IO 在
   /// fakeAsync 下不会完成。回退链每级候选一次探测 + 一次重建，按链深各给一轮
   /// runAsync + pump；最后让 FileImage 在真实事件循环里读完（Windows 下 tearDown
   /// 删临时目录要求句柄已关）。
@@ -519,7 +519,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-3663：合集海报在网络盘上 → build 零同步文件调用，探测落定后回落成员封面', (
+  testWidgets('BUG-3704：合集海报在网络盘上 → build 零同步文件调用，探测落定后回落成员封面', (
     WidgetTester tester,
   ) async {
     // 合集自有海报落在「网络盘」（rclone / SMB 挂载）：冷目录一次同步 stat 要数秒，
@@ -569,7 +569,7 @@ void main() {
   });
 }
 
-/// BUG-3663 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
+/// BUG-3704 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
 class _NetMountFile implements File {
   _NetMountFile(this.path, this.syncCalls, this.asyncProbes);
 

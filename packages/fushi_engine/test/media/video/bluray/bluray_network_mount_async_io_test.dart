@@ -1,4 +1,4 @@
-// BUG-3663：互联 host 与 UI 同在 app 主 isolate 上，用户的蓝光盘目录常放在网络盘
+// BUG-3704：互联 host 与 UI 同在 app 主 isolate 上，用户的蓝光盘目录常放在网络盘
 // （rclone / SMB / WinFsp 挂载）上，挂载端目录缓存过期后一次同步 stat 要数秒——主
 // isolate 上任何一次对盘目录的 `existsSync` / `listSync` / `statSync` 都会冻住全部
 // 互联端点与 UI。

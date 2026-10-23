@@ -207,7 +207,7 @@ Future<bool> extractGraphicSubtitleTrack({
   }
   final File? local = input.isRemote ? null : File(input.uri);
   // async stat：输入是用户库里的视频，常在网络盘上；互联 host 的图形字幕端点在
-  // app 主 isolate 上调这里，同步 stat 会冻结全部端点与 UI（BUG-3663）。
+  // app 主 isolate 上调这里，同步 stat 会冻结全部端点与 UI（BUG-3704）。
   int localLength = 0;
   if (local != null) {
     final FileStat stat;

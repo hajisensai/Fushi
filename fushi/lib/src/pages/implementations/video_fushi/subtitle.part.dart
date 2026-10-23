@@ -1162,7 +1162,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
     } else if (await File(persisted).exists()) {
       // 外挂源持久化值即其绝对路径（[SubtitleSource.toPersistedValue]）。
-      // async：外挂字幕常是视频同目录 sidecar，可能在网络盘上（BUG-3663）。
+      // async：外挂字幕常是视频同目录 sidecar，可能在网络盘上（BUG-3704）。
       source = SubtitleSource.external(
         externalPath: persisted,
         label: p.basename(persisted),
@@ -3208,7 +3208,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 当前选中的外挂字幕文件路径；内嵌轨 / 关闭 / 文件已不在时为 null。
   ///
   /// async：外挂字幕常是视频同目录 sidecar，视频在网络盘（rclone / SMB）上时同步
-  /// stat 会冻结 UI isolate 与同 isolate 的互联 host（BUG-3663）。
+  /// stat 会冻结 UI isolate 与同 isolate 的互联 host（BUG-3704）。
   Future<String?> _currentExternalSubtitlePath() async {
     final String? source = _currentExternalSubtitleSelection();
     if (source == null || !await File(source).exists()) return null;

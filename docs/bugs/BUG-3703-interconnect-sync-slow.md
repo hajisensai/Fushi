@@ -1,4 +1,4 @@
-## BUG-3662 · 互联同步一轮要几分钟（局域网 / 全部客户端）
+## BUG-3703 · 互联同步一轮要几分钟（局域网 / 全部客户端）
 - **报告**：2026-10-23（用户：「fushi 同步书速度很慢，可能不只是书导致的，对比进度冲突不可能这么久的」；局域网下所有设备都慢，iOS 手机约几分钟）
 - **真实性**：✅ 真 bug。真 host（44 书 / 99 视频）+ 真客户端 loopback TLS 装置逐阶段计数，配合对用户真实 host 端点直接计时，定位到稳态每轮都在重做的四处全量工作（TLS 连接复用、地址探测均正常，排除）：
   1. 合集清单永不收敛：`packages/fushi_engine/lib/sync/collection_sync_engine.dart` `_stampEntry` 给 publishedAt 为空的墓碑 / 删除每轮盖 now，而 host DB 不存 publishedAt（`loadLocalCollectionManifest` 不输出），`fushi/lib/src/sync/sync_orchestrator/collections.part.dart` 的「字节不等才 POST」恒成立 ⇒ 每轮整份清单（用户数据 7 MB）POST 回 host、host 整份合并 1.8 s。
@@ -12,4 +12,4 @@
 - **后续（同 PR）**：
   - 复活缺口：schema v125 给 `collection_member_tombstones` 加 `published_at`，host 持久化并在清单里输出墓碑发布戳，「离线早移出、晚同步」的墓碑不再被基线更新的对端判成旧闻（`fushi/test/sync/fushi_library_collections_test.dart`「离线移出晚同步」组、`fushi/test/database/migration_v125_collection_tombstone_published_at_test.dart`）。
   - 书文件箱：host 在 `/api/capabilities` 公布 `webdav.treeListingLevels`，`InterconnectSyncBackend` 实现 `RemoteListingCapable`，书阶段一次有界 `Depth: infinity` 取代逐本 PROPFIND；老 host 不公布就照旧逐本，快照里查不到某本书的文件夹也回落逐本（`fushi/test/sync/interconnect_tree_listing_test.dart`、`packages/fushi_engine/test/sync/dav_tree_listing_host_test.dart`）。
-  - `/api/library/videos` 偶发数秒：不是 `listVideos` 本身（真实库拷贝冷 60 ms / 热 13–16 ms），而是主 isolate 上对 rclone 网络盘的同步 stat，另立 BUG-3663。
+  - `/api/library/videos` 偶发数秒：不是 `listVideos` 本身（真实库拷贝冷 60 ms / 热 13–16 ms），而是主 isolate 上对 rclone 网络盘的同步 stat，另立 BUG-3704。

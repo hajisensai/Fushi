@@ -58,7 +58,7 @@ mixin _LocalLibraryHostVideos
     // app 主 isolate 上，同步 stat 一个在网络盘（rclone / SMB / WinFsp 挂载）上的视频，
     // 挂载端目录缓存过期时要逐级 PROPFIND 重列目录，单次数秒——整条主 isolate（全部
     // 互联端点含 /api/ping、以及 UI）随之冻结。实测 99 个视频、64 个在 rclone 挂载上，
-    // 冷目录时整份清单 4–16.7 s 期间 ping 同步卡死（BUG-3663）。async stat 在 IO
+    // 冷目录时整份清单 4–16.7 s 期间 ping 同步卡死（BUG-3704）。async stat 在 IO
     // 线程池里等，主 isolate 照常服务别的请求；同目录只列一次（缓存的是 Future，
     // 并发的同目录行共用一次列举）。
     final Map<String, Future<List<String>?>> sidecarDirCache =
@@ -385,7 +385,7 @@ mixin _LocalLibraryHostVideos
     final String? path = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (path == null || path.isEmpty) return null;
     if (lacksLocalMediaFile(path)) return null;
-    // async stat：视频常在网络盘上，同步 existsSync 会冻结 host 所在 isolate（BUG-3663）。
+    // async stat：视频常在网络盘上，同步 existsSync 会冻结 host 所在 isolate（BUG-3704）。
     final String? existing = await _existingFilePathAsync(path);
     return existing == null ? null : File(existing);
   }
@@ -1042,7 +1042,7 @@ mixin _LocalLibraryHostVideos
   /// 原路径 → 备份路径。任何一个改名失败：已改名的全部改回，抛
   /// [VideoSubtitleSidecarBusy]（端点映射 409 + 错误码），文件侧原样不变。
   ///
-  /// 全程 async IO：字幕与视频同目录、常在网络盘上（BUG-3663）。
+  /// 全程 async IO：字幕与视频同目录、常在网络盘上（BUG-3704）。
   Future<Map<String, String>> _backUpSidecars(Set<String> paths) async {
     final Map<String, String> backedUp = <String, String>{};
     for (final String path in paths) {
@@ -1093,7 +1093,7 @@ mixin _LocalLibraryHostVideos
 
   /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。
   /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
-  /// 全程 async IO：视频目录常在网络盘上（BUG-3663）。
+  /// 全程 async IO：视频目录常在网络盘上（BUG-3704）。
   Future<void> _displaceSidecarsFor(String videoPath, String suffix) async {
     final String dir = p.dirname(videoPath);
     final String stemLower = p

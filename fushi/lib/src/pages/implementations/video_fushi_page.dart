@@ -5320,7 +5320,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 内嵌轨不在此重解析（避免 BUG-081 关注的 ffmpeg 重抽取），保留 DB 缓存 cue。
   ///
   /// async：档案常是视频同目录 sidecar，视频在网络盘上时同步 stat 会冻结 UI isolate
-  /// （BUG-3663）。
+  /// （BUG-3704）。
   Future<String?> _rehydratableExternalSubtitlePath(String? source) async {
     if (source == null || source.isEmpty) return null;
     if (SubtitleSource.isOff(source)) return null;

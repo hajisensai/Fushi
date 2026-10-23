@@ -195,7 +195,7 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
         source != null &&
             !networkSource &&
             p.isAbsolute(source) &&
-            // async：本地视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3663）。
+            // async：本地视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3704）。
             await File(source).exists()
         ? source
         : null;

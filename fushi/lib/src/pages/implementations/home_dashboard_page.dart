@@ -174,7 +174,7 @@ double dashboardRowCoverHeight(double mainColumnWidth) =>
 /// [exists] 是 async：候选可能落在网络盘（rclone / SMB 挂载）上，挂载端目录缓存
 /// 过期时一次 stat 要逐级重列目录、单次数秒。旧实现在 build 里同步 `existsSync`，
 /// 读有声书时统计表每几秒一写就触发首页重建 → 主 isolate 冻结数秒，同 isolate 上
-/// 的互联 host 端点（含 `/api/ping`）与 UI 一起卡死（BUG-3663）。
+/// 的互联 host 端点（含 `/api/ping`）与 UI 一起卡死（BUG-3704）。
 @visibleForTesting
 Future<String?> dashboardVideoCoverPath({
   required String? collectionCover,
@@ -764,7 +764,7 @@ class _HomeDashboardPageState
 
   /// 「继续」视频卡封面的异步解析结果：候选签名（[_videoCoverCandidateKey]）→
   /// 第一张存在的封面（null = 全不存在）。build 只读这张表、绝不碰文件系统
-  /// （BUG-3663）；表里还没有的候选由 [_resolveVideoCover] 在后台解析完再重建。
+  /// （BUG-3704）；表里还没有的候选由 [_resolveVideoCover] 在后台解析完再重建。
   /// 按候选签名缓存：重载后候选不变就直接复用，不会每次重载都闪占位。
   final Map<String, String?> _videoCoverByCandidates = <String, String?>{};
   final Set<String> _videoCoverResolving = <String>{};

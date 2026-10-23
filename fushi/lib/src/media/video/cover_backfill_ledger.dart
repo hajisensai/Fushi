@@ -58,7 +58,7 @@ class CoverBackfillLedger {
   /// （mtime/size）已变 → 试（并丢弃陈旧记录）；身份未变 → 拦。
   ///
   /// async：视频常在网络盘（rclone / SMB）上，回填循环跑在 UI isolate，同步 stat
-  /// 一次就能冻结界面与同 isolate 的互联 host 数秒（BUG-3663）。
+  /// 一次就能冻结界面与同 isolate 的互联 host 数秒（BUG-3704）。
   Future<bool> shouldAttempt(String videoPath) async {
     final CoverBackfillFailure? failure = _failures[videoPath];
     if (failure == null) return true;

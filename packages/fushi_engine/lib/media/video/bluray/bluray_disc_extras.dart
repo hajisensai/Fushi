@@ -302,7 +302,7 @@ Future<BlurayDiscExtrasPlan?> _planForDisc(String root) async {
   return plan;
 }
 
-/// 只走 async 文件 API（盘常在网络盘上，同步 stat 会冻结 isolate，BUG-3663）。
+/// 只走 async 文件 API（盘常在网络盘上，同步 stat 会冻结 isolate，BUG-3704）。
 /// 各播放列表的 stat 并发发出，一张上百条 MPLS 的盘不逐条串行等网络往返。
 Future<String?> _discFingerprint(String root) async {
   try {

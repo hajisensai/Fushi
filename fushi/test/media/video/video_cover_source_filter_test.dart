@@ -394,7 +394,7 @@ void main() {
       expect(gate, greaterThanOrEqualTo(0));
       expect(freshBook, greaterThan(gate));
       expect(currentCover, greaterThan(freshBook));
-      // ④ BUG-3663：回填环跑在 UI isolate，视频 / 封面常在网络盘上，环内不许有
+      // ④ BUG-3704：回填环跑在 UI isolate，视频 / 封面常在网络盘上，环内不许有
       // 同步文件调用（一次冷 stat 就能冻结界面与同 isolate 的互联 host 数秒）。
       expect(
         body,

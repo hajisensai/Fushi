@@ -15,7 +15,7 @@ import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:path/path.dart' as p;
 
-// BUG-3662：互联文件箱书阶段一次树列举取代逐本 PROPFIND。
+// BUG-3703：互联文件箱书阶段一次树列举取代逐本 PROPFIND。
 //
 // 真 FushiSyncServer + 真 InterconnectSyncBackend，中间夹一层计数代理（数清每个
 // PROPFIND 的 Depth）。同一份远端 / 本地种子各起一套，一套走快照、一套走逐本，比对

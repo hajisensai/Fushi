@@ -227,7 +227,7 @@ class _VideoSubtitleGenerateSheetState
 
   /// 整季：已有 `<视频名>.ja.srt`、管线会跳过的集。initState 里 async 探好后
   /// setState（[_loadExisting]）：这些字幕在视频旁边，常在网络盘上，旧实现作为
-  /// late 字段在 build 里逐集同步 stat，冷目录一次数秒、冻结 UI isolate（BUG-3663）。
+  /// late 字段在 build 里逐集同步 stat，冷目录一次数秒、冻结 UI isolate（BUG-3704）。
   Set<String> _existing = const <String>{};
 
   Future<void> _loadExisting() async {

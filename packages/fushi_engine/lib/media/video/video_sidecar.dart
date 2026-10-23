@@ -128,7 +128,7 @@ List<String> sidecarSuffixesDisplacedBy(
 ///
 /// async：视频常在网络盘（rclone / SMB 挂载）上，同步 listSync 冷目录时要逐级重列
 /// 目录、单次数秒，会冻结调用方整条 isolate——互联 host 跑在 app 主 isolate 上，
-/// 一次字幕请求就能把全部端点和 UI 一起卡住（BUG-3663）。
+/// 一次字幕请求就能把全部端点和 UI 一起卡住（BUG-3704）。
 Future<String?> findSidecarSubtitle(
   String videoPath, {
   required String langCode,

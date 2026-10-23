@@ -58,7 +58,7 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
       if (depth == '1') {
         await _appendDavChildren(entries, fsPath, normPath);
       } else if (depth.trim().toLowerCase() == 'infinity') {
-        // BUG-3662：同步根树列举。**有界**——只往下列 [kDavTreeListingMaxLevels]
+        // BUG-3703：同步根树列举。**有界**——只往下列 [kDavTreeListingMaxLevels]
         // 层（同步根布局只有「根 / 书文件夹或命名空间 / 文件」两层），绝不无限递归。
         // 能力经 `/api/capabilities` 的 `webdav.treeListingLevels` 公布；client 只在
         // 看到该能力后才发 infinity（老 host 把 infinity 当 Depth 0 只回根自身）。
@@ -164,7 +164,7 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
   }
 
   // GET / PUT / MKCOL / DELETE / HEAD 一律 async IO：同步根可能落在网络盘上，host 又跑在
-  // app 主 isolate 上，同步 stat 冷目录时会冻结全部端点与 UI（BUG-3663）。
+  // app 主 isolate 上，同步 stat 冷目录时会冻结全部端点与 UI（BUG-3704）。
   Future<shelf.Response> _handleGet(String fsPath) async {
     final file = File(fsPath);
     final int? length = await _regularFileLength(file);

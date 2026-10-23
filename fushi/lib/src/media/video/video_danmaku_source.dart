@@ -31,7 +31,7 @@ String? pickDanmakuSidecar(String videoBaseNameNoExt, List<String> dirFiles) {
 /// 视频同目录的同名弹幕 sidecar（无则 null）。
 ///
 /// async：视频常在网络盘（rclone / SMB 挂载）上，同步 listSync 冷目录时要逐级重列
-/// 目录、单次数秒，会冻结 UI isolate 与同 isolate 的互联 host（BUG-3663）。目录不存在
+/// 目录、单次数秒，会冻结 UI isolate 与同 isolate 的互联 host（BUG-3704）。目录不存在
 /// / 无权限时与旧实现一致返回 null。
 Future<String?> findDanmakuSidecar(String videoPath) async {
   final Directory dir = Directory(p.dirname(videoPath));
@@ -55,7 +55,7 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
   int maxBytes = kVideoDanmakuLocalMaxBytes,
 }) async {
   try {
-    // 一次 async stat 拿存在性与体积（BUG-3663：sidecar 在网络盘上时同步 stat 冻结 UI）。
+    // 一次 async stat 拿存在性与体积（BUG-3704：sidecar 在网络盘上时同步 stat 冻结 UI）。
     final FileStat stat = await file.stat();
     if (stat.type != FileSystemEntityType.file) {
       return VideoDanmakuLoadResult(

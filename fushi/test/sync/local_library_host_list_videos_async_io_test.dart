@@ -1,4 +1,4 @@
-// BUG-3663：互联 host 的 `/api/library/videos` 跑在 app 主 isolate 上。旧实现逐行
+// BUG-3704：互联 host 的 `/api/library/videos` 跑在 app 主 isolate 上。旧实现逐行
 // `existsSync` / `lengthSync` / `listSync` 视频文件——视频放在网络盘（rclone / SMB /
 // WinFsp 挂载）上、挂载端目录缓存过期时，一次同步 stat 要逐级重列目录、单次数秒，
 // 整条主 isolate（全部互联端点含 /api/ping、UI）随之冻结 4–16.7 s。

@@ -19,7 +19,7 @@ import 'package:fushi/utils.dart';
 ///
 /// [fileExists] 回答本地落地文件在不在：true / false = 已知；null = 还在异步探测，
 /// 此时返回 [kPendingCoverImage]（不先跳到远端 URL / 角色图）。不在这里同步 stat：
-/// 刮削把人物照作为 sidecar 写在视频旁边，常在网络盘上（BUG-3663）。
+/// 刮削把人物照作为 sidecar 写在视频旁边，常在网络盘上（BUG-3704）。
 VideoCreditCardImage? videoCreditCardImage(
   VideoMetadataCreditSummary credit, {
   required bool? Function(String path) fileExists,
@@ -81,7 +81,7 @@ class VideoCreditRail extends StatefulWidget {
 
 class _VideoCreditRailState extends State<VideoCreditRail> {
   /// 人物照 / 角色图本地文件的存在性：build 只读这张表，后台 async 探测落定后重建
-  /// （BUG-3663）。
+  /// （BUG-3704）。
   late final AsyncFileExistenceCache _fileExists = AsyncFileExistenceCache(
     onChanged: () {
       if (mounted) setState(() {});

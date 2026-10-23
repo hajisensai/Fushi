@@ -37,6 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3704](bugs/BUG-3704-host-list-videos-sync-stat-blocks-isolate.md) | ✅ | ✅ | 网络盘上的视频让 Fushi 主 isolate 卡数秒（互联 host 列表与 UI 一起冻结） |
+| [BUG-3703](bugs/BUG-3703-interconnect-sync-slow.md) | ✅ | ✅ | 互联同步一轮要几分钟（局域网 / 全部客户端） |
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |
@@ -77,9 +79,7 @@
 | [BUG-3665](bugs/BUG-3665-lookup-anchor-spans-split-word-fragments.md) | ✅ | ✅ | lookup-anchor-spans-split-word-fragments |
 | [BUG-3664](bugs/BUG-3664-hyphen-compound-tap-looks-up-front-half.md) | ✅ | ✅ | hyphen-compound-tap-looks-up-front-half |
 | [BUG-3663](bugs/BUG-3663-popup-local-audio-channel-missing.md) | ✅ | ✅ | popup-local-audio-channel-missing |
-| [BUG-3663](bugs/BUG-3663-host-list-videos-sync-stat-blocks-isolate.md) | ✅ | ✅ | 网络盘上的视频让 Fushi 主 isolate 卡数秒（互联 host 列表与 UI 一起冻结） |
 | [BUG-3662](bugs/BUG-3662-popup-dictionary-metadata-stale.md) | ✅ | ✅ | popup-dictionary-metadata-stale |
-| [BUG-3662](bugs/BUG-3662-interconnect-sync-slow.md) | ✅ | ✅ | 互联同步一轮要几分钟（局域网 / 全部客户端） |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

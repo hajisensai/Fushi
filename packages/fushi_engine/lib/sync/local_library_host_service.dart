@@ -118,7 +118,7 @@ void _assertSafeName(String name) {
 }
 
 /// [path] 指向的文件存在则原样返回，否则 null。async：host 跑在 app 主 isolate 上，路径可能落在网络盘
-/// （rclone / SMB 挂载）上，同步 existsSync 冷目录时会冻结整条 isolate（BUG-3663）。
+/// （rclone / SMB 挂载）上，同步 existsSync 冷目录时会冻结整条 isolate（BUG-3704）。
 Future<String?> _existingFilePathAsync(String? path) async {
   if (path == null || path.isEmpty) return null;
   try {

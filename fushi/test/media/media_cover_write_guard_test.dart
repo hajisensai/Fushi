@@ -98,7 +98,7 @@ const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
         // 本文件的封面路只派生 coversDir 交给 CoverMetaStore/extractVideoCover。
         '_moveFileInto',
         // 清字幕 / 设默认字幕：把视频同目录的字幕 sidecar 改名成 `.fushi-bak` 备份或改回
-        // （BUG-3663 起由 renameSync 改为 async rename，才进入 `.rename(` 判据），不碰封面。
+        // （BUG-3704 起由 renameSync 改为 async rename，才进入 `.rename(` 判据），不碰封面。
         '_backUpSidecars',
         '_restoreSidecars',
         '_displaceSidecarsFor',

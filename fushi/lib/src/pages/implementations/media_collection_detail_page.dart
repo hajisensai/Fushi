@@ -203,7 +203,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         TickerProviderStateMixin {
   late String _name;
 
-  /// 封面 / 海报 / 附加图缩略图的「文件在不在」异步记忆表（BUG-3663）：合集海报常落在
+  /// 封面 / 海报 / 附加图缩略图的「文件在不在」异步记忆表（BUG-3704）：合集海报常落在
   /// 网络盘（rclone / SMB 挂载）上，build 里同步 stat 一次就能冻结 UI 与同 isolate 的
   /// 互联 host 数秒。build 只读这张表，没见过的路径后台 async 探测、落定后重建。
   late final AsyncFileExistenceCache _coverExists = AsyncFileExistenceCache(
@@ -885,7 +885,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 搬家、备份恢复带来的悬空路径必须表现得像「没设过封面」，落到刮削封面 /
     // 成员封面，而不是返回一张必坏的 FileImage 把后面的回退全挡掉。
     //
-    // 存在性读 [_coverExists]（零同步 IO，BUG-3663）；某一级还在探测时整条链停在
+    // 存在性读 [_coverExists]（零同步 IO，BUG-3704）；某一级还在探测时整条链停在
     // [kPendingCoverImage]，不先闪成后面的回退封面。
     final String? collectionCoverPath =
         (_collectionRow ?? widget.collection).coverPath;
@@ -1334,7 +1334,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     List<String> paths,
     Offset globalPosition,
   ) async {
-    // 目录判定先 async 做完再交给同步的分类器（BUG-3663：拖进来的常是网络盘上的
+    // 目录判定先 async 做完再交给同步的分类器（BUG-3704：拖进来的常是网络盘上的
     // 文件，同步 stat 冷目录要数秒、冻结 UI isolate）。
     // 各路径并发判（一次往返，不逐个串行等网络盘）。
     final List<bool> isDirectory = await Future.wait(<Future<bool>>[
@@ -2098,7 +2098,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                           child: Stack(
                             fit: StackFit.expand,
                             children: <Widget>[
-                              // 存在性读异步记忆表（BUG-3663）；还在探测时先画底色块。
+                              // 存在性读异步记忆表（BUG-3704）；还在探测时先画底色块。
                               if (thumb != null &&
                                   _coverExists.lookup(thumb) == null)
                                 const ColoredBox(color: Color(0x1FFFFFFF))

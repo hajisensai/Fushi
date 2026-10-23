@@ -755,7 +755,7 @@ class _VideoPagePlaybackRemote
     if (_state._referenceSyncRunning) {
       throw const VideoRemoteFailure('busy', '已有对轴在进行');
     }
-    // 同步入口只做零 IO 的选择预检；文件是否还在放进任务里 async 判（BUG-3663：
+    // 同步入口只做零 IO 的选择预检；文件是否还在放进任务里 async 判（BUG-3704：
     // 字幕可能在网络盘上，同步 stat 会冻结 UI isolate）。
     if (_state._currentExternalSubtitleSelection() == null) {
       throw const VideoRemoteFailure(

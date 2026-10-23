@@ -306,7 +306,7 @@ bool isImportableDropUrl(String candidate) {
 /// （widget 层）先用 async 文件 API（`FileSystemEntity.isDirectory`，各路径
 /// `Future.wait` 并发）判完，再传**查表**谓词（如 `directories.contains`）；测试注入
 /// 假谓词。**禁止**在谓词里做同步 stat（`existsSync` 之类）：拖进来的常是网络盘上的
-/// 文件，同步 stat 冷目录要数秒、冻结 UI isolate（BUG-3663）。
+/// 文件，同步 stat 冷目录要数秒、冻结 UI isolate（BUG-3704）。
 /// 不传（默认 null）时行为与历史逐字节一致——目录会落进 [DroppedFiles.unknown]。
 ///
 /// [blurayDiscRootForDirectory] 同理：调用方先对判为目录的路径 await

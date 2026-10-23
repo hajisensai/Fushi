@@ -270,7 +270,7 @@ String? _interconnectHeaderValue(shelf.Request request, String name) {
 }
 
 /// [file] 是普通文件（跟随链接）则返回其长度，否则 / stat 失败返回 null。一次 async
-/// stat 同时代替 `existsSync` + `lengthSync`（BUG-3663：host 路径上不留同步 stat）。
+/// stat 同时代替 `existsSync` + `lengthSync`（BUG-3704：host 路径上不留同步 stat）。
 Future<int?> _regularFileLength(File file) async {
   try {
     final FileStat stat = await file.stat();
@@ -282,7 +282,7 @@ Future<int?> _regularFileLength(File file) async {
 
 /// [path] 指向的封面文件存在则返回，否则 null。async：视频 / 合集封面常和视频一起
 /// 落在网络盘上，host 跑在 app 主 isolate 上，同步 existsSync 冷目录时会冻结全部
-/// 端点与 UI（BUG-3663）。
+/// 端点与 UI（BUG-3704）。
 Future<File?> _coverFile(String? path) async {
   if (path == null || path.isEmpty) return null;
   final File file = File(path);
@@ -1279,7 +1279,7 @@ Future<shelf.Response> serveFileWithRange(
   bool ifRangeRequired = true,
 }) async {
   // 一次 async stat 同时拿存在性与长度：视频流 / 漫画页 / 导出包都经这里，源文件
-  // 可能在网络盘上，同步 existsSync + lengthSync 会冻结 host 所在 isolate（BUG-3663）。
+  // 可能在网络盘上，同步 existsSync + lengthSync 会冻结 host 所在 isolate（BUG-3704）。
   final FileStat stat;
   try {
     stat = await file.stat();
@@ -1353,7 +1353,7 @@ Future<shelf.Response> serveFileWithRange(
 /// 拼成坏片。与导出包的 `pkg-` 验证器（[ExportPackageCache.etagFor]）刻意分开：
 /// 那边钉的是进程内缓存的代数，这里钉的是用户库里的原文件。纯 ASCII。
 ///
-/// async（一次 stat 取 size + mtime）：源文件常在网络盘上（BUG-3663）。文件不存在 /
+/// async（一次 stat 取 size + mtime）：源文件常在网络盘上（BUG-3704）。文件不存在 /
 /// stat 失败抛 [FileSystemException]，与旧 `lengthSync` 同一契约。
 Future<String> videoFileEtag(File file) async {
   final FileStat stat = await file.stat();
@@ -1392,7 +1392,7 @@ class ExportPackageCache {
   /// [export] 返回的临时文件（连同其父临时目录）所有权移交本缓存。
   ///
   /// 命中判据走 async stat（包下载端点在 host 所在 isolate 上跑，同步 stat 会和别的
-  /// 请求抢 isolate，BUG-3663）。await 之后再读 [_inFlight] / [_latest]：两段之间别的
+  /// 请求抢 isolate，BUG-3704）。await 之后再读 [_inFlight] / [_latest]：两段之间别的
   /// 请求可能已换代，命中判据只认 await 后仍是「当前代」的那份。
   Future<File> obtain(
     String kind,

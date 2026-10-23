@@ -17477,7 +17477,7 @@ class CollectionMemberTombstoneRow extends DataClass
   /// 分不清就会把并掉的当成用户拒绝、把成员丢回散条目（schema v124，spec §8.5）。
   final bool organizeMerged;
 
-  /// 这条墓碑知识**进入本库**的毫秒戳（schema v125，BUG-3662 后续）：本机作互联 host 时
+  /// 这条墓碑知识**进入本库**的毫秒戳（schema v125，BUG-3703 后续）：本机作互联 host 时
   /// 清单里的 `publishedAt`（成员墓碑）/ `deletedPublishedAt`（合集级哨兵行），对端用
   /// 「自己的基线 vs 它」判墓碑是不是新闻。只由同步应用端
   /// （`applyCollectionLocalChanges`）给**新知识**盖戳，已有同键同 [deletedAt] 的行原值

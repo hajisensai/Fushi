@@ -1,4 +1,4 @@
-// BUG-3663：视频 / 视频旁 sidecar / 封面常落在网络盘（rclone / SMB / WinFsp 挂载）上，
+// BUG-3704：视频 / 视频旁 sidecar / 封面常落在网络盘（rclone / SMB / WinFsp 挂载）上，
 // 挂载端目录缓存过期时一次同步 stat / list 要逐级重列目录、单次 0.15–4.4 s。app 主
 // isolate 上只要有一次这样的同步文件调用，UI 与同 isolate 的互联 host 端点就一起冻结。
 //
@@ -167,7 +167,7 @@ void main() {
   );
   final String video = p.join(dir, 'Show - 01.mkv');
 
-  group('BUG-3663 网络盘上的视频：打开 / 补字幕 / 封面回填零同步文件调用', () {
+  group('BUG-3704 网络盘上的视频：打开 / 补字幕 / 封面回填零同步文件调用', () {
     test('弹幕 sidecar：async 列目录找同名文件、async stat 判体积', () async {
       final String danmaku = p.join(dir, 'Show - 01.dandanplay.json');
       final _FakeNetMount mount = _FakeNetMount(<String, String>{

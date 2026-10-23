@@ -95,7 +95,7 @@ void main() {
       isTrue,
       reason: '包导出必须经进程级缓存（否则每次请求重新打包）',
     );
-    // 清理改成 async delete（BUG-3663：host 路径上不留同步文件 IO），约束本身不变。
+    // 清理改成 async delete（BUG-3704：host 路径上不留同步文件 IO），约束本身不变。
     expect(
       body.contains('await tmpDir.delete(recursive: true)'),
       isTrue,

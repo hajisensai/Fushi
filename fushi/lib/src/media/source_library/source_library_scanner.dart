@@ -2414,7 +2414,7 @@ class SourceLibraryScanner {
 /// 那不是搬家，绝不能把仍然有效的旧行并掉。
 ///
 /// 文件判据 async：扫描跑在 UI isolate，源库常是网络盘（rclone / SMB），同步 stat
-/// 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3663）。
+/// 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3704）。
 Future<bool> isVideoRowMovedTo(VideoBookRow row, String newPath) async {
   final String oldPath = row.videoPath;
   if (row.playlistJson != null || row.streamSpecJson != null) return false;

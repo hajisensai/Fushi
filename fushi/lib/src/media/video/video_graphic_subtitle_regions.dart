@@ -425,7 +425,7 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
   /// 缓存键：本地文件带大小与修改时间（文件换了就重抽）；远端流只认地址（请求头里的
   /// 会话凭据会轮换，不进键）。本地文件不存在返回 null。`v2`：解码器扩到 VobSub / DVB。
   ///
-  /// async stat：本地视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3663）。
+  /// async stat：本地视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3704）。
   static Future<String?> _cacheKey(GraphicSubtitleRegionRequest r) async {
     final String identity;
     if (r.input.isRemote) {
