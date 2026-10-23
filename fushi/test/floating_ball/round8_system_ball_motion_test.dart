@@ -278,7 +278,56 @@ void main() {
     },
   );
 
-  testWidgets('tap-clipboard setting resyncs the native ball with the flag', (
+  testWidgets('tap-action setting resyncs the native ball with the action id', (
+    WidgetTester tester,
+  ) async {
+    await pumpHost(tester);
+    await enableSystemBall(tester);
+    final SettingsSegmentedItem<FloatingBallTapAction> setting =
+        buildFloatingBallDestination().sections
+            .expand((SettingsSection section) => section.items)
+            .whereType<SettingsSegmentedItem<FloatingBallTapAction>>()
+            .singleWhere(
+              (SettingsSegmentedItem<FloatingBallTapAction> item) =>
+                  item.id == 'floating_ball.tap_action',
+            );
+    final Object? originalActions = starts.single['actions'];
+    expect(setting.defaultValue, FloatingBallTapAction.expand);
+    expect(setting.selected(settingsContext), FloatingBallTapAction.expand);
+    expect(starts.single['tapAction'], '');
+
+    for (final FloatingBallTapAction value in <FloatingBallTapAction>[
+      FloatingBallTapAction.screenOcr,
+      FloatingBallTapAction.clipboard,
+      FloatingBallTapAction.expand,
+    ]) {
+      final int count = starts.length;
+      await tester.runAsync(
+        () async => setting.onChanged(settingsContext, value),
+      );
+      await expectStarts(tester, count + 1);
+      expect(setting.selected(settingsContext), value);
+      expect(prefs.floatingBallTapAction, value);
+      expect(starts.last['tapAction'], value.storageValue);
+      expect(starts.last['actions'], equals(originalActions));
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('legacy tap-clipboard flag reads as the clipboard tap action', (
+    WidgetTester tester,
+  ) async {
+    await tester.runAsync(
+      () async => prefs.setPref('floating_ball.tap_clipboard', true),
+    );
+    expect(prefs.floatingBallTapAction, FloatingBallTapAction.clipboard);
+    await pumpHost(tester);
+    await enableSystemBall(tester);
+    expect(starts.last['tapAction'], 'clipboard');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('open-Fushi switch resyncs the native ball (BUG-3678)', (
     WidgetTester tester,
   ) async {
     await pumpHost(tester);
@@ -287,20 +336,19 @@ void main() {
         .expand((SettingsSection section) => section.items)
         .whereType<SettingsSwitchItem>()
         .singleWhere(
-          (SettingsSwitchItem item) => item.id == 'floating_ball.tap_clipboard',
+          (SettingsSwitchItem item) =>
+              item.id == 'floating_ball.system.open_app',
         );
     final Object? originalActions = starts.single['actions'];
-    expect(setting.defaultValue, isFalse);
-    expect(setting.value(settingsContext), isFalse);
-    expect(starts.single['tapClipboard'], isFalse);
-
-    for (final bool on in <bool>[true, false]) {
+    expect(setting.defaultValue, isTrue);
+    expect(starts.single['showOpenApp'], isTrue);
+    for (final bool on in <bool>[false, true]) {
       final int count = starts.length;
       await tester.runAsync(() async => setting.onChanged(settingsContext, on));
       await expectStarts(tester, count + 1);
-      expect(setting.value(settingsContext), on);
-      expect(prefs.floatingBallTapClipboard, on);
-      expect(starts.last['tapClipboard'], on);
+      expect(prefs.floatingBallSystemOpenApp, on);
+      expect(starts.last['showOpenApp'], on);
+      // 「打开 Fushi」不进可配置动作列表：原生按开关增删，位置固定。
       expect(starts.last['actions'], equals(originalActions));
     }
     await tester.pumpWidget(const SizedBox.shrink());

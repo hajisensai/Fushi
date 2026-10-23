@@ -64,6 +64,17 @@ class FeedbackReopenSeed {
 /// [_FeedbackComposePageState._onDisk]：磁盘上没有草稿。
 const Object _kNoDraftOnDisk = Object();
 
+/// 各分类的附件默认值（反馈 SDN2yTecu9 / LmIRnau_Fa）：只有「问题」默认附带
+/// 日志与打开反馈那一刻的自动截图——它们是复现现场；建议 / 其他一般用不到，
+/// 自动截图也多半不是要配的那张，默认不带（自动截图仍可一键附上）。用户手动
+/// 改过的开关 / 截图不再跟着分类走。
+bool feedbackDefaultIncludeLogs(FeedbackCategory category) =>
+    category == FeedbackCategory.bug;
+
+/// 见 [feedbackDefaultIncludeLogs]。
+bool feedbackDefaultAttachAutoShot(FeedbackCategory category) =>
+    category == FeedbackCategory.bug;
+
 class FeedbackComposePage extends ConsumerStatefulWidget {
   const FeedbackComposePage({this.initialScreenshot, this.reopenOf, super.key});
 
@@ -84,6 +95,10 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   FeedbackCategory _category = FeedbackCategory.bug;
   late final List<Uint8List> _shots = <Uint8List>[?widget.initialScreenshot];
   bool _includeLogs = true;
+
+  /// 用户亲手拨过「附带日志」/ 增删过自动截图：之后换分类不再改它们。
+  bool _logsTouched = false;
+  bool _autoShotTouched = false;
   bool _includeDevice = true;
   bool _linkAccount = true;
   FeedbackSubmitStage? _stage;
@@ -198,6 +213,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       unawaited(_loadDraft());
     } else {
       _category = seed.category;
+      _includeLogs = feedbackDefaultIncludeLogs(seed.category);
       _title.text = seed.title;
       _body.text = seed.body;
       unawaited(_prefillContact());
@@ -224,6 +240,51 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     _scheduleDraftSave();
   }
 
+  /// 本次打开时的自动截图此刻在附件里。
+  bool get _autoShotAttached {
+    final Uint8List? auto = widget.initialScreenshot;
+    return auto != null && _shots.any((Uint8List s) => identical(s, auto));
+  }
+
+  /// 有自动截图、但没附上（分类默认不带或被用户删掉）：给一个「附上当时画面」。
+  bool get _autoShotOffered =>
+      widget.initialScreenshot != null && !_autoShotAttached;
+
+  /// 换分类：没被用户亲手改过的日志开关与自动截图跟着新分类的默认走。
+  void _selectCategory(FeedbackCategory c) {
+    setState(() {
+      _category = c;
+      if (!_logsTouched) _includeLogs = feedbackDefaultIncludeLogs(c);
+      final Uint8List? auto = widget.initialScreenshot;
+      if (!_autoShotTouched && auto != null) {
+        final bool want = feedbackDefaultAttachAutoShot(c);
+        if (!want) {
+          _shots.removeWhere((Uint8List s) => identical(s, auto));
+        } else if (!_autoShotAttached && _room > 0) {
+          _shots.insert(0, auto);
+        }
+      }
+    });
+  }
+
+  void _removeShot(int index) {
+    setState(() {
+      final Uint8List removed = _shots.removeAt(index);
+      if (identical(removed, widget.initialScreenshot)) {
+        _autoShotTouched = true;
+      }
+    });
+  }
+
+  void _attachAutoShot() {
+    final Uint8List? auto = widget.initialScreenshot;
+    if (auto == null || _autoShotAttached || _room <= 0) return;
+    setState(() {
+      _shots.add(auto);
+      _autoShotTouched = true;
+    });
+  }
+
   /// 用户写过东西没有（与刚打开时的空表单 + 自动截图比）。
   bool get _hasDraftContent =>
       _title.text.trim().isNotEmpty ||
@@ -247,6 +308,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         super.setState(() {
           _category = draft.category;
           _includeLogs = draft.includeLogs;
+          // 草稿里的勾选与截图就是用户自己的选择，不再跟分类默认走。
+          _logsTouched = true;
           _includeDevice = draft.includeDevice;
           _linkAccount = draft.linkAccount;
           _shots
@@ -254,8 +317,10 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
             ..addAll(draft.screenshots);
           // 本次打开前自动截的画面接在草稿截图后面（还有空位、且不是草稿里已有的同一张）：
           // 它是打开反馈那一刻的现场，关掉提交页就再也截不回来（BUG-3240）。
+          // 只在草稿的分类默认带自动截图时接（建议 / 其他留给「附上当时画面」）。
           final Uint8List? autoShot = widget.initialScreenshot;
           if (autoShot != null &&
+              feedbackDefaultAttachAutoShot(draft.category) &&
               _room > 0 &&
               !draft.screenshots.any(
                 (Uint8List s) => listEquals(s, autoShot),
@@ -348,6 +413,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     super.setState(() {
       _category = FeedbackCategory.bug;
       _includeLogs = true;
+      _logsTouched = false;
+      _autoShotTouched = false;
       _includeDevice = true;
       _linkAccount = true;
       _shots
@@ -1022,9 +1089,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                     avatar: FushiIcon(feedbackCategoryIcon(c)),
                     label: Text(feedbackCategoryLabel(c)),
                     selected: _category == c,
-                    onSelected: _locked
-                        ? null
-                        : (bool _) => setState(() => _category = c),
+                    onSelected: _locked ? null : (bool _) => _selectCategory(c),
                   ),
               ],
             ),
@@ -1080,7 +1145,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                 style: tokens.type.metadata,
               ),
             ],
-            if (widget.initialScreenshot != null) ...<Widget>[
+            if (_autoShotAttached) ...<Widget>[
               const SizedBox(height: 2),
               Text(
                 t.feedback_compose_auto_shot_hint,
@@ -1097,11 +1162,16 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
                   _Thumb(
                     key: ValueKey<String>('feedback-shot-$i'),
                     bytes: _shots[i],
-                    onRemove: _locked
-                        ? null
-                        : () => setState(() => _shots.removeAt(i)),
+                    onRemove: _locked ? null : () => _removeShot(i),
                   ),
                 if (_room > 0) ...<Widget>[
+                  if (_autoShotOffered)
+                    _AddTile(
+                      key: const ValueKey<String>('feedback-attach-auto-shot'),
+                      icon: FushiIcons.image,
+                      label: t.feedback_compose_attach_auto_shot,
+                      onTap: _locked ? null : _attachAutoShot,
+                    ),
                   _AddTile(
                     key: const ValueKey<String>('feedback-add-image'),
                     icon: FushiIcons.addCircle,
@@ -1126,7 +1196,10 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               value: _includeLogs,
               onChanged: _locked
                   ? null
-                  : (bool v) => setState(() => _includeLogs = v),
+                  : (bool v) => setState(() {
+                      _includeLogs = v;
+                      _logsTouched = true;
+                    }),
               title: Text(t.feedback_compose_attach_logs),
               subtitle: Text(t.feedback_compose_attach_logs_hint),
             ),

@@ -1823,8 +1823,21 @@ class _HomeDashboardPageState
       ));
     }
     // 互联 host 的远端补位（本地无同 key/uid 的在读书/在看视频），与本地条目
-    // 按最近活动时刻统一混排（「继续也走互联」）。
-    for (final RemoteContinueCandidate c in _remoteContinue) {
+    // 按最近活动时刻统一混排（「继续也走互联」）。远端合集已在候选层收敛成一
+    // 合集一卡；本地已出同名合集卡的再去掉（反馈 GonyeE75Kd：同名卡刷屏）。
+    final List<RemoteContinueCandidate> remoteUnits =
+        withoutLocallyCoveredCollections(
+      _remoteContinue,
+      localVideoCollectionNames: <String>{
+        for (final _ContinueEntry e in entries)
+          if (e.isVideo && e.collectionName != null) e.collectionName!,
+      },
+      localBookCollectionNames: <String>{
+        for (final _ContinueEntry e in entries)
+          if (e.isBook && e.collectionName != null) e.collectionName!,
+      },
+    );
+    for (final RemoteContinueCandidate c in remoteUnits) {
       entries.add(_ContinueEntry(
         // BUG-1119：此前是 `c.isVideo ? video : epub` 二元降维——远端 SRT 书会被
         // 抹成 epub、第三种媒体装不下（BUG-1111 的漏网消费点）。直读候选种类。

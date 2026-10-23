@@ -32,8 +32,10 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
  *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
- *   <li>{@code startSystemBall.tapClipboard}：收起态点球直接查剪贴板、长按才展开按钮，
- *       缺省 false（点球展开）。</li>
+ *   <li>{@code startSystemBall.tapAction}：收起态点球直接执行的动作（{@code clipboard} /
+ *       {@code screen_ocr}），此时长按才展开按钮；缺省 / 空 = 点球展开。</li>
+ *   <li>{@code startSystemBall.showLabels}：展开时按钮旁带文字，缺省 true；
+ *       {@code startSystemBall.showOpenApp}：菜单里有「打开 Fushi」，缺省 true。</li>
  *   <li>{@code startSystemBall.icons}：按钮 id → Material Icons 码位（与应用内球同一颗
  *       IconData），{@code startSystemBall.colors}：{@code surface / onSurface / primary}
  *       的 ARGB。都用来把系统球画得和应用内球一样（BUG-2793），缺省回退首字 / 默认配色。</li>
@@ -265,7 +267,9 @@ final class FloatingBallChannel {
                         intMap(call.argument("icons")),
                         intMap(call.argument("colors")),
                         call.argument("ocrLanguage"),
-                        call.argument("tapClipboard"));
+                        call.argument("tapAction"),
+                        call.argument("showLabels"),
+                        call.argument("showOpenApp"));
                 if (FloatingBallService.getInstance() == null) {
                     Intent svc = new Intent(app, FloatingBallService.class);
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -294,6 +298,15 @@ final class FloatingBallChannel {
                 FloatingBallService.startPopupLookup(context);
                 result.success(null);
                 return;
+            case "setScreenOcrOptions": {
+                // 截屏识字的两个用户选项（保持截屏会话 / 制卡带图），见 ScreenOcrOptions。
+                Boolean keep = call.argument("keepSession");
+                Boolean cardImage = call.argument("cardImage");
+                ScreenOcrOptions.save(app, keep != null && keep,
+                        cardImage == null || cardImage);
+                result.success(null);
+                return;
+            }
             case "takePendingOpenLookupPage": {
                 boolean pending = pendingOpenLookupPage;
                 pendingOpenLookupPage = false;

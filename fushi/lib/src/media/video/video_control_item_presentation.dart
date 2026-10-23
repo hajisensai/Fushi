@@ -121,6 +121,8 @@ IconData videoControlItemIcon(
       return FushiIcons.numberedList;
     case VideoControlItem.danmaku:
       return FushiIcons.danmaku;
+    case VideoControlItem.ocrFrame:
+      return FushiIcons.ocr;
     case VideoControlItem.volume:
       return FushiIcons.volumeUp;
     case VideoControlItem.title:
@@ -205,6 +207,8 @@ String videoControlItemLabel(
       return t.video_chapters;
     case VideoControlItem.danmaku:
       return t.video_control_danmaku;
+    case VideoControlItem.ocrFrame:
+      return t.video_control_ocr_frame;
     case VideoControlItem.volume:
       return t.video_control_volume;
     case VideoControlItem.title:

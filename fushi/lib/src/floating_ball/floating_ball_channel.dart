@@ -68,7 +68,8 @@ class FloatingBallChannel {
     required String ocrLanguage,
     bool animate = true,
     bool showLabels = true,
-    bool tapClipboard = false,
+    bool showOpenApp = true,
+    String tapAction = '',
     Map<String, Uint8List>? iconImages,
     Uint8List? ballImage,
     String? dock,
@@ -82,8 +83,10 @@ class FloatingBallChannel {
         'ocrLanguage': ocrLanguage,
         'animate': animate,
         'showLabels': showLabels,
-        // 只有 Android 原生球消费（点球查剪贴板、长按展开）；桌面端忽略。
-        'tapClipboard': tapClipboard,
+        // 菜单里有没有「打开 Fushi」：Android / Windows / macOS 原生球都认。
+        'showOpenApp': showOpenApp,
+        // 只有 Android 原生球消费（点球直接执行该动作、长按展开）；桌面端忽略。
+        'tapAction': tapAction,
         if (iconImages != null) 'iconImages': iconImages,
         if (ballImage != null) 'ballImage': ballImage,
         if (dock != null) 'dock': dock,
@@ -117,6 +120,17 @@ class FloatingBallChannel {
         'labels': labels,
       }) ??
       false;
+
+  /// Android：截屏识字的两个用户选项（原生 `ScreenOcrOptions`）。[keepSession] =
+  /// 保持截屏会话（之后不再弹系统确认框），[cardImage] = 制卡带图（把定格帧写进缓存
+  /// 给查词窗裁卡图）。
+  static Future<void> setScreenOcrOptions({
+    required bool keepSession,
+    required bool cardImage,
+  }) => _invoke<void>('setScreenOcrOptions', <String, Object?>{
+    'keepSession': keepSession,
+    'cardImage': cardImage,
+  });
 
   /// 「应用外查词」：弹出独立查词窗（与系统「处理文本」、截屏识字同一个
   /// `PopupDictFlutterActivity`），只有搜索栏。

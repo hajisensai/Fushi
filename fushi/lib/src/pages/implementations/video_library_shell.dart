@@ -295,6 +295,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               LibrarySectionTab<VideoLibrarySection>(
                 value: _activeSectionOf(group),
                 label: _groupLabel(group),
+                // 组页签的值随组内停留的分区变，顺序身份认组。
+                orderId: group.name,
               ),
         ];
     final _VideoSectionGroup currentGroup = _groupOf(_section);
@@ -309,6 +311,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       onChanged: _select,
       focusIdPrefix: 'video-library-view',
       floating: true,
+      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序。
+      orderKey: 'video',
     );
     // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
     // 换成壳自己的，动作改由浮动动作组画。

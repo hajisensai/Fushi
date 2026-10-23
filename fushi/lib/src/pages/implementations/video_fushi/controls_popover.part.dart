@@ -498,11 +498,13 @@ extension _VideoControlsPopover on _VideoFushiPageState {
     return ValueListenableBuilder<double>(
       valueListenable: _volumeDisplay,
       builder: (BuildContext context, double value, Widget? child) {
-        final double clamped = value.clamp(0.0, 100.0).toDouble();
+        final double max = _maxVideoVolume;
+        final double clamped = value.clamp(0.0, max).toDouble();
         final ColorScheme cs = _videoPopoverColorScheme(context);
         final Widget card = VideoVolumePopoverCard(
           width: width,
           value: clamped,
+          maximum: max,
           uiScale: _videoUiScale,
           colorScheme: cs,
           icon: _volumeIconFor(clamped),

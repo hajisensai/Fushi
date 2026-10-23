@@ -510,6 +510,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   LyricsPlayerCallbacks _lyricsPlayerCallbacks(AudiobookPlayerController ctrl) {
     return LyricsPlayerCallbacks(
       onClose: () => unawaited(_toggleLyricsMode()),
+      // × 直接退书回书架：走显式退书漏斗（PopScope flush / closeMedia 照常），
+      // 且不先关歌词层——这本书记住的歌词模式保持为真，重开仍是歌词模式
+      // （BUG-785；反馈 QvYpZODImz）。
+      onExitBook: () => unawaited(_exitReaderBook()),
       onPlayPause: () => unawaited(ctrl.togglePlayPause()),
       // 上一句 / 下一句走 skipToCue 漏斗：正文账本按「显式跳句」结算（BUG-1107），
       // 与底栏 / 快捷键同一语义——歌词层自己不碰统计。

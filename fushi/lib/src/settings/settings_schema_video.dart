@@ -1362,6 +1362,33 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: VideoMpvConfig.defaults.audioChannels,
           ),
+          // 音量上限（用户反馈 W-qZRr3lwK：片源响度不够，要 200%）。默认 100 = 不放大，
+          // 与以往一致；调高后音量滑条 / 滚轮 / 音量键 / 竖滑手势都能推过 100%，由
+          // mpv `volume-max` + 软件增益放大。见 [VideoMpvConfig.volumeMax]。
+          SettingsSegmentedItem<int>(
+            id: 'video.audio.volume_max',
+            title: t.video_setting_mpv_volume_max,
+            subtitle: t.video_setting_mpv_volume_max_hint,
+            icon: Icons.volume_up_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 185,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            options: <SettingsSegmentOption<int>>[
+              for (final int max in kVideoVolumeMaxValues)
+                SettingsSegmentOption<int>(value: max, label: '$max%'),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).volumeMax,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(volumeMax: value),
+              );
+            },
+            defaultValue: VideoMpvConfig.defaults.volumeMax,
+          ),
           _videoMpvSwitchItem(
             id: 'video.audio.normalize_downmix',
             title: t.video_setting_mpv_normalize,
