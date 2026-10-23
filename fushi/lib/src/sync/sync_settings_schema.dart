@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -639,6 +640,23 @@ SettingsDestination buildInterconnectDestination() {
             },
             icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
+          ),
+          // 反馈 _sZllpFQWm / BUG-3662：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
+          // 这类任务此前只在「浏览 → 下载」里列出，iOS 没有浏览模块就无处可停；
+          // 互联下载不是商店受限能力，这里不挂任何合规门，五端都在。
+          SettingsActionItem(
+            id: 'interconnect.download_tasks',
+            title: t.interconnect_download_tasks_title,
+            subtitle: t.interconnect_download_tasks_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '互联下载任务是本机 app 内存里的传输队列（暂停 / 继续 / 取消要作用在正在跑的'
+              '传输上），只能在 app 里管理',
+            ),
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => const InterconnectDownloadTasksPage(),
+            ),
           ),
           SettingsActionItem(
             id: 'interconnect.game_stream',

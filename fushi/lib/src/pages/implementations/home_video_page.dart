@@ -129,6 +129,8 @@ import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart'
+    show openInterconnectDownloadTasksPage;
 import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
@@ -8144,6 +8146,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
     final RemoteVideoClient? client = _remoteVideoClient;
     final bool canDelete = client is InterconnectSyncBackend;
+    // 这一集的互联下载任务（反馈 _sZllpFQWm / BUG-3662）：在跑 / 暂停 / 失败时，
+    // 「下载」换成暂停 / 继续 / 取消——就在发起下载的同一张卡上，任何平台都可达，
+    // 不依赖「浏览 → 下载」。
+    final InterconnectDownloadManager downloads = ref.read(
+      interconnectDownloadManagerProvider,
+    );
+    final InterconnectDownloadTask? found = downloads.taskFor(video.id);
+    final InterconnectDownloadTask? task =
+        found != null && found.status != InterconnectDownloadStatus.completed
+        ? found
+        : null;
     // 云盘视频：后端能按 Range 读（OneDrive / Dropbox / Google Drive）时多给一个
     // 「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义不变）。
     final CloudStreamVideoClient? cloudStream = _cloudRemoteVideoClient
@@ -8165,14 +8178,51 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 unawaited(_openRemote(video, streamClient: cloudStream));
               },
             ),
-          DialogQuickAction(
-            label: t.remote_video_download,
-            icon: Icons.download_outlined,
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _downloadRemote(video);
-            },
-          ),
+          if (task == null)
+            DialogQuickAction(
+              label: t.remote_video_download,
+              icon: Icons.download_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                _downloadRemote(video);
+              },
+            ),
+          if (task != null && downloads.canPause(task.id))
+            DialogQuickAction(
+              label: t.download_task_pause,
+              icon: Icons.pause_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                downloads.pause(task.id);
+              },
+            ),
+          if (task != null && downloads.canRestart(task.id))
+            DialogQuickAction(
+              label: t.download_task_resume,
+              icon: Icons.play_arrow_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(downloads.resume(task.id));
+              },
+            ),
+          if (task != null && downloads.canCancel(task.id))
+            DialogQuickAction(
+              label: t.interconnect_download_cancel,
+              icon: Icons.close,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(downloads.cancel(task.id));
+              },
+            ),
+          if (task != null)
+            DialogQuickAction(
+              label: t.interconnect_download_tasks_title,
+              icon: Icons.download_for_offline_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(openInterconnectDownloadTasksPage(context));
+              },
+            ),
           DialogQuickAction(
             label: t.remote_video_info,
             icon: Icons.info_outline,
@@ -9352,7 +9402,67 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       chooseTmdbOrderingOnHost: _metadataBackend == null
           ? null
           : _chooseTmdbOrderingOnHost,
+      deleteLocalCopy: _deleteDownloadedLocalCopy,
     );
+  }
+
+  /// 删掉一集**从配对设备下载到本机的副本**（反馈 _sZllpFQWm / BUG-3662：iPad 上
+  /// 找不到删下载副本的地方）。
+  ///
+  /// 落地就是媒体库删除链（放句柄 → 删行 → 删下载下来的文件与字幕），差别只有两点：
+  /// - 只删本机（[DeleteScope.keepLocalOnly]）：对端的原片一个字节都不碰；
+  /// - **合集成员行保留**（`removeFromCollections: false`）：成员行的 entryKey 就是
+  ///   对端 id，留着它这一集就退回远端集，可再流播 / 再下载；按默认把它从合集里
+  ///   摘掉，这一集会从详情页整个消失，合集只剩这一集时还会被连带自删。
+  Future<bool> _deleteDownloadedLocalCopy(VideoBookRow row) async {
+    final FushiDestructiveConfirmResult? confirmed =
+        await showAppDialog<FushiDestructiveConfirmResult>(
+          context: context,
+          builder: (_) => FushiDestructiveConfirmDialog(
+            title: t.collection_episode_local_copy_delete,
+            message: t.collection_episode_local_copy_delete_confirm(
+              title: row.title,
+            ),
+          ),
+        );
+    if (confirmed == null || !mounted) return false;
+    final AppModel appModel = ref.read(appProvider);
+    final VideoLibraryDeleteResult result;
+    try {
+      result = await deleteVideoBooksWithDecision(
+        repo: widget.repo,
+        database: appModel.database,
+        pipeline: appModel.videoDownloadPipelineService,
+        bookUids: <String>[row.bookUid],
+        decision: const DeleteDecision(
+          scope: DeleteScope.keepLocalOnly,
+          deleteLocalFiles: true,
+        ),
+        removeFromCollections: false,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('HomeVideoPage.deleteLocalCopy', e, stack);
+      if (mounted) {
+        FushiToast.show(
+          msg: t.video_library_delete_failed(reason: '$e'),
+          severity: ToastSeverity.error,
+        );
+      }
+      return false;
+    }
+    if (mounted) _refreshAfterTagChange();
+    reportVideoLibraryDeleteFailures(
+      result,
+      source: 'HomeVideoPage.deleteLocalCopy',
+    );
+    final bool deleted = result.deleted > 0;
+    if (deleted) {
+      FushiToast.show(
+        msg: t.collection_episode_local_copy_deleted,
+        severity: ToastSeverity.success,
+      );
+    }
+    return deleted;
   }
 
   /// TMDB 备选排序在 host 上选：列表从 host 拿（host 的 TMDB 配置 / 网络），选定
