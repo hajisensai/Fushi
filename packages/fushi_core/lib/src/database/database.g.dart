@@ -74087,6 +74087,603 @@ class AiAgentActionsCompanion extends UpdateCompanion<AiAgentActionRow> {
   }
 }
 
+class $RemoteAudioBindingsTable extends RemoteAudioBindings
+    with TableInfo<$RemoteAudioBindingsTable, RemoteAudioBindingRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $RemoteAudioBindingsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _srtBookUidMeta = const VerificationMeta(
+    'srtBookUid',
+  );
+  @override
+  late final GeneratedColumn<String> srtBookUid = GeneratedColumn<String>(
+    'srt_book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _providerMeta = const VerificationMeta(
+    'provider',
+  );
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+    'provider',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _serverConfigIdMeta = const VerificationMeta(
+    'serverConfigId',
+  );
+  @override
+  late final GeneratedColumn<String> serverConfigId = GeneratedColumn<String>(
+    'server_config_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _episodeIdMeta = const VerificationMeta(
+    'episodeId',
+  );
+  @override
+  late final GeneratedColumn<String> episodeId = GeneratedColumn<String>(
+    'episode_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _tracksJsonMeta = const VerificationMeta(
+    'tracksJson',
+  );
+  @override
+  late final GeneratedColumn<String> tracksJson = GeneratedColumn<String>(
+    'tracks_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _subtitleOriginMeta = const VerificationMeta(
+    'subtitleOrigin',
+  );
+  @override
+  late final GeneratedColumn<String> subtitleOrigin = GeneratedColumn<String>(
+    'subtitle_origin',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('local'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    srtBookUid,
+    provider,
+    serverConfigId,
+    itemId,
+    episodeId,
+    tracksJson,
+    subtitleOrigin,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'remote_audio_bindings';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<RemoteAudioBindingRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('srt_book_uid')) {
+      context.handle(
+        _srtBookUidMeta,
+        srtBookUid.isAcceptableOrUnknown(
+          data['srt_book_uid']!,
+          _srtBookUidMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_srtBookUidMeta);
+    }
+    if (data.containsKey('provider')) {
+      context.handle(
+        _providerMeta,
+        provider.isAcceptableOrUnknown(data['provider']!, _providerMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerMeta);
+    }
+    if (data.containsKey('server_config_id')) {
+      context.handle(
+        _serverConfigIdMeta,
+        serverConfigId.isAcceptableOrUnknown(
+          data['server_config_id']!,
+          _serverConfigIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_serverConfigIdMeta);
+    }
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('episode_id')) {
+      context.handle(
+        _episodeIdMeta,
+        episodeId.isAcceptableOrUnknown(data['episode_id']!, _episodeIdMeta),
+      );
+    }
+    if (data.containsKey('tracks_json')) {
+      context.handle(
+        _tracksJsonMeta,
+        tracksJson.isAcceptableOrUnknown(data['tracks_json']!, _tracksJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_tracksJsonMeta);
+    }
+    if (data.containsKey('subtitle_origin')) {
+      context.handle(
+        _subtitleOriginMeta,
+        subtitleOrigin.isAcceptableOrUnknown(
+          data['subtitle_origin']!,
+          _subtitleOriginMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {srtBookUid};
+  @override
+  RemoteAudioBindingRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return RemoteAudioBindingRow(
+      srtBookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}srt_book_uid'],
+      )!,
+      provider: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider'],
+      )!,
+      serverConfigId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_config_id'],
+      )!,
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      episodeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_id'],
+      ),
+      tracksJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tracks_json'],
+      )!,
+      subtitleOrigin: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subtitle_origin'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $RemoteAudioBindingsTable createAlias(String alias) {
+    return $RemoteAudioBindingsTable(attachedDatabase, alias);
+  }
+}
+
+class RemoteAudioBindingRow extends DataClass
+    implements Insertable<RemoteAudioBindingRow> {
+  /// 绑定的 [SrtBooks.uid]；一本字幕书至多一条绑定。
+  final String srtBookUid;
+
+  /// 远端协议：目前恒为 `audiobookshelf`。
+  final String provider;
+
+  /// 本机设置里的服务器配置 id。
+  final String serverConfigId;
+
+  /// 服务器上的条目 id。
+  final String itemId;
+
+  /// 播客单集 id；null = 有声书条目本身。
+  final String? episodeId;
+
+  /// 音轨表 JSON：`[{ino, startOffsetMs, durationMs, mime, size, filename}]`。同时是
+  /// 服务器重扫后「音轨变了没」的指纹：变了就要按新偏移重切字幕时间轴。
+  final String tracksJson;
+
+  /// 字幕从哪来：`local`（用户选的本机文件）或 `server:<ino>`（服务器条目里的文件）。
+  final String subtitleOrigin;
+
+  /// 毫秒。
+  final int createdAt;
+  final int updatedAt;
+  const RemoteAudioBindingRow({
+    required this.srtBookUid,
+    required this.provider,
+    required this.serverConfigId,
+    required this.itemId,
+    this.episodeId,
+    required this.tracksJson,
+    required this.subtitleOrigin,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['srt_book_uid'] = Variable<String>(srtBookUid);
+    map['provider'] = Variable<String>(provider);
+    map['server_config_id'] = Variable<String>(serverConfigId);
+    map['item_id'] = Variable<String>(itemId);
+    if (!nullToAbsent || episodeId != null) {
+      map['episode_id'] = Variable<String>(episodeId);
+    }
+    map['tracks_json'] = Variable<String>(tracksJson);
+    map['subtitle_origin'] = Variable<String>(subtitleOrigin);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  RemoteAudioBindingsCompanion toCompanion(bool nullToAbsent) {
+    return RemoteAudioBindingsCompanion(
+      srtBookUid: Value(srtBookUid),
+      provider: Value(provider),
+      serverConfigId: Value(serverConfigId),
+      itemId: Value(itemId),
+      episodeId: episodeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeId),
+      tracksJson: Value(tracksJson),
+      subtitleOrigin: Value(subtitleOrigin),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory RemoteAudioBindingRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return RemoteAudioBindingRow(
+      srtBookUid: serializer.fromJson<String>(json['srtBookUid']),
+      provider: serializer.fromJson<String>(json['provider']),
+      serverConfigId: serializer.fromJson<String>(json['serverConfigId']),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      episodeId: serializer.fromJson<String?>(json['episodeId']),
+      tracksJson: serializer.fromJson<String>(json['tracksJson']),
+      subtitleOrigin: serializer.fromJson<String>(json['subtitleOrigin']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'srtBookUid': serializer.toJson<String>(srtBookUid),
+      'provider': serializer.toJson<String>(provider),
+      'serverConfigId': serializer.toJson<String>(serverConfigId),
+      'itemId': serializer.toJson<String>(itemId),
+      'episodeId': serializer.toJson<String?>(episodeId),
+      'tracksJson': serializer.toJson<String>(tracksJson),
+      'subtitleOrigin': serializer.toJson<String>(subtitleOrigin),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  RemoteAudioBindingRow copyWith({
+    String? srtBookUid,
+    String? provider,
+    String? serverConfigId,
+    String? itemId,
+    Value<String?> episodeId = const Value.absent(),
+    String? tracksJson,
+    String? subtitleOrigin,
+    int? createdAt,
+    int? updatedAt,
+  }) => RemoteAudioBindingRow(
+    srtBookUid: srtBookUid ?? this.srtBookUid,
+    provider: provider ?? this.provider,
+    serverConfigId: serverConfigId ?? this.serverConfigId,
+    itemId: itemId ?? this.itemId,
+    episodeId: episodeId.present ? episodeId.value : this.episodeId,
+    tracksJson: tracksJson ?? this.tracksJson,
+    subtitleOrigin: subtitleOrigin ?? this.subtitleOrigin,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  RemoteAudioBindingRow copyWithCompanion(RemoteAudioBindingsCompanion data) {
+    return RemoteAudioBindingRow(
+      srtBookUid: data.srtBookUid.present
+          ? data.srtBookUid.value
+          : this.srtBookUid,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      serverConfigId: data.serverConfigId.present
+          ? data.serverConfigId.value
+          : this.serverConfigId,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      episodeId: data.episodeId.present ? data.episodeId.value : this.episodeId,
+      tracksJson: data.tracksJson.present
+          ? data.tracksJson.value
+          : this.tracksJson,
+      subtitleOrigin: data.subtitleOrigin.present
+          ? data.subtitleOrigin.value
+          : this.subtitleOrigin,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RemoteAudioBindingRow(')
+          ..write('srtBookUid: $srtBookUid, ')
+          ..write('provider: $provider, ')
+          ..write('serverConfigId: $serverConfigId, ')
+          ..write('itemId: $itemId, ')
+          ..write('episodeId: $episodeId, ')
+          ..write('tracksJson: $tracksJson, ')
+          ..write('subtitleOrigin: $subtitleOrigin, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    srtBookUid,
+    provider,
+    serverConfigId,
+    itemId,
+    episodeId,
+    tracksJson,
+    subtitleOrigin,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RemoteAudioBindingRow &&
+          other.srtBookUid == this.srtBookUid &&
+          other.provider == this.provider &&
+          other.serverConfigId == this.serverConfigId &&
+          other.itemId == this.itemId &&
+          other.episodeId == this.episodeId &&
+          other.tracksJson == this.tracksJson &&
+          other.subtitleOrigin == this.subtitleOrigin &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class RemoteAudioBindingsCompanion
+    extends UpdateCompanion<RemoteAudioBindingRow> {
+  final Value<String> srtBookUid;
+  final Value<String> provider;
+  final Value<String> serverConfigId;
+  final Value<String> itemId;
+  final Value<String?> episodeId;
+  final Value<String> tracksJson;
+  final Value<String> subtitleOrigin;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const RemoteAudioBindingsCompanion({
+    this.srtBookUid = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.serverConfigId = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.episodeId = const Value.absent(),
+    this.tracksJson = const Value.absent(),
+    this.subtitleOrigin = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  RemoteAudioBindingsCompanion.insert({
+    required String srtBookUid,
+    required String provider,
+    required String serverConfigId,
+    required String itemId,
+    this.episodeId = const Value.absent(),
+    required String tracksJson,
+    this.subtitleOrigin = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : srtBookUid = Value(srtBookUid),
+       provider = Value(provider),
+       serverConfigId = Value(serverConfigId),
+       itemId = Value(itemId),
+       tracksJson = Value(tracksJson),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<RemoteAudioBindingRow> custom({
+    Expression<String>? srtBookUid,
+    Expression<String>? provider,
+    Expression<String>? serverConfigId,
+    Expression<String>? itemId,
+    Expression<String>? episodeId,
+    Expression<String>? tracksJson,
+    Expression<String>? subtitleOrigin,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (srtBookUid != null) 'srt_book_uid': srtBookUid,
+      if (provider != null) 'provider': provider,
+      if (serverConfigId != null) 'server_config_id': serverConfigId,
+      if (itemId != null) 'item_id': itemId,
+      if (episodeId != null) 'episode_id': episodeId,
+      if (tracksJson != null) 'tracks_json': tracksJson,
+      if (subtitleOrigin != null) 'subtitle_origin': subtitleOrigin,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  RemoteAudioBindingsCompanion copyWith({
+    Value<String>? srtBookUid,
+    Value<String>? provider,
+    Value<String>? serverConfigId,
+    Value<String>? itemId,
+    Value<String?>? episodeId,
+    Value<String>? tracksJson,
+    Value<String>? subtitleOrigin,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return RemoteAudioBindingsCompanion(
+      srtBookUid: srtBookUid ?? this.srtBookUid,
+      provider: provider ?? this.provider,
+      serverConfigId: serverConfigId ?? this.serverConfigId,
+      itemId: itemId ?? this.itemId,
+      episodeId: episodeId ?? this.episodeId,
+      tracksJson: tracksJson ?? this.tracksJson,
+      subtitleOrigin: subtitleOrigin ?? this.subtitleOrigin,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (srtBookUid.present) {
+      map['srt_book_uid'] = Variable<String>(srtBookUid.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (serverConfigId.present) {
+      map['server_config_id'] = Variable<String>(serverConfigId.value);
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (episodeId.present) {
+      map['episode_id'] = Variable<String>(episodeId.value);
+    }
+    if (tracksJson.present) {
+      map['tracks_json'] = Variable<String>(tracksJson.value);
+    }
+    if (subtitleOrigin.present) {
+      map['subtitle_origin'] = Variable<String>(subtitleOrigin.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RemoteAudioBindingsCompanion(')
+          ..write('srtBookUid: $srtBookUid, ')
+          ..write('provider: $provider, ')
+          ..write('serverConfigId: $serverConfigId, ')
+          ..write('itemId: $itemId, ')
+          ..write('episodeId: $episodeId, ')
+          ..write('tracksJson: $tracksJson, ')
+          ..write('subtitleOrigin: $subtitleOrigin, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -74311,6 +74908,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     this,
   );
   late final $AiAgentActionsTable aiAgentActions = $AiAgentActionsTable(this);
+  late final $RemoteAudioBindingsTable remoteAudioBindings =
+      $RemoteAudioBindingsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -74436,6 +75035,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     galgameTextLines,
     aiAgentSessions,
     aiAgentActions,
+    remoteAudioBindings,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -124637,6 +125237,306 @@ typedef $$AiAgentActionsTableProcessedTableManager =
       AiAgentActionRow,
       PrefetchHooks Function()
     >;
+typedef $$RemoteAudioBindingsTableCreateCompanionBuilder =
+    RemoteAudioBindingsCompanion Function({
+      required String srtBookUid,
+      required String provider,
+      required String serverConfigId,
+      required String itemId,
+      Value<String?> episodeId,
+      required String tracksJson,
+      Value<String> subtitleOrigin,
+      required int createdAt,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$RemoteAudioBindingsTableUpdateCompanionBuilder =
+    RemoteAudioBindingsCompanion Function({
+      Value<String> srtBookUid,
+      Value<String> provider,
+      Value<String> serverConfigId,
+      Value<String> itemId,
+      Value<String?> episodeId,
+      Value<String> tracksJson,
+      Value<String> subtitleOrigin,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$RemoteAudioBindingsTableFilterComposer
+    extends Composer<_$FushiDatabase, $RemoteAudioBindingsTable> {
+  $$RemoteAudioBindingsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get srtBookUid => $composableBuilder(
+    column: $table.srtBookUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverConfigId => $composableBuilder(
+    column: $table.serverConfigId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeId => $composableBuilder(
+    column: $table.episodeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tracksJson => $composableBuilder(
+    column: $table.tracksJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get subtitleOrigin => $composableBuilder(
+    column: $table.subtitleOrigin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$RemoteAudioBindingsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $RemoteAudioBindingsTable> {
+  $$RemoteAudioBindingsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get srtBookUid => $composableBuilder(
+    column: $table.srtBookUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverConfigId => $composableBuilder(
+    column: $table.serverConfigId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeId => $composableBuilder(
+    column: $table.episodeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tracksJson => $composableBuilder(
+    column: $table.tracksJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get subtitleOrigin => $composableBuilder(
+    column: $table.subtitleOrigin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$RemoteAudioBindingsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $RemoteAudioBindingsTable> {
+  $$RemoteAudioBindingsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get srtBookUid => $composableBuilder(
+    column: $table.srtBookUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get serverConfigId => $composableBuilder(
+    column: $table.serverConfigId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<String> get episodeId =>
+      $composableBuilder(column: $table.episodeId, builder: (column) => column);
+
+  GeneratedColumn<String> get tracksJson => $composableBuilder(
+    column: $table.tracksJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get subtitleOrigin => $composableBuilder(
+    column: $table.subtitleOrigin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$RemoteAudioBindingsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $RemoteAudioBindingsTable,
+          RemoteAudioBindingRow,
+          $$RemoteAudioBindingsTableFilterComposer,
+          $$RemoteAudioBindingsTableOrderingComposer,
+          $$RemoteAudioBindingsTableAnnotationComposer,
+          $$RemoteAudioBindingsTableCreateCompanionBuilder,
+          $$RemoteAudioBindingsTableUpdateCompanionBuilder,
+          (
+            RemoteAudioBindingRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $RemoteAudioBindingsTable,
+              RemoteAudioBindingRow
+            >,
+          ),
+          RemoteAudioBindingRow,
+          PrefetchHooks Function()
+        > {
+  $$RemoteAudioBindingsTableTableManager(
+    _$FushiDatabase db,
+    $RemoteAudioBindingsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RemoteAudioBindingsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$RemoteAudioBindingsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$RemoteAudioBindingsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> srtBookUid = const Value.absent(),
+                Value<String> provider = const Value.absent(),
+                Value<String> serverConfigId = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<String?> episodeId = const Value.absent(),
+                Value<String> tracksJson = const Value.absent(),
+                Value<String> subtitleOrigin = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => RemoteAudioBindingsCompanion(
+                srtBookUid: srtBookUid,
+                provider: provider,
+                serverConfigId: serverConfigId,
+                itemId: itemId,
+                episodeId: episodeId,
+                tracksJson: tracksJson,
+                subtitleOrigin: subtitleOrigin,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String srtBookUid,
+                required String provider,
+                required String serverConfigId,
+                required String itemId,
+                Value<String?> episodeId = const Value.absent(),
+                required String tracksJson,
+                Value<String> subtitleOrigin = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => RemoteAudioBindingsCompanion.insert(
+                srtBookUid: srtBookUid,
+                provider: provider,
+                serverConfigId: serverConfigId,
+                itemId: itemId,
+                episodeId: episodeId,
+                tracksJson: tracksJson,
+                subtitleOrigin: subtitleOrigin,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$RemoteAudioBindingsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $RemoteAudioBindingsTable,
+      RemoteAudioBindingRow,
+      $$RemoteAudioBindingsTableFilterComposer,
+      $$RemoteAudioBindingsTableOrderingComposer,
+      $$RemoteAudioBindingsTableAnnotationComposer,
+      $$RemoteAudioBindingsTableCreateCompanionBuilder,
+      $$RemoteAudioBindingsTableUpdateCompanionBuilder,
+      (
+        RemoteAudioBindingRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $RemoteAudioBindingsTable,
+          RemoteAudioBindingRow
+        >,
+      ),
+      RemoteAudioBindingRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -124941,4 +125841,6 @@ class $FushiDatabaseManager {
       $$AiAgentSessionsTableTableManager(_db, _db.aiAgentSessions);
   $$AiAgentActionsTableTableManager get aiAgentActions =>
       $$AiAgentActionsTableTableManager(_db, _db.aiAgentActions);
+  $$RemoteAudioBindingsTableTableManager get remoteAudioBindings =>
+      $$RemoteAudioBindingsTableTableManager(_db, _db.remoteAudioBindings);
 }

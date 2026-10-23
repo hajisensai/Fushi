@@ -644,6 +644,8 @@ const List<String> _deviceLocalTables = <String>[
   'update_feed_entries',
   'manga_download_jobs',
   'pending_mine_queue',
+  // v137：字幕书与远端音频的绑定。指向本机设置里的服务器配置 id，别的设备上没有意义。
+  'remote_audio_bindings',
   'clipboard_history',
   // v124：AI 整理记录（子表先删）。描述「这台设备做过哪些整理」，撤销按合集名找，
   // 恢复后对不上的记录只是撤销时找不到目标，不会误删。
@@ -678,6 +680,7 @@ const List<String> _deviceLocalTables = <String>[
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
   'clipboard_history',
+  'remote_audio_bindings',
   'pending_mine_queue',
   'manga_download_jobs',
   'update_feed_entries',

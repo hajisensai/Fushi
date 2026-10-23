@@ -1775,8 +1775,30 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         // 见 deleteEpubBook）。
         await removeEntryFromAllCollections(MediaKind.srt, uid);
         await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
+        // v119：远端音频绑定同事务清（逻辑外键，没有级联）。
+        await (delete(remoteAudioBindings)
+              ..where((t) => t.srtBookUid.equals(uid)))
+            .go();
         return (delete(srtBooks)..where((t) => t.uid.equals(uid))).go();
       });
+
+  // ── remote audio bindings（v119，设备本地）─────────────────────────
+  Future<RemoteAudioBindingRow?> getRemoteAudioBinding(String srtBookUid) =>
+      (select(remoteAudioBindings)
+            ..where((t) => t.srtBookUid.equals(srtBookUid)))
+          .getSingleOrNull();
+
+  Future<List<RemoteAudioBindingRow>> getAllRemoteAudioBindings() =>
+      select(remoteAudioBindings).get();
+
+  /// 按 [RemoteAudioBindingsCompanion.srtBookUid] 插入或整行覆盖。
+  Future<void> upsertRemoteAudioBinding(RemoteAudioBindingsCompanion row) =>
+      into(remoteAudioBindings).insertOnConflictUpdate(row);
+
+  Future<int> deleteRemoteAudioBinding(String srtBookUid) =>
+      (delete(remoteAudioBindings)
+            ..where((t) => t.srtBookUid.equals(srtBookUid)))
+          .go();
 
   // ── reader positions ────────────────────────────────────────────
   // v82 起键 = 书稳定 uid（epub 书 = epub_books.uid；非 epub 域沿用其既有

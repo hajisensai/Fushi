@@ -505,6 +505,16 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   // SRS（v117 起的 9 张表）2026-10-23 起不在 tables.dart 里：归 Rust 的 srs.db
   // （docs/specs/2026-10-23-srs-rust-store.md）。那些列全是身份 / 规范事件 JSON / 本机状态，
   // 笔记字段里的媒体引用只存文件名，数据根迁移随 support 目录整搬 srs.db 即可，无需改写。
+  // ── remote_audio_bindings（schema v137，字幕书的远端音频绑定，device-local）──
+  // 全是协议名 / 服务器配置 id / 条目 id / 音轨 JSON（ino、偏移、时长、文件名）；
+  // 音频在服务器上，本机没有任何路径列，数据根迁移无需改写。
+  PathRebaseColumn('RemoteAudioBindings', 'serverConfigId',
+      PathRebaseKind.notAPath, '本机设置里的服务器配置 id，不是路径。'),
+  PathRebaseColumn('RemoteAudioBindings', 'itemId', PathRebaseKind.notAPath,
+      '服务器上的条目 id，不是路径。'),
+  PathRebaseColumn('RemoteAudioBindings', 'tracksJson', PathRebaseKind.notAPath,
+      '服务器音轨表（ino / 偏移 / 时长 / 文件名），文件名只是显示用，不是本机路径。'),
+
 
   // ── video_download_*（schema v78，device-local 持久流水线）────────
   PathRebaseColumn('VideoDownloadJobs', 'resourceProvider',
