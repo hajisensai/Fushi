@@ -5,6 +5,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
@@ -535,11 +536,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
 
-  /// 最近一次 [setVolume] 请求的「可听音量」（0..100）；player 未实例化时供 [volume]
+  /// 最近一次 [setVolume] 请求的「可听音量」（0..[maxVolume]）；player 未实例化时供 [volume]
   /// getter 回退。**这是音量目标的单一语义**：调音量就写它，与「静音前音量」无关。
   double _lastVolume = 100.0;
 
-  /// 进入静音那一刻捕获的「静音前音量」（0..100），取消静音时恢复到它。
+  /// 进入静音那一刻捕获的「静音前音量」（0..[maxVolume]），取消静音时恢复到它。
   ///
   /// 与 [_lastVolume] 分离是 TODO-433 的根因修复：旧实现让 [_lastVolume] 同时承担
   /// 「音量目标」和「静音前音量」两种语义——静音期间任何调音量都会改写它，导致
@@ -1598,6 +1599,15 @@ class VideoPlayerController extends ChangeNotifier
   double get speed => _player?.state.rate ?? _lastSpeed;
 
   double get volume => _player?.state.volume ?? _lastVolume;
+
+  /// 音量上限（百分比）：用户在 mpv 配置里选的 [VideoMpvConfig.volumeMax]（100 /
+  /// 150 / 200）；网页播放后端是 HTML video，音量最大就是 100%。所有音量入口
+  /// （[setVolume] / [adjustVolume] / [toggleMute] / 页面滑条与手势）一律按它 clamp。
+  double get maxVolume =>
+      isWebBackend ? 100.0 : _mpvConfig.volumeMax.toDouble();
+
+  /// 最近一次请求的可听音量目标（不含静音），不读 libmpv 异步滞后的 `state.volume`。
+  double get requestedVolume => _lastVolume;
 
   bool get muted => _muted;
 
@@ -2977,6 +2987,12 @@ class VideoPlayerController extends ChangeNotifier
   /// 应用。五平台 libmpv 后端均生效；仅非 libmpv 后端 / 不支持的属性静默 no-op。
   Future<void> applyMpvConfig(VideoMpvConfig config) async {
     _mpvConfig = config;
+    // 音量上限调低：音量目标与静音前音量一起收进新上限（mpv 收到更低的 `volume-max`
+    // 不会替我们改 `volume`，播放器会停在旧的放大值上）。
+    final double max = maxVolume;
+    final bool volumeClamped = _lastVolume > max;
+    if (volumeClamped) _lastVolume = max;
+    if (_volumeBeforeMute > max) _volumeBeforeMute = max;
     final Player? player = _player;
     if (player == null) return;
     final VideoMpvConfig effective = _mpvConfigForCurrentSource(config);
@@ -2991,6 +3007,7 @@ class VideoPlayerController extends ChangeNotifier
       playbackSpeed: _lastSpeed,
       outputVolume: _outputVolume,
     );
+    if (volumeClamped && !_muted) await player.setVolume(_lastVolume);
   }
 
   /// BUG-2691：Android 上服务器元数据已知是 DV P5 的片源，本次开片强制软解
@@ -3043,6 +3060,12 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
+    // （BUG-3697）。其它平台 / 不在任何来源下的文件 no-op。
+    if (videoFile != null) {
+      await SourceFolderAccess.instance.ensureForPath(videoFile.path);
+      if (loadToken != _loadToken) return;
+    }
     _resetDiscMenu();
     if (openBlurayMenu) {
       final String? root = videoFile == null
@@ -3548,7 +3571,7 @@ class VideoPlayerController extends ChangeNotifier
       _mpvConfig,
     );
     final double initialOutputVolume = initialVolume
-        .clamp(0.0, 100.0)
+        .clamp(0.0, maxVolume)
         .toDouble();
     await applyMpvConfigToPlayer(
       player,
@@ -3564,7 +3587,7 @@ class VideoPlayerController extends ChangeNotifier
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
 
     _setDiscLoadStage('playback-properties');
-    initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
+    initialVolume = initialVolume.clamp(0.0, maxVolume).toDouble();
     _lastVolume = initialVolume;
     if (initialVolume > 0) _muted = false;
     await player.setVolume(initialVolume);
@@ -5717,22 +5740,22 @@ class VideoPlayerController extends ChangeNotifier
     await _player?.setRate(rate);
   }
 
-  /// 设置可听音量（0..100）。写非零音量即解除静音（「从静音加音量 = 从 0 起音」
+  /// 设置可听音量（0..[maxVolume]）。写非零音量即解除静音（「从静音加音量 = 从 0 起音」
   /// 的合理语义）。**只写音量目标 [_lastVolume]，绝不碰 [_volumeBeforeMute]**——
   /// 静音期间调音量不污染「静音前音量」，取消静音仍回到确定值。
   Future<void> setVolume(double value) async {
-    _lastVolume = value.clamp(0.0, 100.0).toDouble();
+    _lastVolume = value.clamp(0.0, maxVolume).toDouble();
     if (_lastVolume > 0) _muted = false;
     await _syncAudioSpdif();
     await _player?.setVolume(_lastVolume);
   }
 
   /// 在当前**有效输出音量**（静音时为 0，否则为 [volume]）基础上增减 [delta] 并
-  /// clamp 到 0..100，写穿 player，返回**确定的新音量**供 UI 直接刷新显示/OSD，
+  /// clamp 到 0..[maxVolume]，写穿 player，返回**确定的新音量**供 UI 直接刷新显示/OSD，
   /// 不必再去读异步滞后的 [volume]。从静音态加音量会经 [setVolume] 解除静音、从 0 起音。
   Future<double> adjustVolume(double delta) async {
     final double base = _muted ? 0.0 : volume;
-    final double next = (base + delta).clamp(0.0, 100.0).toDouble();
+    final double next = (base + delta).clamp(0.0, maxVolume).toDouble();
     await setVolume(next);
     return next;
   }
@@ -5756,7 +5779,7 @@ class VideoPlayerController extends ChangeNotifier
     // 进入静音：先快照当前可听音量，再压 0。
     final double live = _player?.state.volume ?? _lastVolume;
     _volumeBeforeMute = (live > 0 ? live : _lastVolume)
-        .clamp(0.0, 100.0)
+        .clamp(0.0, maxVolume)
         .toDouble();
     _muted = true;
     await _syncAudioSpdif();

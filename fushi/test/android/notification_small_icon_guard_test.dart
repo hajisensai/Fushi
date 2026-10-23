@@ -146,19 +146,34 @@ void main() {
     expect(host, isNot(contains('notification_hint')));
   });
 
-  test('悬浮球「点球查剪贴板」：收起态点 = 查剪贴板，长按 = 展开', () {
+  test('悬浮球「点按悬浮球」动作：收起态点 = 直接执行（剪贴板 / 截屏识字），长按 = 展开', () {
     final String svc = File(
       '$javaRoot/app/fushi/reader/FloatingBallService.java',
     ).readAsStringSync();
     final String channel = File(
       '$javaRoot/app/fushi/reader/FloatingBallChannel.java',
     ).readAsStringSync();
-    // Dart → 原生 → 落盘 → 服务重建时重放。
-    expect(channel, contains('call.argument("tapClipboard")'));
-    expect(svc, contains('editor.putBoolean(PREF_TAP_CLIPBOARD'));
+    // Dart → 原生 → 落盘 → 服务重建时重放；旧版 bool 只在新键没写过时迁移成剪贴板。
+    expect(channel, contains('call.argument("tapAction")'));
     expect(
       svc,
-      contains('tapClipboard = prefs.getBoolean(PREF_TAP_CLIPBOARD, false)'),
+      contains(
+        'editor.putString(PREF_TAP_ACTION, sanitizeTapAction(tapAction))',
+      ),
+    );
+    expect(
+      svc,
+      contains(
+        'tapAction = prefs.contains(PREF_TAP_ACTION)\n'
+        '                ? sanitizeTapAction(prefs.getString(PREF_TAP_ACTION, ""))\n'
+        '                : (prefs.getBoolean(PREF_TAP_CLIPBOARD, false) ? ACTION_CLIPBOARD : "");',
+      ),
+    );
+    expect(
+      svc,
+      contains(
+        'TAP_ACTIONS = Arrays.asList(ACTION_CLIPBOARD, ACTION_SCREEN_OCR)',
+      ),
     );
     final int start = svc.indexOf('protected void setupDragListener()');
     final String touch = svc.substring(start, svc.indexOf('\n    }\n', start));
@@ -174,16 +189,51 @@ void main() {
       'mainHandler.removeCallbacks(longPressExpand);'.allMatches(touch).length,
       4,
     );
-    // 抬手：长按已展开就不再当点击；开关开着且收起态 → 查剪贴板，否则照旧展开 / 收起。
+    // 抬手：长按已展开就不再当点击；设了动作且收起态 → 执行它，否则照旧展开 / 收起。
     expect(touch, contains('} else if (!longPressFired) {'));
     expect(
       touch,
       contains(
-        'if (tapClipboard && !expandTarget) {\n'
-        '                            runAction(ACTION_CLIPBOARD);\n'
+        'if (!tapAction.isEmpty() && !expandTarget) {\n'
+        '                            runAction(tapAction);\n'
         '                        } else {\n'
         '                            toggle();',
       ),
     );
+  });
+
+  test('BUG-3678 应用外球认「显示按钮文字」与「打开 Fushi」开关', () {
+    final String svc = File(
+      '$javaRoot/app/fushi/reader/FloatingBallService.java',
+    ).readAsStringSync();
+    final String channel = File(
+      '$javaRoot/app/fushi/reader/FloatingBallChannel.java',
+    ).readAsStringSync();
+    expect(channel, contains('call.argument("showLabels")'));
+    expect(channel, contains('call.argument("showOpenApp")'));
+    expect(
+      svc,
+      contains('showLabels = prefs.getBoolean(PREF_SHOW_LABELS, true)'),
+    );
+    expect(
+      svc,
+      contains('showOpenApp = prefs.getBoolean(PREF_SHOW_OPEN_APP, true)'),
+    );
+    // 标签胶囊只在开关开着时建（旧实现恒建，Dart 下发的 showLabels 被原生丢掉）。
+    final int labelsStart = svc.indexOf(
+      'private List<TextView> buildMenuLabels(',
+    );
+    final String labels = svc.substring(
+      labelsStart,
+      svc.indexOf('\n    }\n', labelsStart),
+    );
+    expect(labels, contains('boolean show = showLabels && '));
+    final int idsStart = svc.indexOf('private List<String> menuIds()');
+    final String ids = svc.substring(
+      idsStart,
+      svc.indexOf('\n    }\n', idsStart),
+    );
+    expect(ids, contains('if (showOpenApp) ids.add(ACTION_OPEN_APP);'));
+    expect(ids, isNot(contains('\n        ids.add(ACTION_OPEN_APP);')));
   });
 }

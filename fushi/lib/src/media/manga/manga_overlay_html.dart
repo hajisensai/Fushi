@@ -2381,11 +2381,28 @@ String _mangaGestureJs({
   var DBL_MS = ${doubleTapAnimationMs.clamp(100, 600)}, DBL_SLOP = 30;
   var lastTapT = 0, lastTapX = 0, lastTapY = 0;
   var pendingEmptyTap = null;
+  // 双击窗口按「第一击松手 → 第二击**按下**」计（反馈 IDF2uWUvlf，与 Android
+  // GestureDetector 的 DOUBLE_TAP_TIMEOUT 同口径）。此前只在第二击**松手**时判，
+  // 窗口里还得塞下第二击按住的那 ~100ms，挂起的 onTapEmpty 定时器又是从第一击
+  // 松手起算——手指还按在屏上它就先发了，悬浮栏被切出来、双击缩放落空，只有
+  // 快速三击（第二、三击凑成一对）才偶尔放大。第二击按下时落在挂起窗口内且离
+  // 第一击够近，就当场取消挂起的单击并武装双击，松手时直接缩放。
+  var dblArmed = false;
+  function _armDoubleTapOnDown(x, y){
+    dblArmed = false;
+    if (pendingEmptyTap === null) return;
+    var dx = x - lastTapX, dy = y - lastTapY;
+    if ((dx * dx + dy * dy) > DBL_SLOP * DBL_SLOP) return;
+    _cancelPendingEmptyTap();
+    dblArmed = true;
+  }
   function _consumeDoubleTap(x, y){
     var now = Date.now();
     var dx = x - lastTapX, dy = y - lastTapY;
-    var isDouble = (now - lastTapT) <= DBL_MS &&
-        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP;
+    var armed = dblArmed;
+    dblArmed = false;
+    var isDouble = armed || ((now - lastTapT) <= DBL_MS &&
+        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP);
     if (isDouble) { lastTapT = 0; return true; }
     lastTapT = now; lastTapX = x; lastTapY = y;
     return false;
@@ -2536,6 +2553,7 @@ String _mangaGestureJs({
       id: e.pointerId, lastX: e.clientX, lastY: e.clientY,
       lastT: Date.now(), vy: 0, touch: e.pointerType === 'touch'
     };
+    _armDoubleTapOnDown(e.clientX, e.clientY);
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e){

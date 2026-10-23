@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 
@@ -47,6 +48,42 @@ void main() {
         isNot('安達としまむら'),
         reason: '番外 SS 不是卷号，不猜',
       );
+    });
+
+    // n4KC1azJvw：日文轻小说「各卷副标题 + 结尾 <系列名>」以前把系列名当出版标签
+    // 丢掉，整套散在书架上。
+    test('结尾标签是正文前缀时就是系列名（青ブタ形态）', () {
+      const List<String> titles = <String>[
+        '青春ブタ野郎はバニーガール先輩の夢を見ない<青春ブタ野郎>',
+        '青春ブタ野郎はプチデビル後輩の夢を見ない<青春ブタ野郎>',
+        '青春ブタ野郎はロジカルウィッチの夢を見ない <青春ブタ野郎>',
+      ];
+      for (final String title in titles) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.key, '青春ブタ野郎', reason: title);
+        expect(key.seriesTitle, '青春ブタ野郎', reason: title);
+        expect(key.volume, isNull, reason: title);
+      }
+      expect(sharedBookSeriesKey(titles), '青春ブタ野郎');
+      final BookSeriesKey numbered = parseBookSeriesKey(
+        'とある魔術の禁書目録 3（とある魔術の禁書目録）',
+      )!;
+      expect(numbered.key, 'とある魔術の禁書目録');
+      expect(numbered.seriesTitle, 'とある魔術の禁書目録');
+      expect(numbered.volume, 3, reason: '正文末尾的卷号照常读');
+    });
+
+    test('不是正文前缀的结尾标签仍按出版标签处理，不拿来归组', () {
+      // 同一文库的不同作品共享 (電撃文庫)，不能因此并成一组。
+      expect(
+        parseBookSeriesKey('とらドラ! (電撃文庫)')!.key,
+        isNot(parseBookSeriesKey('灼眼のシャナ (電撃文庫)')!.key),
+      );
+      expect(parseBookSeriesKey('とらドラ! (電撃文庫)')!.key, 'とらドラ!');
+      // 单字标签碰巧是正文首字不算系列名。
+      expect(parseBookSeriesKey('上野さんは不器用<上>')!.key, '上野さんは不器用');
+      // 标签与正文相同（不是真前缀）走原判据。
+      expect(parseBookSeriesKey('安達としまむら (安達としまむら)')!.key, '安達としまむら');
     });
 
     test('合集名保留原文写法；书名本身的数字不被当卷号吃掉', () {
@@ -134,6 +171,49 @@ void main() {
           titleByUid[item.entryKey] ?? item.entryKey,
       ];
     }
+
+    // n4KC1azJvw：每卷副标题各不相同、书名里没有系列线索，只有 OPF 声明了系列。
+    test('EPUB 声明的系列优先于书名：副标题各异的分卷按声明归组、按卷序排', () async {
+      String declared(String name, num index) =>
+          encodeEpubSeriesMetadata(EpubSeries(name: name, index: index));
+      await addBook(
+        'ココロコネクト キズランダム',
+        format: 'epub',
+        sourceMetadata: declared('ココロコネクト', 2),
+      );
+      await addBook(
+        'ココロコネクト ヒトランダム',
+        format: 'epub',
+        sourceMetadata: declared('ココロコネクト', 1),
+      );
+      await addBook(
+        'ココロコネクト カコランダム',
+        format: 'epub',
+        sourceMetadata: declared('ココロコネクト', 3),
+      );
+      // 读过 OPF、没有声明：照旧走书名启发式，不被并进去。
+      await addBook(
+        'ココロコネクト アスランダム 上',
+        format: 'epub',
+        sourceMetadata: encodeEpubSeriesMetadata(null),
+      );
+
+      final summary = await grouper.groupAll();
+
+      expect(summary.createdCollectionIds, hasLength(1));
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        summary.createdCollectionIds.single,
+      ))!;
+      expect(collection.name, 'ココロコネクト');
+      expect(await members(collection.id), <String>[
+        'ココロコネクト ヒトランダム',
+        'ココロコネクト キズランダム',
+        'ココロコネクト カコランダム',
+      ]);
+      // 幂等：再跑一次不新建、不改动。
+      final again = await grouper.groupAll();
+      expect(again.createdCollectionIds, isEmpty);
+    });
 
     test('漫画四卷叠成一个 playlist 合集，按卷号排；在线漫画与单卷不进', () async {
       await addBook('志乃と恋 ４', importedAt: 1);

@@ -119,9 +119,16 @@ void main() {
           reason: '[$label] 连续空白 / 空白后接终点必须终止扫描');
 
       // 词首回退仍必须用词边界语义（含空白），否则回退会越过空格吃进上一个词。
-      expect(src.contains('!this.isScanBoundary(hitContent[startOffset - 1])'),
+      // BUG-3664 起回退终点是 isTokenStartBoundary = isScanBoundary + 词内连字符。
+      expect(
+          src.contains('!this.isTokenStartBoundary(hitContent[startOffset - 1])'),
           isTrue,
-          reason: '[$label] 词首回退必须继续用 isScanBoundary（含空白）');
+          reason: '[$label] 词首回退必须用 isTokenStartBoundary（含空白）');
+      expect(
+          src.contains('return this.isScanBoundary(char) || '
+              'this.wordHyphenPattern.test('),
+          isTrue,
+          reason: '[$label] isTokenStartBoundary 必须以 isScanBoundary（含空白）为底');
     });
   });
 }

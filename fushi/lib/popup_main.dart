@@ -39,6 +39,9 @@ void popupMain() {
 
       await FushiDicts.preloadTransforms();
       final appModel = container.read(appProvider);
+      // 弹窗进程的制卡结果 toast 同样听「制卡提示」开关（偏好在 initialise 后才有值，
+      // 闭包每次现读）。
+      FushiToast.mineNoticeFilter = appModel.mineNoticeShown;
       unawaited(appModel.initialiseForDictionaryPopup());
     },
     (exception, stack) {
@@ -103,10 +106,10 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
               // 紧随其后投递新词的 setState——否则常驻热页收不到新词、didUpdateWidget 不触发，
               // 弹窗卡在旧词甚至配合 _isClosing 残留一并关不掉。记日志后带旧偏好缓存继续。
               try {
-                await appModel.refreshPrefCacheIfChanged();
+                await appModel.refreshForWarmDictionaryPopup();
               } on Object catch (e, stack) {
                 ErrorLogService.instance.log(
-                  'popupMain.refreshPrefCacheIfChanged',
+                  'popupMain.refreshForWarmDictionaryPopup',
                   e,
                   stack,
                 );
@@ -229,6 +232,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           sourceCharIndex: _sourceCharIndex,
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
+          cardImage: _sourceBlock?.cardImage,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),

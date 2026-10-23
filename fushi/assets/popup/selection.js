@@ -55,6 +55,14 @@ window.fushiSelection = {
     isScanBoundary(char) {
         return this.isScanWhitespace(char) || this.isScanStop(char);
     },
+    // BUG-3664：点词「回退到词首」还要停在词内连字符上——`time-blackened` 点 blackened
+    // 不能退回 time（词典没有复合词时只能匹配出前半截 time）。只截回退、不截前向扫描：
+    // 点 time 仍把 `time-blackened …` 整串交给引擎，有词条的复合词照样查得到。软连字符
+    // U+00AD 不算（不可见的排版断词点）。与 reader_selection_scripts.dart 同名谓词一致。
+    wordHyphenPattern: /[\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D]/,
+    isTokenStartBoundary(char) {
+        return this.isScanBoundary(char) || this.wordHyphenPattern.test(char || '');
+    },
 
     // BUG-2056：撇号在**词内**时不是词边界。英语的缩合形与所有格（don’t / it’s /
     // John’s / we’ve）在真实 EPUB 里几乎都用排版撇号 U+2019，而它和 ASCII ' 一样躺在
@@ -579,7 +587,7 @@ window.fushiSelection = {
         let startOffset = offset;
         const hitContent = startNode.textContent;
         if (startOffset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(startOffset))) {
-            while (startOffset > 0 && !this.isScanBoundary(hitContent[startOffset - 1])) {
+            while (startOffset > 0 && !this.isTokenStartBoundary(hitContent[startOffset - 1])) {
                 startOffset--;
             }
         }

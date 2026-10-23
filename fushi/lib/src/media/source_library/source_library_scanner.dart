@@ -65,6 +65,8 @@ import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
+    show isMokuroLegacyHtmlPath, kMokuroLegacyOcrDirName, legacyMokuroRoot;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show
         MokuroImage,
@@ -77,6 +79,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName;
 import 'package:fushi/src/media/source_library/sftp_stream_source.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/pdf/pdf_importer.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart';
@@ -440,17 +443,24 @@ Map<String, Object?> _decodeMokuroRoot(String json) {
 /// One pending pure-image manga folder scanned from a local manga source.
 @immutable
 class ScanMangaFolderItem {
-  const ScanMangaFolderItem({required this.folderPath});
+  const ScanMangaFolderItem({required this.folderPath, this.series});
 
-  /// 页图所在的一卷目录；标题稳定取目录名，供后台重扫按标题身份静默去重。
+  /// 页图所在的一卷目录；标题稳定，供后台重扫按标题身份静默去重。
   final String folderPath;
+
+  /// 「系列目录/卷目录」下探出的卷的系列归属（引擎 [planMangaFolders]）；普通卷为
+  /// null。有它时入库标题取 [MangaSeriesVolume.title]（「系列名 卷目录名」），
+  /// 否则取卷目录名。
+  final MangaSeriesVolume? series;
 
   @override
   bool operator ==(Object other) =>
-      other is ScanMangaFolderItem && other.folderPath == folderPath;
+      other is ScanMangaFolderItem &&
+      other.folderPath == folderPath &&
+      other.series == series;
 
   @override
-  int get hashCode => folderPath.hashCode;
+  int get hashCode => Object.hash(folderPath, series);
 }
 
 /// One pending Blu-ray disc (`BDMV` tree) scanned from a local video source.
@@ -713,7 +723,10 @@ ScanPlan planScanFromFileList(
         ? const <ScanMangaFolderItem>[]
         : <ScanMangaFolderItem>[
             for (final String folder in mangaPlan.imageFolders)
-              ScanMangaFolderItem(folderPath: folder),
+              ScanMangaFolderItem(
+                folderPath: folder,
+                series: mangaPlan.seriesVolumes[folder],
+              ),
           ],
     blurayDiscs: <ScanBlurayDiscItem>[
       for (final String root in blurayRoots)
@@ -757,10 +770,15 @@ class SourceLibraryScanner {
   SourceLibraryScanner(
     this._db, {
     MangaSevenZipExtractor? mangaSevenZipExtractor,
+    SourceFolderAccess? folderAccess,
   })  : _videoRepo = VideoBookRepository(_db),
-        _mangaSevenZipExtractor = mangaSevenZipExtractor;
+        _mangaSevenZipExtractor = mangaSevenZipExtractor,
+        _folderAccess = folderAccess ?? SourceFolderAccess.instance;
 
   final FushiDatabase _db;
+
+  /// iOS 本地来源的安全作用域访问（BUG-3697）；测试注入 fake。
+  final SourceFolderAccess _folderAccess;
   final VideoBookRepository _videoRepo;
   final MangaSevenZipExtractor? _mangaSevenZipExtractor;
 
@@ -857,6 +875,26 @@ class SourceLibraryScanner {
     SourceFileSystem? fs,
     bool restoreDissolvedGroups = false,
   }) async {
+    // iOS：本地来源在沙盒外，不先激活书签 `dart:io` 一个文件都列不出（BUG-3697）。
+    // 激活失败（没存书签 / 解析失败 / 文件夹被挪走）是**整次扫描**读不了，写明原因
+    // 后直接收尾，不把「读不到」伪装成「0 个媒体」。其它平台恒返回 null。
+    final String? accessError =
+        await _folderAccess.ensureSourceAccess(_db, source);
+    if (accessError != null) {
+      await _db.updateMediaSourceScanResult(
+        id: source.id,
+        mediaCount: 0,
+        lastScannedAt: DateTime.now(),
+        lastScanError: accessError,
+      );
+      return SourceScanSummary(
+        sourceId: source.id,
+        mediaKind: source.mediaKind,
+        discoveredPaths: const <String>[],
+        importedMediaCount: 0,
+        error: accessError,
+      );
+    }
     final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
     String? scanError;
@@ -1249,10 +1287,55 @@ class SourceLibraryScanner {
       } else {
         await _importMangaRemote(plan, identity, fs, tally);
       }
+      await _retireFlattenedSeries(plan, identity, tally);
     } finally {
       await identity.index.save(_db);
     }
     return tally;
+  }
+
+  /// 旧版把 `系列/卷N/页图` 的整个系列目录导成一本；本轮按新规则拆出的分卷全部在库
+  /// 后，回收那本合订本（引擎 [retireFlattenedMangaSeries]，与无头服务端同一份）。
+  /// 回收失败只记进本轮的部分失败汇总，不中断扫描。
+  Future<void> _retireFlattenedSeries(
+    ScanPlan plan,
+    _MangaSourceIdentity id,
+    _MangaVolumeTally tally,
+  ) async {
+    final Map<String, MangaSeriesVolume> seriesByDir =
+        <String, MangaSeriesVolume>{};
+    final Map<String, List<String>> volumeRels = <String, List<String>>{};
+    for (final ScanMangaFolderItem item in plan.mangaFolders) {
+      final MangaSeriesVolume? series = item.series;
+      if (series == null) continue;
+      seriesByDir[series.seriesDir] = series;
+      (volumeRels[series.seriesDir] ??= <String>[])
+          .add(id.relOf(item.folderPath));
+    }
+    if (seriesByDir.isEmpty) return;
+    final ({List<String> retiredUids, List<String> errors}) result =
+        await retireFlattenedMangaSeries(
+      db: _db,
+      index: id.index,
+      sourceId: id.sourceId,
+      series: <FlattenedMangaSeries>[
+        for (final MapEntry<String, MangaSeriesVolume> e
+            in seriesByDir.entries)
+          (
+            seriesRel: id.relOf(e.key),
+            seriesTitle: e.value.seriesTitle,
+            volumeRels: volumeRels[e.key]!,
+          ),
+      ],
+    );
+    if (result.retiredUids.isNotEmpty) {
+      debugPrint('SourceLibraryScanner retired ${result.retiredUids.length} '
+          'flattened manga series book(s) superseded by split volumes');
+    }
+    for (final String error in result.errors) {
+      tally.failedPaths.add(error);
+      tally.firstError ??= error;
+    }
   }
 
   /// 本地漫画来源逐卷导入（判据见 [_importManga]）。
@@ -1267,8 +1350,12 @@ class SourceLibraryScanner {
         if (id.isIndexed(path)) return false;
         // 标题与导入器同一派生（mokuro 顶层 title/volume，再退化文件名），显式传给
         // 导入器，判据与落库用的是同一个标题。
+        // mokuro 旧版 `.html` manifest 没有 JSON 顶层，元数据按路径派生（与导入器
+        // 拼回的 `.mokuro` 顶层同一个函数）。
         final String title = MangaImporter.deriveMokuroTitle(
-          _decodeMokuroRoot(await File(path).readAsString()),
+          isMokuroLegacyHtmlPath(path)
+              ? legacyMokuroRoot(path)
+              : _decodeMokuroRoot(await File(path).readAsString()),
           p.basename(path),
         );
         final DuplicatePolicy? policy = await id.policyFor(path, title);
@@ -1311,7 +1398,7 @@ class SourceLibraryScanner {
       final String path = item.folderPath;
       await tally.attempt(path, () async {
         if (id.isIndexed(path)) return false;
-        final String title = p.basename(path);
+        final String title = item.series?.title ?? p.basename(path);
         final DuplicatePolicy? policy = await id.policyFor(path, title);
         if (policy == null) return false;
         final String bookKey = await MangaImporter.importFromImageFolder(
@@ -1432,6 +1519,9 @@ class SourceLibraryScanner {
     required SourceFileSystem fs,
   }) async {
     if (id.isIndexed(item.mokuroPath)) return false;
+    if (isMokuroLegacyHtmlPath(item.mokuroPath, context: p.url)) {
+      return _importRemoteLegacyMokuroVolume(item: item, id: id, fs: fs);
+    }
     final String mokuroName = sourceEntryBasename(item.mokuroPath);
     final String jsonStr = await fs.readText(item.mokuroPath);
     final String title = MangaImporter.deriveMokuroTitle(
@@ -1535,6 +1625,60 @@ class SourceLibraryScanner {
     }
   }
 
+  /// 远端一卷 mokuro 0.1 旧版产物（`<父>/<卷名>.html` + `<父>/<卷名>/` 页图 +
+  /// `<父>/_ocr/<卷名>/` 逐页 JSON）：标题只由路径派生（与本地同一个
+  /// [legacyMokuroRoot]），先过判据，放行才把页图与逐页 JSON 按原布局镜像进临时
+  /// 目录，再交本地导入器——`.html` 本身不下载（导入器不读它的内容，只认布局）。
+  Future<bool> _importRemoteLegacyMokuroVolume({
+    required ScanMangaItem item,
+    required _MangaSourceIdentity id,
+    required SourceFileSystem fs,
+  }) async {
+    final String htmlName = sourceEntryBasename(item.mokuroPath);
+    final String parentDir = _remoteParentDir(item.mokuroPath);
+    final String volumeName = p.basenameWithoutExtension(htmlName);
+    final String title = MangaImporter.deriveMokuroTitle(
+      legacyMokuroRoot(item.mokuroPath, context: p.url),
+      htmlName,
+    );
+    final DuplicatePolicy? policy = await id.policyFor(item.mokuroPath, title);
+    if (policy == null) return false;
+    final String prefix = parentDir.isEmpty ? '' : '$parentDir/';
+    final Directory tmp =
+        Directory.systemTemp.createTempSync('m1c_scan_manga_legacy_');
+    try {
+      // 标题已按远端路径定好并显式传给导入器，镜像根叫什么不影响身份。
+      final Directory root = Directory(p.join(tmp.path, 'volume'))
+        ..createSync();
+      await _mirrorRemoteMangaPages(
+        fs,
+        '$prefix$volumeName',
+        Directory(p.join(root.path, volumeName)),
+      );
+      await _mirrorRemoteMangaPages(
+        fs,
+        '$prefix$kMokuroLegacyOcrDirName/$volumeName',
+        Directory(p.join(root.path, kMokuroLegacyOcrDirName, volumeName)),
+        extensions: const <String>{'.json'},
+      );
+      final String localHtml = p.join(root.path, htmlName);
+      File(localHtml).writeAsStringSync('');
+      final String bookKey = await MangaImporter.importFromMokuroPath(
+        db: _db,
+        mokuroPath: localHtml,
+        title: title,
+        sourceId: id.sourceId,
+        policy: policy,
+      );
+      await id.record(item.mokuroPath, bookKey);
+      return true;
+    } finally {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   /// 远端一个单文件漫画卷：先过判据（含负向表：判过不是漫画、远端指纹没变的包不再
   /// 下载），放行才把包（连同包旁的 `.mokuro` sidecar）下载到临时目录，再走与本地
   /// 同一个 [_importMangaCarrierFile]。
@@ -1589,7 +1733,8 @@ class SourceLibraryScanner {
     required SourceFileSystem fs,
   }) async {
     if (id.isIndexed(item.folderPath)) return false;
-    final String title = sourceEntryBasename(item.folderPath);
+    final String title =
+        item.series?.title ?? sourceEntryBasename(item.folderPath);
     final DuplicatePolicy? policy = await id.policyFor(item.folderPath, title);
     if (policy == null) return false;
     final Directory tmp =
@@ -1622,16 +1767,19 @@ class SourceLibraryScanner {
   /// OCR 产物目录（[kMangaOcrOutDirName]，本地枚举同样排除）——其余文件下了也会被
   /// 导入器忽略，只是白白耗流量。`.` / `..` 段直接拒绝：镜像在书目录 sanitize
   /// 之前落盘，不能靠后面那道防穿越。
+  ///
+  /// [extensions] 缺省是页图；mokuro 旧版产物的逐页 OCR 目录传 `{'.json'}`。
   static Future<void> _mirrorRemoteMangaPages(
     SourceFileSystem fs,
     String remoteDir,
-    Directory destRoot,
-  ) async {
+    Directory destRoot, {
+    Set<String> extensions = kMangaImageExtensions,
+  }) async {
     final String prefix = remoteDir.endsWith('/') ? remoteDir : '$remoteDir/';
     for (final SourceFileEntry e
         in await fs.listFiles(remoteDir, recursive: true)) {
       if (e.isDirectory || !e.path.startsWith(prefix)) continue;
-      if (!kMangaImageExtensions.contains(p.extension(e.name).toLowerCase())) {
+      if (!extensions.contains(p.extension(e.name).toLowerCase())) {
         continue;
       }
       final List<String> segs = e.path

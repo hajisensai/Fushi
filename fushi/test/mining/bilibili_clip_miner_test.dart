@@ -210,6 +210,59 @@ void main() {
     });
   });
 
+  // 反馈 Atbl_kOuZK：服务端匿名请求被 B 站风控 HTTP 412，稿件改由扩展在页面主世界里取
+  // playurl 回传（顶层键是 data，与番剧的 result 不同）。
+  group('稿件页面内 playurl（反馈 Atbl_kOuZK）', () {
+    test('稿件响应体（data 顶层）走 buildPgcRequest，挑最高码率音轨、不打网络', () async {
+      int fetches = 0;
+      final BilibiliClipMiner miner = BilibiliClipMiner(
+        fetchJson: (Uri uri) async {
+          fetches++;
+          return null;
+        },
+      );
+      final BilibiliClipRequest req = miner.buildPgcRequest(
+        playurlBody: playurlBody,
+        startMs: 1000,
+        endMs: 2000,
+        fields: const <String, String>{},
+        sentence: 's',
+        documentTitle: '页面标题',
+      );
+      expect(
+        req.audioSource,
+        parseBilibiliPlayurlResponse(playurlBody)!.audioUrl,
+      );
+      expect(req.documentTitle, '页面标题');
+      expect(fetches, 0, reason: '带了页面响应体就不该再发匿名请求');
+    });
+
+    test('匿名请求被 412：异常带状态码往上抛，而不是混成「解析失败」', () async {
+      final BilibiliClipMiner miner = BilibiliClipMiner(
+        fetchJson: (Uri uri) async =>
+            throw BilibiliApiHttpException(412, uri.path),
+      );
+      await expectLater(
+        miner.buildRequest(
+          bvid: 'BV1Este6wExx',
+          startMs: 0,
+          endMs: 1000,
+          fields: const <String, String>{},
+          sentence: 's',
+        ),
+        throwsA(
+          isA<BilibiliApiHttpException>()
+              .having((BilibiliApiHttpException e) => e.statusCode, 'status', 412)
+              .having(
+                (BilibiliApiHttpException e) => e.toString(),
+                'message',
+                contains('HTTP 412'),
+              ),
+        ),
+      );
+    });
+  });
+
   group('BilibiliClipMiner 防盗链头（BUG-2730）', () {
     test('白名单外的新 PCDN 域名也带 -referer：Referer 来自请求声明，不靠 host 猜', () {
       // 实测 B 站把音轨分到 `b-<id>.edge.mountaintoys.cn:4483` 这种 PCDN 节点时，

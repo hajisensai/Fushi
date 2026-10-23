@@ -138,13 +138,20 @@ void main() {
           isTrue,
           reason: '[$label] 词内判据必须要求撇号**右**侧是空格分词类字母');
 
-      // 词首回退必须保持原样（整条 while 条件逐字不变）：把桥接加进回退会让
-      // l’homme 点 homme 退回 l’，是净损失。行为测试 ⑥⑦ 守行为，这里守写法。
+      // 词首回退不得加撇号桥接：把桥接加进回退会让 l’homme 点 homme 退回 l’，是净
+      // 损失。回退的终点谓词是 isTokenStartBoundary（BUG-3664 在 isScanBoundary 之上
+      // 只多停词内连字符），它必须仍以 isScanBoundary 为底——撇号在 scanDelimiters
+      // 里，于是照旧是回退终点。行为测试 ⑥⑦ 守行为，这里守写法。
       expect(
           code.contains('while (startOffset > 0 && '
-              '!this.isScanBoundary(hitContent[startOffset - 1])) {'),
+              '!this.isTokenStartBoundary(hitContent[startOffset - 1])) {'),
           isTrue,
-          reason: '[$label] 词首回退不得被改动（不得跨撇号）');
+          reason: '[$label] 词首回退必须走 isTokenStartBoundary（不得跨撇号）');
+      expect(
+          code.contains('return this.isScanBoundary(char) || '
+              'this.wordHyphenPattern.test('),
+          isTrue,
+          reason: '[$label] isTokenStartBoundary 必须以 isScanBoundary 为底（撇号仍是终点）');
     });
   });
 

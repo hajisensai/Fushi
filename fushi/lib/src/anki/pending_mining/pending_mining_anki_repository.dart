@@ -180,11 +180,28 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 一张——之后由 AnkiMobile 的 `x-success` 回跳（[confirmAnkiMobileDelivery]）确认
   /// 这张、再发下一张。回前台等自动触发对它一律跳过：用户只是切回 Fushi，不该被
   /// 拉去 AnkiMobile。
-  Future<PendingFlushReport> flush({bool interactive = false}) => _serialized(
-    () => inner.switchesAppPerNote
-        ? _startAnkiMobileSend(interactive: interactive)
-        : _flushAll(),
-  );
+  ///
+  /// 批量制卡模式（[AnkiSettings.batchMiningEnabled]）下，非 [interactive] 的补发
+  /// （回前台 / 启动 / 收到别的设备转来的卡 / 直接制卡成功后的顺手补发）一律跳过：
+  /// 批量制卡的语义是「先存在本机，用户点了才一次性发送」。此前自动补发不看这个开关，
+  /// 桌面上切出再切回窗口就算回前台，攒下的卡在用户看到之前就被发走、出队，
+  /// 「待发卡片」于是显示为空（反馈 _eqP_ypmq8）。
+  Future<PendingFlushReport> flush({bool interactive = false}) =>
+      _serialized(() async {
+        if (!interactive && await _batchHoldsAutoFlush()) {
+          return PendingFlushReport(
+            remaining: (await _store.sendable()).length,
+            skipped: true,
+          );
+        }
+        return inner.switchesAppPerNote
+            ? _startAnkiMobileSend(interactive: interactive)
+            : _flushAll();
+      });
+
+  /// 批量模式下自动补发要不要停手：读的是与 [mineEntry] 入队判据同一份设置。
+  Future<bool> _batchHoldsAutoFlush() async =>
+      (await inner.loadSettings()).batchMiningEnabled;
 
   /// 只补发队列里的一张（控制通道 `anki pending send <id>` / `retry`）。
   ///
@@ -194,7 +211,9 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   Future<PendingFlushReport> flushOne(String id, {bool interactive = false}) =>
       _serialized(() async {
         final PendingMineRow? row = await _store.byId(id);
-        if (row == null || (inner.switchesAppPerNote && !interactive)) {
+        if (row == null ||
+            (!interactive &&
+                (inner.switchesAppPerNote || await _batchHoldsAutoFlush()))) {
           return const PendingFlushReport(skipped: true);
         }
         final _SendResult result = await _sendOne(row);

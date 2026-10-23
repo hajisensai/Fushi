@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart'
     show BuildContext, Color, ColorScheme, Theme, ThemeData;
 import 'package:fushi_anki/fushi_anki.dart';
@@ -531,6 +532,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onTogglePassThrough: togglePassThrough,
       onToggleTransparency: toggleTransparency,
       onOpenWorkbench: openWorkbench,
+      onCopyLine: copyCurrentLine,
       onClose: closeForCurrentSession,
       onOverlayDestroyed: _onOverlayDestroyed,
       onReplayVoice: replayCurrentLine,
@@ -1538,8 +1540,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
   }
 
   /// 工具条槽位悬停提示文案，**下标与 native `hook_toolbar::kSlotActions`
-  /// 严格同序**（重播 / 重录 / 跟随 / 穿透 / 底板 / 锁定 / 工作台 / 置顶 /
-  /// 关闭）。native 不持有 i18n，文案只能由这里按当前 locale 下发。
+  /// 严格同序**（重播 / 重录 / 跟随 / 穿透 / 底板 / 锁定 / 工作台 / 复制 /
+  /// 置顶 / 关闭）。native 不持有 i18n，文案只能由这里按当前 locale 下发。
   List<String> get _slotTooltips => <String>[
     t.game_hook_btn_replay,
     t.game_hook_btn_recapture,
@@ -1548,6 +1550,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     t.game_hook_btn_transparency,
     t.game_hook_btn_lock,
     t.game_hook_btn_workbench,
+    t.game_hook_btn_copy,
     t.game_hook_btn_topmost,
     t.game_hook_btn_close,
   ];
@@ -1562,6 +1565,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     t.gal_hook_toolbar_label_transparency,
     t.gal_hook_toolbar_label_lock,
     t.gal_hook_toolbar_label_workbench,
+    t.gal_hook_toolbar_label_copy,
     t.gal_hook_toolbar_label_topmost,
     t.gal_hook_toolbar_label_close,
   ];
@@ -2003,6 +2007,21 @@ class GalHookTextOverlayController extends ChangeNotifier {
       replaying: replaying,
       recapturing: recapturing,
     );
+  }
+
+  /// 浮窗「复制」（反馈 qM4n-Tu0pc）：把浮窗上正显示的这句台词放进剪贴板，
+  /// 不必切回工作台。复制的是显示文本（与浮窗所见一致），没有台词时提示。
+  Future<void> copyCurrentLine() async {
+    final String? text = _displayedLineText;
+    if (!_started || text == null || text.trim().isEmpty) {
+      FushiToast.show(
+        msg: t.game_hook_line_unavailable,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: text));
+    FushiToast.show(msg: t.copied_to_clipboard);
   }
 
   Future<void> openWorkbench() async {

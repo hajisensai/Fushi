@@ -84,6 +84,7 @@ class VideoPlayerShortcutActions {
     required this.nextFrame,
     required this.screenshot,
     required this.screenshotSubtitled,
+    required this.ocrFrame,
     required this.toggleFullscreen,
     required this.toggleMiniWindow,
     required this.toggleMiniChrome,
@@ -137,6 +138,9 @@ class VideoPlayerShortcutActions {
   /// 带字幕截图：与 [screenshot] 同一条取帧路径，区别只在把屏幕上那条字幕
   /// 合成回画面（字幕是 Flutter overlay 画的，不在解码帧里）。
   final VoidCallback screenshotSubtitled;
+
+  /// 识别一次当前画面（OCR 点字查词，默认裸 O）：正在播放先暂停，再对当前帧识别。
+  final VoidCallback ocrFrame;
   final VoidCallback toggleFullscreen;
 
   /// 进/出小窗模式（默认裸 W 键）：桌面把主窗缩成无边框置顶小窗，Android 进系统
@@ -270,6 +274,7 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoToggleMiniChrome,
   ShortcutAction.videoScreenshot,
   ShortcutAction.videoScreenshotSubtitled,
+  ShortcutAction.videoOcrFrame,
   ShortcutAction.videoToggleShaderCompare,
   ShortcutAction.videoToggleImmersiveLock,
   // 学习
@@ -306,6 +311,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoNextFrame: actions.nextFrame,
     ShortcutAction.videoScreenshot: actions.screenshot,
     ShortcutAction.videoScreenshotSubtitled: actions.screenshotSubtitled,
+    ShortcutAction.videoOcrFrame: actions.ocrFrame,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleMiniWindow: actions.toggleMiniWindow,
     ShortcutAction.videoToggleMiniChrome: actions.toggleMiniChrome,

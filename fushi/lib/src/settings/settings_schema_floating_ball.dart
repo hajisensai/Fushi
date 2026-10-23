@@ -73,17 +73,58 @@ SettingsDestination buildFloatingBallDestination() {
             },
             defaultValue: false,
           ),
-          SettingsSwitchItem(
-            id: 'floating_ball.tap_clipboard',
-            title: t.floating_ball_tap_clipboard,
-            subtitle: t.floating_ball_tap_clipboard_hint,
-            icon: FushiIcons.paste,
-            // 只有 Android 原生系统球实现了「点球查剪贴板、长按展开」。
+          SettingsSegmentedItem<FloatingBallTapAction>(
+            id: 'floating_ball.tap_action',
+            title: t.floating_ball_tap_action,
+            subtitle: t.floating_ball_tap_action_hint,
+            icon: FushiIcons.touch,
+            // 只有 Android 原生系统球实现了「点球直接执行、长按展开」。
             visible: (SettingsContext c) =>
                 Platform.isAndroid && _prefs(c).floatingBallSystem,
-            value: (SettingsContext c) => _prefs(c).floatingBallTapClipboard,
+            options: <SettingsSegmentOption<FloatingBallTapAction>>[
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.expand,
+                label: t.floating_ball_tap_action_expand,
+              ),
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.clipboard,
+                label: t.floating_ball_action_clipboard,
+              ),
+              SettingsSegmentOption<FloatingBallTapAction>(
+                value: FloatingBallTapAction.screenOcr,
+                label: t.floating_ball_action_screen_ocr,
+              ),
+            ],
+            selected: (SettingsContext c) => _prefs(c).floatingBallTapAction,
+            onChanged: (SettingsContext c, FloatingBallTapAction value) async {
+              await _prefs(c).setFloatingBallTapAction(value);
+              c.refresh();
+            },
+            defaultValue: FloatingBallTapAction.fallback,
+          ),
+          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_image',
+            title: t.screen_ocr_card_image,
+            subtitle: t.screen_ocr_card_image_hint,
+            icon: FushiIcons.image,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
             onChanged: (SettingsContext c, bool value) async {
-              await _prefs(c).setFloatingBallTapClipboard(value);
+              await _prefs(c).setScreenOcrCardImage(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_keep_session',
+            title: t.screen_ocr_keep_session,
+            subtitle: t.screen_ocr_keep_session_hint,
+            icon: FushiIcons.cast,
+            visible: (SettingsContext c) => Platform.isAndroid,
+            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrKeepCaptureSession(value);
               c.refresh();
             },
             defaultValue: false,
@@ -165,6 +206,20 @@ SettingsSection _buttonsSection(FloatingBallScope scope) {
         : SettingsSectionPresentation.expanded,
     visible: (SettingsContext c) => _scopeVisible(c, scope),
     items: <SettingsItem>[
+      // 应用外球固定的「打开 Fushi」：习惯切屏回来的人可以关掉（反馈 9bdhVTgq3A）。
+      // 不进按钮列表的持久化值：它在菜单里的位置固定（关闭之下），原生按开关增删。
+      if (scope == FloatingBallScope.system)
+        SettingsSwitchItem(
+          id: 'floating_ball.system.open_app',
+          title: t.floating_ball_action_open_app,
+          icon: FushiIcons.openInNew,
+          value: (SettingsContext c) => _prefs(c).floatingBallSystemOpenApp,
+          onChanged: (SettingsContext c, bool value) async {
+            await _prefs(c).setFloatingBallSystemOpenApp(value);
+            c.refresh();
+          },
+          defaultValue: true,
+        ),
       for (final String id in scope.catalog)
         SettingsSwitchItem(
           id: 'floating_ball.${scope.storageValue}.$id',

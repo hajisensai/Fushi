@@ -330,6 +330,9 @@ class ShortcutDefaults {
     ShortcutAction.videoScreenshotSubtitled: _kb([
       _key(LogicalKeyboardKey.keyS, {ModifierKey.shift}),
     ]),
+    // 识别当前画面：O = OCR。video co-active 组（含 universal）内裸 O 此前完全空闲。
+    // 手柄留空，用户可自绑。
+    ShortcutAction.videoOcrFrame: _kb([_key(LogicalKeyboardKey.keyO)]),
     ShortcutAction.videoToggleFullscreen: _kb(
       [_key(LogicalKeyboardKey.keyF), _key(LogicalKeyboardKey.f12)],
       [_gRT],
@@ -514,6 +517,11 @@ class ShortcutDefaults {
     // 空绑定（见 _mobile），系统不允许第三方注册全局热键。
     ShortcutAction.globalExternalOpenLookupPage: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.alt}),
+    ]),
+    // 「截屏识字」：默认 Ctrl+Alt+O（O = OCR），与同 scope 的 D / F 不撞；macOS 表
+    // 同样 Ctrl→Meta，移动端整个 scope 为空。
+    ShortcutAction.globalExternalScreenOcr: _kb([
+      _key(LogicalKeyboardKey.keyO, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮

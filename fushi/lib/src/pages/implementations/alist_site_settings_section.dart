@@ -76,6 +76,18 @@ class _AListSiteSettingsSectionState
             hint: t.discovery_alist_settings_hint,
             icon: FushiIcons.cloud,
           ),
+          // 「显示在」只有书 / 有声书 / 游戏 / 漫画：这里配的站点是发现页的下载源，
+          // 视频不走下载，而是视频库的 AList 来源原地流播（media_sources_view
+          // 的 'alist' transport）。用户在这里找不到视频就以为不支持
+          // （3-enoE7FpS），所以把入口写在这里。
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: FushiInlineNotice(
+              key: const ValueKey<String>('alist-site-video-hint'),
+              icon: FushiIcons.video,
+              message: t.discovery_alist_video_hint,
+            ),
+          ),
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
             alignment: Alignment.centerLeft,
