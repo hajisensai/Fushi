@@ -421,6 +421,16 @@ namespace flutter_inappwebview_plugin
     channel->InvokeMethod("onConsoleMessage", std::move(arguments));
   }
 
+  void WebViewChannelDelegate::onDownloadStartRequest(std::shared_ptr<DownloadStartRequest> request) const
+  {
+    if (!channel) {
+      return;
+    }
+
+    auto arguments = std::make_unique<flutter::EncodableValue>(request->toEncodableMap());
+    channel->InvokeMethod("onDownloadStartRequest", std::move(arguments));
+  }
+
   void WebViewChannelDelegate::onDevToolsProtocolEventReceived(const std::string& eventName, const std::string& data) const
   {
     if (!channel) {
