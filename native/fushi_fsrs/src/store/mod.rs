@@ -21,8 +21,10 @@ use rusqlite::{Connection, OpenFlags};
 const LEGACY_KEY: &str = "legacy_import";
 
 pub struct SrsCore {
-    writer: Mutex<Connection>,
+    // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
+    // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
     reader: Mutex<Connection>,
+    writer: Mutex<Connection>,
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
     legacy_open: AtomicBool,
 }
@@ -30,8 +32,14 @@ pub struct SrsCore {
 fn configure(conn: &Connection) -> Result<(), String> {
     conn.busy_timeout(Duration::from_millis(5000))
         .map_err(|e| e.to_string())?;
-    conn.execute_batch("PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF;")
-        .map_err(|e| e.to_string())
+    // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
+    // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
+    // 上限 256 MB；WAL 模式下 SQLite 照常处理。
+    conn.execute_batch(
+        "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; \
+         PRAGMA mmap_size = 268435456; PRAGMA cache_size = -65536;",
+    )
+    .map_err(|e| e.to_string())
 }
 
 impl SrsCore {
@@ -556,5 +564,39 @@ mod direct_tests {
         assert!(core.history_states(&[vec!["c1".into()]]).is_err());
         core.exec("ROLLBACK", &[], false).unwrap();
         assert_eq!(core.history_states(&[vec!["c1".into()]]).unwrap(), expect_new);
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+
+    #[test]
+    fn closing_folds_the_wal_back_into_the_main_file() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_close_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.legacy_mark_none().unwrap();
+            core.exec(
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('a', 'p', '{}')",
+                &[],
+                false,
+            )
+            .unwrap();
+        }
+        assert!(!p.with_file_name("srs.db-wal").exists(), "WAL left behind after close");
+        // 只拷主文件也拿得到数据。
+        let copy = dir.join("copy.db");
+        std::fs::copy(&p, &copy).unwrap();
+        let c = SrsCore::open(&copy).unwrap();
+        let n: i64 = c
+            .reader()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
     }
 }
