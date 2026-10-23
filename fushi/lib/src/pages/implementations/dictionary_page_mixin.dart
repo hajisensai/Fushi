@@ -969,9 +969,12 @@ mixin DictionaryPageMixin {
       pos: pos,
       // 被更上层查词卡盖住的部分裁掉：上层的模糊才采到正文而不是本层面板
       // （[PopupOccluderClip]，玻璃叠玻璃）。
+      // 只算已淡入完成的上层（[DictionaryPopupEntry.entranceSettled]）：上层还在
+      // 淡入时就挖洞，洞口会透出视频 / 正文（反馈 iZupbhhdNV）。
       occluders: <Rect>[
         for (int j = index + 1; j < controller.entries.length; j++)
-          if (controller.entries[j].visible)
+          if (controller.entries[j].visible &&
+              controller.entries[j].entranceSettled)
             _calcMixinPopupPosition(
               controller.entries[j].selectionRect,
               screen,
@@ -986,6 +989,10 @@ mixin DictionaryPageMixin {
       // 接替已画出的搜索占位卡时，接着占位卡的淡入进度淡完（不从 0 重来、也不跳满）。
       entranceStartProgress:
           popupEntranceProgressAfter(entry.searchPlaceholderShownFor),
+      onEntranceSettled: (bool settled) {
+        if (!mounted || entry.entranceSettled == settled) return;
+        setState(() => entry.entranceSettled = settled);
+      },
       screen: screen,
       child: _wrapPopupContent(
           wrapContent,

@@ -33,7 +33,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3266 条。点号进各自文件。
+> 共 3267 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -44,6 +44,7 @@
 |---|:--:|:--:|---|
 | [BUG-3663](bugs/BUG-3663-video-lookup-overlay-over-later-routes.md) | ✅ | ✅ | 视频页查词浮层压在之后推入的页面之上，点击被 barrier 吃掉并续播 |
 | [BUG-3662](bugs/BUG-3662-video-lookup-highlight-multi-layer-ass.md) | ✅ | ✅ | 视频字幕查词高亮在多层 ASS 同文本事件上重复画、压住下层字形 |
+| [BUG-3663](bugs/BUG-3663-nested-popup-occluder-see-through.md) | ✅ | ✅ | nested-popup-occluder-see-through |
 | [BUG-3662](bugs/BUG-3662-video-subtitle-kana-kanji-baseline.md) | ✅ | ✅ | video-subtitle-kana-kanji-baseline |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
