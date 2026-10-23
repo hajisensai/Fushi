@@ -231,6 +231,27 @@ void main() {
     );
     _log('expanded dialog found=${expanded.evaluate().length}');
     final Rect? bigRect = _rectOf(tester, _clipTexture(expanded));
+    // 两处画面外面各套了什么（偏色排查）：Texture 往上 60 层的 widget 类型。
+    String ancestry(Finder tex) {
+      if (tex.evaluate().isEmpty) return '-';
+      final List<String> out = <String>[];
+      tex.evaluate().first.visitAncestorElements((Element e) {
+        final Widget w = e.widget;
+        String extra = '';
+        if (w is ColoredBox) extra = '(${w.color})';
+        if (w is ColorFiltered) extra = '(${w.colorFilter})';
+        if (w is Opacity) extra = '(${w.opacity})';
+        if (w is ShaderMask || w is BackdropFilter) extra = '(!)';
+        out.add('${w.runtimeType}$extra');
+        return out.length < 60;
+      });
+      return out.join(' < ');
+    }
+
+    _log('ancestry expanded: ${ancestry(_clipTexture(expanded))}');
+    _log(
+      'ancestry card: ${ancestry(find.descendant(of: find.byType(SrsCardVideoClip, skipOffstage: false), matching: find.byType(Texture, skipOffstage: false)))}',
+    );
     _log('expanded clip rect=$bigRect');
     await captureFlutterFrame(tester, 'media-02-expanded-paused');
     final (ui.Image, ByteData)? a = await _grab(tester);

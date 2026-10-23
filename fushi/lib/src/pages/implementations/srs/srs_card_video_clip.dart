@@ -600,39 +600,45 @@ class SrsCardVideoExpandedView extends StatelessWidget {
       maxWidth: screen.width * 0.92,
       maxHeight: screen.height * 0.86,
     );
+    // 对话框路由下面没有 Material：关闭键（InkWell）缺 Material 祖先会构建失败，被错误盒
+    // 替换——错误盒在 Positioned 里按最大约束铺满整个画面（debug 半透明红、release 灰块），
+    // 视频被盖住、关闭键也没了（BUG-3705）。透明 Material 只提供墨水层，不画任何东西。
     return Center(
       child: SizedBox.fromSize(
         size: size,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ClipRRect(
-              borderRadius: const BorderRadius.all(Radius.circular(12)),
-              child: ColoredBox(
-                color: Colors.black,
-                child: GestureDetector(
-                  key: const ValueKey<String>('srs-card-video-expanded'),
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onToggle,
-                  child: view,
+        child: Material(
+          type: MaterialType.transparency,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(12)),
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: GestureDetector(
+                    key: const ValueKey<String>('srs-card-video-expanded'),
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onToggle,
+                    child: view,
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              right: 0,
-              top: 0,
-              child: FushiIconButton(
-                key: const ValueKey<String>('srs-card-video-expanded-close'),
-                icon: FushiIcons.close,
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                size: 20,
-                padding: const EdgeInsets.all(14),
-                backgroundColor: Colors.black45,
-                enabledColor: Colors.white,
-                onTap: () => Navigator.of(context).pop(),
+              Positioned(
+                right: 0,
+                top: 0,
+                child: FushiIconButton(
+                  key: const ValueKey<String>('srs-card-video-expanded-close'),
+                  icon: FushiIcons.close,
+                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                  size: 20,
+                  padding: const EdgeInsets.all(14),
+                  backgroundColor: Colors.black45,
+                  enabledColor: Colors.white,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
