@@ -648,16 +648,22 @@ void main() {
         hlc: const Hlc(1, 0, 'w'),
         timeSource: SrsTimeSource.wall,
       );
-      final SrsNoteTypeView v = SrsNoteTypeView.materialize(
-        const SrsEntityRecord(
-          id: nt,
-          profileUid: kP,
-          kind: SrsEntityKind.noteType,
-          payload: <String, Object?>{'ankiNum': 1, 'builtin': 'lapis'},
-        ),
-        SrsEntityEdits.build(<SrsFieldEdit>[rename]),
-        builtin: builtin,
-      );
+      final SrsNoteTypeView v = srsMaterializeNoteTypes(
+        <(SrsEntitySource, SrsBuiltinNoteType?)>[
+          (
+            SrsEntitySource.record(
+              const SrsEntityRecord(
+                id: nt,
+                profileUid: kP,
+                kind: SrsEntityKind.noteType,
+                payload: <String, Object?>{'ankiNum': 1, 'builtin': 'lapis'},
+              ),
+              <SrsEditItem>[SrsEditItem.of(rename, null)],
+            ),
+            builtin,
+          ),
+        ],
+      ).single;
       expect(v.fields.map((SrsFieldDef f) => f.name), <String>[
         'Expression',
         '例句',
@@ -701,15 +707,19 @@ void main() {
               timeSource: SrsTimeSource.wall,
             ),
         ];
-        return SrsDeckView.materialize(
-          SrsEntityRecord(
-            id: id,
-            profileUid: kP,
-            kind: SrsEntityKind.deck,
-            payload: const <String, Object?>{},
+        return srsMaterializeDecks(<SrsEntitySource>[
+          SrsEntitySource.record(
+            SrsEntityRecord(
+              id: id,
+              profileUid: kP,
+              kind: SrsEntityKind.deck,
+              payload: const <String, Object?>{},
+            ),
+            <SrsEditItem>[
+              for (final SrsFieldEdit x in e) SrsEditItem.of(x, null),
+            ],
           ),
-          SrsEntityEdits.build(e),
-        );
+        ]).single;
       }
 
       final SrsDeckTree cyc = SrsDeckTree(<SrsDeckView>[

@@ -13,13 +13,15 @@ export 'src/field_edit.dart';
 export 'src/ffi/ffi_fsrs_engine.dart';
 export 'src/ffi/fushi_fsrs_library.dart';
 export 'src/fsrs_engine.dart';
+export 'src/register_kernel.dart';
 export 'src/history_kernel.dart'
     show
         SrsHistoryKernelUnavailableError,
         SrsHistoryState,
         SrsStoredHistory,
         SrsHistoryInput,
-        srsHistoryStatesFromJson;
+        srsHistoryStatesFromJson,
+        srsImportEquivalentAny;
 export 'src/hlc.dart';
 export 'src/ids.dart';
 export 'src/new_card_budget.dart';

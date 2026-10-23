@@ -17,12 +17,18 @@
 //!   ffsrs_search_corpus_attach / ffsrs_search_corpus_needs / ffsrs_search_corpus_match /
 //!   ffsrs_search_dupe_norm_batch
 //!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）/
-//!   ffsrs_history_states / ffsrs_history_select
-//!   （卡片历史内核：有效日志选取与当前排程状态，见 history.rs）
+//!   ffsrs_history_states / ffsrs_history_select / ffsrs_import_equivalent
+//!   （卡片历史内核：有效日志选取与当前排程状态、Anki 导入判重，见 history.rs）/
+//!   ffsrs_materialize
+//!   （字段寄存器内核：修改记录 → 寄存器 → 物化视图，见 registers.rs；排序键 ordering.rs、
+//!   释义样式去重规范形 style_dedup.rs 两边共用）
 
 pub mod history;
+pub mod ordering;
+pub mod registers;
 pub mod search;
 pub mod store;
+pub mod style_dedup;
 
 use std::ffi::{c_char, CStr, CString};
 use std::io::Read;
@@ -877,6 +883,64 @@ pub extern "C" fn ffsrs_history_select(
             )
         };
         history::select_columns(ints, text, offs, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// Anki 导入器入库前判重，布局见 [history::import_equivalent_any]。`offs` 长 `n_logs + 1`，
+/// `groups` 长 `n_groups + 1`。成功返回每组一个字节的缓冲区（[ffsrs_free_bytes] 释放）。
+#[no_mangle]
+pub extern "C" fn ffsrs_import_equivalent(
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    n_logs: usize,
+    groups: *const u32,
+    n_groups: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) {
+            return Err("null argument".to_owned());
+        }
+        let (text, offs, groups) =
+            unsafe { (raw_slice(text, text_len), raw_slice(offs, n_logs + 1), raw_slice(groups, n_groups + 1)) };
+        history::import_equivalent_any(text, offs, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+// ---------------------------------------------------------------- 字段寄存器（registers.rs）
+
+/// 一批实体的寄存器与物化视图，布局见 [registers::materialize]。`header` 是组描述 JSON，
+/// `offs` 长 `n_items + 1`，`servers` 长 `n_items`。成功返回 JSON 结果（UTF-8，[ffsrs_free_bytes] 释放）；
+/// 失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_materialize(
+    header: *const u8,
+    header_len: usize,
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    servers: *const i64,
+    n_items: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null()
+            || offs.is_null()
+            || header.is_null()
+            || (text.is_null() && text_len > 0)
+            || (servers.is_null() && n_items > 0)
+        {
+            return Err("null argument".to_owned());
+        }
+        let (header, text, offs, servers) = unsafe {
+            (raw_slice(header, header_len), raw_slice(text, text_len), raw_slice(offs, n_items + 1), raw_slice(servers, n_items))
+        };
+        registers::materialize(header, text, offs, servers)
     }));
     bytes_out(outcome, out_len, error_out)
 }

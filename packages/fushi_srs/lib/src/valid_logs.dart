@@ -5,11 +5,7 @@ library;
 import 'algorithm.dart';
 import 'fsrs_engine.dart';
 import 'history_kernel.dart';
-import 'ordering.dart';
 import 'review_log.dart';
-
-/// 导入复习与原生复习的等价容差：同卡、同评分、时刻相差不超过 1 秒。
-const int srsImportEquivalenceToleranceMs = 1000;
 
 const int _dayMs = 24 * 60 * 60 * 1000;
 
@@ -25,13 +21,14 @@ class SrsCardHistory {
     int? Function(String eventId)? serverTimeOf,
   }) => many(<SrsHistoryInput>[(logs.toList(), serverTimeOf)]).single;
 
-  SrsCardHistory._(
-    List<SrsReviewLog> logs,
-    SrsHistorySelection sel,
-    this._serverTimeOf,
-  ) : all = <SrsReviewLog>[for (final int i in sel.order) logs[i]],
+  SrsCardHistory._(List<SrsReviewLog> logs, SrsHistorySelection sel)
+    : all = <SrsReviewLog>[for (final int i in sel.order) logs[i]],
       lastEffective = sel.lastEffective < 0 ? null : logs[sel.lastEffective],
       _schedulerFrom = sel.schedulerFrom < 0 ? null : logs[sel.schedulerFrom] {
+    for (int k = 0; k < all.length; k++) {
+      _position[all[k].id] = k;
+      if (sel.status[k] & srsHistoryClamped != 0) _clamped.add(all[k].id);
+    }
     effective = <SrsReviewLog>[
       for (int k = 0; k < all.length; k++)
         if (sel.status[k] & srsHistoryEffective != 0) all[k],
@@ -51,11 +48,9 @@ class SrsCardHistory {
     final List<SrsHistorySelection> sel = srsSelectHistories(inputs);
     return <SrsCardHistory>[
       for (int i = 0; i < inputs.length; i++)
-        SrsCardHistory._(inputs[i].$1, sel[i], inputs[i].$2),
+        SrsCardHistory._(inputs[i].$1, sel[i]),
     ];
   }
-
-  final int? Function(String eventId)? _serverTimeOf;
 
   /// 全部日志（含 undo、被撤销的、不认识的；同 ID 只留最后一条），按 sortKey 升序。
   final List<SrsReviewLog> all;
@@ -75,8 +70,15 @@ class SrsCardHistory {
   /// 决定排程归属的那条 handOff（最后一条有结果的有效 handOff）。
   final SrsReviewLog? _schedulerFrom;
 
-  SrsSortKey sortKeyOf(SrsReviewLog log) =>
-      srsSortKey(log.hlc, log.id, _serverTimeOf?.call(log.id));
+  final Map<String, int> _position = <String, int>{};
+  final Set<String> _clamped = <String>{};
+
+  /// [a] 在排序里是否在 [b] 之后（两条都得是本历史 [all] 里的日志）。排序键只在 Rust 里算。
+  bool isAfter(SrsReviewLog a, SrsReviewLog b) =>
+      _position[a.id]! > _position[b.id]!;
+
+  /// [log] 的排序键被钳位（HLC 物理时间超过它所在批次的 S + 10 分钟）。
+  bool isClamped(SrsReviewLog log) => _clamped.contains(log.id);
 
   /// 卡片当前排程状态 = 最后一条有效日志的结果；scheduler 另由 [scheduler] 决定。
   SrsScheduleResult get state {
@@ -99,27 +101,6 @@ class SrsCardHistory {
     for (final SrsReviewLog l in effective)
       if (l.isRatingReview && l.rating != null) l,
   ];
-}
-
-/// 导入日志 [imported] 与原生日志 [native] 是否是同一次复习（铁律 B）。只看两条日志自身。
-///
-/// 卡片历史里的等价判定在 native/fushi_fsrs/src/history.rs（同一容差、同一判据，固定向量
-/// test/history/fixtures/ 钉齐）；这一份只给 Anki 导入器入库前判重用，第二阶段随导入一起收进内核
-/// （docs/specs/2026-10-23-srs-rust-core.md）。
-///
-/// [sameCard] = 调用方已知两条日志属于同一张逻辑卡（同一份卡片历史：新卡与它经「更改笔记类型」
-/// 继承的前身卡），此时不再比 cardId。
-bool srsImportEquivalent(
-  SrsReviewLog imported,
-  SrsReviewLog native, {
-  bool sameCard = false,
-}) {
-  if (!sameCard && imported.cardId != native.cardId) return false;
-  if (imported.rating != native.rating) return false;
-  if (!imported.isRatingReview || !native.isRatingReview) return false;
-  final int? ankiMs = imported.ankiRevlogId;
-  if (ankiMs == null) return false;
-  return (ankiMs - native.occurredAt).abs() <= srsImportEquivalenceToleranceMs;
 }
 
 /// 「重置」：manual 且结果是新卡、reps 归零。是记忆状态的新起点。
@@ -224,7 +205,7 @@ SrsMemoryInput srsCollectMemoryInput(
     if (!srsIsRestoreState(l)) continue;
     final List<SrsReviewLog> after = <SrsReviewLog>[
       for (final SrsReviewLog r in ratings)
-        if (history.sortKeyOf(r) > history.sortKeyOf(l)) r,
+        if (history.isAfter(r, l)) r,
     ];
     return _fromAnchor(l, after, algorithm, toReviews);
   }
@@ -245,7 +226,7 @@ SrsMemoryInput srsCollectMemoryInput(
   }
   final List<SrsReviewLog> after = <SrsReviewLog>[
     for (final SrsReviewLog r in ratings)
-      if (history.sortKeyOf(r) > history.sortKeyOf(anchor)) r,
+      if (history.isAfter(r, anchor)) r,
   ];
   return _fromAnchor(anchor, after, algorithm, toReviews);
 }

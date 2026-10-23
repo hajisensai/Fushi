@@ -42,22 +42,27 @@ void main() {
         hlc: const Hlc(1, 0, 'w'),
         timeSource: SrsTimeSource.wall,
       );
-      return SrsDeckView.materialize(
-        const SrsEntityRecord(
-          id: 'd',
-          profileUid: kProfile,
-          kind: SrsEntityKind.deck,
-          payload: <String, Object?>{},
+      return srsMaterializeDecks(<SrsEntitySource>[
+        SrsEntitySource.record(
+          const SrsEntityRecord(
+            id: 'd',
+            profileUid: kProfile,
+            kind: SrsEntityKind.deck,
+            payload: <String, Object?>{},
+          ),
+          <SrsEditItem>[
+            for (final SrsFieldEdit x in <SrsFieldEdit>[
+              if (baseAt != null)
+                e(SrsFieldKeys.deckOptimizeBaseline, <String, Object?>{
+                  'at': baseAt,
+                  'n': baseN,
+                }),
+              e(SrsFieldKeys.deckAutoOptimize, auto),
+            ])
+              SrsEditItem.of(x, null),
+          ],
         ),
-        SrsEntityEdits.build(<SrsFieldEdit>[
-          if (baseAt != null)
-            e(SrsFieldKeys.deckOptimizeBaseline, <String, Object?>{
-              'at': baseAt,
-              'n': baseN,
-            }),
-          e(SrsFieldKeys.deckAutoOptimize, auto),
-        ]),
-      );
+      ]).single;
     }
 
     test('门槛、增长比例、30 天、关闭开关、不认识的 rev', () {

@@ -5,13 +5,14 @@
 //
 // 库开在临时文件上、走 createInBackground（与 app 同一种连接：语句经后台 isolate 往返）。
 // 计的是调用方看到的整段耗时（读库 + 跨 isolate 搬运 + FFI + 写缓存），不只量内核。
-// 设计与验收口径见 docs/specs/2026-10-23-srs-rust-core.md「第一阶段」。
+// 设计与验收口径见 docs/specs/2026-10-23-srs-rust-core.md「第一阶段」「第二阶段」。
 import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
+import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:test/test.dart';
 
@@ -115,6 +116,9 @@ void main() {
       final List<String> cards = <String>[
         for (final SrsCardCacheRow c in await store.allCardRows()) c.id,
       ];
+      final List<String> noteIds = <String>{
+        for (final SrsCardCacheRow c in await store.allCardRows()) c.noteId,
+      }.toList();
       final Stopwatch sw = Stopwatch();
       Future<int> timed(Future<void> Function() body) async {
         sw
@@ -131,11 +135,18 @@ void main() {
         final int flag = await timed(
           () => store.setFlag(cards[round], round + 1),
         );
+        // 第二阶段验收：全部笔记的物化（寄存器 + 视图），以及给全部笔记加一个标签（批量改标签：
+        // 读现值 → 判 no-op → 写修改记录 → 刷缓存）。
+        final int views = await timed(() => store.notes(noteIds));
+        final int tags = await timed(
+          () => srsBatchEditTags(store, noteIds, add: <String>['r$round']),
+        );
         // ignore: avoid_print
         print(
           'BENCH round=$round notes=$notes cards=${cards.length} '
           'revs/card=$revs rebuildCaches=${rebuild}ms '
-          'histories(all)=${hist}ms setFlag(1 card)=${flag}ms',
+          'histories(all)=${hist}ms setFlag(1 card)=${flag}ms '
+          'notes(all)=${views}ms editTags(all)=${tags}ms',
         );
       }
     },

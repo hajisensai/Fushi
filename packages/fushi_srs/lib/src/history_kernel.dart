@@ -43,6 +43,9 @@ const int srsHistoryRevoked = 2;
 const int srsHistoryEquivalentImport = 4;
 const int srsHistoryRevoker = 8;
 
+/// 排序键的物理部分被钳位（HLC 物理时间超过 S(e) + 10 分钟；history.rs `STATUS_CLAMPED`）。
+const int srsHistoryClamped = 16;
+
 FushiFsrs _library(FushiFsrs? library) =>
     library ?? FushiFsrs.instance ?? (throw SrsHistoryKernelUnavailableError());
 
@@ -183,6 +186,74 @@ SrsHistoryState _decodeState(
     ),
     lastLogId: flags & 1 != 0 ? str(2 * g) : null,
   );
+}
+
+/// Anki 导入器入库前判重：每组（导入日志, 这张逻辑卡的原生日志）里，导入日志与某条原生日志是不是
+/// 同一次复习（两条都是评分类复习、评分相同、Anki revlog 时刻与原生发生时刻相差 ≤ 1 秒）。判据与卡片
+/// 历史选取里的等价导入是 history.rs 同一个函数。整批一次 FFI 调用，与输入同序。
+List<bool> srsImportEquivalentAny(
+  List<(SrsReviewLog imported, List<SrsReviewLog> natives)> groups, {
+  FushiFsrs? library,
+}) {
+  if (groups.isEmpty) return const <bool>[];
+  final FushiFsrs lib = _library(library);
+  final List<Uint8List> logs = <Uint8List>[
+    for (final (SrsReviewLog i, List<SrsReviewLog> ns)
+        in groups) ...<Uint8List>[
+      utf8.encode(i.canonical()),
+      for (final SrsReviewLog n in ns) utf8.encode(n.canonical()),
+    ],
+  ];
+  int total = 0;
+  for (final Uint8List j in logs) {
+    total += j.length;
+  }
+  final Pointer<Uint8> text = malloc<Uint8>(total == 0 ? 1 : total);
+  final Pointer<Uint32> offs = malloc<Uint32>(logs.length + 1);
+  final Pointer<Uint32> bounds = malloc<Uint32>(groups.length + 1);
+  final Pointer<Size> outLen = calloc<Size>();
+  final Pointer<Pointer<Char>> error = calloc<Pointer<Char>>();
+  try {
+    final Uint8List t = text.asTypedList(total == 0 ? 1 : total);
+    final Uint32List o = offs.asTypedList(logs.length + 1);
+    final Uint32List g = bounds.asTypedList(groups.length + 1);
+    int at = 0;
+    o[0] = 0;
+    for (int i = 0; i < logs.length; i++) {
+      t.setRange(at, at + logs[i].length, logs[i]);
+      at += logs[i].length;
+      o[i + 1] = at;
+    }
+    g[0] = 0;
+    for (int k = 0; k < groups.length; k++) {
+      g[k + 1] = g[k] + 1 + groups[k].$2.length;
+    }
+    final Pointer<Uint8> out = lib.bindings.ffsrs_import_equivalent(
+      text,
+      total,
+      offs,
+      logs.length,
+      bounds,
+      groups.length,
+      outLen,
+      error,
+    );
+    if (out == nullptr) throw FormatException(_takeError(lib, error));
+    final int len = outLen.value;
+    try {
+      return <bool>[for (final int b in out.asTypedList(len)) b == 1];
+    } finally {
+      lib.bindings.ffsrs_free_bytes(out, len);
+    }
+  } finally {
+    malloc
+      ..free(text)
+      ..free(offs)
+      ..free(bounds);
+    calloc
+      ..free(outLen)
+      ..free(error);
+  }
 }
 
 /// 一份历史的选取结果（[srsSelectHistories]）：下标指向该份历史的输入列表。

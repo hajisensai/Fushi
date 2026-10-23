@@ -12,22 +12,23 @@
 //! 规则与旧 Dart 实现逐条对应（固定向量 packages/fushi_srs/test/history/fixtures/ 由删除前的 Dart
 //! 实现生成，两条入口都必须逐条一致）：
 //! - 同一份历史里同 ID 的日志只留最后一条（Dart `Map` 去重语义）；
-//! - 排序键 = (钳位后的物理时间, 计数器, writerId, eventId)，钳位 = min(HLC 物理部分, S(e) + 10 分钟)；
-//!   字符串按 **UTF-16 码元**比较（Dart `String.compareTo`），不是 Rust 默认的码点序；
+//! - 排序键见 ordering.rs（与字段寄存器共用一份）：(钳位后的物理时间, 计数器, writerId, eventId)，
+//!   字符串按 UTF-16 码元比较；
 //! - 撤销：undo 日志的 revokes 目标不算有效；不级联；
-//! - 等价导入：Anki 导入的评分日志与本机原生评分同评分、Anki revlog 时刻与原生时刻相差 ≤ 1 秒时不算有效；
+//! - 等价导入：Anki 导入的评分日志与本机原生评分同评分、Anki revlog 时刻与原生时刻相差 ≤ 1 秒时不算有效
+//!   （两条日志之间的判据 [import_equivalent] 也是 Anki 导入器入库前判重的唯一实现）；
 //! - 有效 = 已知 kind、不是 undo、没被撤销、不是等价导入；
 //! - 状态 = 最后一条有结果的有效日志的结果；排程归属 = 最后一条有结果的有效 handOff 的方向，没有 = fushi。
 
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
+pub use crate::ordering::{cmp_utf16, CLOCK_TOLERANCE_MS};
+use crate::ordering::{is_clamped, SortKey};
+
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use serde_json::Value;
-
-/// 排序与 HLC 推进共用的容差（Dart `srsClockToleranceMs`）：S(e) 之后最多 10 分钟。
-pub const CLOCK_TOLERANCE_MS: i64 = 10 * 60 * 1000;
 
 /// 导入复习与原生复习的等价容差（Dart `srsImportEquivalenceToleranceMs`）。
 pub const IMPORT_EQUIVALENCE_TOLERANCE_MS: i64 = 1000;
@@ -102,28 +103,27 @@ impl Log<'_> {
         self.kind == Kind::Review && self.rating_type
     }
 
-    fn sort_physical(&self) -> i64 {
-        match self.server_time {
-            Some(s) => self.physical.min(s.saturating_add(CLOCK_TOLERANCE_MS)),
-            None => self.physical,
-        }
+    fn sort_key(&self) -> SortKey<'_> {
+        SortKey::new(self.physical, self.counter, &self.writer, &self.id, self.server_time)
     }
-}
-
-/// Dart `String.compareTo`：按 UTF-16 码元比较。与码点序只在「增补平面字符 vs U+E000..U+FFFF」处不同。
-pub fn cmp_utf16(a: &str, b: &str) -> Ordering {
-    if a.is_ascii() && b.is_ascii() {
-        return a.as_bytes().cmp(b.as_bytes());
-    }
-    a.encode_utf16().cmp(b.encode_utf16())
 }
 
 fn cmp_sort_key(a: &Log<'_>, b: &Log<'_>) -> Ordering {
-    a.sort_physical()
-        .cmp(&b.sort_physical())
-        .then(a.counter.cmp(&b.counter))
-        .then_with(|| cmp_utf16(&a.writer, &b.writer))
-        .then_with(|| cmp_utf16(&a.id, &b.id))
+    a.sort_key().cmp(&b.sort_key())
+}
+
+/// 导入日志 [imported] 与原生日志 [native] 是不是同一次复习（铁律 B）。只看两条日志自身：
+/// 两条都是评分类复习、评分相同、导入日志带 Anki revlog 时刻且与原生日志的发生时刻相差 ≤ 1 秒。
+/// 卡片历史选取（[select]）与 Anki 导入器入库前判重（[import_equivalent_any]）都走这一个判据。
+pub fn import_equivalent(imported: &Log<'_>, native: &Log<'_>) -> bool {
+    imported.rating == native.rating
+        && imported.is_rating_review()
+        && native.is_rating_review()
+        && match imported.anki_id {
+            // 与 Dart int 同语义：减法与取绝对值都按 64 位回绕。
+            Some(anki_ms) => anki_ms.wrapping_sub(native.occurred_at).wrapping_abs() <= IMPORT_EQUIVALENCE_TOLERANCE_MS,
+            None => false,
+        }
 }
 
 /// 选取标记（每条日志一个字节；列模式原样交给 Dart）。
@@ -134,6 +134,8 @@ pub const STATUS_REVOKED: u8 = 2;
 pub const STATUS_EQUIVALENT_IMPORT: u8 = 4;
 /// 这条是带撤销目标的 undo（它的 revokes 进 Dart 的 `revoked` 集合，目标不在本历史里也算）。
 pub const STATUS_REVOKER: u8 = 8;
+/// 排序键的物理部分被钳位（HLC 物理时间超过 S(e) + 10 分钟）。
+pub const STATUS_CLAMPED: u8 = 16;
 
 /// 一份历史的选取结果。下标都指向输入切片。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,16 +203,12 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         if revoked {
             s |= STATUS_REVOKED;
         }
-        let equivalent = l.origin == Origin::Anki
-            && l.is_rating_review()
-            && match l.anki_id {
-                Some(anki_ms) => natives.iter().any(|n| {
-                    l.rating == n.rating && (anki_ms - n.occurred_at).abs() <= IMPORT_EQUIVALENCE_TOLERANCE_MS
-                }),
-                None => false,
-            };
+        let equivalent = l.origin == Origin::Anki && natives.iter().any(|n| import_equivalent(l, n));
         if equivalent {
             s |= STATUS_EQUIVALENT_IMPORT;
+        }
+        if is_clamped(l.physical, l.server_time) {
+            s |= STATUS_CLAMPED;
         }
         if l.kind != Kind::Unknown && l.kind != Kind::Undo && !revoked && !equivalent {
             s |= STATUS_EFFECTIVE;
@@ -272,8 +270,8 @@ struct WireLog<'a> {
     _fv: Option<i64>,
 }
 
-/// Dart `Hlc.decode`：`<physical>:<counter>:<writerId>`，writerId 可含冒号，只切前两段。
-fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
+/// Dart `Hlc.decode`：`<physical>:<counter>:<writerId>`，writerId 可含冒号，只切前两段（字段寄存器同用这一份）。
+pub(crate) fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
     let mut it = text.splitn(3, ':');
     let (p, c, w) = match (it.next(), it.next(), it.next()) {
         (Some(p), Some(c), Some(w)) => (p, c, w),
@@ -637,19 +635,40 @@ pub fn select_columns(ints: &[i64], text: &[u8], offs: &[u32], groups: &[u32]) -
     Ok(out)
 }
 
+/// Anki 导入器入库前判重：第 g 组 = 日志 `groups[g]..groups[g+1]`，组里第一条是导入日志、其余是
+/// 这张逻辑卡的原生日志（调用方已筛好来源），第 i 条日志 = `text[offs[i]..offs[i+1]]`（落库 JSON）。
+/// 输出每组一个字节：1 = 导入日志与组里某条原生日志等价（[import_equivalent]）。
+pub fn import_equivalent_any(text: &[u8], offs: &[u32], groups: &[u32]) -> Result<Vec<u8>, String> {
+    let n_logs = offs.len().checked_sub(1).ok_or("bad import batch layout")?;
+    if groups.is_empty() || *groups.last().unwrap() as usize != n_logs {
+        return Err("bad import batch layout".to_owned());
+    }
+    let text = std::str::from_utf8(text).map_err(|_| "import batch is not UTF-8".to_owned())?;
+    let mut logs: Vec<Log<'_>> = Vec::with_capacity(n_logs);
+    for w in offs.windows(2) {
+        let (a, b) = (w[0] as usize, w[1] as usize);
+        if a > b || b > text.len() || !text.is_char_boundary(a) || !text.is_char_boundary(b) {
+            return Err("bad import batch offsets".to_owned());
+        }
+        logs.push(parse_wire(&text[a..b], None)?.0);
+    }
+    let mut out = Vec::with_capacity(groups.len() - 1);
+    for g in groups.windows(2) {
+        let (a, b) = (g[0] as usize, g[1] as usize);
+        if a >= b || b > n_logs {
+            return Err("bad import batch groups".to_owned());
+        }
+        out.push(u8::from(logs[a + 1..b].iter().any(|n| import_equivalent(&logs[a], n))));
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn wire(id: &str, kind: &str, hlc: &str, at: i64, extra: &str) -> String {
         format!(r#"{{"id":"{id}","p":"p","card":"c","kind":"{kind}","hlc":"{hlc}","at":{at}{extra}}}"#)
-    }
-
-    #[test]
-    fn utf16_order_differs_from_code_point_order() {
-        // U+1D4E7 的高代理 0xD835 < U+FF21：UTF-16 序在前，码点序在后。
-        assert_eq!(cmp_utf16("\u{1D4E7}", "\u{FF21}"), Ordering::Less);
-        assert_eq!("\u{1D4E7}".cmp("\u{FF21}"), Ordering::Greater);
     }
 
     #[test]
