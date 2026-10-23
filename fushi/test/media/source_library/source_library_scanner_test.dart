@@ -21,7 +21,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/platform_charset_detector.dart';
 import 'package:image/image.dart' as img;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+import 'package:fushi_engine/epub/book_title_conflict.dart'
+    show DuplicatePolicy;
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/media/source_library/book_library_prune.dart'
+    show BookSourceIndex;
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
@@ -1789,6 +1793,167 @@ Attributes = A
       expect(book.title, 'volume-03');
       expect(book.format, BookFormat.manga.dbValue);
       expect(book.sourceId, sid);
+    });
+
+    // 反馈 n4KC1azJvw（manga-series-volume-folders-flattened）：`库根/系列/卷N/页图`
+    // 以前整个系列导成一本 ~2000 页的漫画。
+    group('系列目录/卷目录', () {
+      Future<SourceLibraryRow> seriesSource(FushiDatabase db) async {
+        final int sid =
+            await db.insertMediaSource(MediaSourcesCompanion.insert(
+          label: 'Manga series',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          recursive: const Value(true),
+          createdAt: 1000,
+        ));
+        return (await db.getMediaSourceById(sid))!;
+      }
+
+      void writeSeries() {
+        for (final String v in <String>['Vol01', 'Vol02', 'Vol03']) {
+          _writeMangaPage(p.join(tmp.path, 'ONE PIECE', v), '001.png');
+          _writeMangaPage(p.join(tmp.path, 'ONE PIECE', v), '002.png');
+        }
+      }
+
+      Future<List<String>> collectionTitles(
+        FushiDatabase db,
+        MediaCollectionRow collection,
+      ) async {
+        final Map<String, String> titleByUid = <String, String>{
+          for (final EpubBookRow b in await db.getAllEpubBooks())
+            b.uid: b.title,
+        };
+        return <String>[
+          for (final MediaCollectionItemRow i
+              in await db.getCollectionItems(collection.id))
+            titleByUid[i.entryKey] ?? '?${i.entryKey}',
+        ];
+      }
+
+      test('真实临时目录 → 入库 3 卷，且同在系列合集「ONE PIECE」里', () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        writeSeries();
+        final SourceLibraryRow source = await seriesSource(db);
+
+        final SourceScanSummary summary =
+            await SourceLibraryScanner(db).scan(source);
+
+        expect(summary.error, isNull);
+        expect(summary.importedMediaCount, 3);
+        final List<EpubBookRow> books = await db.getAllEpubBooks();
+        expect(
+          books.map((EpubBookRow b) => b.title).toList()..sort(),
+          <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03'],
+        );
+        for (final EpubBookRow b in books) {
+          expect(b.chapterCount, 2, reason: '${b.title} 只含自己那一卷的页');
+          expect(b.sourceId, source.id);
+        }
+        final List<MediaCollectionRow> collections =
+            await db.getAllMediaCollections();
+        expect(collections, hasLength(1));
+        expect(collections.single.name, 'ONE PIECE');
+        expect(collections.single.collectionType, 'playlist');
+        expect(await collectionTitles(db, collections.single), <String>[
+          'ONE PIECE Vol01',
+          'ONE PIECE Vol02',
+          'ONE PIECE Vol03',
+        ]);
+
+        // 重扫幂等：不新增书、不重复建合集。
+        final SourceScanSummary again =
+            await SourceLibraryScanner(db).scan(source);
+        expect(again.importedMediaCount, 0);
+        expect(await db.getAllEpubBooks(), hasLength(3));
+        expect(await db.getAllMediaCollections(), hasLength(1));
+      });
+
+      test('旧版导成的整本合订本：重扫后被分卷取代，不留重复', () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        writeSeries();
+        final SourceLibraryRow source = await seriesSource(db);
+        // 复现旧版扫描的落库结果：整个系列目录一本、标题 = 目录名、索引登记
+        // `ONE PIECE` → 这本书。
+        final String oldKey = await MangaImporter.importFromImageFolder(
+          db: db,
+          imageDirPath: p.join(tmp.path, 'ONE PIECE'),
+          title: 'ONE PIECE',
+          sourceId: source.id,
+          policy: const DuplicatePolicy.skip(),
+        );
+        final EpubBookRow oldBook = (await db.getEpubBook(oldKey))!;
+        expect(oldBook.chapterCount, 6);
+        final BookSourceIndex index =
+            await BookSourceIndex.load(db, source.id);
+        index.put('ONE PIECE', oldBook.uid);
+        await index.save(db);
+
+        final SourceScanSummary summary =
+            await SourceLibraryScanner(db).scan(source);
+
+        expect(summary.error, isNull);
+        expect(summary.importedMediaCount, 3);
+        expect(await db.getEpubBook(oldKey), isNull,
+            reason: '合订本被分卷取代；留着就是同一批页在书架上两份');
+        expect(
+          (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
+            ..sort(),
+          <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03'],
+        );
+        final BookSourceIndex after =
+            await BookSourceIndex.load(db, source.id);
+        expect(after.uidOf('ONE PIECE'), isNull);
+        expect(after.entries.keys.toSet(), <String>{
+          'ONE PIECE/Vol01',
+          'ONE PIECE/Vol02',
+          'ONE PIECE/Vol03',
+        });
+        final List<MediaCollectionRow> collections =
+            await db.getAllMediaCollections();
+        expect(collections, hasLength(1));
+        expect(await collectionTitles(db, collections.single), hasLength(3));
+      });
+
+      test('旧合订本没被索引认领时也按「本来源 + 目录名」认出并取代', () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        writeSeries();
+        final SourceLibraryRow source = await seriesSource(db);
+        final String oldKey = await MangaImporter.importFromImageFolder(
+          db: db,
+          imageDirPath: p.join(tmp.path, 'ONE PIECE'),
+          title: 'ONE PIECE',
+          sourceId: source.id,
+          policy: const DuplicatePolicy.skip(),
+        );
+
+        await SourceLibraryScanner(db).scan(source);
+
+        expect(await db.getEpubBook(oldKey), isNull);
+        expect(await db.getAllEpubBooks(), hasLength(3));
+      });
+
+      test('同名的手动导入（无来源）不是本来源的合订本：不删', () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        writeSeries();
+        final SourceLibraryRow source = await seriesSource(db);
+        final String manualKey = await MangaImporter.importFromImageFolder(
+          db: db,
+          imageDirPath: p.join(tmp.path, 'ONE PIECE'),
+          title: 'ONE PIECE',
+          policy: const DuplicatePolicy.skip(),
+        );
+
+        await SourceLibraryScanner(db).scan(source);
+
+        expect(await db.getEpubBook(manualKey), isNotNull);
+        expect(await db.getAllEpubBooks(), hasLength(4));
+      });
     });
 
     ArchiveFile pngEntry(String name, {int width = 20, int height = 40}) {

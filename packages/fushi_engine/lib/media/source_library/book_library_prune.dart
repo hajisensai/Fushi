@@ -390,6 +390,90 @@ Future<String?> adoptExistingBookForSource({
   return row.uid;
 }
 
+/// 「系列目录/卷目录」被拆成分卷后，旧版扫描把整个系列目录导成的那本「合订本」。
+typedef FlattenedMangaSeries = ({
+  /// 系列目录的索引键（旧版把它当一卷登记的就是这个键）。
+  String seriesRel,
+
+  /// 系列目录 basename：旧版就用它当书名（索引里没有这条时按它认）。
+  String seriesTitle,
+
+  /// 本轮拆出的各卷目录的索引键。
+  List<String> volumeRels,
+});
+
+/// 把旧版扫描导成一整本的系列目录让位给拆出的分卷（BUG：
+/// manga-series-volume-folders-flattened）。返回被回收的书 uid 与逐条错误。
+///
+/// 旧规则把 `库根/系列/卷N/页图` 的整个 `系列` 目录导成一本（~2000 页）。新规则拆成
+/// 分卷后，这本书的源（`系列` 目录）**仍然存在**，所以对账（[pruneMissingBookRows]
+/// 的 `relGone` 还会现场看目录在不在）永远不会回收它——不处理的话重扫后书架上是
+/// 「合订本 + 各分卷」重复一份。这里在本轮分卷都已入库后回收它：
+/// - 先决条件：该系列**每一卷**都已被索引认领（本轮导入成功，或早已在库）。有一卷
+///   失败 / 因同名书被跳过，就保留合订本，内容不会凭空少一块；
+/// - 只认本来源导入的那一行：索引里 `seriesRel` 指向的书；索引里没有（升级前的
+///   扫描没写索引）时退到「`sourceId` = 本来源、格式漫画、bookKey = 系列目录名」，
+///   正是旧扫描器的落库方式。手动导入 / 别的来源的同名书不碰；
+/// - 那本书还被本来源别的源认领着就只撤掉 `seriesRel` 这条，不删书；
+/// - 回收方式与对账删失效书相同：`deleteEpubBook`（不写墓碑）+ 回收 `fushi_books/`
+///   正文副本，不碰用户源文件。合订本的阅读进度 / 书签随行一起删——2000 页里的
+///   页码对不上任何一卷，没有可迁移的落点。
+Future<({List<String> retiredUids, List<String> errors})>
+retireFlattenedMangaSeries({
+  required FushiDatabase db,
+  required BookSourceIndex index,
+  required int sourceId,
+  required Iterable<FlattenedMangaSeries> series,
+}) async {
+  final List<String> retired = <String>[];
+  final List<String> errors = <String>[];
+  List<BookSourceRow>? rows;
+  for (final FlattenedMangaSeries s in series) {
+    final List<String?> volumeUids = <String?>[
+      for (final String rel in s.volumeRels) index.uidOf(rel),
+    ];
+    if (volumeUids.isEmpty || volumeUids.contains(null)) continue;
+    rows ??= await loadBookSourceRows(db);
+    final String? indexedUid = index.uidOf(s.seriesRel);
+    final String fallbackKey = sanitizeTtuFilename(s.seriesTitle);
+    BookSourceRow? row;
+    for (final BookSourceRow r in rows) {
+      if (indexedUid != null
+          ? r.uid == indexedUid
+          : r.bookKey == fallbackKey &&
+                r.sourceId == sourceId &&
+                r.format == BookFormat.manga.dbValue) {
+        row = r;
+        break;
+      }
+    }
+    if (row == null ||
+        row.sourceId != sourceId ||
+        row.format != BookFormat.manga.dbValue ||
+        volumeUids.contains(row.uid) ||
+        index.relsOf(row.uid).any((String rel) => rel != s.seriesRel)) {
+      // 不是本来源的合订本（或还有别的源认领它）：只撤掉这条过期的卷登记。
+      index.remove(s.seriesRel);
+      continue;
+    }
+    try {
+      await db.deleteEpubBook(row.bookKey);
+    } catch (e) {
+      errors.add('${row.bookKey}: $e');
+      continue;
+    }
+    index.remove(s.seriesRel);
+    rows.remove(row);
+    retired.add(row.uid);
+    try {
+      await reclaimBookAssets(row);
+    } catch (e) {
+      errors.add('${row.bookKey}: reclaim ${row.extractDir}: $e');
+    }
+  }
+  return (retiredUids: retired, errors: errors);
+}
+
 /// 书根：[root] 下全部 `.epub`（递归、不跟链接、按路径排序）。
 Future<List<String>> listEpubSourceFiles(Directory root) async {
   final List<String> out = <String>[];

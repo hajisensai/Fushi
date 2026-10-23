@@ -28,13 +28,13 @@ class BookSeriesKey {
 /// 文件名原样成了书名）。
 final RegExp _hashSuffix = RegExp(r'\s*\[[0-9a-fA-F]{8}\]\s*$');
 
-/// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `v02` / `(2)` / `#2`，以及直接贴在
-/// 汉字 / 假名后的 `安達としまむら10`。数字前必须有分隔或非 ASCII 字符，「86」
-/// 这类纯数字书名、「Catch22」这类拉丁字母贴数字的书名尾数不会被吃掉（「Fahrenheit
-/// 451」会被读成卷号，但归组要求同系列 ≥2 卷，单本不受影响）。只在全角已折半角的
-/// 串上匹配。
+/// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `Vol-2` / `Volume 2` / `v02` /
+/// `(2)` / `#2`，以及直接贴在汉字 / 假名后的 `安達としまむら10`。数字前必须有
+/// 分隔或非 ASCII 字符，「86」这类纯数字书名、「Catch22」这类拉丁字母贴数字的
+/// 书名尾数不会被吃掉（「Fahrenheit 451」会被读成卷号，但归组要求同系列 ≥2 卷，
+/// 单本不受影响）。只在全角已折半角的串上匹配。
 final RegExp _volumeSuffix = RegExp(
-  r'(?:\s+|[\s_\-:・]*(?:第|vol\.?\s*|v(?=\d)|#)|\s*\(|(?<=[^\x00-\x7F]))'
+  r'(?:\s+|[\s_\-:・]*(?:第|vol(?:ume)?[\s._\-]*|v(?=\d)|#)|\s*\(|(?<=[^\x00-\x7F]))'
   r'(\d{1,4}(?:\.\d)?)'
   r'\s*(?:巻|卷|册|冊)?\s*\)?\s*$',
   caseSensitive: false,
@@ -55,15 +55,12 @@ String _foldWidth(String s) => String.fromCharCodes(<int>[
         : c,
 ]);
 
-/// 解析 [title]；去掉卷号后系列名为空时返回 null（不参与归组）。
+/// 在折叠串 [folded] 上切出「系列名结束下标 + 卷号」：[parseBookSeriesKey] 与
+/// [parseBookVolumeFolderName] 共用，卷号判据只有这一份。
 ///
-/// 匹配在折叠串上做，合集名按同一下标从**原文**截取（不把用户书名里的 `～`
-/// 改成 `~`）。卷号匹配不上时先剥一层结尾标签再试（`安達としまむら13 (電撃文庫)`）。
-BookSeriesKey? parseBookSeriesKey(String title) {
-  final String folded = _foldWidth(title);
+/// 卷号匹配不上时先剥一层结尾标签再试（`安達としまむら13 (電撃文庫)`）。
+({int end, num? volume}) _splitVolumeSuffix(String folded) {
   int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
-  final BookSeriesKey? labelled = _seriesFromTrailingLabel(title, folded, end);
-  if (labelled != null) return labelled;
   RegExpMatch? m = _volumeSuffix.firstMatch(folded.substring(0, end));
   if (m == null) {
     end = _trailingLabel.firstMatch(folded.substring(0, end))?.start ?? end;
@@ -75,12 +72,32 @@ BookSeriesKey? parseBookSeriesKey(String title) {
     end = m.start;
   }
   end = _trailingSeparators.firstMatch(folded.substring(0, end))?.start ?? end;
-  final String key = folded.substring(0, end).trim();
+  return (end: end, volume: volume);
+}
+
+/// 比较用的归一化系列键：去首尾空白、空白折叠、ASCII 小写（[folded] 须已折半角）。
+String _normalizeSeriesKey(String folded) =>
+    folded.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+
+/// 解析 [title]；去掉卷号后系列名为空时返回 null（不参与归组）。
+///
+/// 匹配在折叠串上做，合集名按同一下标从**原文**截取（不把用户书名里的 `～`
+/// 改成 `~`）。
+BookSeriesKey? parseBookSeriesKey(String title) {
+  final String folded = _foldWidth(title);
+  final BookSeriesKey? labelled = _seriesFromTrailingLabel(
+    title,
+    folded,
+    _hashSuffix.firstMatch(folded)?.start ?? folded.length,
+  );
+  if (labelled != null) return labelled;
+  final ({int end, num? volume}) split = _splitVolumeSuffix(folded);
+  final String key = folded.substring(0, split.end).trim();
   if (key.isEmpty) return null;
   return BookSeriesKey(
-    key: key.replaceAll(RegExp(r'\s+'), ' ').toLowerCase(),
-    seriesTitle: title.substring(0, end).trim(),
-    volume: volume,
+    key: _normalizeSeriesKey(key),
+    seriesTitle: title.substring(0, split.end).trim(),
+    volume: split.volume,
   );
 }
 
@@ -109,10 +126,42 @@ BookSeriesKey? _seriesFromTrailingLabel(String title, String folded, int end) {
   final RegExpMatch? volume = _volumeSuffix.firstMatch(body);
   final int innerStart = head.indexOf(inner, open + 1);
   return BookSeriesKey(
-    key: inner.replaceAll(RegExp(r'\s+'), ' ').toLowerCase(),
+    key: _normalizeSeriesKey(inner),
     seriesTitle: title.substring(innerStart, innerStart + inner.length),
     volume: volume == null ? null : num.parse(volume.group(1)!),
   );
+}
+
+/// 「系列目录/卷目录/页图」布局里，目录名 [name] 作为系列目录 [seriesFolderName]
+/// 之下的**卷目录**时的卷号；不像卷目录返回 null。
+///
+/// 卷号判据与 [parseBookSeriesKey] 是同一条正则（[_splitVolumeSuffix]），只多两点
+/// 目录语境下的差别：
+/// - 纯数字目录名（`01`、`2`）算卷号——书名「86」刻意不当卷号，但系列目录下一排
+///   `01` / `02` 子目录就是分卷；
+/// - 卷号前剩下的部分必须为空（`Vol.01`、`Volume 6`、`第3巻`、`3巻`、`v02`、`#4`、
+///   `（5）`），或与系列目录名归一化后相同（`ONE PIECE/ONE PIECE 01`）。否则不算：
+///   `Chapter 01` / `Episode 2` 是章节目录，`Extra 2` 是附录，同样带尾数但不是卷；
+///   `ch01`、`第1話`、`extra`、`images` 连卷号都解析不出。
+///
+/// `namesSeries` 为真表示目录名自己已带系列名（上面第二种），调用方起卷标题时
+/// 不必再拼系列名。
+({num volume, bool namesSeries})? parseBookVolumeFolderName(
+  String name, {
+  required String seriesFolderName,
+}) {
+  // 前置一个空格，让纯数字名也能走正则的空白分支；下标整体右移一位，这里只取
+  // 卷号前缀做比较，不受影响。
+  final String folded = ' ${_foldWidth(name)}';
+  final ({int end, num? volume}) split = _splitVolumeSuffix(folded);
+  final num? volume = split.volume;
+  if (volume == null) return null;
+  final String prefix = _normalizeSeriesKey(folded.substring(0, split.end));
+  if (prefix.isEmpty) return (volume: volume, namesSeries: false);
+  if (prefix == _normalizeSeriesKey(_foldWidth(seriesFolderName))) {
+    return (volume: volume, namesSeries: true);
+  }
+  return null;
 }
 
 /// [titles] 是否全都是同一系列的分卷（每个都解析得出 [BookSeriesKey] 且 `key` 相同）：

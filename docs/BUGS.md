@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3269 条。点号进各自文件。
+> 共 3270 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3666](bugs/BUG-3666-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3665](bugs/BUG-3665-ios-source-folder-bookmark.md) | ✅ | ✅ | ios-source-folder-bookmark |
 | [BUG-3664](bugs/BUG-3664-model-download-concurrent-writers-416.md) | ✅ | ✅ | 识别模型 / MOSS 下载挂在弹层上：关掉再开会起第二条写者，`.part` 写坏后永远 HTTP 416 |
 | [BUG-3663](bugs/BUG-3663-book-series-trailing-label-dropped.md) | ✅ | ✅ | 结尾 `<系列名>` 被当出版标签丢掉，日文轻小说整套散在书架上 |
