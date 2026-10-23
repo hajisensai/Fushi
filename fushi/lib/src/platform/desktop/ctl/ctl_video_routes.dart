@@ -47,6 +47,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_player_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_support.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_video_subtitle_fetch_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_subtitle_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 
@@ -90,6 +91,8 @@ List<CtlRoute> buildVideoCtlRoutes(DesktopCtlContext context) {
     ...buildVideoPlayerCtlRoutes(context),
     // ── 生成日语字幕（ASR + AI 校对管线，不依赖视频页） ──────────────────
     ...buildVideoSubtitleCtlRoutes(context),
+    // ── 在线字幕：立即补 / 手动搜 / 点名下载（与刮削后自动补同一个服务） ──────
+    ...buildVideoSubtitleFetchCtlRoutes(context),
   ];
 }
 

@@ -10,8 +10,8 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
     required JimakuClient client,
     this.priority = 100,
     bool closesClient = false,
-  })  : _client = client,
-        _closesClient = closesClient;
+  }) : _client = client,
+       _closesClient = closesClient;
 
   final JimakuClient _client;
   final bool _closesClient;
@@ -39,13 +39,14 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
   Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
     VideoSubtitleSearchRequest request,
   ) async {
-    final List<String> fallbacks = <String>{
+    // 剧场版前缀（「映画ドラえもん …」）让 Jimaku 的模糊搜索零命中，变体紧跟原词。
+    final List<String> fallbacks = jimakuQueryVariants(<String>[
       request.effectiveQuery,
       ...request.alternateTitles,
       if (request.media?.originalTitle != null) request.media!.originalTitle!,
-    }.where((String title) => title.trim().isNotEmpty).toList();
+    ]);
     try {
-      final List<JimakuEntry> entries = await _client.searchEntries(
+      final List<JimakuEntry> found = await _client.searchEntries(
         anilistId: request.media?.anilistId,
         // 真人剧的权威关联键：AniList 只覆盖动画，没有它就只能拿显示名去模糊碰（BUG-1849）。
         tmdbId: tmdbIdFor(request.media),
@@ -56,24 +57,47 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
         throwOnError: true,
         animeFilter: _animeFilterFor(request),
       );
+      // 泛化回退词一次能搜出几十个条目，逐条列文件会把 25 次/窗口的配额当场打穿
+      // （见 [kJimakuMaxEntriesPerSearch]）：只列与作品标题最像的几个。
+      final List<JimakuEntry> entries = pickJimakuEntriesForTitles(
+        found,
+        fallbacks,
+      );
       final List<VideoSubtitleCandidate> candidates =
           <VideoSubtitleCandidate>[];
-      final int? episode = request.effectiveEpisode;
+      final List<ExternalProviderFailure> failures =
+          <ExternalProviderFailure>[];
       for (final JimakuEntry entry in entries) {
-        final List<JimakuFile> files = await _client.listFiles(
-          entry.id,
-          episode: episode,
-          throwOnError: true,
-        );
-        // 整季压缩包（BUG-3000 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
-        // `Show (01-26).zip` 这类整季包猜不出单集，会被服务端滤掉。带集号查时再列
-        // 一次不带集号的全表，只从里面补压缩包。
-        final List<JimakuFile> packs = <JimakuFile>[
-          for (final JimakuFile file in episode == null
-              ? files
-              : await _client.listFiles(entry.id, throwOnError: true))
-            if (file.archiveFormat != null) file,
-        ];
+        // 电影条目没有「集」：文件名里的「Movie 25」会被当成第 25 集，按集过滤只会
+        // 误伤，整季包补列也无从谈起——一次不带集号的列表就是全部。
+        final int? episode = entry.flags.movie
+            ? null
+            : request.effectiveEpisode;
+        final List<JimakuFile> files;
+        final List<JimakuFile> packs;
+        try {
+          files = await _client.listFiles(
+            entry.id,
+            episode: episode,
+            throwOnError: true,
+          );
+          // 整季压缩包（BUG-3000 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
+          // `Show (01-26).zip` 这类整季包猜不出单集，会被服务端滤掉。带集号查时再
+          // 列一次不带集号的全表，只从里面补压缩包。
+          packs = <JimakuFile>[
+            for (final JimakuFile file
+                in episode == null
+                    ? files
+                    : await _client.listFiles(entry.id, throwOnError: true))
+              if (file.archiveFormat != null) file,
+          ];
+        } on Object catch (error) {
+          // 排在最前的条目都没问到 = 整次搜索失败；后面的条目失败（典型是限流）
+          // 不该把已经拿到的候选一起丢掉，如实带着失败返回部分结果。
+          if (candidates.isEmpty) rethrow;
+          failures.add(_jimakuFailure('search', error));
+          break;
+        }
         final Set<String> seen = <String>{};
         for (final JimakuFile file in <JimakuFile>[...files, ...packs]) {
           final SubtitleArchiveFormat? archive = file.archiveFormat;
@@ -100,7 +124,11 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
           );
         }
       }
-      return ProviderBatchResult<VideoSubtitleCandidate>.success(candidates);
+      return ProviderBatchResult<VideoSubtitleCandidate>(
+        items: candidates,
+        failures: failures,
+        successfulProviderCount: 1,
+      );
     } on Object catch (error) {
       return ProviderBatchResult<VideoSubtitleCandidate>.failure(
         _jimakuFailure('search', error),
@@ -109,7 +137,6 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
   }
 
   @override
-
   /// Jimaku 无下载配额概念，允许为语言标签白下一次。
   @override
   bool get allowsFreeProbeDownload => true;
@@ -179,7 +206,7 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
           message: entries.isEmpty
               ? 'Jimaku archive contained no text subtitle'
               : 'Jimaku archive has no file for episode '
-                  '${candidate.wantedEpisode}',
+                    '${candidate.wantedEpisode}',
         );
       }
       return VideoSubtitleDownload(
@@ -201,8 +228,10 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
 
 /// 把发现层的分类映射成 Jimaku 的 `anime` 硬过滤（BUG-1694）。
 ///
-/// `discoveryCategory` 已经是这个问题的答案，不需要再猜：anime → 只搜动画；
-/// movie/tv → 只搜真人；连 media 都没有（纯文本搜索请求）才看请求自带的
+/// anime → 只搜动画；movie/tv → 先真人、空了再动画（[JimakuAnimeFilter.liveActionFirst]）。
+/// movie/tv 不是「确证真人」：刮削侧只要没挂 AniDB / AniList id 就落到这两档，而只刮了
+/// TMDB 的动画剧场版（哆啦A梦剧场版）照样有动画条目——只搜真人档等于这类片子永远
+/// 补不上字幕。真人剧命中时请求数不变。连 media 都没有（纯文本搜索请求）才看请求自带的
 /// [VideoSubtitleSearchRequest.anime] 提示，它也没有才两档都试。
 ///
 /// 那个 `anime` 字段此前是**死字段**：声明了、注释写着「只有 Jimaku 消费」，却没有
@@ -212,13 +241,12 @@ JimakuAnimeFilter _animeFilterFor(VideoSubtitleSearchRequest request) {
   return switch (request.media?.discoveryCategory) {
     VideoDiscoveryCategory.anime => JimakuAnimeFilter.anime,
     VideoDiscoveryCategory.movie ||
-    VideoDiscoveryCategory.tv =>
-      JimakuAnimeFilter.liveAction,
+    VideoDiscoveryCategory.tv => JimakuAnimeFilter.liveActionFirst,
     null => switch (request.anime) {
-        true => JimakuAnimeFilter.anime,
-        false => JimakuAnimeFilter.liveAction,
-        null => JimakuAnimeFilter.either,
-      },
+      true => JimakuAnimeFilter.anime,
+      false => JimakuAnimeFilter.liveAction,
+      null => JimakuAnimeFilter.either,
+    },
   };
 }
 
@@ -227,8 +255,9 @@ JimakuAnimeFilter _animeFilterFor(VideoSubtitleSearchRequest request) {
 /// 种类只认正面证据：`flags.movie` 为真、或 TMDB id 带 `movie:` / `tv:` 号段。
 /// `flags.movie` 为假**不**等于剧集——条目没被编辑标记过的电影同样是假。
 SubtitleWorkClaim jimakuEntryWorkClaim(JimakuEntry entry) {
-  final RegExpMatch? tmdb = RegExp(r'^(movie|tv):(\d+)$')
-      .firstMatch(entry.tmdbId?.trim().toLowerCase() ?? '');
+  final RegExpMatch? tmdb = RegExp(
+    r'^(movie|tv):(\d+)$',
+  ).firstMatch(entry.tmdbId?.trim().toLowerCase() ?? '');
   final VideoMetadataMediaKind? tmdbKind = switch (tmdb?.group(1)) {
     'movie' => VideoMetadataMediaKind.movie,
     'tv' => VideoMetadataMediaKind.tv,
@@ -297,9 +326,10 @@ ExternalProviderFailure _jimakuFailure(String operation, Object error) {
       401 => ExternalProviderFailureKind.unauthorized,
       403 => ExternalProviderFailureKind.forbidden,
       429 => ExternalProviderFailureKind.rateLimited,
-      _ => status == null
-          ? ExternalProviderFailureKind.invalidResponse
-          : ExternalProviderFailureKind.unavailable,
+      _ =>
+        status == null
+            ? ExternalProviderFailureKind.invalidResponse
+            : ExternalProviderFailureKind.unavailable,
     },
     message: status == null
         ? 'Jimaku returned an invalid response'

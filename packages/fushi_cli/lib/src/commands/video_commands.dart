@@ -4,6 +4,7 @@ import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show videoSettingsOpsCommands;
 import 'video_player_commands.dart';
 import 'video_subtitle_commands.dart';
+import 'video_subtitle_fetch_commands.dart';
 
 /// video 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_video_routes.dart`）：
 /// 视频库刮削（作品列表 / 重刮 / 回答待确认 / 手动候选 / 手动指定身份）、视频发现
@@ -91,6 +92,7 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
       ),
       ...videoPlayerCommands,
       ...videoSubtitleCommands,
+      ...videoSubtitleFetchCommands,
       ...videoSettingsOpsCommands,
     ],
   ),
