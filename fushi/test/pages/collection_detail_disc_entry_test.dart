@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -37,13 +38,19 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<void> addMember(String uid, String path, {int? playedAt}) async {
+  Future<void> addMember(
+    String uid,
+    String path, {
+    int? playedAt,
+    int positionMs = 0,
+  }) async {
     await db.upsertVideoBook(
       VideoBooksCompanion(
         bookUid: Value(uid),
         title: Value(uid),
         videoPath: Value(path),
         lastPlayedAt: Value(playedAt),
+        lastPositionMs: Value(positionMs),
       ),
     );
     await db.addToCollection(collectionId, MediaKind.video, uid);
@@ -112,11 +119,8 @@ void main() {
       find.byKey(const ValueKey<String>('collection-disc-choose')),
       findsOneWidget,
     );
-    // 选集标题上方那排描边按钮已删除。
-    expect(
-      find.byKey(ValueKey<String>('bluray-menu-${p.join('/box', 'Disc 1')}')),
-      findsNothing,
-    );
+    // 选集标题上方那排「进入原盘菜单 · 盘名」描边按钮已删除。
+    expect(find.text('${t.video_disc_open_menu} · Disc 1'), findsNothing);
 
     final Finder mainTitle = find.byKey(
       const ValueKey<String>('collection-disc-main-title'),
@@ -131,13 +135,19 @@ void main() {
     WidgetTester tester,
   ) async {
     useSurface(tester);
-    await addMember('d1', mpls('Disc 1'), playedAt: 100);
-    await tester.runAsync(
-      () => db.updateVideoBookPosition('d1', 754000, playedAt: 100),
-    );
+    await addMember('d1', mpls('Disc 1'), playedAt: 100, positionMs: 754000);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
-    expect(find.text(t.video_disc_continue_at(time: '12:34')), findsOneWidget);
+    // 窄 hero 下次按钮是只露图标的 tonal 钮（文案进 tooltip），按组件读文案。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is MediaDetailSecondaryButton &&
+            w.buttonKey == const ValueKey<String>('collection-disc-continue') &&
+            w.label == t.video_disc_continue_at(time: '12:34'),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('collection-disc-choose')),
       findsNothing,
