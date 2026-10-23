@@ -161,8 +161,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
   // `.dock` / `.y` 分开存：两颗球可以同时在。
   'floating_ball.system_dock',
+  // bool：应用外悬浮球菜单里有没有「打开 Fushi」，默认 true。
+  'floating_ball.system_open_app',
   'floating_ball.system_y',
-  // bool：Android 应用外悬浮球收起态点球 = 查剪贴板、长按展开，默认 false。
+  // String：Android 应用外悬浮球收起态点一下做什么（FloatingBallTapAction：
+  // '' 展开 / clipboard / screen_ocr），非展开时长按才展开。没写过时沿用下面的旧键。
+  'floating_ball.tap_action',
+  // bool（旧，只读作迁移）：收起态点球 = 查剪贴板，已由 tap_action 取代。
   'floating_ball.tap_clipboard',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
@@ -452,6 +457,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // bool：截屏识字 / 拍照查词制卡带所点文本块的截图（默认 true）。
+  'screen_ocr.card_image',
+  // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
+  'screen_ocr.keep_capture_session',
   // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
   // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
   'shelf_collection_layout',

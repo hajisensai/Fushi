@@ -453,7 +453,29 @@ class GlobalLookupController {
             triggerSelectionLookup(source: 'hotkey'),
         // 相反的取舍：不取任何文本，把主窗唤到前台并落在查词页上。
         ShortcutAction.globalExternalOpenLookupPage: openLookupPageInMainWindow,
+        // 截屏识字：执行体在悬浮球宿主（与桌面应用外球的同名按钮共用）。
+        ShortcutAction.globalExternalScreenOcr: triggerScreenOcr,
       };
+
+  /// 桌面截屏识字的执行体，由常驻的 `AppFloatingBallHost` 装上 / 卸下（截屏、冻结
+  /// 层、点字查词的整套状态都在那边，与应用外悬浮球的「截屏识字」按钮同一条路径）。
+  /// 本控制器只负责把 [ShortcutAction.globalExternalScreenOcr] 的 OS 热键接过去。
+  Future<void> Function()? screenOcrHandler;
+
+  /// [ShortcutAction.globalExternalScreenOcr] 的执行体。宿主还没挂上（不该发生：
+  /// 它挂在 app 根上）时记一条错误日志而不是静默吞键。
+  Future<void> triggerScreenOcr() async {
+    final Future<void> Function()? handler = screenOcrHandler;
+    if (handler == null) {
+      ErrorLogService.instance.log(
+        'GlobalLookupController.screenOcr',
+        StateError('screen OCR hotkey pressed but no host is mounted'),
+        StackTrace.current,
+      );
+      return;
+    }
+    await handler();
+  }
 
   /// TODO-1066 — (un)registers the OS-level hotkeys from the current
   /// [_osHotKeyActions] bindings in the registry. Unregisters everything

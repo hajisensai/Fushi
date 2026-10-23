@@ -232,6 +232,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           sourceCharIndex: _sourceCharIndex,
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
+          cardImage: _sourceBlock?.cardImage,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),

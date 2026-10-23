@@ -598,6 +598,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Favorite current sentence': _kFloatingBallSceneButtons,
   'floatingBall/Screenshot': _kFloatingBallSceneButtons,
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
+  // 截屏识字制卡带图：生效点是制卡那一刻（词典弹窗 mixin / 覆盖窗委托读偏好、按截图
+  // 裁卡图），设置页里没有制卡面。裁图与通道载荷由专项测试钉住。
+  'floatingBall/Add screenshot to cards':
+      'test/floating_ball/screen_ocr_card_image_test.dart + '
+      'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。

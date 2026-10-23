@@ -518,6 +518,11 @@ class ShortcutDefaults {
     ShortcutAction.globalExternalOpenLookupPage: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
+    // 「截屏识字」：默认 Ctrl+Alt+O（O = OCR），与同 scope 的 D / F 不撞；macOS 表
+    // 同样 Ctrl→Meta，移动端整个 scope 为空。
+    ShortcutAction.globalExternalScreenOcr: _kb([
+      _key(LogicalKeyboardKey.keyO, {ModifierKey.ctrl, ModifierKey.alt}),
+    ]),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
     // 语义（Ctrl+滚轮是缩放、Shift+滚轮是横向滚动，都不能占）。dictionaryPopup 是独立

@@ -14,6 +14,8 @@ import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
+    show OverlayMiningHandler;
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -1296,6 +1298,42 @@ void main() {
         expect(prefs.floatingBallSystem, isTrue, reason: '两颗球的开关互不影响');
       });
 
+      testWidgets('BUG-3663 本场景按钮全取消（应用内球不画）：应用外球不让位；勾回按钮再让位', (
+        WidgetTester tester,
+      ) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        expect(yields(), <bool>[true]);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallButtons(
+            FloatingBallScope.general,
+            const <String>[],
+          );
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(ball(), findsNothing);
+        expect(
+          yields(),
+          <bool>[true, false],
+          reason: '应用内一颗球都不画时应用外球还让位 = Fushi 里一颗球都没有',
+        );
+        expect(prefs.floatingBallInApp, isTrue, reason: '不动开关');
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallButtons(
+            FloatingBallScope.general,
+            const <String>['lookup'],
+          );
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(ball(), findsOneWidget);
+        expect(yields(), <bool>[true, false, true]);
+      });
+
       testWidgets('用户关掉应用外球：前后台切换不会把它打开', (WidgetTester tester) async {
         mockNative(tester);
         clearNative(tester);
@@ -1560,6 +1598,8 @@ void main() {
             const Rect.fromLTRB(2220, 200, 2320, 250),
           );
           expect(called('stopScreenOcr'), isFalse, reason: '查词时冻结层留着');
+          // 反馈 Gz7z6Y6Mbr：制卡走带截图卡图的委托，而不是默认的无图路径。
+          expect(call.miningHandler, isNotNull);
         });
 
         testWidgets('点在字外：关冻结层并收起查词卡；之后的点击不再查词', (WidgetTester tester) async {
@@ -1746,10 +1786,12 @@ class _LookupTextCall {
     this.anchorScreenRect,
     this.physicalPlacement, {
     this.sentence = '',
+    this.miningHandler,
   });
 
   final String text;
   final String sentence;
+  final OverlayMiningHandler? miningHandler;
   final Rect? anchorScreenRect;
   final GlobalLookupPhysicalPlacement? physicalPlacement;
 }
@@ -1772,6 +1814,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
     String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
+    OverlayMiningHandler? miningHandler,
   }) async {
     log.add('lookupText');
     lookups.add(
@@ -1780,6 +1823,7 @@ class _RecordingActionTarget extends DesktopSystemBallActionTarget {
         anchorScreenRect,
         physicalPlacement,
         sentence: sentence,
+        miningHandler: miningHandler,
       ),
     );
     return true;
