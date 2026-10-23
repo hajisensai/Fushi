@@ -767,8 +767,9 @@ const String _notOverrideTitleSql =
 ///   enforced FK to `profiles` never blocks the sweep). 例外：[stripSrs] 为 false
 ///   时保留拥有 SRS 数据的 `profiles` 行（只剩名字与 uid——子表照删），SRS 行按
 ///   `profiles.uid` 归属，没有这几行恢复端就无从归位（见 [BackupCategory.srs]）。
-/// - [stripSrs]        : 删掉副本里老形态的 SRS 表（`srs` 类别未勾，或 SRS 另以 `srs.db`
-///   快照随包）。新形态副本里本来就没有这些表，是空操作。
+/// - [stripSrs]        : `srs` 类别未勾（不保留 SRS 归属档案；副本里老形态的 SRS 表删掉）。
+/// - [dropLegacySrs]   : 删掉副本里老形态的 SRS 表（[stripSrs]，或 SRS 另以 `srs.db` 快照随包）。
+///   新形态副本里本来就没有这些表，是空操作。默认随 [stripSrs]。
 /// - [keepSrsProfileUids]: [stripProfiles] 且不 [stripSrs] 时要留下的 SRS 归属档案 uid；null =
 ///   从副本里老形态的 SRS 表读（SRS 仍在主库里的老形态）。
 ///
@@ -781,6 +782,7 @@ Future<void> _stripExcludedDataCategories(
   required bool stripSettings,
   required bool stripProfiles,
   required bool stripSrs,
+  bool? dropLegacySrs,
   Set<String>? keepSrsProfileUids,
 }) async {
   final FushiDatabase db = FushiDatabase(dbDirectory);
@@ -804,7 +806,7 @@ Future<void> _stripExcludedDataCategories(
     final Set<String> keepUids = stripProfiles && !stripSrs
         ? (keepSrsProfileUids ?? await srsProfileUids(db))
         : const <String>{};
-    if (stripSrs) await dropLegacySrsTables(db);
+    if (dropLegacySrs ?? stripSrs) await dropLegacySrsTables(db);
     if (stripProfiles) {
       for (final String table in _profilesLayerTablesChildFirst) {
         if (table == 'profiles' && !stripSrs) {
@@ -1475,9 +1477,10 @@ class BackupService {
           stripStatistics: !includeStatistics,
           stripSettings: !includeSettings,
           stripProfiles: !includeProfiles,
-          // 未勾复习：SRS 档案不必保留（[srsProfileUidSet] 不用）；勾了且有快照：按 srs.db 的
-          // uid 保留档案，同时删掉副本里的老形态残表。
-          stripSrs: stripLegacySrs,
+          // 勾了复习：按 srs.db（或副本里老表）的 uid 保留 SRS 归属档案；有快照时副本里的
+          // 老形态残表一并删掉。
+          stripSrs: !includeSrs,
+          dropLegacySrs: stripLegacySrs,
           keepSrsProfileUids: srsProfileUidSet,
         );
       }
