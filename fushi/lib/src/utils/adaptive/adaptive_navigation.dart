@@ -56,6 +56,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
+part 'nav_rail/apple_sidebar_tabs.part.dart';
+
 class AdaptiveNavItem {
   final IconData icon;
   final IconData? selectedIcon;

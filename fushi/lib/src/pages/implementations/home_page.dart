@@ -1871,46 +1871,124 @@ class _HomePageState extends BasePageState<HomePage>
         // NavRailContentSync 与 buildBody），免得它们每帧重排；可见内容照常
         // 随 rail 重排，否则右侧贴边内容整段过渡被裁、结束时弹回（BUG-3447）。
         child: NavRailContentSync(
-          child: Row(
-            children: [
-              // Each rail destination is its own gamepad/keyboard focus target,
-              // so the app focus ring hugs the single selected item; D-pad
-              // Up/Down steps between them and Left/Right leaves to the content.
-              FocusTraversalGroup(
-                child: ValueListenableBuilder<bool?>(
-                  valueListenable: appModel.navRailExpandedNotifier,
-                  builder: (BuildContext context, bool? userExpanded, _) {
-                    // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
-                    // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
-                    // 抽屉）。玻璃设计系统恒按尺寸档。
-                    final bool extended = adaptiveNavRailExtended(
-                      context,
-                      sizeClass: sizeClass,
-                      userExpanded: userExpanded,
-                    );
-                    return adaptiveNavRail(
-                      context: context,
-                      currentIndex: visualIndex,
-                      onTap: selectVisual,
-                      items: displayItems,
-                      leading: const NavRailBrandButton(),
-                      extended: extended,
-                      onToggleExtended: () =>
-                          unawaited(appModel.setNavRailExpanded(!extended)),
-                    );
-                  },
+          child: isGlassDesign(context) && sizeClass == WindowSizeClass.expanded
+              ? _appleSidebarShell(
+                  tabs: tabs,
+                  reversed: reversed,
+                  displayItems: displayItems,
+                  visualIndex: visualIndex,
+                  selectVisual: selectVisual,
+                )
+              : Row(
+                  children: [
+                    // Each rail destination is its own gamepad/keyboard focus target,
+                    // so the app focus ring hugs the single selected item; D-pad
+                    // Up/Down steps between them and Left/Right leaves to the content.
+                    FocusTraversalGroup(
+                      child: ValueListenableBuilder<bool?>(
+                        valueListenable: appModel.navRailExpandedNotifier,
+                        builder: (BuildContext context, bool? userExpanded, _) {
+                          // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
+                          // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
+                          // 抽屉）。玻璃设计系统恒按尺寸档。
+                          final bool extended = adaptiveNavRailExtended(
+                            context,
+                            sizeClass: sizeClass,
+                            userExpanded: userExpanded,
+                          );
+                          return adaptiveNavRail(
+                            context: context,
+                            currentIndex: visualIndex,
+                            onTap: selectVisual,
+                            items: displayItems,
+                            leading: const NavRailBrandButton(),
+                            extended: extended,
+                            onToggleExtended: () => unawaited(
+                              appModel.setNavRailExpanded(!extended),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    Expanded(child: _homeContentPane()),
+                  ],
                 ),
-              ),
-              Expanded(
-                child: _GlassContentSurface(
-                  child: _withAppleScrollChrome(
-                    FocusTraversalGroup(child: _bodyWithMiniBar()),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
+      ),
+    );
+  }
+
+  /// 宽屏首页的内容区（rail / 侧栏右边那一块）。
+  Widget _homeContentPane() => _GlassContentSurface(
+    child: _withAppleScrollChrome(
+      FocusTraversalGroup(child: _bodyWithMiniBar()),
+    ),
+  );
+
+  /// Apple 设计系统宽窗口：侧栏 ↔ 顶部标签栏外壳（[AppleSidebarTabsShell]）。
+  /// 分组按模块性质：媒体库（首页 + 各库页 + 网页）/ 工具（浏览、查词、复习）/
+  /// 底部钉设置。收成标签栏 = 用户把 rail 记成「收起」（与 MD3 rail 的菜单钮
+  /// 同一个偏好，见 [adaptiveAppleTabBarMode]）。
+  Widget _appleSidebarShell({
+    required List<HomeTab> tabs,
+    required bool reversed,
+    required List<AdaptiveNavItem> displayItems,
+    required int visualIndex,
+    required ValueChanged<int> selectVisual,
+  }) {
+    const Set<HomeTab> tools = <HomeTab>{
+      HomeTab.browse,
+      HomeTab.dictionaries,
+      HomeTab.srs,
+    };
+    final List<int> library = <int>[];
+    final List<int> toolIndices = <int>[];
+    final List<int> footer = <int>[];
+    for (int i = 0; i < displayItems.length; i++) {
+      final HomeTab tab = homeTabForVisualIndex(
+        tabs: tabs,
+        visualIndex: i,
+        reversed: reversed,
+      );
+      if (tab == HomeTab.settings) {
+        footer.add(i);
+      } else if (tools.contains(tab)) {
+        toolIndices.add(i);
+      } else {
+        library.add(i);
+      }
+    }
+    return FocusTraversalGroup(
+      child: ValueListenableBuilder<bool?>(
+        valueListenable: appModel.navRailExpandedNotifier,
+        builder: (BuildContext context, bool? userExpanded, _) {
+          final bool tabBar = adaptiveAppleTabBarMode(
+            context,
+            sizeClass: WindowSizeClass.expanded,
+            userExpanded: userExpanded,
+          );
+          return AppleSidebarTabsShell(
+            items: displayItems,
+            currentIndex: visualIndex,
+            onTap: selectVisual,
+            leading: const NavRailBrandButton(),
+            sections: <AppleSidebarSection>[
+              AppleSidebarSection(
+                title: t.nav_section_library,
+                indices: library,
+              ),
+              if (toolIndices.isNotEmpty)
+                AppleSidebarSection(
+                  title: t.nav_section_tools,
+                  indices: toolIndices,
+                ),
+            ],
+            footer: footer,
+            tabBar: tabBar,
+            onToggle: () => unawaited(appModel.setNavRailExpanded(tabBar)),
+            child: _homeContentPane(),
+          );
+        },
       ),
     );
   }
