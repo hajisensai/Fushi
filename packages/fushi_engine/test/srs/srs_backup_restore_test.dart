@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
@@ -16,6 +15,8 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000b1';
 
@@ -26,7 +27,6 @@ void main() {
   int t = DateTime.utc(2026, 10, 17, 9).millisecondsSinceEpoch;
   late SrsMemoryDir dir;
   late Directory tmp;
-  final List<FushiDatabase> dbs = <FushiDatabase>[];
 
   setUp(() async {
     t = DateTime.utc(2026, 10, 17, 9).millisecondsSinceEpoch;
@@ -34,18 +34,14 @@ void main() {
     tmp = await Directory.systemTemp.createTemp('srs_backup_test_');
   });
   tearDown(() async {
-    for (final FushiDatabase db in dbs) {
-      await db.close();
-    }
-    dbs.clear();
     await tmp.delete(recursive: true);
   });
 
   Future<SrsDbStore> device(String id, {String profile = kProfile}) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    dbs.add(db);
+    final SrsStorage srsStorage = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: profile,
       deviceId: id,
       engine: const SrsFakeEngine(),

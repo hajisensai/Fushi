@@ -1,6 +1,5 @@
 // 主库 SRS 表 → srs.db 的一次性搬迁（docs/specs/2026-10-23-srs-rust-store.md §3）。
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
@@ -12,6 +11,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
+import 'support/srs_test_storage.dart';
 import 'apkg/srs_apkg_import_test.dart'
     show
         crtSecs,
@@ -76,9 +77,12 @@ void main() {
   late FushiDatabase db;
   late SrsCore core;
 
-  setUp(() {
+  setUp(() async {
     tmp = Directory.systemTemp.createTempSync('srs_legacy_mig_');
     db = FushiDatabase.forTesting(NativeDatabase.memory());
+    for (final String ddl in kLegacySrsTableDdl.values) {
+      await db.customStatement(ddl);
+    }
     core = SrsCore.open('${tmp.path}${Platform.pathSeparator}srs.db');
   });
   tearDown(() async {
@@ -105,8 +109,11 @@ void main() {
   });
 
   test('copies every row byte-for-byte, then drops the old tables', () async {
+    // 先在一份新的 srs.db 上造数据，再抄进主库的旧表形态。
+    final SrsStorage gen = await openTestSrsStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
+      db: gen.db,
+      core: gen.core,
       profileUid: '01928c3e-0000-7000-8000-00000000a11a',
       deviceId: 'mig',
       engine: const FakeFsrsEngine(),
@@ -120,6 +127,7 @@ void main() {
       zstdDecompress: (Uint8List b) => null,
     );
     await store.setFlag((await store.allCardRows()).first.id, 2);
+    await copySrsRowsToLegacyTables(gen.db, db);
 
     final Map<String, List<Map<String, Object?>>> before =
         <String, List<Map<String, Object?>>>{};

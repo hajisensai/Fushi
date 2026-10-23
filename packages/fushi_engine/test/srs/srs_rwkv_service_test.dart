@@ -7,8 +7,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -22,6 +20,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDay = 86400000;
@@ -89,8 +89,10 @@ class _Fixture {
     final List<int> clock = <int>[
       DateTime.utc(2026, 3, 1, 12).millisecondsSinceEpoch,
     ];
+    final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: FushiDatabase.forTesting(NativeDatabase.memory()),
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),

@@ -6,14 +6,13 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:test/test.dart';
 
 import '../support/srs_query_counter.dart';
 import 'apkg_test_support.dart';
+import '../support/srs_test_storage.dart';
 import 'srs_apkg_import_test.dart'
     show
         crtSecs,
@@ -88,13 +87,12 @@ void main() {
       final CountingInterceptor counter = CountingInterceptor();
       final Uint8List bytes = benchApkg(notes);
       final Directory tmp = Directory.systemTemp.createTempSync('srs_bench_');
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase.createInBackground(
-          File('${tmp.path}/b.db'),
-        ).interceptWith(counter),
+      final TestSrs srs = await openTestSrsAt(
+        '${tmp.path}/srs.db',
+        interceptor: counter,
+        inline: false,
       );
       addTearDown(() async {
-        await db.close();
         try {
           tmp.deleteSync(recursive: true);
         } on FileSystemException {
@@ -103,7 +101,8 @@ void main() {
       });
       const String uid = '01928c3e-0000-7000-8000-0000000be4c5';
       final SrsDbStore store = await SrsDbStore.open(
-        db: db,
+        db: srs.db,
+        core: srs.core,
         profileUid: uid,
         deviceId: 'bench',
         engine: const FakeFsrsEngine(),
