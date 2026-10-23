@@ -413,6 +413,46 @@ Rect anchorPopupTopLeft({
   return Rect.fromLTWH(left, top, width, height);
 }
 
+/// BUG-3663：所在路由「是否栈顶」变化的探针。
+///
+/// 查词浮层挂在根 Overlay、跨路由生存（[DictionaryPageMixin.lookupOwnerRoute]），它
+/// 读路由栈顶状态的那一刻只在自己 build 时；而别的路由压上来 / 退下去时没有任何东西
+/// 让那个 entry 重建。把本探针放进宿主路由的子树：它经 `ModalRoute.isCurrentOf`
+/// 订阅路由作用域，栈顶状态一变 [onChanged] 就被调用，宿主据此刷新浮层 entry。
+///
+/// [onChanged] 在依赖变化的 build 阶段触发，宿主须把实际刷新排到帧后（与浮层同步的
+/// 既有 post-frame 收口一致），不能在回调里同步 setState。[child] 原样透传、不重建。
+class LookupOwnerRouteProbe extends StatefulWidget {
+  const LookupOwnerRouteProbe({
+    required this.onChanged,
+    required this.child,
+    super.key,
+  });
+
+  final VoidCallback onChanged;
+  final Widget child;
+
+  @override
+  State<LookupOwnerRouteProbe> createState() => _LookupOwnerRouteProbeState();
+}
+
+class _LookupOwnerRouteProbeState extends State<LookupOwnerRouteProbe> {
+  bool? _wasCurrent;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool? isCurrent = ModalRoute.isCurrentOf(context);
+    if (isCurrent == _wasCurrent) return;
+    final bool firstReport = _wasCurrent == null;
+    _wasCurrent = isCurrent;
+    if (!firstReport) widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 /// 查词浮层的整屏 dismiss barrier（点浮层外面关栈）这一帧要不要挂。
 ///
 /// 三个走**根 Overlay** 的表面（视频页 / 首页词典页 / texthooker）各写一份这条件，

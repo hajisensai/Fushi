@@ -7237,6 +7237,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  /// BUG-3663：查词浮层跟随的路由——窗口模式是本页路由，全屏期间是全屏路由（与键盘
+  /// 所有者同一口径，见 [_handleWindowsImeSpaceDown]）。别的路由（反馈 / 设置等整页、
+  /// 根导航上的对话框）压上来时它不再是栈顶，[DictionaryPageMixin] 据此把浮层停靠屏外、
+  /// 撤掉整屏 barrier；查词会话与「因查词暂停」原样保留，回到本页即复原。
+  @override
+  ModalRoute<Object?>? get lookupOwnerRoute {
+    if (!mounted) return null;
+    return _videoFullscreenActive
+        ? _videoFullscreenRoute
+        : ModalRoute.of(context);
+  }
+
+  /// [LookupOwnerRouteProbe] 回报宿主路由栈顶状态变了：帧后刷新根 Overlay 浮层 entry
+  /// （它只在自己 build 时读 [lookupOwnerRoute]）。探针回调发生在 build 阶段，不能同步
+  /// 刷新——与 [_buildVideoBody] 每帧的同步走同一个帧后收口。
+  void _onLookupOwnerRouteChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
+  }
+
   /// 把查词浮层栈同步到根 Overlay：栈非空且未插入则插入、栈空则移除、否则
   /// `markNeedsBuild` 刷新。在 [build] 的 post-frame 调，使根 Overlay 总是反映
   /// 当前栈（[DictionaryPageMixin] 的 push/pop 都走 `setState` → 重 build → 本同步）。
