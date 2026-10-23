@@ -22,6 +22,12 @@ library;
 /// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
 const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 
+/// 库页顶部页签的用户自定义顺序（反馈 ndQ5eXLcqp），后缀 = 页签栏的 orderKey
+/// （`video` / `book-library-view` / …），值是逗号分隔的页签 id（见
+/// `section_tab_order.dart`）。入口布局，与底栏模块顺序同族：设备本地，不进
+/// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
+const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -705,6 +711,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // （BUG-2816）与 app 漫画来源扫描（BUG-3574）共用（引擎 book_library_prune.dart）；
   // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
+  kSectionTabOrderPrefKeyPrefix,
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。
