@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "Không thể giải nén tệp",
   "custom_fonts_catalog_title": "Thư viện phông",
   "custom_fonts_download_failed": "Tải xuống thất bại",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "Đang tải…",
   "custom_fonts_drag_hint": "Kéo để sắp xếp thứ tự ưu tiên phông chữ",
   "custom_fonts_empty": "Chưa thêm phông chữ tùy chỉnh",

@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "아카이브 추출 실패",
   "custom_fonts_catalog_title": "글꼴 라이브러리",
   "custom_fonts_download_failed": "다운로드 실패",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "다운로드 중…",
   "custom_fonts_drag_hint": "드래그하여 글꼴 우선순위 변경",
   "custom_fonts_empty": "추가된 사용자 글꼴이 없습니다",

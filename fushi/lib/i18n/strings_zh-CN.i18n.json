@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "解压失败",
   "custom_fonts_catalog_title": "字体库",
   "custom_fonts_download_failed": "下载失败",
+  "custom_fonts_download_unreachable_hint": "连不上字体下载源。可在设置里的「网络代理」配置代理后重试，或直接导入已有的字体文件。",
   "custom_fonts_downloading": "正在下载…",
   "custom_fonts_drag_hint": "拖拽排列字体优先级",
   "custom_fonts_empty": "未添加自定义字体",

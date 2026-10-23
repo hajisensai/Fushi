@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "Failed to extract archive",
   "custom_fonts_catalog_title": "Font library",
   "custom_fonts_download_failed": "Download failed",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "Downloading...",
   "custom_fonts_drag_hint": "Drag to reorder font priority",
   "custom_fonts_empty": "No custom fonts added",

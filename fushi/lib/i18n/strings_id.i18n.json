@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "Gagal mengekstrak arsip",
   "custom_fonts_catalog_title": "Pustaka font",
   "custom_fonts_download_failed": "Unduhan gagal",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "Mengunduh…",
   "custom_fonts_drag_hint": "Seret untuk mengatur ulang prioritas font",
   "custom_fonts_empty": "Belum ada font kustom",

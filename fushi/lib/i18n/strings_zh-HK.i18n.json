@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "解壓失敗",
   "custom_fonts_catalog_title": "字型庫",
   "custom_fonts_download_failed": "下載失敗",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "正在下載…",
   "custom_fonts_drag_hint": "拖曳以調整字型優先順序",
   "custom_fonts_empty": "未添加自訂字型",

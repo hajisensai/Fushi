@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "فشل استخراج الأرشيف",
   "custom_fonts_catalog_title": "مكتبة الخطوط",
   "custom_fonts_download_failed": "فشل التنزيل",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "جارٍ التنزيل...",
   "custom_fonts_drag_hint": "اسحب لإعادة ترتيب أولوية الخطوط",
   "custom_fonts_empty": "لم تتم إضافة خطوط مخصصة",

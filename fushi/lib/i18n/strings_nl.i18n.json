@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "Archief kon niet worden uitgepakt",
   "custom_fonts_catalog_title": "Lettertypebibliotheek",
   "custom_fonts_download_failed": "Download mislukt",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "Downloaden...",
   "custom_fonts_drag_hint": "Sleep om letterpypeprioriteit te wijzigen",
   "custom_fonts_empty": "Geen aangepaste lettertypen toegevoegd",

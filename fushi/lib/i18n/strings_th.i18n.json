@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "แตกไฟล์ไม่สำเร็จ",
   "custom_fonts_catalog_title": "คลังฟอนต์",
   "custom_fonts_download_failed": "ดาวน์โหลดล้มเหลว",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "กำลังดาวน์โหลด…",
   "custom_fonts_drag_hint": "ลากเพื่อจัดเรียงลำดับฟอนต์",
   "custom_fonts_empty": "ไม่มีฟอนต์กำหนดเอง",

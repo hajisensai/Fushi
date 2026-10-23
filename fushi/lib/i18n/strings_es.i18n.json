@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "Error al extraer el archivo",
   "custom_fonts_catalog_title": "Biblioteca de fuentes",
   "custom_fonts_download_failed": "Error en la descarga",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "Descargando...",
   "custom_fonts_drag_hint": "Arrastra para reordenar la prioridad de fuentes",
   "custom_fonts_empty": "No se han añadido fuentes personalizadas",

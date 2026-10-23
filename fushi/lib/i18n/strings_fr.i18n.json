@@ -1601,6 +1601,7 @@
   "custom_fonts_archive_error": "Échec de l'extraction de l'archive",
   "custom_fonts_catalog_title": "Bibliothèque de polices",
   "custom_fonts_download_failed": "Échec du téléchargement",
+  "custom_fonts_download_unreachable_hint": "Couldn't reach the font download servers. Set up a network proxy in settings (Network proxy) and try again, or import a font file you already have.",
   "custom_fonts_downloading": "Téléchargement...",
   "custom_fonts_drag_hint": "Glisser pour réorganiser la priorité des polices",
   "custom_fonts_empty": "Aucune police personnalisée ajoutée",
