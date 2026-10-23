@@ -837,6 +837,32 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectSyncFavoritesEnabled(value);
             },
           ),
+          // 反馈 5nWEirdCs2：上面两项（以及书/视频进度、合集等）只在「一轮同步」里
+          // 与对端合并，而轮次由同步分类的「自动同步」开关（默认关）驱动。此前互联页
+          // 对此一字不提——用户开了互联、配了对，看到「双向合并、默认开启」，却永远
+          // 等不到合并。这里不镜像开关（2026-09-06 拍板：互联页对别处的设置只留指路
+          // 行），而是一行实时状态 + 跳到同步分类并定位到那个开关。
+          SettingsNavigationItem(
+            id: 'interconnect.auto_sync_entry',
+            title: t.interconnect_auto_sync_entry,
+            subtitleBuilder: (SettingsContext ctx) =>
+                _syncSettings(ctx).autoSync
+                ? t.interconnect_auto_sync_entry_on
+                : t.interconnect_auto_sync_entry_off,
+            icon: FushiIcons.sync,
+            onTap: (SettingsContext ctx) async {
+              SettingsSearchReveal.pendingItemId = 'sync.auto_sync';
+              await pushSettingsPage(
+                ctx,
+                (_) => SettingsDetailPage(
+                  destination: buildSyncBackupDestination(),
+                ),
+              );
+              // 在同步分类里改了开关，回来要重算本行的实时状态（ModalRoute 缓存页面
+              // 内容，弹回来不会自己重算 resolveSubtitle，BUG-2586 同款）。
+              ctx.refresh();
+            },
+          ),
         ],
       ),
       // 交给已配对设备：本机把某类工作整个甩给对端主机去做。两项都只有 client 角色

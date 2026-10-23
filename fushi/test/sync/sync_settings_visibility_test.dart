@@ -503,10 +503,28 @@ void main() {
         expect(dest.sections[2].visible, isNotNull);
         // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
         // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
+        // 反馈 5nWEirdCs2：两项只在「一轮同步」里合并，轮次由同步分类的「自动同步」
+        // （默认关）驱动——本区末尾一行实时状态 + 指路，不镜像开关。
         expect(idsOf(dest.sections[3]), <String>[
           'interconnect.share_statistics',
           'interconnect.share_favorites',
+          'interconnect.auto_sync_entry',
         ]);
+        final SettingsNavigationItem autoSyncEntry =
+            dest.sections[3].items.last as SettingsNavigationItem;
+        expect(autoSyncEntry.onTap, isNotNull, reason: '指路行必须能点进同步分类');
+        expect(
+          autoSyncEntry.subtitleBuilder,
+          isNotNull,
+          reason: '必须实时显示自动同步开/关，否则用户仍不知道为什么不合并',
+        );
+        // 被指的开关仍在同步分类里（指路行指向的不是空位）。
+        expect(
+          buildSyncBackupDestination().sections
+              .expand((SettingsSection s) => s.items)
+              .map((SettingsItem i) => i.id),
+          contains('sync.auto_sync'),
+        );
         expect(dest.sections[3].visible, isNotNull);
         expect(
           dest.sections[3].footer,
