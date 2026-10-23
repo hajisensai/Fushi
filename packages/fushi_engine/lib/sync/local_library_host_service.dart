@@ -19,6 +19,7 @@ import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show PlaylistEntry;
 import 'package:fushi_engine/media/video/strm_file.dart'

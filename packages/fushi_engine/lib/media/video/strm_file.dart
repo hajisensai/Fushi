@@ -11,6 +11,8 @@ library;
 
 import 'package:fushi_engine/media/video/anime_source_video_path.dart'
     show isAnimeSourceVideoPath;
+import 'package:fushi_engine/media/video/media_server_video_path.dart'
+    show isMediaServerVideoPath;
 
 /// `.strm` 扩展名（小写，不带点）。
 const String kStrmExtension = 'strm';
@@ -70,14 +72,16 @@ bool isNetworkStreamUrl(String url) {
 /// 判据的用途是「别把它当本地路径去碰文件系统」，宁可多认。
 ///
 /// 在线视频源入库集（[isAnimeSourceVideoPath]，`anime-source://`，起播时向扩展
-/// 取流）与来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，起播时经回环中继
-/// 取字节）同样没有本地文件，一并算在内——全仓唯一一份判据，
+/// 取流）、媒体服务器入库条目（[isMediaServerVideoPath]，`media-server://`，起播时
+/// 按服务器配置现建客户端取流）与来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，
+/// 起播时经回环中继取字节）同样没有本地文件，一并算在内——全仓唯一一份判据，
 /// `anime_source_video_path.dart` 只是转出它。`.strm` 不在其内：本地 `.strm` 是
 /// 磁盘上真实存在的文件（同目录 NFO / 海报 sidecar 照常可用），只是**没有媒体
 /// 字节**——需要媒体字节的门用 [lacksLocalMediaFile]。
 bool isNetworkOnlyVideoPath(String? path) {
   if (path == null) return false;
   if (isAnimeSourceVideoPath(path)) return true;
+  if (isMediaServerVideoPath(path)) return true;
   if (isSourceLibrarySftpVideoPath(path)) return true;
   final String trimmed = path.trim();
   final int sep = trimmed.indexOf('://');

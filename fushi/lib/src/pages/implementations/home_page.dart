@@ -105,6 +105,8 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_browse
     show MediaServerEntry;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show MediaServerVideoLibrary;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
@@ -3509,6 +3511,9 @@ class _HomePageState extends BasePageState<HomePage>
   Future<List<MediaServerEntry>> _loadMediaServerEntries() async {
     final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
     final List<MediaServerConfig> configs = await syncRepo.getMediaServers();
+    final MediaServerVideoLibrary library = MediaServerVideoLibrary(
+      database: appModelNoUpdate.database,
+    );
     return <MediaServerEntry>[
       for (final MediaServerConfig config in configs)
         MediaServerEntry(
@@ -3516,6 +3521,7 @@ class _HomePageState extends BasePageState<HomePage>
           accountName: config.accountName,
           routeUrls: config.routeUrls,
           onSwitchRoute: (String url) => _switchMediaServerRoute(config, url),
+          library: library,
         ),
     ];
   }
