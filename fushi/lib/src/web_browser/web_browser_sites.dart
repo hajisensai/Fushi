@@ -98,19 +98,55 @@ List<WebBrowserSite> addWebBrowserSite(
   return List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[...sites, site]);
 }
 
-/// 地址栏输入 → 可打开的 http(s) 地址。没写协议的补 https；不像网址返回 null。
+/// 地址栏输入 → 可打开的 http(s) 地址；不像网址返回 null（交给搜索引擎）。
+///
+/// - 写了 `http://` / `https://`：用户明说是网址，任何非空主机都直接打开——
+///   `http://localhost:55000/texthooker`、`http://nas:8080` 这类本机 / 局域网
+///   地址没有点号，旧判据「主机必须带点」把它们统统送去了搜索（5wWlKU_Rir）；
+/// - 没写协议：主机带点（域名 / IPv4）、`[IPv6]`，或 `localhost` 带端口 / 路径
+///   才算网址。回环与 IP 字面量补 `http`（本机服务几乎都不是 TLS，浏览器同
+///   口径），其余补 `https`。裸 `localhost` / 单个词仍按搜索处理。
 Uri? parseWebBrowserAddress(String input) {
-  String text = input.trim();
+  final String text = input.trim();
   if (text.isEmpty || text.contains(' ')) return null;
-  if (!RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(text)) {
-    text = 'https://$text';
+  final bool explicitScheme = RegExp(
+    r'^[a-zA-Z][a-zA-Z0-9+.-]*://',
+  ).hasMatch(text);
+  if (explicitScheme) {
+    final Uri? uri = Uri.tryParse(text);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    return uri.host.isEmpty ? null : uri;
   }
-  final Uri? uri = Uri.tryParse(text);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return null;
-  }
-  if (uri.host.isEmpty || !uri.host.contains('.')) return null;
-  return uri;
+  final Uri? probe = Uri.tryParse('http://$text');
+  if (probe == null || probe.host.isEmpty) return null;
+  final String host = probe.host;
+  final bool ipLiteral =
+      host.contains(':') || RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
+  final bool localhost =
+      host == 'localhost' &&
+      (probe.hasPort || text.length > 'localhost'.length);
+  if (!localhost && !ipLiteral && !host.contains('.')) return null;
+  return Uri.tryParse('${localhost || ipLiteral ? 'http' : 'https'}://$text');
+}
+
+/// 用 [next] 替换站点表里 URL 与 [previous] 相同的那一项（编辑站点）。
+/// 新 URL 与表里另一项撞了时丢掉被编辑的这项、保留原有那项，不出现重复。
+List<WebBrowserSite> replaceWebBrowserSite(
+  List<WebBrowserSite> sites,
+  WebBrowserSite previous,
+  WebBrowserSite next,
+) {
+  final String oldUrl = previous.url.toString();
+  final String newUrl = next.url.toString();
+  final bool collides =
+      newUrl != oldUrl &&
+      sites.any((WebBrowserSite s) => s.url.toString() == newUrl);
+  return List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[
+    for (final WebBrowserSite s in sites)
+      if (s.url.toString() != oldUrl) s else if (!collides) next,
+  ]);
 }
 
 /// 地址栏的搜索引擎（用户 2026-10-20：「搜索框不要用网址，要支持搜索引擎，并且

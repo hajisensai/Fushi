@@ -203,7 +203,16 @@ class LyricsPlayerCallbacks {
     this.onOpenIllustration,
     this.onReplayCue,
     this.onSwapSides,
+    this.onExitBook,
   });
+
+  /// 关掉歌词层并直接退出本书回书架，**不改**这本书记住的「歌词模式」——下次
+  /// 打开仍是歌词模式（每本书各记各的，见 `ReaderFushiSource.lyricsModeForBook`）。
+  ///
+  /// 非 null 时右上角 × 走它，另加一颗「书籍模式」键走 [onClose]（反馈
+  /// QvYpZODImz：× 原本只回正文，想退书还得再按一次返回，而且回正文那一下会把
+  /// 这本书记成书籍模式）。null = 维持旧形态（× 即 [onClose]）。
+  final VoidCallback? onExitBook;
 
   /// 宽屏左右整块互换（写偏好 `lyrics_panel_mirrored`）。null = 不显示该键。
   final VoidCallback? onSwapSides;

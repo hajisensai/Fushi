@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
@@ -25,7 +27,13 @@ void main() {
       final List<GameStreamLookupLayout> saved = <GameStreamLookupLayout>[];
       await _pumpPage(tester, onChanged: saved.add);
       expect(_lineHeight(tester), GameStreamLookupLayout.defaultLineHeight);
-      expect(_lineFontSize(tester), GameStreamLookupLayout.baseFontSize);
+      _expectLineFitted(tester);
+      // 反馈 eXmW0_Kjer：短台词放大到填满区域，而不是停在等比字号。
+      expect(
+        _lineFontSize(tester),
+        greaterThan(GameStreamLookupLayout.baseFontSize),
+      );
+      final double before = _lineFontSize(tester)!;
 
       await tester.drag(
         find.byKey(GameStreamPage.lineResizeHandleKey),
@@ -34,7 +42,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_lineHeight(tester), 280);
-      expect(_lineFontSize(tester), 28);
+      _expectLineFitted(tester);
+      expect(_lineFontSize(tester), greaterThan(before));
       expect(saved, const <GameStreamLookupLayout>[
         GameStreamLookupLayout(lineHeight: 280),
       ]);
@@ -52,7 +61,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(_lineHeight(tester), GameStreamLookupLayout.maxLineHeight);
-      expect(_lineFontSize(tester), GameStreamLookupLayout.maxFontSize);
+      _expectLineFitted(tester);
 
       await tester.drag(
         find.byKey(GameStreamPage.lineResizeHandleKey),
@@ -60,7 +69,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(_lineHeight(tester), GameStreamLookupLayout.minLineHeight);
-      expect(_lineFontSize(tester), GameStreamLookupLayout.minFontSize);
+      _expectLineFitted(tester);
       expect(saved.last.lineHeight, GameStreamLookupLayout.minLineHeight);
     });
 
@@ -136,7 +145,7 @@ void main() {
       );
       expect(_railWidth(tester), 520);
       expect(_lineHeight(tester), 210);
-      expect(_lineFontSize(tester), 21);
+      _expectLineFitted(tester);
     });
 
     testWidgets('handles have 48dp touch targets and resize cursors', (
@@ -307,8 +316,9 @@ void main() {
         expect(
           _videoHeight(tester) +
               8 +
-              const GameStreamLookupLayout(compactRailHeight: 420)
-                  .effectiveCompactRailHeight(shortBody),
+              const GameStreamLookupLayout(
+                compactRailHeight: 420,
+              ).effectiveCompactRailHeight(shortBody),
           closeTo(height, 0.01),
         );
 
@@ -320,8 +330,7 @@ void main() {
         await tester.pumpAndSettle();
         tester.takeException();
         expect(
-          saved.where((GameStreamLookupLayout l) =>
-              l.compactRailHeight != 420),
+          saved.where((GameStreamLookupLayout l) => l.compactRailHeight != 420),
           isEmpty,
         );
       });
@@ -441,6 +450,47 @@ void main() {
       );
     });
   });
+  group('fit-to-area line size (feedback eXmW0_Kjer)', () {
+    TextStyle style(double size) => TextStyle(fontSize: size, height: 1.25);
+
+    test('a short line grows past the proportional floor to fill the area', () {
+      final double size = gameStreamFitLineFontSize(
+        text: 'みたい',
+        styleFor: style,
+        width: 300,
+        height: 200,
+        floor: 14,
+      );
+      expect(size, greaterThan(14));
+      expect(size, lessThanOrEqualTo(GameStreamLookupLayout.maxFitFontSize));
+    });
+
+    test('the ceiling caps a tiny line in a huge area', () {
+      expect(
+        gameStreamFitLineFontSize(
+          text: 'あ',
+          styleFor: style,
+          width: 2000,
+          height: 2000,
+          floor: 14,
+        ),
+        GameStreamLookupLayout.maxFitFontSize,
+      );
+    });
+
+    test('a line that does not fit even at the floor keeps the floor', () {
+      expect(
+        gameStreamFitLineFontSize(
+          text: 'あ' * 400,
+          styleFor: style,
+          width: 200,
+          height: 60,
+          floor: 14,
+        ),
+        14,
+      );
+    });
+  });
 }
 
 Future<void> _pumpPage(
@@ -504,6 +554,30 @@ double _videoHeight(WidgetTester tester) =>
 
 double _railWidth(WidgetTester tester) =>
     tester.getSize(find.byKey(GameStreamPage.dictionaryKey)).width;
+
+/// The line is laid out at its fit-to-area size: never below the proportional
+/// floor, never above the fit ceiling, and the paragraph ends above the line
+/// area's bottom padding (the resize handle's reach).
+void _expectLineFitted(WidgetTester tester) {
+  final double area = _lineHeight(tester);
+  final double size = _lineFontSize(tester)!;
+  final double floor = GameStreamLookupLayout.fontSizeFor(area);
+  expect(size, greaterThanOrEqualTo(floor));
+  expect(
+    size,
+    lessThanOrEqualTo(math.max(floor, GameStreamLookupLayout.maxFitFontSize)),
+  );
+  final Rect text = tester.getRect(
+    find.byKey(GameStreamPage.transcriptTextKey),
+  );
+  final Rect box = tester.getRect(
+    find.ancestor(
+      of: find.byKey(GameStreamPage.transcriptKey),
+      matching: find.byType(SingleChildScrollView),
+    ),
+  );
+  expect(text.bottom, lessThanOrEqualTo(box.bottom - 16 + 0.01));
+}
 
 double? _lineFontSize(WidgetTester tester) {
   final InlineSpan span = tester

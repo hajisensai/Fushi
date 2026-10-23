@@ -50,6 +50,10 @@ void main() {
                         ],
                         identityOf: (ModuleId m) =>
                             (label: m.name, icon: Icons.circle),
+                        settingsIdentity: (
+                          label: 'settings',
+                          icon: Icons.settings,
+                        ),
                         onEnabledChanged: (ModuleId m, bool v) async {},
                       );
                     },
@@ -64,13 +68,14 @@ void main() {
     await tester.pump();
   }
 
-  List<String> visibleTitles(WidgetTester tester) {
+  List<String> visibleTitles(WidgetTester tester, {bool withSettings = false}) {
     final List<String> titles = <String>[];
-    for (final ModuleId m in shown) {
-      final Finder row = find.byKey(
-        ValueKey<String>('nav-module-row-${m.name}'),
-      );
-      titles.add('${tester.getTopLeft(row).dy.round()}:${m.name}');
+    for (final String name in <String>[
+      for (final ModuleId m in shown) m.name,
+      if (withSettings) 'settings',
+    ]) {
+      final Finder row = find.byKey(ValueKey<String>('nav-module-row-$name'));
+      titles.add('${tester.getTopLeft(row).dy.round()}:$name');
     }
     titles.sort(
       (String a, String b) => int.parse(
@@ -107,7 +112,7 @@ void main() {
     appModel = _OrderAppModel(<ModuleId>[...shown]);
   });
 
-  testWidgets('首行上移 / 末行下移禁用，其余可用', (WidgetTester tester) async {
+  testWidgets('首行上移 / 末行（设置）下移禁用，其余可用', (WidgetTester tester) async {
     await pumpList(tester);
     bool enabledOf(String key) => tester
         .widget<FushiIconButton>(find.byKey(ValueKey<String>(key)))
@@ -117,7 +122,42 @@ void main() {
     expect(enabledOf('nav-module-up-books'), isTrue);
     expect(enabledOf('nav-module-down-books'), isTrue);
     expect(enabledOf('nav-module-up-video'), isTrue);
-    expect(enabledOf('nav-module-down-video'), isFalse);
+    expect(enabledOf('nav-module-down-video'), isTrue);
+    // 反馈 TqJ_xq3UlO：设置默认在最后，也是一行可移动的条目，但没有开关。
+    expect(enabledOf('nav-module-up-settings'), isTrue);
+    expect(enabledOf('nav-module-down-settings'), isFalse);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('nav-module-row-settings')),
+        matching: find.byType(FushiSwitch),
+      ),
+      findsNothing,
+      reason: '设置恒在，不能关',
+    );
+  });
+
+  testWidgets('设置行上移：位置落库成 settingsSlot，模块顺序不变', (WidgetTester tester) async {
+    await pumpList(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('nav-module-up-settings')),
+    );
+    await tester.pump();
+    expect(appModel.saved.single.where(shown.contains).toList(), shown);
+    // 设置挪到 video 前面：只与显示的行对调，其余（未显示）模块的位置不动，
+    // 所以设置落在完整顺序的第 2 位（home、books 之后）。
+    expect(appModel.savedSlots.single, 2);
+    expect(visibleTitles(tester, withSettings: true), <String>[
+      'home',
+      'books',
+      'settings',
+      'video',
+    ]);
+    // 再按「下移」移回最后。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('nav-module-down-settings')),
+    );
+    await tester.pump();
+    expect(appModel.savedSlots.last, ModuleId.values.length, reason: '回到最后');
   });
 
   testWidgets('上移 / 下移按钮命中区不小于 48dp', (WidgetTester tester) async {
@@ -197,7 +237,8 @@ void main() {
 
     expect(actionsOf(ModuleId.home), <String>{t.move_down});
     expect(actionsOf(ModuleId.books), <String>{t.move_up, t.move_down});
-    expect(actionsOf(ModuleId.video), <String>{t.move_up});
+    // video 下面还有「设置」那一行，所以两个方向都有。
+    expect(actionsOf(ModuleId.video), <String>{t.move_up, t.move_down});
 
     // 真触发「上移」：books 与 home 对调。
     final SemanticsNode books = tester.getSemantics(
@@ -251,7 +292,9 @@ class _OrderAppModel extends AppModel {
   _OrderAppModel(this._order) : super(testPlatformServices());
 
   List<ModuleId> _order;
+  int? _slot;
   final List<List<ModuleId>> saved = <List<ModuleId>>[];
+  final List<int?> savedSlots = <int?>[];
   bool failNextSave = false;
   VoidCallback rebuild = () {};
 
@@ -259,20 +302,28 @@ class _OrderAppModel extends AppModel {
   List<ModuleId> get moduleOrder => orderModules(_order);
 
   @override
-  ModuleVisibility get moduleVisibility =>
-      ModuleVisibility(ModuleId.values.toSet(), order: _order);
+  ModuleVisibility get moduleVisibility => ModuleVisibility(
+    ModuleId.values.toSet(),
+    order: _order,
+    settingsSlot: _slot,
+  );
 
   @override
   bool moduleEnabled(ModuleId module) => true;
 
   @override
-  Future<void> setModuleOrder(List<ModuleId> order) async {
+  Future<void> setModuleOrder(
+    List<ModuleId> order, {
+    required int? settingsSlot,
+  }) async {
     if (failNextSave) {
       failNextSave = false;
       throw StateError('disk full');
     }
     saved.add(order);
+    savedSlots.add(settingsSlot);
     _order = order;
+    _slot = settingsSlot;
     rebuild();
   }
 }

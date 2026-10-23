@@ -156,8 +156,9 @@ export 'package:fushi/src/models/home_tab.dart';
 /// 顺序是**用户自己排的**（设置 → 外观 → 功能模块 拖拽排序，存在
 /// [ModuleVisibility.order]）；没排过时按 [ModuleId] 枚举顺序，即首页 → 书架 →
 /// 漫画 → 视频 → 游戏 → 浏览 → 查词 → 浏览器扩展（与排序功能上线前写死的顺序
-/// 一致，升级上来不变）。被关掉或平台上不存在的模块跳过但保留位置意愿；设置恒在
-/// 且恒在最后，是全部模块关光后的安全回退面（故 [ModuleId] 里没有它，也不参与排序）。
+/// 一致，升级上来不变）。被关掉或平台上不存在的模块跳过但保留位置意愿；设置恒在、
+/// 恰好一次，是全部模块关光后的安全回退面（故 [ModuleId] 里没有它）。设置默认在
+/// 最后，用户可以把它拖到别处（[ModuleVisibility.settingsSlot]，反馈 TqJ_xq3UlO）。
 ///
 /// 形参是**一个** [ModuleVisibility] 而不是一串 bool：此前这里收七个具名 bool，
 /// 调用方（`_activeTabs()` 与 main.dart 的 macOS 根侧栏）各手抄一份实参表，两份
@@ -165,18 +166,23 @@ export 'package:fushi/src/models/home_tab.dart';
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
 /// 一次，顺序也随快照一起走，所有调用点不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-  for (final ModuleId module in visibility.ordered)
-    if (homeTabOfModule(module) case final HomeTab tab
+  for (final ModuleId? module in visibility.navOrder)
+    if (module == null)
+      HomeTab.settings
+    else if (homeTabOfModule(module) case final HomeTab tab
         when visibility.isEnabled(module))
       tab,
-  HomeTab.settings,
 ];
 
-/// 默认落地 tab：可见列表的第一项。首页开着就是首页；首页被关掉时是第一个
-/// 启用的模块（底栏最左边那一项）；导航模块全关时只剩设置。设置恒在，所以
-/// [tabs]（[homeActiveTabs] 的结果）永不为空。
-HomeTab homeLandingTab(List<HomeTab> tabs) =>
-    tabs.isEmpty ? HomeTab.settings : tabs.first;
+/// 默认落地 tab：可见列表里第一个**不是设置**的 tab。首页开着就是首页；首页被
+/// 关掉时是第一个启用的模块；用户把设置拖到最前也不会一打开就落在设置里。导航
+/// 模块全关时只剩设置。设置恒在，所以 [tabs]（[homeActiveTabs] 的结果）永不为空。
+HomeTab homeLandingTab(List<HomeTab> tabs) {
+  for (final HomeTab tab in tabs) {
+    if (tab != HomeTab.settings) return tab;
+  }
+  return HomeTab.settings;
+}
 
 /// 启动落地 tab：用户选的启动页（设置 → 系统 → 启动页，[startupModule]）在
 /// [tabs]（[homeActiveTabs] 的结果）里可见时就落它，否则落默认 [homeLandingTab]。
@@ -790,7 +796,7 @@ class _HomePageState extends BasePageState<HomePage>
       dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
       audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
       tempDir: appModel.temporaryDirectory,
-      localAudioEntries: appModel.localAudioDbs,
+      localAudioEntries: appModel.localAudioDbsOnThisDevice,
       onLocalAudioImported: appModel.importSyncedLocalAudioDb,
       onPostRun: appModel.refreshAfterSyncRun,
       onReport: appModel.presentSyncPrompts,

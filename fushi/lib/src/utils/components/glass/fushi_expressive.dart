@@ -17,7 +17,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 //   按下弹到小圆角，松手弹回；toggle 选中态常驻方圆角。
 // - [FushiConnectedButtonGroup]：连接式按钮组（MD3 的 SegmentedButton）。段间
 //   2px 缝、外端全圆角、内侧小圆角，选中段弹成全胶囊，按下的段变宽、邻段让出。
-// - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居被挤窄。
+// - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居只让出富余（不折行）。
 //
 // 弹簧取 M3 Expressive 的 motion scheme（[FushiSprings]，唯一真相源在
 // fushi_motion_tokens.dart）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
@@ -642,12 +642,18 @@ class _RenderFushiSqueeze extends RenderBox
 
   /// 各子项的最终宽度：基准宽（等宽 = 最宽者；否则各自的最大固有宽，受约束
   /// 时按比例缩放 / 撑满），再按按下进度把宽度从邻居匀给按下的那个。
+  ///
+  /// 邻居只让出「超出自身单行固有宽」的那部分富余（反馈 orCq_DE1i7：按下
+  /// 「更多」把「分享主题」挤到比单行还窄，文字折成两行、按钮高度跳变）。
+  /// 按自然宽排布的组没有富余，按下只剩按钮自身的形变，不再挤压邻居；撑满
+  /// 整行（[expand]）或等宽段这类有富余的组照常挤压，但永远不会挤到折行。
   List<double> _widths(BoxConstraints constraints, List<RenderBox> children) {
     final int n = children.length;
     final double gaps = _gaps(n);
-    List<double> base = children
+    final List<double> natural = children
         .map((RenderBox c) => c.getMaxIntrinsicWidth(double.infinity))
         .toList();
+    List<double> base = List<double>.of(natural);
     if (_equalExtents) {
       final double widest = base.reduce(math.max);
       base = List<double>.filled(n, widest);
@@ -677,10 +683,17 @@ class _RenderFushiSqueeze extends RenderBox
         if (i < n - 1) i + 1,
       ];
       if (neighbours.isEmpty) continue;
-      final double grow = _growFactor * base[i] * p;
+      final List<double> spare = <double>[
+        for (final int j in neighbours) math.max(0.0, widths[j] - natural[j]),
+      ];
+      final double totalSpare = spare.fold<double>(0, (double a, double b) {
+        return a + b;
+      });
+      if (totalSpare <= 0) continue;
+      final double grow = math.min(_growFactor * base[i] * p, totalSpare);
       widths[i] += grow;
-      for (final int j in neighbours) {
-        widths[j] -= grow / neighbours.length;
+      for (int k = 0; k < neighbours.length; k++) {
+        widths[neighbours[k]] -= grow * spare[k] / totalSpare;
       }
     }
     return widths.map((double w) => math.max(0.0, w)).toList();
@@ -1254,7 +1267,8 @@ class _ConnectedSegmentContent extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// 一排并列按钮。MD3 下是 M3 Expressive 标准按钮组：按下的按钮变宽
-/// （+[growFactor]），相邻按钮被挤窄让出同样的宽度（fast spatial 弹簧），
+/// （至多 +[growFactor]），宽度只从相邻按钮「超出单行固有宽」的富余里匀出
+/// ——邻居永远不会被挤到折行；没有富余（按自然宽排布）就不挤（fast spatial 弹簧），
 /// 子按钮本身（FushiFilledButton 等）再各自做按压变形；Apple 设计系统下就是
 /// 间距 [spacing] 的普通 Row，不挤压。
 ///

@@ -508,7 +508,7 @@ class SrsMiner with AnkiNoteComposer {
 
   List<String> _buildTags(AnkiSettings settings, AnkiMiningContext context) =>
       buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,

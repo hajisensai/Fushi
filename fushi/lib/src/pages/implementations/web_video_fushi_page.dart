@@ -1454,6 +1454,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       screenshot: noop,
       // 网页视频页没有 media_kit 帧可取（画面在 WebView 里），两条截图动作同样落空。
       screenshotSubtitled: noop,
+      ocrFrame: noop,
       toggleFullscreen: () => unawaited(_toggleFullscreen()),
       // 内置网页播放器没有小窗：画面是站点自己的播放器在 WebView2 里渲染的，
       // 把主窗缩成小窗只会得到一个塞不下网页布局的窗口，系统画中画更拿不到这条

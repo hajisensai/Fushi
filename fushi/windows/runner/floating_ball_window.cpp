@@ -156,11 +156,11 @@ void FloatingBallWindow::DiscardDeviceResources() {
 void FloatingBallWindow::ClearBitmapCache() { bitmaps_.clear(); }
 
 std::vector<std::string> FloatingBallWindow::ButtonIds() const {
-  // 固定的关闭 / 打开 Fushi 在最上（离球最远，防误触），用户勾选的动作在下、
-  // 末颗紧贴球顶——与应用内「列表末颗离球最近」同序。
+  // 固定的关闭 / （没被关掉的）打开 Fushi 在最上（离球最远，防误触），用户勾选的
+  // 动作在下、末颗紧贴球顶——与应用内「列表末颗离球最近」同序。
   std::vector<std::string> ids;
   ids.emplace_back(kActionClose);
-  ids.emplace_back(kActionOpenApp);
+  if (config_.show_open_app) ids.emplace_back(kActionOpenApp);
   for (const std::string& id : config_.actions) {
     if (id != kActionClose && id != kActionOpenApp &&
         std::find(ids.begin(), ids.end(), id) == ids.end()) {

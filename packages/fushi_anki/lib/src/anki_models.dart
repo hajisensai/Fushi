@@ -197,6 +197,7 @@ class AnkiSettings {
     this.availableNoteTypes = const [],
     this.fieldMappings = const {},
     this.tags = '',
+    this.globalTags = '',
     this.tagIncludeHibiki = true,
     this.tagIncludeCategory = true,
     this.allowDupes = false,
@@ -249,6 +250,7 @@ class AnkiSettings {
       json['fieldMappings'] as Map? ?? {},
     ),
     tags: json['tags'] as String? ?? '',
+    globalTags: json['globalTags'] as String? ?? '',
     tagIncludeHibiki: json['tagIncludeHibiki'] as bool? ?? true,
     tagIncludeCategory: json['tagIncludeCategory'] as bool? ?? true,
     allowDupes: json['allowDupes'] as bool? ?? false,
@@ -307,7 +309,17 @@ class AnkiSettings {
   final List<AnkiDeck> availableDecks;
   final List<AnkiNoteType> availableNoteTypes;
   final Map<String, String> fieldMappings;
+  /// 当前 Profile 的自定义标签（空白分隔）。随 Profile 快照切换（`ProfileKeys`）。
   final String tags;
+
+  /// 所有 Profile 共用的自定义标签（反馈 ORHr4_WDOy：「全局标签给所有卡，Profile 标签
+  /// 各配各的」）。**故意不进 Profile 快照**（`ProfileKeys.ankiSettingsToMap`）：切
+  /// Profile 时 `mapToAnkiSettings` 只覆盖快照里有的字段，它因此原样保留 = 全局。
+  final String globalTags;
+
+  /// 制卡时实际要加的自定义标签：全局在前、Profile 在后（[buildNoteTags] 负责去重）。
+  /// 所有后端拼标签一律传它，不要再单传 [tags]——那会把全局标签漏掉。
+  String get noteTags => globalTags.trim().isEmpty ? tags : '$globalTags $tags';
 
   /// 是否给每张 Fushi 制出的卡片追加固定的 `fushi` 默认标签（TODO-117 开关）。
   /// 默认 `true`（保持 TODO-115/062 现状）。
@@ -497,6 +509,7 @@ class AnkiSettings {
     List<AnkiNoteType>? availableNoteTypes,
     Map<String, String>? fieldMappings,
     String? tags,
+    String? globalTags,
     bool? tagIncludeHibiki,
     bool? tagIncludeCategory,
     bool? allowDupes,
@@ -547,6 +560,7 @@ class AnkiSettings {
     availableNoteTypes: availableNoteTypes ?? this.availableNoteTypes,
     fieldMappings: fieldMappings ?? this.fieldMappings,
     tags: tags ?? this.tags,
+    globalTags: globalTags ?? this.globalTags,
     tagIncludeHibiki: tagIncludeHibiki ?? this.tagIncludeHibiki,
     tagIncludeCategory: tagIncludeCategory ?? this.tagIncludeCategory,
     allowDupes: allowDupes ?? this.allowDupes,
@@ -599,6 +613,7 @@ class AnkiSettings {
     'availableNoteTypes': availableNoteTypes.map((t) => t.toJson()).toList(),
     'fieldMappings': fieldMappings,
     'tags': tags,
+    'globalTags': globalTags,
     'tagIncludeHibiki': tagIncludeHibiki,
     'tagIncludeCategory': tagIncludeCategory,
     'allowDupes': allowDupes,
