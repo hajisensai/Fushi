@@ -218,21 +218,24 @@ typedef SrsTombstonePredicate =
 class SrsPurgeChunk {
   const SrsPurgeChunk({
     required this.notes,
-    required this.cards,
+    required this.cardIds,
     required this.events,
     required this.mediaRefs,
   });
 
   static const SrsPurgeChunk empty = SrsPurgeChunk(
     notes: <String>[],
-    cards: 0,
+    cardIds: <String>[],
     events: 0,
     mediaRefs: <String>{},
   );
 
   /// 真被清除的笔记。
   final List<String> notes;
-  final int cards;
+
+  /// 随之清除的卡。
+  final List<String> cardIds;
+  int get cards => cardIds.length;
 
   /// 删掉的事件行数（身份记录 + 修改记录 + 复习日志）。
   final int events;
@@ -2524,6 +2527,21 @@ class SrsDbStore implements SrsSyncReplica {
     List<String> noteIds, {
     required SrsTombstonePredicate eligible,
     Set<String> Function(String html)? mediaRefsOf,
+  }) async {
+    final SrsPurgeChunk r = await _purgeDeletedNotes(
+      noteIds,
+      eligible: eligible,
+      mediaRefsOf: mediaRefsOf,
+    );
+    // 事务提交之后再告诉 RWKV：清掉的卡不会再成为候选，常驻分数表里它们的项一并删掉。
+    if (r.cardIds.isNotEmpty) unawaited(rwkv?.onCardsPurged(r.cardIds));
+    return r;
+  }
+
+  Future<SrsPurgeChunk> _purgeDeletedNotes(
+    List<String> noteIds, {
+    required SrsTombstonePredicate eligible,
+    Set<String> Function(String html)? mediaRefsOf,
   }) => runExclusive(
     () => db.transaction(() async {
       if (noteIds.isEmpty) return SrsPurgeChunk.empty;
@@ -2670,7 +2688,7 @@ class SrsDbStore implements SrsSyncReplica {
       await _saveLocal();
       return SrsPurgeChunk(
         notes: purge,
-        cards: cardList.length,
+        cardIds: cardList,
         events: events,
         mediaRefs: media,
       );

@@ -275,6 +275,16 @@ fn scores_single_and_batch_are_bit_identical_and_patching_is_scoped() {
         assert!(runtime.unappend(9).unwrap());
         let hits = runtime.scores_lookup(&ids, &versions);
         assert_eq!(hits.iter().filter(|h| h.is_none()).count(), 2);
+        // 卡被永久清除：项从表里删掉（整表刷新不再算它），别的项不动；删不存在的不算。
+        let before = runtime.scores_len();
+        assert_eq!(runtime.scores_remove(&[ids[10], ids[11], 999_999]), 2);
+        assert_eq!(runtime.scores_len(), before - 2);
+        assert_eq!(
+            runtime.scores_requery(1, 90 * 86_400_000).unwrap(),
+            runtime.scores_len()
+        );
+        let hits = runtime.scores_lookup(&ids[10..13], &versions[10..13]);
+        assert!(hits[0].is_none() && hits[1].is_none() && hits[2].is_some());
         runtime.scores_clear();
         assert_eq!(runtime.scores_len(), 0);
     }

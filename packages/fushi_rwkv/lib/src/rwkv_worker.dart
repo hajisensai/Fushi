@@ -176,6 +176,10 @@ class RwkvWorker {
   Future<int> requeryScores(int today, int nowMs) =>
       _call<int>(_Op.requeryScores, (today, nowMs));
 
+  /// [RwkvNativeRuntime.removeScores]。
+  Future<int> removeScores(Int64List cardIds) =>
+      _call<int>(_Op.removeScores, Int64List.fromList(cardIds));
+
   Future<RwkvIntervals> nextIntervals(
     RwkvRows answer, {
     required double targetRetention,
@@ -242,6 +246,7 @@ enum _Op {
   lookupScores,
   updateScores,
   requeryScores,
+  removeScores,
   nextIntervals,
   snapshot,
   restore,
@@ -421,6 +426,8 @@ Object? _run(RwkvNativeRuntime runtime, _Command command) {
     case _Op.requeryScores:
       final (int today, int nowMs) = command.argument! as (int, int);
       return runtime.requeryScores(today, nowMs);
+    case _Op.removeScores:
+      return runtime.removeScores(command.argument! as Int64List);
     case _Op.nextIntervals:
       final (Uint8List row, double target, int max) =
           command.argument! as (Uint8List, double, int);

@@ -50,6 +50,8 @@ class _Worker implements SrsRwkvBackend {
   @override
   Future<int> requeryScores(int today, int nowMs) =>
       worker.requeryScores(today, nowMs);
+  @override
+  Future<int> removeScores(Int64List cardIds) => worker.removeScores(cardIds);
 }
 
 String _weights() {

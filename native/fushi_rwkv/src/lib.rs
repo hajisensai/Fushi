@@ -27,7 +27,7 @@
 //!   frwkv_runtime_next_intervals /
 //!   frwkv_runtime_append / frwkv_runtime_unappend /
 //!   frwkv_runtime_scores_clear / frwkv_runtime_scores_lookup / frwkv_runtime_scores_update /
-//!   frwkv_runtime_scores_requery /
+//!   frwkv_runtime_scores_requery / frwkv_runtime_scores_remove /
 //!   frwkv_runtime_snapshot / frwkv_runtime_restore / frwkv_runtime_reset / frwkv_runtime_stats /
 //!   frwkv_last_error / frwkv_free_string / frwkv_free_bytes
 
@@ -788,6 +788,15 @@ impl RwkvRuntime {
         Ok(order.len())
     }
 
+    /// 从分数表删掉这些卡的项（卡被永久清除：它不会再成为候选，留着只占内存、整表刷新时白算）。
+    /// 返回真删掉的项数。
+    pub fn scores_remove(&mut self, card_ids: &[i64]) -> usize {
+        card_ids
+            .iter()
+            .filter(|id| self.scores.remove(id).is_some())
+            .count()
+    }
+
     /// 分数表项数（测试 / 诊断）。
     pub fn scores_len(&self) -> usize {
         self.scores.len()
@@ -1413,6 +1422,30 @@ pub unsafe extern "C" fn frwkv_runtime_scores_update(
         }
         Ok(())
     })
+}
+
+/// 从分数表删掉 `count` 张卡的项（[RwkvRuntime::scores_remove]）。返回删掉的项数（≥ 0）。
+///
+/// # Safety
+/// `runtime` 有效；`card_ids` 指向 `count` 个元素。
+#[no_mangle]
+pub unsafe extern "C" fn frwkv_runtime_scores_remove(
+    runtime: *mut FrwkvRuntime,
+    card_ids: *const i64,
+    count: usize,
+) -> i32 {
+    let mut removed = 0usize;
+    let code = guarded(|| {
+        let runtime = runtime.as_mut().ok_or_else(|| argument("null runtime"))?;
+        let ids = slice_or_empty(card_ids, count).ok_or_else(|| argument("null card ids"))?;
+        removed = runtime.0.scores_remove(ids);
+        Ok(())
+    });
+    if code == FRWKV_OK {
+        i32::try_from(removed).unwrap_or(i32::MAX)
+    } else {
+        code
+    }
 }
 
 /// 全量刷新分数表（[RwkvRuntime::scores_requery]）：按第 `today` 个调度日、此刻 `now_ms` 重算
