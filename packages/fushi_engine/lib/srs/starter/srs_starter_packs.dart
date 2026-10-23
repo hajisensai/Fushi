@@ -91,7 +91,7 @@ class SrsStarterManifestException implements Exception {
   String toString() => 'SrsStarterManifestException: $message';
 }
 
-final RegExp _idPattern = RegExp(r'^[a-z0-9][a-z0-9_-]{0,63}$');
+final RegExp _idPattern = RegExp(r'^[a-z0-9][a-z0-9._-]{0,63}$');
 final RegExp _languagePattern = RegExp(r'^[a-z]{2,3}$');
 final RegExp _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
 

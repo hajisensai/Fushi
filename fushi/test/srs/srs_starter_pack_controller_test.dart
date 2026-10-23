@@ -143,7 +143,11 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     importRuns.single.complete(SrsImportReport()..notesAdded = 3);
     await imports.tasks.single.result;
-    await Future<void>.delayed(Duration.zero);
+    // 删包是真实文件 IO：等控制器回到空闲（最多 5 秒）。
+    for (int i = 0; i < 500; i++) {
+      if (c.stateOf(_pack.id).phase == SrsStarterPackPhase.idle) break;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     expect(c.stateOf(_pack.id).phase, SrsStarterPackPhase.idle);
     expect(await file.exists(), isFalse, reason: '导入成功后删掉下载的包');
   });

@@ -10,7 +10,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_starter_pack_controller.dart';
-import 'package:fushi/src/utils/components/content_language_picker.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
