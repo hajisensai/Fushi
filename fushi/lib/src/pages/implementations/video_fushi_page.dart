@@ -1053,6 +1053,9 @@ abstract class VideoFushiTestHooks {
   String? get debugDiscPlaylistPath;
   String get debugActiveBookUid;
   bool get debugDiscLearningBlocked;
+
+  /// 原盘会话的悬浮控制栏此刻是否显示（菜单阶段）。
+  bool get debugDiscSessionBarVisible;
   VideoDiscTrackOwner? get debugDiscTrackOwner;
   String? get debugActiveAudioTrackId;
   String? get debugResolvedDiscSubtitleTrackId;
@@ -1706,6 +1709,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String get debugActiveBookUid => _activeBookUid;
   @override
   bool get debugDiscLearningBlocked => _discLearningBlocked;
+  @override
+  bool get debugDiscSessionBarVisible => _discMenuChromeVisible.value;
   @override
   VideoDiscTrackOwner? get debugDiscTrackOwner =>
       (_controller ?? _pendingController)?.discTrackOwner;

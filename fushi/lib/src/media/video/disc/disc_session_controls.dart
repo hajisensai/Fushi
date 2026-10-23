@@ -159,12 +159,16 @@ class DiscExitHoldRing extends StatelessWidget {
   const DiscExitHoldRing({
     required this.holding,
     required this.color,
+    required this.label,
     this.duration = kDiscExitHoldDuration,
     super.key,
   });
 
   final ValueListenable<bool> holding;
   final Color color;
+
+  /// Screen-reader text for the ring ("按住退出原盘").
+  final String label;
   final Duration duration;
 
   @override
@@ -174,17 +178,21 @@ class DiscExitHoldRing extends StatelessWidget {
       if (!held) return const SizedBox.shrink();
       return IgnorePointer(
         child: Center(
-          child: TweenAnimationBuilder<double>(
-            key: const ValueKey<String>('disc-exit-hold-ring'),
-            // The fill is the hold timer made visible, not decoration: it
-            // keeps its real duration under reduced motion.
-            tween: Tween<double>(begin: 0, end: 1),
-            duration: duration,
-            builder: (BuildContext context, double value, Widget? _) =>
-                CustomPaint(
-                  size: const Size.square(72),
-                  painter: _HoldRingPainter(progress: value, color: color),
-                ),
+          child: Semantics(
+            label: label,
+            liveRegion: true,
+            child: TweenAnimationBuilder<double>(
+              key: const ValueKey<String>('disc-exit-hold-ring'),
+              // The fill is the hold timer made visible, not decoration: it
+              // keeps its real duration under reduced motion.
+              tween: Tween<double>(begin: 0, end: 1),
+              duration: duration,
+              builder: (BuildContext context, double value, Widget? _) =>
+                  CustomPaint(
+                    size: const Size.square(72),
+                    painter: _HoldRingPainter(progress: value, color: color),
+                  ),
+            ),
           ),
         ),
       );

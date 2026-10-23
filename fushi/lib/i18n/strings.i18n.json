@@ -7822,7 +7822,6 @@
   "video_disc_choose_disc": "Choose disc",
   "video_disc_continue_at": "Continue watching $time",
   "video_disc_exit": "Exit disc",
-  "video_disc_exit_fullscreen": "Exit full screen",
   "video_disc_extraction_unavailable": "This title plays through the disc decoder, but its encrypted source cannot be extracted for subtitles or cards.",
   "video_disc_hold_to_exit": "Hold to exit the disc",
   "video_disc_menu_open_failed": "This disc's menu could not be opened. You can still play its titles directly.",

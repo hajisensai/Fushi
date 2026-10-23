@@ -7822,7 +7822,6 @@
   "video_disc_choose_disc": "选盘",
   "video_disc_continue_at": "继续观看 $time",
   "video_disc_exit": "退出原盘",
-  "video_disc_exit_fullscreen": "退出全屏",
   "video_disc_extraction_unavailable": "此标题可经原盘解码播放，但加密源无法用于字幕提取或制卡。",
   "video_disc_hold_to_exit": "按住退出原盘",
   "video_disc_menu_open_failed": "无法打开这张原盘的菜单，仍可直接播放其中的标题。",

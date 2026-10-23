@@ -150,7 +150,11 @@ void main() {
     await tester.pumpWidget(
       Directionality(
         textDirection: TextDirection.ltr,
-        child: DiscExitHoldRing(holding: holding, color: Colors.white),
+        child: DiscExitHoldRing(
+          holding: holding,
+          color: Colors.white,
+          label: 'hold to exit',
+        ),
       ),
     );
     final Finder ring = find.byKey(

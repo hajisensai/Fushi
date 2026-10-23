@@ -562,8 +562,11 @@ extension _VideoDiscMenu on _VideoFushiPageState {
   }
 
   /// 按住 Esc / 手柄 B 时屏幕中央的圆环进度。
-  Widget _buildDiscExitHoldRing() =>
-      DiscExitHoldRing(holding: _discExitHold.holding, color: Colors.white);
+  Widget _buildDiscExitHoldRing() => DiscExitHoldRing(
+    holding: _discExitHold.holding,
+    color: Colors.white,
+    label: t.video_disc_hold_to_exit,
+  );
 
   /// 原盘启动动画：只在从库里显式进原盘会话、带了封面、且设置开着时出现。动画本身
   /// 在减弱动态效果 / 墨水屏下时长为零、什么都不画。

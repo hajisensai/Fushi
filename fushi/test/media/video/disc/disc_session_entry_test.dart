@@ -32,7 +32,7 @@ void main() {
         <String>['Disc 1', 'Disc 2', 'Disc 10'],
         reason: 'natural order: Disc 10 after Disc 2; plain files are no disc',
       );
-      expect(discs[1].rootPath, p.join('/box', 'Disc 2'));
+      expect(discs[1].rootPath, p.normalize(p.join('/box', 'Disc 2')));
     });
 
     test('each disc opens with its most recently played member', () {
