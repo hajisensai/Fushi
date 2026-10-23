@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart'
@@ -193,9 +194,12 @@ void main() {
     await a.deleteNote(gone);
     final String goneCard = await cardOf(a, gone);
 
-    final SrsPurgeReport r = await srsPurgeNotesNow(a, <String>[
-      gone,
-    ], mediaRoot: media);
+    final SrsPurgeReport r = await srsPurgeNotesNow(
+      a,
+      <String>[gone],
+      mediaRoot: media,
+      mediaGrace: Duration.zero,
+    );
     expect(r.notes, 1);
     expect(r.mediaFiles, 1);
     await expectPurged(a, gone, goneCard);
@@ -323,9 +327,12 @@ void main() {
     );
 
     await a.deleteNote(n);
-    final SrsPurgeReport r = await srsPurgeNotesNow(a, <String>[
-      n,
-    ], mediaRoot: media);
+    final SrsPurgeReport r = await srsPurgeNotesNow(
+      a,
+      <String>[n],
+      mediaRoot: media,
+      mediaGrace: Duration.zero,
+    );
     expect(r.mediaFiles, 1);
     await expectPurged(a, n, c);
 
@@ -355,5 +362,116 @@ void main() {
     t += 365 * kDay;
     expect((await srsPurgeExpiredTombstones(a, mediaRoot: media)).notes, 0);
     expect(File(p.join(media.path, 'cat.png')).existsSync(), isTrue);
+  });
+
+  group('⑤ 媒体回收与并发写入（HBK-AUDIT-014）', () {
+    final DateTime old = DateTime.now().subtract(const Duration(days: 3));
+
+    Future<SrsDbStore> reopen(SrsDbStore s, String id) => SrsDbStore.open(
+      db: s.db,
+      profileUid: kProfile,
+      deviceId: id,
+      engine: const SrsFakeEngine(),
+      trustedClock: SrsTrustedClock(
+        wallClockMs: () => t,
+        monotonicMs: () => t,
+        bootId: 'boot-$id',
+      ),
+    );
+
+    test('刚存 / 刚复用、引用还没提交的文件不删；候选持久化，下一轮（重开后）照常回收', () async {
+      final SrsDbStore a = await device('a');
+      final Directory media = Directory(p.join(tmp.path, 'media'))
+        ..createSync(recursive: true);
+      final File reused = File(p.join(media.path, 'reused.png'))
+        ..writeAsStringSync('r');
+      final File stale = File(p.join(media.path, 'stale.png'))
+        ..writeAsStringSync('s');
+      reused.setLastModifiedSync(old);
+      stale.setLastModifiedSync(old);
+      final String gone = await addNote(
+        a,
+        '雪',
+        extra: '<img src="reused.png"><img src="stale.png">',
+      );
+      await a.deleteNote(gone);
+
+      // 制卡路径：SrsMediaStore.store 复用了同内容文件（刷新修改时间），返回名字，
+      // 引用它的笔记还没提交——回收恰好在这时跑。
+      reused.setLastModifiedSync(DateTime.now());
+      final SrsPurgeReport r = await srsPurgeNotesNow(a, <String>[
+        gone,
+      ], mediaRoot: media);
+      expect(r.notes, 1);
+      expect(r.mediaFiles, 1);
+      expect(stale.existsSync(), isFalse, reason: '过了宽限期且无引用');
+      expect(reused.existsSync(), isTrue, reason: '刚复用、引用可能还没提交');
+      expect(a.pendingMediaGc, <String>{'reused.png'});
+
+      // 引用一直没提交（制卡被取消）：重开 store 后候选还在，过了宽限期照常回收。
+      final SrsDbStore again = await reopen(a, 'a');
+      expect(again.pendingMediaGc, <String>{'reused.png'});
+      reused.setLastModifiedSync(old);
+      expect(
+        (await srsPurgeExpiredTombstones(again, mediaRoot: media)).mediaFiles,
+        1,
+      );
+      expect(reused.existsSync(), isFalse);
+      expect(again.pendingMediaGc, isEmpty);
+    });
+
+    test('候选在宽限期内被新笔记引用：不删，并移出待回收集合', () async {
+      final SrsDbStore a = await device('a');
+      final Directory media = Directory(p.join(tmp.path, 'media'))
+        ..createSync(recursive: true);
+      final File f = File(p.join(media.path, 'cat.png'))
+        ..writeAsStringSync('c');
+      f.setLastModifiedSync(old);
+      final String gone = await addNote(a, '猫', extra: '<img src="cat.png">');
+      await a.deleteNote(gone);
+      f.setLastModifiedSync(DateTime.now());
+      await srsPurgeNotesNow(a, <String>[gone], mediaRoot: media);
+      expect(a.pendingMediaGc, <String>{'cat.png'});
+
+      await addNote(a, '虎', extra: '<img src="CAT.png">');
+      f.setLastModifiedSync(old);
+      expect(
+        (await srsPurgeExpiredTombstones(a, mediaRoot: media)).mediaFiles,
+        0,
+      );
+      expect(f.existsSync(), isTrue);
+      expect(a.pendingMediaGc, isEmpty);
+    });
+
+    test('扫描与删除在独占区里：排在前面的写入重新引用了候选，文件保留', () async {
+      final SrsDbStore a = await device('a');
+      final Directory media = Directory(p.join(tmp.path, 'media'))
+        ..createSync(recursive: true);
+      final File f = File(p.join(media.path, 'dog.png'))
+        ..writeAsStringSync('d');
+      f.setLastModifiedSync(old);
+      final String gone = await addNote(a, '犬', extra: '<img src="dog.png">');
+      await a.deleteNote(gone);
+
+      // 一个写入者先拿到锁（编辑 / 恢复 / 撤销），在锁里才把引用写进库。
+      final Completer<void> gate = Completer<void>();
+      final Future<void> writer = a.runExclusive(() async {
+        await gate.future;
+        await addNote(a, '狗', extra: '<img src="dog.png">');
+      });
+      final Future<SrsPurgeReport> purge = srsPurgeNotesNow(
+        a,
+        <String>[gone],
+        mediaRoot: media,
+        mediaGrace: Duration.zero,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      gate.complete();
+      await writer;
+      final SrsPurgeReport r = await purge;
+      expect(r.notes, 1);
+      expect(r.mediaFiles, 0);
+      expect(f.existsSync(), isTrue);
+    });
   });
 }

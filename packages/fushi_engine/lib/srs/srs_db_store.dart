@@ -314,6 +314,12 @@ class SrsDbStore implements SrsSyncReplica {
   /// 存量样式去重的进度：srs_field_edits 里已检查到的 rowid（本机状态，不进备份）。
   int _styleCursor = 0;
 
+  /// 墓碑清除收集到、还没回收的媒体文件名（[purgeDeletedNotes] 与笔记删除同一事务落进本机状态）。
+  /// 回收（srs_purge.dart）在独占区里核对存活引用后删文件并从这里移除；刚被写过 / 复用过的文件
+  /// 留到下一轮。持久化是为了崩溃、被叫停或宽限期内跳过的名字下次接着处理——否则笔记已清、
+  /// 候选只在那一轮内存里，文件就永远没人回收了。
+  final Set<String> _pendingMediaGc = <String>{};
+
   /// 本机缓存按哪一版推导规则建的（本机状态，不进备份）。缓存加了新的派生列、而存量库里
   /// 可能已有喂它的修改记录时 +1，并在 [_upgradeCaches] 里补一步定向重算。
   ///
@@ -501,6 +507,12 @@ class SrsDbStore implements SrsSyncReplica {
     );
     _outboxSeq = (j['outboxSeq'] as int?) ?? 0;
     _styleCursor = (j['styleCursor'] as int?) ?? 0;
+    _pendingMediaGc
+      ..clear()
+      ..addAll(<String>[
+        for (final Object? n in (j['mediaGc'] as List?) ?? const <Object?>[])
+          if (n is String) n,
+      ]);
     // 没有本机状态（新设备 / 恢复备份后）：缓存要么还没有、要么随即整份重建，按当前规则算。
     _cacheRevision = row == null
         ? _kCacheRevision
@@ -558,6 +570,8 @@ class SrsDbStore implements SrsSyncReplica {
       'hlc': _clock.last.encode(),
       'outboxSeq': _outboxSeq,
       'styleCursor': _styleCursor,
+      if (_pendingMediaGc.isNotEmpty)
+        'mediaGc': (_pendingMediaGc.toList()..sort()),
       'cacheRev': _cacheRevision,
       'revision': _revision,
       'epoch': _epoch,
@@ -2652,6 +2666,7 @@ class SrsDbStore implements SrsSyncReplica {
       _ankiCardIndex = null;
       _revision += events == 0 ? 1 : events;
       _contentRevision++;
+      _pendingMediaGc.addAll(media);
       await _saveLocal();
       return SrsPurgeChunk(
         notes: purge,
@@ -2661,6 +2676,21 @@ class SrsDbStore implements SrsSyncReplica {
       );
     }),
   );
+
+  /// 待回收的媒体文件名（见 [_pendingMediaGc]）。
+  Set<String> get pendingMediaGc => Set<String>.unmodifiable(_pendingMediaGc);
+
+  /// 把 [names] 移出待回收集合并落盘。只能在独占区里调：回收方在同一个独占区里核对存活引用、
+  /// 删文件、再调这里，期间不会有别的写入插进来重新引用它们。
+  Future<void> settlePendingMediaGc(Iterable<String> names) async {
+    assert(
+      identical(Zone.current[_writeZoneKey], this),
+      'settlePendingMediaGc outside runExclusive',
+    );
+    final int before = _pendingMediaGc.length;
+    _pendingMediaGc.removeAll(names);
+    if (_pendingMediaGc.length != before) await _saveLocal();
+  }
 
   /// 给 [ids] 每个实体的同一个字段键写同一个值（值没变的跳过）：现值一次预读，序号按 [ids] 的顺序
   /// 分配，一次落库。与逐个 `editField` 同结果。调用方已在独占区里。

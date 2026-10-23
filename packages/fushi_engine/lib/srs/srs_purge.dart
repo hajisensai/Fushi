@@ -37,6 +37,19 @@
 /// - 媒体：只删「被清除笔记引用过、而此刻没有任何存活引用」的文件（存活引用见
 ///   [srsAllMediaReferences]，含已删未清的笔记与并发候选值），按不区分大小写比较。媒体删除不跨设备
 ///   传播（srs_media_sync.dart），同步目录里的媒体不动；备份的共享媒体池有自己的副本。
+///
+/// ## 媒体回收与并发写入的契约
+///
+/// 「扫存活引用 → 删文件」若不在一个独占区里，中间插进来的编辑 / 恢复 / 撤销会重新引用某个刚判为
+/// 无引用的文件，清理照旧按过期的结论删掉它，且无从找回（HBK-AUDIT-014）。所以：
+/// - 扫描、删文件、移出待回收集合在**同一个** `runExclusive` 里做；库里每一种引入引用的写入
+///   （编辑、导入、同步并入、按时间点恢复、撤销）都走这把锁，插不进来。
+/// - 媒体文件本身先于引用落盘（`SrsMediaStore.store` 写文件 / 复用同内容文件 → 之后才提交引用它的
+///   笔记），这一步在锁外。为此 `store` 复用已有文件时也刷新修改时间，回收只删修改时间早于
+///   [kSrsMediaGcGrace] 的文件：刚写 / 刚复用、引用可能还没提交的文件留到下一轮（与 git gc 对
+///   松散对象的宽限期同理）。
+/// - 候选随笔记清除同一事务落进本机状态（`SrsDbStore.pendingMediaGc`）：被跳过、被叫停或中途崩溃
+///   的下次维护接着处理，不会因为笔记已清而永远没人回收。
 library;
 
 import 'dart:io';
@@ -54,6 +67,11 @@ const Duration kSrsTombstonePurgeAfter = Duration(days: 90);
 
 /// 维护时每块处理的候选笔记数（一块一个独占区 + 一个事务）。
 const int kSrsPurgeChunk = 200;
+
+/// 媒体回收宽限期：修改时间在这之内的文件不删（见库注释「媒体回收与并发写入的契约」）。
+/// 远大于任何「存文件 → 提交笔记」之间的间隔（制卡、导入、AnkiConnect `storeMediaFile` 后
+/// `addNote`），又短到用户删牌组后第二天的维护就能释放空间。
+const Duration kSrsMediaGcGrace = Duration(hours: 24);
 
 /// 一次清除做了什么。
 class SrsPurgeReport {
@@ -105,6 +123,7 @@ Future<SrsPurgeReport> srsPurgeExpiredTombstones(
   SrsDbStore store, {
   Directory? mediaRoot,
   Duration after = kSrsTombstonePurgeAfter,
+  Duration mediaGrace = kSrsMediaGcGrace,
   int chunkSize = kSrsPurgeChunk,
   bool Function()? shouldStop,
 }) async {
@@ -115,6 +134,7 @@ Future<SrsPurgeReport> srsPurgeExpiredTombstones(
     afterMs: after.inMilliseconds,
     localOnly: store.neverSynced,
     mediaRoot: mediaRoot,
+    mediaGrace: mediaGrace,
     chunkSize: chunkSize,
     shouldStop: shouldStop,
   );
@@ -127,6 +147,7 @@ Future<SrsPurgeReport> srsPurgeNotesNow(
   SrsDbStore store,
   List<String> noteIds, {
   Directory? mediaRoot,
+  Duration mediaGrace = kSrsMediaGcGrace,
 }) {
   if (!store.neverSynced) {
     throw StateError('immediate purge is only allowed before the first sync');
@@ -137,6 +158,7 @@ Future<SrsPurgeReport> srsPurgeNotesNow(
     afterMs: 0,
     localOnly: true,
     mediaRoot: mediaRoot,
+    mediaGrace: mediaGrace,
     chunkSize: kSrsPurgeChunk,
   );
 }
@@ -147,11 +169,11 @@ Future<SrsPurgeReport> _purge(
   required int afterMs,
   required bool localOnly,
   required Directory? mediaRoot,
+  required Duration mediaGrace,
   required int chunkSize,
   bool Function()? shouldStop,
 }) async {
   final SrsPurgeReport report = SrsPurgeReport();
-  final Set<String> mediaCandidates = <String>{};
   final int step = chunkSize < 1 ? 1 : chunkSize;
   for (int i = 0; i < noteIds.length; i += step) {
     if (shouldStop?.call() == true) {
@@ -180,45 +202,60 @@ Future<SrsPurgeReport> _purge(
       ..notes += r.notes.length
       ..cards += r.cards
       ..events += r.events;
-    mediaCandidates.addAll(r.mediaRefs);
     // 让出事件循环：维护在后台跑，块与块之间复习 / 编辑的写入照常插进来。
     await Future<void>.delayed(Duration.zero);
   }
-  if (mediaRoot != null && mediaCandidates.isNotEmpty) {
-    report.mediaFiles = await _deleteUnreferencedMedia(
+  // 本轮新清除的笔记引用的媒体已随清除事务进了待回收集合；以前轮次被跳过 / 叫停的也在里面。
+  if (mediaRoot != null && !report.stopped && store.pendingMediaGc.isNotEmpty) {
+    report.mediaFiles = await _collectPendingMedia(
       store,
       mediaRoot,
-      mediaCandidates,
+      grace: mediaGrace,
     );
   }
   return report;
 }
 
-/// 删掉 [candidates] 里此刻没有任何存活引用的文件（只删 [mediaRoot] 下的裸文件名）。
-/// 比较不区分大小写：Windows / macOS 默认卷上大小写不同的两个名字是同一个文件。
-Future<int> _deleteUnreferencedMedia(
+/// 回收待回收集合里此刻没有任何存活引用、且过了宽限期的文件（只删 [mediaRoot] 下的裸文件名）。
+///
+/// 扫描、删除、移出集合全程在一个独占区里（见库注释「媒体回收与并发写入的契约」）。比较不区分
+/// 大小写：Windows / macOS 默认卷上大小写不同的两个名字是同一个文件。
+Future<int> _collectPendingMedia(
   SrsDbStore store,
-  Directory mediaRoot,
-  Set<String> candidates,
-) async {
+  Directory mediaRoot, {
+  required Duration grace,
+}) => store.runExclusive(() async {
   final Set<String> alive = <String>{
     for (final String n in await srsAllMediaReferences(store)) n.toLowerCase(),
   };
+  final DateTime freshAfter = DateTime.now().subtract(grace);
+  final List<String> settled = <String>[];
   int deleted = 0;
-  for (final String name in candidates) {
-    if (!_isBareName(name) || alive.contains(name.toLowerCase())) continue;
+  for (final String name in store.pendingMediaGc) {
+    // 又被引用了：不是垃圾。以后引用它的笔记被清除时会重新成为候选。
+    if (!_isBareName(name) || alive.contains(name.toLowerCase())) {
+      settled.add(name);
+      continue;
+    }
     final File f = File(p.join(mediaRoot.path, name));
+    final FileStat st = await f.stat();
+    if (st.type == FileSystemEntityType.notFound) {
+      settled.add(name);
+      continue;
+    }
+    // 刚写 / 刚复用：引用它的笔记可能还没提交，留到下一轮。
+    if (st.modified.isAfter(freshAfter)) continue;
     try {
-      if (await f.exists()) {
-        await f.delete();
-        deleted++;
-      }
+      await f.delete();
+      deleted++;
+      settled.add(name);
     } on FileSystemException {
-      // 被占用（Windows 上正在播放 / 预览）：留着。只影响这一个文件的空间。
+      // 被占用（Windows 上正在播放 / 预览）：留在集合里，下一轮再试。
     }
   }
+  await store.settlePendingMediaGc(settled);
   return deleted;
-}
+});
 
 bool _isBareName(String n) =>
     n.isNotEmpty &&
