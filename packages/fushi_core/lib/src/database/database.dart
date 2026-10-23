@@ -38,6 +38,7 @@ part 'database_tags_sync.part.dart';
 part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
+part 'database_web_browser.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -818,6 +819,11 @@ void _requireOneVideoMetadataOwner({
   MediaPrivacyFlags,
   LibraryOrganizeRuns,
   LibraryOrganizeChanges,
+  WebBrowserHistory,
+  WebBrowserBookmarks,
+  WebBrowserSessionTabs,
+  WebBrowserClosedTabs,
+  WebBrowserDownloads,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -830,7 +836,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbStatistics,
         _FushiDbVideoDomain,
         _FushiDbUpdateFeed,
-        _FushiDbMangaDownload {
+        _FushiDbMangaDownload,
+        _FushiDbWebBrowser {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -851,7 +858,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 124;
+  int get schemaVersion => 125;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2412,6 +2419,26 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('library_organize_changes')) {
               await m.createTable(libraryOrganizeChanges);
+            }
+          }
+          if (from < 125) {
+            // v125（内置浏览器完整化）：历史 / 书签（含文件夹）/ 标签页会话 / 最近关闭 /
+            // 下载记录五张新表。纯新表、不动存量数据；幂等守卫同 v119。历史与书签随备份
+            // 走、经聚合快照跨端同步，其余三张设备本地。
+            if (!await _tableExists('web_browser_history')) {
+              await m.createTable(webBrowserHistory);
+            }
+            if (!await _tableExists('web_browser_bookmarks')) {
+              await m.createTable(webBrowserBookmarks);
+            }
+            if (!await _tableExists('web_browser_session_tabs')) {
+              await m.createTable(webBrowserSessionTabs);
+            }
+            if (!await _tableExists('web_browser_closed_tabs')) {
+              await m.createTable(webBrowserClosedTabs);
+            }
+            if (!await _tableExists('web_browser_downloads')) {
+              await m.createTable(webBrowserDownloads);
             }
           }
         },

@@ -1009,8 +1009,13 @@ class AppModel with ChangeNotifier {
               parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
             SyncTombstoneKind.favoritesentence =>
               favSentenceTexts[c.itemKey] ?? c.itemKey,
-            // localaudio: displayName 本身即可读；null = 未知种类原样展示。
-            SyncTombstoneKind.localaudio || null => c.itemKey,
+            // localaudio: displayName 本身即可读；null = 未知种类原样展示。浏览器
+            // 历史 / 书签只经聚合快照传播、不进确认清单，到不了这里，兜底原样展示。
+            SyncTombstoneKind.localaudio ||
+            SyncTombstoneKind.webhistory ||
+            SyncTombstoneKind.webbookmark ||
+            null =>
+              c.itemKey,
           },
         ),
     ];
@@ -1070,6 +1075,12 @@ class AppModel with ChangeNotifier {
             // 按内容键取消收藏。默认写墓碑（本设备也需抑制第三设备并集复活，与源墓碑同键）。
             await FavoriteSentenceRepository(database)
                 .removeByItemKey(c.itemKey);
+          case SyncTombstoneKind.webhistory:
+          case SyncTombstoneKind.webbookmark:
+            // v125 浏览器历史 / 书签的删除只经聚合快照仲裁落地，从不产生删除确认候选
+            // （[SyncTombstoneKind.propagatesViaAggregateSnapshotOnly]）；万一出现也不在此删。
+            debugPrint(
+                '[sync] skip snapshot-only deletion ${c.mediaType}/${c.itemKey}');
           case null:
             // 未知类型：跳过，但留痕——用户确认了删除、这里静默吞掉会造成
             // 「以为删了实际没删」且无从排查（mediaType 审计 2026-07-25）。

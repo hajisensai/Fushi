@@ -36,12 +36,18 @@ abstract interface class WebBrowserStore implements Listenable {
     int? parentId,
   });
   Future<int> addFolder({required String title, int? parentId});
+
+  /// 只改显式传入的字段：[parentId] 为 null = 不改父目录；要移到根目录传
+  /// [moveToRoot] = true。换父目录且没给 [position] 时排到新目录末尾；给了
+  /// [position] 时把同级重新编号成 0..n-1、本条落在该下标（拖动排序）。
+  /// 不允许把文件夹移进它自己或其子孙（静默忽略）。
   Future<void> updateBookmark(
     int id, {
     String? title,
     Uri? url,
     int? parentId,
     int? position,
+    bool moveToRoot = false,
   });
 
   /// 删文件夹连同其下全部内容。
@@ -66,6 +72,8 @@ abstract interface class WebBrowserStore implements Listenable {
     WebBrowserDownloadState? state,
     String? savedPath,
   });
+
+  /// 最新开始的在前。
   Future<List<WebBrowserDownload>> downloads();
   Future<void> deleteDownload(int id);
 }

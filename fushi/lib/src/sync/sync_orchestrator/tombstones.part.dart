@@ -213,6 +213,9 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         return true;
       case SyncTombstoneKind.favoriteword:
       case SyncTombstoneKind.favoritesentence:
+      // v125 浏览器历史 / 书签同理：只经聚合快照传播。
+      case SyncTombstoneKind.webhistory:
+      case SyncTombstoneKind.webbookmark:
         return false;
     }
   }
@@ -243,6 +246,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         return backend.deleteRemoteVideo(itemKey);
       case SyncTombstoneKind.favoriteword:
       case SyncTombstoneKind.favoritesentence:
+      case SyncTombstoneKind.webhistory:
+      case SyncTombstoneKind.webbookmark:
         // [_hasInterconnectDeletionChannel] 已挡在前面，走不到这里。
         return true;
     }

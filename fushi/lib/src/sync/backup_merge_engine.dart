@@ -237,6 +237,8 @@ class BackupMergeEngine {
       if (_wants('progress')) {
         await _mergeBookmarks();
         await _mergeAudiobookPositionPrefs();
+        await _mergeWebBrowserHistory();
+        await _mergeWebBrowserBookmarks();
       }
       // v82：书自定义 CSS / 图片揭开状态（uid 键 LWW）。无 dialog toggle——
       // 存在性 guard 让「书没随备份来」时自然 no-op（与 collections/tags 同规）。
@@ -1173,6 +1175,103 @@ class BackupMergeEngine {
     );
   }
 
+  /// v125 内置浏览器历史：按 url 并集（与聚合快照 `mergeWebHistory` 同律：次数取大、
+  /// 最近访问取大、标题跟较新的访问走）。本机删过的（被本机 `webhistory` 墓碑压制，判据
+  /// [isWebHistorySuppressed]）不从旧备份复活——与 book_tombstones「旧备份不复活已删」
+  /// 同一纪律，读的是**本机**墓碑。
+  Future<void> _mergeWebBrowserHistory() async {
+    if (!await _srcTableExists('web_browser_history')) return;
+    final Map<String, int> tombstones = <String, int>{
+      for (final SyncDeletionTombstoneRow row in await _db
+          .getSyncDeletionTombstonesOfType(SyncTombstoneKind.webhistory.dbValue))
+        row.itemKey: row.deletedAt,
+    };
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT url, title, last_visited_at, visit_count '
+          'FROM $_srcAlias.web_browser_history',
+        )
+        .get();
+    for (final QueryRow r in rows) {
+      final String url = r.read<String>('url');
+      final int lastVisitedAt = r.read<int>('last_visited_at');
+      if (isWebHistorySuppressed(
+        url: url,
+        lastVisitedAt: lastVisitedAt,
+        tombstones: tombstones,
+      )) {
+        continue;
+      }
+      await _db.mergeWebBrowserHistoryEntry(
+        url: url,
+        title: r.read<String>('title'),
+        lastVisitedAt: lastVisitedAt,
+        visitCount: r.read<int>('visit_count'),
+      );
+    }
+  }
+
+  /// v125 内置浏览器书签 / 文件夹：按 uid LWW 并入（父级按 uid 换成本机 id，父级先落），
+  /// 本机墓碑严格压制（`deletedAt > updatedAt`）的不复活。
+  Future<void> _mergeWebBrowserBookmarks() async {
+    if (!await _srcTableExists('web_browser_bookmarks')) return;
+    final Map<String, int> tombstones = <String, int>{
+      for (final SyncDeletionTombstoneRow row in await _db
+          .getSyncDeletionTombstonesOfType(
+              SyncTombstoneKind.webbookmark.dbValue))
+        row.itemKey: row.deletedAt,
+    };
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT s.uid, s.title, s.url, p.uid AS parent_uid, s.position, '
+          's.created_at, s.updated_at '
+          'FROM $_srcAlias.web_browser_bookmarks AS s '
+          'LEFT JOIN $_srcAlias.web_browser_bookmarks AS p ON p.id = s.parent_id',
+        )
+        .get();
+    final List<QueryRow> pending = <QueryRow>[
+      for (final QueryRow r in rows)
+        if ((tombstones[r.read<String>('uid')] ?? 0) <=
+            r.read<int>('updated_at'))
+          r,
+    ];
+    final Set<String> inBackup = <String>{
+      for (final QueryRow r in pending) r.read<String>('uid'),
+    };
+    final Set<String> placed = <String>{};
+    Future<void> place(QueryRow r) async {
+      await _db.upsertWebBrowserBookmarkFromSync(
+        uid: r.read<String>('uid'),
+        title: r.read<String>('title'),
+        url: r.read<String?>('url'),
+        parentUid: r.read<String?>('parent_uid'),
+        position: r.read<int>('position'),
+        createdAt: r.read<int>('created_at'),
+        updatedAt: r.read<int>('updated_at'),
+      );
+      placed.add(r.read<String>('uid'));
+    }
+
+    bool progressed = true;
+    while (pending.isNotEmpty && progressed) {
+      progressed = false;
+      for (final QueryRow r in List<QueryRow>.of(pending)) {
+        final String? parent = r.read<String?>('parent_uid');
+        if (parent != null &&
+            inBackup.contains(parent) &&
+            !placed.contains(parent)) {
+          continue;
+        }
+        await place(r);
+        pending.remove(r);
+        progressed = true;
+      }
+    }
+    for (final QueryRow r in pending) {
+      await place(r);
+    }
+  }
+
   /// MinedSentences have NO unique constraint, so INSERT OR IGNORE would never
   /// dedupe. Dedupe by content fingerprint {source, date_key, expression,
   /// reading, created_at} via NOT EXISTS (select-then-insert at SQL scope).
@@ -1796,6 +1895,11 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v124：AI 整理记录，设备本地。
       'library_organize_runs',
       'library_organize_changes',
+      // v125：内置浏览器标签页会话 / 最近关闭 / 下载记录，设备本地（会话与最近关闭
+      // 描述这台设备开着什么；下载记录指向本机磁盘上的文件）。
+      'web_browser_session_tabs',
+      'web_browser_closed_tabs',
+      'web_browser_downloads',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →

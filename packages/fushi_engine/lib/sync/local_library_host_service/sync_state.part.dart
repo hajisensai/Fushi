@@ -183,7 +183,11 @@ mixin _LocalLibraryHostSyncState
         await _db.getSyncDeletionTombstones();
     return <({String mediaType, String itemKey, int deletedAt})>[
       for (final SyncDeletionTombstoneRow r in rows)
-        (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
+        // v125：只随聚合快照走的种类（浏览器历史 / 书签）不进删除确认清单。
+        if (!(SyncTombstoneKind.tryParse(r.mediaType)
+                ?.propagatesViaAggregateSnapshotOnly ??
+            false))
+          (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
     ];
   }
 }
