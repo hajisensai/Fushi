@@ -26,6 +26,8 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
 import 'package:fushi_engine/srs/apkg/srs_import_report.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart'
+    show SrsLegacyLapisMigrationOps, srsLapisDeckRenamed;
 
 export 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
     show SrsImportException, SrsZstdDecoder;
@@ -327,6 +329,9 @@ class _Importer {
 
   /// 同 profile 回导时补的「前身」链接（日志原样保留在前身卡上）。
   final List<SrsEditSpec> _historyLinks = <SrsEditSpec>[];
+
+  /// 带 FSRS 参数、导入后改用 RWKV 的来源预设 id → 原算法（报告的「继续用 FSRS」用）。
+  final Map<int, SrsAlgorithm> _fsrsOfPreset = <int, SrsAlgorithm>{};
   final Map<String, Map<String, Object?>> _extDecks =
       <String, Map<String, Object?>>{};
   final Map<String, Object?> _extNotes = <String, Object?>{};
@@ -936,6 +941,7 @@ class _Importer {
           break;
         }
       }
+      found ??= _renamedLapisDeck(tree, full, parent);
       if (found != null) {
         idByName[full] = found;
         continue;
@@ -971,6 +977,10 @@ class _Importer {
           ),
         ],
       );
+      final SrsAlgorithm? fromFsrs = _fsrsOfPreset[byName[full]?.configId];
+      if (fromFsrs != null && values.containsKey(SrsFieldKeys.deckAlgorithm)) {
+        report.fsrsDecks[id] = fromFsrs;
+      }
       idByName[full] = id;
       if (!renamedImport) created.add(full);
       tree = await store.deckTree();
@@ -989,6 +999,25 @@ class _Importer {
             byName[full]!.configId,
       }.where(col.presets.containsKey).length;
     }
+  }
+
+  /// Anki 牌组 [full]（本机父牌组 [parent]）先前导入过、又被 Lapis 迁移改名成了 Fushi Card
+  /// （[SrsLegacyLapisMigrationOps.renameLapisDecks]）时，本机那个牌组的 ID；否则 null。
+  ///
+  /// 导入按「名字 + 父牌组」找牌组，Anki 那边仍叫「Lapis」，对不上改过名的本机牌组；以前这里就
+  /// 另建一个「Lapis」并把卡挪进去，随后的改名又因同级已有「Fushi Card」被跳过——重跑迁移后
+  /// 牌组重复、卡被拆成两半。认回的判据是确定的：按 Anki 全名派生的导入 ID（[srsImportedDeckId]）
+  /// 还活着、仍在同一父牌组下、名字正是 [srsLapisDeckRenamed] 的结果——即它就是从这个 Anki 牌组
+  /// 导入、再由迁移改名的那个。用户手改成别的名字的不认（照旧另建，见 [_mapDecks]）。
+  String? _renamedLapisDeck(SrsDeckTree tree, String full, String? parent) {
+    final String? renamed = srsLapisDeckRenamed(_parts(full).last);
+    if (renamed == null) return null;
+    final String id = srsImportedDeckId(profileUid, full);
+    final SrsDeckView? d = tree[id];
+    if (d == null || d.name != renamed || tree.parentOf(id) != parent) {
+      return null;
+    }
+    return id;
   }
 
   /// 首次建牌组 [full] 时随它一起写的设置（预设参数 / 继承方式 / 收起 / fushi-ext 的牌组键）。
@@ -1023,13 +1052,17 @@ class _Importer {
       final SrsAnkiDeck? parentSrc = parentName == null
           ? null
           : byName[parentName];
-      // 同一预设：父牌组也是本次新建、且用同一预设 → 继承；否则 own（顶层恒 own）。
+      // 父牌组也是本次新建、且两者的排程设置相同 → 继承；否则 own（顶层恒 own）。「相同」不只
+      // 认同一个预设 id：Anki 里给子牌组复制一份内容一模一样的预设很常见，按 id 判会把这些子牌组
+      // 全落成「单独设置」，之后改父牌组的参数就得逐个子牌组去改。
+      final SrsAnkiPreset? parentPreset = parentSrc == null
+          ? null
+          : col.presets[parentSrc.configId];
       final bool inherit =
           preset != null &&
-          parentName != null &&
+          parentPreset != null &&
           created.contains(parentName) &&
-          parentSrc != null &&
-          parentSrc.configId == preset.id;
+          _sameInheritedSettings(preset, parentPreset);
       if (preset != null) {
         values.addAll(
           _presetValues(
@@ -1054,7 +1087,46 @@ class _Importer {
       }
       values.removeWhere((String k, Object? _) => !wanted(k));
     }
+    // 关着「使用 RWKV」：自己管参数的新牌组一律落在 FSRS 上——Fushi 自己导出的 RWKV 牌组改回
+    // FSRS-7；没写算法的（两个开关都关、或不导入 FSRS 参数——算法键已在上面滤掉）也明确写
+    // FSRS-7，否则会落到默认算法 RWKV。必须在上面的按开关过滤之后，不然又被滤掉。
+    // 继承父牌组的子牌组不写，随父牌组。
+    if (!options.useRwkv) {
+      final Object? alg = values[SrsFieldKeys.deckAlgorithm];
+      final bool owns =
+          _parts(full).length == 1 ||
+          values[SrsFieldKeys.deckParamsMode] == 'own';
+      if (alg is Map && alg['alg'] == SrsAlgorithm.rwkv.wire) {
+        values[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
+          ...alg.cast<String, Object?>(),
+          'alg': SrsAlgorithm.fsrs7.wire,
+        };
+      } else if (alg == null && owns) {
+        values[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
+          'alg': SrsAlgorithm.fsrs7.wire,
+          'auto': true,
+        };
+      }
+    }
     return values;
+  }
+
+  /// 两个预设落到 Fushi 后、随参数继承的那部分（记忆率、音频、算法、参数组）是否一致。步长 /
+  /// 上限 / 最大间隔在 Fushi 里是每个牌组自己的，继承与否都照写，不参与比较；本次不导入的键
+  /// （按 [SrsAnkiImportOptions.withDeckConfigs] / [SrsAnkiImportOptions.withFsrsParams]）也不比。
+  bool _sameInheritedSettings(SrsAnkiPreset a, SrsAnkiPreset b) {
+    if (a.id == b.id) return true;
+    Map<String, Object?> inherited(SrsAnkiPreset p) =>
+        _presetValues(p, own: true, report: false)
+          ..remove(SrsFieldKeys.deckSteps)
+          ..remove(SrsFieldKeys.deckLimits)
+          ..remove(SrsFieldKeys.deckMaxInterval)
+          ..removeWhere(
+            (String k, Object? _) => _fsrsDeckKeys.contains(k)
+                ? !options.withFsrsParams
+                : !options.withDeckConfigs,
+          );
+    return jsonEncode(inherited(a)) == jsonEncode(inherited(b));
   }
 
   /// 归「FSRS 参数」开关管的牌组键（其余预设键归「牌组预设」开关）。
@@ -1127,33 +1199,56 @@ class _Importer {
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }
-    SrsAlgorithm alg = srsDefaultAlgorithm;
+    // 带来的 FSRS 参数组（按它自己的算法存）。
+    SrsAlgorithm? fsrs;
     List<double>? params;
     if (col.fsrsEnabled) {
-      if (p.rwkvEnabled && report && options.withFsrsParams) {
-        this.report.rwkvPresetsFellBack.add(p.name);
-      }
       if (p.fsrs7Params.length == SrsAlgorithm.fsrs7.paramCount &&
           (p.fsrsVersion ?? 0) == 0) {
-        alg = SrsAlgorithm.fsrs7;
+        fsrs = SrsAlgorithm.fsrs7;
         params = p.fsrs7Params;
       } else if (p.fsrs6Params.length == SrsAlgorithm.fsrs6.paramCount) {
-        alg = SrsAlgorithm.fsrs6;
+        fsrs = SrsAlgorithm.fsrs6;
         params = p.fsrs6Params;
       }
     }
+    // 开着「使用 RWKV」（默认）：一律用默认算法 RWKV（RWKV fork 的 rwkvReviewEnabled 预设本来就是）。
+    // 带着 FSRS 参数来的预设参数照样存下、报告里写明，用户不要 RWKV 就在报告里「继续用 FSRS」或去
+    // 牌组设置切回，参数还在；没有参数的（SM-2 或没优化过）同样写进报告，不静默换算法。
+    // 关着：保留来源的 FSRS 算法，没有参数（含 Anki 里开了 RWKV 的）用 FSRS-7，同样进报告。
+    // 「参数保留了、可以切回 FSRS」只在导入 FSRS 参数（[SrsAnkiImportOptions.withFsrsParams]）时
+    // 成立：关着时算法 / 参数键在 [_newDeckSettings] 里整组滤掉，参数根本没落库，不能这样报。
+    final bool rwkv = options.useRwkv;
+    final bool keepsParams = options.withFsrsParams;
+    if (report) {
+      if (p.rwkvEnabled) {
+        (rwkv ? this.report.rwkvPresets : this.report.rwkvPresetsOnFsrs).add(
+          p.name,
+        );
+      } else if (fsrs == null) {
+        (rwkv
+                ? this.report.defaultAlgorithmPresets
+                : this.report.defaultFsrsPresets)
+            .add(p.name);
+      } else if (rwkv && keepsParams) {
+        this.report.fsrsPresets[p.name] = fsrs;
+      }
+    }
+    if (rwkv && keepsParams && fsrs != null && !p.rwkvEnabled) {
+      _fsrsOfPreset[p.id] = fsrs;
+    }
     v[SrsFieldKeys.deckAlgorithm] = <String, Object?>{
-      'alg': alg.wire,
+      'alg': (rwkv ? srsDefaultAlgorithm : (fsrs ?? SrsAlgorithm.fsrs7)).wire,
       'auto': true,
     };
-    if (params != null) {
-      final String? bad = _validate(alg, params);
+    if (fsrs != null && params != null) {
+      final String? bad = _validate(fsrs, params);
       if (bad != null) {
         if (report && options.withFsrsParams) {
           this.report.invalidParams[p.name] = bad;
         }
       } else {
-        v[alg == SrsAlgorithm.fsrs6
+        v[fsrs == SrsAlgorithm.fsrs6
             ? SrsFieldKeys.deckFsrs6Params
             : SrsFieldKeys.deckFsrs7Params] = SrsParamSet(
           params: params,
@@ -1295,6 +1390,11 @@ class _Importer {
         : (_deckOf[cards.first.homeDeck] ?? store.defaultDeckId);
 
     final bool isNew = existing == null;
+    // 先前导入过、后来在本机被删：重新导入即恢复（与牌组同一条规则，见 [_importDecks]；Anki
+    // 里删掉的笔记不留身份，再导入就是新加）。以前按「已存在、较新时更新」走，本机内容的
+    // 修改时刻晚于来源 mod → 记为未改动，删除标记永远不清：牌组复活了、笔记仍是删除态，
+    // 卡片留在删牌组时移去的默认牌组里且被隐藏。
+    final bool restored = existing != null && existing.deletedAt != null;
     bool update = false;
     if (isNew) {
       // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
@@ -1320,6 +1420,19 @@ class _Importer {
         ),
       );
       return;
+    } else if (restored) {
+      // 删除标记、内容、标签、首选牌组一律回到来源：用户要的是「把它导回来」，本机的旧内容
+      // 只是删除前的残留，不参与「较新时更新」的比较。
+      update = true;
+      await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
+        SrsFieldKeys.deleted: null,
+        for (final MapEntry<String, String> f in fields.entries)
+          if (existing.field(f.key) != f.value)
+            SrsFieldKeys.noteField(f.key): f.value,
+        if (!_sameList(existing.tags, tags)) SrsFieldKeys.noteTags: tags,
+        if (existing.deckId != firstDeck) SrsFieldKeys.noteDeck: firstDeck,
+      });
+      report.notesRestored++;
     } else if (options.updateNotes.shouldUpdate(
       localMs: _lastEditMs(
         existing.edits,
@@ -1367,6 +1480,7 @@ class _Importer {
         firstDeck,
         isNew: isNew,
         update: update,
+        restored: restored,
       );
       if (options.withScheduling) {
         await _importCardSchedule(cardId, c, revlogOf, noteExisted: !isNew);
@@ -1382,6 +1496,7 @@ class _Importer {
     String noteDeck, {
     required bool isNew,
     required bool update,
+    bool restored = false,
   }) async {
     if (!isNew && !update) return;
     final String deck = _deckOf[c.homeDeck] ?? store.defaultDeckId;
@@ -1408,8 +1523,9 @@ class _Importer {
       cardId,
     );
     final int sourceMs = c.mod * 1000;
+    // 恢复的笔记不比：本机那次改动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
     bool localNewer(String key) =>
-        _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
+        !restored && _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
     if (row.deckId != deck && !localNewer(SrsFieldKeys.cardDeck)) {
       await store.moveCard(cardId, deck);
     }

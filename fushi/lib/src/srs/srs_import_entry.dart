@@ -81,6 +81,12 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
     updated: r.notesUpdated,
     skipped: r.notesSkipped,
   ),
+  if (r.notesRestored > 0) t.srs_import_report_restored(n: r.notesRestored),
+  if (r.lapisNotesMigrated > 0)
+    t.srs_import_report_lapis_migrated(n: r.lapisNotesMigrated),
+  if (r.lapisDecksRenamed > 0)
+    t.srs_import_report_lapis_decks_renamed(n: r.lapisDecksRenamed),
+  if (r.lapisMigrationFailed) t.srs_import_report_lapis_failed,
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
   if (r.cardsResetToNew > 0)
     t.srs_import_report_reset_new(n: r.cardsResetToNew),
@@ -104,8 +110,19 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
       preset: s.preset,
       removed: _formatSteps(s.removed),
     ),
-  for (final String preset in r.rwkvPresetsFellBack)
+  for (final MapEntry<String, SrsAlgorithm> e in r.fsrsPresets.entries)
+    t.srs_import_report_fsrs(
+      preset: e.key,
+      alg: e.value == SrsAlgorithm.fsrs6 ? 'FSRS-6' : 'FSRS-7',
+    ),
+  for (final String preset in r.defaultAlgorithmPresets)
+    t.srs_import_report_default_algorithm(preset: preset),
+  for (final String preset in r.rwkvPresets)
     t.srs_import_report_rwkv(preset: preset),
+  for (final String preset in r.rwkvPresetsOnFsrs)
+    t.srs_import_report_rwkv_on_fsrs(preset: preset),
+  for (final String preset in r.defaultFsrsPresets)
+    t.srs_import_report_default_fsrs(preset: preset),
   for (final String preset in r.invalidParams.keys)
     t.srs_import_report_invalid_params(preset: preset),
   if (r.conflictNotes.isNotEmpty)
@@ -135,7 +152,11 @@ Future<bool> srsExportScopeUsesFsrs7(SrsDbStore store, {String? deckId}) async {
       ? tree.decks.map((SrsDeckView d) => d.id)
       : tree.subtree(deckId);
   for (final String id in ids) {
-    if (tree.paramsOwner(id).localAlgorithm == SrsAlgorithm.fsrs7) return true;
+    // RWKV 牌组的参数组也是 FSRS-7 的（影子记忆状态），Anki 里同样改用 FSRS-6。
+    if (tree.paramsOwner(id).localAlgorithm.memoryAlgorithm ==
+        SrsAlgorithm.fsrs7) {
+      return true;
+    }
   }
   return false;
 }
@@ -218,11 +239,39 @@ String srsImportFailureMessage(Object failure) =>
         error: failure is SrsImportException ? failure.message : '$failure',
       );
 
+/// 用户不要 RWKV：把导入时由 FSRS 预设改用 RWKV 的牌组（[SrsImportReport.fsrsDecks]）切回各自
+/// 原来的 FSRS 算法，返回切了几个。导入时参数已经按原算法存下，切回即用。
+///
+/// 只改仍然自己管参数、仍是 RWKV 的牌组：导入后被删、改成继承、或用户已经自己换过算法的跳过。
+Future<int> srsKeepImportedDecksOnFsrs(
+  SrsDbStore store,
+  Map<String, SrsAlgorithm> decks,
+) async {
+  final SrsDeckTree tree = await store.deckTree();
+  int switched = 0;
+  for (final MapEntry<String, SrsAlgorithm> e in decks.entries) {
+    final SrsDeckView? deck = tree[e.key];
+    if (deck == null || tree.paramsOwner(e.key).id != e.key) continue;
+    if (!deck.localAlgorithm.usesRwkv) continue;
+    await store.editFields(SrsEntityKind.deck, e.key, <String, Object?>{
+      SrsFieldKeys.deckAlgorithm: <String, Object?>{
+        'alg': e.value.wire,
+        'auto': false,
+      },
+    });
+    switched++;
+  }
+  return switched;
+}
+
 /// 导入报告对话框（任务条「查看报告」）。
+///
+/// 有由 FSRS 预设改用 RWKV 的牌组且给了 [onKeepFsrs] 时多一个「继续用 FSRS」按钮。
 Future<void> showSrsImportReportDialog(
   BuildContext context,
-  SrsImportReport report,
-) => showAppDialog<void>(
+  SrsImportReport report, {
+  VoidCallback? onKeepFsrs,
+}) => showAppDialog<void>(
   context: context,
   builder: (BuildContext dialogContext) => FushiAlertDialog(
     icon: const FushiDialogHeroIcon(icon: FushiIcons.importFile),
@@ -241,6 +290,15 @@ Future<void> showSrsImportReportDialog(
       ),
     ),
     actions: <Widget>[
+      if (onKeepFsrs != null && report.fsrsDecks.isNotEmpty)
+        FushiDialogAction(
+          label: t.srs_import_report_keep_fsrs,
+          kind: FushiDialogActionKind.secondary,
+          onPressed: () {
+            Navigator.of(dialogContext).pop();
+            onKeepFsrs();
+          },
+        ),
       FushiDialogAction(
         label: t.dialog_ok,
         kind: FushiDialogActionKind.primary,
@@ -250,6 +308,21 @@ Future<void> showSrsImportReportDialog(
     ],
   ),
 );
+
+/// 导入报告「继续用 FSRS」：切完提示切了几个，并让牌组列表重读。
+Future<void> srsKeepImportedDecksOnFsrsFromReport(
+  WidgetRef ref,
+  SrsImportReport report,
+) async {
+  final SrsDbStore? store = await readSrsStore(ref);
+  if (store == null) {
+    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    return;
+  }
+  final int n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  bumpSrsRevision(ref);
+  FushiToast.show(msg: t.srs_import_kept_fsrs(n: n));
+}
 
 /// 导入失败对话框（任务条上点失败的任务）。
 Future<void> showSrsImportFailureDialog(BuildContext context, Object failure) =>

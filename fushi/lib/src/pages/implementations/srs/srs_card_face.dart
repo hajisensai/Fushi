@@ -58,6 +58,7 @@ class SrsCardFace {
     this.onWheel,
     this.onZoomWheel,
     this.hostCss = '',
+    this.hostScript = '',
     this.onSourceLink,
     this.autoplayMedia = true,
   });
@@ -106,6 +107,11 @@ class SrsCardFace {
   /// 「长释义收起高度」按外层视口给成像素值：释义 WebView 高度跟内容走，页内 `vh` 不再是屏高。
   final String hostCss;
 
+  /// 宿主追加的外壳脚本（随主题下发一次）。可定义 `window.__fushiSrsHostLayout`：外壳在
+  /// 卡片脚本跑完、换主题后都会调它（混合渲染的释义页据此重排词典分组）。脚本内容应当
+  /// 固定不变，随设置变化的参数走 [hostCss] 里的 CSS 变量（主题键只比脚本长度）。
+  final String hostScript;
+
   /// 卡面里点了 Fushi 制卡写进 MiscInfo 的来源链接（`fushi://source?...`）：宿主据此
   /// 跳回书 / 漫画 / 视频的对应位置（`openCardSource`）。null = 来源链接不响应。其它
   /// 链接一律不导航（卡面外壳不能被链接带走）。
@@ -133,6 +139,7 @@ class SrsCardFace {
         onWheel: onWheel,
         onZoomWheel: onZoomWheel,
         hostCss: hostCss,
+        hostScript: hostScript,
         onSourceLink: onSourceLink,
         autoplayMedia: autoplayMedia,
       );
@@ -540,12 +547,21 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 宿主排版钩子（SrsCardFace.hostScript 定义）：卡片脚本与钩子都跑完后再排。
+  function hostLayout(){
+    try {
+      if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
     dictStyle();
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
     designSkin();
+    hostLayout();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
     document.getElementById('fushi-theme-css').textContent = themeCss;
@@ -556,6 +572,7 @@ const String kSrsCardShellScript = r'''
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
     } catch (e) {}
+    hostLayout();
   };
   // 样式注册表：每段样式（笔记类型 CSS / 卡片正文里抽出的 <style>）按内容哈希只建一次
   // <style data-fushi-css>，之后换卡只传哈希引用；当前卡没引用的全部 disabled（词典样式
@@ -1056,11 +1073,15 @@ class SrsCardFaceSync {
 /// 卡面 `[sound:]` 的播放实现（测试覆写）。参数是本地文件路径；返回是否开始播放。
 typedef SrsSoundPlayer = Future<bool> Function(String path);
 
-/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]）。
+/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]），
+/// 音量取开播那一刻的 [srsReviewVolumeProvider]。
 final Provider<SrsSoundPlayer> srsSoundPlayerProvider =
     Provider<SrsSoundPlayer>(
       (Ref ref) =>
-          (String path) => DesktopAudioPlayback.playFile(path),
+          (String path) => DesktopAudioPlayback.playFile(
+            path,
+            volume: ref.read(srsReviewVolumeProvider),
+          ),
     );
 
 /// 卡面媒体请求的响应：[store] 里按名字取字节；不是卡面媒体 URL 时返回 null。
@@ -1181,6 +1202,7 @@ class SrsCardFaceDocumentInputs {
         a.bodyHtml == b.bodyHtml &&
         a.css == b.css &&
         a.hostCss == b.hostCss &&
+        a.hostScript == b.hostScript &&
         // 复习中改牌组「自动播放」要立即重下发（BUG-3547）：不比它会命中旧文档。
         a.autoplayMedia == b.autoplayMedia &&
         identical(fonts, other.fonts) &&
@@ -1276,7 +1298,7 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
         : skin
         ? kSrsDesignSkinClass
         : '',
-    hostScript: skin ? kSrsCardDesignSkinScript : '',
+    hostScript: (skin ? kSrsCardDesignSkinScript : '') + face.hostScript,
   );
 }
 
@@ -1566,7 +1588,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             r['width'] ?? 0,
             r['height'] ?? 0,
           );
-    final Rect anchor = box.localToGlobal(local.topLeft) & local.size;
+    // 整个矩形经同一变换：复习页不在 FushiAppUiScaleNeutralizer 之下，「全局左上角 & 局部
+    // 尺寸」会把高宽留在 1/界面缩放，弹窗按偏高的下沿摆、盖住被查的那一行。
+    final Rect anchor = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      local,
+    );
     lookup.lookup(
       SrsCardLookupRequest(
         term: data.text,

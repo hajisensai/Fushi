@@ -44,6 +44,8 @@ import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart'
     show kSrsBuiltinFushiCardKey, srsBuiltinNoteTypeSpec;
@@ -61,7 +63,6 @@ enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
 /// `SettingsCustomItem.rows` 逐行渲染（每行一个 [AnkiSettingsBody]，与同组的子页
 /// 入口行同一分段规则）；哪些行出现由 schema 侧的 `ankiSectionRowsFor` 决定。
 enum AnkiSectionRow {
-  target,
   profile,
   fetch,
   createLapis,
@@ -246,22 +247,48 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // 挖词目标：与「下载」的后端选择同一形态——一个分组、一条分段条，脚注说明
+          // 当前目标；选中哪个，下面才展开哪个的设置。
           enter(
-            'card_section_srs',
-            AdaptiveSettingsSection(
-              title: t.srs_mining_target_srs,
+            'card_section_target',
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SettingsSearchTarget(
-                  id: 'card_creation.anki.srs_mining_target',
-                  child: _buildSrsTargetRow(
-                    srsEnabled: srsEnabled,
-                    toReview: toReview,
-                  ),
+                AdaptiveSettingsSection(
+                  title: t.srs_mining_target_title,
+                  children: <Widget>[
+                    SettingsSearchTarget(
+                      id: 'card_creation.anki.srs_mining_target',
+                      child: _buildMiningTargetStrip(
+                        tokens,
+                        srsEnabled: srsEnabled,
+                        toReview: toReview,
+                      ),
+                    ),
+                  ],
                 ),
-                if (toReview) ..._buildSrsMiningRows(),
+                SettingsSectionFooter(
+                  toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
+                ),
               ],
             ),
           ),
+          if (toReview)
+            enter(
+              'card_section_srs',
+              AdaptiveSettingsSection(
+                title: t.srs_mining_target_srs,
+                children: <Widget>[
+                  ..._buildSrsMiningRows(),
+                  // 切到 Fushi 复习之前排队等发往 Anki 的卡：有才显示。
+                  const SettingsSearchTarget(
+                    id: 'card_creation.anki.pending_mines',
+                    child: PendingMinesEntryRow(hideWhenEmpty: true),
+                  ),
+                ],
+              ),
+            ),
           // 两种目标都生效的卡片内容项（SRS 制卡复用 AnkiNoteComposer：查重放行、
           // ✓ 覆写范围、紧凑释义都读同一份设置）。只对 Anki 成立的「查重范围」在
           // 「Anki」分组。
@@ -348,33 +375,40 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  /// 「Fushi 复习」分组的首行：复习模块关着时是「开启 Fushi 复习」入口（确认一次：
-  /// 开模块 + 改目标）；开着时是单选目标行。当前发往 Anki 时副标题如实写明，并指向
-  /// 下方「Anki」分组——这是状态说明，不是推广。
-  Widget _buildSrsTargetRow({
+  /// 挖词目标分段条（Fushi 复习 / Anki）。复习模块关着时选「Fushi 复习」先确认一次：
+  /// 开模块 + 改目标（[_enableFushiReview]）；取消则仍是 Anki。
+  Widget _buildMiningTargetStrip(
+    FushiDesignTokens tokens, {
     required bool srsEnabled,
     required bool toReview,
   }) {
-    if (!srsEnabled) {
-      return AdaptiveSettingsNavigationRow(
-        key: const ValueKey<String>('card-target-srs-enable'),
-        title: t.card_target_srs_enable,
-        subtitle: t.card_target_srs_hint,
-        icon: FushiIcons.repeat,
-        showIcon: true,
-        onTap: () => unawaited(_enableFushiReview()),
-      );
-    }
-    return CardTargetRow(
-      key: const ValueKey<String>('card-target-srs'),
-      title: t.card_target_srs_title,
-      subtitle: toReview
-          ? t.card_target_srs_hint
-          : t.card_target_anki_current_note,
-      icon: FushiIcons.repeat,
-      selected: toReview,
-      onSelect: () => unawaited(
-        ref.read(appProvider).setSrsMiningTarget(SrsMiningTarget.srs),
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: tokens.spacing.gap,
+      ),
+      child: FushiSegmentedStrip<SrsMiningTarget>(
+        key: const ValueKey<String>('card-target-switch'),
+        segments: <ButtonSegment<SrsMiningTarget>>[
+          ButtonSegment<SrsMiningTarget>(
+            value: SrsMiningTarget.srs,
+            icon: const Icon(FushiIcons.repeat),
+            label: Text(t.srs_mining_target_srs),
+          ),
+          ButtonSegment<SrsMiningTarget>(
+            value: SrsMiningTarget.anki,
+            icon: const Icon(FushiIcons.ankiCard),
+            label: Text(t.srs_mining_target_anki),
+          ),
+        ],
+        selected: toReview ? SrsMiningTarget.srs : SrsMiningTarget.anki,
+        onChanged: (SrsMiningTarget target) {
+          if (target == SrsMiningTarget.srs && !srsEnabled) {
+            unawaited(_enableFushiReview());
+            return;
+          }
+          unawaited(ref.read(appProvider).setSrsMiningTarget(target));
+        },
       ),
     );
   }
@@ -403,24 +437,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) {
     final AnkiSettings settings = uiState.settings;
     return switch (row) {
-      AnkiSectionRow.target => SettingsSearchTarget(
-        id: 'card_creation.anki.target',
-        child: CardTargetRow(
-          key: const ValueKey<String>('card-target-anki'),
-          title: t.card_target_anki_title,
-          subtitle: t.card_target_anki_hint,
-          icon: FushiIcons.ankiCard,
-          selected: !ref.watch(srsMiningToReviewProvider),
-          // 复习模块关着时 Anki 是唯一目标：只标状态，不给切换。
-          onSelect: ref.watch(srsModuleEnabledProvider)
-              ? () => unawaited(
-                  ref
-                      .read(appProvider)
-                      .setSrsMiningTarget(SrsMiningTarget.anki),
-                )
-              : null,
-        ),
-      ),
       // showIcon 与同组的刷新 / Lapis 行一致，左栏图标对齐。
       AnkiSectionRow.profile => SettingsSearchTarget(
         id: 'card_creation.anki.profile',
@@ -496,11 +512,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
       // 待发制卡队列：不受「Anki 已配置」门控——恰恰是连不上 Anki 的时候卡会攒在
       // 这里。切到 Fushi 复习前攒下的待发卡片仍要发往 Anki：队列非空时照旧露出。
-      AnkiSectionRow.pendingMines => SettingsSearchTarget(
+      AnkiSectionRow.pendingMines => const SettingsSearchTarget(
         id: 'card_creation.anki.pending_mines',
-        child: PendingMinesEntryRow(
-          hideWhenEmpty: ref.watch(srsMiningToReviewProvider),
-        ),
+        child: PendingMinesEntryRow(),
       ),
     };
   }
@@ -2648,49 +2662,6 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// 制卡目标的单选行（「发往 Fushi 复习」/「发往 Anki」）：左栏图标 + 标题 / 说明 +
-/// 行尾单选钮。两行分在「Fushi 复习」与「Anki」两个分组里，同一时刻只有一行选中。
-/// [onSelect] 为 null = 只标状态不给切换（复习模块关着时 Anki 是唯一目标）。
-class CardTargetRow extends StatelessWidget {
-  const CardTargetRow({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.selected,
-    required this.onSelect,
-    super.key,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback? onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    final VoidCallback? select = selected ? null : onSelect;
-    return Semantics(
-      selected: selected,
-      inMutuallyExclusiveGroup: true,
-      child: AdaptiveSettingsRow(
-        title: title,
-        subtitle: selected ? '${t.card_target_current} · $subtitle' : subtitle,
-        icon: icon,
-        showIcon: true,
-        trailing: ExcludeSemantics(
-          child: FushiRadio<bool>(
-            value: true,
-            groupValue: selected,
-            onChanged: (bool? _) => select?.call(),
-          ),
-        ),
-        onTap: select,
       ),
     );
   }

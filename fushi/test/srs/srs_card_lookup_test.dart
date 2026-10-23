@@ -1,6 +1,8 @@
 // 复习卡面查词：原生区按字取词 → 查词弹窗（与阅读器同一套弹窗引擎）；弹窗里继续嵌套查；
 // 卡面原有点击（点例句显示注音）不被取词吃掉；卡面链接只放行 Fushi 来源跳转。
 // 复习页整页（按键不评分、Esc 关弹窗回焦点）见 srs_pages_test.dart 的「卡面查词」组。
+import 'dart:ui' show BoxHeightStyle;
+
 import 'package:flutter/rendering.dart' show RenderParagraph, TextBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
@@ -291,6 +293,64 @@ void main() {
     expect(termAt('よ'), 'ように通う');
     expect(termAt('通'), '通う');
     expect(termAt('か'), '通う', reason: '点注音按该段起点取词');
+  });
+
+  // 用户 2026-10-21「弹窗位置不对，高了一点」：复习页不在界面缩放中和层之下（实测用户
+  // 界面缩放 1.4），取词锚点只平移原点时高宽 / 位置留在 1/缩放，弹窗按偏高的下沿摆、
+  // 盖住被查的那一行。锚点必须是字形盒经完整变换后的全局矩形。
+  testWidgets('原生区取词锚点随界面缩放：盒子含点按位置、高度 = 字形高 × 缩放', (
+    WidgetTester tester,
+  ) async {
+    const double scale = 1.4;
+    final GlobalKey root = GlobalKey();
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 30, top: 40),
+            child: Transform.scale(
+              scale: scale,
+              alignment: Alignment.topLeft,
+              child: RepaintBoundary(
+                key: root,
+                child: const SrsRubyText(
+                  segments: <SrsInline>[SrsInline('手足を動かして水中を進む')],
+                  style: TextStyle(fontSize: 20),
+                  rubyStyle: TextStyle(fontSize: 10),
+                  lookup: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final RenderBox box = root.currentContext!.findRenderObject()! as RenderBox;
+    final Offset tap = rubyBaseCenter(tester, find.byKey(root), '水');
+    final SrsNativeLookupHit hit = srsNativeLookupHitAt(box, tap)!;
+    expect(hit.term, '水中を進む');
+    final RenderParagraph paragraph = hit.paragraph;
+    final String text = paragraph.text.toPlainText(
+      includeSemanticsLabels: false,
+    );
+    final int i = text.indexOf('水');
+    final Rect glyph = paragraph
+        .getBoxesForSelection(
+          TextSelection(baseOffset: i, extentOffset: i + 1),
+          boxHeightStyle: BoxHeightStyle.max,
+        )
+        .first
+        .toRect();
+    expect(hit.anchor.contains(tap), isTrue, reason: '${hit.anchor} vs $tap');
+    expect(hit.anchor.height, moreOrLessEquals(glyph.height * scale));
+    expect(hit.anchor.width, moreOrLessEquals(glyph.width * scale));
+    // 下沿 = 字形真实下沿（弹窗贴着它往下摆，不能压进这一行）。
+    expect(
+      hit.anchor.bottom,
+      moreOrLessEquals(paragraph.localToGlobal(glyph.bottomLeft).dy),
+    );
   });
 
   group('卡面链接', () {

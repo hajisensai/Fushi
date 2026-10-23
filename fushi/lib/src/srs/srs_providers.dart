@@ -20,7 +20,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
+import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -127,6 +130,18 @@ final Provider<bool> srsReviewShowIntervalsProvider = Provider<bool>(
   ),
 );
 
+/// 复习页页头是否显示剩余卡数（按 profile 偏好，默认显示；对齐 Anki「显示剩余卡片数量」）。
+final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewShowCounts)),
+);
+
+/// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。
+final Provider<double> srsReviewVolumeProvider = Provider<double>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewVolume)),
+);
+
 /// 复习页卡面缩放倍率（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0），按 profile 偏好。
 final Provider<double> srsReviewZoomProvider = Provider<double>(
   (Ref ref) =>
@@ -216,6 +231,51 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       return store;
     });
 
+/// RWKV 权重目录（`<support>/srs_rwkv/models`）：按需下载，走全应用代理。
+final FutureProvider<SrsRwkvModels> srsRwkvModelsProvider =
+    FutureProvider<SrsRwkvModels>((Ref ref) async {
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      return SrsRwkvModels(
+        dir: Directory(p.join(support.path, 'srs_rwkv', 'models')),
+        createClient: createAppHttpClient,
+      );
+    });
+
+/// RWKV 排程服务：挂到 store 上（[SrsDbStore.rwkv]）。对象本身很轻；后台 isolate 与全量回放
+/// 只在有 RWKV 牌组、且权重已下载时启动（[SrsRwkvService.start]，或第一次给 RWKV 牌组排程时）。
+/// 由 `srsAppRuntimeProvider` 保活（模块开着时常驻）。换 profile / 关模块时关掉（存快照）。
+final FutureProvider<SrsRwkvService?> srsRwkvServiceProvider =
+    FutureProvider<SrsRwkvService?>((Ref ref) async {
+      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      if (store == null) return null;
+      final SrsRwkvModels models = await ref.watch(
+        srsRwkvModelsProvider.future,
+      );
+      final Directory support = await ref.watch(srsSupportRootProvider)();
+      final SrsRwkvService service = SrsRwkvService(
+        store: store,
+        models: models,
+        snapshotDir: Directory(p.join(support.path, 'srs_rwkv', 'state')),
+        log: (String message) => ErrorLogService.instance.log(
+          'SrsRwkvService',
+          message,
+          StackTrace.current,
+        ),
+      );
+      store.rwkv = service;
+      ref.onDispose(() {
+        if (identical(store.rwkv, service)) store.rwkv = null;
+        unawaited(service.close());
+      });
+      final SrsDeckTree tree = await store.deckTree();
+      if (tree.decks.any(
+        (SrsDeckView d) => tree.paramsOwner(d.id).localAlgorithm.usesRwkv,
+      )) {
+        srsRunLogged('SrsRwkvService.start', service.start);
+      }
+      return service;
+    });
+
 /// SRS 媒体根所在的支持目录（测试覆写成临时目录）。
 final Provider<Future<Directory> Function()> srsSupportRootProvider =
     Provider<Future<Directory> Function()>(
@@ -275,9 +335,14 @@ class SrsDeckDeleteController extends ChangeNotifier {
   /// 这个牌组是否在删（删完、等重读的也算：行保持删除中，直到列表里没有它）。
   bool isDeleting(String deckId) => _deleting.containsKey(deckId);
 
-  /// 删一个牌组（连同子牌组，见 `SrsDbStore.deleteDeck`）。同一个牌组已经在删时直接返回。
+  /// 删一个牌组（连同子牌组，见 `SrsDbStore.deleteDeck`；[deleteCards] 为真时连卡片一起删）。
+  /// 同一个牌组已经在删时直接返回。
   /// 失败原样抛出（调用方记日志）；成功或失败都让列表重读（失败也可能已提交了前几块）。
-  Future<void> delete(SrsDbStore store, String deckId) async {
+  Future<void> delete(
+    SrsDbStore store,
+    String deckId, {
+    bool deleteCards = false,
+  }) async {
     if (_disposed || _deleting.containsKey(deckId)) return;
     final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
     _deleting[deckId] = progress;
@@ -285,6 +350,7 @@ class SrsDeckDeleteController extends ChangeNotifier {
     try {
       await store.deleteDeck(
         deckId,
+        deleteCards: deleteCards,
         onProgress: (int done, int total) {
           if (!_disposed && total > 0) progress.value = done / total;
         },

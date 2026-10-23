@@ -332,6 +332,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 不再每章重查全书 cue）。
     _cachedAllCues = null;
     _cachedSentenceAudio = false;
+    _cueOffsetIndex = null;
   }
 
   /// 歌词层在场时换接了控制器（重导入强制重载等）：把覆盖层期间的正文强制跟随
@@ -1094,23 +1095,19 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         : null;
   }
 
+  /// 查词卡顿（P2）：旧实现每次查词把全书 cue 解码两轮（先按章过滤、再比区间）。现在
+  /// 用 [AudioCueOffsetIndex] 缓存本章解码结果，cue 列表实例或章号变了才重建；与
+  /// `sentenceAudioCuesForSection` + 顺序首个命中的旧语义逐位相同。
   AudioCue? _findCueForOffset(int matchableOffset) {
     final AudiobookPlayerController? ctrl = _audiobookController;
     if (ctrl == null) return null;
-    final List<AudioCue> cues = ctrl.sentenceAudioCuesForSection(
-      _currentChapter,
-    );
-    for (final AudioCue cue in cues) {
-      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-        cue.textFragmentId,
-      );
-      if (frag == null) continue;
-      if (frag.normCharStart <= matchableOffset &&
-          frag.normCharEnd > matchableOffset) {
-        return cue;
-      }
+    final List<AudioCue> cues = ctrl.chapterCuesSnapshot;
+    AudioCueOffsetIndex? index = _cueOffsetIndex;
+    if (index == null || !index.matches(cues, _currentChapter)) {
+      index = AudioCueOffsetIndex.build(cues, _currentChapter);
+      _cueOffsetIndex = index;
     }
-    return null;
+    return index.cueAt(matchableOffset);
   }
 
   AudioCue? _findCueForSentence(String sentence) {

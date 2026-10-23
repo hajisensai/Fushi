@@ -1912,16 +1912,18 @@ bool isUpdateVersionNewer(
   // 一律不是更新（让 beta/debug 用户能收到更新的正式版/更高基版本，永不掉队）。
   if (!_channelAdmitsVersion(remoteVersion, channel)) return false;
 
-  // 基版本不同：高基永远更新（pubspec 基版本随 commit 单调递增，高基=更晚构建）。
-  final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
-  if (baseCompare != 0) return baseCompare > 0;
-
-  // 同基：按 release sequence「谁后构建谁赢」（BUG-846 正式↔调试来回更新根治）。序号跨三
-  // 通道同尺（都是 git rev-list --count HEAD），故正式版/beta/debug 同基可直接比先后，不再
-  // 用 semver 的「正式版>预发布」——那与「预发布轨更晚构建」矛盾，正是乒乓根源。
+  // 两侧 release sequence 都已知：按序号「谁后构建谁赢」，**先于基版本**（BUG-846 正式↔调试
+  // 来回更新根治）。序号跨三通道同尺（都是 git rev-list --count HEAD），而 Android versionCode
+  // 就由它导出——序号更低的包系统拒装（「无法降级安装」）。基版本不再单调代表构建先后：
+  // 从 main 发的正式版 3.0.1（seq 19816）基版本高于 develop 的 3.0.0-debug.20320，构建却更早，
+  // 旧的「高基永远更新」把它推给调试版用户、装不上（2026-10-22 实测）。
   final int? rSeq = _releaseSeqOf(remoteVersion, remoteSeq);
   final int? lSeq = _releaseSeqOf(localVersion, localSeq);
   if (rSeq != null && lSeq != null) return rSeq > lSeq;
+
+  // 任一侧序号未知：只能退回基版本比较，高基视为更新。
+  final int baseCompare = _compareBaseVersion(remoteVersion, localVersion);
+  if (baseCompare != 0) return baseCompare > 0;
 
   // 任一侧序号未知（如正式版仅走 302 拿不到 seq，或本机构建号缺失）：同基无法判先后 →
   // 保守不更新。绝不在无法证实「远端更晚」时把用户在同基的两个轨道间来回推；等基版本上升
@@ -2017,19 +2019,18 @@ bool isVersionNewer(String remote, String local) {
 }
 
 /// BUG-846「谁后用谁」候选新旧比较（供合集并集选择排序，非「是否更新」判定）：`>0` 表示
-/// [a] 比 [b] 更新。基版本降序主导；同基按 release sequence（`git rev-list --count HEAD`，三
-/// 通道同尺）降序——正式版 seq 由 [seqA]/[seqB]（manifest 顶层 releaseSequence）提供，预发布
-/// seq 即版本串尾号。序号缺失（正式版 302 回退无 seq）→ 同基视为并列（稳定排序保原序）。
+/// [a] 比 [b] 更新。两侧 release sequence（`git rev-list --count HEAD`，三通道同尺）都已知时
+/// 按序号降序——正式版 seq 由 [seqA]/[seqB]（manifest 顶层 releaseSequence）提供，预发布 seq 即
+/// 版本串尾号；任一侧缺序号（正式版 302 回退无 seq）才按基版本降序，同基视为并列（稳定排序保原序）。
 /// 与 [isUpdateVersionNewer] 同尺，消除「排序偏预发布轨 vs 判据偏正式版」不一致这个乒乓根源。
 int _compareReleaseRecency(String a, String b, {int? seqA, int? seqB}) {
   final String va = _stripBuildMetadata(a.trim());
   final String vb = _stripBuildMetadata(b.trim());
-  final int baseCompare = _compareBaseVersion(va, vb);
-  if (baseCompare != 0) return baseCompare;
+  // 与 [isUpdateVersionNewer] 同序：序号都已知时序号主导，缺序号才看基版本。
   final int? ra = _releaseSeqOf(va, seqA);
   final int? rb = _releaseSeqOf(vb, seqB);
   if (ra != null && rb != null) return ra.compareTo(rb);
-  return 0;
+  return _compareBaseVersion(va, vb);
 }
 
 String _stripBuildMetadata(String version) => version.split('+').first;

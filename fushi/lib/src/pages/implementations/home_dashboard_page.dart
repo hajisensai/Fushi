@@ -33,6 +33,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -61,6 +62,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -120,6 +122,25 @@ int? dashboardBookCollectionContinueIndex(
   final int idx = continueMemberIndex(sorted);
   if (sorted[idx].completed) return null;
   return idx;
+}
+
+/// 书合集续读卡「Vol. N」徽标的卷号：合集成员（[memberTitles]，含本卷）都是同一
+/// 系列的分卷时，取书名里的卷号（与分卷归组同一判据 [sharedBookSeriesKey] /
+/// [parseBookSeriesKey]，全角数字已折半角）；否则——主题合集、混了别的系列，或
+/// 书名没有卷号——退回合集内第几个（[memberOrdinal]，1 起）。
+///
+/// 用户实报「我在读 2/17 卷，首页却显示 Vol. 17」：旧实现直接拿合集内位置当卷号，
+/// 合集顺序与卷号一错位（手动建系列按选择顺序尾插、缺卷、只收了后几卷），徽标
+/// 就把位置当成卷号说出来。只在同系列时认书名尾数：主题合集里的「Fahrenheit 451」
+/// 不是第 451 卷。
+@visibleForTesting
+num? dashboardBookVolumeNumber({
+  required String title,
+  required List<String> memberTitles,
+  required int memberOrdinal,
+}) {
+  if (sharedBookSeriesKey(memberTitles) == null) return memberOrdinal;
+  return parseBookSeriesKey(title)?.volume ?? memberOrdinal;
 }
 
 /// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
@@ -1366,6 +1387,19 @@ class _HomeDashboardPageState
         int entrance = 0;
         Widget entering(Widget child) =>
             FushiStaggeredEntrance(index: entrance++, child: child);
+        // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
+        // 一个回到引导的入口）。排在最上面、最先进场。
+        final Widget? onboardingCard = _initialLoadDone &&
+                homeOnboardingCardVisible(
+                  dismissed: appModel.onboardingHomeCardDismissed,
+                  onboardingFinished: appModel.onboardingFinished,
+                  libraryEmpty: books.isEmpty &&
+                      _videos.isEmpty &&
+                      _games.isEmpty &&
+                      continueEntries.isEmpty,
+                )
+            ? entering(_buildOnboardingCard(tokens, appModel))
+            : null;
         final Widget body;
         if (twoColumn) {
           final Widget main = entering(continueCard);
@@ -1446,6 +1480,10 @@ class _HomeDashboardPageState
                   appModel.packageInfo.packageName !=
                       kHibikiPackageName) ...<Widget>[
                 _FushiMigrationBanner(appModel: appModel),
+              ],
+              if (onboardingCard != null) ...<Widget>[
+                onboardingCard,
+                SizedBox(height: tokens.spacing.card),
               ],
               body,
             ],
@@ -1612,16 +1650,29 @@ class _HomeDashboardPageState
       MediaItem item, {
       required int recentMs,
       required String? collectionName,
-      int? volume,
+      int? memberOrdinal,
+      List<MediaItem> collectionMembers = const <MediaItem>[],
     }) {
       final int percent = item.duration > 0
           ? ((item.position / item.duration) * 100).clamp(0, 100).round()
           : 0;
+      // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
+      // 首页「继续」区同步显示新名），不直接读 DB 原名。
+      final String title =
+          ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item);
+      final num? volume = memberOrdinal == null
+          ? null
+          : dashboardBookVolumeNumber(
+              title: title,
+              memberTitles: <String>[
+                for (final MediaItem m in collectionMembers)
+                  ReaderFushiSource.instance.getDisplayTitleFromMediaItem(m),
+              ],
+              memberOrdinal: memberOrdinal,
+            );
       return _ContinueEntry(
         kind: _bookMediaKind(item),
-        // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
-        // 首页「继续」区同步显示新名），不直接读 DB 原名。
-        title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
+        title: title,
         recentMs: recentMs,
         progress: percent / 100,
         // 合集里的第几卷优先（下一卷还没开读时 0% 没有信息量），进度条照画。
@@ -1683,7 +1734,8 @@ class _HomeDashboardPageState
         sorted[idx],
         recentMs: recent,
         collectionName: _collectionNamesById[ce.key],
-        volume: sorted.length >= 2 ? idx + 1 : null,
+        memberOrdinal: sorted.length >= 2 ? idx + 1 : null,
+        collectionMembers: sorted,
       ));
     }
     // 视频侧合集感知 Next-Up（用户实报：合集里看完一集，合集不该从「继续」消
@@ -1825,6 +1877,52 @@ class _HomeDashboardPageState
       );
       if (mounted) bumpSrsRevision(ref);
     });
+  }
+
+  /// 「新手引导」卡：一句说明 + 「继续新手引导」主按钮，标题行尾是「不再显示」。
+  /// 走完向导（[AppModel.onboardingFinished]）且库里有了内容后自己消失。
+  Widget _buildOnboardingCard(FushiDesignTokens tokens, AppModel appModel) {
+    return _sectionCard(
+      tokens,
+      key: const ValueKey<String>('home-onboarding-card'),
+      title: t.onboarding_title,
+      icon: FushiIcons.flag,
+      trailing: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('home-onboarding-card-dismiss'),
+          icon: FushiIcons.close,
+          tooltip: t.home_onboarding_card_dismiss,
+          onTap: () async {
+            await appModel.setOnboardingHomeCardDismissed(value: true);
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+      child: HomeEmptyState(
+        stateKey: 'home-onboarding-card-body',
+        icon: FushiIcons.flag,
+        message: t.home_onboarding_card_desc,
+        actions: <Widget>[
+          FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('home-onboarding-card-start'),
+            onPressed: () => unawaited(_openOnboardingWizard()),
+            icon: const FushiIcon(FushiIcons.forward),
+            label: Text(t.home_onboarding_card_start),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openOnboardingWizard() async {
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const OnboardingWizardPage(),
+        fullscreenDialog: true,
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。

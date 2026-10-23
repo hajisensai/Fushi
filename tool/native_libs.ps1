@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  备好 app 与 flutter test 硬依赖的 Rust 原生库（fushi_compute / fushi_fsrs / fushi_web_core）。
+  备好 app 与 flutter test 硬依赖的 Rust 原生库（fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv）。
 
 .DESCRIPTION
   tool/bootstrap.ps1 在 pub get 之后调用本脚本；已有 worktree 缺库（测试成片报
@@ -32,7 +32,7 @@ $root = Split-Path -Parent $PSScriptRoot
 
 # 缺 cargo 时（需要编的那一刻）直接失败而不是跳过：跳过的结果是之后 flutter build / test
 # 在 CMake / Gradle / 加载器里才报错，离原因更远。
-$NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core')
+$NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rwkv')
 
 function Get-NativeHostLayout {
     [OutputType([hashtable])]

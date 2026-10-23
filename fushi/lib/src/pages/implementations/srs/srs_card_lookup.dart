@@ -829,11 +829,12 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   if (term.trim().isEmpty) return null;
   final int startUtf16 = data.text.characters.take(span.start).string.length;
   final String sentence = extractSentenceAt(data.text, startUtf16, 1).sentence;
-  final Offset origin = paragraph.localToGlobal(Offset.zero);
   return (
     term: term,
     sentence: sentence.isEmpty ? data.text : sentence,
-    anchor: box.shift(origin),
+    // 字形盒整个经段落到根的变换（含界面缩放）：只平移原点会把盒子的位置与高宽留在
+    // 1/缩放，弹窗按偏高的下沿摆、盖住被查的那一行（复习页不在缩放中和层之下）。
+    anchor: MatrixUtils.transformRect(paragraph.getTransformTo(null), box),
     paragraph: paragraph,
     start: startUtf16,
   );

@@ -9,8 +9,10 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/apkg/srs_protobuf.dart';
+import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
@@ -209,26 +211,27 @@ List<FxNote> fixtureNotes(int nowMs) => <FxNote>[
   ),
 ];
 
-Uint8List legacyApkg(int nowMs) => zipOf(<String, List<int>>{
-  'collection.anki21': buildLegacyCollection(
-    crtSecs: crtSecs,
-    conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': true},
-    models: legacyModels(),
-    decks: legacyDecks(),
-    dconf: legacyDconf(),
-    notes: fixtureNotes(nowMs),
-  ),
-  'media': utf8.encode(
-    jsonEncode(<String, String>{
-      '0': 'a.png',
-      '1': '_font.woff',
-      '2': 'unused.png',
-    }),
-  ),
-  '0': <int>[1, 2, 3],
-  '1': <int>[4, 5],
-  '2': <int>[6],
-});
+Uint8List legacyApkg(int nowMs, {bool fsrs = true}) =>
+    zipOf(<String, List<int>>{
+      'collection.anki21': buildLegacyCollection(
+        crtSecs: crtSecs,
+        conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': fsrs},
+        models: legacyModels(),
+        decks: legacyDecks(),
+        dconf: legacyDconf(),
+        notes: fixtureNotes(nowMs),
+      ),
+      'media': utf8.encode(
+        jsonEncode(<String, String>{
+          '0': 'a.png',
+          '1': '_font.woff',
+          '2': 'unused.png',
+        }),
+      ),
+      '0': <int>[1, 2, 3],
+      '1': <int>[4, 5],
+      '2': <int>[6],
+    });
 
 /// 旧行为（选项加入前）：全部导入排程与预设、合并笔记类型、从不覆盖已有内容。
 const SrsAnkiImportOptions kFullOptions = SrsAnkiImportOptions(
@@ -440,11 +443,18 @@ void main() {
     expect(jp.ownParams, isFalse);
     expect(jp.newPerDay, 15);
     expect(lang.ownParams, isTrue);
-    expect(lang.algorithmWire, 'fsrs6');
+    // 带 FSRS 参数的预设也用默认的 RWKV；参数照样存下，切回 FSRS-6 时还在。
+    expect(lang.algorithmWire, SrsAlgorithm.rwkv.wire);
     expect(lang.fsrs6!.params, fsrs6Params);
     expect(lang.desiredRetention, 0.85);
     expect(tree.paramsOwner(jp.id).id, lang.id);
     expect(jsonEncode(rep.toJson()), contains('JP preset'));
+    // 报告列出改用 RWKV 的 FSRS 预设与它自己管参数的牌组（导入报告据此提供「继续用 FSRS」）。
+    expect(rep.fsrsPresets, <String, SrsAlgorithm>{
+      'JP preset': SrsAlgorithm.fsrs6,
+    });
+    expect(rep.fsrsDecks, <String, SrsAlgorithm>{lang.id: SrsAlgorithm.fsrs6});
+    expect(rep.defaultAlgorithmPresets, isEmpty);
   });
 
   test('② 两台设备各导入同一个包，同步后不出重复', () async {
@@ -515,6 +525,69 @@ void main() {
     expect(upd.notesUpdated, 1);
     expect(upd.notesSkipped, 2);
     expect((await s.note(n1))!.field(back), 'cat');
+  });
+
+  test('删牌组（保留卡片）+ 删笔记后再导入：笔记恢复、卡片回原牌组', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    await importInto(s, legacyApkg(t));
+    final List<SrsNoteCacheRow> imported = await s.listNotes();
+    final List<String> noteIds = <String>[
+      for (final SrsNoteCacheRow n in imported) n.id,
+    ];
+    final Map<String, String> deckOf = <String, String>{
+      for (final SrsCardCacheRow c in await s.allCardRows())
+        if (!c.hidden) c.id: c.deckId,
+    };
+    expect(deckOf, isNotEmpty);
+    // 用户的路径：先把导入的牌组都删掉（保留卡片 → 卡移到默认牌组），再批量删笔记。
+    final SrsDeckTree tree = await s.deckTree();
+    String rootOf(String id) {
+      String cur = id;
+      for (String? p = tree.parentOf(cur); p != null; p = tree.parentOf(cur)) {
+        cur = p;
+      }
+      return cur;
+    }
+
+    for (final String root in <String>{
+      for (final String deck in deckOf.values)
+        if (deck != s.defaultDeckId) rootOf(deck),
+    }) {
+      await s.deleteDeck(root);
+    }
+    expect(
+      <String>{
+        for (final SrsCardCacheRow c in await s.allCardRows())
+          if (!c.hidden) c.deckId,
+      },
+      <String>{s.defaultDeckId},
+    );
+    await srsBatchDeleteNotes(s, noteIds);
+    expect(await s.listNotes(), isEmpty);
+
+    final SrsImportReport rep = await importInto(s, legacyApkg(t));
+    expect(rep.notesAdded, 0);
+    expect(rep.notesRestored, noteIds.length);
+    expect(rep.notesSkipped, 0);
+    expect(
+      <String>[for (final SrsNoteCacheRow n in await s.listNotes()) n.id]
+        ..sort(),
+      List<String>.of(noteIds)..sort(),
+    );
+    for (final MapEntry<String, String> e in deckOf.entries) {
+      final SrsCardCacheRow? row = await s.cardRow(e.key);
+      expect(row, isNotNull);
+      expect(row!.hidden, isFalse, reason: 'card ${e.key} still hidden');
+      expect(row.deckId, e.value, reason: 'card ${e.key} not back in deck');
+    }
+    // 再导入一次：已经恢复的不再计入恢复。
+    final SrsImportReport again = await importInto(s, legacyApkg(t));
+    expect(again.notesRestored, 0);
+    expect(again.notesSkipped, noteIds.length);
   });
 
   test('笔记类型 kind 不一致（普通 ↔ 填空）：不更新，笔记进冲突报告', () async {
@@ -982,7 +1055,7 @@ void main() {
     expect(core.ownParams, isTrue);
     expect(core.learnSteps, <double>[2, 20]);
     expect(core.newPerDay, 30);
-    expect(core.algorithmWire, 'fsrs6');
+    expect(core.algorithmWire, SrsAlgorithm.rwkv.wire);
     expect(core.desiredRetention, closeTo(0.9, 1e-6));
     expect(core.fsrs6!.params.first, closeTo(fsrs6Params.first, 1e-6));
   });
@@ -1373,8 +1446,158 @@ void main() {
       expect(lang.fsrs6, isNull);
       expect(lang.desiredRetention, 0.8);
       expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
       // 排程照常导入。
       expect(rep.anchorsWritten, 2);
+    });
+
+    test('Anki 没开 FSRS（SM-2）：预设落到默认算法并写进报告，不静默换算法', () async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(
+        s,
+        legacyApkg(t, fsrs: false),
+      );
+      final SrsDeckTree tree = await s.deckTree();
+      final SrsDeckView lang = tree.decks.firstWhere(
+        (SrsDeckView d) => tree.fullName(d.id) == 'Lang',
+      );
+      expect(lang.localAlgorithm, srsDefaultAlgorithm);
+      expect(rep.defaultAlgorithmPresets, contains('JP preset'));
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+    });
+  });
+
+  // 所有者 2026-10-20：「从 anki 迁移数据时，应该让用户选择是否迁移 rwkv」。
+  group('导入选项「使用 RWKV 排程」关闭', () {
+    Future<(SrsImportReport, SrsDeckView, SrsDeckView)> run(
+      Uint8List pkg,
+      SrsAnkiImportOptions options,
+    ) async {
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsImportReport rep = await importInto(s, pkg, options: options);
+      final SrsDeckTree tree = await s.deckTree();
+      SrsDeckView named(String n) =>
+          tree.decks.firstWhere((SrsDeckView d) => tree.fullName(d.id) == n);
+      return (rep, named('Lang'), named('Lang::JP'));
+    }
+
+    test('默认开；旧偏好里没有这一项时也按开', () {
+      expect(const SrsAnkiImportOptions().useRwkv, isTrue);
+      expect(
+        SrsAnkiImportOptions.fromJson(const <String, Object?>{}).useRwkv,
+        isTrue,
+      );
+      expect(
+        SrsAnkiImportOptions.fromJson(
+          const SrsAnkiImportOptions(useRwkv: false).toJson(),
+        ).useRwkv,
+        isFalse,
+      );
+    });
+
+    test('带 FSRS-6 参数的预设保留 FSRS-6，不提供「继续用 FSRS」', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(useRwkv: false),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs6.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+      expect(rep.rwkvPresets, isEmpty);
+    });
+
+    test('没有 FSRS 参数（SM-2）：FSRS-7，进报告', () async {
+      final (SrsImportReport rep, SrsDeckView lang, _) = await run(
+        legacyApkg(t, fsrs: false),
+        kFullOptions.copyWith(useRwkv: false),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(rep.defaultFsrsPresets, contains('JP preset'));
+      expect(rep.defaultAlgorithmPresets, isEmpty);
+    });
+
+    test('不含牌组预设也不含 FSRS 参数，也不落到默认的 RWKV：顶层新牌组写 FSRS-7，子牌组随继承', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(
+          withDeckConfigs: false,
+          withFsrsParams: false,
+          useRwkv: false,
+        ),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(lang.fsrs6, isNull);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      // 对照：开着 RWKV、两项都不含时新牌组用默认算法。
+      final (_, SrsDeckView langOn, _) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(withDeckConfigs: false, withFsrsParams: false),
+      );
+      expect(langOn.localAlgorithm, srsDefaultAlgorithm);
+    });
+
+    test('不含牌组预设但导入 FSRS 参数：关 RWKV 时保留包里的 FSRS-6 与参数', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        legacyApkg(t),
+        kFullOptions.copyWith(withDeckConfigs: false, useRwkv: false),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs6.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+    });
+
+    test('Fushi 自己导出的 RWKV 牌组回导时改回 FSRS-7', () async {
+      final SrsDbStore src = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final String deck = await src.createDeck('R');
+      await src.editFields(SrsEntityKind.deck, deck, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.rwkv.wire,
+          'auto': true,
+        },
+      });
+      await src.createNote(
+        noteTypeId: src.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kProfile, 'Expression'): '食べる',
+        },
+        deckId: deck,
+      );
+      final Uint8List pkg = await exportAnkiPackage(store: src);
+
+      final SrsDbStore dst = await openTestStore(
+        profileUid: kProfile2,
+        deviceId: 'b',
+        now: () => t,
+      );
+      await importInto(
+        dst,
+        pkg,
+        options: kFullOptions.copyWith(useRwkv: false),
+      );
+      final SrsDeckTree tree = await dst.deckTree();
+      final SrsDeckView r = tree.decks.firstWhere(
+        (SrsDeckView d) => tree.fullName(d.id) == 'R',
+      );
+      expect(r.algorithmWire, SrsAlgorithm.fsrs7.wire);
     });
   });
 
@@ -1399,11 +1622,15 @@ void main() {
       return (rep, named('Lang'), named('Lang::JP'));
     }
 
-    test('只要 FSRS 参数：算法 / 参数 / 保留率照搬，步长与上限用本机默认', () async {
+    test('只要 FSRS 参数、关 RWKV：算法 / 参数 / 保留率照搬，步长与上限用本机默认', () async {
       final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
-        kFullOptions.copyWith(withDeckConfigs: false, withFsrsParams: true),
+        kFullOptions.copyWith(
+          withDeckConfigs: false,
+          withFsrsParams: true,
+          useRwkv: false,
+        ),
       );
-      expect(lang.algorithmWire, 'fsrs6');
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs6.wire);
       expect(lang.fsrs6!.params, fsrs6Params);
       expect(lang.desiredRetention, 0.85);
       // 子牌组仍按来源继承父牌组的参数。
@@ -1412,9 +1639,29 @@ void main() {
       expect(jp.newPerDay, 20);
       expect(rep.truncatedSteps, isEmpty);
       expect(rep.deckPresetsSkipped, 1);
+      // 留在 FSRS 上：没有「继续用 FSRS」可提供。
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
     });
 
-    test('只要牌组预设：步长与上限照搬，算法 / 参数 / 保留率用本机默认', () async {
+    test('只要 FSRS 参数、开 RWKV（默认）：用 RWKV，参数与保留率照样存下并报告可切回', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(withDeckConfigs: false, withFsrsParams: true),
+      );
+      expect(lang.algorithmWire, SrsAlgorithm.rwkv.wire);
+      expect(lang.fsrs6!.params, fsrs6Params);
+      expect(lang.desiredRetention, 0.85);
+      expect(jp.ownParams, isFalse);
+      expect(jp.newPerDay, 20);
+      expect(rep.fsrsPresets, <String, SrsAlgorithm>{
+        'JP preset': SrsAlgorithm.fsrs6,
+      });
+      expect(rep.fsrsDecks, <String, SrsAlgorithm>{
+        lang.id: SrsAlgorithm.fsrs6,
+      });
+    });
+
+    test('只要牌组预设、开 RWKV：步长与上限照搬，算法用默认 RWKV，不报「FSRS 参数已保留」', () async {
       final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
         kFullOptions.copyWith(withDeckConfigs: true, withFsrsParams: false),
       );
@@ -1423,7 +1670,29 @@ void main() {
       expect(rep.truncatedSteps, hasLength(1));
       expect(lang.fsrs6, isNull);
       expect(lang.desiredRetention, 0.8);
-      expect(lang.algorithmWire, isNot('fsrs6'));
+      expect(lang.localAlgorithm, srsDefaultAlgorithm);
+      expect(lang.algorithmWire, isNot(SrsAlgorithm.fsrs6.wire));
+      // 参数没导入：报告不能说「参数保留了，可以继续用 FSRS」，也不提供切回。
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
+    });
+
+    test('只要牌组预设、关 RWKV：算法落 FSRS-7（默认参数），不是默认的 RWKV', () async {
+      final (SrsImportReport rep, SrsDeckView lang, SrsDeckView jp) = await run(
+        kFullOptions.copyWith(
+          withDeckConfigs: true,
+          withFsrsParams: false,
+          useRwkv: false,
+        ),
+      );
+      expect(jp.newPerDay, 15);
+      expect(lang.algorithmWire, SrsAlgorithm.fsrs7.wire);
+      expect(lang.fsrs6, isNull);
+      expect(lang.fsrs7, isNull);
+      expect(lang.desiredRetention, 0.8);
+      expect(jp.ownParams, isFalse);
+      expect(rep.fsrsPresets, isEmpty);
+      expect(rep.fsrsDecks, isEmpty);
     });
 
     test('选项默认开 FSRS 参数；旧偏好里没有这一项时也按开', () {
@@ -1544,6 +1813,66 @@ void main() {
     expect(deck('Zero').maxIntervalDays, 36500); // 0 = 无效，不写，走默认。
     expect(deck('NoConf').newPerDay, 25);
     expect(deck('NoConf').reviewsPerDay, 250);
+  });
+
+  group('子牌组参数继承', () {
+    /// 子牌组 Lang::JP 改用预设 3：JP preset 的复制品，[edit] 再改它。
+    Future<SrsDeckTree> importWithCopiedPreset(
+      void Function(Map<String, Object?> preset) edit,
+    ) async {
+      final Map<String, Object?> dconf = legacyDconf();
+      final Map<String, Object?> copy =
+          jsonDecode(jsonEncode(dconf['2'])) as Map<String, Object?>;
+      copy
+        ..['id'] = 3
+        ..['name'] = 'JP preset copy';
+      edit(copy);
+      dconf['3'] = copy;
+      final Map<String, Object?> decks = legacyDecks();
+      (decks['$kDeckJp']! as Map<String, Object?>)['conf'] = 3;
+      final SrsDbStore s = await openTestStore(
+        profileUid: kProfile,
+        deviceId: 'a',
+        now: () => t,
+      );
+      await importInto(
+        s,
+        zipOf(<String, List<int>>{
+          'collection.anki21': buildLegacyCollection(
+            crtSecs: crtSecs,
+            conf: <String, Object?>{'rollover': 4, 'localOffset': 0},
+            models: legacyModels(),
+            decks: decks,
+            dconf: dconf,
+            notes: fixtureNotes(t),
+          ),
+          'media': utf8.encode('{}'),
+        }),
+      );
+      return s.deckTree();
+    }
+
+    test('预设 id 不同但排程设置相同 → 继承（每日上限仍是子牌组自己的）', () async {
+      final SrsDeckTree tree = await importWithCopiedPreset(
+        (Map<String, Object?> p) =>
+            (p['new']! as Map<String, Object?>)['perDay'] = 30,
+      );
+      final String lang = srsImportedDeckId(kProfile, 'Lang');
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[jp]!.ownParams, isFalse);
+      expect(tree.paramsOwner(jp).id, lang);
+      expect(tree[jp]!.newPerDay, 30);
+      expect(tree[lang]!.newPerDay, 15);
+    });
+
+    test('记忆率不同 → 单独设置', () async {
+      final SrsDeckTree tree = await importWithCopiedPreset(
+        (Map<String, Object?> p) => p['desiredRetention'] = 0.9,
+      );
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[jp]!.ownParams, isTrue);
+      expect(tree[jp]!.desiredRetention, 0.9);
+    });
   });
 
   group('牌组音频设置（Anki autoplay / replayq）', () {
@@ -1774,5 +2103,85 @@ void main() {
     expect(await s.entityIds(SrsEntityKind.note), hasLength(63));
     expect(rep.notesAdded, 62, reason: 'x59 落库时已存在，不算新增');
     expect(rep.cardsAdded, 5 + 59);
+  });
+
+  test('Lapis 牌组迁移改名成 Fushi Card 后再迁移：认回改名的牌组，不另建 Lapis、卡不拆走', () async {
+    final SrsDbStore s = await openTestStore(
+      profileUid: kProfile,
+      deviceId: 'a',
+      now: () => t,
+    );
+    // Anki 那边的牌组叫「Lapis」/「Lapis::JP」，迁移之后也一直叫这个名字。
+    Uint8List lapisApkg() => zipOf(<String, List<int>>{
+      'collection.anki21': buildLegacyCollection(
+        crtSecs: crtSecs,
+        conf: <String, Object?>{'rollover': 4, 'localOffset': 0, 'fsrs': true},
+        models: legacyModels(),
+        decks: <String, Object?>{
+          ...legacyDecks(),
+          '$kDeckLang': <String, Object?>{
+            'id': kDeckLang,
+            'name': 'Lapis',
+            'dyn': 0,
+            'conf': 2,
+          },
+          '$kDeckJp': <String, Object?>{
+            'id': kDeckJp,
+            'name': 'Lapis::JP',
+            'dyn': 0,
+            'conf': 2,
+          },
+        },
+        dconf: legacyDconf(),
+        notes: fixtureNotes(t),
+      ),
+      'media': utf8.encode(jsonEncode(<String, String>{})),
+    });
+
+    await importInto(s, lapisApkg());
+    expect(await s.renameLapisDecks(), 1);
+    Map<String, String> cardDecks(
+      SrsDeckTree tree,
+      List<SrsCardCacheRow> rows,
+    ) => <String, String>{
+      for (final SrsCardCacheRow c in rows)
+        if (!c.hidden) c.id: tree.fullName(c.deckId),
+    };
+    final SrsDeckTree renamedTree = await s.deckTree();
+    final Map<String, String> before = cardDecks(
+      renamedTree,
+      await s.allCardRows(),
+    );
+    expect(
+      before.values,
+      containsAll(<String>['Fushi Card', 'Fushi Card::JP']),
+    );
+    final int deckCount = renamedTree.decks.length;
+
+    // 重跑迁移（导入 + 改名）两次：都落回改过名的牌组。
+    for (int round = 0; round < 2; round++) {
+      await importInto(s, lapisApkg());
+      expect(await s.renameLapisDecks(), 0, reason: 'round $round');
+      final SrsDeckTree tree = await s.deckTree();
+      expect(
+        <String>[for (final SrsDeckView d in tree.decks) tree.fullName(d.id)]
+          ..sort(),
+        <String>[
+          for (final SrsDeckView d in renamedTree.decks)
+            renamedTree.fullName(d.id),
+        ]..sort(),
+        reason: 'round $round: 没有另建 Lapis',
+      );
+      expect(tree.decks, hasLength(deckCount));
+      expect(
+        tree.decks.where((SrsDeckView d) => d.name == 'Fushi Card'),
+        hasLength(1),
+      );
+      expect(
+        tree.decks.where((SrsDeckView d) => d.name.toLowerCase() == 'lapis'),
+        isEmpty,
+      );
+      expect(cardDecks(tree, await s.allCardRows()), before);
+    }
   });
 }

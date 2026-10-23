@@ -23,6 +23,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart'
@@ -88,6 +89,7 @@ import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
@@ -1085,6 +1087,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _runLibraryMapsRound(_libraryMapsRequestGeneration);
 
   Future<void> _runLibraryMapsRound(int requestGeneration) async {
+    // 库里多了东西：开了「导入后自动 AI 整理」时去抖后交 AI（门在 runner；扫描期间
+    // 每秒都来一次信号，去抖把它推到扫描结束后）。
+    scheduleAutomaticLibraryOrganize(CollectionShelfDomain.video);
     try {
       await _loadLibraryMapsInner(requestGeneration);
     } catch (_) {
@@ -2700,21 +2705,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (name == null || !mounted) return;
     final int targetId = choice.targetId;
-    // 复查 #6（TOCTOU）：成员快照上面是在命名确认框「之前」取的，框开着期间若有新成员
-    // 同步进源合集，用旧快照迁移会漏掉这些新成员，随后 deleteMediaCollection 把它们连
-    // 同源合集一起删掉 → 分组丢失。确认后、迁移前对每个源合集「重取」最新成员再迁移，
-    // addToCollection 幂等去重，重复成员无副作用。
-    for (final int id in collectionIds) {
-      if (id == targetId) continue;
-      final List<MediaCollectionItemRow> members = await db.getCollectionItems(
-        id,
-      );
-      for (final MediaCollectionItemRow m in members) {
-        // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
-        await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
-      }
-      await deleteMediaCollectionWithAssets(db, id);
-    }
+    // 复查 #6（TOCTOU）：确认框开着期间同步进源合集的新成员，由合并入口按源合集
+    // 当前成员行搬家一并带上。
+    await mergeMediaCollectionsInto(
+      db,
+      targetId: targetId,
+      sourceIds: collectionIds,
+    );
     for (final ShelfEntryRef ref in refs) {
       await db.addToCollection(targetId, ref.mediaType, ref.entryKey);
     }
@@ -8593,7 +8590,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       sortModeLabel: _sortModeLabel,
       onSortModeChanged: _setSortMode,
       onTagsChanged: () => ref.invalidate(videoBookTagMapProvider),
+      // AI 整理库（spec 2026-10-20 §10.1）：过 AI 模块门。
+      onAiOrganize: isAiModuleEnabled(ref.read(appProvider).moduleVisibility)
+          ? () => unawaited(_aiOrganizeVideos())
+          : null,
     );
+  }
+
+  /// 「AI 整理」视频库（[onlyEntryKeys] 给「整理所选」用）。
+  Future<void> _aiOrganizeVideos({Set<String>? onlyEntryKeys}) =>
+      runLibraryOrganizeInteractive(
+        context: context,
+        appModel: ref.read(appProvider),
+        domain: CollectionShelfDomain.video,
+        onlyEntryKeys: onlyEntryKeys,
+        onChanged: () {
+          if (mounted) unawaited(_loadLibraryMaps());
+        },
+      );
+
+  /// 多选「AI 整理所选」：选中的散视频 + 选中合集的成员。
+  Future<void> _batchAiOrganize() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final FushiDatabase db = ref.read(appProvider).database;
+    final Set<String> keys = <String>{
+      for (final String uid in _selectedLocalUids)
+        '${MediaKind.video.dbValue}\u0000$uid',
+    };
+    for (final int id in _selectedCollectionIds) {
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(id)) {
+        keys.add('${m.mediaType}\u0000${m.entryKey}');
+      }
+    }
+    if (keys.isEmpty || !mounted) return;
+    _exitSelectionMode();
+    await _aiOrganizeVideos(onlyEntryKeys: keys);
   }
 
   String _sortModeLabel(ShelfSortMode mode) => switch (mode) {
@@ -9966,6 +9997,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           icon: Icons.playlist_add,
           tooltip: t.combine_into_series,
         ),
+        // AI 整理所选（spec 2026-10-20 §10.1）。
+        if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
+          FushiIconButton(
+            key: const ValueKey<String>('home_video_batch_ai_organize'),
+            enabled: hasLocalSelection,
+            onTap: _batchAiOrganize,
+            icon: FushiIcons.aiAssistant,
+            tooltip: t.library_organize_selection_action,
+          ),
         FushiIconButton(
           // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
           key: const ValueKey<String>('home_video_batch_tag'),

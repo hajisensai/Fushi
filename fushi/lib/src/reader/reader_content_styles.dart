@@ -124,8 +124,10 @@ class ReaderContentStyles {
   ///
   /// 只在「翻页 + 横排 + 每页列数 = 自动(0)」时把一屏排成 2 栏，让竖向折痕正好落在
   /// 两栏之间（content-box 居中、两栏对称，栏间隙中线 = 窗口中线；页边距左右不等时
-  /// 中线偏移半个差值）。用户显式选了列数就尊重用户；竖排不处理（已知局限：有宽度的
-  /// 物理铰链仍可能遮住竖排单栏的一行字）；滚动 / VN 不经多列。
+  /// 中线偏移半个差值）。用户显式选了列数就尊重用户；滚动 / VN 不经多列。
+  ///
+  /// 竖排不在这里处理：竖排的 multicol 列沿 inline 轴（竖直）堆叠，「2 栏」是上下两条，
+  /// 挡不住竖向折痕。竖排的一屏两页走另一种几何——[foldVerticalSpreadFor]（竖排对开）。
   static int? foldPageColumnsOverride({
     required bool bookPosture,
     required ReaderSettings settings,
@@ -153,35 +155,118 @@ class ReaderContentStyles {
     return 2;
   }
 
-  /// 「中缝折痕」此刻能不能画出来：只有翻页模式且本次排版实际恰好两栏（= 一屏两页）
-  /// 才有「两页之间」。[effectivePageColumns] = 折叠覆盖 ?? 用户设置的每页列数。
+  /// 折叠屏书本姿态下竖排是否排成「对开」（一屏右页 + 左页，折痕落在两页之间）。
+  ///
+  /// 条件与横排两栏对称：书本姿态 + 翻页 + 竖排 + 每页列数 = 自动(0)。用户显式选了列数
+  /// 就尊重用户（竖排「2 栏」= 上下两条，那是用户自己的选择）；滚动 / VN 不经多列。
+  ///
+  /// 几何：CSS Multicol Level 2 的 `column-height` + `column-wrap: wrap`（Chromium 145+）。
+  /// 每个 multicol 行只有一列（列高 = 原竖排列高），行的块向尺寸 = 半个 content-box 宽，
+  /// 行沿块轴（vertical-rl 下从右往左）换行——右页、左页、下一对开……翻页轴随之变成从右往左
+  /// 的 x 轴（JS getScrollContext 按计算样式 `columnWrap == 'wrap'` 识别，见
+  /// reader_pagination_scripts.dart 的 xr 轴）。不支持 `column-wrap` 的 WebView 整条忽略
+  /// 这组声明（`@supports` 包裹），退回原竖排单条几何，JS 同样按计算样式退回 y 轴。
+  static bool foldVerticalSpread({
+    required bool bookPosture,
+    required ReaderSettings settings,
+  }) {
+    return foldVerticalSpreadFor(
+      bookPosture: bookPosture,
+      viewMode: settings.viewMode,
+      writingMode: settings.writingMode,
+      pageColumns: settings.pageColumns,
+    );
+  }
+
+  /// [foldVerticalSpread] 的原始值版本（设置页直接喂偏好值，判据只此一份）。
+  static bool foldVerticalSpreadFor({
+    required bool bookPosture,
+    required String viewMode,
+    required String writingMode,
+    required int pageColumns,
+  }) {
+    if (!bookPosture) return false;
+    if (viewMode == 'vn' || viewMode == 'continuous') return false;
+    if (!writingMode.startsWith('vertical')) return false;
+    return pageColumns == 0;
+  }
+
+  /// 「中缝折痕」此刻能不能画出来：只有翻页模式且本次排版实际是一屏两页才有「两页之间」。
+  /// 一屏两页 = 横排恰好两栏（[effectivePageColumns] = 折叠覆盖 ?? 用户设置的每页列数），
+  /// 或竖排对开（[verticalSpread]，见 [foldVerticalSpreadFor]）。
   ///
   /// CSS 生成与设置页的显隐共用这一个判据——设置页据此只在开关真能生效时露出该项，
   /// 否则用户打开了也看不到效果。
   static bool pageCreaseApplies({
     required String viewMode,
     required int effectivePageColumns,
+    bool verticalSpread = false,
   }) {
     return viewMode != 'vn' &&
         viewMode != 'continuous' &&
-        effectivePageColumns == 2;
+        (effectivePageColumns == 2 || verticalSpread);
   }
 
-  /// 折叠屏书本姿态下两栏之间的栏间隙（px）：null = 不覆盖（常量 22px）。
+  /// 折叠屏书本姿态下两页之间的间隙（px）：null = 不覆盖（常量 22px）。横排两栏是
+  /// `column-gap`，竖排对开（[verticalSpread]）是两个 multicol 行之间的 `row-gap`。
   ///
-  /// 对齐指南「内容放在铰链两侧、不放在铰链下」：只在横排翻页、一屏恰好两栏时生效，
-  /// 栏间隙 = 常量 22px + [hingeGutterPx]（铰链宽 + 2×铰链与正文中线的偏差，见
+  /// 对齐指南「内容放在铰链两侧、不放在铰链下」：只在翻页、一屏两页时生效，
+  /// 间隙 = 常量 22px + [hingeGutterPx]（铰链宽 + 2×铰链与正文中线的偏差，见
   /// `fushiHingeGutterPx`），两侧各留 11px 余量。[hingeGutterPx] 为 0（柔性折痕且
   /// 已居中）时不覆盖，与原几何逐字节相同。
   static int? foldColumnGapPx({
     required double hingeGutterPx,
     required int effectivePageColumns,
     required ReaderSettings settings,
+    bool verticalSpread = false,
   }) {
-    if (hingeGutterPx <= 0 || effectivePageColumns != 2) return null;
+    if (hingeGutterPx <= 0) return null;
     if (settings.isVnMode || settings.isContinuousMode) return null;
-    if (settings.writingMode.startsWith('vertical')) return null;
+    if (settings.writingMode.startsWith('vertical')) {
+      if (!verticalSpread) return null;
+    } else if (effectivePageColumns != 2) {
+      return null;
+    }
     return ReaderLayoutDefaults.columnGapPx + hingeGutterPx.ceil();
+  }
+
+  /// 竖排对开（[foldVerticalSpreadFor]）的 multicol 行几何，整段包在
+  /// `@supports (column-wrap: wrap)` 里：不支持的 WebView 原样保留竖排单条。
+  ///
+  /// - `column-count: 1`：每个 multicol 行只有一列，列高仍是原竖排的 `column-width`
+  ///   （= content-box 高，[verticalColumnWidthCss]），一列 = 一页。
+  /// - `column-height`：行的块向尺寸（vertical-rl 下是宽度）= (content-box 宽 − 页间隙) / 2，
+  ///   一屏正好并排两行 = 右页 + 左页，页间隙中线 = content-box 中线（与横排两栏同一条中线，
+  ///   铰链缝 `fushiHingeGutterPx` 按同一中线算）。
+  /// - `row-gap`：两页之间的间隙 [gapPx]（书本姿态加宽到盖住铰链）；JS 的页步从计算样式
+  ///   回读 `columnHeight` + `rowGap`，与这里同源。
+  /// - `body::after` 强制分栏补一页空白页：滚动范围只延伸到最后一页的左缘，章末页数为奇数时
+  ///   末对开（末页 + 空左页）滚不到，只能停在物理终点——倒数第二页被挤到右页位置，与上一对开
+  ///   重叠（真 Chrome 探针 visible_range_probe 实测末步重叠 189 字）。补一页后奇数页的末对开
+  ///   完整可达；偶数页多出的空页落在末对开之后，末页由最后内容边定（伪元素不计入
+  ///   buildPaginationMetrics），翻不到空对开上。与 WebKit 横排的 BUG-2819 补栏同一手法。
+  static String verticalSpreadCss({
+    required String marginLeftCss,
+    required String marginRightCss,
+    required int gapPx,
+  }) {
+    return '''
+/* 竖排对开（折叠屏书本姿态）：一屏右页 + 左页，翻页轴 = 从右往左的 x 轴。 */
+@supports (column-wrap: wrap) {
+  body {
+    column-count: 1 !important;
+    column-height: max(1px, calc((var(--page-width, 100vw) - $marginLeftCss - $marginRightCss - ${gapPx}px) / 2)) !important;
+    column-wrap: wrap !important;
+    row-gap: ${gapPx}px !important;
+  }
+  body::after {
+    content: "" !important;
+    display: block !important;
+    block-size: 1px !important;
+    break-before: column !important;
+  }
+}
+''';
   }
 
   /// 「中缝折痕」显示风格：一屏两页时在两页之间画书脊阴影，像摊开的实体书。
@@ -280,6 +365,7 @@ html::after {
     bool motionEnabled = true,
     int? pageColumnsOverride,
     int? columnGapOverridePx,
+    bool verticalSpread = false,
   }) {
     return '<style>\n${css(
       settings: settings,
@@ -300,6 +386,7 @@ html::after {
       motionEnabled: motionEnabled,
       pageColumnsOverride: pageColumnsOverride,
       columnGapOverridePx: columnGapOverridePx,
+      verticalSpread: verticalSpread,
     )}\n</style>';
   }
 
@@ -567,6 +654,10 @@ body::after {
     /// 书本姿态下加宽到盖住铰链（见 [foldColumnGapPx]）。列宽推算与 `column-gap` 同用
     /// 这一个值，JS 的页步又从计算样式回读 column-gap，三者同源、翻页网格不失配。
     int? columnGapOverridePx,
+
+    /// 折叠屏书本姿态下竖排排成对开（[foldVerticalSpread]）：一屏右页 + 左页，两页之间
+    /// 的 `row-gap` 取 [columnGapOverridePx]（缺省常量 22px）。只在翻页 + 竖排时生效。
+    bool verticalSpread = false,
   }) {
     final int pageColumns = pageColumnsOverride ?? settings.pageColumns;
     final int columnGapPx = columnGapOverridePx ?? ReaderLayoutDefaults.columnGapPx;
@@ -859,22 +950,43 @@ svg.block-img.blurred {
         settings.isVnMode || settings.isContinuousMode
             ? ''
             : _webKitPaginatedScrollEndCss();
-    // 中缝折痕：只有翻页模式恰好两栏（= 一屏两页）时才有「两页之间」。
-    final String pageCreaseCss = settings.pageCrease &&
-            ReaderContentStyles.pageCreaseApplies(
-              viewMode: settings.viewMode,
-              effectivePageColumns: pageColumns,
-            )
-        ? ReaderContentStyles.pageCreaseCss(
-            isVertical: isVertical,
-            shadeColor: colors.textColor,
-            marginTopCss: marginTopCss,
-            marginBottomCss: marginBottomCss,
+    // 竖排对开：只在翻页 + 竖排下发（滚动 / VN 不经 multicol）。
+    final bool spread = verticalSpread &&
+        isVertical &&
+        !settings.isVnMode &&
+        !settings.isContinuousMode;
+    final String verticalSpreadCss = spread
+        ? ReaderContentStyles.verticalSpreadCss(
             marginLeftCss: marginLeftCss,
             marginRightCss: marginRightCss,
-            columnGapPx: columnGapPx,
+            gapPx: columnGapPx,
           )
         : '';
+    // 中缝折痕：只有翻页模式一屏两页（横排恰好两栏 / 竖排对开）时才有「两页之间」。
+    // 竖排对开的两页左右并排，折痕与横排两栏同一条竖线（content-box 中线），所以按横排
+    // 几何画；它和对开几何同生共死——包进同一个 @supports，不支持 column-wrap 的 WebView
+    // 退回单条竖排时不会在正文中间画出一道阴影。
+    final String pageCreaseCss;
+    if (settings.pageCrease &&
+        ReaderContentStyles.pageCreaseApplies(
+          viewMode: settings.viewMode,
+          effectivePageColumns: pageColumns,
+          verticalSpread: spread,
+        )) {
+      final String crease = ReaderContentStyles.pageCreaseCss(
+        isVertical: isVertical && !spread,
+        shadeColor: colors.textColor,
+        marginTopCss: marginTopCss,
+        marginBottomCss: marginBottomCss,
+        marginLeftCss: marginLeftCss,
+        marginRightCss: marginRightCss,
+        columnGapPx: columnGapPx,
+      );
+      pageCreaseCss =
+          spread ? '@supports (column-wrap: wrap) {\n$crease}\n' : crease;
+    } else {
+      pageCreaseCss = '';
+    }
 
     return '''
 $resolvedFontFaces
@@ -947,7 +1059,7 @@ html {
   background: transparent;
 }
 $layoutCss
-$paginatedScrollEndCss$pageCreaseCss$paragraphSpacingCss
+$verticalSpreadCss$paginatedScrollEndCss$pageCreaseCss$paragraphSpacingCss
 img.block-img {
   /* max-width / max-height = 页面容纳约束，恒 !important（见文件内说明）。 */
   max-width: var(--fushi-image-max-width, $imageMaxWidth) !important;

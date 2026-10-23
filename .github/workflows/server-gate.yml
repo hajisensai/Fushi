@@ -34,9 +34,13 @@ on:
       # 硬依赖的 Rust 计算内核：服务端 / 引擎测试要真库。
       - 'packages/fushi_compute/**'
       - 'native/fushi_compute/**'
+      # RWKV-Instant 排程推理（硬依赖，经 fushi_srs → fushi_engine）。
+      - 'packages/fushi_rwkv/**'
+      - 'native/fushi_rwkv/**'
       - '.github/workflows/server-gate.yml'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/setup-fushi-rwkv/**'
       - '.github/actions/native-store-names/names.sh'
   push:
     branches: ['develop']
@@ -46,9 +50,13 @@ on:
       # 硬依赖的 Rust 计算内核：服务端 / 引擎测试要真库。
       - 'packages/fushi_compute/**'
       - 'native/fushi_compute/**'
+      # RWKV-Instant 排程推理（硬依赖，经 fushi_srs → fushi_engine）。
+      - 'packages/fushi_rwkv/**'
+      - 'native/fushi_rwkv/**'
       - '.github/workflows/server-gate.yml'
       - '.github/actions/pdfium-hook-cache/**'
       - '.github/actions/setup-fushi-compute/**'
+      - '.github/actions/setup-fushi-rwkv/**'
       - '.github/actions/native-store-names/names.sh'
 
 permissions:
@@ -90,6 +98,9 @@ jobs:
       # 计算内核 fushi_compute 是硬依赖（经 fushi_engine）：先编 Linux .so、导出 FUSHI_COMPUTE_LIB。
       - name: Build fushi_compute (Linux .so)
         uses: ./.github/actions/setup-fushi-compute
+      # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
+      - name: Build fushi_rwkv (Linux .so)
+        uses: ./.github/actions/setup-fushi-rwkv
       - name: Test fushi_server
         working-directory: packages/fushi_server
         run: dart ../../fushi/tool/flutter_test_failures.dart --output-dir=../../.codex-test/flutter-test/fushi_server

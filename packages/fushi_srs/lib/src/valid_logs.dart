@@ -178,8 +178,8 @@ double srsElapsedDays({
   required int Function(int ms) dayIndexOf,
 }) {
   if (toMs <= fromMs) return 0;
-  return switch (algorithm) {
-    SrsAlgorithm.fsrs7 => (toMs - fromMs) / _dayMs,
+  return switch (algorithm.memoryAlgorithm) {
+    SrsAlgorithm.fsrs7 || SrsAlgorithm.rwkv => (toMs - fromMs) / _dayMs,
     SrsAlgorithm.fsrs6 => (dayIndexOf(toMs) - dayIndexOf(fromMs)).toDouble(),
   };
 }
@@ -298,6 +298,7 @@ SrsMemory? srsComputeMemory(
   required List<double> params,
   double sm2Retention = 0.9,
 }) {
+  algorithm = algorithm.memoryAlgorithm;
   SrsMemory? starting = input.starting;
   final ({double ease, double intervalDays})? sm2 = input.sm2Start;
   if (starting == null && sm2 != null) {

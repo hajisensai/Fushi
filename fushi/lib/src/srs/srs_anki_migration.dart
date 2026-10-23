@@ -6,17 +6,23 @@
 /// - [SrsAnkiMigrationFromPackage]：用户在 Anki / AnkiDroid / AnkiMobile 里导出的
 ///   .colpkg / .apkg（所有平台都能走，iOS 只有这一条）。
 ///
-/// 迁移固定用 [kSrsAnkiMigrationOptions]：带排程与复习记录、带牌组预设，其余与 Anki 默认一致。
+/// 选项由「迁移设置」页（srs_anki_migration_setup_page.dart）逐项给用户选：学习进度、排程算法
+/// （RWKV / FSRS）、导入后是否把旧 Lapis 迁到 Fushi 卡片等，记在
+/// [kSrsAnkiMigrationSettingsPrefKey]；没选过时取 [kSrsAnkiMigrationOptions]。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
 
@@ -25,6 +31,88 @@ export 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';
 const SrsAnkiImportOptions kSrsAnkiMigrationOptions = SrsAnkiImportOptions(
   withScheduling: true,
   withDeckConfigs: true,
+);
+
+/// 「迁移设置」页的全部选择：导入选项 + 导入后是否把旧 Lapis 迁到 Fushi 卡片。
+class SrsAnkiMigrationSettings {
+  const SrsAnkiMigrationSettings({
+    this.options = kSrsAnkiMigrationOptions,
+    this.convertLapis = true,
+    this.renameLapisDecks = true,
+  });
+
+  final SrsAnkiImportOptions options;
+
+  /// 导入结束后在同一个后台任务里把本机全部旧 Lapis 笔记（含这次导入的）迁到 Fushi 卡片，
+  /// 并补迁以前遗漏的字段（[SrsLegacyLapisMigrationOps]）。默认开：从 Anki 带 Lapis 过来就是
+  /// 要用 Fushi 卡片；设置页写明了它做什么、迁不过去的字段怎么处理，不想要可以关。
+  final bool convertLapis;
+
+  /// [convertLapis] 开着时，再把名字里带 Lapis 的牌组改成 Fushi Card
+  /// （[SrsLegacyLapisMigrationOps.renameLapisDecks]）。[convertLapis] 关着时不生效。
+  final bool renameLapisDecks;
+
+  SrsAnkiMigrationSettings copyWith({
+    SrsAnkiImportOptions? options,
+    bool? convertLapis,
+    bool? renameLapisDecks,
+  }) => SrsAnkiMigrationSettings(
+    options: options ?? this.options,
+    convertLapis: convertLapis ?? this.convertLapis,
+    renameLapisDecks: renameLapisDecks ?? this.renameLapisDecks,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'options': options.toJson(),
+    'convertLapis': convertLapis,
+    'renameLapisDecks': renameLapisDecks,
+  };
+
+  /// 缺项 / 坏值回落到默认值。
+  static SrsAnkiMigrationSettings fromJson(Map<String, Object?> json) {
+    const SrsAnkiMigrationSettings d = SrsAnkiMigrationSettings();
+    final Object? options = json['options'];
+    final Object? convert = json['convertLapis'];
+    final Object? renameDecks = json['renameLapisDecks'];
+    return SrsAnkiMigrationSettings(
+      options: options is Map
+          ? SrsAnkiImportOptions.fromJson(options.cast<String, Object?>())
+          : d.options,
+      convertLapis: convert is bool ? convert : d.convertLapis,
+      renameLapisDecks: renameDecks is bool ? renameDecks : d.renameLapisDecks,
+    );
+  }
+}
+
+/// 偏好键：上次「迁移设置」页的选择（String，[SrsAnkiMigrationSettings.toJson] 的 JSON）。
+///
+/// 与「导入 Anki 包」对话框的 `srs_import_anki_options` 分开：两边默认值本来就不同（迁移默认
+/// 带排程与预设，导入别人分享的包一般不带）。
+const String kSrsAnkiMigrationSettingsPrefKey = 'srs_anki_migration_settings';
+
+SrsAnkiMigrationSettings readSrsAnkiMigrationSettings(PrefStore prefs) {
+  final Object? raw = prefs.getPref(
+    kSrsAnkiMigrationSettingsPrefKey,
+    defaultValue: '',
+  );
+  if (raw is! String || raw.isEmpty) return const SrsAnkiMigrationSettings();
+  try {
+    final Object? json = jsonDecode(raw);
+    if (json is Map) {
+      return SrsAnkiMigrationSettings.fromJson(json.cast<String, Object?>());
+    }
+  } on FormatException {
+    // 坏值：按默认值处理，下次确认时覆盖。
+  }
+  return const SrsAnkiMigrationSettings();
+}
+
+Future<void> writeSrsAnkiMigrationSettings(
+  PrefStore prefs,
+  SrsAnkiMigrationSettings settings,
+) => prefs.setPref(
+  kSrsAnkiMigrationSettingsPrefKey,
+  jsonEncode(settings.toJson()),
 );
 
 /// 一次迁移的来源。
@@ -50,11 +138,64 @@ final class SrsAnkiMigrationFromPackage extends SrsAnkiMigrationSource {
 ///
 /// 这是迁移唯一的执行入口：页面只负责发现 / 确认 / 展示，导入本身只经这里——
 /// 改成后台任务时把这一处换成后台 API 即可。
+///
+/// [settings] 的 [SrsAnkiMigrationSettings.convertLapis] 开着时，导入落库后在同一个任务里把旧
+/// Lapis 迁到 Fushi 卡片（[srsConvertLegacyLapisAfterImport]），不依赖迁移页还开着。
 Future<SrsImportReport> runSrsAnkiMigration({
   required SrsDbStore store,
   required SrsMediaStore media,
   required SrsAnkiMigrationSource source,
-  SrsAnkiImportOptions options = kSrsAnkiMigrationOptions,
+  SrsAnkiMigrationSettings settings = const SrsAnkiMigrationSettings(),
+  void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
+  final SrsImportReport report = await _importMigrationSource(
+    store: store,
+    media: media,
+    source: source,
+    options: settings.options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
+  if (settings.convertLapis) {
+    await srsConvertLegacyLapisAfterImport(
+      store,
+      report,
+      renameDecks: settings.renameLapisDecks,
+    );
+  }
+  return report;
+}
+
+/// 迁移后的「旧 Lapis → Fushi 卡片」：逐个变体迁移（换类型 + 补迁，原牌组不动），再补迁以前
+/// 迁移遗漏的字段。每个变体各自一个事务（[SrsLegacyLapisMigrationOps.migrateLegacyLapis]），失败的
+/// 那个整体不落库、仍是旧 Lapis。[renameDecks] 时最后把名字带 Lapis 的牌组改成 Fushi Card。导入本身已经落库，所以这一步失败不让整个任务失败，而是记日志并在
+/// 报告里写明（[SrsImportReport.lapisMigrationFailed]），用户可以去笔记类型页重试。
+Future<void> srsConvertLegacyLapisAfterImport(
+  SrsDbStore store,
+  SrsImportReport report, {
+  bool renameDecks = false,
+}) async {
+  try {
+    for (final SrsLegacyLapisSource source
+        in await store.legacyLapisSources()) {
+      report.lapisNotesMigrated += await store.migrateLegacyLapis(
+        source.type.id,
+      );
+    }
+    report.lapisNotesMigrated += await store.applyLapisBackfill();
+    if (renameDecks) report.lapisDecksRenamed = await store.renameLapisDecks();
+  } catch (e, stack) {
+    ErrorLogService.instance.log('SrsAnkiMigration.convertLapis', e, stack);
+    report.lapisMigrationFailed = true;
+  }
+}
+
+Future<SrsImportReport> _importMigrationSource({
+  required SrsDbStore store,
+  required SrsMediaStore media,
+  required SrsAnkiMigrationSource source,
+  required SrsAnkiImportOptions options,
   void Function(double progress)? onProgress,
   bool Function()? shouldStop,
 }) {

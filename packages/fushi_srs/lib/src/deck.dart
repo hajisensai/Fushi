@@ -45,6 +45,73 @@ class SrsParamSet {
   }
 }
 
+/// RWKV-Instant 的排队设置（[SrsFieldKeys.deckRwkvQueue]），默认值 = 上游 kuma3 默认。
+class SrsRwkvQueueSettings {
+  const SrsRwkvQueueSettings({
+    this.minReviewsPerDay = 0,
+    this.repeatMinReviews = 5,
+    this.repeatMinSeconds = 30,
+  });
+
+  /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
+  /// 的复习卡里按回忆率从低到高补足。0 = 不启用。
+  final int minReviewsPerDay;
+
+  /// 同日重复：今天答过的卡，之后这组牌组里别的卡至少要有这么多次作答才再出。
+  final int repeatMinReviews;
+
+  /// 同日重复：今天答过的卡，距上次作答至少这么多秒才再出。
+  final int repeatMinSeconds;
+
+  static const int maxMinReviewsPerDay = 9999;
+  static const int maxRepeatMinReviews = 999;
+  static const int maxRepeatMinSeconds = 86400;
+
+  /// 缺项 / 坏值回落到默认值，越界的夹到合法范围。
+  static SrsRwkvQueueSettings fromValue(Object? v) {
+    const SrsRwkvQueueSettings d = SrsRwkvQueueSettings();
+    if (v is! Map) return d;
+    int read(String key, int fallback, int max) => switch (v[key]) {
+      final int n => n.clamp(0, max),
+      _ => fallback,
+    };
+    return SrsRwkvQueueSettings(
+      minReviewsPerDay: read(
+        'minReviews',
+        d.minReviewsPerDay,
+        maxMinReviewsPerDay,
+      ),
+      repeatMinReviews: read(
+        'repeatReviews',
+        d.repeatMinReviews,
+        maxRepeatMinReviews,
+      ),
+      repeatMinSeconds: read(
+        'repeatSeconds',
+        d.repeatMinSeconds,
+        maxRepeatMinSeconds,
+      ),
+    );
+  }
+
+  Map<String, Object?> toValue() => <String, Object?>{
+    'minReviews': minReviewsPerDay,
+    'repeatReviews': repeatMinReviews,
+    'repeatSeconds': repeatMinSeconds,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsRwkvQueueSettings &&
+      other.minReviewsPerDay == minReviewsPerDay &&
+      other.repeatMinReviews == repeatMinReviews &&
+      other.repeatMinSeconds == repeatMinSeconds;
+
+  @override
+  int get hashCode =>
+      Object.hash(minReviewsPerDay, repeatMinReviews, repeatMinSeconds);
+}
+
 /// 物化后的牌组。
 class SrsDeckView {
   SrsDeckView({
@@ -65,6 +132,7 @@ class SrsDeckView {
     required this.maxIntervalDays,
     this.autoplayAudio = true,
     this.replayQuestionAudio = true,
+    this.rwkvQueue = const SrsRwkvQueueSettings(),
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -120,6 +188,9 @@ class SrsDeckView {
   /// 答案面重播时先播问题音频（Anki 默认；false = 「重播答案时跳过问题」）。
   /// 只看 own 祖先上的值。
   final bool replayQuestionAudio;
+
+  /// RWKV-Instant 排队设置。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
+  final SrsRwkvQueueSettings rwkvQueue;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;
@@ -133,9 +204,9 @@ class SrsDeckView {
   bool get algorithmUnknownLocally =>
       SrsAlgorithm.tryParse(algorithmWire) == null;
 
-  SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a) {
+  SrsParamSet? paramSetFor(SrsAlgorithm a) => switch (a.memoryAlgorithm) {
     SrsAlgorithm.fsrs6 => fsrs6,
-    SrsAlgorithm.fsrs7 => fsrs7,
+    SrsAlgorithm.fsrs7 || SrsAlgorithm.rwkv => fsrs7,
   };
 
   static SrsDeckView materialize(SrsEntityRecord record, SrsEntityEdits edits) {
@@ -185,6 +256,9 @@ class SrsDeckView {
       autoplayAudio: edits.value(SrsFieldKeys.deckAutoplay) != false,
       replayQuestionAudio:
           edits.value(SrsFieldKeys.deckReplayQuestion) != false,
+      rwkvQueue: SrsRwkvQueueSettings.fromValue(
+        edits.value(SrsFieldKeys.deckRwkvQueue),
+      ),
       optimizeBaselineAt: baseline is Map ? baseline['at'] as int? : null,
       optimizeBaselineCount: baseline is Map ? baseline['n'] as int? : null,
       deletedAt: edits.deletedAt,
@@ -311,7 +385,7 @@ class SrsDeckTree {
     final List<double> params =
         (set != null && set.params.length == alg.paramCount)
         ? set.params
-        : (defaultsOf?.call(alg) ?? const <double>[]);
+        : (defaultsOf?.call(alg.memoryAlgorithm) ?? const <double>[]);
     return SrsSchedulingConfig(
       learnStepsMinutes: self.learnSteps,
       relearnStepsMinutes: self.relearnSteps,

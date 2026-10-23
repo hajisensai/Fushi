@@ -31,10 +31,10 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show videoDownloadJobCanResume, videoDownloadJobCanSetPriority;
 import 'package:fushi/src/platform/desktop/ctl/ctl_data_wire.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_download_subscription_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_download_support.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -88,6 +88,7 @@ List<CtlRoute> buildDataCtlRoutes(DesktopCtlContext context) {
     ..._backupRoutes(context, tasks),
     ..._syncRoutes(context),
     ..._downloadRoutes(context),
+    ...buildDownloadSubscriptionCtlRoutes(context),
     ..._mediaServerRoutes(context),
     ..._peerRoutes(context),
     ..._storageRoutes(context, tasks),
@@ -469,15 +470,7 @@ List<CtlRoute> _syncRoutes(DesktopCtlContext context) => <CtlRoute>[
 
 // ── 下载 ─────────────────────────────────────────────────────────────
 
-/// 下载中心的门：合规门（iOS 无下载中心）+「浏览」模块开关（下载页签挂在它下面）。
-void _requireDownloads(AppModel appModel) {
-  if (!StoreRestrictedCapability.downloads.isAvailable) {
-    throw const CtlFailure.unsupported('本平台不提供下载中心');
-  }
-  if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
-    throw const CtlFailure.rejected('「浏览」模块已关闭（设置 › 功能模块）');
-  }
-}
+void _requireDownloads(AppModel appModel) => requireCtlDownloadCenter(appModel);
 
 Future<VideoDownloadJobRow> _requireJob(AppModel appModel, String id) async {
   final VideoDownloadJobRow? job = await appModel.database.getVideoDownloadJob(

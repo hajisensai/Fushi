@@ -156,6 +156,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `.dock` / `.y` 分开存：两颗球可以同时在。
   'floating_ball.system_dock',
   'floating_ball.system_y',
+  // bool：Android 应用外悬浮球收起态点球 = 查剪贴板、长按展开，默认 false。
+  'floating_ball.tap_clipboard',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   // bool：悬浮字幕粗体（默认 true）。
@@ -255,6 +257,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // String（JSON 字符串数组）：AI 整理库里本机「允许再次建议」的被拒分组键。拒绝本身
+  // 跨端同步（删除哨兵），放行只对点它的设备成立——放行后再建出的同键合集会让这个
+  // 分组在每台设备上自然解除拒绝（设备本地）。
+  'library_organize_allowed_keys',
+  // bool（默认 false）：AI 整理库「导入后自动整理」（设备本地：按量计费的同意只对
+  // 点它的那台设备成立；只在一台设备上开就够，结果靠同步传播）。
+  'library_organize_auto',
+  // int（毫秒，0 = 没开过）：最近一次打开自动整理的时刻。自动整理只看此后新入库的
+  // 条目，打开开关不会把整个库发给 AI（设备本地）。
+  'library_organize_auto_since',
+  // bool（默认 false）：用户点过 AI 整理的「会发送什么」说明并同意（设备本地）。
+  'library_organize_consented',
   'local_audio_db_display_name',
   'local_audio_db_path',
   'local_audio_dbs',
@@ -364,6 +378,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'network_proxy_password',
   'network_proxy_username',
   'onboarding_completed',
+  // bool：新手引导是否**走完**（点了最后一步的「开始使用」；跳过 / 返回不算）。
+  // 缺省 true（老安装不受影响），全新安装首帧写 false。与 onboarding_completed
+  // 同族、不随 Profile 走。首页「新手引导」卡据此判定（见 homeOnboardingCardVisible）。
+  'onboarding_finished',
+  // bool：首页「新手引导」卡被用户点了「不再显示」。同族、不随 Profile 走。
+  'onboarding_home_card_dismissed',
   'overlay_lookup_independent_size',
   'overlay_lookup_max_height',
   'overlay_lookup_max_width',
@@ -464,9 +484,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsReviewReplayButton.wire：'off' | 'start' | 'end'，默认 'off'）：复习页
   // 底部操作行一端放一颗重播音频键（手机刷卡时拇指在屏幕下方，够不到顶栏）。非凭据、跨设备。
   'srs_review_replay_button',
+  // bool（默认 true）：复习页页头显示剩余卡数（新 / 学习 / 复习，对齐 Anki「显示剩余卡片
+  // 数量」）。非凭据、跨设备。
+  'srs_review_show_counts',
   // bool（默认 true）：评分按钮显示下次间隔（小号副标签，误按 / 排程异常一眼可见）。
   // 非凭据、跨设备。
   'srs_review_show_intervals',
+  // double（默认 1.0，0–1）：复习卡面音频音量，点播与自动连播共用。非凭据、跨设备。
+  'srs_review_volume',
   // double（默认 1.0，0.6–2.0）：复习页卡面缩放（Ctrl / ⌘ + 滚轮、Ctrl + 加减号 / 0）。
   'srs_review_zoom',
   'startup_default_dictionary_tab',

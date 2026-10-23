@@ -10,7 +10,7 @@
 mod common;
 
 use common::*;
-use fushi_rwkv::{RwkvInference, RwkvRuntime, StatePrecision};
+use fushi_rwkv::{Model, RwkvInference, RwkvRuntime, StatePrecision};
 
 /// 用上游原样的 API（`RwkvInference`）跑夹具的每一步。
 fn run_raw(fixture: &Fixture, inference: &mut RwkvInference) -> Vec<Output> {
@@ -225,7 +225,7 @@ fn runtime_thread_count_does_not_change_results() {
     let fixture = Fixture::load("simulated_collection");
     let mut results = Vec::new();
     for threads in [0, 1, 3] {
-        let mut runtime = RwkvRuntime::new(model(), StatePrecision::Int8, threads).unwrap();
+        let mut runtime = RwkvRuntime::new(&Model::from(model().clone()), StatePrecision::Int8, threads).unwrap();
         let mut outputs = Vec::new();
         for step in &fixture.steps {
             match step {

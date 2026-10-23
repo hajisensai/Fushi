@@ -517,6 +517,15 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           icon: Icons.playlist_add,
           tooltip: t.combine_into_series,
         ),
+        // AI 整理所选（spec 2026-10-20 §10.1）：只把选中的散卡与选中合集的成员交给 AI。
+        if (isAiModuleEnabled(_moduleVisibility))
+          FushiIconButton(
+            key: const ValueKey<String>('reader_shelf_batch_ai_organize'),
+            enabled: hasLocalSelection,
+            onTap: _batchAiOrganize,
+            icon: FushiIcons.aiAssistant,
+            tooltip: t.library_organize_selection_action,
+          ),
         FushiIconButton(
           // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
           key: const ValueKey<String>('reader_shelf_batch_tag'),
@@ -1030,6 +1039,27 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           ? (_epubUidByKey[ref.entryKey] ?? ref.entryKey)
           : ref.entryKey;
 
+  /// 多选「AI 整理所选」：选中的散卡（成员行键，epub 换成 uid）+ 选中合集的成员。
+  Future<void> _batchAiOrganize() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final FushiDatabase db = appModel.database;
+    final Set<String> keys = <String>{};
+    for (final String key in _selectedLocalKeys) {
+      final ShelfEntryRef? ref =
+          shelfSelectionToEntry(key, ShelfSelectionSurface.books);
+      if (ref == null) continue;
+      keys.add('${ref.mediaType.dbValue}\u0000${_collectionEntryKeyFor(ref)}');
+    }
+    for (final int id in _selectedCollectionIds) {
+      for (final MediaCollectionItemRow m in await db.getCollectionItems(id)) {
+        keys.add('${m.mediaType}\u0000${m.entryKey}');
+      }
+    }
+    if (keys.isEmpty || !mounted) return;
+    _exitSelectionMode();
+    await _aiOrganizeShelf(onlyEntryKeys: keys);
+  }
+
   /// 块3：批量「组合」按钮三档自适应（[classifyCombine]）。书架选择键经
   /// shelfSelectionToEntry 解码成 (mediaType, entryKey)：
   /// - 仅散卡 → 命名弹窗新建合集（[_combineCreateNew]）；
@@ -1187,20 +1217,13 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
     if (name == null || !mounted) return;
     final int targetId = choice.targetId;
-    // 复查 #6（TOCTOU）：成员快照上面是在命名确认框「之前」取的，框开着期间若有新成员
-    // 同步进源合集，用旧快照迁移会漏掉这些新成员，随后 deleteMediaCollection 把它们连
-    // 同源合集一起删掉 → 分组丢失。确认后、迁移前对每个源合集「重取」最新成员再迁移，
-    // addToCollection 幂等去重，重复成员无副作用。
-    for (final int id in collectionIds) {
-      if (id == targetId) continue;
-      final List<MediaCollectionItemRow> members =
-          await db.getCollectionItems(id);
-      for (final MediaCollectionItemRow m in members) {
-        // 原样搬家现有成员行：行值可能是对端未知种类，走 raw 版防静默丢成员。
-        await db.addToCollectionRaw(targetId, m.mediaType, m.entryKey);
-      }
-      await deleteMediaCollectionWithAssets(db, id);
-    }
+    // 复查 #6（TOCTOU）：确认框开着期间同步进源合集的新成员，由合并入口按源合集
+    // 当前成员行搬家一并带上。
+    await mergeMediaCollectionsInto(
+      db,
+      targetId: targetId,
+      sourceIds: collectionIds,
+    );
     for (final ShelfEntryRef ref in refs) {
       // v83：epub 落库键 = uid（[_collectionEntryKeyFor]，剪枝时已刷新换算表）。
       await db.addToCollection(

@@ -20,6 +20,7 @@ import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_library_organize_routes.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
@@ -65,6 +66,8 @@ List<CtlRoute> buildLibraryCtlRoutes(DesktopCtlContext context) {
     ...buildReaderCtlRoutes(context),
     ...buildAudiobookCtlRoutes(context),
     ...buildMangaOcrCtlRoutes(context),
+    // AI 整理库（CLI `library organize` / `organize-history` / `organize-undo`）。
+    ...buildLibraryOrganizeCtlRoutes(context),
   ];
 }
 

@@ -24,6 +24,14 @@ class _BookStageThrowingBackend extends FakeSyncBackend {
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
+/// 自旋到 `DateTime.now()` 的毫秒值真正前进（理由见 main 里 tick 的注释）。
+Future<void> _tick() async {
+  final int start = DateTime.now().millisecondsSinceEpoch;
+  while (DateTime.now().millisecondsSinceEpoch <= start) {
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+}
+
 /// 一台设备：自有 DB + deviceId，共享同一 FakeAssetStore（模拟同一云命名空间）。
 /// [syncCollections] 复刻编排器的云后端合集阶段（per-device 文件读-合-写）。
 class _Dev {
@@ -48,9 +56,16 @@ class _Dev {
         syncDictionary: false,
       );
 
+  /// 每轮同步独占一段毫秒：前后各 [_tick]。合集裁决只认毫秒墙钟且用严格 `>`
+  /// （本端基线 = 同步**起手**取的 now；对端发布戳同样起手取），同一毫秒内的
+  /// 「同步起手 → 之后的移出」或「A 起手 → B 起手」会撞成平值而被判旧闻——那是
+  /// 毫秒时戳本身无法区分先后的平局，不是本文件要验证的因果语义。实测（150 轮）：
+  /// 不隔开时 ~50% 撞平且撞平必红，隔开后 0/150。
   Future<SyncRunReport> sync() async {
+    await _tick();
     final SyncRunReport report = SyncRunReport();
     await _orch.syncCollections(report);
+    await _tick();
     return report;
   }
 
@@ -92,12 +107,7 @@ void main() {
   // sync 的时戳撞成平值 → 严格比较退化为平局，成员在满负载并行下随机复活/消失。这里自旋
   // 到 now() 真正前进，保证时戳严格递增，与平台定时器粒度、CPU 负载无关（Stopwatch 无关，
   // 因裁决用的是 DateTime 毫秒，必须让 DateTime 本身前进）。
-  Future<void> tick() async {
-    final int start = DateTime.now().millisecondsSinceEpoch;
-    while (DateTime.now().millisecondsSinceEpoch <= start) {
-      await Future<void>.delayed(const Duration(milliseconds: 2));
-    }
-  }
+  Future<void> tick() => _tick();
 
   Future<List<AssetEntry>> manifestFiles() async {
     final List<AssetEntry> children =

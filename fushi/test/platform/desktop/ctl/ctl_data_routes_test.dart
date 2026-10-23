@@ -102,6 +102,15 @@ void main() {
         ('DELETE', '/api/admin/peers/hosts/https%3A%2F%2Fh%3A7000'),
         ('POST', '/api/admin/storage/migrate'),
         ('GET', '/api/admin/storage/migrate'),
+        // 订阅（`sub`）：与订阅页按钮同一份 AppSubscriptionHost。
+        ('GET', '/api/admin/subscriptions'),
+        ('GET', '/api/admin/subscriptions/video-discovery-1'),
+        ('GET', '/api/admin/subscriptions/s1/items'),
+        ('POST', '/api/admin/subscriptions/check'),
+        ('POST', '/api/admin/subscriptions/s1/check'),
+        ('POST', '/api/admin/subscriptions/s1/enable'),
+        ('PUT', '/api/admin/subscriptions/s1'),
+        ('DELETE', '/api/admin/subscriptions/s1'),
       ];
       for (final (String method, String path) in calls) {
         final List<CtlRoute> hits = <CtlRoute>[
@@ -110,6 +119,42 @@ void main() {
         ];
         expect(hits, hasLength(1), reason: '$method $path');
       }
+    });
+
+    test('订阅：删除缺 confirm、启停缺 enabled 都 400，不碰 app', () async {
+      Future<void> expect400(String method, String pattern, CtlCall call) =>
+          expectLater(
+            routes
+                .firstWhere(
+                  (CtlRoute r) => r.pattern == pattern && r.method == method,
+                )
+                .handler(call),
+            throwsA(
+              isA<CtlFailure>().having(
+                (CtlFailure f) => f.status,
+                'status',
+                400,
+              ),
+            ),
+          );
+      await expect400(
+        'DELETE',
+        '/api/admin/subscriptions/:id',
+        const CtlCall(
+          method: 'DELETE',
+          path: '/api/admin/subscriptions/s1',
+          params: <String, String>{'id': 's1'},
+        ),
+      );
+      await expect400(
+        'POST',
+        '/api/admin/subscriptions/:id/enable',
+        const CtlCall(
+          method: 'POST',
+          path: '/api/admin/subscriptions/s1/enable',
+          params: <String, String>{'id': 's1'},
+        ),
+      );
     });
 
     test('媒体服务器 id 路径参数按段解码', () {

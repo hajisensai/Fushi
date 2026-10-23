@@ -1017,6 +1017,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 应用外悬浮球（Android）：收起态点球直接查剪贴板，长按才展开按钮
+  /// （同 Google「点按翻译」的「自动翻译复制的文字」）。默认关 = 点球展开。
+  bool get floatingBallTapClipboard =>
+      getPref('floating_ball.tap_clipboard', defaultValue: false);
+
+  Future<void> setFloatingBallTapClipboard(bool value) async {
+    await setPref('floating_ball.tap_clipboard', value);
+    notifyListeners();
+  }
+
   /// 应用外悬浮球（Android 悬浮窗服务 / Windows、macOS 置顶窗口）。默认关。旧版
   /// 选过 `system` 的用户保持开。不支持的平台（iOS / Linux）读到 true 也不起球。
   bool get floatingBallSystem {
@@ -1496,6 +1506,26 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setOnboardingCompleted({required bool value}) async {
     await setPref('onboarding_completed', value);
+  }
+
+  /// 新手引导是否**走完**（最后一步点了「开始使用」）。与 [onboardingCompleted]
+  /// 的区别：后者是「首启自动弹过了」，跳过 / 返回关掉向导也算；本键只认走完。
+  /// 缺省 true（老安装不出首页引导卡），全新安装首帧显式写 false。
+  bool get onboardingFinished =>
+      getPref('onboarding_finished', defaultValue: true) as bool;
+
+  Future<void> setOnboardingFinished({required bool value}) async {
+    await setPref('onboarding_finished', value);
+    notifyListeners();
+  }
+
+  /// 首页「新手引导」卡被点了「不再显示」。
+  bool get onboardingHomeCardDismissed =>
+      getPref('onboarding_home_card_dismissed', defaultValue: false) as bool;
+
+  Future<void> setOnboardingHomeCardDismissed({required bool value}) async {
+    await setPref('onboarding_home_card_dismissed', value);
+    notifyListeners();
   }
 
   final int defaultMaximumDictionaryTermsInResult = 10;
@@ -3095,6 +3125,26 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页页头显示剩余卡数（新 / 学习 / 复习）。默认 true。
+  bool get srsReviewShowCounts =>
+      getPref('srs_review_show_counts', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewShowCounts(bool value) async {
+    await setPref('srs_review_show_counts', value);
+    notifyListeners();
+  }
+
+  // 复习卡面音频音量（0–1，手动点播与自动连播共用）。默认 1.0。
+  double get srsReviewVolume {
+    final Object? v = getPref('srs_review_volume', defaultValue: 1.0);
+    return v is num ? v.toDouble().clamp(0.0, 1.0) : 1.0;
+  }
+
+  Future<void> setSrsReviewVolume(double value) async {
+    await setPref('srs_review_volume', value.clamp(0.0, 1.0));
+    notifyListeners();
+  }
+
   // 复习页卡面缩放倍率。默认 1.0。
   double get srsReviewZoom =>
       (getPref('srs_review_zoom', defaultValue: 1.0) as num).toDouble();
@@ -4619,11 +4669,9 @@ class PreferencesRepository extends ChangeNotifier
   /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
   /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
   ///
-  /// 出厂默认是 `google_lens`：整页识别的版面/竖排质量明显优于本地 ONNX，且不
-  /// 依赖 1GB 级模型下载或桌面 mokuro CLI，是唯一「装完就能用」的引擎。这**不**
-  /// 削弱隐私边界——真正的上传闸门是 [ensureGoogleLensDisclosure] 的逐设备一次性
-  /// 同意弹窗，用户拒绝即不发任何字节；想彻底离线的用户把本偏好改回 `auto`，
-  /// `auto` 的解析链依旧永不跨到 Lens。
+  /// 出厂默认是 `local_onnx`（本机逐列 CTC 模型，2026-10-21 用户拍板从
+  /// `google_lens` 改回）：离线、不上传页图；模型未下载时走「没有引擎」提示与
+  /// 下载入口。选 Lens 的用户仍过 [ensureGoogleLensDisclosure] 的逐设备同意弹窗。
   String get mangaOcrEnginePreference => getPref(
         'manga_ocr_engine_preference',
         defaultValue: kDefaultMangaOcrEnginePreference.key,
@@ -5011,6 +5059,65 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaDownloadAutoOcr(bool value) async {
     await setPref('manga_download_auto_ocr', value);
+    notifyListeners();
+  }
+
+  /// AI 整理库「导入后自动整理」（spec docs/specs/2026-10-20-ai-library-organize-design.md
+  /// §10.2）。默认关：按量计费，绝不静默开启。
+  bool get libraryOrganizeAuto =>
+      getPref('library_organize_auto', defaultValue: false) as bool;
+
+  /// 打开时同时记下打开时刻（自动整理只看此后新入库的条目），并记为已同意：开关
+  /// 的副标题就是「会发送什么」的完整说明，用户亲手打开即同意。
+  Future<void> setLibraryOrganizeAuto(bool value) async {
+    await setPref('library_organize_auto', value);
+    if (value) {
+      await setPref(
+        'library_organize_auto_since',
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      await setPref('library_organize_consented', true);
+    }
+    notifyListeners();
+  }
+
+  /// 最近一次打开自动整理的时刻（毫秒；0 = 没开过）。
+  int get libraryOrganizeAutoSince =>
+      getPref('library_organize_auto_since', defaultValue: 0) as int;
+
+  /// 本机「允许再次建议」的被拒分组键（AI 整理记录页）。
+  Set<String> get libraryOrganizeAllowedKeys {
+    final String raw =
+        getPref('library_organize_allowed_keys', defaultValue: '') as String;
+    if (raw.isEmpty) return const <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return <String>{
+          for (final Object? k in decoded)
+            if (k is String && k.isNotEmpty) k,
+        };
+      }
+    } on FormatException {
+      // 坏值当空。
+    }
+    return const <String>{};
+  }
+
+  Future<void> addLibraryOrganizeAllowedKey(String key) async {
+    final List<String> next = <String>{...libraryOrganizeAllowedKeys, key}
+        .toList()
+      ..sort();
+    await setPref('library_organize_allowed_keys', jsonEncode(next));
+    notifyListeners();
+  }
+
+  /// 用户同意过 AI 整理「会发送什么」的说明。
+  bool get libraryOrganizeConsented =>
+      getPref('library_organize_consented', defaultValue: false) as bool;
+
+  Future<void> setLibraryOrganizeConsented(bool value) async {
+    await setPref('library_organize_consented', value);
     notifyListeners();
   }
 

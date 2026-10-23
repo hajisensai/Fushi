@@ -100,6 +100,13 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - **本地前提**：要装 Rust（cargo）。`tool/setup_worktree.ps1` → `tool/bootstrap.ps1` 在 pub get 之后按主机平台编一次（Windows `build_windows_dll.ps1`，Linux / macOS 对应 sh；`tool/bootstrap.sh` 同理），没有 cargo 直接报错失败；显式跳过用 `-SkipNativeCompute` / `FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1`。编 Android 包另需 NDK + `cargo install cargo-ndk`，先跑 `build_android_so.ps1 -Abis <要出的 ABI>`。`flutter test` / `dart test` 由 `FUSHI_COMPUTE_LIB`（绝对路径）或加载器在测试宿主下向上找 `native/fushi_compute/prebuilt/<平台>/` 定位。
 - **CI**：跑 Dart / Flutter 测试的 job（`main.yml` build + unit-tests、`release.yml` tests、`server-gate.yml`、`golden-tests.yml`、`build-multiplatform.yml` android）一律经 composite action `.github/actions/setup-fushi-compute` 先编宿主平台库并导出 `FUSHI_COMPUTE_LIB`（需要 APK 的 job 再按 ABI 交叉编；工具链读 `native-store-names/names.sh` 的 `P2P_RUST` / `CARGO_NDK`；为省缓存配额不挂 rust-cache）。出包 job（`release.yml` Android 三 ABI、`release-desktop.yml` Windows / macOS / iOS、`release-server.yml` Linux / Windows、`build-multiplatform.yml` 四端）各自带 rust-cache 构建，失败即 job 失败，出包后硬核对（APK 每个 ABI、Windows bundle、macOS Frameworks 的 install name / arm64 / 符号 / ctypes 调 `ffc_abi_version` == 1、iOS Runner 导出 `ffc_*`），Windows 与 Linux 服务端再拿真库跑 `packages/fushi_compute` 整个 test 目录并断言没有 `native library not found`。PR 上 `native-compute-gate.yml` 补 Android 三 ABI 与 `cargo test --release --locked`。
 
+## RWKV-Instant 排程推理原生库 fushi_rwkv（Rust，AGPL-3.0-or-later）—— **硬依赖**
+
+- 源码 `native/fushi_rwkv/`（C ABI `frwkv_*`，`opt-level = 3` + LTO，`panic = "unwind"`）+ Dart FFI 包 `packages/fushi_rwkv/`（`FushiRwkv.load`，环境变量 `FUSHI_RWKV_LIB`）。接线**逐项照抄 fushi_compute**：同名构建脚本 `build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（arm64，部署目标 13.4，`/usr/bin/strip -x` + dlopen 冒烟），产物落 `native/fushi_rwkv/prebuilt/<平台>/`；iOS 只进伞形库 `native/fushi_ios_umbrella`（`IOS_NATIVE` 持久库件名随之带上 `native/fushi_rwkv`）。`verify_abi.sh` 的期望集 = `src/` 里全部 `extern "C" fn frwkv_*` ∪ `packages/fushi_rwkv/lib/` 下的 `'frwkv_*'` 字面量，新增导出自动跟上；也认 Windows PE（取 `llvm-nm` 同目录的 `llvm-readobj` 读导出表）。
+- 缺库 = 构建失败：Windows / Linux CMake `FATAL_ERROR`（`FUSHI_RWKV_DLL` / `FUSHI_RWKV_SO`）、macOS `fushi/macos/bundle_fushi_rwkv.sh` `exit 1`、iOS 编译前 `fushi/ios/check_fushi_rwkv.sh`（伞形库不导出 `frwkv_abi_version` 即失败）、Android `checkFushiRwkvNative`（挂 `preBuild`）。本地 `tool/bootstrap.ps1` / `bootstrap.sh` 紧接 fushi_compute 编它，`-SkipNativeCompute` 两个一起跳过。守卫 `fushi/test/build/fushi_rwkv_hard_dependency_guard_test.dart`。
+- **CI**：凡用 `setup-fushi-compute` 的 job 紧跟着用 `.github/actions/setup-fushi-rwkv`（同样的 `android-abis`，导出 `FUSHI_RWKV_LIB`）；出包 job 与 fushi_compute 同处各带 rust-cache 构建并出包后核对（APK 每个 ABI、Windows bundle、macOS Frameworks、iOS Runner 导出 `frwkv_*`、服务端 Linux / Windows bundle），dlopen 冒烟比对的 ABI 版本从 `src/lib.rs` 的 `ABI_VERSION` 读、不写死。PR 上 `native-rwkv-gate.yml` 跑三种 CPU 内核的 `cargo test --release`（权重与小模型包按 `fetch_model.sh` 钉的两个 SHA-256 缓存）+ Android 三 ABI 真编与符号核对。
+- **许可**：fushi_rwkv 是 AGPL-3.0-or-later（推理核心搬自 kuma3-anki-core，所有者 2026-10-19 拍板接受，见 `native/fushi_rwkv/UPSTREAM.md`）。动态加载它的四端 app 与静态链它的 iOS 伞形库 / Runner 都随之受 AGPL 约束（GPL-3.0 第 13 条允许与 AGPL-3.0 合并分发）。
+
 ## 发布通道
 
 默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。
@@ -229,6 +236,16 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/fushi
   --ref develop -f channel=debug -f testflight_only=true`。testflight_only 的 run 只签 iOS、
   不发 Release、走独立 concurrency 组，不会与 push 构建互相取消。
+- **同一个 commit 不能重复传 TestFlight**（2026-10-22 实测）：build number 由
+  `tool/release_sequence.sh`（commit 数 + 地板）算出、经 `--build-number` 直接喂给 iOS 构建，
+  `pubspec.yaml` 的 `+build` 与 `workflow_dispatch` 输入都改不了它。所以在同一个 sha 上重跑
+  `testflight_only` 必然算出同一个号，ASC 直接 409 `ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE`
+  （`The bundle version must be higher than the previously uploaded version: '<seq>'`）：`ios`
+  job 全绿、只有 `testflight` job 红，容易误判成签名或凭据问题。要真正再出一份新包，唯一前提是
+  让序列涨一格（develop 多一个 commit），触发方式本身解决不了。纯为出包抬序列时优先落 docs 类
+  改动——`docs/**` 不在本 workflow 的 push `paths` 里，不会顺带触发一轮全量构建，随后单独 dispatch
+  `testflight_only` 只跑一轮 iOS。
+
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
   App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每第三次 debug

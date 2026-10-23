@@ -161,4 +161,46 @@ void main() {
       reason: '销毁句柄前必须等辅助 isolate 上的钩子放行跑完',
     );
   });
+
+  // 暂停 OCR 截帧不得占 Player 串行锁：截帧 + 纯 Dart 编 PNG 要几百毫秒，持锁期间
+  // play() / pause() 全排队，开着暂停识别时按继续播放要等截帧编完才响应。不持锁
+  // 的截帧必须登记进 `_offThreadNativeCalls`，否则 dispose 可能在它还在用句柄时
+  // mpv_terminate_destroy。
+  test('pause-OCR frame capture does not hold the player lock', () {
+    final String controller = maskComments(
+      File(
+        'lib/src/media/video/video_player_controller.dart',
+      ).readAsStringSync(),
+    );
+    final int at = controller.indexOf(
+      'Future<Uint8List?> captureFrameWithSubtitles(',
+    );
+    expect(at, isNonNegative, reason: '找不到 captureFrameWithSubtitles');
+    final String capture = controller.substring(
+      at,
+      controller.indexOf('\n  }\n', at),
+    );
+    expect(capture, contains('.screenshot('));
+    expect(
+      capture,
+      contains('synchronized: false'),
+      reason: '持锁截帧会把 play()/pause() 卡在截帧 + 编码后面',
+    );
+
+    final String patch = maskComments(
+      File(
+        '../ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/player/real.dart',
+      ).readAsStringSync(),
+    );
+    final int s = patch.indexOf('Future<Uint8List?> screenshot(');
+    expect(s, isNonNegative, reason: '补丁里找不到 screenshot(');
+    final String screenshot = patch.substring(s, patch.indexOf('\n  }\n', s));
+    expect(screenshot, contains('compute('));
+    expect(
+      screenshot,
+      contains('_offThreadNativeCalls.add('),
+      reason: '不持锁的截帧要让 dispose 等它跑完再销毁句柄',
+    );
+    expect(screenshot, contains('_offThreadNativeCalls.remove('));
+  });
 }

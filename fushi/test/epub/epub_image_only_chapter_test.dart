@@ -200,6 +200,34 @@ void main() {
       expect(book.chapterImageSrcs(0), <String>['a.jpg', 'b.jpg']);
     });
 
+    test('one file referenced several times is one image (KCC Panel View)', () {
+      // KCC's Kindle markup: the page image once visibly, then four hidden
+      // `.PV-P` magnify regions pointing at the same file.
+      final EpubBook book = _book('<html><body>'
+          '<div><img src="../Images/kcc-0003.jpg"/></div>'
+          '<div id="PV"><div id="PV-TL"><a class="app-amzn-magnify"></a></div>'
+          '</div>'
+          '<div class="PV-P"><img src="../Images/kcc-0003.jpg"/></div>'
+          '<div class="PV-P"><img src="../Images/./kcc-0003.jpg"/></div>'
+          '<div class="PV-P"><img src="../Images/kcc%2D0003.jpg"/></div>'
+          '<div class="PV-P"><img src="../Images/kcc-0003.jpg"/></div>'
+          '</body></html>');
+      expect(book.chapterImageSrcs(0), <String>['../Images/kcc-0003.jpg']);
+    });
+
+    test('distinct files on one page all stay, in order', () {
+      final EpubBook book = _book('<html><body>'
+          '<img src="b.jpg"/><img src="a.jpg"/><img src="b.jpg"/>'
+          '<img src="data:image/png;base64,AA=="/>'
+          '<img src="data:image/png;base64,AA=="/>'
+          '</body></html>');
+      expect(book.chapterImageSrcs(0), <String>[
+        'b.jpg',
+        'a.jpg',
+        'data:image/png;base64,AA==',
+      ]);
+    });
+
     test('no image → null / empty', () {
       final EpubBook book = _book('<html><body><p>text</p></body></html>');
       expect(book.chapterImageSrc(0), isNull);

@@ -46,6 +46,7 @@ class SrsAnkiImportOptions {
     this.withScheduling = false,
     this.withDeckConfigs = false,
     this.withFsrsParams = true,
+    this.useRwkv = true,
   });
 
   /// 来源笔记类型与本机同一笔记类型的字段 / 模板不一致时：
@@ -69,8 +70,15 @@ class SrsAnkiImportOptions {
   final bool withDeckConfigs;
 
   /// 新建的牌组写入来源的排程算法、FSRS 参数与期望保留率（所有者 2026-10-20：「导入时
-  /// 让用户选择是否转移 FSRS 参数」）；关闭时新牌组用 Fushi 默认算法与参数（自动优化）。
+  /// 让用户选择是否转移 FSRS 参数」）；关闭时新牌组不带来源参数，算法按 [useRwkv]：开着用
+  /// Fushi 默认 RWKV，关着用 FSRS-7（参数自动优化）。
   final bool withFsrsParams;
+
+  /// 新建的牌组改用 RWKV 排程（Fushi 默认）。关闭时保留来源的 FSRS 算法（带 FSRS-6 / FSRS-7
+  /// 参数的照原算法；Anki 里开了 RWKV 或没有参数的用 FSRS-7），Fushi 自己导出的 RWKV 牌组同样
+  /// 改回 FSRS-7；不导入 FSRS 参数时同样落在 FSRS-7。所有者 2026-10-20：「从 anki 迁移数据时，
+  /// 应该让用户选择是否迁移 rwkv」。
+  final bool useRwkv;
 
   SrsAnkiImportOptions copyWith({
     bool? mergeNoteTypes,
@@ -79,6 +87,7 @@ class SrsAnkiImportOptions {
     bool? withScheduling,
     bool? withDeckConfigs,
     bool? withFsrsParams,
+    bool? useRwkv,
   }) => SrsAnkiImportOptions(
     mergeNoteTypes: mergeNoteTypes ?? this.mergeNoteTypes,
     updateNotes: updateNotes ?? this.updateNotes,
@@ -86,6 +95,7 @@ class SrsAnkiImportOptions {
     withScheduling: withScheduling ?? this.withScheduling,
     withDeckConfigs: withDeckConfigs ?? this.withDeckConfigs,
     withFsrsParams: withFsrsParams ?? this.withFsrsParams,
+    useRwkv: useRwkv ?? this.useRwkv,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -95,6 +105,7 @@ class SrsAnkiImportOptions {
     'withScheduling': withScheduling,
     'withDeckConfigs': withDeckConfigs,
     'withFsrsParams': withFsrsParams,
+    'useRwkv': useRwkv,
   };
 
   /// 缺项 / 坏值回落到默认值。
@@ -116,6 +127,7 @@ class SrsAnkiImportOptions {
       withScheduling: b('withScheduling', d.withScheduling),
       withDeckConfigs: b('withDeckConfigs', d.withDeckConfigs),
       withFsrsParams: b('withFsrsParams', d.withFsrsParams),
+      useRwkv: b('useRwkv', d.useRwkv),
     );
   }
 
@@ -127,7 +139,8 @@ class SrsAnkiImportOptions {
       other.updateNoteTypes == updateNoteTypes &&
       other.withScheduling == withScheduling &&
       other.withDeckConfigs == withDeckConfigs &&
-      other.withFsrsParams == withFsrsParams;
+      other.withFsrsParams == withFsrsParams &&
+      other.useRwkv == useRwkv;
 
   @override
   int get hashCode => Object.hash(
@@ -137,5 +150,6 @@ class SrsAnkiImportOptions {
     withScheduling,
     withDeckConfigs,
     withFsrsParams,
+    useRwkv,
   );
 }

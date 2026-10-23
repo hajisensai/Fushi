@@ -1035,6 +1035,40 @@ window.__fushiInstallShell = function(C) {
   isVertical: function() {
     return window.getComputedStyle(document.body).writingMode === "vertical-rl";
   },
+  // 竖排对开（折叠屏书本姿态，reader_content_styles.dart 的 verticalSpreadCss）：竖排 +
+  // multicol 行换行（column-wrap: wrap）。每页 = 一个 multicol 行，行沿块轴（vertical-rl 下
+  // 从右往左）排开，一屏右页 + 左页。判据读计算样式：不支持 column-wrap 的 WebView 整条忽略
+  // 那组声明，这里随之为 false，几何与翻页轴都退回竖排单条。
+  isVerticalSpread: function() {
+    var cs = window.getComputedStyle(document.body);
+    return cs.writingMode === "vertical-rl" && cs.columnWrap === "wrap";
+  },
+  // 分页翻页轴：'x' = 横排（页沿 x 左→右）、'y' = 竖排单条（页沿 y 上→下）、'xr' = 竖排对开
+  // （页沿 x 右→左）。xr 轴上的坐标一律归一化成「到 body 右缘的距离」、滚动量归一化成
+  // −scrollLeft，于是首边 / 末边 / 页网格 / 相位与横排同构，下游算法只有一份。
+  pagedAxis: function() {
+    if (!this.isVertical()) return 'x';
+    return this.isVerticalSpread() ? 'xr' : 'y';
+  },
+  // 兼容旧入参：布尔 vertical（连续 shell 仍这样传：true→'y'、false→'x'）或已解析的轴。
+  pagedAxisOf: function(axisOrVertical) {
+    if (axisOrVertical === 'x' || axisOrVertical === 'y' || axisOrVertical === 'xr') {
+      return axisOrVertical;
+    }
+    return axisOrVertical ? 'y' : 'x';
+  },
+  // rect（client 坐标）在翻页轴上的 [start, end)：x = left/right、y = top/bottom、
+  // xr = 到 body 右缘的距离（start 取 rect.right、end 取 rect.left）。
+  turnSpan: function(axisOrVertical, rect) {
+    var axis = this.pagedAxisOf(axisOrVertical);
+    if (axis === 'xr') {
+      var right = document.body.getBoundingClientRect().right;
+      return { start: right - rect.right, end: right - rect.left };
+    }
+    return axis === 'y'
+      ? { start: rect.top, end: rect.bottom }
+      : { start: rect.left, end: rect.right };
+  },
   // BUG-493 根因修复：_reanchorPending 的唯一写入口（清旗单点化，_sharedJs 两 shell 共用）。
   // true→false 转换 = 重锚 settle，那一刻（bridge 可用时）callHandler('onReanchorSettled')
   // 通知 Dart 补刷一次进度（webview.part.dart 注册），事件驱动替代旧的 Dart 侧 120ms×8
@@ -1102,7 +1136,12 @@ window.__fushiInstallShell = function(C) {
     var multicol = usedColW > 0 && usedColW < turnFull - 1;
     if (vertical) {
       var h = multicol ? Math.round(usedColW) : cs.h;
-      return { w: Math.max(1, Math.floor(cs.w * ratio)), h: Math.max(1, h) };
+      // 竖排对开：一页的宽 = multicol 行的块向尺寸 column-height（半个 content-box 宽），
+      // 宽插图按整 content-box 撑开会压过中缝盖到另一页。没有 column-height（未对开 /
+      // WebView 不支持 → 'auto' 或 undefined → NaN）时原样用整 content-box 宽。
+      var spreadW = parseFloat(getComputedStyle(document.body).columnHeight);
+      var w = spreadW > 0 && spreadW < cs.w ? spreadW : cs.w;
+      return { w: Math.max(1, Math.floor(w * ratio)), h: Math.max(1, h) };
     }
     var w = multicol ? usedColW : cs.w;
     return { w: Math.max(1, Math.floor(w * ratio)), h: Math.max(1, cs.h) };
@@ -1200,7 +1239,7 @@ window.__fushiInstallShell = function(C) {
       range.setEnd(targetNode, Math.min(1, targetNode.length));
       var rect = this.getRect(range);
       var scroll = this.getPagePosition(context);
-      var anchor = (context.vertical ? rect.top : rect.left) + scroll;
+      var anchor = this.turnSpan(context.axis, rect).start + scroll;
       this.setPagePosition(context, this.alignToPage(context, anchor));
     }
   },
@@ -1529,41 +1568,50 @@ window.__fushiInstallShell = function(C) {
   // 掩住看不出来；统计接入后（fushiProgressDetails 第三/四段）页首角落在插图 / 空行时
   // 整段 [0, 页尾) 被当成本页可见区间，翻走一次就把几千字前文计成已读。仅分页 shell 调用。
   firstVisibleCharOffsetByScanPaged: function() {
-    var vertical = this.isVertical();
-    var firstEdge = this.pagedFirstEdge(vertical);
+    var axis = this.pagedAxis();
+    var firstEdge = this.pagedFirstEdge(axis);
     var walker = this.createWalker();
     var explored = 0;
     var node;
     while (node = walker.nextNode()) {
       if (this.countChars(node.textContent) > 0) {
-        explored += this.countCharsBeforeViewportPaged(node, vertical, firstEdge);
+        explored += this.countCharsBeforeViewportPaged(node, axis, firstEdge);
       }
     }
     return explored;
   },
   // 分页翻页轴上「当前页 content-box 起点」（body-relative）：横排 = padding-left、竖排 =
-  // padding-top。前页的末列在它之前（中间还隔一个 column-gap），当前页的首列从它开始。
+  // padding-top、竖排对开（xr，到 body 右缘的距离）= padding-right。前页的末列在它之前
+  // （中间还隔一个列 / 行间距），当前页的首列从它开始。
   // 分页 caret 探点（getFirstVisibleCharOffset 的 `pl + 2` / `pt + 2`）与扫描兜底、
   // 页上校验（charOffsetOnCurrentPage）都以它为首边，三处同量纲。
-  pagedFirstEdge: function(vertical) {
+  // 入参是翻页轴（pagedAxis），兼容旧的布尔 vertical（pagedAxisOf）。
+  pagedFirstEdge: function(axisOrVertical) {
+    var axis = this.pagedAxisOf(axisOrVertical);
     var cs = getComputedStyle(document.body);
-    return vertical
+    if (axis === 'xr') return parseFloat(cs.paddingRight) || 0;
+    return axis === 'y'
       ? (parseFloat(cs.paddingTop) || 0)
       : (parseFloat(cs.paddingLeft) || 0);
   },
   // 分页翻页轴上「当前页 content-box 终点」（body-relative）：横排 = clientWidth −
-  // padding-right、竖排 = clientHeight − padding-bottom。下一页的首列在它之后。
-  pagedLastEdge: function(vertical) {
+  // padding-right、竖排 = clientHeight − padding-bottom、竖排对开（xr）= clientWidth −
+  // padding-left（一屏两页的左页左缘，到 body 右缘的距离）。下一页的首列在它之后。
+  pagedLastEdge: function(axisOrVertical) {
+    var axis = this.pagedAxisOf(axisOrVertical);
     var cs = getComputedStyle(document.body);
-    return vertical
+    if (axis === 'xr') {
+      return document.body.clientWidth - (parseFloat(cs.paddingLeft) || 0);
+    }
+    return axis === 'y'
       ? document.body.clientHeight - (parseFloat(cs.paddingBottom) || 0)
       : document.body.clientWidth - (parseFloat(cs.paddingRight) || 0);
   },
   // TODO-773 P0：countCharsBeforeViewport 的分页版（body-relative 首边）。与连续版逐字
   // 二分定位同算法，只换轴：分页「在首边之前」= 沿翻页轴落在当前页 content-box 起点之前
-  // （横排 rect.right <= firstEdge / 竖排 rect.bottom <= firstEdge，BUG-2492），其余三态
-  // 短路、零尺寸跳过、代理对迭代全部一致。
-  countCharsBeforeViewportPaged: function(node, vertical, firstEdge) {
+  // （turnSpan(axis).end <= firstEdge：横排 rect.right、竖排 rect.bottom、竖排对开到右缘的
+  // 距离，BUG-2492），其余三态短路、零尺寸跳过、代理对迭代全部一致。
+  countCharsBeforeViewportPaged: function(node, axis, firstEdge) {
     var text = node.textContent || '';
     var totalChars = this.countChars(text);
     if (totalChars <= 0) return 0;
@@ -1576,11 +1624,10 @@ window.__fushiInstallShell = function(C) {
     for (var i = 0; i < rects.length; i++) {
       var rect = rects[i];
       if (rect.width <= 0 || rect.height <= 0) continue;
-      // 翻页轴：横排 x（列左→右）、竖排 y（列上→下）。
-      var start = vertical ? rect.top : rect.left;
-      var end = vertical ? rect.bottom : rect.right;
-      minStart = Math.min(minStart, start);
-      maxEnd = Math.max(maxEnd, end);
+      // 翻页轴：横排 x（列左→右）、竖排 y（列上→下）、竖排对开 xr（页右→左）。
+      var span = this.turnSpan(axis, rect);
+      minStart = Math.min(minStart, span.start);
+      maxEnd = Math.max(maxEnd, span.end);
     }
     if (maxEnd <= firstEdge) return totalChars;
     if (minStart >= firstEdge || minStart === Infinity) return 0;
@@ -1601,7 +1648,7 @@ window.__fushiInstallShell = function(C) {
     var firstVisible = offsets.length;
     while (low <= high) {
       var mid = Math.floor((low + high) / 2);
-      if (this.isTextOffsetBeforeViewportPaged(node, offsets[mid], text, vertical, firstEdge)) {
+      if (this.isTextOffsetBeforeViewportPaged(node, offsets[mid], text, axis, firstEdge)) {
         low = mid + 1;
       } else {
         firstVisible = mid;
@@ -1612,9 +1659,10 @@ window.__fushiInstallShell = function(C) {
   },
   // TODO-773 P0：isTextOffsetBeforeViewport 的分页版（body-relative 首边）。沿翻页轴判
   // 该字是否整个落在当前页 content-box 起点之前：横排 rect.right<=firstEdge（=padding-left）、
-  // 竖排 rect.bottom<=firstEdge（=padding-top）（BUG-2492：不是连续版的 bottom<=0 /
-  // left>=clientWidth）。
-  isTextOffsetBeforeViewportPaged: function(node, offset, text, vertical, firstEdge) {
+  // 竖排 rect.bottom<=firstEdge（=padding-top）、竖排对开到右缘的距离 <= firstEdge
+  // （=padding-right）（BUG-2492：不是连续版的 bottom<=0 / left>=clientWidth）。
+  // axis 兼容布尔 vertical：连续 shell 的 countCharsBeforeViewport 传任意边时仍按布尔调用。
+  isTextOffsetBeforeViewportPaged: function(node, offset, text, axis, firstEdge) {
     var char = String.fromCodePoint(text.codePointAt(offset));
     if (!char) return false;
     var range = document.createRange();
@@ -1622,7 +1670,7 @@ window.__fushiInstallShell = function(C) {
     range.setEnd(node, offset + char.length);
     var rect = this.getRect(range);
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-    return (vertical ? rect.bottom : rect.right) <= firstEdge;
+    return this.turnSpan(axis, rect).end <= firstEdge;
   },
   // BUG-2492：章内偏移 [charOffset] 处那个学习单位是否画在**当前页**上（沿翻页轴与
   // 当前页 content-box [firstEdge, lastEdge) 相交）。fushiProgressDetails 把
@@ -1649,19 +1697,11 @@ window.__fushiInstallShell = function(C) {
     }
     if (!targetNode) return false;
     var text = targetNode.textContent;
-    var charIdx = 0;
-    var textOffset = 0;
-    for (var i = 0; i < text.length && charIdx < remaining; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
-      if (cp > 0xFFFF) i++;
-      textOffset = i + 1;
-    }
-    // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：西文空格分词的
-    // 分隔空格、`<p>\n本文` 的前导折叠空白都落在这里。空白永远不是单元首字，而软换行
-    // 处的尾随空格还可能带着一个落在**前页末行**的非零 rect——先按码元跳过空白，
-    // 再交给 characterAnchorRect 跳零尺寸盒（scrollToCharOffset 同款）。
-    while (textOffset < text.length && /\s/.test(text[textOffset])) textOffset++;
+    // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：句读 / 括号（「。」）、
+    // 西文分词空格、`<p>\n本文` 的前导折叠空白都落在这里，且软换行处它们可能带着一个落在
+    // **前页末行**的非零 rect。unitStartOffset 直接给出目标单元首码点（BUG-3651），再交给
+    // characterAnchorRect 跳零尺寸盒（scrollToCharOffset 同款）。
+    var textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     if (textOffset >= text.length) return false;
     var cpAt = text.codePointAt(textOffset);
     var range = document.createRange();
@@ -1669,12 +1709,11 @@ window.__fushiInstallShell = function(C) {
     range.setEnd(targetNode, textOffset + (cpAt > 0xFFFF ? 2 : 1));
     var rect = this.characterAnchorRect(range);
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-    var vertical = this.isVertical();
-    var firstEdge = this.pagedFirstEdge(vertical);
-    var lastEdge = this.pagedLastEdge(vertical);
-    var start = vertical ? rect.top : rect.left;
-    var end = vertical ? rect.bottom : rect.right;
-    return end > firstEdge && start < lastEdge;
+    var axis = this.pagedAxis();
+    var firstEdge = this.pagedFirstEdge(axis);
+    var lastEdge = this.pagedLastEdge(axis);
+    var span = this.turnSpan(axis, rect);
+    return span.end > firstEdge && span.start < lastEdge;
   },
   buildSentenceAudioNormIndex: function() {
     // 一次性遍历 DOM 文本节点（createWalker 跳过振假名 rt/rp），构建归一化
@@ -1877,6 +1916,7 @@ window.__fushiInstallShell = function(C) {
         }
       });
       cueRanges.track(this.cueRangesMap);
+      this._cueLookupIndex = null; // 反查索引作废（见 cueLookupIndex）
       // 让可绘制包裹（BUG-3323，整节点搬进行内元素、不切开）后的文本索引重建。
       this.buildNodeOffsets();
       return;
@@ -1907,6 +1947,7 @@ window.__fushiInstallShell = function(C) {
         if (rubyElements.length) self.cueRubyElements.set(id, rubyElements);
       }
     });
+    this._cueLookupIndex = null; // 反查索引作废（见 cueLookupIndex）
     this.buildNodeOffsets();
   },
   highlightSentenceAudioCue: function(cueId, reveal) {
@@ -1967,7 +2008,149 @@ window.__fushiInstallShell = function(C) {
   },
   // Resolve the actual rendered cue, shared by pointer seek and lookup payloads.
   // Study-unit offsets are not subtitle-normalized character offsets.
+  //
+  // 查词卡顿（P2）：每次查词（buildSelectionPayload）都会调这里。旧实现对三张表逐 cue 线性
+  // 判包含（comparePoint / contains），整章几千句时就是几千次 DOM 调用。现在走懒建的反查
+  // 索引（cueLookupIndex）：wrapper / ruby 两支沿命中点的祖先链查表（O(树深)），Range 支对
+  // 按起点排好序、两两不重叠的 Range 二分（不满足不重叠就退回线性）。返回值与旧线性扫描逐位
+  // 相同——同一 cue 的多个候选里仍按 Map 插入序取第一个（见 cueIdAtDomPointLinear，保留作
+  // 参照实现与回退）。
   cueIdAtDomPoint: function(node, off) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    var sidEl = el && el.closest ? el.closest('[data-cue-id]') : null;
+    if (sidEl) return JSON.stringify({ type: 'sid', id: sidEl.getAttribute('data-cue-id') });
+    var index = this.cueLookupIndex();
+    var found = null;
+    if (this.cueRangesMap.size) {
+      found = index.ranges ? this.cueIdInSortedRanges(index.ranges, node, off) : undefined;
+      if (found === undefined) return this.cueIdAtDomPointLinear(node, off);
+      if (found) return JSON.stringify({ type: 'frag', id: found });
+    }
+    if (this.cueRubyElements.size) {
+      found = this.cueOwnerOnAncestors(index.rubyOwner, node);
+      if (found) return JSON.stringify({ type: 'frag', id: found.id });
+    }
+    if (this.cueWrappers.size) {
+      var best = this.cueOwnerOnAncestors(index.wrapperOwner, node);
+      // BUG-2806：点在注音上时按「同一颗 ruby」归属（与线性版同一判据）。
+      var pointRuby = this.rubyForNode(node);
+      var viaRuby = pointRuby ? index.wrapperRubyOwner.get(pointRuby) : null;
+      if (viaRuby && (!best || viaRuby.order < best.order)) best = viaRuby;
+      if (best) return JSON.stringify({ type: 'frag', id: best.id });
+    }
+    return null;
+  },
+  // 反查索引：三张 cue 表在 applySentenceAudioCues / resetSentenceAudioCues 时整体重建（两处都
+  // 直接把 _cueLookupIndex 置空作废本索引）；另按三表 size 自检，防直接改表（测试与旧调用方会 reset 后手工 set）。
+  cueLookupIndex: function() {
+    var idx = this._cueLookupIndex;
+    if (idx && idx.rangesSize === this.cueRangesMap.size &&
+        idx.rubySize === this.cueRubyElements.size &&
+        idx.wrappersSize === this.cueWrappers.size) {
+      return idx;
+    }
+    var self = this;
+    idx = {
+      rangesSize: this.cueRangesMap.size,
+      rubySize: this.cueRubyElements.size,
+      wrappersSize: this.cueWrappers.size,
+      ranges: null,
+      rubyOwner: new Map(),
+      wrapperOwner: new Map(),
+      wrapperRubyOwner: new Map()
+    };
+    var order = 0;
+    // 每个元素只记 Map 插入序里第一个拥有它的 cue（= 线性 forEach 先命中的那个）。
+    var own = function(map, key, id, rank) {
+      if (key && !map.has(key)) map.set(key, { id: id, order: rank });
+    };
+    this.cueRubyElements.forEach(function(rubyElements, id) {
+      var rank = order++;
+      for (var i = 0; i < rubyElements.length; i++) own(idx.rubyOwner, rubyElements[i], id, rank);
+    });
+    order = 0;
+    this.cueWrappers.forEach(function(wrappers, id) {
+      var rank = order++;
+      for (var i = 0; i < wrappers.length; i++) {
+        own(idx.wrapperOwner, wrappers[i], id, rank);
+        own(idx.wrapperRubyOwner, self.rubyForNode(wrappers[i]), id, rank);
+      }
+    });
+    idx.ranges = this.sortedDisjointCueRanges();
+    this._cueLookupIndex = idx;
+    return idx;
+  },
+  // 边界点 (na, oa) 相对 (nb, ob)：-1 在前 / 0 相同 / 1 在后（DOM 边界点序）。
+  compareBoundaryPoint: function(na, oa, nb, ob) {
+    var probe = document.createRange();
+    probe.setStart(nb, ob);
+    return probe.comparePoint(na, oa);
+  },
+  // 全部 cue Range 按起点排序；只有两两不重叠（前一个的终点 <= 后一个的起点）时返回数组，
+  // 否则返回 null（让查询退回线性，保住「插入序第一个」的语义）。Live Range 随 DOM 改动
+  // 单调移动，排好的序与不重叠性在改动后仍成立。
+  sortedDisjointCueRanges: function() {
+    if (!this.cueRangesMap.size) return null;
+    var all = [];
+    this.cueRangesMap.forEach(function(ranges, id) {
+      for (var i = 0; i < ranges.length; i++) all.push({ range: ranges[i], id: id });
+    });
+    var self = this;
+    try {
+      all.sort(function(a, b) {
+        return self.compareBoundaryPoint(a.range.startContainer, a.range.startOffset,
+          b.range.startContainer, b.range.startOffset);
+      });
+      for (var k = 1; k < all.length; k++) {
+        var prev = all[k - 1].range, cur = all[k].range;
+        if (this.compareBoundaryPoint(prev.endContainer, prev.endOffset,
+            cur.startContainer, cur.startOffset) > 0) {
+          return null;
+        }
+      }
+    } catch (e) {
+      return null;
+    }
+    return all;
+  },
+  // 在排好序、不重叠的 Range 里找包含 (node, off) 的那个（start <= p < end，与线性版的
+  // 「comparePoint == 0 且不是终点」同一判据）。返回 cue id / null；量不了（跨文档等）返回
+  // undefined，调用方退回线性。不重叠保证至多一个 Range 满足，且必是起点 <= p 的最后一个。
+  cueIdInSortedRanges: function(sorted, node, off) {
+    try {
+      var lo = 0, hi = sorted.length - 1, hit = -1;
+      while (lo <= hi) {
+        var mid = (lo + hi) >> 1;
+        var r = sorted[mid].range;
+        if (this.compareBoundaryPoint(r.startContainer, r.startOffset, node, off) <= 0) {
+          hit = mid; lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      if (hit < 0) return null;
+      var range = sorted[hit].range;
+      if (range.comparePoint(node, off) === 0 &&
+          !(range.endContainer === node && range.endOffset === off)) {
+        return sorted[hit].id;
+      }
+      return null;
+    } catch (e) {
+      return undefined;
+    }
+  },
+  // 沿 node 的祖先链（含自身）找 owner 表里的元素，返回插入序最靠前的 {id, order}。
+  // 等价于线性版的 element.contains(node)：contains 为真 ⇔ 元素是 node 自身或其祖先。
+  cueOwnerOnAncestors: function(owners, node) {
+    var best = null;
+    for (var n = node; n; n = n.parentNode) {
+      var owner = owners.get(n);
+      if (owner && (!best || owner.order < best.order)) best = owner;
+    }
+    return best;
+  },
+  // 旧的线性反查原样保留：Range 支不满足二分前提时的回退，也是一致性测试的参照实现。
+  cueIdAtDomPointLinear: function(node, off) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     var sidEl = el && el.closest ? el.closest('[data-cue-id]') : null;
     if (sidEl) return JSON.stringify({ type: 'sid', id: sidEl.getAttribute('data-cue-id') });
@@ -2040,6 +2223,7 @@ window.__fushiInstallShell = function(C) {
     });
     this.cueWrappers.clear();
     this.activeCueId = null;
+    this._cueLookupIndex = null; // 反查索引作废（见 cueLookupIndex）
   },
   // BUG-3343：拆包裹与合并文本节点都经 __fushiLiveRanges（定义在选区脚本），查词选区的
   // 「节点 + 偏移」与 live Range 换算到合并后的节点，不随被并掉的节点一起失效。
@@ -2451,6 +2635,8 @@ $kReaderPageTurnJs
     var vertical = this.isVertical();
     var scrollEl = document.body;
     var cs = getComputedStyle(scrollEl);
+    // 竖排对开（xr 轴）是另一种页几何，单独成段，竖排单条 / 横排的推导一行不动。
+    if (vertical && cs.columnWrap === 'wrap') return this._spreadScrollContext(scrollEl, cs);
     var contentBox;
     // TODO-753/792（横排 + 竖排亚像素 pageStep 统一）：列周期 = used column-width +
     // column-gap。直接取 getComputedStyle(scrollEl).columnWidth —— 浏览器对 CSS
@@ -2548,6 +2734,7 @@ $kReaderPageTurnJs
       : (parseFloat(cs.paddingLeft) || 0);
     return {
       vertical: vertical,
+      axis: vertical ? 'y' : 'x',
       scrollEl: scrollEl,
       pageSize: pageStep,
       maxScroll: maxScroll,
@@ -2559,7 +2746,38 @@ $kReaderPageTurnJs
       columnGap: gap
     };
   },
+  // 竖排对开的分页几何（xr 轴，见 isVerticalSpread）。与横排两栏同构：一屏 = N 个 multicol
+  // 行（N = 2：右页 + 左页），页步 = N ×（行的块向尺寸 column-height + 行距 row-gap）=
+  // content-box 宽 + 行距。两个量都从计算样式回读（CSS 端 verticalSpreadCss 同源），与横排
+  // 读 used column-width / column-gap 同理：网格步距 == 浏览器真实行周期。滚动坐标归一化为
+  // −scrollLeft（vertical-rl 的滚动原点在右缘、向左为负），contentStart = padding-right
+  // （首页内容从右侧页边距内开始）。
+  _spreadScrollContext: function(scrollEl, cs) {
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var fullTurnBox = (scrollEl.getBoundingClientRect().width || scrollEl.clientWidth
+        || this.pageWidth || window.innerWidth) - pl - pr;
+    var gap = parseFloat(cs.rowGap) || 0;
+    var pageBox = parseFloat(cs.columnHeight);
+    if (!(pageBox > 0)) pageBox = Math.max(1, (fullTurnBox - gap) / 2);
+    var pages = Math.max(1, Math.round((fullTurnBox + gap) / (pageBox + gap)));
+    var pageStep = pages * (pageBox + gap);
+    var totalSize = scrollEl.scrollWidth;
+    var viewportExtent = scrollEl.clientWidth;
+    return {
+      vertical: true,
+      axis: 'xr',
+      scrollEl: scrollEl,
+      pageSize: pageStep,
+      maxScroll: Math.max(0, totalSize - pageStep),
+      physicalMaxScroll: Math.max(0, totalSize - viewportExtent),
+      viewportExtent: viewportExtent,
+      contentStart: pr,
+      columnGap: gap
+    };
+  },
   getPagePosition: function(context) {
+    if (context.axis === 'xr') return 0 - context.scrollEl.scrollLeft;
     return context.vertical ? context.scrollEl.scrollTop : context.scrollEl.scrollLeft;
   },
   lockRootViewport: function() {
@@ -2580,7 +2798,9 @@ $kReaderPageTurnJs
     return didScroll;
   },
   assignPagePosition: function(context, position) {
-    if (context.vertical) {
+    if (context.axis === 'xr') {
+      context.scrollEl.scrollLeft = 0 - position;
+    } else if (context.vertical) {
       context.scrollEl.scrollTop = position;
     } else {
       context.scrollEl.scrollLeft = position;
@@ -2702,7 +2922,8 @@ $kReaderPageTurnJs
     // 旧实现用首段 rect 的几何中点（top/bottom 或 left/right 取中），句首落列后
     // 半段时中点越界相邻列 → floor 前翻，下一句又翻回 = 有声书自动读翻页抖动。
     // 起始边锚恒落「句子起点所在页」，不越界。轴向语义已被起始边路径锁定，不自创轴向。
-    var startEdge = context.vertical ? rect.top : rect.left;
+    // 竖排对开（xr 轴）的起始边是 rect.right（归一化到 body 右缘，见 turnSpan）。
+    var startEdge = this.turnSpan(context.axis, rect).start;
     var anchor = startEdge + currentScroll;
     var targetScroll = this.alignToPage(context, anchor);
     // BUG-1764（有声书跟随读到下一页第一句时不翻页）：这里曾有一条
@@ -2791,13 +3012,14 @@ $kReaderPageTurnJs
       var rects = range.getClientRects();
       var progressRect = this.getRect(range);
       var nodeStartEdge = progressRect && progressRect.width > 0 && progressRect.height > 0
-        ? (context.vertical ? progressRect.top : progressRect.left) + currentScroll
+        ? this.turnSpan(context.axis, progressRect).start + currentScroll
         : null;
       for (var i = 0; i < rects.length; i++) {
         var rect = rects[i];
         if (rect.width <= 0 || rect.height <= 0) continue;
-        var startEdge = (context.vertical ? rect.top : rect.left) + currentScroll;
-        var endEdge = (context.vertical ? rect.bottom : rect.right) + currentScroll;
+        var span = this.turnSpan(context.axis, rect);
+        var startEdge = span.start + currentScroll;
+        var endEdge = span.end + currentScroll;
         firstContentEdge = firstContentEdge === null ? startEdge : Math.min(firstContentEdge, startEdge);
         lastContentEdge = Math.max(lastContentEdge, endEdge);
       }
@@ -2810,8 +3032,9 @@ $kReaderPageTurnJs
     for (var j = 0; j < media.length; j++) {
       var mediaRect = media[j].getBoundingClientRect();
       if (mediaRect.width <= 0 || mediaRect.height <= 0) continue;
-      var mediaStart = (context.vertical ? mediaRect.top : mediaRect.left) + currentScroll;
-      var mediaEnd = (context.vertical ? mediaRect.bottom : mediaRect.right) + currentScroll;
+      var mediaSpan = this.turnSpan(context.axis, mediaRect);
+      var mediaStart = mediaSpan.start + currentScroll;
+      var mediaEnd = mediaSpan.end + currentScroll;
       firstContentEdge = firstContentEdge === null ? mediaStart : Math.min(firstContentEdge, mediaStart);
       lastContentEdge = Math.max(lastContentEdge, mediaEnd);
     }
@@ -3091,7 +3314,7 @@ $kReaderPageTurnJs
     if (context.pageSize <= 0 || !target) return false;
     var rect = this.getRect(target);
     var currentScroll = this.getPagePosition(context);
-    var anchor = (context.vertical ? rect.top : rect.left) + currentScroll;
+    var anchor = this.turnSpan(context.axis, rect).start + currentScroll;
     this.setPagePosition(context, this.alignToPage(context, anchor));
     return true;
   },
@@ -3236,24 +3459,23 @@ $kReaderPageTurnJs
       runningOffset += nodeChars;
     }
     if (!targetNode) return;
-    var charIdx = 0;
-    var textOffset = 0;
     var text = targetNode.textContent;
-    for (var i = 0; i < text.length && charIdx < remaining; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
-      if (cp > 0xFFFF) i++;
-      textOffset = i + 1;
-    }
+    // BUG-3651：落到目标单元的首码点，不是「前一单元结束后的下一码元」——后者可能是句读 /
+    // 空白分隔符；页首字紧跟在前一页末行的「。」之后时，量到的是那个「。」的字形，整页
+    // 退回前一页（与 charOffsetOnCurrentPage / collapsedRangeAtCharOffset 同一个逆映射）。
+    var textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
     range.collapse(true);
-    var rect = this.characterAnchorRect(range);
+    // BUG-3431（分页侧补齐）：落页对齐的是目标字自己的字形盒，不是塌缩光标——目标字恰是软换行
+    // 处的行首时，Chromium 把塌缩光标算到**上一行行尾**；那一行是上一页（竖排单条的上一条、
+    // 横排的上一列、竖排对开的上一对开左页）的末行时，光标锚把整页判进前一页，冷启动恢复没有
+    // hint（BUG-2205 的 ±1 保原页只在重锚时有）兜，于是每次重开退一页。量不到字形（偏移在节点
+    // 末尾等）才退回光标几何。连续 shell 同一处早已如此。
+    var rect = this.characterGlyphRect(range) || this.characterAnchorRect(range);
     if (!rect) return;
     var context = this.getScrollContext();
-    var scrollOffset = context.vertical
-      ? (context.scrollEl.scrollTop + rect.top)
-      : (context.scrollEl.scrollLeft + rect.left);
+    var scrollOffset = this.getPagePosition(context) + this.turnSpan(context.axis, rect).start;
     // BUG-2325：字符落页走同一个列号函数 alignToPage（减相位 + gap 下侧容差）。旧的裸
     // floor(scrollOffset/pageSize) 既漏了相位 contentStart，也吃不住上面那条每页累积的
     // 网格漂移：精确锚恢复 / 样式重锚 commit 落到「页首字」时同样会退回前一列。
@@ -3975,7 +4197,10 @@ $kSentenceAudioRubyGapJs
   // BUG-461：把章内绝对可匹配字符索引解析成一个塌缩到该字符起始边的 collapsed range。
   // 抽自 scrollToCharOffset 内联体，供「句首锚」与「句尾锚」共用（DRY），返回 null 表示
   // 该偏移落在正文之外（解析失败）。
-  collapsedRangeAtCharOffset: function(charOffset) {
+  // [afterPreviousUnit]（句尾锚用）：句尾偏移是**开区间**终点（句首 + 句长），塌缩到第
+  // charOffset 个单元结束之后（即句子最后一个单元之后、句末「。」之前），而不是下一句的
+  // 首字——后者可能已换到下一行。省略时（句首锚）塌缩到目标单元首码点（BUG-3651）。
+  collapsedRangeAtCharOffset: function(charOffset, afterPreviousUnit) {
     if (charOffset < 0) return null;
     var walker = this.createWalker();
     var node;
@@ -3988,14 +4213,20 @@ $kSentenceAudioRubyGapJs
     }
     if (!targetNode) return null;
     var remaining = charOffset - runningOffset;
-    var charIdx = 0;
-    var textOffset = 0;
     var text = targetNode.textContent;
-    for (var i = 0; i < text.length && charIdx < remaining; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
-      if (cp > 0xFFFF) i++;
-      textOffset = i + 1;
+    var textOffset;
+    if (afterPreviousUnit) {
+      textOffset = 0;
+      var charIdx = 0;
+      for (var i = 0; i < text.length && charIdx < remaining; i++) {
+        var cp = text.codePointAt(i);
+        if (window.fushiStudyUnits.isUnitEnd(text, i)) charIdx++;
+        if (cp > 0xFFFF) i++;
+        textOffset = i + 1;
+      }
+    } else {
+      // BUG-3651：塌缩到目标单元的首码点，不停在它前面的句读 / 空白分隔符上。
+      textOffset = window.fushiStudyUnits.unitStartOffset(text, remaining);
     }
     var range = document.createRange();
     range.setStart(targetNode, Math.min(textOffset, text.length));
@@ -4060,7 +4291,7 @@ $kSentenceAudioRubyGapJs
     var pt = parseFloat(cs.paddingTop) || 0;
     // 句尾区间锚（BUG-461）：仅横排、且调用方给了句尾偏移时启用。
     if (typeof endCharOffset === 'number' && endCharOffset > charOffset) {
-      var endRange = this.collapsedRangeAtCharOffset(endCharOffset);
+      var endRange = this.collapsedRangeAtCharOffset(endCharOffset, true);
       var endRect = endRange ? this.characterAnchorRect(endRange) : null;
       if (endRect) {
         var lineH = parseFloat(cs.lineHeight);

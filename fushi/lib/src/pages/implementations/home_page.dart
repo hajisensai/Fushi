@@ -551,6 +551,8 @@ class _HomePageState extends BasePageState<HomePage>
         // 上来时该键缺省即 true（不弹）；中途杀进程下次启动值仍是 false，会
         // 重新弹出（缺省语义见 PreferencesRepository.onboardingCompleted）。
         await appModel.setOnboardingCompleted(value: false);
+        // 「走完」与「弹过」分开记：跳过向导后首页常驻一张引导卡，走完才收。
+        await appModel.setOnboardingFinished(value: false);
       }
 
       // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/

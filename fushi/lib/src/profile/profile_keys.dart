@@ -1,7 +1,8 @@
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_core/fushi_core.dart' show kStatLegacyProfileIdPrefKey;
+import 'package:fushi_core/fushi_core.dart'
+    show kStatLegacyProfileIdPrefKey, kStudyProfileNameAliasesPrefKey;
 
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show kLyricsModeBookPrefDbPrefix;
@@ -61,9 +62,13 @@ class ProfileKeys {
     // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
     // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。
     kStatLegacyProfileIdPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同族。
+    kStudyProfileNameAliasesPrefKey,
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
+    'onboarding_finished',
+    'onboarding_home_card_dismissed',
     // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
     // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
     'browse_moved_notice_handled',

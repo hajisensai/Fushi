@@ -375,6 +375,28 @@ class FushidictsFfiBindings {
   late final _MatchLengthDart matchLength;
 }
 
+// ── 已导入词典的 redirect_glossary.flag 迁移（按需解析） ──────────────
+
+typedef _EnsureRedirectFlagNative = Int32 Function(Pointer<Utf8> dir);
+typedef EnsureRedirectFlagDart = int Function(Pointer<Utf8> dir);
+
+/// `fushidicts_ensure_redirect_flag` 的绑定，**用到时才解析**（理由同
+/// [lookupZstdDecompressFile]：这是一次性迁移，随包旧库缺这个导出时只让迁移报
+/// 「不支持」，不能连累整套查词绑定在构造时抛）。
+///
+/// 原生语义（`query.cpp` 的 `ensure_redirect_glossary_flag`）：已有与当前 blobs.bin
+/// 大小一致的标记文件就直接读它返回；否则整本扫描（单本最多约 1 s）并写回标记。
+/// 返回 1 = 含纯重定向 glossary，0 = 不含，-1 = 读不了。不需要查询句柄。
+EnsureRedirectFlagDart? lookupEnsureRedirectFlag() {
+  try {
+    return _openNativeLib()
+        .lookupFunction<_EnsureRedirectFlagNative, EnsureRedirectFlagDart>(
+            'fushidicts_ensure_redirect_flag');
+  } on ArgumentError {
+    return null;
+  }
+}
+
 // ── zstd 文件解压（按需解析） ───────────────────────────────────────
 
 typedef _ZstdDecompressFileNative = Int32 Function(

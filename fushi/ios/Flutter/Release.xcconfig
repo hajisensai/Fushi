@@ -3,7 +3,8 @@
 // iOS 伞形 Rust 静态库（互联 P2P 隧道 fp2p_* + SRS 排程内核 ffsrs_* + 计算内核 ffc_* 合一，
 // std 只有一份）：native/fushi_ios_umbrella/build_ios_staticlib.sh 生成。这里仍是可选 include，
 // 但计算内核 fushi_compute 是硬依赖：没编过（或是加入 fushi_compute 之前的旧件）时 Runner 的
-// 「Check fushi_compute (iOS umbrella)」构建阶段（ios/check_fushi_compute.sh）让构建失败。
+// 「Check fushi_compute (iOS umbrella)」构建阶段（ios/check_fushi_compute.sh）让构建失败；RWKV 排程推理
+// fushi_rwkv（frwkv_*）同为硬依赖，由「Check fushi_rwkv (iOS umbrella)」（ios/check_fushi_rwkv.sh）把关。
 // 见 Runner 的 OTHER_LDFLAGS。
 #include? "../../../native/fushi_ios_umbrella/prebuilt/ios/fushi_ios_umbrella.xcconfig"
 // APNs 环境（Runner/Runner.entitlements 的 aps-environment）。只在接入了那份 entitlements

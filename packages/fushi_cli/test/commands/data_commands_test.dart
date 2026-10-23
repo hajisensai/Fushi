@@ -33,6 +33,7 @@ void main() {
       'backup',
       'sync',
       'dl',
+      'sub',
       'mediaserver',
       'peer',
       'storage',
@@ -588,12 +589,121 @@ void main() {
     });
   });
 
+  group('sub', () {
+    test('ls / get / items / check（单条与全部）', () {
+      expect(build('sub', 'ls', <String>[]).path, '/api/admin/subscriptions');
+      expect(
+        build('sub', 'get', <String>['video-discovery-1']).path,
+        '/api/admin/subscriptions/video-discovery-1',
+      );
+      expect(
+        build('sub', 'items', <String>['a/b']).path,
+        '/api/admin/subscriptions/a%2Fb/items',
+      );
+      final CtlRequestSpec all = build('sub', 'check', <String>[]);
+      expect(all.method, 'POST');
+      expect(all.path, '/api/admin/subscriptions/check');
+      expect(
+        build('sub', 'check', <String>['s1']).path,
+        '/api/admin/subscriptions/s1/check',
+      );
+      expect(() => build('sub', 'get', <String>[]), usageError());
+    });
+
+    test('enable / disable 走同一条路由，body 区分', () {
+      final CtlRequestSpec on = build('sub', 'enable', <String>['s1']);
+      expect(on.path, '/api/admin/subscriptions/s1/enable');
+      expect(on.body, <String, Object?>{'enabled': true});
+      expect(build('sub', 'disable', <String>['s1']).body, <String, Object?>{
+        'enabled': false,
+      });
+    });
+
+    test('edit 只带给出的项；--start-after none 清空；规则空串 = 去掉', () {
+      final CtlRequestSpec r = build('sub', 'edit', <String>[
+        's1',
+        '--query',
+        'Nia Liston 1080p',
+        '--start-after',
+        '3',
+        '--subtitles',
+        'required',
+        '--source',
+        '7',
+        '--group',
+        'SubsPlease,Erai-raws',
+        '--resolution',
+        '',
+      ]);
+      expect(r.method, 'PUT');
+      expect(r.path, '/api/admin/subscriptions/s1');
+      expect(r.body, <String, Object?>{
+        'searchQuery': 'Nia Liston 1080p',
+        'startAfterEpisode': 3,
+        'subtitlePolicy': 'required',
+        'source': 7,
+        'releaseGroups': <String>['SubsPlease', 'Erai-raws'],
+        'resolutions': <String>[],
+      });
+      final CtlRequestSpec clear = build('sub', 'edit', <String>[
+        's1',
+        '--start-after',
+        'none',
+      ]);
+      expect(clear.body, <String, Object?>{'startAfterEpisode': null});
+      expect(() => build('sub', 'edit', <String>['s1']), usageError());
+      expect(
+        () => build('sub', 'edit', <String>['s1', '--start-after', 'x']),
+        usageError(),
+      );
+    });
+
+    test('rm 必须 --yes，并带 confirm', () {
+      expect(() => build('sub', 'rm', <String>['s1']), usageError());
+      final CtlRequestSpec r = build('sub', 'rm', <String>['s1', '--yes']);
+      expect(r.method, 'DELETE');
+      expect(r.path, '/api/admin/subscriptions/s1');
+      expect(r.query, <String, String>{'confirm': 'true'});
+    });
+  });
+
   group('render', () {
     String render(String group, String command, Object? data) =>
         dataCommandGroups
             .firstWhere((CtlCommandGroup g) => g.name == group)
             .find(command)!
             .render!(data);
+
+    test('sub ls 状态列：启用 / 已停用 / 已完成 / 出错；后端未就绪有提示', () {
+      final String out = render('sub', 'ls', <String, Object?>{
+        'supported': false,
+        'subscriptions': <Object?>[
+          <String, Object?>{'subscriptionId': 'a', 'enabled': true},
+          <String, Object?>{'subscriptionId': 'b', 'enabled': false},
+          <String, Object?>{
+            'subscriptionId': 'c',
+            'enabled': false,
+            'fulfilledAt': 1,
+          },
+          <String, Object?>{
+            'subscriptionId': 'd',
+            'enabled': true,
+            'lastError': 'boom',
+          },
+        ],
+      });
+      expect(out, startsWith('本机下载后端未就绪'));
+      for (final String s in <String>['启用', '已停用', '已完成', '出错：boom']) {
+        expect(out, contains(s));
+      }
+      expect(
+        render('sub', 'ls', <String, Object?>{
+          'supported': true,
+          'subscriptions': <Object?>[],
+        }),
+        contains('没有订阅'),
+      );
+    });
 
     test('dl ls 表格与空表', () {
       expect(

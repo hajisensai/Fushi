@@ -31,7 +31,8 @@ function progressDetailsSource() {
   return src.slice(start, end + 5);
 }
 
-const paras = Array.from({length: 70}, (_, i) => `<p>P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを並べています。文章文章文章文章文章文章文章文章。</p>`).join('\n');
+const makeParas = (n) => Array.from({length: n}, (_, i) => `<p>P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを並べています。文章文章文章文章文章文章文章文章。</p>`).join('\n');
+const paras = makeParas(70);
 
 const GEOMETRIES = [
   {
@@ -45,6 +46,28 @@ const GEOMETRIES = [
     // 竖排：列（= 一页的一条横带）沿 Y 轴堆叠，column-width 是列高 = V − pt − pb；行自右向左。
     css: `html,body{margin:0;padding:0;}html{overflow:hidden;}
  body{width:${W}px;height:${H}px;padding:${PT}px ${PR}px ${PB}px ${PL}px;box-sizing:border-box;writing-mode:vertical-rl;column-width:${H-PT-PB}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;}
+ p{margin:0 1em 0 0;}`,
+  },
+  {
+    // 竖排对开（折叠屏书本姿态，reader_content_styles.dart 的 verticalSpreadCss）：每页 = 一个
+    // multicol 行（column-count:1、列高 = V − pt − pb），行宽 column-height = (content 宽 − 行距)/2，
+    // column-wrap:wrap 让行沿块轴从右往左排开——一屏右页 + 左页，翻页轴 = 从右往左的 x（xr）。
+    // 行距 40px 模拟书本姿态加宽的铰链缝。需要 Chromium 145+（column-wrap）。
+    name: 'paginated vertical spread', engine: 'fushi_engine_paginated.html', continuous: false,
+    css: `html,body{margin:0;padding:0;}html{overflow:hidden;}
+ body{width:${W}px;height:${H}px;padding:${PT}px ${PR}px ${PB}px ${PL}px;box-sizing:border-box;writing-mode:vertical-rl;column-width:${H-PT-PB}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;
+ column-count:1;column-height:${(W-PL-PR-40)/2}px;column-wrap:wrap;row-gap:40px;}
+ body::after{content:"";display:block;block-size:1px;break-before:column;}
+ p{margin:0 1em 0 0;}`,
+  },
+  {
+    // 同一几何换段落数，让章末页数的奇偶与上一组相反：奇数页时末对开只有右页，靠
+    // body::after 补的空页才滚得到；偶数页时补的空页不能变成一次多余的翻页。
+    name: 'paginated vertical spread (other parity)', engine: 'fushi_engine_paginated.html', continuous: false, paraCount: 74,
+    css: `html,body{margin:0;padding:0;}html{overflow:hidden;}
+ body{width:${W}px;height:${H}px;padding:${PT}px ${PR}px ${PB}px ${PL}px;box-sizing:border-box;writing-mode:vertical-rl;column-width:${H-PT-PB}px;column-gap:22px;column-fill:auto;font-size:22px;line-height:1.8;overflow:hidden;
+ column-count:1;column-height:${(W-PL-PR-40)/2}px;column-wrap:wrap;row-gap:40px;}
+ body::after{content:"";display:block;block-size:1px;break-before:column;}
  p{margin:0 1em 0 0;}`,
   },
   {
@@ -80,7 +103,7 @@ async function openChapter(geom) {
   // 引擎与安装脚本放 <head>：createWalker 走 document.body 的全部文本节点，脚本正文若在
   // body 里会被数进 totalChars（章总字数虚高、末页 end 跟着虚高）。生产路径引擎经
   // evaluateJavascript 注入、不进 DOM，head 放置与之等价。
-  const full = `<!doctype html><html><head><meta charset="utf-8"><style>${geom.css}</style>\n${engine}\n${install}</head><body>${paras}</body></html>`;
+  const full = `<!doctype html><html><head><meta charset="utf-8"><style>${geom.css}</style>\n${engine}\n${install}</head><body>${geom.paraCount ? makeParas(geom.paraCount) : paras}</body></html>`;
   const b = await puppeteer.launch({executablePath: CHROME, headless: 'new', args: ['--no-sandbox']});
   const pg = await b.newPage(); await pg.setViewport({width: W, height: H});
   await pg.setRequestInterception(true);

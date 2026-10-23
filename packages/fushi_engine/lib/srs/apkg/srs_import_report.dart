@@ -2,6 +2,7 @@
 library;
 
 import 'package:fushi_engine/srs/apkg/srs_import_options.dart';
+import 'package:fushi_srs/fushi_srs.dart';
 
 /// 一条不导入 / 有冲突的笔记。
 class SrsImportNoteIssue {
@@ -86,6 +87,18 @@ class SrsImportReport {
   /// 已存在、按「更新笔记」选项没更新（或来源内容与本机相同）：本地字段不动。
   int notesSkipped = 0;
 
+  /// 先前导入过、后来在本机删掉，这次恢复的笔记数（不计入 [notesAdded] / [notesUpdated]）。
+  int notesRestored = 0;
+
+  /// 「从 Anki 迁移」选了「导入后把旧 Lapis 迁到 Fushi 卡片」：迁过去 / 补迁的笔记数。
+  int lapisNotesMigrated = 0;
+
+  /// 同时选了「牌组名里的 Lapis 改成 Fushi Card」：改名的牌组数。
+  int lapisDecksRenamed = 0;
+
+  /// 上面那一步失败（导入本身已落库；笔记仍是旧 Lapis，可在笔记类型页重试）。
+  bool lapisMigrationFailed = false;
+
   /// 本次用的选项。
   SrsAnkiImportOptions options = const SrsAnkiImportOptions();
 
@@ -132,8 +145,24 @@ class SrsImportReport {
   final List<SrsImportTruncatedSteps> truncatedSteps =
       <SrsImportTruncatedSteps>[];
 
-  /// 开了 RWKV、改用 FSRS 的预设名。
-  final List<String> rwkvPresetsFellBack = <String>[];
+  /// 开了 RWKV 的预设名（导入后照旧用 RWKV）。
+  final List<String> rwkvPresets = <String>[];
+
+  /// 带着 FSRS 参数导入、改用 RWKV 的预设：预设名 → 原算法（FSRS-6 / FSRS-7）。参数照样存下。
+  final Map<String, SrsAlgorithm> fsrsPresets = <String, SrsAlgorithm>{};
+
+  /// 没有可用 FSRS 参数（SM-2 或没训练过）、导入后用默认算法的预设名。
+  final List<String> defaultAlgorithmPresets = <String>[];
+
+  /// 导入时关了 RWKV（[SrsAnkiImportOptions.useRwkv]）：Anki 里开了 RWKV、改用 FSRS-7 的预设名。
+  final List<String> rwkvPresetsOnFsrs = <String>[];
+
+  /// 导入时关了 RWKV：没有可用 FSRS 参数、用 FSRS-7 默认参数的预设名。
+  final List<String> defaultFsrsPresets = <String>[];
+
+  /// 本次新建、自己管参数、由 FSRS 预设改用 RWKV 的牌组：牌组 ID → 原算法
+  /// （导入报告的「继续用 FSRS」按这份改回）。
+  final Map<String, SrsAlgorithm> fsrsDecks = <String, SrsAlgorithm>{};
 
   /// 参数校验不过、没写参数的预设：预设名 → 原因。
   final Map<String, String> invalidParams = <String, String>{};
@@ -147,6 +176,9 @@ class SrsImportReport {
     'notesAdded': notesAdded,
     'notesUpdated': notesUpdated,
     'notesSkipped': notesSkipped,
+    'notesRestored': notesRestored,
+    'lapisNotesMigrated': lapisNotesMigrated,
+    'lapisMigrationFailed': lapisMigrationFailed,
     'options': options.toJson(),
     'noteTypesUpdated': noteTypesUpdated,
     'noteTypesDuplicated': noteTypesDuplicated,
@@ -168,7 +200,18 @@ class SrsImportReport {
     'truncatedSteps': <Map<String, Object?>>[
       for (final SrsImportTruncatedSteps s in truncatedSteps) s.toJson(),
     ],
-    'rwkvPresetsFellBack': rwkvPresetsFellBack,
+    'rwkvPresets': rwkvPresets,
+    'fsrsPresets': <String, String>{
+      for (final MapEntry<String, SrsAlgorithm> e in fsrsPresets.entries)
+        e.key: e.value.wire,
+    },
+    'defaultAlgorithmPresets': defaultAlgorithmPresets,
+    'rwkvPresetsOnFsrs': rwkvPresetsOnFsrs,
+    'defaultFsrsPresets': defaultFsrsPresets,
+    'fsrsDecks': <String, String>{
+      for (final MapEntry<String, SrsAlgorithm> e in fsrsDecks.entries)
+        e.key: e.value.wire,
+    },
     'invalidParams': invalidParams,
     'removedInSource': <Map<String, Object?>>[
       for (final SrsImportRemovedItem r in removedInSource) r.toJson(),

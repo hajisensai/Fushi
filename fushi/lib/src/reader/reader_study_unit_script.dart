@@ -97,7 +97,34 @@ if (!window.fushiStudyUnits) {
       return inWord ? total + 1 : total;
     }
 
-    return { isUnitEnd: isUnitEnd, count: count };
+    // isUnitEnd 前缀计数的逆：text 里第 unitIndex 个（0 起）学习单位**首码点**的码元下标；
+    // 不足 unitIndex+1 个单位时返回 text.length。
+    // 第 k 个单位结束后的下一个码元未必是第 k+1 个单位的首码点：句读 / 括号等分隔符
+    // （「。」）、空白（西文分词空格、`<p>\n本文` 的前导折叠空白）与前导透明码点都不属于
+    // 任何单位。落页 / 页上校验若停在那里，量到的是**分隔符**的字形——页首字恰在句号后
+    // 换行（禁则允许在「。」后断行，页首紧跟上一页末行的「。」）时，那个「。」画在前一页，
+    // 存→取就整页退回前一页（BUG-3651 竖排对开 20px 每页退一页）。
+    function unitStartOffset(text, unitIndex) {
+      var s = String(text || '');
+      var seen = 0;
+      var i = 0;
+      while (i < s.length && seen < unitIndex) {
+        var ch = charAt(s, i);
+        if (!ch) break;
+        if (isUnitEnd(s, i)) seen++;
+        i += ch.length;
+      }
+      while (i < s.length) {
+        var c = charAt(s, i);
+        if (!c) break;
+        var kind = classify(c);
+        if (kind === 1 || kind === 2) break;
+        i += c.length;
+      }
+      return i;
+    }
+
+    return { isUnitEnd: isUnitEnd, count: count, unitStartOffset: unitStartOffset };
   })();
 }
 """;

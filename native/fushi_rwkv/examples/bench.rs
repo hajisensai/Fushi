@@ -7,7 +7,7 @@
 //!   默认 model/RWKV_trained_on_5000_10000.bin、5000 张卡、730 天、threads=0（全部核心）、两种精度。
 use std::time::Instant;
 
-use fushi_rwkv::{ReviewInput, RwkvModel, RwkvRuntime, StatePrecision};
+use fushi_rwkv::{Model, ReviewInput, RwkvRuntime, StatePrecision};
 
 struct Lcg(u64);
 
@@ -123,6 +123,45 @@ fn simulate(cards: usize, days: i64) -> (Vec<ReviewInput>, Vec<ReviewInput>) {
     (reviews, queries)
 }
 
+/// Resident memory of this process in MB (Windows working set, Linux RSS;
+/// `None` elsewhere).
+fn resident_mb() -> Option<f64> {
+    #[cfg(windows)]
+    {
+        #[repr(C)]
+        #[derive(Default)]
+        struct Counters {
+            cb: u32,
+            page_faults: u32,
+            peak_working_set: usize,
+            working_set: usize,
+            other: [usize; 6],
+        }
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn GetCurrentProcess() -> isize;
+            fn K32GetProcessMemoryInfo(process: isize, counters: *mut Counters, cb: u32) -> i32;
+        }
+        let mut counters = Counters {
+            cb: std::mem::size_of::<Counters>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: plain Win32 call writing into a correctly sized struct.
+        let ok = unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) };
+        (ok != 0).then(|| counters.working_set as f64 / 1e6)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let statm = std::fs::read_to_string("/proc/self/statm").ok()?;
+        let pages: f64 = statm.split_whitespace().nth(1)?.parse().ok()?;
+        Some(pages * 4096.0 / 1e6)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        None
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let model_path = args.get(1).cloned().unwrap_or_else(|| {
@@ -142,13 +181,14 @@ fn main() {
         .map(|p| match p {
             "f32" => StatePrecision::F32,
             "int8" => StatePrecision::Int8,
+            "int4" => StatePrecision::Int4,
             other => panic!("unknown precision {other}"),
         })
         .collect();
 
     let started = Instant::now();
     let bytes = std::fs::read(&model_path).expect("model file (run fetch_model.sh)");
-    let model = RwkvModel::from_bytes(&bytes).unwrap();
+    let model = Model::from_bytes(&bytes).unwrap();
     println!(
         "model load: {:.1} ms",
         started.elapsed().as_secs_f64() * 1e3
@@ -162,13 +202,19 @@ fn main() {
         std::thread::available_parallelism().map_or(0, |n| n.get())
     );
     for precision in precisions {
+        let resident_before = resident_mb();
         let mut runtime = RwkvRuntime::new(&model, precision, threads).unwrap();
         let started = Instant::now();
         // 与 kuma3 一样按 65,536 条一块追加
-        for chunk in reviews.chunks(65_536) {
+        let chunk_rows: usize = std::env::var("REPLAY_CHUNK")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(65_536);
+        for chunk in reviews.chunks(chunk_rows) {
             runtime.replay(chunk, false).unwrap();
         }
         let replay = started.elapsed().as_secs_f64();
+        let resident_replay = resident_mb();
         let started = Instant::now();
         let r = runtime.query(&queries).unwrap();
         let query = started.elapsed().as_secs_f64();
@@ -207,7 +253,15 @@ fn main() {
             snapshot.len() as f64 / 1e6,
             state as f64 / 1e6,
         );
+        if let (Some(before), Some(after)) = (resident_before, resident_replay) {
+            println!(
+                "  resident memory after replay: +{:.1} MB ({:.2}x the state)",
+                after - before,
+                (after - before) / (state as f64 / 1e6 + stats.feature_state_bytes as f64 / 1e6),
+            );
+        }
         let mean = r.iter().filter(|v| v.is_finite()).sum::<f32>() / r.len() as f32;
         println!("  mean R {mean:.4}, first {:?}", one);
+        drop(runtime);
     }
 }

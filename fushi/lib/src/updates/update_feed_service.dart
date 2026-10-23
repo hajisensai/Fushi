@@ -120,6 +120,14 @@ class UpdateFeedService implements UpdateFeedPublisher {
     return _permissionGranted = await _notifier.requestPermission();
   }
 
+  /// **只查询**系统此刻允不允许发通知（不弹框），并刷新 [systemNotificationsGranted]。
+  /// 新手引导的权限步骤用它显示现状：用户可能刚从系统设置里改完回来。
+  Future<bool> refreshSystemNotificationsGranted() async {
+    _notifierReady ??= await _notifier.ensureReady();
+    if (_notifierReady != true) return _permissionGranted = false;
+    return _permissionGranted = await _notifier.hasPermission();
+  }
+
   /// 启动期把通知后端初始化好：注册点击回调、回放「被通知冷启动」的那次点击、
   /// 让上个进程留下的通知能被撤销。没有这一步，回调只在本进程**第一次发通知**
   /// 时才挂上——重启后点昨晚那条「播放」什么都不发生。总开关关着就不初始化。

@@ -4977,13 +4977,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (described.record && reviewSession == null) {
         unawaited(_recordMinedCount());
       }
-      FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
+        FushiToast.showMine(msg: described.message, status: described.status);
         return MinePopupResult.mined(outcome);
       }
       // BUG-1908/1915：重复 ≠ 没制成，见 MinePopupResult.duplicate；
       // 失败结局一律经 .failed(outcome) 这一个入口，别在各表面散写判据。
-      return MinePopupResult.failed(outcome);
+      // 失败原因交给弹窗就地说，不另弹 toast（见 MinePopupResult.message）。
+      return MinePopupResult.failed(outcome, message: described.message);
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.onMineFromPopup', e, stack);
       return const MinePopupResult();

@@ -46,6 +46,8 @@ import 'package:fushi_engine/media/torrent/download_save_root.dart'
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi/src/media/collections/library_organize_runner.dart'
+    show scheduleAutomaticLibraryOrganize;
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show scheduleAutomaticCollectionAiOrder;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
@@ -820,9 +822,14 @@ class SourceLibraryScanner {
   /// After insert, calls [FushiDatabase.updateMediaSourceScanResult] to write the
   /// media count / timestamp; any throw records its text in lastScanError
   /// (mediaCount reflects the count successfully inserted before the failure).
+  ///
+  /// [restoreDissolvedGroups]：用户显式「恢复自动分组」时为 true——本轮扫描不再
+  /// 尊重解散合集留下的墓碑（BUG-1739 的防复活门），把散开的视频按规则重新归组。
+  /// 普通重扫 / 定时扫描一律 false，用户的解散照常保持。
   Future<SourceScanSummary> scan(
     SourceLibraryRow source, {
     SourceFileSystem? fs,
+    bool restoreDissolvedGroups = false,
   }) {
     if (source.mediaKind != SourceLibraryKind.video.dbValue) {
       return _scanUnlocked(source, fs: fs);
@@ -838,12 +845,17 @@ class SourceLibraryScanner {
         error: '视频刮削资料正在清理',
       ));
     }
-    return _scanUnlocked(source, fs: fs).whenComplete(lease.release);
+    return _scanUnlocked(
+      source,
+      fs: fs,
+      restoreDissolvedGroups: restoreDissolvedGroups,
+    ).whenComplete(lease.release);
   }
 
   Future<SourceScanSummary> _scanUnlocked(
     SourceLibraryRow source, {
     SourceFileSystem? fs,
+    bool restoreDissolvedGroups = false,
   }) async {
     final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
@@ -967,6 +979,7 @@ class SourceLibraryScanner {
             sourceId: source.id,
             groupingMode: source.videoGroupingMode,
             sourceRoot: scanRoot,
+            restoreDissolvedGroups: restoreDissolvedGroups,
           );
           // 归组按季 → 集排完后，没有集号的 SP / OVA / 特别篇交 AI 定位（只在
           // 指派了提供商、用户没手动排过时才发请求）；后台跑，不阻塞扫描。
@@ -977,8 +990,20 @@ class SourceLibraryScanner {
               ...grouping.updatedCollectionIds,
             ],
           );
-          mediaCount += await _importPlaylists(plan, source.id, files);
-          mediaCount += await _importBlurayDiscs(plan, source.id);
+          // 规则归不了组的新视频：开了「导入后自动 AI 整理」时去抖后交 AI（spec
+          // 2026-10-20 §10.2，门在 runner 里），不阻塞扫描。
+          scheduleAutomaticLibraryOrganize(CollectionShelfDomain.video);
+          mediaCount += await _importPlaylists(
+            plan,
+            source.id,
+            files,
+            restoreDissolvedGroups: restoreDissolvedGroups,
+          );
+          mediaCount += await _importBlurayDiscs(
+            plan,
+            source.id,
+            restoreDissolvedGroups: restoreDissolvedGroups,
+          );
           if (source.videoGroupingMode != 'folder') {
             await VideoSourceMetadataIndexer(_db).index(source);
           }
@@ -1879,7 +1904,7 @@ class SourceLibraryScanner {
       if (item.mediaType != video || item.entryKey != stale.bookUid) continue;
       if (liveCollections.add(item.collectionId)) {
         await _db.addToCollection(
-            item.collectionId, MediaKind.video, live.bookUid);
+            item.collectionId, MediaKind.video, live.bookUid, userIntent: false);
       }
     }
     await _videoRepo.deleteVideoBooks(<String>[stale.bookUid]);
@@ -1915,8 +1940,9 @@ class SourceLibraryScanner {
   Future<int> _importPlaylists(
     ScanPlan plan,
     int sourceId,
-    SourceFileSystem fs,
-  ) async {
+    SourceFileSystem fs, {
+    required bool restoreDissolvedGroups,
+  }) async {
     if (plan.playlists.isEmpty) return 0;
 
     // 统一合集：拆集后无单条 playlist 行 → 用「同名 playlist 合集是否已存在」区分
@@ -1980,10 +2006,11 @@ class SourceLibraryScanner {
         // BUG-1739：用户删过同名 playlist 合集 → 重扫不复活（importSplitPlaylist
         // 的 createMediaCollection 会清墓碑，把删除静默撤销）。清单文件还在扫描
         // 根里不代表用户想要回这个合集；显式重导（导入对话框）不走本路径。
-        if (await _db.hasCollectionDeletionTombstone(
-          collectionName,
-          'playlist',
-        )) {
+        if (!restoreDissolvedGroups &&
+            await _db.hasCollectionDeletionTombstone(
+              collectionName,
+              'playlist',
+            )) {
           continue;
         }
 
@@ -2042,7 +2069,11 @@ class SourceLibraryScanner {
   ///
   /// 每条标题的 `videoPath` 是它自己的 `.mpls` 绝对路径——一个真实存在的文件，于是
   /// 「文件还在不在」「这路径被谁引用着」这些既有判据原样可用，不需要为 BD 另开一套。
-  Future<int> _importBlurayDiscs(ScanPlan plan, int sourceId) async {
+  Future<int> _importBlurayDiscs(
+    ScanPlan plan,
+    int sourceId, {
+    required bool restoreDissolvedGroups,
+  }) async {
     if (plan.blurayDiscs.isEmpty) return 0;
 
     final Map<String, int> existingCollectionIds = <String, int>{
@@ -2089,10 +2120,11 @@ class SourceLibraryScanner {
       } else {
         // BUG-1739 同款守卫：用户删过同名合集，重扫不复活——整张盘都不复活，
         // 特典也不例外（它们挂在这张盘的正片下，盘都删了特典没有归处）。
-        if (await _db.hasCollectionDeletionTombstone(
-          collectionName,
-          'playlist',
-        )) {
+        if (!restoreDissolvedGroups &&
+            await _db.hasCollectionDeletionTombstone(
+              collectionName,
+              'playlist',
+            )) {
           continue;
         }
 

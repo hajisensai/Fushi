@@ -168,6 +168,7 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
                   t.srs_import_with_deck_configs,
                   t.srs_import_with_deck_configs_help,
                 ),
+                item(t.srs_import_use_rwkv, t.srs_import_use_rwkv_help),
                 item(
                   t.srs_import_with_fsrs_params,
                   t.srs_import_with_fsrs_params_help,
@@ -242,6 +243,12 @@ class _SrsImportOptionsDialogState extends State<SrsImportOptionsDialog> {
               title: t.srs_import_with_fsrs_params,
               value: o.withFsrsParams,
               onChanged: (bool v) => _set(o.copyWith(withFsrsParams: v)),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-import-use-rwkv'),
+              title: t.srs_import_use_rwkv,
+              value: o.useRwkv,
+              onChanged: (bool v) => _set(o.copyWith(useRwkv: v)),
             ),
           ],
         ),

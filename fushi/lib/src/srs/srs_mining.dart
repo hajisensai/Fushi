@@ -649,6 +649,7 @@ class SrsMiner with AnkiNoteComposer {
       if (fields.values.every((String v) => v.trim().isEmpty)) {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
       await store.updateNote(

@@ -352,6 +352,46 @@ void main() {
     expect((await a.cardRow(cardId))!.deckId, tree.parentOf(child));
   });
 
+  test('删除牌组可连卡片一起删：子树里的笔记删除，别处的笔记不动', () async {
+    final SrsDbStore a = await device('a');
+    final String child = await a.ensureDeckPath('Lapis::N3');
+    final String parent = (await a.deckTree()).parentOf(child)!;
+    final String inside = await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: lapis('海'),
+      deckId: child,
+    );
+    final String outside = await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: lapis('空'),
+      deckId: parent,
+    );
+    final List<(int, int)> progress = <(int, int)>[];
+    await a.deleteDeck(
+      parent,
+      deleteCards: true,
+      onProgress: (int done, int total) => progress.add((done, total)),
+    );
+    final SrsDeckTree tree = await a.deckTree();
+    expect(tree[parent], isNull);
+    expect(tree[child], isNull);
+    for (final String noteId in <String>[inside, outside]) {
+      final SrsCardCacheRow card = (await a.cardsOfNote(noteId)).single;
+      expect(card.hidden, isTrue, reason: '笔记已删，卡不再显示');
+      expect(card.deckId, a.defaultDeckId, reason: '恢复笔记后卡不落在已删除的牌组里');
+    }
+    expect(progress.last, (4, 4), reason: '两条笔记 + 两张卡');
+
+    final String keep = await a.ensureDeckPath('Keep');
+    final String other = await a.createNote(
+      noteTypeId: a.lapisNoteTypeId,
+      fieldsById: lapis('川'),
+      deckId: keep,
+    );
+    await a.deleteDeck(await a.ensureDeckPath('Empty'), deleteCards: true);
+    expect((await a.cardsOfNote(other)).single.hidden, isFalse);
+  });
+
   test('缓存可由事件完整重建', () async {
     final SrsDbStore a = await device('a');
     final String noteId = await a.createNote(

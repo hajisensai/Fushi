@@ -71,8 +71,9 @@ class SrsAnswerContext {
   double elapsedDaysFor(SrsAlgorithm algorithm) {
     final int? last = current.lastReviewedAt;
     if (last == null || nowMs <= last) return 0;
-    return switch (algorithm) {
-      SrsAlgorithm.fsrs7 => (nowMs - last) / (24 * 60 * _minuteMs),
+    return switch (algorithm.memoryAlgorithm) {
+      SrsAlgorithm.fsrs7 ||
+      SrsAlgorithm.rwkv => (nowMs - last) / (24 * 60 * _minuteMs),
       SrsAlgorithm.fsrs6 =>
         (day.dayIndexOf(nowMs) - day.dayIndexOf(last)).toDouble(),
     };

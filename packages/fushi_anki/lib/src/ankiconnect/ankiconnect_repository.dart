@@ -490,6 +490,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to create a blank card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
       // BUG-1900：字段名必须与**当前**笔记类型求交后再送出。AnkiDroid 后端一直是按
@@ -791,6 +792,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         return MineOutcome.failure(
           'All fields are empty — refusing to clear an existing card. '
           'Check your note type field mappings.',
+          errorCode: AnkiErrorCode.allFieldsEmpty,
         );
       }
 

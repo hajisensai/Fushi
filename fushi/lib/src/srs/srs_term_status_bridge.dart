@@ -21,6 +21,7 @@ String srsTermStatusLabel(SrsTermStatus status, {required int today}) {
     case SrsQueue.relearning:
       return t.srs_status_learning;
     case SrsQueue.review:
+      if (status.byRecall) return t.srs_status_review_by_recall;
       final int? due = status.dueDay;
       if (due == null || due <= today) return t.srs_status_due;
       return t.srs_status_review_in(n: due - today);

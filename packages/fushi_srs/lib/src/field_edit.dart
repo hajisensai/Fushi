@@ -127,6 +127,11 @@ abstract final class SrsFieldKeys {
   /// skip_question_when_replaying_answer 取反）。随参数继承走 own 祖先。
   static const String deckReplayQuestion = 'replayQuestion';
 
+  /// RWKV-Instant 排队设置（Map，三项一起写、一起合并，见 [SrsRwkvQueueSettings]）：
+  /// `minReviews` 每天最少复习数、`repeatReviews` / `repeatSeconds` 同日重复的间隔守卫。
+  /// 对应上游 kuma3 的 RWKV 牌组选项；缺省 = 上游默认。随参数继承走 own 祖先。
+  static const String deckRwkvQueue = 'rwkvQueue';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';

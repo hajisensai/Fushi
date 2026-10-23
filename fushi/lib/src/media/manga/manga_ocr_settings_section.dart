@@ -303,7 +303,7 @@ class _MangaOcrSettingsSectionState
     final String Function()? getter = widget.enginePreferenceGetter;
     if (getter != null) return getter();
     // 回退值必须与偏好仓库的出厂默认同源（BUG-1780）：这里曾经硬写 `auto`，
-    // 而生产默认是 `google_lens`，两者分叉让 UI 守卫恒绿——测试永远在跑一条
+    // 而当时生产默认是 `google_lens`，两者分叉让 UI 守卫恒绿——测试永远在跑一条
     // 用户碰不到的分支。
     return kDefaultMangaOcrEnginePreference.key;
   }
@@ -951,7 +951,7 @@ class _MangaOcrSettingsSectionState
   ///
   /// 当前引擎用不到本机模型时**收起成一行摘要**（模型名 +「用不到」+ 体积 /
   /// 占用），点开才露出完整的卡——修的是「我选的是 Google Lens，这儿怎么还让我
-  /// 下模型」；但不藏（BUG-1780：出厂默认就是 Lens，想预先备好离线模型的人仍要
+  /// 下模型」；但不藏（BUG-1780：选了 Lens 但想预先备好离线模型的人仍要
   /// 找得到下载入口，磁盘上的残留也得删得掉）。下载中、加载中一律展开。
   Widget _buildSettingsModelGroup(ThemeData theme) {
     final bool collapsible =

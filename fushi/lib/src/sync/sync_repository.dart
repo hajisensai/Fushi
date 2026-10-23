@@ -1727,6 +1727,8 @@ class SyncRepository {
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
+    // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
+    kStudyProfileNameAliasesPrefKey,
     _keyBackendType,
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。
@@ -1828,6 +1830,12 @@ class SyncRepository {
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
     'video_subtitle_ai_proofread',
     'video_subtitle_ai_consented',
+    // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
+    // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
+    'library_organize_allowed_keys',
+    'library_organize_auto',
+    'library_organize_auto_since',
+    'library_organize_consented',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是

@@ -183,7 +183,7 @@ async function api(path, opts){
   const r = await fetch('/api/admin/'+path, Object.assign({headers:{'Content-Type':'application/json'}}, opts||{}));
   if (r.status===401){ location.reload(); throw new Error('unauthorized'); }
   const j = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(j.error || ('HTTP '+r.status));
+  if (!r.ok) throw new Error(j.reason==='disabled' ? '订阅已停用，请先启用' : (j.error || ('HTTP '+r.status)));
   return j;
 }
 const post = (p,b)=>api(p,{method:'POST',body:JSON.stringify(b||{})});
@@ -314,7 +314,7 @@ async function loadSubscriptions(){
   sel.innerHTML = (r.providers||[]).map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
   if (cur) sel.value = cur;
   const fmtCounts = (c)=> c ? Object.entries(c).map(([k,v])=>`${k} ${v}`).join(' · ') : '';
-  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<tr><td>${esc(s.title)}<div class="small muted">${esc(s.mediaKind)} · ${esc(s.mode)}</div></td><td class="small">${esc(s.searchQuery)}</td><td class="small">${esc(s.resourceProvider)}</td><td>${s.enabled?'<span class="tag ok">启用</span>':'<span class="tag">停用</span>'} ${s.lastError?`<div class="small" style="color:var(--err)">${esc(s.lastError)}</div>`:''}</td><td class="small">${esc(fmtCounts(s.itemCounts))}</td><td class="small">${s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'}</td><td class="row"><button class="b sec" data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}">${s.enabled?'停用':'启用'}</button><button class="b sec" data-sub="check" data-id="${esc(s.subscriptionId)}">检查</button><button class="b danger" data-sub="delete" data-id="${esc(s.subscriptionId)}">删除</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">无</td></tr>';
+  $('#subs').innerHTML = (r.subscriptions||[]).map(s=>`<tr><td>${esc(s.title)}<div class="small muted">${esc(s.mediaKind)} · ${esc(s.mode)}</div></td><td class="small">${esc(s.searchQuery)}</td><td class="small">${esc(s.resourceProvider)}</td><td>${s.enabled?'<span class="tag ok">启用</span>':'<span class="tag">停用</span>'} ${s.lastError?`<div class="small" style="color:var(--err)">${esc(s.lastError)}</div>`:''}</td><td class="small">${esc(fmtCounts(s.itemCounts))}</td><td class="small">${s.lastCheckedAt?fmtTime(s.lastCheckedAt):'—'}</td><td class="row"><button class="b sec" data-sub="enable" data-id="${esc(s.subscriptionId)}" data-enabled="${s.enabled?'0':'1'}">${s.enabled?'停用':'启用'}</button><button class="b sec" data-sub="check" data-id="${esc(s.subscriptionId)}"${s.enabled?'':' disabled title="已停用的订阅不检查，请先启用"'}>检查</button><button class="b danger" data-sub="delete" data-id="${esc(s.subscriptionId)}">删除</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted">无</td></tr>';
   $('#subs').querySelectorAll('[data-sub]').forEach(b=>b.onclick=guard(async()=>{ const id=encodeURIComponent(b.dataset.id);
     if(b.dataset.sub==='delete'){ if(!confirm('删除该订阅？（已下载的任务不受影响）')) return; await del('subscriptions/'+id); }
     else if(b.dataset.sub==='enable'){ await post('subscriptions/'+id+'/enable',{enabled:b.dataset.enabled==='1'}); }
@@ -468,7 +468,7 @@ const FIELDS = [
   ['qbittorrent.url','qBittorrent WebUI 地址','text'],['qbittorrent.username','qBittorrent 用户名','text'],['qbittorrent.password','qBittorrent 密码','password'],
   ['ai.preset','AI 提供商（手机「AI 下视频」选本机执行时用；空 = 不用 AI、不发任何 AI 请求）','dyn:aiPresets'],['ai.apiKey','AI API key','secret:ai.apiKeySet'],
   ['ai.model','AI 模型（空 = 预设起点模型）','text'],['ai.baseUrl','AI 接口地址（空 = 预设地址）','text'],['ai.protocol','AI 协议（空 = 跟随预设）','select:,openAiCompatible,anthropicMessages,geminiGenerateContent'],
-  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],
+  ['ai.reasoningEffort','AI 推理档位','select:none,low,medium,high'],['ai.allowInsecureHttp','AI 允许明文 HTTP（本地推理服务）','bool'],['ai.webKnowledge','AI 联网资料（维基辅助识别作品）','bool'],['ai.libraryOrganize','扫描入库后自动 AI 整理库（把该在一起的归进合集，按量计费）','bool'],
 ];
 let settingsCache=null;
 async function loadSettings(){

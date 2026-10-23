@@ -25,6 +25,9 @@ rayon = "1.12.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+# The small model's release package (weights + golden test vectors, .npz) is
+# read straight from its zip in tests/small_model.rs.
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [profile.release]
 # Not "z" like fushi_fsrs: this is an inference kernel (a full-collection

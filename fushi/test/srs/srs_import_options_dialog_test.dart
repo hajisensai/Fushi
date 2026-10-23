@@ -84,7 +84,7 @@ void main() {
   testWidgets('桌面：对话框按内容收高、宽度在 MD3 对话框规范内，标题与文件名在顶部', (
     WidgetTester tester,
   ) async {
-    // 高 1000：内容（多了「导入 FSRS 参数」一行后约 750）在 800 高窗口里与对话框
+    // 高 1000：内容（多了「导入 FSRS 参数」「使用 RWKV 排程」两行后约 800）在 800 高窗口里与对话框
     // 上限（800 - 2×24）只差几像素，量不出「按内容收高」还是「撑满」。
     final BuildContext host = await pumpHost(tester, const Size(1280, 1000));
     await open(tester, host);
@@ -146,6 +146,8 @@ void main() {
     expect(switchRow('srs-import-with-deck-configs').value, isFalse);
     // FSRS 参数是 Fushi 自加的一项（所有者 2026-10-20），默认开。
     expect(switchRow('srs-import-with-fsrs-params').value, isTrue);
+    // RWKV 是 Fushi 默认排程（所有者 2026-10-20：导入时可选），默认开。
+    expect(switchRow('srs-import-use-rwkv').value, isTrue);
     expect(switchRow('srs-import-merge-notetypes').value, isFalse);
     for (final String key in <String>[
       'srs-import-update-notes',

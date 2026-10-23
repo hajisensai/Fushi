@@ -19,15 +19,16 @@ echo "==> flutter pub get (fushi/)"
 echo "==> Applying pub-cache patches"
 bash ci/apply-patches.sh
 
-# Rust 原生库 native/fushi_compute / fushi_fsrs / fushi_web_core 是 app 与 flutter test 的硬依赖：
+# Rust 原生库 native/fushi_compute / fushi_fsrs / fushi_web_core / fushi_rwkv 是 app 与 flutter test 的硬依赖：
 # CMake / Xcode / Gradle 缺库直接构建失败，测试成片报库不可用。按主机平台各编一次；没有 cargo 就失败。
 # （Windows 的 tool/native_libs.ps1 还会复用兄弟 worktree 的同源码产物；这里只编。与它的 crate 清单保持一致。）
+# fushi_rwkv 是 RWKV-Instant 排程推理（AGPL-3.0-or-later）。
 # 显式跳过：FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1（之后手动跑对应的 build_* 脚本）。
 if [ -n "${FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE:-}" ]; then
-  echo "WARNING: skipped native/fushi_compute, fushi_fsrs, fushi_web_core (required); run native/<crate>/build_<platform> before flutter build/test" >&2
+  echo "WARNING: skipped native/fushi_compute, fushi_fsrs, fushi_web_core, fushi_rwkv (required); run native/<crate>/build_<platform> before flutter build/test" >&2
 else
   if ! command -v cargo >/dev/null 2>&1; then
-    echo "error: cargo not found. native/fushi_compute, fushi_fsrs, fushi_web_core (Rust) are required native dependencies;" >&2
+    echo "error: cargo not found. native/fushi_compute, fushi_fsrs, fushi_web_core, fushi_rwkv (Rust) are required native dependencies;" >&2
     echo "       install Rust (https://rustup.rs) and re-run, or set FUSHI_BOOTSTRAP_SKIP_NATIVE_COMPUTE=1 to skip explicitly." >&2
     exit 1
   fi
@@ -37,12 +38,14 @@ else
       bash native/fushi_compute/build_macos_dylib.sh
       bash native/fushi_fsrs/build_macos_dylib.sh
       bash native/fushi_web_core/build_macos_dylib.sh
+      bash native/fushi_rwkv/build_macos_dylib.sh
       ;;
     *)
       echo "==> native Rust libraries (Linux x64 .so)"
       bash native/fushi_compute/build_linux_so.sh
       bash native/fushi_fsrs/build_linux_so.sh
       bash native/fushi_web_core/build_linux_so.sh
+      bash native/fushi_rwkv/build_linux_so.sh
       ;;
   esac
 fi

@@ -16,6 +16,28 @@ class FlutterTestRunSummary {
   /// Number of non-hidden `testDone` events observed.
   final int testsCompleted;
 
+  /// One verdict over several sequential `flutter test` runs (batches): green
+  /// only when every batch reached `done: success`; a batch without a verdict
+  /// makes the whole run verdict-less, a failed one makes it failed.
+  static FlutterTestRunSummary merge(List<FlutterTestRunSummary> runs) {
+    bool? success = runs.isNotEmpty;
+    for (final FlutterTestRunSummary run in runs) {
+      if (run.success == null) {
+        success = null;
+        break;
+      }
+      if (run.success == false) success = false;
+    }
+    return FlutterTestRunSummary(
+      errors: <FlutterTestErrorEvent>[
+        for (final FlutterTestRunSummary run in runs) ...run.errors,
+      ],
+      success: success,
+      testsCompleted: runs.fold<int>(
+          0, (int sum, FlutterTestRunSummary run) => sum + run.testsCompleted),
+    );
+  }
+
   /// Why this run must not be reported as green, or `null` when it is green.
   ///
   /// A run only passes when the reporter reached `done: success` *and* at

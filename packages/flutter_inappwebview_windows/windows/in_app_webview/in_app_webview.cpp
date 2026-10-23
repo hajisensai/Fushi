@@ -1899,8 +1899,8 @@ namespace flutter_inappwebview_plugin
     if (!surface_ && width > 0 && height > 0) {
       // 窗口宿主模式：不设 BoundsMode / RasterizationScale（WebView2 自己按显示器 DPI 栅格化，
       // 这正是硬件 PlayReady 走受保护输出所需的常规窗口路径）。
+      // 子窗口按纹理栅格倍率（dpr × 祖先缩放）定物理尺寸；deviceScaleFactor_ 归 setPosition。
       captureScaleFactor_ = device_scale_factor;
-      deviceScaleFactor_ = device_scale_factor;
       windowedWidth_ = static_cast<int>(width * device_scale_factor);
       windowedHeight_ = static_cast<int>(height * device_scale_factor);
       applyWindowedBounds();
@@ -1911,8 +1911,11 @@ namespace flutter_inappwebview_plugin
     }
 
     if (surface_ && width > 0 && height > 0) {
+      // 尺寸的倍率是纹理栅格倍率（Dart 侧 = dpr × 祖先缩放，见 surfaceRasterScale），
+      // 可以不等于窗口 dpr；deviceScaleFactor_（窗口坐标 / 滚轮还原 / 截图）只归
+      // setPosition 管，这里不覆盖，否则 app 界面大小 ≠ 100% 时滚轮倍率跟着偏。
+      (void)device_scale_factor;
       captureScaleFactor_ = capture_scale_factor;
-      deviceScaleFactor_ = device_scale_factor;
       auto scaled_width = width * capture_scale_factor;
       auto scaled_height = height * capture_scale_factor;
 

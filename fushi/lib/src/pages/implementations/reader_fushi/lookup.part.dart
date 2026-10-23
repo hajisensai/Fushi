@@ -210,12 +210,21 @@ extension _ReaderLookup on _ReaderFushiPageState {
         // try —— 半销毁 WebView 上它抛 MissingPluginException，此前 eval 在 try 之外
         // 会让整个歌词查词分支（含 _runLookupAndHighlight）被打断、弹窗不显示。纳入后
         // 失败则 _lookupCue 退回 currentCue fallback，查词照常继续。
-        final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
-          source: 'JSON.stringify(window.__lyricsCueContext || null)',
-        );
-        if (ctxRaw is String && ctxRaw != 'null') {
-          final Map<String, dynamic> ctx =
-              jsonDecode(ctxRaw) as Map<String, dynamic>;
+        // 查词卡顿：歌词文档选词时已把 `__lyricsCueContext` 同步放进 payload
+        // （fireTextSelected），直接用它，省掉查词前对歌词 WebView 的一次 eval 来回。
+        // payload 不带这个键（正文文档 / 旧 payload）才回去读一次，行为与旧实现一致。
+        final Map<String, dynamic>? ctx;
+        if (data.carriesLyricsCueContext) {
+          ctx = data.lyricsCueContext;
+        } else {
+          final Object? ctxRaw = await _lyricsController?.evaluateJavascript(
+            source: 'JSON.stringify(window.__lyricsCueContext || null)',
+          );
+          ctx = ctxRaw is String && ctxRaw != 'null'
+              ? jsonDecode(ctxRaw) as Map<String, dynamic>
+              : null;
+        }
+        if (ctx != null) {
           final String? fragId = ctx['textFragmentId'] as String?;
           final int? cueIdx = (ctx['cueIndex'] as num?)?.toInt();
           if (fragId != null && fragId.isNotEmpty) {

@@ -1716,6 +1716,12 @@ class AnkiErrorCode {
   /// `cannot create note because it is empty`）。本地预检把它变成一句能照着做的话。
   static const String firstFieldEmpty = 'ANKI_FIRST_FIELD_EMPTY';
 
+  /// 按字段映射渲染后**一个字段都没有内容**，本地直接拒收（HBK-AUDIT-018 的空卡门）。
+  ///
+  /// 几乎总是映射本身是空的：选了非 Lapis 的笔记类型后映射被重置成 `{}`、从没手动配过。
+  /// 此前这条失败不带码，toast 里直接是后端的英文原文（用户 2026-10-21 iOS 反馈）。
+  static const String allFieldsEmpty = 'ANKI_ALL_FIELDS_EMPTY';
+
   /// BUG-2380：「创建并选用 Lapis」建完之后，Lapis 牌组 / 笔记类型仍然不在后端
   /// 回读的清单里 —— 也就是后端把创建**静默吞掉**了（AnkiDroid 的 `addNewDeck`
   /// 失败返回 null 而 native 侧照样 `result.success`，是已知形态）。

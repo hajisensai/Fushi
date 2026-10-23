@@ -448,12 +448,17 @@ void main() {
       expect(find.text('Importing Japanese.apkg…'), findsOneWidget);
       expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
 
-      runner.calls.single.done.complete(_report(12));
-      await _settle(tester);
-      expect(
-        find.text('Imported Japanese.apkg: 12 notes added'),
-        findsOneWidget,
+      // 四个数各不相同：任一项接错（如恢复数显示成新增数）都对不上。
+      runner.calls.single.done.complete(
+        _report(12)
+          ..notesRestored = 3
+          ..notesUpdated = 2
+          ..notesSkipped = 7,
       );
+      await _settle(tester);
+      const String doneLabel =
+          'Imported Japanese.apkg: 12 new, 3 restored, 2 updated, 7 unchanged';
+      expect(find.text(doneLabel), findsOneWidget);
       expect(find.byType(FushiLinearProgressIndicator), findsNothing);
       final Finder dismiss = find.byKey(
         const ValueKey<String>('srs-import-task-dismiss-1'),
@@ -462,7 +467,7 @@ void main() {
       await tester.tap(dismiss);
       await _settle(tester);
       expect(c.tasks, isEmpty);
-      expect(find.text('Imported Japanese.apkg: 12 notes added'), findsNothing);
+      expect(find.text(doneLabel), findsNothing);
     });
 
     testWidgets('[$ds] 删牌组：进行中显示「正在删除」与进度条、行不可点；删完立即消失，卡移到默认牌组', (
@@ -534,8 +539,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();
-      // 确认框：标题与确认按钮同名，按钮在后。
-      await tester.tap(find.text(t.srs_deck_delete).last);
+      // 卡片去向二选一（BUG-3647）：保留卡片 = 移到上级（这里是默认牌组）。
+      await tester.tap(find.text(t.srs_deck_delete_move_cards));
       // 不推进数据库（fake zone 里真异步不走）：删除停在进行中。
       for (int i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 60));
@@ -835,7 +840,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.srs_deck_delete).last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(t.srs_deck_delete).last);
+      await tester.tap(find.text(t.srs_deck_delete_move_cards));
       for (int i = 0; i < 6; i++) {
         await tester.pump(const Duration(milliseconds: 60));
       }

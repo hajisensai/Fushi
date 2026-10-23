@@ -33,10 +33,28 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3247 条。点号进各自文件。
+> 共 3265 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
+| [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
+| [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
+| [BUG-3658](bugs/BUG-3658-srs-subdecks-not-inheriting-parent-settings.md) | ✅ | ✅ | srs-subdecks-not-inheriting-parent-settings |
+| [BUG-3657](bugs/BUG-3657-dashboard-volume-badge-uses-collection-position.md) | ✅ | ✅ | dashboard-volume-badge-uses-collection-position |
+| [BUG-3656](bugs/BUG-3656-android-notification-small-icon-headset.md) | ✅ | ✅ | android-notification-small-icon-headset |
+| [BUG-3655](bugs/BUG-3655-srs-reimport-deleted-notes-not-restored.md) | ✅ | ✅ | srs-reimport-deleted-notes-not-restored |
+| [BUG-3654](bugs/BUG-3654-video-dissolved-series-cannot-regroup.md) | ✅ | ✅ | 整批解散合集后系列永久散成单集，重扫无法恢复 |
+| [BUG-3653](bugs/BUG-3653-srs-anki-migration-silent-options.md) | ✅ | ✅ | srs-anki-migration-silent-options |
+| [BUG-3652](bugs/BUG-3652-anki-mine-all-fields-empty-reported-twice-clipped.md) | ✅ | ✅ | anki-mine-all-fields-empty-reported-twice-clipped |
+| [BUG-3651](bugs/BUG-3651-paged-restore-page-first-after-stop-previous-page.md) | ✅ | ✅ | 页首字紧跟上一页末行的「。」时，存→取退回前一页（学习单位逆映射停在分隔符上） |
+| [BUG-3650](bugs/BUG-3650-paged-restore-page-first-caret-previous-page.md) | ✅ | ✅ | 翻页模式页首字在禁则换行处时重开退一页（分页 scrollToCharOffset 用塌缩光标锚） |
+| [BUG-3649](bugs/BUG-3649-manga-detected-epub-no-force-book-import.md) | ✅ | ✅ | manga-detected-epub-no-force-book-import |
+| [BUG-3648](bugs/BUG-3648-subscription-ops-split-ui-ctl.md) | ✅ | ✅ | 视频订阅操作在订阅页与 host 各写一份、语义分叉；经 host 重新启用已完成 oneShot 撞 CHECK；CLI 没有订阅命令 |
+| [BUG-3647](bugs/BUG-3647-srs-deck-delete-no-delete-cards-option.md) | ✅ | ✅ | srs-deck-delete-no-delete-cards-option |
+| [BUG-3646](bugs/BUG-3646-epub-manga-duplicate-pages-kcc-panel-view.md) | ✅ | ✅ | 纯图 EPUB 转漫画重页（KCC Panel View 每页出 5 份） |
+| [BUG-3645](bugs/BUG-3645-pause-ocr-resume-delay.md) | ✅ | ✅ | 开了暂停 OCR 后，暂停 → 继续播放有明显延迟 |
+| [BUG-3644](bugs/BUG-3644-study-tombstone-profile-mismatch-diverges.md) | ✅ | ✅ | study-tombstone-profile-mismatch-diverges |
 | [BUG-3643](bugs/BUG-3643-manga-cbz-avif-pages.md) | ✅ | ✅ | CBZ 漫画内含 AVIF 页图时导入失败（Manga archive has no images） |
 | [BUG-3642](bugs/BUG-3642-epub-zip-extra-field-padding-range-error.md) | ✅ | ✅ | EPUB 导入报 RangeError (length) 0..36: 37（zip extra field 尾部填充越界读） |
 | [BUG-3641](bugs/BUG-3641-unread-epub-content-sync.md) | ✅ | ✅ | 未读 EPUB 因无阅读进度被同步跳过，云端只有元数据 |

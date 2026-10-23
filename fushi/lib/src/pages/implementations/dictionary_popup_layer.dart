@@ -458,6 +458,88 @@ bool shouldShowLookupDismissBarrier({
 Widget lookupOverlayHitClaim({required Widget child}) =>
     Listener(behavior: HitTestBehavior.opaque, child: child);
 
+/// P1-A（2026-10-20）：把**一层**查词弹窗直接绑到 [controller] 上——controller 一
+/// notify，这一层就地重建，不必等宿主整页 `setState`。
+///
+/// 为什么需要它：视频页 / 首页词典 / texthooker 等 mixin 宿主把弹窗栈挂在**根
+/// Overlay** 的 entry 里，旧链路是「结果到达 → 宿主整页 setState → 宿主 build 尾部
+/// post-frame 回调 `markNeedsBuild` 根 Overlay entry → 下一帧才推结果」：每次查词先白
+/// 重建一遍整个视频页，结果还晚一帧。阅读器（`BaseSourcePageState.buildDictionary`）
+/// 早就用 `AnimatedBuilder` 监听 controller；这里给 mixin 家族同一个订阅点，而且做在
+/// mixin 内部——宿主一行都不用改。
+///
+/// 只认「[entry] 仍在栈内」时的通知：被裁掉 / 清栈的那一层**保持上一次的子树**，
+/// 交给宿主下一次重建把它摘掉或把它的 WebView 键搬进停驻层（BUG-2039 ③ 靠同一把
+/// GlobalKey 搬家保温）。若这里抢先改画别的东西，WebView element 会在宿主重建前被销毁，
+/// 停驻 realm 就退化成冷建。条目在栈里的下标在其存活期内不变（栈只从尾部裁、从尾部压），
+/// 所以 [builder] 捕获的下标始终有效。
+///
+/// 自身是 [StatefulWidget]，夹在 [Stack] 与 [builder] 返回的 [Positioned] 之间合法
+/// （ParentDataWidget 只要求中间没有 RenderObjectWidget）。BUG-941 的 entry 身份 key
+/// 挂在它身上（它才是 Stack 的直接子项）。
+class DictionaryPopupEntryBinding extends StatefulWidget {
+  const DictionaryPopupEntryBinding({
+    super.key,
+    required this.controller,
+    required this.entry,
+    required this.builder,
+  });
+
+  final DictionaryPopupController controller;
+  final DictionaryPopupEntry entry;
+
+  /// 产出这一层（[Positioned]）的构造器；每次 controller 变化（[entry] 仍在栈内）
+  /// 与宿主重建时调用，读的是 controller / entry 的当前状态。
+  final Widget Function() builder;
+
+  @override
+  State<DictionaryPopupEntryBinding> createState() =>
+      _DictionaryPopupEntryBindingState();
+}
+
+class _DictionaryPopupEntryBindingState
+    extends State<DictionaryPopupEntryBinding> {
+  Widget? _lastBuilt;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(DictionaryPopupEntryBinding oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
+    super.dispose();
+  }
+
+  void _onControllerChanged() {
+    if (!mounted) return;
+    if (!widget.controller.entries.contains(widget.entry)) return;
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 宿主重建时本层若已离栈（同一帧里先 notify 后重建的窗口），沿用上一次的子树，
+    // 理由见类注释；宿主这一轮重建本来就不会再带上它。
+    if (_lastBuilt != null &&
+        !widget.controller.entries.contains(widget.entry)) {
+      return _lastBuilt!;
+    }
+    return _lastBuilt = widget.builder();
+  }
+}
+
 /// 把一个弹窗层 [child] 按 [pos] 摆放；隐藏层（[visible]=false，即 BUG-094 常驻热槽 /
 /// TODO-058 挂起冷层）停到屏幕右外侧 `(screen.width + 8, 0)` 继续预热。
 ///
@@ -1127,6 +1209,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onQueueOverwrite,
     this.onOpenInAnki,
     this.onUpdateEntry,
+    this.isSessionOnScreen,
     this.onFavoriteEntry,
     this.onFavoriteCheck,
     this.onAppendSentence,
@@ -1150,6 +1233,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overlayWidget,
     this.isDark = false,
     this.overrideFillColor,
+    this.coverFillColor,
     this.showBorder = true,
     this.bottomDocked = false,
     this.webViewOverflowHeight = 0,
@@ -1217,6 +1301,12 @@ class DictionaryPopupLayer extends StatelessWidget {
     Map<String, String> fields,
   )?
   onUpdateEntry;
+
+  /// BUG-3652 续：这一层此刻是否仍在屏上（宿主模型真值，通常是
+  /// `controller.isEntryOnScreen(entry)`）。透传给 [DictionaryPopupWebView]：制卡失败
+  /// 回包回来时弹窗已不在，原因就改由宿主 toast，而不是交给一个没人看的弹窗。null =
+  /// 挂载期间一直在屏上。
+  final bool Function()? isSessionOnScreen;
 
   /// 查重（词条渲染时问 Anki「这张卡已经有了吗」）。**可空**：与 [onMineEntry] 同
   /// 进同退——制卡不可用时传 null，弹窗既不画 ✓ 也不发查重探测。
@@ -1292,6 +1382,11 @@ class DictionaryPopupLayer extends StatelessWidget {
   final Widget? overlayWidget;
   final bool isDark;
   final Color? overrideFillColor;
+
+  /// 搜索中 / 真实空结果盖板的底色；缺省按 [overrideFillColor] 推导。面板本身透明
+  /// 的宿主（app 外查词窗基础层，卡片底色由外层画）必须显式给一个不透明色：盖板
+  /// 透明 = 没盖住热槽 WebView，popup.js 自己画的「未找到」会和 Flutter 占位叠成两份。
+  final Color? coverFillColor;
   final bool showBorder;
   final bool swipeDismissible;
 
@@ -1420,9 +1515,11 @@ class DictionaryPopupLayer extends StatelessWidget {
     // secondarySystemGroupedBackground 材质色）。搜索中 / 空结果的不透明盖板要与
     // 玻璃同色系，否则深色下是一块纯黑（systemGroupedBackground）压在 #1C1C1E
     // 玻璃上，切换时闪一下。MD3 不变。
-    final Color coverColor = overrideFillColor == null && isGlassDesign(context)
-        ? appleColorsOf(context).secondaryGroupedBackground
-        : fillColor;
+    final Color coverColor =
+        coverFillColor ??
+        (overrideFillColor == null && isGlassDesign(context)
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : fillColor);
 
     final Widget? topBar = _buildTopBar(context);
     final Widget body = _buildContent(context, coverColor);
@@ -1968,6 +2065,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onLinkClick: onLinkClick,
               onMineEntry: onMineEntry,
               onUpdateEntry: onUpdateEntry,
+              isSessionOnScreen: isSessionOnScreen,
               onDuplicateCheck: onDuplicateCheck,
               onOverwriteTargetNoteId: onOverwriteTargetNoteId,
               onMinedCardAction: onMinedCardAction,

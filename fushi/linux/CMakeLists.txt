@@ -173,6 +173,19 @@ endif()
 install(FILES "${FUSHI_COMPUTE_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# RWKV-Instant 排程推理（**硬依赖**，AGPL-3.0-or-later）：native/fushi_rwkv/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_rwkv.so 随包进 bundle/lib/（Dart 侧按裸名经 $ORIGIN/lib 定位）。
+# 与 fushi_compute 同一语义：没有 Dart 回退实现，缺库时在配置期直接失败。
+set(FUSHI_RWKV_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so")
+if(NOT EXISTS "${FUSHI_RWKV_SO}")
+  message(FATAL_ERROR
+    "fushi_rwkv is a required native dependency, but ${FUSHI_RWKV_SO} is missing. "
+    "Build it first: bash native/fushi_rwkv/build_linux_so.sh (needs Rust/cargo).")
+endif()
+install(FILES "${FUSHI_RWKV_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # 内置 libtorrent 引擎（copy-if-present）：native/fushi_torrent/build_linux_so.sh 产出
 # prebuilt/linux-x64/libfushi_torrent_ffi.so（vcpkg 静态链 libtorrent/boost/openssl +
 # -static-libstdc++，只剩 glibc 动态），与无头服务端随包的是同一份。存在则随包进

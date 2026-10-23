@@ -330,16 +330,24 @@ class SrsImportController extends ChangeNotifier {
   }
 }
 
+/// 完成任务的一句话（任务条与全局提示共用）：新增 / 恢复 / 更新 / 未改动都写出来。以前只报
+/// 新增数，重导删掉过的笔记时显示「新增 0 条」，用户以为卡片丢了。
+String srsImportTaskDoneLabel(String name, SrsImportReport? report) =>
+    t.srs_import_task_done_summary(
+      name: name,
+      added: report?.notesAdded ?? 0,
+      restored: report?.notesRestored ?? 0,
+      updated: report?.notesUpdated ?? 0,
+      skipped: report?.notesSkipped ?? 0,
+    );
+
 /// 一个任务结束时的全局提示（离开了牌组列表也看得到）。
 void showSrsImportFinishedToast(SrsImportTask task) {
   // 取消是用户刚在任务条上点的，行本身就显示「已取消」，不再另弹提示。
   if (task.status == SrsImportTaskStatus.cancelled) return;
   if (task.status == SrsImportTaskStatus.done) {
     FushiToast.show(
-      msg: t.srs_import_task_done(
-        name: task.displayName,
-        n: task.report?.notesAdded ?? 0,
-      ),
+      msg: srsImportTaskDoneLabel(task.displayName, task.report),
       severity: ToastSeverity.success,
       toastLength: Toast.LENGTH_LONG,
     );

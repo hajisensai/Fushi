@@ -32,6 +32,7 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     required this.targetSourceId,
     required this.backendName,
     this.service,
+    this.releaseSeedsOutsideTarget,
   });
 
   final FushiDatabase db;
@@ -50,6 +51,10 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   /// 周期检查服务；null = 下载后端没起来（能力位报 supported=false）。
   final VideoDownloadSubscriptionService? service;
+
+  /// 改目标来源后摘掉旧来源里已完成集的种子（下载管线的
+  /// `releaseSubscriptionSeedsOutsideTarget`，BUG-2776）；null = 没有管线，跳过。
+  final Future<int> Function(String subscriptionId)? releaseSeedsOutsideTarget;
 
   bool get _supported => service != null;
 
@@ -164,19 +169,19 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   @override
   Future<void> setEnabled(String subscriptionId, bool enabled) async {
-    final VideoDownloadSubscriptionRow? row =
-        await db.getVideoDownloadSubscription(subscriptionId);
-    if (row == null) {
-      throw const HostSubscriptionRejected(
-          404, 'not_found', 'unknown subscription');
-    }
+    await _requireRow(subscriptionId);
     final int now = DateTime.now().millisecondsSinceEpoch;
     await db.updateVideoDownloadSubscription(
       subscriptionId,
       VideoDownloadSubscriptionsCompanion(
         enabled: Value<bool>(enabled),
-        // 重新启用立刻排期；停用清掉租约免得挂一条永远不会续的 claim。
-        nextCheckAt: Value<int?>(enabled ? now : row.nextCheckAt),
+        // 重新启用立刻排期；停用不动排期。
+        nextCheckAt: enabled ? Value<int?>(now) : const Value<int?>.absent(),
+        // oneShot 完成位只在停用态合法（表级 CHECK）：重新启用必须同时清掉，
+        // 否则写入直接被约束拒绝。
+        fulfilledAt:
+            enabled ? const Value<int?>(null) : const Value<int?>.absent(),
+        // 清掉租约，免得挂一条永远不会续的 claim。
         claimedBy: const Value<String?>(null),
         claimExpiresAt: const Value<int?>(null),
         updatedAt: Value<int>(now),
@@ -185,6 +190,7 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     if (enabled) await service?.checkNow();
   }
 
+  /// [subscriptionId] 为 null = 「全部检查」：所有启用的订阅立即到期，再跑一轮。
   @override
   Future<void> checkNow(String? subscriptionId) async {
     final VideoDownloadSubscriptionService? svc = service;
@@ -192,23 +198,89 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
       throw const HostSubscriptionRejected(
           409, 'unsupported', 'no torrent backend on this host');
     }
+    final int now = DateTime.now().millisecondsSinceEpoch;
     if (subscriptionId != null) {
-      final VideoDownloadSubscriptionRow? row =
-          await db.getVideoDownloadSubscription(subscriptionId);
-      if (row == null) {
+      final VideoDownloadSubscriptionRow row =
+          await _requireRow(subscriptionId);
+      if (!row.enabled) {
         throw const HostSubscriptionRejected(
-            404, 'not_found', 'unknown subscription');
+            409, 'disabled', 'subscription is disabled; enable it first');
       }
       await db.updateVideoDownloadSubscription(
         subscriptionId,
         VideoDownloadSubscriptionsCompanion(
-          nextCheckAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
+          nextCheckAt: Value<int?>(now),
           claimedBy: const Value<String?>(null),
           claimExpiresAt: const Value<int?>(null),
+          updatedAt: Value<int>(now),
         ),
       );
+    } else {
+      for (final VideoDownloadSubscriptionRow row
+          in await db.getVideoDownloadSubscriptions()) {
+        if (!row.enabled) continue;
+        await db.updateVideoDownloadSubscription(
+          row.subscriptionId,
+          VideoDownloadSubscriptionsCompanion(
+            nextCheckAt: Value<int?>(now),
+            updatedAt: Value<int>(now),
+          ),
+        );
+      }
     }
     await svc.checkNow();
+  }
+
+  /// 一条订阅的逐集历史（季 / 集 / 发现时刻序）。本机管理面用，不在互联 wire 上。
+  Future<List<VideoDownloadSubscriptionItemRow>> items(
+      String subscriptionId) async {
+    await _requireRow(subscriptionId);
+    return db.getVideoDownloadSubscriptionItems(subscriptionId);
+  }
+
+  /// 编辑订阅规则（窄合并）：只写 [edit] 里给出的白名单列，外加 `nextCheckAt=now`
+  /// 让新规则尽快跑一轮、清 `lastError`；items 历史与其余调度状态一概不动。
+  /// 改了目标来源时，已派出、还没进整理的任务一起改过去（BUG-2755），旧来源里
+  /// 已完成集的种子一并摘掉（BUG-2776）。
+  ///
+  /// 只给本机主人用（订阅页「编辑」与桌面控制通道）：互联 wire 上目标来源由 host
+  /// 自己决定，见库注释，所以它不在 [HostSubscriptionHost] 接口上。
+  Future<VideoDownloadSubscriptionRow> update(
+    String subscriptionId,
+    VideoDownloadSubscriptionRuleEdit edit,
+  ) async {
+    await _requireRow(subscriptionId);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await db.updateVideoDownloadSubscriptionRetargetingJobs(
+      subscriptionId,
+      VideoDownloadSubscriptionsCompanion(
+        searchQuery: edit.searchQuery,
+        startAfterEpisode: edit.startAfterEpisode,
+        subtitlePolicy: edit.subtitlePolicy,
+        targetSourceId: edit.targetSourceId,
+        filterJson: edit.filterJson,
+        nextCheckAt: Value<int?>(now),
+        lastError: const Value<String?>(null),
+        updatedAt: Value<int>(now),
+      ),
+      nowAt: now,
+    );
+    if (edit.targetSourceId.present) {
+      await releaseSeedsOutsideTarget?.call(subscriptionId);
+    }
+    await service?.checkNow();
+    return _requireRow(subscriptionId);
+  }
+
+  Future<VideoDownloadSubscriptionRow> _requireRow(
+      String subscriptionId) async {
+    final VideoDownloadSubscriptionRow? row =
+        await db.getVideoDownloadSubscription(subscriptionId);
+    if (row == null) {
+      throw const HostSubscriptionRejected(
+          404, 'not_found', 'unknown subscription');
+    }
+    return row;
   }
 
   @override
@@ -220,3 +292,53 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     }
   }
 }
+
+/// 编辑订阅的白名单列（[PipelineSubscriptionHost.update]）。每列 `absent` = 不动；
+/// 构造时校验取值，非法直接抛 [FormatException]。
+class VideoDownloadSubscriptionRuleEdit {
+  VideoDownloadSubscriptionRuleEdit({
+    this.searchQuery = const Value<String>.absent(),
+    this.startAfterEpisode = const Value<int?>.absent(),
+    this.subtitlePolicy = const Value<String>.absent(),
+    this.targetSourceId = const Value<int?>.absent(),
+    this.filterJson = const Value<String>.absent(),
+  }) {
+    if (searchQuery.present && searchQuery.value.trim().isEmpty) {
+      throw const FormatException('searchQuery must not be empty');
+    }
+    final int? start =
+        startAfterEpisode.present ? startAfterEpisode.value : null;
+    if (start != null && start < 0) {
+      throw const FormatException('startAfterEpisode must be >= 0');
+    }
+    if (subtitlePolicy.present &&
+        !kVideoDownloadSubscriptionSubtitlePolicies
+            .contains(subtitlePolicy.value)) {
+      throw const FormatException(
+          'subtitlePolicy must be none / bestEffort / required');
+    }
+    if (filterJson.present && jsonDecode(filterJson.value) is! Map) {
+      throw const FormatException('filterJson must be a JSON object');
+    }
+  }
+
+  final Value<String> searchQuery;
+  final Value<int?> startAfterEpisode;
+  final Value<String> subtitlePolicy;
+  final Value<int?> targetSourceId;
+  final Value<String> filterJson;
+
+  bool get isEmpty =>
+      !searchQuery.present &&
+      !startAfterEpisode.present &&
+      !subtitlePolicy.present &&
+      !targetSourceId.present &&
+      !filterJson.present;
+}
+
+/// 订阅字幕策略的合法取值（与表列 / 创建请求同一组）。
+const Set<String> kVideoDownloadSubscriptionSubtitlePolicies = <String>{
+  'none',
+  'bestEffort',
+  'required',
+};

@@ -448,4 +448,44 @@ void main() {
       expect(c.backfill, 0);
     });
   });
+
+  group('Lapis deck rename', () {
+    test('name mapping: whole word, case-insensitive, null without lapis', () {
+      expect(srsLapisDeckRenamed('Lapis'), 'Fushi Card');
+      expect(srsLapisDeckRenamed('lapis mining'), 'Fushi Card mining');
+      expect(srsLapisDeckRenamed('日语 LAPIS'), '日语 Fushi Card');
+      // 只是含这几个字母的名字不动（按子串替换会改成「Fushi Cardlazuli」）。
+      expect(srsLapisDeckRenamed('Lapislazuli'), isNull);
+      expect(srsLapisDeckRenamed('Mining'), isNull);
+    });
+
+    test(
+      'renames own level only, skips sibling collisions, idempotent',
+      () async {
+        final SrsDbStore s = await device();
+        final String lapisTop = await s.createDeck('Lapis');
+        final String child = await s.createDeck('lapis', parentId: lapisTop);
+        final String plain = await s.createDeck('Words', parentId: lapisTop);
+        final String lazuli = await s.createDeck('Lapislazuli');
+        final String mining = await s.createDeck('Lapis Mining');
+        final String miningTarget = await s.createDeck('Fushi Card Mining');
+        // 「Old::Lapis」改名会撞同级已有的「Old::Fushi Card」：保持原名。
+        final String old = await s.createDeck('Old');
+        final String clash = await s.createDeck('Fushi Card', parentId: old);
+        final String clashSrc = await s.createDeck('Lapis', parentId: old);
+        expect(await s.renameLapisDecks(), 2);
+        final SrsDeckTree tree = await s.deckTree();
+        expect(tree.fullName(lapisTop), 'Fushi Card');
+        expect(tree.fullName(child), 'Fushi Card::Fushi Card');
+        expect(tree.fullName(plain), 'Fushi Card::Words');
+        expect(tree.fullName(lazuli), 'Lapislazuli');
+        // 「Lapis Mining」改名会撞同级已有的「Fushi Card Mining」：保持原名。
+        expect(tree.fullName(mining), 'Lapis Mining');
+        expect(tree.fullName(miningTarget), 'Fushi Card Mining');
+        expect(tree.fullName(clash), 'Old::Fushi Card');
+        expect(tree.fullName(clashSrc), 'Old::Lapis');
+        expect(await s.renameLapisDecks(), 0);
+      },
+    );
+  });
 }

@@ -570,6 +570,36 @@ String subtitleLookupTerm(String sentence, int graphemeIndex) =>
   int graphemeIndex,
 ) => subtitleTranscriptLookupSpan(sentence, graphemeIndex);
 
+/// 画面字幕悬停查词的「同一个词」判据（查词卡顿：划过一个多字词只查一次）。
+///
+/// 两条任一成立即视为同一个词、不再发起查词：
+/// 1. 命中字位落在当前查词高亮 [activeHighlight] 里——高亮是引擎回报的命中词（与阅读器
+///    悬停「落在 matchedRanges 内即同词」同语义），只在弹窗栈可见时非空；
+/// 2. 与上次悬停同句，且查词起点 [spanStart]（[subtitleLookupSpan]：拉丁词回退到词首，
+///    其余脚本即命中字位）与上次 [lastSpanStart] 相同——查询串完全相同，重查只会得到同一
+///    结果；覆盖引擎结果回来之前（高亮尚未写入）在同一个拉丁词里移动的情形。
+@visibleForTesting
+bool isSameSubtitleHoverWord({
+  required String sentence,
+  required int graphemeIndex,
+  required int spanStart,
+  required int? cueStartMs,
+  required String lastSentence,
+  required int lastSpanStart,
+  required SubtitleLookupHighlight? activeHighlight,
+}) {
+  if (activeHighlight != null &&
+      cueStartMs != null &&
+      activeHighlight.covers(
+        sentence: sentence,
+        cueStartMs: cueStartMs,
+        graphemeIndex: graphemeIndex,
+      )) {
+    return true;
+  }
+  return sentence == lastSentence && spanStart == lastSpanStart;
+}
+
 /// 引擎回报的匹配长度是**码点**数（`bestLength` / [lookupHighlightCharCount]），
 /// 字幕逐字登记按 **grapheme**；把查询串 [term] 的前 [matchedRunes] 个码点折算成
 /// grapheme 数，供 [SubtitleLookupHighlight.graphemeCount]。拉丁/假名两者相等，
@@ -6540,6 +6570,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String _barrierHoverLastSentence = '';
   int _barrierHoverLastGrapheme = -1;
 
+  /// 画面字幕悬停最后一次发起查词的查词起点（[subtitleLookupSpan] 的 start），与
+  /// [_barrierHoverLastSentence] 一起构成「同一个词」的去重键；复位时机同上两个键。
+  int _barrierHoverLastSpanStart = -1;
+
   /// 桌面 Shift-鼠标悬停在查词浮层 dismiss barrier 上「连续切换查词」（BUG-861，与阅读器
   /// [ReaderFushiPage.onDismissBarrierHover] 同语义）。
   ///
@@ -6571,6 +6605,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
       _barrierHoverLastGrapheme = -1;
+      _barrierHoverLastSpanStart = -1;
       return;
     }
     final double dx = event.position.dx - _barrierHoverLastPos.dx;
@@ -6614,6 +6649,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }
       _barrierHoverLastSentence = listHit.cue.text;
       _barrierHoverLastGrapheme = listHit.graphemeIndex;
+      // 列表这条仍按「同句同 grapheme」去重；画面字幕的「同词」键随之作废，免得回到画面
+      // 同一句时拿列表查词之前的起点误判成同一个词。
+      _barrierHoverLastSpanStart = -1;
       _handleSubtitleListLookup(
         listHit.cue,
         listHit.graphemeIndex,
@@ -6628,18 +6666,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 到这里。首弹后 barrier 盖不住的字符可能被两条路径同时命中，用「同句同 grapheme」短路
   /// 去重，保证一次移动只换一次词（否则同词双 `replaceStack` 会闪烁 / 重复刷 FFI）。点击查词
   /// （`onCharTap` → [_handleSubtitleLookupTap]）不经此入口，故重复点同字仍照常重查。
+  ///
+  /// 查词卡顿：去重键从「同句同 grapheme」放宽为「同一个词」——划过一个三字词原先要连查
+  /// 三次（每个字各一次 replaceStack + FFI）。判据见 [isSameSubtitleHoverWord]：命中字位落
+  /// 在当前查词高亮（引擎回报的命中词）里，或与上次悬停的查词起点（[subtitleLookupSpan]，
+  /// 拉丁词回退到词首）相同，都视为同一个词。
   void _handleSubtitleHoverLookup(
     String sentence,
     int graphemeIndex,
     Rect charRect,
     AudioCue? cue,
   ) {
-    if (sentence == _barrierHoverLastSentence &&
-        graphemeIndex == _barrierHoverLastGrapheme) {
+    final int spanStart = subtitleLookupSpan(sentence, graphemeIndex).start;
+    if (isSameSubtitleHoverWord(
+      sentence: sentence,
+      graphemeIndex: graphemeIndex,
+      spanStart: spanStart,
+      cueStartMs: (cue ?? _lastLookupCue)?.startMs,
+      lastSentence: _barrierHoverLastSentence,
+      lastSpanStart: _barrierHoverLastSpanStart,
+      activeHighlight: _activeSubtitleLookupHighlight,
+    )) {
       return;
     }
     _barrierHoverLastSentence = sentence;
     _barrierHoverLastGrapheme = graphemeIndex;
+    _barrierHoverLastSpanStart = spanStart;
     _handleSubtitleLookupTap(
       sentence,
       graphemeIndex,
@@ -7095,6 +7147,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
       _barrierHoverLastGrapheme = -1;
+      _barrierHoverLastSpanStart = -1;
       // 悬停离开那条会话状态同在此收尾：会话已结束，来源标记与意图确认表都不该跨到下
       // 一次查词（否则上一轮悬停会话的标记会让下一次**点击**查词也被自动关掉）。
       _lookupOpenedByHover = false;

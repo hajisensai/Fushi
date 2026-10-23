@@ -379,9 +379,10 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (described.record) {
       unawaited(_recordMinedSentence(fields, miningContext, outcome.noteId));
     }
-    FushiToast.show(
-        msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
+      FushiToast.show(
+          msg: described.message,
+          severity: mineToastSeverity(described.status));
       // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
       // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
       _miningDraft.clear();
@@ -391,8 +392,9 @@ extension _ReaderMining on _ReaderFushiPageState {
       return MinePopupResult.mined(outcome);
     }
     // BUG-1908/1915：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」
-    // 区分；判据只住在 .failed(outcome) 一处。
-    return MinePopupResult.failed(outcome);
+    // 区分；判据只住在 .failed(outcome) 一处。失败原因交给弹窗就地说，不另弹 toast
+    // （见 MinePopupResult.message）。
+    return MinePopupResult.failed(outcome, message: described.message);
   }
 
   Future<MinePopupResult> _onUpdateFromPopupInner(
@@ -425,12 +427,13 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 覆盖路径走收口的单一真相（overwrite=true → card_overwritten + 不记账）。覆盖已有
     // 卡片不计入统计（不是新制一张），成功仍保留「最新可改」第三态、带回同一 noteId。
     final described = describeMineOutcome(outcome, overwrite: true);
-    FushiToast.show(
-        msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
+      FushiToast.show(
+          msg: described.message,
+          severity: mineToastSeverity(described.status));
       return MinePopupResult.mined(outcome);
     }
-    return MinePopupResult.failed(outcome);
+    return MinePopupResult.failed(outcome, message: described.message);
   }
 
   /// TODO-948/952：制卡『句子为空 / 字段未映射』诊断（加性、零行为改动）。

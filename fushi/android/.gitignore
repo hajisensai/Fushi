@@ -12,3 +12,6 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# CMake/ndk-build 中间产物（externalNativeBuild），构建残留，不入库。
+.cxx/

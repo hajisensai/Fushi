@@ -75,6 +75,12 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
       srsRevisionProvider,
       (int? previous, int next) => runtime.backup.onDataChanged(),
     );
+    // RWKV 排程服务随模块常驻（store.rwkv 由它装配；对象很轻，重活按需启动）。
+    ref.listen<AsyncValue<Object?>>(
+      srsRwkvServiceProvider,
+      (AsyncValue<Object?>? previous, AsyncValue<Object?> next) {},
+      fireImmediately: true,
+    );
     runtime.install();
     ref.onDispose(runtime.dispose);
     return runtime;
