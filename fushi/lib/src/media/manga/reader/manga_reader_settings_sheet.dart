@@ -328,6 +328,7 @@ Future<void> showMangaReaderSettingsSheet({
   Set<String> supportedDeviceKeys = const <String>{},
   MangaPageTurnSettings? pageTurn,
   Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged,
+  VoidCallback? onEditToolbarLayout,
 }) async => showReaderSideSheet<void>(
   context: context,
   side: ReaderSideSheetSide.right,
@@ -341,6 +342,7 @@ Future<void> showMangaReaderSettingsSheet({
     supportedDeviceKeys: supportedDeviceKeys,
     pageTurn: pageTurn,
     onPageTurnChanged: onPageTurnChanged,
+    onEditToolbarLayout: onEditToolbarLayout,
   ),
 );
 
@@ -358,6 +360,7 @@ class MangaReaderSettingsSheet extends StatefulWidget {
     this.ocrSettings,
     this.pageTurn,
     this.onPageTurnChanged,
+    this.onEditToolbarLayout,
   });
   final MangaReaderPreferences globalDefaults;
   final Map<String, Object?> overrides;
@@ -373,6 +376,10 @@ class MangaReaderSettingsSheet extends StatefulWidget {
 
   /// 翻页动画三项的写入（全局偏好）；null = 只读。
   final Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged;
+
+  /// 「工具栏布局」入口（打开按钮布局编辑器）；null = 不显示。工具栏布局是全局
+  /// 偏好（不分作品），不受下方作用域切换影响。
+  final VoidCallback? onEditToolbarLayout;
   @override
   State<MangaReaderSettingsSheet> createState() =>
       _MangaReaderSettingsSheetState();
@@ -996,6 +1003,19 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       if (tab == 0 && byKey['mode'] != null) _modeBlock(byKey['mode']!),
       if (tab == 0 && _pageTurn != null) _pageTurnGroup(_pageTurn!),
       if (tab == 2) _filterPreview(),
+      if (tab == 1 && widget.onEditToolbarLayout != null)
+        MangaPanelGroup(
+          title: t.manga_reader_control_layout,
+          children: <Widget>[
+            AdaptiveSettingsNavigationRow(
+              key: const ValueKey<String>('manga_reader_toolbar_layout'),
+              title: t.manga_reader_control_layout,
+              icon: FushiIcons.dashboardCustomize,
+              showIcon: true,
+              onTap: widget.onEditToolbarLayout!,
+            ),
+          ],
+        ),
       for (final (String Function(), List<String>) g in groups)
         MangaPanelGroup(
           title: g.$1(),

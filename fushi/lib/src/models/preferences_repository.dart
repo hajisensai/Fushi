@@ -64,6 +64,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -4948,6 +4949,39 @@ class PreferencesRepository extends ChangeNotifier
 
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
+
+  /// 漫画阅读器工具栏按钮布局（宽窗）。持久化键 `manga_control_layout`，空 / 坏值
+  /// 回出厂布局（与布局化之前的固定排布视觉等价）。
+  MangaControlLayout get mangaControlLayout => MangaControlLayout.decode(
+        getPref('manga_control_layout', defaultValue: '') as String,
+      );
+
+  Future<void> setMangaControlLayout(MangaControlLayout layout) async {
+    await setPref('manga_control_layout', layout.encode());
+    notifyListeners();
+  }
+
+  /// 漫画阅读器窄窗（手机竖屏）按钮布局。持久化键 `manga_control_layout_compact`；
+  /// 没存过窄窗布局但存过宽窗布局时沿用宽窗那份（与小说阅读器同一口径）。
+  MangaControlLayout get mangaCompactControlLayout {
+    final String compact =
+        getPref('manga_control_layout_compact', defaultValue: '') as String;
+    if (compact.trim().isNotEmpty) {
+      return MangaControlLayout.decode(
+        compact,
+        fallback: MangaControlLayout.compactDefaults,
+      );
+    }
+    final String wide =
+        getPref('manga_control_layout', defaultValue: '') as String;
+    if (wide.trim().isNotEmpty) return MangaControlLayout.decode(wide);
+    return MangaControlLayout.compactDefaults;
+  }
+
+  Future<void> setMangaCompactControlLayout(MangaControlLayout layout) async {
+    await setPref('manga_control_layout_compact', layout.encode());
+    notifyListeners();
+  }
 
   Future<void> setMangaChromeFloating(bool value) async {
     await setPref('manga_chrome_floating', value);

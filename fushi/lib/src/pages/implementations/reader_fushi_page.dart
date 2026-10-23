@@ -104,6 +104,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/audio_highlight_style.dart';
+import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
@@ -3129,8 +3130,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _suppressPositionPersist = _sourceReviewSession != null
           ? _sourceReviewActive
           : bm.preserveSavedPosition;
-      final int? charAnchor = bm.charAnchor;
-      final int? len = bm.charAnchorLength;
+      // 2026-10 书签恢复：持久化书签带页首精确字符偏移（[Bookmark.charOffset]，
+      // 与 charAnchor 同计量）时同样走精确锚；只有旧书签（-1）才退回分数。
+      final int? charAnchor =
+          bm.charAnchor ?? (bm.charOffset >= 0 ? bm.charOffset : null);
+      final int? len = bm.charAnchor != null ? bm.charAnchorLength : null;
       final bool precise = charAnchor != null && charAnchor >= 0;
       _setOpenResumePoint(
         chapter: bm.sectionIndex,

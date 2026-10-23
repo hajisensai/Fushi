@@ -99,6 +99,7 @@ import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
 import 'package:fushi/src/reader/dictionary_style_css.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -10410,6 +10411,19 @@ class AppModel with ChangeNotifier {
       prefsRepo.setMangaVolumeKeyPaging(value);
 
   bool get mangaChromeFloating => prefsRepo.mangaChromeFloating;
+
+  /// 漫画阅读器工具栏按钮布局：按窗口宽度取生效的那份（< [kMangaControlCompactWidth]
+  /// 用窄窗布局）。
+  MangaControlLayout mangaControlLayoutFor({required bool compact}) => compact
+      ? prefsRepo.mangaCompactControlLayout
+      : prefsRepo.mangaControlLayout;
+
+  Future<void> setMangaControlLayoutFor({
+    required bool compact,
+    required MangaControlLayout layout,
+  }) => compact
+      ? prefsRepo.setMangaCompactControlLayout(layout)
+      : prefsRepo.setMangaControlLayout(layout);
   Future<void> setMangaChromeFloating(bool value) =>
       prefsRepo.setMangaChromeFloating(value);
 

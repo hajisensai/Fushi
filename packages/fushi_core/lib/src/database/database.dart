@@ -851,7 +851,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 124;
+  int get schemaVersion => 125;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2412,6 +2412,20 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('library_organize_changes')) {
               await m.createTable(libraryOrganizeChanges);
+            }
+          }
+          if (from < 125) {
+            // v125（阅读器书签回归）：bookmarks.char_offset——书签页首字符的章内精确
+            // 偏移（改字号后页码会变、字符不变，存量 -1 = 回退 norm_char_offset 分数）；
+            // bookmarks.chapter_key——在线漫画书签所在章的稳定键（存量 NULL）。
+            // 幂等守卫同 v119。
+            if (await _tableExists('bookmarks') &&
+                !await _columnExists('bookmarks', 'char_offset')) {
+              await m.addColumn(bookmarks, bookmarks.charOffset);
+            }
+            if (await _tableExists('bookmarks') &&
+                !await _columnExists('bookmarks', 'chapter_key')) {
+              await m.addColumn(bookmarks, bookmarks.chapterKey);
             }
           }
         },

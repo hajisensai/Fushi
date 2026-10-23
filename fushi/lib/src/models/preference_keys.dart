@@ -300,6 +300,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
   'manga_chrome_floating',
+  // 漫画阅读器工具栏按钮布局 JSON（MangaControlLayout，v1 槽位表；空 = 出厂布局）。
+  'manga_control_layout',
+  // 窄窗（手机竖屏）漫画按钮布局 JSON（同形；空 = 沿用宽窗那份）。
+  'manga_control_layout_compact',
   // int（天，BUG-2450）：在线漫画封面磁盘缓存的保留天数（Mihon 封面缓存
   // MihonCoverCache.maxAge）。默认 180，范围 30..360。
   'manga_cover_cache_max_age_days',

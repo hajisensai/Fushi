@@ -16,6 +16,8 @@ class Bookmark {
         bookTitle: json['bookTitle'] as String?,
         pageInChapter: json['pageInChapter'] as int?,
         totalPagesInChapter: json['totalPagesInChapter'] as int?,
+        charOffset: json['charOffset'] as int? ?? -1,
+        chapterKey: json['chapterKey'] as String?,
       );
   Bookmark({
     required this.sectionIndex,
@@ -27,6 +29,8 @@ class Bookmark {
     this.bookTitle,
     this.pageInChapter,
     this.totalPagesInChapter,
+    this.charOffset = -1,
+    this.chapterKey,
     this.charAnchor,
     this.charAnchorLength,
     this.preserveSavedPosition = false,
@@ -42,6 +46,8 @@ class Bookmark {
         bookTitle: row.bookTitle,
         pageInChapter: row.pageInChapter,
         totalPagesInChapter: row.totalPagesInChapter,
+        charOffset: row.charOffset,
+        chapterKey: row.chapterKey,
       );
 
   final int? id;
@@ -60,6 +66,13 @@ class Bookmark {
   final String? bookTitle;
   final int? pageInChapter;
   final int? totalPagesInChapter;
+
+  /// v125：书签页首字符的章内精确字符偏移（与 `ReaderPosition.charOffset` 同计量，
+  /// 持久化）。-1 = 没有（旧书签 / 漫画 / PDF），跳转回退 [normCharOffset] 分数。
+  final int charOffset;
+
+  /// v125：在线漫画书签所在章的稳定键；其余来源为 null。
+  final String? chapterKey;
 
   /// BUG-459：临时跳转用的「章节内绝对可匹配字符索引」（`getNormalizedOffset` 口径，
   /// 0..数千），与阅读器 `_initialCharOffset` / `ReaderPosition.charOffset` 同计量。
@@ -92,6 +105,8 @@ class Bookmark {
         if (pageInChapter != null) 'pageInChapter': pageInChapter,
         if (totalPagesInChapter != null)
           'totalPagesInChapter': totalPagesInChapter,
+        if (charOffset >= 0) 'charOffset': charOffset,
+        if (chapterKey != null) 'chapterKey': chapterKey,
       };
 }
 
@@ -129,6 +144,8 @@ class BookmarkRepository {
             bookTitle: Value(bookmark.bookTitle),
             pageInChapter: Value(bookmark.pageInChapter),
             totalPagesInChapter: Value(bookmark.totalPagesInChapter),
+            charOffset: Value(bookmark.charOffset),
+            chapterKey: Value(bookmark.chapterKey),
           ),
         );
   }

@@ -8,6 +8,7 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
@@ -95,6 +96,11 @@ class _MangaTestAppModel extends AppModel {
   // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
   @override
   bool get mangaChromeFloating => false;
+
+  // 工具栏布局走 prefsRepo（测试里为 null）：给出厂布局。
+  @override
+  MangaControlLayout mangaControlLayoutFor({required bool compact}) =>
+      MangaControlLayout.defaults;
 
   @override
   bool get mangaVolumeKeyPaging => false;

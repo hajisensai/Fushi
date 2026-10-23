@@ -68,6 +68,10 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
   /// 目录 / 搜索 / 收藏（左侧导航抽屉）。
   navigation('navigation', recoverySlot: ReaderControlSlot.topLeft),
 
+  /// 书签与收藏句：打开导航抽屉并直达「收藏」页的「书签」段。出厂在「更多」
+  /// （宽窗 / 窄窗都是）；存量布局 JSON 缺这颗时按出厂表回填到「更多」。
+  bookmarks('bookmarks', recoverySlot: ReaderControlSlot.topRight),
+
   /// 插图册。
   gallery('gallery', recoverySlot: ReaderControlSlot.topLeft),
 
@@ -234,7 +238,7 @@ class ReaderControlLayout {
 
   /// 宽窗（≥ [kReaderControlCompactWidth]）出厂布局（2026-10 工具栏精简，按使用频率
   /// 重排）：左「← 返回」，中「书名」（点它 = 打开导航），右主操作组「导航 /
-  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏」收进「更多」；
+  /// 有声书 / 阅读设置」；中频的「歌词模式 / 统计 / 插图 / 全屏 / 书签」收进「更多」；
   /// 计时 / 开关栏 / 有声书传输键留在托盘（传输键由播放条与 FAB 承担）。
   ///
   /// 只影响**没有存过布局**的用户：存量布局 JSON 把每颗按钮都显式列在某个槽或
@@ -259,6 +263,7 @@ class ReaderControlLayout {
           ReaderControlItem.statistics,
           ReaderControlItem.gallery,
           ReaderControlItem.fullscreen,
+          ReaderControlItem.bookmarks,
         ],
       },
     ),
@@ -287,6 +292,7 @@ class ReaderControlLayout {
           ReaderControlItem.modeToggle,
           ReaderControlItem.gallery,
           ReaderControlItem.fullscreen,
+          ReaderControlItem.bookmarks,
         ],
       },
     ),
