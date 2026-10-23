@@ -8862,6 +8862,11 @@ class AppModel with ChangeNotifier {
 
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       prefsRepo.galMiningAnimatedFormat;
+
+  /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
+  bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
+  Future<void> setMiningAnimatedPlayOnce(bool value) =>
+      prefsRepo.setMiningAnimatedPlayOnce(value);
   void setGalMiningAnimatedFormat(MiningAnimatedFormat format) =>
       prefsRepo.setGalMiningAnimatedFormat(format);
 

@@ -1166,6 +1166,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           id: 'card_creation.anki.video_mining_animated_format',
           child: _buildVideoMiningAnimatedFormatPicker(),
         ),
+        // 反馈 ZxyIMK-C5V：动图在 Anki 里默认无限循环；打开后与视频片段一样只播一遍。
+        // 视频 cue 动图与 galgame 窗口动图共用，所以不分平台、不随格式隐藏。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_animated_play_once',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_animated_play_once,
+            subtitle: t.mining_animated_play_once_hint,
+            value: appModel.miningAnimatedPlayOnce,
+            onChanged: (bool value) async {
+              await appModel.setMiningAnimatedPlayOnce(value);
+              if (mounted) setState(() {});
+            },
+          ),
+        ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_still_format',
           child: _buildVideoMiningStillFormatPicker(),

@@ -651,6 +651,14 @@ CtlBodyPage _mediaPage() {
         write: (SettingsContext c, MiningAnimatedFormat v) =>
             c.appModel.setVideoMiningAnimatedFormat(v),
       ),
+      SettingsSwitchItem(
+        id: _id('mining_animated_play_once'),
+        title: t.mining_animated_play_once,
+        subtitle: t.mining_animated_play_once_hint,
+        value: (SettingsContext c) => c.appModel.miningAnimatedPlayOnce,
+        onChanged: (SettingsContext c, bool v) =>
+            c.appModel.setMiningAnimatedPlayOnce(v),
+      ),
       _stillFormatChoice(
         id: 'video_mining_still_format',
         title: t.video_mining_still_format,

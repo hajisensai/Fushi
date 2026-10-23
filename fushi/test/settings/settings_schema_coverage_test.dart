@@ -716,6 +716,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/anki/anki_overwrite_scope_test.dart + test/srs/srs_mining_test.dart',
   'cardCreation/Compact glossaries':
       'test/anki/anki_compact_glossaries_guard_test.dart',
+  // 「制卡提示」两个开关（反馈 zNuGKLIhmT / aK5wv0CnWf）：写的是内存 DB 里的偏好，
+  // changed / persisted 已由本测试证实；效果（哪类 toast 不弹）在 widget 树里看不见
+  // （FushiToast 走全局 navigatorKey 的 overlay），由纯函数裁决 + 接线源码守卫咬住。
+  'cardCreation/Show mining confirmations':
+      'test/anki/mine_notice_toggle_test.dart',
+  'cardCreation/Show duplicate-card notices':
+      'test/anki/mine_notice_toggle_test.dart',
+  // 「动图只播放一次」（反馈 ZxyIMK-C5V）：效果在 ffmpeg 产物的循环计数里，widget
+  // 树看不到；参数映射与两条动图链的接线由专项测试咬住（-loop 口径已实测）。
+  'cardCreation/Play animated images once':
+      'test/mining/mining_animated_play_once_test.dart',
   'cardCreation/Add "fushi" tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':

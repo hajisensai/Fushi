@@ -352,6 +352,12 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           hasRevealTarget: true,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_animated_play_once',
+          title: t.mining_animated_play_once,
+          subtitle: t.mining_animated_play_once_hint,
+          hasRevealTarget: true,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_image_mode',
           title: t.gal_mining_image_mode,
           hasRevealTarget: true,

@@ -97,7 +97,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
         VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
-    show MiningMediaCompression;
+    show MiningMediaCompression, miningAnimatedPlayOnceReader;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
@@ -307,6 +307,8 @@ class PreferencesRepository extends ChangeNotifier
     appUserProxyModeReader = () => networkProxyMode;
     appUserProxyUsernameReader = () => networkProxyUsername;
     appUserProxyPasswordReader = () => networkProxyPassword;
+    // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
+    miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
   }
 
   Map<String, String> get prefsSnapshot =>
@@ -3471,6 +3473,16 @@ class PreferencesRepository extends ChangeNotifier
 
   void setGalMiningStillFormat(MiningStillFormat format) async {
     await setPref('gal_mining_still_format', format.wireName);
+    notifyListeners();
+  }
+
+  /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。默认 false = 无限循环（存量行为）。
+  /// 两条动图链（视频 cue、galgame 窗口）共用；见 `animatedLoopArgs`。
+  bool get miningAnimatedPlayOnce =>
+      getPref('mining_animated_play_once', defaultValue: false) as bool;
+
+  Future<void> setMiningAnimatedPlayOnce(bool value) async {
+    await setPref('mining_animated_play_once', value);
     notifyListeners();
   }
 

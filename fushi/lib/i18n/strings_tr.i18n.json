@@ -4754,6 +4754,8 @@
   "mining_animated_format_avif": "AVIF (en küçük)",
   "mining_animated_format_gif": "GIF (en uyumlu)",
   "mining_animated_format_webp": "WebP (daha geniş destek)",
+  "mining_animated_play_once": "Play animated images once",
+  "mining_animated_play_once_hint": "Animated card images (GIF / WebP / AVIF) play through once in Anki instead of looping, like video clips. Applies to newly mined cards.",
   "mining_audio_follow_playback_speed": "Cümle sesini oynatma hızına uydur",
   "mining_audio_follow_playback_speed_hint": "Sesli kitap 1×'ten hızlı veya yavaş oynatılırken karttaki cümle sesi, perde korunarak aynı hıza zaman esnetmesiyle uyarlanır. Yalnızca sesli kitaptan kart oluşturmada.",
   "mining_audio_head_pad": "Cümleden önce ses payı",

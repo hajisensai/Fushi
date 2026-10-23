@@ -4754,6 +4754,8 @@
   "mining_animated_format_avif": "AVIF (kleinst)",
   "mining_animated_format_gif": "GIF (meest compatibel)",
   "mining_animated_format_webp": "WebP (bredere ondersteuning)",
+  "mining_animated_play_once": "Play animated images once",
+  "mining_animated_play_once_hint": "Animated card images (GIF / WebP / AVIF) play through once in Anki instead of looping, like video clips. Applies to newly mined cards.",
   "mining_audio_follow_playback_speed": "Zinsaudio afstemmen op afspeelsnelheid",
   "mining_audio_follow_playback_speed_hint": "Wanneer het luisterboek sneller of langzamer dan 1× speelt, wordt de zinsaudio op de kaart naar dezelfde snelheid uitgerekt met behoud van de toonhoogte. Alleen voor mining uit luisterboeken.",
   "mining_audio_head_pad": "Audio-marge vóór de zin",

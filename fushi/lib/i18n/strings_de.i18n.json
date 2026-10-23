@@ -4754,6 +4754,8 @@
   "mining_animated_format_avif": "AVIF (kleinste)",
   "mining_animated_format_gif": "GIF (höchste Kompatibilität)",
   "mining_animated_format_webp": "WebP (breitere Unterstützung)",
+  "mining_animated_play_once": "Play animated images once",
+  "mining_animated_play_once_hint": "Animated card images (GIF / WebP / AVIF) play through once in Anki instead of looping, like video clips. Applies to newly mined cards.",
   "mining_audio_follow_playback_speed": "Satz-Audio an Wiedergabegeschwindigkeit anpassen",
   "mining_audio_follow_playback_speed_hint": "Wenn das Hörbuch schneller oder langsamer als 1× läuft, wird das Satz-Audio auf der Karte mit erhaltener Tonhöhe auf dieselbe Geschwindigkeit gedehnt. Nur für Hörbuch-Mining.",
   "mining_audio_head_pad": "Audio-Puffer vor dem Satz",

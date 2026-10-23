@@ -4754,6 +4754,8 @@
   "mining_animated_format_avif": "AVIF（體積最小）",
   "mining_animated_format_gif": "GIF（兼容性最好）",
   "mining_animated_format_webp": "WebP（兼容性更廣）",
+  "mining_animated_play_once": "動圖只播放一次",
+  "mining_animated_play_once_hint": "卡片裡的動圖（GIF / WebP / AVIF）在 Anki 中只播放一遍，不再循環，和影片片段一樣。只對之後新製的卡生效。",
   "mining_audio_follow_playback_speed": "句子音頻跟隨播放倍速",
   "mining_audio_follow_playback_speed_hint": "有聲書以非 1 倍速播放時，卡片的句子音頻按同一倍率變速不變調；僅對有聲書制卡生效。",
   "mining_audio_head_pad": "句子音頻開頭餘量",

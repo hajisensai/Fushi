@@ -4754,6 +4754,8 @@
   "mining_animated_format_avif": "AVIF (الأصغر حجمًا)",
   "mining_animated_format_gif": "GIF (الأكثر توافقًا)",
   "mining_animated_format_webp": "WebP (دعم أوسع)",
+  "mining_animated_play_once": "Play animated images once",
+  "mining_animated_play_once_hint": "Animated card images (GIF / WebP / AVIF) play through once in Anki instead of looping, like video clips. Applies to newly mined cards.",
   "mining_audio_follow_playback_speed": "مطابقة صوت الجملة لسرعة التشغيل",
   "mining_audio_follow_playback_speed_hint": "عندما يُشغَّل الكتاب الصوتي أسرع أو أبطأ من 1×، يُمدَّد صوت الجملة في البطاقة زمنيًا إلى السرعة نفسها مع الحفاظ على النغمة. لاستخراج الكتب الصوتية فقط.",
   "mining_audio_head_pad": "إضافة صوتية قبل الجملة",

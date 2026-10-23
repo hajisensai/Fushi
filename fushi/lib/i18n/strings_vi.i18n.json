@@ -4754,6 +4754,8 @@
   "mining_animated_format_avif": "AVIF (nhỏ nhất)",
   "mining_animated_format_gif": "GIF (tương thích nhất)",
   "mining_animated_format_webp": "WebP (tương thích rộng hơn)",
+  "mining_animated_play_once": "Play animated images once",
+  "mining_animated_play_once_hint": "Animated card images (GIF / WebP / AVIF) play through once in Anki instead of looping, like video clips. Applies to newly mined cards.",
   "mining_audio_follow_playback_speed": "Khớp âm thanh câu với tốc độ phát",
   "mining_audio_follow_playback_speed_hint": "Khi sách nói phát nhanh hoặc chậm hơn 1×, âm thanh câu trên thẻ được co giãn thời gian theo cùng tốc độ và giữ nguyên cao độ. Chỉ áp dụng cho tạo thẻ từ sách nói.",
   "mining_audio_head_pad": "Đệm âm thanh trước câu",

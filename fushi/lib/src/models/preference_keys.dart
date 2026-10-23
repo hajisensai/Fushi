@@ -343,6 +343,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （反馈 zNuGKLIhmT：阅读时挡住正文）。
   'mine_notice_success',
   'mine_to_server',
+  // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
+  // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
+  'mining_animated_play_once',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
