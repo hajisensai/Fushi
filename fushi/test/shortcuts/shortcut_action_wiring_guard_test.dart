@@ -84,6 +84,10 @@ void main() {
       // 它挂在首页键事件节点之下、先于 home 页的 _executeShortcutAction，库页
       // 之外 home 解析到它时返回 ignored 冒泡——与 globalExternalLookup 同类。
       'lib/src/utils/components/fushi_header_search.dart',
+      // app 内浏览器（webBrowser scope）：页面键事件节点
+      // `resolveKeyboard(event, scope: ShortcutScope.webBrowser)` 后按动作派发
+      // （新建 / 关闭标签页、地址栏、页内查找、缩放…），未命中再兜底 universal。
+      'lib/src/pages/implementations/fushi_web_browser_page.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

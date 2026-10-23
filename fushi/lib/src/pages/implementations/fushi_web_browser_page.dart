@@ -1,34 +1,37 @@
 import 'dart:async';
-import 'dart:collection';
-import 'dart:convert';
 
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi/models.dart';
-import 'package:fushi/src/focus/webview_key_bridge.dart'
-    show hostOwnsWebViewHoverLookup;
-import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
+import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart';
-import 'package:fushi/src/media/manga/web/web_comic_scan.dart';
-import 'package:fushi/src/media/manga/web/web_comic_scanner.dart';
-import 'package:fushi/src/media/novel/web/web_novel_gate.dart';
-import 'package:fushi/src/media/novel/web/web_novel_reader_launch.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
-import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
-import 'package:fushi/src/reader/reader_selection_data.dart';
-import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_address_bar.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_menus.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.dart';
+import 'package:fushi/src/pages/implementations/web_browser/web_browser_tab_lists.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_web_browser.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show focusedEditableText;
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/utils/components/fushi_loading_view.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -37,14 +40,26 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-import 'package:fushi/src/web_adblock/web_adblock_capability.dart';
-import 'package:fushi/src/web_adblock/web_adblock_service.dart';
-import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
+import 'package:fushi/src/web_browser/data/web_browser_store.dart';
+import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
+import 'package:fushi/src/web_browser/features/study/web_card_source.dart';
+import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
+import 'package:fushi/src/web_browser/features/web_browser_features.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_error_view.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_find_bar.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_page_settings.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_tab_actions.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_tab_view.dart';
+import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
+import 'package:fushi/src/web_browser/tabs/web_browser_tab_host.dart';
+import 'package:fushi/src/web_browser/tabs/web_browser_tabs_controller.dart';
+import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
-import 'package:fushi/src/webview/web_payload_limits.dart';
-import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/web_browser/web_browser_suggestions.dart';
 
-/// 站点书签（偏好 `web_browser_sites`），入口页与浏览页共用同一份解析。
+export 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
+
+/// 站点书签（偏好 `web_browser_sites`），入口页与新标签页起始页共用同一份解析。
 List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
     parseWebBrowserSites(
       appModel.prefsRepo.webBrowserSitesJson,
@@ -52,53 +67,6 @@ List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
         mangaAvailable: webComicReaderActionAvailable(),
       ),
     );
-
-/// 浏览页上按一次「返回」（Android 系统返回 / iOS 侧滑 / 桌面 Esc）该做的那一步。
-enum WebBrowserBackStep {
-  /// 关掉最上面一层查词弹窗（弹窗栈在本页路由之内，没有自己的 PopScope）。
-  closeLookup,
-
-  /// 退一步网页历史。
-  webHistoryBack,
-
-  /// 离开浏览页（放行路由 pop）。
-  leavePage,
-}
-
-/// 返回的优先级：查词弹窗 → 网页历史 → 离开浏览页。弹窗开着时若直接退网页历史
-/// （或没有历史时整页 pop），弹窗会留在已经换掉的网页上 / 随浏览页一起被关掉。
-@visibleForTesting
-WebBrowserBackStep webBrowserBackStep({
-  required bool lookupOpen,
-  required bool canGoBack,
-}) {
-  if (lookupOpen) return WebBrowserBackStep.closeLookup;
-  if (canGoBack) return WebBrowserBackStep.webHistoryBack;
-  return WebBrowserBackStep.leavePage;
-}
-
-/// 浏览页 chrome（地址栏 + 工具栏）摆在哪。
-enum WebBrowserChromeLayout {
-  /// 窄窗口（手机竖屏等）：地址栏与工具栏都收在底部（拇指区），顶部只留状态栏。
-  bottom,
-
-  /// 宽窗口（横屏 / 桌面）：地址栏与工具栏并成顶部一行，竖向空间全让给网页。
-  top,
-}
-
-/// 低于这个窗口宽度时 chrome 收到底部。
-const double kWebBrowserChromeTopMinWidth = 600;
-
-/// 只按窗口宽度分，不看平台（用户 2026-10-20：「不要按平台判断，按宽度」）：
-/// 宽窗口只留顶部一行，窄窗口只留底部。
-@visibleForTesting
-WebBrowserChromeLayout webBrowserChromeLayout({required Size size}) =>
-    size.width >= kWebBrowserChromeTopMinWidth
-    ? WebBrowserChromeLayout.top
-    : WebBrowserChromeLayout.bottom;
-
-/// 手机横屏顶部一行里地址栏至少留的宽度；工具栏只拿剩下的，放不下的收进「⋯」。
-const double _kMobileTopAddressMinWidth = 240;
 
 /// 推出全屏浏览页（[FushiWebBrowserPage]）。它是独立子页：盖住首页外壳的主导航
 /// 底栏 / 侧栏，网页独占整屏，退出回到入口页。
@@ -155,34 +123,39 @@ class _FushiWebBrowserHomePageState
   void _openAddress(String input) {
     final Uri? url = resolveWebBrowserInput(
       input,
-      readWebBrowserSearchEngine(_appModel.prefsRepo),
+      readWebBrowserSearchProvider(_appModel.prefsRepo),
     );
     if (url == null) return;
     unawaited(_open(url));
   }
 
-  Future<void> _setSearchEngine(WebBrowserSearchEngine engine) async {
-    await writeWebBrowserSearchEngine(_appModel.prefsRepo, engine);
+  Future<void> _setSearchEngine(WebBrowserSearchProvider engine) async {
+    await writeWebBrowserSearchProvider(_appModel.prefsRepo, engine);
     if (mounted) setState(() {});
   }
 
   /// 地址栏前导：当前搜索引擎，点开切换。
   Widget _buildEngineMenu(BuildContext context) {
-    final WebBrowserSearchEngine current = readWebBrowserSearchEngine(
+    final WebBrowserSearchProvider current = readWebBrowserSearchProvider(
       _appModel.prefsRepo,
     );
-    return FushiOverflowMenu<WebBrowserSearchEngine>(
+    final List<WebBrowserSearchProvider> all = webBrowserSearchProviders(
+      _appModel.prefsRepo,
+    );
+    return FushiOverflowMenu<String>(
       key: const ValueKey<String>('web-browser-search-engine'),
       tooltip: t.web_browser_search_engine,
-      onSelected: (WebBrowserSearchEngine engine) =>
-          unawaited(_setSearchEngine(engine)),
-      items: <PopupMenuEntry<WebBrowserSearchEngine>>[
-        for (final WebBrowserSearchEngine engine
-            in WebBrowserSearchEngine.values)
-          FushiPopupMenuItem<WebBrowserSearchEngine>(
-            value: engine,
+      onSelected: (String value) {
+        for (final WebBrowserSearchProvider p in all) {
+          if (p.prefValue == value) unawaited(_setSearchEngine(p));
+        }
+      },
+      items: <PopupMenuEntry<String>>[
+        for (final WebBrowserSearchProvider engine in all)
+          FushiPopupMenuItem<String>(
+            value: engine.prefValue,
             label: engine.label,
-            selected: engine == current,
+            selected: engine.prefValue == current.prefValue,
           ),
       ],
       child: FushiSearchLeading(
@@ -319,58 +292,6 @@ class _FushiWebBrowserHomePageState
     );
   }
 
-  Widget _buildSiteTile(BuildContext context, WebBrowserSite site) {
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool glass = isGlassDesign(context);
-    final String trimmed = site.name.trim();
-    final String name = trimmed.isEmpty ? site.url.host : trimmed;
-    final String initial = name.characters.first.toUpperCase();
-    return FushiCard(
-      key: ValueKey<String>('web-browser-site-${site.url}'),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      onTap: () => unawaited(_open(site.url)),
-      onLongPress: () => unawaited(_siteActions(site)),
-      onSecondaryTap: () => unawaited(_siteActions(site)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // 站点头像：首字母落在 tonal 圆里（Apple 用强调色淡底）。不取网站
-          // favicon——入口页不为几个字节去联网。
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: glass
-                ? appleColorsOf(context).accent.withValues(alpha: 0.16)
-                : theme.colorScheme.secondaryContainer,
-            foregroundColor: glass
-                ? appleColorsOf(context).accent
-                : theme.colorScheme.onSecondaryContainer,
-            child: Text(
-              initial,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          const Spacer(),
-          Text(
-            name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.listTitle,
-          ),
-          const SizedBox(height: 2),
-          Text(
-            site.url.host,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.listSubtitle,
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildBody(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -443,8 +364,11 @@ class _FushiWebBrowserHomePageState
               ),
               delegate: SliverChildBuilderDelegate(
                 fushiStaggeredItemBuilder(
-                  (BuildContext context, int i) =>
-                      _buildSiteTile(context, _sites[i]),
+                  (BuildContext context, int i) => _WebBrowserSiteTile(
+                    site: _sites[i],
+                    onOpen: () => unawaited(_open(_sites[i].url)),
+                    onActions: () => unawaited(_siteActions(_sites[i])),
+                  ),
                 ),
                 childCount: _sites.length,
               ),
@@ -478,59 +402,172 @@ class _FushiWebBrowserHomePageState
 /// 站点卡片长按 / 右键菜单的动作。
 enum _SiteAction { edit, remove }
 
-/// app 内通用浏览器的全屏浏览页（五端：Windows / macOS / Linux / Android / iOS），
-/// 由入口页 [FushiWebBrowserHomePage] 经 [openFushiWebBrowser] 推出。
+/// 入口页与新标签页起始页共用的站点卡片。
+class _WebBrowserSiteTile extends StatelessWidget {
+  const _WebBrowserSiteTile({
+    required this.site,
+    required this.onOpen,
+    this.onActions,
+  });
+
+  final WebBrowserSite site;
+  final VoidCallback onOpen;
+  final VoidCallback? onActions;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool glass = isGlassDesign(context);
+    final String trimmed = site.name.trim();
+    final String name = trimmed.isEmpty ? site.url.host : trimmed;
+    final String initial = name.characters.first.toUpperCase();
+    return FushiCard(
+      key: ValueKey<String>('web-browser-site-${site.url}'),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      onTap: onOpen,
+      onLongPress: onActions,
+      onSecondaryTap: onActions,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // 站点头像：首字母落在 tonal 圆里（Apple 用强调色淡底）。不取网站
+          // favicon——入口页不为几个字节去联网。
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: glass
+                ? appleColorsOf(context).accent.withValues(alpha: 0.16)
+                : theme.colorScheme.secondaryContainer,
+            foregroundColor: glass
+                ? appleColorsOf(context).accent
+                : theme.colorScheme.onSecondaryContainer,
+            child: Text(
+              initial,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.listTitle,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            site.url.host,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tokens.type.listSubtitle,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 网页持焦时把浏览器快捷键交回 Dart 的键盘桥 handler 名。
+const String _kKeyBridgeHandler = 'onWebBrowserShortcutKey';
+
+/// 浏览器快捷键的键盘桥：作为一个内部功能挂到每个标签页（WebView 持焦时键只在
+/// DOM 里，见 docs/agent/focus-ownership.md「键盘桥」）。键表取自当前注册表里
+/// [ShortcutScope.webBrowser] 的全部键盘绑定（token 即 `InputBinding.serialize()`）。
+class _ShortcutKeyBridge extends WebBrowserFeature {
+  _ShortcutKeyBridge({required this.registry, required this.onToken});
+
+  final FushiShortcutRegistry registry;
+  final void Function(WebBrowserTab tab, String token) onToken;
+
+  @override
+  String get id => 'shell-shortcut-key-bridge';
+
+  List<String> _tokens() => <String>[
+    for (final ShortcutAction action in ShortcutAction.actionsForScope(
+      ShortcutScope.webBrowser,
+    ))
+      for (final InputBinding binding
+          in registry.bindingsFor(action).keyboardBindings)
+        binding.serialize(),
+  ];
+
+  @override
+  List<UserScript> userScripts() => <UserScript>[
+    UserScript(
+      groupName: 'fushi-web-browser-shortcuts',
+      source: webViewKeyBridgeScript(
+        handlerName: _kKeyBridgeHandler,
+        keys: _tokens(),
+        stopPropagation: true,
+      ),
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+    ),
+  ];
+
+  @override
+  void onWebViewCreated(WebBrowserTab tab, InAppWebViewController controller) {
+    controller.addJavaScriptHandler(
+      handlerName: _kKeyBridgeHandler,
+      callback: (List<dynamic> args) {
+        if (args.isNotEmpty && args.first is String) {
+          onToken(tab, args.first as String);
+        }
+        return null;
+      },
+    );
+  }
+}
+
+/// app 内通用浏览器的全屏浏览页（五端），由入口页 [FushiWebBrowserHomePage] 经
+/// [openFushiWebBrowser] 推出。多标签页：标签列表归 [WebBrowserTabsController]，
+/// 每个标签页的 WebView 归 [WebBrowserTabView]，本页只是壳——摆放、chrome、菜单、
+/// 快捷键与会话恢复。
 ///
-/// 版面（两套设计系统同构，组件各自分派）：地址栏（M3E search bar / iOS 搜索
-/// 胶囊，左侧 ✕ 退出浏览页，尾部刷新）+ 悬浮工具栏（纯图标，文字进 tooltip /
-/// 语义）+ 网页漫画的「用 Fushi 阅读本章」FAB，摆放见 [webBrowserChromeLayout]：
-/// 桌面顶部地址栏、底部工具栏；手机竖屏两者都在底部（紧凑档）；手机横屏并成顶部
-/// 一行。工具栏默认全部平铺，宽度不够才按优先级把低优先级的收进「⋯」。
+/// 版式按窗口宽度分（[webBrowserShellLayout]，不看平台）：
+/// - 窄窗口（竖屏）：底栏「后退 / 地址栏 / 查词 / 标签数 / ⋯」，标签数按钮打开全屏
+///   标签页网格；往下滚收起成小地址条；
+/// - 宽窗口 + 侧边栏（默认）：顶栏最左是侧边栏开关，260dp 侧边栏放标签页列表 +
+///   书签 / 历史 / 下载；桌面挤开网页，手机横屏盖在网页上；
+/// - 宽窗口 + 顶部标签栏：地址栏上方一排 36dp 标签；矮窗口（手机横屏）往下滚两排
+///   一起收起。
+/// 工具栏默认平铺、放不下才按优先级收进「⋯」（[FushiTopBarOverflowFit]）。
 ///
-/// - **Fushi 查词**：复用复习卡面那一套（[SrsCardLookupHost] 弹窗栈 + 阅读器选区
-///   脚本 [ReaderSelectionScripts] + 卡面取词监听 [kSrsCardLookupScript]）：点按
-///   正文取词、Shift / 「悬停即查词」悬停取词，链接 / 按钮 / 表单上不取词，弹窗里
-///   继续嵌套查、制卡。工具栏「点词查词」可临时关掉（浏览时点正文不弹窗）；
-/// - **网页漫画**（附加动作）：「用 Fushi 阅读本章」扫当前页的漫画图交给漫画
-///   阅读器。只在 [webComicReaderActionAvailable]（`onlineMangaSource` 合规门）
-///   为真时出现——iOS 上浏览器照常可用，只是没有这项动作，也不预置漫画站；
-/// - **网页小说**（附加动作）：「用 Fushi 阅读（小说）」把当前页整页 HTML 交给 Rust
-///   提取正文、并进连载会话，预览确认后进书架并在阅读器打开（读到末尾自动拉下一章）。
-///   只在 [webNovelReaderActionAvailable]（`onlineNovelSource` 合规门）为真时出现；
-/// - **广告 / 跟踪拦截**：[applyAdblockTo]（Rust adblock 引擎，设置 › 系统里的
-///   开关、订阅列表与白名单现读生效；iOS / macOS 的规则在 WebView 创建时固化）。
-///
-/// 系统返回 / 侧滑先退网页历史，退到头才离开浏览页；左上 ✕ 直接离开。
+/// 返回（系统返回 / 侧滑 / Esc）：查词弹窗 → 全屏 / 查找条 / 网格 / 抽屉 → 网页
+/// 历史 → 关掉由别的标签页打开的子页 → 离开浏览页（[webBrowserBackStep]）。
 class FushiWebBrowserPage extends ConsumerStatefulWidget {
   const FushiWebBrowserPage({required this.initialUrl, super.key});
 
-  /// 打开即加载的地址（地址栏的输入规则，见 [parseWebBrowserAddress]）。
+  /// 打开即加载的地址（地址栏的输入规则，见 [parseWebBrowserAddress]）；空串 =
+  /// 只恢复上次的标签页（没有就开一个新标签页）。
   final String initialUrl;
 
-  /// 测试注入：widget 测试里没有平台视图。
+  /// 测试注入：壳的 widget 测试用它代替整个 [WebBrowserTabView]（标签页 WebView 的
+  /// 生命周期由 tab_view 自己的测试覆盖，壳测试只看摆放）。
   @visibleForTesting
-  static Widget Function(BuildContext context)? debugWebViewBuilder;
+  static Widget Function(BuildContext context, WebBrowserTab tab)?
+  debugTabViewBuilder;
 
   @override
   ConsumerState<FushiWebBrowserPage> createState() =>
-      _FushiWebBrowserPageState();
+      FushiWebBrowserPageState();
 }
 
-class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
-    implements SrsCardLookupSurface {
-  late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
-    surface: 'fushi-web-browser',
-  );
-  final GlobalKey _webViewKey = GlobalKey(debugLabel: 'fushi-web-browser');
-  final TextEditingController _address = TextEditingController();
-  final FocusNode _addressFocus = FocusNode(
-    debugLabel: 'web-browser-page-address',
-  );
-
-  /// 底部工具栏「放不下才收进 ⋯」的平铺颗数决策（与顶栏共用同一套测宽）。
+/// 浏览页壳的状态（测试经它读标签列表、直接执行快捷键动作）。
+class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
+    with WidgetsBindingObserver
+    implements WebBrowserTabHost {
+  late final WebBrowserStore _store = ref.read(webBrowserStoreProvider);
+  late final List<WebBrowserFeature> _features;
+  late final WebBrowserTabsController _tabs;
+  late final WebBrowserSuggestionsController _suggestions;
+  final FocusNode _addressFocus = FocusNode(debugLabel: 'web-browser-address');
+  final GlobalKey<WebBrowserAddressBarState> _addressBar =
+      GlobalKey<WebBrowserAddressBarState>();
   final FushiTopBarOverflowFit _toolbarFit = FushiTopBarOverflowFit();
 
-  /// 页内取词：与复习卡面同一套控制器 / 宿主。设置现读，「点词查词」开关即时生效。
+  /// 页内取词：与复习卡面同一套控制器，整页一份；标签页 WebView 经
+  /// [SrsCardLookupScope] 登记成取词表面。
   late final SrsCardLookupController _lookup = SrsCardLookupController(
     settings: () {
       final SrsCardLookupSettings reader = srsCardLookupSettingsFromReader();
@@ -540,170 +577,314 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       );
     },
   );
-  final ReaderHostHoverLookupGate _hostHover = ReaderHostHoverLookupGate();
-  static final String _lookupInstallScript = srsCardLookupInstallScript(
-    ReaderSelectionScripts.source(),
-  );
   bool _lookupEnabled = true;
 
-  /// 网页漫画扫图（合规门关时为 null，整条能力不装）。
-  final WebComicScanDriver? _scanDriver = webComicReaderActionAvailable()
-      ? WebComicScanDriver()
-      : null;
-  bool _scanning = false;
+  late WebBrowserTabStyle _tabStyle;
+  late bool _sidebarOpen;
 
-  /// 网页小说动作（合规门关时整条能力不装）。
-  final bool _novelAvailable = webNovelReaderActionAvailable();
-  bool _extractingNovel = false;
+  /// 侧边栏是抽屉形态时（手机横屏）的开合，与桌面推挤形态的记忆开关分开。
+  bool _drawerOpen = false;
+  bool _gridOpen = false;
+  WebBrowserCollapseState _collapse = const WebBrowserCollapseState();
+  final Map<String, Uint8List> _thumbnails = <String, Uint8List>{};
 
-  /// 广告拦截接线：环境就绪时建一次，WebView 重建（死亡守卫）也沿用同一份，
-  /// 让 cosmetic 的 JS handler 与按 href 记的例外集始终是同一个对象。
-  WebAdblockWiring? _adblock;
-
-  bool _environmentReady = false;
-  WebViewEnvironment? _environment;
-  InAppWebViewController? _controller;
-  bool _canGoBack = false;
-  bool _canGoForward = false;
-  Uri? _currentUrl;
-  String _pageTitle = '';
-
-  /// WebView 首次创建时加载的地址；创建后清空（之后的导航都走控制器）。
-  Uri? _pendingUrl;
-  late List<WebBrowserSite> _sites;
+  WebBrowserTab? _watched;
+  bool _bookmarked = false;
+  Uri? _bookmarkCheckedFor;
+  bool _systemUiHidden = false;
 
   AppModel get _appModel => ref.read(appProvider);
 
   @override
+  WebBrowserStore get store => _store;
+
+  @override
+  List<WebBrowserFeature> get features => _features;
+
+  @visibleForTesting
+  WebBrowserTabsController get tabsController => _tabs;
+
+  @override
   void initState() {
     super.initState();
-    _sites = _loadWebBrowserSites(_appModel);
+    WidgetsBinding.instance.addObserver(this);
+    final PrefStore prefs = _appModel.prefsRepo;
+    _tabStyle = webBrowserTabStyle(prefs);
+    _sidebarOpen = webBrowserSidebarOpen(prefs);
+    _features = <WebBrowserFeature>[
+      ...buildWebBrowserFeatures(ref),
+      _ShortcutKeyBridge(
+        registry: _appModel.shortcutRegistry,
+        onToken: _onBridgeToken,
+      ),
+    ];
+    for (final WebBrowserFeature f in _features) {
+      f.actionsChanged?.addListener(_rebuild);
+    }
+    _tabs = WebBrowserTabsController(store: _store, features: _features)
+      ..persistSession = webBrowserRestoreTabs(prefs);
+    // 带进来的地址先开（监听挂上之前：initState 里不能 setState），恢复的会话
+    // 随后异步插到它前面。
     final Uri? initial = parseWebBrowserAddress(widget.initialUrl);
-    _pendingUrl = initial;
-    _currentUrl = initial;
-    _address.text = initial?.toString() ?? widget.initialUrl;
-    _lookup.register(this);
-    unawaited(_prepareEnvironment());
+    if (initial != null) openTab(initial);
+    _tabs.addListener(_onTabsChanged);
+    _bindActiveTab();
+    _store.addListener(_onStoreChanged);
+    _suggestions = WebBrowserSuggestionsController(
+      store: _store,
+      provider: () => readWebBrowserSearchProvider(_appModel.prefsRepo),
+      onlineEnabled: () => !(_tabs.activeTab?.incognito ?? false),
+    );
+    _addressFocus.addListener(_rebuild);
+    _lookup.addListener(_rebuild);
+    unawaited(_restore());
+  }
+
+  Future<void> _restore() async {
+    try {
+      await _tabs.restoreSession();
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('FushiWebBrowserPage.restore', error, stack);
+    }
+    if (!mounted) return;
+    if (_tabs.isEmpty) openTab(null);
   }
 
   @override
   void dispose() {
-    _lookup.unregister(this);
+    WidgetsBinding.instance.removeObserver(this);
+    if (_systemUiHidden) {
+      unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    }
+    _watched?.removeListener(_onActiveTabChanged);
+    _tabs.removeListener(_onTabsChanged);
+    _store.removeListener(_onStoreChanged);
+    for (final WebBrowserFeature f in _features) {
+      f.actionsChanged?.removeListener(_rebuild);
+      f.dispose();
+    }
+    _tabs.dispose();
+    _suggestions.dispose();
     _lookup.dispose();
-    _address.dispose();
     _addressFocus.dispose();
     super.dispose();
   }
 
-  Future<void> _prepareEnvironment() async {
-    WebViewEnvironment? environment;
-    try {
-      // 与网页漫画的无界面扫图、CookieManager 同一个环境：取图带的 cookie 就是
-      // 用户在这里登录 / 过验证得到的那份（Windows 上 cookie 归环境所有）。
-      environment = await MangaWebViewEnvironment.obtain();
-    } on Object {
-      environment = null;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      unawaited(_tabs.flushSession());
     }
-    final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
-    final WebAdblockNetworkMode mode = currentWebAdblockNetworkMode;
-    final Future<void> loading = adblock.ensureLoaded().catchError((
-      Object e,
-      StackTrace s,
-    ) {
-      ErrorLogService.instance.log('FushiWebBrowserPage.adblockLoad', e, s);
-    });
-    // contentBlockers 平台（iOS / macOS）的规则在 WebView 创建时固化：等引擎就绪
-    // 再建，否则这一页整页不拦。逐请求平台每次请求现读策略，后台加载即可，不让
-    // 首次下载订阅列表卡住页面。
-    if (mode == WebAdblockNetworkMode.contentBlockers) await loading;
-    if (!mounted) return;
-    setState(() {
-      _environment = environment;
-      _adblock = applyAdblockTo(
-        InAppWebViewSettings(
-          javaScriptEnabled: true,
-          sharedCookiesEnabled: true,
-        ),
-        policy: adblock,
-        mode: mode,
-      );
-      _environmentReady = true;
-    });
   }
 
-  // ── 导航 ───────────────────────────────────────────────────────────
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
 
-  void _openAddress(String input) {
-    final Uri? url = resolveWebBrowserInput(
-      input,
-      readWebBrowserSearchEngine(ref.read(appProvider).prefsRepo),
-    );
-    if (url == null) return;
-    _addressFocus.unfocus();
-    _address.text = url.toString();
-    final InAppWebViewController? controller = _controller;
-    if (controller == null) {
-      setState(() => _pendingUrl = url);
+  /// 前台标签页换了：改挂监听、重置滚动收起、按新页同步系统栏与书签星标。
+  void _bindActiveTab() {
+    final WebBrowserTab? active = _tabs.activeTab;
+    if (identical(active, _watched)) return;
+    _watched?.removeListener(_onActiveTabChanged);
+    _watched = active;
+    active?.addListener(_onActiveTabChanged);
+    _collapse = const WebBrowserCollapseState();
+    _applySystemUi(active?.fullscreen ?? false);
+    _refreshBookmark();
+  }
+
+  void _onTabsChanged() {
+    _bindActiveTab();
+    _rebuild();
+  }
+
+  void _onActiveTabChanged() {
+    final WebBrowserTab? tab = _watched;
+    if (tab == null) return;
+    _applySystemUi(tab.fullscreen);
+    if (tab.url != _bookmarkCheckedFor) _refreshBookmark();
+    _rebuild();
+  }
+
+  void _onStoreChanged() => _refreshBookmark();
+
+  void _refreshBookmark() {
+    final Uri? url = _tabs.activeTab?.url;
+    _bookmarkCheckedFor = url;
+    if (url == null) {
+      if (_bookmarked && mounted) setState(() => _bookmarked = false);
       return;
     }
-    unawaited(controller.loadUrl(urlRequest: URLRequest(url: WebUri.uri(url))));
+    unawaited(
+      _store.bookmarkForUrl(url).then((WebBrowserBookmark? b) {
+        if (!mounted || _tabs.activeTab?.url != url) return;
+        if ((b != null) != _bookmarked) setState(() => _bookmarked = b != null);
+      }, onError: (Object _) {}),
+    );
   }
 
-  Future<void> _syncNavigation(
-    InAppWebViewController controller,
-    WebUri? url,
-  ) async {
-    bool back = false;
-    bool forward = false;
-    String title = '';
-    try {
-      back = await controller.canGoBack();
-      forward = await controller.canGoForward();
-      title = await controller.getTitle() ?? '';
-    } on Object {
-      // 平台实现没给（或 WebView 已销毁）：按钮保持禁用即可。
+  void _applySystemUi(bool fullscreen) {
+    if (fullscreen == _systemUiHidden) return;
+    _systemUiHidden = fullscreen;
+    unawaited(
+      SystemChrome.setEnabledSystemUIMode(
+        fullscreen ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      ),
+    );
+  }
+
+  // ── WebBrowserTabHost ─────────────────────────────────────────────────
+
+  @override
+  WebBrowserTab openTab(
+    Uri? url, {
+    String? openerId,
+    int? windowId,
+    bool incognito = false,
+    bool activate = true,
+  }) {
+    final WebBrowserTab tab = _tabs.openTab(
+      url,
+      openerId: openerId,
+      windowId: windowId,
+      incognito: incognito,
+      activate: activate,
+    );
+    if (webBrowserDesktopModeSupported() &&
+        webBrowserDesktopModeDefault(_appModel.prefsRepo)) {
+      tab.update(desktopMode: true);
     }
-    if (!mounted) return;
-    setState(() {
-      _canGoBack = back;
-      _canGoForward = forward;
-      _pageTitle = title;
-      if (url != null) {
-        _currentUrl = url;
-        if (!_addressFocus.hasFocus) _address.text = url.toString();
-      }
-    });
+    if (url == null && activate) {
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (mounted && identical(_tabs.activeTab, tab)) {
+          _addressBar.currentState?.beginEditing();
+        }
+      });
+    }
+    return tab;
   }
 
-  /// 左上 ✕：不经网页历史，直接离开浏览页（[Navigator.pop] 不受 [PopScope] 拦）。
-  void _close() => Navigator.of(context).pop();
+  @override
+  void closeTab(WebBrowserTab tab) {
+    _tabs.closeTab(tab);
+    _thumbnails.remove(tab.id);
+    if (_tabs.isEmpty && !_gridOpen && mounted) Navigator.of(context).pop();
+  }
 
-  /// 返回被 [PopScope] 拦下时的那一步（判据见 [webBrowserBackStep]）。
-  void _onBackBlocked() {
-    switch (webBrowserBackStep(
-      lookupOpen: _lookup.isOpen,
-      canGoBack: _canGoBack,
-    )) {
-      case WebBrowserBackStep.closeLookup:
-        // 搜索期占位没有可见层时 closeTop 返回 false：整栈关掉，别让返回键落空。
-        if (!_lookup.closeTop()) _lookup.closeAll();
-      case WebBrowserBackStep.webHistoryBack:
-        final InAppWebViewController? controller = _controller;
-        if (controller != null) unawaited(controller.goBack());
-      case WebBrowserBackStep.leavePage:
-        break;
+  @override
+  bool isActive(WebBrowserTab tab) => _tabs.isActive(tab);
+
+  @override
+  void onContentScrolled(WebBrowserTab tab, {required int y, required int dy}) {
+    if (!isActive(tab) || !mounted) return;
+    final WebBrowserCollapseState next = _collapse.onScroll(y: y, dy: dy);
+    if (next.collapsed != _collapse.collapsed) {
+      setState(() => _collapse = next);
+    } else {
+      _collapse = next;
     }
   }
 
-  // ── 站点书签 ─────────────────────────────────────────────────────────
+  @override
+  void onFullscreenChanged(WebBrowserTab tab, {required bool fullscreen}) {
+    tab.update(fullscreen: fullscreen);
+  }
+
+  // ── 导航 ─────────────────────────────────────────────────────────────
+
+  PrefStore get _prefs => _appModel.prefsRepo;
+
+  /// 在 [tab]（默认前台页）里打开 [url]；[newTab] 开新标签页。
+  void _navigate(Uri url, {WebBrowserTab? tab, bool newTab = false}) {
+    final WebBrowserTab? target = newTab ? null : (tab ?? _tabs.activeTab);
+    if (target == null) {
+      openTab(url);
+      return;
+    }
+    final InAppWebViewController? controller = target.controller;
+    if (controller != null) {
+      unawaited(
+        controller.loadUrl(urlRequest: URLRequest(url: WebUri.uri(url))),
+      );
+    } else {
+      target.update(url: url);
+    }
+    _tabs.activate(target);
+  }
+
+  void _submitAddress(String input) {
+    final Uri? url = resolveWebBrowserInput(
+      input,
+      readWebBrowserSearchProvider(_prefs),
+    );
+    if (url != null) _navigate(url);
+  }
+
+  void _openSuggestion(WebBrowserSuggestion s) {
+    final Uri? url =
+        s.url ??
+        (s.query == null
+            ? null
+            : readWebBrowserSearchProvider(_prefs).searchUrl(s.query!));
+    if (url != null) _navigate(url);
+  }
+
+  void _goBack() => unawaited(_tabs.activeTab?.controller?.goBack());
+
+  /// 工具栏「后退」：与系统返回同一条阶梯（[webBrowserBackStep]），退到头就离开
+  /// 浏览页——桌面没有系统返回键，这是鼠标离开浏览器的入口。
+  void _backOrLeave() => unawaited(Navigator.of(context).maybePop());
+  void _goForward() => unawaited(_tabs.activeTab?.controller?.goForward());
+
+  void _reload() {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    if (tab == null) return;
+    tab.setError(null);
+    unawaited(tab.controller?.reload());
+  }
+
+  Future<void> _toggleBookmark() async {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final Uri? url = tab?.url;
+    if (tab == null || url == null || tab.incognito) return;
+    final WebBrowserBookmark? existing = await _store.bookmarkForUrl(url);
+    if (existing != null) {
+      await _store.deleteBookmark(existing.id);
+    } else {
+      await _store.addBookmark(title: tab.displayTitle, url: url);
+    }
+    _refreshBookmark();
+  }
+
+  void _toggleLookup() {
+    setState(() => _lookupEnabled = !_lookupEnabled);
+    if (!_lookupEnabled) _lookup.closeAll();
+  }
+
+  void _setTextZoom(int value) => _tabs.activeTab?.update(textZoom: value);
+
+  void _openFind() => _tabs.activeTab?.update(findOpen: true);
+
+  void _newTab({bool incognito = false}) {
+    setState(() => _gridOpen = false);
+    openTab(null, incognito: incognito);
+  }
+
+  Future<void> _reopenClosedTab() async {
+    await _tabs.reopenClosedTab();
+  }
 
   Future<void> _addCurrentSite() async {
-    final Uri? url = _currentUrl;
-    if (url == null) return;
-    final String name = _pageTitle.trim().isEmpty ? url.host : _pageTitle;
-    _sites = addWebBrowserSite(_sites, WebBrowserSite(name: name, url: url));
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final Uri? url = tab?.url;
+    if (tab == null || url == null) return;
+    final List<WebBrowserSite> sites = addWebBrowserSite(
+      _loadWebBrowserSites(_appModel),
+      WebBrowserSite(name: tab.displayTitle, url: url),
+    );
     await _appModel.prefsRepo.setWebBrowserSitesJson(
-      encodeWebBrowserSites(_sites),
+      encodeWebBrowserSites(sites),
     );
     FushiToast.show(
       msg: t.web_browser_site_added,
@@ -711,404 +892,572 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     );
   }
 
-  // ── 网页漫画 ─────────────────────────────────────────────────────────
+  Future<void> _setTabStyle(WebBrowserTabStyle style) async {
+    setState(() => _tabStyle = style);
+    await setWebBrowserTabStyle(_prefs, style);
+  }
 
-  Future<void> _readChapterInFushi() async {
-    final WebComicScanDriver? driver = _scanDriver;
-    final InAppWebViewController? controller = _controller;
-    final Uri? url = _currentUrl;
-    if (driver == null || controller == null || url == null || _scanning) {
+  void _toggleSidebar(bool overlay) {
+    if (overlay) {
+      setState(() => _drawerOpen = !_drawerOpen);
       return;
     }
-    setState(() => _scanning = true);
-    FushiToast.show(msg: t.manga_web_scan_running);
-    try {
-      final WebComicScanResult scan = await driver.scan(
-        controller,
-        pageUrl: url,
-      );
-      if (!mounted) return;
-      if (scan.isEmpty) {
-        FushiToast.show(
-          msg: t.manga_web_scan_empty,
-          severity: ToastSeverity.warning,
+    setState(() => _sidebarOpen = !_sidebarOpen);
+    unawaited(setWebBrowserSidebarOpen(_prefs, _sidebarOpen));
+  }
+
+  Future<void> _openGrid() async {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final InAppWebViewController? controller = tab?.controller;
+    if (tab != null && controller != null && !tab.incognito) {
+      try {
+        final Uint8List? shot = await controller.takeScreenshot(
+          screenshotConfiguration: ScreenshotConfiguration(
+            compressFormat: CompressFormat.JPEG,
+            quality: 60,
+          ),
         );
-        return;
+        if (shot != null) _thumbnails[tab.id] = shot;
+      } on Object {
+        // 平台不支持截图：网格用色块。
       }
-      await openWebComicScanInReader(context: context, ref: ref, scan: scan);
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'FushiWebBrowserPage.readChapter',
-        error,
-        stack,
-      );
-      if (mounted) {
-        FushiToast.show(
-          msg: t.manga_web_scan_failed,
-          severity: ToastSeverity.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _scanning = false);
     }
+    if (mounted) setState(() => _gridOpen = true);
   }
 
-  // ── 网页小说 ─────────────────────────────────────────────────────────
-
-  Future<void> _readNovelInFushi() async {
-    final InAppWebViewController? controller = _controller;
-    final Uri? url = _currentUrl;
-    if (!_novelAvailable ||
-        controller == null ||
-        url == null ||
-        _extractingNovel) {
-      return;
-    }
-    setState(() => _extractingNovel = true);
-    FushiToast.show(msg: t.novel_web_extract_running);
-    try {
-      await readWebNovelPageInFushi(
-        context: context,
-        ref: ref,
-        controller: controller,
-        pageUrl: url,
-      );
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'FushiWebBrowserPage.readNovel',
-        error,
-        stack,
-      );
-      if (mounted) {
-        FushiToast.show(
-          msg: t.novel_web_extract_failed(error: '$error'),
-          severity: ToastSeverity.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _extractingNovel = false);
-    }
-  }
-
-  Future<void> _toggleAdFilter() async {
-    final bool next = !_appModel.prefsRepo.webComicAdFilter;
-    await _appModel.prefsRepo.setWebComicAdFilter(next);
-    if (mounted) setState(() {});
-  }
-
-  // ── 查词 ─────────────────────────────────────────────────────────────
-
-  Future<void> _evaluateQuiet(String source) async {
-    final InAppWebViewController? controller = _controller;
-    if (controller == null) return;
-    try {
-      await controller.evaluateJavascript(source: source);
-    } on Object {
-      // 平台视图半销毁 / 页面正在跳转：取词失败 no-op。
-    }
-  }
-
-  String _lookupGateScript() {
-    final SrsCardLookupSettings settings = _lookup.settings;
-    return srsCardLookupGateScript(
-      tap: settings.tap,
-      hover: settings.hoverAuto,
-      hostHover: hostOwnsWebViewHoverLookup,
-      open: _lookup.isOpen,
-    );
-  }
-
-  /// 每个新文档（onLoadStop）装一次取词脚本（脚本自带幂等守卫）并下发门控。
-  Future<void> _installLookup(InAppWebViewController controller) async {
-    try {
-      await controller.evaluateJavascript(source: _lookupInstallScript);
-      await controller.evaluateJavascript(source: _lookupGateScript());
-    } on Object catch (error, stack) {
-      ErrorLogService.instance.log(
-        'FushiWebBrowserPage.installLookup',
-        error,
-        stack,
-      );
-    }
-  }
-
-  void _toggleLookup() {
-    setState(() => _lookupEnabled = !_lookupEnabled);
-    if (!_lookupEnabled) _lookup.closeAll();
-    unawaited(_evaluateQuiet(_lookupGateScript()));
-  }
-
-  RenderBox? get _webViewBox {
-    final RenderObject? r = _webViewKey.currentContext?.findRenderObject();
-    return r is RenderBox && r.attached && r.hasSize ? r : null;
-  }
-
-  void _onTextSelected(Object? raw) {
-    final RenderBox? box = _webViewBox;
-    if (box == null || raw is! String || !_lookupEnabled) return;
-    final Object? json;
-    try {
-      json = jsonDecode(raw);
-    } on FormatException {
-      return;
-    }
-    if (json is! Map<String, dynamic>) return;
-    final ReaderSelectionData data = ReaderSelectionData.fromJson(json);
-    if (data.text.trim().isEmpty) return;
-    final Map<String, double>? r = data.rect;
-    final Rect local = r == null
-        ? Rect.fromCenter(
-            center: box.size.center(Offset.zero),
-            width: 1,
-            height: 1,
-          )
-        : Rect.fromLTWH(
-            r['x'] ?? 0,
-            r['y'] ?? 0,
-            r['width'] ?? 0,
-            r['height'] ?? 0,
-          );
-    _lookup.lookup(
-      SrsCardLookupRequest(
-        term: data.text,
-        anchor: box.localToGlobal(local.topLeft) & local.size,
-        sentence: data.sentence.isEmpty ? data.text : data.sentence,
-        fromHover: data.fromHover,
-        origin: this,
-        onMatched: (int count) => unawaited(
-          _evaluateQuiet(ReaderSelectionScripts.highlightInvocation(count)),
-        ),
-      ),
-    );
-  }
-
-  @override
-  bool lookupAt(Offset globalPosition, {required bool fromHover}) {
-    final RenderBox? box = _webViewBox;
-    if (_controller == null || box == null || !mounted) return false;
-    final Offset local = box.globalToLocal(globalPosition);
-    if (!readerHostHoverPointInside(local, box.size)) return false;
+  void _openDataPage(WebBrowserDataPage page) {
+    setState(() => _drawerOpen = false);
     unawaited(
-      _evaluateQuiet(
-        ReaderSelectionScripts.selectInvocation(
-          local.dx,
-          local.dy,
-          400,
-          fromHover: fromHover,
-        ),
+      openWebBrowserDataPage(
+        context,
+        page,
+        store: _store,
+        prefs: _prefs,
+        onOpen: (Uri url, {bool newTab = false}) =>
+            _navigate(url, newTab: newTab),
       ),
     );
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext _) =>
+            SettingsDetailPage.subPage(webBrowserSettingsDestination),
+      ),
+    );
+    if (!mounted) return;
+    setState(() {
+      _tabStyle = webBrowserTabStyle(_prefs);
+      _tabs.persistSession = webBrowserRestoreTabs(_prefs);
+    });
+  }
+
+  // ── 返回 ─────────────────────────────────────────────────────────────
+
+  bool get _overlayOpen {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    return _gridOpen ||
+        _drawerOpen ||
+        (tab?.fullscreen ?? false) ||
+        (tab?.findOpen ?? false);
+  }
+
+  bool get _openedByOtherTab {
+    final String? opener = _tabs.activeTab?.openerId;
+    return opener != null && _tabs.tabById(opener) != null;
+  }
+
+  WebBrowserBackStep get _backStep => webBrowserBackStep(
+    lookupOpen: _lookup.isOpen,
+    canGoBack: _tabs.activeTab?.canGoBack ?? false,
+    overlayOpen: _overlayOpen,
+    openedByOtherTab: _openedByOtherTab,
+  );
+
+  void _onBackBlocked() {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    switch (_backStep) {
+      case WebBrowserBackStep.closeLookup:
+        // 搜索期占位没有可见层时 closeTop 返回 false：整栈关掉，别让返回键落空。
+        if (!_lookup.closeTop()) _lookup.closeAll();
+      case WebBrowserBackStep.dismissOverlay:
+        if (tab != null && tab.fullscreen) {
+          unawaited(exitTabFullscreen(tab));
+          tab.update(fullscreen: false);
+        } else if (tab != null && tab.findOpen) {
+          tab.update(findOpen: false);
+        } else {
+          setState(() {
+            _gridOpen = false;
+            _drawerOpen = false;
+          });
+        }
+      case WebBrowserBackStep.webHistoryBack:
+        _goBack();
+      case WebBrowserBackStep.closeTab:
+        if (tab != null) closeTab(tab);
+      case WebBrowserBackStep.leavePage:
+        break;
+    }
+  }
+
+  // ── 快捷键 ───────────────────────────────────────────────────────────
+
+  Set<ModifierKey> _pressedModifiers() {
+    final HardwareKeyboard hw = HardwareKeyboard.instance;
+    return <ModifierKey>{
+      if (hw.isControlPressed) ModifierKey.ctrl,
+      if (hw.isShiftPressed) ModifierKey.shift,
+      if (hw.isAltPressed) ModifierKey.alt,
+      if (hw.isMetaPressed) ModifierKey.meta,
+    };
+  }
+
+  KeyEventResult _onKeyEvent(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final ShortcutAction? action = _appModel.shortcutRegistry.resolveKeyboard(
+      event.logicalKey,
+      modifiers: _pressedModifiers(),
+      scope: ShortcutScope.webBrowser,
+      physicalKey: focusedEditableText() == null ? event.physicalKey : null,
+    );
+    if (action == null) return KeyEventResult.ignored;
+    return runShortcut(action)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
+
+  /// WebView 持焦时键盘桥回传的 token → 注册表解析（与 Flutter 持焦同一条路）。
+  void _onBridgeToken(WebBrowserTab tab, String token) {
+    if (!mounted || !isActive(tab)) return;
+    final InputBinding? binding = InputBinding.deserialize(token);
+    if (binding == null) return;
+    final ShortcutAction? action = _appModel.shortcutRegistry.resolveKeyboard(
+      binding.key,
+      modifiers: binding.modifiers,
+      scope: ShortcutScope.webBrowser,
+    );
+    if (action != null) runShortcut(action);
+  }
+
+  /// 执行一个浏览器快捷键动作；返回是否消费。
+  @visibleForTesting
+  bool runShortcut(ShortcutAction action) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    switch (action) {
+      case ShortcutAction.webBrowserNewTab:
+        _newTab();
+      case ShortcutAction.webBrowserCloseTab:
+        if (tab != null) closeTab(tab);
+      case ShortcutAction.webBrowserReopenClosedTab:
+        unawaited(_reopenClosedTab());
+      case ShortcutAction.webBrowserFocusAddress:
+        _addressBar.currentState?.beginEditing();
+      case ShortcutAction.webBrowserNextTab:
+        _tabs.activateRelative(1);
+      case ShortcutAction.webBrowserPreviousTab:
+        _tabs.activateRelative(-1);
+      case ShortcutAction.webBrowserFindInPage:
+        _openFind();
+      case ShortcutAction.webBrowserBack:
+        _goBack();
+      case ShortcutAction.webBrowserForward:
+        _goForward();
+      case ShortcutAction.webBrowserReload:
+        _reload();
+      case ShortcutAction.webBrowserToggleBookmark:
+        unawaited(_toggleBookmark());
+      case ShortcutAction.webBrowserZoomIn:
+        if (tab != null) _setTextZoom(webBrowserStepTextZoom(tab.textZoom, 1));
+      case ShortcutAction.webBrowserZoomOut:
+        if (tab != null) _setTextZoom(webBrowserStepTextZoom(tab.textZoom, -1));
+      case ShortcutAction.webBrowserZoomReset:
+        _setTextZoom(100);
+      default:
+        return false;
+    }
     return true;
   }
 
-  @override
-  void onLookupStateChanged({
-    required bool open,
-    required SrsCardLookupSurface? origin,
-  }) {
-    if (!open) _hostHover.reset();
-    unawaited(
-      _evaluateQuiet(
-        _lookupGateScript() +
-            (!open || !identical(origin, this)
-                ? ReaderSelectionScripts.clearInvocation()
-                : ''),
-      ),
+  // ── 工具栏 / 菜单 ─────────────────────────────────────────────────────
+
+  List<WebBrowserAction> _featureActions(WebBrowserTab? tab) {
+    if (tab == null) return const <WebBrowserAction>[];
+    final List<WebBrowserAction> all = <WebBrowserAction>[
+      for (final WebBrowserFeature f in _features) ...f.actions(context, tab),
+    ];
+    all.sort(
+      (WebBrowserAction a, WebBrowserAction b) =>
+          b.priority.compareTo(a.priority),
     );
+    return all;
   }
 
-  /// macOS：页内收不到 mousemove，宿主侧接管悬停取词（BUG-2508 同法）。
-  void _onHostHover(PointerHoverEvent event) {
-    if (!_lookupEnabled || _lookup.isOpen) return;
-    if (!_hostHover.shouldLookup(
-      event.localPosition,
-      shiftPressed: HardwareKeyboard.instance.isShiftPressed,
-      hoverAutoLookup: _lookup.settings.hoverAuto,
-    )) {
-      return;
-    }
-    lookupAt(event.position, fromHover: true);
+  FushiToolbarItem _toToolbarItem(WebBrowserAction a) => FushiToolbarItem(
+    key: ValueKey<String>('web-browser-action-${a.id}'),
+    icon: a.icon,
+    label: a.label,
+    selected: a.selected,
+    onPressed: a.onPressed,
+  );
+
+  /// 工具栏动作（高 → 低优先级）。宽度不够时从末尾起收进「⋯」。
+  List<FushiToolbarItem> _toolbarItems(WebBrowserShellLayout layout) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final List<WebBrowserAction> feature = _featureActions(tab)
+        .where(
+          (WebBrowserAction a) =>
+              a.placement == WebBrowserActionPlacement.toolbar,
+        )
+        .toList();
+    final List<({int priority, FushiToolbarItem item})> ranked =
+        <({int priority, FushiToolbarItem item})>[
+          (
+            priority: 85,
+            item: FushiToolbarItem(
+              key: const ValueKey<String>('web-browser-lookup'),
+              icon: FushiIcons.readerMode,
+              label: _lookupEnabled
+                  ? t.web_browser_lookup_on
+                  : t.web_browser_lookup_off,
+              selected: _lookupEnabled,
+              onPressed: _toggleLookup,
+            ),
+          ),
+          for (final WebBrowserAction a in feature)
+            (priority: a.priority, item: _toToolbarItem(a)),
+          if (layout != WebBrowserShellLayout.bottomBar)
+            (
+              priority: 40,
+              item: FushiToolbarItem(
+                key: const ValueKey<String>('web-browser-downloads'),
+                icon: FushiIcons.download,
+                label: t.web_browser_menu_downloads,
+                onPressed: () => _openDataPage(WebBrowserDataPage.downloads),
+              ),
+            ),
+          if (layout == WebBrowserShellLayout.topStrip) ...<
+            ({int priority, FushiToolbarItem item})
+          >[
+            (
+              priority: 30,
+              item: FushiToolbarItem(
+                key: const ValueKey<String>('web-browser-bookmarks'),
+                icon: FushiIcons.bookmarks,
+                label: t.web_browser_menu_bookmarks,
+                onPressed: () => _openDataPage(WebBrowserDataPage.bookmarks),
+              ),
+            ),
+            (
+              priority: 29,
+              item: FushiToolbarItem(
+                key: const ValueKey<String>('web-browser-history'),
+                icon: FushiIcons.history,
+                label: t.web_browser_menu_history,
+                onPressed: () => _openDataPage(WebBrowserDataPage.history),
+              ),
+            ),
+          ],
+        ];
+    ranked.sort(
+      (
+        ({int priority, FushiToolbarItem item}) a,
+        ({int priority, FushiToolbarItem item}) b,
+      ) => b.priority.compareTo(a.priority),
+    );
+    return <FushiToolbarItem>[for (final r in ranked) r.item];
   }
 
-  // ── 构建 ─────────────────────────────────────────────────────────────
-
-  /// 底部工具栏的动作，按优先级从高到低（宽度不够时从末尾起收进「⋯」）。
-  List<FushiToolbarItem> _toolbarItems() {
-    final InAppWebViewController? controller = _controller;
-    return <FushiToolbarItem>[
-      FushiToolbarItem(
-        key: const ValueKey<String>('web-browser-back'),
-        icon: FushiIcons.back,
-        label: t.back,
-        onPressed: controller != null && _canGoBack
-            ? () => unawaited(controller.goBack())
-            : null,
-      ),
-      FushiToolbarItem(
-        key: const ValueKey<String>('web-browser-forward'),
-        icon: FushiIcons.forward,
-        label: t.web_browser_forward,
-        onPressed: controller != null && _canGoForward
-            ? () => unawaited(controller.goForward())
-            : null,
-      ),
-      if (_novelAvailable)
-        FushiToolbarItem(
-          key: const ValueKey<String>('web-browser-read-novel'),
-          icon: FushiIcons.books,
-          label: t.novel_web_page_read,
-          selected: _extractingNovel,
-          onPressed: controller != null && _currentUrl != null
-              ? (_extractingNovel ? null : () => unawaited(_readNovelInFushi()))
-              : null,
+  List<WebBrowserMenuSection> _menuSections({
+    required WebBrowserShellLayout layout,
+    required List<FushiToolbarItem> overflow,
+  }) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final bool hasPage = tab?.url != null;
+    final List<WebBrowserAction> featureMenu = _featureActions(tab)
+        .where(
+          (WebBrowserAction a) => a.placement == WebBrowserActionPlacement.menu,
+        )
+        .toList();
+    return <WebBrowserMenuSection>[
+      WebBrowserMenuItems(<WebBrowserMenuItem>[
+        for (final FushiToolbarItem item in overflow)
+          WebBrowserMenuItem(
+            id: 'overflow-${item.key}',
+            icon: item.icon,
+            label: item.label,
+            selected: item.selected,
+            enabled: item.onPressed != null,
+            onSelected: item.onPressed ?? () {},
+          ),
+      ]),
+      WebBrowserMenuItems(<WebBrowserMenuItem>[
+        WebBrowserMenuItem(
+          id: 'new-tab',
+          icon: FushiIcons.add,
+          label: t.web_browser_tab_new,
+          onSelected: _newTab,
         ),
-      FushiToolbarItem(
-        key: const ValueKey<String>('web-browser-lookup'),
-        icon: FushiIcons.readerMode,
-        label: _lookupEnabled
-            ? t.web_browser_lookup_on
-            : t.web_browser_lookup_off,
-        selected: _lookupEnabled,
-        onPressed: _toggleLookup,
-      ),
-      FushiToolbarItem(
-        key: const ValueKey<String>('web-browser-site-add'),
-        icon: FushiIcons.bookmarkAdd,
-        label: t.web_browser_site_add,
-        onPressed: controller != null && _currentUrl != null
-            ? () => unawaited(_addCurrentSite())
-            : null,
-      ),
+        if (webBrowserIncognitoSupported())
+          WebBrowserMenuItem(
+            id: 'new-incognito-tab',
+            icon: FushiIcons.visibilityOff,
+            label: t.web_browser_tab_new_incognito,
+            onSelected: () => _newTab(incognito: true),
+          ),
+      ]),
+      WebBrowserMenuItems(<WebBrowserMenuItem>[
+        WebBrowserMenuItem(
+          id: 'history',
+          icon: FushiIcons.history,
+          label: t.web_browser_menu_history,
+          onSelected: () => _openDataPage(WebBrowserDataPage.history),
+        ),
+        WebBrowserMenuItem(
+          id: 'bookmarks',
+          icon: FushiIcons.bookmarks,
+          label: t.web_browser_menu_bookmarks,
+          onSelected: () => _openDataPage(WebBrowserDataPage.bookmarks),
+        ),
+        WebBrowserMenuItem(
+          id: 'downloads',
+          icon: FushiIcons.download,
+          label: t.web_browser_menu_downloads,
+          onSelected: () => _openDataPage(WebBrowserDataPage.downloads),
+        ),
+      ]),
+      WebBrowserMenuItems(<WebBrowserMenuItem>[
+        WebBrowserMenuItem(
+          id: 'forward',
+          icon: FushiIcons.forward,
+          label: t.web_browser_forward,
+          enabled: tab?.canGoForward ?? false,
+          onSelected: _goForward,
+        ),
+        WebBrowserMenuItem(
+          id: 'find',
+          icon: FushiIcons.manageSearch,
+          label: t.web_browser_find_hint,
+          enabled: hasPage,
+          onSelected: _openFind,
+        ),
+        WebBrowserMenuItem(
+          id: 'share',
+          icon: FushiIcons.share,
+          label: t.share,
+          enabled: hasPage,
+          onSelected: () => unawaited(shareTabUrl(tab!)),
+        ),
+        WebBrowserMenuItem(
+          id: 'copy-link',
+          icon: FushiIcons.copy,
+          label: t.web_browser_link_copy,
+          enabled: hasPage,
+          onSelected: () => unawaited(copyTabUrl(tab!)),
+        ),
+        WebBrowserMenuItem(
+          id: 'open-external',
+          icon: FushiIcons.openInNew,
+          label: t.web_browser_menu_open_external,
+          enabled: hasPage,
+          onSelected: () => unawaited(openTabInSystemBrowser(tab!)),
+        ),
+        WebBrowserMenuItem(
+          id: 'site-add',
+          icon: FushiIcons.bookmarkAdd,
+          label: t.web_browser_site_add,
+          enabled: hasPage,
+          onSelected: () => unawaited(_addCurrentSite()),
+        ),
+        if (webBrowserDesktopModeSupported())
+          WebBrowserMenuItem(
+            id: 'desktop-site',
+            icon: FushiIcons.laptop,
+            label: t.web_browser_menu_desktop_site,
+            selected: tab?.desktopMode ?? false,
+            enabled: tab != null,
+            onSelected: () => tab?.update(desktopMode: !(tab.desktopMode)),
+          ),
+      ]),
+      if (tab != null)
+        WebBrowserMenuWidget(
+          id: 'text-size',
+          height: 56,
+          builder: (BuildContext _) => WebBrowserTextZoomRow(
+            value: tab.textZoom,
+            onChanged: _setTextZoom,
+          ),
+        ),
+      if (layout != WebBrowserShellLayout.bottomBar)
+        WebBrowserMenuWidget(
+          id: 'tab-style',
+          height: 84,
+          builder: (BuildContext _) => WebBrowserTabStyleSegments(
+            value: _tabStyle,
+            onChanged: (WebBrowserTabStyle s) => unawaited(_setTabStyle(s)),
+          ),
+        ),
+      WebBrowserMenuItems(<WebBrowserMenuItem>[
+        for (final WebBrowserAction a in featureMenu)
+          WebBrowserMenuItem(
+            id: 'feature-${a.id}',
+            icon: a.icon,
+            label: a.label,
+            selected: a.selected,
+            enabled: a.onPressed != null,
+            onSelected: a.onPressed ?? () {},
+          ),
+      ]),
+      WebBrowserMenuItems(<WebBrowserMenuItem>[
+        WebBrowserMenuItem(
+          id: 'settings',
+          icon: FushiIcons.settings,
+          label: t.web_browser_menu_settings,
+          onSelected: () => unawaited(_openSettings()),
+        ),
+      ]),
     ];
   }
 
-  /// 恒在「⋯」里的低频开关。
-  List<FushiToolbarItem> _menuItems() => <FushiToolbarItem>[
-    if (_scanDriver != null)
-      FushiToolbarItem(
-        key: const ValueKey<String>('web-browser-ad-filter'),
-        icon: FushiIcons.webAssetOff,
-        label: _appModel.prefsRepo.webComicAdFilter
-            ? t.manga_web_ad_filter_on
-            : t.manga_web_ad_filter_off,
-        onPressed: () => unawaited(_toggleAdFilter()),
-      ),
-  ];
-
-  /// 地址栏：左侧 ✕ 退出浏览页，尾部刷新。[compact] = 手机上的 40 高胶囊
-  /// （桌面是 56 高的独立搜索栏）。
-  Widget _buildAddressField(BuildContext context, {required bool compact}) {
-    final InAppWebViewController? controller = _controller;
-    final double? iconSize = compact ? kFushiSearchFieldIconSize : null;
-    final EdgeInsets? iconPadding = compact ? const EdgeInsets.all(4) : null;
-    return FushiSearchField(
-      fieldKey: const ValueKey<String>('web-browser-address'),
-      controller: _address,
-      focusNode: _addressFocus,
-      hintText: t.web_browser_search_hint,
-      keyboardType: TextInputType.url,
-      size: compact ? FushiSearchFieldSize.regular : FushiSearchFieldSize.large,
-      leading: FushiSearchLeading(
-        child: FushiIconButton(
-          key: const ValueKey<String>('web-browser-close'),
-          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-          icon: FushiIcons.close,
-          size: iconSize,
-          padding: iconPadding,
-          onTap: _close,
-        ),
-      ),
-      trailing: <Widget>[
-        FushiIconButton(
-          key: const ValueKey<String>('web-browser-reload'),
-          tooltip: t.refresh,
-          icon: FushiIcons.refresh,
-          size: iconSize,
-          padding: iconPadding,
-          onTap: controller == null
-              ? null
-              : () => unawaited(controller.reload()),
-        ),
-      ],
-      onChanged: (String _) {},
-      onSubmitted: _openAddress,
-    );
-  }
-
-  /// 底部 chrome：桌面只有居中工具栏；手机竖屏是「地址栏 / 工具栏」两行紧凑档。
-  /// 整块落在网页下方的页面底色上，不叠在网页上——WebView 内容拿不到底部让位，
-  /// 叠上去末尾那段永远被挡。
-  Widget _buildBottomBar(BuildContext context, {required bool withAddress}) {
-    final double side = withAddress
-        ? FushiDesignTokens.of(context).spacing.gap
-        : kFushiFloatingToolbarEdgeMargin;
-    return Padding(
-      padding: withBottomSafeInset(
-        context,
-        withAddress
-            ? EdgeInsets.fromLTRB(side, 4, side, 4)
-            : EdgeInsets.fromLTRB(side, 8, side, 12),
-      ),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints box) {
-          final Widget toolbar = Center(
-            child: _buildToolbar(budget: box.maxWidth, compact: withAddress),
-          );
-          if (!withAddress) return toolbar;
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildAddressField(context, compact: true),
-              const SizedBox(height: 4),
-              toolbar,
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  /// 手机横屏：地址栏与工具栏并成顶部一行，地址栏吃剩余宽度。
-  Widget _buildMobileTopBar(BuildContext context) {
-    final double side = FushiDesignTokens.of(context).spacing.gap;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(side, 4, side, 4),
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints box) => Row(
-          children: <Widget>[
-            Expanded(child: _buildAddressField(context, compact: true)),
-            SizedBox(width: side),
-            _buildToolbar(
-              budget: box.maxWidth - _kMobileTopAddressMinWidth - side,
-              compact: true,
+  /// 标签区域右键 / 长按菜单。
+  void _showTabContextMenu(WebBrowserTab tab, Offset position) {
+    final bool wide =
+        webBrowserChromeLayout(size: MediaQuery.sizeOf(context)) ==
+        WebBrowserChromeLayout.top;
+    unawaited(
+      showWebBrowserMenu(
+        context: context,
+        globalPosition: position,
+        sections: <WebBrowserMenuSection>[
+          if (wide)
+            WebBrowserMenuItems(<WebBrowserMenuItem>[
+              if (_tabStyle == WebBrowserTabStyle.sidebar)
+                WebBrowserMenuItem(
+                  id: 'use-top',
+                  icon: FushiIcons.webAsset,
+                  label: t.web_browser_tab_style_use_top,
+                  onSelected: () =>
+                      unawaited(_setTabStyle(WebBrowserTabStyle.topStrip)),
+                )
+              else
+                WebBrowserMenuItem(
+                  id: 'use-sidebar',
+                  icon: FushiIcons.menuOpen,
+                  label: t.web_browser_tab_style_use_sidebar,
+                  onSelected: () =>
+                      unawaited(_setTabStyle(WebBrowserTabStyle.sidebar)),
+                ),
+            ]),
+          WebBrowserMenuItems(<WebBrowserMenuItem>[
+            WebBrowserMenuItem(
+              id: 'tab-close',
+              icon: FushiIcons.close,
+              label: t.web_browser_tab_close,
+              onSelected: () => closeTab(tab),
             ),
-          ],
-        ),
+            WebBrowserMenuItem(
+              id: 'tab-close-others',
+              icon: FushiIcons.deleteSweep,
+              label: t.web_browser_tab_close_others,
+              enabled: _tabs.length > 1,
+              onSelected: () => _tabs.closeOtherTabs(tab),
+            ),
+            WebBrowserMenuItem(
+              id: 'tab-reopen',
+              icon: FushiIcons.undo,
+              label: t.web_browser_tab_reopen_closed,
+              onSelected: () => unawaited(_reopenClosedTab()),
+            ),
+          ]),
+          WebBrowserMenuItems(<WebBrowserMenuItem>[
+            WebBrowserMenuItem(
+              id: 'tab-copy-link',
+              icon: FushiIcons.copy,
+              label: t.web_browser_link_copy,
+              enabled: tab.url != null,
+              onSelected: () => unawaited(copyTabUrl(tab)),
+            ),
+          ]),
+        ],
       ),
     );
   }
 
-  /// 悬浮工具栏 + 「阅读本章」FAB，在 [budget] 宽度里能平铺几颗就平铺几颗。
-  Widget _buildToolbar({required double budget, required bool compact}) {
-    final bool canRead = _scanDriver != null && _controller != null;
-    final Widget? fab = canRead
-        ? FushiToolbarFab(
-            key: const ValueKey<String>('web-browser-read-in-fushi'),
-            icon: FushiIcons.manga,
-            tooltip: t.manga_web_chapter_read,
-            onPressed: _scanning
-                ? null
-                : () => unawaited(_readChapterInFushi()),
-          )
-        : null;
-    final List<FushiToolbarItem> items = _toolbarItems();
-    final List<FushiToolbarItem> menu = _menuItems();
+  WebBrowserTabCallbacks get _tabCallbacks => WebBrowserTabCallbacks(
+    isActive: isActive,
+    onSelect: (WebBrowserTab tab) {
+      _tabs.activate(tab);
+      if (_drawerOpen) setState(() => _drawerOpen = false);
+    },
+    onClose: closeTab,
+    onNewTab: _newTab,
+    onNewIncognitoTab: webBrowserIncognitoSupported()
+        ? () => _newTab(incognito: true)
+        : null,
+    onContextMenu: _showTabContextMenu,
+    onReorder: _tabs.reorder,
+  );
+
+  // ── 构建：chrome ─────────────────────────────────────────────────────
+
+  Color _barColor(BuildContext context) => isGlassDesign(context)
+      ? appleColorsOf(context).secondaryGroupedBackground
+      : Theme.of(context).colorScheme.surfaceContainer;
+
+  Widget _addressBarFor(
+    BuildContext context, {
+    required bool reloadInside,
+    required WebBrowserSuggestionsDirection direction,
+  }) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    return WebBrowserAddressBar(
+      key: _addressBar,
+      url: tab?.url,
+      focusNode: _addressFocus,
+      suggestions: _suggestions,
+      onSubmitted: _submitAddress,
+      onOpenSuggestion: _openSuggestion,
+      bookmarked: _bookmarked,
+      onToggleBookmark: tab?.url != null && !(tab?.incognito ?? true)
+          ? () => unawaited(_toggleBookmark())
+          : null,
+      onReload: reloadInside && tab?.url != null ? _reload : null,
+      incognito: tab?.incognito ?? false,
+      direction: direction,
+    );
+  }
+
+  Widget _iconButton({
+    required Key key,
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onTap,
+    bool selected = false,
+  }) => FushiIconButton(
+    key: key,
+    icon: icon,
+    tooltip: tooltip,
+    selected: selected,
+    onTap: onTap,
+  );
+
+  /// 动作按钮 + 「⋯」：在 [budget] 宽度里能平铺几颗就平铺几颗。
+  List<Widget> _actionButtons(
+    BuildContext context, {
+    required WebBrowserShellLayout layout,
+    required double budget,
+    Widget? beforeMenu,
+    double beforeMenuWidth = 0,
+  }) {
+    final List<FushiToolbarItem> items = _toolbarItems(layout);
     final int visible = _toolbarFit.visibleFor(
       groups: <List<FushiToolbarItem>>[items],
-      budget: budget - (fab == null ? 0 : 56 + kFushiFloatingToolbarFabGap),
-      pinnedMenu: menu.isNotEmpty,
-      padding: 2 * (compact ? 4 : kFushiFloatingToolbarPadding),
+      budget: budget - beforeMenuWidth,
+      pinnedMenu: true,
     );
     final ({
       List<List<FushiToolbarItem>> groups,
@@ -1119,135 +1468,626 @@ class _FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       const <FushiToolbarItem>[],
       visible,
     );
-    return FushiFloatingToolbar(
+    return <Widget>[
+      for (final List<FushiToolbarItem> g in split.groups)
+        for (final FushiToolbarItem item in g)
+          _iconButton(
+            key: item.key ?? ValueKey<String>(item.label),
+            icon: item.icon,
+            tooltip: item.label,
+            selected: item.selected,
+            onTap: item.onPressed,
+          ),
+      ?beforeMenu,
+      Builder(
+        builder: (BuildContext anchor) => _iconButton(
+          key: const ValueKey<String>('web-browser-more'),
+          icon: FushiIcons.more,
+          tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+          onTap: () => unawaited(
+            showWebBrowserMenu(
+              context: context,
+              anchor: anchor,
+              sections: _menuSections(layout: layout, overflow: split.overflow),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// 宽窗口顶栏（48dp）：[侧边栏开关] 后退 刷新 | 地址栏 | 动作 ⋯。
+  Widget _buildTopBar(
+    BuildContext context,
+    WebBrowserShellLayout layout, {
+    required bool overlaySidebar,
+    required bool compactHeight,
+  }) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final bool sidebar = layout == WebBrowserShellLayout.sidebar;
+    final bool sidebarShown = overlaySidebar ? _drawerOpen : _sidebarOpen;
+    final List<Widget> leading = <Widget>[
+      if (sidebar)
+        _iconButton(
+          key: const ValueKey<String>('web-browser-sidebar-toggle'),
+          icon: FushiIcons.menuOpen,
+          tooltip: t.web_browser_sidebar_toggle,
+          selected: sidebarShown,
+          onTap: () => _toggleSidebar(overlaySidebar),
+        ),
+      _iconButton(
+        key: const ValueKey<String>('web-browser-back'),
+        icon: FushiIcons.back,
+        tooltip: t.back,
+        onTap: _backOrLeave,
+      ),
+      if (!compactHeight)
+        _iconButton(
+          key: const ValueKey<String>('web-browser-reload'),
+          icon: FushiIcons.refresh,
+          tooltip: t.refresh,
+          onTap: tab?.url != null ? _reload : null,
+        ),
+    ];
+    return Container(
       key: const ValueKey<String>('web-browser-toolbar'),
-      // 一组：悬浮工具栏不画组间分隔线。
-      groups: <List<FushiToolbarItem>>[
-        <FushiToolbarItem>[
-          for (final List<FushiToolbarItem> g in split.groups) ...g,
-        ],
-      ],
-      overflow: <FushiToolbarItem>[...split.overflow, ...menu],
-      fab: fab,
-      compact: compact,
+      height: kWebBrowserTopBarHeight,
+      color: _barColor(context),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints box) {
+          final double slot = fushiTopBarActionSlotWidth(context);
+          final double addressMin = compactHeight ? 200 : 280;
+          final double budget =
+              box.maxWidth - leading.length * slot - addressMin - 16;
+          return Row(
+            children: <Widget>[
+              ...leading,
+              const SizedBox(width: 8),
+              Expanded(
+                child: _addressBarFor(
+                  context,
+                  reloadInside: compactHeight,
+                  direction: WebBrowserSuggestionsDirection.down,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ..._actionButtons(context, layout: layout, budget: budget),
+            ],
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildWebView(BuildContext context) {
-    final Widget Function(BuildContext context)? stub =
-        FushiWebBrowserPage.debugWebViewBuilder;
-    if (stub != null) return stub(context);
-    final WebAdblockWiring? adblock = _adblock;
-    if (!_environmentReady || adblock == null) return const FushiLoadingView();
-    final Uri? initial = _pendingUrl;
-    final Widget webView = KeyedSubtree(
-      key: _deathGuard.rebuildKey,
-      child: InAppWebView(
-        key: _webViewKey,
-        webViewEnvironment: _environment,
-        initialUrlRequest: initial == null
-            ? null
-            : URLRequest(url: WebUri.uri(initial)),
-        initialSettings: adblock.settings,
-        initialUserScripts: UnmodifiableListView<UserScript>(
-          adblock.userScripts,
-        ),
-        shouldInterceptRequest: adblock.shouldInterceptRequest,
-        onLoadStart: (InAppWebViewController _, WebUri? url) =>
-            adblock.onLoadStart(url),
-        onWebViewCreated: (InAppWebViewController controller) {
-          adblock.onWebViewCreated(controller);
-          controller.addJavaScriptHandler(
-            handlerName: 'onTextSelected',
-            callback: limitWebPayload(
-              'onTextSelected',
-              kWebPayloadSmallMaxChars,
-              (List<dynamic> arguments) {
-                if (mounted && arguments.isNotEmpty) {
-                  _onTextSelected(arguments.first);
-                }
-                return null;
-              },
-            ),
-          );
-          controller.addJavaScriptHandler(
-            handlerName: 'onTapEmpty',
-            callback: (List<dynamic> _) => null,
-          );
-          _scanDriver?.attach(controller);
-          if (mounted) {
-            setState(() {
-              _controller = controller;
-              _pendingUrl = null;
-            });
-          }
-        },
-        onLoadStop: (InAppWebViewController controller, WebUri? url) {
-          unawaited(_syncNavigation(controller, url));
-          unawaited(_installLookup(controller));
-        },
-        onTitleChanged: (InAppWebViewController controller, String? _) =>
-            unawaited(_syncNavigation(controller, null)),
-        onUpdateVisitedHistory:
-            (InAppWebViewController controller, WebUri? url, bool? _) {
-              adblock.onUpdateVisitedHistory(url);
-              unawaited(_syncNavigation(controller, url));
-            },
-        onWebContentProcessDidTerminate: (InAppWebViewController _) =>
-            unawaited(_deathGuard.handleWebContentTerminated()),
-        onRenderProcessGone:
-            (InAppWebViewController _, RenderProcessGoneDetail detail) =>
-                unawaited(
-                  _deathGuard.handleDeath(
-                    didCrash: detail.didCrash,
-                    rendererPriorityAtExit: detail.rendererPriorityAtExit,
+  Widget _tabCountButton(BuildContext context) {
+    final int count = _tabs.length;
+    final ThemeData theme = Theme.of(context);
+    final Color fg = isGlassDesign(context)
+        ? appleColorsOf(context).label
+        : theme.colorScheme.onSurface;
+    return Tooltip(
+      message: t.web_browser_tab_count(count: count),
+      child: Semantics(
+        button: true,
+        label: t.web_browser_tab_count(count: count),
+        excludeSemantics: true,
+        child: FushiPressScale(
+          child: InkResponse(
+            key: const ValueKey<String>('web-browser-tab-count'),
+            radius: 24,
+            onTap: () => unawaited(_openGrid()),
+            child: SizedBox.square(
+              dimension: 48,
+              child: Center(
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: fg, width: 1.8),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
-    if (!hostOwnsWebViewHoverLookup) return webView;
-    return Listener(onPointerHover: _onHostHover, child: webView);
+  }
+
+  /// 竖屏底栏：后退 | 地址栏（刷新在内）| 查词等动作 | 标签数 | ⋯。
+  Widget _buildBottomBar(BuildContext context) {
+    return GestureDetector(
+      onVerticalDragEnd: (DragEndDetails d) {
+        if ((d.primaryVelocity ?? 0) > 200 &&
+            webBrowserCollapseOnScroll(_prefs)) {
+          setState(
+            () => _collapse = const WebBrowserCollapseState(collapsed: true),
+          );
+        }
+      },
+      child: Container(
+        key: const ValueKey<String>('web-browser-toolbar'),
+        color: _barColor(context),
+        padding: withBottomSafeInset(
+          context,
+          const EdgeInsets.fromLTRB(4, 6, 4, 6),
+        ),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints box) {
+            final double slot = fushiTopBarActionSlotWidth(context);
+            final double budget = box.maxWidth - slot - 180 - 8;
+            return Row(
+              children: <Widget>[
+                _iconButton(
+                  key: const ValueKey<String>('web-browser-back'),
+                  icon: FushiIcons.back,
+                  tooltip: t.back,
+                  onTap: _backOrLeave,
+                ),
+                Expanded(
+                  child: _addressBarFor(
+                    context,
+                    reloadInside: true,
+                    direction: WebBrowserSuggestionsDirection.up,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                ..._actionButtons(
+                  context,
+                  layout: WebBrowserShellLayout.bottomBar,
+                  budget: budget,
+                  beforeMenu: _tabCountButton(context),
+                  beforeMenuWidth: slot,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// 收起后的小地址条（26dp，只剩「🔒 域名」）：点一下或往回划展开。
+  Widget _buildMiniBar(BuildContext context) {
+    final Uri? url = _tabs.activeTab?.url;
+    final ThemeData theme = Theme.of(context);
+    void expand() =>
+        setState(() => _collapse = const WebBrowserCollapseState());
+    return Semantics(
+      button: true,
+      label: t.web_browser_toolbar_expand,
+      child: GestureDetector(
+        key: const ValueKey<String>('web-browser-mini-bar'),
+        behavior: HitTestBehavior.opaque,
+        onTap: expand,
+        onVerticalDragEnd: (DragEndDetails _) => expand(),
+        child: Container(
+          height: kWebBrowserMiniBarHeight,
+          color: isGlassDesign(context)
+              ? appleColorsOf(context).groupedBackground
+              : theme.colorScheme.surface,
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiIcon(
+                url?.scheme == 'https' ? FushiIcons.lock : FushiIcons.info,
+                size: 12,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                url?.host ?? t.web_browser_tab_new,
+                style: theme.textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _progressLine(BuildContext context) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final bool loading = tab?.loading ?? false;
+    return SizedBox(
+      height: 2,
+      child: AnimatedOpacity(
+        opacity: loading ? 1 : 0,
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        child: LinearProgressIndicator(
+          key: const ValueKey<String>('web-browser-progress'),
+          value: loading ? tab!.progress : 1,
+          minHeight: 2,
+          backgroundColor: Colors.transparent,
+        ),
+      ),
+    );
+  }
+
+  // ── 构建：内容 ───────────────────────────────────────────────────────
+
+  Widget _buildStartView(BuildContext context, WebBrowserTab tab) {
+    final List<WebBrowserSite> sites = _loadWebBrowserSites(_appModel);
+    final ThemeData theme = Theme.of(context);
+    return ColoredBox(
+      key: ValueKey<String>('web-browser-start-${tab.id}'),
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).groupedBackground
+          : theme.colorScheme.surface,
+      child: FushiEntranceScope(
+        child: GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 200,
+            mainAxisExtent: 116,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+          ),
+          itemCount: sites.length,
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int i) => _WebBrowserSiteTile(
+              site: sites[i],
+              onOpen: () => _navigate(sites[i].url, tab: tab),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabBody(BuildContext context, WebBrowserTab tab) {
+    return ListenableBuilder(
+      listenable: tab,
+      builder: (BuildContext context, Widget? _) {
+        if (tab.url == null) return _buildStartView(context, tab);
+        final WebBrowserLoadError? error = tab.error;
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            FushiWebBrowserPage.debugTabViewBuilder?.call(context, tab) ??
+                WebBrowserTabView(
+                  key: ValueKey<String>(tab.id),
+                  tab: tab,
+                  host: this,
+                  lookupEnabled: _lookupEnabled,
+                ),
+            if (error != null)
+              WebBrowserErrorView(
+                error: error,
+                onRetry: () => retryTabLoad(tab),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTabs(BuildContext context) {
+    final WebBrowserTab? active = _tabs.activeTab;
+    final WebBrowserTab? findTab = active != null && active.findOpen
+        ? active
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (findTab != null)
+          WebBrowserFindBar(
+            key: ValueKey<String>('web-browser-find-${findTab.id}'),
+            tab: findTab,
+          ),
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              for (final WebBrowserTab tab in _tabs.tabs)
+                if (_tabs.isLive(tab) || identical(tab, active))
+                  Offstage(
+                    key: ValueKey<String>('web-browser-tab-${tab.id}'),
+                    offstage: !identical(tab, active),
+                    child: TickerMode(
+                      enabled: identical(tab, active),
+                      child: _buildTabBody(context, tab),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSidebar(BuildContext context) => WebBrowserSidebar(
+    tabs: _tabs.tabs,
+    callbacks: _tabCallbacks,
+    store: _store,
+    onOpenUrl: (Uri url) {
+      setState(() => _drawerOpen = false);
+      _navigate(url);
+    },
+    onOpenPage: _openDataPage,
+  );
+
+  Widget _buildWide(
+    BuildContext context,
+    WebBrowserShellLayout layout,
+    Size size,
+  ) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final bool fullscreen = tab?.fullscreen ?? false;
+    final bool overlaySidebar = webBrowserSidebarOverlays(size: size);
+    final bool compactHeight = size.height < kWebBrowserCompactHeight;
+    final bool collapsed =
+        _collapseAllowed(layout, size) && _collapse.collapsed;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    final bool sidebar = layout == WebBrowserShellLayout.sidebar;
+    final bool pushOpen = sidebar && !overlaySidebar && _sidebarOpen;
+    final bool drawerOpen = sidebar && overlaySidebar && _drawerOpen;
+
+    final Widget chrome = fullscreen
+        ? const SizedBox(width: double.infinity)
+        : collapsed
+        ? _buildMiniBar(context)
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              AnimatedContainer(
+                duration: duration,
+                curve: FushiMotion.standard,
+                height: layout == WebBrowserShellLayout.topStrip
+                    ? kWebBrowserTabStripHeight
+                    : 0,
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.bottomCenter,
+                    minHeight: kWebBrowserTabStripHeight,
+                    maxHeight: kWebBrowserTabStripHeight,
+                    child: _hiddenUnless(
+                      layout == WebBrowserShellLayout.topStrip,
+                      WebBrowserTabStrip(
+                        tabs: _tabs.tabs,
+                        callbacks: _tabCallbacks,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              _buildTopBar(
+                context,
+                layout,
+                overlaySidebar: overlaySidebar,
+                compactHeight: compactHeight,
+              ),
+            ],
+          );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (!fullscreen)
+          ColoredBox(
+            color: _barColor(context),
+            child: SafeArea(bottom: false, child: const SizedBox.shrink()),
+          ),
+        ClipRect(
+          child: AnimatedSize(
+            duration: duration,
+            curve: FushiMotion.standard,
+            alignment: Alignment.topCenter,
+            child: chrome,
+          ),
+        ),
+        if (!fullscreen) _progressLine(context),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              AnimatedContainer(
+                duration: duration,
+                curve: FushiMotion.standard,
+                width: pushOpen && !fullscreen ? kWebBrowserSidebarWidth : 0,
+                child: ClipRect(
+                  child: OverflowBox(
+                    alignment: Alignment.centerRight,
+                    minWidth: kWebBrowserSidebarWidth,
+                    maxWidth: kWebBrowserSidebarWidth,
+                    child: overlaySidebar
+                        ? const SizedBox.shrink()
+                        : _hiddenUnless(
+                            pushOpen && !fullscreen,
+                            _buildSidebar(context),
+                          ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    _buildTabs(context),
+                    if (sidebar && overlaySidebar && !fullscreen) ...<Widget>[
+                      IgnorePointer(
+                        ignoring: !drawerOpen,
+                        child: AnimatedOpacity(
+                          opacity: drawerOpen ? 1 : 0,
+                          duration: duration,
+                          child: GestureDetector(
+                            key: const ValueKey<String>(
+                              'web-browser-sidebar-scrim',
+                            ),
+                            onTap: () => setState(() => _drawerOpen = false),
+                            child: const ColoredBox(color: Color(0x47000000)),
+                          ),
+                        ),
+                      ),
+                      AnimatedPositioned(
+                        duration: duration,
+                        curve: FushiMotion.standard,
+                        left: drawerOpen ? 0 : -kWebBrowserSidebarWidth - 16,
+                        top: 0,
+                        bottom: 0,
+                        width: kWebBrowserSidebarWidth,
+                        child: Material(
+                          elevation: drawerOpen ? 4 : 0,
+                          child: _buildSidebar(context),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 收起中的侧边栏 / 标签栏仍挂在树上（宽高过渡时内容跟着滑出），但收起后不能
+  /// 被手柄 / 键盘焦点、读屏、指针摸到。
+  Widget _hiddenUnless(bool shown, Widget child) => ExcludeFocus(
+    excluding: !shown,
+    child: ExcludeSemantics(
+      excluding: !shown,
+      child: IgnorePointer(ignoring: !shown, child: child),
+    ),
+  );
+
+  bool _collapseAllowed(WebBrowserShellLayout layout, Size size) =>
+      webBrowserToolbarCollapsible(layout: layout, size: size) &&
+      webBrowserCollapseOnScroll(_prefs) &&
+      !_addressFocus.hasFocus &&
+      !_lookup.isOpen;
+
+  Widget _buildNarrow(BuildContext context, Size size) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final bool fullscreen = tab?.fullscreen ?? false;
+    final bool collapsed =
+        _collapseAllowed(WebBrowserShellLayout.bottomBar, size) &&
+        _collapse.collapsed;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (!fullscreen)
+          ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: const SafeArea(bottom: false, child: SizedBox.shrink()),
+          ),
+        Expanded(child: _buildTabs(context)),
+        if (!fullscreen) ...<Widget>[
+          if (!collapsed) _progressLine(context),
+          ClipRect(
+            child: AnimatedSize(
+              duration: duration,
+              curve: FushiMotion.standard,
+              alignment: Alignment.bottomCenter,
+              child: collapsed
+                  ? Padding(
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.paddingOf(context).bottom,
+                      ),
+                      child: _buildMiniBar(context),
+                    )
+                  : _buildBottomBar(context),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final WebBrowserChromeLayout layout = webBrowserChromeLayout(
-      size: MediaQuery.sizeOf(context),
+    final Size size = MediaQuery.sizeOf(context);
+    final WebBrowserShellLayout layout = webBrowserShellLayout(
+      size: size,
+      style: _tabStyle,
     );
-    // 查词弹窗开合要重算 PopScope：弹窗栈挂在本页路由之内、没有自己的 PopScope。
-    return ListenableBuilder(
-      listenable: _lookup,
-      builder: (BuildContext context, Widget? page) => PopScope(
-        // 系统返回 / 侧滑 / Esc：先关查词弹窗，再退网页历史，都退到头才离开浏览页。
-        canPop:
-            webBrowserBackStep(
-              lookupOpen: _lookup.isOpen,
-              canGoBack: _canGoBack,
-            ) ==
-            WebBrowserBackStep.leavePage,
-        onPopInvokedWithResult: (bool didPop, Object? _) {
-          if (!didPop) _onBackBlocked();
-        },
-        child: page!,
-      ),
-      child: SrsCardLookupHost(
-        controller: _lookup,
-        child: FushiPageScaffold(
-          title: _pageTitle.trim().isEmpty ? t.web_browser_title : _pageTitle,
-          header: switch (layout) {
-            WebBrowserChromeLayout.top => _buildMobileTopBar(context),
-            // 窄窗口顶部只留状态栏（脚手架的 SafeArea 已让出）。
-            WebBrowserChromeLayout.bottom => const SizedBox.shrink(),
+    final WebBrowserTab? tab = _tabs.activeTab;
+    final Color bg = isGlassDesign(context)
+        ? appleColorsOf(context).groupedBackground
+        : Theme.of(context).colorScheme.surface;
+    final Widget body = layout == WebBrowserShellLayout.bottomBar
+        ? _buildNarrow(context, size)
+        : _buildWide(context, layout, size);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return PopScope(
+      // 系统返回 / 侧滑 / Esc：先关查词弹窗与临时层，再退网页历史，都退到头
+      // 才离开浏览页。
+      canPop: _backStep == WebBrowserBackStep.leavePage,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) _onBackBlocked();
+      },
+      child: Focus(
+        debugLabel: 'web-browser-shortcuts',
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _onKeyEvent,
+        child: SrsCardLookupHost(
+          controller: _lookup,
+          // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
+          cardSource: () {
+            final WebBrowserTab? active = _tabs.activeTab;
+            final WebBrowserCardSource? source = active == null
+                ? null
+                : webBrowserCardSourceOf(active);
+            return source == null
+                ? null
+                : (title: source.title, url: source.url);
           },
-          // 正文是平台 WebView，内容在 WebView 内部滚动、拿不到页头让位：不叠放。
-          extendBodyBehindHeader: false,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Expanded(child: _buildWebView(context)),
-              if (layout == WebBrowserChromeLayout.bottom)
-                _buildBottomBar(context, withAddress: true),
-            ],
+          child: Material(
+            color: bg,
+            child: Semantics(
+              label: tab == null || tab.displayTitle.isEmpty
+                  ? t.web_browser_title
+                  : tab.displayTitle,
+              container: true,
+              child: Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  body,
+                  IgnorePointer(
+                    ignoring: !_gridOpen,
+                    child: AnimatedSwitcher(
+                      duration: duration,
+                      switchInCurve: FushiMotion.enter,
+                      switchOutCurve: FushiMotion.exit,
+                      transitionBuilder:
+                          (Widget child, Animation<double> animation) =>
+                              FadeTransition(
+                                opacity: fushiUnitClamped(animation),
+                                child: ScaleTransition(
+                                  scale: Tween<double>(
+                                    begin: 0.96,
+                                    end: 1,
+                                  ).animate(animation),
+                                  child: child,
+                                ),
+                              ),
+                      child: _gridOpen
+                          ? WebBrowserTabGrid(
+                              tabs: _tabs.tabs,
+                              callbacks: _tabCallbacks,
+                              thumbnails: _thumbnails,
+                              onDone: () => setState(() => _gridOpen = false),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

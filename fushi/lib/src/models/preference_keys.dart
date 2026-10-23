@@ -692,8 +692,32 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
   'video_time_display_remaining',
   'video_youtube_quality_height',
+  // bool（默认 true）：浏览器手机上滚动时收起工具栏（web_browser_prefs.dart，设备本地）。
+  'web_browser_collapse_toolbar_on_scroll',
+  // string（JSON 数组）：浏览器用户自定义搜索引擎（web_browser_sites.dart，设备本地）。
+  'web_browser_custom_search_engines',
+  // bool（默认 false）：浏览器新标签页默认桌面版网页（web_browser_prefs.dart，设备本地）。
+  'web_browser_desktop_mode_default',
+  // bool（默认 false）：浏览器网页深色模式（web_browser_prefs.dart，设备本地）。
+  'web_browser_force_dark',
+  // bool：浏览器整页注音开关（features/furigana，设备本地）。
+  'web_browser_furigana',
+  // bool：浏览器生词高亮开关（features/furigana，设备本地）。
+  'web_browser_known_words',
+  // bool（默认 true）：浏览器重启后恢复上次的标签页（web_browser_prefs.dart，设备本地）。
+  'web_browser_restore_tabs',
+  // string（内置引擎名 / custom:<id>，默认 google）：浏览器当前搜索引擎（设备本地）。
+  'web_browser_search_engine',
+  // bool（默认 true）：浏览器侧边栏模式下侧边栏是否展开（web_browser_prefs.dart，设备本地）。
+  'web_browser_sidebar_open',
+  // string（JSON）：浏览器按站点记住的权限决定（web_browser_site_settings.dart，设备本地）。
+  'web_browser_site_permissions',
   // string（JSON 数组，空串 = 用预置站点）：app 内浏览器的站点书签（web_browser_sites.dart）。
   'web_browser_sites',
+  // string（sidebar / topStrip，默认 sidebar）：浏览器宽窗口标签页样式（web_browser_prefs.dart，设备本地）。
+  'web_browser_tab_style',
+  // bool（默认 true）：浏览器 YouTube 页内可点字幕（features/youtube_subtitles，设备本地）。
+  'web_browser_youtube_subtitles',
   // bool（默认 true）：网页漫画章末二维码广告页剔除（判定在 native/fushi_web_core 的 comic_ad）。
   'web_comic_ad_filter',
   'yomitan_api_key',

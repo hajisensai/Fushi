@@ -1212,6 +1212,8 @@ IconData _scopeIcon(ShortcutScope scope) => switch (scope) {
       ShortcutScope.audiobook => FushiIcons.audiobook,
       ShortcutScope.manga => FushiIcons.readingMode,
       ShortcutScope.video => FushiIcons.video,
+      // globe 已给了 global，这里用「浏览器窗口」字形区分。
+      ShortcutScope.webBrowser => FushiIcons.webAsset,
       ShortcutScope.gamepad => FushiIcons.games,
       ShortcutScope.dictionaryPopup => FushiIcons.language,
     };

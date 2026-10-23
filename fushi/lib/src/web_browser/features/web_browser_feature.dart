@@ -42,8 +42,18 @@ abstract class WebBrowserFeature {
   List<WebBrowserAction> actions(BuildContext context, WebBrowserTab tab) =>
       const <WebBrowserAction>[];
 
+  /// 功能自身状态变了（开关类动作的 [WebBrowserAction.selected]、某个动作出现 /
+  /// 消失），而标签页本身没变：壳监听它重建工具栏 / 「⋯」菜单。null = 动作只随
+  /// 标签页状态变化。
+  Listenable? get actionsChanged => null;
+
   /// 浏览页销毁。
   void dispose() {}
+}
+
+/// [WebBrowserFeature.actionsChanged] 的现成实现：功能内部 `notify()` 一下。
+class WebBrowserFeatureNotifier extends ChangeNotifier {
+  void notify() => notifyListeners();
 }
 
 /// 功能动作摆放的位置。

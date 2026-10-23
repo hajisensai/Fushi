@@ -477,22 +477,31 @@ void main() {
           'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
         ),
       );
+      // 浏览器的「阅读本章」是一个功能插件（WebComicFeature）：扫图执行器整条只在
+      // 合规门开时建，插件的 available 由它是否为 null 决定，浏览页不装不可用的插件。
+      final String comic = compactCode(
+        read('lib/src/web_browser/tab_view/features/web_comic_feature.dart'),
+      );
+      expect(
+        comic,
+        contains(
+          '_scanDriver=webComicReaderActionAvailable()?WebComicScanDriver():null',
+        ),
+        reason: '扫图执行器整条只在合规门开时装。',
+      );
+      expect(comic, contains('boolgetavailable=>_scanDriver!=null;'));
+      expect(comic, isNot(contains('Platform.isIOS')));
+      final String features = compactCode(
+        read('lib/src/web_browser/features/web_browser_features.dart'),
+      );
+      expect(features, contains('WebComicFeature(ref:ref)'));
+      expect(
+        features,
+        contains('.where((WebBrowserFeaturef)=>f.available)'),
+        reason: '装配点只保留 available 的插件。',
+      );
       final String browser = compactCode(
         read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
-      );
-      expect(
-        browser,
-        contains(
-          'finalWebComicScanDriver?_scanDriver=webComicReaderActionAvailable()'
-          '?WebComicScanDriver():null;',
-        ),
-        reason: '扫图执行器整条只在合规门开时装；「阅读本章」按钮由它是否为 null 决定。',
-      );
-      expect(
-        browser,
-        contains(
-          'final bool canRead = _scanDriver != null'.replaceAll(' ', ''),
-        ),
       );
       expect(
         browser,
@@ -543,21 +552,24 @@ void main() {
           'StoreRestrictedCapability.onlineNovelSource.isAvailable;',
         ),
       );
-      final String browser = compactCode(
-        read('lib/src/pages/implementations/fushi_web_browser_page.dart'),
+      // 浏览器上的小说动作是功能插件（WebNovelFeature），available 即合规门。
+      final String novel = compactCode(
+        read('lib/src/web_browser/tab_view/features/web_novel_feature.dart'),
       );
       expect(
-        browser,
-        contains('finalbool_novelAvailable=webNovelReaderActionAvailable();'),
+        novel,
+        contains('_novelAvailable=webNovelReaderActionAvailable();'),
         reason: '小说动作整条只在合规门开时装。',
       );
+      expect(novel, contains('boolgetavailable=>_novelAvailable;'));
+      expect(novel, contains('if(!_novelAvailable||'));
+      expect(novel, isNot(contains('Platform.isIOS')));
       expect(
-        browser,
-        contains('if(_novelAvailable)FushiToolbarItem('),
-        reason: '工具栏上的「用 Fushi 阅读（小说）」由同一个判据决定出不出现。',
+        compactCode(
+          read('lib/src/web_browser/features/web_browser_features.dart'),
+        ),
+        contains('WebNovelFeature(ref:ref)'),
       );
-      expect(browser, contains('if(!_novelAvailable||'));
-      expect(browser, isNot(contains('Platform.isIOS')));
       final String library = compactCode(
         read('lib/src/media/novel/web/web_novel_library.dart'),
       );

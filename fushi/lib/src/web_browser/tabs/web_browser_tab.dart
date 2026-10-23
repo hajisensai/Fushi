@@ -41,6 +41,7 @@ class WebBrowserTab extends ChangeNotifier {
   bool _desktopMode = false;
   int _textZoom = 100;
   bool _fullscreen = false;
+  bool _findOpen = false;
   InAppWebViewController? _controller;
 
   Uri? get url => _url;
@@ -75,6 +76,9 @@ class WebBrowserTab extends ChangeNotifier {
   /// 网页请求了全屏（HTML5 视频全屏）：浏览器 chrome 全部让位。
   bool get fullscreen => _fullscreen;
 
+  /// 页内查找条开着（壳在此时显示 `WebBrowserFindBar`）。
+  bool get findOpen => _findOpen;
+
   /// 当前活着的控制器；标签页被回收（只剩地址）或 WebView 还没建时为 null。
   InAppWebViewController? get controller => _controller;
 
@@ -89,6 +93,7 @@ class WebBrowserTab extends ChangeNotifier {
     bool? desktopMode,
     int? textZoom,
     bool? fullscreen,
+    bool? findOpen,
   }) {
     bool changed = false;
     if (url != null && url != _url) {
@@ -130,6 +135,10 @@ class WebBrowserTab extends ChangeNotifier {
     }
     if (fullscreen != null && fullscreen != _fullscreen) {
       _fullscreen = fullscreen;
+      changed = true;
+    }
+    if (findOpen != null && findOpen != _findOpen) {
+      _findOpen = findOpen;
       changed = true;
     }
     if (changed) notifyListeners();
