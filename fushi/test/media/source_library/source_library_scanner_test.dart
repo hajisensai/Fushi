@@ -556,6 +556,33 @@ void main() {
       } catch (_) {}
     });
 
+    // Tz04dfBf2f：扫描根不存在 / 读不到（iOS 沙盒外未授权路径、盘没挂上）时以前
+    // listFiles 回空列表，来源记成「0 个媒体、无错误」，用户看不出是读不到。
+    for (final String kind in <String>['book', 'video', 'manga']) {
+      test('$kind source: unreadable root records lastScanError, not 0 silently',
+          () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final String missing = p.join(tmp.path, 'not-mounted');
+        final int sid = await db.insertMediaSource(
+            MediaSourcesCompanion.insert(
+                label: 'Gone',
+                mediaKind: kind,
+                rootPath: missing,
+                createdAt: 1000));
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+
+        final SourceScanSummary summary =
+            await SourceLibraryScanner(db).scan(source);
+
+        expect(summary.succeeded, isFalse);
+        expect(summary.importedMediaCount, 0);
+        final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+        expect(after.lastScanError, contains('not accessible'));
+        expect(after.lastScanError, contains(missing));
+      });
+    }
+
     test('video source: inserts videos with sourceId + cues + scan result',
         () async {
       final FushiDatabase db = _memDb();

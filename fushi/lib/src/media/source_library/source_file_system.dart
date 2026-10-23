@@ -130,7 +130,12 @@ class LocalSourceFileSystem implements SourceFileSystem {
   }) async {
     final Directory dir = Directory(dirPath);
     if (!await dir.exists()) {
-      return const <SourceFileEntry>[];
+      // 不存在 / 读不到（盘没挂上、iOS 沙盒外未授权的安全作用域路径）必须抛：以前
+      // 回空列表，扫描记成「0 个媒体、无错误」，来源页看起来扫过了却什么都没有，
+      // 用户只能猜是不是子文件夹没扫（Tz04dfBf2f）。抛出后扫描器把原因落进
+      // lastScanError，来源行照实显示。
+      throw FileSystemException(
+          'Source folder does not exist or is not accessible', dirPath);
     }
     final List<SourceFileEntry> entries = <SourceFileEntry>[];
     await for (final FileSystemEntity e

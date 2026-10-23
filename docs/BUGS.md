@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3265 条。点号进各自文件。
+> 共 3268 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3664](bugs/BUG-3664-model-download-concurrent-writers-416.md) | ✅ | ✅ | 识别模型 / MOSS 下载挂在弹层上：关掉再开会起第二条写者，`.part` 写坏后永远 HTTP 416 |
+| [BUG-3663](bugs/BUG-3663-book-series-trailing-label-dropped.md) | ✅ | ✅ | 结尾 `<系列名>` 被当出版标签丢掉，日文轻小说整套散在书架上 |
+| [BUG-3662](bugs/BUG-3662-source-root-unreadable-scans-silently-empty.md) | ✅ | ✅ | 常驻来源的扫描根读不到时静默记成「0 个媒体、无错误」 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
