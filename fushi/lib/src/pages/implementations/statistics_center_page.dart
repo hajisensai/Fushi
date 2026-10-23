@@ -242,7 +242,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     try {
       final AppModel appModel = ref.read(appProvider);
       final FushiDatabase db = appModel.database;
-      // 复习（SRS）时长读时并进总览（BUG-3663），复习模块关着时不出现。
+      // 复习（SRS）时长读时并进总览（BUG-3704），复习模块关着时不出现。
       final StatFacts facts = await loadStatFacts(
         db,
         activityLimit: 0,

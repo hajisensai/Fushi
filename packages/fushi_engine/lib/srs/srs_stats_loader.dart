@@ -3,7 +3,7 @@
 ///
 /// 只读：不写任何事件、不刷新缓存。复习记录读 `srs_stat_reviews`（有效复习投影，与卡片缓存
 /// 同一次重算产出，见 `SrsDbStore._cardCacheRow`）的定长列，不再全量读复习日志逐条
-/// jsonDecode 重放历史（BUG-3662：20 万条日志时那一段占装载的一半）。
+/// jsonDecode 重放历史（BUG-3703：20 万条日志时那一段占装载的一半）。
 library;
 
 import 'dart:math' as math;

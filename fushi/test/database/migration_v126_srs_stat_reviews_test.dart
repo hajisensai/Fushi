@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v126：`srs_stat_reviews`——SRS 有效复习投影（本机可重建缓存，BUG-3662）。
+/// v126：`srs_stat_reviews`——SRS 有效复习投影（本机可重建缓存，BUG-3703）。
 ///
 /// 迁移只建空表 + 两条索引：存量库的投影由 SrsDbStore 打开时按缓存修订号补算（引擎测试
 /// `packages/fushi_engine/test/srs/srs_stat_projection_test.dart` 钉那一步）；重跑幂等。

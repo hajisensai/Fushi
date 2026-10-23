@@ -3,7 +3,7 @@
 ///
 /// - 只读 SRS 自己的数据（有效复习投影 `srs_stat_reviews` / `srs_cards_cache` / 笔记），按
 ///   profile；不碰学习统计域的 `study_segments`（那是阅读 / 观看 / 游戏的时长事实表）。统计
-///   中心总览要的复习时长由 `loadStatFacts(includeReviews:)` 读同一张投影表合并（BUG-3663）。
+///   中心总览要的复习时长由 `loadStatFacts(includeReviews:)` 读同一张投影表合并（BUG-3704）。
 /// - 「今天」与日序号一律走 SRS 的 [SrsDayContext]（翻日时刻 + UTC 偏移，与复习页、
 ///   牌组计数同一口径），不走统计页的 dateKey。
 /// - 复习 = 有效的评分日志（被 undo 撤销的、被判与原生日志等价的导入日志都不算，

@@ -224,7 +224,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
         (t.home_filter_read, Icons.menu_book_outlined, kActivityMediaBook),
         (t.home_filter_watch, Icons.movie_outlined, kActivityMediaVideo),
         (t.home_filter_game, Icons.sports_esports_outlined, kActivityMediaGame),
-        // 统计中心总览读时并进来的 SRS 复习时长（BUG-3663）。
+        // 统计中心总览读时并进来的 SRS 复习时长（BUG-3704）。
         (t.nav_srs, Icons.style_outlined, kStatMediaReview),
       ])
         if (_section(context, tokens, label, icon, kind) case final Widget w) w,

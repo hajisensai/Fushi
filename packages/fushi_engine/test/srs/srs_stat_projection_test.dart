@@ -1,4 +1,4 @@
-// 有效复习投影（srs_stat_reviews）的真实库契约（BUG-3662）：
+// 有效复习投影（srs_stat_reviews）的真实库契约（BUG-3703）：
 // - 增量维护的结果 = 整份重建的结果 = 从原始日志逐卡重放的结果；
 // - undo / 再答 / 导入 revlog 都随卡片缓存重算；保留原始时刻，日界换了读时重分桶；
 // - 存量库（缓存修订号 < 2）打开时补齐；
@@ -78,7 +78,7 @@ void main() {
       jsonEncode(r.data),
   ];
 
-  /// 旧装载路径的结果：全量读日志、逐条 jsonDecode、按卡重放（BUG-3662 之前的实现）。
+  /// 旧装载路径的结果：全量读日志、逐条 jsonDecode、按卡重放（BUG-3703 之前的实现）。
   Future<List<String>> fromRawLogs(SrsDayContext day) async {
     final Map<String, List<SrsReviewLog>> byCard =
         <String, List<SrsReviewLog>>{};
