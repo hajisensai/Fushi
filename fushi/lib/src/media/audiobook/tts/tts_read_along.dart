@@ -63,6 +63,29 @@ class TtsStartException implements Exception {
   final TtsStartProblem problem;
 }
 
+/// 朗读失败提示的时机：只有播放器正停在调度失败的那一句上时才暂停 + 提示，每次失败
+/// 只提示一次（失败事件与播放器换句通知都会来问）。
+///
+/// 播放器会预读下一句（just_audio 提前向下一句的音频源要数据）：下一句失败时当前句
+/// 还能读完，提前暂停等于把一次网络抖动放大成打断。
+class TtsFailureReportGate {
+  int? _reported;
+
+  /// 调度停在 [failedIndex]（null = 没有失败），播放器在 [currentIndex]。
+  bool shouldReport({required int? failedIndex, required int currentIndex}) {
+    if (failedIndex == null) {
+      _reported = null;
+      return false;
+    }
+    if (failedIndex != currentIndex || _reported == failedIndex) return false;
+    _reported = failedIndex;
+    return true;
+  }
+
+  /// 调度已恢复（用户重试 / 离开失败句）：同一句再失败要重新提示。
+  void reset() => _reported = null;
+}
+
 /// [TtsReadAlong.switchVoice] 的结果。
 enum TtsVoiceSwitchOutcome {
   /// 与当前声音完全相同（含凭据），什么都没做。
@@ -187,6 +210,7 @@ class TtsReadAlong extends ChangeNotifier {
   StreamSubscription<TtsSegmentEvent>? _eventsSub;
   bool _wasPlaying = false;
   bool _released = false;
+  final TtsFailureReportGate _failureGate = TtsFailureReportGate();
 
   /// 调度因失败停下时的原因（UI 展示；用户按播放即重试）。
   TtsFailure? get failure => _scheduler.failure;
@@ -497,17 +521,38 @@ class TtsReadAlong extends ChangeNotifier {
       // （失败句本身不被跳过——回到它时会重新请求）。
       final int? failed = _scheduler.failedIndex;
       if (failed != null && failed != index) {
-        _scheduler.resume();
-        notifyListeners();
+        _resumeAfterFailure();
       }
+      // 播放器预读下一句时它失败了，当时还在读上一句没有打断；现在播到它了才停下提示。
+      _reportFailureIfOnFailedSentence();
     }
     final bool playing = c.isPlaying;
     // 失败停下后用户再按播放 = 重试。
     if (playing && !_wasPlaying && _scheduler.failure != null) {
-      _scheduler.resume();
-      notifyListeners();
+      _resumeAfterFailure();
     }
     _wasPlaying = playing;
+  }
+
+  void _resumeAfterFailure() {
+    _scheduler.resume();
+    _failureGate.reset();
+    notifyListeners();
+  }
+
+  /// 调度停在失败句上、且播放器正停在那一句：暂停并提示（每次失败只提示一次）。
+  /// 失败句不是当前句（播放器预读后一句 / 后台预取）时不打断正在播放的句子。
+  void _reportFailureIfOnFailedSentence() {
+    final TtsFailure? failure = _scheduler.failure;
+    if (failure == null) return;
+    if (!_failureGate.shouldReport(
+      failedIndex: _scheduler.failedIndex,
+      currentIndex: currentIndex,
+    )) {
+      return;
+    }
+    unawaited(_controller?.pause());
+    onFailure?.call(failure);
   }
 
   /// 预取缓冲按「播放时长」而不是句数算：2 倍速下同样 3 句只够 1/2 的时间，合成
@@ -539,9 +584,10 @@ class TtsReadAlong extends ChangeNotifier {
           cues[index].endMs = audio.durationMs;
           c?.refreshCueTimings();
         }
-      case TtsSegmentFailed(:final TtsFailure failure):
-        unawaited(c?.pause());
-        onFailure?.call(failure);
+      case TtsSegmentFailed():
+        // 后台预取失败（blocking 为假）不打断播放：调度器记下这句，播放器要到它时
+        // 重新请求。播放器要的句子失败才可能需要停下，且只在播到它时停。
+        _reportFailureIfOnFailedSentence();
     }
     notifyListeners();
   }

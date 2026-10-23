@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:test/test.dart';
@@ -21,6 +22,7 @@ void main() {
     int count = 10,
     int lookahead = 3,
     int? concurrency,
+    TtsRetryPolicy retryPolicy = TtsRetryPolicy.none,
   }) {
     final TtsSynthesisScheduler s = TtsSynthesisScheduler(
       provider: provider,
@@ -29,6 +31,7 @@ void main() {
       audioIdentity: const <String, Object?>{'provider': 'fake', 'revision': 0},
       lookahead: lookahead,
       concurrency: concurrency,
+      retryPolicy: retryPolicy,
     );
     schedulers.add(s);
     return s;
@@ -170,6 +173,129 @@ void main() {
     expect((e as TtsSegmentFailed).failure.code, TtsFailureCode.badResponse);
   });
 
+  group('prefetch failure does not interrupt playback', () {
+    test('a failed prefetch is recorded without halting; demanded sentences '
+        'keep synthesizing', () async {
+      provider.failing.add('t2');
+      final TtsSynthesisScheduler s = make(lookahead: 3);
+      final List<TtsSegmentEvent> events = <TtsSegmentEvent>[];
+      s.events.listen(events.add);
+      s.setCursor(0);
+      await waitFor(() => events.whereType<TtsSegmentFailed>().isNotEmpty);
+      await settle();
+      final TtsSegmentFailed failed = events
+          .whereType<TtsSegmentFailed>()
+          .single;
+      expect(failed.index, 2);
+      expect(failed.blocking, isFalse);
+      expect(s.failure, isNull, reason: '预取失败不能让调度停下');
+      expect(s.failedIndex, isNull);
+      expect(s.prefetchFailed(2), isTrue);
+      // 预取暂停：失败后不再往后打 t3（断网 / 限流时不把整个窗口打一遍）。
+      expect(provider.calls, <String>['t0', 't1', 't2']);
+
+      // 播放器要的句子照常可用。
+      expect((await s.ensure(1)).key, s.keyOf(1));
+      // 播放前进：解除预取暂停，跳过失败句继续往后预取。
+      s.setCursor(1);
+      await waitFor(() => provider.calls.contains('t3'));
+      await waitFor(() => provider.calls.contains('t4'));
+      expect(
+        provider.calls.where((String t) => t == 't2').length,
+        1,
+        reason: '预取不会反复重打失败句',
+      );
+      expect(s.failure, isNull);
+    });
+
+    test('the failed sentence is re-requested when the player reaches it, '
+        'and succeeds if the service recovered', () async {
+      provider.failing.add('t1');
+      final TtsSynthesisScheduler s = make(lookahead: 2);
+      final List<TtsSegmentEvent> events = <TtsSegmentEvent>[];
+      s.events.listen(events.add);
+      s.setCursor(0);
+      await waitFor(() => s.prefetchFailed(1));
+      provider.failing.clear();
+      final TtsCachedAudio audio = await s.ensure(1);
+      expect(audio.key, s.keyOf(1));
+      expect(s.prefetchFailed(1), isFalse);
+      expect(provider.calls.where((String t) => t == 't1').length, 2);
+      expect(s.failure, isNull);
+    });
+
+    test('the failed sentence still fails when demanded: halts as a blocking '
+        'failure (never silently skipped)', () async {
+      provider.failing.add('t1');
+      final TtsSynthesisScheduler s = make(lookahead: 2);
+      final List<TtsSegmentEvent> events = <TtsSegmentEvent>[];
+      s.events.listen(events.add);
+      s.setCursor(0);
+      await waitFor(() => s.prefetchFailed(1));
+      bool completed = false;
+      unawaited(
+        s
+            .ensure(1)
+            .then(
+              (_) => completed = true,
+              onError: (Object _) => completed = true,
+            ),
+      );
+      await waitFor(() => s.failure != null);
+      await settle();
+      final TtsSegmentFailed blocking = events
+          .whereType<TtsSegmentFailed>()
+          .last;
+      expect(blocking.index, 1);
+      expect(blocking.blocking, isTrue);
+      expect(s.failedIndex, 1);
+      expect(completed, isFalse, reason: '播放器保持缓冲，不跳到下一句');
+    });
+  });
+
+  group('transient failures are retried before surfacing', () {
+    const TtsRetryPolicy fast = TtsRetryPolicy(baseDelay: Duration.zero);
+
+    test('a sentence that fails transiently twice still plays', () async {
+      provider.failTimes['t0'] = 2;
+      final TtsSynthesisScheduler s = make(lookahead: 0, retryPolicy: fast);
+      final List<TtsSegmentEvent> events = <TtsSegmentEvent>[];
+      s.events.listen(events.add);
+      final TtsCachedAudio audio = await s.ensure(0);
+      expect(audio.key, s.keyOf(0));
+      expect(provider.calls, <String>['t0', 't0', 't0']);
+      await settle(20);
+      expect(events.whereType<TtsSegmentFailed>(), isEmpty);
+      expect(s.failure, isNull);
+    });
+
+    test('retries are bounded: the last real failure is reported', () async {
+      provider.failTimes['t0'] = 100;
+      final TtsSynthesisScheduler s = make(lookahead: 0, retryPolicy: fast);
+      unawaited(s.ensure(0).then((_) {}, onError: (Object _) {}));
+      await waitFor(() => s.failure != null);
+      expect(s.failure!.code, TtsFailureCode.network);
+      expect(provider.calls.length, 4, reason: '1 次 + 3 次重试');
+    });
+
+    test('non-transient failures are not retried', () async {
+      final _RejectingProvider rejecting = _RejectingProvider();
+      final TtsSynthesisScheduler s = TtsSynthesisScheduler(
+        provider: rejecting,
+        cache: cache,
+        texts: texts(1),
+        audioIdentity: const <String, Object?>{},
+        lookahead: 0,
+        retryPolicy: fast,
+      );
+      schedulers.add(s);
+      unawaited(s.ensure(0).then((_) {}, onError: (Object _) {}));
+      await waitFor(() => s.failure != null);
+      expect(s.failure!.code, TtsFailureCode.rejected);
+      expect(rejecting.attempts, 1);
+    });
+  });
+
   test('jumping the cursor cancels out-of-window in-flight work', () async {
     provider = FakeTtsProvider(maxConcurrency: 2)..gateAll = true;
     final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
@@ -195,47 +321,47 @@ void main() {
     expect(s.isInFlight(0) && s.isInFlight(1), isTrue);
   });
 
+  test('stale demand outside the new window is cancelled and its waiter ends '
+      'with cancelled (not left pending until dispose)', () async {
+    provider.gateAll = true;
+    final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
+    final Future<TtsCachedAudio> demanded = s.ensure(0);
+    await waitFor(() => provider.calls.length == 1);
+    final Future<void> expectation = expectLater(
+      demanded,
+      throwsA(
+        isA<TtsFailure>().having(
+          (TtsFailure f) => f.code,
+          'code',
+          TtsFailureCode.cancelled,
+        ),
+      ),
+    );
+    // ensure(0) 后立刻跳到远处：_demanded 被裁掉、在途 t0 被取消，等待者以「已取消」
+    // 结束——不是挂到 dispose。
+    s.setCursor(15);
+    await expectation;
+    await waitFor(() => provider.cancelled.contains('t0'));
+    expect(s.failure, isNull);
+  });
+
   test(
-    'stale demand outside the new window is cancelled and its waiter ends '
-    'with cancelled (not left pending until dispose)',
+    'a waiter inside the new window keeps waiting across setCursor',
     () async {
       provider.gateAll = true;
-      final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
-      final Future<TtsCachedAudio> demanded = s.ensure(0);
-      await waitFor(() => provider.calls.length == 1);
-      final Future<void> expectation = expectLater(
-        demanded,
-        throwsA(
-          isA<TtsFailure>().having(
-            (TtsFailure f) => f.code,
-            'code',
-            TtsFailureCode.cancelled,
-          ),
-        ),
-      );
-      // ensure(0) 后立刻跳到远处：_demanded 被裁掉、在途 t0 被取消，等待者以「已取消」
-      // 结束——不是挂到 dispose。
-      s.setCursor(15);
-      await expectation;
-      await waitFor(() => provider.cancelled.contains('t0'));
-      expect(s.failure, isNull);
+      final TtsSynthesisScheduler s = make(count: 20, lookahead: 3);
+      final Future<TtsCachedAudio> demanded = s.ensure(2);
+      await waitFor(() => provider.calls.contains('t2'));
+      s.setCursor(1);
+      bool done = false;
+      unawaited(demanded.then((_) => done = true, onError: (Object _) {}));
+      await settle();
+      expect(done, isFalse, reason: '窗口内的请求不能被误取消');
+      provider.release('t2');
+      final TtsCachedAudio audio = await demanded;
+      expect(audio.path, s.audioPathOf(2));
     },
   );
-
-  test('a waiter inside the new window keeps waiting across setCursor', () async {
-    provider.gateAll = true;
-    final TtsSynthesisScheduler s = make(count: 20, lookahead: 3);
-    final Future<TtsCachedAudio> demanded = s.ensure(2);
-    await waitFor(() => provider.calls.contains('t2'));
-    s.setCursor(1);
-    bool done = false;
-    unawaited(demanded.then((_) => done = true, onError: (Object _) {}));
-    await settle();
-    expect(done, isFalse, reason: '窗口内的请求不能被误取消');
-    provider.release('t2');
-    final TtsCachedAudio audio = await demanded;
-    expect(audio.path, s.audioPathOf(2));
-  });
 
   test('re-requesting a cancelled sentence registers a fresh waiter', () async {
     final TtsSynthesisScheduler s = make(count: 20, lookahead: 1);
@@ -377,5 +503,20 @@ class _UnabortableProvider extends TtsProvider {
     await File(outputPath).writeAsBytes(buildWav());
     wrote = true;
     return const TtsResult(format: TtsAudioFormat.wav);
+  }
+}
+
+/// 服务端拒收这一句（HTTP 400）：不是临时失败，不能重试。
+class _RejectingProvider extends FakeTtsProvider {
+  int attempts = 0;
+
+  @override
+  Future<TtsResult> synthesize(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+  }) async {
+    attempts++;
+    throw const TtsFailure(TtsFailureCode.rejected, 'HTTP 400');
   }
 }
