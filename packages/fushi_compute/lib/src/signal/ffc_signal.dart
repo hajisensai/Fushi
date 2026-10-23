@@ -362,8 +362,9 @@ const int kFfcSnapCueStride = 6;
 
 /// cue 能量吸附参数个数；顺序 `frameMs, maxGapMs, windowMs, minValleyMs,
 /// distancePenalty, tailMs, leadMs, minDurationMs, floorMarginDb, minThresholdDb,
-/// maxThresholdDb, tokenGuardMs, edgeMaxShiftMs, edgeMinVoiceMs, edgeLeadMs, edgeTailMs`。
-const int kFfcSnapParamCount = 16;
+/// maxThresholdDb, tokenGuardMs, edgeMaxShiftMs, edgeMinVoiceMs, edgeLeadMs, edgeTailMs,
+/// cutBiasMs`。
+const int kFfcSnapParamCount = 17;
 
 int _snapCall(
   _SnapDart fn,
@@ -376,7 +377,7 @@ int _snapCall(
     throw ArgumentError.value(cues.length, 'cues', 'not a multiple of stride');
   }
   if (params.length != kFfcSnapParamCount) {
-    throw ArgumentError.value(params.length, 'params', 'expected 16');
+    throw ArgumentError.value(params.length, 'params', 'expected 17');
   }
   return using((Arena arena) {
     final Pointer<Int8> e = arena<Int8>(energy.isEmpty ? 1 : energy.length);

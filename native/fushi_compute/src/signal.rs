@@ -652,10 +652,13 @@ pub struct SnapParams {
     pub edge_min_voice_ms: i64,
     pub edge_lead_ms: i64,
     pub edge_tail_ms: i64,
+    /// 切点的已知偏差补偿：选谷时以「token 推算的切点 + 此值」为中心（RNN-T 发射
+    /// 系统性偏早，切点跟着偏早）。
+    pub cut_bias_ms: i64,
 }
 
 /// 参数数组长度。顺序即 [SnapParams] 的字段顺序。
-pub const SNAP_PARAM_COUNT: usize = 16;
+pub const SNAP_PARAM_COUNT: usize = 17;
 
 /// 每条 cue 在 i64 数组里占的槽数：`[start, end, audioFileIndex, hasTokens, firstOffset, lastOffset]`。
 pub const SNAP_CUE_STRIDE: usize = 6;
@@ -682,6 +685,7 @@ impl SnapParams {
             edge_min_voice_ms: int(p[13])?,
             edge_lead_ms: int(p[14])?,
             edge_tail_ms: int(p[15])?,
+            cut_bias_ms: int(p[16])?,
         };
         // Dart：`~/ frameMs` 遇 0 抛异常；clamp 的上下限反了抛 ArgumentError。
         let ok = params.frame_ms > 0
@@ -822,7 +826,7 @@ fn snap_cues(cues: &mut [SnapCue], db: &[i8], p: &SnapParams) -> i64 {
         if gap < 0 || gap > p.max_gap_ms {
             continue;
         }
-        let b = (cur.end + next.start) / 2;
+        let b = (cur.end + next.start) / 2 + p.cut_bias_ms;
         let f0 = ((b - p.window_ms) / p.frame_ms).max(0);
         let f1 = ((b + p.window_ms) / p.frame_ms).min(n);
         let mut best: i64 = -1;
@@ -1410,7 +1414,7 @@ mod tests {
     fn params() -> Vec<f64> {
         vec![
             20.0, 400.0, 600.0, 120.0, 0.5, 80.0, 40.0, 500.0, 16.0, -50.0, -30.0, 200.0, 600.0,
-            60.0, 150.0, 80.0,
+            60.0, 150.0, 80.0, 0.0,
         ]
     }
 
