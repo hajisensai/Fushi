@@ -783,7 +783,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     _Phase.loading => AsrPipelineStage.loadModel,
     _Phase.running ||
     _Phase.pausing ||
-    _Phase.paused => AsrPipelineStage.transcribe,
+    _Phase.paused ||
+    _Phase.proofreading => AsrPipelineStage.transcribe,
     _Phase.error => _failedStage,
     _Phase.checking || _Phase.ready || _Phase.finished => null,
   };
@@ -1691,6 +1692,8 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.running:
       case _Phase.pausing:
       case _Phase.paused:
+      // AI 校对是在转录稿上再加工一遍（还没到匹配正文），转录格仍算进行中。
+      case _Phase.proofreading:
         return asrPipelineStates(
           current: AsrPipelineStage.transcribe,
           skipped: skipped,
