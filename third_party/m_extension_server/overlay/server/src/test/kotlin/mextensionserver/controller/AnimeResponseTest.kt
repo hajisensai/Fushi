@@ -120,16 +120,18 @@ class AnimeResponseTest {
     }
 
     @Test
-    fun `lib gate accepts manga 1_4 and 1_6 and anime 14 to 16`() {
+    fun `lib gate accepts manga 1_4 and 1_6 and anime 14 to 17`() {
         assertEquals("1.4", InspectHandler.supportedLibVersionLabel("manga", 1.4))
         assertEquals("1.6", InspectHandler.supportedLibVersionLabel("manga", 1.6))
         assertNull(InspectHandler.supportedLibVersionLabel("manga", 14.0))
         assertEquals("14", InspectHandler.supportedLibVersionLabel("anime", 14.0))
-        // The hosted anime ABI is the lib 14 + lib 16 union (hoster API, the
-        // data-class Video); both generations install.
+        // The hosted anime ABI is the lib 14 + 16 + 17 union (hoster API, Video with
+        // and without memo, combined episode update); every generation installs.
         assertEquals("15", InspectHandler.supportedLibVersionLabel("anime", 15.0))
         assertEquals("16", InspectHandler.supportedLibVersionLabel("anime", 16.0))
-        assertNull(InspectHandler.supportedLibVersionLabel("anime", 17.0))
+        assertEquals("17", InspectHandler.supportedLibVersionLabel("anime", 17.0))
+        assertNull(InspectHandler.supportedLibVersionLabel("anime", 18.0))
+        assertNull(InspectHandler.supportedLibVersionLabel("anime", 13.0))
         assertNull(InspectHandler.supportedLibVersionLabel("anime", 1.6))
         assertNull(InspectHandler.supportedLibVersionLabel("anime", null))
     }

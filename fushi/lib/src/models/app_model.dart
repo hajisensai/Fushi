@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -40,6 +41,8 @@ import 'package:http/io_client.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart'
+    show systemTtsDictionaryLanguages;
 import 'package:fushi/creator.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -836,7 +839,8 @@ class AppModel with ChangeNotifier {
       },
       // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
       // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
-      localAudioEntriesProvider: () => localAudioDbs,
+      // BUG-3702：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
+      localAudioEntriesProvider: () => localAudioDbsOnThisDevice,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
@@ -2120,6 +2124,26 @@ class AppModel with ChangeNotifier {
 
   List<Dictionary> get dictionaries => dictRepo.dictionaries;
 
+  /// 已装词典声明的词头语言（[Dictionary.effectiveSourceLanguage]，未声明为
+  /// null）。系统语音兜底定语言用（`resolveSystemTtsLanguageTag` 第 3 级，
+  /// BUG-3669）；词典仓库还没就位时为空。
+  List<String?> get installedDictionarySourceLanguages => _dictionaryRepoReady
+      ? <String?>[
+          for (final Dictionary d in dictionaries) d.effectiveSourceLanguage,
+        ]
+      : const <String?>[];
+
+  /// 名为 [dictionaryName] 的已装词典声明的词头语言；名字为空、没装这本或它没
+  /// 声明时为 null。
+  String? dictionarySourceLanguageOf(String? dictionaryName) {
+    if (dictionaryName == null || dictionaryName.isEmpty) return null;
+    if (!_dictionaryRepoReady) return null;
+    for (final Dictionary d in dictionaries) {
+      if (d.name == dictionaryName) return d.effectiveSourceLanguage;
+    }
+    return null;
+  }
+
   /// 词典改名投影（真名 -> 显示名，只含改过名的）。推导在
   /// [dictionaryDisplayNameOverridesOf] 单点完成。
   ///
@@ -3304,6 +3328,12 @@ class AppModel with ChangeNotifier {
       await SyncRepository(_database).migrateInterconnectBackendToToggle();
       await SyncRepository(_database).migrateFolderCacheToPerChannel();
 
+      // iOS 常驻来源文件夹：按书签恢复安全作用域访问并在 app 生命周期内持有
+      // （BUG-3697）。视频来源是原地播放，播放器 / 字幕 / 制卡都要读原文件。不阻塞
+      // 启动：扫描与播放前会各自等它跑完（`ensureSourceAccess` / `ensureForPath`）。
+      // 其它平台 no-op；弹窗词典 / 悬浮词典进程不经 initialise()，那边不读来源。
+      SourceFolderAccess.instance.activateAllOnStartup(_database);
+
       /// Prepare all repositories (objects created first, then loaded in
       /// parallel to avoid serial await chains).
       _prefsRepo = PreferencesRepository(_database);
@@ -3330,6 +3360,9 @@ class AppModel with ChangeNotifier {
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
+      // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
+      // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
+      systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       mediaHistoryRepo = MediaHistoryRepository(_database);
 
       debugPrint('[Fushi] init: repositories (parallel)');
@@ -3774,8 +3807,7 @@ class AppModel with ChangeNotifier {
       // TODO-855: only do the expensive full reload when the main app actually
       // mutated a preference / switched profile since the last lookup; a cheap
       // single-row DB version read gates it.
-      await refreshPrefCacheIfChanged();
-      await _prepareLocalAudioForPlayback();
+      await refreshForWarmDictionaryPopup();
       return;
     }
     try {
@@ -3810,6 +3842,9 @@ class AppModel with ChangeNotifier {
           onCacheRebuild: _rebuildDictPathsCache,
           isLowMemory: () => prefsRepo.lowMemoryMode);
       _dictionaryRepoReady = true;
+      // 系统语音兜底（「朗读声音」里的系统语音预设拿不到 AppModel）按已装词典
+      // 的词头语言定语言：现读，词典增删即时生效（BUG-3669）。
+      systemTtsDictionaryLanguages = () => installedDictionarySourceLanguages;
       await dictRepo.loadFromDb();
 
       mediaHistoryRepo = MediaHistoryRepository(_database);
@@ -3935,14 +3970,36 @@ class AppModel with ChangeNotifier {
   /// [PreferencesRepository.readPrefsVersionFromDb] row read replaces the
   /// previous unconditional full-table [refreshPrefCache] on every lookup; the
   /// expensive reload now happens only when something actually changed.
-  Future<void> refreshPrefCacheIfChanged() async {
+  ///
+  /// Returns whether a reload actually happened.
+  Future<bool> refreshPrefCacheIfChanged() async {
     final int dbVersion = await prefsRepo.readPrefsVersionFromDb();
-    if (dbVersion == _lastSeenPrefsVersion) return;
+    if (dbVersion == _lastSeenPrefsVersion) return false;
     await refreshPrefCache();
     // refreshPrefCache already advanced _lastSeenPrefsVersion from the reloaded
     // cache; align it to the value we just read so a concurrent writer between
     // the read and the reload can still be detected on the next call.
     _lastSeenPrefsVersion = dbVersion;
+    return true;
+  }
+
+  /// Android app 外查词（`:popup` 进程）热复用前的跨进程对账：常驻进程只在冷启动
+  /// 装载一次状态，主进程之后的改动它都看不见。三件事：
+  ///
+  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）。
+  /// 2. 词典元数据（顺序 / 启用 / 折叠 / 改名 / 增删）：住在 `dictionary_metadata`
+  ///    表、不抬 `prefs_version`，以前只在冷启动读一次——主进程「词典管理」改完，
+  ///    app 外查词要杀进程才生效（BUG-3662）。变了就照 [reloadDictionariesFromDb]
+  ///    重载引擎、清查词缓存。
+  /// 3. 本地音频库：配置在偏好里，原生侧的库句柄要重新推（偏好变了才推）。
+  Future<void> refreshForWarmDictionaryPopup() async {
+    final bool prefsChanged = await refreshPrefCacheIfChanged();
+    if (await dictRepo.reloadMetadataIfChangedInDb()) {
+      await _rebuildDictPathsCacheAsync();
+      dictRepo.clearDictionaryResultsCache();
+      dictionarySearchAgainNotifier.notifyListeners();
+    }
+    if (prefsChanged) await _prepareLocalAudioForPlayback();
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────
@@ -8428,8 +8485,15 @@ class AppModel with ChangeNotifier {
   List<ModuleId> get moduleOrder =>
       isPreferencesReady ? prefsRepo.moduleOrder : const <ModuleId>[];
 
-  Future<void> setModuleOrder(List<ModuleId> order) async {
-    await prefsRepo.setModuleOrder(order);
+  /// 「设置」tab 在用户排序里的位置；null = 最后（见 [ModuleVisibility.settingsSlot]）。
+  int? get moduleSettingsSlot =>
+      isPreferencesReady ? prefsRepo.moduleSettingsSlot : null;
+
+  Future<void> setModuleOrder(
+    List<ModuleId> order, {
+    required int? settingsSlot,
+  }) async {
+    await prefsRepo.setModuleOrder(order, settingsSlot: settingsSlot);
     notifyListeners();
   }
 
@@ -8444,6 +8508,7 @@ class AppModel with ChangeNotifier {
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
         prefOf: moduleEnabled,
         order: moduleOrder,
+        settingsSlot: moduleSettingsSlot,
         isWindows: platformServices.isWindows,
         isDesktop: platformServices.isDesktop,
         isIOS: platformServices.isIOS,
@@ -8868,6 +8933,11 @@ class AppModel with ChangeNotifier {
 
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       prefsRepo.galMiningAnimatedFormat;
+
+  /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
+  bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
+  Future<void> setMiningAnimatedPlayOnce(bool value) =>
+      prefsRepo.setMiningAnimatedPlayOnce(value);
   void setGalMiningAnimatedFormat(MiningAnimatedFormat format) =>
       prefsRepo.setGalMiningAnimatedFormat(format);
 
@@ -8917,6 +8987,18 @@ class AppModel with ChangeNotifier {
   bool get collapseDictionaries => prefsRepo.collapseDictionaries;
   void toggleCollapseDictionaries() => prefsRepo.toggleCollapseDictionaries();
   bool get compactGlossaries => prefsRepo.compactGlossaries;
+
+  /// 制卡提示开关（设置 → 制卡 → 制卡提示，反馈 zNuGKLIhmT / aK5wv0CnWf）。
+  bool get mineNoticeSuccess => prefsRepo.mineNoticeSuccess;
+  Future<void> setMineNoticeSuccess(bool value) =>
+      prefsRepo.setMineNoticeSuccess(value);
+  bool get mineNoticeDuplicate => prefsRepo.mineNoticeDuplicate;
+  Future<void> setMineNoticeDuplicate(bool value) =>
+      prefsRepo.setMineNoticeDuplicate(value);
+
+  /// [FushiToast.mineNoticeFilter] 的接线：偏好还没载入（启动最早期）时一律弹。
+  bool mineNoticeShown(MineToastStatus status) =>
+      _prefsRepo?.mineNoticeShown(status) ?? true;
   void toggleCompactGlossaries() => prefsRepo.toggleCompactGlossaries();
   bool get dictionaryUnifiedStyle => prefsRepo.dictionaryUnifiedStyle;
   void toggleDictionaryUnifiedStyle() =>
@@ -9833,6 +9915,12 @@ class AppModel with ChangeNotifier {
 
   List<LocalAudioDbEntry> get localAudioDbs => _localAudioManager.entries;
 
+  /// [localAudioDbs] 的 path 归一到本机实际文件位置（见
+  /// [LocalAudioManager.entriesOnThisDevice]）。互联同步只认这份：存储 path 可能
+  /// 是别的设备的（BUG-3702）。
+  List<LocalAudioDbEntry> get localAudioDbsOnThisDevice =>
+      _localAudioManager.entriesOnThisDevice;
+
   /// 把外部音频库文件拷进库目录，返回内部副本 entry（不写 prefs、不通知 native）。
   /// 持久化交给后续 [setAudioSourceConfigs]。
   ///
@@ -9888,18 +9976,48 @@ class AppModel with ChangeNotifier {
   /// 同步拉到一个远端本地音频库：把 staging 的 .db 拷进本机库目录（重建本机 path，
   /// 绝不复用远端 manifest 的绝对 path——它在本机不存在），经 [setAudioSourceConfigs]
   /// 双写 `audio_source_configs` + `local_audio_dbs` + 推 native，再还原子来源偏好
-  /// 并刷 UI。按 displayName 去重（已存在则跳过）。
+  /// 并刷 UI。按 displayName 去重：同名库已在本机可用则跳过。
+  ///
+  /// 同名条目在、但它指向的库文件**本机没有**（BUG-3702：从另一台设备导入的
+  /// 配置方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库
+  /// 落进本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
+  /// 偏好），而不是追加一条同名新源。否则这条悬空引用会永久挡住同步修复。
   ///
   /// 由 [SyncOrchestrator.onLocalAudioImported] 调用，故注册逻辑集中在此（拥有
   /// LocalAudioManager 的 AppModel），保持双真相源一致。
   Future<void> importSyncedLocalAudioDb(LocalAudioPackageContents c) async {
-    final bool exists = audioSourceConfigs.any((AudioSourceConfig s) =>
+    final List<AudioSourceConfig> configs = audioSourceConfigs;
+    final int existingIndex = configs.indexWhere((AudioSourceConfig s) =>
         s.kind == AudioSourceKind.localAudio &&
         s.displayLabel == c.displayName);
-    if (exists) return;
+    final AudioSourceConfig? existing =
+        existingIndex < 0 ? null : configs[existingIndex];
+    if (existing != null &&
+        await isLocalAudioDbAvailable(existing.path ?? '')) {
+      return;
+    }
     if (!await c.dbFile.exists()) return;
     final LocalAudioDbEntry entry =
         await importLocalAudioDbFile(c.dbFile.path, displayName: c.displayName);
+    if (existing != null) {
+      final List<LocalAudioSourcePref> keptSources =
+          sourcePrefsForLocalDb(existing.path ?? '');
+      final List<LocalAudioSourcePref> sources =
+          keptSources.isNotEmpty ? keptSources : c.sources;
+      await setAudioSourceConfigs(
+        <AudioSourceConfig>[
+          for (int i = 0; i < configs.length; i++)
+            i == existingIndex
+                ? existing.copyWith(path: entry.path)
+                : configs[i],
+        ],
+        sourcesByPath: sources.isEmpty
+            ? const <String, List<LocalAudioSourcePref>>{}
+            : <String, List<LocalAudioSourcePref>>{entry.path: sources},
+      );
+      notifyListeners();
+      return;
+    }
     final AudioSourceConfig cfg = AudioSourceConfig.localAudio(
       label: c.displayName,
       path: entry.path,
@@ -10769,6 +10887,13 @@ class _AppModelRemoteLookupService
     // kind 都不发 → 根本进不到这个分支，行为与改动前逐字一致（照常出卡，无句子音频）。
     final bool isBilibiliPgc = payload.clipSourceKind == 'bilibili-pgc' &&
         payload.clipSourcePlayurlBody != null;
+    // 反馈 Atbl_kOuZK：稿件的 playurl 也由扩展在页面主世界里取回（带用户自己的会话，
+    // 服务端匿名请求会被 B 站风控 HTTP 412）。带了响应体就只挑流、不发网络请求；没带
+    // （旧扩展 / 页面里没取到）才由服务端自己解析。
+    final bool usePagePlayurl =
+        isBilibiliPgc ||
+        (payload.clipSourceKind == 'bilibili' &&
+            payload.clipSourcePlayurlBody != null);
     if ((payload.clipSourceKind == 'bilibili' || isBilibiliPgc) &&
         payload.clipSourceId != null &&
         payload.clipStartMs != null &&
@@ -10790,7 +10915,7 @@ class _AppModelRemoteLookupService
       try {
         // 番剧：音轨是扩展在页面里解析好回传的，这里不发任何网络请求（见 buildPgcRequest）。
         // 稿件：服务端自己用 bvid 查 cid 再取 playurl（未登录也拿得到最高档音轨）。
-        bi = isBilibiliPgc
+        bi = usePagePlayurl
             ? _bilibiliClipMiner.buildPgcRequest(
                 playurlBody: payload.clipSourcePlayurlBody!,
                 startMs: payload.clipStartMs!,
@@ -10815,7 +10940,11 @@ class _AppModelRemoteLookupService
         // /api/mine 只 catch FormatException，这里不兜住会 500 整张卡。
         return remoteMineError(
           'Anki.mineImmersion.bilibili',
-          'bilibili 视频流解析失败，未制卡',
+          // 反馈 Atbl_kOuZK：412 = B 站风控拦了服务端的匿名请求。走到这里说明扩展没在页面
+          // 里取到 playurl（旧扩展 / 页面注入失败），单独说清楚，别和「视频不可用」混在一起。
+          e is BilibiliApiHttpException && e.statusCode == 412
+              ? 'bilibili 拒绝了匿名请求（HTTP 412 风控），未制卡。请把浏览器扩展更新到最新版本后重试'
+              : 'bilibili 视频流解析失败，未制卡',
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,

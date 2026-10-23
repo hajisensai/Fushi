@@ -2256,6 +2256,7 @@ void FlutterWindow::RegisterFloatingBallChannel() {
           FloatingBallWindow::Config config;
           config.animate = BoolFromValue(args, "animate", true);
           config.show_labels = BoolFromValue(args, "showLabels", true);
+          config.show_open_app = BoolFromValue(args, "showOpenApp", true);
           auto find = [args](const char* key) -> const flutter::EncodableValue* {
             if (args == nullptr) return nullptr;
             const auto it = args->find(flutter::EncodableValue(key));

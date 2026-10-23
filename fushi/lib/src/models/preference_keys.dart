@@ -22,6 +22,12 @@ library;
 /// 所以合并导入接管源库偏好时不带它（见 `BackupMergeEngine`）。
 const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 
+/// 库页顶部页签的用户自定义顺序（反馈 ndQ5eXLcqp），后缀 = 页签栏的 orderKey
+/// （`video` / `book-library-view` / …），值是逗号分隔的页签 id（见
+/// `section_tab_order.dart`）。入口布局，与底栏模块顺序同族：设备本地，不进
+/// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
+const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -155,8 +161,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
   // `.dock` / `.y` 分开存：两颗球可以同时在。
   'floating_ball.system_dock',
+  // bool：应用外悬浮球菜单里有没有「打开 Fushi」，默认 true。
+  'floating_ball.system_open_app',
   'floating_ball.system_y',
-  // bool：Android 应用外悬浮球收起态点球 = 查剪贴板、长按展开，默认 false。
+  // String：Android 应用外悬浮球收起态点一下做什么（FloatingBallTapAction：
+  // '' 展开 / clipboard / screen_ocr），非展开时长按才展开。没写过时沿用下面的旧键。
+  'floating_ball.tap_action',
+  // bool（旧，只读作迁移）：收起态点球 = 查剪贴板，已由 tap_action 取代。
   'floating_ball.tap_clipboard',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
@@ -336,7 +347,16 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：启动时在后台把签名未变的 Mihon 漫画 / 视频扩展更新到
   // 仓库新版（`kMihonExtensionAutoUpdatePref`，update_probes.dart）。
   'mihon_extension_auto_update',
+  // bool（默认 true）：制卡提示——查重拦下（「重复卡片，未导出」）时弹 toast
+  // （反馈 aK5wv0CnWf）。失败与「成功但缺音频」不受开关影响。
+  'mine_notice_duplicate',
+  // bool（默认 true）：制卡提示——成功 / 制卡中 / 已存入待发卡片的 toast
+  // （反馈 zNuGKLIhmT：阅读时挡住正文）。
+  'mine_notice_success',
   'mine_to_server',
+  // bool（默认 false = 循环）：制卡动图（视频 cue / galgame 窗口，GIF·WebP·AVIF）只播放
+  // 一次（反馈 ZxyIMK-C5V）。经 `miningAnimatedPlayOnceReader` 交给 ffmpeg 的 `-loop`。
+  'mining_animated_play_once',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
@@ -437,6 +457,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // bool：截屏识字 / 拍照查词制卡带所点文本块的截图（默认 true）。
+  'screen_ocr.card_image',
+  // bool：Android 截屏识字保持录屏会话、之后不再弹确认框（默认 false）。
+  'screen_ocr.keep_capture_session',
   // String：已废弃（2026-10-13 起合集一律是网格里的单个格子，「整行展开」rows
   // 模式已移除；旧值 rows / cards 都无人读取）。key 冻结保留，备份 / 旧数据兼容。
   'shelf_collection_layout',
@@ -705,6 +729,7 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // （BUG-2816）与 app 漫画来源扫描（BUG-3574）共用（引擎 book_library_prune.dart）；
   // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
+  kSectionTabOrderPrefKeyPrefix,
   'src:',
   // int（毫秒，v101）：`updates_last_check_<UpdateFeedKind.dbValue>`——某个域上次
   // 后台检查完成的时刻。到期判据只读它，失败也照记（否则断网时每个 tick 都重试）。

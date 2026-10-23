@@ -9,6 +9,13 @@ import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/asr/asr_transcript_proofreader.dart';
+import 'package:fushi_engine/asr/cloud_whisper_transcription_service.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
+    show SubtitleAiUsageTally;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
+import 'package:fushi/src/asr_host/asr_ai_hosts.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
@@ -47,11 +54,9 @@ class _FakeSegmenter implements AsrSegmenter {
   @override
   Future<List<AsrSpeechSegment>> feed(
     AsrPcmChunk chunk,
-  ) async =>
-      <AsrSpeechSegment>[
-        AsrSpeechSegment(
-            startSample: 0, samples: Float32List(2 * kAsrSampleRate)),
-      ];
+  ) async => <AsrSpeechSegment>[
+    AsrSpeechSegment(startSample: 0, samples: Float32List(2 * kAsrSampleRate)),
+  ];
 
   @override
   Future<List<AsrSpeechSegment>> flush() async => <AsrSpeechSegment>[];
@@ -67,15 +72,14 @@ class _FakeDecoder implements AsrBatchDecoder {
   @override
   Future<List<AsrDecodedSegment>> decodeBatch(
     List<AsrSpeechSegment> segments,
-  ) async =>
-      segments
-          .map(
-            (AsrSpeechSegment _) => AsrDecodedSegment(
-              tokens: const <String>['今', '日', '。'],
-              tokenOffsetsMs: const <int>[100, 300, 600],
-            ),
-          )
-          .toList();
+  ) async => segments
+      .map(
+        (AsrSpeechSegment _) => AsrDecodedSegment(
+          tokens: const <String>['今', '日', '。'],
+          tokenOffsetsMs: const <int>[100, 300, 600],
+        ),
+      )
+      .toList();
 }
 
 /// 假服务：模型就绪与否、已完成产物可编程；`start` 装配真任务 + 假会话。
@@ -88,15 +92,13 @@ class _FakeService extends AsrTranscriptionService {
     this.existingSrt,
     this.probeError,
   }) : super(
-          audioProfile: AsrAudioProfile.cleanSpeech,
-          backend: const AsrIsolateBackend(
-            buildFactory: _unusedOnnxFactory,
-          ),
-          pcm: _FakePcm(),
-          openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
-              AsrModelStore(jobsDir, asrModelPackFor(l, profile: profile)),
-          jobsRoot: () async => jobsDir,
-        );
+         audioProfile: AsrAudioProfile.cleanSpeech,
+         backend: const AsrIsolateBackend(buildFactory: _unusedOnnxFactory),
+         pcm: _FakePcm(),
+         openStore: (AsrLanguage l, AsrAudioProfile profile) async =>
+             AsrModelStore(jobsDir, asrModelPackFor(l, profile: profile)),
+         jobsRoot: () async => jobsDir,
+       );
 
   bool ready;
   final Directory jobsDir;
@@ -165,18 +167,16 @@ class _FakeService extends AsrTranscriptionService {
   @override
   Future<String?> finishedSrtPath(
     List<String> audioPaths,
-    AsrLanguage language,
-    {List<AsrSegmentSpan>? segments}
-  ) async =>
-      existingSrt;
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async => existingSrt;
 
   @override
   Future<AsrJobState?> existingState(
     List<String> audioPaths,
-    AsrLanguage language,
-    {List<AsrSegmentSpan>? segments}
-  ) async =>
-      null;
+    AsrLanguage language, {
+    List<AsrSegmentSpan>? segments,
+  }) async => null;
 
   @override
   Future<void> discard(
@@ -232,8 +232,9 @@ class _FakeService extends AsrTranscriptionService {
 /// 在语言下拉里选 [language]：先点开下拉（触发器显示当前语言），再点菜单里的
 /// 母语名条目（触发器与条目可能同文，取最后一个即菜单项）。
 Future<void> pickLanguage(WidgetTester tester, AsrLanguage language) async {
-  await tester
-      .tap(find.byKey(const ValueKey<String>('asr-transcribe-language')));
+  await tester.tap(
+    find.byKey(const ValueKey<String>('asr-transcribe-language')),
+  );
   await tester.pumpAndSettle();
   final Finder entry = find.text(language.nativeName).last;
   // 菜单有最大高度、可滚动；条目可能在视口外。
@@ -279,12 +280,15 @@ void main() {
     Future<String?> Function({
       required String fileName,
       required String? initialDirectory,
-    })? saveFilePicker,
+    })?
+    saveFilePicker,
     AsrLanguage? languageHint,
     AsrModelCatalog Function()? catalogGetter,
     Future<void> Function(AsrModelCatalog catalog)? catalogSetter,
     Future<String?> Function()? directoryPicker,
     ThemeData? theme,
+    AsrTranscriptionService Function()? cloudService,
+    AsrProofreadHost? proofreadHost,
   }) {
     return ProviderScope(
       child: TranslationProvider(
@@ -293,7 +297,7 @@ void main() {
           builder: theme == null
               ? null
               : (BuildContext context, Widget? child) =>
-                  RepaintBoundary(key: _previewBoundary, child: child),
+                    RepaintBoundary(key: _previewBoundary, child: child),
           home: Scaffold(
             body: Builder(
               builder: (BuildContext context) => Center(
@@ -311,6 +315,8 @@ void main() {
                       catalogGetter: catalogGetter,
                       catalogSetter: catalogSetter,
                       directoryPicker: directoryPicker,
+                      cloudService: cloudService,
+                      proofreadHost: proofreadHost,
                     );
                     onResult(r);
                   },
@@ -395,8 +401,9 @@ void main() {
     expect(service.lastStartLanguage, AsrLanguage.english);
   });
 
-  testWidgets('非 macOS：加速分段只有自动 / 仅 CPU，不露 CoreML',
-      (WidgetTester tester) async {
+  testWidgets('非 macOS：加速分段只有自动 / 仅 CPU，不露 CoreML', (
+    WidgetTester tester,
+  ) async {
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
     await tester.pumpWidget(wrap(service, (String? _) {}));
     await tester.tap(find.byKey(const ValueKey<String>('open')));
@@ -406,8 +413,9 @@ void main() {
     expect(find.text(t.audiobook_transcribe_accel_coreml), findsNothing);
   });
 
-  testWidgets('macOS：露出 CoreML 分段，选中后 plan / start 都收到 coreml',
-      (WidgetTester tester) async {
+  testWidgets('macOS：露出 CoreML 分段，选中后 plan / start 都收到 coreml', (
+    WidgetTester tester,
+  ) async {
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
     await tester.pumpWidget(wrap(service, (String? _) {}));
     await tester.tap(find.byKey(const ValueKey<String>('open')));
@@ -499,14 +507,15 @@ void main() {
       wrap(
         service,
         (String? _) {},
-        saveFilePicker: ({
-          required String fileName,
-          required String? initialDirectory,
-        }) async {
-          askedName = fileName;
-          askedDir = initialDirectory;
-          return target;
-        },
+        saveFilePicker:
+            ({
+              required String fileName,
+              required String? initialDirectory,
+            }) async {
+              askedName = fileName;
+              askedDir = initialDirectory;
+              return target;
+            },
       ),
     );
     await tester.tap(find.byKey(const ValueKey<String>('open')));
@@ -567,13 +576,12 @@ void main() {
       bool hasSubtitle = false,
       bool hasAudio = true,
       bool asrSupported = true,
-    }) =>
-        audioOnlyImportHint(
-          hasBook: hasBook,
-          hasSubtitle: hasSubtitle,
-          hasAudio: hasAudio,
-          asrSupported: asrSupported,
-        );
+    }) => audioOnlyImportHint(
+      hasBook: hasBook,
+      hasSubtitle: hasSubtitle,
+      hasAudio: hasAudio,
+      asrSupported: asrSupported,
+    );
 
     expect(hint(), AudioOnlyImportHint.transcribeToBook);
     expect(hint(asrSupported: false), AudioOnlyImportHint.pickSubtitleToBook);
@@ -609,7 +617,9 @@ void main() {
     expect(asrLanguageHintFromBookLanguage('zh-Hant-TW'), AsrLanguage.mandarin);
     expect(asrLanguageHintFromBookLanguage('zh-HK'), AsrLanguage.cantonese);
     expect(
-        asrLanguageHintFromBookLanguage('zh-Hant-HK'), AsrLanguage.cantonese);
+      asrLanguageHintFromBookLanguage('zh-Hant-HK'),
+      AsrLanguage.cantonese,
+    );
     expect(asrLanguageHintFromBookLanguage('yue'), AsrLanguage.cantonese);
     expect(asrLanguageHintFromBookLanguage('ko-KR'), AsrLanguage.korean);
     // Omnilingual 兜住的 9 种也能从书的语言标签推出来。
@@ -623,8 +633,9 @@ void main() {
     expect(asrLanguageHintFromBookLanguage('   '), isNull);
   });
 
-  testWidgets('languageHint=english 且偏好存 ja：初值英语、plan 收到英语、偏好不被改写',
-      (WidgetTester tester) async {
+  testWidgets('languageHint=english 且偏好存 ja：初值英语、plan 收到英语、偏好不被改写', (
+    WidgetTester tester,
+  ) async {
     savedLanguage = 'ja';
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
     await tester.pumpWidget(
@@ -646,8 +657,9 @@ void main() {
     expect(savedLanguage, 'ja');
   });
 
-  testWidgets('plan 带 probeError：就绪行追加「GPU 探测失败，按 CPU 规划」提示',
-      (WidgetTester tester) async {
+  testWidgets('plan 带 probeError：就绪行追加「GPU 探测失败，按 CPU 规划」提示', (
+    WidgetTester tester,
+  ) async {
     final _FakeService service = _FakeService(
       ready: true,
       jobsDir: tmp,
@@ -681,11 +693,11 @@ void main() {
       srtPath: src.path,
       audioPaths: <String>[p.join(tmp.path, 'x.m4b')],
       desktop: true,
-      saveFilePicker: ({
-        required String fileName,
-        required String? initialDirectory,
-      }) async =>
-          null,
+      saveFilePicker:
+          ({
+            required String fileName,
+            required String? initialDirectory,
+          }) async => null,
     );
     expect(r, isFalse);
   });
@@ -831,12 +843,14 @@ void main() {
       find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
       findsOneWidget,
     );
-    expect(_statusText(tester),
-        contains(t.audiobook_transcribe_retranscribe_hint));
-    final FushiSegmentedButton<AsrAccelerationPreference> accel =
-        tester.widget<FushiSegmentedButton<AsrAccelerationPreference>>(
-      find.byType(FushiSegmentedButton<AsrAccelerationPreference>),
+    expect(
+      _statusText(tester),
+      contains(t.audiobook_transcribe_retranscribe_hint),
     );
+    final FushiSegmentedButton<AsrAccelerationPreference> accel = tester
+        .widget<FushiSegmentedButton<AsrAccelerationPreference>>(
+          find.byType(FushiSegmentedButton<AsrAccelerationPreference>),
+        );
     expect(accel.onSelectionChanged, isNotNull, reason: '完成态加速分段可用');
 
     final Finder cpu = find.text(t.audiobook_transcribe_accel_cpu);
@@ -882,9 +896,7 @@ void main() {
 
   // 真实像素预览（只在 FUSHI_PREVIEW=1 时跑，写 PNG 给 PR 当改后截图）：完成态改了
   // 加速之后的样子。
-  testWidgets('preview: 完成态改选项后的弹层（BUG-3138）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('preview: 完成态改选项后的弹层（BUG-3138）', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(560, 760) * 1.5;
     tester.view.devicePixelRatio = 1.5;
     addTearDown(tester.view.resetPhysicalSize);
@@ -897,9 +909,9 @@ void main() {
         final File file = File(path);
         if (!file.existsSync()) continue;
         final Uint8List bytes = await file.readAsBytes();
-        await (FontLoader('PreviewCJK')
-              ..addFont(Future<ByteData>.value(ByteData.sublistView(bytes))))
-            .load();
+        await (FontLoader(
+          'PreviewCJK',
+        )..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)))).load();
         return;
       }
     });
@@ -929,9 +941,10 @@ void main() {
     await tester.tap(find.text(t.audiobook_transcribe_accel_cpu));
     await tester.pumpAndSettle();
     await tester.runAsync(() async {
-      final ui.Image image = await (_previewBoundary.currentContext!
-              .findRenderObject()! as RenderRepaintBoundary)
-          .toImage(pixelRatio: 1.5);
+      final ui.Image image =
+          await (_previewBoundary.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary)
+              .toImage(pixelRatio: 1.5);
       final ByteData? png = await image.toByteData(
         format: ui.ImageByteFormat.png,
       );
@@ -1083,14 +1096,17 @@ void main() {
     Widget wrapWithCatalog(
       _FakeService service, {
       Future<String?> Function()? directoryPicker,
-    }) =>
-        wrap(
-          service,
-          (String? _) {},
-          catalogGetter: () => catalog,
-          catalogSetter: setCatalog,
-          directoryPicker: directoryPicker,
-        );
+      AsrTranscriptionService Function()? cloudService,
+      AsrProofreadHost? proofreadHost,
+    }) => wrap(
+      service,
+      (String? _) {},
+      catalogGetter: () => catalog,
+      catalogSetter: setCatalog,
+      directoryPicker: directoryPicker,
+      cloudService: cloudService,
+      proofreadHost: proofreadHost,
+    );
 
     /// M3E 分段选项卡让弹层 body 变高，800x600 测试窗下模型行落在 body 可滚
     /// 视口之外（下面紧挨固定 footer 的「开始转录」）；先滚到控件再点，同用户操作。
@@ -1160,11 +1176,13 @@ void main() {
         find.byKey(const ValueKey<String>('asr-local-model-pick')),
         findsOneWidget,
       );
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-local-model-pick')));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('asr-local-model-pick')),
+      );
       await settle();
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-local-model-confirm')));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('asr-local-model-confirm')),
+      );
       await settle();
 
       expect(catalog.customPacks, hasLength(1));
@@ -1182,6 +1200,215 @@ void main() {
         id,
       );
     });
+
+    // 反馈 fvrYPia3kW ①：云端 Whisper 转录是下拉里的另一个引擎。
+    group('云端转录', () {
+      AiProviderConfig? provider;
+      CloudWhisperTranscriptionService cloud() =>
+          CloudWhisperTranscriptionService(
+            resolveProvider: () => provider,
+            ffmpeg: _UnusedFfmpeg(),
+            jobsRoot: () async => tmp,
+          );
+
+      Future<void> pickCloud(WidgetTester tester) async {
+        await tapScrolledIntoView(tester, 'asr-transcribe-model');
+        await tester.pumpAndSettle();
+        final Finder entry = find
+            .text(t.audiobook_transcribe_engine_cloud)
+            .last;
+        await tester.ensureVisible(entry);
+        await tester.pumpAndSettle();
+        await tester.tap(entry);
+        await tester.pumpAndSettle();
+      }
+
+      FushiFilledButton startButton(WidgetTester tester) =>
+          tester.widget<FushiFilledButton>(
+            find.ancestor(
+              of: find.text(t.audiobook_transcribe_start),
+              matching: find.byType(FushiFilledButton),
+            ),
+          );
+
+      testWidgets('没指派提供商：选云端后说清去哪里配，且不给开始', (WidgetTester tester) async {
+        provider = null;
+        final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+        await tester.pumpWidget(wrapWithCatalog(service, cloudService: cloud));
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+        await pickCloud(tester);
+
+        expect(
+          catalog.choices[AsrLanguage.japanese.tag],
+          kCloudWhisperEngineId,
+        );
+        expect(
+          _statusText(tester),
+          contains(t.audiobook_transcribe_engine_cloud_unset),
+        );
+        expect(startButton(tester).onPressed, isNull);
+      });
+
+      testWidgets('指派了提供商：就绪行报云端 + 提供商名，可以开始', (WidgetTester tester) async {
+        provider = AiProviderConfig(
+          id: 'groq-ui',
+          presetId: 'groq',
+          name: 'Groq',
+          baseUrl: Uri.parse('https://api.groq.com/openai/v1'),
+          apiKey: 'gsk_test',
+          model: 'whisper-large-v3',
+        );
+        final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
+        await tester.pumpWidget(wrapWithCatalog(service, cloudService: cloud));
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+        await pickCloud(tester);
+
+        expect(
+          _statusText(tester),
+          contains('${t.audiobook_transcribe_engine_cloud} · Groq'),
+        );
+        expect(
+          _statusText(tester),
+          isNot(contains(t.audiobook_transcribe_engine_cloud_unset)),
+        );
+        expect(startButton(tester).onPressed, isNotNull);
+      });
+    });
+
+    // 反馈 fvrYPia3kW ②：完成态的「AI 校对」。
+    group('AI 校对', () {
+      testWidgets('完成态点 AI 校对：报改了几行，出现「还原原稿」', (WidgetTester tester) async {
+        final File srt = File(p.join(tmp.path, 'transcript.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nはい\n\n');
+        final _FakeService service = _FakeService(
+          ready: true,
+          jobsDir: tmp,
+          existingSrt: srt.path,
+        );
+        String? ranOn;
+        String? ranLanguage;
+        await tester.pumpWidget(
+          wrapWithCatalog(
+            service,
+            proofreadHost: AsrProofreadHost(
+              providerName: () => 'DeepSeek',
+              run:
+                  ({
+                    required String srtPath,
+                    required String languageTag,
+                    required SubtitleCancelToken cancel,
+                    void Function(int doneBatches, int totalBatches)?
+                    onProgress,
+                  }) async {
+                    ranOn = srtPath;
+                    ranLanguage = languageTag;
+                    onProgress?.call(1, 1);
+                    // 真实实现写的原稿备份（同步写：widget 测试体内是 fake async）。
+                    File(
+                      p.join(p.dirname(srtPath), kAsrRawTranscriptFileName),
+                    ).writeAsStringSync(srt.readAsStringSync());
+                    return AsrTranscriptProofreadFileOutcome(
+                      result: AsrTranscriptProofreadOutcome(
+                        cues: const <AsrCue>[],
+                        totalBatches: 1,
+                        appliedBatches: 1,
+                        skippedBatches: 0,
+                        changedCues: 3,
+                        usage: SubtitleAiUsageTally(),
+                      ),
+                      tokenSidecarWritten: true,
+                    );
+                  },
+            ),
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(
+            const ValueKey<String>('asr-transcribe-proofread-restore'),
+          ),
+          findsNothing,
+        );
+        expect(
+          _statusText(tester),
+          contains(t.audiobook_transcribe_proofread_hint),
+        );
+        final Finder button = find.byKey(
+          const ValueKey<String>('asr-transcribe-proofread'),
+        );
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        expect(ranOn, srt.path);
+        expect(ranLanguage, AsrLanguage.japanese.tag);
+        expect(
+          _statusText(tester),
+          contains(
+            t.audiobook_transcribe_proofread_done(changed: 3, skipped: 0),
+          ),
+        );
+        expect(
+          find.byKey(
+            const ValueKey<String>('asr-transcribe-proofread-restore'),
+          ),
+          findsOneWidget,
+        );
+        // 校对完仍是完成态：「使用字幕」照常可点。
+        expect(
+          find.widgetWithText(FilledButton, t.audiobook_transcribe_use_result),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('没指派「字幕校对」提供商：不发请求，说清去哪里配', (WidgetTester tester) async {
+        final File srt = File(p.join(tmp.path, 'transcript.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nはい\n\n');
+        final _FakeService service = _FakeService(
+          ready: true,
+          jobsDir: tmp,
+          existingSrt: srt.path,
+        );
+        int runs = 0;
+        await tester.pumpWidget(
+          wrapWithCatalog(
+            service,
+            proofreadHost: AsrProofreadHost(
+              providerName: () => null,
+              run:
+                  ({
+                    required String srtPath,
+                    required String languageTag,
+                    required SubtitleCancelToken cancel,
+                    void Function(int doneBatches, int totalBatches)?
+                    onProgress,
+                  }) async {
+                    runs++;
+                    throw StateError('must not run');
+                  },
+            ),
+          ),
+        );
+        await tester.tap(find.byKey(const ValueKey<String>('open')));
+        await tester.pumpAndSettle();
+        final Finder button = find.byKey(
+          const ValueKey<String>('asr-transcribe-proofread'),
+        );
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        expect(runs, 0);
+        expect(
+          _statusText(tester),
+          contains(t.audiobook_transcribe_proofread_unset),
+        );
+      });
+    });
   });
 }
 
@@ -1192,4 +1419,15 @@ String _elapsedTotalPrefix() {
       .audiobook_transcribe_elapsed_total(elapsed: marker)
       .split(marker)
       .first;
+}
+
+/// 云端服务在这些用例里只做规划与就绪判定，不该真调 ffmpeg。
+class _UnusedFfmpeg implements FfmpegBackend {
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) =>
+      throw UnimplementedError('cloud UI tests never run ffmpeg');
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
+      throw UnimplementedError('cloud UI tests never run ffprobe');
 }

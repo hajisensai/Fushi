@@ -49,14 +49,15 @@ class PlayAudioAction extends QuickAction {
     // and iterated `Enhancement?` null-checking each element (a non-nullable
     // list cannot contain null). Collapsed to the single audio enhancement
     // this action actually previews.
-    final AudioEnhancement enhancement =
+    final LocalAudioEnhancement enhancement =
         LocalAudioEnhancement(field: AudioField.instance);
 
-    final File? file = await enhancement.fetchAudio(
+    // 带上词条出自的词典：系统语音兜底按它声明的词头语言念（BUG-3669）。
+    final File? file = await enhancement.fetchEntryAudio(
       appModel: appModel,
-      context: context,
       term: entry.word,
       reading: entry.reading,
+      dictionaryName: dictionaryName ?? entry.dictionaryName,
     );
 
     if (file != null) {

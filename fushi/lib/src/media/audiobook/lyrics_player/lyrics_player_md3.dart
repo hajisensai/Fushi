@@ -342,6 +342,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
         mirror: mirrorProgress,
       );
       final VoidCallback? onSwap = callbacks.onSwapSides;
+      final VoidCallback? onExitBook = callbacks.onExitBook;
       return Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
@@ -349,13 +350,24 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             rect: geometry.panel,
             child: _WidePanel(data: data, callbacks: callbacks),
           ),
-          // 底板右上角：左右互换 + 关闭（M3E 按钮组，tonal 同一档）。
+          // 底板右上角：书籍模式 + 左右互换 + 关闭（M3E 按钮组，tonal 同一档）。
+          // 有 [LyricsPlayerCallbacks.onExitBook] 时 × 直接退书回书架，回正文
+          // 交给前面的「书籍模式」键（反馈 QvYpZODImz）。
           Positioned(
             top: geometry.plate.top + 12,
             right: size.width - geometry.plate.right + 12,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                if (onExitBook != null) ...<Widget>[
+                  FushiIconButtonControl.filledTonal(
+                    key: const ValueKey<String>('lyrics_return_to_book_button'),
+                    tooltip: t.book_mode,
+                    onPressed: callbacks.onClose,
+                    icon: const FushiIcon(FushiIcons.readingMode),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 if (onSwap != null) ...<Widget>[
                   FushiIconButtonControl.filledTonal(
                     key: const ValueKey<String>('lyrics_swap_sides_button'),
@@ -366,8 +378,11 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
                   const SizedBox(width: 8),
                 ],
                 FushiIconButtonControl.filledTonal(
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  onPressed: callbacks.onClose,
+                  key: const ValueKey<String>('lyrics_close_button'),
+                  tooltip: onExitBook != null
+                      ? t.lyrics_exit_to_library
+                      : MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: onExitBook ?? callbacks.onClose,
                   icon: const FushiIcon(FushiIcons.close),
                 ),
               ],
@@ -1320,6 +1335,14 @@ class _NarrowTopBar extends StatelessWidget {
                 onPressed: callbacks.onOpenStatistics,
                 icon: const FushiIcon(FushiIcons.statistics),
               ),
+              // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
+              if (callbacks.onExitBook != null)
+                FushiIconButtonControl(
+                  key: const ValueKey<String>('lyrics_close_button'),
+                  tooltip: t.lyrics_exit_to_library,
+                  onPressed: callbacks.onExitBook!,
+                  icon: const FushiIcon(FushiIcons.close),
+                ),
             ],
           ),
         ),

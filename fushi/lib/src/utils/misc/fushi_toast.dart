@@ -27,6 +27,14 @@ abstract final class FushiToast {
   static set navigatorKey(GlobalKey<NavigatorState> key) =>
       _toastNavigatorKey = key;
 
+  /// 制卡结果 toast 的用户开关（[mineToastShown] 的接线点）。各 entry point 在拿到
+  /// `AppModel` 后装上读偏好的闭包（`PreferencesRepository.mineNoticeShown`）；没装时
+  /// 一律弹（存量行为）。闭包每次现读偏好，设置页改完立即生效。
+  static bool Function(MineToastStatus status) mineNoticeFilter =
+      _showEveryMineNotice;
+
+  static bool _showEveryMineNotice(MineToastStatus status) => true;
+
   /// [severity] 决定前置图标与图标的语义色（见 [ToastSeverity]）；底色恒为主题的
   /// 浮条色，不再整块铺饱和色。显式传 [backgroundColor] / [textColor] 仍然优先
   /// ——少数调用点（如 tag chip 透传自身颜色）不是语义着色。
@@ -77,7 +85,11 @@ abstract final class FushiToast {
   /// pending 信息）。有 navigator overlay（主 app，桌面与移动）时走自绘 overlay
   /// （会顶替上一条，让 pending → 结果自然过渡）；无 overlay 的独立弹窗 Activity
   /// 降级为原生着色 toast（无图标但仍着色，绝不静默）。
+  ///
+  /// 先过 [mineNoticeFilter]：用户在「制卡提示」里关掉的那类结果直接不弹。所有制卡
+  /// 结果 toast 都从这里出，所以开关只需在这一处生效。
   static void showMine({required String msg, required MineToastStatus status}) {
+    if (!mineNoticeFilter(status)) return;
     final overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay != null) {
       _showMineOverlay(overlay: overlay, msg: msg, status: status);

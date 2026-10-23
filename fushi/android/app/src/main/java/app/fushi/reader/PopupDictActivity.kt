@@ -8,7 +8,6 @@ import android.graphics.drawable.StateListDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.util.TypedValue
 import android.util.Log
 import android.view.Gravity
@@ -28,7 +27,6 @@ import android.widget.LinearLayout
 import android.app.Activity
 import org.json.JSONArray
 import java.io.ByteArrayInputStream
-import java.util.Locale
 import java.util.concurrent.Executors
 
 class PopupDictActivity : Activity() {
@@ -116,8 +114,6 @@ class PopupDictActivity : Activity() {
     private lateinit var searchField: EditText
     private val dbReader = PopupDbReader()
     private var ankiDroid: AnkiDroidHelper? = null
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private var currentSearchTerm = ""
     private var cachedPrefs: PopupDbReader.PopupPrefs? = null
@@ -146,13 +142,6 @@ class PopupDictActivity : Activity() {
         }
 
         ankiDroid = AnkiDroidHelper(this)
-        tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                val result = tts?.setLanguage(Locale.JAPAN)
-                ttsReady = result != TextToSpeech.LANG_MISSING_DATA
-                        && result != TextToSpeech.LANG_NOT_SUPPORTED
-            }
-        }
 
         buildLayout()
         applyPopupWindowSize()
@@ -171,7 +160,6 @@ class PopupDictActivity : Activity() {
 
     override fun onDestroy() {
         ioExecutor.shutdownNow()
-        tts?.shutdown()
         webView.destroy()
         super.onDestroy()
     }

@@ -523,10 +523,7 @@ void main() {
 
       expect(sent, <String>['sk-first-1111', 'sk-second-2222']);
       expect(prefs.aiKeyHealth, isEmpty);
-      expect(
-        find.text(t.ai_provider_api_key_ok(tail: '1111')),
-        findsOneWidget,
-      );
+      expect(find.text(t.ai_provider_api_key_ok(tail: '1111')), findsOneWidget);
       expect(find.textContaining(t.ai_error_quota_exhausted), findsNothing);
     });
 
@@ -645,7 +642,10 @@ void main() {
         const AiFeatureAssignments().withDefault('p3'),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey<String>('ai-provider-p3')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('ai-provider-p3')),
+        findsOneWidget,
+      );
 
       // 本页：只改 p1 的模型。
       await openEditor(tester, 'p1');
@@ -663,9 +663,7 @@ void main() {
       expect(prefs.storedAiFeatureAssignments.defaultProviderId, 'p3');
     });
 
-    testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('外层只放总配置：功能指派默认折叠，摘要报单独指定了几项', (WidgetTester tester) async {
       debugSettingsForceExpandAllSections = false;
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
@@ -696,9 +694,7 @@ void main() {
       expect(featureRow, findsOneWidget, reason: '点分组头展开后功能行出现');
     });
 
-    testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('折叠头摘要：单独指定（含「不使用 AI」）几项就报几项', (WidgetTester tester) async {
       debugSettingsForceExpandAllSections = false;
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
@@ -712,9 +708,7 @@ void main() {
       expect(find.text(t.ai_feature_overrides_count(n: 2)), findsOneWidget);
     });
 
-    testWidgets('单独指定过的功能行带「改过默认值」标记，恢复默认即跟随默认', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('单独指定过的功能行带「改过默认值」标记，恢复默认即跟随默认', (WidgetTester tester) async {
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),
       ]);
@@ -791,9 +785,10 @@ void main() {
       final AiFeatureAssignments saved = prefs.aiFeatureAssignments;
       expect(saved.defaultProviderId, 'p1');
       for (final AiFeature feature in AiFeature.values) {
+        // 云端语音转录上传音频、按量计费：只认显式指派，不跟随默认。
         expect(
           saved.resolve(feature, prefs.aiProviders)?.id,
-          'p1',
+          feature.followsDefaultProvider ? 'p1' : isNull,
           reason: feature.name,
         );
       }
@@ -1156,10 +1151,14 @@ void main() {
       // 候选只是辅助输入；写不进去就等于升级后把人家的自定义模型名吞了）。
       expect(
         tester
-            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
-                of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
-                matching: find.byType(TextField),
-              )),)
+            .widget<TextField>(
+              glassUnwrap<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+                  matching: find.byType(TextField),
+                ),
+              ),
+            )
             .controller!
             .text,
         'gpt-4o-mini',
@@ -1189,10 +1188,14 @@ void main() {
       // 显示着不同的模型名，而落盘的偏偏是用户没在看的那一个。
       expect(
         tester
-            .widget<TextField>(glassUnwrap<TextField>(find.descendant(
-                of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
-                matching: find.byType(TextField),
-              )),)
+            .widget<TextField>(
+              glassUnwrap<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+                  matching: find.byType(TextField),
+                ),
+              ),
+            )
             .controller!
             .text,
         'o4-mini',

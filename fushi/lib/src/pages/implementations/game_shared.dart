@@ -261,6 +261,7 @@ class GameSectionTabs extends StatelessWidget {
           LibrarySectionTab<GameSection>(
             value: section,
             label: _labelFor(section),
+            orderId: section.name,
           ),
       ],
       // 诊断不设页签（从捕获工作台 / 全局设置进入），停在诊断时高亮「捕获工作台」。
@@ -270,6 +271,8 @@ class GameSectionTabs extends StatelessWidget {
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
       floating: floating,
+      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序。
+      orderKey: 'games',
     );
   }
 }

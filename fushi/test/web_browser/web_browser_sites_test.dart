@@ -63,6 +63,80 @@ void main() {
     expect(parseWebBrowserAddress(''), isNull);
   });
 
+  test('5wWlKU_Rir：本机 / 局域网地址直接打开，不送去搜索', () {
+    // 写了协议：任何非空主机都是网址（主机不带点也算）。
+    for (final String input in <String>[
+      'http://localhost:55000/texthooker',
+      'http://nas:8080/',
+      'https://intranet/wiki',
+      'http://[::1]:8080/',
+    ]) {
+      expect(parseWebBrowserAddress(input)?.toString(), input, reason: input);
+      expect(
+        resolveWebBrowserInput(input, WebBrowserSearchEngine.bing)?.toString(),
+        input,
+        reason: input,
+      );
+    }
+    // 没写协议：回环与 IP 字面量补 http，其余补 https。
+    expect(
+      parseWebBrowserAddress('localhost:55000/texthooker')?.toString(),
+      'http://localhost:55000/texthooker',
+    );
+    expect(
+      parseWebBrowserAddress('192.168.1.10:8096')?.toString(),
+      'http://192.168.1.10:8096',
+    );
+    expect(
+      parseWebBrowserAddress('[::1]:8080')?.toString(),
+      'http://[::1]:8080',
+    );
+    expect(
+      parseWebBrowserAddress('example.com/a')?.toString(),
+      'https://example.com/a',
+    );
+    // 单个词、`协议:` 形状的非网址仍走搜索。
+    expect(parseWebBrowserAddress('nas'), isNull);
+    expect(parseWebBrowserAddress('foo:bar'), isNull);
+    expect(parseWebBrowserAddress('http://'), isNull);
+  });
+
+  test('编辑站点：按旧 URL 原位替换；新 URL 撞上已有项时不产生重复', () {
+    final WebBrowserSite a = WebBrowserSite(
+      name: 'A',
+      url: Uri.parse('https://a.example/'),
+    );
+    final WebBrowserSite b = WebBrowserSite(
+      name: 'B',
+      url: Uri.parse('https://b.example/'),
+    );
+    final WebBrowserSite c = WebBrowserSite(
+      name: 'C',
+      url: Uri.parse('https://c.example/'),
+    );
+    final WebBrowserSite edited = WebBrowserSite(
+      name: 'Texthooker',
+      url: Uri.parse('http://localhost:55000/texthooker'),
+    );
+    expect(
+      replaceWebBrowserSite(<WebBrowserSite>[a, b, c], b, edited),
+      <WebBrowserSite>[a, edited, c],
+    );
+    final WebBrowserSite toC = WebBrowserSite(name: 'B2', url: c.url);
+    expect(
+      replaceWebBrowserSite(<WebBrowserSite>[a, b, c], b, toC),
+      <WebBrowserSite>[a, c],
+    );
+    // 编辑后的站点经偏好往返仍可读回（无点号主机不再在解析时被丢掉）。
+    expect(
+      parseWebBrowserSites(
+        encodeWebBrowserSites(<WebBrowserSite>[edited]),
+        presets: const <WebBrowserSite>[],
+      ),
+      <WebBrowserSite>[edited],
+    );
+  });
+
   group('resolveWebBrowserInput', () {
     test('像网址的输入直接打开，不经搜索引擎', () {
       for (final WebBrowserSearchEngine engine

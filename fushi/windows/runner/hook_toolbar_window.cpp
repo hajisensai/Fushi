@@ -143,6 +143,8 @@ const wchar_t* SlotGlyph(Profile profile, int slot, const States& states) {
     return L"\uE99B";  // dashboard_customize
   }
   if (std::strcmp(action, "topmost") == 0) return L"\uF10D";   // push_pin
+  // content_copy 不在打包字体的极小子集里：显式空串 = 逐槽回退矢量画法。
+  if (std::strcmp(action, "copyLine") == 0) return L"";
   if (std::strcmp(action, "close") == 0) return L"\uE5CD";     // close
   // previousCue / nextCue 显式声明「没有字体字形」：打包的字体是 11 个码位的极小
   // 子集（skip_previous U+E045 / skip_next U+E044 不在其中），用字体画出来是豆腐
@@ -259,6 +261,23 @@ void DrawSlotIcon(ID2D1RenderTarget* target, ID2D1Factory* factory,
                        round_stroke.Get());
       target->DrawLine(point(0.30f, 0.50f), point(0.46f, 0.46f), brush, stroke,
                        round_stroke.Get());
+    }
+  } else if (is("copyLine")) {  // Two stacked sheets (content_copy).
+    target->DrawRoundedRectangle(
+        D2D1::RoundedRect(rect(0.38f, 0.30f, 0.72f, 0.74f), size * 0.05f,
+                          size * 0.05f),
+        brush, stroke, round_stroke.Get());
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> back;
+    if (SUCCEEDED(factory->CreatePathGeometry(back.GetAddressOf()))) {
+      Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+      if (SUCCEEDED(back->Open(sink.GetAddressOf()))) {
+        sink->BeginFigure(point(0.28f, 0.64f), D2D1_FIGURE_BEGIN_HOLLOW);
+        sink->AddLine(point(0.28f, 0.24f));
+        sink->AddLine(point(0.60f, 0.24f));
+        sink->EndFigure(D2D1_FIGURE_END_OPEN);
+        sink->Close();
+        draw_path(back.Get());
+      }
     }
   } else if (is("recaptureVoice")) {  // Microphone, not an ambiguous dot.
     {

@@ -3,15 +3,16 @@ import 'package:fushi/src/reader/reader_settings.dart';
 
 /// 竖排标点子集字体（BUG-3606）。
 ///
-/// 竖排 `text-orientation: mixed` 下，「」、。（）等 UAX #50 标为 Tu / Tr 的标点由
-/// 浏览器保持直立、靠字体的 OpenType `vert` / `vrt2` 替换成竖排字形。Blink（Android
-/// WebView / WebView2 / Chrome）在提供该字符的字体**没有**这条替换时不会退回旋转，
-/// 直接画横排字形；而 ー …… —— 这类字符按旋转处理、与字体无关，总是竖的。于是正文
-/// 字体（用户导入 / 按名选的系统字体、书自带字体、系统回退字体）只要缺 `vert`，同一页
-/// 就会「引号横着、长音和省略号竖着」。
+/// 竖排 `text-orientation: mixed` 下，「」、。（）与长音符 ー 等 UAX #50 标为 Tu / Tr
+/// 的字符由浏览器保持直立、靠字体的 OpenType `vert` / `vrt2` 替换成竖排字形。Blink
+/// （Android WebView / WebView2 / Chrome）在提供该字符的字体**没有**这条替换时不会
+/// 退回旋转，直接画横排字形；而 …… —— 这类字符按旋转处理、与字体无关，总是竖的。于是
+/// 正文字体（用户导入 / 按名选的系统字体、书自带字体、系统回退字体）只要缺 `vert`，
+/// 同一页就会「引号和长音横着、省略号竖着」（ー 早先被误当成旋转类排除，反馈
+/// mTof77pMTe 的「カーテン」就是横线，已补进子集）。
 ///
 /// 修法：竖排时把一款随包、确定带 `vert` 的标点子集（Noto Serif JP，SIL OFL 1.1，
-/// 由 `fushi/tool/fonts/gen_vertical_punctuation.py` 生成，3.7 KB）放在正文字体链
+/// 由 `fushi/tool/fonts/gen_vertical_punctuation.py` 生成，约 4 KB）放在正文字体链
 /// **最前面**，`unicode-range` 只覆盖子集里的标点——这些标点一律用它的竖排字形，其余
 /// 字符照旧落到原来的链。横排不注入，渲染与改动前逐字节相同。
 ///
@@ -33,6 +34,7 @@ abstract final class ReaderVerticalPunctuationFont {
     (0x3008, 0x3011), // 〈〉《》「」『』【】
     (0x3014, 0x301F), // 〔〕〖〗〘〙〚〛〜〝〞〟
     (0x30A0, 0x30A0), // ゠
+    (0x30FC, 0x30FC), // ー
     (0xFF08, 0xFF09), // （）
     (0xFF0C, 0xFF0C), // ，
     (0xFF0E, 0xFF0E), // ．

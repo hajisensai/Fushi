@@ -19,8 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 配套行为测试见 test/models/preferences_repository_test.dart（prefsVersion 单调 +
 /// 跨进程可读）与 test/profile/profile_repository_test.dart（profile 切换 bump 版本）。
 void main() {
-  test(
-      'popup_main onNewProcessText must NOT unconditionally refreshPrefCache '
+  test('popup_main onNewProcessText must NOT unconditionally refreshPrefCache '
       'on every external lookup (TODO-855 warm-reuse perf regression)', () {
     final String src = File('lib/popup_main.dart').readAsStringSync();
 
@@ -29,18 +28,46 @@ void main() {
     expect(
       src.contains('await appModel.refreshPrefCache()'),
       isFalse,
-      reason: 'TODO-855 回归：popup_main 又在每次查词无条件 await '
+      reason:
+          'TODO-855 回归：popup_main 又在每次查词无条件 await '
           'refreshPrefCache() —— 该路径必须走 refreshPrefCacheIfChanged() 先做廉价 '
           'prefs_version 检查，仅在 profile/偏好真正变化时才全量刷新。',
     );
 
     // The conditional path must be present (it is the fix; deleting it would
-    // make warm-reuse popups blind to profile/pref changes).
+    // make warm-reuse popups blind to profile/pref changes). BUG-3662: the
+    // popup now calls the umbrella AppModel.refreshForWarmDictionaryPopup(),
+    // which must still gate prefs through refreshPrefCacheIfChanged() and also
+    // reconcile dictionary metadata.
     expect(
-      src.contains('refreshPrefCacheIfChanged()'),
+      src.contains('await appModel.refreshForWarmDictionaryPopup();'),
       isTrue,
-      reason: 'popup_main 必须调用 refreshPrefCacheIfChanged() —— 否则 warm-reuse '
-          '弹窗看不到主 app 的 profile 切换 / 偏好变化（功能回归）。',
+      reason:
+          'popup_main 必须调用 refreshForWarmDictionaryPopup() —— 否则 warm-reuse '
+          '弹窗看不到主 app 的 profile 切换 / 偏好 / 词典设置变化（功能回归）。',
+    );
+    final String model = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    final int at = model.indexOf(
+      'Future<void> refreshForWarmDictionaryPopup() async {',
+    );
+    expect(at, greaterThan(0), reason: 'refreshForWarmDictionaryPopup 锚点不在了');
+    final String body = model.substring(at, model.indexOf('\n  }\n', at));
+    expect(
+      body.contains('await refreshPrefCacheIfChanged();'),
+      isTrue,
+      reason: 'TODO-855：偏好仍须经 prefs_version 门控，不得改成无条件全量刷新',
+    );
+    expect(
+      body.contains('await refreshPrefCache()'),
+      isFalse,
+      reason: 'TODO-855 回归：热路径不得无条件 refreshPrefCache()',
+    );
+    expect(
+      body.contains('await dictRepo.reloadMetadataIfChangedInDb()'),
+      isTrue,
+      reason: 'BUG-3662：热路径必须对账词典元数据（顺序 / 启用 / 折叠）',
     );
   });
 }

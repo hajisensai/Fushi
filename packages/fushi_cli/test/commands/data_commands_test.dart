@@ -742,7 +742,8 @@ void main() {
 
     test('sync ls 列出可用通道名', () {
       final String text = render('sync', 'ls', <String, Object?>{
-        'autoSync': true,
+        'autoSync': false,
+        'interconnectAutoSync': true,
         'interconnectEnabled': true,
         'running': false,
         'channels': <Object?>[
@@ -753,6 +754,9 @@ void main() {
       });
       expect(text, contains('cloud（webDav）'));
       expect(text, contains('interconnect（fushiServer）'));
+      // 两条通道的自动同步开关分开报（反馈 5nWEirdCs2）。
+      expect(text, contains('云同步自动同步：关'));
+      expect(text, contains('互联自动同步：开'));
     });
 
     test('dl add 远端 / dl detail / dl targets / pair-link / migrate', () {
