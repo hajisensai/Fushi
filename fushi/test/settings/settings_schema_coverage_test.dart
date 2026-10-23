@@ -1372,6 +1372,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/sync/interconnect_share_scope_test.dart',
   'interconnect/Share favorites':
       'test/sync/interconnect_share_scope_test.dart',
+  // 互联通道自己的自动同步（反馈 5nWEirdCs2 / BUG-3662）：开关写 interconnect_sync_auto，
+  // 效果是自动路径只跑开着的通道（关互联云照跑 / 关云互联照跑），迁移三态在
+  // sync_repository_test。
+  'interconnect/Auto sync': 'test/sync/sync_channel_isolation_test.dart',
   // service-config 同步：开关是请求前的进场门（关 = 连请求都不发），且是设备本地键。
   'interconnect/Sync service configuration from host':
       'test/sync/interconnect_service_config_test.dart',
