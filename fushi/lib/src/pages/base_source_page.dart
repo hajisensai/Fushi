@@ -1608,6 +1608,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,
       verticalWriting: verticalWriting,
+      // 与弹窗外壳的实际下限同口径（自适应收高 / 拖拽把手都按界面大小缩放它）。
+      minPopupWidth: kLookupPopupMinWidth * appModel.appUiScale,
+      minPopupHeight: kLookupPopupMinHeight * appModel.appUiScale,
     );
   }
 
