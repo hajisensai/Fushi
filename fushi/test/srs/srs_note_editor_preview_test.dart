@@ -135,6 +135,56 @@ void main() {
     expect(srsClozeOrdinals(<String>['plain']), isEmpty);
   });
 
+  testWidgets('原生混合预览的判据与复习页一致：模板改过就退回整面 WebView', (WidgetTester tester) async {
+    final SrsDbStore store = await _open(tester);
+    final SrsNoteTypeView type = (await _db(
+      tester,
+      () => store.noteType(store.fushiCardNoteTypeId),
+    ))!;
+    final Map<String, String> values = <String, String>{
+      _fid('Expression'): '食べる',
+      _fid('Picture'): '[sound:clip.mp4]',
+    };
+    final SrsTemplateDef tpl = type.templates.first;
+    expect(
+      srsNotePreviewNativeFushiCard(
+        type: type,
+        template: tpl,
+        valuesById: values,
+      ),
+      isNotNull,
+      reason: '内置模板 + 原生画得全的片段 → 原生混合渲染',
+    );
+    final SrsTemplateDef edited = SrsTemplateDef(
+      id: tpl.id,
+      name: tpl.name,
+      ord: tpl.ord,
+      front: '${tpl.front}<p>x</p>',
+      back: tpl.back,
+    );
+    expect(
+      srsNotePreviewNativeFushiCard(
+        type: type,
+        template: edited,
+        valuesById: values,
+      ),
+      isNull,
+      reason: '模板改过 → 整面 WebView（复习页同样如此）',
+    );
+    expect(
+      srsNotePreviewNativeFushiCard(
+        type: type,
+        template: tpl,
+        valuesById: <String, String>{
+          ...values,
+          _fid('Picture'): '<img src="https://example.com/a.png">',
+        },
+      ),
+      isNull,
+      reason: '远程图片原生画不了 → 整面 WebView',
+    );
+  });
+
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
@@ -159,6 +209,8 @@ void main() {
         findsOneWidget,
       );
       expect(_key('srs_note_preview'), findsNothing, reason: '宽窗不需要顶栏预览按钮');
+      // BUG-3704：模板未改的 Fushi 卡片与复习页同一个原生混合卡面，不退回整面 WebView。
+      expect(_inPreview(_key('srs-note-preview-native')), findsOneWidget);
       expect(_inPreview(find.textContaining('食べる')), findsWidgets);
       await tester.enterText(
         find.descendant(

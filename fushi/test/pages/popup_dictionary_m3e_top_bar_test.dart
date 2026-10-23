@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// BUG-3225 同一 PR 的顶部区域 M3E 化（app 外查词窗 popup_dictionary_page）：
 /// - MD3：关闭钮并进搜索栏同一枚 tonal 胶囊（仍在横滑包装之外、点它直接关）、
@@ -73,7 +74,10 @@ Future<void> _pump(
   final _TopBarAppModel appModel = _TopBarAppModel();
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [appProvider.overrideWith((ref) => appModel)],
+      overrides: [
+        appProvider.overrideWith((ref) => appModel),
+        ...popupMiningTargetTestOverrides(),
+      ],
       child: TranslationProvider(
         child: MaterialApp(
           theme: theme,
@@ -169,6 +173,30 @@ void main() {
     expect(_outerCard(tester).showBorder, isTrue);
     // 顶部区域的 M3E 形态与平台无关。
     expect(find.byKey(_toolbarKey), findsOneWidget);
+  });
+
+  // BUG-3703：「制卡目标」切换此前只交给层顶栏，基础层的层顶栏整条不画（没有
+  // header / 关闭 / 返回 / 历史），应用外查词窗里永远看不到这颗按钮。
+  testWidgets('MD3: mining target switch sits in the search pill, once', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, theme: _theme());
+    const ValueKey<String> target = ValueKey<String>('popup_mining_target');
+    expect(find.byKey(target), findsOneWidget);
+    expect(
+      find.descendant(of: find.byKey(_toolbarKey), matching: find.byKey(target)),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Apple design also shows the mining target switch', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, theme: _theme(glass: true));
+    expect(
+      find.byKey(const ValueKey<String>('popup_mining_target')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('Apple design keeps its own header layout', (

@@ -4089,28 +4089,22 @@ class SrsDbStore implements SrsSyncReplica {
     );
     // 原生卡面画不全的媒体（SVG / 远程图片、Picture 里的杂项内容）留在整面 WebView
     // （同一份模板），见 srs_fushi_card_native_media。
-    final bool nativeFushiCard =
-        d.noteType.builtinKey == kSrsBuiltinFushiCardKey &&
-        front == FushiCardNoteType.template.front &&
-        back == FushiCardNoteType.template.back &&
-        d.noteType.css == FushiCardNoteType.template.css &&
-        srsFushiCardMediaIsNative(fields);
+    final String? definitions = srsFushiCardNativeDefinitions(
+      builtinKey: d.noteType.builtinKey,
+      front: front,
+      back: back,
+      css: d.noteType.css,
+      fieldsByName: fields,
+      cardOrd: tpl.ord,
+      specials: specials,
+    );
     return SrsRenderedCard(
       question: r.question,
       answer: r.answer,
       css: d.noteType.css,
       isEmpty: r.isEmpty,
       fields: fields,
-      fushiCardDefinitions: nativeFushiCard
-          ? renderAnkiCard(
-              questionTemplate: front,
-              answerTemplate: kFushiCardDefinitionsTemplate,
-              noteFields: fields,
-              cardOrd: tpl.ord,
-              isCloze: false,
-              specials: specials,
-            ).answer
-          : null,
+      fushiCardDefinitions: definitions,
     );
   }
 

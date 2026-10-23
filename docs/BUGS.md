@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3291 条。点号进各自文件。
+> 共 3293 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3704](bugs/BUG-3704-srs-note-editor-preview-not-native-fushi-card.md) | ✅ | ✅ | 笔记编辑页实时预览与复习页不是同一张卡（Fushi 卡片退回整面 WebView，片段 / 图片画法不同） |
+| [BUG-3703](bugs/BUG-3703-popup-mining-target-switch-hidden-on-base-layer.md) | ✅ | ✅ | 应用外查词窗基础层不显示「制卡目标」切换按钮 |
 | [BUG-3687](bugs/BUG-3687-srs-rwkv-purged-card-scores-not-evicted.md) | ✅ | ✅ | 永久清除的卡仍留在 RWKV 常驻分数表里 |
 | [BUG-3686](bugs/BUG-3686-srs-rwkv-score-requery-counts-cache-hits.md) | ✅ | ✅ | RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答 |
 | [BUG-3685](bugs/BUG-3685-srs-purge-media-delete-race.md) | ✅ | ✅ | 墓碑清除回收媒体时，扫描与删除之间新加的引用照样被删 |
