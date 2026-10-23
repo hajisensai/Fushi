@@ -4797,6 +4797,8 @@
   "nav_game": "Game",
   "nav_home": "Home",
   "nav_lookup": "Lookup",
+  "nav_peek_open": "Open",
+  "nav_peek_recent": "Recent",
   "nav_srs": "Review",
   "nav_video": "Video",
   "nav_web": "Browser",
