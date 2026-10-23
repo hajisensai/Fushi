@@ -270,7 +270,6 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       await session.stop();
     }
 
-    final FushiDatabase db = appModel.database;
     final String bookKey = widget.bookKey;
 
     // 本书正在 TTS 朗读（退书后台继续听再进来）：接回朗读会话，不去解析录音有声书——
@@ -288,7 +287,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       return;
     }
 
-    final AudiobookSessionLauncher launcher = AudiobookSessionLauncher(db);
+    final AudiobookSessionLauncher launcher = appModel
+        .newAudiobookSessionLauncher();
     final AudiobookSessionStartRequest? req = await launcher.resolve(bookKey);
     if (req != null) {
       // 若进程级会话已持有本书控制器（退书后台听书后重进 / 同书重开），直接复用
@@ -402,6 +402,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // 灌扁平全书 cue 作初值（_primeAudioCuesForCurrentBook 随后按章节精确覆盖）；
         // 与后台听书路径共用 req.cues，使 attach 前的瞬态也有 cue（TODO-354）。
         cues: req.cues,
+        remote: req.remote,
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.startSession', e, stack);
@@ -1476,6 +1477,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           _runAudiobookClipPipeline(
             text: selectedText.trim(),
             inputFile: inputFile,
+            audioFileIndex: range.audioFileIndex,
             startMs: range.startMs,
             endMs: range.endMs,
             dynamicPlan: dynamicPlan,
@@ -1606,6 +1608,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   Future<void> _runAudiobookClipPipeline({
     required String text,
     required File inputFile,
+    required int audioFileIndex,
     required int startMs,
     required int endMs,
     _AudiobookClipDynamicPlan? dynamicPlan,
@@ -1661,12 +1664,26 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       final Duration synthTimeout = Duration(
         milliseconds: 3 * 60 * 1000 + (clipEndMs - clipStartMs),
       );
-      final String? clipPath = await extractAudioSegmentViaFfmpeg(
-        inputPath: inputFile.path,
-        startMs: clipStartMs,
-        endMs: clipEndMs,
-        outputPath: '$base.aac',
-      );
+      // 本机书 = 文件路径；流式书 = 服务器地址 + 此刻现取的鉴权头（占位文件不存在）。
+      AudiobookTrackInput? audioInput;
+      try {
+        audioInput = await _audiobookController?.trackInputFor(audioFileIndex);
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'ReaderFushi.exportClip.trackInput',
+          e,
+          stack,
+        );
+      }
+      final String? clipPath = audioInput == null
+          ? null
+          : await extractAudioSegmentViaFfmpeg(
+              inputPath: audioInput.input,
+              httpHeaders: audioInput.headers,
+              startMs: clipStartMs,
+              endMs: clipEndMs,
+              outputPath: '$base.aac',
+            );
       if (clipPath == null) {
         // TODO-1005 / BUG-472：M2 裁音频返回 null 此前只弹 toast、零日志（底层早返回
         // 也曾静默）。在管线层补一条带完整上下文的 ErrorLogService，连同底层日志一起

@@ -123,7 +123,10 @@ extension _ReaderMining on _ReaderFushiPageState {
       if (clip != null &&
           clip.audioFileIndex >= 0 &&
           clip.audioFileIndex < audioFiles.length) {
-        final File inputFile = audioFiles[clip.audioFileIndex];
+        // 本机书 = 文件路径；流式书 = 服务器文件地址 + 现取的鉴权头（占位文件不存在，
+        // 绝不能直接读 `audioFiles[i].path`）。
+        final AudiobookTrackInput audioInput = await _audiobookController!
+            .trackInputFor(clip.audioFileIndex);
         sentenceAudioTempDir =
             Directory.systemTemp.createTempSync('fushi_mine_sentence_audio_');
         // 句子音频容器与视频制卡保持同一平台规则：iOS 用 `.m4a`，让 AnkiMobile
@@ -151,7 +154,8 @@ extension _ReaderMining on _ReaderFushiPageState {
                 ? _audiobookController?.speed
                 : null;
         sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
-          inputPath: inputFile.path,
+          inputPath: audioInput.input,
+          httpHeaders: audioInput.headers,
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: outputPath,
