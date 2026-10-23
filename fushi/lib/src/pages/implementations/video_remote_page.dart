@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -31,6 +32,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show DictionaryPopupWebViewState, MinePopupResult, QueuedOverwriteReply;
 import 'package:fushi/src/sync/sync_backend.dart' show SyncAuthError;
+import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -424,6 +426,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         _active = -1;
       }
     });
+    _syncNowPlayingCover();
     if (changed) {
       final Map<String, dynamic> session = Map<String, dynamic>.from(_session);
       final String key =
@@ -464,6 +467,37 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     if (favoritesChanged || changed) await _loadFavorites();
     _highlight();
     _checkFavoriteReady();
+  }
+
+  /// 「正在播放」封面对应的电脑视频（快照 `identity` = bookUid）；换视频才重拉。
+  String? _coverIdentity;
+
+  /// 「正在播放」封面（背景取色 + 控制卡缩略图）；没有 / 还没拉到为 null。
+  ImageProvider? _nowPlayingCover;
+
+  /// 每部视频只拉一次封面：失败（没有封面 / 旧版电脑）也记住，不在每次快照
+  /// 刷新时重试。
+  void _syncNowPlayingCover() {
+    final String identity = _state['identity']?.toString() ?? '';
+    if (identity == _coverIdentity) return;
+    _coverIdentity = identity;
+    if (_nowPlayingCover != null) setState(() => _nowPlayingCover = null);
+    if (identity.isEmpty) return;
+    unawaited(
+      _client
+          .fetchRemoteCover(videoRemoteCoverPath(identity))
+          .then(
+            (Uint8List bytes) {
+              if (!mounted || _coverIdentity != identity || bytes.isEmpty) {
+                return;
+              }
+              setState(() => _nowPlayingCover = MemoryImage(bytes));
+            },
+            onError: (Object _) {
+              // 没有封面：保留应用主题与图标占位，不是错误。
+            },
+          ),
+    );
   }
 
   Future<List<Map<String, dynamic>>> _loadCues(
@@ -732,6 +766,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
           'limit': 100,
         }),
       ),
+      coverFor: _libraryCover,
     );
     if (picked == null || !mounted) return;
     if (available && picked == _state['identity']) return;
@@ -740,6 +775,22 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       'requestId': _client.requestId(),
     });
   });
+
+  /// 点播行的封面：只拉电脑声明有封面的条目（`coverVersion`），磁盘缓存按
+  /// 版本键控（重新刮削换了封面就重拉）。
+  ImageProvider? _libraryCover(VideoRemoteLibraryEntry entry) {
+    final int? version = entry.coverVersion;
+    if (version == null) return null;
+    return ResizeImage(
+      RemoteCoverImage(
+        videoRemoteCoverPath(entry.bookUid),
+        _client,
+        cacheKey: '${entry.bookUid}@$version',
+      ),
+      width: 192,
+      allowUpscaling: false,
+    );
+  }
 
   /// 电脑当前作品的集数（单视频 / 旧版电脑为 0）。
   int get episodeCount => (_state['episodeCount'] as num?)?.toInt() ?? 0;
@@ -1803,6 +1854,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     return VideoRemoteNowPlaying(
       title: _state['title']?.toString() ?? '',
       hostName: widget.peer.deviceName,
+      cover: _nowPlayingCover,
       isPlaying: playing,
       speed: (_state['speed'] as num?)?.toDouble() ?? 1,
       currentFavorited:

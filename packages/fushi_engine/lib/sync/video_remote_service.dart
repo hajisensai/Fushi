@@ -55,8 +55,11 @@ const Set<String> videoRemoteOperations = <String>{
   // or without a video page already open.
   //
   // * `library` — `{query?, offset?, limit?}` -> `{total, offset, items:
-  //   [{bookUid, title, collection?, positionMs, lastPlayedAt?}],
-  //   currentBookUid}`. Read only; `query` filters by title / collection.
+  //   [{bookUid, title, collection?, positionMs, lastPlayedAt?,
+  //   coverVersion?}], currentBookUid}`. Read only; `query` filters by title
+  //   / collection. `coverVersion` (cover file mtime) is present only when
+  //   the video has a cover, served by the interconnect library's
+  //   `GET /api/library/videos/<bookUid>/cover`.
   // * `openVideo` — `{bookUid, requestId}`: closes the open video page (its
   //   normal exit, position saved) and opens [bookUid]. Answers before the
   //   new page is playing; its session reaches the phone through the state

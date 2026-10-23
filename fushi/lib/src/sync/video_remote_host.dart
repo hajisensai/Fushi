@@ -118,6 +118,7 @@ final class VideoRemoteLibraryItem {
     this.collection,
     this.positionMs = 0,
     this.lastPlayedAt,
+    this.coverVersion,
   });
   final String bookUid;
   final String title;
@@ -126,12 +127,19 @@ final class VideoRemoteLibraryItem {
   final String? collection;
   final int positionMs;
   final int? lastPlayedAt;
+
+  /// Modification time (ms) of the video's cover file; null when it has none.
+  /// The phone fetches the cover from the library's own cover endpoint only
+  /// when this is set, and keys its cache by it (a re-scraped cover changes
+  /// it).
+  final int? coverVersion;
   Map<String, Object?> toJson() => <String, Object?>{
     'bookUid': bookUid,
     'title': title,
     if (collection != null) 'collection': collection,
     'positionMs': positionMs,
     if (lastPlayedAt != null) 'lastPlayedAt': lastPlayedAt,
+    if (coverVersion != null) 'coverVersion': coverVersion,
   };
 }
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,6 +108,36 @@ void main() {
       (page['items']! as List<Object?>).single,
       containsPair('bookUid', 'b'),
     );
+  });
+
+  test(
+    'library items carry the cover version only when there is a cover',
+    () async {
+      library = const <VideoRemoteLibraryItem>[
+        VideoRemoteLibraryItem(bookUid: 'a', title: 'A', coverVersion: 1234),
+        VideoRemoteLibraryItem(bookUid: 'b', title: 'B'),
+      ];
+      final List<Object?> items = (await call('library'))['items']! as List;
+      expect(items.first, containsPair('coverVersion', 1234));
+      expect(items.last, isNot(contains('coverVersion')));
+    },
+  );
+
+  test('cover version is the cover file mtime, null without a file', () async {
+    final Directory dir = await Directory.systemTemp.createTemp('vr_cover');
+    addTearDown(() => dir.delete(recursive: true));
+    final File cover = File('${dir.path}/cover.jpg')
+      ..writeAsBytesSync(<int>[1]);
+    final DateTime mtime = DateTime.fromMillisecondsSinceEpoch(1700000000000);
+    cover.setLastModifiedSync(mtime);
+    expect(
+      await videoRemoteCoverVersion(cover.path),
+      mtime.millisecondsSinceEpoch,
+    );
+    expect(await videoRemoteCoverVersion('${dir.path}/missing.jpg'), isNull);
+    expect(await videoRemoteCoverVersion(dir.path), isNull);
+    expect(await videoRemoteCoverVersion(null), isNull);
+    expect(await videoRemoteCoverVersion(''), isNull);
   });
 
   test(
