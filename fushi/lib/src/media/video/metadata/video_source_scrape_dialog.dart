@@ -605,12 +605,7 @@ class _VideoSourceScrapeTaskPanelState
         if (parseVideoScrapeAiIdentityNote(issue.message) != null)
           describeVideoScrapeIssueMessage(issue.message),
     ];
-    final String summary = t.scrape_all_done(
-      applied: report.succeededWorks,
-      review: report.pendingConfirmations,
-      skipped: report.protectedArtifacts,
-      failed: report.failedWorks,
-    );
+    final String summary = _reportSummary(report);
     return <String>[summary, ...notes].join('\n');
   }
 
@@ -930,6 +925,16 @@ class _VideoSourceScrapeTaskPanelState
     ];
   }
 
+  /// 结果汇总：作品数（应用 / 本批待确认 / 失败）与文件数（受保护未覆盖的
+  /// sidecar）分开说——旧文案把后者写成「已跳过 N 个」，读起来像跳过了 N 部作品。
+  static String _reportSummary(SourceScrapeReport report) =>
+      t.video_source_scrape_report_summary(
+        applied: report.succeededWorks,
+        review: report.pendingConfirmations,
+        failed: report.failedWorks,
+        protected: report.protectedArtifacts,
+      );
+
   /// 已完成区块的行：阶段 + 汇总的状态卡，其下每条警告 / 错误一格分段卡。
   List<Widget> _reportRows(
     VideoSourceScrapePhase phase,
@@ -948,17 +953,46 @@ class _VideoSourceScrapeTaskPanelState
         showProgress: false,
         details: <Widget>[
           Text(
-            t.scrape_all_done(
-              applied: report.succeededWorks,
-              review: report.pendingConfirmations,
-              skipped: report.protectedArtifacts,
-              failed: report.failedWorks,
-            ),
+            _reportSummary(report),
             style: context.fushiType.bodyMedium.copyWith(
               color:
                   fushiCardToneColors(context, _phaseTone(phase))?.onContainer,
             ),
           ),
+          // 「本批待确认」只数这一批新判出的歧义；早就在清单里的作品（后台补刮
+          // 不再重问）只在「待确认」页签里。清单非空就在结果卡上直说并给入口，
+          // 不让「待确认 0」读成「没有要你决策的」。
+          if (_pendingWorks.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              t.video_source_scrape_report_pending_backlog(
+                n: _pendingWorks.length,
+              ),
+              key: const ValueKey<String>(
+                'video-source-report-pending-backlog',
+              ),
+              style: context.fushiType.bodyMedium.copyWith(
+                color: fushiCardToneColors(context, _phaseTone(phase))
+                    ?.onContainer,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: Builder(
+                builder: (BuildContext context) =>
+                    FushiFilledButton.tonalIcon(
+                  key: const ValueKey<String>(
+                    'video-source-report-pending-open',
+                  ),
+                  onPressed: () =>
+                      DefaultTabController.of(context).animateTo(1),
+                  icon: const FushiIcon(FushiIcons.pending, size: 18),
+                  label: Text(t.video_source_scrape_report_pending_open),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
       if (issues.isNotEmpty) const SizedBox(height: 12),

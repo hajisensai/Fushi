@@ -709,10 +709,17 @@ class VideoSourceScrapeCoordinator
   VideoMetadataMediaKind _manualMediaKind(VideoSourceScrapeWork work) {
     final VideoNameInfo parsed =
         parseVideoFilename(p.basename(work.members.first.videoPath));
-    return work.isEpisodic || parsed.episode != null
+    return _looksEpisodic(work, parsed)
         ? VideoMetadataMediaKind.tv
         : VideoMetadataMediaKind.movie;
   }
+
+  /// 没有身份证据时的形态判据：多集作品是剧；单文件作品解出集号也是剧，**除非**
+  /// 文件名带电影关键词——`Doraemon Movie 01 (1980)` 的 `01` 是剧场版序号，按剧
+  /// 搜会让「Doraemon」唯一命中 TMDB 的 TV 本体并自动绑上（下载整理器
+  /// `video_download_organizer.dart` 同样是电影提示优先于集号）。
+  static bool _looksEpisodic(VideoSourceScrapeWork work, VideoNameInfo parsed) =>
+      work.isEpisodic || (parsed.episode != null && !parsed.isMovieHint);
 
   @override
   Future<SourceScrapeReport> scrapeSource(
@@ -1291,7 +1298,7 @@ class VideoSourceScrapeCoordinator
         confirmedLookup ?? downloadLookups.firstOrNull;
     VideoMetadataMediaKind kind = !localWork.isEpisodic && kindEvidence != null
         ? kindEvidence.mediaKind
-        : localWork.isEpisodic || parsed.episode != null
+        : _looksEpisodic(localWork, parsed)
             ? VideoMetadataMediaKind.tv
             : VideoMetadataMediaKind.movie;
     VideoMetadataWork? nfo = await VideoNfoReader(
@@ -1875,6 +1882,8 @@ class VideoSourceScrapeCoordinator
         metadata,
         tmdb.metadata,
         preferredLanguage: _locale,
+        supplementPart:
+            await _tmdbSupplementPart(resolvedLookup, tmdb.metadata),
       );
       // MAL cour 季缺分集（播出中的作品 Jikan 常给 0 集）→ 按映射表显式的
       // 「TMDB 第 S 季从第 O+1 集起」切片补集，本地文件才挂得上分集行。
@@ -3044,6 +3053,48 @@ class VideoSourceScrapeCoordinator
       externalId: '${tmdbIds.single}',
       mediaKind: kind,
     );
+  }
+
+  /// TMDB 补充若是主身份所属的**整部剧**（Fribb 行指向剧的第 S≠1 季 / 集偏移
+  /// 大于 0 / 剧场版挂在剧的特典季下），返回主身份那一部分自己的年份来源；补充
+  /// 就是主身份本身时返回 null。不这么分，AniDB 只有标题目录摘要（没有年份）时
+  /// 剧本体的首播年会填进续作季与剧场版（响け！2/3 显示 2015、剧场版显示 1979）。
+  Future<VideoMetadataSupplementPart?> _tmdbSupplementPart(
+    VideoMetadataLookup? resolved,
+    VideoMetadataWork? supplement,
+  ) async {
+    if (supplement == null) return null;
+    final int? supplementId = int.tryParse(
+      _lookupForCandidate(supplement, VideoMetadataProviderKind.tmdb)
+              ?.externalId ??
+          '',
+    );
+    if (supplementId == null) return null;
+    for (final AnimeIdentityEntry entry in await _mappingEntries(resolved)) {
+      if (entry.tmdbId != supplementId ||
+          entry.tmdbMediaKind != VideoMetadataMediaKind.tv ||
+          supplement.kind != VideoMetadataMediaKind.tv) {
+        continue;
+      }
+      final int? season = entry.tmdbSeason;
+      final bool part = entry.isMovie ||
+          (season != null && season != 1) ||
+          (entry.tmdbEpisodeOffset ?? 0) > 0;
+      if (!part) continue;
+      final VideoMetadataSeason? own = entry.isMovie || season == null
+          ? null
+          : supplement.seasons
+              .where((VideoMetadataSeason s) => s.seasonNumber == season)
+              .firstOrNull;
+      // 同一季里的后半段（集偏移 > 0）不是从这一季开头播的，季的年份 / 首播日
+      // 都不一定属于它，留空。
+      final bool offset = (entry.tmdbEpisodeOffset ?? 0) > 0;
+      return VideoMetadataSupplementPart(
+        year: offset ? null : own?.year,
+        premiered: offset ? null : own?.airDate,
+      );
+    }
+    return null;
   }
 
   /// 主身份（MAL / AniDB）在离线映射里的行；没有映射 / 不是这两家 / 查询失败 → 空。

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +11,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:path/path.dart' as p;
 
 /// 来源级 `provider_override` 与全局主源偏好决定手动搜索链的顺序；历史值回落全局。
 void main() {
@@ -175,6 +178,54 @@ void main() {
     expect(candidates.single.lookup.provider, VideoMetadataProviderKind.tmdb);
     expect(candidates.single.lookup.mediaKind, VideoMetadataMediaKind.movie);
     expect(mal.searchCalls, 0);
+    expect(tmdb.searchedKinds,
+        <VideoMetadataMediaKind>[VideoMetadataMediaKind.movie]);
+  });
+
+  // 单文件剧场版 `Doraemon Movie 01 (1980)`：`01` 是剧场版序号不是集号。旧判据
+  // 只看「解出了集号」就按剧搜，「Doraemon」于是唯一命中 TMDB 的 TV 本体并被自动
+  // 绑上；文件名带电影关键词时必须按电影搜。
+  test('single-file work with a movie keyword is searched as a movie',
+      () async {
+    final Directory root =
+        await Directory.systemTemp.createTemp('fushi_movie_hint_');
+    addTearDown(() => root.delete(recursive: true));
+    final Directory folder = Directory(
+        p.join(root.path, '[Fabre-RAW] Doraemon Movie 01 (1980) [1080p]'));
+    await folder.create();
+    final File file = File(p.join(
+        folder.path, '[Fabre-RAW] Doraemon Movie 01 (1980) [1080p].mkv'));
+    await file.writeAsBytes(const <int>[0]);
+    final int sourceId =
+        await db.insertMediaSource(MediaSourcesCompanion.insert(
+      label: 'Movies',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ));
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('movie01'),
+      title: const Value<String>('[Fabre-RAW] Doraemon Movie 01 (1980) [1080p]'),
+      videoPath: Value<String>(file.path),
+      sourceId: Value<int?>(sourceId),
+    ));
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final _RecordingProvider tmdb =
+        _RecordingProvider(VideoMetadataProviderKind.tmdb);
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(
+          primaryProvider: VideoMetadataProviderKind.tmdb),
+      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[tmdb]),
+    );
+    addTearDown(coordinator.close);
+    await coordinator.searchManualCandidates(
+      source: source,
+      workTitle: '[Fabre-RAW] Doraemon Movie 01 (1980) [1080p]',
+      workStableKey: 'book:movie01',
+      query: 'Doraemon',
+    );
     expect(tmdb.searchedKinds,
         <VideoMetadataMediaKind>[VideoMetadataMediaKind.movie]);
   });
