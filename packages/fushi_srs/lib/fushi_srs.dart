@@ -30,6 +30,8 @@ export 'src/review_log.dart';
 export 'src/scheduler.dart';
 export 'src/search/anki_search.dart';
 export 'src/source_ref.dart';
+export 'src/store/srs_core.dart';
+export 'src/store/srs_rows.dart';
 export 'src/style_dedup.dart';
 export 'src/sync/memory_replica.dart';
 export 'src/sync/sync_engine.dart';

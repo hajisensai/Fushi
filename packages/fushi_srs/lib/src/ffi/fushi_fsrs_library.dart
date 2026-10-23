@@ -16,10 +16,13 @@ const int kFushiFsrsAbiVersion = 1;
 /// 而是 [tryLoad] 返回 null / [isAvailable] 为 false。与 packages/fushi_p2p 的
 /// `FushiP2p` 同一套定位规则。
 class FushiFsrs {
-  FushiFsrs._(this.bindings, this.libraryPath);
+  FushiFsrs._(this.bindings, this.libraryPath, this.library);
 
   /// 底层 FFI 绑定（高级封装之外的逃生口）。
   final FushiFsrsBindings bindings;
+
+  /// 已打开的原生库（srs.db 的绑定 `SrsCoreBindings` 从同一个库查符号）。
+  final DynamicLibrary library;
 
   /// 实际加载的路径；按系统搜索路径裸名加载时为裸名，iOS 进程内静态链接时为 null。
   final String? libraryPath;
@@ -183,6 +186,6 @@ class FushiFsrs {
     if (bindings.ffsrs_abi_version() != kFushiFsrsAbiVersion) {
       return null; // ABI 不符：请求 / 响应形状可能已变，宁可不可用。
     }
-    return FushiFsrs._(bindings, path);
+    return FushiFsrs._(bindings, path, lib);
   }
 }
