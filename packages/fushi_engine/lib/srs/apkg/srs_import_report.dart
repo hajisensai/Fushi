@@ -120,6 +120,9 @@ class SrsImportReport {
   /// 新增笔记带来的卡片数。
   int cardsAdded = 0;
 
+  /// 本机已有、从没排过位置的新卡补上了来源的新卡位置（重新导入时的补救）。
+  int newPositionsRepaired = 0;
+
   /// 写入的来源 revlog 日志数（被识别为本机原生 / fushi-ext 已有的不算）。
   int reviewLogsImported = 0;
   int anchorsWritten = 0;

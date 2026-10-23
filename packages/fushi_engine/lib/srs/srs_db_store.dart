@@ -2041,6 +2041,46 @@ class SrsDbStore implements SrsSyncReplica {
     for (final (String id, SrsEntityEdits _) in await _cardLineage(cardId)) id,
   ]);
 
+  /// 复习日志的归属：前身卡 → 继承它历史的可见卡（与 [history] 合并前身日志同一条血统规则）。
+  ///
+  /// 更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后，日志仍记在（已隐藏的）前身卡名下；按卡读日志的地方
+  /// （统计）要把它们算到继承它们的那张可见卡上，否则那张卡在牌组统计里一条复习都没有。一张前身被
+  /// 几张可见卡继承时（极少）归 id 最小的那张，不重复计数。
+  Future<Map<String, String>> historyOwnerIndex() async {
+    final Map<String, List<String>> successors = await _successorIndex();
+    if (successors.isEmpty) return const <String, String>{};
+    final Set<String> candidates = <String>{
+      for (final List<String> l in successors.values) ...l,
+    };
+    final List<String> visible = <String>[
+      for (final SrsCardCacheRow c in await cardRows(candidates))
+        if (!c.hidden) c.id,
+    ]..sort();
+    final Map<String, String> out = <String, String>{};
+    for (int i = 0; i < visible.length; i += _refreshChunk) {
+      final List<String> chunk = visible.sublist(
+        i,
+        min(i + _refreshChunk, visible.length),
+      );
+      final _RefreshPrefetch pre = _RefreshPrefetch();
+      await _prefetchLineage(pre, chunk);
+      await _readWith(pre, () async {
+        for (final String owner in chunk) {
+          for (final (String id, SrsEntityEdits _) in (await _cardLineage(
+            owner,
+          )).skip(1)) {
+            out.putIfAbsent(id, () => owner);
+          }
+        }
+      });
+    }
+    // 前身自己还可见（没被换掉）时它的日志仍归它自己。
+    for (final SrsCardCacheRow c in await cardRows(out.keys.toList())) {
+      if (!c.hidden) out.remove(c.id);
+    }
+    return out;
+  }
+
   /// 一组卡各自的复习历史（同 [history]；按输入顺序去重）。按块预读整条血统的修改记录、日志与
   /// 服务器时刻（每块几次往返），批量重置 / 设置到期 / 撤销 / 立即重排 / 导出 / 优化器取数不再每张卡
   /// 各查四五次（BUG-3543）。
