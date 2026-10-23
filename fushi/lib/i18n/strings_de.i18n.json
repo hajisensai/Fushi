@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Benachrichtigen, wenn für eine installierte Erweiterung in ihrem Repository eine neuere Version vorliegt.",
   "updates_notify_section": "Update-Benachrichtigungen",
   "updates_notify_video_episode": "Über neue Anime-Folgen benachrichtigen",
-  "updates_notify_video_episode_hint": "Benachrichtigen, wenn bei einer abonnierten Serie der Download einer neuen Folge abgeschlossen ist.",
+  "updates_notify_video_episode_hint": "Benachrichtigen, wenn bei einer abonnierten Serie der Download einer neuen Folge abgeschlossen ist oder eine Serie in deiner Videobibliothek neue Folgen bekommt.",
   "updates_system_notifications": "Systembenachrichtigungen",
   "updates_system_notifications_hint": "Zusätzlich eine Systembenachrichtigung senden. Wenn ausgeschaltet, bleibt das Badge in der App erhalten.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

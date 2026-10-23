@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "インストール済みの拡張機能にリポジトリでより新しいバージョンがあるときに通知します。",
   "updates_notify_section": "アップデート通知",
   "updates_notify_video_episode": "アニメの新エピソードを通知",
-  "updates_notify_video_episode_hint": "購読中のシリーズの新エピソードのダウンロードが完了したときに通知します。",
+  "updates_notify_video_episode_hint": "購読中のシリーズの新エピソードのダウンロードが完了したとき、またはビデオライブラリの作品に新しいエピソードが出たときに通知します。",
   "updates_system_notifications": "システム通知",
   "updates_system_notifications_hint": "システム通知も送信します。オフにしてもアプリ内のバッジは残ります。",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

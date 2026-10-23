@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "แจ้งเตือนเมื่อส่วนขยายที่ติดตั้งมีเวอร์ชันใหม่กว่าในที่เก็บ",
   "updates_notify_section": "การแจ้งเตือนอัปเดต",
   "updates_notify_video_episode": "แจ้งเตือนตอนอนิเมะใหม่",
-  "updates_notify_video_episode_hint": "แจ้งเตือนเมื่อซีรีส์ที่ติดตามดาวน์โหลดตอนใหม่เสร็จ",
+  "updates_notify_video_episode_hint": "แจ้งเตือนเมื่อซีรีส์ที่ติดตามดาวน์โหลดตอนใหม่เสร็จ หรือเมื่อผลงานในคลังวิดีโอมีตอนใหม่",
   "updates_system_notifications": "การแจ้งเตือนของระบบ",
   "updates_system_notifications_hint": "ส่งการแจ้งเตือนของระบบด้วย การปิดตัวเลือกนี้ยังคงเก็บป้ายในแอปไว้",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

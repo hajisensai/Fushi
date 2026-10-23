@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "설치된 확장 프로그램의 저장소에 더 새로운 버전이 있으면 알립니다.",
   "updates_notify_section": "업데이트 알림",
   "updates_notify_video_episode": "새 애니메이션 에피소드 알림",
-  "updates_notify_video_episode_hint": "구독한 시리즈의 새 에피소드 다운로드가 끝나면 알립니다.",
+  "updates_notify_video_episode_hint": "구독한 시리즈의 새 에피소드 다운로드가 끝나거나 동영상 라이브러리의 작품에 새 에피소드가 나오면 알립니다.",
   "updates_system_notifications": "시스템 알림",
   "updates_system_notifications_hint": "시스템 알림도 함께 보냅니다. 끄면 앱 내 배지는 유지됩니다.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Оповещать, когда в репозитории есть более новая версия установленного расширения.",
   "updates_notify_section": "Уведомления об обновлениях",
   "updates_notify_video_episode": "Уведомлять о новых сериях аниме",
-  "updates_notify_video_episode_hint": "Оповещать, когда для подписанного сериала скачана новая серия.",
+  "updates_notify_video_episode_hint": "Оповещать, когда для подписанного сериала скачана новая серия или у сериала в видеотеке выходят новые серии.",
   "updates_system_notifications": "Системные уведомления",
   "updates_system_notifications_hint": "Дополнительно отправлять системное уведомление. При отключении значок в приложении сохраняется.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Báo khi tiện ích mở rộng đã cài có phiên bản mới hơn trong kho của nó.",
   "updates_notify_section": "Thông báo cập nhật",
   "updates_notify_video_episode": "Thông báo về tập anime mới",
-  "updates_notify_video_episode_hint": "Báo khi một series đã đăng ký tải xong tập mới.",
+  "updates_notify_video_episode_hint": "Báo khi một series đã đăng ký tải xong tập mới, hoặc khi một tác phẩm trong thư viện video có tập mới.",
   "updates_system_notifications": "Thông báo hệ thống",
   "updates_system_notifications_hint": "Gửi thêm thông báo hệ thống. Tắt mục này vẫn giữ huy hiệu trong ứng dụng.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

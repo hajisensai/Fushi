@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Waarschuwt wanneer een geïnstalleerde extensie een nieuwere versie in zijn repository heeft.",
   "updates_notify_section": "Updatemeldingen",
   "updates_notify_video_episode": "Melden bij nieuwe anime-afleveringen",
-  "updates_notify_video_episode_hint": "Waarschuwt wanneer een geabonneerde serie een nieuwe aflevering heeft gedownload.",
+  "updates_notify_video_episode_hint": "Waarschuwt wanneer een geabonneerde serie een nieuwe aflevering heeft gedownload of een serie in je videobibliotheek nieuwe afleveringen krijgt.",
   "updates_system_notifications": "Systeemmeldingen",
   "updates_system_notifications_hint": "Stuur ook een systeemmelding. Als je dit uitzet, blijft de badge in de app behouden.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

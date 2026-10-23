@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Avisa quando uma extensão instalada tem uma versão mais nova no repositório.",
   "updates_notify_section": "Notificações de atualização",
   "updates_notify_video_episode": "Notificar sobre novos episódios de anime",
-  "updates_notify_video_episode_hint": "Avisa quando uma série assinada termina de baixar um novo episódio.",
+  "updates_notify_video_episode_hint": "Avisa quando uma série assinada termina de baixar um novo episódio ou quando uma série da sua videoteca recebe novos episódios.",
   "updates_system_notifications": "Notificações do sistema",
   "updates_system_notifications_hint": "Também envia uma notificação do sistema. Desativar mantém o selo dentro do app.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

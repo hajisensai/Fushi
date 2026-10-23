@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Yüklü bir eklentinin deposunda daha yeni bir sürümü olduğunda uyar.",
   "updates_notify_section": "Güncelleme bildirimleri",
   "updates_notify_video_episode": "Yeni anime bölümlerini bildir",
-  "updates_notify_video_episode_hint": "Abone olunan bir dizi yeni bir bölümü indirmeyi bitirdiğinde uyar.",
+  "updates_notify_video_episode_hint": "Abone olunan bir dizi yeni bir bölümü indirmeyi bitirdiğinde veya video kitaplığındaki bir diziye yeni bölümler geldiğinde uyar.",
   "updates_system_notifications": "Sistem bildirimleri",
   "updates_system_notifications_hint": "Ayrıca bir sistem bildirimi gönder. Bunu kapatmak uygulama içi rozeti korur.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",

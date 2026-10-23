@@ -7675,7 +7675,7 @@
   "updates_notify_manga_extension_hint": "Peringatkan saat ekstensi terpasang memiliki versi lebih baru di repositorinya.",
   "updates_notify_section": "Notifikasi pembaruan",
   "updates_notify_video_episode": "Beri tahu tentang episode anime baru",
-  "updates_notify_video_episode_hint": "Peringatkan saat serial yang dilanggan selesai mengunduh episode baru.",
+  "updates_notify_video_episode_hint": "Peringatkan saat serial yang dilanggan selesai mengunduh episode baru, atau saat serial di pustaka video mendapat episode baru.",
   "updates_system_notifications": "Notifikasi sistem",
   "updates_system_notifications_hint": "Juga kirim notifikasi sistem. Mematikan ini mempertahankan lencana dalam aplikasi.",
   "updates_video_library_auto_update": "Auto-add new episodes to the video library",
