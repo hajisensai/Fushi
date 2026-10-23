@@ -39,6 +39,9 @@ class _FakeRemote implements AudiobookRemotePlayback {
       AudiobookTrackInput(input: 'https://abs.example/file/$index');
 
   @override
+  Future<void> attach(RemotePlaybackHost host) async {}
+
+  @override
   Future<void> release() async => released++;
 }
 

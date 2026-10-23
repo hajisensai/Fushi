@@ -289,6 +289,30 @@ class AudiobookSession extends ChangeNotifier {
     _onReleased = onReleased;
     _watchStoredCues();
 
+    // 远端书：后台接上进度同步（开会话 / 续播 / 定期写回）。不 await——开书不能等
+    // 服务器；它的失败只记日志，绝不影响播放。
+    if (remote != null) {
+      unawaited(
+        remote
+            .attach(
+              RemotePlaybackHost(
+                isPlaying: () => controller.isPlaying,
+                filePosition: () => controller.currentFilePosition,
+                restoreTo: (int fileIndex, int positionMs) =>
+                    controller.restoreToFileOffset(
+                      fileIndex: fileIndex,
+                      positionMs: positionMs,
+                    ),
+                addListener: controller.addListener,
+                removeListener: controller.removeListener,
+              ),
+            )
+            .catchError((Object e, StackTrace stack) {
+              ErrorLogService.instance.log('AudiobookSession.remoteAttach', e, stack);
+            }),
+      );
+    }
+
     _subscribeControlStreams(controller);
     await _startBackgroundSurfaces(controller);
 

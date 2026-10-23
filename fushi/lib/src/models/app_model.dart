@@ -7412,7 +7412,14 @@ class AppModel with ChangeNotifier {
       final AudiobookshelfApi? api = audiobookshelfApis.apiFor(server);
       return api == null
           ? null
-          : AudiobookshelfRemotePlayback(api: api, binding: binding);
+          : AudiobookshelfRemotePlayback(
+              api: api,
+              binding: binding,
+              deviceId: () => SyncRepository(database).getOrCreateDeviceId(),
+              onSyncError: (String what, Object error) => ErrorLogService
+                  .instance
+                  .log('AudiobookshelfProgress.$what', error, StackTrace.current),
+            );
     }
     return null;
   }

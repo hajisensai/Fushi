@@ -778,6 +778,47 @@ void main() {
       expect(localInput.headers, isEmpty);
     });
 
+    test('起会话后把播放器接给远端接缝（进度同步用），位置 / 播放状态可读', () async {
+      final (AudiobookSession session, _, _StubRemote r) = await startRemote();
+      await pumpEventQueue();
+      final RemotePlaybackHost host = r.attached!;
+      expect(host.isPlaying(), isFalse);
+      expect(host.filePosition(), (fileIndex: 0, positionMs: 0));
+      int notified = 0;
+      void listener() => notified++;
+      host.addListener(listener);
+      await session.controller!.setSpeed(1.5);
+      expect(notified, greaterThan(0), reason: '控制器变化会通知到接缝挂的监听');
+      host.removeListener(listener);
+      final int before = notified;
+      await session.controller!.setSpeed(1.0);
+      expect(notified, before, reason: '摘掉监听后不再通知');
+      expect(session.controller!.currentFilePosition.fileIndex, 0);
+    });
+
+    test('接缝 attach 失败（离线）不影响开书，会话照常可用', () async {
+      final _FakePlatform platform = installPlatform();
+      expect(platform, isNotNull);
+      final AudiobookSession session = makeSession();
+      addTearDown(session.dispose);
+      final _StubRemote remote = _StubRemote()..attachThrows = true;
+      final AudiobookPlayerController? controller = await session.start(
+        info: SessionBookInfo(
+          bookKey: 'offline',
+          audiobook: ab('offline'),
+          title: 'Offline',
+          mediaIdentifier: 'fushi://book/offline',
+        ),
+        audioFiles: remote.placeholderFiles,
+        prefs: prefs(),
+        persist: persist(),
+        remote: remote,
+      );
+      await pumpEventQueue();
+      expect(controller, isNotNull);
+      expect(session.isActive, isTrue);
+    });
+
     test('stop() 释放接缝，且只释放一次', () async {
       final (AudiobookSession session, _, _StubRemote r) = await startRemote();
       await session.stop();
@@ -984,6 +1025,8 @@ class _FakePlayer extends AudioPlayerPlatform {
 
 class _StubRemote implements AudiobookRemotePlayback {
   int released = 0;
+  RemotePlaybackHost? attached;
+  bool attachThrows = false;
 
   @override
   int get trackCount => 2;
@@ -1008,6 +1051,12 @@ class _StubRemote implements AudiobookRemotePlayback {
         input: 'https://abs.example/f$index',
         headers: const <String, String>{'Authorization': 'Bearer t'},
       );
+
+  @override
+  Future<void> attach(RemotePlaybackHost host) async {
+    attached = host;
+    if (attachThrows) throw StateError('server unreachable');
+  }
 
   @override
   Future<void> release() async => released++;

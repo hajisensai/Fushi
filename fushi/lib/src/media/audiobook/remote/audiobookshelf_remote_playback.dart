@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_progress_sync.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobookshelf_track_audio_source.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
@@ -16,10 +17,23 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
   AudiobookshelfRemotePlayback({
     required AudiobookshelfApi api,
     required this.binding,
-  }) : _api = api;
+    Future<String> Function()? deviceId,
+    void Function(String what, Object error)? onSyncError,
+    AudiobookshelfProgressSync? progressSync,
+  }) : _api = api {
+    _progress =
+        progressSync ??
+        AudiobookshelfProgressSync(
+          api: api,
+          binding: binding,
+          deviceId: deviceId ?? () async => 'fushi',
+          onError: onSyncError,
+        );
+  }
 
   final AudiobookshelfApi _api;
   final RemoteAudioBinding binding;
+  late final AudiobookshelfProgressSync _progress;
 
   List<RemoteAudioTrack> get tracks => binding.tracks;
 
@@ -67,10 +81,12 @@ class AudiobookshelfRemotePlayback implements AudiobookRemotePlayback {
   }
 
   @override
-  Future<void> release() async {
-    // 共享的协议层实例归 AudiobookshelfApiRegistry 管，这里没有要释放的东西。
-    // P5 的进度同步在此结算并关闭服务器会话。
-  }
+  Future<void> attach(RemotePlaybackHost host) => _progress.attach(host);
+
+  /// 结算最后一次进度并关服务器会话。共享的协议层实例归 AudiobookshelfApiRegistry
+  /// 管，这里不动它。
+  @override
+  Future<void> release() => _progress.close();
 
   static String _extensionOf(RemoteAudioTrack track) {
     final String? name = track.filename;

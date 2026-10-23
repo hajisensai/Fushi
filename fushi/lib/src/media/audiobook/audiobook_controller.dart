@@ -797,6 +797,11 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 是否正在播放。
   bool get isPlaying => _player.playing;
 
+  /// 当前位置：第几个音频文件、文件内毫秒（含激活落点的瞬态修正）。远端书的进度
+  /// 同步用它换算全书真实秒数。
+  ({int fileIndex, int positionMs}) get currentFilePosition =>
+      _effectiveFilePosition;
+
   /// 当前全局播放位置。
   Duration get position =>
       Duration(milliseconds: _effectiveFilePosition.positionMs);

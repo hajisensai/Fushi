@@ -6,6 +6,7 @@
 library;
 
 import 'dart:io';
+import 'dart:ui' show VoidCallback;
 
 import 'package:just_audio/just_audio.dart';
 
@@ -25,6 +26,30 @@ class AudiobookTrackInput {
   bool get isRemote => headers.isNotEmpty || input.contains('://');
 }
 
+/// 远端接缝眼里的播放器：只暴露进度同步需要的那几样，避免接缝反过来依赖控制器
+/// （控制器已经依赖接缝）。
+class RemotePlaybackHost {
+  const RemotePlaybackHost({
+    required this.isPlaying,
+    required this.filePosition,
+    required this.restoreTo,
+    required this.addListener,
+    required this.removeListener,
+  });
+
+  final bool Function() isPlaying;
+
+  /// 当前位置：第几个音频文件、文件内毫秒。
+  final ({int fileIndex, int positionMs}) Function() filePosition;
+
+  /// 跳到（文件下标，文件内毫秒）。
+  final Future<void> Function(int fileIndex, int positionMs) restoreTo;
+
+  /// 播放状态 / 位置变化的通知（控制器是 ChangeNotifier）。
+  final void Function(VoidCallback listener) addListener;
+  final void Function(VoidCallback listener) removeListener;
+}
+
 abstract class AudiobookRemotePlayback {
   /// 音轨数；与会话里的 `audioFiles` 一一对应。
   int get trackCount;
@@ -42,6 +67,10 @@ abstract class AudiobookRemotePlayback {
 
   /// 第 [index] 轨交给 ffmpeg 的输入：地址 + **现取**的鉴权头（令牌临近过期会先刷新）。
   Future<AudiobookTrackInput> trackInput(int index);
+
+  /// 会话起好后把播放器接上来：服务器进度同步（续播位置、定期写回）。**不得阻塞开书**，
+  /// 实现里的网络失败只记日志。
+  Future<void> attach(RemotePlaybackHost host);
 
   /// 会话结束时释放本接缝占用的资源（不关共享的协议层实例，它归注册表管）。
   Future<void> release();
