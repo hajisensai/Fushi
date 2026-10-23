@@ -7,7 +7,11 @@ import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
-    show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
+    show
+        kLookupPopupDefaultHeight,
+        kLookupPopupDefaultWidth,
+        kLookupPopupMinHeight,
+        kLookupPopupMinWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
@@ -279,6 +283,12 @@ Rect resolvePopupRect({
 /// [fallback]（被点的那个字）——字形矩形很小，四周总有空间，弹窗完整落在屏内、只是
 /// 可能盖住同一气泡里的其它字。避让成功时原样返回 [preferred]，既有行为不变。
 /// 底部固定模式忽略选区，不需要选。
+///
+/// 最小可用尺寸默认就是弹窗系统自己的下限（[kLookupPopupMinWidth] /
+/// [kLookupPopupMinHeight]，宿主再乘界面大小）：内容自适应收高、拖拽把手与设置滑杆都
+/// 不会让弹窗小于它。反馈 9VPd0p5d0V 的未放大截图里，资料表并集上方只剩约 130 高，
+/// 旧阈值 120 判它「放得下」，弹窗被推到屏顶、只露出顶栏和词头、离被点的词半屏远
+/// ——比弹窗系统自己允许的最小尺寸还小的结果不能算避让成功。
 Rect choosePopupAnchorRect({
   required Rect preferred,
   required Rect? fallback,
@@ -290,8 +300,8 @@ Rect choosePopupAnchorRect({
   double bottomReserve = 0.0,
   double topReserve = 0.0,
   bool verticalWriting = false,
-  double minPopupWidth = 200.0,
-  double minPopupHeight = 120.0,
+  double minPopupWidth = kLookupPopupMinWidth,
+  double minPopupHeight = kLookupPopupMinHeight,
 }) {
   if (fallback == null || bottomDocked || fallback == preferred) {
     return preferred;
