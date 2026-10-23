@@ -1826,6 +1826,30 @@ window.fushiSelection = {
     // 只覆盖词所在的直接父节点，绝不跨整篇）。
     return el.parentElement || el;
   },
+  // 字幕合成书（`CuesToEpub`：独立 SRT 书 / 语音转录产物）把相邻 cue 拼进同一个 <p>，每条
+  // cue 一个 [data-cue-id] span。听写稿常常整段没有句末标点，只按标点切句会把整段（几十条
+  // cue）当成一句塞进卡片。cue 是转录器按停顿 / 时长切好的语音单元，是没有标点时唯一可靠的
+  // 句界，所以：相邻两条 cue **都**不含句末标点时，它们之间的边界算句界。只要任一侧有标点
+  // （正常带标点的稿、被停顿切开的半句「今日は天気が」|「いいですね。」），照旧按标点取句，
+  // 不受影响。
+  cueSpanOf: function(node) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return el && el.closest ? el.closest('[data-cue-id]') : null;
+  },
+  hasSentenceDelimiter: function(text) {
+    if (!text) return false;
+    for (var i = 0; i < text.length; i++) {
+      if (this.sentenceDelimiters.includes(text[i])) return true;
+    }
+    return false;
+  },
+  isUnpunctuatedCueBoundary: function(a, b) {
+    var cueA = this.cueSpanOf(a);
+    var cueB = this.cueSpanOf(b);
+    if (!cueA || !cueB || cueA === cueB) return false;
+    return !this.hasSentenceDelimiter(cueA.textContent) &&
+      !this.hasSentenceDelimiter(cueB.textContent);
+  },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
     var self = this;
@@ -2455,6 +2479,8 @@ window.fushiSelection = {
       sStartOffset = 0;
       var laterNode = node;
       node = walker.previousNode();
+      // 无标点听写稿：cue 边界即句界（见 isUnpunctuatedCueBoundary）。
+      if (node && this.isUnpunctuatedCueBoundary(node, laterNode)) break;
       if (node) {
         limit = node.textContent.length;
         // BUG-3453：被跳过的空白缝还原成一个空格（partsBefore 最后反转拼接）。
@@ -2491,6 +2517,7 @@ window.fushiSelection = {
       var earlierNode = node;
       node = walker.nextNode();
       start = 0;
+      if (node && this.isUnpunctuatedCueBoundary(earlierNode, node)) break;
       // BUG-3453：同上，向后拼接时也把被跳过的空白缝还原成一个空格。
       if (node && this.hasSkippedWhitespaceBetween(earlierNode, node) &&
           this.isWordGapBetweenChars(earlierNode.textContent, node.textContent)) {
