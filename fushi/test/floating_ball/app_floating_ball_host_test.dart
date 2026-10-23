@@ -1296,6 +1296,42 @@ void main() {
         expect(prefs.floatingBallSystem, isTrue, reason: '两颗球的开关互不影响');
       });
 
+      testWidgets('BUG-3663 本场景按钮全取消（应用内球不画）：应用外球不让位；勾回按钮再让位', (
+        WidgetTester tester,
+      ) async {
+        mockNative(tester);
+        clearNative(tester);
+        await startSystemBall(tester);
+        expect(yields(), <bool>[true]);
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallButtons(
+            FloatingBallScope.general,
+            const <String>[],
+          );
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(ball(), findsNothing);
+        expect(
+          yields(),
+          <bool>[true, false],
+          reason: '应用内一颗球都不画时应用外球还让位 = Fushi 里一颗球都没有',
+        );
+        expect(prefs.floatingBallInApp, isTrue, reason: '不动开关');
+        await tester.runAsync(() async {
+          await prefs.setFloatingBallButtons(
+            FloatingBallScope.general,
+            const <String>['lookup'],
+          );
+          await debugLatestSystemBallSync;
+        });
+        await tester.pump();
+        await tester.pump();
+        expect(ball(), findsOneWidget);
+        expect(yields(), <bool>[true, false, true]);
+      });
+
       testWidgets('用户关掉应用外球：前后台切换不会把它打开', (WidgetTester tester) async {
         mockNative(tester);
         clearNative(tester);

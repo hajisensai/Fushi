@@ -730,12 +730,26 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 应用外球此刻该不该给应用内球让位（见 [floatingBallSystemBallYieldsToInApp]）。
   bool _systemBallYields() => floatingBallSystemBallYieldsToInApp(
-    inAppBallEnabled: _prefs?.floatingBallInApp ?? true,
+    inAppBallEnabled:
+        (_prefs?.floatingBallInApp ?? true) && _inAppBallHasButtons,
     lifecycle: _lifecycle,
     mobileForeground: _foreground,
     desktop: isDesktopSystemBallPlatform,
     inPictureInPicture: _inPictureInPicture,
   );
+
+  /// 当前场景按用户勾选还剩不剩按钮（与开关、可用性一起算；临时隐藏不算）。
+  /// 一颗都没有 = 本场景不要应用内球，应用外球不让位（BUG-3663）。
+  bool _inAppBallHasButtons = true;
+
+  /// build 里记下本场景有没有按钮；变了等这一帧结束再重新下发让位值。
+  void _noteInAppBallHasButtons(bool hasButtons) {
+    if (hasButtons == _inAppBallHasButtons) return;
+    _inAppBallHasButtons = hasButtons;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pushSystemBallYield();
+    });
+  }
 
   /// 原生球在跑、让位值变了才下发（线协议沿用 `setAppForeground`，值的含义是
   /// 「让位」）。原生球没起时不发：起球前会先下发一次。
@@ -1342,14 +1356,6 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       _dismissed = false;
       _dismissedOwner = null;
     }
-    if (!prefs.floatingBallInApp ||
-        scene.hidesBall ||
-        _capturing ||
-        // 反馈截图走原生窗口快照（含 WebView）时球会被一起拍进去，先藏。
-        feedbackWindowCaptureActive.value ||
-        _dismissed) {
-      return const SizedBox.shrink();
-    }
     final List<ReaderHeaderAction> buttons = <ReaderHeaderAction>[
       for (final String id in scene.pinnedIds)
         if (scene.actions[id] case final ReaderHeaderAction action) action,
@@ -1359,8 +1365,20 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           .map((String id) => _resolveButton(id, scene))
           .nonNulls,
     ];
-    // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。
-    if (buttons.isEmpty) return const SizedBox.shrink();
+    // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。这与关掉「应用内显示」
+    // 同义：应用外球不能再让位，否则这一场景里一颗球都没有（BUG-3663，反馈
+    // C-Bm1TZ388「应用外显示、应用内不显示」）。临时不画（场景隐藏 / 关闭 / 截屏中）
+    // 不影响这个判断，照样让位。
+    _noteInAppBallHasButtons(buttons.isNotEmpty);
+    if (!prefs.floatingBallInApp ||
+        scene.hidesBall ||
+        _capturing ||
+        // 反馈截图走原生窗口快照（含 WebView）时球会被一起拍进去，先藏。
+        feedbackWindowCaptureActive.value ||
+        _dismissed ||
+        buttons.isEmpty) {
+      return const SizedBox.shrink();
+    }
     // 「关闭悬浮球」排最上（离球最远，防误触）；按钮在下、末颗紧贴球。接管中的
     // 页面没有关闭键，固定按钮占最上面那几格。
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
