@@ -49,11 +49,12 @@ class TtsChannel {
   static bool get isSupported => _isSupported;
   static const _channel = FushiChannels.tts;
 
-  /// 原生 `TtsChannelHandler` 只注册在主 Activity 的引擎上（`MainActivity.
-  /// configureFlutterEngine`）；Android 弹窗词典 / 悬浮词典是另外的引擎与 entry
-  /// point，那里调本通道只会 MissingPluginException。由主入口 `main()` 调
-  /// [markHostPlaybackRegistered] 声明「本引擎有原生播放器」，消费端据此决定能否
-  /// 把单词音频交给原生 MediaPlayer（BUG-3311）。
+  /// 原生 `TtsChannelHandler` 注册在主 Activity 的引擎上（`MainActivity.
+  /// configureFlutterEngine`），也注册在 `:popup` 进程的 app 外查词引擎上
+  /// （`FloatingDictPluginRegistrant`，BUG-3663：本地音频库查询要用它）。但单词音频
+  /// 改交原生 MediaPlayer（BUG-3311 的防 duck 路径）只在主引擎上做：app 外查词浮在
+  /// 别的 app 上，照旧走弹窗 WebView 的 `<audio>`。由主入口 `main()` 调
+  /// [markHostPlaybackRegistered] 声明「本引擎走原生播放」，消费端据此分流。
   static bool _hostPlaybackRegistered = false;
 
   /// 本引擎是否能用原生 MediaPlayer 播单词音频（Android 主引擎）。

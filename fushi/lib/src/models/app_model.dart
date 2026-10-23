@@ -3774,8 +3774,7 @@ class AppModel with ChangeNotifier {
       // TODO-855: only do the expensive full reload when the main app actually
       // mutated a preference / switched profile since the last lookup; a cheap
       // single-row DB version read gates it.
-      await refreshPrefCacheIfChanged();
-      await _prepareLocalAudioForPlayback();
+      await refreshForWarmDictionaryPopup();
       return;
     }
     try {
@@ -3935,14 +3934,36 @@ class AppModel with ChangeNotifier {
   /// [PreferencesRepository.readPrefsVersionFromDb] row read replaces the
   /// previous unconditional full-table [refreshPrefCache] on every lookup; the
   /// expensive reload now happens only when something actually changed.
-  Future<void> refreshPrefCacheIfChanged() async {
+  ///
+  /// Returns whether a reload actually happened.
+  Future<bool> refreshPrefCacheIfChanged() async {
     final int dbVersion = await prefsRepo.readPrefsVersionFromDb();
-    if (dbVersion == _lastSeenPrefsVersion) return;
+    if (dbVersion == _lastSeenPrefsVersion) return false;
     await refreshPrefCache();
     // refreshPrefCache already advanced _lastSeenPrefsVersion from the reloaded
     // cache; align it to the value we just read so a concurrent writer between
     // the read and the reload can still be detected on the next call.
     _lastSeenPrefsVersion = dbVersion;
+    return true;
+  }
+
+  /// Android app 外查词（`:popup` 进程）热复用前的跨进程对账：常驻进程只在冷启动
+  /// 装载一次状态，主进程之后的改动它都看不见。三件事：
+  ///
+  /// 1. 偏好：[refreshPrefCacheIfChanged]（`prefs_version` 一行读门控）。
+  /// 2. 词典元数据（顺序 / 启用 / 折叠 / 改名 / 增删）：住在 `dictionary_metadata`
+  ///    表、不抬 `prefs_version`，以前只在冷启动读一次——主进程「词典管理」改完，
+  ///    app 外查词要杀进程才生效（BUG-3662）。变了就照 [reloadDictionariesFromDb]
+  ///    重载引擎、清查词缓存。
+  /// 3. 本地音频库：配置在偏好里，原生侧的库句柄要重新推（偏好变了才推）。
+  Future<void> refreshForWarmDictionaryPopup() async {
+    final bool prefsChanged = await refreshPrefCacheIfChanged();
+    if (await dictRepo.reloadMetadataIfChangedInDb()) {
+      await _rebuildDictPathsCacheAsync();
+      dictRepo.clearDictionaryResultsCache();
+      dictionarySearchAgainNotifier.notifyListeners();
+    }
+    if (prefsChanged) await _prepareLocalAudioForPlayback();
   }
 
   // ── sync pref helpers (delegated to PreferencesRepository) ──────────
