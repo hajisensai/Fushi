@@ -20,8 +20,13 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
   ) async {
     final List<RemoteLocalAudioInfo> remoteEntries =
         await backend.listRemoteLocalAudio();
+    // 「本端有」只认库文件真在本机的条目（[localAudioEntries] 的 path 已归一到本机
+    // 落点，见 AppModel.localAudioDbsOnThisDevice）。从另一台设备导入的配置方案会
+    // 带来同名但文件不在本机的引用（BUG-3662）：把它算作「本端有」，远端那份就永远
+    // 不会被拉下来，这条源也就永远修不好。拉下来后由 onLocalAudioImported 原位改指。
     final Set<String> localNames = <String>{
-      for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
+      for (final LocalAudioDbEntry d in localAudioEntries)
+        if (File(d.path).existsSync()) d.displayName,
     };
     final Set<String> remoteNames = <String>{
       for (final RemoteLocalAudioInfo r in remoteEntries) r.displayName,

@@ -1633,8 +1633,11 @@ class SyncOrchestrator {
         if (!e.isFolder && _isLocalAudioAsset(e.name))
           _stripLocalAudioAssetSuffix(e.name),
     };
+    // 「本端有」只认库文件真在本机的条目（同 _syncLocalAudioLive，BUG-3662）：
+    // 文件不在本机的同名引用不能挡住远端那份被拉下来。
     final Set<String> localNames = <String>{
-      for (final LocalAudioDbEntry d in localAudioEntries) d.displayName,
+      for (final LocalAudioDbEntry d in localAudioEntries)
+        if (File(d.path).existsSync()) d.displayName,
     };
 
     // Resolve both sides' work first so progress has a real denominator. The

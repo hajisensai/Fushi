@@ -385,6 +385,43 @@ void main() {
           reason: 'onLocalAudioImported 应被调用');
     });
 
+    test(
+        'BUG-3662 pull：本地有同名条目但库文件不在本机（导入别的设备的配置方案）'
+        '→ 仍拉取，不被悬空引用挡住', () async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+
+      final Directory tmp = Directory(p.join(work.path, 'tmp_pull_dangling'))
+        ..createSync();
+      final InterconnectSyncBackend backend =
+          await _buildClientBackend(base: serverBase, token: token);
+
+      final List<String> imported = <String>[];
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        // 配置方案从另一台设备带来的引用：同名，但本机没有这个文件。
+        localAudioEntries: <LocalAudioDbEntry>[
+          LocalAudioDbEntry(
+            path: p.join(work.path, 'not_on_this_device', 'local_audio_1.db'),
+            displayName: 'NHK ラジオ',
+          ),
+        ],
+        onLocalAudioImported: (LocalAudioPackageContents c) async {
+          imported.add(c.displayName);
+        },
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncLocalAudioLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty,
+          reason: '悬空引用不该被当成「本端有」去推送: ${report.errors}');
+      expect(report.localAudioImported, 1,
+          reason: '文件不在本机的同名条目不算「本端有」，远端那份必须被拉下来');
+      expect(imported, <String>['NHK ラジオ']);
+    });
+
     test('push：本地有 Local ライブラリ，host 无 → 推送到 host', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);
