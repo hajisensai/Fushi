@@ -504,25 +504,29 @@ class _WidePanel extends StatelessWidget {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: _gap),
                     child: _SpringEntrance(
-                      child: Center(
-                        // 播放走过书中插图时封面位换成插图（见
-                        // lyrics_illustration_view）。
-                        child: LyricsIllustrationArtworkSlot(
-                          controller: data.illustrations,
-                          side: width,
-                          height: height,
-                          borderRadius: _kLargeBorderRadius,
-                          onOpen: callbacks.onOpenIllustration == null
-                              ? null
-                              : (int index) => callbacks.onOpenIllustration!(
-                                  index,
-                                  returnToCover: false,
-                                ),
-                          cover: _CoverTile(
-                            cover: data.cover,
-                            width: width,
+                      // 封面（带大投影）自成一层：控件层别处重画时不连带它
+                      // 重新栅格化。
+                      child: RepaintBoundary(
+                        child: Center(
+                          // 播放走过书中插图时封面位换成插图（见
+                          // lyrics_illustration_view）。
+                          child: LyricsIllustrationArtworkSlot(
+                            controller: data.illustrations,
+                            side: width,
                             height: height,
-                            isPlaying: data.isPlaying,
+                            borderRadius: _kLargeBorderRadius,
+                            onOpen: callbacks.onOpenIllustration == null
+                                ? null
+                                : (int index) => callbacks.onOpenIllustration!(
+                                    index,
+                                    returnToCover: false,
+                                  ),
+                            cover: _CoverTile(
+                              cover: data.cover,
+                              width: width,
+                              height: height,
+                              isPlaying: data.isPlaying,
+                            ),
                           ),
                         ),
                       ),
@@ -976,8 +980,10 @@ class _StatsBuilderState extends State<_StatsBuilder> {
     super.dispose();
   }
 
+  // 自带重绘边界：读数每秒一变只重录这一小块，不连带播放卡投影与封面。
   @override
-  Widget build(BuildContext context) => widget.builder(context, _stats);
+  Widget build(BuildContext context) =>
+      RepaintBoundary(child: widget.builder(context, _stats));
 }
 
 /// 宽屏读数：tonal 标签一行（阅读速度 / 全书进度 / 会话时长）。

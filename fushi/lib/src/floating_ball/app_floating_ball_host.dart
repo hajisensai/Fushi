@@ -1357,7 +1357,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // ReaderFloatingBall 返回 Positioned，必须是 Stack 的直接子节点。本宿主挂在
     // 导航之上，没有 Overlay 祖先，球与按钮的 Tooltip 要自带一层；Stack 只在
     // 球 / 按钮上命中，空白处照常穿透到底下页面。
-    return Overlay.wrap(
+    // 球按页面此刻的主题画（歌词模式的封面取色等），而不是导航之上的根主题。
+    final ThemeData? sceneTheme = scene.theme;
+    final Widget ball = Overlay.wrap(
       child: Stack(
         children: <Widget>[
           ReaderFloatingBall(
@@ -1375,6 +1377,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ],
       ),
     );
+    // 恒包一层 Theme：有无场景主题时结构一致，球的展开 / 拖动状态不随换页丢失。
+    return Theme(data: sceneTheme ?? Theme.of(context), child: ball);
   }
 }
 

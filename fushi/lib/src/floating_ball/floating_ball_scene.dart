@@ -24,6 +24,7 @@ class _SceneEntry {
   Map<String, ReaderHeaderAction> get actions => state.widget.actions;
   bool get hidesBall => state.widget.hideBall;
   List<String> get pinnedIds => state.widget.pinnedIds;
+  ThemeData? get theme => state._theme;
 
   bool get isCurrent {
     if (!state.mounted || !state._active) return false;
@@ -47,6 +48,7 @@ class FloatingBallSceneSnapshot {
     required this.hidesBall,
     this.pinnedIds = const <String>[],
     this.owner,
+    this.theme,
   });
 
   /// 没有登记场景的页面：按「其它页面」的按钮配置。
@@ -73,6 +75,10 @@ class FloatingBallSceneSnapshot {
   /// 宿主据此判断用户是否已经离开了点「关闭悬浮球」的那个页面（离开即恢复）。
   /// 用路由而不是场景 State：页面上弹对话框时场景暂时不是当前，但人还在这页。
   final Object? owner;
+
+  /// 场景所在位置的主题：球按页面此刻的配色画（例如歌词模式按封面取色换了整页
+  /// 主题，球要跟着换，不能停在导航之上的根主题）。没有场景时 null = 根主题。
+  final ThemeData? theme;
 }
 
 /// 进程级场景登记表。
@@ -99,6 +105,7 @@ class FloatingBallSceneRegistry extends ChangeNotifier {
         hidesBall: entry.hidesBall,
         pinnedIds: entry.pinnedIds,
         owner: entry.owner,
+        theme: entry.theme,
       );
     }
     final Route<dynamic>? top = _topPage;
@@ -235,8 +242,18 @@ class _FloatingBallSceneState extends State<FloatingBallScene> {
     super.dispose();
   }
 
+  /// 本页此刻的主题（build 里取，主题一变本元素随之重建并通知宿主）。
+  ThemeData? _theme;
+
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    if (!identical(theme, _theme)) {
+      _theme = theme;
+      _registry._scheduleNotify();
+    }
+    return widget.child;
+  }
 }
 
 /// 两组按钮在外观上是否一致（id、图标、文案、key、可用态）。闭包不参与比较：页面

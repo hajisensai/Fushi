@@ -1030,8 +1030,9 @@ class _NarrowIllustrationEntry extends StatelessWidget {
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.medium,
                       gaplessPlayback: true,
-                      errorBuilder: (_, Object e, StackTrace? s) =>
-                          ColoredBox(color: Colors.white.withValues(alpha: 0.12)),
+                      errorBuilder: (_, Object e, StackTrace? s) => ColoredBox(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
                     ),
                   ),
                 ),
@@ -1157,8 +1158,10 @@ class _PeriodicRebuildState extends State<_PeriodicRebuild> {
     super.dispose();
   }
 
+  // 自带重绘边界：按间隔重建的读数只重录这一小块，不连带整个控件层。
   @override
-  Widget build(BuildContext context) => widget.builder(context);
+  Widget build(BuildContext context) =>
+      RepaintBoundary(child: widget.builder(context));
 }
 
 /// 无底色白色图标按钮（Niratan `LyricsPlayerIconButton`）：白 0.88、黑 0.28
@@ -1539,8 +1542,12 @@ class _LyricsScrubberState extends State<_LyricsScrubber> {
     );
   }
 
+  // 自带重绘边界：250ms 一次的进度刷新只重录进度条，不连带整个控件层。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      RepaintBoundary(child: _buildScrubber(context));
+
+  Widget _buildScrubber(BuildContext context) {
     final Duration duration = _duration;
     final Duration shown = _displayed();
     final double fraction = duration.inMilliseconds > 0
