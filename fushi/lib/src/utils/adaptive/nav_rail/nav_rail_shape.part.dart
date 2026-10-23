@@ -113,14 +113,16 @@ class _NavRailShapeState extends State<_NavRailShape>
       child: AnimatedBuilder(
         animation: Listenable.merge(<Listenable>[_morph.animation, _spin]),
         builder: (BuildContext context, Widget? _) {
-          // 弹簧过冲会让进度略超 1：形状插值只取 [0, 1]，过冲交给尺寸的回弹。
+          // 弹簧过冲会让进度略超 1：形状插值只取 [0, 1]。
           final double t = _morph.value;
           final ShapeBorder border = OutlinedBorder.lerp(
             from,
             to,
             t.clamp(0.0, 1.0),
           )!;
-          final double scale = 0.9 + 0.1 * t;
+          // 墨滴落定时就是同色同大的圆：形变从等大的圆开始，不缩一下；
+          // 只把弹簧过冲换成一点点鼓起。
+          final double scale = t <= 1 ? 1 : 1 + (t - 1) * 0.6;
           return Transform.rotate(
             angle: _spin.value * 2 * math.pi,
             child: Transform.scale(
