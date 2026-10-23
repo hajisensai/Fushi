@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3266 条。点号进各自文件。
+> 共 3270 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3666](bugs/BUG-3666-scrape-summary-hides-pending-backlog.md) | ✅ | 🚧 | scrape-summary-hides-pending-backlog |
+| [BUG-3665](bugs/BUG-3665-tmdb-parent-series-year-leaks.md) | ✅ | ✅ | tmdb-parent-series-year-leaks |
+| [BUG-3664](bugs/BUG-3664-anidb-catalog-only-auto-matches-wrong-kind.md) | ✅ | ✅ | anidb-catalog-only-auto-matches-wrong-kind |
+| [BUG-3663](bugs/BUG-3663-movie-keyword-single-file-scraped-as-tv.md) | ✅ | ✅ | movie-keyword-single-file-scraped-as-tv |
 | [BUG-3662](bugs/BUG-3662-cli-candidates-provider-only-filters.md) | ✅ | ✅ | cli-candidates-provider-only-filters |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
