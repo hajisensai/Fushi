@@ -5660,22 +5660,22 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
     entryDiv.appendChild(createEntryHeader(entry, idx));
 
     const exprTags = createExpressionTagsSection(entry);
-    if (exprTags) {
-        entryDiv.appendChild(exprTags);
-    }
 
     const deinflection = createDeinflectionSection(entry);
     if (deinflection) {
         entryDiv.appendChild(deinflection);
     }
 
-    // 频率 / 音调进词头右侧的元数据列（见 createEntryHeader 的 .entry-header-main）。
+    // 频率 / 音调 / 词形标签进词头右侧的元数据列（见 createEntryHeader 的
+    // .entry-header-main）。词形标签（用户 10-23）原本在元数据列下方独占一整行，
+    // 跟在音调后面收进同一列，元数据列铺满整行时与其它 chip 共用宽度。
     const freqSection = createFrequencySection(entry.frequencies);
     const pitchSection = createPitchSection(entry.pitches, entry.reading);
-    if (freqSection || pitchSection) {
+    if (freqSection || pitchSection || exprTags) {
         const meta = el('div', { className: 'entry-header-meta' });
         if (freqSection) meta.appendChild(freqSection);
         if (pitchSection) meta.appendChild(pitchSection);
+        if (exprTags) meta.appendChild(exprTags);
         const headerMain = entryDiv.querySelector('.entry-header-main');
         (headerMain || entryDiv).appendChild(meta);
         if (headerMain) observeEntryHeaderMetaLayout(headerMain.parentNode);

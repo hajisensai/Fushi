@@ -1089,6 +1089,12 @@ html.global-lookup .mine-button:not(:disabled) {
     -webkit-user-select: none;
 }
 
+/* 词形标签收进词头元数据列（用户 10-23）时跟在频率 / 音调后面：不再往上拽贴词头，
+   与列内其它 section 同一行距（2px，tag-row 自带 3px）。列首照旧由 :first-child 归零。 */
+.entry-header-meta > .entry-tags:not(:first-child) {
+    margin-top: 2px;
+}
+
 .tag-row {
     display: flex;
     flex-wrap: wrap;
@@ -3219,6 +3225,10 @@ html.fushi-m3e .entry-current .entry-header::before {
    行之间 8。chip 一律 inline-flex 垂直居中——不再靠各自的 line-height / padding 凑高度，
    所以音调行的「N 本辞典」与读音 [n] 落在同一条中线上。 */
 html.fushi-m3e .entry-tags {
+    margin-top: 8px;
+}
+
+html.fushi-m3e .entry-header-meta > .entry-tags:not(:first-child) {
     margin-top: 8px;
 }
 
