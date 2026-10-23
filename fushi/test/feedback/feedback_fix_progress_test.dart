@@ -74,7 +74,9 @@ void main() {
         '2.3.0-debug.150',
         '2.3.0-debug.200',
         '2.3.0-debug.200+200', // build metadata 不影响
-        '2.4.0-debug.10', // 更高基版本
+        // 更高基版本且序号更大。序号才是先后的判据（50ae205e81：release sequence
+        // 压过基版本），`2.4.0-debug.10` 这种序号更小的构建比 150 更早，不算已包含。
+        '2.4.0-debug.160',
       ]) {
         final FeedbackFixProgress p = _progress(
           fix,
