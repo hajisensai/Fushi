@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "เปิดเมนูบริบท",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "นำมาไว้ด้านหน้าและเปิดหน้าค้นหา",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "เลื่อนลงหนึ่งขั้น",
   "shortcut_action_global_scroll_line_up": "เลื่อนขึ้นหนึ่งขั้น",
   "shortcut_action_global_scroll_page_down": "เลื่อนลงหนึ่งหน้าจอ",

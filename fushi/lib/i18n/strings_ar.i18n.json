@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "فتح قائمة السياق",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "إحضار إلى الواجهة وفتح صفحة البحث",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "التمرير لأسفل خطوة واحدة",
   "shortcut_action_global_scroll_line_up": "التمرير لأعلى خطوة واحدة",
   "shortcut_action_global_scroll_page_down": "تمرير لأسفل بمقدار شاشة",

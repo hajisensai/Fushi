@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "컨텍스트 메뉴 열기",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "앞으로 가져와 검색 페이지 열기",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "한 단계 아래로 스크롤",
   "shortcut_action_global_scroll_line_up": "한 단계 위로 스크롤",
   "shortcut_action_global_scroll_page_down": "한 화면 아래로 스크롤",

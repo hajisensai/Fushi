@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "Open context menu",
   "shortcut_action_global_external_lookup": "App-external lookup shortcut",
   "shortcut_action_global_external_open_lookup_page": "Bring to front and open lookup page",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "Scroll down one step",
   "shortcut_action_global_scroll_line_up": "Scroll up one step",
   "shortcut_action_global_scroll_page_down": "Scroll down one screen",

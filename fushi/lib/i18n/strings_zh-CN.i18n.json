@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "打开右键菜单",
   "shortcut_action_global_external_lookup": "应用外查词快捷键",
   "shortcut_action_global_external_open_lookup_page": "唤起主窗并打开查词页",
+  "shortcut_action_global_external_screen_ocr": "截屏识字（全局）",
   "shortcut_action_global_scroll_line_down": "向下滚动一行",
   "shortcut_action_global_scroll_line_up": "向上滚动一行",
   "shortcut_action_global_scroll_page_down": "向下翻一屏",

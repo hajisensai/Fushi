@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "Открыть контекстное меню",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "Вывести на передний план и открыть страницу поиска",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "Прокрутить вниз на один шаг",
   "shortcut_action_global_scroll_line_up": "Прокрутить вверх на один шаг",
   "shortcut_action_global_scroll_page_down": "Прокрутить вниз на экран",

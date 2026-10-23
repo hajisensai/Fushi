@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "Abrir menu de contexto",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "Trazer para frente e abrir a página de consulta",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "Rolar uma etapa para baixo",
   "shortcut_action_global_scroll_line_up": "Rolar uma etapa para cima",
   "shortcut_action_global_scroll_page_down": "Rolar uma tela para baixo",

@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "Mở menu ngữ cảnh",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "Đưa lên trước và mở trang tra từ",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "Cuộn xuống một bước",
   "shortcut_action_global_scroll_line_up": "Cuộn lên một bước",
   "shortcut_action_global_scroll_page_down": "Cuộn xuống một màn hình",

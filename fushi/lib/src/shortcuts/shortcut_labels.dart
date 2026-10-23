@@ -204,6 +204,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_external_lookup;
       case ShortcutAction.globalExternalOpenLookupPage:
         return t.shortcut_action_global_external_open_lookup_page;
+      case ShortcutAction.globalExternalScreenOcr:
+        return t.shortcut_action_global_external_screen_ocr;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:

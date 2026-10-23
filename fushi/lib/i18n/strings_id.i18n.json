@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "Buka menu konteks",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "Bawa ke depan dan buka halaman pencarian",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "Gulir turun satu langkah",
   "shortcut_action_global_scroll_line_up": "Gulir naik satu langkah",
   "shortcut_action_global_scroll_page_down": "Gulir bawah satu layar",

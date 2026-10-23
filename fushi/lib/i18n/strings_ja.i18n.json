@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "コンテキストメニューを開く",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "前面に出して辞書検索ページを開く",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "1行下にスクロール",
   "shortcut_action_global_scroll_line_up": "1行上にスクロール",
   "shortcut_action_global_scroll_page_down": "1画面分下にスクロール",

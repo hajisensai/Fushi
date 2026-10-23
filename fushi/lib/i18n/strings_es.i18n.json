@@ -5836,6 +5836,7 @@
   "shortcut_action_global_context_menu": "Abrir menú contextual",
   "shortcut_action_global_external_lookup": "App-external lookup hotkey",
   "shortcut_action_global_external_open_lookup_page": "Traer al frente y abrir la página de consulta",
+  "shortcut_action_global_external_screen_ocr": "Screen OCR (anywhere)",
   "shortcut_action_global_scroll_line_down": "Desplazar un paso hacia abajo",
   "shortcut_action_global_scroll_line_up": "Desplazar un paso hacia arriba",
   "shortcut_action_global_scroll_page_down": "Desplazar una pantalla hacia abajo",
