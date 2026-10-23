@@ -448,6 +448,7 @@ class AdminApi {
           kind: kind,
           force: true,
         );
+      case SourceLibraryKind.music:
       case null:
         throw FormatException('library "${library.id}" has unsupported kind=${library.kind}');
     }

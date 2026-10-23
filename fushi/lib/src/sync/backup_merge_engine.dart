@@ -1796,6 +1796,18 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v124：AI 整理记录，设备本地。
       'library_organize_runs',
       'library_organize_changes',
+      // v125 音乐模块 P0：曲库目录 / 歌单 / 歌词缓存 / 播放流整组设备本地（不出境），
+      // 合并导入同样跳过；跨设备合并等「音乐」备份类别与合并规则一起做。
+      'music_play_events',
+      'music_playlist_entries',
+      'music_playlists',
+      'music_videos',
+      'music_lyrics',
+      'music_track_credits',
+      'music_tracks',
+      'music_albums',
+      'music_artists',
+      'music_disc_sources',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →

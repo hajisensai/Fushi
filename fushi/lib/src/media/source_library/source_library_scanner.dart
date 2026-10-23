@@ -1057,6 +1057,11 @@ class SourceLibraryScanner {
                 '${manga.firstError}';
           }
           await BookSeriesGrouper(_db).groupAll();
+        case SourceLibraryKind.music:
+          // 音乐来源不走通用文件清单 + ScanPlan：目录遍历与标签 / CUE 解析都在
+          // Rust 胖核心（native/fushi_music）里做，由音乐曲库扫描器接管。
+          throw UnsupportedError(
+              'Music sources are scanned by the music library scanner');
       }
     } catch (e, stack) {
       scanError = e.toString();

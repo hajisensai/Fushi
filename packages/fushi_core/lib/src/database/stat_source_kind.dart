@@ -5,7 +5,7 @@
 /// 且写入点跨层（lookup 浮窗 / 阅读器 / 视频页 / core DAO），故挪进 fushi_core
 /// （同 activity_event_types.dart 的理由）。
 ///
-/// ⚠️ 与合集/书架域（`MediaKind`）**互不通用**：本域有 book / video / game 三桶
+/// ⚠️ 与合集/书架域（`MediaKind`）**互不通用**：本域有 book / video / game / music 四桶
 /// （`book` 涵盖 EPUB / 字幕书 / PDF / 漫画等一切「阅读」表面），`book` ≠ `epub`。
 library;
 
@@ -23,6 +23,10 @@ const String kStatSourceVideo = 'video';
 /// 记「玩的时候学了什么」，两者都进游戏域但走各自的表。
 const String kStatSourceGame = 'game';
 
+/// 音乐统计来源（落 DB 串，永不改变）：歌词查词 / 制卡（音乐模块，v125 起）。
+/// 只有发生学习动作或用户开启「听歌计入学习」才产生（设计 D4）。
+const String kStatSourceMusic = 'music';
+
 /// 统计来源的**内存态**枚举（命名统一 Phase 3.4，模式照 `SentenceSourceKind` /
 /// `MediaKind`）。落库仍存 [kStatSourceBook] / [kStatSourceVideo] /
 /// [kStatSourceGame] 原字符串（字节不变），本枚举供边界显式解析 / 穷尽 switch。
@@ -34,7 +38,10 @@ enum StatSourceKind {
   video(kStatSourceVideo),
 
   /// galgame（hook 会话期间的查词 / 制卡 / 收藏）。
-  game(kStatSourceGame);
+  game(kStatSourceGame),
+
+  /// 音乐（歌词查词 / 制卡）。
+  music(kStatSourceMusic);
 
   const StatSourceKind(this.dbValue);
 
@@ -42,7 +49,7 @@ enum StatSourceKind {
   /// 场景只用本字段，绝不用 `.name`。
   final String dbValue;
 
-  /// 严格解析：精确匹配三个落库值之一，未知 / null → null，绝不抛。
+  /// 严格解析：精确匹配任一落库值，未知 / null → null，绝不抛。
   static StatSourceKind? tryParse(String? raw) {
     for (final StatSourceKind kind in StatSourceKind.values) {
       if (kind.dbValue == raw) return kind;

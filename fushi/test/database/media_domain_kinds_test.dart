@@ -15,8 +15,10 @@ void main() {
         ActivityMediaKind.values
             .map((ActivityMediaKind k) => k.dbValue)
             .toSet(),
-        <String>{'book', 'video', 'game'},
+        <String>{'book', 'video', 'game', 'music'},
       );
+      expect(ActivityMediaKind.music.dbValue, kActivityMediaMusic);
+      expect(kActivityMediaMusic, 'music');
       expect(ActivityMediaKind.book.dbValue, kActivityMediaBook);
       expect(ActivityMediaKind.video.dbValue, kActivityMediaVideo);
       expect(ActivityMediaKind.game.dbValue, kActivityMediaGame);
@@ -56,8 +58,10 @@ void main() {
     test('dbValue 集合守卫：恰为 {book, video, game}，与移入 core 的常量一致', () {
       expect(
         StatSourceKind.values.map((StatSourceKind k) => k.dbValue).toSet(),
-        <String>{'book', 'video', 'game'},
+        <String>{'book', 'video', 'game', 'music'},
       );
+      expect(StatSourceKind.music.dbValue, kStatSourceMusic);
+      expect(kStatSourceMusic, 'music');
       expect(StatSourceKind.book.dbValue, kStatSourceBook);
       expect(StatSourceKind.video.dbValue, kStatSourceVideo);
       expect(StatSourceKind.game.dbValue, kStatSourceGame);
@@ -124,7 +128,7 @@ void main() {
   });
 
   group('SyncTombstoneKind（sync_deletion_tombstones.media_type）', () {
-    test('dbValue 集合守卫：5 资产 + 2 收藏集合，恰为 7 值', () {
+    test('dbValue 集合守卫：6 资产 + 2 收藏集合，恰为 8 值', () {
       expect(
         SyncTombstoneKind.values
             .map((SyncTombstoneKind k) => k.dbValue)
@@ -140,8 +144,11 @@ void main() {
           'localaudio',
           'favoriteword',
           'favoritesentence',
+          // v125 音乐模块：曲目墓碑（itemKey = 内容派生 track_uid）。
+          'music',
         },
       );
+      expect(SyncTombstoneKind.music.dbValue, 'music');
       expect(SyncTombstoneKind.book.dbValue, 'book');
       expect(SyncTombstoneKind.audiobook.dbValue, 'audiobook');
       expect(SyncTombstoneKind.srtbook.dbValue, 'srtbook');
@@ -192,9 +199,11 @@ void main() {
       expect(activityMediaKindOf(MediaKind.srt), ActivityMediaKind.book);
       expect(activityMediaKindOf(MediaKind.video), ActivityMediaKind.video);
       expect(activityMediaKindOf(MediaKind.game), ActivityMediaKind.game);
+      // 音乐曲目（v125）不在合集 / 书架域里（曲库有自己的专辑 / 歌单），是唯一
+      // 没有书架种类来源的活动种类。
       expect(MediaKind.values.map(activityMediaKindOf).toSet(),
-          ActivityMediaKind.values.toSet(),
-          reason: '每个活动种类都至少有一个书架种类来源');
+          ActivityMediaKind.values.toSet()..remove(ActivityMediaKind.music),
+          reason: '除音乐外每个活动种类都至少有一个书架种类来源');
     });
 
     test('shelfKindsOfActivityMedia 穷尽、有序（epub 优先 srt 回退）且与正向映射互逆', () {

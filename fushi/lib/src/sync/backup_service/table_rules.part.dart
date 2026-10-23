@@ -320,6 +320,17 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v124：AI 整理记录（本机做过哪些整理、供撤销），设备本地。
   'library_organize_runs': BackupTableRule.deviceLocal(),
   'library_organize_changes': BackupTableRule.deviceLocal(),
+  // v125 音乐模块 P0：整组设备本地（理由见 backup_service.dart 的 _deviceLocalTables）。
+  'music_play_events': BackupTableRule.deviceLocal(),
+  'music_playlist_entries': BackupTableRule.deviceLocal(),
+  'music_playlists': BackupTableRule.deviceLocal(),
+  'music_videos': BackupTableRule.deviceLocal(),
+  'music_lyrics': BackupTableRule.deviceLocal(),
+  'music_track_credits': BackupTableRule.deviceLocal(),
+  'music_tracks': BackupTableRule.deviceLocal(),
+  'music_albums': BackupTableRule.deviceLocal(),
+  'music_artists': BackupTableRule.deviceLocal(),
+  'music_disc_sources': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

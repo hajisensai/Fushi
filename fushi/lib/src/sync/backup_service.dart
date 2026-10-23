@@ -645,6 +645,19 @@ const List<String> _deviceLocalTables = <String>[
   // 恢复后对不上的记录只是撤销时找不到目标，不会误删。
   'library_organize_changes',
   'library_organize_runs',
+  // v125 音乐模块 P0：曲库目录可由重扫重建、装的是本机绝对路径；歌单 / 歌词编辑 /
+  // MV 绑定随备份走要等「音乐」备份类别与合并规则（P1）。在那之前整组设备本地：
+  // 不出境，覆盖恢复后从本机 bak 回灌（用户的曲库与歌单不因恢复别的数据而丢）。
+  'music_play_events',
+  'music_playlist_entries',
+  'music_playlists',
+  'music_videos',
+  'music_lyrics',
+  'music_track_credits',
+  'music_tracks',
+  'music_albums',
+  'music_artists',
+  'music_disc_sources',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -668,6 +681,16 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_download_subscription_items',
   'library_organize_runs',
   'library_organize_changes',
+  'music_disc_sources',
+  'music_artists',
+  'music_albums',
+  'music_tracks',
+  'music_track_credits',
+  'music_lyrics',
+  'music_videos',
+  'music_playlists',
+  'music_playlist_entries',
+  'music_play_events',
 ];
 
 /// v117 SRS 的**本机发布元信息 / 本机状态 / 可重建缓存**（docs/specs/2026-10-14-

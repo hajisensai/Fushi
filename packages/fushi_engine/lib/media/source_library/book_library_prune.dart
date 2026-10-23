@@ -511,6 +511,9 @@ Future<Set<String>> enumerateBookSourceRelPaths(
       ];
     case SourceLibraryKind.video:
       throw ArgumentError.value(kind, 'kind', 'video roots use video prune');
+    case SourceLibraryKind.music:
+      throw ArgumentError.value(
+          kind, 'kind', 'music roots soft-delete via the music scanner');
   }
   return <String>{
     for (final String path in paths) bookSourceRelPath(root.path, path),

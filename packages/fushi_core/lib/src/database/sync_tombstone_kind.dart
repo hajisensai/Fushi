@@ -4,7 +4,7 @@
 /// `book` 指「书资产」整体，itemKey=bookKey）。表注释只列了 4 个资产种类，
 /// 但收藏词 / 收藏句的删除传播墓碑也存进同一列（写入点
 /// `FushiDatabase.removeFavoriteWord` / `FavoriteSentenceRepository`），
-/// 故本枚举含全部 7 个已落库值。
+/// 故本枚举含全部已落库值（v125 起加音乐曲目）。
 library;
 
 /// sync 删除墓碑的资产种类（命名统一 Phase 3.4，模式照 `SentenceSourceKind` /
@@ -36,14 +36,17 @@ enum SyncTombstoneKind {
 
   /// 收藏句（itemKey=内容键，见 `FavoriteSentenceRepository.itemKeyOf` /
   /// `kFavoriteSentenceTombstoneType`）。
-  favoritesentence('favoritesentence');
+  favoritesentence('favoritesentence'),
+
+  /// 音乐曲目（itemKey=music_tracks.track_uid，内容派生、跨设备稳定；v125 起）。
+  music('music');
 
   const SyncTombstoneKind(this.dbValue);
 
   /// 落 DB 的字符串。永不改变；持久化场景只用本字段，绝不用 `.name`。
   final String dbValue;
 
-  /// 严格解析：精确匹配七个落库值之一，未知 / null → null，绝不抛
+  /// 严格解析：精确匹配八个落库值之一，未知 / null → null，绝不抛
   /// ——同步引擎须容忍对端未来新增的未知种类原样透传。
   static SyncTombstoneKind? tryParse(String? raw) {
     for (final SyncTombstoneKind kind in SyncTombstoneKind.values) {
