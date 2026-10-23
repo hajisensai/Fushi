@@ -1,5 +1,6 @@
 import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
@@ -64,6 +65,8 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart'
+    show openInterconnectDownloadTasksPage;
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
@@ -292,6 +295,40 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 上一次看到的本页路由是否在栈顶（判「被盖住 → 又露出来」的边沿）。
   bool _routeWasCurrent = true;
 
+  /// 本机成员里**从配对设备下载来的副本**（同一个 id 仍在对端清单里）的
+  /// entryKey。只有它们给「删除本机副本」：删掉后合集成员行留着，这一集退回
+  /// 远端集（反馈 _sZllpFQWm / BUG-3666：iPad 上找不到删下载副本的地方）。用户
+  /// 自己导入的本机原件不在其中，不会被这条动作误删。
+  Set<String> _peerCopyKeys = const <String>{};
+
+  /// 重算 [_peerCopyKeys]。在 [_reload] 画完之后后台跑、不挡首帧：
+  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端清单，这里只在库页
+  /// 注入了「删除本机副本」时才问一次（共享远端库缓存，TTL 内不打网络）；拉不到
+  /// 清单就当没有副本——宁可不给入口，也不把本机原件当副本删。
+  Future<void> _refreshPeerCopyKeys(List<VideoBookRow> members) async {
+    final CollectionRemoteContext? remote = widget.remote;
+    Set<String> keys = const <String>{};
+    if (remote != null &&
+        remote.deleteLocalCopy != null &&
+        members.isNotEmpty) {
+      try {
+        final Set<String> remoteIds = <String>{
+          for (final RemoteVideoInfo info in await remote.loadRemoteVideos())
+            info.id,
+        };
+        keys = <String>{
+          for (final VideoBookRow member in members)
+            if (remoteIds.contains(member.bookUid)) member.bookUid,
+        };
+      } catch (_) {
+        keys = const <String>{};
+      }
+    }
+    if (!mounted) return;
+    if (setEquals(keys, _peerCopyKeys)) return;
+    setState(() => _peerCopyKeys = keys);
+  }
+
   @override
   FushiDatabase get detailDatabase => widget.database;
   @override
@@ -497,6 +534,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       }
       _loading = false;
     });
+    unawaited(_refreshPeerCopyKeys(members));
     _syncBackdropRotation();
   }
 
@@ -2350,6 +2388,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 本集对它没有意义，换成「打开文件位置」。纯函数判据，不吃 IO。
     final VideoBookRow? local = episode.local;
     final bool hasLocalFiles = local != null && videoBookHasLocalFiles(local);
+    // 互联下载的管理动作（反馈 _sZllpFQWm / BUG-3666）：与发起下载的「下载远端集」
+    // 同一处、对同一集，任何平台都可达——不依赖「浏览 → 下载」，也不问商店合规门
+    // （互联下载不是受限能力）。
+    final InterconnectDownloadManager? downloads = widget.remote?.downloads;
+    final String? taskId = episode.isRemote && downloads != null
+        ? downloads.taskFor(episode.entryKey)?.id
+        : null;
+    final bool canDownloadToDevice =
+        episode.remote != null &&
+        widget.remote?.downloadMembers != null &&
+        taskId == null;
+    final bool canDeleteLocalCopy =
+        local != null &&
+        widget.remote?.deleteLocalCopy != null &&
+        _peerCopyKeys.contains(local.bookUid);
     final _EpisodeMenuAction? action = await showFushiMenu<_EpisodeMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
@@ -2357,6 +2410,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<_EpisodeMenuAction>>[
+        if (canDownloadToDevice)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.downloadToDevice,
+            child: _menuItemRow(
+              FushiIcons.cloudDownload,
+              t.remote_video_download,
+            ),
+          ),
+        if (taskId != null && downloads!.canPause(taskId))
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.pauseDownload,
+            child: _menuItemRow(FushiIcons.pause, t.download_task_pause),
+          ),
+        if (taskId != null && downloads!.canRestart(taskId))
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.resumeDownload,
+            child: _menuItemRow(FushiIcons.play, t.download_task_resume),
+          ),
+        if (taskId != null && downloads!.canCancel(taskId))
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.cancelDownload,
+            child: _menuItemRow(
+              FushiIcons.close,
+              t.interconnect_download_cancel,
+            ),
+          ),
         if (_downloadsAvailable && !hasLocalFiles)
           PopupMenuItem<_EpisodeMenuAction>(
             value: _EpisodeMenuAction.download,
@@ -2408,10 +2487,37 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           value: _EpisodeMenuAction.removeFromCollection,
           child: _menuItemRow(FushiIcons.linkOff, t.collection_remove_member),
         ),
+        if (canDeleteLocalCopy)
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.deleteLocalCopy,
+            child: _menuItemRow(
+              FushiIcons.delete,
+              t.collection_episode_local_copy_delete,
+            ),
+          ),
       ],
     );
     if (!mounted) return;
     switch (action) {
+      case _EpisodeMenuAction.downloadToDevice:
+        await widget.remote?.downloadMembers?.call(
+          _collection,
+          <RemoteVideoInfo>[episode.remote!],
+        );
+        if (mounted) await _reload();
+      case _EpisodeMenuAction.pauseDownload:
+        downloads?.pause(taskId!);
+      case _EpisodeMenuAction.resumeDownload:
+        await downloads?.resume(taskId!);
+        if (mounted) await _reload();
+      case _EpisodeMenuAction.cancelDownload:
+        await downloads?.cancel(taskId!);
+      case _EpisodeMenuAction.deleteLocalCopy:
+        final bool deleted =
+            await widget.remote?.deleteLocalCopy?.call(local!) ?? false;
+        if (!deleted || !mounted) return;
+        widget.onChanged();
+        await _reload();
       case _EpisodeMenuAction.download:
         _openDownloadDialog(episodeNumber: _episodeNumberOf(episode));
       case _EpisodeMenuAction.openFileLocation:
@@ -2569,6 +2675,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         // 批下载在 app 级管理器里跑到底；这里只等它排完，回来重载让新落地的
         // 本地行替换远端占位。
         await widget.remote?.downloadMembers?.call(_collection, _remoteMembers);
+        if (mounted) await _reload();
+        return;
+      case _CollectionManageAction.interconnectDownloadTasks:
+        await openInterconnectDownloadTasksPage(context);
         if (mounted) await _reload();
         return;
       case _CollectionManageAction.scrapeOnHost:
@@ -2754,6 +2864,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           t.remote_collection_download_members,
           enabled: _remoteMembers.isNotEmpty,
         ),
+      // 互联下载任务（暂停 / 继续 / 取消）：「下载远端集」发起的整批任务在这里能停
+      // （反馈 _sZllpFQWm：iOS 没有「浏览 → 下载」，此前点了就停不下来）。
+      if (widget.remote?.downloads != null)
+        action(
+          _CollectionManageAction.interconnectDownloadTasks,
+          FushiIcons.download,
+          t.interconnect_download_tasks_title,
+        ),
       // 互联刮削（7a / 7b）。
       if (widget.remote?.scrapeOnHost != null)
         action(
@@ -2885,6 +3003,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
 /// 集卡上下文菜单动作。
 enum _EpisodeMenuAction {
+  downloadToDevice,
+  pauseDownload,
+  resumeDownload,
+  cancelDownload,
+  deleteLocalCopy,
   download,
   openFileLocation,
   mediaInfo,
@@ -2905,6 +3028,7 @@ enum _CollectionManageAction {
   generateJaSubtitles,
   renameEpisodes,
   downloadRemote,
+  interconnectDownloadTasks,
   scrapeOnHost,
   scrapeForHost,
   splitBySeason,

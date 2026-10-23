@@ -80,6 +80,7 @@ void main() {
     required List<RemoteVideoInfo> remoteVideos,
     void Function(RemoteVideoInfo, List<RemoteVideoInfo>, int)? onOpenRemote,
     InterconnectDownloadManager? downloads,
+    Future<bool> Function(VideoBookRow row)? deleteLocalCopy,
   }) =>
       TranslationProvider(
         child: MaterialApp(
@@ -97,6 +98,7 @@ void main() {
               openEpisode: onOpenRemote ??
                   (RemoteVideoInfo _, List<RemoteVideoInfo> __, int ___) {},
               downloads: downloads,
+              deleteLocalCopy: deleteLocalCopy,
             ),
             onChanged: () {},
           ),
@@ -328,5 +330,111 @@ void main() {
     expect(passedMembers?.map((RemoteVideoInfo v) => v.id).toList(),
         <String>['video/e1', 'video/e2']);
     expect(passedIndex, 1);
+  });
+
+  // 反馈 _sZllpFQWm / BUG-3666：iPad 上「下载远端集」后没有地方能停、也找不到删
+  // 下载副本的地方（任务列表只在 iOS 缺席的「浏览 → 下载」里）。合集详情页的集卡
+  // 菜单就地给出互联下载的暂停 / 继续 / 取消，以及「删除本机副本」——后者只给
+  // id 仍在对端清单里的本机成员，用户自己导入的本机原件不给。
+  testWidgets('集卡菜单：远端集给继续 / 取消下载；下载副本给「删除本机副本」，本机原件不给',
+      (WidgetTester tester) async {
+    // e1：从对端下载来的副本（本机有行，id 也在对端清单里）；e2：用户自己的本机
+    // 文件（对端没有）；e3：只在对端、上次下到一半被暂停。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/e1'),
+      title: const Value('Show 01'),
+      videoPath: const Value('/remote_videos/Show 01.mkv'),
+    ));
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value('video/e2'),
+      title: const Value('Show 02'),
+      videoPath: const Value('/v/Show 02.mkv'),
+    ));
+    for (final String uid in <String>['video/e1', 'video/e2', 'video/e3']) {
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+    final InterconnectDownloadManager manager = InterconnectDownloadManager();
+    addTearDown(manager.dispose);
+    final Directory dir = Directory.systemTemp.createTempSync('fushi_coll_ic');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final File dest = File('${dir.path}/e3.mp4');
+    File('${dest.path}.part').writeAsBytesSync(List<int>.filled(10, 1));
+    manager.registerPausedVideoDownload(
+      id: 'video/e3',
+      title: 'Show 03',
+      dest: dest,
+      run: (File target,
+              {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {},
+      receivedBytes: 10,
+      totalBytes: 100,
+    );
+    final List<String> deletedCopies = <String>[];
+
+    useTallSurface(tester);
+    await tester.pumpWidget(detailPage(
+      remoteVideos: <RemoteVideoInfo>[
+        remoteEpisode('video/e1', 'Show 01', 0),
+        remoteEpisode('video/e3', 'Show 03', 2),
+      ],
+      downloads: manager,
+      deleteLocalCopy: (VideoBookRow row) async {
+        deletedCopies.add(row.bookUid);
+        return false;
+      },
+    ));
+    await tester.pumpAndSettle();
+
+    Future<void> openMenu(String uid) async {
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(
+          find.byKey(ValueKey<String>('collection-episode-row-$uid')),
+        ),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryButton,
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> closeMenu() async {
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+    }
+
+    await openMenu('video/e2');
+    expect(find.text(t.collection_episode_local_copy_delete), findsNothing,
+        reason: '对端没有这一集：是本机原件，不是下载副本');
+    await closeMenu();
+
+    await openMenu('video/e3');
+    expect(find.text(t.download_task_resume), findsOneWidget);
+    expect(find.text(t.interconnect_download_cancel), findsOneWidget);
+    expect(find.text(t.download_task_pause), findsNothing,
+        reason: '暂停中的任务不再给暂停');
+    await tester.tap(find.text(t.interconnect_download_cancel));
+    // 取消里有真实文件 IO（删 part / 清单）：交替让出真实时间与冲刷 fake zone。
+    for (int i = 0;
+        i < 200 &&
+            (manager.taskFor('video/e3') != null ||
+                File('${dest.path}.part').existsSync());
+        i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(manager.taskFor('video/e3'), isNull, reason: '取消后任务移出');
+    expect(File('${dest.path}.part').existsSync(), isFalse,
+        reason: '取消删掉半成品，重开 app 不会再被自动续传');
+
+    await openMenu('video/e1');
+    expect(find.text(t.collection_episode_local_copy_delete), findsOneWidget);
+    await tester.tap(find.text(t.collection_episode_local_copy_delete));
+    await tester.pumpAndSettle();
+    expect(deletedCopies, <String>['video/e1']);
   });
 }

@@ -836,7 +836,8 @@ class AppModel with ChangeNotifier {
       },
       // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
       // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
-      localAudioEntriesProvider: () => localAudioDbs,
+      // BUG-3667：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
+      localAudioEntriesProvider: () => localAudioDbsOnThisDevice,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
       audioDatabaseRoot: Directory('${appDirectory.path}/audiobooks'),
@@ -9873,6 +9874,12 @@ class AppModel with ChangeNotifier {
 
   List<LocalAudioDbEntry> get localAudioDbs => _localAudioManager.entries;
 
+  /// [localAudioDbs] 的 path 归一到本机实际文件位置（见
+  /// [LocalAudioManager.entriesOnThisDevice]）。互联同步只认这份：存储 path 可能
+  /// 是别的设备的（BUG-3667）。
+  List<LocalAudioDbEntry> get localAudioDbsOnThisDevice =>
+      _localAudioManager.entriesOnThisDevice;
+
   /// 把外部音频库文件拷进库目录，返回内部副本 entry（不写 prefs、不通知 native）。
   /// 持久化交给后续 [setAudioSourceConfigs]。
   ///
@@ -9928,18 +9935,48 @@ class AppModel with ChangeNotifier {
   /// 同步拉到一个远端本地音频库：把 staging 的 .db 拷进本机库目录（重建本机 path，
   /// 绝不复用远端 manifest 的绝对 path——它在本机不存在），经 [setAudioSourceConfigs]
   /// 双写 `audio_source_configs` + `local_audio_dbs` + 推 native，再还原子来源偏好
-  /// 并刷 UI。按 displayName 去重（已存在则跳过）。
+  /// 并刷 UI。按 displayName 去重：同名库已在本机可用则跳过。
+  ///
+  /// 同名条目在、但它指向的库文件**本机没有**（BUG-3667：从另一台设备导入的
+  /// 配置方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库
+  /// 落进本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
+  /// 偏好），而不是追加一条同名新源。否则这条悬空引用会永久挡住同步修复。
   ///
   /// 由 [SyncOrchestrator.onLocalAudioImported] 调用，故注册逻辑集中在此（拥有
   /// LocalAudioManager 的 AppModel），保持双真相源一致。
   Future<void> importSyncedLocalAudioDb(LocalAudioPackageContents c) async {
-    final bool exists = audioSourceConfigs.any((AudioSourceConfig s) =>
+    final List<AudioSourceConfig> configs = audioSourceConfigs;
+    final int existingIndex = configs.indexWhere((AudioSourceConfig s) =>
         s.kind == AudioSourceKind.localAudio &&
         s.displayLabel == c.displayName);
-    if (exists) return;
+    final AudioSourceConfig? existing =
+        existingIndex < 0 ? null : configs[existingIndex];
+    if (existing != null &&
+        await isLocalAudioDbAvailable(existing.path ?? '')) {
+      return;
+    }
     if (!await c.dbFile.exists()) return;
     final LocalAudioDbEntry entry =
         await importLocalAudioDbFile(c.dbFile.path, displayName: c.displayName);
+    if (existing != null) {
+      final List<LocalAudioSourcePref> keptSources =
+          sourcePrefsForLocalDb(existing.path ?? '');
+      final List<LocalAudioSourcePref> sources =
+          keptSources.isNotEmpty ? keptSources : c.sources;
+      await setAudioSourceConfigs(
+        <AudioSourceConfig>[
+          for (int i = 0; i < configs.length; i++)
+            i == existingIndex
+                ? existing.copyWith(path: entry.path)
+                : configs[i],
+        ],
+        sourcesByPath: sources.isEmpty
+            ? const <String, List<LocalAudioSourcePref>>{}
+            : <String, List<LocalAudioSourcePref>>{entry.path: sources},
+      );
+      notifyListeners();
+      return;
+    }
     final AudioSourceConfig cfg = AudioSourceConfig.localAudio(
       label: c.displayName,
       path: entry.path,

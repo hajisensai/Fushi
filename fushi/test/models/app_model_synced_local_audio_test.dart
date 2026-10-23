@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -161,6 +162,63 @@ void main() {
     await appModel.importSyncedLocalAudioDb(stagedContents(displayName: 'NHK'));
     expect(localCount(), 1, reason: '同名不应重复增长');
     expect(appModel.localAudioDbs.length, 1);
+  });
+
+  test(
+      'BUG-3667: same-name entry whose DB is not on this device is re-pointed '
+      'in place (order / enabled / sub-sources kept), not skipped', () async {
+    // 导入别的设备的配置方案后的样子：同名本地库条目在，路径是那台设备的内部副本
+    // （按文件名归一到本机库目录后也找不到文件），排在一条远端源之后、关着、带子来源偏好。
+    const String foreignPath =
+        r'C:\Users\other\AppData\Roaming\Fushi\local_audio_1783304412795.db';
+    const List<LocalAudioSourcePref> keptSources = <LocalAudioSourcePref>[
+      LocalAudioSourcePref(name: 'forvo', enabled: true),
+      LocalAudioSourcePref(name: 'nhk16', enabled: false),
+    ];
+    await prefs.setAudioSourceConfigs(<AudioSourceConfig>[
+      AudioSourceConfig.remoteAudio(url: 'https://example.test/{term}'),
+      AudioSourceConfig.localAudio(
+          label: 'NHK', path: foreignPath, enabled: false),
+    ]);
+    await prefs.setPref(
+      'local_audio_dbs',
+      jsonEncode(<Map<String, dynamic>>[
+        const LocalAudioDbEntry(
+          path: foreignPath,
+          displayName: 'NHK',
+          enabled: false,
+          sources: keptSources,
+        ).toJson(),
+      ]),
+    );
+    expect(await appModel.isLocalAudioDbAvailable(foreignPath), isFalse,
+        reason: '前置：这条引用在本机确实不可用');
+    final List<AudioSourceConfig> before = appModel.audioSourceConfigs;
+
+    await appModel.importSyncedLocalAudioDb(stagedContents(
+      displayName: 'NHK',
+      sources: const <LocalAudioSourcePref>[
+        LocalAudioSourcePref(name: 'nhk16', enabled: true),
+      ],
+    ));
+
+    final List<AudioSourceConfig> after = appModel.audioSourceConfigs;
+    expect(after.length, before.length, reason: '原位改指，不追加同名新源');
+    final int index = before.indexWhere(
+        (AudioSourceConfig s) => s.kind == AudioSourceKind.localAudio);
+    final AudioSourceConfig repointed = after[index];
+    expect(repointed.kind, AudioSourceKind.localAudio,
+        reason: '在源列表里的位置不变');
+    expect(repointed.displayLabel, 'NHK');
+    expect(repointed.enabled, isFalse, reason: '保留用户的开关');
+    expect(p.canonicalize(p.dirname(repointed.path!)),
+        p.canonicalize(libraryDir.path));
+    expect(await appModel.isLocalAudioDbAvailable(repointed.path!), isTrue,
+        reason: '改指后本机能找到这份库');
+    expect(appModel.localAudioDbs.single.path, repointed.path,
+        reason: 'audio_source_configs 与 local_audio_dbs 双写一致');
+    expect(appModel.localAudioDbs.single.sources, keptSources,
+        reason: '保留该条目原有的子来源偏好，不被同步包里的覆盖');
   });
 
   test(

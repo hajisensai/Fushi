@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -640,6 +641,23 @@ SettingsDestination buildInterconnectDestination() {
             icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
           ),
+          // 反馈 _sZllpFQWm / BUG-3666：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
+          // 这类任务此前只在「浏览 → 下载」里列出，iOS 没有浏览模块就无处可停；
+          // 互联下载不是商店受限能力，这里不挂任何合规门，五端都在。
+          SettingsActionItem(
+            id: 'interconnect.download_tasks',
+            title: t.interconnect_download_tasks_title,
+            subtitle: t.interconnect_download_tasks_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '互联下载任务是本机 app 内存里的传输队列（暂停 / 继续 / 取消要作用在正在跑的'
+              '传输上），只能在 app 里管理',
+            ),
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => const InterconnectDownloadTasksPage(),
+            ),
+          ),
           SettingsActionItem(
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
@@ -817,6 +835,32 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setInterconnectSyncFavoritesEnabled(value);
+            },
+          ),
+          // 反馈 5nWEirdCs2：上面两项（以及书/视频进度、合集等）只在「一轮同步」里
+          // 与对端合并，而轮次由同步分类的「自动同步」开关（默认关）驱动。此前互联页
+          // 对此一字不提——用户开了互联、配了对，看到「双向合并、默认开启」，却永远
+          // 等不到合并。这里不镜像开关（2026-09-06 拍板：互联页对别处的设置只留指路
+          // 行），而是一行实时状态 + 跳到同步分类并定位到那个开关。
+          SettingsNavigationItem(
+            id: 'interconnect.auto_sync_entry',
+            title: t.interconnect_auto_sync_entry,
+            subtitleBuilder: (SettingsContext ctx) =>
+                _syncSettings(ctx).autoSync
+                ? t.interconnect_auto_sync_entry_on
+                : t.interconnect_auto_sync_entry_off,
+            icon: FushiIcons.sync,
+            onTap: (SettingsContext ctx) async {
+              SettingsSearchReveal.pendingItemId = 'sync.auto_sync';
+              await pushSettingsPage(
+                ctx,
+                (_) => SettingsDetailPage(
+                  destination: buildSyncBackupDestination(),
+                ),
+              );
+              // 在同步分类里改了开关，回来要重算本行的实时状态（ModalRoute 缓存页面
+              // 内容，弹回来不会自己重算 resolveSubtitle，BUG-2586 同款）。
+              ctx.refresh();
             },
           ),
         ],

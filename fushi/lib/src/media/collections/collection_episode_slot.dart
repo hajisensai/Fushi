@@ -306,6 +306,7 @@ class CollectionRemoteContext {
     this.scrapeForHost,
     this.chooseTmdbOrderingOnHost,
     this.downloads,
+    this.deleteLocalCopy,
   });
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
@@ -349,4 +350,9 @@ class CollectionRemoteContext {
   /// 详情页是普通 StatefulWidget、既有测试不挂 `ProviderScope`，所以由库页注入
   /// 而不是页内取 provider；null = 集卡不画下载态（与注入前逐像素相同）。
   final InterconnectDownloadManager? downloads;
+
+  /// 删掉一集**从配对设备下载到本机的副本**（本机行 + 下载下来的文件），合集成员
+  /// 行保留，这一集退回远端集。自带确认框，返回是否真的删了。详情页只对 id 仍在
+  /// 对端清单里的本机成员给这条动作（见详情页 `_peerCopyKeys`）。null = 不提供。
+  final Future<bool> Function(VideoBookRow row)? deleteLocalCopy;
 }

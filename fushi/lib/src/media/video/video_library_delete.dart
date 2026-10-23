@@ -51,6 +51,9 @@ typedef VideoLibraryDeleteResult = ({
 /// 删掉 [bookUids] 对应的视频行 + app 副本；[decision].deleteLocalFiles 为真时再删
 /// 原始视频文件（含跟着它走的 sidecar 字幕）并联动下载任务；
 /// [decision].deleteStatistics 为真时先把这些视频攒下的统计一并删掉。
+///
+/// [removeFromCollections] 见 [VideoBookRepository.deleteVideoBooks]：只有「删掉从
+/// 配对设备下载来的本机副本」传 false（那一集仍在对端，合集成员留着退回远端集）。
 Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   required VideoBookRepository repo,
   required FushiDatabase database,
@@ -58,6 +61,7 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   required Iterable<String> bookUids,
   required DeleteDecision decision,
   bool compactDatabase = true,
+  bool removeFromCollections = true,
   Future<void> Function()? afterDeleteBeforeReclaim,
 }) async {
   LocalFileDeleteReport report = const LocalFileDeleteReport();
@@ -88,6 +92,7 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
       scope: decision.scope,
       compactDatabase: compactDatabase,
       deleteLocalFiles: decision.deleteLocalFiles,
+      removeFromCollections: removeFromCollections,
       localFileHooks: decision.deleteLocalFiles
           ? LocalVideoFileDeleteHooks(
               beforeDelete: (List<String> candidates) async {

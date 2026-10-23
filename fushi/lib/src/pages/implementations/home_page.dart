@@ -796,7 +796,7 @@ class _HomePageState extends BasePageState<HomePage>
       dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
       audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
       tempDir: appModel.temporaryDirectory,
-      localAudioEntries: appModel.localAudioDbs,
+      localAudioEntries: appModel.localAudioDbsOnThisDevice,
       onLocalAudioImported: appModel.importSyncedLocalAudioDb,
       onPostRun: appModel.refreshAfterSyncRun,
       onReport: appModel.presentSyncPrompts,
