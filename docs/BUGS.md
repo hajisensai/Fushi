@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3267 条。点号进各自文件。
+> 共 3308 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3704](bugs/BUG-3704-stats-overview-missing-srs-review-time.md) | ✅ | ✅ | 统计中心总览看不到 SRS 复习时长（含导入的 Anki 复习时长） |
 | [BUG-3703](bugs/BUG-3703-srs-stats-full-log-decode.md) | ✅ | ✅ | SRS 统计页每次全量读复习日志逐条 jsonDecode，随日志量线性变慢 |
-> 共 3306 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |
