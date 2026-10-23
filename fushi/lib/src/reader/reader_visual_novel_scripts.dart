@@ -3332,6 +3332,45 @@ $sharedInitViewport
       return this.sourceRoot || document.body;
     };
   }
+  // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的
+  // audioCuePayload 调 cueIdAtDomPoint）。分页 / 连续 shell 按 cue↔DOM 映射表反查，VN 屏上
+  // 是克隆、映射表只在播放到某句时才对那一句建——此前 VN 整个缺这对方法，中键恒拿到 null、
+  // 静默无反应。VN 的 cue 本来就是章内音频坐标区间（start/length，与跟随同一口径），这里把
+  // 点击处换算到同一坐标（getMatchableOffset，克隆 / 源节点都认）再按区间找所属句，
+  // 回 `{type:'frag', id}`（id 即 textFragmentId，见 AudiobookBridge）。点在注音上按所属
+  // ruby 的基字起点算。
+  if (typeof vn.cueIdAtPoint !== 'function') {
+    vn.cueIdAtPoint = function(x, y) {
+      if (!window.fushiSelection || !window.fushiSelection.getCaretRange) return null;
+      var caret = window.fushiSelection.getCaretRange(x, y);
+      if (!caret) return null;
+      return this.cueIdAtDomPoint(caret.startContainer, caret.startOffset);
+    };
+  }
+  if (typeof vn.cueIdAtDomPoint !== 'function') {
+    vn.cueIdAtDomPoint = function(node, off) {
+      var cues = this.sentenceAudioCues;
+      if (!node || !cues || !cues.length) return null;
+      var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      var annotation = el && el.closest ? el.closest('rt, rp') : null;
+      if (annotation) {
+        var ruby = annotation.closest('ruby');
+        node = ruby ? this.createWalker(ruby).nextNode() : null;
+        off = 0;
+      }
+      if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+      var offset = this.getMatchableOffset(node, off);
+      if (offset === null) return null;
+      for (var i = 0; i < cues.length; i++) {
+        var cue = cues[i];
+        if (!cue || !cue.id) continue;
+        if (offset >= this.sentenceAudioCueStart(cue) && offset < this.sentenceAudioCueEnd(cue)) {
+          return JSON.stringify({ type: 'frag', id: cue.id });
+        }
+      }
+      return null;
+    };
+  }
   // 章内字符偏移 → 屏索引：**唯一**一份两段式查找（先找覆盖该偏移的屏，再取第一个
   // 末尾越过它的屏，覆盖偏移落在屏间空白 / 媒体单元的情况）。跟随
   // （highlightSelectorCue）、搜索（scrollToSearchMatch）、恢复（restoreToCharOffset）
