@@ -183,17 +183,28 @@ Future<bool> _press(WidgetTester tester, String key) async {
 Future<bool> _closeSidePanel(WidgetTester tester) async {
   final Finder panel = find.byType(VideoChapterPanel);
   if (panel.evaluate().isEmpty) return true;
-  final Finder barrier = find.byWidgetPredicate(
-    (Widget w) =>
-        w is GestureDetector &&
-        w.behavior == HitTestBehavior.opaque &&
-        w.child == null &&
-        w.onTap != null,
-  );
-  final Finder stack = find.ancestor(of: panel, matching: find.byType(Stack));
-  final Finder scoped = find.descendant(of: stack.first, matching: barrier);
-  if (scoped.evaluate().isEmpty) return false;
-  tester.widget<GestureDetector>(scoped.first).onTap!();
+  // 沿祖先链往上找第一个「直接子节点里有全屏 barrier」的 Stack（side_panel.part
+  // 的 `Stack[GestureDetector(opaque, onTap: _hideVideoSidePanel), panelContent]`）。
+  // 面板内部也有 Stack，所以不能取最近的那个。
+  GestureDetector? barrier;
+  tester.element(panel).visitAncestorElements((Element e) {
+    final Widget w = e.widget;
+    if (w is Stack) {
+      for (final Widget child in w.children) {
+        if (child is GestureDetector &&
+            child.behavior == HitTestBehavior.opaque &&
+            child.child == null &&
+            child.onTap != null) {
+          barrier = child;
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+  final GestureDetector? found = barrier;
+  if (found == null) return false;
+  found.onTap!();
   return _waitFor(
     tester,
     () => find.byType(VideoChapterPanel).evaluate().isEmpty,

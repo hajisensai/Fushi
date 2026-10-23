@@ -26,17 +26,21 @@ void main() {
 
   group('manual seek clears in-flight explicit-seek suppression (BUG-903)', () {
     test('暂停态 skipToCue 立旗 → seekMs 到新位置复位抑制旗，后续 tick 不再被旧目标抑制', () async {
-      final AudiobookPlayerController controller =
-          await _loadController(<AudioCue>[
-        _cue(0), // cue0: [0, 1000]
-        _cue(1000), // cue1: [1000, 2000]
-        _cue(2000), // cue2: [2000, 3000]
-      ]);
+      final AudiobookPlayerController controller = await _loadController(
+        <AudioCue>[
+          _cue(0), // cue0: [0, 1000]
+          _cue(1000), // cue1: [1000, 2000]
+          _cue(2000), // cue2: [2000, 3000]
+        ],
+      );
 
       // 暂停态点最后一句 → 立起显式 seek 抑制窗，权威 cue 写成 cue2。
       await controller.skipToCue(controller.chapterCuesSnapshot[2]);
-      expect(controller.explicitSeekInFlightForTesting, isTrue,
-          reason: 'skipToCue（sentenceAudioHighlight 路径）暂停态应立起抑制窗');
+      expect(
+        controller.explicitSeekInFlightForTesting,
+        isTrue,
+        reason: 'skipToCue（sentenceAudioHighlight 路径）暂停态应立起抑制窗',
+      );
       expect(controller.currentCue?.startMs, 2000);
 
       // 让 skipToCue 那次 seek 吐出的事件落库，`_player.duration` 就绪，
@@ -45,44 +49,47 @@ void main() {
 
       // 用户拖进度条回到 cue1（1000ms）—— 全新意图，取代 in-flight explicit seek。
       await controller.seekMs(1000);
-      expect(controller.explicitSeekInFlightForTesting, isFalse,
-          reason: '手动 seek 必须复位显式 seek 抑制旗（BUG-903 根因）');
+      expect(
+        controller.explicitSeekInFlightForTesting,
+        isFalse,
+        reason: '手动 seek 必须复位显式 seek 抑制旗（BUG-903 根因）',
+      );
 
       // 模拟暂停态下到达新位置的 tick：旗已复位，不再被旧目标(cue2@2000)抑制，
       // cue 正常收敛到 cue1。旧行为下旗仍立，!playing 早退 → cue 卡在 cue2。
       controller.debugUpdateCueForPosition(1000);
-      expect(controller.currentCue?.startMs, 1000,
-          reason: '复位后暂停态 tick 应跟随新位置到 cue1，而非被旧目标抑制');
+      expect(
+        controller.currentCue?.startMs,
+        1000,
+        reason: '复位后暂停态 tick 应跟随新位置到 cue1，而非被旧目标抑制',
+      );
 
       controller.dispose();
     });
 
     test('暂停态 skipToCue 立旗 → noteManualReaderNavigation 手动翻页也复位抑制旗', () async {
-      final AudiobookPlayerController controller =
-          await _loadController(<AudioCue>[
-        _cue(0),
-        _cue(1000),
-        _cue(2000),
-      ]);
+      final AudiobookPlayerController controller = await _loadController(
+        <AudioCue>[_cue(0), _cue(1000), _cue(2000)],
+      );
 
       await controller.skipToCue(controller.chapterCuesSnapshot[2]);
       expect(controller.explicitSeekInFlightForTesting, isTrue);
 
       // 手动翻页（TOC / 链接 / 书签 / 翻页）同样取代 in-flight explicit seek。
       controller.noteManualReaderNavigation();
-      expect(controller.explicitSeekInFlightForTesting, isFalse,
-          reason: 'noteManualReaderNavigation 必须复位显式 seek 抑制旗');
+      expect(
+        controller.explicitSeekInFlightForTesting,
+        isFalse,
+        reason: 'noteManualReaderNavigation 必须复位显式 seek 抑制旗',
+      );
 
       controller.dispose();
     });
 
     test('未手动 seek：暂停态无关瞬态 tick 不复位抑制旗（BUG-061 暂停抑制原样保留）', () async {
-      final AudiobookPlayerController controller =
-          await _loadController(<AudioCue>[
-        _cue(0),
-        _cue(1000),
-        _cue(2000),
-      ]);
+      final AudiobookPlayerController controller = await _loadController(
+        <AudioCue>[_cue(0), _cue(1000), _cue(2000)],
+      );
 
       await controller.skipToCue(controller.chapterCuesSnapshot[2]);
       expect(controller.explicitSeekInFlightForTesting, isTrue);
@@ -91,10 +98,16 @@ void main() {
       // 没有手动 seek 介入：加载期旧位置瞬态 tick 既不能清旗，也不能把权威
       // cue2 覆盖回旧句——证明修复只在「手动改位置」路径复位，没过度清旗。
       controller.debugUpdateCueForPosition(800);
-      expect(controller.explicitSeekInFlightForTesting, isTrue,
-          reason: '无手动 seek 时暂停态瞬态 tick 不得复位抑制旗（不重引 BUG-061）');
-      expect(controller.currentCue?.startMs, 2000,
-          reason: '抑制窗仍应保护权威 cue2 不被瞬态旧位置覆盖');
+      expect(
+        controller.explicitSeekInFlightForTesting,
+        isTrue,
+        reason: '无手动 seek 时暂停态瞬态 tick 不得复位抑制旗（不重引 BUG-061）',
+      );
+      expect(
+        controller.currentCue?.startMs,
+        2000,
+        reason: '抑制窗仍应保护权威 cue2 不被瞬态旧位置覆盖',
+      );
 
       controller.dispose();
     });
@@ -121,17 +134,43 @@ void main() {
       fail('$signature 花括号不匹配');
     }
 
+    // seekMs 只负责报「跳转回退」再委托 _seekWithinFile（seekRelative / seekGlobalMs
+    // 同文件分支也走它），物理 seek 与抑制窗复位都在那一份本体里。
     final int seekMsStart = src.indexOf('Future<void> seekMs(int positionMs)');
     final String seekMsBody = src.substring(
-        seekMsStart, bodyOf('Future<void> seekMs(int positionMs)'));
-    expect(seekMsBody.contains('_clearExplicitSeekSuppression()'), isTrue,
-        reason: 'seekMs 必须复位显式 seek 抑制窗（BUG-903）');
+      seekMsStart,
+      bodyOf('Future<void> seekMs(int positionMs)'),
+    );
+    final int withinStart = src.indexOf(
+      'Future<void> _seekWithinFile(int positionMs)',
+    );
+    final String withinBody = src.substring(
+      withinStart,
+      bodyOf('Future<void> _seekWithinFile(int positionMs)'),
+    );
+    expect(
+      seekMsBody.contains('_clearExplicitSeekSuppression()') ||
+          (seekMsBody.contains('_seekWithinFile(') &&
+              withinBody.contains('_clearExplicitSeekSuppression()')),
+      isTrue,
+      reason: 'seekMs 必须复位显式 seek 抑制窗（BUG-903）',
+    );
+    expect(
+      withinBody.contains('_clearExplicitSeekSuppression()'),
+      isTrue,
+      reason: '_seekWithinFile 是同文件 seek 的唯一本体，必须复位抑制窗（BUG-903）',
+    );
 
     final int noteStart = src.indexOf('void noteManualReaderNavigation()');
-    final String noteBody =
-        src.substring(noteStart, bodyOf('void noteManualReaderNavigation()'));
-    expect(noteBody.contains('_clearExplicitSeekSuppression()'), isTrue,
-        reason: 'noteManualReaderNavigation 必须复位显式 seek 抑制窗（BUG-903）');
+    final String noteBody = src.substring(
+      noteStart,
+      bodyOf('void noteManualReaderNavigation()'),
+    );
+    expect(
+      noteBody.contains('_clearExplicitSeekSuppression()'),
+      isTrue,
+      reason: 'noteManualReaderNavigation 必须复位显式 seek 抑制窗（BUG-903）',
+    );
   });
 }
 
@@ -147,10 +186,7 @@ Future<AudiobookPlayerController> _loadController(List<AudioCue> cues) async {
   addTearDown(() {
     if (audioFile.existsSync()) audioFile.deleteSync();
   });
-  await controller.load(
-    audiobook: _audiobook(),
-    audioFiles: <File>[audioFile],
-  );
+  await controller.load(audiobook: _audiobook(), audioFiles: <File>[audioFile]);
   controller.setChapterCues(cues);
   return controller;
 }
@@ -178,8 +214,9 @@ Audiobook _audiobook() {
 }
 
 void _installFakeAudioPlatform() {
-  const MethodChannel audioSessionChannel =
-      MethodChannel('com.ryanheise.audio_session');
+  const MethodChannel audioSessionChannel = MethodChannel(
+    'com.ryanheise.audio_session',
+  );
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(audioSessionChannel, (_) async => null);
   addTearDown(() {
@@ -230,16 +267,18 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
       StreamController<PlaybackEventMessage>.broadcast();
 
   void _emit(int ms) {
-    _events.add(PlaybackEventMessage(
-      processingState: ProcessingStateMessage.ready,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: ProcessingStateMessage.ready,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 100),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -266,22 +305,19 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
     SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
+  ) async => SetAndroidAudioAttributesResponse();
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
 
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
@@ -294,26 +330,22 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
     SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
+  ) async => SetPreferredPeakBitRateResponse();
 
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
     SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
+  ) async => SetShuffleModeResponse();
 
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
     SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
+  ) async => SetShuffleOrderResponse();
 
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
     SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
+  ) async => SetSkipSilenceResponse();
 
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
@@ -326,8 +358,7 @@ class _FakeAudioPlayer extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
     SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
+  ) async => SetWebCrossOriginResponse();
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {
