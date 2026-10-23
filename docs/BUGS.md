@@ -43,11 +43,6 @@
 | [BUG-3664](bugs/BUG-3664-onedrive-large-upload-restarts-every-sync.md) | ✅ | ✅ | onedrive-large-upload-restarts-every-sync |
 | [BUG-3663](bugs/BUG-3663-interconnect-repair-leaves-sibling-addresses-revoked-token.md) | ✅ | ✅ | interconnect-repair-leaves-sibling-addresses-revoked-token |
 | [BUG-3662](bugs/BUG-3662-interconnect-session-pinned-on-dead-address.md) | ✅ | ✅ | interconnect-session-pinned-on-dead-address |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-interconnect-auto-sync-default-off.md) | ✅ | ✅ | interconnect-auto-sync-default-off |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
