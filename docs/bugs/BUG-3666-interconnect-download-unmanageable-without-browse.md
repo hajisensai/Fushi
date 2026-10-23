@@ -1,4 +1,4 @@
-## BUG-3662 · interconnect-download-unmanageable-without-browse
+## BUG-3666 · interconnect-download-unmanageable-without-browse
 - **报告**：2026-10-23（用户：应用内反馈 _sZllpFQWm，iPad 3.0.0+19763 经互联看 Windows 主机视频——①「下载远端集」后没有任何地方能暂停 / 取消，重开 app 正在下的那集还会自动续传；② 找不到删除已下载到本机的视频的地方）
 - **真实性**：✅ 真 bug，两处根因：
   1. 互联下载任务（`InterconnectDownloadManager`）唯一的列表入口是「浏览 → 下载」：`fushi/lib/src/pages/implementations/browse_page.dart:932` 把 `InterconnectDownloadTasksSection` 链进统一任务列表；而「浏览」整模块的 `ModuleId.browse.availableOn` 委托到 `StoreRestrictedCapability.downloads`（`fushi/lib/src/models/store_compliance.dart`），iOS 上整模块缺席。互联下载（拷用户自己另一台设备上的内容）并不是受限能力，却随下载中心一起没了入口；合集详情页集卡菜单（`media_collection_detail_page.dart` `_showEpisodeMenu`）与远端视频卡动作面板（`home_video_page.dart` `_showRemoteVideoDialog`）只有「下载」，没有暂停 / 取消。另外 `InterconnectDownloadManager.startBatch` 对被暂停的成员只计 failed 然后**继续起跑下一集**——即便能暂停当前集，整批也停不下来。管理器也没有「取消在跑任务」的原语（`discard` 拒绝 running）。

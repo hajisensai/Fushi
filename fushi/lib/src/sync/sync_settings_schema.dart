@@ -641,7 +641,7 @@ SettingsDestination buildInterconnectDestination() {
             icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
           ),
-          // 反馈 _sZllpFQWm / BUG-3662：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
+          // 反馈 _sZllpFQWm / BUG-3666：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
           // 这类任务此前只在「浏览 → 下载」里列出，iOS 没有浏览模块就无处可停；
           // 互联下载不是商店受限能力，这里不挂任何合规门，五端都在。
           SettingsActionItem(

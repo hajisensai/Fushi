@@ -836,7 +836,7 @@ class AppModel with ChangeNotifier {
       },
       // BUG-2815：现读而非快照——host 服务只在互联启动时构造一次，快照会让之后
       // 新增 / 删除的本地音频库在对端清单与导出里都看不见。
-      // BUG-3662：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
+      // BUG-3667：path 归一到本机落点，别的设备带来的库引用才能按本机文件导出。
       localAudioEntriesProvider: () => localAudioDbsOnThisDevice,
       localAudioStagingDir: temporaryDirectory,
       onLocalAudioImported: importSyncedLocalAudioDb,
@@ -9830,7 +9830,7 @@ class AppModel with ChangeNotifier {
 
   /// [localAudioDbs] 的 path 归一到本机实际文件位置（见
   /// [LocalAudioManager.entriesOnThisDevice]）。互联同步只认这份：存储 path 可能
-  /// 是别的设备的（BUG-3662）。
+  /// 是别的设备的（BUG-3667）。
   List<LocalAudioDbEntry> get localAudioDbsOnThisDevice =>
       _localAudioManager.entriesOnThisDevice;
 
@@ -9891,7 +9891,7 @@ class AppModel with ChangeNotifier {
   /// 双写 `audio_source_configs` + `local_audio_dbs` + 推 native，再还原子来源偏好
   /// 并刷 UI。按 displayName 去重：同名库已在本机可用则跳过。
   ///
-  /// 同名条目在、但它指向的库文件**本机没有**（BUG-3662：从另一台设备导入的
+  /// 同名条目在、但它指向的库文件**本机没有**（BUG-3667：从另一台设备导入的
   /// 配置方案带来了那台设备的库引用，`.db` 本身没过来）时不跳过——把拉到的库
   /// 落进本机库目录，并**原位**改指那一条（保留它在源列表里的顺序、开关与子来源
   /// 偏好），而不是追加一条同名新源。否则这条悬空引用会永久挡住同步修复。

@@ -297,7 +297,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 本机成员里**从配对设备下载来的副本**（同一个 id 仍在对端清单里）的
   /// entryKey。只有它们给「删除本机副本」：删掉后合集成员行留着，这一集退回
-  /// 远端集（反馈 _sZllpFQWm / BUG-3662：iPad 上找不到删下载副本的地方）。用户
+  /// 远端集（反馈 _sZllpFQWm / BUG-3666：iPad 上找不到删下载副本的地方）。用户
   /// 自己导入的本机原件不在其中，不会被这条动作误删。
   Set<String> _peerCopyKeys = const <String>{};
 
@@ -2388,7 +2388,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 本集对它没有意义，换成「打开文件位置」。纯函数判据，不吃 IO。
     final VideoBookRow? local = episode.local;
     final bool hasLocalFiles = local != null && videoBookHasLocalFiles(local);
-    // 互联下载的管理动作（反馈 _sZllpFQWm / BUG-3662）：与发起下载的「下载远端集」
+    // 互联下载的管理动作（反馈 _sZllpFQWm / BUG-3666）：与发起下载的「下载远端集」
     // 同一处、对同一集，任何平台都可达——不依赖「浏览 → 下载」，也不问商店合规门
     // （互联下载不是受限能力）。
     final InterconnectDownloadManager? downloads = widget.remote?.downloads;

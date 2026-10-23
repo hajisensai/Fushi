@@ -373,7 +373,7 @@ class OneDriveSyncBackend extends SyncBackend
     final fileLength = await file.length();
     if (fileLength > kOneDriveSimpleUploadMaxBytes) {
       // 大文件（有声书包 / 视频 / 词典包）走可续传上传会话：单次长 PUT 一断就整份
-      // 作废、下轮同步从头重传（BUG-3662）。
+      // 作废、下轮同步从头重传（BUG-3664）。
       final String uploadUrl = await _createUploadSession(folderId, fileName);
       await uploadFileToOneDriveSession(
         client: await obtainSyncHttpClient(),

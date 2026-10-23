@@ -386,7 +386,7 @@ void main() {
     });
 
     test(
-        'BUG-3662 pull：本地有同名条目但库文件不在本机（导入别的设备的配置方案）'
+        'BUG-3667 pull：本地有同名条目但库文件不在本机（导入别的设备的配置方案）'
         '→ 仍拉取，不被悬空引用挡住', () async {
       final FushiDatabase localDb = _memDb();
       addTearDown(localDb.close);

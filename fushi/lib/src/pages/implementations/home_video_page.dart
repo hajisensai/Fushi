@@ -8146,7 +8146,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
     final RemoteVideoClient? client = _remoteVideoClient;
     final bool canDelete = client is InterconnectSyncBackend;
-    // 这一集的互联下载任务（反馈 _sZllpFQWm / BUG-3662）：在跑 / 暂停 / 失败时，
+    // 这一集的互联下载任务（反馈 _sZllpFQWm / BUG-3666）：在跑 / 暂停 / 失败时，
     // 「下载」换成暂停 / 继续 / 取消——就在发起下载的同一张卡上，任何平台都可达，
     // 不依赖「浏览 → 下载」。
     final InterconnectDownloadManager downloads = ref.read(
@@ -9406,7 +9406,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
   }
 
-  /// 删掉一集**从配对设备下载到本机的副本**（反馈 _sZllpFQWm / BUG-3662：iPad 上
+  /// 删掉一集**从配对设备下载到本机的副本**（反馈 _sZllpFQWm / BUG-3666：iPad 上
   /// 找不到删下载副本的地方）。
   ///
   /// 落地就是媒体库删除链（放句柄 → 删行 → 删下载下来的文件与字幕），差别只有两点：

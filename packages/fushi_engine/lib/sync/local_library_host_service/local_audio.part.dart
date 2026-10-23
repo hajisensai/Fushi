@@ -9,7 +9,7 @@ mixin _LocalLibraryHostLocalAudio
   /// host 当前本地音频来源清单（从注入的 [_localAudioEntries] 取 displayName）。
   ///
   /// 只列库文件真在本机的来源：从别的设备导入的配置方案会带来文件不在本机的同名
-  /// 引用（BUG-3662），列出来对端就会来拉一个 [exportLocalAudio] 必然抛错的库。
+  /// 引用（BUG-3667），列出来对端就会来拉一个 [exportLocalAudio] 必然抛错的库。
   @override
   Future<List<RemoteLocalAudioInfo>> listLocalAudio() async {
     return <RemoteLocalAudioInfo>[

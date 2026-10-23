@@ -1,4 +1,4 @@
-## BUG-3662 · onedrive-large-upload-restarts-every-sync
+## BUG-3664 · onedrive-large-upload-restarts-every-sync
 - **报告**：2026-10-23（用户：应用内反馈 xQVvACx8mY，iOS 3.0.0+19763，OneDrive：每次同步都把整本有声书重新上传）
 - **真实性**：✅ 真 bug，但不是「缺少跳过判断」。`syncAudiobookPackages`（`fushi/lib/src/sync/sync_orchestrator.dart:1683-1687`）上传前已经按名 `findAsset` 判远端有无，有就不传。反馈人日志里 10-19 ~ 10-21 的每一次 `audiobook.fushiaudio` 上传都以 `Broken pipe` / `Connection reset by peer` 告终、没有一次成功——远端始终没有这份资产，所以每轮同步都重新导出、从头再传。根因在 `OneDriveSyncBackend.uploadContentFile`（`fushi/lib/src/sync/onedrive_sync_backend.dart:366` 起）：任意大小都走单请求 `PUT :/content` 简单上传（Graph 只支持到 250 MB，官方建议 > 10 MiB 用 createUploadSession）。几百 MB 的有声书包在一条长连接上传几分钟，途中任何断流（移动网络、iOS 退后台、服务端重置）整份作废，不可续传。
 - **[x] ① 已修复** — `uploadContentFile` 对 > 10 MiB 文件改走 Graph 上传会话（`createUploadSession`，conflictBehavior=replace）；新文件 `fushi/lib/src/sync/onedrive_upload_session.dart` 按 10 MiB（320 KiB 整数倍）分片顺序 PUT，断流 / 5xx / 416 时 `GET uploadUrl` 取 `nextExpectedRanges` 从服务端已确认处续传（5xx 指数退避，均为 Graph 官方续传语义），会话 404 直接失败，同一偏移连续无进展 4 次放弃并 DELETE 会话。uploadUrl 请求不带 bearer。

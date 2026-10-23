@@ -1,4 +1,4 @@
-## BUG-3662 · 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好
+## BUG-3667 · 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好
 - **报告**：2026-10-23（应用内反馈 -5lhI1miwl，Android vivo 3.0.0：互联同步词典与书籍后导入电脑端的配置方案，手机点词朗读无声、制卡无单词发音）
 - **真实性**：✅ 真 bug（部分）。
   - 原假设「配置方案把桌面专属 TTS 引擎 / 声音带到 Android」不成立：`tts_voice_presets` / `tts_active_preset_id` / `mining_tts_fallback_voice` 都在 `SyncRepository.deviceLocalPrefKeys`（`fushi/lib/src/sync/sync_repository.dart:1868-1871`），经 `PrefRedactionPolicy.isDeviceLocalOrCredential` 被 Profile 快照与分享 JSON 剔除。

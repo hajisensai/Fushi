@@ -33,32 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3267 条。点号进各自文件。
+> 共 3271 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3667](bugs/BUG-3667-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
+| [BUG-3666](bugs/BUG-3666-interconnect-download-unmanageable-without-browse.md) | ✅ | ✅ | interconnect-download-unmanageable-without-browse |
+| [BUG-3665](bugs/BUG-3665-remote-collection-continue-duplicate-cards.md) | ✅ | ✅ | 首页「继续」远端合集每集一张同名卡 |
+| [BUG-3664](bugs/BUG-3664-onedrive-large-upload-restarts-every-sync.md) | ✅ | ✅ | onedrive-large-upload-restarts-every-sync |
 | [BUG-3663](bugs/BUG-3663-interconnect-repair-leaves-sibling-addresses-revoked-token.md) | ✅ | ✅ | interconnect-repair-leaves-sibling-addresses-revoked-token |
 | [BUG-3662](bugs/BUG-3662-interconnect-session-pinned-on-dead-address.md) | ✅ | ✅ | interconnect-session-pinned-on-dead-address |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-onedrive-large-upload-restarts-every-sync.md) | ✅ | ✅ | onedrive-large-upload-restarts-every-sync |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-remote-collection-continue-duplicate-cards.md) | ✅ | ✅ | 首页「继续」远端合集每集一张同名卡 |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-interconnect-download-unmanageable-without-browse.md) | ✅ | ✅ | interconnect-download-unmanageable-without-browse |
-> 共 3266 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3662](bugs/BUG-3662-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
