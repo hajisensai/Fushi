@@ -11,6 +11,8 @@
     "native/fushi_fsrs/Cargo.toml": "31efb16a899a66b190c27e6791758071b8cd176688954f298ef2780de5e0fe02",
     "native/fushi_ios_umbrella/Cargo.lock": "e9689c1cef7eb5f2e3adfae5b19a69354028337693be1dc42fba377afff92828",
     "native/fushi_ios_umbrella/Cargo.toml": "e00e225cbd3e845e97603f7f0bcf67a2e89b83faf5f9adb20d07e8b6d86c4bb2",
+    "native/fushi_music/Cargo.lock": "7c4e04f38fb9ce3425bf6de7d0afe0f7de4cc362c210f79652a505ae58ef00ce",
+    "native/fushi_music/Cargo.toml": "cd07c5b3f2c188adb77d50cb4d1a1569981badcdcf23654a05699177968783e8",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "4266ab30ac34757a5e95aa95202377ca0a021b4fb288b12e0e009ac157444961",
@@ -316,6 +318,8 @@
     "third_party/libplacebo-win/LICENSE.libplacebo": "b3aa400aca6d2ba1f0bd03bd98d03d1fe7489a3bbb26969d72016360af8a5c9d"
   },
   "pendingUpstreamLicense": [
+    "lofty@0.22.4",
+    "ogg_pager@0.7.2",
     "seahash@4.1.0",
     "selectors@0.38.0"
   ],
@@ -426,11 +430,13 @@
       "packages": [
         "dispatch2",
         "htmlescape",
+        "lofty",
         "objc2-core-foundation",
         "objc2-core-wlan",
         "objc2-security",
         "objc2-security-foundation",
-        "objc2-system-configuration"
+        "objc2-system-configuration",
+        "ogg_pager"
       ]
     },
     {
@@ -2998,6 +3004,7 @@
         "block2",
         "dispatch2",
         "htmlescape",
+        "lofty",
         "objc2",
         "objc2-core-foundation",
         "objc2-core-wlan",
@@ -3006,6 +3013,7 @@
         "objc2-security",
         "objc2-security-foundation",
         "objc2-system-configuration",
+        "ogg_pager",
         "seahash"
       ]
     },
@@ -4153,6 +4161,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -4707,7 +4716,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -4877,7 +4887,8 @@
       "license": "Unlicense OR MIT",
       "origin": [
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -4981,6 +4992,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_rwkv",
         "fushi_web_core"
@@ -5245,6 +5257,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -5278,6 +5291,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5338,6 +5352,19 @@
         "fushi_compute",
         "fushi_ios_umbrella",
         "fushi_web_core"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "61d383b05b87d78f.txt"
+      ]
+    },
+    {
+      "name": "crc32fast",
+      "version": "1.5.3",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -5429,6 +5456,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5587,6 +5615,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -5756,7 +5785,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -6060,6 +6090,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -6374,6 +6405,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -6808,6 +6840,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -8257,6 +8290,7 @@
       "license": "MIT OR Apache-2.0",
       "origin": [
         "fushi_compute",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -9219,6 +9253,20 @@
       ]
     },
     {
+      "name": "lofty",
+      "version": "0.22.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt",
+        "074e6e32c86a4c0e.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT OR Apache-2.0 的标准文本，版权人见 crate 作者：Serial <69764315+Serial-ATA@users.noreply.github.com>"
+    },
+    {
       "name": "log",
       "version": "0.4.34",
       "license": "MIT OR Apache-2.0",
@@ -9226,6 +9274,7 @@
         "fushi_anki_sync",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -9551,6 +9600,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -10311,6 +10361,20 @@
         "b05785f9f18e6716.txt"
       ],
       "note": "crate 包内没有许可文件；原文取自上游 https://github.com/madsmtm/objc2/tree/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b。Upstream LICENSE.md only names the licenses and carries no license body or copyright line; it also notes the crates are derived from Apple SDKs。附 Zlib OR Apache-2.0 OR MIT 的 SPDX 标准正文；crate 作者："
+    },
+    {
+      "name": "ogg_pager",
+      "version": "0.7.2",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt",
+        "074e6e32c86a4c0e.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT OR Apache-2.0 的标准文本，版权人见 crate 作者：Serial <69764315+Serial-ATA@users.noreply.github.com>"
     },
     {
       "name": "once_cell",
@@ -11986,6 +12050,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12279,7 +12344,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_compute",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -12426,6 +12492,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",
@@ -12453,6 +12520,7 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -13388,6 +13456,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
@@ -14630,6 +14699,7 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_web_core"
       ],
       "textSource": "package",

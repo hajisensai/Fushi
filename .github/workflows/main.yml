@@ -93,6 +93,7 @@ jobs:
           native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
           native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
           native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+          native/fushi_music/prebuilt/linux-x64/libfushi_music.so
         if-no-files-found: error
         retention-days: 3
 
@@ -262,6 +263,11 @@ jobs:
         key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-9bc1e3e4040ce9693f230e905abb5c925b1102f787424b9059543ae900f1e2a2
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       run: bash native/fushi_rwkv/fetch_model.sh
+
+    # 音乐胖核心 fushi_music 同为硬依赖（packages/fushi_music 的真 FFI 测试缺库判红、不 skip）。
+    # 用 runner 自带的 stable 工具链（同 fushi_fsrs 那一步，不进持久库）；冷编约 1 min。
+    - name: Build fushi_music (Linux x64) for package tests
+      run: bash native/fushi_music/build_linux_so.sh
 
     - name: Run package tests
       env:
@@ -475,6 +481,7 @@ jobs:
       FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
       FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
       FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+      FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
     strategy:
       fail-fast: false
       matrix:

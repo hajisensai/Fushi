@@ -1639,6 +1639,7 @@ jobs:
           native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
           native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
           native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+          native/fushi_music/prebuilt/linux-x64/libfushi_music.so
         if-no-files-found: error
         retention-days: 3
 
@@ -1702,6 +1703,7 @@ jobs:
       FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
       FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
       FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+      FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
     steps:
     - uses: actions/checkout@v6
 

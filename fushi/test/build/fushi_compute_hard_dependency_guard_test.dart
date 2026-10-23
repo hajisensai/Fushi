@@ -112,7 +112,7 @@ void main() {
     expect(
       libs,
       contains(
-        r"$NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rwkv')",
+        r"$NativeTestCrates = @('fushi_compute', 'fushi_fsrs', 'fushi_web_core', 'fushi_rwkv', 'fushi_music')",
       ),
     );
     final String sh = maskHashComments(read('../tool/bootstrap.sh'));
@@ -121,6 +121,7 @@ void main() {
       'fushi_fsrs',
       'fushi_web_core',
       'fushi_rwkv',
+      'fushi_music',
     ]) {
       expect(sh, contains('bash native/$crate/build_linux_so.sh'));
       expect(sh, contains('bash native/$crate/build_macos_dylib.sh'));
