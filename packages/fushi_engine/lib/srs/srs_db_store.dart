@@ -2491,8 +2491,11 @@ class SrsDbStore implements SrsSyncReplica {
   /// 物理清除 [noteIds] 里**此刻仍是已删除、且 [eligible] 认可**的笔记（一个独占区 + 一个事务）：
   ///
   /// - 删：笔记身份记录、笔记除删除寄存器外的全部修改记录（字段 / 标签 / 来源 / 牌组 / 类型）、
-  ///   笔记缓存行；它全部卡的修改记录、复习日志、卡片缓存行；这些事件的本机元信息（srs_event_local，
+  ///   笔记缓存行；它全部卡的修改记录、卡片缓存行；这些事件的本机元信息（srs_event_local，
   ///   含发件箱里还没发出去的）。
+  /// - 留复习日志：统计（复习日历 / 复习量 / 时长）以日志为唯一事实，清掉会让过去的学习记录凭空消失
+  ///   （用户 2026-10-23 拍板不可接受；与 Anki 删卡保留 revlog 一致）。日志每条只有几十字节，
+  ///   占空间的是正文与媒体。
   /// - 留：笔记删除寄存器里的修改记录（墓碑本身，几十字节）。它让清除之后对端晚到的同一笔记的事件
   ///   照样被判为「已删除」，下次维护再清掉（见 [purgeCandidateNoteIds]），不会复活成可见笔记。
   /// - 跳过：已被恢复的；删除寄存器里有并发内容修改（「待裁决」，用户还没决定恢复还是确认删除）的；
@@ -2588,7 +2591,6 @@ class SrsDbStore implements SrsSyncReplica {
       }
       final List<String> cardList = cards.toList();
       final List<String> cardEditIds = <String>[];
-      final List<String> logIds = <String>[];
       for (final List<String> chunk in _chunks(cardList)) {
         for (final QueryRow r
             in await db
@@ -2606,21 +2608,6 @@ class SrsDbStore implements SrsSyncReplica {
                 .get()) {
           cardEditIds.add(r.read<String>('id'));
         }
-        for (final QueryRow r
-            in await db
-                .customSelect(
-                  'SELECT id FROM srs_review_logs WHERE card_id IN '
-                  '(${List<String>.filled(chunk.length, '?').join(',')})',
-                  variables: <Variable<Object>>[
-                    for (final String c in chunk) Variable<String>(c),
-                  ],
-                  readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                    db.srsReviewLogs,
-                  },
-                )
-                .get()) {
-          logIds.add(r.read<String>('id'));
-        }
       }
 
       int events = 0;
@@ -2632,11 +2619,6 @@ class SrsDbStore implements SrsSyncReplica {
       for (final List<String> chunk in _chunks(cardEditIds)) {
         events += await (db.delete(
           db.srsFieldEdits,
-        )..where((t) => t.id.isIn(chunk))).go();
-      }
-      for (final List<String> chunk in _chunks(logIds)) {
-        events += await (db.delete(
-          db.srsReviewLogs,
         )..where((t) => t.id.isIn(chunk))).go();
       }
       for (final List<String> chunk in _chunks(purge)) {
@@ -2655,7 +2637,6 @@ class SrsDbStore implements SrsSyncReplica {
       for (final List<String> chunk in _chunks(<String>[
         ...contentEditIds,
         ...cardEditIds,
-        ...logIds,
         ...purge,
       ])) {
         await (db.delete(

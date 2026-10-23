@@ -756,7 +756,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     final AiProviderConfig? provider = ref
         .read(appProvider)
         .prefsRepo
-        .resolveAiFeatureProvider(AiFeature.srsTemplate);
+        .resolveAiFeatureProvider(AiFeature.srsNoteField);
     if (provider == null) {
       FushiToast.show(msg: t.ai_assist_no_provider);
       return;

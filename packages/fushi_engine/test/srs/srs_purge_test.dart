@@ -104,12 +104,11 @@ void main() {
               .get())
           .length;
 
-  /// 清除后的笔记：身份记录、正文、缓存、卡、日志都没了，只剩删除寄存器（墓碑）。
+  /// 清除后的笔记：身份记录、正文、缓存、卡都没了，只剩删除寄存器（墓碑）与复习日志。
   Future<void> expectPurged(SrsDbStore s, String noteId, String cardId) async {
     expect(await s.note(noteId), isNull, reason: '身份记录已清');
     expect(await s.cardsOfNote(noteId), isEmpty, reason: '卡片缓存行已清');
     expect(await s.cardRow(cardId), isNull);
-    expect(await logCount(s, cardId), 0, reason: '复习日志已清');
     expect(
       await noteEditCount(s, noteId),
       await noteEditCount(s, noteId, key: SrsFieldKeys.deleted),
@@ -159,6 +158,7 @@ void main() {
     expect(r.notes, 1);
     expect(r.events, greaterThan(0));
     await expectPurged(a, gone, goneCard);
+    expect(await logCount(a, goneCard), 1, reason: '复习日志保留：统计里过去的复习不能因为清除而消失');
     expect((await a.note(keep))!.deletedAt, isNull, reason: '没删的笔记不动');
 
     // 同步过、但删除记录还没发布出去（S 未知）：多久都不清。
