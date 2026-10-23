@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Artis",
   "lyrics_blur": "Buramkan lirik",
   "lyrics_blur_hint": "Buramkan baris saat ini untuk imersi mendengarkan; arahkan kursor atau ketuk untuk menampilkan",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Ukuran Font Lirik",
   "lyrics_font_size_hint": "Ukuran font lirik tidak bergantung pada mode buku",
   "lyrics_highlight_color": "Current line color",

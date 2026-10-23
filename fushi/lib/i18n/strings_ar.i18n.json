@@ -4040,6 +4040,7 @@
   "lyrics_artist": "الفنان",
   "lyrics_blur": "تمويه كلمات الأغاني",
   "lyrics_blur_hint": "تمويه السطر الحالي للانغماس في الاستماع؛ مرر المؤشر أو انقر للكشف",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "حجم خط كلمات الأغاني",
   "lyrics_font_size_hint": "حجم خط كلمات الأغاني مستقل عن وضع الكتاب",
   "lyrics_highlight_color": "Current line color",

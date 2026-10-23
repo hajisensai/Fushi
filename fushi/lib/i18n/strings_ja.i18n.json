@@ -4040,6 +4040,7 @@
   "lyrics_artist": "アーティスト",
   "lyrics_blur": "歌詞をぼかす",
   "lyrics_blur_hint": "リスニングに集中するため現在の行をぼかします。ホバーまたはタップで表示",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "歌詞フォントサイズ",
   "lyrics_font_size_hint": "歌詞フォントサイズはブックモードとは独立しています",
   "lyrics_highlight_color": "Current line color",

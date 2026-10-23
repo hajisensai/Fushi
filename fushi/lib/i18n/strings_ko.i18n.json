@@ -4040,6 +4040,7 @@
   "lyrics_artist": "아티스트",
   "lyrics_blur": "가사 흐리게",
   "lyrics_blur_hint": "듣기 몰입을 위해 현재 줄을 흐리게 합니다. 마우스를 올리거나 탭하면 표시됩니다",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "가사 글꼴 크기",
   "lyrics_font_size_hint": "가사 글꼴 크기는 책 모드와 독립적입니다",
   "lyrics_highlight_color": "Current line color",

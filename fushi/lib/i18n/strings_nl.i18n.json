@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Artiest",
   "lyrics_blur": "Songtekst vervagen",
   "lyrics_blur_hint": "Vervaag de huidige regel voor luisterimmersie; beweeg erover of tik om te onthullen",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Lettergrootte songtekst",
   "lyrics_font_size_hint": "Lettergrootte songtekst is onafhankelijk van de boekmodus",
   "lyrics_highlight_color": "Current line color",

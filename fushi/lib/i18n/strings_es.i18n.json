@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Artista",
   "lyrics_blur": "Difuminar letras",
   "lyrics_blur_hint": "Difumina la línea actual para inmersión auditiva; pase el cursor o toque para revelar",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Tamaño de fuente de letras",
   "lyrics_font_size_hint": "El tamaño de fuente de las letras es independiente del modo libro",
   "lyrics_highlight_color": "Current line color",

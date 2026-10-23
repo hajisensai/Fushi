@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Artista",
   "lyrics_blur": "Sfoca testi",
   "lyrics_blur_hint": "Sfoca la riga corrente per immersione nell'ascolto; passa sopra o tocca per rivelare",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Dimensione carattere testi",
   "lyrics_font_size_hint": "La dimensione del carattere dei testi è indipendente dalla modalità libro",
   "lyrics_highlight_color": "Current line color",

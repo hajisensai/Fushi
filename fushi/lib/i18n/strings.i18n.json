@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Artist",
   "lyrics_blur": "Blur lyrics",
   "lyrics_blur_hint": "Blur the current line for listening immersion; hover or tap to reveal",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Lyrics font size",
   "lyrics_font_size_hint": "Lyrics font size is independent of book mode",
   "lyrics_highlight_color": "Current line color",

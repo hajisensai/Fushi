@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Artiste",
   "lyrics_blur": "Flouter les paroles",
   "lyrics_blur_hint": "Flouter la ligne actuelle pour l'immersion à l'écoute ; survolez ou appuyez pour révéler",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Taille de police des paroles",
   "lyrics_font_size_hint": "La taille de police des paroles est indépendante du mode livre",
   "lyrics_highlight_color": "Current line color",

@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Sanatçı",
   "lyrics_blur": "Sözleri bulanıklaştır",
   "lyrics_blur_hint": "Dinleme deneyimi için geçerli satırı bulanıklaştır; görmek için üzerine gelin veya dokunun",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Şarkı Sözü Yazı Boyutu",
   "lyrics_font_size_hint": "Şarkı sözü yazı boyutu kitap modundan bağımsızdır",
   "lyrics_highlight_color": "Current line color",

@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Künstler",
   "lyrics_blur": "Liedtext unscharf",
   "lyrics_blur_hint": "Die aktuelle Zeile für Hörimmersion unscharf stellen; darüber fahren oder tippen zum Aufdecken",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Liedtext-Schriftgröße",
   "lyrics_font_size_hint": "Die Schriftgröße der Liedtexte ist unabhängig vom Buchmodus",
   "lyrics_highlight_color": "Current line color",

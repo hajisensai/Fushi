@@ -4040,6 +4040,7 @@
   "lyrics_artist": "ศิลปิน",
   "lyrics_blur": "เบลอเนื้อเพลง",
   "lyrics_blur_hint": "เบลอบรรทัดปัจจุบันเพื่อฝึกการฟัง; เลื่อนเมาส์หรือแตะเพื่อเปิดเผย",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "ขนาดตัวอักษรเนื้อเพลง",
   "lyrics_font_size_hint": "ขนาดตัวอักษรเนื้อเพลงเป็นอิสระจากโหมดหนังสือ",
   "lyrics_highlight_color": "Current line color",

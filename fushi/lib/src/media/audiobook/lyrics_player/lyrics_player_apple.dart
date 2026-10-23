@@ -428,6 +428,20 @@ class _WideChrome extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 有退书回调时：「书籍模式」键回正文，× 直接退书回书架（反馈
+              // QvYpZODImz）。
+              if (callbacks.onExitBook != null) ...<Widget>[
+                _LyricsIconButton(
+                  key: const ValueKey<String>('lyrics_return_to_book_button'),
+                  icon: CupertinoIcons.book,
+                  diameter: 38,
+                  iconSize: 18,
+                  color: Colors.white.withValues(alpha: 0.74),
+                  tooltip: t.book_mode,
+                  onPressed: callbacks.onClose,
+                ),
+                const SizedBox(width: 8),
+              ],
               if (callbacks.onSwapSides != null) ...<Widget>[
                 _LyricsIconButton(
                   key: const ValueKey<String>('lyrics_swap_sides_button'),
@@ -441,12 +455,15 @@ class _WideChrome extends StatelessWidget {
                 const SizedBox(width: 8),
               ],
               _LyricsIconButton(
+                key: const ValueKey<String>('lyrics_close_button'),
                 icon: CupertinoIcons.xmark,
                 diameter: 38,
                 iconSize: 18,
                 color: Colors.white.withValues(alpha: 0.74),
-                tooltip: t.floating_lyric_close,
-                onPressed: callbacks.onClose,
+                tooltip: callbacks.onExitBook != null
+                    ? t.lyrics_exit_to_library
+                    : t.floating_lyric_close,
+                onPressed: callbacks.onExitBook ?? callbacks.onClose,
               ),
             ],
           ),
@@ -909,6 +926,17 @@ class _NarrowChrome extends StatelessWidget {
               Expanded(
                 child: _NarrowHeader(title: data.title, clock: data.clock),
               ),
+              // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
+              if (callbacks.onExitBook != null)
+                _LyricsIconButton(
+                  key: const ValueKey<String>('lyrics_close_button'),
+                  icon: CupertinoIcons.xmark,
+                  diameter: 38,
+                  iconSize: 18,
+                  color: Colors.white.withValues(alpha: 0.74),
+                  tooltip: t.lyrics_exit_to_library,
+                  onPressed: callbacks.onExitBook!,
+                ),
             ],
           ),
         ),
@@ -1030,8 +1058,9 @@ class _NarrowIllustrationEntry extends StatelessWidget {
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.medium,
                       gaplessPlayback: true,
-                      errorBuilder: (_, Object e, StackTrace? s) =>
-                          ColoredBox(color: Colors.white.withValues(alpha: 0.12)),
+                      errorBuilder: (_, Object e, StackTrace? s) => ColoredBox(
+                        color: Colors.white.withValues(alpha: 0.12),
+                      ),
                     ),
                   ),
                 ),

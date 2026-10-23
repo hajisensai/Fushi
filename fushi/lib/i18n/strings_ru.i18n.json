@@ -4040,6 +4040,7 @@
   "lyrics_artist": "Исполнитель",
   "lyrics_blur": "Размытие текста песен",
   "lyrics_blur_hint": "Размывает текущую строку для погружения в аудирование; наведите курсор или нажмите, чтобы показать",
+  "lyrics_exit_to_library": "Close and return to library",
   "lyrics_font_size": "Размер шрифта текста песен",
   "lyrics_font_size_hint": "Размер шрифта текста песен не зависит от режима книги",
   "lyrics_highlight_color": "Current line color",
