@@ -5678,6 +5678,7 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
         if (pitchSection) meta.appendChild(pitchSection);
         const headerMain = entryDiv.querySelector('.entry-header-main');
         (headerMain || entryDiv).appendChild(meta);
+        if (headerMain) observeEntryHeaderMetaLayout(headerMain.parentNode);
     }
 
     const { details, body, grouped, dictNames } = glossaryWrapper;
@@ -5704,6 +5705,72 @@ function buildEntryElement(entry, idx, maximumDictionaryBlocks = Infinity) {
     }
 
     return entryDiv;
+}
+
+// 用户 10-23：元数据列放不进词头右侧、换到词头下方时，它仍住在左簇里，而左簇与按钮组
+// 共用词头那一行——按钮组下方那一截宽度被白白让掉，窄弹窗里元数据列只剩一百多 px，
+// 频率 chip 一枚一行、音调来源药丸与读音也各占一行，右侧整片空白。纯 CSS 拿不到
+// 「元数据列换行了没有」这个由内容宽度决定的状态，这里量一次：
+//   · 词头 + 元数据列（14em 下限，与 .entry-header-meta 的 flex-basis 一致）+ 按钮组
+//     放得进一行 → 维持原布局（元数据列贴词头右侧）；
+//   · 词头 + 按钮组放得下、元数据列放不下 → 挂 .meta-stacked：左簇 display:contents，
+//     元数据列独占词头行下方的整行宽（含按钮组下方）；
+//   · 词头 + 按钮组本身放不下 → 维持原布局（按钮组整组换行，见 BUG-3320）。
+// 判据只读词头 / 按钮组 / 词头行三者的宽度，挂不挂类名都不改变它们，不会来回振荡。
+// 由 ResizeObserver 驱动：content-visibility 跳过的尾批词条不渲染就不量（BUG-3274）。
+var __fushiHeaderMetaObserver = null;
+
+function entryHeaderChildByClass(parent, className) {
+    const kids = parent && parent.children;
+    if (!kids) return null;
+    for (let i = 0; i < kids.length; i++) {
+        if (kids[i].classList && kids[i].classList.contains(className)) return kids[i];
+    }
+    return null;
+}
+
+function updateEntryHeaderMetaLayout(header) {
+    if (!header || !header.isConnected) return;
+    const main = entryHeaderChildByClass(header, 'entry-header-main');
+    const buttons = entryHeaderChildByClass(header, 'header-buttons');
+    const meta = entryHeaderChildByClass(main, 'entry-header-meta');
+    const headword = main && main.firstElementChild;
+    if (!buttons || !meta || !headword || headword === meta) return;
+    const rowWidth = header.clientWidth;
+    if (!rowWidth) return;
+    const headerGap = parseFloat(getComputedStyle(header).columnGap) || 0;
+    const mainGap = parseFloat(getComputedStyle(main).columnGap) || 0;
+    const metaMin = 14 * (parseFloat(getComputedStyle(meta).fontSize) || 16);
+    // 滚动容器的 scrollWidth 是词头完整宽度（被压缩时也一样）；非滚动词头是 flex 项，同理。
+    const headwordWidth = headword.scrollWidth;
+    const buttonsWidth = buttons.offsetWidth;
+    const headwordRow = headwordWidth + headerGap + buttonsWidth;
+    const stacked = headwordRow <= rowWidth
+        && headwordRow + mainGap + metaMin > rowWidth;
+    header.classList.toggle('meta-stacked', stacked);
+}
+
+function observeEntryHeaderMetaLayout(header) {
+    if (!header || typeof ResizeObserver !== 'function') return;
+    if (!__fushiHeaderMetaObserver) {
+        __fushiHeaderMetaObserver = new ResizeObserver(records => {
+            const headers = new Set();
+            records.forEach(record => {
+                const target = record.target;
+                const header = target.classList && target.classList.contains('entry-header')
+                    ? target
+                    : target.closest && target.closest('.entry-header');
+                if (header) headers.add(header);
+            });
+            headers.forEach(updateEntryHeaderMetaLayout);
+        });
+    }
+    const main = entryHeaderChildByClass(header, 'entry-header-main');
+    const buttons = entryHeaderChildByClass(header, 'header-buttons');
+    __fushiHeaderMetaObserver.observe(header);
+    // 词头字体晚到 / 按钮组增删会改它们的宽度而不改词头行宽，单独观察。
+    if (main && main.firstElementChild) __fushiHeaderMetaObserver.observe(main.firstElementChild);
+    if (buttons) __fushiHeaderMetaObserver.observe(buttons);
 }
 
 function appendNextDeferredGlossaryBlock(entryDiv) {
@@ -7512,6 +7579,10 @@ window.renderPopup = function() {
     // observeMasonryTargets 重新观察（幂等）。
     if (masonryObserver) {
         try { masonryObserver.disconnect(); } catch (_) { /* no-op */ }
+    }
+    // 同理：词头元数据布局的观察目标随旧词条一起换代。
+    if (__fushiHeaderMetaObserver) {
+        try { __fushiHeaderMetaObserver.disconnect(); } catch (_) { /* no-op */ }
     }
     masonryDirtyBodies.clear();
     masonryDirtyAll = false;

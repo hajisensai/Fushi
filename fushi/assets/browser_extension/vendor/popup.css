@@ -476,6 +476,23 @@ html {
     margin-top: 0;
 }
 
+/* 用户 10-23：元数据列换到词头下方时铺满整行（含按钮组下方），不再只占左簇那一截。
+   .meta-stacked 由 popup.js updateEntryHeaderMetaLayout 按「词头 + 按钮组放得下、再加
+   14em 元数据列放不下」挂上：左簇拆成 contents，词头与按钮组同一行，元数据列独占下一行。 */
+.entry-header.meta-stacked {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+.entry-header.meta-stacked > .entry-header-main {
+    display: contents;
+}
+
+.entry-header.meta-stacked .entry-header-meta {
+    order: 1;
+    flex: 1 1 100%;
+}
+
 .expression {
     font-size: 26px;
     cursor: pointer;
