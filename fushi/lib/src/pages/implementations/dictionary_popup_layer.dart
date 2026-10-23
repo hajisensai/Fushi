@@ -4,6 +4,7 @@ import 'dart:ui' show PointerDeviceKind;
 import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
@@ -423,6 +424,46 @@ Rect anchorPopupTopLeft({
   return Rect.fromLTWH(left, top, width, height);
 }
 
+/// BUG-3663：所在路由「是否栈顶」变化的探针。
+///
+/// 查词浮层挂在根 Overlay、跨路由生存（[DictionaryPageMixin.lookupOwnerRoute]），它
+/// 读路由栈顶状态的那一刻只在自己 build 时；而别的路由压上来 / 退下去时没有任何东西
+/// 让那个 entry 重建。把本探针放进宿主路由的子树：它经 `ModalRoute.isCurrentOf`
+/// 订阅路由作用域，栈顶状态一变 [onChanged] 就被调用，宿主据此刷新浮层 entry。
+///
+/// [onChanged] 在依赖变化的 build 阶段触发，宿主须把实际刷新排到帧后（与浮层同步的
+/// 既有 post-frame 收口一致），不能在回调里同步 setState。[child] 原样透传、不重建。
+class LookupOwnerRouteProbe extends StatefulWidget {
+  const LookupOwnerRouteProbe({
+    required this.onChanged,
+    required this.child,
+    super.key,
+  });
+
+  final VoidCallback onChanged;
+  final Widget child;
+
+  @override
+  State<LookupOwnerRouteProbe> createState() => _LookupOwnerRouteProbeState();
+}
+
+class _LookupOwnerRouteProbeState extends State<LookupOwnerRouteProbe> {
+  bool? _wasCurrent;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool? isCurrent = ModalRoute.isCurrentOf(context);
+    if (isCurrent == _wasCurrent) return;
+    final bool firstReport = _wasCurrent == null;
+    _wasCurrent = isCurrent;
+    if (!firstReport) widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 /// 查词浮层的整屏 dismiss barrier（点浮层外面关栈）这一帧要不要挂。
 ///
 /// 三个走**根 Overlay** 的表面（视频页 / 首页词典页 / texthooker）各写一份这条件，
@@ -560,6 +601,10 @@ class _DictionaryPopupEntryBindingState
 /// base_source_page._buildPopupLayer 与 dictionary_page_mixin.buildNestedPopupLayer
 /// 此前各写一份此 parking + Visibility 几何（BUG-135 的 `parked ? width+8` 改一处忘另
 /// 一处即漂移），收口于此；两宿主各自的 [DictionaryPopupLayer] 回调差异留在各自方法。
+///
+/// [onEntranceSettled]：本层入场淡入是否已走完、在屏上满不透明（隐藏即回 false）。
+/// 宿主据此把本层记进更下层的 [occluders]——见 [DictionaryPopupEntry.entranceSettled]。
+/// 回调一律在帧末（post-frame）发出，宿主可直接 setState。
 Widget parkedPopupLayer({
   Key? key,
   required Rect pos,
@@ -568,6 +613,7 @@ Widget parkedPopupLayer({
   required Widget child,
   double entranceStartProgress = 0.0,
   List<Rect> occluders = const <Rect>[],
+  ValueChanged<bool>? onEntranceSettled,
 }) {
   return Positioned(
     key: key,
@@ -589,6 +635,7 @@ Widget parkedPopupLayer({
         child: _PopupEntranceFade(
           visible: visible,
           startProgress: entranceStartProgress,
+          onSettledChanged: onEntranceSettled,
           child: visible && occluders.isNotEmpty
               ? PopupOccluderClip(
                   layerRect: pos,
@@ -825,10 +872,14 @@ class _PopupEntranceFade extends StatefulWidget {
     required this.visible,
     required this.child,
     this.startProgress = 0.0,
+    this.onSettledChanged,
   });
 
   final bool visible;
   final Widget child;
+
+  /// 「本层满不透明在屏上」翻转时回报（见 [parkedPopupLayer] 的 onEntranceSettled）。
+  final ValueChanged<bool>? onSettledChanged;
 
   /// 进入可见态时从这个进度（0..1，见 [popupEntranceProgressAfter]）开始淡入。
   final double startProgress;
@@ -845,15 +896,42 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
   late final AnimationController _progress;
   late final Animation<double> _opacity;
 
+  /// 最近一次 build 是否墨水屏（淡入归零 = 一可见即满不透明）。
+  bool _eink = false;
+
+  /// 已回报给 [_PopupEntranceFade.onSettledChanged] 的值；null = 还没回报过。
+  bool? _reportedSettled;
+  bool _settledReportScheduled = false;
+
   @override
   void initState() {
     super.initState();
-    _progress = AnimationController(vsync: this, duration: _kSlideDuration);
+    _progress = AnimationController(vsync: this, duration: _kSlideDuration)
+      ..addStatusListener((AnimationStatus _) => _scheduleSettledReport());
     _opacity = CurvedAnimation(
       parent: _progress,
       curve: FushiSpringCurve.effects,
     );
     if (widget.visible) _enterVisible();
+    _scheduleSettledReport();
+  }
+
+  /// 本层此刻是否满不透明地画在屏上。
+  bool get _settled => widget.visible && (_eink || _progress.isCompleted);
+
+  /// 把 [_settled] 的翻转回报给宿主。状态可能在 build 期间变（didUpdateWidget 里复位
+  /// 进度、首帧即满进度），那时宿主不能 setState，所以统一挪到本帧帧末发出。
+  void _scheduleSettledReport() {
+    if (widget.onSettledChanged == null || _settledReportScheduled) return;
+    _settledReportScheduled = true;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      _settledReportScheduled = false;
+      if (!mounted) return;
+      final bool settled = _settled;
+      if (settled == _reportedSettled) return;
+      _reportedSettled = settled;
+      widget.onSettledChanged?.call(settled);
+    });
   }
 
   @override
@@ -864,6 +942,7 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
     } else if (!widget.visible && oldWidget.visible) {
       _progress.value = 0.0; // 隐藏即复位，避免下次瞬间满不透明。
     }
+    _scheduleSettledReport();
   }
 
   /// 从 [_PopupEntranceFade.startProgress] 接着往 1 走；首个可见帧就是这个进度，
@@ -882,12 +961,17 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
 
   @override
   Widget build(BuildContext context) {
+    final bool eink = isEinkTheme(context);
+    if (eink != _eink) {
+      _eink = eink;
+      _scheduleSettledReport();
+    }
     return FadeTransition(
       // 墨水屏模式：淡入归零为瞬时显示——慢刷新屏上 0→1 补间是一段灰阶残影，
       // 且弹窗「先出壳后出内容」的观感在 e-ink 上尤其糟。
       opacity: !widget.visible
           ? kAlwaysDismissedAnimation
-          : (isEinkTheme(context) ? kAlwaysCompleteAnimation : _opacity),
+          : (eink ? kAlwaysCompleteAnimation : _opacity),
       child: widget.child,
     );
   }

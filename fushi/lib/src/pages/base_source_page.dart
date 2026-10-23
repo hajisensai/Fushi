@@ -1064,9 +1064,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       pos: pos,
       // 被更上层查词卡盖住的部分裁掉：上层的模糊才采到正文而不是本层面板
       // （[PopupOccluderClip]，玻璃叠玻璃）。
+      // 只算已淡入完成的上层（[DictionaryPopupEntry.entranceSettled]）：上层还在
+      // 淡入时就挖洞，洞口会透出正文 / 视频（反馈 iZupbhhdNV）。
       occluders: <Rect>[
         for (int j = index + 1; j < stack.length; j++)
-          if (stack[j].visible)
+          if (stack[j].visible && stack[j].entranceSettled)
             _calculatePopupPosition(
               stack[j].selectionRect,
               screen,
@@ -1080,6 +1082,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图
       // （WebView2 / Android platform view）盖住 showAppDialog 弹的对话框（层级不对）。
       visible: item.visible && _popupHidingDialogDepth == 0,
+      onEntranceSettled: (bool settled) {
+        if (!mounted || item.entranceSettled == settled) return;
+        setState(() => item.entranceSettled = settled);
+      },
       screen: screen,
       child: DictionaryPopupLayer(
         result: item.result,

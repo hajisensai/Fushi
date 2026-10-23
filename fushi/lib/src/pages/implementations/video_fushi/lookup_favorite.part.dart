@@ -37,6 +37,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
+    // BUG-3663：本页（或全屏路由）被别的页面盖住时不起新查词——浮层此刻停靠在屏外，
+    // 起了也看不见，却会暂停视频、改高亮。
+    if (lookupOwnerRouteCovered) return;
     final ({int start, String term}) span = subtitleLookupSpan(
       sentence,
       graphemeIndex,

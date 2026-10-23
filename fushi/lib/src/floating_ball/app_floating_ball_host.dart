@@ -1358,21 +1358,29 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // 导航之上，没有 Overlay 祖先，球与按钮的 Tooltip 要自带一层；Stack 只在
     // 球 / 按钮上命中，空白处照常穿透到底下页面。
     return Overlay.wrap(
-      child: Stack(
-        children: <Widget>[
-          ReaderFloatingBall(
-            key: const ValueKey<String>('fushi_app_floating_ball'),
-            viewport: viewport,
-            actions: actions,
-            dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
-            verticalFraction: prefs.floatingBallVerticalFraction,
-            animate: !appModel.einkMode,
-            showLabels: prefs.floatingBallShowLabels,
-            onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
-              unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
-            },
-          ),
-        ],
+      // 指针停在球 / 按钮上（[appFloatingBallPointerInside]）。deferToChild：Stack 只在
+      // 球与按钮上命中，空白处既不进入也不挡下层页面的 MouseRegion。
+      child: MouseRegion(
+        opaque: false,
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        onEnter: (_) => appFloatingBallPointerInside.value = true,
+        onExit: (_) => appFloatingBallPointerInside.value = false,
+        child: Stack(
+          children: <Widget>[
+            ReaderFloatingBall(
+              key: const ValueKey<String>('fushi_app_floating_ball'),
+              viewport: viewport,
+              actions: actions,
+              dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
+              verticalFraction: prefs.floatingBallVerticalFraction,
+              animate: !appModel.einkMode,
+              showLabels: prefs.floatingBallShowLabels,
+              onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
+                unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

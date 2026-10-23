@@ -330,6 +330,9 @@ class ShortcutDefaults {
     ShortcutAction.videoScreenshotSubtitled: _kb([
       _key(LogicalKeyboardKey.keyS, {ModifierKey.shift}),
     ]),
+    // 识别当前画面：O = OCR。video co-active 组（含 universal）内裸 O 此前完全空闲。
+    // 手柄留空，用户可自绑。
+    ShortcutAction.videoOcrFrame: _kb([_key(LogicalKeyboardKey.keyO)]),
     ShortcutAction.videoToggleFullscreen: _kb(
       [_key(LogicalKeyboardKey.keyF), _key(LogicalKeyboardKey.f12)],
       [_gRT],
