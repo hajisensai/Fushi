@@ -27,6 +27,7 @@ import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart';
 
 /// String：制卡单词音频的 TTS 兜底声音（[MiningTtsFallbackVoice.wire]）。
 /// 值可能指向本机的声音预设（`tts_voice_presets` 是设备本地清单），所以与
@@ -131,27 +132,61 @@ class WordAudioUnavailable implements Exception {
 String wordAudioUnavailableMessage(WordAudioUnavailable error) =>
     '${t.audio_unavailable} ${error.reason}';
 
-/// 统一的失败上报：总是记错误日志（设置 › 诊断 › 错误日志可查）；[manual]
-/// （用户主动点的）再弹带原因的提示，自动触发保持静默。
+/// 单词音频拿不到时的上报：记日志 + 决定要不要提示用户。
+///
+/// - 总是记错误日志（设置 › 诊断 › 错误日志可查）；
+/// - [manual]（用户主动点的）：每次都弹带原因的提示；
+/// - 自动触发且原因是**系统语音**（[SystemTtsFailure]：不支持该语言、没装语音
+///   数据、没有引擎……）：这是设备配置问题，不提示的话用户只会看到卡片永远没有
+///   单词发音、却不知道为什么（BUG-3669）。但批量 / 连续制卡时每张卡都会撞同一个
+///   原因，所以**同一判据（[SystemTtsFailure.dedupeKey] = 原因 + 语言）在本进程
+///   内只提示一次**；换了原因或语言会再提示；
+/// - 自动触发的其它原因（选中的在线 / 本机声音服务失败）维持只记日志——它们按句
+///   变化（网络抖动等），自动路径逐张弹会刷屏，手动预览时会带原因提示。
+class WordAudioFailureReporter {
+  WordAudioFailureReporter({required this.log, required this.notify});
+
+  /// 生产实例：日志进 [ErrorLogService]，提示走 [FushiToast]。
+  static WordAudioFailureReporter instance = WordAudioFailureReporter(
+    log: (String tag, Object error, StackTrace stack) =>
+        ErrorLogService.instance.log(tag, error, stack),
+    notify: (String message) => FushiToast.show(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.BOTTOM,
+      severity: ToastSeverity.error,
+    ),
+  );
+
+  final void Function(String tag, Object error, StackTrace stack) log;
+  final void Function(String message) notify;
+
+  final Set<String> _notifiedAutoKeys = <String>{};
+
+  void report(
+    WordAudioUnavailable error,
+    StackTrace stack, {
+    required bool manual,
+  }) {
+    // toString 带原因与底层错误码（TtsFailure 只含可公开诊断，不含正文 / 凭据）。
+    log('LocalAudioEnhancement.ttsFallback', error, stack);
+    if (manual) {
+      notify(wordAudioUnavailableMessage(error));
+      return;
+    }
+    final Object? cause = error.cause;
+    if (cause is! SystemTtsFailure) return;
+    if (!_notifiedAutoKeys.add(cause.dedupeKey)) return;
+    notify(wordAudioUnavailableMessage(error));
+  }
+}
+
+/// 统一的失败上报（见 [WordAudioFailureReporter]）。
 void reportWordAudioUnavailable(
   WordAudioUnavailable error,
   StackTrace stack, {
   required bool manual,
-}) {
-  // toString 带原因与底层错误码（TtsFailure 只含可公开诊断，不含正文 / 凭据）。
-  ErrorLogService.instance.log(
-    'LocalAudioEnhancement.ttsFallback',
-    error,
-    stack,
-  );
-  if (!manual) return;
-  FushiToast.show(
-    msg: wordAudioUnavailableMessage(error),
-    toastLength: Toast.LENGTH_LONG,
-    gravity: ToastGravity.BOTTOM,
-    severity: ToastSeverity.error,
-  );
-}
+}) => WordAudioFailureReporter.instance.report(error, stack, manual: manual);
 
 /// 兜底合成要用到的 TTS 体系入口（生产 = [TtsServices]，测试可注入假实现）。
 abstract interface class MiningTtsVoiceSource {
@@ -194,10 +229,21 @@ MiningTtsVoiceSource miningTtsVoiceSourceOf(TtsServices services) =>
 /// 系统语音的固定输出文件名（沿用既有行为）。
 const String kSystemTtsTermAudioFileName = 'tts_term_audio.wav';
 
+/// 系统语音合成函数的形状（生产 = `TtsChannel.ttsToFile`）：成功返回写出的路径，
+/// 失败抛 [SystemTtsFailure]。
+typedef SystemTtsToFile =
+    Future<String> Function(
+      String text,
+      String outputPath,
+      String? languageTag,
+    );
+
 /// 兜底链第 3 步：按 [choice] 合成 [text] 的单词音频。
 ///
-/// - 系统语音：`systemTts(text, <outputDir>/tts_term_audio.wav)`，失败返回 null
-///   （与升级前一致，不带原因）。
+/// - 系统语音：`systemTts(text, <outputDir>/tts_term_audio.wav, languageTag)`，
+///   [languageTag] 是要念的语言（[resolveSystemTtsLanguageTag] 的结果，null =
+///   引擎默认语言）。失败抛带原因的 [WordAudioUnavailable]（cause 是
+///   [SystemTtsFailure]），不再静默返回 null（BUG-3669）。
 /// - 不使用：直接返回 null，不碰任何 TTS。
 /// - 预设：经 [voices] 取引擎合成（走缓存），产物复制到 [outputDir] 下按缓存键
 ///   命名、扩展名随真实格式（wav / mp3）的文件——不同词互不覆盖。失败抛
@@ -206,20 +252,34 @@ Future<File?> synthesizeMiningTtsFallback({
   required String text,
   required MiningTtsFallbackVoice choice,
   required Directory outputDir,
-  required Future<String?> Function(String text, String outputPath) systemTts,
+  required SystemTtsToFile systemTts,
   required MiningTtsVoiceSource Function() voices,
+  String? languageTag,
 }) async {
   switch (choice.kind) {
     case MiningTtsFallbackKind.none:
       return null;
     case MiningTtsFallbackKind.system:
-      final String? written = await systemTts(
-        text,
-        p.join(outputDir.path, kSystemTtsTermAudioFileName),
-      );
-      if (written == null) return null;
+      final String written;
+      try {
+        written = await systemTts(
+          text,
+          p.join(outputDir.path, kSystemTtsTermAudioFileName),
+          languageTag,
+        );
+      } on SystemTtsFailure catch (failure) {
+        throw WordAudioUnavailable(
+          systemTtsFailureText(failure),
+          cause: failure,
+        );
+      }
       final File file = File(written);
-      return file.existsSync() ? file : null;
+      if (file.existsSync()) return file;
+      final SystemTtsFailure missing = SystemTtsFailure(
+        SystemTtsFailureReason.synthesisFailed,
+        languageTag: languageTag,
+      );
+      throw WordAudioUnavailable(systemTtsFailureText(missing), cause: missing);
     case MiningTtsFallbackKind.preset:
       return _synthesizeWithPreset(
         text: text,

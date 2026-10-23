@@ -210,6 +210,41 @@ mixin _FushiDbContentMisc
             ..where((t) => t.bookKey.equals(bookKey) & t.isbn.isNull()))
           .write(EpubBooksCompanion(isbn: Value<String?>(isbn)));
 
+  /// 还没写过 `sourceMetadata` 的 EPUB（`format='epub'` 且列为空）的
+  /// `(bookKey, extractDir)`，供引擎侧 `backfillEpubSeries` 只读 OPF 回填系列声明
+  /// （n4KC1azJvw）。导入时已写过系列描述符（含「没有声明」标记）或带别的描述符
+  /// （在线 / 网页小说）的书不在内。
+  Future<List<({String bookKey, String extractDir})>>
+      getEpubBooksMissingSourceMetadata() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.extractDir,
+          ])
+          ..where(epubBooks.sourceMetadata.isNull() &
+              epubBooks.format.equals(BookFormat.epub.dbValue));
+    final List<TypedResult> rows = await query.get();
+    return <({String bookKey, String extractDir})>[
+      for (final TypedResult row in rows)
+        (
+          bookKey: row.read(epubBooks.bookKey)!,
+          extractDir: row.read(epubBooks.extractDir)!,
+        ),
+    ];
+  }
+
+  /// 只在 `sourceMetadata` 仍为空时写入（回填与导入 / 在线描述符并发时不覆盖先到
+  /// 的值）。返回受影响行数。
+  Future<int> setEpubBookSourceMetadataIfMissing(
+    String bookKey,
+    String sourceMetadata,
+  ) =>
+      (update(epubBooks)
+            ..where((t) =>
+                t.bookKey.equals(bookKey) & t.sourceMetadata.isNull()))
+          .write(EpubBooksCompanion(sourceMetadata: Value<String?>(sourceMetadata)));
+
   /// Inserts a book; returns its bookKey (the primary key) on success.
   ///
   /// v81：companion 未携带（或空）本机稳定 uid 时在此**单点自动生成**——

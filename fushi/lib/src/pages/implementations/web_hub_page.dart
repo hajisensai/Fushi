@@ -89,12 +89,15 @@ class _WebHubPageState extends State<WebHubPage> {
           LibrarySectionTab<WebHubSection>(
             value: section,
             label: _label(section),
+            orderId: section.name,
           ),
       ],
       selected: _section,
       onChanged: _select,
       focusIdPrefix: 'web-hub-tab',
       floating: true,
+      // 反馈 ndQ5eXLcqp：长按 / 右键页签栏自定义顶部页签顺序。
+      orderKey: 'web',
     );
     final String? shellTitle = FushiShellInlineTitle.of(context)
         ? FushiShellTitleScope.maybeTitleOf(context)

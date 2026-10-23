@@ -13,6 +13,7 @@ import eu.kanade.tachiyomi.source.model.FilterList
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
+import mextensionserver.impl.ExtensionHttpServers
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
@@ -198,7 +199,7 @@ internal fun loadEpisodeVideos(
             episode.episode_number = episodeData.episode_number ?: 0f
             episode.scanlator = episodeData.scanlator
         }
-    return runBlocking { AnimeVideoLoader.loadVideos(source, episode) }
+    return runBlocking { AnimeVideoLoader.loadVideos(source, episode, ExtensionHttpServers::baseUrlFor) }
 }
 
 /**

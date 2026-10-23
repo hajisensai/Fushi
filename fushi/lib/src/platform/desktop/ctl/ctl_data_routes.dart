@@ -401,7 +401,10 @@ List<CtlRoute> _syncRoutes(DesktopCtlContext context) => <CtlRoute>[
     final SyncRepository repo = SyncRepository(context.appModel.database);
     final SyncBackendType selected = await repo.getBackendType();
     return <String, Object?>{
+      // 两条通道各有自动同步开关（反馈 5nWEirdCs2）：autoSync = 云通道，
+      // interconnectAutoSync = 互联通道。
       'autoSync': await repo.isAutoSyncEnabled(),
+      'interconnectAutoSync': await repo.isInterconnectAutoSyncEnabled(),
       'interconnectEnabled': await repo.isInterconnectEnabled(),
       'running': syncInProgress.value,
       'lastFullSweep': syncOutcomeToWire(lastFullSweepOutcome.value),

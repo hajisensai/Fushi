@@ -308,6 +308,20 @@ void main() {
       isTrue,
       reason: '词典 WebView 必须位于漫画翻页键处理器的 Focus 子树内',
     );
+    // 反馈 8HcJchWAcr：词典层必须画在 chrome 之上（页面主 Stack 的最后一个孩子）。
+    // 排在它之后的 chrome 会盖过弹窗的 dismiss barrier（点底栏打开快捷设置），
+    // 在 iOS 上还会被 engine 并进弹窗平台视图的 overlay、按弹窗圆角裁剪。
+    final Finder host = find.byKey(
+      const ValueKey<String>('manga_dictionary_host'),
+    );
+    final Stack pageStack = tester.widget<Stack>(
+      find.ancestor(of: host, matching: find.byType(Stack)).first,
+    );
+    expect(
+      pageStack.children.last.key,
+      const ValueKey<String>('manga_dictionary_host'),
+      reason: '查词弹窗层之后不得再有任何 Flutter 内容（chrome / 浮标 / 按钮）',
+    );
   });
 
   testWidgets('有书行时加载 manga.json 并恢复已存页码（真实进度读穿）', (WidgetTester tester) async {

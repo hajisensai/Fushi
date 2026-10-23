@@ -8,6 +8,8 @@ import 'package:fushi/src/asr_host/asr_host.dart'
 import 'package:fushi/src/asr_host/gpu_acceleration.dart'
     show gpuRuntimeToDownloadForUi, withGpuRuntimeDownload;
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart' show GpuRuntimeStore;
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show SharedModelDownloads, asrPackDownloadKey, sharedModelDownloads;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一个语音转录模型包当前的下载进度快照。
@@ -60,7 +62,9 @@ class AsrModelDownloads extends ChangeNotifier {
     this.gpuRuntimeToDownload = gpuRuntimeToDownloadForUi,
     AsrTranscriptionService Function(AsrAudioProfile profile)?
     serviceForProfile,
-  }) : serviceForProfile =
+    SharedModelDownloads? shared,
+  }) : shared = shared ?? sharedModelDownloads,
+       serviceForProfile =
            serviceForProfile ??
            ((AsrAudioProfile profile) =>
                createAsrTranscriptionService(audioProfile: profile));
@@ -73,6 +77,10 @@ class AsrModelDownloads extends ChangeNotifier {
 
   /// 按包开模型目录（手动接入的本地包认用户自己的文件夹）。
   final Future<AsrModelStore> Function(AsrModelPack pack) openPackStore;
+
+  /// 模型文件下载的单飞登记表：转录弹层 / 视频字幕弹层 / 自动转录也经它下同一个
+  /// 包，同一份目录同一时刻只有一条写者（kZZmXQBv7E）。
+  final SharedModelDownloads shared;
 
   /// 下模型阶段该一起下的 GPU 环境；null = 不需要 / 本平台没有。
   final Future<GpuRuntimeStore?> Function() gpuRuntimeToDownload;
@@ -183,7 +191,10 @@ class AsrModelDownloads extends ChangeNotifier {
     slot.total += gpu?.pendingDownloadBytes ?? 0;
     slot.subscription =
         withGpuRuntimeDownload(
-          store.download(plan.variant),
+          shared.join(
+            asrPackDownloadKey(pack.id),
+            () => store.download(plan.variant),
+          ),
           gpu,
           onGpuRuntimeError: (Object error) {
             _lastGpuErrors[pack.id] = '$error';
@@ -225,6 +236,8 @@ class AsrModelDownloads extends ChangeNotifier {
     _notify();
     try {
       await slot.cancel();
+      // 模型文件那条归单飞登记表持有，摘掉本槽的监听不会停它。
+      await shared.cancel(asrPackDownloadKey(packId));
     } finally {
       if (identical(_slots[packId], slot)) {
         _slots.remove(packId);

@@ -928,17 +928,20 @@ class _AiProviderSettingsSectionState
       title: _featureTitle(feature),
       summary: _featureSummary(feature),
       current: current,
+      // 不跟随默认的功能（云端语音转录）：「未指定」就是不用，不再列「跟随默认」
+      // 与等价的「不使用 AI」两项。
       options: <(String?, String)>[
         (
           null,
-          defaultName == null
+          defaultName == null || !feature.followsDefaultProvider
               ? t.ai_feature_unset
               : t.ai_feature_follow_default(name: defaultName),
         ),
         for (final AiProviderConfig config in usable)
           (config.id, config.displayName),
         if (assignedUnavailable) (assigned, t.ai_feature_assigned_unavailable),
-        (kAiFeatureDisabled, t.ai_feature_disabled),
+        if (feature.followsDefaultProvider)
+          (kAiFeatureDisabled, t.ai_feature_disabled),
       ],
       onChanged: (String? value) => _setAssignment(feature, value),
     );
@@ -1003,6 +1006,7 @@ class _AiProviderSettingsSectionState
     AiFeature.collectionOrder => FushiIcons.sort,
     AiFeature.libraryOrganize => FushiIcons.aiAssistant,
     AiFeature.subtitleProofread => FushiIcons.edit,
+    AiFeature.cloudTranscription => FushiIcons.subtitles,
   };
 
   // ---------------------------------------------------------------------------
@@ -1256,6 +1260,7 @@ class _AiProviderSettingsSectionState
     AiFeature.collectionOrder => t.ai_feature_collection_order,
     AiFeature.libraryOrganize => t.ai_feature_library_organize,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
+    AiFeature.cloudTranscription => t.ai_feature_cloud_transcription,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -1273,6 +1278,7 @@ class _AiProviderSettingsSectionState
     AiFeature.collectionOrder => t.ai_feature_collection_order_summary,
     AiFeature.libraryOrganize => t.ai_feature_library_organize_summary,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
+    AiFeature.cloudTranscription => t.ai_feature_cloud_transcription_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

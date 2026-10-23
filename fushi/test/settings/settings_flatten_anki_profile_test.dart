@@ -248,11 +248,21 @@ void main() {
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(8),
+      findsNWidgets(10),
       reason:
-          '常用开关（卡片内容 2 + 标签 4）与 Anki 分组的批量制卡 + 落地设备直接可见，'
-          '维护开关属于独立子页',
+          '常用开关（卡片内容 2 + 制卡提示 2 + 标签 4）与 Anki 分组的批量制卡 + 落地设备'
+          '直接可见，维护开关属于独立子页',
     );
+    for (final String notice in <String>[
+      'Show mining confirmations',
+      'Show duplicate-card notices',
+    ]) {
+      expect(
+        find.widgetWithText(AdaptiveSettingsSwitchRow, notice),
+        findsOneWidget,
+        reason: '「制卡提示」开关应无条件显示（两种挖词目标都生效）',
+      );
+    }
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),
       findsOneWidget,
@@ -367,13 +377,20 @@ void main() {
     );
     // 图片质量 / 音频质量 + 句子音频头/尾 padding 两对滑块。
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(4));
-    // 唯一的开关是「句子音频跟随播放倍速」（PR #1537，与音频质量同组）；
-    // 通用设置的开关一个都不该出现在这个子页。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsOneWidget);
+    // 开关只有「句子音频跟随播放倍速」（PR #1537，与音频质量同组）与「动图只播放
+    // 一次」（反馈 ZxyIMK-C5V，与动图格式同组）；通用设置的开关一个都不该出现在这个子页。
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(2));
     expect(
       find.widgetWithText(
         AdaptiveSettingsSwitchRow,
         'Match sentence audio to playback speed',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Play animated images once',
       ),
       findsOneWidget,
     );

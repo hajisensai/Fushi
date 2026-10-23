@@ -314,6 +314,40 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               ],
             ),
           ),
+          // 制卡提示：制卡结果 toast 的开关组，两种目标都生效（toast 出口只有
+          // FushiToast.showMine 一处）。失败与「成功但缺音频」不受开关影响。
+          enter(
+            'card_section_notices',
+            AdaptiveSettingsSection(
+              title: t.card_creation_section_notices,
+              children: <Widget>[
+                SettingsSearchTarget(
+                  id: 'card_creation.notice.success',
+                  child: AdaptiveSettingsSwitchRow(
+                    title: t.card_creation_notice_success,
+                    subtitle: t.card_creation_notice_success_hint,
+                    value: appModel.mineNoticeSuccess,
+                    onChanged: (bool value) async {
+                      await appModel.setMineNoticeSuccess(value);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+                SettingsSearchTarget(
+                  id: 'card_creation.notice.duplicate',
+                  child: AdaptiveSettingsSwitchRow(
+                    title: t.card_creation_notice_duplicate,
+                    subtitle: t.card_creation_notice_duplicate_hint,
+                    value: appModel.mineNoticeDuplicate,
+                    onChanged: (bool value) async {
+                      await appModel.setMineNoticeDuplicate(value);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
           // 默认标签区（TODO-135）：「自动给卡片加什么标签」的开关并到一处，与目标
           // 无关——SRS 制卡同样经 buildNoteTags 打这些标签。
           enter(
@@ -321,6 +355,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             AdaptiveSettingsSection(
               title: t.anki_tag_default_section,
               children: [
+                SettingsSearchTarget(
+                  id: 'card_creation.anki.global_tags',
+                  child: _buildGlobalTagsInput(settings, vm),
+                ),
                 SettingsSearchTarget(
                   id: 'card_creation.anki.tags',
                   child: _buildTagsInput(settings, vm),
@@ -1131,6 +1169,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_animated_format',
           child: _buildVideoMiningAnimatedFormatPicker(),
+        ),
+        // 反馈 ZxyIMK-C5V：动图在 Anki 里默认无限循环；打开后与视频片段一样只播一遍。
+        // 视频 cue 动图与 galgame 窗口动图共用，所以不分平台、不随格式隐藏。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_animated_play_once',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_animated_play_once,
+            subtitle: t.mining_animated_play_once_hint,
+            value: appModel.miningAnimatedPlayOnce,
+            onChanged: (bool value) async {
+              await appModel.setMiningAnimatedPlayOnce(value);
+              if (mounted) setState(() {});
+            },
+          ),
         ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_still_format',
@@ -2308,12 +2360,29 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {
     return AdaptiveSettingsRow(
       title: t.anki_tags,
+      subtitle: t.anki_tags_profile_hint,
       controlBelow: true,
       trailing: AdaptiveSettingsTextField(
         initialValue: settings.tags,
         labelText: t.anki_tags,
         hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
+      ),
+    );
+  }
+
+  /// 反馈 ORHr4_WDOy：所有 Profile 共用的标签，与上面按 Profile 的那一行叠加
+  /// （[AnkiSettings.noteTags]）。
+  Widget _buildGlobalTagsInput(AnkiSettings settings, AnkiViewModel vm) {
+    return AdaptiveSettingsRow(
+      title: t.anki_tags_global,
+      subtitle: t.anki_tags_global_hint,
+      controlBelow: true,
+      trailing: AdaptiveSettingsTextField(
+        initialValue: settings.globalTags,
+        labelText: t.anki_tags_global,
+        hintText: t.anki_tags_hint,
+        onChanged: (v) => vm.updateGlobalTags(v),
       ),
     );
   }

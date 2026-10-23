@@ -78,3 +78,38 @@ bool isTransportFailure(Object error) =>
     error is TimeoutException ||
     error is TlsException ||
     error is http.ClientException;
+
+/// jsDelivr 的独立 CDN 边缘网络（同一 GitHub 仓库内容）。单个边缘节点对某文件
+/// 缓存未命中 / 限流 / 抖动时换一个独立网络即可成；中国大陆通常可达。
+const List<String> kJsDelivrHosts = <String>[
+  'cdn.jsdelivr.net',
+  'fastly.jsdelivr.net',
+  'gcore.jsdelivr.net',
+  'testingcf.jsdelivr.net',
+];
+
+/// **纯函数**：GitHub 仓库 [repo]@[ref] 里的文件 [repoPath] 按优先级排序的下载 URL。
+///
+/// 顺序：① jsDelivr 多 CDN 节点（[kJsDelivrHosts]）→ ② [kGitHubMirrorPrefixes] 套在
+/// raw 直链前 → ③ `raw.githubusercontent.com` 官方直连兜底。app 运行时下载**不走**
+/// 本机命令行代理，中国大陆网络全靠前两档兜底（Anime4K 着色器、推荐字体共用）。
+///
+/// [viaJsDelivr] 为 false 时跳过 ①：jsDelivr 对体积超过 50MB 的目录整目录 403
+/// （例如 google/fonts 的 `ofl/notoserifsc`），对这类路径 ① 必败、只会白等。
+/// [repoPath] 原样拼接，调用方负责其中需要的百分号编码（如 `%5Bwght%5D`）。
+List<String> gitHubRepoFileUrls(
+  String repoPath, {
+  required String repo,
+  required String ref,
+  bool viaJsDelivr = true,
+}) {
+  final String rawUrl =
+      'https://raw.githubusercontent.com/$repo/$ref/$repoPath';
+  return <String>[
+    if (viaJsDelivr)
+      for (final String host in kJsDelivrHosts)
+        'https://$host/gh/$repo@$ref/$repoPath',
+    for (final String prefix in kGitHubMirrorPrefixes) '$prefix$rawUrl',
+    rawUrl,
+  ];
+}

@@ -29,13 +29,21 @@ import 'package:fushi/src/asr_host/asr_host.dart'
         appEnsureMossProvisioned,
         appMossProvisionedDiskBytes,
         appMossProvisionStatus;
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show asrDownloadKeyFor, kMossDownloadKey, sharedModelDownloads;
 
 /// 视频用的日语识别模型：是否已下载 + 下载。
 abstract interface class VideoSubtitleAsrModelPort {
   Future<bool> isReady();
 
   /// 下载缺失的模型文件；事件流结束 = 下载完。失败以异常结束流。
+  ///
+  /// 下载归全应用单飞登记表（`sharedModelDownloads`），不归调用页面：取消订阅
+  /// （关弹层）不停下载；已在下载时再调只是挂上去看进度，不另起第二条写者。
   Stream<ModelDownloadEvent> download();
+
+  /// 接回进行中的下载（别处 / 之前那次弹层发起的）；没在下载时为 null。
+  Stream<ModelDownloadEvent>? resumeDownload();
 }
 
 /// 生产实现：与视频页「语音转写」同一个 `mixedAudio` 转录服务装配。
@@ -54,8 +62,18 @@ class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady() async => (await _plan(_service())).modelReady;
 
+  static String get _key =>
+      asrDownloadKeyFor(AsrLanguage.japanese, AsrAudioProfile.mixedAudio);
+
   @override
-  Stream<ModelDownloadEvent> download() async* {
+  Stream<ModelDownloadEvent> download() =>
+      sharedModelDownloads.join(_key, _downloadMissing);
+
+  @override
+  Stream<ModelDownloadEvent>? resumeDownload() =>
+      sharedModelDownloads.attach(_key);
+
+  static Stream<ModelDownloadEvent> _downloadMissing() async* {
     final AsrTranscriptionService service = _service();
     final AsrTranscribePlan plan = await _plan(service);
     if (plan.modelReady) return;
@@ -108,7 +126,13 @@ abstract interface class VideoSubtitleMossPort {
   Future<VideoSubtitleMossState> status(MossBackendPreference backend);
 
   /// 下载缺失的运行库与权重；事件流结束 = 下载完。失败以异常结束流。
+  ///
+  /// 与 [VideoSubtitleAsrModelPort.download] 同一套单飞语义：取消订阅不停下载，
+  /// 已在下载时只是挂上去。
   Stream<ModelDownloadEvent> ensure(MossBackendPreference backend);
+
+  /// 接回进行中的 MOSS 下载；没在下载时为 null。
+  Stream<ModelDownloadEvent>? resumeEnsure();
 
   /// 本机已落盘的全部 MOSS 文件（所有后端的运行库 + 权重）占的字节。
   Future<int> diskBytes();
@@ -139,7 +163,14 @@ class AppVideoSubtitleMossPort implements VideoSubtitleMossPort {
 
   @override
   Stream<ModelDownloadEvent> ensure(MossBackendPreference backend) =>
-      appEnsureMossProvisioned(backend);
+      sharedModelDownloads.join(
+        kMossDownloadKey,
+        () => appEnsureMossProvisioned(backend),
+      );
+
+  @override
+  Stream<ModelDownloadEvent>? resumeEnsure() =>
+      sharedModelDownloads.attach(kMossDownloadKey);
 
   @override
   Future<int> diskBytes() => appMossProvisionedDiskBytes();

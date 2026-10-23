@@ -59,6 +59,12 @@ html::before { display: none !important; }
         'font-family: $fallback !important\'>「</div>'
         '<div id="bad" class="probe" style=\'left: 800px; '
         'font-family: "NoVert" !important\'>「</div>'
+        // 反馈 mTof77pMTe：长音符 ー 与「」同属 Tr，缺 vert 时同样画成横线。
+        '<div id="t2" class="probe" style="left: 400px; top: 450px">ー</div>'
+        '<div id="ref2" class="probe" style=\'left: 600px; top: 450px; '
+        'font-family: $fallback !important\'>ー</div>'
+        '<div id="bad2" class="probe" style=\'left: 800px; top: 450px; '
+        'font-family: "NoVert" !important\'>ー</div>'
         '</body></html>';
   }
 

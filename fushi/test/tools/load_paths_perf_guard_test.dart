@@ -201,7 +201,7 @@ void main() {
   group('startup', () {
     test('font targets resolve concurrently, web fonts decode off-thread', () {
       final String model = read('lib/src/models/app_model.dart');
-      // 四条字体链（界面 / 字幕 / 游戏 / 复习卡片，BUG-3672 补上第四条）在同一个
+      // 四条字体链（界面 / 字幕 / 游戏 / 复习卡片，BUG-3713 补上第四条）在同一个
       // Future.wait 里并发解析；按批次切片判，不依赖 dart format 把列表排成一行还是多行。
       const String waitHead = 'await Future.wait<Object?>(<Future<Object?>>[';
       final int waitAt = model.indexOf(waitHead);

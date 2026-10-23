@@ -537,6 +537,9 @@ enum ShortcutAction {
   // 「含字幕」那条要在 Dart 侧把字幕合成回帧上（`video_screenshot_compose.dart`）。
   videoScreenshot(ShortcutScope.video, 'video_screenshot'),
   videoScreenshotSubtitled(ShortcutScope.video, 'video_screenshot_subtitled'),
+  // 识别一次当前画面（反馈 X3ozgOAx8v）：正在播放先暂停，再对当前帧 OCR、原位铺可点
+  // 的字查词——不依赖「暂停时自动识别」范围（默认关）。画面上的硬字幕 / 招牌只能靠它查。
+  videoOcrFrame(ShortcutScope.video, 'video_ocr_frame'),
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
       ShortcutScope.video, 'video_toggle_favorite_sentence'),
@@ -603,6 +606,17 @@ enum ShortcutAction {
   globalExternalOpenLookupPage(
     ShortcutScope.globalExternal,
     'global_external_open_lookup_page',
+  ),
+
+  // 用户请求（反馈 vTpcneuvAm）：「截屏识字」的全局快捷键。与桌面应用外悬浮球的
+  // 「截屏识字」按钮同一个执行体（`AppFloatingBallHost` 的桌面截屏 OCR：截光标所在
+  // 显示器 → 冻结层 → 系统 OCR → 点字用全局查词卡查），只是不经球、不必先开应用外
+  // 悬浮球。执行体登记在 GlobalLookupController._osHotKeyActions（经
+  // `GlobalLookupController.screenOcrHandler` 转给悬浮球宿主）。键盘-only，理由同
+  // globalExternalOpenLookupPage。
+  globalExternalScreenOcr(
+    ShortcutScope.globalExternal,
+    'global_external_screen_ocr',
   ),
 
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
@@ -687,7 +701,9 @@ enum ShortcutAction {
         // RawInput 侧键触发（runner 侧只登记那一个按钮号），手柄是进程级单槽
         // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
         // 能回显，按下去什么都不发生。
-        ShortcutAction.globalExternalOpenLookupPage => const <ShortcutChannel>{
+        ShortcutAction.globalExternalOpenLookupPage ||
+        ShortcutAction.globalExternalScreenOcr =>
+          const <ShortcutChannel>{
             ShortcutChannel.keyboard,
           },
         _ => scope.channels,

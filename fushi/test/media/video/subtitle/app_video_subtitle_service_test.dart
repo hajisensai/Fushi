@@ -240,6 +240,56 @@ void main() {
       expect(service.latestJobFor(target), same(job));
     });
 
+    // DEStBY5I66：视频页对当前这一集点「生成日语字幕」后退出播放页，任务结束时
+    // 页面已不在；条目原本选着别的字幕时，生成的字幕必须替换掉原选择（连同库里旧源
+    // 的 cue 缓存），重进播放页才用得上。整季 / CLI（不带 videoPath）仍不覆盖。
+    test('视频页单集入口：替换已有字幕选择并清掉旧 cue 缓存', () async {
+      final String ep1 = video('ep01.mkv');
+      await addBook('a', ep1, subtitleSource: 'embedded:2');
+      await db.replaceCuesForBook('a', <AudioCuesCompanion>[
+        AudioCuesCompanion.insert(
+          bookKey: 'a',
+          chapterHref: '',
+          sentenceIndex: 0,
+          textFragmentId: '',
+          cueText: 'old embedded line',
+          startMs: 0,
+          endMs: 1000,
+          audioFileIndex: 0,
+        ),
+      ]);
+      final AppVideoSubtitleService service = buildService();
+
+      final AppVideoSubtitleTarget cli = await service.resolveBook('a');
+      expect(
+        cli.episodes.single.replacesSubtitleSelection,
+        isFalse,
+        reason: 'CLI / 库页入口不覆盖用户选择',
+      );
+
+      final AppVideoSubtitleTarget target = await service.resolveBook(
+        'a',
+        videoPath: ep1,
+      );
+      expect(target.episodes.single.replacesSubtitleSelection, isTrue);
+      final AppVideoSubtitleJob job = service.start(
+        target,
+        const AppVideoSubtitleOptions(),
+      );
+      await job.done;
+
+      expect(job.status, AppVideoSubtitleJobStatus.succeeded);
+      final String srt = p.join(p.dirname(ep1), 'ep01.ja.srt');
+      expect(File(srt).existsSync(), isTrue);
+      expect((await db.getVideoBookByBookUid('a'))!.subtitleSource, srt);
+      expect(
+        await db.getCuesForBook('a'),
+        isEmpty,
+        reason: '旧源的 cue 缓存清掉，重进时按新字幕档案重解析',
+      );
+      expect(job.registeredBookUids, <String>['a']);
+    });
+
     test('同时只跑一个：第二个任务被拒（busy）', () async {
       await addBook('a', video('ep01.mkv'));
       final AppVideoSubtitleService service = buildService();

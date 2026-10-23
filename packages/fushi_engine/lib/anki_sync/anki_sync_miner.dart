@@ -152,7 +152,7 @@ class AnkiSyncMiner with AnkiNoteComposer {
         deck: deck.name,
         fields: ordered,
         tags: buildNoteTags(
-          settings.tags,
+          settings.noteTags,
           source: context.source,
           includeHibiki: settings.tagIncludeHibiki,
           includeCategory: settings.tagIncludeCategory,

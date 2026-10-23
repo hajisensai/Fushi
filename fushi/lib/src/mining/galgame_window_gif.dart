@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegRunResult, resolveFfmpegBackend;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
-    show animatedEncoderArgs;
+    show animatedEncoderArgs, animatedLoopArgs, miningAnimatedPlayOnceReader;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat;
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -242,6 +242,7 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
         outputPath: outputPath,
         fps: fps,
         maxWidth: maxWidth,
+        playOnce: miningAnimatedPlayOnceReader(),
       );
       final FfmpegRunResult result =
           await resolveFfmpegBackend().run(args, const Duration(seconds: 60));
@@ -308,6 +309,8 @@ List<String> buildGalWindowAnimatedArgs({
   required String outputPath,
   required int fps,
   required int maxWidth,
+  // 反馈 ZxyIMK-C5V：true = 只播放一次。见 [animatedLoopArgs]（与视频 cue 动图同一处）。
+  bool playOnce = false,
 }) {
   final bool isGif = format == MiningAnimatedFormat.gif;
   final String scale = isGif
@@ -326,7 +329,8 @@ List<String> buildGalWindowAnimatedArgs({
     filter,
     // 编码器参数与视频 cue 动图**共用同一处真相源**，两条链路不各持一份。
     ...animatedEncoderArgs(format),
-    if (format != MiningAnimatedFormat.gif) ...<String>['-loop', '0'],
+    // GIF 也显式传：「只播一次」要 `-loop -1`，而循环时 `-loop 0` 与 GIF muxer 缺省等价。
+    ...animatedLoopArgs(format, playOnce: playOnce),
     outputPath,
   ];
 }

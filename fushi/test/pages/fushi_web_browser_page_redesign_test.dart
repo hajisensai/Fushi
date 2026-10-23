@@ -230,6 +230,57 @@ void main() {
       expect(find.text('Example'), findsOneWidget);
     });
 
+    // 5wWlKU_Rir：站点可手动添加 / 编辑（本机服务地址没有点号也能存）。
+    testWidgets('手动添加本机地址站点，再长按编辑名称，写穿偏好', (WidgetTester tester) async {
+      await pumpHome(tester);
+      Future<void> submitDialogText(String text) async {
+        final Finder field = find.descendant(
+          of: find.byType(Dialog),
+          matching: find.byType(EditableText),
+        );
+        await tester.enterText(field, text);
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.pumpAndSettle();
+      }
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('web-browser-site-new')),
+      );
+      await tester.pumpAndSettle();
+      await submitDialogText('localhost:55000/texthooker');
+      await submitDialogText('Texthooker');
+      expect(find.text('Texthooker'), findsOneWidget);
+      expect(
+        parseWebBrowserSites(
+          appModel.prefsRepo.webBrowserSitesJson,
+          presets: const <WebBrowserSite>[],
+        ).map((WebBrowserSite s) => '${s.name}|${s.url}'),
+        <String>[
+          'Example|https://example.com/',
+          'Texthooker|http://localhost:55000/texthooker',
+        ],
+      );
+
+      await tester.longPress(find.text('Texthooker'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.web_browser_site_edit));
+      await tester.pumpAndSettle();
+      await submitDialogText('http://127.0.0.1:55000/texthooker');
+      await submitDialogText('TH');
+      expect(find.text('TH'), findsOneWidget);
+      expect(
+        parseWebBrowserSites(
+          appModel.prefsRepo.webBrowserSitesJson,
+          presets: const <WebBrowserSite>[],
+        ).map((WebBrowserSite s) => '${s.name}|${s.url}'),
+        <String>[
+          'Example|https://example.com/',
+          'TH|http://127.0.0.1:55000/texthooker',
+        ],
+      );
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('手机横屏：地址栏与工具栏并成顶部一行、都在网页上方', (WidgetTester tester) async {
       await pumpHome(tester);
       await tester.tap(find.text('Example'));

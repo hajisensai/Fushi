@@ -10,6 +10,8 @@
 library;
 
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -43,6 +45,56 @@ const Duration kAiChatRetryBaseDelay = Duration(seconds: 2);
 /// 提供商要求等得比这还久（`Retry-After` 动辄几分钟的额度耗尽）就不在后台干等，
 /// 直接报失败——那不是抖动，是额度没了。
 const Duration kAiChatMaxRetryWait = Duration(seconds: 60);
+
+/// [AiChatClient.transcribeAudio] 一次请求的整体时限：上传一个音频分片（低码率
+/// 十分钟约 2–3 MB，慢速移动网络要几十秒）再加服务端解码。
+const Duration kAiTranscriptionRequestTimeout = Duration(minutes: 5);
+
+/// 提供商协议没有语音转录端点（只有 OpenAI 兼容协议有 `/audio/transcriptions`）。
+const String kAiTranscriptionUnsupportedProtocol = 'unsupported_protocol';
+
+/// multipart 表单分隔串：随机 32 位十六进制，撞上音频字节的概率可忽略。
+String aiMultipartBoundary() {
+  final math.Random random = math.Random.secure();
+  final StringBuffer sb = StringBuffer('----fushi');
+  for (int i = 0; i < 32; i++) {
+    sb.write(random.nextInt(16).toRadixString(16));
+  }
+  return sb.toString();
+}
+
+/// 手拼 `multipart/form-data` 请求体（RFC 7578）：普通字段按 [fields] 顺序（允许
+/// 同名重复——`http.MultipartRequest.fields` 是 Map，装不下 OpenAI 的
+/// `timestamp_granularities[]` 数组写法），最后一个文件字段。
+List<int> encodeAiMultipartForm({
+  required String boundary,
+  required List<(String, String)> fields,
+  required String fileField,
+  required String fileName,
+  required String fileContentType,
+  required List<int> fileBytes,
+}) {
+  final BytesBuilder out = BytesBuilder(copy: false);
+  void line(String text) => out.add(utf8.encode('$text\r\n'));
+  String quote(String value) =>
+      value.replaceAll('\r', ' ').replaceAll('\n', ' ').replaceAll('"', '%22');
+  for (final (String name, String value) in fields) {
+    line('--$boundary');
+    line('Content-Disposition: form-data; name="${quote(name)}"');
+    line('');
+    line(value);
+  }
+  line('--$boundary');
+  line(
+    'Content-Disposition: form-data; name="${quote(fileField)}"; '
+    'filename="${quote(fileName)}"',
+  );
+  line('Content-Type: $fileContentType');
+  line('');
+  out.add(fileBytes);
+  out.add(utf8.encode('\r\n--$boundary--\r\n'));
+  return out.takeBytes();
+}
 
 /// 一次应答报告的 token 用量。
 ///
@@ -453,6 +505,91 @@ class AiChatClient {
     }
     models.sort();
     return List<String>.unmodifiable(models);
+  }
+
+  /// 云端语音转录：一段音频发到 OpenAI 兼容的 `POST {baseUrl}/audio/transcriptions`
+  /// （OpenAI Whisper、Groq 等），返回解码后的 `verbose_json` 应答（含 `segments`，
+  /// 端点支持时还有逐词 `words`）。模型名取 [AiProviderConfig.model]——给转录用的
+  /// 那家提供商填的就是 Whisper 模型（如 Groq 的 `whisper-large-v3`）。
+  ///
+  /// 与 [completeWithUsage] 同一套 key 轮换、限频与临时性失败退避（[_withRetry]），
+  /// 失败同样只抛脱敏短码。只有 OpenAI 兼容协议有这个端点，其余协议抛
+  /// `unsupported_protocol`。单次上传大小由调用方控制（Groq 免费档 25 MB）。
+  ///
+  /// [language]：ISO-639 语言码（`ja` / `en` …），不传由服务端自动识别。
+  /// [prompt]：Whisper 的提示文本（专名 / 文风示例），不传就不发。
+  Future<Map<Object?, Object?>> transcribeAudio({
+    required AiProviderConfig provider,
+    required List<int> audioBytes,
+    required String fileName,
+    required String contentType,
+    String? language,
+    String? prompt,
+  }) async {
+    if (provider.protocol != AiWireProtocol.openAiCompatible) {
+      throw const AiChatFailure(kAiTranscriptionUnsupportedProtocol);
+    }
+    if (!provider.isUsable) {
+      throw const AiChatFailure('provider_not_configured');
+    }
+    return _withRetry(
+      provider,
+      (String key) => _postTranscription(
+        provider,
+        key,
+        audioBytes: audioBytes,
+        fileName: fileName,
+        contentType: contentType,
+        language: language,
+        prompt: prompt,
+      ),
+    );
+  }
+
+  Future<Map<Object?, Object?>> _postTranscription(
+    AiProviderConfig provider,
+    String key, {
+    required List<int> audioBytes,
+    required String fileName,
+    required String contentType,
+    String? language,
+    String? prompt,
+  }) async {
+    final String boundary = aiMultipartBoundary();
+    final List<int> body = encodeAiMultipartForm(
+      boundary: boundary,
+      fields: <(String, String)>[
+        ('model', provider.model.trim()),
+        ('response_format', 'verbose_json'),
+        // 同名字段要发两次（OpenAI 的数组写法）：Map 装不下，所以表单手拼。
+        ('timestamp_granularities[]', 'segment'),
+        ('timestamp_granularities[]', 'word'),
+        ('temperature', '0'),
+        if (language != null && language.trim().isNotEmpty)
+          ('language', language.trim()),
+        if (prompt != null && prompt.trim().isNotEmpty)
+          ('prompt', prompt.trim()),
+      ],
+      fileField: 'file',
+      fileName: fileName,
+      fileContentType: contentType,
+      fileBytes: audioBytes,
+    );
+    final Map<String, String> headers = _headers(provider, key)
+      ..['content-type'] = 'multipart/form-data; boundary=$boundary';
+    final http.Response response = await _send(
+      () => _client.post(
+        _resolve(provider.baseUrl, 'audio/transcriptions'),
+        headers: headers,
+        body: body,
+      ),
+      timeout: kAiTranscriptionRequestTimeout,
+    );
+    final Object? decoded = _decodeBody(response);
+    if (decoded is! Map) {
+      throw const AiChatFailure('bad_response');
+    }
+    return decoded;
   }
 
   // -------------------------------------------------------------------------
@@ -924,10 +1061,13 @@ class AiChatClient {
     return byHealth != null && byHealth.isAfter(byReply) ? byHealth : byReply;
   }
 
-  Future<http.Response> _send(Future<http.Response> Function() send) async {
+  Future<http.Response> _send(
+    Future<http.Response> Function() send, {
+    Duration timeout = kAiChatRequestTimeout,
+  }) async {
     final http.Response response;
     try {
-      response = await send().timeout(kAiChatRequestTimeout);
+      response = await send().timeout(timeout);
     } catch (_) {
       // 原始异常可能带完整 URL（含 Gemini 的 ?key=），绝不透出。
       throw const AiChatFailure('network_error');
