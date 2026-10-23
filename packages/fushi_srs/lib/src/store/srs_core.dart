@@ -174,44 +174,42 @@ typedef _HistDart =
 
 /// `ffsrs_store_*` 的绑定。
 final class SrsCoreBindings {
-  SrsCoreBindings._(FushiFsrs lib)
-    : _fsrs = lib,
-      open = lib.library.lookupFunction<_OpenC, _OpenDart>('ffsrs_store_open'),
-      close = lib.library.lookupFunction<_CloseC, _CloseDart>(
-        'ffsrs_store_close',
-      ),
-      legacyState = lib.library.lookupFunction<_StateC, _StateDart>(
+  SrsCoreBindings._(FushiFsrs fsrs, ffi.DynamicLibrary lib)
+    : _fsrs = fsrs,
+      open = lib.lookupFunction<_OpenC, _OpenDart>('ffsrs_store_open'),
+      close = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_close'),
+      legacyState = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_legacy_state',
       ),
-      legacyBegin = lib.library.lookupFunction<_SimpleC, _SimpleDart>(
+      legacyBegin = lib.lookupFunction<_SimpleC, _SimpleDart>(
         'ffsrs_store_legacy_begin',
       ),
-      legacyPage = lib.library.lookupFunction<_PageC, _PageDart>(
+      legacyPage = lib.lookupFunction<_PageC, _PageDart>(
         'ffsrs_store_legacy_page',
       ),
-      legacyCommit = lib.library.lookupFunction<_SimpleC, _SimpleDart>(
+      legacyCommit = lib.lookupFunction<_SimpleC, _SimpleDart>(
         'ffsrs_store_legacy_commit',
       ),
-      legacyAbort = lib.library.lookupFunction<_SimpleC, _SimpleDart>(
+      legacyAbort = lib.lookupFunction<_SimpleC, _SimpleDart>(
         'ffsrs_store_legacy_abort',
       ),
-      legacyMarkNone = lib.library.lookupFunction<_SimpleC, _SimpleDart>(
+      legacyMarkNone = lib.lookupFunction<_SimpleC, _SimpleDart>(
         'ffsrs_store_legacy_mark_none',
       ),
-      snapshot = lib.library.lookupFunction<_SnapshotC, _SnapshotDart>(
+      snapshot = lib.lookupFunction<_SnapshotC, _SnapshotDart>(
         'ffsrs_store_snapshot',
       ),
-      debugQuery = lib.library.lookupFunction<_QueryC, _QueryDart>(
+      debugQuery = lib.lookupFunction<_QueryC, _QueryDart>(
         'ffsrs_store_debug_query',
       ),
-      exec = lib.library.lookupFunction<_ExecC, _ExecDart>('ffsrs_store_exec'),
-      execBatch = lib.library.lookupFunction<_PageC, _PageDart>(
+      exec = lib.lookupFunction<_ExecC, _ExecDart>('ffsrs_store_exec'),
+      execBatch = lib.lookupFunction<_PageC, _PageDart>(
         'ffsrs_store_exec_batch',
       ),
-      inTransaction = lib.library.lookupFunction<_StateC, _StateDart>(
+      inTransaction = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_in_transaction',
       ),
-      historyStates = lib.library.lookupFunction<_HistC, _HistDart>(
+      historyStates = lib.lookupFunction<_HistC, _HistDart>(
         'ffsrs_store_history_states',
       );
 
@@ -242,13 +240,20 @@ final class SrsCoreBindings {
     if (lib == null) throw SrsCoreUnavailableError('library not found');
     final SrsCoreBindings b;
     try {
-      b = SrsCoreBindings._(lib);
+      b = SrsCoreBindings._(lib, _reopen(lib.libraryPath));
     } on ArgumentError catch (e) {
       throw SrsCoreUnavailableError('missing symbol: ${e.message}');
     }
     if (libraryPath == null) _instance = b;
     return b;
   }
+
+  /// 按 [FushiFsrs.libraryPath] 取回同一个已加载的库（null = iOS 进程内静态链接）。
+  /// [FushiFsrs] 自己不持有 `DynamicLibrary`：它要能随闭包发进 `Isolate.run`，而
+  /// `DynamicLibrary` 不可跨 isolate 发送。
+  static ffi.DynamicLibrary _reopen(String? path) => path == null
+      ? ffi.DynamicLibrary.process()
+      : ffi.DynamicLibrary.open(path);
 
   /// 实际加载的库路径（后台 isolate 重新加载同一个库用）。
   String? get libraryPath => _fsrs.libraryPath;
