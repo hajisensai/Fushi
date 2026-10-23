@@ -77,6 +77,56 @@ void main() {
     expect(state['caret'], 'video');
   });
 
+  test(
+    'count repeats a move in one request and stops when the cursor leaves',
+    () async {
+      final _FakePlayer player = await connect(caret: true);
+      await caret('enter');
+      final Map<String, Object?> moved = await host
+          .handle('command', <String, dynamic>{
+            'sessionId': snapshot['sessionId'],
+            'subtitleVersion': snapshot['subtitleVersion'],
+            'requestId': 'count-1',
+            'action': 'caret',
+            'caret': 'right',
+            'count': 3,
+          }, 'phone');
+      expect(moved, containsPair('caret', 'video'));
+      expect(player.steps, <String>['enter', 'right', 'right', 'right']);
+
+      player.exitAfterSteps = 1;
+      await host.handle('command', <String, dynamic>{
+        'sessionId': snapshot['sessionId'],
+        'subtitleVersion': snapshot['subtitleVersion'],
+        'requestId': 'count-2',
+        'action': 'caret',
+        'caret': 'left',
+        'count': 5,
+      }, 'phone');
+      expect(player.steps.where((String s) => s == 'left'), hasLength(1));
+
+      for (final (String, Object) bad in <(String, Object)>[
+        ('right', 0),
+        ('right', 21),
+        ('right', '2'),
+        ('activate', 2),
+      ]) {
+        await expectLater(
+          host.handle('command', <String, dynamic>{
+            'sessionId': snapshot['sessionId'],
+            'subtitleVersion': snapshot['subtitleVersion'],
+            'requestId': 'bad-${bad.$1}-${bad.$2}',
+            'action': 'caret',
+            'caret': bad.$1,
+            'count': bad.$2,
+          }, 'phone'),
+          throwsA(remoteError(400, 'invalid_number')),
+          reason: '$bad',
+        );
+      }
+    },
+  );
+
   test('unknown steps are rejected before reaching the player', () async {
     final _FakePlayer player = await connect(caret: true);
     for (final Object? step in <Object?>[null, 3, 'jump', '']) {
@@ -97,6 +147,9 @@ final class _FakePlayer {
   final List<VoidCallback> listeners = <VoidCallback>[];
   final List<String> steps = <String>[];
   String surface = 'none';
+
+  /// 非空时再走这么多步后光标退出（模拟电脑上有人退了它）。
+  int? exitAfterSteps;
 
   VideoRemotePlaybackBinding binding() => VideoRemotePlaybackBinding(
     identity: () => 'video-one',
@@ -122,6 +175,14 @@ final class _FakePlayer {
     caret: caret
         ? (String step) async {
             steps.add(step);
+            final int? left = exitAfterSteps;
+            if (left != null) {
+              exitAfterSteps = left - 1;
+              if (left - 1 <= 0) {
+                surface = 'none';
+                return surface;
+              }
+            }
             surface = switch (step) {
               'enter' => 'video',
               'activate' => 'popup',

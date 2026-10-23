@@ -72,6 +72,9 @@ class VideoRemotePadGestureTracker {
   /// 本轮是否已经发过长按 / 步进（抬手不再判点击或快滑）。
   bool _consumed = false;
 
+  /// 本轮中途换过模式（[switchMode]）：手指没再动就抬起不算点按。
+  bool _noTap = false;
+
   /// 步进锁定的轴（true = 横向）；null = 还没走出 slop。
   bool? _stepHorizontal;
   double _stepCarry = 0;
@@ -87,6 +90,7 @@ class VideoRemotePadGestureTracker {
     if (_pointers.isEmpty) {
       _multi = false;
       _consumed = false;
+      _noTap = false;
       _stepHorizontal = null;
       _stepCarry = 0;
       _firstDownAt = at;
@@ -162,7 +166,7 @@ class VideoRemotePadGestureTracker {
     if (_consumed) return const <VideoRemotePadGesture>[];
     final Offset travel = p.last - p.origin;
     if (!p.moved) {
-      if (at - p.downAt >= longPressAfter) {
+      if (_noTap || at - p.downAt >= longPressAfter) {
         return const <VideoRemotePadGesture>[];
       }
       return _tap(p.origin, at);
@@ -237,13 +241,37 @@ class VideoRemotePadGestureTracker {
     return out;
   }
 
-  /// 换模式（进出选词）时丢掉在途状态，避免旧模式的单击在新模式里落地。
+  /// 换模式（进出选词）：丢掉等确认的单击（不能在新模式里落成别的操作）。
+  /// 手指还按着时（长按进入选词）不作废这一下：从当前位置、当前时刻重新起算，
+  /// 接着拖就按新模式走；不动就抬起什么也不发。
+  void switchMode({required bool stepping, required Duration at}) {
+    this.stepping = stepping;
+    doubleTapEnabled = !stepping;
+    _pendingTapAt = null;
+    _pendingTapPosition = null;
+    _stepHorizontal = null;
+    _stepCarry = 0;
+    if (_pointers.isEmpty) return;
+    for (final _Pointer p in _pointers.values) {
+      p
+        ..origin = p.last
+        ..downAt = at
+        ..moved = false;
+    }
+    if (!_multi) {
+      _consumed = false;
+      _noTap = true;
+    }
+  }
+
+  /// 丢掉全部在途状态。
   void reset() {
     _pointers.clear();
     _pendingTapAt = null;
     _pendingTapPosition = null;
     _multi = false;
     _consumed = false;
+    _noTap = false;
     _stepHorizontal = null;
     _stepCarry = 0;
   }
@@ -251,8 +279,8 @@ class VideoRemotePadGestureTracker {
 
 class _Pointer {
   _Pointer(this.origin, this.downAt) : last = origin;
-  final Offset origin;
-  final Duration downAt;
+  Offset origin;
+  Duration downAt;
   Offset last;
   bool moved = false;
 }

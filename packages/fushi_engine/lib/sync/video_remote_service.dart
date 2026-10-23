@@ -94,7 +94,9 @@ const Set<String> videoRemoteOperations = <String>{
 ///   the computer downloads it into its subtitle folder and applies it as
 ///   the primary subtitle ([videoRemoteCapabilitySubtitleSearch]). Errors:
 ///   `404 subtitle_candidate_missing`, `502 subtitle_download_failed`.
-/// * `caret` — `{caret: String}` from [videoRemoteCaretActions]: drives the
+/// * `caret` — `{caret: String, count?: int}` from [videoRemoteCaretActions]
+///   (`count`, 1..[videoRemoteCaretMaxCount], repeats one of
+///   [videoRemoteCaretMoves] so a quick drag is one request): drives the
 ///   computer's own subtitle word cursor (the keyboard / gamepad one) so the
 ///   lookup card opens on the computer screen ([videoRemoteCapabilityCaret]).
 ///   Answers `{ok, caret}` with the cursor's surface afterwards (see
@@ -134,6 +136,17 @@ const Set<String> videoRemoteCaretActions = <String>{
   'longPress',
   'back',
 };
+
+/// The `caret` steps that take a `count`.
+const Set<String> videoRemoteCaretMoves = <String>{
+  'left',
+  'right',
+  'up',
+  'down',
+};
+
+/// Upper bound of the `caret` command's `count`.
+const int videoRemoteCaretMaxCount = 20;
 
 /// Where the computer's word cursor is (`caret` in the snapshot and in the
 /// `caret` command's answer): `none` (off), `video` (on the subtitle) or

@@ -859,9 +859,19 @@ final class VideoRemoteHost implements VideoRemoteService {
         if (step is! String || !videoRemoteCaretActions.contains(step)) {
           throw const VideoRemoteException(400, 'invalid_argument');
         }
+        final Object? count = body['count'] ?? 1;
+        if (count is! int ||
+            count < 1 ||
+            count > videoRemoteCaretMaxCount ||
+            (count > 1 && !videoRemoteCaretMoves.contains(step))) {
+          throw const VideoRemoteException(400, 'invalid_number');
+        }
         // The phone's own lookup (if any) is untouched: the cursor works on
         // the computer screen, the pause it takes is the page's own.
-        final String surface = await caret(step);
+        String surface = await caret(step);
+        for (int i = 1; i < count && surface != 'none'; i++) {
+          surface = await caret(step);
+        }
         _publish();
         return <String, Object?>{'ok': true, 'caret': surface};
       }

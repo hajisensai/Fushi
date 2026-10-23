@@ -135,11 +135,9 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
   void didUpdateWidget(covariant VideoRemoteTouchpad oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.caretActive != widget.caretActive) {
-      // 换模式丢掉在途手势：空闲时等双击确认的单击不能落成选词里的「查词」。
-      _tracker
-        ..reset()
-        ..stepping = widget.caretActive
-        ..doubleTapEnabled = !widget.caretActive;
+      // 空闲时等双击确认的单击不能落成选词里的「查词」；长按进入选词时手指还
+      // 按着，接着拖就开始挪字。
+      _tracker.switchMode(stepping: widget.caretActive, at: _now);
     }
   }
 

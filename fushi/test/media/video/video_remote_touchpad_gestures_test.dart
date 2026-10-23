@@ -136,6 +136,41 @@ void main() {
     expect(tracker.tick(ms(4000)), isEmpty);
   });
 
+  test(
+    'switching to stepping mid-press keeps the finger and drops its tap',
+    () {
+      final VideoRemotePadGestureTracker tracker =
+          VideoRemotePadGestureTracker();
+      tracker.down(1, o, ms(0));
+      expect(tracker.tick(ms(520)), <VideoRemotePadGesture>[
+        VideoRemotePadGesture.longPress,
+      ]);
+      // 长按进入选词：手指还按着，从这里起改按步进判。
+      tracker.switchMode(stepping: true, at: ms(530));
+      expect(
+        tracker.move(1, o + const Offset(46, 0), ms(600)),
+        <VideoRemotePadGesture>[VideoRemotePadGesture.stepRight],
+      );
+      expect(tracker.up(1, ms(650)), isEmpty);
+
+      // 不动就抬起：不算点按（不会立刻查第一个字）。
+      tracker.switchMode(stepping: false, at: ms(700));
+      tracker.down(2, o, ms(800));
+      expect(tracker.tick(ms(1320)), <VideoRemotePadGesture>[
+        VideoRemotePadGesture.longPress,
+      ]);
+      tracker.switchMode(stepping: true, at: ms(1330));
+      expect(tracker.up(2, ms(1400)), isEmpty);
+      expect(tracker.tick(ms(3000)), isEmpty);
+
+      // 之后的新一下照常是点按（选词模式下点按即发）。
+      tracker.down(3, o, ms(3100));
+      expect(tracker.up(3, ms(3150)), <VideoRemotePadGesture>[
+        VideoRemotePadGesture.tap,
+      ]);
+    },
+  );
+
   test('a cancelled pointer produces nothing', () {
     final VideoRemotePadGestureTracker tracker = VideoRemotePadGestureTracker(
       doubleTapEnabled: false,
