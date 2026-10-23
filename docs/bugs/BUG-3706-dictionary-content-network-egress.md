@@ -1,6 +1,6 @@
 ## BUG-3706 · dictionary-content-network-egress
-- **报告**：2026-10-23（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
-- **备注**：
+- **报告**：2026-10-23（用户：开放用户提交词典前的安全审计）
+- **真实性**：✅ 真 bug。词典内容能让查词弹窗向任意外部地址发请求（每次查词都泄露查了什么词 / 可做追踪）：`fushi/lib/src/pages/implementations/dictionary_webview_media.dart` `dictionaryMediaWebResourceResponse` 对不认识的 URL 返回 null 即放行真实网络；`dict-media.js` `constructDictCss` 原样透传 `@import` / `url()`；`popup.js` `setStructuredContentElementStyle` 不过滤 `backgroundImage`；HTML 释义的 `<img src="https://…">` 原样保留。
+- **[x] ① 已修复** — 在内容层切断（`popup.js`：`stripDictCssRemoteRefs` 作用于词典 styles.css、导出卡片 CSS、内联 `<style>` 与 `style` 属性；结构化内容 style 拒 `url(` / `image-set(` / `expression(`；`sanitizeDictElementAttributes` 删除指向外部的自动请求属性；沙箱 iframe CSP `default-src 'none'`）。**刻意不在原生拦截器拦 http(s)**：弹窗自己 `new Audio(远程 URL)` 播在线发音，一刀切会拦死这条合法路径。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/popup_dict_sandbox_test.dart`（场景 1/2/5：结构化内容外部背景图、HTML 外部 img / style url、styles.css 的 `@import` 与外部 `url()` 被剥，本地 url 保留；去掉 CSS 剥离的变异会打红）。
+- **备注**：主文档未加 CSP（见 spec「已知未做」）。

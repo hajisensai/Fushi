@@ -2,6 +2,7 @@ package com.pichillilorenzo.flutter_inappwebview_android.plugin_scripts_js;
 
 import com.pichillilorenzo.flutter_inappwebview_android.types.PluginScript;
 import com.pichillilorenzo.flutter_inappwebview_android.types.UserScriptInjectionTime;
+import com.pichillilorenzo.flutter_inappwebview_android.webview.JavaScriptBridgeInterface;
 
 public class JavaScriptBridgeJS {
   public static final String JAVASCRIPT_BRIDGE_NAME = "flutter_inappwebview";
@@ -214,32 +215,112 @@ public class JavaScriptBridgeJS {
           "    }" +
           "};";
 
-  public static final String JAVASCRIPT_BRIDGE_JS_SOURCE = "if (window." + JAVASCRIPT_BRIDGE_NAME + " != null) {" +
-          "  window." + JAVASCRIPT_BRIDGE_NAME + ".callHandler = function() {" +
-          "    var _callHandlerID = setTimeout(function(){});" +
-          "    window." + JAVASCRIPT_BRIDGE_NAME + "._callHandler(arguments[0], _callHandlerID, JSON.stringify(Array.prototype.slice.call(arguments, 1)));" +
-          "    return new Promise(function(resolve, reject) {" +
-          "      window." + JAVASCRIPT_BRIDGE_NAME + "[_callHandlerID] = {resolve: resolve, reject: reject};" +
-          "    });" +
-          "  };" +
-          "}"+
-          "if (window.top != null && window.top !== window && window." + JAVASCRIPT_BRIDGE_NAME + " == null) {" +
-          "  window." + JAVASCRIPT_BRIDGE_NAME + " = {};" +
-          "  window." + JAVASCRIPT_BRIDGE_NAME + ".callHandler = function() {" +
-          "    var _callHandlerID = setTimeout(function(){});" +
+  // Fushi patch (bridge lock, see PATCHES.md): value the lock request resolves to on success.
+  public static final String FUSHI_BRIDGE_LOCKED_VALUE = "fushi-bridge-locked-v1";
+
+  // Fushi patch (bridge lock, see PATCHES.md): the whole bridge script runs in one IIFE so the
+  // bridge token lives in a closure (_fushiBridgeToken) and is never reachable from window.
+  // Every JS->native call of the plugin goes through _fushiInvoke / _fushiHideContextMenuCall,
+  // which attach the token once the page has locked the bridge and call the upstream 3-argument
+  // _callHandler / _hideContextMenu otherwise (unlocked = upstream behaviour).
+  public static final String JAVASCRIPT_BRIDGE_JS_SOURCE = "(function() {" +
+          "  var _fushiBridgeToken = null;" +
+          "  var _fushiIsTopFrame = false;" +
+          "  try { _fushiIsTopFrame = (window.top == null || window.top === window); } catch (e) { _fushiIsTopFrame = false; }" +
+          // Same-origin subframes (e.g. plugin content worlds) forward through the top frame's
+          // invoker so their calls carry the token; that is no wider than calling
+          // window.top.flutter_inappwebview.callHandler, which they can already do. Opaque-origin
+          // (sandboxed) frames cannot read window.top and fall back to their own token-less path.
+          "  var _fushiTopBridgeFn = function(name) {" +
+          "    if (_fushiIsTopFrame) { return null; }" +
           "    try {" +
-          "      window.top." + JAVASCRIPT_BRIDGE_NAME + "._callHandler(arguments[0], _callHandlerID, JSON.stringify(Array.prototype.slice.call(arguments, 1)));" +
-          "      return new Promise(function(resolve, reject) {" +
-          "        window.top." + JAVASCRIPT_BRIDGE_NAME + "[_callHandlerID] = {resolve: resolve, reject: reject};" +
-          "      });" +
-          "    } catch (error) {" +
-          "      return new Promise(function(resolve, reject) { reject(error); });" +
-          "    }" +
+          "      var topBridge = window.top." + JAVASCRIPT_BRIDGE_NAME + ";" +
+          "      if (topBridge != null && topBridge !== window." + JAVASCRIPT_BRIDGE_NAME + " && typeof topBridge[name] === 'function') { return topBridge[name]; }" +
+          "    } catch (e) {}" +
+          "    return null;" +
           "  };" +
-          "}" +
-          "if (window." + JAVASCRIPT_BRIDGE_NAME + " != null) {" +
-          "  " + UTIL_JS_SOURCE +
-          "}";
+          "  if (window." + JAVASCRIPT_BRIDGE_NAME + " != null && window." + JAVASCRIPT_BRIDGE_NAME + "._fushiBridgeInstalled !== true) {" +
+          "    var _fushiBridge = window." + JAVASCRIPT_BRIDGE_NAME + ";" +
+          "    _fushiBridge._fushiBridgeInstalled = true;" +
+          "    var _fushiLocalInvoke = function(handlerName, callHandlerID, argsJson) {" +
+          "      if (_fushiBridgeToken == null) {" +
+          "        _fushiBridge._callHandler(handlerName, callHandlerID, argsJson);" +
+          "      } else {" +
+          "        _fushiBridge._fushiCallHandler(handlerName, callHandlerID, argsJson, _fushiBridgeToken);" +
+          "      }" +
+          "    };" +
+          "    var _fushiLocalHideContextMenu = function() {" +
+          "      if (_fushiBridgeToken == null) {" +
+          "        _fushiBridge._hideContextMenu();" +
+          "      } else {" +
+          "        _fushiBridge._fushiHideContextMenu(_fushiBridgeToken);" +
+          "      }" +
+          "    };" +
+          "    _fushiBridge._fushiInvoke = function(handlerName, callHandlerID, argsJson) {" +
+          "      var viaTop = _fushiTopBridgeFn('_fushiInvoke');" +
+          "      if (viaTop != null) { viaTop(handlerName, callHandlerID, argsJson); } else { _fushiLocalInvoke(handlerName, callHandlerID, argsJson); }" +
+          "    };" +
+          "    _fushiBridge._fushiHideContextMenuCall = function() {" +
+          "      var viaTop = _fushiTopBridgeFn('_fushiHideContextMenuCall');" +
+          "      if (viaTop != null) { viaTop(); } else { _fushiLocalHideContextMenu(); }" +
+          "    };" +
+          "    _fushiBridge.callHandler = function() {" +
+          "      if (arguments[0] === '" + JavaScriptBridgeInterface.FUSHI_LOCK_BRIDGE_HANDLER_NAME + "') {" +
+          "        return new Promise(function(resolve, reject) {" +
+          "          if (!_fushiIsTopFrame || _fushiBridgeToken != null) { resolve(false); return; }" +
+          // Fushi patch (BUG-3705): the native side clears the lock in onPageStarted, which runs on
+          // the UI thread and can land after this document's first scripts. Locking before the
+          // platform-ready event (dispatched from onPageFinished, i.e. strictly later) could be
+          // wiped by that late reset and leave the page believing it is locked while the bridge is
+          // open again, so the lock request waits for platform-ready here.
+          "          var doLock = function() {" +
+          "            if (_fushiBridgeToken != null) { resolve(false); return; }" +
+          "            var granted = null;" +
+          "            try { granted = _fushiBridge._fushiLockBridge(); } catch (e) { granted = null; }" +
+          "            if (typeof granted === 'string' && granted.length >= 32) {" +
+          "              _fushiBridgeToken = granted;" +
+          "              resolve('" + FUSHI_BRIDGE_LOCKED_VALUE + "');" +
+          "            } else {" +
+          "              resolve(false);" +
+          "            }" +
+          "          };" +
+          "          if (_fushiBridge._platformReady === true) { doLock(); return; }" +
+          "          window.addEventListener('flutterInAppWebViewPlatformReady', function() { doLock(); }, { once: true });" +
+          "        });" +
+          "      }" +
+          "      var _callHandlerID = setTimeout(function(){});" +
+          "      _fushiBridge._fushiInvoke(arguments[0], _callHandlerID, JSON.stringify(Array.prototype.slice.call(arguments, 1)));" +
+          "      return new Promise(function(resolve, reject) {" +
+          "        window." + JAVASCRIPT_BRIDGE_NAME + "[_callHandlerID] = {resolve: resolve, reject: reject};" +
+          "      });" +
+          "    };" +
+          "  }" +
+          "  if (window.top != null && window.top !== window && window." + JAVASCRIPT_BRIDGE_NAME + " == null) {" +
+          "    window." + JAVASCRIPT_BRIDGE_NAME + " = {};" +
+          "    window." + JAVASCRIPT_BRIDGE_NAME + ".callHandler = function() {" +
+          "      if (arguments[0] === '" + JavaScriptBridgeInterface.FUSHI_LOCK_BRIDGE_HANDLER_NAME + "') {" +
+          "        return new Promise(function(resolve, reject) { resolve(false); });" +
+          "      }" +
+          "      var _callHandlerID = setTimeout(function(){});" +
+          "      try {" +
+          "        var topBridge = window.top." + JAVASCRIPT_BRIDGE_NAME + ";" +
+          "        if (typeof topBridge._fushiInvoke === 'function') {" +
+          "          topBridge._fushiInvoke(arguments[0], _callHandlerID, JSON.stringify(Array.prototype.slice.call(arguments, 1)));" +
+          "        } else {" +
+          "          topBridge._callHandler(arguments[0], _callHandlerID, JSON.stringify(Array.prototype.slice.call(arguments, 1)));" +
+          "        }" +
+          "        return new Promise(function(resolve, reject) {" +
+          "          window.top." + JAVASCRIPT_BRIDGE_NAME + "[_callHandlerID] = {resolve: resolve, reject: reject};" +
+          "        });" +
+          "      } catch (error) {" +
+          "        return new Promise(function(resolve, reject) { reject(error); });" +
+          "      }" +
+          "    };" +
+          "  }" +
+          "  if (window." + JAVASCRIPT_BRIDGE_NAME + " != null) {" +
+          "    " + UTIL_JS_SOURCE +
+          "  }" +
+          "})();";
 
   public static final String PLATFORM_READY_JS_SOURCE = "(function() {" +
           "  if ((window.top == null || window.top === window) && window." + JAVASCRIPT_BRIDGE_NAME + " != null && window." + JAVASCRIPT_BRIDGE_NAME + "._platformReady == null) {" +

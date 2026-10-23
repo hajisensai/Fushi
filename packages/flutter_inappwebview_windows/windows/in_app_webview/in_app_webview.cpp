@@ -4,6 +4,8 @@
 #include <objbase.h>
 #include <Shlwapi.h>
 #include <windows.h>
+#include <bcrypt.h>
+#include <iostream>
 #include <WebView2EnvironmentOptions.h>
 #include <wil/wrl.h>
 
@@ -20,6 +22,9 @@
 #include "../webview_environment/webview_environment_manager.h"
 #include "in_app_webview.h"
 #include "in_app_webview_manager.h"
+
+// Fushi bridge lock：BCryptGenRandom 生成桥令牌。
+#pragma comment(lib, "bcrypt.lib")
 
 namespace flutter_inappwebview_plugin
 {
@@ -40,6 +45,46 @@ namespace flutter_inappwebview_plugin
       }
       value.resize(written);
       return value;
+    }
+
+    // Fushi bridge lock：丢弃消息时的 warn。debugLog 在 release 被编译掉，这条必须留痕。
+    void fushiBridgeLockWarn(const std::string& message)
+    {
+      const std::string line = "[flutter_inappwebview_windows][bridge-lock][warn] " + message;
+      std::cerr << line << std::endl;
+      OutputDebugStringW(utf8_to_wide("\n" + line + "\n").c_str());
+    }
+
+    // ≥128 bit 的随机令牌：BCryptGenRandom(系统首选 RNG) 取 32 字节 → 64 位小写 hex。
+    bool fushiGenerateBridgeLockToken(std::string* out)
+    {
+      unsigned char bytes[32] = {};
+      if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, bytes, static_cast<ULONG>(sizeof(bytes)), BCRYPT_USE_SYSTEM_PREFERRED_RNG))) {
+        return false;
+      }
+      static const char kHex[] = "0123456789abcdef";
+      std::string token;
+      token.reserve(sizeof(bytes) * 2);
+      for (unsigned char b : bytes) {
+        token.push_back(kHex[b >> 4]);
+        token.push_back(kHex[b & 0x0F]);
+      }
+      SecureZeroMemory(bytes, sizeof(bytes));
+      *out = std::move(token);
+      return true;
+    }
+
+    // 定长比较，不因首个不同字节提前返回。
+    bool fushiTokensEqual(const std::string& a, const std::string& b)
+    {
+      if (a.size() != b.size()) {
+        return false;
+      }
+      unsigned char diff = 0;
+      for (size_t i = 0; i < a.size(); ++i) {
+        diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+      }
+      return diff == 0;
     }
   }
 
@@ -639,6 +684,12 @@ namespace flutter_inappwebview_plugin
           if (!*alive) {
             return S_OK;
           }
+          // Fushi bridge lock：ContentLoading 只在顶层 frame 提交新文档时触发（同文档的
+          // fragment / pushState 不触发，子 frame 导航走 Frame 事件）——新文档回到未锁定。
+          // 故意不在 NavigationStarting 清：导航可能被取消 / 变成下载，旧文档仍活着，
+          // 那时清令牌等于把还在跑的已锁页面解锁。
+          bridgeLockToken_.clear();
+          bridgeLockSource_.clear();
           if (channelDelegate) {
             channelDelegate->onProgressChanged(33);
           }
@@ -761,13 +812,42 @@ namespace flutter_inappwebview_plugin
           return S_OK;
         }
 
+        // Fushi bridge lock：WebMessageReceived 只承接顶层文档的 chrome.webview.postMessage
+        // （iframe 的 postMessage 走 ICoreWebView2Frame::WebMessageReceived，本插件不订阅）；
+        // Source 仍作为令牌之外的第二道校验（spec 第 7 条）。
+        std::wstring messageSource;
+        {
+          wil::unique_cotaskmem_string sourceRaw;
+          if (SUCCEEDED(args->get_Source(&sourceRaw)) && sourceRaw) {
+            messageSource = sourceRaw.get();
+          }
+        }
+
         wil::unique_cotaskmem_string json;
         if (succeededOrLog(args->get_WebMessageAsJson(&json))) {
-          auto message = nlohmann::json::parse(wide_to_utf8(json.get()));
+          auto message = nlohmann::json::parse(wide_to_utf8(json.get()), nullptr, false);
 
           if (message.is_object() && message.contains("name") && message.at("name").is_string() && message.contains("body") && message.at("body").is_object()) {
             auto name = message.at("name").get<std::string>();
             auto body = message.at("body").get<nlohmann::json>();
+
+            if (name.compare(FUSHI_BRIDGE_LOCK_HANDLER_NAME) == 0) {
+              auto lockCallHandlerID = body.contains("_callHandlerID") && body.at("_callHandlerID").is_number_integer() ? body.at("_callHandlerID").get<int64_t>() : 0;
+              handleBridgeLockRequest(messageSource, lockCallHandlerID);
+              return S_OK;
+            }
+
+            if (!bridgeLockToken_.empty()) {
+              std::string presentedToken;
+              const bool hasToken = body.contains("_fushiBridgeToken") && body.at("_fushiBridgeToken").is_string();
+              if (hasToken) {
+                presentedToken = body.at("_fushiBridgeToken").get<std::string>();
+              }
+              if (!isBridgeMessageAuthorized(messageSource, hasToken ? &presentedToken : nullptr)) {
+                fushiBridgeLockWarn("dropped JS->native message on locked bridge (missing/invalid token or unexpected source): " + wide_to_utf8(messageSource));
+                return S_OK;
+              }
+            }
 
             if (name.compare("callHandler") == 0 && body.contains("handlerName") && body.at("handlerName").is_string()) {
               auto handlerName = body.at("handlerName").get<std::string>();
@@ -2298,6 +2378,57 @@ namespace flutter_inappwebview_plugin
     }
     mainFrameInjectedOkUrls_.erase(it);
     return true;
+  }
+
+  // Fushi bridge lock — 处理桥脚本拦下的 callHandler('_fushiLockBridge')。
+  // 已锁定 / Source 是 srcdoc 或空 / 取随机数失败 → 回 false（保持原令牌）；
+  // 否则生成令牌、记下锁定方文档的 Source，并只回给顶层文档的桥闭包。
+  void InAppWebView::handleBridgeLockRequest(const std::wstring& source, int64_t callHandlerID)
+  {
+    std::string token;
+    bool granted = false;
+    if (!bridgeLockToken_.empty()) {
+      fushiBridgeLockWarn("refused _fushiLockBridge: bridge already locked");
+    }
+    else if (source.empty() || source.rfind(L"about:srcdoc", 0) == 0) {
+      fushiBridgeLockWarn("refused _fushiLockBridge from unexpected source: " + wide_to_utf8(source));
+    }
+    else if (!fushiGenerateBridgeLockToken(&token)) {
+      fushiBridgeLockWarn("refused _fushiLockBridge: BCryptGenRandom failed");
+    }
+    else {
+      bridgeLockToken_ = token;
+      bridgeLockSource_ = source;
+      granted = true;
+    }
+    // evaluateJavascript 只在顶层文档执行；令牌是 hex，直接作 JS 字符串字面量拼入。
+    const std::string reply = granted ? "'" + token + "'" : "false";
+    evaluateJavascript("if (window." + JAVASCRIPT_BRIDGE_NAME + " != null && typeof window." + JAVASCRIPT_BRIDGE_NAME + "._fushiLockResult === 'function') { window." + JAVASCRIPT_BRIDGE_NAME + "._fushiLockResult(" + std::to_string(callHandlerID) + ", " + reply + "); }", ContentWorld::page(), nullptr);
+  }
+
+  // 锁定后每条消息：令牌必须一致，且发送方文档必须是锁定方（或当前顶层 Source，兼容同文档
+  // pushState 改 URL）。about:srcdoc 等子文档 Source 两者都不会相等。
+  bool InAppWebView::isBridgeMessageAuthorized(const std::wstring& source, const std::string* token) const
+  {
+    if (bridgeLockToken_.empty()) {
+      return true;
+    }
+    if (token == nullptr || !fushiTokensEqual(*token, bridgeLockToken_)) {
+      return false;
+    }
+    if (source.empty()) {
+      return false;
+    }
+    if (source == bridgeLockSource_) {
+      return true;
+    }
+    if (webView) {
+      wil::unique_cotaskmem_string topSource;
+      if (SUCCEEDED(webView->get_Source(&topSource)) && topSource && source == topSource.get()) {
+        return true;
+      }
+    }
+    return false;
   }
 
   InAppWebView::~InAppWebView()

@@ -1374,6 +1374,10 @@ function setStructuredContentElementStyle(element, style) {
         if (isFlowEscapingStructuredContentStyle(property, value)) {
             continue;
         }
+        // BUG-3706：background-image 之类的 url() 会让每次查词都请求外部地址。
+        if (!isSafeStructuredContentStyleValue(value)) {
+            continue;
+        }
         if ((property === 'marginTop' || property === 'marginLeft' || property === 'marginRight' || property === 'marginBottom') && typeof value === 'number') {
             element.style[property] = `${value}em`;
         } else {
@@ -1758,8 +1762,11 @@ function constructSingleGlossaryHtml(entryIndex) {
         let html = `<div style="text-align: left;" class="yomitan-glossary"><ol>${currentGlossary}</ol>`;
         const css = window.dictionaryStyles?.[lastDict] ?? '';
         if (css) {
-            const scopedCss = constructDictCss(css, lastDict, `.yomitan-glossary [data-dictionary="${lastDict}"]`);
+            const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), lastDict, `.yomitan-glossary [data-dictionary="${lastDict}"]`);
+            // BUG-3705：拼进卡片 HTML 的是字符串，词典 CSS 里的 `</style>` 会闭合标签、
+            // 把后面的内容当 HTML（含脚本）写进用户的 Anki 卡片。
             const formatted = scopedCss
+            .replace(/<\/style/gi, '<\\/style')
             .replace(/\s+/g, ' ')
             .replace(/\s*\{\s*/g, ' { ')
             .replace(/\s*\}\s*/g, ' }\n')
@@ -1904,8 +1911,10 @@ function constructGlossaryHtml(entryIndex) {
     result += '</ol>';
     
     for (const [dictName, css] of Object.entries(styles)) {
-        const scopedCss = constructDictCss(css, dictName, `.yomitan-glossary [data-dictionary="${dictName}"]`);
+        const scopedCss = constructDictCss(stripDictCssRemoteRefs(css), dictName, `.yomitan-glossary [data-dictionary="${dictName}"]`);
+        // BUG-3705：同上，`</style>` 不能闭合导出卡片里的样式标签。
         const formatted = scopedCss
+        .replace(/<\/style/gi, '<\\/style')
         .replace(/\s+/g, ' ')
         .replace(/\s*\{\s*/g, ' { ')
         .replace(/\s*\}\s*/g, ' }\n')
@@ -2941,6 +2950,408 @@ function sanitizeInlineHtml(html) {
     return tmp.innerHTML;
 }
 
+/* ---------------------------------------------------------------------------
+   词典内容的安全边界（BUG-3705 / BUG-3706，设计见
+   docs/specs/2026-10-23-dictionary-script-sandbox.md）。
+
+   词典是外来数据：结构化内容的标签名、MDX 的整段 HTML、styles.css 都由词典作者
+   决定。弹窗主文档握着原生桥（制卡 / 改卡 / 打开链接），所以主文档里**不允许**
+   出现任何词典可控的脚本：
+   - 结构化内容只认 Yomitan 规范的标签，`href` 拒危险 scheme，style 拒外部 url()；
+   - 不带 <script> 的 HTML 释义净化后留在主文档（交互、选词、导出照旧）；
+   - 带 <script> 的 HTML 释义整块进 `sandbox="allow-scripts"`（**无**
+     allow-same-origin）的 iframe，而且只在宿主确认「桥已锁到顶层 frame」之后才挂载
+     ——Android 的 addJavascriptInterface 等桥对所有 frame 可见，光有 sandbox 不够；
+     锁不上（旧插件 / 不支持的宿主）就只显示净化后的静态内容。
+--------------------------------------------------------------------------- */
+
+// Yomitan structured-content 规范的标签，外加几种常见内联标签容错。其余标签按
+// span 渲染（保留内容，丢掉标签语义），绝不 createElement 一个词典给的任意名字。
+const STRUCTURED_CONTENT_TAGS = new Set([
+    'br', 'ruby', 'rb', 'rt', 'rtc', 'rp', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th',
+    'span', 'div', 'ol', 'ul', 'li', 'details', 'summary', 'a', 'img',
+    'b', 'i', 'u', 's', 'em', 'strong', 'small', 'sub', 'sup', 'p', 'code',
+]);
+
+function structuredContentTagName(tag) {
+    const name = typeof tag === 'string' ? tag.toLowerCase() : '';
+    return STRUCTURED_CONTENT_TAGS.has(name) ? name : 'span';
+}
+
+// 浏览器解析 URL 前会剥掉控制字符与空白，`java\tscript:` 照样是 javascript:。
+function isDangerousDictUrl(value) {
+    const compact = `${value}`.replace(/[\u0000- \u007f-\u009f]+/g, '');
+    return /^(?:javascript|vbscript|data|livescript|mocha):/i.test(compact) &&
+        !/^data:image\/(?:png|gif|jpe?g|webp|avif|bmp);/i.test(compact);
+}
+
+// 外部网络引用：http(s):// 与协议相对 //。词典内容一旦能发外部请求，每次查词都会
+// 把用户查了什么词泄露出去（BUG-3706）。
+const DICT_REMOTE_URL_RE = /^\s*(?:https?:)?\/\//i;
+// 正则里的引号一律写成 Unicode 转义：源码守卫的词法器不认正则字面量，裸引号会被当成
+// 串的开头、把后面整段源码掩码掉。
+const DICT_CSS_REMOTE_URL_RE = /url\(\s*[\u0027\u0022]?\s*(?:https?:)?\/\/[^)]*\)/gi;
+
+function isRemoteDictUrl(value) {
+    return DICT_REMOTE_URL_RE.test(`${value}`);
+}
+
+// styles.css / 内联 <style> / style 属性里的外部引用：@import 整条丢（相对路径的
+// @import 在弹窗里本来也解析不到词典目录），外部 url() 换成空 url()。
+function stripDictCssRemoteRefs(css) {
+    if (!css) return css;
+    return `${css}`
+        .replace(/@import\b[^;]*;?/gi, '')
+        .replace(DICT_CSS_REMOTE_URL_RE, 'url()');
+}
+
+function isSafeStructuredContentStyleValue(value) {
+    if (typeof value !== 'string') return true;
+    return !/url\s*\(|image-set\s*\(|expression\s*\(|javascript:/i.test(value);
+}
+
+// 主文档里不允许存在的元素：能执行脚本、能导航、能嵌入外部文档或改写文档基址的。
+const DICT_HTML_BLOCKED_SELECTOR = [
+    'script', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'portal',
+    'base', 'meta', 'form', 'noscript', 'template',
+    // SVG 动画能把 href 改成 javascript:，属性过滤管不到 to/values。
+    'animate', 'set', 'animatemotion', 'animatetransform', 'discard',
+].join(',');
+
+// 会让浏览器自动发起请求的属性（不需要用户点击）。
+const DICT_AUTO_FETCH_ATTRS = new Set([
+    'src', 'srcset', 'poster', 'background', 'lowsrc', 'dynsrc', 'data', 'ping',
+]);
+
+function sanitizeDictElementAttributes(element) {
+    const tag = element.tagName.toLowerCase();
+    for (const attr of [...element.attributes]) {
+        const name = attr.name.toLowerCase();
+        const value = attr.value;
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction' ||
+            name === 'action' || name === 'http-equiv') {
+            element.removeAttribute(attr.name);
+            continue;
+        }
+        const isUrlAttr = name === 'href' || name === 'xlink:href' || DICT_AUTO_FETCH_ATTRS.has(name);
+        if (isUrlAttr && isDangerousDictUrl(value)) {
+            element.removeAttribute(attr.name);
+            continue;
+        }
+        // 外链 <a href="https://…"> 是用户点了才走 openLink 的正常交叉引用，保留；
+        // 其余元素上的外部地址会被浏览器自动请求，一律去掉。
+        const isNavigationHref = (name === 'href' || name === 'xlink:href') &&
+            (tag === 'a' || tag === 'area');
+        if (isUrlAttr && !isNavigationHref && name !== 'srcset' && isRemoteDictUrl(value)) {
+            element.removeAttribute(attr.name);
+            continue;
+        }
+        if (name === 'srcset' && /(?:https?:)?\/\//i.test(value)) {
+            element.removeAttribute(attr.name);
+            continue;
+        }
+        if (name === 'style') {
+            const stripped = stripDictCssRemoteRefs(value);
+            if (/expression\s*\(|javascript:/i.test(stripped)) {
+                element.removeAttribute(attr.name);
+            } else if (stripped !== value) {
+                element.setAttribute(attr.name, stripped);
+            }
+        }
+    }
+    if (tag === 'style') {
+        element.textContent = stripDictCssRemoteRefs(element.textContent);
+    }
+}
+
+// 词典 HTML → 可以放进主文档的 HTML。<template> 解析是惰性的：不跑脚本、不加载
+// 图片，<link>/<style> 也留在原位（DOMParser 会把它们挪进 head 丢掉）。
+function sanitizeDictHtml(html) {
+    const template = document.createElement('template');
+    template.innerHTML = `${html}`;
+    const root = template.content;
+    root.querySelectorAll(DICT_HTML_BLOCKED_SELECTOR).forEach(node => node.remove());
+    root.querySelectorAll('*').forEach(sanitizeDictElementAttributes);
+    return template.innerHTML;
+}
+
+// 沙箱 iframe 里的 HTML：脚本与内联事件就是要保留的东西，只去掉能逃出沙箱语义
+// 或嵌入外部文档的元素，并切断外部网络引用（iframe 自己的 CSP 再兜一层）。
+function sanitizeDictSandboxHtml(html) {
+    const template = document.createElement('template');
+    template.innerHTML = `${html}`;
+    const root = template.content;
+    root.querySelectorAll('iframe,frame,frameset,object,embed,applet,portal,base,meta')
+        .forEach(node => node.remove());
+    root.querySelectorAll('*').forEach(element => {
+        for (const attr of [...element.attributes]) {
+            const name = attr.name.toLowerCase();
+            if (name === 'srcdoc') element.removeAttribute(attr.name);
+            if (name === 'style') {
+                element.setAttribute(attr.name, stripDictCssRemoteRefs(attr.value));
+            }
+            if (DICT_AUTO_FETCH_ATTRS.has(name) && isRemoteDictUrl(attr.value)) {
+                element.removeAttribute(attr.name);
+            }
+        }
+        if (element.tagName.toLowerCase() === 'style') {
+            element.textContent = stripDictCssRemoteRefs(element.textContent);
+        }
+    });
+    return template.innerHTML;
+}
+
+function dictHtmlHasScript(html) {
+    return /<script\b/i.test(`${html}`);
+}
+
+const FUSHI_BRIDGE_LOCKED = 'fushi-bridge-locked-v1';
+let __fushiBridgeLockPromise = null;
+
+// 让宿主把原生桥锁到本文档：锁定后宿主只认带令牌的调用，沙箱 iframe 即使摸得到桥
+// 对象也调不动。只认专用返回值——没实现锁定的宿主对未知 handler 可能回 true / null，
+// 那都不算锁住。每个文档只锁一次（宿主在新文档提交时清令牌）。
+//
+// 这里不判「自己是不是顶层 frame」：Windows app 外查词宿主把本页放在一个同源子 frame
+// 里、由宿主页代为锁定；该拒的子 frame 请求由各平台的桥脚本自己拒。
+function fushiLockBridge() {
+    if (__fushiBridgeLockPromise) return __fushiBridgeLockPromise;
+    __fushiBridgeLockPromise = (async () => {
+        const bridge = window.flutter_inappwebview;
+        if (!bridge || typeof bridge.callHandler !== 'function') return false;
+        try {
+            return (await bridge.callHandler('_fushiLockBridge')) === FUSHI_BRIDGE_LOCKED;
+        } catch (_) {
+            return false;
+        }
+    })();
+    return __fushiBridgeLockPromise;
+}
+
+const __dictSandboxFrames = new Set();
+let __dictSandboxListening = false;
+let __dictSandboxLastAction = 0;
+
+// iframe 内的辅助脚本（我们自己的，排在词典脚本之前）：把高度、链接点击、点词
+// 交给父页面。它和词典脚本同处沙箱，父页面因此只把这些消息当「用户在 iframe 里点了
+// 什么」的提示：类型白名单、长度封顶、要求真实用户激活、限频。
+const DICT_SANDBOX_HELPER_JS = `(function () {
+  function post(message) {
+    message.__fushiDictSandbox = 1;
+    try { parent.postMessage(message, '*'); } catch (e) {}
+  }
+  var lastHeight = -1;
+  function reportHeight() {
+    var root = document.documentElement;
+    var height = Math.ceil(Math.max(root.scrollHeight, document.body ? document.body.scrollHeight : 0));
+    if (height !== lastHeight) { lastHeight = height; post({ type: 'height', value: height }); }
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    reportHeight();
+    try { new ResizeObserver(reportHeight).observe(document.documentElement); }
+    catch (e) { setInterval(reportHeight, 500); }
+  });
+  window.addEventListener('load', reportHeight);
+  window.addEventListener('error', function (event) {
+    post({ type: 'error', message: String(event && event.message || '') });
+  });
+  function rectOf(x, y, element) {
+    var r = element ? element.getBoundingClientRect() : null;
+    return r ? { x: r.left, y: r.top, width: r.width, height: r.height }
+             : { x: x, y: y, width: 0, height: 0 };
+  }
+  function baseText(anchor) {
+    var clone = anchor.cloneNode(true);
+    var ruby = clone.querySelectorAll('rt,rp');
+    for (var i = 0; i < ruby.length; i++) ruby[i].remove();
+    return (clone.textContent || '').trim();
+  }
+  var stop = /[\\s\\u3000-\\u3002\\uff01\\uff0c\\uff0e\\uff1a\\uff1b\\uff1f\\u300c-\\u300f.,;:!?()\\[\\]{}\\u0022\\u0027<>]/;
+  function isJapanese(code) {
+    return (code >= 0x3040 && code <= 0x30ff) || (code >= 0x3400 && code <= 0x9fff) ||
+           (code >= 0xf900 && code <= 0xfaff) || (code >= 0xff66 && code <= 0xff9f);
+  }
+  document.addEventListener('click', function (event) {
+    if (event.defaultPrevented) return;
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    var anchor = target && target.closest ? target.closest('a[href]') : null;
+    if (anchor) {
+      event.preventDefault();
+      post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
+             rect: rectOf(event.clientX, event.clientY, anchor) });
+      return;
+    }
+    if (!document.caretRangeFromPoint) return;
+    var range = document.caretRangeFromPoint(event.clientX, event.clientY);
+    if (!range || range.startContainer.nodeType !== 3) return;
+    var data = range.startContainer.data;
+    var start = range.startOffset;
+    if (start >= data.length) return;
+    if (!isJapanese(data.charCodeAt(start))) {
+      while (start > 0 && !stop.test(data[start - 1])) start--;
+    }
+    var end = start;
+    while (end < data.length && end - start < 20 && !stop.test(data[end])) end++;
+    if (end <= start) return;
+    post({ type: 'select', text: data.slice(start, end),
+           rect: { x: event.clientX, y: event.clientY, width: 0, height: 0 } });
+  });
+})();`;
+
+function __dictSandboxEnsureListener() {
+    if (__dictSandboxListening) return;
+    __dictSandboxListening = true;
+    window.addEventListener('message', __dictSandboxOnMessage);
+    // 宿主在顶层新文档提交时清令牌；页面若被 bfcache 留下再恢复，本文档以为自己还
+    // 锁着、原生侧却已解锁。离开时就拆掉所有沙箱，恢复后桥闭包里还留着旧令牌、
+    // 再锁会被拒，于是不会再挂新的沙箱——只剩静态内容，偏安全那一侧。
+    window.addEventListener('pagehide', () => {
+        for (const frame of __dictSandboxFrames) frame.remove();
+        __dictSandboxFrames.clear();
+    });
+}
+
+function __dictSandboxFrameFor(source) {
+    for (const frame of __dictSandboxFrames) {
+        if (!frame.isConnected) {
+            __dictSandboxFrames.delete(frame);
+            continue;
+        }
+        if (frame.contentWindow === source) return frame;
+    }
+    return null;
+}
+
+// 只放行「用户刚在 iframe 里交互过」时的动作消息：用户在子 frame 里点击会把激活
+// 传播到祖先 frame；不支持 userActivation 的引擎退回「焦点在这个 iframe 上」。
+function __dictSandboxUserActive(frame) {
+    const activation = navigator.userActivation;
+    if (activation && typeof activation.isActive === 'boolean') return activation.isActive;
+    return document.activeElement === frame;
+}
+
+function __dictSandboxOnMessage(event) {
+    const data = event.data;
+    if (!data || typeof data !== 'object' || data.__fushiDictSandbox !== 1) return;
+    const frame = __dictSandboxFrameFor(event.source);
+    if (!frame) return;
+    const dictName = frame.getAttribute('data-dictionary') || '';
+    if (data.type === 'height') {
+        const height = Number(data.value);
+        if (Number.isFinite(height)) {
+            frame.style.height = `${Math.max(0, Math.min(height, 20000))}px`;
+        }
+        return;
+    }
+    if (data.type === 'error') {
+        reportDictScriptError(dictName, 'sandbox', { message: `${data.message || ''}`.slice(0, 500) });
+        return;
+    }
+    if (data.type !== 'link' && data.type !== 'select') return;
+    if (!__dictSandboxUserActive(frame)) return;
+    const now = Date.now();
+    if (now - __dictSandboxLastAction < 300) return;
+    __dictSandboxLastAction = now;
+
+    const frameRect = frame.getBoundingClientRect();
+    const raw = data.rect && typeof data.rect === 'object' ? data.rect : {};
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    const rect = {
+        x: frameRect.left + num(raw.x),
+        y: frameRect.top + num(raw.y),
+        width: num(raw.width),
+        height: num(raw.height),
+    };
+    const bridge = window.flutter_inappwebview;
+    if (!bridge || typeof bridge.callHandler !== 'function') return;
+
+    if (data.type === 'select') {
+        const text = `${data.text || ''}`.slice(0, 64);
+        if (!text) return;
+        if (window.__hasChildPopup) {
+            bridge.callHandler('tapOutside');
+            return;
+        }
+        bridge.callHandler('textSelected', text, rect);
+        return;
+    }
+
+    const href = `${data.href || ''}`.trim().slice(0, 2048);
+    if (/^https?:\/\//i.test(href)) {
+        openExternalLink(href);
+        return;
+    }
+    if (/^sound:/i.test(href)) {
+        const soundPath = href.replace(/^sound:\/{0,}/i, '');
+        const soundUrl = soundPath ? rewriteDictionaryMediaPath(soundPath, dictName) : null;
+        if (soundUrl) playWordAudio(soundUrl);
+        return;
+    }
+    if (isDangerousDictUrl(href)) return;
+    const query = `${data.text || ''}`.trim().slice(0, 128);
+    if (!query) return;
+    bridge.callHandler('onLinkClick', query, rect);
+}
+
+// 外链 <script src> 的源码由父页面经桥取回、内联进 srcdoc（沙箱里没有桥）。
+async function __dictSandboxInlineScripts(html, dictName) {
+    const pattern = /<script\b([^>]*)\bsrc\s*=\s*([\u0027\u0022])([^\u0027\u0022]*)\2([^>]*)>\s*<\/script\s*>/gi;
+    const matches = [...`${html}`.matchAll(pattern)];
+    let out = `${html}`;
+    for (const match of matches) {
+        const code = await fetchDictAsset(dictName, normalizeDictMediaPath(match[3]));
+        const replacement = code
+            ? `<script>${code.replace(/<\/script/gi, '<\\/script')}</script>`
+            : '';
+        out = out.replace(match[0], () => replacement);
+    }
+    return out;
+}
+
+function __dictSandboxDocument(bodyHtml, dictName, host) {
+    let color = '';
+    let font = '';
+    try {
+        const computed = getComputedStyle(host);
+        color = computed.color;
+        font = `${computed.fontSize} ${computed.fontFamily}`;
+    } catch (_) { /* 宿主未挂载时用浏览器默认 */ }
+    const dictCss = stripDictCssRemoteRefs(window.dictionaryStyles?.[dictName] ?? '');
+    const escapeStyle = (css) => `${css}`.replace(/<\/style/gi, '<\\/style');
+    const csp = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; " +
+        "style-src 'unsafe-inline' image: dictmedia: data:; img-src image: dictmedia: data: blob:; " +
+        "font-src image: dictmedia: data:; media-src image: dictmedia: data: blob:; " +
+        "connect-src 'none'; form-action 'none'; base-uri 'none'";
+    return '<!doctype html><html><head><meta charset="utf-8">' +
+        `<meta http-equiv="Content-Security-Policy" content="${csp}">` +
+        '<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden;}' +
+        `body{color:${color};font:${font};word-break:break-word;}</style>` +
+        `<style>${escapeStyle(dictCss)}</style>` +
+        `<script>${DICT_SANDBOX_HELPER_JS}</script>` +
+        `</head><body>${bodyHtml}</body></html>`;
+}
+
+// 带脚本的 HTML 释义：先放净化后的静态内容，桥锁定成功后再换成沙箱 iframe。
+function mountDictScriptSandbox(wrapper, html, dictName) {
+    wrapper.innerHTML = rewriteDictLinks(sanitizeDictHtml(html), dictName);
+    fushiLockBridge().then(async (locked) => {
+        if (!locked) return;
+        const body = await __dictSandboxInlineScripts(
+            rewriteDictLinks(sanitizeDictSandboxHtml(html), dictName), dictName);
+        if (!wrapper.isConnected) return;
+        const frame = document.createElement('iframe');
+        frame.setAttribute('sandbox', 'allow-scripts');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.setAttribute('data-dictionary', dictName);
+        frame.className = 'dict-script-sandbox';
+        frame.style.cssText = 'display:block;width:100%;height:0;border:0;background:transparent;';
+        frame.srcdoc = __dictSandboxDocument(body, dictName, wrapper);
+        __dictSandboxEnsureListener();
+        __dictSandboxFrames.add(frame);
+        wrapper.replaceChildren(frame);
+    }).catch((error) => reportDictScriptError(dictName, 'sandbox', error));
+}
+
 function linkifyUrls(html) {
     return html.replace(URL_RE, url => {
         const href = /^https?:\/\//i.test(url) ? url : 'https://' + url;
@@ -3071,12 +3482,13 @@ function renderStructuredContent(parent, node, language = null, dictName = null,
         return;
     }
     
-    const tagName = node.tag || 'span';
+    // BUG-3705：标签名来自词典，只认白名单（`{"tag":"script"}` 曾原样 createElement）。
+    const tagName = structuredContentTagName(node.tag || 'span');
     const element = document.createElement(tagName);
     element.classList.add(`gloss-sc-${tagName}`);
     let nextLanguage = language;
-    
-    if (node.href) {
+
+    if (node.href && typeof node.href === 'string' && !isDangerousDictUrl(node.href)) {
         element.setAttribute('href', node.href);
         const isExternal = /^https?:\/\//i.test(node.href);
         element.onclick = (e) => {
@@ -5578,7 +5990,7 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
         }
     `.trim();
     if (dictStyle) {
-        styleText += '\n' + constructDictCss(dictStyle, dictName);
+        styleText += '\n' + constructDictCss(stripDictCssRemoteRefs(dictStyle), dictName);
     }
     ensureDictionaryStyle(dictName, styleText);
 
@@ -5590,7 +6002,13 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
             } catch {
                 if (/<[a-z][\s\S]*>/i.test(content)) {
                     const wrapper = el('div');
-                    wrapper.innerHTML = rewriteDictLinks(content, dictName);
+                    // BUG-3705：词典 HTML 不再原样进主文档。带脚本的进沙箱 iframe，
+                    // 其余净化后留在这里（事件属性 / 危险 URL / 外部请求都去掉）。
+                    if (dictHtmlHasScript(content)) {
+                        mountDictScriptSandbox(wrapper, content, dictName);
+                    } else {
+                        wrapper.innerHTML = rewriteDictLinks(sanitizeDictHtml(content), dictName);
+                    }
                     parent.appendChild(wrapper);
                 } else {
                     renderStructuredContent(parent, content, null, dictName);
@@ -5646,10 +6064,8 @@ function createGlossarySection(dictName, contents, dictIdx, entryIdx, totalDicts
     __fushiChunkLongGlossary(dictWrapper, dictName);
 
     // MDX 词典的条目 HTML 自带 <script>（NLT 的頻度条形图、OALDPEX 的配置界面和
-    // 中文翻译开关）。经 innerHTML 插入的 script 按规范不会执行，这里补上——作用域
-    // 根就是 dictWrapper，所以脚本的 document 查询看不到别的词典。取源码要过桥，
-    // 是异步的；渲染不等它，脚本就绪后自行改写自己的子树。
-    runDictScripts(dictWrapper, dictName);
+    // 中文翻译开关）。它们只在沙箱 iframe 里跑（renderContent → mountDictScriptSandbox，
+    // BUG-3705），主文档里不执行任何词典脚本。
 
     return details;
 }

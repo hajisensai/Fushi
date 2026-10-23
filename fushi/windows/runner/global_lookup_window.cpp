@@ -1,5 +1,6 @@
 #include "global_lookup_window.h"
 
+#include <bcrypt.h>  // Fushi bridge lock: BCryptGenRandom token
 #include <dwmapi.h>
 #include <shlwapi.h>
 #include <wincodec.h>  // WIC：CapturePreview 压缩流 → BGRA8 直通 alpha 位图
@@ -3143,6 +3144,24 @@ void GlobalLookupWindow::ConfigureWebView() {
           .Get(),
       nullptr);
 
+  // Fushi bridge lock — a (re)configured surface starts unlocked, and every new
+  // TOP-LEVEL document commit (Navigate, BUG-693 Reload, ...) unlocks again.
+  // ContentLoading is top-level only and skips same-document navigations; the
+  // token is deliberately NOT cleared on NavigationStarting, because a started
+  // navigation can still be cancelled while the locked document lives on.
+  bridge_lock_token_.clear();
+  bridge_lock_source_.clear();
+  webview_->add_ContentLoading(
+      Callback<ICoreWebView2ContentLoadingEventHandler>(
+          [this](ICoreWebView2*,
+                 ICoreWebView2ContentLoadingEventArgs*) -> HRESULT {
+            bridge_lock_token_.clear();
+            bridge_lock_source_.clear();
+            return S_OK;
+          })
+          .Get(),
+      nullptr);
+
   // Inject the bridge adapter at document start so popup.js's
   // window.flutter_inappwebview.callHandler maps to chrome.webview.postMessage.
   std::wstring adapter = LoadAdapterScript();
@@ -3249,9 +3268,33 @@ void GlobalLookupWindow::ConfigureWebView() {
       Callback<ICoreWebView2WebMessageReceivedEventHandler>(
           [this](ICoreWebView2*,
                  ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
+            // Fushi bridge lock — this event only carries the TOP-LEVEL
+            // document's chrome.webview.postMessage (an iframe's postMessage
+            // raises ICoreWebView2Frame::WebMessageReceived, which this window
+            // never subscribes). popup.html iframes reach native only through
+            // global_lookup_host.js re-posting on the top document, so Source
+            // is always the host document; get_Source is still checked as the
+            // second gate next to the token (spec item 7).
+            std::wstring message_source;
+            {
+              wil::unique_cotaskmem_string source_raw;
+              if (SUCCEEDED(args->get_Source(&source_raw)) && source_raw) {
+                message_source = source_raw.get();
+              }
+            }
             wil::unique_cotaskmem_string json;
             if (SUCCEEDED(args->get_WebMessageAsJson(&json))) {
               std::string body = WideToUtf8(json.get());
+              std::string bridge_handler;
+              if (ReadTopLevelJsonString(body, "handler", &bridge_handler) &&
+                  bridge_handler == "_fushiLockBridge") {
+                // Handled natively, never forwarded to Dart.
+                HandleBridgeLockRequest(message_source);
+                return S_OK;
+              }
+              if (!AuthorizeLockedBridgeMessage(message_source, &body)) {
+                return S_OK;
+              }
               // Phase C — host-chrome window resize. The client area is fully
               // covered by the WebView2 child HWND, so WM_NCHITTEST never
               // reaches this window; the root card grip posts
@@ -3588,6 +3631,119 @@ void GlobalLookupWindow::RecoverDeadWebView(const std::string& replay_script) {
   if (hwnd_ != nullptr) {
     EnsureWebView();
   }
+}
+
+namespace {
+
+// The only document allowed to lock (and then talk to) this bridge: the
+// virtual-host page ConfigureWebView navigates to.
+constexpr wchar_t kGlobalLookupHostDocumentUrl[] =
+    L"https://hibiki.popup/global_lookup_host.html";
+constexpr char kBridgeTokenField[] = "__fushiBridgeToken";
+
+bool IsExpectedBridgeLockSource(const std::wstring& source) {
+  const std::wstring expected(kGlobalLookupHostDocumentUrl);
+  if (source.size() < expected.size() ||
+      source.compare(0, expected.size(), expected) != 0) {
+    return false;
+  }
+  // Exact document, optionally followed by a query / fragment only.
+  return source.size() == expected.size() ||
+         source[expected.size()] == L'?' || source[expected.size()] == L'#';
+}
+
+// >=128 bit random token: 32 bytes from the system-preferred RNG, lower hex.
+bool GenerateBridgeLockToken(std::string* out) {
+  unsigned char bytes[32] = {};
+  if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, bytes,
+                                      static_cast<ULONG>(sizeof(bytes)),
+                                      BCRYPT_USE_SYSTEM_PREFERRED_RNG))) {
+    return false;
+  }
+  static const char kHex[] = "0123456789abcdef";
+  std::string token;
+  token.reserve(sizeof(bytes) * 2);
+  for (unsigned char b : bytes) {
+    token.push_back(kHex[b >> 4]);
+    token.push_back(kHex[b & 0x0F]);
+  }
+  SecureZeroMemory(bytes, sizeof(bytes));
+  *out = std::move(token);
+  return true;
+}
+
+bool BridgeTokensEqual(const std::string& a, const std::string& b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  unsigned char diff = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  }
+  return diff == 0;
+}
+
+}  // namespace
+
+// Fushi bridge lock — global_lookup_host.js forwards a popup document's
+// callHandler('_fushiLockBridge') as { handler: '_fushiLockBridge' } from the
+// top-level host document. Grant once per top-level document; the token goes
+// back ONLY to the host closure via window.__fushiBridgeLockResult (the host
+// then stamps it on every outbound message and answers the popup realm).
+void GlobalLookupWindow::HandleBridgeLockRequest(const std::wstring& source) {
+  if (!webview_) {
+    return;
+  }
+  std::string token;
+  bool granted = false;
+  if (!bridge_lock_token_.empty()) {
+    NativeGlog("[bridge-lock][warn] refused _fushiLockBridge: already locked");
+  } else if (!IsExpectedBridgeLockSource(source)) {
+    NativeGlog("[bridge-lock][warn] refused _fushiLockBridge from source=" +
+               WideToUtf8(source));
+  } else if (!GenerateBridgeLockToken(&token)) {
+    NativeGlog("[bridge-lock][warn] refused _fushiLockBridge: "
+               "BCryptGenRandom failed");
+  } else {
+    bridge_lock_token_ = token;
+    bridge_lock_source_ = source;
+    granted = true;
+  }
+  // The token is lower-case hex, safe to splice as a JS string literal.
+  std::wstring script =
+      L"window.__fushiBridgeLockResult && window.__fushiBridgeLockResult(" +
+      (granted ? L"'" + Utf8ToWide(token) + L"'" : std::wstring(L"false")) +
+      L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
+bool GlobalLookupWindow::AuthorizeLockedBridgeMessage(const std::wstring& source,
+                                                      std::string* body) {
+  if (bridge_lock_token_.empty()) {
+    return true;  // Unlocked: legacy behaviour, byte-for-byte.
+  }
+  std::string token;
+  if (source != bridge_lock_source_ ||
+      !ReadTopLevelJsonString(*body, kBridgeTokenField, &token) ||
+      !BridgeTokensEqual(token, bridge_lock_token_)) {
+    NativeGlog("[bridge-lock][warn] dropped message on locked bridge "
+               "(missing/invalid token or unexpected source=" +
+               WideToUtf8(source) + ")");
+    return false;
+  }
+  // The host puts the token FIRST; strip it so Dart (and its message log)
+  // never sees it. Any other layout is still authorized, just not stripped.
+  const std::string prefix =
+      std::string("{\"") + kBridgeTokenField + "\":\"" + token + "\"";
+  if (body->compare(0, prefix.size(), prefix) == 0) {
+    const size_t next = prefix.size();
+    if (next < body->size() && (*body)[next] == ',') {
+      *body = "{" + body->substr(next + 1);
+    } else if (next < body->size() && (*body)[next] == '}') {
+      *body = "{" + body->substr(next);
+    }
+  }
+  return true;
 }
 
 void GlobalLookupWindow::ResolveBridge(int64_t id,

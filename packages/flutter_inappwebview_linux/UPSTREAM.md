@@ -82,6 +82,28 @@
   默认归 Flutter，用户点进 WebView（`onPointerDown` 里 `requestFocus`）后才进 DOM，由宿主的
   键盘桥交回 Dart。
 
+### 原生：桥锁定（BUG-3705，安全补丁）
+
+契约见 `docs/specs/2026-10-23-dictionary-script-sandbox.md`「JS ↔ 原生契约：桥锁定」。上游的桥
+脚本注入所有 frame，`_bridgeSecret` 是脚本字面量（任何 frame 都读得到），`_isMainFrame` 读了不用，
+沙箱 iframe 照样能调桥。改动：
+
+- `plugin_scripts_js/javascript_bridge_js.h`：所有 JS→原生调用收进闭包函数 `_fushiPostToNative`，
+  自动附 `_fushiBridgeToken`（令牌只在闭包里，不挂 window）。`callHandler('_fushiLockBridge')` 由桥
+  脚本拦截：原生回令牌 → 存进闭包，Promise resolve 成 `'fushi-bridge-locked-v1'`；其余一律 `false`。
+  插件其它脚本（console / ajax / fetch / 颜色 / 日期 / 打印 / web message 等）本来就都走
+  `callHandler` 包装，未改。
+- `in_app_webview/in_app_webview.cc` `handleScriptMessageWithReply`：拦截 `_fushiLockBridge`（不分发
+  到 Dart），已锁或 JS 自报非主 frame → 回 `false`；否则 `getrandom` 取 256 bit 令牌（拿不到 CSPRNG
+  就拒绝锁定，不退回 `mt19937`）。锁定后每次调用（含所有内部 handler）先校验令牌（逐字节异或比较）
+  且 `_isMainFrame` 为真，不满足的 `g_warning` 后丢弃、不回调。WPE 的 with-reply 信号不带 frame 信息，
+  所以权威是令牌，`_isMainFrame` 只是额外过滤。
+- `OnLoadChanged`：`WEBKIT_LOAD_COMMITTED`（`load-changed` 只报主 frame）清令牌，放在
+  `channel_delegate_` 判空之前。不在 `STARTED` 清：失败 / 转下载的临时加载会留下仍带沙箱 iframe 的
+  旧文档，它必须保持锁定。
+- 未锁定时行为不变（`_fushiLockBridge` 这个名字除外：它不再分发到 Dart）。
+- 守卫：`fushi/test/build/inappwebview_bridge_lock_apple_linux_guard_test.dart`。
+
 ## 升级
 
 上游发正式版且本仓整体升到 `flutter_inappwebview` 6.2+ / 接口 1.4 时，删掉本目录，改回

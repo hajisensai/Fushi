@@ -243,6 +243,14 @@ namespace flutter_inappwebview_plugin
     std::shared_ptr<NavigationAction> lastNavigationAction_;
     bool isLoading_ = false;
     std::string pageFrameId_;
+    // Fushi bridge lock（docs/specs/2026-10-23-dictionary-script-sandbox.md「桥锁定」）。
+    // 顶层文档调 callHandler('_fushiLockBridge') 后原生生成的随机令牌；空 = 未锁定（旧行为）。
+    // 锁定后每条 JS→原生消息都必须带同一令牌，且 WebMessageReceived 的 Source 必须是锁定时的
+    // 顶层文档（或当前顶层 Source），否则丢弃并记 warn。顶层新文档提交（ContentLoading）清空。
+    std::string bridgeLockToken_;
+    std::wstring bridgeLockSource_;
+    void handleBridgeLockRequest(const std::wstring& source, int64_t callHandlerID);
+    bool isBridgeMessageAuthorized(const std::wstring& source, const std::string* token) const;
     // 对象存活标志：所有跨 Dart 桥异步回来的 WebResourceRequested deferral 回调都捕获它的
     // 拷贝，回调入口先解引用判断本对象是否仍存活。析构里翻成 false，使迟到回调不再触碰
     // this/channelDelegate/args，避免 use-after-free（TODO-931）。
