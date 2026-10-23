@@ -145,7 +145,8 @@ class SyncAssetPackageService {
       throw FormatException('Unexpected package kind: ${manifest['kind']}');
     }
     final Map<String, Object?> dictionary = _mapValue(manifest, 'dictionary');
-    final String name = _stringValue(dictionary, 'name');
+    final String name =
+        _requireSinglePathSegment(_stringValue(dictionary, 'name'), 'name');
 
     // 这里**只列 manifest 带的列**，用户设置列（改名 display_name、手动指定的
     // 内容语言 language_override）刻意留 absent：`upsertDictionaryMeta` 走的是
@@ -906,7 +907,8 @@ class SyncAssetPackageService {
     }
     final Map<String, Object?> meta = _mapValue(manifest, 'localAudio');
     final String displayName = _stringValue(meta, 'displayName');
-    final String dbFileName = _stringValue(meta, 'dbFileName');
+    final String dbFileName = _requireSinglePathSegment(
+        _stringValue(meta, 'dbFileName'), 'dbFileName');
     final bool enabled = _nullableBool(meta, 'enabled') ?? true;
     final List<LocalAudioSourcePref> sources =
         _listValue(meta, 'sources').map((Object? raw) {
@@ -993,6 +995,27 @@ class SyncAssetPackageService {
 /// Windows-invalid `\ / : * ? " < > |` and control chars with `_`).
 /// Filesystem-safe inputs (e.g. `ttu-42`) pass through unchanged.
 String _safeDirName(String id) => safeWindowsFileName(id);
+
+/// manifest 里拿来拼落地路径的名字（词典名、音频库 db 文件名）必须是**单个路径段**。
+///
+/// 包来自对端，manifest 是外来数据：`../../x` 或绝对路径一旦进了 `p.join`，
+/// [_extractResourcesInIsolate] 的 `isWithin` 校验是以**已被篡改的根目录**为基准的，
+/// 挡不住（BUG-3703）。这里不改写成安全名而是直接拒：词典名同时是 DB 主键，
+/// 改写会让资源目录与 DB 行对不上。
+String _requireSinglePathSegment(String value, String field) {
+  if (value.isEmpty ||
+      value == '.' ||
+      value == '..' ||
+      value.contains('/') ||
+      value.contains(r'\') ||
+      value.contains('\u0000') ||
+      p.isAbsolute(value) ||
+      p.windows.isAbsolute(value) ||
+      p.basename(value) != value) {
+    throw FormatException('Invalid package $field: $value');
+  }
+  return value;
+}
 
 /// 一本书要进包的全部资源文件（按路径去重）。
 ///

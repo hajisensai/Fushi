@@ -5,6 +5,9 @@ import 'package:fushi/src/onboarding/recommended_pack.dart';
 import 'package:fushi/src/utils/misc/download_plan.dart';
 import 'package:path/path.dart' as p;
 
+const String _sha =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
 void main() {
   group('google drive route', () {
     test('direct url embeds the shared file id and skips the confirm page', () {
@@ -17,6 +20,9 @@ void main() {
         contains('id=$kRecommendedPackGoogleDriveFileId'),
       );
       expect(kRecommendedPackGoogleDriveDirectUrl, contains('confirm=t'));
+      // BUG-3704：回退线路也必须带钉死的摘要，不能整包不校验就进备份导入。
+      expect(
+          kRecommendedPackWholeFileSha256, matches(RegExp(r'^[0-9a-f]{64}$')));
       // 分享页与直下链指向同一个文件 id，换包时两处一起换。
       expect(
         kRecommendedPackGoogleDriveUrl,
@@ -35,6 +41,7 @@ void main() {
       final RecommendedPackDownloader google = RecommendedPackDownloader(
         packDir: dir,
         url: kRecommendedPackGoogleDriveDirectUrl,
+        sha256Hex: kRecommendedPackWholeFileSha256,
       );
       expect(p.basename(google.packFile.path), kRecommendedPackFileName);
       expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
@@ -42,6 +49,7 @@ void main() {
       final RecommendedPackDownloader bare = RecommendedPackDownloader(
         packDir: dir,
         url: 'https://example.invalid/a.zip',
+        sha256Hex: _sha,
       );
       expect(p.basename(bare.packFile.path), kRecommendedPackFileName);
     });
@@ -56,7 +64,7 @@ void main() {
       final RecommendedPackManifest? manifest = parseRecommendedPackManifest(
         '{"version":"2026-08-14",'
         '"url":"$kRecommendedPackGoogleDriveDirectUrl",'
-        '"size_bytes":10220484385}',
+        '"sha256":"$_sha","size_bytes":10220484385}',
       );
       expect(manifest, isNotNull);
       final RecommendedPackDownloader fromManifest =
@@ -218,11 +226,26 @@ void main() {
       );
     });
 
+    test('missing sha256 rejects the whole manifest (BUG-3704)', () {
+      // 没有摘要 = 下来的 9.5 GB 不受任何校验就进备份导入；判无效后回退到带
+      // 钉死摘要的内置直链。
+      expect(
+        parseRecommendedPackManifest('{"url":"https://dl.wrds.xyz/a.zip"}'),
+        isNull,
+      );
+      expect(
+        parseRecommendedPackManifest(
+            '{"url":"https://dl.wrds.xyz/a.zip","sha256":""}'),
+        isNull,
+      );
+    });
+
     test('optional fields tolerate absence and wrong types', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
-          '{"url":"https://dl.wrds.xyz/a.zip","size_bytes":"big","version":3}');
+          '{"url":"https://dl.wrds.xyz/a.zip","sha256":"$_sha",'
+          '"size_bytes":"big","version":3}');
       expect(m, isNotNull);
-      expect(m!.sha256, isNull);
+      expect(m!.sha256, _sha);
       expect(m.sizeBytes, isNull);
       expect(m.version, isNull);
     });
@@ -235,9 +258,10 @@ void main() {
     test('deflate_pack 子清单合法时取它（本版本用原生 zlib 解压）', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
         '{"version":"store","url":"https://a.example/store.fushi.zip",'
-        '"size_bytes":10000,'
+        '"sha256":"$_sha","size_bytes":10000,'
         '"$kRecommendedPackDeflateManifestKey":{"version":"deflate",'
-        '"url":"https://a.example/deflate.fushi.zip","size_bytes":8000}}',
+        '"url":"https://a.example/deflate.fushi.zip","sha256":"$_sha",'
+        '"size_bytes":8000}}',
       );
       expect(m, isNotNull);
       expect(m!.url, 'https://a.example/deflate.fushi.zip');
@@ -247,7 +271,7 @@ void main() {
 
     test('deflate_pack 缺失或不合法时退回顶层 STORE 包，而不是整体失败', () {
       const String store = '"version":"store",'
-          '"url":"https://a.example/store.fushi.zip"';
+          '"url":"https://a.example/store.fushi.zip","sha256":"$_sha"';
       for (final String extra in <String>[
         '',
         ',"$kRecommendedPackDeflateManifestKey":null',
@@ -255,6 +279,8 @@ void main() {
         ',"$kRecommendedPackDeflateManifestKey":{"url":"http://a.example/d"}',
         ',"$kRecommendedPackDeflateManifestKey":{"url":"https://a.example/d",'
             '"sha256":"zz"}',
+        // 子清单缺摘要同样不可信，退回顶层（BUG-3704）。
+        ',"$kRecommendedPackDeflateManifestKey":{"url":"https://a.example/d"}',
       ]) {
         final RecommendedPackManifest? m = parseRecommendedPackManifest(
           '{$store$extra}',
@@ -265,7 +291,7 @@ void main() {
 
     test('mirrors / part_base_urls 只收 https，杂项被丢掉', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
-        '{"url":"https://dl.wrds.xyz/a.zip",'
+        '{"url":"https://dl.wrds.xyz/a.zip","sha256":"$_sha",'
         '"mirrors":["https://m1/a.zip","http://insecure/a.zip",7],'
         '"part_base_urls":["https://gh/dl/"]}',
       );
@@ -278,7 +304,7 @@ void main() {
 
     test('parts 里有一条坏记录就整表作废（半张切片表比没有更危险）', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
-        '{"url":"https://dl.wrds.xyz/a.zip",'
+        '{"url":"https://dl.wrds.xyz/a.zip","sha256":"$_sha",'
         '"part_base_urls":["https://gh/dl/"],'
         '"parts":[{"name":"a.000","offset":0,"length":100},'
         '{"name":"a.001","offset":100,"length":-5}]}',
@@ -289,7 +315,7 @@ void main() {
 
     test('切片名不得带路径分隔符（防止拼出目录穿越 URL）', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
-        '{"url":"https://dl.wrds.xyz/a.zip",'
+        '{"url":"https://dl.wrds.xyz/a.zip","sha256":"$_sha",'
         '"part_base_urls":["https://gh/dl/"],'
         '"parts":[{"name":"../../evil","offset":0,"length":100}]}',
       );
