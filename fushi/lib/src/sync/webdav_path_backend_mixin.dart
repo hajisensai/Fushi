@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, protected;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
@@ -88,4 +89,81 @@ mixin WebDavPathBackendMixin on SyncBackend, SyncFolderCache {
       audioBook: findSyncFileByPrefix(files, 'audioBook_'),
     );
   }
+}
+
+/// 把一次对同步根 [rootHref] 的树列举（PROPFIND，至少列到孙层）装配成
+/// [RemoteListingSnapshot]（BUG-3662）。
+///
+/// 与逐本 [WebDavPathBackendMixin.listSyncFiles] 给出同一批 id / 名字：书文件夹名取该
+/// 文件夹条目的 `displayName`（与 [WebDavPathBackendMixin.listBooks] 同源），文件 id 是
+/// 回包 href 原样、名字是 `displayName`；三件套再由快照的 `trioFor` 走同一个 canonical
+/// matcher。
+///
+/// 回包形状不对就返回 null（调用方回退逐本列举），不做「尽量凑」：
+/// - 缺根自身条目（任何合法 PROPFIND 回包都带请求目标自身）；
+/// - 出现不在同步根下的 href；
+/// - 孙层条目找不到所属文件夹条目。
+/// 层级按 href 的**路径部分**算（去掉 `scheme://authority`），不受默认端口写法等
+/// 来源差异影响。
+RemoteListingSnapshot? remoteListingFromDavTree(
+  List<DavEntry> entries,
+  String rootHref,
+) {
+  final String rootPath = _davPathOf(ensureFolderIdTrailingSlash(rootHref));
+  bool sawRoot = false;
+  final Map<String, String> folderNameBySegment = <String, String>{};
+  final List<(String, DavEntry)> grandchildren = <(String, DavEntry)>[];
+  final RemoteListingBuilder builder = RemoteListingBuilder();
+
+  for (final DavEntry e in entries) {
+    final String path = _davPathOf(e.href);
+    if (!path.startsWith(rootPath)) {
+      if (ensureFolderIdTrailingSlash(path) == rootPath) {
+        sawRoot = true;
+        continue;
+      }
+      return null;
+    }
+    String rel = path.substring(rootPath.length);
+    if (rel.endsWith('/')) rel = rel.substring(0, rel.length - 1);
+    if (rel.isEmpty) {
+      sawRoot = true;
+      continue;
+    }
+    final int slash = rel.indexOf('/');
+    if (slash < 0) {
+      // 同步根的直接子项：文件夹登记（空文件夹也要能与「不存在」区分）；直接躺在
+      // 根下的文件是 BUG-619 的 spill 残留，不属于任何书。
+      if (e.isCollection) {
+        folderNameBySegment[rel] = e.displayName;
+        builder.addFolder(e.displayName);
+      }
+      continue;
+    }
+    // 更深的层级当前布局里不存在（host 也不会列），忽略而不是硬塞进某个文件夹。
+    if (rel.indexOf('/', slash + 1) >= 0) continue;
+    grandchildren.add((rel.substring(0, slash), e));
+  }
+  if (!sawRoot) return null;
+
+  for (final (String segment, DavEntry e) in grandchildren) {
+    final String? parentName = folderNameBySegment[segment];
+    if (parentName == null) return null;
+    builder.addEntry(
+      parentName: parentName,
+      name: e.displayName,
+      id: e.href,
+      isFolder: e.isCollection,
+    );
+  }
+  return builder.build();
+}
+
+/// href 的路径部分：绝对 URL 去掉 `scheme://authority`，相对路径原样。不经
+/// [Uri.parse]——[DavEntry.href] 是已解码的可读形态（含中文 / 空格），解析会改写它。
+String _davPathOf(String href) {
+  final int scheme = href.indexOf('://');
+  if (scheme < 0) return href;
+  final int slash = href.indexOf('/', scheme + 3);
+  return slash < 0 ? '/' : href.substring(slash);
 }

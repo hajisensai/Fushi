@@ -117,9 +117,15 @@ void _assertSafeName(String name) {
   }
 }
 
-String? _existingFilePath(String? path) {
+/// [path] 指向的文件存在则原样返回，否则 null。async：host 跑在 app 主 isolate 上，路径可能落在网络盘
+/// （rclone / SMB 挂载）上，同步 existsSync 冷目录时会冻结整条 isolate（BUG-3663）。
+Future<String?> _existingFilePathAsync(String? path) async {
   if (path == null || path.isEmpty) return null;
-  return File(path).existsSync() ? path : null;
+  try {
+    return await File(path).exists() ? path : null;
+  } on FileSystemException {
+    return null;
+  }
 }
 
 /// [LocalLibraryHostService] 的抽象骨架：宣告全部 host 接口，并把具体类的注入字段以抽象私有

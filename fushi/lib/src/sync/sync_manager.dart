@@ -360,8 +360,16 @@ class SyncManager {
     // 这本书单独问一次。两条路给出的是**同一批文件名**（快照的 trioFor 与各后端的
     // listSyncFiles 共用同一个 canonical matcher），所以下面的方向判定一个字都不用
     // 改，也不存在「快照说没变就跳过」这种需要被信任的中间结论。
-    final SyncFileTrio syncFiles = listing != null
-        ? listing.trioFor(assetKey)
+    //
+    // BUG-3662：快照只在**明确列出了这本书的文件夹**时才采信。快照按远端返回的
+    // 文件夹名逐字比对，而逐本列举是按路径去问——大小写不敏感（Windows host /
+    // Drive）或 Unicode 规范化不同的文件系统上，路径能问到、名字却对不上；把这种
+    // 「对不上」当成「远端没有任何文件」会按本地旧进度覆盖远端。查不到就回落逐本
+    // 列举：新书本就要付这一次（文件夹刚由 ensureBookFolder 建出），稳态仍是 O(1)。
+    final RemoteListingSnapshot? folderListing =
+        listing != null && listing.hasFolder(assetKey) ? listing : null;
+    final SyncFileTrio syncFiles = folderListing != null
+        ? folderListing.trioFor(assetKey)
         : await _backend.listSyncFiles(folderId);
 
     final SyncBookResult result = await _syncBookProgress(
@@ -389,7 +397,7 @@ class SyncManager {
       await _exportContentIfMissing(
         book: book,
         folderId: folderId,
-        remoteFileNames: listing
+        remoteFileNames: folderListing
             ?.entriesOf(assetKey)
             .where((AssetEntry entry) => !entry.isFolder)
             .map((AssetEntry entry) => entry.name)

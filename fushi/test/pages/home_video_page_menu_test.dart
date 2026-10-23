@@ -233,7 +233,11 @@ void main() {
   }
 
   Directory writeEmbeddedSubtitleCache(File video) {
-    final Directory dir = embeddedSubtitleCacheDir(video.path);
+    // 同步拿 stat 走纯函数那一半：widget 测试的 fake-async 里不能 await 真 IO。
+    final Directory dir = embeddedSubtitleCacheDirForStat(
+      video.path,
+      video.statSync(),
+    );
     dir.createSync(recursive: true);
     File(
       p.join(dir.path, 'sub_0.srt'),

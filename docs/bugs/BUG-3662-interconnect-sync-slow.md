@@ -8,4 +8,8 @@
   另：用户 host 上 3145 个 playlist（8.4 万成员）是 2026-09-17/18 从 Emby 兼容服务器整库收养生成的远端条目（`dd1aaf9e2c` 起该路径默认关），已经用户确认经控制通道正常删除路径清除（写合集墓碑，各端随同步删除）。
 - **[x] ① 已修复** — 合集只给远端没有的知识盖发布戳；聚合按内容（与 PUT 指纹同口径）判等、只写增量、片段批量写；进度 sweep 整轮一次读快照、已收敛条目跳过、不再写同值基线；host 列表复用 `getLocalPrimaryCollectionMembership()`、grouper 只取相关合集成员。
 - **[x] ② 已加自动化测试** — `fushi/test/sync/fushi_library_collections_test.dart`（真 host 稳态零 POST）、`fushi/test/sync/aggregate_apply_delta_test.dart`、`fushi/test/sync/interconnect_progress_sweep_db_ops_test.dart`、`packages/fushi_engine/test/sync/local_library_host_collection_membership_test.dart`
-- **备注**：修前修后（Windows / Mac 桌面，同规模数据）：聚合稳态 18468 条 SQL / 2.5 s → 20 条 / 0.4 s；视频进度稳态 1487 条 → 4 条；书 / 有声书进度 221 / 82 条 → 4 条；`listBooks` 约 900 ms → 33 ms，`listVideos` 约 335 ms → 22 ms。未在 iOS 真机实测。遗留：host 不存 publishedAt，互联通道上「离线移出、晚发布」的成员复活缺口仍在（需升 schema）；`/api/library/videos` 首次冷启动 6.9 s 未复现；书文件箱阶段每本仍一次 PROPFIND（互联后端未实现 `RemoteListingCapable`）。
+- **备注**：修前修后（Windows / Mac 桌面，同规模数据）：聚合稳态 18468 条 SQL / 2.5 s → 20 条 / 0.4 s；视频进度稳态 1487 条 → 4 条；书 / 有声书进度 221 / 82 条 → 4 条；`listBooks` 约 900 ms → 33 ms，`listVideos` 约 335 ms → 22 ms。未在 iOS 真机实测。
+- **后续（同 PR）**：
+  - 复活缺口：schema v125 给 `collection_member_tombstones` 加 `published_at`，host 持久化并在清单里输出墓碑发布戳，「离线早移出、晚同步」的墓碑不再被基线更新的对端判成旧闻（`fushi/test/sync/fushi_library_collections_test.dart`「离线移出晚同步」组、`fushi/test/database/migration_v125_collection_tombstone_published_at_test.dart`）。
+  - 书文件箱：host 在 `/api/capabilities` 公布 `webdav.treeListingLevels`，`InterconnectSyncBackend` 实现 `RemoteListingCapable`，书阶段一次有界 `Depth: infinity` 取代逐本 PROPFIND；老 host 不公布就照旧逐本，快照里查不到某本书的文件夹也回落逐本（`fushi/test/sync/interconnect_tree_listing_test.dart`、`packages/fushi_engine/test/sync/dav_tree_listing_host_test.dart`）。
+  - `/api/library/videos` 偶发数秒：不是 `listVideos` 本身（真实库拷贝冷 60 ms / 热 13–16 ms），而是主 isolate 上对 rclone 网络盘的同步 stat，另立 BUG-3663。

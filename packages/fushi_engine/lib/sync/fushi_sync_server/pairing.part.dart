@@ -514,6 +514,12 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       'gameStream': _gameStreamService != null,
       // 远程更新 host（反馈 Pp8XPyve0N）：client 据此决定是否显示「主机版本」行。
       'hostUpdate': hostSelfUpdater != null,
+      // 互联文件箱的同步根树列举（BUG-3662）：PROPFIND `Depth: infinity` 完整列出的
+      // 层数。老 host 无此字段 → client 不发 infinity（老 host 会把它当 Depth 0、只回
+      // 根自身，被误读成「远端没有任何书文件夹」），照旧逐本 Depth 1 列举。
+      kInterconnectDavCapabilityGroup: <String, dynamic>{
+        kInterconnectDavTreeListingLevelsField: kDavTreeListingMaxLevels,
+      },
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,

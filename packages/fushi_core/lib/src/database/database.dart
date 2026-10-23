@@ -851,7 +851,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 124;
+  int get schemaVersion => 125;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2412,6 +2412,19 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('library_organize_changes')) {
               await m.createTable(libraryOrganizeChanges);
+            }
+          }
+          if (from < 125) {
+            // v125：collection_member_tombstones.published_at——墓碑知识进入本库的时刻，
+            // 本机作互联 host 时作清单 publishedAt / deletedPublishedAt 输出（BUG-3662
+            // 后续：host 不存它时 GET 永远回 null，对端只能回退移出时刻判新旧，离线早移出、
+            // 晚同步的墓碑会被基线更新的对端判成旧闻、成员复活）。存量行留 NULL（回退
+            // deleted_at，与升级前行为一致）。幂等守卫同 v119。
+            if (await _tableExists('collection_member_tombstones') &&
+                !await _columnExists(
+                    'collection_member_tombstones', 'published_at')) {
+              await m.addColumn(collectionMemberTombstones,
+                  collectionMemberTombstones.publishedAt);
             }
           }
         },

@@ -22,21 +22,23 @@ mixin _LocalLibraryHostLocalAudio
   @override
   Future<File> exportLocalAudio(String displayName) async {
     _assertSafeName(displayName);
-    final LocalAudioDbEntry? entry =
-        _localAudioEntries.cast<LocalAudioDbEntry?>().firstWhere(
-              (LocalAudioDbEntry? e) => e!.displayName == displayName,
-              orElse: () => null,
-            );
+    final LocalAudioDbEntry? entry = _localAudioEntries
+        .cast<LocalAudioDbEntry?>()
+        .firstWhere(
+          (LocalAudioDbEntry? e) => e!.displayName == displayName,
+          orElse: () => null,
+        );
     if (entry == null) {
       throw StateError('local audio not found: $displayName');
     }
     final File dbFile = File(entry.path);
-    if (!dbFile.existsSync()) {
+    if (!await dbFile.exists()) {
       throw StateError('local audio DB file not found: ${entry.path}');
     }
 
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_local_audio_export');
+    final Directory tmpDir = await Directory.systemTemp.createTemp(
+      'fushi_local_audio_export',
+    );
     final File out = File(p.join(tmpDir.path, '$displayName.fushiaudiolib'));
     await _packages.exportLocalAudioPackage(
       displayName: entry.displayName,
@@ -62,11 +64,11 @@ mixin _LocalLibraryHostLocalAudio
     await _runExclusive(() async {
       final Directory stagingDir =
           _localAudioStagingDir ?? Directory.systemTemp;
-      final LocalAudioPackageContents contents =
-          await _packages.importLocalAudioPackage(
-        packageFile: packageFile,
-        stagingDir: stagingDir,
-      );
+      final LocalAudioPackageContents contents = await _packages
+          .importLocalAudioPackage(
+            packageFile: packageFile,
+            stagingDir: stagingDir,
+          );
       try {
         await callback(contents);
       } finally {

@@ -58,7 +58,13 @@ class CollectionSyncEngine {
     CollectionRuleOrder? ruleOrder,
   }) {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    final Map<String, _NormalizedEntry> lSide = _normalize(local);
+    // 本端侧（未发布快照）的发布戳一律不读：本地 DB 的 publishedAt 是「进入本库的时刻」，
+    // 只服务本机作互联 host 时的清单输出（见 [loadLocalCollectionManifest]），与本端此刻
+    // 要发布到的这条通道无关。读了会让它冒充本通道的首发戳（不再盖 now），或在两侧都无
+    // 成员时以 min 压低远端已定的戳 → 合并结果与远端字节不等、每轮回写。本端侧裁决只用
+    // removedAt/deletedAt，这里剥掉后与 DB 存不存该列无关、行为不变。
+    final Map<String, _NormalizedEntry> lSide =
+        _normalize(local, keepPublished: localIsPeer);
     final Map<String, _NormalizedEntry> rSide = _normalize(remote);
     final Set<String> allKeys = <String>{...lSide.keys, ...rSide.keys};
     // 自然键排序遍历：合并结果与遍历顺序无关，但排序让输出/调试稳定。
@@ -129,12 +135,13 @@ class CollectionSyncEngine {
   /// publishedAt 照远端原样保留（远端是 null 就保持 null，对端裁决回退
   /// removedAt/deletedAt）。
   ///
-  /// 不能给「远端已有但 publishedAt 为 null」的知识盖戳：互联 host 的 DB 不存
-  /// publishedAt（[loadLocalCollectionManifest] 不输出），GET 永远回 null；本端若每轮
-  /// 都盖 now，合并结果就永远与 host 清单字节不等 ⇒ 稳态每轮整份 POST。这个戳对 host
-  /// 也没有信息量：host 本地已有该墓碑/删除，按本端侧 removedAt/deletedAt 裁决，用不到
-  /// incoming 的 publishedAt。云通道的远端是对端文件折叠，受影响的只有旧版写出的无戳
-  /// 知识——给它伪造「now 才发布」反而会让对端把旧闻当新闻。
+  /// 不能给「远端已有但 publishedAt 为 null」的知识盖戳：互联 host 的 NULL 是「host
+  /// 用户亲手移出 / 升级前存量行」（v125 起 host 只给经同步进库的新知识存戳，见
+  /// [applyCollectionLocalChanges]），GET 照实回 null；本端若每轮都盖 now，合并结果就
+  /// 永远与 host 清单字节不等 ⇒ 稳态每轮整份 POST。这个戳对 host 也没有信息量：host
+  /// 本地已有该墓碑/删除，按本端侧 removedAt/deletedAt 裁决，用不到 incoming 的
+  /// publishedAt。云通道的远端是对端文件折叠，受影响的只有旧版写出的无戳知识——给它
+  /// 伪造「now 才发布」反而会让对端把旧闻当新闻。
   ///
   /// publishedAt 已有值（来自对端清单）的原样保留——发布时刻一经确定绝不刷新，
   /// 否则每轮都重盖会破坏「字节相等 ⇒ 跳过回写」的幂等。
@@ -503,8 +510,10 @@ class CollectionSyncEngine {
     if (m.members.isNotEmpty && l.orderUpdatedAt != m.orderUpdatedAt) {
       return false;
     }
-    // 墓碑集合一致？只比 removedAt——publishedAt 不落本地 DB（本地无该列），忽略之
-    // 才不会因合并结果盖了 publishedAt 就每轮误判「需变更」空转写库。
+    // 墓碑集合一致？只比 removedAt。本地 DB 的 publishedAt 是「进入本库的时刻」，由
+    // 应用端只给新知识盖、已有行原值保留（[applyCollectionLocalChanges]），与合并结果里
+    // 本通道的发布戳本就不是一个量；[merge] 也已把本端侧的戳剥掉（[l] 里恒 null）。比它
+    // 只会让每轮都判「需变更」空转写库。
     if (l.tombstones.length != m.memberTombstones.length) return false;
     for (final CollectionMemberTombstone t in m.memberTombstones) {
       if (l.tombstones[_memberKey(t.mediaType, t.entryKey)]?.removedAt !=
@@ -541,7 +550,10 @@ class CollectionSyncEngine {
   /// 归一化一侧清单：按自然键成 map；死条目丢弃成员与墓碑（已无意义）；活条目
   /// 丢弃与在册成员同键的墓碑（DAO 不变量「加成员清墓碑」的防御性兜底）。
   /// 重复自然键（历史 schema 无唯一约束）取先见者，与备份合并的对齐方向一致。
-  static Map<String, _NormalizedEntry> _normalize(CollectionManifest m) {
+  ///
+  /// [keepPublished] 为 false 时丢弃该侧全部发布戳（本端未发布快照，见 [merge]）。
+  static Map<String, _NormalizedEntry> _normalize(CollectionManifest m,
+      {bool keepPublished = true}) {
     final Map<String, _NormalizedEntry> out = <String, _NormalizedEntry>{};
     for (final CollectionManifestEntry e in m.collections) {
       final String key = _naturalKey(e.name, e.collectionType);
@@ -551,7 +563,7 @@ class CollectionSyncEngine {
           name: e.name,
           collectionType: e.collectionType,
           deletedAt: e.deletedAt,
-          deletedPublishedAt: e.deletedPublishedAt,
+          deletedPublishedAt: keepPublished ? e.deletedPublishedAt : null,
           orderUpdatedAt: 0,
           memberOrder: const <String>[],
           membersByKey: const <String, CollectionManifestMember>{},
@@ -580,7 +592,7 @@ class CollectionSyncEngine {
           if (!byKey.containsKey(_memberKey(t.mediaType, t.entryKey)))
             _memberKey(t.mediaType, t.entryKey): (
               removedAt: t.removedAt,
-              publishedAt: t.publishedAt,
+              publishedAt: keepPublished ? t.publishedAt : null,
             ),
       };
       out[key] = _NormalizedEntry(
@@ -715,6 +727,8 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
   final Map<String, List<CollectionMemberTombstoneRow>> memberTombsByKey =
       <String, List<CollectionMemberTombstoneRow>>{};
   final Map<String, int> deletedAtByKey = <String, int>{};
+  // v125：哨兵行的进库时刻 → 清单 deletedPublishedAt（本机作互联 host 时对端据此判新旧）。
+  final Map<String, int> deletedPubByKey = <String, int>{};
   final Map<String, String> deletedKeyByKey = <String, String>{};
   final Set<String> deletedMergedKeys = <String>{};
   String nk(String name, String type) => '$name\u0000$type';
@@ -725,6 +739,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
             t.entryKey == FushiDatabase.collectionTombstoneSentinel;
     if (isSentinel) {
       deletedAtByKey[key] = t.deletedAt;
+      if (t.publishedAt != null) deletedPubByKey[key] = t.publishedAt!;
       if (t.organizeKey != null) deletedKeyByKey[key] = t.organizeKey!;
       if (t.organizeMerged) deletedMergedKeys.add(key);
     } else {
@@ -780,6 +795,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
               mediaType: t.mediaType,
               entryKey: wireEntryKey(t.mediaType, t.entryKey),
               removedAt: t.deletedAt,
+              publishedAt: t.publishedAt,
             ),
       ],
       tagNames: <String>[for (final BookTagRow t in rowTags) t.name],
@@ -810,6 +826,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
       name: name,
       collectionType: type,
       deletedAt: deadAt,
+      deletedPublishedAt: deadAt != null ? deletedPubByKey[key] : null,
       organizeKey: deadAt != null ? deletedKeyByKey[key] : null,
       organizeMerged: deadAt != null && deletedMergedKeys.contains(key),
       memberTombstones: deadAt != null
@@ -824,6 +841,7 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
                     mediaType: t.mediaType,
                     entryKey: wireEntryKey(t.mediaType, t.entryKey),
                     removedAt: t.deletedAt,
+                    publishedAt: t.publishedAt,
                   ),
             ],
     ));
@@ -838,9 +856,18 @@ Future<CollectionManifest> loadLocalCollectionManifest(FushiDatabase db) async {
 /// 与用户路径的关键差异：这里**镜像**清单里的时间戳/墓碑，绝不写 now、绝不经
 /// [FushiDatabase.removeFromCollection]/[FushiDatabase.deleteMediaCollection]
 /// （那两条会写全新墓碑，把同步应用伪装成本端的人为操作）。
+///
+/// 墓碑行的 `publishedAt`（v125）= 这条知识**进入本库**的时刻，只服务本机作互联 host
+/// 时的清单输出：本库已有同键、同 deletedAt 的行原值保留（含 NULL——本机用户亲手移出的
+/// 进库时刻就是 deletedAt），一经确定不刷新；否则是经同步新进库的知识，盖
+/// [publishedAtMs]（缺省当前墙钟）。不抄合并结果里的发布戳：那是**别的通道**（云文件 /
+/// 对端 host）的首发时刻，早于它进本库的时刻；本机的互联 client 若基线落在两者之间，
+/// 拿早的那个会把没见过的墓碑判成旧闻、成员复活（BUG-3662 后续）。
 Future<int> applyCollectionLocalChanges(
-    FushiDatabase db, CollectionLocalChanges changes) async {
+    FushiDatabase db, CollectionLocalChanges changes,
+    {int? publishedAtMs}) async {
   if (changes.isEmpty) return 0;
+  final int stampMs = publishedAtMs ?? DateTime.now().millisecondsSinceEpoch;
   // 被本轮解散的合集行快照：删行发生在事务里，而回收自有封面是文件 IO，必须挪到
   // 事务提交之后做（BUG-1319）。路径只能在行还活着时取，故在删之前入列。
   // v68：附加图行随删行 cascade 消失，同一顺序约束，路径也在删前快照。
@@ -860,6 +887,24 @@ Future<int> applyCollectionLocalChanges(
   String localEntryKey(String mediaType, String entryKey) =>
       identities.localKey(mediaType, entryKey);
   await db.transaction(() async {
+    // 本库现有墓碑（事务内读，与后面的整体替换同一快照）：同键同 deletedAt 的行沿用其
+    // publishedAt，其余新知识盖 [stampMs]。
+    final Map<String, CollectionMemberTombstoneRow> existingTombs =
+        <String, CollectionMemberTombstoneRow>{
+      for (final CollectionMemberTombstoneRow t
+          in await db.getAllCollectionMemberTombstones())
+        _tombRowKey(t.collectionName, t.collectionType, t.mediaType,
+            t.entryKey): t,
+    };
+    int? publishedFor(CollectionManifestEntry e, String mediaType,
+        String entryKey, int deletedAt) {
+      final CollectionMemberTombstoneRow? old = existingTombs[_tombRowKey(
+          e.name, e.collectionType, mediaType, entryKey)];
+      return old != null && old.deletedAt == deletedAt
+          ? old.publishedAt
+          : stampMs;
+    }
+
     for (final CollectionManifestEntry e in changes.entries) {
       final MediaCollectionRow? row =
           await db.getMediaCollectionByNaturalKey(e.name, e.collectionType);
@@ -890,6 +935,11 @@ Future<int> applyCollectionLocalChanges(
             mediaType: FushiDatabase.collectionTombstoneSentinel,
             entryKey: FushiDatabase.collectionTombstoneSentinel,
             deletedAt: e.deletedAt!,
+            publishedAt: Value<int?>(publishedFor(
+                e,
+                FushiDatabase.collectionTombstoneSentinel,
+                FushiDatabase.collectionTombstoneSentinel,
+                e.deletedAt!)),
             // v124：镜像被删合集的分组键与「是否并掉」。
             organizeKey: Value<String?>(e.organizeKey),
             organizeMerged: Value<bool>(e.organizeMerged),
@@ -972,6 +1022,8 @@ Future<int> applyCollectionLocalChanges(
             mediaType: t.mediaType,
             entryKey: t.entryKey,
             deletedAt: t.removedAt,
+            publishedAt: Value<int?>(
+                publishedFor(e, t.mediaType, t.entryKey, t.removedAt)),
           ),
       ]);
     }
@@ -986,6 +1038,11 @@ Future<int> applyCollectionLocalChanges(
   await rehomeDissolvedOrganizerCollections(db, dissolvedOrganizer);
   return changes.changedCollections;
 }
+
+/// 墓碑行四元主键的查表键（NUL 分隔，四段都不含 NUL）。
+String _tombRowKey(String collectionName, String collectionType,
+        String mediaType, String entryKey) =>
+    '$collectionName\u0000$collectionType\u0000$mediaType\u0000$entryKey';
 
 /// 合集同步一轮**推进基线之后**调：把对端带来的同系列整理器合集在本机合成一个
 /// （v124，AI 整理库 spec §8.4，[convergeOrganizedCollections]）。

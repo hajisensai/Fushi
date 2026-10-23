@@ -23,8 +23,10 @@ void main() {
   test('真实龙女仆 m3u8 解析 + sidecar .ja.srt 日文 cue', () async {
     final String baseDir = p.dirname(m3u8Path);
     final String content = File(m3u8Path).readAsStringSync();
-    final List<PlaylistEntry> entries =
-        parseM3u8(content: content, baseDir: baseDir);
+    final List<PlaylistEntry> entries = parseM3u8(
+      content: content,
+      baseDir: baseDir,
+    );
 
     // ① 集数与 m3u8 中 #EXTINF 条数一致（实测 55 集），标题非空，第一集存在。
     final int extinfCount = '\n$content'
@@ -35,23 +37,36 @@ void main() {
     expect(entries.length, greaterThanOrEqualTo(50));
     expect(entries.first.title.isNotEmpty, isTrue);
     final String firstPath = entries.first.path;
-    expect(File(firstPath).existsSync(), isTrue,
-        reason: 'first episode mkv must exist: $firstPath');
+    expect(
+      File(firstPath).existsSync(),
+      isTrue,
+      reason: 'first episode mkv must exist: $firstPath',
+    );
 
     // ② sidecar 检测：S01E01.mkv → .ja.srt。
-    final String? sidecar = findSidecarSubtitle(firstPath, langCode: 'ja');
+    final String? sidecar = await findSidecarSubtitle(
+      firstPath,
+      langCode: 'ja',
+    );
     expect(sidecar, isNotNull);
-    expect(sidecar!.toLowerCase().endsWith('.ja.srt'), isTrue,
-        reason: 'expected .ja.srt sidecar, got $sidecar');
+    expect(
+      sidecar!.toLowerCase().endsWith('.ja.srt'),
+      isTrue,
+      reason: 'expected .ja.srt sidecar, got $sidecar',
+    );
 
     // ③ 解析日文 cue，打印前 3 条供肉眼确认。
     final String subText = await readTextWithEncoding(File(sidecar));
-    final List<AudioCue> cues =
-        SrtParser.parseString(content: subText, bookKey: 'probe');
+    final List<AudioCue> cues = SrtParser.parseString(
+      content: subText,
+      bookKey: 'probe',
+    );
     expect(cues.length, greaterThan(0));
     // ignore: avoid_print
-    print('[dragonmaid] entries=${entries.length} '
-        'first="${entries.first.title}" sidecar=$sidecar cues=${cues.length}');
+    print(
+      '[dragonmaid] entries=${entries.length} '
+      'first="${entries.first.title}" sidecar=$sidecar cues=${cues.length}',
+    );
     for (int i = 0; i < cues.length && i < 3; i++) {
       // ignore: avoid_print
       print('[dragonmaid][cue $i] ${cues[i].startMs}ms: ${cues[i].text}');

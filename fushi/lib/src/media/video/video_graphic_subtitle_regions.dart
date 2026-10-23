@@ -333,7 +333,7 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
     required Size fallbackCanvas,
     Future<void>? cancel,
   }) async {
-    final String? key = _cacheKey(request);
+    final String? key = await _cacheKey(request);
     if (key == null) return null;
     final GraphicSubtitleRegionTrack? hot = _memory[key];
     if (hot != null) return hot;
@@ -424,12 +424,14 @@ class FfmpegGraphicSubtitleRegionLoader implements GraphicSubtitleRegionLoader {
 
   /// 缓存键：本地文件带大小与修改时间（文件换了就重抽）；远端流只认地址（请求头里的
   /// 会话凭据会轮换，不进键）。本地文件不存在返回 null。`v2`：解码器扩到 VobSub / DVB。
-  static String? _cacheKey(GraphicSubtitleRegionRequest r) {
+  ///
+  /// async stat：本地视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3663）。
+  static Future<String?> _cacheKey(GraphicSubtitleRegionRequest r) async {
     final String identity;
     if (r.input.isRemote) {
       identity = r.input.uri;
     } else {
-      final FileStat stat = File(r.input.uri).statSync();
+      final FileStat stat = await File(r.input.uri).stat();
       if (stat.type != FileSystemEntityType.file) return null;
       identity =
           '${r.input.uri}|${stat.size}|${stat.modified.millisecondsSinceEpoch}';

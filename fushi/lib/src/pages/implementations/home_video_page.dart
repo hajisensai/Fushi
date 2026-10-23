@@ -60,6 +60,7 @@ import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/cover_backfill_ledger.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -340,6 +341,39 @@ class HomeVideoPage extends BaseModuleTabPage {
 
 class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
+
+  /// 本地封面 / 海报 / 附加图的「文件在不在」异步记忆表（BUG-3663）：这些路径常落在
+  /// 网络盘（rclone / SMB 挂载）上，build 里同步 stat 一次就能冻结 UI 与同 isolate
+  /// 的互联 host 数秒。build 只读这张表，没见过的路径后台 async 探测、落定后重建；
+  /// 还在探测的候选画 [kPendingCoverImage]（回退链停在它这里，不先闪成后备封面）。
+  late final AsyncFileExistenceCache _coverExists = AsyncFileExistenceCache(
+    onChanged: _onCoverExistenceChanged,
+  );
+
+  /// 远端清单下发的 host 侧封面路径（几乎只在同机联调时真的存在）的同款记忆表；
+  /// 随远端清单换代清空（见 [_loadRemoteVideos]）。
+  late final AsyncFileExistenceCache _remoteCoverExists =
+      AsyncFileExistenceCache(onChanged: _onCoverExistenceChanged);
+
+  void _onCoverExistenceChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 书架行重取：同时让「已知不存在」的封面路径再探一次（刮削 / 抽帧可能刚把文件
+  /// 写到原先探过的路径上），旧答案用到新答案回来，不闪占位。
+  Future<List<VideoBookRow>> _listForShelf() {
+    _coverExists.revalidateMissing();
+    return widget.repo.listForShelf();
+  }
+
+  /// 本地文件封面图源（回退链用）：已知存在 → [resizedFileImage]；已知不在 / 空 →
+  /// null（链继续往后找）；还在探测 → [kPendingCoverImage]（链停下等重建）。零同步 IO。
+  ImageProvider? _localFileCover(String? path) {
+    final bool? exists = _coverExists.lookupOptional(path);
+    if (exists == null) return kPendingCoverImage;
+    return exists ? resizedFileImage(File(path!)) : null;
+  }
+
   Future<_RemoteVideoState?>? _remoteFuture;
 
   /// 本页实例已尝试接回过的中断下载（视频 id）。见 [_resumeInterruptedRemoteDownloads]。
@@ -658,7 +692,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       appModelNoUpdate.prefsRepo.videoAllSeriesFilterName,
     );
     // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
-    _future = widget.repo.listForShelf();
+    _future = _listForShelf();
     _remoteFuture = _loadRemoteVideos();
     // 首帧就预取分组/排序映射（合集折叠首绘就要 _collectionsById，不能等刷新）。
     _loadLibraryMaps();
@@ -802,6 +836,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _coverExists.dispose();
+    _remoteCoverExists.dispose();
     _headerSearch.dispose();
     _searchController.dispose();
     _continueRowController.dispose();
@@ -888,7 +924,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _refreshOnChangeSignal() {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
-      _future = widget.repo.listForShelf();
+      _future = _listForShelf();
     });
     _loadLibraryMapsKeepingInFlight();
     _maybeBackfillCovers();
@@ -978,7 +1014,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _refresh({bool remote = false, bool backfillCovers = true}) {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
-      _future = widget.repo.listForShelf();
+      _future = _listForShelf();
       if (remote) _remoteFuture = _loadRemoteVideos();
     });
     _loadLibraryMaps();
@@ -1013,7 +1049,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     );
     if (mounted) {
       setState(() {
-        _future = widget.repo.listForShelf();
+        _future = _listForShelf();
         _remoteFuture = remote;
       });
     }
@@ -1130,7 +1166,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _refreshAfterPlayback() {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
-      _future = widget.repo.listForShelf();
+      _future = _listForShelf();
     });
     unawaited(_loadWatchRecency());
   }
@@ -1397,8 +1433,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     for (final MediaImageKind kind in preference) {
       for (final MediaImageRow row in rows) {
         if (row.kind != kind.dbValue || row.path.isEmpty) continue;
-        final File file = File(row.path);
-        if (file.existsSync()) return resizedFileImage(file);
+        final ImageProvider? image = _localFileCover(row.path);
+        if (image != null) return image;
       }
     }
     return null;
@@ -1434,12 +1470,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     for (final String kind in kinds) {
       for (final VideoMetadataImageRow row in ordered) {
         if (row.kind != kind) continue;
-        final String? localPath = row.localPath;
-        if (localPath != null &&
-            localPath.isNotEmpty &&
-            File(localPath).existsSync()) {
-          return resizedFileImage(File(localPath));
-        }
+        final ImageProvider? local = _localFileCover(row.localPath);
+        if (local != null) return local;
         if (row.remoteUrl.isNotEmpty) {
           return AppCachedHttpImage(row.remoteUrl);
         }
@@ -1504,7 +1536,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 整个回填循环从这里被掀掉——release 因断言被编译掉而侥幸跑通，于是这条
       // 只在 debug 生效的失效路径长期没人发现（封面回填在 debug 下根本不工作）。
       setState(() {
-        _future = widget.repo.listForShelf();
+        _future = _listForShelf();
       });
     }
 
@@ -1513,23 +1545,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       for (final VideoBookRow row in rows) {
         if (!mounted) return;
         final String? cover = row.coverPath;
-        if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+        // 全部 async：回填循环跑在 UI isolate，视频 / 封面常在网络盘上，同步 stat
+        // 逐条冻结界面与同 isolate 的互联 host（BUG-3663）。
+        if (cover != null && cover.isNotEmpty && await File(cover).exists()) {
           continue; // 已有封面。
         }
         final String path = row.videoPath;
         if (!isLocalFrameExtractableVideoSource(path)) {
           continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
         }
-        if (!File(path).existsSync()) {
+        if (!await File(path).exists()) {
           // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
           // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
           // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
           // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
           continue;
         }
-        if (!CoverBackfillLedger.instance.shouldAttempt(path)) {
+        if (!await CoverBackfillLedger.instance.shouldAttempt(path)) {
           continue; // 此前失败且文件未变：不再白烧 ffmpeg。
         }
+        // 上面几次 async 文件判据期间页面可能已经销毁：不再进闸门读写库 / 起 ffmpeg。
+        if (!mounted) return;
         bool admitted = false;
         final String? extracted = await VideoCoverMutationGate.runExclusive(
           () async {
@@ -1542,7 +1578,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final String? currentCover = current.coverPath;
             if (currentCover != null &&
                 currentCover.isNotEmpty &&
-                File(currentCover).existsSync()) {
+                await File(currentCover).exists()) {
               return null;
             }
             final CoverMetaStore? coverMetaStore = await _prepareAutoFrameCover(
@@ -1569,9 +1605,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         );
         if (!admitted) continue;
         if (extracted == null) {
-          CoverBackfillLedger.instance.recordFailure(
+          await CoverBackfillLedger.instance.recordFailure(
             path,
-            reason: File(path).existsSync() ? 'extract-failed' : 'file-missing',
+            reason: await File(path).exists()
+                ? 'extract-failed'
+                : 'file-missing',
           );
           continue;
         }
@@ -1675,7 +1713,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }) async {
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     // 远端清单换代 = 封面文件路径集合可能变，记忆表随之作废（见 _remoteCoverFileExists）。
-    _remoteCoverPathExists.clear();
+    _remoteCoverExists.clear();
     if (!_shouldLoadRemoteVideos) {
       _remoteVideoSource = null;
       return null;
@@ -2340,17 +2378,41 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   ///
   /// [globalPosition] 为 [FushiFileDropTarget] 透出的 Flutter global/view 坐标，
   /// 可直接交给卡片注册表命中（注册表存的是同一坐标系的屏幕矩形）。
-  void _handleVideoDrop(List<String> paths, Offset globalPosition) {
+  Future<void> _handleVideoDrop(
+    List<String> paths,
+    Offset globalPosition,
+  ) async {
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route != null && !route.isCurrent) return;
 
     // 必须注入 isDirectory 谓词：不传的话目录落进 unknown，视频页对「拖入文件夹」
     // 完全静默（用户报的「拖文件夹没反应」）。分类只记录事实，目录算什么由
     // decideDropIntent 按落点表面决定。
+    // 目录判定与盘根探测先 async 做完再交给纯函数分类器（BUG-3663：拖进来的常是
+    // 网络盘上的文件 / 蓝光盘目录，同步 stat 冷目录要数秒、冻结 UI isolate）。
+    // 各路径并发判（一次往返，不逐个串行等网络盘）。
+    final List<bool> isDirectory = await Future.wait(<Future<bool>>[
+      for (final String path in paths) FileSystemEntity.isDirectory(path),
+    ]);
+    final List<String> directoryPaths = <String>[
+      for (int i = 0; i < paths.length; i++)
+        if (isDirectory[i]) paths[i],
+    ];
+    final List<String?> discRootList = await Future.wait(<Future<String?>>[
+      for (final String path in directoryPaths)
+        blurayDiscRootForDirectory(path),
+    ]);
+    final Map<String, String> discRoots = <String, String>{
+      for (int i = 0; i < directoryPaths.length; i++)
+        if (discRootList[i] != null) directoryPaths[i]: discRootList[i]!,
+    };
+    // await 期间页面可能已销毁或被别的路由盖住：再判一次，与入口同一口径。
+    if (!mounted || (route != null && !route.isCurrent)) return;
+    final Set<String> directories = directoryPaths.toSet();
     final DroppedFiles files = classifyDroppedFiles(
       paths,
-      isDirectory: (String path) => Directory(path).existsSync(),
-      blurayDiscRootForDirectory: blurayDiscRootForDirectory,
+      isDirectory: directories.contains,
+      blurayDiscRootForDirectory: (String directory) => discRoots[directory],
     );
     debugPrint(
       '[fushi-drop] [home-video] classified '
@@ -3562,9 +3624,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 长按菜单封面块的模糊垫底图源（[MediaItemDialogFrame.coverBackdrop]）：与
   /// [_buildCover] 同一判据——文件不存在时为 null，菜单退回纯色 letterbox。
   ImageProvider? _coverBackdropFor(String? coverPath) {
-    if (coverPath == null || coverPath.isEmpty) return null;
-    final File file = File(coverPath);
-    return file.existsSync() ? FileImage(file) : null;
+    // 存在性读异步记忆表（BUG-3663）；还在探测时不画垫底（菜单退回纯色 letterbox）。
+    if (_coverExists.lookupOptional(coverPath) != true) return null;
+    return FileImage(File(coverPath!));
   }
 
   /// 长按视频卡：打开与书架书籍一致的封面背景动作面板。播放仍由卡片点击负责。
@@ -4171,7 +4233,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 都会被调用，无条件 setState 会形成刷新环）。
     if (mounted && service.attemptedCount != before) {
       setState(() {
-        _future = widget.repo.listForShelf();
+        _future = _listForShelf();
       });
     }
   }
@@ -6015,11 +6077,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<_VideoSlot> members,
     _VideoSlot fallback,
   ) {
-    final String? own = collection.coverPath;
-    if (own != null && own.isNotEmpty && File(own).existsSync()) {
-      return resizedFileImage(File(own));
-    }
-    return _canonicalCollectionPosterProvider(collection.id) ??
+    return _localFileCover(collection.coverPath) ??
+        _canonicalCollectionPosterProvider(collection.id) ??
         _collectionMembersCoverProvider(_localMembersOf(members)) ??
         _slotCoverProvider(fallback);
   }
@@ -6984,13 +7043,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   /// 本地卡朝向探测/渲染共用封面 provider（缺失/悬空路径 = null → 占位 + 恒竖卡）。
-  ImageProvider? _localCoverProvider(VideoBookRow book) {
-    final String? cover = book.coverPath;
-    if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
-      return null;
-    }
-    return resizedFileImage(File(cover));
-  }
+  ImageProvider? _localCoverProvider(VideoBookRow book) =>
+      _localFileCover(book.coverPath);
 
   /// 远端占位卡封面 provider（本地缓存文件 → 钉扎客户端 URL；两者皆无 = null）。
   /// 渲染（[_buildRemoteVideoCover]）与其它取封面的地方都从这里拿：同一个 provider
@@ -7002,10 +7056,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 大库「系列 / 全部视频」页因此持续卡顿；本地封面早就恒过 720 宽缩放，远端没理由
   /// 例外。`allowUpscaling: false`：小图原样解码，不放大不裁切。
   ImageProvider? _remoteCoverProvider(RemoteVideoInfo video) {
-    final String? coverPath = video.coverPath;
-    if (coverPath != null && _remoteCoverFileExists(coverPath)) {
-      return resizedFileImage(File(coverPath));
-    }
+    final bool? coverFileExists = _remoteCoverExists.lookupOptional(
+      video.coverPath,
+    );
+    if (coverFileExists == null) return kPendingCoverImage;
+    if (coverFileExists) return resizedFileImage(File(video.coverPath!));
     final String? coverUrl = video.coverUrl;
     final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(
       _remoteVideoClient,
@@ -7020,20 +7075,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     return null;
   }
 
-  /// [RemoteVideoInfo.coverPath] 是否落在本机磁盘上，按路径记忆化。
-  ///
-  /// 该路径由 wire 下发（host 侧的本地路径），几乎只在同机联调时真的存在，但判据
-  /// 本身逃不掉——它决定「走文件还是走 URL」。此前每次 build 都同步 `existsSync`，
-  /// 大库一帧几千次磁盘 stat 全在 UI 线程上。记忆表随远端清单同生命周期：
-  /// [_loadRemoteVideos] 每次重取清单时清空（清单变了路径集合才会变；单纯滚动 /
-  /// 重建不会），所以不会把「文件后来出现了」永远判成不存在。
-  final Map<String, bool> _remoteCoverPathExists = <String, bool>{};
-
   /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
   List<RemoteVideoInfo>? _adoptedRemoteVideos;
-
-  bool _remoteCoverFileExists(String coverPath) => _remoteCoverPathExists
-      .putIfAbsent(coverPath, () => File(coverPath).existsSync());
 
   /// 过滤后视频（本地 + 远端占位 union）→ 合集折叠 + 按当前排序方式排 group。远端占位
   /// 用 `-1-index` 编码 importedAt（全为负，稳定排在本地条目之后、组内保持目录序）。
@@ -7333,10 +7376,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     CollectionGroup<_VideoSlot> group, {
     bool landscapeSlot = false,
   }) {
-    final String? own = group.collection?.coverPath;
-    if (own != null && own.isNotEmpty && File(own).existsSync()) {
+    final ImageProvider? own = _localFileCover(group.collection?.coverPath);
+    if (own != null) {
       return PortraitCoverImage(
-        image: resizedFileImage(File(own)),
+        image: own,
         landscapeSlot: landscapeSlot,
         errorBuilder: (BuildContext _) =>
             ShelfCoverPlaceholder(icon: FushiIcons.video),
@@ -7359,12 +7402,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     for (final CollectionOrderingItem<_VideoSlot> it in group.items) {
       final VideoBookRow? local = it.payload.local;
       if (local == null) continue;
-      final String? cover = local.coverPath;
-      if (cover != null && cover.isNotEmpty && File(cover).existsSync()) {
+      final ImageProvider? cover = _localFileCover(local.coverPath);
+      if (cover != null) {
         // 朝向自适应槽位：不合槽封面由 [PortraitCoverImage] 用「模糊同图垫底 +
         // contain 前景」填充；解码上限与旧 cacheWidth 同源（resizedFileImage 默认 720）。
         return PortraitCoverImage(
-          image: resizedFileImage(File(cover)),
+          image: cover,
           landscapeSlot: landscapeSlot,
           errorBuilder: (BuildContext _) =>
               ShelfCoverPlaceholder(icon: FushiIcons.video),
@@ -8845,10 +8888,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     List<String> memberUidOrder,
     List<VideoBookRow> library,
   ) {
-    final String? own = collection.coverPath;
-    if (own != null && own.isNotEmpty && File(own).existsSync()) {
-      return resizedFileImage(File(own));
-    }
+    final ImageProvider? own = _localFileCover(collection.coverPath);
+    if (own != null) return own;
     final ImageProvider? canonical = _canonicalCollectionPosterProvider(
       collection.id,
     );
@@ -10100,11 +10141,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     bool landscapeSlot = false,
   }) {
     final String? cover = book.coverPath;
-    // 保留同步 existsSync 短路：对已知不存在的封面直接占位，避免对缺失文件发起
-    // 无谓的异步解码（真机少一次失败 IO；widget 测试里也不会因缺失文件挂在解码上）。
-    // 单卡一次 stat 成本极小；首屏真正的开销是解码尺寸（下方 cacheWidth 降采样）
-    // 与 _repairMovedCoverPaths 的全库 stat（已改异步）。
-    if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
+    // 已知不存在 / 还在探测的封面直接占位，避免对缺失文件发起无谓的异步解码。存在性
+    // 读异步记忆表、零同步 IO（BUG-3663：封面常在网络盘上，旧实现在这里同步
+    // existsSync，冷目录一次 stat 数秒、整页与同 isolate 的互联 host 一起冻结）。
+    if (cover == null || _coverExists.lookupOptional(cover) != true) {
       return ShelfCoverPlaceholder(icon: FushiIcons.video);
     }
     if (poster) {

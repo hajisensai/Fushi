@@ -348,8 +348,10 @@ class SyncRunReport {
     deletionCandidates.addAll(other.deletionCandidates);
     // 逐槽位取 max：两条通道的复核时刻各归各的轴，绝不折成一个标量（那会用一条
     // 通道的时刻去推进另一条通道的基线）。
-    other.deletionTombstonesHighWaterMsByScope
-        .forEach((String scopeId, int at) {
+    other.deletionTombstonesHighWaterMsByScope.forEach((
+      String scopeId,
+      int at,
+    ) {
       final int? prev = deletionTombstonesHighWaterMsByScope[scopeId];
       if (prev == null || at > prev) {
         deletionTombstonesHighWaterMsByScope[scopeId] = at;
@@ -365,22 +367,26 @@ class SyncRunReport {
   void noteError(String label, Object error) {
     errors.add('$label: $error');
     if (error is! SyncAuthError) return;
-    _addAuthFailure(SyncAuthFailure(
-      label: label,
-      kind: error.kind,
-      message: error.message,
-      serverReason: error.serverReason,
-    ));
+    _addAuthFailure(
+      SyncAuthFailure(
+        label: label,
+        kind: error.kind,
+        message: error.message,
+        serverReason: error.serverReason,
+      ),
+    );
   }
 
   /// 按（kind, message, serverReason）去重：一次 401 会让一轮里几百本书逐本
   /// 失败，用户只需要知道「凭据被拒了」一次。label 不进去重键（它只是
   /// 第一个撞上的现场），否则去重就形同虚设。
   void _addAuthFailure(SyncAuthFailure failure) {
-    final bool seen = authFailures.any((SyncAuthFailure f) =>
-        f.kind == failure.kind &&
-        f.message == failure.message &&
-        f.serverReason == failure.serverReason);
+    final bool seen = authFailures.any(
+      (SyncAuthFailure f) =>
+          f.kind == failure.kind &&
+          f.message == failure.message &&
+          f.serverReason == failure.serverReason,
+    );
     if (!seen) authFailures.add(failure);
   }
 }
@@ -490,13 +496,13 @@ class SyncOrchestrator {
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
     this.pendingMineRelay,
-  })  : _db = db,
-        _backend = backend,
-        _dictionaryResourceRoot = dictionaryResourceRoot,
-        _audioDatabaseRoot = audioDatabaseRoot,
-        _tempDir = tempDir,
-        _scope = syncChannelScopeOf(backend),
-        _packages = SyncAssetPackageService(db: db);
+  }) : _db = db,
+       _backend = backend,
+       _dictionaryResourceRoot = dictionaryResourceRoot,
+       _audioDatabaseRoot = audioDatabaseRoot,
+       _tempDir = tempDir,
+       _scope = syncChannelScopeOf(backend),
+       _packages = SyncAssetPackageService(db: db);
 
   final FushiDatabase _db;
   final SyncBackend _backend;
@@ -528,6 +534,7 @@ class SyncOrchestrator {
   /// 默认 true：省略该参数的既有调用点行为不变。
   final bool syncFavorites;
   final bool syncAudioBookPosition;
+
   /// 「上传书籍文件」：EPUB 等非漫画格式的书文件是否上传（漫画看 [syncMangaContent]）。
   final bool syncContent;
 
@@ -569,16 +576,18 @@ class SyncOrchestrator {
   }) {
     final cb = onProgress;
     if (cb == null) return;
-    cb(SyncProgress(
-      phase: phase,
-      itemIndex: itemIndex,
-      itemTotal: itemTotal,
-      title: title,
-      fileFraction: fileFraction,
-      bytesPerSecond: fileBytes == null
-          ? null
-          : _rateMeter.sample((phase, itemIndex, title), fileBytes),
-    ));
+    cb(
+      SyncProgress(
+        phase: phase,
+        itemIndex: itemIndex,
+        itemTotal: itemTotal,
+        title: title,
+        fileFraction: fileFraction,
+        bytesPerSecond: fileBytes == null
+            ? null
+            : _rateMeter.sample((phase, itemIndex, title), fileBytes),
+      ),
+    );
   }
 
   /// One meter for the whole run: per-file byte counts fold into its running
@@ -648,8 +657,9 @@ class SyncOrchestrator {
     // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
     // 音频文件 live 同步，请参考本方法的分流模式扩展。
     final bool managerSyncContent = isInterconnect ? false : syncContent;
-    final bool managerSyncMangaContent =
-        isInterconnect ? false : syncMangaContent;
+    final bool managerSyncMangaContent = isInterconnect
+        ? false
+        : syncMangaContent;
 
     int readingDone = 0;
     int readingTotal = 0;
@@ -665,30 +675,37 @@ class SyncOrchestrator {
     // 失效」降级成一条无操作性的杂项错误；且鉴权死了后续阶段本来也无法工作。
     List<SyncBookResult> bookResults = const <SyncBookResult>[];
     try {
-      bookResults = await SyncManager(
-        db: _db,
-        backend: _backend,
-        onContentProgress: (double f, [int? b]) => _emit(SyncPhase.readingData,
-            itemIndex: readingDone,
-            itemTotal: readingTotal,
-            title: readingTitle,
-            fileFraction: f,
-            fileBytes: b),
-      ).syncAllBooks(
-        syncStats: syncStats,
-        statsSyncMode: statsSyncMode,
-        syncAudioBook: syncAudioBookPosition,
-        syncContent: managerSyncContent,
-        syncMangaContent: managerSyncMangaContent,
-        listing: listing,
-        onBookProgress: (int done, int total, String title) {
-          readingDone = done;
-          readingTotal = total;
-          readingTitle = title;
-          _emit(SyncPhase.readingData,
-              itemIndex: done, itemTotal: total, title: title);
-        },
-      );
+      bookResults =
+          await SyncManager(
+            db: _db,
+            backend: _backend,
+            onContentProgress: (double f, [int? b]) => _emit(
+              SyncPhase.readingData,
+              itemIndex: readingDone,
+              itemTotal: readingTotal,
+              title: readingTitle,
+              fileFraction: f,
+              fileBytes: b,
+            ),
+          ).syncAllBooks(
+            syncStats: syncStats,
+            statsSyncMode: statsSyncMode,
+            syncAudioBook: syncAudioBookPosition,
+            syncContent: managerSyncContent,
+            syncMangaContent: managerSyncMangaContent,
+            listing: listing,
+            onBookProgress: (int done, int total, String title) {
+              readingDone = done;
+              readingTotal = total;
+              readingTitle = title;
+              _emit(
+                SyncPhase.readingData,
+                itemIndex: done,
+                itemTotal: total,
+                title: title,
+              );
+            },
+          );
     } on SyncAuthError {
       rethrow;
     } catch (e) {
@@ -804,8 +821,9 @@ class SyncOrchestrator {
     // 冷却窗（[_syncCooldownMs]）压制、整轮重试——即「同步没完成就丢弃中间态、下次
     // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
     // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
-    await SyncRepository(_db)
-        .setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
+    await SyncRepository(
+      _db,
+    ).setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
 
     return report;
   }
@@ -815,8 +833,7 @@ class SyncOrchestrator {
   Future<void> syncAggregateLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncAggregateLive(report, backend);
+  ) => _syncAggregateLive(report, backend);
 
   /// 合集双向同步（多端库联合视图 §2.3 任务4，云后端通道）。
   ///
@@ -935,8 +952,9 @@ class SyncOrchestrator {
 
   Future<void> syncCollections(SyncRunReport report) async {
     try {
-      final String ns =
-          await _backend.ensureNamespace(kSyncCollectionsNamespace);
+      final String ns = await _backend.ensureNamespace(
+        kSyncCollectionsNamespace,
+      );
       final SyncRepository repo = SyncRepository(_db);
 
       // 竞态修复：**读远端清单之前**先预取本轮基线时刻，整轮成功后写这个预取值
@@ -983,15 +1001,17 @@ class SyncOrchestrator {
           if (isOwn) {
             ownCorrupt = true;
             report.noteError(
-                'own collections manifest "${e.name}" unreadable;'
-                ' republishing from local+peers this run (self-heal)',
-                err);
+              'own collections manifest "${e.name}" unreadable;'
+              ' republishing from local+peers this run (self-heal)',
+              err,
+            );
           } else {
             skippedPeer = true;
             report.noteError(
-                'peer collections manifest "${e.name}" '
-                'unreadable; skipped this run (baseline held)',
-                err);
+              'peer collections manifest "${e.name}" '
+              'unreadable; skipped this run (baseline held)',
+              err,
+            );
           }
         }
       }
@@ -1003,8 +1023,9 @@ class SyncOrchestrator {
 
       // 折叠对端 per-device 文件 + 旧单文件成远端并集（按文件级 lastWrittenAt 裁决墓碑，
       // 见 combinePeers）。空并集 = 首轮/无对端，优雅退化为「只上传本机」。
-      final CollectionManifest remote =
-          CollectionSyncEngine.combinePeers(peers);
+      final CollectionManifest remote = CollectionSyncEngine.combinePeers(
+        peers,
+      );
 
       // BUG-2717：读本地清单 → 合并 → 落库是一次读-改-写，与本机作为互联 host 处理
       // 对端 POST 的 mergeCollectionManifest 持同一把窄锁（网络读写都在锁外）。
@@ -1020,8 +1041,10 @@ class SyncOrchestrator {
           ruleOrder: await loadBookSeriesRuleOrder(_db),
         );
 
-        report.collectionsUpdated +=
-            await applyCollectionLocalChanges(_db, outcome.changes);
+        report.collectionsUpdated += await applyCollectionLocalChanges(
+          _db,
+          outcome.changes,
+        );
       });
 
       // 回写门槛：本端 per-device 文件内容有变才写自己那份；本端尚无文件且合并结果为空
@@ -1031,8 +1054,11 @@ class SyncOrchestrator {
           !ownExists && !ownCorrupt && outcome.merged.collections.isEmpty;
       bool ownWritten = false;
       if (!nothingToPublish && outcome.merged.canonicalJson() != ownCanonical) {
-        await _backend.putJsonAsset(ns, ownName,
-            outcome.merged.withLastWrittenAt(nextBaseline).toJson());
+        await _backend.putJsonAsset(
+          ns,
+          ownName,
+          outcome.merged.withLastWrittenAt(nextBaseline).toJson(),
+        );
         ownWritten = true;
       }
 
@@ -1063,24 +1089,21 @@ class SyncOrchestrator {
   Future<void> syncVideoMetadataLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncVideoMetadataLive(report, backend);
+  ) => _syncVideoMetadataLive(report, backend);
 
   /// 测试入口：直接调用 [_syncTagsLive]。
   @visibleForTesting
   Future<void> syncTagsLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncTagsLive(report, backend);
+  ) => _syncTagsLive(report, backend);
 
   /// 测试入口：直接调用 [_syncCollectionsLive]（private 方法对测试文件不可见）。
   @visibleForTesting
   Future<void> syncCollectionsLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncCollectionsLive(report, backend);
+  ) => _syncCollectionsLive(report, backend);
 
   /// 删除墓碑同步（云后端通道，显式确认式删除传播 Phase C/D）。
   ///
@@ -1104,14 +1127,15 @@ class SyncOrchestrator {
   /// 是标量，推过头会把那条没读到的、deletedAt 更小的删除永久压成「旧闻」。
   Future<void> syncDeletionTombstones(SyncRunReport report) async {
     try {
-      final String ns =
-          await _backend.ensureNamespace(kSyncTombstonesNamespace);
+      final String ns = await _backend.ensureNamespace(
+        kSyncTombstonesNamespace,
+      );
       final SyncRepository repo = SyncRepository(_db);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
 
       // ── 发布：本机未发布墓碑 → 远端标记 ──
-      final List<SyncDeletionTombstoneRow> localRows =
-          await _db.getSyncDeletionTombstones();
+      final List<SyncDeletionTombstoneRow> localRows = await _db
+          .getSyncDeletionTombstones();
       for (final SyncDeletionTombstoneRow row in localRows) {
         if (row.remotePublishedAt != 0) continue;
         await _backend.putJsonAsset(
@@ -1120,7 +1144,10 @@ class SyncOrchestrator {
           deletionTombstoneJson(row.mediaType, row.itemKey, row.deletedAt),
         );
         await _db.markSyncDeletionPublished(
-            row.mediaType, row.itemKey, nextBaseline);
+          row.mediaType,
+          row.itemKey,
+          nextBaseline,
+        );
       }
 
       // ── 消费：读远端标记 → deleteLocal 候选（过基线守卫）──
@@ -1149,7 +1176,9 @@ class SyncOrchestrator {
           // 按不完整处理——静默 continue 会让后者变成一次无声的永久压制。
           scanComplete = false;
           report.noteError(
-              'deletion tombstone "${e.name}" unreadable', 'empty response');
+            'deletion tombstone "${e.name}" unreadable',
+            'empty response',
+          );
           continue;
         }
         final parsed = parseDeletionTombstoneJson(json);
@@ -1158,11 +1187,15 @@ class SyncOrchestrator {
           // 变好，故不置 scanComplete=false（否则基线被一个坏文件永久钉死，用户每轮
           // 重看同一批确认框）。只如实记一条，别再静默丢。
           report.noteError(
-              'deletion tombstone "${e.name}" malformed', 'skipped');
+            'deletion tombstone "${e.name}" malformed',
+            'skipped',
+          );
           continue;
         }
         final Map<String, int> byKey = remoteTombstones.putIfAbsent(
-            parsed.mediaType, () => <String, int>{});
+          parsed.mediaType,
+          () => <String, int>{},
+        );
         final int? prev = byKey[parsed.itemKey];
         if (prev == null || parsed.deletedAt > prev) {
           byKey[parsed.itemKey] = parsed.deletedAt;
@@ -1171,8 +1204,11 @@ class SyncOrchestrator {
 
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
-      aliasPeerBookTombstones(remoteTombstones, present,
-          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
+      aliasPeerBookTombstones(
+        remoteTombstones,
+        present,
+        peerToLocalBookKey: await _db.getPeerToLocalBookKeys(),
+      );
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline; // 时钟回拨钳制。
       bool heldBaseline = false;
@@ -1205,8 +1241,10 @@ class SyncOrchestrator {
         }
       }
       if (heldBaseline) {
-        report.errors.add('deletion tombstones scan incomplete; '
-            'consumption baseline held until a complete read');
+        report.errors.add(
+          'deletion tombstones scan incomplete; '
+          'consumption baseline held until a complete read',
+        );
       }
     } catch (e) {
       report.noteError('deletion tombstones sync', e);
@@ -1218,8 +1256,7 @@ class SyncOrchestrator {
   Future<void> syncDeletionTombstonesLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncDeletionTombstonesLive(report, backend);
+  ) => _syncDeletionTombstonesLive(report, backend);
 
   /// 云视频资产同步（多端库联合视图 §2.6 / 任务12，云后端通道）。
   ///
@@ -1249,8 +1286,10 @@ class SyncOrchestrator {
       };
 
       // 远端既有清单（无则空，首轮优雅退化为「只上传本机视频」）。
-      final AssetEntry? manifestAsset =
-          await _backend.findAsset(ns, kSyncVideosManifestName);
+      final AssetEntry? manifestAsset = await _backend.findAsset(
+        ns,
+        kSyncVideosManifestName,
+      );
       RemoteVideoManifest remote = RemoteVideoManifest.empty;
       String? remoteCanonical;
       if (manifestAsset != null) {
@@ -1261,8 +1300,10 @@ class SyncOrchestrator {
           // priorEntry 恒 null → 每个视频每轮都判「远端无同尺寸」全量重传（无幂等判据的
           // 死循环，视频体积大代价惨重）；若回写：空清单覆盖抹掉他端全部条目。无法判幂等
           // 就不传，下轮下载成功即自愈。
-          report.errors.add('video manifest present but unreadable; skipping '
-              'video upload + manifest writeback this run (retried next run)');
+          report.errors.add(
+            'video manifest present but unreadable; skipping '
+            'video upload + manifest writeback this run (retried next run)',
+          );
           return;
         }
         remote = RemoteVideoManifest.fromJson(json);
@@ -1273,26 +1314,35 @@ class SyncOrchestrator {
       // 的 uid 原样保留——upload-only 并集，绝不因本地缺这条而从清单里抹掉它）。
       final Map<String, RemoteVideoManifestEntry> byUid =
           <String, RemoteVideoManifestEntry>{
-        for (final RemoteVideoManifestEntry e in remote.videos) e.uid: e,
-      };
+            for (final RemoteVideoManifestEntry e in remote.videos) e.uid: e,
+          };
 
       // 稳定顺序（uid 升序）遍历本地可上传视频，进度分母 = 可上传视频数。
-      final List<VideoBookRow> localVideos = <VideoBookRow>[
-        for (final VideoBookRow v in await _db.allVideoBooks())
-          if (_isUploadableLocalVideo(v)) v,
-      ]..sort(
-          (VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid));
+      final List<VideoBookRow> localVideos =
+          <VideoBookRow>[
+            for (final VideoBookRow v in await _db.allVideoBooks())
+              if (_isUploadableLocalVideo(v)) v,
+          ]..sort(
+            (VideoBookRow a, VideoBookRow b) => a.bookUid.compareTo(b.bookUid),
+          );
       final int total = localVideos.length;
       int index = 0;
 
       for (final VideoBookRow v in localVideos) {
-        _emit(SyncPhase.videos,
-            itemIndex: index, itemTotal: total, title: v.title);
+        _emit(
+          SyncPhase.videos,
+          itemIndex: index,
+          itemTotal: total,
+          title: v.title,
+        );
         try {
           final File file = File(v.videoPath);
-          if (!file.existsSync()) {
-            report.errors
-                .add('video "${v.title}": local file missing: ${v.videoPath}');
+          // async 判存在：视频常在网络盘上，同步 existsSync 冷目录时会冻结主 isolate
+          // （BUG-3663）。
+          if (!await file.exists()) {
+            report.errors.add(
+              'video "${v.title}": local file missing: ${v.videoPath}',
+            );
             index++;
             continue;
           }
@@ -1304,7 +1354,7 @@ class SyncOrchestrator {
           final String? coverPath = v.coverPath;
           if (coverPath != null &&
               coverPath.isNotEmpty &&
-              File(coverPath).existsSync()) {
+              await File(coverPath).exists()) {
             coverAsset = videoCoverAssetName(v.bookUid, coverPath);
             if (!remoteSizeByName.containsKey(coverAsset)) {
               await _backend.putAsset(ns, coverAsset, File(coverPath));
@@ -1320,17 +1370,24 @@ class SyncOrchestrator {
           // 条目 videoAsset 同名 && 记录的明文尺寸 == 本地明文尺寸 ⇒ 跳过。
           final RemoteVideoManifestEntry? priorEntry = byUid[v.bookUid];
           final bool remoteHasByName = remoteSizeByName.containsKey(assetName);
-          final bool manifestSameSize = priorEntry != null &&
+          final bool manifestSameSize =
+              priorEntry != null &&
               priorEntry.videoAsset == assetName &&
               priorEntry.sizeBytes == size;
           if (!(remoteHasByName && manifestSameSize)) {
-            await _backend.putAsset(ns, assetName, file,
-                onProgress: (double f, [int? b]) => _emit(SyncPhase.videos,
-                    itemIndex: index,
-                    itemTotal: total,
-                    title: v.title,
-                    fileFraction: f,
-                    fileBytes: b));
+            await _backend.putAsset(
+              ns,
+              assetName,
+              file,
+              onProgress: (double f, [int? b]) => _emit(
+                SyncPhase.videos,
+                itemIndex: index,
+                itemTotal: total,
+                title: v.title,
+                fileFraction: f,
+                fileBytes: b,
+              ),
+            );
             remoteSizeByName[assetName] = size;
             report.videosExported++;
           }
@@ -1375,7 +1432,10 @@ class SyncOrchestrator {
           manifestAsset == null && merged.videos.isEmpty;
       if (!nothingToPublish && merged.canonicalJson() != remoteCanonical) {
         await _backend.putJsonAsset(
-            ns, kSyncVideosManifestName, merged.toJson());
+          ns,
+          kSyncVideosManifestName,
+          merged.toJson(),
+        );
       }
     } catch (e) {
       report.noteError('video assets sync', e);
@@ -1387,19 +1447,18 @@ class SyncOrchestrator {
   /// exported / synced / skipped) is left to the existing per-phase tallies
   /// and is NOT counted here. A conflict carries the four fields filled by
   /// [SyncManager] when it detects a genuine three-way fork.
-  void _collectConflicts(
-    List<SyncBookResult> results,
-    SyncRunReport report,
-  ) {
+  void _collectConflicts(List<SyncBookResult> results, SyncRunReport report) {
     for (final SyncBookResult result in results) {
       if (result.direction != SyncResult.conflict) continue;
-      report.conflicts.add(SyncConflict(
-        assetKey: result.conflictAssetKey!,
-        dimension: result.conflictDimension!,
-        title: result.title,
-        localVersion: result.conflictLocalVersion,
-        remoteVersion: result.conflictRemoteVersion,
-      ));
+      report.conflicts.add(
+        SyncConflict(
+          assetKey: result.conflictAssetKey!,
+          dimension: result.conflictDimension!,
+          title: result.title,
+          localVersion: result.conflictLocalVersion,
+          remoteVersion: result.conflictRemoteVersion,
+        ),
+      );
     }
   }
 
@@ -1428,8 +1487,12 @@ class SyncOrchestrator {
 
     for (int i = 0; i < total; i++) {
       final SyncFileRef folder = toImport[i];
-      _emit(SyncPhase.books,
-          itemIndex: i, itemTotal: total, title: folder.name);
+      _emit(
+        SyncPhase.books,
+        itemIndex: i,
+        itemTotal: total,
+        title: folder.name,
+      );
       try {
         if (await importRemoteBookFolder(
           db: _db,
@@ -1438,12 +1501,14 @@ class SyncOrchestrator {
           tempDir: _tempDir,
           // 下载远端书文件夹时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
           audioDatabaseRoot: _audioDatabaseRoot,
-          onProgress: (double f, [int? b]) => _emit(SyncPhase.books,
-              itemIndex: i,
-              itemTotal: total,
-              title: folder.name,
-              fileFraction: f,
-              fileBytes: b),
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.books,
+            itemIndex: i,
+            itemTotal: total,
+            title: folder.name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         )) {
           report.booksImported++;
         }
@@ -1458,32 +1523,28 @@ class SyncOrchestrator {
   Future<void> syncBookProgressLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncBookProgressLive(report, backend);
+  ) => _syncBookProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncVideoProgressLive]。
   @visibleForTesting
   Future<void> syncVideoProgressLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncVideoProgressLive(report, backend);
+  ) => _syncVideoProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncAudiobookProgressLive]。
   @visibleForTesting
   Future<void> syncAudiobookProgressLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncAudiobookProgressLive(report, backend);
+  ) => _syncAudiobookProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncBooksContentLive]（private 方法对测试文件不可见）。
   @visibleForTesting
   Future<void> syncBooksContentLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncBooksContentLive(report, backend);
+  ) => _syncBooksContentLive(report, backend);
 
   /// 测试入口：直接调用 [_syncLocalAudioLive]。
   @visibleForTesting
@@ -1491,16 +1552,14 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend, {
     SyncAssetDirection direction = SyncAssetDirection.both,
-  }) =>
-      _syncLocalAudioLive(report, backend, direction);
+  }) => _syncLocalAudioLive(report, backend, direction);
 
   /// 测试入口：直接调用 [_syncAudiobooksLive]。
   @visibleForTesting
   Future<void> syncAudiobooksLiveForTest(
     SyncRunReport report,
     InterconnectSyncBackend backend,
-  ) =>
-      _syncAudiobooksLive(report, backend);
+  ) => _syncAudiobooksLive(report, backend);
 
   /// Union-syncs dictionaries. 互联（InterconnectSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
@@ -1573,8 +1632,12 @@ class SyncOrchestrator {
 
     // Push local-only.
     for (final LocalAudioDbEntry d in toPush) {
-      _emit(SyncPhase.localAudio,
-          itemIndex: index, itemTotal: total, title: d.displayName);
+      _emit(
+        SyncPhase.localAudio,
+        itemIndex: index,
+        itemTotal: total,
+        title: d.displayName,
+      );
       final File dbFile = File(d.path);
       File? tmp;
       try {
@@ -1587,13 +1650,18 @@ class SyncOrchestrator {
           outputFile: tmp,
         );
         await _backend.putAsset(
-            ns, '${d.displayName}$_localAudioAssetSuffix', tmp,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
-                itemIndex: index,
-                itemTotal: total,
-                title: d.displayName,
-                fileFraction: f,
-                fileBytes: b));
+          ns,
+          '${d.displayName}$_localAudioAssetSuffix',
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.localAudio,
+            itemIndex: index,
+            itemTotal: total,
+            title: d.displayName,
+            fileFraction: f,
+            fileBytes: b,
+          ),
+        );
         report.localAudioExported++;
       } catch (e) {
         report.noteError('export local audio "${d.displayName}"', e);
@@ -1605,8 +1673,12 @@ class SyncOrchestrator {
 
     // Pull remote-only.
     for (final AssetEntry e in toPull) {
-      _emit(SyncPhase.localAudio,
-          itemIndex: index, itemTotal: total, title: e.name);
+      _emit(
+        SyncPhase.localAudio,
+        itemIndex: index,
+        itemTotal: total,
+        title: e.name,
+      );
       File? tmp;
       // Staging .db extracted from the package. AppModel.importSyncedLocalAudioDb
       // *copies* it into the library dir (never moves), so the staging copy
@@ -1615,18 +1687,20 @@ class SyncOrchestrator {
       File? stagingDb;
       try {
         tmp = _tmpFile(_localAudioAssetSuffix);
-        await _backend.getAsset(e.id, tmp,
-            onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
-                itemIndex: index,
-                itemTotal: total,
-                title: e.name,
-                fileFraction: f,
-                fileBytes: b));
-        final LocalAudioPackageContents contents =
-            await _packages.importLocalAudioPackage(
-          packageFile: tmp,
-          stagingDir: _tempDir,
+        await _backend.getAsset(
+          e.id,
+          tmp,
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.localAudio,
+            itemIndex: index,
+            itemTotal: total,
+            title: e.name,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         );
+        final LocalAudioPackageContents contents = await _packages
+            .importLocalAudioPackage(packageFile: tmp, stagingDir: _tempDir);
         stagingDb = contents.dbFile;
         if (onLocalAudioImported != null) {
           await onLocalAudioImported!(contents);
@@ -1655,8 +1729,12 @@ class SyncOrchestrator {
     final int total = books.length;
     for (int i = 0; i < total; i++) {
       final EpubBookRow book = books[i];
-      _emit(SyncPhase.audiobooks,
-          itemIndex: i, itemTotal: total, title: book.title);
+      _emit(
+        SyncPhase.audiobooks,
+        itemIndex: i,
+        itemTotal: total,
+        title: book.title,
+      );
       // BUG-619 / TODO-1329: skip empty-key books. bookKey == the sanitized
       // title, so an empty key means ensureBookFolder would collapse onto the
       // sync root and scatter the .fushiaudio package into fushi-data/ instead
@@ -1669,10 +1747,13 @@ class SyncOrchestrator {
         final SrtBookRow? srt = await _db.getSrtBookByBookKey(bookKey);
         // 只看行在不在会把音频已断链的有声书打成零音频包推上云，之后远端「已有」，
         // 这本书永远不再补传（与互联 BUG-2551 同判据）。
-        final bool hasLocal = ab != null &&
+        final bool hasLocal =
+            ab != null &&
             srt != null &&
             await audiobookAudioIsIntact(
-                audioPathsJson: ab.audioPathsJson, audioRoot: ab.audioRoot);
+              audioPathsJson: ab.audioPathsJson,
+              audioRoot: ab.audioRoot,
+            );
 
         final String folderId = await _backend.ensureBookFolder(
           bookTitle: book.title,
@@ -1680,8 +1761,8 @@ class SyncOrchestrator {
         );
         // 先认新名，再回落 Hibiki 时代的旧名：漏认旧名会把「云上已有有声书」
         // 判成没有，于是重新上传一份新名资产，同一本书在云上留下两份包。
-        final AssetEntry? existing = await _backend.findAsset(
-                folderId, kSyncAudiobookAssetName) ??
+        final AssetEntry? existing =
+            await _backend.findAsset(folderId, kSyncAudiobookAssetName) ??
             await _backend.findAsset(folderId, kLegacySyncAudiobookAssetName);
 
         if (hasLocal && existing == null) {
@@ -1691,13 +1772,19 @@ class SyncOrchestrator {
             srtBookUid: srt.uid,
             outputFile: tmp,
           );
-          await _backend.putAsset(folderId, kSyncAudiobookAssetName, tmp,
-              onProgress: (double f, [int? b]) => _emit(SyncPhase.audiobooks,
-                  itemIndex: i,
-                  itemTotal: total,
-                  title: book.title,
-                  fileFraction: f,
-                  fileBytes: b));
+          await _backend.putAsset(
+            folderId,
+            kSyncAudiobookAssetName,
+            tmp,
+            onProgress: (double f, [int? b]) => _emit(
+              SyncPhase.audiobooks,
+              itemIndex: i,
+              itemTotal: total,
+              title: book.title,
+              fileFraction: f,
+              fileBytes: b,
+            ),
+          );
           report.audiobooksExported++;
         }
       } catch (e) {
@@ -1777,13 +1864,18 @@ Future<bool> importRemoteBookFolder({
   if (epub == null) return false;
 
   tempDir.createSync(recursive: true);
-  final File tmp = File(p.join(
-    tempDir.path,
-    'fushi_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
-  ));
+  final File tmp = File(
+    p.join(
+      tempDir.path,
+      'fushi_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
+    ),
+  );
   try {
-    await backend.getAsset(epub.id, tmp,
-        onProgress: syncTransferFractionOnly(onProgress));
+    await backend.getAsset(
+      epub.id,
+      tmp,
+      onProgress: syncTransferFractionOnly(onProgress),
+    );
     // 漫画包可能是新名 `.manga.zip`，也可能是旧版本传的同名 `<title>.epub`，故按
     // **内容**嗅探分流：zip 根含 manga.json = 漫画书目录整树包，走 MangaImporter
     // 的既有两遍式校验落库；否则按 EPUB。与互联通道（host importBookFromFile /
@@ -1862,10 +1954,12 @@ Future<void> _pullRemoteFolderAudiobook({
   }
   if (audioAsset == null) return;
 
-  final File tmp = File(p.join(
-    tempDir.path,
-    'fushi_remote_audio_${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
-  ));
+  final File tmp = File(
+    p.join(
+      tempDir.path,
+      'fushi_remote_audio_${DateTime.now().microsecondsSinceEpoch}.fushiaudio',
+    ),
+  );
   try {
     await backend.getAsset(audioAsset.id, tmp);
     await SyncAssetPackageService(db: db).importAudioDatabasePackage(
@@ -1998,7 +2092,7 @@ Future<void> _applyRemoteMangaReaderOverride(
 
 @visibleForTesting
 ({Map<String, Object?> overrides, int updatedAt, bool deleted})
-    parseMangaReaderSidecar(Object? json) {
+parseMangaReaderSidecar(Object? json) {
   if (json is! Map) {
     return (
       overrides: const <String, Object?>{},
@@ -2017,8 +2111,8 @@ Future<void> _applyRemoteMangaReaderOverride(
   final int updatedAt = rawAt is int
       ? rawAt
       : rawAt is num
-          ? rawAt.toInt()
-          : int.tryParse(rawAt?.toString() ?? '') ?? -1;
+      ? rawAt.toInt()
+      : int.tryParse(rawAt?.toString() ?? '') ?? -1;
   return (
     overrides: overrides,
     updatedAt: updatedAt,
@@ -2030,7 +2124,7 @@ Future<void> _applyRemoteMangaReaderOverride(
 /// 非 Map / 缺 updatedAt / 坏字段一律安全跳过，绝不抛 FormatException。测试可见。
 @visibleForTesting
 Map<String, ({String content, bool deleted, int updatedAt})>
-    parseBookCssSidecar(Object? json) {
+parseBookCssSidecar(Object? json) {
   if (json is! Map) {
     return const <String, ({String content, bool deleted, int updatedAt})>{};
   }
@@ -2047,8 +2141,8 @@ Map<String, ({String content, bool deleted, int updatedAt})>
     final int? ms = updatedAt is int
         ? updatedAt
         : (updatedAt is num
-            ? updatedAt.toInt()
-            : int.tryParse(updatedAt?.toString() ?? ''));
+              ? updatedAt.toInt()
+              : int.tryParse(updatedAt?.toString() ?? ''));
     if (ms == null) return;
     out[rel] = (
       content: v['content']?.toString() ?? '',
@@ -2065,7 +2159,8 @@ Map<String, ({String content, bool deleted, int updatedAt})>
 /// 绝不抛 FormatException。测试可见。
 @visibleForTesting
 ({Map<String, int> addedAt, Map<String, int> tombstones}) parseTagSidecar(
-    Object? json) {
+  Object? json,
+) {
   if (json is! Map) {
     return (addedAt: <String, int>{}, tombstones: <String, int>{});
   }

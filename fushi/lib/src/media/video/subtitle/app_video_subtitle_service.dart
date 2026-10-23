@@ -549,13 +549,13 @@ class AppVideoSubtitleService {
     final List<AppVideoSubtitleEpisode> episodes = <AppVideoSubtitleEpisode>[];
     final List<AppVideoSubtitleUnavailable> unavailable =
         <AppVideoSubtitleUnavailable>[];
-    _collectEpisodes(row, episodes, unavailable, onlyPath: videoPath);
+    await _collectEpisodes(row, episodes, unavailable, onlyPath: videoPath);
     // 播放页的当前路径可能是重定位后的（盘符换了 / 数据根搬了），与库里记的写法
     // 对不上：文件确实在就照样处理这一集，只是不替这一行登记字幕选择（页面自己选）。
     if (videoPath != null &&
         episodes.isEmpty &&
         isLocalVideoFilePath(videoPath) &&
-        File(videoPath).existsSync()) {
+        await File(videoPath).exists()) {
       unavailable.clear();
       episodes.add(
         AppVideoSubtitleEpisode(
@@ -601,7 +601,7 @@ class AppVideoSubtitleService {
         item.entryKey,
       );
       if (row == null) continue;
-      _collectEpisodes(row, episodes, unavailable);
+      await _collectEpisodes(row, episodes, unavailable);
     }
     final SubtitleWorkContext work =
         await SubtitleWorkContextLoader(database).forCollection(collectionId) ??
@@ -618,12 +618,14 @@ class AppVideoSubtitleService {
     );
   }
 
-  void _collectEpisodes(
+  /// 视频文件存在性一律 async 判：视频常在网络盘（rclone / SMB）上，这条服务跑在
+  /// UI isolate，同步 stat 冷目录要数秒、整个界面一起冻结（BUG-3663）。
+  Future<void> _collectEpisodes(
     VideoBookRow row,
     List<AppVideoSubtitleEpisode> out,
     List<AppVideoSubtitleUnavailable> unavailable, {
     String? onlyPath,
-  }) {
+  }) async {
     final List<String> candidates = localVideoFileCandidates(
       videoPath: row.videoPath,
       playlistJson: row.playlistJson,
@@ -643,7 +645,7 @@ class AppVideoSubtitleService {
     final bool playlist = candidates.length > 1;
     for (final String path in candidates) {
       if (onlyPath != null && !p.equals(path, onlyPath)) continue;
-      if (!File(path).existsSync()) {
+      if (!await File(path).exists()) {
         unavailable.add(
           AppVideoSubtitleUnavailable(
             bookUid: row.bookUid,
@@ -814,8 +816,9 @@ class AppVideoSubtitleService {
     bool anyByDuration = false;
     int unknown = 0;
     for (final AppVideoSubtitleEpisode e in target.episodes) {
+      // 视频旁的字幕在网络盘上时同步 stat 会冻结 UI isolate（BUG-3663）。
       if (target.wholeSeason &&
-          File(_subtitlePathFor(e.videoPath)).existsSync()) {
+          await File(_subtitlePathFor(e.videoPath)).exists()) {
         continue;
       }
       final Directory dir = Directory(

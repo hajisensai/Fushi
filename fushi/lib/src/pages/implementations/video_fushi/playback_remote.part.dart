@@ -441,7 +441,7 @@ class _VideoPagePlaybackRemote
   @override
   Future<String> importSubtitle(String path, {bool secondary = false}) async {
     final VideoPlayerController controller = _requireController();
-    if (!File(path).existsSync()) {
+    if (!await File(path).exists()) {
       throw VideoRemoteFailure('not_found', '字幕文件不存在：$path');
     }
     if (subtitleFormatForPath(path) == null) {
@@ -755,7 +755,9 @@ class _VideoPagePlaybackRemote
     if (_state._referenceSyncRunning) {
       throw const VideoRemoteFailure('busy', '已有对轴在进行');
     }
-    if (_state._currentExternalSubtitlePath() == null) {
+    // 同步入口只做零 IO 的选择预检；文件是否还在放进任务里 async 判（BUG-3663：
+    // 字幕可能在网络盘上，同步 stat 会冻结 UI isolate）。
+    if (_state._currentExternalSubtitleSelection() == null) {
       throw const VideoRemoteFailure(
         'failed',
         '对轴需要当前选中一份外挂字幕文件（内封轨 / 关闭时不能对）',
@@ -778,6 +780,9 @@ class _VideoPagePlaybackRemote
         return false;
       }
 
+      if (await _state._currentExternalSubtitlePath() == null) {
+        throw const VideoRemoteFailure('failed', '当前选中的外挂字幕文件已不在磁盘上');
+      }
       job.update(phase: 'aligning');
       await _state._alignSubtitleToEmbeddedTracks(controller, confirm: answer);
       final String? needs = declined;

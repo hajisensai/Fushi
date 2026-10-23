@@ -18,7 +18,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return shelf.Response.ok(
         jsonEncode(<Map<String, Object?>>[
           for (final RemoteVideoInfo v in list)
-            _remoteVideoJsonForRequest(v, request)
+            _remoteVideoJsonForRequest(v, request),
         ]),
         headers: <String, String>{'Content-Type': 'application/json'},
       );
@@ -41,8 +41,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (method != 'GET') return shelf.Response(405);
       // TODO-885: 远端播放列表按集——?episode=N 决定流式哪一集（DB-only 反查）。
       final int episodeIndex = _episodeIndexFromRequest(request);
-      final File? file =
-          await svc.resolveVideoFile(streamUrlId, episodeIndex: episodeIndex);
+      final File? file = await svc.resolveVideoFile(
+        streamUrlId,
+        episodeIndex: episodeIndex,
+      );
       if (file == null) return shelf.Response.notFound('Video not found');
       // 弱网转码：client 报画质档（`?maxWidth=1280&maxBitrate=3000000`），host 决定
       // 认不认。四个闸门缺一不可——档位有效、用户没关开关、本机真能 exec ffmpeg
@@ -63,13 +65,11 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       }
       final VideoTranscodeProfile? transcodeProfile =
           transcodeDurationMs != null && transcodeDurationMs > 0
-              ? requestedProfile
-              : null;
+          ? requestedProfile
+          : null;
       final int? transcodeAudioStreamIndex = transcodeProfile == null
           ? null
-          : int.tryParse(
-              request.url.queryParameters['audioStreamIndex'] ?? '',
-            );
+          : int.tryParse(request.url.queryParameters['audioStreamIndex'] ?? '');
       // BUG-1568：签发前先按 TTL 清过期，再把数量收束到 [_maxVideoStreamTokens] 内
       // （淘汰最旧者）。对照 audio token 的 BUG-908(a) 修法：消费侧（GET /stream）的
       // prune 等不到「只签发不取流」的调用者，上限必须在签发侧强制。
@@ -82,7 +82,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         episodeIndex: episodeIndex,
         transcodeProfile: transcodeProfile,
         transcodeAudioStreamIndex: transcodeAudioStreamIndex,
-        transcodeDurationMs: transcodeProfile == null ? null : transcodeDurationMs,
+        transcodeDurationMs: transcodeProfile == null
+            ? null
+            : transcodeDurationMs,
       );
       final String encodedId = Uri.encodeFull(streamUrlId);
       // stream / subtitle URL 都带 episode=N，让 client 取流 / 下字幕命中同一集。
@@ -93,12 +95,14 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       // 蓝光标题直传：每段一个分段 URL（同一 token），client 用 EDL 拼回与本地播放
       // 逐 tick 相同的时间轴（bluray_remote_title.dart）。转码时不需要它——HLS 分段
       // 由 host 从播放列表直接转出。
-      final BlurayRemoteTitle? discTitle = disc == null || transcodeProfile != null
+      final BlurayRemoteTitle? discTitle =
+          disc == null || transcodeProfile != null
           ? null
           : disc.remoteTitle(
               (int stream) => request.requestedUri
                   .replace(
-                    path: '/api/library/videos/$encodedId/'
+                    path:
+                        '/api/library/videos/$encodedId/'
                         '$kBlurayClipPathSuffix',
                     queryParameters: <String, String>{
                       ...streamQuery,
@@ -133,13 +137,16 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       // 转码时 client 拿到的是一张 HLS playlist（播放器自己再去取 init 段与各分段，
       // 那些 URL 由 playlist 内部用相对路径给出）；不转码时还是老的整文件流。
       final Uri streamUri = request.requestedUri.replace(
-        path: '/api/library/videos/$encodedId/'
+        path:
+            '/api/library/videos/$encodedId/'
             '${transcodeProfile == null ? 'stream' : 'hls.m3u8'}',
         queryParameters: streamQuery,
       );
       // subtitle URL 不含 token（走 Basic 鉴权），但带 episode=N。
-      final File? sub = await svc.resolveVideoSubtitle(streamUrlId,
-          episodeIndex: episodeIndex);
+      final File? sub = await svc.resolveVideoSubtitle(
+        streamUrlId,
+        episodeIndex: episodeIndex,
+      );
       final Uri? subtitleUri = sub != null
           ? request.requestedUri.replace(
               path: '/api/library/videos/$encodedId/subtitle',
@@ -150,11 +157,11 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           : null;
       final List<RemoteVideoEmbeddedSubtitleTrack> embeddedTracks =
           await _embeddedSubtitleTracksForRequest(
-        file,
-        request,
-        streamUrlId,
-        episodeIndex,
-      );
+            file,
+            request,
+            streamUrlId,
+            episodeIndex,
+          );
       return jsonResponse(<String, dynamic>{
         // 蓝光标题给 EDL（各段地址都是 host 的 http(s) URL）：旧 client 不认
         // `discTitle`，原样交给 libmpv 也能播明文 http host；新 client 读 `discTitle`
@@ -193,31 +200,41 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       _pruneVideoTokens();
       final String? tokenValue = request.url.queryParameters['token'];
       if (tokenValue == null || tokenValue.isEmpty) {
-        return shelf.Response(401,
-            body: 'Missing token',
-            headers: <String, String>{'Content-Type': 'text/plain'});
+        return shelf.Response(
+          401,
+          body: 'Missing token',
+          headers: <String, String>{'Content-Type': 'text/plain'},
+        );
       }
       final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
       if (tok == null || tok.videoId != streamId) {
-        return shelf.Response(403,
-            body: 'Invalid or expired token',
-            headers: <String, String>{'Content-Type': 'text/plain'});
+        return shelf.Response(
+          403,
+          body: 'Invalid or expired token',
+          headers: <String, String>{'Content-Type': 'text/plain'},
+        );
       }
       // TODO-885: 用 token 绑定的集下标反查（token 是 streamurl 签发时定的，client 不能
       // 自己改集——?episode 只决定 streamurl 阶段，stream 阶段以 token 为准）。
-      final File? file =
-          await svc.resolveVideoFile(streamId, episodeIndex: tok.episodeIndex);
+      final File? file = await svc.resolveVideoFile(
+        streamId,
+        episodeIndex: tok.episodeIndex,
+      );
       if (file == null) return shelf.Response.notFound('Video not found');
       // 带 ETag + 按需校验 If-Range：client 下载续传会带上次记下的验证器，文件在
       // host 上被替换时降级 200 全量；播放器的盲 Range（seek）不带 If-Range，照常
       // 206（ifRangeRequired: false）。
-      if (!file.existsSync()) {
+      // 全程 async stat：视频常在网络盘上，同步 stat 会冻结 host 所在 isolate（BUG-3663）。
+      final String etag;
+      try {
+        etag = await videoFileEtag(file);
+      } on FileSystemException {
         return shelf.Response.notFound('Video not found');
       }
       return serveFileWithRange(
         file,
         request,
-        etag: videoFileEtag(file),
+        etag: etag,
         ifRangeRequired: false,
       );
     }
@@ -258,8 +275,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // client 解析出逐句起止（制卡锚句 / 句子音频），不为字幕把整片再读一遍。需 Basic
     // 鉴权（不在 /stream 豁免名单）。embeddedStreamIndex 与 `/subtitle` 同义（ffmpeg
     // `0:s:N`，即 `embeddedSubtitleTracks[].streamIndex`）。文本轨走 `/subtitle`，这里 404。
-    final String? graphicSubtitleId =
-        _extractVideoId(reqPath, 'graphicsubtitle');
+    final String? graphicSubtitleId = _extractVideoId(
+      reqPath,
+      'graphicsubtitle',
+    );
     if (graphicSubtitleId != null) {
       if (method != 'GET') return shelf.Response(405);
       return _handleGraphicSubtitleTrack(svc, request, graphicSubtitleId);
@@ -290,15 +309,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         }
         final String lang = (decoded['language'] ?? '').toString().trim();
         if (lang.isNotEmpty) {
-          if (!RegExp(r'^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8})*$')
-              .hasMatch(lang)) {
+          if (!RegExp(
+            r'^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8})*$',
+          ).hasMatch(lang)) {
             return shelf.Response(400, body: 'Invalid language tag');
           }
           language = lang;
         }
       }
-      final VideoSubtitleBackfillReport? report =
-          await runner(backfillId, language: language);
+      final VideoSubtitleBackfillReport? report = await runner(
+        backfillId,
+        language: language,
+      );
       if (report == null) return shelf.Response.notFound('Video not found');
       return jsonResponse(report.toJson());
     }
@@ -313,8 +335,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (method == 'PUT') {
         final String suffix =
             _decodeHeaderValue(request, kSubtitleSuffixHeader) ?? '';
-        final Directory tmpDir =
-            Directory.systemTemp.createTempSync('fushi_subtitle_in');
+        final Directory tmpDir = await Directory.systemTemp.createTemp(
+          'fushi_subtitle_in',
+        );
         final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
         final IOSink sink = tmp.openWrite();
         try {
@@ -368,7 +391,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             // best-effort
           }
           try {
-            tmpDir.deleteSync(recursive: true);
+            await tmpDir.delete(recursive: true);
           } catch (_) {
             // best-effort
           }
@@ -382,11 +405,13 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         }
         final String whichText =
             request.url.queryParameters['which'] ?? 'primary';
-        final VideoSubtitleClearScope? which =
-            VideoSubtitleClearScope.values.asNameMap()[whichText];
+        final VideoSubtitleClearScope? which = VideoSubtitleClearScope.values
+            .asNameMap()[whichText];
         if (which == null) {
-          return shelf.Response(400,
-              body: 'which must be primary, secondary or all');
+          return shelf.Response(
+            400,
+            body: 'which must be primary, secondary or all',
+          );
         }
         final String sidecars = request.url.queryParameters['sidecars'] ?? '';
         if (sidecars.isNotEmpty && sidecars != 'all') {
@@ -395,10 +420,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         try {
           final VideoSubtitleClearResult result =
               await (svc as VideoSubtitleClearHost).clearVideoSubtitle(
-            subtitleId,
-            which: which,
-            allSidecars: sidecars == 'all',
-          );
+                subtitleId,
+                which: which,
+                allSidecars: sidecars == 'all',
+              );
           return jsonResponse(result.toJson());
         } on ArgumentError catch (e) {
           return shelf.Response(400, body: 'Invalid video id: ${e.message}');
@@ -419,8 +444,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final String? embeddedIndexText =
           request.url.queryParameters['embeddedStreamIndex'];
       final File? sub = embeddedIndexText == null
-          ? await svc.resolveVideoSubtitle(subtitleId,
-              episodeIndex: episodeIndex)
+          ? await svc.resolveVideoSubtitle(
+              subtitleId,
+              episodeIndex: episodeIndex,
+            )
           : await _resolveEmbeddedVideoSubtitle(
               svc,
               subtitleId,
@@ -428,7 +455,8 @@ extension _FushiSyncServerVideo on FushiSyncServer {
               episodeIndex,
             );
       if (sub == null) return shelf.Response.notFound('Subtitle not found');
-      final int length = sub.lengthSync();
+      final int? length = await _regularFileLength(sub);
+      if (length == null) return shelf.Response.notFound('Subtitle not found');
       return shelf.Response.ok(
         sub.openRead(),
         headers: <String, String>{
@@ -449,8 +477,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         return shelf.Response.notFound('Video danmaku key not supported');
       }
       final DandanplayFileKey? key = await (svc as VideoDanmakuKeyHost)
-          .videoDanmakuKey(danmakuKeyId,
-              episodeIndex: _episodeIndexFromRequest(request));
+          .videoDanmakuKey(
+            danmakuKeyId,
+            episodeIndex: _episodeIndexFromRequest(request),
+          );
       if (key == null) return shelf.Response.notFound('Video not found');
       return jsonResponse(key.toJson());
     }
@@ -461,8 +491,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (positionId != null) {
       final int episodeIndex = _episodeIndexFromRequest(request);
       // 先确认该视频 id（含集下标）在 host DB 真实存在，防止任意 id 写脏 prefs。
-      final File? file =
-          await svc.resolveVideoFile(positionId, episodeIndex: episodeIndex);
+      final File? file = await svc.resolveVideoFile(
+        positionId,
+        episodeIndex: episodeIndex,
+      );
       if (file == null) return shelf.Response.notFound('Video not found');
       switch (method) {
         case 'GET':
@@ -483,8 +515,12 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           final int posMs = (json['positionMs'] as num?)?.toInt() ?? 0;
           final int updatedAtMs =
               (json['positionUpdatedAtMs'] as num?)?.toInt() ?? 0;
-          await svc.putVideoPosition(positionId, posMs, updatedAtMs,
-              episodeIndex: episodeIndex);
+          await svc.putVideoPosition(
+            positionId,
+            posMs,
+            updatedAtMs,
+            episodeIndex: episodeIndex,
+          );
           return shelf.Response(200);
         default:
           return shelf.Response(405);
@@ -511,8 +547,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       }
       switch (method) {
         case 'GET':
-          final VideoPlaybackSyncState s =
-              await playbackHost.getVideoPlayback(playbackId);
+          final VideoPlaybackSyncState s = await playbackHost.getVideoPlayback(
+            playbackId,
+          );
           return jsonResponse(s.toJson());
         case 'PUT':
           final String body = await request.readAsString();
@@ -523,7 +560,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
             return shelf.Response(400, body: 'Invalid JSON');
           }
           await playbackHost.putVideoPlayback(
-              playbackId, VideoPlaybackSyncState.fromJson(json));
+            playbackId,
+            VideoPlaybackSyncState.fromJson(json),
+          );
           return shelf.Response(200);
         default:
           return shelf.Response(405);
@@ -540,17 +579,21 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     if (clipAudioId != null) {
       if (method != 'GET') return shelf.Response(405);
       final int episodeIndex = _episodeIndexFromRequest(request);
-      final int? startMs =
-          int.tryParse(request.url.queryParameters['startMs'] ?? '');
-      final int? endMs =
-          int.tryParse(request.url.queryParameters['endMs'] ?? '');
+      final int? startMs = int.tryParse(
+        request.url.queryParameters['startMs'] ?? '',
+      );
+      final int? endMs = int.tryParse(
+        request.url.queryParameters['endMs'] ?? '',
+      );
       if (startMs == null || endMs == null || endMs <= startMs) {
         return shelf.Response(400, body: 'Invalid clip range');
       }
-      final int? audioStreamIndex =
-          int.tryParse(request.url.queryParameters['audioStreamIndex'] ?? '');
-      final int? audioStreamCount =
-          int.tryParse(request.url.queryParameters['audioStreamCount'] ?? '');
+      final int? audioStreamIndex = int.tryParse(
+        request.url.queryParameters['audioStreamIndex'] ?? '',
+      );
+      final int? audioStreamCount = int.tryParse(
+        request.url.queryParameters['audioStreamCount'] ?? '',
+      );
       final int audioChannels =
           int.tryParse(request.url.queryParameters['ac'] ?? '') ?? 1;
       final String audioBitrate =
@@ -577,7 +620,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       } finally {
         // 裁到独立临时目录，回传后连目录一并清（clipVideoAudio 建的 temp 目录）。
         try {
-          clip.parent.deleteSync(recursive: true);
+          await clip.parent.delete(recursive: true);
         } catch (_) {
           // best-effort
         }
@@ -595,19 +638,25 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (id == null) {
         return shelf.Response(400, body: 'Invalid video id');
       }
-      final String title =
-          _decodeHeaderValue(request, kVideoTitleHeader) ?? id;
-      final String? fileName =
-          _decodeHeaderValue(request, kVideoFilenameHeader);
-      final Directory tmpDir =
-          Directory.systemTemp.createTempSync('fushi_video_in');
+      final String title = _decodeHeaderValue(request, kVideoTitleHeader) ?? id;
+      final String? fileName = _decodeHeaderValue(
+        request,
+        kVideoFilenameHeader,
+      );
+      final Directory tmpDir = await Directory.systemTemp.createTemp(
+        'fushi_video_in',
+      );
       final File tmp = File(p.join(tmpDir.path, 'upload.bin'));
       final IOSink sink = tmp.openWrite();
       try {
         await request.read().forEach(sink.add);
         await sink.close();
-        await svc.importVideo(tmp,
-            id: id, title: title, originalFileName: fileName);
+        await svc.importVideo(
+          tmp,
+          id: id,
+          title: title,
+          originalFileName: fileName,
+        );
         return shelf.Response(200);
       } catch (e) {
         try {
@@ -618,7 +667,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         return shelf.Response(500, body: 'Video import failed: $e');
       } finally {
         try {
-          tmpDir.deleteSync(recursive: true);
+          await tmpDir.delete(recursive: true);
         } catch (_) {
           // best-effort
         }
@@ -662,26 +711,33 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     final Map<String, Object?> json = video.toJson()
       ..remove('coverUrl')
       ..remove('hasCover');
-    if (_coverFile(video.coverPath) != null) {
+    // coverPath 由 host 服务出清单时已按「磁盘上真存在」解析好（见
+    // [RemoteVideoInfo.coverPath]），这里不再逐条同步 stat：视频封面常在网络盘上，
+    // 清单端点逐条 existsSync 会冻结 host 所在 isolate（BUG-3663）。清单之后被删掉
+    // 的封面由封面端点自己 async 判 404。
+    if (video.coverPath?.isNotEmpty ?? false) {
       final String encodedId = Uri.encodeFull(video.id);
       json['hasCover'] = true;
-      json['coverUrl'] = request.requestedUri.replace(
-        path: '/api/library/videos/$encodedId/cover',
-        queryParameters: <String, String>{},
-      ).toString();
+      json['coverUrl'] = request.requestedUri
+          .replace(
+            path: '/api/library/videos/$encodedId/cover',
+            queryParameters: <String, String>{},
+          )
+          .toString();
     }
     return json;
   }
 
   Future<List<RemoteVideoEmbeddedSubtitleTrack>>
-      _embeddedSubtitleTracksForRequest(
+  _embeddedSubtitleTracksForRequest(
     File videoFile,
     shelf.Request request,
     String videoId,
     int episodeIndex,
   ) async {
-    final List<EmbeddedSubtitleTrack> tracks =
-        await listEmbeddedSubtitleTracks(videoFile.path);
+    final List<EmbeddedSubtitleTrack> tracks = await listEmbeddedSubtitleTracks(
+      videoFile.path,
+    );
     final String encodedId = Uri.encodeFull(videoId);
     final String videoStem = p.basenameWithoutExtension(videoFile.path);
     return <RemoteVideoEmbeddedSubtitleTrack>[
@@ -712,13 +768,15 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       title: track.title,
       isText: isText,
       url: isText
-          ? request.requestedUri.replace(
-              path: '/api/library/videos/$encodedId/subtitle',
-              queryParameters: <String, String>{
-                'embeddedStreamIndex': '${track.streamIndex}',
-                if (episodeIndex > 0) 'episode': '$episodeIndex',
-              },
-            ).toString()
+          ? request.requestedUri
+                .replace(
+                  path: '/api/library/videos/$encodedId/subtitle',
+                  queryParameters: <String, String>{
+                    'embeddedStreamIndex': '${track.streamIndex}',
+                    if (episodeIndex > 0) 'episode': '$episodeIndex',
+                  },
+                )
+                .toString()
           : null,
       fileName: isText
           ? '${_safeDownloadStem(videoStem)}.embedded.${track.streamIndex}$extension'
@@ -733,11 +791,14 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     int episodeIndex,
   ) async {
     if (streamIndex == null || streamIndex < 0) return null;
-    final File? videoFile =
-        await service.resolveVideoFile(id, episodeIndex: episodeIndex);
+    final File? videoFile = await service.resolveVideoFile(
+      id,
+      episodeIndex: episodeIndex,
+    );
     if (videoFile == null) return null;
-    final List<EmbeddedSubtitleTrack> tracks =
-        await listEmbeddedSubtitleTracks(videoFile.path);
+    final List<EmbeddedSubtitleTrack> tracks = await listEmbeddedSubtitleTracks(
+      videoFile.path,
+    );
     for (final EmbeddedSubtitleTrack track in tracks) {
       if (track.streamIndex != streamIndex) continue;
       if (subtitleFormatForCodec(track.codec) == null) return null;
@@ -768,8 +829,10 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return shelf.Response(400, body: 'embeddedStreamIndex required');
     }
     final int episodeIndex = _episodeIndexFromRequest(request);
-    final File? videoFile =
-        await service.resolveVideoFile(id, episodeIndex: episodeIndex);
+    final File? videoFile = await service.resolveVideoFile(
+      id,
+      episodeIndex: episodeIndex,
+    );
     if (videoFile == null) return shelf.Response.notFound('Video not found');
     EmbeddedSubtitleTrack? track;
     for (final EmbeddedSubtitleTrack candidate
@@ -791,28 +854,34 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         codec: track.codec,
       );
     } on GraphicSubtitleTrackExportUnsupported catch (e) {
-      return shelf.Response(415,
-          body: 'Unsupported graphic subtitle: ${e.codec}');
+      return shelf.Response(
+        415,
+        body: 'Unsupported graphic subtitle: ${e.codec}',
+      );
     } catch (e) {
       fushiDebugPrint('graphic subtitle export failed: $e');
       return shelf.Response(500, body: 'Graphic subtitle export failed');
     }
-    if (export == null || !export.file.existsSync()) {
+    if (export == null || !await export.file.exists()) {
       return shelf.Response(500, body: 'Graphic subtitle export failed');
     }
     // `?part=header`：轨头 JSON（VobSub 调色板 / DVB 页号等载荷里没有的 extradata）；
     // 这条轨没有轨头（PGS）时 404。缺省回载荷。两次请求命中抽取实现的同一份缓存。
     final bool wantsHeader = request.url.queryParameters['part'] == 'header';
     final File? file = wantsHeader ? export.headerFile : export.file;
-    if (file == null || !file.existsSync()) {
+    final int? fileLength = file == null
+        ? null
+        : await _regularFileLength(file);
+    if (file == null || fileLength == null) {
       return shelf.Response.notFound('Graphic subtitle track header not found');
     }
     return shelf.Response.ok(
       file.openRead(),
       headers: <String, String>{
-        'Content-Type':
-            wantsHeader ? 'application/json' : 'application/octet-stream',
-        'Content-Length': '${file.lengthSync()}',
+        'Content-Type': wantsHeader
+            ? 'application/json'
+            : 'application/octet-stream',
+        'Content-Length': '$fileLength',
         'X-Fushi-Graphic-Subtitle-Format': export.format,
       },
     );
@@ -825,7 +894,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 单行直查（videoCoverPath = 1 次 DB 查询 + stat）。旧实现每张封面请求重跑
     // 整份 listVideos()（每行一次目录扫描 + 多次 DB 查询），N 张封面 = O(N²)，
     // 500 视频的封面墙一次浏览拖成分钟级——这是「互联视频极慢」的主根因。
-    return _coverFile(await service.videoCoverPath(id));
+    return await _coverFile(await service.videoCoverPath(id));
   }
 
   String _generateVideoToken() {
@@ -881,23 +950,29 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     _pruneVideoTokens();
     final String? tokenValue = request.url.queryParameters['token'];
     if (tokenValue == null || tokenValue.isEmpty) {
-      return shelf.Response(401,
-          body: 'Missing token',
-          headers: <String, String>{'Content-Type': 'text/plain'});
+      return shelf.Response(
+        401,
+        body: 'Missing token',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
     }
     final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
     if (tok == null || tok.videoId != videoId) {
-      return shelf.Response(403,
-          body: 'Invalid or expired token',
-          headers: <String, String>{'Content-Type': 'text/plain'});
+      return shelf.Response(
+        403,
+        body: 'Invalid or expired token',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
     }
     final VideoTranscodeProfile? profile = tok.transcodeProfile;
     final int durationMs = tok.transcodeDurationMs ?? 0;
     if (profile == null || durationMs <= 0) {
       return shelf.Response.notFound('Not a transcoded stream');
     }
-    final File? file =
-        await svc.resolveVideoFile(videoId, episodeIndex: tok.episodeIndex);
+    final File? file = await svc.resolveVideoFile(
+      videoId,
+      episodeIndex: tok.episodeIndex,
+    );
     if (file == null) return shelf.Response.notFound('Video not found');
 
     if (suffix == 'hls.m3u8') {
@@ -951,18 +1026,24 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     _pruneVideoTokens();
     final String? tokenValue = request.url.queryParameters['token'];
     if (tokenValue == null || tokenValue.isEmpty) {
-      return shelf.Response(401,
-          body: 'Missing token',
-          headers: <String, String>{'Content-Type': 'text/plain'});
+      return shelf.Response(
+        401,
+        body: 'Missing token',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
     }
     final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
     if (tok == null || tok.videoId != videoId) {
-      return shelf.Response(403,
-          body: 'Invalid or expired token',
-          headers: <String, String>{'Content-Type': 'text/plain'});
+      return shelf.Response(
+        403,
+        body: 'Invalid or expired token',
+        headers: <String, String>{'Content-Type': 'text/plain'},
+      );
     }
-    final File? file =
-        await svc.resolveVideoFile(videoId, episodeIndex: tok.episodeIndex);
+    final File? file = await svc.resolveVideoFile(
+      videoId,
+      episodeIndex: tok.episodeIndex,
+    );
     if (file == null) return shelf.Response.notFound('Video not found');
     final BlurayTitleStreams? disc = await readBlurayTitleStreams(file.path);
     if (disc == null) return shelf.Response.notFound('Not a Blu-ray title');
@@ -971,7 +1052,8 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return shelf.Response.notFound('Clip out of range');
     }
     final File stream = File(disc.streamPaths[index]);
-    if (!stream.existsSync()) return shelf.Response.notFound('Clip missing');
+    // 蓝光目录常在网络盘上：async 判存在（BUG-3663）。
+    if (!await stream.exists()) return shelf.Response.notFound('Clip missing');
 
     final BlurayClipLease lease;
     try {
@@ -983,10 +1065,16 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     }
     if (lease.source == stream.path) {
       lease.release();
+      final String etag;
+      try {
+        etag = await videoFileEtag(stream);
+      } on FileSystemException {
+        return shelf.Response.notFound('Clip missing');
+      }
       return serveFileWithRange(
         stream,
         request,
-        etag: videoFileEtag(stream),
+        etag: etag,
         ifRangeRequired: false,
       );
     }
@@ -1044,8 +1132,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           HttpHeaders.contentLengthHeader,
           HttpHeaders.contentRangeHeader,
         ])
-          if (upstream.headers.value(name) case final String value)
-            name: value,
+          if (upstream.headers.value(name) case final String value) name: value,
       },
     );
   }
@@ -1069,15 +1156,15 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   }
 
   shelf.Response _transcodedBytesResponse(Uint8List bytes) => shelf.Response.ok(
-        bytes,
-        headers: <String, String>{
-          'Content-Type': 'video/mp2t',
-          'Content-Length': '${bytes.length}',
-          // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
-          // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
-          'Cache-Control': 'no-store',
-        },
-      );
+    bytes,
+    headers: <String, String>{
+      'Content-Type': 'video/mp2t',
+      'Content-Length': '${bytes.length}',
+      // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
+      // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
+      'Cache-Control': 'no-store',
+    },
+  );
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到

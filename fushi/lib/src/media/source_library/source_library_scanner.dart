@@ -294,12 +294,15 @@ class _MangaVolumeTally {
       if (await body()) imported++;
     } on DuplicateImportCancelledException catch (e) {
       debugPrint(
-          'SourceLibraryScanner skip duplicate manga ${e.title} ($path)');
+        'SourceLibraryScanner skip duplicate manga ${e.title} ($path)',
+      );
     } catch (e, stack) {
       failedPaths.add(path);
       firstError ??= e;
-      debugPrint('SourceLibraryScanner manga import failed for $path: $e\n'
-          '$stack');
+      debugPrint(
+        'SourceLibraryScanner manga import failed for $path: $e\n'
+        '$stack',
+      );
     }
   }
 }
@@ -416,7 +419,9 @@ class _MangaSourceIdentity {
           format: BookFormat.manga,
         );
         if (uid != null) index.put(rel, uid);
-        debugPrint('SourceLibraryScanner manga already imported: $title ($path)');
+        debugPrint(
+          'SourceLibraryScanner manga already imported: $title ($path)',
+        );
         return null;
       case SourceDuplicateKind.foreign:
         debugPrint('SourceLibraryScanner skip duplicate manga $title ($path)');
@@ -552,8 +557,10 @@ List<SourceFileEntry> excludeSourceIncomingEntries(
 }) {
   if (!isLocal) return entries;
   return entries
-      .where((SourceFileEntry entry) =>
-          !isSourceIncomingPath(sourceRoot, entry.path))
+      .where(
+        (SourceFileEntry entry) =>
+            !isSourceIncomingPath(sourceRoot, entry.path),
+      )
       .toList(growable: false);
 }
 
@@ -648,11 +655,13 @@ ScanPlan planScanFromFileList(
       );
       final Map<String, String> dirPaths =
           pathByDir[dir] ?? const <String, String>{};
-      books.add(ScanBookItem(
-        bookPath: e.path,
-        subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
-        audioPaths: sel.audio.map((String n) => dirPaths[n] ?? n).toList(),
-      ));
+      books.add(
+        ScanBookItem(
+          bookPath: e.path,
+          subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
+          audioPaths: sel.audio.map((String n) => dirPaths[n] ?? n).toList(),
+        ),
+      );
       continue;
     }
     // `.strm` 流指针按普通视频入库（videoPath = `.strm` 自身）：标题取文件名、
@@ -673,10 +682,12 @@ ScanPlan planScanFromFileList(
       );
       final Map<String, String> dirPaths =
           pathByDir[dir] ?? const <String, String>{};
-      videos.add(ScanVideoItem(
-        videoPath: e.path,
-        subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
-      ));
+      videos.add(
+        ScanVideoItem(
+          videoPath: e.path,
+          subtitlePath: sel.subtitle == null ? null : dirPaths[sel.subtitle!],
+        ),
+      );
     }
   }
 
@@ -757,8 +768,8 @@ class SourceLibraryScanner {
   SourceLibraryScanner(
     this._db, {
     MangaSevenZipExtractor? mangaSevenZipExtractor,
-  })  : _videoRepo = VideoBookRepository(_db),
-        _mangaSevenZipExtractor = mangaSevenZipExtractor;
+  }) : _videoRepo = VideoBookRepository(_db),
+       _mangaSevenZipExtractor = mangaSevenZipExtractor;
 
   final FushiDatabase _db;
   final VideoBookRepository _videoRepo;
@@ -770,8 +781,9 @@ class SourceLibraryScanner {
     if (source.transport == 'local') {
       return const LocalSourceFileSystem();
     }
-    final SourceLibrarySecret secret =
-        await SourceLibraryCredentialStore(_db).readSecret(source.id);
+    final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+      _db,
+    ).readSecret(source.id);
     return buildNetworkFileSystem(
       transport: source.transport,
       config: decodeSourceConfig(source.configJson),
@@ -795,17 +807,20 @@ class SourceLibraryScanner {
     }
     final int port =
         (config['port'] as num?)?.toInt() ?? (transport == 'sftp' ? 22 : 21);
-    return NetworkSourceFileSystem(NetworkSourceConfig(
-      transport: transport,
-      host: (config['host'] as String?) ?? '',
-      port: port,
-      username: (config['username'] as String?) ?? '',
-      password: (password != null && password.isNotEmpty) ? password : null,
-      privateKey:
-          (privateKey != null && privateKey.isNotEmpty) ? privateKey : null,
-      useTls: (config['useTls'] as bool?) ?? false,
-      baseUrl: (config['baseUrl'] as String?),
-    ));
+    return NetworkSourceFileSystem(
+      NetworkSourceConfig(
+        transport: transport,
+        host: (config['host'] as String?) ?? '',
+        port: port,
+        username: (config['username'] as String?) ?? '',
+        password: (password != null && password.isNotEmpty) ? password : null,
+        privateKey: (privateKey != null && privateKey.isNotEmpty)
+            ? privateKey
+            : null,
+        useTls: (config['useTls'] as bool?) ?? false,
+        baseUrl: (config['baseUrl'] as String?),
+      ),
+    );
   }
 
   /// Scans one source library.
@@ -837,13 +852,15 @@ class SourceLibraryScanner {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) {
-      return Future<SourceScanSummary>.value(SourceScanSummary(
-        sourceId: source.id,
-        mediaKind: source.mediaKind,
-        discoveredPaths: const <String>[],
-        importedMediaCount: 0,
-        error: '视频刮削资料正在清理',
-      ));
+      return Future<SourceScanSummary>.value(
+        SourceScanSummary(
+          sourceId: source.id,
+          mediaKind: source.mediaKind,
+          discoveredPaths: const <String>[],
+          importedMediaCount: 0,
+          error: '视频刮削资料正在清理',
+        ),
+      );
     }
     return _scanUnlocked(
       source,
@@ -874,8 +891,9 @@ class SourceLibraryScanner {
     try {
       // 值域显式化（命名统一 Phase 3.4）：落库串经 SourceLibraryKind 严格解析，
       // 未知串在这里立刻失败（与旧 else 分支同语义），下方分派改穷尽 switch。
-      final SourceLibraryKind? kind =
-          SourceLibraryKind.tryParse(source.mediaKind);
+      final SourceLibraryKind? kind = SourceLibraryKind.tryParse(
+        source.mediaKind,
+      );
       if (kind == null) {
         throw ArgumentError.value(
           source.mediaKind,
@@ -892,9 +910,11 @@ class SourceLibraryScanner {
           kind == SourceLibraryKind.video &&
           !kStreamableVideoSourceTransports.contains(source.transport)) {
         throw StateError(
-            'Network video sources support SFTP/WebDAV/AList only');
+          'Network video sources support SFTP/WebDAV/AList only',
+        );
       }
-      final String? sftpUrlRoot = !transportFs.isLocal &&
+      final String? sftpUrlRoot =
+          !transportFs.isLocal &&
               kind == SourceLibraryKind.video &&
               source.transport == 'sftp'
           ? sftpSourceUrlRootForConfig(decodeSourceConfig(source.configJson))
@@ -907,10 +927,7 @@ class SourceLibraryScanner {
           ? source.rootPath
           : sftpSourceUrlOf(source.rootPath, sftpUrlRoot);
       final List<SourceFileEntry> entries = excludeSourceIncomingEntries(
-        await files.listFiles(
-          source.rootPath,
-          recursive: source.recursive,
-        ),
+        await files.listFiles(source.rootPath, recursive: source.recursive),
         sourceRoot: source.rootPath,
         isLocal: files.isLocal,
       );
@@ -947,14 +964,16 @@ class SourceLibraryScanner {
             List<String> createdPaths,
             List<String> failedPaths,
             Object? firstError,
-          }) imported = await _importVideos(plan, source.id, files);
+          })
+          imported = await _importVideos(plan, source.id, files);
           final List<String> createdVideoPaths = imported.createdPaths;
           mediaCount = createdVideoPaths.length;
           // BUG-2570：部分文件失败不再作废整批。把「几个失败 / 第一个是谁 / 为什么」
           // 汇总成一条能照着查的错误，成功的条目照常计数入库。真正中断扫描的异常
           // 仍走下面的总 catch 覆盖它（那是整次扫描没跑完，比部分失败更严重）。
           if (imported.failedPaths.isNotEmpty) {
-            partialError = 'Imported ${createdVideoPaths.length} video(s); '
+            partialError =
+                'Imported ${createdVideoPaths.length} video(s); '
                 '${imported.failedPaths.length} failed. First failure: '
                 '${p.basename(imported.failedPaths.first)} — '
                 '${imported.firstError}';
@@ -965,22 +984,23 @@ class SourceLibraryScanner {
           // 网络（WebDAV）来源同样归组：文件名解析统一走解码 basename
           // （sourceEntryBasename）。来源库条目路径进到这里已是解码态（见该函数
           // 文档），所以取末段即可，不能再解一次。
-          grouping = await VideoFolderGroupCoordinator(
-            database: _db,
-            repository: _videoRepo,
-          ).groupPaths(
-            videoPaths: <String>[
-              for (final ScanVideoItem item in plan.videos)
-                if (source.videoGroupingMode == 'folder' ||
-                    classifyLocalVideoExtra(item.videoPath) == null)
-                  item.videoPath,
-            ],
-            createdVideoPaths: createdVideoPaths,
-            sourceId: source.id,
-            groupingMode: source.videoGroupingMode,
-            sourceRoot: scanRoot,
-            restoreDissolvedGroups: restoreDissolvedGroups,
-          );
+          grouping =
+              await VideoFolderGroupCoordinator(
+                database: _db,
+                repository: _videoRepo,
+              ).groupPaths(
+                videoPaths: <String>[
+                  for (final ScanVideoItem item in plan.videos)
+                    if (source.videoGroupingMode == 'folder' ||
+                        classifyLocalVideoExtra(item.videoPath) == null)
+                      item.videoPath,
+                ],
+                createdVideoPaths: createdVideoPaths,
+                sourceId: source.id,
+                groupingMode: source.videoGroupingMode,
+                sourceRoot: scanRoot,
+                restoreDissolvedGroups: restoreDissolvedGroups,
+              );
           // 归组按季 → 集排完后，没有集号的 SP / OVA / 特别篇交 AI 定位（只在
           // 指派了提供商、用户没手动排过时才发请求）；后台跑，不阻塞扫描。
           scheduleAutomaticCollectionAiOrder(
@@ -1008,12 +1028,17 @@ class SourceLibraryScanner {
             await VideoSourceMetadataIndexer(_db).index(source);
           }
         case SourceLibraryKind.manga:
-          final _MangaVolumeTally manga =
-              await _importManga(plan, source, files, entries);
+          final _MangaVolumeTally manga = await _importManga(
+            plan,
+            source,
+            files,
+            entries,
+          );
           mediaCount = manga.imported;
           // 与视频分支同语义（BUG-2570）：部分卷失败不作废整批。
           if (manga.failedPaths.isNotEmpty) {
-            partialError = 'Imported ${manga.imported} manga volume(s); '
+            partialError =
+                'Imported ${manga.imported} manga volume(s); '
                 '${manga.failedPaths.length} failed. First failure: '
                 '${p.basename(manga.failedPaths.first)} — '
                 '${manga.firstError}';
@@ -1022,8 +1047,10 @@ class SourceLibraryScanner {
       }
     } catch (e, stack) {
       scanError = e.toString();
-      debugPrint('SourceLibraryScanner.scan failed for '
-          'source ${source.id} (${source.rootPath}): $e\n$stack');
+      debugPrint(
+        'SourceLibraryScanner.scan failed for '
+        'source ${source.id} (${source.rootPath}): $e\n$stack',
+      );
     } finally {
       // 关闭网络连接（本地/注入的 fake 无需关闭）。
       if (transportFs is NetworkSourceFileSystem) {
@@ -1113,14 +1140,14 @@ class SourceLibraryScanner {
             fs,
             (String subtitlePath, List<String> audioPaths) =>
                 alignAndPersistAudiobook(
-              db: _db,
-              repo: SrtBookRepository(_db),
-              audiobookRepo: AudiobookRepository(_db),
-              bookKey: bookKey,
-              title: p.basenameWithoutExtension(item.bookPath),
-              subtitlePath: subtitlePath,
-              audioPaths: audioPaths,
-            ),
+                  db: _db,
+                  repo: SrtBookRepository(_db),
+                  audiobookRepo: AudiobookRepository(_db),
+                  bookKey: bookKey,
+                  title: p.basenameWithoutExtension(item.bookPath),
+                  subtitlePath: subtitlePath,
+                  audioPaths: audioPaths,
+                ),
           );
         }
       } on DuplicateImportCancelledException catch (e) {
@@ -1129,8 +1156,10 @@ class SourceLibraryScanner {
         // 把它补挂成有声书——否则新增的 .srt/.mp3 被静默忽略。仅当该书尚未挂任何有声书
         // 时才对齐，保证重复重扫幂等、不重跑 matcher、不覆盖用户手动重匹配。
         await _attachSidecarAudiobookToExisting(item, e.title, fs);
-        debugPrint('SourceLibraryScanner skip duplicate book '
-            '${e.title} (${item.bookPath})');
+        debugPrint(
+          'SourceLibraryScanner skip duplicate book '
+          '${e.title} (${item.bookPath})',
+        );
       }
     }
     if (epubTmp != null) {
@@ -1158,22 +1187,23 @@ class SourceLibraryScanner {
     final EpubBookRow? existingBook = await _db.getEpubBook(bookKey);
     if (existingBook == null) return;
     final AudiobookRepository audiobookRepo = AudiobookRepository(_db);
-    final Audiobook? alreadyAttached =
-        await audiobookRepo.findByBookKey(bookKey);
+    final Audiobook? alreadyAttached = await audiobookRepo.findByBookKey(
+      bookKey,
+    );
     if (alreadyAttached != null) return;
     await _withLocalSidecars(
       item,
       fs,
       (String subtitlePath, List<String> audioPaths) =>
           alignAndPersistAudiobook(
-        db: _db,
-        repo: SrtBookRepository(_db),
-        audiobookRepo: audiobookRepo,
-        bookKey: bookKey,
-        title: p.basenameWithoutExtension(item.bookPath),
-        subtitlePath: subtitlePath,
-        audioPaths: audioPaths,
-      ),
+            db: _db,
+            repo: SrtBookRepository(_db),
+            audiobookRepo: audiobookRepo,
+            bookKey: bookKey,
+            title: p.basenameWithoutExtension(item.bookPath),
+            subtitlePath: subtitlePath,
+            audioPaths: audioPaths,
+          ),
     );
   }
 
@@ -1187,11 +1217,14 @@ class SourceLibraryScanner {
     Future<T> Function(String subtitlePath, List<String> audioPaths) body,
   ) async {
     if (fs.isLocal) return body(item.subtitlePath!, item.audioPaths);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('m1c_scan_book_sidecars_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'm1c_scan_book_sidecars_',
+    );
     try {
-      final String subtitle =
-          await fs.copyToLocal(item.subtitlePath!, tmp.path);
+      final String subtitle = await fs.copyToLocal(
+        item.subtitlePath!,
+        tmp.path,
+      );
       final List<String> audio = <String>[
         for (final String remote in item.audioPaths)
           await fs.copyToLocal(remote, tmp.path),
@@ -1344,7 +1377,8 @@ class SourceLibraryScanner {
     required int sourceId,
     required DuplicatePolicy policy,
   }) async {
-    final bool isImageArchive = mangaArchiveNeedsContentProbe(localPath) &&
+    final bool isImageArchive =
+        mangaArchiveNeedsContentProbe(localPath) &&
         await looksLikeImageArchiveInBackground(localPath);
     final ImportCarrier carrier = classifyImportCarrier(
       localPath,
@@ -1380,8 +1414,10 @@ class SourceLibraryScanner {
       case ImportCarrier.mangaMokuro:
       case ImportCarrier.epub:
       case ImportCarrier.text:
-        debugPrint('SourceLibraryScanner skip non-manga file in manga source '
-            '($carrier): $localPath');
+        debugPrint(
+          'SourceLibraryScanner skip non-manga file in manga source '
+          '($carrier): $localPath',
+        );
         return null;
     }
   }
@@ -1447,8 +1483,10 @@ class SourceLibraryScanner {
 
     // 远端相对路径（解码、正斜杠）→ 远端全路径查找表，作用域 = `.mokuro` 父目录。
     final String parentDir = _remoteParentDir(item.mokuroPath);
-    final List<SourceFileEntry> remoteFiles =
-        await fs.listFiles(parentDir, recursive: true);
+    final List<SourceFileEntry> remoteFiles = await fs.listFiles(
+      parentDir,
+      recursive: true,
+    );
     final String prefix = parentDir.endsWith('/') ? parentDir : '$parentDir/';
     final Map<String, String> remoteByRel = <String, String>{};
     for (final SourceFileEntry e in remoteFiles) {
@@ -1478,19 +1516,23 @@ class SourceLibraryScanner {
       pageExists: remoteByRel.containsKey,
     );
     if (pageRoot == null) {
-      final String searched = mokuroPageRootCandidates(
-              volumeName: remoteVolumeName)
-          .map((List<String> candidate) =>
-              candidate.isEmpty ? parentDir : '$prefix${candidate.join('/')}')
-          .join(', ');
+      final String searched =
+          mokuroPageRootCandidates(volumeName: remoteVolumeName)
+              .map(
+                (List<String> candidate) => candidate.isEmpty
+                    ? parentDir
+                    : '$prefix${candidate.join('/')}',
+              )
+              .join(', ');
       throw MangaImportException(
         'Missing manga page image: ${payload.images.first.url} '
         '(searched: $searched)',
       );
     }
 
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('m1c_scan_manga_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'm1c_scan_manga_',
+    );
     try {
       // 逐页镜像，**连页图根一起原样保留**（`<根>/<url>`）：本地导入器对着镜像
       // 目录再解析一次根，两边同一口径，于是镜像布局与远端逐段同构。`..` 段直接
@@ -1512,8 +1554,9 @@ class SourceLibraryScanner {
           ...pageRoot,
           ...segs.sublist(0, segs.length - 1),
         ];
-        final Directory destDir =
-            Directory(p.joinAll(<String>[tmp.path, ...destSegs]));
+        final Directory destDir = Directory(
+          p.joinAll(<String>[tmp.path, ...destSegs]),
+        );
         destDir.createSync(recursive: true);
         await fs.copyToLocal(remotePath, destDir.path);
       }
@@ -1549,12 +1592,12 @@ class SourceLibraryScanner {
   }) async {
     final String path = item.archivePath;
     if (id.isIndexed(path) || id.isRejected(path)) return false;
-    final String title =
-        p.basenameWithoutExtension(sourceEntryBasename(path));
+    final String title = p.basenameWithoutExtension(sourceEntryBasename(path));
     final DuplicatePolicy? policy = await id.policyFor(path, title);
     if (policy == null) return false;
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('m1c_scan_manga_archive_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'm1c_scan_manga_archive_',
+    );
     try {
       final String localArchive = await fs.copyToLocal(path, tmp.path);
       final String? sidecar = item.mokuroSidecarPath;
@@ -1592,8 +1635,9 @@ class SourceLibraryScanner {
     final String title = sourceEntryBasename(item.folderPath);
     final DuplicatePolicy? policy = await id.policyFor(item.folderPath, title);
     if (policy == null) return false;
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('m1c_scan_manga_folder_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'm1c_scan_manga_folder_',
+    );
     try {
       final Directory volumeDir = Directory(p.join(tmp.path, 'volume'))
         ..createSync();
@@ -1628,8 +1672,10 @@ class SourceLibraryScanner {
     Directory destRoot,
   ) async {
     final String prefix = remoteDir.endsWith('/') ? remoteDir : '$remoteDir/';
-    for (final SourceFileEntry e
-        in await fs.listFiles(remoteDir, recursive: true)) {
+    for (final SourceFileEntry e in await fs.listFiles(
+      remoteDir,
+      recursive: true,
+    )) {
       if (e.isDirectory || !e.path.startsWith(prefix)) continue;
       if (!kMangaImageExtensions.contains(p.extension(e.name).toLowerCase())) {
         continue;
@@ -1646,10 +1692,9 @@ class SourceLibraryScanner {
       if (segs.sublist(0, segs.length - 1).contains(kMangaOcrOutDirName)) {
         continue;
       }
-      final Directory destDir = Directory(p.joinAll(<String>[
-        destRoot.path,
-        ...segs.sublist(0, segs.length - 1),
-      ]));
+      final Directory destDir = Directory(
+        p.joinAll(<String>[destRoot.path, ...segs.sublist(0, segs.length - 1)]),
+      );
       destDir.createSync(recursive: true);
       await fs.copyToLocal(e.path, destDir.path);
     }
@@ -1684,15 +1729,9 @@ class SourceLibraryScanner {
   /// `VideoSpecsService` 的 ffprobe（并发 2、20s 超时）全部挤到超时，于是整库文件被
   /// 当成「探不出规格」永久记进负缓存，技术规格角标再也不出现。
   Future<
-      ({
-        List<String> createdPaths,
-        List<String> failedPaths,
-        Object? firstError,
-      })> _importVideos(
-    ScanPlan plan,
-    int sourceId,
-    SourceFileSystem fs,
-  ) async {
+    ({List<String> createdPaths, List<String> failedPaths, Object? firstError})
+  >
+  _importVideos(ScanPlan plan, int sourceId, SourceFileSystem fs) async {
     if (plan.videos.isEmpty) {
       return (
         createdPaths: const <String>[],
@@ -1709,8 +1748,9 @@ class SourceLibraryScanner {
     final bool streamInPlace = !fs.isLocal;
     final List<VideoBookRow> existingRows = await _videoRepo.listAll();
     // Existing book_uid set for silent same-name dedup (matches import dialog).
-    final Set<String> existingKeys =
-        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    final Set<String> existingKeys = existingRows
+        .map((VideoBookRow r) => r.bookUid)
+        .toSet();
     // TODO-1237 ②: existing physical paths (normalized) for re-scan dedup — a
     // folder re-scan must SKIP files already imported instead of suffixing
     // `X (2)` duplicates (mirrors _importBooks' skip policy, BUG-443). Grown as
@@ -1741,9 +1781,10 @@ class SourceLibraryScanner {
       for (final ScanVideoItem item in plan.videos) {
         final String normalizedPath = normalizeVideoPath(item.videoPath);
         // BUG-2979：同名旧行的文件已经不在原处 = 这就是搬走的那个文件。
-        final VideoBookRow? moved =
-            streamInPlace ? null : rowByUid[singleVideoBookUid(item.videoPath)];
-        if (moved != null && isVideoRowMovedTo(moved, item.videoPath)) {
+        final VideoBookRow? moved = streamInPlace
+            ? null
+            : rowByUid[singleVideoBookUid(item.videoPath)];
+        if (moved != null && await isVideoRowMovedTo(moved, item.videoPath)) {
           final VideoBookRow? live = rowByPath[normalizedPath];
           if (live == null) {
             // 首次扫到搬家后的文件：原行改指新路径，进度 / 字幕 cue / 标签 /
@@ -1751,8 +1792,9 @@ class SourceLibraryScanner {
             await _videoRepo.updateLocalMediaPaths(
               moved.bookUid,
               videoPath: item.videoPath,
-              subtitleSource: item.subtitlePath != null &&
-                      _isDeadLocalPath(moved.subtitleSource)
+              subtitleSource:
+                  item.subtitlePath != null &&
+                      await _isDeadLocalPath(moved.subtitleSource)
                   ? item.subtitlePath
                   : null,
             );
@@ -1796,15 +1838,19 @@ class SourceLibraryScanner {
             final String? subUrl = item.subtitlePath;
             streamSpecJson = StreamVideoSpec(
               subtitleUrl: subUrl,
-              subtitleFileName:
-                  subUrl == null ? null : sourceEntryBasename(subUrl),
+              subtitleFileName: subUrl == null
+                  ? null
+                  : sourceEntryBasename(subUrl),
             ).toStorageJson();
           } else if (item.subtitlePath != null) {
             final String fmt = _extOf(p.basename(item.subtitlePath!));
-            subtitleTmp ??=
-                Directory.systemTemp.createTempSync('m1c_scan_subs_');
-            final String localSub =
-                await fs.copyToLocal(item.subtitlePath!, subtitleTmp.path);
+            subtitleTmp ??= Directory.systemTemp.createTempSync(
+              'm1c_scan_subs_',
+            );
+            final String localSub = await fs.copyToLocal(
+              item.subtitlePath!,
+              subtitleTmp.path,
+            );
             // readTextWithEncoding(File) keeps the non-UTF-8 charset detection;
             // local copyToLocal returns the original path so behaviour is
             // unchanged.
@@ -1847,8 +1893,10 @@ class SourceLibraryScanner {
         } catch (e, stack) {
           failedPaths.add(item.videoPath);
           firstError ??= e;
-          debugPrint('SourceLibraryScanner video import failed for '
-              '${item.videoPath}: $e\n$stack');
+          debugPrint(
+            'SourceLibraryScanner video import failed for '
+            '${item.videoPath}: $e\n$stack',
+          );
         }
       }
       return (
@@ -1878,19 +1926,21 @@ class SourceLibraryScanner {
   }) async {
     final bool staleNewer =
         (stale.lastPlayedAt ?? 0) > (live.lastPlayedAt ?? 0);
-    await (_db.update(_db.videoBooks)
-          ..where((t) => t.bookUid.equals(live.bookUid)))
-        .write(VideoBooksCompanion(
-      lastPositionMs: staleNewer
-          ? Value<int>(stale.lastPositionMs)
-          : const Value<int>.absent(),
-      lastPlayedAt: staleNewer
-          ? Value<int?>(stale.lastPlayedAt)
-          : const Value<int?>.absent(),
-      completedAt: live.completedAt == null && stale.completedAt != null
-          ? Value<DateTime?>(stale.completedAt)
-          : const Value<DateTime?>.absent(),
-    ));
+    await (_db.update(
+      _db.videoBooks,
+    )..where((t) => t.bookUid.equals(live.bookUid))).write(
+      VideoBooksCompanion(
+        lastPositionMs: staleNewer
+            ? Value<int>(stale.lastPositionMs)
+            : const Value<int>.absent(),
+        lastPlayedAt: staleNewer
+            ? Value<int?>(stale.lastPlayedAt)
+            : const Value<int?>.absent(),
+        completedAt: live.completedAt == null && stale.completedAt != null
+            ? Value<DateTime?>(stale.completedAt)
+            : const Value<DateTime?>.absent(),
+      ),
+    );
     for (final BookTagRow tag in await _db.getTagsForVideoBook(stale.bookUid)) {
       await _db.addTagToVideoBook(live.bookUid, tag.id);
     }
@@ -1904,7 +1954,11 @@ class SourceLibraryScanner {
       if (item.mediaType != video || item.entryKey != stale.bookUid) continue;
       if (liveCollections.add(item.collectionId)) {
         await _db.addToCollection(
-            item.collectionId, MediaKind.video, live.bookUid, userIntent: false);
+          item.collectionId,
+          MediaKind.video,
+          live.bookUid,
+          userIntent: false,
+        );
       }
     }
     await _videoRepo.deleteVideoBooks(<String>[stale.bookUid]);
@@ -1964,12 +2018,15 @@ class SourceLibraryScanner {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
         // 合集名走解码 basename：网络清单的 href 是百分号编码的。
-        final String collectionName =
-            p.basenameWithoutExtension(sourceEntryBasename(item.playlistPath));
+        final String collectionName = p.basenameWithoutExtension(
+          sourceEntryBasename(item.playlistPath),
+        );
 
         playlistTmp ??= Directory.systemTemp.createTempSync('m1c_scan_pls_');
-        final String localM3u8 =
-            await fs.copyToLocal(item.playlistPath, playlistTmp.path);
+        final String localM3u8 = await fs.copyToLocal(
+          item.playlistPath,
+          playlistTmp.path,
+        );
         final String content = await readTextWithEncoding(File(localM3u8));
         // baseDir is the ORIGINAL m3u8 path's directory (source namespace):
         // locally the real on-disk dir, matching manual / drag-drop import when
@@ -1985,8 +2042,10 @@ class SourceLibraryScanner {
           hlsStreams.add(ScanVideoItem(videoPath: item.playlistPath));
           continue;
         }
-        final List<PlaylistEntry> entries =
-            parseM3u8(content: content, baseDir: baseDir);
+        final List<PlaylistEntry> entries = parseM3u8(
+          content: content,
+          baseDir: baseDir,
+        );
         // 空 / 不可解析清单：跳过（不当成「清单变空 → 清光成员」，避免读盘瞬时失败
         // 误删已存在合集，保守降级）。
         if (entries.isEmpty) continue;
@@ -2014,13 +2073,13 @@ class SourceLibraryScanner {
           continue;
         }
 
-        final SplitPlaylistImportResult result =
-            await _videoRepo.importSplitPlaylist(
-          collectionName: collectionName,
-          entries: entries,
-          sourceId: sourceId,
-          reuseExistingPaths: true,
-        );
+        final SplitPlaylistImportResult result = await _videoRepo
+            .importSplitPlaylist(
+              collectionName: collectionName,
+              entries: entries,
+              sourceId: sourceId,
+              reuseExistingPaths: true,
+            );
         // 记入 map：同一次扫描里遇到第二个同名清单时走 reconcile，不再重导致重复。
         existingPlaylistIds[collectionName] = result.collectionId;
 
@@ -2047,8 +2106,12 @@ class SourceLibraryScanner {
           List<String> createdPaths,
           List<String> failedPaths,
           Object? firstError,
-        }) imported =
-            await _importVideos(ScanPlan(videos: hlsStreams), sourceId, fs);
+        })
+        imported = await _importVideos(
+          ScanPlan(videos: hlsStreams),
+          sourceId,
+          fs,
+        );
         count += imported.createdPaths.length;
       }
       return count;
@@ -2103,8 +2166,10 @@ class SourceLibraryScanner {
       // 清单的合集就换下一个候选名，直到找到本盘的或一个空位。
       String collectionName = disc.name;
       int? existingId;
-      for (final String candidate
-          in blurayCollectionNameCandidates(disc.name, disc.rootPath)) {
+      for (final String candidate in blurayCollectionNameCandidates(
+        disc.name,
+        disc.rootPath,
+      )) {
         collectionName = candidate;
         existingId = existingCollectionIds[candidate];
         if (existingId == null) break;
@@ -2128,13 +2193,13 @@ class SourceLibraryScanner {
           continue;
         }
 
-        final SplitPlaylistImportResult result =
-            await _videoRepo.importSplitPlaylist(
-          collectionName: collectionName,
-          entries: entries,
-          sourceId: sourceId,
-          reuseExistingPaths: true,
-        );
+        final SplitPlaylistImportResult result = await _videoRepo
+            .importSplitPlaylist(
+              collectionName: collectionName,
+              entries: entries,
+              sourceId: sourceId,
+              reuseExistingPaths: true,
+            );
         existingCollectionIds[collectionName] = result.collectionId;
         await _videoRepo.recordVideoImportActivity(
           bookUid: result.episodeUids.first,
@@ -2193,7 +2258,10 @@ class SourceLibraryScanner {
 /// 路径不同、旧行是普通本地文件（不是流媒体 / 播放列表 / URL）、旧文件已不存在，
 /// 而且**旧路径所在的盘还在线**——网络盘 / 移动硬盘没挂上时旧文件当然「不存在」，
 /// 那不是搬家，绝不能把仍然有效的旧行并掉。
-bool isVideoRowMovedTo(VideoBookRow row, String newPath) {
+///
+/// 文件判据 async：扫描跑在 UI isolate，源库常是网络盘（rclone / SMB），同步 stat
+/// 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3663）。
+Future<bool> isVideoRowMovedTo(VideoBookRow row, String newPath) async {
   final String oldPath = row.videoPath;
   if (row.playlistJson != null || row.streamSpecJson != null) return false;
   if (oldPath.contains('://')) return false;
@@ -2204,8 +2272,8 @@ bool isVideoRowMovedTo(VideoBookRow row, String newPath) {
   }
   if (!p.isAbsolute(oldPath)) return false;
   final String root = p.rootPrefix(oldPath);
-  if (root.isEmpty || !Directory(root).existsSync()) return false;
-  return !File(oldPath).existsSync();
+  if (root.isEmpty || !await Directory(root).exists()) return false;
+  return !await File(oldPath).exists();
 }
 
 String _crossPlatformBasename(String path) {
@@ -2214,8 +2282,8 @@ String _crossPlatformBasename(String path) {
 }
 
 /// 本地路径已失效（null / URL / 哨兵值都不算失效，不去动它）。
-bool _isDeadLocalPath(String? path) {
+Future<bool> _isDeadLocalPath(String? path) async {
   if (path == null || path.isEmpty || path.contains('://')) return false;
   if (!p.isAbsolute(path)) return false;
-  return !File(path).existsSync();
+  return !await File(path).exists();
 }

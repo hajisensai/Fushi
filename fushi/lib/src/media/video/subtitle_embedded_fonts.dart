@@ -53,8 +53,9 @@ List<EmbeddedFontAttachment> parseFfprobeFontAttachments(String jsonText) {
 
     final String codecName = (s['codec_name'] as String? ?? '').toLowerCase();
     final Object? tagsObj = s['tags'];
-    final Map<Object?, Object?> tags =
-        tagsObj is Map ? tagsObj : const <Object?, Object?>{};
+    final Map<Object?, Object?> tags = tagsObj is Map
+        ? tagsObj
+        : const <Object?, Object?>{};
     final String fileName =
         (tags['filename'] as String? ?? tags['FILENAME'] as String? ?? '')
             .trim();
@@ -67,10 +68,12 @@ List<EmbeddedFontAttachment> parseFfprobeFontAttachments(String jsonText) {
       mimetype: mime,
       fileName: fileName,
     )) {
-      result.add(EmbeddedFontAttachment(
-        attachmentOrdinal: thisOrdinal,
-        fileName: fileName.isEmpty ? 'attachment_$thisOrdinal' : fileName,
-      ));
+      result.add(
+        EmbeddedFontAttachment(
+          attachmentOrdinal: thisOrdinal,
+          fileName: fileName.isEmpty ? 'attachment_$thisOrdinal' : fileName,
+        ),
+      );
     }
   }
   return result;
@@ -163,8 +166,10 @@ void _parseSfntNameTableAt(
     final int strLen = data.getUint16(rec + 8);
     final int strOff = stringStorage + data.getUint16(rec + 10);
     if (strLen <= 0 || strOff + strLen > length) continue;
-    final Uint8List raw =
-        data.buffer.asUint8List(data.offsetInBytes + strOff, strLen);
+    final Uint8List raw = data.buffer.asUint8List(
+      data.offsetInBytes + strOff,
+      strLen,
+    );
     final String? name = _decodeNameRecord(platformId, raw);
     if (name != null && name.trim().isNotEmpty) out.add(name.trim());
   }
@@ -203,7 +208,7 @@ String? _decodeNameRecord(int platformId, Uint8List raw) {
 /// → 返回空集，overlay 继续走既有 CJK fallback。
 class SubtitleEmbeddedFontLoader {
   SubtitleEmbeddedFontLoader({FfmpegBackend? backend})
-      : _backend = backend ?? resolveFfmpegBackend();
+    : _backend = backend ?? resolveFfmpegBackend();
 
   final FfmpegBackend _backend;
 
@@ -225,7 +230,8 @@ class SubtitleEmbeddedFontLoader {
 
     final Set<String> families = <String>{};
     try {
-      if (!File(videoPath).existsSync()) {
+      // async：视频可能在网络盘上，同步 stat 会冻结 UI isolate（BUG-3663）。
+      if (!await File(videoPath).exists()) {
         _byVideoPath[videoPath] = families;
         return families;
       }
@@ -235,11 +241,15 @@ class SubtitleEmbeddedFontLoader {
         _byVideoPath[videoPath] = families;
         return families;
       }
-      final Directory tempDir =
-          await Directory.systemTemp.createTemp('fushi_subfonts_');
+      final Directory tempDir = await Directory.systemTemp.createTemp(
+        'fushi_subfonts_',
+      );
       try {
-        final List<File> extracted =
-            await _dumpAttachments(videoPath, fonts, tempDir);
+        final List<File> extracted = await _dumpAttachments(
+          videoPath,
+          fonts,
+          tempDir,
+        );
         for (final File file in extracted) {
           await _registerFontFile(file, families);
         }
@@ -250,8 +260,11 @@ class SubtitleEmbeddedFontLoader {
         } catch (_) {}
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('SubtitleEmbeddedFontLoader.loadForVideo', e, stack);
+      ErrorLogService.instance.log(
+        'SubtitleEmbeddedFontLoader.loadForVideo',
+        e,
+        stack,
+      );
     }
     _byVideoPath[videoPath] = families;
     return families;
@@ -271,16 +284,13 @@ class SubtitleEmbeddedFontLoader {
   ) async {
     final FfmpegRunResult probe;
     try {
-      probe = await _backend.runProbe(
-        <String>[
-          '-v', 'quiet',
-          '-print_format', 'json',
-          '-show_streams',
-          '-select_streams', 't', // 只列附件流。
-          videoPath,
-        ],
-        _probeTimeout,
-      );
+      probe = await _backend.runProbe(<String>[
+        '-v', 'quiet',
+        '-print_format', 'json',
+        '-show_streams',
+        '-select_streams', 't', // 只列附件流。
+        videoPath,
+      ], _probeTimeout);
     } on ProcessException {
       // 无 ffprobe 可执行（未捆绑 + 不在 PATH）：预期降级，非错误，不记日志。
       return const <EmbeddedFontAttachment>[];
@@ -301,10 +311,9 @@ class SubtitleEmbeddedFontLoader {
     final List<File> targets = <File>[];
     for (final EmbeddedFontAttachment font in fonts) {
       final String ext = _fontExtension(font.fileName);
-      final File out = File(p.join(
-        tempDir.path,
-        'font_${font.attachmentOrdinal}$ext',
-      ));
+      final File out = File(
+        p.join(tempDir.path, 'font_${font.attachmentOrdinal}$ext'),
+      );
       args
         ..add('-dump_attachment:t:${font.attachmentOrdinal}')
         ..add(out.path);
@@ -334,14 +343,19 @@ class SubtitleEmbeddedFontLoader {
       if (_registeredFamilies.contains(family)) continue;
       try {
         final FontLoader loader = FontLoader(family)
-          ..addFont(Future<ByteData>.value(
-            bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes),
-          ));
+          ..addFont(
+            Future<ByteData>.value(
+              bytes.buffer.asByteData(bytes.offsetInBytes, bytes.lengthInBytes),
+            ),
+          );
         await loader.load();
         _registeredFamilies.add(family);
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('SubtitleEmbeddedFontLoader.register($family)', e, stack);
+        ErrorLogService.instance.log(
+          'SubtitleEmbeddedFontLoader.register($family)',
+          e,
+          stack,
+        );
       }
     }
   }

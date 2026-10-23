@@ -657,8 +657,9 @@ void main() {
           isNull);
       await tick();
 
-      // 第二轮：两端知识已一致。host 不存 publishedAt（GET 回 null）；client 若给
-      // 远端已有的删除 / 墓碑再盖 now，合并结果永远与 host 清单字节不等 → 每轮整份 POST。
+      // 第二轮：两端知识已一致。host 用户亲手造的删除 / 墓碑 GET 回 null 发布戳；client
+      // 若给远端已有的删除 / 墓碑再盖 now，合并结果永远与 host 清单字节不等 → 每轮整份
+      // POST。client 本地 DB 存的「进库时刻」也不得掺进合并结果（v125）。
       final CollectionManifest hostBefore =
           (await backend.getRemoteCollectionManifest())!;
       final CollectionSyncOutcome replay = CollectionSyncEngine.merge(
@@ -681,6 +682,174 @@ void main() {
       await tick();
       await orch.syncCollectionsLiveForTest(SyncRunReport(), backend);
       expect(hostSvc.mergePosts, 1);
+    });
+  });
+
+  // ── BUG-3662 后续：host 持久化墓碑发布戳，离线早移出、晚同步的墓碑不被判旧闻 ──
+  group('离线移出晚同步：基线更新的另一端不复活（host 存 publishedAt）', () {
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
+    const String token = 'collections-published-token';
+    late String base;
+
+    setUp(() async {
+      hostDb = memDb();
+      server = FushiSyncServer(
+        syncDataDir:
+            Directory.systemTemp.createTempSync('hbk_coll_published').path,
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: buildSvc(hostDb),
+      );
+      await server.start();
+      base = 'http://127.0.0.1:${server.port}';
+    });
+
+    tearDown(() async => server.stop());
+
+    Future<void> tick() =>
+        Future<void>.delayed(const Duration(milliseconds: 3));
+
+    /// 一个真实互联 client：自己的 DB + backend + orchestrator，同步一轮走
+    /// GET → merge → 落库 → POST 全链路。
+    Future<Future<void> Function()> client(FushiDatabase db) async {
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: base, enabled: true),
+      ]);
+      await repo.setFushiClientToken(token);
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+          (String url, String tok) async => true);
+      await backend.restoreAuth(repo);
+      await backend.authenticate(repo: repo);
+      final SyncOrchestrator orch = SyncOrchestrator(
+        db: db,
+        backend: backend,
+        dictionaryResourceRoot: Directory.systemTemp,
+        audioDatabaseRoot: Directory.systemTemp,
+        tempDir: Directory.systemTemp,
+        syncStats: false,
+        syncAudioBookPosition: false,
+        syncContent: false,
+        syncMangaContent: false,
+        syncAudioBookFiles: false,
+        syncDictionary: false,
+      );
+      return () async {
+        final SyncRunReport report = SyncRunReport();
+        await orch.syncCollectionsLiveForTest(report, backend);
+        expect(report.errors, isEmpty);
+      };
+    }
+
+    Future<List<String>?> membersOf(FushiDatabase db, String name) async {
+      final MediaCollectionRow? row =
+          await db.getMediaCollectionByNaturalKey(name, 'playlist');
+      if (row == null) return null;
+      return (await db.getCollectionItems(row.id))
+          .map((MediaCollectionItemRow m) => m.entryKey)
+          .toList();
+    }
+
+    test('A 离线 t1 移出成员、t3 才同步；B 基线 t2 → 墓碑胜、不复活', () async {
+      final int hs =
+          await hostDb.createMediaCollection('S', collectionType: 'playlist');
+      await hostDb.addToCollection(hs, MediaKind.video, 'v1');
+      await hostDb.addToCollection(hs, MediaKind.video, 'v2');
+      await tick();
+
+      final FushiDatabase aDb = memDb();
+      final FushiDatabase bDb = memDb();
+      final Future<void> Function() syncA = await client(aDb);
+      final Future<void> Function() syncB = await client(bDb);
+      await syncA();
+      await tick();
+
+      // t1：A 离线移出 v2（还没同步）。
+      final int as =
+          (await aDb.getMediaCollectionByNaturalKey('S', 'playlist'))!.id;
+      await aDb.removeFromCollection(as, MediaKind.video, 'v2');
+      await tick();
+
+      // t2：B 同步一轮，基线推进到 t1 之后；此刻 host 与 B 都还有 v2。
+      await syncB();
+      expect(await membersOf(bDb, 'S'), <String>['v1', 'v2']);
+      await tick();
+
+      // t3：A 上线同步，墓碑（removedAt=t1）进 host。
+      await syncA();
+      expect(await membersOf(hostDb, 'S'), <String>['v1']);
+      await tick();
+
+      // B 再同步：removedAt=t1 早于 B 的基线 t2，只看它会判旧闻、v2 复活；
+      // 发布戳晚于 t2 ⇒ 是新闻 ⇒ 移出生效。
+      await syncB();
+      expect(await membersOf(bDb, 'S'), <String>['v1'],
+          reason: '墓碑对 B 是新闻，B 本地的 v2 不得胜出');
+      expect(await membersOf(hostDb, 'S'), <String>['v1'],
+          reason: 'B 不得把 v2 经 POST 加回 host');
+
+      // 多轮后稳定。
+      await tick();
+      await syncA();
+      await syncB();
+      expect(await membersOf(aDb, 'S'), <String>['v1']);
+      expect(await membersOf(bDb, 'S'), <String>['v1']);
+      expect(await membersOf(hostDb, 'S'), <String>['v1']);
+
+      // 机理：host 持久化了墓碑进库时刻并在 GET 清单里输出（晚于移出时刻 t1）。
+      final CollectionMemberTombstone hostTomb =
+          (await loadLocalCollectionManifest(hostDb))
+              .collections
+              .firstWhere((CollectionManifestEntry e) => e.name == 'S')
+              .memberTombstones
+              .single;
+      expect(hostTomb.publishedAt, isNotNull,
+          reason: 'host 必须持久化墓碑进库时刻并在清单里输出');
+      expect(hostTomb.publishedAt!, greaterThan(hostTomb.removedAt));
+    });
+
+    test('A 离线 t1 删整个合集、t3 才同步；B 基线 t2 → 删除胜、不复活', () async {
+      final int hs =
+          await hostDb.createMediaCollection('D', collectionType: 'playlist');
+      await hostDb.addToCollection(hs, MediaKind.video, 'd1');
+      await tick();
+
+      final FushiDatabase aDb = memDb();
+      final FushiDatabase bDb = memDb();
+      final Future<void> Function() syncA = await client(aDb);
+      final Future<void> Function() syncB = await client(bDb);
+      await syncA();
+      await tick();
+
+      final int ad =
+          (await aDb.getMediaCollectionByNaturalKey('D', 'playlist'))!.id;
+      await aDb.deleteMediaCollection(ad);
+      await tick();
+
+      await syncB();
+      expect(await membersOf(bDb, 'D'), <String>['d1']);
+      await tick();
+
+      await syncA();
+      expect(await membersOf(hostDb, 'D'), isNull);
+      await tick();
+
+      await syncB();
+      expect(await membersOf(bDb, 'D'), isNull,
+          reason: '删除对 B 是新闻，B 本地的合集不得以「重建」胜出');
+      expect(await membersOf(hostDb, 'D'), isNull,
+          reason: 'B 不得把合集经 POST 重建回 host');
+
+      final CollectionManifestEntry hostDead =
+          (await loadLocalCollectionManifest(hostDb))
+              .collections
+              .firstWhere((CollectionManifestEntry e) => e.name == 'D');
+      expect(hostDead.deletedAt, isNotNull);
+      expect(hostDead.deletedPublishedAt, isNotNull,
+          reason: 'host 必须持久化合集删除的进库时刻并在清单里输出');
+      expect(hostDead.deletedPublishedAt!, greaterThan(hostDead.deletedAt!));
     });
   });
 }

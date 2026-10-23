@@ -121,10 +121,11 @@ class SubtitleBackfillResult {
 ///
 /// 返回值必须是入参的**全量排列**——它只改顺序、不改集合，[VideoSubtitleBackfillService.maxCandidates]
 /// 的语义（最多真下几条）不受影响。抛异常按「原序」处理。
-typedef SubtitleBackfillReorder = Future<List<VideoSubtitleCandidate>> Function(
-  List<VideoSubtitleCandidate> candidates,
-  SubtitleBackfillTarget target,
-);
+typedef SubtitleBackfillReorder =
+    Future<List<VideoSubtitleCandidate>> Function(
+      List<VideoSubtitleCandidate> candidates,
+      SubtitleBackfillTarget target,
+    );
 
 /// 给刮削后仍缺字幕的视频自动补一条字幕。
 class VideoSubtitleBackfillService {
@@ -161,8 +162,10 @@ class VideoSubtitleBackfillService {
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
     }
+    // 全部文件判据 async：补字幕跑在 UI isolate，视频与 sidecar 常在网络盘上，同步
+    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3663）。
     final File video = File(target.videoPath);
-    if (!video.existsSync()) {
+    if (!await video.exists()) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
@@ -170,7 +173,7 @@ class VideoSubtitleBackfillService {
     }
     // 目录里已经躺着 sidecar 就当已有字幕——它可能是用户手放的，也可能是下载
     // 流水线放的。两种都不该被覆盖。
-    if (_existingSidecars(video).isNotEmpty) {
+    if ((await _existingSidecars(video)).isNotEmpty) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
@@ -226,7 +229,8 @@ class VideoSubtitleBackfillService {
       contentMetadataLanguage:
           target.originalLanguage ?? facts.primaryAudioLanguage,
     );
-    final String? ranking = preferred ??
+    final String? ranking =
+        preferred ??
         resolveSubtitleDownloadLanguage(
           globalDefaultContentLanguage: defaultContentLanguage,
         );
@@ -275,8 +279,9 @@ class VideoSubtitleBackfillService {
         );
       }
     }
-    final int limit =
-        ordered.length < maxCandidates ? ordered.length : maxCandidates;
+    final int limit = ordered.length < maxCandidates
+        ? ordered.length
+        : maxCandidates;
     for (int i = 0; i < limit; i++) {
       final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
@@ -387,18 +392,18 @@ class VideoSubtitleBackfillService {
     return null;
   }
 
-  List<String> _existingSidecars(File video) {
+  Future<List<String>> _existingSidecars(File video) async {
     try {
       final Directory dir = video.parent;
       final List<String> names = <String>[
-        for (final FileSystemEntity entity in dir.listSync())
+        await for (final FileSystemEntity entity in dir.list())
           if (entity is File) p.basename(entity.path),
       ];
       return listSidecarSubtitles(
         p.basenameWithoutExtension(video.path),
         names,
       );
-    } catch (_) {
+    } on FileSystemException {
       // 目录读不了就当「不确定有没有」，按有处理——宁可不补，也不能覆盖。
       return const <String>['<unreadable>'];
     }
@@ -417,7 +422,7 @@ class VideoSubtitleBackfillService {
       '${p.basenameWithoutExtension(video.path)}.$language$extension',
     );
     final File dest = File(target);
-    if (dest.existsSync()) return target;
+    if (await dest.exists()) return target;
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
@@ -432,7 +437,7 @@ class VideoSubtitleBackfillService {
     );
     // 对齐可能要几十秒（整片抽轨）：这期间用户 / 另一条路径可能已经落了同名
     // sidecar，rename 会把它覆盖掉。再查一次，已存在就放弃这份。
-    if (dest.existsSync()) {
+    if (await dest.exists()) {
       try {
         await temp.delete();
       } catch (_) {}

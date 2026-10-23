@@ -1212,6 +1212,14 @@ class CollectionMemberTombstones extends Table {
   BoolColumn get organizeMerged =>
       boolean().withDefault(const Constant(false))();
 
+  /// 这条墓碑知识**进入本库**的毫秒戳（schema v125，BUG-3662 后续）：本机作互联 host 时
+  /// 清单里的 `publishedAt`（成员墓碑）/ `deletedPublishedAt`（合集级哨兵行），对端用
+  /// 「自己的基线 vs 它」判墓碑是不是新闻。只由同步应用端
+  /// （`applyCollectionLocalChanges`）给**新知识**盖戳，已有同键同 [deletedAt] 的行原值
+  /// 保留、一经确定不刷新。NULL = 本机用户亲手移出 / 删除（进库时刻就是 [deletedAt]，
+  /// 对端回退它判）或升级前的存量行。本机自己同步时不读它（本端侧按 [deletedAt] 裁决）。
+  IntColumn get publishedAt => integer().nullable()();
+
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
   Set<Column> get primaryKey =>
