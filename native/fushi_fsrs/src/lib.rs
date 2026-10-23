@@ -22,6 +22,7 @@
 
 pub mod history;
 pub mod search;
+pub mod store;
 
 use std::ffi::{c_char, CStr, CString};
 use std::io::Read;

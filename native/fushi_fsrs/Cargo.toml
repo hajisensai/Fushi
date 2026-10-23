@@ -20,6 +20,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 # Anki 搜索的正则与去 HTML（search.rs）：与 Anki 桌面版 rslib 同一个正则引擎，`re:` 语义以它为准。
 regex = "1"
+# srs.db（docs/specs/2026-10-23-srs-rust-store.md）：自带一份 SQLite（bundled），只开 srs.db，绝不开主库 fushi.db。
+rusqlite = { version = "0.37", features = ["bundled"] }
 
 [profile.release]
 opt-level = "z"
