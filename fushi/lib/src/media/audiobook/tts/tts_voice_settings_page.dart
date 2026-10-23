@@ -33,6 +33,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/gpt_sovits_local_page.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_local_page.dart';
+import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_two_pane_layout.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -770,7 +771,7 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     );
     List<TtsVoice> voices = const <TtsVoice>[];
     try {
-      voices = await provider.listVoices();
+      voices = await provider.listParamOptions(spec.key);
     } on TtsFailure catch (failure) {
       if (mounted) {
         setState(
@@ -807,29 +808,44 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       title: ttsParamLabel(spec.key),
       selected: current,
       options: <FushiChoiceOption<String>>[
+        // 非必填的声音类参数（系统语音的引擎 / 声音）可以不选：空 = 引擎默认行为。
+        if (!spec.required)
+          FushiChoiceOption<String>(
+            value: '',
+            label: ttsParamEmptyLabel(spec.key),
+          ),
         for (final TtsVoice v in sorted)
           FushiChoiceOption<String>(
             value: v.id,
             label: v.displayName == v.id ? v.id : '${v.displayName} · ${v.id}',
             subtitle: <String>[
-              v.locale,
+              if (v.locale.isNotEmpty) v.locale,
               if (v.gender != null) v.gender!,
             ].join(' · '),
           ),
       ],
     );
     if (picked == null || !mounted) return;
-    final TtsVoice chosen = sorted.firstWhere((TtsVoice v) => v.id == picked);
-    // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
-    widget.onChanged(
-      _preset.copyWith(
-        params: <String, String>{
-          ..._preset.params,
-          spec.key: picked,
-          '${spec.key}$_kVoiceNameSuffix': chosen.displayName,
-        },
-      ),
-    );
+    final Map<String, String> params = <String, String>{..._preset.params};
+    if (picked.isEmpty) {
+      params
+        ..remove(spec.key)
+        ..remove('${spec.key}$_kVoiceNameSuffix');
+    } else {
+      final TtsVoice chosen = sorted.firstWhere((TtsVoice v) => v.id == picked);
+      // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
+      params[spec.key] = picked;
+      params['${spec.key}$_kVoiceNameSuffix'] = chosen.displayName;
+    }
+    // 系统语音的声音属于某个引擎：换了引擎，旧引擎的声音名在新引擎里没有意义。
+    if (_preset.providerId == SystemTtsDescriptor.providerId &&
+        spec.key == SystemTtsDescriptor.engineKey &&
+        picked != current) {
+      params
+        ..remove(SystemTtsDescriptor.voiceKey)
+        ..remove('${SystemTtsDescriptor.voiceKey}$_kVoiceNameSuffix');
+    }
+    widget.onChanged(_preset.copyWith(params: params));
     if (_testResult != null) setState(() => _testResult = null);
   }
 
@@ -1287,7 +1303,9 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
           child: AdaptiveSettingsRow(
             title: label,
             subtitle: id.isEmpty
-                ? t.audiobook_tts_voice_pick
+                ? (spec.required
+                      ? t.audiobook_tts_voice_pick
+                      : ttsParamEmptyLabel(spec.key))
                 : (name.isEmpty || name == id ? id : '$name · $id'),
             subtitleMaxLines: 2,
             onTap: _fetchingVoices ? null : () => unawaited(_pickVoice(spec)),

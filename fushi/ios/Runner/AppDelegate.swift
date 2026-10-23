@@ -215,6 +215,9 @@ final class FushiRemotePush {
     // 系统语音转录（iOS 26 的 SpeechAnalyzer）。老系统上原生侧应答「不支持」，
     // Dart 侧据此不把这个引擎放进下拉。
     FushiSpeechTranscriber.register(binaryMessenger: binaryMessenger)
+    // 系统语音（AVSpeechSynthesizer 合成到 WAV）：朗读声音的「系统语音」与制卡发音
+    // 兜底。只实现 ttsToFile / getVoices，见 FushiSystemTts.swift。
+    FushiSystemTts.register(binaryMessenger: binaryMessenger)
     // 复制图片到剪贴板（视频截图 / 阅读器内联图）。与 macOS 同一份实现，
     // 方法名与入参逐字对齐 Windows 那份 CF_DIB 实现。
     FushiClipboardImage.register(binaryMessenger: binaryMessenger)

@@ -1,5 +1,5 @@
-/// 系统语音（Android TextToSpeech / Windows SAPI / macOS say / Linux
-/// Open JTalk·espeak-ng）的**语言判据**与**失败类型**（BUG-3669）。
+/// 系统语音（Android TextToSpeech / iOS AVSpeechSynthesizer / Windows OneCore·SAPI /
+/// macOS say / Linux Open JTalk·espeak-ng）的**语言判据**与**失败类型**（BUG-3669）。
 ///
 /// 以前这条通道写死日语：Android 引擎初始化只认 `Locale.JAPAN`、合成默认
 /// `ja-JP`，没装日语语音数据的设备上整条通道静默返回 null，而且对学英语 / 韩语
@@ -27,6 +27,10 @@ enum SystemTtsFailureReason {
   /// 语言的声音、Linux 只有日语引擎而请求的是别的语言）。
   languageNotSupported,
 
+  /// 用户在声音预设里点名的引擎声音不在了（卸载 / 换了设备 / 换了引擎）。不悄悄
+  /// 换成别的声音：那就不是用户选的那个了。
+  voiceUnavailable,
+
   /// 引擎可用、语言也支持，但这一次合成没产出音频。
   synthesisFailed,
 }
@@ -48,6 +52,7 @@ class SystemTtsFailure extends TtsFailure {
         'ENGINE_UNAVAILABLE' => SystemTtsFailureReason.engineUnavailable,
         'LANGUAGE_MISSING_DATA' => SystemTtsFailureReason.languageMissingData,
         'LANGUAGE_NOT_SUPPORTED' => SystemTtsFailureReason.languageNotSupported,
+        'VOICE_UNAVAILABLE' => SystemTtsFailureReason.voiceUnavailable,
         _ => SystemTtsFailureReason.synthesisFailed,
       }, languageTag: languageTag);
 
@@ -72,6 +77,7 @@ String systemTtsFailureText(SystemTtsFailure failure) {
       t.tts_system_language_missing_data(language: language),
     SystemTtsFailureReason.languageNotSupported =>
       t.tts_system_language_unsupported(language: language),
+    SystemTtsFailureReason.voiceUnavailable => t.tts_system_voice_unavailable,
     SystemTtsFailureReason.synthesisFailed => t.tts_system_synthesis_failed,
   };
 }

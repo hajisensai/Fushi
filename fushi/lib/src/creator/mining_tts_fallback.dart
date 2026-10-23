@@ -100,11 +100,13 @@ Future<void> setMiningTtsFallbackVoice(
 
 /// 本平台制卡兜底用的系统语音引擎名（专有名词，不翻译）；null = 本平台没有。
 ///
-/// 与 `TtsChannel.ttsToFile` / `ttsToFileDesktop` 的分派同一张表：Android 走原生
-/// TextToSpeech，桌面走各 OS 自带引擎，iOS 没有实现。
+/// 与 `TtsChannel.ttsToFile` / `ttsToFileDesktop` 的分派同一张表：Android / iOS 走
+/// 原生，桌面走各 OS 自带引擎。「系统语音」这一项按文字语言自动挑声音；想固定某个
+/// 引擎 / 声音，就建一份系统语音的朗读声音预设、在这里选那份预设。
 String? systemTtsEngineName() {
   if (Platform.isAndroid) return 'Android TextToSpeech';
-  if (Platform.isWindows) return 'Windows SAPI';
+  if (Platform.isIOS) return 'iOS AVSpeechSynthesizer';
+  if (Platform.isWindows) return 'Windows OneCore / SAPI';
   if (Platform.isMacOS) return 'macOS say';
   if (Platform.isLinux) return 'Open JTalk / espeak-ng';
   return null;
