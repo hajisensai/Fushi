@@ -29,6 +29,35 @@ async function fushiSrsTermStatus(arg) {
     return null;
   }
 }
+// 批量版（popup.js 一轮可见批次一次）：转发到 /api/srs/term-status-batch，回
+// {statuses:[...]}。退避期（复习模块关）回等长全 null——不是「不支持」，popup.js 不必
+// 退回逐条；老 app 没有批量端点（非 200 且非 404）或其它失败 → 回 null，popup.js 本批
+// 退回逐条 srsTermStatus（老端点照旧可用）。
+async function fushiSrsTermStatusBatch(arg) {
+  var terms = arg && Array.isArray(arg.terms) ? arg.terms : null;
+  if (!terms) return null;
+  var empty = terms.map(function () { return null; });
+  if (Date.now() < fushiSrsDisabledUntil) return { statuses: empty };
+  try {
+    var resp = await chrome.runtime.sendMessage({
+      type: 'srsTermStatusBatch',
+      terms: terms.map(function (t) {
+        return { expression: (t && t.expression) || '', reading: (t && t.reading) || '' };
+      }),
+    });
+    if (resp && resp.status === 404) {
+      // 老 app 也会对未知路径回 404：交给逐条端点判断（真关着时它同样 404 并退避）。
+      return null;
+    }
+    var statuses = resp && resp.ok && resp.data ? resp.data.statuses : null;
+    if (!Array.isArray(statuses) || statuses.length !== terms.length) return null;
+    return {
+      statuses: statuses.map(function (s) { return s && typeof s === 'object' ? s : null; }),
+    };
+  } catch (_) {
+    return null;
+  }
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -155,6 +184,8 @@ window.flutter_inappwebview = {
         })();
       case 'srsTermStatus':
         return fushiSrsTermStatus(args[0]);
+      case 'srsTermStatusBatch':
+        return fushiSrsTermStatusBatch(args[0]);
       case 'srsOpenCard':
         // 点复习标记：让 app 打开那张卡（POST /api/srs/open）。失败只回 false，不打扰查词。
         return (async function () {

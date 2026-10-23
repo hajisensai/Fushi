@@ -175,6 +175,147 @@ void main() {
       },
     );
 
+    test('批量桥：模块关着 / 参数不对 / 超过上限回 null', () async {
+      final List<dynamic> ok = <dynamic>[
+        <String, Object?>{
+          'terms': <Map<String, String>>[
+            <String, String>{'expression': '雪', 'reading': 'ゆき'},
+          ],
+        },
+      ];
+      expect(await srsHandleTermStatusBatchBridge(ok, null), isNull);
+      expect(
+        await srsHandleTermStatusBatchBridge(<dynamic>[
+          <String, Object?>{'terms': 'x'},
+        ], host()),
+        isNull,
+      );
+      expect(
+        await srsHandleTermStatusBatchBridge(<dynamic>[
+          <String, Object?>{
+            'terms': <Map<String, String>>[
+              for (int i = 0; i <= kSrsTermStatusBatchMax; i++)
+                <String, String>{'expression': '語$i'},
+            ],
+          },
+        ], host()),
+        isNull,
+      );
+    });
+
+    test('批量桥：一个可见批次只查一次存储，回包与单条逐个一致、等长同序', () async {
+      // 同形异读：「上手」两张卡分别是 じょうず / うわて。
+      await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kSrsTestProfile, 'Expression'): '上手',
+          srsLapisFieldId(kSrsTestProfile, 'ExpressionReading'): 'じょうず',
+        },
+      );
+      final String uwate = await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(kSrsTestProfile, 'Expression'): '上手',
+          srsLapisFieldId(kSrsTestProfile, 'ExpressionReading'): 'うわて',
+        },
+      );
+      final List<SrsTermQuery> terms = <SrsTermQuery>[
+        const SrsTermQuery('雪', 'ゆき'),
+        const SrsTermQuery('雨'),
+        const SrsTermQuery('上手', 'じょうず'),
+        const SrsTermQuery('上手', 'うわて'),
+        const SrsTermQuery('雪', 'ゆき'),
+      ];
+      final List<int> batchSizes = <int>[];
+      final List<Map<String, Object?>?> got = await srsLookupTermStatusPayloads(
+        store,
+        terms,
+        lookup: (List<SrsTermQuery> qs) {
+          batchSizes.add(qs.length);
+          return store.lookupTermStatus(qs);
+        },
+      );
+      // 同形异读必须分层（存储层按词形回结果），其余一层：雪/雨/上手(じょうず) + 上手(うわて)。
+      expect(batchSizes, <int>[3, 1]);
+      expect(got, hasLength(terms.length));
+      for (int i = 0; i < terms.length; i++) {
+        expect(
+          got[i],
+          await srsLookupTermStatusPayload(
+            store,
+            expression: terms[i].expression,
+            reading: terms[i].reading ?? '',
+          ),
+          reason: 'term $i',
+        );
+      }
+      expect(got[1], isNull);
+      expect(got[3]!['noteId'], uwate);
+      expect(got[2]!['noteId'], isNot(uwate));
+
+      // 宿主装配：一次桥调用 = 一次 readStore + 一层查询。
+      int reads = 0;
+      final SrsAppHost counting = SrsAppHost(
+        readStore: () async {
+          reads++;
+          return store;
+        },
+        openNote: (String id) async => true,
+        openBrowse: () async => true,
+      );
+      final Map<String, Object?>? reply = await srsHandleTermStatusBatchBridge(
+        <dynamic>[
+          <String, Object?>{
+            'terms': <Map<String, String>>[
+              <String, String>{'expression': '雪', 'reading': 'ゆき'},
+              <String, String>{'expression': '雨', 'reading': ''},
+            ],
+          },
+        ],
+        counting,
+      );
+      expect(reads, 1);
+      final List<Object?> statuses = reply!['statuses']! as List<Object?>;
+      expect(statuses, hasLength(2));
+      expect((statuses[0]! as Map<String, Object?>)['noteId'], noteId);
+      expect(statuses[1], isNull);
+    });
+
+    test('端到端耗时：一屏 20 个词逐条 vs 一次批量（打印供 PR 记录）', () async {
+      final List<SrsTermQuery> terms = <SrsTermQuery>[
+        for (int i = 0; i < 20; i++) SrsTermQuery('語$i', 'ご$i'),
+      ];
+      for (int i = 0; i < 20; i += 2) {
+        await store.createNote(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '語$i',
+            srsLapisFieldId(kSrsTestProfile, 'ExpressionReading'): 'ご$i',
+          },
+        );
+      }
+      final SrsAppHost h = host();
+      // 预热（首次查询的语句准备 / 牌组树缓存）。
+      await h.termStatuses(terms);
+      final Stopwatch singles = Stopwatch()..start();
+      final List<Map<String, Object?>?> one = <Map<String, Object?>?>[
+        for (final SrsTermQuery q in terms)
+          await h.termStatus(q.expression, q.reading ?? ''),
+      ];
+      singles.stop();
+      final Stopwatch batch = Stopwatch()..start();
+      final List<Map<String, Object?>?> many = await h.termStatuses(terms);
+      batch.stop();
+      expect(many, one);
+      expect(many.whereType<Map<String, Object?>>(), hasLength(10));
+      // ignore: avoid_print
+      print(
+        'srs term status, 20 visible terms: '
+        '20 single round trips ${singles.elapsedMicroseconds} us vs '
+        '1 batch ${batch.elapsedMicroseconds} us (host side, in-memory store)',
+      );
+    });
+
     test('打开卡片：只给 cardId 时反查 noteId', () async {
       final String cardId = (await store.cardsOfNote(noteId)).single.id;
       expect(
@@ -268,6 +409,83 @@ void main() {
       );
       expect(c3, 200);
       expect(jsonDecode(b3), <String, dynamic>{'opened': true});
+    });
+
+    test('批量端点：模块关着 404；一次请求回等长同序；超上限 400', () async {
+      const String body =
+          '{"terms":[{"expression":"雪","reading":"ゆき"},{"expression":"雨"}]}';
+      expect(
+        (await _post(server.port, '/api/srs/term-status-batch', body)).$1,
+        404,
+      );
+      api = host();
+      final (int code, String text) = await _post(
+        server.port,
+        '/api/srs/term-status-batch',
+        body,
+      );
+      expect(code, 200);
+      final List<dynamic> statuses =
+          (jsonDecode(text) as Map<String, dynamic>)['statuses']
+              as List<dynamic>;
+      expect(statuses, hasLength(2));
+      expect((statuses[0] as Map<String, dynamic>)['noteId'], noteId);
+      expect(statuses[1], isNull);
+
+      // 扩展链路端到端（真本机 HTTP）：一屏 20 个词逐条 vs 一次批量（打印供 PR 记录）。
+      final List<Map<String, String>> screen = <Map<String, String>>[
+        for (int i = 0; i < 20; i++)
+          <String, String>{'expression': '語$i', 'reading': 'ご$i'},
+      ];
+      final Stopwatch singles = Stopwatch()..start();
+      for (final Map<String, String> term in screen) {
+        expect(
+          (await _post(
+            server.port,
+            '/api/srs/term-status',
+            jsonEncode(term),
+          )).$1,
+          200,
+        );
+      }
+      singles.stop();
+      final Stopwatch batch = Stopwatch()..start();
+      expect(
+        (await _post(
+          server.port,
+          '/api/srs/term-status-batch',
+          jsonEncode(<String, Object?>{'terms': screen}),
+        )).$1,
+        200,
+      );
+      batch.stop();
+      // ignore: avoid_print
+      print(
+        'srs term status over HTTP, 20 visible terms: '
+        '20 requests ${singles.elapsedMicroseconds} us vs '
+        '1 batch request ${batch.elapsedMicroseconds} us',
+      );
+      expect(
+        (await _post(
+          server.port,
+          '/api/srs/term-status-batch',
+          jsonEncode(<String, Object?>{
+            'terms': <Map<String, String>>[
+              for (int i = 0; i <= kSrsTermStatusBatchMax; i++)
+                <String, String>{'expression': '語$i'},
+            ],
+          }),
+        )).$1,
+        400,
+      );
+      expect(
+        (await _post(
+          server.port,
+          '/api/srs/term-status-batch',
+          '{"terms":1}',
+        )).$1,
+        400,
+      );
     });
   });
 

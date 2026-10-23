@@ -110,6 +110,9 @@ bool maybeHandleOverlayDeferredBridge({
     case 'srsTermStatus':
       unawaited(_handleSrsTermStatusBridge(message, resolveBridge));
       return true;
+    case 'srsTermStatusBatch':
+      unawaited(_handleSrsTermStatusBatchBridge(message, resolveBridge));
+      return true;
     case 'srsOpenCard':
       unawaited(_handleSrsOpenCardBridge(message, resolveBridge));
       return true;
@@ -525,6 +528,25 @@ Future<void> _handleDuplicateBridge(
     glog('duplicate: duplicateCheck -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
+}
+
+/// Fushi 复习词状态批量版（deferred）：一轮可见批次一次往返，回 `{statuses: [...]}`；
+/// 模块关着 / 参数不对回 null（popup.js 退回逐条 srsTermStatus）。
+Future<void> _handleSrsTermStatusBatchBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Map<String, Object?>? reply;
+  try {
+    reply = await srsHandleTermStatusBatchBridge(<Object?>[
+      _firstMapArg(message),
+    ], SrsAppHost.current);
+  } catch (e, st) {
+    ErrorLogService.instance.log('overlay.srsTermStatusBatch', e, st);
+    reply = null;
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
 }
 
 /// Fushi 复习词状态（deferred）：回 null 或 popup.js 的状态对象。

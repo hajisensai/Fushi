@@ -3400,6 +3400,7 @@ void GlobalLookupWindow::ConfigureWebView() {
                   // Dart engine answers from the SRS store (or null / false
                   // while the review module is off).
                   body.find("\"srsTermStatus\"") != std::string::npos ||
+                  body.find("\"srsTermStatusBatch\"") != std::string::npos ||
                   body.find("\"srsOpenCard\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);

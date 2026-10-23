@@ -295,6 +295,78 @@ function applySrsStatusBadge(badge, status) {
     setInlineButtonTip(badge, String(status.tooltip || status.dueLabel || ''));
 }
 
+// 复习词状态的小批合并（srs_followup K）：一轮 IntersectionObserver 回调里进入可见 /
+// 预取范围的词条是同步逐个 start 的，它们的 fetchState 在同一个微任务前排进队列，
+// 微任务里合成一次 `srsTermStatusBatch`（{terms:[{expression,reading}]} →
+// {statuses:[null|{...}]}，等长同序）。只合并「已经被调度起跑」的词条：没进可见范围
+// 的隐藏词条根本没有 fetchState 调用，延迟加载不变；去重 / epoch / 元素版本检查仍由
+// scheduleEntryStateCheck 负责（同 key 在途请求共用一个 promise，不会重复入队）。
+// 只有一个词时直接走单条 `srsTermStatus`（同样一次往返）。批量回包不是等长数组
+// （老宿主没有这根桥 / 宿主出错）→ 本批退回逐条，本次渲染内不再试批量。
+const SRS_STATUS_BATCH_MAX = 32;
+let srsStatusBatchQueue = [];
+let srsStatusBatchScheduled = false;
+let srsStatusBatchUnsupported = false;
+
+function fetchSrsTermStatusSingle(bridge, term) {
+    return bridge.callHandler('srsTermStatus', term);
+}
+
+function fetchSrsTermStatusBatched(bridge, expression, reading) {
+    const term = { expression: expression || '', reading: reading || '' };
+    if (srsStatusBatchUnsupported) return fetchSrsTermStatusSingle(bridge, term);
+    return new Promise((resolve, reject) => {
+        srsStatusBatchQueue.push({ bridge, term, resolve, reject });
+        if (srsStatusBatchScheduled) return;
+        srsStatusBatchScheduled = true;
+        Promise.resolve().then(flushSrsStatusBatchQueue);
+    });
+}
+
+function flushSrsStatusBatchQueue() {
+    srsStatusBatchScheduled = false;
+    const queue = srsStatusBatchQueue;
+    srsStatusBatchQueue = [];
+    for (let i = 0; i < queue.length; i += SRS_STATUS_BATCH_MAX) {
+        runSrsStatusBatch(queue.slice(i, i + SRS_STATUS_BATCH_MAX));
+    }
+}
+
+function settleSrsStatusSingles(items) {
+    for (const item of items) {
+        let pending;
+        try {
+            pending = Promise.resolve(fetchSrsTermStatusSingle(item.bridge, item.term));
+        } catch (error) {
+            pending = Promise.reject(error);
+        }
+        pending.then(item.resolve, item.reject);
+    }
+}
+
+async function runSrsStatusBatch(items) {
+    if (items.length === 1 || srsStatusBatchUnsupported) {
+        settleSrsStatusSingles(items);
+        return;
+    }
+    let reply = null;
+    try {
+        reply = await items[0].bridge.callHandler('srsTermStatusBatch', {
+            terms: items.map((item) => item.term),
+        });
+    } catch (_) {
+        reply = null;
+    }
+    const statuses = reply && typeof reply === 'object' && Array.isArray(reply.statuses) &&
+        reply.statuses.length === items.length ? reply.statuses : null;
+    if (!statuses) {
+        srsStatusBatchUnsupported = true;
+        settleSrsStatusSingles(items);
+        return;
+    }
+    items.forEach((item, index) => item.resolve(statuses[index] ?? null));
+}
+
 function createSrsStatusBadge(expression, reading) {
     if (window.__fushiSrsEnabled === false) return null;
     const bridge = window.flutter_inappwebview;
@@ -320,8 +392,9 @@ function createSrsStatusBadge(expression, reading) {
             }
         },
     });
-    const fetchStatus = () => bridge.callHandler(
-        'srsTermStatus', { expression: expression || '', reading: reading || '' });
+    // 单条刷新（制卡 / 改卡后）走单条桥，立即发出、不等批次。
+    const fetchStatus = () => fetchSrsTermStatusSingle(
+        bridge, { expression: expression || '', reading: reading || '' });
     badge.__fushiRefreshSrsStatus = async () => {
         try {
             invalidateEntryStateCheck(badge);
@@ -334,7 +407,7 @@ function createSrsStatusBadge(expression, reading) {
     scheduleEntryStateCheck(
         badge,
         `srs\u0000${mineEntryKey(expression, reading)}`,
-        fetchStatus,
+        () => fetchSrsTermStatusBatched(bridge, expression, reading),
         (status) => applySrsStatusBadge(badge, status),
     );
     return badge;
@@ -365,6 +438,8 @@ function resetEntryStateChecks() {
     entryStateCheckJobs = new WeakMap();
     entryStateCheckRuns = new WeakMap();
     entryStateCheckPromises.clear();
+    // 新一轮渲染重新试批量（上一轮宿主出错不该让整个 WebView 生命期都退回逐条）。
+    srsStatusBatchUnsupported = false;
 }
 
 function invalidateEntryStateCheck(anchor) {

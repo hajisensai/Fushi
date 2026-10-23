@@ -1566,6 +1566,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'srsTermStatusBatch') {
+        // 批量版：POST {terms:[{expression,reading}]} → /api/srs/term-status-batch，回
+        // {statuses:[...]}（等长同序）。老 app 没有该端点 → 非 200，bridge-shim 退回逐条。
+        const terms = Array.isArray(msg.terms) ? msg.terms : [];
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/term-status-batch', {
+          method: 'POST',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            terms: terms.map((t) => ({ expression: (t && t.expression) || '', reading: (t && t.reading) || '' })),
+          }),
+        }));
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'srsOpenCard') {
         // 点复习标记：让 app 打开那张卡。POST {cardId,noteId} → /api/srs/open，回 {opened:bool}。
         const r = await fushiRequest(({ base, token }) => fetch(base + '/api/srs/open', {

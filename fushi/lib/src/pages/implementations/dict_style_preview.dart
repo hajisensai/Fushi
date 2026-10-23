@@ -277,6 +277,7 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   // 复习词状态标记：预览不显示复习状态（回 null = 不渲染标记）、不打开卡片。
   'srsOpenCard',
   'srsTermStatus',
+  'srsTermStatusBatch',
   'tapOutside',
   'textSelected',
   'updateEntry',

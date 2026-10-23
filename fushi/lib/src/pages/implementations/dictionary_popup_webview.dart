@@ -3188,6 +3188,16 @@ JSON.stringify((function(){
             () => srsHandleTermStatusBridge(args, SrsAppHost.current),
           ),
         );
+        // 批量版：popup.js 把一轮可见 / 预取范围内的词合成一次桥往返。
+        controller.addJavaScriptHandler(
+          handlerName: 'srsTermStatusBatch',
+          callback: (args) => _guardJsBridge<Map<String, Object?>?>(
+            'DictPopupWebview.srsTermStatusBatch',
+            null,
+            ErrorLogService.instance,
+            () => srsHandleTermStatusBatchBridge(args, SrsAppHost.current),
+          ),
+        );
         controller.addJavaScriptHandler(
           handlerName: 'srsOpenCard',
           callback: (args) => _guardJsBridge<bool>(
