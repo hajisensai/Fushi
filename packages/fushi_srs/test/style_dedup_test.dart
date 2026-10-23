@@ -136,4 +136,30 @@ void main() {
     ])[SrsFieldKeys.noteField('g')]!;
     expect(diff.conflicted, isTrue);
   });
+
+  test('合并口径的去重门槛按 UTF-16 码元：511 不换、512 换（与 kSrsStyleDedupMinChars 冻结一致）', () {
+    // 原生侧（registers.rs / style_dedup.rs）的「值相同」：内联样式与它的规范引用行同值，
+    // 前提是样式够大、会被去重；不到门槛的内联样式与引用行是两份不同的内容。
+    String inline(String css) => '<style>$css</style>x';
+    String linked(String css) => '${srsStyleLinkTag(srsStyleMediaName(css))}x';
+    final String c511 = 'a' * 511;
+    final String c512 = 'a' * 512;
+    // 256 个增补平面字符 = 512 个 UTF-16 码元（码点只有 256 个）。
+    final String astral = '\u{1D4E7}' * 256;
+    final String astralShort = '\u{1D4E7}' * 255 + 'a';
+    expect(
+      srsSameEditValues(<(Object?, Object?)>[
+        (inline(c511), linked(c511)),
+        (inline(c512), linked(c512)),
+        (inline(astral), linked(astral)),
+        (inline(astralShort), linked(astralShort)),
+      ]),
+      <bool>[false, true, true, false],
+    );
+    // 与 Dart 侧写库去重（srsDedupStyles）同一判断。
+    expect(srsDedupStyles(inline(c511)).changed, isFalse);
+    expect(srsDedupStyles(inline(c512)).changed, isTrue);
+    expect(srsDedupStyles(inline(astral)).changed, isTrue);
+    expect(srsDedupStyles(inline(astralShort)).changed, isFalse);
+  });
 }
