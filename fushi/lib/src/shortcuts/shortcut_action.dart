@@ -537,6 +537,9 @@ enum ShortcutAction {
   // 「含字幕」那条要在 Dart 侧把字幕合成回帧上（`video_screenshot_compose.dart`）。
   videoScreenshot(ShortcutScope.video, 'video_screenshot'),
   videoScreenshotSubtitled(ShortcutScope.video, 'video_screenshot_subtitled'),
+  // 识别一次当前画面（反馈 X3ozgOAx8v）：正在播放先暂停，再对当前帧 OCR、原位铺可点
+  // 的字查词——不依赖「暂停时自动识别」范围（默认关）。画面上的硬字幕 / 招牌只能靠它查。
+  videoOcrFrame(ShortcutScope.video, 'video_ocr_frame'),
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
       ShortcutScope.video, 'video_toggle_favorite_sentence'),

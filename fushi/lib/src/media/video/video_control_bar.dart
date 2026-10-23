@@ -105,6 +105,7 @@ int? videoControlItemBarPriority(VideoControlItem item) {
       return 40;
     // 弹幕开关：用户主动拖上来的才在栏上，设置面板另有同一开关，放不下时可以先收。
     case VideoControlItem.danmaku:
+    case VideoControlItem.ocrFrame:
       return 35;
     case VideoControlItem.clipExport:
       return 30;
