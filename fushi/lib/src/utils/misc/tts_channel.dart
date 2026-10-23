@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/desktop_tts.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart';
 
 /// 一个本地音频库推给查询层的配置：库路径 + 启用子来源的优先级序。
 ///
@@ -401,25 +402,64 @@ class TtsChannel {
     );
   }
 
-  Future<String?> ttsToFile(String text, String outputPath,
-      {String locale = 'ja-JP'}) async {
+  /// 用系统语音把 [text] 合成到 [outputPath]，返回实际写出的文件路径。
+  ///
+  /// [languageTag]（BCP-47）是要念的语言，由 [resolveSystemTtsLanguageTag] 决定；
+  /// null = 用引擎默认语言（不再写死日语，BUG-3669）。失败抛 [SystemTtsFailure]
+  /// （带原因与语言），由调用方记日志、提示用户——这里不吞、不返回 null。
+  ///
+  /// Android 走原生 TextToSpeech；其它平台走 OS 自带引擎（[ttsToFileDesktop]）。
+  Future<String> ttsToFile(
+    String text,
+    String outputPath, {
+    String? languageTag,
+  }) async {
     if (!_isSupported) {
-      // No native TextToSpeech off Android: use the OS speech engine
-      // (macOS `say` / Windows SAPI / Linux Open JTalk or espeak-ng). Returns
-      // null when no engine is installed or on failure.
-      return ttsToFileDesktop(text: text, outputPath: outputPath);
+      return ttsToFileDesktop(
+        text: text,
+        outputPath: outputPath,
+        languageTag: languageTag,
+      );
     }
+    return nativeTtsToFile(
+      _channel,
+      text: text,
+      outputPath: outputPath,
+      languageTag: languageTag,
+    );
+  }
+
+  /// [ttsToFile] 的原生半段（Android `TtsChannelHandler.handleTtsToFile`）：
+  /// 把语言原样交给原生侧，把原生的错误码映射成 [SystemTtsFailure]。通道可注入，
+  /// 这样非 Android 机器上也能测「locale 透传」与「失败不静默」。
+  @visibleForTesting
+  static Future<String> nativeTtsToFile(
+    MethodChannel channel, {
+    required String text,
+    required String outputPath,
+    required String? languageTag,
+  }) async {
+    final Object? result;
     try {
-      final result = await _channel.invokeMethod('ttsToFile', {
+      result = await channel.invokeMethod<Object?>('ttsToFile', {
         'text': text,
-        'locale': locale,
+        'languageTag': languageTag,
         'outputPath': outputPath,
       });
-      return result as String?;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('TtsChannel.ttsToFile', e, stack);
-      return null;
+    } on PlatformException catch (e) {
+      throw SystemTtsFailure.fromPlatformCode(e.code, languageTag);
+    } on MissingPluginException {
+      // 原生 handler 没挂上（弹窗词典等没有 TtsChannelHandler 的引擎）。
+      throw SystemTtsFailure(
+        SystemTtsFailureReason.engineUnavailable,
+        languageTag: languageTag,
+      );
     }
+    if (result is String && result.isNotEmpty) return result;
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.synthesisFailed,
+      languageTag: languageTag,
+    );
   }
 
   Future<void> stop() async {

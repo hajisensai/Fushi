@@ -10,6 +10,6 @@
 - **[x] ① 已修复** — 同步侧统一认「本机真实落点」：`LocalAudioManager.entriesOnThisDevice` / `AppModel.localAudioDbsOnThisDevice`（path 经 `resolveInternalPath` 归一）喂给 orchestrator 与 host；两条同步路径的 localNames 只收文件在本机的条目；host 清单只列文件在本机的库；`importSyncedLocalAudioDb` 遇到同名但本机不可用的条目时落库并**原位改指**（保留列表位置、开关、子来源偏好），不追加同名新源。提交见本分支 `fix(audio): let sync repair local audio refs imported from another device`。
 - **[x] ② 已加自动化测试** — `fushi/test/models/app_model_synced_local_audio_test.dart`（悬空同名条目原位改指）、`fushi/test/sync/sync_orchestrator_live_audio_test.dart`（悬空同名条目不挡 pull）。两条均做过变异实测：还原旧判据后分别红在「目录仍是源机路径」「localAudioImported 0 ≠ 1」。
 - **备注**：
-  - 没改：Android 系统语音兜底（`TtsChannelHandler.java:69` 初始化只认日语、`TtsChannel.ttsToFile` 默认 `ja-JP`）在没装日语语音数据的 ROM 上整段返回 null 且不留日志——反馈人看起来在学英语（发音库名 `android_english…`、Edge 声音 `en-US-AriaNeural`），这会让「制卡发音兜底=系统语音」也落空。语言怎么定（无全局目标语言）需决策，已回报。
+  - Android 系统语音兜底写死日语、失败静默的问题另记 BUG-3669（已修）。
   - 没改：配置方案导入时把本机已有的同名发音库直接接上（避免一次重复下载）。现在的修复路径是「再跑一次互联发音库同步」。
   - 未做真机复测。

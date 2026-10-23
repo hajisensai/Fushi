@@ -284,6 +284,9 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.auto_sync',
             title: t.sync_auto_sync,
+            // 反馈 5nWEirdCs2：本开关只管云同步通道；互联通道的自动同步在互联页单独
+            // 一个开关（默认开），见 interconnect.auto_sync。
+            subtitle: t.sync_auto_sync_cloud_hint,
             icon: FushiIcons.sync,
             // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
             // book-close pushes through the resolved backend. Outbound only
@@ -837,30 +840,24 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectSyncFavoritesEnabled(value);
             },
           ),
-          // 反馈 5nWEirdCs2：上面两项（以及书/视频进度、合集等）只在「一轮同步」里
-          // 与对端合并，而轮次由同步分类的「自动同步」开关（默认关）驱动。此前互联页
-          // 对此一字不提——用户开了互联、配了对，看到「双向合并、默认开启」，却永远
-          // 等不到合并。这里不镜像开关（2026-09-06 拍板：互联页对别处的设置只留指路
-          // 行），而是一行实时状态 + 跳到同步分类并定位到那个开关。
-          SettingsNavigationItem(
-            id: 'interconnect.auto_sync_entry',
-            title: t.interconnect_auto_sync_entry,
-            subtitleBuilder: (SettingsContext ctx) =>
-                _syncSettings(ctx).autoSync
-                ? t.interconnect_auto_sync_entry_on
-                : t.interconnect_auto_sync_entry_off,
+          // 反馈 5nWEirdCs2（所有者拍板方案 A）：上面两项（以及书/视频进度、合集等）
+          // 只在「一轮同步」里与对端合并。拆开关前轮次由同步分类那个默认关的全局「自动
+          // 同步」驱动，互联页的「双向合并、默认开启」于是是句空话。现在互联通道有自己
+          // 的自动同步开关（默认开，老用户按旧开关迁移，见
+          // SyncRepository.isInterconnectAutoSyncEnabled），与上面两项同区：它就是
+          // 「这些内容什么时候合并」的答案。不是镜像——同步分类那个只管云通道。
+          SettingsSwitchItem(
+            id: 'interconnect.auto_sync',
+            title: t.interconnect_auto_sync,
+            subtitle: t.interconnect_auto_sync_hint,
             icon: FushiIcons.sync,
-            onTap: (SettingsContext ctx) async {
-              SettingsSearchReveal.pendingItemId = 'sync.auto_sync';
-              await pushSettingsPage(
-                ctx,
-                (_) => SettingsDetailPage(
-                  destination: buildSyncBackupDestination(),
-                ),
-              );
-              // 在同步分类里改了开关，回来要重算本行的实时状态（ModalRoute 缓存页面
-              // 内容，弹回来不会自己重算 resolveSubtitle，BUG-2586 同款）。
-              ctx.refresh();
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectAutoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectAutoSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectAutoSyncEnabled(value);
             },
           ),
         ],
@@ -1296,7 +1293,12 @@ class _SyncSettingsState {
   /// 互联总开关（独立于 [backendType] 云备份后端选择）。为 true 时互联作为一条独立
   /// 通道运行，与云备份并存（不再是互斥的 backendType==fushiServer 单选）。
   bool interconnectEnabled = false;
+
+  /// 云同步通道的自动同步（`sync.auto_sync`，默认关）。
   bool autoSync = false;
+
+  /// 互联通道的自动同步（`interconnect.auto_sync`，默认开，反馈 5nWEirdCs2）。
+  bool interconnectAutoSync = true;
   bool syncStats = true;
   bool syncContent = false;
   bool syncMangaContent = false;
@@ -1418,6 +1420,7 @@ class _SyncSettingsState {
       backendType = await _repo.getBackendType();
       interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
+      interconnectAutoSync = await _repo.isInterconnectAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncMangaContent = await _repo.isSyncMangaContentEnabled();
