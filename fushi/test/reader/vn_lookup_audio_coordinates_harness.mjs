@@ -145,8 +145,14 @@ try {
         check(reader.currentScreenIndex === before,
           'following the selected cue stays on its original screen',
           { expected: before, actual: reader.currentScreenIndex });
-        const highlighted = Array.from(reader.screen.querySelectorAll(
-          '.fushi-sentence-audio-active')).map(node => node.textContent).join('');
+        // 当前句：支持 CSS Highlight 时是 Range（BUG-3663，按文档序），否则是 wrapper。
+        const audioHighlight = CSS.highlights && CSS.highlights.get('fushi-sentence-audio');
+        const highlighted = audioHighlight
+          ? Array.from(audioHighlight)
+            .sort((a, b) => a.compareBoundaryPoints(Range.START_TO_START, b))
+            .map(range => range.toString()).join('')
+          : Array.from(reader.screen.querySelectorAll(
+            '.fushi-sentence-audio-active')).map(node => node.textContent).join('');
         // The cue text plus the sentence-final 「。」 it owns (BUG-2907), never ruby rt.
         const expected = target.cueText + '。';
         check(highlighted === expected,

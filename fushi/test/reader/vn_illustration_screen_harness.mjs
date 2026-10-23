@@ -154,8 +154,11 @@ try {
     reader.highlightSentenceAudioCue('yoku', true, true, false);
     await frame();
     out.resumed = { geo: geometry(reader), detected: window.imageDetected,
-      active: Array.from(reader.screen.querySelectorAll('.fushi-sentence-audio-active'))
-        .map((n) => n.textContent).join('') };
+      // 当前句：支持 CSS Highlight 时是 Range（BUG-3663），否则是 wrapper。
+      active: CSS.highlights && CSS.highlights.has('fushi-sentence-audio')
+        ? Array.from(CSS.highlights.get('fushi-sentence-audio')).map((r) => r.toString()).join('')
+        : Array.from(reader.screen.querySelectorAll('.fushi-sentence-audio-active'))
+          .map((n) => n.textContent).join('') };
     window.imageDetected = 0;
     reader.renderScreen(0, true);
     reader.highlightSentenceAudioCue('yoku', true, false, false);
