@@ -1,4 +1,4 @@
-## BUG-3662 · srs-optimizer-prefix-json-quadratic
+## BUG-3703 · srs-optimizer-prefix-json-quadratic
 - **报告**：2026-10-23（审查记录 HBK-AUDIT-017：FSRS 优化器每条复习复制一份历史前缀、整份 JSON 过 FFI）
 - **真实性**：✅ 真问题（性能 / 内存）。根因两处，都是「训练条目 = 一张卡到某次评分为止的历史前缀」被按条目物化：
   - `packages/fushi_engine/lib/srs/srs_optimizer.dart:131-149`（修前）：每条复习 `input.reviews.sublist(0, i + 1)` 复制一份前缀，

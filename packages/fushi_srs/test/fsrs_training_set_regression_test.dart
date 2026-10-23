@@ -1,5 +1,5 @@
 // 打包训练集（ffsrs_fit，前缀在原生侧展开）与旧实现（每条复习一份历史前缀、JSON 过 FFI）的回归对拍
-// （BUG-3662）。
+// （BUG-3703）。
 //
 // test/fixtures/fsrs_training_regression_vectors.json 是旧实现（develop 329a739431）在一份固定合成数据
 // 上的输出：300 张卡、2137 条按评分时刻交错排序的训练条目，带每张卡的数字 ID。这里用新路径在同一份输入上

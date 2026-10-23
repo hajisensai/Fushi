@@ -100,7 +100,7 @@ class SrsFsrsReview {
   };
 }
 
-/// 参数优化 / 评估的训练集，打包成 TypedData（BUG-3662）。
+/// 参数优化 / 评估的训练集，打包成 TypedData（BUG-3703）。
 ///
 /// 优化器的训练条目是「一张卡到某次评分为止的历史前缀」，一张 n 次评分的卡贡献 n-1 条。
 /// 这里每张卡只存一份完整历史（[ratings] / [deltaDays] 按 [cardOffsets] 切段），条目只记
