@@ -62,8 +62,13 @@ class _VideoPagePlaybackRemote
   }
 
   @override
-  Future<void> seekToMs(int positionMs) async =>
-      _controller?.seekMs(positionMs);
+  Future<void> seekToMs(int positionMs) async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return;
+    // 绝对 seek 是一次跳转（进「跳转回退」历史，跨度不够自动不算）；seekByMs 是步进。
+    _state._recordVideoJumpDeparture(positionMs);
+    await controller.seekMs(positionMs);
+  }
 
   @override
   Future<void> seekByMs(int deltaMs) async =>

@@ -223,6 +223,7 @@ extension _VideoChapter on _VideoFushiPageState {
         emptyHint: t.video_chapters_empty,
         onTapChapter: (VideoChapter chapter) {
           _pokeControlsVisible();
+          _recordVideoChapterJumpDeparture(chapter.index);
           unawaited(controller.seekToChapter(chapter.index));
         },
       ),

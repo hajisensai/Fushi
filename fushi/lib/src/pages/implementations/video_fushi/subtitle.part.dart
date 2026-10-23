@@ -146,6 +146,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 并唤醒控制条。不关面板——用户常连点多句逐句跳，保持列表常驻（与 asbplayer 一致）。
   void _handleSubtitleJumpTap(AudioCue cue) {
     _pokeControlsVisible();
+    _recordVideoCueJumpDeparture(cue);
     unawaited(_controller?.skipToCue(cue));
   }
 

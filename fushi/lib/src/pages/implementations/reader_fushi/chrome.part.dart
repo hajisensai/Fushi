@@ -1042,9 +1042,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   _openImageViewer(ReaderFushiSource.epubUrl(ref.src)),
               onJumpTo: (EpubImageRef ref) {
                 Navigator.pop(routeContext);
-                unawaited(
-                  _navigateToChapter(ref.jumpChapterIndex, manual: true),
-                );
+                unawaited(() async {
+                  await _recordTextJumpDeparture();
+                  await _navigateToChapter(ref.jumpChapterIndex, manual: true);
+                }());
               },
               volumeSwitch: _galleryVolumeSwitch(routeContext),
             ),
@@ -3990,6 +3991,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String query,
   ) async {
     if (!mounted || _book == null || _controller == null) return;
+    await _recordTextJumpDeparture();
+    if (!mounted) return;
     // 搜索跳转是跳转不是阅读：字数账本（ReadUnitLedger）不需要播种——跳走前那页
     // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
     final String preciseLocateJs =
@@ -4037,6 +4040,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// settings sheet 的 onJumpToFavorite 与 debugJumpToFavorite 测试钩子都走这里。
   Future<void> _jumpToFavoriteSentence(FavoriteSentence fav) async {
     if (fav.sectionIndex == null) return;
+    await _recordTextJumpDeparture();
     // BUG-2596：歌词模式下「跳到收藏」= 把音频定位到那句 cue（歌词页随 cue 推进
     // 高亮/滚过去），与跳章同一条路；正文导航会把歌词文档换成 EPUB 章。找不到
     // 对应 cue（收藏落在对齐没覆盖的正文）就什么都不做——歌词里没有它。

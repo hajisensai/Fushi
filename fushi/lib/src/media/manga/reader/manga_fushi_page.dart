@@ -131,6 +131,11 @@ import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
+import 'package:fushi/src/media/manga/reader/manga_jump_point.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart';
+
+part 'manga_jump_history.part.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
 ///
@@ -1176,6 +1181,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _currentPage = 0;
   double _currentFraction = 0;
   Timer? _progressDebounce;
+
+  /// 「跳转回退」历史（[_MangaJumpBack]）：非连续跳转前压出发点。
+  final JumpHistory<MangaJumpPoint> _jumpHistory = JumpHistory<MangaJumpPoint>(
+    isSamePlace: MangaJumpPoint.isSamePlace,
+  );
+
+  /// 正在执行返回 / 前进：期间的跳转不再入栈。
+  bool _jumpHistoryRestoring = false;
+
+  /// 跳转 / 返回 / 前进后的短暂闪现（chrome 收起时胶囊也亮着）。
+  bool _jumpPillFlashing = false;
+  Timer? _jumpPillFlashTimer;
+
+  /// 胶囊闪现开关（setState 只能在 State 成员里调，扩展 [_MangaJumpBack] 经此）。
+  void _setJumpPillFlashing(bool value) {
+    if (mounted) setState(() => _jumpPillFlashing = value);
+  }
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
 
@@ -1613,6 +1635,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_downloadWatch?.cancel());
     _downloadWatch = null;
     _dictionaryTurnDismissTimer?.cancel();
+    _jumpPillFlashTimer?.cancel();
     // BUG-2449：这里只是不再观察；整卷 OCR 任务归注册表所有，退出页面照跑。
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
@@ -3438,6 +3461,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _switchToChapter(
     int index, {
     bool landOnLastPage = false,
+    int? initialPage,
   }) async {
     final OnlineMangaLibraryService? service = _shelfLibraryService;
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
@@ -3477,6 +3501,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         entry: selected,
         chapterIndex: index,
         landOnLastPage: landOnLastPage,
+        explicitInitialPage: initialPage,
       );
       // 末页是装载时的起始页，不再「装好再跳」（BUG-3222）；这里只把落点记成
       // 本章进度（与翻页同一条路径）。直读失败退到「本章未下载」态时没有正文。
@@ -5414,19 +5439,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _pushPageAnimationToJs();
   }
 
-  Future<void> _jumpToPage(int oneBasedPage) async {
+  /// [fraction]：webtoon 的页内归一化偏移（只有「跳转回退」落回原处时非 0）。
+  Future<void> _jumpToPage(int oneBasedPage, {double fraction = 0}) async {
     final MokuroPayload? payload = _payload;
     if (payload == null || payload.images.isEmpty) return;
     final int page = (oneBasedPage - 1).clamp(0, payload.images.length - 1);
     final int target = MangaFushiPage.spreadIndexForPage(_spreads, page);
+    final double offset = _mode.isContinuous ? fraction.clamp(0.0, 1.0) : 0;
     _resetPanelNavigation();
     _currentSpread = target;
-    _currentFraction = 0;
+    _currentFraction = offset;
     if (_mode.isContinuous) {
       await _controller?.evaluateJavascript(
         source:
             'window.__mangaScrollToSpread && '
-            'window.__mangaScrollToSpread($target, 0);',
+            'window.__mangaScrollToSpread($target, $offset);',
       );
       await _replaceSpreadOcr(target);
     } else {
@@ -5477,6 +5504,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
     );
     if (target != null && target >= 0) {
+      if (target != _shelfChapterIndex) _recordMangaJumpDeparture();
       await _switchToChapter(target);
     }
   }
@@ -5802,6 +5830,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       total: total,
     );
     if (page != null) {
+      _recordMangaJumpDeparture(targetPage: page - 1);
       await _jumpToPage(page);
     }
   }
@@ -5861,7 +5890,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       currentPages: _currentScreenPages(),
       thumbnail: _pageThumbnail,
     );
-    if (page != null && mounted) await _jumpToPage(page + 1);
+    if (page != null && mounted) {
+      _recordMangaJumpDeparture(targetPage: page);
+      await _jumpToPage(page + 1);
+    }
   }
 
   /// 快捷设置面板：阅读方向 / 单双页 / 缩放 / 底色 / 亮度。写入与「全部设置」
@@ -5925,6 +5957,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       return;
     }
+    _recordMangaJumpDeparture();
     await _switchToChapter(target);
   }
 
@@ -6262,6 +6295,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       child: _buildTopChrome(),
                     ),
                   ),
+                  // 「跳转回退」胶囊：顶部居中，chrome 显示时坐在顶栏下方；没
+                  // 跳转过不画（[_buildMangaJumpHistoryPill]）。
+                  _buildMangaJumpHistoryPill(
+                    chromeShown:
+                        _chromeContentReady &&
+                        mangaChromeBarPainted(
+                          floating: _chromeFloating,
+                          chromeVisible: _chromeVisible,
+                          transientVisible: _chrome.transientVisible,
+                          contentReady: _chromeActionsEnabled,
+                        ),
+                  ),
                   // 换章装载中：正文上盖一层加载指示（BUG-3221）。章末不再弹「下一章」
                   // 卡片——翻过末页本来就直接换章，卡片只是多余的一步（用户反馈）；
                   // 换章真正缺的是「正在加载」的反馈，否则用户以为没翻动、会多滑。
@@ -6491,8 +6536,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           pageListenable: _pageNotifier,
           currentPage: () => _pageNotifier.value,
           rtl: _spreadDirection == 'rtl',
-          onPageCommitted: (int pageIndex) =>
-              unawaited(_jumpToPage(pageIndex + 1)),
+          onPageCommitted: (int pageIndex) {
+            _recordMangaJumpDeparture(targetPage: pageIndex);
+            unawaited(_jumpToPage(pageIndex + 1));
+          },
           onPageTap: () => unawaited(_showPageJumpDialog()),
           pageTapTooltip: t.manga_jump_to_page,
           onPreviousChapter: _shelfEntry == null
@@ -6769,7 +6816,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           label: t.manga_reader_back_to_start,
           slot: MangaChromeSlot.top,
           priority: 1,
-          onPressed: () => unawaited(_jumpToPage(1)),
+          onPressed: () {
+            _recordMangaJumpDeparture(targetPage: 0);
+            unawaited(_jumpToPage(1));
+          },
         ),
         // 默认进入即整卷识别；只有触发方式设成「手动」时才给这个入口。
         if (_showManualVolumeOcrAction)
@@ -7465,6 +7515,7 @@ class _MangaPageSessionRemote implements ReaderSessionRemote {
         pageIndex >= payload.images.length) {
       return false;
     }
+    _state._recordMangaJumpDeparture(targetPage: pageIndex);
     await _state._jumpToPage(pageIndex + 1);
     return true;
   }
@@ -7477,6 +7528,9 @@ class _MangaPageSessionRemote implements ReaderSessionRemote {
         chapterIndex < 0 ||
         chapterIndex >= entry.chapters.length) {
       return false;
+    }
+    if (chapterIndex != _state._shelfChapterIndex) {
+      _state._recordMangaJumpDeparture();
     }
     await _state._switchToChapter(chapterIndex);
     return _state.mounted && _state._shelfChapterIndex == chapterIndex;

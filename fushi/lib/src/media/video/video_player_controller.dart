@@ -1144,8 +1144,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 播放页把它接给 fork 的 `relativeSeekBasePosition`：fork 在一次横滑开始时只取
   /// 一次基准（整段拖动用同一个快照，拖动中途在途目标落地 / 清掉也不跳），拖动 HUD
   /// 读 [lastRelativeSeekBaseMs] 与它对齐，而不是每帧重读会变的 [resumePositionMs]。
-  int? captureRelativeSeekBaseMs() =>
-      _lastRelativeSeekBaseMs = resumePositionMs;
+  int? captureRelativeSeekBaseMs() {
+    _relativeSeekBaseCaptureCount++;
+    return _lastRelativeSeekBaseMs = resumePositionMs;
+  }
+
+  /// [captureRelativeSeekBaseMs] 被调过几次。fork 只在横滑 / 双击这类**相对**步进
+  /// 开始时取基准；播放页的「跳转回退」据此把进度条按下与随后的步进区分开（进度条
+  /// 与步进共用 `onSeekEnd`，见 `VideoSeekBarJumpTracker`）。
+  int get relativeSeekBaseCaptureCount => _relativeSeekBaseCaptureCount;
+  int _relativeSeekBaseCaptureCount = 0;
 
   /// 最近一次 [captureRelativeSeekBaseMs] 取到的基准；从未取过为 null。
   int? get lastRelativeSeekBaseMs => _lastRelativeSeekBaseMs;
@@ -4508,7 +4516,12 @@ class VideoPlayerController extends ChangeNotifier
     _syncCueForPosition(clampedMs, persistPosition: false);
     // fork 在 onSeekEnd 之后才 `player.seek`，此刻下发的前移量正好赶在这次 seek 前。
     _applyHrSeekDemuxerOffsetFor(clampedMs);
+    onExternalSeekNotified?.call(clampedMs);
   }
+
+  /// [notifyExternalSeek] 的旁听者（落点，播放器轴毫秒）：播放页的「跳转回退」靠它
+  /// 拿到 media_kit 进度条 / 横滑 / 双击的落点（这几条 seek 绕过 [seekMs]）。
+  void Function(int targetMs)? onExternalSeekNotified;
 
   /// 按 [targetMs] 给这次 seek 下发 `hr-seek-demuxer-offset`（BUG-3618，判据见
   /// [hrSeekDemuxerOffsetForSeek]）。必须在 `player.seek` **之前**同步调用：libmpv
