@@ -41,7 +41,7 @@ void main() {
           payload.path,
         ]).timeout(const Duration(seconds: 80));
         expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-        expect(run.stdout, contains('PASS 5 dictionary sandbox scenarios'));
+        expect(run.stdout, contains('PASS 9 dictionary sandbox scenarios'));
       } finally {
         temp.deleteSync(recursive: true);
       }

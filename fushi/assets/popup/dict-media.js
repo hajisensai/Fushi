@@ -24,6 +24,24 @@ function rewriteDictLinks(html, dictName) {
     });
 }
 
+/* rewriteDictLinks 的 DOM 版（BUG-3705）：在已净化的惰性 DOM（<template> 内容）上直接改写，
+   调用方再 importNode 挂进文档。不能回到「改字符串 → innerHTML 再解析」：两次解析的上下文
+   不同，`<math><mtext><table><mglyph><style><img onerror>` 这类结构会在第二次解析时复活脚本。 */
+function rewriteDictLinksInTree(root, dictName) {
+    root.querySelectorAll('link[href]').forEach((link) => {
+        const normalized = normalizeDictMediaPath(link.getAttribute('href'));
+        const stylesheet = link.ownerDocument.createElement('link');
+        stylesheet.setAttribute('rel', 'stylesheet');
+        stylesheet.setAttribute('href',
+            `dictmedia://${encodeURIComponent(normalized)}?dictionary=${encodeURIComponent(dictName)}`);
+        link.replaceWith(stylesheet);
+    });
+    root.querySelectorAll('img[src]').forEach((img) => {
+        const rewritten = rewriteDictionaryMediaPath(img.getAttribute('src'), dictName);
+        if (rewritten !== null) img.setAttribute('src', rewritten);
+    });
+}
+
 /* 词典 CSS 作用域化的结果**只由** (css, dictName, scopePrefix) 决定——纯函数，
    同输入必同输出。但它的调用点是 createGlossarySection，即「每个词条的每个词典块」
    各调一次：N 条词条 × M 本词典就是 N×M 次把同一本词典那份（Yomitan 词典动辄几十 KB

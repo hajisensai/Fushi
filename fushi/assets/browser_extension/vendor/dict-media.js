@@ -54,6 +54,41 @@ function rewriteDictLinks(html, dictName) {
     });
 }
 
+/* rewriteDictLinks 的 DOM 版（BUG-3705）：在已净化的惰性 DOM（<template> 内容）上直接改写，
+   调用方再 importNode 挂进文档。不能回到「改字符串 → innerHTML 再解析」：两次解析的上下文
+   不同，`<math><mtext><table><mglyph><style><img onerror>` 这类结构会在第二次解析时复活脚本。
+   扩展分叉与 rewriteDictLinks 同语义：__fushiDictMedia 已设时一律写无 token 的占位属性
+   （TODO-1215 / BUG-1718），由 resolveDictMediaPlaceholders 取字节。 */
+function rewriteDictLinksInTree(root, dictName) {
+    const media = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
+    const viaServer = !!(media && media.base && media.token);
+    root.querySelectorAll('link[href]').forEach((link) => {
+        const href = link.getAttribute('href');
+        const replacement = link.ownerDocument.createElement('link');
+        if (viaServer) {
+            replacement.setAttribute('data-fushi-media-dict', encodeURIComponent(dictName));
+            replacement.setAttribute('data-fushi-media-path', encodeURIComponent(href));
+        } else {
+            replacement.setAttribute('rel', 'stylesheet');
+            replacement.setAttribute('href',
+                `dictmedia://${encodeURIComponent(normalizeDictMediaPath(href))}?dictionary=${encodeURIComponent(dictName)}`);
+        }
+        link.replaceWith(replacement);
+    });
+    root.querySelectorAll('img[src]').forEach((img) => {
+        const src = img.getAttribute('src');
+        const rewritten = rewriteDictionaryMediaPath(src, dictName);
+        if (rewritten === null) return;
+        if (viaServer) {
+            img.removeAttribute('src');
+            img.setAttribute('data-fushi-media-dict', encodeURIComponent(dictName));
+            img.setAttribute('data-fushi-media-path', encodeURIComponent(src));
+        } else {
+            img.setAttribute('src', rewritten);
+        }
+    });
+}
+
 /* 词典 CSS 作用域化的结果**只由** (css, dictName, scopePrefix) 决定——纯函数，
    同输入必同输出。但它的调用点是 createGlossarySection，即「每个词条的每个词典块」
    各调一次：N 条词条 × M 本词典就是 N×M 次把同一本词典那份（Yomitan 词典动辄几十 KB
