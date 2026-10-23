@@ -389,6 +389,8 @@ import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart'
+    show nativeOpenFailureDiagnosis;
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
@@ -3697,7 +3699,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           'network stream never opened within '
               '${2500 + _kNetworkMediaOpenGraceMs}ms '
               '(duration/position stayed 0); '
-              'lastPlayerError=${_lastPlaybackErrorMessage ?? "<none>"}',
+              '${nativeOpenFailureDiagnosis(_lastPlaybackErrorMessage)}',
           StackTrace.current,
         );
         controller.removeListener(_promoteVideoReadyOnFirstFrame);

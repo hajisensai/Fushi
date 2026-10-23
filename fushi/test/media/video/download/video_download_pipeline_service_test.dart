@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/torrent/download_save_root.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
@@ -2819,6 +2820,74 @@ void main() {
           ? 'holding an open handle only blocks deletion on Windows'
           : null);
 
+  group('BUG-3666 moved seeds stay claimed by their job row', () {
+    // 整理后种子被 moveStorage 到来源根继续做种：savePath 不在任何
+    // 「下载根/分类」目录下。后端按内置引擎的真实规则（目录即分类）过滤。
+    late _DirectoryCategoryTorrentBackend backend;
+    late _PipelineEnvironment environment;
+    const String jobId = 'seeding-in-source-root';
+
+    setUp(() async {
+      final Directory downloadRoot =
+          await Directory.systemTemp.createTemp('fushi-download-root-');
+      addTearDown(() => downloadRoot.delete(recursive: true));
+      backend = _DirectoryCategoryTorrentBackend(
+        saveRoots: TorrentSaveRoots(active: downloadRoot.path),
+      );
+      environment = await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      backend.seed(
+        TorrentSnapshot(
+          hash: _torrentHash,
+          name: 'Show',
+          progress: 1,
+          state: 'uploading',
+          savePath: environment.root.path,
+          contentPath: p.join(environment.root.path, 'Show'),
+          amountLeft: 0,
+          upRateBps: 32 * 1024,
+        ),
+      );
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.import,
+        lifecycle: VideoDownloadJobLifecycle.completed,
+        observedSavePath: environment.root.path,
+      );
+    });
+
+    test('the fake filters like the embedded engine (premise)', () async {
+      expect(
+        await backend.listTorrents(category: _expectedCategory),
+        isEmpty,
+        reason: '前提：挪到来源根的种子按分类列不出来，否则本组断言是空壳。',
+      );
+    });
+
+    test('task snapshots still report the seed and its upload rate',
+        () async {
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(jobId))!;
+
+      final Map<String, TorrentSnapshot> snapshots = await environment.service
+          .loadTaskSnapshots(<VideoDownloadJobRow>[job]);
+
+      expect(snapshots.keys, <String>[jobId]);
+      expect(snapshots[jobId]!.upRateBps, 32 * 1024);
+      expect(snapshots[jobId]!.isComplete, isTrue);
+    });
+
+    test('job details keep live data instead of missingFromBackend',
+        () async {
+      final VideoDownloadJobDetails details =
+          await environment.service.loadJobDetails(jobId);
+
+      expect(details.liveDataAbsence, VideoDownloadLiveDataAbsence.none);
+      expect(details.backend, same(backend));
+      expect(details.snapshot.upRateBps, 32 * 1024);
+    });
+  });
+
   test('cancel pauses the exact backend task and never deletes its files',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend();
@@ -5174,6 +5243,29 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   ) async {
     renameFileCalls += 1;
     return TorrentStorageResult(ok: true, path: newPath);
+  }
+}
+
+/// 按内置引擎的真实分类规则列种子的 fake：分类 = 「下载根/分类」目录
+/// （[TorrentSaveRoots.ownsCategoryPath]，与 `EmbeddedTorrentBackend.listTorrents`
+/// 同一判据），不带分类时列全部。
+class _DirectoryCategoryTorrentBackend extends _FakeTorrentBackend {
+  _DirectoryCategoryTorrentBackend({required this.saveRoots});
+
+  final TorrentSaveRoots saveRoots;
+  final List<TorrentSnapshot> _seeded = <TorrentSnapshot>[];
+
+  void seed(TorrentSnapshot snapshot) => _seeded.add(snapshot);
+
+  @override
+  Future<List<TorrentSnapshot>> listTorrents({String? category}) async {
+    listTorrentsCalls += 1;
+    return <TorrentSnapshot>[
+      for (final TorrentSnapshot snapshot in _seeded)
+        if (category == null ||
+            saveRoots.ownsCategoryPath(snapshot.savePath, category))
+          snapshot,
+    ];
   }
 }
 

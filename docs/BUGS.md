@@ -88,6 +88,15 @@
 | [BUG-3664](bugs/BUG-3664-video-lookup-highlight-multi-layer-ass.md) | ✅ | ✅ | 视频字幕查词高亮在多层 ASS 同文本事件上重复画、压住下层字形 |
 | [BUG-3663](bugs/BUG-3663-video-lookup-overlay-over-later-routes.md) | ✅ | ✅ | 视频页查词浮层压在之后推入的页面之上，点击被 barrier 吃掉并续播 |
 | [BUG-3662](bugs/BUG-3662-video-generated-subtitle-not-applied-after-leaving-page.md) | ✅ | ✅ | video-generated-subtitle-not-applied-after-leaving-page |
+> 共 3270 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3666](bugs/BUG-3666-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |
+| [BUG-3665](bugs/BUG-3665-mokuro-legacy-html-import-dropped-ocr.md) | ✅ | ✅ | mokuro-legacy-html-import-dropped-ocr |
+| [BUG-3664](bugs/BUG-3664-aniyomi-extensions-lib-17-refused.md) | ✅ | ✅ | 视频源扩展（Aniyomi extensions-lib 17）装不上：Unsupported extension-lib version |
+| [BUG-3663](bugs/BUG-3663-browser-address-bar-local-hosts-searched.md) | ✅ | ✅ | 应用内浏览器地址栏把本机 / 局域网网址当成搜索，站点也不能手动添加编辑 |
+| [BUG-3662](bugs/BUG-3662-emby-public-endpoints-all-404.md) | ✅ | ✅ | 部分 Emby 服务器公开端点全 404，添加服务器失败 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |

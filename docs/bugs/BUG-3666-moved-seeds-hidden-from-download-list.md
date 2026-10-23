@@ -1,0 +1,13 @@
+## BUG-3666 · 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空
+- **报告**：2026-10-22（应用内反馈 04mnkaft5O，Windows 内置引擎：下载中心「总速度」↑ 恒 0 B/s、「做种中」为空；`fushi_cli dl detail` 对 66 个完成任务全报 `missingFromBackend`，而 fastresume 显示这些种子都在引擎里做种、实测约 31.6 KiB/s 上传）。早先本机记录过同一现象（分支 `claude/seed-upload-zero-826605`，只有文档、从未修复）。
+- **真实性**：✅ 真 bug（显示 / 认领层；引擎本身在正常做种）。沿代码路径确认：
+  - 整理阶段把完成的受管任务 moveStorage 到来源根继续做种（`packages/fushi_engine/lib/media/video/download/video_download_organizer.dart:389`），任务行仍记着 `backendTaskId` / `torrentHash`。
+  - 内置后端的分类过滤是「目录即真相」：`packages/fushi_engine/lib/media/torrent/embedded_torrent_backend.dart:359` `listTorrents(category:)` 只保留 `TorrentSaveRoots.ownsCategoryPath`（`download_save_root.dart:110`）命中的种子——`<下载根>/<分类>/` 或 `.fushi-incoming/<分类>`。挪到来源根后的 savePath 两者都不是，整批被滤掉。
+  - 流水线的**按 hash 认领**却拿这份按分类过滤的列表去找：`loadTaskSnapshots`（原 `video_download_pipeline_service.dart:2027`，喂下载中心任务行的速率 / 「做种中」/ 顶部 hero）、`loadJobDetails`（原 `:1727`，喂详情与 `fushi_cli dl detail`，判成 `missingFromBackend`）、`resumeJob`（原 `:1533`）、`_observeDownload`（原 `:2689`）、入队回落核对（原 `:2314`）。
+  - 顶部 hero 只累加任务行速率（`fushi/lib/src/media/downloads/download_task_browser.dart:1205`）本身没错：下载中心的任务只来自流水线任务行（`video_download_jobs_panel.dart:937` 是唯一给 `upRateBps` 赋值的地方），快照认领回来后求和即正确。
+  - 外接 qBittorrent：分类是标签，`setLocation` 不改它，整理挪目录**不**触发本 bug；但用户在 qB 里改分类同样会让任务失联，同一修复一并覆盖。
+- **[x] ① 已修复** — `video_download_pipeline_service.dart` 新增 `_listBackendTorrentsForJobs` / `_findBackendTorrent`：任务行一律按「已核对的后端身份 + info hash」认领，列种子不再带分类（同一后端里一个 hash 只对应一颗种子，分类对认领没有信息量）；`loadTaskSnapshots` 的分组键去掉分类（每个后端只列一次）。分类只在投递新种子时决定落点。未采纳「hero 改取会话级速率」：会话级会把外接 qB 上与 Fushi 无关的种子流量也算进来，且多后端时没有单一会话；认领修好后任务求和就是 Fushi 受管任务的真实总速度。提交见 git log（`fix(download): claim job torrents by info hash`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/download/video_download_pipeline_service_test.dart` 组「BUG-3666 moved seeds stay claimed by their job row」：fake 后端按内置引擎同一判据（`TorrentSaveRoots.ownsCategoryPath`）过滤分类，种子 savePath 在来源根；断言前提（按分类列为空）、`loadTaskSnapshots` 仍返回该任务与上传速率、`loadJobDetails` 的 `liveDataAbsence` 为 `none`。变异实测：还原旧实现后两条断言变红（`[]` / `missingFromBackend`）。
+- **备注**：
+  - 用户自设上传限速 40 KiB/s 是真实上限，不属本 bug。
+  - 同场观察到「4 个下载中任务下行也是 0 B/s」未深挖，与本 bug 无关。

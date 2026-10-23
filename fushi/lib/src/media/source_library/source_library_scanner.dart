@@ -65,6 +65,8 @@ import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
+import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
+    show isMokuroLegacyHtmlPath, kMokuroLegacyOcrDirName, legacyMokuroRoot;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show
         MokuroImage,
@@ -1267,8 +1269,12 @@ class SourceLibraryScanner {
         if (id.isIndexed(path)) return false;
         // 标题与导入器同一派生（mokuro 顶层 title/volume，再退化文件名），显式传给
         // 导入器，判据与落库用的是同一个标题。
+        // mokuro 旧版 `.html` manifest 没有 JSON 顶层，元数据按路径派生（与导入器
+        // 拼回的 `.mokuro` 顶层同一个函数）。
         final String title = MangaImporter.deriveMokuroTitle(
-          _decodeMokuroRoot(await File(path).readAsString()),
+          isMokuroLegacyHtmlPath(path)
+              ? legacyMokuroRoot(path)
+              : _decodeMokuroRoot(await File(path).readAsString()),
           p.basename(path),
         );
         final DuplicatePolicy? policy = await id.policyFor(path, title);
@@ -1432,6 +1438,9 @@ class SourceLibraryScanner {
     required SourceFileSystem fs,
   }) async {
     if (id.isIndexed(item.mokuroPath)) return false;
+    if (isMokuroLegacyHtmlPath(item.mokuroPath, context: p.url)) {
+      return _importRemoteLegacyMokuroVolume(item: item, id: id, fs: fs);
+    }
     final String mokuroName = sourceEntryBasename(item.mokuroPath);
     final String jsonStr = await fs.readText(item.mokuroPath);
     final String title = MangaImporter.deriveMokuroTitle(
@@ -1535,6 +1544,60 @@ class SourceLibraryScanner {
     }
   }
 
+  /// 远端一卷 mokuro 0.1 旧版产物（`<父>/<卷名>.html` + `<父>/<卷名>/` 页图 +
+  /// `<父>/_ocr/<卷名>/` 逐页 JSON）：标题只由路径派生（与本地同一个
+  /// [legacyMokuroRoot]），先过判据，放行才把页图与逐页 JSON 按原布局镜像进临时
+  /// 目录，再交本地导入器——`.html` 本身不下载（导入器不读它的内容，只认布局）。
+  Future<bool> _importRemoteLegacyMokuroVolume({
+    required ScanMangaItem item,
+    required _MangaSourceIdentity id,
+    required SourceFileSystem fs,
+  }) async {
+    final String htmlName = sourceEntryBasename(item.mokuroPath);
+    final String parentDir = _remoteParentDir(item.mokuroPath);
+    final String volumeName = p.basenameWithoutExtension(htmlName);
+    final String title = MangaImporter.deriveMokuroTitle(
+      legacyMokuroRoot(item.mokuroPath, context: p.url),
+      htmlName,
+    );
+    final DuplicatePolicy? policy = await id.policyFor(item.mokuroPath, title);
+    if (policy == null) return false;
+    final String prefix = parentDir.isEmpty ? '' : '$parentDir/';
+    final Directory tmp =
+        Directory.systemTemp.createTempSync('m1c_scan_manga_legacy_');
+    try {
+      // 标题已按远端路径定好并显式传给导入器，镜像根叫什么不影响身份。
+      final Directory root = Directory(p.join(tmp.path, 'volume'))
+        ..createSync();
+      await _mirrorRemoteMangaPages(
+        fs,
+        '$prefix$volumeName',
+        Directory(p.join(root.path, volumeName)),
+      );
+      await _mirrorRemoteMangaPages(
+        fs,
+        '$prefix$kMokuroLegacyOcrDirName/$volumeName',
+        Directory(p.join(root.path, kMokuroLegacyOcrDirName, volumeName)),
+        extensions: const <String>{'.json'},
+      );
+      final String localHtml = p.join(root.path, htmlName);
+      File(localHtml).writeAsStringSync('');
+      final String bookKey = await MangaImporter.importFromMokuroPath(
+        db: _db,
+        mokuroPath: localHtml,
+        title: title,
+        sourceId: id.sourceId,
+        policy: policy,
+      );
+      await id.record(item.mokuroPath, bookKey);
+      return true;
+    } finally {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+
   /// 远端一个单文件漫画卷：先过判据（含负向表：判过不是漫画、远端指纹没变的包不再
   /// 下载），放行才把包（连同包旁的 `.mokuro` sidecar）下载到临时目录，再走与本地
   /// 同一个 [_importMangaCarrierFile]。
@@ -1622,16 +1685,19 @@ class SourceLibraryScanner {
   /// OCR 产物目录（[kMangaOcrOutDirName]，本地枚举同样排除）——其余文件下了也会被
   /// 导入器忽略，只是白白耗流量。`.` / `..` 段直接拒绝：镜像在书目录 sanitize
   /// 之前落盘，不能靠后面那道防穿越。
+  ///
+  /// [extensions] 缺省是页图；mokuro 旧版产物的逐页 OCR 目录传 `{'.json'}`。
   static Future<void> _mirrorRemoteMangaPages(
     SourceFileSystem fs,
     String remoteDir,
-    Directory destRoot,
-  ) async {
+    Directory destRoot, {
+    Set<String> extensions = kMangaImageExtensions,
+  }) async {
     final String prefix = remoteDir.endsWith('/') ? remoteDir : '$remoteDir/';
     for (final SourceFileEntry e
         in await fs.listFiles(remoteDir, recursive: true)) {
       if (e.isDirectory || !e.path.startsWith(prefix)) continue;
-      if (!kMangaImageExtensions.contains(p.extension(e.name).toLowerCase())) {
+      if (!extensions.contains(p.extension(e.name).toLowerCase())) {
         continue;
       }
       final List<String> segs = e.path
