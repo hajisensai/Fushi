@@ -488,6 +488,51 @@ class LibraryFilterChoiceSection<T> extends StatelessWidget {
   }
 }
 
+/// 多选维度：每个档位一枚 filter chip，可同时勾多个；一个都不勾 = 不按这一维筛
+/// （所以不需要单独的「全部」档）。点已勾的档位取消勾选。
+class LibraryFilterMultiChoiceSection<T> extends StatelessWidget {
+  const LibraryFilterMultiChoiceSection({
+    required this.title,
+    required this.values,
+    required this.selected,
+    required this.labelOf,
+    required this.onChanged,
+    super.key,
+  });
+
+  final String title;
+  final List<T> values;
+  final Set<T> selected;
+  final String Function(T value) labelOf;
+
+  /// 勾选集变化后的新集合（不可变副本）。
+  final ValueChanged<Set<T>> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return LibraryFilterSection(
+      title: title,
+      children: <Widget>[
+        for (final T value in values)
+          FushiFilterChip(
+            key: ValueKey<String>('library-filter-multi-$value'),
+            label: Text(labelOf(value)),
+            selected: selected.contains(value),
+            onSelected: (bool on) {
+              final Set<T> next = <T>{...selected};
+              if (on) {
+                next.add(value);
+              } else {
+                next.remove(value);
+              }
+              onChanged(Set<T>.unmodifiable(next));
+            },
+          ),
+      ],
+    );
+  }
+}
+
 /// 页头下方 chip 行里的一枚生效中筛选条件：点 ✕（或手柄 X）移除这一条，
 /// 点 chip 本身打开筛选面板。
 class LibraryActiveFilterChip extends StatelessWidget {

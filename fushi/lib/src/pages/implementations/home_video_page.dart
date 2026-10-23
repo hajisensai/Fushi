@@ -42,6 +42,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart'
 import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
+import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart'
     show AnimeDownloadSubscription, AnimeDownloadSubscriptionStore;
@@ -54,6 +55,9 @@ import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/media/video/video_subscription_updates.dart';
 import 'package:fushi/src/media/video/scraper/auto_scrape_service.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show VideoProbeFacts, VideoStreamFacts;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForDirectory;
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -593,6 +597,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   VideoExtrasFilter _extrasFilter = VideoExtrasFilter.all;
   int? _sourceFilter;
 
+  /// 「规格」筛选（多选，2026-10-24 原盘交接第 9 项）：BD / UHD / DVD / 普通文件 +
+  /// 4K / HDR。与年份 / 看完状态一样不持久化。
+  Set<VideoSpecFilter> _specFilters = const <VideoSpecFilter>{};
+
+  /// 规格筛选含 4K / HDR 时订阅着的规格服务（探测结果陆续回来要重筛）。
+  VideoSpecsService? _specsListened;
+
+  /// 规格筛选判过、但规格还没有结论的路径：攒成一批在帧后交给解析器 / 规格服务，
+  /// 不在 build 里逐条发 IO。[_specPrimed] 记已经交过的，避免同一路径反复排队。
+  final Set<String> _pendingDiscResolve = <String>{};
+  final Set<String> _pendingSpecPrime = <String>{};
+  final Set<String> _specPrimed = <String>{};
+
   /// 分组 / 折叠 / 筛选依赖的映射（合集字典、折叠归属、刮削资料、海报…）是否
   /// 已由 [_loadLibraryMaps] 首次落位。只从 false 变 true，此后的重载用旧映射顶住。
   ///
@@ -804,6 +821,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   @override
   void dispose() {
+    _specsListened?.removeListener(_onVideoSpecsChangedForFilter);
     _headerSearch.dispose();
     _searchController.dispose();
     _continueRowController.dispose();
@@ -1958,7 +1976,137 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       matchesVideoSource(
         sourceFilter: _effectiveSourceFilter,
         sourceId: b.sourceId,
+      ) &&
+      _passesSpecFilter(b);
+
+  /// 「规格」筛选判定。原盘规格（蓝光要读一次 `index.bdmv` 分 UHD）与 4K / HDR
+  /// （规格服务的探测结果）都是纯读缓存；还没结论的路径攒批补解析，结论回来后重筛。
+  /// 合集按成员逐条判、再折成合集卡，所以「合集里任一成员命中」即整张卡出现。
+  bool _passesSpecFilter(VideoBookRow b) {
+    if (_specFilters.isEmpty) return true;
+    final String path = b.videoPath;
+    final DiscFormatResolver resolver = ref.read(discFormatResolverProvider);
+    if (_specFilters.any(kVideoSpecCarrierFilters.contains) &&
+        !resolver.isResolved(path)) {
+      _queueDiscResolve(path);
+    }
+    final bool wantsQuality =
+        _specFilters.contains(VideoSpecFilter.uhd4k) ||
+        _specFilters.contains(VideoSpecFilter.hdr);
+    final VideoSpecsService specs = ref.read(videoSpecsProvider);
+    if (wantsQuality &&
+        !specs.isResolved(path) &&
+        !_specPrimed.contains(path)) {
+      _queueSpecPrime(path);
+    }
+    final VideoProbeFacts? facts = wantsQuality ? specs.specsFor(path) : null;
+    final VideoStreamFacts? video = facts?.video;
+    return matchesVideoSpecFilter(
+      selected: _specFilters,
+      discFormat: resolver.peek(path),
+      isDiscMember: isDiscMemberPath(path),
+      is4k: video?.resolutionLabel == '4K',
+      isHdr: video?.dynamicRange.isHdr ?? false,
+    );
+  }
+
+  void _queueDiscResolve(String path) {
+    final bool first = _pendingDiscResolve.isEmpty;
+    _pendingDiscResolve.add(path);
+    if (!first) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final List<String> batch = _pendingDiscResolve.toList();
+      _pendingDiscResolve.clear();
+      if (!mounted || batch.isEmpty) return;
+      unawaited(
+        ref.read(discFormatResolverProvider).resolveAll(batch).then((_) {
+          if (mounted) setState(() {});
+        }),
       );
+    });
+  }
+
+  void _queueSpecPrime(String path) {
+    final bool first = _pendingSpecPrime.isEmpty;
+    _pendingSpecPrime.add(path);
+    if (!first) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final List<String> batch = _pendingSpecPrime.toList();
+      _pendingSpecPrime.clear();
+      if (!mounted || batch.isEmpty) return;
+      _specPrimed.addAll(batch);
+      unawaited(ref.read(videoSpecsProvider).prime(batch));
+    });
+  }
+
+  /// 改「规格」筛选：含 4K / HDR 时订阅规格服务（探测陆续回来要重筛），不含时退订。
+  void _setSpecFilters(Set<VideoSpecFilter> next) {
+    setState(() => _specFilters = next);
+    final bool wantsQuality =
+        next.contains(VideoSpecFilter.uhd4k) ||
+        next.contains(VideoSpecFilter.hdr);
+    final VideoSpecsService? listened = _specsListened;
+    if (wantsQuality) {
+      final VideoSpecsService service = ref.read(videoSpecsProvider);
+      if (!identical(listened, service)) {
+        listened?.removeListener(_onVideoSpecsChangedForFilter);
+        service.addListener(_onVideoSpecsChangedForFilter);
+        _specsListened = service;
+      }
+    } else if (listened != null) {
+      listened.removeListener(_onVideoSpecsChangedForFilter);
+      _specsListened = null;
+    }
+  }
+
+  void _onVideoSpecsChangedForFilter() {
+    if (mounted) setState(() {});
+  }
+
+  /// 生效中的规格档位，按档位声明顺序以「 / 」连接（生效 chip 的文字）。
+  String _specFiltersSummary() => <String>[
+    for (final VideoSpecFilter f in VideoSpecFilter.values)
+      if (_specFilters.contains(f)) _specFilterLabel(f),
+  ].join(' / ');
+
+  String _specFilterLabel(VideoSpecFilter filter) => switch (filter) {
+    VideoSpecFilter.bluray => t.video_filter_spec_bluray,
+    VideoSpecFilter.uhdBluray => t.video_filter_spec_uhd_bluray,
+    VideoSpecFilter.dvd => t.video_filter_spec_dvd,
+    VideoSpecFilter.plainFile => t.video_filter_spec_plain_file,
+    VideoSpecFilter.uhd4k => t.video_filter_spec_4k,
+    VideoSpecFilter.hdr => t.video_filter_spec_hdr,
+  };
+
+  /// 封面左上角：原盘规格角标（BD / UHD / DVD，多盘 `BD ×3`）在上，用户标签在下。
+  /// 两者都没有时返回 null（不占位）。成员里有没有原盘标题是纯字符串判据，普通
+  /// 视频卡不会多挂一个 widget。
+  Widget? _coverTopLeftLabels({
+    required Key badgeKey,
+    required List<_VideoTagChip> tags,
+    required List<String> memberPaths,
+  }) {
+    final bool disc = memberPaths.any(isDiscMemberPath);
+    if (!disc && tags.isEmpty) return null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (disc)
+          Padding(
+            padding: EdgeInsets.only(bottom: tags.isEmpty ? 0 : 2),
+            child: IgnorePointer(
+              child: DiscFormatBadge(
+                key: badgeKey,
+                resolver: ref.read(discFormatResolverProvider),
+                memberPaths: memberPaths,
+              ),
+            ),
+          ),
+        if (tags.isNotEmpty) _buildTagLabels(tags),
+      ],
+    );
+  }
 
   bool _isCollectionMember(String bookUid) {
     final int? collectionId =
@@ -4577,7 +4725,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                           _effectiveMediaTypeFilter ==
                               VideoMediaTypeFilter.all &&
                           _effectiveExtrasFilter == VideoExtrasFilter.all &&
-                          _effectiveSourceFilter == null)
+                          _effectiveSourceFilter == null &&
+                          // 远端占位不带文件路径，判不出载体 / 画质。
+                          _specFilters.isEmpty)
                         v,
                 ];
                 // 反馈 ZjKzpkfZ1N：首页分区没有任何筛选入口（标签栏、筛选面板、
@@ -7228,9 +7378,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     landscapeSlot:
                         orientation == VideoCardOrientation.landscape,
                   ),
-                  // 合集标签 chip 列（左上，与散卡标签层同形）；多选态让位勾选框。
-                  if (tags.isNotEmpty && !_selectionMode)
-                    Positioned(top: 6, left: 6, child: _buildTagLabels(tags)),
+                  // 原盘规格角标 + 合集标签 chip 列（左上，与散卡同形）；多选态让位
+                  // 勾选框。
+                  if (!_selectionMode)
+                    if (_coverTopLeftLabels(
+                          badgeKey: ValueKey<String>(
+                            'home_video_collection_disc_badge_${collection.id}',
+                          ),
+                          tags: tags,
+                          memberPaths: <String>[
+                            for (final CollectionOrderingItem<_VideoSlot> it
+                                in group.items)
+                              if (it.payload.local
+                                  case final VideoBookRow local)
+                                local.videoPath,
+                          ],
+                        )
+                        case final Widget labels)
+                      Positioned(top: 6, left: 6, child: labels),
                   // 含远端占位成员 → 右下云角标（与散卡云角标同位；右上让位给
                   // 集数角标，TODO-2486 设计稿拍板）。成员在下载 / 刚失败时该位
                   // 换成下载态角标（下载本身蕴含「有远端成员」，不叠两枚）。
@@ -7926,6 +8091,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   bool get _hasActivePanelFilter =>
       !_yearFilter.isAll ||
       _watchStatusFilter != VideoWatchStatusFilter.all ||
+      _specFilters.isNotEmpty ||
       _seriesFilterIsNonDefault ||
       _effectiveMediaTypeFilter != VideoMediaTypeFilter.all ||
       _effectiveExtrasFilter != VideoExtrasFilter.all ||
@@ -7968,6 +8134,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           onTap: openPanel,
           onRemove: () =>
               setState(() => _watchStatusFilter = VideoWatchStatusFilter.all),
+        ),
+      if (_specFilters.isNotEmpty)
+        LibraryActiveFilterChip(
+          key: const ValueKey<String>('video_active_filter_spec'),
+          label: '${t.video_filter_spec} · ${_specFiltersSummary()}',
+          onTap: openPanel,
+          onRemove: () => _setSpecFilters(const <VideoSpecFilter>{}),
         ),
       if (_seriesFilterIsNonDefault)
         LibraryActiveFilterChip(
@@ -8052,6 +8225,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onSelected: (VideoWatchStatusFilter value) =>
                 update(() => setState(() => _watchStatusFilter = value)),
           ),
+          LibraryFilterMultiChoiceSection<VideoSpecFilter>(
+            key: const ValueKey<String>('video_filter_panel_spec'),
+            title: t.video_filter_spec,
+            values: VideoSpecFilter.values,
+            selected: _specFilters,
+            labelOf: _specFilterLabel,
+            onChanged: (Set<VideoSpecFilter> next) =>
+                update(() => _setSpecFilters(next)),
+          ),
           if (_isAllVideosSection) ...<Widget>[
             LibraryFilterChoiceSection<VideoSeriesFilter>(
               key: const ValueKey<String>('video_filter_panel_series'),
@@ -8118,6 +8300,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
     });
+    _setSpecFilters(const <VideoSpecFilter>{});
     _setSeriesFilter(kDefaultVideoSeriesFilter);
   }
 
@@ -8788,6 +8971,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       _extrasFilter = VideoExtrasFilter.all;
       _sourceFilter = null;
     });
+    _setSpecFilters(const <VideoSpecFilter>{});
     if (ref.read(selectedTagIdsProvider).isNotEmpty) {
       ref.read(selectedTagIdsProvider.notifier).state = <int>{};
     }
@@ -9934,8 +10118,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     ),
                   // UI 巡检 PR-4：多选态勾选框占左上角（同为 top:6,left:6），标签层
                   // 让位隐藏——此前两层同角重叠，勾选框压在标签 chip 上两者都花。
-                  if (tags.isNotEmpty && !showSelection)
-                    Positioned(top: 6, left: 6, child: _buildTagLabels(tags)),
+                  // 原盘规格角标（BD / UHD / DVD）在标签上方，同一左上角。
+                  if (!showSelection)
+                    if (_coverTopLeftLabels(
+                          badgeKey: ValueKey<String>(
+                            'home_video_disc_badge_${book.bookUid}',
+                          ),
+                          tags: tags,
+                          memberPaths: <String>[book.videoPath],
+                        )
+                        case final Widget labels)
+                      Positioned(top: 6, left: 6, child: labels),
                   // 播放列表角标（≥2 集才算播放列表）：右上角「▶ N」徽标，与单视频
                   // 一眼区分（C 需求②）。
                   if (episodeCount >= 2)
