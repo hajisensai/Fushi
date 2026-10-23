@@ -95,8 +95,9 @@ function fushiClipSource() {
 // 且随站点改版就会碎）。cid 由服务端用 bvid 现查（`x/web-interface/view`），扩展不必知道它。
 //
 // 两类页面两个 kind，因为**音轨的来路根本不同**：
-//   'bilibili'     — `/video/BV...` 稿件：`x/player/playurl` 匿名即可（未登录也拿得到最高档
-//                    音轨，实测见 `bilibili_clip_miner.dart`），服务端自己解析，原路不动。
+//   'bilibili'     — `/video/BV...` 稿件：`x/player/playurl` 未登录也拿得到最高档音轨，但服务端
+//                    的匿名请求会被 B 站风控 HTTP 412（海外 / 代理出口），所以 background 同样先在
+//                    页面主世界里取（`fushiResolveBilibiliUgcPlayurl`），取不到才由服务端自己解析。
 //   'bilibili-pgc' — `/bangumi/play/ep<id>` 番剧/影视：走 `pgc/player/web/playurl`（epid→cid），
 //                    大会员内容**必须带 SESSDATA**；而该接口的 CORS 只放行
 //                    `https://www.bilibili.com`（实测 `Access-Control-Allow-Origin` 就是这一个

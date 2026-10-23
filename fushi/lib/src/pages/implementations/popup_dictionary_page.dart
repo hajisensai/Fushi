@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultWidth;
@@ -32,6 +33,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
     this.sourceCharIndex = -1,
     this.sourceBlock,
     this.sourceBlockOffset = -1,
+    this.cardImage,
     this.anchorRect,
     this.subtitleWindowRect,
     this.closeInApp,
@@ -54,6 +56,10 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// 不再只剩被点的那一行；否则回落为整行（BUG-2900）。
   final String? sourceBlock;
   final int sourceBlockOffset;
+
+  /// 反馈 Gz7z6Y6Mbr：截屏识字这次点字的卡图来源（定格帧文件 + 文本块），制卡时裁成
+  /// 卡图（[DictionaryPageMixin.miningCardImage]）。其它入口为 null。
+  final ScreenOcrCardImage? cardImage;
 
   /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
   /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
@@ -129,6 +135,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   @override
   AppModel get mixinAppModel => appModel;
+
+  @override
+  ScreenOcrCardImage? get miningCardImage => widget.cardImage;
 
   @override
   ThemeData get mixinTheme => Theme.of(context);

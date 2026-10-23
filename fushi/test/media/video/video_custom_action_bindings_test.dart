@@ -37,6 +37,7 @@ VideoPlayerShortcutActions _dummyActions() {
     nextFrame: noop,
     screenshot: noop,
     screenshotSubtitled: noop,
+    ocrFrame: noop,
     toggleFullscreen: noop,
     toggleMiniWindow: noop,
     toggleMiniChrome: noop,

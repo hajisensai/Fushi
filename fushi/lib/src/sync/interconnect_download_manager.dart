@@ -116,6 +116,7 @@ class InterconnectDownloadBatch {
     required this.total,
     this.completed = 0,
     this.failed = 0,
+    this.skipped = 0,
   });
 
   /// 批键（合集用 [InterconnectDownloadManager.collectionBatchId]）。
@@ -128,16 +129,24 @@ class InterconnectDownloadBatch {
   final int completed;
   final int failed;
 
-  int get finished => completed + failed;
-  bool get isRunning => finished < total;
+  /// 用户停掉整批后没再起跑的成员数（见 [InterconnectDownloadManager.startBatch]）。
+  final int skipped;
 
-  InterconnectDownloadBatch copyWith({int? completed, int? failed}) {
+  int get finished => completed + failed;
+  bool get isRunning => finished + skipped < total;
+
+  InterconnectDownloadBatch copyWith({
+    int? completed,
+    int? failed,
+    int? skipped,
+  }) {
     return InterconnectDownloadBatch(
       id: id,
       title: title,
       total: total,
       completed: completed ?? this.completed,
       failed: failed ?? this.failed,
+      skipped: skipped ?? this.skipped,
     );
   }
 }
@@ -299,6 +308,10 @@ class InterconnectDownloadManager extends ChangeNotifier {
   final Map<String, Completer<void>> _cancelSignals =
       <String, Completer<void>>{};
 
+  /// 在跑任务的「这一轮已结束」信号（无论完成 / 失败 / 暂停）。[cancel] 靠它等
+  /// 传输原语真的停下、`.part` 不再被写，再删半成品。
+  final Map<String, Completer<void>> _stopped = <String, Completer<void>>{};
+
   final Map<String, InterconnectDownloadBatch> _batches =
       <String, InterconnectDownloadBatch>{};
 
@@ -317,6 +330,11 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// （成员自己的失败原因仍在其 [InterconnectDownloadTask.error]）。被用户暂停的
   /// 成员同样计入 failed（批只区分「落地了」与「没落地」），它自己停在暂停态。
   /// 同 [id] 已在跑则忽略重复调用，返回当前批。
+  ///
+  /// 用户暂停 / 取消正在跑的成员 = **停掉整批**：后面排队的成员不再起跑。批是
+  /// 串行的，任何时刻用户只看得到正在跑的那一集；若暂停后下一集立刻接上，用户
+  /// 就再也停不下这批（反馈 _sZllpFQWm：「点了下载远端集后没有任何地方能停」）。
+  /// 想继续，对暂停的那集点继续，或再点一次「下载远端集」（已在本机的集不再下）。
   Future<InterconnectDownloadBatch> startBatch({
     required String id,
     required String title,
@@ -331,10 +349,13 @@ class InterconnectDownloadManager extends ChangeNotifier {
     );
     _notify();
     await holdKeepAliveDuring(() async {
-      for (final Future<void> Function() start in starters) {
+      for (int i = 0; i < starters.length; i++) {
         try {
-          await start();
+          await starters[i]();
           _updateBatch(id, completed: 1);
+        } on RemoteDownloadCancelled {
+          _updateBatch(id, failed: 1, skipped: starters.length - i - 1);
+          break;
         } catch (_) {
           _updateBatch(id, failed: 1);
         }
@@ -358,12 +379,18 @@ class InterconnectDownloadManager extends ChangeNotifier {
     }
   }
 
-  void _updateBatch(String id, {int completed = 0, int failed = 0}) {
+  void _updateBatch(
+    String id, {
+    int completed = 0,
+    int failed = 0,
+    int skipped = 0,
+  }) {
     final InterconnectDownloadBatch? batch = _batches[id];
     if (batch == null) return;
     _batches[id] = batch.copyWith(
       completed: batch.completed + completed,
       failed: batch.failed + failed,
+      skipped: batch.skipped + skipped,
     );
     _notify();
   }
@@ -616,6 +643,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
     _specs[id] = spec;
     final Completer<void> cancel = Completer<void>();
     _cancelSignals[id] = cancel;
+    final Completer<void> stopped = Completer<void>();
+    _stopped[id] = stopped;
     final InterconnectDownloadTask started = InterconnectDownloadTask(
       id: id,
       title: spec.title,
@@ -678,6 +707,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
       rethrow;
     } finally {
       if (identical(_cancelSignals[id], cancel)) _cancelSignals.remove(id);
+      if (identical(_stopped[id], stopped)) _stopped.remove(id);
+      stopped.complete();
     }
   }
 
@@ -728,6 +759,37 @@ class InterconnectDownloadManager extends ChangeNotifier {
     _specs.remove(id);
     _finishedOrder.remove(id);
     _notify();
+  }
+
+  /// 该任务此刻能否「取消下载」：在跑且可暂停（先停再删），或停在暂停 / 失败态。
+  /// 不可暂停的书 / 有声书在跑时不能取消（传输原语不认中止信号）。
+  bool canCancel(String id) {
+    final InterconnectDownloadTask? task = _tasks[id];
+    if (task == null) return false;
+    if (task.isRunning) return canPause(id);
+    return task.status == InterconnectDownloadStatus.paused ||
+        task.status == InterconnectDownloadStatus.failed;
+  }
+
+  /// 取消一个未完成的下载：在跑的先发中止信号并**等这一轮真的停下**（传输原语
+  /// 不再写 `.part`），再走 [discard] 删半成品、续传清单与任务记录——取消后
+  /// 重开 app 也不会被自动续传接回来（续传清单已删）。
+  ///
+  /// 互联下载在任何平台都要能取消（iOS 没有「浏览 → 下载」，这是它唯一的停法），
+  /// 所以这里是不依赖下载中心的公共入口。返回是否删了半成品文件。
+  Future<bool> cancel(String id) async {
+    if (!canCancel(id)) return false;
+    final InterconnectDownloadTask task = _tasks[id]!;
+    if (task.isRunning) {
+      final Completer<void>? stopped = _stopped[id];
+      pause(id);
+      if (stopped != null) await stopped.future;
+      // 这一轮恰好在停下前完成了：成品已入库，不是「取消」能撤回的东西。
+      if (_tasks[id]?.status == InterconnectDownloadStatus.completed) {
+        return false;
+      }
+    }
+    return discard(id);
   }
 
   /// 放弃一个未完成（paused/failed）的任务并删掉已下载的半成品（`.part` 及其

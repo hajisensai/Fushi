@@ -139,6 +139,8 @@ function loadTooltip({ zoom = 1, viewportWidth = 800, viewportHeight = 600, canH
     // popup.js 里这些 helper 住在切片之外，按其真实语义提供最小实现。
     __fushiRootNode: () => root,
     __fushiOverlayParent: () => root,
+    // 非 shadow 宿主（无 window.__fushiRoot）：applyGrammarTooltipTheme 直接返回。
+    __fushiContainer: () => null,
     __fushiViewportWidth: () => viewportWidth,
     __fushiPopupContentZoom: () => zoom,
     __fushiEventTarget: (e) => e.target,

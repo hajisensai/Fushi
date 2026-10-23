@@ -11,11 +11,16 @@
 ///   建查询行」；原生侧作答 / 撤销只作废同一张卡与同一条笔记的项。
 ///   **表里别的卡的 R 并不因此还是最新的**：小模型有卡 / 笔记 / 牌组 / 预设 / 全局五条状态流，
 ///   今日复习数等输入也是共享的，答 B 之后用新状态查 A 的结果可能与 A 的旧分数不同。所以模型
-///   状态每推进 [requeryEveryAnswers] 次（追加的评分与撤回各算一次，本机与同步来的都算——数的是
-///   状态真的变了几次，不是查询命中比例，HBK-AUDIT-019），下一次排队前整表按此刻重查（原生侧
-///   改写查询行、不回读历史）；缺省 1 = 每次作答后都用最新状态给全部候选打分。另外换日、牌组
+///   状态每推进 N 次（牌组设置「每答几题刷新」[SrsRwkvQueueSettings.refreshEvery]，同一次排队涉及
+///   多个牌组时取最小；追加的评分与撤回各算一次，本机与同步来的都算——数的是
+///   状态真的变了几次，不是查询命中比例，HBK-AUDIT-019）就整表按此刻重查一次（原生侧改写查询行、
+///   不回读历史）；缺省 1 = 每题。这一次重查**放到后台、下一次排队生效**：本次排队先用表里现有的
+///   分数（作答卡与同笔记卡已按最新状态补算），出完这一张再在 worker 里重查，用户看卡的工夫里就
+///   算完了。实测 1.2 万候选卡：同步重查让「作答 → 出下一张」从约 90 ms 变成约 300 ms，放后台
+///   后不再算进这段（srs_rwkv_answer_bench_test）。代价是别的卡的分数晚一题跟上。另外换日、牌组
 ///   设置变化、同步合并后（[SrsDbStore.rwkvScoresKey]）、距上次整表重查满 [requeryAfter]（查询
-///   行里的间隔秒数随时间走；只在下一次排队时检查，不是定时器）也整表重查；日界设置变化时清空
+///   行里的间隔秒数随时间走；只在下一次排队时检查，不是定时器）当场整表重查（这几种旧分数可能
+///   整体失效，不能晚一题）；日界设置变化时清空
 ///   重建。增量与全量走同一个原生查询，每行的 R 不取决于同批别的行，逐位一致
 ///   （native/fushi_rwkv/tests/journal.rs）——这只证明查询实现一致，不证明旧分数仍准确。
 /// - **清除**：卡被永久清除（srs_purge.dart）后它的项从表里删掉（[onCardsPurged]），否则一直占着
@@ -164,10 +169,6 @@ typedef _NewLog = ({
   String? revokes,
 });
 
-/// [SrsRwkvService.requeryEveryAnswers] 的缺省值：每次作答（或撤回）后整表按最新状态重查，
-/// 排队用的 R 永远来自当前模型状态（上游 JSchoreels/anki 未配置时同样回退到每题刷新）。
-const int kSrsRwkvRequeryEveryAnswers = 1;
-
 /// [SrsRwkvService.requeryAfter] 的缺省值。
 const Duration kSrsRwkvRequeryAfter = Duration(minutes: 30);
 
@@ -177,12 +178,10 @@ class SrsRwkvService implements SrsRwkvScheduling {
     required this.models,
     required this.snapshotDir,
     this.threads = 0,
-    this.requeryEveryAnswers = kSrsRwkvRequeryEveryAnswers,
     this.requeryAfter = kSrsRwkvRequeryAfter,
     Future<SrsRwkvBackend> Function(File weights)? openBackend,
     void Function(String message)? log,
-  }) : assert(requeryEveryAnswers >= 1),
-       _open = openBackend ?? _openWorker,
+  }) : _open = openBackend ?? _openWorker,
        _log = log ?? ((String _) {});
 
   final SrsDbStore store;
@@ -193,9 +192,6 @@ class SrsRwkvService implements SrsRwkvScheduling {
 
   /// 原生线程数：0 = 全部核心。
   final int threads;
-
-  /// 模型状态推进几次后整表重查分数（见文件头）。1 = 每次作答后都按最新状态重查。
-  final int requeryEveryAnswers;
 
   /// 距上次整表重查满这么久，下一次排队前整表重查（见文件头）。
   final Duration requeryAfter;
@@ -240,6 +236,9 @@ class SrsRwkvService implements SrsRwkvScheduling {
 
   /// 上次整表重查以来模型状态推进的次数（[_appendNew] 追加的评分与撤回）。
   int _stateChangesSinceRequery = 0;
+
+  /// 后台整表重查已排进 worker、还没跑完。
+  bool _requeryPending = false;
 
   /// [SrsDbStore.changeFingerprint] 上次核对时的值（状态与日志表一致时记下）。
   String? _checkedRevision;
@@ -841,7 +840,28 @@ class SrsRwkvService implements SrsRwkvScheduling {
       final SrsDayContext day = await store.dayContext();
       final SrsDeckTree tree = await store.deckTree();
       final int today = day.dayIndexOf(nowMs);
-      await _alignScores(backend, day, today, nowMs);
+      // 「每答几题刷新」：这次排队涉及的牌组里取最小（参数归属的 own 祖先的设置）。
+      int refreshEvery = SrsRwkvQueueSettings.maxRefreshEvery;
+      for (final String d in <String>{
+        for (final SrsRwkvCandidate c in cards) c.deckId,
+      }) {
+        refreshEvery = min(
+          refreshEvery,
+          tree
+              .paramsOwner(
+                tree.effectiveDeckOf(d, fallback: store.defaultDeckId),
+              )
+              .rwkvQueue
+              .refreshEvery,
+        );
+      }
+      final bool requeryAfterThis = await _alignScores(
+        backend,
+        day,
+        today,
+        nowMs,
+        refreshEvery: refreshEvery,
+      );
       // 卡的数字 id 与「版本」（最后一条有效日志 + 牌组 + 预设：换了任何一个，这张卡的查询行就变了）。
       final Map<String, String> presetOf = <String, String>{};
       final List<int> numeric = SrsIds.ankiNumericIds(<String>[
@@ -878,6 +898,7 @@ class SrsRwkvService implements SrsRwkvScheduling {
           scores[missing[k]] = fresh[k];
         }
       }
+      if (requeryAfterThis) _requeryInBackground(backend, today, nowMs);
       return <double>[for (final double v in scores) v];
     } catch (error, stack) {
       // 例如本机时钟早于已回放的最后一条评分（对端设备时钟超前）：这一次按到期日排。
@@ -887,14 +908,16 @@ class SrsRwkvService implements SrsRwkvScheduling {
   }
 
   /// 分数表的全量刷新时机（见文件头）：日界设置 / 本机状态纪元变了 → 清空（之后按历史重算）；
-  /// 换日、牌组设置或同步合并（[SrsDbStore.rwkvScoresKey]）、模型状态推进满
-  /// [requeryEveryAnswers] 次、距上次整表重查满 [requeryAfter] → 原生侧按此刻整表重查。
-  Future<void> _alignScores(
+  /// 换日、牌组设置或同步合并（[SrsDbStore.rwkvScoresKey]）、距上次整表重查满 [requeryAfter]
+  /// → 当场整表重查；只是模型状态推进满 [refreshEvery] 次 → 返回 true，调用方用完这次
+  /// 的分数后在后台重查（[_requeryInBackground]）。
+  Future<bool> _alignScores(
     SrsRwkvBackend backend,
     SrsDayContext day,
     int today,
-    int nowMs,
-  ) async {
+    int nowMs, {
+    required int refreshEvery,
+  }) async {
     final String clearKey =
         '${store.rwkvScoresClearKey}|${day.utcOffsetMin}|${day.rolloverHour}';
     final String requeryKey = store.rwkvScoresKey;
@@ -903,17 +926,35 @@ class SrsRwkvService implements SrsRwkvScheduling {
     } else if (requeryKey != _scoresRequeryKey ||
         today != _scoresToday ||
         nowMs - _scoresAt >= requeryAfter.inMilliseconds ||
-        nowMs < _scoresAt ||
-        _stateChangesSinceRequery >= requeryEveryAnswers) {
+        nowMs < _scoresAt) {
       await _serial(() => backend.requeryScores(today, nowMs));
     } else {
-      return;
+      return _stateChangesSinceRequery >= refreshEvery;
     }
     _scoresClearKey = clearKey;
     _scoresRequeryKey = requeryKey;
     _scoresToday = today;
     _scoresAt = nowMs;
     _stateChangesSinceRequery = 0;
+    return false;
+  }
+
+  /// 后台整表重查（见文件头）：排在本次排队的查询后面，同一个 worker 串行，不与查询交错。
+  /// 计数在排进去时清零：重查期间又答的题算下一轮。已有一轮在排队时不再排。
+  void _requeryInBackground(SrsRwkvBackend backend, int today, int nowMs) {
+    if (_requeryPending) return;
+    _requeryPending = true;
+    _stateChangesSinceRequery = 0;
+    unawaited(
+      _serial(() => backend.requeryScores(today, nowMs))
+          .then<void>((_) {
+            if (today == _scoresToday && nowMs > _scoresAt) _scoresAt = nowMs;
+          })
+          .catchError((Object error) {
+            _log('RWKV background requery failed: $error');
+          })
+          .whenComplete(() => _requeryPending = false),
+    );
   }
 
   /// 分数表里没有（或版本变了）的卡：读历史、按此刻建查询行，一次原生调用算完并记进表里。

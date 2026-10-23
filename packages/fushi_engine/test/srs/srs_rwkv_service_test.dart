@@ -267,16 +267,23 @@ class _Fixture {
     return models;
   }
 
-  SrsRwkvService service(
-    _FakeBackend backend, {
-    bool ready = true,
-    int requeryEveryAnswers = kSrsRwkvRequeryEveryAnswers,
-  }) => SrsRwkvService(
-    store: store,
-    models: models(ready: ready),
-    snapshotDir: Directory('${dir.path}/state'),
-    requeryEveryAnswers: requeryEveryAnswers,
-    openBackend: (File weights) async => backend,
+  SrsRwkvService service(_FakeBackend backend, {bool ready = true}) =>
+      SrsRwkvService(
+        store: store,
+        models: models(ready: ready),
+        snapshotDir: Directory('${dir.path}/state'),
+        openBackend: (File weights) async => backend,
+      );
+
+  /// 默认牌组的「每答几题刷新 RWKV 分数」（牌组设置）。
+  Future<void> setRefreshEvery(int n) => store.editFields(
+    SrsEntityKind.deck,
+    store.defaultDeckId,
+    <String, Object?>{
+      SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings(
+        refreshEvery: n,
+      ).toValue(),
+    },
   );
 
   Future<int> reviewCount() async =>
@@ -559,7 +566,8 @@ void main() {
       await f.graduate(cards);
       backend = _FakeBackend()..defaultR = 0.5;
       // 这组钉的是局部作废与撤销日志：把按作答次数的整表重查调到够不着（那条在下一组）。
-      service = f.service(backend, requeryEveryAnswers: 1000);
+      await f.setRefreshEvery(1000);
+      service = f.service(backend);
       f.store.rwkv = service;
       await service.start();
       await _settled(service);
@@ -664,11 +672,10 @@ void main() {
     late _FakeBackend backend;
     late SrsRwkvService service;
 
-    Future<void> open({
-      int requeryEveryAnswers = kSrsRwkvRequeryEveryAnswers,
-    }) async {
+    Future<void> open({int refreshEvery = 1}) async {
       backend = _FakeBackend()..defaultR = 0.5;
-      service = f.service(backend, requeryEveryAnswers: requeryEveryAnswers);
+      if (refreshEvery != 1) await f.setRefreshEvery(refreshEvery);
+      service = f.service(backend);
       f.store.rwkv = service;
       await service.start();
       await _settled(service);
@@ -683,7 +690,7 @@ void main() {
 
     tearDown(() => service.close());
 
-    test('缺省每次作答后整表按最新状态重查：别的卡的分数跟着变', () async {
+    test('缺省每次作答后整表按最新状态重查：放后台、下一次排队生效', () async {
       await open();
       final String deck = f.store.defaultDeckId;
       final String a = (await f.store.nextCard(deck))!;
@@ -692,17 +699,58 @@ void main() {
       for (final String c in cards) {
         backend.setR(c, 0.6);
       }
-      backend.setR(cards.firstWhere((String c) => c != a), 0.3);
+      final String low = cards.firstWhere((String c) => c != a);
+      final int lowId = SrsIds.ankiNumericIds(<String>[low]).single;
+      backend.setR(low, 0.3);
       await f.store.answer(a, 3);
       f.advance(1000);
       expect(await service.refresh(), isTrue);
-      final String next = (await f.store.nextCard(deck))!;
+      // 这一次排队不等整表重查：用表里现有的分数出卡，出完再在后台重查（不阻塞出卡的耗时由
+      // srs_rwkv_answer_bench_test 真模型实测）。
+      final String first = (await f.store.nextCard(deck))!;
+      await pumpEventQueue();
       expect(backend.requeries, 1);
-      expect(next, cards.firstWhere((String c) => c != a));
+      expect(backend.scores[lowId]!.$2, closeTo(0.3, 1e-9), reason: '后台重查完');
+      // 下一题起用新分数：R 最低的那张先出。
+      final String b = first == low
+          ? cards.firstWhere((String c) => c != a && c != low)
+          : first;
+      await f.store.answer(b, 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      expect(await f.store.nextCard(deck, exclude: <String>{a, b}), low);
+    });
+
+    test('每答几题刷新是牌组设置：改了下一次排队就按新值数；小于 1 按 1', () async {
+      expect(
+        SrsRwkvQueueSettings.fromValue(<String, Object?>{
+          'refreshEvery': 0,
+        }).refreshEvery,
+        1,
+      );
+      expect(const SrsRwkvQueueSettings().refreshEvery, 1, reason: '默认每题');
+      await open();
+      final String deck = f.store.defaultDeckId;
+      await f.store.nextCard(deck);
+      await f.setRefreshEvery(2);
+      await f.store.nextCard(deck);
+      expect(backend.requeries, 1, reason: '牌组设置变了：当场整表重查');
+      await f.store.answer(cards[0], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 1, reason: '推进 1 次，没满 2 次');
+      await f.store.answer(cards[1], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 2);
     });
 
     test('只数状态推进：连续直接评分（中间不排队）照样数满就重查', () async {
-      await open(requeryEveryAnswers: 3);
+      await open(refreshEvery: 3);
       final String deck = f.store.defaultDeckId;
       await f.store.nextCard(deck);
       for (final String c in cards.take(2)) {
@@ -711,12 +759,14 @@ void main() {
       }
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
+      await pumpEventQueue();
       expect(backend.requeries, 0, reason: '推进 2 次，没满 3 次');
       // 第三次作答之前不排队：以前按「部分命中的查询」计数，这里一次都不算。
       await f.store.answer(cards[2], 3);
       f.advance(1000);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
+      await pumpEventQueue();
       expect(backend.requeries, 1);
       // 撤回也是状态推进。
       final SrsReviewLog l = await f.store.answer(cards[3], 3);
@@ -725,11 +775,13 @@ void main() {
       expect(await f.store.undo(cards[3], l.id), isTrue);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
+      await pumpEventQueue();
       expect(backend.requeries, 1, reason: '答 + 撤 = 2 次');
       await f.store.answer(cards[4], 3);
       f.advance(1000);
       expect(await service.refresh(), isTrue);
       await f.store.nextCard(deck);
+      await pumpEventQueue();
       expect(backend.requeries, 2);
     });
 

@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
@@ -43,6 +46,26 @@ class _FakePrefs implements VideoSubtitleGeneratePrefs {
       segmenter = value;
 }
 
+/// 模型没下好、而另一处（之前那次弹层 / 设置页）正在下（kZZmXQBv7E）。
+class _DownloadingAsr implements VideoSubtitleAsrModelPort {
+  final StreamController<ModelDownloadEvent> running =
+      StreamController<ModelDownloadEvent>.broadcast();
+  int downloads = 0;
+
+  @override
+  Future<bool> isReady() async => false;
+
+  @override
+  Stream<ModelDownloadEvent> download() {
+    downloads++;
+    return running.stream;
+  }
+
+  @override
+  Stream<ModelDownloadEvent>? resumeDownload() =>
+      running.isClosed ? null : running.stream;
+}
+
 void main() {
   late FushiDatabase db;
   late Directory tmp;
@@ -76,7 +99,9 @@ void main() {
   });
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  AppVideoSubtitleService buildService() => AppVideoSubtitleService(
+  AppVideoSubtitleService buildService({
+    VideoSubtitleAsrModelPort asrModelPort = const ReadyModels(),
+  }) => AppVideoSubtitleService(
     database: db,
     settings: settings,
     glossaryStore: MemoryGlossaryStore(),
@@ -84,7 +109,7 @@ void main() {
     jobsRoot: () async => Directory(p.join(tmp.path, 'jobs')),
     probeDurationMs: (String _) async => 24 * 60 * 1000,
     mossPort: const ReadyModels(),
-    asrModelPort: const ReadyModels(),
+    asrModelPort: asrModelPort,
     recognizerResolver:
         ({
           required VideoSubtitleSegmenterMode mode,
@@ -125,6 +150,53 @@ void main() {
         find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
       )
       .onPressed;
+
+  testWidgets('重开弹层接回进行中的模型下载：显示进度、下载钮不再可点（不另起写者）', (
+    WidgetTester tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _DownloadingAsr asr = _DownloadingAsr();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleGenerateSheet(
+            service: buildService(asrModelPort: asr),
+            target: target,
+            prefs: _FakePrefs(),
+            openAiSettings: (BuildContext _) async {},
+          ),
+        ),
+      ),
+    );
+    asr.running.add(
+      const ModelDownloadEvent(
+        fileName: 'model.onnx_data',
+        receivedBytes: 40,
+        totalBytes: 100,
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final Finder button = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-model-download'),
+    );
+    expect(button, findsOneWidget);
+    expect(tester.widget<FushiOutlinedButton>(button).onPressed, isNull);
+    expect(asr.downloads, 0, reason: '接回而不是重新发起');
+
+    await asr.running.close();
+    await tester.pump();
+    await tester.pump();
+    expect(
+      tester.widget<FushiOutlinedButton>(button).onPressed,
+      isNotNull,
+      reason: '那条结束后（仍未就绪）才允许再点',
+    );
+  });
 
   testWidgets('AI 校对开着但没指派提供商：显示引导，「开始」不可点', (WidgetTester tester) async {
     tester.view

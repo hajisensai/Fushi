@@ -33,6 +33,7 @@ import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
+import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -935,14 +936,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     // 扫描根是**长期存储并反复复扫**的路径，必须是 `dart:io` 真读得动的绝对路径：
     // 安卓上裸 `getDirectoryPath()` 只是把 tree URI 拼成路径串（映射不出 volume 时
     // 还会退化成 `/`），而 SAF 授的是 URI 权限不是路径权限——没有全文件访问，扫描
-    // 器读它必失败，于是「加了来源却永远扫不出书」。统一走 pickRealDirectoryPath
-    // （安卓先取全文件访问再经原生 SAF 解析真实路径；桌面/iOS 行为逐字不变）。
-    final String? picked = await pickRealDirectoryPath(
-      context: context,
-      appModel: _appModel,
-      dialogTitle: t.media_source_add_local_folder,
-    );
-    if (!mounted || picked == null || picked.isEmpty) return;
+    // 器读它必失败，于是「加了来源却永远扫不出书」。统一走 [_pickSourceFolder]
+    // （安卓先取全文件访问再经原生 SAF 解析真实路径；iOS 建安全作用域书签；桌面原样）。
+    final ({String path, String? bookmark})? pick =
+        await _pickSourceFolder(t.media_source_add_local_folder);
+    if (!mounted || pick == null) return;
+    final String picked = pick.path;
+    final String? bookmark = pick.bookmark;
     if (await _importedAsAudioCd(picked) || !mounted) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
@@ -957,7 +957,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           msg: t.media_source_root_already_added(path: norm),
           severity: ToastSeverity.warning,
         );
-        await _rescan(row);
+        await _rescan(await _adoptFreshBookmark(row, bookmark));
         return;
       }
     }
@@ -970,6 +970,8 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         mediaKind: Value(widget.mediaKind),
         transport: const Value('local'),
         rootPath: Value(norm),
+        // iOS：安全作用域书签，扫描 / 播放前据此重新取得访问权（BUG-3697）。
+        configJson: sourceConfigValueForBookmark(bookmark),
         recursive: const Value(true),
         videoGroupingMode: Value(groupingMode),
         sortOrder: Value(_nextSortOrder()),
@@ -991,12 +993,10 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 逐字一致。
   Future<void> importLocalFolderOnce() async {
     if (isBusy) return;
-    final String? picked = await pickRealDirectoryPath(
-      context: context,
-      appModel: _appModel,
-      dialogTitle: t.media_import_folder,
-    );
-    if (!mounted || picked == null || picked.isEmpty) return;
+    final ({String path, String? bookmark})? pick =
+        await _pickSourceFolder(t.media_import_folder);
+    if (!mounted || pick == null) return;
+    final String picked = pick.path;
     if (await _importedAsAudioCd(picked) || !mounted) return;
 
     final String norm = normalizeSourceRootPath(picked, transport: 'local');
@@ -1010,7 +1010,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           msg: t.media_source_root_already_added(path: norm),
           severity: ToastSeverity.warning,
         );
-        await _rescan(row);
+        await _rescan(await _adoptFreshBookmark(row, pick.bookmark));
         return;
       }
     }
@@ -1026,6 +1026,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           mediaKind: widget.mediaKind,
           path: norm,
           videoGroupingMode: groupingMode,
+          bookmark: pick.bookmark,
           onScanning: onScanning,
         ),
       );
@@ -1053,6 +1054,58 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       }
       onLibraryChanged?.call();
     }
+  }
+
+  /// 选一个要登记成来源（常驻或仅此一次）的本地文件夹。
+  ///
+  /// iOS 走 [SourceFolderAccess.pickFolder]：系统目录选择器 + 在访问窗口内建安全作用域
+  /// 书签（BUG-3697）。file_picker 的 `getDirectoryPath()` 交回的沙盒外路径从未激活
+  /// 访问，`dart:io` 读不了，存下来也永远扫不出东西。其它平台（以及集成测试注入路径
+  /// 时）走 [pickRealDirectoryPath]，书签恒为 null。
+  ///
+  /// 返回 null = 取消或失败（失败已提示）。
+  Future<({String path, String? bookmark})?> _pickSourceFolder(
+    String dialogTitle,
+  ) async {
+    final SourceFolderAccess access = SourceFolderAccess.instance;
+    if (access.requiresBookmark && !isRealDirectoryPathOverridden) {
+      final SourceFolderBookmarkPick? pick;
+      try {
+        pick = await access.pickFolder();
+      } on SourceFolderAccessException catch (e) {
+        FushiToast.show(
+          msg: t.media_source_folder_access_pick_failed(reason: e.message),
+          severity: ToastSeverity.error,
+        );
+        return null;
+      }
+      if (pick == null || pick.path.isEmpty) return null;
+      return (path: pick.path, bookmark: pick.bookmark);
+    }
+    final String? picked = await pickRealDirectoryPath(
+      context: context,
+      appModel: _appModel,
+      dialogTitle: dialogTitle,
+    );
+    if (picked == null || picked.isEmpty) return null;
+    return (path: picked, bookmark: null);
+  }
+
+  /// 撞同根时用户刚为这个文件夹重新授过权：把新书签写回已有行并丢掉旧访问，返回
+  /// 带新 configJson 的行供重扫。这是修复之前在 iOS 上加的、没有书签的来源的恢复
+  /// 路径（扫描报「未保存访问授权」时提示用户重新添加同一个文件夹）。
+  /// [bookmark] 为 null（非 iOS）时原样返回 [row]。
+  Future<SourceLibraryRow> _adoptFreshBookmark(
+    SourceLibraryRow row,
+    String? bookmark,
+  ) async {
+    if (bookmark == null) return row;
+    await _db.updateMediaSourceConfigJson(
+      row.id,
+      configWithSourceBookmark(row.configJson, bookmark),
+    );
+    await SourceFolderAccess.instance.invalidate(row.id);
+    return await _db.getMediaSourceById(row.id) ?? row;
   }
 
   /// 添加网络来源：弹连接表单（transport 集按域收窄，见 [_networkTransports]）

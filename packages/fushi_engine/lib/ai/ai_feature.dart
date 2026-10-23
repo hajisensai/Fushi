@@ -102,7 +102,25 @@ enum AiFeature {
   /// 补偿措施——只发 ASR 文本与专名表（不发音频 / 画面）；时间轴永远是本地识别
   /// 的，AI 只改文字；回复必须覆盖整批全部 id 才落盘，缺 id / 解析失败重试，
   /// 最终失败报错停下而不是静默保留原稿；已有同名字幕绝不覆盖。
-  subtitleProofread;
+  ///
+  /// 同一指派也服务语音转录弹层的「AI 校对」（`asr/asr_transcript_proofreader.dart`，
+  /// 有声书 / 视频转录稿通用）：只改文字、补标点，cue 数量与时间轴不变，回复缺条
+  /// 的那一块整块放弃；校对前的原稿留备份、可还原。只在用户点「AI 校对」时发请求。
+  subtitleProofread,
+
+  /// 云端语音转录（`asr/cloud_whisper_transcription_service.dart`）：把音频交给
+  /// OpenAI 兼容的 `/audio/transcriptions`（Groq / OpenAI Whisper 等）转字幕。这家
+  /// 提供商的「模型」填 Whisper 模型名（如 Groq 的 `whisper-large-v3`）。
+  ///
+  /// 与 [mangaOcr] 同属上传用户内容、按量计费的一类，所以**不跟随默认提供商**
+  /// （[followsDefaultProvider]）：默认提供商多半是聊天模型，跟过来只会在转录时
+  /// 报错，也不该在用户没点名的情况下把整本有声书传出去。只有显式指派了一家、并在
+  /// 转录弹层里选了「云端」引擎才会发请求；产物与设备端转录同构（单时间轴 SRT +
+  /// 逐 token 时间 sidecar），时间轴来自服务端的逐词 / 逐段时间。
+  cloudTranscription;
+
+  /// 没显式指派时是否跟随默认提供商（见 [cloudTranscription]）。
+  bool get followsDefaultProvider => this != AiFeature.cloudTranscription;
 
   /// 持久化键。[acquire] 钉在合并前的 `videoAcquire`，其余与枚举名一致；
   /// 改枚举名不能改这里，否则存量指派静默失效。
@@ -199,7 +217,8 @@ class AiFeatureAssignments {
     if (explicit == kAiFeatureDisabled) {
       return null;
     }
-    return explicit ?? defaultProviderId;
+    return explicit ??
+        (feature.followsDefaultProvider ? defaultProviderId : null);
   }
 
   /// 解析出这个功能**当前真能用**的提供商。

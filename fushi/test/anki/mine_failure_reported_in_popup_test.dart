@@ -20,7 +20,7 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 // 修法：空卡门带 [AnkiErrorCode.allFieldsEmpty] → 本地化成能照着做的一句话；弹窗
 // 发起的失败只在弹窗按钮旁说一次（[MinePopupResult.message]），宿主不再另弹 toast。
 //
-// BUG-3682 之后空映射在载入时就补成按字段名推出的默认映射，① 的「空表」本身不再出现；
+// BUG-3723 之后空映射在载入时就补成按字段名推出的默认映射，① 的「空表」本身不再出现；
 // 空卡门仍要守住「映射覆盖到了笔记类型、但渲染出来全空」（这里 Front 映射到一个本次
 // 词条没有的读音）。
 

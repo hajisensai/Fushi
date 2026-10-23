@@ -1006,8 +1006,15 @@ SrsHistogram srsUnitHistogram(List<double> values, {required int bins}) {
 
 /// 一张卡的有效日志 → 统计复习记录 + 成熟变化。[history] 用 [SrsCardHistory]
 /// 判有效（undo 撤销 / 等价导入都已排除）。
+///
+/// [cardId] = 这份历史所属的（可见）卡：历史含前身卡的日志时（更改笔记类型、旧 Lapis 迁到
+/// Fushi 卡片），记录归到这张卡上，而不是日志上写的前身卡 id。不给时按日志自己的卡。
 ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-srsStatsFromHistory(SrsCardHistory history, SrsDayContext day) {
+srsStatsFromHistory(
+  SrsCardHistory history,
+  SrsDayContext day, {
+  String? cardId,
+}) {
   final List<SrsStatReview> reviews = <SrsStatReview>[];
   final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
   SrsScheduleResult prev = SrsScheduleResult.initial;
@@ -1036,7 +1043,7 @@ srsStatsFromHistory(SrsCardHistory history, SrsDayContext day) {
         final int offsetMs = l.utcOffsetMin * 60000;
         reviews.add(
           SrsStatReview(
-            cardId: l.cardId,
+            cardId: cardId ?? l.cardId,
             at: l.occurredAt,
             day: dayIndex,
             hour: ((l.occurredAt + offsetMs) % _dayMs) ~/ _hourMs,
@@ -1062,7 +1069,7 @@ srsStatsFromHistory(SrsCardHistory history, SrsDayContext day) {
     if (mature != prevMature) {
       maturity.add(
         SrsStatMaturityEvent(
-          cardId: l.cardId,
+          cardId: cardId ?? l.cardId,
           day: dayIndex,
           delta: mature ? 1 : -1,
         ),

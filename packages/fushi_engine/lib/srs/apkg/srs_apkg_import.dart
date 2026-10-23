@@ -349,6 +349,9 @@ class _Importer {
   /// 本批攒下的事件草稿：修改记录的序号在落库时（[SrsDbStore.importDrafts]）才分配。
   final List<SrsEventDraft> _pending = <SrsEventDraft>[];
 
+  /// 已存在的卡要补写的新卡位置（重新导入 / 迁移补救，见 [_importNewPosition]），导入结束一次写。
+  final Map<String, int> _positionRepairs = <String, int>{};
+
   // fushi-ext
   bool _extSameProfile = false;
   final Map<int, List<SrsReviewLog>> _extLogsByCard =
@@ -400,6 +403,7 @@ class _Importer {
     }
     await _flush(force: true);
     if (_historyLinks.isNotEmpty) await store.writeEdits(_historyLinks);
+    await _repairNewPositions();
     onProgress?.call(1);
     return report;
   }
@@ -1450,6 +1454,14 @@ class _Importer {
           reason: SrsImportIssueReason.noteTypeChanged,
         ),
       );
+      // 本机换过笔记类型（旧 Lapis 迁到 Fushi 卡片）：内容与日志不动，但从没排过的新卡位置照样
+      // 补上（写到继承这些卡的可见卡上，见 [_repairNewPositions]）——已迁移用户重迁的补救路径。
+      if (options.withScheduling) {
+        for (final _SrcCard c in cards) {
+          final String? cardId = _cardIdOf(nt, noteId, c);
+          if (cardId != null) _importNewPosition(cardId, c, noteExisted: true);
+        }
+      }
       return;
     } else if (restored) {
       // 删除标记、内容、标签、首选牌组一律回到来源：用户要的是「把它导回来」，本机的旧内容
@@ -1494,17 +1506,8 @@ class _Importer {
     }
 
     for (final _SrcCard c in cards) {
-      final String? tplId = nt.isCloze
-          ? (nt.templateIdByOrd.isEmpty
-                ? null
-                : nt.templateIdByOrd[nt.templateIdByOrd.keys.reduce(min)])
-          : nt.templateIdByOrd[c.ord];
-      if (tplId == null) continue;
-      final String cardId = SrsIds.card(
-        noteId,
-        tplId,
-        nt.isCloze ? c.ord + 1 : 0,
-      );
+      final String? cardId = _cardIdOf(nt, noteId, c);
+      if (cardId == null) continue;
       await _importCardFlags(
         cardId,
         c,
@@ -1519,6 +1522,17 @@ class _Importer {
         report.cardsResetToNew++;
       }
     }
+  }
+
+  /// 来源卡在本机的卡 ID（模板按 ord 对应；填空题共用一个模板、按填空序号区分）。
+  String? _cardIdOf(_NtMap nt, String noteId, _SrcCard c) {
+    final String? tplId = nt.isCloze
+        ? (nt.templateIdByOrd.isEmpty
+              ? null
+              : nt.templateIdByOrd[nt.templateIdByOrd.keys.reduce(min)])
+        : nt.templateIdByOrd[c.ord];
+    if (tplId == null) return null;
+    return SrsIds.card(noteId, tplId, nt.isCloze ? c.ord + 1 : 0);
   }
 
   Future<void> _importCardFlags(
@@ -1567,6 +1581,48 @@ class _Importer {
     }
   }
 
+  /// Anki 新卡的出卡位置（`due` 是新卡序号；在筛选牌组里时原值在 `odue`）→ Fushi 的
+  /// [SrsFieldKeys.cardNewPosition]。以前不导：迁移后的新卡全部「没排过」，按笔记创建时刻出，
+  /// Anki 里按词频 / 手动排好的顺序丢了。
+  ///
+  /// 本机已有的卡（重新导入 / 已迁移用户再迁一次）只补「从没排过」的：本机排过的（「按词频
+  /// 重排新卡」、Fushi 里改过位置）不覆盖。
+  void _importNewPosition(
+    String cardId,
+    _SrcCard c, {
+    required bool noteExisted,
+  }) {
+    if (c.type != 0) return;
+    final int pos = c.odid != 0 && c.odue != 0 ? c.odue : c.due;
+    if (!noteExisted) {
+      _pending.addAll(
+        store.newEditDrafts(SrsEntityKind.card, cardId, <String, Object?>{
+          SrsFieldKeys.cardNewPosition: pos,
+        }),
+      );
+      return;
+    }
+    _positionRepairs[cardId] = pos;
+  }
+
+  /// 已有卡的新卡位置补救：导入的卡若已被换成别的卡（旧 Lapis 迁到 Fushi 卡片后旧卡隐藏），写到
+  /// 继承它的可见卡上；只补此刻可见、还是新卡、从没排过位置的（本机排过的不覆盖）。
+  Future<void> _repairNewPositions() async {
+    if (_positionRepairs.isEmpty) return;
+    final Map<String, String> owners = await store.historyOwnerIndex();
+    final Map<String, int> target = <String, int>{};
+    for (final MapEntry<String, int> e in _positionRepairs.entries) {
+      target.putIfAbsent(owners[e.key] ?? e.key, () => e.value);
+    }
+    final Map<String, int> unpositioned = <String, int>{
+      for (final SrsCardCacheRow c in await store.cardRows(target.keys))
+        if (c.newPosition == null) c.id: target[c.id]!,
+    };
+    report.newPositionsRepaired = (await store.setNewCardPositions(
+      unpositioned,
+    )).length;
+  }
+
   Future<void> _importCardSchedule(
     String cardId,
     _SrcCard c,
@@ -1580,6 +1636,7 @@ class _Importer {
     final List<String> revlogIds = SrsIds.importedRevlogs(cardId, <int>[
       for (final _SrcRevlog r in revlogs) r.id,
     ]);
+    _importNewPosition(cardId, c, noteExisted: noteExisted);
     final (int nowMs, _) = store.now();
     final int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
     if (latest > nowMs + srsClockToleranceMs) {

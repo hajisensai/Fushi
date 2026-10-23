@@ -203,7 +203,7 @@ void main() {
           reason: '统一 helper 须同步显示真相源');
     });
 
-    test('_syncVolumeDisplay 写 _volumeDisplay.value 并 clamp 到 0..100', () {
+    test('_syncVolumeDisplay 写 _volumeDisplay.value 并 clamp 到音量上限', () {
       final String body = methodBody(
         page,
         RegExp(r'void _syncVolumeDisplay\(double volume\) \{(.*?)\n  \}',
@@ -212,7 +212,9 @@ void main() {
       );
       expect(body, contains('_volumeDisplay.value'),
           reason: '同步真相源 = 写 _volumeDisplay.value');
-      expect(body, contains('clamp(0.0, 100.0)'), reason: '音量须 clamp 到 0..100');
+      // W-qZRr3lwK：上限随 mpv 配置「音量上限」（100 / 150 / 200）。
+      expect(body, contains('clamp(0.0, _maxVideoVolume)'),
+          reason: '音量须 clamp 到 0..音量上限');
     });
 
     test('键盘音量键 / 静音切换 / media_kit 移动竖滑都走统一显示 helper', () {
