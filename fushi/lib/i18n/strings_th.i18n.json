@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "Muted",
   "srs_visual_tone_normal": "Normal",
   "srt_audio_unresolved": "ไม่พบไฟล์เสียง กรุณาแนบใหม่",
+  "srt_book_attach_epub": "Add book file",
+  "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
   "srt_book_reimport": "นำเข้าใหม่",
   "srt_book_reimport_body_rebuilt": "สร้างข้อความหนังสือใหม่แล้ว เปิดหนังสืออีกครั้งเพื่ออ่าน",
   "srt_book_reimport_no_cues": "ไม่พบบรรทัดคำบรรยายในไฟล์นั้น",

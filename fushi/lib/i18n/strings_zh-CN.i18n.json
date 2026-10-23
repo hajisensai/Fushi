@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "淡化",
   "srs_visual_tone_normal": "正常",
   "srt_audio_unresolved": "未找到音频文件 — 请重新附加",
+  "srt_book_attach_epub": "添加书籍文件",
+  "srt_book_attach_epub_remove_old_hint": "已用书籍正文生成新的有声书，原来的字幕书可以删除",
   "srt_book_reimport": "重新导入",
   "srt_book_reimport_body_rebuilt": "正文已重建，请重新打开本书",
   "srt_book_reimport_no_cues": "该字幕文件解析不出任何字幕行",

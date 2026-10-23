@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "Muted",
   "srs_visual_tone_normal": "Normal",
   "srt_audio_unresolved": "Arquivo de áudio não encontrado — reanexe-o",
+  "srt_book_attach_epub": "Add book file",
+  "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
   "srt_book_reimport": "Reimportar",
   "srt_book_reimport_body_rebuilt": "Texto do livro reconstruído — reabra o livro para lê-lo",
   "srt_book_reimport_no_cues": "Nenhuma linha de legenda encontrada nesse arquivo",

@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "Muted",
   "srs_visual_tone_normal": "Normal",
   "srt_audio_unresolved": "لم يتم العثور على ملف الصوت — يرجى إعادة الإرفاق",
+  "srt_book_attach_epub": "Add book file",
+  "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
   "srt_book_reimport": "إعادة الاستيراد",
   "srt_book_reimport_body_rebuilt": "تم إعادة بناء نص الكتاب — أعد فتح الكتاب لقراءته",
   "srt_book_reimport_no_cues": "لم يتم العثور على سطور ترجمة في هذا الملف",

@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "Muted",
   "srs_visual_tone_normal": "Normal",
   "srt_audio_unresolved": "音声ファイルが見つかりません。再紐付けしてください",
+  "srt_book_attach_epub": "Add book file",
+  "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
   "srt_book_reimport": "再インポート",
   "srt_book_reimport_body_rebuilt": "書籍テキストを再構築しました — 本を開き直して読んでください",
   "srt_book_reimport_no_cues": "そのファイルに字幕行が見つかりませんでした",

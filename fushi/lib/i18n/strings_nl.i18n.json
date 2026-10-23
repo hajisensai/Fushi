@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "Muted",
   "srs_visual_tone_normal": "Normal",
   "srt_audio_unresolved": "Audiobestand niet gevonden — koppel opnieuw",
+  "srt_book_attach_epub": "Add book file",
+  "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
   "srt_book_reimport": "Opnieuw importeren",
   "srt_book_reimport_body_rebuilt": "Boektekst herbouwd — heropen het boek om te lezen",
   "srt_book_reimport_no_cues": "Geen ondertitelregels gevonden in dat bestand",

@@ -6863,6 +6863,8 @@
   "srs_visual_tone_muted": "Muted",
   "srs_visual_tone_normal": "Normal",
   "srt_audio_unresolved": "Аудиофайл не найден — привяжите заново",
+  "srt_book_attach_epub": "Add book file",
+  "srt_book_attach_epub_remove_old_hint": "A new audiobook with the book text was created. You can delete the old subtitle-only book.",
   "srt_book_reimport": "Повторный импорт",
   "srt_book_reimport_body_rebuilt": "Текст книги пересоздан — откройте книгу заново для чтения",
   "srt_book_reimport_no_cues": "В этом файле не найдено строк субтитров",
