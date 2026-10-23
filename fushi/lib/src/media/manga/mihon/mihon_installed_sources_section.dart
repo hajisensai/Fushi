@@ -16,6 +16,71 @@ import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
+/// 同一扩展、同名的一组源——一般是同一站点的多个语言版本（E-Hentai 一个扩展
+/// 出几十个语言源）。列表里合成一行显示（1PKqUbCed7，用户 2026-10-23 拍板）；
+/// 数据层仍是一源一行（启停 / 置顶 / 排序 / 偏好都按源存），这里只改显示。
+@immutable
+class MihonSourceGroup {
+  const MihonSourceGroup(this.members);
+
+  /// 组内成员，保持源列表里的先后顺序；至少一个。
+  final List<MangaOnlineSourceRow> members;
+
+  /// 代表行：组的名称、置顶态、行 key 都取它。
+  MangaOnlineSourceRow get lead => members.first;
+
+  /// 多于一个语言版本。
+  bool get isMulti => members.length > 1;
+
+  /// 组开关：任一成员启用即视为开。
+  bool get enabled =>
+      members.any((MangaOnlineSourceRow source) => source.enabled);
+
+  bool get pinned => lead.pinned;
+
+  /// 已启用的成员；一个都没启用时返回全部（点进去仍可选语言浏览）。
+  List<MangaOnlineSourceRow> get openable {
+    final List<MangaOnlineSourceRow> on = <MangaOnlineSourceRow>[
+      for (final MangaOnlineSourceRow source in members)
+        if (source.enabled) source,
+    ];
+    return on.isEmpty ? members : on;
+  }
+}
+
+/// 按「扩展包 + 名称（不分大小写、去首尾空白）」把源合组，组序取每组第一次出现
+/// 的位置、组内保持原顺序。不同扩展的同名源不会被合在一起。
+List<MihonSourceGroup> groupMihonSources(List<MangaOnlineSourceRow> rows) {
+  final Map<String, List<MangaOnlineSourceRow>> byKey =
+      <String, List<MangaOnlineSourceRow>>{};
+  for (final MangaOnlineSourceRow row in rows) {
+    final String key =
+        '${row.extensionPackage}\u0000${row.name.trim().toLowerCase()}';
+    (byKey[key] ??= <MangaOnlineSourceRow>[]).add(row);
+  }
+  return <MihonSourceGroup>[
+    for (final List<MangaOnlineSourceRow> members in byKey.values)
+      MihonSourceGroup(List<MangaOnlineSourceRow>.unmodifiable(members)),
+  ];
+}
+
+/// 合组后行上的语言 tag：前 [maxShown] 个语言（去重、按出现顺序），多出的记
+/// `+N`。单语言组就是那一个语言。
+String mihonSourceGroupLanguageSummary(
+  MihonSourceGroup group, {
+  int maxShown = 3,
+}) {
+  final List<String> labels = <String>[];
+  final Set<String> seen = <String>{};
+  for (final MangaOnlineSourceRow source in group.members) {
+    final String value = source.language.trim();
+    if (value.isEmpty || !seen.add(value.toLowerCase())) continue;
+    labels.add(onlineSourceLanguageLabel(value));
+  }
+  if (labels.length <= maxShown) return labels.join(' · ');
+  return '${labels.take(maxShown).join(' · ')} +${labels.length - maxShown}';
+}
+
 /// 扩展提供的在线源列表：「导入」视图「在线源」段的正文，漫画与视频共用。
 ///
 /// 一行一个源（M3E 分段列表行，见 [InstalledOnlineSourceRow]）：启停开关、名称、
@@ -220,11 +285,14 @@ class _MihonInstalledSourcesSectionState
   }
 
   /// 把一组（置顶组 / 其余组）的新顺序拼回完整列表（置顶组在前），批量回写
-  /// `sort_order`。
+  /// `sort_order`。合组的行按成员原顺序整体挪动。
   Future<void> _reorderGroup(
-    List<MangaOnlineSourceRow> group, {
+    List<MihonSourceGroup> groups, {
     required bool pinned,
   }) async {
+    final List<MangaOnlineSourceRow> group = <MangaOnlineSourceRow>[
+      for (final MihonSourceGroup g in groups) ...g.members,
+    ];
     final List<MangaOnlineSourceRow> all = _orderedSources();
     final List<MangaOnlineSourceRow> otherGroup = <MangaOnlineSourceRow>[
       for (final MangaOnlineSourceRow row in all)
@@ -261,21 +329,134 @@ class _MihonInstalledSourcesSectionState
 
   /// 菜单里的「上移 / 下移」：与拖拽同一条回写路径，只在本组内挪一格。
   Future<void> _moveWithinGroup(
-    MangaOnlineSourceRow source,
-    List<MangaOnlineSourceRow> group,
+    MihonSourceGroup source,
+    List<MihonSourceGroup> group,
     int delta,
   ) async {
     final int index = group.indexWhere(
-      (MangaOnlineSourceRow row) => _keyOf(row) == _keyOf(source),
+      (MihonSourceGroup row) => _groupKeyOf(row) == _groupKeyOf(source),
     );
     final int target = index + delta;
     if (index < 0 || target < 0 || target >= group.length) return;
-    final List<MangaOnlineSourceRow> reordered = List<MangaOnlineSourceRow>.of(
-      group,
-    );
-    final MangaOnlineSourceRow moved = reordered.removeAt(index);
+    final List<MihonSourceGroup> reordered = List<MihonSourceGroup>.of(group);
+    final MihonSourceGroup moved = reordered.removeAt(index);
     reordered.insert(target, moved);
     await _reorderGroup(reordered, pinned: source.pinned);
+  }
+
+  /// 合组行的身份：代表行的身份（单源组与旧行 key 完全一致）。
+  static String _groupKeyOf(MihonSourceGroup group) => _keyOf(group.lead);
+
+  /// 组开关：把每个与目标不同的成员逐个写成 [value]。
+  Future<void> _setGroupEnabled(MihonSourceGroup group, bool value) async {
+    for (final MangaOnlineSourceRow source in group.members) {
+      if (source.enabled == value) continue;
+      await widget.manager.updateSourceSettings(source, enabled: value);
+    }
+  }
+
+  /// 组置顶：所有成员同进同出，否则组会被拆到两段里。
+  Future<void> _setGroupPinned(MihonSourceGroup group, bool value) async {
+    for (final MangaOnlineSourceRow source in group.members) {
+      if (source.pinned == value) continue;
+      await widget.manager.updateSourceSettings(source, pinned: value);
+    }
+  }
+
+  /// 多语言组先选语言：[candidates] 只有一个时直接返回它。
+  Future<MangaOnlineSourceRow?> _pickLanguage(
+    MihonSourceGroup group,
+    List<MangaOnlineSourceRow> candidates,
+  ) async {
+    if (candidates.length == 1) return candidates.single;
+    return showFushiChoiceDialog<MangaOnlineSourceRow>(
+      context: context,
+      title: group.lead.name,
+      message: t.mihon_source_pick_language,
+      icon: FushiIcons.language,
+      options: <FushiChoiceOption<MangaOnlineSourceRow>>[
+        for (final MangaOnlineSourceRow source in candidates)
+          FushiChoiceOption<MangaOnlineSourceRow>(
+            value: source,
+            label: onlineSourceLanguageLabel(source.language),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openGroup(MihonSourceGroup group) async {
+    final void Function(MangaOnlineSourceRow source)? open =
+        widget.onOpenSource;
+    if (open == null) return;
+    final MangaOnlineSourceRow? source = await _pickLanguage(
+      group,
+      group.openable,
+    );
+    if (source != null && mounted) open(source);
+  }
+
+  Future<void> _openGroupPreferences(MihonSourceGroup group) async {
+    final MangaOnlineSourceRow? source = await _pickLanguage(
+      group,
+      group.members,
+    );
+    if (source != null && mounted) _openPreferences(source);
+  }
+
+  /// 「语言」：逐语言启停（多选，允许全关）。
+  Future<void> _editGroupLanguages(MihonSourceGroup group) async {
+    final Set<MangaOnlineSourceRow>? chosen =
+        await showFushiMultiChoiceDialog<MangaOnlineSourceRow>(
+          context: context,
+          title: t.mihon_source_languages,
+          message: group.lead.name,
+          initial: <MangaOnlineSourceRow>{
+            for (final MangaOnlineSourceRow source in group.members)
+              if (source.enabled) source,
+          },
+          options: <FushiChoiceOption<MangaOnlineSourceRow>>[
+            for (final MangaOnlineSourceRow source in group.members)
+              FushiChoiceOption<MangaOnlineSourceRow>(
+                value: source,
+                label: onlineSourceLanguageLabel(source.language),
+              ),
+          ],
+        );
+    if (chosen == null) return;
+    for (final MangaOnlineSourceRow source in group.members) {
+      final bool want = chosen.contains(source);
+      if (source.enabled == want) continue;
+      await widget.manager.updateSourceSettings(source, enabled: want);
+    }
+  }
+
+  Future<void> _clearGroupData(MihonSourceGroup group) async {
+    if (!group.isMulti) return _clearSourceData(group.lead);
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.mihon_source_clear_data,
+      message: t.mihon_source_clear_data_hint,
+      icon: FushiIcons.deleteSweep,
+      confirmLabel: t.dialog_clear,
+      destructive: true,
+    );
+    if (!confirmed) return;
+    try {
+      for (final MangaOnlineSourceRow source in group.members) {
+        await widget.manager.clearSourceData(source);
+      }
+    } on Object catch (error, stack) {
+      if (mounted) {
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'MihonInstalledSources',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+    }
   }
 
   bool get _searching => _searchQuery.trim().isNotEmpty;
@@ -340,12 +521,13 @@ class _MihonInstalledSourcesSectionState
         if (!row.pinned) row,
     ];
     final bool narrowed = _searching || _filtering;
-    final List<MangaOnlineSourceRow> pinned = narrowed
-        ? _visible(pinnedAll)
-        : pinnedAll;
-    final List<MangaOnlineSourceRow> rest = narrowed
-        ? _visible(restAll)
-        : restAll;
+    // 同扩展同名的语言版本合成一行（先筛后合：语言筛选只留匹配的语言版本）。
+    final List<MihonSourceGroup> pinned = groupMihonSources(
+      narrowed ? _visible(pinnedAll) : pinnedAll,
+    );
+    final List<MihonSourceGroup> rest = groupMihonSources(
+      narrowed ? _visible(restAll) : restAll,
+    );
     // 筛选后的顺序不是真实顺序：不可拖、菜单里不出上移 / 下移。
     final bool reorderable = !narrowed;
     final String? emptyLabel = widget.emptyLabel;
@@ -407,27 +589,27 @@ class _MihonInstalledSourcesSectionState
           else ...<Widget>[
             if (pinned.isNotEmpty)
               SliverToBoxAdapter(
-                child: InstalledSourcesGroup<MangaOnlineSourceRow>(
+                child: InstalledSourcesGroup<MihonSourceGroup>(
                   key: const ValueKey<String>('mihon_sources_pinned_group'),
                   header: t.online_sources_pinned_header,
                   items: pinned,
-                  keyOf: _keyOf,
+                  keyOf: _groupKeyOf,
                   reorderable: reorderable,
-                  onReorder: (List<MangaOnlineSourceRow> reordered) =>
+                  onReorder: (List<MihonSourceGroup> reordered) =>
                       unawaited(_reorderGroup(reordered, pinned: true)),
                   rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
                 ),
               ),
             if (rest.isNotEmpty)
               SliverToBoxAdapter(
-                child: InstalledSourcesGroup<MangaOnlineSourceRow>(
+                child: InstalledSourcesGroup<MihonSourceGroup>(
                   key: const ValueKey<String>('mihon_sources_all_group'),
                   header: showAllHeader ? t.online_sources_all_header : null,
                   items: rest,
-                  keyOf: _keyOf,
+                  keyOf: _groupKeyOf,
                   reorderable: reorderable,
                   entranceOffset: pinned.length,
-                  onReorder: (List<MangaOnlineSourceRow> reordered) =>
+                  onReorder: (List<MihonSourceGroup> reordered) =>
                       unawaited(_reorderGroup(reordered, pinned: false)),
                   rowBuilder: _rowBuilder(rest, reorderable: reorderable),
                 ),
@@ -438,13 +620,13 @@ class _MihonInstalledSourcesSectionState
     );
   }
 
-  InstalledSourceRowBuilder<MangaOnlineSourceRow> _rowBuilder(
-    List<MangaOnlineSourceRow> group, {
+  InstalledSourceRowBuilder<MihonSourceGroup> _rowBuilder(
+    List<MihonSourceGroup> group, {
     required bool reorderable,
   }) =>
       (
         BuildContext context,
-        MangaOnlineSourceRow source,
+        MihonSourceGroup source,
         int index,
         int count,
         bool dragEnabled,
@@ -463,34 +645,51 @@ class _MihonInstalledSourcesSectionState
   ///
   /// [group] 是该行所在组（置顶 / 其余）的完整顺序，「上移 / 下移」只在组内挪，
   /// 保留给键盘 / 手柄用户；[reorderable] 为 false（搜索 / 筛选中）时不出排序项。
+  ///
+  /// 多语言组（[MihonSourceGroup.isMulti]）：语言 tag 是摘要、开关控整组、点行
+  /// 先选语言、「来源偏好」先选语言、菜单多一项「语言」逐语言启停；置顶 / 排序 /
+  /// 清数据作用于整组。
   Widget _buildRow(
-    MangaOnlineSourceRow source,
-    List<MangaOnlineSourceRow> group, {
+    MihonSourceGroup group,
+    List<MihonSourceGroup> siblings, {
     required int index,
     required int count,
     required bool reorderable,
     required bool dragEnabled,
   }) {
-    final MihonManager manager = widget.manager;
+    final MangaOnlineSourceRow source = group.lead;
     final void Function(MangaOnlineSourceRow source)? open =
         widget.onOpenSource;
     final MangaExtensionRow? extension = _extensionOf(source);
+    MangaOnlineSourceRow? loginSource;
+    for (final MangaOnlineSourceRow member in group.members) {
+      if (_loginTargetFor(member) != null) {
+        loginSource = member;
+        break;
+      }
+    }
     final List<OnlineSourceMenuAction> actions = <OnlineSourceMenuAction>[
-      if (_loginTargetFor(source) != null)
+      if (group.isMulti)
         OnlineSourceMenuAction(
-          key: ValueKey<String>('mihon_source_login_${source.sourceId}'),
+          key: ValueKey<String>(
+            'mihon_source_languages_${source.extensionPackage}_'
+            '${source.sourceId}',
+          ),
+          label: t.mihon_source_languages,
+          icon: FushiIcons.language,
+          onTap: () => unawaited(_editGroupLanguages(group)),
+        ),
+      if (loginSource case final MangaOnlineSourceRow login)
+        OnlineSourceMenuAction(
+          key: ValueKey<String>('mihon_source_login_${login.sourceId}'),
           label: t.mihon_source_login,
           icon: FushiIcons.login,
-          onTap: () => unawaited(_openWebLogin(source)),
+          onTap: () => unawaited(_openWebLogin(login)),
         ),
       OnlineSourceMenuAction(
-        label: source.pinned ? t.mihon_source_unpin : t.mihon_source_pin,
-        icon: source.pinned
-            ? FushiIcons.filled(FushiIcons.pin)
-            : FushiIcons.pin,
-        onTap: () => unawaited(
-          manager.updateSourceSettings(source, pinned: !source.pinned),
-        ),
+        label: group.pinned ? t.mihon_source_unpin : t.mihon_source_pin,
+        icon: group.pinned ? FushiIcons.filled(FushiIcons.pin) : FushiIcons.pin,
+        onTap: () => unawaited(_setGroupPinned(group, !group.pinned)),
       ),
       if (reorderable) ...<OnlineSourceMenuAction>[
         OnlineSourceMenuAction(
@@ -498,21 +697,21 @@ class _MihonInstalledSourcesSectionState
           icon: FushiIcons.expandLess,
           onTap: index == 0
               ? null
-              : () => unawaited(_moveWithinGroup(source, group, -1)),
+              : () => unawaited(_moveWithinGroup(group, siblings, -1)),
         ),
         OnlineSourceMenuAction(
           label: t.mihon_source_move_down,
           icon: FushiIcons.expandMore,
           onTap: index == count - 1
               ? null
-              : () => unawaited(_moveWithinGroup(source, group, 1)),
+              : () => unawaited(_moveWithinGroup(group, siblings, 1)),
         ),
       ],
       OnlineSourceMenuAction(
         label: t.mihon_source_clear_data,
         icon: FushiIcons.deleteSweep,
         destructive: true,
-        onTap: () => unawaited(_clearSourceData(source)),
+        onTap: () => unawaited(_clearGroupData(group)),
       ),
       if (extension != null)
         OnlineSourceMenuAction(
@@ -533,19 +732,27 @@ class _MihonInstalledSourcesSectionState
         'mihon_source_row_${source.extensionPackage}_${source.sourceId}',
       ),
       title: source.name,
-      enabled: source.enabled,
+      enabled: group.enabled,
       onEnabledChanged: (bool value) =>
-          unawaited(manager.updateSourceSettings(source, enabled: value)),
-      language: source.language,
+          unawaited(_setGroupEnabled(group, value)),
+      language: group.isMulti
+          ? mihonSourceGroupLanguageSummary(group)
+          : source.language,
       detail: mihonSourceExtensionLabel(
         sourceName: source.name,
         extensionName: extension?.name,
       ),
-      pinned: source.pinned,
-      onOpen: open == null ? null : () => open(source),
+      pinned: group.pinned,
+      onOpen: open == null
+          ? null
+          : group.isMulti
+          ? () => unawaited(_openGroup(group))
+          : () => open(source),
       primaryAction: FushiIconButtonControl(
         tooltip: t.mihon_source_preferences,
-        onPressed: () => _openPreferences(source),
+        onPressed: group.isMulti
+            ? () => unawaited(_openGroupPreferences(group))
+            : () => _openPreferences(source),
         icon: const FushiIcon(FushiIcons.settings),
       ),
       menuKey: ValueKey<String>(
