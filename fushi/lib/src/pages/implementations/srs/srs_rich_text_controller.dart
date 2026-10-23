@@ -3,8 +3,12 @@
 ///
 /// 为什么不用 WebView contenteditable：编辑页一屏十来个字段，每个字段一个 WebView 太重
 /// （桌面 WebView2 / 移动端平台视图都是独立进程或纹理），且焦点 / 输入法 / 快捷键要跨
-/// 平台视图边界桥接；这里的格式只有加粗 / 斜体 / 下划线 / 颜色 / 高亮，原生 [EditableText] 足够，
+/// 平台视图边界桥接；这里的格式只有加粗 / 斜体 / 下划线 / 颜色 / 高亮 / 注音，原生 [EditableText] 足够，
 /// 输入法、撤销、选择、手柄焦点全部沿用 app 现有的文本框行为。
+///
+/// **注音**：输入框里不画上方读音（[EditableText] 的选区 / 光标按字形排，行内塞读音会错位），
+/// 带注音的字只加点状下划线；真正的注音效果由编辑器在输入框上方另画一行（见
+/// [rubyGroups]）。在一组注音中间打字，新字归进这一组；在组的两头打字不带注音。
 ///
 /// **往返不变**：没改过（文字与样式都与载入时相同）时 [html] 原样返回载入时的字符串，
 /// 不经序列化——`<strong>` 不会被改写成 `<b>`、实体不会被重新转义。
@@ -80,7 +84,18 @@ class SrsRichTextController extends TextEditingController {
         suffix++;
       }
       final int inserted = next.length - prefix - suffix;
-      final SrsRichFormat style = _pending ?? _styleBefore(prefix);
+      SrsRichFormat style = _pending ?? _styleBefore(prefix);
+      final SrsRuby? ruby = style.ruby;
+      if (ruby != null) {
+        final int after = old.length - suffix;
+        final bool inside =
+            prefix > 0 &&
+            after < old.length &&
+            _styles[prefix - 1].ruby == ruby &&
+            _styles[after].ruby == ruby &&
+            !next.substring(prefix, prefix + inserted).contains('\n');
+        if (!inside) style = style.withRuby(null);
+      }
       _styles = <SrsRichFormat>[
         ..._styles.sublist(0, prefix),
         ...List<SrsRichFormat>.filled(inserted, style),
@@ -161,9 +176,92 @@ class SrsRichTextController extends TextEditingController {
   void setHighlight(int? argb) =>
       _restyle((SrsRichFormat s) => s.withHighlight(argb));
 
-  TextStyle _styleOf(SrsRichFormat s, bool composing) {
+  // ------------------------------------------------------------ 注音
+
+  /// 第 [index] 个字所在注音组的范围；不带注音返回 null。
+  TextRange? _rubyGroupAt(int index) {
+    if (index < 0 || index >= _styles.length) return null;
+    final SrsRuby? ruby = _styles[index].ruby;
+    if (ruby == null) return null;
+    int start = index;
+    int end = index + 1;
+    while (start > 0 && _styles[start - 1].ruby == ruby) {
+      start--;
+    }
+    while (end < _styles.length && _styles[end].ruby == ruby) {
+      end++;
+    }
+    return TextRange(start: start, end: end);
+  }
+
+  /// 当前选区落在的那一组注音：选区整个在同一组里（折叠光标 = 紧挨光标前 / 后的字所在组）
+  /// 返回这组的完整范围，否则 null。
+  TextRange? get activeRubyRange {
+    final TextSelection sel = selection;
+    if (!sel.isValid) return null;
+    if (sel.isCollapsed) {
+      return _rubyGroupAt(sel.start - 1) ?? _rubyGroupAt(sel.start);
+    }
+    final TextRange? group = _rubyGroupAt(sel.start);
+    if (group == null || sel.end > group.end) return null;
+    return group;
+  }
+
+  /// [activeRubyRange] 那组的读音。
+  String? get activeRubyReading {
+    final TextRange? range = activeRubyRange;
+    return range == null ? null : _styles[range.start].ruby!.reading;
+  }
+
+  /// 有没有注音。
+  bool get hasRuby => _styles.any((SrsRichFormat s) => s.ruby != null);
+
+  /// 全部注音组（按出现顺序）。
+  List<({TextRange range, String reading})> get rubyGroups {
+    final List<({TextRange range, String reading})> out =
+        <({TextRange range, String reading})>[];
+    int i = 0;
+    while (i < _styles.length) {
+      final TextRange? group = _rubyGroupAt(i);
+      if (group == null) {
+        i++;
+        continue;
+      }
+      out.add((range: group, reading: _styles[i].ruby!.reading));
+      i = group.end;
+    }
+    return out;
+  }
+
+  /// 给 [range] 里的字标注音 [reading]（空 = 去掉这段的注音）。范围里有换行（注音不跨行）
+  /// 或越界时不改、返回 false。
+  bool setRuby(TextRange range, String reading) {
+    if (!range.isValid ||
+        range.isCollapsed ||
+        range.end > text.length ||
+        text.substring(range.start, range.end).contains('\n')) {
+      return false;
+    }
+    final String r = reading.replaceAll(RegExp(r'[\r\n]'), ' ').trim();
+    SrsRuby? ruby;
+    if (r.isNotEmpty) {
+      int id = 0;
+      for (final SrsRichFormat s in _styles) {
+        if (s.ruby != null && s.ruby!.id > id) id = s.ruby!.id;
+      }
+      ruby = SrsRuby(id + 1, r);
+    }
+    for (int i = range.start; i < range.end; i++) {
+      _styles[i] = _styles[i].withRuby(ruby);
+    }
+    notifyListeners();
+    return true;
+  }
+
+  TextStyle _styleOf(SrsRichFormat s, bool composing, Color rubyColor) {
+    final bool ruby = s.ruby != null && !s.underline && !composing;
     final List<TextDecoration> decorations = <TextDecoration>[
-      if (s.underline || composing) TextDecoration.underline,
+      if (s.underline || composing || ruby) TextDecoration.underline,
     ];
     return TextStyle(
       fontWeight: s.bold ? FontWeight.w700 : null,
@@ -171,6 +269,8 @@ class SrsRichTextController extends TextEditingController {
       decoration: decorations.isEmpty
           ? null
           : TextDecoration.combine(decorations),
+      decorationStyle: ruby ? TextDecorationStyle.dotted : null,
+      decorationColor: ruby ? rubyColor : null,
       color: s.color == null ? null : Color(s.color!),
       backgroundColor: s.highlight == null ? null : Color(s.highlight!),
     );
@@ -188,6 +288,7 @@ class SrsRichTextController extends TextEditingController {
         withComposing && composing.isValid && !composing.isCollapsed;
     bool inComposing(int i) =>
         hasComposing && i >= composing.start && i < composing.end;
+    final Color rubyColor = Theme.of(context).colorScheme.primary;
     final List<TextSpan> children = <TextSpan>[];
     int i = 0;
     while (i < t.length) {
@@ -201,7 +302,9 @@ class SrsRichTextController extends TextEditingController {
           inComposing(j) == c) {
         j++;
       }
-      children.add(TextSpan(text: t.substring(i, j), style: _styleOf(s, c)));
+      children.add(
+        TextSpan(text: t.substring(i, j), style: _styleOf(s, c, rubyColor)),
+      );
       i = j;
     }
     return TextSpan(style: style, children: children);
