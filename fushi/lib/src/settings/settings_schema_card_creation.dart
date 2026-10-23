@@ -205,6 +205,12 @@ SettingsDestination buildCardCreationDestination() {
         subtitle: t.card_creation_notice_duplicate_hint,
       ),
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.global_tags',
+        hasRevealTarget: true,
+        title: t.anki_tags_global,
+        subtitle: t.anki_tag_default_section,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.tags',
         hasRevealTarget: true,
         title: t.anki_tags,

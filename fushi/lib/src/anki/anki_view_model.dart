@@ -200,6 +200,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 所有 Profile 共用的标签（反馈 ORHr4_WDOy），见 [AnkiSettings.globalTags]。
+  Future<void> updateGlobalTags(String tags) async {
+    final updated =
+        await _repository.updateSettings((s) => s.copyWith(globalTags: tags));
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> updateTags(String tags) async {
     final updated =
         await _repository.updateSettings((s) => s.copyWith(tags: tags));

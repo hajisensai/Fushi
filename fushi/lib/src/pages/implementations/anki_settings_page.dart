@@ -356,6 +356,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               title: t.anki_tag_default_section,
               children: [
                 SettingsSearchTarget(
+                  id: 'card_creation.anki.global_tags',
+                  child: _buildGlobalTagsInput(settings, vm),
+                ),
+                SettingsSearchTarget(
                   id: 'card_creation.anki.tags',
                   child: _buildTagsInput(settings, vm),
                 ),
@@ -2356,12 +2360,29 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   Widget _buildTagsInput(AnkiSettings settings, AnkiViewModel vm) {
     return AdaptiveSettingsRow(
       title: t.anki_tags,
+      subtitle: t.anki_tags_profile_hint,
       controlBelow: true,
       trailing: AdaptiveSettingsTextField(
         initialValue: settings.tags,
         labelText: t.anki_tags,
         hintText: t.anki_tags_hint,
         onChanged: (v) => vm.updateTags(v),
+      ),
+    );
+  }
+
+  /// 反馈 ORHr4_WDOy：所有 Profile 共用的标签，与上面按 Profile 的那一行叠加
+  /// （[AnkiSettings.noteTags]）。
+  Widget _buildGlobalTagsInput(AnkiSettings settings, AnkiViewModel vm) {
+    return AdaptiveSettingsRow(
+      title: t.anki_tags_global,
+      subtitle: t.anki_tags_global_hint,
+      controlBelow: true,
+      trailing: AdaptiveSettingsTextField(
+        initialValue: settings.globalTags,
+        labelText: t.anki_tags_global,
+        hintText: t.anki_tags_hint,
+        onChanged: (v) => vm.updateGlobalTags(v),
       ),
     );
   }

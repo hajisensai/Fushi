@@ -392,6 +392,13 @@ CtlBodyPage _tagsPage() => CtlBodyPage(
   breadcrumb: _crumb(t.anki_tag_default_section),
   items: <SettingsItem>[
     SettingsTextItem(
+      id: _id('global_tags'),
+      title: t.anki_tags_global,
+      subtitle: t.anki_tags_global_hint,
+      value: (SettingsContext c) => _cfg(c).globalTags,
+      onChanged: (SettingsContext c, String v) => _vm(c).updateGlobalTags(v),
+    ),
+    SettingsTextItem(
       id: _id('tags'),
       title: t.anki_tags,
       subtitle: t.anki_tags_hint,
