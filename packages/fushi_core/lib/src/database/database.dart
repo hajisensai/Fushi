@@ -851,7 +851,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 124;
+  int get schemaVersion => 125;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2412,6 +2412,16 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('library_organize_changes')) {
               await m.createTable(libraryOrganizeChanges);
+            }
+          }
+          if (from < 125) {
+            // v125（SRS 写入路径读放大）：idx_srs_field_edits_profile_register（同步冲突角标的
+            // 分组只扫索引）、idx_srs_notes_cache_type（笔记类型成员查找）、
+            // idx_srs_notes_cache_pending（待裁决笔记的部分索引），见 _ensureSrsIndexes。只加
+            // 索引、不动数据；全部 IF NOT EXISTS，幂等。表在阶梯上不存在（合成库）则跳过。
+            if (await _tableExists('srs_field_edits') &&
+                await _tableExists('srs_notes_cache')) {
+              await _ensureSrsIndexes();
             }
           }
         },

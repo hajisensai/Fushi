@@ -3519,11 +3519,28 @@ class AppModel with ChangeNotifier {
       // 画一帧再跳变（refreshAppFont 要等到用户改设置才跑）。
       final Future<List<String>> gameFontsF =
           AppFontLoader.resolveAndLoadAll(readerSettings.gameLookupFonts);
-      await Future.wait<Object?>(
-          <Future<Object?>>[appFontsF, subtitleFontF, gameFontsF]);
+      // 复习「Fushi 卡片」字体链（[FontTarget.srsCard]）也必须在这里装上：此前首帧前
+      // 只解析了上面三条，_srsCardFonts / _srsCardFontFamilies 一直停在空表，直到用户
+      // 在字体库里随手改一下（关掉再打开）触发 refreshAppFont 才第一次填上——表现就是
+      // 「复习卡面吃掉了字体」。refreshAppFont 填的每个字段 init 都要填（守卫
+      // test/models/app_font_init_covers_refresh_guard_test.dart）。
+      final List<Map<String, dynamic>> srsCardFonts = <Map<String, dynamic>>[
+        for (final Map<String, dynamic> row in readerSettings.srsCardFonts)
+          Map<String, dynamic>.of(row),
+      ];
+      final Future<List<String>> srsCardFontsF =
+          AppFontLoader.resolveAndLoadAll(srsCardFonts);
+      await Future.wait<Object?>(<Future<Object?>>[
+        appFontsF,
+        subtitleFontF,
+        gameFontsF,
+        srsCardFontsF,
+      ]);
       _appFontFamilies = await appFontsF;
       _subtitleFontFamily = await subtitleFontF;
       _gameLookupFontFamilies = await gameFontsF;
+      _srsCardFonts = srsCardFonts;
+      _srsCardFontFamilies = await srsCardFontsF;
       ReaderFushiSource.readerSettings = readerSettings;
 
       // Start polling physical controllers on platforms that need it (desktop);
@@ -9712,6 +9729,15 @@ class AppModel with ChangeNotifier {
   /// 未注入（测试、弹窗 / 悬浮词典引擎）时退回裸后端，与注入前行为一致。
   BaseAnkiRepository get miningAnkiRepository =>
       ankiRepositoryReader?.call() ?? platformServices.createAnkiRepository();
+
+  /// 读 `hostMiningAnkiRepositoryProvider` 的委托，由 main.dart 注入。
+  BaseAnkiRepository Function()? hostMiningRepositoryReader;
+
+  /// 替**别的设备**制卡的入口（互联主机收转发、浏览器扩展）用的仓库：裸本机后端，
+  /// 但遵守本机挖词目标（目标是 Fushi 复习时落复习）。未注入时退回裸后端。
+  BaseAnkiRepository get hostMiningAnkiRepository =>
+      hostMiningRepositoryReader?.call() ??
+      platformServices.createAnkiRepository();
 
   // TODO-2936：扩展查词请求可能成串到达（termEntries + tokenize + mine），一趟
   // 在途时后续命中直接跳过——绑定应用本身幂等，重复趟次只是浪费快照/应用开销。

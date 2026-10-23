@@ -1,9 +1,9 @@
-/// 笔记编辑页的富文本输入：一个 [TextEditingController]，额外为每个字符记一份行内样式
-/// （[SrsRichStyle]），按样式画 [TextSpan]，并序列化回 Anki 写法的 HTML。
+/// 笔记编辑页的富文本输入：一个 [TextEditingController]，额外为每个字符记一份行内格式
+/// （[SrsRichFormat]，含高亮，见 srs_rich_format.dart），按样式画 [TextSpan]，并序列化回 Anki 写法的 HTML。
 ///
 /// 为什么不用 WebView contenteditable：编辑页一屏十来个字段，每个字段一个 WebView 太重
 /// （桌面 WebView2 / 移动端平台视图都是独立进程或纹理），且焦点 / 输入法 / 快捷键要跨
-/// 平台视图边界桥接；这里的格式只有加粗 / 斜体 / 下划线 / 颜色，原生 [EditableText] 足够，
+/// 平台视图边界桥接；这里的格式只有加粗 / 斜体 / 下划线 / 颜色 / 高亮，原生 [EditableText] 足够，
 /// 输入法、撤销、选择、手柄焦点全部沿用 app 现有的文本框行为。
 ///
 /// **往返不变**：没改过（文字与样式都与载入时相同）时 [html] 原样返回载入时的字符串，
@@ -14,41 +14,42 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/srs/srs_field_markup.dart';
+import 'package:fushi/src/srs/srs_field_markup.dart' show SrsRichAttr;
+import 'package:fushi/src/srs/srs_rich_format.dart';
 
 class SrsRichTextController extends TextEditingController {
-  SrsRichTextController._(this._original, SrsRichDoc doc)
-    : _styles = List<SrsRichStyle>.of(doc.styles),
+  SrsRichTextController._(this._original, SrsRichFormatDoc doc)
+    : _styles = List<SrsRichFormat>.of(doc.formats),
       _initialText = doc.text,
-      _initialStyles = List<SrsRichStyle>.unmodifiable(doc.styles),
+      _initialStyles = List<SrsRichFormat>.unmodifiable(doc.formats),
       super(text: doc.text);
 
-  /// 从字段 HTML 建；不在子集里（见 [srsParseRichHtml]）返回 null。
+  /// 从字段 HTML 建；不在子集里（见 [srsParseRichFormatHtml]）返回 null。
   static SrsRichTextController? tryParse(String html) {
-    final SrsRichDoc? doc = srsParseRichHtml(html);
+    final SrsRichFormatDoc? doc = srsParseRichFormatHtml(html);
     return doc == null ? null : SrsRichTextController._(html, doc);
   }
 
   final String _original;
   final String _initialText;
-  final List<SrsRichStyle> _initialStyles;
-  List<SrsRichStyle> _styles;
+  final List<SrsRichFormat> _initialStyles;
+  List<SrsRichFormat> _styles;
 
   /// 折叠光标下「接下来输入的字」的样式（点了加粗再打字）；移动光标即作废。
-  SrsRichStyle? _pending;
+  SrsRichFormat? _pending;
 
   /// 逐字符样式（只读视图）。
-  List<SrsRichStyle> get styles => List<SrsRichStyle>.unmodifiable(_styles);
+  List<SrsRichFormat> get styles => List<SrsRichFormat>.unmodifiable(_styles);
 
   /// 和载入时相比改过没有。
   bool get dirty =>
-      text != _initialText || !srsSameStyles(_styles, _initialStyles);
+      text != _initialText || !srsSameFormats(_styles, _initialStyles);
 
   /// 字段值：没改过 = 原样的载入值；改过 = 序列化。
-  String get html => dirty ? srsRichToHtml(text, _styles) : _original;
+  String get html => dirty ? srsRichFormatToHtml(text, _styles) : _original;
 
-  SrsRichStyle _styleBefore(int offset) {
-    if (_styles.isEmpty) return SrsRichStyle.plain;
+  SrsRichFormat _styleBefore(int offset) {
+    if (_styles.isEmpty) return SrsRichFormat.plain;
     if (offset > 0) return _styles[math.min(offset, _styles.length) - 1];
     return _styles.first;
   }
@@ -79,10 +80,10 @@ class SrsRichTextController extends TextEditingController {
         suffix++;
       }
       final int inserted = next.length - prefix - suffix;
-      final SrsRichStyle style = _pending ?? _styleBefore(prefix);
-      _styles = <SrsRichStyle>[
+      final SrsRichFormat style = _pending ?? _styleBefore(prefix);
+      _styles = <SrsRichFormat>[
         ..._styles.sublist(0, prefix),
-        ...List<SrsRichStyle>.filled(inserted, style),
+        ...List<SrsRichFormat>.filled(inserted, style),
         ..._styles.sublist(old.length - suffix),
       ];
       _pending = null;
@@ -119,7 +120,7 @@ class SrsRichTextController extends TextEditingController {
     return first;
   }
 
-  void _restyle(SrsRichStyle Function(SrsRichStyle s) change) {
+  void _restyle(SrsRichFormat Function(SrsRichFormat s) change) {
     final TextSelection sel = selection;
     if (!sel.isValid || sel.isCollapsed) {
       _pending = change(
@@ -136,13 +137,31 @@ class SrsRichTextController extends TextEditingController {
   /// 开关 [attr]：选区里全都带 → 去掉；否则全部加上。折叠光标 = 改接下来输入的样式。
   void toggle(SrsRichAttr attr) {
     final bool on = !isActive(attr);
-    _restyle((SrsRichStyle s) => s.withAttr(attr, on));
+    _restyle((SrsRichFormat s) => s.withAttr(attr, on));
   }
 
   /// 设文字颜色（null = 默认颜色）。
-  void setColor(int? argb) => _restyle((SrsRichStyle s) => s.withColor(argb));
+  void setColor(int? argb) => _restyle((SrsRichFormat s) => s.withColor(argb));
 
-  TextStyle _styleOf(SrsRichStyle s, bool composing) {
+  /// 当前选区（或光标处）的高亮色；选区里不一致时 null。
+  int? get activeHighlight {
+    final TextSelection sel = selection;
+    if (!sel.isValid || sel.isCollapsed) {
+      return (_pending ?? _styleBefore(sel.isValid ? sel.start : text.length))
+          .highlight;
+    }
+    final int? first = _styles[sel.start].highlight;
+    for (int i = sel.start; i < sel.end; i++) {
+      if (_styles[i].highlight != first) return null;
+    }
+    return first;
+  }
+
+  /// 设高亮（null = 去掉高亮）。
+  void setHighlight(int? argb) =>
+      _restyle((SrsRichFormat s) => s.withHighlight(argb));
+
+  TextStyle _styleOf(SrsRichFormat s, bool composing) {
     final List<TextDecoration> decorations = <TextDecoration>[
       if (s.underline || composing) TextDecoration.underline,
     ];
@@ -153,6 +172,7 @@ class SrsRichTextController extends TextEditingController {
           ? null
           : TextDecoration.combine(decorations),
       color: s.color == null ? null : Color(s.color!),
+      backgroundColor: s.highlight == null ? null : Color(s.highlight!),
     );
   }
 
@@ -171,13 +191,13 @@ class SrsRichTextController extends TextEditingController {
     final List<TextSpan> children = <TextSpan>[];
     int i = 0;
     while (i < t.length) {
-      final SrsRichStyle s = i < _styles.length
+      final SrsRichFormat s = i < _styles.length
           ? _styles[i]
-          : SrsRichStyle.plain;
+          : SrsRichFormat.plain;
       final bool c = inComposing(i);
       int j = i + 1;
       while (j < t.length &&
-          (j < _styles.length ? _styles[j] : SrsRichStyle.plain) == s &&
+          (j < _styles.length ? _styles[j] : SrsRichFormat.plain) == s &&
           inComposing(j) == c) {
         j++;
       }

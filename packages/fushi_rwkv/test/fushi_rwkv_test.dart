@@ -181,6 +181,75 @@ void main() {
     );
   }
 
+  test(
+    'worker: undo journal and score table cross the isolate boundary',
+    () async {
+      final RwkvWorker worker = await RwkvWorker.spawn(
+        modelPath: _smallWeights().path,
+        threads: 2,
+      );
+      addTearDown(worker.close);
+      final (RwkvRows history, RwkvRows _) = _history();
+      await worker.replay(history);
+      final Uint8List before = await worker.snapshot();
+      final RwkvRows today = RwkvRows()
+        ..add(
+          cardId: 103,
+          noteId: 501,
+          deckId: 2,
+          presetId: 1,
+          ease: 3,
+          cardType: 2,
+          dayOffset: 60,
+          elapsedDays: 5,
+          elapsedSeconds: 5 * 86400,
+        );
+      expect(await worker.append(today, <int>[77]), isTrue);
+      expect(await worker.snapshot(), isNot(before));
+      expect(await worker.unappend(76), isFalse);
+      expect(await worker.unappend(77), isTrue);
+      expect(await worker.snapshot(), before);
+
+      final RwkvRows q = RwkvRows();
+      for (int card = 0; card < 4; card++) {
+        q.add(
+          cardId: 100 + card,
+          noteId: 500 + card ~/ 2,
+          deckId: 1 + card % 2,
+          presetId: 1,
+          ease: 0,
+          cardType: 2,
+          dayOffset: 61,
+          elapsedDays: 3,
+          elapsedSeconds: 3 * 86400,
+        );
+      }
+      final Float32List plain = await worker.query(q);
+      final Float32List scored = await worker.updateScores(
+        q,
+        Uint64List.fromList(<int>[1, 2, 3, 4]),
+        Int64List.fromList(<int>[-1, -1, -1, -1]),
+      );
+      expect(scored, plain);
+      final RwkvScoreLookup hit = await worker.lookupScores(
+        Int64List.fromList(<int>[100, 101, 102, 103]),
+        Uint64List.fromList(<int>[1, 2, 9, 4]),
+      );
+      expect(hit.found, <int>[1, 1, 0, 1]);
+      expect(hit.scores[0], plain[0]);
+      expect(hit.scores[2].isNaN, isTrue);
+      expect(await worker.requeryScores(61, 0), 4);
+      await worker.clearScores();
+      expect(
+        (await worker.lookupScores(
+          Int64List.fromList(<int>[100]),
+          Uint64List.fromList(<int>[1]),
+        )).hits,
+        0,
+      );
+    },
+  );
+
   test('a damaged weight file is refused with a reason', () async {
     final File junk = File(
       '${Directory.systemTemp.createTempSync('fushi_rwkv').path}/junk.bin',

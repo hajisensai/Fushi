@@ -24,9 +24,8 @@ import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
-import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
-    show ankiHandlebarLabel;
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview, srsFieldPlaceholderHtml, srsRenderTemplatePreview;
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -532,15 +531,7 @@ class _SrsFieldInfoPageState extends ConsumerState<SrsFieldInfoPage> {
         children: <Widget>[
           Text(t.srs_field_info_usage, style: context.fushiType.titleSmall),
           Text(
-            slot.trim().isEmpty
-                ? t.srs_field_info_mining_none
-                : t.srs_field_info_mining(
-                    slot: slot
-                        .split(RegExp(r'\s+'))
-                        .where((String s) => s.isNotEmpty)
-                        .map(ankiHandlebarLabel)
-                        .join(' + '),
-                  ),
+            srsMiningSlotText(slot),
             key: const ValueKey<String>('srs-field-info-mining'),
             style: context.fushiType.bodyMedium,
           ),

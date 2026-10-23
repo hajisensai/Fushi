@@ -118,6 +118,8 @@ class SrsVisualBlock {
     this.size = SrsVisualSize.body,
     this.align = SrsVisualAlign.center,
     this.bold = false,
+    this.italic = false,
+    this.color,
     this.tone = SrsVisualTone.normal,
     this.filter = SrsVisualFilter.plain,
     this.boxed = false,
@@ -145,6 +147,14 @@ class SrsVisualBlock {
   final SrsVisualSize size;
   final SrsVisualAlign align;
   final bool bold;
+
+  /// 斜体。
+  final bool italic;
+
+  /// 自定义文字颜色 `#rrggbb`（小写）；null = 按 [tone]。设了颜色时 [tone] 的强调色让位，
+  /// 弱化仍生效（半透明）。
+  final String? color;
+
   final SrsVisualTone tone;
   final SrsVisualFilter filter;
 
@@ -164,6 +174,9 @@ class SrsVisualBlock {
     SrsVisualSize? size,
     SrsVisualAlign? align,
     bool? bold,
+    bool? italic,
+    String? color,
+    bool clearColor = false,
     SrsVisualTone? tone,
     SrsVisualFilter? filter,
     bool? boxed,
@@ -179,6 +192,8 @@ class SrsVisualBlock {
     size: size ?? this.size,
     align: align ?? this.align,
     bold: bold ?? this.bold,
+    italic: italic ?? this.italic,
+    color: clearColor ? null : (color ?? this.color),
     tone: tone ?? this.tone,
     filter: filter ?? this.filter,
     boxed: boxed ?? this.boxed,
@@ -196,6 +211,8 @@ class SrsVisualBlock {
     if (size != SrsVisualSize.body) 's': size.name,
     if (align != SrsVisualAlign.center) 'a': align.name,
     if (bold) 'b': true,
+    if (italic) 'i': true,
+    if (color != null) 'col': color,
     if (tone != SrsVisualTone.normal) 'c': tone.name,
     if (filter != SrsVisualFilter.plain) 'x': filter.name,
     if (boxed) 'box': true,
@@ -226,6 +243,8 @@ class SrsVisualBlock {
       size: _byName(SrsVisualSize.values, raw['s']) ?? SrsVisualSize.body,
       align: _byName(SrsVisualAlign.values, raw['a']) ?? SrsVisualAlign.center,
       bold: raw['b'] == true,
+      italic: raw['i'] == true,
+      color: srsVisualColorOrNull(raw['col']),
       tone: _byName(SrsVisualTone.values, raw['c']) ?? SrsVisualTone.normal,
       filter:
           _byName(SrsVisualFilter.values, raw['x']) ?? SrsVisualFilter.plain,
@@ -233,6 +252,19 @@ class SrsVisualBlock {
       hideWhenEmpty: raw['show'] != true,
     );
   }
+}
+
+/// 认得的自定义颜色：只收 `#rgb` / `#rrggbb`，统一成小写 `#rrggbb`；其余（含任何能逃出
+/// CSS 声明的字符）返回 null。注释里的值来自同步 / 导入 / AI，不可信。
+String? srsVisualColorOrNull(Object? raw) {
+  if (raw is! String) return null;
+  final String v = raw.trim().toLowerCase();
+  final RegExpMatch? m = RegExp(r'^#([0-9a-f]{3}|[0-9a-f]{6})$').firstMatch(v);
+  if (m == null) return null;
+  final String h = m.group(1)!;
+  return h.length == 6
+      ? '#$h'
+      : '#${h.split('').map((String c) => '$c$c').join()}';
 }
 
 T? _byName<T extends Enum>(List<T> values, Object? name) {
@@ -317,8 +349,11 @@ String _style(SrsVisualBlock b) {
     if (b.size == SrsVisualSize.display || b.size == SrsVisualSize.title)
       'line-height:1.35',
     if (b.bold) 'font-weight:700',
+    if (b.italic) 'font-style:italic',
+    if (srsVisualColorOrNull(b.color) case final String c) 'color:$c',
     switch (b.tone) {
       SrsVisualTone.normal => '',
+      SrsVisualTone.accent when srsVisualColorOrNull(b.color) != null => '',
       SrsVisualTone.accent => 'color:$_kAccent',
       SrsVisualTone.muted => 'opacity:0.7',
     },
@@ -372,7 +407,7 @@ String srsCompileVisualBody(
       case SrsVisualBlockKind.divider:
         out.writeln(
           '<hr class="fv-divider" style="border:none;border-top:1px solid '
-          '${b.tone == SrsVisualTone.accent ? _kAccent : 'rgba(127,127,127,0.35)'};'
+          '${srsVisualColorOrNull(b.color) ?? (b.tone == SrsVisualTone.accent ? _kAccent : 'rgba(127,127,127,0.35)')};'
           'margin:0.9em 0">',
         );
       case SrsVisualBlockKind.frontSide:

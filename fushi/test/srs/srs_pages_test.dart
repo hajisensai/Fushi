@@ -589,6 +589,10 @@ void main() {
         greaterThanOrEqualTo(apple ? 36 : 48),
       );
 
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(SrsDeckListPage)),
+      );
+      final int revisionBefore = container.read(srsRevisionProvider);
       await tester.tap(toggle);
       await _settle(tester);
       expect(childHeight(), 0, reason: '收起后后代消失');
@@ -599,6 +603,22 @@ void main() {
         isTrue,
         reason: '折叠写进牌组本身',
       );
+      expect(
+        container.read(srsRevisionProvider),
+        revisionBefore,
+        reason: '收起 / 展开只是界面状态，不触发牌组计数 / 角标重读',
+      );
+
+      // 之后别处（同步来的对端改动）把它改成展开、列表重读：以重读的数据为准，本地覆盖
+      // 不能把它一直钉在「收起」。
+      await tester.runAsync(() => store.setDeckCollapsed(parent, false));
+      container.read(srsRevisionProvider.notifier).state++;
+      await _settle(tester);
+      expect(childHeight(), greaterThan(0), reason: '重读的数据晚于本地写入：撤掉覆盖');
+      await tester.runAsync(() => store.setDeckCollapsed(parent, true));
+      container.read(srsRevisionProvider.notifier).state++;
+      await _settle(tester);
+      expect(childHeight(), 0);
 
       await tester.tap(toggle);
       await _settle(tester);
@@ -1224,10 +1244,20 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
+      // #17：重播键单独一行、在评分按钮上方（不再与评分按钮并排同高），靠选定的右端。
       expect(
-        tester.getCenter(replay).dx,
-        greaterThan(
-          tester.getCenter(find.byKey(const ValueKey<String>('srs-rate-4'))).dx,
+        tester.getRect(replaySentence).bottom,
+        lessThanOrEqualTo(
+          tester.getRect(find.byKey(const ValueKey<String>('srs-rate-4'))).top,
+        ),
+      );
+      expect(
+        tester.getRect(replaySentence).right,
+        moreOrLessEquals(
+          tester
+              .getRect(find.byKey(const ValueKey<String>('srs-rate-4')))
+              .right,
+          epsilon: 0.5,
         ),
       );
       // 评分按钮：间隔 + 评价词两行；整颗不高过 64（M3E 中号按钮）。关掉间隔后只剩评价词。
@@ -1345,11 +1375,24 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('复习布局：窄屏放不下逐段重播键时退回一颗整面重播键，不把底栏挤窄', (
+    testWidgets('复习布局：一行放不下逐段重播键时退回一颗整面重播键，不把底栏挤窄', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
-      await addWithAudio(tester, store);
+      // 六段音频：340 宽的一行放不下六颗逐段键。
+      await tester.runAsync(
+        () => store.createNote(
+          noteTypeId: store.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(_kProfile, 'Expression'): '食べる',
+            srsLapisFieldId(_kProfile, 'MainDefinition'): 'to eat',
+            srsLapisFieldId(_kProfile, 'ExpressionAudio'):
+                '[sound:w1.mp3][sound:w2.mp3][sound:w3.mp3]',
+            srsLapisFieldId(_kProfile, 'SentenceAudio'):
+                '[sound:s1.mp3][sound:s2.mp3][sound:s3.mp3]',
+          },
+        ),
+      );
       final _RecordingAudio audio = _RecordingAudio();
       await _pumpPage(
         tester,
@@ -1369,7 +1412,7 @@ void main() {
       expect(
         find.byKey(const ValueKey<String>('srs-bottom-replay-1')),
         findsNothing,
-        reason: '两段音频在 340 宽下放不下逐段键',
+        reason: '六段音频在 340 宽的一行里放不下逐段键',
       );
       await tester.tap(find.byKey(const ValueKey<String>('srs-show-answer')));
       await _settle(tester);
@@ -1383,11 +1426,18 @@ void main() {
       audio.played.clear();
       await tester.tap(replay);
       await _settle(tester);
-      expect(audio.played, <String>['word.mp3', 'sent.mp3']);
+      expect(audio.played, <String>[
+        'w1.mp3',
+        'w2.mp3',
+        'w3.mp3',
+        's1.mp3',
+        's2.mp3',
+        's3.mp3',
+      ]);
       await _unmount(tester);
     });
 
-    testWidgets('复习布局（Apple）：底部重播键与底栏按钮同高、放在选定那端、点了重播', (
+    testWidgets('复习布局（Apple）：底部重播键单独一行在底栏按钮上方、靠选定那端、点了重播', (
       WidgetTester tester,
     ) async {
       final SrsDbStore store = await _openStore(tester);
@@ -1421,33 +1471,22 @@ void main() {
         tester.getCenter(showAnswer).dx,
         moreOrLessEquals(512, epsilon: 0.5),
       );
-      expect(
-        tester.getSize(replay).height,
-        moreOrLessEquals(tester.getSize(showAnswer).height, epsilon: 0.5),
-      );
       expect(tester.getSize(replay).height, greaterThanOrEqualTo(48));
+      // #17：重播键单独一行，在「显示答案」上方，与它不同行。
+      expect(
+        tester.getRect(replay).bottom,
+        lessThanOrEqualTo(tester.getRect(showAnswer).top),
+      );
       await tester.tap(showAnswer);
       await _settle(tester);
-      expect(
-        tester.getSize(replay).height,
-        moreOrLessEquals(
-          tester
-              .getSize(find.byKey(const ValueKey<String>('srs-rate-1')))
-              .height,
-          epsilon: 0.5,
-        ),
-      );
-      // 与评分按钮上下对齐（评分行上方有提示行时也不错位）。
       final Rect rate = tester.getRect(
         find.byKey(const ValueKey<String>('srs-rate-1')),
       );
+      // 在评分按钮上方、与第一颗评分按钮左对齐（选的是左端）。
+      expect(tester.getRect(replay).bottom, lessThanOrEqualTo(rate.top));
       expect(
-        tester.getRect(replay).top,
-        moreOrLessEquals(rate.top, epsilon: 0.5),
-      );
-      expect(
-        tester.getRect(replay).bottom,
-        moreOrLessEquals(rate.bottom, epsilon: 0.5),
+        tester.getRect(replay).left,
+        moreOrLessEquals(rate.left, epsilon: 0.5),
       );
       audio.played.clear();
       await tester.tap(replay);

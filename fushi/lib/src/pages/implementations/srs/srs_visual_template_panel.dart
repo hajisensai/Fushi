@@ -11,7 +11,11 @@ import 'dart:convert';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart'
+    show kSrsFieldColorPalette;
+import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart';
+import 'package:fushi/src/srs/srs_field_markup.dart' show srsCssColor;
 import 'package:fushi/src/srs/srs_visual_template.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -312,14 +316,26 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
     SrsVisualBlockKind.frontSide => t.srs_visual_kind_front_side,
   };
 
+  /// 块标题：字段块显示人话名 + 原名 + ⓘ（点开看字段说明），其余块是纯文字。
+  Widget _blockTitleWidget(BuildContext context, SrsVisualBlock b) {
+    final SrsFieldDef? f = b.kind == SrsVisualBlockKind.field
+        ? widget.type.fieldById(b.fieldId ?? '')
+        : null;
+    if (f == null) return Text(_blockTitle(b));
+    return SrsFieldLabel(
+      help: SrsFieldHelp.of(f),
+      style: context.fushiType.bodyLarge,
+    );
+  }
+
   String _blockSummary(SrsVisualBlock b) => switch (b.kind) {
     SrsVisualBlockKind.field || SrsVisualBlockKind.text => <String>[
-      if (b.kind == SrsVisualBlockKind.field)
-        widget.type.fieldById(b.fieldId ?? '')?.name ?? '',
       srsVisualSizeLabel(b.size),
       srsVisualAlignLabel(b.align),
       if (b.filter != SrsVisualFilter.plain) srsVisualFilterLabel(b.filter),
       if (b.tone != SrsVisualTone.normal) srsVisualToneLabel(b.tone),
+      if (b.italic) t.srs_visual_prop_italic,
+      ?b.color,
     ].where((String s) => s.isNotEmpty).join(' · '),
     SrsVisualBlockKind.divider => srsVisualToneLabel(b.tone),
     SrsVisualBlockKind.frontSide => t.srs_visual_kind_front_side_hint,
@@ -351,7 +367,7 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
             child: FushiListItem(
               key: ValueKey<String>('srs-visual-block-tile-${b.id}'),
               leading: FushiListLeadingIcon(_blockIcon(b)),
-              title: Text(_blockTitle(b)),
+              title: _blockTitleWidget(context, b),
               subtitle: Text(_blockSummary(b)),
               onTap: hasProps
                   ? () => setState(() => _expanded = open ? null : b.id)
@@ -521,6 +537,15 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
             onChanged: (bool v) => _replace(b.copyWith(bold: v)),
           ),
           AdaptiveSettingsSwitchRow(
+            key: ValueKey<String>('srs-visual-italic-${b.id}'),
+            title: t.srs_visual_prop_italic,
+            value: b.italic,
+            onChanged: (bool v) => _replace(b.copyWith(italic: v)),
+          ),
+        ],
+        _colorRow(context, b),
+        if (textual) ...<Widget>[
+          AdaptiveSettingsSwitchRow(
             key: ValueKey<String>('srs-visual-boxed-${b.id}'),
             title: t.srs_visual_prop_boxed,
             value: b.boxed,
@@ -543,6 +568,74 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
             onChanged: (String v) => _replace(b.copyWith(label: v)),
           ),
         ],
+      ],
+    );
+  }
+
+  /// 自定义颜色：一排色板（第一格 = 不用自定义颜色，按上面的「颜色」走）。
+  Widget _colorRow(BuildContext context, SrsVisualBlock b) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    Widget swatch(int? argb) {
+      final String? css = argb == null ? null : srsCssColor(argb);
+      final bool selected = b.color == css;
+      return FushiTooltip(
+        message: css ?? t.srs_note_format_color_default,
+        child: Semantics(
+          button: true,
+          selected: selected,
+          label: css ?? t.srs_note_format_color_default,
+          child: FushiPressScale(
+            child: GestureDetector(
+              key: ValueKey<String>(
+                'srs-visual-color-${b.id}-${css ?? 'none'}',
+              ),
+              onTap: () => _replace(
+                css == null
+                    ? b.copyWith(clearColor: true)
+                    : b.copyWith(color: css),
+              ),
+              child: AnimatedContainer(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: argb == null ? tokens.surfaces.page : Color(argb),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected ? scheme.primary : scheme.outlineVariant,
+                    width: selected ? 3 : 1,
+                  ),
+                ),
+                child: argb == null
+                    ? FushiIcon(
+                        FushiIcons.block,
+                        size: 18,
+                        color: scheme.onSurfaceVariant,
+                      )
+                    : null,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      key: ValueKey<String>('srs-visual-color-${b.id}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: tokens.spacing.gap / 2,
+      children: <Widget>[
+        Text(t.srs_visual_prop_color, style: context.fushiType.bodyLarge),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            swatch(null),
+            for (final int c in kSrsFieldColorPalette) swatch(c),
+          ],
+        ),
       ],
     );
   }

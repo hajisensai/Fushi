@@ -36,6 +36,14 @@ abstract class SrsCardVideoHandle {
   Future<void> stop();
 }
 
+/// 卡面上跟着例句音频「陪播」的画面：动图（GIF / 动态 AVIF）或不带这段声音的视频片段
+/// （#7 / #10）。例句音频经序列开播的那一刻，画面从头播；片段此时静音，只出画面——
+/// 任何重播入口同一时刻只出一路声音。
+abstract class SrsCardSentenceCompanion {
+  /// 例句音频（[name]）刚开播：画面回到开头重新播。
+  void sentenceStarted(String name);
+}
+
 /// 卡面此刻是否还有一轮构建没跑完（已排了帧 / 正在帧里）：片段只在构建时挂上，没有待跑的
 /// 构建就不会再有片段登记。
 bool _schedulerBuildPending() {
@@ -54,10 +62,11 @@ Future<void> _schedulerBuildSettled() => SchedulerBinding.instance.endOfFrame;
 
 /// 一次等片段登记的播放（见 [SrsCardVideoChannel.playToEndOrElse]）。
 class _PendingClipPlay {
-  _PendingClipPlay(this.name, this.orElse);
+  _PendingClipPlay(this.name, this.orElse, this.stopAudio);
 
   final String name;
   final Future<bool> Function() orElse;
+  final Future<void> Function()? stopAudio;
   final Completer<bool> done = Completer<bool>();
 }
 
@@ -103,6 +112,46 @@ class SrsCardVideoChannel {
   /// [name] 此刻是否有片段挂在卡面上。
   bool isAttached(String name) => _handles[name]?.isNotEmpty ?? false;
 
+  /// 当前卡面的「例句音频」（只作画面陪播的那几段，见 `SrsFushiCardMedia.companionSentence`）。
+  /// 原生卡面挂载 / 换卡时设置，卸载时清空。
+  Set<String> _sentenceAudio = const <String>{};
+  Object? _sentenceOwner;
+
+  final List<SrsCardSentenceCompanion> _companions =
+      <SrsCardSentenceCompanion>[];
+
+  /// 原生卡面声明自己的例句音频（[owner] 用来在卸载时只清自己设的那一份）。
+  void setSentenceAudio(Object owner, Iterable<String> names) {
+    _sentenceOwner = owner;
+    _sentenceAudio = Set<String>.unmodifiable(names);
+  }
+
+  /// 撤销 [owner] 声明的例句音频（别的卡面已经换上自己的，就不动）。
+  void clearSentenceAudio(Object owner) {
+    if (!identical(_sentenceOwner, owner)) return;
+    _sentenceOwner = null;
+    _sentenceAudio = const <String>{};
+  }
+
+  /// [name] 是不是当前卡面的陪播例句音频。
+  bool isSentenceAudio(String name) => _sentenceAudio.contains(name);
+
+  void attachCompanion(SrsCardSentenceCompanion companion) {
+    if (!_companions.contains(companion)) _companions.add(companion);
+  }
+
+  void detachCompanion(SrsCardSentenceCompanion companion) =>
+      _companions.remove(companion);
+
+  /// 陪播画面从头播（例句音频开播时，见 [playToEndOrElse]）。
+  void _startCompanions(String name) {
+    for (final SrsCardSentenceCompanion c in List<SrsCardSentenceCompanion>.of(
+      _companions,
+    )) {
+      c.sentenceStarted(name);
+    }
+  }
+
   /// 在卡面上把 [name] 的片段从头播到尾。
   ///
   /// null = 卡面上没有这段片段（调用方退回只播音频）；否则同
@@ -129,11 +178,21 @@ class SrsCardVideoChannel {
   ///
   /// 与 [SrsCardVideoHandle.playFromStart] 同一契约：本方法同步登记，返回之后的 [stopAll]
   /// 一定能打断它（[orElse] 自己负责同步登记它那条路）。
-  Future<bool> playToEndOrElse(String name, Future<bool> Function() orElse) {
-    final Future<bool>? clip = playToEnd(name);
+  ///
+  /// 同一时刻只出一路声音（#10）：走片段时先停掉 [stopAudio]（共用音频播放器里还在播的
+  /// 上一段）；走纯音频时先把卡面上在播的片段停下（[orElse] 换内容只打断音频播放器，
+  /// 管不到片段）。是例句陪播音频时，音频登记之后画面从头陪播（片段静音）。
+  Future<bool> playToEndOrElse(
+    String name,
+    Future<bool> Function() orElse, {
+    Future<void> Function()? stopAudio,
+  }) {
+    final Future<bool>? clip = _playClip(name, stopAudio);
     if (clip != null) return clip;
-    if (!srsIsVideoName(name) || !_buildPending()) return orElse();
-    final _PendingClipPlay pending = _PendingClipPlay(name, orElse);
+    if (!srsIsVideoName(name) || !_buildPending()) {
+      return _playAudio(name, orElse);
+    }
+    final _PendingClipPlay pending = _PendingClipPlay(name, orElse, stopAudio);
     _pending.add(pending);
     unawaited(
       _buildSettled().then<void>(
@@ -144,10 +203,28 @@ class SrsCardVideoChannel {
     return pending.done.future;
   }
 
+  Future<bool>? _playClip(String name, Future<void> Function()? stopAudio) {
+    final Future<bool>? clip = playToEnd(name);
+    if (clip != null && stopAudio != null) unawaited(stopAudio());
+    return clip;
+  }
+
+  Future<bool> _playAudio(String name, Future<bool> Function() orElse) {
+    for (final SrsCardVideoHandle h in _allHandles()) {
+      unawaited(h.stop());
+    }
+    final Future<bool> audio = orElse();
+    if (isSentenceAudio(name)) _startCompanions(name);
+    return audio;
+  }
+
   void _resolvePending(_PendingClipPlay pending) {
     // 已被 stopAll 结束。
     if (!_pending.remove(pending)) return;
-    pending.done.complete(playToEnd(pending.name) ?? pending.orElse());
+    pending.done.complete(
+      _playClip(pending.name, pending.stopAudio) ??
+          _playAudio(pending.name, pending.orElse),
+    );
   }
 
   /// 停掉所有挂着的片段（换卡 / 翻面 / 离开复习页 / 序列被取消），并以 false 结束还在等
