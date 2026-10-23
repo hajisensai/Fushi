@@ -2,8 +2,13 @@
 #include <flutter/flutter_view_controller.h>
 #include <shellapi.h>
 #include <windows.h>
+#include <audiopolicy.h>
+#include <mmdeviceapi.h>
+#include <wrl/client.h>
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "crash_dump.h"
 #include "external_video_handoff.h"
@@ -78,6 +83,57 @@ bool HasRestartMarker() {
 bool IsTestRunnerMode() {
   return ::GetEnvironmentVariableW(L"FUSHI_TEST_HIDDEN", nullptr, 0) > 0;
 }
+
+// 集成测试 runner 下把本进程的默认音频会话静音：itest 素材是 ffmpeg 生成的
+// 440/880 Hz 正弦波（视频轨、查词发音），真 libmpv / just_audio_media_kit 播出来
+// 就是持续的「嘟嘟」声。静音在 WASAPI 会话层做，一处覆盖本进程所有播放器，且
+// mpv 的 volume / mute 属性、时间轴推进都不受影响（测音量 duck 的用例照样成立）。
+// 只作用于本进程（GUID_NULL + 非跨进程会话）：WebView2 在 msedgewebview2 子进程里
+// 出声，不在此列。对枚举时已激活的每个输出设备都静音；测试中途插拔出的新设备不覆盖。
+class TestRunnerAudioMute {
+ public:
+  TestRunnerAudioMute() {
+    Microsoft::WRL::ComPtr<IMMDeviceEnumerator> enumerator;
+    if (FAILED(::CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr,
+                                  CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))) {
+      return;
+    }
+    Microsoft::WRL::ComPtr<IMMDeviceCollection> devices;
+    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE,
+                                              &devices))) {
+      return;
+    }
+    UINT count = 0;
+    devices->GetCount(&count);
+    for (UINT i = 0; i < count; ++i) {
+      Microsoft::WRL::ComPtr<IMMDevice> device;
+      Microsoft::WRL::ComPtr<IAudioSessionManager> manager;
+      Microsoft::WRL::ComPtr<ISimpleAudioVolume> volume;
+      if (FAILED(devices->Item(i, &device)) ||
+          FAILED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL,
+                                  nullptr, &manager)) ||
+          FAILED(manager->GetSimpleAudioVolume(nullptr, FALSE, &volume)) ||
+          FAILED(volume->SetMute(TRUE, nullptr))) {
+        continue;
+      }
+      muted_.push_back(std::move(volume));
+    }
+  }
+
+  // 退出时解除静音：Windows 会按 exe 记住应用音量，不还原的话同一份构建产物
+  // 之后手动 `flutter run` 也会是哑的。
+  ~TestRunnerAudioMute() {
+    for (const Microsoft::WRL::ComPtr<ISimpleAudioVolume> &volume : muted_) {
+      volume->SetMute(FALSE, nullptr);
+    }
+  }
+
+  TestRunnerAudioMute(const TestRunnerAudioMute &) = delete;
+  TestRunnerAudioMute &operator=(const TestRunnerAudioMute &) = delete;
+
+ private:
+  std::vector<Microsoft::WRL::ComPtr<ISimpleAudioVolume>> muted_;
+};
 
 // 开发期与已安装的 Fushi 并存（`flutter run` 热重载时用户还开着自己的 Fushi 在看书）。
 // 只在 debug 构建、且显式设了 FUSHI_DEV_SIDE_BY_SIDE 时生效，release 包恒为 false。
@@ -277,6 +333,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  // 只有 itest runner 才静音；生命周期包住整个消息循环，在 CoUninitialize 之前析构。
+  std::unique_ptr<TestRunnerAudioMute> test_audio_mute;
+  if (IsTestRunnerMode() && !dev_side_by_side) {
+    test_audio_mute = std::make_unique<TestRunnerAudioMute>();
+  }
+
   flutter::DartProject project(L"data");
   // Flutter 3.47 起 Windows 默认 Impeller；合成器内 HDR 的引擎补丁
   // （ci/patches/flutter-engine/<版本>/）只实现了 Skia 路径，Impeller 下
@@ -312,6 +374,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   ::fushi::StopHangWatchdog();
+  test_audio_mute.reset();
   ::CoUninitialize();
   return EXIT_SUCCESS;
 }
