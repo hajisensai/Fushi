@@ -347,3 +347,154 @@ pub extern "C" fn ffsrs_store_history_states(
         Ok(())
     })
 }
+
+// ---------------------------------------------------------------- P6 直读命令（store/projections.rs）
+
+/// 命令的输入页：两列 `[下标 i64, 文本]`。下标 g ≥ 0 = 第 g 份历史的血统里的一张卡；-1 = profile uid。
+fn lineage_page(page: &[u8], n_groups: usize) -> Result<(Vec<Vec<String>>, Option<String>), String> {
+    use rusqlite::types::Value;
+    let (_, rows) = super::rows::decode(page)?;
+    let mut lineages: Vec<Vec<String>> = vec![Vec::new(); n_groups];
+    let mut profile = None;
+    for r in rows {
+        let mut it = r.into_iter();
+        match (it.next(), it.next()) {
+            (Some(Value::Integer(-1)), Some(Value::Text(p))) => profile = Some(p),
+            (Some(Value::Integer(g)), Some(Value::Text(card))) if g >= 0 && (g as usize) < n_groups => {
+                lineages[g as usize].push(card)
+            }
+            _ => return Err("bad lineage row".into()),
+        }
+    }
+    Ok((lineages, profile))
+}
+
+fn ints<'a>(ptr: *const i64, n: usize) -> Option<&'a [i64]> {
+    if n == 0 {
+        Some(&[])
+    } else if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(ptr, n) })
+    }
+}
+
+/// 统一的命令外壳：输入页 + i64 参数，输出 Rust 分配的字节（`ffsrs_free_bytes` 释放）。
+#[allow(clippy::too_many_arguments)]
+fn command(
+    core: *const SrsCore,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+    body: impl FnOnce(&SrsCore, &[u8], &[i64]) -> Result<Vec<u8>, String>,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let page = bytes(page, page_len).ok_or("null page")?;
+        let args = ints(args, n_args).ok_or("null args")?;
+        hand_out(body(c, page, args)?, out, out_len);
+        Ok(())
+    })
+}
+
+fn arg(args: &[i64], k: usize) -> Result<i64, String> {
+    args.get(k).copied().ok_or_else(|| format!("missing argument {k}"))
+}
+
+fn day_of(args: &[i64], k: usize) -> Result<crate::projection::Day, String> {
+    Ok(crate::projection::Day { utc_offset_min: arg(args, k)?, rollover_hour: arg(args, k + 1)? })
+}
+
+fn group_count(args: &[i64]) -> Result<usize, String> {
+    usize::try_from(arg(args, 0)?).map_err(|_| "negative group count".to_string())
+}
+
+/// 优化器训练集（`SrsCore::optimizer_items`）。`args = [n_groups, alg, utcOffsetMin, rolloverHour, 卡数字 id × n_groups]`。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_optimizer_items(
+    core: *const SrsCore,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
+        let n = group_count(args)?;
+        let (lineages, _) = lineage_page(page, n)?;
+        let alg = crate::projection::Alg::from_code(arg(args, 1)?)?;
+        let ids = args.get(4..4 + n).ok_or("missing card ids")?;
+        c.optimizer_items(&lineages, ids, alg, &day_of(args, 2)?)
+    })
+}
+
+/// RWKV 回放行。`args = [n_groups, mode, utcOffsetMin, rolloverHour, since, 数字 id × 4·n_groups]`；
+/// mode 0 = 逐卡（`SrsCore::rwkv_cards`），1 = 全量回放（`SrsCore::rwkv_replay`，页里要有 profile 行）。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_rwkv_rows(
+    core: *const SrsCore,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
+        let n = group_count(args)?;
+        let (lineages, profile) = lineage_page(page, n)?;
+        let ids = args.get(5..5 + 4 * n).ok_or("missing rwkv ids")?;
+        let day = day_of(args, 2)?;
+        match arg(args, 1)? {
+            0 => c.rwkv_cards(&lineages, ids, &day),
+            1 => c.rwkv_replay(profile.as_deref().ok_or("missing profile")?, &lineages, ids, &day, arg(args, 4)?),
+            m => Err(format!("unknown rwkv mode {m}")),
+        }
+    })
+}
+
+/// RWKV 对齐的日志指纹与尾巴（`SrsCore::rwkv_log_tail`）。页 = profile 行；`args = [since, with_rows]`。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_rwkv_log_tail(
+    core: *const SrsCore,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
+        let (_, profile) = lineage_page(page, 0)?;
+        c.rwkv_log_tail(profile.as_deref().ok_or("missing profile")?, arg(args, 0)?, arg(args, 1)? != 0)
+    })
+}
+
+/// 统计页的有效评分列（`SrsCore::stats_reviews`）。页 = profile 行；无参数。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_stats_reviews(
+    core: *const SrsCore,
+    page: *const u8,
+    page_len: usize,
+    args: *const i64,
+    n_args: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, _| {
+        let (_, profile) = lineage_page(page, 0)?;
+        c.stats_reviews(profile.as_deref().ok_or("missing profile")?)
+    })
+}

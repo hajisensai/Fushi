@@ -58,7 +58,7 @@ impl Kind {
         }
     }
 
-    fn from_code(code: i64) -> Self {
+    pub(crate) fn from_code(code: i64) -> Self {
         match code {
             0 => Kind::Review,
             1 => Kind::Manual,
@@ -253,21 +253,127 @@ struct WireLog<'a> {
     anki_id: Option<i64>,
     #[serde(default, borrow)]
     res: Option<&'a RawValue>,
-    // 选取用不到、但 Dart `fromJson` 会做类型转换的键：类型不对同样判坏数据。
-    #[serde(default, borrow, rename = "ts")]
-    _ts: Option<Cow<'a, str>>,
-    #[serde(default, rename = "dur")]
-    _dur: Option<i64>,
+    // 选取用不到、投影（统计 / 优化器 / RWKV，projection.rs）要读，或 Dart `fromJson` 会做类型转换的键：
+    // 类型不对同样判坏数据。
+    #[serde(default, borrow)]
+    ts: Option<Cow<'a, str>>,
+    #[serde(default)]
+    dur: Option<i64>,
     #[serde(default, borrow, rename = "params")]
     _params: Option<Cow<'a, str>>,
-    #[serde(default, borrow, rename = "alg")]
-    _alg: Option<Cow<'a, str>>,
+    #[serde(default, borrow)]
+    alg: Option<Cow<'a, str>>,
     #[serde(default, rename = "utcOff")]
-    _utc_off: Option<i64>,
+    utc_off: Option<i64>,
     #[serde(default, rename = "rollover")]
     _rollover: Option<i64>,
     #[serde(default, rename = "fv")]
     _fv: Option<i64>,
+    // `extra` 里投影要看的两个键（Dart 原样保留不认识的键）：导入锚点 / 恢复照抄的记忆状态是哪种算法算的，
+    // 以及「恢复到备份时间点」的标记（`srsRestoreLogExtraKey`）。memAlg 只在用到时才要求是字符串（Dart
+    // `extra['memAlg'] as String?` 在用到那一刻才转换）。
+    #[serde(default, borrow, rename = "memAlg")]
+    mem_alg: Option<&'a RawValue>,
+    #[serde(default, borrow, rename = "restoreOf")]
+    restore_of: Option<&'a RawValue>,
+}
+
+/// reviewType（`SrsReviewType`，持久化名冻结）；缺省 manual。列模式下的编码与 Dart 侧同序。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RType {
+    Learn = 0,
+    Review = 1,
+    Relearn = 2,
+    Filtered = 3,
+    Manual = 4,
+    Rescheduled = 5,
+    /// 本机不认识的值（Dart 原样保留字符串；所有规则里都与 manual 走同一个分支）。
+    Other = 6,
+}
+
+impl RType {
+    pub fn parse(wire: Option<&str>) -> Self {
+        match wire {
+            None | Some("manual") => RType::Manual,
+            Some("learn") => RType::Learn,
+            Some("review") => RType::Review,
+            Some("relearn") => RType::Relearn,
+            Some("filtered") => RType::Filtered,
+            Some("rescheduled") => RType::Rescheduled,
+            Some(_) => RType::Other,
+        }
+    }
+
+    pub fn from_code(code: i64) -> Self {
+        match code {
+            0 => RType::Learn,
+            1 => RType::Review,
+            2 => RType::Relearn,
+            3 => RType::Filtered,
+            4 => RType::Manual,
+            5 => RType::Rescheduled,
+            _ => RType::Other,
+        }
+    }
+
+    /// 评分类（learn / review / relearn）。
+    pub fn is_rating(self) -> bool {
+        matches!(self, RType::Learn | RType::Review | RType::Relearn)
+    }
+}
+
+/// 投影（projection.rs）要的、选取用不到的那几个字段。
+#[derive(Debug, Clone)]
+pub struct Extra<'a> {
+    pub rtype: RType,
+    /// `durationMs`，缺省 0。
+    pub dur: i64,
+    /// 日志 `alg` 是 rwkv（按回忆率排的复习）。
+    pub alg_rwkv: bool,
+    /// `utcOffsetMin`，缺省 0。
+    pub utc_off: i64,
+    /// 时间来源是墙钟（`ts` 不是 anchored；缺省 wall）。
+    pub ts_wall: bool,
+    /// `extra['memAlg']` 原文（null / 缺失 = None）。
+    pub mem_alg: Option<&'a RawValue>,
+    /// `extra['restoreOf'] != null`。
+    pub restore: bool,
+}
+
+/// 一条日志的结果里投影要读的字段（`SrsScheduleResult` 的一部分）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Outcome {
+    /// 0 new / 1 learning / 2 review / 3 relearning。
+    pub queue: i64,
+    pub due_day: Option<i64>,
+    pub scheduled_days: i64,
+    pub reps: i64,
+    pub last_reviewed_at: Option<i64>,
+    pub memory: Option<(f64, f64, f64)>,
+    pub ease: Option<i64>,
+}
+
+impl Outcome {
+    fn of(r: &WireResult<'_>) -> Self {
+        Outcome {
+            queue: queue_code(r.queue.as_deref()),
+            due_day: r.due_day,
+            scheduled_days: r.ivl.unwrap_or(0),
+            reps: r.reps.unwrap_or(0),
+            last_reviewed_at: r.last_reviewed_at,
+            memory: parse_memory(r.mem.as_ref()),
+            ease: r.ease,
+        }
+    }
+}
+
+/// 一条落库日志的全部投影输入：选取字段、结果（没有 / 不是对象 = None）、其余字段。
+pub type Parsed<'a> = (Log<'a>, Option<Outcome>, Extra<'a>);
+
+/// 一条落库日志解成 [Parsed]（与 [state_from_json] 同一套坏数据判据）。
+pub fn parse_full(json: &str, server_time: Option<i64>) -> Result<Parsed<'_>, String> {
+    let (log, res, extra) = parse_wire(json, server_time)?;
+    Ok((log, res.as_ref().map(Outcome::of), extra))
 }
 
 /// Dart `Hlc.decode`：`<physical>:<counter>:<writerId>`，writerId 可含冒号，只切前两段（字段寄存器同用这一份）。
@@ -283,7 +389,10 @@ pub(crate) fn parse_hlc(text: &str) -> Result<(i64, i64, &str), String> {
 }
 
 /// 一条落库日志解成 [Log]，连同解好的结果（与 Dart 一样每条都解：哪条的结果是坏数据都判错）。
-fn parse_wire<'a>(json: &'a str, server_time: Option<i64>) -> Result<(Log<'a>, Option<WireResult<'a>>), String> {
+fn parse_wire<'a>(
+    json: &'a str,
+    server_time: Option<i64>,
+) -> Result<(Log<'a>, Option<WireResult<'a>>, Extra<'a>), String> {
     let w: WireLog<'a> = serde_json::from_str(json).map_err(|e| format!("bad review log: {e}"))?;
     let _ = (&w.p, &w.card);
     let (physical, counter, writer) = match w.hlc {
@@ -307,7 +416,17 @@ fn parse_wire<'a>(json: &'a str, server_time: Option<i64>) -> Result<(Log<'a>, O
         Some(_) => Origin::Other,
     };
     // reviewType 缺省 manual（不是评分类）。
-    let rating_type = matches!(w.rtype.as_deref(), Some("learn" | "review" | "relearn"));
+    let rtype = RType::parse(w.rtype.as_deref());
+    let rating_type = rtype.is_rating();
+    let extra = Extra {
+        rtype,
+        dur: w.dur.unwrap_or(0),
+        alg_rwkv: w.alg.as_deref() == Some("rwkv"),
+        utc_off: w.utc_off.unwrap_or(0),
+        ts_wall: w.ts.as_deref() != Some("anchored"),
+        mem_alg: w.mem_alg,
+        restore: w.restore_of.is_some(),
+    };
     Ok((
         Log {
             id: w.id,
@@ -325,6 +444,7 @@ fn parse_wire<'a>(json: &'a str, server_time: Option<i64>) -> Result<(Log<'a>, O
             has_result: res.is_some(),
         },
         res,
+        extra,
     ))
 }
 
@@ -402,7 +522,7 @@ pub fn state_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<S
     let mut logs = Vec::with_capacity(jsons.len());
     let mut results: Vec<Option<WireResult<'_>>> = Vec::with_capacity(jsons.len());
     for (j, s) in jsons.iter().zip(server_times) {
-        let (log, res) = parse_wire(j, *s)?;
+        let (log, res, _) = parse_wire(j, *s)?;
         logs.push(log);
         results.push(res);
     }

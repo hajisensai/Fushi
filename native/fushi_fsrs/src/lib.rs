@@ -25,6 +25,7 @@
 
 pub mod history;
 pub mod ordering;
+pub mod projection;
 pub mod registers;
 pub mod search;
 pub mod store;
@@ -883,6 +884,53 @@ pub extern "C" fn ffsrs_history_select(
             )
         };
         history::select_columns(ints, text, offs, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// 记忆状态输入（列模式，排程用），布局见 [projection::memory_input_columns] / [projection::encode_memory_input]。
+/// `ints` 长 `n_logs × MEMORY_COLUMN_WORDS`（一份历史的有效日志，已排序）；`alg` 0 fsrs6 / 1 fsrs7 / 2 rwkv。
+/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_memory_input(
+    ints: *const i64,
+    n_logs: usize,
+    alg: i32,
+    utc_offset_min: i32,
+    rollover_hour: i32,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || (ints.is_null() && n_logs > 0) {
+            return Err("null argument".to_owned());
+        }
+        let ints = unsafe { raw_slice(ints, n_logs * projection::MEMORY_COLUMN_WORDS) };
+        let day = projection::Day { utc_offset_min: utc_offset_min.into(), rollover_hour: rollover_hour.into() };
+        let m = projection::memory_input_columns(ints, projection::Alg::from_code(alg.into())?, &day)?;
+        Ok(projection::encode_memory_input(&m))
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// RWKV「此刻」行（ease 0），布局见 [projection::rwkv_now_rows]：`ints` 长 `n_rows × NOW_ROW_WORDS`，
+/// 输出 `n_rows × 80` 字节（packages/fushi_rwkv `RwkvRows.fromBytes`）。释放规则同上。
+#[no_mangle]
+pub extern "C" fn ffsrs_rwkv_now_rows(
+    ints: *const i64,
+    n_rows: usize,
+    utc_offset_min: i32,
+    rollover_hour: i32,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || (ints.is_null() && n_rows > 0) {
+            return Err("null argument".to_owned());
+        }
+        let ints = unsafe { raw_slice(ints, n_rows * projection::NOW_ROW_WORDS) };
+        let day = projection::Day { utc_offset_min: utc_offset_min.into(), rollover_hour: rollover_hour.into() };
+        projection::rwkv_now_rows(ints, &day)
     }));
     bytes_out(outcome, out_len, error_out)
 }

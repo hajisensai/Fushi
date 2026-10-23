@@ -8,6 +8,7 @@
 
 pub mod ffi;
 pub mod rows;
+mod projections;
 pub mod schema;
 
 use std::path::Path;
