@@ -362,8 +362,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_video_enabled',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
-  // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-16 起 pager）：
-  // 手机底栏形态 flat / pager（AdaptiveNavBarStyle.prefValue）。
+  // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-23 起 mode_strip）：
+  // 手机底栏形态 flat / pager / dial / shelf / drum / fan / mode_strip
+  // （AdaptiveNavBarStyle.prefValue）。
   'nav_bar_style',
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
