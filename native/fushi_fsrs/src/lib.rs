@@ -16,8 +16,11 @@
 //!   ffsrs_search_corpus_set_floats / ffsrs_search_chunk_new / ffsrs_search_chunk_free /
 //!   ffsrs_search_corpus_attach / ffsrs_search_corpus_needs / ffsrs_search_corpus_match /
 //!   ffsrs_search_dupe_norm_batch
-//!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）
+//!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）/
+//!   ffsrs_history_states / ffsrs_history_select
+//!   （卡片历史内核：有效日志选取与当前排程状态，见 history.rs）
 
+pub mod history;
 pub mod search;
 
 use std::ffi::{c_char, CStr, CString};
@@ -787,6 +790,94 @@ pub extern "C" fn ffsrs_search_dupe_norm_batch(
         }
         None => std::ptr::null_mut(),
     }
+}
+
+// ---------------------------------------------------------------- 卡片历史（history.rs）
+
+/// 把成功的字节结果交给调用方（[ffsrs_free_bytes] 释放），失败写错误串（[ffsrs_free_string] 释放）。
+fn bytes_out(outcome: std::thread::Result<Result<Vec<u8>, String>>, out_len: *mut usize, error_out: *mut *mut c_char) -> *mut u8 {
+    match outcome {
+        Ok(Ok(bytes)) => {
+            let boxed = bytes.into_boxed_slice();
+            unsafe { *out_len = boxed.len() };
+            Box::into_raw(boxed) as *mut u8
+        }
+        Ok(Err(e)) => {
+            set_error(error_out, &e);
+            std::ptr::null_mut()
+        }
+        Err(_) => {
+            set_error(error_out, "panic in fushi_fsrs");
+            std::ptr::null_mut()
+        }
+    }
+}
+
+unsafe fn raw_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    }
+}
+
+/// 一批卡片历史（落库 JSON 原文）的当前状态，布局见 [history::states_from_json]。
+/// `offs` 长 `n_logs + 1`，`servers` 长 `n_logs`，`groups` 长 `n_groups + 1`。
+/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_history_states(
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    servers: *const i64,
+    n_logs: usize,
+    groups: *const u32,
+    n_groups: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) || (servers.is_null() && n_logs > 0) {
+            return Err("null argument".to_owned());
+        }
+        let (text, offs, servers, groups) = unsafe {
+            (raw_slice(text, text_len), raw_slice(offs, n_logs + 1), raw_slice(servers, n_logs), raw_slice(groups, n_groups + 1))
+        };
+        history::states_from_json(text, offs, servers, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// 一批卡片历史（列模式）的选取，布局见 [history::select_columns]。`ints` 长
+/// `n_logs × COLUMN_WORDS`，`offs` 长 `3·n_logs + 1`，`groups` 长 `n_groups + 1`。
+/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_history_select(
+    ints: *const i64,
+    n_logs: usize,
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    groups: *const u32,
+    n_groups: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) || (ints.is_null() && n_logs > 0) {
+            return Err("null argument".to_owned());
+        }
+        let (ints, text, offs, groups) = unsafe {
+            (
+                raw_slice(ints, n_logs * history::COLUMN_WORDS),
+                raw_slice(text, text_len),
+                raw_slice(offs, 3 * n_logs + 1),
+                raw_slice(groups, n_groups + 1),
+            )
+        };
+        history::select_columns(ints, text, offs, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
 }
 
 #[no_mangle]

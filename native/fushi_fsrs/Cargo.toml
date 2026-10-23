@@ -17,7 +17,7 @@ fsrs = { git = "https://github.com/open-spaced-repetition/fsrs-rs", rev = "0a573
 # .apkg 新格式（collection.anki21b、媒体清单、媒体文件）的 zstd 解码。纯 Rust，五个平台交叉编译不需要 C 工具链。
 ruzstd = "0.8"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value", "float_roundtrip"] }
 # Anki 搜索的正则与去 HTML（search.rs）：与 Anki 桌面版 rslib 同一个正则引擎，`re:` 语义以它为准。
 regex = "1"
 

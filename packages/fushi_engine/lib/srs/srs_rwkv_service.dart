@@ -491,13 +491,16 @@ class SrsRwkvService implements SrsRwkvScheduling {
     // ——连续答题时那样会一直退回「RWKV 还没准备好」。
     for (int attempt = 0; attempt < 5; attempt++) {
       final _LogPrint done = _replayed!;
-      final _LogPrint now = await _fingerprint();
+      // 指纹与「已回放之后的新行数」必须是同一时刻的快照：分两条语句查，中间夹进一次作答
+      // （作答不等对齐），新行数就比指纹多一条，被误判成「历史被改写」去全量重建。
+      final (_LogPrint now, int newRows) = await _fingerprintSince(
+        done.maxRowId,
+      );
       if (now == done) {
         _checkedRevision = revision;
         return true;
       }
-      if (now.maxRowId <= done.maxRowId ||
-          now.count - done.count != await _countNewRows(done.maxRowId)) {
+      if (now.maxRowId <= done.maxRowId || now.count - done.count != newRows) {
         break;
       }
       final bool? appended = await _appendNew(backend, done.maxRowId, now);
@@ -533,17 +536,23 @@ class SrsRwkvService implements SrsRwkvScheduling {
       r.read<String>('card_id'),
   ];
 
-  Future<int> _countNewRows(int afterRowId) async {
+  /// [_fingerprint] 连同 rowid 在 [afterRowId] 之后的行数，一条语句（同一个快照）取出。
+  Future<(_LogPrint, int)> _fingerprintSince(int afterRowId) async {
     final row = await store.db
         .customSelect(
-          'SELECT COUNT(*) AS c FROM srs_review_logs WHERE profile_uid = ? AND rowid > ?',
+          'SELECT COUNT(*) AS c, COALESCE(MAX(rowid), 0) AS m, '
+          'COALESCE(SUM(rowid > ?), 0) AS n '
+          'FROM srs_review_logs WHERE profile_uid = ?',
           variables: <Variable<Object>>[
-            Variable<String>(store.profileUid),
             Variable<int>(afterRowId),
+            Variable<String>(store.profileUid),
           ],
         )
         .getSingle();
-    return row.read<int>('c');
+    return (
+      (count: row.read<int>('c'), maxRowId: row.read<int>('m')),
+      row.read<int>('n'),
+    );
   }
 
   /// rowid 之后的日志若全是评分、都不早于已回放的最后一条、且各是其卡末尾的保留评分，
