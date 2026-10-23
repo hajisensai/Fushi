@@ -309,6 +309,7 @@ class AnkiSettings {
   final List<AnkiDeck> availableDecks;
   final List<AnkiNoteType> availableNoteTypes;
   final Map<String, String> fieldMappings;
+
   /// 当前 Profile 的自定义标签（空白分隔）。随 Profile 快照切换（`ProfileKeys`）。
   final String tags;
 
@@ -864,6 +865,7 @@ class AnkiMiningContext {
     this.clipStartMs,
     this.clipEndMs,
     this.sourceLink,
+    this.sourceUrl,
   });
   final String sentence;
   final String? cueSentence;
@@ -927,6 +929,13 @@ class AnkiMiningContext {
   /// Portable card origin; survives media upload and backend forwarding.
   final CardSourceLink? sourceLink;
 
+  /// 卡片来源的外部网址（app 内浏览器制卡时是当前网页，已去掉 `#片段`）。
+  ///
+  /// 与 [sourceLink] 是两种来源：[sourceLink] 是书库内可回跳的定位，优先；没有库内
+  /// 定位时 `{source-link}` 渲染成指向此网址的 `<a>`（标题取 [documentTitle]），见
+  /// [AnkiHandlebarRenderer.renderSourceLink]。只认 http(s)，其它 scheme 不出链接。
+  final String? sourceUrl;
+
   /// Used when updating an existing note: its marker identity must survive a
   /// newly captured position, and legacy notes must not acquire dangling URLs.
   AnkiMiningContext withSourceLink(CardSourceLink? value) => AnkiMiningContext(
@@ -944,6 +953,7 @@ class AnkiMiningContext {
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: value,
+    sourceUrl: sourceUrl,
   );
 
   /// 渲染前把两个**本地媒体路径**换成 backend 落盘后的媒体引用
@@ -974,6 +984,7 @@ class AnkiMiningContext {
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
     sourceLink: sourceLink,
+    sourceUrl: sourceUrl,
   );
 }
 
@@ -1111,12 +1122,31 @@ class AnkiHandlebarRenderer {
     final String title = context.documentTitle ?? '';
     final CardSourceLink? source = context.sourceLink;
     if (source == null) {
+      final Uri? url = webSourceUrlOf(context.sourceUrl);
+      if (url != null) {
+        // 无标题时用主机名作链接文字：同 toHtml 缺省标签，不落任何自然语言。
+        final String label = title.trim().isEmpty ? url.host : title.trim();
+        return '<a href="'
+            '${const HtmlEscape(HtmlEscapeMode.attribute).convert(url.toString())}'
+            '">${const HtmlEscape(HtmlEscapeMode.element).convert(label)}</a>';
+      }
       return const HtmlEscape(HtmlEscapeMode.element).convert(title);
     }
     // 无标题时退回 toHtml 的语言中性缺省标签：这是写进用户 Anki 卡面的文本，
     // 17 种界面语言共用一份模板，不能落任何一种自然语言。
     if (title.trim().isEmpty) return source.toHtml();
     return source.toHtml(label: title);
+  }
+
+  /// [AnkiMiningContext.sourceUrl] 能否作为卡面链接：只认带主机的 http(s) 网址；
+  /// 空 / 解析失败 / `javascript:` 等其它 scheme 一律 null（不往卡面写可执行链接）。
+  static Uri? webSourceUrlOf(String? raw) {
+    final String value = raw?.trim() ?? '';
+    if (value.isEmpty) return null;
+    final Uri? url = Uri.tryParse(value);
+    if (url == null || url.host.isEmpty) return null;
+    if (url.scheme != 'http' && url.scheme != 'https') return null;
+    return url;
   }
 
   /// 把媒体片段起止（毫秒偏移）渲染成人类可读的 `HH:MM:SS - HH:MM:SS`。

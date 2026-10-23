@@ -255,6 +255,11 @@ class SrsCardLookupScope extends InheritedWidget {
       !identical(oldWidget.controller, controller);
 }
 
+/// 查词宿主上制卡时的外部来源：页面标题 + 网址（app 内浏览器的当前网页）。
+///
+/// 用通用记录类型而不是浏览器的来源类，宿主层不依赖 web_browser 层。
+typedef SrsCardLookupCardSource = ({String title, Uri url});
+
 /// 卡面查词宿主：给 [child] 提供 [SrsCardLookupScope]，把弹窗栈挂进根 Overlay。
 class SrsCardLookupHost extends ConsumerStatefulWidget {
   const SrsCardLookupHost({
@@ -262,6 +267,7 @@ class SrsCardLookupHost extends ConsumerStatefulWidget {
     required this.controller,
     required this.child,
     this.onClosed,
+    this.cardSource,
   });
 
   final SrsCardLookupController controller;
@@ -269,6 +275,10 @@ class SrsCardLookupHost extends ConsumerStatefulWidget {
 
   /// 整栈关掉之后（页面据此经 PageFocusOwnership 回收焦点）。
   final VoidCallback? onClosed;
+
+  /// 弹窗里制卡时的卡片来源，制卡那一刻现取（标签页可能已导航）。返回 null = 不带来源
+  /// （如无痕标签页）。不传（复习卡面）时制卡与以前完全一样。
+  final SrsCardLookupCardSource? Function()? cardSource;
 
   @override
   ConsumerState<SrsCardLookupHost> createState() => _SrsCardLookupHostState();
@@ -311,6 +321,15 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     if (search != null) return search(term, maximumTerms);
     return super.searchPopupDictionary(term: term, maximumTerms: maximumTerms);
   }
+
+  @override
+  String? get miningDocumentTitle {
+    final String? title = widget.cardSource?.call()?.title.trim();
+    return title == null || title.isEmpty ? null : title;
+  }
+
+  @override
+  String? get miningSourceUrl => widget.cardSource?.call()?.url.toString();
 
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) =>
