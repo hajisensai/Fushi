@@ -3292,6 +3292,10 @@ function __dictSandboxUserActive(frame) {
 function __dictSandboxOnMessage(event) {
     const data = event.data;
     if (!data || typeof data !== 'object' || data.__fushiDictSandbox !== 1) return;
+    // 沙箱 iframe 没有 allow-same-origin，它的文档是不透明源，发来的消息 origin 恒为字面量
+    // 'null'。frame 一旦被导航到真实站点，origin 就不再是 'null'——与「二次 load 即移除」
+    // 互为兜底，导航后的页面发来的消息一律不认。
+    if (event.origin !== 'null') return;
     const frame = __dictSandboxFrameFor(event.source);
     if (!frame) return;
     const dictName = frame.getAttribute('data-dictionary') || '';

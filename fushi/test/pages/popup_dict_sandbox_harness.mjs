@@ -137,7 +137,7 @@ try {
       type: 'structured-content',
       content: [
         { tag: 'script', content: "window.__pwned = 'sc-script'" },
-        { tag: 'a', href: "javascript:window.__pwned='sc-href'", content: 'link' },
+        { tag: 'a', href: "javascript:window.__pwned='sc-href'", content: 'link' },  // NOSONAR: attack payload asserted not to execute
         { tag: 'iframe', content: 'framed' },
         { tag: 'span', style: { backgroundImage: 'url(https://evil.example/t.png)' }, content: 'bg' },
       ],
@@ -155,8 +155,8 @@ try {
   {
     const r = await driver.evalOnPage(page(LOCKED), renderExpr(
       '<img src="x" onerror="window.__pwned=\'onerror\'">' +
-      '<svg onload="window.__pwned=\'svg\'"><a xlink:href="javascript:1"><text>s</text></a></svg>' +
-      '<a href="javascript:window.__pwned=\'click\'">bad</a><a href="https://example.com/">ok</a>' +
+      '<svg onload="window.__pwned=\'svg\'"><a xlink:href="javascript:1"><text>s</text></a></svg>' +  // NOSONAR: attack payload asserted not to execute
+      '<a href="javascript:window.__pwned=\'click\'">bad</a><a href="https://example.com/">ok</a>' +  // NOSONAR: attack payload asserted not to execute
       '<img src="https://evil.example/t.png"><form action="https://evil.example/"><input></form>' +
       '<p style="background:url(https://evil.example/s.png)">styled</p>'));
     assert.equal(r.pwned, null, `inline handlers must not run (${r.pwned})`);
