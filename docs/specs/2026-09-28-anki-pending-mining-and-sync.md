@@ -42,7 +42,7 @@
   `connectionTimeout` / `connectionUnknown`（含 AnkiConnect「提交结果未知」）可能已落卡，仍按失败报给用户，不自动重发。
   「批量制卡」开启时一律入队、不碰后端。
 - 补发时机：直接制卡成功（说明后端可达）后、app 回前台时自动补发，串行、遇不可达即停；
-  「批量制卡」开启时不自动补发（BUG-3662），只有用户点「全部发送」才发；
+  「批量制卡」开启时不自动补发（BUG-3672），只有用户点「全部发送」才发；
   AnkiMobile（`switchesAppPerNote`）绝不自动补发——用户点「全部发送」拉起一张，行留在 `sending`；
   只有 `fushi://ankiSuccess` 回跳（词条对得上）才出队并拉起下一张，队列清空后才打开 `anki://x-callback-url/sync`。
   用户在 AnkiMobile 里取消（没有回跳）卡不丢，下次「全部发送」重发它。回前台对 AnkiMobile 不做任何事。

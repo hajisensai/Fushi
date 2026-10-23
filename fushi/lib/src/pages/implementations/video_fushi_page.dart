@@ -5007,7 +5007,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 字幕源（[row.subtitleSource] 跨重启保留），无匹配再退默认 sidecar 探测。
   Future<void> _loadSingle(VideoBookRow row) async {
     // iOS：下面先要读同目录字幕 / 封面等原文件，访问窗口得在第一次读盘前就位
-    // （BUG-3665；控制器 load 里还有一道，覆盖不经这里的打开路径）。
+    // （BUG-3697；控制器 load 里还有一道，覆盖不经这里的打开路径）。
     await SourceFolderAccess.instance.ensureForPath(row.videoPath);
     final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
     final ({String videoPath, String? subtitleSource}) paths =
@@ -7264,7 +7264,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// BUG-3663：查词浮层跟随的路由——窗口模式是本页路由，全屏期间是全屏路由（与键盘
+  /// BUG-3685：查词浮层跟随的路由——窗口模式是本页路由，全屏期间是全屏路由（与键盘
   /// 所有者同一口径，见 [_handleWindowsImeSpaceDown]）。别的路由（反馈 / 设置等整页、
   /// 根导航上的对话框）压上来时它不再是栈顶，[DictionaryPageMixin] 据此把浮层停靠屏外、
   /// 撤掉整屏 barrier；查词会话与「因查词暂停」原样保留，回到本页即复原。

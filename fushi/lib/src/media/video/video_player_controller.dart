@@ -3061,7 +3061,7 @@ class VideoPlayerController extends ChangeNotifier
     );
     final int loadToken = ++_loadToken;
     // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
-    // （BUG-3665）。其它平台 / 不在任何来源下的文件 no-op。
+    // （BUG-3697）。其它平台 / 不在任何来源下的文件 no-op。
     if (videoFile != null) {
       await SourceFolderAccess.instance.ensureForPath(videoFile.path);
       if (loadToken != _loadToken) return;

@@ -1,6 +1,0 @@
-## BUG-3662 · 常驻来源的扫描根读不到时静默记成「0 个媒体、无错误」
-- **报告**：2026-10-23（用户：应用内反馈 Tz04dfBf2f，iOS 3.0.0「漫画/小说/视频设了常驻来源后不扫描子文件夹，只能手动选具体文件导入」）
-- **真实性**：✅ 真 bug（部分）。`LocalSourceFileSystem.listFiles`（`fushi/lib/src/media/source_library/source_file_system.dart:131`）在根目录 `exists()` 为 false 时返回空列表；扫描器（`source_library_scanner.dart` `_scanUnlocked`）据此记 `mediaCount=0`、`lastScanError=null`。iOS 上「添加本地文件夹」走 `pickRealDirectoryPath`（`real_path_directory_picker.dart:46`）→ file_picker `getDirectoryPath()`，交回沙盒外的安全作用域路径却从不 `startAccessingSecurityScopedResource()`（file_picker 8.3.7 `FilePickerPlugin.m:216` 只建 open 模式选择器，BUG-2786 已记），`dart:io` 读不到，于是来源看起来「扫过了但什么都没有」；手动选文件走 import 模式拷进沙盒所以能导。盘没挂上的桌面来源同样被静默记 0。
-- **[x] ① 已修复（可见性部分）** — `listFiles` 对不存在 / 读不到的目录抛 `FileSystemException`（带路径），扫描器把原因落进 `lastScanError`，来源行照实显示。**iOS 常驻来源本身仍读不到**：需要原生安全作用域书签（选目录时建书签存进 `media_sources.configJson`、每次启动 / 扫描前 resolve + startAccessing、过期书签刷新、就地播放的视频同样要访问窗口），属于需决策的 iOS 原生改动，未在本提交实现。
-- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_library_scanner_test.dart`（book / video / manga 三种来源：读不到的根记 `lastScanError` 且含路径）、`fushi/test/media/source_library/source_file_system_test.dart`（契约反转：抛 `FileSystemException`）。
-- **备注**：iOS 端常驻来源的安全作用域书签（选目录建书签、启动 / 扫描 / 原地播放前激活）已在 BUG-3665 实现。

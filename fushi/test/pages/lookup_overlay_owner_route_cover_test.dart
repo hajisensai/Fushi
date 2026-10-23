@@ -15,7 +15,7 @@ import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/popup_mining_target_overrides.dart';
 import '../helpers/test_platform_services.dart';
 
-/// BUG-3663（反馈 5yWS2o6U6q）：视频页查词浮层压在之后推入的整页之上。
+/// BUG-3685（反馈 5yWS2o6U6q）：视频页查词浮层压在之后推入的整页之上。
 ///
 /// 视频页把整棵查词浮层子树（整屏 dismiss barrier + 弹窗层）手动插在**根 Overlay**
 /// （为了盖过 media_kit 全屏路由）。`Navigator` 每次 push 都经 `Overlay.rearrange`
@@ -315,7 +315,7 @@ void main() {
     expect(_popupParked(tester), isFalse, reason: '回到宿主页，浮层复原');
   });
 
-  group('视频页接线（BUG-3663 源码守卫）', () {
+  group('视频页接线（BUG-3685 源码守卫）', () {
     String read(String path) => File(path).readAsStringSync();
     const String page = 'lib/src/pages/implementations/video_fushi_page.dart';
     const String dir = 'lib/src/pages/implementations/video_fushi';
@@ -352,7 +352,7 @@ void main() {
 
   // 首页词典页与 texthooker 的浮层同样手动插在根 Overlay 上，同一机制接上：覆写
   // lookupOwnerRoute 为本页路由 + 挂栈顶探针（探针回调帧后刷新浮层 entry）。
-  group('首页词典页 / texthooker 接线（BUG-3663 源码守卫）', () {
+  group('首页词典页 / texthooker 接线（BUG-3685 源码守卫）', () {
     for (final String page in <String>[
       'lib/src/pages/implementations/home_dictionary_page.dart',
       'lib/src/pages/implementations/texthooker_page.dart',

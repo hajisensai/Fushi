@@ -1647,14 +1647,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
-    // BUG-3663：探针挂在本页路由里，路由被压住 / 回到栈顶时刷新根 Overlay 浮层。
+    // BUG-3685：探针挂在本页路由里，路由被压住 / 回到栈顶时刷新根 Overlay 浮层。
     return LookupOwnerRouteProbe(
       onChanged: _onLookupOwnerRouteChanged,
       child: _buildPage(context),
     );
   }
 
-  /// BUG-3663（反馈 5yWS2o6U6q）：查词浮层挂在根 Overlay、跟随本页路由。别的整页
+  /// BUG-3685（反馈 5yWS2o6U6q）：查词浮层挂在根 Overlay、跟随本页路由。别的整页
   /// 推上来（设置 / 反馈……）时本页不再是栈顶，[DictionaryPageMixin] 把浮层停靠屏外、
   /// 撤掉整屏 barrier——否则 `Overlay.rearrange` 把浮层排回最顶，压住新页面、吃掉点击。
   @override

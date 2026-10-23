@@ -17,7 +17,7 @@ import 'package:path/path.dart' as p;
 String? debugRealDirectoryPathOverride;
 
 /// 集成测试是否注入了目录选择结果（release 构建恒 false）。给要绕开平台专用选择器
-/// （如 iOS 来源书签选择器，BUG-3665）、改走 [pickRealDirectoryPath] 吃注入值的调用方用。
+/// （如 iOS 来源书签选择器，BUG-3697）、改走 [pickRealDirectoryPath] 吃注入值的调用方用。
 bool get isRealDirectoryPathOverridden =>
     kDebugMode && debugRealDirectoryPathOverride != null;
 

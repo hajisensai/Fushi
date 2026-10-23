@@ -41,7 +41,7 @@ void main() {
       final int end = src.indexOf('Future<', idx + 10);
       expect(end, isNonNegative, reason: 'addLocalFolder 之后必须还有下一个方法声明作切片终点');
       final String body = src.substring(idx, end);
-      // BUG-3665：选目录收口到 `_pickSourceFolder`（iOS 建安全作用域书签，其它平台
+      // BUG-3697：选目录收口到 `_pickSourceFolder`（iOS 建安全作用域书签，其它平台
       // 走统一真实路径入口），addLocalFolder 只调它。
       expect(
         body.contains('_pickSourceFolder('),

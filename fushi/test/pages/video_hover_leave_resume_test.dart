@@ -243,7 +243,7 @@ void main() {
       final int parkedAt = mixinSource.indexOf('return parkedPopupLayer(');
       expect(parkedAt, greaterThanOrEqualTo(0));
       // 截到这个层构造函数结束为止（不按固定字数截：parkedPopupLayer 的实参会随修复
-      // 增长，BUG-3666 加了 occluders 筛选与 onEntranceSettled 后 1200 字已截不到 child）。
+      // 增长，BUG-3699 加了 occluders 筛选与 onEntranceSettled 后 1200 字已截不到 child）。
       final String layer = mixinSource.substring(
         parkedAt,
         mixinSource.indexOf('\n  }', parkedAt),

@@ -970,7 +970,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         mediaKind: Value(widget.mediaKind),
         transport: const Value('local'),
         rootPath: Value(norm),
-        // iOS：安全作用域书签，扫描 / 播放前据此重新取得访问权（BUG-3665）。
+        // iOS：安全作用域书签，扫描 / 播放前据此重新取得访问权（BUG-3697）。
         configJson: sourceConfigValueForBookmark(bookmark),
         recursive: const Value(true),
         videoGroupingMode: Value(groupingMode),
@@ -1059,7 +1059,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 选一个要登记成来源（常驻或仅此一次）的本地文件夹。
   ///
   /// iOS 走 [SourceFolderAccess.pickFolder]：系统目录选择器 + 在访问窗口内建安全作用域
-  /// 书签（BUG-3665）。file_picker 的 `getDirectoryPath()` 交回的沙盒外路径从未激活
+  /// 书签（BUG-3697）。file_picker 的 `getDirectoryPath()` 交回的沙盒外路径从未激活
   /// 访问，`dart:io` 读不了，存下来也永远扫不出东西。其它平台（以及集成测试注入路径
   /// 时）走 [pickRealDirectoryPath]，书签恒为 null。
   ///

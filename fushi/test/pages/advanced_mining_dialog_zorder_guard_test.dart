@@ -144,7 +144,7 @@ void main() {
     final String src = read(
       'lib/src/pages/implementations/dictionary_page_mixin.dart',
     );
-    // BUG-3663：门收口成 [lookupPopupHiddenByDialog]（= 对话框计数 > 0 或宿主路由
+    // BUG-3685：门收口成 [lookupPopupHiddenByDialog]（= 对话框计数 > 0 或宿主路由
     // 被盖住），计数仍在门里，见下一条断言。
     expect(
       src,

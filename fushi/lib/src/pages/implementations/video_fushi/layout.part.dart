@@ -95,7 +95,7 @@ extension _VideoLayout on _VideoFushiPageState {
     // 够不到面板，正是 BUG-1864 的 scope≠mount 根因。「长按不连发」由
     // [kVideoPressEdgeOnlyActions] 在那条通道上翻译成「重复沿不消费」。
     //
-    // BUG-3663：探针挂在本页路由里，路由被压住 / 回到栈顶时刷新根 Overlay 浮层。
+    // BUG-3685：探针挂在本页路由里，路由被压住 / 回到栈顶时刷新根 Overlay 浮层。
     return LookupOwnerRouteProbe(
       onChanged: _onLookupOwnerRouteChanged,
       child: VideoControlsThemePair(

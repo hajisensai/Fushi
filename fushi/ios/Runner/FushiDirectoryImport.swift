@@ -18,7 +18,7 @@ import UniformTypeIdentifiers
 /// - 取消 / 下拉关掉 → `nil`；拷贝失败 → `COPY_FAILED`（半截拷贝已删）；
 ///   已有一个选择器挂着 → `BUSY`。
 ///
-/// 同一 channel 还承载**常驻来源文件夹**的安全作用域书签（BUG-3665，反馈 Tz04dfBf2f）：
+/// 同一 channel 还承载**常驻来源文件夹**的安全作用域书签（BUG-3697，反馈 Tz04dfBf2f）：
 /// 常驻来源要反复复扫、视频还要原地播放，不能整卷拷，只能记住用户的授权、每次用前
 /// 重新激活。Dart 门面是 `fushi/lib/src/media/source_library/source_folder_access.dart`。
 /// 契约：
@@ -199,7 +199,7 @@ final class FushiDirectoryImport: NSObject, UIDocumentPickerDelegate,
     result(value)
   }
 
-  // MARK: - Security-scoped bookmarks（常驻来源，BUG-3665）
+  // MARK: - Security-scoped bookmarks（常驻来源，BUG-3697）
 
   /// 在访问窗口内为 [url] 建书签。
   ///

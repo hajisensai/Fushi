@@ -424,7 +424,7 @@ Rect anchorPopupTopLeft({
   return Rect.fromLTWH(left, top, width, height);
 }
 
-/// BUG-3663：所在路由「是否栈顶」变化的探针。
+/// BUG-3685：所在路由「是否栈顶」变化的探针。
 ///
 /// 查词浮层挂在根 Overlay、跨路由生存（[DictionaryPageMixin.lookupOwnerRoute]），它
 /// 读路由栈顶状态的那一刻只在自己 build 时；而别的路由压上来 / 退下去时没有任何东西

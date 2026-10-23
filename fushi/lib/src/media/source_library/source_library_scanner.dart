@@ -777,7 +777,7 @@ class SourceLibraryScanner {
 
   final FushiDatabase _db;
 
-  /// iOS 本地来源的安全作用域访问（BUG-3665）；测试注入 fake。
+  /// iOS 本地来源的安全作用域访问（BUG-3697）；测试注入 fake。
   final SourceFolderAccess _folderAccess;
   final VideoBookRepository _videoRepo;
   final MangaSevenZipExtractor? _mangaSevenZipExtractor;
@@ -875,7 +875,7 @@ class SourceLibraryScanner {
     SourceFileSystem? fs,
     bool restoreDissolvedGroups = false,
   }) async {
-    // iOS：本地来源在沙盒外，不先激活书签 `dart:io` 一个文件都列不出（BUG-3665）。
+    // iOS：本地来源在沙盒外，不先激活书签 `dart:io` 一个文件都列不出（BUG-3697）。
     // 激活失败（没存书签 / 解析失败 / 文件夹被挪走）是**整次扫描**读不了，写明原因
     // 后直接收尾，不把「读不到」伪装成「0 个媒体」。其它平台恒返回 null。
     final String? accessError =

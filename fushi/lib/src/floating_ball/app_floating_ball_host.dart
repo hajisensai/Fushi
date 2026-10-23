@@ -749,7 +749,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   );
 
   /// 当前场景按用户勾选还剩不剩按钮（与开关、可用性一起算；临时隐藏不算）。
-  /// 一颗都没有 = 本场景不要应用内球，应用外球不让位（BUG-3663）。
+  /// 一颗都没有 = 本场景不要应用内球，应用外球不让位（BUG-3687）。
   bool _inAppBallHasButtons = true;
 
   /// build 里记下本场景有没有按钮；变了等这一帧结束再重新下发让位值。
@@ -1415,7 +1415,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           .nonNulls,
     ];
     // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。这与关掉「应用内显示」
-    // 同义：应用外球不能再让位，否则这一场景里一颗球都没有（BUG-3663，反馈
+    // 同义：应用外球不能再让位，否则这一场景里一颗球都没有（BUG-3687，反馈
     // C-Bm1TZ388「应用外显示、应用内不显示」）。临时不画（场景隐藏 / 关闭 / 截屏中）
     // 不影响这个判断，照样让位。
     _noteInAppBallHasButtons(buttons.isNotEmpty);

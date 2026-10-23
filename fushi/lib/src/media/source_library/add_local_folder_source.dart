@@ -24,7 +24,7 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 /// [mediaKind] 取 `SourceLibraryKind` 的字符串值（`book` / `video` / `manga`）——
 /// 由**当前打开的页面**决定，不从文件内容猜。
 ///
-/// [bookmark]：iOS 安全作用域书签（BUG-3665）。现有调用方（拖放落点、桌面控制通道）
+/// [bookmark]：iOS 安全作用域书签（BUG-3697）。现有调用方（拖放落点、桌面控制通道）
 /// 都只在桌面 / 安卓可达（desktop_drop 没有 iOS 实现），恒传 null；若将来在 iOS 上
 /// 不带书签调用，扫描会如实报「未保存访问授权」而不是静默扫出 0 个。
 Future<AddLocalFolderResult> addLocalFolderAsSource({
@@ -84,7 +84,7 @@ int _nextSortOrder(List<MediaSourceRow> existing) => existing.isEmpty
 /// [onScanning] 在临时行插入后、扫描开始前回调其 id（来源页用它点亮忙态）。scanner
 /// 意外抛出时异常照常上抛，临时行仍会被删除。
 ///
-/// [bookmark]：iOS 安全作用域书签（BUG-3665），只撑这一次扫描的访问窗口，删临时行
+/// [bookmark]：iOS 安全作用域书签（BUG-3697），只撑这一次扫描的访问窗口，删临时行
 /// 前释放。书 / 漫画扫描时已拷进 app，扫完即可停；视频是原地引用，扫完停掉访问后
 /// 原文件在 iOS 上不可再读——要长期播放请登记成常驻来源。
 Future<SourceScanSummary?> importLocalFolderOnceAt({

@@ -1298,7 +1298,7 @@ void main() {
         expect(prefs.floatingBallSystem, isTrue, reason: '两颗球的开关互不影响');
       });
 
-      testWidgets('BUG-3663 本场景按钮全取消（应用内球不画）：应用外球不让位；勾回按钮再让位', (
+      testWidgets('BUG-3687 本场景按钮全取消（应用内球不画）：应用外球不让位；勾回按钮再让位', (
         WidgetTester tester,
       ) async {
         mockNative(tester);

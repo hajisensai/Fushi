@@ -165,7 +165,7 @@ void main() {
   });
 
   test(
-      'BUG-3667: same-name entry whose DB is not on this device is re-pointed '
+      'BUG-3702: same-name entry whose DB is not on this device is re-pointed '
       'in place (order / enabled / sub-sources kept), not skipped', () async {
     // 导入别的设备的配置方案后的样子：同名本地库条目在，路径是那台设备的内部副本
     // （按文件名归一到本机库目录后也找不到文件），排在一条远端源之后、关着、带子来源偏好。

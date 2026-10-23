@@ -222,7 +222,7 @@ extension _VideoFullscreen on _VideoFushiPageState {
           child: _wrapVideoGamepadControls(
             _buildVideoFloatingBallScene(
               playerController,
-              // BUG-3663：全屏期间查词浮层跟随的是本路由（[lookupOwnerRoute]），探针
+              // BUG-3685：全屏期间查词浮层跟随的是本路由（[lookupOwnerRoute]），探针
               // 订阅它的栈顶状态，反馈 / 设置等页面压上来时刷新根 Overlay 浮层。
               child: LookupOwnerRouteProbe(
                 onChanged: _onLookupOwnerRouteChanged,

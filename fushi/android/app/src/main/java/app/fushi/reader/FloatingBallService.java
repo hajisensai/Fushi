@@ -173,7 +173,7 @@ public class FloatingBallService extends BaseFloatingService {
      * 才展开——给只用一个功能的人一步直达（反馈 9bdhVTgq3A：只用截屏识字）。
      */
     private static final String PREF_TAP_ACTION = "ball_tap_action";
-    /** 展开时按钮旁显示文字（Dart「显示按钮文字」，BUG-3662：旧实现原生恒显示）。 */
+    /** 展开时按钮旁显示文字（Dart「显示按钮文字」，BUG-3678：旧实现原生恒显示）。 */
     private static final String PREF_SHOW_LABELS = "ball_show_labels";
     /** 菜单里有没有「打开 Fushi」（Dart 应用外按钮组里的开关，默认有）。 */
     private static final String PREF_SHOW_OPEN_APP = "ball_show_open_app";

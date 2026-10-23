@@ -253,7 +253,7 @@ mixin DictionaryPageMixin {
   /// 着：点击先被 barrier 吃掉，再被判成「点弹窗外面」直接清整栈。故 barrier 必须与
   /// [parkedPopupLayer] 的 `visible` 共用同一门控：对话框期间整棵浮层既不显示也不拦点击。
   ///
-  /// BUG-3663：同一道门也管「宿主路由被别的路由盖住」（[lookupOwnerRoute]）。浮层 entry
+  /// BUG-3685：同一道门也管「宿主路由被别的路由盖住」（[lookupOwnerRoute]）。浮层 entry
   /// 手动插在根 Overlay 上，`Navigator` 每次 push 都经 `Overlay.rearrange` 把非路由
   /// entry 排回最顶——之后推进来的整页（反馈 / 设置……）照样被浮层与整屏 barrier 压住：
   /// 看得见浮层、点不着页面，点击还被判成「点浮层外面」关栈并恢复播放。与对话框同一种
@@ -263,7 +263,7 @@ mixin DictionaryPageMixin {
   bool get lookupPopupHiddenByDialog =>
       _popupHidingDialogDepth > 0 || lookupOwnerRouteCovered;
 
-  /// 查词浮层所属的路由（BUG-3663）。浮层挂在根 Overlay、跨路由生存的宿主覆写它（视频页：
+  /// 查词浮层所属的路由（BUG-3685）。浮层挂在根 Overlay、跨路由生存的宿主覆写它（视频页：
   /// 窗口模式是本页路由，全屏期间是全屏路由）；null = 不跟随路由（默认，浮层与宿主同在
   /// 一个路由里，或宿主本就常驻在导航之上）。
   ///

@@ -1,4 +1,4 @@
-// iOS 常驻来源文件夹的安全作用域访问（BUG-3665，反馈 Tz04dfBf2f）。
+// iOS 常驻来源文件夹的安全作用域访问（BUG-3697，反馈 Tz04dfBf2f）。
 //
 // 问题：iOS 上「添加本地文件夹」走 file_picker 的 `getDirectoryPath()`，拿到的是沙盒
 // 外的路径，却从没 `startAccessingSecurityScopedResource()`——`dart:io` 一个字节都读

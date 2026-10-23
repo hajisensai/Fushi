@@ -33,7 +33,7 @@
 - Flutter 应用内球：全部支持平台生效；保持原有多列 / 极窄视口下只显示图标的布局规则。
 - Windows / macOS / Android 应用外球：随 `startSystemBall.showLabels` 更新；旧调用未传时
   默认开启。Android 原生球后来补了标签胶囊（M3E FAB menu），旧实现把这个参数丢掉、恒显示
-  文字（BUG-3662），现落盘 `ball_show_labels` 并在建按钮窗时生效；contentDescription 保留。
+  文字（BUG-3678），现落盘 `ball_show_labels` 并在建按钮窗时生效；contentDescription 保留。
 
 应用外球菜单里的「打开 Fushi」：设置 → 悬浮球 → 应用外按钮组第一项，偏好
 `floating_ball.system_open_app`（bool，默认开），经 `startSystemBall.showOpenApp` 下发，

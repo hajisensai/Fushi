@@ -1986,7 +1986,7 @@ class VideoDownloadPipelineService {
   /// 只会制造漏认：内置引擎的分类是「下载根/分类」目录（目录即真相），而整理
   /// 阶段会把完成的受管种子 moveStorage 到来源根继续做种——挪走后它不在任何
   /// 分类目录下，按分类列就整批「missingFromBackend」，任务页上传恒 0、「做种中」
-  /// 恒空（BUG-3666）。外接 qBittorrent 的分类是标签、setLocation 不改它，但用户
+  /// 恒空（BUG-3700）。外接 qBittorrent 的分类是标签、setLocation 不改它，但用户
   /// 在 qB 里改分类同样会让任务失联；按 hash 认领对两种后端一致。
   ///
   /// 分类只在**投递**新种子时决定落点（[TorrentBackend.addTorrent]），不参与认领。
@@ -2017,7 +2017,7 @@ class VideoDownloadPipelineService {
   /// 分享率。配置已切换或后端不可用的组安全降级为空，由 UI 显示未知值。
   ///
   /// 按任务行记的 info hash 认领（[_listBackendTorrentsForJobs]），不按分类过滤：
-  /// 整理后挪到来源根继续做种的种子不在任何「下载根/分类」目录下（BUG-3666）。
+  /// 整理后挪到来源根继续做种的种子不在任何「下载根/分类」目录下（BUG-3700）。
   Future<Map<String, TorrentSnapshot>> loadTaskSnapshots(
     Iterable<VideoDownloadJobRow> jobs,
   ) async {

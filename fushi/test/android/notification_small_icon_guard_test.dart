@@ -202,7 +202,7 @@ void main() {
     );
   });
 
-  test('BUG-3662 应用外球认「显示按钮文字」与「打开 Fushi」开关', () {
+  test('BUG-3678 应用外球认「显示按钮文字」与「打开 Fushi」开关', () {
     final String svc = File(
       '$javaRoot/app/fushi/reader/FloatingBallService.java',
     ).readAsStringSync();

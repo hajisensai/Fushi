@@ -327,7 +327,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('open-Fushi switch resyncs the native ball (BUG-3662)', (
+  testWidgets('open-Fushi switch resyncs the native ball (BUG-3678)', (
     WidgetTester tester,
   ) async {
     await pumpHost(tester);

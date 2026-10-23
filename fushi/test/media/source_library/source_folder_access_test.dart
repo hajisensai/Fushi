@@ -1,4 +1,4 @@
-// BUG-3665（反馈 Tz04dfBf2f）：iOS 常驻来源文件夹的安全作用域书签。
+// BUG-3697（反馈 Tz04dfBf2f）：iOS 常驻来源文件夹的安全作用域书签。
 //
 // 原生半边（ios/Runner/FushiDirectoryImport.swift）本机编不了，这里钉 Dart 侧契约：
 //  (1) configJson 书签编解码：独立键、保留其它键、凭据红线照旧。

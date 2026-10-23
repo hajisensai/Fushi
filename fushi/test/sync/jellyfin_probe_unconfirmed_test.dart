@@ -1,4 +1,4 @@
-// BUG-3662（反馈 WMxpfrPXJp）：部分 Emby 部署的网关只放行客户端业务路由，
+// BUG-3677（反馈 WMxpfrPXJp）：部分 Emby 部署的网关只放行客户端业务路由，
 // `/System/Info/Public` 与 `/System/Ping`（根路径与 `/emby` 前缀）全部 404，
 // 但登录与读媒体库正常，Emby 官方客户端 / SenPlayer 能用。添加服务器时公开端点
 // 全 404 不能判「连不上」，要由真正的认证请求在候选根地址间定案。

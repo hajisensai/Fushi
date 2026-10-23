@@ -2820,7 +2820,7 @@ void main() {
           ? 'holding an open handle only blocks deletion on Windows'
           : null);
 
-  group('BUG-3666 moved seeds stay claimed by their job row', () {
+  group('BUG-3700 moved seeds stay claimed by their job row', () {
     // 整理后种子被 moveStorage 到来源根继续做种：savePath 不在任何
     // 「下载根/分类」目录下。后端按内置引擎的真实规则（目录即分类）过滤。
     late _DirectoryCategoryTorrentBackend backend;
