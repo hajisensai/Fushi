@@ -1,0 +1,7 @@
+## BUG-3683 · 应用外查词制卡用旧牌组/配置，且无法在应用外切换
+- **报告**：2026-10-18（来源：应用内反馈 fiwDIpFep7 跟进；开发者 2026-10-23 回复已列入计划）
+- **现象**：① 应用外查词（Android 分享 / 选中文本弹窗、悬浮词典）里不能切换制卡配置 / 牌组；② 主 app 改了牌组后，应用外制卡仍写进旧牌组。
+- **真实性**：✅ 真 bug（Android；Windows 全局查词由主 engine 驱动，不受影响）。根因：Anki 设置整份 JSON 存在 SharedPreferences（`packages/fushi_anki/lib/src/base_anki_repository.dart:28` `fushi_anki_settings`），SP 插件按进程 / isolate 各缓存一份。Android `:popup` 是独立进程（`fushi/android/app/src/main/AndroidManifest.xml:170,184`），悬浮词典是同进程另一个 engine（`fushi/lib/floating_dict_main.dart:20`），初始化后一直读自己那份旧缓存。应用外切换按钮被默认关闭（`dictionary_popup_layer.dart` `showMiningTargetSwitch`）。
+- **[x] ① 已修复** — `b19d64b333`：新增存储端口 `AnkiSettingsStore`（`packages/fushi_anki/lib/src/anki_settings_store.dart`），app 三个入口打开库后装配 Drift 实现 `DriftAnkiSettingsStore`（`fushi/lib/src/anki/anki_settings_drift_store.dart`，每次读直查 `preferences` 单行、写经 `setPref` 递增跨进程 `prefs_version`）；一次性迁移用 `insertPrefIfAbsent`（单条 `INSERT OR IGNORE`，两进程并发首启只落地一次），任何进程都不删 SP 旧键（保留降级退路、避免 `:popup` 整文件写回覆盖主进程）；`anki_settings` 排除出 Profile 快照（否则切到旧 Profile 会删光设置）并列为设备本地 + 凭据键（含 AnkiConnect apiKey，不进备份）；`refreshPrefCacheIfChanged` 返回是否变化，变化时让 Anki 仓库 / 视图模型 / Profile 视图模型失效，悬浮词典查词与制卡前也比对版本；应用外查词窗打开「制卡目标」切换按钮。
+- **[x] ② 已加自动化测试** — `fushi/test/anki/anki_settings_drift_store_test.dart`（两个连接 A 写 B 立即读到、迁移连跑两次与两连接并发各只写一次、切旧 Profile 设置不丢、备份导出剔除该键、SP 默认实现行为不变）
+- **备注**：Windows 原生 `popup.html` 的切换 UI 未做；「单独切换笔记类型 / 临时把选中文字当句子」仍是功能需求。菜单下拉在 Android 原生 WebView 上是否被遮挡（BUG-797 一类）未真机验证。
