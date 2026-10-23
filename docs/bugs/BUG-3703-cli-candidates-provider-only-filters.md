@@ -1,4 +1,4 @@
-## BUG-3662 · cli-candidates-provider-only-filters
+## BUG-3703 · cli-candidates-provider-only-filters
 - **报告**：2026-10-23（用户：「怎么没让我决策的，又说没刮削出来，全用 cli 帮我修一下。不能修的地方就补上 cli」）
 - **真实性**：✅ 真 bug。`fushi_cli video candidates <work> --provider tmdb` 对任何查询词（含「ドラえもん」）都回「没有候选」。根因 `packages/fushi_engine/lib/media/video/metadata/video_source_scrape_coordinator.dart` 的 `searchManualCandidates`：按主源链搜到第一个有结果的源（AniDB）就 `break`，且形态只取来源计划猜的 `_manualMediaKind(work)`；ctl 路由 `ctl_video_routes.dart` 的 `searchCandidates` 只把 `provider` 当结果过滤器。主源 AniDB 有歧义候选时 TMDB 永远不会被搜，被计划当成剧集的剧场版也永远搜不到电影——17 部《[Fabre-RAW] Doraemon Movie NN》卡在待确认、CLI 无法给出正确的 TMDB 电影候选。
 - **[x] ① 已修复** — `VideoSourceScrapeManualBinding.searchManualCandidates` 加可选 `provider` / `mediaKind`：给了就只搜该资料源、该形态（缺省行为不变）；ctl `candidates` 路由透传 `provider` 与新参数 `type`；CLI `video candidates` 新增 `--type tv|movie`，`--provider` 语义改为「只搜这个资料源」。
