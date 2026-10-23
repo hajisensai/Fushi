@@ -195,7 +195,8 @@ Future<({List<AudioCue> cues, MatchResult result})> finalizeAlignedCues({
       fushiDebugPrint(
         '[fushi-import] energy snap: ${computed.snappedBoundaries} '
         'boundaries, ${computed.refinedEdges} edges, '
-        '${computed.mergedFragments} fragments merged',
+        '${computed.mergedFragments} fragments merged, '
+        '${computed.displayMargins} margin edges',
       );
     }
   }
@@ -282,6 +283,7 @@ class AlignedCueComputation {
     this.snappedBoundaries,
     this.refinedEdges,
     this.mergedFragments,
+    this.displayMargins,
   });
 
   final List<AudioCue> cues;
@@ -299,6 +301,9 @@ class AlignedCueComputation {
 
   /// 设备端转录产物并回相邻 cue 的句内碎片数（`CueFragmentMerger`）。
   final int? mergedFragments;
+
+  /// 跟读显示余量动过的边数（`CueDisplayMargins`）。
+  final int? displayMargins;
 }
 
 /// [finalizeAlignedCues] 的后台 isolate debugName。
@@ -337,6 +342,7 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
   int? moved;
   int? edges;
   int? fragments;
+  int? margins;
   if (request.asrGenerated) {
     replaceMatchedCueTextWithBookText(
       sections: request.sections,
@@ -359,6 +365,10 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
     cues = merged.cues;
     result = merged.result;
     fragments = merged.merged;
+    // 最后按语速留跟读余量：快档贴声音，慢 / 正常档前后多留一两百毫秒。
+    if (energy != null) {
+      margins = const CueDisplayMargins().apply(cues, energy);
+    }
   }
   return AlignedCueComputation(
     cues: cues,
@@ -368,6 +378,7 @@ AlignedCueComputation computeAlignedCues(AlignedCueRequest request) {
     snappedBoundaries: moved,
     refinedEdges: edges,
     mergedFragments: fragments,
+    displayMargins: margins,
   );
 }
 

@@ -46,6 +46,7 @@ export 'src/matching/collection_audio_matcher.dart';
 export 'src/matching/cue_file_index_assigner.dart';
 export 'src/matching/cue_sentence_resegmenter.dart';
 export 'src/matching/cue_energy_snapper.dart';
+export 'src/matching/cue_display_margins.dart';
 export 'src/matching/cue_fragment_merger.dart';
 export 'src/matching/subtitle_rematch_codec.dart';
 export 'src/matching/cues_to_epub.dart';
