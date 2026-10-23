@@ -144,7 +144,11 @@ void main() {
               file == 'gone.mp3' ? null : '/cache/$source-${file.hashCode}.mp3',
     );
     final List<AudioSourceConfig> sources = <AudioSourceConfig>[
-      AudioSourceConfig.localAudio(label: 'android.db', path: '/db'),
+      AudioSourceConfig.localAudio(
+        label: 'android.db',
+        path: '/db',
+        enabled: true,
+      ),
     ];
 
     final List<WordAudioCandidate> list = await resolver.listConfigured(
