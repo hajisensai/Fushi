@@ -153,6 +153,54 @@ typedef _DupeNormDart =
       int,
       ffi.Pointer<ffi.Size>,
     );
+typedef _HistoryStatesC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistoryStatesDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistorySelectC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistorySelectDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
 typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
 
@@ -209,6 +257,14 @@ class FushiFsrsBindings {
       ffsrs_search_dupe_norm_batch = lib
           .lookupFunction<_DupeNormC, _DupeNormDart>(
             'ffsrs_search_dupe_norm_batch',
+          ),
+      ffsrs_history_states = lib
+          .lookupFunction<_HistoryStatesC, _HistoryStatesDart>(
+            'ffsrs_history_states',
+          ),
+      ffsrs_history_select = lib
+          .lookupFunction<_HistorySelectC, _HistorySelectDart>(
+            'ffsrs_history_select',
           );
 
   /// 请求 JSON → 响应 JSON（`{"ok":…}` / `{"error":"…"}`）。
@@ -340,4 +396,35 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Size> outLen,
   )
   ffsrs_search_dupe_norm_batch;
+
+  /// 卡片历史（落库 JSON）→ 当前状态，批量；布局见 native/fushi_fsrs/src/history.rs
+  /// `states_from_json`。成功返回缓冲区（[ffsrs_free_bytes] 释放），失败返回空指针并写错误串
+  /// （[ffsrs_free_string] 释放）。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    ffi.Pointer<ffi.Int64> serverTimes,
+    int nLogs,
+    ffi.Pointer<ffi.Uint32> groups,
+    int nGroups,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_history_states;
+
+  /// 卡片历史（列模式）→ 排序与选取标记，批量；布局见 history.rs `select_columns`。
+  /// 释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Int64> ints,
+    int nLogs,
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    ffi.Pointer<ffi.Uint32> groups,
+    int nGroups,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_history_select;
 }

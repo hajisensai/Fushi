@@ -4,6 +4,7 @@ library;
 
 import 'algorithm.dart';
 import 'fsrs_engine.dart';
+import 'history_kernel.dart';
 import 'ordering.dart';
 import 'review_log.dart';
 
@@ -13,77 +14,69 @@ const int srsImportEquivalenceToleranceMs = 1000;
 const int _dayMs = 24 * 60 * 60 * 1000;
 
 /// 一张卡的日志视图。[serverTimeOf] 给出事件的 S(e)。
+///
+/// 排序与有效日志选取（撤销、等价导入、排程归属）只在 Rust 里写一份
+/// （native/fushi_fsrs/src/history.rs，见 history_kernel.dart）；这里只是选取结果的视图。
+/// 一次构造一次 FFI 调用，成批构造用 [SrsCardHistory.many]（一批一次）。
 class SrsCardHistory {
-  SrsCardHistory(
+  /// 一份历史（一次 FFI 调用；空历史不进原生侧）。
+  factory SrsCardHistory(
     Iterable<SrsReviewLog> logs, {
     int? Function(String eventId)? serverTimeOf,
-  }) : _serverTimeOf = serverTimeOf {
-    final Map<String, SrsReviewLog> byId = <String, SrsReviewLog>{
-      for (final SrsReviewLog l in logs) l.id: l,
+  }) => many(<SrsHistoryInput>[(logs.toList(), serverTimeOf)]).single;
+
+  SrsCardHistory._(
+    List<SrsReviewLog> logs,
+    SrsHistorySelection sel,
+    this._serverTimeOf,
+  ) : all = <SrsReviewLog>[for (final int i in sel.order) logs[i]],
+      lastEffective = sel.lastEffective < 0 ? null : logs[sel.lastEffective],
+      _schedulerFrom = sel.schedulerFrom < 0 ? null : logs[sel.schedulerFrom] {
+    effective = <SrsReviewLog>[
+      for (int k = 0; k < all.length; k++)
+        if (sel.status[k] & srsHistoryEffective != 0) all[k],
+    ];
+    revoked = <String>{
+      for (int k = 0; k < all.length; k++)
+        if (sel.status[k] & srsHistoryRevoker != 0) all[k].revokesId!,
     };
-    all = byId.values.toList()
-      ..sort(
-        (SrsReviewLog a, SrsReviewLog b) =>
-            sortKeyOf(a).compareTo(sortKeyOf(b)),
-      );
-    _computeEffective();
+    equivalentImports = <String>{
+      for (int k = 0; k < all.length; k++)
+        if (sel.status[k] & srsHistoryEquivalentImport != 0) all[k].id,
+    };
+  }
+
+  /// 一批历史，与输入同序；整批一次 FFI 调用。
+  static List<SrsCardHistory> many(List<SrsHistoryInput> inputs) {
+    final List<SrsHistorySelection> sel = srsSelectHistories(inputs);
+    return <SrsCardHistory>[
+      for (int i = 0; i < inputs.length; i++)
+        SrsCardHistory._(inputs[i].$1, sel[i], inputs[i].$2),
+    ];
   }
 
   final int? Function(String eventId)? _serverTimeOf;
 
-  /// 全部日志（含 undo、被撤销的、不认识的），按 sortKey 升序。
-  late final List<SrsReviewLog> all;
+  /// 全部日志（含 undo、被撤销的、不认识的；同 ID 只留最后一条），按 sortKey 升序。
+  final List<SrsReviewLog> all;
 
   /// 有效日志（kind 已知且不是 undo、没被撤销、不是被判等价的导入日志），按 sortKey 升序。
   late final List<SrsReviewLog> effective;
 
-  /// 被 undo 撤销的日志 ID。
+  /// 被 undo 撤销的日志 ID（undo 的目标；目标不在本历史里也算）。
   late final Set<String> revoked;
 
   /// 被判与原生日志等价、因此不算有效的导入日志 ID。
   late final Set<String> equivalentImports;
 
+  /// 最后一条有结果的有效日志；没有 = 新卡。
+  final SrsReviewLog? lastEffective;
+
+  /// 决定排程归属的那条 handOff（最后一条有结果的有效 handOff）。
+  final SrsReviewLog? _schedulerFrom;
+
   SrsSortKey sortKeyOf(SrsReviewLog log) =>
       srsSortKey(log.hlc, log.id, _serverTimeOf?.call(log.id));
-
-  void _computeEffective() {
-    revoked = <String>{
-      for (final SrsReviewLog l in all)
-        if (l.kind == SrsLogKind.undo && l.revokesId != null) l.revokesId!,
-    };
-    final List<SrsReviewLog> nativeRatings = <SrsReviewLog>[
-      for (final SrsReviewLog l in all)
-        if (l.origin == SrsLogOrigin.fushi && l.isRatingReview) l,
-    ];
-    equivalentImports = <String>{
-      for (final SrsReviewLog imp in all)
-        if (imp.origin == SrsLogOrigin.anki &&
-            imp.isRatingReview &&
-            imp.ankiRevlogId != null &&
-            nativeRatings.any(
-              // 一份历史就是一张逻辑卡（含「更改笔记类型」继承来的前身卡的日志），
-              // 前身卡的原生日志与新卡的导入日志照样判等价。
-              (SrsReviewLog n) => srsImportEquivalent(imp, n, sameCard: true),
-            ))
-          imp.id,
-    };
-    effective = <SrsReviewLog>[
-      for (final SrsReviewLog l in all)
-        if (l.isKnownKind &&
-            l.kind != SrsLogKind.undo &&
-            !revoked.contains(l.id) &&
-            !equivalentImports.contains(l.id))
-          l,
-    ];
-  }
-
-  /// 最后一条有结果的有效日志；没有 = 新卡。
-  SrsReviewLog? get lastEffective {
-    for (int i = effective.length - 1; i >= 0; i--) {
-      if (effective[i].result != null) return effective[i];
-    }
-    return null;
-  }
 
   /// 卡片当前排程状态 = 最后一条有效日志的结果；scheduler 另由 [scheduler] 决定。
   SrsScheduleResult get state {
@@ -95,15 +88,8 @@ class SrsCardHistory {
 
   /// 卡片归谁排程：最后一条有效 handOff 事件（移交 / 收回）的方向；没有 = fushi。
   /// 导入锚点、评分都不改归属，同一个导入操作永远同一种结果。
-  String get scheduler {
-    for (int i = effective.length - 1; i >= 0; i--) {
-      final SrsReviewLog l = effective[i];
-      if (l.kind == SrsLogKind.handOff && l.result != null) {
-        return l.result!.scheduler;
-      }
-    }
-    return SrsScheduler.fushi;
-  }
+  String get scheduler =>
+      _schedulerFrom?.result!.scheduler ?? SrsScheduler.fushi;
 
   /// 协议只允许撤销「该卡当前最后一条有效日志」。
   bool canUndo(String logId) => lastEffective?.id == logId;
@@ -116,6 +102,10 @@ class SrsCardHistory {
 }
 
 /// 导入日志 [imported] 与原生日志 [native] 是否是同一次复习（铁律 B）。只看两条日志自身。
+///
+/// 卡片历史里的等价判定在 native/fushi_fsrs/src/history.rs（同一容差、同一判据，固定向量
+/// test/history/fixtures/ 钉齐）；这一份只给 Anki 导入器入库前判重用，第二阶段随导入一起收进内核
+/// （docs/specs/2026-10-23-srs-rust-core.md）。
 ///
 /// [sameCard] = 调用方已知两条日志属于同一张逻辑卡（同一份卡片历史：新卡与它经「更改笔记类型」
 /// 继承的前身卡），此时不再比 cardId。
