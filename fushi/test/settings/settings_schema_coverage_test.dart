@@ -941,6 +941,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 直通：下发值由 mpv 配置测试咬住；真正的码流直通要接功放 / 回音壁才能验。
   'video/Dolby / DTS passthrough':
       'test/media/video/video_mpv_config_test.dart',
+  // 音量上限（W-qZRr3lwK）：volume-max 下发与编解码由 mpv 配置测试咬住，各音量入口
+  // 按上限 clamp 由控制器测试咬住；实际放大响度要真机听。
+  'video/Volume limit': 'test/media/video/video_player_controller_test.dart',
   // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
   // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
   "video/Respect subtitle's own style":
