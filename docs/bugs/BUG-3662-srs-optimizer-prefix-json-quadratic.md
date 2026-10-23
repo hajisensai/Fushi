@@ -8,7 +8,7 @@
     再转 `Vec<FSRSItem>`。一轮优化至少 5 次调用（compute + 2×evaluate + 2×evaluate_tss），每次重编一遍。
   - 实测（1500 卡、每卡 20–120 次评分、10.5 万条目、Σ 前缀 444 万条评分）：单次请求 142.7 MB JSON，进程峰值 RSS 8125 MB，
     端到端 76.6 s（其中绝大部分是 JSON 编解码与 `Value` 树，不是 fsrs-rs 的计算）。
-- **[x] ① 已修复** — 训练集改成打包 TypedData `SrsFsrsTrainingSet`（`packages/fushi_srs/lib/src/fsrs_engine.dart`）：每张卡只存一份
+- **[x] ① 已修复**（9999afa554）— 训练集改成打包 TypedData `SrsFsrsTrainingSet`（`packages/fushi_srs/lib/src/fsrs_engine.dart`）：每张卡只存一份
   完整历史（`ratings` / `deltaDays` / `cardOffsets` / `cardIds`），条目只记按评分时刻排好序的 `(卡序号, 前缀长度)`；原生侧新 C ABI
   `ffsrs_fit`（`native/fushi_fsrs/src/lib.rs`，替换 `ffsrs_compute_parameters` 与 JSON op `evaluate` / `evaluate_tss`，ABI 1→2）
   在 Rust 里展开前缀再交给 fsrs-rs。不留 JSON 回退。
