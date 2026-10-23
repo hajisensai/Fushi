@@ -104,8 +104,10 @@ Future<String?> showAsrTranscribeSheet({
           ? null
           : InterconnectJobClient(repo: SyncRepository(appModel.database)));
   // 云端转录 / AI 校对：提供商按 AI 设置里的功能指派现取（见 asr_ai_hosts.dart）。
-  // 没有 app 模型（测试宿主）就两样都不提供。
-  final AppModel? model = appModel;
+  // 没有 app 模型或偏好仓库还没就绪（测试宿主 / 启动早期）就两样都不提供。
+  final AppModel? model = appModel != null && appModel.isPreferencesReady
+      ? appModel
+      : null;
   final AsrTranscriptionService Function()? cloud =
       cloudService ??
       (model == null
