@@ -145,7 +145,7 @@ try {
     assert.equal(r.pwned, null, 'structured content must not execute');
     assert.equal(r.scriptsInMain, 0, 'no <script> element from structured content');
     assert.equal(r.frames.length, 0, 'no iframe element from structured content');
-    assert.ok(!r.hrefs.some((h) => /javascript:/i.test(h)), `javascript: href stripped (${r.hrefs})`);
+    assert.ok(!r.hrefs.some((h) => /javascript:/i.test(h)), `javascript: href stripped (${r.hrefs})`);  // NOSONAR: checks that the payload href was stripped; nothing is evaluated
     assert.ok(!/evil\.example/.test(JSON.stringify(r)), 'remote background url dropped');
     assert.ok(r.text.includes('link') && r.text.includes('framed'), 'content of unknown tags is kept');
     passed++;
@@ -161,7 +161,7 @@ try {
       '<p style="background:url(https://evil.example/s.png)">styled</p>'));
     assert.equal(r.pwned, null, `inline handlers must not run (${r.pwned})`);
     assert.deepEqual(r.onAttrs, [], 'on* attributes stripped');
-    assert.ok(!r.hrefs.some((h) => /javascript:/i.test(h)), `javascript: href stripped (${r.hrefs})`);
+    assert.ok(!r.hrefs.some((h) => /javascript:/i.test(h)), `javascript: href stripped (${r.hrefs})`);  // NOSONAR: checks that the payload href was stripped; nothing is evaluated
     assert.ok(r.hrefs.includes('https://example.com/'), 'normal external link kept');
     assert.ok(!r.srcs.some((s) => /evil\.example/.test(s)), `remote img src stripped (${r.srcs})`);
     assert.ok(!/evil\.example/.test(JSON.stringify(r)), 'no remote reference left anywhere');
