@@ -35,6 +35,7 @@ import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -567,12 +568,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       return null;
     }
     final String picture = widget.fields['Picture']!;
-    final double? maxWidth = wide ? null : s.thumb * 1.5;
-    // 窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；左栏图（视频片段
-    // 与怪比例图片）最高 220，矮视口（手机横屏）120。
-    final double maxHeight = wide
-        ? (_viewport <= 520 ? 120 : 220)
-        : s.thumb * 1.4;
+    final SrsPictureLimits limits = srsPictureLimits(
+      ref.watch(srsReviewImageSizeProvider),
+      wide: wide,
+      viewport: _viewport,
+      thumb: s.thumb,
+    );
+    final double? maxWidth = limits.maxWidth;
+    final double maxHeight = limits.maxHeight;
     // 视频片段（WebM `<video>` / MP4 `[sound:]`）：在卡面上原生播，复习页的音频序列经
     // 片段通道驱动它（先单词音频、再片段）。
     final String? clip = srsVideoSources(picture).firstOrNull;
@@ -592,12 +595,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       name: name,
       // 窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）。宽版式左栏：
       // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
-      // 照旧限高 220（矮视口 120）完整显示。铺满的图最高占视口的
-      // [kSrsPictureFillMaxViewportFraction]，再高就整张等比缩小（不裁切），不把例句挤出首屏。
+      // 限高完整显示。铺满的图有高度上限，再高就整张等比缩小（不裁切），不把例句挤出
+      // 首屏。各上限随「卡面图片大小」设置，见 [srsPictureLimits]。
       maxWidth: maxWidth,
       maxHeight: maxHeight,
-      fillWidth: wide && _viewport > 520,
-      maxFillHeight: _viewport * kSrsPictureFillMaxViewportFraction,
+      fillWidth: limits.fillWidth,
+      maxFillHeight: limits.maxFillHeight,
       radius: s.tokens.radiusSmall,
     );
   }
@@ -1341,6 +1344,87 @@ const double kSrsPictureFillMaxAspect = 2.5;
 /// 铺满的图片最高占卡面视口高度的比例。
 const double kSrsPictureFillMaxViewportFraction = 0.4;
 
+/// 原生卡面图片的尺寸上限（[srsPictureLimits] 按「卡面图片大小」设置给出）。
+typedef SrsPictureLimits = ({
+  double? maxWidth,
+  double maxHeight,
+  bool fillWidth,
+  double maxFillHeight,
+});
+
+/// Fushi 卡片图片（含视频片段）的尺寸上限，与 WebView 卡面的 [srsReviewImageSizeCss]
+/// 读同一个设置。[wide]：宽版式左栏；否则是窄版式标题右侧的缩略图（[thumb] 为基准边长）。
+///
+/// - 原样：左栏常见比例铺满栏宽（视口高于 520 时），怪比例 / 视频片段最高 220（矮视口
+///   120）；铺满的图最高占视口的 [kSrsPictureFillMaxViewportFraction]。缩略图 1.5 × 1.4 基准边。
+/// - 适应宽度：任何视口都铺满栏宽，限高放宽到 360（矮视口 180）/ 视口的 55%；缩略图 ×1.5。
+/// - 放大：铺满栏宽，限高到视口的 [kSrsReviewLargeImageMaxVh]%；缩略图 ×2。
+@visibleForTesting
+SrsPictureLimits srsPictureLimits(
+  SrsReviewImageSize size, {
+  required bool wide,
+  required double viewport,
+  required double thumb,
+}) {
+  final bool short = viewport <= 520;
+  final double thumbScale = switch (size) {
+    SrsReviewImageSize.original => 1,
+    SrsReviewImageSize.fitWidth => 1.5,
+    SrsReviewImageSize.large => 2,
+  };
+  final double largeCap = viewport * kSrsReviewLargeImageMaxVh / 100;
+  return (
+    maxWidth: wide ? null : thumb * 1.5 * thumbScale,
+    maxHeight: !wide
+        ? thumb * 1.4 * thumbScale
+        : switch (size) {
+            SrsReviewImageSize.original => short ? 120 : 220,
+            SrsReviewImageSize.fitWidth => short ? 180 : 360,
+            SrsReviewImageSize.large => largeCap,
+          },
+    fillWidth: wide && (size != SrsReviewImageSize.original || !short),
+    maxFillHeight: switch (size) {
+      SrsReviewImageSize.original =>
+        viewport * kSrsPictureFillMaxViewportFraction,
+      SrsReviewImageSize.fitWidth => viewport * 0.55,
+      SrsReviewImageSize.large => largeCap,
+    },
+  );
+}
+
+/// 全屏查看一张卡面图片（原生卡点图、WebView 卡经 [SrsCardFace.onImageTap] 点图共用）：
+/// 可双指 / 滚轮缩放拖动，点一下关闭。
+Future<void> showSrsCardImageViewer(BuildContext context, Widget picture) =>
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext context) => GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: InteractiveViewer(child: picture),
+      ),
+    );
+
+/// 卡面图片控件：AVIF（制卡默认的动图格式）走 Rust 逐帧解码播放，其余按
+/// [srsCardImageProvider]。来源无法显示时 null。
+Widget? srsCardImageWidget(String src, SrsMediaStore? store, {BoxFit? fit}) {
+  final File? avif = !src.startsWith('data:') && isAvifPath(src)
+      ? store?.resolve(src)
+      : null;
+  if (avif != null) {
+    return FushiAnimatedAvifImage(
+      file: avif,
+      fit: fit,
+      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+    );
+  }
+  final ImageProvider<Object>? provider = srsCardImageProvider(src, store);
+  if (provider == null) return null;
+  return Image(
+    image: provider,
+    fit: fit,
+    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+  );
+}
+
 /// 媒体库里的图片：点按全屏查看。
 class _MediaImage extends ConsumerStatefulWidget {
   const _MediaImage({
@@ -1490,13 +1574,7 @@ class _MediaImageState extends ConsumerState<_MediaImage> {
     return FushiPressScale(
       child: GestureDetector(
         onTap: () => unawaited(
-          showAppDialog<void>(
-            context: context,
-            builder: (BuildContext context) => GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: InteractiveViewer(child: picture(fit: BoxFit.contain)),
-            ),
-          ),
+          showSrsCardImageViewer(context, picture(fit: BoxFit.contain)),
         ),
         child: box,
       ),

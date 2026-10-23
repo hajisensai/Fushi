@@ -42,6 +42,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
@@ -859,6 +860,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
+  /// WebView 卡面里点了图片（[SrsCardFace.onImageTap]）：页内地址换回媒体名，用原生卡
+  /// 那个可缩放的全屏查看；关掉后焦点回复习页（WebView 拿走过 OS 焦点）。
+  void _viewCardImage(String src) {
+    final Uri? url = src.startsWith('data:') ? null : Uri.tryParse(src);
+    final String? name = url == null ? src : srsMediaNameFromUrl(url);
+    if (name == null) return;
+    srsRunLogged('SrsReview.viewCardImage', () async {
+      final Widget? picture = srsCardImageWidget(
+        name,
+        await ref.read(srsMediaStoreProvider.future),
+        fit: BoxFit.contain,
+      );
+      if (picture == null || !mounted) return;
+      _lookup.closeAll();
+      await showSrsCardImageViewer(context, picture);
+      if (mounted) _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    });
+  }
+
   // ------------------------------------------------------------------ 界面
 
   String get _countsText =>
@@ -1286,6 +1306,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       pageZoom: zoom == 1 ? null : zoom,
       onZoomWheel: _zoomWheel,
       onSourceLink: _openSource,
+      // 「卡面图片大小」随主题原地下发（不重放卡片）；Fushi 卡片的原生图片读同一设置。
+      hostCss: srsReviewImageSizeCss(ref.watch(srsReviewImageSizeProvider)),
+      onImageTap: _viewCardImage,
       // 卡面页内自己出声的媒体（视频制卡的同步片段等）同样服从牌组的自动播放开关
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,

@@ -1,0 +1,12 @@
+## BUG-3703 · 复习卡里的图片太小（Anki 导入卡没有任何放大手段）
+- **报告**：2026-10-23（反馈 Nhva4S69_b，Windows 3.0.0-debug.20679：「复习卡片里的 Anki 图片太小」，附 3 张截图）
+- **真实性**：✅ 真缺口（不是渲染错误，是缺设置）。复习卡两条渲染路径：
+  - Anki 导入卡：整张卡在 WebView 里按牌组 CSS 原样渲染（`fushi/lib/src/pages/implementations/srs/srs_card_face.dart` `SrsCardFaceDocument.of`），宿主只注入播放按钮样式 `kSrsCardMediaCss`（`fushi/lib/src/srs/srs_card_media.dart:122`），没有任何 `img` 规则；图片小要么是原图像素小，要么是牌组 CSS 自己 `img{max-height:…}`，用户都改不了，也不能点开看大图。
+  - Fushi 原生卡：`_MediaImage`（`srs_fushi_card_view.dart`）非铺满时写死限高 220，只有宽版式且视口高于 520 才铺满栏宽。
+  - 没看到反馈截图原图，无法确认那张卡属于「原图小」还是「牌组 CSS 限死」；下面的设置两种都覆盖。
+- **[x] ① 已修复** —
+  - 复习选项面板（`SrsReviewLayoutSheet`）加「卡面图片大小」：原样 / 适应宽度 / 放大（偏好 `srs_review_image_size`，按 profile、跨设备）。WebView 卡经现成的 `hostCss` 通道注入 `srsReviewImageSizeCss`（`srs_review_layout.dart`）：适应宽度 = 去掉牌组尺寸上限、宽了才缩；放大 = 小图也铺满卡面宽、最高 75vh 等比收。走原地换主题，不重放卡片。
+  - 原生卡：`srsPictureLimits` 按同一设置给限高 / 铺满门槛 / 缩略图边长（原样 = 旧值）。
+  - WebView 卡点图放大：页内脚本 `kSrsCardImageTapScript` 收 `.card img` 的点击（链接 / `onclick` / 已 `preventDefault` 的不抢），经新 handler `onSrsImageTap` 回传 `currentSrc`；复习页换回媒体名后用原生卡同一个 `InteractiveViewer` 全屏查看（`showSrsCardImageViewer`）。没走键盘桥：键盘桥只传按键 token，图片地址用独立 handler 更直接，和来源链接同一做法。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_card_image_size_test.dart`（三档 CSS、只走原地换主题、点图脚本在 node 里跑生产常量、原生上限单调且原样 = 旧值）；`fushi/test/srs/srs_pages_test.dart`「复习选项『卡面图片大小』」（面板改档 → 卡面 hostCss 随之变；点图回调 → 全屏查看、关闭；远程图不弹）。
+- **备注**：未在真实 WebView / 用户牌组上目测效果；「放大」档对卡面里所有 `<img>` 生效，牌组里小图标（音调图、旗帜）也会被拉宽。
