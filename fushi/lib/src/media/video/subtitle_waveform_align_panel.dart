@@ -1390,7 +1390,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: FushiIconButtonControl.filledTonal(
-        size: FushiIconButtonSize.s,
+        size: ButtonSizeVariant.small,
         tooltip: tooltip,
         icon: FushiIcon(icon),
         onPressed: onPressed,
@@ -1536,13 +1536,13 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               FushiIconButtonControl(
-                size: FushiIconButtonSize.s,
+                size: ButtonSizeVariant.small,
                 tooltip: t.video_subtitle_prev_cue_align,
                 icon: const FushiIcon(FushiIcons.skipPrevious),
                 onPressed: () => _snapDelayToCue(next: false),
               ),
               FushiIconButtonControl(
-                size: FushiIconButtonSize.s,
+                size: ButtonSizeVariant.small,
                 tooltip: t.video_subtitle_next_cue_align,
                 icon: const FushiIcon(FushiIcons.skipNext),
                 onPressed: () => _snapDelayToCue(next: true),

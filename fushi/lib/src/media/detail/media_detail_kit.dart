@@ -1080,7 +1080,7 @@ class MediaDetailSecondaryButton extends StatelessWidget {
       return FushiIconButtonControl.filledTonal(
         key: buttonKey,
         tooltip: label,
-        size: FushiIconButtonSize.m,
+        size: ButtonSizeVariant.medium,
         isSelected: selected,
         onPressed: busy ? null : onPressed,
         icon: glyph,
@@ -1145,12 +1145,10 @@ class MediaDetailMoreButton extends StatefulWidget {
   State<MediaDetailMoreButton> createState() => _MediaDetailMoreButtonState();
 }
 
-/// 详情页图标钮的实际尺寸（[FushiIconButtonSize.m]）：测宽与实际渲染取同一个值，
+/// 详情页图标钮的实际尺寸（[ButtonSizeVariant.medium]）：测宽与实际渲染取同一个值，
 /// 不再按顶栏的 48 估（实测 6 个动作 340px 预算全展开需要 376px，会溢出）。
-final double _kInlineButtonExtent = fushiExpressiveIconButtonExtent(
-  FushiIconButtonSize.m,
-  FushiIconButtonWidth.standard,
-).width;
+/// 官方 M3E 规格：medium × standard 宽 56。
+const double _kInlineButtonExtent = 56;
 
 /// 平铺钮之间的间距（[MediaDetailMoreButton.build] 里的 SizedBox 宽度）。
 const double _kInlineButtonGap = 8;
@@ -1188,7 +1186,7 @@ class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
     child: FushiIconButtonControl.filledTonal(
       key: item.key,
       tooltip: item.label,
-      size: FushiIconButtonSize.m,
+      size: ButtonSizeVariant.medium,
       onPressed: item.enabled ? item.onSelected : null,
       icon: FushiIcon(item.icon),
     ),
@@ -1198,7 +1196,7 @@ class _MediaDetailMoreButtonState extends State<MediaDetailMoreButton> {
     builder: (BuildContext context) => FushiIconButtonControl.filledTonal(
       key: widget.buttonKey,
       tooltip: widget.tooltip ?? t.common_more_actions,
-      size: FushiIconButtonSize.m,
+      size: ButtonSizeVariant.medium,
       onPressed: () => unawaited(_open(context, hidden)),
       icon: const FushiIcon(FushiIcons.moreHoriz),
     ),

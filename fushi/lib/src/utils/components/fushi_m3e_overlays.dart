@@ -500,8 +500,8 @@ class FushiM3eFloatingSheet extends StatelessWidget {
 // M3E 形状库（装饰形）
 // ---------------------------------------------------------------------------
 
-/// M3E 形状库里用作装饰底的几种形状（Material Shapes 的子集，按极坐标函数
-/// 生成，任意尺寸下都是平滑闭合曲线）。
+/// M3E 形状库里用作装饰底的几种形状（官方 [MaterialShapes] 的子集，见
+/// [FushiExpressiveShape.polygon]）。
 enum FushiExpressiveShape {
   /// 圆。
   circle,
@@ -522,6 +522,18 @@ enum FushiExpressiveShape {
   sunny,
 }
 
+/// [FushiExpressiveShape] 对应的官方 M3E 形状。
+extension FushiExpressiveShapePolygon on FushiExpressiveShape {
+  RoundedPolygon get polygon => switch (this) {
+    FushiExpressiveShape.circle => MaterialShapes.circle,
+    FushiExpressiveShape.cookie4 => MaterialShapes.cookie4Sided,
+    FushiExpressiveShape.cookie6 => MaterialShapes.cookie6Sided,
+    FushiExpressiveShape.cookie9 => MaterialShapes.cookie9Sided,
+    FushiExpressiveShape.flower => MaterialShapes.flower,
+    FushiExpressiveShape.sunny => MaterialShapes.sunny,
+  };
+}
+
 /// 把 [FushiExpressiveShape] 画成 [OutlinedBorder]，可直接给 [ShapeDecoration]
 /// / [Material.shape] / 裁剪用。[rotation] 为弧度。
 class FushiExpressiveShapeBorder extends OutlinedBorder {
@@ -530,50 +542,21 @@ class FushiExpressiveShapeBorder extends OutlinedBorder {
   final FushiExpressiveShape shape;
   final double rotation;
 
-  /// 极坐标半径函数：r(θ) ∈ (0, 1]。
-  double _radiusAt(double theta) {
-    switch (shape) {
-      case FushiExpressiveShape.circle:
-        return 1;
-      case FushiExpressiveShape.cookie4:
-        return 0.86 + 0.14 * math.cos(4 * theta);
-      case FushiExpressiveShape.cookie6:
-        return 0.9 + 0.1 * math.cos(6 * theta);
-      case FushiExpressiveShape.cookie9:
-        return 0.92 + 0.08 * math.cos(9 * theta);
-      case FushiExpressiveShape.flower:
-        // 花瓣更饱满：把余弦压成「宽瓣窄谷」。
-        final double c = (math.cos(8 * theta) + 1) / 2;
-        return 0.74 + 0.26 * math.pow(c, 0.6);
-      case FushiExpressiveShape.sunny:
-        final double c = (math.cos(12 * theta) + 1) / 2;
-        return 0.88 + 0.12 * math.pow(c, 2);
-    }
-  }
-
   Path _path(Rect rect) {
-    final Path path = Path();
     if (shape == FushiExpressiveShape.circle) {
-      return path..addOval(rect);
+      return Path()..addOval(rect);
     }
+    final Path path = MaterialShapeBorder(
+      shape: shape.polygon,
+      squash: 1,
+    ).getOuterPath(rect);
+    if (rotation == 0) return path;
     final Offset c = rect.center;
-    final double rx = rect.width / 2;
-    final double ry = rect.height / 2;
-    const int steps = 180;
-    for (int i = 0; i <= steps; i++) {
-      final double theta = i / steps * 2 * math.pi;
-      final double r = _radiusAt(theta);
-      final Offset p = Offset(
-        c.dx + rx * r * math.cos(theta + rotation),
-        c.dy + ry * r * math.sin(theta + rotation),
-      );
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    return path..close();
+    final Matrix4 spin = Matrix4.identity()
+      ..translateByDouble(c.dx, c.dy, 0, 1)
+      ..rotateZ(rotation)
+      ..translateByDouble(-c.dx, -c.dy, 0, 1);
+    return path.transform(spin.storage);
   }
 
   @override

@@ -3253,7 +3253,10 @@ class _SessionHeroBadge extends StatelessWidget {
         decoration: ShapeDecoration(
           color: eink ? Colors.transparent : fill,
           shape: active
-              ? FushiCookieBorder(lobes: 4, side: side)
+              ? MaterialShapeBorder(
+                  shape: MaterialShapes.cookie4Sided,
+                  side: side,
+                )
               : CircleBorder(side: side),
         ),
         child: SizedBox.square(
