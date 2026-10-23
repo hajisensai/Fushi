@@ -1,4 +1,4 @@
-## BUG-3683 · 应用外查词制卡用旧牌组/配置，且无法在应用外切换
+## BUG-3724 · 应用外查词制卡用旧牌组/配置，且无法在应用外切换
 - **报告**：2026-10-18（来源：应用内反馈 fiwDIpFep7 跟进；开发者 2026-10-23 回复已列入计划）
 - **现象**：① 应用外查词（Android 分享 / 选中文本弹窗、悬浮词典）里不能切换制卡配置 / 牌组；② 主 app 改了牌组后，应用外制卡仍写进旧牌组。
 - **真实性**：✅ 真 bug（Android；Windows 全局查词由主 engine 驱动，不受影响）。根因：Anki 设置整份 JSON 存在 SharedPreferences（`packages/fushi_anki/lib/src/base_anki_repository.dart:28` `fushi_anki_settings`），SP 插件按进程 / isolate 各缓存一份。Android `:popup` 是独立进程（`fushi/android/app/src/main/AndroidManifest.xml:170,184`），悬浮词典是同进程另一个 engine（`fushi/lib/floating_dict_main.dart:20`），初始化后一直读自己那份旧缓存。应用外切换按钮被默认关闭（`dictionary_popup_layer.dart` `showMiningTargetSwitch`）。

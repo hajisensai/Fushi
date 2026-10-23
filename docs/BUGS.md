@@ -33,42 +33,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3293 条。点号进各自文件。
+> 共 3334 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3704](bugs/BUG-3704-srs-anki-import-drops-new-card-position.md) | ✅ | ✅ | 从 Anki 迁移 / 导入不带新卡位置，新卡按笔记创建时刻出、丢了 Anki 里排好的顺序 |
-| [BUG-3703](bugs/BUG-3703-srs-stats-miss-inherited-history-after-type-change.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片（或换笔记类型）后，牌组统计里复习记录全空 |
-| [BUG-3687](bugs/BUG-3687-srs-rwkv-purged-card-scores-not-evicted.md) | ✅ | ✅ | 永久清除的卡仍留在 RWKV 常驻分数表里 |
-| [BUG-3686](bugs/BUG-3686-srs-rwkv-score-requery-counts-cache-hits.md) | ✅ | ✅ | RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答 |
-| [BUG-3685](bugs/BUG-3685-srs-purge-media-delete-race.md) | ✅ | ✅ | 墓碑清除回收媒体时，扫描与删除之间新加的引用照样被删 |
-| [BUG-3684](bugs/BUG-3684-srs-sync-snapshot-freezes-ui.md) | ✅ | ✅ | 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死 |
-| [BUG-3683](bugs/BUG-3683-anki-settings-stale-in-popup-process.md) | ✅ | ✅ | 应用外查词制卡用旧牌组/配置，且无法在应用外切换 |
-| [BUG-3682](bugs/BUG-3682-anki-non-lapis-note-type-empty-mappings.md) | ✅ | ✅ | 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡 |
-| [BUG-3681](bugs/BUG-3681-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
-| [BUG-3680](bugs/BUG-3680-srs-editor-no-preview-visual-ai.md) | ✅ | ✅ | 编辑卡片缺预览与可视化编辑，字段名无翻译说明，编辑与模板无 AI |
-| [BUG-3679](bugs/BUG-3679-srs-deck-delete-never-purged.md) | ✅ | ✅ | 删除牌组（含连卡片删除）只写墓碑，永不物理清除 |
-| [BUG-3678](bugs/BUG-3678-srs-undo-slow-and-downgrades-fsrs7.md) | ✅ | ✅ | Ctrl+Z 撤回极慢且撤回后降级成 FSRS-7 |
-| [BUG-3677](bugs/BUG-3677-srs-rwkv-full-rescore-per-answer.md) | ✅ | ✅ | RWKV 每评一张卡全量重算分数 |
-| [BUG-3676](bugs/BUG-3676-srs-browse-loads-all-fields.md) | ✅ | ✅ | SRS 浏览把整个集合所有卡全部字段加载进内存 |
-| [BUG-3675](bugs/BUG-3675-srs-host-remote-mining-ignores-srs-target.md) | ✅ | 🚧 | 互联主机替其它设备制卡时无视「制卡目标 = Fushi 复习」 |
-| [BUG-3674](bugs/BUG-3674-srs-colpkg-import-out-of-memory.md) | ✅ | ✅ | Android 导入 .colpkg 报 Out of Memory |
-| [BUG-3673](bugs/BUG-3673-srs-interconnect-sync-not-shared.md) | ✅ | ✅ | Fushi SRS 通过互联同步不互通 |
-| [BUG-3672](bugs/BUG-3672-srs-card-fonts-need-toggle.md) | ✅ | ✅ | SRS 卡片字体需关掉再打开字体设置才生效 |
-| [BUG-3671](bugs/BUG-3671-srs-open-note-editor-no-lock-slow.md) | ✅ | ✅ | 跳转卡片无防重入锁且加载慢、编辑页无法删卡 |
-| [BUG-3670](bugs/BUG-3670-srs-popup-duplicate-open-card-buttons.md) | ✅ | ✅ | 查词弹窗「新卡」与「跳转」去同一页面 |
-| [BUG-3669](bugs/BUG-3669-srs-jump-to-card-autoplays-video.md) | ✅ | ✅ | 从查词弹窗跳转到卡片视频自动播放 |
-| [BUG-3668](bugs/BUG-3668-srs-replay-buttons-same-row-as-grades.md) | ✅ | ✅ | 复习页音频按钮与评分按钮同一行 |
-| [BUG-3667](bugs/BUG-3667-srs-card-links-not-clickable.md) | ✅ | ✅ | 卡片内超链接无法点击 |
-| [BUG-3666](bugs/BUG-3666-srs-review-extra-audio-buttons.md) | ✅ | ✅ | 只有一句例句却出 5 个音频按钮、未开自动播放全播 |
-| [BUG-3665](bugs/BUG-3665-srs-clip-and-sentence-double-audio.md) | ✅ | ✅ | 卡上视频不能放大、与例句按钮重复出声，重播导致重音 |
-| [BUG-3664](bugs/BUG-3664-srs-sentence-target-word-not-highlighted.md) | ✅ | ✅ | 例句中目标词不高亮 |
-| [BUG-3663](bugs/BUG-3663-srs-review-space-dead-after-grading.md) | ✅ | ✅ | 评分后下一张卡「显示答案」空格失灵 |
-| [BUG-3662](bugs/BUG-3662-srs-review-gif-not-synced-with-sentence.md) | ✅ | ✅ | 复习卡动图不与例句音频联动 |
-> 共 3326 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-3730](bugs/BUG-3730-srs-anki-import-drops-new-card-position.md) | ✅ | ✅ | 从 Anki 迁移 / 导入不带新卡位置，新卡按笔记创建时刻出、丢了 Anki 里排好的顺序 |
+| [BUG-3729](bugs/BUG-3729-srs-stats-miss-inherited-history-after-type-change.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片（或换笔记类型）后，牌组统计里复习记录全空 |
+| [BUG-3728](bugs/BUG-3728-srs-rwkv-purged-card-scores-not-evicted.md) | ✅ | ✅ | 永久清除的卡仍留在 RWKV 常驻分数表里 |
+| [BUG-3727](bugs/BUG-3727-srs-rwkv-score-requery-counts-cache-hits.md) | ✅ | ✅ | RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答 |
+| [BUG-3726](bugs/BUG-3726-srs-purge-media-delete-race.md) | ✅ | ✅ | 墓碑清除回收媒体时，扫描与删除之间新加的引用照样被删 |
+| [BUG-3725](bugs/BUG-3725-srs-sync-snapshot-freezes-ui.md) | ✅ | ✅ | 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死 |
+| [BUG-3724](bugs/BUG-3724-anki-settings-stale-in-popup-process.md) | ✅ | ✅ | 应用外查词制卡用旧牌组/配置，且无法在应用外切换 |
+| [BUG-3723](bugs/BUG-3723-anki-non-lapis-note-type-empty-mappings.md) | ✅ | ✅ | 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡 |
 | [BUG-3722](bugs/BUG-3722-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
 | [BUG-3721](bugs/BUG-3721-srs-editor-no-preview-visual-ai.md) | ✅ | ✅ | 编辑卡片缺预览与可视化编辑，字段名无翻译说明，编辑与模板无 AI |
 | [BUG-3720](bugs/BUG-3720-srs-deck-delete-never-purged.md) | ✅ | ✅ | 删除牌组（含连卡片删除）只写墓碑，永不物理清除 |

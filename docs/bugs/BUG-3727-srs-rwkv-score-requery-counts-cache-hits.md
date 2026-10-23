@@ -1,4 +1,4 @@
-## BUG-3686 · RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答
+## BUG-3727 · RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答
 - **报告**：2026-10-23（来源：审查记录 HBK-AUDIT-019，`2026-10-23-rwkv-score-refresh-review.md`）
 - **现象**：RWKV-Instant 排队用常驻分数表缓存每张候选卡的回忆率 R。答完一张卡后，其余卡的 R 会因共享状态（牌组 / 预设 / 全局流、今日复习数）变化而改变，但它们继续沿用旧分数。旧分数要等「50 次增量或 30 分钟」才整表刷新，而这个计数在一些作答路径上永远到不了 50。
 - **真实性**：✅ 真 bug（代码路径确认，测试复现）。根因：`packages/fushi_engine/lib/srs/srs_rwkv_service.dart` 的 `instantRetrievability` 只在一次查询「既有命中又有缺失」（`missing.length < cards.length`）时 `_patchesSinceRequery++`。下面两种情况都不计数，模型推进再多次，别的牌组的旧分数也不刷新：

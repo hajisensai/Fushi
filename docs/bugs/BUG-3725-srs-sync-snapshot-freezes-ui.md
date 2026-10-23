@@ -1,4 +1,4 @@
-## BUG-3684 · 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死
+## BUG-3725 · 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死
 - **报告**：2026-10-21（来源：应用内反馈 OMWOurRQKb，Windows 3.0.0-debug.20585）
 - **现象**：导入约 1.2 万张卡后，SRS「浏览」页（11826 张卡）卡死，随后反馈页、设置页也「未响应」（看门狗 main thread unresponsive ≥10 s）；清空卡组仍卡，关掉复习模块恢复。日志另有 `SrsSyncScheduler.localDirectory` 同步中 drift「connection was closed」（`SrsDbStore._loadLocal` ← `SrsSyncEngine._upload`）。
 - **真实性**：✅ 真 bug。浏览页本身不是根因（`srs_browse.dart` 只读卡片缓存与笔记头）。根因在复习模块常驻的同步链路，全部跑在 UI isolate 上：

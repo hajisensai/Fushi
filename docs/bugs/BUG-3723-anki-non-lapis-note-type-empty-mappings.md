@@ -1,4 +1,4 @@
-## BUG-3682 · 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡
+## BUG-3723 · 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡
 - **报告**：2026-10-21（来源：应用内反馈 AGLC0BuaKB，iOS 3.0.0-debug.20409，标题「无法导入anki」）
 - **现象**：「一键制卡」批量页 2/2 全部失败，每条报 `All fields are empty — refusing to create a blank card.`；词条与例句都有内容（韩语）。标题说「导入」，实际是制卡导出失败，与 apkg 导入 / unicase 无关（日志里没有 unicase 报错）。
 - **真实性**：✅ 真 bug（映射层，与学习语言无关）。根因：选非 Lapis 笔记类型时映射被置成 `{}`——`fushi/lib/src/anki/anki_view_model.dart:184` 调 `LapisPreset.applyDefaults(noteType, {})`，非 Lapis 原样返回空表（`packages/fushi_anki/lib/src/lapis_preset.dart:22`）；拉取配置后非 Lapis 也原样沿用旧映射（`packages/fushi_anki/lib/src/anki_note_composer.dart:349`），映射里留着别的笔记类型字段名时同样整张空卡。代码里没有任何按字段名自动匹配。批量页把 `allFieldsEmpty` 当单条失败（`fushi/lib/src/media/favorites/favorite_batch_mining_runner.dart:391`），每条各失败一次、不提示去配置。BUG-3652 只把这句报错本地化了，根因未动。
