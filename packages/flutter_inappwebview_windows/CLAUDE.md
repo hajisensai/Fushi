@@ -32,3 +32,4 @@
 ## 变更记录 (Changelog)
 
 - 2026-05-23: 初始文档生成。
+- 2026-10-23: 桥锁定 `_fushiLockBridge`（词典脚本沙箱，BUG-3705），与上游的差异逐条记在 [PATCHES.md](PATCHES.md)。

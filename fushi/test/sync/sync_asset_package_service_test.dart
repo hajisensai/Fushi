@@ -243,6 +243,60 @@ void main() {
       );
       expect(File(p.join(temp.path, 'evil.txt')).existsSync(), isFalse);
     });
+
+    // BUG-3703：manifest 的词典名直接拼进落地根目录，资源条目本身干净也能写出界。
+    for (final String evilName in <String>[
+      '../escaped',
+      r'..\escaped',
+      '..',
+      'sub/dir',
+      '/abs',
+      r'C:\abs',
+    ]) {
+      test('rejects dictionary name "$evilName" that escapes the root',
+          () async {
+        final Directory temp = await Directory.systemTemp.createTemp(
+          'fushi-dict-package-name-',
+        );
+        addTearDown(() => temp.delete(recursive: true));
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+
+        final Archive archive = Archive()
+          ..addFile(_textFile(
+              'manifest.json',
+              jsonEncode(<String, Object?>{
+                'schemaVersion': 1,
+                'kind': 'dictionary',
+                'dictionary': <String, Object?>{
+                  'name': evilName,
+                  'formatKey': 'yomichan',
+                  'order': 0,
+                  'type': 'term',
+                  'metadataJson': '{}',
+                  'hiddenLanguagesJson': '[]',
+                  'collapsedLanguagesJson': '[]',
+                },
+              })))
+          ..addFile(_textFile('resources/payload.txt', 'owned'));
+        final File package = File(p.join(temp.path, 'bad-name.zip'))
+          ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+        final Directory root = Directory(p.join(temp.path, 'dicts', 'inner'));
+
+        await expectLater(
+          SyncAssetPackageService(db: db).importDictionaryPackage(
+            packageFile: package,
+            dictionaryResourceRoot: root,
+          ),
+          throwsA(isA<FormatException>()),
+        );
+        expect(
+            File(p.join(temp.path, 'dicts', 'escaped', 'payload.txt'))
+                .existsSync(),
+            isFalse);
+        expect(await db.getAllDictionaryMetadata(), isEmpty);
+      });
+    }
   });
 
   group('Audio database sync packages', () {
@@ -594,6 +648,44 @@ void main() {
       expect(restored.length, sizeBytes);
       expect(_sha256Hex(restored), _sha256Hex(big),
           reason: '大 DB STORE 往返后字节哈希必须一致');
+    });
+
+    // BUG-3703：dbFileName 来自对端 manifest，`../x.db` 会让导入方把暂存目录外的
+    // 任意文件当成音频库接管。
+    test('rejects dbFileName that points outside the staging dir', () async {
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi-local-audio-package-name-',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+
+      final Archive archive = Archive()
+        ..addFile(_textFile(
+            'manifest.json',
+            jsonEncode(<String, Object?>{
+              'schemaVersion': 1,
+              'kind': 'localAudio',
+              'localAudio': <String, Object?>{
+                'displayName': 'Evil',
+                'enabled': true,
+                'dbFileName': '../outside.db',
+                'sources': <Object?>[],
+              },
+            })))
+        ..addFile(_textFile('resources/local_audio_1.db', 'db'));
+      final File package = File(p.join(temp.path, 'evil.fushiaudiolib'))
+        ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+      final Directory staging = Directory(p.join(temp.path, 'staging'))
+        ..createSync();
+
+      await expectLater(
+        SyncAssetPackageService(db: db).importLocalAudioPackage(
+          packageFile: package,
+          stagingDir: staging,
+        ),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 }
