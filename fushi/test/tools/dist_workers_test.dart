@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../tool/test_flow/dist_console.dart';
 import '../../tool/test_flow/dist_plan.dart';
 import '../../tool/test_flow/dist_workers.dart';
 
@@ -45,6 +46,12 @@ void main() {
         reason: '${f.path} starts a process in its own window',
       );
     }
+  });
+
+  test('the console check sees the console flutter test runs in', () {
+    // flutter_tester is started with a console of its own (or none needed
+    // off Windows); the check must not refuse a normal run.
+    expect(hasSharedConsole(), isTrue);
   });
 
   test('the checked-in example config parses', () {

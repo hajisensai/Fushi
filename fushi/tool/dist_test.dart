@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'test_flow/dist_console.dart';
 import 'test_flow/dist_plan.dart';
 import 'test_flow/dist_results.dart';
 import 'test_flow/dist_snapshot.dart';
@@ -26,6 +27,14 @@ import 'test_flow/suite_timings.dart';
 /// only when green.
 Future<void> main(List<String> args) async {
   final _Options options = _Options.parse(args);
+  if (!hasSharedConsole()) {
+    stderr.writeln(
+      'dist_test: this process has no console, so every flutter / git / ssh '
+      'it starts would open a window of its own and take the focus. Run it '
+      'from a terminal or an agent shell.',
+    );
+    exit(64);
+  }
   if (!File('pubspec.yaml').existsSync() || !Directory('test').existsSync()) {
     stderr.writeln('run from fushi/ (the Flutter app directory)');
     exit(64);
