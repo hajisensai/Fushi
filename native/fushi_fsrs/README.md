@@ -10,12 +10,12 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | 符号 | 作用 |
 |---|---|
 | `ffsrs_call(const char*) -> char*` | 请求 JSON → 响应 JSON，按 `op` 分派（见下） |
-| `ffsrs_compute_parameters(const char*, AtomicI32* cancel, AtomicI64* progress[2]) -> char*` | 参数优化，阻塞；`cancel` 写非 0 即取消，`progress` 持续写 `[已处理, 总数]`，两者可空 |
+| `ffsrs_fit(const char* req, const u8* ratings, const float* delta_days, usize n_reviews, const u32* card_offsets, const i64* card_ids, usize n_cards, const u32* item_cards, const u32* item_lengths, usize n_items, AtomicI32* cancel, AtomicI64* progress[2]) -> char*` | 参数优化 / 评估，阻塞；`req` 是 `{"op","algorithm","params"?}`（op：`compute_parameters` / `evaluate` / `evaluate_tss`）；训练集打包传（见下）；`card_ids` 可空，只给参数优化用；`cancel` 写非 0 即取消，`progress` 持续写 `[已处理, 总数]`，两者可空 |
 | `ffsrs_retrievability_batch(const char* model, const float* s, const float* d, const float* sf, const float* elapsed, usize n, float* out) -> char*` | 同一组参数下批量算可提取度（统计页）：`model` 是 `{"algorithm","params"}`，四个输入数组与 `out` 长度均为 `n`，`sf` 可空（取 `s`）；返回 `{"ok":n}` / `{"error"}`，结果与逐张调 `retrievability` op 逐位一致 |
 | `ffsrs_free_string(char*)` | 释放上面三个返回的串 |
 | `ffsrs_zstd_decompress(const u8*, usize, usize* out_len) -> u8*` | zstd 解码（.apkg 新格式），失败返回 NULL |
 | `ffsrs_free_bytes(u8*, usize)` | 释放解码缓冲区 |
-| `ffsrs_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即判不可用 |
+| `ffsrs_abi_version() -> i32` | ABI 版本（当前 2）；Dart 侧不一致即判不可用 |
 | `ffsrs_search_corpus_new(const u8* text, usize, const u32* layout, usize, char** err) -> Corpus*` | Anki 搜索语料的结构：笔记类型 / 字段名 / 标签 / 牌组 / 模板名（UTF-8 拼接）与字段排布（u32 布局，见 `src/search.rs` `Corpus::new`），**不含字段值**；失败返回 NULL 并在 `err`（可空）写错误串。句柄内部带锁，可跨线程调用 |
 | `ffsrs_search_corpus_free(Corpus*)` | 释放语料（Dart 侧挂在 `NativeFinalizer` 上） |
 | `ffsrs_search_corpus_needs(const Corpus*, const char* query) -> char*` | 一条查询要哪些字段值：`{"ok":{"all":true}}`（未限定字段的文本 / `re:`）或 `{"ok":{"all":false,"names":[字段名 id…]}}`；查询不合法时与 match 同形报错。只读建语料时定死的字段名表、**不拿语料锁**：另一线程上的 match 正在求值（持锁）时也立即返回 |
@@ -28,8 +28,13 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
 一律**小数天**。`op`：`version` / `defaults` / `validate` / `next_states` / `memory_state` /
-`memory_state_from_sm2` / `retrievability` / `next_interval` / `evaluate` / `evaluate_tss`。
-`ffsrs_compute_parameters` 的请求是 `{"algorithm", "items": [[{"rating","deltaT"},…],…], "cardIds"?}`，
+`memory_state_from_sm2` / `retrievability` / `next_interval`。
+
+`ffsrs_fit` 的训练集（BUG-3703）：每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets`
+切段，长 `n_cards + 1`），外加按评分时刻排好序的条目 `(item_cards[i], item_lengths[i])` = 卡
+`item_cards[i]` 的前 `item_lengths[i]` 次评分。fsrs-rs 的 API 收每条自带前缀的 `Vec<FSRSItem>`，前缀在
+Rust 里展开：过边界与 Dart 侧都是 O(总评分数)，展开后的 O(Σ 前缀长度)（每条评分 8 字节）只在本次调用
+期间存在；fsrs-rs 内部 FSRS-6 训练 / 两种评估仍逐条前缀计算，这部分计算量仍是 O(Σ 前缀长度)。
 取消后返回 `{"error":"cancelled"}`。
 
 ### Anki 搜索（`src/search.rs`）
