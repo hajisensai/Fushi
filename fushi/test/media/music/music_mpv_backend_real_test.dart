@@ -106,7 +106,7 @@ void main() {
   final String? skip = libmpv == null
       ? 'Build Windows Debug or set FUSHI_TEST_LIBMPV to libmpv-2.dll'
       : null;
-  late Directory dir;
+  Directory? tempDir;
   late String a;
   late String b;
   late String full;
@@ -115,7 +115,9 @@ void main() {
   setUpAll(() async {
     if (libmpv == null) return;
     MediaKit.ensureInitialized(libmpv: libmpv);
-    dir = Directory.systemTemp.createTempSync('fushi_music_mpv_');
+    final Directory dir = tempDir = Directory.systemTemp.createTempSync(
+      'fushi_music_mpv_',
+    );
     a = await _ffmpegTone(dir, 'a.flac', 1.5, 440);
     b = await _ffmpegTone(dir, 'b.flac', 1.5, 660);
     full = await _ffmpegTone(dir, 'full.flac', 3, 330);
@@ -132,10 +134,7 @@ void main() {
       ],
     );
   });
-  tearDownAll(() {
-    if (libmpv == null) return;
-    dir.deleteSync(recursive: true);
-  });
+  tearDownAll(() => tempDir?.deleteSync(recursive: true));
 
   test(
     'FLAC 播放：位置前进，播放态为真',
