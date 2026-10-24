@@ -2,9 +2,9 @@
 ///
 /// 兜底链（[LocalAudioEnhancement]）：本地 Yomitan 音频库 → 配置的音频源 → 这里。
 /// 声音可选：
-/// - 系统语音（默认，沿用 `TtsChannel.ttsToFile` 的既有行为与平台差异：Android
-///   TextToSpeech、Windows SAPI、macOS say（AIFF）、Linux Open JTalk / espeak-ng，
-///   iOS 没有）；
+/// - 系统语音（默认，`TtsChannel.ttsToFile`，按文字语言自动挑声音：Android
+///   TextToSpeech、iOS AVSpeechSynthesizer、Windows OneCore / SAPI、macOS say、
+///   Linux Open JTalk / espeak-ng，一律出 WAV）；想固定引擎 / 声音就选一份系统语音预设；
 /// - 用户在「朗读声音」里配置的任一预设（在线 / 本机服务 / 系统），经引擎注册表
 ///   取 provider，合成走全应用共用的 [TtsAudioCache]（同词同音色不重复合成）；
 /// - 不使用 TTS 兜底。
@@ -115,11 +115,13 @@ Future<void> setMiningTtsFallbackVoice(
 
 /// 本平台制卡兜底用的系统语音引擎名（专有名词，不翻译）；null = 本平台没有。
 ///
-/// 与 `TtsChannel.ttsToFile` / `ttsToFileDesktop` 的分派同一张表：Android 走原生
-/// TextToSpeech，桌面走各 OS 自带引擎，iOS 没有实现。
+/// 与 `TtsChannel.ttsToFile` / `ttsToFileDesktop` 的分派同一张表：Android / iOS 走
+/// 原生，桌面走各 OS 自带引擎。「系统语音」这一项按文字语言自动挑声音；想固定某个
+/// 引擎 / 声音，就建一份系统语音的朗读声音预设、在这里选那份预设。
 String? systemTtsEngineName() {
   if (Platform.isAndroid) return 'Android TextToSpeech';
-  if (Platform.isWindows) return 'Windows SAPI';
+  if (Platform.isIOS) return 'iOS AVSpeechSynthesizer';
+  if (Platform.isWindows) return 'Windows OneCore / SAPI';
   if (Platform.isMacOS) return 'macOS say';
   if (Platform.isLinux) return 'Open JTalk / espeak-ng';
   return null;

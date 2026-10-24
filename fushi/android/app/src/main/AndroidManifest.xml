@@ -381,5 +381,13 @@
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="https" />
         </intent>
+        <!-- 系统语音（TextToSpeech）。Android 11+ 包可见性：不声明 TTS_SERVICE 查询时，
+             第三方 TTS 引擎（讯飞、MultiTTS、商店版谷歌 / 微软……）对本 app 不可见——
+             TextToSpeech 绑不上用户在系统里设的默认引擎、回落到别的引擎或直接初始化失败，
+             引擎列表也列不出来。「别的软件能用系统 TTS，Fushi 不能」就是这条缺失
+             （SystemTtsController；有源码守卫钉住）。 -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 </manifest>

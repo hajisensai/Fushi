@@ -16,6 +16,8 @@ import 'package:fushi/src/utils/misc/desktop_tts.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
+import 'package:fushi/src/utils/misc/system_tts_voices.dart';
+import 'package:fushi_engine/tts/tts_types.dart' show TtsVoice;
 
 /// 一个本地音频库推给查询层的配置：库路径 + 启用子来源的优先级序。
 ///
@@ -477,23 +479,33 @@ class TtsChannel {
     );
   }
 
+  /// 系统语音走原生通道的平台：Android（`TtsChannelHandler` → TextToSpeech）与 iOS
+  /// （`FushiSystemTts.swift` → AVSpeechSynthesizer）。iOS 的同名通道只实现语音
+  /// 三个方法（`ttsToFile` / `getVoices`），播放等仍走 [_isSupported] 之外的实现。
+  static bool get _nativeSpeech => Platform.isAndroid || Platform.isIOS;
+
   /// 用系统语音把 [text] 合成到 [outputPath]，返回实际写出的文件路径。
   ///
+  /// [voice] 是 [listSystemTtsVoices] 给出的声音 id（null / 空 = 按 [languageTag]
+  /// 自动挑）；[engine] 只在 Android 有意义（引擎包名，null / 空 = 系统默认引擎）。
   /// [languageTag]（BCP-47）是要念的语言，由 [resolveSystemTtsLanguageTag] 决定；
   /// null = 用引擎默认语言（不再写死日语，BUG-3669）。失败抛 [SystemTtsFailure]
   /// （带原因与语言），由调用方记日志、提示用户——这里不吞、不返回 null。
   ///
-  /// Android 走原生 TextToSpeech；其它平台走 OS 自带引擎（[ttsToFileDesktop]）。
+  /// Android / iOS 走原生；桌面走 OS 自带引擎（[ttsToFileDesktop]）。
   Future<String> ttsToFile(
     String text,
     String outputPath, {
     String? languageTag,
+    String? engine,
+    String? voice,
   }) async {
-    if (!_isSupported) {
+    if (!_nativeSpeech) {
       return ttsToFileDesktop(
         text: text,
         outputPath: outputPath,
         languageTag: languageTag,
+        voice: voice,
       );
     }
     return nativeTtsToFile(
@@ -501,18 +513,56 @@ class TtsChannel {
       text: text,
       outputPath: outputPath,
       languageTag: languageTag,
+      engine: engine,
+      voice: voice,
     );
   }
 
-  /// [ttsToFile] 的原生半段（Android `TtsChannelHandler.handleTtsToFile`）：
-  /// 把语言原样交给原生侧，把原生的错误码映射成 [SystemTtsFailure]。通道可注入，
-  /// 这样非 Android 机器上也能测「locale 透传」与「失败不静默」。
+  /// 本机的系统语音引擎（只有 Android 能选引擎；别的平台返回空表）。
+  Future<List<SystemTtsEngine>> listSystemTtsEngines() async {
+    if (!Platform.isAndroid) return const <SystemTtsEngine>[];
+    try {
+      return parseAndroidTtsEngines(
+        await _channel.invokeMethod<Object?>('getEngines'),
+      );
+    } on PlatformException catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.listSystemTtsEngines', e, stack);
+      return const <SystemTtsEngine>[];
+    } on MissingPluginException {
+      return const <SystemTtsEngine>[];
+    }
+  }
+
+  /// 系统语音可选的声音。[engine] 只在 Android 有意义（null / 空 = 默认引擎）。
+  /// 列不出来返回空表（调用方提示「没有可用声音」）。
+  Future<List<TtsVoice>> listSystemTtsVoices({String? engine}) async {
+    if (!_nativeSpeech) return listDesktopTtsVoices();
+    try {
+      final Object? raw = await _channel.invokeMethod<Object?>('getVoices', {
+        if (engine != null && engine.isNotEmpty) 'engine': engine,
+      });
+      return Platform.isAndroid
+          ? parseAndroidTtsVoices(raw)
+          : parseAppleSpeechVoices(raw);
+    } on PlatformException catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.listSystemTtsVoices', e, stack);
+      return const <TtsVoice>[];
+    } on MissingPluginException {
+      return const <TtsVoice>[];
+    }
+  }
+
+  /// [ttsToFile] 的原生半段（Android `TtsChannelHandler.handleTtsToFile` / iOS
+  /// `FushiSystemTts`）：把语言、引擎、声音原样交给原生侧，把原生的错误码映射成
+  /// [SystemTtsFailure]。通道可注入，这样非原生机器上也能测「参数透传」与「失败不静默」。
   @visibleForTesting
   static Future<String> nativeTtsToFile(
     MethodChannel channel, {
     required String text,
     required String outputPath,
     required String? languageTag,
+    String? engine,
+    String? voice,
   }) async {
     final Object? result;
     try {
@@ -520,11 +570,13 @@ class TtsChannel {
         'text': text,
         'languageTag': languageTag,
         'outputPath': outputPath,
+        if (engine != null && engine.isNotEmpty) 'engine': engine,
+        if (voice != null && voice.isNotEmpty) 'voice': voice,
       });
     } on PlatformException catch (e) {
       throw SystemTtsFailure.fromPlatformCode(e.code, languageTag);
     } on MissingPluginException {
-      // 原生 handler 没挂上（弹窗词典等没有 TtsChannelHandler 的引擎）。
+      // 原生 handler 没挂上（没有语音实现的引擎 / 平台）。
       throw SystemTtsFailure(
         SystemTtsFailureReason.engineUnavailable,
         languageTag: languageTag,
