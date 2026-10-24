@@ -4,6 +4,22 @@
 
 总设计见 [design.md](../specs/galgame-mining/design.md)，阶段计划与完成证据见 [engine-adapter-plan.md](../specs/galgame-mining/engine-adapter-plan.md)，当前支持状态以 `native/galgame_hook/engine-support.yaml` 为唯一真相源。
 
+## 0. 硬规则
+
+从根 `CLAUDE.md` 迁入（2026-10-24），效力不变。
+
+- Galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配和制卡 E2E 默认**只做 Windows 端**。允许范围是 Windows Hibiki、Windows x86/x64 注入器/helper/hook，以及 Windows 链路必需的共享代码和平台无关测试；禁止修改、构建、运行、打包、发布或宣称支持 Android、iOS、macOS、Linux 的 galgame 实现。只有用户明确变更平台范围时才能越过此边界，通用的多平台构建或集成测试说明不得自动扩大 galgame 任务范围。
+- 任何 galgame 文本/语音 Hook、LunaHook、helper、adapter、引擎适配或支持声明，开工前必须完整阅读 [docs/agent/galgame-hooking.md](galgame-hooking.md)；一引擎一任务、一独立 worktree。native 与消费端现在同仓，IPC 契约变更必须在同一个 PR 内同步两侧。
+- 写代码前必须在用户原始安装与启动路径建立身份/时序台账：启动器与真实游戏 PID/父子关系、架构、exe/module/helper/DLL 实际路径与 SHA-256、注入/附着策略，以及进程出现、模块加载、首次资源访问和首次音频的时间。imports、模块名、DLL 已加载或 Hook installed 只算候选证据。
+- 能力阶段必须分开记录：`process_found → helper_ready → ipc_ready → text_ready → resource/pcm_ready → paired → e2e_verified`；不得用前一阶段推断后一阶段，也不得把 ready、捕获、纯人声分类、哈希一致和端到端混成一个“成功”。
+- 每轮只修原始路径上第一个未通过边界。引擎/保护壳/加载时序特例必须收进 profile/adapter；共享中间件不得仅凭 DLL 名启用，且须有跨引擎负向测试。
+- **「游戏适配成功」的定义（用户 2026-09-26 拍板）**：做新游戏 / 新引擎适配时，只有在原始启动路径上同时满足以下四条才算成功，缺一条就只能报「部分适配」并写明缺哪条：① **文本**：能 hook 到当前台词正文（选定线程是干净正文，不是伪影）；② **音频**：能拿到与该句对应的语音（引擎资源或 PCM；纯 Loopback 降级不算）；③ **内嵌查词**：游戏画面内能弹出 Fushi 查词卡；④ **点击查词不推进**：点击内嵌查词不会推进游戏进度。汇报时四条逐条给出证据，不得用「注入成功」「Hook installed」「能启动」代替。
+- **Windows 触屏与滑动是第④条的必测输入（用户 2026-09-29 拍板）**：「点击查词不推进」必须同时对鼠标与 Windows 触摸成立，只测鼠标不算通过。触摸点按会被系统提升成背靠背的 `WM_LBUTTONDOWN/UP`（亚帧，采样型引擎的按键轮询可能看不到按下，BUG-2769）；长按会被系统当成右键（实测 0.6 s 即弹出游戏右键菜单）；滑动走 `WM_POINTER*` 与提升出的拖动。覆盖窗 / 查词卡的 `WS_EX_NOACTIVATE` **挡不住触摸激活**（`WM_POINTERACTIVATE`/`WM_MOUSEACTIVATE` 与 WebView2 的 `SetFocus` 都会把卡片变前台，游戏失去前台后宿主「点卡外吞点击」随之失效，BUG-2788）——新增或改动任何覆盖在游戏上的窗口，都要保证触摸下它不抢游戏的前台。真机验收至少覆盖：触摸点字查词、触摸卡内（点词 / 滚动）后再触摸卡外、卡上横滑关卡、卡外滑动、长按；每步记下前台窗口与台词是否推进。本机有触摸数字化器，用 `InjectTouchInput`（`PT_TOUCH`）真实注入，套路见 [docs/agent/galgame-hooking.md](galgame-hooking.md) §7。
+- **游戏适配只做引擎级适配（用户 2026-09-26 拍板）**：某款游戏出问题时，修的是它所属引擎（及引擎版本/变体，如 KiriKiri2-BCB / KiriKiri Z / 加壳 exe）的通用判据与通用生命周期，让同引擎的其它游戏一起受益；**禁止新增按单个游戏的 exe 哈希 / 文件名 / 标题写死的 profile、延迟附着表或特判分支**来「修好这一款」。判据必须来自引擎结构特征（导出表、插件 ABI、运行时模块、窗口/加载时序信号等），并用同引擎多个版本的样本 + 非本引擎的负向样本验证。确实只能靠外部不可控差异区分时，先说明为什么没有引擎级判据、影响范围和清理条件，并征得用户同意。存量按哈希的 profile 视为待收编的技术债，碰到时优先改成引擎级判据。
+- **老游戏全屏与分辨率（用户 2026-09-27 拍板，同日修订）**：真机测试 / 驱动老游戏（800x600、1024x768 等低分辨率作品，如 RealLive / 早期 KiriKiri）时优先窗口模式；需要全屏观感时优先**无边框超分放大**（不改显示模式）。但游戏本身全屏就会独占并改桌面分辨率的，**允许让它改、照常测试**——这是用户的真实路径，适配必须在该状态下同样成立（独占全屏后客户区原点变 (0,0)、客户区=游戏分辨率，③④ 坐标映射与 accept4 物理坐标要按此换算）。测完把桌面分辨率恢复原值。
+- Loopback 只是显式降级，不能证明引擎 Hook、逐句配对或纯人声已验证；任何必需测试、双架构构建、replay 或真机门被跳过/阻塞，只能标 `implemented_unverified`，不得宣称“已支持/已修好”。
+- 支持升级必须回到原始启动路径完成“当前文本 → 对应语音 → 当前画面 → 真卡写入”E2E；宣称原始逐句资源时还须记录与源 entry 的字节哈希一致性，并只通过 `native/galgame_hook/engine-support.yaml` 真相源更新支持状态。
+
 ## 1. 边界与开工条件
 
 - native 采集组件在本仓 `native/galgame_hook/`（源码已合仓）。**进程/链接边界不变且是硬规则：绝不链接进 `fushi.exe`**。`tools/build_distribution.ps1` 单独构建 `voice_hook_<arch>.zip`；两架构 zip 由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地；运行期不下载任何组件（helper 的在线发布通道 `voice-hook-helper` release 已于 2026-08-11 连同其 workflow 一并删除）。helper 仍以隔离子进程/DLL 运行。
