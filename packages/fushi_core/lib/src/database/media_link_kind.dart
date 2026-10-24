@@ -77,8 +77,13 @@ abstract final class MediaLinkSource {
   /// 用户手动连接（永远优先，恒为已确认）。
   static const String manual = 'manual';
 
-  /// VNDB 的 VN 条目自带的关联动画 AniDB id（强判据）。
+  /// VNDB 的 VN 条目自带的关联动画 AniDB id（强判据）。保留值：VNDB kana API 实际
+  /// 不提供 anime 字段（2026-10-24 实测），这条判据改由 [wikidata] 桥接。
   static const String vndb = 'vndb';
+
+  /// Wikidata id 桥接：VN（P3180 VNDB id）经 based on / derivative work 到动画，
+  /// 读出 AniDB anime id（P5646）后对上本地视频（强判据，仍只作建议）。
+  static const String wikidata = 'wikidata';
 
   /// MAL（Jikan）的 Adaptation 关系 + 本地书 ISBN / 标题匹配（中等判据）。
   static const String mal = 'mal';

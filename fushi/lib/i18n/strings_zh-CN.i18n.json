@@ -4559,6 +4559,7 @@
   "media_link_infer_found": "新增 $count 条建议",
   "media_link_infer_network_failed": "连不上 MAL，请稍后再试",
   "media_link_infer_none": "没有新的建议",
+  "media_link_infer_wikidata_failed": "连不上 Wikidata，请稍后再试",
   "media_link_kind_audiobook": "有声书",
   "media_link_kind_book": "书",
   "media_link_kind_game": "游戏",

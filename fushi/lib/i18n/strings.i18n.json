@@ -4559,6 +4559,7 @@
   "media_link_infer_found": "$count new suggestions",
   "media_link_infer_network_failed": "Could not reach MAL, try again later",
   "media_link_infer_none": "No new suggestions",
+  "media_link_infer_wikidata_failed": "Could not reach Wikidata, try again later",
   "media_link_kind_audiobook": "Audiobook",
   "media_link_kind_book": "Book",
   "media_link_kind_game": "Game",

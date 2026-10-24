@@ -10,6 +10,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_media_link_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/links/media_link_inference.dart';
+import 'package:fushi_engine/media/links/wikidata_anime_bridge.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
     show VideoMetadataNetworkException;
@@ -20,6 +21,10 @@ const int kMediaLinkBookScopeMalLimit = 5;
 /// MAL 原作查询（可注入，测试用离线 fixture）。
 typedef MalSourceMaterialFetcher =
     Future<List<MalSourceMaterial>> Function(String malId);
+
+/// Wikidata id 桥（可注入，测试用离线 fixture）：VNDB id → AniDB anime id 集合。
+typedef WikidataAnimeLookup =
+    Future<Map<String, Set<String>>> Function(Iterable<String> vndbIds);
 
 /// 本机全部可参与推断的条目（一次推断内复用）。外部 id 只收已在用的视频身份
 /// （mal / anidb / tmdb）与游戏的 vndb；**不收 Bangumi**（所有者 2026-10-24 拍板）。
@@ -157,6 +162,7 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
   required MediaLinkLibrarySnapshot library,
   required MediaLinkEndpoint self,
   required MalSourceMaterialFetcher fetchMalSourceMaterial,
+  required WikidataAnimeLookup lookupWikidataAnime,
 }) async {
   final MediaLinkSubject? subject = library.find(self);
   if (subject == null) return const <MediaLinkCandidate>[];
@@ -164,6 +170,29 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
   switch (self.kind) {
     case MediaLinkKind.videoCollection:
     case MediaLinkKind.videoEpisode:
+      // R0：本地游戏的 VNDB id 经 Wikidata 桥到这部动画的 AniDB id（强判据）。
+      if (subject.externalIds['anidb'] != null) {
+        final List<MediaLinkSubject> vns = <MediaLinkSubject>[
+          for (final MediaLinkSubject g in library.games)
+            if (g.externalIds['vndb'] != null) g,
+        ];
+        if (vns.isNotEmpty) {
+          final Map<String, Set<String>> bridged = await lookupWikidataAnime(
+            vns.map((MediaLinkSubject g) => g.externalIds['vndb']!),
+          );
+          for (final MediaLinkSubject g in vns) {
+            out.addAll(
+              matchWikidataAnime(
+                game: g,
+                anidbIds:
+                    bridged[normalizeVndbVnId(g.externalIds['vndb']!)] ??
+                    const <String>{},
+                videos: <MediaLinkSubject>[subject],
+              ),
+            );
+          }
+        }
+      }
       if (subject.externalIds['mal'] case final String malId) {
         out.addAll(
           matchMalSourceMaterial(
@@ -203,6 +232,18 @@ Future<List<MediaLinkCandidate>> collectMediaLinkCandidates({
         ),
       );
     case MediaLinkKind.game:
+      if (subject.externalIds['vndb'] case final String vndb) {
+        final Map<String, Set<String>> bridged = await lookupWikidataAnime(
+          <String>[vndb],
+        );
+        out.addAll(
+          matchWikidataAnime(
+            game: subject,
+            anidbIds: bridged[normalizeVndbVnId(vndb)] ?? const <String>{},
+            videos: library.videos,
+          ),
+        );
+      }
       out.addAll(
         matchSubjectsByTitle(
           subject: subject,
@@ -224,6 +265,7 @@ Future<int> runMediaLinkInference({
   required FushiDatabase db,
   required MediaLinkEndpoint self,
   required MalSourceMaterialFetcher fetchMalSourceMaterial,
+  required WikidataAnimeLookup lookupWikidataAnime,
   MediaLinkJudge? judge,
 }) async {
   final MediaLinkLibrarySnapshot library = await MediaLinkLibrarySnapshot.load(
@@ -233,6 +275,7 @@ Future<int> runMediaLinkInference({
     library: library,
     self: self,
     fetchMalSourceMaterial: fetchMalSourceMaterial,
+    lookupWikidataAnime: lookupWikidataAnime,
   );
   if (judge != null) {
     try {
@@ -279,10 +322,17 @@ Future<int> Function()? mediaLinkInferCallback({
         db: appModel.database,
         self: self,
         fetchMalSourceMaterial: mal.fetchSourceMaterial,
+        lookupWikidataAnime: WikidataAnimeBridge.shared.anidbIdsForVndb,
         judge: provider == null
             ? null
             : AiMediaLinkJudge(client: aiClient!, provider: provider),
       );
+    } on WikidataBridgeException {
+      FushiToast.show(
+        msg: t.media_link_infer_wikidata_failed,
+        severity: ToastSeverity.warning,
+      );
+      return 0;
     } on VideoMetadataNetworkException {
       // MAL（Jikan）连不上 / 限流：本轮整体不写（规则是先收齐候选再落库），
       // 告诉用户而不是假装「没有新建议」。

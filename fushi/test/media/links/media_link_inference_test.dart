@@ -409,6 +409,8 @@ void main() {
         kind: MediaLinkKind.videoCollection,
         key: collectionTagEntryKey(collectionId),
       ),
+      lookupWikidataAnime: (Iterable<String> _) async =>
+          const <String, Set<String>>{},
       fetchMalSourceMaterial: (String malId) async {
         fetched.add(malId);
         return const <MalSourceMaterial>[

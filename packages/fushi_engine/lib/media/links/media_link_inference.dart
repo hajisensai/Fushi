@@ -144,6 +144,33 @@ List<MediaLinkCandidate> matchMalSourceMaterial({
   return out;
 }
 
+/// 规则 R0（强判据）：游戏 [game] 的 VNDB id 经 Wikidata 桥出的改编动画 AniDB id
+/// [anidbIds]，对上本地视频的 AniDB id。方向确定（VN 是原作）；`source = wikidata`、
+/// 置信度 0.9、有共享 id 佐证——但仍只写建议，由用户确认。
+List<MediaLinkCandidate> matchWikidataAnime({
+  required MediaLinkSubject game,
+  required Set<String> anidbIds,
+  required List<MediaLinkSubject> videos,
+}) {
+  if (anidbIds.isEmpty) return const <MediaLinkCandidate>[];
+  return <MediaLinkCandidate>[
+    for (final MediaLinkSubject v in videos)
+      if (v.externalIds['anidb'] case final String aid
+          when anidbIds.contains(aid.trim()))
+        MediaLinkCandidate(
+          from: game,
+          to: v,
+          relation: MediaLinkRelation.adaptation,
+          source: MediaLinkSource.wikidata,
+          confidence: 0.9,
+          reason:
+              'Wikidata: anime with AniDB #${aid.trim()} is based on '
+              'VNDB ${game.externalIds['vndb']} ("${game.displayTitle}").',
+          idEvidence: true,
+        ),
+  ];
+}
+
 /// 规则 R2：[subject] 与 [others] 之间没有共享 id、但规范化标题对得上的 →
 /// 低置信「同一作品」候选（0.35 / 0.25），交 AI 裁决方向与真假。
 List<MediaLinkCandidate> matchSubjectsByTitle({
