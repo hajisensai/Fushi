@@ -334,14 +334,31 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
                       if (currentName != null) currentName,
                     ],
                   )
-                : Row(
-                    children: <Widget>[
-                      titleRow,
-                      if (currentName != null) ...<Widget>[
-                        SizedBox(width: fs),
-                        Expanded(child: currentName),
-                      ],
-                    ],
+                : LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints box) {
+                      // 标题 + 徽标优先占位，当前集名吃剩下的宽度。标题行是
+                      // 非 flex 子项，Row 给它的主轴约束是无界的，它内部的
+                      // Flexible 标题就不会省略号截断——大字号 / 窄宽屏下
+                      // 整行溢出。这里把它封顶在「行宽减去与集名的间距」，
+                      // 超长时由标题自己截断，集名退到 0 宽。
+                      final double gap = currentName != null ? fs : 0;
+                      final double titleCap = (box.maxWidth - gap).clamp(
+                        0.0,
+                        double.infinity,
+                      );
+                      return Row(
+                        children: <Widget>[
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: titleCap),
+                            child: titleRow,
+                          ),
+                          if (currentName != null) ...<Widget>[
+                            SizedBox(width: gap),
+                            Expanded(child: currentName),
+                          ],
+                        ],
+                      );
+                    },
                   ),
           ),
           if (showPager) ...<Widget>[
