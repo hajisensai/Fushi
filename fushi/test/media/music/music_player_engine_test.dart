@@ -209,6 +209,29 @@ void main() {
     expect(engine.isActive, isFalse);
   });
 
+  test('设置开关经 reapplySettings 立即下发给在用的后端', () async {
+    bool gapless = true;
+    bool replayGain = true;
+    final _FakeBackend b = _FakeBackend();
+    final MusicPlayerEngine e = MusicPlayerEngine(
+      backendFactory: () => b,
+      gaplessEnabled: () => gapless,
+      replayGainEnabled: () => replayGain,
+    );
+    addTearDown(e.dispose);
+    await e.playQueue(<MusicPlayItem>[
+      _item('a'),
+    ], context: MusicQueueContext.album);
+    expect(b.settings?.gapless, isTrue);
+    expect(b.settings?.replayGain, MusicReplayGainMode.album);
+    gapless = false;
+    replayGain = false;
+    await e.reapplySettings();
+    expect(b.settings?.gapless, isFalse);
+    expect(b.settings?.replayGain, MusicReplayGainMode.off);
+    expect(musicMpvProperties(b.settings!)['gapless-audio'], 'no');
+  });
+
   test('mpv 映射：CUE 起止成逐文件选项；设置成 gapless / replaygain 属性', () {
     final media = musicMediaOf(
       const MusicPlayItem(

@@ -34,6 +34,7 @@ void main() {
     ModuleId.books: 'system.module_books',
     ModuleId.manga: 'system.module_manga',
     ModuleId.video: 'system.module_video',
+    ModuleId.music: 'system.module_music',
     ModuleId.games: 'system.module_games',
     ModuleId.browse: 'system.module_downloads',
     ModuleId.lookup: 'system.module_lookup',

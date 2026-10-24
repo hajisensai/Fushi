@@ -7,6 +7,7 @@ import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/utils.dart' show FushiDesignTokens;
 
 /// 内嵌封面字节的进程内缓存（按音频路径）。取封面要读整个文件头里的图片块，放后台
 /// isolate；同一张专辑的封面在网格 / 专辑页 / 播放条里会被要很多次，缓存最近 64 张。
@@ -42,7 +43,7 @@ class MusicCover extends StatelessWidget {
     this.coverPath,
     this.embeddedFromPath,
     this.size,
-    this.borderRadius = 12,
+    this.borderRadius,
   });
 
   /// 目录封面 / 缓存封面文件。
@@ -51,17 +52,19 @@ class MusicCover extends StatelessWidget {
   /// 有内嵌封面的音频文件路径（[coverPath] 为空时用）。
   final String? embeddedFromPath;
   final double? size;
-  final double borderRadius;
+
+  /// 缺省 = 设计令牌的卡内小件圆角（与书架封面框同形）。
+  final BorderRadius? borderRadius;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Widget placeholder = ColoredBox(
-      color: scheme.surfaceContainerHighest,
+      color: scheme.secondaryContainer,
       child: Center(
         child: FushiIcon(
           FushiIcons.music,
-          color: scheme.onSurfaceVariant,
+          color: scheme.onSecondaryContainer,
           size: size == null ? 40 : size! * 0.4,
         ),
       ),
@@ -94,7 +97,8 @@ class MusicCover extends StatelessWidget {
       child = placeholder;
     }
     return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
+      borderRadius:
+          borderRadius ?? FushiDesignTokens.of(context).radii.cardRadius,
       child: SizedBox(
         width: size,
         height: size,

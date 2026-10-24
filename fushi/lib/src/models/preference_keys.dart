@@ -379,7 +379,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：「功能模块」里的首页 dashboard 开关（2026-10-09 起可关）。
   'module_home_enabled',
   'module_manga_enabled',
+  'module_music_enabled',
   'module_video_enabled',
+  'music_gapless',
+  'music_replaygain',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
   // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-16 起 pager）：

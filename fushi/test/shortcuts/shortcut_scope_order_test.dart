@@ -21,6 +21,7 @@ void main() {
         ShortcutScope.audiobook,
         ShortcutScope.manga,
         ShortcutScope.video,
+        ShortcutScope.music,
         // 输入设备
         ShortcutScope.gamepad,
         // 查词弹窗

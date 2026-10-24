@@ -50,8 +50,9 @@ String musicFormatBadge({
     }
     return name;
   }
-  if (bitrateKbps != null && bitrateKbps > 0)
+  if (bitrateKbps != null && bitrateKbps > 0) {
     return '$name ${bitrateKbps}k'.trim();
+  }
   return name;
 }
 

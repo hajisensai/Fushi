@@ -49,6 +49,11 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 音乐播放（无缝 / ReplayGain）：生效点是音乐引擎下发给独立 libmpv 实例的属性
+  // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
+  // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
+  'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、

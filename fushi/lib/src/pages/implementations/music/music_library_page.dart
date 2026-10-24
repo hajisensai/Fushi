@@ -437,7 +437,7 @@ class _AlbumCard extends StatelessWidget {
     return FushiHoverLift(
       builder: (BuildContext context, bool hovering) => FushiPressScale(
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
           onTap: onTap,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

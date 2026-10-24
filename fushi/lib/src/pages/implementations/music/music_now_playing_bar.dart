@@ -57,7 +57,11 @@ class MusicNowPlayingBar extends ConsumerWidget {
                   .clamp(0.0, 1.0);
         final Widget content = Row(
           children: <Widget>[
-            MusicCover(coverPath: item.coverPath, size: 44, borderRadius: 8),
+            MusicCover(
+              coverPath: item.coverPath,
+              size: 44,
+              borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

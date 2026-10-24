@@ -88,7 +88,7 @@ class MusicAlbumPage extends ConsumerWidget {
           coverPath: album.coverPath,
           embeddedFromPath: embeddedCoverPath,
           size: 200,
-          borderRadius: 16,
+          borderRadius: tokens.radii.groupRadius,
         ),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -298,15 +298,17 @@ class _Badge extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: strong ? scheme.primaryContainer : scheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(6),
+        color: strong ? scheme.primaryContainer : scheme.secondaryContainer,
+        borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         child: Text(
           text,
           style: context.fushiType.labelMedium.copyWith(
-            color: strong ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+            color: strong
+                ? scheme.onPrimaryContainer
+                : scheme.onSecondaryContainer,
           ),
         ),
       ),
