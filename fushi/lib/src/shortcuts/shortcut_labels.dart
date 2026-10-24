@@ -194,6 +194,16 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_lookup_next_word;
       case ShortcutAction.videoLookupPrevWord:
         return t.shortcut_action_video_lookup_prev_word;
+      case ShortcutAction.musicTogglePlayPause:
+        return t.shortcut_action_music_toggle_play_pause;
+      case ShortcutAction.musicNextTrack:
+        return t.shortcut_action_music_next_track;
+      case ShortcutAction.musicPreviousTrack:
+        return t.shortcut_action_music_previous_track;
+      case ShortcutAction.musicSeekForward:
+        return t.shortcut_action_music_seek_forward;
+      case ShortcutAction.musicSeekBackward:
+        return t.shortcut_action_music_seek_backward;
       case ShortcutAction.dpadUp:
         return t.shortcut_action_dpad_up;
       case ShortcutAction.dpadDown:
@@ -269,6 +279,8 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_global_external;
       case ShortcutScope.dictionaryPopup:
         return t.shortcut_scope_dictionary_popup;
+      case ShortcutScope.music:
+        return t.shortcut_scope_music;
     }
   }
 }

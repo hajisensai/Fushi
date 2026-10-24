@@ -38,6 +38,9 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/music/music_library_scanner.dart';
+import 'package:fushi_music/fushi_music.dart' show MusicScanRootError;
+
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -870,6 +873,43 @@ class SourceLibraryScanner {
     ).whenComplete(lease.release);
   }
 
+  /// 音乐来源：不走通用文件清单 + ScanPlan——目录遍历与标签 / CUE 解析都在 Rust 胖核心
+  /// （native/fushi_music）里，由 [MusicLibraryScanner] 接管。只支持本地目录（Rust 直接
+  /// 读文件系统）；网络来源如实报错。原生库缺失是部署缺陷，照常抛出不吞。
+  Future<SourceScanSummary> _scanMusicSource(SourceLibraryRow source) async {
+    int mediaCount = 0;
+    String? scanError;
+    if (source.transport != 'local') {
+      scanError = 'Music sources support local folders only';
+    } else {
+      try {
+        final MusicScanSummary summary = await MusicLibraryScanner(_db)
+            .scanSource(
+          sourceId: source.id,
+          rootPath: source.rootPath,
+          recursive: source.recursive,
+        );
+        mediaCount = summary.trackCount;
+        scanError = summary.errorSummary;
+      } on MusicScanRootError catch (e) {
+        scanError = e.toString();
+      }
+    }
+    await _db.updateMediaSourceScanResult(
+      id: source.id,
+      mediaCount: mediaCount,
+      lastScannedAt: DateTime.now(),
+      lastScanError: scanError,
+    );
+    return SourceScanSummary(
+      sourceId: source.id,
+      mediaKind: source.mediaKind,
+      discoveredPaths: const <String>[],
+      importedMediaCount: mediaCount,
+      error: scanError,
+    );
+  }
+
   Future<SourceScanSummary> _scanUnlocked(
     SourceLibraryRow source, {
     SourceFileSystem? fs,
@@ -894,6 +934,9 @@ class SourceLibraryScanner {
         importedMediaCount: 0,
         error: accessError,
       );
+    }
+    if (source.mediaKind == SourceLibraryKind.music.dbValue) {
+      return _scanMusicSource(source);
     }
     final SourceFileSystem transportFs = fs ?? await _resolveFileSystem(source);
     int mediaCount = 0;
@@ -1058,10 +1101,8 @@ class SourceLibraryScanner {
           }
           await BookSeriesGrouper(_db).groupAll();
         case SourceLibraryKind.music:
-          // 音乐来源不走通用文件清单 + ScanPlan：目录遍历与标签 / CUE 解析都在
-          // Rust 胖核心（native/fushi_music）里做，由音乐曲库扫描器接管。
-          throw UnsupportedError(
-              'Music sources are scanned by the music library scanner');
+          // 音乐来源在进 try 之前就分流给 [_scanMusicSource]，走不到这里。
+          throw StateError('music sources are routed to _scanMusicSource');
       }
     } catch (e, stack) {
       scanError = e.toString();

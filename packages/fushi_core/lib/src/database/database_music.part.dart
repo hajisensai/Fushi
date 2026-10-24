@@ -137,6 +137,28 @@ mixin _FushiDbMusic on _$FushiDatabase {
     });
   }
 
+  /// 来源 [sourceId] 下在库曲目的（路径, 修改时刻, 大小, uid）。扫描器据此告诉 Rust
+  /// 哪些文件没变（跳过标签解析），以及「没变的文件」对应哪些曲目 uid（一个 CUE 整轨
+  /// 对应多首）。
+  Future<List<({String path, int mtimeAt, int size, String trackUid})>>
+  musicTrackFilesOfSource(int sourceId) async {
+    final List<MusicTrackRow> rows =
+        await (select(musicTracks)..where(
+              ($MusicTracksTable t) =>
+                  t.sourceId.equals(sourceId) & t.deletedAt.isNull(),
+            ))
+            .get();
+    return <({String path, int mtimeAt, int size, String trackUid})>[
+      for (final MusicTrackRow r in rows)
+        (
+          path: r.path,
+          mtimeAt: r.fileMtimeAt,
+          size: r.fileSize,
+          trackUid: r.trackUid,
+        ),
+    ];
+  }
+
   /// 软删一首曲目（远端删除标记 / 用户从曲库移除；不碰磁盘文件）。
   Future<void> softDeleteMusicTrack(
     String trackUid, {

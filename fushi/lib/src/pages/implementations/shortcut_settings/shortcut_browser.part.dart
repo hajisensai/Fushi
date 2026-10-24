@@ -1212,6 +1212,7 @@ IconData _scopeIcon(ShortcutScope scope) => switch (scope) {
       ShortcutScope.audiobook => FushiIcons.audiobook,
       ShortcutScope.manga => FushiIcons.readingMode,
       ShortcutScope.video => FushiIcons.video,
+      ShortcutScope.music => FushiIcons.music,
       ShortcutScope.gamepad => FushiIcons.games,
       ShortcutScope.dictionaryPopup => FushiIcons.language,
     };

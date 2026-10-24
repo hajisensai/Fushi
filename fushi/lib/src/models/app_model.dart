@@ -276,6 +276,9 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_session.dart';
+import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
@@ -1466,11 +1469,16 @@ class AppModel with ChangeNotifier {
           FloatingLyricLookupNotifier.instance.requestLookup(text, index);
         }());
       },
+      // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
       controlStreams: AudioControlStreams(
-          playIntentStream: audioCtrl.playIntentStream,
-          seekStream: audioCtrl.seekStream,
-          skipNextStream: audioCtrl.skipNextStream,
-          skipPreviousStream: audioCtrl.skipPreviousStream,
+          playIntentStream: audioCtrl.streamFor(
+              audioCtrl.playIntentStream, MediaSessionOwner.audiobook),
+          seekStream: audioCtrl.streamFor(
+              audioCtrl.seekStream, MediaSessionOwner.audiobook),
+          skipNextStream: audioCtrl.streamFor(
+              audioCtrl.skipNextStream, MediaSessionOwner.audiobook),
+          skipPreviousStream: audioCtrl.streamFor(
+              audioCtrl.skipPreviousStream, MediaSessionOwner.audiobook),
           toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream),
       // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
       // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
@@ -1482,6 +1490,33 @@ class AppModel with ChangeNotifier {
     ..floatingLyricWindowRect = _floatingLyricWindowRect
     ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
+
+  /// 进程级音乐会话（音乐模块，docs/specs/2026-10-23-music-module-design.md §7）：独立
+  /// libmpv 实例（首次播放才建）、队列 / 无缝 / ReplayGain 编排，与有声书互斥持有
+  /// 媒体会话。
+  late final MusicSession musicSession = MusicSession(
+    engine: MusicPlayerEngine(
+      backendFactory: MpvMusicOutputBackend.new,
+      gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
+      replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
+    ),
+    audio: audioCtrl,
+    audiobook: audiobookSession,
+    database: () => isDatabaseReady ? database : null,
+    showMediaNotification: () => showMediaNotification,
+  );
+
+  bool get musicGapless => prefsRepo.musicGapless;
+  Future<void> setMusicGapless(bool value) async {
+    await prefsRepo.setMusicGapless(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicReplayGain => prefsRepo.musicReplayGain;
+  Future<void> setMusicReplayGain(bool value) async {
+    await prefsRepo.setMusicReplayGain(value);
+    await musicSession.engine.reapplySettings();
+  }
   late DictionaryImportManager _dictImportManager;
 
   /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是
