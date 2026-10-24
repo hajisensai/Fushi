@@ -536,6 +536,18 @@ videoDiscMenuKeyActions = <VideoDiscType, Map<VideoDiscMenuKey, String>>{
   },
 };
 
+/// The remote key a Blu-ray `discnav` action string stands for (the vocabulary
+/// the menu UI and its key bindings were written in); null for pointer and
+/// unknown actions. The session then sends it through the table of its own
+/// disc type ([videoDiscMenuKeyCommand]).
+VideoDiscMenuKey? videoDiscMenuKeyForAction(String action) {
+  for (final MapEntry<VideoDiscMenuKey, String> entry
+      in videoDiscMenuKeyActions[VideoDiscType.bluray]!.entries) {
+    if (entry.value == action) return entry.key;
+  }
+  return null;
+}
+
 /// The mpv command for [key] on a disc of [type].
 List<String> videoDiscMenuKeyCommand(
   VideoDiscType type,

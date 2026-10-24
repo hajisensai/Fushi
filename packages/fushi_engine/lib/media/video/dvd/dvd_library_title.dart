@@ -69,3 +69,68 @@ Future<List<VideoBookRow>> ensureDvdDiscExtrasInLibrary(
     ];
   });
 }
+
+/// The library row of DVD title [titlePath] (`<disc>/VIDEO_TS/TITLE_nn.dvdtitle`)
+/// that the disc menu just started: the DVD counterpart of
+/// `ensureBlurayTitleInLibrary`. An imported title (main feature / episode /
+/// extra) returns its existing row; a title the importer filtered out (menu-only
+/// short titles) is added by the extras rule (`<disc name> - T<nn>`, the disc's
+/// source, not in the disc collection). Returns null when [titlePath] is not a
+/// title of a readable DVD.
+Future<VideoBookRow?> ensureDvdTitleInLibrary(
+  FushiDatabase db,
+  String titlePath,
+) async {
+  final String? root = dvdDiscRootForTitlePath(titlePath);
+  final int? number = dvdTitleNumberForPath(titlePath);
+  if (root == null || number == null) return null;
+  final VideoBookRepository repo = VideoBookRepository(db);
+  final String key = normalizeVideoPath(titlePath);
+  final String rootKey = normalizeVideoPath(root);
+  int? sourceId;
+  for (final VideoBookRow row in await repo.listAll()) {
+    if (normalizeVideoPath(row.videoPath) == key) return row;
+    final String? rowRoot = dvdDiscRootForTitlePath(row.videoPath);
+    if (sourceId == null &&
+        rowRoot != null &&
+        normalizeVideoPath(rowRoot) == rootKey) {
+      sourceId = row.sourceId;
+    }
+  }
+  // Reading the disc proves the title exists before a row is made for it.
+  final DvdDisc? disc = await readDvdDisc(root);
+  if (disc == null) return null;
+  DvdTitleCandidate? candidate;
+  for (final DvdTitleCandidate c in disc.candidates) {
+    if (c.entry.titleNumber == number) candidate = c;
+  }
+  if (candidate == null) return null;
+  DvdTitle? extra;
+  for (final DvdTitle t in disc.extras) {
+    if (t.titleNumber == number) extra = t;
+  }
+  extra ??= DvdTitle(
+    entry: candidate.entry,
+    discRootPath: disc.rootPath,
+    name: dvdExtraTitleName(disc.name, number),
+    isMainFeature: false,
+    duration: candidate.duration,
+    cellIds: candidate.cellIds,
+  );
+  final List<VideoBookRow> rows = await ensureDvdDiscExtrasInLibrary(
+    db,
+    disc: DvdDisc(
+      rootPath: disc.rootPath,
+      name: disc.name,
+      discId: disc.discId,
+      vmg: disc.vmg,
+      titles: disc.titles,
+      candidates: disc.candidates,
+      extras: <DvdTitle>[extra],
+      volumeLabel: disc.volumeLabel,
+    ),
+    titlePaths: <String>[titlePath],
+    sourceId: sourceId,
+  );
+  return rows.isEmpty ? null : rows.single;
+}

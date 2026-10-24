@@ -428,6 +428,16 @@ void main() {
       );
     });
 
+    test('UI action strings map back to remote keys for dispatch', () {
+      for (final VideoDiscMenuKey key in VideoDiscMenuKey.values) {
+        final String action =
+            videoDiscMenuKeyActions[VideoDiscType.bluray]![key]!;
+        expect(videoDiscMenuKeyForAction(action), key, reason: action);
+      }
+      expect(videoDiscMenuKeyForAction('mouse-click'), isNull);
+      expect(videoDiscMenuKeyForAction('nonsense'), isNull);
+    });
+
     test('remote keys stay unchecked inputs; menu calls stay checked', () {
       for (final VideoDiscMenuKey key in <VideoDiscMenuKey>[
         VideoDiscMenuKey.up,

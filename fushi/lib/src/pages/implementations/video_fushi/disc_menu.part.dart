@@ -4,7 +4,9 @@ part of '../video_fushi_page.dart';
 /// binds a selected physical playlist to the existing learning pipeline.
 extension _VideoDiscMenu on _VideoFushiPageState {
   Future<bool> _ensureDiscMenuRuntime(String playlistPath) async {
-    final String? root = blurayDiscRootForPlaylistPath(playlistPath);
+    // DVD menus run in libdvdnav: no BD-J runtime to provision.
+    if (isDvdTitlePath(playlistPath)) return true;
+    final String? root = discRootForMemberPath(playlistPath);
     if (root == null) return true; // Controller reports malformed input.
     try {
       final BlurayMenuInfo? info = await readBlurayMenuInfo(root);
@@ -81,8 +83,13 @@ extension _VideoDiscMenu on _VideoFushiPageState {
 
   Future<void> _runDiscNavigation(String action) async {
     if (_controller?.discMenuEntryPending == true) return;
+    // Remote keys go through the command table of the session's disc type
+    // (videoDiscMenuKeyActions: Blu-ray libbluray / DVD libdvdnav).
+    final VideoDiscMenuKey? key = videoDiscMenuKeyForAction(action);
     try {
-      await _controller?.discNavigation(action);
+      await (key == null
+          ? _controller?.discNavigation(action)
+          : _controller?.discMenuKey(key));
     } catch (error, stack) {
       ErrorLogService.instance.log('VideoDiscMenu.navigate', error, stack);
       if (mounted) {
@@ -337,10 +344,9 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // They get their row through the importer's own rules (disc source, disc
       // collection, META disc name) — a hand-built sourceless row is invisible
       // to every scrape entry point, which select books by source.
-      final VideoBookRow? row = await ensureBlurayTitleInLibrary(
-        appModel.database,
-        path,
-      );
+      final VideoBookRow? row = isDvdTitlePath(path)
+          ? await ensureDvdTitleInLibrary(appModel.database, path)
+          : await ensureBlurayTitleInLibrary(appModel.database, path);
       if (!current() || row == null) return;
       final VideoBookRow selected = row;
       // Identity changes atomically before enabling title playback consumers.
@@ -604,9 +610,11 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     // 正片上叠着盘的弹出菜单时（导航标题 1..65534 且已有播放列表）照常可用。
     final bool onTitle =
         state != null &&
-        state.title > 0 &&
-        state.title < 65535 &&
-        state.playlist != null;
+        (state.discType == VideoDiscType.dvd
+            ? state.dvd?.domain == VideoDvdDomain.title
+            : state.title > 0 &&
+                  state.title < 65535 &&
+                  state.playlist != null);
     final bool chaptersAvailable = onTitle && _hasChapters;
     void poke() {
       _pokeControlsVisible();

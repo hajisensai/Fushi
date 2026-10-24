@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdDiscRootForTitlePath, dvdTitleNumberForPath, isDvdTitlePath;
 import 'package:path/path.dart' as p;
 
 /// A DVD-Video title as one FFmpeg input (docs/specs/2026-10-24-dvd-original-menu.md).
@@ -112,6 +114,16 @@ String encodeDvdTitleInput(DvdTitleInput input) => Uri(
 /// is malformed throws, so a broken caller is loud rather than reading
 /// nothing.
 DvdTitleInput? parseDvdTitleInput(String value) {
+  // A library DVD title (`<disc>/VIDEO_TS/TITLE_nn.dvdtitle`, the
+  // `VideoBooks.videoPath` of a DVD member) names the whole title.
+  if (isDvdTitlePath(value)) {
+    final String? disc = dvdDiscRootForTitlePath(value);
+    final int? title = dvdTitleNumberForPath(value);
+    if (disc == null || title == null) {
+      throw FormatException('Malformed DVD title path: $value');
+    }
+    return DvdTitleInput(disc: disc, title: title);
+  }
   if (!value.startsWith('$dvdTitleInputScheme:')) return null;
   final Uri uri = Uri.parse(value);
   final Map<String, String> query = uri.queryParameters;

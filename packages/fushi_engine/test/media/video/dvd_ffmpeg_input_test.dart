@@ -6,6 +6,8 @@ library;
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:test/test.dart';
 
@@ -48,6 +50,23 @@ void main() {
       final String encoded = encodeDvdTitleInput(input);
       expect(encoded, startsWith('$dvdTitleInputScheme:'));
       expect(parseDvdTitleInput(encoded), input);
+    });
+
+    test('a library DVD title path is a DVD title input', () {
+      // VideoBooks.videoPath of a DVD member (dvd_title_path.dart).
+      final String folder = dvdTitlePath('/discs/show', 3);
+      final DvdTitleInput fromFolder = parseDvdTitleInput(folder)!;
+      expect(fromFolder.title, 3);
+      expect(fromFolder.demuxerPath, p.normalize('/discs/show'));
+      final DvdTitleInput fromImage = parseDvdTitleInput(
+        dvdTitlePath('/isos/show.iso', 12),
+      )!;
+      expect(fromImage.title, 12);
+      expect(fromImage.demuxerPath, p.normalize('/isos/show.iso'));
+      expect(
+        prepareDvdFfmpegArgs(<String>['-i', folder, 'o.png']).sublist(0, 4),
+        <String>['-f', 'dvdvideo', '-title', '3'],
+      );
     });
 
     test('ordinary paths and URLs are not DVD titles', () {

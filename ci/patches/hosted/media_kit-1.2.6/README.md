@@ -12,8 +12,9 @@ are described in `PATCHES.md`. The other is an imported predicate for the existi
 `loadfile` versus temporary-playlist branch of `NativePlayer.open`.
 `native_open_policy.dart` implements and tests the request boundary:
 
-- A single explicit `Media('bd://...')` or `Media('bluray://...')` uses the
-  existing `loadfile ... append` branch. Public state, stream events, pause,
+- A single explicit `Media('bd://...')`, `Media('bluray://...')`,
+  `Media('dvd://...')` or `Media('dvdnav://...')` uses the existing
+  `loadfile ... append` branch. Public state, stream events, pause,
   headers, hooks, playlist position and locking remain in media_kit's normal
   open implementation.
 - A `Playlist`, including a one-entry or mixed `fd://`/disc playlist, retains
@@ -23,7 +24,8 @@ are described in `PATCHES.md`. The other is an imported predicate for the existi
   behavior. Ordinary local files, HTTP URLs and EDL requests are unchanged.
 - `load-unsafe-playlists` is never enabled.
 
-mpv marks its Blu-ray stream drivers `STREAM_ORIGIN_UNSAFE`. media_kit's usual
+mpv marks its Blu-ray and DVD (`stream_dvdnav.c`, 2026-10-24) stream drivers
+`STREAM_ORIGIN_UNSAFE`. media_kit's usual
 temporary m3u turns even a single explicitly requested disc into a file-origin
 playlist entry and mpv rejects it. A native `loadfile`/`loadlist` comparison
 using the same bundled DLL and disc reproduced that difference.
