@@ -203,6 +203,7 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         YoutubeVariantSet,
         resolveYoutubeVideoVariants,
         isYoutubeUrl,
+        YoutubeManifestException,
         youtubeVideoIdOrNull;
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
@@ -3938,8 +3939,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         if (!mounted) return;
         _resolvedStreamInfo = launch.info;
         _resolvedStreamClient = launch.client;
-      } catch (e) {
+      } catch (e, stack) {
         debugPrint('[VideoFushiPage] stream book launch build failed: $e');
+        // 失败原因必须进错误日志：页面上只有一句归类后的文案，YouTube 兜底链逐 client
+        // 的原因（超时 / unplayable / 403）只在异常本身里。
+        ErrorLogService.instance.log('VideoFushi.streamLaunch', e, stack);
         if (mounted) {
           setState(() {
             _failed = true;
@@ -4515,6 +4519,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       debugPrint(
         '[VideoFushiPage] remote episode $index load failed: $e\n$stack',
       );
+      ErrorLogService.instance.log('VideoFushi.remoteEpisode', e, stack);
       if (mounted) {
         setState(() {
           _failed = true;
@@ -11657,6 +11662,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // YouTube 兜底链每个 client 都死在传输层（连不上 / 超时）：出口问题（没走代理、
+    // DNS 被污染），不是视频不可用。消息里的「manifest failed」不能再被下面的子串
+    // 判据当成「不可用」（Android 没接 Wi-Fi 代理时就是这样被误报的）。
+    if (error is YoutubeManifestException && error.isTransportFailure) {
+      return t.video_load_failed_network;
+    }
     if (error is VideoDiscMenuException) {
       if (error.code == 'java-runtime-unavailable') {
         return t.video_disc_runtime_required;
