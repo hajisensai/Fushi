@@ -320,6 +320,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // 歌词层在场时本页给旧控制器挂的强制跟随随解绑一起撤（会话可能比本页活得
     // 久）；新控制器接上后由 [_reapplyLyricsFollowOverride] 补挂。
     if (_lyricsMode) old.setReaderFollowOverride(false);
+    old.setReaderVisible(true);
     _audiobookController = null;
     _syncChromePlaybackListener();
     _audiobookBookKey = null;
