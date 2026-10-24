@@ -21,7 +21,9 @@
 //!   （卡片历史内核：有效日志选取与当前排程状态、Anki 导入判重，见 history.rs）/
 //!   ffsrs_materialize
 //!   （字段寄存器内核：修改记录 → 寄存器 → 物化视图，见 registers.rs；排序键 ordering.rs、
-//!   释义样式去重规范形 style_dedup.rs 两边共用）
+//!   释义样式去重规范形 style_dedup.rs 两边共用） /
+//!   ffsrs_memory_input / ffsrs_rwkv_now_rows
+//!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）
 
 pub mod history;
 pub mod ordering;

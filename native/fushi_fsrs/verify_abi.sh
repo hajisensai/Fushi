@@ -31,10 +31,10 @@ grep -ohE "'ffsrs_[a-z0-9_]+'" "$BINDINGS" "$STORE_BINDINGS" | tr -d "'" | sort 
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "ffsrs_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」
-# 恒真。下界取当前全部 21 个（7 个排程 / zstd + 10 个 Anki 搜索 + 3 个卡片历史 / 导入判重 + 1 个字段寄存器）；真删符号是破坏性 ABI
+# 恒真。下界取当前全部 41 个（7 个排程 / zstd + 10 个 Anki 搜索 + 3 个卡片历史 / 导入判重 + 1 个字段寄存器 + 2 个记忆状态输入 / RWKV 此刻行 + 18 个 srs.db 句柄与直读命令）；真删符号是破坏性 ABI
 # 变更（ffsrs_abi_version 同时要升），应当同时改这里。
-if [[ "$expected_count" -lt 21 ]]; then
-  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<21），正则失效或绑定被大改，不能当通过。" >&2
+if [[ "$expected_count" -lt 41 ]]; then
+  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<41），正则失效或绑定被大改，不能当通过。" >&2
   exit 1
 fi
 
