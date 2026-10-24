@@ -689,15 +689,15 @@ class AppModel with ChangeNotifier {
     ),
   );
 
-  /// App 级 Fushi LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
-  /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
-  /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
-  /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
   /// 互联 host 的远程自更新实现（见 [createAppHostSelfUpdater]）。
   late final AppHostSelfUpdater hostSelfUpdater = createAppHostSelfUpdater(
     this,
   );
 
+  /// App 级 Fushi LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
+  /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
+  /// 启动时若用户启用了 host 则自动开，仅在用户关闭开关或退出 app 时停。配对批准
+  /// 弹窗经全局 [navigatorKey]，故在任意界面都能弹。
   late final FushiSyncServerController
   syncServerController = FushiSyncServerController(
     navigatorKey: navigatorKey,
