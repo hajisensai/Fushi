@@ -7548,6 +7548,8 @@
   "sync_username": "Nama pengguna",
   "sync_video_files": "Unggah file video",
   "sync_video_files_warning": "File video bisa sangat besar.",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "Ada kolom yang belum diisi",
   "sync_webdav_test_failed": "Koneksi gagal: $message",
   "sync_webdav_url": "URL server",

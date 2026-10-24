@@ -7548,6 +7548,8 @@
   "sync_username": "用户名",
   "sync_video_files": "上传视频文件",
   "sync_video_files_warning": "视频文件可能非常大。",
+  "sync_web_history": "同步浏览历史",
+  "sync_web_history_hint": "默认关闭。开启后，内置浏览器的浏览历史随云备份与已配对设备同步；书签随收藏同步。",
   "sync_webdav_missing_fields": "缺少字段",
   "sync_webdav_test_failed": "连接失败: $message",
   "sync_webdav_url": "服务器地址",

@@ -7548,6 +7548,8 @@
   "sync_username": "用戶名稱",
   "sync_video_files": "上傳影片檔案",
   "sync_video_files_warning": "影片檔案可能非常大。",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "缺少欄位",
   "sync_webdav_test_failed": "連線失敗：$message",
   "sync_webdav_url": "伺服器網址",

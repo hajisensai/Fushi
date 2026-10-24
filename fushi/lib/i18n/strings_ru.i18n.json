@@ -7548,6 +7548,8 @@
   "sync_username": "Имя пользователя",
   "sync_video_files": "Загрузка видеофайлов",
   "sync_video_files_warning": "Видеофайлы могут быть очень большими.",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "Не заполнены поля",
   "sync_webdav_test_failed": "Ошибка соединения: $message",
   "sync_webdav_url": "URL сервера",

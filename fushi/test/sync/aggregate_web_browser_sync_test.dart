@@ -210,11 +210,27 @@ void main() {
       expect(old.webHistory, isEmpty);
       expect(old.webBookmarks, isEmpty);
 
-      final AggregateSnapshot noFav = s.select(stats: true, favorites: false);
-      expect(noFav.webHistory, isEmpty);
+      // 书签归收藏族：收藏关掉时书签（连墓碑）置空，历史不受收藏开关影响。
+      final AggregateSnapshot noFav = s.select(
+        stats: true,
+        favorites: false,
+        webHistory: true,
+      );
+      expect(noFav.webHistory, hasLength(1));
+      expect(noFav.webHistoryTombstones, hasLength(1));
       expect(noFav.webBookmarks, isEmpty);
-      expect(noFav.webHistoryTombstones, isEmpty);
       expect(noFav.webBookmarkTombstones, isEmpty);
+
+      // 历史自成一族（设备级「同步浏览历史」，默认关）：已开共享收藏也不外流。
+      final AggregateSnapshot noHistory = s.select(
+        stats: true,
+        favorites: true,
+        webHistory: false,
+      );
+      expect(noHistory.webHistory, isEmpty);
+      expect(noHistory.webHistoryTombstones, isEmpty);
+      expect(noHistory.webBookmarks, hasLength(2));
+      expect(noHistory.webBookmarkTombstones, hasLength(1));
     });
   });
 

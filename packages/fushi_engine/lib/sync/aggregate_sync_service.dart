@@ -36,6 +36,18 @@ bool _isAggregateAsset(String name) =>
     name.endsWith(_aggregateAssetSuffix) ||
     name.endsWith(_legacyAggregateAssetSuffix);
 
+/// 设备级「同步浏览历史」开关的偏好键（云备份与互联两条通道共用，host 侧也认）。
+///
+/// **缺行 = 关**：v128 起浏览历史进聚合快照，若跟「共享收藏」走，已开共享收藏的
+/// 存量用户升级后第一轮同步就会零操作地把整份浏览轨迹推到云端 / 互联 host。历史的
+/// 隐私分量与收藏不是一个量级，必须由用户显式打开。设备本地键：不随备份 / Profile
+/// 快照出境（换一台设备恢复备份不得替那台设备打开历史外流）。
+const String kSyncWebHistoryPrefKey = 'sync_web_history_enabled';
+
+/// 读 [kSyncWebHistoryPrefKey]（缺行为 false）。
+Future<bool> readWebHistorySyncEnabled(FushiDatabase db) =>
+    db.getPrefTyped<bool>(kSyncWebHistoryPrefKey, false);
+
 /// Preference key holding the favorite-sentence JSON list. Mirrors
 /// `FavoriteSentenceRepository._key` and BackupMergeEngine's constant; kept in
 /// sync behaviourally by favorite_sentence_merge_import_test.dart.
@@ -105,12 +117,27 @@ class AggregateSyncService {
   /// （见 `SyncRunReport.remoteMutated`）：这一步历史上是无条件写的，而无条件写会让
   /// 每台设备每轮同步都在远端留下改动痕迹，于是所有对端的「无人动过」判据永远为假、
   /// 依赖它的阶段跳过全部失效，多设备之间互相触发、永不收敛。
+  ///
+  /// [shareStats]：云通道的「同步统计」（统计族 + 收藏族一把管，既有行为）。
+  /// [shareWebHistory]：设备级「同步浏览历史」（默认关）。两族都在**上下行**同时
+  /// 裁剪——只停上传会让对端历史继续折进本地，用户看到的仍是「关了还在同步」。两者
+  /// 皆 false 时整轮 no-op。
   Future<bool> sync({
     required SyncAssetStore store,
     required String deviceId,
+    bool shareStats = true,
+    bool shareWebHistory = false,
   }) async {
+    if (!shareStats && !shareWebHistory) return false;
+    AggregateSnapshot scoped(AggregateSnapshot s) => s.select(
+          stats: shareStats,
+          favorites: shareStats,
+          webHistory: shareWebHistory,
+        );
+
     // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot = await materializeLocalSnapshot();
+    final AggregateSnapshot localSnapshot =
+        scoped(await materializeLocalSnapshot());
 
     // 2) Ensure the reserved namespace, list peer snapshots.
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
@@ -141,7 +168,8 @@ class AggregateSyncService {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
       }
-      final AggregateSnapshot peer = AggregateSnapshot.fromJson(peerJson);
+      final AggregateSnapshot peer =
+          scoped(AggregateSnapshot.fromJson(peerJson));
       merged = mergeSnapshots(merged, peer);
     }
     await peerSnapshotCache?.retainOnly(
@@ -254,17 +282,25 @@ class AggregateSyncService {
   /// 裁都等于开关没关。与 [filterTombstoned] 同一条理由——让不变式在每条路径上都
   /// 成立，而不是靠推理。下行同样裁剪：只停上传会让对端数据继续折进本地，用户看到
   /// 的仍是「关了还在同步」。两者皆 false 时整轮 no-op（连请求都不发）。
+  ///
+  /// [shareWebHistory] 是设备级「同步浏览历史」（默认关，见
+  /// [kSyncWebHistoryPrefKey]），与上面两个许可同律上下行一起裁。
   Future<void> syncOverClient({
     required Future<Object?> Function() fetchRemote,
     required Future<void> Function(Object json) pushMerged,
     bool shareStats = true,
     bool shareFavorites = true,
+    bool shareWebHistory = false,
   }) async {
-    if (!shareStats && !shareFavorites) return;
+    if (!shareStats && !shareFavorites && !shareWebHistory) return;
 
     // 1) Materialise local state.
     final AggregateSnapshot localSnapshot = (await materializeLocalSnapshot())
-        .select(stats: shareStats, favorites: shareFavorites);
+        .select(
+      stats: shareStats,
+      favorites: shareFavorites,
+      webHistory: shareWebHistory,
+    );
 
     // 2) Fetch the host's snapshot. null => old host without the endpoint:
     //    degrade to push-only (still share our state; skip the local fold).
@@ -283,7 +319,11 @@ class AggregateSyncService {
     // 3) Fold the host snapshot into the local one through the same pure merge
     //    the cloud channel uses (single source of truth; commutative/idempotent).
     final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson)
-        .select(stats: shareStats, favorites: shareFavorites);
+        .select(
+      stats: shareStats,
+      favorites: shareFavorites,
+      webHistory: shareWebHistory,
+    );
     final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
@@ -403,6 +443,13 @@ class AggregateSyncService {
     final bool favoritesChanged = changed.any(_favoriteFamilyKeys.contains);
     final bool segmentsChanged = changed.contains('studySegments') ||
         changed.contains('studySegmentTombstones');
+    // v128 浏览器历史 / 书签：与收藏同律，行或墓碑任一有变化就连墓碑整族下发
+    // （[applyWebBrowserFamilies] 先落墓碑再按墓碑过滤并入，重放同值是 no-op）。
+    // 漏掉这两族 = 合并结果里的历史 / 书签永远落不了地（delta 里恒为空）。
+    final bool webHistoryChanged = changed.contains('webHistory') ||
+        changed.contains('webHistoryTombstones');
+    final bool webBookmarksChanged = changed.contains('webBookmarks') ||
+        changed.contains('webBookmarkTombstones');
     List<T> added<T>(String key, List<T> all) =>
         <T>[for (final int i in addedIndexes[key]!) all[i]];
     List<T> whole<T>(bool include, List<T> all) => include ? all : <T>[];
@@ -425,6 +472,12 @@ class AggregateSyncService {
           whole(favoritesChanged, merged.favoriteWordTombstones),
       favoriteSentenceTombstones:
           whole(favoritesChanged, merged.favoriteSentenceTombstones),
+      webHistory: whole(webHistoryChanged, merged.webHistory),
+      webHistoryTombstones:
+          whole(webHistoryChanged, merged.webHistoryTombstones),
+      webBookmarks: whole(webBookmarksChanged, merged.webBookmarks),
+      webBookmarkTombstones:
+          whole(webBookmarksChanged, merged.webBookmarkTombstones),
     );
   }
 

@@ -857,6 +857,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
+  // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
+  'syncBackup/Sync browsing history':
+      'test/sync/aggregate_web_history_share_gate_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
   // 「上传漫画文件」（书籍和漫画分开，2026-10-21）：按格式分流的上传 / 不上传、旧名
   // `.epub` 漫画包去重都在这条专项测试里咬住。

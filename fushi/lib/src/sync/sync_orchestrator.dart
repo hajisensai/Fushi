@@ -528,6 +528,7 @@ class SyncOrchestrator {
     this.deviceId = '',
     required this.syncStats,
     this.syncFavorites = true,
+    this.syncWebHistory = false,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncMangaContent,
@@ -577,6 +578,10 @@ class SyncOrchestrator {
   /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
   /// 默认 true：省略该参数的既有调用点行为不变。
   final bool syncFavorites;
+
+  /// 浏览器历史是否参与聚合同步（设备级「同步浏览历史」，两条通道共用，见
+  /// `kSyncWebHistoryPrefKey`）。默认 false：历史不跟收藏走，省略该参数即不外流。
+  final bool syncWebHistory;
   final bool syncAudioBookPosition;
 
   /// 「上传书籍文件」：EPUB 等非漫画格式的书文件是否上传（漫画看 [syncMangaContent]）。
@@ -839,7 +844,9 @@ class SyncOrchestrator {
       // 在 [AggregateSyncService.syncOverClient] 内按族做，两族都关时整轮不发请求。
       // 互联无 per-device 快照文件、不依赖 deviceId：host 单份权威快照，client GET →
       // 并集折叠 → 写回本地 → PUT 回 host（host 再 MAX/并集折叠进自己 DB）。
-      if (syncStats || syncFavorites) await _syncAggregateLive(report, b);
+      if (syncStats || syncFavorites || syncWebHistory) {
+        await _syncAggregateLive(report, b);
+      }
     }
 
     // 云后端聚合同步（统计 + 收藏跨端共享，TODO-1056 phase B）。互联 live 端点
@@ -847,7 +854,10 @@ class SyncOrchestrator {
     // 统计 + 收藏，同属「统计同步」语义，不新增设置项 / schema）。
     // deviceId 为空（测试构造 / 未配置）时跳过：聚合快照按 deviceId 命名，无 id
     // 无法安全落每设备快照，降级为 no-op（绝不崩，绝不写错名快照）。
-    if (!isInterconnect && syncStats && deviceId.isNotEmpty) {
+    // 浏览历史有自己的设备级开关（默认关），与统计各自独立地驱动这一步。
+    if (!isInterconnect &&
+        (syncStats || syncWebHistory) &&
+        deviceId.isNotEmpty) {
       await _syncAggregate(report);
     }
     mark('aggregate');

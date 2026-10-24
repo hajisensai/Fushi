@@ -32,6 +32,8 @@ import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/pairing/interconnect_device_key.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
+import 'package:fushi_engine/sync/aggregate_sync_service.dart'
+    show kSyncWebHistoryPrefKey, readWebHistorySyncEnabled;
 export 'package:fushi_engine/sync/sync_channel_scope.dart' show SyncChannelScope;
 
 /// 触达一台 Fushi 同步服务器的一个候选地址。
@@ -902,6 +904,14 @@ class SyncRepository {
       _interconnectAggregateFlag(_keyInterconnectSyncStats);
   Future<void> setInterconnectSyncStatsEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncStats, v);
+
+  /// 设备级「同步浏览历史」：浏览器历史（及清除历史的墓碑）是否进聚合快照，云备份
+  /// 与互联两条通道共用；host 侧也按它决定是否发出 / 接收历史。**缺行 = 关**——历史
+  /// 不跟「共享收藏夹」走（书签仍跟收藏走），已开共享收藏的存量用户升级后不会零操作
+  /// 就把整份浏览轨迹推出去。设备本地键（见 [deviceLocalPrefKeys]）。
+  Future<bool> isWebHistorySyncEnabled() => readWebHistorySyncEnabled(_db);
+  Future<void> setWebHistorySyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(kSyncWebHistoryPrefKey, v);
 
   /// 互联通道「共享收藏夹」：收藏词 + 收藏句（以及它们的删除墓碑，取消收藏要能
   /// 跨端传播）。与统计同为聚合快照的一半，但语义不同——收藏是用户挑出来的内容，
@@ -1779,6 +1789,9 @@ class SyncRepository {
   ];
 
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
+    // 打开浏览轨迹外流。
+    kSyncWebHistoryPrefKey,
     // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合、整页注音……）：
     // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
     ...kWebBrowserDeviceLocalPrefKeys,

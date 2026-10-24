@@ -192,6 +192,22 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncStatsEnabled(value);
             },
           ),
+          // 设备级「同步浏览历史」（默认关）：云备份与互联两条通道共用，本机作互联
+          // host 时也按它决定发不发 / 收不收历史，所以不设 visible 门控。历史不跟
+          // 「同步统计 / 共享收藏夹」走——浏览轨迹的隐私分量远高于收藏。
+          SettingsSwitchItem(
+            id: 'sync.web_history',
+            title: t.sync_web_history,
+            subtitle: t.sync_web_history_hint,
+            icon: FushiIcons.globe,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncWebHistory,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncWebHistory = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setWebHistorySyncEnabled(value);
+            },
+          ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
           // 单独控制（见 buildInterconnectDestination），二者互不牵连。故这三个开关只在
@@ -1300,6 +1316,7 @@ class _SyncSettingsState {
   /// 互联通道的自动同步（`interconnect.auto_sync`，默认开，反馈 5nWEirdCs2）。
   bool interconnectAutoSync = true;
   bool syncStats = true;
+  bool syncWebHistory = false;
   bool syncContent = false;
   bool syncMangaContent = false;
   bool syncAudioBookFiles = false;
@@ -1422,6 +1439,7 @@ class _SyncSettingsState {
       autoSync = await _repo.isAutoSyncEnabled();
       interconnectAutoSync = await _repo.isInterconnectAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
+      syncWebHistory = await _repo.isWebHistorySyncEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncMangaContent = await _repo.isSyncMangaContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();

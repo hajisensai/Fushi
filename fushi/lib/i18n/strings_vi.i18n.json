@@ -7548,6 +7548,8 @@
   "sync_username": "Tên đăng nhập",
   "sync_video_files": "Tải lên tệp video",
   "sync_video_files_warning": "Tệp video có thể rất lớn.",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "Thiếu thông tin",
   "sync_webdav_test_failed": "Kết nối thất bại: $message",
   "sync_webdav_url": "URL máy chủ",

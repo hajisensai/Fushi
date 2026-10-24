@@ -254,6 +254,7 @@ Future<Map<String, Object?>> runAggregatePull(
   bool push = false,
   bool stats = true,
   bool favorites = true,
+  bool webHistory = false,
 }) async {
   final AggregateSyncService service = AggregateSyncService(db);
   if (push) {
@@ -267,13 +268,14 @@ Future<Map<String, Object?>> runAggregatePull(
       },
       shareStats: stats,
       shareFavorites: favorites,
+      shareWebHistory: webHistory,
     );
     return <String, Object?>{
       'mode': 'push',
       'hostHasEndpoint': fetched != null,
       'pulled': fetched == null
           ? null
-          : aggregateSnapshotCounts(AggregateSnapshot.fromJson(fetched).select(stats: stats, favorites: favorites)),
+          : aggregateSnapshotCounts(AggregateSnapshot.fromJson(fetched).select(stats: stats, favorites: favorites, webHistory: webHistory)),
       'pushed': pushed,
     };
   }
@@ -281,7 +283,7 @@ Future<Map<String, Object?>> runAggregatePull(
   if (json == null) {
     throw const SyncRemoteException(_exitUnavailable, 'host 没有 /api/library/aggregate 端点（版本过旧），无法拉取');
   }
-  final AggregateSnapshot incoming = AggregateSnapshot.fromJson(json).select(stats: stats, favorites: favorites);
+  final AggregateSnapshot incoming = AggregateSnapshot.fromJson(json).select(stats: stats, favorites: favorites, webHistory: webHistory);
   await service.foldIntoLocal(incoming);
   return <String, Object?>{
     'mode': 'pull',
@@ -361,7 +363,8 @@ class SyncModule extends CliModule {
       ..addFlag('allow-http', negatable: false, help: '允许明文 http 端点')
       ..addFlag('push', negatable: false, help: '双向：合并结果再推回 host（缺省只拉）')
       ..addFlag('stats', defaultsTo: true, help: '同步学习统计')
-      ..addFlag('favorites', defaultsTo: true, help: '同步收藏词 / 收藏句')
+      ..addFlag('favorites', defaultsTo: true, help: '同步收藏词 / 收藏句 / 浏览器书签')
+      ..addFlag('web-history', defaultsTo: false, help: '同步浏览器历史（默认关：浏览轨迹须显式开启）')
       ..addFlag('json', negatable: false, help: '输出 JSON');
     sync.addCommand('pair')
       ..addOption('fingerprint', help: 'host 证书 SHA-256 指纹（必填，从 host 的配对页抄）')
@@ -375,7 +378,7 @@ class SyncModule extends CliModule {
       '''
 sync pair <https://host:port> --fingerprint <sha256>
     以本服务端身份向另一台 host 配对（host 上需点同意；要 PIN 时从 stdin 读）
-sync pull <url> [--fingerprint <sha256>] [--allow-http] [--push] [--no-stats] [--no-favorites] [--json]
+sync pull <url> [--fingerprint <sha256>] [--allow-http] [--push] [--no-stats] [--no-favorites] [--web-history] [--json]
     拉取 host 的学习统计 + 收藏并折进本机（只增不减）；--push 时把合并结果推回 host。
     凭据取已配对记录，或环境变量 $kSyncTokenEnv。只覆盖聚合维度（书 / 视频 / 合集
     的互联同步编排在 app 侧，服务端没有）。serve 也在跑且本机同时是该 host 的对端时，
@@ -441,7 +444,8 @@ sync peers [--json] | sync forget <url>''';
     }
     final bool stats = sub['stats'] as bool;
     final bool favorites = sub['favorites'] as bool;
-    if (!stats && !favorites) {
+    final bool webHistory = sub['web-history'] as bool;
+    if (!stats && !favorites && !webHistory) {
       e.writeln('--no-stats 与 --no-favorites 同时给出：没有要同步的东西');
       return _exitUsage;
     }
@@ -468,6 +472,7 @@ sync peers [--json] | sync forget <url>''';
           push: sub['push'] as bool,
           stats: stats,
           favorites: favorites,
+          webHistory: webHistory,
         );
         final Map<String, Object?> report = <String, Object?>{'host': target.url.toString(), ...result};
         if (sub['json'] as bool) {
