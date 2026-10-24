@@ -23,13 +23,21 @@
   的私有前缀，再 configure FFmpeg；`tool/bluray/build_libmpv.ps1` 用同一个前缀的 pkg-config；
   `package_libmpv.py` 要求三个 DLL 各从该前缀解析一次（改名为 `fbddvd*.dll`），并写
   `fushi-dvd` 来源记录与许可原文。
-- 移动端 / macOS：`platforms/build_cross.sh` 产出共享库开发包，FFmpegKitNext 与 libmpv fork
-  都要从它链接（见下「未完成」）。
+- 移动端 / macOS：`tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh` 先用
+  `platforms/build_cross.sh` 编出每个目标的共享库前缀，再以 `FUSHI_DVD_ROOT` 交给
+  FFmpegKitNext；kit 补丁 `tool/ffmpeg-unified/patches/ffmpeg-kit-next/0003-*` 让 FFmpeg 对这些
+  共享库 configure `--enable-libdvdnav --enable-libdvdread`，并把它们放到 libav* 旁边：
+  Android 的 `.so`（meson 对 Android 宿主不带版本号，`DT_SONAME` 就是 `libdvdnav.so`）由
+  ndk-build 打进 AAR；Apple 的 dylib install name 是 `@rpath/<lib>.framework/<lib>`，
+  `platforms/make_xcframeworks.sh` 组装 `libdvd*.xcframework` 一起放进 xcframework zip /
+  macOS 布局。libmpv fork 链接的就是这同一份（`forks/`）。
 
 `dvdvideo` 目前登记在 `tool/ffmpeg-unified/capabilities.json` 的 `staged` 区：新构建
-（`build_libmpv.ps1` 调 `verify_ffmpeg_capabilities.py --require-staged`）必须带；已入库的
-各平台产物在重编前不被它判红。四个平台都重新 vendor 后，把它挪进 `demuxers` 下限并删掉
-`staged` 里的这一项。
+（`build_libmpv.ps1`、`build_macos.sh` 调 `verify_ffmpeg_capabilities.py --require-staged`，
+移动端 CI 调 `verify_mobile_outputs.py --require-staged`）必须带；已入库的产物不被它判红。
+**提升条件**：Windows（2026-10-24 已带，`…-dvd1.7z`）、Android AAR、iOS xcframework、macOS
+`ffmpeg-unified-macos.tar.gz` 四份入库产物**全部**带上 `dvdvideo` 后，才把它挪进 `demuxers`
+下限并删掉 `staged` 里的这一项（Linux 用系统 FFmpeg，不在入库产物之列）。
 
 ## 运行时探测
 
@@ -69,7 +77,13 @@
   其后换到第 3 章 generation 不变）→ 片尾 post 命令回到 VMGM（generation 3）；四张带高亮的
   截图里按钮矩形内 100% 是选中色。
 
-没有测过：加密商业盘（本机无样本）、ISO 形态、多角度、真实商业盘菜单的高亮对拍。
+- 蓝光回归（换入库归档前，README 要求）：`verify_menu_render.py --disc` 对本机可读的
+  Kaguya Disc 2 测试副本，新旧两份 libmpv 的快照序列一致（first-play → playlist 1001 的 HDMV
+  IG 菜单，`right` 把焦点移到「チャプター」，截图同一菜单）；另一张 BD（響け！特別編）在隔离
+  探针里新旧都打不开（没有 app 侧的 AACS），表现一致。通过后已换入库归档：
+  `mpv-dev-…-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1.7z`。
+
+没有测过：加密商业 DVD（本机无样本）、ISO 形态、多角度、真实商业 DVD 菜单的高亮对拍。
 
 ### Apple（2026-10-24，SSH 到本机 Mac，Xcode 26.6，pip 装的 meson 1.12.1 / ninja）
 
@@ -82,18 +96,21 @@ libdvdcss 1.6.0 原样编不过（`ioctl.c` 在没有 IOKit DVD 客户端的系�
 实际解密没有测过。** App Store 不收裸 `.dylib`，iOS 随包时要由 libmpv / FFmpegKitNext 的打包步骤
 包成 framework。
 
-Android 没在本机编：Windows 宿主上的 meson 拒绝给 Android（POSIX）宿主用 `C:/` 前缀；Mac 上
-没有 NDK。脚本已限制只在 Linux / macOS 宿主跑。
+### Android（2026-10-24，Mac 上，NDK r27d 解压到 /tmp，无 sudo）
 
-## 未完成（其余四端，未验证）
+`build_cross.sh` 三个 ABI（arm64-v8a / armeabi-v7a / x86_64）都编过：`DT_SONAME` 为
+`libdvdcss.so` / `libdvdread.so` / `libdvdnav.so`，`libdvdnav.so` NEED `libdvdread.so`、
+`libdvdread.so` NEED `libdvdcss.so`，LOAD 段按 16 KB（0x4000）对齐。Windows 宿主上的 meson 拒绝给
+Android（POSIX）宿主用 `C:/` 前缀，所以脚本只在 Linux / macOS 宿主跑。FFmpegKitNext 的
+Android 整包（Gradle + AAR）没在本机编，留给 CI。
 
-- **Android / iOS / macOS**：`.github/workflows/ffmpeg-unified-mobile.yml` 的 `dvd-libs` job 只写好、
-  未跑过（Apple 三个目标在本机 Mac 上手动跑过同一脚本，见上）。还差：① FFmpegKitNext 链接这些共享库并开
-  `--enable-libdvdnav --enable-libdvdread`（kit 自己的外部库机制是静态链进 libav*，与「libmpv
-  也链同一份」冲突，需要一个 kit 补丁让 configure 用 `dvd-dev` 前缀的 pkg-config）；
-  ② `hajisensai/libmpv-android-video-build`（经私有镜像 `libmpv-android-build-fushi` 跑 CI）与
-  `hajisensai/libmpv-darwin-build` 的 `fushi/unified-ffmpeg` 分支去掉 `-Ddvdnav=disabled`、
-  链接 `dvd-dev` 开发包、把 `.so` / framework 随包；③ 重新 vendor 后 `staged` 挪进下限。
+## 未完成（未验证 / 待批准）
+
+- **移动端 CI**：`ffmpeg-unified-mobile.yml` 的三个平台 job 现在都先编 DVD 库，验证改用
+  `--require-staged`；未在 CI 上跑过。
+- **libmpv fork**：补丁与说明在 `forks/`，未推送、未触发远端构建（需所有者批准；要把两端
+  libmpv 改成 `-Dgpl=true`）。fork 产物重新 vendor 前，`fushi/test/build` 下按补丁散列钉住
+  Android / Darwin 产物的 6 条用例保持红。
 - **Linux**：用系统 libmpv / FFmpeg（Debian 的 libmpv2 已带 dvdnav）；加密盘需要系统装
   libdvdcss（Debian 走 contrib 的 `libdvd-pkg`）。以 `probe_libmpv.py` 的探测结果为准。
 - **iOS 上架风险**：判据预留在 `fushi/lib/src/models/store_compliance.dart` 的
