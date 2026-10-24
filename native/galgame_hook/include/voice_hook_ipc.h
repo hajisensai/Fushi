@@ -366,9 +366,10 @@ constexpr uint32_t kTextSourceKogadoHy = 11;
 // LucaSystem exact text: the Japanese record of the scenario VM's MESSAGE
 // opcode, role prefix and glossary markers removed.
 constexpr uint32_t kTextSourceLuca = 12;
-// Text source ids 13-14: reserved, unassigned. The Malie adapter took 15 while
-// other engine adapters were in flight; no branch in this repository uses
-// 13-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// Text source id 14: reserved, unassigned. The Malie adapter took 15 while
+// other engine adapters were in flight; no branch in this repository used
+// 13-14 (checked 2026-10-03 across all local refs; 13 went to knife on
+// 2026-10-24 after the same check). The host maps unknown kinds
 // to the generic 'hook:' lane, so a new kind must be registered here AND in
 // GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
 // galgame_audio_source.dart) in the same change; register the number here
@@ -376,6 +377,9 @@ constexpr uint32_t kTextSourceLuca = 12;
 // Malie exact text: the click unit the message window's segment parser hands
 // to the RICHTEXT3D reveal (voice tag and ruby removed).
 constexpr uint32_t kTextSourceMalie = 15;
+// knife (Rust reimplementation of the Switch Tsukihime engine) exact text: the
+// message the engine serves on its own text WebSocket, ruby already removed.
+constexpr uint32_t kTextSourceKnife = 13;
 // FVP (Favorite View Point) exact text published by the native TextPrint
 // (text object Print) hook.
 constexpr uint32_t kTextSourceFvp = 10;

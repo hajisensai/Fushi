@@ -2018,6 +2018,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     compact: compact,
                     actions: sessionActions,
                     footer: <Widget>[
+                      // 色块嵌在 footer 的 surface 容器里：四周留白，别贴着容器边
+                      // 和下方的游戏内查词行。
+                      if (state.knifeTextServiceIniPath != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                          child: _buildKnifeTextServiceNotice(state),
+                        ),
                       if (Platform.isWindows)
                         GalAttachedLookupWorkbench(
                           controller: GalHookTextOverlayController
@@ -2186,6 +2193,30 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               remember: true,
             ),
       ),
+    );
+  }
+
+  /// knife 的台词服务没开（附着到已在运行的游戏）：说明原因，并经用户点击把开关写进
+  /// knife.ini。写入后要重启游戏才生效——服务只在游戏启动时读开关。
+  Widget _buildKnifeTextServiceNotice(GalHookSessionState state) {
+    if (state.knifeTextServiceIniWritten) {
+      return FushiInlineNotice(
+        severity: FushiNoticeSeverity.success,
+        message: t.game_knife_text_service_written,
+      );
+    }
+    return FushiInlineNotice(
+      severity: FushiNoticeSeverity.warning,
+      title: t.game_knife_text_service_off_title,
+      message: state.knifeTextServiceIniWriteFailed
+          ? t.game_knife_text_service_write_failed
+          : t.game_knife_text_service_off_body,
+      actions: <Widget>[
+        FushiFilledButton.tonal(
+          onPressed: _session.enableKnifeTextServiceInIni,
+          child: Text(t.game_knife_text_service_enable_action),
+        ),
+      ],
     );
   }
 

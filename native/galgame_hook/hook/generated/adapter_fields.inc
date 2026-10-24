@@ -18,3 +18,4 @@
   FvpAdapter fvp_;
   KogadoHyAdapter kogado_hy_;
   LucaAdapter luca_;
+  KnifeAdapter knife_;
