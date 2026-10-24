@@ -115,27 +115,6 @@ void main() {
         expect(words.single.map((s) => s.text).join(), text.substring(0, 30));
       });
 
-      test('批量分词带词头：切分与同步路径相同、命中段给词头、未命中为空', () async {
-        final List<int> sync = FushiDicts.instance.tokenizeLengths(text)!;
-        final List<List<FushiTermToken>>? r = await FushiDicts.instance
-            .tokenizeTermsInBackground(<String>[text, '', '漢は']);
-        expect(r, hasLength(3));
-        expect(r![0].map((FushiTermToken t) => t.length).toList(), sync);
-        int at = 0;
-        for (final FushiTermToken t in r[0]) {
-          final String surface = text.substring(at, at + t.length);
-          at += t.length;
-          if (surface == 'は') {
-            expect(t.expression, isEmpty, reason: 'は 不在词典里');
-          } else {
-            expect(t.expression, surface);
-            expect(t.reading, 'よみ');
-          }
-        }
-        expect(r[1], isEmpty);
-        expect(r[2].map((FushiTermToken t) => t.expression), <String>['', '']);
-      });
-
       test('分词在飞时重载（旧实例 dispose）结果照样正确', () async {
         final List<int> sync = FushiDicts.instance.tokenizeLengths(text)!;
         for (int round = 0; round < 5; round++) {

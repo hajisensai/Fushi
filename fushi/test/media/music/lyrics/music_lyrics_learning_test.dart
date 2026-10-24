@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_coverage.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiTermToken;
 import 'package:fushi_music/fushi_music.dart';
 
 LyricLine _line(
@@ -155,89 +153,6 @@ void main() {
       expect(musicNextSyllableBoundary(l, 2000), isNull);
       final LyricLine padded = _timeline().lines[3];
       expect(musicDesktopSungLength(padded, 8000), 3, reason: '行首空白不算');
-    });
-  });
-
-  group('生词覆盖率', () {
-    Future<List<List<FushiTermToken>>?> tokenize(List<String> texts) async =>
-        <List<FushiTermToken>>[
-          for (final String s in texts)
-            switch (s) {
-              '夜に駆ける' => <FushiTermToken>[
-                (length: 1, reading: 'よる', expression: '夜'),
-                (length: 1, reading: '', expression: 'に'),
-                (length: 3, reading: 'かける', expression: '駆ける'),
-              ],
-              '沈むように' => <FushiTermToken>[
-                (length: 2, reading: 'しずむ', expression: '沈む'),
-                (length: 3, reading: '', expression: ''),
-              ],
-              _ => <FushiTermToken>[
-                (length: s.length, reading: '', expression: ''),
-              ],
-            },
-        ];
-
-    test('按出现次数、词头归一；和声行不算；未命中段不算', () async {
-      final MusicLyricsCoverage c = (await computeMusicLyricsCoverage(
-        _timeline(),
-        tokenize: tokenize,
-        knownTerms: (List<({String expression, String reading})> terms) async {
-          expect(terms.map((t) => t.expression), <String>[
-            '夜',
-            'に',
-            '駆ける',
-            '沈む',
-          ]);
-          return <String>{'に', '沈む'};
-        },
-      ))!;
-      expect(c.totalTokens, 4);
-      expect(c.knownTokens, 2);
-      expect(c.percent, 50);
-      expect(c.unknownTerms, <String>['夜', '駆ける']);
-    });
-
-    test('没词典 / 复习模块关着 / 一个词都没命中：不显示（null），不硬造 0%', () async {
-      Future<Set<String>?> none(
-        List<({String expression, String reading})> _,
-      ) async => <String>{};
-      expect(
-        await computeMusicLyricsCoverage(
-          _timeline(),
-          tokenize: (_) async => null,
-          knownTerms: none,
-        ),
-        isNull,
-      );
-      expect(
-        await computeMusicLyricsCoverage(
-          _timeline(),
-          tokenize: tokenize,
-          knownTerms: (_) async => null,
-        ),
-        isNull,
-      );
-      expect(
-        await computeMusicLyricsCoverage(
-          _timeline(),
-          tokenize: (List<String> texts) async => <List<FushiTermToken>>[
-            for (final String s in texts)
-              <FushiTermToken>[(length: s.length, reading: '', expression: '')],
-          ],
-          knownTerms: none,
-        ),
-        isNull,
-      );
-    });
-
-    test('标点段即使词典命中也不算词', () {
-      expect(musicTermIsWordLike('、'), isFalse);
-      expect(musicTermIsWordLike('！？'), isFalse);
-      expect(musicTermIsWordLike(' '), isFalse);
-      expect(musicTermIsWordLike('ok'), isTrue);
-      expect(musicTermIsWordLike('夜'), isTrue);
-      expect(musicTermIsWordLike('ありがとう'), isTrue);
     });
   });
 }

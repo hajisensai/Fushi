@@ -311,57 +311,6 @@ void main() {
     expect(any['<b>上手</b>']!.cardCount, 1);
   });
 
-  test('已知词快照与逐词 lookupTermStatus 同口径（曲库难度排序）', () async {
-    final SrsDbStore a = await device('a');
-    await a.createNote(
-      noteTypeId: a.lapisNoteTypeId,
-      fieldsById: lapis('上手', reading: 'じょうず'),
-    );
-    final String catNote = await a.createNote(
-      noteTypeId: a.lapisNoteTypeId,
-      fieldsById: lapis('猫', reading: 'ねこ'),
-    );
-    final String gone = await a.createNote(
-      noteTypeId: a.lapisNoteTypeId,
-      fieldsById: lapis('犬', reading: 'いぬ'),
-    );
-    await a.answer((await a.cardsOfNote(catNote)).single.id, 4);
-    await a.deleteNote(gone);
-    const List<SrsTermQuery> queries = <SrsTermQuery>[
-      SrsTermQuery('上手', 'じょうず'),
-      SrsTermQuery('上手', 'うわて'),
-      SrsTermQuery('猫'),
-      SrsTermQuery('猫', 'ねこ'),
-      SrsTermQuery('犬'),
-      SrsTermQuery('未収録'),
-    ];
-    final SrsKnownTermSnapshot snap = await a.knownTermSnapshot();
-    final Map<String, SrsTermStatus> per = await a.lookupTermStatus(queries);
-    expect(per['猫']!.queue, SrsQueue.review, reason: '「简单」直接毕业');
-    expect(snap.isKnown(const SrsTermQuery('猫')), isTrue);
-    expect(snap.isKnown(const SrsTermQuery('上手')), isFalse, reason: '新卡');
-    expect(snap.isKnown(const SrsTermQuery('犬')), isFalse, reason: '已删');
-    for (final SrsTermQuery q in queries) {
-      expect(
-        snap.isKnown(q),
-        per[q.expression]?.queue == SrsQueue.review,
-        reason: '${q.expression}/${q.reading}',
-      );
-    }
-    final String before = snap.stamp;
-    await a.answer((await a.cardsOfNote(catNote)).single.id, 1);
-    final SrsKnownTermSnapshot after = await a.knownTermSnapshot();
-    expect(
-      after.isKnown(const SrsTermQuery('猫')),
-      (await a.lookupTermStatus(<SrsTermQuery>[
-            const SrsTermQuery('猫'),
-          ]))['猫']!.queue ==
-          SrsQueue.review,
-    );
-    expect(after.isKnown(const SrsTermQuery('猫')), isFalse, reason: '重学');
-    expect(after.stamp, isNot(before), reason: '已知判定变了指纹必须变');
-  });
-
   test('删除笔记：卡片不可见；删除与对端并发修改 → 待裁决', () async {
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');

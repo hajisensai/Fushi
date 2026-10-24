@@ -3,8 +3,6 @@ import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_coverage_index.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
@@ -12,9 +10,6 @@ import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiTermToken;
-import 'package:fushi_music/fushi_music.dart';
-import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -81,20 +76,11 @@ Future<FushiDatabase> _seed() async {
   return db;
 }
 
-Future<void> _pump(
-  WidgetTester tester,
-  AppModel app,
-  Widget home, {
-  MusicLyricsCoverageIndex? coverage,
-}) async {
+Future<void> _pump(WidgetTester tester, AppModel app, Widget home) async {
   LocaleSettings.setLocale(AppLocale.en);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        appProvider.overrideWith((Ref ref) => app),
-        if (coverage != null)
-          musicLyricsCoverageIndexProvider.overrideWithValue(coverage),
-      ],
+      overrides: [appProvider.overrideWith((Ref ref) => app)],
       child: TranslationProvider(
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true),
@@ -139,75 +125,6 @@ void main() {
     await tester.tap(find.text(t.music_section_artists));
     await tester.pumpAndSettle();
     expect(find.text('Singer'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-  });
-
-  testWidgets('歌曲分区按难度排序：有覆盖率的在前、无歌词排最后并标明', (WidgetTester tester) async {
-    final FushiDatabase db = await _seed();
-    addTearDown(db.close);
-    final AppModel app = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
-    LyricTimeline lyrics(String text) => LyricTimeline(
-      format: 'lrc',
-      lines: <LyricLine>[
-        LyricLine(
-          startMs: 0,
-          endMs: 1000,
-          syllables: <LyricSyllable>[
-            LyricSyllable(text: text, startMs: 0, endMs: 1000),
-          ],
-        ),
-      ],
-    );
-    // t1 没有歌词；t2 两个词、一个已知（50%）。
-    final MusicLyricsCoverageIndex coverage = MusicLyricsCoverageIndex(
-      database: () => db,
-      resolveLocal: (MusicLyricsTrackRef t) async =>
-          t.trackUid == 't2' ? lyrics('yoru hoshi') : null,
-      tokenize: (List<String> texts) async => <List<FushiTermToken>>[
-        for (final String _ in texts)
-          const <FushiTermToken>[
-            (length: 4, reading: '', expression: 'yoru'),
-            (length: 1, reading: '', expression: ''),
-            (length: 5, reading: '', expression: 'hoshi'),
-          ],
-      ],
-      dictionaryStamp: () => 'dict',
-      knownSnapshot: () async => SrsKnownTermSnapshot.fromRows(
-        <({String termKey, String readingKey, SrsQueue queue, bool suspended})>[
-          (
-            termKey: 'yoru',
-            readingKey: '',
-            queue: SrsQueue.review,
-            suspended: false,
-          ),
-        ],
-      ),
-    );
-    addTearDown(coverage.dispose);
-    await _pump(tester, app, const MusicLibraryPage(), coverage: coverage);
-
-    await tester.tap(find.text(t.music_section_songs));
-    await tester.pumpAndSettle();
-    // 曲库顺序：不显示难度。
-    expect(find.text(t.music_difficulty_no_lyrics), findsNothing);
-    expect(
-      tester.getTopLeft(find.text('Song t1')).dy,
-      lessThan(tester.getTopLeft(find.text('Song t2')).dy),
-    );
-
-    await tester.tap(find.text(t.music_sort_easiest));
-    await tester.runAsync(() => coverage.run());
-    await tester.pumpAndSettle();
-    expect(find.text(t.music_difficulty_known(percent: 50)), findsOneWidget);
-    expect(find.text(t.music_difficulty_no_lyrics), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text('Song t2')).dy,
-      lessThan(tester.getTopLeft(find.text('Song t1')).dy),
-      reason: '无歌词的排最后',
-    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

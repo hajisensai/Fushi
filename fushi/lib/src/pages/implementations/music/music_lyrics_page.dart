@@ -10,7 +10,6 @@
 /// - 制卡（§12）：句子 = 查词所在那行，音频片段 = 该行前后各扩 0.5 s，卡图 = 封面，出处 =
 ///   `music` 来源链接 + 制卡历史 `position_ms` / `duration_ms`（L3）；
 /// - AB 循环一行 / 多行（mpv 原生 ab-loop）；
-/// - 生词覆盖率：已在复习库里的词 / 歌词里的词；
 /// - 来源：选来源（本地候选 + 在线模糊搜索）写成用户行，可恢复自动来源，可显式导出 TTML。
 ///   不做歌词编辑与自动注音（所有者 2026-10-24 拍板，设计 D11）；
 /// - 卡拉 OK 字幕页（P3，§6.3 / §9.2）：歌词来源是 ASS 或音频旁有同名 `.cdg` 时出现入口；
@@ -27,13 +26,9 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, kStatSourceMusic;
-import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
-import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_music/fushi_music.dart';
-import 'package:fushi_srs/fushi_srs.dart'
-    show SrsKnownTermSnapshot, SrsTermQuery;
 
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
@@ -41,7 +36,6 @@ import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_clock.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_coverage.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
@@ -57,7 +51,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
     show MusicKaraokeTrack, openMusicKaraokePage;
-import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
@@ -144,24 +137,6 @@ Future<String?> _ffmpegClip({
 @visibleForTesting
 MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
 
-/// 复习库 → 「已知」词头（卡已进入复习队列）。[store] 为 null（复习模块关着）返回 null。
-Future<Set<String>?> musicKnownTermsFromSrs(
-  SrsDbStore? store,
-  List<({String expression, String reading})> terms,
-) async {
-  if (store == null) return null;
-  // 与曲库难度排序同一份判据（SrsKnownTermSnapshot，口径同 lookupTermStatus）：一次
-  // 联表读出分布，不按词逐个查库。
-  final SrsKnownTermSnapshot known = await store.knownTermSnapshot();
-  return <String>{
-    for (final ({String expression, String reading}) t in terms)
-      if (known.isKnown(
-        SrsTermQuery(t.expression, t.reading.isEmpty ? null : t.reading),
-      ))
-        t.expression,
-  };
-}
-
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
     : super(item: null);
@@ -198,9 +173,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// AB 循环覆盖的行（含）；没开为 null。
   (int, int)? _loopLines;
 
-  MusicLyricsCoverage? _coverage;
-  int _coverageGeneration = 0;
-
   @override
   void initState() {
     super.initState();
@@ -235,7 +207,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _cdgPath = null;
       _lookupLine = null;
       _loopLines = null;
-      _coverage = null;
     });
     MusicLyricsResolution? r;
     Object? error;
@@ -254,34 +225,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _error = error;
       _offsetMs = r?.timeline.offsetMs ?? 0;
     });
-    if (r != null) unawaited(_computeCoverage(r.timeline));
   }
 
   /// 当前生效的时间轴（带界面上实时调的偏移）。
   LyricTimeline? get _timeline =>
       _lyrics?.timeline.copyWith(offsetMs: _offsetMs);
-
-  Future<void> _computeCoverage(LyricTimeline t) async {
-    final int generation = ++_coverageGeneration;
-    MusicLyricsCoverage? c;
-    try {
-      if (!FushiDicts.isInitialized) return;
-      c = await computeMusicLyricsCoverage(
-        t,
-        tokenize: (List<String> texts) =>
-            FushiDicts.instance.tokenizeTermsInBackground(texts),
-        knownTerms: (List<({String expression, String reading})> terms) async =>
-            musicKnownTermsFromSrs(
-              await ref.read(srsStoreProvider.future),
-              terms,
-            ),
-      );
-    } on Object catch (e, st) {
-      ErrorLogService.instance.log('MusicLyricsPage.coverage', e, st);
-    }
-    if (!mounted || generation != _coverageGeneration) return;
-    setState(() => _coverage = c);
-  }
 
   void _nudgeOffset(int deltaMs) {
     final MusicLyricsResolution? r = _lyrics;
@@ -955,7 +903,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     final Duration? duration = _engine.duration;
     final double max = (duration?.inMilliseconds ?? 0).toDouble();
     final bool synced = _lyrics?.timeline.isSynced ?? false;
-    final MusicLyricsCoverage? coverage = _coverage;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -994,28 +941,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: context.fushiType.bodyMedium,
-        ),
-        // 生词覆盖率：有词典、复习模块开着、至少命中一个词才显示。
-        FushiAnimatedSize(
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: context.fushiMotion.spatialDefault.curve,
-          child: coverage == null
-              ? const SizedBox(width: double.infinity)
-              : FushiTooltip(
-                  message: t.music_lyrics_coverage_hint,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      t.music_lyrics_coverage(
-                        known: coverage.knownTokens,
-                        total: coverage.totalTokens,
-                        percent: coverage.percent,
-                      ),
-                      key: const ValueKey<String>('music_lyrics_coverage'),
-                      style: context.fushiType.bodySmall,
-                    ),
-                  ),
-                ),
         ),
         Slider(
           value: position.inMilliseconds.toDouble().clamp(

@@ -670,9 +670,6 @@ const List<String> _deviceLocalTables = <String>[
   'video_theme_song_spans',
   // v131：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
   'game_voice_casts',
-  // v134：歌词生词覆盖率缓存（曲库按难度排序）。纯派生、可整表重算，键是本机曲目
-  // uid，设备本地。无外键。
-  'music_lyric_coverage',
   // v129：音乐刮削三表。键是 track_uid（含本机路径）、内容可由重刮重建，与曲库目录
   // 同属设备本地。无外键。
   'music_scrape_meta',
@@ -708,7 +705,6 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_track_credits',
   'video_theme_song_spans',
   'game_voice_casts',
-  'music_lyric_coverage',
   'music_scrape_meta',
   'music_metadata_raw_snapshots',
   'music_locked_fields',
