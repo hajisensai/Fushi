@@ -148,6 +148,13 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
     reason: 'DVD 补丁要应用到 libmpv 的两个独立构建仓，用法注释写的是真实依赖仓库名，不是本仓旧名。',
   ),
   _Exemption(
+    pathSuffix: 'tool/bluray/forks/apply.sh',
+    context: RegExp(
+      r'checkout of hajisensai/libmpv-(android-video|darwin)-build @',
+    ),
+    reason: '远端原盘补丁同样应用到 libmpv 的两个独立构建仓，用法注释写的是真实依赖仓库名。',
+  ),
+  _Exemption(
     pathSuffix: 'tools/build_magpie_slim.ps1',
     context: null,
     reason:
