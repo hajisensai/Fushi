@@ -2980,8 +2980,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                 // rail）与收起 rail 宽度不同，标题跟着它缩进；
                                 // 展开态与首页 rail 同一判据（尺寸档 + MD3 菜单钮
                                 // 手动切换的记忆）。
-                                final double railWidth =
-                                    adaptiveNavRailWidthFor(
+                                // Apple 宽窗口收成顶部标签栏时左边没有侧栏，
+                                // 标题不缩进。
+                                final bool appleTabBar =
+                                    adaptiveAppleTabBarMode(
+                                      context,
+                                      sizeClass: sizeClass,
+                                      userExpanded: appModel
+                                          .navRailExpandedNotifier
+                                          .value,
+                                    );
+                                final double railWidth = appleTabBar
+                                    ? 0
+                                    : adaptiveNavRailWidthFor(
                                       context,
                                       extended: adaptiveNavRailExtended(
                                         context,

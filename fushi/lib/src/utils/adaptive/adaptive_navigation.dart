@@ -62,6 +62,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 
 part 'nav_rail/nav_rail_shape.part.dart';
 part 'nav_rail/nav_rail_peek.part.dart';
+part 'nav_rail/apple_sidebar_tabs.part.dart';
 
 class AdaptiveNavItem {
   final IconData icon;
