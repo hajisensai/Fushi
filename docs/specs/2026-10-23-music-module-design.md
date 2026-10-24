@@ -415,8 +415,10 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   并在每个扫描批次的同一事务里重放（扫描按标签整行 upsert 会把身份冲回 NULL）。刮到的
   标题 / 艺人等经「写回文件标签」显式落进文件；预览里取消勾选的字段记成
   `music_locked_fields`，以后不再提议。CUE 虚拟曲目不能写回（一份整轨一组标签）。
-- **AcoustID**：本仓不内置任何 key；设置 › 音乐 填用户自己的应用 key，没填时声纹这步跳过、
-  设置页与曲目页说明原因。声纹 = 统一 FFmpeg 解前 120 s → `ffm_fp_compute` →
+- **AcoustID**：随包内置所有者的应用 key（应用名 Fushi）：入库的 `fushi/lib/src/media/music/acoustid_secret.dart`
+  是空占位，CI 经 `provide-baked-secrets` 从仓库 secret `ACOUSTID_API_KEY` 注入，本机真值走
+  skip-worktree。设置 › 音乐 里用户自己填的 key 优先（`resolveMusicAcoustidApiKey`），两者都空才跳过
+  声纹这步并说明原因。声纹 = 统一 FFmpeg 解前 120 s → `ffm_fp_compute` →
   `ffm_fp_acoustid_encode`（chromaprint 压缩 + URL-safe base64，与 `fpcalc` 同形），只上传
   这个串与时长。
 - **VGMdb**：社区镜像 vgmdb.info，只按目录编号查一次、1 次 / 3 s、默认关。2026-10-24 本机
