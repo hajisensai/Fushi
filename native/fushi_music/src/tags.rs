@@ -8,6 +8,7 @@ use std::path::Path;
 use lofty::config::ParseOptions;
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::mp4::{Mp4Codec, Mp4File};
+use lofty::mpeg::MpegFile;
 use lofty::picture::PictureType;
 use lofty::probe::Probe;
 use lofty::tag::{Accessor, ItemKey, Tag};
@@ -96,6 +97,122 @@ pub fn parse_rg(s: &str) -> Option<f64> {
         .or_else(|| t.strip_suffix("DB"))
         .unwrap_or(t);
     t.trim().parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// R128 增益（Opus `R128_TRACK_GAIN` / `R128_ALBUM_GAIN`，RFC 7845 §5.2.1）：Q7.8 定点整数，
+/// 参考响度 -23 LUFS。ReplayGain 2.0 参考 -18 LUFS，所以换算成 RG dB 要再加 5。
+pub fn parse_r128(s: &str) -> Option<f64> {
+    let q: i32 = s.trim().parse().ok()?;
+    if !(i16::MIN as i32..=i16::MAX as i32).contains(&q) {
+        return None;
+    }
+    Some(q as f64 / 256.0 + 5.0)
+}
+
+/// Apple Sound Check（`iTunNORM`）：10 个 8 位十六进制数。前两个是左 / 右声道以 1/1000 W
+/// 计的响度比，换算 `gain = -10·log10(max(v0, v1) / 1000)`（与 ReplayGain → Sound Check
+/// 的通行写法 `v = 1000·10^(-gain/10)` 互逆）；第 7、8 个是左 / 右声道峰值样本（16 bit
+/// 满幅 32768），取大者除以 32768 作线性峰值。返回 (gain dB, peak)。
+pub fn parse_itunnorm(s: &str) -> Option<(f64, Option<f64>)> {
+    let vals: Vec<u32> = s
+        .split_whitespace()
+        .map(|p| u32::from_str_radix(p, 16))
+        .collect::<Result<Vec<u32>, _>>()
+        .ok()?;
+    if vals.len() < 2 {
+        return None;
+    }
+    let loud = vals[0].max(vals[1]);
+    if loud == 0 {
+        return None;
+    }
+    let gain = -10.0 * (loud as f64 / 1000.0).log10();
+    let peak = (vals.len() >= 8)
+        .then(|| vals[6].max(vals[7]))
+        .filter(|p| *p > 0)
+        .map(|p| p as f64 / 32768.0);
+    gain.is_finite().then_some((gain, peak))
+}
+
+/// 标签里不在 lofty 映射表中的键（MP4 自由格式 `----:com.apple.iTunes:<名>` 大小写变体、
+/// Vorbis 的 `R128_*`）：按名字大小写不敏感找。
+fn get_unknown(tag: &Tag, name: &str) -> Option<String> {
+    tag.items().find_map(|item| {
+        let ItemKey::Unknown(k) = item.key() else {
+            return None;
+        };
+        let bare = k
+            .strip_prefix("----:com.apple.iTunes:")
+            .or_else(|| k.strip_prefix("TXXX:"))
+            .unwrap_or(k);
+        if bare.eq_ignore_ascii_case(name) {
+            item.value().text().and_then(clean)
+        } else {
+            None
+        }
+    })
+}
+
+fn rg_value(tag: &Tag, key: &ItemKey, name: &str) -> Option<f64> {
+    get(tag, key)
+        .or_else(|| get_unknown(tag, name))
+        .and_then(|s| parse_rg(&s))
+}
+
+/// 响度标签（设计 §7.3），优先级：ReplayGain 2.0 `REPLAYGAIN_*` > Opus `R128_*` > Apple
+/// `iTunNORM`（只有曲目级）。缺的留 None，由 app 侧 EBU R128 扫描补。
+pub fn fill_loudness(tag: &Tag, meta: &mut FileMeta) {
+    meta.rg_track_gain = rg_value(tag, &ItemKey::ReplayGainTrackGain, "REPLAYGAIN_TRACK_GAIN");
+    meta.rg_track_peak = rg_value(tag, &ItemKey::ReplayGainTrackPeak, "REPLAYGAIN_TRACK_PEAK");
+    meta.rg_album_gain = rg_value(tag, &ItemKey::ReplayGainAlbumGain, "REPLAYGAIN_ALBUM_GAIN");
+    meta.rg_album_peak = rg_value(tag, &ItemKey::ReplayGainAlbumPeak, "REPLAYGAIN_ALBUM_PEAK");
+    if meta.rg_track_gain.is_none() {
+        meta.rg_track_gain = get_unknown(tag, "R128_TRACK_GAIN").and_then(|s| parse_r128(&s));
+    }
+    if meta.rg_album_gain.is_none() {
+        meta.rg_album_gain = get_unknown(tag, "R128_ALBUM_GAIN").and_then(|s| parse_r128(&s));
+    }
+    if meta.rg_track_gain.is_none() {
+        if let Some((gain, peak)) = get_unknown(tag, "iTunNORM").and_then(|s| parse_itunnorm(&s)) {
+            meta.rg_track_gain = Some(gain);
+            if meta.rg_track_peak.is_none() {
+                meta.rg_track_peak = peak;
+            }
+        }
+    }
+}
+
+/// MP3 的 ID3v2：`TXXX` 描述大小写不规范（`replaygain_track_gain`）与 `COMM:iTunNORM`
+/// 在 lofty 的通用 [`Tag`] 里拿不到，直接读 ID3v2 帧补。
+fn fill_loudness_from_id3v2(path: &Path, meta: &mut FileMeta) {
+    let Ok(f) = File::open(path) else { return };
+    let mut reader = BufReader::new(f);
+    let Ok(mp3) = MpegFile::read_from(&mut reader, ParseOptions::new().read_cover_art(false))
+    else {
+        return;
+    };
+    let Some(id3) = mp3.id3v2() else { return };
+    let user = |name: &str| -> Option<f64> {
+        id3.get_user_text(name)
+            .or_else(|| id3.get_user_text(&name.to_ascii_lowercase()))
+            .and_then(parse_rg)
+    };
+    meta.rg_track_gain = meta.rg_track_gain.or_else(|| user("REPLAYGAIN_TRACK_GAIN"));
+    meta.rg_track_peak = meta.rg_track_peak.or_else(|| user("REPLAYGAIN_TRACK_PEAK"));
+    meta.rg_album_gain = meta.rg_album_gain.or_else(|| user("REPLAYGAIN_ALBUM_GAIN"));
+    meta.rg_album_peak = meta.rg_album_peak.or_else(|| user("REPLAYGAIN_ALBUM_PEAK"));
+    if meta.rg_track_gain.is_none() {
+        let norm = id3
+            .comments()
+            .find(|c| c.description.eq_ignore_ascii_case("iTunNORM"))
+            .and_then(|c| parse_itunnorm(&c.content));
+        if let Some((gain, peak)) = norm {
+            meta.rg_track_gain = Some(gain);
+            if meta.rg_track_peak.is_none() {
+                meta.rg_track_peak = peak;
+            }
+        }
+    }
 }
 
 /// 日期串里的年份（`2019`、`2019-03-01`、`2019/03`）。
@@ -256,10 +373,11 @@ pub fn read_file_meta(path: &Path) -> Result<FileMeta, String> {
         .or_else(|| tag.year().map(i64::from));
     meta.genre = tag.genre().and_then(|s| clean(&s));
     meta.catalog_no = get(tag, &ItemKey::CatalogNumber);
-    meta.rg_track_gain = get(tag, &ItemKey::ReplayGainTrackGain).and_then(|s| parse_rg(&s));
-    meta.rg_track_peak = get(tag, &ItemKey::ReplayGainTrackPeak).and_then(|s| parse_rg(&s));
-    meta.rg_album_gain = get(tag, &ItemKey::ReplayGainAlbumGain).and_then(|s| parse_rg(&s));
-    meta.rg_album_peak = get(tag, &ItemKey::ReplayGainAlbumPeak).and_then(|s| parse_rg(&s));
+    fill_loudness(tag, &mut meta);
+    if file_type == FileType::Mpeg && (meta.rg_track_gain.is_none() || meta.rg_album_gain.is_none())
+    {
+        fill_loudness_from_id3v2(path, &mut meta);
+    }
     meta.mb_recording_id = get(tag, &ItemKey::MusicBrainzRecordingId);
     meta.mb_work_id = get(tag, &ItemKey::MusicBrainzWorkId);
     meta.mb_release_id = get(tag, &ItemKey::MusicBrainzReleaseId);
@@ -308,5 +426,73 @@ mod tests {
         assert_eq!(year_of("2019-03-01"), Some(2019));
         assert_eq!(year_of("19"), None);
         assert_eq!(leading_number("3/12"), Some(3));
+    }
+
+    #[test]
+    fn r128_to_replaygain() {
+        // Q7.8：-2048/256 = -8 dB（相对 -23 LUFS）→ RG2（-18 LUFS）= -3 dB。
+        assert_eq!(parse_r128("-2048"), Some(-3.0));
+        assert_eq!(parse_r128("0"), Some(5.0));
+        assert_eq!(parse_r128(" 256 "), Some(6.0));
+        assert_eq!(parse_r128("40000"), None);
+        assert_eq!(parse_r128("-3.5"), None);
+    }
+
+    #[test]
+    fn itunnorm_to_replaygain() {
+        // 0x3E8 = 1000 → 0 dB；0x2710 = 10000 → -10 dB；峰值 0x4000 / 32768 = 0.5。
+        let (g, p) = parse_itunnorm(
+            " 000003E8 00000200 00000000 00000000 00000000 00000000 00004000 00002000 00000000 00000000",
+        )
+        .unwrap();
+        assert!(g.abs() < 1e-9);
+        assert_eq!(p, Some(0.5));
+        let (g, p) = parse_itunnorm("00000100 00002710").unwrap();
+        assert!((g + 10.0).abs() < 1e-9);
+        assert_eq!(p, None);
+        assert_eq!(parse_itunnorm("zz"), None);
+        assert_eq!(parse_itunnorm("00000000 00000000"), None);
+    }
+
+    #[test]
+    fn loudness_precedence_and_unknown_keys() {
+        use lofty::tag::{ItemValue, TagItem, TagType};
+        let mut tag = Tag::new(TagType::VorbisComments);
+        tag.push_unchecked(TagItem::new(
+            ItemKey::Unknown("R128_TRACK_GAIN".into()),
+            ItemValue::Text("-2048".into()),
+        ));
+        tag.push_unchecked(TagItem::new(
+            ItemKey::Unknown("R128_ALBUM_GAIN".into()),
+            ItemValue::Text("0".into()),
+        ));
+        let mut meta = FileMeta::default();
+        fill_loudness(&tag, &mut meta);
+        assert_eq!(meta.rg_track_gain, Some(-3.0));
+        assert_eq!(meta.rg_album_gain, Some(5.0));
+
+        // REPLAYGAIN_* 优先于 R128_*。
+        tag.push_unchecked(TagItem::new(
+            ItemKey::ReplayGainTrackGain,
+            ItemValue::Text("-6.50 dB".into()),
+        ));
+        fill_loudness(&tag, &mut meta);
+        assert_eq!(meta.rg_track_gain, Some(-6.5));
+
+        // MP4 自由格式大写变体（lofty 只映射小写）+ iTunNORM。
+        let mut mp4 = Tag::new(TagType::Mp4Ilst);
+        mp4.push_unchecked(TagItem::new(
+            ItemKey::Unknown("----:com.apple.iTunes:REPLAYGAIN_ALBUM_GAIN".into()),
+            ItemValue::Text("-1.25 dB".into()),
+        ));
+        mp4.push_unchecked(TagItem::new(
+            ItemKey::Unknown("----:com.apple.iTunes:iTunNORM".into()),
+            ItemValue::Text("00002710 00002710 0 0 0 0 00008000 00004000".into()),
+        ));
+        let mut meta = FileMeta::default();
+        fill_loudness(&mp4, &mut meta);
+        assert_eq!(meta.rg_album_gain, Some(-1.25));
+        assert!((meta.rg_track_gain.unwrap() + 10.0).abs() < 1e-9);
+        assert_eq!(meta.rg_track_peak, Some(1.0));
     }
 }

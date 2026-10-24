@@ -943,6 +943,8 @@ class SourceLibraryScanner {
         );
         mediaCount = summary.trackCount;
         scanError = summary.errorSummary;
+        // 缺 ReplayGain 标签的新曲目交给后台响度扫描（不阻塞来源扫描收尾）。
+        onMusicSourceScanned?.call();
       } on MusicScanRootError catch (e) {
         scanError = e.toString();
       }

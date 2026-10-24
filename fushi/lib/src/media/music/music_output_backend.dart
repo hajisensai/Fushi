@@ -7,6 +7,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/music/music_signal_path.dart';
+
 /// 一首要播的曲目（CUE 虚拟曲目带起止）。
 @immutable
 class MusicPlayItem {
@@ -21,6 +23,14 @@ class MusicPlayItem {
     this.albumUid,
     this.durationMs,
     this.coverPath,
+    this.codec,
+    this.sampleRate,
+    this.bitDepth,
+    this.channels,
+    this.rgTrackGain,
+    this.rgTrackPeak,
+    this.rgAlbumGain,
+    this.rgAlbumPeak,
   });
 
   final String trackUid;
@@ -35,6 +45,20 @@ class MusicPlayItem {
   final String? albumUid;
   final int? durationMs;
   final String? coverPath;
+
+  /// 曲库扫描从文件头读到的源属性（`dsd` / `flac` …；位深 mpv 不报，信号路径用这里的）。
+  final String? codec;
+  final int? sampleRate;
+  final int? bitDepth;
+  final int? channels;
+
+  /// ReplayGain（dB / 线性峰值）：标签（REPLAYGAIN_* / R128_* / iTunNORM）或 EBU R128 扫描。
+  final double? rgTrackGain;
+  final double? rgTrackPeak;
+  final double? rgAlbumGain;
+  final double? rgAlbumPeak;
+
+  bool get isDsd => codec == 'dsd';
 
   @override
   bool operator ==(Object other) =>
@@ -56,6 +80,16 @@ enum MusicReplayGainMode {
   final String mpvValue;
 }
 
+/// DSD → PCM 的目标采样率（设计 §7.1）：mpv 不支持 DoP / 原生 DSD 输出，只能先转 PCM。
+enum MusicDsdPcmRate {
+  khz176(176400),
+  khz352(352800);
+
+  const MusicDsdPcmRate(this.hz);
+
+  final int hz;
+}
+
 /// 输出层设置。
 @immutable
 class MusicOutputSettings {
@@ -63,6 +97,12 @@ class MusicOutputSettings {
     required this.gapless,
     required this.replayGain,
     this.replayGainPreampDb = 0,
+    this.exclusive = false,
+    this.audioDevice = 'auto',
+    this.speed = 1,
+    this.volume = 100,
+    this.dsdPcmRate = MusicDsdPcmRate.khz176,
+    this.crossfade = Duration.zero,
   });
 
   /// mpv `gapless-audio=weak`（同格式真无缝，格式变化时重开设备）。
@@ -70,15 +110,71 @@ class MusicOutputSettings {
   final MusicReplayGainMode replayGain;
   final double replayGainPreampDb;
 
+  /// 独占 / bit-perfect 输出（设计 §7.4）：Windows WASAPI 独占、macOS hog mode、
+  /// Android 14+ USB bit-perfect 混音属性。独占时不设 `audio-samplerate`、不强制
+  /// `audio-format`，设备跟随源格式。
+  final bool exclusive;
+
+  /// mpv `audio-device`（`auto` = 系统默认）。
+  final String audioDevice;
+
+  /// 播放速度（≠1 时 mpv 自动插 scaletempo2，变速不变调）。
+  final double speed;
+
+  /// 软件音量（100 = 不改样本）。
+  final double volume;
+  final MusicDsdPcmRate dsdPcmRate;
+
+  /// 交叉淡入时长；[Duration.zero] = 关（默认）。开了即非 bit-perfect。
+  final Duration crossfade;
+
+  MusicOutputSettings copyWith({
+    bool? gapless,
+    MusicReplayGainMode? replayGain,
+    double? replayGainPreampDb,
+    bool? exclusive,
+    String? audioDevice,
+    double? speed,
+    double? volume,
+    MusicDsdPcmRate? dsdPcmRate,
+    Duration? crossfade,
+  }) => MusicOutputSettings(
+    gapless: gapless ?? this.gapless,
+    replayGain: replayGain ?? this.replayGain,
+    replayGainPreampDb: replayGainPreampDb ?? this.replayGainPreampDb,
+    exclusive: exclusive ?? this.exclusive,
+    audioDevice: audioDevice ?? this.audioDevice,
+    speed: speed ?? this.speed,
+    volume: volume ?? this.volume,
+    dsdPcmRate: dsdPcmRate ?? this.dsdPcmRate,
+    crossfade: crossfade ?? this.crossfade,
+  );
+
   @override
   bool operator ==(Object other) =>
       other is MusicOutputSettings &&
       other.gapless == gapless &&
       other.replayGain == replayGain &&
-      other.replayGainPreampDb == replayGainPreampDb;
+      other.replayGainPreampDb == replayGainPreampDb &&
+      other.exclusive == exclusive &&
+      other.audioDevice == audioDevice &&
+      other.speed == speed &&
+      other.volume == volume &&
+      other.dsdPcmRate == dsdPcmRate &&
+      other.crossfade == crossfade;
 
   @override
-  int get hashCode => Object.hash(gapless, replayGain, replayGainPreampDb);
+  int get hashCode => Object.hash(
+    gapless,
+    replayGain,
+    replayGainPreampDb,
+    exclusive,
+    audioDevice,
+    speed,
+    volume,
+    dsdPcmRate,
+    crossfade,
+  );
 }
 
 /// 后端上报的事件。
@@ -100,14 +196,38 @@ final class MusicBackendPlaying extends MusicBackendEvent {
   final bool playing;
 }
 
-/// 后端已无缝切到预先排好的「下一首」。
+/// 后端已无缝切到预先排好的「下一首」——以**实际出声**为准（设备缓冲里前一首的尾巴
+/// 放完那一刻），不是解码器开始读下一首的时刻。
 final class MusicBackendAdvanced extends MusicBackendEvent {
-  const MusicBackendAdvanced();
+  const MusicBackendAdvanced([this.trackUid]);
+
+  /// 现在出声的曲目；null = 后端不知道（引擎按队列顺序推进一首）。
+  final String? trackUid;
 }
 
 /// 当前曲目播完且后面没有排好的下一首。
 final class MusicBackendCompleted extends MusicBackendEvent {
   const MusicBackendCompleted();
+}
+
+/// 输出降级的原因。
+enum MusicOutputFallbackReason {
+  /// 独占打不开（设备被别的程序独占、驱动不支持独占等），已退回共享模式。
+  exclusiveUnavailable,
+
+  /// 选的输出设备打不开（拔掉了 / 不存在），已退回系统默认设备。
+  deviceUnavailable,
+}
+
+/// 输出层没能按设置打开、已经自动退回（独占 → 共享 / 指定设备 → 默认）。界面必须明确
+/// 提示，不能静默。
+final class MusicBackendOutputFallback extends MusicBackendEvent {
+  const MusicBackendOutputFallback(this.reason, this.detail);
+
+  final MusicOutputFallbackReason reason;
+
+  /// mpv 的原始报错。
+  final String detail;
 }
 
 final class MusicBackendFailed extends MusicBackendEvent {
@@ -141,4 +261,10 @@ abstract interface class MusicOutputBackend {
   Future<void> seek(Duration position);
   Future<void> stop();
   Future<void> dispose();
+
+  /// 当前信号路径的原始数据（面板用）；没在播时为 null。
+  Future<MusicSignalPathSnapshot?> readSignalPath();
+
+  /// 可选的输出设备。
+  Future<List<MusicAudioDevice>> listAudioDevices();
 }

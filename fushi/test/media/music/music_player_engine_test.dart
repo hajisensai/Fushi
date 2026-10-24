@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_signal_path.dart';
 
 /// 记录引擎发给后端的每一条命令；测试手动发后端事件。
 class _FakeBackend implements MusicOutputBackend {
@@ -60,6 +61,13 @@ class _FakeBackend implements MusicOutputBackend {
     disposed = true;
     await controller.close();
   }
+
+  @override
+  Future<MusicSignalPathSnapshot?> readSignalPath() async => null;
+
+  @override
+  Future<List<MusicAudioDevice>> listAudioDevices() async =>
+      const <MusicAudioDevice>[];
 }
 
 MusicPlayItem _item(String uid, {int? durationMs = 200000}) => MusicPlayItem(
@@ -229,27 +237,56 @@ void main() {
     await e.reapplySettings();
     expect(b.settings?.gapless, isFalse);
     expect(b.settings?.replayGain, MusicReplayGainMode.off);
-    expect(musicMpvProperties(b.settings!)['gapless-audio'], 'no');
+    expect(
+      musicMpvProperties(
+        b.settings!,
+        platform: MusicOutputPlatform.windows,
+      )['gapless-audio'],
+      'no',
+    );
   });
 
-  test('mpv 映射：CUE 起止成逐文件选项；设置成 gapless / replaygain 属性', () {
+  test('mpv 映射：CUE 起止成 EDL 段（不走会冲掉设备缓冲的 start seek）；设置成属性', () {
     final media = musicMediaOf(
       const MusicPlayItem(
         trackUid: 'x',
-        path: '/m/full.flac',
+        path: '/m/full,1.flac',
         title: 'x',
         startMs: 1000,
-        endMs: 2000,
+        endMs: 2500,
       ),
     );
-    expect(media.start, const Duration(seconds: 1));
-    expect(media.end, const Duration(seconds: 2));
+    // 路径带逗号也不会被当成 EDL 分隔符：%字节数% 前缀。
+    expect(
+      media.uri,
+      'edl://%14%/m/full,1.flac,start=1.000000,length=1.500001',
+    );
+    expect(media.start, isNull);
+    expect(media.end, isNull);
+    expect(
+      musicMediaOf(
+        const MusicPlayItem(
+          trackUid: 'y',
+          path: '/m/日本.flac',
+          title: 'y',
+          startMs: 0,
+        ),
+      ).uri,
+      '/m/日本.flac',
+      reason: '从 0 播到尾的 CUE 首轨等同整文件',
+    );
+    expect(
+      musicEdlUri('/m/日本.flac', startMs: 61000),
+      'edl://%14%/m/日本.flac,start=61.000000,length=86400',
+      reason: '长度按 UTF-8 字节；最后一轨给开放段长，不截段尾',
+    );
     expect(
       musicMpvProperties(
         const MusicOutputSettings(
           gapless: true,
           replayGain: MusicReplayGainMode.album,
         ),
+        platform: MusicOutputPlatform.windows,
       ),
       containsPair('gapless-audio', 'weak'),
     );
@@ -258,10 +295,102 @@ void main() {
         gapless: false,
         replayGain: MusicReplayGainMode.off,
       ),
+      platform: MusicOutputPlatform.windows,
     );
     expect(off['gapless-audio'], 'no');
     expect(off['prefetch-playlist'], 'no');
+    // ReplayGain 恒由后端按曲目用 volume-gain 施加，mpv 自己的 replaygain 关掉。
     expect(off['replaygain'], 'no');
-    expect(off['replaygain-clip'], 'no');
+  });
+
+  test('输出偏好（预放大 / 独占 / 设备 / DSD / 速度 / 音量）经引擎下发给后端', () async {
+    final _FakeBackend b = _FakeBackend();
+    MusicOutputSettings base = const MusicOutputSettings(
+      gapless: true,
+      replayGain: MusicReplayGainMode.off,
+    );
+    final MusicPlayerEngine e = MusicPlayerEngine(
+      backendFactory: () => b,
+      baseSettings: () => base,
+    );
+    addTearDown(e.dispose);
+    await e.playQueue(<MusicPlayItem>[_item('a')]);
+    expect(b.settings?.exclusive, isFalse);
+    base = const MusicOutputSettings(
+      gapless: true,
+      replayGain: MusicReplayGainMode.off,
+      replayGainPreampDb: 4,
+      exclusive: true,
+      audioDevice: 'wasapi/{x}',
+      dsdPcmRate: MusicDsdPcmRate.khz352,
+      speed: 1.25,
+      volume: 70,
+    );
+    await e.reapplySettings();
+    final MusicOutputSettings s = b.settings!;
+    expect(s.replayGainPreampDb, 4);
+    expect(s.exclusive, isTrue);
+    expect(s.dsdPcmRate, MusicDsdPcmRate.khz352);
+    // ReplayGain 档位仍由引擎按播放语境决定（这里是混排 → track）。
+    expect(s.replayGain, MusicReplayGainMode.track);
+    final Map<String, String> win = musicMpvProperties(
+      s,
+      platform: MusicOutputPlatform.windows,
+    );
+    expect(win['ao'], 'wasapi');
+    expect(win['audio-exclusive'], 'yes');
+    expect(win['audio-device'], 'wasapi/{x}');
+    expect(win['speed'], '1.2500');
+    expect(win['volume'], '70.00');
+    expect(
+      win.containsKey('audio-samplerate'),
+      isFalse,
+      reason: '独占时设备跟随源，不全局钉采样率（DSD 走逐文件选项）',
+    );
+    expect(
+      musicMpvProperties(s, platform: MusicOutputPlatform.macos)['ao'],
+      'coreaudio',
+    );
+    expect(
+      musicMpvProperties(
+        s,
+        platform: MusicOutputPlatform.windows,
+        exclusiveAllowed: false,
+      )['audio-exclusive'],
+      'no',
+      reason: '独占打不开后退回共享',
+    );
+    expect(
+      musicMpvProperties(
+        s,
+        platform: MusicOutputPlatform.android,
+      ).containsKey('audio-exclusive'),
+      isFalse,
+      reason: 'Android 走平台 bit-perfect 混音属性，不是 mpv 独占',
+    );
+  });
+
+  test('睡眠定时「播完本曲停」：不再预排下一首，播完停在下一首开头', () async {
+    await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
+    await engine.setStopAfterCurrent(true);
+    expect(backend.next, isNull);
+    backend.controller.add(const MusicBackendCompleted());
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.isPlaying, isFalse);
+    expect(engine.current?.trackUid, 'b');
+    expect(engine.stopAfterCurrent, isFalse);
+    await engine.play();
+    expect(backend.log.last, 'open:b+null');
+  });
+
+  test('Advanced 带曲目 uid 时按 uid 对位（切换期内队列被重排也不错位）', () async {
+    await engine.playQueue(<MusicPlayItem>[
+      _item('a'),
+      _item('b'),
+      _item('c'),
+    ], context: MusicQueueContext.album);
+    backend.controller.add(const MusicBackendAdvanced('c'));
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.current?.trackUid, 'c');
   });
 }

@@ -6,15 +6,17 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
-import 'package:fushi/src/media/music/music_output_backend.dart'
-    show MusicPlayItem;
+import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 /// 一首播完算「听完」的容差。
 const Duration kMusicCompletionSlack = Duration(seconds: 2);
@@ -31,6 +33,17 @@ class MusicSession extends ChangeNotifier {
        _database = database,
        _showMediaNotification = showMediaNotification {
     engine
+      // 独占 / 指定设备打不开、已自动退回：明确提示，不静默（设计 §14）。
+      ..onOutputFallback = (MusicBackendOutputFallback f) {
+        FushiToast.show(
+          msg: switch (f.reason) {
+            MusicOutputFallbackReason.exclusiveUnavailable =>
+              t.music_output_fallback_exclusive,
+            MusicOutputFallbackReason.deviceUnavailable =>
+              t.music_output_fallback_device,
+          },
+        );
+      }
       ..onWillPlay = _onWillPlay
       ..onTrackStarted = _onTrackStarted
       ..addListener(_onEngineChanged);
@@ -69,6 +82,9 @@ class MusicSession extends ChangeNotifier {
   final List<StreamSubscription<Object?>> _subs =
       <StreamSubscription<Object?>>[];
 
+  bool _audioSessionSubscribed = false;
+  bool _resumeAfterInterruption = false;
+
   int? _playEventId;
   MusicPlayItem? _playEventItem;
 
@@ -85,8 +101,70 @@ class MusicSession extends ChangeNotifier {
     }
   }
 
+  /// 系统音频会话（设计 §7.5）：mpv 不管 Android 音频焦点 / iOS AVAudioSession，
+  /// 由 audio_session 接——耳机拔出暂停、来电等打断暂停并在系统允许时恢复。
+  /// 蓝牙 / 线控按键走 audio_service 的媒体按键（[AudioController] 的意图流）。
+  ///
+  /// 每次开播都重新 configure：有声书用的是 spokenAudio 模式，两边共用同一个系统会话。
+  Future<void> _ensureAudioSession() async {
+    final AudioSession session = await AudioSession.instance;
+    await session.configure(
+      const AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
+        avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.none,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        avAudioSessionRouteSharingPolicy:
+            AVAudioSessionRouteSharingPolicy.longFormAudio,
+        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+        androidAudioAttributes: AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.music,
+          usage: AndroidAudioUsage.media,
+        ),
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+        // 被短暂压低（导航播报等）时系统自己降音量，不暂停。
+        androidWillPauseWhenDucked: false,
+      ),
+    );
+    if (_audioSessionSubscribed) return;
+    _audioSessionSubscribed = true;
+    _subs.add(
+      session.becomingNoisyEventStream.listen((_) {
+        // 耳机拔出 / 蓝牙断开：立即暂停，不外放。
+        if (engine.isPlaying) unawaited(engine.pause());
+      }),
+    );
+    _subs.add(session.interruptionEventStream.listen(_onInterruption));
+  }
+
+  void _onInterruption(AudioInterruptionEvent event) {
+    if (event.begin) {
+      switch (event.type) {
+        case AudioInterruptionType.duck:
+          return;
+        case AudioInterruptionType.pause:
+        case AudioInterruptionType.unknown:
+          if (engine.isPlaying) {
+            _resumeAfterInterruption =
+                event.type == AudioInterruptionType.pause;
+            unawaited(engine.pause());
+          }
+      }
+      return;
+    }
+    // 打断结束：只有系统表示可以恢复（暂时性打断，如来电挂断）才自动续播。
+    if (event.type == AudioInterruptionType.pause && _resumeAfterInterruption) {
+      unawaited(engine.play());
+    }
+    _resumeAfterInterruption = false;
+  }
+
   /// 音乐要开始出声：认领媒体会话，正在放的有声书暂停（不停会话，回去还能接着听）。
   void _onWillPlay() {
+    unawaited(
+      _ensureAudioSession().then(
+        (_) async => (await AudioSession.instance).setActive(true),
+      ),
+    );
     _audio.claimSession(MediaSessionOwner.music);
     final controller = _audiobook.controller;
     if (controller != null && controller.isPlaying) {
@@ -167,7 +245,7 @@ class MusicSession extends ChangeNotifier {
     handler.updatePlaybackState(
       playing: engine.isPlaying,
       position: engine.position,
-      speed: 1,
+      speed: engine.currentSettings.speed,
       duration: engine.duration ?? Duration.zero,
     );
   }

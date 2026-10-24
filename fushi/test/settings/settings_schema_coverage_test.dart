@@ -54,6 +54,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
   'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
+  // 预放大 / 独占 / DSD 采样率：设置值 → 引擎输出设置 → mpv 属性由
+  // music_player_engine_test 咬住；真 libmpv 上的实际效果（volume-gain 电平、
+  // WASAPI 独占 audio-out-params、DSD 逐文件 audio-samplerate）在
+  // music_mpv_backend_real_test。
+  'music/ReplayGain pre-amp': 'test/media/music/music_player_engine_test.dart',
+  'music/Exclusive (bit-perfect) output':
+      'test/media/music/music_player_engine_test.dart',
+  'music/DSD to PCM sample rate':
+      'test/media/music/music_player_engine_test.dart',
+  // 响度扫描开关：生效点是后台 FFmpeg ebur128 写库，harness 没有 FFmpeg 与曲目。
+  'music/Measure loudness of untagged tracks':
+      'test/media/music/music_loudness_scanner_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
