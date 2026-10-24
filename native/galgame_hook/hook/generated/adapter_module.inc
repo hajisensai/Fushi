@@ -18,3 +18,4 @@
         fvp_.onModuleLoaded(entry.szModule);
         kogado_hy_.onModuleLoaded(entry.szModule);
         luca_.onModuleLoaded(entry.szModule);
+        knife_.onModuleLoaded(entry.szModule);
