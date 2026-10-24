@@ -4327,13 +4327,13 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   final int? pageInChapter;
   final int? totalPagesInChapter;
 
-  /// v125：书签所在页首字符的章内精确字符偏移（与 [ReaderPositions.charOffset]
+  /// v127：书签所在页首字符的章内精确字符偏移（与 [ReaderPositions.charOffset]
   /// 同计量）。存字符而不是页码：改字号 / 边距后页码会变，字符位置不变。-1 = 无
-  /// 精确偏移（v125 前的旧书签 / 拿不到页范围），跳转回退 [normCharOffset] 分数。
+  /// 精确偏移（v127 前的旧书签 / 拿不到页范围），跳转回退 [normCharOffset] 分数。
   /// 漫画 / PDF 书签按页记，恒 -1。
   final int charOffset;
 
-  /// v125：在线漫画书签所在章的稳定键（`MangaChapterStates.chapterKey`，Mihon 下是
+  /// v127：在线漫画书签所在章的稳定键（`MangaChapterStates.chapterKey`，Mihon 下是
   /// 章 url）。章下标会随源更新漂移，按键找章；本地卷 / EPUB / PDF 为 null。
   final String? chapterKey;
   const BookmarkRow({
