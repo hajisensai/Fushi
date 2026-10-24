@@ -40,6 +40,7 @@ String musicSignalStageLabel(MusicSignalStage stage) => switch (stage) {
   MusicSignalStage.replayGain => t.music_signal_stage_replay_gain,
   MusicSignalStage.speed => t.music_signal_stage_speed,
   MusicSignalStage.filters => t.music_signal_stage_filters,
+  MusicSignalStage.equalizer => t.music_signal_stage_equalizer,
   MusicSignalStage.crossfade => t.music_signal_stage_crossfade,
 };
 
@@ -189,6 +190,12 @@ class _MusicSignalPathPanelState extends State<MusicSignalPathPanel> {
         active: v.stages.contains(MusicSignalStage.speed),
         detail: '×${s.speed.toStringAsFixed(2)}',
       ),
+      // 均衡器（P5）：挂着就是一环（判非 bit-perfect）；关 / 平直时不挂滤镜，这里不出现。
+      if (s.equalizer)
+        _Stage(
+          label: musicSignalStageLabel(MusicSignalStage.equalizer),
+          active: true,
+        ),
       // 交叉淡入：作用于本曲时是一环（判非 bit-perfect）；设置开着但被独占 / 硬件直出
       // 自动停用时标出原因。
       if (s.crossfade ||

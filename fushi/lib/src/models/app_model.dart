@@ -284,6 +284,7 @@ import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
@@ -1608,6 +1609,10 @@ class AppModel with ChangeNotifier {
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
       crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
+      equalizer: MusicEqualizerSettings(
+        enabled: prefsRepo.musicEqEnabled,
+        gainsDb: MusicEqualizerSettings.parseGains(prefsRepo.musicEqGains),
+      ),
     );
   }
 

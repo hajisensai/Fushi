@@ -34,6 +34,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
@@ -280,6 +281,12 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await _setIfChanged(e.key, e.value);
     }
     await _applyGain(_audible);
+    // 均衡器（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 平直 = 空，bit-perfect 不动）；
+    // 装了交叉淡入时由 on_load 钩子与淡入淡出拼进同一条逐文件链（逐文件 `af` 整体替换全局
+    // 的，单挂全局会在淡入淡出的那几首上丢掉均衡）。
+    if (!_crossfadeFilters) {
+      await _setIfChanged('af', musicEqualizerAf(settings.equalizer) ?? '');
+    }
     if (_platform == MusicOutputPlatform.android) {
       if (exclusiveTurnedOff) {
         _androidBitPerfect = null;
@@ -323,7 +330,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     if (_crossfadeFilters) {
       await native.setProperty(
         'file-local-options/af',
-        musicCrossfadeAf(fadeIn: fadeIn ?? Duration.zero),
+        musicComposeAf(<String?>[
+          musicEqualizerAf(_settings.equalizer),
+          musicCrossfadeAf(fadeIn: fadeIn ?? Duration.zero),
+        ]),
       );
       _filteredUids.add(item.trackUid);
     } else {
@@ -690,6 +700,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       if (d.name == device) deviceDescription = d.description;
     }
     final MusicPlayItem? item = _pending ?? _audible;
+    final String rawAf = await read('af');
     return MusicSignalPathSnapshot(
       platform: _platform,
       fileFormat: _nonEmpty(await read('file-format')),
@@ -714,7 +725,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       muted: await read('mute') == 'yes',
       speed: readDouble(await read('speed'), 1),
       pitchCorrection: await read('audio-pitch-correction') == 'yes',
-      userFilters: musicStripCrossfadeFilters(await read('af')),
+      userFilters: musicStripEqualizerFilters(
+        musicStripCrossfadeFilters(rawAf),
+      ),
+      equalizer: musicAfHasEqualizer(rawAf),
       crossfade: item != null && _filteredUids.contains(item.trackUid),
       crossfadeAvailability: musicCrossfadeAvailability(
         _settings,

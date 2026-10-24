@@ -87,6 +87,20 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 属性由 music_server_test 咬住。
   'music/Server streaming quality':
       'test/media/music/server/music_server_test.dart',
+  // 图示均衡器：生效点是音乐 libmpv 实例的 `af`，harness 里没有在播的 mpv。偏好串 → 均衡
+  // 设置 → `af` 链由 music_equalizer_test 咬住；真 libmpv 上的增益 / 关时逐样本不变 /
+  // 与交叉淡入同链在 music_equalizer_real_test。
+  'music/Enable equalizer': 'test/media/music/music_equalizer_test.dart',
+  'music/31 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/62 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/125 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/250 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/500 Hz': 'test/media/music/music_equalizer_test.dart',
+  'music/1 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/2 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/4 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/8 kHz': 'test/media/music/music_equalizer_test.dart',
+  'music/16 kHz': 'test/media/music/music_equalizer_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
@@ -189,6 +190,19 @@ SettingsDestination buildMusicDestination() {
             ),
             onTap: _pickAudioDevice,
           ),
+          // 图示均衡器（P5，可选）：子页里开关 + 10 段；开且不平直即非 bit-perfect（信号路径
+          // 面板单独标「均衡器」），关 / 平直时不挂任何滤镜。
+          SettingsNavigationItem(
+            id: 'music.equalizer',
+            title: t.music_eq_title,
+            subtitleBuilder: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicEqEnabled
+                ? t.music_eq_on
+                : t.music_eq_off,
+            icon: FushiIcons.barChart,
+            showIcon: true,
+            child: _equalizerDestination,
+          ),
           SettingsSegmentedItem<int>(
             id: 'music.dsd_rate',
             title: t.music_dsd_rate_title,
@@ -328,6 +342,78 @@ SettingsDestination buildMusicDestination() {
     ],
   );
 }
+
+/// 均衡器子页：开关 + 每段一个 ±12 dB 滑块 + 复位。改动立即经引擎重新下发（`af`）。
+SettingsDestination _equalizerDestination() => SettingsDestination(
+  id: SettingsDestinationId.music,
+  title: t.music_eq_title,
+  icon: FushiIcons.barChart,
+  sections: <SettingsSection>[
+    SettingsSection(
+      items: <SettingsItem>[
+        SettingsSwitchItem(
+          id: 'music.eq_enabled',
+          title: t.music_eq_enabled_title,
+          subtitle: t.music_eq_enabled_hint,
+          icon: FushiIcons.barChart,
+          defaultValue: false,
+          value: (SettingsContext c) => c.appModel.prefsRepo.musicEqEnabled,
+          onChanged: (SettingsContext c, bool v) async {
+            await c.appModel.prefsRepo.setMusicEqEnabled(v);
+            await c.appModel.musicSession.engine.reapplySettings();
+          },
+        ),
+      ],
+    ),
+    SettingsSection(
+      title: t.music_eq_bands,
+      items: <SettingsItem>[
+        for (int i = 0; i < kMusicEqualizerBandsHz.length; i++)
+          SettingsSliderItem(
+            id: 'music.eq_band_${kMusicEqualizerBandsHz[i]}',
+            title: musicEqualizerBandLabel(kMusicEqualizerBandsHz[i]),
+            icon: FushiIcons.barChart,
+            min: -kMusicEqualizerMaxGainDb,
+            max: kMusicEqualizerMaxGainDb,
+            divisions: (kMusicEqualizerMaxGainDb * 4).round(),
+            defaultValue: 0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) =>
+                '${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)} dB',
+            value: (SettingsContext c) => MusicEqualizerSettings.parseGains(
+              c.appModel.prefsRepo.musicEqGains,
+            )[i],
+            onChanged: (SettingsContext c, double v) async {
+              final List<double> gains = MusicEqualizerSettings.parseGains(
+                c.appModel.prefsRepo.musicEqGains,
+              );
+              gains[i] = (v * 2).roundToDouble() / 2;
+              await c.appModel.prefsRepo.setMusicEqGains(
+                MusicEqualizerSettings.encodeGains(gains),
+              );
+              await c.appModel.musicSession.engine.reapplySettings();
+            },
+          ),
+        SettingsActionItem(
+          id: 'music.eq_reset',
+          title: t.music_eq_reset,
+          icon: FushiIcons.restart,
+          cli: const SettingsCliAction.tap(),
+          onTap: (SettingsContext c) async {
+            await c.appModel.prefsRepo.setMusicEqGains('');
+            await c.appModel.musicSession.engine.reapplySettings();
+            c.refresh();
+          },
+        ),
+      ],
+    ),
+  ],
+);
+
+/// 频段名（`31 Hz` / `1 kHz`）：单位是国际通用写法，不翻译。
+String musicEqualizerBandLabel(int hz) =>
+    hz >= 1000 ? '${hz ~/ 1000} kHz' : '$hz Hz';
 
 /// 识别整个曲库：串行跑（MusicBrainz 1 req/s），进度与结果走 toast。
 Future<void> _identifyLibrary(SettingsContext c) async {

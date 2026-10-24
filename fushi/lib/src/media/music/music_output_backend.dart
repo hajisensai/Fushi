@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 
 /// 一首要播的曲目（CUE 虚拟曲目带起止）。
@@ -110,6 +111,7 @@ class MusicOutputSettings {
     this.dsdPcmRate = MusicDsdPcmRate.khz176,
     this.crossfade = Duration.zero,
     this.crossfadeContinuous = false,
+    this.equalizer = const MusicEqualizerSettings(),
   });
 
   /// mpv `gapless-audio=weak`（同格式真无缝，格式变化时重开设备）。
@@ -138,6 +140,9 @@ class MusicOutputSettings {
   /// 专辑连续曲目 / CUE 拆轨这类本来就该无缝的衔接也交叉淡入（默认否：真无缝优先）。
   final bool crossfadeContinuous;
 
+  /// 图示均衡器（P5，可选）：作用于信号时即非 bit-perfect；关 / 平直时不挂滤镜。
+  final MusicEqualizerSettings equalizer;
+
   MusicOutputSettings copyWith({
     bool? gapless,
     MusicReplayGainMode? replayGain,
@@ -149,6 +154,7 @@ class MusicOutputSettings {
     MusicDsdPcmRate? dsdPcmRate,
     Duration? crossfade,
     bool? crossfadeContinuous,
+    MusicEqualizerSettings? equalizer,
   }) => MusicOutputSettings(
     gapless: gapless ?? this.gapless,
     replayGain: replayGain ?? this.replayGain,
@@ -160,6 +166,7 @@ class MusicOutputSettings {
     dsdPcmRate: dsdPcmRate ?? this.dsdPcmRate,
     crossfade: crossfade ?? this.crossfade,
     crossfadeContinuous: crossfadeContinuous ?? this.crossfadeContinuous,
+    equalizer: equalizer ?? this.equalizer,
   );
 
   @override
@@ -174,7 +181,8 @@ class MusicOutputSettings {
       other.volume == volume &&
       other.dsdPcmRate == dsdPcmRate &&
       other.crossfade == crossfade &&
-      other.crossfadeContinuous == crossfadeContinuous;
+      other.crossfadeContinuous == crossfadeContinuous &&
+      other.equalizer == equalizer;
 
   @override
   int get hashCode => Object.hash(
@@ -188,6 +196,7 @@ class MusicOutputSettings {
     dsdPcmRate,
     crossfade,
     crossfadeContinuous,
+    equalizer,
   );
 }
 
