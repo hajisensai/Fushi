@@ -52,6 +52,24 @@ String distSshExecutable([Map<String, String>? environment]) {
   return 'ssh';
 }
 
+/// Proxy variables never reach a test process: CI has none, and a
+/// `NO_PROXY=127.0.0.1` makes ffmpeg drop an explicit `-http_proxy`, which
+/// turns the media relay tests red on a machine that only set a proxy for
+/// GitHub. ssh workers get them only in the prepare step (prepareEnv).
+const Set<String> kDistStrippedTestEnv = <String>{
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+};
+
+/// [parent] without [kDistStrippedTestEnv] (case-insensitively).
+Map<String, String> distTestEnvironment(Map<String, String> parent) =>
+    <String, String>{
+      for (final MapEntry<String, String> e in parent.entries)
+        if (!kDistStrippedTestEnv.contains(e.key.toUpperCase())) e.key: e.value,
+    };
+
 /// ssh's own exit code for connection-level failures.
 const int kSshConnectionFailure = 255;
 
@@ -462,6 +480,8 @@ class LocalDistWorker extends DistWorker {
           ...chunk,
         ],
         workingDirectory: _fushiDir,
+        environment: distTestEnvironment(Platform.environment),
+        includeParentEnvironment: false,
         runInShell: Platform.isWindows,
       );
       _process = process;

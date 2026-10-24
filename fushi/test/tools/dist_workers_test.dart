@@ -54,6 +54,19 @@ void main() {
     expect(hasSharedConsole(), isTrue);
   });
 
+  test('test processes run without proxy variables, as on CI', () {
+    expect(
+      distTestEnvironment(<String, String>{
+        'PATH': 'p',
+        'HTTPS_PROXY': 'x',
+        'http_proxy': 'x',
+        'NO_PROXY': '127.0.0.1',
+        'all_proxy': 'x',
+      }),
+      <String, String>{'PATH': 'p'},
+    );
+  });
+
   test('the checked-in example config parses', () {
     final List<DistWorkerConfig> workers = readDistWorkers(
       File('tool/dist_test/workers.example.json').readAsStringSync(),
