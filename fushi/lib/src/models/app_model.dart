@@ -1558,7 +1558,9 @@ class AppModel with ChangeNotifier {
   /// 音乐刮削（设计 §8）：MusicBrainz 主源 + AcoustID（有应用 key 才用）+ CAA + VGMdb（开关）。
   late final MusicScrapeService musicScrape = MusicScrapeService(
     database: () => isDatabaseReady ? database : null,
-    acoustidApiKey: () => isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    acoustidApiKey: () => resolveMusicAcoustidApiKey(
+      isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    ),
     vgmdbEnabled: () => isDatabaseReady && prefsRepo.musicVgmdbEnabled,
   );
 

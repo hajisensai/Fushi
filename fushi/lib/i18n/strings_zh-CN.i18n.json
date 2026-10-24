@@ -5011,6 +5011,7 @@
   "music_section_songs": "歌曲",
   "music_section_works": "作品",
   "music_setting_acoustid_key": "AcoustID API key",
+  "music_setting_acoustid_key_builtin_hint": "已内置，可填自己的 key 覆盖。只上传声纹与时长。",
   "music_setting_acoustid_key_hint": "acoustid.org 的应用 key。不填则不做声纹识别；只上传声纹与时长。",
   "music_setting_identify_library": "识别整个曲库",
   "music_setting_identify_library_hint": "MusicBrainz，每秒至多 1 次请求",

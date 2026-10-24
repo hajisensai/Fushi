@@ -259,6 +259,12 @@ void main() {
     ]);
   });
 
+  test('AcoustID key：用户填的优先，没填用内置，两者都空才不可用', () {
+    expect(resolveMusicAcoustidApiKey(' mine ', builtinKey: 'builtin'), 'mine');
+    expect(resolveMusicAcoustidApiKey('  ', builtinKey: 'builtin'), 'builtin');
+    expect(resolveMusicAcoustidApiKey('', builtinKey: ''), '');
+  });
+
   test('曲库批量：串行、统计按途径', () async {
     final MusicLibraryScrapeReport r = await service().scrapeLibrary();
     expect(r.total, 1);

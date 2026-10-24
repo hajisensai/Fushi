@@ -5011,6 +5011,7 @@
   "music_section_songs": "Songs",
   "music_section_works": "Works",
   "music_setting_acoustid_key": "AcoustID API key",
+  "music_setting_acoustid_key_builtin_hint": "Built in; enter your own AcoustID application key to override it. Only the fingerprint and duration are sent.",
   "music_setting_acoustid_key_hint": "Application key from acoustid.org. Without it, fingerprint identification is off; only the fingerprint and duration are sent.",
   "music_setting_identify_library": "Identify library",
   "music_setting_identify_library_hint": "MusicBrainz, at most one request per second",
