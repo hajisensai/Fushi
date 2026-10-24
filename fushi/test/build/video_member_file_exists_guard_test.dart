@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/scan_scale.dart';
+import '../helpers/source_guard.dart';
 
 /// 视频库路径的「文件在不在」只许走 `video_member_file.dart` 的两个入口。
 ///
@@ -36,14 +37,9 @@ final RegExp _assigned = RegExp(
   r'(?:final|var)\s+File\s+(\w+)\s*=\s*File\(\s*([\w.!?]*[vV]ideoPath)\s*\)\s*;',
 );
 
-/// 去掉整行注释：文档里引用反面写法不算违规。
-String _stripLineComments(String source) => source
-    .split('\n')
-    .map((String line) => line.trimLeft().startsWith('//') ? '' : line)
-    .join('\n');
-
 List<String> findBareVideoPathExistsChecks(String source) {
-  final String code = _stripLineComments(source);
+  // 注释（行注释、行尾注释、块注释）里引用反面写法不算违规；遮罩保持下标不变。
+  final String code = maskComments(source);
   final List<String> hits = <String>[];
   for (final RegExpMatch m in _direct.allMatches(code)) {
     hits.add(m.group(0)!);

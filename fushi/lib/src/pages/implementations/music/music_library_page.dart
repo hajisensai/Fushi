@@ -275,21 +275,24 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             ),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: adaptiveSegmentedButton<MusicLibrarySection>(
-                  context: context,
-                  segments: <ButtonSegment<MusicLibrarySection>>[
-                    for (final MusicLibrarySection s
-                        in MusicLibrarySection.values)
-                      ButtonSegment<MusicLibrarySection>(
-                        value: s,
-                        label: Text(musicLibrarySectionLabel(s)),
-                      ),
-                  ],
-                  selected: <MusicLibrarySection>{_section},
-                  onSelectionChanged: (Set<MusicLibrarySection> v) =>
-                      setState(() => _section = v.first),
+              // 桌面端默认 dragDevices 不含鼠标：分段放不下时鼠标也得拖得动。
+              child: HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: adaptiveSegmentedButton<MusicLibrarySection>(
+                    context: context,
+                    segments: <ButtonSegment<MusicLibrarySection>>[
+                      for (final MusicLibrarySection s
+                          in MusicLibrarySection.values)
+                        ButtonSegment<MusicLibrarySection>(
+                          value: s,
+                          label: Text(musicLibrarySectionLabel(s)),
+                        ),
+                    ],
+                    selected: <MusicLibrarySection>{_section},
+                    onSelectionChanged: (Set<MusicLibrarySection> v) =>
+                        setState(() => _section = v.first),
+                  ),
                 ),
               ),
             ),
