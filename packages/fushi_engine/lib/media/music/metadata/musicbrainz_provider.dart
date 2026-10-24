@@ -209,7 +209,7 @@ class MusicBrainzProvider
   }
 
   static const String _releaseInc =
-      'recordings+artist-credits+labels+release-groups+media';
+      'recordings+artist-credits+labels+release-groups';
 
   @override
   Future<List<MusicReleaseTracklist>> searchDiscReleases(

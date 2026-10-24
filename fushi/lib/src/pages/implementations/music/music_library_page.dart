@@ -17,7 +17,6 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
@@ -189,6 +188,16 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     await _reload();
   }
 
+  Future<void> _readCd() async {
+    setState(() => _scanning = true);
+    try {
+      await readAudioCdIntoLibrary(context: context, app: _app);
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+    await _reload();
+  }
+
   Future<void> _reportScan() async {
     final int count = (await _app.database.listMusicTracks()).length;
     FushiToast.show(msg: t.music_scan_done(count: count));
@@ -284,6 +293,15 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                       label: t.music_disc_add,
                       onPressed: _scanning ? null : () => unawaited(_addDisc()),
                     ),
+                    if (musicAudioCdSupported())
+                      FushiToolbarItem(
+                        key: const ValueKey<String>('music_read_cd'),
+                        icon: FushiIcons.audio,
+                        label: t.music_cd_read,
+                        onPressed: _scanning
+                            ? null
+                            : () => unawaited(_readCd()),
+                      ),
                     FushiToolbarItem(
                       key: const ValueKey<String>('music_rescan'),
                       icon: FushiIcons.refresh,
@@ -470,9 +488,6 @@ class _AlbumCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final MusicDiscSourceRow? disc = this.disc;
-    final String? discMember = disc == null
-        ? null
-        : musicDiscBadgeMemberPath(disc);
     final MusicTrackRow? first = tracks.isEmpty ? null : tracks.first;
     final String badge = first == null
         ? ''
@@ -510,16 +525,11 @@ class _AlbumCard extends ConsumerWidget {
                       coverPath: album.coverPath,
                       embeddedFromPath: embeddedCoverPath,
                     ),
-                    if (discMember != null)
+                    if (disc != null)
                       Positioned(
                         left: 6,
                         top: 6,
-                        child: IgnorePointer(
-                          child: DiscFormatBadge(
-                            resolver: ref.read(discFormatResolverProvider),
-                            memberPaths: <String>[discMember],
-                          ),
-                        ),
+                        child: IgnorePointer(child: MusicDiscBadge(disc: disc)),
                       ),
                   ],
                 ),

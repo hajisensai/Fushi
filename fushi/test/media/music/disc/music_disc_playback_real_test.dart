@@ -31,10 +31,7 @@ String? _env(String key) {
 }
 
 /// 用 `ao=pcm` 把后端实际送出的音频落盘（48 kHz 单声道 s16），播完返回秒数。
-Future<double> _playToPcm(
-  List<MusicPlayItem> items,
-  String out,
-) async {
+Future<double> _playToPcm(List<MusicPlayItem> items, String out) async {
   final MpvMusicOutputBackend backend = MpvMusicOutputBackend(
     configuration: const PlayerConfiguration(
       vo: 'null',
@@ -108,7 +105,9 @@ void main() {
         <int>[0, 1800, 4200],
       );
 
-      final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db.close);
       await MusicDiscImportService(db).importChapters(
         info,

@@ -418,6 +418,43 @@ mixin _FushiDbMusic on _$FushiDatabase {
     }
   });
 
+  /// 读一张音频 CD 落库（一个事务）：这是用户显式「重新读盘 / 识别」，专辑与曲目的名字
+  /// 按这一次的结论整行覆盖（入库时刻不动、软删标记清掉）。
+  Future<void> writeMusicAudioCd({
+    required MusicAlbumsCompanion album,
+    required MusicDiscSourcesCompanion disc,
+    required List<MusicTracksCompanion> tracks,
+  }) => transaction(() async {
+    await into(musicDiscSources).insert(
+      disc,
+      onConflict: DoUpdate<$MusicDiscSourcesTable, MusicDiscSourceRow>(
+        (_) => disc.copyWith(addedAt: const Value<int>.absent()),
+      ),
+    );
+    await into(musicAlbums).insert(
+      album,
+      onConflict: DoUpdate<$MusicAlbumsTable, MusicAlbumRow>(
+        (_) => album.copyWith(addedAt: const Value<int>.absent()),
+      ),
+    );
+    for (final MusicTracksCompanion track in tracks) {
+      await into(musicTracks).insert(
+        track,
+        onConflict: DoUpdate<$MusicTracksTable, MusicTrackRow>(
+          (_) => track.copyWith(
+            addedAt: const Value<int>.absent(),
+            deletedAt: const Value<int?>(null),
+          ),
+        ),
+      );
+    }
+    if (tracks.isNotEmpty) {
+      await _reapplyMusicScrapeOverlaySql(this, <String>[
+        for (final MusicTracksCompanion t in tracks) t.trackUid.value,
+      ]);
+    }
+  });
+
   /// 从曲库移除一张盘：光盘来源与专辑行删掉，它的曲目软删（歌单 / 播放记录仍能解析）。
   Future<void> removeMusicDisc({
     required String discUid,

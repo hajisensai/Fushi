@@ -9,12 +9,12 @@ import 'package:drift/drift.dart'
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/disc/music_disc.dart';
 
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
-import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
@@ -170,9 +170,6 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       album.albumUid: album,
     };
     final MusicDiscSourceRow? disc = this.disc;
-    final String? discMember = disc == null
-        ? null
-        : musicDiscBadgeMemberPath(disc);
 
     final Widget header = Wrap(
       spacing: tokens.spacing.section,
@@ -187,15 +184,14 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
               size: 200,
               borderRadius: tokens.radii.groupRadius,
             ),
-            if (discMember != null)
+            if (disc != null)
               Positioned(
                 left: 8,
                 top: 8,
                 child: IgnorePointer(
-                  child: DiscFormatBadge(
+                  child: MusicDiscBadge(
                     key: const ValueKey<String>('music-album-disc-badge'),
-                    resolver: ref.read(discFormatResolverProvider),
-                    memberPaths: <String>[discMember],
+                    disc: disc,
                   ),
                 ),
               ),
@@ -273,13 +269,15 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
                               ),
                         icon: const FushiIcon(FushiIcons.toc),
                         label: Text(
-                          tracks.isEmpty
-                              ? t.music_disc_import_chapters
-                              : t.music_disc_reimport_chapters,
+                          musicDiscImportLabel(
+                            disc,
+                            hasTracks: tracks.isNotEmpty,
+                          ),
                         ),
                       ),
                     ),
-                    if (tracks.isNotEmpty)
+                    if (tracks.isNotEmpty &&
+                        disc.kind != MusicDiscKind.cdda.wire)
                       FushiPressScale(
                         child: FushiOutlinedButton.icon(
                           key: const ValueKey<String>('music_disc_lookup'),

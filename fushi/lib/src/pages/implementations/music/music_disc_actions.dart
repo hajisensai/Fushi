@@ -17,8 +17,13 @@ import 'package:fushi_engine/media/video/disc/disc_image_probe.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_music/fushi_music.dart';
+
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
+import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -37,6 +42,30 @@ String? musicDiscBadgeMemberPath(MusicDiscSourceRow disc) =>
       ),
       _ => null,
     };
+
+/// 光盘专辑封面角标：DVD / BD / UHD 走视频库同一个 [DiscFormatBadge]（BD 要读 `index.bdmv`
+/// 才分得出 UHD），音频 CD 直接是 `CD`。
+class MusicDiscBadge extends ConsumerWidget {
+  const MusicDiscBadge({super.key, required this.disc});
+
+  final MusicDiscSourceRow disc;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (MusicDiscKind.fromWire(disc.kind) == MusicDiscKind.cdda) {
+      return Semantics(
+        label: 'CD',
+        child: const ExcludeSemantics(child: CoverBadge(label: 'CD')),
+      );
+    }
+    final String? member = musicDiscBadgeMemberPath(disc);
+    if (member == null) return const SizedBox.shrink();
+    return DiscFormatBadge(
+      resolver: ref.read(discFormatResolverProvider),
+      memberPaths: <String>[member],
+    );
+  }
+}
 
 /// 章节曲目的默认名（MusicBrainz 对号后会被改掉）。
 String musicDiscChapterDefaultTitle(
@@ -286,6 +315,133 @@ Future<bool> removeMusicDiscFromLibrary({
   return true;
 }
 
+/// 本机能不能读物理光驱（桌面三端）。
+bool musicAudioCdSupported() =>
+    Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+/// 工具栏「读取音频 CD」/ CD 专辑的「重新读盘」：选光驱（只有一台就直接用）→ 读 TOC /
+/// CD-TEXT → MusicBrainz Disc ID 查发行（多张时让用户选）→ 入库。返回专辑 uid（取消 / 失败
+/// 为 null）。
+Future<String?> readAudioCdIntoLibrary({
+  required BuildContext context,
+  required AppModel app,
+  String? device,
+  MusicAudioCdService? service,
+  MusicReleaseProvider? provider,
+}) async {
+  final MusicAudioCdService cd = service ?? MusicAudioCdService(app.database);
+  String? drive = device;
+  if (drive == null) {
+    final List<String> drives = await cd.listDrives();
+    if (!context.mounted) return null;
+    if (drives.isEmpty) {
+      FushiToast.show(
+        msg: t.music_cd_no_drive,
+        severity: ToastSeverity.warning,
+      );
+      return null;
+    }
+    drive = drives.length == 1
+        ? drives.single
+        : await showFushiChoiceDialog<String>(
+            context: context,
+            title: t.music_cd_choose_drive,
+            icon: FushiIcons.audio,
+            options: <FushiChoiceOption<String>>[
+              for (final String d in drives)
+                FushiChoiceOption<String>(
+                  value: d,
+                  label: d,
+                  icon: FushiIcons.audio,
+                ),
+            ],
+          );
+    if (drive == null || !context.mounted) return null;
+  }
+  final FushiProgressDialogHandle progress = showFushiProgressDialog(
+    context: context,
+    title: t.music_cd_reading,
+  );
+  final AudioCdInfo info;
+  List<MusicReleaseTracklist> releases = const <MusicReleaseTracklist>[];
+  final MusicReleaseProvider mb = provider ?? MusicBrainzProvider();
+  try {
+    try {
+      info = await cd.read(drive);
+    } on AudioCdReadException {
+      progress.close();
+      FushiToast.show(
+        msg: t.music_cd_read_failed(device: drive),
+        severity: ToastSeverity.warning,
+      );
+      return null;
+    } on MusicAudioCdNotAudioException {
+      progress.close();
+      FushiToast.show(
+        msg: t.music_cd_not_audio(device: drive),
+        severity: ToastSeverity.warning,
+      );
+      return null;
+    }
+    progress.message.value = t.music_disc_lookup_searching;
+    try {
+      releases = await cd.lookup(info, mb);
+    } on Exception catch (e) {
+      // 查不到网络照样入库（CD-TEXT / 轨号），只提示一句。
+      FushiToast.show(
+        msg: t.music_disc_lookup_failed(error: e.toString()),
+        severity: ToastSeverity.warning,
+      );
+    }
+  } finally {
+    if (provider == null) mb.close();
+    progress.close();
+  }
+  if (!context.mounted) return null;
+  MusicReleaseTracklist? release;
+  if (releases.length == 1) {
+    release = releases.single;
+  } else if (releases.length > 1) {
+    release = await showFushiChoiceDialog<MusicReleaseTracklist>(
+      context: context,
+      title: t.music_disc_lookup_pick,
+      icon: FushiIcons.music,
+      options: <FushiChoiceOption<MusicReleaseTracklist>>[
+        for (final MusicReleaseTracklist r in releases)
+          FushiChoiceOption<MusicReleaseTracklist>(
+            value: r,
+            label: r.title,
+            subtitle: <String>[
+              ?r.artistCredit,
+              ?r.date,
+              ?r.country,
+              if (r.catalogNumbers.isNotEmpty) r.catalogNumbers.first,
+            ].join(' · '),
+            icon: FushiIcons.music,
+          ),
+      ],
+    );
+    if (!context.mounted) return null;
+  } else {
+    FushiToast.show(msg: t.music_cd_lookup_none);
+  }
+  final String albumUid = await cd.import(
+    info,
+    device: drive,
+    release: release,
+    fallbackTitle: (int n) => t.music_cd_track_name(n: n),
+    fallbackAlbumTitle: t.music_cd_album_name,
+  );
+  FushiToast.show(
+    msg: t.music_cd_imported(
+      title: release?.title ?? info.albumTitle ?? t.music_cd_album_name,
+      count: info.audioTracks.length,
+    ),
+    severity: ToastSeverity.success,
+  );
+  return albumUid;
+}
+
 /// 光盘专辑的菜单项。
 enum MusicDiscMenuAction { importChapters, lookup, remove }
 
@@ -326,11 +482,10 @@ Future<void> showMusicDiscAlbumMenu({
       item(
         MusicDiscMenuAction.importChapters,
         FushiIcons.toc,
-        tracks.isEmpty
-            ? t.music_disc_import_chapters
-            : t.music_disc_reimport_chapters,
+        musicDiscImportLabel(disc, hasTracks: tracks.isNotEmpty),
       ),
-      if (tracks.isNotEmpty)
+      if (tracks.isNotEmpty &&
+          MusicDiscKind.fromWire(disc.kind) != MusicDiscKind.cdda)
         item(
           MusicDiscMenuAction.lookup,
           FushiIcons.search,
@@ -350,6 +505,19 @@ Future<void> showMusicDiscAlbumMenu({
   );
 }
 
+/// 「导入」类动作的文字：DVD / BD 是章节导入，音频 CD 是重新读盘（再查一次 Disc ID）。
+String musicDiscImportLabel(
+  MusicDiscSourceRow disc, {
+  required bool hasTracks,
+}) {
+  if (MusicDiscKind.fromWire(disc.kind) == MusicDiscKind.cdda) {
+    return t.music_cd_reread;
+  }
+  return hasTracks
+      ? t.music_disc_reimport_chapters
+      : t.music_disc_import_chapters;
+}
+
 Future<void> runMusicDiscMenuAction({
   required BuildContext context,
   required AppModel app,
@@ -360,7 +528,15 @@ Future<void> runMusicDiscMenuAction({
 }) async {
   switch (action) {
     case MusicDiscMenuAction.importChapters:
-      await importMusicDiscChapters(context: context, app: app, disc: disc);
+      if (MusicDiscKind.fromWire(disc.kind) == MusicDiscKind.cdda) {
+        await readAudioCdIntoLibrary(
+          context: context,
+          app: app,
+          device: disc.path,
+        );
+      } else {
+        await importMusicDiscChapters(context: context, app: app, disc: disc);
+      }
     case MusicDiscMenuAction.lookup:
       await lookupMusicDiscRelease(
         context: context,

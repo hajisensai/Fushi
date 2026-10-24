@@ -30,6 +30,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
 import 'package:media_kit/media_kit.dart';
 
+import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
@@ -64,6 +65,19 @@ typedef MusicResolvedMedia = ({Media media, Map<String, String> fileLocal});
 /// 段并带逐文件选项；盘不在了（读不到 MPLS）时原样交出路径，由 mpv 报打不开、走既有的
 /// 播放失败路径，而不是在这里吞掉。
 Future<MusicResolvedMedia> resolveMusicMedia(MusicPlayItem item) async {
+  if (isMusicCddaPath(item.path)) {
+    // `cdda://` 不能当 EDL 段的源（盘协议在 EDL 里被拒），只能逐文件 start / end：播放器级
+    // seek，轨间不无缝（见 music_audio_cd.dart 文件头）。
+    final int? end = item.endMs;
+    return (
+      media: Media(item.path),
+      fileLocal: <String, String>{
+        'start': ((item.startMs ?? 0) / 1000).toStringAsFixed(6),
+        'end': ?(end == null ? null : (end / 1000).toStringAsFixed(6)),
+        'vid': 'no',
+      },
+    );
+  }
   if (isMusicDiscTitlePath(item.path)) {
     final MusicDiscMediaSource? disc = await resolveMusicDiscMediaSource(
       item.path,
