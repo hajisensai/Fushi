@@ -101,6 +101,37 @@ void main() {
     });
   });
 
+  test('slots: one checkout per slot, seeded from and copying the primary', () {
+    final List<DistWorkerConfig> configs = readDistWorkers(
+      '{"workers": [{"name": "mac", "kind": "ssh-trusted", "os": "macos", '
+      '"host": "u@h", "slots": 3, "workdir": "fd/work"}]}',
+    );
+    final List<DistWorker> workers = createDistWorkers(
+      configs.single,
+      repoRoot: '.',
+    );
+    expect(workers.map((DistWorker w) => w.name), <String>[
+      'mac',
+      'mac.2',
+      'mac.3',
+    ]);
+    expect(workers.map((DistWorker w) => w.config.workdir), <String>[
+      'fd/work',
+      'fd/work-2',
+      'fd/work-3',
+    ]);
+    expect(workers[2].config.seedRepo, 'fd/work');
+    expect(workers[2].config.nativePeer, 'fd/work');
+    expect(workers.first.config.nativePeer, isNull);
+    expect(
+      () => readDistWorkers(
+        '{"workers": [{"name": "a", "kind": "local", "os": "windows", '
+        '"slots": 2}]}',
+      ),
+      throwsA(isA<DistConfigError>()),
+    );
+  });
+
   test('shellQuote survives single quotes', () {
     expect(shellQuote("it's"), r"'it'\''s'");
     expect(shellQuote(r'$HOME'), r"'$HOME'");

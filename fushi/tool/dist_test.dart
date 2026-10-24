@@ -65,7 +65,7 @@ Future<void> main(List<String> args) async {
   }
   final List<DistWorker> workers = <DistWorker>[
     for (final DistWorkerConfig c in configs)
-      createDistWorker(c, repoRoot: repoRoot),
+      ...createDistWorkers(c, repoRoot: repoRoot),
   ];
   if (workers.isEmpty) {
     stderr.writeln('no workers selected');

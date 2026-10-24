@@ -12,6 +12,7 @@
       "host": "user@192.168.1.34",
       "os": "macos",
       "seedRepo": "dev/hibiki",
+      "slots": 3,
       "path": ["$HOME/flutter_3.47.6/bin", "/opt/homebrew/bin", "$HOME/.cargo/bin"],
       "prepareEnv": {
         "LANG": "en_US.UTF-8",

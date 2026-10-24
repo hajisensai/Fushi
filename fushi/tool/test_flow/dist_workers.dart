@@ -83,6 +83,8 @@ class DistWorkerConfig {
     this.prepareEnv = const <String, String>{},
     this.concurrency,
     this.capabilities = const <String>{},
+    this.slots = 1,
+    this.nativePeer,
   });
 
   final String name;
@@ -114,6 +116,34 @@ class DistWorkerConfig {
   /// `flutter test --concurrency`; null = flutter's default.
   final int? concurrency;
   final Set<String> capabilities;
+
+  /// Independent checkouts on this machine, each running its own
+  /// `flutter test`. One process compiles its suites one at a time (measured
+  /// on the M4 Mac: ~1.4 s per suite whatever `--concurrency` is), so more
+  /// processes is what uses more cores; they cannot share a checkout (they
+  /// fight over build/native_assets). ssh workers only.
+  final int slots;
+
+  /// Primary slot's checkout (relative to the remote home) a secondary slot
+  /// copies matching native libraries from instead of building them again.
+  final String? nativePeer;
+
+  /// Slot [index] (2..[slots]) of this machine: its own checkout next to the
+  /// primary one, seeded from the primary's objects.
+  DistWorkerConfig slot(int index) => DistWorkerConfig(
+    name: '$name.$index',
+    kind: kind,
+    platform: platform,
+    host: host,
+    identity: identity,
+    workdir: '$workdir-$index',
+    seedRepo: workdir,
+    path: path,
+    prepareEnv: prepareEnv,
+    concurrency: concurrency,
+    capabilities: capabilities,
+    nativePeer: workdir,
+  );
 
   static final RegExp _name = RegExp(r'^[A-Za-z0-9_-]+$');
   static final RegExp _host = RegExp(r'^[A-Za-z0-9_.-]+@[A-Za-z0-9_.:-]+$');
@@ -191,6 +221,13 @@ class DistWorkerConfig {
     if (concurrency != null && (concurrency is! int || concurrency < 1)) {
       throw DistConfigError('worker $name: concurrency must be >= 1');
     }
+    final Object? slots = json['slots'];
+    if (slots != null && (slots is! int || slots < 1 || slots > 8)) {
+      throw DistConfigError('worker $name: slots must be 1..8');
+    }
+    if (kind == DistWorkerKind.local && slots != null && slots != 1) {
+      throw DistConfigError('worker $name: a local worker has one slot');
+    }
     final String identity = str('identity');
     return DistWorkerConfig(
       name: name,
@@ -208,6 +245,7 @@ class DistWorkerConfig {
             in (json['capabilities'] as List<Object?>?) ?? <Object?>[])
           if (c is String) c,
       },
+      slots: (slots as int?) ?? 1,
     );
   }
 }
@@ -297,13 +335,23 @@ abstract class DistWorker {
   Future<String> status();
 }
 
-DistWorker createDistWorker(
+/// The workers of one config entry: one per slot.
+List<DistWorker> createDistWorkers(
   DistWorkerConfig config, {
   required String repoRoot,
-}) => switch (config.kind) {
-  DistWorkerKind.local => LocalDistWorker(config, repoRoot: repoRoot),
-  DistWorkerKind.sshTrusted => SshDistWorker(config, repoRoot: repoRoot),
-};
+}) {
+  switch (config.kind) {
+    case DistWorkerKind.local:
+      return <DistWorker>[LocalDistWorker(config, repoRoot: repoRoot)];
+    case DistWorkerKind.sshTrusted:
+      final SshDistWorker primary = SshDistWorker(config, repoRoot: repoRoot);
+      return <DistWorker>[
+        primary,
+        for (int i = 2; i <= config.slots; i++)
+          SshDistWorker(config.slot(i), repoRoot: repoRoot, primary: primary),
+      ];
+  }
+}
 
 /// Collects a child's stdout lines, mirrors its stderr into [stderrLog], and
 /// enforces [timeout] by calling [kill].
@@ -352,7 +400,9 @@ class LocalDistWorker extends DistWorker {
 
   @override
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log) async {
-    if (!File('$_fushiDir/.dart_tool/package_config.json').existsSync()) {
+    // pub workspace: the resolution lands in the workspace root's .dart_tool.
+    if (!File('$repoRoot/.dart_tool/package_config.json').existsSync() &&
+        !File('$_fushiDir/.dart_tool/package_config.json').existsSync()) {
       throw DistWorkerError(
         'local checkout has no pub get yet; run '
         'tool/setup_worktree.ps1 first',
@@ -476,9 +526,14 @@ class LocalDistWorker extends DistWorker {
 }
 
 class SshDistWorker extends DistWorker {
-  SshDistWorker(super.config, {required this.repoRoot});
+  SshDistWorker(super.config, {required this.repoRoot, this.primary});
 
   final String repoRoot;
+
+  /// Set on secondary slots: they prepare after the primary, so its native
+  /// libraries can be copied instead of built twice in parallel.
+  final SshDistWorker? primary;
+  final Completer<void> _prepared = Completer<void>();
   Process? _process;
 
   List<String> get _sshBase => <String>[
@@ -525,6 +580,15 @@ class SshDistWorker extends DistWorker {
 
   @override
   Future<void> prepare(DistSnapshot snapshot, String runId, IOSink log) async {
+    await primary?._prepared.future;
+    try {
+      await _prepare(snapshot, runId, log);
+    } finally {
+      if (!_prepared.isCompleted) _prepared.complete();
+    }
+  }
+
+  Future<void> _prepare(DistSnapshot snapshot, String runId, IOSink log) async {
     final String workdir = shellQuote(config.workdir);
     final String seed = config.seedRepo == null
         ? ''
@@ -571,6 +635,8 @@ class SshDistWorker extends DistWorker {
     final String env = <String>[
       for (final MapEntry<String, String> e in config.prepareEnv.entries)
         '${e.key}=${shellQuote(e.value)}',
+      if (config.nativePeer != null)
+        'DIST_NATIVE_PEER="\$HOME"/${shellQuote(config.nativePeer!)}',
     ].join(' ');
     await _sshChecked(
       'checkout',

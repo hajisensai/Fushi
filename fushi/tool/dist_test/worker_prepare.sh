@@ -45,8 +45,20 @@ for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv; do
   stamp="$state/native-$crate.key"
   if [ "$(cat "$stamp" 2>/dev/null || true)" != "$key" ] ||
      [ -z "$(ls "native/$crate/prebuilt/$plat" 2>/dev/null)" ]; then
-    echo "==> build native/$crate"
-    bash "native/$crate/$script"
+    # A secondary slot (DIST_NATIVE_PEER = the primary checkout, prepared
+    # first) copies a library built from the same source tree.
+    peer="${DIST_NATIVE_PEER:-}"
+    if [ -n "$peer" ] &&
+       [ "$(cat "$peer/.git/fushi-dist/native-$crate.key" 2>/dev/null || true)" = "$key" ] &&
+       [ -n "$(ls "$peer/native/$crate/prebuilt/$plat" 2>/dev/null)" ]; then
+      echo "==> copy native/$crate from $peer"
+      mkdir -p "native/$crate/prebuilt"
+      rm -rf "native/$crate/prebuilt/$plat"
+      cp -R "$peer/native/$crate/prebuilt/$plat" "native/$crate/prebuilt/$plat"
+    else
+      echo "==> build native/$crate"
+      bash "native/$crate/$script"
+    fi
     echo "$key" > "$stamp"
   else
     echo "==> native/$crate unchanged"
