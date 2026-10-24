@@ -4,6 +4,7 @@
 // widget 测试里没有 WebView，卡面经 srsCardFaceBuilderProvider 换成纯文本实现。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
@@ -25,6 +26,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -187,6 +189,17 @@ class _LayoutApp extends AppModel {
   @override
   Future<void> setSrsReviewShowIntervals(bool value) async {
     intervals = value;
+    notifyListeners();
+  }
+
+  SrsReviewImageSize imageSize = SrsReviewImageSize.original;
+
+  @override
+  SrsReviewImageSize get srsReviewImageSize => imageSize;
+
+  @override
+  Future<void> setSrsReviewImageSize(SrsReviewImageSize value) async {
+    imageSize = value;
     notifyListeners();
   }
 }
@@ -1670,6 +1683,85 @@ void main() {
       expect(tree.paramsOwner(kid).rwkvQueue, want, reason: '子牌组随继承');
       await _unmount(tester);
     });
+  });
+
+  testWidgets('复习选项「卡面图片大小」：改了即换卡面注入的 CSS；卡面点图回传地址后全屏查看', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addLapis(tester, store, '食べる');
+    final _LayoutApp app = _LayoutApp();
+    await _pumpPage(
+      tester,
+      store: store,
+      apple: false,
+      app: app,
+      page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'D'),
+      overrides: <Override>[
+        srsMediaStoreProvider.overrideWith(
+          (Ref ref) async => SrsMediaStore(Directory.systemTemp),
+        ),
+      ],
+    );
+    SrsCardFace face() =>
+        tester.widget<SrsPlainCardFace>(find.byType(SrsPlainCardFace)).face;
+    expect(face().hostCss, isEmpty, reason: '默认原样：不注入图片样式');
+    expect(face().onImageTap, isNotNull);
+
+    final Finder flat = find.byKey(const ValueKey<String>('srs_review_layout'));
+    if (flat.evaluate().isNotEmpty) {
+      await tester.tap(flat.first);
+    } else {
+      await tester.tap(
+        find
+            .byKey(const ValueKey<String>('fushi_floating_toolbar_overflow'))
+            .first,
+      );
+      await _settle(tester);
+      await tester.tap(find.text(t.srs_review_layout_title).last);
+    }
+    await _settle(tester);
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('srs-review-layout-image-size')),
+    );
+    await _settle(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('srs-review-layout-image-size')),
+        matching: find.text(t.srs_review_layout_image_large),
+      ),
+    );
+    await _settle(tester);
+    expect(app.imageSize, SrsReviewImageSize.large);
+    expect(face().hostCss, srsReviewImageSizeCss(SrsReviewImageSize.large));
+    expect(face().hostCss, contains('.card img{width:100%!important'));
+    Navigator.of(tester.element(find.byType(SrsReviewLayoutSheet))).pop();
+    await _settle(tester);
+
+    // 页内点图脚本经 onSrsImageTap 回传的是改写后的媒体地址：换回媒体名、全屏查看。
+    expect(find.byType(InteractiveViewer), findsNothing);
+    face().onImageTap!('https://srs.local/media/pic%201.png');
+    await _settle(tester);
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    final Image shown = tester.widget<Image>(
+      find.descendant(
+        of: find.byType(InteractiveViewer),
+        matching: find.byType(Image),
+      ),
+    );
+    expect(
+      (shown.image as FileImage).file.path,
+      endsWith('${Platform.pathSeparator}pic 1.png'),
+    );
+    await tester.tap(find.byType(InteractiveViewer));
+    await _settle(tester);
+    expect(find.byType(InteractiveViewer), findsNothing);
+
+    // 不是卡面媒体的地址（远程图）不弹。
+    face().onImageTap!('https://example.com/a.png');
+    await _settle(tester);
+    expect(find.byType(InteractiveViewer), findsNothing);
+    await _unmount(tester);
   });
 
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {

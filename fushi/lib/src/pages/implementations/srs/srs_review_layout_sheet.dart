@@ -46,6 +46,7 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
     final bool floating = ref.watch(srsReviewChromeFloatingProvider);
     final bool hideHardEasy = ref.watch(srsReviewHideHardEasyProvider);
     final double volume = ref.watch(srsReviewVolumeProvider);
+    final SrsReviewImageSize imageSize = ref.watch(srsReviewImageSizeProvider);
     // 「左 / 右」按视觉方向标：RTL 下行首在右边。
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
     return FushiModalSheetFrame(
@@ -124,6 +125,27 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             subtitle: t.srs_review_layout_floating_top_bar_hint,
             value: floating,
             onChanged: (bool v) => app.setSrsReviewChromeFloating(v),
+          ),
+          AdaptiveSettingsSegmentedRow<SrsReviewImageSize>(
+            key: const ValueKey<String>('srs-review-layout-image-size'),
+            title: t.srs_review_layout_image_size,
+            subtitle: t.srs_review_layout_image_size_hint,
+            selected: imageSize,
+            segments: <ButtonSegment<SrsReviewImageSize>>[
+              ButtonSegment<SrsReviewImageSize>(
+                value: SrsReviewImageSize.original,
+                label: Text(t.srs_review_layout_image_original),
+              ),
+              ButtonSegment<SrsReviewImageSize>(
+                value: SrsReviewImageSize.fitWidth,
+                label: Text(t.srs_review_layout_image_fit_width),
+              ),
+              ButtonSegment<SrsReviewImageSize>(
+                value: SrsReviewImageSize.large,
+                label: Text(t.srs_review_layout_image_large),
+              ),
+            ],
+            onChanged: (SrsReviewImageSize v) => app.setSrsReviewImageSize(v),
           ),
           if (showDesignSkin) _designSkinRow(ref, app),
         ],

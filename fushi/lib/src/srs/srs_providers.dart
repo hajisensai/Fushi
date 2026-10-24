@@ -127,6 +127,14 @@ final Provider<SrsReviewReplayButton> srsReviewReplayButtonProvider =
       ),
     );
 
+/// 复习卡面图片大小（按 profile 偏好，默认原样）。
+final Provider<SrsReviewImageSize> srsReviewImageSizeProvider =
+    Provider<SrsReviewImageSize>(
+      (Ref ref) => ref.watch(
+        appProvider.select((AppModel app) => app.srsReviewImageSize),
+      ),
+    );
+
 /// 评分按钮是否显示下次间隔（按 profile 偏好，默认显示）。
 final Provider<bool> srsReviewShowIntervalsProvider = Provider<bool>(
   (Ref ref) => ref.watch(

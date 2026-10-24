@@ -3180,6 +3180,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习卡面图片大小（SrsReviewImageSize.wire）。默认 'original'。
+  String get srsReviewImageSize =>
+      getPref('srs_review_image_size', defaultValue: 'original') as String;
+
+  Future<void> setSrsReviewImageSize(String wire) async {
+    await setPref('srs_review_image_size', wire);
+    notifyListeners();
+  }
+
   // 复习页底部重播键的位置（SrsReviewReplayButton.wire）。默认 'off'。
   String get srsReviewReplayButton =>
       getPref('srs_review_replay_button', defaultValue: 'off') as String;

@@ -64,6 +64,7 @@ class SrsCardFace {
     this.autoplayMedia = false,
     this.onPlayAudio,
     this.onTapEmpty,
+    this.onImageTap,
   });
 
   final String cardId;
@@ -138,6 +139,10 @@ class SrsCardFace {
   /// 收起悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同一口径）。null = 不响应。
   final VoidCallback? onTapEmpty;
 
+  /// 卡面正文里点了图片（`src` 是页内地址：媒体库虚拟域 / 自定义 scheme / `data:`）：
+  /// 宿主据此全屏查看（[srsMediaNameFromUrl] 换回媒体名）。null = 图片点击不拦。
+  final void Function(String src)? onImageTap;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -160,6 +165,7 @@ class SrsCardFace {
         autoplayMedia: autoplayMedia,
         onPlayAudio: onPlayAudio,
         onTapEmpty: onTapEmpty,
+        onImageTap: onImageTap,
       );
 }
 
@@ -414,6 +420,28 @@ final class SrsCardLookupLink extends SrsCardLinkAction {
   final String query;
   final Rect rect;
 }
+
+/// 页内图片点击 → 宿主（见 [kSrsCardImageTapScript]）。
+const String kSrsImageTapHandler = 'onSrsImageTap';
+
+/// 卡面图片点按放大：冒泡阶段收 `.card` 里 `<img>` 的点击，把 `currentSrc` 交给宿主。
+/// 卡片模板自己处理了的点击（链接里的图、带 `onclick` 的图或祖先、已
+/// `preventDefault`）不抢，模板的点图翻转 / 显示提示照常。
+const String kSrsCardImageTapScript = r'''
+(function(){
+  if (window.__fushiSrsImageTap) return;
+  window.__fushiSrsImageTap = true;
+  document.addEventListener('click', function(e){
+    if (e.defaultPrevented || e.button !== 0) return;
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG' || !t.closest('.card')) return;
+    if (t.closest('a[href],button,[onclick]')) return;
+    var src = t.currentSrc || t.src || '';
+    if (!src) return;
+    try { window.flutter_inappwebview.callHandler('onSrsImageTap', src); } catch (err) {}
+  });
+})();
+''';
 
 /// 卡面导航策略：Fushi 来源链接交给 [onSourceLink] 后取消；外壳本身（`about:` /
 /// `data:` 载入）、子框架（卡片里嵌的视频等）放行；其余主框架导航一律取消。
@@ -1830,6 +1858,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             : srsCardFaceBridgeScript(widget.face.bridgeKeys),
       );
       await controller.evaluateJavascript(source: kSrsCardLinkScript);
+      if (widget.face.onImageTap != null) {
+        await controller.evaluateJavascript(source: kSrsCardImageTapScript);
+      }
       final bool height = widget.face.onContentHeight != null;
       final bool wheel = widget.face.onWheel != null;
       final bool zoom = widget.face.onZoomWheel != null;
@@ -1951,6 +1982,16 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                   ? CardSourceLink.tryParse(href)
                   : null;
               if (link != null && mounted) widget.face.onSourceLink?.call(link);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsImageTapHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? src = arguments.isEmpty ? null : arguments.first;
+              if (src is String && src.isNotEmpty && mounted) {
+                widget.face.onImageTap?.call(src);
+              }
               return null;
             },
           );
