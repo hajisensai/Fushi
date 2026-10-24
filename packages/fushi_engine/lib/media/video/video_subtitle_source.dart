@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -598,7 +599,7 @@ Future<EmbeddedSubtitleTrackProbeResult> probeEmbeddedSubtitleTracks(
 ) async {
   final int sizeBytes = _fileSizeOrZero(videoPath);
   final Duration timeout = subtitleExtractTimeoutForBytes(sizeBytes);
-  if (!File(videoPath).existsSync()) {
+  if (!hasLocalMediaFileSync(videoPath)) {
     return EmbeddedSubtitleTrackProbeResult(
       tracks: const <EmbeddedSubtitleTrack>[],
       status: EmbeddedSubtitleTrackProbeStatus.missingFile,

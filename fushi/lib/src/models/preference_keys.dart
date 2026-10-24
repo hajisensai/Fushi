@@ -593,6 +593,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：系列详情页宽屏版式——true = 海报横幅（与竖屏同形），
   // false = 两栏。详情页右上角切换，跨作品记住。
   'video_detail_poster_layout',
+  // bool（三项默认都 true）：原盘会话。auto_fullscreen = 桌面端进原盘会话自动全屏、
+  // 退出恢复进入前窗口状态；launch_animation = 封面放大铺满再淡入盘菜单的启动动画；
+  // open_menu_by_default = 原盘作品详情页主按钮打开原盘菜单（关 = 直接播正片）。
+  'video_disc_auto_fullscreen',
+  'video_disc_launch_animation',
+  'video_disc_open_menu_by_default',
   'video_download_backend_path_mappings',
   'video_download_embedded_installation_id',
   // bool：下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）——管线

@@ -55,6 +55,24 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         name: "app.fushi/window",
         binaryMessenger: controller.engine.binaryMessenger)
       startupWindowChannel.setMethodCallHandler { [weak self] call, result in
+        // App-owned borderless fullscreen (disc sessions); see
+        // MainFlutterWindow.setBorderlessFullscreen.
+        if call.method == "setBorderlessFullscreen"
+          || call.method == "isBorderlessFullscreen"
+        {
+          guard let window = self?.mainFlutterWindow as? MainFlutterWindow else {
+            result(FlutterError(code: "window_unavailable", message: nil, details: nil))
+            return
+          }
+          if call.method == "isBorderlessFullscreen" {
+            result(window.isBorderlessFullscreen)
+            return
+          }
+          let args = call.arguments as? [String: Any]
+          let enabled = args?["fullscreen"] as? Bool ?? false
+          result(window.setBorderlessFullscreen(enabled))
+          return
+        }
         guard call.method == "showStartupWindow" else {
           result(FlutterMethodNotImplemented)
           return

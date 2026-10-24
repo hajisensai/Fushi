@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -191,20 +192,6 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                     ),
                   );
                 },
-                onOpenDiscMenu: (VideoBookRow episode) {
-                  Navigator.push<void>(
-                    context,
-                    adaptivePageRoute<void>(
-                      context: context,
-                      builder: (_) => VideoFushiPage.neutralized(
-                        bookUid: episode.bookUid,
-                        repo: widget.repository,
-                        playlistCollectionId: collection.id,
-                        openBlurayMenu: true,
-                      ),
-                    ),
-                  );
-                },
                 onChanged: widget.onChanged,
                 onDeleteMembersMedia: widget.onDeleteMembersMedia,
                 deleteMembersLocalFilesSubtitle:
@@ -258,6 +245,12 @@ class _StandaloneVideoWorkDetailState
   List<VideoMetadataImageRow> _images = const <VideoMetadataImageRow>[];
   bool _loading = true;
 
+  /// 这部作品是一张原盘（成员路径能反推出盘根）时的那张盘；null = 普通文件。
+  DiscRef? _disc;
+
+  /// [_disc] 在本机开不开得了菜单；null = 能开。
+  DiscMenuUnavailableReason? _discUnavailable;
+
   @override
   void initState() {
     super.initState();
@@ -299,8 +292,16 @@ class _StandaloneVideoWorkDetailState
     final List<VideoMetadataImageRow> images = work == null
         ? const <VideoMetadataImageRow>[]
         : await widget.database.getVideoMetadataImages(workId: work.id);
+    final DiscRef? disc = book == null
+        ? null
+        : collectDiscRefs(<VideoBookRow>[book]).firstOrNull;
+    final DiscMenuUnavailableReason? discUnavailable = disc == null
+        ? null
+        : await probeLocalDiscMenu(disc);
     if (!mounted) return;
     setState(() {
+      _disc = disc;
+      _discUnavailable = discUnavailable;
       _book = book;
       _work = work;
       _credits = credits;
@@ -360,6 +361,9 @@ class _StandaloneVideoWorkDetailState
     final String? status = work?.status?.trim();
     final double? rating = work?.rating;
     final int? runtime = work?.runtimeMinutes;
+    final DiscRef? disc = _disc;
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    final bool started = book.lastPositionMs > 0;
     // M3E 作品详情：宽屏两栏（左 hero sticky、右规格 / 资料 / 人物 / 附件），
     // 窄屏单列。大背景 fanart 优先、没有就拿海报模糊垫底（与系列详情同一判据）。
     return Scaffold(
@@ -378,7 +382,9 @@ class _StandaloneVideoWorkDetailState
             buttonKey: const ValueKey<String>('video-work-resume-fab'),
             watching: true,
             started: book.lastPositionMs > 0,
-            onPressed: () => _playBook(book),
+            labelOverride: discPrimary ? t.video_disc_play : null,
+            icon: discPrimary ? FushiIcons.toc : null,
+            onPressed: () => _onPrimaryPlay(book),
           ),
           header: CollectionDetailHero(
             backdrop: fanart,
@@ -403,19 +409,47 @@ class _StandaloneVideoWorkDetailState
                 ),
             ],
             summary: work?.overview,
-            playLabel: MediaDetailResumeFab.labelFor(
-              watching: true,
-              started: book.lastPositionMs > 0,
-            ),
+            // 原盘开不了菜单时写明原因（主按钮退回普通播放）。
+            continueLabel: disc != null && _discUnavailable != null
+                ? discMenuUnavailableText(_discUnavailable!)
+                : null,
+            playLabel: discPrimary
+                ? t.video_disc_play
+                : MediaDetailResumeFab.labelFor(
+                    watching: true,
+                    started: started,
+                  ),
+            playIcon: discPrimary ? FushiIcons.toc : null,
             playButtonKey: const ValueKey<String>('video-work-play'),
-            onPlay: () => _playBook(book),
+            onPlay: () => _onPrimaryPlay(book),
             secondaryActions: <Widget>[
-              if (blurayDiscRootForPlaylistPath(book.videoPath) != null)
+              if (disc != null && discPrimary)
+                started
+                    ? MediaDetailSecondaryButton(
+                        buttonKey: const ValueKey<String>(
+                          'video-work-disc-continue',
+                        ),
+                        icon: FushiIcons.history,
+                        label: t.video_disc_continue_at(
+                          time: formatDiscResumePosition(book.lastPositionMs),
+                        ),
+                        onPressed: () => _playBook(book),
+                      )
+                    : MediaDetailSecondaryButton(
+                        buttonKey: const ValueKey<String>(
+                          'video-work-disc-main-title',
+                        ),
+                        icon: FushiIcons.playCircle,
+                        label: t.video_disc_play_main_title,
+                        onPressed: () => _playBook(book),
+                      )
+              else if (disc != null && _discUnavailable == null)
+                // 「原盘默认进入菜单」关着：主按钮直接播正片，菜单入口留在这里。
                 MediaDetailSecondaryButton(
                   buttonKey: const ValueKey<String>('video-work-disc-menu'),
                   icon: FushiIcons.toc,
-                  label: t.video_disc_open_menu,
-                  onPressed: () => _playBook(book, openBlurayMenu: true),
+                  label: t.video_disc_play,
+                  onPressed: () => _openDisc(disc),
                 ),
             ],
           ),
@@ -568,7 +602,39 @@ class _StandaloneVideoWorkDetailState
   static bool _isTrailer(VideoMetadataExtraRow extra) =>
       extra.kind == 'trailer' || extra.kind == 'teaser';
 
-  void _playBook(VideoBookRow book, {bool openBlurayMenu = false}) {
+  DiscPrimaryKind get _discPrimaryKind => resolveDiscPrimaryKind(
+    hasDisc: _disc != null,
+    openMenuByDefault: discOpenMenuByDefaultOf(context),
+    unavailable: _discUnavailable,
+  );
+
+  void _onPrimaryPlay(VideoBookRow book) {
+    final DiscRef? disc = _disc;
+    if (disc != null && _discPrimaryKind == DiscPrimaryKind.playDisc) {
+      _openDisc(disc);
+      return;
+    }
+    _playBook(book);
+  }
+
+  void _openDisc(DiscRef disc) {
+    unawaited(
+      openDiscSession(
+        context: context,
+        repo: widget.repository,
+        book: disc.book,
+        cover:
+            _image('poster') ??
+            _image('cover') ??
+            resolveMediaCoverImage(
+              kind: MediaKind.video,
+              localPath: disc.book.coverPath,
+            ),
+      ),
+    );
+  }
+
+  void _playBook(VideoBookRow book) {
     Navigator.push<void>(
       context,
       adaptivePageRoute<void>(
@@ -576,7 +642,6 @@ class _StandaloneVideoWorkDetailState
         builder: (_) => VideoFushiPage.neutralized(
           bookUid: book.bookUid,
           repo: widget.repository,
-          openBlurayMenu: openBlurayMenu,
         ),
       ),
     );

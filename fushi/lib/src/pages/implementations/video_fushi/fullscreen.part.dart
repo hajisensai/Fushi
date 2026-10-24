@@ -97,7 +97,10 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// （快路径直接翻真 / 慢路径 [_promoteVideoReady]）都调它，一次性闸门去重。
   void _scheduleInitialFullscreenIfNeeded() {
     if (_didInitialFullscreen) return;
-    if (!widget.initialFullscreen || isMobilePlatform) {
+    // 原盘会话（桌面、「播放原盘时自动全屏」开）同样在就绪后进全屏路由；退出会话时
+    // 路由 pop → runner 按进入前保存的 WINDOWPLACEMENT 还原最大化 / 尺寸 / 位置。
+    if (!(widget.initialFullscreen || _wantsDiscAutoFullscreen) ||
+        isMobilePlatform) {
       _didInitialFullscreen = true;
       return;
     }
@@ -227,7 +230,9 @@ extension _VideoFullscreen on _VideoFushiPageState {
               child: LookupOwnerRouteProbe(
                 onChanged: _onLookupOwnerRouteChanged,
                 child: VideoFullscreenBackScope(
-                  dismissTopLayer: _dismissTopForegroundLayer,
+                  dismissTopLayer: () =>
+                      _dismissTopForegroundLayer() ||
+                      _discSessionShowBarOnBack(),
                   exitFullscreen: _exitVideoFullscreenOnBack,
                   child: Material(
                     child: FushiAppUiScaleNeutralizer(
@@ -421,6 +426,12 @@ extension _VideoFullscreen on _VideoFushiPageState {
   /// 执行体）；全屏 controls 尚未挂上 / 已卸载拿不到 context 时，直接 pop 本路由——
   /// 真 pop 会照常触发 media_kit 的退原生全屏与 [_onVideoFullscreenRouteClosed]。
   void _exitVideoFullscreenOnBack() {
+    // 原盘会话的全屏是会话自己进的：控制栏开着再按返回 = 退出整个原盘会话（退全屏
+    // 并回详情页），不是只退全屏留在菜单页。
+    if (_discSessionSurfaceActive) {
+      unawaited(_exitDiscSession());
+      return;
+    }
     final BuildContext? controlsContext = _videoControlsContext;
     if (controlsContext != null &&
         controlsContext.mounted &&
@@ -479,6 +490,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
         await WindowCaptionChannel.setFullscreen(true);
         return;
       }
+      // 原盘会话在 macOS 上用应用自有的无边框全屏：系统原生全屏会把 Esc 归系统，
+      // 会话的「Esc 呼出控制栏 / 再按退出」就失效了。
+      if (Platform.isMacOS && widget.openBlurayMenu) {
+        if (await WindowCaptionChannel.setBorderlessFullscreen(true)) {
+          _macBorderlessFullscreen = true;
+          return;
+        }
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscSession.macFullscreen',
+          'borderless fullscreen refused by the runner; using native fullscreen',
+        );
+      }
       await defaultEnterNativeFullscreen();
       return;
     }
@@ -510,6 +533,13 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 闪一下标题栏。
         await WindowCaptionChannel.setFullscreen(false);
         FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
+        return;
+      }
+      if (_macBorderlessFullscreen) {
+        // 与进入对称：还原无边框全屏之前的 styleMask / frame（含「缩放」后的尺寸）。
+        _macBorderlessFullscreen = false;
+        await WindowCaptionChannel.setBorderlessFullscreen(false);
+        FushiDesktopTitleBar.reassertMacTrafficLights();
         return;
       }
       await defaultExitNativeFullscreen();

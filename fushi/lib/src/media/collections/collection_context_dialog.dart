@@ -60,6 +60,7 @@ Future<void> showCollectionContextDialog({
   String? deleteMembersStatisticsSubtitle,
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
+  List<DialogListAction> leadingListActions = const <DialogListAction>[],
   Widget? cover,
   ImageProvider? coverImage,
 }) async {
@@ -92,6 +93,13 @@ Future<void> showCollectionContextDialog({
         launchLabel: t.collection_view_all,
         onLaunch: () => closeThen(onOpenDetail),
         listActions: <DialogListAction>[
+          // 媒体特有的首项（视频原盘合集：「进入原盘菜单」）。同样统一包 closeThen。
+          for (final DialogListAction action in leadingListActions)
+            DialogListAction(
+              label: action.label,
+              icon: action.icon,
+              onPressed: () => closeThen(action.onPressed),
+            ),
           DialogListAction(
             label: t.rename_collection,
             icon: Icons.drive_file_rename_outline,

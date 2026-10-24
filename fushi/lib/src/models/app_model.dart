@@ -19,6 +19,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -4606,6 +4607,23 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
 
+  /// 原盘会话三项（落 Drift preferences，默认都开）：桌面自动全屏 / 启动动画 /
+  /// 详情页主按钮默认进菜单。
+  bool get videoDiscAutoFullscreen => prefsRepo.videoDiscAutoFullscreen;
+
+  Future<void> setVideoDiscAutoFullscreen(bool value) =>
+      prefsRepo.setVideoDiscAutoFullscreen(value);
+
+  bool get videoDiscLaunchAnimation => prefsRepo.videoDiscLaunchAnimation;
+
+  Future<void> setVideoDiscLaunchAnimation(bool value) =>
+      prefsRepo.setVideoDiscLaunchAnimation(value);
+
+  bool get videoDiscOpenMenuByDefault => prefsRepo.videoDiscOpenMenuByDefault;
+
+  Future<void> setVideoDiscOpenMenuByDefault(bool value) =>
+      prefsRepo.setVideoDiscOpenMenuByDefault(value);
+
   /// 底部细进度条开关（落 Drift preferences，默认关）：控制条淡出后在视频最下方
   /// 留一条主题色细线。小窗档恒显、不受它管，见 `videoSlimProgressBarVisible`。
   bool get videoSlimProgressBar => prefsRepo.videoSlimProgressBar;
@@ -6093,8 +6111,8 @@ class AppModel with ChangeNotifier {
     final VideoBookRow? row =
         await VideoBookRepository(database).getByBookUid(videoId);
     if (row == null) return null;
-    final File file = File(row.videoPath);
-    return await file.exists() ? file.path : null;
+    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
+    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。

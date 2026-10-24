@@ -68,10 +68,73 @@ class MainFlutterWindow: NSWindow {
   // synthetic key events at the Flutter framework level, so they don't need the
   // OS window to be key.
   override var canBecomeKey: Bool {
-    return hiddenTestMode ? false : super.canBecomeKey
+    if hiddenTestMode { return false }
+    // A borderless window refuses key status by default; the app-owned
+    // fullscreen below must keep receiving keyboard (Esc / arrows).
+    return isBorderlessFullscreen ? true : super.canBecomeKey
   }
 
   override var canBecomeMain: Bool {
-    return hiddenTestMode ? false : super.canBecomeMain
+    if hiddenTestMode { return false }
+    return isBorderlessFullscreen ? true : super.canBecomeMain
+  }
+
+  // MARK: App-owned borderless fullscreen (disc sessions)
+  //
+  // AppKit's native fullscreen (`toggleFullScreen`) moves the window to its own
+  // Space and lets the system claim Esc, so the disc session's Esc (summon the
+  // control bar / leave the disc) never reaches Flutter. Instead the window
+  // drops its title bar, covers the current screen, auto-hides menu bar and
+  // Dock, and on exit restores exactly the style mask, level, presentation
+  // options and frame it had before (a zoomed window is restored by frame).
+  // Dart side: WindowCaptionChannel.setBorderlessFullscreen.
+
+  private struct BorderlessRestoreState {
+    let frame: NSRect
+    let styleMask: NSWindow.StyleMask
+    let level: NSWindow.Level
+    let presentation: NSApplication.PresentationOptions
+    let collectionBehavior: NSWindow.CollectionBehavior
+  }
+
+  private var borderlessRestore: BorderlessRestoreState?
+
+  var isBorderlessFullscreen: Bool { borderlessRestore != nil }
+
+  /// Returns false when the request cannot be honoured (already in AppKit's
+  /// native fullscreen, or no screen to cover). Idempotent per direction.
+  @discardableResult
+  func setBorderlessFullscreen(_ enabled: Bool) -> Bool {
+    if enabled {
+      if borderlessRestore != nil { return true }
+      // Never stack on top of AppKit's own fullscreen: its Space owns the frame.
+      if styleMask.contains(.fullScreen) { return false }
+      guard let screen = self.screen ?? NSScreen.main else { return false }
+      borderlessRestore = BorderlessRestoreState(
+        frame: frame,
+        styleMask: styleMask,
+        level: level,
+        presentation: NSApp.presentationOptions,
+        collectionBehavior: collectionBehavior)
+      // Keep fullSizeContentView so macos_window_utils' content layout does not
+      // jump; dropping .titled/.resizable removes the frame and traffic lights.
+      styleMask = [.borderless, .fullSizeContentView]
+      // The green button / ⌃⌘F must not start AppKit fullscreen on top of ours.
+      collectionBehavior.remove(.fullScreenPrimary)
+      collectionBehavior.insert(.fullScreenNone)
+      NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
+      setFrame(screen.frame, display: true, animate: false)
+      makeKeyAndOrderFront(nil)
+      return true
+    }
+    guard let restore = borderlessRestore else { return true }
+    borderlessRestore = nil
+    NSApp.presentationOptions = restore.presentation
+    styleMask = restore.styleMask
+    collectionBehavior = restore.collectionBehavior
+    level = restore.level
+    setFrame(restore.frame, display: true, animate: false)
+    makeKeyAndOrderFront(nil)
+    return true
   }
 }

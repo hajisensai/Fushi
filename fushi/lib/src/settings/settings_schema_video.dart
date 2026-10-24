@@ -88,6 +88,48 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 原盘会话三项（2026-10-24 BD/DVD 原盘交互改造）：纯 pref，默认都开。播放页
+          // 面板不单列（无 VideoPlacement）——它们决定的是「怎么进原盘会话」，进了会话
+          // 再改没有意义，下一次进入生效。
+          SettingsSwitchItem(
+            id: 'video.playback.disc_auto_fullscreen',
+            title: t.video_setting_disc_auto_fullscreen,
+            subtitle: t.video_setting_disc_auto_fullscreen_hint,
+            icon: Icons.fullscreen_outlined,
+            // 移动端视频页全程横屏沉浸，没有窗口全屏这回事。
+            visible: (_) => isDesktopPlatform,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscAutoFullscreen,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscAutoFullscreen(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.disc_launch_animation',
+            title: t.video_setting_disc_launch_animation,
+            icon: Icons.animation_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscLaunchAnimation,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscLaunchAnimation(value);
+            },
+            defaultValue: true,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.disc_open_menu_by_default',
+            title: t.video_setting_disc_open_menu_by_default,
+            subtitle: t.video_setting_disc_open_menu_by_default_hint,
+            icon: Icons.album_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDiscOpenMenuByDefault,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoDiscOpenMenuByDefault(
+                value,
+              );
+            },
+            defaultValue: true,
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。

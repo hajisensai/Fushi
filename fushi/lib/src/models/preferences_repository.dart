@@ -1866,6 +1866,36 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 原盘会话自动全屏（仅桌面端，默认开）：进原盘会话时窗口切全屏，退出时恢复进入前
+  /// 的窗口状态（最大化 / 尺寸 / 位置）。
+  bool get videoDiscAutoFullscreen =>
+      getPref('video_disc_auto_fullscreen', defaultValue: true) as bool;
+
+  Future<void> setVideoDiscAutoFullscreen(bool value) async {
+    await setPref('video_disc_auto_fullscreen', value);
+    notifyListeners();
+  }
+
+  /// 原盘启动动画（默认开）：封面从卡片位置放大铺满再淡入盘菜单；减弱动态效果 /
+  /// 墨水屏下时长本就归零。
+  bool get videoDiscLaunchAnimation =>
+      getPref('video_disc_launch_animation', defaultValue: true) as bool;
+
+  Future<void> setVideoDiscLaunchAnimation(bool value) async {
+    await setPref('video_disc_launch_animation', value);
+    notifyListeners();
+  }
+
+  /// 原盘默认进入菜单（默认开）：原盘作品详情页的主按钮打开原盘菜单；关掉后主按钮
+  /// 直接播放正片，菜单入口留在次按钮。
+  bool get videoDiscOpenMenuByDefault =>
+      getPref('video_disc_open_menu_by_default', defaultValue: true) as bool;
+
+  Future<void> setVideoDiscOpenMenuByDefault(bool value) async {
+    await setPref('video_disc_open_menu_by_default', value);
+    notifyListeners();
+  }
+
   /// 底部细进度条开关：控制条淡出后，在视频最下方留一条主题色细线
   /// （B 站 / YouTube 同款）。**默认关**——控制条淡出本身就是「把画面让干净」，
   /// 再留一条常亮的线等于把这个意图撤回一半；想要的人去设置里开。getPref 仅在

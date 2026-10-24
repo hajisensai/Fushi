@@ -4,6 +4,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath, isDiscMemberPath;
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -13,9 +15,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 String _legacyMenuTitleName(String discRootPath, String playlistId) =>
     '${p.basename(p.normalize(discRootPath))} · $playlistId';
 
+/// [videoPath] 是不是盘根为 [normalizedRoot] 的那张原盘上的成员（蓝光 / DVD 同一判据）。
 bool _onDisc(String videoPath, String normalizedRoot) {
-  if (!isBlurayPlaylistPath(videoPath)) return false;
-  final String? root = blurayDiscRootForPlaylistPath(videoPath);
+  final String? root = discRootForMemberPath(videoPath);
   return root != null && normalizeVideoPath(root) == normalizedRoot;
 }
 
@@ -204,8 +206,8 @@ typedef BlurayExtraDeletionTombstone = ({
   String entryKey,
 });
 
-/// 用户删除 [bookUids] **之前**调用：认出其中的蓝光盘特典（盘内 `.mpls`、不是任何
-/// 合集成员——标题都在盘合集里），返回它们该记的删除墓碑。
+/// 用户删除 [bookUids] **之前**调用：认出其中的原盘特典（蓝光盘内 `.mpls` / DVD
+/// `TITLE_nn.dvdtitle`、不是任何合集成员——标题都在盘合集里），返回它们该记的删除墓碑。
 ///
 /// 特典不进盘合集，删掉它不会留下任何成员墓碑；下一次重扫又按 `disc.extras` 原样
 /// 建回来（PR #2058 审查）。墓碑挂在盘合集的自然键下：扫描器导入特典前按它跳过；
@@ -219,7 +221,8 @@ Future<List<BlurayExtraDeletionTombstone>> planBlurayExtraDeletionTombstones(
   final List<VideoBookRow> targets = <VideoBookRow>[];
   for (final String uid in bookUids.toSet()) {
     final VideoBookRow? row = await db.getVideoBookByBookUid(uid);
-    if (row != null && isBlurayPlaylistPath(row.videoPath)) targets.add(row);
+    // 蓝光与 DVD 的特典同一套墓碑（盘合集自然键 + 成员基身份）。
+    if (row != null && isDiscMemberPath(row.videoPath)) targets.add(row);
   }
   if (targets.isEmpty) return const <BlurayExtraDeletionTombstone>[];
   final List<MediaCollectionItemRow> items = await db.getAllCollectionItems();
@@ -239,7 +242,7 @@ Future<List<BlurayExtraDeletionTombstone>> planBlurayExtraDeletionTombstones(
   final List<BlurayExtraDeletionTombstone> result =
       <BlurayExtraDeletionTombstone>[];
   for (final VideoBookRow row in extras) {
-    final String? discRoot = blurayDiscRootForPlaylistPath(row.videoPath);
+    final String? discRoot = discRootForMemberPath(row.videoPath);
     if (discRoot == null) continue;
     final String root = normalizeVideoPath(discRoot);
     if (!collectionNameByRoot.containsKey(root)) {

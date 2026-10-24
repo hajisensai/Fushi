@@ -228,13 +228,18 @@ extension VideoDiscMenuController on VideoPlayerController {
   /// Clicks the authored button at normalized video coordinates (select +
   /// activate in one native step). There is deliberately no hover counterpart:
   /// see [videoDiscNavigationCommand].
-  Future<void> clickDiscMenu(double x, double y) async {
-    await _sendDiscCommand(
-      videoDiscNavigationCommand('mouse-click', x: x, y: y),
-    );
-  }
+  ///
+  /// Returns whether the disc consumed the click. Measured on a real HDMV disc
+  /// (2026-10-24, handoff step 0): a click on an authored button is consumed,
+  /// a click on blank space is not (libbluray `_mouse_move` reports no valid
+  /// button, so `BD_VK_MOUSE_ACTIVATE` is refused). The page uses this as the
+  /// "clicked blank space" signal for its session bar.
+  Future<bool> clickDiscMenu(double x, double y) =>
+      _sendDiscCommand(videoDiscNavigationCommand('mouse-click', x: x, y: y));
 
-  Future<void> _sendDiscCommand(List<String> command) async {
+  /// Returns false only when the disc did not consume an input command; a stale
+  /// load also reports true (nothing for the caller to act on).
+  Future<bool> _sendDiscCommand(List<String> command) async {
     final Player? player = _player;
     final int token = _loadToken;
     if (player == null ||
@@ -248,7 +253,8 @@ extension VideoDiscMenuController on VideoPlayerController {
     }
     final dynamic native = player.platform;
     await native.getPropertyAsync('mpv-version', waitForInitialization: false);
-    if (!_isCurrentLoad(player, token)) return;
+    if (!_isCurrentLoad(player, token)) return true;
+    bool consumed = true;
     if (isVideoDiscInputCommand(command)) {
       // An unconsumed key/click is the disc's own no-op (see
       // isVideoDiscInputCommand), not a failure the user must be told about.
@@ -257,7 +263,8 @@ extension VideoDiscMenuController on VideoPlayerController {
       // diagnostic log, and let the post-command sample below decide the menu
       // state — an inactive navigation is surfaced there as
       // 'navigation-open-failed', never inferred from this result.
-      if (!await runVideoDiscInputCommand(native, command)) {
+      consumed = await runVideoDiscInputCommand(native, command);
+      if (!consumed) {
         ErrorLogService.instance.logDiagnostic(
           'VideoDiscMenu.input',
           'input not consumed by disc: ${command.join(' ')}',
@@ -269,6 +276,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     // A sampler already in flight may have read the pre-command title; the
     // sampler then reads once more, so completion means a post-command snapshot.
     await _sampleDiscMenu(player, token);
+    return consumed;
   }
 
   /// Completes after a snapshot read that started after this call. A request

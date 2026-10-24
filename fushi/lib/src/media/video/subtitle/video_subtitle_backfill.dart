@@ -20,6 +20,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_video_search_assistant.dart';
@@ -161,13 +162,13 @@ class VideoSubtitleBackfillService {
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
     }
-    final File video = File(target.videoPath);
-    if (!video.existsSync()) {
+    if (!videoPathFileExistsSync(target.videoPath)) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
       );
     }
+    final File video = File(target.videoPath);
     // 目录里已经躺着 sidecar 就当已有字幕——它可能是用户手放的，也可能是下载
     // 流水线放的。两种都不该被覆盖。
     if (_existingSidecars(video).isNotEmpty) {

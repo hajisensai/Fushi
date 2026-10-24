@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -225,7 +226,7 @@ class SubtitleEmbeddedFontLoader {
 
     final Set<String> families = <String>{};
     try {
-      if (!File(videoPath).existsSync()) {
+      if (!hasLocalMediaFileSync(videoPath)) {
         _byVideoPath[videoPath] = families;
         return families;
       }
