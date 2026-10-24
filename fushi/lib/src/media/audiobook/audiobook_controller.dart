@@ -302,6 +302,33 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 控制器只报事件不做统计判断，与 [onBoundarySkip] 同样保持与 reader 解耦。
   void Function(AudioCue cue)? onExplicitCueJump;
 
+  /// 大跨度音频跳转回调：一次显式 seek（拖进度 / 系统媒体控件拖动 / 点句播放 /
+  /// 章节定位，即 [seekGlobalMs] / [seekMs] / [skipToCue] 三个漏斗）要把全书位置
+  /// 挪动至少 [audioJumpThresholdMs] 时，在物理 seek **之前**带上出发点的全书
+  /// 毫秒触发。reader 借此把出发点压进「跳转回退」历史。快进快退
+  /// （[seekRelative]）是步进不是跳转，不报；逐句切换跨度小于阈值，自然不报。
+  void Function(int fromGlobalMs)? onBeforeAudioJump;
+
+  /// 音频移动多远才算「跳转」：逐句、几秒的修正不进回退历史。
+  static const int audioJumpThresholdMs = 15000;
+
+  void _reportAudioJump(int targetGlobalMs) {
+    final void Function(int)? listener = onBeforeAudioJump;
+    if (listener == null) return;
+    final int fromMs = globalPosition.inMilliseconds;
+    if ((targetGlobalMs - fromMs).abs() < audioJumpThresholdMs) return;
+    listener(fromMs);
+  }
+
+  /// 当前文件之前所有文件的累计时长：文件内偏移 → 全书毫秒。
+  int _globalBaseOfFile(int fileIndex) {
+    int base = 0;
+    for (int i = 0; i < fileIndex && i < _fileDurationsMs.length; i++) {
+      base += _fileDurationsMs[i];
+    }
+    return base;
+  }
+
   /// 对齐 Sasayaki `hasPlayedOnce`：true 之前不允许跨章自动翻页，避免
   /// 打开书 / 恢复位置瞬间 cue 与 reader 当前章不一致就立刻跳章，
   /// 把用户当前阅读位置吃掉。在首次 [play] 调用时翻为 true，不会复位
@@ -736,8 +763,9 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 未就绪）时退回 [seekMs]。有声书面板的整书进度条用它。
   Future<void> seekGlobalMs(int globalMs) async {
     await _loadReady.future;
+    _reportAudioJump(globalMs);
     if (_fileDurationsMs.isEmpty) {
-      await seekMs(globalMs);
+      await _seekWithinFile(globalMs);
       return;
     }
     final ({int fileIndex, int offsetMs}) target = splitGlobalMs(
@@ -746,7 +774,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     );
     final int currentIndex = _player.currentIndex ?? 0;
     if (target.fileIndex == currentIndex) {
-      await seekMs(target.offsetMs);
+      await _seekWithinFile(target.offsetMs);
       return;
     }
     _clearExplicitSeekSuppression();
@@ -1271,6 +1299,14 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 避免 just_audio 将位置重置到 0。
   Future<void> seekMs(int positionMs) async {
     await _loadReady.future;
+    _reportAudioJump(_globalBaseOfFile(_player.currentIndex ?? 0) + positionMs);
+    await _seekWithinFile(positionMs);
+  }
+
+  /// [seekMs] 的本体，不报 [onBeforeAudioJump]：[seekGlobalMs] 已在入口报过、
+  /// [seekRelative] 是步进不是跳转。
+  Future<void> _seekWithinFile(int positionMs) async {
+    await _loadReady.future;
     // 手动 seek（拖进度条 / 快进快退，seekRelative 也经此）是一个全新的、取代
     // 任何 in-flight 显式 seek（skipToCue / playCueOnce）的用户意图：**无条件**先
     // 复位抑制窗——放在 duration 守卫之前，即便 duration 尚未就绪、物理 seek 因
@@ -1407,7 +1443,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       0,
       duration.inMilliseconds,
     );
-    await seekMs(newMs);
+    await _seekWithinFile(newMs);
   }
 
   /// 跳转到指定 cue 的起始位置。
@@ -1458,6 +1494,9 @@ class AudiobookPlayerController extends ChangeNotifier {
       return;
     }
     final int positionMs = _clampToKnownDuration(mappedPosition.positionMs);
+    _reportAudioJump(
+      _globalBaseOfFile(mappedPosition.audioFileIndex) + positionMs,
+    );
     // BUG-1080：目标已成功定位、跳转必然发生 → 通知 reader 抬统计字数水位到目标
     // cue（跳过的段落不算已读）。放在物理 seek 之前，保证水位在任何后续进度回调
     // （seek 落地触发的 WebView 跟随滚动 → _refreshProgress）之前就位。

@@ -474,6 +474,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
                 data: _lyricsPlayerData(ctrl),
                 callbacks: _lyricsPlayerCallbacks(ctrl),
                 onHtmlThemeChanged: _applyLyricsHtmlTheme,
+                // 跳转回退胶囊：覆盖层常驻 chrome，有历史就显示。
+                navigationAccessory: _jumpHistory.isEmpty
+                    ? null
+                    : _jumpHistoryPill(visible: true),
               );
             },
           ),

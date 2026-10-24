@@ -316,6 +316,9 @@ import 'package:fushi/src/media/video/video_subtitle_sync_row.dart'
     show VideoSubtitleSyncRow;
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/media/video/video_jump_history.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
@@ -431,6 +434,7 @@ part 'video_fushi/playback_remote.part.dart';
 part 'video_fushi/remote_control.part.dart';
 part 'video_fushi/advanced_mining.part.dart';
 part 'video_fushi/web_source.part.dart';
+part 'video_fushi/jump_history.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -2345,6 +2349,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// setState 重建（与 [_titleNotifier] / [_immersiveLocked] 同源，BUG-120）。监听
   /// notifier 才能让窗口与全屏两种场景字幕都随控制条显隐上顶 / 落回。
   final ValueNotifier<bool> _videoControlsVisible = ValueNotifier<bool>(false);
+
+  /// 「跳转回退」历史（位置 = 播放器轴毫秒），见 jump_history.part.dart。
+  final JumpHistory<int> _videoJumpHistory = createVideoJumpHistory();
+
+  /// 历史所属的集（`bookUid#集号`），换集懒清空；见 [_VideoJumpBack._syncVideoJumpScope]。
+  String? _videoJumpScope;
+
+  /// 正在执行「返回 / 前进」：期间的 seek 不再入栈。
+  bool _videoJumpRestoring = false;
+
+  /// media_kit 进度条拖动的出发点记账（进度条 seek 绕过 controller）。
+  final VideoSeekBarJumpTracker _seekBarJumpTracker = VideoSeekBarJumpTracker();
+
+  /// 历史变化计数：胶囊在全屏路由里也要跟着重建，走 notifier 而非 setState。
+  final ValueNotifier<int> _videoJumpHistoryRevision = ValueNotifier<int>(0);
+
+  /// 跳转 / 返回 / 前进后的 6 秒闪现窗口。
+  final ValueNotifier<bool> _videoJumpPillFlashing = ValueNotifier<bool>(false);
+  Timer? _videoJumpFlashTimer;
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
   ///
@@ -5602,6 +5625,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.removeListener(_onDiscNavigationChanged);
     controller.addListener(_onDiscNavigationChanged);
     _attachControllerChapterListener(controller);
+    // 「跳转回退」旁听进度条落点（jump_history.part.dart）。
+    _attachVideoJumpHistory(controller);
     // 标题先推给响应式 notifier，让全屏路由顶栏（不随页面 setState 重建）也跟上（BUG-120）。
     _titleNotifier.value = title;
     // 音量控件显示真相源对齐 controller 实际音量（换集复用同一 controller，TODO-377/438）。
@@ -6264,6 +6289,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _restartHideTimerSignal.dispose();
     _controlsHeldByMenu.dispose();
     _videoControlsVisible.dispose();
+    _videoJumpFlashTimer?.cancel();
+    _videoJumpHistoryRevision.dispose();
+    _videoJumpPillFlashing.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();
     super.dispose();
@@ -7915,13 +7943,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? unsupported
           : () => _runWhenImmersiveAllowsShortcuts(() {
               _keepControlsAliveIfVisible();
-              unawaited(controller.previousChapter());
+              unawaited(_recordVideoJumpAround(controller.previousChapter));
             }),
       nextChapter: web
           ? unsupported
           : () => _runWhenImmersiveAllowsShortcuts(() {
               _keepControlsAliveIfVisible();
-              unawaited(controller.nextChapter());
+              unawaited(_recordVideoJumpAround(controller.nextChapter));
             }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
@@ -9839,11 +9867,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.previousChapter:
         _pokeControlsVisible();
-        unawaited(controller.previousChapter());
+        unawaited(_recordVideoJumpAround(controller.previousChapter));
         break;
       case VideoControlItem.nextChapter:
         _pokeControlsVisible();
-        unawaited(controller.nextChapter());
+        unawaited(_recordVideoJumpAround(controller.nextChapter));
         break;
       case VideoControlItem.chapterList:
         _showChapterPanel(controller, sourceSlot: sourceSlot);
@@ -10900,7 +10928,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final VideoPlayerController? controller = _controller;
     final int? durationMs = controller?.durationMs;
     if (controller == null || durationMs == null || durationMs <= 0) return;
-    await controller.seekMs((durationMs * fraction.clamp(0.0, 1.0)).round());
+    final int targetMs = (durationMs * fraction.clamp(0.0, 1.0)).round();
+    _recordVideoJumpDeparture(targetMs);
+    await controller.seekMs(targetMs);
   }
 
   /// 跳上/下一句并唤醒控制条（底部胶囊条「上/下一句」按钮，BUG-175 ②）。

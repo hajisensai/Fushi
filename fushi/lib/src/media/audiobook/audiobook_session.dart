@@ -306,6 +306,8 @@ class AudiobookSession extends ChangeNotifier {
       // BUG-1107：显式跳句（skipToCue 漏斗）→ reader 抬阅读统计字数水位到目标
       // cue（音频跳过的段落不算已读）。
       controller.onExplicitCueJump = reader.onExplicitCueJump;
+      // 大跨度音频跳转（拖进度 / 点句 / 章节定位）→ reader 记「跳转回退」出发点。
+      controller.onBeforeAudioJump = reader.onBeforeAudioJump;
     }
     // BUG-2558：reader 接手统计，后台听书那只必须停——否则同一段时间两只时钟各记一遍。
     _syncStudyClockRunState();
@@ -327,6 +329,7 @@ class AudiobookSession extends ChangeNotifier {
       controller.onCrossChapter = null;
       controller.onBoundarySkip = null;
       controller.onExplicitCueJump = null;
+      controller.onBeforeAudioJump = null;
       // 离开 reader 时把跨章守卫复位，避免 reader 在跳章 await 中途离开导致
       // _chapterTransition 卡 true，会话继续播却永不推进 cue。
       controller.cancelChapterTransition();
@@ -973,6 +976,10 @@ abstract class ReaderAudiobookView {
   /// 底栏按钮 / 媒体通知）已定位目标 cue。reader 把阅读统计字数水位抬到目标
   /// 位置——音频跳过的段落不算已读（BUG-1107）。
   void onExplicitCueJump(AudioCue cue);
+
+  /// 大跨度音频跳转即将发生（[AudiobookPlayerController.onBeforeAudioJump]），
+  /// [fromGlobalMs] 是出发点的全书毫秒：reader 压进「跳转回退」历史。
+  void onBeforeAudioJump(int fromGlobalMs);
 
   /// 控制器 cue / 播放态变化：reader 更新 WebView 正文高亮 / lyrics / 进度。
   void onReaderCueChanged();

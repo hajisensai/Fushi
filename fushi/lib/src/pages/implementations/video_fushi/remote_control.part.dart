@@ -116,9 +116,12 @@ extension _VideoRemoteControl on _VideoFushiPageState {
           case 'seek':
           case 'seekCue':
             final int position = (body['positionMs'] as num).toInt();
-            await controller.seekMs(
-              position.clamp(0, controller.durationMs ?? position),
+            final int target = position.clamp(
+              0,
+              controller.durationMs ?? position,
             );
+            _recordVideoJumpDeparture(target);
+            await controller.seekMs(target);
             if (action == 'seekCue') await controller.play();
           default:
             throw const VideoRemoteException(400, 'invalid_action');
@@ -518,7 +521,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       if (cue == null) {
         throw const VideoRemoteException(404, 'favorite_subtitle_missing');
       }
-      await controller.seekMs(miningClipTimeMs(cue.startMs, cue.delayMs));
+      final int favoriteMs = miningClipTimeMs(cue.startMs, cue.delayMs);
+      _recordVideoJumpDeparture(favoriteMs);
+      await controller.seekMs(favoriteMs);
       await controller.play();
       return;
     }
