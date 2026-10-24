@@ -14,7 +14,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';
 
-/// 9 张 SRS 表（与 fushi_core `kLegacySrsTableDdl` 的键相同）。
+/// srs.db 的 SRS 表：9 张老表（与 fushi_core `kLegacySrsTableDdl` 的键相同）+ srs.db 自己的有效复习投影。
 const List<String> _kSrsTables = <String>[
   'srs_entities',
   'srs_field_edits',
@@ -25,6 +25,7 @@ const List<String> _kSrsTables = <String>[
   'srs_sent_batches',
   'srs_notes_cache',
   'srs_cards_cache',
+  'srs_stat_reviews',
 ];
 
 /// 允许写 SRS 表名的文件（相对仓库根，`/` 分隔）→ 理由。

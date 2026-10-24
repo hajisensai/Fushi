@@ -21,6 +21,7 @@ part 'srs_database.g.dart';
     SrsSentBatches,
     SrsNotesCache,
     SrsCardsCache,
+    SrsStatReviews,
   ],
 )
 class SrsDatabase extends _$SrsDatabase {

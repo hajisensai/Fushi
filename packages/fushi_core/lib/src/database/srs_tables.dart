@@ -1,4 +1,4 @@
-/// SRS 的 9 张表（Drift 声明，执行在 Rust 独占的 srs.db 上，见
+/// SRS 的 10 张表（Drift 声明，执行在 Rust 独占的 srs.db 上，见
 /// docs/specs/2026-10-23-srs-rust-store.md）。列与 native/fushi_fsrs/src/store/schema.rs 逐列相同。
 library;
 
@@ -182,4 +182,39 @@ class SrsCardsCache extends Table {
 
   @override
   Set<Column> get primaryKey => {id};
+}
+
+/// 有效复习投影（本机可重建缓存，不同步、不进备份；srs.db schema v3）。每条「有效」复习日志一行
+/// （被 undo 撤销的、被判与原生日志等价的导入日志、不认识的 kind 都不在），复习统计页与统计中心
+/// 总览直接按定长列读，不再全量读 `srs_review_logs` 逐条 jsonDecode 重放历史（BUG-3770）。
+///
+/// - 身份 = 日志 ID（[logId]）：同一条日志只有一行。
+/// - [cardId] = **归属卡**：卡自己可见就归自己；否则归它可见的后继卡（更改笔记类型 / 旧 Lapis 迁到
+///   Fushi 卡片后隐藏的旧卡，复习算到继承它历史的卡上）中 id 最小的；后继都不可见时归链尾。归属卡按
+///   「归它的全部卡」的合并历史分类（`SrsDbStore._refreshStatProjection`，投影规则在 Rust
+///   `history::stats_from_json`）。
+/// - 只存与「日界」无关的事实：原始时刻 [occurredAt] + 写入时的 UTC 偏移；日序号、提前复习
+///   （[prevDueDay] 与当天比）在读时按读方的日界口径算。
+/// - 分类 [kind] 依赖前序有效状态（`SrsStatReviewKind` 下标）。[rating] 为 null = 只是成熟状态
+///   变化（[maturityDelta] ≠ 0）的非评分日志。
+@DataClassName('SrsStatReviewRow')
+class SrsStatReviews extends Table {
+  TextColumn get logId => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get cardId => text()();
+  IntColumn get occurredAt => integer()();
+  IntColumn get utcOffsetMin => integer().withDefault(const Constant(0))();
+  IntColumn get rating => integer().nullable()();
+  IntColumn get kind => integer().withDefault(const Constant(0))();
+  IntColumn get durationMs => integer().withDefault(const Constant(0))();
+
+  /// 复习卡按到期日排的评分复习：上一条有效结果的到期日（读时与当天比得出「提前复习」）；
+  /// 其余 null。
+  IntColumn get prevDueDay => integer().nullable()();
+
+  /// +1 = 这条日志后变成熟，−1 = 掉出成熟，0 = 不变。
+  IntColumn get maturityDelta => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {logId};
 }

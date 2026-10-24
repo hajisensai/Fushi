@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -197,6 +197,28 @@ CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_type ON srs_notes_cache (profile_
 CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_pending ON srs_notes_cache (profile_uid) WHERE pending_decision = 1;
 "#;
 
+/// V3：有效复习投影 `srs_stat_reviews`（本机可重建缓存，不同步、不进备份；Drift 声明见
+/// packages/fushi_core/lib/src/database/srs_tables.dart `SrsStatReviews`）。一条有效复习日志一行，
+/// `card_id` 是归属卡（`SrsDbStore._refreshStatProjection`）。老库建空表，由 Dart 侧缓存修订号 2 的
+/// 升级步填满。
+const V3: &str = r#"
+CREATE TABLE IF NOT EXISTS srs_stat_reviews (
+  log_id TEXT NOT NULL,
+  profile_uid TEXT NOT NULL,
+  card_id TEXT NOT NULL,
+  occurred_at INTEGER NOT NULL,
+  utc_offset_min INTEGER NOT NULL DEFAULT 0,
+  rating INTEGER NULL,
+  kind INTEGER NOT NULL DEFAULT 0,
+  duration_ms INTEGER NOT NULL DEFAULT 0,
+  prev_due_day INTEGER NULL,
+  maturity_delta INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (log_id)
+);
+CREATE INDEX IF NOT EXISTS idx_srs_stat_reviews_profile_time ON srs_stat_reviews (profile_uid, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_srs_stat_reviews_card ON srs_stat_reviews (card_id);
+"#;
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
@@ -227,6 +249,9 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     }
     if current < 2 {
         tx.execute_batch(V2).map_err(|e| e.to_string())?;
+    }
+    if current < 3 {
+        tx.execute_batch(V3).map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

@@ -129,7 +129,7 @@ enum BackupCategory {
   /// instead of being wiped to empty. Included by default.
   profiles,
 
-  /// 复习（SRS）：Rust 的 `srs.db` 快照（zip 条目 `srs.db`，四张同步数据表随包、五张设备
+  /// 复习（SRS）：Rust 的 `srs.db` 快照（zip 条目 `srs.db`，四张同步数据表随包、六张设备
   /// 本地表在快照里清空）+ 媒体目录 `<support>/srs_media/`（按 profile 子目录原样打包，
   /// 归档前缀 `srs_media/`，文件名 = 内容 sha1）。老形态备份（2026-10-23 之前）的 SRS 表在
   /// `fushi.db` 条目里，恢复 / 合并照样认（见 backup_srs_tables.dart）。
@@ -1252,7 +1252,7 @@ class BackupService {
     return srsUserNoteCount(srs?.db ?? _db);
   }
 
-  /// 用 Rust 把本机 srs.db `VACUUM INTO` 到 [path]（必须不存在），并清空快照里的 5 张设备本地表。
+  /// 用 Rust 把本机 srs.db `VACUUM INTO` 到 [path]（必须不存在），并清空快照里的 6 张设备本地表。
   /// 在后台 isolate 跑（库大时要几百毫秒）；句柄线程安全。
   static Future<void> _snapshotSrs(SrsStorage srs, String path) {
     final int address = srs.core.address;

@@ -263,8 +263,8 @@ final class SrsCoreBindings {
       rwkvLogTail = lib.lookupFunction<_CmdC, _CmdDart>(
         'ffsrs_store_rwkv_log_tail',
       ),
-      statsReviews = lib.lookupFunction<_CmdC, _CmdDart>(
-        'ffsrs_store_stats_reviews',
+      statProjection = lib.lookupFunction<_HistC, _HistDart>(
+        'ffsrs_store_stat_projection',
       );
 
   final FushiFsrs _fsrs;
@@ -288,7 +288,7 @@ final class SrsCoreBindings {
   final _CmdDart optimizerItems;
   final _CmdDart rwkvRows;
   final _CmdDart rwkvLogTail;
-  final _CmdDart statsReviews;
+  final _HistDart statProjection;
 
   static SrsCoreBindings? _instance;
 
@@ -553,6 +553,38 @@ final class SrsCore {
     return bytes;
   });
 
+  /// 有效复习投影（`srs_stat_reviews` 的行），Rust 直接从写连接读日志（含事务里未提交的行）。[groups]
+  /// 每项是一个归属组（归属卡在前，再列出归它的前身卡），组内日志合在一起投影。返回 9 列行页
+  /// （[srsDecodeRows]）：组下标, logId, occurredAt, utcOffsetMin, rating|null, kind, durationMs,
+  /// prevDueDay|null, maturityDelta。
+  Uint8List statProjection(List<List<String>> groups) => using((Arena arena) {
+    final Uint8List page = srsEncodeRows(2, <List<Object?>>[
+      for (int g = 0; g < groups.length; g++)
+        for (final String c in groups[g]) <Object?>[g, c],
+    ]);
+    final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
+    final ffi.Pointer<ffi.Size> outLen = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(
+      _b,
+      _b.statProjection(
+        _h,
+        _copy(arena, page),
+        page.length,
+        groups.length,
+        out,
+        outLen,
+        err,
+      ),
+      err,
+    );
+    final int len = outLen.value;
+    final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
+    _b._freeBytes(out.value, len);
+    return bytes;
+  });
+
   // ---------------------------------------------------------------- P6 直读命令
   //
   // 都在读连接上一个读事务里执行（只看已提交的行，不挡写连接），布局见 native/fushi_fsrs/src/store/
@@ -618,15 +650,6 @@ final class SrsCore {
     _lineagePage(const <List<String>>[], profileUid),
     <int>[since, if (withRows) 1 else 0, if (incremental) 1 else 0],
   );
-
-  /// 统计页：本 profile 每张卡的有效日志列与当前记忆状态。[lineages] 每组 `[继承卡, 前身卡…]`：
-  /// 前身卡的日志并到继承卡上一起选取、记在继承卡名下。
-  Uint8List statsReviews(
-    String profileUid, {
-    List<List<String>> lineages = const <List<String>>[],
-  }) => _command(_b.statsReviews, _lineagePage(lineages, profileUid), <int>[
-    lineages.length,
-  ]);
 
   static Uint8List _lineagePage(List<List<String>> lineages, String? profile) =>
       srsEncodeRows(2, <List<Object?>>[

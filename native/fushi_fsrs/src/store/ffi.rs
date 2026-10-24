@@ -399,6 +399,47 @@ pub extern "C" fn ffsrs_store_history_states(
     })
 }
 
+/// 有效复习投影（直读写连接）。`groups` 同 [ffsrs_store_history_states]（两列页 `[组下标, 卡 ID]`），
+/// 每组是一个归属组（归属卡 + 归它的前身卡）；输出是 9 列行页（见 `SrsCore::stat_projection`），
+/// 用 `ffsrs_free_bytes` 释放。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_stat_projection(
+    core: *const SrsCore,
+    groups: *const u8,
+    groups_len: usize,
+    n_groups: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let lineages = decode_groups(bytes(groups, groups_len).ok_or("null groups")?, n_groups)?;
+        hand_out(c.stat_projection(&lineages)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// 两列页 `[组下标 i64, 卡 ID 文本]` → 每组的卡 ID（组内保持页里的顺序）。
+fn decode_groups(page: &[u8], n_groups: usize) -> Result<Vec<Vec<String>>, String> {
+    use rusqlite::types::Value;
+    let (_, rows) = super::rows::decode(page)?;
+    let mut groups: Vec<Vec<String>> = vec![Vec::new(); n_groups];
+    for r in rows {
+        let mut it = r.into_iter();
+        match (it.next(), it.next()) {
+            (Some(Value::Integer(g)), Some(Value::Text(card))) if g >= 0 && (g as usize) < n_groups => {
+                groups[g as usize].push(card)
+            }
+            _ => return Err("bad history group row".into()),
+        }
+    }
+    Ok(groups)
+}
+
 // ---------------------------------------------------------------- P6 直读命令（store/projections.rs）
 
 /// 命令的输入页：两列 `[下标 i64, 文本]`。下标 g ≥ 0 = 第 g 份历史的血统里的一张卡；-1 = profile uid。
@@ -535,25 +576,5 @@ pub extern "C" fn ffsrs_store_rwkv_log_tail(
             arg(args, 1)? != 0,
             args.get(2).copied().unwrap_or(0) != 0,
         )
-    })
-}
-
-/// 统计页的有效评分列（`SrsCore::stats_reviews`）。页 = profile 行 + 血统行（`[继承卡, 前身卡…]`）；
-/// 参数 `[n_groups]`（省略 = 0 组）。
-#[no_mangle]
-pub extern "C" fn ffsrs_store_stats_reviews(
-    core: *const SrsCore,
-    page: *const u8,
-    page_len: usize,
-    args: *const i64,
-    n_args: usize,
-    out: *mut *mut u8,
-    out_len: *mut usize,
-    error_out: *mut *mut c_char,
-) -> i32 {
-    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
-        let n_groups = usize::try_from(args.first().copied().unwrap_or(0)).map_err(|_| "bad n_groups")?;
-        let (lineages, profile) = lineage_page(page, n_groups)?;
-        c.stats_reviews(profile.as_deref().ok_or("missing profile")?, &lineages)
     })
 }

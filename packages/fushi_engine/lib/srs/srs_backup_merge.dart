@@ -243,6 +243,8 @@ const List<String> _kSrsProfileTables = <String>[
   'srs_local_state',
   'srs_notes_cache',
   'srs_cards_cache',
+  // srs.db schema v3：有效复习投影（可重建缓存）。
+  'srs_stat_reviews',
   // v121：本机已冻结批次留存。
   'srs_sent_batches',
 ];

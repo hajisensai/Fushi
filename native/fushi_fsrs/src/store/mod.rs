@@ -232,7 +232,7 @@ impl SrsCore {
     // ------------------------------------------------------------ 备份快照
 
     /// `VACUUM INTO` 一份一致快照（读连接上做：不挡写）。`strip_device_local` 时在快照里清空
-    /// 5 张设备本地表（本机状态、发件箱元信息、留存批次、两张缓存），与通用备份的规则一致。
+    /// 6 张设备本地表（本机状态、发件箱元信息、留存批次、三张缓存），与通用备份的规则一致。
     pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
         if target.exists() {
             return Err(format!("{} already exists", target.display()));
@@ -250,7 +250,8 @@ impl SrsCore {
             snap.execute_batch(
                 "BEGIN; DELETE FROM srs_event_local; DELETE FROM srs_local_state; \
                  DELETE FROM srs_sent_batches; DELETE FROM srs_notes_cache; \
-                 DELETE FROM srs_cards_cache; DELETE FROM srs_meta WHERE key = 'legacy_import'; \
+                 DELETE FROM srs_cards_cache; DELETE FROM srs_stat_reviews; \
+                 DELETE FROM srs_meta WHERE key = 'legacy_import'; \
                  COMMIT; VACUUM;",
             )
             .map_err(|e| e.to_string())?;
@@ -340,6 +341,65 @@ impl SrsCore {
     /// `groups[g]` 是第 g 份历史的血统（自己 + 全部前身的卡 ID）。输出布局同
     /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
     pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let logs = self.writer_logs(groups)?;
+        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let mut states = Vec::with_capacity(groups.len());
+        for g in groups {
+            let mut jsons: Vec<&str> = Vec::new();
+            let mut servers: Vec<Option<i64>> = Vec::new();
+            for c in g {
+                for (j, s) in logs.get(c).unwrap_or(&empty) {
+                    jsons.push(j);
+                    servers.push(*s);
+                }
+            }
+            states.push(crate::history::state_from_json(&jsons, &servers)?);
+        }
+        Ok(crate::history::encode_states(&states))
+    }
+
+    /// 有效复习投影（`srs_stat_reviews` 的行），同样直读写连接：`groups[g]` 是第 g 个归属组（归属卡在前，
+    /// 再列出归它的前身卡），日志合在一起按 [crate::history::stats_from_json] 投影。归属由 Dart 按血统与
+    /// 可见性定（`SrsDbStore._refreshStatProjection`）。
+    ///
+    /// 输出是一页行（`rows::encode`，9 列）：归属组下标, logId, occurredAt, utcOffsetMin, rating|NULL,
+    /// kind, durationMs, prevDueDay|NULL, maturityDelta。
+    pub fn stat_projection(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let logs = self.writer_logs(groups)?;
+        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let mut out: Vec<Vec<Value>> = Vec::new();
+        let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
+        for (gi, g) in groups.iter().enumerate() {
+            let mut jsons: Vec<&str> = Vec::new();
+            let mut servers: Vec<Option<i64>> = Vec::new();
+            for c in g {
+                for (j, s) in logs.get(c).unwrap_or(&empty) {
+                    jsons.push(j);
+                    servers.push(*s);
+                }
+            }
+            for r in crate::history::stats_from_json(&jsons, &servers)? {
+                out.push(vec![
+                    Value::Integer(gi as i64),
+                    Value::Text(r.log_id),
+                    Value::Integer(r.occurred_at),
+                    Value::Integer(r.utc_off),
+                    opt(r.rating),
+                    Value::Integer(r.kind),
+                    Value::Integer(r.dur),
+                    opt(r.prev_due_day),
+                    Value::Integer(r.maturity_delta),
+                ]);
+            }
+        }
+        Ok(rows::encode(9, &out))
+    }
+
+    /// 这些组里全部卡的日志原文 + 服务器时刻（写连接，一条 JOIN 按块取）。
+    fn writer_logs(
+        &self,
+        groups: &[Vec<String>],
+    ) -> Result<std::collections::HashMap<String, Vec<(String, Option<i64>)>>, String> {
         let w = self.writer()?;
         let mut wanted: Vec<&str> = Vec::new();
         let mut seen = std::collections::HashSet::new();
@@ -368,21 +428,7 @@ impl SrsCore {
                 logs.entry(card).or_default().push((json, st));
             }
         }
-        drop(w);
-        let empty: Vec<(String, Option<i64>)> = Vec::new();
-        let mut states = Vec::with_capacity(groups.len());
-        for g in groups {
-            let mut jsons: Vec<&str> = Vec::new();
-            let mut servers: Vec<Option<i64>> = Vec::new();
-            for c in g {
-                for (j, s) in logs.get(c).unwrap_or(&empty) {
-                    jsons.push(j);
-                    servers.push(*s);
-                }
-            }
-            states.push(crate::history::state_from_json(&jsons, &servers)?);
-        }
-        Ok(crate::history::encode_states(&states))
+        Ok(logs)
     }
 
     // ------------------------------------------------------------ 测试 / 诊断
@@ -658,6 +704,63 @@ mod direct_tests {
         assert!(core.history_states(&[vec!["c1".into()]]).is_err());
         core.exec("ROLLBACK", &[], false).unwrap();
         assert_eq!(core.history_states(&[vec!["c1".into()]]).unwrap(), expect_new);
+    }
+
+    fn log(id: &str, card: &str, ms: i64, rtype: &str, rating: i64, res: &str) -> String {
+        format!(
+            r#"{{"id":"{id}","p":"p","card":"{card}","kind":"review","hlc":"{ms}:0:w","at":{ms},"rtype":"{rtype}","rating":{rating},"dur":1500,"utcOff":540,"res":{res}}}"#
+        )
+    }
+
+    #[test]
+    fn stat_projection_classifies_on_the_merged_history_of_the_owner_group() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_stat_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        let day = 86_400_000;
+        let mature = r#"{"queue":"review","ivl":30,"dueDay":100}"#;
+        let a = log("a", "old", day, "learn", 3, mature);
+        let b = log("b", "c1", 2 * day, "review", 3, r#"{"queue":"review","ivl":5,"dueDay":105}"#);
+        let c = log("c", "c1", 3 * day, "review", 1, mature);
+        let undo = r#"{"id":"u","p":"p","card":"c1","kind":"undo","hlc":"260000000:0:w","at":260000000,"revokes":"c"}"#;
+        for (id, card, json) in [("a", "old", a.as_str()), ("b", "c1", b.as_str()), ("c", "c1", c.as_str()), ("u", "c1", undo)] {
+            core.exec(
+                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
+                 review_type, origin, duration_ms, json) VALUES (?1, 'p', ?2, 'k', NULL, 0, 'r', 'o', 0, ?3)",
+                &[Value::Text(id.into()), Value::Text(card.into()), Value::Text(json.into())],
+                false,
+            )
+            .unwrap();
+        }
+        let page = core.stat_projection(&[vec!["c1".into(), "old".into()]]).unwrap();
+        let (cols, rows) = rows::decode(&page).unwrap();
+        assert_eq!(cols, 9);
+        let row = |id: &str, at: i64, rating: i64, kind: i64, prev: Value, delta: i64| {
+            vec![
+                Value::Integer(0),
+                Value::Text(id.into()),
+                Value::Integer(at),
+                Value::Integer(540),
+                Value::Integer(rating),
+                Value::Integer(kind),
+                Value::Integer(1500),
+                prev,
+                Value::Integer(delta),
+            ]
+        };
+        assert_eq!(
+            rows,
+            vec![
+                // 前身卡的学习：新卡，学完即成熟。
+                row("a", day, 3, 0, Value::Null, 1),
+                // 本卡：前序（合并历史里前身那条）已是 30 天间隔 → 成熟复习，带上一条到期日；掉出成熟。
+                row("b", 2 * day, 3, 3, Value::Integer(100), -1),
+                // 被撤销的那条不在。
+            ]
+        );
     }
 }
 

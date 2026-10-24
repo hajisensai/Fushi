@@ -339,8 +339,15 @@ class SrsDbStore implements SrsSyncReplica {
   /// 1（v123）：srs_cards_cache.new_position。旧版本设备会照常收下对端同步来的 `newPos`
   /// 修改记录（修改记录不认键名、原样落库），但它的卡片缓存没有这一列；升级加列时留 NULL，
   /// 这些卡就一直按创建时刻出、取卡读到的位置也是空的，直到这张卡再被改一次。
-  static const int _kCacheRevision = 1;
+  ///
+  /// 2（srs.db schema v3）：srs_stat_reviews（有效复习投影）。存量库的投影表是新建的空表，升级时按全部
+  /// 卡 + 全部有日志的卡算一遍投影（[_refreshStatProjection]）。
+  static const int _kCacheRevision = 2;
   int _cacheRevision = _kCacheRevision;
+
+  /// 有效复习投影要重算的卡（缓存刷新写过 / 隐藏的卡、脏卡、重建与升级时的全部卡）：[_flushCachesNow]
+  /// 末尾按归属组一起算（[_refreshStatProjection]）。多算只是白算，不会错。
+  final Set<String> _statDirty = <String>{};
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
   int _revision = 0;
@@ -1641,6 +1648,14 @@ class SrsDbStore implements SrsSyncReplica {
         rest.sublist(i, min(i + _refreshChunk, rest.length)),
       );
     }
+    // 投影在全部缓存行（可见性）写完之后再算：归属看的是这一轮之后的可见性。还没有缓存行的卡
+    // （日志先于笔记到达、笔记已被物理清除）也算：它们的复习照样计入统计。
+    _statDirty.addAll(cards);
+    if (_statDirty.isNotEmpty) {
+      final Set<String> seeds = Set<String>.of(_statDirty);
+      _statDirty.clear();
+      await _refreshStatProjection(seeds);
+    }
   }
 
   /// 缓存刷新每块的笔记 / 卡数：块内的读写各合成几次往返；块不宜太大（一块的计算在 UI isolate
@@ -1745,6 +1760,9 @@ class SrsDbStore implements SrsSyncReplica {
     // 变更日志与数字索引随写入同步记下（同一个独占区 / 事务里）；事务回滚时
     // [_transactionOrReload] 会把两者一起作废。
     _journalCacheWrite(noteIds, <String>[...cardIds, ...w.hide]);
+    _statDirty
+      ..addAll(cardIds)
+      ..addAll(w.hide);
     _indexCacheRows(noteIds, cardIds);
     await db.batch((Batch b) {
       if (w.notes.isNotEmpty) {
@@ -1985,6 +2003,10 @@ class SrsDbStore implements SrsSyncReplica {
         );
         await _flushCaches();
       }
+      if (_cacheRevision < 2) {
+        _statDirty.addAll(await _allStatSeeds());
+        await _flushCaches();
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -2001,6 +2023,12 @@ class SrsDbStore implements SrsSyncReplica {
       await (db.delete(
         db.srsNotesCache,
       )..where((t) => t.profileUid.equals(profileUid))).go();
+      await (db.delete(
+        db.srsStatReviews,
+      )..where((t) => t.profileUid.equals(profileUid))).go();
+      // 投影按全部有日志的卡重算（缓存行随笔记重建，那些卡由 [_writeCache] 记进来；这里补上没有
+      // 缓存行的卡：笔记已物理清除，复习照样计入统计）。
+      _statDirty.addAll(await _allStatSeeds());
       final List<SrsEntityRow> notes =
           await (db.select(db.srsEntities)..where(
                 (t) =>
@@ -2183,6 +2211,146 @@ class SrsDbStore implements SrsSyncReplica {
     return out;
   }
 
+  /// 本 profile 全部有日志的卡（投影重建 / 升级的种子；缓存行由刷新本身记进 [_statDirty]）。
+  Future<List<String>> _allStatSeeds() async {
+    final $SrsReviewLogsTable t = db.srsReviewLogs;
+    return <String>[
+      for (final TypedResult r
+          in await (db.selectOnly(t, distinct: true)
+                ..addColumns(<Expression<Object>>[t.cardId])
+                ..where(t.profileUid.equals(profileUid)))
+              .get())
+        r.read(t.cardId)!,
+    ];
+  }
+
+  /// 有效复习投影（`srs_stat_reviews`）：[seeds] 所在的「前身 ↔ 后继」连通分量整份重算。
+  ///
+  /// 归属（投影行的 `card_id`）只在这里定一次，增量与重建同一规则：
+  /// - 卡自己可见 → 归自己（前身自己还可见时它的日志仍归它，与 [historyOwnerIndex] 同）；
+  /// - 否则归继承它历史的可见卡（它在其血统里）中 id 最小的；
+  /// - 都不可见（笔记已删）→ 归它的后代里没有后代的那张（链尾）中 id 最小的；没有后代 → 归自己。
+  /// 每个归属组（归属卡 + 归它的卡）的日志合在一起，由 Rust 选取、按合并历史分类（一次 FFI 调用一批组）。
+  /// 缓存行的可见性在这之前已写完（同一事务里），所以更改笔记类型 / Lapis 迁移把旧卡藏起来的那一轮，
+  /// 旧卡的复习就记到新卡上；之后重建、恢复、新设备首次同步都得出同样的行。
+  Future<void> _refreshStatProjection(Set<String> seeds) async {
+    final Map<String, List<String>> succ = await _successorIndex();
+    final Map<String, List<String>> pred = <String, List<String>>{};
+    for (final MapEntry<String, List<String>> e in succ.entries) {
+      for (final String s in e.value) {
+        (pred[s] ??= <String>[]).add(e.key);
+      }
+    }
+    // 连通分量：沿链接双向扩（链接表是超集；真正的血统下面按修改记录的生效值算）。
+    final Set<String> family = <String>{};
+    final List<String> queue = seeds.toList();
+    while (queue.isNotEmpty) {
+      final String c = queue.removeLast();
+      if (!family.add(c)) continue;
+      queue
+        ..addAll(succ[c] ?? const <String>[])
+        ..addAll(pred[c] ?? const <String>[]);
+    }
+    final List<String> ids = family.toList()..sort();
+    final Set<String> visible = <String>{
+      for (final SrsCardCacheRow c in await cardRows(ids))
+        if (!c.hidden) c.id,
+    };
+    // 真后代：p 在 X 的血统里（X ≠ p）。只有带链接的卡才可能有前身 / 后代。
+    final List<String> linked = <String>[
+      for (final String c in ids)
+        if (succ.containsKey(c) || pred.containsKey(c)) c,
+    ];
+    final Map<String, Set<String>> descendants = <String, Set<String>>{};
+    for (int i = 0; i < linked.length; i += _refreshChunk) {
+      final List<String> chunk = linked.sublist(
+        i,
+        min(i + _refreshChunk, linked.length),
+      );
+      final List<List<String>> lineages = await _lineageIds(
+        _RefreshPrefetch(),
+        chunk,
+      );
+      for (int k = 0; k < chunk.length; k++) {
+        for (final String p in lineages[k].skip(1)) {
+          (descendants[p] ??= <String>{}).add(chunk[k]);
+        }
+      }
+    }
+    String ownerOf(String c) {
+      if (visible.contains(c)) return c;
+      final Set<String>? d = descendants[c];
+      if (d == null || d.isEmpty) return c;
+      final List<String> shown = <String>[
+        for (final String x in d)
+          if (visible.contains(x)) x,
+      ]..sort();
+      if (shown.isNotEmpty) return shown.first;
+      final List<String> tails = <String>[
+        for (final String x in d)
+          if (descendants[x]?.isEmpty ?? true) x,
+      ]..sort();
+      return tails.isNotEmpty ? tails.first : (d.toList()..sort()).first;
+    }
+
+    final Map<String, List<String>> groups = <String, List<String>>{};
+    for (final String c in ids) {
+      final String o = ownerOf(c);
+      (groups[o] ??= <String>[o]);
+      if (c != o) groups[o]!.add(c);
+    }
+    final List<String> owners = groups.keys.toList();
+    final List<SrsStatReviewsCompanion> rows = <SrsStatReviewsCompanion>[];
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
+    for (int i = 0; i < owners.length; i += _statChunk) {
+      final List<String> chunk = owners.sublist(
+        i,
+        min(i + _statChunk, owners.length),
+      );
+      final List<List<String>> batch = <List<String>>[
+        for (final String o in chunk) groups[o]!,
+      ];
+      // Rust 在写连接上直读日志（含本事务未提交的行）；放后台 isolate，不挡 UI（同 [_cardMaterials]）。
+      final Uint8List page = await Isolate.run<Uint8List>(
+        () => SrsCore.fromAddress(
+          address,
+          libraryPath: libraryPath,
+        ).statProjection(batch),
+      );
+      final (int _, List<List<Object?>> out) = srsDecodeRows(page);
+      for (final List<Object?> r in out) {
+        rows.add(
+          SrsStatReviewsCompanion.insert(
+            logId: r[1]! as String,
+            profileUid: profileUid,
+            cardId: chunk[r[0]! as int],
+            occurredAt: r[2]! as int,
+            utcOffsetMin: Value<int>(r[3]! as int),
+            rating: Value<int?>(r[4] as int?),
+            kind: Value<int>(r[5]! as int),
+            durationMs: Value<int>(r[6]! as int),
+            prevDueDay: Value<int?>(r[7] as int?),
+            maturityDelta: Value<int>(r[8]! as int),
+          ),
+        );
+      }
+    }
+    // 分量里每张卡名下的旧行整份换掉；行身份是日志 ID，归属换了的日志被新行覆盖，一条日志至多一行。
+    await db.batch((Batch b) {
+      for (final List<String> chunk in _chunks(family)) {
+        b.deleteWhere(
+          db.srsStatReviews,
+          ($SrsStatReviewsTable x) => x.cardId.isIn(chunk),
+        );
+      }
+      if (rows.isNotEmpty) b.insertAllOnConflictUpdate(db.srsStatReviews, rows);
+    });
+  }
+
+  /// 投影每次 Rust 调用的归属组数。
+  static const int _statChunk = 500;
+
   /// 一组卡各自的复习历史（同 [history]；按输入顺序去重）。按块预读整条血统的修改记录、日志与
   /// 服务器时刻（每块几次往返），批量重置 / 设置到期 / 撤销 / 立即重排 / 导出 / 优化器取数不再每张卡
   /// 各查四五次（BUG-3543）。
@@ -2317,23 +2485,6 @@ class SrsDbStore implements SrsSyncReplica {
       incremental,
     ),
   );
-
-  /// 统计页的有效日志列：前身卡（[historyOwnerIndex]）的日志算到继承它历史的可见卡上。
-  Future<SrsStatsColumns> statsColumns() async {
-    final Map<String, List<String>> groups = <String, List<String>>{};
-    for (final MapEntry<String, String> e
-        in (await historyOwnerIndex()).entries) {
-      (groups[e.value] ??= <String>[e.value]).add(e.key);
-    }
-    return SrsStatsColumns(
-      await _coreStatsReviews(
-        core.address,
-        core.libraryPath,
-        profileUid,
-        groups.values.toList(),
-      ),
-    );
-  }
 
   Future<SrsCardHistory> _historyOf(List<String> cardIds) async {
     final (List<SrsReviewLog> logs, int? Function(String)? s) =
@@ -5819,16 +5970,4 @@ Future<Uint8List> _coreRwkvLogTail(
     withRows: withRows,
     incremental: incremental,
   ),
-);
-
-Future<Uint8List> _coreStatsReviews(
-  int address,
-  String? libraryPath,
-  String profileUid,
-  List<List<String>> lineages,
-) => Isolate.run<Uint8List>(
-  () => SrsCore.fromAddress(
-    address,
-    libraryPath: libraryPath,
-  ).statsReviews(profileUid, lineages: lineages),
 );

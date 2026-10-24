@@ -519,14 +519,125 @@ fn parse_result<'a>(raw: &'a RawValue) -> Result<WireResult<'a>, String> {
 
 /// 一份历史（落库 JSON + 各自的服务器时刻）的当前状态。
 pub fn state_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<State, String> {
+    let (logs, results, _) = parse_all(jsons, server_times)?;
+    let sel = select(&logs);
+    state_of(sel, logs, results)
+}
+
+/// 「成熟」的间隔下限（Dart `kSrsMatureIntervalDays`）。
+pub const MATURE_INTERVAL_DAYS: i64 = 21;
+
+/// 有效复习投影的一行（`srs_stat_reviews`；Dart `SrsStatProjection`）。与日界无关：日序号、小时、
+/// 提前复习由读方按自己的日界从 [occurred_at] / [utc_off] / [prev_due_day] 算。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatRow {
+    pub log_id: String,
+    pub occurred_at: i64,
+    pub utc_off: i64,
+    /// 1..4；None = 不是统计复习，只是成熟状态变化（[maturity_delta] ≠ 0）。
+    pub rating: Option<i64>,
+    /// `SrsStatReviewKind` 下标：0 新卡 / 1 学习 / 2 年轻 / 3 成熟 / 4 重学 / 5 筛选。
+    pub kind: i64,
+    pub dur: i64,
+    /// 按到期日排的复习卡复习：上一条有效结果的到期日（> 当天 = 提前复习）；其余 None。
+    pub prev_due_day: Option<i64>,
+    /// +1 = 这条之后变成熟，−1 = 掉出成熟，0 = 不变。
+    pub maturity_delta: i64,
+}
+
+/// 一份归属组（归属卡 + 归它的前身卡，日志合在一起）的有效复习投影：每条有效日志在分类 / 成熟变化
+/// 上看合并历史里的前序有效结果。规则与删除前的 Dart `srsStatProjectionOf` 逐条对应。
+pub fn stats_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<Vec<StatRow>, String> {
+    let (logs, results, extras) = parse_all(jsons, server_times)?;
+    let sel = select(&logs);
+    Ok(stat_rows(&sel, &logs, &results, &extras))
+}
+
+type ParsedAll<'a> = (Vec<Log<'a>>, Vec<Option<WireResult<'a>>>, Vec<Extra<'a>>);
+
+fn parse_all<'a>(jsons: &[&'a str], server_times: &[Option<i64>]) -> Result<ParsedAll<'a>, String> {
     let mut logs = Vec::with_capacity(jsons.len());
-    let mut results: Vec<Option<WireResult<'_>>> = Vec::with_capacity(jsons.len());
+    let mut results = Vec::with_capacity(jsons.len());
+    let mut extras = Vec::with_capacity(jsons.len());
     for (j, s) in jsons.iter().zip(server_times) {
-        let (log, res, _) = parse_wire(j, *s)?;
+        let (log, res, extra) = parse_wire(j, *s)?;
         logs.push(log);
         results.push(res);
+        extras.push(extra);
     }
-    let sel = select(&logs);
+    Ok((logs, results, extras))
+}
+
+fn stat_rows(
+    sel: &Selection,
+    logs: &[Log<'_>],
+    results: &[Option<WireResult<'_>>],
+    extras: &[Extra<'_>],
+) -> Vec<StatRow> {
+    let mut out = Vec::new();
+    // 前序有效结果（`SrsScheduleResult.initial`：新卡、间隔 0、没有到期日）。
+    let (mut prev_queue, mut prev_ivl, mut prev_due) = (0i64, 0i64, None::<i64>);
+    let mut prev_mature = false;
+    for (k, &i) in sel.order.iter().enumerate() {
+        if sel.status[k] & STATUS_EFFECTIVE == 0 {
+            continue;
+        }
+        let (log, extra) = (&logs[i], &extras[i]);
+        let res = results[i].as_ref().map(Outcome::of);
+        let kind = if log.kind == Kind::Review && matches!(log.rating, Some(1..=4)) {
+            match extra.rtype {
+                RType::Learn => Some(if prev_queue == 0 { 0 } else { 1 }),
+                RType::Review => Some(if prev_ivl >= MATURE_INTERVAL_DAYS { 3 } else { 2 }),
+                RType::Relearn => Some(4),
+                RType::Filtered => Some(5),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let mut delta = 0;
+        if let Some(r) = &res {
+            let mature = r.queue == 2 && r.scheduled_days >= MATURE_INTERVAL_DAYS;
+            if mature != prev_mature {
+                delta = if mature { 1 } else { -1 };
+                prev_mature = mature;
+            }
+        }
+        if kind.is_some() || delta != 0 {
+            out.push(StatRow {
+                log_id: log.id.clone().into_owned(),
+                occurred_at: log.occurred_at,
+                utc_off: extra.utc_off,
+                rating: kind.and(log.rating),
+                kind: kind.unwrap_or(0),
+                dur: extra.dur.max(0),
+                // 按回忆率排的复习（日志 alg = rwkv）不看到期日，无所谓「提前」。
+                prev_due_day: if kind.is_some()
+                    && !extra.alg_rwkv
+                    && extra.rtype == RType::Review
+                    && prev_queue == 2
+                {
+                    prev_due
+                } else {
+                    None
+                },
+                maturity_delta: delta,
+            });
+        }
+        if let Some(r) = res {
+            prev_queue = r.queue;
+            prev_ivl = r.scheduled_days;
+            prev_due = r.due_day;
+        }
+    }
+    out
+}
+
+fn state_of(
+    sel: Selection,
+    logs: Vec<Log<'_>>,
+    mut results: Vec<Option<WireResult<'_>>>,
+) -> Result<State, String> {
     let scheduler = sel
         .scheduler_from
         .and_then(|i| results[i].as_ref().and_then(|r| r.scheduler.as_deref()))

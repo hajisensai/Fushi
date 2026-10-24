@@ -1,8 +1,9 @@
 /// 复习（SRS）统计的数据面：把复习日志与卡片缓存归一成统计用的扁平记录，再由
 /// 纯函数聚合出统计中心「复习」分区的每一块（对齐 Anki 2.1.50+ 统计页）。
 ///
-/// - 只读 SRS 自己的数据（`srs_review_logs` / `srs_cards_cache` / 笔记），按 profile；
-///   不碰学习统计域的 `study_segments`（那是阅读 / 观看 / 游戏的时长事实表）。
+/// - 只读 SRS 自己的数据（有效复习投影 `srs_stat_reviews` / `srs_cards_cache` / 笔记），按
+///   profile；不碰学习统计域的 `study_segments`（那是阅读 / 观看 / 游戏的时长事实表）。统计
+///   中心总览要的复习时长由 `loadStatFacts(includeReviews:)` 读同一张投影表合并（BUG-3771）。
 /// - 「今天」与日序号一律走 SRS 的 [SrsDayContext]（翻日时刻 + UTC 偏移，与复习页、
 ///   牌组计数同一口径），不走统计页的 dateKey。
 /// - 复习 = 有效的评分日志（被 undo 撤销的、被判与原生日志等价的导入日志都不算，
@@ -1004,136 +1005,81 @@ SrsHistogram srsUnitHistogram(List<double> values, {required int bins}) {
   );
 }
 
-/// 统计投影要的一条有效日志（统计页取数由 Rust 直读选取后按列交回，见 `SrsDbStore.statsColumns`）。
-class SrsStatLog {
-  const SrsStatLog({
+/// 一条有效日志在统计里的投影（与日界无关的那部分；落在 srs.db 的 `srs_stat_reviews`，一条日志一行，
+/// 由 Rust `history::stats_from_json` 在缓存刷新时产出，见 `SrsDbStore._refreshStatProjection`）。
+///
+/// 日序号、小时、「提前复习」都依赖读方的日界口径，读时由 [srsStatsFromProjection] 算；
+/// 这里只留原始时刻、写入时的 UTC 偏移和「上一条有效结果的到期日」。分类 [kind] 依赖前序
+/// 有效状态，只能在按整张卡的有效历史重放时定，所以在投影里存死。
+class SrsStatProjection {
+  const SrsStatProjection({
+    required this.logId,
     required this.cardId,
-    required this.isReviewKind,
-    required this.rating,
-    required this.reviewType,
-    required this.at,
+    required this.occurredAt,
     this.utcOffsetMin = 0,
+    this.rating,
+    this.kind = SrsStatReviewKind.newCard,
     this.durationMs = 0,
-    this.rwkv = false,
-    this.result,
+    this.prevDueDay,
+    this.maturityDelta = 0,
   });
 
-  /// 内存里的日志对象（测试与已有 [SrsCardHistory] 的调用方）。
-  /// [cardId] 覆盖日志上写的卡（前身卡的日志记到继承它历史的卡上）。
-  factory SrsStatLog.of(SrsReviewLog l, {String? cardId}) => SrsStatLog(
-    cardId: cardId ?? l.cardId,
-    isReviewKind: l.kind == SrsLogKind.review,
-    rating: l.rating,
-    reviewType: l.reviewType,
-    at: l.occurredAt,
-    utcOffsetMin: l.utcOffsetMin,
-    durationMs: l.durationMs,
-    rwkv: l.algorithm == SrsAlgorithm.rwkv.wire,
-    result: l.result == null
-        ? null
-        : (
-            queue: l.result!.queue,
-            scheduledDays: l.result!.scheduledDays,
-            dueDay: l.result!.dueDay,
-          ),
-  );
+  final String logId;
 
+  /// 归属卡（卡自己可见就是它自己；隐藏的前身卡归继承它历史的可见卡，见 `SrsStatReviews`）。
   final String cardId;
-  final bool isReviewKind;
-  final int? rating;
-  final String reviewType;
-  final int at;
+  final int occurredAt;
   final int utcOffsetMin;
+
+  /// 1..4；null = 不是统计复习，只是成熟状态变化（[maturityDelta] ≠ 0）。
+  final int? rating;
+  final SrsStatReviewKind kind;
   final int durationMs;
 
-  /// 这次是按回忆率排的（日志 alg = rwkv）。
-  final bool rwkv;
+  /// 按到期日排的复习卡复习：上一条有效结果的到期日（> 当天 = 提前复习）；其余 null。
+  final int? prevDueDay;
 
-  /// 这次操作后的结果（undo / 不认识的 kind 没有）。
-  final ({SrsQueue queue, int scheduledDays, int? dueDay})? result;
+  /// +1 = 这条之后变成熟，−1 = 掉出成熟，0 = 不变。
+  final int maturityDelta;
+
+  bool get isReview => rating != null;
 }
 
-/// 一张卡的有效日志 → 统计复习记录 + 成熟变化。[history] 用 [SrsCardHistory]
-/// 判有效（undo 撤销 / 等价导入都已排除）。
-///
-/// [cardId] = 这份历史所属的（可见）卡：历史含前身卡的日志时（更改笔记类型、旧 Lapis 迁到
-/// Fushi 卡片），记录归到这张卡上，而不是日志上写的前身卡 id。不给时按日志自己的卡。
+/// 投影 → 统计复习记录 + 成熟变化，日序号 / 小时 / 提前复习按 [day] 的口径算。
 ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-srsStatsFromHistory(
-  SrsCardHistory history,
-  SrsDayContext day, {
-  String? cardId,
-}) => srsStatsFromLogs(<SrsStatLog>[
-  for (final SrsReviewLog l in history.effective)
-    SrsStatLog.of(l, cardId: cardId),
-], day);
-
-/// 一张卡按排序键升序的有效日志 → 统计复习记录 + 成熟变化（统计投影，唯一实现）。
-({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-srsStatsFromLogs(List<SrsStatLog> effective, SrsDayContext day) {
+srsStatsFromProjection(
+  Iterable<SrsStatProjection> projection,
+  SrsDayContext day,
+) {
   final List<SrsStatReview> reviews = <SrsStatReview>[];
   final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
-  ({SrsQueue queue, int scheduledDays, int? dueDay}) prev = (
-    queue: SrsQueue.newCard,
-    scheduledDays: 0,
-    dueDay: null,
-  );
-  bool prevMature = false;
-  for (final SrsStatLog l in effective) {
-    final int dayIndex = day.dayIndexOf(l.at);
-    final int? rating = l.rating;
-    if (l.isReviewKind && rating != null && rating >= 1 && rating <= 4) {
-      final SrsStatReviewKind? kind = switch (l.reviewType) {
-        SrsReviewType.learn =>
-          prev.queue == SrsQueue.newCard
-              ? SrsStatReviewKind.newCard
-              : SrsStatReviewKind.learn,
-        SrsReviewType.review =>
-          prev.scheduledDays >= kSrsMatureIntervalDays
-              ? SrsStatReviewKind.mature
-              : SrsStatReviewKind.young,
-        SrsReviewType.relearn => SrsStatReviewKind.relearn,
-        SrsReviewType.filtered => SrsStatReviewKind.filtered,
-        _ => null,
-      };
-      if (kind != null) {
-        final int offsetMs = l.utcOffsetMin * 60000;
-        reviews.add(
-          SrsStatReview(
-            cardId: l.cardId,
-            at: l.at,
-            day: dayIndex,
-            hour: ((l.at + offsetMs) % _dayMs) ~/ _hourMs,
-            rating: rating,
-            kind: kind,
-            durationMs: math.max(0, l.durationMs),
-            // 按回忆率排的复习（日志 alg = rwkv）不看到期日，无所谓「提前」。
-            early:
-                !l.rwkv &&
-                l.reviewType == SrsReviewType.review &&
-                prev.queue == SrsQueue.review &&
-                prev.dueDay != null &&
-                prev.dueDay! > dayIndex,
-          ),
-        );
-      }
-    }
-    final ({SrsQueue queue, int scheduledDays, int? dueDay})? res = l.result;
-    if (res == null) continue;
-    final bool mature =
-        res.queue == SrsQueue.review &&
-        res.scheduledDays >= kSrsMatureIntervalDays;
-    if (mature != prevMature) {
-      maturity.add(
-        SrsStatMaturityEvent(
-          cardId: l.cardId,
+  for (final SrsStatProjection p in projection) {
+    final int dayIndex = day.dayIndexOf(p.occurredAt);
+    final int? rating = p.rating;
+    if (rating != null) {
+      final int offsetMs = p.utcOffsetMin * 60000;
+      reviews.add(
+        SrsStatReview(
+          cardId: p.cardId,
+          at: p.occurredAt,
           day: dayIndex,
-          delta: mature ? 1 : -1,
+          hour: ((p.occurredAt + offsetMs) % _dayMs) ~/ _hourMs,
+          rating: rating,
+          kind: p.kind,
+          durationMs: p.durationMs,
+          early: p.prevDueDay != null && p.prevDueDay! > dayIndex,
         ),
       );
-      prevMature = mature;
     }
-    prev = res;
+    if (p.maturityDelta != 0) {
+      maturity.add(
+        SrsStatMaturityEvent(
+          cardId: p.cardId,
+          day: dayIndex,
+          delta: p.maturityDelta,
+        ),
+      );
+    }
   }
   return (reviews: reviews, maturity: maturity);
 }

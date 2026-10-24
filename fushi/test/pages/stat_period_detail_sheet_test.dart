@@ -96,6 +96,46 @@ void main() {
     expect(watchY, lessThan(gameY));
   });
 
+  testWidgets('BUG-3771：总览并进来的复习时长单独成「复习」节，排在游戏之后；不可删、不可点开', (
+    WidgetTester tester,
+  ) async {
+    int deletes = 0;
+    int taps = 0;
+    await _open(
+      tester,
+      facts: <StatFact>[
+        _fact('game', '2026-09-01', key: 'g1', title: 'Clannad', ms: 120000),
+        _fact(
+          kStatMediaReview,
+          '2026-09-01',
+          key: kStatReviewMediaKey,
+          title: 'REVIEW',
+          ms: 600000,
+        ),
+      ],
+      contains: (String d) => d == '2026-09-01',
+      onEntryTap: (String kind, String key) async => taps++,
+      onEntryDelete: (StatPeriodEntryTarget t) async {
+        deletes++;
+        return true;
+      },
+    );
+    expect(find.text(t.nav_srs), findsOneWidget);
+    expect(find.text('REVIEW'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text(t.home_filter_game)).dy,
+      lessThan(tester.getTopLeft(find.text(t.nav_srs)).dy),
+    );
+    // 只有游戏那一行有删除按钮。
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    await tester.tap(find.text('REVIEW'));
+    await tester.longPress(find.text('REVIEW'));
+    await tester.pumpAndSettle();
+    expect(taps, 0);
+    expect(deletes, 0);
+    expect(find.text('REVIEW'), findsOneWidget);
+  });
+
   testWidgets('BUG-2216：legacy 无身份行 unique-title 吸收进唯一身份组；同名双身份不合并', (
     WidgetTester tester,
   ) async {

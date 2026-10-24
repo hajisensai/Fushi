@@ -3,8 +3,6 @@ import 'dart:io';
 
 import 'package:drift/drift.dart'
     show BooleanExpressionOperators, driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
