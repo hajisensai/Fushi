@@ -25,6 +25,18 @@ navigation snapshot (`dvd-state`). DVD menu playback has not been tested on a de
 `http(s)://` URLs of a paired host's disc share, and `Mpv` carries the read-only property
 `disc-remote-access` (`verify_darwin_archive.py` requires it). Remote playback has not been tested on a device.
 
+**Audio CD (2026-10-25, `cdda1`):** rebuilt from branch `fushi/cdda` `07d6afd` (private CI mirror
+`hajisensai/libmpv-darwin-build-fushi`, run 40132136924) with `-Dcdda=enabled` and the sixth mpv patch
+`cdda-seek-sector-offset.patch` (stream_cdda's seek kept only the sector and dropped the byte offset
+inside it). libcdio 2.3.0 and libcdio-paranoia 10.2+2.0.2 (GPL-3.0-or-later) are built in the fork and
+ship as `Cdio` / `Cdio_cdda` / `Cdio_paranoia` frameworks linking the system `/usr/lib/libiconv.2.dylib`,
+IOKit and DiskArbitration; `Mpv` links `@rpath/Cdio_paranoia.framework` and carries the patch's
+`Seek to sector %d, byte %d within the sector.` string (`verify_darwin_archive.py` requires both on
+macOS). The Makefile cache key moved to `unified-07d6afd9f8c2` so existing build trees re-extract.
+Audio CD playback has not been tested on a Mac. iOS is unchanged (`-Dcdda=disabled`; its rebuild from
+the same commit differed only in build paths and the configure string, so the vendored iOS archive
+was kept).
+
 Rebuild with `tool/bluray/platforms/build_darwin.sh` from the repository root and
 verify with `tool/bluray/platforms/verify_darwin_archive.py --platform macos` before replacing this archive.
 The package Makefile verifies the SHA-256 before extraction and supports an explicit

@@ -1,8 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+
+bool _containsBytes(List<int> haystack, List<int> needle) {
+  final int last = haystack.length - needle.length;
+  for (int i = 0; i <= last; i++) {
+    if (haystack[i] != needle[0]) continue;
+    int j = 1;
+    while (j < needle.length && haystack[i + j] == needle[j]) {
+      j++;
+    }
+    if (j == needle.length) return true;
+  }
+  return false;
+}
 
 /// 音频 CD（音乐方案 §9.3 P5）：Windows 随包 libmpv 必须带 `cdda://`，并带
 /// `patches/cdda-seek-sector-offset.patch`。
@@ -161,6 +176,54 @@ void main() {
       );
     }
   });
+
+  // Apple：macOS 随包 libmpv 带 cdda（三个 Cdio framework + 补丁特征串）；iOS 没有光驱，
+  // 不编 cdda，也不许带 libcdio。直接打开 Makefile 钉住的那份归档逐个看。
+  for (final String plat in <String>['macos', 'ios']) {
+    test('$plat 随包 libmpv：${plat == 'macos' ? '带' : '不带'} cdda', () {
+      final String dir = '../third_party/media_kit_libs_${plat}_video/$plat';
+      final RegExpMatch m = RegExp(
+        r'^MPV_XCFRAMEWORKS_VENDOR_ARCHIVE=\$\(abspath ([^)]+)\)$',
+        multiLine: true,
+      ).firstMatch(File('$dir/Makefile').readAsStringSync())!;
+      final Archive tar = TarDecoder().decodeBytes(
+        gzip.decode(
+          File(p.normalize(p.join(dir, m.group(1)!))).readAsBytesSync(),
+        ),
+      );
+      final Set<String> frameworks = <String>{
+        for (final ArchiveFile f in tar.files)
+          if (RegExp(r'/(\w+)\.xcframework/').firstMatch(f.name) != null)
+            RegExp(r'/(\w+)\.xcframework/').firstMatch(f.name)!.group(1)!,
+      };
+      const Set<String> cdio = <String>{'Cdio', 'Cdio_cdda', 'Cdio_paranoia'};
+      final List<int> marker = latin1.encode(
+        'Seek to sector %d, byte %d within the sector.',
+      );
+      final List<ArchiveFile> mpv = tar.files
+          .where(
+            (ArchiveFile f) =>
+                f.isFile &&
+                !f.isSymbolicLink &&
+                f.name.contains('Mpv.framework/') &&
+                p.posix.basename(f.name) == 'Mpv',
+          )
+          .toList();
+      expect(mpv, isNotEmpty);
+      if (plat == 'macos') {
+        expect(frameworks, containsAll(cdio));
+        for (final ArchiveFile slice in mpv) {
+          expect(
+            _containsBytes(slice.content as List<int>, marker),
+            isTrue,
+            reason: '${slice.name} lacks cdda-seek-sector-offset.patch',
+          );
+        }
+      } else {
+        expect(frameworks.intersection(cdio), isEmpty);
+      }
+    }, timeout: const Timeout(Duration(minutes: 3)));
+  }
 
   test('media_kit 覆盖层只放行 app 自己构造的 cdda://<光驱>', () {
     final String policy = File(

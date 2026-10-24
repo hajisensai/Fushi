@@ -32,7 +32,7 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "bb2ceaed3d261ac8290b7a91e3617672e8e6fb07c13016b055858b3905c20a43",
+    "native/third_party_licenses/manifest.json": "7d8aa48066615072b7b0c8b960c61c55bd80758059725360e2079d738ca37e89",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
     "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
@@ -8398,6 +8398,23 @@
       "version": "2.3.0",
       "license": "GPL-3.0-or-later",
       "origin": [
+        "pub:media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "7fa7e56c0db71105.txt"
+      ],
+      "platforms": [
+        "macos"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio 2.3.0，tarball https://github.com/libcdio/libcdio/releases/download/2.3.0/libcdio-2.3.0.tar.bz2 sha256 53e83d28…；源码头 'either version 3 of the License, or (at your option) any later version'；原文 = 该 tarball 的 COPYING",
+      "note": "Cdio.framework（macos-arm64，仅 macOS：iOS 不编 cdda），音频 CD 的 cdda:// 读盘；链系统 /usr/lib/libiconv.2.dylib 与 IOKit / DiskArbitration。"
+    },
+    {
+      "name": "libcdio",
+      "version": "2.3.0",
+      "license": "GPL-3.0-or-later",
+      "origin": [
         "pub:media_kit_libs_windows_video"
       ],
       "textSource": "manifest",
@@ -8409,6 +8426,23 @@
       ],
       "source": "tool/cdda/recipe.env: MSYS2 binary package mingw-w64-x86_64-libcdio 2.3.0-1 (sha256 e8ce99bc…), unpacked into a private prefix by tool/cdda/fetch_cdio_msys2.py; corresponding source = MSYS2 source package mingw-w64-libcdio-2.3.0-1.src.tar.zst (sha256 d2cf5c1b…: upstream libcdio-2.3.0.tar.bz2 sha256 53e83d28… + PKGBUILD + libcdio-0.83-linking.patch); source headers: 'either version 3 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-cdda/ in the rebuilt archive, with SOURCE.txt)",
       "note": "DLL: libcdio-19.dll (fbdcdio-19.dll in the bundle), linked by libmpv's cdda:// stream (-Dcdda=enabled) through libcdio_cdda / libcdio_paranoia; imports only libiconv. Audio CD playback, docs/specs/2026-10-23-music-module-design.md §9.3."
+    },
+    {
+      "name": "libcdio-paranoia",
+      "version": "10.2+2.0.2",
+      "license": "GPL-3.0-or-later",
+      "origin": [
+        "pub:media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "7fa7e56c0db71105.txt"
+      ],
+      "platforms": [
+        "macos"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio-paranoia 10.2+2.0.2，tarball https://ftp.gnu.org/gnu/libcdio/libcdio-paranoia-10.2+2.0.2.tar.bz2 sha256 18689253…；lib/paranoia 与 lib/cdda_interface 源码头 'either version 3 of the License, or (at your option) any later version'",
+      "note": "Cdio_cdda.framework 与 Cdio_paranoia.framework（macos-arm64，仅 macOS），mpv stream_cdda 的 CD-DA 读取与抖动校正。"
     },
     {
       "name": "libcdio-paranoia",

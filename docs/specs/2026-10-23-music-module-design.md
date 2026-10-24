@@ -556,9 +556,9 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
       mpv 报错时再核对一次。没盘 / 换了盘给出带光驱名的明确提示（`music_cd_play_no_disc` /
       `music_cd_play_other_disc`），不会拿别的盘的音频顶着这张专辑的曲名播；其余播放失败现在也会
       toast（`music_play_failed`），原来只记在引擎里、界面不显示。
-    - **平台**：Windows 已实测（下）；macOS 在 Darwin fork 本地分支加了 libcdio 配方与补丁，**等所有者
-      推送并构建**后重新 vendor；iOS / Android 没有光驱，不做；Linux 用系统 mpv，需带 cdda
-      （`docs/agent/build.md`）。
+    - **平台**：Windows 已实测（下）；macOS 随包 libmpv 已换成 Darwin fork `fushi/cdda` `07d6afd`
+      （run 40132136924）的 cdda 构建，产物校验通过（带补丁、链 libcdio_paranoia），**未在 Mac 上实测
+      播放**；iOS / Android 没有光驱，不做；Linux 用系统 mpv，需带 cdda（`docs/agent/build.md`）。
     - **实测**（Windows x64，`…-cdda1` 归档，光驱 E: 里 12 轨盘 `wQ8ygYRJ6TxS9evQ5yIRDW8yJLo-`，参考为
       `cd-paranoia -d E: -Z -r N` 直读，`music_cdda_playback_real_test.dart`，5/5 通过）：第 2 轨
       11,176,704 帧与直读逐字节相同（偏移 0）；轨中 seek 到 100.123 s 后 6,761,295 帧与直读从第

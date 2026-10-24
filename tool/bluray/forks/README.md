@@ -24,7 +24,7 @@
 | 平台 | 状态 | 做法 |
 |---|---|---|
 | Windows | 已实现、已实测 | `tool/bluray/build_libmpv.ps1` 第 6 个补丁 + `-Dcdda=enabled`；libcdio / paranoia 来自 `tool/cdda/recipe.env` 钉版本与 sha256 的 MSYS2 包，`tool/cdda/fetch_cdio_msys2.py` 解到私有前缀（不往 MSYS2 装包）；随包 `fbdcdio-19.dll` / `fbdcdio_cdda-2.dll` / `fbdcdio_paranoia-2.dll`，许可在 `licenses/fushi-cdda/`（GPL-3.0-or-later，含 `SOURCE.txt`）。归档见 `NATIVE_BUILD.md` 的 `cdda1`。 |
-| macOS | 已实现、**未构建** | Darwin fork 本地分支 `fushi/cdda`（基于 `fushi/rdisc` 568c907）：libcdio 2.3.0 / libcdio-paranoia 10.2+2.0.2 的 Nix 配方（只给 macOS）、`patches/mpv-cdda-seek-sector-offset.patch`、macOS `-Dcdda=enabled`。要所有者推到 `hajisensai/libmpv-darwin-build-fushi` 并手动派发 `unified-ffmpeg.yml`，再按下面「重新 vendor」换产物；`verify_darwin_archive.py` 已要求 macOS 产物带 cdda（换产物前用当前随包归档跑它会红，这是预期）。 |
+| macOS | 已构建、已 vendor，**未在 Mac 上实测** | Darwin fork `fushi/cdda` `07d6afd9f8c2606320a35b0e1d32143b5da25f15`（基于 `fushi/rdisc` 568c907，三个提交：配方与补丁 `d3df8b3`、`ec46611` 预设 `am_cv_func_iconv_works=yes`——原生构建时 gnulib 的运行期测试拒绝 macOS 14+ 的 SDK iconv，libcdio 只看 `(size_t)-1` 不受影响、`07d6afd` libcdio-paranoia 只编 `include/` 与 `lib/`——`src/` 的 usage.h 规则在 out-of-tree 下取错目录），镜像仓 run 40132136924。macOS 归档 sha256 `4b58264b…`，`verify_darwin_archive.py` 通过（三个 Cdio framework、补丁特征串、Mpv 链 `@rpath/Cdio_paranoia.framework`）。 |
 | iOS | 不做 | 没有光驱，也没有可用的 libcdio 设备驱动；`-Dcdda=disabled`，`verify_darwin_archive.py` 拒绝带 libcdio 的 iOS 归档。 |
 | Android | 不做 | 没有光驱。Android 构建按名字逐个复制补丁（`tool/bluray/platforms/build_android.sh`、`libmpv-android-video-build.patch`、`apply.sh android` 都不整目录应用），新补丁不进 Android 构建；即使进了，`-Dcdda=disabled` 下 `stream_cdda.c` 不编译。 |
 | Linux | 系统 mpv | 源码构建用发行版 `libmpv2`，要带 cdda（`docs/agent/build.md`「Linux 桌面」）；发行版 mpv 没有这个补丁，seek 后会整段提前。 |

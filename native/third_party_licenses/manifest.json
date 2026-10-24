@@ -2408,6 +2408,34 @@
       "note": "Bluray.framework；-Dbdj_jar=disabled -Dfreetype=disabled -Dlibxml2=disabled -Dembed_udfread=true。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
+      "name": "libcdio",
+      "version": "2.3.0",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_macos_video",
+      "platforms": [
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/cdda/libcdio-2.3.0-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio 2.3.0，tarball https://github.com/libcdio/libcdio/releases/download/2.3.0/libcdio-2.3.0.tar.bz2 sha256 53e83d28…；源码头 'either version 3 of the License, or (at your option) any later version'；原文 = 该 tarball 的 COPYING",
+      "note": "Cdio.framework（macos-arm64，仅 macOS：iOS 不编 cdda），音频 CD 的 cdda:// 读盘；链系统 /usr/lib/libiconv.2.dylib 与 IOKit / DiskArbitration。"
+    },
+    {
+      "name": "libcdio-paranoia",
+      "version": "10.2+2.0.2",
+      "license": "GPL-3.0-or-later",
+      "component": "pub:media_kit_libs_macos_video",
+      "platforms": [
+        "macos"
+      ],
+      "texts": [
+        "native/third_party_licenses/texts/cdda/libcdio-paranoia-10.2+2.0.2-COPYING"
+      ],
+      "source": "hajisensai/libmpv-darwin-build@07d6afd9f8c2606320a35b0e1d32143b5da25f15（分支 fushi/cdda，镜像仓 run 40132136924）packages.lock.nix libcdio-paranoia 10.2+2.0.2，tarball https://ftp.gnu.org/gnu/libcdio/libcdio-paranoia-10.2+2.0.2.tar.bz2 sha256 18689253…；lib/paranoia 与 lib/cdda_interface 源码头 'either version 3 of the License, or (at your option) any later version'",
+      "note": "Cdio_cdda.framework 与 Cdio_paranoia.framework（macos-arm64，仅 macOS），mpv stream_cdda 的 CD-DA 读取与抖动校正。"
+    },
+    {
       "name": "libudfread",
       "version": "1.2.0",
       "license": "LGPL-2.1-or-later",
