@@ -24,6 +24,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiWavyLinearProgress;
@@ -490,6 +491,13 @@ class _MaterialNavCluster extends StatelessWidget {
       barStyle == AdaptiveNavBarStyle.pager &&
       capsuleIndices.length > _kNavPageSize;
 
+  /// Apple 胶囊版的分页判据：`nav_overflow/` 的交互原型（含出厂默认的相机
+  /// 模式条）只接了 MD3，Apple 下一律回落分页滑动——它们改默认之前 Apple
+  /// 用户看到的就是分页，不让默认值变更把 Apple 底栏退回平铺。
+  bool _glassPagedFor(List<int> capsuleIndices) =>
+      (barStyle == AdaptiveNavBarStyle.pager || barStyle.isOverflowVariant) &&
+      capsuleIndices.length > _kNavPageSize;
+
   /// Apple 设计系统（iOS 26）的悬浮标签栏本体：一枚放目的地的玻璃胶囊，
   /// [glassSearchIndex] 那一项拆成右侧的圆形玻璃钮。下滑最小化时胶囊收成
   /// 只剩当前项图标的圆（宽度动画；减弱动态效果下瞬间到位），其余目的地
@@ -530,7 +538,7 @@ class _MaterialNavCluster extends StatelessWidget {
         final double innerFull = fullWidth - 2 * _kGlassNavBarInnerPadding;
         const double innerMini =
             _kGlassNavBarMinimizedWidth - 2 * _kGlassNavBarInnerPadding;
-        final bool paged = _pagedFor(capsuleIndices);
+        final bool paged = _glassPagedFor(capsuleIndices);
         final Widget fullRow = paged
             ? _buildPagedRow(context, innerFull, capsuleIndices, glass: true)
             : Row(
@@ -761,6 +769,27 @@ class _MaterialNavCluster extends StatelessWidget {
     final double width = box.maxWidth;
     if (_pagedFor(indices)) {
       return _buildPagedRow(context, width, indices);
+    }
+    if (this.barStyle.isOverflowVariant) {
+      final ValueChanged<int> select = onDragSelect ?? onTap;
+      return buildNavOverflowVariant(
+        this.barStyle,
+        NavOverflowSpec(
+          items: items,
+          indices: indices,
+          currentIndex: currentIndex,
+          onSelect: (int i) {
+            if (i != currentIndex) fushiSelectionHaptic(context);
+            select(i);
+          },
+          cellBuilder: (int i, double cellWidth) =>
+              _cell(context, i, cellWidth: cellWidth),
+          width: width,
+          height: box.maxHeight.isFinite
+              ? box.maxHeight
+              : kAdaptiveNavBarContentHeight,
+        ),
+      );
     }
     final TextStyle style =
         (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
