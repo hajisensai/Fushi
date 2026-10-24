@@ -30,12 +30,17 @@ class LnReaderExtensionsSection extends StatefulWidget {
     required this.manager,
     required this.showStores,
     required this.showCatalog,
+    this.onOpenStores,
     super.key,
   });
 
   final LnReaderManager manager;
   final bool showStores;
   final bool showCatalog;
+
+  /// 插件目录按钮行上的「扩展仓库」入口（push 仓库管理页）；null 不显示。
+  /// 页头那颗同动作的图标没有字，新用户认不出来。
+  final VoidCallback? onOpenStores;
 
   @override
   State<LnReaderExtensionsSection> createState() =>
@@ -344,6 +349,13 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           icon: const FushiIcon(FushiIcons.link),
           label: Text(t.mihon_store_add),
         ),
+      if (widget.showCatalog && widget.onOpenStores != null)
+        FushiOutlinedButton.icon(
+          key: const ValueKey<String>('novel_extension_open_stores'),
+          onPressed: widget.onOpenStores,
+          icon: const FushiIcon(FushiIcons.hub),
+          label: Text(t.online_sources_stores_manage),
+        ),
     ];
   }
 
@@ -468,21 +480,20 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
         // 与 Mihon 仓库行同一判据：刷新中不判「零扩展」，否则每次进页都误报。
         final bool returnedNothing =
             !manager.loading && store.lastError == null && count == 0;
-        final ExtensionStoreStatus status =
-            switch ((store.lastError, returnedNothing)) {
-              (final String error, _) => (
-                text: error,
-                tone: FushiStatusTone.error,
-              ),
-              (null, true) => (
-                text: t.mihon_store_zero_extensions,
-                tone: FushiStatusTone.warning,
-              ),
-              (null, false) => (
-                text: t.mihon_store_extension_count(count: count),
-                tone: null,
-              ),
-            };
+        final ExtensionStoreStatus status = switch ((
+          store.lastError,
+          returnedNothing,
+        )) {
+          (final String error, _) => (text: error, tone: FushiStatusTone.error),
+          (null, true) => (
+            text: t.mihon_store_zero_extensions,
+            tone: FushiStatusTone.warning,
+          ),
+          (null, false) => (
+            text: t.mihon_store_extension_count(count: count),
+            tone: null,
+          ),
+        };
         // 仓库列表整段读作一个分组（MD3 分段 / Apple inset grouped）。
         return ExtensionStoreTile(
           index: index,

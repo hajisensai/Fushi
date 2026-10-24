@@ -99,6 +99,7 @@ class MihonInstalledSourcesSection extends StatefulWidget {
     this.leading = const <Widget>[],
     this.onOpenSource,
     this.emptyLabel,
+    this.onBrowseExtensions,
   });
 
   final MihonManager manager;
@@ -112,6 +113,10 @@ class MihonInstalledSourcesSection extends StatefulWidget {
 
   /// 一个扩展源都没有时的提示；为 null 不提示（有内置行的域列表不算空）。
   final String? emptyLabel;
+
+  /// 空态上「浏览扩展」按钮的去向（切到 / 打开本域「扩展」）；null 不画按钮。
+  /// 新用户第一眼落在「来源」上，只给一句「先装扩展」却不给路，找不到扩展在哪。
+  final VoidCallback? onBrowseExtensions;
 
   @override
   State<MihonInstalledSourcesSection> createState() =>
@@ -573,6 +578,17 @@ class _MihonInstalledSourcesSectionState
                 child: FushiPlaceholderMessage(
                   icon: FushiIcons.browserExtension,
                   message: emptyLabel,
+                  action: switch (widget.onBrowseExtensions) {
+                    final VoidCallback onTap => FushiFilledButton.icon(
+                      key: const ValueKey<String>(
+                        'mihon_sources_browse_extensions',
+                      ),
+                      onPressed: onTap,
+                      icon: const FushiIcon(FushiIcons.browserExtension),
+                      label: Text(t.online_sources_browse_extensions),
+                    ),
+                    null => null,
+                  },
                 ),
               ),
             )

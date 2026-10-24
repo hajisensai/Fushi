@@ -10,6 +10,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -133,6 +135,54 @@ void main() {
       expect(tester.takeException(), null);
     });
 
+    testWidgets('「扩展」段带 onOpenStores：目录按钮行有带字的「扩展仓库」，点了走回调', (
+      WidgetTester tester,
+    ) async {
+      int opened = 0;
+      await pumpSlivers(tester, <Widget>[
+        MihonExtensionsPage(
+          manager: manager,
+          embedded: true,
+          onOpenStores: () => opened++,
+          sections: const <MihonExtensionsSection>[
+            MihonExtensionsSection.catalog,
+          ],
+        ),
+      ]);
+      final Finder button = find.byKey(
+        const ValueKey<String>('mihon_extension_open_stores'),
+      );
+      expect(button, findsOneWidget);
+      expect(
+        find.descendant(
+          of: button,
+          matching: find.text(t.online_sources_stores_manage),
+        ),
+        findsOneWidget,
+        reason: '入口必须带字：页头那颗无字图标新用户认不出来',
+      );
+      await tester.tap(button);
+      await tester.pump();
+      expect(opened, 1);
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('没传 onOpenStores 时目录里不画「扩展仓库」按钮', (WidgetTester tester) async {
+      await pumpSlivers(tester, <Widget>[
+        MihonExtensionsPage(
+          manager: manager,
+          embedded: true,
+          sections: const <MihonExtensionsSection>[
+            MihonExtensionsSection.catalog,
+          ],
+        ),
+      ]);
+      expect(
+        find.byKey(const ValueKey<String>('mihon_extension_open_stores')),
+        findsNothing,
+      );
+    });
+
     testWidgets('空 sections 渲染空 sliver：兄弟节仍在、不抛', (WidgetTester tester) async {
       await pumpSlivers(tester, <Widget>[
         const SliverToBoxAdapter(child: Text('outer-section-above')),
@@ -160,6 +210,60 @@ void main() {
       expect(find.text(t.mihon_store_refresh), findsOneWidget);
       expect(find.text(t.mihon_extension_import), findsOneWidget);
       expect(find.text(t.mihon_store_add), findsOneWidget);
+    });
+  });
+
+  group('来源空态去扩展', () {
+    testWidgets('没有扩展源：空态给「浏览扩展」按钮，点了走 onBrowseExtensions', (
+      WidgetTester tester,
+    ) async {
+      int browsed = 0;
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(
+          manager: manager,
+          emptyLabel: t.video_online_sources_empty,
+          onBrowseExtensions: () => browsed++,
+        ),
+      ]);
+      expect(find.text(t.video_online_sources_empty), findsOneWidget);
+      final Finder button = find.byKey(
+        const ValueKey<String>('mihon_sources_browse_extensions'),
+      );
+      expect(button, findsOneWidget);
+      await tester.tap(button);
+      await tester.pump();
+      expect(browsed, 1);
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('库页壳里 openOnlineSourceExtensions 就地切到「扩展」视图，不 push', (
+      WidgetTester tester,
+    ) async {
+      final List<MediaLibraryViewKind> selected = <MediaLibraryViewKind>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MediaLibraryShellScope(
+            kinds: const <MediaLibraryViewKind>{
+              MediaLibraryViewKind.onlineSources,
+              MediaLibraryViewKind.extensions,
+            },
+            select: selected.add,
+            child: Builder(
+              builder: (BuildContext context) => TextButton(
+                onPressed: () => openOnlineSourceExtensions(
+                  context,
+                  OnlineSourcesDomain.video,
+                ),
+                child: const Text('go'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pump();
+      expect(selected, <MediaLibraryViewKind>[MediaLibraryViewKind.extensions]);
+      expect(find.byType(BrowseSubPage), findsNothing);
     });
   });
 

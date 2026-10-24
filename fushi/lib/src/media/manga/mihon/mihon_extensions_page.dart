@@ -62,6 +62,7 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
     this.manager,
     this.embedded = false,
     this.sections = MihonExtensionsSection.values,
+    this.onOpenStores,
   });
 
   final Widget? navigation;
@@ -72,6 +73,12 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
 
   /// 内嵌时渲染的节；独立页形态忽略它、恒渲染全部。
   final List<MihonExtensionsSection> sections;
+
+  /// 内嵌目录按钮行上的「扩展仓库」入口（push 仓库管理页）；null 不显示。
+  ///
+  /// 页头动作组里同一动作只是一颗无字的图标，新用户认不出「加扩展先得加仓库」
+  /// 的入口在哪，所以目录正文里再给一颗带字的按钮。
+  final VoidCallback? onOpenStores;
 
   bool get _showStores => sections.contains(MihonExtensionsSection.stores);
   bool get _showCatalog => sections.contains(MihonExtensionsSection.catalog);
@@ -516,6 +523,13 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               icon: const FushiIcon(FushiIcons.link),
               label: Text(t.mihon_store_add),
             ),
+          if (widget._showCatalog && widget.onOpenStores != null)
+            FushiOutlinedButton.icon(
+              key: const ValueKey<String>('mihon_extension_open_stores'),
+              onPressed: widget.onOpenStores,
+              icon: const FushiIcon(FushiIcons.hub),
+              label: Text(t.online_sources_stores_manage),
+            ),
           if (widget._showCatalog)
             FushiFilledButton.tonalIcon(
               key: const ValueKey<String>('mihon_extension_import_apk'),
@@ -648,9 +662,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 顶部刷新 / 添加仓库、信任提示、加载条、仓库分组列表。与小说插件仓库页
   /// 同一组零件（`extension_store_list.dart`）。
   Widget _buildStorePage(MihonManager manager) {
-    return FushiEntranceScope(
-      child: _buildStorePageBody(manager),
-    );
+    return FushiEntranceScope(child: _buildStorePageBody(manager));
   }
 
   Widget _buildStorePageBody(MihonManager manager) {
@@ -765,7 +777,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     // 每个仓库（表头 + 展开的扩展行）读作一个分组：逐行算出组内位置。
     final List<(int, int)> groupSlots = extensionGroupSlots(
-      groupedRows.map((MihonExtensionListRow row) => row is MihonStoreHeaderRow),
+      groupedRows.map(
+        (MihonExtensionListRow row) => row is MihonStoreHeaderRow,
+      ),
     );
     final Widget storesSliver = SliverList.builder(
       itemCount: manager.stores.length,
@@ -793,23 +807,22 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
               (MihonAvailableExtension item) => item.storeUrl == store.indexUrl,
             )
             .length;
-        final ExtensionStoreStatus? status =
-            switch ((store.lastError, returnedNothing)) {
-              (final String error, _) => (
-                text: error,
-                tone: FushiStatusTone.error,
-              ),
-              (null, true) => (
-                text: t.mihon_store_zero_extensions,
-                tone: FushiStatusTone.warning,
-              ),
-              // 刷新中 / 停用的仓库没有可信的条数，只显示地址。
-              (null, false) when extensionCount > 0 => (
-                text: t.mihon_store_extension_count(count: extensionCount),
-                tone: null,
-              ),
-              (null, false) => null,
-            };
+        final ExtensionStoreStatus? status = switch ((
+          store.lastError,
+          returnedNothing,
+        )) {
+          (final String error, _) => (text: error, tone: FushiStatusTone.error),
+          (null, true) => (
+            text: t.mihon_store_zero_extensions,
+            tone: FushiStatusTone.warning,
+          ),
+          // 刷新中 / 停用的仓库没有可信的条数，只显示地址。
+          (null, false) when extensionCount > 0 => (
+            text: t.mihon_store_extension_count(count: extensionCount),
+            tone: null,
+          ),
+          (null, false) => null,
+        };
         // 仓库列表整段读作一个分组（MD3 分段 / Apple inset grouped），组尾
         // 留组间距与下面的目录隔开。
         return ExtensionStoreTile(
@@ -1012,7 +1025,10 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         extension.name,
         extension.packageName,
         ...extension.sources.expand(
-          (MihonAvailableSource source) => <String>[source.name, source.baseUrl],
+          (MihonAvailableSource source) => <String>[
+            source.name,
+            source.baseUrl,
+          ],
         ),
       ],
     );

@@ -134,6 +134,9 @@ class _MangaOnlineSourcesViewState
               const SizedBox(height: 4),
             ],
             onOpenSource: _openMihonSource,
+            emptyLabel: t.manga_online_sources_empty,
+            onBrowseExtensions: () =>
+                openOnlineSourceExtensions(context, OnlineSourcesDomain.manga),
           )
         else if (onlineSourcesAvailable)
           SliverToBoxAdapter(
@@ -152,6 +155,9 @@ class _MangaOnlineSourcesViewState
         MihonExtensionsPage(
           key: ValueKey<String>('manga_mihon_extensions_${section.name}'),
           embedded: true,
+          onOpenStores: section == OnlineSourcesSection.extensions
+              ? () => openOnlineSourceStores(context, OnlineSourcesDomain.manga)
+              : null,
           sections: <MihonExtensionsSection>[
             if (section == OnlineSourcesSection.stores)
               MihonExtensionsSection.stores

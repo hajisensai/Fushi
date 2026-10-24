@@ -9,6 +9,7 @@ import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/online/installed_online_source_row.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -27,11 +28,15 @@ class LnReaderInstalledSourcesSection extends StatefulWidget {
   const LnReaderInstalledSourcesSection({
     required this.manager,
     required this.onOpenSource,
+    this.onBrowseExtensions,
     super.key,
   });
 
   final LnReaderManager manager;
   final void Function(LnReaderInstalledPlugin plugin) onOpenSource;
+
+  /// 空态上「浏览扩展」按钮的去向（切到 / 打开本域「扩展」）；null 不画按钮。
+  final VoidCallback? onBrowseExtensions;
 
   @override
   State<LnReaderInstalledSourcesSection> createState() =>
@@ -271,6 +276,17 @@ class _LnReaderInstalledSourcesSectionState
               child: FushiPlaceholderMessage(
                 icon: FushiIcons.books,
                 message: t.novel_online_sources_empty,
+                action: switch (widget.onBrowseExtensions) {
+                  final VoidCallback onTap => FushiFilledButton.icon(
+                    key: const ValueKey<String>(
+                      'novel_sources_browse_extensions',
+                    ),
+                    onPressed: onTap,
+                    icon: const FushiIcon(FushiIcons.browserExtension),
+                    label: Text(t.online_sources_browse_extensions),
+                  ),
+                  null => null,
+                },
               ),
             )
           else if (narrowed && pinned.isEmpty && rest.isEmpty)
