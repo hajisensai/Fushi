@@ -125,20 +125,24 @@ Future<Uint8List> _play(
         equalizer: eq,
       ),
     );
+    // 读逐文件 `af` 要在文件还加载着的时候：先暂停着打开（on_load 钩子照样跑），等时长报上来
+    // （文件已加载）再读，然后才开播。`ao=pcm` 不按实时送数据，边播边等位置会和「已经
+    // 播完卸载」赛跑。
     await backend.openPair(
       MusicPlayItem(trackUid: file, path: file, title: 'tone'),
       null,
-      play: true,
+      play: onAf == null,
     );
     if (onAf != null) {
-      await backend.debugPlayer.stream.position.firstWhere(
-        (Duration p) => p > const Duration(milliseconds: 200),
-      );
+      await backend.debugPlayer.stream.duration
+          .firstWhere((Duration d) => d > Duration.zero)
+          .timeout(const Duration(seconds: 15));
       onAf(
         await (backend.debugPlayer.platform! as NativePlayer).getPropertyAsync(
           'af',
         ),
       );
+      await backend.play();
     }
     await done.future.timeout(const Duration(seconds: 30));
   } finally {
