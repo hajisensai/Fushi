@@ -1602,8 +1602,16 @@ mixin _FushiDbStatistics
   // ── mined sentences ──────────────────────────────────────────────
 
   /// 记录一次成功制卡：插入一条历史，并在事务内 trim 掉超额的最旧行。
-  /// 定位列（[bookKey]/[sectionIndex]/[normCharOffset]/[normCharLength]）按来源可空——
-  /// 独立查词页 / 首页词典制卡无书无章，传 null（展示为不可跳转条目）。
+  /// 定位列按来源可空——独立查词页 / 首页词典制卡无书无章，传 null（展示为不可跳转
+  /// 条目）。v128 起每种定位各占一列、不再一列两义：
+  /// - 书 / 有声书 / 歌词模式：[sectionIndex] + [normCharOffset] / [normCharLength]；
+  /// - 视频：[sectionIndex]（集下标）+ [positionMs] / [durationMs]；
+  /// - 音乐：[positionMs] / [durationMs]（[bookKey] = track uid）；
+  /// - 漫画：[pageIndex]；
+  /// - 游戏：只有 [bookKey]（`galgames.id`），台词在文本钩子历史里。
+  ///
+  /// 时间轴来源误传字符偏移会被断言拦下（[source] 为 video / music 时
+  /// [normCharOffset] / [normCharLength] 必须为 null）。
   Future<void> addMinedSentence({
     required String source,
     required String dateKey,
@@ -1617,9 +1625,18 @@ mixin _FushiDbStatistics
     int? sectionIndex,
     int? normCharOffset,
     int? normCharLength,
+    int? positionMs,
+    int? durationMs,
+    int? pageIndex,
     int? noteId,
-  }) =>
-      transaction(() async {
+  }) {
+    assert(
+      !((source == 'video' || source == 'music') &&
+          (normCharOffset != null || normCharLength != null)),
+      'time-axis mined sentences carry positionMs / durationMs, '
+      'not character offsets',
+    );
+    return transaction(() async {
         await into(minedSentences).insert(
           MinedSentencesCompanion.insert(
             source: source,
@@ -1634,12 +1651,16 @@ mixin _FushiDbStatistics
             sectionIndex: Value(sectionIndex),
             normCharOffset: Value(normCharOffset),
             normCharLength: Value(normCharLength),
+            positionMs: Value(positionMs),
+            durationMs: Value(durationMs),
+            pageIndex: Value(pageIndex),
             noteId: Value(noteId),
             createdAt: DateTime.now().millisecondsSinceEpoch,
           ),
         );
         await _trimMinedSentences();
       });
+  }
 
   /// 取全部制卡历史，按 createdAt 倒序（最近在前），供收藏夹页展示。
   Future<List<MinedSentenceRow>> getAllMinedSentences() =>

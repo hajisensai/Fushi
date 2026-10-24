@@ -443,12 +443,18 @@ Future<Map<String, Object?>> _mineEntry(
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
   final BaseAnkiRepository repo = model.miningAnkiRepository;
+  // galgame 会话在跑：卡片带游戏出处（复习时「回到出处」打开该游戏），书域不带。
+  final ({String gameId, String? title})? game =
+      overlayMinedSentenceGameOrigin();
   final MineOutcome outcome = await repo.mineEntry(
     rawPayloadJson: jsonEncode(fields),
     context: AnkiMiningContext(
       sentence: sentence,
       coverPath: coverPath,
       source: AnkiMiningSource.book,
+      documentTitle: game?.title,
+      sourceLink:
+          game == null ? null : CardSourceLink.tryGame(gameId: game.gameId),
     ),
   );
   // 与 in-app 入口（texthooker 页）同判据：describeMineOutcome 决定成败与记不记，
@@ -529,9 +535,14 @@ Future<void> _recordMinedStats(
     // P4 写侧收敛：全局汇总 + per-book 计数走 DB 复合入口（同事务；app 外查词
     // 无书 → bookKey/title 空，只进汇总桶）。制卡历史行与之共用同一时刻的 dateKey。
     await db.recordMiningEvent(sourceType: overlayStatSourceType(), at: now);
+    // 游戏域时记下「哪个游戏」（回到出处 = 打开该游戏的详情 / 文本钩子历史）。
+    final ({String gameId, String? title})? game =
+        overlayMinedSentenceGameOrigin();
     await db.addMinedSentence(
       source: overlayMinedSentenceSource(),
       dateKey: dateKey,
+      bookKey: game?.gameId,
+      documentTitle: game?.title,
       expression: fields['expression'] ?? '',
       reading: fields['reading'] ?? '',
       glossary: fields['glossary'] ?? '',

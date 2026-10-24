@@ -14269,6 +14269,39 @@ class $MinedSentencesTable extends MinedSentences
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _positionMsMeta = const VerificationMeta(
+    'positionMs',
+  );
+  @override
+  late final GeneratedColumn<int> positionMs = GeneratedColumn<int>(
+    'position_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _pageIndexMeta = const VerificationMeta(
+    'pageIndex',
+  );
+  @override
+  late final GeneratedColumn<int> pageIndex = GeneratedColumn<int>(
+    'page_index',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _noteIdMeta = const VerificationMeta('noteId');
   @override
   late final GeneratedColumn<int> noteId = GeneratedColumn<int>(
@@ -14314,6 +14347,9 @@ class $MinedSentencesTable extends MinedSentences
     sectionIndex,
     normCharOffset,
     normCharLength,
+    positionMs,
+    durationMs,
+    pageIndex,
     noteId,
     dateKey,
     createdAt,
@@ -14416,6 +14452,24 @@ class $MinedSentencesTable extends MinedSentences
         ),
       );
     }
+    if (data.containsKey('position_ms')) {
+      context.handle(
+        _positionMsMeta,
+        positionMs.isAcceptableOrUnknown(data['position_ms']!, _positionMsMeta),
+      );
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('page_index')) {
+      context.handle(
+        _pageIndexMeta,
+        pageIndex.isAcceptableOrUnknown(data['page_index']!, _pageIndexMeta),
+      );
+    }
     if (data.containsKey('note_id')) {
       context.handle(
         _noteIdMeta,
@@ -14495,6 +14549,18 @@ class $MinedSentencesTable extends MinedSentences
         DriftSqlType.int,
         data['${effectivePrefix}norm_char_length'],
       ),
+      positionMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position_ms'],
+      ),
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      ),
+      pageIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}page_index'],
+      ),
       noteId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}note_id'],
@@ -14524,21 +14590,34 @@ class MinedSentenceRow extends DataClass
   final String glossary;
   final String sentence;
 
-  /// 跳转/分流来源标识，与 `kFavoriteSentenceSourceBook` / `Video` 等同值（'book' |
-  /// 'video' | 'audiobook' | 'lyrics'）。统计语义（book/video 桶）也由它派生。
+  /// 跳转/分流来源标识，与 `kFavoriteSentenceSource*` 同值（'book' | 'video' |
+  /// 'audiobook' | 'lyrics' | 'game' | 'manga' | 'music'，见 `SentenceSourceKind`）。
   final String source;
   final String? documentTitle;
   final String? chapterLabel;
 
-  /// 定位锚点（与收藏句同构）：书内是 bookKey，视频是 bookUid。
+  /// 出处身份（按 [source] 分域）：书 / 有声书 / 歌词模式 / 漫画是 bookKey，视频是
+  /// bookUid，游戏是 `galgames.id`，音乐是 `music_tracks.track_uid`。
   final String? bookKey;
+
+  /// 书内章节下标；视频是集下标（单视频恒 0）。
   final int? sectionIndex;
 
-  /// 书内是归一化字符偏移；视频来源里复用为 cue 起点 ms（与收藏句一致）。
+  /// **只**表示章内归一化字符偏移（书 / 有声书 / 歌词模式）。v128 前视频来源把它
+  /// 复用成 cue 起点毫秒，v128 迁移已把那批值搬进 [positionMs] 并清空本列。
   final int? normCharOffset;
 
-  /// 视频来源里复用为 cue 时长 ms（书内为选区长度）。
+  /// **只**表示选区字符长度（同 [normCharOffset]）。v128 前视频复用为 cue 时长。
   final int? normCharLength;
+
+  /// 媒体时间轴上的起点毫秒（视频 / 音乐；v128）。
+  final int? positionMs;
+
+  /// 片段时长毫秒（与 [positionMs] 成对；v128）。
+  final int? durationMs;
+
+  /// 漫画页码（0 起；v128）。
+  final int? pageIndex;
 
   /// AnkiConnect 成功制卡带回的 note id；AnkiDroid 恒 null。
   final int? noteId;
@@ -14557,6 +14636,9 @@ class MinedSentenceRow extends DataClass
     this.sectionIndex,
     this.normCharOffset,
     this.normCharLength,
+    this.positionMs,
+    this.durationMs,
+    this.pageIndex,
     this.noteId,
     required this.dateKey,
     required this.createdAt,
@@ -14587,6 +14669,15 @@ class MinedSentenceRow extends DataClass
     }
     if (!nullToAbsent || normCharLength != null) {
       map['norm_char_length'] = Variable<int>(normCharLength);
+    }
+    if (!nullToAbsent || positionMs != null) {
+      map['position_ms'] = Variable<int>(positionMs);
+    }
+    if (!nullToAbsent || durationMs != null) {
+      map['duration_ms'] = Variable<int>(durationMs);
+    }
+    if (!nullToAbsent || pageIndex != null) {
+      map['page_index'] = Variable<int>(pageIndex);
     }
     if (!nullToAbsent || noteId != null) {
       map['note_id'] = Variable<int>(noteId);
@@ -14622,6 +14713,15 @@ class MinedSentenceRow extends DataClass
       normCharLength: normCharLength == null && nullToAbsent
           ? const Value.absent()
           : Value(normCharLength),
+      positionMs: positionMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(positionMs),
+      durationMs: durationMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationMs),
+      pageIndex: pageIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pageIndex),
       noteId: noteId == null && nullToAbsent
           ? const Value.absent()
           : Value(noteId),
@@ -14648,6 +14748,9 @@ class MinedSentenceRow extends DataClass
       sectionIndex: serializer.fromJson<int?>(json['sectionIndex']),
       normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
       normCharLength: serializer.fromJson<int?>(json['normCharLength']),
+      positionMs: serializer.fromJson<int?>(json['positionMs']),
+      durationMs: serializer.fromJson<int?>(json['durationMs']),
+      pageIndex: serializer.fromJson<int?>(json['pageIndex']),
       noteId: serializer.fromJson<int?>(json['noteId']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -14669,6 +14772,9 @@ class MinedSentenceRow extends DataClass
       'sectionIndex': serializer.toJson<int?>(sectionIndex),
       'normCharOffset': serializer.toJson<int?>(normCharOffset),
       'normCharLength': serializer.toJson<int?>(normCharLength),
+      'positionMs': serializer.toJson<int?>(positionMs),
+      'durationMs': serializer.toJson<int?>(durationMs),
+      'pageIndex': serializer.toJson<int?>(pageIndex),
       'noteId': serializer.toJson<int?>(noteId),
       'dateKey': serializer.toJson<String>(dateKey),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -14688,6 +14794,9 @@ class MinedSentenceRow extends DataClass
     Value<int?> sectionIndex = const Value.absent(),
     Value<int?> normCharOffset = const Value.absent(),
     Value<int?> normCharLength = const Value.absent(),
+    Value<int?> positionMs = const Value.absent(),
+    Value<int?> durationMs = const Value.absent(),
+    Value<int?> pageIndex = const Value.absent(),
     Value<int?> noteId = const Value.absent(),
     String? dateKey,
     int? createdAt,
@@ -14710,6 +14819,9 @@ class MinedSentenceRow extends DataClass
     normCharLength: normCharLength.present
         ? normCharLength.value
         : this.normCharLength,
+    positionMs: positionMs.present ? positionMs.value : this.positionMs,
+    durationMs: durationMs.present ? durationMs.value : this.durationMs,
+    pageIndex: pageIndex.present ? pageIndex.value : this.pageIndex,
     noteId: noteId.present ? noteId.value : this.noteId,
     dateKey: dateKey ?? this.dateKey,
     createdAt: createdAt ?? this.createdAt,
@@ -14740,6 +14852,13 @@ class MinedSentenceRow extends DataClass
       normCharLength: data.normCharLength.present
           ? data.normCharLength.value
           : this.normCharLength,
+      positionMs: data.positionMs.present
+          ? data.positionMs.value
+          : this.positionMs,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      pageIndex: data.pageIndex.present ? data.pageIndex.value : this.pageIndex,
       noteId: data.noteId.present ? data.noteId.value : this.noteId,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -14761,6 +14880,9 @@ class MinedSentenceRow extends DataClass
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('normCharLength: $normCharLength, ')
+          ..write('positionMs: $positionMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('pageIndex: $pageIndex, ')
           ..write('noteId: $noteId, ')
           ..write('dateKey: $dateKey, ')
           ..write('createdAt: $createdAt')
@@ -14782,6 +14904,9 @@ class MinedSentenceRow extends DataClass
     sectionIndex,
     normCharOffset,
     normCharLength,
+    positionMs,
+    durationMs,
+    pageIndex,
     noteId,
     dateKey,
     createdAt,
@@ -14802,6 +14927,9 @@ class MinedSentenceRow extends DataClass
           other.sectionIndex == this.sectionIndex &&
           other.normCharOffset == this.normCharOffset &&
           other.normCharLength == this.normCharLength &&
+          other.positionMs == this.positionMs &&
+          other.durationMs == this.durationMs &&
+          other.pageIndex == this.pageIndex &&
           other.noteId == this.noteId &&
           other.dateKey == this.dateKey &&
           other.createdAt == this.createdAt);
@@ -14820,6 +14948,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
   final Value<int?> sectionIndex;
   final Value<int?> normCharOffset;
   final Value<int?> normCharLength;
+  final Value<int?> positionMs;
+  final Value<int?> durationMs;
+  final Value<int?> pageIndex;
   final Value<int?> noteId;
   final Value<String> dateKey;
   final Value<int> createdAt;
@@ -14836,6 +14967,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
     this.sectionIndex = const Value.absent(),
     this.normCharOffset = const Value.absent(),
     this.normCharLength = const Value.absent(),
+    this.positionMs = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.pageIndex = const Value.absent(),
     this.noteId = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -14853,6 +14987,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
     this.sectionIndex = const Value.absent(),
     this.normCharOffset = const Value.absent(),
     this.normCharLength = const Value.absent(),
+    this.positionMs = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.pageIndex = const Value.absent(),
     this.noteId = const Value.absent(),
     required String dateKey,
     required int createdAt,
@@ -14872,6 +15009,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
     Expression<int>? sectionIndex,
     Expression<int>? normCharOffset,
     Expression<int>? normCharLength,
+    Expression<int>? positionMs,
+    Expression<int>? durationMs,
+    Expression<int>? pageIndex,
     Expression<int>? noteId,
     Expression<String>? dateKey,
     Expression<int>? createdAt,
@@ -14889,6 +15029,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
       if (sectionIndex != null) 'section_index': sectionIndex,
       if (normCharOffset != null) 'norm_char_offset': normCharOffset,
       if (normCharLength != null) 'norm_char_length': normCharLength,
+      if (positionMs != null) 'position_ms': positionMs,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (pageIndex != null) 'page_index': pageIndex,
       if (noteId != null) 'note_id': noteId,
       if (dateKey != null) 'date_key': dateKey,
       if (createdAt != null) 'created_at': createdAt,
@@ -14908,6 +15051,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
     Value<int?>? sectionIndex,
     Value<int?>? normCharOffset,
     Value<int?>? normCharLength,
+    Value<int?>? positionMs,
+    Value<int?>? durationMs,
+    Value<int?>? pageIndex,
     Value<int?>? noteId,
     Value<String>? dateKey,
     Value<int>? createdAt,
@@ -14925,6 +15071,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
       sectionIndex: sectionIndex ?? this.sectionIndex,
       normCharOffset: normCharOffset ?? this.normCharOffset,
       normCharLength: normCharLength ?? this.normCharLength,
+      positionMs: positionMs ?? this.positionMs,
+      durationMs: durationMs ?? this.durationMs,
+      pageIndex: pageIndex ?? this.pageIndex,
       noteId: noteId ?? this.noteId,
       dateKey: dateKey ?? this.dateKey,
       createdAt: createdAt ?? this.createdAt,
@@ -14970,6 +15119,15 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
     if (normCharLength.present) {
       map['norm_char_length'] = Variable<int>(normCharLength.value);
     }
+    if (positionMs.present) {
+      map['position_ms'] = Variable<int>(positionMs.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (pageIndex.present) {
+      map['page_index'] = Variable<int>(pageIndex.value);
+    }
     if (noteId.present) {
       map['note_id'] = Variable<int>(noteId.value);
     }
@@ -14997,6 +15155,9 @@ class MinedSentencesCompanion extends UpdateCompanion<MinedSentenceRow> {
           ..write('sectionIndex: $sectionIndex, ')
           ..write('normCharOffset: $normCharOffset, ')
           ..write('normCharLength: $normCharLength, ')
+          ..write('positionMs: $positionMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('pageIndex: $pageIndex, ')
           ..write('noteId: $noteId, ')
           ..write('dateKey: $dateKey, ')
           ..write('createdAt: $createdAt')
@@ -80968,6 +81129,9 @@ typedef $$MinedSentencesTableCreateCompanionBuilder =
       Value<int?> sectionIndex,
       Value<int?> normCharOffset,
       Value<int?> normCharLength,
+      Value<int?> positionMs,
+      Value<int?> durationMs,
+      Value<int?> pageIndex,
       Value<int?> noteId,
       required String dateKey,
       required int createdAt,
@@ -80986,6 +81150,9 @@ typedef $$MinedSentencesTableUpdateCompanionBuilder =
       Value<int?> sectionIndex,
       Value<int?> normCharOffset,
       Value<int?> normCharLength,
+      Value<int?> positionMs,
+      Value<int?> durationMs,
+      Value<int?> pageIndex,
       Value<int?> noteId,
       Value<String> dateKey,
       Value<int> createdAt,
@@ -81057,6 +81224,21 @@ class $$MinedSentencesTableFilterComposer
 
   ColumnFilters<int> get normCharLength => $composableBuilder(
     column: $table.normCharLength,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pageIndex => $composableBuilder(
+    column: $table.pageIndex,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -81145,6 +81327,21 @@ class $$MinedSentencesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pageIndex => $composableBuilder(
+    column: $table.pageIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get noteId => $composableBuilder(
     column: $table.noteId,
     builder: (column) => ColumnOrderings(column),
@@ -81218,6 +81415,19 @@ class $$MinedSentencesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get pageIndex =>
+      $composableBuilder(column: $table.pageIndex, builder: (column) => column);
+
   GeneratedColumn<int> get noteId =>
       $composableBuilder(column: $table.noteId, builder: (column) => column);
 
@@ -81277,6 +81487,9 @@ class $$MinedSentencesTableTableManager
                 Value<int?> sectionIndex = const Value.absent(),
                 Value<int?> normCharOffset = const Value.absent(),
                 Value<int?> normCharLength = const Value.absent(),
+                Value<int?> positionMs = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<int?> pageIndex = const Value.absent(),
                 Value<int?> noteId = const Value.absent(),
                 Value<String> dateKey = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -81293,6 +81506,9 @@ class $$MinedSentencesTableTableManager
                 sectionIndex: sectionIndex,
                 normCharOffset: normCharOffset,
                 normCharLength: normCharLength,
+                positionMs: positionMs,
+                durationMs: durationMs,
+                pageIndex: pageIndex,
                 noteId: noteId,
                 dateKey: dateKey,
                 createdAt: createdAt,
@@ -81311,6 +81527,9 @@ class $$MinedSentencesTableTableManager
                 Value<int?> sectionIndex = const Value.absent(),
                 Value<int?> normCharOffset = const Value.absent(),
                 Value<int?> normCharLength = const Value.absent(),
+                Value<int?> positionMs = const Value.absent(),
+                Value<int?> durationMs = const Value.absent(),
+                Value<int?> pageIndex = const Value.absent(),
                 Value<int?> noteId = const Value.absent(),
                 required String dateKey,
                 required int createdAt,
@@ -81327,6 +81546,9 @@ class $$MinedSentencesTableTableManager
                 sectionIndex: sectionIndex,
                 normCharOffset: normCharOffset,
                 normCharLength: normCharLength,
+                positionMs: positionMs,
+                durationMs: durationMs,
+                pageIndex: pageIndex,
                 noteId: noteId,
                 dateKey: dateKey,
                 createdAt: createdAt,

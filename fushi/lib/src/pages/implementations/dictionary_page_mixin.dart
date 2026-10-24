@@ -560,10 +560,13 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
     String? coverPath,
   ) async {
+    final CardSourceLink? sourceLink = miningCardSourceLink;
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
       source: miningSource,
+      documentTitle: sourceLink == null ? null : minedSentenceOrigin?.title,
+      sourceLink: sourceLink,
     );
     // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
     // pending toast 给即时反馈；结果 toast 会顶替它。
@@ -817,17 +820,31 @@ mixin DictionaryPageMixin {
     controller.onLookupStarted = recordLookup;
   }
 
-  /// TODO-633: land one mined-sentence history row (no book locator here —
-  /// home/standalone lookup). Best-effort; failure is swallowed + logged.
+  /// 制卡历史行的出处身份（`mined_sentences.book_key` + 标题快照）。首页 / 独立
+  /// 查词窗没有出处，恒 null（行不可跳转）；texthooker 覆写为当前 galgame 会话的
+  /// `galgames.id`（回到出处 = 打开该游戏详情 / 文本钩子历史）。
+  @protected
+  ({String key, String? title})? get minedSentenceOrigin => null;
+
+  /// 本宿主制出的卡携带的出处链接（复习时「回到出处」）。默认 null（首页 / 独立
+  /// 查词无出处）；texthooker 覆写为游戏出处。
+  @protected
+  CardSourceLink? get miningCardSourceLink => null;
+
+  /// TODO-633: land one mined-sentence history row. Locator = [minedSentenceOrigin]
+  /// (null for home/standalone lookup). Best-effort; failure is swallowed + logged.
   @protected
   Future<void> recordMinedSentence(
     Map<String, String> fields,
     int? noteId,
   ) async {
     try {
+      final ({String key, String? title})? origin = minedSentenceOrigin;
       await mixinAppModel.database.addMinedSentence(
         source: dictionarySourceType,
         dateKey: _statTodayKey(),
+        bookKey: origin?.key,
+        documentTitle: origin?.title,
         expression: fields['expression'] ?? '',
         reading: fields['reading'] ?? '',
         glossary: fields['glossary'] ?? '',

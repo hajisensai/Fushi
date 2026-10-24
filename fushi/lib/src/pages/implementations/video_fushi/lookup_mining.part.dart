@@ -843,8 +843,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         historyDocumentTitle: historySnapshot?.documentTitle,
         historyBookKey: historySnapshot?.bookKey,
         historySectionIndex: historySnapshot?.sectionIndex,
-        historyCueStartMs: historySnapshot?.normCharOffset,
-        historyCueLengthMs: historySnapshot?.normCharLength,
+        historyCueStartMs: historySnapshot?.positionMs,
+        historyCueLengthMs: historySnapshot?.durationMs,
       );
       stageNote =
           ({
@@ -1215,8 +1215,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         documentTitle: snapshot.documentTitle,
         bookKey: snapshot.bookKey,
         sectionIndex: snapshot.sectionIndex,
-        normCharOffset: snapshot.normCharOffset,
-        normCharLength: snapshot.normCharLength,
+        positionMs: snapshot.positionMs,
+        durationMs: snapshot.durationMs,
         noteId: noteId,
       );
     } catch (e, st) {

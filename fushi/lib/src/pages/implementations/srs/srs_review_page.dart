@@ -28,6 +28,8 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi/src/anki/card_source_origin.dart'
+    show cardSourceKindIcon, cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -850,7 +852,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     }
   }
 
-  /// 卡面里点了 Fushi 来源链接：跳回书 / 漫画 / 视频的对应位置。
+  /// 当前卡笔记里的出处链接（制卡时写进来源字段的 `fushi://source`）。顶栏「回到
+  /// 出处」按它显示——不依赖卡面模板是否把来源字段渲染出来。
+  CardSourceLink? get _currentSourceLink {
+    final SrsCardDetail? detail = _detail;
+    return detail == null
+        ? null
+        : cardSourceLinkOfFields(detail.note.fields.values);
+  }
+
+  /// 卡面里点了 Fushi 来源链接 / 顶栏「回到出处」：跳回书 / 漫画 / 视频 / 游戏 /
+  /// 音乐的对应位置。
   void _openSource(CardSourceLink link) {
     _lookup.closeAll();
     srsRunLogged(
@@ -900,6 +912,13 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         icon: FushiIcons.replay,
         label: t.srs_review_replay_audio,
         onPressed: _replayAudio,
+      ),
+    if (_currentSourceLink case final CardSourceLink source)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_open_source'),
+        icon: cardSourceKindIcon(source.kind),
+        label: t.card_source_open,
+        onPressed: () => _openSource(source),
       ),
     if (_detail != null)
       FushiToolbarItem(

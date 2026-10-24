@@ -868,7 +868,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 126;
+  int get schemaVersion => 128;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2460,6 +2460,39 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
             await _ensureMusicIndexes();
+          }
+          // v127 由并行分支分配（作品图谱以外的另一项改动），本分支不占用。
+          if (from < 128) {
+            // v128（卡片「回到出处」，docs/specs/2026-10-24-cross-media-links.md §4）：
+            // mined_sentences 加显式定位列 position_ms / duration_ms（视频 / 音乐时间轴）
+            // 与 page_index（漫画页）。此前视频来源把 norm_char_offset / norm_char_length
+            // 复用成 cue 起点 / 时长毫秒（同一列语义随 source 变）：把 source='video' 的
+            // 旧值搬进新列，并清空旧列——旧列从此只表示字符偏移。
+            //
+            // 清空而不是保留双写：这张表只经本机写入与备份文件流转（不进在线聚合同步
+            // wire）；旧备份打开时先走本迁移再 ATTACH 合并，新备份被旧版本拒收
+            // （schemaVersion 门），所以不存在仍按旧口径读这一列的消费方。
+            // 幂等：列存在即跳过加列；搬迁只动 position_ms 仍为 NULL 的视频行。
+            if (await _tableExists('mined_sentences')) {
+              for (final GeneratedColumn<Object> column
+                  in <GeneratedColumn<Object>>[
+                minedSentences.positionMs,
+                minedSentences.durationMs,
+                minedSentences.pageIndex,
+              ]) {
+                if (!await _columnExists('mined_sentences', column.name)) {
+                  await m.addColumn(minedSentences, column);
+                }
+              }
+              await customStatement(
+                'UPDATE mined_sentences SET '
+                'position_ms = norm_char_offset, '
+                'duration_ms = norm_char_length, '
+                'norm_char_offset = NULL, norm_char_length = NULL '
+                "WHERE source = 'video' AND position_ms IS NULL "
+                'AND (norm_char_offset IS NOT NULL OR norm_char_length IS NOT NULL)',
+              );
+            }
           }
         },
         onCreate: (m) async {
