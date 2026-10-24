@@ -4100,7 +4100,7 @@
   "lookup_library_sentences_group_videos": "Videos",
   "lookup_library_sentences_indexing": "Indexing… $done / $total",
   "lookup_library_sentences_rebuild": "Rebuild sentence index",
-  "lookup_library_sentences_rebuild_hint": "Re-index books, subtitles and lyrics from the library. Game text is kept and re-tokenized.",
+  "lookup_library_sentences_rebuild_hint": "Re-index your books, subtitles, lyrics and game text from the library.",
   "lookup_library_sentences_rebuild_started": "Rebuilding the sentence index in the background",
   "lookup_library_sentences_status": "$sentences sentences from $documents sources",
   "lookup_library_sentences_title": "From your library · $count",

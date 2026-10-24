@@ -78,11 +78,7 @@ void main() {
       debounce: const Duration(milliseconds: 1),
       gameFlushDelay: const Duration(hours: 1),
     );
-    service.start(
-      database: db,
-      directory: dir.path,
-      isEnabled: () => enabled,
-    );
+    service.start(database: db, directory: dir.path, isEnabled: () => enabled);
     // 让 startDelay 的计时器跑完首轮对账。
     await Future<void>.delayed(const Duration(milliseconds: 20));
     await service.idle;
@@ -94,90 +90,202 @@ void main() {
     if (dir.existsSync()) dir.deleteSync(recursive: true);
   });
 
-  test('游戏台词：逐段重绘按行 id 覆盖、外部通道前缀续写覆盖，落盘后可查', () async {
+  Future<void> addGame(String id) => db.upsertGalgame(
+    GalgamesCompanion.insert(
+      id: id,
+      name: 'Some Game',
+      exePath: '/g/$id.exe',
+      workdir: '/g',
+      addedAt: 0,
+    ),
+  );
+
+  /// 等表变化的去抖对账与它排出的喂入任务都跑完。
+  Future<void> settle() async {
+    for (int i = 0; i < 3; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await service.idle;
+    }
+  }
+
+  test('游戏台词：逐段重绘按行 id 覆盖、外部通道前缀续写覆盖，落库后可查', () async {
+    await addGame('g1');
     service
       ..feedGameLine(
         gameId: 'g1',
-        title: 'Some Game',
         lineKey: 'line-1',
         text: 'The dog',
         atMs: 1000,
       )
       ..feedGameLine(
         gameId: 'g1',
-        title: 'Some Game',
         lineKey: 'line-1',
         text: 'The dog RAN home',
         atMs: 1100,
       )
+      ..feedGameLine(gameId: 'g1', lineKey: null, text: 'A cat', atMs: 2000)
       ..feedGameLine(
         gameId: 'g1',
-        title: 'Some Game',
-        lineKey: null,
-        text: 'A cat',
-        atMs: 2000,
-      )
-      ..feedGameLine(
-        gameId: 'g1',
-        title: 'Some Game',
         lineKey: null,
         text: 'A cat ran too',
         atMs: 2100,
       );
     await service.flushGameLines();
+    await settle();
 
+    // 台词落进 galgame_text_lines（唯一持久副本，随备份走）：折叠后只有两行。
+    expect(
+      (await db.select(db.galgameTextLines).get())
+          .map((GalgameTextLineRow r) => r.lineText)
+          .toList(),
+      <String>['The dog RAN home', 'A cat ran too'],
+    );
     final CorpusQueryResult result = await service.query(<String>['ran']);
     expect(result.groups.single.kind, CorpusSourceKind.game);
     expect(
       result.groups.single.items.map((CorpusHit h) => h.text).toSet(),
       <String>{'The dog RAN home', 'A cat ran too'},
     );
-    expect(result.groups.single.total, 2);
     final CorpusHit hit = result.groups.single.items.firstWhere(
       (CorpusHit h) => h.text == 'The dog RAN home',
     );
     // pos = 这一行第一次出现的时刻（重绘不改它）。
     expect(hit.pos, 1000);
-    expect(hit.highlights, <({int start, int length})>[
-      (start: 8, length: 3),
-    ]);
+    expect(hit.highlights, <({int start, int length})>[(start: 8, length: 3)]);
     expect(hit.title, 'Some Game');
-  });
 
-  test('词典换了：游戏台词从语料库读回原文、按新口径重新分词；游戏删了台词跟着删', () async {
-    await db.upsertGalgame(
-      GalgamesCompanion.insert(
-        id: 'g1',
-        name: 'G',
-        exePath: '/g/g.exe',
-        workdir: '/g',
-        addedAt: 0,
-      ),
-    );
+    // 同一句再来一次（回想 / 重读存档）：按 (游戏, 台词) 去重。
     service.feedGameLine(
       gameId: 'g1',
-      title: 'G',
+      lineKey: 'again',
+      text: 'A cat ran too',
+      atMs: 9000,
+    );
+    await service.flushGameLines();
+    await settle();
+    expect(await db.countGalgameTextLines('g1'), 2);
+  });
+
+  test('去抖落库留下最后一行（可能还在续写），停止捕获时才写', () async {
+    await addGame('g1');
+    final LibraryCorpusService quick = LibraryCorpusService(
+      normalizer: normalizer,
+      startDelay: const Duration(hours: 1),
+      gameFlushDelay: const Duration(milliseconds: 10),
+    );
+    quick.start(database: db, directory: dir.path, isEnabled: () => enabled);
+    quick
+      ..feedGameLine(gameId: 'g1', lineKey: 'a', text: 'first line', atMs: 1)
+      ..feedGameLine(gameId: 'g1', lineKey: 'b', text: 'second li', atMs: 2);
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(
+      (await db.select(db.galgameTextLines).get()).map(
+        (GalgameTextLineRow r) => r.lineText,
+      ),
+      <String>['first line'],
+    );
+    quick.feedGameLine(
+      gameId: 'g1',
+      lineKey: 'b',
+      text: 'second line',
+      atMs: 3,
+    );
+    await quick.stop();
+    expect(
+      (await db.select(db.galgameTextLines).get()).map(
+        (GalgameTextLineRow r) => r.lineText,
+      ),
+      <String>['first line', 'second line'],
+    );
+  });
+
+  test('词典换了：游戏块按新口径重新分词；游戏删了台词与文档跟着删', () async {
+    await addGame('g1');
+    service.feedGameLine(
+      gameId: 'g1',
       lineKey: 'a',
       text: 'Hello World',
       atMs: 1,
     );
     await service.flushGameLines();
-    await service.idle;
+    await settle();
+    expect(await _gameDocs(service), <(String, String)>[('g1', 'dict-v1')]);
 
     normalizer.signature = 'dict-v2';
     service.scheduleReconcile();
-    await service.idle;
+    await settle();
     expect(await _gameDocs(service), <(String, String)>[('g1', 'dict-v2')]);
-    // 重新归一后原文与定位不变、照样查得到。
-    final CorpusHit hit =
-        (await service.query(<String>['world'])).groups.single.items.single;
+    final CorpusHit hit = (await service.query(<String>[
+      'world',
+    ])).groups.single.items.single;
     expect(hit.text, 'Hello World');
     expect(hit.pos, 1);
 
     await (db.delete(db.galgames)..where((t) => t.id.equals('g1'))).go();
-    service.scheduleReconcile();
-    await service.idle;
+    await settle();
+    expect(await db.countGalgameTextLines('g1'), 0, reason: '外键 cascade');
     expect(await _gameDocs(service), isEmpty);
+  });
+
+  test('L4 首版存在语料里的台词：对账时读回进表、换成派生文档，不丢', () async {
+    await addGame('g1');
+    // 用首版的形态直接写一份游戏文档（指纹没有 db: 前缀，台词只在语料里）。
+    await service.debugPut(
+      CorpusDocument(
+        kind: CorpusSourceKind.game,
+        key: 'g1',
+        part: 0,
+        title: 'Some Game',
+        fingerprint: 'abcdef0123456789',
+        normalizer: 'dict-v1',
+        updatedAt: 1,
+        sentences: const <CorpusSentence>[
+          CorpusSentence(section: 0, pos: 42, len: 0, text: 'old line here'),
+        ],
+      ),
+    );
+    service.scheduleReconcile();
+    await settle();
+    final List<GalgameTextLineRow> rows = await db
+        .select(db.galgameTextLines)
+        .get();
+    expect(rows.single.lineText, 'old line here');
+    expect(rows.single.receivedAt, 42);
+    final List<CorpusDocInfo> docs = await service.debugDocs(
+      CorpusSourceKind.game,
+    );
+    expect(docs.single.fingerprint, startsWith('db:'));
+    expect(
+      (await service.query(<String>['old'])).groups.single.items.single.text,
+      'old line here',
+    );
+  });
+
+  test('语料目录里有坏文件：打开时丢掉、从台词表重建，查询照常', () async {
+    await addGame('g1');
+    await db.insertGalgameTextLines(
+      'g1',
+      const <({String text, int receivedAt})>[
+        (text: 'broken index survives', receivedAt: 5),
+      ],
+    );
+    await service.stop();
+    final Directory fresh = Directory('${dir.path}/fresh')..createSync();
+    File('${fresh.path}/garbage.fcd').writeAsBytesSync(<int>[1, 2, 3, 4]);
+    service = LibraryCorpusService(
+      normalizer: normalizer,
+      startDelay: Duration.zero,
+      debounce: const Duration(milliseconds: 1),
+    );
+    service.start(database: db, directory: fresh.path, isEnabled: () => true);
+    await settle();
+    expect(
+      (await service.query(<String>[
+        'survives',
+      ])).groups.single.items.single.text,
+      'broken index survives',
+    );
+    expect((await service.stats())!.droppedOnOpen, 1);
   });
 
   test('视频字幕：只认本地库里的视频，内容不变时不重复写', () async {
@@ -191,7 +299,11 @@ void main() {
       ..endMs = 63000
       ..audioFileIndex = 0;
     // 不在 video_books 里的 uid（网页剧集 / 远端原盘）：跳过。
-    service.feedVideoCues(bookUid: 'web:x', episodeIndex: 0, cues: <AudioCue>[cue]);
+    service.feedVideoCues(
+      bookUid: 'web:x',
+      episodeIndex: 0,
+      cues: <AudioCue>[cue],
+    );
     await service.idle;
     expect((await service.query(<String>['run'])).isEmpty, isTrue);
   });
@@ -200,7 +312,6 @@ void main() {
     enabled = false;
     service.feedGameLine(
       gameId: 'g1',
-      title: 'G',
       lineKey: 'a',
       text: 'quiet please',
       atMs: 1,

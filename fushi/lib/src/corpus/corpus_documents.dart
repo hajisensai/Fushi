@@ -127,10 +127,12 @@ CorpusDocument lyricsDocument({
     part: -1,
     title: title,
     // 调用方给了来源侧的指纹（音乐对账用歌词行元数据）就用它，否则按内容算。
-    fingerprint: fingerprint ?? corpusFingerprint(<Object?>[
-      timeline.offsetMs,
-      for (final CorpusSentence s in sentences) ...<Object?>[s.pos, s.text],
-    ]),
+    fingerprint:
+        fingerprint ??
+        corpusFingerprint(<Object?>[
+          timeline.offsetMs,
+          for (final CorpusSentence s in sentences) ...<Object?>[s.pos, s.text],
+        ]),
     normalizer: normalizer,
     updatedAt: updatedAt,
     sentences: sentences,
@@ -146,11 +148,15 @@ String bookFingerprint({
   required String extractDir,
 }) => corpusFingerprint(<Object?>[uid, importedAt, chapterCount, extractDir]);
 
-/// 游戏台词落盘批次：同一游戏的台词按每 [kCorpusGameChunkLines] 行一份文档（part 递增），
-/// 当前批次反复整份替换，满了开下一批。
-const int kCorpusGameChunkLines = 200;
+/// 游戏台词块文档的指纹前缀：v130 起游戏文档由 `galgame_text_lines` 派生，指纹带这个
+/// 前缀；没有它的是 L4 首版直接存在语料里的台词（迁移时读回进表）。
+const String kGameChunkFingerprintPrefix = 'db:';
 
-/// 游戏台词批次 → 文档。pos = 收到台词的时刻（毫秒时间戳），len = 0。
+/// 一块游戏台词的指纹（只增不改的表：行数 + 最大 id 不变，内容就不变）。
+String gameChunkFingerprint({required int count, required int maxId}) =>
+    '$kGameChunkFingerprintPrefix$count:$maxId';
+
+/// 游戏台词块 → 文档。pos = 第一次收到台词的时刻（毫秒时间戳），len = 0。
 CorpusDocument gameLinesDocument({
   required String gameId,
   required String title,
@@ -158,6 +164,7 @@ CorpusDocument gameLinesDocument({
   required List<({String text, int atMs})> lines,
   required String normalizer,
   required int updatedAt,
+  String? fingerprint,
 }) {
   final List<CorpusSentence> sentences = <CorpusSentence>[
     for (final ({String text, int atMs}) line in lines)
@@ -174,9 +181,11 @@ CorpusDocument gameLinesDocument({
     key: gameId,
     part: part,
     title: title,
-    fingerprint: corpusFingerprint(<Object?>[
-      for (final CorpusSentence s in sentences) ...<Object?>[s.pos, s.text],
-    ]),
+    fingerprint:
+        fingerprint ??
+        corpusFingerprint(<Object?>[
+          for (final CorpusSentence s in sentences) ...<Object?>[s.pos, s.text],
+        ]),
     normalizer: normalizer,
     updatedAt: updatedAt,
     sentences: sentences,
