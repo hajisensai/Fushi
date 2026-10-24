@@ -18,6 +18,7 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
+import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart' show srsMediaRefsIn;
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
@@ -342,7 +343,10 @@ class SrsDbStore implements SrsSyncReplica {
   ///
   /// 2（srs.db schema v3）：srs_stat_reviews（有效复习投影）。存量库的投影表是新建的空表，升级时按全部
   /// 卡 + 全部有日志的卡算一遍投影（[_refreshStatProjection]）。
-  static const int _kCacheRevision = 2;
+  ///
+  /// 3（srs.db schema v4）：srs_notes_cache.media_refs（笔记引用的媒体）。老库这一列是空的，升级时
+  /// 全部笔记缓存重算一遍。
+  static const int _kCacheRevision = 3;
   int _cacheRevision = _kCacheRevision;
 
   /// 有效复习投影要重算的卡（缓存刷新写过 / 隐藏的卡、脏卡、重建与升级时的全部卡）：[_flushCachesNow]
@@ -2032,6 +2036,10 @@ class SrsDbStore implements SrsSyncReplica {
         _statDirty.addAll(await _allStatSeeds());
         await _flushCaches();
       }
+      if (_cacheRevision < 3) {
+        _dirtyNotes.addAll(await entityIds(SrsEntityKind.note));
+        await _flushCaches();
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -2133,6 +2141,38 @@ class SrsDbStore implements SrsSyncReplica {
     );
   }
 
+  /// 笔记当前字段值引用的媒体文件名（[SrsNotesCache.mediaRefs] 的值：换行分隔、去重排序）。
+  static String _mediaRefsOf(SrsNoteView n) {
+    final Set<String> refs = <String>{
+      for (final String v in n.fields.values) ...<String>[
+        ...srsMediaRefsIn(v),
+        // 释义样式去重的共享样式文件（`_fushi_style_<sha1>.css`，见 srs_style_store.dart）。
+        ...srsStyleRefsIn(v),
+      ],
+    };
+    return (refs.where((String r) => !r.contains('\n')).toList()..sort()).join(
+      '\n',
+    );
+  }
+
+  /// 本 profile 未删除笔记当前引用的全部媒体文件名（读笔记缓存的 media_refs 列，不解析字段值）。
+  Future<Set<String>> noteMediaRefs() async {
+    final $SrsNotesCacheTable t = db.srsNotesCache;
+    final Set<String> out = <String>{};
+    for (final TypedResult r
+        in await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.mediaRefs])
+              ..where(
+                t.profileUid.equals(profileUid) &
+                    t.deletedAt.isNull() &
+                    t.mediaRefs.equals('').not(),
+              ))
+            .get()) {
+      out.addAll(r.read(t.mediaRefs)!.split('\n'));
+    }
+    return out;
+  }
+
   /// 笔记缓存刷新的第二步：算笔记缓存行、要隐藏的不再应有的卡、应有的卡的缓存行（记进
   /// [refreshed]），攒进 [out] 由调用方成批写。
   Future<void> _applyNotePlan(
@@ -2160,6 +2200,7 @@ class SrsDbStore implements SrsSyncReplica {
         tagsJson: Value<String>(jsonEncode(n.tags)),
         pendingDecision: Value<bool>(n.hasPendingDecision),
         updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+        mediaRefs: Value<String>(n.deletedAt != null ? '' : _mediaRefsOf(n)),
       ),
     );
     final Map<String, (String, int, bool)> expected = plan.expected;
@@ -5239,23 +5280,7 @@ class SrsDbStore implements SrsSyncReplica {
 
   @override
   Future<List<SrsEvent>> exportAll() async {
-    final List<SrsEvent> out = <SrsEvent>[];
-    for (final SrsEntityRow r in await (db.select(
-      db.srsEntities,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(SrsEntityEvent(_entityFromRow(r)));
-    }
-    for (final SrsFieldEditRow r in await (db.select(
-      db.srsFieldEdits,
-    )..where((t) => t.profileUid.equals(profileUid))).get()) {
-      out.add(
-        SrsEditEvent(
-          SrsFieldEdit.fromJson(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
-          ),
-        ),
-      );
-    }
+    final List<SrsEvent> out = await exportEntitiesAndEdits();
     for (final SrsReviewLogRow r in await (db.select(
       db.srsReviewLogs,
     )..where((t) => t.profileUid.equals(profileUid))).get()) {
@@ -5276,6 +5301,69 @@ class SrsDbStore implements SrsSyncReplica {
     }
     return out;
   }
+
+  /// 本 profile 的全部身份记录与修改记录（[exportAll] 去掉复习日志与不认识的事件）。按时间点恢复
+  /// 改回字段只要这两类；日志是库里最大的一块，不必整份读回来逐条解码。
+  Future<List<SrsEvent>> exportEntitiesAndEdits() async {
+    final List<SrsEvent> out = <SrsEvent>[];
+    for (final SrsEntityRow r in await (db.select(
+      db.srsEntities,
+    )..where((t) => t.profileUid.equals(profileUid))).get()) {
+      out.add(SrsEntityEvent(_entityFromRow(r)));
+    }
+    for (final SrsFieldEditRow r in await (db.select(
+      db.srsFieldEdits,
+    )..where((t) => t.profileUid.equals(profileUid))).get()) {
+      out.add(
+        SrsEditEvent(
+          SrsFieldEdit.fromJson(
+            (jsonDecode(r.json) as Map).cast<String, Object?>(),
+          ),
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 本 profile 每张卡的复习日志 ID（只读 id / card_id 两列，不读正文）。
+  Future<Map<String, List<String>>> logIdsByCard() async {
+    final $SrsReviewLogsTable t = db.srsReviewLogs;
+    final Map<String, List<String>> out = <String, List<String>>{};
+    for (final TypedResult r
+        in await (db.selectOnly(t)
+              ..addColumns(<Expression<Object>>[t.id, t.cardId])
+              ..where(t.profileUid.equals(profileUid)))
+            .get()) {
+      final String card = r.read(t.cardId)!;
+      final String id = r.read(t.id)!;
+      (out[card] ??= <String>[]).add(id);
+    }
+    return out;
+  }
+
+  /// [cardIds] 各自的复习日志（解码好的；没有日志的卡不出现）。
+  Future<Map<String, List<SrsReviewLog>>> logsOfCards(
+    Iterable<String> cardIds,
+  ) async {
+    final Map<String, List<SrsReviewLog>> out = <String, List<SrsReviewLog>>{};
+    for (final List<String> chunk in _chunks(cardIds)) {
+      for (final SrsReviewLogRow r
+          in await (db.select(db.srsReviewLogs)..where(
+                (t) => t.profileUid.equals(profileUid) & t.cardId.isIn(chunk),
+              ))
+              .get()) {
+        (out[r.cardId] ??= <SrsReviewLog>[]).add(
+          SrsReviewLog.fromJson(
+            (jsonDecode(r.json) as Map).cast<String, Object?>(),
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  /// 卡片的「前身 → 后继」链接（更改笔记类型 / Lapis 迁移的 historyFrom 修改记录，只扫部分索引）。
+  Future<Map<String, List<String>>> successorIndex() => _successorIndex();
 
   /// 全部事件的 ID，与 [exportAll] 同序（身份记录 → 修改记录 → 日志 → 不认识的事件，表内按 rowid）。
   /// 全量重新发布只要 ID：只读 id 列，不把正文读回来解析。

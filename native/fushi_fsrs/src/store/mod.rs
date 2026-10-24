@@ -500,7 +500,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(idx, 12);
+        assert_eq!(idx, 14);
     }
 
     #[test]

@@ -160,7 +160,8 @@ Future<void> _restoreFields(
   List<SrsEvent> backupEvents,
   SrsRestoreReport report,
 ) async {
-  final List<SrsEvent> local = await store.exportAll();
+  // 只要身份记录与修改记录：复习日志（库里最大的一块）这一步用不到。
+  final List<SrsEvent> local = await store.exportEntitiesAndEdits();
   final Map<String, int> s = await store.exportServerTimes();
   int? serverTimeOf(String id) => s[id];
 
@@ -343,28 +344,18 @@ Future<void> _restoreLogs(
   final Map<String, int> s = await store.exportServerTimes();
   int? serverTimeOf(String id) => s[id];
 
-  final Map<String, List<SrsReviewLog>> byCard = <String, List<SrsReviewLog>>{};
-  // 卡片的「前身」链接（更改笔记类型）：前身 → 继承它历史的卡。
-  final Map<String, Set<String>> successors = <String, Set<String>>{};
-  for (final SrsEvent e in await store.exportAll()) {
-    if (e is SrsLogEvent) {
-      (byCard[e.log.cardId] ??= <SrsReviewLog>[]).add(e.log);
-    } else if (e is SrsEditEvent &&
-        e.edit.entityKind == SrsEntityKind.card &&
-        e.edit.fieldKey.startsWith(SrsFieldKeys.cardHistoryFromPrefix)) {
-      (successors[e.edit.fieldKey.substring(
-                SrsFieldKeys.cardHistoryFromPrefix.length,
-              )] ??=
-              <String>{})
-          .add(e.edit.entityId);
-    }
-  }
   // 受影响的卡：有不在备份里的日志（备份之后的复习、撤销等）的卡。其余卡的日志与备份时完全相同，
-  // 状态必然一致，不用逐卡读历史。
+  // 状态必然一致，不用逐卡读历史。先只读「日志 ID → 卡」两列判定，正文只读受影响的卡。
   final Set<String> affected = <String>{
-    for (final MapEntry<String, List<SrsReviewLog>> e in byCard.entries)
-      if (e.value.any((SrsReviewLog l) => !backupLogIds.contains(l.id))) e.key,
+    for (final MapEntry<String, List<String>> e
+        in (await store.logIdsByCard()).entries)
+      if (e.value.any((String id) => !backupLogIds.contains(id))) e.key,
   };
+  final Map<String, List<SrsReviewLog>> byCard = await store.logsOfCards(
+    affected,
+  );
+  // 卡片的「前身」链接（更改笔记类型）：前身 → 继承它历史的卡。
+  final Map<String, List<String>> successors = await store.successorIndex();
   final SrsLogContext ctx = await store.logContext();
   final List<SrsReviewLog> undos = <SrsReviewLog>[
     for (final String card in affected)
@@ -383,7 +374,8 @@ Future<void> _restoreLogs(
   final Set<String> check = <String>{...affected};
   final List<String> queue = affected.toList();
   while (queue.isNotEmpty) {
-    for (final String next in successors[queue.removeLast()] ?? <String>{}) {
+    for (final String next
+        in successors[queue.removeLast()] ?? const <String>[]) {
       if (check.add(next)) queue.add(next);
     }
   }

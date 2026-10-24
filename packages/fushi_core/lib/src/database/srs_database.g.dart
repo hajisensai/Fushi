@@ -2827,6 +2827,18 @@ class $SrsNotesCacheTable extends SrsNotesCache
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _mediaRefsMeta = const VerificationMeta(
+    'mediaRefs',
+  );
+  @override
+  late final GeneratedColumn<String> mediaRefs = GeneratedColumn<String>(
+    'media_refs',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2842,6 +2854,7 @@ class $SrsNotesCacheTable extends SrsNotesCache
     tagsJson,
     pendingDecision,
     updatedAt,
+    mediaRefs,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2946,6 +2959,12 @@ class $SrsNotesCacheTable extends SrsNotesCache
         updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
       );
     }
+    if (data.containsKey('media_refs')) {
+      context.handle(
+        _mediaRefsMeta,
+        mediaRefs.isAcceptableOrUnknown(data['media_refs']!, _mediaRefsMeta),
+      );
+    }
     return context;
   }
 
@@ -3007,6 +3026,10 @@ class $SrsNotesCacheTable extends SrsNotesCache
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
       )!,
+      mediaRefs: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_refs'],
+      )!,
     );
   }
 
@@ -3034,6 +3057,11 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
   final String tagsJson;
   final bool pendingDecision;
   final int updatedAt;
+
+  /// srs.db schema v4：这条笔记当前字段值引用的媒体文件名（`<img src>` / `[sound:]` / 共享样式文件，
+  /// 换行分隔，去重排序），随笔记缓存同一次刷新算出。媒体同步每轮只读这一列，不再逐页读全部修改记录
+  /// 解析字段值（审计 D）。已删笔记写空。
+  final String mediaRefs;
   const SrsNoteCacheRow({
     required this.id,
     required this.profileUid,
@@ -3048,6 +3076,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
     required this.tagsJson,
     required this.pendingDecision,
     required this.updatedAt,
+    required this.mediaRefs,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3069,6 +3098,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
     map['tags_json'] = Variable<String>(tagsJson);
     map['pending_decision'] = Variable<bool>(pendingDecision);
     map['updated_at'] = Variable<int>(updatedAt);
+    map['media_refs'] = Variable<String>(mediaRefs);
     return map;
   }
 
@@ -3091,6 +3121,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
       tagsJson: Value(tagsJson),
       pendingDecision: Value(pendingDecision),
       updatedAt: Value(updatedAt),
+      mediaRefs: Value(mediaRefs),
     );
   }
 
@@ -3113,6 +3144,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
       tagsJson: serializer.fromJson<String>(json['tagsJson']),
       pendingDecision: serializer.fromJson<bool>(json['pendingDecision']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      mediaRefs: serializer.fromJson<String>(json['mediaRefs']),
     );
   }
   @override
@@ -3132,6 +3164,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
       'tagsJson': serializer.toJson<String>(tagsJson),
       'pendingDecision': serializer.toJson<bool>(pendingDecision),
       'updatedAt': serializer.toJson<int>(updatedAt),
+      'mediaRefs': serializer.toJson<String>(mediaRefs),
     };
   }
 
@@ -3149,6 +3182,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
     String? tagsJson,
     bool? pendingDecision,
     int? updatedAt,
+    String? mediaRefs,
   }) => SrsNoteCacheRow(
     id: id ?? this.id,
     profileUid: profileUid ?? this.profileUid,
@@ -3163,6 +3197,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
     tagsJson: tagsJson ?? this.tagsJson,
     pendingDecision: pendingDecision ?? this.pendingDecision,
     updatedAt: updatedAt ?? this.updatedAt,
+    mediaRefs: mediaRefs ?? this.mediaRefs,
   );
   SrsNoteCacheRow copyWithCompanion(SrsNotesCacheCompanion data) {
     return SrsNoteCacheRow(
@@ -3187,6 +3222,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
           ? data.pendingDecision.value
           : this.pendingDecision,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      mediaRefs: data.mediaRefs.present ? data.mediaRefs.value : this.mediaRefs,
     );
   }
 
@@ -3205,7 +3241,8 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
           ..write('sortField: $sortField, ')
           ..write('tagsJson: $tagsJson, ')
           ..write('pendingDecision: $pendingDecision, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('mediaRefs: $mediaRefs')
           ..write(')'))
         .toString();
   }
@@ -3225,6 +3262,7 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
     tagsJson,
     pendingDecision,
     updatedAt,
+    mediaRefs,
   );
   @override
   bool operator ==(Object other) =>
@@ -3242,7 +3280,8 @@ class SrsNoteCacheRow extends DataClass implements Insertable<SrsNoteCacheRow> {
           other.sortField == this.sortField &&
           other.tagsJson == this.tagsJson &&
           other.pendingDecision == this.pendingDecision &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.mediaRefs == this.mediaRefs);
 }
 
 class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
@@ -3259,6 +3298,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
   final Value<String> tagsJson;
   final Value<bool> pendingDecision;
   final Value<int> updatedAt;
+  final Value<String> mediaRefs;
   final Value<int> rowid;
   const SrsNotesCacheCompanion({
     this.id = const Value.absent(),
@@ -3274,6 +3314,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
     this.tagsJson = const Value.absent(),
     this.pendingDecision = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.mediaRefs = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   SrsNotesCacheCompanion.insert({
@@ -3290,6 +3331,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
     this.tagsJson = const Value.absent(),
     this.pendingDecision = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.mediaRefs = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        profileUid = Value(profileUid),
@@ -3310,6 +3352,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
     Expression<String>? tagsJson,
     Expression<bool>? pendingDecision,
     Expression<int>? updatedAt,
+    Expression<String>? mediaRefs,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3326,6 +3369,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
       if (tagsJson != null) 'tags_json': tagsJson,
       if (pendingDecision != null) 'pending_decision': pendingDecision,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (mediaRefs != null) 'media_refs': mediaRefs,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3344,6 +3388,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
     Value<String>? tagsJson,
     Value<bool>? pendingDecision,
     Value<int>? updatedAt,
+    Value<String>? mediaRefs,
     Value<int>? rowid,
   }) {
     return SrsNotesCacheCompanion(
@@ -3360,6 +3405,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
       tagsJson: tagsJson ?? this.tagsJson,
       pendingDecision: pendingDecision ?? this.pendingDecision,
       updatedAt: updatedAt ?? this.updatedAt,
+      mediaRefs: mediaRefs ?? this.mediaRefs,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3406,6 +3452,9 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
+    if (mediaRefs.present) {
+      map['media_refs'] = Variable<String>(mediaRefs.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3428,6 +3477,7 @@ class SrsNotesCacheCompanion extends UpdateCompanion<SrsNoteCacheRow> {
           ..write('tagsJson: $tagsJson, ')
           ..write('pendingDecision: $pendingDecision, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('mediaRefs: $mediaRefs, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6850,6 +6900,7 @@ typedef $$SrsNotesCacheTableCreateCompanionBuilder =
       Value<String> tagsJson,
       Value<bool> pendingDecision,
       Value<int> updatedAt,
+      Value<String> mediaRefs,
       Value<int> rowid,
     });
 typedef $$SrsNotesCacheTableUpdateCompanionBuilder =
@@ -6867,6 +6918,7 @@ typedef $$SrsNotesCacheTableUpdateCompanionBuilder =
       Value<String> tagsJson,
       Value<bool> pendingDecision,
       Value<int> updatedAt,
+      Value<String> mediaRefs,
       Value<int> rowid,
     });
 
@@ -6941,6 +6993,11 @@ class $$SrsNotesCacheTableFilterComposer
 
   ColumnFilters<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaRefs => $composableBuilder(
+    column: $table.mediaRefs,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -7018,6 +7075,11 @@ class $$SrsNotesCacheTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaRefs => $composableBuilder(
+    column: $table.mediaRefs,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$SrsNotesCacheTableAnnotationComposer
@@ -7075,6 +7137,9 @@ class $$SrsNotesCacheTableAnnotationComposer
 
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaRefs =>
+      $composableBuilder(column: $table.mediaRefs, builder: (column) => column);
 }
 
 class $$SrsNotesCacheTableTableManager
@@ -7121,6 +7186,7 @@ class $$SrsNotesCacheTableTableManager
                 Value<String> tagsJson = const Value.absent(),
                 Value<bool> pendingDecision = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<String> mediaRefs = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsNotesCacheCompanion(
                 id: id,
@@ -7136,6 +7202,7 @@ class $$SrsNotesCacheTableTableManager
                 tagsJson: tagsJson,
                 pendingDecision: pendingDecision,
                 updatedAt: updatedAt,
+                mediaRefs: mediaRefs,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7153,6 +7220,7 @@ class $$SrsNotesCacheTableTableManager
                 Value<String> tagsJson = const Value.absent(),
                 Value<bool> pendingDecision = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
+                Value<String> mediaRefs = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SrsNotesCacheCompanion.insert(
                 id: id,
@@ -7168,6 +7236,7 @@ class $$SrsNotesCacheTableTableManager
                 tagsJson: tagsJson,
                 pendingDecision: pendingDecision,
                 updatedAt: updatedAt,
+                mediaRefs: mediaRefs,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

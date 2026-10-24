@@ -140,6 +140,11 @@ class SrsNotesCache extends Table {
       boolean().withDefault(const Constant(false))();
   IntColumn get updatedAt => integer().withDefault(const Constant(0))();
 
+  /// srs.db schema v4：这条笔记当前字段值引用的媒体文件名（`<img src>` / `[sound:]` / 共享样式文件，
+  /// 换行分隔，去重排序），随笔记缓存同一次刷新算出。媒体同步每轮只读这一列，不再逐页读全部修改记录
+  /// 解析字段值（审计 D）。已删笔记写空。
+  TextColumn get mediaRefs => text().withDefault(const Constant(''))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
