@@ -556,9 +556,9 @@ class SrsBackupStore {
 
   /// 做一份备份。[profileName] 只用于显示。
   ///
-  /// 真实库三十万条复习日志要读二三十秒。库在文件上时在后台 isolate 的独立只读连接里读
-  /// （[SrsBackupSnapshotReader]），主连接上的复习查询与写入不排在它后面（BUG-3579 起先只是让路）。
-  /// [shouldStop] 每读完一页（后台读时约每 100 ms）问一次，为 true 时抛 [SrsBackupCancelled]：
+  /// 真实库三十万条复习日志要读二三十秒。在后台 isolate 里、srs.db 上另开的一条 Rust 只读连接里读
+  /// （[SrsBackupSnapshotReader]），写连接上的复习查询与写入不排在它后面（BUG-3579 起先只是让路）。
+  /// [shouldStop] 每读完一页问一次，为 true 时抛 [SrsBackupCancelled]：
   /// 读事务回滚（只读，没有副作用）、暂存文件删掉。
   Future<SrsBackupInfo> create(
     SrsDbStore store, {
@@ -613,17 +613,13 @@ class SrsBackupStore {
           profileUid: profileUid,
           eventsPath: eventsTmp.path,
           serverTimesPath: serverTimesTmp.path,
+          shouldStop: shouldStop,
         );
-      });
-      final Timer poll = Timer.periodic(const Duration(milliseconds: 100), (_) {
-        if (shouldStop?.call() ?? false) reader.cancel();
       });
       try {
         snap = await reader.done;
       } on SrsSnapshotCancelled {
         throw const SrsBackupCancelled();
-      } finally {
-        poll.cancel();
       }
       final int eventCount = snap.eventCount;
       final SrsBackupCounts counts = snap.counts;

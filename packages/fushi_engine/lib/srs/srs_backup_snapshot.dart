@@ -258,14 +258,16 @@ class SrsBackupSnapshotReader {
   /// 读完：事件条数与计数。叫停时抛 [SrsSnapshotCancelled]，读失败时抛原错误（文本）。
   Future<({int eventCount, SrsBackupCounts counts})> get done => _done;
 
-  /// 叫停：后台读完当前页就回滚读事务、关连接，[done] 抛 [SrsSnapshotCancelled]。
+  /// 叫停：后台读完当前页就停，[done] 抛 [SrsSnapshotCancelled]（会话在后台退出后结束）。
   void cancel() => _control.send('cancel');
 
+  /// [shouldStop] 后台每读完一页就在本 isolate 问一次（与在同一条连接上读时同一粒度），为 true 时叫停。
   static Future<SrsBackupSnapshotReader> start({
     required SrsCore core,
     required String profileUid,
     required String eventsPath,
     required String serverTimesPath,
+    bool Function()? shouldStop,
     @visibleForTesting int pageSize = 2000,
   }) async {
     // 快照在这里（调用方的写锁里）定下；后台 isolate 只借用这个会话，会话由本 isolate 在后台
@@ -282,9 +284,14 @@ class SrsBackupSnapshotReader {
       if (!done.isCompleted) done.completeError(error);
     }
 
+    SendPort? reply;
     port.listen((Object? m) {
       if (m is SendPort) {
+        reply = m;
         ready.complete(m);
+      } else if (m == 'page') {
+        // 后台读完一页、等着回话：这里问叫停与否（读库在后台，这一问不碰库）。
+        reply?.send((shouldStop?.call() ?? false) ? 'cancel' : 'go');
       } else if (m is List && m.isNotEmpty && m.first == 'done') {
         done.complete((
           eventCount: m[1] as int,
@@ -333,8 +340,10 @@ class SrsBackupSnapshotReader {
     final String profileUid = args[3]! as String;
     final ReceivePort control = ReceivePort();
     bool cancelled = false;
+    Completer<void>? waiting;
     control.listen((Object? m) {
       if (m == 'cancel') cancelled = true;
+      if (m == 'cancel' || m == 'go') waiting?.complete();
     });
     out.send(control.sendPort);
     try {
@@ -350,8 +359,12 @@ class SrsBackupSnapshotReader {
             serverTimesPath: args[5]! as String,
             pageSize: args[6]! as int,
             checkStop: () async {
-              // 让出事件循环收叫停消息（读库是同步调用，不让出就永远收不到）。
-              await Future<void>.delayed(Duration.zero);
+              // 每页问一次调用方要不要停（[start] 的 shouldStop），等它回话；外部的 [cancel] 也在这里生效。
+              if (cancelled) throw const SrsSnapshotCancelled();
+              final Completer<void> reply = waiting = Completer<void>();
+              out.send('page');
+              await reply.future;
+              waiting = null;
               if (cancelled) throw const SrsSnapshotCancelled();
             },
           );
