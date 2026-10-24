@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -12,7 +14,9 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 //
 // MD3 设计系统的应用级导航按 M3 Expressive 规格：
 // - 宽屏 navigation rail 有收起（96）/ 展开（220，取代旧侧边抽屉）两态，顶部
-//   菜单钮切换，宽度走 spatial 弹簧；两态都恒显示文字标签；
+//   菜单钮切换，宽度走 spatial 弹簧；展开态恒显示文字标签，收起态纯图标
+//   （用户 2026-10-23「侧边栏收起不显示文字」，b564b53970）——名称进 tooltip /
+//   速览卡标题与无障碍语义；
 // - 底栏（flexible navigation bar）64 高、标签恒显示（首页 ≥600 走 rail，
 //   M3E 的横排目的地不在底栏里做）；
 // - 活动指示器选中时按 expressive 弹簧展开，悬停 / 按压状态层与指示器同框；
@@ -120,10 +124,30 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('两态都恒显示全部文字标签', (WidgetTester tester) async {
+    testWidgets('收起态纯图标（名称进 tooltip 与语义），展开态恒显示全部文字标签', (
+      WidgetTester tester,
+    ) async {
       final ValueNotifier<bool> expanded = await pumpToggleRail(tester);
       for (final AdaptiveNavItem item in items) {
-        expect(labelPainted(tester, item.label), isTrue, reason: item.label);
+        // 用户 2026-10-23「侧边栏收起不显示文字」：收起 rail 不画文字，名称
+        // 走 tooltip（悬停 / 长按可见）与无障碍语义（报原文案）。
+        expect(labelPainted(tester, item.label), isFalse, reason: item.label);
+        expect(find.byIcon(item.icon).hitTestable(), findsOneWidget);
+        // 不用 find.byTooltip：它只认 SDK 的 Tooltip 类型与 RawTooltip 的语义
+        // tooltip，而这里的 tooltip 是 material_ui 的、且 excludeFromSemantics
+        // （名称由外层 Semantics 报），两条路都匹配不到。
+        expect(
+          find.byWidgetPredicate(
+            (Widget w) => w is FushiTooltip && w.message == item.label,
+          ),
+          findsOneWidget,
+          reason: '${item.label}：收起态名称进 tooltip',
+        );
+        expect(
+          find.bySemanticsLabel(item.label),
+          findsWidgets,
+          reason: '${item.label}：收起态语义仍须报名称',
+        );
       }
       expanded.value = true;
       await tester.pumpAndSettle();

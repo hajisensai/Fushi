@@ -105,14 +105,16 @@ void main() {
 
   // MD3 底栏 / 收起 rail：整格是点击区，但悬停 / 按压状态层（含涟漪）只画在
   // 指示器药丸上，与选中高亮同尺寸（M3 NavigationBar 的 indicator ink）。
-  Rect stateLayerRect(WidgetTester tester, String label) {
-    final Finder ink = inkOf(label);
+  Rect stateLayerRectOf(WidgetTester tester, Finder ink) {
     final InkWell inkWell = tester.widget<InkWell>(ink);
     final RenderBox ref = tester.renderObject<RenderBox>(ink);
     final RectCallback? callback = inkWell.getRectCallback(ref);
     final Rect local = callback == null ? Offset.zero & ref.size : callback();
     return local.shift(ref.localToGlobal(Offset.zero));
   }
+
+  Rect stateLayerRect(WidgetTester tester, String label) =>
+      stateLayerRectOf(tester, inkOf(label));
 
   Rect selectedPillRect(WidgetTester tester, String label) {
     final Finder pill = find
@@ -169,7 +171,26 @@ void main() {
     await expectIndicatorInk(tester);
   });
 
-  testWidgets('MD3 收起 rail：状态层裁到指示器药丸', (WidgetTester tester) async {
+  // MD3 收起 rail 纯图标（用户 2026-10-23「侧边栏收起不显示文字」，b564b53970）：
+  // 指示器是图标背后 52 见方的专属形状槽（墨滴落点），状态层裁成同一方槽的
+  // 圆形。没有文字可锚，按图标找格。
+  Finder railInkOf(IconData icon) => find
+      .ancestor(
+        of: find.byIcon(icon),
+        matching: find.byWidgetPredicate((Widget w) => w is InkWell),
+      )
+      .first;
+
+  Rect railShapeSlotRect(WidgetTester tester, IconData icon) {
+    // 图标外最近的 Stack 是形状槽里的叠层（形状在下、图标在上），被槽的
+    // SizedBox.square 紧约束成槽本身的大小。
+    final Finder slot = find
+        .ancestor(of: find.byIcon(icon), matching: find.byType(Stack))
+        .first;
+    return tester.getRect(slot);
+  }
+
+  testWidgets('MD3 收起 rail：状态层裁到指示器形状槽', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -196,6 +217,28 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await expectIndicatorInk(tester);
+    expect(tester.takeException(), isNull);
+
+    final Rect selected = railShapeSlotRect(tester, Icons.movie_outlined);
+    expect(selected.width, selected.height, reason: '收起 rail 的指示器槽是正方形');
+    for (final AdaptiveNavItem item in items) {
+      expect(find.text(item.label), findsNothing, reason: '收起 rail 不画文字');
+      final Rect slot = railShapeSlotRect(tester, item.icon);
+      final Finder ink = railInkOf(item.icon);
+      final Rect layer = stateLayerRectOf(tester, ink);
+      expect(layer.size, selected.size, reason: '${item.label}：状态层与选中形状槽尺寸不一致');
+      expect(layer, slot, reason: '${item.label}：状态层没有落在自己的形状槽上');
+      // 整格（InkWell 本身）比状态层大：点击区不随状态层一起收窄。
+      expect(
+        tester.getSize(ink).height,
+        greaterThan(layer.height),
+        reason: '${item.label}：整格点击区应大于状态层',
+      );
+      expect(
+        tester.widget<InkWell>(ink).borderRadius,
+        BorderRadius.circular(selected.height / 2),
+        reason: '${item.label}：状态层应是与槽同径的圆',
+      );
+    }
   });
 }
