@@ -1932,7 +1932,7 @@ class _CastAvatar extends StatelessWidget {
               : '${person.name} · $role',
           excludeSemantics: true,
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: FushiM3eShape.cardRadius,
             onTap: onTap,
             child: card,
           ),

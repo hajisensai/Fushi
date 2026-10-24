@@ -372,7 +372,6 @@ class _PersonHeader extends StatelessWidget {
       for (final String scheme in PersonIdScheme.all)
         for (final String v in data.cluster.idsOf(scheme))
           Chip(
-            visualDensity: VisualDensity.compact,
             label: Text('${personIdSchemeLabel(scheme)} $v'),
           ),
     ];
