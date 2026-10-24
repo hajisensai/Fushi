@@ -846,11 +846,17 @@ void main() {
             // 设备不接受独占（或这个格式的独占）时后端退回共享并发明确提示。
             final bool fellBack = rec.count<MusicBackendOutputFallback>() > 0;
             final bool exclusiveActive = exclusive && !fellBack;
-            // ignore: avoid_print
-            if (fellBack)
-              print(
-                '  fallback: ${rec.events.firstWhere((e) => e.event is MusicBackendOutputFallback).event}',
-              );
+            if (fellBack) {
+              final MusicBackendOutputFallback f =
+                  rec.events
+                          .firstWhere(
+                            (e) => e.event is MusicBackendOutputFallback,
+                          )
+                          .event
+                      as MusicBackendOutputFallback;
+              // ignore: avoid_print
+              print('  fallback: ${f.reason.name} ${f.detail}');
+            }
             expect(snap.currentAo, 'wasapi');
             expect(snap.exclusiveRequested, exclusiveActive);
             expect(inRaw, isNotNull);
