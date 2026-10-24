@@ -794,10 +794,24 @@ class SrsAnkiConnectHandler {
     });
   }
 
-  static int _compareNotes(SrsNoteView a, SrsNoteView b) {
-    final int c = a.createdAt.compareTo(b.createdAt);
-    return c != 0 ? c : a.id.compareTo(b.id);
+  /// 笔记的全序：(createdAt, id)。常驻视图里的 [SrsNoteView] 与搜索求值对象带的
+  /// [SrsSubjectNote]（[SrsCardSearchSubject.note]）是同一条笔记的两种形态，必须按同一个
+  /// 键比较，命中归并（[_matchCards]）才与 [_Resident.notes] 的顺序一致。
+  static int _compareNoteKeys(
+    int aCreatedAt,
+    String aId,
+    int bCreatedAt,
+    String bId,
+  ) {
+    final int c = aCreatedAt.compareTo(bCreatedAt);
+    return c != 0 ? c : aId.compareTo(bId);
   }
+
+  static int _compareNotes(SrsNoteView a, SrsNoteView b) =>
+      _compareNoteKeys(a.createdAt, a.id, b.createdAt, b.id);
+
+  static int _compareSubjectNotes(SrsSubjectNote a, SrsSubjectNote b) =>
+      _compareNoteKeys(a.createdAt, a.id, b.createdAt, b.id);
 
   /// [r.notes] 里第一个不小于 [n] 的位置。
   static int _notePos(List<SrsNoteView> notes, SrsNoteView n) {
@@ -1058,7 +1072,7 @@ class SrsAnkiConnectHandler {
         while (i < base.length || j < delta.length) {
           if (j == delta.length ||
               (i < base.length &&
-                  _compareNotes(base[i].note, delta[j].note) < 0)) {
+                  _compareSubjectNotes(base[i].note, delta[j].note) < 0)) {
             out.add(base[i++]);
           } else {
             out.add(delta[j++]);
