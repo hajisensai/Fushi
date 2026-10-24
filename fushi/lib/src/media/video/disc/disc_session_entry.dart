@@ -2,13 +2,14 @@ import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
-    show blurayDiscRootForPlaylistPath;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
 import 'package:path/path.dart' as p;
 
 /// One physical disc inside a library entry (a collection or a standalone work).
 ///
-/// A disc collection stores one member per selected MPLS; several members can
+/// A disc collection stores one member per selected title (BD MPLS / DVD
+/// title); several members can
 /// share one disc root, and a multi-disc box set has several roots. [book] is
 /// the member the disc session is opened with: the most recently played one on
 /// this disc, otherwise the first in library order.
@@ -39,7 +40,7 @@ class DiscRef {
 List<DiscRef> collectDiscRefs(Iterable<VideoBookRow> members) {
   final Map<String, List<VideoBookRow>> byRoot = <String, List<VideoBookRow>>{};
   for (final VideoBookRow book in members) {
-    final String? root = blurayDiscRootForPlaylistPath(book.videoPath);
+    final String? root = discRootForMemberPath(book.videoPath);
     if (root == null) continue;
     byRoot.putIfAbsent(root, () => <VideoBookRow>[]).add(book);
   }
