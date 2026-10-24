@@ -302,4 +302,95 @@ void main() {
     // ReplayGain 恒由后端按曲目用 volume-gain 施加，mpv 自己的 replaygain 关掉。
     expect(off['replaygain'], 'no');
   });
+
+  test('输出偏好（预放大 / 独占 / 设备 / DSD / 速度 / 音量）经引擎下发给后端', () async {
+    final _FakeBackend b = _FakeBackend();
+    MusicOutputSettings base = const MusicOutputSettings(
+      gapless: true,
+      replayGain: MusicReplayGainMode.off,
+    );
+    final MusicPlayerEngine e = MusicPlayerEngine(
+      backendFactory: () => b,
+      baseSettings: () => base,
+    );
+    addTearDown(e.dispose);
+    await e.playQueue(<MusicPlayItem>[_item('a')]);
+    expect(b.settings?.exclusive, isFalse);
+    base = const MusicOutputSettings(
+      gapless: true,
+      replayGain: MusicReplayGainMode.off,
+      replayGainPreampDb: 4,
+      exclusive: true,
+      audioDevice: 'wasapi/{x}',
+      dsdPcmRate: MusicDsdPcmRate.khz352,
+      speed: 1.25,
+      volume: 70,
+    );
+    await e.reapplySettings();
+    final MusicOutputSettings s = b.settings!;
+    expect(s.replayGainPreampDb, 4);
+    expect(s.exclusive, isTrue);
+    expect(s.dsdPcmRate, MusicDsdPcmRate.khz352);
+    // ReplayGain 档位仍由引擎按播放语境决定（这里是混排 → track）。
+    expect(s.replayGain, MusicReplayGainMode.track);
+    final Map<String, String> win = musicMpvProperties(
+      s,
+      platform: MusicOutputPlatform.windows,
+    );
+    expect(win['ao'], 'wasapi');
+    expect(win['audio-exclusive'], 'yes');
+    expect(win['audio-device'], 'wasapi/{x}');
+    expect(win['speed'], '1.2500');
+    expect(win['volume'], '70.00');
+    expect(
+      win.containsKey('audio-samplerate'),
+      isFalse,
+      reason: '独占时设备跟随源，不全局钉采样率（DSD 走逐文件选项）',
+    );
+    expect(
+      musicMpvProperties(s, platform: MusicOutputPlatform.macos)['ao'],
+      'coreaudio',
+    );
+    expect(
+      musicMpvProperties(
+        s,
+        platform: MusicOutputPlatform.windows,
+        exclusiveAllowed: false,
+      )['audio-exclusive'],
+      'no',
+      reason: '独占打不开后退回共享',
+    );
+    expect(
+      musicMpvProperties(
+        s,
+        platform: MusicOutputPlatform.android,
+      ).containsKey('audio-exclusive'),
+      isFalse,
+      reason: 'Android 走平台 bit-perfect 混音属性，不是 mpv 独占',
+    );
+  });
+
+  test('睡眠定时「播完本曲停」：不再预排下一首，播完停在下一首开头', () async {
+    await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b')]);
+    await engine.setStopAfterCurrent(true);
+    expect(backend.next, isNull);
+    backend.controller.add(const MusicBackendCompleted());
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.isPlaying, isFalse);
+    expect(engine.current?.trackUid, 'b');
+    expect(engine.stopAfterCurrent, isFalse);
+    await engine.play();
+    expect(backend.log.last, 'open:b+null');
+  });
+
+  test('Advanced 带曲目 uid 时按 uid 对位（切换期内队列被重排也不错位）', () async {
+    await engine.playQueue(<MusicPlayItem>[
+      _item('a'),
+      _item('b'),
+      _item('c'),
+    ], context: MusicQueueContext.album);
+    backend.controller.add(const MusicBackendAdvanced('c'));
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.current?.trackUid, 'c');
+  });
 }

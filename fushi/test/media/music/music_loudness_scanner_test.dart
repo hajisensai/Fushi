@@ -163,6 +163,32 @@ void main() {
     );
   });
 
+  test('「自动测量」关掉时曲库扫描触发的请求不跑，「立即测量」(force) 照跑', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    int runs = 0;
+    final MusicLoudnessScanner scanner = MusicLoudnessScanner(
+      database: () => db,
+      enabled: () => false,
+      ffmpeg: () {
+        runs++;
+        return resolveFfmpegBackend();
+      },
+    );
+    await db
+        .into(db.musicTracks)
+        .insert(_track('x', path: '/nonexistent/x.flac'));
+    await scanner.schedule();
+    expect(runs, 0);
+    expect((await db.getMusicTrack('x'))!.r128ScannedAt, isNull);
+    await scanner.schedule(force: true);
+    expect(runs, 1);
+    // 文件读不了：记扫描时刻（不无限重试），增益留空。
+    final MusicTrackRow x = (await db.getMusicTrack('x'))!;
+    expect(x.r128ScannedAt, isNotNull);
+    expect(x.rgTrackGain, isNull);
+  });
+
   group('真 FFmpeg + 内存 DB', () {
     late FushiDatabase db;
     late Directory dir;

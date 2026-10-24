@@ -12,6 +12,7 @@ import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -104,6 +105,13 @@ class MusicNowPlayingBar extends ConsumerWidget {
               icon: const FushiIcon(FushiIcons.skipNext),
               tooltip: t.shortcut_action_music_next_track,
               onPressed: () => unawaited(session.engine.skipNext()),
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('music_bar_signal_path'),
+              icon: const FushiIcon(FushiIcons.highQuality),
+              tooltip: t.music_signal_path_title,
+              onPressed: () =>
+                  unawaited(showMusicSignalPathPanel(context, appModel)),
             ),
             FushiIconButtonControl(
               icon: const FushiIcon(FushiIcons.stop),
