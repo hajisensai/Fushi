@@ -428,6 +428,9 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   确认才写 `music_videos`。YouTube 绑定时尝试拿音频流做一次声纹对齐求偏移，拿不到按 0、
   MV 页可 ±100 ms 微调。「曲库音轨」模式在同一个 mpv 实例里 `audio-add` 本地文件、
   `audio-delay = offset − cueStart`，由 mpv 自己对齐，不在 Dart 里追帧。
+  真 libmpv 实测（`music_mv_audio_sync_real_test.dart`）只覆盖了负 `audio-delay`（CUE 曲目）：
+  跳转后音轨从文件时刻 `v − delay` 起，公式与符号正确。正偏移（MV 有前奏）在 `ao=pcm` 下 mpv
+  从文件时刻 v 起送音频、由画面补偿，落盘音频看不出画面时刻，**尚未实测**，需要真机看画面验证。
 - **schema v129**：`music_scrape_meta` / `music_metadata_raw_snapshots` / `music_locked_fields`，
   三张都设备本地。刮削下载的封面在 `<documents>/music_covers/`，数据根迁移按
   `DataRootMigrator._rebaseMusicAlbums` 改写（目录封面是外部路径，不动）。

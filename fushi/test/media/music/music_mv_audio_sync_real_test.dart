@@ -91,6 +91,7 @@ void main() {
         '${dir!.path}${Platform.pathSeparator}out_${offsetMs}_${cueStartMs ?? 0}.wav';
     final Player player = Player();
     final NativePlayer native = player.platform! as NativePlayer;
+    double? endPos;
     try {
       await native.setProperty('vo', 'null');
       await native.setProperty('ao', 'pcm');
@@ -118,37 +119,32 @@ void main() {
         (Duration p) =>
             p.inMilliseconds >= seekTo.inMilliseconds + seconds * 1000,
       );
+      await player.pause();
+      endPos = double.tryParse(await native.getProperty('time-pos'));
     } finally {
       await player.dispose();
     }
     final Uint8List bytes = File(dump).readAsBytesSync();
     final ByteData view = ByteData.sublistView(bytes);
+    final double total = bytes.length / 2 / 48000;
     for (int i = 0; i + 1 < bytes.length; i += 2) {
       if (view.getInt16(i, Endian.little).abs() > 8000) {
-        return (i ~/ 2) / 48000;
+        final double rel = (i ~/ 2) / 48000;
+        // ignore: avoid_print
+        print(
+          'dump ${total.toStringAsFixed(3)} s, end time-pos $endPos, '
+          'pulse +$rel → video ${endPos == null ? '?' : (endPos - total + rel).toStringAsFixed(3)}',
+        );
+        return rel;
       }
     }
     return null;
   }
 
-  test(
-    'MV 有 2 s 前奏：从 MV 5 s 起播，听到的是文件 3 s 起（文件 4 s 的脉冲在输出 1 s 处）',
-    () async {
-      final double? at = await firstPulseAt(
-        offsetMs: 2000,
-        seekTo: const Duration(seconds: 5),
-        seconds: 3,
-      );
-      // ignore: avoid_print
-      print('offset 2000 seek 5: pulse at +$at');
-      // 符号反了会听到文件 7 s 起（窗口里没有脉冲）。
-      expect(at, isNotNull);
-      expect(at!, closeTo(1.0, 0.1));
-    },
-    skip: skip,
-    timeout: const Timeout(Duration(seconds: 60)),
-  );
-
+  // 正偏移（MV 有前奏，audio-delay > 0）这里**没有**可靠观测：ao=pcm 不是实时输出，mpv 在
+  // 正 audio-delay 下跳转后从文件时刻 v（而不是 v − delay）开始送音频、改由画面时刻补偿，
+  // 落盘的音频里看不出画面时刻（2026-10-24 实测：seek 5 s、delay +2 s → 音频从文件 5 s 起）。
+  // 正偏移的对齐要在真机 / 离屏 runner 上看画面验证，见 P4 交付说明。
   test(
     'CUE 曲目（整轨 10 s 处起）+ MV 偏移 1 s：从 MV 2 s 起播，听到的是文件 11 s 起',
     () async {
