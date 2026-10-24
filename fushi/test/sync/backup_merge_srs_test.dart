@@ -126,9 +126,18 @@ void main() {
       // 老形态：同样的行写进备份主库里的旧表。
       for (final MapEntry<String, String> t in kLegacySrsTableDdl.entries) {
         await src.customStatement(t.value);
+        // 只抄老表有的列：srs.db 之后加的列（schema v4 的 media_refs 等）老形态里本来就没有。
+        final Set<String> legacyCols = <String>{
+          for (final QueryRow c
+              in await src.customSelect('PRAGMA table_info(${t.key})').get())
+            c.read<String>('name'),
+        };
         for (final QueryRow r
             in await srcSrs.db.customSelect('SELECT * FROM ${t.key}').get()) {
-          final List<String> cols = r.data.keys.toList();
+          final List<String> cols = <String>[
+            for (final String c in r.data.keys)
+              if (legacyCols.contains(c)) c,
+          ];
           await src.customStatement(
             'INSERT INTO ${t.key} (${cols.join(', ')}) '
             'VALUES (${List<String>.filled(cols.length, '?').join(', ')})',
