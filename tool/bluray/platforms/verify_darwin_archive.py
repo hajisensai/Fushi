@@ -74,10 +74,19 @@ UNIFIED_FFMPEG = {"libavcodec", "libavdevice", "libavfilter", "libavformat",
 SHARED_DVD = {"libdvdcss", "libdvdread", "libdvdnav"}
 PRIVATE_FFMPEG = {"Avcodec", "Avdevice", "Avfilter", "Avformat", "Avutil",
                   "Swresample", "Swscale"}
+# tool/cdda: audio CD (cdda://) is macOS only. libcdio / libcdio_cdda /
+# libcdio_paranoia ship as frameworks next to Mpv in the macOS archive; iOS has
+# no optical drive, builds mpv with -Dcdda=disabled and must not carry them.
+CDDA_FRAMEWORKS = {"Cdio", "Cdio_cdda", "Cdio_paranoia"}
+# MP_DBG format string of cdda-seek-sector-offset.patch (seek keeps the byte
+# offset inside the target sector); only present when the patch is built in.
+CDDA_SEEK_MARKER = b"Seek to sector %d, byte %d within the sector."
 
 
 def verify_archive(path, platform):
     required = {"Mpv", "Bluray", "Placebo"}
+    if platform == "macos":
+        required |= CDDA_FRAMEWORKS
     # Fushi ships Apple Silicon only on macOS.
     expected = {"macos": {"": {"arm64"}},
                 "ios": {"": {"arm64"}, "simulator": {"arm64", "x86_64"}}}[platform]
@@ -112,6 +121,8 @@ def verify_archive(path, platform):
                 markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav",
                            b"dvd-state", b"disc-remote-access", b"without DefaultDuration",
                            b"Deriving missing DTS") if framework == "Mpv" else ()
+                if framework == "Mpv" and platform == "macos":
+                    markers += (CDDA_SEEK_MARKER,)
                 slices = macho_slices(data, markers)
                 actual = {item["architecture"] for item in slices}
                 if actual != expected[variant] or actual != set(library["SupportedArchitectures"]):
@@ -130,8 +141,12 @@ def verify_archive(path, platform):
     if packaged := (PRIVATE_FFMPEG | UNIFIED_FFMPEG) & frameworks.keys():
         raise ValueError(f"FFmpeg packaged inside libmpv ({sorted(packaged)}); "
                          "libmpv must link the unified FFmpeg frameworks")
+    if platform != "macos" and (packaged := CDDA_FRAMEWORKS & frameworks.keys()):
+        raise ValueError(f"libcdio packaged for {platform} ({sorted(packaged)}); "
+                         "audio CD (cdda) is macOS only")
     unified_used = False
     dvd_used = False
+    cdda_used = False
     for framework, variants in frameworks.items():
         for slices in variants.values():
             for item in slices:
@@ -144,6 +159,8 @@ def verify_archive(path, platform):
                                        f"@rpath/{target}.framework/Versions/A/{target}",
                                        f"@rpath/{target}.framework/Versions/Current/{target}"}
                         if target in frameworks and dependency in valid_paths:
+                            cdda_used = cdda_used or (framework == "Mpv"
+                                                      and target == "Cdio_paranoia")
                             continue
                         if target in UNIFIED_FFMPEG and dependency in valid_paths:
                             unified_used = True
@@ -156,13 +173,15 @@ def verify_archive(path, platform):
         raise ValueError("Mpv does not link the unified FFmpeg (@rpath/libavcodec.framework)")
     if not dvd_used:
         raise ValueError("Mpv does not link the shared DVD library (@rpath/libdvdnav.framework)")
+    if platform == "macos" and not cdda_used:
+        raise ValueError("Mpv does not link libcdio_paranoia (@rpath/Cdio_paranoia.framework)")
     checksum = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             checksum.update(chunk)
     digest = checksum.hexdigest()
     return {"sha256": digest, "platform": platform, "frameworks": frameworks,
-            "validation": "archive structure, Mach-O CPU slices, dylib closure (unified FFmpeg + shared DVD frameworks), navigation incl. dvd-state, lace-timestamp and recorder-DTS markers",
+            "validation": "archive structure, Mach-O CPU slices, dylib closure (unified FFmpeg + shared DVD frameworks, macOS libcdio frameworks), navigation incl. dvd-state, lace-timestamp, recorder-DTS and (macOS) cdda seek markers",
             "device_menu_rendering_tested": False}
 
 

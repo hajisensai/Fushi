@@ -24,6 +24,10 @@ case "${KIND}" in
     # The Darwin archive is verified in this repo (verify_darwin_archive.py
     # requires the disc-remote-access marker); the fork only needs the patch.
     cp "${NAV}" "${FORK}/patches/disc-navigation-state.patch"
+    # Audio CD (tool/cdda, macOS only): mk-pkg-mpv/video.nix on the fork's
+    # fushi/cdda branch applies this last and builds -Dcdda=enabled on macOS.
+    cp "${ROOT}/third_party/media_kit_libs_windows_video/patches/cdda-seek-sector-offset.patch" \
+      "${FORK}/patches/mpv-cdda-seek-sector-offset.patch"
     ;;
   *) echo "apply.sh: android or darwin" >&2; exit 2 ;;
 esac

@@ -103,6 +103,11 @@ Future<_Run> _run(
   );
 }
 
+void _expectNoFailure(_Run r) => expect(<String>[
+  for (final MusicBackendEvent e in r.failures)
+    if (e is MusicBackendFailed) '${e.reason}: ${e.message}',
+], isEmpty);
+
 /// [got] 在 [ref] 里从第几帧开始（只用于失败时说明偏了多少）。
 int _locate(Uint8List got, Uint8List ref) {
   int first = 0;
@@ -201,7 +206,7 @@ void main() {
         p.join(tmp.path, 'track02.raw'),
         (MpvMusicOutputBackend b) => b.openPair(item(1), null, play: true),
       );
-      expect(r.failures, isEmpty);
+      _expectNoFailure(r);
       _expectSamePcm(r.pcm, ref2);
     },
     skip: skip,
@@ -225,7 +230,7 @@ void main() {
         await b.seek(target);
         await b.play();
       });
-      expect(r.failures, isEmpty);
+      _expectNoFailure(r);
       // 后端把本曲在盘上的起点加回去；media_kit 的 seek 精确到毫秒，mpv 精确 seek 按
       // `trunc((目标 - 包起点) · 44100)` 跳过样本 = 目标时刻向下取整的那一帧。
       final int originUs = (musicCddaSeconds(tracks[1].cueStartMs!) * 1e6)
@@ -250,7 +255,7 @@ void main() {
         p.join(tmp.path, 'gapless_open.raw'),
         (MpvMusicOutputBackend b) => b.openPair(item(1), item(2), play: true),
       );
-      expect(r.failures, isEmpty);
+      _expectNoFailure(r);
       expect(r.advanced, <String>[tracks[2].trackUid]);
       _expectSamePcm(r.pcm, both());
     },
@@ -267,7 +272,7 @@ void main() {
         await b.openPair(item(1), null, play: true);
         await b.replaceNext(item(2));
       });
-      expect(r.failures, isEmpty);
+      _expectNoFailure(r);
       expect(r.advanced, <String>[tracks[2].trackUid]);
       _expectSamePcm(r.pcm, both());
     },

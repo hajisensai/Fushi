@@ -531,12 +531,41 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `DKIOCCDREADTOC`（完整 TOC 换算成格式 0）；移动端返回不支持。实测本机光驱一张 12 轨 CD：Disc ID
   `wQ8ygYRJ6TxS9evQ5yIRDW8yJLo-` 在 MusicBrainz 查到对应发行，整盘入库。曲目路径 `cdda://<设备>` +
   起止（毫秒，相对第 1 轨起点）。
-  - **播放被两件事挡住（需要决策）**：① 随包 Windows libmpv 没编 libcdio（`-Dcdda`）；② media_kit
-    覆盖层 `native_open_policy.dart` 刻意不让播放列表里的盘协议走直接 loadfile（安全策略），而音乐后端
-    恒用两项播放列表。另编一份带 cdda 的 libmpv（只在本机验证用）实测：`cdda://E:` + 逐文件
-    `start`/`end` 播第 2 轨，长度 0 误差、内容与 cd-paranoia 直读逐样本一致，但整段提前 172 个样本
-    （mpv `stream_cdda.c` 的 seek 丢掉扇区内偏移，需要一个小补丁）；EDL 包 `cdda://` 默认被拒（不安全
-    来源），开 `load-unsafe-playlists` 才行。
+  - **播放（2026-10-25 放开，所有者批准）**：
+    - **libmpv**：Windows 随包 libmpv 改为 `-Dcdda=enabled`（`…-rdisc1-cdda1.7z`），libcdio 2.3.0 /
+      libcdio-paranoia 10.2+2.0.2 取自 `tool/cdda/recipe.env` 钉版本与 sha256 的 MSYS2 包、解到私有前缀
+      （不往 MSYS2 装包），随包 `fbdcdio*.dll`，GPL-3.0-or-later 许可进 `licenses/fushi-cdda/` 与原生
+      许可清单。第 6 个 mpv 补丁 `cdda-seek-sector-offset.patch` 修 `stream_cdda.c` 的 seek 丢扇区内
+      偏移（原来 seek 后整段提前最多 587 个样本，第 2 轨实测提前 172 个）。补丁说明与各平台状态见
+      `tool/bluray/forks/README.md`。
+    - **直接加载**：mpv 把 `stream_cdda` 标 `STREAM_ORIGIN_UNSAFE`，进 media_kit 的临时播放列表会被拒。
+      覆盖层 `native_open_policy.dart` 只放行 app 自己构造的 `cdda://<光驱>`（`E:` / `/dev/sr0` /
+      `/dev/rdiskN`），别的写法一律保持 mpv 的来源检查；音乐后端含 CD 的一对曲目改为「单个 Media 打开
+      + `Player.add` 追加」（各自一条 `loadfile`），不再把盘放进 Playlist。EDL 包 `cdda://` 仍被 mpv 拒，
+      不用。
+    - **无缝**：`start` 是播放器级 seek、会清掉前一首的尾巴，所以盘上**相邻**的下一首不另开 mpv 文件，
+      而是把当前 `cdda://` 文件的 `end` 延到下一首的终点（同一条盘时间轴，轨界不经 seek），越过下一首
+      起点即发「已推进」。起止毫秒按 CD 扇区（1/75 s）还原到轨界、再后挪 1 µs（mpv 截断取样本）。
+      不相邻的下一首（随机 / 跳播 / 换文件）照常进播放列表，前一首尾巴会被 `start` 的 seek 清掉——
+      mpv 的限制，只在不相邻时发生。
+    - **时间轴**：CD 曲目的 mpv 时间是盘时间，位置 / seek / A-B 循环 / 交叉淡入的淡入淡出时刻都按本曲
+      起点换算；均衡器照常（与时间无关）；ReplayGain：CD 没有标签、也不做响度扫描（FFmpeg 没有 cdda
+      协议，光驱里的盘随时会换），按 0 dB 播，信号路径面板照实显示；交叉淡入：盘上相邻曲目本来就是
+      连续的、默认不淡入（与 CUE 同规则），选了「连续曲目也淡入」时按盘时间起点淡入淡出。
+    - **换盘 / 没盘**：打开前按 Disc ID 核对光驱里的盘（曲目 uid = Disc ID + 轨号）；CD 曲目提前结束或
+      mpv 报错时再核对一次。没盘 / 换了盘给出带光驱名的明确提示（`music_cd_play_no_disc` /
+      `music_cd_play_other_disc`），不会拿别的盘的音频顶着这张专辑的曲名播；其余播放失败现在也会
+      toast（`music_play_failed`），原来只记在引擎里、界面不显示。
+    - **平台**：Windows 已实测（下）；macOS 在 Darwin fork 本地分支加了 libcdio 配方与补丁，**等所有者
+      推送并构建**后重新 vendor；iOS / Android 没有光驱，不做；Linux 用系统 mpv，需带 cdda
+      （`docs/agent/build.md`）。
+    - **实测**（Windows x64，`…-cdda1` 归档，光驱 E: 里 12 轨盘 `wQ8ygYRJ6TxS9evQ5yIRDW8yJLo-`，参考为
+      `cd-paranoia -d E: -Z -r N` 直读，`music_cdda_playback_real_test.dart`，5/5 通过）：第 2 轨
+      11,176,704 帧与直读逐字节相同（偏移 0）；轨中 seek 到 100.123 s 后 6,761,295 帧与直读从第
+      4,415,409 帧起逐字节相同（偏移 0）；第 2 → 3 轨连播（打开时排好 / 播放中 `replaceNext` 延长
+      终点两种）16,010,652 帧 = 两轨直读首尾相接、逐字节相同，各发一次「已推进」；光驱里不是这张盘
+      / 盘符不存在时打开即报 `cdOtherDisc` / `cdNoDisc`、不出声。对照：同一测试换没打补丁的 cdda
+      libmpv，第 2 轨与连播整段提前 172 帧、seek 后提前 580 帧，4 条全红。
   - **抓轨（FLAC + CUE + 日志 + AccurateRip）评估后不做**：需要原始扇区读（C2 / 重读校验）、驱动器
     读偏移库、AccurateRip v1/v2 校验与数据库查询、日志格式——是一个独立子系统的量级。
 - **服务器曲库**：`packages/fushi_engine/lib/media/music/server/`（`MusicServerBrowser` 契约 +

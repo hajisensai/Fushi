@@ -1,3 +1,36 @@
+# 音频 CD：第 6 个 mpv 补丁 `cdda-seek-sector-offset.patch`（`cdda1`，2026-10-25）
+
+## 补丁说明
+
+`third_party/media_kit_libs_windows_video/patches/cdda-seek-sector-offset.patch` 只改 mpv
+`stream/stream_cdda.c`（基线 `36abaa32`，上游 master 至 2026-10-25 未修）：
+
+- **问题**：`seek()` 只取 `sec = newpos / 2352`，把扇区内余下的字节偏移丢了，并且没有丢掉
+  seek 前那一扇区没读完的数据。原始音频解复用器按 `samplerate / 8` 帧的包对齐 seek
+  （`demux_raw.c`），所以 seek 目标几乎总不在扇区边界上：例如盘上第 2 轨起点 17446 扇区
+  （232.613 s），解复用器 seek 到 41031328 字节，余 688 字节（172 帧），stream 却从扇区头读，
+  之后每个样本都比它的时间戳早 172 帧；mpv 精确 seek 再按时间戳裁边，结果整轨提前 172 帧、
+  长度不变——和 cd-paranoia 直读逐样本比对才看得出来（最多 587 帧）。
+- **修法**：`seek()` 清掉旧扇区（`data = NULL`），把扇区内偏移记进 `data_pos`；
+  `fill_buffer()` 读下一扇区时，seek 之后的第一扇区从 `data_pos` 开始，其余照旧从 0 开始。
+  越界 seek 也清掉旧扇区。加了一行 `MP_DBG`（`Seek to sector %d, byte %d within the
+  sector.`），既是诊断日志，也是各平台产物里可查的补丁特征串（`verify_darwin_archive.py`）。
+- **验收**（真光驱、真盘，`fushi/test/media/music/disc/music_cdda_playback_real_test.dart`）：
+  第 2 轨与 `cd-paranoia -r 2` 逐字节相同（偏移 0，未打补丁的 libmpv 提前 172 帧）；轨中 seek 后偏移 0（未打补丁提前 580 帧）；第 2 → 3 轨连播与两轨
+  直读首尾相接、逐字节相同。
+
+## 各平台
+
+| 平台 | 状态 | 做法 |
+|---|---|---|
+| Windows | 已实现、已实测 | `tool/bluray/build_libmpv.ps1` 第 6 个补丁 + `-Dcdda=enabled`；libcdio / paranoia 来自 `tool/cdda/recipe.env` 钉版本与 sha256 的 MSYS2 包，`tool/cdda/fetch_cdio_msys2.py` 解到私有前缀（不往 MSYS2 装包）；随包 `fbdcdio-19.dll` / `fbdcdio_cdda-2.dll` / `fbdcdio_paranoia-2.dll`，许可在 `licenses/fushi-cdda/`（GPL-3.0-or-later，含 `SOURCE.txt`）。归档见 `NATIVE_BUILD.md` 的 `cdda1`。 |
+| macOS | 已实现、**未构建** | Darwin fork 本地分支 `fushi/cdda`（基于 `fushi/rdisc` 568c907）：libcdio 2.3.0 / libcdio-paranoia 10.2+2.0.2 的 Nix 配方（只给 macOS）、`patches/mpv-cdda-seek-sector-offset.patch`、macOS `-Dcdda=enabled`。要所有者推到 `hajisensai/libmpv-darwin-build-fushi` 并手动派发 `unified-ffmpeg.yml`，再按下面「重新 vendor」换产物；`verify_darwin_archive.py` 已要求 macOS 产物带 cdda（换产物前用当前随包归档跑它会红，这是预期）。 |
+| iOS | 不做 | 没有光驱，也没有可用的 libcdio 设备驱动；`-Dcdda=disabled`，`verify_darwin_archive.py` 拒绝带 libcdio 的 iOS 归档。 |
+| Android | 不做 | 没有光驱。Android 构建按名字逐个复制补丁（`tool/bluray/platforms/build_android.sh`、`libmpv-android-video-build.patch`、`apply.sh android` 都不整目录应用），新补丁不进 Android 构建；即使进了，`-Dcdda=disabled` 下 `stream_cdda.c` 不编译。 |
+| Linux | 系统 mpv | 源码构建用发行版 `libmpv2`，要带 cdda（`docs/agent/build.md`「Linux 桌面」）；发行版 mpv 没有这个补丁，seek 后会整段提前。 |
+
+`bash tool/bluray/forks/apply.sh darwin <checkout>` 现在也复制 cdda 补丁。
+
 # libmpv fork 的远端原盘改动（`rdisc1`，2026-10-24，**已推送、已构建、已 vendor**）
 
 ## 状态（2026-10-24）
