@@ -489,6 +489,7 @@ class GalHookSessionState {
     this.japaneseLocaleSkipReason,
     this.knifeTextServiceIniPath,
     this.knifeTextServiceIniWritten = false,
+    this.knifeTextServiceIniWriteFailed = false,
   });
 
   final GalHookSessionPhase phase;
@@ -552,6 +553,9 @@ class GalHookSessionState {
   /// 本局已经替用户把开关写进 [knifeTextServiceIniPath]（重启游戏后生效）。
   final bool knifeTextServiceIniWritten;
 
+  /// 本局写 [knifeTextServiceIniPath] 失败过（UI 改为提示手动添加那一行）。
+  final bool knifeTextServiceIniWriteFailed;
+
   bool get isActive =>
       phase != GalHookSessionPhase.idle && phase != GalHookSessionPhase.error;
   bool get hasText => textSignalReceived;
@@ -593,6 +597,7 @@ class GalHookSessionState {
     String? knifeTextServiceIniPath,
     bool clearKnifeTextServiceIniPath = false,
     bool? knifeTextServiceIniWritten,
+    bool? knifeTextServiceIniWriteFailed,
   }) {
     return GalHookSessionState(
       phase: phase ?? this.phase,
@@ -651,6 +656,10 @@ class GalHookSessionState {
       knifeTextServiceIniWritten: clearKnifeTextServiceIniPath
           ? false
           : knifeTextServiceIniWritten ?? this.knifeTextServiceIniWritten,
+      knifeTextServiceIniWriteFailed: clearKnifeTextServiceIniPath
+          ? false
+          : knifeTextServiceIniWriteFailed ??
+                this.knifeTextServiceIniWriteFailed,
     );
   }
 }
@@ -1356,12 +1365,6 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
-  /// BUG-1267 — attach 路径的 `lunaPcHooks` 判据。
-  ///
-  /// 与 launch 路径**共用** [shouldUseLunaPcHooksForExecutable]：判据本身只认 exe
-  /// 路径（basename 白名单 + 同目录 `UnityPlayer.dll`），launch 有路径、attach 也能
-  /// 从 PID 查到，没有任何理由让两条路径给出不同答案。查不到路径时返回 false —— 这
-  /// 与修复前的硬编码行为一致，所以「探测失败」不会比旧版更糟，只会不再更好。
   /// 附着到 knife 时判断它的台词服务是否开着：knife.ini 没开 → 记下 ini 路径让 UI 提示。
   /// 用户若是用 `-t` 自己开的，第一句 knife 台词到达时提示随即撤掉（见
   /// [_onTextBufferChanged]）；进程命令行 host 读不到，这是唯一可靠的「已开」证据。
@@ -1397,6 +1400,7 @@ class GalHookSessionController extends ChangeNotifier {
       );
       return true;
     } on FileSystemException catch (error) {
+      _setState(_state.copyWith(knifeTextServiceIniWriteFailed: true));
       _record(
         GalHookEventSeverity.error,
         'text',
@@ -1408,6 +1412,12 @@ class GalHookSessionController extends ChangeNotifier {
     }
   }
 
+  /// BUG-1267 — attach 路径的 `lunaPcHooks` 判据。
+  ///
+  /// 与 launch 路径**共用** [shouldUseLunaPcHooksForExecutable]：判据本身只认 exe
+  /// 路径（basename 白名单 + 同目录 `UnityPlayer.dll`），launch 有路径、attach 也能
+  /// 从 PID 查到，没有任何理由让两条路径给出不同答案。查不到路径时返回 false —— 这
+  /// 与修复前的硬编码行为一致，所以「探测失败」不会比旧版更糟，只会不再更好。
   bool _lunaPcHooksForPid(int pid) {
     final String? imagePath = _targetImagePathProbe(pid);
     if (imagePath == null || imagePath.isEmpty) return false;

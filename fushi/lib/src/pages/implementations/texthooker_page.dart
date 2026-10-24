@@ -145,7 +145,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   );
   final ScrollController _scroll = ScrollController();
   final GalHookSessionController _session = GalHookSessionController.instance;
-  bool _knifeIniWriteFailed = false;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
 
@@ -2209,17 +2208,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return FushiInlineNotice(
       severity: FushiNoticeSeverity.warning,
       title: t.game_knife_text_service_off_title,
-      message: _knifeIniWriteFailed
+      message: state.knifeTextServiceIniWriteFailed
           ? t.game_knife_text_service_write_failed
           : t.game_knife_text_service_off_body,
       actions: <Widget>[
         FushiFilledButton.tonal(
-          onPressed: () {
-            final bool written = _session.enableKnifeTextServiceInIni();
-            if (!written && mounted) {
-              setState(() => _knifeIniWriteFailed = true);
-            }
-          },
+          onPressed: _session.enableKnifeTextServiceInIni,
           child: Text(t.game_knife_text_service_enable_action),
         ),
       ],

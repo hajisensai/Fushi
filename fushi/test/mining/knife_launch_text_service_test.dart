@@ -178,4 +178,66 @@ void main() {
       root = Directory.systemTemp.createTempSync('knife_launch_test_');
     }
   });
+
+  group('附着到已在运行的 knife', () {
+    const ExternalWindowInfo window = ExternalWindowInfo(
+      hwnd: 21,
+      pid: 2222,
+      title: 'knife',
+    );
+
+    test('台词服务没开：记下 knife.ini 并提示，一键写入后标记已写', () async {
+      final String exe = makeExe(ini: 'assets-dir = assets\n');
+      final GalHookSessionController controller = build(exe);
+      await controller.startAttachedCapture(window);
+      final String ini = p.join(root.path, 'knife.ini');
+      expect(controller.state.knifeTextServiceIniPath, ini);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('knife.text_service_off'),
+      );
+
+      expect(controller.enableKnifeTextServiceInIni(), isTrue);
+      expect(controller.state.knifeTextServiceIniWritten, isTrue);
+      expect(
+        File(ini).readAsStringSync(),
+        'assets-dir = assets\ntext-websocket = 127.0.0.1:6677\n',
+      );
+      // 已写过：不重复写。
+      expect(controller.enableKnifeTextServiceInIni(), isFalse);
+
+      // 新的一局附着：ini 已开，提示与「已写」标记都清掉。
+      await controller.startAttachedCapture(window);
+      expect(controller.state.knifeTextServiceIniPath, isNull);
+      expect(controller.state.knifeTextServiceIniWritten, isFalse);
+      await controller.close();
+    });
+
+    test('写入失败：状态带出失败，换一局附着后复位', () async {
+      final String exe = makeExe();
+      // knife.ini 位置被同名目录占住，写入必然失败。
+      Directory(p.join(root.path, 'knife.ini')).createSync();
+      final GalHookSessionController controller = build(exe);
+      await controller.startAttachedCapture(window);
+      expect(controller.state.knifeTextServiceIniPath, isNotNull);
+      expect(controller.enableKnifeTextServiceInIni(), isFalse);
+      expect(controller.state.knifeTextServiceIniWriteFailed, isTrue);
+      expect(
+        controller.events.map((GalHookEvent e) => e.code),
+        contains('knife.text_service_ini_failed'),
+      );
+
+      await controller.startAttachedCapture(window);
+      expect(controller.state.knifeTextServiceIniWriteFailed, isFalse);
+      await controller.close();
+    });
+
+    test('不是 knife：不提示', () async {
+      final String exe = makeExe(knife: false);
+      final GalHookSessionController controller = build(exe);
+      await controller.startAttachedCapture(window);
+      expect(controller.state.knifeTextServiceIniPath, isNull);
+      await controller.close();
+    });
+  });
 }
