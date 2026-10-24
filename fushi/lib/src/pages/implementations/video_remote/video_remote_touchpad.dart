@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_remote_touchpad_gestures.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -219,9 +220,10 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           DecoratedBox(
-            decoration: BoxDecoration(
+            // 全胶囊模式标签：形状取框架的 StadiumBorder，不手写圆角数字。
+            decoration: ShapeDecoration(
               color: scheme.primaryContainer,
-              borderRadius: BorderRadius.circular(999),
+              shape: const StadiumBorder(),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -275,7 +277,8 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
     final IconData? flash = _flash;
     return Material(
       key: const ValueKey<String>('video-remote-touchpad'),
-      color: scheme.surfaceContainerLowest,
+      // 整屏触控板就是页面本身：取设计系统的页面底色角色。
+      color: FushiDesignTokens.of(context).surfaces.page,
       child: FushiEntranceScope(
         child: Stack(
           fit: StackFit.expand,
