@@ -561,6 +561,20 @@ if (!window.__fushiLiveRanges) {
 // Range 登记在 tracked() 里，正文其它 DOM 手术（__fushiLiveRanges.moveNodes）会把它们写回而不塌缩。
 // Blink 与不支持 CSS Highlight 的旧 WebView 继续走包裹。window.__fushiSentenceAudioRangeMode
 // （布尔）可强制开关，供测试在 Chrome 里跑这条路径。
+// BUG-3770：VN 逐字显现时未显现的字只是被 ::highlight(fushi-vn-unrevealed) 画成透明，仍在 DOM
+// 里、照样能被 caretPositionFromPoint 命中。window.__fushiRevealRange 是那段未显现正文的
+// live Range（VN shell 维护，其余时候为 null）；查词命中与窄条层都经这里认出「还看不见」的字。
+if (typeof window.__fushiTextUnrevealed !== 'function') {
+  window.__fushiTextUnrevealed = function(node, offset) {
+    var range = window.__fushiRevealRange;
+    if (!range) return false;
+    try {
+      return range.comparePoint(node, offset) === 0;
+    } catch (_) {
+      return false;
+    }
+  };
+}
 if (!window.__fushiCueRanges) {
   window.__fushiCueRanges = (function() {
     var HIGHLIGHT = 'fushi-sentence-audio';
@@ -1026,6 +1040,13 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       if (!parent || end <= start) return;
       // VN 逐字显现时未显现的字（data-fushi-visual-novel-unrevealed）是 visibility:hidden 的，窄条不能先露出来。
       if (parent.closest('rt, rp, [data-fushi-visual-novel-unrevealed], ' + HOST)) return;
+      // Range 版逐字显现（BUG-3770）：未显现的部分同样不画，只留已显现的那截。
+      var unrevealed = window.__fushiRevealRange;
+      if (unrevealed && typeof window.__fushiTextUnrevealed === 'function') {
+        if (window.__fushiTextUnrevealed(node, start)) return;
+        if (unrevealed.startContainer === node && unrevealed.startOffset < end) end = unrevealed.startOffset;
+        if (end <= start) return;
+      }
       if (seen) {
         if (seen.indexOf(node) >= 0) return;
         seen.push(node);
@@ -1985,6 +2006,8 @@ window.fushiSelection = {
   // 就是上千次强制 reflow。拿不到盒（无 body / 退化几何）一律返回 true —— 这道守卫只负责
   // 拦下**确证不可见**的字符，绝不在几何未知时把正常查词一起拦掉。
   charRangeVisible: function(charRange, box) {
+    if (typeof window.__fushiTextUnrevealed === 'function' &&
+        window.__fushiTextUnrevealed(charRange.startContainer, charRange.startOffset)) return false;
     if (box === undefined) box = this.visibleContentBox();
     if (!box) return true;
     var rects = charRange.getClientRects();
