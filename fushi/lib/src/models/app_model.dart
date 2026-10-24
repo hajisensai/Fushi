@@ -10,7 +10,8 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
-import 'package:fushi/src/corpus/library_corpus_settings.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kLibrarySentencesEnabledPrefKey;
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
@@ -1190,6 +1191,14 @@ class AppModel with ChangeNotifier {
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
+
+  /// 查词弹窗「我库里的例句」开关（D-L2 默认开）。偏好还没装好（独立弹窗 entry point /
+  /// 测试替身没跑 initialise）时按默认值，不抛——判据放在这个 getter 自己身上，弹窗注入等
+  /// 读它的地方不各自判空。
+  bool get librarySentencesEnabled =>
+      _prefsRepo?.getPref(kLibrarySentencesEnabledPrefKey, defaultValue: true)
+          as bool? ??
+      true;
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -3767,7 +3776,7 @@ class AppModel with ChangeNotifier {
       LibraryCorpusService.instance.start(
         database: _database,
         directory: LibraryCorpusService.directoryUnder(_databaseDirectory.path),
-        isEnabled: () => librarySentencesEnabledOf(this),
+        isEnabled: () => librarySentencesEnabled,
       );
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。

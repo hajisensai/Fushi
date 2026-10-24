@@ -12,9 +12,7 @@ import 'package:fushi/utils.dart';
 import 'package:material_ui/material_ui.dart';
 
 /// 开关当前值（D-L2：默认开，全在本机、不上传）。
-bool librarySentencesEnabledOf(AppModel app) =>
-    app.prefsRepo.getPref(kLibrarySentencesEnabledPrefKey, defaultValue: true)
-        as bool;
+bool librarySentencesEnabledOf(AppModel app) => app.librarySentencesEnabled;
 
 Future<void> setLibrarySentencesEnabled(AppModel app, bool value) async {
   await app.prefsRepo.setPref(kLibrarySentencesEnabledPrefKey, value);
