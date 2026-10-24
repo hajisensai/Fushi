@@ -1970,6 +1970,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'music_albums',
       'music_artists',
       'music_disc_sources',
+      // v127：OP / ED 声纹比对缓存——本机文件的实测结果，必须本机重算。
+      'video_theme_song_spans',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →

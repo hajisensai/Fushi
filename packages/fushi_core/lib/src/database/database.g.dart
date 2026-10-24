@@ -70313,6 +70313,661 @@ class MusicPlayEventsCompanion extends UpdateCompanion<MusicPlayEventRow> {
   }
 }
 
+class $VideoThemeSongSpansTable extends VideoThemeSongSpans
+    with TableInfo<$VideoThemeSongSpansTable, VideoThemeSongSpanRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoThemeSongSpansTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _episodeIndexMeta = const VerificationMeta(
+    'episodeIndex',
+  );
+  @override
+  late final GeneratedColumn<int> episodeIndex = GeneratedColumn<int>(
+    'episode_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeBytesMeta = const VerificationMeta(
+    'fileSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> fileSizeBytes = GeneratedColumn<int>(
+    'file_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _detectorVersionMeta = const VerificationMeta(
+    'detectorVersion',
+  );
+  @override
+  late final GeneratedColumn<int> detectorVersion = GeneratedColumn<int>(
+    'detector_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startMsMeta = const VerificationMeta(
+    'startMs',
+  );
+  @override
+  late final GeneratedColumn<int> startMs = GeneratedColumn<int>(
+    'start_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _endMsMeta = const VerificationMeta('endMs');
+  @override
+  late final GeneratedColumn<int> endMs = GeneratedColumn<int>(
+    'end_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _detectedAtMeta = const VerificationMeta(
+    'detectedAt',
+  );
+  @override
+  late final GeneratedColumn<int> detectedAt = GeneratedColumn<int>(
+    'detected_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    episodeIndex,
+    trackUid,
+    fileSizeBytes,
+    fileModifiedAt,
+    detectorVersion,
+    startMs,
+    endMs,
+    confidence,
+    detectedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_theme_song_spans';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoThemeSongSpanRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('episode_index')) {
+      context.handle(
+        _episodeIndexMeta,
+        episodeIndex.isAcceptableOrUnknown(
+          data['episode_index']!,
+          _episodeIndexMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_episodeIndexMeta);
+    }
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('file_size_bytes')) {
+      context.handle(
+        _fileSizeBytesMeta,
+        fileSizeBytes.isAcceptableOrUnknown(
+          data['file_size_bytes']!,
+          _fileSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeBytesMeta);
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileModifiedAtMeta);
+    }
+    if (data.containsKey('detector_version')) {
+      context.handle(
+        _detectorVersionMeta,
+        detectorVersion.isAcceptableOrUnknown(
+          data['detector_version']!,
+          _detectorVersionMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_detectorVersionMeta);
+    }
+    if (data.containsKey('start_ms')) {
+      context.handle(
+        _startMsMeta,
+        startMs.isAcceptableOrUnknown(data['start_ms']!, _startMsMeta),
+      );
+    }
+    if (data.containsKey('end_ms')) {
+      context.handle(
+        _endMsMeta,
+        endMs.isAcceptableOrUnknown(data['end_ms']!, _endMsMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('detected_at')) {
+      context.handle(
+        _detectedAtMeta,
+        detectedAt.isAcceptableOrUnknown(data['detected_at']!, _detectedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_detectedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid, episodeIndex, trackUid};
+  @override
+  VideoThemeSongSpanRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoThemeSongSpanRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      episodeIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_index'],
+      )!,
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      fileSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size_bytes'],
+      )!,
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      )!,
+      detectorVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}detector_version'],
+      )!,
+      startMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start_ms'],
+      ),
+      endMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}end_ms'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      detectedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}detected_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoThemeSongSpansTable createAlias(String alias) {
+    return $VideoThemeSongSpansTable(attachedDatabase, alias);
+  }
+}
+
+class VideoThemeSongSpanRow extends DataClass
+    implements Insertable<VideoThemeSongSpanRow> {
+  /// `video_books.book_uid`。**没有外键**：设备本地表在覆盖恢复后按
+  /// `INSERT … SELECT * FROM devbak` 原样回灌，挂外键会让「备份里已没有这部视频」的
+  /// 一行把整批设备本地表的回灌打断。删视频时由 `deleteVideoBooks` 同事务清掉。
+  final String bookUid;
+
+  /// 播放列表下标（单文件视频为 0）。
+  final int episodeIndex;
+
+  /// 音乐曲目 `music_tracks.track_uid`（逻辑外键：曲库重扫按 uid upsert）。
+  final String trackUid;
+
+  /// 比对当时的视频文件大小 / 修改时刻（毫秒）：失效判据。
+  final int fileSizeBytes;
+  final int fileModifiedAt;
+
+  /// 声纹算法版本：失效判据。
+  final int detectorVersion;
+
+  /// 这首歌在这一集里的起止（毫秒，视频时间轴）。NULL = 比对过、没出现。
+  final int? startMs;
+  final int? endMs;
+
+  /// 声纹对齐置信度 0..1（没出现时 NULL）。
+  final double? confidence;
+  final int detectedAt;
+  const VideoThemeSongSpanRow({
+    required this.bookUid,
+    required this.episodeIndex,
+    required this.trackUid,
+    required this.fileSizeBytes,
+    required this.fileModifiedAt,
+    required this.detectorVersion,
+    this.startMs,
+    this.endMs,
+    this.confidence,
+    required this.detectedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['episode_index'] = Variable<int>(episodeIndex);
+    map['track_uid'] = Variable<String>(trackUid);
+    map['file_size_bytes'] = Variable<int>(fileSizeBytes);
+    map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    map['detector_version'] = Variable<int>(detectorVersion);
+    if (!nullToAbsent || startMs != null) {
+      map['start_ms'] = Variable<int>(startMs);
+    }
+    if (!nullToAbsent || endMs != null) {
+      map['end_ms'] = Variable<int>(endMs);
+    }
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    map['detected_at'] = Variable<int>(detectedAt);
+    return map;
+  }
+
+  VideoThemeSongSpansCompanion toCompanion(bool nullToAbsent) {
+    return VideoThemeSongSpansCompanion(
+      bookUid: Value(bookUid),
+      episodeIndex: Value(episodeIndex),
+      trackUid: Value(trackUid),
+      fileSizeBytes: Value(fileSizeBytes),
+      fileModifiedAt: Value(fileModifiedAt),
+      detectorVersion: Value(detectorVersion),
+      startMs: startMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(startMs),
+      endMs: endMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endMs),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      detectedAt: Value(detectedAt),
+    );
+  }
+
+  factory VideoThemeSongSpanRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoThemeSongSpanRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      episodeIndex: serializer.fromJson<int>(json['episodeIndex']),
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
+      fileModifiedAt: serializer.fromJson<int>(json['fileModifiedAt']),
+      detectorVersion: serializer.fromJson<int>(json['detectorVersion']),
+      startMs: serializer.fromJson<int?>(json['startMs']),
+      endMs: serializer.fromJson<int?>(json['endMs']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      detectedAt: serializer.fromJson<int>(json['detectedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'episodeIndex': serializer.toJson<int>(episodeIndex),
+      'trackUid': serializer.toJson<String>(trackUid),
+      'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
+      'fileModifiedAt': serializer.toJson<int>(fileModifiedAt),
+      'detectorVersion': serializer.toJson<int>(detectorVersion),
+      'startMs': serializer.toJson<int?>(startMs),
+      'endMs': serializer.toJson<int?>(endMs),
+      'confidence': serializer.toJson<double?>(confidence),
+      'detectedAt': serializer.toJson<int>(detectedAt),
+    };
+  }
+
+  VideoThemeSongSpanRow copyWith({
+    String? bookUid,
+    int? episodeIndex,
+    String? trackUid,
+    int? fileSizeBytes,
+    int? fileModifiedAt,
+    int? detectorVersion,
+    Value<int?> startMs = const Value.absent(),
+    Value<int?> endMs = const Value.absent(),
+    Value<double?> confidence = const Value.absent(),
+    int? detectedAt,
+  }) => VideoThemeSongSpanRow(
+    bookUid: bookUid ?? this.bookUid,
+    episodeIndex: episodeIndex ?? this.episodeIndex,
+    trackUid: trackUid ?? this.trackUid,
+    fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+    fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+    detectorVersion: detectorVersion ?? this.detectorVersion,
+    startMs: startMs.present ? startMs.value : this.startMs,
+    endMs: endMs.present ? endMs.value : this.endMs,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    detectedAt: detectedAt ?? this.detectedAt,
+  );
+  VideoThemeSongSpanRow copyWithCompanion(VideoThemeSongSpansCompanion data) {
+    return VideoThemeSongSpanRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      episodeIndex: data.episodeIndex.present
+          ? data.episodeIndex.value
+          : this.episodeIndex,
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      fileSizeBytes: data.fileSizeBytes.present
+          ? data.fileSizeBytes.value
+          : this.fileSizeBytes,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      detectorVersion: data.detectorVersion.present
+          ? data.detectorVersion.value
+          : this.detectorVersion,
+      startMs: data.startMs.present ? data.startMs.value : this.startMs,
+      endMs: data.endMs.present ? data.endMs.value : this.endMs,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      detectedAt: data.detectedAt.present
+          ? data.detectedAt.value
+          : this.detectedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoThemeSongSpanRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('episodeIndex: $episodeIndex, ')
+          ..write('trackUid: $trackUid, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('detectorVersion: $detectorVersion, ')
+          ..write('startMs: $startMs, ')
+          ..write('endMs: $endMs, ')
+          ..write('confidence: $confidence, ')
+          ..write('detectedAt: $detectedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    bookUid,
+    episodeIndex,
+    trackUid,
+    fileSizeBytes,
+    fileModifiedAt,
+    detectorVersion,
+    startMs,
+    endMs,
+    confidence,
+    detectedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoThemeSongSpanRow &&
+          other.bookUid == this.bookUid &&
+          other.episodeIndex == this.episodeIndex &&
+          other.trackUid == this.trackUid &&
+          other.fileSizeBytes == this.fileSizeBytes &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          other.detectorVersion == this.detectorVersion &&
+          other.startMs == this.startMs &&
+          other.endMs == this.endMs &&
+          other.confidence == this.confidence &&
+          other.detectedAt == this.detectedAt);
+}
+
+class VideoThemeSongSpansCompanion
+    extends UpdateCompanion<VideoThemeSongSpanRow> {
+  final Value<String> bookUid;
+  final Value<int> episodeIndex;
+  final Value<String> trackUid;
+  final Value<int> fileSizeBytes;
+  final Value<int> fileModifiedAt;
+  final Value<int> detectorVersion;
+  final Value<int?> startMs;
+  final Value<int?> endMs;
+  final Value<double?> confidence;
+  final Value<int> detectedAt;
+  final Value<int> rowid;
+  const VideoThemeSongSpansCompanion({
+    this.bookUid = const Value.absent(),
+    this.episodeIndex = const Value.absent(),
+    this.trackUid = const Value.absent(),
+    this.fileSizeBytes = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.detectorVersion = const Value.absent(),
+    this.startMs = const Value.absent(),
+    this.endMs = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.detectedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoThemeSongSpansCompanion.insert({
+    required String bookUid,
+    required int episodeIndex,
+    required String trackUid,
+    required int fileSizeBytes,
+    required int fileModifiedAt,
+    required int detectorVersion,
+    this.startMs = const Value.absent(),
+    this.endMs = const Value.absent(),
+    this.confidence = const Value.absent(),
+    required int detectedAt,
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       episodeIndex = Value(episodeIndex),
+       trackUid = Value(trackUid),
+       fileSizeBytes = Value(fileSizeBytes),
+       fileModifiedAt = Value(fileModifiedAt),
+       detectorVersion = Value(detectorVersion),
+       detectedAt = Value(detectedAt);
+  static Insertable<VideoThemeSongSpanRow> custom({
+    Expression<String>? bookUid,
+    Expression<int>? episodeIndex,
+    Expression<String>? trackUid,
+    Expression<int>? fileSizeBytes,
+    Expression<int>? fileModifiedAt,
+    Expression<int>? detectorVersion,
+    Expression<int>? startMs,
+    Expression<int>? endMs,
+    Expression<double>? confidence,
+    Expression<int>? detectedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (episodeIndex != null) 'episode_index': episodeIndex,
+      if (trackUid != null) 'track_uid': trackUid,
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (detectorVersion != null) 'detector_version': detectorVersion,
+      if (startMs != null) 'start_ms': startMs,
+      if (endMs != null) 'end_ms': endMs,
+      if (confidence != null) 'confidence': confidence,
+      if (detectedAt != null) 'detected_at': detectedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoThemeSongSpansCompanion copyWith({
+    Value<String>? bookUid,
+    Value<int>? episodeIndex,
+    Value<String>? trackUid,
+    Value<int>? fileSizeBytes,
+    Value<int>? fileModifiedAt,
+    Value<int>? detectorVersion,
+    Value<int?>? startMs,
+    Value<int?>? endMs,
+    Value<double?>? confidence,
+    Value<int>? detectedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoThemeSongSpansCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      episodeIndex: episodeIndex ?? this.episodeIndex,
+      trackUid: trackUid ?? this.trackUid,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      detectorVersion: detectorVersion ?? this.detectorVersion,
+      startMs: startMs ?? this.startMs,
+      endMs: endMs ?? this.endMs,
+      confidence: confidence ?? this.confidence,
+      detectedAt: detectedAt ?? this.detectedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (episodeIndex.present) {
+      map['episode_index'] = Variable<int>(episodeIndex.value);
+    }
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (fileSizeBytes.present) {
+      map['file_size_bytes'] = Variable<int>(fileSizeBytes.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (detectorVersion.present) {
+      map['detector_version'] = Variable<int>(detectorVersion.value);
+    }
+    if (startMs.present) {
+      map['start_ms'] = Variable<int>(startMs.value);
+    }
+    if (endMs.present) {
+      map['end_ms'] = Variable<int>(endMs.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (detectedAt.present) {
+      map['detected_at'] = Variable<int>(detectedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoThemeSongSpansCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('episodeIndex: $episodeIndex, ')
+          ..write('trackUid: $trackUid, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('detectorVersion: $detectorVersion, ')
+          ..write('startMs: $startMs, ')
+          ..write('endMs: $endMs, ')
+          ..write('confidence: $confidence, ')
+          ..write('detectedAt: $detectedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -70517,6 +71172,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $MusicPlayEventsTable musicPlayEvents = $MusicPlayEventsTable(
     this,
   );
+  late final $VideoThemeSongSpansTable videoThemeSongSpans =
+      $VideoThemeSongSpansTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -70636,6 +71293,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlaylists,
     musicPlaylistEntries,
     musicPlayEvents,
+    videoThemeSongSpans,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -118738,6 +119396,329 @@ typedef $$MusicPlayEventsTableProcessedTableManager =
       MusicPlayEventRow,
       PrefetchHooks Function()
     >;
+typedef $$VideoThemeSongSpansTableCreateCompanionBuilder =
+    VideoThemeSongSpansCompanion Function({
+      required String bookUid,
+      required int episodeIndex,
+      required String trackUid,
+      required int fileSizeBytes,
+      required int fileModifiedAt,
+      required int detectorVersion,
+      Value<int?> startMs,
+      Value<int?> endMs,
+      Value<double?> confidence,
+      required int detectedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoThemeSongSpansTableUpdateCompanionBuilder =
+    VideoThemeSongSpansCompanion Function({
+      Value<String> bookUid,
+      Value<int> episodeIndex,
+      Value<String> trackUid,
+      Value<int> fileSizeBytes,
+      Value<int> fileModifiedAt,
+      Value<int> detectorVersion,
+      Value<int?> startMs,
+      Value<int?> endMs,
+      Value<double?> confidence,
+      Value<int> detectedAt,
+      Value<int> rowid,
+    });
+
+class $$VideoThemeSongSpansTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoThemeSongSpansTable> {
+  $$VideoThemeSongSpansTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeIndex => $composableBuilder(
+    column: $table.episodeIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get detectorVersion => $composableBuilder(
+    column: $table.detectorVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get startMs => $composableBuilder(
+    column: $table.startMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get endMs => $composableBuilder(
+    column: $table.endMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get detectedAt => $composableBuilder(
+    column: $table.detectedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$VideoThemeSongSpansTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoThemeSongSpansTable> {
+  $$VideoThemeSongSpansTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeIndex => $composableBuilder(
+    column: $table.episodeIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get detectorVersion => $composableBuilder(
+    column: $table.detectorVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get startMs => $composableBuilder(
+    column: $table.startMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get endMs => $composableBuilder(
+    column: $table.endMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get detectedAt => $composableBuilder(
+    column: $table.detectedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$VideoThemeSongSpansTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoThemeSongSpansTable> {
+  $$VideoThemeSongSpansTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<int> get episodeIndex => $composableBuilder(
+    column: $table.episodeIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get detectorVersion => $composableBuilder(
+    column: $table.detectorVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get startMs =>
+      $composableBuilder(column: $table.startMs, builder: (column) => column);
+
+  GeneratedColumn<int> get endMs =>
+      $composableBuilder(column: $table.endMs, builder: (column) => column);
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get detectedAt => $composableBuilder(
+    column: $table.detectedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$VideoThemeSongSpansTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoThemeSongSpansTable,
+          VideoThemeSongSpanRow,
+          $$VideoThemeSongSpansTableFilterComposer,
+          $$VideoThemeSongSpansTableOrderingComposer,
+          $$VideoThemeSongSpansTableAnnotationComposer,
+          $$VideoThemeSongSpansTableCreateCompanionBuilder,
+          $$VideoThemeSongSpansTableUpdateCompanionBuilder,
+          (
+            VideoThemeSongSpanRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $VideoThemeSongSpansTable,
+              VideoThemeSongSpanRow
+            >,
+          ),
+          VideoThemeSongSpanRow,
+          PrefetchHooks Function()
+        > {
+  $$VideoThemeSongSpansTableTableManager(
+    _$FushiDatabase db,
+    $VideoThemeSongSpansTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoThemeSongSpansTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VideoThemeSongSpansTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoThemeSongSpansTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<int> episodeIndex = const Value.absent(),
+                Value<String> trackUid = const Value.absent(),
+                Value<int> fileSizeBytes = const Value.absent(),
+                Value<int> fileModifiedAt = const Value.absent(),
+                Value<int> detectorVersion = const Value.absent(),
+                Value<int?> startMs = const Value.absent(),
+                Value<int?> endMs = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<int> detectedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoThemeSongSpansCompanion(
+                bookUid: bookUid,
+                episodeIndex: episodeIndex,
+                trackUid: trackUid,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                detectorVersion: detectorVersion,
+                startMs: startMs,
+                endMs: endMs,
+                confidence: confidence,
+                detectedAt: detectedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                required int episodeIndex,
+                required String trackUid,
+                required int fileSizeBytes,
+                required int fileModifiedAt,
+                required int detectorVersion,
+                Value<int?> startMs = const Value.absent(),
+                Value<int?> endMs = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                required int detectedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoThemeSongSpansCompanion.insert(
+                bookUid: bookUid,
+                episodeIndex: episodeIndex,
+                trackUid: trackUid,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                detectorVersion: detectorVersion,
+                startMs: startMs,
+                endMs: endMs,
+                confidence: confidence,
+                detectedAt: detectedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$VideoThemeSongSpansTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoThemeSongSpansTable,
+      VideoThemeSongSpanRow,
+      $$VideoThemeSongSpansTableFilterComposer,
+      $$VideoThemeSongSpansTableOrderingComposer,
+      $$VideoThemeSongSpansTableAnnotationComposer,
+      $$VideoThemeSongSpansTableCreateCompanionBuilder,
+      $$VideoThemeSongSpansTableUpdateCompanionBuilder,
+      (
+        VideoThemeSongSpanRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoThemeSongSpansTable,
+          VideoThemeSongSpanRow
+        >,
+      ),
+      VideoThemeSongSpanRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -119024,4 +120005,6 @@ class $FushiDatabaseManager {
       $$MusicPlaylistEntriesTableTableManager(_db, _db.musicPlaylistEntries);
   $$MusicPlayEventsTableTableManager get musicPlayEvents =>
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
+  $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
+      $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
 }

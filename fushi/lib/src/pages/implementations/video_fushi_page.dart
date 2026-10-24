@@ -296,6 +296,12 @@ import 'package:fushi/src/media/video/subtitle_auto_align.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/subtitle_word_sweep.dart';
 import 'package:fushi/src/media/video/video_chapter_markers.dart';
+import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
+import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
+import 'package:fushi/src/media/video/theme_song/video_theme_song_overlay.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
+import 'package:fushi_engine/media/video/video_local_files.dart'
+    show isLocalVideoFilePath;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle_burn.dart';
@@ -438,6 +444,7 @@ part 'video_fushi/playback_remote.part.dart';
 part 'video_fushi/remote_control.part.dart';
 part 'video_fushi/advanced_mining.part.dart';
 part 'video_fushi/web_source.part.dart';
+part 'video_fushi/theme_song.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -3052,6 +3059,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 当前播放的视频文件绝对路径（枚举字幕源用）；未 load 时为 null。
   String? _currentVideoPath;
+
+  /// 作品图谱 L2：本集识别出的 OP / ED（见 `video_fushi/theme_song.part.dart`）。
+  late final VideoThemeSongTracker _themeSongTracker = VideoThemeSongTracker(
+    autoSkip: () => appModel.videoThemeSongAutoSkip,
+    onAutoSkip: (int targetMs) => unawaited(_controller?.seekMs(targetMs)),
+  );
+
+  /// 换源代际：慢的读缓存 / 识别落地时若已换集就丢弃。
+  int _themeSongLoadSeq = 0;
+
+  /// 主题曲段首 / 段尾，画进进度条章节刻度层（与容器章节合并）。
+  final ValueNotifier<List<VideoChapter>> _themeSongChapters =
+      ValueNotifier<List<VideoChapter>>(const <VideoChapter>[]);
 
   /// 视频内嵌字体加载器（对齐 mpv attachment 字体）：开视频时抽 MKV 内嵌字体附件注册进
   /// 引擎，字幕 overlay 按 ASS `Fontname` 命中真实字体。内部按视频路径缓存 + 进程级 family
@@ -5689,6 +5709,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-669：建立 / 重置进度条 hover 缩略图预览（桌面本地文件实时取帧；远端流 /
     // 移动端降级）。在 _currentVideoPath 更新后调，按新路径绑离屏取帧器。
     _setupThumbnailPreview(videoPath);
+    // 作品图谱 L2：按新源读 / 识别本集 OP / ED。
+    _refreshThemeSongSpans(controller, videoPath);
     _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
     // BUG-370：视频就绪后重申沉浸隐藏系统栏（移动端）。沉浸模式在 initState 只申一次，
     // 而**远端视频**要先 await 网络流地址 + 下字幕才 load，controller 就绪得晚——若
@@ -6142,6 +6164,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    _themeSongTracker.dispose();
+    _themeSongChapters.dispose();
     sensorHousingEdge.removeListener(_onSensorHousingEdgeChanged);
     appFloatingBallPointerInside.removeListener(_onFloatingBallPointerChanged);
     _unregisterVideoRemote();

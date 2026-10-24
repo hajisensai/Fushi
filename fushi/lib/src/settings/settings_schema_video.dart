@@ -130,6 +130,32 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 作品图谱 L2：音乐库里的 OP / ED 经声纹识别出每集起止后的两项行为。纯 pref，
+          // 播放页面板不单列（与原盘会话三项同理：它们决定的是进入 OP 时怎么办）。
+          SettingsSwitchItem(
+            id: 'video.playback.theme_song_auto_skip',
+            title: t.video_setting_theme_song_auto_skip,
+            subtitle: t.video_setting_theme_song_auto_skip_hint,
+            icon: FushiIcons.skipNext,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoThemeSongAutoSkip,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoThemeSongAutoSkip(value);
+            },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.theme_song_now_playing',
+            title: t.video_setting_theme_song_now_playing,
+            subtitle: t.video_setting_theme_song_now_playing_hint,
+            icon: FushiIcons.music,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoThemeSongNowPlaying,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoThemeSongNowPlaying(value);
+            },
+            defaultValue: true,
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。

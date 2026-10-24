@@ -152,9 +152,29 @@ Future<MediaLinkEntry> resolveMediaLinkEntry(
         coverPath: game.coverPath,
       );
     case MediaLinkKind.musicAlbum:
+      final MusicAlbumRow? album = await db.getMusicAlbum(endpoint.key);
+      if (album == null) return missing(endpoint.key);
+      return MediaLinkEntry(
+        endpoint: endpoint,
+        title: album.title,
+        inLibrary: true,
+        coverPath: album.coverPath,
+      );
     case MediaLinkKind.musicTrack:
-      // 音乐模块落地前本机没有音乐条目表：一律「未入库」。
-      return missing(endpoint.key);
+      final MusicTrackRow? track = await db.getMusicTrack(endpoint.key);
+      if (track == null || track.deletedAt != null) {
+        return missing(endpoint.key);
+      }
+      final String? albumUid = track.albumUid;
+      final MusicAlbumRow? album = albumUid == null
+          ? null
+          : await db.getMusicAlbum(albumUid);
+      return MediaLinkEntry(
+        endpoint: endpoint,
+        title: track.title,
+        inLibrary: true,
+        coverPath: album?.coverPath,
+      );
   }
 }
 
@@ -186,14 +206,29 @@ Future<List<MediaLinkView>> loadMediaLinkViews(
   return views;
 }
 
-/// 手动连接对话框里可选的目标种类（音乐模块落地前没有本地音乐条目，不列；有声书
-/// 与其 EPUB 共用 bookKey，连书即可）。
+/// 手动连接对话框里可选的目标种类（有声书与其 EPUB 共用 bookKey，连书即可）。
 const List<MediaLinkKind> kMediaLinkPickableKinds = <MediaLinkKind>[
   MediaLinkKind.videoCollection,
   MediaLinkKind.videoEpisode,
   MediaLinkKind.book,
   MediaLinkKind.game,
+  // 主题曲连接（作品图谱 L2）的音乐端。专辑端点只由同步 / 推断带来：OP / ED 是单曲，
+  // 手动连接选曲目即可，分段按钮也放不下第六段。
+  MediaLinkKind.musicTrack,
 ];
+
+/// 主题曲连接要求一端是音乐、一端是视频（合集或单个视频）。
+bool mediaLinkThemeSongCompatible(MediaLinkKind a, MediaLinkKind b) {
+  bool isMusic(MediaLinkKind k) =>
+      k == MediaLinkKind.musicTrack || k == MediaLinkKind.musicAlbum;
+  bool isVideo(MediaLinkKind k) =>
+      k == MediaLinkKind.videoCollection || k == MediaLinkKind.videoEpisode;
+  return (isMusic(a) && isVideo(b)) || (isVideo(a) && isMusic(b));
+}
+
+/// 主题曲连接的方向固定为「音乐 → 视频」（`MediaLinkRelation.themeSong` 的约定）。
+bool mediaLinkIsMusicKind(MediaLinkKind k) =>
+    k == MediaLinkKind.musicTrack || k == MediaLinkKind.musicAlbum;
 
 /// 某种类的全部本机条目（手动连接的候选），按标题排序。
 Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
@@ -255,8 +290,35 @@ Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
         );
       }
     case MediaLinkKind.musicAlbum:
+      for (final MusicAlbumRow a in await db.listMusicAlbums()) {
+        out.add(
+          MediaLinkEntry(
+            endpoint: (kind: kind, key: a.albumUid),
+            title: a.title,
+            inLibrary: true,
+            coverPath: a.coverPath,
+          ),
+        );
+      }
     case MediaLinkKind.musicTrack:
-      break;
+      final Map<String, MusicAlbumRow> albums = <String, MusicAlbumRow>{
+        for (final MusicAlbumRow a in await db.listMusicAlbums()) a.albumUid: a,
+      };
+      for (final MusicTrackRow tr in await db.listMusicTracks()) {
+        if (tr.deletedAt != null) continue;
+        final MusicAlbumRow? album = tr.albumUid == null
+            ? null
+            : albums[tr.albumUid];
+        out.add(
+          MediaLinkEntry(
+            endpoint: (kind: kind, key: tr.trackUid),
+            // 同名曲目（TV size / 完整版 / 伴奏）靠专辑名区分。
+            title: album == null ? tr.title : '${tr.title} · ${album.title}',
+            inLibrary: true,
+            coverPath: album?.coverPath,
+          ),
+        );
+      }
   }
   out.sort((MediaLinkEntry a, MediaLinkEntry b) => a.title.compareTo(b.title));
   return out;

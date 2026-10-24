@@ -28,6 +28,7 @@ import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
+import 'theme_song_span_tables.dart';
 
 part 'database.g.dart';
 part 'database_infra.part.dart';
@@ -42,6 +43,7 @@ part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
 part 'database_media_links.part.dart';
 part 'database_music.part.dart';
+part 'database_theme_song_spans.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -833,6 +835,7 @@ void _requireOneVideoMetadataOwner({
   MusicPlaylists,
   MusicPlaylistEntries,
   MusicPlayEvents,
+  VideoThemeSongSpans,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -847,7 +850,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbUpdateFeed,
         _FushiDbMangaDownload,
         _FushiDbMediaLinks,
-        _FushiDbMusic {
+        _FushiDbMusic,
+        _FushiDbThemeSongSpans {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -868,7 +872,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 126;
+  int get schemaVersion => 127;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2460,6 +2464,14 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
             await _ensureMusicIndexes();
+          }
+          if (from < 127) {
+            // v127（作品图谱 L2，docs/specs/2026-10-24-cross-media-links.md §2）：
+            // video_theme_song_spans——OP / ED 声纹比对结果的按集缓存（设备本地、纯缓存）。
+            // 纯建表；幂等守卫同 v119。
+            if (!await _tableExists('video_theme_song_spans')) {
+              await m.createTable(videoThemeSongSpans);
+            }
           }
         },
         onCreate: (m) async {
