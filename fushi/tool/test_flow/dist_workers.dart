@@ -34,6 +34,24 @@ const List<String> kDistSshOptions = <String>[
 /// Path characters per local `flutter test` process (cmd.exe stops at 8191).
 const int kLocalMaxCommandChars = 6000;
 
+/// The ssh client for remote commands. On Windows the system OpenSSH
+/// (native Win32 pipes): Git for Windows' msys `ssh.exe`, which PATH often
+/// finds first, emulates select() over the pipes Dart hands it and stalled a
+/// batch mid-line (the remote run had finished; the stream never arrived).
+/// `FUSHI_DIST_SSH` overrides. The snapshot push keeps git's own ssh.
+String distSshExecutable([Map<String, String>? environment]) {
+  final Map<String, String> env = environment ?? Platform.environment;
+  final String? override = env['FUSHI_DIST_SSH'];
+  if (override != null && override.isNotEmpty) return override;
+  if (Platform.isWindows) {
+    final String system =
+        '${env['SystemRoot'] ?? r'C:\Windows'}'
+        r'\System32\OpenSSH\ssh.exe';
+    if (File(system).existsSync()) return system;
+  }
+  return 'ssh';
+}
+
 /// ssh's own exit code for connection-level failures.
 const int kSshConnectionFailure = 255;
 
@@ -485,8 +503,10 @@ class SshDistWorker extends DistWorker {
 
   /// `-n`: no stdin to forward, so ssh can finish as soon as the remote
   /// command does.
-  Future<ProcessResult> _ssh(String remoteCommand) =>
-      Process.run('ssh', <String>['-n', ..._sshBase, remoteCommand]);
+  Future<ProcessResult> _ssh(String remoteCommand) => Process.run(
+    distSshExecutable(),
+    <String>['-n', ..._sshBase, remoteCommand],
+  );
 
   Future<void> _sshChecked(String step, String command, IOSink log) async {
     final ProcessResult r = await _ssh(command);
@@ -588,7 +608,7 @@ class SshDistWorker extends DistWorker {
       '${config.concurrency ?? 0}',
       ...flutterArgs.map(shellQuote),
     ].join(' ');
-    final Process process = await Process.start('ssh', <String>[
+    final Process process = await Process.start(distSshExecutable(), <String>[
       ..._sshBase,
       '${_prefix}bash fushi/tool/dist_test/worker_run.sh $args',
     ]);
