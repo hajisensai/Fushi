@@ -256,6 +256,9 @@ def probe(path, disc=None, seconds=5, dvd=None):
             "discnav": [item for item in commands if item.get("name") == "discnav"],
             "disc_menu_active_property": "disc-menu-active" in properties,
             "disc_navigation_state_json_property": "disc-navigation-state-json" in properties,
+            # Remote discs (disc-interaction-handoff phase 2): bluray-device /
+            # dvd-device accept a paired host's disc share URL.
+            "disc_remote_access_property": "disc-remote-access" in properties,
             "bluray_protocol": "bd" in protocols or "bluray" in protocols,
             "truehd_decoder": any(item.get("codec") == "truehd" for item in decoders),
             "render_api": all(hasattr(mpv.lib, name) for name in (
@@ -302,6 +305,7 @@ def main():
         print(f"DVD capability missing: {error}", file=sys.stderr)
     return 0 if all((not report["dvd"]["errors"],report["disc_menu_option_result"] == 0, report["discnav"],
                      report["disc_menu_active_property"], report["bluray_protocol"],
+                     report["disc_remote_access_property"],
                      report["truehd_decoder"], report["render_api"],
                      report["lua_script"]["message"])) else 1
 

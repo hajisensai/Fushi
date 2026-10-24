@@ -64,6 +64,7 @@ class NativeAbiTests(unittest.TestCase):
         self.assertEqual(report["disc_menu_option_result"], 0)
         self.assertTrue(report["discnav"])
         for field in ("disc_menu_active_property", "disc_navigation_state_json_property",
+                      "disc_remote_access_property",
                       "bluray_protocol", "truehd_decoder", "render_api"):
             self.assertTrue(report[field], field)
         # BUG-3325: Lua player scripts must actually execute, not just load.

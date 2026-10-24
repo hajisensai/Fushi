@@ -20,7 +20,7 @@ diff --git a/player/command.c b/player/command.c
  #include "misc/thread_pool.h"
  #include "misc/thread_tools.h"
  
-@@ -1151,6 +1152,112 @@
+@@ -1151,6 +1152,120 @@
      return m_property_bool_ro(action, arg, st.menu_active);
  }
  
@@ -109,6 +109,14 @@ diff --git a/player/command.c b/player/command.c
 +
 +// media_kit's public getProperty uses MPV_FORMAT_STRING. Keep its wire
 +// format explicit instead of depending on generic node-to-string printing.
++// Fushi remote discs: bluray-device / dvd-device accept a paired host's disc
++// share URL (stream_bluray.c bd_open_files, stream_dvdnav.c open_stream2).
++static int mp_property_disc_remote_access(void *ctx, struct m_property *prop,
++                                          int action, void *arg)
++{
++    return m_property_int_ro(action, arg, 1);
++}
++
 +static int mp_property_disc_navigation_state_json(void *ctx, struct m_property *prop,
 +                                                  int action, void *arg)
 +{
@@ -133,16 +141,17 @@ diff --git a/player/command.c b/player/command.c
  static int mp_property_edition(void *ctx, struct m_property *prop,
                                 int action, void *arg)
  {
-@@ -4685,6 +4792,8 @@
+@@ -4685,6 +4800,9 @@
      {"edition", mp_property_edition},
      {"current-edition", mp_property_current_edition},
      {"disc-menu-active", mp_property_disc_menu_active},
 +    {"disc-navigation-state", mp_property_disc_navigation_state},
 +    {"disc-navigation-state-json", mp_property_disc_navigation_state_json},
++    {"disc-remote-access", mp_property_disc_remote_access},
      {"chapters", mp_property_chapters},
      {"editions", mp_property_editions},
      {"metadata", mp_property_metadata},
-@@ -4891,7 +5000,7 @@
+@@ -4891,7 +5009,7 @@
      E(MP_EVENT_TRACKS_CHANGED, "track-list", "current-tracks"),
      E(MP_EVENT_TRACK_SWITCHED, "track-list", "current-tracks"),
      E(MPV_EVENT_IDLE, "*"),
@@ -372,7 +381,24 @@ diff --git a/stream/stream.h b/stream/stream.h
 diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
 --- a/stream/stream_bluray.c
 +++ b/stream/stream_bluray.c
-@@ -86,6 +86,7 @@
+@@ -35,12 +35,16 @@
+ #include <libbluray/keys.h>
+ #include <libbluray/bluray-version.h>
+ #include <libbluray/log_control.h>
++#include <libbluray/filesystem.h>
+ #include <libavutil/common.h>
+ 
+ #include "config.h"
+ #include "mpv_talloc.h"
+ #include "common/common.h"
+ #include "common/msg.h"
++#include <mpv/client.h>
++#include "misc/json.h"
++#include "misc/node.h"
+ #include "misc/thread_tools.h"
+ #include "options/m_config.h"
+ #include "options/options.h"
+@@ -86,6 +90,7 @@
  const struct m_sub_options stream_bluray_conf = {
      .opts = (const struct m_option[]) {
          {"device", OPT_STRING(bluray_device), .flags = M_OPT_FILE},
@@ -380,7 +406,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
          {"angle", OPT_INT(angle), M_RANGE(1, 999)},
          {0},
      },
-@@ -125,6 +126,10 @@
+@@ -125,6 +130,10 @@
      int current_angle;
      int current_title;
      int current_playlist;
@@ -391,7 +417,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
  
      // Cached map from filtered title index (0..num_titles-1) to mpls_id.
      uint32_t *title_to_playlist;
-@@ -589,6 +594,7 @@
+@@ -589,6 +598,7 @@
                  bd_free_title_info(b->title_info);
              b->title_info = ti;
              b->current_playlist = playlist;
@@ -399,7 +425,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
              b->current_title = title;
              if (b->hdmv_mode)
                  b->discontinuity_id++;
-@@ -603,6 +609,9 @@
+@@ -603,6 +613,9 @@
                  b->title_info = NULL;
              }
              b->current_title = title;
@@ -409,7 +435,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
              if (b->hdmv_mode)
                  b->discontinuity_id++;
              mp_mutex_unlock(&b->overlay_lock);
-@@ -624,6 +633,12 @@
+@@ -624,6 +637,12 @@
              mp_mutex_unlock(&b->overlay_lock);
              break;
          }
@@ -422,7 +448,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
          case BD_EVENT_AUDIO_STREAM:
              mp_mutex_lock(&b->overlay_lock);
              b->audio_stream_num = ev.param;
-@@ -941,7 +956,8 @@
+@@ -941,7 +960,8 @@
          case STREAM_NAV_MENU_ROOT:
          case STREAM_NAV_MENU_TITLE:
              // BD doesn't distinguish "title menu", both map to disc root.
@@ -432,7 +458,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
              break;
          case STREAM_NAV_MENU_POPUP:
              key = BD_VK_POPUP;
-@@ -953,15 +969,17 @@
+@@ -953,15 +973,17 @@
              key = BD_VK_POPUP;
              break;
          case STREAM_NAV_MOUSE_MOVE:
@@ -454,7 +480,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
          // If an activation just ran a button command, it may have released a
          // held still, bump discontinuity_id.
          if (stream_nav_action_activates(nav->action)) {
-@@ -1008,12 +1026,22 @@
+@@ -1008,12 +1030,22 @@
              mp_mutex_unlock(&b->overlay_lock);
              return STREAM_OK;
          }
@@ -481,18 +507,357 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
              .still_active = b->still_active,
              .src_w = MPMAX(b->ig.disp_w, b->pg.disp_w),
              .src_h = MPMAX(b->ig.disp_h, b->pg.disp_h),
-@@ -1215,9 +1243,17 @@
+@@ -1162,6 +1194,327 @@
+     }
+ }
+ 
++
++// Fushi remote disc: the device is the base URL of a paired host's read-only
++// disc share (".../api/library/disc/<token>/", see Fushi's
++// disc_share_routes.dart). libbluray reads every file through mpv's own
++// stream layer (HTTP Range via the configured http-proxy, so the app's relay
++// keeps owning TLS pinning), and lists directories from the share manifest
++// instead of a local file system.
++#define REMOTE_DISC_MAX_MANIFEST (8 * 1024 * 1024)
++#define REMOTE_DISC_MAX_FILES    20000
++
++struct remote_disc_file {
++    char *path;      // relative to the disc root, '/'-separated
++    int64_t size;
++};
++
++struct remote_disc {
++    struct mpv_global *global;
++    struct mp_cancel *cancel;
++    struct mp_log *log;
++    int origin;
++    char *base;      // ends with '/'
++    struct remote_disc_file *files;
++    int num_files;
++};
++
++struct remote_disc_fh {
++    struct remote_disc *disc;
++    char *url;
++    stream_t *st;    // opened on first access
++    int64_t size;
++    int64_t pos;
++    bool failed;
++};
++
++static bool remote_disc_is_url(const char *device)
++{
++    return device && (!strncmp(device, "http://", 7) ||
++                      !strncmp(device, "https://", 8));
++}
++
++// libbluray builds relative paths with its platform DIR_SEP ('\\' on Windows).
++static char *remote_disc_normalize(void *ta, const char *rel_path)
++{
++    char *path = talloc_strdup(ta, rel_path ? rel_path : "");
++    for (char *c = path; *c; c++) {
++        if (*c == '\\')
++            *c = '/';
++    }
++    char *start = path;
++    while (*start == '/')
++        start++;
++    size_t len = strlen(start);
++    while (len && start[len - 1] == '/')
++        start[--len] = '\0';
++    return start;
++}
++
++static struct remote_disc_file *remote_disc_find(struct remote_disc *disc,
++                                                 const char *path)
++{
++    for (int i = 0; i < disc->num_files; i++) {
++        if (!strcmp(disc->files[i].path, path))
++            return &disc->files[i];
++    }
++    // Discs authored on case-insensitive file systems may differ in case.
++    for (int i = 0; i < disc->num_files; i++) {
++        if (!strcasecmp(disc->files[i].path, path))
++            return &disc->files[i];
++    }
++    return NULL;
++}
++
++static bool remote_disc_fh_open(struct remote_disc_fh *fh)
++{
++    if (fh->st)
++        return true;
++    if (fh->failed)
++        return false;
++    fh->st = stream_create(fh->url, STREAM_READ | fh->disc->origin,
++                           fh->disc->cancel, fh->disc->global);
++    if (!fh->st) {
++        fh->failed = true;
++        mp_err(fh->disc->log, "Remote disc: cannot open %s\n", fh->url);
++        return false;
++    }
++    if (fh->pos && !stream_seek(fh->st, fh->pos)) {
++        fh->failed = true;
++        return false;
++    }
++    return true;
++}
++
++static void remote_disc_fh_close(BD_FILE_H *file)
++{
++    struct remote_disc_fh *fh = file->internal;
++    if (fh->st)
++        free_stream(fh->st);
++    talloc_free(fh);
++    free(file);
++}
++
++static int64_t remote_disc_fh_seek(BD_FILE_H *file, int64_t offset,
++                                   int32_t origin)
++{
++    struct remote_disc_fh *fh = file->internal;
++    int64_t target = origin == SEEK_CUR ? fh->pos + offset
++                   : origin == SEEK_END ? fh->size + offset
++                   : offset;
++    if (target < 0 || target > fh->size)
++        return -1;
++    // Seeking past what is read is lazy: the next read opens / seeks.
++    if (fh->st && target != stream_tell(fh->st) && !stream_seek(fh->st, target))
++        return -1;
++    fh->pos = target;
++    return target;
++}
++
++static int64_t remote_disc_fh_tell(BD_FILE_H *file)
++{
++    struct remote_disc_fh *fh = file->internal;
++    return fh->pos;
++}
++
++static int remote_disc_fh_eof(BD_FILE_H *file)
++{
++    struct remote_disc_fh *fh = file->internal;
++    return fh->pos >= fh->size;
++}
++
++static int64_t remote_disc_fh_read(BD_FILE_H *file, uint8_t *buf, int64_t size)
++{
++    struct remote_disc_fh *fh = file->internal;
++    if (size <= 0 || fh->pos >= fh->size)
++        return 0;
++    if (size > fh->size - fh->pos)
++        size = fh->size - fh->pos;
++    if (!remote_disc_fh_open(fh))
++        return -1;
++    int64_t done = 0;
++    while (done < size) {
++        int chunk = (int)MPMIN(size - done, 1 << 20);
++        int got = stream_read(fh->st, buf + done, chunk);
++        if (got <= 0)
++            break;
++        done += got;
++    }
++    fh->pos += done;
++    if (done < size && fh->pos < fh->size)
++        return done ? done : -1; // truncated transfer: report what arrived
++    return done;
++}
++
++static int64_t remote_disc_fh_write(BD_FILE_H *file, const uint8_t *buf,
++                                    int64_t size)
++{
++    return -1; // the share is read-only
++}
++
++static BD_FILE_H *remote_disc_open_file(void *handle, const char *rel_path)
++{
++    struct remote_disc *disc = handle;
++    void *tmp = talloc_new(NULL);
++    char *path = remote_disc_normalize(tmp, rel_path);
++    struct remote_disc_file *entry = remote_disc_find(disc, path);
++    if (!entry) {
++        talloc_free(tmp);
++        return NULL;
++    }
++    BD_FILE_H *file = calloc(1, sizeof(*file));
++    if (!file) {
++        talloc_free(tmp);
++        return NULL;
++    }
++    struct remote_disc_fh *fh = talloc_zero(NULL, struct remote_disc_fh);
++    fh->disc = disc;
++    fh->size = entry->size;
++    char *escaped = mp_url_escape(tmp, entry->path, "/");
++    fh->url = talloc_asprintf(fh, "%sfiles/%s", disc->base, escaped);
++    talloc_free(tmp);
++    file->internal = fh;
++    file->close = remote_disc_fh_close;
++    file->seek = remote_disc_fh_seek;
++    file->tell = remote_disc_fh_tell;
++    file->eof = remote_disc_fh_eof;
++    file->read = remote_disc_fh_read;
++    file->write = remote_disc_fh_write;
++    return file;
++}
++
++struct remote_disc_dir {
++    char **names;
++    int num_names;
++    int next;
++};
++
++static void remote_disc_dir_close(BD_DIR_H *dir)
++{
++    talloc_free(dir->internal);
++    free(dir);
++}
++
++static int remote_disc_dir_read(BD_DIR_H *dir, BD_DIRENT *entry)
++{
++    struct remote_disc_dir *d = dir->internal;
++    if (d->next >= d->num_names)
++        return 1;
++    snprintf(entry->d_name, sizeof(entry->d_name), "%s", d->names[d->next++]);
++    return 0;
++}
++
++static BD_DIR_H *remote_disc_open_dir(void *handle, const char *rel_path)
++{
++    struct remote_disc *disc = handle;
++    struct remote_disc_dir *d = talloc_zero(NULL, struct remote_disc_dir);
++    char *dir = remote_disc_normalize(d, rel_path);
++    size_t dir_len = strlen(dir);
++    for (int i = 0; i < disc->num_files; i++) {
++        const char *path = disc->files[i].path;
++        if (dir_len) {
++            if (strncasecmp(path, dir, dir_len) || path[dir_len] != '/')
++                continue;
++            path += dir_len + 1;
++        }
++        const char *slash = strchr(path, '/');
++        char *name = slash ? talloc_strndup(d, path, slash - path)
++                           : talloc_strdup(d, path);
++        bool seen = false;
++        for (int n = 0; n < d->num_names; n++)
++            seen |= !strcmp(d->names[n], name);
++        if (!seen)
++            MP_TARRAY_APPEND(d, d->names, d->num_names, name);
++    }
++    if (!d->num_names) {
++        talloc_free(d);
++        return NULL;
++    }
++    BD_DIR_H *handle_out = calloc(1, sizeof(*handle_out));
++    if (!handle_out) {
++        talloc_free(d);
++        return NULL;
++    }
++    handle_out->internal = d;
++    handle_out->close = remote_disc_dir_close;
++    handle_out->read = remote_disc_dir_read;
++    return handle_out;
++}
++
++// Fetches and validates the share manifest. Paths with "..", absolute paths
++// or backslashes are rejected wholesale: the manifest comes from the network.
++static struct remote_disc *remote_disc_open(stream_t *s, void *ta,
++                                            const char *device)
++{
++    struct remote_disc *disc = talloc_zero(ta, struct remote_disc);
++    disc->global = s->global;
++    disc->cancel = s->cancel;
++    disc->log = s->log;
++    disc->origin = s->stream_origin ? s->stream_origin : STREAM_ORIGIN_DIRECT;
++    size_t len = strlen(device);
++    disc->base = device[len - 1] == '/' ? talloc_strdup(disc, device)
++                                        : talloc_asprintf(disc, "%s/", device);
++    char *url = talloc_asprintf(disc, "%smanifest.json", disc->base);
++    stream_t *ms = stream_create(url, STREAM_READ | disc->origin, s->cancel,
++                                 s->global);
++    if (!ms) {
++        MP_ERR(s, "Remote disc: cannot fetch the share manifest\n");
++        return NULL;
++    }
++    struct bstr data = stream_read_complete(ms, disc, REMOTE_DISC_MAX_MANIFEST);
++    free_stream(ms);
++    if (!data.start) {
++        MP_ERR(s, "Remote disc: share manifest unreadable or too large\n");
++        return NULL;
++    }
++    char *text = data.start;
++    struct mpv_node root;
++    if (json_parse(disc, &root, &text, MAX_JSON_DEPTH) < 0 ||
++        root.format != MPV_FORMAT_NODE_MAP)
++    {
++        MP_ERR(s, "Remote disc: share manifest is not JSON\n");
++        return NULL;
++    }
++    struct mpv_node *version = node_map_get(&root, "version");
++    struct mpv_node *files = node_map_get(&root, "files");
++    if (!version || !files || files->format != MPV_FORMAT_NODE_ARRAY ||
++        !((version->format == MPV_FORMAT_INT64 && version->u.int64 == 1) ||
++          (version->format == MPV_FORMAT_DOUBLE && version->u.double_ == 1)))
++    {
++        MP_ERR(s, "Remote disc: unsupported share manifest\n");
++        return NULL;
++    }
++    struct mpv_node_list *list = files->u.list;
++    if (list->num <= 0 || list->num > REMOTE_DISC_MAX_FILES) {
++        MP_ERR(s, "Remote disc: share manifest has no files\n");
++        return NULL;
++    }
++    for (int i = 0; i < list->num; i++) {
++        struct mpv_node *entry = &list->values[i];
++        struct mpv_node *path = node_map_get(entry, "path");
++        struct mpv_node *size = node_map_get(entry, "size");
++        if (!path || path->format != MPV_FORMAT_STRING || !size)
++            return NULL;
++        double bytes = size->format == MPV_FORMAT_DOUBLE ? size->u.double_
++                     : size->format == MPV_FORMAT_INT64 ? (double)size->u.int64
++                     : -1;
++        const char *p = path->u.string;
++        if (bytes < 0 || !p[0] || p[0] == '/' || strchr(p, '\\') ||
++            strstr(p, "..") || strchr(p, ':'))
++        {
++            MP_ERR(s, "Remote disc: unsafe manifest entry\n");
++            return NULL;
++        }
++        struct remote_disc_file file = {
++            .path = talloc_strdup(disc, p),
++            .size = (int64_t)bytes,
++        };
++        MP_TARRAY_APPEND(disc, disc->files, disc->num_files, file);
++    }
++    MP_VERBOSE(s, "Remote disc: %d files\n", disc->num_files);
++    return disc;
++}
++
+ static int bluray_stream_open_internal(stream_t *s)
+ {
+     struct bluray_priv_s *b = s->priv;
+@@ -1214,10 +1567,27 @@
+     mp_mutex_unlock(&bluray_log_lock);
  
      /* open device */
-     char *device_tmp = mp_get_user_path(NULL, s->global, device);
+-    char *device_tmp = mp_get_user_path(NULL, s->global, device);
 -    BLURAY *bd = bd_open(device_tmp, NULL);
++    bool remote = remote_disc_is_url(device);
++    struct remote_disc *remote_disc = NULL;
++    if (remote && !(remote_disc = remote_disc_open(s, b, device))) {
++        ret = STREAM_UNSUPPORTED;
++        goto err;
++    }
++    char *device_tmp = remote ? NULL : mp_get_user_path(NULL, s->global, device);
 +    BLURAY *bd = bd_init();
 +    if (bd && b->opts->java_home && b->opts->java_home[0]) {
 +        char *java_home = mp_get_user_path(NULL, s->global, b->opts->java_home);
 +        bd_set_player_setting_str(bd, BLURAY_PLAYER_JAVA_HOME, java_home);
 +        talloc_free(java_home);
 +    }
-+    bool opened = bd && bd_open_disc(bd, device_tmp, NULL);
++    bool opened = bd && (remote
++        ? bd_open_files(bd, remote_disc, remote_disc_open_dir,
++                        remote_disc_open_file)
++        : bd_open_disc(bd, device_tmp, NULL));
      talloc_free(device_tmp);
 -    if (!bd) {
 +    if (!opened) {
@@ -501,7 +866,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
          if (!b->probing)
              MP_ERR(s, "Couldn't open Blu-ray device: %s\n", device);
          ret = STREAM_UNSUPPORTED;
-@@ -1263,11 +1299,15 @@
+@@ -1263,11 +1633,15 @@
      // these should be set before any callback
      b->current_angle = -1;
      b->current_title = -1;
@@ -517,7 +882,7 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
      MP_VERBOSE(s, "First play: %i, Top menu: %i, "
                    "HDMV Titles: %i, BD-J Titles: %i, Other: %i\n",
                 info->first_play_supported, info->top_menu_supported,
-@@ -1278,11 +1318,11 @@
+@@ -1278,11 +1652,11 @@
  
      // BD-J menus require a usable Java VM and libbluray.jar.
      if (b->hdmv_mode && info->bdj_detected && !info->bdj_handled) {
@@ -535,7 +900,19 @@ diff --git a/stream/stream_bluray.c b/stream/stream_bluray.c
 diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
 --- a/stream/stream_dvdnav.c
 +++ b/stream/stream_dvdnav.c
-@@ -96,6 +96,16 @@
+@@ -78,6 +78,11 @@
+     int track;
+     char *device;
+ 
++    // Fushi remote DVD image: the device is an http(s) URL of an .iso file
++    // on a paired host's disc share; libdvdread reads it block-wise through
++    // these callbacks instead of a local path.
++    stream_t *remote;
++
+     mp_mutex lock;                      // guards the nav/menu state below
+ 
+     bool still_active;                  // fill_buffer() is holding a still
+@@ -96,6 +101,16 @@
      pci_t pci;                          // Copy of the last NAV packet's PCI.
      bool pci_valid;
  
@@ -552,7 +929,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
      // Disc-driven audio/sub/angle state.
      int audio_physical;                 // 0..7 from DVDNAV_AUDIO_STREAM_CHANGE
      int sub_physical;                   // 0..31 from DVDNAV_SPU_STREAM_CHANGE
-@@ -307,6 +317,50 @@
+@@ -307,6 +322,50 @@
      }
  }
  
@@ -603,7 +980,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
  static const char *dvd_domain_name(dvdnav_t *dvdnav)
  {
      if (dvdnav_is_domain_fp(dvdnav) == 1)
-@@ -422,76 +476,98 @@
+@@ -422,76 +481,98 @@
  // resolve the neighbour ourselves and use dvdnav_button_select() (rather than
  // dvdnav_{upper,lower,left,right}_button_select()) so that auto-action buttons
  // are activated only through update_highlight(), where we can observe it.
@@ -725,7 +1102,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
  }
  
  // Mark a source-position jump. Runs with priv->lock held.
-@@ -510,18 +586,19 @@
+@@ -510,18 +591,19 @@
             priv->discontinuity_id, priv->pending_drain);
  }
  
@@ -748,7 +1125,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
  }
  
  /**
-@@ -671,6 +748,9 @@
+@@ -671,6 +753,9 @@
          MP_VERBOSE(s, "switched to VTS: %d (old=%d) domain=%s\n",
                     vts_event->new_vtsN, vts_event->old_vtsN,
                     dvd_domain_name(dvdnav));
@@ -758,7 +1135,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
          if (!priv->had_initial_vts) {
              // dvdnav sends an initial VTS change before any data; don't
              // cause a blocking wait for the player, because the player in
-@@ -696,6 +776,8 @@
+@@ -696,6 +781,8 @@
  
          if (ev->pgc_length)
              priv->duration = ev->pgc_length;
@@ -767,7 +1144,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
  
          MP_VERBOSE(s, "cell change: cell=%d pg=%d pgc_len=%.3f "
                     "cur_time=%.3f domain=%s\n",
-@@ -1012,8 +1094,9 @@
+@@ -1012,8 +1099,9 @@
          return STREAM_OK;
      }
      case STREAM_CTRL_NAV_CMD: {
@@ -779,7 +1156,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
      }
      case STREAM_CTRL_NAV_DRAIN_ENABLE: {
          mp_mutex_lock(&priv->lock);
-@@ -1041,6 +1124,8 @@
+@@ -1041,6 +1129,8 @@
          bool no_audio = true;
          for (int n = 0; n < 8 && no_audio; n++)
              no_audio = dvdnav_get_audio_logical_stream(dvdnav, n) == -1;
@@ -788,7 +1165,7 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
          mp_mutex_lock(&priv->lock);
          if (priv->src_w <= 0 || priv->src_h <= 0)
              refresh_video_resolution(priv);
-@@ -1060,6 +1145,26 @@
+@@ -1060,6 +1150,26 @@
              .sub_visible = priv->sub_visible,
              .angle = cur_angle,
              .num_angles = num_angles,
@@ -815,3 +1192,97 @@ diff --git a/stream/stream_dvdnav.c b/stream/stream_dvdnav.c
          };
          mp_mutex_unlock(&priv->lock);
          return STREAM_OK;
+@@ -1075,8 +1185,12 @@
+     if (priv->dvdnav)
+         dvdnav_close(priv->dvdnav);
+     priv->dvdnav = NULL;
+-    if (priv->dvd_speed)
++    if (priv->remote) {
++        free_stream(priv->remote);
++        priv->remote = NULL;
++    } else if (priv->dvd_speed) {
+         dvd_set_speed(s, priv->filename, -1);
++    }
+     mp_mutex_destroy(&priv->lock);
+ }
+ 
+@@ -1108,6 +1222,56 @@
+     return dvdnav_open2(dest, priv, &logger_cb, path);
+ }
+ 
++
++static bool dvd_remote_is_url(const char *device)
++{
++    return device && (!strncmp(device, "http://", 7) ||
++                      !strncmp(device, "https://", 8));
++}
++
++static int dvd_remote_seek(void *p, uint64_t pos)
++{
++    struct priv *priv = p;
++    return priv->remote && stream_seek(priv->remote, (int64_t)pos) ? 0 : -1;
++}
++
++static int dvd_remote_read(void *p, void *buffer, int len)
++{
++    struct priv *priv = p;
++    if (!priv->remote)
++        return -1;
++    int done = 0;
++    while (done < len) {
++        int got = stream_read(priv->remote, (char *)buffer + done, len - done);
++        if (got <= 0)
++            break;
++        done += got;
++    }
++    return done ? done : (len ? -1 : 0);
++}
++
++static dvdnav_status_t nav_open_remote(stream_t *stream, dvdnav_t **dest,
++                                       const char *url)
++{
++    struct priv *priv = stream->priv;
++    int origin = stream->stream_origin ? stream->stream_origin
++                                       : STREAM_ORIGIN_DIRECT;
++    priv->remote = stream_create(url, STREAM_READ | origin, stream->cancel,
++                                 stream->global);
++    if (!priv->remote) {
++        MP_ERR(stream, "Remote DVD: cannot open %s\n", url);
++        return DVDNAV_STATUS_ERR;
++    }
++    priv->lib_log = mp_log_new(stream, stream->log, "/libdvdnav");
++    const dvdnav_logger_cb logger_cb = { .pf_log = dvdnav_log };
++    static dvdnav_stream_cb stream_cb = {
++        .pf_seek = dvd_remote_seek,
++        .pf_read = dvd_remote_read,
++        .pf_readv = NULL,
++    };
++    return dvdnav_open_stream2(dest, priv, &logger_cb, &stream_cb);
++}
++
+ static struct priv *new_dvdnav_stream(stream_t *stream, char *filename)
+ {
+     struct priv *priv = stream->priv;
+@@ -1116,6 +1280,14 @@
+     if (!filename)
+         return NULL;
+ 
++    if (dvd_remote_is_url(filename)) {
++        priv->filename = talloc_strdup(priv, filename);
++        if (nav_open_remote(stream, &priv->dvdnav, priv->filename) !=
++            DVDNAV_STATUS_OK || !priv->dvdnav)
++            return NULL;
++        goto opened;
++    }
++
+     if (!(priv->filename = mp_get_user_path(priv, stream->global, filename)))
+         return NULL;
+ 
+@@ -1128,6 +1300,7 @@
+     if (!priv->dvdnav)
+         return NULL;
+ 
++opened:
+     dvdnav_set_readahead_flag(priv->dvdnav, 1);
+     if (dvdnav_set_PGC_positioning_flag(priv->dvdnav, 1) != DVDNAV_STATUS_OK)
+         MP_ERR(stream, "stream_dvdnav, failed to set PGC positioning\n");
