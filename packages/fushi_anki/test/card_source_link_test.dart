@@ -386,6 +386,88 @@ void main() {
     expect(link.toHtml(label: '<script>'), contains('&lt;script&gt;'));
   });
 
+  group('web sourceUrl', () {
+    String renderLink(AnkiMiningContext context) =>
+        AnkiHandlebarRenderer.render(
+          '{source-link}|{document-title}',
+          const AnkiMiningPayload(expression: 'word'),
+          context,
+        );
+
+    test('renders an escaped link when there is no library locator', () {
+      expect(
+        renderLink(
+          const AnkiMiningContext(
+            sentence: 's',
+            documentTitle: 'A <b> & "c"',
+            sourceUrl: 'https://example.com/p?a=1&b="x"',
+          ),
+        ),
+        '<a href="https://example.com/p?a=1&amp;b=%22x%22">'
+        'A &lt;b&gt; &amp; "c"</a>|A <b> & "c"',
+      );
+    });
+
+    test('falls back to the host when the title is blank', () {
+      expect(
+        renderLink(
+          const AnkiMiningContext(
+            sentence: 's',
+            sourceUrl: 'https://news.example.jp/a',
+          ),
+        ),
+        '<a href="https://news.example.jp/a">news.example.jp</a>|',
+      );
+    });
+
+    test('library locator wins over the web url', () {
+      final String html = renderLink(
+        AnkiMiningContext(
+          sentence: 's',
+          documentTitle: 'Book',
+          sourceLink: book(),
+          sourceUrl: 'https://example.com/',
+        ),
+      );
+      expect(html, contains('fushi://source?'));
+      expect(html, isNot(contains('example.com')));
+    });
+
+    test('non-http schemes and legacy contexts render the plain title', () {
+      for (final String? url in <String?>[
+        null,
+        '',
+        'javascript:alert(1)',
+        'file:///etc/passwd',
+        'not a url',
+      ]) {
+        expect(
+          renderLink(
+            AnkiMiningContext(
+              sentence: 's',
+              documentTitle: 'T',
+              sourceUrl: url,
+            ),
+          ),
+          'T|T',
+          reason: '$url',
+        );
+      }
+    });
+
+    test('copies keep the url', () {
+      const AnkiMiningContext base = AnkiMiningContext(
+        sentence: 's',
+        sourceUrl: 'https://example.com/',
+      );
+      expect(base.withSourceLink(null).sourceUrl, 'https://example.com/');
+      expect(
+        base.withMediaRefs(coverRef: null, sentenceAudioRef: null).sourceUrl,
+        'https://example.com/',
+      );
+    });
+  });
+
   test('mined notes carry no source marker tag (BUG-2527)', () {
     // The source ID lives only in the field href; tags stay the user's own.
     expect(_SourceRepository().tags('custom'), <String>['custom']);

@@ -2,7 +2,9 @@
 // player response（见下方注释与 resolveYoutubeSource）。dart format 会把多行 import 的
 // `show VideoController` 换行，令行内 `// ignore` 锚点失效，故用 file 级抑制。
 // ignore_for_file: invalid_use_of_internal_member
+import 'dart:async' show TimeoutException;
 import 'dart:convert' show jsonDecode;
+import 'dart:io' show HandshakeException, HttpException, SocketException;
 
 import 'package:html_unescape/html_unescape.dart';
 import 'package:http/http.dart' as http;
@@ -605,27 +607,75 @@ Future<yt.StreamManifest> _getManifestWithClientFallback(
         requireWatchPage: false,
       );
 
-  final List<String> failures = <String>[];
+  final List<YoutubeClientFailure> failures = <YoutubeClientFailure>[];
   for (final yt.YoutubeApiClient api in ytClients) {
     try {
       final yt.StreamManifest manifest =
           await fetch(api).timeout(perClientTimeout);
       if (manifest.streams.isNotEmpty) return manifest;
-      failures.add('${youtubeClientName(api)}: no streams');
+      failures.add(YoutubeClientFailure(youtubeClientName(api), null));
     } catch (e) {
       // 单 client 失败（403 / 无流 / 限流 / 取身份失败 / 本 client 超时）：记下、试下一个
       // 兜底 client（非致命）。超时（[TimeoutException]）与其它失败同路径，快速切下一个。
-      failures
-          .add('${youtubeClientName(api)}: ${e.toString().split('\n').first}');
+      failures.add(YoutubeClientFailure(youtubeClientName(api), e));
     }
   }
   if (failures.isEmpty) {
     throw StateError('youtube manifest: empty client fallback list');
   }
-  throw StateError(
-    'youtube manifest failed for all clients ($videoId): '
-    '${failures.join('; ')}',
-  );
+  throw YoutubeManifestException(videoId.value, failures);
+}
+
+/// 兜底链上一个 client 的失败（[error] 为 null = 该 client 回了空流表）。
+class YoutubeClientFailure {
+  const YoutubeClientFailure(this.client, this.error);
+
+  /// innertube clientName（[youtubeClientName]）。
+  final String client;
+
+  /// 原始异常（保留类型，供调用方分型）；null = 无流。
+  final Object? error;
+
+  /// 传输层失败：连不上 / 握手失败 / 本 client 超时——请求根本没拿到 YouTube 的回答。
+  ///
+  /// 典型成因是出口问题（没走代理、DNS 被污染），不是视频不可用。Android 上没接系统
+  /// Wi-Fi 代理时每个 client 都是 13 s 超时，旧实现把整串包成 StateError
+  /// 「youtube manifest failed …」，被播放页的子串判据误标成「视频不可用」。
+  bool get isTransport {
+    final Object? e = error;
+    return e is TimeoutException ||
+        e is SocketException ||
+        e is HandshakeException ||
+        e is HttpException ||
+        e is http.ClientException;
+  }
+
+  @override
+  String toString() {
+    final Object? e = error;
+    if (e == null) return '$client: no streams';
+    return '$client: ${e.runtimeType}: ${e.toString().split('\n').first}';
+  }
+}
+
+/// 兜底链全部 client 失败。逐 client 保留原始异常（[failures]），toString 逐个列出
+/// 「client: 异常类型: 首行」，进错误日志即可看出是出口问题（全是
+/// [YoutubeClientFailure.isTransport]）还是 YouTube 拒绝（unplayable / 403 / 判 bot）。
+class YoutubeManifestException implements Exception {
+  const YoutubeManifestException(this.videoId, this.failures);
+
+  final String videoId;
+  final List<YoutubeClientFailure> failures;
+
+  /// 每个 client 都死在传输层（连不上 / 超时）。
+  bool get isTransportFailure =>
+      failures.isNotEmpty &&
+      failures.every((YoutubeClientFailure f) => f.isTransport);
+
+  @override
+  String toString() =>
+      'youtube manifest failed for all clients ($videoId): '
+      '${failures.join('; ')}';
 }
 
 /// 测试入口：用注入的 [http]（如 `MockClient`）离线驱动真实兜底链（BUG-2946 回归测试）。

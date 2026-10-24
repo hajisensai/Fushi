@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preference_keys.dart'
     show kAnkiSettingsPrefKey;
+import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
         kDownloadExecutionHostPrefKey,
@@ -1778,6 +1779,9 @@ class SyncRepository {
   ];
 
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合、整页注音……）：
+    // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
+    ...kWebBrowserDeviceLocalPrefKeys,
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,

@@ -29,6 +29,10 @@ class AggregateSnapshot {
     this.favoriteSentenceTombstones = const <AggregateTombstoneRecord>[],
     this.studySegments = const <StudySegmentRecord>[],
     this.studySegmentTombstones = const <StudyTombstoneRecord>[],
+    this.webHistory = const <WebHistoryRecord>[],
+    this.webBookmarks = const <WebBookmarkRecord>[],
+    this.webHistoryTombstones = const <AggregateTombstoneRecord>[],
+    this.webBookmarkTombstones = const <AggregateTombstoneRecord>[],
   });
 
   /// Wire format version. It is reserved for a genuinely BREAKING change (one
@@ -88,6 +92,20 @@ class AggregateSnapshot {
   final List<StudySegmentRecord> studySegments;
   final List<StudyTombstoneRecord> studySegmentTombstones;
 
+  /// v128 内置浏览器（additive 字段，走 [currentVersion] 注释的兼容不变量）：
+  /// 历史全量（按 url 并集：次数取大、最近访问取大、标题跟较新的访问走）与书签 /
+  /// 文件夹全量（按 uid LWW `updatedAt`，父级用父文件夹 uid 表示）。
+  ///
+  /// 墓碑与本地 `sync_deletion_tombstones` 的 `webhistory` / `webbookmark` 同键：
+  /// 历史 itemKey = url（`deletedAt > lastVisitedAt` 压制）或区间墓碑
+  /// `~clear:<since>`（`since <= lastVisitedAt < deletedAt` 压制，永不退场）；书签
+  /// itemKey = uid（`deletedAt > updatedAt` 压制）。属「收藏」族（[select] 的
+  /// `favorites` 许可一并裁剪）。
+  final List<WebHistoryRecord> webHistory;
+  final List<WebBookmarkRecord> webBookmarks;
+  final List<AggregateTombstoneRecord> webHistoryTombstones;
+  final List<AggregateTombstoneRecord> webBookmarkTombstones;
+
   /// True when nothing in the snapshot would change a peer: used to skip an
   /// empty upload on a device that has no aggregate state yet.
   bool get isEmpty =>
@@ -104,7 +122,11 @@ class AggregateSnapshot {
       favoriteSentences.isEmpty &&
       // 只有墓碑也必须上传：纯删除同样要传播到对端。
       favoriteWordTombstones.isEmpty &&
-      favoriteSentenceTombstones.isEmpty;
+      favoriteSentenceTombstones.isEmpty &&
+      webHistory.isEmpty &&
+      webBookmarks.isEmpty &&
+      webHistoryTombstones.isEmpty &&
+      webBookmarkTombstones.isEmpty;
 
   Map<String, Object?> toJson() => <String, Object?>{
         'version': currentVersion,
@@ -136,6 +158,16 @@ class AggregateSnapshot {
             studySegments.map((StudySegmentRecord r) => r.toJson()).toList(),
         'studySegmentTombstones': studySegmentTombstones
             .map((StudyTombstoneRecord r) => r.toJson())
+            .toList(),
+        'webHistory':
+            webHistory.map((WebHistoryRecord r) => r.toJson()).toList(),
+        'webBookmarks':
+            webBookmarks.map((WebBookmarkRecord r) => r.toJson()).toList(),
+        'webHistoryTombstones': webHistoryTombstones
+            .map((AggregateTombstoneRecord r) => r.toJson())
+            .toList(),
+        'webBookmarkTombstones': webBookmarkTombstones
+            .map((AggregateTombstoneRecord r) => r.toJson())
             .toList(),
       };
 
@@ -177,6 +209,13 @@ class AggregateSnapshot {
           _decodeList(json['studySegments'], StudySegmentRecord.fromJson),
       studySegmentTombstones: _decodeList(
           json['studySegmentTombstones'], StudyTombstoneRecord.fromJson),
+      webHistory: _decodeList(json['webHistory'], WebHistoryRecord.fromJson),
+      webBookmarks:
+          _decodeList(json['webBookmarks'], WebBookmarkRecord.fromJson),
+      webHistoryTombstones: _decodeList(
+          json['webHistoryTombstones'], AggregateTombstoneRecord.fromJson),
+      webBookmarkTombstones: _decodeList(
+          json['webBookmarkTombstones'], AggregateTombstoneRecord.fromJson),
     );
   }
 
@@ -221,6 +260,15 @@ class AggregateSnapshot {
       studySegments: stats ? studySegments : const <StudySegmentRecord>[],
       studySegmentTombstones:
           stats ? studySegmentTombstones : const <StudyTombstoneRecord>[],
+      // v128 浏览器历史 / 书签归「收藏」族：「共享收藏夹」关掉时连同墓碑一起置空。
+      webHistory: favorites ? webHistory : const <WebHistoryRecord>[],
+      webBookmarks: favorites ? webBookmarks : const <WebBookmarkRecord>[],
+      webHistoryTombstones: favorites
+          ? webHistoryTombstones
+          : const <AggregateTombstoneRecord>[],
+      webBookmarkTombstones: favorites
+          ? webBookmarkTombstones
+          : const <AggregateTombstoneRecord>[],
     );
   }
 
@@ -552,6 +600,88 @@ class FavoriteWordRecord {
       dateKey: (json['dateKey'] as String?) ?? '',
       createdAt: _asInt(json['createdAt']),
       sentence: (json['sentence'] as String?) ?? '',
+    );
+  }
+}
+
+/// v128 内置浏览器一条历史的 wire 形状（`web_browser_history` 去掉本机 id）。
+/// 跨端身份是 [url]。
+class WebHistoryRecord {
+  const WebHistoryRecord({
+    required this.url,
+    required this.title,
+    required this.lastVisitedAt,
+    required this.visitCount,
+  });
+
+  final String url;
+  final String title;
+  final int lastVisitedAt;
+  final int visitCount;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'url': url,
+        'title': title,
+        'lastVisitedAt': lastVisitedAt,
+        'visitCount': visitCount,
+      };
+
+  static WebHistoryRecord? fromJson(Map<String, Object?> json) {
+    final Object? url = json['url'];
+    if (url is! String || url.isEmpty) return null;
+    return WebHistoryRecord(
+      url: url,
+      title: (json['title'] as String?) ?? '',
+      lastVisitedAt: _asInt(json['lastVisitedAt']),
+      visitCount: _asInt(json['visitCount']),
+    );
+  }
+}
+
+/// v128 内置浏览器一条书签 / 书签文件夹的 wire 形状。跨端身份是 [uid]；[url] 为
+/// null = 文件夹；[parentUid] 为 null = 根目录（本机自增 parentId 不跨端）。
+class WebBookmarkRecord {
+  const WebBookmarkRecord({
+    required this.uid,
+    required this.title,
+    required this.url,
+    required this.parentUid,
+    required this.position,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String uid;
+  final String title;
+  final String? url;
+  final String? parentUid;
+  final int position;
+  final int createdAt;
+  final int updatedAt;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'uid': uid,
+        'title': title,
+        if (url != null) 'url': url,
+        if (parentUid != null) 'parentUid': parentUid,
+        'position': position,
+        'createdAt': createdAt,
+        'updatedAt': updatedAt,
+      };
+
+  static WebBookmarkRecord? fromJson(Map<String, Object?> json) {
+    final Object? uid = json['uid'];
+    if (uid is! String || uid.isEmpty) return null;
+    final Object? url = json['url'];
+    final Object? parentUid = json['parentUid'];
+    return WebBookmarkRecord(
+      uid: uid,
+      title: (json['title'] as String?) ?? '',
+      url: url is String ? url : null,
+      parentUid: parentUid is String && parentUid.isNotEmpty ? parentUid : null,
+      position: _asInt(json['position']),
+      createdAt: _asInt(json['createdAt']),
+      updatedAt: _asInt(json['updatedAt']),
     );
   }
 }

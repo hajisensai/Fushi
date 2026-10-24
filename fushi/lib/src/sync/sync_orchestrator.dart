@@ -1228,6 +1228,13 @@ class SyncOrchestrator {
           .getSyncDeletionTombstones();
       for (final SyncDeletionTombstoneRow row in localRows) {
         if (row.remotePublishedAt != 0) continue;
+        // v128：浏览器历史 / 书签的墓碑只随聚合快照走，不发布逐条标记（一次「清除浏览
+        // 数据」可能上千条，且没有逐条确认语义）。
+        if (SyncTombstoneKind.tryParse(row.mediaType)
+                ?.propagatesViaAggregateSnapshotOnly ??
+            false) {
+          continue;
+        }
         await _backend.putJsonAsset(
           ns,
           deletionTombstoneAssetName(row.mediaType, row.itemKey),

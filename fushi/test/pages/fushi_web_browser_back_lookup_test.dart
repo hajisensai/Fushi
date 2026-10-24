@@ -21,6 +21,9 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
+import 'package:fushi/src/web_browser/data/memory_web_browser_store.dart';
+import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
+import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
 import '../helpers/popup_mining_target_overrides.dart';
@@ -82,8 +85,8 @@ void main() {
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: tmp);
     MangaWebViewEnvironment.override = () async => null;
-    FushiWebBrowserPage.debugWebViewBuilder = (BuildContext _) =>
-        const ColoredBox(
+    FushiWebBrowserPage.debugTabViewBuilder =
+        (BuildContext _, WebBrowserTab _) => const ColoredBox(
           key: ValueKey<String>('stub-webview'),
           color: Colors.white,
         );
@@ -91,7 +94,7 @@ void main() {
 
   tearDown(() async {
     MangaWebViewEnvironment.override = null;
-    FushiWebBrowserPage.debugWebViewBuilder = null;
+    FushiWebBrowserPage.debugTabViewBuilder = null;
     await db.close();
     try {
       tmp.deleteSync(recursive: true);
@@ -111,6 +114,7 @@ void main() {
           appProvider.overrideWith((Ref ref) => appModel),
           ...popupMiningTargetTestOverrides(),
           srsCardLookupSearchProvider.overrideWithValue(_fakeSearch),
+          webBrowserStoreProvider.overrideWithValue(MemoryWebBrowserStore()),
           webAdblockServiceProvider.overrideWith(
             (Ref ref) => WebAdblockService(
               dataDir: () => null,

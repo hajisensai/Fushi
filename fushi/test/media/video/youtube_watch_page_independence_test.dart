@@ -146,8 +146,8 @@ void main() {
           kYoutubeManifestClientFallback,
         ),
         throwsA(
-          isA<StateError>().having(
-            (StateError e) => e.message,
+          isA<YoutubeManifestException>().having(
+            (YoutubeManifestException e) => e.toString(),
             'message',
             allOf(<Matcher>[
               contains(_videoId),
@@ -178,7 +178,7 @@ void main() {
           _videoId,
           kYoutubeManifestClientFallback,
         ),
-        throwsA(isA<StateError>()),
+        throwsA(isA<YoutubeManifestException>()),
       );
       expect(playerClients, isNot(contains('VISIONOS')));
       expect(playerClients, containsAll(<String>['ANDROID_VR', 'ANDROID']));

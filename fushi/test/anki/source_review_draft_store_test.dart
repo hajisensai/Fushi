@@ -63,6 +63,7 @@ void main() {
         clipEndMs: 20,
         synchronizedVideo: true,
         sourceLink: link,
+        sourceUrl: 'https://example.test/page?a=1',
       );
       await store.saveMining(
         link: link,
@@ -100,6 +101,7 @@ void main() {
       expect(restored.synchronizedVideo, isTrue,
           reason: '同步视频位丢了，回看落卡会把同一 MP4 当图与声各传一份');
       expect(restored.sourceLink!.toUri(), context.sourceLink!.toUri());
+      expect(restored.sourceUrl, context.sourceUrl);
       expect(await File(restored.coverPath!).readAsBytes(), <int>[1, 2]);
       expect(await File(restored.sentenceAudioPath!).readAsBytes(), <int>[
         3,

@@ -101,6 +101,7 @@ class ForwardedMinePayloadBuilder {
       sentenceOffset: context.sentenceOffset,
       source: context.source?.name,
       sourceLink: context.sourceLink,
+      sourceUrl: context.sourceUrl,
       bookTitleTag: context.bookTitleTag,
       collectionTag: context.collectionTag,
       charPositionTag: context.charPositionTag,

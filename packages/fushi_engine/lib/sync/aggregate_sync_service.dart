@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_web_browser.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -468,13 +469,27 @@ class AggregateSyncService {
             in _tombstoneRecordsOf(t, profileNameById, aliases))
           r.key: t.deletedAt,
     };
+    // v128 浏览器历史 / 书签：按本机 `webhistory` / `webbookmark` 墓碑裁剪（与 apply 同律）。
+    final ({List<WebHistoryRecord> history, List<WebBookmarkRecord> bookmarks})
+        web = await filterWebBrowserTombstoned(
+      _db,
+      history: snapshot.webHistory,
+      bookmarks: snapshot.webBookmarks,
+    );
     if (statTombstoned.isEmpty &&
         favWordTombstoned.isEmpty &&
         favSentenceTombstoned.isEmpty &&
-        segmentTombstoned.isEmpty) {
+        segmentTombstoned.isEmpty &&
+        identical(web.history, snapshot.webHistory) &&
+        identical(web.bookmarks, snapshot.webBookmarks)) {
       return snapshot;
     }
     return AggregateSnapshot(
+      webHistory: web.history,
+      webBookmarks: web.bookmarks,
+      // 墓碑家族透传（删除才能传到对端）。
+      webHistoryTombstones: snapshot.webHistoryTombstones,
+      webBookmarkTombstones: snapshot.webBookmarkTombstones,
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRecord s in snapshot.studySegments)
           if ((segmentTombstoned[s.mediaIdentity] ?? 0) <= s.startAt) s,
@@ -575,7 +590,32 @@ class AggregateSyncService {
       tombstones: AggregateMergeService.mergeStudyTombstones(
           local.studySegmentTombstones, remote.studySegmentTombstones),
     );
+    // v128 浏览器历史（url 并集）/ 书签（uid LWW）+ 各自墓碑仲裁。
+    final ({
+      List<WebHistoryRecord> entries,
+      List<AggregateTombstoneRecord> tombstones
+    }) historyArb = arbitrateWebHistory(
+      union: mergeWebHistory(local.webHistory, remote.webHistory),
+      tombstones: webTombstoneMap(<AggregateTombstoneRecord>[
+        ...local.webHistoryTombstones,
+        ...remote.webHistoryTombstones,
+      ]),
+    );
+    final ({
+      List<WebBookmarkRecord> bookmarks,
+      List<AggregateTombstoneRecord> tombstones
+    }) bookmarksArb = arbitrateWebBookmarks(
+      union: mergeWebBookmarks(local.webBookmarks, remote.webBookmarks),
+      tombstones: webTombstoneMap(<AggregateTombstoneRecord>[
+        ...local.webBookmarkTombstones,
+        ...remote.webBookmarkTombstones,
+      ]),
+    );
     return AggregateSnapshot(
+      webHistory: historyArb.entries,
+      webBookmarks: bookmarksArb.bookmarks,
+      webHistoryTombstones: historyArb.tombstones,
+      webBookmarkTombstones: bookmarksArb.tombstones,
       studySegments: segmentsArb.segments,
       studySegmentTombstones: segmentsArb.tombstones,
       readingStats: _mergeReadingStats(local.readingStats, remote.readingStats),
@@ -989,8 +1029,18 @@ class AggregateSyncService {
     final Map<int, String> profileNameById = await _profileNameById();
     final Map<int, Set<String>> aliases =
         await _db.getStudyProfileNameAliases();
+    final ({
+      List<WebHistoryRecord> history,
+      List<WebBookmarkRecord> bookmarks,
+      List<AggregateTombstoneRecord> historyTombstones,
+      List<AggregateTombstoneRecord> bookmarkTombstones,
+    }) web = await materializeWebBrowserFamilies(_db);
 
     return AggregateSnapshot(
+      webHistory: web.history,
+      webBookmarks: web.bookmarks,
+      webHistoryTombstones: web.historyTombstones,
+      webBookmarkTombstones: web.bookmarkTombstones,
       studySegments: <StudySegmentRecord>[
         for (final StudySegmentRow s in segments)
           if (AggregateMergeService.isStudyKindSyncable(s.mediaKind))
@@ -1423,6 +1473,8 @@ class AggregateSyncService {
       );
     }
     await _writeFavoriteSentences(snapshot.favoriteSentences);
+    // v128 浏览器历史 / 书签（墓碑先落、再并入；自带墓碑过滤与幂等）。
+    await applyWebBrowserFamilies(_db, snapshot);
   }
 
   /// 第 4 步落库（BUG-2717）：在 [localApplyLock] 内**重新** materialize 本地再折叠

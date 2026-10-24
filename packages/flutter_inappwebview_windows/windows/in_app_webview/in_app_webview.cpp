@@ -753,6 +753,11 @@ namespace flutter_inappwebview_plugin
                     std::optional<std::map<std::string, std::string>>{},
                     std::optional<std::vector<uint8_t>>{});
                   channelDelegate->onReceivedHttpError(std::move(webResourceRequest), std::move(webResourceResponse));
+                  // WebView2 把主框架 4xx/5xx 一律报成 IsSuccess=FALSE，但文档其实已经加载
+                  // 完（网站自己的 404 页，或空响应体时 Chromium 换上的 HTTP ERROR 页）。
+                  // Android / iOS 在 HTTP 错误后照常回 onLoadStop；这里不补，Dart 侧就永远
+                  // 停在 loading、加载后钩子（标题、历史、取词脚本、空白页判定）一个都不跑。
+                  channelDelegate->onLoadStop(url);
                 }
                 else if (httpStatusCode < 400) {
                   auto webResourceError = std::make_unique<WebResourceError>(WebErrorStatusDescription[webErrorType], webErrorType);
@@ -1017,6 +1022,89 @@ namespace flutter_inappwebview_plugin
         return S_OK;
       }
     ).Get(), &windowCloseRequestedToken_));
+
+    // 下载：Dart 侧实现了 onDownloadStartRequest（_inferInitialSettings 会据此把
+    // useOnDownloadStart 置 true，setSettings 也会实时更新）时，取消 WebView2 自带下载
+    // （不落系统「下载」目录、不弹 Edge 下载浮层），把请求转给 Dart，由宿主自己下载；
+    // 没实现则不碰，保持 WebView2 默认行为（headless / 其它使用方不受影响）。
+    // 与 Android DownloadListener 的约定一致：事件是单向通知，Dart 回调无返回值。
+    wil::com_ptr<ICoreWebView2_4> webView4;
+    if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView4)))) {
+      failedLog(webView4->add_DownloadStarting(
+        Callback<ICoreWebView2DownloadStartingEventHandler>(
+          [this, alive = alive_](ICoreWebView2* sender, ICoreWebView2DownloadStartingEventArgs* args)
+          {
+            if (!*alive) {
+              return S_OK;
+            }
+            if (!channelDelegate || !settings || !settings->useOnDownloadStart) {
+              return S_OK;
+            }
+
+            wil::com_ptr<ICoreWebView2DownloadOperation> operation;
+            if (FAILED(args->get_DownloadOperation(&operation)) || !operation) {
+              return S_OK;
+            }
+            wil::unique_cotaskmem_string uri;
+            if (FAILED(operation->get_Uri(&uri)) || !uri) {
+              return S_OK;
+            }
+            const std::string url = wide_to_utf8(uri.get());
+            // blob: 地址只在页面上下文里有效，宿主的 HTTP 客户端取不到；交给 Dart 只会
+            // 失败并把这次下载弄丢，所以保留 WebView2 自带下载（平台边界，不转发）。
+            if (url.empty() || starts_with(url, std::string{ "blob:" })) {
+              return S_OK;
+            }
+
+            wil::unique_cotaskmem_string mimeTypeRaw;
+            std::optional<std::string> mimeType = SUCCEEDED(operation->get_MimeType(&mimeTypeRaw)) && mimeTypeRaw && *mimeTypeRaw.get() != L'\0'
+              ? wide_to_utf8(mimeTypeRaw.get()) : std::optional<std::string>{};
+
+            wil::unique_cotaskmem_string contentDispositionRaw;
+            std::optional<std::string> contentDisposition = SUCCEEDED(operation->get_ContentDisposition(&contentDispositionRaw)) && contentDispositionRaw && *contentDispositionRaw.get() != L'\0'
+              ? wide_to_utf8(contentDispositionRaw.get()) : std::optional<std::string>{};
+
+            // TotalBytesToReceive 来自 Content-Length，未知时为 -1（与 Android 约定一致）。
+            INT64 totalBytes = -1;
+            if (FAILED(operation->get_TotalBytesToReceive(&totalBytes))) {
+              totalBytes = -1;
+            }
+
+            // WebView2 已按 Content-Disposition / URL / MIME 推好的保存路径，取文件名部分。
+            std::optional<std::string> suggestedFilename;
+            wil::unique_cotaskmem_string resultFilePath;
+            if (SUCCEEDED(args->get_ResultFilePath(&resultFilePath)) && resultFilePath && *resultFilePath.get() != L'\0') {
+              const std::wstring fileName = std::filesystem::path(resultFilePath.get()).filename().wstring();
+              if (!fileName.empty()) {
+                suggestedFilename = wide_to_utf8(fileName);
+              }
+            }
+
+            std::optional<std::string> userAgent;
+            wil::com_ptr<ICoreWebView2Settings> webViewSettings;
+            wil::com_ptr<ICoreWebView2Settings2> webViewSettings2;
+            wil::unique_cotaskmem_string userAgentRaw;
+            if (webView && SUCCEEDED(webView->get_Settings(&webViewSettings)) &&
+              SUCCEEDED(webViewSettings->QueryInterface(IID_PPV_ARGS(&webViewSettings2))) &&
+              SUCCEEDED(webViewSettings2->get_UserAgent(&userAgentRaw)) && userAgentRaw) {
+              userAgent = wide_to_utf8(userAgentRaw.get());
+            }
+
+            failedLog(args->put_Cancel(TRUE));
+
+            auto request = std::make_shared<DownloadStartRequest>(
+              url,
+              userAgent,
+              contentDisposition,
+              mimeType,
+              static_cast<int64_t>(totalBytes),
+              suggestedFilename,
+              std::nullopt);
+            channelDelegate->onDownloadStartRequest(std::move(request));
+            return S_OK;
+          }
+        ).Get(), &downloadStartingToken_));
+    }
 
     // 进程失败：上游 Windows 实现从未接 ProcessFailed，主渲染进程 / 浏览器进程退出后 Dart 侧
     // onRenderProcessGone 永不触发，WebView 停在死页面（黑屏回不来）。这里按 kind 转发：
@@ -2455,6 +2543,10 @@ namespace flutter_inappwebview_plugin
       wil::com_ptr<ICoreWebView2_2> webView2;
       if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView2)))) {
         failedLog(webView2->remove_DOMContentLoaded(domContentLoadedToken_));
+      }
+      wil::com_ptr<ICoreWebView2_4> webView4;
+      if (downloadStartingToken_.value != 0 && SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView4)))) {
+        failedLog(webView4->remove_DownloadStarting(downloadStartingToken_));
       }
     }
     // DevTools 事件 receiver 注册在各自 receiver 对象上（成员保活），逐个 remove。

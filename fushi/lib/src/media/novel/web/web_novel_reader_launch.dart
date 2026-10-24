@@ -156,16 +156,20 @@ class WebNovelPreviewDialog extends StatelessWidget {
 /// - 预览里给出章节标题、首段、下一章是否找到、是新书还是并进哪本；
 /// - 确认后组装 / 就地重建 EPUB（[WebNovelLibrary.save]），开到这一章。
 ///
+/// [pageHtml] 非 null 时用它代替当前 DOM（浏览器阅读模式已把页面换成干净排版，
+/// 「存进书架」要用换之前的原页——下一章 / 目录链接都在原页里）。
+///
 /// 返回 false = 这一页没识别到正文（调用方已提示）或用户取消。
 Future<bool> readWebNovelPageInFushi({
   required BuildContext context,
   required WidgetRef ref,
   required InAppWebViewController controller,
   required Uri pageUrl,
+  Uint8List? pageHtml,
 }) async {
   final AppModel appModel = ref.read(appProvider);
   final WebNovelLibrary library = WebNovelLibrary(database: appModel.database);
-  final Uint8List html = await webNovelPageHtml(controller);
+  final Uint8List html = pageHtml ?? await webNovelPageHtml(controller);
   final String? workKey = WebArticleExtractor.workKeyForUrl(pageUrl);
   final EpubBookRow? existing = workKey == null
       ? null

@@ -89,12 +89,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     final WebVideoSite? site = widget.webSite;
     if (site != null) {
       unawaited(
-        Navigator.of(context).pushReplacement(
-          adaptivePageRoute<void>(
-            context: context,
-            builder: (_) => FushiWebBrowserPage(initialUrl: site.url),
-          ),
-        ),
+        Navigator.of(
+          context,
+        ).pushReplacement(fushiWebBrowserRoute(context, site.url)),
       );
       return;
     }

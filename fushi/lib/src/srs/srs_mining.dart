@@ -82,6 +82,11 @@ SrsSourceRef srsSourceRefFromMiningContext(AnkiMiningContext context) {
         );
     }
   }
+  // 外部网页（app 内浏览器制卡）：没有库内定位时按网址记出处。
+  final Uri? webUrl = AnkiHandlebarRenderer.webSourceUrlOf(context.sourceUrl);
+  if (webUrl != null) {
+    return SrsSourceRef.web(webUrl.toString(), title: title);
+  }
   if (context.source == AnkiMiningSource.game) {
     return SrsSourceRef(SrsSourceKind.game, <String, Object?>{
       if (title != null) 'title': title,
@@ -657,7 +662,8 @@ class SrsMiner with AnkiNoteComposer {
         fieldsById: fields,
         tags: <String>{...note.tags, ..._buildTags(settings, context)}.toList(),
       );
-      if (context.sourceLink != null) {
+      if (context.sourceLink != null ||
+          AnkiHandlebarRenderer.webSourceUrlOf(context.sourceUrl) != null) {
         await store.editFields(SrsEntityKind.note, noteId, <String, Object?>{
           SrsFieldKeys.noteSource: srsSourceRefFromMiningContext(
             context,

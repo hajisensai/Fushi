@@ -491,6 +491,17 @@ mixin DictionaryPageMixin {
       ? AnkiMiningSource.video
       : AnkiMiningSource.book;
 
+  /// 制卡来源标题（卡面 `{document-title}`，无库内定位时也是 `{source-link}` 的链接
+  /// 文字）。默认 null = 不带标题（独立查词页 / 复习卡面）；app 内浏览器经查词宿主覆写成
+  /// 当前网页标题。
+  @protected
+  String? get miningDocumentTitle => null;
+
+  /// 制卡来源网址（[AnkiMiningContext.sourceUrl]，`{source-link}` 渲染成指向它的链接）。
+  /// 默认 null；app 内浏览器经查词宿主覆写成当前网页网址（无痕标签页不给）。
+  @protected
+  String? get miningSourceUrl => null;
+
   /// 弹窗查词的数据源注入点：首查（[pushNestedPopup]）、加载更多（[loadMoreForEntry]）
   /// 与原地跳转（[navigatePopupInPlace]）三处都只走这里。默认走本机
   /// [AppModel.searchDictionary]（含它自己的远端优先分支），行为与从前一致；手机字幕
@@ -564,6 +575,8 @@ mixin DictionaryPageMixin {
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
       source: miningSource,
+      documentTitle: miningDocumentTitle,
+      sourceUrl: miningSourceUrl,
     );
     // TODO-1325 #6：制卡可能要走网络（AnkiConnect）+ 下音频，先弹「制卡中…」蓝色
     // pending toast 给即时反馈；结果 toast 会顶替它。
@@ -626,6 +639,8 @@ mixin DictionaryPageMixin {
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
       source: miningSource,
+      documentTitle: miningDocumentTitle,
+      sourceUrl: miningSourceUrl,
     );
     // TODO-1325 #6：覆写同样先弹 pending。
     FushiToast.showMine(

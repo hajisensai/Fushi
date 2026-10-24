@@ -273,6 +273,9 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken processFailedToken_ = {};
     // DOMContentLoaded 注册在 ICoreWebView2_2 接口上，析构时需重新 QueryInterface 该接口才能 remove。
     EventRegistrationToken domContentLoadedToken_ = {};
+    // DownloadStarting 注册在 ICoreWebView2_4 接口上（Runtime 过旧取不到则不注册，token 保持空），
+    // 析构时同样重新 QueryInterface 再 remove。
+    EventRegistrationToken downloadStartingToken_ = {};
     // CursorChanged 注册在 webViewCompositionController 上。
     EventRegistrationToken cursorChangedToken_ = {};
     // Fetch.requestPaused / Runtime.consoleAPICalled 注册在各自的 DevTools 事件 receiver 上；
