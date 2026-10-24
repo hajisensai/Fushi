@@ -36,7 +36,7 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_store_optimizer_items(SrsCore*, const u8* page, usize, const i64* args, usize, u8** out, usize*, char**) -> i32` | 优化器训练集（P6，`src/store/projections.rs`）：读连接上一个读事务里直读血统的日志 + 服务器时刻，选取、记忆状态输入、「时间不确定」过滤，输出列式训练集（序列 + 前缀条目，按评分时刻排序）。`page` 两列 `[下标, 文本]`（g ≥ 0 血统里的卡，-1 profile），`args = [n, alg, utcOffsetMin, rolloverHour, 卡数字 id × n]` |
 | `ffsrs_store_rwkv_rows` | RWKV 回放行（P6）：mode 0 逐卡（保留评分行、日志 ID、有效评分数、最后保留评分），mode 1 全量回放（本 profile 日志一条语句扫出，指纹与行同一快照，按评分时刻稳定排序，另报列卡之后才出现的「漏卡」）；签名同上，`args = [n, mode, utcOffsetMin, rolloverHour, since, 数字 id × 4n]` |
 | `ffsrs_store_rwkv_log_tail` | RWKV 对齐：本 profile 日志的 (行数, 最大 rowid, since 之后的行数)，可选连同这些新行（id / 卡 / kind（review / undo / 其它）/ 撤销目标 / 时刻）；签名同上，`args = [since, with_rows, incremental?]`，incremental 时只数 since 之后的行（O(新增)） |
-| `ffsrs_store_stats_reviews` | 统计页取数：本 profile 日志按卡选取，每卡当前记忆状态 + 每条有效日志 8 个 i64 列（时刻、UTC 偏移、时长、评分、结果的队列 / 间隔 / 到期日、kind / reviewType / alg 位）+ 卡 ID 串表；签名同上，页里可带血统行 `[继承卡, 前身卡…]`（前身卡的日志算到继承卡上），`args = [n_groups]` |
+| `ffsrs_store_stat_projection` | 有效复习投影（`srs_stat_reviews` 的行）：写连接直读日志，一批归属组（归属卡 + 归它的前身卡）一次调用，按合并历史投影，回 9 列行页 |
 | `ffsrs_store_legacy_state` / `_legacy_begin` / `_legacy_page` / `_legacy_commit` / `_legacy_abort` / `_legacy_mark_none` | 主库旧 srs_* 表的一次性搬迁（Dart 读、Rust 写，一个事务）|
 | `ffsrs_store_snapshot(SrsCore*, const u8* path, usize, i32 strip_device_local, char**) -> i32` | 备份快照（`VACUUM INTO`，可清空设备本地表）|
 | `ffsrs_store_debug_query` | 只读调试查询（测试 / 诊断）|

@@ -126,7 +126,7 @@
 |---|---|---|---|
 | 优化器训练集（`srsPrepareOptimization`） | `ffsrs_store_optimizer_items` | 列式训练集（每张进训练集的卡一条评审序列 + 按时刻排好的前缀条目），`SrsTrainingSet` 一块字节跨 isolate，拟合用的后台 isolate 里才展开 | `store.histories` 循环、`_timeUncertain`、逐卡 `srsCollectMemoryInput` |
 | RWKV 全量回放 / 增量追加 / 排队此刻行（`SrsRwkvService`） | `ffsrs_store_rwkv_rows`（逐卡 / 全量）、`ffsrs_store_rwkv_log_tail`、`ffsrs_rwkv_now_rows` | `RwkvRows` 同布局的字节（全量已按时刻排好）、指纹与日志尾巴 | 整个 `srs_rwkv_history.dart`（保留评分 / card_type / 间隔 / 行构建 / 排序）、服务里 4 条 SQL 与「读完再核对、丢卡重读」循环 |
-| 统计页（`loadSrsStats`） | `ffsrs_store_stats_reviews` | 每卡记忆状态 + 每条有效日志 8 列 | 全表 `db.select` + 逐卡 `SrsCardHistory`；投影 `srsStatsFromLogs` 仍在 Dart |
+| 统计页（`loadSrsStats`） | ~~`ffsrs_store_stats_reviews`~~ → 见 §7.2，改为读投影表 | — | 全表 `db.select` + 逐卡 `SrsCardHistory` |
 | 记忆状态输入（排程 `SrsCardOps` 也用） | `ffsrs_memory_input`（列模式） | 评审序列与起点 | `srsElapsedDays`、`srsIsReset`、`srsIsRestoreState`、`_fromAnchor` / `_lastAnchor` |
 
 - 回归向量：`packages/fushi_engine/test/srs/fixtures/p6_vectors.json.gz` 与
@@ -154,10 +154,37 @@
 | | RWKV 全量回放 | 3465–4638 ms | 1944–2736 ms |
 | | 统计页装载 | 4402–5187 ms | 2182–2919 ms |
 
+### 7.2 有效复习投影 `srs_stat_reviews`（与 #2481 合并，2026-10-25）
+
+#2481 给统计页（BUG-3770）与统计总览的复习时长（BUG-3771）加了一张可重建的投影表，原设计放在主库、投影算法在 Dart
+`_cardCacheRow` 里按卡算。与本设计合并时改成：
+
+- **表在 srs.db**（schema v3，`SrsStatReviews`），设备本地缓存：快照剥离（`snapshot_into` 清空）、合并改 uid 时随 profile 删，
+  主库 schema 不因它升版本（没有 v129）。
+- **投影规则在 Rust**：`history::stats_from_json`（与删除前的 Dart `srsStatProjectionOf` 逐条对应，p6 向量的统计期望就是
+  删除前 Dart 实现的输出）；store 命令 `stat_projection(groups)` / `ffsrs_store_stat_projection` 在写连接上直读日志（看得见
+  本事务未提交的行），一批归属组一次调用，回 9 列行页。缓存刷新里日志仍不经 Dart。
+- **归属在缓存刷新的第二趟定**（`SrsDbStore._refreshStatProjection`，在本轮全部缓存行写完、可见性定下之后）：卡自己可见
+  → 归自己；否则归继承它历史的可见卡中 id 最小的；都不可见 → 归后代里的链尾；没有后代 → 归自己。每个归属组的日志合在一起
+  按合并历史分类。#2481 原来「每条日志只由自己的卡投影、读时再按 `historyOwnerIndex` 换归属」在三处出错（审查实锤）：前身卡
+  没有缓存行（重建 / 覆盖恢复 / 新设备首次同步）时它的复习整段消失；前身与后继日志交错时分类与成熟净值错；物理清除后增量与
+  重建结果不同。现在增量、重建、升级同一规则；清除后的复习照样计入（与旧统计、Anki 保留 revlog 一致），重建按「全部有日志的卡」重算。
+- 删除：`ffsrs_store_stats_reviews`、`SrsStatsColumns`、`SrsDbStore.statsColumns`、Dart 的 `srsStatsFromLogs` /
+  `srsStatsFromHistory` / `srsStatProjectionOf`。统计页读投影（`loadSrsStatProjection`），读时按日界分桶（`srsStatsFromProjection`）。
+- 总览复习时长：`loadStatFacts(reviewsFrom: SrsDatabase?)`，先在主库把 `profiles.id` 换成 uid，再在 srs.db 上用 Drift 表达式聚合。
+- 缓存修订号 2：存量库升级时按全部卡 + 全部有日志的卡算一遍投影。
+
+### 7.3 其它按需读（2026-10-25）
+
+- 时点恢复（`srs_point_in_time_restore.dart`）不再两次整库 `exportAll()`：改回字段只读身份记录 + 修改记录
+  （`exportEntitiesAndEdits`），日志一步先读「日志 ID → 卡」两列（`logIdsByCard`）定受影响的卡，再只解码这些卡的日志
+  （`logsOfCards`），前身链接走部分索引（`successorIndex`）。
+- 媒体同步：笔记缓存加 `media_refs` 列（schema v4，缓存修订号 3），随笔记缓存同一次刷新算出（存量样式去重
+  `compactStoredStyles` 改写字段后也会刷新这条笔记）；`srsReferencedMedia` 每轮只读这一列，不再逐页读全部修改记录解析字段。
+  媒体回收（`srsAllMediaReferences`，保守口径含已删未清与并发候选值）仍按页读修改记录，只在维护时跑。
+
 仍未收编（下一步）：
-- 优化器的拟合 / 评估仍走 `ffsrs_compute_parameters` / `ffsrs_call` 的 JSON 请求（训练集在后台 isolate 展开成
-  `List<List<SrsFsrsReview>>` 再编码，一轮最多 6 次）；下一步给引擎加列式入口直接吃 `SrsTrainingSet` 的字节。
-- 统计页的笔记缓存行 / 卡缓存行 / 笔记物化仍经 Drift 执行器读；统计投影（`srsStatsFromLogs`）与可提取度分组留在 Dart。
+- 统计页的笔记缓存行 / 卡缓存行 / 笔记物化仍经 Drift 执行器读；可提取度分组留在 Dart。
 - 血统（字段寄存器内核）仍由 Dart 预读修改记录后给出；搬进 Rust 后这几条命令可以只收卡 ID。
 - Lapis 迁移里还有直接 SQL，`srs_store_ownership_guard_test` 按文件白名单放行。
 - 写路径（事件落库、支配判定、写入者状态）仍是 Dart 组语句、Rust 执行；收编为 Rust 事务命令后删除 Dart 的 `runExclusive`。
