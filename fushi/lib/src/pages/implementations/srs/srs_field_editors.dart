@@ -844,7 +844,14 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
-                        Text('あ', style: base.copyWith(fontSize: 9, height: 1)),
+                        Text(
+                          'あ',
+                          // 注音键的图标本身就是「小字注在大字上」：注音字取正文 0.6 倍。
+                          style: base.copyWith(
+                            fontSize: (base.fontSize ?? 14) * 0.6,
+                            height: 1,
+                          ),
+                        ),
                         Text('字', style: base.copyWith(height: 1)),
                       ],
                     ),

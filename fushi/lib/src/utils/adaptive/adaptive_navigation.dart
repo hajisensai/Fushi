@@ -62,6 +62,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 
 part 'nav_rail/nav_rail_shape.part.dart';
 part 'nav_rail/nav_rail_peek.part.dart';

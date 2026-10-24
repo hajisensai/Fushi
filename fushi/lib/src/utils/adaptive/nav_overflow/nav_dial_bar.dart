@@ -10,6 +10,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 
 /// 旋钮触发格的宽度（也是 [NavOverflowSpec.pinnedCount] 的 triggerWidth）。
 const double _kKnobWidth = 56;
@@ -878,7 +880,7 @@ class _DialLabel extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: scheme.tertiary,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: FushiM3eShape.cardRadius,
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

@@ -13,6 +13,9 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 
 /// 底栏原型「书脊」（[AdaptiveNavBarStyle] 同名值，设计稿 divergent.html F2）。
 ///
@@ -583,10 +586,10 @@ class _NavShelfBarState extends State<NavShelfBar>
     required double totalMs,
   }) {
     return Material(
-      color: scheme.surfaceContainerHigh,
+      color: FushiDesignTokens.of(context).surfaces.search,
       elevation: 6,
       shadowColor: scheme.shadow,
-      borderRadius: BorderRadius.circular(28),
+      borderRadius: FushiM3eShape.containerLargeRadius,
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),

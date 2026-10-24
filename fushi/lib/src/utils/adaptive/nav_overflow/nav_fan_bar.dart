@@ -13,6 +13,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 
 /// 牌叠格宽（与 [NavOverflowSpec.pinnedCount] 的 triggerWidth 一致）。
 const double _kDeckWidth = 56;
@@ -24,7 +27,6 @@ const double _kPivotBelow = 140;
 const double _kArm = 330;
 const double _kCardWidth = 64;
 const double _kCardHeight = 92;
-const double _kCardRadius = 12;
 
 /// 扇面总张角的一半（度）。
 const double _kSpreadDeg = 28;
@@ -473,7 +475,7 @@ class _FanCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Color background = Color.lerp(
-      scheme.surfaceContainerLowest,
+      FushiDesignTokens.of(context).surfaces.page,
       scheme.tertiary,
       hot,
     )!;
@@ -494,7 +496,7 @@ class _FanCard extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(_kCardRadius),
+        borderRadius: FushiM3eShape.smallRadius,
         border: Border.all(color: border, width: current ? 3 : 1),
         boxShadow: <BoxShadow>[
           BoxShadow(
@@ -505,7 +507,7 @@ class _FanCard extends StatelessWidget {
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(_kCardRadius),
+        borderRadius: FushiM3eShape.smallRadius,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(6, 7, 2, 4),
           child: Column(

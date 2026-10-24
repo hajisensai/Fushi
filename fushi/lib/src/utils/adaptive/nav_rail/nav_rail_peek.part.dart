@@ -63,7 +63,6 @@ const Duration _kNavPeekCacheTtl = Duration(seconds: 30);
 
 const double _kNavPeekWidth = 320;
 const double _kNavPeekGap = 10;
-const double _kNavPeekRadius = 28;
 
 /// 收起 / 展开 rail 的格向速览卡登记自己：悬停进出与卡片定位都经它。
 class _NavRailPeekRegistry extends InheritedWidget {
@@ -279,7 +278,9 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
     if (target == null) return const SizedBox.shrink();
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    final Color surface = eink ? colors.surface : colors.surfaceContainerHigh;
+    final Color surface = eink
+        ? colors.surface
+        : FushiDesignTokens.of(context).surfaces.search;
     final Widget content = AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       switchInCurve: FushiMotion.enter,
@@ -351,7 +352,7 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
             elevation: eink ? 0 : 3,
             shadowColor: colors.shadow,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(_kNavPeekRadius),
+              borderRadius: FushiM3eShape.containerLargeRadius,
               side: eink
                   ? BorderSide(color: colors.onSurface)
                   : BorderSide.none,
@@ -554,7 +555,7 @@ class _NavPeekCover extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Widget placeholder = ColoredBox(
-      color: colors.surfaceContainerHighest,
+      color: FushiDesignTokens.of(context).surfaces.overlay,
       child: Center(
         child: FushiIcon(fallbackIcon, color: colors.onSurfaceVariant),
       ),
@@ -598,7 +599,7 @@ class _NavPeekResume extends StatelessWidget {
       child: FushiPressScale(
         child: Material(
           color: colors.surfaceContainer,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: FushiM3eShape.cardRadius,
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onOpen,
@@ -652,7 +653,9 @@ class _NavPeekResume extends StatelessWidget {
                           FushiWavyLinearProgress(
                             value: progress.clamp(0.0, 1.0),
                             color: colors.primary,
-                            trackColor: colors.surfaceContainerHighest,
+                            trackColor: FushiDesignTokens.of(
+                              context,
+                            ).surfaces.overlay,
                           ),
                         ],
                       ],

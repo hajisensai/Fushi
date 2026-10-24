@@ -200,7 +200,6 @@ class _NavModeStripBarState extends State<NavModeStripBar>
   @override
   Widget build(BuildContext context) {
     if (spec.indices.isEmpty) return const SizedBox.shrink();
-    final ThemeData theme = Theme.of(context);
     final TextStyle labelStyle = context.fushiType.labelLarge.copyWith(
       fontWeight: FontWeight.w700,
       height: 1,
