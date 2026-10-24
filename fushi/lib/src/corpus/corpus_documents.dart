@@ -104,6 +104,7 @@ CorpusDocument lyricsDocument({
   required LyricTimeline timeline,
   required String normalizer,
   required int updatedAt,
+  String? fingerprint,
 }) {
   final List<CorpusSentence> sentences = <CorpusSentence>[];
   for (final LyricLine line in timeline.lines) {
@@ -125,7 +126,8 @@ CorpusDocument lyricsDocument({
     key: trackUid,
     part: -1,
     title: title,
-    fingerprint: corpusFingerprint(<Object?>[
+    // 调用方给了来源侧的指纹（音乐对账用歌词行元数据）就用它，否则按内容算。
+    fingerprint: fingerprint ?? corpusFingerprint(<Object?>[
       timeline.offsetMs,
       for (final CorpusSentence s in sentences) ...<Object?>[s.pos, s.text],
     ]),

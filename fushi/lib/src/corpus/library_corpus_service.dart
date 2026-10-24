@@ -45,7 +45,9 @@ class FushiDictsCorpusNormalizer implements CorpusNormalizer {
 
   @override
   String? get signature {
-    if (!FushiDicts.isInitialized) return null;
+    // 有待办（词典集合刚变、还没装载）时不在这里触发同步装载——那会在 UI isolate 上一口气
+    // 装完全部词典；等 app 自己的异步装载结算后，签名轮询（[_signatureWatch]）再来。
+    if (!FushiDicts.isInitialized || FushiDicts.hasPendingDicts) return null;
     final List<String> paths = FushiDicts.instance.termDictionaryPaths;
     if (paths.isEmpty) return null;
     // 路径 + 目录修改时刻：同一路径重新导入（覆盖）也算换了词典。
@@ -64,7 +66,9 @@ class FushiDictsCorpusNormalizer implements CorpusNormalizer {
 
   @override
   Future<T?> runInBackground<T>(T Function(CorpusTermsFn terms) job) {
-    if (!FushiDicts.isInitialized) return Future<T?>.value();
+    if (!FushiDicts.isInitialized || FushiDicts.hasPendingDicts) {
+      return Future<T?>.value();
+    }
     return FushiDicts.instance.borrowForBackground<T>(
       (int address, String? libraryPath) => Isolate.run<T>(
         () => job(
@@ -153,6 +157,11 @@ class LibraryCorpusService {
       <StreamSubscription<Object?>>[];
   final Map<String, Timer> _debouncers = <String, Timer>{};
   Timer? _startTimer;
+
+  /// 词典集合变化的轮询：签名与上次对账时不同（导入 / 删除词典、启动时词典还没装好）
+  /// 就整库对账一次（过期文档读回原文重新分词）。签名只是几次目录 stat，很便宜。
+  Timer? _signatureWatch;
+  String? _reconciledSignature;
   ExitFlushCallback? _exitFlush;
   int _jobsDone = 0;
   int _jobsTotal = 0;
@@ -208,13 +217,23 @@ class LibraryCorpusService {
     on(db.musicLyrics, CorpusSourceKind.music);
     on(db.musicTracks, CorpusSourceKind.music);
     on(db.galgames, CorpusSourceKind.game);
+    _signatureWatch ??= Timer.periodic(_signaturePollInterval, (_) {
+      final String? signature = _normalizer.signature;
+      if (signature != null && signature != _reconciledSignature) {
+        scheduleReconcile();
+      }
+    });
   }
+
+  static const Duration _signaturePollInterval = Duration(minutes: 2);
 
   void _unsubscribe() {
     for (final StreamSubscription<Object?> s in _subscriptions) {
       unawaited(s.cancel());
     }
     _subscriptions.clear();
+    _signatureWatch?.cancel();
+    _signatureWatch = null;
     for (final Timer t in _debouncers.values) {
       t.cancel();
     }
@@ -428,6 +447,7 @@ class LibraryCorpusService {
     final FushiDatabase? db = _db;
     final String? normalizer = _normalizer.signature;
     if (db == null || normalizer == null) return;
+    _reconciledSignature = normalizer;
     final List<CorpusDocInfo>? docs = await _withIndex(_docsOp(kind));
     if (docs == null) return;
     switch (kind) {
@@ -496,8 +516,10 @@ class LibraryCorpusService {
           existing.normalizer == normalizer) {
         continue;
       }
-      await _ingestBook(row, fingerprint, normalizer);
-      if (!enabled) return;
+      // 一本书一个任务：进度按份计，中途关掉开关 / 退出时没跑到的下次对账接着做。
+      unawaited(
+        _enqueue('book', () => _ingestBook(row, fingerprint, normalizer)),
+      );
     }
     await _removeOrphans(CorpusSourceKind.book, docs, live);
   }
@@ -546,19 +568,22 @@ class LibraryCorpusService {
     for (final VideoBookRow row in rows) {
       if (indexed.contains(row.bookUid)) continue;
       if (playlistEpisodeCount(row.playlistJson) > 0) continue;
-      final List<AudioCue> cues = await repo.loadCues(row.bookUid);
-      if (cues.isEmpty) continue;
-      await _putDocument(
-        videoCuesDocument(
-          bookUid: row.bookUid,
-          episodeIndex: 0,
-          title: row.title,
-          cues: cues,
-          normalizer: normalizer,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ),
+      unawaited(
+        _enqueue('video', () async {
+          final List<AudioCue> cues = await repo.loadCues(row.bookUid);
+          if (cues.isEmpty) return;
+          await _putDocument(
+            videoCuesDocument(
+              bookUid: row.bookUid,
+              episodeIndex: 0,
+              title: row.title,
+              cues: cues,
+              normalizer: normalizer,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+        }),
       );
-      if (!enabled) return;
     }
   }
 
@@ -589,23 +614,37 @@ class LibraryCorpusService {
     await _removeOrphans(CorpusSourceKind.music, docs, live);
     for (final String uid in live) {
       final MusicLyricRow row = chosen[uid]!;
-      final LyricTimeline? timeline = await _timelineOf(row);
-      if (timeline == null) continue;
-      final CorpusDocument doc = lyricsDocument(
-        trackUid: uid,
-        title: titles[uid]!,
-        timeline: timeline,
-        normalizer: normalizer,
-        updatedAt: row.updatedAt,
-      );
+      // 指纹只用行元数据：任一歌词行一变就整表对账，不能为了比对把每首歌的时间轴都解一遍。
+      final String fingerprint = corpusFingerprint(<Object?>[
+        row.source,
+        row.updatedAt,
+        row.offsetMs,
+        row.isUserEdited,
+        row.raw.length,
+      ]);
       final CorpusDocInfo? existing = byKey[uid];
       if (existing != null &&
-          existing.fingerprint == doc.fingerprint &&
+          existing.fingerprint == fingerprint &&
           existing.normalizer == normalizer) {
         continue;
       }
-      await _putDocument(doc);
-      if (!enabled) return;
+      final String title = titles[uid]!;
+      unawaited(
+        _enqueue('music', () async {
+          final LyricTimeline? timeline = await _timelineOf(row);
+          if (timeline == null) return;
+          await _putDocument(
+            lyricsDocument(
+              trackUid: uid,
+              title: title,
+              timeline: timeline,
+              normalizer: normalizer,
+              updatedAt: row.updatedAt,
+              fingerprint: fingerprint,
+            ),
+          );
+        }),
+      );
     }
   }
 
@@ -693,13 +732,20 @@ class LibraryCorpusService {
     required String normalizer,
     required int updatedAt,
   }) => (CorpusTermsFn terms) {
-    final EpubBook book = EpubParser.parseFromExtracted(extractDir);
     final List<CorpusSentence> sentences = <CorpusSentence>[];
     final BytesBuilder termBytes = BytesBuilder(copy: false);
-    for (int i = 0; i < book.chapters.length; i++) {
+    EpubBook? book;
+    try {
+      book = EpubParser.parseFromExtracted(extractDir);
+    } on FormatException {
+      // 解不开的书（容器 / OPF 坏了）：照样写一份空文档记下这个指纹，免得每次对账都重试；
+      // 书被重新导入（指纹变了）时会再来。
+      book = null;
+    }
+    for (int i = 0; i < (book?.chapters.length ?? 0); i++) {
       final List<CorpusSentence> chapter = bookChapterSentences(
         i,
-        book.chapterPlainText(i),
+        book!.chapterPlainText(i),
       );
       if (chapter.isEmpty) continue;
       sentences.addAll(chapter);
