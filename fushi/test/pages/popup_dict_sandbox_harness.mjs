@@ -88,12 +88,19 @@ function page(lockReply, dictStyles, parentActive) {
 }
 
 // 渲染一个词典块，等锁桥 + iframe 加载 + 消息往返，然后回报主文档状态。
-function renderExpr(content) {
+// untilExpr：给了就等到该表达式为真（上限 8 秒）再回报，而不是固定等 1.5 秒——断言
+// 「某个桥调用**到了**」的场景不能押在固定时长上（CI 机器慢时沙箱可能还没跑完）。
+// 断言「某个调用**没到**」的场景仍用固定等待：那是它们的观察窗口。
+function renderExpr(content, untilExpr) {
   return `(async () => {
     const details = createGlossarySection('D', [{ content: ${JSON.stringify(content)},
       definitionTags: '', termTags: '', glossaryIndex: 0 }], 0, 0, 1);
     document.body.appendChild(details);
-    await new Promise((r) => setTimeout(r, 1500));
+    ${untilExpr
+    ? `for (const deadline = Date.now() + 8000; Date.now() < deadline && !(${untilExpr});) {
+      await new Promise((r) => setTimeout(r, 50));
+    }`
+    : 'await new Promise((r) => setTimeout(r, 1500));'}
     const frames = [...document.querySelectorAll('iframe')];
     return {
       pwned: window.__pwned === undefined ? null : String(window.__pwned),
@@ -283,19 +290,19 @@ try {
 
   // 10. 父页面有用户激活时（用户随便点了一下释义），沙箱脚本伪造的外链消息也不放行：
   //     父页面判断不了「点的就是这条链接」，所以沙箱来源只认回查词 / sound: 本地音频。
-  //     同一 frame 随后发的回查词链接必须照常生效——证明激活确实成立，外链是被判据挡下
-  //     而不是因为没激活被顺带丢掉（否则这条断言是空壳）。
+  //     同一 frame 紧接着（同一个回调里、零间隔）发的回查词链接必须照常生效——证明激活
+  //     确实成立，外链是被判据挡下而不是因为没激活被顺带丢掉（否则这条断言是空壳）；
+  //     零间隔同时钉住「被丢弃的外链不占 300 ms 动作节流」：曾经先占节流再丢，两条
+  //     消息间隔一旦被调度挤到 300 ms 以内，真实查词就被吞掉（CI 上实际红过）。
   {
     const r = await driver.evalOnPage(page(LOCKED, {}, true), renderExpr(`<div>s</div><script>
       setTimeout(function () {
         parent.postMessage({ __fushiDictSandbox: 1, type: 'link',
           href: 'https://evil.example/leak?q=TERM', text: 'x', rect: {} }, '*');
-      }, 50);
-      setTimeout(function () {
         parent.postMessage({ __fushiDictSandbox: 1, type: 'link',
           href: '?query=word', text: 'word', rect: {} }, '*');
-      }, 450);
-    </script>`));
+      }, 50);
+    </script>`, "window.__calls.some((c) => c.name === 'onLinkClick')"));
     assert.equal(r.frames.length, 1, 'scripted block mounted into one iframe');
     assert.ok(!r.calls.includes('openLink'),
       `external link forged by the sandbox must not open even with parent activation (${r.calls})`);
