@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "Thư viện game, nguồn siêu dữ liệu và ảnh bìa",
   "backup_category_local_audio": "Cơ sở dữ liệu âm thanh cục bộ",
   "backup_category_local_audio_desc": "Cơ sở dữ liệu âm thanh phát âm cục bộ",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "Hồ sơ",
   "backup_category_profiles_desc": "Hồ sơ cấu hình",
   "backup_category_progress": "Tiến độ đọc",

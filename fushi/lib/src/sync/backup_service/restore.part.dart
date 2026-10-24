@@ -9,6 +9,7 @@ typedef _ContentRowCounts = ({
   int progress,
   int statistics,
   int srsNotes,
+  int music,
 });
 
 /// 备份的恢复 / 合并 / 预览 / 崩溃恢复 / 读包摘要（B1 从 [BackupService] 分家）。
@@ -88,6 +89,7 @@ class BackupRestoreService {
     int? dbProgressCount,
     int? dbStatisticsCount,
     int? dbSrsNoteCount,
+    int? dbMusicCount,
     bool peekFailed = false,
   }) {
     final Set<String> dictDirs = <String>{};
@@ -170,6 +172,7 @@ class BackupRestoreService {
     // 同一口径。
     final int srsCount =
         (meta?.srsNoteCount ?? dbSrsNoteCount ?? 0) + srsMediaFiles;
+    final int musicCount = meta?.musicCount ?? dbMusicCount ?? 0;
     final Map<BackupCategory, int> counts = <BackupCategory, int>{
       if (dictDirs.isNotEmpty) BackupCategory.dictionary: dictDirs.length,
       if (bookDirs.isNotEmpty) BackupCategory.books: bookDirs.length,
@@ -181,6 +184,7 @@ class BackupRestoreService {
       if (progressCount > 0) BackupCategory.progress: progressCount,
       if (statisticsCount > 0) BackupCategory.statistics: statisticsCount,
       if (srsCount > 0) BackupCategory.srs: srsCount,
+      if (musicCount > 0) BackupCategory.music: musicCount,
     };
     // Peek needed but absent → the row counts meta lacks are UNKNOWN, and
     // unknown must read as present (see doc). `statsCount` is always set on
@@ -197,6 +201,7 @@ class BackupRestoreService {
         BackupCategory.statistics,
       // SRS 表同样随 DB 整体覆盖：未知若当成「没有」，覆盖导入会把包里的复习数据剥掉。
       if (peekFailed && meta?.srsNoteCount == null) BackupCategory.srs,
+      if (peekFailed && meta?.musicCount == null) BackupCategory.music,
     };
     return BackupContentSummary(
       counts: counts,
@@ -242,7 +247,8 @@ class BackupRestoreService {
               meta.audiobookCount == null ||
               meta.gameCount == null ||
               meta.progressCount == null ||
-              meta.srsNoteCount == null) &&
+              meta.srsNoteCount == null ||
+              meta.musicCount == null) &&
           dbEntry != null;
       if (needPeek) {
         peek = await _peekContentRowCounts(zipPath, dbEntry.name);
@@ -254,6 +260,7 @@ class BackupRestoreService {
           dbProgressCount: peek?.progress,
           dbStatisticsCount: peek?.statistics,
           dbSrsNoteCount: peek?.srsNotes,
+          dbMusicCount: peek?.music,
           // A failed peek must never read as "the backup has none" — that
           // would hide the toggles and the overwrite import would strip the
           // device's own rows (see summarizeBackupEntries doc).
@@ -302,6 +309,9 @@ class BackupRestoreService {
               _countTableIfPresent(db, 'video_watch_statistics') +
               _countTableIfPresent(db, 'mining_statistics') +
               _countTableIfPresent(db, 'study_segments'),
+          music: <String>[
+            for (final String t in musicUserTables) t,
+          ].fold<int>(0, (int sum, String t) => sum + _countTableIfPresent(db, t)),
           srsNotes:
               _countTableIfPresent(db, 'srs_entities', where: _srsUserNoteSql),
         );
@@ -321,6 +331,20 @@ class BackupRestoreService {
   }
 
   /// `SELECT COUNT(*)` of [table] on an open read-only sqlite [db], or 0 when the
+  /// 从 [dbDirectory] 的库里删掉「音乐」类别的用户数据表（子表在前）。
+  static Future<void> _stripMusicUserData(String dbDirectory) async {
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      await db.transaction(() async {
+        for (final String table in musicUserTables) {
+          await db.customStatement('DELETE FROM $table');
+        }
+      });
+    } finally {
+      await db.close();
+    }
+  }
+
   /// table is absent (older-schema backup blob). [where] 可选的行过滤条件。
   static int _countTableIfPresent(
     sqlite.Database db,
@@ -1241,6 +1265,11 @@ class BackupRestoreService {
         // skipped above (effGameCoversRoot=null), so strip the rows too or the
         // library would land as cover-less ghosts.
         await _retainGames(dbDirectory, const <String>{});
+      }
+      if (!wants(BackupCategory.music)) {
+        // 音乐用户数据随覆盖 DB 整体落地：未勾「音乐」时从换入的 DB 里剥掉，
+        // 与 games / videos 同一覆盖语义。曲库目录是设备本地表，另由 bak 回灌。
+        await _stripMusicUserData(dbDirectory);
       }
       if (!wants(BackupCategory.statistics) ||
           !wants(BackupCategory.progress) ||

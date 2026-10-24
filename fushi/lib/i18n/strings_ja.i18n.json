@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "ゲームライブラリ、メタデータソース、カバー",
   "backup_category_local_audio": "ローカル音声データベース",
   "backup_category_local_audio_desc": "ローカル発音音声データベース",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "プロファイル",
   "backup_category_profiles_desc": "設定プロファイル",
   "backup_category_progress": "読書進捗",

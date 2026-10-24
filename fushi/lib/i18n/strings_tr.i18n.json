@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "Oyun kitaplığı, meta veri kaynakları ve kapaklar",
   "backup_category_local_audio": "Yerel ses veritabanları",
   "backup_category_local_audio_desc": "Yerel telaffuz ses veritabanları",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "Profiller",
   "backup_category_profiles_desc": "Yapılandırma profilleri",
   "backup_category_progress": "Okuma ilerlemesi",

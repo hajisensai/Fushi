@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "게임 라이브러리, 메타데이터 소스 및 표지",
   "backup_category_local_audio": "로컬 오디오 데이터베이스",
   "backup_category_local_audio_desc": "로컬 발음 오디오 데이터베이스",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "프로필",
   "backup_category_profiles_desc": "구성 프로필",
   "backup_category_progress": "읽기 진행률",

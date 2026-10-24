@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "Spelbibliotheek, metadatabronnen en omslagen",
   "backup_category_local_audio": "Lokale audiodatabases",
   "backup_category_local_audio_desc": "Lokale uitspraakaudiodatabases",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "Profielen",
   "backup_category_profiles_desc": "Configuratieprofielen",
   "backup_category_progress": "Leesvoortgang",

@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "مكتبة الألعاب ومصادر البيانات الوصفية والأغلفة",
   "backup_category_local_audio": "قواعد بيانات الصوت المحلية",
   "backup_category_local_audio_desc": "قواعد بيانات صوت النطق المحلية",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "الملفات الشخصية",
   "backup_category_profiles_desc": "ملفات تعريف الإعدادات",
   "backup_category_progress": "تقدم القراءة",

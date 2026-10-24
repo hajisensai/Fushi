@@ -246,6 +246,7 @@ class BackupMergeEngine {
       // BUG-1488：用户给书改的名字（override_title pref）是内容，跟着书走。
       await _mergeOverrideTitlePrefs();
       if (_wants('localAudio')) await _mergeAudioSourcePrefs();
+      if (_wants('music')) await _mergeMusicUserData();
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
       if (_adoptSourcePreferences) await _adoptMissingPreferences();
@@ -1554,6 +1555,100 @@ class BackupMergeEngine {
 
   /// v82：书自定义 CSS LWW 合并（per {book_uid, relative_path}，updatedAt 取
   /// 较新；重置墓碑 deleted 行同样传播）。此前该表不进 merge（src 静默丢弃）。
+  /// 音乐用户数据（v125，「音乐」类别）：
+  /// - 歌单：按 `playlist_uid` LWW（`updated_at` 大者胜，含软删）；备份胜出的歌单
+  ///   整组替换条目（条目没有独立身份，顺序就是内容）。
+  /// - 歌词：按 (track_uid, source) LWW（`updated_at`）。
+  /// - MV 绑定：按 (track_uid, kind, ref) LWW（`updated_at`）。
+  /// - 播放流：按 (track_uid, started_at) 去重并集。
+  /// 曲目身份是内容派生 uid，两边同一首歌同一个 uid，无需重映射。
+  Future<void> _mergeMusicUserData() async {
+    if (await _srcTableExists('music_playlists')) {
+      await _db.customStatement(
+        'CREATE TEMP TABLE IF NOT EXISTS merge_music_pl (uid TEXT PRIMARY KEY)',
+      );
+      await _db.customStatement('DELETE FROM temp.merge_music_pl');
+      await _db.customStatement(
+        'INSERT INTO temp.merge_music_pl (uid) '
+        'SELECT s.playlist_uid FROM $_srcAlias.music_playlists AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_playlists AS t '
+        'WHERE t.playlist_uid = s.playlist_uid '
+        'AND t.updated_at >= s.updated_at)',
+      );
+      await _db.customStatement(
+        'INSERT INTO music_playlists '
+        '(playlist_uid, name, rules_json, created_at, updated_at, deleted_at) '
+        'SELECT s.playlist_uid, s.name, s.rules_json, s.created_at, '
+        's.updated_at, s.deleted_at FROM $_srcAlias.music_playlists AS s '
+        'WHERE s.playlist_uid IN (SELECT uid FROM temp.merge_music_pl) '
+        'ON CONFLICT (playlist_uid) DO UPDATE SET name = excluded.name, '
+        'rules_json = excluded.rules_json, updated_at = excluded.updated_at, '
+        'deleted_at = excluded.deleted_at',
+      );
+      if (await _srcTableExists('music_playlist_entries')) {
+        await _db.customStatement(
+          'DELETE FROM music_playlist_entries WHERE playlist_uid IN '
+          '(SELECT uid FROM temp.merge_music_pl)',
+        );
+        await _db.customStatement(
+          'INSERT INTO music_playlist_entries '
+          '(playlist_uid, track_uid, position, added_at) '
+          'SELECT s.playlist_uid, s.track_uid, s.position, s.added_at '
+          'FROM $_srcAlias.music_playlist_entries AS s '
+          'WHERE s.playlist_uid IN (SELECT uid FROM temp.merge_music_pl) '
+          'ORDER BY s.playlist_uid, s.position',
+        );
+      }
+      await _db.customStatement('DROP TABLE IF EXISTS temp.merge_music_pl');
+    }
+    if (await _srcTableExists('music_lyrics')) {
+      await _db.customStatement(
+        'INSERT INTO music_lyrics (track_uid, source, format, raw, '
+        'timeline_cache, timeline_version, offset_ms, timing_quality, '
+        'is_user_edited, updated_at) '
+        'SELECT s.track_uid, s.source, s.format, s.raw, s.timeline_cache, '
+        's.timeline_version, s.offset_ms, s.timing_quality, s.is_user_edited, '
+        's.updated_at FROM $_srcAlias.music_lyrics AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_lyrics AS t '
+        'WHERE t.track_uid = s.track_uid AND t.source = s.source '
+        'AND t.updated_at >= s.updated_at) '
+        'ON CONFLICT (track_uid, source) DO UPDATE SET '
+        'format = excluded.format, raw = excluded.raw, '
+        'timeline_cache = excluded.timeline_cache, '
+        'timeline_version = excluded.timeline_version, '
+        'offset_ms = excluded.offset_ms, '
+        'timing_quality = excluded.timing_quality, '
+        'is_user_edited = excluded.is_user_edited, '
+        'updated_at = excluded.updated_at',
+      );
+    }
+    if (await _srcTableExists('music_videos')) {
+      await _db.customStatement(
+        'INSERT INTO music_videos (track_uid, kind, ref, offset_ms, '
+        'confidence, is_user_bound, updated_at) '
+        'SELECT s.track_uid, s.kind, s.ref, s.offset_ms, s.confidence, '
+        's.is_user_bound, s.updated_at FROM $_srcAlias.music_videos AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_videos AS t '
+        'WHERE t.track_uid = s.track_uid AND t.kind = s.kind '
+        'AND t.ref = s.ref AND t.updated_at >= s.updated_at) '
+        'ON CONFLICT (track_uid, kind, ref) DO UPDATE SET '
+        'offset_ms = excluded.offset_ms, confidence = excluded.confidence, '
+        'is_user_bound = excluded.is_user_bound, '
+        'updated_at = excluded.updated_at',
+      );
+    }
+    if (await _srcTableExists('music_play_events')) {
+      await _db.customStatement(
+        'INSERT INTO music_play_events '
+        '(track_uid, started_at, listened_ms, completed) '
+        'SELECT s.track_uid, s.started_at, s.listened_ms, s.completed '
+        'FROM $_srcAlias.music_play_events AS s '
+        'WHERE NOT EXISTS (SELECT 1 FROM music_play_events AS t '
+        'WHERE t.track_uid = s.track_uid AND t.started_at = s.started_at)',
+      );
+    }
+  }
+
   Future<void> _mergeBookCustomCss() async {
     if (!await _srcTableExists('book_custom_css')) return;
     await _db.customStatement(
@@ -1796,13 +1891,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v124：AI 整理记录，设备本地。
       'library_organize_runs',
       'library_organize_changes',
-      // v125 音乐模块 P0：曲库目录 / 歌单 / 歌词缓存 / 播放流整组设备本地（不出境），
-      // 合并导入同样跳过；跨设备合并等「音乐」备份类别与合并规则一起做。
-      'music_play_events',
-      'music_playlist_entries',
-      'music_playlists',
-      'music_videos',
-      'music_lyrics',
+      // v125 音乐曲库目录：本机重扫产物（绝对路径），设备本地。音乐用户数据走
+      // [BackupMergeEngine._mergeMusicUserData]。
       'music_track_credits',
       'music_tracks',
       'music_albums',

@@ -1183,6 +1183,8 @@
   "backup_category_games_desc": "Libreria di giochi, fonti dei metadati e copertine",
   "backup_category_local_audio": "Database audio locali",
   "backup_category_local_audio_desc": "Database audio di pronuncia locali",
+  "backup_category_music": "Music",
+  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "Profili",
   "backup_category_profiles_desc": "Profili di configurazione",
   "backup_category_progress": "Progresso di lettura",
