@@ -1149,6 +1149,21 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return row?.baseVersion;
   }
 
+  /// 一次取回某维度的全部基线（assetKey → baseVersion）。
+  ///
+  /// 互联进度 sweep 每轮要看每个条目的基线与「待确认」基线，逐条
+  /// [getSyncBaseline] 是 N+1；整轮先用这里一条查询读齐，在内存里判定。
+  Future<Map<String, int>> getSyncBaselinesForDimension(
+    String dimension,
+  ) async {
+    final List<SyncBaselineRow> rows = await (select(
+      syncBaselines,
+    )..where((t) => t.dimension.equals(dimension))).get();
+    return <String, int>{
+      for (final SyncBaselineRow row in rows) row.assetKey: row.baseVersion,
+    };
+  }
+
   /// 写/更新基线版本（主键 assetKey+dimension upsert）。
   Future<void> setSyncBaseline(
     String assetKey,

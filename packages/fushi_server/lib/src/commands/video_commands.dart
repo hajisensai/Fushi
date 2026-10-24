@@ -674,8 +674,8 @@ Map<String, Object?> _factsJson(VideoProbeFacts facts) => <String, Object?>{
 Future<int> videoProbeBluray(ArgResults sub, {required CliIo io}) async {
   if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: video probe-bluray <dir>');
   final String dir = p.absolute(sub.rest.single);
-  if (!Directory(dir).existsSync()) return io.fail(kExitNoInput, '找不到目录: $dir');
-  final String? root = blurayDiscRootForDirectory(dir);
+  if (!await Directory(dir).exists()) return io.fail(kExitNoInput, '找不到目录: $dir');
+  final String? root = await blurayDiscRootForDirectory(dir);
   if (root == null) return io.fail(kExitNoInput, '不是蓝光盘目录（找不到 BDMV/PLAYLIST）: $dir');
   final BlurayDisc? disc = await readBlurayDisc(root);
   if (disc == null) return io.fail(kExitFailure, '读不出这张盘的播放列表: $root');

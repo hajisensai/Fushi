@@ -1160,8 +1160,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
         streamIndex: streamIndex,
         label: 'embedded:$streamIndex',
       );
-    } else if (File(persisted).existsSync()) {
+    } else if (await File(persisted).exists()) {
       // 外挂源持久化值即其绝对路径（[SubtitleSource.toPersistedValue]）。
+      // async：外挂字幕常是视频同目录 sidecar，可能在网络盘上（BUG-3704）。
       source = SubtitleSource.external(
         externalPath: persisted,
         label: p.basename(persisted),
@@ -2176,7 +2177,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         );
         return;
       }
-    } else if (File(persisted).existsSync()) {
+    } else if (await File(persisted).exists()) {
       cues = await _loadExternalSubtitleCues(persisted, _activeBookUid);
     } else {
       return;
@@ -3101,7 +3102,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 抽轨可能要几十秒（大容器整片 demux），期间连点不重入。
     if (_referenceSyncRunning) return;
     final String? videoPath = _currentVideoPath;
-    final String? subtitlePath = _currentExternalSubtitlePath();
+    final String? subtitlePath = await _currentExternalSubtitlePath();
     if (videoPath == null || subtitlePath == null) {
       _showOsd(
         t.video_subtitle_reference_sync_need_external,
@@ -3200,15 +3201,26 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
   }
 
-  /// 当前选中的外挂字幕文件路径；内嵌轨 / 关闭 / 文件已不在时为 null。
-  String? _currentExternalSubtitlePath() {
+  /// 当前选中的外挂字幕源（只看选择、零 IO）；内嵌轨 / 关闭 / 未选时为 null。
+  /// 同步入口（桌面 CLI 起任务前的预检）用它；文件是否还在由
+  /// [_currentExternalSubtitlePath] 异步判。
+  String? _currentExternalSubtitleSelection() {
     final String? source = _currentSubtitleSource;
     if (source == null ||
         SubtitleSource.isOff(source) ||
-        SubtitleSource.isEmbeddedPersisted(source) ||
-        !File(source).existsSync()) {
+        SubtitleSource.isEmbeddedPersisted(source)) {
       return null;
     }
+    return source;
+  }
+
+  /// 当前选中的外挂字幕文件路径；内嵌轨 / 关闭 / 文件已不在时为 null。
+  ///
+  /// async：外挂字幕常是视频同目录 sidecar，视频在网络盘（rclone / SMB）上时同步
+  /// stat 会冻结 UI isolate 与同 isolate 的互联 host（BUG-3704）。
+  Future<String?> _currentExternalSubtitlePath() async {
+    final String? source = _currentExternalSubtitleSelection();
+    if (source == null || !await File(source).exists()) return null;
     return source;
   }
 

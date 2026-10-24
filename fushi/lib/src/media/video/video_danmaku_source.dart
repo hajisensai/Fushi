@@ -28,21 +28,25 @@ String? pickDanmakuSidecar(String videoBaseNameNoExt, List<String> dirFiles) {
   return null;
 }
 
-String? findDanmakuSidecar(String videoPath) {
+/// 视频同目录的同名弹幕 sidecar（无则 null）。
+///
+/// async：视频常在网络盘（rclone / SMB 挂载）上，同步 listSync 冷目录时要逐级重列
+/// 目录、单次数秒，会冻结 UI isolate 与同 isolate 的互联 host（BUG-3704）。目录不存在
+/// / 无权限时与旧实现一致返回 null。
+Future<String?> findDanmakuSidecar(String videoPath) async {
   final Directory dir = Directory(p.dirname(videoPath));
-  if (!dir.existsSync()) return null;
-  final List<String> files;
+  final List<String> files = <String>[];
   try {
-    files = dir
-        .listSync(followLinks: false)
-        .whereType<File>()
-        .map((File f) => p.basename(f.path))
-        .toList(growable: false);
+    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
+      if (e is File) files.add(p.basename(e.path));
+    }
   } on FileSystemException {
     return null;
   }
-  final String? picked =
-      pickDanmakuSidecar(p.basenameWithoutExtension(videoPath), files);
+  final String? picked = pickDanmakuSidecar(
+    p.basenameWithoutExtension(videoPath),
+    files,
+  );
   return picked == null ? null : p.normalize(p.join(dir.path, picked));
 }
 
@@ -51,13 +55,15 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
   int maxBytes = kVideoDanmakuLocalMaxBytes,
 }) async {
   try {
-    if (!file.existsSync()) {
+    // 一次 async stat 拿存在性与体积（BUG-3704：sidecar 在网络盘上时同步 stat 冻结 UI）。
+    final FileStat stat = await file.stat();
+    if (stat.type != FileSystemEntityType.file) {
       return VideoDanmakuLoadResult(
         items: const <VideoDanmakuItem>[],
         sourcePath: file.path,
       );
     }
-    final int length = file.lengthSync();
+    final int length = stat.size;
     if (length > maxBytes) {
       return VideoDanmakuLoadResult(
         items: const <VideoDanmakuItem>[],
@@ -71,10 +77,10 @@ Future<VideoDanmakuLoadResult> loadDanmakuSidecarFile(
     // 均可跨 isolate 传输，`_parseDanmakuContent` 是无闭包捕获的顶层纯函数。
     final String content = await readTextWithEncoding(file);
     final String ext = p.extension(file.path).toLowerCase();
-    final List<VideoDanmakuItem> items = await compute(
-      _parseDanmakuContent,
-      (content, ext == '.json'),
-    );
+    final List<VideoDanmakuItem> items = await compute(_parseDanmakuContent, (
+      content,
+      ext == '.json',
+    ));
     return VideoDanmakuLoadResult(items: items, sourcePath: file.path);
   } catch (e) {
     return VideoDanmakuLoadResult(

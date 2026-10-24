@@ -69,6 +69,12 @@
 | [BUG-3705](bugs/BUG-3705-srs-sentence-target-word-not-highlighted.md) | ✅ | ✅ | 例句中目标词不高亮 |
 | [BUG-3704](bugs/BUG-3704-srs-review-space-dead-after-grading.md) | ✅ | ✅ | 评分后下一张卡「显示答案」空格失灵 |
 | [BUG-3703](bugs/BUG-3703-srs-review-gif-not-synced-with-sentence.md) | ✅ | ✅ | 复习卡动图不与例句音频联动 |
+> 共 3308 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3704](bugs/BUG-3704-host-list-videos-sync-stat-blocks-isolate.md) | ✅ | ✅ | 网络盘上的视频让 Fushi 主 isolate 卡数秒（互联 host 列表与 UI 一起冻结） |
+| [BUG-3703](bugs/BUG-3703-interconnect-sync-slow.md) | ✅ | ✅ | 互联同步一轮要几分钟（局域网 / 全部客户端） |
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |

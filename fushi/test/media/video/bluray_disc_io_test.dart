@@ -87,14 +87,14 @@ void main() {
   test('认盘：盘根与 BDMV 目录本身都认，别的目录不认', () async {
     writeWholeClipTitle('00001', clipId: '00001', seconds: 3600);
 
-    expect(blurayDiscRootForDirectory(discRoot), p.normalize(discRoot));
+    expect(await blurayDiscRootForDirectory(discRoot), p.normalize(discRoot));
     expect(
-      blurayDiscRootForDirectory(p.join(discRoot, 'BDMV')),
+      await blurayDiscRootForDirectory(p.join(discRoot, 'BDMV')),
       p.normalize(discRoot),
     );
-    expect(blurayDiscRootForDirectory(temp.path), isNull);
+    expect(await blurayDiscRootForDirectory(temp.path), isNull);
     expect(
-      blurayDiscRootForDirectory(p.join(discRoot, 'BDMV', 'STREAM')),
+      await blurayDiscRootForDirectory(p.join(discRoot, 'BDMV', 'STREAM')),
       isNull,
     );
   });

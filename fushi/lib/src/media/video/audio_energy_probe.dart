@@ -248,11 +248,14 @@ Future<List<double>> extractAudioEnergyEnvelope({
   int? audioStreamCount,
   int? limitMs = kSubtitleAutoAlignProbeLimitMs,
 }) async {
-  if (!File(videoPath).existsSync()) {
+  // 一次 async stat 拿存在性与体积：视频可能在网络盘上，同步 stat 会冻结 UI isolate
+  // （BUG-3704）。
+  final FileStat videoStat = await File(videoPath).stat();
+  if (videoStat.type == FileSystemEntityType.notFound) {
     debugPrint('[audio-energy] input missing: $videoPath');
     return const <double>[];
   }
-  final int sizeBytes = _fileSizeOrZero(videoPath);
+  final int sizeBytes = videoStat.size < 0 ? 0 : videoStat.size;
   final Duration timeout = audioEnergyProbeTimeoutForBytes(sizeBytes);
   // 性能截断：limitMs 换算成 ffmpeg `-t` 秒数（向上取整，保证覆盖到上界那一格）；
   // <=0 或 null 表示抽整轨。与 [buildCueActivityEnvelope] 的 durationMs 上界须取同值。
@@ -350,12 +353,4 @@ List<double> downsampleEnergyEnvelope(
   return FfcEnergyEnvelope.fromDb(
     frames,
   ).downsample(targetBuckets, percentile: normalizeCeilingPercentile);
-}
-
-int _fileSizeOrZero(String path) {
-  try {
-    return File(path).lengthSync();
-  } catch (_) {
-    return 0;
-  }
 }

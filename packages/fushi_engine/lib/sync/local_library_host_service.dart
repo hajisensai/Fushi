@@ -117,9 +117,15 @@ void _assertSafeName(String name) {
   }
 }
 
-String? _existingFilePath(String? path) {
+/// [path] 指向的文件存在则原样返回，否则 null。async：host 跑在 app 主 isolate 上，路径可能落在网络盘
+/// （rclone / SMB 挂载）上，同步 existsSync 冷目录时会冻结整条 isolate（BUG-3704）。
+Future<String?> _existingFilePathAsync(String? path) async {
   if (path == null || path.isEmpty) return null;
-  return File(path).existsSync() ? path : null;
+  try {
+    return await File(path).exists() ? path : null;
+  } on FileSystemException {
+    return null;
+  }
 }
 
 /// [LocalLibraryHostService] 的抽象骨架：宣告全部 host 接口，并把具体类的注入字段以抽象私有
@@ -409,8 +415,10 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
   /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格
-  /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。每个被引用
-  /// 合集只 [getCollectionItems] 一次，避免逐条目 N+1。
+  /// 折叠 / UI 占位卡归行一致。孤儿引用（合集已删）跳过 = 无归属（散卡）。
+  ///
+  /// 只含本机库里存在的条目（视频 bookUid / EPUB uid 与 bookKey / SRT uid）——消费方
+  /// [listBooks] / [listVideos] 也只按这几种键查。
   Future<Map<String, RemoteCollectionMembership>>
       _primaryCollectionMembership() async =>
           (await _primaryCollectionData()).membership;
@@ -425,8 +433,14 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
         Map<String, RemoteCollectionMembership> membership,
         Map<String, MediaCollectionRow> collectionByEntry,
       })> _primaryCollectionData() async {
-    final Map<String, int> primaryByEntry =
-        await _db.getPrimaryCollectionIdByEntry();
+    // 一趟 SQL 收窄到本机条目（[FushiDatabase.getLocalPrimaryCollectionMembership]，
+    // 与 getPrimaryCollectionIdByEntry 同一 MIN(collection_id) 折叠口径并带回组内
+    // sortIndex）。旧实现全表 GROUP BY 后按主归属合集逐个 getCollectionItems：
+    // 成员表远大于本机库（在线源 / 播放列表合集挂着成千上万本机不存在的集数），
+    // 3000+ 合集的 host 每次出清单就是 3000+ 次跨 isolate 查询 + 8 万行搬运，
+    // `/api/library/books` 与 `/api/library/videos` 秒级的主因。
+    final Map<String, ({int collectionId, int sortIndex})> primaryByEntry =
+        await _db.getLocalPrimaryCollectionMembership();
     if (primaryByEntry.isEmpty) {
       return (
         membership: const <String, RemoteCollectionMembership>{},
@@ -442,24 +456,18 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
         <String, RemoteCollectionMembership>{};
     final Map<String, MediaCollectionRow> rowByEntry =
         <String, MediaCollectionRow>{};
-    // 只遍历真正承载某条目主归属的合集（按 id 去重），逐合集取一次成员行。
-    for (final int cid in primaryByEntry.values.toSet()) {
-      final MediaCollectionRow? col = collectionsById[cid];
+    for (final MapEntry<String, ({int collectionId, int sortIndex})> e
+        in primaryByEntry.entries) {
+      final MediaCollectionRow? col = collectionsById[e.value.collectionId];
       if (col == null) continue; // 孤儿引用：归属合集已删 → 该条目退化散卡。
-      for (final MediaCollectionItemRow item
-          in await _db.getCollectionItems(cid)) {
-        // v83：epub 成员行 entryKey = 本机 epub_books.uid（透传行 = 对端 bookKey），
-        // 本 map 键随成员表面貌走——bookKey 侧消费方（listBooks）负责先换到 uid。
-        final String key = '${item.mediaType}|${item.entryKey}';
-        // 仅记录以本合集为主归属的成员（该条目也可能在别的更大 id 合集里）。
-        if (primaryByEntry[key] != cid) continue;
-        out[key] = RemoteCollectionMembership(
-          collectionName: col.name,
-          collectionType: col.collectionType,
-          sortIndex: item.sortIndex,
-        );
-        rowByEntry[key] = col;
-      }
+      // v83：epub 成员行 entryKey = 本机 epub_books.uid（透传行 = 对端 bookKey），
+      // 本 map 键随成员表面貌走——bookKey 侧消费方（listBooks）负责先换到 uid。
+      out[e.key] = RemoteCollectionMembership(
+        collectionName: col.name,
+        collectionType: col.collectionType,
+        sortIndex: e.value.sortIndex,
+      );
+      rowByEntry[e.key] = col;
     }
     return (membership: out, collectionByEntry: rowByEntry);
   }
@@ -472,13 +480,14 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// [listBooks] 的 `hasAudiobook` 徽章、[listAudiobooks] 清单、orchestrator
   /// sweep 三处判据全部走此单一派生逻辑，确保徽章/清单/导出契约完全同源（TODO-778）。
   Future<Set<String>> _srtBackedAudiobookKeys() async {
-    final List<AudiobookRow> rows = await _db.getAllAudiobooks();
-    final Set<String> keys = <String>{};
-    for (final AudiobookRow r in rows) {
-      if (await _db.getSrtBookByBookKey(r.bookKey) != null) {
-        keys.add(r.bookKey);
-      }
-    }
-    return keys;
+    // 一趟取 SrtBooks 的 bookKey 集合（与逐条 getSrtBookByBookKey 同判据：该 bookKey
+    // 有任一 SrtBooks 行），不再按有声书逐本查。
+    final Set<String> srtBookKeys = <String>{
+      for (final SrtBookRow s in await _db.getAllSrtBooks()) s.bookKey,
+    };
+    return <String>{
+      for (final AudiobookRow r in await _db.getAllAudiobooks())
+        if (srtBookKeys.contains(r.bookKey)) r.bookKey,
+    };
   }
 }

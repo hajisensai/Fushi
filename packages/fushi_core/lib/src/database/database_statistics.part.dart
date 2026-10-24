@@ -536,6 +536,23 @@ mixin _FushiDbStatistics
     return tomb != null && row.startAt.value < tomb.deletedAt;
   }
 
+  /// [_isStudySegmentTombstoned] 的批量形态：墓碑表已一次读进
+  /// `(profileId, mediaKind, mediaKey) → deletedAt`，判据逐字相同。
+  static bool _isStudySegmentTombstonedIn(
+    Map<(int, String, String), int> tombstones,
+    StudySegmentsCompanion row,
+  ) {
+    if (!row.mediaKind.present ||
+        !row.mediaKey.present ||
+        !row.startAt.present) {
+      return false;
+    }
+    final int profileId = row.profileId.present ? row.profileId.value : 0;
+    final int? deletedAt =
+        tombstones[(profileId, row.mediaKind.value, row.mediaKey.value)];
+    return deletedAt != null && row.startAt.value < deletedAt;
+  }
+
   /// 闭区间 [fromDateKey, toDateKey]（`yyyy-MM-dd` 字典序即时间序）内的全部段；
   /// 任一端 null = 不设界。
   ///
@@ -595,24 +612,48 @@ mixin _FushiDbStatistics
   ///
   /// v105：新行的 profile_id 由调用方按对端 Profile **名字**解析好传进来（缺席盖
   /// 当前激活）；已有行的归属不随 LWW 改（段第一次落到哪个 Profile 就是哪个）。
+  ///
+  /// 批量形态（聚合同步首轮要落上万段）：墓碑表与激活 Profile 在事务内各读一次，
+  /// upsert 走一次 [batch]，不再逐行跨 isolate 查碑 + 插入。事务内只写段、不写碑，
+  /// 所以一次读出的墓碑集合与逐行查询看到的完全相同。
   Future<void> upsertStudySegmentsIfNewer(
     Iterable<StudySegmentsCompanion> rows,
   ) =>
       transaction(() async {
-        for (final StudySegmentsCompanion input in rows) {
-          final StudySegmentsCompanion row =
-              await _stampStudySegmentProfile(input);
-          if (await _isStudySegmentTombstoned(row)) continue;
-          await into(studySegments).insert(
-            row,
-            onConflict: DoUpdate(
-              (old) => row.copyWith(profileId: const Value.absent()),
-              target: [studySegments.uid],
-              where: (old) =>
-                  old.updatedAt.isSmallerThanValue(row.updatedAt.value),
-            ),
-          );
-        }
+        final List<StudySegmentsCompanion> inputs = rows.toList();
+        if (inputs.isEmpty) return;
+        final int? activeProfileId =
+            inputs.any((StudySegmentsCompanion r) => !r.profileId.present)
+                ? await resolveActiveProfileId()
+                : null;
+        final Map<(int, String, String), int> tombstones =
+            <(int, String, String), int>{
+          for (final StudySegmentTombstoneRow t
+              in await select(studySegmentTombstones).get())
+            (t.profileId, t.mediaKind, t.mediaKey): t.deletedAt,
+        };
+        final List<StudySegmentsCompanion> writable = <StudySegmentsCompanion>[
+          for (final StudySegmentsCompanion input in inputs)
+            input.profileId.present
+                ? input
+                : input.copyWith(profileId: Value(activeProfileId!)),
+        ]..removeWhere((StudySegmentsCompanion row) =>
+            _isStudySegmentTombstonedIn(tombstones, row));
+        if (writable.isEmpty) return;
+        await batch((Batch b) {
+          for (final StudySegmentsCompanion row in writable) {
+            b.insert(
+              studySegments,
+              row,
+              onConflict: DoUpdate<$StudySegmentsTable, StudySegmentRow>(
+                (old) => row.copyWith(profileId: const Value.absent()),
+                target: [studySegments.uid],
+                where: (old) =>
+                    old.updatedAt.isSmallerThanValue(row.updatedAt.value),
+              ),
+            );
+          }
+        });
       });
 
   // zeroStudySegmentsOnDays / deleteStatFactsOnDays 住 _FushiDbContentMisc（同

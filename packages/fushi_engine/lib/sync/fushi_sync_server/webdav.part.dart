@@ -9,7 +9,9 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
   /// 继续。永远只 await 单一路径上的前驱、绝不在持有一把锁时去取另一把，故不会死锁；
   /// 收尾时若自己仍是链尾就从 map 摘除，避免闲置路径无界堆积。
   Future<T> _serializeDavWrite<T>(
-      String fsPath, Future<T> Function() action) async {
+    String fsPath,
+    Future<T> Function() action,
+  ) async {
     final Future<void> prev = _davWriteChain[fsPath] ?? Future<void>.value();
     final Completer<void> done = Completer<void>();
     _davWriteChain[fsPath] = done.future;
@@ -27,7 +29,10 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
   }
 
   Future<shelf.Response> _handlePropfind(
-      shelf.Request request, String davPath, String fsPath) async {
+    shelf.Request request,
+    String davPath,
+    String fsPath,
+  ) async {
     final depth = request.headers['depth'] ?? '1';
     // BUG-908(b)：逐项 stat 一律异步，避免在事件循环上做阻塞式系统调用（大目录
     // PROPFIND 会串起成百上千次同步 stat，卡住整个 server）。
@@ -41,43 +46,51 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
     final normPath = davPath.endsWith('/') ? davPath : '$davPath/';
 
     if (entity == FileSystemEntityType.directory) {
-      entries.add(_DavEntry(
-        href: normPath,
-        isCollection: true,
-        displayName: p.basename(fsPath),
-        contentLength: 0,
-      ));
+      entries.add(
+        _DavEntry(
+          href: normPath,
+          isCollection: true,
+          displayName: p.basename(fsPath),
+          contentLength: 0,
+        ),
+      );
 
       if (depth == '1') {
-        final dir = Directory(fsPath);
-        await for (final child in dir.list()) {
-          final childName = p.basename(child.path);
-          final isDir = child is Directory;
-          final childHref = '$normPath$childName${isDir ? '/' : ''}';
-          // BUG-908(b)：文件长度用异步 stat（await for 循环里安全 await，不打乱 XML
-          // 组装顺序）；目录不必取长度。
-          // 修改时间与长度取自同一次 stat：客户端（SRS 同步）拿它当服务器时间。
-          final FileStat? st = isDir ? null : await (child as File).stat();
-          entries.add(_DavEntry(
-            href: childHref,
-            isCollection: isDir,
-            displayName: childName,
-            contentLength: st?.size ?? 0,
-            modified: st?.modified,
-          ));
+        await _appendDavChildren(entries, fsPath, normPath);
+      } else if (depth.trim().toLowerCase() == 'infinity') {
+        // BUG-3703：同步根树列举。**有界**——只往下列 [kDavTreeListingMaxLevels]
+        // 层（同步根布局只有「根 / 书文件夹或命名空间 / 文件」两层），绝不无限递归。
+        // 能力经 `/api/capabilities` 的 `webdav.treeListingLevels` 公布；client 只在
+        // 看到该能力后才发 infinity（老 host 把 infinity 当 Depth 0 只回根自身）。
+        final List<_DavEntry> children = <_DavEntry>[];
+        await _appendDavChildren(children, fsPath, normPath);
+        final String canonicalRoot = p.canonicalize(syncDataDir);
+        for (final _DavEntry child in children) {
+          entries.add(child);
+          if (!child.isCollection) continue;
+          final String childFsPath = p.join(fsPath, child.displayName);
+          // 与逐个 PROPFIND 同一道路径围栏：符号链接解析到同步根之外的子目录，
+          // 单独 PROPFIND 会被 403 拒绝，这里也不下钻（不把根外内容列出去）。
+          final String canonicalChild = p.canonicalize(childFsPath);
+          if (!canonicalChild.startsWith('$canonicalRoot${p.separator}')) {
+            continue;
+          }
+          await _appendDavChildren(entries, childFsPath, child.href);
         }
       }
     } else {
       final file = File(fsPath);
       // BUG-908(b)：单文件长度也用异步 stat。
       final FileStat st = await file.stat();
-      entries.add(_DavEntry(
-        href: davPath,
-        isCollection: false,
-        displayName: p.basename(fsPath),
-        contentLength: st.size,
-        modified: st.modified,
-      ));
+      entries.add(
+        _DavEntry(
+          href: davPath,
+          isCollection: false,
+          displayName: p.basename(fsPath),
+          contentLength: st.size,
+          modified: st.modified,
+        ),
+      );
     }
 
     final xml = StringBuffer('<?xml version="1.0" encoding="utf-8"?>\n')
@@ -89,19 +102,22 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
         ..write('<d:propstat>\n')
         ..write('<d:prop>\n')
         ..write(
-            '<d:displayname>${_xmlEscape(entry.displayName)}</d:displayname>\n')
+          '<d:displayname>${_xmlEscape(entry.displayName)}</d:displayname>\n',
+        )
         ..write('<d:resourcetype>')
         ..write(entry.isCollection ? '<d:collection/>' : '')
         ..write('</d:resourcetype>\n');
       if (!entry.isCollection) {
         xml.write(
-            '<d:getcontentlength>${entry.contentLength}</d:getcontentlength>\n');
+          '<d:getcontentlength>${entry.contentLength}</d:getcontentlength>\n',
+        );
       }
       final DateTime? modified = entry.modified;
       if (modified != null) {
         // RFC 1123（HttpDate.format 总是输出 GMT）。
         xml.write(
-            '<d:getlastmodified>${HttpDate.format(modified)}</d:getlastmodified>\n');
+          '<d:getlastmodified>${HttpDate.format(modified)}</d:getlastmodified>\n',
+        );
       }
       xml
         ..write('</d:prop>\n')
@@ -111,29 +127,65 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
     }
     xml.write('</d:multistatus>');
 
-    return shelf.Response(207,
-        body: xml.toString(),
-        headers: {'Content-Type': 'application/xml; charset=utf-8'});
+    return shelf.Response(
+      207,
+      body: xml.toString(),
+      headers: {'Content-Type': 'application/xml; charset=utf-8'},
+    );
   }
 
+  /// 把目录 [dirFsPath] 的直接子项按 PROPFIND Depth 1 的形状追加进 [out]。
+  /// [dirHref] 是该目录的 dav href（以 `/` 结尾）；子项 href = `dirHref + 名字`，与
+  /// 直接对该目录发 Depth 1 时逐字相同（树列举与逐本列举给出同一批 id）。
+  Future<void> _appendDavChildren(
+    List<_DavEntry> out,
+    String dirFsPath,
+    String dirHref,
+  ) async {
+    final dir = Directory(dirFsPath);
+    await for (final child in dir.list()) {
+      final childName = p.basename(child.path);
+      final isDir = child is Directory;
+      final childHref = '$dirHref$childName${isDir ? '/' : ''}';
+      // BUG-908(b)：文件长度用异步 stat（await for 循环里安全 await，不打乱 XML
+      // 组装顺序）；目录不必取长度。
+      // 修改时间与长度取自同一次 stat：客户端（SRS 同步）拿它当服务器时间。
+      final FileStat? st = isDir ? null : await (child as File).stat();
+      out.add(
+        _DavEntry(
+          href: childHref,
+          isCollection: isDir,
+          displayName: childName,
+          contentLength: st?.size ?? 0,
+          modified: st?.modified,
+        ),
+      );
+    }
+  }
+
+  // GET / PUT / MKCOL / DELETE / HEAD 一律 async IO：同步根可能落在网络盘上，host 又跑在
+  // app 主 isolate 上，同步 stat 冷目录时会冻结全部端点与 UI（BUG-3704）。
   Future<shelf.Response> _handleGet(String fsPath) async {
     final file = File(fsPath);
-    if (!file.existsSync()) return shelf.Response.notFound('Not found');
+    final int? length = await _regularFileLength(file);
+    if (length == null) return shelf.Response.notFound('Not found');
     return shelf.Response.ok(
       file.openRead(),
       headers: {
         'Content-Type': _guessContentType(fsPath),
-        'Content-Length': '${file.lengthSync()}',
+        'Content-Length': '$length',
       },
     );
   }
 
   Future<shelf.Response> _handlePut(
-      shelf.Request request, String fsPath) async {
+    shelf.Request request,
+    String fsPath,
+  ) async {
     final parent = Directory(p.dirname(fsPath));
-    if (!parent.existsSync()) parent.createSync(recursive: true);
+    if (!await parent.exists()) await parent.create(recursive: true);
     final file = File(fsPath);
-    final existed = file.existsSync();
+    final existed = await file.exists();
     final sink = file.openWrite();
     try {
       await request.read().forEach(sink.add);
@@ -144,11 +196,15 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
       // response — matching the download paths' cleanup (HBK-AUDIT-029).
       try {
         await sink.close();
-      } catch (_) {/* best-effort: failure is non-critical here */}
-      if (file.existsSync()) {
+      } catch (_) {
+        /* best-effort: failure is non-critical here */
+      }
+      if (await file.exists()) {
         try {
-          file.deleteSync();
-        } catch (_) {/* best-effort: failure is non-critical here */}
+          await file.delete();
+        } catch (_) {
+          /* best-effort: failure is non-critical here */
+        }
       }
       return shelf.Response(500, body: 'Write failed');
     }
@@ -157,13 +213,13 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
 
   Future<shelf.Response> _handleMkcol(String fsPath) async {
     final dir = Directory(fsPath);
-    if (dir.existsSync()) return shelf.Response(405);
-    dir.createSync(recursive: true);
+    if (await dir.exists()) return shelf.Response(405);
+    await dir.create(recursive: true);
     return shelf.Response(201);
   }
 
   Future<shelf.Response> _handleDelete(String fsPath) async {
-    final type = FileSystemEntity.typeSync(fsPath);
+    final type = await FileSystemEntity.type(fsPath);
     if (type == FileSystemEntityType.notFound) {
       return shelf.Response.notFound('Not found');
     }
@@ -176,12 +232,15 @@ extension _FushiSyncServerWebDav on FushiSyncServer {
   }
 
   Future<shelf.Response> _handleHead(String fsPath) async {
-    final file = File(fsPath);
-    if (!file.existsSync()) return shelf.Response.notFound('Not found');
-    return shelf.Response.ok(null, headers: {
-      'Content-Type': _guessContentType(fsPath),
-      'Content-Length': '${file.lengthSync()}',
-    });
+    final int? length = await _regularFileLength(File(fsPath));
+    if (length == null) return shelf.Response.notFound('Not found');
+    return shelf.Response.ok(
+      null,
+      headers: {
+        'Content-Type': _guessContentType(fsPath),
+        'Content-Length': '$length',
+      },
+    );
   }
 }
 

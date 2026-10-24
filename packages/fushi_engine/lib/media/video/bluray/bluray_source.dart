@@ -92,7 +92,7 @@ Future<BluraySource?> resolveBluraySource(String playlistPath) async {
   final File file = File(playlistPath);
   final Uint8List bytes;
   try {
-    if (!file.existsSync()) return null;
+    if (!await file.exists()) return null;
     bytes = await file.readAsBytes();
   } on FileSystemException {
     return null;
@@ -121,7 +121,7 @@ Future<Map<String, BlurayClipTimebase>> _readTimebases(
       p.join(discRootPath, 'BDMV', 'CLIPINF', '$clipId.clpi'),
     );
     try {
-      if (!file.existsSync()) continue;
+      if (!await file.exists()) continue;
       final BlurayClipTimebase? timebase = parseBlurayClipTimebase(
         await file.readAsBytes(),
       );

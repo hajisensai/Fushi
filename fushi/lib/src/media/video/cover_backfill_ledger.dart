@@ -56,18 +56,21 @@ class CoverBackfillLedger {
 
   /// 是否应对 [videoPath] 发起一次抽帧：无失败记录 → 试；有记录但文件身份
   /// （mtime/size）已变 → 试（并丢弃陈旧记录）；身份未变 → 拦。
-  bool shouldAttempt(String videoPath) {
+  ///
+  /// async：视频常在网络盘（rclone / SMB）上，回填循环跑在 UI isolate，同步 stat
+  /// 一次就能冻结界面与同 isolate 的互联 host 数秒（BUG-3704）。
+  Future<bool> shouldAttempt(String videoPath) async {
     final CoverBackfillFailure? failure = _failures[videoPath];
     if (failure == null) return true;
-    final (int?, int?) now = _statIdentity(videoPath);
+    final (int?, int?) now = await _statIdentity(videoPath);
     if (now.$1 == failure.mtimeMs && now.$2 == failure.sizeBytes) return false;
     _failures.remove(videoPath); // 文件变了：旧账作废，放行重试。
     return true;
   }
 
   /// 记一次失败：连同当前文件身份一起存，供 [shouldAttempt] 判「同一文件不变」。
-  void recordFailure(String videoPath, {required String reason}) {
-    final (int?, int?) identity = _statIdentity(videoPath);
+  Future<void> recordFailure(String videoPath, {required String reason}) async {
+    final (int?, int?) identity = await _statIdentity(videoPath);
     _failures[videoPath] = CoverBackfillFailure(
       reason: reason,
       mtimeMs: identity.$1,
@@ -89,12 +92,12 @@ class CoverBackfillLedger {
   int get debugFailureCount => _failures.length;
 
   /// 读文件身份 (mtimeMs, sizeBytes)；不存在/不可 stat 返回 (null, null)。
-  static (int?, int?) _statIdentity(String path) {
+  static Future<(int?, int?)> _statIdentity(String path) async {
     try {
-      final FileStat stat = File(path).statSync();
+      final FileStat stat = await File(path).stat();
       if (stat.type == FileSystemEntityType.notFound) return (null, null);
       return (stat.modified.millisecondsSinceEpoch, stat.size);
-    } catch (_) {
+    } on FileSystemException {
       return (null, null);
     }
   }

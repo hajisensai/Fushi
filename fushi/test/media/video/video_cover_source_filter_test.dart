@@ -40,10 +40,7 @@ void main() {
 
   group('isLocalFrameExtractableVideoSource（回填候选判据）', () {
     test('本地媒体文件路径 -> true', () {
-      expect(
-        isLocalFrameExtractableVideoSource(r'D:\videos\ep1.mkv'),
-        isTrue,
-      );
+      expect(isLocalFrameExtractableVideoSource(r'D:\videos\ep1.mkv'), isTrue);
       expect(isLocalFrameExtractableVideoSource('/videos/ep1.mp4'), isTrue);
     });
 
@@ -52,10 +49,7 @@ void main() {
         isLocalFrameExtractableVideoSource(r'D:\videos\k-on\k-on.m3u8'),
         isFalse,
       );
-      expect(
-        isLocalFrameExtractableVideoSource('/videos/list.m3u'),
-        isFalse,
-      );
+      expect(isLocalFrameExtractableVideoSource('/videos/list.m3u'), isFalse);
     });
 
     test('空路径 / http(s) 流 URL 不进抽帧候选', () {
@@ -76,15 +70,17 @@ void main() {
     test('本地 .m3u8 直接返回 null，不烧 ffmpeg 子进程', () async {
       // 早退发生在 AppPaths / ffmpeg 之前：本测试无 path_provider mock、无 ffmpeg，
       // 若有人删掉抽取器层的清单拒收，这里会因 MissingPluginException 立即红。
-      final Directory tmp =
-          Directory.systemTemp.createTempSync('fushi_cover_filter_');
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'fushi_cover_filter_',
+      );
       addTearDown(() {
         try {
           tmp.deleteSync(recursive: true);
         } catch (_) {}
       });
-      final File manifest =
-          File('${tmp.path}${Platform.pathSeparator}k-on.m3u8');
+      final File manifest = File(
+        '${tmp.path}${Platform.pathSeparator}k-on.m3u8',
+      );
       manifest.writeAsStringSync('#EXTM3U\n#EXTINF:-1,ep1\nep1.mkv\n');
 
       final String? cover = await extractVideoCover(
@@ -111,9 +107,16 @@ void main() {
         isFalse,
       );
       expect(
-        isHollowMediaHeaderBytes(
-          const <int>[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70],
-        ),
+        isHollowMediaHeaderBytes(const <int>[
+          0x00,
+          0x00,
+          0x00,
+          0x18,
+          0x66,
+          0x74,
+          0x79,
+          0x70,
+        ]),
         isFalse,
       );
       expect(
@@ -161,8 +164,10 @@ void main() {
     });
 
     test('内容只在探测窗之后才出现 -> 仍判 true（ffmpeg 此刻同样打不开）', () {
-      final List<int> bytes =
-          List<int>.filled(kHollowMediaHeaderProbeBytes * 3, 0);
+      final List<int> bytes = List<int>.filled(
+        kHollowMediaHeaderProbeBytes * 3,
+        0,
+      );
       bytes[kHollowMediaHeaderProbeBytes + 4] = 0x47;
       final File partial = write('midfile.m2ts', bytes);
       expect(hasHollowMediaHeader(partial.path), isTrue);
@@ -207,8 +212,10 @@ void main() {
       // 根本不是普通文件（目录）：openSync 抛，同样按「读不出来」处理。
       expect(hasHollowMediaHeader(tmp.path), isFalse);
 
-      final List<ErrorLogEntry> added =
-          ErrorLogService.instance.diagnosticEntries.sublist(diagBefore);
+      final List<ErrorLogEntry> added = ErrorLogService
+          .instance
+          .diagnosticEntries
+          .sublist(diagBefore);
       expect(added.length, 2, reason: '每次读失败都要留痕，不能静默吞掉');
       expect(
         added.every((ErrorLogEntry e) => e.source == 'hasHollowMediaHeader'),
@@ -246,8 +253,9 @@ void main() {
     test('头部全零的本地文件直接返回 null，不烧 ffmpeg 子进程', () async {
       // 与上面的清单拒收同一手法：早退发生在 AppPaths / ffmpeg 之前。若有人删掉抽取器
       // 层的空洞拒收，这里会因 path_provider 的 MissingPluginException 立即红。
-      final File hollow =
-          File('${tmp.path}${Platform.pathSeparator}00014.m2ts');
+      final File hollow = File(
+        '${tmp.path}${Platform.pathSeparator}00014.m2ts',
+      );
       hollow.writeAsBytesSync(
         List<int>.filled(kHollowMediaHeaderProbeBytes * 2, 0),
       );
@@ -281,40 +289,46 @@ void main() {
   group('封面抽取器接线守卫（源码扫描 · BUG-1867）', () {
     late String source;
     setUpAll(() {
-      source = File('../packages/fushi_engine/lib/media/video/video_cover_extractor.dart')
-          .readAsStringSync();
+      source = File(
+        '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart',
+      ).readAsStringSync();
     });
 
     test('空洞拒收是唯一一道门，且在 AppPaths / ffmpeg 之前', () {
-      final int gate = source
-          .indexOf('if (!isRemoteInput && hasHollowMediaHeader(videoPath))');
+      final int gate = source.indexOf(
+        'if (!isRemoteInput && hasHollowMediaHeader(videoPath))',
+      );
       // 抽取器搬进引擎后不认识 app 的 AppPaths，建目录改经 enginePaths 装配点。
       // 仍钉同一条不变式：空洞拒收要排在建目录之前（否则为一个必然失败的输入
       // 先建目录）；只是标记要跟着换，不然 indexOf 得 -1、断言变成恒假。
-      final int appPaths =
-          source.indexOf('enginePaths.videoCoversDirectory()');
-      final int embedded =
-          source.indexOf('await extractEmbeddedVideoCoverViaFfmpeg(');
+      final int appPaths = source.indexOf('enginePaths.videoCoversDirectory()');
+      final int embedded = source.indexOf(
+        'await extractEmbeddedVideoCoverViaFfmpeg(',
+      );
       expect(gate, greaterThanOrEqualTo(0), reason: '抽取器层必须有空洞拒收');
-      expect(appPaths, greaterThan(gate),
-          reason: '判据排在建目录之后 = 为一个必然失败的输入先建目录');
+      expect(appPaths, greaterThan(gate), reason: '判据排在建目录之后 = 为一个必然失败的输入先建目录');
       expect(embedded, greaterThan(gate));
     });
 
     test('回填降级必须覆盖两段 ffmpeg，不能只降抽帧那一段', () {
       // 只给抽帧传 diagnosticOnly 的话，ffmpeg 缺失时内嵌封面那一段仍按错误级上报，
       // 34 条候选照样刷满用户可见错误日志——BUG-1867 只修了一半。
-      final int embedded =
-          source.indexOf('await extractEmbeddedVideoCoverViaFfmpeg(');
+      final int embedded = source.indexOf(
+        'await extractEmbeddedVideoCoverViaFfmpeg(',
+      );
       // BUG-3044：抽帧改经 grabFirstNonBlackCoverFrame 按候选时刻跳黑帧，开关在
       // 这一层透传（首个候选沿用调用方的开关，补救候选恒为诊断级）。
       final int frame = source.indexOf('return grabFirstNonBlackCoverFrame(');
       expect(embedded, greaterThanOrEqualTo(0));
       expect(frame, greaterThan(embedded));
-      final int embeddedFlag =
-          source.indexOf('diagnosticOnly: diagnosticOnly,', embedded);
-      final int frameFlag =
-          source.indexOf('diagnosticOnly: diagnosticOnly,', frame);
+      final int embeddedFlag = source.indexOf(
+        'diagnosticOnly: diagnosticOnly,',
+        embedded,
+      );
+      final int frameFlag = source.indexOf(
+        'diagnosticOnly: diagnosticOnly,',
+        frame,
+      );
       expect(embeddedFlag, greaterThan(embedded));
       expect(embeddedFlag, lessThan(frame), reason: '内嵌封面那一段没吃到开关');
       expect(frameFlag, greaterThan(frame), reason: '抽帧那一段没吃到开关');
@@ -322,12 +336,17 @@ void main() {
 
     test('hasHollowMediaHeader 读失败：记诊断 + 返回 false（不得当成空壳）', () {
       final int fn = source.indexOf('bool hasHollowMediaHeader(String path)');
-      expect(fn, greaterThanOrEqualTo(0),
-          reason: '签名变了（例如又长出 probeBytes 这种没有调用方的参数）');
+      expect(
+        fn,
+        greaterThanOrEqualTo(0),
+        reason: '签名变了（例如又长出 probeBytes 这种没有调用方的参数）',
+      );
       final int catchAt = source.indexOf('} catch (e) {', fn);
       final int finallyAt = source.indexOf('} finally {', fn);
-      final int diag =
-          source.indexOf("logDiagnostic('hasHollowMediaHeader'", catchAt);
+      final int diag = source.indexOf(
+        "logDiagnostic('hasHollowMediaHeader'",
+        catchAt,
+      );
       final int ret = source.indexOf('return false;', catchAt);
       expect(catchAt, greaterThan(fn));
       expect(diag, greaterThan(catchAt));
@@ -340,8 +359,9 @@ void main() {
   group('视频页回填接线守卫（源码扫描）', () {
     late String source;
     setUpAll(() {
-      source = File('lib/src/pages/implementations/home_video_page.dart')
-          .readAsStringSync();
+      source = File(
+        'lib/src/pages/implementations/home_video_page.dart',
+      ).readAsStringSync();
     });
 
     /// 截取 [source] 中方法 [name] 的正文（从声明行到下一个顶格方法/类结束前的
@@ -368,10 +388,18 @@ void main() {
       // 刮削或手选刚提交的封面仍会被后台帧覆盖。
       final int gate = body.indexOf('VideoCoverMutationGate.runExclusive');
       final int freshBook = body.indexOf('widget.repo.getByBookUid(', gate);
-      final int currentCover = body.indexOf('File(currentCover).existsSync()');
+      final int currentCover = body.indexOf(
+        'await File(currentCover).exists()',
+      );
       expect(gate, greaterThanOrEqualTo(0));
       expect(freshBook, greaterThan(gate));
       expect(currentCover, greaterThan(freshBook));
+      // ④ BUG-3704：回填环跑在 UI isolate，视频 / 封面常在网络盘上，环内不许有
+      // 同步文件调用（一次冷 stat 就能冻结界面与同 isolate 的互联 host 数秒）。
+      expect(
+        body,
+        isNot(matches(RegExp(r'(existsSync|statSync|lengthSync)\('))),
+      );
     });
 
     test('视频页不再自己预判空洞：判据唯一真相源在抽取器层（BUG-1867）', () {
@@ -390,8 +418,11 @@ void main() {
       final int call = body.indexOf('extractVideoCover(');
       expect(call, greaterThanOrEqualTo(0));
       final int flag = body.indexOf('diagnosticOnly: true', call);
-      expect(flag, greaterThan(call),
-          reason: 'best-effort 回填的「给不出帧」不是 app 错误，不该刷用户可见错误日志页');
+      expect(
+        flag,
+        greaterThan(call),
+        reason: 'best-effort 回填的「给不出帧」不是 app 错误，不该刷用户可见错误日志页',
+      );
     });
 
     test('_pullToRefresh：显式刷新是唯一清账入口', () {
@@ -399,9 +430,9 @@ void main() {
       expect(body, contains('CoverBackfillLedger.instance.clearAll()'));
       // 清账只许接在显式刷新：全文件仅此一处 clearAll。
       expect(
-        RegExp(r'CoverBackfillLedger\.instance\.clearAll\(\)')
-            .allMatches(source)
-            .length,
+        RegExp(
+          r'CoverBackfillLedger\.instance\.clearAll\(\)',
+        ).allMatches(source).length,
         1,
       );
     });

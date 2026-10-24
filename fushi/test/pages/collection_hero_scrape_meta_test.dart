@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
@@ -26,7 +28,28 @@ import 'package:fushi_core/fushi_core.dart';
 ///     重模糊垫底；2:3 封面恒在独立封面卡里清晰显示（[PortraitCoverImage] 按朝向
 ///     分流），不再把海报硬塞进宽幅槽（BUG-1298）。
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  final TestWidgetsFlutterBinding binding =
+      TestWidgetsFlutterBinding.ensureInitialized();
+
+  // BUG-3704：封面存在性改为 async 探测后，测试要用 runAsync 让真实 IO 回话；同一
+  // 窗口里远程封面（CachedNetworkImage）的磁盘缓存管理器也会真的起来，要
+  // path_provider 应答。
+  late Directory pathProviderDir;
+  setUpAll(() {
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'collection_hero_pp_',
+    );
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      (MethodCall call) async => pathProviderDir.path,
+    );
+  });
+  tearDownAll(() {
+    binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/path_provider'),
+      null,
+    );
+  });
 
   late FushiDatabase db;
   late int collectionId;
@@ -139,6 +162,20 @@ void main() {
     ),
   );
 
+  /// BUG-3704：hero 封面链的存在性改为 async 探测（build 里不再同步 stat），真实
+  /// IO 在 fakeAsync 下不会完成。链上每级一次探测 + 一次重建，按链深各给一轮。
+  Future<void> settleCoverProbes(WidgetTester tester, {int rounds = 4}) async {
+    // 封面链每级一次探测 + 一次重建；之后封面图源的真实文件读取（打开 → 读 → 关）
+    // 每一步的续体都排在 fakeAsync 里，要 runAsync 让 IO 回话、再 pump 跑续体，多给
+    // 几轮让句柄关掉，否则 tearDown 删临时目录会撞「文件被占用」（Windows）。
+    for (int i = 0; i < rounds + 6; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 40)),
+      );
+      await tester.pump();
+    }
+  }
+
   /// 宽屏（≥ 1080）走两栏：hero 在左栏（独立滚动 = sticky），右栏选集。
   Future<void> pumpWide(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
@@ -147,6 +184,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
+    await settleCoverProbes(tester);
   }
 
   /// 单列（< 1080）但 hero 够宽（≥ 640）：封面卡在左、信息在右，hero 自己画大背景。
@@ -157,6 +195,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
+    await settleCoverProbes(tester);
   }
 
   testWidgets('宽屏两栏：hero 在左栏，大背景由布局画在整页后面', (WidgetTester tester) async {
@@ -353,6 +392,9 @@ void main() {
       'https://image.example/poster.jpg',
       reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
+    // settleCoverProbes 给真实 IO 的 runAsync 窗口里远程封面的磁盘缓存也真的起来了，
+    // 它排了一个 10 秒的清理定时器；走完它，免得测试结束时还有定时器挂着。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   // BUG：剧集目录从 `D:\smb\<剧名>` 挪进 `D:\smb\动漫\<剧名>` 后，合集
@@ -430,4 +472,88 @@ void main() {
       reason: '不再把 2:3 海报铺进宽幅槽（BUG-1298）',
     );
   });
+
+  testWidgets('BUG-3704：合集海报在网络盘上 → hero build 零同步文件调用', (
+    WidgetTester tester,
+  ) async {
+    // 合集海报 / 刮削本地图落在「网络盘」（rclone / SMB 挂载）上：旧实现 hero getter
+    // 逐级 existsSync，冷目录一次 stat 数秒，整页与同 isolate 的互联 host 一起冻结。
+    // 网络盘上的同步文件 API 一律记账；两张图都已不在，探测落定后落到远程封面。
+    final String netPoster = '${coverDir.path}/__fushi_net_mount__/poster.jpg';
+    final String netCache = '${coverDir.path}/__fushi_net_mount__/cache.jpg';
+    await db.updateMediaCollectionCoverPath(collectionId, netPoster);
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        collectionId: Value<int?>(collectionId),
+        mediaType: 'tv',
+        title: 'Net series',
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataImages(
+      workId: workId,
+      images: <VideoMetadataImagesCompanion>[
+        VideoMetadataImagesCompanion.insert(
+          provider: 'tmdb',
+          kind: 'cover',
+          remoteUrl: 'https://image.example/net-poster.jpg',
+          localPath: Value<String?>(netCache),
+          updatedAt: 1,
+        ),
+      ],
+    );
+
+    final List<String> syncCalls = <String>[];
+    final List<String> asyncProbes = <String>[];
+    final Zone outer = Zone.current;
+    await IOOverrides.runZoned<Future<void>>(
+      () async {
+        await pumpSingleColumn(tester);
+        await tester.pump(const Duration(milliseconds: 300));
+      },
+      createFile: (String path) => path.contains('__fushi_net_mount__')
+          ? _NetMountFile(path, syncCalls, asyncProbes)
+          : outer.run(() => File(path)),
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(syncCalls, isEmpty, reason: 'hero build 不得对网络盘封面做同步文件调用');
+    expect(asyncProbes.toSet(), <String>{netPoster, netCache});
+    expect(asyncProbes, hasLength(2), reason: '每张候选只 async 探一次，结果进缓存');
+    final PortraitCoverImage poster = tester.widget<PortraitCoverImage>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('collection-hero-poster')),
+        matching: find.byType(PortraitCoverImage),
+      ),
+    );
+    final ImageProvider<Object> remote =
+        (poster.image as ResizeImage).imageProvider;
+    expect(remote, isA<CachedNetworkImageProvider>());
+    expect(
+      (remote as CachedNetworkImageProvider).url,
+      'https://image.example/net-poster.jpg',
+    );
+  });
+}
+
+/// BUG-3704 用的「网络盘」假文件：同步 API 记账并抛错，`exists()` 记账后回 false。
+class _NetMountFile implements File {
+  _NetMountFile(this.path, this.syncCalls, this.asyncProbes);
+
+  @override
+  final String path;
+  final List<String> syncCalls;
+  final List<String> asyncProbes;
+
+  @override
+  Future<bool> exists() async {
+    asyncProbes.add(path);
+    return false;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    syncCalls.add('${invocation.memberName} $path');
+    throw StateError('unexpected File.${invocation.memberName} on $path');
+  }
 }

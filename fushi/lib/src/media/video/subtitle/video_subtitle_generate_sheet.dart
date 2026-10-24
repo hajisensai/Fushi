@@ -225,22 +225,31 @@ class _VideoSubtitleGenerateSheetState
   AppVideoSubtitleJob? _job;
   String? _startError;
 
-  /// 整季：已有 `<视频名>.ja.srt`、管线会跳过的集。
-  late final Set<String> _existing = <String>{
-    if (_target.wholeSeason)
+  /// 整季：已有 `<视频名>.ja.srt`、管线会跳过的集。initState 里 async 探好后
+  /// setState（[_loadExisting]）：这些字幕在视频旁边，常在网络盘上，旧实现作为
+  /// late 字段在 build 里逐集同步 stat，冷目录一次数秒、冻结 UI isolate（BUG-3704）。
+  Set<String> _existing = const <String>{};
+
+  Future<void> _loadExisting() async {
+    if (!_target.wholeSeason) return;
+    final Set<String> existing = <String>{
       for (final AppVideoSubtitleEpisode e in _target.episodes)
-        if (File(
+        if (await File(
           p.join(
             p.dirname(e.videoPath),
             '${p.basenameWithoutExtension(e.videoPath)}.ja.srt',
           ),
-        ).existsSync())
+        ).exists())
           e.videoPath,
-  };
+    };
+    if (!mounted) return;
+    setState(() => _existing = existing);
+  }
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadExisting());
     final AppVideoSubtitleJob? latest = _service.latestJobFor(_target);
     if (latest != null) _attach(latest);
     unawaited(_refreshPlan());

@@ -17283,6 +17283,17 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _publishedAtMeta = const VerificationMeta(
+    'publishedAt',
+  );
+  @override
+  late final GeneratedColumn<int> publishedAt = GeneratedColumn<int>(
+    'published_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     collectionName,
@@ -17292,6 +17303,7 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
     deletedAt,
     organizeKey,
     organizeMerged,
+    publishedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -17369,6 +17381,15 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
         ),
       );
     }
+    if (data.containsKey('published_at')) {
+      context.handle(
+        _publishedAtMeta,
+        publishedAt.isAcceptableOrUnknown(
+          data['published_at']!,
+          _publishedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -17414,6 +17435,10 @@ class $CollectionMemberTombstonesTable extends CollectionMemberTombstones
         DriftSqlType.bool,
         data['${effectivePrefix}organize_merged'],
       )!,
+      publishedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}published_at'],
+      ),
     );
   }
 
@@ -17440,17 +17465,25 @@ class CollectionMemberTombstoneRow extends DataClass
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
   final int deletedAt;
 
-  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键（schema
-  /// v124，spec §5.2）。键不在任何活合集的 [MediaCollections.organizeKey] /
-  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个 AI 分组（删了或撤销
-  /// 了），任何设备上的 AI 都不再建它；键在某个活合集的别名里 = 只是被合并掉了。
-  /// 成员墓碑行恒 NULL。
+  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键**集合**（schema
+  /// v124，spec §5.2）：主键 + 吸收过的别名，换行分隔（`encodeOrganizeAliases`）。用户删的
+  /// （[organizeMerged] = false）且键不在任何活合集的 [MediaCollections.organizeKey] /
+  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个分组，任何设备上的 AI 都
+  /// 不再建它。自动路径删的合集不记键。成员墓碑行恒 NULL。
   final String? organizeKey;
 
   /// 合集级删除哨兵行：这次删除是整理器把它**并进了别的合集**（true），还是用户删的
   /// （false，默认）。只看键找不找得到吸收者分不清这两者——吸收者可能还没同步过来；
   /// 分不清就会把并掉的当成用户拒绝、把成员丢回散条目（schema v124，spec §8.5）。
   final bool organizeMerged;
+
+  /// 这条墓碑知识**进入本库**的毫秒戳（schema v125，BUG-3703 后续）：本机作互联 host 时
+  /// 清单里的 `publishedAt`（成员墓碑）/ `deletedPublishedAt`（合集级哨兵行），对端用
+  /// 「自己的基线 vs 它」判墓碑是不是新闻。只由同步应用端
+  /// （`applyCollectionLocalChanges`）给**新知识**盖戳，已有同键同 [deletedAt] 的行原值
+  /// 保留、一经确定不刷新。NULL = 本机用户亲手移出 / 删除（进库时刻就是 [deletedAt]，
+  /// 对端回退它判）或升级前的存量行。本机自己同步时不读它（本端侧按 [deletedAt] 裁决）。
+  final int? publishedAt;
   const CollectionMemberTombstoneRow({
     required this.collectionName,
     required this.collectionType,
@@ -17459,6 +17492,7 @@ class CollectionMemberTombstoneRow extends DataClass
     required this.deletedAt,
     this.organizeKey,
     required this.organizeMerged,
+    this.publishedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -17472,6 +17506,9 @@ class CollectionMemberTombstoneRow extends DataClass
       map['organize_key'] = Variable<String>(organizeKey);
     }
     map['organize_merged'] = Variable<bool>(organizeMerged);
+    if (!nullToAbsent || publishedAt != null) {
+      map['published_at'] = Variable<int>(publishedAt);
+    }
     return map;
   }
 
@@ -17486,6 +17523,9 @@ class CollectionMemberTombstoneRow extends DataClass
           ? const Value.absent()
           : Value(organizeKey),
       organizeMerged: Value(organizeMerged),
+      publishedAt: publishedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(publishedAt),
     );
   }
 
@@ -17502,6 +17542,7 @@ class CollectionMemberTombstoneRow extends DataClass
       deletedAt: serializer.fromJson<int>(json['deletedAt']),
       organizeKey: serializer.fromJson<String?>(json['organizeKey']),
       organizeMerged: serializer.fromJson<bool>(json['organizeMerged']),
+      publishedAt: serializer.fromJson<int?>(json['publishedAt']),
     );
   }
   @override
@@ -17515,6 +17556,7 @@ class CollectionMemberTombstoneRow extends DataClass
       'deletedAt': serializer.toJson<int>(deletedAt),
       'organizeKey': serializer.toJson<String?>(organizeKey),
       'organizeMerged': serializer.toJson<bool>(organizeMerged),
+      'publishedAt': serializer.toJson<int?>(publishedAt),
     };
   }
 
@@ -17526,6 +17568,7 @@ class CollectionMemberTombstoneRow extends DataClass
     int? deletedAt,
     Value<String?> organizeKey = const Value.absent(),
     bool? organizeMerged,
+    Value<int?> publishedAt = const Value.absent(),
   }) => CollectionMemberTombstoneRow(
     collectionName: collectionName ?? this.collectionName,
     collectionType: collectionType ?? this.collectionType,
@@ -17534,6 +17577,7 @@ class CollectionMemberTombstoneRow extends DataClass
     deletedAt: deletedAt ?? this.deletedAt,
     organizeKey: organizeKey.present ? organizeKey.value : this.organizeKey,
     organizeMerged: organizeMerged ?? this.organizeMerged,
+    publishedAt: publishedAt.present ? publishedAt.value : this.publishedAt,
   );
   CollectionMemberTombstoneRow copyWithCompanion(
     CollectionMemberTombstonesCompanion data,
@@ -17554,6 +17598,9 @@ class CollectionMemberTombstoneRow extends DataClass
       organizeMerged: data.organizeMerged.present
           ? data.organizeMerged.value
           : this.organizeMerged,
+      publishedAt: data.publishedAt.present
+          ? data.publishedAt.value
+          : this.publishedAt,
     );
   }
 
@@ -17566,7 +17613,8 @@ class CollectionMemberTombstoneRow extends DataClass
           ..write('entryKey: $entryKey, ')
           ..write('deletedAt: $deletedAt, ')
           ..write('organizeKey: $organizeKey, ')
-          ..write('organizeMerged: $organizeMerged')
+          ..write('organizeMerged: $organizeMerged, ')
+          ..write('publishedAt: $publishedAt')
           ..write(')'))
         .toString();
   }
@@ -17580,6 +17628,7 @@ class CollectionMemberTombstoneRow extends DataClass
     deletedAt,
     organizeKey,
     organizeMerged,
+    publishedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -17591,7 +17640,8 @@ class CollectionMemberTombstoneRow extends DataClass
           other.entryKey == this.entryKey &&
           other.deletedAt == this.deletedAt &&
           other.organizeKey == this.organizeKey &&
-          other.organizeMerged == this.organizeMerged);
+          other.organizeMerged == this.organizeMerged &&
+          other.publishedAt == this.publishedAt);
 }
 
 class CollectionMemberTombstonesCompanion
@@ -17603,6 +17653,7 @@ class CollectionMemberTombstonesCompanion
   final Value<int> deletedAt;
   final Value<String?> organizeKey;
   final Value<bool> organizeMerged;
+  final Value<int?> publishedAt;
   final Value<int> rowid;
   const CollectionMemberTombstonesCompanion({
     this.collectionName = const Value.absent(),
@@ -17612,6 +17663,7 @@ class CollectionMemberTombstonesCompanion
     this.deletedAt = const Value.absent(),
     this.organizeKey = const Value.absent(),
     this.organizeMerged = const Value.absent(),
+    this.publishedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CollectionMemberTombstonesCompanion.insert({
@@ -17622,6 +17674,7 @@ class CollectionMemberTombstonesCompanion
     required int deletedAt,
     this.organizeKey = const Value.absent(),
     this.organizeMerged = const Value.absent(),
+    this.publishedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : collectionName = Value(collectionName),
        collectionType = Value(collectionType),
@@ -17636,6 +17689,7 @@ class CollectionMemberTombstonesCompanion
     Expression<int>? deletedAt,
     Expression<String>? organizeKey,
     Expression<bool>? organizeMerged,
+    Expression<int>? publishedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -17646,6 +17700,7 @@ class CollectionMemberTombstonesCompanion
       if (deletedAt != null) 'deleted_at': deletedAt,
       if (organizeKey != null) 'organize_key': organizeKey,
       if (organizeMerged != null) 'organize_merged': organizeMerged,
+      if (publishedAt != null) 'published_at': publishedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -17658,6 +17713,7 @@ class CollectionMemberTombstonesCompanion
     Value<int>? deletedAt,
     Value<String?>? organizeKey,
     Value<bool>? organizeMerged,
+    Value<int?>? publishedAt,
     Value<int>? rowid,
   }) {
     return CollectionMemberTombstonesCompanion(
@@ -17668,6 +17724,7 @@ class CollectionMemberTombstonesCompanion
       deletedAt: deletedAt ?? this.deletedAt,
       organizeKey: organizeKey ?? this.organizeKey,
       organizeMerged: organizeMerged ?? this.organizeMerged,
+      publishedAt: publishedAt ?? this.publishedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -17696,6 +17753,9 @@ class CollectionMemberTombstonesCompanion
     if (organizeMerged.present) {
       map['organize_merged'] = Variable<bool>(organizeMerged.value);
     }
+    if (publishedAt.present) {
+      map['published_at'] = Variable<int>(publishedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -17712,6 +17772,7 @@ class CollectionMemberTombstonesCompanion
           ..write('deletedAt: $deletedAt, ')
           ..write('organizeKey: $organizeKey, ')
           ..write('organizeMerged: $organizeMerged, ')
+          ..write('publishedAt: $publishedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -76268,6 +76329,7 @@ typedef $$CollectionMemberTombstonesTableCreateCompanionBuilder =
       required int deletedAt,
       Value<String?> organizeKey,
       Value<bool> organizeMerged,
+      Value<int?> publishedAt,
       Value<int> rowid,
     });
 typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder =
@@ -76279,6 +76341,7 @@ typedef $$CollectionMemberTombstonesTableUpdateCompanionBuilder =
       Value<int> deletedAt,
       Value<String?> organizeKey,
       Value<bool> organizeMerged,
+      Value<int?> publishedAt,
       Value<int> rowid,
     });
 
@@ -76323,6 +76386,11 @@ class $$CollectionMemberTombstonesTableFilterComposer
 
   ColumnFilters<bool> get organizeMerged => $composableBuilder(
     column: $table.organizeMerged,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get publishedAt => $composableBuilder(
+    column: $table.publishedAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -76370,6 +76438,11 @@ class $$CollectionMemberTombstonesTableOrderingComposer
     column: $table.organizeMerged,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get publishedAt => $composableBuilder(
+    column: $table.publishedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$CollectionMemberTombstonesTableAnnotationComposer
@@ -76407,6 +76480,11 @@ class $$CollectionMemberTombstonesTableAnnotationComposer
 
   GeneratedColumn<bool> get organizeMerged => $composableBuilder(
     column: $table.organizeMerged,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get publishedAt => $composableBuilder(
+    column: $table.publishedAt,
     builder: (column) => column,
   );
 }
@@ -76464,6 +76542,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 Value<int> deletedAt = const Value.absent(),
                 Value<String?> organizeKey = const Value.absent(),
                 Value<bool> organizeMerged = const Value.absent(),
+                Value<int?> publishedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CollectionMemberTombstonesCompanion(
                 collectionName: collectionName,
@@ -76473,6 +76552,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 deletedAt: deletedAt,
                 organizeKey: organizeKey,
                 organizeMerged: organizeMerged,
+                publishedAt: publishedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -76484,6 +76564,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 required int deletedAt,
                 Value<String?> organizeKey = const Value.absent(),
                 Value<bool> organizeMerged = const Value.absent(),
+                Value<int?> publishedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CollectionMemberTombstonesCompanion.insert(
                 collectionName: collectionName,
@@ -76493,6 +76574,7 @@ class $$CollectionMemberTombstonesTableTableManager
                 deletedAt: deletedAt,
                 organizeKey: organizeKey,
                 organizeMerged: organizeMerged,
+                publishedAt: publishedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

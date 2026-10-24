@@ -238,7 +238,7 @@ class LibraryScanner {
             uniqueVideoBookUid(singleVideoBookUid(file.path), existingKeys);
         existingKeys.add(bookUid);
         final String? sidecar =
-            findSidecarSubtitle(file.path, langCode: subtitleLanguage);
+            await findSidecarSubtitle(file.path, langCode: subtitleLanguage);
         final String? subtitleFormat = sidecar == null
             ? null
             : p.extension(sidecar).replaceFirst('.', '').toLowerCase();

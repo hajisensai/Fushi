@@ -4312,7 +4312,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _currentSubtitleSource = null;
           subtitleResolved = true;
         } else if (subtitleFormatForPath(persistedSub) != null &&
-            File(persistedSub).existsSync()) {
+            await File(persistedSub).exists()) {
           // 本地已下载/导入的字幕文件仍在磁盘（Jimaku / 手动导入落 video_subtitles/）→ 重放。
           _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
           cues = await _loadExternalSubtitleCues(persistedSub, info.id);
@@ -5040,7 +5040,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 故只需修单视频路径。
     final String? rehydratePath = subtitleExplicitlyOff
         ? null
-        : _rehydratableExternalSubtitlePath(externalSub);
+        : await _rehydratableExternalSubtitlePath(externalSub);
 
     // TODO-1246 补全：**内嵌** ASS/SSA 轨（anime MKV 最常见）的样式真相源是视频容器，
     // 但抽取后的缓存档案（`sub_<n>.ass`，含 [V4+ Styles]）已是磁盘上物化的 .ass。外挂
@@ -5215,7 +5215,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final bool takeImportedShortcut = crossEpisode
         ? shouldReusePersistedSubtitleAcrossEpisode(persisted, videoPath)
         : isImportedExternalSubtitlePath(persisted);
-    if (takeImportedShortcut && File(persisted).existsSync()) {
+    if (takeImportedShortcut && await File(persisted).exists()) {
       final SubtitleSource external = SubtitleSource.external(
         externalPath: persisted,
         label: p.basename(persisted),
@@ -5330,11 +5330,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 重解析拿回样式 markup（TODO-1246）；否则返回 null：内嵌轨（`embedded:<n>` 无扩展名，
   /// [subtitleFormatForPath] 判 null）、关闭哨兵、`null`/空、或档案已不在磁盘上（重解析无源）。
   /// 内嵌轨不在此重解析（避免 BUG-081 关注的 ffmpeg 重抽取），保留 DB 缓存 cue。
-  String? _rehydratableExternalSubtitlePath(String? source) {
+  ///
+  /// async：档案常是视频同目录 sidecar，视频在网络盘上时同步 stat 会冻结 UI isolate
+  /// （BUG-3704）。
+  Future<String?> _rehydratableExternalSubtitlePath(String? source) async {
     if (source == null || source.isEmpty) return null;
     if (SubtitleSource.isOff(source)) return null;
     if (subtitleFormatForPath(source) == null) return null;
-    if (!File(source).existsSync()) return null;
+    if (!await File(source).exists()) return null;
     return source;
   }
 
@@ -5346,7 +5349,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     String videoPath,
     String bookUid,
   ) async {
-    final String? sidecarPath = findSidecarSubtitle(
+    final String? sidecarPath = await findSidecarSubtitle(
       videoPath,
       langCode: _targetLangCode,
     );

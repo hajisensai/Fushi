@@ -16,6 +16,7 @@ import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart'
     show CollectionAddOutcome, addMediaRefToCollection;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -202,6 +203,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         TickerProviderStateMixin {
   late String _name;
 
+  /// 封面 / 海报 / 附加图缩略图的「文件在不在」异步记忆表（BUG-3704）：合集海报常落在
+  /// 网络盘（rclone / SMB 挂载）上，build 里同步 stat 一次就能冻结 UI 与同 isolate 的
+  /// 互联 host 数秒。build 只读这张表，没见过的路径后台 async 探测、落定后重建。
+  late final AsyncFileExistenceCache _coverExists = AsyncFileExistenceCache(
+    onChanged: () {
+      if (mounted) setState(() {});
+    },
+  );
+
   /// 本合集**有序**成员槽（本地行 + 只在对端的远端占位）——本页唯一的成员真相源。
   List<CollectionEpisodeSlot> _slots = const <CollectionEpisodeSlot>[];
   bool _loading = true;
@@ -363,6 +373,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   @override
   void dispose() {
+    _coverExists.dispose();
     _backdropRotationTimer?.cancel();
     _seasonTabs?.dispose();
     super.dispose();
@@ -873,52 +884,58 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // （`home_video_page.dart` 的 `_buildCollectionCover`）同一条判据：剧集目录
     // 搬家、备份恢复带来的悬空路径必须表现得像「没设过封面」，落到刮削封面 /
     // 成员封面，而不是返回一张必坏的 FileImage 把后面的回退全挡掉。
-    final String? collectionCover = _existingLocalCover(
-      (_collectionRow ?? widget.collection).coverPath,
-    );
-    if (collectionCover != null) {
-      return resolveMediaCoverImage(
-        kind: MediaKind.video,
-        localPath: collectionCover,
-        decodeWidth: 1600,
-      );
+    //
+    // 存在性读 [_coverExists]（零同步 IO，BUG-3704）；某一级还在探测时整条链停在
+    // [kPendingCoverImage]，不先闪成后面的回退封面。
+    final String? collectionCoverPath =
+        (_collectionRow ?? widget.collection).coverPath;
+    switch (_coverExists.lookupOptional(collectionCoverPath)) {
+      case null:
+        return kPendingCoverImage;
+      case true:
+        return resolveMediaCoverImage(
+          kind: MediaKind.video,
+          localPath: collectionCoverPath,
+          decodeWidth: 1600,
+        );
+      case false:
+        break;
     }
-    if (_existingLocalCover(_canonicalCoverPath)
-        case final String canonicalCover) {
-      return resolveMediaCoverImage(
-        kind: MediaKind.video,
-        localPath: canonicalCover,
-        decodeWidth: 1600,
-      );
+    switch (_coverExists.lookupOptional(_canonicalCoverPath)) {
+      case null:
+        return kPendingCoverImage;
+      case true:
+        return resolveMediaCoverImage(
+          kind: MediaKind.video,
+          localPath: _canonicalCoverPath,
+          decodeWidth: 1600,
+        );
+      case false:
+        break;
     }
     if (_canonicalCoverRemoteUrl case final String remoteCover
         when remoteCover.isNotEmpty) {
       return _resolveCanonicalImage(remoteCover, decodeWidth: 1600);
     }
     if (_members.isEmpty) return null;
-    String? fallbackCover = _existingLocalCover(
+    for (final String? candidate in <String?>[
       _members[_continueIndex].coverPath,
-    );
-    if (fallbackCover == null) {
-      for (final VideoBookRow row in _members) {
-        final String? candidate = _existingLocalCover(row.coverPath);
-        if (candidate != null) {
-          fallbackCover = candidate;
-          break;
-        }
+      for (final VideoBookRow row in _members) row.coverPath,
+    ]) {
+      switch (_coverExists.lookupOptional(candidate)) {
+        case null:
+          return kPendingCoverImage;
+        case true:
+          return resolveMediaCoverImage(
+            kind: MediaKind.video,
+            localPath: candidate,
+            decodeWidth: 1600,
+          );
+        case false:
+          continue;
       }
     }
-    return resolveMediaCoverImage(
-      kind: MediaKind.video,
-      localPath: fallbackCover,
-      decodeWidth: 1600,
-    );
-  }
-
-  /// 本地封面路径非空且文件存在时原样返回，否则 null（[_heroCover] 的逐级判据）。
-  static String? _existingLocalCover(String? path) {
-    if (path == null || path.isEmpty) return null;
-    return File(path).existsSync() ? path : null;
+    return null;
   }
 
   /// 把当前 [_slots] 顺序一次落盘（sortIndex 全表回写）。库页合集行与播放器
@@ -1317,9 +1334,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     List<String> paths,
     Offset globalPosition,
   ) async {
+    // 目录判定先 async 做完再交给同步的分类器（BUG-3704：拖进来的常是网络盘上的
+    // 文件，同步 stat 冷目录要数秒、冻结 UI isolate）。
+    // 各路径并发判（一次往返，不逐个串行等网络盘）。
+    final List<bool> isDirectory = await Future.wait(<Future<bool>>[
+      for (final String path in paths) FileSystemEntity.isDirectory(path),
+    ]);
+    final Set<String> directories = <String>{
+      for (int i = 0; i < paths.length; i++)
+        if (isDirectory[i]) paths[i],
+    };
+    if (!mounted) return;
     final DroppedFiles files = classifyDroppedFiles(
       paths,
-      isDirectory: (String path) => Directory(path).existsSync(),
+      isDirectory: directories.contains,
     );
     debugPrint(
       '[fushi-drop] [collection-detail] videos=${files.videos.length} '
@@ -1698,8 +1726,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final RemoteVideoInfo? remote = slot.remote;
     if (remote == null) return null;
     final String? cachedPath = remote.coverPath;
-    if (cachedPath != null && File(cachedPath).existsSync()) {
-      return FileImage(File(cachedPath));
+    switch (_coverExists.lookupOptional(cachedPath)) {
+      case null:
+        return kPendingCoverImage;
+      case true:
+        return FileImage(File(cachedPath!));
+      case false:
+        break;
     }
     final String? url = remote.coverUrl;
     final RemoteCoverFetcher? fetcher = widget.remote?.coverFetcher;
@@ -2065,7 +2098,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                           child: Stack(
                             fit: StackFit.expand,
                             children: <Widget>[
-                              if (thumb != null && File(thumb).existsSync())
+                              // 存在性读异步记忆表（BUG-3704）；还在探测时先画底色块。
+                              if (thumb != null &&
+                                  _coverExists.lookup(thumb) == null)
+                                const ColoredBox(color: Color(0x1FFFFFFF))
+                              else if (thumb != null &&
+                                  _coverExists.lookup(thumb)!)
                                 Image.file(
                                   File(thumb),
                                   fit: BoxFit.cover,

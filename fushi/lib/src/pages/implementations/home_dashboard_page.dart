@@ -170,19 +170,25 @@ double dashboardRowCoverHeight(double mainColumnWidth) =>
 /// 文件不在（换盘 / 清缓存 / 刮削改过路径）或这一集还没抽帧时，主角卡与横滑卡
 /// 直接掉成「图标 + 名字」占位，而视频页同一部作品照样有封面。全部候选都不存在
 /// 返回 null（调用方画占位）。
+///
+/// [exists] 是 async：候选可能落在网络盘（rclone / SMB 挂载）上，挂载端目录缓存
+/// 过期时一次 stat 要逐级重列目录、单次数秒。旧实现在 build 里同步 `existsSync`，
+/// 读有声书时统计表每几秒一写就触发首页重建 → 主 isolate 冻结数秒，同 isolate 上
+/// 的互联 host 端点（含 `/api/ping`）与 UI 一起卡死（BUG-3704）。
 @visibleForTesting
-String? dashboardVideoCoverPath({
+Future<String?> dashboardVideoCoverPath({
   required String? collectionCover,
   required String? ownCover,
   Iterable<String?> memberCovers = const <String?>[],
-  required bool Function(String path) exists,
-}) {
-  bool usable(String? path) => path != null && path.isNotEmpty && exists(path);
-  if (usable(collectionCover)) return collectionCover;
-  if (usable(ownCover)) return ownCover;
+  required Future<bool> Function(String path) exists,
+}) async {
+  Future<bool> usable(String? path) async =>
+      path != null && path.isNotEmpty && await exists(path);
+  if (await usable(collectionCover)) return collectionCover;
+  if (await usable(ownCover)) return ownCover;
   // 逐个惰性取：找到第一张存在的就停。
   for (final String? path in memberCovers) {
-    if (usable(path)) return path;
+    if (await usable(path)) return path;
   }
   return null;
 }
@@ -755,6 +761,13 @@ class _HomeDashboardPageState
   /// 合集主封面（`MediaCollections.coverPath`，刮削落地的作品海报）：「继续」
   /// 竖卡的视频优先用它，集封面多是横版截帧。
   Map<int, String> _collectionCoverById = const <int, String>{};
+
+  /// 「继续」视频卡封面的异步解析结果：候选签名（[_videoCoverCandidateKey]）→
+  /// 第一张存在的封面（null = 全不存在）。build 只读这张表、绝不碰文件系统
+  /// （BUG-3704）；表里还没有的候选由 [_resolveVideoCover] 在后台解析完再重建。
+  /// 按候选签名缓存：重载后候选不变就直接复用，不会每次重载都闪占位。
+  final Map<String, String?> _videoCoverByCandidates = <String, String?>{};
+  final Set<String> _videoCoverResolving = <String>{};
 
   /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
   /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
@@ -2585,18 +2598,72 @@ class _HomeDashboardPageState
     final VideoBookRow? video = entry.video;
     if (video == null) return null;
     final int? cid = entry.collectionId;
+    final String? collectionCover = cid == null
+        ? null
+        : _collectionCoverById[cid];
+    final List<String?> memberCovers = cid == null
+        ? const <String?>[]
+        : _collectionMemberCovers(cid, except: video.bookUid).toList();
+    final String key = _videoCoverCandidateKey(
+      collectionCover,
+      video.coverPath,
+      memberCovers,
+    );
+    if (!_videoCoverByCandidates.containsKey(key)) {
+      _resolveVideoCover(
+        key,
+        collectionCover: collectionCover,
+        ownCover: video.coverPath,
+        memberCovers: memberCovers,
+      );
+      return null; // 解析完成前画占位，解析完 setState 重建。
+    }
+    final String? localPath = _videoCoverByCandidates[key];
+    if (localPath == null) return null;
     return resolveMediaCoverImage(
       kind: MediaKind.video,
-      localPath: dashboardVideoCoverPath(
-        collectionCover: cid == null ? null : _collectionCoverById[cid],
-        ownCover: video.coverPath,
-        memberCovers: cid == null
-            ? const <String?>[]
-            : _collectionMemberCovers(cid, except: video.bookUid),
-        exists: (String path) => File(path).existsSync(),
-      ),
+      localPath: localPath,
       decodeWidth: kLocalCoverDecodePixelWidth,
     );
+  }
+
+  /// [_videoCoverByCandidates] 的键：候选路径按回退顺序拼接（纯字符串，零 IO）。
+  static String _videoCoverCandidateKey(
+    String? collectionCover,
+    String? ownCover,
+    List<String?> memberCovers,
+  ) => <String?>[
+    collectionCover,
+    ownCover,
+    ...memberCovers,
+  ].map((String? e) => e ?? '').join('|');
+
+  /// 后台按 [dashboardVideoCoverPath] 回退链异步解析一组候选（async `exists`，在 IO
+  /// 线程池里等，不阻塞 UI isolate），结果进 [_videoCoverByCandidates] 后重建。
+  void _resolveVideoCover(
+    String key, {
+    required String? collectionCover,
+    required String? ownCover,
+    required List<String?> memberCovers,
+  }) {
+    if (!_videoCoverResolving.add(key)) return;
+    unawaited(() async {
+      String? resolved;
+      try {
+        resolved = await dashboardVideoCoverPath(
+          collectionCover: collectionCover,
+          ownCover: ownCover,
+          memberCovers: memberCovers,
+          exists: (String path) => File(path).exists(),
+        );
+      } on FileSystemException catch (e, stack) {
+        ErrorLogService.instance.log('HomeDashboardPage.videoCover', e, stack);
+      } finally {
+        _videoCoverResolving.remove(key);
+      }
+      if (!mounted) return;
+      setState(() => _videoCoverByCandidates[key] = resolved);
+    }());
   }
 
   /// 同一主合集里其它集的封面路径（懒序列，[dashboardVideoCoverPath] 找到第一张
