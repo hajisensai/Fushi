@@ -520,7 +520,9 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
     final String label = cue.isEmpty ? t.reader_audiobook_now_playing : cue;
     final String chapter = widget.chapterLabel?.trim() ?? '';
     final String? coverPath = widget.coverPath;
-    const OutlinedBorder coverShape = FushiCookieBorder(lobes: 4, depth: 0.1);
+    final OutlinedBorder coverShape = MaterialShapeBorder(
+      shape: MaterialShapes.cookie4Sided,
+    );
     final Widget cover = SizedBox.square(
       dimension: 44,
       child: coverPath == null

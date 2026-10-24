@@ -181,9 +181,7 @@ class _AudioRecorderDialogPageState
         // M3E：实心主色播放钮，播放中弹簧变形成方圆角（形状即状态）。
         return FushiIconButtonControl.filled(
           icon: FushiIcon(iconData),
-          shape: playing
-              ? FushiIconButtonShape.square
-              : FushiIconButtonShape.round,
+          shape: playing ? ButtonShapeVariant.square : ButtonShapeVariant.round,
           tooltip: playerState?.playing == true ? t.pause : t.play,
           onPressed: () async {
             AudioSession? session;

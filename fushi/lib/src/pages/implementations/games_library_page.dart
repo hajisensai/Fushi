@@ -2982,7 +2982,7 @@ class _ContinuePlayGlyph extends StatelessWidget {
     final FushiMotionScheme motion = context.fushiMotion;
     final bool lifted = m3e && FushiHoverLift.liftedOf(context);
     final ShapeBorder shape = m3e
-        ? const FushiCookieBorder(lobes: 4, depth: 0.12)
+        ? MaterialShapeBorder(shape: MaterialShapes.cookie4Sided)
         : CircleBorder(
             side: BorderSide(
               color: eink ? cs.onSurface : Colors.transparent,

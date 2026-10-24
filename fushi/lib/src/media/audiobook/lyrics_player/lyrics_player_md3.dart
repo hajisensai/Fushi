@@ -261,8 +261,8 @@ class _TransportGroup extends StatelessWidget {
   final bool isPlaying;
   final LyricsPlayerCallbacks callbacks;
   final double playSize;
-  final FushiIconButtonSize sideSize;
-  final FushiIconButtonWidth sideWidth;
+  final ButtonSizeVariant sideSize;
+  final IconButtonWidthVariant sideWidth;
   final double spacing;
 
   /// false = ±10 秒不在这一行（窄屏放不下时挪到进度条两侧，见
@@ -492,8 +492,8 @@ class _WidePanel extends StatelessWidget {
                     isPlaying: data.isPlaying,
                     callbacks: callbacks,
                     playSize: 68,
-                    sideSize: FushiIconButtonSize.s,
-                    sideWidth: FushiIconButtonWidth.standard,
+                    sideSize: ButtonSizeVariant.small,
+                    sideWidth: IconButtonWidthVariant.standard,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -1527,8 +1527,8 @@ class _NarrowControlBar extends StatelessWidget {
                   playSize: transport.playSize,
                   spacing: transport.spacing,
                   showRelativeSeek: transport.inlineSeek,
-                  sideSize: FushiIconButtonSize.m,
-                  sideWidth: FushiIconButtonWidth.narrow,
+                  sideSize: ButtonSizeVariant.medium,
+                  sideWidth: IconButtonWidthVariant.narrow,
                 ),
               ),
             ),

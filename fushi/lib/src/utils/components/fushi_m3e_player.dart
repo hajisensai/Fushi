@@ -838,8 +838,8 @@ class FushiTransportGroup extends StatelessWidget {
   final VoidCallback onPrevious;
   final VoidCallback onNext;
   final double playSize;
-  final FushiIconButtonSize sideSize;
-  final FushiIconButtonWidth sideWidth;
+  final ButtonSizeVariant sideSize;
+  final IconButtonWidthVariant sideWidth;
 
   /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
   final ValueChanged<int>? onSeekRelative;
@@ -902,7 +902,7 @@ Widget fushiRelativeSeekButton(
           ? '${keyPrefix}_seek_back_button'
           : '${keyPrefix}_seek_forward_button',
     ),
-    size: FushiIconButtonSize.s,
+    size: ButtonSizeVariant.small,
     tooltip: back ? '-10s' : '+10s',
     onPressed: () => seekBy(seconds),
     icon: FushiIcon(back ? FushiIcons.replay10 : FushiIcons.forward10),

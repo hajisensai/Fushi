@@ -46,11 +46,15 @@ class FushiFillSlot extends InheritedWidget {
       shape: shape,
       child: Builder(
         builder: (BuildContext context) {
-          final ButtonStyle? inherited = IconButtonTheme.of(context).style;
+          final IconButtonThemeData inherited = IconButtonTheme.of(context);
           final ButtonStyle fill = fushiFillSlotButtonStyle(extent, shape);
           return IconButtonTheme(
             data: IconButtonThemeData(
-              style: inherited == null ? fill : fill.merge(inherited),
+              // 沿用祖先的设计变体（官方 M3E）：只换尺寸与形状。
+              variant: inherited.variant,
+              style: inherited.style == null
+                  ? fill
+                  : fill.merge(inherited.style),
             ),
             child: SizedBox.fromSize(
               size: extent,

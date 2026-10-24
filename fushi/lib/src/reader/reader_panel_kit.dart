@@ -300,67 +300,18 @@ enum ReaderBadgeShape {
   flower,
 }
 
-/// 极径起伏的闭合形状（饼干 / 花瓣）；[lobes] 为 0 时退化成圆。
-class ReaderPolarShapeBorder extends ShapeBorder {
-  const ReaderPolarShapeBorder({this.lobes = 4, this.depth = 0.08});
-
-  factory ReaderPolarShapeBorder.of(ReaderBadgeShape shape) => switch (shape) {
-    ReaderBadgeShape.circle => const ReaderPolarShapeBorder(lobes: 0),
-    ReaderBadgeShape.cookie4 => const ReaderPolarShapeBorder(
-      lobes: 4,
-      depth: 0.09,
-    ),
-    ReaderBadgeShape.cookie9 => const ReaderPolarShapeBorder(
-      lobes: 9,
-      depth: 0.05,
-    ),
-    ReaderBadgeShape.flower => const ReaderPolarShapeBorder(
-      lobes: 8,
-      depth: 0.13,
-    ),
-  };
-
-  final int lobes;
-  final double depth;
-
-  @override
-  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
-
-  @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
-      getOuterPath(rect, textDirection: textDirection);
-
-  @override
-  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
-    if (lobes == 0) return Path()..addOval(rect);
-    const int samples = 144;
-    final Offset c = rect.center;
-    final double rx = rect.width / 2;
-    final double ry = rect.height / 2;
-    final double norm = 1 + depth;
-    final Path path = Path();
-    for (int i = 0; i <= samples; i++) {
-      final double theta = i / samples * 2 * math.pi - math.pi / 2;
-      final double r = (1 + depth * math.cos(lobes * theta)) / norm;
-      final Offset p = Offset(
-        c.dx + rx * r * math.cos(theta),
-        c.dy + ry * r * math.sin(theta),
-      );
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    return path..close();
-  }
-
-  @override
-  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
-
-  @override
-  ShapeBorder scale(double t) => this;
-}
+/// [shape] 对应的 [ShapeBorder]：饼干 / 花瓣取官方 M3E 形状库
+/// （[MaterialShapes]），不再自绘。
+ShapeBorder readerBadgeShapeBorder(ReaderBadgeShape shape) => switch (shape) {
+  ReaderBadgeShape.circle => const CircleBorder(),
+  ReaderBadgeShape.cookie4 => MaterialShapeBorder(
+    shape: MaterialShapes.cookie4Sided,
+  ),
+  ReaderBadgeShape.cookie9 => MaterialShapeBorder(
+    shape: MaterialShapes.cookie9Sided,
+  ),
+  ReaderBadgeShape.flower => MaterialShapeBorder(shape: MaterialShapes.flower),
+};
 
 /// 形状底的图标徽标：MD3（M3E）用饼干 / 花瓣装饰形状，Apple 用圆角方块
 /// （SF Symbols 风格的 tinted 底）。[spin] 为 true 时进场带一点旋转回弹。
@@ -392,7 +343,7 @@ class ReaderShapeBadge extends StatelessWidget {
         iconColor ?? (glass ? appleColorsOf(context).onAccent : cs.onPrimary);
     final ShapeBorder border = glass
         ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(size / 4))
-        : ReaderPolarShapeBorder.of(shape);
+        : readerBadgeShapeBorder(shape);
     return SizedBox.square(
       dimension: size,
       child: DecoratedBox(
