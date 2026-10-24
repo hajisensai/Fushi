@@ -197,4 +197,49 @@ void main() {
       }
     },
   );
+
+  test('mobile: FFmpegKitNext and the libmpv forks link the same DVD libs', () {
+    const String mobile = '../tool/ffmpeg-unified/mobile';
+    final String kitPatch = File(
+      '../tool/ffmpeg-unified/patches/ffmpeg-kit-next/'
+      '0003-fushi-dvd-link-the-shared-tool-dvd-libraries.patch',
+    ).readAsStringSync();
+    expect(kitPatch, contains('--enable-libdvdnav --enable-libdvdread'));
+    expect(kitPatch, contains('LOCAL_SHARED_LIBRARIES += libdvdcss'));
+    expect(
+      File('$mobile/prepare_kit.sh').readAsStringSync(),
+      contains('kit patch 0003'),
+    );
+    for (final String platform in <String>['android', 'ios', 'macos']) {
+      final String script = File(
+        '$mobile/build_$platform.sh',
+      ).readAsStringSync();
+      expect(
+        script,
+        contains('FUSHI_DVD_ROOT="\${DVD}"'),
+        reason: '$platform must hand the tool/dvd prefixes to the kit',
+      );
+      expect(script, contains('dvd/platforms/build_cross.sh'));
+    }
+    final String workflow = File(
+      '../.github/workflows/ffmpeg-unified-mobile.yml',
+    ).readAsStringSync();
+    expect(
+      RegExp(
+        r'verify_mobile_outputs\.py \w+ "\$RUNNER_TEMP/out" --require-staged',
+      ).allMatches(workflow).length,
+      2,
+    );
+    // Fork overlays: mpv's stream_dvdnav.c only builds with -Dgpl=true.
+    for (final String fork in <String>[
+      'libmpv-android-video-build',
+      'libmpv-darwin-build',
+    ]) {
+      final String patch = File(
+        '../tool/dvd/forks/$fork.patch',
+      ).readAsStringSync();
+      expect(patch, contains('-Dgpl=true'), reason: fork);
+      expect(patch, contains('-Ddvdnav=enabled'), reason: fork);
+    }
+  });
 }

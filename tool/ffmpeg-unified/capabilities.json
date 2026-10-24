@@ -32,7 +32,7 @@
   "bsfs": ["aac_adtstoasc", "h264_mp4toannexb", "hevc_mp4toannexb"],
   "tls_options": ["tls_pin_sha256"],
   "staged": {
-    "_comment": "Capabilities a NEW build must carry before every platform's vendored artifact has been rebuilt with them. Builds check them with verify_ffmpeg_capabilities.py --require-staged (tool/bluray/build_libmpv.ps1 does); release checks of the already vendored artifacts do not. Once Windows, Android, iOS and macOS are all re-vendored, move each entry into the floor above and delete it here. DVD: docs/specs/2026-10-24-dvd-original-menu.md (dvdvideo demuxer on the tool/dvd libraries, the same copies libmpv's dvd:// links).",
+    "_comment": "Capabilities a NEW build must carry before every platform's vendored artifact has been rebuilt with them. Builds check them with verify_ffmpeg_capabilities.py --require-staged (tool/bluray/build_libmpv.ps1 does); release checks of the already vendored artifacts do not. Promotion rule: an entry moves into the floor above (and is deleted here) only when the vendored artifact of EVERY platform carries it: Windows (libmpv archive, re-vendored with DVD 2026-10-24 as -dvd1), Android (AAR), iOS (xcframeworks) and macOS (ffmpeg-unified-macos.tar.gz); see tool/dvd/README.md and tool/dvd/forks/README.md. DVD: docs/specs/2026-10-24-dvd-original-menu.md (dvdvideo demuxer on the tool/dvd libraries, the same copies libmpv's dvd:// links).",
     "demuxers": ["dvdvideo"],
     "configure": ["--enable-libdvdnav", "--enable-libdvdread"]
   }

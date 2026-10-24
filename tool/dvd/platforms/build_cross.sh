@@ -112,9 +112,11 @@ rm -rf "${PREFIX}"
 bash "${HERE}/../build_dvd_libs.sh" "${WORK}/build-${TARGET}" "${PREFIX}" "${CROSS}"
 
 framework_plist() {
-  local name="$1" platform="$2" min="$3" version
-  version="$(pkg-config --modversion "$(case "${name}" in
-    libdvdcss) echo libdvdcss ;; libdvdread) echo dvdread ;; *) echo dvdnav ;; esac)")"
+  local name="$1" platform="$2" min="$3" module version
+  # pkg-config module names: libdvdcss, dvdread, dvdnav.
+  module="${name}"
+  [ "${name}" = libdvdcss ] || module="${name#lib}"
+  version="$(pkg-config --modversion "${module}")"
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -163,9 +165,13 @@ case "${TARGET}" in
       [ -L "${lib}" ] && continue
       name="$(basename "${lib}" | cut -d. -f1)"
       fw="${PREFIX}/frameworks/${name}.framework"
+      # Headers: include/dvdcss|dvdread|dvdnav, like the libav* frameworks.
+      headers="${PREFIX}/include/${name#lib}"
       case "${TARGET}" in
         macos-*)
-          mkdir -p "${fw}/Versions/A/Resources"
+          mkdir -p "${fw}/Versions/A/Resources" "${fw}/Versions/A/Headers"
+          cp "${headers}"/*.h "${fw}/Versions/A/Headers/"
+          ln -s Versions/Current/Headers "${fw}/Headers"
           cp "${lib}" "${fw}/Versions/A/${name}"
           framework_plist "${name}" MacOSX "${MACOS_MIN}" > "${fw}/Versions/A/Resources/Info.plist"
           cp "${PREFIX}/share/licenses/fushi-dvd/${name}-COPYING" "${fw}/Versions/A/Resources/COPYING"
@@ -174,7 +180,8 @@ case "${TARGET}" in
           ln -s Versions/Current/Resources "${fw}/Resources"
           ;;
         *)
-          mkdir -p "${fw}"
+          mkdir -p "${fw}/Headers"
+          cp "${headers}"/*.h "${fw}/Headers/"
           cp "${lib}" "${fw}/${name}"
           platform=iPhoneOS
           [ "${TARGET#ios-simulator}" != "${TARGET}" ] && platform=iPhoneSimulator
