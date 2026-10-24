@@ -25,6 +25,7 @@ Future<void> showMediaLinksDialog({
   required MediaLinkEndpoint self,
   required MediaLinkOpenCallback onOpen,
   Future<int> Function()? onInfer,
+  ValueChanged<String>? Function(MediaLinkKind kind)? searchActionFor,
 }) => showAppDialog<void>(
   context: context,
   builder: (BuildContext dialogContext) => FushiDialogFrame(
@@ -36,6 +37,7 @@ Future<void> showMediaLinksDialog({
         database: database,
         self: self,
         onInfer: onInfer,
+        searchActionFor: searchActionFor,
         onOpen: (MediaLinkEntry e) {
           Navigator.of(dialogContext).pop();
           onOpen(e);
@@ -62,6 +64,7 @@ class MediaLinksSection extends StatefulWidget {
     required this.self,
     required this.onOpen,
     this.onInfer,
+    this.searchActionFor,
     super.key,
   });
 
@@ -74,6 +77,9 @@ class MediaLinksSection extends StatefulWidget {
 
   /// 「查找相关作品」：跑一轮推断，返回新增建议数。null = 不显示入口。
   final Future<int> Function()? onInfer;
+
+  /// 「未入库」灰卡的去搜入口（按端点种类给出；返回 null = 该种类没有入口）。
+  final ValueChanged<String>? Function(MediaLinkKind kind)? searchActionFor;
 
   @override
   State<MediaLinksSection> createState() => _MediaLinksSectionState();
@@ -202,6 +208,11 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   Widget _buildCard(BuildContext context, MediaLinkView view) {
     final MediaLinkEntry other = view.other;
     final bool missing = !other.inLibrary;
+    // 合集端点的键是本机 id，丢了就没有可搜的标题。
+    final ValueChanged<String>? search =
+        missing && other.endpoint.kind != MediaLinkKind.videoCollection
+        ? widget.searchActionFor?.call(other.endpoint.kind)
+        : null;
     final Widget card = SizedBox(
       key: ValueKey<String>(
         'media-link-card-${other.endpoint.kind.dbValue}-${other.endpoint.key}',
@@ -241,7 +252,11 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                     PositionedDirectional(
                       bottom: 6,
                       start: 6,
-                      child: CoverBadge(label: t.media_link_not_in_library),
+                      child: CoverBadge(
+                        label: search == null
+                            ? t.media_link_not_in_library
+                            : t.media_link_search_missing,
+                      ),
                     ),
                 ],
               ),
@@ -264,13 +279,15 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       ),
     );
     return FushiHoverLift(
-      enabled: !missing,
+      enabled: !missing || search != null,
       builder: (BuildContext context, bool _) => Semantics(
-        button: !missing,
+        button: !missing || search != null,
         label: other.title,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: missing ? null : () => widget.onOpen(other),
+          onTap: missing
+              ? (search == null ? null : () => search(other.title))
+              : () => widget.onOpen(other),
           onLongPressStart: (LongPressStartDetails d) =>
               _showCardMenu(view, d.globalPosition),
           onSecondaryTapUp: (TapUpDetails d) =>

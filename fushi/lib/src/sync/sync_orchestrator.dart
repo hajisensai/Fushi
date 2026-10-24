@@ -855,6 +855,7 @@ class SyncOrchestrator {
       await _syncVideoMetadataLive(report, b);
     } else {
       await syncCollections(report);
+      await _syncMediaLinksCloud(report);
     }
     mark('collections+tags+metadata');
 
@@ -946,6 +947,7 @@ class SyncOrchestrator {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
       await _backend.findOrCreateRootFolder();
       await syncCollections(report);
+      await _syncMediaLinksCloud(report);
     }
     return report;
   }
@@ -1177,6 +1179,11 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) =>
       _syncMediaLinksLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncMediaLinksCloud]。
+  @visibleForTesting
+  Future<void> syncMediaLinksCloudForTest(SyncRunReport report) =>
+      _syncMediaLinksCloud(report);
 
   /// 测试入口：直接调用 [_syncCollectionsLive]（private 方法对测试文件不可见）。
   @visibleForTesting

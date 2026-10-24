@@ -40,7 +40,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show openMediaLinkEntry;
+    show mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 import 'package:fushi/utils.dart';
@@ -1163,6 +1163,8 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
         self: (kind: MediaLinkKind.game, key: game.id),
         onOpen: (MediaLinkEntry e) =>
             openMediaLinkEntry(context: context, ref: ref, entry: e),
+        searchActionFor: (MediaLinkKind k) =>
+            mediaLinkSearchAction(context: context, ref: ref, kind: k),
         onInfer: mediaLinkInferCallback(
           ref: ref,
           self: (kind: MediaLinkKind.game, key: game.id),

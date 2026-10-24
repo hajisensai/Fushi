@@ -146,7 +146,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show openMediaLinkEntry;
+    show mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 
@@ -3200,6 +3200,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           self: (kind: MediaLinkKind.book, key: bookKey),
           onOpen: (MediaLinkEntry e) =>
               openMediaLinkEntry(context: context, ref: ref, entry: e),
+          searchActionFor: (MediaLinkKind k) =>
+              mediaLinkSearchAction(context: context, ref: ref, kind: k),
           onInfer: mediaLinkInferCallback(
             ref: ref,
             self: (kind: MediaLinkKind.book, key: bookKey),

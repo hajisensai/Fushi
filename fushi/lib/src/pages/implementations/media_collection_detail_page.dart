@@ -101,7 +101,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show openMediaLinkEntry;
+    show mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 
@@ -2993,6 +2993,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                       entry: e,
                     ),
                     onInfer: mediaLinkInferCallback(ref: ref, self: self),
+                    searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
+                      context: context,
+                      ref: ref,
+                      kind: k,
+                    ),
                   );
                 },
               ),

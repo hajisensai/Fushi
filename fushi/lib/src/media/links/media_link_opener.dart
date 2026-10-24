@@ -15,6 +15,61 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
+    show AiMediaAcquisitionDomain;
+import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart'
+    show OnlineSourcesDomain;
+import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
+
+/// 「未入库」灰卡的「去搜」：交给各模块**已有**的获取入口，标题预填。返回 null =
+/// 本平台 / 本配置没有可用入口（灰卡就只是灰卡，不渲染一个点了没去处的按钮）。
+///
+/// - 视频合集 / 单个视频：番剧下载对话框（与合集详情页「相关作品 › 去下载」同一个），
+///   门是「浏览」模块开着——该模块的 `availableOn` 已委托 `StoreRestrictedCapability`，
+///   iOS 上恒关；
+/// - 书 / 游戏：发现页同一个「AI 下载」入口（[discoveryAiAcquireAction]），合规门
+///   （下载 / 外部发现）与 AI 模块门都在它里面，不在这里另写平台判断；
+/// - 音乐：音乐模块落地前没有获取入口。
+ValueChanged<String>? mediaLinkSearchAction({
+  required BuildContext context,
+  required WidgetRef ref,
+  required MediaLinkKind kind,
+}) {
+  final AppModel appModel = ref.read(appProvider);
+  switch (kind) {
+    case MediaLinkKind.videoCollection:
+    case MediaLinkKind.videoEpisode:
+      if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) return null;
+      return (String title) => unawaited(
+        showAppDialog<void>(
+          context: context,
+          builder: (_) =>
+              AnimeDownloadDialog(showTasks: false, initialSearchQuery: title),
+        ),
+      );
+    case MediaLinkKind.book:
+    case MediaLinkKind.audiobook:
+      return discoveryAiAcquireAction(
+        context: context,
+        readAppModel: () => ref.read(appProvider),
+        domain: AiMediaAcquisitionDomain.novel,
+        domainLabel: mediaLinkKindLabel(kind),
+        onlineDomain: OnlineSourcesDomain.novel,
+      );
+    case MediaLinkKind.game:
+      return discoveryAiAcquireAction(
+        context: context,
+        readAppModel: () => ref.read(appProvider),
+        domain: AiMediaAcquisitionDomain.game,
+        domainLabel: mediaLinkKindLabel(kind),
+      );
+    case MediaLinkKind.musicAlbum:
+    case MediaLinkKind.musicTrack:
+      return null;
+  }
+}
 
 /// 打开作品图谱另一端在本机的条目：各模块已有的那个出口，不另起页面。
 ///
