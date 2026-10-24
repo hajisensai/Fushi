@@ -1,9 +1,5 @@
 {
   "pins": {
-    "test/desktop/fushi_desktop_title_bar_subtree_identity_test.dart": {
-      "platforms": ["windows"],
-      "reason": "lib picks the title bar by host: on macOS the native traffic-light bar draws no Flutter-side top resize edges, which this test asserts (Mac run 2026-10-24)"
-    },
     "test/media/novel/lnreader_cover_image_test.dart": {
       "platforms": ["windows"],
       "reason": "flutter_cache_manager opens sqflite; on a macOS host that is the platform plugin, not the FFI factory, so 'databaseFactory not initialized' (Mac run 2026-10-24, reproduces alone)"
@@ -19,10 +15,6 @@
     "test/utils/net/app_image_file_service_retry_test.dart": {
       "platforms": ["windows"],
       "reason": "flutter_cache_manager opens sqflite; on a macOS host that is the platform plugin, not the FFI factory, so 'databaseFactory not initialized' in tearDownAll (Mac run 2026-10-24, reproduces alone)"
-    },
-    "test/widgets/glass/fushi_popup_surface_glass_test.dart": {
-      "platforms": ["windows"],
-      "reason": "the iOS / macOS opaque-panel case reads the real host on a macOS machine and paints differently than the test expects (Mac run 2026-10-24, reproduces alone)"
     }
   }
 }
