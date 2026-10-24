@@ -4465,6 +4465,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 曲库「歌曲」分区的排序（`MusicTrackSort.prefValue`：library / easiest / hardest）。
+  String get musicTrackSort =>
+      getPref('music_track_sort', defaultValue: 'library') as String;
+
+  Future<void> setMusicTrackSort(String value) async {
+    await setPref('music_track_sort', value);
+    notifyListeners();
+  }
+
   /// DSD → PCM 目标采样率（Hz，176400 / 352800，设计 §7.1）。
   int get musicDsdPcmRate =>
       getPref('music_dsd_pcm_rate', defaultValue: 176400) as int;

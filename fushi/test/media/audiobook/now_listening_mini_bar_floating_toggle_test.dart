@@ -35,12 +35,12 @@ void main() {
 
   test('floating-lyric toggle is gated to platforms with a native back-end',
       () {
-    // native 悬浮窗后端只在 Android / Windows（floating_lyric_channel.isSupported），
-    // 其余桌面必须隐藏开关而不是给一个点了无效的按钮。
+    // native 悬浮窗后端只在 Android / Windows / macOS（FloatingLyricChannel
+    // .supported），Linux 必须隐藏开关而不是给一个点了无效的按钮。
     expect(
-      source.contains('Platform.isAndroid || Platform.isWindows'),
+      source.contains('if (FloatingLyricChannel.supported)'),
       isTrue,
-      reason: '开关须按 native 后端可用性平台门控（仅 Android/Windows）',
+      reason: '开关须按 native 后端可用性平台门控（FloatingLyricChannel.supported）',
     );
   });
 }

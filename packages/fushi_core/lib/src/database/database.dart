@@ -24,6 +24,7 @@ import 'galgame_text_line_tables.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_link_kind.dart';
+import 'music_coverage_tables.dart';
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
@@ -849,6 +850,7 @@ void _requireOneVideoMetadataOwner({
   PersonIdentityBridges,
   AdaptationProgressAnchors,
   GalgameTextLines,
+  MusicLyricCoverage,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -888,7 +890,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 131;
+  int get schemaVersion => 134;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2559,6 +2561,15 @@ class FushiDatabase extends _$FushiDatabase
               if (!await _tableExists(table.actualTableName)) {
                 await m.createTable(table);
               }
+            }
+          }
+          if (from < 134) {
+            // v134（音乐 §12「曲库按难度排序」）：music_lyric_coverage——每首歌歌词的
+            // 生词覆盖率缓存（分词段 + 已知段，失效规则见 music_coverage_tables.dart）。
+            // 纯派生缓存、设备本地。纯建表；幂等守卫同 v119。v132 / v133 由并行分支使用，
+            // 本步只认自己的表。
+            if (!await _tableExists('music_lyric_coverage')) {
+              await m.createTable(musicLyricCoverage);
             }
           }
         },

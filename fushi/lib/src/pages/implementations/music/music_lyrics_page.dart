@@ -33,7 +33,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:fushi_srs/fushi_srs.dart'
-    show SrsQueue, SrsTermQuery, SrsTermStatus;
+    show SrsKnownTermSnapshot, SrsTermQuery;
 
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
@@ -150,14 +150,15 @@ Future<Set<String>?> musicKnownTermsFromSrs(
   List<({String expression, String reading})> terms,
 ) async {
   if (store == null) return null;
-  final Map<String, SrsTermStatus> hits = await store
-      .lookupTermStatus(<SrsTermQuery>[
-        for (final ({String expression, String reading}) t in terms)
-          SrsTermQuery(t.expression, t.reading.isEmpty ? null : t.reading),
-      ]);
+  // 与曲库难度排序同一份判据（SrsKnownTermSnapshot，口径同 lookupTermStatus）：一次
+  // 联表读出分布，不按词逐个查库。
+  final SrsKnownTermSnapshot known = await store.knownTermSnapshot();
   return <String>{
-    for (final MapEntry<String, SrsTermStatus> e in hits.entries)
-      if (e.value.queue == SrsQueue.review) e.key,
+    for (final ({String expression, String reading}) t in terms)
+      if (known.isKnown(
+        SrsTermQuery(t.expression, t.reading.isEmpty ? null : t.reading),
+      ))
+        t.expression,
   };
 }
 
@@ -425,8 +426,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         documentTitle: item?.title,
         coverPath: cover != null && File(cover).existsSync() ? cover : null,
         sentenceAudioPath: audioPath,
-        // 与收藏夹批量制卡同口径：音乐卡归「书」分类标签（ankiMiningSourceOf）。
-        source: AnkiMiningSource.book,
+        // 音乐卡单独打 `music` 分类标签（所有者 2026-10-24），与收藏夹批量制卡
+        // 的 ankiMiningSourceOf 同口径。
+        source: AnkiMiningSource.music,
         bookTitleTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(item?.title)
             : null,

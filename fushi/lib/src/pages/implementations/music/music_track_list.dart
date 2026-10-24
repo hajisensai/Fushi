@@ -4,11 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/music/lyrics/music_lyrics_coverage_index.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_difficulty_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -45,6 +47,7 @@ class MusicTrackList extends ConsumerWidget {
     required this.context,
     this.shrinkWrap = false,
     this.showTrackNumbers = false,
+    this.difficulty,
   });
 
   final List<MusicTrackRow> tracks;
@@ -54,6 +57,9 @@ class MusicTrackList extends ConsumerWidget {
   final MusicQueueContext context;
   final bool shrinkWrap;
   final bool showTrackNumbers;
+
+  /// 非 null = 行尾显示难度标记（曲库按难度排序时）；没有条目的曲目视为未计算。
+  final Map<String, MusicTrackDifficulty>? difficulty;
 
   List<MusicPlayItem> _items() => <MusicPlayItem>[
     for (final MusicTrackRow t in tracks)
@@ -128,6 +134,18 @@ class MusicTrackList extends ConsumerWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
+                    if (difficulty
+                        case final Map<String, MusicTrackDifficulty>
+                            d) ...<Widget>[
+                      MusicDifficultyBadge(
+                        key: ValueKey<String>(
+                          'music-track-difficulty-${track.trackUid}',
+                        ),
+                        difficulty:
+                            d[track.trackUid] ?? MusicTrackDifficulty.pending,
+                      ),
+                      SizedBox(width: tokens.spacing.gap),
+                    ],
                     Text(
                       formatMusicDuration(track.durationMs),
                       style: c.fushiType.bodySmall,

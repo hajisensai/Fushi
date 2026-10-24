@@ -293,7 +293,8 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_desktop_lyrics_hint,
             icon: FushiIcons.lyrics,
             defaultValue: false,
-            // 原生悬浮字幕窗只有 Android / Windows（与有声书悬浮字幕同一个窗口）。
+            // 原生悬浮字幕窗只有 Android / Windows / macOS（与有声书悬浮字幕同一个
+            // 窗口）。
             visible: (SettingsContext c) => FloatingLyricChannel.supported,
             value: (SettingsContext c) => c.appModel.musicDesktopLyrics,
             onChanged: (SettingsContext c, bool value) =>

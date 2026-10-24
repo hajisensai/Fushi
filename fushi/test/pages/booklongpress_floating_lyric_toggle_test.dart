@@ -38,11 +38,12 @@ void main() {
     );
   });
 
-  test('入口门控 Android/Windows（与 isSupported 一致，不删现有入口）', () {
+  test('入口门控与 isSupported 同源（不删现有入口）', () {
     expect(
-      src.contains('Platform.isAndroid || Platform.isWindows'),
+      src.contains('FloatingLyricChannel.supported &&'),
       isTrue,
-      reason: '悬浮字幕仅 Android/Windows 支持。',
+      reason: '悬浮字幕入口只认 FloatingLyricChannel.supported（Android / Windows / '
+          'macOS），不各自写 Platform 判据。',
     );
   });
 
@@ -116,7 +117,7 @@ void main() {
     );
     expect(
       srtActions,
-      contains('Platform.isAndroid || Platform.isWindows'),
+      contains('FloatingLyricChannel.supported &&'),
       reason: 'SRT 卡悬浮字幕入口平台门控与 EPUB 侧一致。',
     );
   });

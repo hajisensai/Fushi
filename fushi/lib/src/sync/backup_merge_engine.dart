@@ -1995,6 +1995,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'video_theme_song_spans',
       // v131：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
       'game_voice_casts',
+      // v134：歌词生词覆盖率缓存——本机曲库派生，本机重算。
+      'music_lyric_coverage',
       // v129：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。
       'music_scrape_meta',
       'music_metadata_raw_snapshots',

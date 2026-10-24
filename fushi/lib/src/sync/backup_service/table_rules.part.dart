@@ -370,6 +370,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'video_theme_song_spans': BackupTableRule.deviceLocal(),
   // v131：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
   'game_voice_casts': BackupTableRule.deviceLocal(),
+  // v134：歌词生词覆盖率缓存，纯派生、设备本地（见 _deviceLocalTables）。
+  'music_lyric_coverage': BackupTableRule.deviceLocal(),
   // v129：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、
   // 可由重刮重建，设备本地（见 _deviceLocalTables）。
   'music_scrape_meta': BackupTableRule.deviceLocal(),

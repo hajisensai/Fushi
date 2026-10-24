@@ -8497,9 +8497,10 @@ class AppModel with ChangeNotifier {
           fontSize: fontSize, font: _floatingLyricNativeFont());
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
-  /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
+  /// 桌面原生窗（Windows / macOS）吃字体；阅读器设置尚未加载时返回 null（原生用
+  /// 默认字族）。
   ({String family, String? path})? _floatingLyricNativeFont() {
-    if (!Platform.isWindows) return null;
+    if (!isFontTargetAvailableOnPlatform(FontTarget.floatingLyric)) return null;
     final ReaderSettings? settings = ReaderFushiSource.readerSettings;
     if (settings == null) return null;
     return AppFontLoader.resolveForNativeOverlay(settings.floatingLyricFonts,
