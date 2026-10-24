@@ -16,8 +16,10 @@ import 'package:fushi/src/media/video/video_screenshot_destination.dart'
     show kVideoScreenshotDirectoryPref;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kSectionTabOrderPrefKeyPrefix;
+    show kAnkiSettingsPrefKey, kSectionTabOrderPrefKeyPrefix;
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/srs/srs_providers.dart'
+    show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 
 class ProfileKeys {
@@ -78,6 +80,9 @@ class ProfileKeys {
     // Profile 切换重新弹出）。
     'p2p_download_notice_dismissed',
     'game_resource_notice_dismissed',
+    // 复习页旧 Lapis 迁移横幅的「不再提醒」：同族。进快照的话，切到这个键落地前建的
+    // 老 Profile（含媒体绑定的临时切换）会把它删掉，横幅下次启动又弹出来。
+    kSrsLapisMigrationReminderPrefKey,
     // 封面模式迁到片段默认的一次性标记：同族。进快照的话，切 Profile 会把旧值 gif
     // 带回来，下次启动迁移重跑，把用户此后自己选的 GIF 又改成片段。
     'mining_image_mode_install_default',
@@ -139,6 +144,11 @@ class ProfileKeys {
     // into a profile (and restoring/wiping it on profile switch) would make
     // the counter non-monotonic and break change detection.
     PreferencesRepository.prefsVersionKey,
+    // Anki 制卡设置整份 JSON（含 AnkiConnect apiKey）：牌组 / 笔记类型 / 映射等
+    // 字段已由 [ankiSettingsToMap] 按字段随 Profile 走；整行进快照的话，切到迁 Drift
+    // 之前建的老 Profile 会因「快照里没有这个键」把它删掉，Anki 设置整份清空。
+    // （它同时在设备本地名单里，[isExcludedPref] 第一道判定已拦；这里点名防名单漂移。）
+    kAnkiSettingsPrefKey,
   };
 
   static const List<String> _excludedPrefPrefixes = [

@@ -369,6 +369,7 @@ class ChannelSyncFlags {
   const ChannelSyncFlags({
     required this.syncStats,
     required this.syncFavorites,
+    this.syncWebHistory = false,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncMangaContent,
@@ -381,6 +382,10 @@ class ChannelSyncFlags {
   /// 聚合快照里统计与收藏本来就由同一个开关代管，拆开会改变云备份的既有行为）；
   /// 互联通道读自己的 `interconnect_sync_favorites`。
   final bool syncFavorites;
+
+  /// 浏览器历史是否参与聚合同步：设备级「同步浏览历史」，两条通道读同一个键
+  /// （默认关；历史不跟收藏走，见 `kSyncWebHistoryPrefKey`）。
+  final bool syncWebHistory;
   final bool syncAudioBookPosition;
   final bool syncContent;
 
@@ -421,6 +426,7 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
     syncFavorites: isInterconnect
         ? await repo.isInterconnectSyncFavoritesEnabled()
         : await repo.isSyncStatsEnabled(),
+    syncWebHistory: await repo.isWebHistorySyncEnabled(),
     syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
     syncContent: isInterconnect
         ? await repo.isInterconnectSyncContentEnabled()
@@ -512,6 +518,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     ),
     syncStats: flags.syncStats,
     syncFavorites: flags.syncFavorites,
+    syncWebHistory: flags.syncWebHistory,
     syncAudioBookPosition: flags.syncAudioBookPosition,
     syncContent: flags.syncContent,
     syncMangaContent: flags.syncMangaContent,

@@ -396,7 +396,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
               child: DecoratedBox(
                 decoration: ShapeDecoration(
                   color: scheme.secondary,
-                  shape: const FushiCookieBorder(lobes: 9),
+                  shape: MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
                 ),
                 child: Center(
                   child: FushiIcon(
@@ -834,7 +834,11 @@ class _HeroStatusIcon extends StatelessWidget {
                 curve: FushiMotion.standard,
                 decoration: ShapeDecoration(
                   color: fill,
-                  shape: FushiCookieBorder(lobes: connected ? 9 : 4),
+                  shape: MaterialShapeBorder(
+                    shape: connected
+                        ? MaterialShapes.cookie9Sided
+                        : MaterialShapes.cookie4Sided,
+                  ),
                 ),
                 child: Center(
                   child: Transform.rotate(

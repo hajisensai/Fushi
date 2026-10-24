@@ -229,6 +229,13 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'bookmarks': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.progress,
   }),
+  // v128 内置浏览器历史 / 书签（含文件夹）：浏览「进度」，随进度类别走。
+  'web_browser_history': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.progress,
+  }),
+  'web_browser_bookmarks': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.progress,
+  }),
   // 「最近打开流」：带进度两数，外部媒体行还带 URL 与标题快照。
   'media_open_history': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.progress,
@@ -304,6 +311,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v124：AI 整理记录（本机做过哪些整理、供撤销），设备本地。
   'library_organize_runs': BackupTableRule.deviceLocal(),
   'library_organize_changes': BackupTableRule.deviceLocal(),
+  // v128：内置浏览器标签页会话 / 最近关闭 / 下载记录，设备本地。
+  'web_browser_session_tabs': BackupTableRule.deviceLocal(),
+  'web_browser_closed_tabs': BackupTableRule.deviceLocal(),
+  'web_browser_downloads': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

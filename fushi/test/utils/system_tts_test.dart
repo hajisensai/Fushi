@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -112,6 +113,33 @@ void main() {
       expect(args.containsKey('locale'), isFalse);
     });
 
+    test('引擎包名与声音 id 原样交给原生；没选就不带这两个键', () async {
+      answer((MethodCall call) => '/out/a.wav');
+      await TtsChannel.nativeTtsToFile(
+        channel,
+        text: '学生',
+        outputPath: '/out/a.wav',
+        languageTag: 'ja',
+        engine: 'com.iflytek.speechcloud',
+        voice: 'ja-jp-x-htm-local',
+      );
+      await TtsChannel.nativeTtsToFile(
+        channel,
+        text: '学生',
+        outputPath: '/out/a.wav',
+        languageTag: 'ja',
+        engine: '',
+      );
+      final Map<Object?, Object?> chosen =
+          calls.first.arguments as Map<Object?, Object?>;
+      expect(chosen['engine'], 'com.iflytek.speechcloud');
+      expect(chosen['voice'], 'ja-jp-x-htm-local');
+      final Map<Object?, Object?> auto =
+          calls.last.arguments as Map<Object?, Object?>;
+      expect(auto.containsKey('engine'), isFalse);
+      expect(auto.containsKey('voice'), isFalse);
+    });
+
     test('不指定语言时传 null（原生用引擎默认语言）', () async {
       answer((MethodCall call) => '/out/a.wav');
       await TtsChannel.nativeTtsToFile(
@@ -130,6 +158,7 @@ void main() {
           'LANGUAGE_MISSING_DATA': SystemTtsFailureReason.languageMissingData,
           'LANGUAGE_NOT_SUPPORTED': SystemTtsFailureReason.languageNotSupported,
           'ENGINE_UNAVAILABLE': SystemTtsFailureReason.engineUnavailable,
+          'VOICE_UNAVAILABLE': SystemTtsFailureReason.voiceUnavailable,
           'SYNTHESIS_FAILED': SystemTtsFailureReason.synthesisFailed,
           'SOMETHING_NEW': SystemTtsFailureReason.synthesisFailed,
         };
@@ -324,21 +353,62 @@ void main() {
       expect(desktopTtsLanguageCode(null), isNull);
     });
 
-    test('Windows SAPI：指定语言时按 Culture 选声音、没有就以约定码退出', () {
-      final String withLang = sapiWindowsScript(
-        textBase64: 'AA==',
+    test('Windows：点名声音按 id 拆成引擎 + 键；没点名才带语言；不认识的 id = 声音不在', () {
+      final Map<String, Object?> byVoice = windowsSpeakRequest(
+        text: 'テスト',
         outputPath: r'C:\o.wav',
-        languageCode: 'en',
-      );
-      expect(withLang, contains("TwoLetterISOLanguageName -eq 'en'"));
-      expect(withLang, contains('exit $kSapiNoVoiceForLanguageExitCode'));
-      expect(withLang, contains(r'$s.SelectVoice('));
-      final String noLang = sapiWindowsScript(
-        textBase64: 'AA==',
+        languageTag: 'ja',
+        voice: 'onecore:MSTTS_V110_jaJP_HarukaM',
+      )!;
+      expect(byVoice['voiceKind'], 'onecore');
+      expect(byVoice['voiceKey'], 'MSTTS_V110_jaJP_HarukaM');
+      expect(byVoice.containsKey('lang'), isFalse);
+      expect(utf8.decode(base64Decode(byVoice['text']! as String)), 'テスト');
+      final Map<String, Object?> sapi = windowsSpeakRequest(
+        text: 'a',
         outputPath: r'C:\o.wav',
-        languageCode: null,
+        languageTag: null,
+        voice: 'sapi:Microsoft Haruka Desktop',
+      )!;
+      expect(sapi['voiceKind'], 'sapi');
+      expect(sapi['voiceKey'], 'Microsoft Haruka Desktop');
+      final Map<String, Object?> byLang = windowsSpeakRequest(
+        text: 'a',
+        outputPath: r'C:\o.wav',
+        languageTag: 'en-US',
+        voice: null,
+      )!;
+      expect(byLang['lang'], 'en');
+      expect(byLang.containsKey('voiceKind'), isFalse);
+      expect(
+        windowsSpeakRequest(
+          text: 'a',
+          outputPath: r'C:\o.wav',
+          languageTag: null,
+          voice: 'ja-jp-x-htm-local',
+        ),
+        isNull,
       );
-      expect(noLang, isNot(contains('SelectVoice')));
+    });
+
+    test('macOS：say 直接出 16-bit WAV，点名声音时带 -v，正文在 -- 之后', () {
+      expect(
+        sayMacOSArguments(outputPath: '/o.wav', text: '-x', voice: 'Kyoko'),
+        <String>[
+          '-v',
+          'Kyoko',
+          '--file-format=WAVE',
+          '--data-format=LEI16@22050',
+          '-o',
+          '/o.wav',
+          '--',
+          '-x',
+        ],
+      );
+      expect(
+        sayMacOSArguments(outputPath: '/o.wav', text: 'a'),
+        isNot(contains('-v')),
+      );
     });
 
     test('macOS：从 say -v ? 里挑该语言的第一个声音（名字可带空格）', () {
@@ -350,6 +420,14 @@ void main() {
       expect(pickMacOSVoice(list, 'ja'), 'Kyoko');
       expect(pickMacOSVoice(list, 'en'), 'Alex');
       expect(pickMacOSVoice(list, 'fr'), isNull);
+      // macOS 27 的多变体声音：名字带本地化括号，取整段名字（say -v 认它）。
+      expect(
+        pickMacOSVoice(
+          'Eddy (日语（日本）)       ja_JP    # こんにちは! 私の名前はEddyです。\n',
+          'ja',
+        ),
+        'Eddy (日语（日本）)',
+      );
     });
 
     test('Linux：只有日语引擎，别的语言直接报不支持（不拿日语声音念英语）', () async {

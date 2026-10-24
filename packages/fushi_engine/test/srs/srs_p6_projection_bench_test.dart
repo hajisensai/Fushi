@@ -97,7 +97,41 @@ class _CountingBackend implements SrsRwkvBackend {
   Future<void> replay(RwkvRows r) async => rows += r.length;
 
   @override
+  Future<bool> append(RwkvRows r, List<int> tags) async {
+    rows += r.length;
+    return true;
+  }
+
+  @override
+  Future<bool> unappend(int tag) async => false;
+
+  @override
   Future<Float32List> query(RwkvRows r) async => Float32List(r.length);
+
+  @override
+  Future<void> clearScores() async {}
+
+  @override
+  Future<RwkvScoreLookup> lookupScores(
+    Int64List cardIds,
+    Uint64List versions,
+  ) async => RwkvScoreLookup(
+    Float32List(cardIds.length)..fillRange(0, cardIds.length, double.nan),
+    Uint8List(cardIds.length),
+  );
+
+  @override
+  Future<Float32List> updateScores(
+    RwkvRows r,
+    Uint64List versions,
+    Int64List anchorsMs,
+  ) async => Float32List(r.length);
+
+  @override
+  Future<int> requeryScores(int today, int nowMs) async => 0;
+
+  @override
+  Future<int> removeScores(Int64List cardIds) async => 0;
 
   @override
   Future<Uint8List> snapshot() async => Uint8List(0);

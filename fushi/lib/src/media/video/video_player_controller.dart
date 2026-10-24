@@ -7,6 +7,7 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
+import 'package:fushi/src/media/video/video_audio_output_recovery.dart';
 import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_aacs_module.dart';
@@ -811,6 +812,72 @@ class VideoPlayerController extends ChangeNotifier
   /// 回补当前 [_lastVolume]（默认 100）无害，[load] 随后会再设一次。
   StreamSubscription<AudioDevice>? _audioDeviceSub;
 
+  /// BUG-3767：音频输出丢失后的自动恢复（见 [VideoAudioOutputRecovery]）。mpv 在音频
+  /// 设备打不开时取消选中音轨、之后再也不选回来；这里按退避重选音轨直到 ao 建起来。
+  /// 随 load 重置，随 Player 销毁停止。
+  late final VideoAudioOutputRecovery _audioOutputRecovery =
+      VideoAudioOutputRecovery(
+        reselectAudio: _reselectAudioAfterOutputLoss,
+        log: (String message) =>
+            videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, message),
+      );
+
+  /// BUG-3767：系统音频设备列表变化订阅（mpv `audio-device-list`，wasapi 热插拔通知）。
+  /// 设备回来了的最强信号，喂给 [_audioOutputRecovery] 立即重试。与 [_audioDeviceSub]
+  /// 同为 Player 作用域。
+  StreamSubscription<List<AudioDevice>>? _audioDevicesSub;
+
+  /// 写回 `aid` 后等多久再读 `current-ao` 判定恢复与否：成功时 ao 初始化只要几十毫秒，
+  /// 失败时 wasapi 自己的重试要一两秒才放弃。
+  static const Duration _audioRecoveryVerifyDelay = Duration(
+    milliseconds: 1500,
+  );
+
+  /// [_audioOutputRecovery] 的一次尝试，见 [reselectAudioAfterOutputLoss]。
+  Future<VideoAudioRecoveryAttempt> _reselectAudioAfterOutputLoss() async {
+    final Player? player = _player;
+    if (player == null || _webBackend) {
+      return VideoAudioRecoveryAttempt.abandoned;
+    }
+    final int loadToken = _loadToken;
+    return reselectAudioAfterOutputLoss(
+      player,
+      isCurrent: () => _isCurrentLoad(player, loadToken),
+    );
+  }
+
+  /// BUG-3767：mpv 的音轨仍处于被取消选中（`aid=no`）时写回丢失前在放的那条
+  /// （[videoAudioRecoveryTargetAid]），随后以 `current-ao` 非空为恢复判据。每个
+  /// await 后都问 [isCurrent]（player identity + loadToken 双判据，与本文件其它原生
+  /// 下发一致，防 UAF / 写到下一集）。`aid` 不是 `no` 时不写，只读判据——旧片迟到的
+  /// 丢失错误不会切掉新片正在放的音轨。
+  @visibleForTesting
+  static Future<VideoAudioRecoveryAttempt> reselectAudioAfterOutputLoss(
+    Player player, {
+    required bool Function() isCurrent,
+    Duration verifyDelay = _audioRecoveryVerifyDelay,
+  }) async {
+    final dynamic native = player.platform;
+    if (native == null) return VideoAudioRecoveryAttempt.abandoned;
+    final String? target = videoAudioRecoveryTargetAid(
+      player.state.track.audio.id,
+      player.state.tracks.audio,
+    );
+    if (target == null) return VideoAudioRecoveryAttempt.abandoned;
+    final String aid = (await native.getPropertyAsync('aid')).toString();
+    if (!isCurrent()) return VideoAudioRecoveryAttempt.abandoned;
+    if (aid.trim() == 'no') {
+      await native.setProperty('aid', target);
+      await Future<void>.delayed(verifyDelay);
+      if (!isCurrent()) return VideoAudioRecoveryAttempt.abandoned;
+    }
+    final String ao = (await native.getPropertyAsync('current-ao')).toString();
+    if (!isCurrent()) return VideoAudioRecoveryAttempt.abandoned;
+    return ao.trim().isNotEmpty
+        ? VideoAudioRecoveryAttempt.recovered
+        : VideoAudioRecoveryAttempt.stillLost;
+  }
+
   /// 每次 [load] 递增。复用同一个 [Player] 换片时，单靠 player identity 无法区分
   /// 旧媒体的异步章节读取结果；token 让旧 load 的结果可被丢弃。
   int _loadToken = 0;
@@ -1144,8 +1211,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 播放页把它接给 fork 的 `relativeSeekBasePosition`：fork 在一次横滑开始时只取
   /// 一次基准（整段拖动用同一个快照，拖动中途在途目标落地 / 清掉也不跳），拖动 HUD
   /// 读 [lastRelativeSeekBaseMs] 与它对齐，而不是每帧重读会变的 [resumePositionMs]。
-  int? captureRelativeSeekBaseMs() =>
-      _lastRelativeSeekBaseMs = resumePositionMs;
+  int? captureRelativeSeekBaseMs() {
+    _relativeSeekBaseCaptureCount++;
+    return _lastRelativeSeekBaseMs = resumePositionMs;
+  }
+
+  /// [captureRelativeSeekBaseMs] 被调过几次。fork 只在横滑 / 双击这类**相对**步进
+  /// 开始时取基准；播放页的「跳转回退」据此把进度条按下与随后的步进区分开（进度条
+  /// 与步进共用 `onSeekEnd`，见 `VideoSeekBarJumpTracker`）。
+  int get relativeSeekBaseCaptureCount => _relativeSeekBaseCaptureCount;
+  int _relativeSeekBaseCaptureCount = 0;
 
   /// 最近一次 [captureRelativeSeekBaseMs] 取到的基准；从未取过为 null。
   int? get lastRelativeSeekBaseMs => _lastRelativeSeekBaseMs;
@@ -3060,6 +3135,8 @@ class VideoPlayerController extends ChangeNotifier
       'Provide exactly one of videoFile or mediaUri.',
     );
     final int loadToken = ++_loadToken;
+    // BUG-3767：mpv 不把上一片的 `aid=no` 沿用到新文件，上一片的音频恢复状态作废。
+    _audioOutputRecovery.reset();
     // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
     // （BUG-3697）。其它平台 / 不在任何来源下的文件 no-op。
     if (videoFile != null) {
@@ -3313,6 +3390,10 @@ class VideoPlayerController extends ChangeNotifier
         if (current == null) return;
         unawaited(current.setVolume(_muted ? 0.0 : _lastVolume));
       });
+      _audioDevicesSub = player.stream.audioDevices.listen((_) {
+        if (!identical(_player, player)) return;
+        _audioOutputRecovery.onAudioDevicesChanged();
+      });
       // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
       _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
       // 诊断时间轴（2026-09-22）：把 libmpv 经客户端 API 推上来的日志行也转写进
@@ -3342,6 +3423,9 @@ class VideoPlayerController extends ChangeNotifier
       // 新一集打成失败。本文件其余 8 处原生下发都用双判据，同理。
       _errorSub = player.stream.error.listen((String message) {
         if (!identical(_player, player)) return; // 旧 Player 的迟到错误不算数。
+        // BUG-3767：音频设备打不开 → 进入恢复。恢复尝试自己按双判据校验，且只在 mpv
+        // 音轨确实处于 `aid=no` 时才写回，旧片迟到的这条错误不会切掉新片的音轨。
+        _audioOutputRecovery.onPlayerError(message);
         onPlaybackError?.call(
           redactAacsRelayUrls(redactAppNativeProxySecrets(message)),
         );
@@ -4508,7 +4592,12 @@ class VideoPlayerController extends ChangeNotifier
     _syncCueForPosition(clampedMs, persistPosition: false);
     // fork 在 onSeekEnd 之后才 `player.seek`，此刻下发的前移量正好赶在这次 seek 前。
     _applyHrSeekDemuxerOffsetFor(clampedMs);
+    onExternalSeekNotified?.call(clampedMs);
   }
+
+  /// [notifyExternalSeek] 的旁听者（落点，播放器轴毫秒）：播放页的「跳转回退」靠它
+  /// 拿到 media_kit 进度条 / 横滑 / 双击的落点（这几条 seek 绕过 [seekMs]）。
+  void Function(int targetMs)? onExternalSeekNotified;
 
   /// 按 [targetMs] 给这次 seek 下发 `hr-seek-demuxer-offset`（BUG-3618，判据见
   /// [hrSeekDemuxerOffsetForSeek]）。必须在 `player.seek` **之前**同步调用：libmpv
@@ -6307,6 +6396,9 @@ class VideoPlayerController extends ChangeNotifier
     _durationReadySub = null;
     unawaited(_audioDeviceSub?.cancel());
     _audioDeviceSub = null;
+    unawaited(_audioDevicesSub?.cancel());
+    _audioDevicesSub = null;
+    _audioOutputRecovery.dispose();
     // BUG-2441：错误订阅与 Player 同作用域，随它一起摘（也断开对页面回调的引用）。
     unawaited(_errorSub?.cancel());
     _errorSub = null;
@@ -6393,6 +6485,9 @@ class VideoPlayerController extends ChangeNotifier
     _mediaOpened = false; // 与 [dispose] 一致：Player 没了，旧证据作废。
     unawaited(_errorSub?.cancel()); // 错误订阅与 Player 同作用域。
     _errorSub = null;
+    unawaited(_audioDevicesSub?.cancel()); // BUG-3767：同为 Player 作用域。
+    _audioDevicesSub = null;
+    _audioOutputRecovery.reset();
     _resetLuaScriptState(); // 新 Player 必须重新 load-script（见字段注释）。
     // 旧 Player 的镜像轨随它消失，镜像 SRT 也一起作废。先摘下所有权（释放期间可能已
     // 建好新 Player、写出新镜像，不能误删那份），等 libmpv 放掉句柄后再删。

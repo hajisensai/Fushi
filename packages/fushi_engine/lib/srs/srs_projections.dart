@@ -89,28 +89,36 @@ class SrsTrainingSet {
   int get _deltas => _ratings + reviewTotal;
   int get _items => _deltas + reviewTotal;
 
-  /// 每项是一张卡到某次评分为止的历史（按最后一次评分时刻排序，供时间序列切分）。
-  late final List<List<SrsFsrsReview>> items = () {
-    final List<List<SrsFsrsReview>> seqs = <List<SrsFsrsReview>>[
-      for (int s = 0; s < seqCount; s++)
-        <SrsFsrsReview>[
-          for (int r = _w(_seqStart + s); r < _w(_seqStart + s + 1); r++)
-            SrsFsrsReview(
-              rating: _w(_ratings + r),
-              deltaDays: _d.getFloat64(8 * (_deltas + r), Endian.little),
-            ),
-        ],
-    ];
-    return <List<SrsFsrsReview>>[
-      for (int i = 0; i < itemCount; i++)
-        seqs[_w(_items + 2 * i)].sublist(0, _w(_items + 2 * i + 1)),
-    ];
+  /// 换成 FSRS 引擎的打包训练集（每张卡一份完整历史 + 按时刻排好的（卡，前缀长度）条目，前缀在
+  /// `ffsrs_fit` 里展开）。第一次读时转换（在拟合用的后台 isolate 里），O(总评分数)。
+  late final SrsFsrsTrainingSet fsrs = () {
+    final Uint8List ratings = Uint8List(reviewTotal);
+    final Float32List deltas = Float32List(reviewTotal);
+    for (int r = 0; r < reviewTotal; r++) {
+      ratings[r] = _w(_ratings + r);
+      deltas[r] = _d.getFloat64(8 * (_deltas + r), Endian.little);
+    }
+    final Uint32List offsets = Uint32List(seqCount + 1);
+    final Int64List ids = Int64List(seqCount);
+    for (int c = 0; c <= seqCount; c++) {
+      offsets[c] = _w(_seqStart + c);
+      if (c < seqCount) ids[c] = _w(_seqCard + c);
+    }
+    final Uint32List itemCards = Uint32List(itemCount);
+    final Uint32List itemLengths = Uint32List(itemCount);
+    for (int i = 0; i < itemCount; i++) {
+      itemCards[i] = _w(_items + 2 * i);
+      itemLengths[i] = _w(_items + 2 * i + 1);
+    }
+    return SrsFsrsTrainingSet(
+      ratings: ratings,
+      deltaDays: deltas,
+      cardOffsets: offsets,
+      cardIds: ids,
+      itemCards: itemCards,
+      itemLengths: itemLengths,
+    );
   }();
-
-  /// 与 [items] 同序的 53 位卡 id。
-  late final List<int> cardIds = <int>[
-    for (int i = 0; i < itemCount; i++) _w(_seqCard + _w(_items + 2 * i)),
-  ];
 }
 
 // ---------------------------------------------------------------- RWKV
@@ -256,7 +264,14 @@ SrsRwkvReplay srsDecodeRwkvReplay(Uint8List bytes) {
 }
 
 /// 一条对齐用的新日志（rowid 在指纹之后）。
-typedef SrsRwkvTailLog = ({String id, String cardId, bool isReview, int at});
+/// [kind] 是日志 kind（review / undo；其它 kind 为空串——对齐只认这两种），[revokes] 是 undo 的撤销目标。
+typedef SrsRwkvTailLog = ({
+  String id,
+  String cardId,
+  String kind,
+  int at,
+  String? revokes,
+});
 
 /// RWKV 对齐的日志指纹与尾巴（`ffsrs_store_rwkv_log_tail`，同一个快照）。
 class SrsRwkvLogTail {
@@ -281,7 +296,7 @@ SrsRwkvLogTail srsDecodeRwkvLogTail(Uint8List bytes) {
   final ByteData d = ByteData.sublistView(bytes);
   int w(int k) => d.getInt64(8 * k, Endian.little);
   final int n = w(3);
-  final List<String> s = _strings(bytes, 8 * (4 + 2 * n), 2 * n);
+  final List<String> s = _strings(bytes, 8 * (4 + 2 * n), 3 * n);
   return SrsRwkvLogTail(
     count: w(0),
     maxRowId: w(1),
@@ -289,10 +304,15 @@ SrsRwkvLogTail srsDecodeRwkvLogTail(Uint8List bytes) {
     logs: <SrsRwkvTailLog>[
       for (int i = 0; i < n; i++)
         (
-          id: s[2 * i],
-          cardId: s[2 * i + 1],
-          isReview: w(4 + n + i) != 0,
+          id: s[3 * i],
+          cardId: s[3 * i + 1],
+          kind: switch (w(4 + n + i)) {
+            1 => SrsLogKind.review,
+            2 => SrsLogKind.undo,
+            _ => '',
+          },
           at: w(4 + i),
+          revokes: s[3 * i + 2].isEmpty ? null : s[3 * i + 2],
         ),
     ],
   );

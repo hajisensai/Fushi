@@ -64,6 +64,7 @@ Future<List<VideoRemoteLibraryItem>> listVideoRemoteLibrary(
             collectionNames[primary[MediaKind.video.compositeKey(row.bookUid)]],
         positionMs: row.lastPositionMs,
         lastPlayedAt: row.lastPlayedAt,
+        coverPath: row.coverPath,
       ),
   ];
 }

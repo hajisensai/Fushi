@@ -51,7 +51,14 @@ enum StoreRestrictedCapability {
   /// 一致：报「码流仍是 AACS 加密」，不读取、不下载任何播放配置；已解密的副本与
   /// 未加密的原盘照常播放。引擎侧开关是 `aacsDecryptionAvailable`
   /// （`installEngineHostBindings()` 用本值赋值）。
-  aacsDecryption;
+  aacsDecryption,
+
+  /// 应用内的外部打赏 / 赞助入口（GitHub Sponsors、Ko-fi）。
+  ///
+  /// 审核指南 3.1.1：应用内向开发者付款（含打赏 / 小费）只能走 App 内购买，
+  /// 引导到外部支付页的按钮属于会被拒绝上架的形态（只有获批的非营利组织
+  /// 募捐例外）。iOS 上设置页不渲染这些入口；仓库 README 等应用外渠道不受影响。
+  externalDonation;
 
   /// 本能力在目标平台上**是否存在**（与用户意愿、与运行时能否跑起来都无关）。
   ///

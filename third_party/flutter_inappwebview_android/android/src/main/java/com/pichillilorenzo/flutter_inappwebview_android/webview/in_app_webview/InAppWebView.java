@@ -95,6 +95,7 @@ import com.pichillilorenzo.flutter_inappwebview_android.webview.ContextMenuSetti
 import com.pichillilorenzo.flutter_inappwebview_android.webview.InAppWebViewInterface;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.JavaScriptBridgeInterface;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.WebViewChannelDelegate;
+import com.pichillilorenzo.flutter_inappwebview_android.webview.WebViewProfileManager;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.web_message.WebMessageChannel;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.web_message.WebMessageListener;
 
@@ -2094,8 +2095,29 @@ final public class InAppWebView extends InputAwareWebView implements InAppWebVie
     loadUrl("about:blank");
   }
 
+  // Hibiki patch: the named profile this view was attached to (see
+  // WebViewProfileManager). Released once, after the view's native side is
+  // gone, so that ending an incognito session while its last view is being torn
+  // down acts only after that view can no longer write cookies / storage.
+  // dispose() only schedules destroy() (about:blank onPageFinished), and
+  // Chromium's AwContents.destroy() itself only marks the view destroyed and
+  // *posts* destroyNatives() to the UI-thread handler; posting the release to
+  // the same (main) looper afterwards queues it behind that message (FIFO).
+  @Nullable
+  public String profileName;
+
   @Override
   public void destroy() {
     super.destroy();
+    final String released = profileName;
+    profileName = null;
+    if (released != null) {
+      new Handler(Looper.getMainLooper()).post(new Runnable() {
+        @Override
+        public void run() {
+          WebViewProfileManager.release(released);
+        }
+      });
+    }
   }
 }

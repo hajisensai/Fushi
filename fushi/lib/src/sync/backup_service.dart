@@ -636,6 +636,10 @@ const List<String> _deviceLocalTables = <String>[
   // 恢复后对不上的记录只是撤销时找不到目标，不会误删。
   'library_organize_changes',
   'library_organize_runs',
+  // v128：内置浏览器的标签页会话 / 最近关闭 / 下载记录（下载记录带本机落盘路径）。
+  'web_browser_session_tabs',
+  'web_browser_closed_tabs',
+  'web_browser_downloads',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -659,6 +663,9 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_download_subscription_items',
   'library_organize_runs',
   'library_organize_changes',
+  'web_browser_session_tabs',
+  'web_browser_closed_tabs',
+  'web_browser_downloads',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`
@@ -792,6 +799,13 @@ Future<void> _stripExcludedDataCategories(
       await db.customStatement('DELETE FROM bookmarks');
       await db.customStatement(
           "DELETE FROM preferences WHERE key LIKE 'audiobook_pos_%'");
+      // v128 内置浏览器历史 / 书签随「进度」走；它们的删除墓碑（逻辑键，不随表
+      // cascade）同样只在勾了进度时出境——否则「没导出浏览数据」的备份仍带着删过的网址。
+      await db.customStatement('DELETE FROM web_browser_history');
+      await db.customStatement('DELETE FROM web_browser_bookmarks');
+      await db.customStatement(
+          'DELETE FROM sync_deletion_tombstones WHERE media_type IN '
+          "('webhistory', 'webbookmark')");
     }
     if (stripStatistics) {
       for (final String table in _statisticsTables) {

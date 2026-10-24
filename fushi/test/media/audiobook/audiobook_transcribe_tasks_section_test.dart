@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
+    show AudiobookAlignmentStep;
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:path/path.dart' as p;
 
@@ -93,6 +96,63 @@ void main() {
     });
   });
 
+  group('阶段 / 覆盖情况', () {
+    test('加载模型与匹配正文有自己的状态；匹配不估百分比、带细分步骤', () {
+      expect(
+        audiobookTranscribeJobStatusLabel(
+          _job(
+            AudiobookTranscribeJobStatus.running,
+            phase: AudiobookTranscribeJobPhase.loadingModel,
+          ),
+        ),
+        t.audiobook_transcribe_status_loading_model,
+      );
+      expect(
+        audiobookTranscribeJobStatusLabel(
+          _job(
+            AudiobookTranscribeJobStatus.running,
+            phase: AudiobookTranscribeJobPhase.matching,
+          )..alignmentStep = AudiobookAlignmentStep.finishing,
+        ),
+        '${t.audiobook_transcribe_status_matching} · '
+        '${t.audiobook_transcribe_step_finishing}',
+      );
+    });
+
+    test('完成且有覆盖情况：已入库后附覆盖率与命中句数', () {
+      final AudiobookTranscribeJob job =
+          _job(AudiobookTranscribeJobStatus.done, resultKey: 'k')
+            ..coverage = const AudiobookTextCoverage(
+              matchedCues: 99,
+              totalCues: 100,
+              coveredChars: 985,
+              spanChars: 1000,
+            );
+      expect(
+        audiobookTranscribeJobStatusLabel(job),
+        '${t.audiobook_transcribe_status_done} · '
+        '${t.audiobook_transcribe_coverage_text(pct: '98.5')} · '
+        '${t.audiobook_transcribe_coverage_cues(matched: 99, total: 100)}',
+      );
+      // 任务卡标题行：百分比由卡片拼、覆盖率在摘要标签里，都不重复。
+      expect(
+        audiobookTranscribeJobStatusLabel(job, compact: true),
+        t.audiobook_transcribe_status_done,
+      );
+      expect(
+        audiobookTranscribeJobStatusLabel(
+          _job(
+            AudiobookTranscribeJobStatus.running,
+            phase: AudiobookTranscribeJobPhase.transcribing,
+            progress: 0.43,
+          ),
+          compact: true,
+        ),
+        t.audiobook_transcribe_status_transcribing,
+      );
+    });
+  });
+
   testWidgets('队列任务并入统一任务列表:状态/进度/动作槽位正确', (WidgetTester tester) async {
     final Directory root = Directory.systemTemp.createTempSync('abts_');
     addTearDown(() => root.deleteSync(recursive: true));
@@ -104,7 +164,12 @@ void main() {
       queue = AudiobookTranscribeImportQueue(
         store: File(p.join(root.path, 'jobs.json')),
         transcriber: _HangingTranscriber(),
-        importer: (AudiobookTranscribeJob job, String srt) async => 'k',
+        importer:
+            (
+              AudiobookTranscribeJob job,
+              String srt,
+              AudiobookTranscribeImportSink sink,
+            ) async => 'k',
       );
       await queue.enqueue(audioPaths: <String>['/a/01.mp3'], title: 'Running');
       await queue.enqueue(audioPaths: <String>['/b/01.mp3'], title: 'Waiting');
@@ -141,6 +206,44 @@ void main() {
     expect(running.actions.retry, isNull);
     expect(running.actions.clear, isNull);
     expect(entries.last.status, DownloadTaskStatus.queued);
+
+    // 任务行详情里有阶段轨（转录中：前两格走过、第三格高亮）。
+    await tester.pumpWidget(
+      ProviderScope(
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: Builder(builder: running.builder),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 阶段轨在折叠时也可见（卡片摘要槽），不用点开。
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-2-active')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asr-pipeline-stage-0-skipped')),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: AudiobookTranscribeTasksSection(
+            queueOverride: queue,
+            tasksBuilder: (BuildContext context, List<DownloadTaskEntry> e) {
+              entries = e;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
 
     // 取消正在跑的那本 → 列表随队列刷新,可重试/可移出。
     // 等的是「队列广播了终态」而不是「状态字段变了」：终态先写盘再通知，

@@ -103,6 +103,33 @@ void main() {
     );
   });
 
+  // 用户 10-23：元数据列换到词头下方时铺满整行（含按钮组下方），词形标签也收进这一列。
+  // 判据的行为测试见 test/dictionary/popup_header_meta_stacked_test.js。
+  test('stacked header meta column spans the full header row', () {
+    expect(
+      ruleBody('.entry-header.meta-stacked > .entry-header-main'),
+      contains('display: contents'),
+      reason: '拆掉左簇，元数据列才能越过按钮组下方那一截',
+    );
+    expect(
+      ruleBody('.entry-header.meta-stacked .entry-header-meta'),
+      contains('flex: 1 1 100%'),
+    );
+    expect(ruleBody('.entry-header.meta-stacked'), contains('flex-wrap: wrap'));
+    final String fn = js.substring(
+      js.indexOf('function buildEntryElement('),
+      js.indexOf('function appendNextDeferredGlossaryBlock('),
+    );
+    expect(fn.contains('observeEntryHeaderMetaLayout('), isTrue);
+    expect(fn.contains('meta.appendChild(exprTags)'), isTrue);
+    expect(fn.contains('entryDiv.appendChild(exprTags)'), isFalse);
+    expect(
+      js.contains('__fushiHeaderMetaObserver.disconnect()'),
+      isTrue,
+      reason: '换代时断开旧词条的观察，热槽 WebView 不攒脱离文档的子树',
+    );
+  });
+
   // BUG-3320（反馈 ICrzgr8FsV）：窄弹窗里按钮组压住词头。左簇 flex-basis 0 让换行判定永远
   // 「放得下」，按钮组从不换行；min-content 下限恢复「放不下就整组换到下一行」，长词头由
   // 词头行自身宽度（容器单位）封顶、仍横向滚动。前后对比截图见 PR。

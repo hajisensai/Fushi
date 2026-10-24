@@ -64,7 +64,14 @@ String ttsParamLabel(String key) => switch (key) {
   IrodoriServerTtsDescriptor.captionKey => t.audiobook_tts_param_caption,
   'api_key' => t.audiobook_tts_param_api_key,
   'voice' => t.audiobook_tts_param_voice,
+  SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine,
   _ => key,
+};
+
+/// 非必填的声音类参数「不选」时显示什么（系统语音：默认引擎 / 按文字语言自动挑）。
+String ttsParamEmptyLabel(String key) => switch (key) {
+  SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine_default,
+  _ => t.audiobook_tts_param_voice_auto,
 };
 
 /// GPT-SoVITS 语言代码的可读名称（`ja` 是「日语，夹杂的英文按英文读」，

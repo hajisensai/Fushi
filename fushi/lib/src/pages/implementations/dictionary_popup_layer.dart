@@ -1364,8 +1364,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   final bool keepWebViewWarm;
 
   /// 顶栏是否给出「制卡目标」按钮（[DictionaryPopupMiningTargetButton]：切配置 /
-  /// 牌组）。只有真能制卡的宿主（制卡模块开着）才开；默认关，app 外覆盖窗、停驻
-  /// 热槽等不制卡的层不出现，也不去碰 Anki / 配置 provider。
+  /// 牌组）。只有真能制卡的宿主（制卡模块开着）才开：in-app 三车道与应用外独立查词窗
+  /// （`popup_dictionary_page.dart`，Anki 设置迁 Drift 后跨进程一致，fiwDIpFep7）。
+  /// 默认关，停驻热槽等不制卡的层不出现，也不去碰 Anki / 配置 provider。
   final bool showMiningTargetSwitch;
 
   /// TODO-869：本层弹窗是否有子（后代）弹窗。透传给 [DictionaryPopupWebView] 注入

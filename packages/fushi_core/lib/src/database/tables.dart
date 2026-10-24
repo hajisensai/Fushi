@@ -157,6 +157,16 @@ class Bookmarks extends Table {
   TextColumn get bookTitle => text().nullable()();
   IntColumn get pageInChapter => integer().nullable()();
   IntColumn get totalPagesInChapter => integer().nullable()();
+
+  /// v127：书签所在页首字符的章内精确字符偏移（与 [ReaderPositions.charOffset]
+  /// 同计量）。存字符而不是页码：改字号 / 边距后页码会变，字符位置不变。-1 = 无
+  /// 精确偏移（v127 前的旧书签 / 拿不到页范围），跳转回退 [normCharOffset] 分数。
+  /// 漫画 / PDF 书签按页记，恒 -1。
+  IntColumn get charOffset => integer().withDefault(const Constant(-1))();
+
+  /// v127：在线漫画书签所在章的稳定键（`MangaChapterStates.chapterKey`，Mihon 下是
+  /// 章 url）。章下标会随源更新漂移，按键找章；本地卷 / EPUB / PDF 为 null。
+  TextColumn get chapterKey => text().nullable()();
 }
 
 // ── reading_statistics ──────────────────────────────────────────────
@@ -1214,6 +1224,14 @@ class CollectionMemberTombstones extends Table {
   /// 分不清就会把并掉的当成用户拒绝、把成员丢回散条目（schema v124，spec §8.5）。
   BoolColumn get organizeMerged =>
       boolean().withDefault(const Constant(false))();
+
+  /// 这条墓碑知识**进入本库**的毫秒戳（schema v128，BUG-3743 后续）：本机作互联 host 时
+  /// 清单里的 `publishedAt`（成员墓碑）/ `deletedPublishedAt`（合集级哨兵行），对端用
+  /// 「自己的基线 vs 它」判墓碑是不是新闻。只由同步应用端
+  /// （`applyCollectionLocalChanges`）给**新知识**盖戳，已有同键同 [deletedAt] 的行原值
+  /// 保留、一经确定不刷新。NULL = 本机用户亲手移出 / 删除（进库时刻就是 [deletedAt]，
+  /// 对端回退它判）或升级前的存量行。本机自己同步时不读它（本端侧按 [deletedAt] 裁决）。
+  IntColumn get publishedAt => integer().nullable()();
 
   /// 一 (合集, 成员) 一行；合集级哨兵行天然也唯一。
   @override
@@ -3487,4 +3505,87 @@ class LibraryOrganizeChanges extends Table {
 
   /// 撤销时刻；NULL = 未撤销。
   IntColumn get undoneAt => integer().nullable()();
+}
+
+// ── web_browser_*（内置浏览器，schema v128）────────────────────────────
+// 历史 / 书签（含文件夹）随备份走、经聚合快照跨端同步（删除写 sync_deletion_tombstones，
+// 种类 `webhistory` / `webbookmark`）；标签页会话、最近关闭、下载记录是**设备本地**：
+// 不同步、不进备份。无痕标签页的任何数据都不进这几张表。
+
+/// 浏览历史：同一 url 一行（访问合并：标题取最近一次、次数累加）。
+///
+/// 跨端身份就是 [url] 本身；合并按 url 并集，次数取大、最近访问取大、标题跟最近访问走。
+@DataClassName('WebBrowserHistoryRow')
+class WebBrowserHistory extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get url => text().unique()();
+  TextColumn get title => text().withDefault(const Constant(''))();
+
+  /// 最近一次访问的毫秒戳。
+  IntColumn get lastVisitedAt => integer()();
+  IntColumn get visitCount => integer().withDefault(const Constant(1))();
+}
+
+/// 浏览器书签与书签文件夹（[url] 为 NULL = 文件夹）。
+///
+/// [parentId] 是本机自增 id 的逻辑外键（NULL = 根目录），删文件夹由 store 显式级联并
+/// 逐条写墓碑。跨端身份是 [uid]（随机生成、永不改变）；wire 上父级用父文件夹的 uid 表示，
+/// 落地时按 uid 换回本机 id。合并按 uid 取 [updatedAt] 大者（LWW）。
+@DataClassName('WebBrowserBookmarkRow')
+class WebBrowserBookmarks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get uid => text().unique()();
+  TextColumn get title => text()();
+  TextColumn get url => text().nullable()();
+  IntColumn get parentId => integer().nullable()();
+  IntColumn get position => integer().withDefault(const Constant(0))();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+}
+
+/// 标签页会话（设备本地）：整份覆盖，[position] 即标签顺序。
+@DataClassName('WebBrowserSessionTabRow')
+class WebBrowserSessionTabs extends Table {
+  IntColumn get position => integer()();
+
+  /// 标签页 id（壳生成的字符串，只在本机有意义）。
+  TextColumn get tabId => text()();
+  TextColumn get url => text()();
+  TextColumn get title => text().withDefault(const Constant(''))();
+
+  /// 是否为当前激活的标签页（至多一行为真）。
+  BoolColumn get active => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => <Column>{position};
+}
+
+/// 最近关闭的标签页（设备本地，最多保留 25 条）。
+@DataClassName('WebBrowserClosedTabRow')
+class WebBrowserClosedTabs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get url => text()();
+  TextColumn get title => text().withDefault(const Constant(''))();
+  IntColumn get closedAt => integer()();
+
+  /// 关闭时在标签列表里的位置（恢复时尽量放回原位）。
+  IntColumn get tabIndex => integer().withDefault(const Constant(0))();
+}
+
+/// 浏览器下载记录（设备本地）。
+@DataClassName('WebBrowserDownloadRow')
+class WebBrowserDownloads extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get url => text()();
+  TextColumn get fileName => text()();
+  TextColumn get mimeType => text().nullable()();
+  IntColumn get totalBytes => integer().nullable()();
+  IntColumn get receivedBytes => integer().withDefault(const Constant(0))();
+
+  /// `running` | `completed` | `failed` | `cancelled`。
+  TextColumn get state => text()();
+
+  /// 下载落盘的本机绝对路径；完成前为 NULL。
+  TextColumn get savedPath => text().nullable()();
+  IntColumn get startedAt => integer()();
 }

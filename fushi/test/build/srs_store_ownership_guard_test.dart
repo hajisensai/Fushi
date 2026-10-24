@@ -41,6 +41,10 @@ const Map<String, String> _kAllowed = <String, String>{
   'packages/fushi_engine/lib/srs/srs_backup_merge.dart': '备份合并（新老两种来源）',
   'packages/fushi_engine/lib/srs/srs_legacy_lapis_migration.dart': 'SRS 子系统',
   'packages/fushi_engine/lib/srs/srs_stats.dart': 'SRS 子系统',
+  'packages/fushi_engine/lib/srs/srs_backup_snapshot.dart':
+      'SRS 备份读快照（Rust 只读会话上）',
+  'packages/fushi_engine/lib/srs/srs_browse_query.dart': 'SRS 浏览查询',
+  'packages/fushi_engine/lib/srs/srs_note_type_store.dart': 'SRS 子系统',
   // 通用备份里老形态（SRS 表还在主库 / 老备份主库条目里）的唯一处置点。
   'fushi/lib/src/sync/backup_srs_tables.dart': '老形态备份兼容',
 };
@@ -99,6 +103,28 @@ void main() {
       _kAllowed.keys.toSet().difference(seenAllowed),
       isEmpty,
       reason: '白名单里有已不碰 SRS 表名的文件',
+    );
+  });
+
+  test('SRS 子系统不用 Dart 的 sqlite3 开库（srs.db 只由 Rust 打开）', () {
+    // apkg/ 打开的是 Anki 的 .anki2 / collection 文件（不是 srs.db），照常用 Dart 的 sqlite3。
+    final Directory srs = Directory(
+      p.join(_repo.path, 'packages', 'fushi_engine', 'lib', 'srs'),
+    );
+    final List<String> offenders = <String>[
+      for (final File f in _dartFiles(srs))
+        if (!_rel(f).contains('/srs/apkg/') &&
+            maskComments(
+              f.readAsStringSync(),
+            ).contains("import 'package:sqlite3/"))
+          _rel(f),
+    ];
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '要另开一条读 srs.db 的连接就用 SrsCore.beginRead（Rust 只读会话）：'
+          '两份 SQLite 同开一个文件会在 POSIX 上互相清掉文件锁。$offenders',
     );
   });
 

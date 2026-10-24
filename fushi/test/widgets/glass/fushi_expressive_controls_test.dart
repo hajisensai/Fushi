@@ -832,8 +832,8 @@ void main() {
       await pumpHost(
         tester,
         (_) => FushiIconButtonControl.filled(
-          size: FushiIconButtonSize.xl,
-          shape: FushiIconButtonShape.square,
+          size: ButtonSizeVariant.xLarge,
+          shape: ButtonShapeVariant.square,
           onPressed: () {},
           icon: const Icon(Icons.play_arrow),
         ),

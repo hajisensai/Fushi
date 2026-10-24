@@ -45,9 +45,10 @@ class SrsOptimizationInput {
   /// 训练集（列式字节，跨 isolate 只拷一块）。
   final SrsTrainingSet trainingSet;
 
-  /// 每项是一张卡到某次评分为止的历史（按最后一次评分时刻排序，供时间序列切分）。第一次读时展开。
-  List<List<SrsFsrsReview>> get items => trainingSet.items;
-  List<int> get cardIds => trainingSet.cardIds;
+  /// 训练集：每条是一张卡到某次评分为止的历史前缀（按最后一次评分时刻排序，供时间序列切分），
+  /// 带每张卡的数字 ID。打包成 TypedData，每张卡只存一份完整历史，前缀在原生侧展开（BUG-3745）。
+  /// 第一次读时由 [trainingSet] 转换。
+  SrsFsrsTrainingSet get items => trainingSet.fsrs;
 
   /// 进训练集的评分条数（门槛与基线用）。
   int get reviewCount => trainingSet.itemCount;
@@ -132,7 +133,6 @@ SrsOptimizationResult srsRunOptimization(
   final List<double> fresh = engine.computeParameters(
     algorithm: alg,
     items: input.items,
-    cardIds: input.cardIds,
     control: control,
   );
   final List<double> current = input.currentParams.isEmpty
@@ -159,7 +159,6 @@ SrsOptimizationResult srsRunOptimization(
       final List<double> p7 = engine.computeParameters(
         algorithm: SrsAlgorithm.fsrs7,
         items: input.items,
-        cardIds: input.cardIds,
         control: control,
       );
       return SrsOptimizationResult(

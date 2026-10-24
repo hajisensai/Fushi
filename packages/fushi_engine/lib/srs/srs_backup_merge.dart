@@ -393,12 +393,12 @@ Future<bool> srsCanAdoptProfileUid(
 /// 旧 uid 下只剩空（内置行随下次打开重建），重跑即收敛。
 Future<void> srsAdoptProfileUid(
   FushiDatabase db,
-  SrsStorage srs, {
+  SrsDatabase srs, {
   required int profileId,
   required String oldUid,
   required String newUid,
 }) async {
-  await _deleteProfileRows(srs.db, oldUid);
+  await _deleteProfileRows(srs, oldUid);
   await db.adoptProfileUid(profileId, newUid);
 }
 

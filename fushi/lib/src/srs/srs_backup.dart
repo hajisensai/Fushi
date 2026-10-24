@@ -355,7 +355,7 @@ class SrsBackupController {
       final String oldUid = store.profileUid;
       await srsAdoptProfileUid(
         db,
-        srs,
+        srs.db,
         profileId: profileId,
         oldUid: oldUid,
         newUid: backupUid,
@@ -372,7 +372,7 @@ class SrsBackupController {
         // 回到采用之前：新 uid 下的行全部删掉、uid 换回去（旧 uid 下只有内置行 / 本机状态，重开时重建）。
         await srsAdoptProfileUid(
           db,
-          srs,
+          srs.db,
           profileId: profileId,
           oldUid: backupUid,
           newUid: oldUid,

@@ -66,7 +66,12 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
       // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
-      onSeekStart: () => controller.clearSeekTargetSnap(),
+      // 「跳转回退」：进度条按下记出发点，落点经 notifyExternalSeek 旁听判定
+      // （jump_history.part.dart）。
+      onSeekStart: () {
+        controller.clearSeekTargetSnap();
+        _onSeekBarJumpStart(controller);
+      },
       // BUG-796 后续：进度条拖动/点击落点经 media_kit 内部 player.seek 绕过 controller.seekMs
       // 的「权威同步 + 在途抑制」——暂停态拖到无字幕段旧字幕不消失（同 ±秒键根因）。fork 在
       // onSeekEnd 透出落点 target，页面补调 notifyExternalSeek 应用同款保护（不重复 seek）。
@@ -383,7 +388,12 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // seekMs 统一清除点，用户开始拖动时清掉「主动跳转目标」快照——否则点字幕行后
       // 的在途 seek 宽限窗口内拖进度条到更早句，会被误 snap 回旧目标句。fork 的 seek
       // bar 把内部 onSeekStart 与本回调合并调用（third_party/media_kit_video）。
-      onSeekStart: () => controller.clearSeekTargetSnap(),
+      // 「跳转回退」：进度条按下记出发点，落点经 notifyExternalSeek 旁听判定
+      // （jump_history.part.dart）。
+      onSeekStart: () {
+        controller.clearSeekTargetSnap();
+        _onSeekBarJumpStart(controller);
+      },
       // BUG-796 后续（同桌面 theme）：进度条落点补调 notifyExternalSeek，暂停态拖到无字幕段
       // 旧字幕立即消失、不被滞后旧 position 拉回；不重复 seek（进度条内部已 seek）。
       onSeekEnd: (Duration target) =>

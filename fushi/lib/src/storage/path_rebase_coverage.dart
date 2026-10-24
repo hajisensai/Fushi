@@ -464,6 +464,26 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   PathRebaseColumn('WebMineQueue', 'fieldsJson', PathRebaseKind.notAPath,
       '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。'),
 
+  // ── web_browser_*（schema v128，内置浏览器）──────────────────────────
+  PathRebaseColumn('WebBrowserHistory', 'url', PathRebaseKind.notAPath,
+      '浏览历史的网页 URL，不是本机路径。'),
+  PathRebaseColumn('WebBrowserBookmarks', 'url', PathRebaseKind.notAPath,
+      '书签的网页 URL（NULL = 文件夹），不是本机路径。'),
+  PathRebaseColumn('WebBrowserSessionTabs', 'url', PathRebaseKind.notAPath,
+      '标签页会话里的网页 URL，不是本机路径。'),
+  PathRebaseColumn('WebBrowserClosedTabs', 'url', PathRebaseKind.notAPath,
+      '最近关闭标签页的网页 URL，不是本机路径。'),
+  PathRebaseColumn('WebBrowserDownloads', 'url', PathRebaseKind.notAPath,
+      '下载来源的远端 URL，不是本机路径。'),
+  PathRebaseColumn('WebBrowserDownloads', 'fileName', PathRebaseKind.notAPath,
+      '下载文件的裸文件名（展示用），不是绝对路径。'),
+  PathRebaseColumn(
+      'WebBrowserDownloads',
+      'savedPath',
+      PathRebaseKind.externalUserPath,
+      '浏览器下载落盘位置在系统下载目录 / 用户选的目录，不在数据根内；数据根迁移不搬'
+          '下载文件，也绝不能改写这一列（改了反而指向不存在的文件）。'),
+
   // ── pending_mine_queue（schema v116，设备端待发制卡队列，device-local）──
   PathRebaseColumn(
       'PendingMineQueue',

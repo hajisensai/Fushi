@@ -326,6 +326,13 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("webAsset", "web_asset", "web_asset_outlined", "web_asset", "窗口 / 页面元素"),
     ("webAssetOff", "web_asset_off", "web_asset_off_outlined", "web_asset_off", "隐藏页面元素"),
     ("remoteControl", "settings_remote", None, None, "遥控器（手机遥控电脑播放）"),
+    # ── 应用内浏览器 ─────────────────────────────────────────────────
+    ("sidebar", "dock_to_right", None, None, "侧边栏开关 / 侧边栏样式"),
+    ("tab", "tab", "tab_outlined", "tab", "标签页 / 顶部标签栏"),
+    ("findInPage", "find_in_page", "find_in_page_outlined", "find_in_page", "页内查找"),
+    # Material Symbols 没有 incognito 字形（上游码位表至 master 都没有），无痕沿用
+    # visibility_off；单独给语义名，换字形时只改这一行。
+    ("incognito", "visibility_off", "visibility_off_outlined", "visibility_off", "无痕浏览"),
 ]
 
 # 旧 Material 图标在 Apple 映射表里没有、或映射不合适时，直接指定 CupertinoIcons 名
@@ -398,6 +405,9 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "danmaku": ("chat_bubble_text", "chat_bubble_text_fill"),
     "danmakuOff": ("chat_bubble", "chat_bubble_fill"),
     "remoteControl": ("antenna_radiowaves_left_right", "antenna_radiowaves_left_right"),
+    "sidebar": ("sidebar_left", "sidebar_left"),
+    "tab": ("square_on_square", "square_fill_on_square_fill"),
+    "findInPage": ("doc_text_search", "doc_text_search"),
 }
 
 

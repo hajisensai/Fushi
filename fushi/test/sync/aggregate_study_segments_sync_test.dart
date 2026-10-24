@@ -154,11 +154,18 @@ void main() {
           StudyTombstoneRecord(mediaKind: 'book', mediaKey: 'b1', deletedAt: 1),
         ],
       );
-      final AggregateSnapshot cut = snap.select(stats: false, favorites: true);
+      final AggregateSnapshot cut = snap.select(
+        stats: false,
+        favorites: true,
+        webHistory: true,
+      );
       expect(cut.studySegments, isEmpty);
       expect(cut.studySegmentTombstones, isEmpty);
       expect(
-        identical(snap.select(stats: true, favorites: true), snap),
+        identical(
+          snap.select(stats: true, favorites: true, webHistory: true),
+          snap,
+        ),
         isTrue,
       );
     });

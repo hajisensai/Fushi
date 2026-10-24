@@ -121,9 +121,8 @@ Future<int> _mergeBackupEvents(
   Map<String, int> serverTimes,
 ) async {
   if (events.isEmpty) return 0;
-  final Set<String> before = <String>{
-    for (final SrsEvent e in await store.exportAll()) e.id,
-  };
+  // 只要 ID：不读正文、不逐条解码（整库导出在大库上是秒级）。
+  final Set<String> before = (await store.exportAllIds()).toSet();
   await store.applyRemote(events);
   final Set<String> ids = <String>{for (final SrsEvent e in events) e.id};
   final Map<String, int> times = <String, int>{
@@ -131,9 +130,7 @@ Future<int> _mergeBackupEvents(
       if (ids.contains(t.key)) t.key: t.value,
   };
   if (times.isNotEmpty) await store.observeServerTimes(times);
-  final Set<String> after = <String>{
-    for (final SrsEvent e in await store.exportAll()) e.id,
-  };
+  final Set<String> after = (await store.exportAllIds()).toSet();
   final List<String> fresh = <String>[
     for (final String id in ids)
       if (!before.contains(id) && after.contains(id)) id,

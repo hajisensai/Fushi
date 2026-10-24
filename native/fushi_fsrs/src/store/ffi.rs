@@ -8,7 +8,7 @@ use std::ffi::{c_char, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
-use super::SrsCore;
+use super::{ReadSession, SrsCore};
 
 pub const STORE_OK: i32 = 0;
 pub const STORE_ERROR: i32 = -1;
@@ -37,14 +37,14 @@ fn utf8<'a>(ptr: *const u8, len: usize) -> Result<&'a str, String> {
     std::str::from_utf8(b).map_err(|e| e.to_string())
 }
 
-/// 跑一段带句柄的操作，统一处理空指针、错误与 panic。
-fn run(
-    core: *const SrsCore,
+/// 跑一段带句柄（[SrsCore] / [ReadSession]）的操作，统一处理空指针、错误与 panic。
+fn run<T>(
+    core: *const T,
     error_out: *mut *mut c_char,
-    body: impl FnOnce(&SrsCore) -> Result<(), String>,
+    body: impl FnOnce(&T) -> Result<(), String>,
 ) -> i32 {
     if core.is_null() {
-        set_error(error_out, "null srs core");
+        set_error(error_out, "null srs handle");
         return STORE_BAD_ARGUMENT;
     }
     let core = unsafe { &*core };
@@ -211,6 +211,57 @@ pub extern "C" fn ffsrs_store_debug_query(
         hand_out(c.debug_query(s, &values)?, out, out_len);
         Ok(())
     })
+}
+
+/// 只读会话（`SrsCore::read_session`）：另开一条只读连接、开读事务并定下快照。成功写 `*session_out`；
+/// 用 [ffsrs_store_read_end] 结束（回滚并关闭）。会话可以在别的线程 / isolate 上用，但同一时刻只许一个调用。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_begin(
+    core: *const SrsCore,
+    session_out: *mut *mut ReadSession,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if session_out.is_null() {
+        set_error(error_out, "null session_out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(core, error_out, |c| {
+        let s = c.read_session()?;
+        unsafe { *session_out = Box::into_raw(Box::new(s)) };
+        Ok(())
+    })
+}
+
+/// 在只读会话的读事务里跑一条只读语句。参数页 / 结果编码同 [ffsrs_store_debug_query]。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_query(
+    session: *const ReadSession,
+    sql: *const u8,
+    sql_len: usize,
+    params: *const u8,
+    params_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run(session, error_out, |r| {
+        let s = utf8(sql, sql_len)?;
+        let values = one_row(bytes(params, params_len).ok_or("null params")?)?;
+        hand_out(r.query(s, &values)?, out, out_len);
+        Ok(())
+    })
+}
+
+/// 结束只读会话（NULL 无操作）。之后句柄不可再用。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_end(session: *mut ReadSession) {
+    if !session.is_null() {
+        let _ = catch_unwind(AssertUnwindSafe(|| unsafe { drop(Box::from_raw(session)) }));
+    }
 }
 
 fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
@@ -463,7 +514,8 @@ pub extern "C" fn ffsrs_store_rwkv_rows(
     })
 }
 
-/// RWKV 对齐的日志指纹与尾巴（`SrsCore::rwkv_log_tail`）。页 = profile 行；`args = [since, with_rows]`。
+/// RWKV 对齐的日志指纹与尾巴（`SrsCore::rwkv_log_tail`）。页 = profile 行；
+/// `args = [since, with_rows, incremental?]`（第三个省略 = 0，整表计数）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_rwkv_log_tail(
     core: *const SrsCore,
@@ -477,11 +529,17 @@ pub extern "C" fn ffsrs_store_rwkv_log_tail(
 ) -> i32 {
     command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
         let (_, profile) = lineage_page(page, 0)?;
-        c.rwkv_log_tail(profile.as_deref().ok_or("missing profile")?, arg(args, 0)?, arg(args, 1)? != 0)
+        c.rwkv_log_tail(
+            profile.as_deref().ok_or("missing profile")?,
+            arg(args, 0)?,
+            arg(args, 1)? != 0,
+            args.get(2).copied().unwrap_or(0) != 0,
+        )
     })
 }
 
-/// 统计页的有效评分列（`SrsCore::stats_reviews`）。页 = profile 行；无参数。
+/// 统计页的有效评分列（`SrsCore::stats_reviews`）。页 = profile 行 + 血统行（`[继承卡, 前身卡…]`）；
+/// 参数 `[n_groups]`（省略 = 0 组）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_stats_reviews(
     core: *const SrsCore,
@@ -493,8 +551,9 @@ pub extern "C" fn ffsrs_store_stats_reviews(
     out_len: *mut usize,
     error_out: *mut *mut c_char,
 ) -> i32 {
-    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, _| {
-        let (_, profile) = lineage_page(page, 0)?;
-        c.stats_reviews(profile.as_deref().ok_or("missing profile")?)
+    command(core, page, page_len, args, n_args, out, out_len, error_out, |c, page, args| {
+        let n_groups = usize::try_from(args.first().copied().unwrap_or(0)).map_err(|_| "bad n_groups")?;
+        let (lineages, profile) = lineage_page(page, n_groups)?;
+        c.stats_reviews(profile.as_deref().ok_or("missing profile")?, &lineages)
     })
 }

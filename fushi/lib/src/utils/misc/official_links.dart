@@ -19,6 +19,10 @@ const String kOfficialDownloadPageUrl = '$kOfficialWebsiteUrl/download';
 /// 同一个 GitHub 账号；应用侧集中保存 URL，避免账号或路径变更时入口静默分叉。
 const String kGitHubSponsorsUrl = 'https://github.com/sponsors/hajisensai';
 
+/// Fushi 的 Ko-fi 赞助页。与 GitHub Sponsors 并列，给没有 GitHub 账号或想一次性
+/// 打赏的用户；与仓库 `.github/FUNDING.yml` 的 `ko_fi` 指向同一账号。
+const String kKoFiUrl = 'https://ko-fi.com/hajisensai';
+
 /// 在系统浏览器里打开官网下载页。打不开返回 false，**不抛**（理由同
 /// [openOfficialWebsite]）。
 Future<bool> openOfficialDownloadPage() async {

@@ -14,6 +14,10 @@
 /// WebView，两边用的是同一份模板设计。
 library;
 
+import 'package:fushi_anki/fushi_anki_core.dart';
+
+import 'package:fushi_engine/srs/srs_builtin.dart';
+
 /// 原生卡面直接画的图片字段。
 const String kSrsFushiNativePictureField = 'Picture';
 
@@ -103,4 +107,38 @@ bool srsFushiCardMediaIsNative(Map<String, String> fields) {
     if (!_nativeImageSource(src)) return false;
   }
   return true;
+}
+
+/// 一张卡能否走原生混合渲染：内置 Fushi 卡片、模板与样式都没改、媒体原生画得全
+/// （[srsFushiCardMediaIsNative]）。能则返回只含释义区的背面 HTML（交给释义 WebView），
+/// 否则 null（整面 WebView）。
+///
+/// 复习页渲染（`SrsDbStore.renderCard`）与笔记编辑页的实时预览共用这一处判据：两边若各写
+/// 一份，编辑页预览会退回整面 WebView，与复习页画出来的不是同一张卡（片段 / 图片尺寸都不同）。
+///
+/// [front] / [back] 是名字形式的模板；[fieldsByName] 已展开共享样式引用。
+String? srsFushiCardNativeDefinitions({
+  required String? builtinKey,
+  required String front,
+  required String back,
+  required String css,
+  required Map<String, String> fieldsByName,
+  required int cardOrd,
+  AnkiCardSpecialFields specials = const AnkiCardSpecialFields(),
+}) {
+  final bool native =
+      builtinKey == kSrsBuiltinFushiCardKey &&
+      front == FushiCardNoteType.template.front &&
+      back == FushiCardNoteType.template.back &&
+      css == FushiCardNoteType.template.css &&
+      srsFushiCardMediaIsNative(fieldsByName);
+  if (!native) return null;
+  return renderAnkiCard(
+    questionTemplate: front,
+    answerTemplate: kFushiCardDefinitionsTemplate,
+    noteFields: fieldsByName,
+    cardOrd: cardOrd,
+    isCloze: false,
+    specials: specials,
+  ).answer;
 }

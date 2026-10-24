@@ -136,7 +136,11 @@ libraryVideoSubtitleTarget(
   // 多集作品里认不出集号就不配，配上去只能是碰运气。
   final bool single = own != null || memberCount <= 1;
   final VideoNameInfo parsed = parseVideoFilename(p.basename(book.videoPath));
-  final int? episode = parsed.episode;
+  // 单文件电影没有集号（「Doraemon Movie 25」的 25 是系列序号），同
+  // scrapedSubtitleTargets。
+  final int? episode = single && work.mediaType == 'movie'
+      ? null
+      : parsed.episode;
   if (episode == null && !single) {
     return (
       target: null,

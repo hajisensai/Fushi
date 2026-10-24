@@ -6,6 +6,7 @@
 /// - 学习进度：排程与复习记录 / 牌组预设 / FSRS 参数；
 /// - 排程算法：RWKV / FSRS 二选一，各自写明后果；
 /// - 卡片模板：导入后把旧 Lapis 迁到 Fushi 卡片（同一个后台任务里做，不依赖本页）；
+/// - 迁移之后：把卡片去向切到 Fushi 复习（制卡目标 + 互联「制卡到互联主机」，默认开）；
 /// - 更新（折叠）：合并笔记模板、更新笔记 / 笔记模板；
 /// - 开始前请知悉：合并不替换、删过的笔记会恢复、后台进行、怎么撤回。
 ///
@@ -237,6 +238,23 @@ class _SrsAnkiMigrationSetupPageState extends State<SrsAnkiMigrationSetupPage> {
                       () => _settings = _settings.copyWith(renameLapisDecks: v),
                     )
                   : null,
+            ),
+          ],
+        ),
+      ),
+      _section(
+        tokens,
+        AdaptiveSettingsSection(
+          title: t.srs_anki_migrate_setup_section_after,
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('srs-anki-setup-switch-target'),
+              title: t.srs_anki_migrate_setup_switch_target,
+              subtitle: t.srs_anki_migrate_setup_switch_target_desc,
+              value: _settings.switchCardTarget,
+              onChanged: (bool v) => setState(
+                () => _settings = _settings.copyWith(switchCardTarget: v),
+              ),
             ),
           ],
         ),

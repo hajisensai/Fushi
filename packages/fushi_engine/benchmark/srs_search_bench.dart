@@ -362,7 +362,7 @@ Future<void> main(List<String> args) async {
         c.noteTypes,
       );
       final Stopwatch sw = Stopwatch()..start();
-      final int hits = fresh.query(query: q).length;
+      final int hits = (await fresh.query(query: q)).length;
       final int syncMs = _ms(sw);
       final SrsBrowseSnapshot fresh2 = SrsBrowseSnapshot.fromCards(
         c.cards,
@@ -374,7 +374,7 @@ Future<void> main(List<String> args) async {
       final int prepMs = _ms(sw2);
       final int stallMs = probe.stop();
       final Stopwatch sw3 = Stopwatch()..start();
-      final int hits2 = fresh2.query(query: q).length;
+      final int hits2 = (await fresh2.query(query: q)).length;
       final int queryMs = _ms(sw3);
       print(
         'first   sync $syncMs ms | prepare $prepMs (UI isolate longest stall '
@@ -387,14 +387,14 @@ Future<void> main(List<String> args) async {
       c.noteTypes,
     );
     final Stopwatch build = Stopwatch()..start();
-    snap.query(query: 'is:new');
+    await snap.query(query: 'is:new');
     print('browse  corpus build + first query: ${_ms(build)} ms');
     for (final String q in _browseQueries) {
       final List<int> runs = <int>[];
       int hits = 0;
       for (int r = 0; r < 3; r++) {
         final Stopwatch sw = Stopwatch()..start();
-        hits = snap.query(query: q).length;
+        hits = (await snap.query(query: q)).length;
         runs.add(_ms(sw));
       }
       print('browse  ${runs.join('/')} ms  hits=$hits  $q');

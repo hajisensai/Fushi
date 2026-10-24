@@ -398,7 +398,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               ? const SizedBox.shrink()
               : FushiIconButtonControl(
                   key: const ValueKey<String>('video-subtitle-delay-reset'),
-                  size: FushiIconButtonSize.s,
+                  size: ButtonSizeVariant.small,
                   tooltip: t.video_setting_av_delay_reset,
                   icon: const FushiIcon(FushiIcons.undo),
                   onPressed: () => _commitDelay(0),
@@ -425,7 +425,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
                   ),
                 )
               : FushiIconButtonControl(
-                  size: FushiIconButtonSize.s,
+                  size: ButtonSizeVariant.small,
                   tooltip: t.video_subtitle_auto_align,
                   icon: const FushiIcon(FushiIcons.ai),
                   onPressed: _runAutoAlign,
@@ -436,14 +436,14 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         if (host.onSnapDelayToCue != null) ...<Widget>[
           FushiIconButtonControl(
             key: const ValueKey<String>('video-subtitle-delay-snap-prev'),
-            size: FushiIconButtonSize.s,
+            size: ButtonSizeVariant.small,
             tooltip: t.video_subtitle_prev_cue_align,
             icon: const FushiIcon(FushiIcons.skipPrevious),
             onPressed: () => _snapDelayToCue(next: false),
           ),
           FushiIconButtonControl(
             key: const ValueKey<String>('video-subtitle-delay-snap-next'),
-            size: FushiIconButtonSize.s,
+            size: ButtonSizeVariant.small,
             tooltip: t.video_subtitle_next_cue_align,
             icon: const FushiIcon(FushiIcons.skipNext),
             onPressed: () => _snapDelayToCue(next: true),
@@ -454,7 +454,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
         if (includeFloatBar && host.onEnterSubtitleDelayBar != null)
           FushiIconButtonControl.filledTonal(
             key: const ValueKey<String>('video-subtitle-delay-float'),
-            size: FushiIconButtonSize.s,
+            size: ButtonSizeVariant.small,
             tooltip: t.video_setting_av_delay_float,
             icon: const FushiIcon(FushiIcons.pictureInPicture),
             onPressed: host.onEnterSubtitleDelayBar,
@@ -622,7 +622,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: FushiIconButtonControl.filledTonal(
-        size: FushiIconButtonSize.s,
+        size: ButtonSizeVariant.small,
         tooltip: tooltip,
         icon: FushiIcon(icon),
         onPressed: onPressed,

@@ -44,6 +44,7 @@ class VideoRemoteCallbacks {
     this.onLookupFavorite,
     this.onCustomizeControls,
     this.onPickVideo,
+    this.onOpenTouchpad,
   });
 
   /// 返回（退出遥控）。
@@ -83,6 +84,10 @@ class VideoRemoteCallbacks {
   /// 顶栏「点播」：从电脑视频库里选片让电脑播放；null = 电脑不支持（旧版），
   /// 不显示该按钮。
   final VoidCallback? onPickVideo;
+
+  /// 顶栏「触控板」：进整屏手势遥控；null = 现在用不了（电脑上没在放视频），
+  /// 不显示该按钮。
+  final VoidCallback? onOpenTouchpad;
 }
 
 /// 手机字幕遥控器的整页脚手架（纯展示）。
@@ -338,7 +343,15 @@ class _VideoRemoteScaffoldState extends State<VideoRemoteScaffold> {
     final VideoRemoteCallbacks callbacks = widget.callbacks;
     final VoidCallback? customize = callbacks.onCustomizeControls;
     final VoidCallback? pickVideo = callbacks.onPickVideo;
+    final VoidCallback? openTouchpad = callbacks.onOpenTouchpad;
     final List<FushiToolbarItem> pickGroup = <FushiToolbarItem>[
+      if (openTouchpad != null)
+        FushiToolbarItem(
+          key: const ValueKey<String>('video-remote-open-touchpad'),
+          icon: FushiIcons.touch,
+          label: t.video_remote_touchpad,
+          onPressed: openTouchpad,
+        ),
       if (pickVideo != null)
         FushiToolbarItem(
           key: const ValueKey<String>('video-remote-pick-video'),

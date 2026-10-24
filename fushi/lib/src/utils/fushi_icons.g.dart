@@ -1669,6 +1669,30 @@ abstract final class FushiIcons {
     fontFamily: kFushiSymbolsFontFamily,
   );
 
+  /// 侧边栏开关 / 侧边栏样式：Symbols `dock_to_right`
+  static const IconData sidebar = IconData(
+    0xf7e4,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 标签页 / 顶部标签栏：Symbols `tab`（取代 Icons.tab_outlined / Icons.tab）
+  static const IconData tab = IconData(
+    0xe8d8,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 页内查找：Symbols `find_in_page`（取代 Icons.find_in_page_outlined / Icons.find_in_page）
+  static const IconData findInPage = IconData(
+    0xe880,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
+  /// 无痕浏览：Symbols `visibility_off`（取代 Icons.visibility_off_outlined / Icons.visibility_off）
+  static const IconData incognito = IconData(
+    0xe8f5,
+    fontFamily: kFushiSymbolsFontFamily,
+  );
+
   /// 全部语义名 → 线框图标（测试 / 样张页遍历用）。
   static const Map<String, IconData> all = <String, IconData>{
     'home': home,
@@ -1945,6 +1969,10 @@ abstract final class FushiIcons {
     'webAsset': webAsset,
     'webAssetOff': webAssetOff,
     'remoteControl': remoteControl,
+    'sidebar': sidebar,
+    'tab': tab,
+    'findInPage': findInPage,
+    'incognito': incognito,
   };
 
   /// [icon] 的实心（FILL=1）版本：选中态 / 激活态用。非语义图标原样返回。
@@ -2184,6 +2212,7 @@ abstract final class FushiIcons {
     0xe87a: IconData(0xe87a, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe87b: IconData(0xe87b, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe87e: IconData(0xe87e, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe880: IconData(0xe880, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe888: IconData(0xe888, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe88e: IconData(0xe88e, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe898: IconData(0xe898, fontFamily: kFushiSymbolsFilledFontFamily),
@@ -2201,6 +2230,7 @@ abstract final class FushiIcons {
     0xe8c7: IconData(0xe8c7, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d4: IconData(0xe8d4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8d5: IconData(0xe8d5, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xe8d8: IconData(0xe8d8, fontFamily: kFushiSymbolsFilledFontFamily),
     0xe8de: IconData(
       0xe8de,
       fontFamily: kFushiSymbolsFilledFontFamily,
@@ -2314,6 +2344,7 @@ abstract final class FushiIcons {
     0xf20b: IconData(0xf20b, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf2ea: IconData(0xf2ea, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf539: IconData(0xf539, fontFamily: kFushiSymbolsFilledFontFamily),
+    0xf7e4: IconData(0xf7e4, fontFamily: kFushiSymbolsFilledFontFamily),
     0xf8b6: IconData(0xf8b6, fontFamily: kFushiSymbolsFilledFontFamily),
   };
 }
@@ -2567,6 +2598,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe87a: (CupertinoIcons.compass, CupertinoIcons.compass_fill),
   0xe87b: (CupertinoIcons.cube_box, CupertinoIcons.cube_box_fill),
   0xe87e: (CupertinoIcons.heart, CupertinoIcons.heart_fill),
+  0xe880: (CupertinoIcons.doc_text_search, CupertinoIcons.doc_text_search),
   0xe888: (CupertinoIcons.xmark_circle, CupertinoIcons.xmark_circle_fill),
   0xe88e: (CupertinoIcons.info_circle, CupertinoIcons.info_circle_fill),
   0xe898: (CupertinoIcons.lock_open, CupertinoIcons.lock_open_fill),
@@ -2594,6 +2626,10 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe8d5: (
     CupertinoIcons.arrow_up_arrow_down,
     CupertinoIcons.arrow_up_arrow_down,
+  ),
+  0xe8d8: (
+    CupertinoIcons.square_on_square,
+    CupertinoIcons.square_fill_on_square_fill,
   ),
   0xe8de: (CupertinoIcons.list_dash, CupertinoIcons.list_dash),
   0xe8e2: (CupertinoIcons.globe, CupertinoIcons.globe),
@@ -2764,6 +2800,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   ),
   0xf2ea: (CupertinoIcons.xmark_rectangle, CupertinoIcons.xmark_rectangle_fill),
   0xf539: (CupertinoIcons.book, CupertinoIcons.book_fill),
+  0xf7e4: (CupertinoIcons.sidebar_left, CupertinoIcons.sidebar_left),
   0xf8b6: (
     CupertinoIcons.exclamationmark_circle,
     CupertinoIcons.exclamationmark_circle_fill,

@@ -5,7 +5,7 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -189,6 +189,14 @@ CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_note ON srs_cards_cache (note_id)
 CREATE INDEX IF NOT EXISTS idx_srs_cards_cache_queue ON srs_cards_cache (profile_uid, deck_id, queue, due_day);
 "#;
 
+/// V2（与主库 v125 同一批，写入路径的读放大）：① 同步冲突角标按 profile 对（实体, 字段键）分组只扫索引；
+/// ② 笔记类型的成员查找；③ 待裁决笔记的部分索引。只加索引、不动数据。
+const V2: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_srs_field_edits_profile_register ON srs_field_edits (profile_uid, entity_kind, entity_id, field_key);
+CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_type ON srs_notes_cache (profile_uid, note_type_id);
+CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_pending ON srs_notes_cache (profile_uid) WHERE pending_decision = 1;
+"#;
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
@@ -216,6 +224,9 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
              ON srs_field_edits (field_key, entity_kind, entity_id) WHERE {HISTORY_FROM_CONDITION};"
         ))
         .map_err(|e| e.to_string())?;
+    }
+    if current < 2 {
+        tx.execute_batch(V2).map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

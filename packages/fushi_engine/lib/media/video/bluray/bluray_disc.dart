@@ -138,21 +138,23 @@ Iterable<String> blurayCollectionNameCandidates(
 /// [path] 指向一张盘时返回含 `BDMV` 的那层目录，否则返回 null。
 ///
 /// 同时接受「盘根」与「`BDMV` 目录本身」两种指法——用户拖进来的可能是任意一种。
-String? blurayDiscRootForDirectory(String path) {
+///
+/// 只走 async 文件 API：盘常放在网络盘上，同步 stat 一次就是秒级、冻结调用方所在
+/// isolate（互联 host 与 UI 同在 app 主 isolate，BUG-3756）。
+Future<String?> blurayDiscRootForDirectory(String path) async {
   final String normalized = p.normalize(path);
-  if (_looksLikeBlurayRoot(normalized)) return normalized;
+  if (await _looksLikeBlurayRoot(normalized)) return normalized;
   // 指的是 BDMV 目录本身：上跳一层（精确大小写，见 [blurayDiscRootForFile]）。
   if (p.basename(normalized) == 'BDMV') {
     final String parent = p.dirname(normalized);
-    if (_looksLikeBlurayRoot(parent)) return parent;
+    if (await _looksLikeBlurayRoot(parent)) return parent;
   }
   return null;
 }
 
-bool _looksLikeBlurayRoot(String dirPath) {
-  final String bdmv = p.join(dirPath, 'BDMV');
-  if (!Directory(bdmv).existsSync()) return false;
-  return Directory(p.join(bdmv, 'PLAYLIST')).existsSync();
+Future<bool> _looksLikeBlurayRoot(String dirPath) async {
+  // `BDMV/PLAYLIST` 是目录即隐含 `BDMV` 是目录，一次 stat 就够。
+  return FileSystemEntity.isDirectory(p.join(dirPath, 'BDMV', 'PLAYLIST'));
 }
 
 /// 从盘内**文件**路径反推盘根；不是盘内文件时返回 null。
@@ -221,13 +223,13 @@ bool isInsideBlurayDisc(String filePath, Set<String> discRoots) {
 
 /// 读入 [rootPath] 这张盘。不是盘、或一条标题都选不出来时返回 null。
 Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
-  final String? root = blurayDiscRootForDirectory(rootPath);
+  final String? root = await blurayDiscRootForDirectory(rootPath);
   if (root == null) return null;
 
   final Directory playlistDir = Directory(p.join(root, 'BDMV', 'PLAYLIST'));
   final List<FileSystemEntity> entries;
   try {
-    entries = playlistDir.listSync(followLinks: false);
+    entries = await playlistDir.list(followLinks: false).toList();
   } on FileSystemException {
     return null;
   }
@@ -245,7 +247,7 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
   final Directory streamDir = Directory(p.join(root, 'BDMV', 'STREAM'));
   Set<String>? presentClips = <String>{};
   try {
-    for (final FileSystemEntity entity in streamDir.listSync(
+    await for (final FileSystemEntity entity in streamDir.list(
       followLinks: false,
     )) {
       if (entity is! File) continue;
@@ -380,10 +382,9 @@ Future<String> readBlurayDiscName(String rootPath) async {
   final String fallback = p.basename(p.normalize(rootPath));
   final Directory metaDir = Directory(p.join(rootPath, 'BDMV', 'META', 'DL'));
   try {
-    if (!metaDir.existsSync()) return fallback;
+    if (!await metaDir.exists()) return fallback;
     final List<File> candidates =
-        metaDir
-            .listSync(followLinks: false)
+        (await metaDir.list(followLinks: false).toList())
             .whereType<File>()
             .where((File f) => p.extension(f.path).toLowerCase() == '.xml')
             .toList()

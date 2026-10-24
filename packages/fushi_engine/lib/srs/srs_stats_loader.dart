@@ -109,6 +109,8 @@ Future<SrsStatsBundle> loadSrsStats(
   final int today = dayCtx.dayIndexOf(now);
   final SrsDeckTree tree = await store.deckTree();
 
+  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后隐藏的旧卡）的日志已在 Rust 里算到继承它历史的
+  // 可见卡上（[SrsDbStore.statsColumns]），与复习时用的 [SrsDbStore.history] 同一血统。
   final SrsStatsColumns columns = await store.statsColumns();
 
   final List<SrsCardCacheRow> cardRows = <SrsCardCacheRow>[

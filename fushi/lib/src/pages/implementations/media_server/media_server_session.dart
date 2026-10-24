@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
@@ -49,6 +50,7 @@ class MediaServerSession {
     required this.browser,
     required this.play,
     this.download,
+    this.library,
   });
 
   final MediaServerBrowser browser;
@@ -57,6 +59,10 @@ class MediaServerSession {
   /// 下载出口。null = 这台服务器的条目没有接下载管线，详情页不出「下载」次按钮
   /// （UI 只留位置，不假装能下）。
   final MediaServerDownloadHandler? download;
+
+  /// 「加入媒体库 / 移出媒体库」出口。null = 宿主没接本地库（宿主测试），详情页
+  /// 不出这组按钮。
+  final MediaServerVideoLibrary? library;
 
   String get serverId => browser.serverId;
 

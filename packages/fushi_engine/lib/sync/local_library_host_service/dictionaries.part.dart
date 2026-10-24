@@ -24,8 +24,9 @@ mixin _LocalLibraryHostDictionaries
     final bool exists = rows.any((DictionaryMetaRow r) => r.name == name);
     if (!exists) throw StateError('dictionary not found: $name');
 
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_dict_export');
+    final Directory tmpDir = await Directory.systemTemp.createTemp(
+      'fushi_dict_export',
+    );
     final File out = File(p.join(tmpDir.path, '$name$_dictionaryAssetSuffix'));
     await _packages.exportDictionaryPackage(
       dictionaryName: name,

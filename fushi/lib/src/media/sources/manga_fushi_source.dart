@@ -29,14 +29,14 @@ import 'package:fushi/utils.dart';
 /// [getActions]/[buildHistoryPage] 极少被触达，实现取与 PDF 源一致的安全回退。
 class MangaFushiSource extends ReaderMediaSource {
   MangaFushiSource._()
-      : super(
-          uniqueKey: kUniqueKey,
-          sourceName: t.source_name_bookshelf,
-          description: t.source_description_epub,
-          icon: Icons.collections_bookmark_outlined,
-          implementsSearch: false,
-          implementsHistory: false,
-        );
+    : super(
+        uniqueKey: kUniqueKey,
+        sourceName: t.source_name_bookshelf,
+        description: t.source_description_epub,
+        icon: Icons.collections_bookmark_outlined,
+        implementsSearch: false,
+        implementsHistory: false,
+      );
 
   /// 媒体源唯一键（持久化标识，与 `reader_fushi`/`reader_pdf` 互异）。
   /// [ReaderFushiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
@@ -66,21 +66,32 @@ class MangaFushiSource extends ReaderMediaSource {
   }) async {}
 
   @override
-  Widget buildLaunchPage({
-    MediaItem? item,
-    Bookmark? initialBookmarkJump,
-  }) {
-    return buildChapterLaunchPage(item: item);
+  Widget buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump}) {
+    // 漫画书签按页记（manga_reader_bookmarks.dart）：sectionIndex = 0 起页码；
+    // 在线章再带章稳定键，由阅读器在章节列表里按键找章（下标会随源更新漂移，
+    // 这里拿不到章节列表，也不该按存下的下标开）。
+    final Bookmark? jump = initialBookmarkJump;
+    return buildChapterLaunchPage(
+      item: item,
+      initialPage: jump == null
+          ? null
+          : (jump.sectionIndex < 0 ? 0 : jump.sectionIndex),
+      chapterKey: jump?.chapterKey,
+    );
   }
 
   /// [buildLaunchPage] 的点名版：作品页开某一章时经 `openMedia(launchPageBuilder:)`
   /// 用它，把章下标显式交给阅读器（[MangaFushiPage.initialChapterIndex]）；
   /// [chapterIndex] 为 null 等同直接开书。
   /// [initialPage] 是 0 起计的起始页（见 [MangaFushiPage.initialPage]）。
+  ///
+  /// [chapterKey]：按章稳定键点名（书签跳转用，见 [MangaFushiPage.initialChapterKey]），
+  /// 优先于 [chapterIndex]。
   Widget buildChapterLaunchPage({
     MediaItem? item,
     int? chapterIndex,
     int? initialPage,
+    String? chapterKey,
   }) {
     final String bookKey =
         ReaderFushiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
@@ -92,6 +103,7 @@ class MangaFushiSource extends ReaderMediaSource {
         bookKey: bookKey,
         initialChapterIndex: chapterIndex,
         initialPage: initialPage,
+        initialChapterKey: chapterKey,
       ),
     );
   }
@@ -105,11 +117,7 @@ class MangaFushiSource extends ReaderMediaSource {
     // 漫画有自己的导入按钮与对话框（载体不同、可填字段就不同）；本源作为打开-漫画
     // 的短暂当前源，页头动作给出漫画导入以防被设为当前源时缺动作。
     return <Widget>[
-      buildMangaImportButton(
-        context: context,
-        ref: ref,
-        appModel: appModel,
-      ),
+      buildMangaImportButton(context: context, ref: ref, appModel: appModel),
     ];
   }
 
@@ -158,7 +166,8 @@ class MangaFushiSource extends ReaderMediaSource {
   Future<void> setAuthorFromMediaItem({
     required MediaItem item,
     required String? author,
-  }) =>
-      ReaderFushiSource.instance
-          .setAuthorFromMediaItem(item: item, author: author);
+  }) => ReaderFushiSource.instance.setAuthorFromMediaItem(
+    item: item,
+    author: author,
+  );
 }

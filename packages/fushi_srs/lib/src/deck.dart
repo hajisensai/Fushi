@@ -1,6 +1,8 @@
 /// 牌组设置的物化视图、牌组树与参数继承。
 library;
 
+import 'dart:math' as math;
+
 import 'algorithm.dart';
 import 'entities.dart';
 import 'field_edit.dart';
@@ -51,6 +53,7 @@ class SrsRwkvQueueSettings {
     this.minReviewsPerDay = 0,
     this.repeatMinReviews = 5,
     this.repeatMinSeconds = 30,
+    this.refreshEvery = 1,
   });
 
   /// 每天最少复习数：今天在这个牌组复习过的卡不到这个数时，从回忆率高于目标保留率（本不该出）
@@ -63,9 +66,16 @@ class SrsRwkvQueueSettings {
   /// 同日重复：今天答过的卡，距上次作答至少这么多秒才再出。
   final int repeatMinSeconds;
 
+  /// 每答几题整表刷新一次 RWKV 分数（上游 JSchoreels/anki「Update the RWKV queue every」，
+  /// 默认 1 = 每题）。数的是模型状态真正推进的次数（作答与撤回），刷新在后台跑、下一次排队
+  /// 生效（`SrsRwkvService`）。调大能减少复习时 RWKV 的计算，代价是队列在两次刷新之间用的是
+  /// 较旧的估计。最小 1。
+  final int refreshEvery;
+
   static const int maxMinReviewsPerDay = 9999;
   static const int maxRepeatMinReviews = 999;
   static const int maxRepeatMinSeconds = 86400;
+  static const int maxRefreshEvery = 10000;
 
   /// 缺项 / 坏值回落到默认值，越界的夹到合法范围。
   static SrsRwkvQueueSettings fromValue(Object? v) {
@@ -91,6 +101,10 @@ class SrsRwkvQueueSettings {
         d.repeatMinSeconds,
         maxRepeatMinSeconds,
       ),
+      refreshEvery: math.max(
+        1,
+        read('refreshEvery', d.refreshEvery, maxRefreshEvery),
+      ),
     );
   }
 
@@ -98,6 +112,7 @@ class SrsRwkvQueueSettings {
     'minReviews': minReviewsPerDay,
     'repeatReviews': repeatMinReviews,
     'repeatSeconds': repeatMinSeconds,
+    'refreshEvery': refreshEvery,
   };
 
   @override
@@ -105,11 +120,16 @@ class SrsRwkvQueueSettings {
       other is SrsRwkvQueueSettings &&
       other.minReviewsPerDay == minReviewsPerDay &&
       other.repeatMinReviews == repeatMinReviews &&
-      other.repeatMinSeconds == repeatMinSeconds;
+      other.repeatMinSeconds == repeatMinSeconds &&
+      other.refreshEvery == refreshEvery;
 
   @override
-  int get hashCode =>
-      Object.hash(minReviewsPerDay, repeatMinReviews, repeatMinSeconds);
+  int get hashCode => Object.hash(
+    minReviewsPerDay,
+    repeatMinReviews,
+    repeatMinSeconds,
+    refreshEvery,
+  );
 }
 
 /// 物化后的牌组。

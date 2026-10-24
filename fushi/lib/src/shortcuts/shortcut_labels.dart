@@ -194,6 +194,34 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_lookup_next_word;
       case ShortcutAction.videoLookupPrevWord:
         return t.shortcut_action_video_lookup_prev_word;
+      case ShortcutAction.webBrowserNewTab:
+        return t.shortcut_action_web_browser_new_tab;
+      case ShortcutAction.webBrowserCloseTab:
+        return t.shortcut_action_web_browser_close_tab;
+      case ShortcutAction.webBrowserReopenClosedTab:
+        return t.shortcut_action_web_browser_reopen_closed_tab;
+      case ShortcutAction.webBrowserNextTab:
+        return t.shortcut_action_web_browser_next_tab;
+      case ShortcutAction.webBrowserPreviousTab:
+        return t.shortcut_action_web_browser_previous_tab;
+      case ShortcutAction.webBrowserFocusAddress:
+        return t.shortcut_action_web_browser_focus_address;
+      case ShortcutAction.webBrowserBack:
+        return t.shortcut_action_web_browser_back;
+      case ShortcutAction.webBrowserForward:
+        return t.shortcut_action_web_browser_forward;
+      case ShortcutAction.webBrowserReload:
+        return t.shortcut_action_web_browser_reload;
+      case ShortcutAction.webBrowserFindInPage:
+        return t.shortcut_action_web_browser_find_in_page;
+      case ShortcutAction.webBrowserToggleBookmark:
+        return t.shortcut_action_web_browser_toggle_bookmark;
+      case ShortcutAction.webBrowserZoomIn:
+        return t.shortcut_action_web_browser_zoom_in;
+      case ShortcutAction.webBrowserZoomOut:
+        return t.shortcut_action_web_browser_zoom_out;
+      case ShortcutAction.webBrowserZoomReset:
+        return t.shortcut_action_web_browser_zoom_reset;
       case ShortcutAction.dpadUp:
         return t.shortcut_action_dpad_up;
       case ShortcutAction.dpadDown:
@@ -263,6 +291,9 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_video;
       case ShortcutScope.manga:
         return t.shortcut_scope_manga;
+      // 复用浏览器页标题（「浏览器」），与页面上看到的名字一致。
+      case ShortcutScope.webBrowser:
+        return t.web_browser_title;
       case ShortcutScope.gamepad:
         return t.shortcut_scope_gamepad;
       case ShortcutScope.globalExternal:

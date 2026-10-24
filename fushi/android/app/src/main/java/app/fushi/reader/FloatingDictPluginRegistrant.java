@@ -35,6 +35,13 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering tts channel", e);
         }
+        // 出站代理自动模式读系统代理（SystemProxyChannel）：副 engine 的查词发音 / 网络
+        // 词典同样要走 Wi-Fi 代理，缺这条 channel 时 Dart 侧退化为直连。
+        try {
+            SystemProxyChannel.registerWith(flutterEngine, context);
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering system proxy channel", e);
+        }
         try {
             flutterEngine.getPlugins().add(
                 new dev.fluttercommunity.plus.device_info.DeviceInfoPlusPlugin());

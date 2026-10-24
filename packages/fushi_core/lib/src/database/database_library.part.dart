@@ -1602,6 +1602,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           mediaType: mediaType,
           entryKey: entryKey,
           deletedAt: deletedAt,
+          // v125：本机亲手移出 / 删除的进库时刻就是 deletedAt——显式清空，免得 upsert
+          // 撞上同键旧行时沿用旧的同步进库戳（早于新 deletedAt，对端会误判旧闻）。
+          publishedAt: const Value<int?>(null),
           organizeKey: Value(organizeKey),
           organizeMerged: Value(organizeMerged),
         ),

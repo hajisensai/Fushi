@@ -15,6 +15,7 @@ import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
@@ -28,6 +29,7 @@ import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
@@ -196,7 +198,8 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
-        RemoteCoverFetcher {
+        RemoteCoverFetcher,
+        RemoteListingCapable {
   InterconnectSyncBackend._({FushiProbe? probe})
     : _probe = probe ?? _defaultFushiProbe;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
@@ -650,6 +653,49 @@ class InterconnectSyncBackend extends SyncBackend
 
   @override
   String get davLogTag => '[fushi-client]';
+
+  /// BUG-3743：书阶段一次拿到整个同步根，不再逐本 PROPFIND（44 本书 = 44 次往返）。
+  ///
+  /// 只在 host 于 `/api/capabilities` **显式**声明树列举（`webdav.treeListingLevels`
+  /// ≥ 2）时才发 `Depth: infinity`：老 host 把 infinity 当 Depth 0、只回根自身，那份
+  /// 回包与「空文件箱」长得一模一样，凭回包形状没法区分；误读会让每本书都按「远端
+  /// 无进度」判方向。能力每轮现问、不跨轮缓存——同一地址上的 host 可能被换成老版本。
+  ///
+  /// 拿不到 / 不支持 / 回包形状不对一律返回 null，调用方逐本列举，语义与改动前一致。
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) async {
+    try {
+      await _ensureResolved();
+      final int levels = interconnectDavTreeListingLevels(
+        await _readHostCapabilities(),
+      );
+      if (levels < 2) return null;
+      final List<DavEntry> entries = await _ops!.propfindDepth(
+        rootFolderId,
+        'infinity',
+      );
+      return remoteListingFromDavTree(entries, rootFolderId);
+    } catch (e) {
+      debugPrint('$davLogTag snapshotListing failed, falling back: $e');
+      return null;
+    }
+  }
+
+  /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
+  /// 等其它失败照常抛。
+  Future<Object?> _readHostCapabilities() async {
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/capabilities',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
+    return jsonDecode(await _readBodyBounded(res));
+  }
 
   // ── Metadata sync ─────────────────────────────────────────────────
 

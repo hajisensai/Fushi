@@ -214,6 +214,7 @@ test('Shift+H 真链：keydown 经 subtitle-panel 转发到 content 并持久化
   h.sandbox.window.fushiEpisodeCues = {};
   h.sandbox.window.fushiVideoKey = () => 'episode';
 
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-adapters.js'), 'utf8'), h.sandbox, { filename: 'subtitle-adapters.js' }); // manifest：先于 subtitle-panel.js（共享轨判据）
   vm.runInContext(
     fs.readFileSync(PANEL, 'utf8'),
     h.sandbox,

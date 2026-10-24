@@ -280,7 +280,7 @@ const int _kPlanCacheLimit = 256;
 
 Future<BlurayDiscExtrasPlan?> _planForDisc(String root) async {
   final String key = normalizeVideoPath(root);
-  final String? fingerprint = _discFingerprint(root);
+  final String? fingerprint = await _discFingerprint(root);
   final ({String fingerprint, BlurayDiscExtrasPlan? plan})? cached =
       _planCache[key];
   if (fingerprint != null &&
@@ -302,18 +302,29 @@ Future<BlurayDiscExtrasPlan?> _planForDisc(String root) async {
   return plan;
 }
 
-String? _discFingerprint(String root) {
+/// 只走 async 文件 API（盘常在网络盘上，同步 stat 会冻结 isolate，BUG-3756）。
+/// 各播放列表的 stat 并发发出，一张上百条 MPLS 的盘不逐条串行等网络往返。
+Future<String?> _discFingerprint(String root) async {
   try {
     final List<FileSystemEntity> entries =
-        Directory(p.join(root, 'BDMV', 'PLAYLIST')).listSync(followLinks: false)
+        (await Directory(
+            p.join(root, 'BDMV', 'PLAYLIST'),
+          ).list(followLinks: false).toList())
           ..sort((FileSystemEntity a, FileSystemEntity b) {
             return a.path.compareTo(b.path);
           });
+    final List<File> playlists = <File>[
+      for (final FileSystemEntity entity in entries)
+        if (entity is File && p.extension(entity.path).toLowerCase() == '.mpls')
+          entity,
+    ];
+    final List<FileStat> stats = await Future.wait(<Future<FileStat>>[
+      for (final File file in playlists) file.stat(),
+    ]);
     final StringBuffer buffer = StringBuffer();
-    for (final FileSystemEntity entity in entries) {
-      if (entity is! File) continue;
-      if (p.extension(entity.path).toLowerCase() != '.mpls') continue;
-      final FileStat stat = entity.statSync();
+    for (int i = 0; i < playlists.length; i++) {
+      final File entity = playlists[i];
+      final FileStat stat = stats[i];
       buffer
         ..write(p.basename(entity.path))
         ..write(':')
@@ -322,7 +333,7 @@ String? _discFingerprint(String root) {
         ..write(stat.modified.microsecondsSinceEpoch)
         ..write(';');
     }
-    final FileStat stream = FileStat.statSync(p.join(root, 'BDMV', 'STREAM'));
+    final FileStat stream = await FileStat.stat(p.join(root, 'BDMV', 'STREAM'));
     buffer
       ..write('S:')
       ..write(stream.type)

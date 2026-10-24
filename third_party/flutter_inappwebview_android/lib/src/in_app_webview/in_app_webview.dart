@@ -11,6 +11,7 @@ import '../find_interaction/find_interaction_controller.dart';
 import 'in_app_webview_controller.dart';
 import '../pull_to_refresh/main.dart';
 import '../pull_to_refresh/pull_to_refresh_controller.dart';
+import '../webview_profile.dart';
 
 /// Object specifying creation parameters for creating a [PlatformInAppWebViewWidget].
 ///
@@ -293,6 +294,15 @@ class AndroidInAppWebViewWidget extends PlatformInAppWebViewWidget {
             // ignore: deprecated_member_use_from_same_package
             params.initialOptions?.toMap() ??
             initialSettings.toMap();
+    // Hibiki patch: named profile (see webview_profile.dart).
+    final String? profileName =
+        AndroidWebViewProfile.profileNameOf(params.initialSettings);
+    if (profileName != null) {
+      settingsMap = <String, dynamic>{
+        ...settingsMap,
+        AndroidWebViewProfile.settingsKey: profileName,
+      };
+    }
 
     Map<String, dynamic> pullToRefreshSettings =
         params.pullToRefreshController?.params.settings.toMap() ??

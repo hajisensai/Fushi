@@ -29,7 +29,7 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart'
     show VideoMetadataDatabaseStore;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
-    show VideoMetadataProviderKind, VideoMetadataWork;
+    show VideoMetadataMediaKind, VideoMetadataProviderKind, VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart'
@@ -47,6 +47,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_player_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_support.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_video_subtitle_fetch_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_video_subtitle_routes.dart';
 import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
 
@@ -90,6 +91,8 @@ List<CtlRoute> buildVideoCtlRoutes(DesktopCtlContext context) {
     ...buildVideoPlayerCtlRoutes(context),
     // ── 生成日语字幕（ASR + AI 校对管线，不依赖视频页） ──────────────────
     ...buildVideoSubtitleCtlRoutes(context),
+    // ── 在线字幕：立即补 / 手动搜 / 点名下载（与刮削后自动补同一个服务） ──────
+    ...buildVideoSubtitleFetchCtlRoutes(context),
   ];
 }
 
@@ -262,7 +265,9 @@ class _VideoCtl {
   // ── 手动候选 / 指定身份 ─────────────────────────────────────────────────
 
   /// `video candidates`：库页「重新刮削」搜索框背后的 `searchManualCandidates`
-  /// （只读，不抢刮削互斥门）。查询词缺省用作品标题；`provider` 只过滤结果。
+  /// （只读，不抢刮削互斥门）。查询词缺省用作品标题；`provider` / `type` 给了就
+  /// 只搜该资料源 / 该形态（主源有歧义候选时也能搜到兜底源，剧场版被计划当成
+  /// 剧集时也能按电影搜）。
   Future<Object?> searchCandidates(CtlCall call) async {
     final VideoScrapeRuntime runtime = _runtime();
     final CtlVideoWorkId id = CtlVideoWorkId.parse(call.params['id']!);
@@ -277,7 +282,13 @@ class _VideoCtl {
     );
     final String query = call.optString('q') ?? unit.work.title;
     final List<VideoSourceScrapeConfirmationCandidate> candidates =
-        await _searchManual(runtime.controller, unit, query);
+        await _searchManual(
+          runtime.controller,
+          unit,
+          query,
+          provider: provider,
+          mediaKind: parseCtlVideoMediaKind(call.optString('type')),
+        );
     return <String, Object?>{
       'workId': unit.work.stableKey,
       'query': query,
@@ -292,8 +303,10 @@ class _VideoCtl {
   Future<List<VideoSourceScrapeConfirmationCandidate>> _searchManual(
     VideoSourceScrapeTaskController controller,
     VideoPendingScrapeWork unit,
-    String query,
-  ) async {
+    String query, {
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
+  }) async {
     if (!controller.supportsManualBinding) {
       throw const CtlFailure.unsupported('当前刮削实现不支持手动指定作品');
     }
@@ -303,6 +316,8 @@ class _VideoCtl {
         workTitle: unit.work.title,
         workStableKey: unit.work.stableKey,
         query: query,
+        provider: provider,
+        mediaKind: mediaKind,
       );
     } on FormatException catch (e) {
       throw CtlFailure.badRequest('作品 id / 链接无效：${e.message}');

@@ -24,6 +24,7 @@ class ReaderLyricsPlayerOverlay extends StatefulWidget {
     required this.data,
     required this.callbacks,
     required this.onHtmlThemeChanged,
+    this.navigationAccessory,
   });
 
   /// 歌词 WebView（透明底）。
@@ -34,6 +35,10 @@ class ReaderLyricsPlayerOverlay extends StatefulWidget {
 
   /// 歌词文档主题（颜色 / 对齐 / 透明度阶梯）变化。首帧也会回调一次。
   final ValueChanged<LyricsHtmlTheme> onHtmlThemeChanged;
+
+  /// 挂在歌词区顶部居中的浮动件（阅读器的「跳转回退」胶囊），盖在歌词之上、
+  /// 外观 chrome 之下。null 不画。
+  final Widget? navigationAccessory;
 
   @override
   State<ReaderLyricsPlayerOverlay> createState() =>
@@ -263,6 +268,13 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
                       ),
                     ),
                     Positioned.fromRect(rect: rect, child: widget.lyricsView),
+                    if (widget.navigationAccessory != null)
+                      Positioned(
+                        top: rect.top + 8,
+                        left: rect.left,
+                        width: rect.width,
+                        child: widget.navigationAccessory!,
+                      ),
                     Positioned.fill(
                       child: design.buildChrome(
                         context,

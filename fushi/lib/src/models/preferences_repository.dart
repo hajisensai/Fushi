@@ -64,6 +64,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -675,6 +676,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setJellyfinShowInLibrary(bool value) async {
     await setPref('jellyfin_show_in_library', value);
+    notifyListeners();
+  }
+
+  /// 后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）补新集。默认开；
+  /// 与「番剧新集提醒」是两个开关（那个只管通知）。
+  bool get videoLibraryAutoUpdate =>
+      getPref('video_library_auto_update', defaultValue: true) as bool;
+
+  Future<void> setVideoLibraryAutoUpdate(bool value) async {
+    await setPref('video_library_auto_update', value);
     notifyListeners();
   }
 
@@ -3150,12 +3161,31 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页顶栏悬浮（不占布局、默认收起，点卡面空白 / 右键唤出），与小说、漫画阅读器
+  // 同一口径。默认 true；false = 固定页头常驻。
+  bool get srsReviewChromeFloating =>
+      getPref('srs_review_chrome_floating', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewChromeFloating(bool value) async {
+    await setPref('srs_review_chrome_floating', value);
+    notifyListeners();
+  }
+
   // 复习页评分栏只留「重来 / 良好」（对齐 AnkiDroid hideHardAndEasy）。默认 false。
   bool get srsReviewHideHardEasy =>
       getPref('srs_review_hide_hard_easy', defaultValue: false) as bool;
 
   Future<void> setSrsReviewHideHardEasy(bool value) async {
     await setPref('srs_review_hide_hard_easy', value);
+    notifyListeners();
+  }
+
+  // 复习卡面图片大小（SrsReviewImageSize.wire）。默认 'original'。
+  String get srsReviewImageSize =>
+      getPref('srs_review_image_size', defaultValue: 'original') as String;
+
+  Future<void> setSrsReviewImageSize(String wire) async {
+    await setPref('srs_review_image_size', wire);
     notifyListeners();
   }
 
@@ -4948,6 +4978,39 @@ class PreferencesRepository extends ChangeNotifier
 
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
+
+  /// 漫画阅读器工具栏按钮布局（宽窗）。持久化键 `manga_control_layout`，空 / 坏值
+  /// 回出厂布局（与布局化之前的固定排布视觉等价）。
+  MangaControlLayout get mangaControlLayout => MangaControlLayout.decode(
+        getPref('manga_control_layout', defaultValue: '') as String,
+      );
+
+  Future<void> setMangaControlLayout(MangaControlLayout layout) async {
+    await setPref('manga_control_layout', layout.encode());
+    notifyListeners();
+  }
+
+  /// 漫画阅读器窄窗（手机竖屏）按钮布局。持久化键 `manga_control_layout_compact`；
+  /// 没存过窄窗布局但存过宽窗布局时沿用宽窗那份（与小说阅读器同一口径）。
+  MangaControlLayout get mangaCompactControlLayout {
+    final String compact =
+        getPref('manga_control_layout_compact', defaultValue: '') as String;
+    if (compact.trim().isNotEmpty) {
+      return MangaControlLayout.decode(
+        compact,
+        fallback: MangaControlLayout.compactDefaults,
+      );
+    }
+    final String wide =
+        getPref('manga_control_layout', defaultValue: '') as String;
+    if (wide.trim().isNotEmpty) return MangaControlLayout.decode(wide);
+    return MangaControlLayout.compactDefaults;
+  }
+
+  Future<void> setMangaCompactControlLayout(MangaControlLayout layout) async {
+    await setPref('manga_control_layout_compact', layout.encode());
+    notifyListeners();
+  }
 
   Future<void> setMangaChromeFloating(bool value) async {
     await setPref('manga_chrome_floating', value);

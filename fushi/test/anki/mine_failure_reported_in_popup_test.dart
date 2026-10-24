@@ -19,6 +19,10 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 //      「导出卡片失败。」；iOS 上那条 toast 还落在底部停靠的弹窗上，被弹窗边缘裁掉。
 // 修法：空卡门带 [AnkiErrorCode.allFieldsEmpty] → 本地化成能照着做的一句话；弹窗
 // 发起的失败只在弹窗按钮旁说一次（[MinePopupResult.message]），宿主不再另弹 toast。
+//
+// BUG-3723 之后空映射在载入时就补成按字段名推出的默认映射，① 的「空表」本身不再出现；
+// 空卡门仍要守住「映射覆盖到了笔记类型、但渲染出来全空」（这里 Front 映射到一个本次
+// 词条没有的读音）。
 
 const AnkiSettings _nonLapisWithoutMappings = AnkiSettings(
   selectedDeckId: 0,
@@ -29,6 +33,7 @@ const AnkiSettings _nonLapisWithoutMappings = AnkiSettings(
   availableNoteTypes: <AnkiNoteType>[
     AnkiNoteType(id: 7, name: 'Basic', fields: <String>['Front', 'Back']),
   ],
+  fieldMappings: <String, String>{'Front': '{reading}'},
 );
 
 void main() {
@@ -41,7 +46,7 @@ void main() {
 
   group('空映射 → allFieldsEmpty → 本地化文案', () {
     test(
-      'AnkiMobile：非 Lapis 笔记类型 + 空映射，失败带 allFieldsEmpty 且不打开 Anki',
+      'AnkiMobile：非 Lapis 笔记类型 + 映射渲染全空，失败带 allFieldsEmpty 且不打开 Anki',
       () async {
         final List<Uri> launched = <Uri>[];
         final AnkiMobileRepository repo = AnkiMobileRepository(

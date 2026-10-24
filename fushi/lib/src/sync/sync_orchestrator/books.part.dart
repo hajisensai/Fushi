@@ -70,15 +70,16 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       try {
         // 找到本地行取 extractDir。
         final EpubBookRow? row = localBooks.cast<EpubBookRow?>().firstWhere(
-              (EpubBookRow? b) => sanitizeTtuFilename(b!.title) == key,
-              orElse: () => null,
-            );
+          (EpubBookRow? b) => sanitizeTtuFilename(b!.title) == key,
+          orElse: () => null,
+        );
         if (row == null ||
             row.extractDir.isEmpty ||
             !Directory(row.extractDir).existsSync()) {
           // 本地内容不可用，跳过（与 importRemoteBooks 对称语义）。
-          report.errors
-              .add('live push book "$title": extractDir missing or empty');
+          report.errors.add(
+            'live push book "$title": extractDir missing or empty',
+          );
           index++;
           continue;
         }
@@ -107,8 +108,9 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
             ? await repackageMangaBook(row.extractDir, tmp.path)
             : await repackageExtractedEpub(row.extractDir, tmp.path);
         if (!built) {
-          report.errors
-              .add('live push book "$title": repackage produced no output');
+          report.errors.add(
+            'live push book "$title": repackage produced no output',
+          );
           index++;
           continue;
         }
@@ -120,12 +122,14 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           tmp,
           displayTitle: override?.title,
           displayTitleAt: override?.updatedAt ?? 0,
-          onProgress: (double f, [int? b]) => _emit(SyncPhase.books,
-              itemIndex: index,
-              itemTotal: total,
-              title: title,
-              fileFraction: f,
-              fileBytes: b),
+          onProgress: (double f, [int? b]) => _emit(
+            SyncPhase.books,
+            itemIndex: index,
+            itemTotal: total,
+            title: title,
+            fileFraction: f,
+            fileBytes: b,
+          ),
         );
       } catch (e) {
         report.noteError('live push book "$title"', e);
@@ -156,15 +160,35 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) async {
-    final InterconnectBookProgressSync sync =
-        InterconnectBookProgressSync(db: _db, backend: backend);
+    final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
+      db: _db,
+      backend: backend,
+    );
     final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
+    if (localBooks.isEmpty) return;
+    // 本端进度 / 基线整轮一次读齐（三条查询）；两端已收敛的书在内存里判定后
+    // 跳过，其余照旧逐本重读、判定、落地（快照只用来跳过，从不用来写）。
+    final BookProgressSweepSnapshot snapshot = await sync.loadSweepSnapshot();
     for (final EpubBookRow book in localBooks) {
       try {
         final RemoteBookProgress remote = await sync.remoteProgress(book);
+        if (InterconnectBookProgressSync.isSettled(
+          book: book,
+          local: InterconnectBookProgressSync.localProgressFromSnapshot(
+            book,
+            snapshot,
+          ),
+          remote: remote,
+          snapshot: snapshot,
+        )) {
+          continue;
+        }
         final RemoteBookProgress local = await sync.localProgress(book);
-        final BookProgressSyncAction action =
-            await sync.decide(book, local: local, remote: remote);
+        final BookProgressSyncAction action = await sync.decide(
+          book,
+          local: local,
+          remote: remote,
+        );
         switch (action) {
           case BookProgressSyncAction.synced:
             // BUG-686: a host-newer progress pull lands in reader_positions but
@@ -182,13 +206,15 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
               report.localBookProgressPulled++;
             }
           case BookProgressSyncAction.conflict:
-            report.conflicts.add(SyncConflict(
-              assetKey: book.bookKey,
-              dimension: kInterconnectBookProgressDimension,
-              title: book.title,
-              localVersion: local.updatedAtMs,
-              remoteVersion: remote.updatedAtMs,
-            ));
+            report.conflicts.add(
+              SyncConflict(
+                assetKey: book.bookKey,
+                dimension: kInterconnectBookProgressDimension,
+                title: book.title,
+                localVersion: local.updatedAtMs,
+                remoteVersion: remote.updatedAtMs,
+              ),
+            );
         }
       } catch (e) {
         report.noteError('live book progress "${book.title}"', e);
@@ -219,14 +245,32 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     required Set<String> hostKeys,
     required Future<PlaybackPosition> Function(String key) readHost,
     required String Function(String key) titleOf,
+    required PlaybackPosition Function(String key) localFromSnapshot,
   }) async {
+    // 整轮一次读齐基线 / 待确认基线（两条查询）；本端位置由调用方从 sweep 开头的
+    // 偏好快照里取（零查询）。两端已收敛的条目在内存里判定后直接跳过，不再逐条
+    // 读 3 次、写 2 次；其余条目照旧逐条重读、判定、落地（快照只用来跳过，从不
+    // 用来写）。
+    final PlaybackBaselineSnapshot baselines = await sync
+        .loadBaselineSnapshot();
     for (final String key in localKeys) {
       if (!hostKeys.contains(key)) continue; // host 无此条目：跳过。
       try {
-        final PlaybackPosition local = await sync.localPosition(key);
         final PlaybackPosition host = await readHost(key);
-        final BookProgressSyncAction action =
-            await sync.decide(key, local: local, remote: host);
+        if (InterconnectPlaybackPositionSync.isSettled(
+          local: localFromSnapshot(key),
+          remote: host,
+          snapshot: baselines,
+          key: key,
+        )) {
+          continue;
+        }
+        final PlaybackPosition local = await sync.localPosition(key);
+        final BookProgressSyncAction action = await sync.decide(
+          key,
+          local: local,
+          remote: host,
+        );
         switch (action) {
           case BookProgressSyncAction.synced:
             await sync.alignSynced(key, local: local, remote: host);
@@ -235,13 +279,15 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           case BookProgressSyncAction.applyRemote:
             await sync.applyRemote(key, host, local: local);
           case BookProgressSyncAction.conflict:
-            report.conflicts.add(SyncConflict(
-              assetKey: key,
-              dimension: sync.dimension,
-              title: titleOf(key),
-              localVersion: local.updatedAtMs,
-              remoteVersion: host.updatedAtMs,
-            ));
+            report.conflicts.add(
+              SyncConflict(
+                assetKey: key,
+                dimension: sync.dimension,
+                title: titleOf(key),
+                localVersion: local.updatedAtMs,
+                remoteVersion: host.updatedAtMs,
+              ),
+            );
         }
       } catch (e) {
         report.noteError('$errorLabel "$key"', e);

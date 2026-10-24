@@ -153,30 +153,11 @@
 
   // DOM 采样 live 轨的伪语言码（content.js FUSHI_LIVE_LANG）：排序垫底 + 显示中文标签。
   var LIVE_LANG = 'live';
+  // 列表次序与活动轨判据是共享纯函数（subtitle-adapters.js，manifest 里先于本文件装入；
+  // app 内浏览器的 YouTube 页内字幕也调同一份）。
   function tracksForVideo() {
-    var store = window.fushiEpisodeCues || null;
-    var vid = videoKey();
-    var out = [];
-    if (!store || !vid) return out;
-    for (var key in store) {
-      var sep = key.indexOf('|');
-      if (sep < 0) continue;
-      if (key.slice(0, sep) !== String(vid)) continue;
-      var cues = store[key];
-      if (cues && cues.length) out.push({ lang: key.slice(sep + 1), key: key, cues: cues });
-      // BUG-2194：按需加载的占位轨（清单已到、cue 未取）也列出来，让用户能选中触发加载。
-      else if (window.fushiLazyTracks && window.fushiLazyTracks[key]) {
-        out.push({ lang: key.slice(sep + 1), key: key, cues: [], pending: true });
-      }
-    }
-    out.sort(function (a, b) {
-      // 已加载整集轨在前，占位轨其次，实时采集轨垫底。
-      var al = a.lang === LIVE_LANG ? 2 : (a.pending ? 1 : 0);
-      var bl = b.lang === LIVE_LANG ? 2 : (b.pending ? 1 : 0);
-      if (al !== bl) return al - bl;
-      return a.lang < b.lang ? -1 : (a.lang > b.lang ? 1 : 0);
-    });
-    return out;
+    return fushiListSubtitleTracks(window.fushiEpisodeCues || null, videoKey(),
+      window.fushiLazyTracks || null, LIVE_LANG);
   }
   // 占位轨被选为活动轨 → 请桥真取（同一 key 5 秒内不重复请求；取失败用户重选即可再试）。
   function requestLazyIfPending(track) {
@@ -1038,16 +1019,8 @@
   function refreshHeadless() {
     st.videoId = videoKey();
     var tracks = tracksForVideo();
-    var active = null;
-    for (var i = 0; i < tracks.length; i++) {
-      if (tracks[i].lang === st.activeLang) active = tracks[i];
-    }
-    var fullTrackArrived = st.activeLang === LIVE_LANG &&
-      tracks.length && tracks[0].lang !== LIVE_LANG;
-    if (!active || fullTrackArrived) {
-      active = tracks.length ? tracks[0] : null;
-      st.activeLang = active ? active.lang : null;
-    }
+    var active = fushiResolveActiveSubtitleTrack(tracks, st.activeLang, LIVE_LANG);
+    st.activeLang = active ? active.lang : null;
     requestLazyIfPending(active);
     var off = trackOffset(active ? active.key : null);
     st.cues = active ? shiftedCues(active.cues, off) : [];

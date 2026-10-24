@@ -72,7 +72,7 @@ extension _VideoDanmaku on _VideoFushiPageState {
       return;
     }
 
-    final String? sidecarPath = findDanmakuSidecar(videoPath);
+    final String? sidecarPath = await findDanmakuSidecar(videoPath);
     if (sidecarPath != null) {
       final VideoDanmakuLoadResult local = await loadDanmakuSidecarFile(
         File(sidecarPath),
@@ -96,7 +96,7 @@ extension _VideoDanmaku on _VideoFushiPageState {
 
     if (!appModel.videoDanmakuOnlineEnabled) return;
     final File file = File(videoPath);
-    if (!file.existsSync()) return;
+    if (!await file.exists()) return;
     await _loadOnlineDanmaku(seq, () => dandanplayFileKeyOf(file));
   }
 

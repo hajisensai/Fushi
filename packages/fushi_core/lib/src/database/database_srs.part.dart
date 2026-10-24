@@ -172,6 +172,18 @@ mixin _FushiDbSrs on _$FushiDatabase {
       'CREATE INDEX IF NOT EXISTS idx_srs_field_edits_history_from '
           'ON srs_field_edits (field_key, entity_kind, entity_id) '
           'WHERE $kSrsHistoryFromCondition',
+      // v125：写入路径周边的读放大。
+      // ① 同步冲突角标（SrsDbStore.syncConflicts）按 profile 对 (实体, 字段键) GROUP BY：以前只有
+      //    (entity_kind, entity_id) 索引，每次都全表扫描修改记录表（连同笔记正文 json）。这条覆盖
+      //    索引让分组只扫索引。
+      'CREATE INDEX IF NOT EXISTS idx_srs_field_edits_profile_register '
+          'ON srs_field_edits (profile_uid, entity_kind, entity_id, field_key)',
+      // ② 笔记类型的成员查找（改笔记类型后刷新缓存、按类型列笔记 / 计数）。
+      'CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_type '
+          'ON srs_notes_cache (profile_uid, note_type_id)',
+      // ③ 待裁决笔记（冲突角标）：只含 pending_decision = 1 的那几行。
+      'CREATE INDEX IF NOT EXISTS idx_srs_notes_cache_pending '
+          'ON srs_notes_cache (profile_uid) WHERE pending_decision = 1',
     ];
     for (final String s in stmts) {
       await customStatement(s);

@@ -757,8 +757,11 @@ void main() {
       profileName: '日语',
       nowMs: t,
     );
-    // 备份之后同名文件被换成同样大小的另一份内容：只比大小会误判「已经在」。
-    img.writeAsBytesSync(<int>[9, 9, 9]);
+    // 备份之后同名文件被换成同样大小的另一份内容：只比大小会误判「已经在」。按 app 的写法换
+    // （先写临时文件再改名）：池文件与媒体文件是硬链接，原地改写会连池里那份一起改掉，不在契约内。
+    File('${img.path}.new')
+      ..writeAsBytesSync(<int>[9, 9, 9])
+      ..renameSync(img.path);
     final SrsBackupArchive arch = await SrsBackupStore.read(b1.file);
     try {
       expect(await bs.restoreMedia(arch), 0);

@@ -10,8 +10,8 @@
 //! - 响应恒为 `{"ok": <结果>}` 或 `{"error": "<原因>"}`；任何 panic 都被接住转成 error，不越过 FFI 边界。
 //!
 //! 导出符号（与 packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart 的 lookup 名一一对应）：
-//!   ffsrs_call / ffsrs_compute_parameters / ffsrs_retrievability_batch / ffsrs_free_string /
-//!   ffsrs_zstd_decompress / ffsrs_free_bytes / ffsrs_abi_version /
+//!   ffsrs_call / ffsrs_fit / ffsrs_retrievability_batch / ffsrs_free_string /
+//!   ffsrs_zstd_decompress / ffsrs_zstd_decompress_file / ffsrs_free_bytes / ffsrs_abi_version /
 //!   ffsrs_search_corpus_new / ffsrs_search_corpus_free / ffsrs_search_corpus_set_ints /
 //!   ffsrs_search_corpus_set_floats / ffsrs_search_chunk_new / ffsrs_search_chunk_free /
 //!   ffsrs_search_corpus_attach / ffsrs_search_corpus_needs / ffsrs_search_corpus_match /
@@ -49,7 +49,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。
-pub const ABI_VERSION: i32 = 1;
+pub const ABI_VERSION: i32 = 2;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
 pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
@@ -128,22 +128,79 @@ pub struct Review {
     pub delta_t: f32,
 }
 
-fn parse_items(value: &Value) -> Result<Vec<FSRSItem>, String> {
-    let items: Vec<Vec<Review>> =
-        serde_json::from_value(value.clone()).map_err(|e| format!("bad items: {e}"))?;
-    Ok(items
-        .into_iter()
-        .filter(|reviews| !reviews.is_empty())
-        .map(|reviews| FSRSItem {
-            reviews: reviews
-                .into_iter()
-                .map(|r| FSRSReview {
-                    rating: r.rating,
-                    delta_t: r.delta_t,
-                })
-                .collect(),
-        })
-        .collect())
+/// 优化 / 评估的训练集，打包形态（`ffsrs_fit` 的输入，BUG-3745）。
+///
+/// 每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets` 切段），外加按评分时刻排好序的
+/// 训练条目 `(item_cards[i], item_lengths[i])`：第 i 条 = 卡 `item_cards[i]` 的前 `item_lengths[i]` 次评分。
+/// fsrs-rs 的 API 收 `Vec<FSRSItem>`（每条自带一份前缀），前缀在这里展开：Dart 侧与 FFI 边界只有
+/// O(总评分数) 的数据，展开后的 O(Σ 前缀长度) 只存在于本次调用期间的 Rust 堆上。
+struct TrainingSet<'a> {
+    ratings: &'a [u8],
+    delta_days: &'a [f32],
+    card_offsets: &'a [u32],
+    /// 每张卡的 ID（可空）；按条目展开成 fsrs-rs 要的「与 train_set 对齐的 card_ids」。
+    card_ids: Option<&'a [i64]>,
+    item_cards: &'a [u32],
+    item_lengths: &'a [u32],
+}
+
+impl TrainingSet<'_> {
+    fn validate(&self) -> Result<(), String> {
+        let n_cards = self.card_offsets.len().saturating_sub(1);
+        if self.card_offsets.first() != Some(&0) {
+            return Err("bad training set: card_offsets must start at 0".into());
+        }
+        if self.card_offsets.windows(2).any(|w| w[0] > w[1]) {
+            return Err("bad training set: card_offsets must be non-decreasing".into());
+        }
+        if self.card_offsets[n_cards] as usize != self.ratings.len() {
+            return Err("bad training set: card_offsets do not cover the reviews".into());
+        }
+        if self.card_ids.is_some_and(|ids| ids.len() != n_cards) {
+            return Err("bad training set: one card id per card".into());
+        }
+        for (&card, &len) in self.item_cards.iter().zip(self.item_lengths) {
+            let card = card as usize;
+            if card >= n_cards {
+                return Err(format!("bad training set: item card {card} out of range"));
+            }
+            let history = (self.card_offsets[card + 1] - self.card_offsets[card]) as usize;
+            if len == 0 || len as usize > history {
+                return Err(format!(
+                    "bad training set: prefix length {len} for a {history}-review card"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// 展开成 fsrs-rs 的条目（顺序 = 输入顺序，即按评分时刻）。`with_card_ids` 时同时给出对齐的 card_ids。
+    fn expand(&self, with_card_ids: bool) -> (Vec<FSRSItem>, Option<Vec<i64>>) {
+        let items = self
+            .item_cards
+            .iter()
+            .zip(self.item_lengths)
+            .map(|(&card, &len)| {
+                let from = self.card_offsets[card as usize] as usize;
+                let to = from + len as usize;
+                FSRSItem {
+                    reviews: self.ratings[from..to]
+                        .iter()
+                        .zip(&self.delta_days[from..to])
+                        .map(|(&rating, &delta_t)| FSRSReview {
+                            rating: rating as u32,
+                            delta_t,
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
+        let card_ids = match (with_card_ids, self.card_ids) {
+            (true, Some(ids)) => Some(self.item_cards.iter().map(|&c| ids[c as usize]).collect()),
+            _ => None,
+        };
+        (items, card_ids)
+    }
 }
 
 /// 参数校验：个数必须与算法一致，取值有限；空 = 该算法默认参数。
@@ -288,31 +345,6 @@ fn dispatch(req: &Value) -> Result<Value, String> {
                 3
             )))
         }
-        "evaluate" => {
-            // 训练集内评估：只用于展示「当前参数在这份数据上的 log loss」。
-            // 跨算法 / 新旧参数的采用判定一律用 evaluate_tss（外样本），见 PR6。
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let items = parse_items(req.get("items").unwrap_or(&Value::Null))?;
-            let eval = model
-                .evaluate(items, |_| true)
-                .map_err(|e| format!("evaluate: {e:?}"))?;
-            Ok(json!({ "logLoss": eval.log_loss, "rmseBins": eval.rmse_bins }))
-        }
-        "evaluate_tss" => {
-            // 时间序列切分的外样本评估（第六轮审查第 11 条）：每折只用之前的数据训练、在之后的数据上评估，
-            // FSRS-7 34 个参数在训练集内过拟合的优势不会被算进去。items 必须按复习时间排好序。
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let items = parse_items(req.get("items").unwrap_or(&Value::Null))?;
-            let input = ComputeParametersInput {
-                train_set: items,
-                model_version: algorithm.compute_version(),
-                ..Default::default()
-            };
-            let eval = fsrs::evaluate_with_time_series_splits(input, |_| true)
-                .map_err(|e| format!("evaluate_tss: {e:?}"))?;
-            Ok(json!({ "logLoss": eval.log_loss, "rmseBins": eval.rmse_bins }))
-        }
         other => Err(format!("unknown op: {other}")),
     }
 }
@@ -344,17 +376,35 @@ pub extern "C" fn ffsrs_call(request: *const c_char) -> *mut c_char {
     respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
 }
 
-/// 参数优化（同步、阻塞，调用方放后台 isolate）。
+/// 参数优化与评估（同步、阻塞，调用方放后台 isolate）。
+///
+/// `request`：`{"op","algorithm","params"?}`，op 取
+/// - `compute_parameters`：参数优化，响应 `{"ok":{"params":[...],"count":N}}`；
+///   `card_ids` 非空时按条目对齐传给 fsrs-rs（FSRS-7 同卡前缀按扩展窗口训练）；
+/// - `evaluate`：给定参数的训练集内评估（只用于展示），响应 `{"ok":{"logLoss","rmseBins"}}`；
+/// - `evaluate_tss`：时间序列切分的外样本评估（第六轮审查第 11 条）：每折只用之前的数据训练、在之后的数据上评估，
+///   FSRS-7 34 个参数在训练集内过拟合的优势不会被算进去。条目必须按复习时间排好序。
+///
+/// 两种评估与旧的 JSON 口径一致，不带 card_ids。训练集见 [TrainingSet]：
+/// `ratings` / `delta_days` 长 `n_reviews`，`card_offsets` 长 `n_cards + 1`，`card_ids` 长 `n_cards`（可空），
+/// `item_cards` / `item_lengths` 长 `n_items`。
 ///
 /// - `cancel`：调用方持有的 int32，任意线程写非 0 即请求取消；取消后返回 `{"error":"cancelled"}`，不留半成品。
-/// - `progress`：长度 2 的 int64 数组 [已处理, 总数]，本函数运行中持续写入，可从别的 isolate 读。
-///   两者都可为空指针。
-///
-/// 请求：`{"algorithm":"fsrs7","items":[[{"rating":3,"deltaT":0},...],...],"cardIds":[...]?}`
-/// 响应：`{"ok":{"params":[...],"count":N}}`
+/// - `progress`：长度 2 的 int64 数组 [已处理, 总数]，参数优化运行中持续写入，可从别的 isolate 读。
+///   两者都可为空指针，只对 `compute_parameters` 生效。
 #[no_mangle]
-pub extern "C" fn ffsrs_compute_parameters(
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn ffsrs_fit(
     request: *const c_char,
+    ratings: *const u8,
+    delta_days: *const f32,
+    n_reviews: usize,
+    card_offsets: *const u32,
+    card_ids: *const i64,
+    n_cards: usize,
+    item_cards: *const u32,
+    item_lengths: *const u32,
+    n_items: usize,
     cancel: *const AtomicI32,
     progress: *const AtomicI64,
 ) -> *mut c_char {
@@ -362,35 +412,75 @@ pub extern "C" fn ffsrs_compute_parameters(
     let progress_addr = progress as usize;
     let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
         let req = read_request(request)?;
+        let op = str_field(&req, "op")?;
         let algorithm = Algorithm::parse(str_field(&req, "algorithm")?)?;
-        let items = parse_items(req.get("items").unwrap_or(&Value::Null))?;
-        if items.is_empty() {
+        if n_items == 0 {
             return Err("not enough data".into());
         }
-        let card_ids: Option<Vec<i64>> = match req.get("cardIds") {
-            None | Some(Value::Null) => None,
-            Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| format!("bad cardIds: {e}"))?),
-        };
-        let state = CombinedProgressState::new_shared();
-        let done = Arc::new(AtomicBool::new(false));
-        let watcher = spawn_watcher(state.clone(), done.clone(), cancel_addr, progress_addr);
-        let input = ComputeParametersInput {
-            train_set: items,
-            card_ids,
-            progress: Some(state.clone()),
-            model_version: algorithm.compute_version(),
-            ..Default::default()
-        };
-        let result = fsrs::compute_parameters(input);
-        done.store(true, Ordering::SeqCst);
-        let _ = watcher.join();
-        let cancelled = cancel_addr != 0
-            && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0;
-        if cancelled {
-            return Err("cancelled".into());
+        if card_offsets.is_null()
+            || item_cards.is_null()
+            || item_lengths.is_null()
+            || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
+        {
+            return Err("null buffer".into());
         }
-        let params = result.map_err(|e| format!("compute_parameters: {e:?}"))?;
-        Ok(json!({ "params": params, "count": params.len() }))
+        let set = TrainingSet {
+            ratings: bytes(ratings, n_reviews),
+            delta_days: bytes(delta_days, n_reviews),
+            card_offsets: bytes(card_offsets, n_cards + 1),
+            card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
+            item_cards: bytes(item_cards, n_items),
+            item_lengths: bytes(item_lengths, n_items),
+        };
+        set.validate()?;
+        match op {
+            "compute_parameters" => {
+                let (items, card_ids) = set.expand(true);
+                let state = CombinedProgressState::new_shared();
+                let done = Arc::new(AtomicBool::new(false));
+                let watcher =
+                    spawn_watcher(state.clone(), done.clone(), cancel_addr, progress_addr);
+                let input = ComputeParametersInput {
+                    train_set: items,
+                    card_ids,
+                    progress: Some(state.clone()),
+                    model_version: algorithm.compute_version(),
+                    ..Default::default()
+                };
+                let result = fsrs::compute_parameters(input);
+                done.store(true, Ordering::SeqCst);
+                let _ = watcher.join();
+                let cancelled = cancel_addr != 0
+                    && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0;
+                if cancelled {
+                    return Err("cancelled".into());
+                }
+                let params = result.map_err(|e| format!("compute_parameters: {e:?}"))?;
+                Ok(json!({ "params": params, "count": params.len() }))
+            }
+            "evaluate" => {
+                // 训练集内评估：只用于展示「当前参数在这份数据上的 log loss」。
+                // 跨算法 / 新旧参数的采用判定一律用 evaluate_tss（外样本），见 PR6。
+                let model = build_model(algorithm, req.get("params"))?;
+                let (items, _) = set.expand(false);
+                let eval = model
+                    .evaluate(items, |_| true)
+                    .map_err(|e| format!("evaluate: {e:?}"))?;
+                Ok(json!({ "logLoss": eval.log_loss, "rmseBins": eval.rmse_bins }))
+            }
+            "evaluate_tss" => {
+                let (items, _) = set.expand(false);
+                let input = ComputeParametersInput {
+                    train_set: items,
+                    model_version: algorithm.compute_version(),
+                    ..Default::default()
+                };
+                let eval = fsrs::evaluate_with_time_series_splits(input, |_| true)
+                    .map_err(|e| format!("evaluate_tss: {e:?}"))?;
+                Ok(json!({ "logLoss": eval.log_loss, "rmseBins": eval.rmse_bins }))
+            }
+            other => Err(format!("unknown fit op: {other}")),
+        }
     }));
     respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
 }
@@ -478,7 +568,7 @@ pub extern "C" fn ffsrs_retrievability_batch(
     respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
 }
 
-/// 释放 [ffsrs_call] / [ffsrs_compute_parameters] 返回的字符串。
+/// 释放 [ffsrs_call] / [ffsrs_fit] 返回的字符串。
 #[no_mangle]
 pub extern "C" fn ffsrs_free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
@@ -516,6 +606,75 @@ pub fn zstd_decompress(input: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
     decoder.read_to_end(&mut out).map_err(|e| e.to_string())?;
     Ok(out)
+}
+
+/// [ffsrs_zstd_decompress_file] 的返回码。
+pub const ZSTD_FILE_OK: i32 = 0;
+pub const ZSTD_FILE_BAD_ARGS: i32 = 1;
+pub const ZSTD_FILE_IO: i32 = 2;
+pub const ZSTD_FILE_CORRUPT: i32 = 3;
+pub const ZSTD_FILE_PANIC: i32 = 4;
+
+/// zstd 文件到文件流式解码（.apkg 新格式的 collection.anki21b）：一次调用解完整个文件，
+/// 内存峰值是解码窗口 + 读写缓冲，不随文件大小增长（[ffsrs_zstd_decompress] 要把输入与
+/// 整个输出都放进内存）。两个路径都是 UTF-8、NUL 结尾；输出文件已存在则覆盖。
+/// 返回 `ZSTD_FILE_*`；失败时输出文件可能残留半截内容，由调用方删除。
+#[no_mangle]
+pub extern "C" fn ffsrs_zstd_decompress_file(
+    in_path: *const c_char,
+    out_path: *const c_char,
+) -> i32 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> i32 {
+        if in_path.is_null() || out_path.is_null() {
+            return ZSTD_FILE_BAD_ARGS;
+        }
+        let (Ok(input), Ok(output)) = (
+            unsafe { CStr::from_ptr(in_path) }.to_str(),
+            unsafe { CStr::from_ptr(out_path) }.to_str(),
+        ) else {
+            return ZSTD_FILE_BAD_ARGS;
+        };
+        match zstd_decompress_file(input, output) {
+            Ok(()) => ZSTD_FILE_OK,
+            Err(ZstdFileError::Io(_)) => ZSTD_FILE_IO,
+            Err(ZstdFileError::Corrupt(_)) => ZSTD_FILE_CORRUPT,
+        }
+    }));
+    outcome.unwrap_or(ZSTD_FILE_PANIC)
+}
+
+#[derive(Debug)]
+pub enum ZstdFileError {
+    Io(std::io::Error),
+    Corrupt(String),
+}
+
+pub fn zstd_decompress_file(input: &str, output: &str) -> Result<(), ZstdFileError> {
+    use std::io::{BufReader, BufWriter, ErrorKind, Write};
+    let reader = BufReader::with_capacity(
+        1 << 20,
+        std::fs::File::open(input).map_err(ZstdFileError::Io)?,
+    );
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(reader)
+        .map_err(|e| ZstdFileError::Corrupt(e.to_string()))?;
+    let mut writer = BufWriter::with_capacity(
+        1 << 20,
+        std::fs::File::create(output).map_err(ZstdFileError::Io)?,
+    );
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = match decoder.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            // 读源文件本身的 IO 错误也经 decoder 冒上来；文件已成功打开，读失败按数据非法处理
+            // （截断 / 损坏的帧是这里最常见的原因）。
+            Err(e) => return Err(ZstdFileError::Corrupt(e.to_string())),
+        };
+        writer.write_all(&buf[..n]).map_err(ZstdFileError::Io)?;
+    }
+    writer.flush().map_err(ZstdFileError::Io)?;
+    Ok(())
 }
 
 /// 释放 [ffsrs_zstd_decompress] 返回的缓冲区。
@@ -1123,6 +1282,94 @@ mod tests {
         assert!(r["error"].as_str().unwrap().contains("unknown op"));
     }
 
+    /// 两张卡（3 次、2 次评分）、按时刻交错的三条训练条目。
+    struct Packed {
+        ratings: Vec<u8>,
+        deltas: Vec<f32>,
+        offsets: Vec<u32>,
+        ids: Vec<i64>,
+        item_cards: Vec<u32>,
+        item_lengths: Vec<u32>,
+    }
+
+    fn packed() -> Packed {
+        Packed {
+            ratings: vec![3, 1, 4, 2, 3],
+            deltas: vec![0.0, 1.5, 3.0, 0.0, 0.25],
+            offsets: vec![0, 3, 5],
+            ids: vec![11, 22],
+            item_cards: vec![0, 1, 0],
+            item_lengths: vec![2, 2, 3],
+        }
+    }
+
+    fn fit(op: &str, p: &Packed) -> Value {
+        let req = CString::new(json!({"op": op, "algorithm": "fsrs6"}).to_string()).unwrap();
+        let out = ffsrs_fit(
+            req.as_ptr(),
+            p.ratings.as_ptr(),
+            p.deltas.as_ptr(),
+            p.ratings.len(),
+            p.offsets.as_ptr(),
+            p.ids.as_ptr(),
+            p.offsets.len() - 1,
+            p.item_cards.as_ptr(),
+            p.item_lengths.as_ptr(),
+            p.item_cards.len(),
+            std::ptr::null(),
+            std::ptr::null(),
+        );
+        let text = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_string();
+        ffsrs_free_string(out);
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn training_set_expands_prefixes_in_item_order() {
+        let p = packed();
+        let set = TrainingSet {
+            ratings: &p.ratings,
+            delta_days: &p.deltas,
+            card_offsets: &p.offsets,
+            card_ids: Some(&p.ids),
+            item_cards: &p.item_cards,
+            item_lengths: &p.item_lengths,
+        };
+        set.validate().unwrap();
+        let (items, ids) = set.expand(true);
+        let flat: Vec<Vec<(u32, f32)>> = items
+            .iter()
+            .map(|i| i.reviews.iter().map(|r| (r.rating, r.delta_t)).collect())
+            .collect();
+        assert_eq!(
+            flat,
+            vec![
+                vec![(3, 0.0), (1, 1.5)],
+                vec![(2, 0.0), (3, 0.25)],
+                vec![(3, 0.0), (1, 1.5), (4, 3.0)],
+            ]
+        );
+        assert_eq!(ids, Some(vec![11, 22, 11]));
+        assert_eq!(set.expand(false).1, None);
+    }
+
+    #[test]
+    fn fit_rejects_malformed_training_sets() {
+        let mut p = packed();
+        p.item_lengths[1] = 3; // 卡 1 只有 2 次评分
+        assert!(fit("evaluate", &p)["error"].as_str().unwrap().contains("prefix length"));
+        let mut p = packed();
+        p.item_cards[0] = 2;
+        assert!(fit("evaluate", &p)["error"].as_str().unwrap().contains("out of range"));
+        let mut p = packed();
+        p.offsets[2] = 4;
+        assert!(fit("evaluate", &p)["error"].as_str().unwrap().contains("cover"));
+        assert!(fit("nope", &packed())["error"].as_str().unwrap().contains("unknown fit op"));
+        // 数据太少：fsrs-rs 报错或给默认参数，但都不越过 FFI 边界 panic。
+        let r = fit("compute_parameters", &packed());
+        assert!(r.get("ok").is_some() || r.get("error").is_some());
+    }
+
     #[test]
     fn zstd_roundtrip() {
         let payload: Vec<u8> = (0..50_000u32).flat_map(|i| (i % 251).to_le_bytes()).collect();
@@ -1140,6 +1387,50 @@ mod tests {
         // 损坏的帧返回空指针，不 panic。
         let bad = [0x28u8, 0xb5, 0x2f, 0xfd, 0xff];
         assert!(ffsrs_zstd_decompress(bad.as_ptr(), bad.len(), &mut out_len).is_null());
+    }
+
+    #[test]
+    fn zstd_file_roundtrip() {
+        // 多个读块（> 1 MB 缓冲）+ 能压缩的内容，与 ffsrs_zstd_decompress 结果逐字节相同。
+        let payload: Vec<u8> = (0..1_500_000u32).flat_map(|i| (i % 4093).to_le_bytes()).collect();
+        let frame = ruzstd::encoding::compress_to_vec(
+            payload.as_slice(),
+            ruzstd::encoding::CompressionLevel::Fastest,
+        );
+        let dir = std::env::temp_dir().join(format!("ffsrs_zstd_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("in.zst");
+        let dst = dir.join("out.bin");
+        std::fs::write(&src, &frame).unwrap();
+        let c = |p: &std::path::Path| CString::new(p.to_str().unwrap()).unwrap();
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&src).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_OK
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), payload);
+
+        // 截断的帧：数据非法，不 panic。
+        std::fs::write(&src, &frame[..frame.len() / 2]).unwrap();
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&src).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_CORRUPT
+        );
+        // 不是 zstd。
+        std::fs::write(&src, b"SQLite format 3\0").unwrap();
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&src).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_CORRUPT
+        );
+        // 源文件不存在。
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&dir.join("missing")).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_IO
+        );
+        assert_eq!(
+            ffsrs_zstd_decompress_file(std::ptr::null(), c(&dst).as_ptr()),
+            ZSTD_FILE_BAD_ARGS
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ------------------------------------------------------------ 搜索语料的锁（HBK-AUDIT-005）

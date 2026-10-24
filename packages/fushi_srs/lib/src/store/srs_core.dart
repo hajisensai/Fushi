@@ -126,6 +126,19 @@ typedef _QueryDart =
       ffi.Pointer<ffi.Pointer<ffi.Char>>,
     );
 
+typedef _ReadBeginC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Pointer<ffi.Void>>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _ReadBeginDart =
+    int Function(
+      ffi.Pointer<ffi.Void>,
+      ffi.Pointer<ffi.Pointer<ffi.Void>>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+
 typedef _ExecC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Void>,
@@ -223,6 +236,13 @@ final class SrsCoreBindings {
       snapshot = lib.lookupFunction<_SnapshotC, _SnapshotDart>(
         'ffsrs_store_snapshot',
       ),
+      readBegin = lib.lookupFunction<_ReadBeginC, _ReadBeginDart>(
+        'ffsrs_store_read_begin',
+      ),
+      readQuery = lib.lookupFunction<_QueryC, _QueryDart>(
+        'ffsrs_store_read_query',
+      ),
+      readEnd = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_read_end'),
       debugQuery = lib.lookupFunction<_QueryC, _QueryDart>(
         'ffsrs_store_debug_query',
       ),
@@ -258,6 +278,9 @@ final class SrsCoreBindings {
   final _SimpleDart legacyMarkNone;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
+  final _ReadBeginDart readBegin;
+  final _QueryDart readQuery;
+  final _CloseDart readEnd;
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
@@ -390,27 +413,38 @@ final class SrsCore {
   List<Map<String, Object?>> debugQuery(
     String sql, [
     List<Object?> params = const <Object?>[],
-  ]) => using((Arena arena) {
+  ]) => _rowsQuery(_b, _b.debugQuery, _h, sql, params);
+
+  /// 另开一条独立只读连接并开读事务：返回时快照已定下，之后的写入都不在里面（备份读快照用）。
+  /// 用完 [SrsReadSession.close]。可以在拿到句柄后交给后台 isolate（[SrsReadSession.fromAddress]）。
+  SrsReadSession beginRead() => using((Arena arena) {
+    final ffi.Pointer<ffi.Pointer<ffi.Void>> out = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(_b, _b.readBegin(_h, out, err), err);
+    return SrsReadSession._(_b, out.value, owned: true);
+  });
+
+  static List<Map<String, Object?>> _rowsQuery(
+    SrsCoreBindings b,
+    _QueryDart f,
+    ffi.Pointer<ffi.Void> h,
+    String sql,
+    List<Object?> params,
+  ) => using((Arena arena) {
     final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
     final Uint8List encoded = params.isEmpty
         ? Uint8List(0)
         : srsEncodeRows(params.length, <List<Object?>>[params]);
-    final ffi.Pointer<ffi.Uint8> pp = arena(
-      encoded.isEmpty ? 1 : encoded.length,
-    );
-    pp.asTypedList(encoded.length).setAll(0, encoded);
+    final ffi.Pointer<ffi.Uint8> pp = _copy(arena, encoded);
     final ffi.Pointer<ffi.Pointer<ffi.Uint8>> out = arena();
     final ffi.Pointer<ffi.Size> outLen = arena();
     final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
     err.value = ffi.nullptr;
-    _check(
-      _b,
-      _b.debugQuery(_h, s, sn, pp, encoded.length, out, outLen, err),
-      err,
-    );
+    _check(b, f(h, s, sn, pp, encoded.length, out, outLen, err), err);
     final int len = outLen.value;
     final Uint8List bytes = Uint8List.fromList(out.value.asTypedList(len));
-    _b._freeBytes(out.value, len);
+    b._freeBytes(out.value, len);
     final (int _, List<List<Object?>> rows) = srsDecodeRows(bytes);
     final List<String> names = rows.first.cast<String>();
     return <Map<String, Object?>>[
@@ -573,22 +607,26 @@ final class SrsCore {
   ]);
 
   /// RWKV 对齐的日志指纹（与 rowid 在 [since] 之后的行数），[withRows] 时连同这些新行。
+  /// [incremental]：只数 rowid 在 [since] 之后的行（O(新增)），行数 / 最大 rowid 只算新增部分。
   Uint8List rwkvLogTail(
     String profileUid, {
     required int since,
     required bool withRows,
+    bool incremental = false,
   }) => _command(
     _b.rwkvLogTail,
     _lineagePage(const <List<String>>[], profileUid),
-    <int>[since, if (withRows) 1 else 0],
+    <int>[since, if (withRows) 1 else 0, if (incremental) 1 else 0],
   );
 
-  /// 统计页：本 profile 每张卡的有效日志列与当前记忆状态。
-  Uint8List statsReviews(String profileUid) => _command(
-    _b.statsReviews,
-    _lineagePage(const <List<String>>[], profileUid),
-    const <int>[],
-  );
+  /// 统计页：本 profile 每张卡的有效日志列与当前记忆状态。[lineages] 每组 `[继承卡, 前身卡…]`：
+  /// 前身卡的日志并到继承卡上一起选取、记在继承卡名下。
+  Uint8List statsReviews(
+    String profileUid, {
+    List<List<String>> lineages = const <List<String>>[],
+  }) => _command(_b.statsReviews, _lineagePage(lineages, profileUid), <int>[
+    lineages.length,
+  ]);
 
   static Uint8List _lineagePage(List<List<String>> lineages, String? profile) =>
       srsEncodeRows(2, <List<Object?>>[
@@ -659,5 +697,45 @@ final class SrsCore {
       b._freeString(err.value);
     }
     throw SrsCoreException(rc, message);
+  }
+}
+
+/// srs.db 上一条独立只读连接的读事务（[SrsCore.beginRead]）：所有查询看到开会话那一刻的同一个快照，
+/// 不占 [SrsCore] 的读 / 写连接。同一时刻只许一个调用；[close] 回滚并关连接。
+final class SrsReadSession {
+  SrsReadSession._(this._b, this._handle, {required this.owned});
+
+  /// 包装别的 isolate 开的同一个会话（不拥有，[close] 不关）。
+  static SrsReadSession fromAddress(int address, {String? libraryPath}) =>
+      SrsReadSession._(
+        SrsCoreBindings.load(libraryPath: libraryPath),
+        ffi.Pointer<ffi.Void>.fromAddress(address),
+        owned: false,
+      );
+
+  final SrsCoreBindings _b;
+  ffi.Pointer<ffi.Void> _handle;
+
+  /// 本对象负责结束会话。
+  final bool owned;
+
+  /// 句柄地址（跨 isolate 传递用）。
+  int get address => _handle.address;
+
+  bool get isClosed => _handle == ffi.nullptr;
+
+  /// 在会话的读事务里跑一条只读语句（写语句报错）。返回每行一个「列名 → 值」。
+  List<Map<String, Object?>> query(
+    String sql, [
+    List<Object?> params = const <Object?>[],
+  ]) {
+    if (isClosed) throw StateError('srs read session is closed');
+    return SrsCore._rowsQuery(_b, _b.readQuery, _handle, sql, params);
+  }
+
+  void close() {
+    if (isClosed) return;
+    if (owned) _b.readEnd(_handle);
+    _handle = ffi.nullptr;
   }
 }

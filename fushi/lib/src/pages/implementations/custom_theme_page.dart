@@ -804,7 +804,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               ? const RoundedRectangleBorder(
                   borderRadius: FushiM3eShape.smallRadius,
                 )
-              : const FushiCookieBorder(lobes: 9),
+              : MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
         ),
         child: FushiIcon(
           FushiIcons.ai,

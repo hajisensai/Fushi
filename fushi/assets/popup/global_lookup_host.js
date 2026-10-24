@@ -53,6 +53,182 @@
     return;
   }
 
+  // Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md).
+  //
+  // Native (global_lookup_window.cpp) only hears the TOP-LEVEL document's
+  // chrome.webview.postMessage; popup.html iframes reach it solely through this
+  // host re-posting their messages (wrapFrameBridge -> topPost). So the lock is
+  // requested by a popup document but HELD here: popup.js'
+  // callHandler('_fushiLockBridge') is intercepted in wrapFrameBridge, the host
+  // asks native once per top-level document, native answers with a random token
+  // through window.__fushiBridgeLockResult, and from then on every message the
+  // top document posts — host, popup frames, native-injected scripts, the
+  // top-level adapter — goes through bridgeLockedPost below, which puts the
+  // token FIRST in a fresh copy (native strips it before Dart sees the body).
+  // The token lives only in this closure. A sandboxed dictionary iframe nested
+  // in popup.html has an opaque origin: it can reach neither top.chrome.webview
+  // nor this closure, and its own postMessage never reaches the top-level
+  // WebMessageReceived (and would fail the Source + token checks if it did).
+  // Until a popup asks, nothing changes (state 'none' posts verbatim).
+  var BRIDGE_LOCK_HANDLER = '_fushiLockBridge';
+  var BRIDGE_LOCKED_VALUE = 'fushi-bridge-locked-v1';
+  var bridgeLock = {
+    state: 'none', // none | pending | locked | refused
+    token: null,
+    queue: [],
+    waiters: [],
+  };
+  var bridgeRawPost = null;
+  var bridgeTopAdapterResolve =
+      (typeof window.__fushiBridgeResolve === 'function')
+          ? window.__fushiBridgeResolve
+          : null;
+
+  function bridgeLockedPost(message) {
+    if (!bridgeRawPost) {
+      return;
+    }
+    if (message && typeof message === 'object' &&
+        message.handler === BRIDGE_LOCK_HANDLER) {
+      // Only a popup realm may lock (wrapFrameBridge intercepts those before
+      // they get here). A lock request posted straight from the top document
+      // is refused locally and never forwarded: forwarding would lock native
+      // with a token nobody holds.
+      if (typeof message.__bridgeId !== 'undefined' && bridgeTopAdapterResolve) {
+        try {
+          bridgeTopAdapterResolve(message.__bridgeId, 'false');
+        } catch (e) {
+          // no-op
+        }
+      }
+      return;
+    }
+    if (bridgeLock.state === 'pending') {
+      // Native locks as soon as it handles the request; anything posted before
+      // the token comes back must wait so it is sent WITH the token.
+      bridgeLock.queue.push(message);
+      return;
+    }
+    if (bridgeLock.state === 'locked') {
+      if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        // A non-object body cannot carry the token; native would drop it.
+        return;
+      }
+      var stamped = {__fushiBridgeToken: bridgeLock.token};
+      var keys = Object.keys(message);
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i] !== '__fushiBridgeToken') {
+          stamped[keys[i]] = message[keys[i]];
+        }
+      }
+      bridgeRawPost(stamped);
+      return;
+    }
+    bridgeRawPost(message);
+  }
+
+  // Resolves true once this top-level document holds the native lock.
+  function requestBridgeLock() {
+    return new Promise(function (resolve) {
+      if (bridgeLock.state === 'locked') {
+        resolve(true);
+        return;
+      }
+      if (bridgeLock.state === 'refused' || !bridgeRawPost) {
+        resolve(false);
+        return;
+      }
+      bridgeLock.waiters.push(resolve);
+      if (bridgeLock.state === 'pending') {
+        return;
+      }
+      bridgeLock.state = 'pending';
+      try {
+        bridgeRawPost({handler: BRIDGE_LOCK_HANDLER, args: []});
+      } catch (e) {
+        finishBridgeLock(null);
+      }
+    });
+  }
+
+  function finishBridgeLock(token) {
+    if (bridgeLock.state !== 'pending') {
+      return;
+    }
+    if (typeof token === 'string' && token.length >= 32) {
+      bridgeLock.token = token;
+      bridgeLock.state = 'locked';
+    } else {
+      bridgeLock.state = 'refused';
+    }
+    var queued = bridgeLock.queue;
+    bridgeLock.queue = [];
+    for (var i = 0; i < queued.length; i++) {
+      try {
+        bridgeLockedPost(queued[i]);
+      } catch (e) {
+        // One bad message cannot strand the rest of the queue.
+      }
+    }
+    var waiters = bridgeLock.waiters;
+    bridgeLock.waiters = [];
+    for (var j = 0; j < waiters.length; j++) {
+      try {
+        waiters[j](bridgeLock.state === 'locked');
+      } catch (e) {
+        // no-op
+      }
+    }
+  }
+
+  // Native reply channel (HandleBridgeLockRequest). Ignored unless a request is
+  // in flight, so a stray call cannot plant a token.
+  window.__fushiBridgeLockResult = function (token) {
+    finishBridgeLock(token);
+  };
+
+  (function installBridgeLockPost() {
+    try {
+      var webview = window.chrome && window.chrome.webview;
+      if (!webview || typeof webview.postMessage !== 'function') {
+        return; // node harness / no bridge
+      }
+      bridgeRawPost = webview.postMessage.bind(webview);
+      webview.postMessage = bridgeLockedPost;
+    } catch (e) {
+      bridgeRawPost = null;
+    }
+  })();
+
+  // A popup realm's callHandler('_fushiLockBridge'): answer exactly once per
+  // realm with the dedicated value when the host holds the lock, false
+  // otherwise (repeat request from the same realm, or lock refused).
+  function answerFrameBridgeLock(win, message, realmLock) {
+    var bridgeId = message && typeof message === 'object'
+        ? message.__bridgeId
+        : undefined;
+    function reply(locked) {
+      if (typeof bridgeId === 'undefined' || !win ||
+          typeof win.__fushiBridgeResolve !== 'function') {
+        return;
+      }
+      try {
+        win.__fushiBridgeResolve(
+            bridgeId, locked ? JSON.stringify(BRIDGE_LOCKED_VALUE) : 'false');
+      } catch (e) {
+        // The realm was torn down meanwhile.
+      }
+    }
+    if (realmLock.requested) {
+      reply(false);
+      return;
+    }
+    realmLock.requested = true;
+    requestBridgeLock().then(reply, function () {
+      reply(false);
+    });
+  }
+
   // popup.html sits next to THIS host document: Windows serves both from the
   // WebView2 virtual host https://hibiki.popup, macOS from the fushi-popup://
   // custom scheme (macos/Runner/GlobalLookupOverlay.swift). Resolve it RELATIVE
@@ -718,7 +894,18 @@
     } catch (e) {
       topPost = native.bind(win.chrome.webview);
     }
+    // One wrappedPost per popup realm (a navigation reinstalls the adapter and
+    // gets a fresh wrapper), so this is the per-document lock flag.
+    var realmLock = {requested: false};
     var wrappedPost = function (message) {
+      // Fushi bridge lock — handled before the parked-realm gate so a standby
+      // realm's lock attempt is answered for real instead of resolving null
+      // (popup.js caches the lock result for the document's lifetime).
+      if (message && typeof message === 'object' &&
+          message.handler === BRIDGE_LOCK_HANDLER) {
+        answerFrameBridgeLock(win, message, realmLock);
+        return;
+      }
       // A parked physical realm can still finish an old font/bridge Promise.
       // It has no logical frame owner, so forwarding would relabel stale work
       // with whichever monotonic id acquires the realm next.

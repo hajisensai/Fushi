@@ -265,56 +265,95 @@ impl SrsCore {
     /// RWKV 对齐用的日志指纹与尾巴（同一个快照）：本 profile 的 (行数, 最大 rowid, rowid 在 `since` 之后的行数)；
     /// `with_rows` 时再给出这些新行（按发生时刻、rowid 排序）。
     ///
-    /// 输出：`[i64 count, maxRowId, newRows, n]`、`at × n`、`isReview × n`、串表（每行 ID、卡 ID 交替）。
-    pub fn rwkv_log_tail(&self, profile: &str, since: i64, with_rows: bool) -> Result<Vec<u8>, String> {
+    /// `incremental`：只数 rowid 在 `since` 之后的行（`+profile_uid` 让 SQLite 走 rowid 范围，O(新增)），
+    /// 行数 = 新增行数、最大 rowid = 新增里的最大（没有新增为 0）；调用方在已知的指纹上累加。
+    ///
+    /// 输出：`[i64 count, maxRowId, newRows, n]`、`at × n`、`kind × n`（1 review、2 undo、0 其它）、
+    /// 串表（每行 ID、卡 ID、撤销目标（无则空串）三个一组）。
+    pub fn rwkv_log_tail(
+        &self,
+        profile: &str,
+        since: i64,
+        with_rows: bool,
+        incremental: bool,
+    ) -> Result<Vec<u8>, String> {
+        #[derive(serde::Deserialize)]
+        struct Revokes<'a> {
+            #[serde(default, borrow)]
+            revokes: Option<std::borrow::Cow<'a, str>>,
+        }
         let (count, max_rowid, new_rows, tail) = self.read_snapshot(|r| {
-            let (count, max_rowid, new_rows): (i64, i64, i64) = r
-                .query_row(
+            let (count, max_rowid, new_rows): (i64, i64, i64) = if incremental {
+                let (c, m): (i64, i64) = r
+                    .query_row(
+                        "SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM srs_review_logs \
+                         WHERE rowid > ?2 AND +profile_uid = ?1",
+                        rusqlite::params![profile, since],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .map_err(|e| e.to_string())?;
+                (c, m, c)
+            } else {
+                r.query_row(
                     "SELECT COUNT(*), COALESCE(MAX(rowid), 0), COALESCE(SUM(rowid > ?2), 0) \
                      FROM srs_review_logs WHERE profile_uid = ?1",
                     rusqlite::params![profile, since],
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
-                .map_err(|e| e.to_string())?;
-            let mut tail: Vec<(String, String, bool, i64)> = Vec::new();
+                .map_err(|e| e.to_string())?
+            };
+            let mut tail: Vec<(String, String, i64, i64, String)> = Vec::new();
             if with_rows {
                 let mut stmt = r
                     .prepare_cached(
-                        "SELECT id, card_id, kind, occurred_at FROM srs_review_logs \
-                         WHERE profile_uid = ?1 AND rowid > ?2 ORDER BY occurred_at, rowid",
+                        "SELECT id, card_id, kind, occurred_at, json FROM srs_review_logs \
+                         WHERE rowid > ?2 AND +profile_uid = ?1 ORDER BY occurred_at, rowid",
                     )
                     .map_err(|e| e.to_string())?;
                 let mut q = stmt.query(rusqlite::params![profile, since]).map_err(|e| e.to_string())?;
                 while let Some(row) = q.next().map_err(|e| e.to_string())? {
                     let kind: String = row.get(2).map_err(|e| e.to_string())?;
+                    let (code, revokes) = match kind.as_str() {
+                        "review" => (1, String::new()),
+                        "undo" => {
+                            let json: String = row.get(4).map_err(|e| e.to_string())?;
+                            let v: Revokes<'_> = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+                            (2, v.revokes.map(|c| c.into_owned()).unwrap_or_default())
+                        }
+                        _ => (0, String::new()),
+                    };
                     tail.push((
                         row.get(0).map_err(|e| e.to_string())?,
                         row.get(1).map_err(|e| e.to_string())?,
-                        kind == "review",
+                        code,
                         row.get(3).map_err(|e| e.to_string())?,
+                        revokes,
                     ));
                 }
             }
             Ok((count, max_rowid, new_rows, tail))
         })?;
-        let mut out = Vec::with_capacity(32 + tail.len() * 40);
+        let mut out = Vec::with_capacity(32 + tail.len() * 56);
         push_i64(&mut out, count);
         push_i64(&mut out, max_rowid);
         push_i64(&mut out, new_rows);
         push_i64(&mut out, tail.len() as i64);
         tail.iter().for_each(|t| push_i64(&mut out, t.3));
-        tail.iter().for_each(|t| push_i64(&mut out, i64::from(t.2)));
-        push_strings(&mut out, tail.iter().flat_map(|t| [t.0.as_str(), t.1.as_str()]));
+        tail.iter().for_each(|t| push_i64(&mut out, t.2));
+        push_strings(&mut out, tail.iter().flat_map(|t| [t.0.as_str(), t.1.as_str(), t.4.as_str()]));
         Ok(out)
     }
 
     /// 统计页（`loadSrsStats`）：本 profile 的全部日志按卡（`card_id`，首次出现的顺序）选取，只回投影要的列。
     ///
+    /// [lineages] 每组 `[继承卡, 前身卡…]`（更改笔记类型 / 旧 Lapis 迁移后隐藏的旧卡）：前身卡的日志并到
+    /// 继承卡上、整组一起选取并记在继承卡名下，与复习时 `SrsDbStore.history` 同一血统。
+    ///
     /// 输出：`[i64 n_cards, n_logs]`；每卡 `[flags(1 = 有记忆状态), s, d, sf]`（f64 位）；每条有效日志
     /// `[card, at, utcOff, dur, rating|NONE, ivl, dueDay|NONE, bits]`（卡内按排序键），bits：1 kind 是 review、
     /// `rtype << 1`（3 位）、16 alg 是 rwkv、32 有结果、`queue << 6`（2 位）；最后是卡 ID 串表。
-    pub fn stats_reviews(&self, profile: &str) -> Result<Vec<u8>, String> {
-        let (order, logs) = self.read_snapshot(|r| {
+    pub fn stats_reviews(&self, profile: &str, lineages: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let (seen, logs) = self.read_snapshot(|r| {
             let mut stmt = r
                 .prepare_cached(
                     "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l \
@@ -336,11 +375,36 @@ impl SrsCore {
             }
             Ok((order, logs))
         })?;
+        let mut owner_of: HashMap<&str, usize> = HashMap::new();
+        for (g, l) in lineages.iter().enumerate() {
+            for c in l {
+                owner_of.entry(c.as_str()).or_insert(g);
+            }
+        }
+        // 每张有日志的卡归到它的继承卡（不在任何组里 = 自己）；顺序按组内任一成员首次出现。
+        let mut order: Vec<String> = Vec::with_capacity(seen.len());
+        let mut groups: Vec<Vec<String>> = Vec::with_capacity(seen.len());
+        let mut group_at: HashMap<usize, usize> = HashMap::new();
+        for card in seen {
+            match owner_of.get(card.as_str()) {
+                Some(&g) => {
+                    if let std::collections::hash_map::Entry::Vacant(e) = group_at.entry(g) {
+                        e.insert(order.len());
+                        order.push(lineages[g][0].clone());
+                        groups.push(lineages[g].clone());
+                    }
+                }
+                None => {
+                    order.push(card.clone());
+                    groups.push(vec![card]);
+                }
+            }
+        }
         let mut cards = Vec::with_capacity(order.len() * 32);
         let mut rows = Vec::new();
         let mut n_logs = 0i64;
-        for (k, card) in order.iter().enumerate() {
-            let eff = effective_of(std::slice::from_ref(card), &logs)?;
+        for (k, group) in groups.iter().enumerate() {
+            let eff = effective_of(group, &logs)?;
             match eff.iter().rev().find_map(|l| l.res.as_ref()).and_then(|r| r.memory) {
                 Some((s, d, sf)) => {
                     push_i64(&mut cards, 1);
@@ -458,8 +522,33 @@ mod tests {
         assert_eq!(i64_at(&out, 5 + 10), 1);
         let strs = 40 + 2 * RWKV_ROW;
         assert_eq!(&out[strs + 8..], b"c9");
-        let tail = c.rwkv_log_tail("p", 1, true).unwrap();
+        let tail = c.rwkv_log_tail("p", 1, true, false).unwrap();
         assert_eq!((i64_at(&tail, 0), i64_at(&tail, 1), i64_at(&tail, 2), i64_at(&tail, 3)), (3, 3, 2, 2));
+    }
+
+    #[test]
+    fn rwkv_log_tail_reports_kind_and_revokes_and_counts_incrementally() {
+        let c = core("tail");
+        insert(&c, "a1", "c1", "review", 10, &log("a1", "c1", 1, 10, r#","rtype":"learn","rating":3"#));
+        insert(&c, "b1", "c1", "review", 20, &log("b1", "c1", 2, 20, r#","rtype":"review","rating":4"#));
+        let undo = r#"{"id":"u1","p":"p","card":"c1","kind":"undo","hlc":"3:0:A","at":30,"ts":"anchored","revokes":"b1"}"#;
+        insert(&c, "u1", "c1", "undo", 30, undo);
+        insert(&c, "s1", "c1", "suspend", 40, r#"{"id":"s1","kind":"suspend"}"#);
+        let t = c.rwkv_log_tail("p", 1, true, false).unwrap();
+        assert_eq!((i64_at(&t, 0), i64_at(&t, 1), i64_at(&t, 2), i64_at(&t, 3)), (4, 4, 3, 3));
+        assert_eq!((i64_at(&t, 4), i64_at(&t, 5), i64_at(&t, 6)), (20, 30, 40), "at");
+        assert_eq!((i64_at(&t, 7), i64_at(&t, 8), i64_at(&t, 9)), (1, 2, 0), "kind");
+        // 串表：9 个串（每行 ID、卡、撤销目标）。
+        let strs = 8 * 10;
+        let off = |k: usize| u32::from_le_bytes(t[strs + 4 * k..strs + 4 * k + 4].try_into().unwrap()) as usize;
+        let body = strs + 4 * 10;
+        let s = |k: usize| std::str::from_utf8(&t[body + off(k)..body + off(k + 1)]).unwrap();
+        assert_eq!((s(3), s(4), s(5)), ("u1", "c1", "b1"));
+        assert_eq!(s(2), "", "评分没有撤销目标");
+        let inc = c.rwkv_log_tail("p", 2, false, true).unwrap();
+        assert_eq!((i64_at(&inc, 0), i64_at(&inc, 1), i64_at(&inc, 2)), (2, 4, 2), "只数 rowid 2 之后");
+        let none = c.rwkv_log_tail("p", 4, false, true).unwrap();
+        assert_eq!((i64_at(&none, 0), i64_at(&none, 1)), (0, 0));
     }
 
     #[test]
@@ -467,7 +556,7 @@ mod tests {
         let c = core("stats");
         insert(&c, "a1", "c1", "review", 0, &log("a1", "c1", 1, 0, r#","rtype":"learn","rating":3,"res":{"queue":"review","ivl":3,"mem":{"s":2.5,"d":5}}"#));
         insert(&c, "b1", "c2", "review", 0, &log("b1", "c2", 1, 0, r#","rtype":"review","rating":2,"alg":"rwkv""#));
-        let out = c.stats_reviews("p").unwrap();
+        let out = c.stats_reviews("p", &[]).unwrap();
         assert_eq!((i64_at(&out, 0), i64_at(&out, 1)), (2, 2));
         assert_eq!(i64_at(&out, 2), 1);
         assert_eq!(f64::from_le_bytes(out[24..32].try_into().unwrap()), 2.5);
@@ -477,5 +566,19 @@ mod tests {
         assert_eq!((bits >> 1) & 7, 1, "rtype review");
         assert_eq!(bits & 16, 16);
         assert_eq!(bits & 32, 0);
+    }
+
+    #[test]
+    fn stats_reviews_fold_predecessor_logs_into_the_inheriting_card() {
+        let c = core("stats_lineage");
+        insert(&c, "a1", "old", "review", 0, &log("a1", "old", 1, 0, r#","rtype":"learn","rating":3"#));
+        insert(&c, "z1", "solo", "review", 0, &log("z1", "solo", 1, 0, r#","rtype":"learn","rating":1"#));
+        insert(&c, "b1", "new", "review", 0, &log("b1", "new", 1, 0, r#","rtype":"review","rating":4"#));
+        let out = c.stats_reviews("p", &[vec!["new".into(), "old".into()]]).unwrap();
+        assert_eq!((i64_at(&out, 0), i64_at(&out, 1)), (2, 3), "old 并进 new：两组三条");
+        let rows = 2 + 2 * 4;
+        assert_eq!((i64_at(&out, rows), i64_at(&out, rows + 8), i64_at(&out, rows + 16)), (0, 0, 1));
+        let strs = (rows + 3 * 8) * 8;
+        assert_eq!(&out[strs + 12..], b"newsolo", "继承卡排在前（组内成员 old 先出现）");
     }
 }

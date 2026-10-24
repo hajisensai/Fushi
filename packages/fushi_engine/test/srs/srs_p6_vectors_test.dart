@@ -160,10 +160,17 @@ void main() {
                 return c != 0 ? c : a.compareTo(b);
               });
         expect(set.itemCount, expected.length);
+        final SrsFsrsTrainingSet fsrs = set.fsrs;
+        expect(fsrs.length, expected.length);
         for (int k = 0; k < order.length; k++) {
           final (int _, int card, int len) = expected[order[k]];
-          expect(set.cardIds[k], card, reason: '${alg.wire} item $k');
-          expect(set.items[k], hasLength(len));
+          expect(
+            fsrs.cardIds![fsrs.itemCards[k]],
+            card,
+            reason: '${alg.wire} item $k',
+          );
+          final List<SrsFsrsReview> item = fsrs.item(k);
+          expect(item, hasLength(len));
           // 序列 = 这张卡完整历史的记忆状态输入评审。
           final List<Object?> full =
               ((memory[card]['expect']! as Map<String, Object?>)[alg.wire]!
@@ -171,8 +178,12 @@ void main() {
                   as List<Object?>;
           for (int r = 0; r < len; r++) {
             final List<Object?> want = full[r]! as List<Object?>;
-            expect(set.items[k][r].rating, want[0]);
-            expect(set.items[k][r].deltaDays, (want[1]! as num).toDouble());
+            expect(item[r].rating, want[0]);
+            // 打包训练集的间隔是 f32（与 SrsFsrsTrainingSetBuilder 同精度）。
+            expect(
+              item[r].deltaDays,
+              Float32List.fromList(<double>[(want[1]! as num).toDouble()])[0],
+            );
           }
           checked++;
         }

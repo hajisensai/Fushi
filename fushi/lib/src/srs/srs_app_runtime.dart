@@ -23,6 +23,7 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -31,6 +32,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier;
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_backup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
@@ -69,6 +71,19 @@ final Provider<SrsAppRuntime?> srsAppRuntimeProvider = Provider<SrsAppRuntime?>(
       engine: () => ref.read(srsEngineProvider),
       bumpRevision: () => ref.read(srsRevisionProvider.notifier).state++,
       backup: ref.read(srsBackupControllerProvider),
+      // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
+      profileLinker: SrsDbProfileLinker(
+        db: app.database,
+        activeProfileId: () async {
+          final int id = ref.read(profileViewModelProvider).activeProfileId;
+          return id > 0 ? id : app.database.resolveActiveProfileId();
+        },
+        reopenStore: () async {
+          ref.invalidate(srsStoreProvider);
+          return ref.read(srsStoreProvider.future);
+        },
+        onError: ErrorLogService.instance.log,
+      ),
     );
     // 自动备份：库有变动（本机写 / 同步进来）就看一眼要不要备份（见 srs_backup.dart）。
     ref.listen<int>(
@@ -104,7 +119,9 @@ class SrsAppRuntime {
     required FsrsEngine? Function() engine,
     required void Function() bumpRevision,
     required this.backup,
-  }) : _readStore = readStore,
+    SrsProfileLinker? profileLinker,
+  }) : _profileLinker = profileLinker,
+       _readStore = readStore,
        _readMedia = readMedia,
        _engine = engine,
        _bumpRevision = bumpRevision;
@@ -114,6 +131,7 @@ class SrsAppRuntime {
   final Future<SrsMediaStore?> Function() _readMedia;
   final FsrsEngine? Function() _engine;
   final void Function() _bumpRevision;
+  final SrsProfileLinker? _profileLinker;
 
   /// 自动备份（离开 SRS 界面、库有变动时触发；见 srs_backup.dart）。
   final SrsBackupController backup;
@@ -128,10 +146,16 @@ class SrsAppRuntime {
     directoryKeyOf: (SyncAssetStore backend) =>
         srsDirectoryKeyOf(backend, SyncRepository(app.database)),
     localDirectories: _localDirectories,
+    profileLinker: _profileLinker,
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
+    // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新一轮；重开后自动恢复。
+    canRun: () => app.isInitialised,
   );
+
+  /// 关库前等 SRS 同步收尾（登记到 [AppModel.addDatabaseCloseQuiescer]）。
+  late final Future<void> Function() _quiesceSync = sync.quiesce;
 
   late final SrsOptimizationScheduler optimizer = SrsOptimizationScheduler(
     readStore: _readStore,
@@ -202,6 +226,7 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
+    app.addDatabaseCloseQuiescer(_quiesceSync);
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
@@ -219,6 +244,7 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    app.removeDatabaseCloseQuiescer(_quiesceSync);
     unawaited(_hostWrites?.cancel());
     _hostWrites = null;
     sync.dispose();
@@ -332,6 +358,9 @@ class SrsAppRuntime {
       msg: switch (notice) {
         SrsSyncNotice.backendUnsupported => t.srs_sync_backend_unsupported,
         SrsSyncNotice.clockSkew => t.srs_sync_clock_skew,
+        SrsSyncNotice.profileNotLinked => t.srs_sync_profile_not_linked(
+          name: sync.lastUnlinkedProfile ?? '',
+        ),
       },
       severity: ToastSeverity.warning,
     );

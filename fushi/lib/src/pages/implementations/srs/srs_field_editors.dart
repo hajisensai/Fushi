@@ -1,14 +1,15 @@
 /// 笔记编辑页的按类型字段编辑器（对齐 Anki 桌面版 / AnkiDroid 的笔记编辑器）：
 ///
-/// - 富文本（例句、词条……）：所见即所得，加粗 / 斜体 / 下划线 / 颜色；
-/// - 结构化 HTML（Yomitan 释义）：卡片 CSS 渲染预览 + 改源码，原 HTML 不经序列化；
+/// - 富文本（例句、词条……）：所见即所得，加粗 / 斜体 / 下划线 / 颜色 / 高亮 / 注音（ruby）；
+/// - 结构化 HTML（Yomitan 释义）：卡片 CSS 渲染预览；「编辑文字」把预览换成原生排出的版面，
+///   直接在排版里改字（标签骨架不动，见 srs_html_layout.dart）；也可改源码。原 HTML 不经序列化；
 /// - 振假名 `漢字[かな]`：上方注音显示，点词改读音；
 /// - 图片：缩略图 + 选择 / 替换 / 粘贴 / 删除，新图进 SRS 媒体库（不再塞 base64）；
 /// - 音频 `[sound:]`：播放 + 选择文件 / 录音 / 删除；
 /// - 卡型开关字段：开关。
 ///
 /// 每个字段都能切到 HTML 源码（按钮或 Ctrl+Shift+X，同 Anki）。类型判据见
-/// [srsFieldKindOf]；技术选型说明见 srs_rich_text_controller.dart 文件头。
+/// [srsEditorFieldKindOf]；技术选型说明见 srs_rich_text_controller.dart 文件头。
 library;
 
 import 'dart:async';
@@ -25,9 +26,12 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart'
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/audio_recorder_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_html_layout_editor.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
 import 'package:fushi/src/srs/srs_field_markup.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
+import 'package:fushi/src/srs/srs_rich_format.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -216,10 +220,18 @@ class SrsFieldEditor extends ConsumerStatefulWidget {
     this.css = '',
     this.fushiCard = false,
     this.footer,
+    this.help,
+    this.headerActions = const <Widget>[],
   });
 
   /// 字段名（标题；也参与类型判据）。
   final String name;
+
+  /// 标题用的人话名字与说明（ⓘ）；null = 标题直接显示 [name]。
+  final SrsFieldHelp? help;
+
+  /// 标题行尾部额外的按钮（如「AI 改写」），在源码开关之前。
+  final List<Widget> headerActions;
   final SrsFieldModel model;
 
   /// 这是卡型开关字段（非空 = 开）。
@@ -243,6 +255,12 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
   late int _generation;
   bool _source = false;
   bool _palette = false;
+
+  /// 高亮色板展开（与文字颜色色板互斥）。
+  bool _highlightPalette = false;
+
+  /// 结构化字段正在「在排版里改字」（预览位置换成 [SrsHtmlLayoutEditor]）。
+  bool _layout = false;
   bool _busy = false;
   SrsRichTextController? _rich;
   final TextEditingController _sourceCtl = TextEditingController();
@@ -283,9 +301,16 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     super.dispose();
   }
 
+  void _toggleLayout() => setState(() => _layout = !_layout);
+
   /// 按当前值判类型，重建富文本控制器。
   void _setup() {
-    _kind = srsFieldKindOf(widget.name, _model.value, toggle: widget.toggle);
+    _layout = false;
+    _kind = srsEditorFieldKindOf(
+      widget.name,
+      _model.value,
+      toggle: widget.toggle,
+    );
     final SrsRichTextController? old = _rich;
     _rich = _kind == SrsFieldKind.rich
         ? (SrsRichTextController.tryParse(_model.value)?..addListener(_onRich))
@@ -306,6 +331,7 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
         _generation = _model.generation;
         _source = false;
         _palette = false;
+        _highlightPalette = false;
         _setup();
       });
       return;
@@ -317,7 +343,10 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
   void _onFocus() {
     if (!mounted) return;
     setState(() {
-      if (!_richFocus.hasFocus) _palette = false;
+      if (!_richFocus.hasFocus) {
+        _palette = false;
+        _highlightPalette = false;
+      }
     });
   }
 
@@ -328,9 +357,11 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
         _setup();
         if (_rich != null) _focusLater(_richFocus);
       } else {
+        _layout = false;
         _sourceCtl.text = _model.value;
         _source = true;
         _palette = false;
+        _highlightPalette = false;
         _focusLater(_sourceFocus);
       }
     });
@@ -404,6 +435,115 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     _model.edit(srsSetFuriganaReading(_model.value, index, reading));
   }
 
+  /// 富文本里加 / 改 / 去注音：[range] 为 null 时取当前选区（选区整个落在一组注音里 = 改这组），
+  /// 没选字给提示。读音留空 = 去掉注音。
+  Future<void> _editRuby(SrsRichTextController rich, {TextRange? range}) async {
+    final TextSelection sel = rich.selection;
+    final TextRange? target =
+        range ??
+        rich.activeRubyRange ??
+        (sel.isValid && !sel.isCollapsed
+            ? TextRange(start: sel.start, end: sel.end)
+            : null);
+    if (target == null) {
+      FushiToast.show(msg: t.srs_note_format_ruby_select_hint);
+      return;
+    }
+    final String base = rich.text.substring(target.start, target.end);
+    if (base.contains('\n')) {
+      FushiToast.show(msg: t.srs_note_format_ruby_single_line);
+      return;
+    }
+    final String current = rich.styles[target.start].ruby?.reading ?? '';
+    final String? reading = await showFushiTextInputDialog(
+      context: context,
+      title: t.srs_note_furigana_reading(base: base),
+      initialValue: current,
+      allowEmpty: true,
+    );
+    if (reading == null || !mounted || _rich != rich) return;
+    rich.setRuby(target, reading);
+    _focusLater(_richFocus);
+  }
+
+  /// 输入框上方的注音效果：读音标在基字上方，点一组改读音。
+  Widget _rubyPreview(BuildContext context, SrsRichTextController rich) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextStyle style = context.fushiType.titleMedium.copyWith(height: 1.4);
+    final TextStyle rubyStyle = context.fushiType.labelSmall.copyWith(
+      color: scheme.primary,
+      height: 1.1,
+    );
+    final String text = rich.text;
+    final List<SrsRichFormat> styles = rich.styles;
+    TextStyle styleOf(SrsRichFormat s) => style.copyWith(
+      fontWeight: s.bold ? FontWeight.w700 : null,
+      fontStyle: s.italic ? FontStyle.italic : null,
+      decoration: s.underline ? TextDecoration.underline : null,
+      color: s.color == null ? null : Color(s.color!),
+      backgroundColor: s.highlight == null ? null : Color(s.highlight!),
+    );
+    final List<InlineSpan> spans = <InlineSpan>[];
+    int i = 0;
+    int k = 0;
+    for (final ({TextRange range, String reading}) g in rich.rubyGroups) {
+      for (int j = i; j < g.range.start; j++) {
+        spans.add(TextSpan(text: text[j], style: styleOf(styles[j])));
+      }
+      final int index = k++;
+      final TextRange range = g.range;
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.bottom,
+          child: FushiPressScale(
+            child: InkWell(
+              key: ValueKey<String>('srs-ruby-${widget.name}-$index'),
+              borderRadius: tokens.radii.chipRadius,
+              onTap: () => unawaited(_editRuby(rich, range: range)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(g.reading, style: rubyStyle, maxLines: 1),
+                    Text.rich(
+                      TextSpan(
+                        children: <InlineSpan>[
+                          for (int j = range.start; j < range.end; j++)
+                            TextSpan(text: text[j], style: styleOf(styles[j])),
+                        ],
+                      ),
+                      maxLines: 1,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      i = range.end;
+    }
+    for (int j = i; j < text.length; j++) {
+      spans.add(TextSpan(text: text[j], style: styleOf(styles[j])));
+    }
+    return Container(
+      key: ValueKey<String>('srs-ruby-preview-${widget.name}'),
+      width: double.infinity,
+      margin: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.gap,
+        vertical: tokens.spacing.gap / 2,
+      ),
+      decoration: BoxDecoration(
+        color: tokens.surfaces.card,
+        borderRadius: tokens.radii.controlRadius,
+      ),
+      child: Text.rich(TextSpan(children: spans), style: style),
+    );
+  }
+
   // ------------------------------------------------------------ build
 
   Map<ShortcutActivator, VoidCallback> get _shortcuts {
@@ -474,18 +614,13 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
 
   Widget _buildHeader(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Widget label = Text(
-      widget.name,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: context.fushiType.labelLarge.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-    );
+    final SrsFieldHelp help =
+        widget.help ??
+        SrsFieldHelp(rawName: widget.name, displayName: widget.name);
     if (_kind == SrsFieldKind.toggle) {
-      return Row(
-        children: <Widget>[
-          Expanded(child: label),
+      return SrsFieldLabel(
+        help: help,
+        trailing: <Widget>[
           FushiSwitch(
             key: ValueKey<String>('srs-field-toggle-${widget.name}'),
             value: _model.value.trim().isNotEmpty,
@@ -494,9 +629,12 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
         ],
       );
     }
-    return Row(
-      children: <Widget>[
-        Expanded(child: label),
+    return SrsFieldLabel(
+      help: help,
+      style: context.fushiType.labelLarge.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      trailing: <Widget>[
         if (_busy)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 8),
@@ -505,6 +643,7 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             ),
           ),
+        ...widget.headerActions,
         FushiIconButton(
           key: ValueKey<String>('srs-field-source-${widget.name}'),
           icon: FushiIcons.code,
@@ -560,10 +699,23 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
   Widget _buildRich(BuildContext context) {
     final SrsRichTextController? rich = _rich;
     if (rich == null) return _buildStructured(context);
-    final bool showToolbar = _richFocus.hasFocus || _palette;
+    final bool showToolbar =
+        _richFocus.hasFocus || _palette || _highlightPalette;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // 注音的真正效果画在输入框上方（输入框里只给带注音的字加点状下划线）。
+        ListenableBuilder(
+          listenable: rich,
+          builder: (BuildContext context, _) => FushiAnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            alignment: Alignment.topLeft,
+            child: rich.hasRuby
+                ? _rubyPreview(context, rich)
+                : const SizedBox(width: double.infinity),
+          ),
+        ),
         FushiTextField(
           key: ValueKey<String>('srs-field-input-${widget.name}'),
           controller: rich,
@@ -591,6 +743,7 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       builder: (BuildContext context, _) {
         final TextStyle base = context.fushiType.titleMedium;
         final int? color = rich.activeColor;
+        final int? highlight = rich.activeHighlight;
         return Padding(
           padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
           child: Column(
@@ -636,7 +789,10 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
                     key: ValueKey<String>('srs-format-color-${widget.name}'),
                     tooltip: t.srs_note_format_color,
                     selected: _palette,
-                    onTap: () => setState(() => _palette = !_palette),
+                    onTap: () => setState(() {
+                      _palette = !_palette;
+                      _highlightPalette = false;
+                    }),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
@@ -655,6 +811,51 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
                       ],
                     ),
                   ),
+                  _SrsFormatToggle(
+                    key: ValueKey<String>(
+                      'srs-format-highlight-${widget.name}',
+                    ),
+                    tooltip: t.srs_note_format_highlight,
+                    selected: _highlightPalette || highlight != null,
+                    onTap: () => setState(() {
+                      _highlightPalette = !_highlightPalette;
+                      _palette = false;
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        color: Color(highlight ?? kSrsHighlightDefault),
+                        borderRadius: tokens.radii.chipRadius,
+                      ),
+                      child: Text(
+                        'H',
+                        style: base.copyWith(
+                          height: 1.1,
+                          color: const Color(0xFF000000),
+                        ),
+                      ),
+                    ),
+                  ),
+                  _SrsFormatToggle(
+                    key: ValueKey<String>('srs-format-ruby-${widget.name}'),
+                    tooltip: t.srs_note_format_ruby,
+                    selected: rich.activeRubyReading != null,
+                    onTap: () => unawaited(_editRuby(rich)),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          'あ',
+                          // 注音键的图标本身就是「小字注在大字上」：注音字取正文 0.6 倍。
+                          style: base.copyWith(
+                            fontSize: (base.fontSize ?? 14) * 0.6,
+                            height: 1,
+                          ),
+                        ),
+                        Text('字', style: base.copyWith(height: 1)),
+                      ],
+                    ),
+                  ),
                 ],
               ),
               FushiAnimatedSize(
@@ -663,6 +864,8 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
                 alignment: Alignment.topLeft,
                 child: _palette
                     ? _paletteRow(context, rich, color)
+                    : _highlightPalette
+                    ? _highlightRow(context, rich, highlight)
                     : const SizedBox(width: double.infinity),
               ),
             ],
@@ -725,6 +928,62 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     );
   }
 
+  Widget _highlightRow(
+    BuildContext context,
+    SrsRichTextController rich,
+    int? current,
+  ) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    Widget swatch(int? argb) {
+      final bool selected = current == argb;
+      final String label = argb == null
+          ? t.srs_note_format_highlight_none
+          : srsCssColor(argb);
+      return FushiTooltip(
+        message: label,
+        child: FushiPressScale(
+          child: GestureDetector(
+            key: ValueKey<String>(
+              'srs-format-highlight-swatch-${argb == null ? 'none' : srsCssColor(argb)}',
+            ),
+            onTap: () => rich.setHighlight(argb),
+            child: AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: argb == null
+                    ? FushiDesignTokens.of(context).surfaces.page
+                    : Color(argb),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? scheme.primary : scheme.outlineVariant,
+                  width: selected ? 3 : 1,
+                ),
+              ),
+              child: argb == null
+                  ? FushiIcon(
+                      FushiIcons.block,
+                      size: 18,
+                      color: scheme.onSurfaceVariant,
+                    )
+                  : null,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[
+        swatch(null),
+        for (final int c in kSrsHighlightPalette) swatch(c),
+      ],
+    );
+  }
+
   // ------------------------------------------------------------ 结构化
 
   Widget _buildStructured(BuildContext context) {
@@ -737,43 +996,83 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: tokens.spacing.gap / 2,
       children: <Widget>[
-        AnimatedContainer(
-          key: ValueKey<String>('srs-field-preview-${widget.name}'),
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
-          height: height,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            borderRadius: tokens.radii.controlRadius,
-            border: Border.all(color: scheme.outlineVariant),
-          ),
-          child: builder(
-            context,
-            SrsCardFace(
-              cardId: 'note-editor#${widget.name}',
-              showingAnswer: true,
-              bodyHtml: _model.value,
-              css: widget.css,
-              languageCode: language.isEmpty ? null : language,
-              onBridgeKey: (_) {},
-              bridgeKeys: const <String>[],
-              layout: SrsCardLayout.narrow,
-              fushiCard: widget.fushiCard,
-              onContentHeight: (double h) {
-                if (mounted && (h - _previewHeight).abs() >= 1) {
-                  setState(() => _previewHeight = h);
-                }
-              },
+          curve: FushiMotion.standard,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: Alignment.topCenter,
+              children: <Widget>[...previous, ?current],
             ),
+            child: _layout
+                ? SrsHtmlLayoutEditor(
+                    key: ValueKey<String>(
+                      'srs-field-layout-editor-${widget.name}',
+                    ),
+                    fieldName: widget.name,
+                    html: _model.value,
+                    onChanged: _model.edit,
+                  )
+                : AnimatedContainer(
+                    key: ValueKey<String>('srs-field-preview-${widget.name}'),
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    height: height,
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      borderRadius: tokens.radii.controlRadius,
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: builder(
+                      context,
+                      SrsCardFace(
+                        cardId: 'note-editor#${widget.name}',
+                        showingAnswer: true,
+                        bodyHtml: _model.value,
+                        css: widget.css,
+                        languageCode: language.isEmpty ? null : language,
+                        onBridgeKey: (_) {},
+                        bridgeKeys: const <String>[],
+                        layout: SrsCardLayout.narrow,
+                        fushiCard: widget.fushiCard,
+                        // 编辑器里的预览不自动播放（进编辑页就自动播视频的根因）。
+                        autoplayMedia: false,
+                        onContentHeight: (double h) {
+                          if (mounted && (h - _previewHeight).abs() >= 1) {
+                            setState(() => _previewHeight = h);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
           ),
         ),
-        Row(
+        // 提示 + 两颗按钮：窄栏（编辑页左栏常不足 600dp）放不下一行时按钮换到下一行，
+        // 不让三者硬挤一行溢出。
+        Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            Expanded(
-              child: Text(
-                t.srs_note_field_structured_hint,
-                style: context.fushiType.bodySmall.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            Text(
+              t.srs_note_field_structured_wysiwyg_hint,
+              style: context.fushiType.bodySmall.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            FushiTextButton.icon(
+              key: ValueKey<String>('srs-field-parts-${widget.name}'),
+              onPressed: _model.value.trim().isEmpty ? null : _toggleLayout,
+              icon: FushiIcon(
+                _layout ? FushiIcons.check : FushiIcons.edit,
+                size: 18,
+              ),
+              label: Text(
+                !_layout
+                    ? t.srs_note_field_edit_text
+                    : t.srs_note_field_edit_text_done,
               ),
             ),
             FushiTextButton.icon(

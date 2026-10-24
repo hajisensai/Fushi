@@ -256,6 +256,11 @@ class _StandaloneVideoWorkDetailState
   List<VideoMetadataTermRow> _terms = const <VideoMetadataTermRow>[];
   List<VideoMetadataExtraRow> _extras = const <VideoMetadataExtraRow>[];
   List<VideoMetadataImageRow> _images = const <VideoMetadataImageRow>[];
+
+  /// [_images] 里本地落地文件的存在性（[_load] 里 async 探好，build 只读）。刮削把
+  /// 海报 / 背景图作为 sidecar 写在视频旁边，常在网络盘上，build 里同步 stat 会冻结
+  /// UI 与同 isolate 的互联 host（BUG-3756）。
+  Set<String> _existingImagePaths = const <String>{};
   bool _loading = true;
 
   @override
@@ -299,6 +304,12 @@ class _StandaloneVideoWorkDetailState
     final List<VideoMetadataImageRow> images = work == null
         ? const <VideoMetadataImageRow>[]
         : await widget.database.getVideoMetadataImages(workId: work.id);
+    final Set<String> existingImagePaths = <String>{
+      for (final VideoMetadataImageRow image in images)
+        if (image.localPath case final String path
+            when path.isNotEmpty && await File(path).exists())
+          path,
+    };
     if (!mounted) return;
     setState(() {
       _book = book;
@@ -307,6 +318,7 @@ class _StandaloneVideoWorkDetailState
       _terms = terms;
       _extras = extras;
       _images = images;
+      _existingImagePaths = existingImagePaths;
       _loading = false;
     });
   }
@@ -315,7 +327,9 @@ class _StandaloneVideoWorkDetailState
     for (final VideoMetadataImageRow image in _images) {
       if (image.kind != kind) continue;
       final String? path = image.localPath;
-      if (path != null && File(path).existsSync()) return FileImage(File(path));
+      if (path != null && _existingImagePaths.contains(path)) {
+        return FileImage(File(path));
+      }
       if (image.remoteUrl.isNotEmpty) {
         return AppCachedHttpImage(image.remoteUrl);
       }

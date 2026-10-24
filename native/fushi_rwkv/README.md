@@ -40,7 +40,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 | 符号 | 作用 |
 |---|---|
-| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 2）；Dart 侧不一致即判不可用 |
+| `int32_t frwkv_abi_version(void)` | ABI 版本（当前 3）；Dart 侧不一致即判不可用 |
 | `size_t frwkv_review_struct_size(void)` | `sizeof(FrwkvReview)`（80），核对结构体布局 |
 | `FrwkvModel* frwkv_model_load(const uint8_t* bytes, size_t len)` | 从内存里的权重文件建模型，按内容识别大 / 小模型（`ARWKVWEIGHTS1` f32 两者皆可，`ARWKVWEIGHTS8PC1` int8 逐行仅小模型）；失败 NULL |
 | `int32_t frwkv_model_kind(const FrwkvModel*)` | 1 = 大模型，2 = 小模型；空指针 `-1` |
@@ -49,6 +49,16 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 | `void frwkv_runtime_free(FrwkvRuntime*)` | |
 | `int32_t frwkv_runtime_replay(FrwkvRuntime*, const FrwkvReview* reviews, size_t count, float* out_predictions)` | 按时间顺序追加一批已答复习。`out_predictions` 可空；非空则写 `count` 个 f32：每条有评分行**作答前**的 R，无评分行写 NaN。任一行不合法 → `-2`，整批不应用 |
 | `int32_t frwkv_runtime_query(FrwkvRuntime*, const FrwkvReview* queries, size_t count, float* out)` | 批量查询当前 R，写 `count` 个 f32；不合法的行写 **NaN**（见下） |
+| `int32_t frwkv_runtime_append(FrwkvRuntime*, const FrwkvReview* reviews, const uint64_t* tags, size_t count)` | 同 replay 追加（状态逐位相同），每行记一条撤销日志（标签 `tags[i]`，Fushi 用日志 id 的 hash）；每行必须有评分；**仅小模型**（大模型 `-6`）。日志上限 16 MB（约 300 条），超出丢最早的 |
+| `int32_t frwkv_runtime_unappend(FrwkvRuntime*, uint64_t tag)` | 撤回最近一条 append，仅当标签是 `tag`：返回 1，状态与没回放过它逐位相同（之后没有新抽 ID 编码时连编码一并收回）；不是它 / 日志被 replay·restore·reset 清空过返回 0、什么都不改（调用方全量重建） |
+| `int32_t frwkv_runtime_scores_clear(FrwkvRuntime*)` | 清空常驻分数表 |
+| `int32_t frwkv_runtime_scores_lookup(const FrwkvRuntime*, const int64_t* card_ids, const uint64_t* versions, size_t count, float* out_scores, uint8_t* out_found)` | 按（卡、版本）查分数表；命中写 R 与 1，否则 NaN 与 0；返回命中数 |
+| `int32_t frwkv_runtime_scores_update(FrwkvRuntime*, const FrwkvReview* queries, const uint64_t* versions, const int64_t* anchors_ms, size_t count, float* out)` | 同 query 算 R（逐位相同，每行不取决于同批别的行）并记进表（版本、锚点 = 最后一条保留评分的毫秒时刻，无则 -1） |
+| `int32_t frwkv_runtime_scores_requery(FrwkvRuntime*, int64_t today, int64_t now_ms)` | 全量刷新：把每一项的查询行改写成第 `today` 个调度日、此刻 `now_ms`（规则同 Dart `srsRwkvAddNowRow`）再整批重查；返回项数 |
+
+分数表：append / unappend / replay 作废同卡、同笔记的项（它们的卡 / 笔记状态变了），牌组 / 预设 / 全局
+状态被别的卡带动的变化由调用方定时 `scores_requery` 收敛；reset / restore 清空日志与表。契约测试
+`tests/journal.rs`。
 | `int32_t frwkv_runtime_next_intervals(FrwkvRuntime*, const FrwkvReview* answer, float target_retention, uint32_t max_interval_days, uint32_t* out_days, float* out_r)` | 作答时排程（见下）：写 4 个天数（Again / Hard / Good / Easy），`out_r` 可空；什么都不保存 |
 | `int32_t frwkv_runtime_snapshot(const FrwkvRuntime*, uint8_t** out_bytes, size_t* out_len)` | 导出无损快照（用 `frwkv_free_bytes` 释放） |
 | `int32_t frwkv_runtime_restore(FrwkvRuntime*, const uint8_t* bytes, size_t len)` | 用快照替换状态；precision 必须一致；失败时状态不变 |
@@ -59,7 +69,7 @@ Fushi 的 **RWKV 排程**原生推理库，两个网络：
 
 返回码：`0` 成功；`-1` 调用错误（空指针、未知 precision）；`-2` 输入行不合法；`-3` 权重 /
 快照字节损坏或不匹配；`-4` 内部 panic（已接住，不越过 FFI）；`-5` runtime 在之前的 panic 后
-不可信（只接受 reset / restore / free）。一个 runtime 不是线程安全的，调用方串行化；model 可共享。
+不可信（只接受 reset / restore / free）。`-6` 该模型不支持（撤销日志只有小模型）。一个 runtime 不是线程安全的，调用方串行化；model 可共享。
 线程数不影响数值（大模型：上游的并行全是逐行 map，没有跨线程浮点归约，测试核对 0/1/3 线程逐位
 相同；小模型：每个实体 × 头是一条顺序任务，块边界与线程数都不改结果，测试核对块大小 1 / 7 / 333 /
 整批逐位相同）。

@@ -494,6 +494,17 @@ class GlobalLookupWindow {
   int32_t direct_root_width_ = 0;
   int32_t direct_root_height_ = 0;
   bool webview_ready_ = false;
+  // Fushi bridge lock（docs/specs/2026-10-23-dictionary-script-sandbox.md）。
+  // 锁定方是 popup 文档，但它的消息一律经宿主 global_lookup_host.js 由顶层文档
+  // 转发，所以原生这里看到的 Source 永远是宿主文档 URL。令牌空 = 未锁定（旧行为）；
+  // 锁定后只认带令牌、Source == 锁定时宿主文档的消息。顶层新文档
+  // （ContentLoading）与 ConfigureWebView 重建时清空。
+  std::string bridge_lock_token_;
+  std::wstring bridge_lock_source_;
+  void HandleBridgeLockRequest(const std::wstring& source);
+  // 锁定后校验 + 剥掉令牌字段（不把令牌转给 Dart / 日志）。返回 false = 丢弃。
+  bool AuthorizeLockedBridgeMessage(const std::wstring& source,
+                                    std::string* body);
   // TODO-1268 (BUG-693): a dead-surface rebuild is in flight; renders
   // cache into pending_json_ until NavigationCompleted re-arms
   // webview_ready_.

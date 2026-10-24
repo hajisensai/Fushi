@@ -11,7 +11,7 @@ pub mod rows;
 mod projections;
 pub mod schema;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -28,6 +28,47 @@ pub struct SrsCore {
     writer: Mutex<Connection>,
     /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
     legacy_open: AtomicBool,
+    /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
+    path: PathBuf,
+}
+
+/// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
+/// 不占 [SrsCore] 自己的读 / 写连接。析构即回滚并关闭。
+pub struct ReadSession {
+    conn: Connection,
+}
+
+impl ReadSession {
+    /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
+    pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        query_rows(&self.conn, sql, params)
+    }
+}
+
+/// 一条只读语句的结果页：首行列名，其后每行一组值（rows.rs 编码）。写语句一律拒绝。
+fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    if !stmt.readonly() {
+        return Err("only read-only statements are allowed here".into());
+    }
+    let names: Vec<Value> = stmt
+        .column_names()
+        .iter()
+        .map(|n| Value::Text((*n).to_string()))
+        .collect();
+    let n = names.len();
+    let mut out: Vec<Vec<Value>> = vec![names];
+    let mut q = stmt
+        .query(rusqlite::params_from_iter(params.iter()))
+        .map_err(|e| e.to_string())?;
+    while let Some(row) = q.next().map_err(|e| e.to_string())? {
+        let mut vals = Vec::with_capacity(n);
+        for i in 0..n {
+            vals.push(row.get::<_, Value>(i).map_err(|e| e.to_string())?);
+        }
+        out.push(vals);
+    }
+    Ok(rows::encode(n, &out))
 }
 
 fn configure(conn: &Connection) -> Result<(), String> {
@@ -71,6 +112,7 @@ impl SrsCore {
             writer: Mutex::new(writer),
             reader: Mutex::new(reader),
             legacy_open: AtomicBool::new(false),
+            path: path.to_path_buf(),
         })
     }
 
@@ -348,29 +390,22 @@ impl SrsCore {
     /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
     /// 产品代码一律走粗粒度命令。
     pub fn debug_query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
-        let r = self.reader()?;
-        let mut stmt = r.prepare(sql).map_err(|e| e.to_string())?;
-        if !stmt.readonly() {
-            return Err("debug_query only runs read-only statements".into());
-        }
-        let names: Vec<Value> = stmt
-            .column_names()
-            .iter()
-            .map(|n| Value::Text((*n).to_string()))
-            .collect();
-        let n = names.len();
-        let mut out: Vec<Vec<Value>> = vec![names];
-        let mut q = stmt
-            .query(rusqlite::params_from_iter(params.iter()))
+        query_rows(&*self.reader()?, sql, params)
+    }
+
+    /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
+    /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
+    pub fn read_session(&self) -> Result<ReadSession, String> {
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
+        configure(&conn)?;
+        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
             .map_err(|e| e.to_string())?;
-        while let Some(row) = q.next().map_err(|e| e.to_string())? {
-            let mut vals = Vec::with_capacity(n);
-            for i in 0..n {
-                vals.push(row.get::<_, Value>(i).map_err(|e| e.to_string())?);
-            }
-            out.push(vals);
-        }
-        Ok(rows::encode(n, &out))
+        Ok(ReadSession { conn })
     }
 }
 
@@ -419,7 +454,37 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(idx, 9);
+        assert_eq!(idx, 12);
+    }
+
+    #[test]
+    fn schema_v1_database_upgrades_to_v2_indexes() {
+        let p = temp("schema_v1");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch(
+                    "DROP INDEX idx_srs_field_edits_profile_register; DROP INDEX idx_srs_notes_cache_type; \
+                     DROP INDEX idx_srs_notes_cache_pending; UPDATE srs_meta SET value = '1' WHERE key = 'schema';",
+                )
+                .unwrap();
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let r = core.reader().unwrap();
+        let n: i64 = r
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN \
+                 ('idx_srs_field_edits_profile_register','idx_srs_notes_cache_type','idx_srs_notes_cache_pending')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3);
+        let v: String = r
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(v, schema::SCHEMA_VERSION.to_string());
     }
 
     #[test]
@@ -478,6 +543,34 @@ mod tests {
     }
 
     #[test]
+    fn read_session_reads_one_snapshot_and_rejects_writes() {
+        let p = temp("session");
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        let ins = |id: &str| {
+            core.writer()
+                .unwrap()
+                .execute(
+                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, 'p', '{}')",
+                    [id],
+                )
+                .unwrap();
+        };
+        ins("e1");
+        let s = core.read_session().unwrap();
+        ins("e2");
+        let count = |s: &ReadSession| {
+            let (_, rows) =
+                rows::decode(&s.query("SELECT COUNT(*) AS c FROM srs_unknown_events", &[]).unwrap()).unwrap();
+            rows[1][0].clone()
+        };
+        assert_eq!(count(&s), Value::Integer(1), "会话开始之后的写入不在快照里");
+        assert!(s.query("DELETE FROM srs_unknown_events", &[]).is_err());
+        drop(s);
+        assert_eq!(count(&core.read_session().unwrap()), Value::Integer(2));
+    }
+
+    #[test]
     fn debug_query_rejects_writes_and_encodes_header() {
         let p = temp("dbg");
         let core = SrsCore::open(&p).unwrap();
@@ -489,7 +582,7 @@ mod tests {
         assert_eq!(cols, 2);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0][0], Value::Text("key".into()));
-        assert_eq!(rows[1][1], Value::Text("1".into()));
+        assert_eq!(rows[1][1], Value::Text(schema::SCHEMA_VERSION.to_string()));
     }
 }
 

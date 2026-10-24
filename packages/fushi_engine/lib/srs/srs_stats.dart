@@ -1019,8 +1019,9 @@ class SrsStatLog {
   });
 
   /// 内存里的日志对象（测试与已有 [SrsCardHistory] 的调用方）。
-  factory SrsStatLog.of(SrsReviewLog l) => SrsStatLog(
-    cardId: l.cardId,
+  /// [cardId] 覆盖日志上写的卡（前身卡的日志记到继承它历史的卡上）。
+  factory SrsStatLog.of(SrsReviewLog l, {String? cardId}) => SrsStatLog(
+    cardId: cardId ?? l.cardId,
     isReviewKind: l.kind == SrsLogKind.review,
     rating: l.rating,
     reviewType: l.reviewType,
@@ -1054,11 +1055,18 @@ class SrsStatLog {
 
 /// 一张卡的有效日志 → 统计复习记录 + 成熟变化。[history] 用 [SrsCardHistory]
 /// 判有效（undo 撤销 / 等价导入都已排除）。
+///
+/// [cardId] = 这份历史所属的（可见）卡：历史含前身卡的日志时（更改笔记类型、旧 Lapis 迁到
+/// Fushi 卡片），记录归到这张卡上，而不是日志上写的前身卡 id。不给时按日志自己的卡。
 ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-srsStatsFromHistory(SrsCardHistory history, SrsDayContext day) =>
-    srsStatsFromLogs(<SrsStatLog>[
-      for (final SrsReviewLog l in history.effective) SrsStatLog.of(l),
-    ], day);
+srsStatsFromHistory(
+  SrsCardHistory history,
+  SrsDayContext day, {
+  String? cardId,
+}) => srsStatsFromLogs(<SrsStatLog>[
+  for (final SrsReviewLog l in history.effective)
+    SrsStatLog.of(l, cardId: cardId),
+], day);
 
 /// 一张卡按排序键升序的有效日志 → 统计复习记录 + 成熟变化（统计投影，唯一实现）。
 ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})

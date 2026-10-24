@@ -3,6 +3,7 @@ import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_anki_sync.dart'
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_audio_sources.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_browser_extension.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_content_language.dart';
+import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_custom_themes.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_dict_style.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_discovery.dart';
 import 'package:fushi/src/platform/desktop/ctl/ctl_settings_body_downloads.dart';
@@ -60,6 +61,7 @@ List<CtlBodyPage> buildCtlBodyPages() => <CtlBodyPage>[
   ...buildCtlTrackingBodyPages(),
   ...buildCtlStorageBodyPages(),
   ...buildCtlFontsBodyPages(),
+  ...buildCtlCustomThemesBodyPages(),
   ...buildCtlContentLanguageBodyPages(),
   ...buildCtlMiscBodyPages(),
   ...buildCtlBrowserExtensionBodyPages(),
