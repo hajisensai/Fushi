@@ -1004,6 +1004,55 @@ SrsHistogram srsUnitHistogram(List<double> values, {required int bins}) {
   );
 }
 
+/// 统计投影要的一条有效日志（统计页取数由 Rust 直读选取后按列交回，见 `SrsDbStore.statsColumns`）。
+class SrsStatLog {
+  const SrsStatLog({
+    required this.cardId,
+    required this.isReviewKind,
+    required this.rating,
+    required this.reviewType,
+    required this.at,
+    this.utcOffsetMin = 0,
+    this.durationMs = 0,
+    this.rwkv = false,
+    this.result,
+  });
+
+  /// 内存里的日志对象（测试与已有 [SrsCardHistory] 的调用方）。
+  /// [cardId] 覆盖日志上写的卡（前身卡的日志记到继承它历史的卡上）。
+  factory SrsStatLog.of(SrsReviewLog l, {String? cardId}) => SrsStatLog(
+    cardId: cardId ?? l.cardId,
+    isReviewKind: l.kind == SrsLogKind.review,
+    rating: l.rating,
+    reviewType: l.reviewType,
+    at: l.occurredAt,
+    utcOffsetMin: l.utcOffsetMin,
+    durationMs: l.durationMs,
+    rwkv: l.algorithm == SrsAlgorithm.rwkv.wire,
+    result: l.result == null
+        ? null
+        : (
+            queue: l.result!.queue,
+            scheduledDays: l.result!.scheduledDays,
+            dueDay: l.result!.dueDay,
+          ),
+  );
+
+  final String cardId;
+  final bool isReviewKind;
+  final int? rating;
+  final String reviewType;
+  final int at;
+  final int utcOffsetMin;
+  final int durationMs;
+
+  /// 这次是按回忆率排的（日志 alg = rwkv）。
+  final bool rwkv;
+
+  /// 这次操作后的结果（undo / 不认识的 kind 没有）。
+  final ({SrsQueue queue, int scheduledDays, int? dueDay})? result;
+}
+
 /// 一张卡的有效日志 → 统计复习记录 + 成熟变化。[history] 用 [SrsCardHistory]
 /// 判有效（undo 撤销 / 等价导入都已排除）。
 ///
@@ -1014,18 +1063,26 @@ srsStatsFromHistory(
   SrsCardHistory history,
   SrsDayContext day, {
   String? cardId,
-}) {
+}) => srsStatsFromLogs(<SrsStatLog>[
+  for (final SrsReviewLog l in history.effective)
+    SrsStatLog.of(l, cardId: cardId),
+], day);
+
+/// 一张卡按排序键升序的有效日志 → 统计复习记录 + 成熟变化（统计投影，唯一实现）。
+({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
+srsStatsFromLogs(List<SrsStatLog> effective, SrsDayContext day) {
   final List<SrsStatReview> reviews = <SrsStatReview>[];
   final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
-  SrsScheduleResult prev = SrsScheduleResult.initial;
+  ({SrsQueue queue, int scheduledDays, int? dueDay}) prev = (
+    queue: SrsQueue.newCard,
+    scheduledDays: 0,
+    dueDay: null,
+  );
   bool prevMature = false;
-  for (final SrsReviewLog l in history.effective) {
-    final int dayIndex = day.dayIndexOf(l.occurredAt);
+  for (final SrsStatLog l in effective) {
+    final int dayIndex = day.dayIndexOf(l.at);
     final int? rating = l.rating;
-    if (l.kind == SrsLogKind.review &&
-        rating != null &&
-        rating >= 1 &&
-        rating <= 4) {
+    if (l.isReviewKind && rating != null && rating >= 1 && rating <= 4) {
       final SrsStatReviewKind? kind = switch (l.reviewType) {
         SrsReviewType.learn =>
           prev.queue == SrsQueue.newCard
@@ -1043,16 +1100,16 @@ srsStatsFromHistory(
         final int offsetMs = l.utcOffsetMin * 60000;
         reviews.add(
           SrsStatReview(
-            cardId: cardId ?? l.cardId,
-            at: l.occurredAt,
+            cardId: l.cardId,
+            at: l.at,
             day: dayIndex,
-            hour: ((l.occurredAt + offsetMs) % _dayMs) ~/ _hourMs,
+            hour: ((l.at + offsetMs) % _dayMs) ~/ _hourMs,
             rating: rating,
             kind: kind,
             durationMs: math.max(0, l.durationMs),
             // 按回忆率排的复习（日志 alg = rwkv）不看到期日，无所谓「提前」。
             early:
-                l.algorithm != SrsAlgorithm.rwkv.wire &&
+                !l.rwkv &&
                 l.reviewType == SrsReviewType.review &&
                 prev.queue == SrsQueue.review &&
                 prev.dueDay != null &&
@@ -1061,7 +1118,7 @@ srsStatsFromHistory(
         );
       }
     }
-    final SrsScheduleResult? res = l.result;
+    final ({SrsQueue queue, int scheduledDays, int? dueDay})? res = l.result;
     if (res == null) continue;
     final bool mature =
         res.queue == SrsQueue.review &&
@@ -1069,7 +1126,7 @@ srsStatsFromHistory(
     if (mature != prevMature) {
       maturity.add(
         SrsStatMaturityEvent(
-          cardId: cardId ?? l.cardId,
+          cardId: l.cardId,
           day: dayIndex,
           delta: mature ? 1 : -1,
         ),

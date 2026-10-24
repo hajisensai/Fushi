@@ -1,0 +1,314 @@
+// 一次性：用**删除前的 Dart 实现**生成 P6（统计 / 优化器 / RWKV 取数收编进 Rust）的固定向量。
+//
+// - 记忆状态输入（valid_logs.dart `srsCollectMemoryInput` / `srsElapsedDays` / `SrsDayContext.dayIndexOf`）
+//   → packages/fushi_srs/test/memory/fixtures/memory_input_vectors.json(.gz)
+// - 优化器训练集的逐卡部分（srs_optimizer.dart `srsPrepareOptimization` 循环体原样照抄）、RWKV 回放行
+//   （srs_rwkv_history.dart `SrsRwkvReplayBuilder` / `srsRwkvAddNowRow`）、统计投影的输入
+//   （srs_stats.dart `srsStatsFromHistory`）→ packages/fushi_engine/test/srs/fixtures/p6_vectors.json(.gz)
+//
+// 生成后本文件改名 fixtures/gen_p6_vectors.dart.txt 只作留档（运行时是 test 文件：
+// `dart test test/srs/p6_gen_vectors_test.dart`，在 packages/fushi_engine 下）。
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:typed_data';
+
+import 'package:fushi_engine/srs/srs_rwkv_history.dart';
+import 'package:fushi_engine/srs/srs_stats.dart';
+import 'package:fushi_rwkv/fushi_rwkv.dart';
+import 'package:fushi_srs/fushi_srs.dart';
+import 'package:test/test.dart';
+
+const int _t0 = 1735689600000; // 2025-01-01T00:00:00Z
+const int _dayMs = 86400000;
+
+final Random _r = Random(20261024);
+
+T _pick<T>(List<T> xs) => xs[_r.nextInt(xs.length)];
+
+const List<SrsDayContext> _days = <SrsDayContext>[
+  SrsDayContext(utcOffsetMin: 540, rolloverHour: 4),
+  SrsDayContext(utcOffsetMin: 0, rolloverHour: 0),
+  SrsDayContext(utcOffsetMin: -300, rolloverHour: 23),
+  SrsDayContext(utcOffsetMin: 330, rolloverHour: 4),
+];
+
+const List<String> _rtypes = <String>[
+  SrsReviewType.learn,
+  SrsReviewType.learn,
+  SrsReviewType.review,
+  SrsReviewType.review,
+  SrsReviewType.review,
+  SrsReviewType.relearn,
+  SrsReviewType.manual,
+  SrsReviewType.filtered,
+  SrsReviewType.rescheduled,
+];
+
+SrsMemory? _memory() => _r.nextInt(3) == 0
+    ? null
+    : SrsMemory(
+        stability: _r.nextDouble() * 300,
+        difficulty: 1 + _r.nextDouble() * 9,
+        stabilityFast: _r.nextBool() ? null : _r.nextDouble() * 10,
+      );
+
+SrsScheduleResult _result({SrsQueue? queue, int? reps}) => SrsScheduleResult(
+  queue: queue ?? _pick(SrsQueue.values),
+  dueDay: _r.nextBool() ? 20000 + _r.nextInt(500) : null,
+  dueAt: _r.nextInt(3) == 0 ? _t0 + _r.nextInt(1 << 30) : null,
+  scheduledDays: _pick(<int>[0, 0, 1, 3, 20, 21, 22, 100, -2]),
+  learningStep: _r.nextInt(4),
+  memory: _memory(),
+  lastReviewedAt: _r.nextBool() ? _t0 + _r.nextInt(1 << 30) : null,
+  reps: reps ?? _r.nextInt(50),
+  lapses: _r.nextInt(10),
+  scheduler: _r.nextInt(5) == 0 ? SrsScheduler.anki : SrsScheduler.fushi,
+  ease: _r.nextInt(2) == 0 ? 1300 + _r.nextInt(2000) : null,
+);
+
+/// 一份历史：偏向评分、学习起点、重置、恢复照抄、导入锚点、撤销、墙钟 + 钳位。
+({List<SrsReviewLog> logs, Map<String, int> server}) _history(int n) {
+  final List<SrsReviewLog> logs = <SrsReviewLog>[];
+  final Map<String, int> server = <String, int>{};
+  int clock = _t0 + _r.nextInt(1 << 28);
+  for (int i = 0; i < n; i++) {
+    // 同日多次（学习步、同日 review 重来）与跨日都要有。
+    clock += _pick(<int>[0, 1000, 60000, 600000, 3600000, _dayMs, 3 * _dayMs, 40 * _dayMs]) +
+        _r.nextInt(5000);
+    final int roll = _r.nextInt(40);
+    final String kind = roll < 26
+        ? SrsLogKind.review
+        : roll < 29
+        ? SrsLogKind.manual
+        : roll < 32
+        ? SrsLogKind.importAnchor
+        : roll < 34
+        ? SrsLogKind.undo
+        : roll < 36
+        ? SrsLogKind.reschedule
+        : roll < 37
+        ? SrsLogKind.handOff
+        : roll < 38
+        ? 'futureKind'
+        : SrsLogKind.manual;
+    final String id = 'L${_r.nextInt(1 << 30).toRadixString(36)}$i';
+    String? revokes;
+    if (kind == SrsLogKind.undo) {
+      revokes = logs.isEmpty || _r.nextInt(5) == 0 ? null : _pick(logs).id;
+    }
+    SrsScheduleResult? result;
+    final Map<String, Object?> extra = <String, Object?>{};
+    String rtype = _pick(_rtypes);
+    if (kind == SrsLogKind.manual) {
+      rtype = SrsReviewType.manual;
+      switch (_r.nextInt(4)) {
+        case 0:
+          // 重置。
+          result = _result(queue: SrsQueue.newCard, reps: 0);
+        case 1:
+          // 恢复照抄。
+          result = _result(queue: SrsQueue.review);
+          extra[srsRestoreLogExtraKey] = 'bk${_r.nextInt(9)}';
+          if (_r.nextBool()) extra['memAlg'] = _pick(<String>['fsrs6', 'fsrs7', 'rwkv']);
+        case 2:
+          // 带 restoreOf 但结果是新卡（算重置，不算恢复）。
+          result = _result(queue: SrsQueue.newCard, reps: 0);
+          extra[srsRestoreLogExtraKey] = 'bk';
+        default:
+          result = _result();
+      }
+    } else if (kind == SrsLogKind.importAnchor) {
+      rtype = SrsReviewType.manual;
+      result = _r.nextInt(6) == 0 ? null : _result(queue: SrsQueue.review);
+      if (_r.nextBool()) extra['memAlg'] = _pick(<String>['fsrs6', 'fsrs7', 'x']);
+    } else if (kind == SrsLogKind.undo) {
+      rtype = SrsReviewType.manual;
+    } else if (kind != 'futureKind') {
+      result = _r.nextInt(12) == 0 ? null : _result();
+    }
+    final bool rated = kind == SrsLogKind.review;
+    final int? rating = rated && _r.nextInt(15) != 0 ? 1 + _r.nextInt(4) : null;
+    logs.add(
+      SrsReviewLog(
+        id: id,
+        profileUid: 'p',
+        cardId: _pick(<String>['c', 'c', 'c', 'pred']),
+        kind: kind,
+        hlc: Hlc(clock, _r.nextInt(4) == 0 ? _r.nextInt(3) : 0, _pick(<String>['A', 'B', 'w:c'])),
+        occurredAt: clock + _r.nextInt(3000),
+        timeSource: _r.nextInt(3) == 0 ? SrsTimeSource.wall : SrsTimeSource.anchored,
+        origin: SrsLogOrigin.fushi,
+        reviewType: rtype,
+        rating: rating,
+        revokesId: revokes,
+        durationMs: _pick(<int>[0, 0, 1, 2500, 20000, -5]),
+        algorithm: _pick(<String?>[null, 'fsrs6', 'fsrs7', 'rwkv', 'rwkv']),
+        utcOffsetMin: _pick(<int>[0, 540, -300, 330]),
+        result: result,
+        extra: extra,
+      ),
+    );
+    switch (_r.nextInt(6)) {
+      case 0:
+        // S 远早于 HLC：钳位（墙钟来源时进「时间不确定」）。
+        server[id] = clock - srsClockToleranceMs - 1 - _r.nextInt(86400000);
+      case 1:
+        server[id] = clock + _r.nextInt(1000000);
+      default:
+        break;
+    }
+  }
+  return (logs: logs, server: server);
+}
+
+Map<String, Object?> _memoryJson(SrsMemoryInput m) => <String, Object?>{
+  'reviews': <List<num>>[
+    for (final SrsFsrsReview r in m.reviews) <num>[r.rating, r.deltaDays],
+  ],
+  'starting': m.starting == null
+      ? null
+      : <double>[m.starting!.stability, m.starting!.difficulty, m.starting!.stabilityFast],
+  'sm2': m.sm2Start == null ? null : <double>[m.sm2Start!.ease, m.sm2Start!.intervalDays],
+  'complete': m.complete,
+};
+
+// ---- 优化器循环体（srs_optimizer.dart `srsPrepareOptimization`，删除前原样照抄） ----
+
+bool _timeUncertain(SrsReviewLog l, SrsCardHistory h) =>
+    l.timeSource == SrsTimeSource.wall && h.isClamped(l);
+
+/// null = 这张卡不进训练集；否则每项 (评分时刻, 前缀长度)。
+List<List<int>>? _optimizerItems(SrsCardHistory h, SrsAlgorithm alg, SrsDayContext day) {
+  final SrsMemoryInput input = srsCollectMemoryInput(
+    h,
+    algorithm: alg,
+    dayIndexOf: day.dayIndexOf,
+  );
+  if (!input.complete || input.reviews.isEmpty) return null;
+  final List<SrsReviewLog> ratings = <SrsReviewLog>[
+    for (final SrsReviewLog l in h.effectiveRatings)
+      if (!_timeUncertain(l, h)) l,
+  ];
+  if (ratings.length != input.reviews.length) return null;
+  return <List<int>>[
+    for (int i = 1; i < input.reviews.length; i++) <int>[ratings[i].occurredAt, i + 1],
+  ];
+}
+
+String _hex(Uint8List b) => <String>[
+  for (final int x in b) x.toRadixString(16).padLeft(2, '0'),
+].join();
+
+void main() {
+  test('generate P6 vectors from the pre-deletion Dart implementations', () {
+    final List<Map<String, Object?>> memory = <Map<String, Object?>>[];
+    final List<Map<String, Object?>> p6 = <Map<String, Object?>>[];
+    for (int v = 0; v < 1200; v++) {
+      final int n = switch (v % 10) {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        _ => 3 + _r.nextInt(v % 100 == 3 ? 60 : 14),
+      };
+      final (:List<SrsReviewLog> logs, :Map<String, int> server) = _history(n);
+      final SrsDayContext day = _days[v % _days.length];
+      final SrsCardHistory h = SrsCardHistory(
+        logs,
+        serverTimeOf: (String id) => server[id],
+      );
+      final List<String> canonical = <String>[for (final SrsReviewLog l in logs) l.canonical()];
+      memory.add(<String, Object?>{
+        'logs': canonical,
+        'server': server,
+        'day': <int>[day.utcOffsetMin, day.rolloverHour],
+        'expect': <String, Object?>{
+          for (final SrsAlgorithm a in <SrsAlgorithm>[
+            SrsAlgorithm.fsrs6,
+            SrsAlgorithm.fsrs7,
+            SrsAlgorithm.rwkv,
+          ])
+            a.wire: _memoryJson(
+              srsCollectMemoryInput(h, algorithm: a, dayIndexOf: day.dayIndexOf),
+            ),
+        },
+      });
+
+      // RWKV：这份历史的保留评分行（数字身份固定）、此刻行（四个队列）。
+      final SrsRwkvCard card = SrsRwkvCard(
+        cardId: 1000 + v,
+        noteId: 2000 + v,
+        deckId: 7,
+        presetId: 9,
+        history: h,
+      );
+      final (RwkvRows rows, int? lastAt) = srsRwkvReplayRows(<SrsRwkvCard>[card], day);
+      final List<SrsReviewLog> kept = srsRwkvKeptRatings(h);
+      final SrsRwkvLastRating? last = SrsRwkvLastRating.of(h);
+      final int nowMs = (logs.isEmpty ? _t0 : logs.last.occurredAt) +
+          _pick(<int>[0, 1000, 3600000, _dayMs, 5 * _dayMs]);
+      final Map<String, String> nowRows = <String, String>{};
+      for (final SrsQueue q in SrsQueue.values) {
+        final RwkvRows one = RwkvRows(1);
+        srsRwkvAddNowRow(
+          one,
+          cardId: 1000 + v,
+          noteId: 2000 + v,
+          deckId: 7,
+          presetId: 9,
+          last: last,
+          queue: q,
+          nowMs: nowMs,
+          day: day,
+        );
+        nowRows[q.wire] = _hex(one.bytes);
+      }
+      final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity}) st =
+          srsStatsFromHistory(h, day);
+      p6.add(<String, Object?>{
+        'logs': canonical,
+        'server': server,
+        'day': <int>[day.utcOffsetMin, day.rolloverHour],
+        'optimizer': <String, Object?>{
+          for (final SrsAlgorithm a in <SrsAlgorithm>[SrsAlgorithm.fsrs6, SrsAlgorithm.fsrs7])
+            a.wire: _optimizerItems(h, a, day),
+        },
+        'rwkv': <String, Object?>{
+          'rows': _hex(rows.bytes),
+          'lastAt': lastAt,
+          'kept': <String>[for (final SrsReviewLog l in kept) l.id],
+          'effectiveRatings': h.effectiveRatings.length,
+          'last': last == null ? null : <Object>[last.at, last.rating, last.reviewType],
+          'nowMs': nowMs,
+          'now': nowRows,
+        },
+        'stats': <String, Object?>{
+          'reviews': <List<Object?>>[
+            for (final SrsStatReview r in st.reviews)
+              <Object?>[r.cardId, r.at, r.day, r.hour, r.rating, r.kind.name, r.durationMs, r.early],
+          ],
+          'maturity': <List<Object?>>[
+            for (final SrsStatMaturityEvent m in st.maturity) <Object?>[m.cardId, m.day, m.delta],
+          ],
+          'memory': h.state.memory == null
+              ? null
+              : <double>[
+                  h.state.memory!.stability,
+                  h.state.memory!.difficulty,
+                  h.state.memory!.stabilityFast,
+                ],
+        },
+      });
+    }
+    void write(String path, List<Map<String, Object?>> vectors) {
+      final File f = File(path)..parent.createSync(recursive: true);
+      f.writeAsBytesSync(
+        gzip.encode(utf8.encode(jsonEncode(<String, Object?>{'vectors': vectors}))),
+      );
+      stdout.writeln('wrote ${vectors.length} vectors -> ${f.path}');
+    }
+
+    write('../fushi_srs/test/memory/fixtures/memory_input_vectors.json.gz', memory);
+    write('test/srs/fixtures/p6_vectors.json.gz', p6);
+  });
+}

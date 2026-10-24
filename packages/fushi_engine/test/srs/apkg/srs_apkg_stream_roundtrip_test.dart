@@ -6,7 +6,6 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
@@ -16,6 +15,7 @@ import 'package:test/test.dart';
 
 import '../support/srs_bulk_fixture.dart';
 import '../support/srs_query_counter.dart';
+import '../support/srs_test_storage.dart';
 import 'apkg_test_support.dart';
 import 'srs_apkg_import_test.dart'
     show
@@ -42,12 +42,14 @@ Directory _tmp() {
 /// 一份空库（与 [BulkFixture] 同 profile、同固定时钟）。
 Future<(SrsDbStore, CountingInterceptor)> _emptyStore(String deviceId) async {
   final CountingInterceptor counter = CountingInterceptor();
-  final FushiDatabase db = FushiDatabase.forTesting(
-    NativeDatabase.memory().interceptWith(counter),
+  final Directory dir = _tmp();
+  final TestSrs srs = await openTestSrsAt(
+    '${dir.path}/srs.db',
+    interceptor: counter,
   );
-  addTearDown(db.close);
   final SrsDbStore store = await SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: kBulkUid,
     deviceId: deviceId,
     engine: const FakeFsrsEngine(),

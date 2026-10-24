@@ -17,21 +17,24 @@ NM="${2:-nm}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BINDINGS="$SCRIPT_DIR/../../packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart"
+# srs.db 句柄（ffsrs_store_*）的 lookup 在 SrsCoreBindings 里。
+STORE_BINDINGS="$SCRIPT_DIR/../../packages/fushi_srs/lib/src/store/srs_core.dart"
 
 [[ -f "$BIN" ]] || { echo "::error::artifact not found: $BIN" >&2; exit 1; }
 [[ -f "$BINDINGS" ]] || { echo "::error::bindings not found: $BINDINGS" >&2; exit 1; }
+[[ -f "$STORE_BINDINGS" ]] || { echo "::error::bindings not found: $STORE_BINDINGS" >&2; exit 1; }
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-grep -oE "'ffsrs_[a-z0-9_]+'" "$BINDINGS" | tr -d "'" | sort -u > "$work/expected.txt"
+grep -ohE "'ffsrs_[a-z0-9_]+'" "$BINDINGS" "$STORE_BINDINGS" | tr -d "'" | sort -u > "$work/expected.txt"
 expected_count="$(wc -l < "$work/expected.txt" | tr -d ' ')"
 echo "ffsrs_* symbols looked up by the Dart bindings: $expected_count"
 # 扫描规模哨兵：正则被绑定文件的格式改写打断时，期望集会塌成 0 条，「全都导出了」
-# 恒真。下界取当前全部 18 个（8 个排程 / zstd + 10 个 Anki 搜索）；真删符号是破坏性 ABI
+# 恒真。下界取当前全部 45 个（8 个排程 / 拟合 / zstd + 10 个 Anki 搜索 + 3 个卡片历史 / 导入判重 + 1 个字段寄存器 + 2 个记忆状态输入 / RWKV 此刻行 + 21 个 srs.db 句柄、只读会话与直读命令）；真删符号是破坏性 ABI
 # 变更（ffsrs_abi_version 同时要升），应当同时改这里。
-if [[ "$expected_count" -lt 18 ]]; then
-  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<18），正则失效或绑定被大改，不能当通过。" >&2
+if [[ "$expected_count" -lt 45 ]]; then
+  echo "::error title=ABI symbol extraction collapsed::只从绑定里解析出 $expected_count 个 ffsrs_* 名（<45），正则失效或绑定被大改，不能当通过。" >&2
   exit 1
 fi
 

@@ -1,0 +1,696 @@
+//! SRS 事件库：Rust 独占的 `srs.db`（docs/specs/2026-10-23-srs-rust-store.md）。
+//!
+//! 一条写连接 + 一条读连接，各在一把 Mutex 里：写命令 = 写连接上的一个事务（这把锁就是 SRS 的
+//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住。对象可以从任意线程 / isolate 调用。
+//!
+//! 只打开 `srs.db`、它的备份快照副本或自己生成的临时文件；绝不打开主库 `fushi.db`（同一进程里
+//! Drift 那份 SQLite 与这里自带的一份同开一个文件，会在 POSIX 平台上互相清掉文件锁）。
+
+pub mod ffi;
+pub mod rows;
+mod projections;
+pub mod schema;
+
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::Duration;
+
+use rusqlite::types::Value;
+use rusqlite::{Connection, OpenFlags};
+
+const LEGACY_KEY: &str = "legacy_import";
+
+pub struct SrsCore {
+    // 字段按声明顺序析构：只读连接先关，写连接最后关。最后一个关闭的连接负责把 WAL 并回主文件
+    // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
+    reader: Mutex<Connection>,
+    writer: Mutex<Connection>,
+    /// 旧库搬迁的事务开着（写连接上挂着一个 BEGIN）：别的写命令一律拒绝。
+    legacy_open: AtomicBool,
+    /// 库文件路径（[SrsCore::read_session] 另开只读连接用）。
+    path: PathBuf,
+}
+
+/// 一条独立的只读连接 + 一个读事务（[SrsCore::read_session]）：整段读取看到开会话那一刻的快照，
+/// 不占 [SrsCore] 自己的读 / 写连接。析构即回滚并关闭。
+pub struct ReadSession {
+    conn: Connection,
+}
+
+impl ReadSession {
+    /// 在会话的读事务里跑一条只读语句；结果编码同 [SrsCore::debug_query]（首行是列名）。
+    pub fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        query_rows(&self.conn, sql, params)
+    }
+}
+
+/// 一条只读语句的结果页：首行列名，其后每行一组值（rows.rs 编码）。写语句一律拒绝。
+fn query_rows(conn: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    if !stmt.readonly() {
+        return Err("only read-only statements are allowed here".into());
+    }
+    let names: Vec<Value> = stmt
+        .column_names()
+        .iter()
+        .map(|n| Value::Text((*n).to_string()))
+        .collect();
+    let n = names.len();
+    let mut out: Vec<Vec<Value>> = vec![names];
+    let mut q = stmt
+        .query(rusqlite::params_from_iter(params.iter()))
+        .map_err(|e| e.to_string())?;
+    while let Some(row) = q.next().map_err(|e| e.to_string())? {
+        let mut vals = Vec::with_capacity(n);
+        for i in 0..n {
+            vals.push(row.get::<_, Value>(i).map_err(|e| e.to_string())?);
+        }
+        out.push(vals);
+    }
+    Ok(rows::encode(n, &out))
+}
+
+fn configure(conn: &Connection) -> Result<(), String> {
+    conn.busy_timeout(Duration::from_millis(5000))
+        .map_err(|e| e.to_string())?;
+    // mmap + 64 MB 页缓存：缓存刷新 / 历史这类一次读几万行日志的命令，默认 2 MB 页缓存下每页一次
+    // 系统调用（3000 笔记 / 6.6 万条日志实测读取 320–400 ms → 158 ms）。mmap 只占虚拟地址，
+    // 上限 256 MB；WAL 模式下 SQLite 照常处理。
+    conn.execute_batch(
+        "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; \
+         PRAGMA mmap_size = 268435456; PRAGMA cache_size = -65536;",
+    )
+    .map_err(|e| e.to_string())
+}
+
+impl SrsCore {
+    /// 打开（不存在就建）。建表 / 升级在写连接上一个事务里做完才开读连接。
+    pub fn open(path: &Path) -> Result<Self, String> {
+        let mut writer = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_CREATE
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("open {}: {e}", path.display()))?;
+        configure(&writer)?;
+        let mode: String = writer
+            .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        if !mode.eq_ignore_ascii_case("wal") {
+            return Err(format!("srs.db journal_mode is {mode}, expected wal"));
+        }
+        schema::migrate(&mut writer)?;
+        let reader = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("open reader {}: {e}", path.display()))?;
+        configure(&reader)?;
+        Ok(Self {
+            writer: Mutex::new(writer),
+            reader: Mutex::new(reader),
+            legacy_open: AtomicBool::new(false),
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub(crate) fn writer(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.writer.lock().map_err(|_| "srs writer poisoned".to_string())
+    }
+
+    pub(crate) fn reader(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+        self.reader.lock().map_err(|_| "srs reader poisoned".to_string())
+    }
+
+    fn meta(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+        match conn.query_row("SELECT value FROM srs_meta WHERE key = ?1", [key], |r| r.get(0)) {
+            Ok(v) => Ok(Some(v)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+        conn.execute(
+            "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) \
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [key, value],
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    }
+
+    // ------------------------------------------------------------ 旧库搬迁（§3）
+
+    /// 旧主库里的 SRS 数据是否已搬进来（或确认没有要搬的）。
+    pub fn legacy_imported(&self) -> Result<bool, String> {
+        let w = self.writer()?;
+        Ok(Self::meta(&w, LEGACY_KEY)?.is_some())
+    }
+
+    /// 开搬迁事务：清空 9 张表（未写标记的库里不该有东西；上一次搬到一半崩溃时 SQLite 已回滚）。
+    pub fn legacy_begin(&self) -> Result<(), String> {
+        let w = self.writer()?;
+        if Self::meta(&w, LEGACY_KEY)?.is_some() {
+            return Err("legacy store already imported".into());
+        }
+        if self.legacy_open.swap(true, Ordering::SeqCst) {
+            return Err("legacy import already in progress".into());
+        }
+        let mut sql = String::from("BEGIN IMMEDIATE;");
+        for t in schema::TABLES {
+            sql.push_str(&format!("DELETE FROM {};", t.name));
+        }
+        if let Err(e) = w.execute_batch(&sql) {
+            let _ = w.execute_batch("ROLLBACK");
+            self.legacy_open.store(false, Ordering::SeqCst);
+            return Err(e.to_string());
+        }
+        Ok(())
+    }
+
+    /// 写一页旧表行（列序 = [schema::TABLES] 里该表的列序）。
+    pub fn legacy_page(&self, table: &str, page: &[u8]) -> Result<usize, String> {
+        if !self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import not started".into());
+        }
+        let t = schema::table(table).ok_or_else(|| format!("unknown srs table {table}"))?;
+        let (n_cols, rows) = rows::decode(page)?;
+        if n_cols != t.columns.len() && !rows.is_empty() {
+            return Err(format!(
+                "{table}: page has {n_cols} columns, expected {}",
+                t.columns.len()
+            ));
+        }
+        let w = self.writer()?;
+        let marks = vec!["?"; t.columns.len()].join(", ");
+        let sql = format!(
+            "INSERT INTO {} ({}) VALUES ({marks})",
+            t.name,
+            t.columns.join(", ")
+        );
+        let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
+        for row in &rows {
+            stmt.execute(rusqlite::params_from_iter(row.iter()))
+                .map_err(|e| format!("{table}: {e}"))?;
+        }
+        Ok(rows.len())
+    }
+
+    /// 写标记并提交。
+    pub fn legacy_commit(&self) -> Result<(), String> {
+        if !self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import not started".into());
+        }
+        let w = self.writer()?;
+        let result = Self::set_meta(&w, LEGACY_KEY, "1").and_then(|_| {
+            w.execute_batch("COMMIT").map_err(|e| e.to_string())
+        });
+        if result.is_err() {
+            let _ = w.execute_batch("ROLLBACK");
+        }
+        self.legacy_open.store(false, Ordering::SeqCst);
+        result
+    }
+
+    pub fn legacy_abort(&self) -> Result<(), String> {
+        if !self.legacy_open.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        let w = self.writer()?;
+        w.execute_batch("ROLLBACK").map_err(|e| e.to_string())
+    }
+
+    /// 主库里本来就没有 SRS 表（新装）：直接写标记。
+    pub fn legacy_mark_none(&self) -> Result<(), String> {
+        let w = self.writer()?;
+        Self::set_meta(&w, LEGACY_KEY, "0")
+    }
+
+    // ------------------------------------------------------------ 备份快照
+
+    /// `VACUUM INTO` 一份一致快照（读连接上做：不挡写）。`strip_device_local` 时在快照里清空
+    /// 5 张设备本地表（本机状态、发件箱元信息、留存批次、两张缓存），与通用备份的规则一致。
+    pub fn snapshot_into(&self, target: &Path, strip_device_local: bool) -> Result<(), String> {
+        if target.exists() {
+            return Err(format!("{} already exists", target.display()));
+        }
+        let target_str = target
+            .to_str()
+            .ok_or_else(|| "snapshot path is not UTF-8".to_string())?;
+        {
+            let r = self.reader()?;
+            r.execute("VACUUM INTO ?1", [target_str])
+                .map_err(|e| e.to_string())?;
+        }
+        if strip_device_local {
+            let snap = Connection::open(target).map_err(|e| e.to_string())?;
+            snap.execute_batch(
+                "BEGIN; DELETE FROM srs_event_local; DELETE FROM srs_local_state; \
+                 DELETE FROM srs_sent_batches; DELETE FROM srs_notes_cache; \
+                 DELETE FROM srs_cards_cache; DELETE FROM srs_meta WHERE key = 'legacy_import'; \
+                 COMMIT; VACUUM;",
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
+    // ------------------------------------------------------------ Drift 执行器（§5 过渡层）
+
+    /// 在写连接上执行一条语句（Drift `QueryDelegate` 的后端；事务由 Drift 用 BEGIN / COMMIT
+    /// 语句开关，同一条连接上的 Rust 命令看得见事务里未提交的行）。
+    ///
+    /// 返回页：查询 = 首行列名 + 结果行；其它 = 一行 `[变更行数, last_insert_rowid]`。
+    pub fn exec(&self, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        let w = self.writer()?;
+        Self::exec_on(&w, sql, params, select)
+    }
+
+    fn exec_on(conn: &Connection, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
+        let mut stmt = conn.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
+        if !select {
+            let changes = stmt
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .map_err(|e| format!("{e} in {sql}"))?;
+            return Ok(rows::encode(
+                2,
+                &[vec![
+                    Value::Integer(changes as i64),
+                    Value::Integer(conn.last_insert_rowid()),
+                ]],
+            ));
+        }
+        let n = stmt.column_count();
+        let names: Vec<Value> = stmt
+            .column_names()
+            .iter()
+            .map(|c| Value::Text((*c).to_string()))
+            .collect();
+        let mut out = Vec::with_capacity(4096);
+        out.extend_from_slice(&0u32.to_le_bytes());
+        out.extend_from_slice(&(n as u32).to_le_bytes());
+        for v in &names {
+            rows::push_value(&mut out, v.into());
+        }
+        let mut count: u32 = 1;
+        let mut q = stmt
+            .query(rusqlite::params_from_iter(params.iter()))
+            .map_err(|e| format!("{e} in {sql}"))?;
+        while let Some(row) = q.next().map_err(|e| e.to_string())? {
+            for i in 0..n {
+                rows::push_value(&mut out, row.get_ref(i).map_err(|e| e.to_string())?);
+            }
+            count += 1;
+        }
+        out[0..4].copy_from_slice(&count.to_le_bytes());
+        Ok(out)
+    }
+
+    /// Drift 的批量语句：`statements[i]` 配若干组参数，按给定顺序执行（调用方已在事务里）。
+    pub fn exec_batch(&self, statements: &[&str], applications: &[(usize, Vec<Value>)]) -> Result<(), String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        let w = self.writer()?;
+        for (index, args) in applications {
+            let sql = statements
+                .get(*index)
+                .ok_or_else(|| format!("batch statement index {index} out of range"))?;
+            let mut stmt = w.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?;
+            stmt.execute(rusqlite::params_from_iter(args.iter()))
+                .map_err(|e| format!("{e} in {sql}"))?;
+        }
+        Ok(())
+    }
+
+    /// 写连接当前是否在事务里（Drift 打开时校验、测试用）。
+    pub fn in_transaction(&self) -> Result<bool, String> {
+        Ok(!self.writer()?.is_autocommit())
+    }
+
+    // ------------------------------------------------------------ 直读命令
+
+    /// 卡片历史的当前状态，直接从写连接读日志（看得见 Drift 事务里未提交的行）：
+    /// `groups[g]` 是第 g 份历史的血统（自己 + 全部前身的卡 ID）。输出布局同
+    /// `history::encode_states`。日志原文与服务器时刻一条 JOIN 取出，不跨 isolate、不回 Dart。
+    pub fn history_states(&self, groups: &[Vec<String>]) -> Result<Vec<u8>, String> {
+        let w = self.writer()?;
+        let mut wanted: Vec<&str> = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for g in groups {
+            for c in g {
+                if seen.insert(c.as_str()) {
+                    wanted.push(c.as_str());
+                }
+            }
+        }
+        let mut logs: std::collections::HashMap<String, Vec<(String, Option<i64>)>> =
+            std::collections::HashMap::with_capacity(wanted.len());
+        for chunk in wanted.chunks(500) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "SELECT l.card_id, l.json, e.server_time FROM srs_review_logs l                  LEFT JOIN srs_event_local e ON e.event_id = l.id WHERE l.card_id IN ({marks})"
+            );
+            let mut stmt = w.prepare_cached(&sql).map_err(|e| e.to_string())?;
+            let mut q = stmt
+                .query(rusqlite::params_from_iter(chunk.iter()))
+                .map_err(|e| e.to_string())?;
+            while let Some(row) = q.next().map_err(|e| e.to_string())? {
+                let card: String = row.get(0).map_err(|e| e.to_string())?;
+                let json: String = row.get(1).map_err(|e| e.to_string())?;
+                let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
+                logs.entry(card).or_default().push((json, st));
+            }
+        }
+        drop(w);
+        let empty: Vec<(String, Option<i64>)> = Vec::new();
+        let mut states = Vec::with_capacity(groups.len());
+        for g in groups {
+            let mut jsons: Vec<&str> = Vec::new();
+            let mut servers: Vec<Option<i64>> = Vec::new();
+            for c in g {
+                for (j, s) in logs.get(c).unwrap_or(&empty) {
+                    jsons.push(j);
+                    servers.push(*s);
+                }
+            }
+            states.push(crate::history::state_from_json(&jsons, &servers)?);
+        }
+        Ok(crate::history::encode_states(&states))
+    }
+
+    // ------------------------------------------------------------ 测试 / 诊断
+
+    /// 在读连接上跑一条只读 SQL，结果按 [rows] 编码；第一行是列名（文本）。只给测试与诊断用：
+    /// 产品代码一律走粗粒度命令。
+    pub fn debug_query(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        query_rows(&*self.reader()?, sql, params)
+    }
+
+    /// 另开一条只读连接、开读事务并先读一次（快照在第一次读时才定下）：返回时快照已定，之后本库的
+    /// 新写入都不在里面。备份读快照用（后台 isolate 里分页读二三十秒，不占读 / 写连接）。
+    pub fn read_session(&self) -> Result<ReadSession, String> {
+        let conn = Connection::open_with_flags(
+            &self.path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(|e| format!("open read session {}: {e}", self.path.display()))?;
+        configure(&conn)?;
+        conn.execute_batch("BEGIN").map_err(|e| e.to_string())?;
+        conn.query_row("SELECT COUNT(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
+            .map_err(|e| e.to_string())?;
+        Ok(ReadSession { conn })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ffsrs_store_{}_{}_{}",
+            name,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("srs.db")
+    }
+
+    fn count(core: &SrsCore, table: &str) -> i64 {
+        core.reader()
+            .unwrap()
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
+            .unwrap()
+    }
+
+    #[test]
+    fn open_creates_schema_and_is_idempotent() {
+        let p = temp("open");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            assert!(!core.legacy_imported().unwrap());
+            for t in schema::TABLES {
+                assert_eq!(count(&core, t.name), 0);
+            }
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let idx: i64 = core
+            .reader()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name LIKE 'idx_srs_%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 12);
+    }
+
+    #[test]
+    fn schema_v1_database_upgrades_to_v2_indexes() {
+        let p = temp("schema_v1");
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.writer()
+                .unwrap()
+                .execute_batch(
+                    "DROP INDEX idx_srs_field_edits_profile_register; DROP INDEX idx_srs_notes_cache_type; \
+                     DROP INDEX idx_srs_notes_cache_pending; UPDATE srs_meta SET value = '1' WHERE key = 'schema';",
+                )
+                .unwrap();
+        }
+        let core = SrsCore::open(&p).unwrap();
+        let r = core.reader().unwrap();
+        let n: i64 = r
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN \
+                 ('idx_srs_field_edits_profile_register','idx_srs_notes_cache_type','idx_srs_notes_cache_pending')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3);
+        let v: String = r
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(v, schema::SCHEMA_VERSION.to_string());
+    }
+
+    #[test]
+    fn legacy_import_roundtrip_and_rollback() {
+        let p = temp("legacy");
+        let core = SrsCore::open(&p).unwrap();
+        let page = rows::encode(
+            3,
+            &[
+                vec![Value::Text("e1".into()), Value::Text("p".into()), Value::Text("{}".into())],
+                vec![Value::Text("e2".into()), Value::Text("p".into()), Value::Text("{\"a\":1}".into())],
+            ],
+        );
+        core.legacy_begin().unwrap();
+        assert_eq!(core.legacy_page("srs_unknown_events", &page).unwrap(), 2);
+        core.legacy_abort().unwrap();
+        assert_eq!(count(&core, "srs_unknown_events"), 0);
+        assert!(!core.legacy_imported().unwrap());
+
+        core.legacy_begin().unwrap();
+        core.legacy_page("srs_unknown_events", &page).unwrap();
+        assert!(core.legacy_page("srs_nope", &page).is_err());
+        let bad_cols = rows::encode(2, &[vec![Value::Text("x".into()), Value::Null]]);
+        assert!(core.legacy_page("srs_unknown_events", &bad_cols).is_err());
+        core.legacy_commit().unwrap();
+        assert!(core.legacy_imported().unwrap());
+        assert_eq!(count(&core, "srs_unknown_events"), 2);
+        assert!(core.legacy_begin().is_err());
+    }
+
+    #[test]
+    fn snapshot_strips_device_local_tables() {
+        let p = temp("snap");
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_begin().unwrap();
+        core.legacy_page(
+            "srs_local_state",
+            &rows::encode(2, &[vec![Value::Text("p".into()), Value::Text("{}".into())]]),
+        )
+        .unwrap();
+        core.legacy_page(
+            "srs_unknown_events",
+            &rows::encode(
+                3,
+                &[vec![Value::Text("e".into()), Value::Text("p".into()), Value::Text("{}".into())]],
+            ),
+        )
+        .unwrap();
+        core.legacy_commit().unwrap();
+        let snap = p.with_file_name("snap.db");
+        core.snapshot_into(&snap, true).unwrap();
+        let s = SrsCore::open(&snap).unwrap();
+        assert_eq!(count(&s, "srs_local_state"), 0);
+        assert_eq!(count(&s, "srs_unknown_events"), 1);
+        assert!(!s.legacy_imported().unwrap());
+    }
+
+    #[test]
+    fn read_session_reads_one_snapshot_and_rejects_writes() {
+        let p = temp("session");
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        let ins = |id: &str| {
+            core.writer()
+                .unwrap()
+                .execute(
+                    "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, 'p', '{}')",
+                    [id],
+                )
+                .unwrap();
+        };
+        ins("e1");
+        let s = core.read_session().unwrap();
+        ins("e2");
+        let count = |s: &ReadSession| {
+            let (_, rows) =
+                rows::decode(&s.query("SELECT COUNT(*) AS c FROM srs_unknown_events", &[]).unwrap()).unwrap();
+            rows[1][0].clone()
+        };
+        assert_eq!(count(&s), Value::Integer(1), "会话开始之后的写入不在快照里");
+        assert!(s.query("DELETE FROM srs_unknown_events", &[]).is_err());
+        drop(s);
+        assert_eq!(count(&core.read_session().unwrap()), Value::Integer(2));
+    }
+
+    #[test]
+    fn debug_query_rejects_writes_and_encodes_header() {
+        let p = temp("dbg");
+        let core = SrsCore::open(&p).unwrap();
+        assert!(core.debug_query("DELETE FROM srs_meta", &[]).is_err());
+        let out = core
+            .debug_query("SELECT key, value FROM srs_meta WHERE key = ?1", &[Value::Text("schema".into())])
+            .unwrap();
+        let (cols, rows) = rows::decode(&out).unwrap();
+        assert_eq!(cols, 2);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0][0], Value::Text("key".into()));
+        assert_eq!(rows[1][1], Value::Text(schema::SCHEMA_VERSION.to_string()));
+    }
+}
+
+#[cfg(test)]
+mod exec_tests {
+    use super::*;
+
+    #[test]
+    fn exec_select_insert_and_transactions() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_exec_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        core.exec("BEGIN", &[], false).unwrap();
+        assert!(core.in_transaction().unwrap());
+        let r = core
+            .exec(
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?1, ?2, ?3)",
+                &[Value::Text("a".into()), Value::Text("p".into()), Value::Text("{}".into())],
+                false,
+            )
+            .unwrap();
+        let (_, rows) = rows::decode(&r).unwrap();
+        assert_eq!(rows[0][0], Value::Integer(1));
+        // 同一条连接，事务里看得见。
+        let s = core.exec("SELECT id FROM srs_unknown_events", &[], true).unwrap();
+        let (cols, rows) = rows::decode(&s).unwrap();
+        assert_eq!(cols, 1);
+        assert_eq!(rows.len(), 2);
+        core.exec("ROLLBACK", &[], false).unwrap();
+        assert!(!core.in_transaction().unwrap());
+        core.exec_batch(
+            &["INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES (?, 'p', '{}')"],
+            &[(0, vec![Value::Text("b".into())]), (0, vec![Value::Text("c".into())])],
+        )
+        .unwrap();
+        let s = core.exec("SELECT COUNT(*) FROM srs_unknown_events", &[], true).unwrap();
+        let (_, rows) = rows::decode(&s).unwrap();
+        assert_eq!(rows[1][0], Value::Integer(2));
+        assert!(core.exec("SELECT nope", &[], true).is_err());
+    }
+}
+
+#[cfg(test)]
+mod direct_tests {
+    use super::*;
+
+    #[test]
+    fn history_states_reads_uncommitted_logs_on_the_writer() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_hist_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        let core = SrsCore::open(&p).unwrap();
+        core.legacy_mark_none().unwrap();
+        // 没有日志：新卡状态。
+        let empty = core.history_states(&[vec!["c1".into()]]).unwrap();
+        let expect_new = crate::history::encode_states(&[
+            crate::history::state_from_json(&[], &[]).unwrap(),
+        ]);
+        assert_eq!(empty, expect_new);
+        core.exec("BEGIN", &[], false).unwrap();
+        core.exec(
+            "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, \
+             review_type, origin, duration_ms, json) VALUES ('x', 'p', 'c1', 'k', NULL, 0, 'r', 'o', 0, 'not json')",
+            &[],
+            false,
+        )
+        .unwrap();
+        // 事务里新插的那行（坏 JSON）被读到了 → 解析报错。
+        assert!(core.history_states(&[vec!["c1".into()]]).is_err());
+        core.exec("ROLLBACK", &[], false).unwrap();
+        assert_eq!(core.history_states(&[vec!["c1".into()]]).unwrap(), expect_new);
+    }
+}
+
+#[cfg(test)]
+mod close_tests {
+    use super::*;
+
+    #[test]
+    fn closing_folds_the_wal_back_into_the_main_file() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_close_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("srs.db");
+        let _ = std::fs::remove_file(&p);
+        {
+            let core = SrsCore::open(&p).unwrap();
+            core.legacy_mark_none().unwrap();
+            core.exec(
+                "INSERT INTO srs_unknown_events (id, profile_uid, json) VALUES ('a', 'p', '{}')",
+                &[],
+                false,
+            )
+            .unwrap();
+        }
+        assert!(!p.with_file_name("srs.db-wal").exists(), "WAL left behind after close");
+        // 只拷主文件也拿得到数据。
+        let copy = dir.join("copy.db");
+        std::fs::copy(&p, &copy).unwrap();
+        let c = SrsCore::open(&copy).unwrap();
+        let n: i64 = c
+            .reader()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM srs_unknown_events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+    }
+}

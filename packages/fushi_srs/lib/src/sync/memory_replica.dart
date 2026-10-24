@@ -10,6 +10,7 @@ import '../entities.dart';
 import '../event_store.dart';
 import '../field_edit.dart';
 import '../hlc.dart';
+import '../register_kernel.dart';
 import '../review_log.dart';
 import 'sync_engine.dart';
 
@@ -79,10 +80,8 @@ class SrsMemoryReplica implements SrsSyncReplica {
     Object? value, {
     bool machine = false,
   }) {
-    final SrsRegister current =
-        store.editsOf(kind, entityId)[key] ??
-        srsResolveRegister('', const <SrsFieldEdit>[]);
-    if (srsEditIsNoop(current, value)) return null;
+    final SrsRegister? current = store.editsOf(kind, entityId)[key];
+    if (current != null && srsEditIsNoop(current, value)) return null;
     final (int now, SrsTimeSource src) = trustedNow();
     writer.adopt(store.seenContext);
     final SrsFieldEdit e = writer.create(

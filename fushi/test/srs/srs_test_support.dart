@@ -2,11 +2,15 @@
 //
 // 假内核与 test/srs/srs_pages_test.dart、packages/fushi_engine/test/srs/srs_db_store_test.dart
 // 同一套数值（真实数值由 packages/fushi_srs 的 FFI 测试覆盖）。
+import 'dart:io';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
+import 'package:flutter_test/flutter_test.dart' show addTearDown;
 import 'package:fushi_srs/fushi_srs.dart';
 
 const String kSrsTestProfile = '01928c3e-0000-7000-8000-0000000000cd';
@@ -111,18 +115,41 @@ class SrsTestClock {
   );
 }
 
-/// 内存库上的一个 store（调用方负责关库）。
+/// 临时目录里的一份 srs.db（Rust 独占连接，Drift 执行器跑在当前 isolate）。注册
+/// [addTearDown]：关存储、删目录（Windows 句柄滞后时删除失败吞掉，临时目录留给系统清理）。
+Future<SrsStorage> openSrsTestStorage() async {
+  final Directory dir = Directory.systemTemp.createTempSync('fushi_srs_test_');
+  final SrsStorage storage = await SrsStorage.open(
+    path: SrsStorage.pathIn(dir.path),
+    inline: true,
+  );
+  addTearDown(() async {
+    await storage.close();
+    try {
+      dir.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄尚未释放；临时目录留给系统清理。
+    }
+  });
+  return storage;
+}
+
+/// 内存主库 + 临时 srs.db 上的一个 store（主库由调用方关；srs.db 随 [addTearDown] 关）。
+/// [storage] 给了就用它（同一份 srs.db 上开多个 profile 的 store）。
 Future<(FushiDatabase, SrsDbStore)> openSrsTestStore({
   String profileUid = kSrsTestProfile,
   String deviceId = 'dev',
   FsrsEngine? engine = const SrsTestEngine(),
   SrsTestClock? clock,
   SrsStyleStore? styles,
+  SrsStorage? storage,
 }) async {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+  final SrsStorage srs = storage ?? await openSrsTestStorage();
   final SrsDbStore store = await SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: profileUid,
     deviceId: deviceId,
     engine: engine,

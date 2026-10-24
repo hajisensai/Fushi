@@ -727,29 +727,20 @@ class _Importer {
   }
 
   /// 本机已有的全部定义（含已删除的、内置默认值）。
+  /// 本机笔记类型里有定义的全部字段 / 模板（未删除的物化结果 + 每条定义修改记录本身，含已删除的；
+  /// 合并在字段寄存器内核里，见 [SrsNoteTypeView.definedFields]）。
   static (Map<String, SrsFieldDef>, Map<String, SrsTemplateDef>) _haveDefs(
     SrsNoteTypeView? view,
-  ) {
-    final Map<String, SrsFieldDef> fields = <String, SrsFieldDef>{
+  ) => (
+    <String, SrsFieldDef>{
       if (view != null)
-        for (final SrsFieldDef f in view.fields) f.id: f,
-    };
-    final Map<String, SrsTemplateDef> tmpls = <String, SrsTemplateDef>{
+        for (final SrsFieldDef f in view.definedFields) f.id: f,
+    },
+    <String, SrsTemplateDef>{
       if (view != null)
-        for (final SrsTemplateDef t in view.templates) t.id: t,
-    };
-    if (view == null) return (fields, tmpls);
-    for (final String key in view.edits.keys) {
-      if (key.startsWith('fieldDef/')) {
-        final String id = key.substring('fieldDef/'.length);
-        fields[id] = SrsFieldDef.fromValue(id, view.edits.value(key));
-      } else if (key.startsWith('tmplDef/')) {
-        final String id = key.substring('tmplDef/'.length);
-        tmpls[id] = SrsTemplateDef.fromValue(id, view.edits.value(key));
-      }
-    }
-    return (fields, tmpls);
-  }
+        for (final SrsTemplateDef t in view.definedTemplates) t.id: t,
+    },
+  );
 
   static List<String> _resolveFields(
     String ntId,
@@ -1865,10 +1856,11 @@ class _Importer {
           lapses: 0,
           lastRated: null,
         );
-        // native 是这张卡的整份历史（含前身卡的日志），同一张逻辑卡。
-        return nat.any(
-          (SrsReviewLog l) => srsImportEquivalent(imported, l, sameCard: true),
-        );
+        // native 是这张卡的整份历史（含前身卡的日志），同一张逻辑卡。判据在卡片历史内核里
+        // （与历史选取里的等价导入同一个函数）；这张卡本来就要单独读一次历史，判重随它一次 FFI。
+        return srsImportEquivalentAny(<(SrsReviewLog, List<SrsReviewLog>)>[
+          (imported, nat),
+        ]).single;
       },
     );
     if (!d.write) return;

@@ -9,8 +9,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
@@ -20,6 +18,7 @@ import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 import 'support/srs_query_counter.dart';
+import 'support/srs_test_storage.dart';
 
 const String kUid = '01928c3e-0000-7000-8000-0000000b1a51';
 
@@ -33,12 +32,21 @@ class ScaleFixture {
 
   static Future<ScaleFixture> open({required int notes}) async {
     final CountingInterceptor counter = CountingInterceptor();
-    final FushiDatabase db = FushiDatabase.forTesting(
-      NativeDatabase.memory().interceptWith(counter),
+    final Directory tmp = Directory.systemTemp.createTempSync('srs_scale_');
+    addTearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 句柄晚释放。
+      }
+    });
+    final TestSrs srs = await openTestSrsAt(
+      '${tmp.path}/srs.db',
+      interceptor: counter,
     );
-    addTearDown(db.close);
     final SrsDbStore s = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: kUid,
       deviceId: 'dev',
       engine: const FakeFsrsEngine(),

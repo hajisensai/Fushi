@@ -14,10 +14,10 @@ library;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
 
 void main() {
   final String? source = Platform.environment['FUSHI_SRS_OPEN_BENCH_DB'];
@@ -27,9 +27,9 @@ void main() {
   test(
     'review page first card timing',
     () async {
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase.createInBackground(File(source!)),
-      );
+      // FUSHI_SRS_OPEN_BENCH_DB 指向一份 srs.db（Rust 独占库）。
+      final TestSrs srs = await openTestSrsAt(source!, inline: false);
+      final SrsDatabase db = srs.db;
       final String profileUid =
           (await db
                   .customSelect(
@@ -39,6 +39,7 @@ void main() {
               .read<String>('profile_uid');
       final SrsDbStore store = await SrsDbStore.open(
         db: db,
+        core: srs.core,
         profileUid: profileUid,
         deviceId: 'bench',
       );

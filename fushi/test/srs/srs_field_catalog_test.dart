@@ -55,7 +55,7 @@ void main() {
     const SrsFieldDef f = SrsFieldDef(id: 'x', name: 'N', ord: 0, ankiNum: 7);
     final SrsFieldDef d = f.copyWith(description: '说明');
     expect(d.toValue().containsKey('description'), isFalse);
-    expect(SrsFieldDef.fromValue('x', d.toValue()).description, '');
+    expect(d.toValue(), <String, Object?>{'name': 'N', 'ord': 0, 'ankiNum': 7});
     expect(d.copyWith(name: 'M').description, '说明');
   });
 }

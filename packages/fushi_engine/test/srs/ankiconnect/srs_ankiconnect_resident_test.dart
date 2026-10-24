@@ -4,19 +4,21 @@
 // 判据：同一个 store 上，一直用着的 handler（常驻状态在变更前已经建好、查询已经记忆过）与每次
 // 新建的 handler（没有任何常驻状态，等价于旧实现的每请求整库读）对同一组请求的回答相同。
 // 变更都绕过 handler 直接打在 store 上（同步、复习页、浏览页、导入都是这样写库的）。
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import '../support/srs_bulk_fixture.dart';
 import '../support/srs_fake_engine.dart';
 import '../support/srs_query_counter.dart';
+import '../support/srs_test_storage.dart';
 import 'ankiconnect_harness.dart' show kAcProfile, yomitanNote;
 
 void main() {
@@ -112,11 +114,11 @@ void main() {
   }
 
   setUp(() async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+    final SrsStorage srs = await openTestSrsStorage();
     t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
     store = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: kAcProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),
@@ -351,12 +353,21 @@ void main() {
 
   test('未知整数 id：不重建索引，直接回空', () async {
     final CountingInterceptor counter = CountingInterceptor();
-    final FushiDatabase db = FushiDatabase.forTesting(
-      NativeDatabase.memory().interceptWith(counter),
+    final Directory dir = Directory.systemTemp.createTempSync('srs_ac_');
+    addTearDown(() {
+      try {
+        dir.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 句柄晚释放。
+      }
+    });
+    final TestSrs srs = await openTestSrsAt(
+      '${dir.path}/srs.db',
+      interceptor: counter,
     );
-    addTearDown(db.close);
     final SrsDbStore s = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: kAcProfile,
       deviceId: 'dev',
       fallbackRolloverHour: () => 4,

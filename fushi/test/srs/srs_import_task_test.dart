@@ -32,6 +32,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -481,12 +482,18 @@ void main() {
       final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
         () async {
           final FushiDatabase db = FushiDatabase.forTesting(
-            NativeDatabase.createInBackground(File('${tmp.path}/srs.db')),
+            NativeDatabase.memory(),
           );
+          // 与 app 同一种连接：srs.db 上的语句跨 isolate 在 Rust 连接上执行。
+          final SrsStorage srs = await SrsStorage.open(
+            path: SrsStorage.pathIn(tmp.path),
+          );
+          addTearDown(() => tester.runAsync(srs.close));
           return (
             db,
             await SrsDbStore.open(
-              db: db,
+              db: srs.db,
+              core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',
               engine: const SrsTestEngine(),
@@ -756,12 +763,18 @@ void main() {
       final (FushiDatabase db, SrsDbStore store) = (await tester.runAsync(
         () async {
           final FushiDatabase db = FushiDatabase.forTesting(
-            NativeDatabase.createInBackground(File('${tmp.path}/srs.db')),
+            NativeDatabase.memory(),
           );
+          // 与 app 同一种连接：srs.db 上的语句跨 isolate 在 Rust 连接上执行。
+          final SrsStorage srs = await SrsStorage.open(
+            path: SrsStorage.pathIn(tmp.path),
+          );
+          addTearDown(() => tester.runAsync(srs.close));
           return (
             db,
             await SrsDbStore.open(
-              db: db,
+              db: srs.db,
+              core: srs.core,
               profileUid: kSrsTestProfile,
               deviceId: 'dev',
               engine: const SrsTestEngine(),

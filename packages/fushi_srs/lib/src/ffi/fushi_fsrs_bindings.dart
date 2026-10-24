@@ -184,6 +184,138 @@ typedef _DupeNormDart =
       int,
       ffi.Pointer<ffi.Size>,
     );
+typedef _HistoryStatesC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistoryStatesDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistorySelectC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _HistorySelectDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _ImportEquivalentC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _ImportEquivalentDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MemoryInputC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Int32,
+      ffi.Int32,
+      ffi.Int32,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MemoryInputDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      int,
+      int,
+      int,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _RwkvNowRowsC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Int32,
+      ffi.Int32,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _RwkvNowRowsDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Int64>,
+      int,
+      int,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MaterializeC =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint8>,
+      ffi.Size,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      ffi.Size,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
+typedef _MaterializeDart =
+    ffi.Pointer<ffi.Uint8> Function(
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint8>,
+      int,
+      ffi.Pointer<ffi.Uint32>,
+      ffi.Pointer<ffi.Int64>,
+      int,
+      ffi.Pointer<ffi.Size>,
+      ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    );
 typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
 
@@ -242,7 +374,28 @@ class FushiFsrsBindings {
       ffsrs_search_dupe_norm_batch = lib
           .lookupFunction<_DupeNormC, _DupeNormDart>(
             'ffsrs_search_dupe_norm_batch',
-          );
+          ),
+      ffsrs_history_states = lib
+          .lookupFunction<_HistoryStatesC, _HistoryStatesDart>(
+            'ffsrs_history_states',
+          ),
+      ffsrs_history_select = lib
+          .lookupFunction<_HistorySelectC, _HistorySelectDart>(
+            'ffsrs_history_select',
+          ),
+      ffsrs_import_equivalent = lib
+          .lookupFunction<_ImportEquivalentC, _ImportEquivalentDart>(
+            'ffsrs_import_equivalent',
+          ),
+      ffsrs_materialize = lib.lookupFunction<_MaterializeC, _MaterializeDart>(
+        'ffsrs_materialize',
+      ),
+      ffsrs_memory_input = lib.lookupFunction<_MemoryInputC, _MemoryInputDart>(
+        'ffsrs_memory_input',
+      ),
+      ffsrs_rwkv_now_rows = lib.lookupFunction<_RwkvNowRowsC, _RwkvNowRowsDart>(
+        'ffsrs_rwkv_now_rows',
+      );
 
   /// 请求 JSON → 响应 JSON（`{"ok":…}` / `{"error":"…"}`）。
   final ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char> request)
@@ -392,4 +545,89 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Size> outLen,
   )
   ffsrs_search_dupe_norm_batch;
+
+  /// 卡片历史（落库 JSON）→ 当前状态，批量；布局见 native/fushi_fsrs/src/history.rs
+  /// `states_from_json`。成功返回缓冲区（[ffsrs_free_bytes] 释放），失败返回空指针并写错误串
+  /// （[ffsrs_free_string] 释放）。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    ffi.Pointer<ffi.Int64> serverTimes,
+    int nLogs,
+    ffi.Pointer<ffi.Uint32> groups,
+    int nGroups,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_history_states;
+
+  /// 卡片历史（列模式）→ 排序与选取标记，批量；布局见 history.rs `select_columns`。
+  /// 释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Int64> ints,
+    int nLogs,
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    ffi.Pointer<ffi.Uint32> groups,
+    int nGroups,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_history_select;
+
+  /// Anki 导入器入库前判重（每组：导入日志 + 原生日志，落库 JSON）→ 每组一个字节，批量；
+  /// 布局见 history.rs `import_equivalent_any`。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    int nLogs,
+    ffi.Pointer<ffi.Uint32> groups,
+    int nGroups,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_import_equivalent;
+
+  /// 修改记录（落库 JSON）→ 寄存器与物化视图，批量；布局见 registers.rs `materialize`
+  /// （组描述 JSON + 项原文 + 服务器时刻，结果是 JSON）。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Uint8> header,
+    int headerLen,
+    ffi.Pointer<ffi.Uint8> text,
+    int textLen,
+    ffi.Pointer<ffi.Uint32> offsets,
+    ffi.Pointer<ffi.Int64> serverTimes,
+    int nItems,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_materialize;
+
+  /// 记忆状态输入（铁律 A，`projection.rs` `memory_input_columns`）：一份历史的有效日志（列模式，
+  /// 已排序）→ 评审序列与起点。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Int64> ints,
+    int nLogs,
+    int algorithm,
+    int utcOffsetMin,
+    int rolloverHour,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_memory_input;
+
+  /// RWKV「此刻」行（ease 0，`projection.rs` `rwkv_now_rows`）：每行 9 个 i64 → 80 字节的
+  /// `FrwkvReview`。释放规则同 [ffsrs_history_states]。
+  final ffi.Pointer<ffi.Uint8> Function(
+    ffi.Pointer<ffi.Int64> ints,
+    int nRows,
+    int utcOffsetMin,
+    int rolloverHour,
+    ffi.Pointer<ffi.Size> outLen,
+    ffi.Pointer<ffi.Pointer<ffi.Char>> error,
+  )
+  ffsrs_rwkv_now_rows;
 }

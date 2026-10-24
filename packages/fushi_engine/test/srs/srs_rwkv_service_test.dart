@@ -7,13 +7,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
-import 'package:fushi_engine/srs/srs_rwkv_history.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
@@ -23,6 +21,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDay = 86400000;
@@ -193,8 +193,10 @@ class _Fixture {
     final List<int> clock = <int>[
       DateTime.utc(2026, 3, 1, 12).millisecondsSinceEpoch,
     ];
+    final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: FushiDatabase.forTesting(NativeDatabase.memory()),
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),
@@ -326,24 +328,22 @@ void main() {
       f.advance(kDay * 3);
       await f.store.answer(cards[0], 3);
       final SrsDayContext day = await f.store.dayContext();
-      final Map<String, SrsCardHistory> h = await f.store.histories(cards);
-      SrsRwkvCard card(int i) => SrsRwkvCard(
-        cardId: 10 + i,
-        noteId: 20 + i,
-        deckId: 1,
-        presetId: 1,
-        history: h[cards[i]]!,
+      List<int> ids(int i) => <int>[10 + i, 20 + i, 1, 1];
+      final SrsRwkvReplay replay = await f.store.rwkvReplay(
+        cards,
+        <int>[...ids(0), ...ids(1)],
+        day,
+        since: 0,
       );
-      final (RwkvRows rows, int? lastAt) = srsRwkvReplayRows(<SrsRwkvCard>[
-        card(0),
-        card(1),
-      ], day);
+      final RwkvRows rows = replay.rows;
       expect(rows.length, 4);
       expect(
         <int>[for (int i = 0; i < 4; i++) rows.cardIdAt(i)],
         <int>[10, 11, 10, 10],
       );
-      expect(lastAt, f.clock[0]);
+      expect(replay.lastAt, f.clock[0]);
+      expect(replay.count, 4);
+      expect(replay.strays, isEmpty);
       final ByteData b = ByteData.sublistView(rows.bytes);
       int field(int row, int index) =>
           b.getInt64(row * 80 + 8 * index, Endian.little);
@@ -360,37 +360,42 @@ void main() {
       }
 
       // 「此刻」的查询行：间隔从最后一条保留评分算，ease 0。
+      final SrsRwkvCardRows card0 = (await f.store.rwkvCardRows(
+        <String>[cards[0]],
+        ids(0),
+        day,
+      )).single;
       f.advance(kDay * 2);
-      final RwkvRows now = srsRwkvAnswerRow(
-        card(0),
+      final RwkvRows now = srsRwkvNowRows(
+        <SrsRwkvNowCard>[
+          (
+            cardId: 10,
+            noteId: 20,
+            deckId: 1,
+            presetId: 1,
+            last: card0.last,
+            queue: SrsQueue.review,
+          ),
+        ],
         nowMs: f.clock[0],
-        queue: SrsQueue.review,
         day: day,
       );
       final ByteData nb = ByteData.sublistView(now.bytes);
       expect(nb.getInt64(7 * 8, Endian.little), 2);
       expect(nb.getInt64(8 * 8, Endian.little), 2 * 86400);
+      expect(now.easeAt(0), 0);
 
       // 撤销卡 0 最后一条：保留评分少一条，「追加最后一条」不再成立。
-      final SrsReviewLog last = h[cards[0]]!.effectiveRatings.last;
-      expect(srsRwkvAppendRow(card(0), last, day), isNotNull);
-      expect(await f.store.undo(cards[0], last.id), isTrue);
-      final SrsCardHistory undone = await f.store.history(cards[0]);
-      expect(srsRwkvKeptRatings(undone), hasLength(2));
-      expect(
-        srsRwkvAppendRow(
-          SrsRwkvCard(
-            cardId: 10,
-            noteId: 20,
-            deckId: 1,
-            presetId: 1,
-            history: undone,
-          ),
-          last,
-          day,
-        ),
-        isNull,
-      );
+      final String last = card0.keptIds.last;
+      expect(card0.appendRows(<String>[last]), isNotNull);
+      expect(await f.store.undo(cards[0], last), isTrue);
+      final SrsRwkvCardRows undone = (await f.store.rwkvCardRows(
+        <String>[cards[0]],
+        ids(0),
+        day,
+      )).single;
+      expect(undone.keptIds, hasLength(2));
+      expect(undone.appendRows(<String>[last]), isNull);
     });
   });
 

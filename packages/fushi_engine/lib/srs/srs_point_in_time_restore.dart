@@ -185,17 +185,24 @@ Future<void> _restoreFields(
 
   // 备份之后才出现的笔记 / 牌组 / 笔记类型：删掉（内置行每台设备都有，不算「之后才出现」）。
   final Set<String> createdAfter = <String>{};
-  for (final SrsEntityRecord r in localRecords.values) {
-    if (!_deletableKinds.contains(r.kind)) continue;
-    if (backupEntityIds.contains(r.id) || builtinIds.contains(r.id)) continue;
+  final List<SrsEntityRecord> fresh = <SrsEntityRecord>[
+    for (final SrsEntityRecord r in localRecords.values)
+      if (_deletableKinds.contains(r.kind) &&
+          !backupEntityIds.contains(r.id) &&
+          !builtinIds.contains(r.id))
+        r,
+  ];
+  // 寄存器整批一次 FFI 调用（字段寄存器内核）。
+  final List<SrsEntityEdits> freshEdits =
+      SrsEntityEdits.buildMany(<List<SrsFieldEdit>>[
+        for (final SrsEntityRecord r in fresh)
+          localEdits[(r.kind, r.id)] ?? const <SrsFieldEdit>[],
+      ], serverTimeOf: serverTimeOf);
+  for (int i = 0; i < fresh.length; i++) {
+    final SrsEntityRecord r = fresh[i];
     createdAfter.add(r.id);
-    final List<SrsFieldEdit> edits =
-        localEdits[(r.kind, r.id)] ?? const <SrsFieldEdit>[];
-    final SrsRegister? del = SrsEntityEdits.build(
-      edits,
-      serverTimeOf: serverTimeOf,
-    )[SrsFieldKeys.deleted];
-    if (del != null && !del.conflicted && srsEffectiveDeletedAt(del) != null) {
+    final SrsRegister? del = freshEdits[i][SrsFieldKeys.deleted];
+    if (del != null && !del.conflicted && freshEdits[i].deletedAt != null) {
       continue;
     }
     specs.add(SrsEditSpec(r.kind, r.id, SrsFieldKeys.deleted, nowMs));
@@ -211,33 +218,49 @@ Future<void> _restoreFields(
     ...backupEdits.keys,
     ...localEdits.keys,
   };
-  for (final _EntityKey key in entities) {
-    final (SrsEntityKind kind, String id) = key;
-    if (createdAfter.contains(id)) continue;
-    if (kind == SrsEntityKind.card &&
-        createdAfter.contains(noteOfCard[id] ?? '')) {
-      continue;
-    }
-    final SrsEntityEdits want = SrsEntityEdits.build(
-      backupEdits[key] ?? const <SrsFieldEdit>[],
-      serverTimeOf: serverTimeOf,
-    );
-    final SrsEntityEdits have = SrsEntityEdits.build(
-      localEdits[key] ?? const <SrsFieldEdit>[],
-      serverTimeOf: serverTimeOf,
-    );
+  final List<_EntityKey> keyed = <_EntityKey>[
+    for (final _EntityKey key in entities)
+      if (!createdAfter.contains(key.$2) &&
+          !(key.$1 == SrsEntityKind.card &&
+              createdAfter.contains(noteOfCard[key.$2] ?? '')))
+        key,
+  ];
+  // 备份时与现在的寄存器各整批一次 FFI 调用（字段寄存器内核）。
+  final List<SrsEntityEdits> wants = SrsEntityEdits.buildMany(
+    <List<SrsFieldEdit>>[
+      for (final _EntityKey key in keyed)
+        backupEdits[key] ?? const <SrsFieldEdit>[],
+    ],
+    serverTimeOf: serverTimeOf,
+  );
+  final List<SrsEntityEdits> haves = SrsEntityEdits.buildMany(
+    <List<SrsFieldEdit>>[
+      for (final _EntityKey key in keyed)
+        localEdits[key] ?? const <SrsFieldEdit>[],
+    ],
+    serverTimeOf: serverTimeOf,
+  );
+  // 要改回的候选按原顺序攒着；要判 no-op 的（现值与目标比较）最后整批一次 FFI 调用。
+  final List<(SrsEditSpec, int, bool)> candidates =
+      <(SrsEditSpec, int, bool)>[];
+  final List<(SrsRegister?, Object?)> noopAsk = <(SrsRegister?, Object?)>[];
+  for (int k = 0; k < keyed.length; k++) {
+    final (SrsEntityKind kind, String id) = keyed[k];
+    final SrsEntityEdits want = wants[k];
+    final SrsEntityEdits have = haves[k];
     final Set<String> keys = <String>{...want.keys, ...have.keys};
     for (final String field in keys) {
       final SrsRegister? cur = have[field];
       final SrsRegister? had = want[field];
       final Object? target;
+      int noopAt = -1;
       if (field == SrsFieldKeys.deleted) {
         // 删除优先：备份时只要有一条没被支配的删除记录，行就是已删，不看排序赢家。
-        target = had == null ? null : srsEffectiveDeletedAt(had);
+        target = had == null ? null : want.deletedAt;
         if (cur == null) {
           if (target == null) continue;
         } else if (!cur.conflicted &&
-            (srsEffectiveDeletedAt(cur) != null) == (target != null)) {
+            (have.deletedAt != null) == (target != null)) {
           continue;
         }
       } else {
@@ -246,18 +269,24 @@ Future<void> _restoreFields(
             : _absentValue(store, localRecords[id], kind, field, cur);
         if (cur == null) {
           if (target == null) continue;
-        } else if (srsEditIsNoop(cur, target)) {
-          continue;
+        } else {
+          noopAsk.add((cur, target));
+          noopAt = noopAsk.length - 1;
         }
       }
-      if (field == SrsFieldKeys.deleted &&
+      final bool restored =
+          field == SrsFieldKeys.deleted &&
           target == null &&
           cur != null &&
-          srsEffectiveDeletedAt(cur) != null) {
-        report.entitiesRestored++;
-      }
-      specs.add(SrsEditSpec(kind, id, field, target));
+          have.deletedAt != null;
+      candidates.add((SrsEditSpec(kind, id, field, target), noopAt, restored));
     }
+  }
+  final List<bool> noop = srsEditsAreNoop(noopAsk);
+  for (final (SrsEditSpec spec, int noopAt, bool restored) in candidates) {
+    if (noopAt >= 0 && noop[noopAt]) continue;
+    if (restored) report.entitiesRestored++;
+    specs.add(spec);
   }
   if (specs.isEmpty) return;
   report.fieldEdits = (await store.writeEdits(specs)).length;
