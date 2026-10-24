@@ -339,7 +339,8 @@ class LibraryCorpusService {
   Future<CorpusQueryResult> query(
     List<String> keys, {
     int perKind = 3,
-    int perDoc = 1,
+    // 每份文档至多 2 条：一本书 / 一集里换个语境再给一句，又不至于整组被同一部作品占满。
+    int perDoc = 2,
   }) async {
     final int? address = _address;
     if (!enabled || address == null || keys.isEmpty) {
