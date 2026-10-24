@@ -1,4 +1,4 @@
-## BUG-3704 · Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内
+## BUG-3768 · Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内
 - **报告**：2026-10-24（内部：macOS 同类问题 BUG-3703 / PR #2501 修完后，补 Windows 一侧的实测）
 - **真实性**：✅ 真 bug，Windows 11 26200 实测复现。
   - runner 只在建窗时把隐藏测试窗放到 `kOffscreenOrigin`（`fushi/windows/runner/win32_window.cpp` `CreateAndShow`），之后不拦挪窗；Dart 启动时 `DesktopWindowPlacement.applyInitialPlacement()`（`fushi/lib/src/startup/desktop_window_placement.dart:92`）在隐藏模式下没有豁免，`windowManager.setBounds(initialBounds)` 把窗口居中进工作区（保存过最大化还会 `maximize()`）。

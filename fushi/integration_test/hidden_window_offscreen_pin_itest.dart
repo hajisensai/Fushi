@@ -15,7 +15,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'test_helpers.dart';
 
-/// BUG-3704: the FUSHI_TEST_HIDDEN main window must stay where the runner
+/// BUG-3768: the FUSHI_TEST_HIDDEN main window must stay where the runner
 /// parked it (off-screen at -32000) after Dart startup placement ran —
 /// `applyInitialPlacement` centres it in a work area and, with a saved
 /// maximized state, maximizes it. Before the fix the window landed on the

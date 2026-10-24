@@ -147,7 +147,7 @@ class Win32Window {
 
   bool quit_on_close_ = false;
 
-  // BUG-3704: test-mode origin every move is pinned to (WM_WINDOWPOSCHANGING,
+  // BUG-3768: test-mode origin every move is pinned to (WM_WINDOWPOSCHANGING,
   // see test_window_origin_pin.h); nullopt outside FUSHI_TEST_HIDDEN.
   std::optional<POINT> test_origin_pin_;
 

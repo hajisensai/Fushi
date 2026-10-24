@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:media_kit/media_kit.dart';
 
-/// 音频输出丢失后的自动恢复（BUG-3703）。
+/// 音频输出丢失后的自动恢复（BUG-3767）。
 ///
 /// **现场**：播放中 Windows 音频设备失效（`AUDCLNT_E_DEVICE_INVALIDATED`：默认输出
 /// 设备切换、蓝牙 / HDMI / USB 声卡掉线、被别的程序独占），mpv 的 wasapi 只重试一次，

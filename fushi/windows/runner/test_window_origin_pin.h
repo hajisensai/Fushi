@@ -5,7 +5,7 @@
 
 #include <optional>
 
-// BUG-3704: integration-test window placement (FUSHI_TEST_HIDDEN).
+// BUG-3768: integration-test window placement (FUSHI_TEST_HIDDEN).
 //
 // The runner parks the hidden test window off-screen (or, with
 // FUSHI_TEST_TOPMOST, at the requested evidence rect) once, at creation. Dart

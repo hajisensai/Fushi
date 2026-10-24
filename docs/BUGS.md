@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3370 条。点号进各自文件。
+> 共 3373 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3769](bugs/BUG-3769-browser-windows-cert-error-interstitial.md) | ✅ | ✅ | Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现 |
+| [BUG-3768](bugs/BUG-3768-win-hidden-test-window-pulled-onscreen.md) | ✅ | ✅ | Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内 |
+| [BUG-3767](bugs/BUG-3767-video-audio-output-lost-never-recovers.md) | ✅ | ✅ | 播放中音频设备失效后视频永久没声音，只能重启 app |
 | [BUG-3766](bugs/BUG-3766-scrape-summary-hides-pending-backlog.md) | ✅ | ✅ | scrape-summary-hides-pending-backlog |
 | [BUG-3765](bugs/BUG-3765-dictionary-content-network-egress.md) | ✅ | ✅ | dictionary-content-network-egress |
 | [BUG-3764](bugs/BUG-3764-tmdb-parent-series-year-leaks.md) | ✅ | ✅ | tmdb-parent-series-year-leaks |
@@ -101,24 +104,6 @@
 | [BUG-3705](bugs/BUG-3705-srs-sentence-target-word-not-highlighted.md) | ✅ | ✅ | 例句中目标词不高亮 |
 | [BUG-3704](bugs/BUG-3704-srs-review-space-dead-after-grading.md) | ✅ | ✅ | 评分后下一张卡「显示答案」空格失灵 |
 | [BUG-3703](bugs/BUG-3703-srs-review-gif-not-synced-with-sentence.md) | ✅ | ✅ | 复习卡动图不与例句音频联动 |
-> 共 3310 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3706](bugs/BUG-3706-browser-windows-cert-error-interstitial.md) | ✅ | ✅ | Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现 |
-| [BUG-3705](bugs/BUG-3705-android-youtube-system-proxy.md) | ✅ | ✅ | Android 上 YouTube「用 Fushi 播放」报无法获取视频流（Dart 出站没走 Wi-Fi 系统代理） |
-| [BUG-3704](bugs/BUG-3704-browser-android-fullscreen-frozen.md) | ✅ | ✅ | 应用内浏览器 Android 上网页全屏冻结、退不出（YouTube 画质菜单点不开） |
-| [BUG-3703](bugs/BUG-3703-browser-new-window-blank.md) | ✅ | ✅ | 应用内浏览器里新窗口（target=_blank / window.open）打不开 |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3704](bugs/BUG-3704-win-hidden-test-window-pulled-onscreen.md) | ✅ | ✅ | Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内 |
-> 共 3307 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3703](bugs/BUG-3703-video-audio-output-lost-never-recovers.md) | ✅ | ✅ | 播放中音频设备失效后视频永久没声音，只能重启 app |
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |

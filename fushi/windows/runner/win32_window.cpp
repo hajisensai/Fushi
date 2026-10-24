@@ -225,7 +225,7 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
 
   ApplyTestTopmostPlacement(window);
 
-  // BUG-3704: armed only now, after the runner's own placement above; from
+  // BUG-3768: armed only now, after the runner's own placement above; from
   // here on every move (Dart startup placement, window_manager, DPI change)
   // keeps this origin. See test_window_origin_pin.h.
   const std::optional<RECT> topmost = ReadTestTopmostSpec();
@@ -281,7 +281,7 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
     EnableFullDpiSupportIfAvailable(window);
     that->window_handle_ = window;
   } else if (Win32Window* that = GetThisFromHandle(window)) {
-    // BUG-3704: rewrite before any handler sees the request — plugins answer
+    // BUG-3768: rewrite before any handler sees the request — plugins answer
     // top-level messages first in FlutterWindow::MessageHandler and could
     // otherwise consume it. Not consumed here; dispatch continues as usual.
     if (message == WM_WINDOWPOSCHANGING) {

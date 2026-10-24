@@ -8,7 +8,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as p;
 
-/// BUG-3703：播放中 Windows 音频设备失效（AUDCLNT_E_DEVICE_INVALIDATED → 重试撞上
+/// BUG-3767：播放中 Windows 音频设备失效（AUDCLNT_E_DEVICE_INVALIDATED → 重试撞上
 /// AUDCLNT_E_DEVICE_IN_USE），mpv 报 `Could not open/initialize audio device -> no
 /// sound.` 并取消选中音轨，视频照放、声音永久消失，只能重启 app。
 ///

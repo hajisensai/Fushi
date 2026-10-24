@@ -204,7 +204,7 @@ add_custom_target(fushi_windows_activation_policy_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
 
-# BUG-3704: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
+# BUG-3768: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
 # Dart startup placement (setBounds / maximize) otherwise pulls it onto the
 # user's desktop. Keep the pin policy executable on every Windows runner build.
 add_executable(fushi_windows_test_window_origin_pin_test

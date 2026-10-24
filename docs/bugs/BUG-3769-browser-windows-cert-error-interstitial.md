@@ -1,4 +1,4 @@
-## BUG-3706 · Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现
+## BUG-3769 · Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现
 - **报告**：2026-10-24（用户：浏览器已知问题之一——Windows 上证书错误显示 WebView2 自带的拦截页，不是 app 的失败页）
 - **真实性**：✅ 真 bug，两段都在 Windows fork（`packages/flutter_inappwebview_windows`）：
   1. 原生 `NavigationCompleted`（`windows/in_app_webview/in_app_webview.cpp`，原 `else if (!InAppWebView::isSslError(webErrorType) && navigationAction)`）把 `COREWEBVIEW2_WEB_ERROR_STATUS` 1–5（证书错误）滤掉，留给上游从未实现的 ServerTrustAuth 回调，`onReceivedError` 根本不发。
