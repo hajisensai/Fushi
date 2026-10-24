@@ -67,6 +67,9 @@ class SubsonicApiException implements Exception {
   }
 }
 
+/// 单个请求的响应超时（流媒体本身不经这里：流地址交给 mpv）。
+const Duration kSubsonicRequestTimeout = Duration(seconds: 15);
+
 class SubsonicMusicClient implements MusicServerBrowser {
   SubsonicMusicClient(
     SubsonicServerConfig config, {
@@ -142,7 +145,9 @@ class SubsonicMusicClient implements MusicServerBrowser {
     final Uri uri = _methodUri(method, extra);
     final http.Response res;
     try {
-      res = await _client.get(uri);
+      // 响应超时与视频的 JellyfinApi 同口径：服务器 TCP 可连但不回响应（NAS 半死 / 反代挂起）
+      // 时连接超时完全不触发，页面会永远转圈。
+      res = await _client.get(uri).timeout(kSubsonicRequestTimeout);
     } on http.ClientException catch (e) {
       // ClientException.message 常带完整 URL（含凭据 query）。
       throw http.ClientException(redactSubsonicCredentials(e.message));
