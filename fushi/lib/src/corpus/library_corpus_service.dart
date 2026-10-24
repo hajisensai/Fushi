@@ -217,6 +217,7 @@ class LibraryCorpusService {
     on(db.musicLyrics, CorpusSourceKind.music);
     on(db.musicTracks, CorpusSourceKind.music);
     on(db.galgames, CorpusSourceKind.game);
+    on(db.galgameTextLines, CorpusSourceKind.game);
     _signatureWatch ??= Timer.periodic(_signaturePollInterval, (_) {
       final String? signature = _normalizer.signature;
       if (signature != null && signature != _reconciledSignature) {
@@ -309,6 +310,20 @@ class LibraryCorpusService {
 
   static CorpusStats _statsOp(FushiCorpusIndex i) => i.stats();
 
+  static CorpusDocument? Function(FushiCorpusIndex) _exportOp(
+    CorpusSourceKind kind,
+    String key,
+    int part,
+  ) =>
+      (FushiCorpusIndex i) => i.export(kind, key, part);
+
+  static int Function(FushiCorpusIndex) _removePartOp(
+    CorpusSourceKind kind,
+    String key,
+    int part,
+  ) =>
+      (FushiCorpusIndex i) => i.remove(kind, key, part: part);
+
   static void Function(FushiCorpusIndex) _removeOp(
     CorpusSourceKind kind,
     List<String> keys,
@@ -318,12 +333,10 @@ class LibraryCorpusService {
     }
   };
 
+  /// 「重建」删得掉的文档：四类来源都能从各自的真相源重新生成（游戏台词自 v130 在
+  /// `galgame_text_lines`）。只有播放列表各集字幕要等再次播放才回来（不落库）。
   static int _removeRebuildableOp(FushiCorpusIndex i) =>
-      i.removeKinds(<CorpusSourceKind>[
-        CorpusSourceKind.book,
-        CorpusSourceKind.video,
-        CorpusSourceKind.music,
-      ]);
+      i.removeKinds(CorpusSourceKind.values);
 
   static CorpusQueryResult Function(FushiCorpusIndex) _queryOp(
     List<String> keys,
@@ -427,6 +440,10 @@ class LibraryCorpusService {
   void _enqueueReconcile(CorpusSourceKind kind) =>
       unawaited(_enqueue('reconcile.${kind.name}', () => _reconcile(kind)));
 
+  /// 测试：直接分词写入一份文档（模拟旧版本留下的语料）。
+  @visibleForTesting
+  Future<void> debugPut(CorpusDocument doc) => _putDocument(doc);
+
   /// 测试观测：语料库里某个 kind 的文档清单。
   @visibleForTesting
   Future<List<CorpusDocInfo>> debugDocs(CorpusSourceKind kind) async =>
@@ -503,7 +520,8 @@ class LibraryCorpusService {
     };
     final Set<String> live = <String>{};
     for (final EpubBookRow row in rows) {
-      if (row.format != 'epub') continue;
+      // 只索引文字书（漫画 / PDF 等没有可切句的正文）。
+      if (BookFormat.parseOrEpub(row.format) != BookFormat.epub) continue;
       live.add(row.bookKey);
       final String fingerprint = bookFingerprint(
         uid: row.uid,
@@ -678,19 +696,86 @@ class LibraryCorpusService {
     String hint,
   ) => Isolate.run(() => FushiLyrics.parse(raw, hint: hint));
 
+  /// 游戏：语料文档由 `galgame_text_lines`（v130，台词唯一的持久副本，随备份走）派生，
+  /// 一个游戏按本机 id 每 [kGalgameTextLineChunkSize] 行一块（part = id ~/ 块大小），新台词
+  /// 只让最后一块变化。块的指纹 = 行数 + 最大 id（只增不改的表，两者不变内容就不变）。
+  ///
+  /// L4 首版把台词直接存在语料文档里（指纹没有 `db:` 前缀）：先把那些文档的原句读回、
+  /// 写进表里再删掉文档，台词不丢。
   Future<void> _reconcileGames(
     FushiDatabase db,
     List<CorpusDocInfo> docs,
     String normalizer,
   ) async {
-    final Set<String> live = <String>{
-      for (final GalgameRow g in await db.getAllGalgames()) g.id,
-    };
-    await _removeOrphans(CorpusSourceKind.game, docs, live);
-    await _renormalize(<CorpusDocInfo>[
+    final List<CorpusDocInfo> legacy = <CorpusDocInfo>[
       for (final CorpusDocInfo d in docs)
-        if (live.contains(d.key) && d.normalizer != normalizer) d,
-    ], normalizer);
+        if (!d.fingerprint.startsWith(kGameChunkFingerprintPrefix)) d,
+    ];
+    for (final CorpusDocInfo d in legacy) {
+      final CorpusDocument? doc = await _withIndex<CorpusDocument?>(
+        _exportOp(CorpusSourceKind.game, d.key, d.part),
+      );
+      if (doc != null) {
+        await db
+            .insertGalgameTextLines(d.key, <({String text, int receivedAt})>[
+              for (final CorpusSentence s in doc.sentences)
+                (text: s.text, receivedAt: s.pos),
+            ]);
+      }
+      await _withIndex(_removePartOp(CorpusSourceKind.game, d.key, d.part));
+    }
+    final Map<String, String> titles = <String, String>{
+      for (final GalgameRow g in await db.getAllGalgames()) g.id: g.name,
+    };
+    final Map<(String, int), CorpusDocInfo> byIdentity =
+        <(String, int), CorpusDocInfo>{
+          for (final CorpusDocInfo d in docs)
+            if (d.fingerprint.startsWith(kGameChunkFingerprintPrefix))
+              (d.key, d.part): d,
+        };
+    final Set<(String, int)> live = <(String, int)>{};
+    for (final GalgameTextLineChunk chunk in await db.galgameTextLineChunks()) {
+      final String? title = titles[chunk.gameId];
+      if (title == null) continue;
+      live.add((chunk.gameId, chunk.part));
+      final String fingerprint = gameChunkFingerprint(
+        count: chunk.count,
+        maxId: chunk.maxId,
+      );
+      final CorpusDocInfo? existing = byIdentity[(chunk.gameId, chunk.part)];
+      if (existing != null &&
+          existing.fingerprint == fingerprint &&
+          existing.normalizer == normalizer) {
+        continue;
+      }
+      unawaited(
+        _enqueue('game', () async {
+          final List<GalgameTextLineRow> rows = await db
+              .galgameTextLinesInChunk(chunk.gameId, chunk.part);
+          await _putDocument(
+            gameLinesDocument(
+              gameId: chunk.gameId,
+              title: title,
+              part: chunk.part,
+              lines: <({String text, int atMs})>[
+                for (final GalgameTextLineRow r in rows)
+                  (text: r.lineText, atMs: r.receivedAt),
+              ],
+              normalizer: normalizer,
+              updatedAt: DateTime.now().millisecondsSinceEpoch,
+              fingerprint: fingerprint,
+            ),
+          );
+        }),
+      );
+    }
+    // 游戏被移除（台词随外键 cascade 删掉）/ 块不存在了：删文档。
+    for (final MapEntry<(String, int), CorpusDocInfo> e in byIdentity.entries) {
+      if (live.contains(e.key)) continue;
+      await _withIndex(
+        _removePartOp(CorpusSourceKind.game, e.key.$1, e.key.$2),
+      );
+    }
   }
 
   /// 分词 + 写入一份已构造好的文档（后台 isolate）。
@@ -827,10 +912,10 @@ class LibraryCorpusService {
   Timer? _gameFlushTimer;
 
   /// 文本钩子收到一行台词（[lineKey] = 工作台行 id；同一行被引擎逐段重绘时文本会变长，
-  /// 按 key 覆盖。外部通道没有行 id 时传 null，前缀续写按上一行覆盖）。
+  /// 按 key 覆盖。外部通道没有行 id 时传 null，前缀续写按上一行覆盖）。攒批后写进
+  /// `galgame_text_lines`（台词的持久副本，随备份走），语料文档随表变化对账派生。
   void feedGameLine({
     required String gameId,
-    required String title,
     required String? lineKey,
     required String text,
     required int atMs,
@@ -838,69 +923,48 @@ class LibraryCorpusService {
     if (!enabled || gameId.isEmpty) return;
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    final _GameBatch batch = _gameBatches.putIfAbsent(
-      gameId,
-      () => _GameBatch(gameId),
-    )..title = title;
-    batch.add(lineKey, trimmed, atMs);
+    _gameBatches
+        .putIfAbsent(gameId, () => _GameBatch(gameId))
+        .add(lineKey, trimmed, atMs);
     _gameFlushTimer ??= Timer(_gameFlushDelay, () {
       _gameFlushTimer = null;
-      unawaited(flushGameLines());
+      unawaited(_flushGameLines(includeOpenLine: false));
     });
   }
 
-  /// 把攒着的游戏台词落盘（去抖到期 / 停止监听 / 退出时）。
-  Future<void> flushGameLines() {
+  /// 把攒着的游戏台词全部落库（停止捕获 / 退出时；测试）。
+  Future<void> flushGameLines() => _flushGameLines(includeOpenLine: true);
+
+  /// 去抖落库时留下每个游戏的最后一行：它可能还在被引擎逐段重绘 / 打字机续写，现在写进去
+  /// 再等它写完，表里就会多出一行半句（按 (游戏, 台词) 去重挡不住前缀）。
+  Future<void> _flushGameLines({required bool includeOpenLine}) async {
     _gameFlushTimer?.cancel();
     _gameFlushTimer = null;
-    final List<_GameBatch> dirty = <_GameBatch>[
-      for (final _GameBatch b in _gameBatches.values)
-        if (b.dirty) b,
-    ];
-    if (dirty.isEmpty) return Future<void>.value();
-    final List<Future<void>> writes = <Future<void>>[];
-    for (final _GameBatch batch in dirty) {
-      final List<({String text, int atMs})> lines = batch.takeSnapshot();
-      // 不排进喂入队列：队列里可能正跑着一整本书，退出时的冲刷不能等它。语料库自带读写锁，
-      // 与在跑的写入并发安全。
-      writes.add(
-        _runNow('game', () async {
-          final String? normalizer = _normalizer.signature;
-          if (normalizer == null) return;
-          final int part = await batch.resolvePart(this);
-          await _putDocument(
-            gameLinesDocument(
-              gameId: batch.gameId,
-              title: batch.title,
-              part: part,
-              lines: lines,
-              normalizer: normalizer,
-              updatedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
-          batch.afterWrite(lines.length);
-        }),
+    final FushiDatabase? db = _db;
+    if (db == null) return;
+    for (final _GameBatch batch in _gameBatches.values.toList()) {
+      final List<({String text, int receivedAt})> lines = batch.take(
+        includeOpenLine: includeOpenLine,
       );
+      if (lines.isEmpty) continue;
+      // 不排进喂入队列：队列里可能正跑着一整本书，退出时的冲刷不能等它。
+      await _runNow('game', () async {
+        await db.insertGalgameTextLines(batch.gameId, lines);
+      });
     }
-    return Future.wait(writes);
-  }
-
-  Future<int> _nextGamePart(String gameId) async {
-    final List<CorpusDocInfo>? docs = await _withIndex(
-      _docsOp(CorpusSourceKind.game, gameId),
-    );
-    int next = 0;
-    for (final CorpusDocInfo d in docs ?? const <CorpusDocInfo>[]) {
-      if (d.part >= next) next = d.part + 1;
+    if (!includeOpenLine &&
+        _gameBatches.values.any((_GameBatch b) => b.pending)) {
+      _gameFlushTimer ??= Timer(_gameFlushDelay, () {
+        _gameFlushTimer = null;
+        unawaited(_flushGameLines(includeOpenLine: false));
+      });
     }
-    return next;
   }
 
   // ── 重建 ─────────────────────────────────────────────────────────────
 
-  /// 「重建索引」：删掉能从来源重新生成的书 / 视频 / 音乐文档后整库对账。游戏台词的
-  /// 唯一副本就在语料库里，不删，只按当前词典重新分词。播放列表各集字幕要等再次播放
-  /// 才会回来（它们不落库）。
+  /// 「重建索引」：删掉全部文档后整库对账（书 / 视频 / 音乐 / 游戏台词都从各自的真相源
+  /// 重新生成）。播放列表各集字幕要等再次播放才会回来（它们不落库）。
   Future<void> rebuild() async {
     await _enqueue('rebuild', () async {
       await _withIndex(_removeRebuildableOp);
@@ -913,18 +977,16 @@ class LibraryCorpusService {
       p.join(databaseDirectory, 'corpus');
 }
 
-/// 一个游戏当前在攒的台词批次。
+/// 一个游戏当前在攒、还没落库的台词。
 class _GameBatch {
   _GameBatch(this.gameId);
 
   final String gameId;
-  String title = '';
-  int? _part;
 
-  /// 当前批次已落盘的行（下一次写入整份替换，满 [kCorpusGameChunkLines] 行开新批次）。
   final List<({String? key, String text, int atMs})> _lines =
       <({String? key, String text, int atMs})>[];
-  bool dirty = false;
+
+  bool get pending => _lines.isNotEmpty;
 
   void add(String? key, String text, int atMs) {
     if (_lines.isNotEmpty) {
@@ -934,39 +996,30 @@ class _GameBatch {
           : last.key == null && text.startsWith(last.text);
       if (sameLine) {
         _lines[_lines.length - 1] = (key: key, text: text, atMs: last.atMs);
-        dirty = true;
         return;
       }
       if (key != null) {
         for (int i = _lines.length - 1; i >= 0; i--) {
           if (_lines[i].key == key) {
             _lines[i] = (key: key, text: text, atMs: _lines[i].atMs);
-            dirty = true;
             return;
           }
         }
       }
     }
     _lines.add((key: key, text: text, atMs: atMs));
-    dirty = true;
   }
 
-  List<({String text, int atMs})> takeSnapshot() {
-    dirty = false;
-    return <({String text, int atMs})>[
-      for (final ({String? key, String text, int atMs}) l in _lines)
-        (text: l.text, atMs: l.atMs),
-    ];
-  }
-
-  Future<int> resolvePart(LibraryCorpusService service) async =>
-      _part ??= await service._nextGamePart(gameId);
-
-  /// 写完 [written] 行后：批次满了就开下一批（已写的行不再重写）。
-  void afterWrite(int written) {
-    if (written < kCorpusGameChunkLines) return;
-    _lines.removeRange(0, written.clamp(0, _lines.length));
-    _part = (_part ?? 0) + 1;
-    dirty = _lines.isNotEmpty;
+  /// 取走可以落库的行：[includeOpenLine] 为 false 时留下最后一行（可能还在续写）。
+  List<({String text, int receivedAt})> take({required bool includeOpenLine}) {
+    final int n = includeOpenLine ? _lines.length : _lines.length - 1;
+    if (n <= 0) return const <({String text, int receivedAt})>[];
+    final List<({String text, int receivedAt})> out =
+        <({String text, int receivedAt})>[
+          for (int i = 0; i < n; i++)
+            (text: _lines[i].text, receivedAt: _lines[i].atMs),
+        ];
+    _lines.removeRange(0, n);
+    return out;
   }
 }

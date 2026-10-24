@@ -4100,7 +4100,7 @@
   "lookup_library_sentences_group_videos": "视频",
   "lookup_library_sentences_indexing": "正在建索引… $done / $total",
   "lookup_library_sentences_rebuild": "重建例句索引",
-  "lookup_library_sentences_rebuild_hint": "按库里的书、字幕和歌词重新建索引；游戏台词保留并按当前词典重新分词。",
+  "lookup_library_sentences_rebuild_hint": "按库里的书、字幕、歌词和游戏台词重新建索引。",
   "lookup_library_sentences_rebuild_started": "正在后台重建例句索引",
   "lookup_library_sentences_status": "已索引 $documents 份来源、$sentences 句",
   "lookup_library_sentences_title": "我库里的例句 · $count",

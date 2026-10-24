@@ -20,6 +20,7 @@ import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
 import 'epub_book_meta.dart';
+import 'galgame_text_line_tables.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_link_kind.dart';
@@ -44,6 +45,7 @@ part 'database_update_feed.part.dart';
 part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
 part 'database_media_links.part.dart';
+part 'database_galgame_text_lines.part.dart';
 part 'database_music.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
@@ -846,6 +848,7 @@ void _requireOneVideoMetadataOwner({
   GameVoiceCasts,
   PersonIdentityBridges,
   AdaptationProgressAnchors,
+  GalgameTextLines,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -863,7 +866,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusic,
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
-        _FushiDbPeople {
+        _FushiDbPeople,
+        _FushiDbGalgameTextLines {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -2530,6 +2534,14 @@ class FushiDatabase extends _$FushiDatabase
               if (!await _tableExists(table.actualTableName)) {
                 await m.createTable(table);
               }
+            }
+          }
+          if (from < 130) {
+            // v130（作品图谱 L4 跟进，docs/specs/2026-10-24-cross-media-links.md §3）：
+            // galgame_text_lines——文本钩子台词的持久副本（「我库里的例句」的游戏来源，
+            // 随备份 games 类别走）。纯建表；幂等守卫同 v119。
+            if (!await _tableExists('galgame_text_lines')) {
+              await m.createTable(galgameTextLines);
             }
           }
           if (from < 131) {

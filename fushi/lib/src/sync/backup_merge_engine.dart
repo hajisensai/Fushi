@@ -185,7 +185,11 @@ class BackupMergeEngine {
       // category itself is ticked. Ticking games additionally inserts the
       // unmatched src games (extending the map) + their scrape snapshots.
       await _buildGameIdMap();
-      if (_wants('games')) await _insertMissingGalgames();
+      if (_wants('games')) {
+        await _insertMissingGalgames();
+        // v130：游戏台词跟着游戏走（唯一持久副本，「我库里的例句」由它派生）。
+        await _mergeGalgameTextLines();
+      }
       // Media collections (unified-collections Phase 5) have no dialog toggle:
       // always merge the grouping itself; orphan members are kept and folded in
       // the UI. Self-guards against missing src tables (pre-migration backups).
@@ -341,6 +345,23 @@ class BackupMergeEngine {
       'JOIN $_gameMapTable AS m ON m.src_id = ss.game_id '
       'WHERE NOT EXISTS (SELECT 1 FROM galgame_sources AS t '
       'WHERE t.game_id = m.dst_id AND t.source = ss.source)',
+    );
+  }
+
+  /// v130 文本钩子台词 dedupe-UNION under the remapped game id. Natural key =
+  /// `(game, text)`（表上的唯一键）：同一句台词在同一游戏里只留一行，所以同一份备份合并
+  /// 两次、或两台设备都录到同一句，都不会重复；保留本机已有行的 `received_at`。src 台词
+  /// 的游戏在本机没有宿主（游戏没勾 / 被裁掉）时跳过，不留悬空 `game_id`。`id` 不搬
+  /// （本机自增）：语料分块按本机 id 重新算。自守卫旧备份（v130 之前）没有这张表。
+  Future<void> _mergeGalgameTextLines() async {
+    if (!await _srcTableExists('galgame_text_lines')) return;
+    await _db.customStatement(
+      'INSERT OR IGNORE INTO galgame_text_lines (game_id, text, received_at) '
+      'SELECT m.dst_id, s.text, MIN(s.received_at) '
+      'FROM $_srcAlias.galgame_text_lines AS s '
+      'JOIN $_gameMapTable AS m ON m.src_id = s.game_id '
+      'GROUP BY m.dst_id, s.text '
+      'ORDER BY MIN(s.received_at)',
     );
   }
 

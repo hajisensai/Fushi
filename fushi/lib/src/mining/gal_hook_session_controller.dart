@@ -4390,15 +4390,14 @@ class GalHookSessionController extends ChangeNotifier {
     required String lineText,
     required int atMs,
   }) {
-    final String? gameTitle = _activityGameTitle;
-    if (gameTitle == null) return;
-    // 「我库里的例句」：有库内身份的游戏台词落进本机语料库（文本钩子历史只在会话内存里，
-    // 这是它唯一的持久副本）。同一行逐段重绘按行 id 覆盖，外部通道按前缀续写覆盖。
+    if (_activityGameTitle == null) return;
+    // 「我库里的例句」：有库内身份的游戏台词落进 galgame_text_lines（文本钩子历史只在
+    // 会话内存里，这张表是台词唯一的持久副本，随备份走），例句索引由它派生。同一行逐段
+    // 重绘按行 id 覆盖，外部通道按前缀续写覆盖。
     final String? corpusGameId = _activityGameKey;
     if (corpusGameId != null) {
       LibraryCorpusService.instance.feedGameLine(
         gameId: corpusGameId,
-        title: gameTitle,
         lineKey: lineId,
         text: lineText,
         atMs: atMs,

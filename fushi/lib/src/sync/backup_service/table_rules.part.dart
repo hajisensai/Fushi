@@ -188,6 +188,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 游戏 ──
   'galgame_sources': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
   'galgames': BackupTableRule.rowLevel('_retainGames'),
+  // v130：文本钩子台词——唯一的持久副本（「我库里的例句」的游戏来源由它派生），随游戏
+  // 一起出境；按游戏选择裁剪时经外键 cascade 跟着宿主走。合并导入见
+  // BackupMergeEngine._mergeGalgameTextLines（按游戏身份重映射 + (游戏, 台词) 去重）。
+  'galgame_text_lines': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
 
   // ── 书 / 视频共享 ──
   'media_tracking_outbox': BackupTableRule.follows(_bookOrVideo),

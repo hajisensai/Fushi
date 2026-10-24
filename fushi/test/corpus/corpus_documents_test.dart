@@ -63,7 +63,10 @@ void main() {
       bookUid: 'uid',
       episodeIndex: 4,
       title: 'Renamed',
-      cues: <AudioCue>[_cue('Hello\nthere', 1000, 2500), _cue('Bye', 5000, 4000)],
+      cues: <AudioCue>[
+        _cue('Hello\nthere', 1000, 2500),
+        _cue('Bye', 5000, 4000),
+      ],
       normalizer: 'other',
       updatedAt: 99,
     );
