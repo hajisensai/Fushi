@@ -879,21 +879,34 @@ class MinedSentences extends Table {
   TextColumn get glossary => text().withDefault(const Constant(''))();
   TextColumn get sentence => text().withDefault(const Constant(''))();
 
-  /// 跳转/分流来源标识，与 `kFavoriteSentenceSourceBook` / `Video` 等同值（'book' |
-  /// 'video' | 'audiobook' | 'lyrics'）。统计语义（book/video 桶）也由它派生。
+  /// 跳转/分流来源标识，与 `kFavoriteSentenceSource*` 同值（'book' | 'video' |
+  /// 'audiobook' | 'lyrics' | 'game' | 'manga' | 'music'，见 `SentenceSourceKind`）。
   TextColumn get source => text()();
   TextColumn get documentTitle => text().nullable()();
   TextColumn get chapterLabel => text().nullable()();
 
-  /// 定位锚点（与收藏句同构）：书内是 bookKey，视频是 bookUid。
+  /// 出处身份（按 [source] 分域）：书 / 有声书 / 歌词模式 / 漫画是 bookKey，视频是
+  /// bookUid，游戏是 `galgames.id`，音乐是 `music_tracks.track_uid`。
   TextColumn get bookKey => text().nullable()();
+
+  /// 书内章节下标；视频是集下标（单视频恒 0）。
   IntColumn get sectionIndex => integer().nullable()();
 
-  /// 书内是归一化字符偏移；视频来源里复用为 cue 起点 ms（与收藏句一致）。
+  /// **只**表示章内归一化字符偏移（书 / 有声书 / 歌词模式）。v128 前视频来源把它
+  /// 复用成 cue 起点毫秒，v128 迁移已把那批值搬进 [positionMs] 并清空本列。
   IntColumn get normCharOffset => integer().nullable()();
 
-  /// 视频来源里复用为 cue 时长 ms（书内为选区长度）。
+  /// **只**表示选区字符长度（同 [normCharOffset]）。v128 前视频复用为 cue 时长。
   IntColumn get normCharLength => integer().nullable()();
+
+  /// 媒体时间轴上的起点毫秒（视频 / 音乐；v128）。
+  IntColumn get positionMs => integer().nullable()();
+
+  /// 片段时长毫秒（与 [positionMs] 成对；v128）。
+  IntColumn get durationMs => integer().nullable()();
+
+  /// 漫画页码（0 起；v128）。
+  IntColumn get pageIndex => integer().nullable()();
 
   /// AnkiConnect 成功制卡带回的 note id；AnkiDroid 恒 null。
   IntColumn get noteId => integer().nullable()();

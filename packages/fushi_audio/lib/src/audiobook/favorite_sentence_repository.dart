@@ -2,42 +2,49 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
 
-/// 收藏句子的来源标识。与制卡/收藏单词统计的 `kStatSourceBook`/`kStatSourceVideo`/
-/// `kStatSourceGame` 口径对齐：统计分桶分「书籍 / 视频 / 游戏」三桶——
-/// [kFavoriteSentenceSourceVideo] 归视频统计、[kFavoriteSentenceSourceGame] 归游戏
-/// 统计，其余（书内 / 有声书 / 歌词）都归阅读（书籍）统计。收藏夹页展示时仍可按这
-/// 五个细分值各自标注来源。
+/// 收藏句子 / 制卡句（`mined_sentences.source`）的来源标识。与制卡/收藏单词统计的
+/// `kStatSource*` 口径对齐：统计分桶分「书籍 / 视频 / 游戏 / 音乐」四桶——
+/// [kFavoriteSentenceSourceVideo] 归视频、[kFavoriteSentenceSourceGame] 归游戏、
+/// [kFavoriteSentenceSourceMusic] 归音乐，其余（书内 / 有声书 / 歌词模式 / 漫画）都归
+/// 阅读（书籍）。收藏夹页展示时仍按细分值各自标注来源。
 const String kFavoriteSentenceSourceBook = 'book';
 const String kFavoriteSentenceSourceVideo = 'video';
 const String kFavoriteSentenceSourceAudiobook = 'audiobook';
+
+/// 有声书阅读器的「歌词模式」（书域，身份是 bookKey）。与音乐模块的
+/// [kFavoriteSentenceSourceMusic] 是两回事：后者身份是 track uid、跳回音乐播放器。
 const String kFavoriteSentenceSourceLyrics = 'lyrics';
 
-/// galgame hook 会话期间的收藏句 / 制卡句（`mined_sentences.source` 也用本值域）。
-/// 与 `kStatSourceGame` 逐字节同值，故统计分桶可直接对照。
-///
-/// ⚠️ 刻意**没有**加进 [SentenceSourceKind]：那个枚举被 collections_page 的四处穷尽
-/// switch 消费，加值会让它们编译不过；在这些展示分支补齐 game（图标 / 标签 / 跳转
-/// 模块）之前，`'game'` 经 [sentenceSourceKindOf] 宽松解析回退 [SentenceSourceKind.book]，
-/// 收藏夹里按书来源展示（这些行本来就无定位锚点、不可跳转，行为无退化）。统计分桶
-/// **不**经这个枚举（走 `StatSourceKind` + 本常量的字符串比较），故不受影响。
+/// galgame hook 会话期间的收藏句 / 制卡句。与 `kStatSourceGame` 逐字节同值，故统计
+/// 分桶可直接对照。出处身份 = `galgames.id`。
 const String kFavoriteSentenceSourceGame = 'game';
 
+/// 漫画阅读器（本地卷 / 在线下载）的制卡句。出处身份 = bookKey + 页码。
+const String kFavoriteSentenceSourceManga = 'manga';
+
+/// 音乐模块歌词（v126 起）的制卡句。与 `kStatSourceMusic` 逐字节同值；出处身份 =
+/// `music_tracks.track_uid` + 时间轴位置。
+const String kFavoriteSentenceSourceMusic = 'music';
+
 /// 收藏句来源的**内存态**枚举（BUG-1120）。持久化 JSON 的 `source` 字段仍存
-/// 上面四个原字符串常量（wire 契约字节不变），本枚举只在读取后解析使用，
+/// 上面的原字符串常量（wire 契约字节不变），本枚举只在读取后解析使用，
 /// 供 UI 层穷尽 switch——消除「video vs 其它」的 bool 降维把 audiobook/lyrics
 /// 静默展示成书的问题。
 enum SentenceSourceKind {
   book(kFavoriteSentenceSourceBook),
   video(kFavoriteSentenceSourceVideo),
   audiobook(kFavoriteSentenceSourceAudiobook),
-  lyrics(kFavoriteSentenceSourceLyrics);
+  lyrics(kFavoriteSentenceSourceLyrics),
+  game(kFavoriteSentenceSourceGame),
+  manga(kFavoriteSentenceSourceManga),
+  music(kFavoriteSentenceSourceMusic);
 
   const SentenceSourceKind(this.dbValue);
 
   /// 落库字符串（与 `kFavoriteSentenceSource*` 常量逐字节一致）。
   final String dbValue;
 
-  /// 严格解析：精确匹配四个落库值之一，未知/null → null（由调用方决定回退）。
+  /// 严格解析：精确匹配任一落库值，未知/null → null（由调用方决定回退）。
   static SentenceSourceKind? tryParse(String? raw) {
     for (final SentenceSourceKind kind in SentenceSourceKind.values) {
       if (kind.dbValue == raw) return kind;

@@ -691,6 +691,10 @@ class GalHookMiningCoordinator {
           updateNoteId: updateNoteId,
           stillFormat: stillFormat,
           synchronizedClip: coverIsSynchronizedClip,
+          // 覆写既有卡（updateNoteId）时不新给出处：旧卡没有链接就保持没有。
+          sourceLink: updateNoteId != null || _session.activityGameKey == null
+              ? null
+              : CardSourceLink.tryGame(gameId: _session.activityGameKey!),
         ),
         compression: compression,
         tempDir: jobDirectory.path,

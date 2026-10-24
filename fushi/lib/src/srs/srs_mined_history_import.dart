@@ -2,8 +2,8 @@
 ///
 /// - 每条历史记录变成一条 Lapis 笔记（Expression / ExpressionReading / MainDefinition /
 ///   Sentence / MiscInfo），归入**当前 profile** 的默认牌组；
-/// - 出处按 source 转：书 = bookKey + sectionIndex + 字符偏移；视频 = 媒体身份 + 时间区间
-///   （视频行里 normCharOffset / normCharLength 复用为 cue 起点 / 时长）；
+/// - 出处按 source 转：书 = bookKey + sectionIndex + 字符偏移；视频 / 音乐 = 媒体身份 +
+///   时间区间（v128 起 position_ms / duration_ms）；漫画 = 作品 + 页；游戏 = 游戏 id；
 /// - 去重：guid 由记录**内容**派生（制卡时刻 + 词形 + 读音），重复导入不会重复建卡，
 ///   同一份历史经同步到了别的设备、在那边再导入一次，也会落到同一条笔记上。
 library;
@@ -59,15 +59,30 @@ SrsSourceRef srsSourceRefForMinedSentence(MinedSentenceRow row) {
   if (key != null) {
     switch (row.source) {
       case 'video':
-        final int start = row.normCharOffset ?? 0;
-        final int? length = row.normCharLength;
+      case 'music':
+        final int start = row.positionMs ?? 0;
+        final int? length = row.durationMs;
         return SrsSourceRef.media(
-          kind: SrsSourceKind.video,
+          kind: row.source == 'video'
+              ? SrsSourceKind.video
+              : SrsSourceKind.music,
           mediaKey: key,
           startMs: start,
           endMs: length == null ? null : start + length,
           title: title,
         );
+      case 'manga':
+        return SrsSourceRef.manga(
+          mangaKey: key,
+          chapterKey: row.chapterLabel ?? '',
+          page: row.pageIndex ?? 0,
+          title: title,
+        );
+      case 'game':
+        return SrsSourceRef(SrsSourceKind.game, <String, Object?>{
+          'gameId': key,
+          if (title != null) 'title': title,
+        });
       case 'book':
       case 'audiobook':
       case 'lyrics':

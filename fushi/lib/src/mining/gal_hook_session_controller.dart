@@ -1237,6 +1237,10 @@ class GalHookSessionController extends ChangeNotifier {
   /// 清空），所以不会在会话停掉后继续把查词记进游戏域。
   String? get activityGameKey => _activityGameKey;
 
+  /// [_activityGameTitle] 的只读投影（与 [activityGameKey] 同生命周期）：制卡历史行
+  /// 记下「哪个游戏」用的显示名快照。
+  String? get activityGameTitle => _activityGameTitle;
+
   /// Stable executable path resolved from the PID of an attached game.
   /// This is separate from launchExe because Fushi did not launch that game.
   String? _attachedCaptureExecutable;
