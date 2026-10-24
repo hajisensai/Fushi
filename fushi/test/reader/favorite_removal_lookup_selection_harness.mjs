@@ -53,7 +53,9 @@ function vnPage() {
     html: '<!doctype html><html><head><meta charset="utf-8">' +
       '<style>body{margin:0;font:20px/1.5 sans-serif}' +
       '.fushi-vn-stage,.fushi-vn-screen{width:800px;height:600px}p{margin:0}</style>' +
-      '<script>window.__fushiShells={};' +
+      // VN 在支持 CSS Highlight 的引擎上走 Range、不包裹（BUG-3663）；这里专测旧 WebView 的
+      // 包裹兜底路径下查词选区不丢，强制关掉 Range。
+      '<script>window.__fushiShells={};window.__fushiSentenceAudioRangeMode=false;' +
       'window.flutter_inappwebview={callHandler:()=>{}};' + scripts.units + '</script>' +
       scripts.vn + '<script>' + scripts.selection +
       ';window.__fushiShells.vn(' + JSON.stringify(config) + ');</script>' +

@@ -16,12 +16,15 @@
 //   * Images render from cloned chapter markup; block-image promotion stays
 //     VN-specific, while spoiler/reveal identity reuses the shared reader
 //     image semantics.
-//   * Sasayaki cues always take the inline `.fushi-sentence-audio-cue` wrapper
-//     path, in e-ink too. hoshi swaps to a native rect overlay under e-ink
+//   * Sasayaki cues take the same in-page path in every mode, e-ink too: live
+//     Ranges in the `fushi-sentence-audio` CSS highlight wherever the engine
+//     supports CSS Highlight (BUG-3518 / BUG-3663: the DOM is never cut while the
+//     sentence is on screen), the inline `.fushi-sentence-audio-cue` wrapper only
+//     on older WebViews. hoshi swaps to a native rect overlay under e-ink
 //     (`popupHost.renderSentenceAudioHighlight`); Fushi never ported that host,
 //     so the branch rendered nothing at all and the read-along highlight was
-//     invisible in VN + e-ink. The wrapper class is what the e-ink CSS bar rule
-//     in `ReaderContentStyles` targets, so one path now serves every mode.
+//     invisible in VN + e-ink. `ReaderContentStyles` styles both the
+//     `::highlight(fushi-sentence-audio)` and the wrapper class in e-ink.
 //   * Config placeholders become Dart interpolation; `clickAdvance` is NOT a
 //     hoshi JS concern -- the host (webview.part.dart) binds blank-tap ->
 //     `paginate("forward")`.
@@ -865,7 +868,8 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
-  // BUG-3518：WebKit 上当前屏的句子不包裹，登记成 live Range（见选区脚本 window.__fushiCueRanges）。
+  // BUG-3518 / BUG-3663：支持 CSS Highlight 的引擎上当前屏的句子不包裹，登记成 live Range
+  // （见选区脚本 window.__fushiCueRanges.availableForLiveText）。
   cueRanges: new Map(),
 $kSentenceAudioRubyGapJs
   cueSourceRanges: new Map(),
@@ -3039,8 +3043,10 @@ $sharedInitViewport
     var wrapped = new Map();
     // BUG-3518：WebKit 上切开文本节点会丢掉切口处的字距调整、整行后移；VN 又是播放到那句才包裹，
     // 排版恰好在高亮出现那一刻变动（句子被「顶开」）。那边改登记 Range，不动 DOM。
+    // BUG-3663：Blink 同样会变——包裹段落里后一句的文本节点，同段含 ruby 那一列的行盒差出 6px，
+    // 整屏居中跟着平移。所以 VN 在任何支持 CSS Highlight 的引擎上都登记 Range；包裹只留给旧 WebView。
     var rangeLayer = window.__fushiCueRanges;
-    if (rangeLayer && rangeLayer.enabled()) {
+    if (rangeLayer && rangeLayer.availableForLiveText()) {
       if (!this.cueRanges) this.cueRanges = new Map();
       for (var r = 0; r < cueRanges.length; r++) {
         var built = rangeLayer.build(cueRanges[r].ranges);
@@ -3330,6 +3336,45 @@ $sharedInitViewport
   if (typeof vn.contentRoot !== 'function') {
     vn.contentRoot = function() {
       return this.sourceRoot || document.body;
+    };
+  }
+  // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的
+  // audioCuePayload 调 cueIdAtDomPoint）。分页 / 连续 shell 按 cue↔DOM 映射表反查，VN 屏上
+  // 是克隆、映射表只在播放到某句时才对那一句建——此前 VN 整个缺这对方法，中键恒拿到 null、
+  // 静默无反应。VN 的 cue 本来就是章内音频坐标区间（start/length，与跟随同一口径），这里把
+  // 点击处换算到同一坐标（getMatchableOffset，克隆 / 源节点都认）再按区间找所属句，
+  // 回 `{type:'frag', id}`（id 即 textFragmentId，见 AudiobookBridge）。点在注音上按所属
+  // ruby 的基字起点算。
+  if (typeof vn.cueIdAtPoint !== 'function') {
+    vn.cueIdAtPoint = function(x, y) {
+      if (!window.fushiSelection || !window.fushiSelection.getCaretRange) return null;
+      var caret = window.fushiSelection.getCaretRange(x, y);
+      if (!caret) return null;
+      return this.cueIdAtDomPoint(caret.startContainer, caret.startOffset);
+    };
+  }
+  if (typeof vn.cueIdAtDomPoint !== 'function') {
+    vn.cueIdAtDomPoint = function(node, off) {
+      var cues = this.sentenceAudioCues;
+      if (!node || !cues || !cues.length) return null;
+      var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      var annotation = el && el.closest ? el.closest('rt, rp') : null;
+      if (annotation) {
+        var ruby = annotation.closest('ruby');
+        node = ruby ? this.createWalker(ruby).nextNode() : null;
+        off = 0;
+      }
+      if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+      var offset = this.getMatchableOffset(node, off);
+      if (offset === null) return null;
+      for (var i = 0; i < cues.length; i++) {
+        var cue = cues[i];
+        if (!cue || !cue.id) continue;
+        if (offset >= this.sentenceAudioCueStart(cue) && offset < this.sentenceAudioCueEnd(cue)) {
+          return JSON.stringify({ type: 'frag', id: cue.id });
+        }
+      }
+      return null;
     };
   }
   // 章内字符偏移 → 屏索引：**唯一**一份两段式查找（先找覆盖该偏移的屏，再取第一个

@@ -176,6 +176,12 @@
 |---|:--:|:--:|---|
 | [BUG-3663](bugs/BUG-3663-local-audio-menu-one-subsource.md) | ✅ | ✅ | 「选择音频源」菜单里本地音频库（android.db）只露出一个子来源 |
 | [BUG-3662](bugs/BUG-3662-lookup-audio-ignores-tts-fallback.md) | ✅ | ✅ | 查词 ♪ 不走已配置的 TTS 兜底，制卡却走 |
+> 共 3267 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3663](bugs/BUG-3663-vn-audiobook-highlight-relayout.md) | ✅ | ✅ | VN 模式有声书高亮推进时排版变化 |
+| [BUG-3662](bugs/BUG-3662-vn-middle-click-seek-sentence.md) | ✅ | ✅ | VN 模式中键跳到点击句无反应 |
 | [BUG-3661](bugs/BUG-3661-leaderboard-deploy-red-on-zone-routes-permission.md) | ✅ | ✅ | leaderboard-deploy-red-on-zone-routes-permission |
 | [BUG-3660](bugs/BUG-3660-popup-window-double-empty-state.md) | ✅ | ✅ | popup-window-double-empty-state |
 | [BUG-3659](bugs/BUG-3659-srs-rwkv-rebuild-loop-while-reviewing.md) | ✅ | ✅ | srs-rwkv-rebuild-loop-while-reviewing |
