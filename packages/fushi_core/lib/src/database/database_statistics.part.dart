@@ -777,6 +777,8 @@ mixin _FushiDbStatistics
               .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
         }
         await deleteTagAssignmentsForHost(TagHostKind.game, id);
+        // v131 配音表缓存（设备本地、无外键）同事务清掉。
+        await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
         return (delete(galgames)..where((t) => t.id.equals(id))).go();
       });
 

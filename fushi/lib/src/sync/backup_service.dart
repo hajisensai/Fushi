@@ -668,6 +668,8 @@ const List<String> _deviceLocalTables = <String>[
   // v127：OP / ED 声纹比对的按集缓存。纯缓存、可重算；本机文件的实测结果（另一台设备
   // 可能是另一份片源，OP 位置不同），设备本地。无外键，删除 / 回灌顺序无约束。
   'video_theme_song_spans',
+  // v131：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
+  'game_voice_casts',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -697,6 +699,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_tracks',
   'music_track_credits',
   'video_theme_song_spans',
+  'game_voice_casts',
 ];
 
 /// v117 SRS 的**本机发布元信息 / 本机状态 / 可重建缓存**（docs/specs/2026-10-14-

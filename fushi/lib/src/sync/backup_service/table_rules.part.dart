@@ -201,6 +201,18 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
     BackupCategory.videos,
     BackupCategory.games,
   }),
+  // v131 作品图谱 L5：人物身份桥（Wikidata 桥接缓存 + 用户确认 / 否决的「同一人」）
+  // 连接视频 / 游戏 / 音乐三域的人物，任一勾选就随包；只含外部 id 与人物引用串。
+  'person_identity_bridges': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.videos,
+    BackupCategory.games,
+    BackupCategory.music,
+  }),
+  // v131：动画集 ↔ 原作卷 / 章的手动对应点（用户数据，端点是书与视频）。
+  'adaptation_progress_anchors': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
+    BackupCategory.videos,
+  }),
 
   // ── 合集 / 书架 / 标签 / 同步墓碑（按 media_type 行级裁剪）──
   'collection_scrape_meta': BackupTableRule.rowLevel(
@@ -352,6 +364,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_disc_sources': BackupTableRule.deviceLocal(),
   // v127：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
   'video_theme_song_spans': BackupTableRule.deviceLocal(),
+  // v131：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
+  'game_voice_casts': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]
