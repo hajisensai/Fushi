@@ -277,6 +277,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
@@ -1630,6 +1632,21 @@ class AppModel with ChangeNotifier {
     await musicSession.engine.reapplySettings();
   }
 
+
+  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → LRCLIB。
+  late final MusicLyricsService musicLyrics = MusicLyricsService(
+    database: () => isDatabaseReady ? database : null,
+    lrclib: LrclibClient(),
+    onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
+  );
+
+  bool get musicLyricsOnline => prefsRepo.musicLyricsOnline;
+  Future<void> setMusicLyricsOnline(bool value) =>
+      prefsRepo.setMusicLyricsOnline(value);
+
+  bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
+  Future<void> setMusicLyricsLookupPause(bool value) =>
+      prefsRepo.setMusicLyricsLookupPause(value);
   late DictionaryImportManager _dictImportManager;
 
   /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是

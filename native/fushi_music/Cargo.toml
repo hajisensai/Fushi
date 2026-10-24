@@ -20,6 +20,11 @@ sha1 = "0.10"
 encoding_rs = "0.8"
 # 声纹（chromaprint 纯 Rust 移植，OP/ED 识别与 MV 偏移）。MIT；依赖 rubato（MIT）、rustfft（MIT OR Apache-2.0）。
 rusty-chromaprint = "0.3"
+# 歌词（P1）：TTML 解析（MIT）、KRC 的 zlib（MIT OR Apache-2.0，lofty 已间接依赖）、
+# KRC `[language:]` 的 base64（MIT，lofty 已间接依赖）。
+quick-xml = "0.42"
+flate2 = "1"
+data-encoding = "2"
 
 [profile.release]
 opt-level = 3

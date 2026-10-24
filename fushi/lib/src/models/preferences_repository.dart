@@ -4488,6 +4488,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4，D3 只装配 LRCLIB）。默认开。
+  bool get musicLyricsOnline =>
+      getPref('music_lyrics_online', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsOnline(bool value) async {
+    await setPref('music_lyrics_online', value);
+    notifyListeners();
+  }
+
+  /// 歌词页查词时自动暂停（设计 §6.1「查词时自动暂停可配」）。默认开。
+  bool get musicLyricsLookupPause =>
+      getPref('music_lyrics_lookup_pause', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsLookupPause(bool value) async {
+    await setPref('music_lyrics_lookup_pause', value);
+    notifyListeners();
+  }
+
   bool get floatingLyricClickLookup =>
       getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
 

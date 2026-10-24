@@ -382,6 +382,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_music_enabled',
   'module_video_enabled',
   'music_gapless',
+  // bool（默认 true）：查歌词时自动暂停（音乐 P1 歌词页）。
+  'music_lyrics_lookup_pause',
+  // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
+  'music_lyrics_online',
   'music_replaygain',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',

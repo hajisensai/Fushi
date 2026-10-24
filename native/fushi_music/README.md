@@ -24,6 +24,30 @@
 | `ffm_fp_compute(const i16* pcm, usize n, u32 rate, u32 ch, u8** out, usize* len) -> i32` | 整段交错 s16 PCM → 声纹（小端 u32 数组字节）；一集一次 |
 | `ffm_fp_align(const u32* needle, usize, const u32* hay, usize, u32 min_items, FfmFpMatch* out) -> i32` | 短声纹在长声纹上滑窗对齐 → 偏移 / 起止 / 置信度（没出现 `found = 0`） |
 
+歌词（P1，`src/lyrics/`，详见 `src/lyrics/ffi.rs`）：
+
+| 符号 | 作用 |
+|---|---|
+| `ffm_lyrics_parser_version() -> u32` | 解析器版本（`music_lyrics.timeline_version` 失效判据） |
+| `ffm_lyrics_parse(const u8*, usize, const u8* hint, usize, i64 durationMs, u8**, usize*) -> i32` | 任意格式 → 统一时间轴（线格式 `src/lyrics/wire.rs`）；失败 -3，out 为错误信息 |
+| `ffm_lyrics_embedded(const u8* path, usize, i64 durationMs, u8**, usize*) -> i32` | 内嵌 USLT / SYLT / Vorbis LYRICS / MP4 ©lyr |
+| `ffm_lyrics_merge(primary, len, secondary, len, lang, len, u8**, usize*) -> i32` | 翻译按时间配对（≤ 300 ms） |
+| `ffm_lyrics_align_ruby(timeline, len, tokens, len, u8**, usize*) -> i32` | 自动注音与音节对齐 |
+| `ffm_lyrics_export(timeline, len, format, len, u8**, usize*) -> i32` | 导出 `ttml` / `lrc` |
+
+新增符号不升 `ffm_abi_version`（扫描批次格式没变）；Dart 侧按需 lookup，缺符号抛
+`FushiMusicUnavailableError`。
+
+### 与有声书 `fushi_audio` 的 `LrcParser` 的关系（2026-10-24 判断）
+
+有声书侧 `packages/fushi_audio/lib/src/parsers/lrc_parser.dart` 继续剥词级 `<mm:ss.xx>` 标签、
+产出行级 `AudioCue`，**本期不迁进本 crate**。按「Rust 胖核心」规则只认两种迁移动因，这里都不成立：
+① 没有实测性能问题（剥标签已是整份一次 `stripHtmlTagsBatch` FFI）；② 有声书 cue 绑定书章节、
+下游（匹配 / 对齐 / 制卡）只吃行级 cue，收编进音乐歌词核心并不减少跨边界次数，反而让
+`fushi_engine` / 无头服务端（`dart build cli` 随包原生库）多一个硬依赖。真要给有声书接词级时间
+时，再整段把 `LrcParser` 搬到这里（`ffm_lyrics_parse` + `LyricTimeline → AudioCue` 适配已就绪）
+并删 Dart 版。音乐一律走本 crate。
+
 状态码：0 成功；-1 空指针；-2 参数非法；-3 输入格式不对；-5 根不存在；-100 panic（已接住）。
 
 ## 声纹（`src/fingerprint.rs`）
@@ -54,7 +78,8 @@
 
 ## 测试
 
-`cargo test`：单测 + `tests/scan.rs` 经 C ABI 扫 `tests/fixtures/library`，逐行比对
+`cargo test`：单测 + `tests/lyrics.rs`（每种歌词格式一个样本，`tests/fixtures/lyrics/generate.py`
+生成，经 C ABI 解析后与 `golden/` 比对；编码探测回归向量由旧 Dart `text_file_io.dart` 生成）+ `tests/scan.rs` 经 C ABI 扫 `tests/fixtures/library`，逐行比对
 `tests/fixtures/scan_golden.txt`。样本由 `tests/fixtures/generate.sh` 用统一 FFmpeg 生成并入库
 （FLAC / MP3 / ALAC / WavPack / TTA / DSF / 整轨 + Shift_JIS CUE / FLAC 内嵌 CUE）。
 
@@ -74,6 +99,7 @@ App 打包（Windows CMake 已接；Linux CMake / Android Gradle / macOS / iOS �
 ## 许可
 
 本 crate GPL-3.0-only。依赖：lofty（MIT OR Apache-2.0）、sha1（MIT OR Apache-2.0）、
-encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）、rusty-chromaprint（MIT；其依赖 rubato /
+encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）、quick-xml（MIT）、flate2（MIT OR Apache-2.0）、data-encoding（MIT）、
+rusty-chromaprint（MIT；其依赖 rubato /
 realfft MIT、rustfft MIT OR Apache-2.0）。rusty-chromaprint 与 realfft 上游仓库在发版提交上都没有
 LICENSE 文件，许可页按 SPDX 标准 MIT 文本收录（`pendingUpstreamLicense`）。

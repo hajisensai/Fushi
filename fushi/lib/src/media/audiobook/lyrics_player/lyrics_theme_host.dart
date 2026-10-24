@@ -34,8 +34,9 @@ class LyricsThemeHost extends StatefulWidget {
 class LyricsThemeHostState extends State<LyricsThemeHost> {
   Object? _owner;
   ColorScheme? _coverScheme;
-  final ValueNotifier<ThemeData?> _themeChanges =
-      ValueNotifier<ThemeData?>(null);
+  final ValueNotifier<ThemeData?> _themeChanges = ValueNotifier<ThemeData?>(
+    null,
+  );
   ThemeData? _pendingTheme;
   bool _themeNotificationScheduled = false;
 

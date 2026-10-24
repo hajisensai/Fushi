@@ -1,0 +1,559 @@
+/// 一首歌用哪份歌词（设计 §5.4）+ `music_lyrics` 落库（`timeline_cache` 二进制 + 版本）。
+///
+/// 优先级：① 用户手动指定 / 编辑（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
+/// ④ LRCLIB（精确匹配；失败不自动采用模糊结果，由用户挑）。
+///
+/// - 解析与格式互转全在 Rust（`package:fushi_music`）；这里只做 IO 与编排；
+/// - 在线结果只缓存进 DB，不写用户目录；「导出到文件旁边」是显式操作（[exportBesideAudio]）；
+/// - CUE 虚拟曲目（整轨里的一段）不认同名 sidecar / 内嵌歌词：那些属于整张镜像，不属于这一首；
+/// - 每个来源一行，各自记偏移；查不到的在线结果记一行 `format = none` 的负缓存，
+///   [kLrclibNegativeCacheTtl] 内不再查。
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:drift/drift.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_music/fushi_music.dart';
+
+import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+
+/// 负缓存（在线没查到）的有效期。
+const Duration kLrclibNegativeCacheTtl = Duration(days: 7);
+
+/// 负缓存行的 format。
+const String kMusicLyricsNoneFormat = 'none';
+
+/// 解析歌词所需的曲目信息。
+class MusicLyricsTrackRef {
+  const MusicLyricsTrackRef({
+    required this.trackUid,
+    required this.path,
+    required this.title,
+    this.artist,
+    this.album,
+    this.durationMs,
+    this.cueStartMs,
+  });
+
+  final String trackUid;
+  final String path;
+  final String title;
+  final String? artist;
+  final String? album;
+  final int? durationMs;
+
+  /// CUE 虚拟曲目的起点；非 null 时不认 sidecar / 内嵌。
+  final int? cueStartMs;
+
+  bool get isCueTrack => cueStartMs != null;
+}
+
+/// 解析结果：生效的时间轴（已带该来源的偏移）+ 它来自哪个来源。
+class MusicLyricsResolution {
+  const MusicLyricsResolution({required this.timeline, required this.source});
+
+  final LyricTimeline timeline;
+
+  /// `music_lyrics.source`。
+  final String source;
+}
+
+/// 可供用户挑的一份候选（选来源面板）。
+class MusicLyricsCandidate {
+  const MusicLyricsCandidate({
+    required this.source,
+    required this.label,
+    required this.format,
+    required this.raw,
+    required this.timeline,
+  });
+
+  final String source;
+
+  /// 展示用（文件名 / LRCLIB 记录标题）。
+  final String label;
+  final String format;
+  final Uint8List raw;
+  final LyricTimeline timeline;
+}
+
+typedef _Sidecar = ({LyricTimeline timeline, Uint8List raw, String label});
+
+/// 列目录（测试注入）。
+typedef MusicLyricsDirLister = List<String> Function(String dir);
+
+List<String> _listDirFiles(String dir) {
+  try {
+    return <String>[
+      for (final FileSystemEntity e in Directory(dir).listSync())
+        if (e is File) e.path,
+    ];
+  } on FileSystemException {
+    return const <String>[];
+  }
+}
+
+class MusicLyricsService {
+  MusicLyricsService({
+    required FushiDatabase? Function() database,
+    required LrclibClient lrclib,
+    required bool Function() onlineEnabled,
+    MusicLyricsDirLister listDir = _listDirFiles,
+    Future<List<EmbeddedLyrics>> Function(String path, int? durationMs)?
+    readEmbedded,
+    Future<LyricTimeline> Function(Uint8List bytes, String hint, int? durMs)?
+    parse,
+    int Function()? now,
+  }) : _database = database,
+       _lrclib = lrclib,
+       _onlineEnabled = onlineEnabled,
+       _listDir = listDir,
+       _readEmbedded =
+           readEmbedded ??
+           ((String p, int? d) => FushiLyricsAsync.embedded(p, durationMs: d)),
+       _parse =
+           parse ??
+           ((Uint8List b, String h, int? d) =>
+               FushiLyricsAsync.parse(b, hint: h, durationMs: d)),
+       _now = now ?? (() => DateTime.now().millisecondsSinceEpoch);
+
+  final FushiDatabase? Function() _database;
+  final LrclibClient _lrclib;
+  final bool Function() _onlineEnabled;
+  final MusicLyricsDirLister _listDir;
+  final Future<List<EmbeddedLyrics>> Function(String path, int? durationMs)
+  _readEmbedded;
+  final Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
+  _parse;
+  final int Function() _now;
+
+  Future<List<MusicLyricRow>> _rows(FushiDatabase db, String trackUid) =>
+      (db.select(
+        db.musicLyrics,
+      )..where(($MusicLyricsTable t) => t.trackUid.equals(trackUid))).get();
+
+  /// 行 → 时间轴：缓存版本对得上就直接解码，否则从原文重解析并回写缓存。
+  Future<LyricTimeline> _timelineOf(
+    FushiDatabase db,
+    MusicLyricRow row,
+    int? durationMs,
+  ) async {
+    final Uint8List? cache = row.timelineCache;
+    final int version = FushiLyrics.parserVersion;
+    LyricTimeline t;
+    if (cache != null && row.timelineVersion == version) {
+      t = decodeLyricTimeline(cache);
+    } else {
+      // 用户编辑行的 raw 是 TTML（无损交换格式），其余是原格式。
+      t = await _parse(
+        row.raw,
+        row.isUserEdited ? 'ttml' : row.format,
+        durationMs,
+      );
+      t = t.copyWith(source: row.source, isUserEdited: row.isUserEdited);
+      await _writeCache(db, row.trackUid, row.source, t);
+    }
+    return t.copyWith(source: row.source, offsetMs: row.offsetMs);
+  }
+
+  Future<void> _writeCache(
+    FushiDatabase db,
+    String trackUid,
+    String source,
+    LyricTimeline t,
+  ) =>
+      (db.update(db.musicLyrics)..where(
+            ($MusicLyricsTable r) =>
+                r.trackUid.equals(trackUid) & r.source.equals(source),
+          ))
+          .write(
+            MusicLyricsCompanion(
+              timelineCache: Value<Uint8List?>(encodeLyricTimeline(t)),
+              timelineVersion: Value<int>(FushiLyrics.parserVersion),
+              timingQuality: Value<String>(t.timingQuality.dbName),
+            ),
+          );
+
+  /// 写 / 更新一个来源的行；偏移只在新行时取 0，已有行保留用户调过的偏移。
+  Future<void> _upsert(
+    FushiDatabase db, {
+    required String trackUid,
+    required String source,
+    required String format,
+    required Uint8List raw,
+    LyricTimeline? timeline,
+    bool isUserEdited = false,
+    int? offsetMs,
+  }) async {
+    await db
+        .into(db.musicLyrics)
+        .insert(
+          MusicLyricsCompanion.insert(
+            trackUid: trackUid,
+            source: source,
+            format: format,
+            raw: raw,
+            timelineCache: Value<Uint8List?>(
+              timeline == null ? null : encodeLyricTimeline(timeline),
+            ),
+            timelineVersion: Value<int>(
+              timeline == null ? 0 : FushiLyrics.parserVersion,
+            ),
+            offsetMs: Value<int>(offsetMs ?? 0),
+            timingQuality: Value<String>(
+              timeline?.timingQuality.dbName ?? 'line',
+            ),
+            isUserEdited: Value<bool>(isUserEdited),
+            updatedAt: _now(),
+          ),
+          onConflict: DoUpdate(
+            (_) => MusicLyricsCompanion(
+              format: Value<String>(format),
+              raw: Value<Uint8List>(raw),
+              timelineCache: Value<Uint8List?>(
+                timeline == null ? null : encodeLyricTimeline(timeline),
+              ),
+              timelineVersion: Value<int>(
+                timeline == null ? 0 : FushiLyrics.parserVersion,
+              ),
+              timingQuality: Value<String>(
+                timeline?.timingQuality.dbName ?? 'line',
+              ),
+              isUserEdited: Value<bool>(isUserEdited),
+              updatedAt: Value<int>(_now()),
+              offsetMs: offsetMs == null
+                  ? const Value<int>.absent()
+                  : Value<int>(offsetMs),
+            ),
+          ),
+        );
+  }
+
+  /// 按优先级解析一首歌的歌词；没有任何来源返回 null。网络错误不吞：在线查询失败时
+  /// 已有的本地结果照常返回，没有本地结果时把异常抛给调用方（界面显示「在线查询失败」）。
+  Future<MusicLyricsResolution?> resolve(MusicLyricsTrackRef track) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return null;
+    final List<MusicLyricRow> rows = await _rows(db, track.trackUid);
+    MusicLyricRow? rowOf(String source) {
+      for (final MusicLyricRow r in rows) {
+        if (r.source == source) return r;
+      }
+      return null;
+    }
+
+    // ① 用户手动指定 / 编辑。
+    for (final MusicLyricRow r in rows) {
+      if (r.isUserEdited) {
+        return MusicLyricsResolution(
+          timeline: await _timelineOf(db, r, track.durationMs),
+          source: r.source,
+        );
+      }
+    }
+
+    // ② sidecar（每次重读：本地文件可能被用户换掉；Rust 解析远小于 IO 开销）。
+    if (!track.isCueTrack) {
+      final _Sidecar? side = await _readSidecars(track);
+      if (side != null) {
+        final MusicLyricRow? prev = rowOf(MusicLyricsSource.sidecar);
+        await _upsert(
+          db,
+          trackUid: track.trackUid,
+          source: MusicLyricsSource.sidecar,
+          format: side.timeline.format,
+          raw: side.raw,
+          timeline: side.timeline,
+        );
+        return MusicLyricsResolution(
+          timeline: side.timeline.copyWith(
+            source: MusicLyricsSource.sidecar,
+            offsetMs: prev?.offsetMs ?? 0,
+          ),
+          source: MusicLyricsSource.sidecar,
+        );
+      }
+    }
+
+    // ③ 内嵌（读文件头在后台 isolate）。
+    if (!track.isCueTrack) {
+      final MusicLyricRow? prev = rowOf(MusicLyricsSource.embedded);
+      final EmbeddedLyrics? emb = await _bestEmbedded(track);
+      if (emb != null) {
+        await _upsert(
+          db,
+          trackUid: track.trackUid,
+          source: MusicLyricsSource.embedded,
+          format: emb.format,
+          raw: emb.raw,
+          timeline: emb.timeline,
+        );
+        return MusicLyricsResolution(
+          timeline: emb.timeline.copyWith(
+            source: MusicLyricsSource.embedded,
+            offsetMs: prev?.offsetMs ?? 0,
+          ),
+          source: MusicLyricsSource.embedded,
+        );
+      }
+    }
+
+    // ④ LRCLIB：先看缓存（含负缓存），再按需在线查。
+    final MusicLyricRow? cached = rowOf(MusicLyricsSource.lrclib);
+    if (cached != null) {
+      if (cached.format != kMusicLyricsNoneFormat) {
+        return MusicLyricsResolution(
+          timeline: await _timelineOf(db, cached, track.durationMs),
+          source: MusicLyricsSource.lrclib,
+        );
+      }
+      if (_now() - cached.updatedAt < kLrclibNegativeCacheTtl.inMilliseconds) {
+        return null;
+      }
+    }
+    if (!_onlineEnabled() || (track.artist ?? '').trim().isEmpty) return null;
+    final LrclibRecord? hit = await _lrclib.get(
+      title: track.title,
+      artist: track.artist!,
+      album: track.album,
+      durationMs: track.durationMs,
+    );
+    final ({String raw, String format})? best = hit?.bestLyrics;
+    if (best == null) {
+      await _upsert(
+        db,
+        trackUid: track.trackUid,
+        source: MusicLyricsSource.lrclib,
+        format: kMusicLyricsNoneFormat,
+        raw: Uint8List(0),
+      );
+      return null;
+    }
+    final Uint8List raw = utf8.encode(best.raw);
+    final LyricTimeline t = (await _parse(
+      raw,
+      best.format,
+      track.durationMs,
+    )).copyWith(source: MusicLyricsSource.lrclib);
+    await _upsert(
+      db,
+      trackUid: track.trackUid,
+      source: MusicLyricsSource.lrclib,
+      format: best.format,
+      raw: raw,
+      timeline: t,
+    );
+    return MusicLyricsResolution(
+      timeline: t.copyWith(offsetMs: cached?.offsetMs ?? 0),
+      source: MusicLyricsSource.lrclib,
+    );
+  }
+
+  Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {
+    final String dir = File(track.path).parent.path;
+    final LyricSidecarSet set = pickLyricSidecars(track.path, _listDir(dir));
+    final LyricSidecarFile? primary = set.primary;
+    if (primary == null) return null;
+    final Uint8List raw;
+    try {
+      raw = await File(primary.path).readAsBytes();
+    } on FileSystemException {
+      return null;
+    }
+    LyricTimeline t;
+    try {
+      t = await _parse(raw, primary.ext, track.durationMs);
+    } on LyricsParseException {
+      return null;
+    }
+    for (final LyricSidecarFile tr in set.translations) {
+      try {
+        final LyricTimeline sec = await _parse(
+          await File(tr.path).readAsBytes(),
+          tr.ext,
+          track.durationMs,
+        );
+        t = FushiLyrics.mergeTranslation(t, sec, tr.translationLang!);
+      } on LyricsParseException {
+        continue;
+      } on FileSystemException {
+        continue;
+      }
+    }
+    return (
+      timeline: t,
+      raw: raw,
+      label: File(primary.path).uri.pathSegments.last,
+    );
+  }
+
+  Future<EmbeddedLyrics?> _bestEmbedded(MusicLyricsTrackRef track) async {
+    try {
+      return pickBestEmbedded(
+        await _readEmbedded(track.path, track.durationMs),
+      );
+    } on LyricsParseException {
+      return null;
+    }
+  }
+
+  /// 选来源面板：列出所有本地候选（sidecar 正文、各条内嵌、缓存的 LRCLIB 结果）。
+  Future<List<MusicLyricsCandidate>> localCandidates(
+    MusicLyricsTrackRef track,
+  ) async {
+    final List<MusicLyricsCandidate> out = <MusicLyricsCandidate>[];
+    if (!track.isCueTrack) {
+      final _Sidecar? side = await _readSidecars(track);
+      if (side != null) {
+        out.add(
+          MusicLyricsCandidate(
+            source: MusicLyricsSource.sidecar,
+            label: side.label,
+            format: side.timeline.format,
+            raw: side.raw,
+            timeline: side.timeline,
+          ),
+        );
+      }
+      try {
+        for (final EmbeddedLyrics e in await _readEmbedded(
+          track.path,
+          track.durationMs,
+        )) {
+          out.add(
+            MusicLyricsCandidate(
+              source: MusicLyricsSource.embedded,
+              label: e.key,
+              format: e.format,
+              raw: e.raw,
+              timeline: e.timeline,
+            ),
+          );
+        }
+      } on LyricsParseException {
+        // 文件读不了：没有内嵌候选。
+      }
+    }
+    final FushiDatabase? db = _database();
+    if (db != null) {
+      for (final MusicLyricRow r in await _rows(db, track.trackUid)) {
+        if (r.source == MusicLyricsSource.lrclib &&
+            r.format != kMusicLyricsNoneFormat) {
+          out.add(
+            MusicLyricsCandidate(
+              source: r.source,
+              label: 'LRCLIB',
+              format: r.format,
+              raw: r.raw,
+              timeline: await _timelineOf(db, r, track.durationMs),
+            ),
+          );
+        }
+      }
+    }
+    return out;
+  }
+
+  /// 在线模糊搜索（用户点「搜索在线歌词」时）：返回候选，不落库。
+  Future<List<MusicLyricsCandidate>> searchOnline(
+    MusicLyricsTrackRef track, {
+    String? title,
+    String? artist,
+  }) async {
+    final List<LrclibRecord> records = await _lrclib.search(
+      title: title ?? track.title,
+      artist: artist ?? track.artist,
+      durationMs: track.durationMs,
+    );
+    final List<MusicLyricsCandidate> out = <MusicLyricsCandidate>[];
+    for (final LrclibRecord r in records) {
+      final ({String raw, String format})? best = r.bestLyrics;
+      if (best == null) continue;
+      final Uint8List raw = utf8.encode(best.raw);
+      out.add(
+        MusicLyricsCandidate(
+          source: MusicLyricsSource.lrclib,
+          label: '${r.trackName} — ${r.artistName}',
+          format: best.format,
+          raw: raw,
+          timeline: await _parse(raw, best.format, track.durationMs),
+        ),
+      );
+    }
+    return out;
+  }
+
+  /// 用户挑定一份候选：写成 `user` 行（`is_user_edited`，永远最高）。原文存 TTML（无损），
+  /// 这样之后的轻量编辑与选来源走同一条路径。
+  Future<void> choose(String trackUid, MusicLyricsCandidate candidate) =>
+      saveUserEdit(trackUid, candidate.timeline);
+
+  /// 保存用户编辑（改错字、翻译、注音、单行偏移）后的时间轴。
+  Future<void> saveUserEdit(String trackUid, LyricTimeline edited) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    final LyricTimeline t = edited.copyWith(
+      source: MusicLyricsSource.user,
+      isUserEdited: true,
+    );
+    await _upsert(
+      db,
+      trackUid: trackUid,
+      source: MusicLyricsSource.user,
+      format: 'ttml',
+      raw: FushiLyrics.export(t.copyWith(offsetMs: 0), 'ttml'),
+      timeline: t.copyWith(offsetMs: 0),
+      isUserEdited: true,
+      offsetMs: edited.offsetMs,
+    );
+  }
+
+  /// 撤销手动指定 / 编辑，回到自动优先级。
+  Future<void> clearUserEdit(String trackUid) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    await (db.delete(db.musicLyrics)..where(
+          ($MusicLyricsTable r) =>
+              r.trackUid.equals(trackUid) &
+              r.source.equals(MusicLyricsSource.user),
+        ))
+        .go();
+  }
+
+  /// 整首偏移（实时生效由界面负责，这里持久化）。
+  Future<void> setOffset(String trackUid, String source, int offsetMs) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    await (db.update(db.musicLyrics)..where(
+          ($MusicLyricsTable r) =>
+              r.trackUid.equals(trackUid) & r.source.equals(source),
+        ))
+        .write(MusicLyricsCompanion(offsetMs: Value<int>(offsetMs)));
+  }
+
+  /// 显式操作：把时间轴导出到音频文件旁边（`<主名>.<ext>`），返回写出的路径。
+  /// 已存在同名文件时不覆盖，抛 [FileSystemException]（由界面问用户）。
+  Future<String> exportBesideAudio(
+    MusicLyricsTrackRef track,
+    LyricTimeline timeline,
+    String format, {
+    bool overwrite = false,
+  }) async {
+    final File audio = File(track.path);
+    final String name = audio.uri.pathSegments.last;
+    final int dot = name.lastIndexOf('.');
+    final String stem = dot <= 0 ? name : name.substring(0, dot);
+    final File out = File(
+      '${audio.parent.path}${Platform.pathSeparator}$stem.$format',
+    );
+    if (!overwrite && out.existsSync()) {
+      throw FileSystemException('lyrics file already exists', out.path);
+    }
+    await out.writeAsBytes(FushiLyrics.export(timeline, format), flush: true);
+    return out.path;
+  }
+}

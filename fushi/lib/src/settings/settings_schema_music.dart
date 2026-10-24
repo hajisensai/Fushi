@@ -154,6 +154,35 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
+      // 歌词（P1，设计 §5.4 / §6.1）。
+      SettingsSection(
+        title: t.music_lyrics_title,
+        items: <SettingsItem>[
+          SettingsSwitchItem(
+            id: 'music.lyrics_online',
+            title: t.music_lyrics_online_title,
+            subtitle: t.music_lyrics_online_hint,
+            icon: FushiIcons.cloud,
+            defaultValue: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.musicLyricsOnline,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setMusicLyricsOnline(value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_lookup_pause',
+            title: t.music_lyrics_lookup_pause_title,
+            icon: FushiIcons.pause,
+            defaultValue: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.musicLyricsLookupPause,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setMusicLyricsLookupPause(value);
+            },
+          ),
+        ],
+      ),
     ],
   );
 }

@@ -16,6 +16,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
+pub mod lyrics;
 pub mod scan;
 pub mod tags;
 pub mod uid;
@@ -56,7 +57,7 @@ pub(crate) unsafe fn hand_over_bytes(bytes: Vec<u8>, out_ptr: *mut *mut u8, out_
 
 /// # Safety
 /// `ptr` 为空或指向至少 `len` 字节的可读内存。
-unsafe fn slice_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
+pub(crate) unsafe fn slice_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8]> {
     if ptr.is_null() {
         if len == 0 {
             return Some(&[]);

@@ -745,6 +745,15 @@ class AnotherPopupPart {
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls '
           '(including the Apple pop-up button capsule radius).',
+      'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart':
+          'Karaoke lyrics are content, not chrome: the main-line size is the '
+          'user-adjustable lyric font size (KaraokeLyricsAppearance.fontSize, '
+          'multiplied by system text scale), and ruby / background-vocal / '
+          'translation rows are fixed ratios of it — same reviewed exception '
+          'class as reader / subtitle content text.',
+      'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart':
+          'Pre-layout of karaoke lyric rows derives the ruby row size from the '
+          'line font size (content ratio, see karaoke_appearance.dart).',
       'lib/src/models/theme_notifier.dart':
           'Theme preview content intentionally displays generated surface '
           'roles. buildFushiThemeData is also the ThemeData source for both '
@@ -1313,6 +1322,12 @@ class AnotherPopupPart {
     // 得到，因此本轮零红。它不是「以后再收窄」的占位——名单里的每个 token 从现在起
     // 都必须真实存在，删一个就红。
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
+      'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
         'fontSize:',

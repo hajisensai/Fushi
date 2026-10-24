@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -132,19 +133,34 @@ class MusicNowPlayingBar extends ConsumerWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 560),
               child: FushiPressScale(
-                child: DecoratedBox(
-                  decoration: isGlassDesign(context)
-                      ? fushiAppleSolidFloatingDecoration(
-                          context,
-                          shape: const StadiumBorder(),
-                        )
-                      : fushiFloatingPillDecoration(
-                          context,
-                          color: fushiFloatingToolbarPalette(context).container,
-                        ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
-                    child: content,
+                // 点条身打开播放页（封面 ↔ 歌词），按钮各自吃掉自己的点击。
+                child: GestureDetector(
+                  key: const ValueKey<String>('music_bar_open_player'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => unawaited(
+                    Navigator.of(context).push<void>(
+                      adaptivePageRoute<void>(
+                        context: context,
+                        builder: (_) => const MusicLyricsPage(),
+                      ),
+                    ),
+                  ),
+                  child: DecoratedBox(
+                    decoration: isGlassDesign(context)
+                        ? fushiAppleSolidFloatingDecoration(
+                            context,
+                            shape: const StadiumBorder(),
+                          )
+                        : fushiFloatingPillDecoration(
+                            context,
+                            color: fushiFloatingToolbarPalette(
+                              context,
+                            ).container,
+                          ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 6, 8, 6),
+                      child: content,
+                    ),
                   ),
                 ),
               ),

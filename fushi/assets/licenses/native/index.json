@@ -9,10 +9,10 @@
     "native/fushi_compute/Cargo.toml": "6f41f9145ac7bae3f75f5a55c12a207838ea687db072992e39b1bd33e47a6130",
     "native/fushi_fsrs/Cargo.lock": "a8815739cc64de26beb0e848f11b7c8cf53d2efea4c63fdcbac57a69ea765de9",
     "native/fushi_fsrs/Cargo.toml": "31efb16a899a66b190c27e6791758071b8cd176688954f298ef2780de5e0fe02",
-    "native/fushi_ios_umbrella/Cargo.lock": "4bae1311cbc2375a95d83840196152133ead14c70532fad68c1aa3c2bf869a26",
+    "native/fushi_ios_umbrella/Cargo.lock": "338753022c26cbb277d49d5f07da9398cd2d86324498a1f47ed2b2135623cd16",
     "native/fushi_ios_umbrella/Cargo.toml": "6d7a8d3cbe53bd13303ebee1f66a406dc038f3076dc57a952a27736d37cd141e",
-    "native/fushi_music/Cargo.lock": "9158d888a433e7b7be8005c7cca8f97fdc583edc021d3d50072f69b2e674f310",
-    "native/fushi_music/Cargo.toml": "d85aa5d2e48ec5d7406b32d8123928f3215f0beab643c7bc1b4e1dc28d1742de",
+    "native/fushi_music/Cargo.lock": "d60da239f95ea65b13a54f5c93d5545d77ba14ebfefa801e41175a92d8d2d64b",
+    "native/fushi_music/Cargo.toml": "e4111d04a0c3dd6e480419741fee2fb014051cfc5cf267c3889da24db24e0082",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "4266ab30ac34757a5e95aa95202377ca0a021b4fb288b12e0e009ac157444961",
@@ -9666,6 +9666,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -11567,6 +11568,7 @@
       "license": "MIT",
       "origin": [
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p"
       ],
       "textSource": "package",
