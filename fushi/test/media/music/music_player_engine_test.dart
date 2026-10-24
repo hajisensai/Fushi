@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_signal_path.dart';
 
 /// 记录引擎发给后端的每一条命令；测试手动发后端事件。
 class _FakeBackend implements MusicOutputBackend {
@@ -60,6 +61,13 @@ class _FakeBackend implements MusicOutputBackend {
     disposed = true;
     await controller.close();
   }
+
+  @override
+  Future<MusicSignalPathSnapshot?> readSignalPath() async => null;
+
+  @override
+  Future<List<MusicAudioDevice>> listAudioDevices() async =>
+      const <MusicAudioDevice>[];
 }
 
 MusicPlayItem _item(String uid, {int? durationMs = 200000}) => MusicPlayItem(
@@ -229,27 +237,56 @@ void main() {
     await e.reapplySettings();
     expect(b.settings?.gapless, isFalse);
     expect(b.settings?.replayGain, MusicReplayGainMode.off);
-    expect(musicMpvProperties(b.settings!)['gapless-audio'], 'no');
+    expect(
+      musicMpvProperties(
+        b.settings!,
+        platform: MusicOutputPlatform.windows,
+      )['gapless-audio'],
+      'no',
+    );
   });
 
-  test('mpv 映射：CUE 起止成逐文件选项；设置成 gapless / replaygain 属性', () {
+  test('mpv 映射：CUE 起止成 EDL 段（不走会冲掉设备缓冲的 start seek）；设置成属性', () {
     final media = musicMediaOf(
       const MusicPlayItem(
         trackUid: 'x',
-        path: '/m/full.flac',
+        path: '/m/full,1.flac',
         title: 'x',
         startMs: 1000,
-        endMs: 2000,
+        endMs: 2500,
       ),
     );
-    expect(media.start, const Duration(seconds: 1));
-    expect(media.end, const Duration(seconds: 2));
+    // 路径带逗号也不会被当成 EDL 分隔符：%字节数% 前缀。
+    expect(
+      media.uri,
+      'edl://%14%/m/full,1.flac,start=1.000000,length=1.500001',
+    );
+    expect(media.start, isNull);
+    expect(media.end, isNull);
+    expect(
+      musicMediaOf(
+        const MusicPlayItem(
+          trackUid: 'y',
+          path: '/m/日本.flac',
+          title: 'y',
+          startMs: 0,
+        ),
+      ).uri,
+      '/m/日本.flac',
+      reason: '从 0 播到尾的 CUE 首轨等同整文件',
+    );
+    expect(
+      musicEdlUri('/m/日本.flac', startMs: 61000),
+      'edl://%14%/m/日本.flac,start=61.000000,length=86400',
+      reason: '长度按 UTF-8 字节；最后一轨给开放段长，不截段尾',
+    );
     expect(
       musicMpvProperties(
         const MusicOutputSettings(
           gapless: true,
           replayGain: MusicReplayGainMode.album,
         ),
+        platform: MusicOutputPlatform.windows,
       ),
       containsPair('gapless-audio', 'weak'),
     );
@@ -258,10 +295,11 @@ void main() {
         gapless: false,
         replayGain: MusicReplayGainMode.off,
       ),
+      platform: MusicOutputPlatform.windows,
     );
     expect(off['gapless-audio'], 'no');
     expect(off['prefetch-playlist'], 'no');
+    // ReplayGain 恒由后端按曲目用 volume-gain 施加，mpv 自己的 replaygain 关掉。
     expect(off['replaygain'], 'no');
-    expect(off['replaygain-clip'], 'no');
   });
 }

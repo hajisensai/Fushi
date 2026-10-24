@@ -9,6 +9,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_signal_path.dart';
 
 /// 队列从哪来：决定 ReplayGain 模式（专辑语境用 album gain 保留曲间响度差）。
 enum MusicQueueContext {
@@ -47,15 +48,25 @@ class MusicPlayerEngine extends ChangeNotifier {
     required MusicOutputBackendFactory backendFactory,
     bool Function()? gaplessEnabled,
     bool Function()? replayGainEnabled,
+    MusicOutputSettings Function()? baseSettings,
     Random? random,
   }) : _backendFactory = backendFactory,
        _gaplessEnabled = gaplessEnabled ?? (() => true),
        _replayGainEnabled = replayGainEnabled ?? (() => true),
+       _baseSettings = baseSettings ?? (() => _kDefaultBaseSettings),
        _random = random ?? Random();
+
+  static const MusicOutputSettings _kDefaultBaseSettings = MusicOutputSettings(
+    gapless: true,
+    replayGain: MusicReplayGainMode.off,
+  );
 
   final MusicOutputBackendFactory _backendFactory;
   final bool Function() _gaplessEnabled;
   final bool Function() _replayGainEnabled;
+
+  /// 其余输出偏好（独占 / 设备 / 音量 / 变速 / 预放大 / DSD / 交叉淡入），来自设置。
+  final MusicOutputSettings Function() _baseSettings;
   final Random _random;
 
   MusicOutputBackend? _backend;
@@ -73,6 +84,16 @@ class MusicPlayerEngine extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   String? _lastError;
+  bool _stopAfterCurrent = false;
+
+  /// 队列（或睡眠定时）播完、后端已卸载文件。
+  bool _ended = false;
+  Timer? _sleepTimer;
+  DateTime? _sleepDeadline;
+  MusicBackendOutputFallback? _lastOutputFallback;
+
+  /// 输出自动退回（独占 → 共享 / 指定设备 → 默认）时调用：界面弹明确提示。
+  void Function(MusicBackendOutputFallback fallback)? onOutputFallback;
 
   /// 每次真正开始播一首新曲（含无缝推进）时调用：播放流落库、媒体会话刷新。
   void Function(MusicPlayItem item)? onTrackStarted;
@@ -93,7 +114,16 @@ class MusicPlayerEngine extends ChangeNotifier {
   Duration? get duration => _duration;
   String? get lastError => _lastError;
 
-  MusicOutputSettings get currentSettings => MusicOutputSettings(
+  /// 睡眠定时：播完本曲停。
+  bool get stopAfterCurrent => _stopAfterCurrent;
+
+  /// 睡眠定时器的到点时刻（到点后播完正在放的那首停）；null = 没开。
+  DateTime? get sleepDeadline => _sleepDeadline;
+
+  /// 最近一次输出退回（面板显示原因）；用户改输出设置后清掉。
+  MusicBackendOutputFallback? get lastOutputFallback => _lastOutputFallback;
+
+  MusicOutputSettings get currentSettings => _baseSettings().copyWith(
     gapless: _gaplessEnabled(),
     replayGain: musicReplayGainModeFor(
       enabled: _replayGainEnabled(),
@@ -101,6 +131,22 @@ class MusicPlayerEngine extends ChangeNotifier {
       shuffled: _shuffled,
     ),
   );
+
+  /// 正在播放时读信号路径（面板）；没在播为 null。
+  Future<MusicSignalPathSnapshot?> readSignalPath() async =>
+      _backend?.readSignalPath();
+
+  /// 可选输出设备。没在播时临时建一个后端读完即释放。
+  Future<List<MusicAudioDevice>> listAudioDevices() async {
+    final MusicOutputBackend? existing = _backend;
+    if (existing != null) return existing.listAudioDevices();
+    final MusicOutputBackend temp = _backendFactory();
+    try {
+      return await temp.listAudioDevices();
+    } finally {
+      await temp.dispose();
+    }
+  }
 
   MusicOutputBackend _ensureBackend() {
     final MusicOutputBackend? existing = _backend;
@@ -147,9 +193,10 @@ class MusicPlayerEngine extends ChangeNotifier {
         ? null
         : Duration(milliseconds: item.durationMs!);
     _lastError = null;
+    _ended = false;
     if (play) onWillPlay?.call();
     await backend.applySettings(currentSettings);
-    await backend.openPair(item, next, play: play);
+    await backend.openPair(item, _stopAfterCurrent ? null : next, play: play);
     if (play) {
       _playing = true;
       onTrackStarted?.call(item);
@@ -162,6 +209,11 @@ class MusicPlayerEngine extends ChangeNotifier {
   Future<void> play() async {
     final MusicOutputBackend? backend = _backend;
     if (backend == null || current == null) return;
+    if (_ended) {
+      // 队列播完后后端已卸载文件、交还设备：从当前曲目开头重开。
+      await _openCurrent(play: true);
+      return;
+    }
     onWillPlay?.call();
     await backend.play();
     _playing = true;
@@ -182,12 +234,44 @@ class MusicPlayerEngine extends ChangeNotifier {
     final Duration clamped = position < Duration.zero
         ? Duration.zero
         : (_duration != null && position > _duration! ? _duration! : position);
+    if (_ended) await _openCurrent(play: false);
     await backend.seek(clamped);
     _position = clamped;
     notifyListeners();
   }
 
   Future<void> seekRelative(Duration delta) => seek(_position + delta);
+
+  /// 播完本曲停（再调一次取消）。
+  Future<void> setStopAfterCurrent(bool value) async {
+    if (_stopAfterCurrent == value) return;
+    _stopAfterCurrent = value;
+    if (!value) {
+      _sleepTimer?.cancel();
+      _sleepTimer = null;
+      _sleepDeadline = null;
+    }
+    notifyListeners();
+    // 后端不再预排下一首，当前曲目播完即 Completed；取消时把下一首补回去。
+    await _backend?.replaceNext(value ? null : next);
+  }
+
+  /// 睡眠定时：[after] 之后播完当时正在放的那首停；null 取消。
+  void setSleepTimer(Duration? after) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepDeadline = null;
+    if (after == null) {
+      unawaited(setStopAfterCurrent(false));
+      return;
+    }
+    _sleepDeadline = DateTime.now().add(after);
+    _sleepTimer = Timer(after, () {
+      _sleepTimer = null;
+      unawaited(setStopAfterCurrent(true));
+    });
+    notifyListeners();
+  }
 
   Future<void> skipNext() async {
     if (_index + 1 >= _queue.length) return;
@@ -234,7 +318,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     final MusicOutputBackend? backend = _backend;
     if (backend != null) {
       await backend.applySettings(currentSettings);
-      await backend.replaceNext(next);
+      await backend.replaceNext(_stopAfterCurrent ? null : next);
     }
     notifyListeners();
   }
@@ -251,6 +335,10 @@ class MusicPlayerEngine extends ChangeNotifier {
     _playing = false;
     _position = Duration.zero;
     _duration = null;
+    _stopAfterCurrent = false;
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepDeadline = null;
     notifyListeners();
     if (backend != null) {
       await backend.stop();
@@ -260,7 +348,9 @@ class MusicPlayerEngine extends ChangeNotifier {
 
   /// 输出设置变了（设置页切无缝 / ReplayGain）：立刻下发给在用的后端。
   Future<void> reapplySettings() async {
+    _lastOutputFallback = null;
     await _backend?.applySettings(currentSettings);
+    notifyListeners();
   }
 
   void _onBackendEvent(MusicBackendEvent event) {
@@ -276,9 +366,17 @@ class MusicPlayerEngine extends ChangeNotifier {
         if (_playing == playing) return;
         _playing = playing;
         notifyListeners();
-      case MusicBackendAdvanced():
-        // 后端已经无缝切到我们预排的下一首：推进队列、补新的下一首。
-        if (_index + 1 < _queue.length) _index++;
+      case MusicBackendAdvanced(:final String? trackUid):
+        // 后端已经无缝切到我们预排的下一首（以实际出声为准）：推进队列、补新的下一首。
+        // 后端报了曲目就按曲目对位（切换期内队列可能被重排过）。
+        final int found = trackUid == null
+            ? -1
+            : _queue.indexWhere((MusicPlayItem i) => i.trackUid == trackUid);
+        if (found >= 0) {
+          _index = found;
+        } else if (_index + 1 < _queue.length) {
+          _index++;
+        }
         final MusicPlayItem? item = current;
         _position = Duration.zero;
         _duration = item?.durationMs == null
@@ -286,9 +384,28 @@ class MusicPlayerEngine extends ChangeNotifier {
             : Duration(milliseconds: item!.durationMs!);
         if (item != null) onTrackStarted?.call(item);
         notifyListeners();
-        unawaited(_backend?.replaceNext(next));
+        unawaited(_backend?.replaceNext(_stopAfterCurrent ? null : next));
       case MusicBackendCompleted():
+        // 后端播完即卸载文件、交还设备（独占不再占着）；再按播放由 [play] 重开。
         _playing = false;
+        _ended = true;
+        if (_stopAfterCurrent) {
+          // 睡眠定时到点：指到下一首开头，用户再按播放从下一首接着听。
+          _stopAfterCurrent = false;
+          _sleepDeadline = null;
+          if (_index + 1 < _queue.length) {
+            _index++;
+            final MusicPlayItem? item = current;
+            _position = Duration.zero;
+            _duration = item?.durationMs == null
+                ? null
+                : Duration(milliseconds: item!.durationMs!);
+          }
+        }
+        notifyListeners();
+      case MusicBackendOutputFallback():
+        _lastOutputFallback = event;
+        onOutputFallback?.call(event);
         notifyListeners();
       case MusicBackendFailed(:final String message):
         _lastError = message;
@@ -299,6 +416,7 @@ class MusicPlayerEngine extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sleepTimer?.cancel();
     final MusicOutputBackend? backend = _backend;
     _backend = null;
     unawaited(_eventSub?.cancel());

@@ -108,4 +108,12 @@ MusicPlayItem musicPlayItemOf(
   albumUid: track.albumUid,
   durationMs: track.durationMs,
   coverPath: coverPath ?? album?.coverPath,
+  codec: track.codec,
+  sampleRate: track.sampleRate,
+  bitDepth: track.bitDepth,
+  channels: track.channels,
+  rgTrackGain: track.rgTrackGain,
+  rgTrackPeak: track.rgTrackPeak,
+  rgAlbumGain: track.rgAlbumGain,
+  rgAlbumPeak: track.rgAlbumPeak,
 );
