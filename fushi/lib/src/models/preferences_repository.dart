@@ -679,6 +679,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）补新集。默认开；
+  /// 与「番剧新集提醒」是两个开关（那个只管通知）。
+  bool get videoLibraryAutoUpdate =>
+      getPref('video_library_auto_update', defaultValue: true) as bool;
+
+  Future<void> setVideoLibraryAutoUpdate(bool value) async {
+    await setPref('video_library_auto_update', value);
+    notifyListeners();
+  }
+
   /// 媒体服务器（Jellyfin/Emby）串流画质档下标；-1 = 自动（服务器允许时直播放原
   /// 文件）。选档 = 向服务器声明码率 / 宽度上限，超限由服务器转码到该档。
   int get mediaServerQualityPresetIndex =>

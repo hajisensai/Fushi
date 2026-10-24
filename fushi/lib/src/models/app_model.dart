@@ -22,6 +22,9 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
+import 'package:fushi/src/updates/video_library_update_probe.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart'
+    show isVideoOnlineSourcesAvailable;
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart'
     show feedbackReplyNotificationsEnabled;
@@ -1342,8 +1345,23 @@ class AppModel with ChangeNotifier {
     );
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,
-      isKindEnabled: feed.isKindEnabled,
+      // 番剧新集域在调度器里只跑「媒体库在线作品补新集」：跑不跑看它自己的开关
+      // （`video_library_auto_update`），不看「番剧新集提醒」——提醒开关只决定补上
+      // 的集进不进更新中心（publishBatch 按域开关丢弃），用户 2026-10-23 拍板拆开。
+      isKindEnabled: (UpdateFeedKind kind) =>
+          kind == UpdateFeedKind.videoEpisode
+              ? prefsRepo.videoLibraryAutoUpdate
+              : feed.isKindEnabled(kind),
       probes: <UpdateFeedKind, UpdateProbe>{
+        UpdateFeedKind.videoEpisode: () => runVideoLibraryUpdateProbe(
+              database: database,
+              feed: feed,
+              loadMediaServers: SyncRepository(database).getMediaServers,
+              // 不为后台检查拉起 Mihon 宿主（与漫画探针同理）；平台 / 合规门外
+              // 恒为 null。
+              animeManager:
+                  isVideoOnlineSourcesAvailable ? _animeMihonManager : null,
+            ),
         UpdateFeedKind.mangaChapter: () async {
           if (_mihonManager == null) return;
           await runOnlineMangaUpdateProbe(

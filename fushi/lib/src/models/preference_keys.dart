@@ -620,6 +620,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
   'video_interconnect_quality_preset',
   'video_library_auto_backfill_scrape',
+  // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
+  // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。
+  'video_library_auto_update',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，

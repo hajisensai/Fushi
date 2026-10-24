@@ -676,6 +676,22 @@ SettingsDestination buildSystemDestination() {
                 settingsContext.refresh();
               },
             ),
+          // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
+          // 关提醒不停补集，关这里不影响订阅下载的提醒。
+          SettingsSwitchItem(
+            id: 'system.updates.video_library_auto_update',
+            title: t.updates_video_library_auto_update,
+            subtitle: t.updates_video_library_auto_update_hint,
+            icon: FushiIcons.libraryAdd,
+            defaultValue: true,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.videoLibraryAutoUpdate,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setVideoLibraryAutoUpdate(value);
+              settingsContext.refresh();
+            },
+          ),
           // 扩展后台自动更新（默认关）：启动时把签名未变的漫画 / 视频扩展装成
           // 仓库新版；碰过在线源的进程里推迟到下次启动。只在有 Mihon 宿主且
           // 合规允许在线源的平台出现。

@@ -85,6 +85,9 @@ import 'package:fushi/src/media/video/video_subtitle_restore_plan.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi/src/media/video/video_source_fingerprint.dart';
 import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
@@ -3900,6 +3903,44 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               _failed = true;
               _failReason = e is AnimeSourceLaunchUnavailable
                   ? t.video_online_extension_unavailable
+                  : _describeLoadFailure(e);
+            });
+          }
+          return;
+        }
+        await _initRemote();
+        return;
+      }
+      // 媒体服务器入库条目：按行里的服务器身份找设置里同一台服务器现建客户端
+      // （流地址带令牌、换线路就变，不落库），合集里同一部剧的入库行作连播成员。
+      if (isMediaServerVideoPath(row.videoPath)) {
+        _setLoadingPhase(_VideoLoadPhase.connecting);
+        try {
+          final ({
+            RemoteVideoClient client,
+            RemoteVideoInfo info,
+            List<RemoteVideoInfo> members,
+            int startIndex,
+          })
+          launch = await buildMediaServerLaunch(
+            row: row,
+            database: appModel.database,
+            repository: widget.repo,
+            loadConfigs: SyncRepository(appModel.database).getMediaServers,
+            playlistCollectionId: widget.playlistCollectionId,
+          );
+          if (!mounted) return;
+          _resolvedStreamClient = launch.client;
+          _resolvedStreamInfo = launch.info;
+          _resolvedStreamMembers = launch.members;
+          _resolvedStreamStartIndex = launch.startIndex;
+        } catch (e) {
+          debugPrint('[VideoFushiPage] media-server launch failed: $e');
+          if (mounted) {
+            setState(() {
+              _failed = true;
+              _failReason = e is MediaServerLaunchUnavailable
+                  ? t.video_media_server_launch_unavailable
                   : _describeLoadFailure(e);
             });
           }

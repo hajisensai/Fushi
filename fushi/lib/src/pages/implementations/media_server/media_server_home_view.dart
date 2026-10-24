@@ -226,6 +226,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
                       MediaServerSession(
                         browser: browser,
                         play: widget.session.play,
+                        library: widget.session.library,
                       ),
                   ]),
             ),

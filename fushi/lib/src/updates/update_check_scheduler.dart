@@ -46,6 +46,8 @@ class UpdateCheckScheduler {
   /// 扩展与 app 24 小时：版本发布是周级事件，一天一次已经足够快。
   static const Map<UpdateFeedKind, Duration> kDefaultUpdateCheckIntervals =
       <UpdateFeedKind, Duration>{
+    // 番剧域在这里只有「媒体库在线作品补新集」（订阅仍走自己的相位节奏，见库注释）。
+    UpdateFeedKind.videoEpisode: Duration(hours: 6),
     UpdateFeedKind.mangaChapter: Duration(hours: 6),
     UpdateFeedKind.mangaExtension: Duration(hours: 24),
     UpdateFeedKind.animeExtension: Duration(hours: 24),
