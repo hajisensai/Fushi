@@ -22,6 +22,31 @@ void main() {
     }
   });
 
+  test('no child process gets a console window of its own', () {
+    // Children started in the default mode share dist_test's console; these
+    // are the ways to get a fresh (visible, focus-stealing) cmd window.
+    final List<File> sources = <File>[
+      File('tool/dist_test.dart'),
+      for (final FileSystemEntity e in Directory('tool/test_flow').listSync())
+        if (e is File && e.path.contains('dist_')) e,
+      for (final FileSystemEntity e in Directory('tool/dist_test').listSync())
+        if (e is File) e,
+    ];
+    expect(sources.length, greaterThan(5));
+    final RegExp forbidden = RegExp(
+      r'ProcessStartMode\.detached|Start-Process|cmd(\.exe)?\s+/[ck]\s+start\b'
+      r"|'start',|\bwt(\.exe)?\b|-WindowStyle",
+      caseSensitive: false,
+    );
+    for (final File f in sources) {
+      expect(
+        forbidden.hasMatch(f.readAsStringSync()),
+        isFalse,
+        reason: '${f.path} starts a process in its own window',
+      );
+    }
+  });
+
   test('the checked-in example config parses', () {
     final List<DistWorkerConfig> workers = readDistWorkers(
       File('tool/dist_test/workers.example.json').readAsStringSync(),

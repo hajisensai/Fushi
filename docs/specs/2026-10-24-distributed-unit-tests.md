@@ -1,6 +1,16 @@
 # 单元测试跨机分流（dist_test）设计
 
-日期：2026-10-24　状态：设计稿，未实现
+日期：2026-10-24　状态：第一期（本机 + 自己的 Mac）已实现；第二、三期未做
+
+## 第一期实现（与下文设计的差异以此为准）
+
+- 入口 `fushi/tool/dist_test.dart`；模块 `fushi/tool/test_flow/dist_{plan,snapshot,workers,results}.dart`；worker 端脚本 `fushi/tool/dist_test/worker_{prepare,run,kill}.sh`（随快照一起推过去，版本与代码一致）；配置 `fushi/tool/dist_test/workers.local.json`（`.gitignore`，从 `workers.example.json` 复制）。契约测试 `fushi/test/tools/dist_{plan,snapshot,results,workers}_test.dart`。
+- worker 种类只有 `local`（本 checkout）与 `ssh-trusted`（自己的机器，普通 shell）；`ssh-shim`（朋友机器，强制命令）留给第二期。
+- **没有 `slots`**：每台 worker 一个 checkout、同一时刻一个 `flutter test` 进程，并行度靠 `--concurrency`（`concurrency` 字段）。本机 worker 经 heavy 租约（整轮持有一个槽位），并发缺省取 heavy 的 4。
+- 批次只按耗时切（`--batch-minutes`，缺省 4）。本机 Windows 的 `flutter.bat` 走 `cmd.exe`、命令行上限 8191 字符，所以本机 worker 把一批拆成多个连续进程跑（每个 ≤6000 字符路径），事件流按 `start` 事件拆段再合并判绿；ssh worker 的文件清单走 stdin，没有这个限制。
+- Mac 首次准备：裸仓不单独建，`~/fushi-dist/work` 本身就是推送目标（推到 `refs/dist/<runId>`），`seedRepo`（如 `dev/hibiki`）作为 `objects/info/alternates`，首推只传增量（实测 85 MB）。pub cache 与 `~/dev/hibiki` 共用。准备步骤按内容哈希记在 `.git/fushi-dist/`，命中跳过。
+- `prepareEnv`（代理）只给准备步骤；准备时顺手跑一个小测试把 native-asset hook（pdfium 下载等）的缓存建好，之后的批次不带代理跑，与 CI 一致。
+- `--workers=` 只选部分机器时，只能在没选上的平台跑的 suite 计为「没跑」、整轮判红，不静默跳过。
 
 ## 目标与边界
 

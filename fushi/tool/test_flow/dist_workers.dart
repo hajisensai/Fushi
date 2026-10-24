@@ -483,8 +483,10 @@ class SshDistWorker extends DistWorker {
   String get _prefix =>
       '${_pathPrefix}cd "\$HOME"/${shellQuote(config.workdir)} && ';
 
+  /// `-n`: no stdin to forward, so ssh can finish as soon as the remote
+  /// command does.
   Future<ProcessResult> _ssh(String remoteCommand) =>
-      Process.run('ssh', <String>[..._sshBase, remoteCommand]);
+      Process.run('ssh', <String>['-n', ..._sshBase, remoteCommand]);
 
   Future<void> _sshChecked(String step, String command, IOSink log) async {
     final ProcessResult r = await _ssh(command);
@@ -556,10 +558,16 @@ class SshDistWorker extends DistWorker {
           "git clean -qfd -e 'native/*/prebuilt/' -e 'native/*/target/'",
       log,
     );
+    // Output goes to a file on the worker and is printed afterwards: pub /
+    // cargo / flutter can leave a daemon behind that inherits stdout, and an
+    // inherited ssh channel keeps the connection open forever (seen on the
+    // Mac: prepare finished, ssh never returned).
     await _sshChecked(
       'prepare',
       '$_prefix${env.isEmpty ? '' : 'env $env '}'
-          'bash fushi/tool/dist_test/worker_prepare.sh',
+          'bash fushi/tool/dist_test/worker_prepare.sh '
+          '> .git/fushi-dist-prepare.log 2>&1 < /dev/null; rc=\$?; '
+          'cat .git/fushi-dist-prepare.log; exit \$rc',
       log,
     );
   }

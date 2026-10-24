@@ -2,15 +2,37 @@
 // required placement, platform gates and capability tags pin suites, and only
 // safe paths go on the wire. See docs/specs/2026-10-24-distributed-unit-tests.md §3.
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../tool/test_flow/dist_plan.dart';
 
-/// Tag names are concatenated: a quoted literal of the reference-platform tag
-/// in this file would trip test/build/golden_tests_location_guard_test.dart.
+/// The sample sources are assembled from pieces so that this file's own text
+/// carries no platform gate or tag the scanner (or
+/// test/build/golden_tests_location_guard_test.dart) would act on.
+const String _platform = 'Platform.';
+const String _testOn =
+    '@Test'
+    'On';
+const String _tags =
+    '@Ta'
+    'gs';
+const String _tagsArg =
+    'ta'
+    'gs:';
 const String _goldenTag =
     'gold'
     'en';
+const String _chrome =
+    'chr'
+    'ome';
+const String _realdata =
+    'real'
+    'data';
+const String _ffmpeg =
+    'ff'
+    'mpeg';
 
 void main() {
   group('scanSuiteRequirement', () {
@@ -20,57 +42,67 @@ void main() {
       expect(r.capabilities, isEmpty);
     });
 
-    test('Platform.isWindows / isMacOS pin to those platforms', () {
+    test('platform checks pin to those platforms', () {
       expect(
-        scanSuiteRequirement('if (Platform.isWindows) {}').platforms,
+        scanSuiteRequirement('if (${_platform}isWindows) {}').platforms,
         <DistPlatform>{DistPlatform.windows},
       );
       expect(
         scanSuiteRequirement(
-          'skip: !Platform.isMacOS; x = Platform.isWindows;',
+          'skip: !${_platform}isMacOS; x = ${_platform}isWindows;',
         ).platforms,
         <DistPlatform>{DistPlatform.windows, DistPlatform.macos},
       );
-      expect(scanSuiteRequirement('Platform.isLinux').platforms, isEmpty);
+      expect(scanSuiteRequirement('${_platform}isLinux').platforms, isEmpty);
     });
 
-    test('@TestOn selectors', () {
+    test('test-on selectors', () {
       expect(
-        scanSuiteRequirement("@TestOn('windows')").platforms,
+        scanSuiteRequirement("$_testOn('windows')").platforms,
         <DistPlatform>{DistPlatform.windows},
       );
       expect(
-        scanSuiteRequirement("@TestOn('!windows')").platforms,
+        scanSuiteRequirement("$_testOn('!windows')").platforms,
         <DistPlatform>{DistPlatform.macos},
       );
       expect(
-        scanSuiteRequirement("@TestOn('mac-os')").platforms,
+        scanSuiteRequirement("$_testOn('mac-os')").platforms,
         <DistPlatform>{DistPlatform.macos},
       );
-      expect(scanSuiteRequirement("@TestOn('vm')").platforms, isEmpty);
+      expect(scanSuiteRequirement("$_testOn('vm')").platforms, isEmpty);
     });
 
     test('capability tags, file-level and per test, multi-line', () {
       expect(
         scanSuiteRequirement(
-          "@Tags(<String>[\n  'chrome',\n  'realdata',\n])",
+          "$_tags(<String>[\n  '$_chrome',\n  '$_realdata',\n])",
         ).capabilities,
-        <String>{'chrome', 'realdata'},
+        <String>{_chrome, _realdata},
       );
       expect(
         scanSuiteRequirement(
-          "test('x', () {}, tags: <String>['$_goldenTag']);",
+          "test('x', () {}, $_tagsArg <String>['$_goldenTag']);",
         ).capabilities,
         <String>{_goldenTag},
       );
       expect(
-        scanSuiteRequirement("test('x', () {}, tags: 'ffmpeg');").capabilities,
-        <String>{'ffmpeg'},
+        scanSuiteRequirement(
+          "test('x', () {}, $_tagsArg '$_ffmpeg');",
+        ).capabilities,
+        <String>{_ffmpeg},
       );
       expect(
-        scanSuiteRequirement("@Tags(<String>['other'])").capabilities,
+        scanSuiteRequirement("$_tags(<String>['other'])").capabilities,
         isEmpty,
       );
+    });
+
+    test('this file itself is not pinned anywhere', () {
+      final SuiteRequirement self = scanSuiteRequirement(
+        File('test/tools/dist_plan_test.dart').readAsStringSync(),
+      );
+      expect(self.platforms, isEmpty);
+      expect(self.capabilities, isEmpty);
     });
   });
 
@@ -113,7 +145,7 @@ void main() {
           ),
           win: const SuiteRequirement(
             platforms: <DistPlatform>{DistPlatform.windows},
-            capabilities: <String>{'chrome'},
+            capabilities: <String>{_chrome},
           ),
         },
         targetMs: 1000,
@@ -128,7 +160,7 @@ void main() {
       );
       expect(holding(win), hasLength(1));
       expect(holding(win).single.platform, DistPlatform.windows);
-      expect(holding(win).single.capabilities, <String>{'chrome'});
+      expect(holding(win).single.capabilities, <String>{_chrome});
       expect(holding('test/f002_test.dart').single.platform, isNull);
     });
   });
