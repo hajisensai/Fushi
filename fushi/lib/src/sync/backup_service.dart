@@ -2221,8 +2221,8 @@ class BackupService {
             sourcePathToArchiveRelative.containsKey(videoPath)) {
           continue;
         }
-        // 打包的是媒体本体：DVD title（虚拟路径）/ 网络流 / .strm 没有可打包的文件。
-        if (!await hasLocalMediaFile(videoPath)) continue;
+        // 打包的是这个路径上的文件本身（本地 .strm 指针照打）；DVD title 是虚拟路径，没有可打包的文件。
+        if (!await videoPathFileExists(videoPath)) continue;
         final String relativePath = _videoArchiveRelativePath(
           bookUid: row.bookUid,
           sourcePath: videoPath,

@@ -571,7 +571,7 @@ class AppVideoSubtitleService {
     if (videoPath != null &&
         episodes.isEmpty &&
         isLocalVideoFilePath(videoPath) &&
-        hasLocalMediaFileSync(videoPath)) {
+        videoPathFileExistsSync(videoPath)) {
       unavailable.clear();
       episodes.add(
         AppVideoSubtitleEpisode(

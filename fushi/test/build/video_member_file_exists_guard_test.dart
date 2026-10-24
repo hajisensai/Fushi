@@ -12,7 +12,8 @@ import '../helpers/scan_scale.dart';
 /// `File(videoPath).existsSync()` 对它恒为「不存在」——要么把仍在盘上的条目当成丢了
 /// （搬家 / 离线判据），要么把「没有媒体字节」报成「文件丢失」（上传 / 备份）。根因修
 /// 法是一个引擎侧入口：`videoMemberExists*`（这一条还在不在）与
-/// `hasLocalMediaFile*`（有没有可直接读的媒体文件）。
+/// `hasLocalMediaFile*`（有没有可直接读的媒体文件）与 `videoPathFileExists*`（这个路径
+/// 本身是不是一个文件：打包 / 放 sidecar）。
 ///
 /// 本守卫扫 app / 引擎 / 服务端的 `lib/`，对 `File(<…videoPath>)` 后接 `.exists` /
 /// `.existsSync`（同一表达式，或先赋给局部变量再判）的写法报错。外部传进来的任意文件
@@ -129,7 +130,7 @@ void main() {
       reason:
           '库路径（videoPath）的「文件在不在」不能裸调 File(...).exists*：DVD 标题是虚拟路径，'
           '裸判恒为不存在。「这一条还在不在」用 videoMemberExists*，「有没有可读的媒体文件」'
-          '用 hasLocalMediaFile*（packages/fushi_engine/lib/media/video/video_member_file.dart）。',
+          '用 hasLocalMediaFile*，「这个路径本身是不是文件」用 videoPathFileExists*（packages/fushi_engine/lib/media/video/video_member_file.dart）。',
     );
     expect(
       allowedSeen,

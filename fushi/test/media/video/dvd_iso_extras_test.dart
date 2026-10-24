@@ -126,6 +126,14 @@ void main() {
       File(plain).writeAsBytesSync(<int>[1]);
       expect(hasLocalMediaFileSync(plain), isTrue);
       expect(await videoMemberExists(plain), isTrue);
+
+      // 「这个路径本身是不是文件」：本地 .strm 指针是（备份照打包），DVD title 不是。
+      final String strm = p.join(tmp.path, 'channel.strm');
+      File(strm).writeAsStringSync('https://example.invalid/live.m3u8');
+      expect(videoPathFileExistsSync(strm), isTrue);
+      expect(hasLocalMediaFileSync(strm), isFalse);
+      expect(videoPathFileExistsSync(member), isFalse);
+      expect(await videoPathFileExists(member), isFalse);
     });
   });
 }

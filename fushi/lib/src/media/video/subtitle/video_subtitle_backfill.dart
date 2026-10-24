@@ -162,7 +162,7 @@ class VideoSubtitleBackfillService {
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
     }
-    if (!hasLocalMediaFileSync(target.videoPath)) {
+    if (!videoPathFileExistsSync(target.videoPath)) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',

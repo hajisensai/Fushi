@@ -497,7 +497,7 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
     final VideoBookRow? book = await rt.db.getVideoBookByBookUid(target);
     if (book == null) return io.fail(kExitNoInput, '既不是文件也不是库内视频 id: $target');
     libraryTitle = book.title;
-    if (hasLocalMediaFileSync(book.videoPath)) videoPath = book.videoPath;
+    if (videoPathFileExistsSync(book.videoPath)) videoPath = book.videoPath;
   }
   final VideoNameInfo? parsed = videoPath == null ? null : parseVideoFilename(p.basename(videoPath));
   final String query = ((sub['query'] as String?)?.trim().isNotEmpty ?? false)
