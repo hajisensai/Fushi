@@ -1035,6 +1035,7 @@ class DataRootMigrator {
       await _rebaseVideoFileSpecs(db, docs);
       await _rebaseAnidbFileIdentities(db, docs);
       await _rebaseGalgames(db, docs);
+      await _rebaseMusicAlbums(db, docs);
       await _rebaseMediaCollections(db, docs);
       await _rebaseCollectionScrapeMeta(db, docs);
       await _rebaseCollectionRelations(db, docs);
@@ -1213,6 +1214,24 @@ class DataRootMigrator {
       await db.customStatement(
         'UPDATE galgames SET cover_path = ? WHERE id = ?',
         <Object?>[newCover, g.id],
+      );
+    }
+  }
+
+  /// music_albums：cover_path。这一列混放两种路径：扫描到的目录封面（用户曲库里的
+  /// `cover.jpg`，外部路径、**绝不**改写）与刮削下载的 Cover Art Archive 封面
+  /// （`<documents>/music_covers/<发行 MBID>.jpg`，应用自有资产、必须随根改写）。
+  /// [DocumentsPathRebaser.rebaseNullable] 只改写落在旧 documents 根内的值，外部路径原样。
+  static Future<void> _rebaseMusicAlbums(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final MusicAlbumRow a in await db.listAllMusicAlbumsForPathRebase()) {
+      final String? newCover = docs.rebaseNullable(a.coverPath);
+      if (newCover == a.coverPath) continue;
+      await db.customStatement(
+        'UPDATE music_albums SET cover_path = ? WHERE album_uid = ?',
+        <Object?>[newCover, a.albumUid],
       );
     }
   }

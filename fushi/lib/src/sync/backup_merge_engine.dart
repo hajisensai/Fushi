@@ -1974,6 +1974,10 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'video_theme_song_spans',
       // v131：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
       'game_voice_casts',
+      // v129：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。
+      'music_scrape_meta',
+      'music_metadata_raw_snapshots',
+      'music_locked_fields',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →

@@ -77,6 +77,7 @@ abstract final class PrefRedactionPolicy {
     'video_subtitle_subdl_api_key',
     'manga_cloud_ocr_api_key',
     'video_scraper_tmdb_api_key',
+    'music_acoustid_api_key',
     'video_metadata_fanart_api_key',
     'video_metadata_bangumi_token',
     'video_metadata_douban_authorized_token',

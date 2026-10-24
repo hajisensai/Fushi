@@ -279,6 +279,7 @@ export 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -1542,6 +1543,21 @@ class AppModel with ChangeNotifier {
   bool get musicLyricsOnline => prefsRepo.musicLyricsOnline;
   Future<void> setMusicLyricsOnline(bool value) =>
       prefsRepo.setMusicLyricsOnline(value);
+
+  /// 音乐刮削（设计 §8）：MusicBrainz 主源 + AcoustID（有应用 key 才用）+ CAA + VGMdb（开关）。
+  late final MusicScrapeService musicScrape = MusicScrapeService(
+    database: () => isDatabaseReady ? database : null,
+    acoustidApiKey: () => isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    vgmdbEnabled: () => isDatabaseReady && prefsRepo.musicVgmdbEnabled,
+  );
+
+  String get musicAcoustidApiKey => prefsRepo.musicAcoustidApiKey;
+  Future<void> setMusicAcoustidApiKey(String value) =>
+      prefsRepo.setMusicAcoustidApiKey(value);
+
+  bool get musicVgmdbEnabled => prefsRepo.musicVgmdbEnabled;
+  Future<void> setMusicVgmdbEnabled(bool value) =>
+      prefsRepo.setMusicVgmdbEnabled(value);
 
   bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
   Future<void> setMusicLyricsLookupPause(bool value) =>

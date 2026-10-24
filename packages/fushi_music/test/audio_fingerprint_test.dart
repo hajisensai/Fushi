@@ -118,4 +118,9 @@ void main() {
       throwsA(isA<AudioFingerprintFormatError>()),
     );
   });
+
+  test('AcoustID 编码与 chromaprint 上游固定向量一致', () {
+    expect(fp.acoustidEncode(Uint32List.fromList(<int>[1])), 'AQAAAQE');
+    expect(fp.acoustidEncode(Uint32List(0)), 'AQAAAA');
+  });
 }

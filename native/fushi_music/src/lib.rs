@@ -18,6 +18,7 @@ pub mod dsf;
 pub mod fingerprint;
 pub mod lyrics;
 pub mod scan;
+pub mod tag_write;
 pub mod tags;
 pub mod uid;
 pub mod wire;
@@ -37,6 +38,8 @@ pub mod status {
     pub const BAD_INPUT: i32 = -3;
     /// 扫描根不存在或不是目录。
     pub const NOT_FOUND: i32 = -5;
+    /// 写文件失败（只读 / 被占用 / 格式不支持写标签）。
+    pub const WRITE_FAILED: i32 = -6;
     /// Rust 侧 panic（已接住）。
     pub const PANIC: i32 = -100;
 }
@@ -207,6 +210,76 @@ pub unsafe extern "C" fn ffm_tags_embedded_cover(
                 status::OK
             }
             Err(_) => status::BAD_INPUT,
+        }
+    })
+}
+
+fn utf8_path_arg<'a>(ptr: *const u8, len: usize) -> Result<&'a str, i32> {
+    let Some(bytes) = (unsafe { slice_arg(ptr, len) }) else {
+        return Err(status::NULL_ARGUMENT);
+    };
+    std::str::from_utf8(bytes).map_err(|_| status::INVALID_ARGUMENT)
+}
+
+/// 读出文件主标签里「写回」白名单字段（[tag_write::FIELDS]），线格式见 [tag_write]。
+/// 文件读不了返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// `path_ptr` 指向 `path_len` 字节；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_tags_read_fields(
+    path_ptr: *const u8,
+    path_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let path = match utf8_path_arg(path_ptr, path_len) {
+            Ok(p) => p,
+            Err(code) => return code,
+        };
+        match tag_write::read_fields(std::path::Path::new(path)) {
+            Ok(pairs) => {
+                hand_over_bytes(tag_write::encode_kv(&pairs), out_ptr, out_len);
+                status::OK
+            }
+            Err(_) => status::BAD_INPUT,
+        }
+    })
+}
+
+/// 把一组白名单字段写进文件主标签（值为空串 = 删除）。线格式坏 / 键不认识 / 数字字段
+/// 非法 → [status::INVALID_ARGUMENT]（文件不动）；文件读不了 → [status::BAD_INPUT]；
+/// 写盘失败 → [status::WRITE_FAILED]。
+///
+/// # Safety
+/// `path_ptr` 指向 `path_len` 字节；`kv_ptr` 指向 `kv_len` 字节。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_tags_write_fields(
+    path_ptr: *const u8,
+    path_len: usize,
+    kv_ptr: *const u8,
+    kv_len: usize,
+) -> i32 {
+    guard(|| {
+        let path = match utf8_path_arg(path_ptr, path_len) {
+            Ok(p) => p,
+            Err(code) => return code,
+        };
+        let Some(kv) = slice_arg(kv_ptr, kv_len) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Some(pairs) = tag_write::parse_kv(kv) else {
+            return status::INVALID_ARGUMENT;
+        };
+        match tag_write::write_fields(std::path::Path::new(path), &pairs) {
+            Ok(()) => status::OK,
+            Err(tag_write::TagWriteError::BadInput(_)) => status::INVALID_ARGUMENT,
+            Err(tag_write::TagWriteError::Unreadable(_)) => status::BAD_INPUT,
+            Err(tag_write::TagWriteError::WriteFailed(_)) => status::WRITE_FAILED,
         }
     })
 }

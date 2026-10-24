@@ -21,6 +21,7 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_scrape_sections.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -101,7 +102,32 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
   >
   _track = _loadTrack();
   late Future<List<ThemeSongAppearance>> _appearances = _loadAppearances();
+  late Future<({MusicScrapeMetaRow? meta, Map<String, MusicTrackRow> local})>
+  _versions = _loadVersions();
   bool _detecting = false;
+
+  /// 识别结论 + 「其它版本」里本地有的曲目（按录音 MBID）。
+  Future<({MusicScrapeMetaRow? meta, Map<String, MusicTrackRow> local})>
+  _loadVersions() async {
+    final MusicScrapeMetaRow? meta = await _db.getMusicScrapeMeta(
+      widget.trackUid,
+    );
+    final Set<String> ids = <String>{
+      if (meta?.originalRecordingId != null) meta!.originalRecordingId!,
+      for (final MusicStoredRecording r in decodeMusicStoredRecordings(
+        meta?.versionsJson,
+      ))
+        r.id,
+    };
+    final Map<String, MusicTrackRow> local = <String, MusicTrackRow>{
+      for (final MusicTrackRow t in await _db.listMusicTracksByRecordingIds(
+        ids,
+      ))
+        if (t.trackUid != widget.trackUid && t.mbRecordingId != null)
+          t.mbRecordingId!: t,
+    };
+    return (meta: meta, local: local);
+  }
 
   FushiDatabase get _db => ref.read(appProvider).database;
 
@@ -310,6 +336,44 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
               );
             },
       ),
+      MusicTrackIdentificationSection(
+        database: _db,
+        track: track,
+        service: ref.read(appProvider).musicScrape,
+        onChanged: () => setState(() => _versions = _loadVersions()),
+      ),
+      FutureBuilder<
+        ({MusicScrapeMetaRow? meta, Map<String, MusicTrackRow> local})
+      >(
+        future: _versions,
+        builder:
+            (
+              BuildContext context,
+              AsyncSnapshot<
+                ({MusicScrapeMetaRow? meta, Map<String, MusicTrackRow> local})
+              >
+              v,
+            ) {
+              final MusicScrapeMetaRow? meta = v.data?.meta;
+              if (meta == null || meta.status != 'matched') {
+                return const SizedBox.shrink();
+              }
+              return MusicTrackVersionsSection(
+                meta: meta,
+                localByRecording: v.data!.local,
+                onOpenLocal: (MusicTrackRow other) => unawaited(
+                  Navigator.of(context).push<void>(
+                    adaptivePageRoute<void>(
+                      context: context,
+                      builder: (_) =>
+                          MusicTrackDetailPage(trackUid: other.trackUid),
+                    ),
+                  ),
+                ),
+              );
+            },
+      ),
+      MusicTrackVideosSection(database: _db, track: track),
       // 署名（作品图谱 L5）：点演唱者 / 艺人进人物聚合页；没有署名数据时不渲染。
       MusicTrackPeopleSection(database: _db, trackUid: track.trackUid),
       MediaLinksSection(

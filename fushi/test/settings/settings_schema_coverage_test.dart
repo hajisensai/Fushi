@@ -78,6 +78,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/lyrics/music_lyrics_service_test.dart',
   // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup），harness
   // 设置页没有歌词页；判据由 music_lyrics_page_logic_test 咬住。
+  // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
+  'music/VGMdb lookup': 'test/media/music/metadata/music_scrape_service_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
