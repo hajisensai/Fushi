@@ -53,8 +53,21 @@ void main() {
       expect(body.contains('refreshShelfThrottled('), isTrue);
       // 直接重列只允许出现一次——在节流闭包里；循环体里不得再裸调。钉的是「几次
       // 重列」这个不变式，不是那行的写法（写法从箭头体改成了块体，见下一条）。
+      // 书架重列统一走 `_listForShelf()`（顺带让「已知不存在」的封面重探一次）；
+      // 它本身只是一次 `widget.repo.listForShelf()` 的薄包装。两种写法合计必须
+      // 恰好一次，且包装函数里也只能有一次——绕过包装裸调或在包装里多列都会红。
+      final String wrapper = methodBody(
+        page,
+        'Future<List<VideoBookRow>> _listForShelf() {',
+      );
       expect(
-        'widget.repo.listForShelf()'.allMatches(body).length,
+        'widget.repo.listForShelf()'.allMatches(wrapper).length,
+        1,
+        reason: '_listForShelf 只是一次重列的薄包装',
+      );
+      expect(
+        '_listForShelf()'.allMatches(body).length +
+            'widget.repo.listForShelf()'.allMatches(body).length,
         1,
         reason: '每张封面一次全库重列 + 整页重建',
       );
@@ -97,7 +110,8 @@ void main() {
 
       final String narrow = methodBody(page, 'void _refreshAfterPlayback() {');
       expect(
-        narrow.contains('widget.repo.listForShelf()'),
+        narrow.contains('_listForShelf()') ||
+            narrow.contains('widget.repo.listForShelf()'),
         isTrue,
         reason: '断点 / 完成时刻 / 字幕源 / 音轨都在 video_books 上',
       );
