@@ -34,6 +34,16 @@
 新增符号不升 `ffm_abi_version`（扫描批次格式没变）；Dart 侧按需 lookup，缺符号抛
 `FushiMusicUnavailableError`。
 
+### 与有声书 `fushi_audio` 的 `LrcParser` 的关系（2026-10-24 判断）
+
+有声书侧 `packages/fushi_audio/lib/src/parsers/lrc_parser.dart` 继续剥词级 `<mm:ss.xx>` 标签、
+产出行级 `AudioCue`，**本期不迁进本 crate**。按「Rust 胖核心」规则只认两种迁移动因，这里都不成立：
+① 没有实测性能问题（剥标签已是整份一次 `stripHtmlTagsBatch` FFI）；② 有声书 cue 绑定书章节、
+下游（匹配 / 对齐 / 制卡）只吃行级 cue，收编进音乐歌词核心并不减少跨边界次数，反而让
+`fushi_engine` / 无头服务端（`dart build cli` 随包原生库）多一个硬依赖。真要给有声书接词级时间
+时，再整段把 `LrcParser` 搬到这里（`ffm_lyrics_parse` + `LyricTimeline → AudioCue` 适配已就绪）
+并删 Dart 版。音乐一律走本 crate。
+
 状态码：0 成功；-1 空指针；-2 参数非法；-3 输入格式不对；-5 根不存在；-100 panic（已接住）。
 
 ## uid
