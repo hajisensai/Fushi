@@ -94,8 +94,15 @@ const Set<String> videoRemoteOperations = <String>{
 ///   the computer downloads it into its subtitle folder and applies it as
 ///   the primary subtitle ([videoRemoteCapabilitySubtitleSearch]). Errors:
 ///   `404 subtitle_candidate_missing`, `502 subtitle_download_failed`.
+/// * `caret` — `{caret: String, count?: int}` from [videoRemoteCaretActions]
+///   (`count`, 1..[videoRemoteCaretMaxCount], repeats one of
+///   [videoRemoteCaretMoves] so a quick drag is one request): drives the
+///   computer's own subtitle word cursor (the keyboard / gamepad one) so the
+///   lookup card opens on the computer screen ([videoRemoteCapabilityCaret]).
+///   Answers `{ok, caret}` with the cursor's surface afterwards (see
+///   [videoRemoteCaretSurfaces]); the snapshot carries the same `caret`.
 ///
-/// The last four are newer than the protocol itself: a host that predates
+/// The last five are newer than the protocol itself: a host that predates
 /// them answers `400 invalid_action`, a host whose player cannot do one
 /// answers `409 action_unsupported`. Phones only offer an action when the
 /// snapshot's `capabilities` list names it, so neither reaches a user.
@@ -108,7 +115,43 @@ const Set<String> videoRemoteCommandActions = <String>{
   'episode',
   'subtitleTrack',
   'subtitleDownload',
+  'caret',
 };
+
+/// Steps of the `caret` command. The computer routes each by where its cursor
+/// is: on the subtitle `enter` starts it (pausing playback) on the first
+/// visible character, `left` / `right` step one character back / forward in
+/// reading order, `up` / `down` move a line, `activate` looks the character
+/// up (the card opens and the cursor moves into it); inside the card the same
+/// steps move through it, `activate` presses what the cursor is on (the ＋
+/// button mines) and `longPress` is the card's long press. `back` closes the
+/// top card, or leaves the cursor (resuming playback it paused).
+const Set<String> videoRemoteCaretActions = <String>{
+  'enter',
+  'left',
+  'right',
+  'up',
+  'down',
+  'activate',
+  'longPress',
+  'back',
+};
+
+/// The `caret` steps that take a `count`.
+const Set<String> videoRemoteCaretMoves = <String>{
+  'left',
+  'right',
+  'up',
+  'down',
+};
+
+/// Upper bound of the `caret` command's `count`.
+const int videoRemoteCaretMaxCount = 20;
+
+/// Where the computer's word cursor is (`caret` in the snapshot and in the
+/// `caret` command's answer): `none` (off), `video` (on the subtitle) or
+/// `popup` (inside a lookup card).
+const Set<String> videoRemoteCaretSurfaces = <String>{'none', 'video', 'popup'};
 
 /// Snapshot `capabilities` entries: optional controls this host's player
 /// supports. A snapshot without the list (older hosts) supports none of them.
@@ -116,6 +159,7 @@ const String videoRemoteCapabilityVolume = 'volume';
 const String videoRemoteCapabilityEpisodes = 'episodes';
 const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
 const String videoRemoteCapabilitySubtitleSearch = 'subtitleSearch';
+const String videoRemoteCapabilityCaret = 'caret';
 
 /// Host-level capability (present with or without an open video): the host
 /// answers `library` / `openVideo`.

@@ -57,7 +57,10 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
     show
         videoRemoteActionUnsupported,
+        videoRemoteCapabilityCaret,
         videoRemoteCapabilityEpisodes,
+        videoRemoteCaretMaxCount,
+        videoRemoteCaretMoves,
         videoRemoteCapabilityOpenVideo,
         videoRemoteCapabilitySubtitleSearch,
         videoRemoteCapabilitySubtitleTracks,
@@ -1814,9 +1817,89 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
       key: const ValueKey<String>('video-remote-touchpad-view'),
       line: current?['text']?.toString() ?? '',
       playing: playing,
+      caretActive: caretActive,
+      caretAvailable: canDriveCaret,
       onAction: _onTouchpadAction,
       onExit: () => setTouchpad(false),
     );
+  }
+
+  /// 电脑上字幕选词光标在哪（快照 `caret`：`none` / `video` / `popup`）；旧版
+  /// 电脑不上报 = `none`。
+  String get caretSurface => _state['caret']?.toString() ?? 'none';
+
+  /// 电脑上的选词光标开着（触控板据此切到选词手势）。
+  bool get caretActive => caretSurface != 'none';
+
+  /// 电脑支持从手机驱动选词光标（查词卡弹在电脑屏幕上）。
+  bool get canDriveCaret =>
+      available && capabilities.contains(videoRemoteCapabilityCaret);
+
+  /// 还没发出的选词光标步（步名, 步数）。按顺序一条接一条发；连拖时排着的同向
+  /// 挪动并成一条（`count`），慢网络下手指停了光标也不会继续往前跑很远。
+  final List<(String, int)> _caretPending = <(String, int)>[];
+  bool _caretSending = false;
+
+  /// 排一步选词光标命令。
+  void _sendCaret(String step) {
+    final (String, int)? last = _caretPending.isEmpty
+        ? null
+        : _caretPending.last;
+    if (last != null &&
+        last.$1 == step &&
+        videoRemoteCaretMoves.contains(step) &&
+        last.$2 < videoRemoteCaretMaxCount) {
+      _caretPending.last = (step, last.$2 + 1);
+    } else {
+      _caretPending.add((step, 1));
+    }
+    if (!_caretSending) unawaited(_drainCaret());
+  }
+
+  /// 依次发出排着的光标步。电脑回报光标落在哪，本页据此切换触控板手势；回报
+  /// `none`（光标已退出，或电脑上有人用键盘退了它）时余下的步作废。
+  Future<void> _drainCaret() async {
+    _caretSending = true;
+    try {
+      while (_caretPending.isNotEmpty) {
+        final (String step, int count) = _caretPending.removeAt(0);
+        if (!mounted || !available) {
+          _caretPending.clear();
+          return;
+        }
+        try {
+          final Map<String, dynamic> result = await _client
+              .call('command', <String, dynamic>{
+                ..._session,
+                'requestId': _client.requestId(),
+                'action': 'caret',
+                'caret': step,
+                if (count > 1) 'count': count,
+              });
+          if (!mounted) return;
+          final String surface = result['caret']?.toString() ?? 'none';
+          setState(
+            () => _state = <String, dynamic>{..._state, 'caret': surface},
+          );
+          if (surface == 'none') {
+            _caretPending.clear();
+            if (step == 'enter') {
+              FushiToast.show(
+                msg: t.video_remote_touchpad_caret_unavailable,
+                severity: ToastSeverity.warning,
+              );
+            }
+          }
+        } catch (error) {
+          _caretPending.clear();
+          if (!mounted) return;
+          final String text = videoRemoteErrorText(error);
+          if (text.isNotEmpty) setState(() => _error = text);
+        }
+      }
+    } finally {
+      _caretSending = false;
+    }
   }
 
   Widget _scaffold(_TranscriptProjection projection) {
@@ -1912,6 +1995,13 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   void setTouchpad(bool open) {
     if (open == _touchpad) return;
     if (open) closeLookup();
+    // 离开触控板时把电脑上的选词光标收掉（逐层关卡、最后退出光标并恢复它暂停
+    // 的播放）：回到遥控器后再没有手段操作它。回报 `none` 后余下的后退作废。
+    if (!open && canDriveCaret && caretActive) {
+      for (int i = 0; i < 6; i++) {
+        _sendCaret('back');
+      }
+    }
     setState(() => _touchpad = open);
   }
 
@@ -1947,6 +2037,29 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         // 先记下本地值：连着快滑时下一档在这一档上加，不等电脑的快照回来。
         setState(() => _state = <String, dynamic>{..._state, 'volume': next});
         unawaited(setVolume(next));
+      case VideoRemotePadAction.caretEnter:
+        if (!canDriveCaret) return false;
+        // 先当它已进入：长按的手指还按着，接着拖就该挪字，不等这一来回；电脑
+        // 回报 `none`（屏上没有可选字幕）时 [_drainCaret] 改回来。
+        setState(() => _state = <String, dynamic>{..._state, 'caret': 'video'});
+        _sendCaret('enter');
+      case VideoRemotePadAction.caretLeft:
+      case VideoRemotePadAction.caretRight:
+      case VideoRemotePadAction.caretUp:
+      case VideoRemotePadAction.caretDown:
+      case VideoRemotePadAction.caretActivate:
+      case VideoRemotePadAction.caretLongPress:
+      case VideoRemotePadAction.caretBack:
+        if (!canDriveCaret || !caretActive) return false;
+        _sendCaret(switch (action) {
+          VideoRemotePadAction.caretLeft => 'left',
+          VideoRemotePadAction.caretRight => 'right',
+          VideoRemotePadAction.caretUp => 'up',
+          VideoRemotePadAction.caretDown => 'down',
+          VideoRemotePadAction.caretActivate => 'activate',
+          VideoRemotePadAction.caretLongPress => 'longPress',
+          _ => 'back',
+        });
     }
     return true;
   }

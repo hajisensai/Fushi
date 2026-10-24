@@ -11,7 +11,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 触控板上的一次操作（页面把它翻译成遥控命令）。
+/// 触控板上的一次操作（页面把它翻译成遥控命令）。`caret*` 驱动电脑上的字幕
+/// 选词光标（`caret` 命令）。
 enum VideoRemotePadAction {
   playPause,
   replayLine,
@@ -19,20 +20,62 @@ enum VideoRemotePadAction {
   nextLine,
   volumeUp,
   volumeDown,
+  caretEnter,
+  caretLeft,
+  caretRight,
+  caretUp,
+  caretDown,
+  caretActivate,
+  caretLongPress,
+  caretBack,
 }
 
-/// 手势 → 操作（纯函数）：整屏点按播放 / 暂停，双击重听这句，左滑下一句、右滑
-/// 上一句（像翻页：手指往左推 = 往后），上滑 / 下滑调音量。其余手势不处理。
-VideoRemotePadAction? videoRemotePadActionFor(VideoRemotePadGesture gesture) =>
-    switch (gesture) {
-      VideoRemotePadGesture.tap => VideoRemotePadAction.playPause,
-      VideoRemotePadGesture.doubleTap => VideoRemotePadAction.replayLine,
-      VideoRemotePadGesture.flickLeft => VideoRemotePadAction.nextLine,
-      VideoRemotePadGesture.flickRight => VideoRemotePadAction.previousLine,
-      VideoRemotePadGesture.flickUp => VideoRemotePadAction.volumeUp,
-      VideoRemotePadGesture.flickDown => VideoRemotePadAction.volumeDown,
+/// 手势 → 操作（纯函数）。
+///
+/// 空闲：整屏点按播放 / 暂停，双击重听这句，左滑下一句、右滑上一句（像翻页：
+/// 手指往左推 = 往后），上滑 / 下滑调音量；[caretAvailable] 时长按在电脑上开始
+/// 选词。
+///
+/// 选词中（[caret]）：拖动一格挪一字 / 一行，点按查词或确认，长按 = 卡片里的
+/// 长按，双指轻点后退（关卡 / 退出选词）。
+VideoRemotePadAction? videoRemotePadActionFor(
+  VideoRemotePadGesture gesture, {
+  bool caret = false,
+  bool caretAvailable = false,
+}) {
+  if (caret) {
+    return switch (gesture) {
+      VideoRemotePadGesture.stepLeft => VideoRemotePadAction.caretLeft,
+      VideoRemotePadGesture.stepRight => VideoRemotePadAction.caretRight,
+      VideoRemotePadGesture.stepUp => VideoRemotePadAction.caretUp,
+      VideoRemotePadGesture.stepDown => VideoRemotePadAction.caretDown,
+      VideoRemotePadGesture.tap => VideoRemotePadAction.caretActivate,
+      VideoRemotePadGesture.longPress => VideoRemotePadAction.caretLongPress,
+      VideoRemotePadGesture.twoFingerTap => VideoRemotePadAction.caretBack,
       _ => null,
     };
+  }
+  return switch (gesture) {
+    VideoRemotePadGesture.tap => VideoRemotePadAction.playPause,
+    VideoRemotePadGesture.doubleTap => VideoRemotePadAction.replayLine,
+    VideoRemotePadGesture.flickLeft => VideoRemotePadAction.nextLine,
+    VideoRemotePadGesture.flickRight => VideoRemotePadAction.previousLine,
+    VideoRemotePadGesture.flickUp => VideoRemotePadAction.volumeUp,
+    VideoRemotePadGesture.flickDown => VideoRemotePadAction.volumeDown,
+    VideoRemotePadGesture.longPress when caretAvailable =>
+      VideoRemotePadAction.caretEnter,
+    _ => null,
+  };
+}
+
+/// 逐格挪动（每一格都震，但不闪图标，免得连拖时满屏闪）。
+bool _isCaretStep(VideoRemotePadAction action) => switch (action) {
+  VideoRemotePadAction.caretLeft ||
+  VideoRemotePadAction.caretRight ||
+  VideoRemotePadAction.caretUp ||
+  VideoRemotePadAction.caretDown => true,
+  _ => false,
+};
 
 /// 手机遥控的「触控板」：整块屏幕都是操作区，不看手机也能按（不存在按偏的
 /// 按钮）。每个被识别的手势震一下并在中央闪出对应图标，眼睛回到电脑屏幕前也
@@ -47,6 +90,8 @@ class VideoRemoteTouchpad extends StatefulWidget {
     required this.playing,
     required this.onAction,
     required this.onExit,
+    this.caretActive = false,
+    this.caretAvailable = false,
   });
 
   /// 电脑上当前这句字幕（低头看一眼时用）；空 = 不显示。
@@ -55,13 +100,23 @@ class VideoRemoteTouchpad extends StatefulWidget {
   final bool Function(VideoRemotePadAction action) onAction;
   final VoidCallback onExit;
 
+  /// 电脑上的选词光标开着：手势切到选词（拖动逐格、点按即发，不等双击）。
+  final bool caretActive;
+
+  /// 电脑支持遥控选词（长按进入）。
+  final bool caretAvailable;
+
   @override
   State<VideoRemoteTouchpad> createState() => _VideoRemoteTouchpadState();
 }
 
 class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
     with SingleTickerProviderStateMixin {
-  final VideoRemotePadGestureTracker _tracker = VideoRemotePadGestureTracker();
+  late final VideoRemotePadGestureTracker _tracker =
+      VideoRemotePadGestureTracker(
+        stepping: widget.caretActive,
+        doubleTapEnabled: !widget.caretActive,
+      );
 
   /// 只在有手指按着 / 单击等确认时跑，推进长按与双击窗口的时间。手势时钟就是
   /// 它的帧时间累计（停下时把这段并进 [_offset]）：指针事件取最近一帧的时刻，
@@ -75,6 +130,16 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
   IconData? _flash;
   int _flashSerial = 0;
   Timer? _flashTimer;
+
+  @override
+  void didUpdateWidget(covariant VideoRemoteTouchpad oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.caretActive != widget.caretActive) {
+      // 空闲时等双击确认的单击不能落成选词里的「查词」；长按进入选词时手指还
+      // 按着，接着拖就开始挪字。
+      _tracker.switchMode(stepping: widget.caretActive, at: _now);
+    }
+  }
 
   @override
   void dispose() {
@@ -101,10 +166,18 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
 
   void _emit(List<VideoRemotePadGesture> gestures) {
     for (final VideoRemotePadGesture gesture in gestures) {
-      final VideoRemotePadAction? action = videoRemotePadActionFor(gesture);
+      final VideoRemotePadAction? action = videoRemotePadActionFor(
+        gesture,
+        caret: widget.caretActive,
+        caretAvailable: widget.caretAvailable,
+      );
       if (action == null) continue;
       final IconData icon = _iconFor(action);
       if (!widget.onAction(action)) continue;
+      if (_isCaretStep(action)) {
+        fushiSelectionHaptic(context);
+        continue;
+      }
       fushiLiftHaptic(context);
       _flashTimer?.cancel();
       setState(() {
@@ -125,7 +198,70 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
     VideoRemotePadAction.nextLine => FushiIcons.skipNext,
     VideoRemotePadAction.volumeUp => FushiIcons.volumeUp,
     VideoRemotePadAction.volumeDown => FushiIcons.volumeDown,
+    VideoRemotePadAction.caretEnter ||
+    VideoRemotePadAction.caretActivate => FushiIcons.search,
+    VideoRemotePadAction.caretLongPress => FushiIcons.bookmark,
+    VideoRemotePadAction.caretBack => FushiIcons.back,
+    VideoRemotePadAction.caretLeft ||
+    VideoRemotePadAction.caretRight ||
+    VideoRemotePadAction.caretUp ||
+    VideoRemotePadAction.caretDown => FushiIcons.touch,
   };
+
+  /// 底部手势说明：空闲 / 选词两套（选词时顶上一枚模式标签）。
+  Widget _hint(ThemeData theme, ColorScheme scheme) {
+    final TextStyle? style = theme.textTheme.bodyMedium?.copyWith(
+      color: scheme.onSurfaceVariant,
+    );
+    if (widget.caretActive) {
+      return Column(
+        key: const ValueKey<String>('video-remote-touchpad-hint-caret'),
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              child: Text(
+                t.video_remote_touchpad_caret,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: scheme.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            t.video_remote_touchpad_caret_hint,
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+        ],
+      );
+    }
+    return Column(
+      key: const ValueKey<String>('video-remote-touchpad-hint'),
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.video_remote_touchpad_hint,
+          textAlign: TextAlign.center,
+          style: style,
+        ),
+        if (widget.caretAvailable) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            t.video_remote_touchpad_caret_entry,
+            textAlign: TextAlign.center,
+            style: style,
+          ),
+        ],
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -224,15 +360,9 @@ class _VideoRemoteTouchpadState extends State<VideoRemoteTouchpad>
                     ),
                     FushiStaggeredEntrance(
                       index: 2,
-                      child: Text(
-                        t.video_remote_touchpad_hint,
-                        key: const ValueKey<String>(
-                          'video-remote-touchpad-hint',
-                        ),
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      child: AnimatedSwitcher(
+                        duration: switchDuration,
+                        child: _hint(theme, scheme),
                       ),
                     ),
                   ],

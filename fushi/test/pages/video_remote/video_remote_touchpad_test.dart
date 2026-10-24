@@ -9,7 +9,11 @@ void main() {
   late List<VideoRemotePadAction> actions;
   late bool accept;
 
-  Widget host({VoidCallback? onExit}) => MaterialApp(
+  Widget host({
+    VoidCallback? onExit,
+    bool caretActive = false,
+    bool caretAvailable = false,
+  }) => MaterialApp(
     theme: buildFushiFallbackTheme(
       Brightness.light,
     ).copyWith(platform: TargetPlatform.android),
@@ -25,6 +29,8 @@ void main() {
         return accept;
       },
       onExit: onExit ?? () {},
+      caretActive: caretActive,
+      caretAvailable: caretAvailable,
     ),
   );
 
@@ -121,7 +127,88 @@ void main() {
     expect(actions, isEmpty);
   });
 
+  testWidgets('holding starts choosing a word when the computer supports it', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(host(caretAvailable: true));
+    final TestGesture gesture = await tester.startGesture(
+      tester.getCenter(surface()),
+    );
+    for (int i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(actions, <VideoRemotePadAction>[VideoRemotePadAction.caretEnter]);
+  });
+
+  testWidgets(
+    'while choosing, drags step, taps look up at once, two fingers go back',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(host(caretActive: true, caretAvailable: true));
+      expect(
+        find.byKey(const ValueKey<String>('video-remote-touchpad-hint-caret')),
+        findsOneWidget,
+      );
+      final Offset center = tester.getCenter(surface());
+
+      // 18 slop + 28×2：两格向右，再拖回一格。
+      final TestGesture drag = await tester.startGesture(center);
+      await drag.moveBy(const Offset(40, 0));
+      await drag.moveBy(const Offset(34, 0));
+      await drag.moveBy(const Offset(-30, 0));
+      await drag.up();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(actions, <VideoRemotePadAction>[
+        VideoRemotePadAction.caretRight,
+        VideoRemotePadAction.caretRight,
+        VideoRemotePadAction.caretLeft,
+      ]);
+      // 逐格挪不闪图标。
+      expect(flash(), findsNothing);
+
+      actions.clear();
+      await tapSurface(tester);
+      await tester.pump();
+      expect(actions, <VideoRemotePadAction>[
+        VideoRemotePadAction.caretActivate,
+      ]);
+
+      actions.clear();
+      final TestGesture first = await tester.startGesture(center, pointer: 7);
+      final TestGesture second = await tester.startGesture(
+        center + const Offset(90, 0),
+        pointer: 8,
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      await first.up();
+      await second.up();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(actions, <VideoRemotePadAction>[VideoRemotePadAction.caretBack]);
+    },
+  );
+
   test('gesture → action mapping', () {
     expect(videoRemotePadActionFor(VideoRemotePadGesture.longPress), isNull);
+    expect(
+      videoRemotePadActionFor(
+        VideoRemotePadGesture.longPress,
+        caretAvailable: true,
+      ),
+      VideoRemotePadAction.caretEnter,
+    );
+    expect(
+      videoRemotePadActionFor(VideoRemotePadGesture.longPress, caret: true),
+      VideoRemotePadAction.caretLongPress,
+    );
+    expect(
+      videoRemotePadActionFor(VideoRemotePadGesture.flickLeft, caret: true),
+      isNull,
+    );
+    expect(
+      videoRemotePadActionFor(VideoRemotePadGesture.stepDown, caret: true),
+      VideoRemotePadAction.caretDown,
+    );
+    expect(videoRemotePadActionFor(VideoRemotePadGesture.twoFingerTap), isNull);
   });
 }
