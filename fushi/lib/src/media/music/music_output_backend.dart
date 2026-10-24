@@ -21,6 +21,8 @@ class MusicPlayItem {
     this.artist,
     this.album,
     this.albumUid,
+    this.discNo,
+    this.trackNo,
     this.durationMs,
     this.coverPath,
     this.codec,
@@ -43,6 +45,10 @@ class MusicPlayItem {
   final String? artist;
   final String? album;
   final String? albumUid;
+
+  /// 碟号 / 轨号（判「专辑连续曲目」用，见 `musicTransitionIsBoundary`）。
+  final int? discNo;
+  final int? trackNo;
   final int? durationMs;
   final String? coverPath;
 
@@ -103,6 +109,7 @@ class MusicOutputSettings {
     this.volume = 100,
     this.dsdPcmRate = MusicDsdPcmRate.khz176,
     this.crossfade = Duration.zero,
+    this.crossfadeContinuous = false,
   });
 
   /// mpv `gapless-audio=weak`（同格式真无缝，格式变化时重开设备）。
@@ -128,6 +135,9 @@ class MusicOutputSettings {
   /// 交叉淡入时长；[Duration.zero] = 关（默认）。开了即非 bit-perfect。
   final Duration crossfade;
 
+  /// 专辑连续曲目 / CUE 拆轨这类本来就该无缝的衔接也交叉淡入（默认否：真无缝优先）。
+  final bool crossfadeContinuous;
+
   MusicOutputSettings copyWith({
     bool? gapless,
     MusicReplayGainMode? replayGain,
@@ -138,6 +148,7 @@ class MusicOutputSettings {
     double? volume,
     MusicDsdPcmRate? dsdPcmRate,
     Duration? crossfade,
+    bool? crossfadeContinuous,
   }) => MusicOutputSettings(
     gapless: gapless ?? this.gapless,
     replayGain: replayGain ?? this.replayGain,
@@ -148,6 +159,7 @@ class MusicOutputSettings {
     volume: volume ?? this.volume,
     dsdPcmRate: dsdPcmRate ?? this.dsdPcmRate,
     crossfade: crossfade ?? this.crossfade,
+    crossfadeContinuous: crossfadeContinuous ?? this.crossfadeContinuous,
   );
 
   @override
@@ -161,7 +173,8 @@ class MusicOutputSettings {
       other.speed == speed &&
       other.volume == volume &&
       other.dsdPcmRate == dsdPcmRate &&
-      other.crossfade == crossfade;
+      other.crossfade == crossfade &&
+      other.crossfadeContinuous == crossfadeContinuous;
 
   @override
   int get hashCode => Object.hash(
@@ -174,6 +187,7 @@ class MusicOutputSettings {
     volume,
     dsdPcmRate,
     crossfade,
+    crossfadeContinuous,
   );
 }
 
@@ -239,6 +253,9 @@ final class MusicBackendFailed extends MusicBackendEvent {
 /// 输出后端。实现必须保证：[openPair] 后后端只持有 [current] 与（可选）[next] 两项；
 /// 自然播完 [current] 时若有 next 则无缝切过去并发 [MusicBackendAdvanced]，否则发
 /// [MusicBackendCompleted]。
+///
+/// `crossfadeNext` = 引擎判定 current → next 是真边界、该交叉淡入（只有支持交叉淡入的
+/// 后端理会；不支持的照常 gapless）。
 abstract interface class MusicOutputBackend {
   Stream<MusicBackendEvent> get events;
 
@@ -249,10 +266,11 @@ abstract interface class MusicOutputBackend {
     MusicPlayItem current,
     MusicPlayItem? next, {
     required bool play,
+    bool crossfadeNext = false,
   });
 
   /// 只换「下一首」（当前曲目不中断）。
-  Future<void> replaceNext(MusicPlayItem? next);
+  Future<void> replaceNext(MusicPlayItem? next, {bool crossfadeNext = false});
 
   Future<void> play();
   Future<void> pause();

@@ -4501,6 +4501,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 专辑连续曲目 / CUE 拆轨也交叉淡入（默认关：真无缝优先，设计 §7.2）。
+  bool get musicCrossfadeContinuous =>
+      getPref('music_crossfade_continuous', defaultValue: false) as bool;
+
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await setPref('music_crossfade_continuous', value);
+    notifyListeners();
+  }
+
   /// 本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4，D3 只装配 LRCLIB）。默认开。
   bool get musicLyricsOnline =>
       getPref('music_lyrics_online', defaultValue: true) == true;
