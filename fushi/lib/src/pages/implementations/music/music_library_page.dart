@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
 import 'package:flutter/services.dart' hide ModifierKey;
@@ -11,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/music/lyrics/music_lyrics_coverage_index.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -23,6 +25,7 @@ import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -86,12 +89,24 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
 
+  /// 「歌曲」分区的排序（按歌词生词覆盖率，设计 §12）。
+  MusicTrackSort _sort = MusicTrackSort.library;
+  Map<String, MusicTrackDifficulty> _difficulty =
+      const <String, MusicTrackDifficulty>{};
+  MusicCoverageRunResult? _coverageResult;
+
   AppModel get _app => ref.read(appProvider);
+  MusicLyricsCoverageIndex get _coverage =>
+      ref.read(musicLyricsCoverageIndexProvider);
 
   @override
   void initState() {
     super.initState();
     unawaited(_reload());
+    if (_app.isPreferencesReady) {
+      _sort = MusicTrackSort.parse(_app.prefsRepo.musicTrackSort);
+    }
+    if (_sort.byDifficulty) unawaited(_runCoverage());
     if (widget.snapshotLoader == null && _app.isDatabaseReady) {
       final FushiDatabase db = _app.database;
       // 表级变更流（不是 drift .watch()：长驻页面订阅 watch 会在 dispose 时挂死测试）。
@@ -125,6 +140,32 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               : MusicLibrarySnapshot.empty);
     if (!mounted) return;
     setState(() => _snapshot = snap);
+  }
+
+  /// 先把已落库的难度显示出来，再增量计算（没变的曲目不重算），算完重读。
+  Future<void> _runCoverage({bool force = false}) async {
+    final MusicLyricsCoverageIndex index = _coverage;
+    final Map<String, MusicTrackDifficulty> cached = await index
+        .loadDifficulty();
+    if (!mounted) return;
+    setState(() => _difficulty = cached);
+    final MusicCoverageRunResult result = await index.run(force: force);
+    final Map<String, MusicTrackDifficulty> fresh = await index
+        .loadDifficulty();
+    if (!mounted) return;
+    setState(() {
+      _coverageResult = result;
+      _difficulty = fresh;
+    });
+  }
+
+  void _setSort(MusicTrackSort sort) {
+    if (sort == _sort) return;
+    setState(() => _sort = sort);
+    if (_app.isPreferencesReady) {
+      unawaited(_app.prefsRepo.setMusicTrackSort(sort.prefValue));
+    }
+    if (sort.byDifficulty) unawaited(_runCoverage());
   }
 
   Future<void> _addFolder() async {
@@ -343,11 +384,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         artists: snap.artists,
         onOpen: (MusicArtistRow a) => unawaited(_openArtist(a)),
       ),
-      MusicLibrarySection.songs => MusicTrackList(
-        tracks: snap.tracks,
-        albums: snap.albumByUid,
-        context: MusicQueueContext.mixed,
-      ),
+      MusicLibrarySection.songs => _buildSongs(context, snap),
       MusicLibrarySection.works => Center(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.music,
@@ -365,6 +402,174 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               )
             : _PlaylistList(playlists: snap.playlists),
     };
+  }
+
+  Widget _buildSongs(BuildContext context, MusicLibrarySnapshot snap) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool byDifficulty = _sort.byDifficulty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: HorizontalDragScrollable(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Semantics(
+                      label: t.music_sort_label,
+                      child: adaptiveSegmentedButton<MusicTrackSort>(
+                        context: context,
+                        segments: <ButtonSegment<MusicTrackSort>>[
+                          for (final MusicTrackSort s in MusicTrackSort.values)
+                            ButtonSegment<MusicTrackSort>(
+                              value: s,
+                              label: Text(musicTrackSortLabel(s)),
+                            ),
+                        ],
+                        selected: <MusicTrackSort>{_sort},
+                        onSelectionChanged: (Set<MusicTrackSort> v) =>
+                            _setSort(v.first),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: byDifficulty
+                    ? FushiIconButton(
+                        key: const ValueKey<String>(
+                          'music_difficulty_recompute',
+                        ),
+                        icon: FushiIcons.refresh,
+                        tooltip: t.music_difficulty_recompute,
+                        onTap: () => unawaited(_runCoverage(force: true)),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
+        ),
+        FushiAnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: byDifficulty
+              ? _MusicCoverageStatus(
+                  progress: _coverage.progress,
+                  result: _coverageResult,
+                  onStop: _coverage.cancel,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+        Expanded(
+          child: MusicTrackList(
+            // 换排序时整表重建，错峰进场重播一次。
+            key: ValueKey<MusicTrackSort>(_sort),
+            tracks: sortMusicTracksByDifficulty(
+              snap.tracks,
+              _difficulty,
+              _sort,
+            ),
+            albums: snap.albumByUid,
+            context: MusicQueueContext.mixed,
+            difficulty: byDifficulty ? _difficulty : null,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String musicTrackSortLabel(MusicTrackSort s) => switch (s) {
+  MusicTrackSort.library => t.music_sort_library,
+  MusicTrackSort.easiestFirst => t.music_sort_easiest,
+  MusicTrackSort.hardestFirst => t.music_sort_hardest,
+};
+
+/// 难度排序下的状态行：计算中（进度 + 停止）/ 缺词典 / 复习模块关着 / 口径说明。
+class _MusicCoverageStatus extends StatelessWidget {
+  const _MusicCoverageStatus({
+    required this.progress,
+    required this.result,
+    required this.onStop,
+  });
+
+  final ValueListenable<MusicCoverageProgress> progress;
+  final MusicCoverageRunResult? result;
+  final VoidCallback onStop;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap / 2,
+        tokens.spacing.page,
+        0,
+      ),
+      child: ValueListenableBuilder<MusicCoverageProgress>(
+        valueListenable: progress,
+        builder: (BuildContext context, MusicCoverageProgress p, _) {
+          final Widget child;
+          if (p.running) {
+            child = Row(
+              key: const ValueKey<String>('music_difficulty_running'),
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        t.music_difficulty_progress(
+                          done: p.done,
+                          total: p.total,
+                        ),
+                        style: context.fushiType.bodySmall,
+                      ),
+                      SizedBox(height: tokens.spacing.gap / 2),
+                      LinearProgressIndicator(
+                        value: p.total == 0 ? null : p.done / p.total,
+                      ),
+                    ],
+                  ),
+                ),
+                FushiTextButton(
+                  key: const ValueKey<String>('music_difficulty_stop'),
+                  onPressed: onStop,
+                  child: Text(t.music_difficulty_stop),
+                ),
+              ],
+            );
+          } else {
+            final MusicCoverageRunResult? r = result;
+            final String message =
+                r?.outcome == MusicCoverageRunOutcome.noDictionary
+                ? t.music_difficulty_needs_dictionary
+                : r != null && !r.knownAvailable
+                ? t.music_difficulty_needs_srs
+                : t.music_difficulty_hint;
+            child = Text(
+              message,
+              key: ValueKey<String>(message),
+              style: context.fushiType.bodySmall,
+            );
+          }
+          return AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: Alignment.topLeft,
+              children: <Widget>[...previous, ?current],
+            ),
+            child: child,
+          );
+        },
+      ),
+    );
   }
 }
 

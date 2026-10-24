@@ -235,7 +235,13 @@ class MusicLyricsService {
 
   /// 按优先级解析一首歌的歌词；没有任何来源返回 null。网络错误不吞：在线查询失败时
   /// 已有的本地结果照常返回，没有本地结果时把异常抛给调用方（界面显示「在线查询失败」）。
-  Future<MusicLyricsResolution?> resolve(MusicLyricsTrackRef track) async {
+  ///
+  /// [allowOnline] = false：只认本地（用户指定 / sidecar / 内嵌 / 已缓存的 LRCLIB 行），
+  /// 不发网络请求——给整库批量处理用（曲库难度排序），不能为排序把整库挨个查一遍 LRCLIB。
+  Future<MusicLyricsResolution?> resolve(
+    MusicLyricsTrackRef track, {
+    bool allowOnline = true,
+  }) async {
     final FushiDatabase? db = _database();
     if (db == null) return null;
     final List<MusicLyricRow> rows = await _rows(db, track.trackUid);
@@ -315,7 +321,11 @@ class MusicLyricsService {
         return null;
       }
     }
-    if (!_onlineEnabled() || (track.artist ?? '').trim().isEmpty) return null;
+    if (!allowOnline ||
+        !_onlineEnabled() ||
+        (track.artist ?? '').trim().isEmpty) {
+      return null;
+    }
     final LrclibRecord? hit = await _lrclib.get(
       title: track.title,
       artist: track.artist!,

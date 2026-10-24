@@ -3746,6 +3746,42 @@ class SrsDbStore implements SrsSyncReplica {
     return out;
   }
 
+  /// 「已知词」快照（[SrsKnownTermSnapshot]）：一条联表查询读出本 profile 未删笔记的
+  /// 可见卡片按（词形, 读音, 队列, 暂停）去重的分布。判据与 [lookupTermStatus] 同口径，
+  /// 供一次要判大量词的调用方（曲库生词覆盖率）用，不逐词查库。
+  Future<SrsKnownTermSnapshot> knownTermSnapshot() async {
+    final $SrsNotesCacheTable n = db.srsNotesCache;
+    final $SrsCardsCacheTable c = db.srsCardsCache;
+    final JoinedSelectStatement<HasResultSet, dynamic> q =
+        db.selectOnly(n, distinct: true).join(<Join<HasResultSet, dynamic>>[
+            innerJoin(c, c.noteId.equalsExp(n.id), useColumns: false),
+          ])
+          ..addColumns(<Expression<Object>>[
+            n.termKey,
+            n.readingKey,
+            c.queue,
+            c.suspended,
+          ])
+          ..where(
+            n.profileUid.equals(profileUid) &
+                n.deletedAt.isNull() &
+                n.termKey.equals('').not() &
+                c.hidden.equals(false),
+          );
+    final List<TypedResult> rows = await q.get();
+    return SrsKnownTermSnapshot.fromRows(
+      <({String termKey, String readingKey, SrsQueue queue, bool suspended})>[
+        for (final TypedResult r in rows)
+          (
+            termKey: r.read(n.termKey) ?? '',
+            readingKey: r.read(n.readingKey) ?? '',
+            queue: SrsQueue.parse(r.read(c.queue)),
+            suspended: r.read(c.suspended) ?? false,
+          ),
+      ],
+    );
+  }
+
   /// 笔记缓存列表（浏览页）。
   Future<List<SrsNoteCacheRow>> listNotes({
     String? deckId,

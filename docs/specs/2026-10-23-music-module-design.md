@@ -622,7 +622,20 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `MusicStudyTracker` 写 `study_segments`（`media_kind = music`），按 D4 只在学习动作后
   的空闲窗口内或开了「听歌计入学习」时计；生词覆盖率 = 复习库里已进复习队列的词 /
   歌词里词典命中的词（新 C ABI `fushidicts_tokenize_terms` 整首一次 FFI 取词头）。
-  曲库按难度排序需要把覆盖率落库（新列 / 新表），未做，待分配 schema 号。
+  音乐卡的 Anki 分类标签单独打 `music`（`AnkiMiningSource.music`，所有者 2026-10-24；
+  歌词页手动制卡、收藏夹批量制卡与查词弹窗同口径，此前打成 `book` 的旧卡不迁移）。
+- **曲库按难度排序**（2026-10-24，schema v134）：覆盖率落 `music_lyric_coverage`（一首歌
+  一行，纯派生缓存、设备本地），编排在 `media/music/lyrics/music_lyrics_coverage_index.dart`。
+  每 24 首歌的全部歌词行拼成一次 `fushidicts_tokenize_terms`（后台 isolate），批间可中断、
+  有进度；歌词只取本地来源（用户指定 / sidecar / 内嵌 / 已缓存的 LRCLIB），不为排序出网。
+  两段各自失效：**分词段**按输入指纹（词典集合签名——与「我库里的例句」同一签名——+ 歌词
+  解析器版本 + 曲目文件 mtime + 该曲 `music_lyrics` 各行内容 SHA-1）判，换词典 = 整库重分
+  词；**已知段**按复习库「已知词」快照（`SrsKnownTermSnapshot`，一条联表查询，口径与
+  `lookupTermStatus` 相同，有随机对拍测试）的指纹判，复习库变了只用存下的词头重判、不重新
+  分词。磁盘上 sidecar 被改而该曲没再打开歌词页时增量看不出来，「重新计算难度」重读全部。
+  曲库「歌曲」分区排序：曲库顺序 / 由易到难 / 由难到易（偏好 `music_track_sort`），行尾显示
+  「已知 N%」；没有歌词的排最后并标「无歌词」，有歌词但无词典词的标「无词典词」；没装词典 /
+  复习模块关着时给出提示、不硬造 0%。歌词页覆盖率改用同一份快照（不再逐词查库）。
 - **120 Hz 实测**（`fushi/integration_test/karaoke_lyrics_perf_itest.dart`，Windows profile、
   Skia、160 Hz 屏、dpr 1.5、48 行 / 530 音节字级时间轴、每场景 25 s）：稳态（同进程第
   二遍 / 换歌）超 8.33 ms 帧数为 **0**，build p99 ≈ 0.5 ms、raster p99 ≈ 1.1 ms，每帧只

@@ -65,49 +65,86 @@ bool musicTermIsWordLike(String s) {
   return false;
 }
 
-/// 算一首歌的覆盖率。拿不到分词结果（没词典 / 原生失败）或一个词都没有时返回 null。
-Future<MusicLyricsCoverage?> computeMusicLyricsCoverage(
-  LyricTimeline timeline, {
-  required MusicTermTokenizer tokenize,
-  required MusicKnownTermLookup knownTerms,
-}) async {
-  final List<String> texts = <String>[
-    for (final LyricLine l in timeline.lines)
-      if (!l.isBackground && l.text.trim().isNotEmpty) l.text,
-  ];
-  if (texts.isEmpty) return null;
-  final List<List<FushiTermToken>>? tokens = await tokenize(texts);
-  if (tokens == null) return null;
-  final Map<String, ({String expression, String reading})> unique =
-      <String, ({String expression, String reading})>{};
-  final List<String> occurrences = <String>[];
+/// 参与覆盖率统计的歌词文本：主唱行（和声 / 背景行不算），空行不算。
+List<String> musicCoverageTextsOf(LyricTimeline timeline) => <String>[
+  for (final LyricLine l in timeline.lines)
+    if (!l.isBackground && l.text.trim().isNotEmpty) l.text,
+];
+
+/// 一首歌去重后的一个词：词头（词典形）+ 首次出现时的读音 + 出现次数。
+typedef MusicCoverageTerm = ({String expression, String reading, int count});
+
+/// 分词结果按词头归一：只数词典命中、且表层形像个词的段。返回按首次出现顺序的去重词；
+/// 分词段数与文本数对不上的部分忽略。
+List<MusicCoverageTerm> aggregateMusicCoverageTerms(
+  List<String> texts,
+  List<List<FushiTermToken>> tokens,
+) {
+  final Map<String, ({String reading, int count})> unique =
+      <String, ({String reading, int count})>{};
   for (int i = 0; i < texts.length && i < tokens.length; i++) {
     int at = 0;
     for (final FushiTermToken t in tokens[i]) {
       final String surface = texts[i].substring(at, at + t.length);
       at += t.length;
       if (t.expression.isEmpty || !musicTermIsWordLike(surface)) continue;
-      occurrences.add(t.expression);
-      unique.putIfAbsent(
-        t.expression,
-        () => (expression: t.expression, reading: t.reading),
+      final ({String reading, int count})? prev = unique[t.expression];
+      unique[t.expression] = (
+        reading: prev?.reading ?? t.reading,
+        count: (prev?.count ?? 0) + 1,
       );
     }
   }
-  if (occurrences.isEmpty) return null;
-  final Set<String>? known = await knownTerms(unique.values.toList());
-  if (known == null) return null;
+  return <MusicCoverageTerm>[
+    for (final MapEntry<String, ({String reading, int count})> e
+        in unique.entries)
+      (expression: e.key, reading: e.value.reading, count: e.value.count),
+  ];
+}
+
+/// 由去重词与「已知词头」集合组装覆盖率；没有词时返回 null。
+MusicLyricsCoverage? musicCoverageOf(
+  List<MusicCoverageTerm> terms,
+  Set<String> known,
+) {
+  if (terms.isEmpty) return null;
   int knownCount = 0;
-  for (final String e in occurrences) {
-    if (known.contains(e)) knownCount++;
+  int total = 0;
+  for (final MusicCoverageTerm term in terms) {
+    total += term.count;
+    if (known.contains(term.expression)) knownCount += term.count;
   }
   return MusicLyricsCoverage(
     knownTokens: knownCount,
-    totalTokens: occurrences.length,
-    uniqueTerms: unique.length,
+    totalTokens: total,
+    uniqueTerms: terms.length,
     unknownTerms: <String>[
-      for (final String e in unique.keys)
-        if (!known.contains(e)) e,
+      for (final MusicCoverageTerm term in terms)
+        if (!known.contains(term.expression)) term.expression,
     ],
   );
+}
+
+/// 算一首歌的覆盖率。拿不到分词结果（没词典 / 原生失败）或一个词都没有时返回 null。
+Future<MusicLyricsCoverage?> computeMusicLyricsCoverage(
+  LyricTimeline timeline, {
+  required MusicTermTokenizer tokenize,
+  required MusicKnownTermLookup knownTerms,
+}) async {
+  final List<String> texts = musicCoverageTextsOf(timeline);
+  if (texts.isEmpty) return null;
+  final List<List<FushiTermToken>>? tokens = await tokenize(texts);
+  if (tokens == null) return null;
+  final List<MusicCoverageTerm> terms = aggregateMusicCoverageTerms(
+    texts,
+    tokens,
+  );
+  if (terms.isEmpty) return null;
+  final Set<String>? known =
+      await knownTerms(<({String expression, String reading})>[
+        for (final MusicCoverageTerm term in terms)
+          (expression: term.expression, reading: term.reading),
+      ]);
+  if (known == null) return null;
+  return musicCoverageOf(terms, known);
 }

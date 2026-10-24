@@ -418,6 +418,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_replaygain_preamp_db',
   // double（默认 1.0）：音乐播放速度（变速不变调）。
   'music_speed',
+  // String（默认 'library'）：曲库「歌曲」分区的排序 library / easiest / hardest
+  // （MusicTrackSort.prefValue；按歌词生词覆盖率排序，设计 §12）。
+  'music_track_sort',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
