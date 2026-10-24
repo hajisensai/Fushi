@@ -13,11 +13,14 @@ import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
+
+import '../srs/srs_test_support.dart' show openSrsTestStorage;
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000dd';
 const String kHostId = 'srs-two-way-host';
@@ -64,11 +67,15 @@ void main() {
     }
   });
 
-  Future<SrsDbStore> device(String id) => SrsDbStore.open(
-    db: FushiDatabase.forTesting(NativeDatabase.memory()),
-    profileUid: kProfile,
-    deviceId: id,
-  );
+  Future<SrsDbStore> device(String id) async {
+    final SrsStorage srs = await openSrsTestStorage();
+    return SrsDbStore.open(
+      db: srs.db,
+      core: srs.core,
+      profileUid: kProfile,
+      deviceId: id,
+    );
+  }
 
   Future<String> addNote(SrsDbStore s, String expression) => s.createNote(
     noteTypeId: s.lapisNoteTypeId,
@@ -259,9 +266,10 @@ String? _expressionOf(SrsDbStore s, SrsNoteView? n) =>
 
 /// 一台独立设备：自己的数据库、自己的 profile（名字相同、uid 各自随机生成）、真 [SrsDbProfileLinker]。
 class _LinkedDevice {
-  _LinkedDevice._(this.db, this.deviceId, this.profileId);
+  _LinkedDevice._(this.db, this.srs, this.deviceId, this.profileId);
 
   final FushiDatabase db;
+  final SrsStorage srs;
   final String deviceId;
   final int profileId;
   late SrsDbStore store;
@@ -270,11 +278,13 @@ class _LinkedDevice {
 
   static Future<_LinkedDevice> open(String deviceId) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final SrsStorage srs = await openSrsTestStorage();
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int profileId = await db.insertProfile(
       ProfilesCompanion.insert(name: 'Default', createdAt: now, updatedAt: now),
     );
-    final _LinkedDevice d = _LinkedDevice._(db, deviceId, profileId);
+    final _LinkedDevice d = _LinkedDevice._(db, srs, deviceId, profileId);
     d.store = await d._openStore();
     d.scheduler = SrsSyncScheduler(
       readStore: () async => d.store,
@@ -293,7 +303,8 @@ class _LinkedDevice {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
   );

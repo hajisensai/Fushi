@@ -9,8 +9,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
@@ -18,6 +16,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_test_storage.dart';
 import 'apkg/srs_apkg_import_test.dart'
     show
         crtSecs,
@@ -86,19 +85,17 @@ Uint8List syncBenchApkg(int notes) {
 /// 大库：临时文件 + 后台 isolate 连接（与 app 相同），导入 [notes] 条笔记。
 Future<SrsDbStore> openSyncBenchStore(int notes, {int Function()? now}) async {
   final Directory tmp = Directory.systemTemp.createTempSync('srs_syncb_');
-  final FushiDatabase db = FushiDatabase.forTesting(
-    NativeDatabase.createInBackground(File('${tmp.path}/b.db')),
-  );
-  addTearDown(() async {
-    await db.close();
+  addTearDown(() {
     try {
       tmp.deleteSync(recursive: true);
     } on FileSystemException {
       // 句柄晚释放。
     }
   });
+  final TestSrs srs = await openTestSrsAt('${tmp.path}/b.db', inline: false);
   final SrsDbStore store = await SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: '01928c3e-0000-7000-8000-0000000b10c4',
     deviceId: 'bench',
     engine: const FakeFsrsEngine(),

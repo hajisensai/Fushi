@@ -5,12 +5,12 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/anki_collection_db.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:sqlite3/sqlite3.dart';
+import '../support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 协议测试用的确定性假引擎（与 test/srs/srs_db_store_test.dart 同一份行为）。
 class FakeFsrsEngine implements FsrsEngine {
@@ -127,10 +127,11 @@ Future<SrsDbStore> openTestStore({
   required String profileUid,
   required String deviceId,
   required int Function() now,
-}) {
-  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+}) async {
+  final SrsStorage srsStorage = await openTestSrsStorage();
   return SrsDbStore.open(
-    db: db,
+    db: srsStorage.db,
+    core: srsStorage.core,
     profileUid: profileUid,
     deviceId: deviceId,
     engine: const FakeFsrsEngine(),

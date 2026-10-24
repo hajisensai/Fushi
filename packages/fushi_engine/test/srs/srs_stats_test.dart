@@ -1,12 +1,12 @@
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDayMs = 86400000;
@@ -506,16 +506,17 @@ void main() {
   });
 
   group('loadSrsStats（真实库）', () {
-    late FushiDatabase db;
+    late SrsStorage srsStorage;
     late SrsDbStore store;
     int now = 0;
 
     setUp(() async {
       driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
       now = jst(2026, 10, 14, 10);
-      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      srsStorage = await openTestSrsStorage();
       store = await SrsDbStore.open(
-        db: db,
+        db: srsStorage.db,
+        core: srsStorage.core,
         profileUid: kProfile,
         deviceId: 'dev',
         engine: const _Engine(),
@@ -527,8 +528,6 @@ void main() {
         fallbackRolloverHour: () => 4,
       );
     });
-
-    tearDown(() => db.close());
 
     Map<String, String> lapis(String expr) => <String, String>{
       srsLapisFieldId(kProfile, 'Expression'): expr,

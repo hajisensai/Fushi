@@ -9,6 +9,9 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 ///
 /// 迁移只加一列可空列、不动数据：存量缓存行留 NULL（存量库没有任何位置修改记录，
 /// NULL 与事件一致，不必重建缓存）；重跑幂等。
+///
+/// 2026-10-23 起 SRS 表归 Rust 的 srs.db：新建的主库没有 srs_cards_cache；这里验迁移阶梯上带
+/// 老 SRS 表的 v122 库仍补上这一列（一次性搬迁按带这一列的形状搬）。
 void main() {
   Set<String> columnsOf(sqlite.Database raw, String table) => <String>{
     for (final sqlite.Row row in raw.select("PRAGMA table_info('$table')"))
@@ -26,6 +29,11 @@ void main() {
     await db.close();
 
     final sqlite.Database raw = sqlite.sqlite3.open(path);
+    expect(columnsOf(raw, 'srs_cards_cache'), isEmpty, reason: '新库没有 SRS 表');
+    // 退回 v122 带老 SRS 表的形态：建出老表，去掉 v123 的列。
+    for (final String t in kLegacySrsTableDdl.keys) {
+      raw.execute(kLegacySrsTableDdl[t]!);
+    }
     raw.execute('ALTER TABLE srs_cards_cache DROP COLUMN new_position');
     expect(columnsOf(raw, 'srs_cards_cache'), isNot(contains('new_position')));
     raw.execute(

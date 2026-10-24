@@ -3,7 +3,6 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
@@ -11,6 +10,8 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 /// 确定性假引擎（同 srs_db_store_test.dart）。
 class _FakeEngine implements FsrsEngine {
@@ -126,21 +127,15 @@ const String kProfile = '01928c3e-0000-7000-8000-0000000000b7';
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
-  final List<FushiDatabase> dbs = <FushiDatabase>[];
 
   setUp(() => t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch);
-  tearDown(() async {
-    for (final FushiDatabase db in dbs) {
-      await db.close();
-    }
-    dbs.clear();
-  });
+  tearDown(() async {});
 
   Future<SrsDbStore> device(String id) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    dbs.add(db);
+    final SrsStorage srsStorage = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const _FakeEngine(),

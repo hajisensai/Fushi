@@ -13,6 +13,16 @@ export 'src/field_edit.dart';
 export 'src/ffi/ffi_fsrs_engine.dart';
 export 'src/ffi/fushi_fsrs_library.dart';
 export 'src/fsrs_engine.dart';
+export 'src/register_kernel.dart';
+export 'src/history_kernel.dart'
+    show
+        SrsHistoryKernelUnavailableError,
+        SrsHistoryState,
+        SrsStoredHistory,
+        SrsHistoryInput,
+        srsDecodeHistoryStates,
+        srsHistoryStatesFromJson,
+        srsImportEquivalentAny;
 export 'src/hlc.dart';
 export 'src/ids.dart';
 export 'src/new_card_budget.dart';
@@ -23,6 +33,8 @@ export 'src/review_log.dart';
 export 'src/scheduler.dart';
 export 'src/search/anki_search.dart';
 export 'src/source_ref.dart';
+export 'src/store/srs_core.dart';
+export 'src/store/srs_rows.dart';
 export 'src/style_dedup.dart';
 export 'src/sync/memory_replica.dart';
 export 'src/sync/sync_engine.dart';

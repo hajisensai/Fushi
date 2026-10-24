@@ -8,7 +8,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -16,6 +15,8 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000cc';
 
@@ -33,11 +34,15 @@ void main() {
     hostRoot.deleteSync(recursive: true);
   });
 
-  Future<SrsDbStore> device(String id, {FushiDatabase? db}) => SrsDbStore.open(
-    db: db ?? FushiDatabase.forTesting(NativeDatabase.memory()),
-    profileUid: kProfile,
-    deviceId: id,
-  );
+  Future<SrsDbStore> device(String id, {SrsStorage? storage}) async {
+    final SrsStorage st = storage ?? await openTestSrsStorage();
+    return SrsDbStore.open(
+      db: st.db,
+      core: st.core,
+      profileUid: kProfile,
+      deviceId: id,
+    );
+  }
 
   Future<SrsSyncReport> syncTo(SrsDbStore s, Directory root, String key) =>
       SrsSyncEngine(
@@ -145,8 +150,8 @@ void main() {
   );
 
   test('按目录的进度与批次留存跨重新打开保留；两个目录都确认后不再留存', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    SrsDbStore s = await device('a', db: db);
+    final SrsStorage srsStorage = await openTestSrsStorage();
+    SrsDbStore s = await device('a', storage: srsStorage);
     await syncTo(s, cloudRoot, 'cloud');
     await syncTo(s, hostRoot, 'host');
     await addNote(s, '雪');
@@ -155,7 +160,7 @@ void main() {
     // host 目录同步过、还没确认这一批：留存着。
     expect(await s.sentBatch(s.writerId, no), isNotNull);
 
-    s = await device('a', db: db);
+    s = await device('a', storage: srsStorage);
     final SrsSyncLocalState st = await s.loadSyncState();
     expect(st.directories.keys, unorderedEquals(<String>['cloud', 'host']));
     expect(st.directories['cloud']!.confirmedThrough, no);
@@ -179,8 +184,8 @@ void main() {
   });
 
   test('旧版本本机状态：冻结中的批次搬进留存表，同号同字节传出，next 越过它', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final SrsDbStore s = await device('old', db: db);
+    final SrsStorage srsStorage = await openTestSrsStorage();
+    final SrsDbStore s = await device('old', storage: srsStorage);
     final String noteId = await addNote(s, '雪');
     // 造旧版本的现场：发件箱里的事件已冻结进第 1 批（标记为已发布），批次字节存在本机状态 JSON 里。
     final List<SrsEvent> pending = await s.unpublishedEvents();
@@ -190,11 +195,11 @@ void main() {
       serverTimeMs: 1700000000000,
       events: pending,
     ).encode();
-    await (db.update(db.srsEventLocal)
+    await (srsStorage.db.update(srsStorage.db.srsEventLocal)
           ..where((t) => t.profileUid.equals(kProfile)))
         .write(const SrsEventLocalCompanion(outboxSeq: Value<int?>(null)));
-    final SrsLocalStateRow row = await (db.select(
-      db.srsLocalState,
+    final SrsLocalStateRow row = await (srsStorage.db.select(
+      srsStorage.db.srsLocalState,
     )..where((t) => t.profileUid.equals(kProfile))).getSingle();
     final Map<String, Object?> j = (jsonDecode(row.json) as Map)
         .cast<String, Object?>();
@@ -207,8 +212,8 @@ void main() {
       'boot': false,
       'lastS': <String, int>{},
     };
-    await db
-        .into(db.srsLocalState)
+    await srsStorage.db
+        .into(srsStorage.db.srsLocalState)
         .insertOnConflictUpdate(
           SrsLocalStateCompanion.insert(
             profileUid: kProfile,
@@ -229,7 +234,7 @@ void main() {
       '${ownDir.path}${Platform.pathSeparator}$srsProbeName',
     ).writeAsBytesSync(<int>[1]);
 
-    final SrsDbStore reopened = await device('old', db: db);
+    final SrsDbStore reopened = await device('old', storage: srsStorage);
     final SrsSyncLocalState st = await reopened.loadSyncState();
     expect(st.nextBatchNo, 2);
     expect(st.legacyDirectories, isTrue);

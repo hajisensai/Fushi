@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/platform/file_hard_link.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -63,16 +62,20 @@ void main() {
   });
 
   group('备份媒体池', () {
-    late FushiDatabase db;
+    late SrsStorage srs;
     late SrsDbStore store;
     late SrsBackupStore backups;
     late Directory mediaDir;
 
     setUp(() async {
-      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      srs = await SrsStorage.open(
+        path: p.join(tmp.path, kSrsDatabaseFileName),
+        inline: true,
+      );
       int t = DateTime.utc(2026, 10, 23, 9).millisecondsSinceEpoch;
       store = await SrsDbStore.open(
-        db: db,
+        db: srs.db,
+        core: srs.core,
         profileUid: kProfile,
         deviceId: 'link',
         engine: const SrsFakeEngine(),
@@ -91,7 +94,7 @@ void main() {
       );
     });
     tearDown(() async {
-      await db.close();
+      await srs.close();
     });
 
     Future<SrsBackupInfo> backup() =>

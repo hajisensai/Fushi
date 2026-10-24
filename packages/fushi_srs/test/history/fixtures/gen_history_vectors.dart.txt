@@ -1,0 +1,221 @@
+// 一次性：用**旧的 Dart 实现**（valid_logs.dart 的 SrsCardHistory._computeEffective / state /
+// scheduler / lastEffective，提交 329a739431 时的版本）生成卡片历史选取的固定向量，写到
+// test/history/fixtures/history_vectors.json（入库前 gzip 成 .json.gz）。搬进 Rust
+// （native/fushi_fsrs/src/history.rs）之后旧实现已删，本脚本改名
+// test/history/fixtures/gen_history_vectors.dart.txt 只作留档。
+//
+//   （当时放在 packages/fushi_srs/tool/，`dart run tool/gen_history_vectors.dart` 运行。）
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:fushi_srs/fushi_srs.dart';
+
+const int _t0 = 1735689600000; // 2025-01-01T00:00:00Z
+
+final Random _r = Random(20261023);
+
+T _pick<T>(List<T> xs) => xs[_r.nextInt(xs.length)];
+
+const List<String> _writers = <String>[
+  'A',
+  'B',
+  'anki',
+  'dev-é',
+  'w:with:colons',
+  // U+1D4E7（代理对）与 U+FF21：UTF-16 码元序与码点序相反，钉死「按 Dart String.compareTo」。
+  '\u{1D4E7}w',
+  'Ａw',
+];
+
+const List<String> _kinds = <String>[
+  SrsLogKind.review,
+  SrsLogKind.review,
+  SrsLogKind.review,
+  SrsLogKind.review,
+  SrsLogKind.manual,
+  SrsLogKind.reschedule,
+  SrsLogKind.importAnchor,
+  SrsLogKind.handOff,
+  SrsLogKind.undo,
+  SrsLogKind.undo,
+  'futureKind',
+];
+
+const List<String> _rtypes = <String>[
+  SrsReviewType.learn,
+  SrsReviewType.review,
+  SrsReviewType.review,
+  SrsReviewType.relearn,
+  SrsReviewType.manual,
+  SrsReviewType.filtered,
+  SrsReviewType.rescheduled,
+];
+
+SrsScheduleResult _result() => SrsScheduleResult(
+  queue: _pick(SrsQueue.values),
+  dueDay: _r.nextBool() ? 20000 + _r.nextInt(500) : null,
+  dueAt: _r.nextInt(3) == 0 ? _t0 + _r.nextInt(1 << 30) : null,
+  scheduledDays: _r.nextInt(400),
+  learningStep: _r.nextInt(4),
+  memory: _r.nextInt(4) == 0
+      ? null
+      : SrsMemory(
+          stability: _r.nextDouble() * 300,
+          difficulty: 1 + _r.nextDouble() * 9,
+          stabilityFast: _r.nextBool() ? null : _r.nextDouble() * 10,
+        ),
+  lastReviewedAt: _r.nextBool() ? _t0 + _r.nextInt(1 << 30) : null,
+  reps: _r.nextInt(50),
+  lapses: _r.nextInt(10),
+  scheduler: _r.nextInt(4) == 0 ? SrsScheduler.anki : SrsScheduler.fushi,
+  ease: _r.nextInt(3) == 0 ? 1300 + _r.nextInt(2000) : null,
+);
+
+/// 一份历史：[n] 条日志（含重复 ID、撤销、等价导入、钳位、不认识的 kind）。
+({List<SrsReviewLog> logs, Map<String, int> server}) _history(int n) {
+  final List<SrsReviewLog> logs = <SrsReviewLog>[];
+  final Map<String, int> server = <String, int>{};
+  int clock = _t0 + _r.nextInt(1 << 28);
+  for (int i = 0; i < n; i++) {
+    // 同毫秒 / 计数器并列的情形要多：physical 常常不动。
+    if (_r.nextInt(3) != 0) clock += _r.nextInt(86400000);
+    final String kind = _pick(_kinds);
+    final String origin = _r.nextInt(3) == 0
+        ? SrsLogOrigin.anki
+        : SrsLogOrigin.fushi;
+    final String writer = origin == SrsLogOrigin.anki && _r.nextBool()
+        ? 'anki'
+        : _pick(_writers);
+    final int counter = _r.nextInt(4) == 0 ? _r.nextInt(3) : 0;
+    // 偶尔复用已有 ID（同 ID 后到的覆盖先到的，与 Map 去重同语义）。
+    final String id = logs.isNotEmpty && _r.nextInt(15) == 0
+        ? _pick(logs).id
+        : 'L${_r.nextInt(1 << 30).toRadixString(36)}$i';
+    String? revokes;
+    if (kind == SrsLogKind.undo) {
+      revokes = switch (_r.nextInt(6)) {
+        0 => null,
+        1 => 'missing-${_r.nextInt(100)}',
+        _ => logs.isEmpty ? null : _pick(logs).id,
+      };
+    }
+    final int occurredAt = clock + _r.nextInt(5000) - 2500;
+    final bool rated =
+        kind == SrsLogKind.review ||
+        (kind != SrsLogKind.undo && _r.nextInt(5) == 0);
+    int? ankiId;
+    if (origin == SrsLogOrigin.anki && _r.nextInt(5) != 0) {
+      // 贴近某条已有日志的时刻（等价判定的 ±1 秒边界两侧都要有）。
+      final int near = logs.isEmpty ? occurredAt : _pick(logs).occurredAt;
+      ankiId =
+          near + _pick(<int>[0, 1, -1, 999, -1000, 1000, 1001, -1001, 2500]);
+    }
+    final SrsReviewLog log = SrsReviewLog(
+      id: id,
+      profileUid: 'p',
+      cardId: _pick(<String>['c', 'c', 'pred']),
+      kind: kind,
+      hlc: Hlc(clock, counter, writer),
+      occurredAt: occurredAt,
+      timeSource: _r.nextBool() ? SrsTimeSource.anchored : SrsTimeSource.wall,
+      origin: origin,
+      reviewType: _pick(_rtypes),
+      rating: rated && _r.nextInt(12) != 0 ? 1 + _r.nextInt(4) : null,
+      revokesId: revokes,
+      durationMs: _r.nextInt(3) == 0 ? _r.nextInt(20000) : 0,
+      algorithm: _r.nextBool() ? 'fsrs6' : null,
+      result: kind == SrsLogKind.undo || kind == 'futureKind'
+          ? (_r.nextInt(10) == 0 ? _result() : null)
+          : (_r.nextInt(12) == 0 ? null : _result()),
+      ankiRevlogId: ankiId,
+      extra: <String, Object?>{
+        if (_r.nextInt(10) == 0) srsRestoreLogExtraKey: 'bk${_r.nextInt(9)}',
+        if (_r.nextInt(10) == 0) 'memAlg': 'fsrs7',
+        if (_r.nextInt(20) == 0) 'zzFuture': <String, Object?>{'x': 1},
+      },
+    );
+    // 等价导入：照着一条原生评分镜像出一条 Anki 导入评分（同评分、时刻贴着 ±1 秒边界）。
+    final List<SrsReviewLog> natives = <SrsReviewLog>[
+      for (final SrsReviewLog l in logs)
+        if (l.origin == SrsLogOrigin.fushi && l.isRatingReview) l,
+    ];
+    final SrsReviewLog emitted = natives.isNotEmpty && _r.nextInt(4) == 0
+        ? () {
+            final SrsReviewLog src = _pick(natives);
+            return SrsReviewLog(
+              id: id,
+              profileUid: 'p',
+              cardId: 'c',
+              kind: SrsLogKind.review,
+              hlc: Hlc(clock, counter, 'anki'),
+              occurredAt: src.occurredAt,
+              timeSource: SrsTimeSource.wall,
+              origin: SrsLogOrigin.anki,
+              reviewType: _pick(<String>[
+                SrsReviewType.review,
+                SrsReviewType.learn,
+                SrsReviewType.manual,
+              ]),
+              rating: _r.nextInt(5) == 0 ? 1 + _r.nextInt(4) : src.rating,
+              algorithm: 'anki',
+              result: _result(),
+              ankiRevlogId:
+                  src.occurredAt +
+                  _pick(<int>[0, 1, -1, 999, -1000, 1000, 1001, -1001]),
+            );
+          }()
+        : log;
+    logs.add(emitted);
+    switch (_r.nextInt(5)) {
+      case 0:
+        // S 远早于 HLC：钳位到 S + 10 分钟。
+        server[id] = clock - srsClockToleranceMs - _r.nextInt(86400000);
+      case 1:
+        server[id] = clock + _r.nextInt(1000000);
+      default:
+        break;
+    }
+  }
+  return (logs: logs, server: server);
+}
+
+Map<String, Object?> _expect(SrsCardHistory h) => <String, Object?>{
+  'all': <String>[for (final SrsReviewLog l in h.all) l.id],
+  'effective': <String>[for (final SrsReviewLog l in h.effective) l.id],
+  'revoked': h.revoked.toList()..sort(),
+  'equivalentImports': h.equivalentImports.toList()..sort(),
+  'lastEffective': h.lastEffective?.id,
+  'scheduler': h.scheduler,
+  'state': h.state.toJson(),
+  'effectiveRatings': <String>[
+    for (final SrsReviewLog l in h.effectiveRatings) l.id,
+  ],
+};
+
+void main() {
+  final List<Map<String, Object?>> vectors = <Map<String, Object?>>[];
+  for (int v = 0; v < 1500; v++) {
+    final int n = switch (v % 10) {
+      0 => 0,
+      1 => 1,
+      2 => 2,
+      _ => 3 + _r.nextInt(v % 100 == 3 ? 120 : 12),
+    };
+    final (:List<SrsReviewLog> logs, :Map<String, int> server) = _history(n);
+    final bool withServer = v % 4 != 0;
+    final SrsCardHistory h = SrsCardHistory(
+      logs,
+      serverTimeOf: withServer ? (String id) => server[id] : null,
+    );
+    vectors.add(<String, Object?>{
+      // 落库形态（canonical JSON），按输入顺序；同 ID 多条时后到的生效。
+      'logs': <String>[for (final SrsReviewLog l in logs) l.canonical()],
+      'server': withServer ? server : null,
+      'expect': _expect(h),
+    });
+  }
+  final File out = File('test/history/fixtures/history_vectors.json');
+  out.writeAsStringSync(jsonEncode(<String, Object?>{'vectors': vectors}));
+  stdout.writeln('wrote ${vectors.length} vectors -> ${out.path}');
+}

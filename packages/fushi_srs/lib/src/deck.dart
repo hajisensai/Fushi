@@ -228,65 +228,6 @@ class SrsDeckView {
     SrsAlgorithm.fsrs6 => fsrs6,
     SrsAlgorithm.fsrs7 || SrsAlgorithm.rwkv => fsrs7,
   };
-
-  static SrsDeckView materialize(SrsEntityRecord record, SrsEntityEdits edits) {
-    final Object? limits = edits.value(SrsFieldKeys.deckLimits);
-    final Object? steps = edits.value(SrsFieldKeys.deckSteps);
-    final Object? alg = edits.value(SrsFieldKeys.deckAlgorithm);
-    final Object? baseline = edits.value(SrsFieldKeys.deckOptimizeBaseline);
-    List<double> listOf(Object? v, List<double> fallback) => v is List
-        ? srsSanitizeSteps(
-            v.whereType<num>().map((num x) => x.toDouble()).toList(),
-            fallback,
-          )
-        : fallback;
-    final String? parent = edits.value(SrsFieldKeys.deckParent) as String?;
-    return SrsDeckView(
-      id: record.id,
-      name: (edits.value(SrsFieldKeys.name) as String?) ?? 'Default',
-      parentId: parent,
-      ownParams:
-          parent == null || edits.value(SrsFieldKeys.deckParamsMode) == 'own',
-      newPerDay: limits is Map ? (limits['new'] as int?) ?? 20 : 20,
-      reviewsPerDay: limits is Map ? (limits['review'] as int?) ?? 200 : 200,
-      learnSteps: listOf(
-        steps is Map ? steps['learn'] : null,
-        defaultLearnSteps,
-      ),
-      relearnSteps: listOf(
-        steps is Map ? steps['relearn'] : null,
-        defaultRelearnSteps,
-      ),
-      desiredRetention:
-          ((edits.value(SrsFieldKeys.deckRetention) as num?) ?? 0.8).toDouble(),
-      algorithmWire: alg is Map
-          ? (alg['alg'] as String?) ?? srsDefaultAlgorithm.wire
-          : srsDefaultAlgorithm.wire,
-      algorithmAuto: alg is Map ? alg['auto'] != false : true,
-      fsrs6: SrsParamSet.fromValue(edits.value(SrsFieldKeys.deckFsrs6Params)),
-      fsrs7: SrsParamSet.fromValue(edits.value(SrsFieldKeys.deckFsrs7Params)),
-      autoOptimize: edits.value(SrsFieldKeys.deckAutoOptimize) != false,
-      maxIntervalDays:
-          (edits.value(SrsFieldKeys.deckMaxInterval) as int?) ?? 36500,
-      collapsed: edits.value(SrsFieldKeys.deckCollapsed) == true,
-      position: switch (edits.value(SrsFieldKeys.deckPosition)) {
-        final num v when v.isFinite => v.toDouble(),
-        _ => null,
-      },
-      autoplayAudio: edits.value(SrsFieldKeys.deckAutoplay) != false,
-      replayQuestionAudio:
-          edits.value(SrsFieldKeys.deckReplayQuestion) != false,
-      rwkvQueue: SrsRwkvQueueSettings.fromValue(
-        edits.value(SrsFieldKeys.deckRwkvQueue),
-      ),
-      optimizeBaselineAt: baseline is Map ? baseline['at'] as int? : null,
-      optimizeBaselineCount: baseline is Map ? baseline['n'] as int? : null,
-      deletedAt: edits.deletedAt,
-      builtinKey: record.payload['builtin'] as String?,
-      createdAt: record.createdAt,
-      edits: edits,
-    );
-  }
 }
 
 /// 牌组树：父子关系、成环打破、参数继承。

@@ -9,7 +9,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show QueryRow, driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -20,6 +19,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_test_storage.dart';
 
 void main() {
   final String? dbPath = Platform.environment['FUSHI_SRS_BENCH_DB'];
@@ -33,13 +33,12 @@ void main() {
       final int notes = int.parse(
         Platform.environment['FUSHI_SRS_BENCH_GEN_NOTES'] ?? '5000',
       );
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase(File(genPath!)),
-      );
-      addTearDown(db.close);
+      // FUSHI_SRS_BENCH_GEN 现在指向一份 srs.db。
+      final TestSrs srs = await openTestSrsAt(genPath!);
       const String uid = '01928c3e-0000-7000-8000-0000000be4c4';
       final SrsDbStore store = await SrsDbStore.open(
-        db: db,
+        db: srs.db,
+        core: srs.core,
         profileUid: uid,
         deviceId: 'gen',
         engine: const SrsFakeEngine(),
@@ -66,10 +65,9 @@ void main() {
   test(
     '真实规模：备份 / 改动 / 恢复耗时',
     () async {
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase(File(dbPath!)),
-      );
-      addTearDown(db.close);
+      // FUSHI_SRS_BENCH_DB 现在指向一份 srs.db。
+      final TestSrs srs = await openTestSrsAt(dbPath!);
+      final SrsDatabase db = srs.db;
       final QueryRow r = await db
           .customSelect(
             'SELECT profile_uid, COUNT(*) AS c FROM srs_entities '
@@ -80,6 +78,7 @@ void main() {
       final Stopwatch sw = Stopwatch()..start();
       final SrsDbStore store = await SrsDbStore.open(
         db: db,
+        core: srs.core,
         profileUid: uid,
         deviceId: 'bench',
         engine: const SrsFakeEngine(),

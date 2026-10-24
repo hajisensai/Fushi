@@ -110,6 +110,7 @@ class _MigrationPageState extends State<MigrationPage> {
         fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
         gameCoversRootDirectory:
             p.join(appModel.appDirectory.path, 'game_covers'),
+        srsStorage: appModel.srsStorageForBackup,
       );
       final MigrationExporter exporter = MigrationExporter(
         backupService: service,

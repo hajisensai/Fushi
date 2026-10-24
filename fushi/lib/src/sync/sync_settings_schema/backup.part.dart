@@ -215,6 +215,7 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
       // crossed over and the fonts silently never apply.
       fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
       // Game covers travel with the `games` category (rows + cover files).
+      srsStorage: appModel.srsStorageForBackup,
       gameCoversRootDirectory: p.join(
         appModel.appDirectory.path,
         'game_covers',

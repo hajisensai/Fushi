@@ -11,9 +11,98 @@ part of 'database.dart';
 const String kSrsHistoryFromCondition =
     "substr(field_key, 1, 12) = 'historyFrom/'";
 
-/// v117 SRS：profile 全局身份与 srs_* 表的索引。SRS 的读写逻辑在
+/// v117 建的 8 张 srs_* 表（v121 再加 srs_sent_batches）。
+const List<String> kLegacySrsV117Tables = <String>[
+  'srs_entities',
+  'srs_field_edits',
+  'srs_review_logs',
+  'srs_unknown_events',
+  'srs_event_local',
+  'srs_local_state',
+  'srs_notes_cache',
+  'srs_cards_cache',
+];
+
+/// 老库 srs_* 表的建表语句：与 2026-10-23 之前 Drift 声明生成的表逐列相同（列序也相同）。
+/// 这些表已不在 Drift 声明里（归 Rust 的 srs.db），迁移阶梯上的老库仍按当年的形状建出来，
+/// 好让 SRS 的一次性搬迁原样搬走。
+const Map<String, String> kLegacySrsTableDdl = <String, String>{
+  'srs_entities':
+      'CREATE TABLE IF NOT EXISTS "srs_entities" ("id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "kind" TEXT NOT NULL, '
+      '"payload_json" TEXT NOT NULL, "created_at" INTEGER NOT NULL DEFAULT 0, '
+      'PRIMARY KEY ("id"))',
+  'srs_field_edits':
+      'CREATE TABLE IF NOT EXISTS "srs_field_edits" ("id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "entity_kind" TEXT NOT NULL, '
+      '"entity_id" TEXT NOT NULL, "field_key" TEXT NOT NULL, '
+      '"writer_id" TEXT NOT NULL, "seq" INTEGER NOT NULL, "json" TEXT NOT NULL, '
+      'PRIMARY KEY ("id"))',
+  'srs_review_logs':
+      'CREATE TABLE IF NOT EXISTS "srs_review_logs" ("id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "card_id" TEXT NOT NULL, '
+      '"kind" TEXT NOT NULL, "rating" INTEGER NULL, '
+      '"occurred_at" INTEGER NOT NULL, "review_type" TEXT NOT NULL, '
+      '"origin" TEXT NOT NULL, "duration_ms" INTEGER NOT NULL DEFAULT 0, '
+      '"json" TEXT NOT NULL, PRIMARY KEY ("id"))',
+  'srs_unknown_events':
+      'CREATE TABLE IF NOT EXISTS "srs_unknown_events" ("id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "json" TEXT NOT NULL, PRIMARY KEY ("id"))',
+  'srs_event_local':
+      'CREATE TABLE IF NOT EXISTS "srs_event_local" ("event_id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "outbox_seq" INTEGER NULL, '
+      '"server_time" INTEGER NULL, "received_at" INTEGER NOT NULL DEFAULT 0, '
+      'PRIMARY KEY ("event_id"))',
+  'srs_local_state':
+      'CREATE TABLE IF NOT EXISTS "srs_local_state" ("profile_uid" TEXT NOT NULL, '
+      '"json" TEXT NOT NULL, PRIMARY KEY ("profile_uid"))',
+  'srs_sent_batches':
+      'CREATE TABLE IF NOT EXISTS "srs_sent_batches" ("profile_uid" TEXT NOT NULL, '
+      '"writer_id" TEXT NOT NULL, "batch_no" INTEGER NOT NULL, '
+      '"bytes" BLOB NOT NULL, PRIMARY KEY ("profile_uid", "writer_id", "batch_no"))',
+  'srs_notes_cache':
+      'CREATE TABLE IF NOT EXISTS "srs_notes_cache" ("id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "note_type_id" TEXT NOT NULL, '
+      '"guid" TEXT NOT NULL, "created_at" INTEGER NOT NULL, '
+      '"deck_id" TEXT NULL, "deleted_at" INTEGER NULL, '
+      '"term_key" TEXT NOT NULL DEFAULT \'\', "reading_key" TEXT NOT NULL DEFAULT \'\', '
+      '"sort_field" TEXT NOT NULL DEFAULT \'\', "tags_json" TEXT NOT NULL DEFAULT \'[]\', '
+      '"pending_decision" INTEGER NOT NULL DEFAULT 0 '
+      'CHECK ("pending_decision" IN (0, 1)), '
+      '"updated_at" INTEGER NOT NULL DEFAULT 0, PRIMARY KEY ("id"))',
+  'srs_cards_cache':
+      'CREATE TABLE IF NOT EXISTS "srs_cards_cache" ("id" TEXT NOT NULL, '
+      '"profile_uid" TEXT NOT NULL, "note_id" TEXT NOT NULL, '
+      '"template_id" TEXT NOT NULL, "cloze_ord" INTEGER NOT NULL DEFAULT 0, '
+      '"deck_id" TEXT NOT NULL, "suspended" INTEGER NOT NULL DEFAULT 0 '
+      'CHECK ("suspended" IN (0, 1)), "buried_until_day" INTEGER NULL, '
+      '"flag" INTEGER NOT NULL DEFAULT 0, "hidden" INTEGER NOT NULL DEFAULT 0 '
+      'CHECK ("hidden" IN (0, 1)), "queue" TEXT NOT NULL DEFAULT \'new\', '
+      '"due_day" INTEGER NULL, "due_at" INTEGER NULL, '
+      '"scheduled_days" INTEGER NOT NULL DEFAULT 0, "reps" INTEGER NOT NULL DEFAULT 0, '
+      '"lapses" INTEGER NOT NULL DEFAULT 0, "stability" REAL NULL, '
+      '"difficulty" REAL NULL, "last_reviewed_at" INTEGER NULL, '
+      '"last_log_id" TEXT NULL, "scheduler" TEXT NOT NULL DEFAULT \'fushi\', '
+      '"note_created_at" INTEGER NOT NULL DEFAULT 0, "new_position" INTEGER NULL, '
+      'PRIMARY KEY ("id"))',
+};
+
+/// v117 SRS：profile 全局身份与（老库）srs_* 表的索引。SRS 的读写逻辑在
 /// packages/fushi_engine/lib/srs/（直接用生成的表），本 mixin 只放迁移与身份辅助。
 mixin _FushiDbSrs on _$FushiDatabase {
+  Future<bool> _srsTableExists(String name) async => (await customSelect(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+    variables: <Variable<Object>>[Variable<String>(name)],
+  ).get()).isNotEmpty;
+
+  Future<void> _createLegacySrsTables(List<String> names) async {
+    for (final String n in names) {
+      if (!await _srsTableExists(n)) {
+        await customStatement(kLegacySrsTableDdl[n]!);
+      }
+    }
+  }
+
   static final Random _uidRandom = Random.secure();
 
   /// RFC 9562 UUIDv7（与 fushi_srs 的 uuidV7 同格式；fushi_core 不依赖 fushi_srs）。
@@ -42,10 +131,10 @@ mixin _FushiDbSrs on _$FushiDatabase {
       'SELECT id FROM profiles WHERE uid IS NULL OR uid = \'\'',
     ).get();
     for (final QueryRow r in rows) {
-      await customStatement('UPDATE profiles SET uid = ? WHERE id = ?', <Object>[
-        newProfileUid(),
-        r.read<int>('id'),
-      ]);
+      await customStatement(
+        'UPDATE profiles SET uid = ? WHERE id = ?',
+        <Object>[newProfileUid(), r.read<int>('id')],
+      );
     }
   }
 
@@ -58,7 +147,9 @@ mixin _FushiDbSrs on _$FushiDatabase {
     );
   }
 
+  /// 老库的 srs_* 表索引（只在表还在时补；搬迁到 srs.db 后旧表已删，什么都不做）。
   Future<void> _ensureSrsIndexes() async {
+    if (!await _srsTableExists('srs_entities')) return;
     const List<String> stmts = <String>[
       'CREATE INDEX IF NOT EXISTS idx_srs_entities_profile_kind '
           'ON srs_entities (profile_uid, kind)',

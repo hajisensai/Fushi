@@ -66,6 +66,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi/src/srs/srs_storage_host.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -96,6 +97,7 @@ import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
@@ -1184,6 +1186,59 @@ class AppModel with ChangeNotifier {
   /// of risking a LateInitializationError.
   bool get isDatabaseReady => _databaseOpened;
 
+  /// 进程级 SRS 存储（`<数据库目录>/srs.db`，Rust 独占）。每条开主库的初始化路径各建一份；
+  /// 第一次需要 SRS 时才真正打开（复习模块关着时从不打开）。关主库前先关它。
+  SrsStorageHost get srsStorage {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (host == null) {
+      throw StateError('SRS storage requested before the database was opened');
+    }
+    return host;
+  }
+
+  SrsStorageHost? _srsStorageHost;
+
+  /// 换一份 SRS 存储持有者（旧的先关）。[isMainProcess] 为 false 时不搬迁旧库（见 [SrsStorageHost]）。
+  Future<void> _resetSrsStorageHost({required bool isMainProcess}) async {
+    await _closeSrsStorage();
+    _srsStorageHost = SrsStorageHost(
+      dbDirectory: _databaseDirectory.path,
+      isMainProcess: isMainProcess,
+      legacyDatabase: () => _database,
+    );
+  }
+
+  /// 关 SRS 存储（幂等）。必须在关主库之前：主进程打开时的搬迁读的是主库连接。
+  Future<void> _closeSrsStorage() async {
+    final SrsStorageHost? host = _srsStorageHost;
+    _srsStorageHost = null;
+    if (host == null) return;
+    try {
+      await host.close();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.closeSrsStorage', e, stack);
+    }
+  }
+
+  /// 备份导出要读的本机 SRS 存储：复习模块开着时照常打开；模块关着时只在 srs.db 已经存在
+  /// （以前用过复习、数据还在）时打开——数据在就得能随备份走，没用过复习的设备不凭空建库。
+  /// 返回 null = 本机没有 srs.db（SRS 若还在主库老表里，由主库副本按老形态带走）。
+  Future<SrsStorage?> srsStorageForBackup() async {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (host == null) return null;
+    if (!moduleVisibility.isEnabled(ModuleId.srs) &&
+        !File(host.path).existsSync()) {
+      return null;
+    }
+    return host.acquire();
+  }
+
+  /// Test seam：注入一份 SRS 存储持有者（不经初始化路径）。
+  @visibleForTesting
+  void wireSrsStorageForTesting(SrsStorageHost host) {
+    _srsStorageHost = host;
+  }
+
   /// Theme management, extracted from AppModel for testability.
   late ThemeNotifier themeNotifier;
   bool _themeListenerAdded = false;
@@ -1735,6 +1790,7 @@ class AppModel with ChangeNotifier {
         themeNotifier.removeListener(notifyListeners);
         _themeListenerAdded = false;
       }
+      await _closeSrsStorage();
       try {
         await _database.close();
       } catch (e, stack) {
@@ -3351,6 +3407,7 @@ class AppModel with ChangeNotifier {
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+      await _resetSrsStorageHost(isMainProcess: true);
 
       // Sync-pref maintenance, before any repository loads them or sync runs:
       // 1) recover device-local sync config if a previous backup import crashed
@@ -3971,6 +4028,7 @@ class AppModel with ChangeNotifier {
       // sidecar (the main process owns recovery); it backs off on IOERR.
       _database = FushiDatabase(_databaseDirectory.path, isMainProcess: false);
       _databaseOpened = true;
+      await _resetSrsStorageHost(isMainProcess: false);
 
       _prefsRepo = PreferencesRepository(_database);
       await prefsRepo.loadFromDb();
@@ -8920,6 +8978,8 @@ class AppModel with ChangeNotifier {
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
     await _drainDictionaryWritesForClose('AppModel.closeDatabase');
+    // srs.db 先关：覆盖恢复随后要换 / 删这个文件（POSIX 上删开着的库只是 unlink，连接还写旧 inode）。
+    await _closeSrsStorage();
     await _database.close();
   }
 
@@ -8955,6 +9015,7 @@ class AppModel with ChangeNotifier {
     _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
     await _drainDictionaryWritesForClose('AppModel.closeForPopup');
+    await _closeSrsStorage();
     await _database.close();
     FushiDicts.disposeInstance();
   }

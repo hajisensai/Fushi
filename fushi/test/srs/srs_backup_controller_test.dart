@@ -12,6 +12,7 @@ import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:path/path.dart' as p;
 
 import 'srs_test_support.dart';
@@ -54,6 +55,7 @@ void main() {
 
   late Directory tmp;
   late FushiDatabase local;
+  late SrsStorage localSrs;
   late int profileId;
   late SrsDbStore current;
   late File backupFile;
@@ -62,7 +64,8 @@ void main() {
   int reopenFailures = 0;
 
   Future<SrsDbStore> openCurrent() async => SrsDbStore.open(
-    db: local,
+    db: localSrs.db,
+    core: localSrs.core,
     profileUid: await local.profileUidOf(profileId),
     deviceId: 'dev',
     engine: const SrsTestEngine(),
@@ -85,8 +88,10 @@ void main() {
     );
     final int srcId = await _insertProfile(source, '日语');
     backupUid = await source.profileUidOf(srcId);
+    final SrsStorage sourceSrs = await openSrsTestStorage();
     final SrsDbStore src = await SrsDbStore.open(
-      db: source,
+      db: sourceSrs.db,
+      core: sourceSrs.core,
       profileUid: backupUid,
       deviceId: 'other',
       engine: const SrsTestEngine(),
@@ -107,6 +112,7 @@ void main() {
 
     // 本机：新装，一个空 profile。
     local = FushiDatabase.forTesting(NativeDatabase.memory());
+    localSrs = await openSrsTestStorage();
     profileId = await _insertProfile(local, '默认');
     current = await openCurrent();
     controller = SrsBackupController(
@@ -127,6 +133,7 @@ void main() {
   Future<SrsBackupRestoreOutcome?> restoreFile() => controller.restoreFile(
     backupFile,
     db: local,
+    srs: localSrs,
     activeProfileId: () async => profileId,
     reopenStore: () async {
       if (reopenFailures > 0) {
@@ -159,7 +166,7 @@ void main() {
     await expectLater(restoreFile(), throwsStateError);
     expect(await local.profileUidOf(profileId), originalUid);
     expect(current.profileUid, originalUid);
-    final QueryRow c = await local
+    final QueryRow c = await localSrs.db
         .customSelect(
           'SELECT COUNT(*) AS c FROM srs_entities WHERE profile_uid = ?',
           variables: <Variable<Object>>[Variable<String>(backupUid)],

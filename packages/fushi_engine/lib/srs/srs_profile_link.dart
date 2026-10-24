@@ -368,6 +368,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
         final String oldUid = store.profileUid;
         await srsAdoptProfileUid(
           db,
+          store.db,
           profileId: profileId,
           oldUid: oldUid,
           newUid: uid,
@@ -385,6 +386,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
           // 采用要么整体成功、要么回到原样（旧 uid 下只有内置行 / 本机状态，重开时重建）。
           await srsAdoptProfileUid(
             db,
+            store.db,
             profileId: profileId,
             oldUid: uid,
             newUid: oldUid,

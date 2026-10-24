@@ -10,6 +10,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import '../srs/srs_test_support.dart' show openSrsTestStorage;
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
 class _NoLookup implements FushiRemoteLookupService {
@@ -63,8 +65,10 @@ void main() {
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final SrsStorage srs = await openSrsTestStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: '01928c3e-0000-7000-8000-0000000000ff',
       deviceId: 'dev',
     );

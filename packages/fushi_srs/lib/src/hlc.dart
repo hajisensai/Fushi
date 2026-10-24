@@ -1,8 +1,9 @@
 /// 混合逻辑时钟（铁律 F）与可信时间。
 library;
 
-/// HLC = (物理毫秒, 计数器, writerId)，按字典序比较。
-class Hlc implements Comparable<Hlc> {
+/// HLC = (物理毫秒, 计数器, writerId)。事件间的先后按排序键（钳位后的 HLC + eventId）比，只在 Rust 里
+/// 算一份（native/fushi_fsrs/src/ordering.rs）；这里不提供比较。
+class Hlc {
   const Hlc(this.physical, this.counter, this.writerId);
 
   final int physical;
@@ -10,18 +11,6 @@ class Hlc implements Comparable<Hlc> {
   final String writerId;
 
   static const Hlc zero = Hlc(0, 0, '');
-
-  @override
-  int compareTo(Hlc other) {
-    final int p = physical.compareTo(other.physical);
-    if (p != 0) return p;
-    final int c = counter.compareTo(other.counter);
-    if (c != 0) return c;
-    return writerId.compareTo(other.writerId);
-  }
-
-  bool operator >(Hlc other) => compareTo(other) > 0;
-  bool operator <(Hlc other) => compareTo(other) < 0;
 
   /// 线格式：`<physical>:<counter>:<writerId>`（writerId 可含冒号，只切前两段）。
   String encode() => '$physical:$counter:$writerId';

@@ -205,6 +205,7 @@ void main() {
 
     Future<SrsDbStore> reopen() => SrsDbStore.open(
       db: a.db,
+      core: a.core,
       profileUid: kPosProfile,
       deviceId: 'a',
       engine: const FakeFsrsEngine(),

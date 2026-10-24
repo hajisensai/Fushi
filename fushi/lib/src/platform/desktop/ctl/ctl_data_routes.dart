@@ -144,6 +144,7 @@ BackupService _backupServiceFor(AppModel appModel) => BackupService(
   audiobooksRootDirectory: p.join(appModel.appDirectory.path, 'audiobooks'),
   fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
   gameCoversRootDirectory: p.join(appModel.appDirectory.path, 'game_covers'),
+  srsStorage: appModel.srsStorageForBackup,
 );
 
 Future<Map<String, Object?>> _backupFileToWire(File file) async {

@@ -25,7 +25,7 @@ WebKnownWordStatus webKnownWordStatusOf(
 
 /// 整批查已知词状态（按表层形归一化后的 termKey，与复习「词状态」同一个键）。
 ///
-/// 与 [SrsDbStore.lookupTermStatus] 同源（`srs_notes_cache.term_key` + 卡片缓存），
+/// 与 [SrsDbStore.lookupTermStatus] 同源（srs.db 的笔记缓存 `term_key` + 卡片缓存），
 /// 但那个入口每个词两条查询；整页一批几百个词时这里只做「笔记一条 + 卡片一条」
 /// （按 [kWebKnownWordQueryChunk] 分块）。读音不参与：分词器给的是词典首条读音，
 /// 拿它精确匹配会把同形异读的已知词判成生词。
@@ -43,7 +43,7 @@ Future<Map<String, WebKnownWordStatus>> lookupWebKnownWords(
     (surfacesByKey[key] ??= <String>[]).add(s);
   }
   if (surfacesByKey.isEmpty) return const <String, WebKnownWordStatus>{};
-  final FushiDatabase db = store.db;
+  final SrsDatabase db = store.db;
   final Map<String, String> keyByNote = <String, String>{};
   final List<String> keys = surfacesByKey.keys.toList();
   for (int i = 0; i < keys.length; i += kWebKnownWordQueryChunk) {

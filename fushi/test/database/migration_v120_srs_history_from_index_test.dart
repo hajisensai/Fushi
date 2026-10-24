@@ -6,7 +6,11 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// v120（BUG-3543）：srs_field_edits 加前身链接的部分覆盖索引
-/// `idx_srs_field_edits_history_from`。只加索引、不动数据；重跑幂等；新库 onCreate 也有。
+/// `idx_srs_field_edits_history_from`。只加索引、不动数据；重跑幂等。
+///
+/// 2026-10-23 起 SRS 表归 Rust 的 srs.db（那边的建表同样带这个索引）：新建的主库没有
+/// srs_* 表；这里只验迁移阶梯上的老库（v119，带老 SRS 表）仍补上索引，好让一次性搬迁之前的
+/// 读写照常走它。
 void main() {
   const String index = 'idx_srs_field_edits_history_from';
 
@@ -28,10 +32,14 @@ void main() {
     await fresh.customSelect('SELECT 1').get();
     await fresh.close();
 
-    // 退回 v119 形态：去掉索引，放两行修改记录（一条前身链接、一条普通字段）。
+    // 退回 v119 形态：建出 v117 的老 SRS 表（不带 v120 索引），放两行修改记录（一条前身链接、
+    // 一条普通字段）。
     final sqlite.Database raw = sqlite.sqlite3.open(path);
-    expect(indexesOf(raw), contains(index), reason: '新库 onCreate 就有');
-    raw.execute('DROP INDEX $index');
+    expect(indexesOf(raw), isEmpty, reason: '新库没有 srs_field_edits（归 srs.db）');
+    for (final String t in kLegacySrsV117Tables) {
+      raw.execute(kLegacySrsTableDdl[t]!);
+    }
+    expect(indexesOf(raw), isNot(contains(index)));
     raw.execute(
       'INSERT INTO srs_field_edits '
       '(id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) '

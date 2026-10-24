@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_anki_package.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
@@ -21,6 +20,8 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'ankiconnect/ankiconnect_harness.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000d5';
 
@@ -49,11 +50,12 @@ void main() {
   String fid(String key) => srsFushiCardFieldId(kProfile, key);
 
   Future<SrsDbStore> open(
-    FushiDatabase db,
+    SrsStorage storage,
     String device, {
     String? styleDir,
   }) => SrsDbStore.open(
-    db: db,
+    db: storage.db,
+    core: storage.core,
     profileUid: kProfile,
     deviceId: device,
     styles: styleDir == null
@@ -61,7 +63,7 @@ void main() {
         : SrsStyleStore(Directory(p.join(tmp.path, styleDir))),
   );
 
-  FushiDatabase memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
+  Future<SrsStorage> memDb() => openTestSrsStorage();
 
   Map<String, String> noteFields(String word, List<String> dicts) =>
       <String, String>{
@@ -84,16 +86,16 @@ void main() {
     return (r.question, r.answer);
   }
 
-  Future<int> editBytes(FushiDatabase db) async =>
-      (await db
+  Future<int> editBytes(SrsStorage db) async =>
+      (await db.db
               .customSelect(
                 'SELECT COALESCE(SUM(LENGTH(json)), 0) AS n FROM srs_field_edits',
               )
               .getSingle())
           .read<int>('n');
 
-  Future<int> rawStyleRows(FushiDatabase db) async =>
-      (await db
+  Future<int> rawStyleRows(SrsStorage db) async =>
+      (await db.db
               .customSelect(
                 "SELECT COUNT(*) AS n FROM srs_field_edits WHERE instr(json, '<style>') > 0",
               )
@@ -103,8 +105,8 @@ void main() {
   const List<String> dicts = <String>['JMdict', '大辞林', '明鏡'];
 
   test('落库去重：字段存引用行、样式落共享文件；对外读展开逐字节还原；渲染与去重前一致', () async {
-    final FushiDatabase plainDb = memDb();
-    final FushiDatabase dedupDb = memDb();
+    final SrsStorage plainDb = await memDb();
+    final SrsStorage dedupDb = await memDb();
     final SrsDbStore plain = await open(plainDb, 'plain');
     final SrsDbStore s = await open(dedupDb, 'dev', styleDir: 'media');
     final Map<String, String> original = noteFields('雪', dicts);
@@ -142,9 +144,9 @@ void main() {
     final LocalDirectoryAssetStore backend = LocalDirectoryAssetStore(
       Directory(p.join(tmp.path, 'remote'))..createSync(),
     );
-    final FushiDatabase dbA = memDb();
-    final FushiDatabase dbB = memDb();
-    final FushiDatabase dbC = memDb();
+    final SrsStorage dbA = await memDb();
+    final SrsStorage dbB = await memDb();
+    final SrsStorage dbC = await memDb();
     final SrsDbStore a = await open(dbA, 'a', styleDir: 'a');
     final SrsDbStore b = await open(dbB, 'b', styleDir: 'b');
     // C 没装样式库（例如旧版本）：原样写内联样式。
@@ -215,7 +217,7 @@ void main() {
   });
 
   test('导出 .apkg 自包含（内联样式、不带共享样式文件）；Fushi 回导重新去重', () async {
-    final FushiDatabase db = memDb();
+    final SrsStorage db = await memDb();
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     final Map<String, String> original = noteFields('風', dicts);
     final String id = await addNote(s, '風', dicts);
@@ -245,7 +247,7 @@ void main() {
       isNull,
     );
 
-    final FushiDatabase db2 = memDb();
+    final SrsStorage db2 = await memDb();
     final SrsDbStore other = await open(db2, 'other', styleDir: 'other');
     await importAnkiPackage(
       store: other,
@@ -264,7 +266,7 @@ void main() {
   });
 
   test('导入带引用行 + 共享样式文件的包：按包内文件展开后重新去重', () async {
-    final FushiDatabase db = memDb();
+    final SrsStorage db = await memDb();
     final SrsDbStore s = await open(db, 'dev', styleDir: 'media');
     final Map<String, String> original = noteFields('霧', dicts);
     final String id = await addNote(s, '霧', dicts);
@@ -300,7 +302,7 @@ void main() {
     out.addFile(ArchiveFile('media', m.length, m));
     final Uint8List legacy = Uint8List.fromList(ZipEncoder().encode(out)!);
 
-    final FushiDatabase db2 = memDb();
+    final SrsStorage db2 = await memDb();
     final SrsDbStore other = await open(db2, 'other', styleDir: 'other');
     await importAnkiPackage(
       store: other,
@@ -318,7 +320,7 @@ void main() {
   });
 
   test('存量迁移：就地改表示、不产生事件；分批可中断可续、幂等；渲染不变', () async {
-    final FushiDatabase db = memDb();
+    final SrsStorage db = await memDb();
     final SrsDbStore legacy = await open(db, 'dev');
     final List<String> ids = <String>[
       for (int i = 0; i < 7; i++) await addNote(legacy, '語$i', dicts),

@@ -1,8 +1,6 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -10,6 +8,8 @@ import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000bb';
 
@@ -20,11 +20,15 @@ void main() {
   setUp(() => root = Directory.systemTemp.createTempSync('fushi_srs_sync_'));
   tearDown(() => root.deleteSync(recursive: true));
 
-  Future<SrsDbStore> device(String id) => SrsDbStore.open(
-    db: FushiDatabase.forTesting(NativeDatabase.memory()),
-    profileUid: kProfile,
-    deviceId: id,
-  );
+  Future<SrsDbStore> device(String id) async {
+    final SrsStorage st = await openTestSrsStorage();
+    return SrsDbStore.open(
+      db: st.db,
+      core: st.core,
+      profileUid: kProfile,
+      deviceId: id,
+    );
+  }
 
   test('两台设备经文件系统同步后端收敛；cursor 文件覆盖不留副本', () async {
     final LocalDirectoryAssetStore backend = LocalDirectoryAssetStore(root);

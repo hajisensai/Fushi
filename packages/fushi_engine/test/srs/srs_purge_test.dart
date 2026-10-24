@@ -9,11 +9,13 @@ import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_test_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000e5';
 const int kDay = 24 * 60 * 60 * 1000;
@@ -25,7 +27,6 @@ void main() {
   int t = DateTime.utc(2026, 10, 20, 9).millisecondsSinceEpoch;
   late SrsMemoryDir dir;
   late Directory tmp;
-  final List<FushiDatabase> dbs = <FushiDatabase>[];
 
   setUp(() async {
     t = DateTime.utc(2026, 10, 20, 9).millisecondsSinceEpoch;
@@ -33,18 +34,14 @@ void main() {
     tmp = await Directory.systemTemp.createTemp('srs_purge_test_');
   });
   tearDown(() async {
-    for (final FushiDatabase db in dbs) {
-      await db.close();
-    }
-    dbs.clear();
     await tmp.delete(recursive: true);
   });
 
   Future<SrsDbStore> device(String id) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    dbs.add(db);
+    final SrsStorage srs = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const SrsFakeEngine(),
@@ -369,6 +366,7 @@ void main() {
 
     Future<SrsDbStore> reopen(SrsDbStore s, String id) => SrsDbStore.open(
       db: s.db,
+      core: s.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const SrsFakeEngine(),

@@ -14,10 +14,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math';
+import 'dart:typed_data';
 
-import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -25,6 +24,7 @@ import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import '../support/srs_query_counter.dart';
+import '../support/srs_test_storage.dart';
 import 'apkg_test_support.dart';
 import 'srs_apkg_import_test.dart'
     show
@@ -176,15 +176,14 @@ Future<SrsDbStore> _openStore(
   String name,
   CountingInterceptor? c,
 ) async {
-  final QueryExecutor e = NativeDatabase.createInBackground(
-    File('${tmp.path}/$name.db'),
+  final TestSrs srs = await openTestSrsAt(
+    '${tmp.path}/$name.db',
+    interceptor: c,
+    inline: false,
   );
-  final FushiDatabase db = FushiDatabase.forTesting(
-    c == null ? e : e.interceptWith(c),
-  );
-  addTearDown(db.close);
   return SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: '01928c3e-0000-7000-8000-00000000e3e3',
     deviceId: 'bench',
     engine: const FakeFsrsEngine(),

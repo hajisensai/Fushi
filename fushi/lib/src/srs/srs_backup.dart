@@ -18,6 +18,7 @@ import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
@@ -327,6 +328,7 @@ class SrsBackupController {
   Future<SrsBackupRestoreOutcome?> restoreFile(
     File file, {
     required FushiDatabase db,
+    required SrsStorage srs,
     required Future<int> Function() activeProfileId,
     required Future<void> Function() reopenStore,
   }) => _serial(() async {
@@ -346,13 +348,14 @@ class SrsBackupController {
         throw SrsRestoreOtherLocalProfile(owner.read<String>('name'));
       }
       final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
-      if (!await srsCanAdoptProfileUid(db, store.profileUid, deviceId)) {
+      if (!await srsCanAdoptProfileUid(srs, store.profileUid, deviceId)) {
         throw SrsRestoreProfileMismatch(backupUid, store.profileUid);
       }
       final int profileId = await activeProfileId();
       final String oldUid = store.profileUid;
       await srsAdoptProfileUid(
         db,
+        srs.db,
         profileId: profileId,
         oldUid: oldUid,
         newUid: backupUid,
@@ -369,6 +372,7 @@ class SrsBackupController {
         // 回到采用之前：新 uid 下的行全部删掉、uid 换回去（旧 uid 下只有内置行 / 本机状态，重开时重建）。
         await srsAdoptProfileUid(
           db,
+          srs.db,
           profileId: profileId,
           oldUid: backupUid,
           newUid: oldUid,

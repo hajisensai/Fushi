@@ -2,13 +2,14 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
@@ -42,22 +43,27 @@ void main() {
         hlc: const Hlc(1, 0, 'w'),
         timeSource: SrsTimeSource.wall,
       );
-      return SrsDeckView.materialize(
-        const SrsEntityRecord(
-          id: 'd',
-          profileUid: kProfile,
-          kind: SrsEntityKind.deck,
-          payload: <String, Object?>{},
+      return srsMaterializeDecks(<SrsEntitySource>[
+        SrsEntitySource.record(
+          const SrsEntityRecord(
+            id: 'd',
+            profileUid: kProfile,
+            kind: SrsEntityKind.deck,
+            payload: <String, Object?>{},
+          ),
+          <SrsEditItem>[
+            for (final SrsFieldEdit x in <SrsFieldEdit>[
+              if (baseAt != null)
+                e(SrsFieldKeys.deckOptimizeBaseline, <String, Object?>{
+                  'at': baseAt,
+                  'n': baseN,
+                }),
+              e(SrsFieldKeys.deckAutoOptimize, auto),
+            ])
+              SrsEditItem.of(x, null),
+          ],
         ),
-        SrsEntityEdits.build(<SrsFieldEdit>[
-          if (baseAt != null)
-            e(SrsFieldKeys.deckOptimizeBaseline, <String, Object?>{
-              'at': baseAt,
-              'n': baseN,
-            }),
-          e(SrsFieldKeys.deckAutoOptimize, auto),
-        ]),
-      );
+      ]).single;
     }
 
     test('门槛、增长比例、30 天、关闭开关、不认识的 rev', () {
@@ -133,8 +139,10 @@ void main() {
     () {
       test('合成复习历史上跑出参数并以机器产出写回', () async {
         int t = DateTime.utc(2026, 1, 1, 12).millisecondsSinceEpoch;
+        final SrsStorage srsStorage = await openTestSrsStorage();
         final SrsDbStore store = await SrsDbStore.open(
-          db: FushiDatabase.forTesting(NativeDatabase.memory()),
+          db: srsStorage.db,
+          core: srsStorage.core,
           profileUid: kProfile,
           deviceId: 'dev',
           engine: engine,

@@ -17,6 +17,7 @@ import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
@@ -57,8 +58,13 @@ void main() {
       );
       final Directory mediaDir = Directory(p.join(work.path, 'srs_media', 'p'));
       const String uid = '01928c3e-0000-7000-8000-0000000be4c6';
+      final SrsStorage srs = await SrsStorage.open(
+        path: p.join(work.path, 'srs.db'),
+      );
+      addTearDown(srs.close);
       final SrsDbStore store = await SrsDbStore.open(
-        db: db,
+        db: srs.db,
+        core: srs.core,
         profileUid: uid,
         deviceId: 'bench',
         engine: FfiFsrsEngine.tryCreate(),

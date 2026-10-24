@@ -4,6 +4,8 @@
 ///   **模块关着时一切 SRS 状态都不建**：[srsStoreProvider] 直接给 null，不碰数据库。
 /// - [srsEngineProvider]：FSRS 原生内核；库缺失时为 null（页面显示「排程内核不可用」，
 ///   允许浏览 / 编辑，不能复习）。测试里覆写成假引擎。
+/// - [srsStorageProvider]：进程级 SRS 存储（`srs.db`，[AppModel.srsStorage]）；模块关着时为 null，
+///   不打开文件。非主进程在主进程完成首次搬迁之前也为 null（见 `SrsStorageHost`）。
 /// - [srsStoreProvider]：按当前 profile 打开的 [SrsDbStore]；切 profile 时随
 ///   `activeProfileId` 重建（profile 的全局身份由 `FushiDatabase.profileUidOf` 给出）。
 /// - [srsRevisionProvider]：本机写操作后的刷新信号。store 本身不发变更流，页面写完
@@ -26,6 +28,7 @@ import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -212,10 +215,19 @@ final Provider<FsrsEngine?> srsEngineProvider = Provider<FsrsEngine?>((
   }
 });
 
+/// 进程级 SRS 存储；模块关着时为 null（不打开 srs.db）。存储本身归 [AppModel.srsStorage]
+/// 管（关主库时一起关），这里不在 dispose 时关它：同一进程里重建 provider 复用同一份连接。
+final FutureProvider<SrsStorage?> srsStorageProvider =
+    FutureProvider<SrsStorage?>((Ref ref) async {
+      if (!ref.watch(srsModuleEnabledProvider)) return null;
+      return ref.read(appProvider).srsStorage.acquire();
+    });
+
 /// 当前 profile 的 SRS 副本；模块关着时为 null。
 final FutureProvider<SrsDbStore?> srsStoreProvider =
     FutureProvider<SrsDbStore?>((Ref ref) async {
-      if (!ref.watch(srsModuleEnabledProvider)) return null;
+      final SrsStorage? storage = await ref.watch(srsStorageProvider.future);
+      if (storage == null) return null;
       final int activeProfileId = ref.watch(
         profileViewModelProvider.select(
           (ProfileUiState s) => s.activeProfileId,
@@ -232,7 +244,8 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       ).getOrCreateDeviceId();
       final Directory support = await ref.watch(srsSupportRootProvider)();
       final SrsDbStore store = await SrsDbStore.open(
-        db: app.database,
+        db: storage.db,
+        core: storage.core,
         profileUid: profileUid,
         deviceId: deviceId,
         engine: engine,

@@ -90,7 +90,7 @@ class SrsCardOps {
     final SrsMemoryInput input = srsCollectMemoryInput(
       history,
       algorithm: algorithm,
-      dayIndexOf: ctx.day.dayIndexOf,
+      day: ctx.day,
     );
     final SrsMemory? memory = srsComputeMemory(
       input,
@@ -234,7 +234,7 @@ class SrsCardOps {
     final SrsMemoryInput input = srsCollectMemoryInput(
       history,
       algorithm: algorithm,
-      dayIndexOf: ctx.day.dayIndexOf,
+      day: ctx.day,
     );
     final SrsMemory? memory = srsComputeMemory(
       input,

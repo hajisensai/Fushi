@@ -96,13 +96,15 @@ void main() {
       reason: '_stripCredentials must DELETE every _deviceLocalTables entry',
     );
   });
-  // v117 SRS：本机状态 / 缓存四表不离开本机、覆盖恢复后清空而不回灌；数据本体四表
-  // 随备份走，但合并导入的通用路径必须跳过（铁律 E 由 SRS 专用步骤处理）。
+  // SRS（2026-10-23 起归 Rust 的 srs.db）：本机状态 / 缓存五表不离开本机、覆盖恢复后清空而不
+  // 回灌；数据本体四表随「复习」类别以 srs.db 快照走。主库里只剩老形态（还没搬迁的库 / 老备份）
+  // 的残表，由 backup_srs_tables.dart 统一处置。
   const List<String> srsLocal = <String>[
     'srs_event_local',
     'srs_local_state',
     'srs_notes_cache',
     'srs_cards_cache',
+    'srs_sent_batches',
   ];
   const List<String> srsData = <String>[
     'srs_entities',
@@ -113,12 +115,17 @@ void main() {
 
   test('SRS device-local tables are stripped on export and discarded on '
       'restore', () {
-    final String s =
-        File('lib/src/sync/backup_service.dart').readAsStringSync();
-    final int listStart =
-        s.indexOf('const List<String> _srsDeviceLocalDiscardTables =');
+    final String tables = File(
+      'lib/src/sync/backup_srs_tables.dart',
+    ).readAsStringSync();
+    final int listStart = tables.indexOf(
+      'const List<String> kSrsDeviceLocalTableNames =',
+    );
     expect(listStart, greaterThan(-1));
-    final String listBody = s.substring(listStart, s.indexOf('];', listStart));
+    final String listBody = tables.substring(
+      listStart,
+      tables.indexOf('];', listStart),
+    );
     for (final String table in srsLocal) {
       expect(listBody, contains("'$table'"));
     }
@@ -126,6 +133,10 @@ void main() {
       expect(listBody, isNot(contains("'$table'")),
           reason: '$table 是 SRS 数据本体，必须随备份走');
     }
+
+    final String s = File(
+      'lib/src/sync/backup_service.dart',
+    ).readAsStringSync();
     // 数据本体与本机状态都不得进「从 bak 回灌」的设备本地表（那会把恢复的数据
     // 换回本机旧的 / 让旧本机状态套在新数据上）。
     final int devStart = s.indexOf('const List<String> _deviceLocalTables =');
@@ -137,9 +148,16 @@ void main() {
 
     final int stripStart = s.indexOf('_stripCredentials(String dbDirectory)');
     final String stripBody = s.substring(
-        stripStart, s.indexOf('static Future<void> _strip', stripStart + 1));
-    expect(stripBody, contains('_srsDeviceLocalDiscardTables'),
-        reason: '_stripCredentials 必须清空 SRS 本机状态 / 缓存');
+      stripStart,
+      s.indexOf('static Future<void> _strip', stripStart + 1),
+    );
+    expect(
+      stripBody,
+      contains('clearLegacySrsDeviceLocalTables'),
+      reason: '_stripCredentials 必须清空老形态主库里的 SRS 本机状态 / 缓存',
+    );
+    // 新形态：srs.db 快照由 Rust 清空设备本地表。
+    expect(s, contains('snapshotInto(path, stripDeviceLocal: true)'));
 
     final String restore = File('lib/src/sync/backup_service/restore.part.dart')
         .readAsStringSync();
@@ -147,15 +165,28 @@ void main() {
         .indexOf('static Future<bool> _reapplyDeviceLocalTablesFromBak(');
     expect(reapplyStart, greaterThan(-1));
     final String reapplyBody = restore.substring(
-        reapplyStart, restore.indexOf('static Future<bool> _hasSqliteHeader'));
-    expect(reapplyBody, contains('_srsDeviceLocalDiscardTables'),
-        reason: '覆盖恢复后必须清空 SRS 本机状态，让引擎换新化身');
+      reapplyStart,
+      restore.indexOf('static Future<bool> _hasSqliteHeader'),
+    );
+    expect(
+      reapplyBody,
+      contains('clearLegacySrsDeviceLocalTables'),
+      reason: '覆盖恢复后必须清空 SRS 本机状态，让引擎换新化身',
+    );
   });
 
-  test('merge import skips every SRS table on the generic path', () {
+  test('merge import never touches SRS tables on the generic path', () {
+    // SRS 表不在主库 schema 里，通用路径的跳过清单也不再列它们；老形态备份里的残表只由
+    // SRS 专用步骤（BackupMergeEngine._mergeSrs）读。
     final List<String> skipped = mergeSkippedDeviceLocalTableNames();
     for (final String table in <String>[...srsLocal, ...srsData]) {
-      expect(skipped, contains(table));
+      expect(skipped, isNot(contains(table)));
+    }
+    final String engine = File(
+      'lib/src/sync/backup_merge_engine.dart',
+    ).readAsStringSync();
+    for (final String table in <String>[...srsLocal, ...srsData]) {
+      expect(engine, isNot(contains(table)), reason: table);
     }
   });
 }

@@ -143,10 +143,7 @@ void main() {
         if (e.value.fate == fate) e.key,
     };
     final Set<String> deviceLocal = withFate(BackupTableFate.deviceLocal);
-    expect(<String>{
-      ...lists['deviceLocal']!,
-      ...lists['srsDeviceLocalDiscard']!,
-    }, deviceLocal);
+    expect(lists['deviceLocal']!.toSet(), deviceLocal);
     expect(
       lists['deviceLocalParentFirst']!.toSet(),
       lists['deviceLocal']!.toSet(),
@@ -156,11 +153,12 @@ void main() {
         BackupCategory.statistics,
       }, reason: t);
     }
-    for (final String t in lists['srsData']!) {
-      expect(backupTableRules[t]!.categories, <BackupCategory>{
-        BackupCategory.srs,
-      }, reason: t);
-    }
+    // SRS 的表不在主库里（归 Rust 的 srs.db，随「复习」类别以 zip 条目 `srs.db` 快照走），
+    // 不在这张表里登记。
+    expect(
+      backupTableRules.keys.where((String t) => t.startsWith('srs_')),
+      isEmpty,
+    );
     for (final e in backupTableRules.entries) {
       if (e.value.fate == BackupTableFate.followsCategories) {
         expect(e.value.categories, isNotEmpty, reason: e.key);

@@ -302,8 +302,8 @@ class BackupRestoreService {
               _countTableIfPresent(db, 'video_watch_statistics') +
               _countTableIfPresent(db, 'mining_statistics') +
               _countTableIfPresent(db, 'study_segments'),
-          srsNotes:
-              _countTableIfPresent(db, 'srs_entities', where: _srsUserNoteSql),
+          // 老形态备份的 SRS 在主库里；新形态的 meta 必带 srsNoteCount，不走这里。
+          srsNotes: srsUserNoteCountInLegacyBlob(db),
         );
       } finally {
         db.dispose();
@@ -384,12 +384,10 @@ class BackupRestoreService {
         for (final String t in _deviceLocalTablesParentFirst) {
           await _insertDeviceLocalTableFromBak(db!, t);
         }
-        // v117 SRS 本机状态 / 缓存：覆盖恢复后既不沿用备份里的（导出时已清空，
-        // 这里兜底更老 / 外来的备份），也不从 bak 回灌本机旧的——数据本体已整份
-        // 换成备份的，SRS 引擎须按「无本机状态」换新化身并重建缓存。
-        for (final String t in _srsDeviceLocalDiscardTables) {
-          await db!.customStatement('DELETE FROM $t');
-        }
+        // 老形态备份（SRS 表随主库覆盖进来）的 SRS 本机状态 / 缓存：既不沿用备份里的
+        // （导出时已清空，这里兜底更老 / 外来的备份），也不从 bak 回灌——搬进 srs.db 后
+        // SRS 引擎须按「无本机状态」换新化身并重建缓存。新形态主库里没有这些表，空操作。
+        await clearLegacySrsDeviceLocalTables(db!);
       });
       await db.customStatement('DETACH DATABASE devbak');
       await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
@@ -608,26 +606,40 @@ class BackupRestoreService {
   /// 覆盖恢复里「复习勾了、配置档案没有来自备份」时的 SRS 归位（[BackupCategory.srs]
   /// 对 `profiles` 的依赖）。
   ///
-  /// 覆盖后的活库此时是：配置档案 = 本机的（bak 回灌），SRS 四张数据表 = 备份的，挂在
-  /// 备份那边的 profile uid 上——对不上本机档案就是孤儿。做法是把备份 DB 再解一份到
-  /// 临时文件（迁到当前 schema）、ATTACH 成源，清掉活库里那批原样覆盖进来的 SRS 行，
-  /// 再走与合并导入**同一个** SRS 专用步骤（[mergeSrsFromAttachedBackup]：同 uid
-  /// 并入 / 同名且无用户笔记未发布则采用 uid / 否则新建「（备份）」档案）。整段在一个
-  /// 事务里。媒体目录按 uid 分子目录，三条规则都保留备份的 uid，所以已恢复的
-  /// `srs_media/<uid>/` 直接对得上。
+  /// 覆盖后的活库此时是：配置档案 = 本机的（bak 回灌）；备份的 SRS 挂在备份那边的 profile uid
+  /// 上——对不上本机档案就是孤儿。覆盖语义下本机原有的 SRS 换成备份的：删掉本机 srs.db 重开一份
+  /// 空的，再走与合并导入**同一个** SRS 专用步骤（[mergeSrsIntoLocal]：同 uid 并入 / 同名且无
+  /// 用户笔记未发布则采用 uid / 否则新建「（备份）」档案）。
+  /// - 新形态备份（zip 里有 [srsEntryName]）：事件从解出的 srs.db 副本（Rust 打开）读，档案从
+  ///   解出的备份主库读（ATTACH）。
+  /// - 老形态备份：覆盖进来的主库带着备份的老 SRS 表（孤儿），先删掉；事件与档案都从解出的备份
+  ///   主库副本读（ATTACH，迁到当前 schema 时老表仍在）。
+  /// 备份根本不带 SRS 时什么都不动（本机 srs.db 保留）。
+  ///
+  /// 两个文件分别提交：中途失败时本机 srs.db 可能只合并了一部分（见调用方注释）。媒体目录按
+  /// uid 分子目录，三条规则都保留备份的 uid，所以已恢复的 `srs_media/<uid>/` 直接对得上。
   static Future<void> _reapplySrsViaProfileMerge({
     required String dbDirectory,
     required String zipPath,
     required String dbEntryName,
+    required String? srsEntryName,
   }) async {
     final Directory tmp =
         await Directory.systemTemp.createTemp('fushi_srs_restore_');
     final String srcPath = p.join(tmp.path, _dbName);
+    final String srcSrsPath = p.join(tmp.path, _srsDbName);
+    SrsStorage? srcSrs;
     try {
+      if (srsEntryName == null &&
+          !legacySrsTablesInFile(p.join(dbDirectory, _dbName))) {
+        return;
+      }
       await _extractEntriesStreaming(
         zipPath: zipPath,
         entries: <MapEntry<String, String>>[
           MapEntry<String, String>(dbEntryName, srcPath),
+          if (srsEntryName != null)
+            MapEntry<String, String>(srsEntryName, srcSrsPath),
         ],
       );
       // 迁到当前 schema，列与活库对齐（与合并导入同一约定）。
@@ -637,29 +649,49 @@ class BackupRestoreService {
       } finally {
         await srcMigrate.close();
       }
+      if (srsEntryName != null) {
+        srcSrs = await SrsStorage.open(path: srcSrsPath, inline: true);
+      }
       final FushiDatabase db = FushiDatabase(dbDirectory);
       try {
-        final String safeSrc =
-            srcPath.replaceAll(r'\', '/').replaceAll("'", "''");
-        await db.customStatement("ATTACH DATABASE '$safeSrc' AS srssrc");
+        // 覆盖进来的老 SRS 表挂在备份的 uid 上（孤儿）：删掉，下面按档案重新归位。不删的话，
+        // 本机 srs.db 重开时的一次性搬迁会把它们原样搬进去。
+        await dropLegacySrsTables(db);
+        await _deleteSrsDbFiles(SrsStorage.pathIn(dbDirectory));
+        final SrsStorage local = await SrsStorage.open(
+          path: SrsStorage.pathIn(dbDirectory),
+          legacy: db,
+        );
         try {
-          await db.transaction(() async {
-            for (final String t in <String>[
-              ..._srsDataTables,
-              ..._srsDeviceLocalDiscardTables,
-            ]) {
-              await db.customStatement('DELETE FROM main.$t');
-            }
-            await mergeSrsFromAttachedBackup(db, 'srssrc');
-          });
+          final String safeSrc = srcPath
+              .replaceAll(r'\', '/')
+              .replaceAll("'", "''");
+          await db.customStatement("ATTACH DATABASE '$safeSrc' AS srssrc");
+          try {
+            final SrsStorage? split = srcSrs;
+            await mergeSrsIntoLocal(
+              db: db,
+              localSrs: local,
+              source: split != null
+                  ? SrsBackupSource.split(
+                      profiles: db,
+                      profilesSchema: 'srssrc',
+                      srs: split.db,
+                    )
+                  : SrsBackupSource.attached(db, 'srssrc'),
+            );
+          } finally {
+            await db.customStatement('DETACH DATABASE srssrc');
+          }
         } finally {
-          await db.customStatement('DETACH DATABASE srssrc');
+          await local.close();
         }
         await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
       } finally {
         await db.close();
       }
     } finally {
+      await srcSrs?.close();
       try {
         await tmp.delete(recursive: true);
       } catch (_) {
@@ -734,6 +766,47 @@ class BackupRestoreService {
   static ArchiveFile? _findDbEntry(Archive archive) =>
       archive.findFile(_dbName) ??
       archive.findFile(legacyHibikiDatabaseFileName);
+
+  /// 覆盖恢复里本机 srs.db 的处置（写进恢复 sidecar 的 `srs` 键，崩溃后启动时由
+  /// [recoverPendingRestore] 重放；两种都幂等）：
+  /// - [_srsPlanReplace]：新形态备份带 `srs.db`——事先解到 `srs.db` 旁的暂存文件，主库换好后
+  ///   换掉本机 srs.db（连同 -wal / -shm）。暂存文件已不在 = 已换过。
+  /// - [_srsPlanDropIfLegacy]：备份不带 `srs.db`；覆盖进来的主库若带着老形态 SRS 表，就删掉本机
+  ///   srs.db，下次打开走一次性搬迁把它们搬进来。主库里没有老表（备份不带 SRS / 已搬过）时不动。
+  static const String _srsPlanReplace = 'replace';
+  static const String _srsPlanDropIfLegacy = 'dropIfLegacy';
+
+  /// [_srsPlanReplace] 的暂存文件（与 srs.db 同目录，换文件是同盘 rename）。
+  static String _srsStagedPath(String dbDirectory) =>
+      '${SrsStorage.pathIn(dbDirectory)}.restore-new';
+
+  /// 删 srs.db 及其 -wal / -shm（-wal 先删：残留的 WAL 帧绝不能重放到换进来的库上）。
+  static Future<void> _deleteSrsDbFiles(String srsPath) async {
+    await _safeDelete('$srsPath-wal');
+    await _safeDelete('$srsPath-shm');
+    await _safeDelete(srsPath);
+  }
+
+  /// 执行 [plan]（见 [_srsPlanReplace] / [_srsPlanDropIfLegacy]）。调用方保证此刻没有任何
+  /// srs.db 连接（app 关库时已关 SRS 存储；启动恢复早于 SRS 打开）。
+  static Future<void> _applySrsOverwrite(
+    String dbDirectory,
+    String plan,
+  ) async {
+    final String srsPath = SrsStorage.pathIn(dbDirectory);
+    switch (plan) {
+      case _srsPlanReplace:
+        final File staged = File(_srsStagedPath(dbDirectory));
+        if (!staged.existsSync()) return;
+        await _deleteSrsDbFiles(srsPath);
+        await staged.rename(srsPath);
+      case _srsPlanDropIfLegacy:
+        if (!legacySrsTablesInFile(p.join(dbDirectory, _dbName))) return;
+        await _deleteSrsDbFiles(srsPath);
+      default:
+        throw FormatException('unknown srs restore plan: $plan');
+    }
+  }
 
   /// 备份归档里主库的 schema 若低于 [kMinSupportedSchemaVersion]，抛
   /// [UnsupportedLegacySchemaException]（与开库时同一类型，UI 同一句提示）。
@@ -962,6 +1035,8 @@ class BackupRestoreService {
       // [dbDirectory]）下，与 [SrsMediaStore.directoryFor] 同一规则，恢复后复习页直接
       // 读得到。
       final bool wantsSrs = wants(BackupCategory.srs);
+      // 新形态备份的 SRS 事件在 zip 的 `srs.db` 条目里；老形态在主库条目里。
+      final ArchiveFile? srsFile = archive.findFile(_srsDbName);
       final String? effSrsMediaRoot = wantsSrs
           ? SrsMediaStore.mediaRootFor(Directory(dbDirectory)).path
           : null;
@@ -977,6 +1052,25 @@ class BackupRestoreService {
       final bool srsProfilesFromBackup =
           !haveCurrent || (importSettings && !backupProfilesExcluded);
       bool deviceLocalTablesReapplied = !haveCurrent;
+      // 本机 srs.db 的处置（档案来自备份时随主库一起换；档案留本机时由 3d 按档案合并）。
+      // 复习未勾 = 本机 srs.db 原样保留（它是独立文件，不随主库覆盖丢失）。
+      final String? srsPlan = !wantsSrs || !srsProfilesFromBackup
+          ? null
+          : srsFile != null
+          ? _srsPlanReplace
+          : _srsPlanDropIfLegacy;
+      if (srsPlan == _srsPlanReplace) {
+        // 先解到暂存文件（不碰本机 srs.db）：sidecar 绝不能先于暂存文件宣告「要换」。
+        final String staged = _srsStagedPath(dbDirectory);
+        await _deleteSrsDbFiles(staged);
+        await _extractEntriesStreaming(
+          zipPath: zipPath,
+          entries: <MapEntry<String, String>>[
+            MapEntry<String, String>(srsFile!.name, staged),
+          ],
+          onBytes: reportBytes,
+        );
+      }
 
       // 1) Snapshot the current DB (crash safety) + record what to preserve.
       //    Skipped on a fresh install (no current DB) → backup applied verbatim,
@@ -992,11 +1086,13 @@ class BackupRestoreService {
             'preserveDeviceLocalTables': true,
             if (backupSettingsExcluded) 'preserveSettings': true,
             if (backupProfilesExcluded) 'preserveProfiles': true,
+            if (srsPlan != null) 'srs': srsPlan,
           };
         } else {
           sidecarPayload = <String, dynamic>{
             'mode': 'settings',
             'preserveDeviceLocalTables': true,
+            if (srsPlan != null) 'srs': srsPlan,
           };
         }
         // The v78 download graph is device-local even when there are no sync
@@ -1029,6 +1125,10 @@ class BackupRestoreService {
         ],
         onBytes: reportBytes,
       );
+
+      // 2a) 主库换好后立刻处置本机 srs.db（与主库同属「数据本体」；崩在这之后由启动恢复按
+      //     sidecar 的 `srs` 键重放）。
+      if (srsPlan != null) await _applySrsOverwrite(dbDirectory, srsPlan);
 
       if (effectiveHasDictionaries &&
           dictionaryReapplyPlan != null &&
@@ -1253,7 +1353,7 @@ class BackupRestoreService {
           // the excluded-layer preserve above — never touched by this strip.
           stripSettings: false,
           stripProfiles: false,
-          // 复习未勾：备份里的 SRS 数据不落地（覆盖语义，同 games / videos）。
+          // 复习未勾：老形态备份随主库覆盖进来的 SRS 表不落地（删表；本机 srs.db 不动）。
           stripSrs: !wantsSrs,
         );
       }
@@ -1266,6 +1366,7 @@ class BackupRestoreService {
           dbDirectory: dbDirectory,
           zipPath: zipPath,
           dbEntryName: dbFile.name,
+          srsEntryName: srsFile?.name,
         );
       }
 
@@ -1292,6 +1393,9 @@ class BackupRestoreService {
   /// startup cleanup of the temp `merge-src` + `pre-merge.bak` files.
   static const String _mergeSidecar = '$_dbName.merge-preserve.json';
   static const String _mergeSrcName = '$_dbName.merge-src';
+
+  /// 合并导入时备份 `srs.db` 条目解出的副本（只由 Rust 打开）。
+  static const String _mergeSrcSrsName = '$_dbName.merge-src-srs';
 
   /// MERGE a backup into the current database instead of overwriting it
   /// (TODO-888). The device keeps everything it has; the backup only ADDS what
@@ -1328,6 +1432,7 @@ class BackupRestoreService {
         categories?.map((BackupCategory c) => c.name).toSet();
     final String dbPath = p.join(dbDirectory, _dbName);
     final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
+    final String mergeSrcSrsPath = p.join(dbDirectory, _mergeSrcSrsName);
     final String bakPath = '$dbPath.pre-merge.bak';
     final File sidecar = File(p.join(dbDirectory, _mergeSidecar));
 
@@ -1356,10 +1461,17 @@ class BackupRestoreService {
       await _safeDelete(mergeSrcPath);
       await _safeDelete('$mergeSrcPath-wal');
       await _safeDelete('$mergeSrcPath-shm');
+      await _deleteSrsDbFiles(mergeSrcSrsPath);
+      // 新形态备份的 SRS 事件在 zip 的 `srs.db` 条目里：一并解出副本（只由 Rust 打开）。
+      final ArchiveFile? srsFile = wants(BackupCategory.srs)
+          ? archive.findFile(_srsDbName)
+          : null;
       await _extractEntriesStreaming(
         zipPath: zipPath,
         entries: <MapEntry<String, String>>[
           MapEntry<String, String>(dbFile.name, mergeSrcPath),
+          if (srsFile != null)
+            MapEntry<String, String>(srsFile.name, mergeSrcSrsPath),
         ],
         onBytes: reportBytes,
       );
@@ -1388,12 +1500,34 @@ class BackupRestoreService {
         'mergeSrc': mergeSrcPath,
       }));
 
+      // 备份带不带 SRS：新形态看 `srs.db` 条目，老形态看迁好的副本里有没有老 SRS 表。都不带时
+      // 不打开本机 srs.db（复习从没用过的设备不凭空建库）。
+      final bool mergeSrs =
+          wants(BackupCategory.srs) &&
+          (srsFile != null || legacySrsTablesInFile(mergeSrcPath));
+
       // 4) Open the live DB, ATTACH the backup, run the whole row merge in one
       //    transaction (rolled back on any failure -> DB unchanged).
       final FushiDatabase db = FushiDatabase(dbDirectory);
+      SrsStorage? localSrs;
+      SrsStorage? sourceSrs;
       try {
-        final String safeSrc =
-            mergeSrcPath.replaceAll(r'\', '/').replaceAll("'", "''");
+        if (mergeSrs) {
+          // 调用方关库时已关 app 的 SRS 存储；这里自己开一份（主进程，带一次性搬迁）。
+          localSrs = await SrsStorage.open(
+            path: SrsStorage.pathIn(dbDirectory),
+            legacy: db,
+          );
+          if (srsFile != null) {
+            sourceSrs = await SrsStorage.open(
+              path: mergeSrcSrsPath,
+              inline: true,
+            );
+          }
+        }
+        final String safeSrc = mergeSrcPath
+            .replaceAll(r'\', '/')
+            .replaceAll("'", "''");
         await db.customStatement("ATTACH DATABASE '$safeSrc' AS mergesrc");
         try {
           // TODO-1261: only import video rows whose file travelled (or streaming
@@ -1405,12 +1539,16 @@ class BackupRestoreService {
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
             enabledCategoryNames: enabledCategoryNames,
             adoptSourcePreferences: adoptSourcePreferences,
+            localSrs: localSrs,
+            sourceSrs: sourceSrs?.db,
           ).merge();
         } finally {
           await db.customStatement('DETACH DATABASE mergesrc');
         }
         await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
       } finally {
+        await sourceSrs?.close();
+        await localSrs?.close();
         await db.close();
       }
 
@@ -1483,6 +1621,7 @@ class BackupRestoreService {
       await _safeDelete(mergeSrcPath);
       await _safeDelete('$mergeSrcPath-wal');
       await _safeDelete('$mergeSrcPath-shm');
+      await _deleteSrsDbFiles(mergeSrcSrsPath);
       await _safeDelete(bakPath);
       await _safeDelete(sidecar.path);
     } finally {
@@ -1624,6 +1763,7 @@ class BackupRestoreService {
     await _safeDelete(p.join(dbDirectory, _mergeSrcName));
     await _safeDelete(p.join(dbDirectory, '$_mergeSrcName-wal'));
     await _safeDelete(p.join(dbDirectory, '$_mergeSrcName-shm'));
+    await _deleteSrsDbFiles(p.join(dbDirectory, _mergeSrcSrsName));
     await _safeDelete(p.join(dbDirectory, '$_dbName.pre-merge.bak'));
     await _safeDelete(sidecar.path);
     return true;
@@ -1653,6 +1793,9 @@ class BackupRestoreService {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       shouldReapplyDeviceLocalTables =
           decoded['preserveDeviceLocalTables'] == true;
+      // 本机 srs.db 的处置（幂等；见 [_applySrsOverwrite]）。早于一切 SRS 打开。
+      final Object? srsPlan = decoded['srs'];
+      if (srsPlan is String) await _applySrsOverwrite(dbDirectory, srsPlan);
       if (decoded['mode'] == 'settings') {
         await _reapplySettingsLayer(dbDirectory);
       } else {

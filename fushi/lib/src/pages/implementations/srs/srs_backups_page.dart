@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_backup_retention.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_point_in_time_restore.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -211,11 +212,14 @@ class _SrsBackupsPageState extends ConsumerState<SrsBackupsPage> {
     if (!ok || !mounted) return;
     final AppModel app = ref.read(appProvider);
     await _run('restoreFile', () async {
+      final SrsStorage? srs = await ref.read(srsStorageProvider.future);
+      if (srs == null) return;
       final SrsBackupRestoreOutcome? r;
       try {
         r = await _controller.restoreFile(
           file,
           db: app.database,
+          srs: srs,
           activeProfileId: () async {
             final int id = ref.read(profileViewModelProvider).activeProfileId;
             return id > 0 ? id : app.database.resolveActiveProfileId();

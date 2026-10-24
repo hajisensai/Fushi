@@ -6,9 +6,9 @@
 // - 导入：SELECT 次数与笔记数无关地按批摊薄（修前每条笔记约 13 次）；
 // - 新建牌组：语句数不随库里笔记数增长；
 // - 同步冲突扫描：只读回有 ≥ 2 条记录的字段键，不整表读回修改记录。
+import 'dart:io';
+
 import 'package:drift/drift.dart' hide isNull, isNotNull;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -18,17 +18,27 @@ import 'apkg/apkg_test_support.dart';
 import 'apkg/srs_apkg_import_bench_test.dart' show benchApkg;
 import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 import 'support/srs_query_counter.dart';
+import 'support/srs_test_storage.dart';
 
 const String kUid = '01928c3e-0000-7000-8000-00000000c0de';
 
 Future<(SrsDbStore, CountingInterceptor)> openCounted() async {
   final CountingInterceptor counter = CountingInterceptor();
-  final FushiDatabase db = FushiDatabase.forTesting(
-    NativeDatabase.memory().interceptWith(counter),
+  final Directory tmp = Directory.systemTemp.createTempSync('srs_wp_');
+  addTearDown(() {
+    try {
+      tmp.deleteSync(recursive: true);
+    } on FileSystemException {
+      // 句柄晚释放。
+    }
+  });
+  final TestSrs srs = await openTestSrsAt(
+    '${tmp.path}/srs.db',
+    interceptor: counter,
   );
-  addTearDown(db.close);
   final SrsDbStore store = await SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: kUid,
     deviceId: 'dev',
     engine: const FakeFsrsEngine(),

@@ -9,7 +9,11 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 /// - `idx_srs_field_edits_profile_register`：同步冲突角标按 profile 对 (实体, 字段键) 分组；
 /// - `idx_srs_notes_cache_type`：笔记类型成员查找；
 /// - `idx_srs_notes_cache_pending`：待裁决笔记的部分索引。
-/// 只加索引、不动数据；重跑幂等；新库 onCreate 也有。查询计划用上它们。
+/// 只加索引、不动数据；重跑幂等。查询计划用上它们。
+///
+/// SRS 表从 2026-10-23 起归 Rust 独占的 srs.db（docs/specs/2026-10-23-srs-rust-store.md）：新库的主库里
+/// 没有这些表，三条索引在 srs.db 的 schema v2 里建（native/fushi_fsrs/src/store/schema.rs）。主库这一步
+/// 只作用于还没搬迁的老库（旧表仍在主库里），这里测的就是它。
 void main() {
   const List<String> indexes = <String>[
     'idx_srs_field_edits_profile_register',
@@ -47,12 +51,17 @@ void main() {
     await fresh.customSelect('SELECT 1').get();
     await fresh.close();
 
-    // 退回 v124 形态：去掉三条索引，放几行数据。
+    // 退回 v124 形态：建出老 SRS 表（不带 v125 索引），放几行数据。
     final sqlite.Database raw = sqlite.sqlite3.open(path);
-    expect(indexesOf(raw), containsAll(indexes), reason: '新库 onCreate 就有');
-    for (final String i in indexes) {
-      raw.execute('DROP INDEX $i');
+    expect(
+      indexesOf(raw),
+      isNot(contains(indexes.first)),
+      reason: '新库的主库里没有 SRS 表（归 srs.db）',
+    );
+    for (final String t in kLegacySrsV117Tables) {
+      raw.execute(kLegacySrsTableDdl[t]!);
     }
+    expect(indexesOf(raw).intersection(indexes.toSet()), isEmpty);
     raw.execute(
       'INSERT INTO srs_field_edits '
       '(id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, json) '

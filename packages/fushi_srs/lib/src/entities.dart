@@ -6,6 +6,7 @@
 library;
 
 import 'field_edit.dart';
+import 'register_kernel.dart';
 import 'source_ref.dart';
 
 /// 身份记录：创建即不可变，同 ID 内容必须相同。
@@ -106,17 +107,6 @@ class SrsFieldDef {
     if (ankiNum != null) 'ankiNum': ankiNum,
     if (deleted) 'deleted': true,
   };
-
-  static SrsFieldDef fromValue(String id, Object? v) {
-    final Map<Object?, Object?> m = v is Map ? v : const <Object?, Object?>{};
-    return SrsFieldDef(
-      id: id,
-      name: (m['name'] as String?) ?? '',
-      ord: (m['ord'] as int?) ?? 0,
-      ankiNum: m['ankiNum'] as int?,
-      deleted: m['deleted'] == true,
-    );
-  }
 }
 
 /// 卡面模板定义。正文按 fieldId 存引用（`{{fld:<fieldId>}}`）。
@@ -163,19 +153,6 @@ class SrsTemplateDef {
     if (ankiNum != null) 'ankiNum': ankiNum,
     if (deleted) 'deleted': true,
   };
-
-  static SrsTemplateDef fromValue(String id, Object? v) {
-    final Map<Object?, Object?> m = v is Map ? v : const <Object?, Object?>{};
-    return SrsTemplateDef(
-      id: id,
-      name: (m['name'] as String?) ?? '',
-      ord: (m['ord'] as int?) ?? 0,
-      front: (m['front'] as String?) ?? '',
-      back: (m['back'] as String?) ?? '',
-      ankiNum: m['ankiNum'] as int?,
-      deleted: m['deleted'] == true,
-    );
-  }
 }
 
 /// 内置笔记类型的代码默认值（第六轮审查第 8 条：内置模板版本化）。
@@ -214,44 +191,62 @@ class SrsMergedValue<T> {
   bool get conflicted => register?.conflicted ?? false;
 }
 
-/// 一组修改记录按字段键分好的寄存器（同一个实体）。
+/// 一组修改记录按字段键分好的寄存器（同一个实体；原生内核的结果视图，见 register_kernel.dart）。
 class SrsEntityEdits {
-  SrsEntityEdits(Map<String, SrsRegister> registers) : _r = registers;
+  SrsEntityEdits(
+    Map<String, SrsRegister> registers, {
+    this.deletedAt,
+    List<SrsFieldEdit> Function()? concurrentWithDelete,
+  }) : _r = registers,
+       _concurrent = concurrentWithDelete;
+
+  /// 没有任何记录。
+  factory SrsEntityEdits.empty() => SrsEntityEdits(<String, SrsRegister>{});
 
   final Map<String, SrsRegister> _r;
+  final List<SrsFieldEdit> Function()? _concurrent;
 
   SrsRegister? operator [](String key) => _r[key];
 
+  /// 字段键，按首次出现的顺序。
   Iterable<String> get keys => _r.keys;
 
   Iterable<SrsRegister> get registers => _r.values;
 
   Object? value(String key) => _r[key]?.value;
 
-  int? get deletedAt {
-    final SrsRegister? d = _r[SrsFieldKeys.deleted];
-    return d == null ? null : srsEffectiveDeletedAt(d);
-  }
+  /// 删除优先：删除寄存器里只要有一条没被支配的记录值是整数，行就是已删（取 sortKey 最大的那条）；
+  /// 未删为 null。
+  final int? deletedAt;
+
+  /// 与删除记录并发（谁也没看见谁）的内容修改：删除优先，但这些修改留在行里，作为内容类待裁决项
+  /// 「另一台设备删除了这条笔记，这里有未同步的修改：恢复 / 确认删除」。
+  List<SrsFieldEdit> get concurrentWithDelete =>
+      _concurrent?.call() ?? const <SrsFieldEdit>[];
 
   /// 有冲突的寄存器。
   Iterable<SrsRegister> get conflicted =>
       _r.values.where((SrsRegister r) => r.conflicted);
 
-  /// 由一个实体的全部修改记录构造。
+  /// 由一个实体的全部修改记录构造（一次 FFI 调用）。
   static SrsEntityEdits build(
     Iterable<SrsFieldEdit> edits, {
     int? Function(String eventId)? serverTimeOf,
-  }) {
-    final Map<String, List<SrsFieldEdit>> byKey =
-        <String, List<SrsFieldEdit>>{};
-    for (final SrsFieldEdit e in edits) {
-      (byKey[e.fieldKey] ??= <SrsFieldEdit>[]).add(e);
-    }
-    return SrsEntityEdits(<String, SrsRegister>{
-      for (final MapEntry<String, List<SrsFieldEdit>> e in byKey.entries)
-        e.key: srsResolveRegister(e.key, e.value, serverTimeOf: serverTimeOf),
-    });
-  }
+  }) => buildMany(<List<SrsFieldEdit>>[
+    edits.toList(),
+  ], serverTimeOf: serverTimeOf).single;
+
+  /// 一批实体各自的寄存器，与输入同序；整批一次 FFI 调用。
+  static List<SrsEntityEdits> buildMany(
+    List<List<SrsFieldEdit>> entities, {
+    int? Function(String eventId)? serverTimeOf,
+  }) => srsEntityEditsOf(<List<SrsEditItem>>[
+    for (final List<SrsFieldEdit> edits in entities)
+      <SrsEditItem>[
+        for (final SrsFieldEdit e in edits)
+          SrsEditItem.of(e, serverTimeOf?.call(e.id)),
+      ],
+  ]);
 }
 
 /// 物化后的笔记类型。
@@ -268,6 +263,8 @@ class SrsNoteTypeView {
     required this.deletedAt,
     required this.builtinKey,
     required this.edits,
+    this.definedFields = const <SrsFieldDef>[],
+    this.definedTemplates = const <SrsTemplateDef>[],
   });
 
   final String id;
@@ -286,6 +283,13 @@ class SrsNoteTypeView {
   final String? builtinKey;
   final SrsEntityEdits edits;
 
+  /// 有定义的全部字段：未删除的物化结果，再按记录顺序用每条字段定义修改记录本身覆盖（含已删除的；
+  /// 来自记录的项不带说明）。Anki 导入按它解析来源字段对应的本机 ID。
+  final List<SrsFieldDef> definedFields;
+
+  /// 同 [definedFields]，模板。
+  final List<SrsTemplateDef> definedTemplates;
+
   bool get isCloze => kind == SrsNoteTypeKind.cloze;
 
   SrsFieldDef? fieldById(String id) {
@@ -293,63 +297,6 @@ class SrsNoteTypeView {
       if (f.id == id) return f;
     }
     return null;
-  }
-
-  static SrsNoteTypeView materialize(
-    SrsEntityRecord record,
-    SrsEntityEdits edits, {
-    SrsBuiltinNoteType? builtin,
-  }) {
-    final Map<String, SrsFieldDef> fields = <String, SrsFieldDef>{
-      if (builtin != null)
-        for (final SrsFieldDef f in builtin.fields) f.id: f,
-    };
-    final Map<String, SrsTemplateDef> templates = <String, SrsTemplateDef>{
-      if (builtin != null)
-        for (final SrsTemplateDef t in builtin.templates) t.id: t,
-    };
-    for (final String key in edits.keys) {
-      if (key.startsWith('fieldDef/')) {
-        final String id = key.substring('fieldDef/'.length);
-        fields[id] = SrsFieldDef.fromValue(id, edits.value(key));
-      } else if (key.startsWith('tmplDef/')) {
-        final String id = key.substring('tmplDef/'.length);
-        templates[id] = SrsTemplateDef.fromValue(id, edits.value(key));
-      }
-    }
-    // 字段说明是独立键，定义都物化完再并进去（键的遍历顺序不保证定义在前）。
-    for (final String key in edits.keys) {
-      if (!key.startsWith(SrsFieldKeys.fieldDescriptionPrefix)) continue;
-      final String id = key.substring(
-        SrsFieldKeys.fieldDescriptionPrefix.length,
-      );
-      final SrsFieldDef? f = fields[id];
-      final Object? v = edits.value(key);
-      if (f != null) fields[id] = f.copyWith(description: v is String ? v : '');
-    }
-    int byOrd(dynamic a, dynamic b) {
-      final int c = (a.ord as int).compareTo(b.ord as int);
-      return c != 0 ? c : (a.id as String).compareTo(b.id as String);
-    }
-
-    return SrsNoteTypeView(
-      id: record.id,
-      ankiNum: (record.payload['ankiNum'] as int?) ?? 0,
-      kind: (record.payload['ntKind'] as String?) ?? SrsNoteTypeKind.standard,
-      name: (edits.value(SrsFieldKeys.name) as String?) ?? builtin?.name ?? '',
-      fields: fields.values.where((SrsFieldDef f) => !f.deleted).toList()
-        ..sort(byOrd),
-      templates:
-          templates.values.where((SrsTemplateDef t) => !t.deleted).toList()
-            ..sort(byOrd),
-      css: (edits.value(SrsFieldKeys.css) as String?) ?? builtin?.css ?? '',
-      termFieldId:
-          (edits.value(SrsFieldKeys.termField) as String?) ??
-          builtin?.termFieldId,
-      deletedAt: edits.deletedAt,
-      builtinKey: record.payload['builtin'] as String?,
-      edits: edits,
-    );
   }
 }
 
@@ -366,6 +313,7 @@ class SrsNoteView {
     required this.deckId,
     required this.deletedAt,
     required this.edits,
+    this.hasPendingDecision = false,
   });
 
   final String id;
@@ -386,43 +334,9 @@ class SrsNoteView {
   final SrsEntityEdits edits;
 
   /// 内容类待裁决（字段值并发冲突，或删除与并发修改）。
-  bool get hasPendingDecision {
-    if (edits.conflicted.isNotEmpty) return true;
-    final SrsRegister? del = edits[SrsFieldKeys.deleted];
-    if (del == null || deletedAt == null) return false;
-    final List<SrsFieldEdit> content = <SrsFieldEdit>[
-      for (final SrsRegister r in edits.registers)
-        if (r.key != SrsFieldKeys.deleted) ...r.live,
-    ];
-    return srsEditsConcurrentWithDelete(del, content).isNotEmpty;
-  }
+  final bool hasPendingDecision;
 
   String field(String fieldId) => fields[fieldId] ?? '';
-
-  static SrsNoteView materialize(SrsEntityRecord record, SrsEntityEdits edits) {
-    final Map<String, String> fields = <String, String>{};
-    for (final String key in edits.keys) {
-      if (key.startsWith('f/')) {
-        final Object? v = edits.value(key);
-        fields[key.substring(2)] = v is String ? v : '';
-      }
-    }
-    final Object? tags = edits.value(SrsFieldKeys.noteTags);
-    return SrsNoteView(
-      id: record.id,
-      noteTypeId:
-          (edits.value(SrsFieldKeys.noteType) as String?) ??
-          record.payload['noteTypeId']! as String,
-      guid: record.payload['guid']! as String,
-      createdAt: record.createdAt,
-      fields: fields,
-      tags: tags is List ? tags.whereType<String>().toList() : <String>[],
-      source: SrsSourceRef.fromJson(edits.value(SrsFieldKeys.noteSource)),
-      deckId: edits.value(SrsFieldKeys.noteDeck) as String?,
-      deletedAt: edits.deletedAt,
-      edits: edits,
-    );
-  }
 }
 
 /// 卡片的可编辑字段（不含排程：排程只来自日志）。
@@ -442,25 +356,4 @@ class SrsCardFlags {
 
   /// 新卡出卡位置（[SrsFieldKeys.cardNewPosition]）；null = 没排过。
   final int? newPosition;
-
-  /// [noteDeckId] 是笔记的首选牌组；卡片没有自己的 deck 修改记录时用它，再没有就用 [fallbackDeckId]（默认牌组）。
-  /// 卡片的生成本身不写任何记录：两台设备各自为新模板生成同一张卡，初始 deckId 确定性相同。
-  static SrsCardFlags materialize(
-    SrsEntityEdits edits, {
-    required String? noteDeckId,
-    required String fallbackDeckId,
-  }) => SrsCardFlags(
-    deckId:
-        (edits.value(SrsFieldKeys.cardDeck) as String?) ??
-        noteDeckId ??
-        fallbackDeckId,
-    suspended: edits.value(SrsFieldKeys.suspended) == true,
-    buriedUntilDay: edits.value(SrsFieldKeys.buriedUntilDay) as int?,
-    flag: (edits.value(SrsFieldKeys.flag) as int?) ?? 0,
-    newPosition: switch (edits.value(SrsFieldKeys.cardNewPosition)) {
-      final int v => v,
-      final num v => v.toInt(),
-      _ => null,
-    },
-  );
 }
