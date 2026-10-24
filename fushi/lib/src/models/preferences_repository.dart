@@ -4399,6 +4399,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 卡拉 OK 字幕页里 ASS 歌词的默认显示：`auto`（按特效检测）/ `original`（libass 原样）/
+  /// `structured`（逐字歌词）。默认 `auto`（音乐 P3，设计 §6.3）。
+  String get musicKaraokeAssRender =>
+      (getPref('music_karaoke_ass_render', defaultValue: 'auto') as String?) ??
+      'auto';
+
+  Future<void> setMusicKaraokeAssRender(String value) async {
+    await setPref('music_karaoke_ass_render', value);
+    notifyListeners();
+  }
+
   /// ReplayGain 预放大（dB，-15…+15，设计 §7.3）。默认 0。
   double get musicReplayGainPreampDb =>
       (getPref('music_replaygain_preamp_db', defaultValue: 0.0) as num)

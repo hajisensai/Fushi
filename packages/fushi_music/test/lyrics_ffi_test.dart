@@ -97,6 +97,22 @@ void main() {
     expect(FushiLyrics.parserVersion, greaterThanOrEqualTo(1));
   });
 
+  test('ASS 原样渲染准备：UTF-16 → UTF-8，PlayRes 缺省按 libass 补', () {
+    const String script =
+        '[Script Info]\nPlayResX: 1280\n\n[Events]\nFormat: Layer, Start, End, '
+        'Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,'
+        '0:00:01.00,0:00:02.00,D,,0,0,0,,{\\k50}夜{\\k50}空\n';
+    final Uint8List utf16 = Uint8List.fromList(<int>[
+      0xFF,
+      0xFE,
+      for (final int u in script.codeUnits) ...<int>[u & 0xFF, u >> 8],
+    ]);
+    final AssRawScript raw = prepareAssRawScript(utf16);
+    expect(raw.text, script);
+    expect(raw.playResX, 1280);
+    expect(raw.playResY, 1024);
+  });
+
   test('线格式版本不符 / 截断抛 FormatException', () {
     final Uint8List ok = encodeLyricTimeline(
       const LyricTimeline(format: 'lrc', lines: <LyricLine>[]),

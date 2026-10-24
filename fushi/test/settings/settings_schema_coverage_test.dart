@@ -83,6 +83,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/metadata/music_scrape_service_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
+  // ASS 卡拉 OK 字幕默认显示：生效点是卡拉 OK 字幕页打开时选哪种叠加
+  // （musicKaraokeDefaultOverlay），harness 设置页没有在播的曲目与 mpv；设置值 → 默认
+  // 叠加的判据由 karaoke_stage_plan_test 咬住。
+  'music/ASS karaoke subtitles':
+      'test/media/music/karaoke/karaoke_stage_plan_test.dart',
   // 桌面歌词 / 锁屏歌词：生效点是 MusicLyricsLive（解析当前曲目歌词、按位置推当前行到
   // 原生悬浮窗 / 媒体会话副标题），harness 没有在播的曲目与原生窗口。开关开 = 弹窗推
   // 双行块与已唱高亮、关 = 隐藏 / 不给副标题、两项都关 = 不解析，由

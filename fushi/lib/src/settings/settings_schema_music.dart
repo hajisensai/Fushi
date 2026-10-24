@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
@@ -306,6 +308,33 @@ SettingsDestination buildMusicDestination() {
             value: (SettingsContext c) => c.appModel.musicLyricsMediaSession,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicLyricsMediaSession(value),
+          ),
+          // 卡拉 OK 字幕页里 ASS 的默认显示（P3，设计 §6.3）：自动 = 按 Rust 特效检测。
+          SettingsSegmentedItem<MusicAssRenderPreference>(
+            id: 'music.karaoke_ass_render',
+            dropdown: true,
+            title: t.music_karaoke_ass_render_title,
+            subtitle: t.music_karaoke_ass_render_hint,
+            icon: FushiIcons.lyrics,
+            options: <SettingsSegmentOption<MusicAssRenderPreference>>[
+              for (final MusicAssRenderPreference p
+                  in MusicAssRenderPreference.values)
+                SettingsSegmentOption<MusicAssRenderPreference>(
+                  value: p,
+                  label: switch (p) {
+                    MusicAssRenderPreference.auto =>
+                      t.music_karaoke_ass_render_auto,
+                    MusicAssRenderPreference.original =>
+                      t.music_karaoke_overlay_original,
+                    MusicAssRenderPreference.structured =>
+                      t.music_karaoke_overlay_structured,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.musicKaraokeAssRender,
+            onChanged: (SettingsContext c, MusicAssRenderPreference value) =>
+                c.appModel.setMusicKaraokeAssRender(value),
+            defaultValue: MusicAssRenderPreference.auto,
           ),
           SettingsSwitchItem(
             id: 'music.listening_counts_as_study',

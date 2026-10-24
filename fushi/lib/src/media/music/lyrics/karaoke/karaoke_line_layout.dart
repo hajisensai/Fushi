@@ -491,10 +491,9 @@ class KaraokeLineLayout {
           case LyricFill.instant:
             _active.paint(canvas, textOrigin);
           case LyricFill.outline:
-            canvas.clipRect(
-              Rect.fromLTRB(box.left, clip.top, box.left + fillW, clip.bottom),
-            );
-            (_outline ?? _active).paint(canvas, textOrigin);
+            // libass 的 `\ko`：到点填充换成高亮色，同时描边出现（之前不画描边）。
+            _active.paint(canvas, textOrigin);
+            _outline?.paint(canvas, textOrigin);
           case LyricFill.sweep:
             final double edge = box.left + fillW;
             final double f = fillW >= box.width ? 0 : feather;
