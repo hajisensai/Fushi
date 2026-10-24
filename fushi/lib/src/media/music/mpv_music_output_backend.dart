@@ -30,6 +30,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:media_kit/media_kit.dart';
 
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
@@ -109,7 +110,7 @@ Map<String, String> musicMpvProperties(
 /// mpv 打不开音频输出时打的那一行（`player/audio.c`）。
 const String _kAoInitFailure = 'Could not open/initialize audio device';
 
-class MpvMusicOutputBackend implements MusicOutputBackend {
+class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   /// [initialProperties] 在第一次下发设置前写一次，且之后的设置不会覆盖其中的键
   /// （测试用 `ao=null` 免得真出声）。
   MpvMusicOutputBackend({
@@ -185,6 +186,17 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
   /// 属性）。AO 打不开时 mpv 先报 `eof-reached` 再送出报错日志（实测顺序），没出过声的
   /// 「播完」不是曲目播完。
   bool _entryProducedAudio = false;
+
+  /// 交叉淡入（[MusicCrossfadeBackend] 打开）：之后加载的文件都装逐文件淡入淡出滤镜。
+  /// 关着时 `af` 一概不碰。
+  bool _crossfadeFilters = false;
+
+  /// 交叉淡入进来的曲目 → 加载时的淡入长度（on_load 钩子取走）。
+  final Map<String, Duration> _fadeInFor = <String, Duration>{};
+
+  /// 加载时装了交叉淡入滤镜的曲目。
+  final Set<String> _filteredUids = <String>{};
+  void Function(double pts)? _onAudiblePts;
 
   MusicBitPerfectResult? _androidBitPerfect;
   MusicIosSampleRateResult? _iosSampleRate;
@@ -277,6 +289,16 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
     );
     if (index == null || index < 0 || index >= _mpvItems.length) return;
     final MusicPlayItem item = _mpvItems[index];
+    final Duration? fadeIn = _fadeInFor.remove(item.trackUid);
+    if (_crossfadeFilters) {
+      await native.setProperty(
+        'file-local-options/af',
+        musicCrossfadeAf(fadeIn: fadeIn ?? Duration.zero),
+      );
+      _filteredUids.add(item.trackUid);
+    } else {
+      _filteredUids.remove(item.trackUid);
+    }
     if (item.isDsd) {
       await native.setProperty(
         'file-local-options/audio-samplerate',
@@ -290,6 +312,7 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
     MusicPlayItem current,
     MusicPlayItem? next, {
     required bool play,
+    bool crossfadeNext = false,
   }) async {
     await _ensureInitialised();
     _cancelPending();
@@ -313,7 +336,10 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
   }
 
   @override
-  Future<void> replaceNext(MusicPlayItem? next) async {
+  Future<void> replaceNext(
+    MusicPlayItem? next, {
+    bool crossfadeNext = false,
+  }) async {
     _rewiring = true;
     try {
       final int count = _player.state.playlist.medias.length;
@@ -361,7 +387,10 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
     if (pts == null) return;
     _entryProducedAudio = true;
     final MusicPlayItem? pending = _pending;
-    if (pending == null) return;
+    if (pending == null) {
+      _onAudiblePts?.call(pts);
+      return;
+    }
     // 每一项（含 CUE 的 EDL 段）时间轴都从 0 开始：越过 0 即开始出声。
     final double speed = _settings.speed <= 0 ? 1 : _settings.speed;
     final double remainingS = -pts / speed;
@@ -636,7 +665,12 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
       muted: await read('mute') == 'yes',
       speed: readDouble(await read('speed'), 1),
       pitchCorrection: await read('audio-pitch-correction') == 'yes',
-      userFilters: await read('af'),
+      userFilters: musicStripCrossfadeFilters(await read('af')),
+      crossfade: item != null && _filteredUids.contains(item.trackUid),
+      crossfadeAvailability: musicCrossfadeAvailability(
+        _settings,
+        platform: _platform,
+      ),
       androidBitPerfect: _androidBitPerfect,
       iosSampleRate: _iosSampleRate,
     );
@@ -644,8 +678,19 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
 
   static String? _nonEmpty(String s) => s.isEmpty ? null : s;
 
+  /// 测试：加载时装了交叉淡入滤镜的曲目。
+  @visibleForTesting
+  Set<String> get debugCrossfadeFilteredUids =>
+      Set<String>.unmodifiable(_filteredUids);
+
+  /// 测试：[dispose] 已调用。
+  @visibleForTesting
+  bool get debugDisposed => _disposed;
+  bool _disposed = false;
+
   @override
   Future<void> dispose() async {
+    _disposed = true;
     _cancelPending();
     for (final StreamSubscription<Object?> s in _subs) {
       await s.cancel();
@@ -661,6 +706,72 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
     await _releaseAudioDevice();
     await _player.dispose();
   }
+
+  // ── 交叉淡入（MusicCrossfadeInstance）─────────────────────────────────────
+
+  @override
+  set crossfadeFiltersEnabled(bool value) => _crossfadeFilters = value;
+
+  @override
+  Future<void> openIncoming(
+    MusicPlayItem item, {
+    required Duration fadeIn,
+  }) async {
+    _fadeInFor[item.trackUid] = fadeIn;
+    await openPair(item, null, play: false);
+  }
+
+  @override
+  bool get audibleHasCrossfadeFilters {
+    final MusicPlayItem? audible = _audible;
+    return _pending == null &&
+        audible != null &&
+        _filteredUids.contains(audible.trackUid);
+  }
+
+  @override
+  Duration? get audibleMediaDuration {
+    if (_pending != null) return null;
+    final Duration d = _player.state.duration;
+    if (d > Duration.zero) return d;
+    final int? ms = _audible?.durationMs;
+    return ms == null ? null : Duration(milliseconds: ms);
+  }
+
+  @override
+  bool get advancePending => _pending != null;
+
+  Future<void> _fadeOutCommand(String option, String value) async {
+    final NativePlayer? native = _native;
+    if (native == null) return;
+    await native.command(<String>[
+      'af-command',
+      kMusicCrossfadeOutLabel,
+      option,
+      value,
+    ]);
+  }
+
+  static String _seconds(Duration d) =>
+      (d.inMicroseconds / 1e6).toStringAsFixed(6);
+
+  @override
+  Future<void> armFadeOut({
+    required Duration start,
+    required Duration length,
+  }) async {
+    // 先长度后起点：afade 每条命令后都按秒重算样本数，起点最后改，中间态不会提前淡出。
+    await _fadeOutCommand('d', _seconds(length));
+    await _fadeOutCommand('st', _seconds(start));
+  }
+
+  @override
+  Future<void> disarmFadeOut() =>
+      _fadeOutCommand('st', kMusicCrossfadeIdleStartSeconds.toStringAsFixed(0));
+
+  @override
+  set onAudiblePts(void Function(double pts)? callback) =>
+      _onAudiblePts = callback;
 
   /// 测试 / 诊断：后端是否处在「已解码下一首、前一首尾巴还在出声」的切换期。
   @visibleForTesting

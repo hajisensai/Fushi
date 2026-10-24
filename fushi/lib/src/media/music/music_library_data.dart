@@ -106,6 +106,8 @@ MusicPlayItem musicPlayItemOf(
   artist: track.artistCredit ?? album?.albumArtistCredit,
   album: album?.title,
   albumUid: track.albumUid,
+  discNo: track.discNo,
+  trackNo: track.trackNo,
   durationMs: track.durationMs,
   coverPath: coverPath ?? album?.coverPath,
   codec: track.codec,

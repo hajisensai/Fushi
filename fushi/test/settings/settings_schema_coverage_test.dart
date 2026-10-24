@@ -54,6 +54,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
   'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
+  // 交叉淡入：设置值 → 引擎判衔接（crossfadeNext）→ 双实例编排由 music_crossfade_test
+  // 咬住；真 libmpv 上的样本级曲线 / 实时对齐在 music_crossfade_real_test。
+  'music/Crossfade': 'test/media/music/music_crossfade_test.dart',
+  'music/Crossfade gapless tracks too':
+      'test/media/music/music_crossfade_test.dart',
   // 预放大 / 独占 / DSD 采样率：设置值 → 引擎输出设置 → mpv 属性由
   // music_player_engine_test 咬住；真 libmpv 上的实际效果（volume-gain 电平、
   // WASAPI 独占 audio-out-params、DSD 逐文件 audio-samplerate）在

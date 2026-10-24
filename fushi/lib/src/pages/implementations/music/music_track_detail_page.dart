@@ -15,6 +15,8 @@ import 'package:fushi/src/media/links/media_links_section.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/media/people/person_entry_sections.dart'
+    show MusicTrackPeopleSection;
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -372,6 +374,8 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
             },
       ),
       MusicTrackVideosSection(database: _db, track: track),
+      // 署名（作品图谱 L5）：点演唱者 / 艺人进人物聚合页；没有署名数据时不渲染。
+      MusicTrackPeopleSection(database: _db, trackUid: track.trackUid),
       MediaLinksSection(
         database: _db,
         self: (kind: MediaLinkKind.musicTrack, key: track.trackUid),

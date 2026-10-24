@@ -18,6 +18,12 @@ with `-Dgpl=true -Ddvdnav=enabled` (mpv's `stream_dvdnav` is GPL-only, so this l
 FFmpeg's `dvdvideo` demuxer uses — and packages no DVD library of its own; it carries the v2
 navigation snapshot (`dvd-state`). DVD menu playback has not been tested on a device.
 
+**Remote disc access (2026-10-24, `rdisc1`):** rebuilt from branch `fushi/rdisc` `568c907`
+(private CI mirror `hajisensai/libmpv-darwin-build-fushi`, run 40085846799) with the updated
+`disc-navigation-state.patch` (sha256 `5edcd0de...`): `bluray-device` / `dvd-device` accept
+`http(s)://` URLs of a paired host's disc share, and `Mpv` carries the read-only property
+`disc-remote-access` (`verify_darwin_archive.py` requires it). Remote playback has not been tested on a device.
+
 Rebuild with `tool/bluray/platforms/build_darwin.sh` from the repository root and
 verify with `tool/bluray/platforms/verify_darwin_archive.py --platform ios` before replacing this archive.
 The package Makefile verifies the SHA-256 before extraction and supports an explicit

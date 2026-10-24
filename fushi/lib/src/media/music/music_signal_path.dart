@@ -11,6 +11,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 
 /// 输出所在的平台（判定「是否绕过系统混音」的规则按平台不同）。
@@ -144,6 +145,7 @@ class MusicSignalPathSnapshot {
     this.pitchCorrection = true,
     this.userFilters = '',
     this.crossfade = false,
+    this.crossfadeAvailability = MusicCrossfadeAvailability.off,
     this.androidBitPerfect,
     this.iosSampleRate,
   });
@@ -198,8 +200,11 @@ class MusicSignalPathSnapshot {
   /// `af`：用户 / 本模块显式插的滤镜链；空串 = 没有。
   final String userFilters;
 
-  /// 交叉淡入正在作用于本曲。
+  /// 交叉淡入正在作用于本曲（加载时装了淡入淡出滤镜）。
   final bool crossfade;
+
+  /// 交叉淡入此刻是否可用（独占 / 硬件直出时自动停用，面板要标出来）。
+  final MusicCrossfadeAvailability crossfadeAvailability;
 
   /// Android：bit-perfect 混音属性请求的回报（没请求过为 null）。
   final MusicBitPerfectResult? androidBitPerfect;
