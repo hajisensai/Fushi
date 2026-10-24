@@ -50,15 +50,20 @@ String webBrowserYoutubeSubtitlesBundle(List<String> sources) {
   return out.toString();
 }
 
-/// 开 / 关页面里的字幕层（字幕层没装时什么也不做）。[language] 是用户的学习语言
-/// （BCP-47，如 `ja`），字幕层据此在视频的多条字幕轨里优先选它；空串 = 不指定，只按
-/// 原声 / 人工轨 / 英文的次序选。
-String webBrowserYoutubeSubtitlesToggleScript({
-  required bool enabled,
-  String language = '',
-}) =>
-    'if (window.__fushiYtSubs) '
-    'window.__fushiYtSubs.setEnabled($enabled, ${jsonEncode(language)});';
+/// 开 / 关页面里的字幕层（字幕层没装时什么也不做）。选哪条轨不由 Dart 决定：字幕层按
+/// 浏览器扩展同一份规则（subtitle-adapters.js `fushiListSubtitleTracks` /
+/// `fushiResolveActiveSubtitleTrack`）自己选，用户可在「⋯ › 字幕轨」里换。
+String webBrowserYoutubeSubtitlesToggleScript({required bool enabled}) =>
+    'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled($enabled);';
+
+/// 读当前视频的字幕轨列表（JSON 字符串；字幕层没装 → `null`）。形状与扩展
+/// `fushiSubtitleTrackList` 同：`{active, tracks: [{lang, label, live, length, pending}]}`。
+const String kWebBrowserYoutubeSubtitlesTrackListScript =
+    'window.__fushiYtSubs ? JSON.stringify(window.__fushiYtSubs.trackList()) : null';
+
+/// 选中 [lang]（轨列表里的 `lang`）为活动轨；回 bool（轨不在 → false）。
+String webBrowserYoutubeSubtitlesSelectTrackScript(String lang) =>
+    'window.__fushiYtSubs ? window.__fushiYtSubs.selectTrack(${jsonEncode(lang)}) : false';
 
 /// 页面里字幕层装好了没有（`evaluateJavascript` 回 bool）。
 const String kWebBrowserYoutubeSubtitlesInstalledProbe =

@@ -74,7 +74,9 @@ function loadPanel() {
       runtime: { lastError: null, sendMessage() {}, onMessage: { addListener: (fn) => listeners.push(fn) } },
     },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'subtitle-panel.js'), 'utf8'), sandbox);
+  vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-adapters.js'), 'utf8'), sandbox, { filename: 'subtitle-adapters.js' }); // manifest：先于 subtitle-panel.js（共享轨判据）
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'subtitle-panel.js'), 'utf8'), sandbox);
   return {
     windowObj, toasts,
     send(msg) {

@@ -67,27 +67,51 @@ void main() {
       expect(bundle.trimRight(), endsWith('}'));
     });
 
-    test('开关脚本', () {
+    test('开关 / 轨列表 / 选轨脚本', () {
       expect(
         webBrowserYoutubeSubtitlesToggleScript(enabled: true),
-        'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled(true, "");',
-      );
-      expect(
-        webBrowserYoutubeSubtitlesToggleScript(enabled: true, language: 'ja'),
-        'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled(true, "ja");',
-      );
-      expect(
-        webBrowserYoutubeSubtitlesToggleScript(
-          enabled: true,
-          language: '"); alert(1); ("',
-        ),
-        contains(r'"\"); alert(1); (\""'),
-        reason: '语言按 JSON 字符串转义，不能拼出脚本',
+        'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled(true);',
       );
       expect(
         webBrowserYoutubeSubtitlesToggleScript(enabled: false),
-        contains('setEnabled(false, "")'),
+        contains('setEnabled(false)'),
       );
+      expect(
+        kWebBrowserYoutubeSubtitlesTrackListScript,
+        contains('JSON.stringify(window.__fushiYtSubs.trackList())'),
+      );
+      expect(
+        webBrowserYoutubeSubtitlesSelectTrackScript('日本語 (自动)'),
+        contains('selectTrack("日本語 (自动)")'),
+      );
+      expect(
+        webBrowserYoutubeSubtitlesSelectTrackScript('"); alert(1); ("'),
+        contains(r'selectTrack("\"); alert(1); (\"")'),
+        reason: '轨名按 JSON 字符串转义，不能拼出脚本',
+      );
+    });
+
+    test('轨列表 JSON 解析', () {
+      final WebBrowserYoutubeSubtitleTracks?
+      info = parseWebBrowserYoutubeSubtitleTracks(
+        '{"active":"Deutsch","tracks":['
+        '{"lang":"Deutsch","label":"Deutsch","live":false,"length":3,"pending":false},'
+        '{"lang":"Japanese","label":null,"live":false,"length":0,"pending":true},'
+        '{"lang":"live","label":null,"live":true,"length":1,"pending":false},'
+        '{"lang":""},7]}',
+      );
+      expect(info, isNotNull);
+      expect(info!.active, 'Deutsch');
+      expect(
+        info.tracks.map((WebBrowserYoutubeSubtitleTrack t) => t.lang),
+        <String>['Deutsch', 'Japanese', 'live'],
+      );
+      expect(info.tracks[0].length, 3);
+      expect(info.tracks[1].pending, isTrue);
+      expect(info.tracks[1].label, 'Japanese', reason: '没有显示名退回语言段');
+      expect(info.tracks[2].live, isTrue);
+      expect(parseWebBrowserYoutubeSubtitleTracks('null'), isNull);
+      expect(parseWebBrowserYoutubeSubtitleTracks('{'), isNull);
     });
 
     test('node 真执行：字幕层纯逻辑 + 完整脚本块在 YouTube 装起来、别的站不装', () async {
@@ -160,41 +184,11 @@ void main() {
         UserScriptInjectionTime.AT_DOCUMENT_START,
       );
       expect(scripts.single.source, contains('__fushiYtSubsBundle'));
-      expect(scripts.single.source, contains('setEnabled(true, "")'));
+      expect(scripts.single.source, contains('setEnabled(true);'));
 
       await feature.setEnabled(false);
       expect(prefs.values[kWebBrowserYoutubeSubtitlesPref], isFalse);
       expect(feature.userScripts(), isEmpty);
-    });
-
-    test('学习语言随脚本下发（每次现读）', () async {
-      String language = 'ja';
-      final YoutubeSubtitlesFeature feature = YoutubeSubtitlesFeature(
-        prefs: _MemoryPrefs(),
-        learningLanguage: () => language,
-        loadAsset: _readAsset,
-      );
-      await feature.bundleReady;
-      expect(
-        feature.userScripts().single.source,
-        contains('setEnabled(true, "ja")'),
-      );
-      language = 'zh-Hant';
-      expect(
-        feature.userScripts().single.source,
-        contains('setEnabled(true, "zh-Hant")'),
-      );
-    });
-
-    test('学习语言：默认内容语言优先，未设置时是日语', () {
-      expect(
-        webBrowserYoutubeSubtitleLanguage(defaultContentLanguage: ''),
-        'ja',
-      );
-      expect(
-        webBrowserYoutubeSubtitleLanguage(defaultContentLanguage: ' ko '),
-        'ko',
-      );
     });
 
     test('资产读失败：不注入、不抛', () async {
@@ -236,12 +230,16 @@ void main() {
       );
       await build();
       expect(other, isEmpty);
-      expect(yt, hasLength(1));
-      expect(yt.single.placement, WebBrowserActionPlacement.menu);
-      expect(yt.single.selected, isTrue);
+      expect(yt.map((WebBrowserAction a) => a.id), <String>[
+        'youtube_subtitles',
+        'youtube_subtitles_track',
+      ], reason: '开着时多一个「字幕轨」（= 扩展播放器菜单的轨页）');
+      expect(yt.first.placement, WebBrowserActionPlacement.menu);
+      expect(yt.first.selected, isTrue);
 
       prefs.values[kWebBrowserYoutubeSubtitlesPref] = false;
       await build();
+      expect(yt, hasLength(1), reason: '关着不给选轨');
       expect(yt.single.selected, isFalse);
     });
   });

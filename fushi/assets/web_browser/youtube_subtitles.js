@@ -9,7 +9,8 @@
 // 把当前句画在播放器里，点字时调浏览页已装好的阅读器选区脚本（window.fushiSelection）取词，
 // 由它照常投 callHandler('onTextSelected')。本脚本不查词、不改站点 DOM 的其它部分。
 //
-// 纯逻辑（chooseTrackKey / cueAt）挂在 __fushiYtSubs._pure 供 node 测试。
+// 选轨与扩展同一份共享纯函数（subtitle-adapters.js，见下「选轨」）；cueAt 挂在
+// __fushiYtSubs._pure 供 node 测试。
 (function () {
   'use strict';
   if (window.__fushiYtSubs) return;
@@ -24,149 +25,34 @@
   var TAP_SLOP_PX = 12;
 
   var st = {
-    enabled: false, lang: '', videoKey: '', key: null, cues: [], cue: undefined, requested: {},
+    // activeLang：活动轨的语言段（store key 的 `|` 之后，与扩展 subtitle-panel 的 st.activeLang 同义）。
+    enabled: false, videoKey: '', activeLang: null, cues: [], cue: undefined, lazyRequestedAt: {},
     el: null, line: null, timer: null, downX: 0, downY: 0, down: false,
   };
 
-  // ── 纯逻辑 ──────────────────────────────────────────────────────────────
+  // ── 选轨：与浏览器扩展同一份规则 ──────────────────────────────────────
+  // 列表次序与活动轨判据是扩展 subtitle-adapters.js 的共享纯函数 fushiListSubtitleTracks /
+  // fushiResolveActiveSubtitleTrack（同一脚本块里先于本文件装入，字节一致镜像），扩展面板 /
+  // Side Panel / 播放器内嵌菜单也调它们，这里不另写排序：
+  //   已加载整轨在前 → 占位轨 → live；同档按语言段字典序；活动轨保持上次选中，没有就取第一条，
+  //   live 遇整轨到达自动升级。先取哪条由 youtube-bridge 决定（当前音轨默认字幕轨 → 音轨同语言
+  //   → 人工轨），它只急取头一条。没有语言偏好设置（扩展也没有）；想看别的轨，用户在「⋯ › 字幕轨」
+  //   里换（= 扩展播放器菜单的轨页，trackList / selectTrack 与 fushiSubtitleTrackList /
+  //   fushiSubtitleSelectTrack 同形）。换视频清掉选择（扩展 tick 换视频时 activeLang = null）。
+  var LAZY_RETRY_MS = 5000; // 同一占位轨 5 秒内不重复请求（与扩展 requestLazyIfPending 同值）
 
-  function langOf(key) {
-    var sep = key.indexOf('|');
-    var seg = sep >= 0 ? key.slice(sep + 1) : '';
-    var tilde = seg.indexOf('~');
-    return tilde >= 0 ? seg.slice(0, tilde) : seg;
+  function listTracks() {
+    if (typeof fushiListSubtitleTracks !== 'function') return [];
+    return fushiListSubtitleTracks(window.fushiEpisodeCues || null, st.videoKey,
+      window.fushiLazyTracks || null, LIVE_LANG);
   }
 
-  // ── 选轨 ──
-  // 不能信 store 的登记顺序：youtube-bridge 按「当前音轨默认字幕轨 → 音轨同语言 → 人工轨」
-  // 排序，但 m.youtube.com 上拿不到音轨语言 / 默认轨（runtime 轨为空，走 android 接口兜底），
-  // 排序退化成 YouTube 的语言名字母序——德语人工轨排第一、还被急取，页内字幕显示德语。
-  // 这里自己排：① 用户的学习语言（Dart 经 setEnabled 下发）② 原声（音轨默认轨 / 与自动
-  // 字幕同语言——YouTube 只给口语语言生成自动字幕）③ 其余人工轨 ④ 英文 ⑤ 其余；同档人工轨
-  // 先于自动轨，再按登记顺序。首选轨还是占位（没 cue）时由 reselect 请桥按需取，取到前先
-  // 显示已有的次优轨。
-
-  var ASR_RE = /auto|自动/i; // bridge 的 trackLabel 保证自动轨标签含其一
-
-  function primaryLang(code) {
-    return String(code || '').toLowerCase().split(/[-_]/)[0];
-  }
-
-  // 标签去掉末尾括注（「English (United States)」「日本語 (自動生成) (自动)」）后的语言名。
-  function baseName(label) {
-    var s = String(label || '').trim();
-    for (var i = 0; i < 4; i++) {
-      var next = s.replace(/\s*[(（][^()（）]*[)）]\s*$/, '');
-      if (next === s) break;
-      s = next;
-    }
-    return s.trim().toLowerCase();
-  }
-
-  // 语言码 code 在若干界面语言下的名字（「ja」→ 日本語 / Japanese / Japanisch …）。
-  function langNames(code, uiLangs) {
-    var names = [];
-    var c = primaryLang(code);
-    if (!c) return names;
-    names.push(c);
-    var locales = [c].concat(uiLangs || [], ['en']);
-    for (var i = 0; i < locales.length; i++) {
-      try {
-        var n = new Intl.DisplayNames([locales[i]], { type: 'language' }).of(c);
-        if (n && n !== c) names.push(String(n).toLowerCase());
-      } catch (_) {}
-    }
-    return names;
-  }
-
-  // 标签所属语言是不是 code：页面给了这条轨的元数据就按语言码，否则按语言名比标签。
-  function labelIsLang(label, code, opts) {
-    var c = primaryLang(code);
-    if (!c) return false;
-    var meta = opts && opts.meta && opts.meta[label];
-    if (meta && meta.lang) return meta.lang === c;
-    var base = baseName(label);
-    var names = langNames(c, opts && opts.uiLangs);
-    for (var i = 0; i < names.length; i++) {
-      if (base === names[i] || base.indexOf(names[i] + ' ') === 0) return true;
-    }
-    return false;
-  }
-
-  function isAsr(label, opts) {
-    var meta = opts && opts.meta && opts.meta[label];
-    if (meta && typeof meta.asr === 'boolean') return meta.asr;
-    return ASR_RE.test(label);
-  }
-
-  // 当前视频的整轨（不含 live）按优先级排好的 key 列表，含还没取的占位轨。
-  function rankTrackKeys(store, videoKey, opts) {
-    if (!store || !videoKey) return [];
-    var prefix = videoKey + '|';
-    var keys = Object.keys(store).filter(function (k) {
-      return k.indexOf(prefix) === 0 && Array.isArray(store[k]) && langOf(k) !== LIVE_LANG;
-    });
-    var labels = keys.map(function (k) { return k.slice(prefix.length); });
-    // 原声：页面元数据里的默认轨 / 其语言；否则自动字幕轨的语言名。
-    var origLang = '';
-    var origBase = '';
-    for (var i = 0; i < labels.length; i++) {
-      var m = opts && opts.meta && opts.meta[labels[i]];
-      if (m && m.def && m.lang) { origLang = m.lang; break; }
-    }
-    if (!origLang) {
-      for (var j = 0; j < labels.length; j++) {
-        if (!isAsr(labels[j], opts)) continue;
-        var am = opts && opts.meta && opts.meta[labels[j]];
-        if (am && am.lang) origLang = am.lang; else origBase = baseName(labels[j]);
-        break;
-      }
-    }
-    var target = primaryLang(opts && opts.lang);
-    function rank(label) {
-      var asr = isAsr(label, opts) ? 1 : 0;
-      if (target && labelIsLang(label, target, opts)) return asr;
-      var meta = opts && opts.meta && opts.meta[label];
-      var original = (meta && meta.def) ||
-        (origLang ? labelIsLang(label, origLang, opts) : (origBase && baseName(label) === origBase));
-      if (original) return 2 + asr;
-      if (!asr) return 4;
-      if (labelIsLang(label, 'en', opts)) return 5;
-      return 6;
-    }
-    return keys
-      .map(function (k, i) { return { k: k, i: i, r: rank(labels[i]) }; })
-      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
-      .map(function (e) { return e.k; });
-  }
-
-  // 优先级最高的轨（可能还是占位、没有 cue）；没有整轨 → null。
-  function preferredTrackKey(store, videoKey, opts) {
-    var ranked = rankTrackKeys(store, videoKey, opts);
-    return ranked.length ? ranked[0] : null;
-  }
-
-  // 选当前视频要显示的轨：首选轨有 cue 就用它；首选还在取时，当前轨仍有效就保持（不来回
-  // 跳），否则按优先级取第一条有 cue 的整轨；没有整轨才用 DOM 采样的 live 轨。都没有 → null。
-  function chooseTrackKey(store, videoKey, current, opts) {
-    if (!store || !videoKey) return null;
-    var prefix = videoKey + '|';
-    var hasCues = function (k) {
-      var v = store[k];
-      return Array.isArray(v) && v.length > 0;
-    };
-    var ranked = rankTrackKeys(store, videoKey, opts);
-    if (ranked.length && hasCues(ranked[0])) return ranked[0];
-    if (current && current.indexOf(prefix) === 0 && hasCues(current)) return current;
-    for (var i = 0; i < ranked.length; i++) {
-      if (hasCues(ranked[i])) return ranked[i];
-    }
-    var keys = Object.keys(store);
-    for (var j = 0; j < keys.length; j++) {
-      var k = keys[j];
-      if (k.indexOf(prefix) === 0 && langOf(k) === LIVE_LANG && hasCues(k)) return k;
-    }
-    return null;
+  function requestLazyIfPending(track) {
+    if (!track || !track.pending || typeof window.fushiRequestLazyTrack !== 'function') return;
+    var now = Date.now();
+    if (now - (st.lazyRequestedAt[track.key] || 0) < LAZY_RETRY_MS) return;
+    st.lazyRequestedAt[track.key] = now;
+    try { window.fushiRequestLazyTrack(track.key); } catch (_) {}
   }
 
   // cues 按 startMs 升序（providers 保证）；取覆盖 ms 的那条。
@@ -199,60 +85,6 @@
       if (typeof window.fushiVideoKey === 'function') return String(window.fushiVideoKey() || '');
     } catch (_) {}
     return '';
-  }
-
-  // 与 youtube-bridge 的 trackLabel 同一规则（store key 的 lang 段就是它），用来把页面自带的
-  // 轨元数据（语言码 / 是否自动 / 是否音轨默认轨）对回 store 的标签。
-  function trackLabel(track) {
-    var label = track && track.name && (
-      track.name.simpleText || (track.name.runs && track.name.runs[0] && track.name.runs[0].text)
-    );
-    label = label || track.displayName || track.languageName || track.languageCode || 'und';
-    if (track.kind === 'asr' && !/auto|自动/i.test(label)) label += ' (自动)';
-    return String(label).replace(/\|/g, '_');
-  }
-
-  // 页面能读到的字幕轨元数据：label → {lang, asr, def}。读不到（m.youtube.com 常见）→ {}，
-  // 选轨退回按语言名比标签。
-  function pageTrackMeta(videoKey) {
-    var out = {};
-    function add(tracks, defIdx) {
-      if (!Array.isArray(tracks)) return;
-      for (var i = 0; i < tracks.length; i++) {
-        var t = tracks[i];
-        if (!t) continue;
-        var label = trackLabel(t);
-        if (out[label]) continue;
-        out[label] = {
-          lang: primaryLang(t.languageCode),
-          asr: t.kind === 'asr',
-          def: i === defIdx || t.isDefault === true,
-        };
-      }
-    }
-    var id = videoKey.indexOf('yt-') === 0 ? videoKey.slice(3) : '';
-    try {
-      var player = document.getElementById('movie_player');
-      var data = player && player.getVideoData && player.getVideoData();
-      var audio = player && player.getAudioTrack && player.getAudioTrack();
-      if (audio && (!data || !data.video_id || data.video_id === id)) {
-        add(audio.captionTracks, typeof audio.defaultCaptionTrackIndex === 'number' ? audio.defaultCaptionTrackIndex : -1);
-      }
-    } catch (_) {}
-    try {
-      var response = window.ytInitialPlayerResponse;
-      var details = response && response.videoDetails;
-      var renderer = response && response.captions && response.captions.playerCaptionsTracklistRenderer;
-      if (renderer && details && details.videoId === id) add(renderer.captionTracks, -1);
-    } catch (_) {}
-    return out;
-  }
-
-  function uiLangs() {
-    var out = [];
-    try { if (document.documentElement && document.documentElement.lang) out.push(document.documentElement.lang); } catch (_) {}
-    try { if (navigator.language) out.push(navigator.language); } catch (_) {}
-    return out;
   }
 
   function setNativeHidden(hidden) {
@@ -310,20 +142,54 @@
     lookupAt(t.clientX, t.clientY);
   }
 
-  function ensureEl(player) {
+  // 外观与几何对齐扩展的在页字幕覆盖层（content-css-overlay.css #fushi-subtitle-overlay 默认值 +
+  // subtitle-panel.js placeOverlay）：字号 clamp(18px, 2.2vw, 32px) 随视口宽（手机竖屏全屏时播放器
+  // 又窄又高，旧版按播放器高算字号，一句被撑成两大行盖住画面）；行宽从视频中心向两侧屏缘撑开、被
+  // 近侧屏缘夹住，上限 94% 视口、下限 200px；底边锚在**视频矩形**高的 88%（不是播放器——竖屏
+  // 全屏时播放器上下是黑边）。字幕层挂在播放器里，所以锚点折成相对播放器底边的 px。
+  var FONT_SIZE_CSS = 'clamp(18px, 2.2vw, 32px)';
+  var BOTTOM_ANCHOR = 0.88;
+
+  function rectOf(node) {
+    try {
+      var r = node && node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+      return r && r.width > 0 && r.height > 0 ? r : null;
+    } catch (_) { return null; }
+  }
+
+  // 纯几何：播放器矩形 pr、视频矩形 vr（缺省 = 播放器）、视口宽 vv → 行宽上限与底边距（px）。
+  function overlayLayout(pr, vr, vv) {
+    var box = vr || pr;
+    if (!box) return null;
+    if (!(vv > 0)) vv = box.left + box.right;
+    var cx = box.left + box.width / 2;
+    var halfToEdge = Math.max(0, Math.min(cx, vv - cx));
+    var maxWidth = Math.max(200, Math.min(vv * 0.94, (halfToEdge - 6) * 2));
+    var bottom = pr ? (pr.top + pr.height) - (box.top + box.height * BOTTOM_ANCHOR) : -1;
+    return {
+      maxWidth: Math.round(maxWidth),
+      bottom: bottom >= 0 && pr && bottom <= pr.height ? Math.round(bottom) : -1,
+    };
+  }
+
+  function ensureEl(player, video) {
     if (!st.el) {
       var el = document.createElement('div');
       el.id = EL_ID;
       var es = el.style;
-      es.position = 'absolute'; es.left = '0'; es.right = '0'; es.bottom = '14%';
+      es.position = 'absolute'; es.left = '0'; es.right = '0';
+      es.bottom = Math.round((1 - BOTTOM_ANCHOR) * 100) + '%';
       es.textAlign = 'center'; es.zIndex = '60'; es.pointerEvents = 'none';
       var line = document.createElement('span');
       var ls = line.style;
       ls.display = 'inline-block'; ls.pointerEvents = 'auto'; ls.cursor = 'text';
-      ls.userSelect = 'text'; ls.webkitUserSelect = 'text';
-      ls.color = '#fff'; ls.background = 'rgba(8,8,8,.72)'; ls.padding = '2px 10px';
-      ls.borderRadius = '4px'; ls.lineHeight = '1.4'; ls.whiteSpace = 'pre-wrap';
-      ls.maxWidth = '86%'; ls.fontFamily = 'inherit';
+      ls.userSelect = 'text'; ls.webkitUserSelect = 'text'; ls.boxSizing = 'border-box';
+      ls.color = '#f7f8f2'; ls.background = 'rgba(12,15,13,.72)'; ls.padding = '6px 12px 7px';
+      ls.borderRadius = '8px'; ls.boxShadow = '0 2px 12px rgba(0,0,0,.42)';
+      ls.textShadow = '0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000';
+      ls.fontFamily = '"Hiragino Sans", "Yu Gothic UI", sans-serif';
+      ls.fontSize = FONT_SIZE_CSS; ls.fontWeight = '600'; ls.fontStyle = 'normal';
+      ls.lineHeight = '1.45'; ls.letterSpacing = '0.01em'; ls.whiteSpace = 'pre-wrap';
       line.addEventListener('pointerdown', onPointerDown);
       line.addEventListener('pointerup', onPointerUp);
       line.addEventListener('mousedown', stop);
@@ -337,15 +203,19 @@
     }
     if (player && st.el.parentNode !== player) player.appendChild(st.el);
     if (player) {
-      var h = player.clientHeight || 360;
-      st.line.style.fontSize = Math.max(14, Math.round(h * 0.048)) + 'px';
+      var layout = overlayLayout(rectOf(player), rectOf(video), window.innerWidth || 0);
+      if (layout) {
+        st.line.style.maxWidth = layout.maxWidth + 'px';
+        st.el.style.bottom = layout.bottom >= 0 ? layout.bottom + 'px'
+          : Math.round((1 - BOTTOM_ANCHOR) * 100) + '%';
+      }
     }
     return st.el;
   }
 
-  function render(cue, player) {
+  function render(cue, player, video) {
     if (cue === st.cue) {
-      if (cue && player) ensureEl(player); // 播放器换了节点 / 尺寸变了
+      if (cue && player) ensureEl(player, video); // 播放器换了节点 / 尺寸变了（进出全屏）
       return;
     }
     st.cue = cue;
@@ -353,43 +223,37 @@
       if (st.el && st.el.parentNode) st.el.parentNode.removeChild(st.el);
       return;
     }
-    ensureEl(player);
+    ensureEl(player, video);
     // 整句一个文本节点：阅读器选区脚本按文本节点取句子与词。
     st.line.textContent = String(cue.text || '');
   }
 
   function reselect() {
-    var store = window.fushiEpisodeCues || {};
-    var opts = { lang: st.lang, meta: pageTrackMeta(st.videoKey), uiLangs: uiLangs() };
-    // 首选轨还是占位：请桥按需取一次（取到后 providers 调钩子 → 再 reselect 换过去）。
-    var best = preferredTrackKey(store, st.videoKey, opts);
-    if (best && !(store[best] && store[best].length) && !st.requested[best] &&
-        typeof window.fushiRequestLazyTrack === 'function') {
-      st.requested[best] = true;
-      try { window.fushiRequestLazyTrack(best); } catch (_) {}
-    }
-    var next = chooseTrackKey(store, st.videoKey, st.key, opts);
-    st.key = next;
-    st.cues = next ? store[next] : [];
+    var tracks = listTracks();
+    var active = typeof fushiResolveActiveSubtitleTrack === 'function'
+      ? fushiResolveActiveSubtitleTrack(tracks, st.activeLang, LIVE_LANG) : null;
+    st.activeLang = active ? active.lang : null;
+    requestLazyIfPending(active);
+    st.cues = active ? active.cues : [];
     st.cue = undefined; // 强制重绘
     setNativeHidden(st.enabled && st.cues.length > 0);
+    return tracks;
   }
 
   function tick() {
     if (!st.enabled) return;
     var key = currentVideoKey();
-    if (key !== st.videoKey) { st.videoKey = key; st.key = null; reselect(); }
+    if (key !== st.videoKey) { st.videoKey = key; st.activeLang = null; reselect(); }
     var video = videoEl();
     if (!video || !st.cues.length) { render(null, null); return; }
-    render(cueAt(st.cues, Math.round(video.currentTime * 1000)), playerOf(video));
+    render(cueAt(st.cues, Math.round(video.currentTime * 1000)), playerOf(video), video);
   }
 
-  // lang：用户的学习语言（BCP-47，Dart 下发；空 = 不指定）。
-  function setEnabled(on, lang) {
+  function setEnabled(on) {
     st.enabled = !!on;
-    if (typeof lang === 'string') st.lang = lang;
     if (st.enabled) {
-      st.videoKey = currentVideoKey();
+      var key = currentVideoKey();
+      if (key !== st.videoKey) { st.videoKey = key; st.activeLang = null; }
       reselect();
       if (!st.timer) st.timer = setInterval(tick, 120);
       tick();
@@ -401,6 +265,43 @@
     return st.enabled;
   }
 
+  // 「⋯ › 字幕轨」的数据（与扩展 fushiSubtitleTrackList 同形；label 取站点显示名
+  // window.fushiTrackLabels，live 轨的显示名由 Dart 本地化，这里给 null）。
+  function trackList() {
+    if (!st.videoKey) st.videoKey = currentVideoKey();
+    var tracks = reselect();
+    return {
+      active: st.activeLang,
+      tracks: tracks.map(function (t) {
+        var labels = window.fushiTrackLabels || {};
+        return {
+          lang: t.lang,
+          label: t.lang === LIVE_LANG ? null : (labels[t.key] || t.lang),
+          live: t.lang === LIVE_LANG,
+          length: t.cues.length,
+          pending: !!t.pending,
+        };
+      }),
+    };
+  }
+
+  // 用户选轨（与扩展 fushiSubtitleSelectTrack 同义）：轨不在 → false；在 → 设为活动轨，占位轨
+  // 顺带请桥按需取。只在本视频内记住，换视频按规则重选。
+  function selectTrack(lang) {
+    var wanted = String(lang || '');
+    if (!st.videoKey) st.videoKey = currentVideoKey();
+    var tracks = listTracks();
+    for (var i = 0; i < tracks.length; i++) {
+      if (tracks[i].lang === wanted) {
+        st.activeLang = wanted;
+        reselect();
+        if (st.enabled) tick();
+        return true;
+      }
+    }
+    return false;
+  }
+
   // providers 每到一条新轨 / 新句就调这个钩子（与扩展字幕面板、网页播放器 glue 同一契约）。
   var previousHook = window.fushiSubtitlePanelOnCues;
   window.fushiSubtitlePanelOnCues = function (key) {
@@ -410,12 +311,15 @@
 
   window.__fushiYtSubs = {
     setEnabled: setEnabled,
+    trackList: trackList,
+    selectTrack: selectTrack,
     state: function () {
-      return { enabled: st.enabled, lang: st.lang, videoKey: st.videoKey, key: st.key, cues: st.cues.length };
+      return {
+        enabled: st.enabled, videoKey: st.videoKey, activeLang: st.activeLang, cues: st.cues.length,
+        fontSize: FONT_SIZE_CSS,
+        maxWidth: st.line ? st.line.style.maxWidth : '',
+      };
     },
-    _pure: {
-      chooseTrackKey: chooseTrackKey, preferredTrackKey: preferredTrackKey,
-      rankTrackKeys: rankTrackKeys, cueAt: cueAt, langOf: langOf, baseName: baseName,
-    },
+    _pure: { cueAt: cueAt, overlayLayout: overlayLayout },
   };
 })();
