@@ -2,7 +2,9 @@
 /// br / div / p / 只带颜色的 span / font）之上，再认**高亮**——
 ///
 /// - `<mark>`（浏览器 / Yomitan 常见写法）与 `<span style="background-color: …">`；
-/// - 同一个 span 里 `color` 与 `background-color` 两条声明并存。
+/// - 同一个 span 里 `color` 与 `background-color` 两条声明并存；
+/// - **注音** `<ruby>基字<rt>读音</rt></ruby>`（可带 `<rp>`、一个 ruby 里多组基字 / 读音、
+///   基字里带加粗等行内格式）。读音只收纯文字，基字不跨行。
 ///
 /// 这样「加了高亮的例句」仍走所见即所得编辑，而不是掉进「结构化 HTML，只能改源码」。
 /// 子集之外照旧返回 null，由调用方按结构化内容处理（原 HTML 一字不动）。
@@ -39,7 +41,26 @@ const List<int> kSrsHighlightPalette = <int>[
   0xFFFFE0B2,
 ];
 
-/// 一个字符的行内格式（含高亮）。
+/// 一组注音：同一组的字带同一个 [SrsRuby]（[id] 区分相邻两组读音相同的词）。
+@immutable
+class SrsRuby {
+  const SrsRuby(this.id, this.reading);
+
+  /// 文档内唯一的组号。
+  final int id;
+
+  /// 读音（纯文字）。
+  final String reading;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsRuby && other.id == id && other.reading == reading;
+
+  @override
+  int get hashCode => Object.hash(id, reading);
+}
+
+/// 一个字符的行内格式（含高亮、注音）。
 @immutable
 class SrsRichFormat {
   const SrsRichFormat({
@@ -48,6 +69,7 @@ class SrsRichFormat {
     this.underline = false,
     this.color,
     this.highlight,
+    this.ruby,
   });
 
   static const SrsRichFormat plain = SrsRichFormat();
@@ -62,6 +84,9 @@ class SrsRichFormat {
   /// 高亮（背景）ARGB；null = 无。
   final int? highlight;
 
+  /// 所在的注音组；null = 不带注音。
+  final SrsRuby? ruby;
+
   bool has(SrsRichAttr attr) => switch (attr) {
     SrsRichAttr.bold => bold,
     SrsRichAttr.italic => italic,
@@ -74,6 +99,7 @@ class SrsRichFormat {
     underline: attr == SrsRichAttr.underline ? on : underline,
     color: color,
     highlight: highlight,
+    ruby: ruby,
   );
 
   SrsRichFormat withColor(int? argb) => SrsRichFormat(
@@ -82,6 +108,7 @@ class SrsRichFormat {
     underline: underline,
     color: argb,
     highlight: highlight,
+    ruby: ruby,
   );
 
   SrsRichFormat withHighlight(int? argb) => SrsRichFormat(
@@ -90,6 +117,16 @@ class SrsRichFormat {
     underline: underline,
     color: color,
     highlight: argb,
+    ruby: ruby,
+  );
+
+  SrsRichFormat withRuby(SrsRuby? value) => SrsRichFormat(
+    bold: bold,
+    italic: italic,
+    underline: underline,
+    color: color,
+    highlight: highlight,
+    ruby: value,
   );
 
   @override
@@ -99,10 +136,12 @@ class SrsRichFormat {
       other.italic == italic &&
       other.underline == underline &&
       other.color == color &&
-      other.highlight == highlight;
+      other.highlight == highlight &&
+      other.ruby == ruby;
 
   @override
-  int get hashCode => Object.hash(bold, italic, underline, color, highlight);
+  int get hashCode =>
+      Object.hash(bold, italic, underline, color, highlight, ruby);
 }
 
 /// 解析结果：纯文字 + 逐 UTF-16 码元的格式（长度相同）。
@@ -161,10 +200,20 @@ SrsRichFormatDoc? srsParseRichFormatHtml(String html) {
   final List<SrsRichFormat> formats = <SrsRichFormat>[];
   final List<(String, SrsRichFormat)> stack = <(String, SrsRichFormat)>[];
   SrsRichFormat current = SrsRichFormat.plain;
+  // 注音：在 <ruby> 里 / 当前组基字起点 / 正在收的读音（<rt> 里）/ 在 <rp> 里（括号，丢弃）。
+  bool inRuby = false;
+  int rubyStart = 0;
+  StringBuffer? reading;
+  bool inRp = false;
+  int nextRubyId = 1;
 
   void emit(String raw) {
-    if (raw.isEmpty) return;
+    if (raw.isEmpty || inRp) return;
     final String s = srsDecodeEntities(raw);
+    if (reading != null) {
+      reading.write(s);
+      return;
+    }
     text.write(s);
     formats.addAll(List<SrsRichFormat>.filled(s.length, current));
   }
@@ -183,6 +232,26 @@ SrsRichFormatDoc? srsParseRichFormatHtml(String html) {
     final bool closing = m.group(1)!.isNotEmpty;
     String attrs = m.group(3)!.trim();
     if (attrs.endsWith('/')) attrs = attrs.substring(0, attrs.length - 1);
+    if (reading != null || inRp) {
+      // <rt> / <rp> 里只收纯文字。
+      if (!closing || attrs.isNotEmpty) return null;
+      if (inRp) {
+        if (name != 'rp') return null;
+        inRp = false;
+        continue;
+      }
+      if (name != 'rt') return null;
+      final String r = reading.toString().trim();
+      reading = null;
+      if (r.isNotEmpty && text.length > rubyStart) {
+        final SrsRuby ruby = SrsRuby(nextRubyId++, r);
+        for (int i = rubyStart; i < text.length; i++) {
+          formats[i] = formats[i].withRuby(ruby);
+        }
+      }
+      rubyStart = text.length;
+      continue;
+    }
     if (closing) {
       if (attrs.isNotEmpty) return null;
       if (name == 'br') continue;
@@ -195,14 +264,26 @@ SrsRichFormatDoc? srsParseRichFormatHtml(String html) {
       }
       current = stack[at].$2;
       stack.removeRange(at, stack.length);
+      inRuby = stack.any(((String, SrsRichFormat) e) => e.$1 == 'ruby');
       continue;
     }
     switch (name) {
       case 'br':
-        if (attrs.isNotEmpty) return null;
+        if (attrs.isNotEmpty || inRuby) return null;
         newline();
+      case 'ruby':
+        if (attrs.isNotEmpty || inRuby) return null;
+        stack.add((name, current));
+        inRuby = true;
+        rubyStart = text.length;
+      case 'rt':
+        if (attrs.isNotEmpty || !inRuby) return null;
+        reading = StringBuffer();
+      case 'rp':
+        if (attrs.isNotEmpty || !inRuby) return null;
+        inRp = true;
       case 'div' || 'p':
-        if (attrs.isNotEmpty) return null;
+        if (attrs.isNotEmpty || inRuby) return null;
         if (text.isNotEmpty && !text.toString().endsWith('\n')) newline();
         stack.add((name, current));
       case 'b' || 'strong':
@@ -243,6 +324,7 @@ SrsRichFormatDoc? srsParseRichFormatHtml(String html) {
     }
   }
   emit(html.substring(last));
+  if (reading != null || inRp) return null;
   return SrsRichFormatDoc(text.toString(), formats);
 }
 
@@ -252,43 +334,61 @@ String _escapeText(String s) => s
     .replaceAll('>', '&gt;')
     .replaceAll(' ', '&nbsp;');
 
-/// 富文本 → HTML（Anki 写法）。只有加粗 / 斜体 / 下划线 / 颜色时与旧序列化逐字节一致。
+/// 富文本 → HTML（Anki 写法）。只有加粗 / 斜体 / 下划线 / 颜色时与旧序列化逐字节一致；
+/// 一组注音写成 `<ruby>基字<rt>读音</rt></ruby>`（基字里的行内格式写在 ruby 里面）。
 String srsRichFormatToHtml(String text, List<SrsRichFormat> formats) {
   assert(text.length == formats.length);
   final StringBuffer out = StringBuffer();
   int i = 0;
   while (i < text.length) {
-    final SrsRichFormat s = formats[i];
+    final SrsRuby? ruby = formats[i].ruby;
     int j = i;
-    while (j < text.length && formats[j] == s) {
-      j++;
-    }
-    final String run = text
-        .substring(i, j)
-        .split('\n')
-        .map(_escapeText)
-        .join('<br>');
-    final List<String> decls = <String>[
-      if (s.color != null) 'color: ${srsCssColor(s.color!)};',
-      if (s.highlight != null)
-        'background-color: ${srsCssColor(s.highlight!)};',
-    ];
-    final List<(String, String)> tags = <(String, String)>[
-      if (s.bold) ('b', ''),
-      if (s.italic) ('i', ''),
-      if (s.underline) ('u', ''),
-      if (decls.isNotEmpty) ('span', ' style="${decls.join(' ')}"'),
-    ];
-    for (final (String tag, String attrs) in tags) {
-      out.write('<$tag$attrs>');
-    }
-    out.write(run);
-    for (final (String tag, String _) in tags.reversed) {
-      out.write('</$tag>');
+    if (ruby == null) {
+      while (j < text.length && formats[j] == formats[i]) {
+        j++;
+      }
+      _writeRun(out, text.substring(i, j), formats[i]);
+    } else {
+      while (j < text.length && formats[j].ruby == ruby) {
+        j++;
+      }
+      out.write('<ruby>');
+      int k = i;
+      while (k < j) {
+        final SrsRichFormat s = formats[k].withRuby(null);
+        int e = k;
+        while (e < j && formats[e].withRuby(null) == s) {
+          e++;
+        }
+        _writeRun(out, text.substring(k, e), s);
+        k = e;
+      }
+      out.write('<rt>${_escapeText(ruby.reading)}</rt></ruby>');
     }
     i = j;
   }
   return out.toString();
+}
+
+void _writeRun(StringBuffer out, String text, SrsRichFormat s) {
+  final String run = text.split('\n').map(_escapeText).join('<br>');
+  final List<String> decls = <String>[
+    if (s.color != null) 'color: ${srsCssColor(s.color!)};',
+    if (s.highlight != null) 'background-color: ${srsCssColor(s.highlight!)};',
+  ];
+  final List<(String, String)> tags = <(String, String)>[
+    if (s.bold) ('b', ''),
+    if (s.italic) ('i', ''),
+    if (s.underline) ('u', ''),
+    if (decls.isNotEmpty) ('span', ' style="${decls.join(' ')}"'),
+  ];
+  for (final (String tag, String attrs) in tags) {
+    out.write('<$tag$attrs>');
+  }
+  out.write(run);
+  for (final (String tag, String _) in tags.reversed) {
+    out.write('</$tag>');
+  }
 }
 
 bool srsSameFormats(List<SrsRichFormat> a, List<SrsRichFormat> b) =>

@@ -1,6 +1,6 @@
 // 笔记编辑页的反馈 #1 四件事（整页 widget 测试，内存库 + 纯文本卡面）：
 // 1. 实时预览：宽窗右栏常驻、字段一改就重渲染；窄窗顶栏「预览」打开底部抽屉；
-// 2. 结构化字段（词典排版）逐段改文字，标签骨架原样；富文本高亮；
+// 2. 结构化字段（词典排版）在排版里改文字，标签骨架原样；富文本高亮；
 // 3. 字段名翻译 + ⓘ 展开说明（含制卡来源），未知字段显示原名；
 // 4. 字段「AI 改写 / 补全」抽屉：结果替换 / 追加进草稿（请求经注入的假 runner）。
 // 数据库读写一律放 tester.runAsync（fake zone 里 await 真异步会挂死）。
@@ -290,7 +290,7 @@ void main() {
     await _unmount(tester);
   });
 
-  testWidgets('结构化字段逐段改文字：只换那段文字，标签骨架原样', (WidgetTester tester) async {
+  testWidgets('结构化字段在排版里改文字：只换那段文字，标签骨架原样', (WidgetTester tester) async {
     final SrsDbStore store = await _open(tester);
     final String note = await _note(tester, store, <String, String>{
       'Expression': '通う',
@@ -299,13 +299,13 @@ void main() {
     await _pump(tester, store, note, size: const Size(1280, 2600));
     await tester.tap(_key('srs-field-parts-MainDefinition'));
     await _settle(tester, rounds: 4);
-    expect(_key('srs-field-part-MainDefinition-0'), findsOneWidget);
+    expect(_key('srs-field-layout-MainDefinition-0'), findsOneWidget);
     await tester.enterText(
       find.descendant(
-        of: _key('srs-field-part-MainDefinition-1'),
+        of: _key('srs-field-layout-MainDefinition-0'),
         matching: find.byType(EditableText),
       ),
-      'かよう（通う）',
+      '(大辞林) かよう（通う）',
     );
     await tester.pump();
     await tester.tap(_key('srs_note_save').first);

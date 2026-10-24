@@ -47,6 +47,21 @@ String srsVisualAlignLabel(SrsVisualAlign a) => switch (a) {
   SrsVisualAlign.end => t.srs_visual_align_end,
 };
 
+String srsVisualSpacingLabel(SrsVisualSpacing v) => switch (v) {
+  SrsVisualSpacing.none => t.srs_visual_spacing_none,
+  SrsVisualSpacing.compact => t.srs_visual_spacing_compact,
+  SrsVisualSpacing.normal => t.srs_visual_spacing_normal,
+  SrsVisualSpacing.loose => t.srs_visual_spacing_loose,
+};
+
+String srsVisualImageSizeLabel(SrsVisualImageSize v) => switch (v) {
+  SrsVisualImageSize.auto => t.srs_visual_image_auto,
+  SrsVisualImageSize.small => t.srs_visual_image_small,
+  SrsVisualImageSize.medium => t.srs_visual_image_medium,
+  SrsVisualImageSize.large => t.srs_visual_image_large,
+  SrsVisualImageSize.full => t.srs_visual_image_full,
+};
+
 String srsVisualToneLabel(SrsVisualTone v) => switch (v) {
   SrsVisualTone.normal => t.srs_visual_tone_normal,
   SrsVisualTone.accent => t.srs_visual_tone_accent,
@@ -336,8 +351,17 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
       if (b.tone != SrsVisualTone.normal) srsVisualToneLabel(b.tone),
       if (b.italic) t.srs_visual_prop_italic,
       ?b.color,
+      if (b.spacing != SrsVisualSpacing.normal)
+        '${t.srs_visual_prop_spacing} ${srsVisualSpacingLabel(b.spacing)}',
+      if (b.kind == SrsVisualBlockKind.field &&
+          b.imageSize != SrsVisualImageSize.auto)
+        '${t.srs_visual_prop_image_size} ${srsVisualImageSizeLabel(b.imageSize)}',
     ].where((String s) => s.isNotEmpty).join(' · '),
-    SrsVisualBlockKind.divider => srsVisualToneLabel(b.tone),
+    SrsVisualBlockKind.divider => <String>[
+      srsVisualToneLabel(b.tone),
+      if (b.spacing != SrsVisualSpacing.normal)
+        '${t.srs_visual_prop_spacing} ${srsVisualSpacingLabel(b.spacing)}',
+    ].join(' · '),
     SrsVisualBlockKind.frontSide => t.srs_visual_kind_front_side_hint,
   };
 
@@ -544,6 +568,35 @@ class _SrsVisualTemplatePanelState extends State<SrsVisualTemplatePanel> {
           ),
         ],
         _colorRow(context, b),
+        AdaptiveSettingsSegmentedRow<SrsVisualSpacing>(
+          key: ValueKey<String>('srs-visual-spacing-${b.id}'),
+          title: t.srs_visual_prop_spacing,
+          selected: b.spacing,
+          segments: <ButtonSegment<SrsVisualSpacing>>[
+            for (final SrsVisualSpacing v in SrsVisualSpacing.values)
+              ButtonSegment<SrsVisualSpacing>(
+                value: v,
+                label: Text(srsVisualSpacingLabel(v)),
+              ),
+          ],
+          onChanged: (SrsVisualSpacing v) => _replace(b.copyWith(spacing: v)),
+        ),
+        if (b.kind == SrsVisualBlockKind.field)
+          AdaptiveSettingsSegmentedRow<SrsVisualImageSize>(
+            key: ValueKey<String>('srs-visual-image-size-${b.id}'),
+            title: t.srs_visual_prop_image_size,
+            subtitle: t.srs_visual_prop_image_size_hint,
+            selected: b.imageSize,
+            segments: <ButtonSegment<SrsVisualImageSize>>[
+              for (final SrsVisualImageSize v in SrsVisualImageSize.values)
+                ButtonSegment<SrsVisualImageSize>(
+                  value: v,
+                  label: Text(srsVisualImageSizeLabel(v)),
+                ),
+            ],
+            onChanged: (SrsVisualImageSize v) =>
+                _replace(b.copyWith(imageSize: v)),
+          ),
         if (textual) ...<Widget>[
           AdaptiveSettingsSwitchRow(
             key: ValueKey<String>('srs-visual-boxed-${b.id}'),
