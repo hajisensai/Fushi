@@ -221,6 +221,9 @@ class BackupMergeEngine {
       await _mergeFavoriteSentencePrefs();
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
+      // v125：作品图谱连接——端点里的合集 id / 游戏 id 是 src 本地身份，要在
+      // [_mergeMediaCollections] 与 [_buildGameIdMap] 之后重映射。
+      await _mergeMediaLinks();
       // v80：media_items → media_open_history，PK 是 (media_source, media_id)
       // 双列，_insertMissing 的单键形装不下，展开写。
       await _db.customStatement(
@@ -1472,6 +1475,75 @@ class BackupMergeEngine {
       "WHERE m.media_kind = 'collection' "
       'AND m.entry_key = CAST(tc.id AS TEXT) AND m.tag_id = tt.id)',
     );
+  }
+
+  /// v125 作品图谱连接：整行 LWW 并入（与互联同步同一内核
+  /// [FushiDatabase.mergeRemoteMediaLink]，含否决墓碑）。端点按种类重映射到本机
+  /// 身份：合集 id 经合集自然键、游戏 id 经 [_gameMapTable]；书 / 视频 / 音乐 /
+  /// 有声书键本就跨端稳定，原样保留。本机落不了地的合集 / 游戏端点跳过。
+  Future<void> _mergeMediaLinks() async {
+    if (!await _srcTableExists('media_links')) return;
+    final Map<String, String> collectionIdMap = <String, String>{};
+    if (await _srcTableExists('media_collections')) {
+      final List<QueryRow> pairs = await _db.customSelect(
+        'SELECT CAST(sc.id AS TEXT) AS src_id, MIN(tc.id) AS dst_id '
+        'FROM $_srcAlias.media_collections AS sc '
+        'JOIN media_collections AS tc '
+        'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
+        'GROUP BY sc.id',
+      ).get();
+      for (final QueryRow r in pairs) {
+        collectionIdMap[r.read<String>('src_id')] = r.read<int>('dst_id').toString();
+      }
+    }
+    final Map<String, String> gameIdMap = await _readGameIdMap();
+    String? mapKey(String kind, String key) =>
+        switch (MediaLinkKind.tryParse(kind)) {
+          MediaLinkKind.videoCollection => collectionIdMap[key],
+          MediaLinkKind.game => gameIdMap[key],
+          null => null,
+          _ => key,
+        };
+    final List<QueryRow> rows = await _db
+        .customSelect('SELECT * FROM $_srcAlias.media_links')
+        .get();
+    for (final QueryRow r in rows) {
+      final MediaLinkRelation? relation =
+          MediaLinkRelation.tryParse(r.read<String>('relation'));
+      final MediaLinkKind? fromKind =
+          MediaLinkKind.tryParse(r.read<String>('from_kind'));
+      final MediaLinkKind? toKind =
+          MediaLinkKind.tryParse(r.read<String>('to_kind'));
+      if (relation == null || fromKind == null || toKind == null) continue;
+      final String? fromKey =
+          mapKey(fromKind.dbValue, r.read<String>('from_key'));
+      final String? toKey = mapKey(toKind.dbValue, r.read<String>('to_key'));
+      if (fromKey == null || toKey == null) continue;
+      if (fromKind == toKind && fromKey == toKey) continue;
+      final MediaLinkId id = mediaLinkIdFor(
+        relation,
+        (kind: fromKind, key: fromKey),
+        (kind: toKind, key: toKey),
+      );
+      await _db.mergeRemoteMediaLink(
+        MediaLinkRow(
+          fromKind: id.fromKind,
+          fromKey: id.fromKey,
+          relation: id.relation,
+          toKind: id.toKind,
+          toKey: id.toKey,
+          role: r.readNullable<String>('role'),
+          episodeRange: r.readNullable<String>('episode_range'),
+          source: r.read<String>('source'),
+          confidence: r.readNullable<double>('confidence'),
+          isUserConfirmed: r.read<int>('is_user_confirmed') != 0,
+          reason: r.readNullable<String>('reason'),
+          createdAt: r.read<int>('created_at'),
+          updatedAt: r.read<int>('updated_at'),
+          deletedAt: r.readNullable<int>('deleted_at'),
+        ),
+      );
+    }
   }
 
   /// Profiles UNION by name (device keeps its own profile + id on a name clash),

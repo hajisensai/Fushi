@@ -21,6 +21,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
@@ -981,6 +982,9 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/library/tags') {
       return _handleLibraryTags(request, method);
+    }
+    if (reqPath == '/api/library/media-links') {
+      return _handleLibraryMediaLinks(request, method);
     }
     if (reqPath == '/api/interconnect/service-config') {
       return _handleInterconnectServiceConfig(request, method);

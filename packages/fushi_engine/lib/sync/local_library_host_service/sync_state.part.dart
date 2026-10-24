@@ -176,6 +176,25 @@ mixin _LocalLibraryHostSyncState
     return merged;
   }
 
+  // ── 作品图谱清单（互联作品图谱同步，media_link_sync.dart）──────────────────
+
+  @override
+  Future<MediaLinkManifest> getMediaLinkManifest() =>
+      loadLocalMediaLinkManifest(_db);
+
+  /// 把 client 上报的作品图谱清单按整行 LWW 并入 host DB，返回并入后的 host
+  /// 清单。与标签清单同一把窄锁（[_runSyncStateExclusive]）。
+  @override
+  Future<MediaLinkManifest> mergeMediaLinkManifest(
+      MediaLinkManifest incoming) async {
+    late MediaLinkManifest merged;
+    await _runSyncStateExclusive(() async {
+      await applyMediaLinkManifest(_db, incoming);
+      merged = await loadLocalMediaLinkManifest(_db);
+    });
+    return merged;
+  }
+
   @override
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
       listDeletionTombstones() async {

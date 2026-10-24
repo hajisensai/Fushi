@@ -7031,7 +7031,8 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   final String rootPath;
 
   /// 非敏感网络连接参数 JSON（host/port/username/useTls）。**绝不裸存明文密码/
-  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL。
+  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL（iOS 例外：
+  /// 存 `iosBookmark` 安全作用域书签）。
   final String? configJson;
 
   /// 截图「媒体数」：上次扫描产出的条目数。
@@ -17440,11 +17441,11 @@ class CollectionMemberTombstoneRow extends DataClass
   /// 移出/删除毫秒戳（LWW 比较键；重复移出 upsert 取新）。
   final int deletedAt;
 
-  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键（schema
-  /// v124，spec §5.2）。键不在任何活合集的 [MediaCollections.organizeKey] /
-  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个 AI 分组（删了或撤销
-  /// 了），任何设备上的 AI 都不再建它；键在某个活合集的别名里 = 只是被合并掉了。
-  /// 成员墓碑行恒 NULL。
+  /// 合集级删除哨兵行（mediaType = entryKey = ''）上被删合集的整理分组键**集合**（schema
+  /// v124，spec §5.2）：主键 + 吸收过的别名，换行分隔（`encodeOrganizeAliases`）。用户删的
+  /// （[organizeMerged] = false）且键不在任何活合集的 [MediaCollections.organizeKey] /
+  /// [MediaCollections.organizeAliases] 里 = 用户**拒绝**了这个分组，任何设备上的 AI 都
+  /// 不再建它。自动路径删的合集不记键。成员墓碑行恒 NULL。
   final String? organizeKey;
 
   /// 合集级删除哨兵行：这次删除是整理器把它**并进了别的合集**（true），还是用户删的
@@ -63244,6 +63245,836 @@ class LibraryOrganizeChangesCompanion
   }
 }
 
+class $MediaLinksTable extends MediaLinks
+    with TableInfo<$MediaLinksTable, MediaLinkRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MediaLinksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fromKindMeta = const VerificationMeta(
+    'fromKind',
+  );
+  @override
+  late final GeneratedColumn<String> fromKind = GeneratedColumn<String>(
+    'from_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fromKeyMeta = const VerificationMeta(
+    'fromKey',
+  );
+  @override
+  late final GeneratedColumn<String> fromKey = GeneratedColumn<String>(
+    'from_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _relationMeta = const VerificationMeta(
+    'relation',
+  );
+  @override
+  late final GeneratedColumn<String> relation = GeneratedColumn<String>(
+    'relation',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _toKindMeta = const VerificationMeta('toKind');
+  @override
+  late final GeneratedColumn<String> toKind = GeneratedColumn<String>(
+    'to_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _toKeyMeta = const VerificationMeta('toKey');
+  @override
+  late final GeneratedColumn<String> toKey = GeneratedColumn<String>(
+    'to_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _roleMeta = const VerificationMeta('role');
+  @override
+  late final GeneratedColumn<String> role = GeneratedColumn<String>(
+    'role',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _episodeRangeMeta = const VerificationMeta(
+    'episodeRange',
+  );
+  @override
+  late final GeneratedColumn<String> episodeRange = GeneratedColumn<String>(
+    'episode_range',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manual'),
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isUserConfirmedMeta = const VerificationMeta(
+    'isUserConfirmed',
+  );
+  @override
+  late final GeneratedColumn<bool> isUserConfirmed = GeneratedColumn<bool>(
+    'is_user_confirmed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_user_confirmed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    fromKind,
+    fromKey,
+    relation,
+    toKind,
+    toKey,
+    role,
+    episodeRange,
+    source,
+    confidence,
+    isUserConfirmed,
+    reason,
+    createdAt,
+    updatedAt,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'media_links';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MediaLinkRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('from_kind')) {
+      context.handle(
+        _fromKindMeta,
+        fromKind.isAcceptableOrUnknown(data['from_kind']!, _fromKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fromKindMeta);
+    }
+    if (data.containsKey('from_key')) {
+      context.handle(
+        _fromKeyMeta,
+        fromKey.isAcceptableOrUnknown(data['from_key']!, _fromKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fromKeyMeta);
+    }
+    if (data.containsKey('relation')) {
+      context.handle(
+        _relationMeta,
+        relation.isAcceptableOrUnknown(data['relation']!, _relationMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_relationMeta);
+    }
+    if (data.containsKey('to_kind')) {
+      context.handle(
+        _toKindMeta,
+        toKind.isAcceptableOrUnknown(data['to_kind']!, _toKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_toKindMeta);
+    }
+    if (data.containsKey('to_key')) {
+      context.handle(
+        _toKeyMeta,
+        toKey.isAcceptableOrUnknown(data['to_key']!, _toKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_toKeyMeta);
+    }
+    if (data.containsKey('role')) {
+      context.handle(
+        _roleMeta,
+        role.isAcceptableOrUnknown(data['role']!, _roleMeta),
+      );
+    }
+    if (data.containsKey('episode_range')) {
+      context.handle(
+        _episodeRangeMeta,
+        episodeRange.isAcceptableOrUnknown(
+          data['episode_range']!,
+          _episodeRangeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('is_user_confirmed')) {
+      context.handle(
+        _isUserConfirmedMeta,
+        isUserConfirmed.isAcceptableOrUnknown(
+          data['is_user_confirmed']!,
+          _isUserConfirmedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {
+    fromKind,
+    fromKey,
+    relation,
+    toKind,
+    toKey,
+  };
+  @override
+  MediaLinkRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MediaLinkRow(
+      fromKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}from_kind'],
+      )!,
+      fromKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}from_key'],
+      )!,
+      relation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}relation'],
+      )!,
+      toKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}to_kind'],
+      )!,
+      toKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}to_key'],
+      )!,
+      role: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}role'],
+      ),
+      episodeRange: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}episode_range'],
+      ),
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      isUserConfirmed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_user_confirmed'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $MediaLinksTable createAlias(String alias) {
+    return $MediaLinksTable(attachedDatabase, alias);
+  }
+}
+
+class MediaLinkRow extends DataClass implements Insertable<MediaLinkRow> {
+  final String fromKind;
+  final String fromKey;
+
+  /// `MediaLinkRelation.dbValue`。无方向关系（same_work）落库前两端已按
+  /// `canonicalMediaLinkEndpoints` 排序。
+  final String relation;
+  final String toKind;
+  final String toKey;
+
+  /// 关系内的角色：theme_song 的 `op` / `ed` / `insert` / `theme`，cast 的角色名等。
+  final String? role;
+
+  /// 适用集数范围（theme_song 用，如 `1-12`）；NULL = 全部。
+  final String? episodeRange;
+
+  /// `MediaLinkSource`：`manual` 或推断来源名（vndb / mal / ai …）。
+  final String source;
+
+  /// 推断置信度 0..1；手动连接为 NULL。
+  final double? confidence;
+  final bool isUserConfirmed;
+
+  /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
+  final String? reason;
+  final int createdAt;
+  final int updatedAt;
+
+  /// 删除 / 否决时刻（墓碑）；NULL = 存活。
+  final int? deletedAt;
+  const MediaLinkRow({
+    required this.fromKind,
+    required this.fromKey,
+    required this.relation,
+    required this.toKind,
+    required this.toKey,
+    this.role,
+    this.episodeRange,
+    required this.source,
+    this.confidence,
+    required this.isUserConfirmed,
+    this.reason,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['from_kind'] = Variable<String>(fromKind);
+    map['from_key'] = Variable<String>(fromKey);
+    map['relation'] = Variable<String>(relation);
+    map['to_kind'] = Variable<String>(toKind);
+    map['to_key'] = Variable<String>(toKey);
+    if (!nullToAbsent || role != null) {
+      map['role'] = Variable<String>(role);
+    }
+    if (!nullToAbsent || episodeRange != null) {
+      map['episode_range'] = Variable<String>(episodeRange);
+    }
+    map['source'] = Variable<String>(source);
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    map['is_user_confirmed'] = Variable<bool>(isUserConfirmed);
+    if (!nullToAbsent || reason != null) {
+      map['reason'] = Variable<String>(reason);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
+    return map;
+  }
+
+  MediaLinksCompanion toCompanion(bool nullToAbsent) {
+    return MediaLinksCompanion(
+      fromKind: Value(fromKind),
+      fromKey: Value(fromKey),
+      relation: Value(relation),
+      toKind: Value(toKind),
+      toKey: Value(toKey),
+      role: role == null && nullToAbsent ? const Value.absent() : Value(role),
+      episodeRange: episodeRange == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeRange),
+      source: Value(source),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      isUserConfirmed: Value(isUserConfirmed),
+      reason: reason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reason),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory MediaLinkRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MediaLinkRow(
+      fromKind: serializer.fromJson<String>(json['fromKind']),
+      fromKey: serializer.fromJson<String>(json['fromKey']),
+      relation: serializer.fromJson<String>(json['relation']),
+      toKind: serializer.fromJson<String>(json['toKind']),
+      toKey: serializer.fromJson<String>(json['toKey']),
+      role: serializer.fromJson<String?>(json['role']),
+      episodeRange: serializer.fromJson<String?>(json['episodeRange']),
+      source: serializer.fromJson<String>(json['source']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      isUserConfirmed: serializer.fromJson<bool>(json['isUserConfirmed']),
+      reason: serializer.fromJson<String?>(json['reason']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fromKind': serializer.toJson<String>(fromKind),
+      'fromKey': serializer.toJson<String>(fromKey),
+      'relation': serializer.toJson<String>(relation),
+      'toKind': serializer.toJson<String>(toKind),
+      'toKey': serializer.toJson<String>(toKey),
+      'role': serializer.toJson<String?>(role),
+      'episodeRange': serializer.toJson<String?>(episodeRange),
+      'source': serializer.toJson<String>(source),
+      'confidence': serializer.toJson<double?>(confidence),
+      'isUserConfirmed': serializer.toJson<bool>(isUserConfirmed),
+      'reason': serializer.toJson<String?>(reason),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
+    };
+  }
+
+  MediaLinkRow copyWith({
+    String? fromKind,
+    String? fromKey,
+    String? relation,
+    String? toKind,
+    String? toKey,
+    Value<String?> role = const Value.absent(),
+    Value<String?> episodeRange = const Value.absent(),
+    String? source,
+    Value<double?> confidence = const Value.absent(),
+    bool? isUserConfirmed,
+    Value<String?> reason = const Value.absent(),
+    int? createdAt,
+    int? updatedAt,
+    Value<int?> deletedAt = const Value.absent(),
+  }) => MediaLinkRow(
+    fromKind: fromKind ?? this.fromKind,
+    fromKey: fromKey ?? this.fromKey,
+    relation: relation ?? this.relation,
+    toKind: toKind ?? this.toKind,
+    toKey: toKey ?? this.toKey,
+    role: role.present ? role.value : this.role,
+    episodeRange: episodeRange.present ? episodeRange.value : this.episodeRange,
+    source: source ?? this.source,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    isUserConfirmed: isUserConfirmed ?? this.isUserConfirmed,
+    reason: reason.present ? reason.value : this.reason,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  MediaLinkRow copyWithCompanion(MediaLinksCompanion data) {
+    return MediaLinkRow(
+      fromKind: data.fromKind.present ? data.fromKind.value : this.fromKind,
+      fromKey: data.fromKey.present ? data.fromKey.value : this.fromKey,
+      relation: data.relation.present ? data.relation.value : this.relation,
+      toKind: data.toKind.present ? data.toKind.value : this.toKind,
+      toKey: data.toKey.present ? data.toKey.value : this.toKey,
+      role: data.role.present ? data.role.value : this.role,
+      episodeRange: data.episodeRange.present
+          ? data.episodeRange.value
+          : this.episodeRange,
+      source: data.source.present ? data.source.value : this.source,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      isUserConfirmed: data.isUserConfirmed.present
+          ? data.isUserConfirmed.value
+          : this.isUserConfirmed,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLinkRow(')
+          ..write('fromKind: $fromKind, ')
+          ..write('fromKey: $fromKey, ')
+          ..write('relation: $relation, ')
+          ..write('toKind: $toKind, ')
+          ..write('toKey: $toKey, ')
+          ..write('role: $role, ')
+          ..write('episodeRange: $episodeRange, ')
+          ..write('source: $source, ')
+          ..write('confidence: $confidence, ')
+          ..write('isUserConfirmed: $isUserConfirmed, ')
+          ..write('reason: $reason, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    fromKind,
+    fromKey,
+    relation,
+    toKind,
+    toKey,
+    role,
+    episodeRange,
+    source,
+    confidence,
+    isUserConfirmed,
+    reason,
+    createdAt,
+    updatedAt,
+    deletedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MediaLinkRow &&
+          other.fromKind == this.fromKind &&
+          other.fromKey == this.fromKey &&
+          other.relation == this.relation &&
+          other.toKind == this.toKind &&
+          other.toKey == this.toKey &&
+          other.role == this.role &&
+          other.episodeRange == this.episodeRange &&
+          other.source == this.source &&
+          other.confidence == this.confidence &&
+          other.isUserConfirmed == this.isUserConfirmed &&
+          other.reason == this.reason &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt);
+}
+
+class MediaLinksCompanion extends UpdateCompanion<MediaLinkRow> {
+  final Value<String> fromKind;
+  final Value<String> fromKey;
+  final Value<String> relation;
+  final Value<String> toKind;
+  final Value<String> toKey;
+  final Value<String?> role;
+  final Value<String?> episodeRange;
+  final Value<String> source;
+  final Value<double?> confidence;
+  final Value<bool> isUserConfirmed;
+  final Value<String?> reason;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int?> deletedAt;
+  final Value<int> rowid;
+  const MediaLinksCompanion({
+    this.fromKind = const Value.absent(),
+    this.fromKey = const Value.absent(),
+    this.relation = const Value.absent(),
+    this.toKind = const Value.absent(),
+    this.toKey = const Value.absent(),
+    this.role = const Value.absent(),
+    this.episodeRange = const Value.absent(),
+    this.source = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.isUserConfirmed = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MediaLinksCompanion.insert({
+    required String fromKind,
+    required String fromKey,
+    required String relation,
+    required String toKind,
+    required String toKey,
+    this.role = const Value.absent(),
+    this.episodeRange = const Value.absent(),
+    this.source = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.isUserConfirmed = const Value.absent(),
+    this.reason = const Value.absent(),
+    required int createdAt,
+    required int updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : fromKind = Value(fromKind),
+       fromKey = Value(fromKey),
+       relation = Value(relation),
+       toKind = Value(toKind),
+       toKey = Value(toKey),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<MediaLinkRow> custom({
+    Expression<String>? fromKind,
+    Expression<String>? fromKey,
+    Expression<String>? relation,
+    Expression<String>? toKind,
+    Expression<String>? toKey,
+    Expression<String>? role,
+    Expression<String>? episodeRange,
+    Expression<String>? source,
+    Expression<double>? confidence,
+    Expression<bool>? isUserConfirmed,
+    Expression<String>? reason,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fromKind != null) 'from_kind': fromKind,
+      if (fromKey != null) 'from_key': fromKey,
+      if (relation != null) 'relation': relation,
+      if (toKind != null) 'to_kind': toKind,
+      if (toKey != null) 'to_key': toKey,
+      if (role != null) 'role': role,
+      if (episodeRange != null) 'episode_range': episodeRange,
+      if (source != null) 'source': source,
+      if (confidence != null) 'confidence': confidence,
+      if (isUserConfirmed != null) 'is_user_confirmed': isUserConfirmed,
+      if (reason != null) 'reason': reason,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MediaLinksCompanion copyWith({
+    Value<String>? fromKind,
+    Value<String>? fromKey,
+    Value<String>? relation,
+    Value<String>? toKind,
+    Value<String>? toKey,
+    Value<String?>? role,
+    Value<String?>? episodeRange,
+    Value<String>? source,
+    Value<double?>? confidence,
+    Value<bool>? isUserConfirmed,
+    Value<String?>? reason,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return MediaLinksCompanion(
+      fromKind: fromKind ?? this.fromKind,
+      fromKey: fromKey ?? this.fromKey,
+      relation: relation ?? this.relation,
+      toKind: toKind ?? this.toKind,
+      toKey: toKey ?? this.toKey,
+      role: role ?? this.role,
+      episodeRange: episodeRange ?? this.episodeRange,
+      source: source ?? this.source,
+      confidence: confidence ?? this.confidence,
+      isUserConfirmed: isUserConfirmed ?? this.isUserConfirmed,
+      reason: reason ?? this.reason,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fromKind.present) {
+      map['from_kind'] = Variable<String>(fromKind.value);
+    }
+    if (fromKey.present) {
+      map['from_key'] = Variable<String>(fromKey.value);
+    }
+    if (relation.present) {
+      map['relation'] = Variable<String>(relation.value);
+    }
+    if (toKind.present) {
+      map['to_kind'] = Variable<String>(toKind.value);
+    }
+    if (toKey.present) {
+      map['to_key'] = Variable<String>(toKey.value);
+    }
+    if (role.present) {
+      map['role'] = Variable<String>(role.value);
+    }
+    if (episodeRange.present) {
+      map['episode_range'] = Variable<String>(episodeRange.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (isUserConfirmed.present) {
+      map['is_user_confirmed'] = Variable<bool>(isUserConfirmed.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MediaLinksCompanion(')
+          ..write('fromKind: $fromKind, ')
+          ..write('fromKey: $fromKey, ')
+          ..write('relation: $relation, ')
+          ..write('toKind: $toKind, ')
+          ..write('toKey: $toKey, ')
+          ..write('role: $role, ')
+          ..write('episodeRange: $episodeRange, ')
+          ..write('source: $source, ')
+          ..write('confidence: $confidence, ')
+          ..write('isUserConfirmed: $isUserConfirmed, ')
+          ..write('reason: $reason, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -63431,6 +64262,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $LibraryOrganizeRunsTable(this);
   late final $LibraryOrganizeChangesTable libraryOrganizeChanges =
       $LibraryOrganizeChangesTable(this);
+  late final $MediaLinksTable mediaLinks = $MediaLinksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -63539,6 +64371,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mediaPrivacyFlags,
     libraryOrganizeRuns,
     libraryOrganizeChanges,
+    mediaLinks,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -107982,6 +108815,383 @@ typedef $$LibraryOrganizeChangesTableProcessedTableManager =
       LibraryOrganizeChangeRow,
       PrefetchHooks Function({bool runId})
     >;
+typedef $$MediaLinksTableCreateCompanionBuilder =
+    MediaLinksCompanion Function({
+      required String fromKind,
+      required String fromKey,
+      required String relation,
+      required String toKind,
+      required String toKey,
+      Value<String?> role,
+      Value<String?> episodeRange,
+      Value<String> source,
+      Value<double?> confidence,
+      Value<bool> isUserConfirmed,
+      Value<String?> reason,
+      required int createdAt,
+      required int updatedAt,
+      Value<int?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$MediaLinksTableUpdateCompanionBuilder =
+    MediaLinksCompanion Function({
+      Value<String> fromKind,
+      Value<String> fromKey,
+      Value<String> relation,
+      Value<String> toKind,
+      Value<String> toKey,
+      Value<String?> role,
+      Value<String?> episodeRange,
+      Value<String> source,
+      Value<double?> confidence,
+      Value<bool> isUserConfirmed,
+      Value<String?> reason,
+      Value<int> createdAt,
+      Value<int> updatedAt,
+      Value<int?> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$MediaLinksTableFilterComposer
+    extends Composer<_$FushiDatabase, $MediaLinksTable> {
+  $$MediaLinksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fromKind => $composableBuilder(
+    column: $table.fromKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fromKey => $composableBuilder(
+    column: $table.fromKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get relation => $composableBuilder(
+    column: $table.relation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toKind => $composableBuilder(
+    column: $table.toKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toKey => $composableBuilder(
+    column: $table.toKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get role => $composableBuilder(
+    column: $table.role,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get episodeRange => $composableBuilder(
+    column: $table.episodeRange,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isUserConfirmed => $composableBuilder(
+    column: $table.isUserConfirmed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MediaLinksTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MediaLinksTable> {
+  $$MediaLinksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fromKind => $composableBuilder(
+    column: $table.fromKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fromKey => $composableBuilder(
+    column: $table.fromKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get relation => $composableBuilder(
+    column: $table.relation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toKind => $composableBuilder(
+    column: $table.toKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get toKey => $composableBuilder(
+    column: $table.toKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get role => $composableBuilder(
+    column: $table.role,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get episodeRange => $composableBuilder(
+    column: $table.episodeRange,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isUserConfirmed => $composableBuilder(
+    column: $table.isUserConfirmed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MediaLinksTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MediaLinksTable> {
+  $$MediaLinksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fromKind =>
+      $composableBuilder(column: $table.fromKind, builder: (column) => column);
+
+  GeneratedColumn<String> get fromKey =>
+      $composableBuilder(column: $table.fromKey, builder: (column) => column);
+
+  GeneratedColumn<String> get relation =>
+      $composableBuilder(column: $table.relation, builder: (column) => column);
+
+  GeneratedColumn<String> get toKind =>
+      $composableBuilder(column: $table.toKind, builder: (column) => column);
+
+  GeneratedColumn<String> get toKey =>
+      $composableBuilder(column: $table.toKey, builder: (column) => column);
+
+  GeneratedColumn<String> get role =>
+      $composableBuilder(column: $table.role, builder: (column) => column);
+
+  GeneratedColumn<String> get episodeRange => $composableBuilder(
+    column: $table.episodeRange,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isUserConfirmed => $composableBuilder(
+    column: $table.isUserConfirmed,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$MediaLinksTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MediaLinksTable,
+          MediaLinkRow,
+          $$MediaLinksTableFilterComposer,
+          $$MediaLinksTableOrderingComposer,
+          $$MediaLinksTableAnnotationComposer,
+          $$MediaLinksTableCreateCompanionBuilder,
+          $$MediaLinksTableUpdateCompanionBuilder,
+          (
+            MediaLinkRow,
+            BaseReferences<_$FushiDatabase, $MediaLinksTable, MediaLinkRow>,
+          ),
+          MediaLinkRow,
+          PrefetchHooks Function()
+        > {
+  $$MediaLinksTableTableManager(_$FushiDatabase db, $MediaLinksTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MediaLinksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MediaLinksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MediaLinksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fromKind = const Value.absent(),
+                Value<String> fromKey = const Value.absent(),
+                Value<String> relation = const Value.absent(),
+                Value<String> toKind = const Value.absent(),
+                Value<String> toKey = const Value.absent(),
+                Value<String?> role = const Value.absent(),
+                Value<String?> episodeRange = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<bool> isUserConfirmed = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLinksCompanion(
+                fromKind: fromKind,
+                fromKey: fromKey,
+                relation: relation,
+                toKind: toKind,
+                toKey: toKey,
+                role: role,
+                episodeRange: episodeRange,
+                source: source,
+                confidence: confidence,
+                isUserConfirmed: isUserConfirmed,
+                reason: reason,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fromKind,
+                required String fromKey,
+                required String relation,
+                required String toKind,
+                required String toKey,
+                Value<String?> role = const Value.absent(),
+                Value<String?> episodeRange = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<bool> isUserConfirmed = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                required int createdAt,
+                required int updatedAt,
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MediaLinksCompanion.insert(
+                fromKind: fromKind,
+                fromKey: fromKey,
+                relation: relation,
+                toKind: toKind,
+                toKey: toKey,
+                role: role,
+                episodeRange: episodeRange,
+                source: source,
+                confidence: confidence,
+                isUserConfirmed: isUserConfirmed,
+                reason: reason,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MediaLinksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MediaLinksTable,
+      MediaLinkRow,
+      $$MediaLinksTableFilterComposer,
+      $$MediaLinksTableOrderingComposer,
+      $$MediaLinksTableAnnotationComposer,
+      $$MediaLinksTableCreateCompanionBuilder,
+      $$MediaLinksTableUpdateCompanionBuilder,
+      (
+        MediaLinkRow,
+        BaseReferences<_$FushiDatabase, $MediaLinksTable, MediaLinkRow>,
+      ),
+      MediaLinkRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -108246,4 +109456,6 @@ class $FushiDatabaseManager {
         _db,
         _db.libraryOrganizeChanges,
       );
+  $$MediaLinksTableTableManager get mediaLinks =>
+      $$MediaLinksTableTableManager(_db, _db.mediaLinks);
 }

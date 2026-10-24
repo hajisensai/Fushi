@@ -97,6 +97,14 @@ import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_service.dar
         appRemoteVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/remote_video_subtitle_sheet.dart'
     show showRemoteVideoSubtitleSheet;
+import 'package:fushi/src/media/links/media_link_entries.dart'
+    show MediaLinkEntry;
+import 'package:fushi/src/media/links/media_link_inference_host.dart'
+    show mediaLinkInferCallback;
+import 'package:fushi/src/media/links/media_link_opener.dart'
+    show mediaLinkSearchAction, openMediaLinkEntry;
+import 'package:fushi/src/media/links/media_links_section.dart'
+    show MediaLinksSection;
 
 /// 统一合集 Phase 4：合集详情页（Jellyfin 式）。playlist 合集 = 有序剧集列表：点某集从
 /// 该集开始播放（带剧集面板 / 上下集 / 连播，调用方经 playlistCollectionId 打开播放器）；
@@ -3085,6 +3093,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 collectionId: widget.collection.id,
                 onOpenCollection: (int id) => _openRelatedCollection(id),
                 onDownload: _downloadsAvailable ? _downloadRelation : null,
+              ),
+            ),
+            // 跨模块「同一作品」（作品图谱 media_links）：原作 / 改编 / 游戏…
+            SliverToBoxAdapter(
+              child: Consumer(
+                builder: (BuildContext context, WidgetRef ref, Widget? _) {
+                  final MediaLinkEndpoint self = (
+                    kind: MediaLinkKind.videoCollection,
+                    key: collectionTagEntryKey(widget.collection.id),
+                  );
+                  return MediaLinksSection(
+                    database: widget.database,
+                    self: self,
+                    onOpen: (MediaLinkEntry e) => openMediaLinkEntry(
+                      context: context,
+                      ref: ref,
+                      entry: e,
+                    ),
+                    onInfer: mediaLinkInferCallback(ref: ref, self: self),
+                    searchActionFor: (MediaLinkKind k) => mediaLinkSearchAction(
+                      context: context,
+                      ref: ref,
+                      kind: k,
+                    ),
+                  );
+                },
               ),
             ),
             SliverToBoxAdapter(child: _buildWorkDetailsSection()),

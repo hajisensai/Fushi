@@ -63,6 +63,7 @@ import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
@@ -142,7 +143,8 @@ abstract class _LocalLibraryHostBase
         InterconnectProfileHost,
         VideoMetadataHost,
         VideoMetadataOrderingHost,
-        TagSyncHost {
+        TagSyncHost,
+        MediaLinkSyncHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;

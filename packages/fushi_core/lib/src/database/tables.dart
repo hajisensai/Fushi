@@ -3668,3 +3668,63 @@ class LibraryOrganizeChanges extends Table {
   /// 撤销时刻；NULL = 未撤销。
   IntColumn get undoneAt => integer().nullable()();
 }
+
+// ── media_links（跨模块作品图谱，schema v125）───────────────────────────
+/// 跨模块作品图谱的一条连接（spec `docs/specs/2026-10-24-cross-media-links.md`）：
+/// `(from_kind, from_key) —relation→ (to_kind, to_key)`。不另起「作品」实体取代
+/// 各模块数据，只加一层连接。
+///
+/// 端点种类 / 关系的值域见 `MediaLinkKind` / `MediaLinkRelation`（落库值冻结）；
+/// 键是各模块的**本地**稳定身份（书 bookKey、视频 bookUid、合集 id 字符串、游戏
+/// `Galgames.id`、音乐 uid），跨端换算只在互联同步清单里做（`media_link_sync.dart`），
+/// 与标签映射同一套。端点不设外键：目标条目本机不存在时照常保留（详情页显示「未入库」
+/// 灰卡），宿主删除也不级联。
+///
+/// 一行三态（`MediaLinkState`）：[deletedAt] 非空 = 已删除 / 已否决（墓碑，推断
+/// 不得重复提议同一对条目）；否则 [isUserConfirmed] 决定是「同一作品」事实还是
+/// 「可能相关」建议。跨端合并整行 LWW（按 [updatedAt]），所以删除 / 否决只写墓碑
+/// 不删行——删了就分不清「否决过」和「从没提过」，对端的旧行会把它复活。
+@DataClassName('MediaLinkRow')
+class MediaLinks extends Table {
+  TextColumn get fromKind => text()();
+  TextColumn get fromKey => text()();
+
+  /// `MediaLinkRelation.dbValue`。无方向关系（same_work）落库前两端已按
+  /// `canonicalMediaLinkEndpoints` 排序。
+  TextColumn get relation => text()();
+  TextColumn get toKind => text()();
+  TextColumn get toKey => text()();
+
+  /// 关系内的角色：theme_song 的 `op` / `ed` / `insert` / `theme`，cast 的角色名等。
+  TextColumn get role => text().nullable()();
+
+  /// 适用集数范围（theme_song 用，如 `1-12`）；NULL = 全部。
+  TextColumn get episodeRange => text().nullable()();
+
+  /// `MediaLinkSource`：`manual` 或推断来源名（vndb / mal / ai …）。
+  TextColumn get source => text().withDefault(const Constant('manual'))();
+
+  /// 推断置信度 0..1；手动连接为 NULL。
+  RealColumn get confidence => real().nullable()();
+
+  BoolColumn get isUserConfirmed =>
+      boolean().withDefault(const Constant(false))();
+
+  /// 推断理由（AI 的「为什么认为是同一作品」、确定性判据的证据摘要）。
+  TextColumn get reason => text().nullable()();
+
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  /// 删除 / 否决时刻（墓碑）；NULL = 存活。
+  IntColumn get deletedAt => integer().nullable()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{
+        fromKind,
+        fromKey,
+        relation,
+        toKind,
+        toKey,
+      };
+}
