@@ -145,8 +145,8 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
                   : FushiIcons.filled(FushiIcons.play),
             ),
             shape: playing
-                ? FushiIconButtonShape.square
-                : FushiIconButtonShape.round,
+                ? ButtonShapeVariant.square
+                : ButtonShapeVariant.round,
             tooltip: t.floating_lyric_play_pause,
             onPressed: () => controller.togglePlayPause(),
           )

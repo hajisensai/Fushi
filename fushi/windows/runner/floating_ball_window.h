@@ -36,7 +36,9 @@ class FloatingBallWindow {
     bool animate = true;
     // 只控制可见标签；labels 仍用于 tooltip 和操作名称。
     bool show_labels = true;
-    // Dart 勾选的动作 id（自上而下）；open_app / close 由本类固定加在最上。
+    // 菜单里有没有「打开 Fushi」（Dart 应用外按钮组里的开关；旧调用缺字段 = 有）。
+    bool show_open_app = true;
+    // Dart 勾选的动作 id（自上而下）；close（与没关掉的 open_app）由本类加在最上。
     std::vector<std::string> actions;
     // 按钮文案 / tooltip：键为动作 id + open_app / close / ball。
     std::map<std::string, std::wstring> labels;

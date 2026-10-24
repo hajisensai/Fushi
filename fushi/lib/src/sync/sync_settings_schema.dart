@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
@@ -191,6 +192,22 @@ SettingsDestination buildSyncBackupDestination() {
               ).setSyncStatsEnabled(value);
             },
           ),
+          // 设备级「同步浏览历史」（默认关）：云备份与互联两条通道共用，本机作互联
+          // host 时也按它决定发不发 / 收不收历史，所以不设 visible 门控。历史不跟
+          // 「同步统计 / 共享收藏夹」走——浏览轨迹的隐私分量远高于收藏。
+          SettingsSwitchItem(
+            id: 'sync.web_history',
+            title: t.sync_web_history,
+            subtitle: t.sync_web_history_hint,
+            icon: FushiIcons.globe,
+            value: (SettingsContext ctx) => _syncSettings(ctx).syncWebHistory,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncWebHistory = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setWebHistorySyncEnabled(value);
+            },
+          ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
           // 单独控制（见 buildInterconnectDestination），二者互不牵连。故这三个开关只在
@@ -283,6 +300,9 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.auto_sync',
             title: t.sync_auto_sync,
+            // 反馈 5nWEirdCs2：本开关只管云同步通道；互联通道的自动同步在互联页单独
+            // 一个开关（默认开），见 interconnect.auto_sync。
+            subtitle: t.sync_auto_sync_cloud_hint,
             icon: FushiIcons.sync,
             // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
             // book-close pushes through the resolved backend. Outbound only
@@ -640,6 +660,23 @@ SettingsDestination buildInterconnectDestination() {
             icon: FushiIcons.devices,
             child: _buildInterconnectDevicesPage,
           ),
+          // 反馈 _sZllpFQWm / BUG-3698：从配对设备下到本机的任务（暂停 / 继续 / 取消）。
+          // 这类任务此前只在「浏览 → 下载」里列出，iOS 没有浏览模块就无处可停；
+          // 互联下载不是商店受限能力，这里不挂任何合规门，五端都在。
+          SettingsActionItem(
+            id: 'interconnect.download_tasks',
+            title: t.interconnect_download_tasks_title,
+            subtitle: t.interconnect_download_tasks_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '互联下载任务是本机 app 内存里的传输队列（暂停 / 继续 / 取消要作用在正在跑的'
+              '传输上），只能在 app 里管理',
+            ),
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => const InterconnectDownloadTasksPage(),
+            ),
+          ),
           SettingsActionItem(
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
@@ -817,6 +854,26 @@ SettingsDestination buildInterconnectDestination() {
               await SyncRepository(
                 ctx.appModel.database,
               ).setInterconnectSyncFavoritesEnabled(value);
+            },
+          ),
+          // 反馈 5nWEirdCs2（所有者拍板方案 A）：上面两项（以及书/视频进度、合集等）
+          // 只在「一轮同步」里与对端合并。拆开关前轮次由同步分类那个默认关的全局「自动
+          // 同步」驱动，互联页的「双向合并、默认开启」于是是句空话。现在互联通道有自己
+          // 的自动同步开关（默认开，老用户按旧开关迁移，见
+          // SyncRepository.isInterconnectAutoSyncEnabled），与上面两项同区：它就是
+          // 「这些内容什么时候合并」的答案。不是镜像——同步分类那个只管云通道。
+          SettingsSwitchItem(
+            id: 'interconnect.auto_sync',
+            title: t.interconnect_auto_sync,
+            subtitle: t.interconnect_auto_sync_hint,
+            icon: FushiIcons.sync,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).interconnectAutoSync,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).interconnectAutoSync = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setInterconnectAutoSyncEnabled(value);
             },
           ),
         ],
@@ -1252,8 +1309,14 @@ class _SyncSettingsState {
   /// 互联总开关（独立于 [backendType] 云备份后端选择）。为 true 时互联作为一条独立
   /// 通道运行，与云备份并存（不再是互斥的 backendType==fushiServer 单选）。
   bool interconnectEnabled = false;
+
+  /// 云同步通道的自动同步（`sync.auto_sync`，默认关）。
   bool autoSync = false;
+
+  /// 互联通道的自动同步（`interconnect.auto_sync`，默认开，反馈 5nWEirdCs2）。
+  bool interconnectAutoSync = true;
   bool syncStats = true;
+  bool syncWebHistory = false;
   bool syncContent = false;
   bool syncMangaContent = false;
   bool syncAudioBookFiles = false;
@@ -1374,7 +1437,9 @@ class _SyncSettingsState {
       backendType = await _repo.getBackendType();
       interconnectEnabled = await _repo.isInterconnectEnabled();
       autoSync = await _repo.isAutoSyncEnabled();
+      interconnectAutoSync = await _repo.isInterconnectAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
+      syncWebHistory = await _repo.isWebHistorySyncEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncMangaContent = await _repo.isSyncMangaContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();

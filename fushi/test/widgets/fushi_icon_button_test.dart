@@ -169,5 +169,95 @@ void main() {
       await tester.pumpAndSettle();
       expect(tapped, isTrue);
     });
+
+    // 2026-10-23：MD3 图标按钮换成官方 M3E IconButton 后，官方标准 toggle 选中
+    // 只染 primary、不加容器；用户拍板保留选中态的 secondaryContainer 浅色底，
+    // 叠在官方按钮上。换官方实现时不得再把它丢掉。
+    testWidgets('selected MD3 icon button keeps the tonal selected container', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        buildTestApp(
+          FushiIconButton(
+            icon: Icons.checklist,
+            tooltip: 'Select',
+            selected: true,
+            onTap: () {},
+          ),
+        ),
+      );
+      final IconButton button = tester.widget<IconButton>(
+        find.byType(IconButton),
+      );
+      final ColorScheme cs = Theme.of(
+        tester.element(find.byType(IconButton)),
+      ).colorScheme;
+      expect(button.isSelected, isTrue);
+      expect(
+        button.style?.backgroundColor?.resolve(<WidgetState>{
+          WidgetState.selected,
+        }),
+        cs.secondaryContainer,
+      );
+      expect(
+        button.style?.foregroundColor?.resolve(<WidgetState>{
+          WidgetState.selected,
+        }),
+        cs.onSecondaryContainer,
+      );
+      // 未选中不叠底，交回官方默认。
+      expect(button.style?.backgroundColor?.resolve(<WidgetState>{}), isNull);
+    });
+
+    // 2026-10-24（批量合并 #2457 后 srs_pages_test 牌组设置页三条红）：MD3 图标
+    // 按钮换官方 IconButton 后，外层又包了 Tooltip + Semantics(label:)，在官方的
+    // Semantics(container: true) 之上多出一个语义节点。按钮落在滚动视图缓存区
+    // 之外（长表单底部输入框的粘贴钮）时，官方容器节点的矩形算成空的，框架断言
+    // 「Invisible SemanticsNodes should not be added to the tree」。名称 / 提示 /
+    // 按钮语义必须都在官方那一个容器节点上。
+    testWidgets(
+      'MD3 icon button far below the scroll cache adds no invisible semantics node',
+      (tester) async {
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        Widget field() => TextField(
+          decoration: InputDecoration(
+            labelText: 'Field',
+            suffixIcon: FushiIconButton(
+              icon: Icons.content_paste,
+              tooltip: 'Paste',
+              onTap: () {},
+            ),
+          ),
+        );
+        await tester.pumpWidget(
+          buildTestApp(
+            ListView(
+              children: <Widget>[
+                const SizedBox(height: 700),
+                Column(
+                  children: <Widget>[
+                    const SizedBox(height: 500),
+                    field(),
+                    const SizedBox(height: 300),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        // 滚到可见处：名称与提示落在同一个按钮节点上。
+        await tester.drag(find.byType(ListView), const Offset(0, -900));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getSemantics(find.byType(IconButton)),
+          containsSemantics(label: 'Paste', tooltip: 'Paste', isButton: true),
+        );
+        semantics.dispose();
+      },
+    );
   });
 }

@@ -108,6 +108,7 @@ class DownloadTaskCard extends StatefulWidget {
     this.menuActions = const <DownloadTaskMenuAction>[],
     this.method,
     this.externalSource = false,
+    this.summary,
     super.key,
   });
 
@@ -131,6 +132,9 @@ class DownloadTaskCard extends StatefulWidget {
 
   /// 内容来自第三方站点：方式标签旁多一枚「外部来源」。
   final bool externalSource;
+
+  /// 折叠时也显示的摘要（进度条下方），如转录任务的阶段轨；null = 不画。
+  final Widget? summary;
 
   @override
   State<DownloadTaskCard> createState() => _DownloadTaskCardState();
@@ -350,6 +354,16 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
                 tokens.spacing.gap + 4,
               ),
               child: _buildProgress(context, progress, tone),
+            ),
+          if (widget.summary != null)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                0,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: widget.summary,
             ),
           // 展开详情：spatial 弹簧撑开 / 收起高度（墨水屏与减弱动态效果下瞬时）。
           // 降级时 duration 为零，直接换子树、不经 AnimatedSize：零时长下

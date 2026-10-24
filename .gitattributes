@@ -61,3 +61,5 @@ fushi/lib/i18n/*.i18n.json merge=fushi-i18n-json
 # docs/BUGS.md 是生成的索引表：两边各加一行时按行并集合并、永不冲突；
 # 行序 / 去重交给 `tool/bug.dart settle`（或 reindex）重建。
 docs/BUGS.md merge=union
+# ci/patches/hosted 下是对 pub 包源文件的整文件覆盖，逐字保留上游（含行尾空白），升级时才能直接 diff 出本仓改动。
+ci/patches/hosted/** -whitespace

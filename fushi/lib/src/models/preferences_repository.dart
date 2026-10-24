@@ -26,6 +26,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/misc/toast_severity.dart'
+    show MineToastStatus, mineToastShown;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
     show HiddenRemoteBook, decodeHiddenRemoteBooks, encodeHiddenRemoteBooks;
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -62,6 +64,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -95,7 +98,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
         VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
-    show MiningMediaCompression;
+    show MiningMediaCompression, miningAnimatedPlayOnceReader;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
@@ -305,6 +308,8 @@ class PreferencesRepository extends ChangeNotifier
     appUserProxyModeReader = () => networkProxyMode;
     appUserProxyUsernameReader = () => networkProxyUsername;
     appUserProxyPasswordReader = () => networkProxyPassword;
+    // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
+    miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
   }
 
   Map<String, String> get prefsSnapshot =>
@@ -674,6 +679,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）补新集。默认开；
+  /// 与「番剧新集提醒」是两个开关（那个只管通知）。
+  bool get videoLibraryAutoUpdate =>
+      getPref('video_library_auto_update', defaultValue: true) as bool;
+
+  Future<void> setVideoLibraryAutoUpdate(bool value) async {
+    await setPref('video_library_auto_update', value);
+    notifyListeners();
+  }
+
   /// 媒体服务器（Jellyfin/Emby）串流画质档下标；-1 = 自动（服务器允许时直播放原
   /// 文件）。选档 = 向服务器声明码率 / 宽度上限，超限由服务器转码到该档。
   int get mediaServerQualityPresetIndex =>
@@ -1017,13 +1032,48 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 应用外悬浮球（Android）：收起态点球直接查剪贴板，长按才展开按钮
-  /// （同 Google「点按翻译」的「自动翻译复制的文字」）。默认关 = 点球展开。
-  bool get floatingBallTapClipboard =>
-      getPref('floating_ball.tap_clipboard', defaultValue: false);
+  /// 应用外悬浮球（Android）收起态点一下做什么（[FloatingBallTapAction]）：出厂
+  /// 展开按钮；选了剪贴板查词 / 截屏识字时直接执行、长按才展开。旧版 bool
+  /// `floating_ball.tap_clipboard`（「点球查剪贴板」）在新键没写过时折成剪贴板。
+  FloatingBallTapAction get floatingBallTapAction =>
+      FloatingBallTapAction.fromStorage(
+        getPref('floating_ball.tap_action', defaultValue: null),
+        legacyTapClipboard:
+            getPref('floating_ball.tap_clipboard', defaultValue: false) == true,
+      );
 
-  Future<void> setFloatingBallTapClipboard(bool value) async {
-    await setPref('floating_ball.tap_clipboard', value);
+  Future<void> setFloatingBallTapAction(FloatingBallTapAction value) async {
+    await setPref('floating_ball.tap_action', value.storageValue);
+    notifyListeners();
+  }
+
+  /// 截屏识字 / 拍照查词制卡时把所点文字所在文本块的截图放进卡片图片字段（与漫画卡图
+  /// 同一通道，反馈 Gz7z6Y6Mbr）。默认开。
+  bool get screenOcrCardImage =>
+      getPref('screen_ocr.card_image', defaultValue: true);
+
+  Future<void> setScreenOcrCardImage(bool value) async {
+    await setPref('screen_ocr.card_image', value);
+    notifyListeners();
+  }
+
+  /// Android 截屏识字「保持截屏会话」：第一次同意后录屏会话常驻，之后截屏识字直接取
+  /// 最新帧，不再弹系统确认框（反馈 9bdhVTgq3A / LHyeNKyYjH）。默认关。
+  bool get screenOcrKeepCaptureSession =>
+      getPref('screen_ocr.keep_capture_session', defaultValue: false);
+
+  Future<void> setScreenOcrKeepCaptureSession(bool value) async {
+    await setPref('screen_ocr.keep_capture_session', value);
+    notifyListeners();
+  }
+
+  /// 应用外悬浮球菜单里有没有「打开 Fushi」。默认有；习惯切屏回 Fushi 的人可以
+  /// 关掉（反馈 9bdhVTgq3A）。
+  bool get floatingBallSystemOpenApp =>
+      getPref('floating_ball.system_open_app', defaultValue: true);
+
+  Future<void> setFloatingBallSystemOpenApp(bool value) async {
+    await setPref('floating_ball.system_open_app', value);
     notifyListeners();
   }
 
@@ -1492,8 +1542,21 @@ class PreferencesRepository extends ChangeNotifier
         getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
       );
 
-  Future<void> setModuleOrder(List<ModuleId> order) async {
-    await setPref(ModuleId.orderPrefKey, ModuleId.encodeOrder(order));
+  /// 「设置」tab 在用户排序里的位置（[ModuleId.parseSettingsSlot]）；null = 最后。
+  int? get moduleSettingsSlot => ModuleId.parseSettingsSlot(
+        getPref(ModuleId.orderPrefKey, defaultValue: '') as String,
+      );
+
+  /// 写模块顺序。[settingsSlot] 必须显式给（保留现状就传 [moduleSettingsSlot]）：
+  /// 顺序与设置位置存在同一个键里，漏传就会把用户排好的设置位置悄悄抹掉。
+  Future<void> setModuleOrder(
+    List<ModuleId> order, {
+    required int? settingsSlot,
+  }) async {
+    await setPref(
+      ModuleId.orderPrefKey,
+      ModuleId.encodeOrder(order, settingsSlot: settingsSlot),
+    );
     notifyListeners();
   }
 
@@ -1506,6 +1569,26 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setOnboardingCompleted({required bool value}) async {
     await setPref('onboarding_completed', value);
+  }
+
+  /// 新手引导是否**走完**（最后一步点了「开始使用」）。与 [onboardingCompleted]
+  /// 的区别：后者是「首启自动弹过了」，跳过 / 返回关掉向导也算；本键只认走完。
+  /// 缺省 true（老安装不出首页引导卡），全新安装首帧显式写 false。
+  bool get onboardingFinished =>
+      getPref('onboarding_finished', defaultValue: true) as bool;
+
+  Future<void> setOnboardingFinished({required bool value}) async {
+    await setPref('onboarding_finished', value);
+    notifyListeners();
+  }
+
+  /// 首页「新手引导」卡被点了「不再显示」。
+  bool get onboardingHomeCardDismissed =>
+      getPref('onboarding_home_card_dismissed', defaultValue: false) as bool;
+
+  Future<void> setOnboardingHomeCardDismissed({required bool value}) async {
+    await setPref('onboarding_home_card_dismissed', value);
+    notifyListeners();
   }
 
   final int defaultMaximumDictionaryTermsInResult = 10;
@@ -3078,12 +3161,31 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页顶栏悬浮（不占布局、默认收起，点卡面空白 / 右键唤出），与小说、漫画阅读器
+  // 同一口径。默认 true；false = 固定页头常驻。
+  bool get srsReviewChromeFloating =>
+      getPref('srs_review_chrome_floating', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewChromeFloating(bool value) async {
+    await setPref('srs_review_chrome_floating', value);
+    notifyListeners();
+  }
+
   // 复习页评分栏只留「重来 / 良好」（对齐 AnkiDroid hideHardAndEasy）。默认 false。
   bool get srsReviewHideHardEasy =>
       getPref('srs_review_hide_hard_easy', defaultValue: false) as bool;
 
   Future<void> setSrsReviewHideHardEasy(bool value) async {
     await setPref('srs_review_hide_hard_easy', value);
+    notifyListeners();
+  }
+
+  // 复习卡面图片大小（SrsReviewImageSize.wire）。默认 'original'。
+  String get srsReviewImageSize =>
+      getPref('srs_review_image_size', defaultValue: 'original') as String;
+
+  Future<void> setSrsReviewImageSize(String wire) async {
+    await setPref('srs_review_image_size', wire);
     notifyListeners();
   }
 
@@ -3102,6 +3204,26 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setSrsReviewShowIntervals(bool value) async {
     await setPref('srs_review_show_intervals', value);
+    notifyListeners();
+  }
+
+  // 复习页页头显示剩余卡数（新 / 学习 / 复习）。默认 true。
+  bool get srsReviewShowCounts =>
+      getPref('srs_review_show_counts', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewShowCounts(bool value) async {
+    await setPref('srs_review_show_counts', value);
+    notifyListeners();
+  }
+
+  // 复习卡面音频音量（0–1，手动点播与自动连播共用）。默认 1.0。
+  double get srsReviewVolume {
+    final Object? v = getPref('srs_review_volume', defaultValue: 1.0);
+    return v is num ? v.toDouble().clamp(0.0, 1.0) : 1.0;
+  }
+
+  Future<void> setSrsReviewVolume(double value) async {
+    await setPref('srs_review_volume', value.clamp(0.0, 1.0));
     notifyListeners();
   }
 
@@ -3432,6 +3554,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。默认 false = 无限循环（存量行为）。
+  /// 两条动图链（视频 cue、galgame 窗口）共用；见 `animatedLoopArgs`。
+  bool get miningAnimatedPlayOnce =>
+      getPref('mining_animated_play_once', defaultValue: false) as bool;
+
+  Future<void> setMiningAnimatedPlayOnce(bool value) async {
+    await setPref('mining_animated_play_once', value);
+    notifyListeners();
+  }
+
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       MiningAnimatedFormat.fromWireName(
           getPref('gal_mining_animated_format', defaultValue: null) as String?);
@@ -3565,6 +3697,32 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('collapse_dictionaries', !collapseDictionaries);
     notifyListeners();
   }
+
+  /// 制卡提示：成功 / 制卡中 / 已存入待发卡片的 toast 是否弹出（反馈 zNuGKLIhmT）。
+  /// 默认开 = 存量行为。见 [mineToastShown]。
+  bool get mineNoticeSuccess =>
+      getPref('mine_notice_success', defaultValue: true) as bool;
+
+  Future<void> setMineNoticeSuccess(bool value) async {
+    await setPref('mine_notice_success', value);
+    notifyListeners();
+  }
+
+  /// 制卡提示：查重拦下时的「重复卡片」toast 是否弹出（反馈 aK5wv0CnWf）。
+  bool get mineNoticeDuplicate =>
+      getPref('mine_notice_duplicate', defaultValue: true) as bool;
+
+  Future<void> setMineNoticeDuplicate(bool value) async {
+    await setPref('mine_notice_duplicate', value);
+    notifyListeners();
+  }
+
+  /// 按上面两个开关判断这条制卡结果 toast 该不该弹。
+  bool mineNoticeShown(MineToastStatus status) => mineToastShown(
+        status,
+        showSuccess: mineNoticeSuccess,
+        showDuplicate: mineNoticeDuplicate,
+      );
 
   // 对齐 Hoshi Reader Android 的 "Compact Glossaries"：释义列表由每条一行改成
   // inline + ` | ` 分隔的紧凑排版（popup.js createDictionaryBlock 的 compactCss）。
@@ -4820,6 +4978,39 @@ class PreferencesRepository extends ChangeNotifier
 
   bool get mangaChromeFloating =>
       getPref('manga_chrome_floating', defaultValue: true) as bool;
+
+  /// 漫画阅读器工具栏按钮布局（宽窗）。持久化键 `manga_control_layout`，空 / 坏值
+  /// 回出厂布局（与布局化之前的固定排布视觉等价）。
+  MangaControlLayout get mangaControlLayout => MangaControlLayout.decode(
+        getPref('manga_control_layout', defaultValue: '') as String,
+      );
+
+  Future<void> setMangaControlLayout(MangaControlLayout layout) async {
+    await setPref('manga_control_layout', layout.encode());
+    notifyListeners();
+  }
+
+  /// 漫画阅读器窄窗（手机竖屏）按钮布局。持久化键 `manga_control_layout_compact`；
+  /// 没存过窄窗布局但存过宽窗布局时沿用宽窗那份（与小说阅读器同一口径）。
+  MangaControlLayout get mangaCompactControlLayout {
+    final String compact =
+        getPref('manga_control_layout_compact', defaultValue: '') as String;
+    if (compact.trim().isNotEmpty) {
+      return MangaControlLayout.decode(
+        compact,
+        fallback: MangaControlLayout.compactDefaults,
+      );
+    }
+    final String wide =
+        getPref('manga_control_layout', defaultValue: '') as String;
+    if (wide.trim().isNotEmpty) return MangaControlLayout.decode(wide);
+    return MangaControlLayout.compactDefaults;
+  }
+
+  Future<void> setMangaCompactControlLayout(MangaControlLayout layout) async {
+    await setPref('manga_control_layout_compact', layout.encode());
+    notifyListeners();
+  }
 
   Future<void> setMangaChromeFloating(bool value) async {
     await setPref('manga_chrome_floating', value);

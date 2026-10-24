@@ -378,6 +378,7 @@ class RecommendedPackDownloadController {
         RecommendedPackDownloader(
           packDir: packDir,
           url: kRecommendedPackGoogleDriveDirectUrl,
+          sha256Hex: kRecommendedPackWholeFileSha256,
         );
     return downloader.download(
       progress: progress,

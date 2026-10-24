@@ -104,6 +104,8 @@ Future<void> _pumpReview(
           (Ref ref) => storeLoad ?? Future<SrsDbStore?>.value(store),
         ),
         srsCardAudioOutputProvider.overrideWithValue(audio),
+        // 用例经固定页头的按钮操作；悬浮顶栏（默认）见 srs_review_floating_chrome_test.dart。
+        srsReviewChromeFloatingProvider.overrideWithValue(false),
         srsCardFaceBuilderProvider.overrideWithValue((
           BuildContext context,
           SrsCardFace face,
@@ -206,15 +208,57 @@ void main() {
       settle: false,
     );
     await tester.pump();
-    expect(faces, isEmpty, reason: '牌组还在加载');
+    // 加载期间卡面平台视图先建着（空卡面，cardId 为空），但不显示任何卡。
+    Iterable<SrsCardFace> shown() =>
+        faces.where((SrsCardFace f) => f.cardId.isNotEmpty);
+    expect(faces, isNotEmpty, reason: '读库期间卡面已先建（与读库并行冷建 WebView）');
+    expect(shown(), isEmpty, reason: '牌组还在加载');
     // 用户等不及、直接返回：此前卸载时第一次初始化音频序列，ref.read 抛错、State 卡成僵尸。
     await _unmount(tester);
     expect(tester.takeException(), isNull);
     load.complete(store);
     await _settle(tester);
     expect(tester.takeException(), isNull);
-    expect(faces, isEmpty, reason: '离开后到达的卡不应再显示');
+    expect(shown(), isEmpty, reason: '离开后到达的卡不应再显示');
     expect(audio.played, isEmpty);
+  });
+
+  testWidgets('首张卡：卡面在读库期间先建，出卡后原地复用同一个卡面（不在数据之后冷建 WebView）', (
+    WidgetTester tester,
+  ) async {
+    final SrsDbStore store = await _openStore(tester);
+    await _addLapis(tester, store, '食べる');
+    final Completer<SrsDbStore?> load = Completer<SrsDbStore?>();
+    final List<SrsCardFace> faces = <SrsCardFace>[];
+    await _pumpReview(
+      tester,
+      store: store,
+      faces: faces,
+      audio: _RecordingAudio(),
+      storeLoad: load.future,
+      settle: false,
+    );
+    await tester.pump();
+    final Finder face = find.byType(SrsPlainCardFace);
+    expect(face, findsOneWidget, reason: '读库期间卡面（平台视图）已经在树上');
+    expect(
+      find.byKey(const ValueKey<String>('srs-card-loading')),
+      findsOneWidget,
+    );
+    final Element during = tester.element(face);
+
+    load.complete(store);
+    await _settle(tester);
+    expect(faces.last.cardId, isNotEmpty, reason: '首张卡已上屏');
+    expect(
+      identical(tester.element(face), during),
+      isTrue,
+      reason: '出卡只换内容，卡面元素（生产里是 WebView 平台视图）不重建',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-card-loading')),
+      findsNothing,
+    );
   });
 
   testWidgets('BUG-3547：复习中改学习步长 / 每日上限 / 名字，回来立即生效', (

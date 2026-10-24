@@ -5,6 +5,13 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 /// 一条播放位置：毫秒位置 + 最后更新时刻（epoch 毫秒，0 = 无记录 / 旧数据）。
 typedef PlaybackPosition = ({int positionMs, int updatedAtMs});
 
+/// 一轮 sweep 开头一次读齐的位置基线（assetKey → 位置毫秒）与「待确认」推送基线
+/// （见 [InterconnectPlaybackPositionSync.loadBaselineSnapshot]）。
+typedef PlaybackBaselineSnapshot = ({
+  Map<String, int> baselines,
+  Map<String, int> pending,
+});
+
 /// 互联播放位置的两类条目（BUG-3367）。
 enum PlaybackPositionKind { video, audiobook }
 
@@ -82,6 +89,64 @@ class InterconnectPlaybackPositionSync {
           ),
         );
     }
+  }
+
+  /// 从整表偏好快照读本端位置（与 [localPosition] 同口径，零 SQL）。
+  ///
+  /// [prefs] 是 sweep 开头一次读齐的 `preferences`（[FushiDatabase.getAllPrefs]）；
+  /// [rowPositionMs] 是视频的 `VideoBooks.lastPositionMs`（无行 = null，有声书忽略）。
+  /// 只用于 sweep 的「已收敛则跳过」判定；需要落地时一律回到 [localPosition] 重读。
+  PlaybackPosition localPositionFromPrefs(
+    String key, {
+    required Map<String, String> prefs,
+    int? rowPositionMs,
+  }) {
+    int readInt(String prefKey) {
+      final String? raw = prefs[prefKey];
+      return raw == null ? 0 : PrefCodec.decode<int>(raw, 0);
+    }
+
+    switch (kind) {
+      case PlaybackPositionKind.video:
+        return (
+          positionMs: rowPositionMs ?? readInt(videoRemotePositionPrefKey(key)),
+          updatedAtMs: readInt(videoRemotePositionAtPrefKey(key)),
+        );
+      case PlaybackPositionKind.audiobook:
+        return (
+          positionMs: readInt(audiobookPositionPrefKey(key)),
+          updatedAtMs: readInt(audiobookPositionAtPrefKey(key)),
+        );
+    }
+  }
+
+  /// 一次读齐本种类全部条目的基线与「待确认」基线（两条查询），供 sweep 在内存里
+  /// 判定 [isSettled]，免逐条 `getSyncBaseline`。
+  Future<PlaybackBaselineSnapshot> loadBaselineSnapshot() async => (
+    baselines: await _db.getSyncBaselinesForDimension(dimension),
+    pending: await _db.getSyncBaselinesForDimension(pendingDimension),
+  );
+
+  /// 两端已完全收敛、这一轮无事可做：位置与时间戳都相同、基线已等于该位置、
+  /// 没有「待确认」推送。
+  ///
+  /// 此时原路径是 [decide] → synced → [alignSynced]：不 PUT（时间戳相等）、不落
+  /// 本端（时间戳相等）、只把同一个值重写一遍基线并删一条不存在的待确认行——
+  /// 净效果为零，却是每条目每轮固定的读写。条件里任何一项不成立都
+  /// 不算收敛，调用方回到原路径逐条重读、判定、落地，语义不变。
+  static bool isSettled({
+    required PlaybackPosition local,
+    required PlaybackPosition remote,
+    required PlaybackBaselineSnapshot snapshot,
+    required String key,
+  }) {
+    if (snapshot.pending.containsKey(key)) return false;
+    if (local.positionMs != remote.positionMs ||
+        local.updatedAtMs != remote.updatedAtMs) {
+      return false;
+    }
+    final int recorded = local.positionMs < 0 ? 0 : local.positionMs;
+    return snapshot.baselines[key] == recorded;
   }
 
   /// host 端位置（host 无记录 → 0@0）。

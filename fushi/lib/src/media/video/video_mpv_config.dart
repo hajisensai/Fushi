@@ -48,6 +48,7 @@ class VideoMpvConfig {
     required this.hdrToneMapping,
     required this.hdrComputePeak,
     required this.rawConf,
+    this.volumeMax = kVideoVolumeMaxDefault,
   });
 
   /// 默认配置启用保守的内置高画质缩放；硬件解码默认交给 mpv 安全自动探测。
@@ -148,6 +149,11 @@ class VideoMpvConfig {
   /// 单文件循环。
   final bool loopFile;
 
+  /// 音量上限（百分比，mpv `volume-max`）：取值见 [kVideoVolumeMaxValues]，默认 100
+  /// = 不放大。调到 150 / 200 后音量滑条、滚轮、音量键与竖滑手势都能把音量推过
+  /// 100%，超出部分由 mpv 软件增益放大（响度不足的片源用；过高会削波失真）。
+  final int volumeMax;
+
   /// HDR→SDR 的色调映射曲线（mpv `tone-mapping`）。
   ///
   /// **这是 HDR 片源在 SDR 屏幕上的观感开关，不是 HDR 直通。** 本仓 Windows 侧走
@@ -202,6 +208,7 @@ class VideoMpvConfig {
     String? hdrToneMapping,
     String? hdrComputePeak,
     String? rawConf,
+    int? volumeMax,
   }) =>
       VideoMpvConfig(
         hwdec: hwdec ?? this.hwdec,
@@ -230,6 +237,7 @@ class VideoMpvConfig {
         hdrToneMapping: hdrToneMapping ?? this.hdrToneMapping,
         hdrComputePeak: hdrComputePeak ?? this.hdrComputePeak,
         rawConf: rawConf ?? this.rawConf,
+        volumeMax: volumeMax ?? this.volumeMax,
       );
 
   static String encode(VideoMpvConfig c) => jsonEncode(<String, dynamic>{
@@ -260,6 +268,7 @@ class VideoMpvConfig {
         'hdrToneMapping': c.hdrToneMapping,
         'hdrComputePeak': c.hdrComputePeak,
         'rawConf': c.rawConf,
+        'volumeMax': c.volumeMax,
       });
 
   static VideoMpvConfig decode(String? json) {
@@ -330,12 +339,21 @@ class VideoMpvConfig {
             ? peak
             : defaults.hdrComputePeak,
         rawConf: d['rawConf'] is String ? d['rawConf'] as String : '',
+        volumeMax: kVideoVolumeMaxValues.contains(d['volumeMax'])
+            ? d['volumeMax'] as int
+            : kVideoVolumeMaxDefault,
       );
     } catch (_) {
       return defaults;
     }
   }
 }
+
+/// 视频音量上限的默认值（百分比）：不放大。
+const int kVideoVolumeMaxDefault = 100;
+
+/// [VideoMpvConfig.volumeMax] 的合法取值（百分比）。mpv `volume-max` 下限就是 100。
+const List<int> kVideoVolumeMaxValues = <int>[100, 150, 200];
 
 /// mpv `tone-mapping` 的合法取值（本 app 暴露的子集）。
 const Set<String> kHdrToneMappingValues = <String>{
@@ -600,10 +618,11 @@ const String kAudioPassthroughCodecs = 'ac3,eac3,truehd,dts-hd';
 ///   `aspeed_process`），它按整帧丢弃 / 重复压缩帧来凑速度（af 手册原话「extremely
 ///   low quality」），听感断续卡顿，保音高也无从谈起。
 ///
-/// 所以直通只在「1 倍速、满音量、未静音」时生效；任一项不满足就下发空串让 mpv 本地
-/// 解码成 PCM，倍速 / 音量 / 静音照常工作，回到条件内再恢复直通（运行时改
+/// 所以直通只在「1 倍速、音量正好 100%、未静音」时生效；任一项不满足就下发空串让
+/// mpv 本地解码成 PCM，倍速 / 音量 / 静音照常工作，回到条件内再恢复直通（运行时改
 /// `audio-spdif` 会让 mpv 重建音频输出）。[outputVolume] 是**实际可听音量**（静音
-/// 时传 0），取值 0..100（本仓不做放大）。
+/// 时传 0），取值 0..[VideoMpvConfig.volumeMax]；超过 100 的放大同样是按采样乘增益，
+/// 对压缩码流无效，所以也退回本地解码。
 String resolveAudioSpdif({
   required bool passthrough,
   double playbackSpeed = 1.0,
@@ -611,7 +630,7 @@ String resolveAudioSpdif({
 }) {
   if (!passthrough) return '';
   if (playbackSpeed != 1.0) return '';
-  if (outputVolume < 100.0) return '';
+  if (outputVolume != 100.0) return '';
   return kAudioPassthroughCodecs;
 }
 
@@ -736,6 +755,9 @@ Map<String, String> buildMpvProperties(VideoMpvConfig config,
   // [resolveAudioChannels]；stereo/mono（用户显式强制）原样透传。
   out['audio-channels'] = resolveAudioChannels(config.audioChannels);
   out['audio-normalize-downmix'] = config.normalizeDownmix ? 'yes' : 'no';
+  // 音量上限：mpv 拒收超过 `volume-max` 的 `volume`，必须先于音量下发（[load] 里
+  // 本 map 在 setVolume 之前应用）。
+  out['volume-max'] = config.volumeMax.toString();
   // 直通只在 1 倍速、满音量、未静音时生效，否则本地解码（见 [resolveAudioSpdif]）。
   out['audio-spdif'] = resolveAudioSpdif(
     passthrough: config.audioPassthrough,

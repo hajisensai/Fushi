@@ -71,6 +71,7 @@ Future<T> withMaterializedMiningContext<T>(
       sentenceOffset: payload.sentenceOffset,
       source: miningSourceFromName(payload.source),
       sourceLink: payload.sourceLink,
+      sourceUrl: payload.sourceUrl,
       bookTitleTag: payload.bookTitleTag,
       collectionTag: payload.collectionTag,
       charPositionTag: payload.charPositionTag,

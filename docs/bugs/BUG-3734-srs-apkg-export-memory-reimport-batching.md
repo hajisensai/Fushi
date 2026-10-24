@@ -1,0 +1,20 @@
+## BUG-3734 · srs-apkg-export-memory-reimport-batching
+- **报告**：2026-10-23（SRS 后续任务清单 F：apkg 导出占内存、已存在笔记重导入逐条开事务、新格式整块解 zstd）
+- **真实性**：✅ 真 bug（大库实测见下）。根因（行号均为基线 `2f7f28ea63`，即 hajisensai/Fushi#2472 头；按文件流式打开包是 #2464 已做的，不在本条）：
+  - 导出整包在内存：`packages/fushi_engine/lib/srs/apkg/srs_apkg_export.dart:391-419` 把集合 SQLite 读回内存、全部媒体逐个 `addFile` 进 `Archive`，`ZipEncoder().encode` 出整包后再 `Uint8List.fromList` 复制一份，`exportAnkiPackageFile`（:85）才 `writeAsBytes`；fushi-ext 的全部日志先攒成 `List<Map>` 再整份 `jsonEncode`。app 侧 `fushi/lib/src/srs/srs_import_entry.dart` 拿到字节后又写一遍暂存文件。
+  - 新格式整段解 zstd：`srs_anki_package.dart:283-286` 把流式解出的 collection.anki21b 整份 `readAsBytesSync` 交 `ffsrs_zstd_decompress`（输入输出都在内存），再整份写回。
+  - 已存在笔记重导入逐条往返：`srs_apkg_import.dart:1421` 每条已有笔记 `store.note`，:1561 起每张卡 `cardRow` / `entityEdits` / `history` 各查一次库；内容更新 `editFields`（:1488）、牌组 `moveCard`（:1575）、暂停 `setSuspended`（:1580）各自 `runExclusive` + `_emit` 一个事务。
+  - 往返测试顺带查出：导出把笔记数字 id 写成 `SrsIds.ankiNumericId(n.id)`（`srs_apkg_export.dart:231`，与 AnkiConnect 共用的 53 位哈希），导入却把它当创建时刻（`srs_apkg_import.dart:1445` `createdAt: n['id']`）——导出后导入另一份库，笔记创建时刻变成公元五万年左右。
+- **[x] ① 已修复** — 提交见 PR：
+  - 导出：`exportAnkiPackageFile` 用 `ZipFileEncoder` 边生成边写 `<file>.part`（成功后改名）；集合 SQLite 与 fushi-ext 从临时文件分块原生 deflate（`addFileNativeDeflate`），媒体读一个写一个；fushi-ext 日志逐条流式写临时文件（`_ExtWriter`，字节与原 `jsonEncode` 相同）。`exportAnkiPackage`（字节）改为写临时文件再读回一份。app 导出（`buildSrsAnkiExport`）直接写分享 / 另存用的暂存文件。
+  - 新格式：`native/fushi_fsrs` 新增 `ffsrs_zstd_decompress_file`（文件到文件流式解码，一次 FFI 调用，返回 `ZSTD_FILE_*` 码，区分「内核不可用」与「数据非法」）；`SrsAnkiPackage.openFile` 必填 `zstdFile`，`importAnkiPackageFile` 新增 `zstdDecompressFile`（缺省：注入了内存版解码就沿用它，否则用排程内核）。
+  - 重导入：来源笔记按 200 条一块，块里本机已有的笔记 / 卡片缓存行 / 卡片修改记录 / 历史各成批预读一次（新增 `SrsDbStore.entityEditsMany`）；内容、牌组、暂停的修改改为 `newEditDrafts(current: …)` 草稿，与新笔记同批 `importDrafts` 落库。恢复已删笔记（少见）仍立即落库并刷新该笔记卡片的缓存行（它改笔记首选牌组，跟着笔记走的卡要读落库后的真值）。
+  - 创建时刻：fushi-ext 新增 `noteCreatedAt`（guid → 毫秒），导入优先用它；没有时照旧用数字 id（Anki 自己的包里两者一致）。数字 id 不改：它是全仓与 AnkiConnect 共用的约定。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/apkg/srs_apkg_stream_roundtrip_test.dart`（导出到文件→按文件导入另一份库逐字段一致：笔记字段 / 标签 / 首选牌组 / 创建时刻 / 出处、卡片缓存行全部列、日志、牌组设置、媒体字节；字节版与文件版包内容一致；300 条已有笔记全量更新重导入事务数 < 20、再导一遍零修改记录；anki21b 经排程内核文件到文件解码与旧格式结果一致、截断帧报 corrupt、内核不可用报 needsKernel）；`native/fushi_fsrs/src/lib.rs` `zstd_file_roundtrip`；`srs_apkg_streaming_open_test.dart` / `fushi/test/srs/srs_import_entry_test.dart` 跟随新签名。基准 `packages/fushi_engine/test/srs/apkg/srs_apkg_memory_bench_test.dart`（手动跑，每段单独进程）。
+- **备注**：
+  - 实测（Windows，库在临时文件上走后台 isolate；峰值 = 段内进程 RSS 峰值 − 段开始 RSS，另一 isolate 每 2 ms 采样；每段单独一个进程，包 / 库由 prepare 段预先缓存）：
+    - 导出：2000 笔记 + 800×512 KB 媒体（包 402 MB）+1683 MB → +82 MB；2 万笔记 + 300 媒体 +1115 MB → +373 MB（剩下的是 BUG-3543 的成批预读：范围内全部笔记 / 卡片历史的行对象）。耗时持平。
+    - 重导入同一个包（全部跳过）：2000 笔记 6.3 s → 2.1 s、SELECT 20041 → 211；2 万笔记 54.6 s → 13.2 s、SELECT 200329 → 2029；峰值持平（主要是 fushi-ext 整份 `jsonDecode`，未动）。
+    - 重导入且 300 条全部更新：事务 903 → 4，SELECT 14711 → 100，批写 2700 → 12。
+    - 新格式（集合含 300 MB 填充）：+1286 / +1225 MB → +64 / +70 MB；小集合两边持平。
+  - 仍整份在内存的：导出时范围内全部笔记 / 卡片历史；导入时 fushi-ext 整份解析。apkg 本身不记笔记的首选牌组，导入取首张卡的牌组（格式限制）。

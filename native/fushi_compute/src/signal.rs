@@ -652,10 +652,13 @@ pub struct SnapParams {
     pub edge_min_voice_ms: i64,
     pub edge_lead_ms: i64,
     pub edge_tail_ms: i64,
+    /// 切点的已知偏差补偿：选谷时以「token 推算的切点 + 此值」为中心（RNN-T 发射
+    /// 系统性偏早，切点跟着偏早）。
+    pub cut_bias_ms: i64,
 }
 
 /// 参数数组长度。顺序即 [SnapParams] 的字段顺序。
-pub const SNAP_PARAM_COUNT: usize = 16;
+pub const SNAP_PARAM_COUNT: usize = 17;
 
 /// 每条 cue 在 i64 数组里占的槽数：`[start, end, audioFileIndex, hasTokens, firstOffset, lastOffset]`。
 pub const SNAP_CUE_STRIDE: usize = 6;
@@ -682,6 +685,7 @@ impl SnapParams {
             edge_min_voice_ms: int(p[13])?,
             edge_lead_ms: int(p[14])?,
             edge_tail_ms: int(p[15])?,
+            cut_bias_ms: int(p[16])?,
         };
         // Dart：`~/ frameMs` 遇 0 抛异常；clamp 的上下限反了抛 ArgumentError。
         let ok = params.frame_ms > 0
@@ -748,6 +752,15 @@ const FLOOR_SPAN_FRAMES: usize = 750;
 
 /// 每帧门限：按 250 帧一块，取前后 750 帧内已知电平的第 10 百分位 + margin，夹到上下限。
 fn thresholds(db: &[i8], p: &SnapParams) -> Vec<f64> {
+    thresholds_with(
+        db,
+        p.floor_margin_db,
+        p.min_threshold_db,
+        p.max_threshold_db,
+    )
+}
+
+fn thresholds_with(db: &[i8], floor_margin_db: f64, min_db: f64, max_db: f64) -> Vec<f64> {
     let n = db.len();
     let mut out = vec![0.0f64; n];
     let mut b0 = 0usize;
@@ -763,7 +776,7 @@ fn thresholds(db: &[i8], p: &SnapParams) -> Vec<f64> {
                 count += 1;
             }
         }
-        let mut t = p.max_threshold_db;
+        let mut t = max_db;
         if count > 0 {
             // Dart：`((len - 1) * 10 / 100).round()`——先整数乘，再浮点除。
             let k = (((count - 1) * 10) as f64 / 100.0).round() as usize;
@@ -776,11 +789,7 @@ fn thresholds(db: &[i8], p: &SnapParams) -> Vec<f64> {
                     break;
                 }
             }
-            t = dart_clamp(
-                floor as f64 + p.floor_margin_db,
-                p.min_threshold_db,
-                p.max_threshold_db,
-            );
+            t = dart_clamp(floor as f64 + floor_margin_db, min_db, max_db);
         }
         let end = n.min(b0 + FLOOR_BLOCK_FRAMES);
         out[b0..end].iter_mut().for_each(|x| *x = t);
@@ -817,7 +826,7 @@ fn snap_cues(cues: &mut [SnapCue], db: &[i8], p: &SnapParams) -> i64 {
         if gap < 0 || gap > p.max_gap_ms {
             continue;
         }
-        let b = (cur.end + next.start) / 2;
+        let b = (cur.end + next.start) / 2 + p.cut_bias_ms;
         let f0 = ((b - p.window_ms) / p.frame_ms).max(0);
         let f1 = ((b + p.window_ms) / p.frame_ms).min(n);
         let mut best: i64 = -1;
@@ -1047,6 +1056,222 @@ pub unsafe extern "C" fn ffc_signal_cue_refine_edges(
     })
 }
 
+/// `CueEnergySnapper.displayMargins` 的参数，按 [DISPLAY_PARAM_COUNT] 个 f64 传。
+pub struct DisplayParams {
+    pub frame_ms: i64,
+    pub floor_margin_db: f64,
+    pub min_threshold_db: f64,
+    pub max_threshold_db: f64,
+    pub min_voice_ms: i64,
+    pub slow_cps: f64,
+    pub fast_cps: f64,
+    /// 起点提前量，按档 `[慢, 正常, 快]`。
+    pub head_ms: [i64; 3],
+    /// 收声后续显的基础量，按档 `[慢, 正常, 快]`。
+    pub tail_ms: [i64; 3],
+    pub gap_tail_ratio: f64,
+    pub tail_cap_ms: i64,
+    pub glue_ms: i64,
+    pub tail_safety_ms: i64,
+}
+
+/// 参数数组长度：`frameMs, floorMarginDb, minThresholdDb, maxThresholdDb, minVoiceMs,
+/// slowCps, fastCps, headSlowMs, headNormalMs, headFastMs, tailSlowMs, tailNormalMs,
+/// tailFastMs, gapTailRatio, tailCapMs, glueMs, tailSafetyMs`。
+pub const DISPLAY_PARAM_COUNT: usize = 17;
+
+/// 每条 cue 的槽数：`[startMs, endMs, audioFileIndex, 正文字数]`。
+pub const DISPLAY_CUE_STRIDE: usize = 4;
+
+impl DisplayParams {
+    fn from_slice(p: &[f64]) -> Option<Self> {
+        let int = |v: f64| -> Option<i64> {
+            (v.is_finite() && v.fract() == 0.0 && v.abs() < 9.0e15).then_some(v as i64)
+        };
+        let num = |v: f64| -> Option<f64> { v.is_finite().then_some(v) };
+        let params = Self {
+            frame_ms: int(p[0])?,
+            floor_margin_db: num(p[1])?,
+            min_threshold_db: num(p[2])?,
+            max_threshold_db: num(p[3])?,
+            min_voice_ms: int(p[4])?,
+            slow_cps: num(p[5])?,
+            fast_cps: num(p[6])?,
+            head_ms: [int(p[7])?, int(p[8])?, int(p[9])?],
+            tail_ms: [int(p[10])?, int(p[11])?, int(p[12])?],
+            gap_tail_ratio: num(p[13])?,
+            tail_cap_ms: int(p[14])?,
+            glue_ms: int(p[15])?,
+            tail_safety_ms: int(p[16])?,
+        };
+        let ok = params.frame_ms > 0
+            && params.min_voice_ms >= 0
+            && params.min_threshold_db <= params.max_threshold_db
+            && params.slow_cps <= params.fast_cps;
+        ok.then_some(params)
+    }
+}
+
+/// `[from_ms, to_ms)` 内第一段有声的起点与最后一段有声的终点（毫秒）；一段至少
+/// `min_voice` 帧连续有声才算。
+fn voice_span(
+    voiced: &dyn Fn(i64) -> bool,
+    n: i64,
+    from_ms: i64,
+    to_ms: i64,
+    frame_ms: i64,
+    min_voice: i64,
+) -> Option<(i64, i64)> {
+    let f0 = (from_ms / frame_ms).max(0);
+    let f1 = (to_ms / frame_ms).min(n);
+    let mut onset = None;
+    let mut run = 0i64;
+    for f in f0..f1 {
+        run = if voiced(f) { run + 1 } else { 0 };
+        if run >= min_voice {
+            onset = Some((f - run + 1) * frame_ms);
+            break;
+        }
+    }
+    let onset = onset?;
+    run = 0;
+    let mut f = f1 - 1;
+    while f >= f0 {
+        run = if voiced(f) { run + 1 } else { 0 };
+        if run >= min_voice {
+            return Some((onset, (f + run) * frame_ms));
+        }
+        f -= 1;
+    }
+    None
+}
+
+/// 跟读显示余量：按 cue 有声跨度的字速分慢 / 正常 / 快三档，起点在开口前、终点在
+/// 收声后各留一段（快档几乎不留，慢档前后一两百毫秒），句间停顿越长尾巴越宽
+/// （`gapTailRatio × (停顿 − glue)`，封顶 `tailCapMs`；快档不吃这一项）。
+///
+/// - 只外扩、不内收：吸附 / 修边给出的边界已经贴声音，这里只决定要不要多留；
+/// - 与前一条的空地 ≤ `glueMs`（连读 / 窄缝）不提前起点，与后一条停顿 ≤ `glueMs` 不延尾；
+/// - 起点不早于前一条（已处理后的）终点 + 1 ms，终点不晚于后一条起点 − `tailSafetyMs`；
+///   跨音频文件的邻居不参与；
+/// - 没有有声帧（全静音）或没有正文字数的 cue 不动。
+///
+/// 返回动过的边数。
+fn display_margins(raw: &mut [i64], db: &[i8], p: &DisplayParams) -> i64 {
+    let n = db.len() as i64;
+    let count = raw.len() / DISPLAY_CUE_STRIDE;
+    if n == 0 || count == 0 {
+        return 0;
+    }
+    let threshold = thresholds_with(
+        db,
+        p.floor_margin_db,
+        p.min_threshold_db,
+        p.max_threshold_db,
+    );
+    let voiced = |f: i64| -> bool {
+        let v = db[f as usize];
+        v == 0 || (v as f64) >= threshold[f as usize]
+    };
+    let min_voice = ceil_div_f64(p.min_voice_ms.max(1), p.frame_ms);
+    let orig_starts: Vec<i64> = (0..count).map(|i| raw[i * DISPLAY_CUE_STRIDE]).collect();
+    let mut moved = 0i64;
+    for i in 0..count {
+        let at = i * DISPLAY_CUE_STRIDE;
+        let (start, end, file, chars) = (raw[at], raw[at + 1], raw[at + 2], raw[at + 3]);
+        let Some((on, off)) = voice_span(&voiced, n, start, end, p.frame_ms, min_voice) else {
+            continue;
+        };
+        if off <= on || chars <= 0 {
+            continue;
+        }
+        let cps = chars as f64 / ((off - on) as f64 / 1000.0);
+        let tier = if cps >= p.fast_cps {
+            2
+        } else if cps >= p.slow_cps {
+            1
+        } else {
+            0
+        };
+        let prev_end = (i > 0 && raw[at - DISPLAY_CUE_STRIDE + 2] == file)
+            .then(|| raw[at - DISPLAY_CUE_STRIDE + 1]);
+        let room = prev_end.map_or(i64::MAX, |e| on - e);
+        if room > p.glue_ms {
+            let floor = prev_end.map_or(0, |e| e + 1);
+            let s = start.min((on - p.head_ms[tier]).max(floor));
+            if s < start {
+                raw[at] = s;
+                moved += 1;
+            }
+        }
+        let next_start =
+            (i + 1 < count && raw[at + DISPLAY_CUE_STRIDE + 2] == file).then(|| orig_starts[i + 1]);
+        let gap = next_start.map_or(i64::MAX, |s| s - off);
+        if gap > p.glue_ms {
+            let tail = if tier == 2 {
+                p.tail_ms[2]
+            } else {
+                let by_gap = match next_start {
+                    None => p.tail_cap_ms as f64,
+                    Some(_) => p.gap_tail_ratio * (gap - p.glue_ms) as f64,
+                };
+                (p.tail_ms[tier] as f64)
+                    .max(by_gap)
+                    .min(p.tail_cap_ms as f64)
+                    .round() as i64
+            };
+            let ceiling = next_start.map_or(i64::MAX, |s| s - p.tail_safety_ms);
+            let e = end.max((off + tail).min(ceiling));
+            if e > end {
+                raw[at + 1] = e;
+                moved += 1;
+            }
+        }
+    }
+    moved
+}
+
+/// 有声书 cue 跟读显示余量（`CueEnergySnapper.displayMargins`），整本书一次调用。
+///
+/// - `energy`：同 [ffc_signal_cue_energy_snap]；
+/// - `cues`：`cue_count` × [DISPLAY_CUE_STRIDE] 个 i64，按时间排序，就地改写起止；
+/// - `params`：[DISPLAY_PARAM_COUNT] 个 f64（顺序见常量注释）；整数参数必须是精确整数、
+///   `frameMs > 0`、门限上下限不颠倒、`slowCps <= fastCps`，否则
+///   [INVALID_ARGUMENT](status::INVALID_ARGUMENT)；
+/// - `*out_moved`：动过的边数。
+///
+/// # Safety
+/// 各指针按上面的长度可读 / 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_signal_cue_display_margins(
+    energy: *const i8,
+    energy_len: usize,
+    cues: *mut i64,
+    cue_count: usize,
+    params: *const f64,
+    out_moved: *mut i64,
+) -> i32 {
+    guard(|| {
+        if out_moved.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let Some(db) = slice_in(energy, energy_len) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Some(raw) = slice_out(cues, cue_count * DISPLAY_CUE_STRIDE) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Some(param_slice) = slice_in(params, DISPLAY_PARAM_COUNT) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Some(p) = DisplayParams::from_slice(param_slice) else {
+            return status::INVALID_ARGUMENT;
+        };
+        *out_moved = display_margins(raw, db, &p);
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1189,7 +1414,7 @@ mod tests {
     fn params() -> Vec<f64> {
         vec![
             20.0, 400.0, 600.0, 120.0, 0.5, 80.0, 40.0, 500.0, 16.0, -50.0, -30.0, 200.0, 600.0,
-            60.0, 150.0, 80.0,
+            60.0, 150.0, 80.0, 0.0,
         ]
     }
 
@@ -1199,6 +1424,90 @@ mod tests {
             e[a / 20..b / 20].iter_mut().for_each(|v| *v = -70);
         }
         e
+    }
+
+    fn display_params() -> Vec<f64> {
+        vec![
+            20.0, 16.0, -50.0, -30.0, 60.0, 5.5, 7.0, 120.0, 80.0, 40.0, 180.0, 100.0, 20.0, 0.18,
+            250.0, 400.0, 50.0,
+        ]
+    }
+
+    fn margins(e: &[i8], cues: &mut [i64]) -> i64 {
+        let mut moved = 0i64;
+        let p = display_params();
+        unsafe {
+            assert_eq!(
+                ffc_signal_cue_display_margins(
+                    e.as_ptr(),
+                    e.len(),
+                    cues.as_mut_ptr(),
+                    cues.len() / DISPLAY_CUE_STRIDE,
+                    p.as_ptr(),
+                    &mut moved
+                ),
+                status::OK
+            );
+        }
+        moved
+    }
+
+    #[test]
+    fn display_margins_by_tempo() {
+        // 有声 [1000, 3000) 与 [5000, 7000)，其余静音。
+        let e = energy(9000, &[(0, 1000), (3000, 5000), (7000, 9000)]);
+        // 慢：10 字 / 2 s = 5 cps → 头 120；尾 max(180, 0.18 × (2000 − 400) = 288) 封顶 250。
+        let mut slow = vec![1000i64, 3080, 0, 10, 5000, 7080, 0, 10];
+        assert_eq!(margins(&e, &mut slow), 4);
+        assert_eq!(&slow[..2], &[880, 3250]);
+        // 第二条后面没有邻居：尾按封顶 250。
+        assert_eq!(&slow[4..6], &[4880, 7250]);
+        // 快：20 字 / 2 s = 10 cps → 头 40、尾 20（只外扩：原终点 3080 更晚，不动）。
+        let mut fast = vec![1000i64, 3080, 0, 20, 5000, 7080, 0, 20];
+        margins(&e, &mut fast);
+        assert_eq!(&fast[..2], &[960, 3080]);
+        // 连读：停顿只有 300 ms → 前条不延尾、后条不提前。
+        let e = energy(9000, &[(0, 1000), (3000, 3300), (5300, 9000)]);
+        let mut glued = vec![1000i64, 3000, 0, 10, 3300, 5300, 0, 10];
+        margins(&e, &mut glued);
+        assert_eq!(glued[1], 3000);
+        assert_eq!(glued[4], 3300);
+    }
+
+    #[test]
+    fn display_margins_never_cross_neighbours_or_files() {
+        let e = energy(9000, &[(0, 1000), (3000, 3600), (5600, 9000)]);
+        // 停顿 500 ms：尾 180，且不越过下一条起点 − 50；后条提前也不压前条新终点。
+        let mut cues = vec![1000i64, 3000, 0, 10, 3500, 5600, 0, 10];
+        margins(&e, &mut cues);
+        assert_eq!(cues[1], 3180);
+        assert_eq!(cues[4], 3480);
+        // 不同文件的邻居不参与：尾按「后面没人」封顶。
+        let mut cross = vec![1000i64, 3000, 0, 10, 3500, 5600, 1, 10];
+        margins(&e, &mut cross);
+        assert_eq!(cross[1], 3250);
+    }
+
+    #[test]
+    fn display_margins_rejects_bad_params() {
+        let e = energy(3000, &[]);
+        let mut cues = vec![0i64, 2000, 0, 10];
+        let mut moved = 0i64;
+        let mut p = display_params();
+        p[5] = 8.0; // slowCps > fastCps
+        unsafe {
+            assert_eq!(
+                ffc_signal_cue_display_margins(
+                    e.as_ptr(),
+                    e.len(),
+                    cues.as_mut_ptr(),
+                    1,
+                    p.as_ptr(),
+                    &mut moved
+                ),
+                status::INVALID_ARGUMENT
+            );
+        }
     }
 
     #[test]

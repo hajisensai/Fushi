@@ -5,7 +5,7 @@ part of '../video_fushi_page.dart';
 const double _kVideoWebPageBarHeight = 52;
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
-/// 截图 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；音轨只在站点上报了音轨时画
+/// 截图 / 识别画面文字 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；音轨只在站点上报了音轨时画
 /// （[hasSiteAudioTracks]，目前只有 Netflix）；章节按钮交给通用门控（站点给了片头片尾标记才
 /// 有章节）。纯函数，控制条门控 `_shouldRenderControlItem` 与测试同源调用。
 @visibleForTesting
@@ -17,6 +17,7 @@ bool videoWebBackendSupportsControlItem(
     case VideoControlItem.frameBackward:
     case VideoControlItem.frameForward:
     case VideoControlItem.screenshot:
+    case VideoControlItem.ocrFrame:
     case VideoControlItem.clipExport:
     case VideoControlItem.danmaku:
       return false;
@@ -88,12 +89,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     final WebVideoSite? site = widget.webSite;
     if (site != null) {
       unawaited(
-        Navigator.of(context).pushReplacement(
-          adaptivePageRoute<void>(
-            context: context,
-            builder: (_) => FushiWebBrowserPage(initialUrl: site.url),
-          ),
-        ),
+        Navigator.of(
+          context,
+        ).pushReplacement(fushiWebBrowserRoute(context, site.url)),
       );
       return;
     }

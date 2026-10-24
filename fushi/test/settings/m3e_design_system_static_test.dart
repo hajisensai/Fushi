@@ -738,6 +738,20 @@ class AnotherPopupPart {
         'roles and label sizes — same reviewed exception class as '
         'fushi_material_components / settings_shared.';
     const Map<String, String> allowedFiles = <String, String>{
+      'lib/src/pages/implementations/srs/srs_field_editors.dart':
+          'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
+      'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
+          'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
+      'lib/src/utils/adaptive/nav_overflow/nav_dial_bar.dart':
+          'Hand-drawn dial nav bar: tick marks and the knob are geometry derived from the dial radius, not card/container chrome (panel uses FushiM3eShape).',
+      'lib/src/utils/adaptive/nav_overflow/nav_drum_bar.dart':
+          'Hand-drawn drum nav bar: row radius follows the drum perspective scale per row; the 2dp indicator bar is a glyph, not chrome.',
+      'lib/src/utils/adaptive/nav_overflow/nav_fan_bar.dart':
+          'Fan nav bar: card faces use FushiM3eShape.smallRadius; the remaining 4dp radius is the current-item indicator glyph.',
+      'lib/src/utils/adaptive/nav_overflow/nav_shelf_bar.dart':
+          'Bookshelf nav bar: spine width/label size are auto-fitted to the spine geometry (text must fit the drawn spine); 2dp/9dp radii are spine bands and badge, panel uses tokens.',
+      'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
+          'Apple design-system sidebar/tab strip: radii follow the iOS/macOS sidebar selection and tab-pill metrics (Apple branch, not M3E).',
       'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
       'lib/src/utils/components/fushi_material_components.dart':
@@ -1313,6 +1327,28 @@ class AnotherPopupPart {
     // 得到，因此本轮零红。它不是「以后再收窄」的占位——名单里的每个 token 从现在起
     // 都必须真实存在，删一个就红。
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
+      'lib/src/pages/implementations/srs/srs_field_editors.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/adaptive/nav_overflow/nav_dial_bar.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/utils/adaptive/nav_overflow/nav_drum_bar.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/utils/adaptive/nav_overflow/nav_fan_bar.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/utils/adaptive/nav_overflow/nav_shelf_bar.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart': <String>{
+        'BorderRadius.circular(',
+      },
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
         'fontSize:',

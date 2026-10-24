@@ -20,19 +20,21 @@ void main() {
 
   test('路径穿越闸门只有一处实现', () {
     expect(
-      RegExp(r'shelf\.Response\? _rejectUnsafeAssetId\(')
-          .allMatches(src)
-          .length,
+      RegExp(
+        r'shelf\.Response\? _rejectUnsafeAssetId\(',
+      ).allMatches(src).length,
       1,
       reason: '闸门必须唯一；再出现第二份实现就意味着有人又抄了一遍',
     );
     // 除闸门自身与视频域的两处专用校验外，不得再有裸的 `..` 判断。
-    final int dotDotChecks =
-        RegExp(r"contains\('\.\.'\)").allMatches(src).length;
+    final int dotDotChecks = RegExp(
+      r"contains\('\.\.'\)",
+    ).allMatches(src).length;
     expect(
       dotDotChecks,
       3,
-      reason: '预期恰好 3 处：_rejectUnsafeAssetId 自身 + 视频 id 的两处专用校验。'
+      reason:
+          '预期恰好 3 处：_rejectUnsafeAssetId 自身 + 视频 id 的两处专用校验。'
           '多出来就是有人在新端点里手抄了穿越判断，请改调 _rejectUnsafeAssetId',
     );
   });
@@ -44,9 +46,12 @@ void main() {
       "'displayName'",
       "'bookKey'",
     ]) {
+      // 容忍 dart format 把实参拆成多行（`_rejectUnsafeAssetId(\n  name,\n  'x',\n)`）。
       expect(
         src.contains('_rejectUnsafeAssetId($label)') ||
-            RegExp('_rejectUnsafeAssetId\\([^,]+, $label\\)').hasMatch(src),
+            RegExp(
+              '_rejectUnsafeAssetId\\(\\s*[^,]+,\\s*$label,?\\s*\\)',
+            ).hasMatch(src),
         isTrue,
         reason: '$label 域必须经共享闸门校验资产名',
       );
@@ -55,16 +60,17 @@ void main() {
 
   test('资产包 GET/PUT/DELETE 骨架只有一处实现，四个域都走它', () {
     expect(
-      RegExp(r'Future<shelf\.Response> _serveAssetPackage\(')
-          .allMatches(src)
-          .length,
+      RegExp(
+        r'Future<shelf\.Response> _serveAssetPackage\(',
+      ).allMatches(src).length,
       1,
       reason: '资产包端点骨架必须唯一',
     );
     expect(
       RegExp(r'return _serveAssetPackage\(').allMatches(src).length,
       4,
-      reason: '词典 / 书 / 本地音频 / 有声书四域都必须走共享骨架；'
+      reason:
+          '词典 / 书 / 本地音频 / 有声书四域都必须走共享骨架；'
           '新增媒体域也应走它，而不是再抄一份 switch',
     );
   });
@@ -73,24 +79,42 @@ void main() {
     final int start = src.indexOf('Future<shelf.Response> _serveAssetPackage(');
     expect(start, isNonNegative);
     final int end = src.indexOf(
-        'Future<shelf.Response> _handleLibraryDictionaries(', start);
+      'Future<shelf.Response> _handleLibraryDictionaries(',
+      start,
+    );
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
 
-    expect(body.contains('ExportPackageCache.etagFor(file)'), isTrue,
-        reason: '包下载必须带 ETag 作 If-Range 验证器，否则续传会拼错字节');
-    expect(body.contains('_exportCache.obtain('), isTrue,
-        reason: '包导出必须经进程级缓存（否则每次请求重新打包）');
-    expect(body.contains('tmpDir.deleteSync(recursive: true)'), isTrue,
-        reason: '上传临时目录必须在 finally 里清理，否则每次导入泄漏一个目录');
-    expect(body.contains('} finally {'), isTrue,
-        reason: '临时目录清理必须在 finally，不能只在成功路径');
+    expect(
+      body.contains('ExportPackageCache.etagFor(file)'),
+      isTrue,
+      reason: '包下载必须带 ETag 作 If-Range 验证器，否则续传会拼错字节',
+    );
+    expect(
+      body.contains('_exportCache.obtain('),
+      isTrue,
+      reason: '包导出必须经进程级缓存（否则每次请求重新打包）',
+    );
+    // 清理改成 async delete（BUG-3756：host 路径上不留同步文件 IO），约束本身不变。
+    expect(
+      body.contains('await tmpDir.delete(recursive: true)'),
+      isTrue,
+      reason: '上传临时目录必须在 finally 里清理，否则每次导入泄漏一个目录',
+    );
+    expect(
+      body.contains('} finally {'),
+      isTrue,
+      reason: '临时目录清理必须在 finally，不能只在成功路径',
+    );
   });
 
   test('视频域按设计不接入共享闸门（视频 id 合法含 /）', () {
     // 视频 bookUid 形如 `video/xxx`，走共享闸门会把全部视频端点判成 403。
-    expect(src.contains(r'_rejectUnsafeAssetId(videoId'), isFalse,
-        reason: '视频 id 合法含 /，不得接入禁止 / 的资产闸门');
+    expect(
+      src.contains(r'_rejectUnsafeAssetId(videoId'),
+      isFalse,
+      reason: '视频 id 合法含 /，不得接入禁止 / 的资产闸门',
+    );
     expect(src.contains('_extractVideoId'), isTrue, reason: '视频 id 有自己的专用校验');
   });
 }

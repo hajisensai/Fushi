@@ -113,6 +113,8 @@ Block object keys:
 - "size": ${_enumList(SrsVisualSize.values)} (display = huge headword, small = notes)
 - "align": ${_enumList(SrsVisualAlign.values)}
 - "bold": true/false
+- "italic": true/false
+- "color": optional custom text colour "#rrggbb" (overrides accent tone)
 - "tone": ${_enumList(SrsVisualTone.values)} (accent = theme colour)
 - "filter" (field blocks): ${_enumList(SrsVisualFilter.values)}
   - furigana: field holds 漢字[かな] markup, show readings above kanji
@@ -174,6 +176,8 @@ List<Map<String, Object?>> _blocksForAi(List<SrsVisualBlock> blocks) =>
           'size': x.size.name,
           'align': x.align.name,
           if (x.bold) 'bold': true,
+          if (x.italic) 'italic': true,
+          if (x.color != null) 'color': x.color,
           if (x.tone != SrsVisualTone.normal) 'tone': x.tone.name,
           if (x.filter != SrsVisualFilter.plain) 'filter': x.filter.name,
           if (x.boxed) 'boxed': true,
@@ -252,6 +256,9 @@ List<SrsVisualBlock>? _parseSide(
             _enumFrom(SrsVisualAlign.values, item['align']) ??
             SrsVisualAlign.center,
         bold: _bool(item['bold']) ?? false,
+        italic: _bool(item['italic']) ?? false,
+        // 只认 #rgb / #rrggbb，其余（含可能逃出 CSS 声明的字符）丢弃。
+        color: srsVisualColorOrNull(item['color']),
         tone:
             _enumFrom(SrsVisualTone.values, item['tone']) ??
             SrsVisualTone.normal,

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:fushi/src/sync/onedrive_upload_session.dart';
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
 import 'package:fushi/src/sync/sync_asset_range_reader.dart';
@@ -370,6 +371,18 @@ class OneDriveSyncBackend extends SyncBackend
     SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
+    if (fileLength > kOneDriveSimpleUploadMaxBytes) {
+      // 大文件（有声书包 / 视频 / 词典包）走可续传上传会话：单次长 PUT 一断就整份
+      // 作废、下轮同步从头重传（BUG-3690）。
+      final String uploadUrl = await _createUploadSession(folderId, fileName);
+      await uploadFileToOneDriveSession(
+        client: await obtainSyncHttpClient(),
+        uploadUrl: Uri.parse(uploadUrl),
+        file: file,
+        onProgress: onProgress,
+      );
+      return;
+    }
     final request = http.StreamedRequest(
       'PUT',
       Uri.parse(
@@ -590,6 +603,24 @@ class OneDriveSyncBackend extends SyncBackend
       bytes,
       contentType: 'application/json',
     );
+  }
+
+  /// `createUploadSession`：覆盖同名文件（与简单上传 `PUT :/content` 同语义）。
+  Future<String> _createUploadSession(String folderId, String fileName) async {
+    final resp = await _graphPost(
+      '/me/drive/items/$folderId:/${Uri.encodeComponent(fileName)}:/createUploadSession',
+      <String, dynamic>{
+        'item': <String, dynamic>{
+          '@microsoft.graph.conflictBehavior': 'replace',
+        },
+      },
+    );
+    final json = jsonDecode(resp.body) as Map<String, dynamic>;
+    final String? uploadUrl = json['uploadUrl'] as String?;
+    if (uploadUrl == null || uploadUrl.isEmpty) {
+      throw SyncBackendError('createUploadSession returned no uploadUrl');
+    }
+    return uploadUrl;
   }
 
   Future<void> _deleteItem(String fileId) async {

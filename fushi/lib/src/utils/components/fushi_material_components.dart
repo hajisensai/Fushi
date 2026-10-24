@@ -1091,6 +1091,7 @@ class FushiSearchField extends StatelessWidget {
           tooltip: t.clear,
           size: iconSize,
           padding: padding,
+          padTouchTarget: true,
           onTap: () {
             onClear?.call();
             if (focusNode.canRequestFocus) {
@@ -1477,7 +1478,9 @@ class FushiTouchTargetPadding extends StatelessWidget {
       container: true,
       child: _FushiTouchTargetBox(
         minSize: Size(minWidth, minHeight),
-        child: child,
+        // 让出的边距里的触点会转发进 [child]：里面的紧凑动作钮据此把命中 /
+        // 语义区域竖向撑满这条带（[FushiIconButton.padTouchTarget]）。
+        child: FushiTouchTargetBand(height: minHeight, child: child),
       ),
     );
   }
@@ -1763,6 +1766,7 @@ class _FushiTextFieldState extends State<FushiTextField> {
             tooltip: t.clear,
             size: iconSize,
             padding: padding,
+            padTouchTarget: true,
             onTap: () {
               controller.clear();
               widget.onChanged?.call('');
@@ -1777,6 +1781,7 @@ class _FushiTextFieldState extends State<FushiTextField> {
                 : t.text_field_password_hide,
             size: iconSize,
             padding: padding,
+            padTouchTarget: true,
             onTap: () => setState(() => _obscured = !_obscured),
           ),
         if (assist != null) assist,
@@ -1945,6 +1950,7 @@ Widget? _fushiTextFieldInputSuffix({
   ValueChanged<String>? onChanged,
   double? iconSize,
   EdgeInsets? padding,
+  bool padTouchTarget = true,
 }) {
   if (controller == null) return null;
   final TargetPlatform platform = Theme.of(context).platform;
@@ -1958,6 +1964,7 @@ Widget? _fushiTextFieldInputSuffix({
       tooltip: t.on_screen_keyboard,
       size: iconSize,
       padding: padding,
+      padTouchTarget: padTouchTarget,
       onTap: () =>
           showGamepadKeyboard(context, controller, onChanged: onChanged),
     );
@@ -1967,6 +1974,7 @@ Widget? _fushiTextFieldInputSuffix({
     tooltip: t.paste,
     size: iconSize,
     padding: padding,
+    padTouchTarget: padTouchTarget,
     onTap: () async {
       if (await gamepadKeyboardPaste(controller)) {
         onChanged?.call(controller.text);
@@ -4288,7 +4296,7 @@ bool fushiIsCollapsibleHeaderAction(Widget item) =>
     item is FushiIconButton &&
     item.onTap != null &&
     !item.alwaysVisible &&
-    !item.selected;
+    item.selected != true;
 
 /// [actions] 里可收纳动作的收纳顺序（最先收的在前）：
 /// [FushiIconButton.overflowPriority] 低的先收，同优先级越靠后越先收。纯函数。
@@ -7036,9 +7044,14 @@ class FushiCompactSearchRow extends StatelessWidget {
     final String closeTooltip = MaterialLocalizations.of(
       context,
     ).closeButtonTooltip;
+    // 这一行的粘贴钮不是输入框尾部动作，而是与关闭 / 搜索钮（36）并排的
+    // 行内按钮：跟它们同一尺寸，不单独撑到 48（单独撑高会让它成为整行最靠上
+    // 的焦点目标，初始焦点从关闭钮跳到粘贴钮）。这一行三枚 36 钮的触控区是
+    // 另一处待补的缺口。
     final Widget? keyboardSuffix = _fushiTextFieldInputSuffix(
       context: context,
       controller: controller,
+      padTouchTarget: false,
     );
     // 与 [FushiSearchField] 同一形态语言：MD3 是 surfaceContainerHigh 填充胶囊。
     // Apple 复用 [FushiSearchField] 的 Apple 分支（[FushiTextFieldControl] 认出

@@ -500,8 +500,8 @@ class FushiM3eFloatingSheet extends StatelessWidget {
 // M3E 形状库（装饰形）
 // ---------------------------------------------------------------------------
 
-/// M3E 形状库里用作装饰底的几种形状（Material Shapes 的子集，按极坐标函数
-/// 生成，任意尺寸下都是平滑闭合曲线）。
+/// M3E 形状库里用作装饰底的几种形状（官方 [MaterialShapes] 的子集，见
+/// [FushiExpressiveShape.polygon]）。
 enum FushiExpressiveShape {
   /// 圆。
   circle,
@@ -522,6 +522,18 @@ enum FushiExpressiveShape {
   sunny,
 }
 
+/// [FushiExpressiveShape] 对应的官方 M3E 形状。
+extension FushiExpressiveShapePolygon on FushiExpressiveShape {
+  RoundedPolygon get polygon => switch (this) {
+    FushiExpressiveShape.circle => MaterialShapes.circle,
+    FushiExpressiveShape.cookie4 => MaterialShapes.cookie4Sided,
+    FushiExpressiveShape.cookie6 => MaterialShapes.cookie6Sided,
+    FushiExpressiveShape.cookie9 => MaterialShapes.cookie9Sided,
+    FushiExpressiveShape.flower => MaterialShapes.flower,
+    FushiExpressiveShape.sunny => MaterialShapes.sunny,
+  };
+}
+
 /// 把 [FushiExpressiveShape] 画成 [OutlinedBorder]，可直接给 [ShapeDecoration]
 /// / [Material.shape] / 裁剪用。[rotation] 为弧度。
 class FushiExpressiveShapeBorder extends OutlinedBorder {
@@ -530,50 +542,21 @@ class FushiExpressiveShapeBorder extends OutlinedBorder {
   final FushiExpressiveShape shape;
   final double rotation;
 
-  /// 极坐标半径函数：r(θ) ∈ (0, 1]。
-  double _radiusAt(double theta) {
-    switch (shape) {
-      case FushiExpressiveShape.circle:
-        return 1;
-      case FushiExpressiveShape.cookie4:
-        return 0.86 + 0.14 * math.cos(4 * theta);
-      case FushiExpressiveShape.cookie6:
-        return 0.9 + 0.1 * math.cos(6 * theta);
-      case FushiExpressiveShape.cookie9:
-        return 0.92 + 0.08 * math.cos(9 * theta);
-      case FushiExpressiveShape.flower:
-        // 花瓣更饱满：把余弦压成「宽瓣窄谷」。
-        final double c = (math.cos(8 * theta) + 1) / 2;
-        return 0.74 + 0.26 * math.pow(c, 0.6);
-      case FushiExpressiveShape.sunny:
-        final double c = (math.cos(12 * theta) + 1) / 2;
-        return 0.88 + 0.12 * math.pow(c, 2);
-    }
-  }
-
   Path _path(Rect rect) {
-    final Path path = Path();
     if (shape == FushiExpressiveShape.circle) {
-      return path..addOval(rect);
+      return Path()..addOval(rect);
     }
+    final Path path = MaterialShapeBorder(
+      shape: shape.polygon,
+      squash: 1,
+    ).getOuterPath(rect);
+    if (rotation == 0) return path;
     final Offset c = rect.center;
-    final double rx = rect.width / 2;
-    final double ry = rect.height / 2;
-    const int steps = 180;
-    for (int i = 0; i <= steps; i++) {
-      final double theta = i / steps * 2 * math.pi;
-      final double r = _radiusAt(theta);
-      final Offset p = Offset(
-        c.dx + rx * r * math.cos(theta + rotation),
-        c.dy + ry * r * math.sin(theta + rotation),
-      );
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-    return path..close();
+    final Matrix4 spin = Matrix4.identity()
+      ..translateByDouble(c.dx, c.dy, 0, 1)
+      ..rotateZ(rotation)
+      ..translateByDouble(-c.dx, -c.dy, 0, 1);
+    return path.transform(spin.storage);
   }
 
   @override
@@ -753,6 +736,11 @@ enum FushiDialogActionKind { primary, secondary, destructive }
 
 /// 一枚标准对话框动作按钮。所有模板都经它出按钮，调用方手搓对话框时也可以
 /// 直接用（等价于设计系统分派的 adaptiveDialogAction）。
+///
+/// [countdown] 非空时按钮带强制倒计时：倒计时内置灰、标签显示「标签 (剩余秒数)」，
+/// 归零后才可点。倒计时是本组件自身的能力而不是另一种按钮类型——Apple 设计系统的
+/// [FushiAlertDialog] 只按「是不是标准动作键」决定 alert 胶囊排布，倒计时键必须
+/// 与其它动作键同型，才不会被当成自定义控件退回横排。
 class FushiDialogAction extends StatelessWidget {
   const FushiDialogAction({
     super.key,
@@ -760,6 +748,7 @@ class FushiDialogAction extends StatelessWidget {
     required this.onPressed,
     this.kind = FushiDialogActionKind.secondary,
     this.autofocus = false,
+    this.countdown,
   });
 
   final String label;
@@ -767,8 +756,30 @@ class FushiDialogAction extends StatelessWidget {
   final FushiDialogActionKind kind;
   final bool autofocus;
 
+  /// 强制等待时长；null 或不大于零 = 普通按钮。
+  final Duration? countdown;
+
   @override
   Widget build(BuildContext context) {
+    final Duration? delay = countdown;
+    if (delay != null && delay > Duration.zero) {
+      return _FushiDialogActionCountdown(
+        delay: delay,
+        builder: (BuildContext context, int remaining) => _buildButton(
+          context,
+          label: remaining > 0 ? '$label ($remaining)' : label,
+          onPressed: remaining > 0 ? null : onPressed,
+        ),
+      );
+    }
+    return _buildButton(context, label: label, onPressed: onPressed);
+  }
+
+  Widget _buildButton(
+    BuildContext context, {
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
     final Widget text = Text(label);
     switch (kind) {
       case FushiDialogActionKind.primary:
@@ -811,6 +822,10 @@ class FushiDialogAction extends StatelessWidget {
 /// 标准确认对话框：图标 hero（可选）+ 标题 + 说明 + 「取消 / 确认」。返回 true
 /// = 确认；取消、点遮罩、Esc / 手柄 B 都返回 false。[destructive] 时确认键是
 /// error 色、hero 是 errorContainer 底。Enter 直接确认（确认键 autofocus）。
+///
+/// [confirmDelay] 非空时确认键先置灰、标签尾挂剩余秒数，倒计时归零才可点——
+/// 给「容易手滑、事后难找回」的操作强制留一个停顿；此时焦点落在取消键上，
+/// Enter 不会把倒计时绕过去。
 Future<bool> showFushiConfirmDialog({
   required BuildContext context,
   required String title,
@@ -821,7 +836,12 @@ Future<bool> showFushiConfirmDialog({
   IconData? icon,
   bool destructive = false,
   bool barrierDismissible = true,
+  Duration? confirmDelay,
 }) async {
+  final FushiDialogActionKind confirmKind = destructive
+      ? FushiDialogActionKind.destructive
+      : FushiDialogActionKind.primary;
+  final bool delayed = confirmDelay != null && confirmDelay > Duration.zero;
   final bool? result = await showAppDialog<bool>(
     context: context,
     barrierDismissible: barrierDismissible,
@@ -839,20 +859,71 @@ Future<bool> showFushiConfirmDialog({
       actions: <Widget>[
         FushiDialogAction(
           label: cancelLabel ?? t.dialog_cancel,
+          autofocus: delayed,
           onPressed: () => Navigator.of(dialogContext).pop(false),
         ),
-        FushiDialogAction(
-          label: confirmLabel ?? t.dialog_ok,
-          kind: destructive
-              ? FushiDialogActionKind.destructive
-              : FushiDialogActionKind.primary,
-          autofocus: true,
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-        ),
+        if (delayed)
+          FushiDialogAction(
+            key: const ValueKey<String>('fushi-confirm-countdown-action'),
+            label: confirmLabel ?? t.dialog_ok,
+            kind: confirmKind,
+            countdown: confirmDelay,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          )
+        else
+          FushiDialogAction(
+            label: confirmLabel ?? t.dialog_ok,
+            kind: confirmKind,
+            autofocus: true,
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+          ),
       ],
     ),
   );
   return result ?? false;
+}
+
+/// [FushiDialogAction.countdown] 的倒计时状态：按整秒走 [Timer.periodic]，每秒
+/// 用剩余秒数重建按钮。不随系统「减弱动态效果」归零——这是交互闸门，不是动效。
+class _FushiDialogActionCountdown extends StatefulWidget {
+  const _FushiDialogActionCountdown({
+    required this.delay,
+    required this.builder,
+  });
+
+  final Duration delay;
+  final Widget Function(BuildContext context, int remaining) builder;
+
+  @override
+  State<_FushiDialogActionCountdown> createState() =>
+      _FushiDialogActionCountdownState();
+}
+
+class _FushiDialogActionCountdownState
+    extends State<_FushiDialogActionCountdown> {
+  late int _remaining = (widget.delay.inMilliseconds / 1000).ceil();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_remaining > 0) {
+      _timer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+        if (!mounted) return;
+        setState(() => _remaining--);
+        if (_remaining <= 0) timer.cancel();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _remaining);
 }
 
 /// 标准文本输入对话框。返回 null = 取消；否则返回（默认 trim 后的）文本。

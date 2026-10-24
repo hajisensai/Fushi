@@ -201,6 +201,12 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     return 0;
   }
 
+  /// 整列改写来源的 configJson（目前只用于 iOS 书签过期后回写新书签，见
+  /// `SourceFolderAccess`）。调用方负责经 `encodeSourceConfig` 白名单编码。
+  Future<void> updateMediaSourceConfigJson(int id, String? configJson) =>
+      (update(mediaSources)..where((t) => t.id.equals(id)))
+          .write(MediaSourcesCompanion(configJson: Value(configJson)));
+
   /// 更新来源显示名。
   Future<void> updateMediaSourceLabel(int id, String label) =>
       (update(mediaSources)..where((t) => t.id.equals(id)))
@@ -1596,6 +1602,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           mediaType: mediaType,
           entryKey: entryKey,
           deletedAt: deletedAt,
+          // v125：本机亲手移出 / 删除的进库时刻就是 deletedAt——显式清空，免得 upsert
+          // 撞上同键旧行时沿用旧的同步进库戳（早于新 deletedAt，对端会误判旧闻）。
+          publishedAt: const Value<int?>(null),
           organizeKey: Value(organizeKey),
           organizeMerged: Value(organizeMerged),
         ),

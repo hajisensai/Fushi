@@ -8,6 +8,7 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
@@ -95,6 +96,11 @@ class _MangaTestAppModel extends AppModel {
   // 固定顶栏：测试默认要看得见栏里的按钮（悬浮态默认收起）。
   @override
   bool get mangaChromeFloating => false;
+
+  // 工具栏布局走 prefsRepo（测试里为 null）：给出厂布局。
+  @override
+  MangaControlLayout mangaControlLayoutFor({required bool compact}) =>
+      MangaControlLayout.defaults;
 
   @override
   bool get mangaVolumeKeyPaging => false;
@@ -307,6 +313,20 @@ void main() {
       keyboardAncestors.any((Focus focus) => focus.onKeyEvent != null),
       isTrue,
       reason: '词典 WebView 必须位于漫画翻页键处理器的 Focus 子树内',
+    );
+    // 反馈 8HcJchWAcr：词典层必须画在 chrome 之上（页面主 Stack 的最后一个孩子）。
+    // 排在它之后的 chrome 会盖过弹窗的 dismiss barrier（点底栏打开快捷设置），
+    // 在 iOS 上还会被 engine 并进弹窗平台视图的 overlay、按弹窗圆角裁剪。
+    final Finder host = find.byKey(
+      const ValueKey<String>('manga_dictionary_host'),
+    );
+    final Stack pageStack = tester.widget<Stack>(
+      find.ancestor(of: host, matching: find.byType(Stack)).first,
+    );
+    expect(
+      pageStack.children.last.key,
+      const ValueKey<String>('manga_dictionary_host'),
+      reason: '查词弹窗层之后不得再有任何 Flutter 内容（chrome / 浮标 / 按钮）',
     );
   });
 

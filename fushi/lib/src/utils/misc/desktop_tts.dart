@@ -4,89 +4,286 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart';
+import 'package:fushi/src/utils/misc/system_tts_voices.dart';
+import 'package:fushi/src/utils/misc/windows_speech_worker.dart';
+import 'package:fushi_engine/tts/tts_audio_probe.dart';
+import 'package:fushi_engine/tts/tts_types.dart';
 
-/// Best-effort desktop TTS-to-file fallback for term audio.
+/// Desktop TTS-to-file (the system voice: read-aloud presets and the term-audio
+/// fallback).
 ///
-/// Android synthesises via the native `TextToSpeech`; off Android we shell out
-/// to the OS speech engine: macOS `say` (AIFF), Windows System.Speech / SAPI
-/// (WAV) and on Linux Open JTalk (WAV, reads kanji) with espeak-ng as a
-/// kana-only fallback (its Japanese voice cannot read kanji, so kanji text is
-/// never handed to it). Linux engines are optional distro packages; when none
-/// is installed this returns null like any other failure.
+/// Android / iOS synthesise natively; off those we drive the OS speech engine:
+/// - macOS `say` straight to 16-bit WAV (`--file-format=WAVE`), so the cache /
+///   probe / Anki all see a plain RIFF file;
+/// - Windows WinRT `Windows.Media.SpeechSynthesis` (OneCore voices) plus SAPI 5
+///   through one long-lived PowerShell worker ([WindowsSpeechWorker]);
+/// - Linux Open JTalk (WAV, reads kanji) with espeak-ng as a kana-only fallback
+///   (its Japanese voice cannot read kanji, so kanji text is never handed to it).
 ///
-/// This is a LAST-RESORT fallback (after the local audio DB and online
-/// sources). Pronunciation quality depends entirely on the OS's installed
-/// Japanese voice (macOS: Kyoko/Otoya; Windows: Haruka); with only an English
-/// voice the reading will be wrong. Returns null on any failure — never throws.
-Future<String?> ttsToFileDesktop({
+/// [voice] is a voice id from [listDesktopTtsVoices] (null / empty = pick one by
+/// [languageTag]); a voice that is no longer installed is
+/// [SystemTtsFailureReason.voiceUnavailable], never silently swapped for another.
+/// [languageTag] is the language to speak (see `resolveSystemTtsLanguageTag`);
+/// null = the engine's default voice. Every failure throws [SystemTtsFailure];
+/// nothing returns null silently (BUG-3669).
+Future<String> ttsToFileDesktop({
   required String text,
   required String outputPath,
+  String? languageTag,
+  String? voice,
 }) async {
-  if (text.trim().isEmpty) return null;
-  try {
-    if (Platform.isMacOS) return await _sayMacOS(text, outputPath);
-    if (Platform.isWindows) return await _sapiWindows(text, outputPath);
-    if (Platform.isLinux) return await _ttsLinux(text, outputPath);
-  } catch (e, stack) {
-    ErrorLogService.instance.log('ttsToFileDesktop', e, stack);
+  if (text.trim().isEmpty) {
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.synthesisFailed,
+      languageTag: languageTag,
+    );
   }
-  return null; // unsupported
+  final String? chosen = (voice == null || voice.trim().isEmpty)
+      ? null
+      : voice.trim();
+  if (Platform.isMacOS) return _sayMacOS(text, outputPath, languageTag, chosen);
+  if (Platform.isWindows) {
+    return synthesizeWindowsSpeech(
+      worker: WindowsSpeechWorker.instance,
+      text: text,
+      outputPath: outputPath,
+      languageTag: languageTag,
+      voice: chosen,
+    );
+  }
+  if (Platform.isLinux) {
+    return synthesizeLinuxTtsForLanguage(
+      text: text,
+      outputPath: outputPath,
+      languageTag: languageTag,
+      openJTalk: resolveSystemOpenJTalkAssets(),
+      voice: chosen,
+    );
+  }
+  throw SystemTtsFailure(
+    SystemTtsFailureReason.engineUnavailable,
+    languageTag: languageTag,
+  );
 }
 
-/// macOS `say` reliably writes AIFF; use a sibling `.aiff` path regardless of
-/// the requested extension (Anki/mpv plays AIFF).
-Future<String?> _sayMacOS(String text, String outputPath) async {
-  final String aiffPath =
-      '${outputPath.replaceFirst(RegExp(r'\.[^.]+$'), '')}.aiff';
-  final File out = File(aiffPath);
-  out.parent.createSync(recursive: true);
-  // `--` terminates options so text starting with `-` is not parsed as a flag.
-  final ProcessResult r = await Process.run('say', <String>[
-    '-o',
-    aiffPath,
-    '--',
-    text,
-  ]);
-  if (r.exitCode == 0 && out.existsSync() && out.lengthSync() > 0) {
-    return aiffPath;
+/// 本机系统语音可选的声音（桌面三端）。列不出来（引擎没装 / 进程失败）返回空表。
+Future<List<TtsVoice>> listDesktopTtsVoices() async {
+  try {
+    if (Platform.isMacOS) {
+      final ProcessResult r = await Process.run('say', <String>['-v', '?']);
+      return r.exitCode == 0
+          ? parseMacOSSayVoices('${r.stdout}')
+          : const <TtsVoice>[];
+    }
+    if (Platform.isWindows) {
+      final Map<String, Object?> reply = await WindowsSpeechWorker.instance
+          .request(<String, Object?>{'op': 'voices'});
+      return reply['ok'] == true
+          ? mergeWindowsSpeechVoices(reply['voices'])
+          : const <TtsVoice>[];
+    }
+    if (Platform.isLinux) return await listLinuxTtsVoices();
+  } on Object catch (e, stack) {
+    ErrorLogService.instance.log('listDesktopTtsVoices', e, stack);
   }
-  ErrorLogService.instance.log(
-    'ttsToFileDesktop.say',
-    'say exit ${r.exitCode}: ${r.stderr}',
-    StackTrace.current,
-  );
+  return const <TtsVoice>[];
+}
+
+/// [languageTag] 的主语言子标签，只放行 2–3 个字母（要发给系统引擎 / 与
+/// `say -v ?` 的输出比对，不能把任意字符串带进去）。null / 不合法 = 不指定。
+@visibleForTesting
+String? desktopTtsLanguageCode(String? languageTag) {
+  if (languageTag == null) return null;
+  final String primary = primaryLanguageSubtag(languageTag);
+  return RegExp(r'^[a-z]{2,3}$').hasMatch(primary) ? primary : null;
+}
+
+/// 从 `say -v ?` 的输出里挑第一个 [languageCode] 语言的声音名；没有返回 null。
+@visibleForTesting
+String? pickMacOSVoice(String sayVoiceList, String languageCode) {
+  for (final TtsVoice v in parseMacOSSayVoices(sayVoiceList)) {
+    if (primaryLanguageSubtag(v.locale) == languageCode) return v.id;
+  }
   return null;
 }
 
-/// Windows System.Speech (SAPI) → WAV via PowerShell. The text is passed as
-/// base64-encoded UTF-8 to survive the shell without quoting/encoding issues.
-Future<String?> _sapiWindows(String text, String outputPath) async {
+/// `say` 直接写 16-bit 小端 PCM 的 WAV（`--file-format=WAVE --data-format=LEI16@22050`，
+/// Mac 实测输出 RIFF/WAVE、与扩展名无关）。以前只出 AIFF，而缓存层的格式探测只认
+/// WAV / MP3，所以朗读声音体系里干脆没开放 macOS。
+@visibleForTesting
+List<String> sayMacOSArguments({
+  required String outputPath,
+  required String text,
+  String? voice,
+}) => <String>[
+  if (voice != null) ...<String>['-v', voice],
+  '--file-format=WAVE',
+  '--data-format=LEI16@22050',
+  '-o',
+  outputPath,
+  // `--` terminates options so text starting with `-` is not parsed as a flag.
+  '--',
+  text,
+];
+
+Future<String> _sayMacOS(
+  String text,
+  String outputPath,
+  String? languageTag,
+  String? chosenVoice,
+) async {
   final File out = File(outputPath);
   out.parent.createSync(recursive: true);
-  final String b64 = base64Encode(utf8.encode(text));
-  final String escapedOut = outputPath.replaceAll("'", "''");
-  final String script =
-      'Add-Type -AssemblyName System.Speech; '
-      r"$t=[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"
-      "$b64')); "
-      r'$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; '
-      "\$s.SetOutputToWaveFile('$escapedOut'); "
-      r'$s.Speak($t); $s.Dispose();';
-  final ProcessResult r = await Process.run('powershell', <String>[
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    script,
-  ]);
-  if (r.exitCode == 0 && out.existsSync() && out.lengthSync() > 0) {
-    return outputPath;
+  if (out.existsSync()) out.deleteSync();
+  String? voice = chosenVoice;
+  final String? code = desktopTtsLanguageCode(languageTag);
+  try {
+    if (voice == null && code != null) {
+      final ProcessResult list = await Process.run('say', <String>['-v', '?']);
+      voice = list.exitCode == 0
+          ? pickMacOSVoice('${list.stdout}', code)
+          : null;
+      if (voice == null) {
+        throw SystemTtsFailure(
+          SystemTtsFailureReason.languageNotSupported,
+          languageTag: languageTag,
+        );
+      }
+    }
+    final ProcessResult r = await Process.run(
+      'say',
+      sayMacOSArguments(outputPath: outputPath, text: text, voice: voice),
+    );
+    if (r.exitCode == 0 && hasAudibleWav(out)) {
+      return outputPath;
+    }
+    if (chosenVoice != null) {
+      // 点名的声音不在了 `say` 也是非零退出：先分清是不是这个原因。
+      final ProcessResult list = await Process.run('say', <String>['-v', '?']);
+      final bool installed =
+          list.exitCode == 0 &&
+          parseMacOSSayVoices(
+            '${list.stdout}',
+          ).any((TtsVoice v) => v.id == chosenVoice);
+      if (!installed) {
+        throw SystemTtsFailure(
+          SystemTtsFailureReason.voiceUnavailable,
+          languageTag: languageTag,
+        );
+      }
+    }
+    ErrorLogService.instance.log(
+      'ttsToFileDesktop.say',
+      'say exit ${r.exitCode}: ${r.stderr}',
+      StackTrace.current,
+    );
+  } on ProcessException {
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.engineUnavailable,
+      languageTag: languageTag,
+    );
   }
-  ErrorLogService.instance.log(
-    'ttsToFileDesktop.sapi',
-    'powershell exit ${r.exitCode}: ${r.stderr}',
-    StackTrace.current,
+  throw SystemTtsFailure(
+    SystemTtsFailureReason.synthesisFailed,
+    languageTag: languageTag,
   );
-  return null;
+}
+
+/// [out] 是有实际音频数据的 WAV：头完整、data 段非空。系统引擎点了念不了这段文字的
+/// 声音时会「成功」写出只有头（或只有填充块）的空 WAV。
+@visibleForTesting
+bool hasAudibleWav(File out) {
+  if (!out.existsSync() || out.lengthSync() == 0) return false;
+  final Uint8List bytes = out.readAsBytesSync();
+  if (sniffTtsAudioFormat(bytes) != TtsAudioFormat.wav) return false;
+  final int? ms = probeTtsAudioDurationMs(bytes, TtsAudioFormat.wav);
+  return ms != null && ms > 0;
+}
+
+/// [WindowsSpeechWorker] 的 `speak` 请求体。点名的声音按 id 拆成引擎 + 键交给脚本；
+/// 不认识的 id 前缀（旧数据 / 别的平台同步来的）返回 null = 声音不在。
+@visibleForTesting
+Map<String, Object?>? windowsSpeakRequest({
+  required String text,
+  required String outputPath,
+  required String? languageTag,
+  required String? voice,
+}) {
+  final Map<String, Object?> body = <String, Object?>{
+    'op': 'speak',
+    'text': base64Encode(utf8.encode(text)),
+    'out': outputPath,
+  };
+  if (voice != null) {
+    final ({String kind, String key})? parsed = parseWindowsVoiceId(voice);
+    if (parsed == null) return null;
+    body['voiceKind'] = parsed.kind;
+    body['voiceKey'] = parsed.key;
+  } else {
+    final String? code = desktopTtsLanguageCode(languageTag);
+    if (code != null) body['lang'] = code;
+  }
+  return body;
+}
+
+/// Windows：经常驻工作进程合成（OneCore 优先，SAPI 兜底，见
+/// [kWindowsSpeechWorkerScript]）。工作进程起不来 = 没有引擎。
+@visibleForTesting
+Future<String> synthesizeWindowsSpeech({
+  required WindowsSpeechWorker worker,
+  required String text,
+  required String outputPath,
+  required String? languageTag,
+  required String? voice,
+}) async {
+  final File out = File(outputPath);
+  out.parent.createSync(recursive: true);
+  if (out.existsSync()) out.deleteSync();
+  final Map<String, Object?>? body = windowsSpeakRequest(
+    text: text,
+    outputPath: outputPath,
+    languageTag: languageTag,
+    voice: voice,
+  );
+  if (body == null) {
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.voiceUnavailable,
+      languageTag: languageTag,
+    );
+  }
+  final Map<String, Object?> reply;
+  try {
+    reply = await worker.request(body);
+  } on WindowsSpeechWorkerUnavailable catch (e, stack) {
+    ErrorLogService.instance.log('ttsToFileDesktop.windows', e, stack);
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.engineUnavailable,
+      languageTag: languageTag,
+    );
+  }
+  if (reply['ok'] == true && hasAudibleWav(out)) return outputPath;
+  if (reply['ok'] == true) {
+    // 引擎说成功、文件里却没有音频：点了与文字语言不符的声音时 OneCore / SAPI
+    // 都这样（实测英语声音念日文 = 46 字节的空 WAV）。按合成失败报，不把空文件
+    // 交给制卡 / 缓存。
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.synthesisFailed,
+      languageTag: languageTag,
+    );
+  }
+  final Object? code = reply['code'];
+  if (code != 'VOICE_UNAVAILABLE' && code != 'LANGUAGE_NOT_SUPPORTED') {
+    ErrorLogService.instance.log(
+      'ttsToFileDesktop.windows',
+      'speech worker: $code ${reply['message'] ?? ''}',
+      StackTrace.current,
+    );
+  }
+  throw SystemTtsFailure.fromPlatformCode(
+    code is String ? code : 'SYNTHESIS_FAILED',
+    languageTag,
+  );
 }
 
 /// Open JTalk 的两件资产：MeCab 辞书目录（`-x`）与 HTS 声音文件（`-m`）。
@@ -205,6 +402,48 @@ OpenJTalkAssets? resolveSystemOpenJTalkAssets() => resolveOpenJTalkAssets(
   listVoiceFiles: _listHtsVoices,
 );
 
+/// Linux 可选声音：Open JTalk 的 `.htsvoice`（装了辞书才列）+ espeak-ng 的声音表。
+/// 进程 / 目录读取经参数注入，脱离真实系统可测。
+@visibleForTesting
+Future<List<TtsVoice>> listLinuxTtsVoicesWith({
+  required OpenJTalkAssets? openJTalk,
+  required List<String> Function() listOpenJTalkVoiceFiles,
+  required Future<String?> Function() espeakVoiceList,
+}) async {
+  final String? espeak = await espeakVoiceList();
+  return <TtsVoice>[
+    if (openJTalk != null)
+      ...openJTalkVoicesFromFiles(listOpenJTalkVoiceFiles()),
+    if (espeak != null) ...parseEspeakNgVoices(espeak),
+  ];
+}
+
+/// 本机的 Linux 声音清单（真实环境）。
+Future<List<TtsVoice>> listLinuxTtsVoices() => listLinuxTtsVoicesWith(
+  openJTalk: resolveSystemOpenJTalkAssets(),
+  listOpenJTalkVoiceFiles: () {
+    final String? override = Platform.environment['FUSHI_OPEN_JTALK_VOICE'];
+    return <String>{
+      if (override != null &&
+          override.isNotEmpty &&
+          File(override).existsSync())
+        override,
+      for (final String dir in kOpenJTalkVoiceDirs)
+        if (Directory(dir).existsSync()) ..._listHtsVoices(dir),
+    }.toList();
+  },
+  espeakVoiceList: () async {
+    try {
+      final ProcessResult r = await Process.run('espeak-ng', <String>[
+        '--voices',
+      ]);
+      return r.exitCode == 0 ? '${r.stdout}' : null;
+    } on ProcessException {
+      return null; // 没装 espeak-ng。
+    }
+  },
+);
+
 /// 启动外部 TTS 进程的函数形状（[Process.start] 的子集），测试注入假进程用。
 typedef LinuxTtsProcessStarter =
     Future<Process> Function(String executable, List<String> arguments);
@@ -215,13 +454,168 @@ typedef LinuxTtsProcessStarter =
 const Duration kLinuxTtsProcessTimeout = Duration(seconds: 15);
 
 /// Linux：Open JTalk（能读汉字）优先，没装或失败再用 espeak-ng 读纯假名文本。
-Future<String?> _ttsLinux(String text, String outputPath) => synthesizeLinuxTts(
-  text: text,
+///
+/// 没点名声音时这两个引擎只用日语声音：请求的是别的语言就直接报
+/// [SystemTtsFailureReason.languageNotSupported]，不拿日语声音去念（BUG-3669）。
+/// 没出音频时，Open JTalk 资产都不在 = 没有引擎；在 = 合成失败。
+///
+/// 点名了 [voice]（`openjtalk:<路径>` / `espeak:<语言名>`）就只用那一个：声音文件不在
+/// = [SystemTtsFailureReason.voiceUnavailable]；espeak-ng 的日语声音照样只读纯假名。
+@visibleForTesting
+Future<String> synthesizeLinuxTtsForLanguage({
+  required String text,
+  required String outputPath,
+  required String? languageTag,
+  required OpenJTalkAssets? openJTalk,
+  String? voice,
+  bool Function(String path)? fileExists,
+  LinuxTtsProcessStarter startProcess = Process.start,
+  Duration processTimeout = kLinuxTtsProcessTimeout,
+}) async {
+  if (voice != null && voice.isNotEmpty) {
+    final String? written = await _synthesizeLinuxWithVoice(
+      text: text,
+      outputPath: outputPath,
+      languageTag: languageTag,
+      openJTalk: openJTalk,
+      voice: voice,
+      fileExists: fileExists ?? (String path) => File(path).existsSync(),
+      startProcess: startProcess,
+      processTimeout: processTimeout,
+    );
+    if (written != null) return written;
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.synthesisFailed,
+      languageTag: languageTag,
+    );
+  }
+  final String? code = desktopTtsLanguageCode(languageTag);
+  if (code != null && code != 'ja') {
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.languageNotSupported,
+      languageTag: languageTag,
+    );
+  }
+  final String? written = await synthesizeLinuxTts(
+    text: text,
+    outputPath: outputPath,
+    openJTalk: openJTalk,
+    startProcess: startProcess,
+    processTimeout: processTimeout,
+  );
+  if (written != null) return written;
+  throw SystemTtsFailure(
+    openJTalk == null
+        ? SystemTtsFailureReason.engineUnavailable
+        : SystemTtsFailureReason.synthesisFailed,
+    languageTag: languageTag,
+  );
+}
+
+/// 按点名的声音合成；声音不在时抛 [SystemTtsFailure]，进程失败返回 null。
+Future<String?> _synthesizeLinuxWithVoice({
+  required String text,
+  required String outputPath,
+  required String? languageTag,
+  required OpenJTalkAssets? openJTalk,
+  required String voice,
+  required bool Function(String path) fileExists,
+  required LinuxTtsProcessStarter startProcess,
+  required Duration processTimeout,
+}) async {
+  if (voice.startsWith(kLinuxOpenJTalkVoicePrefix)) {
+    final String voicePath = voice.substring(kLinuxOpenJTalkVoicePrefix.length);
+    if (openJTalk == null) {
+      // 没有辞书就没有 Open JTalk 引擎（声音文件在也念不了）。
+      throw SystemTtsFailure(
+        SystemTtsFailureReason.engineUnavailable,
+        languageTag: languageTag,
+      );
+    }
+    if (!fileExists(voicePath)) {
+      throw SystemTtsFailure(
+        SystemTtsFailureReason.voiceUnavailable,
+        languageTag: languageTag,
+      );
+    }
+    return _runOpenJTalk(
+      text: text,
+      outputPath: outputPath,
+      assets: (dictionaryDir: openJTalk.dictionaryDir, voicePath: voicePath),
+      startProcess: startProcess,
+      timeout: processTimeout,
+    );
+  }
+  if (voice.startsWith(kLinuxEspeakVoicePrefix)) {
+    final String name = voice.substring(kLinuxEspeakVoicePrefix.length);
+    // 只放行 espeak-ng 语言名的字符（会作为 `-v` 参数传给进程）。
+    if (!RegExp(r'^[A-Za-z0-9_+\-/]+$').hasMatch(name)) {
+      throw SystemTtsFailure(
+        SystemTtsFailureReason.voiceUnavailable,
+        languageTag: languageTag,
+      );
+    }
+    if (primaryLanguageSubtag(name) == 'ja' && !isKanaOnlyText(text)) {
+      // espeak-ng 的日语声音念不了汉字（BUG-3092），宁可不出音频。
+      return null;
+    }
+    return _runEspeakNg(
+      text: text,
+      outputPath: outputPath,
+      voiceName: name,
+      startProcess: startProcess,
+      timeout: processTimeout,
+    );
+  }
+  throw SystemTtsFailure(
+    SystemTtsFailureReason.voiceUnavailable,
+    languageTag: languageTag,
+  );
+}
+
+Future<String?> _runOpenJTalk({
+  required String text,
+  required String outputPath,
+  required OpenJTalkAssets assets,
+  required LinuxTtsProcessStarter startProcess,
+  required Duration timeout,
+}) => runLinuxTtsProcess(
+  executable: 'open_jtalk',
+  // 不给输入文件参数时 open_jtalk 从 stdin 读一行行文本。
+  arguments: <String>[
+    '-x',
+    assets.dictionaryDir,
+    '-m',
+    assets.voicePath,
+    '-ow',
+    outputPath,
+  ],
+  // open_jtalk 按行合成；把换行压成空格，保证一次调用只出一段音频。
+  text: '${text.replaceAll(RegExp(r'[\r\n]+'), ' ')}\n',
   outputPath: outputPath,
-  openJTalk: resolveSystemOpenJTalkAssets(),
+  logTag: 'ttsToFileDesktop.openJTalk',
+  startProcess: startProcess,
+  timeout: timeout,
 );
 
-/// [_ttsLinux] 的可注入内核：引擎选择与兜底顺序脱离真实进程可测。
+Future<String?> _runEspeakNg({
+  required String text,
+  required String outputPath,
+  required String voiceName,
+  required LinuxTtsProcessStarter startProcess,
+  required Duration timeout,
+}) => runLinuxTtsProcess(
+  executable: 'espeak-ng',
+  // `--stdin` 读文本；`-b 1` = 输入是 UTF-8。
+  arguments: <String>['-v', voiceName, '-b', '1', '-w', outputPath, '--stdin'],
+  text: text,
+  outputPath: outputPath,
+  logTag: 'ttsToFileDesktop.espeakNg',
+  startProcess: startProcess,
+  timeout: timeout,
+);
+
+/// [synthesizeLinuxTtsForLanguage] 的可注入内核：引擎选择与兜底顺序脱离真实进程可测。
 @visibleForTesting
 Future<String?> synthesizeLinuxTts({
   required String text,
@@ -231,34 +625,20 @@ Future<String?> synthesizeLinuxTts({
   Duration processTimeout = kLinuxTtsProcessTimeout,
 }) async {
   if (openJTalk != null) {
-    final String? viaOpenJTalk = await runLinuxTtsProcess(
-      executable: 'open_jtalk',
-      // 不给输入文件参数时 open_jtalk 从 stdin 读一行行文本。
-      arguments: <String>[
-        '-x',
-        openJTalk.dictionaryDir,
-        '-m',
-        openJTalk.voicePath,
-        '-ow',
-        outputPath,
-      ],
-      // open_jtalk 按行合成；把换行压成空格，保证一次调用只出一段音频。
-      text: '${text.replaceAll(RegExp(r'[\r\n]+'), ' ')}\n',
+    final String? viaOpenJTalk = await _runOpenJTalk(
+      text: text,
       outputPath: outputPath,
-      logTag: 'ttsToFileDesktop.openJTalk',
+      assets: openJTalk,
       startProcess: startProcess,
       timeout: processTimeout,
     );
     if (viaOpenJTalk != null) return viaOpenJTalk;
   }
   if (!isKanaOnlyText(text)) return null;
-  return runLinuxTtsProcess(
-    executable: 'espeak-ng',
-    // `--stdin` 读文本；`-b 1` = 输入是 UTF-8。
-    arguments: <String>['-v', 'ja', '-b', '1', '-w', outputPath, '--stdin'],
+  return _runEspeakNg(
     text: text,
     outputPath: outputPath,
-    logTag: 'ttsToFileDesktop.espeakNg',
+    voiceName: 'ja',
     startProcess: startProcess,
     timeout: processTimeout,
   );

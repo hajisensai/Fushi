@@ -119,7 +119,9 @@ class _FfmpegHttpHeaderArgs {
   });
 
   factory _FfmpegHttpHeaderArgs.from(
-      Map<String, String> headers, String inputPath) {
+    Map<String, String> headers,
+    String inputPath,
+  ) {
     String? userAgent;
     String? referer;
     final List<String> extra = <String>[];
@@ -215,23 +217,23 @@ String ffmpegRemoteInputFor(String inputPath) =>
 /// 不经参数一路传：抽取函数与它们的注入式 typedef 是整条制卡链共用的，多一个参数
 /// 就要改动所有调用点与测试假件，而它们对这件事一无所知。
 FfmpegRemoteInputRoute? Function(String inputPath)?
-    ffmpegRemoteInputRouteResolver;
+ffmpegRemoteInputRouteResolver;
 
 Future<String>? _hlsDemuxerHelpText;
 
 /// 当前后端 ffprobe 的 `-h demuxer=hls` 帮助文本（进程内只问一次，失败按空文本）。
 /// hls demuxer 私有选项的能力判断都查它，不按平台或版本号写死。
 Future<String> _hlsDemuxerHelp() => _hlsDemuxerHelpText ??= () async {
-      try {
-        final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
-          const <String>['-hide_banner', '-h', 'demuxer=hls'],
-          const Duration(seconds: 15),
-        );
-        return result.output;
-      } on Object {
-        return '';
-      }
-    }();
+  try {
+    final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
+      const <String>['-hide_banner', '-h', 'demuxer=hls'],
+      const Duration(seconds: 15),
+    );
+    return result.output;
+  } on Object {
+    return '';
+  }
+}();
 
 /// 当前 ffmpeg 后端（桌面捆绑 / `FUSHI_FFMPEG` / 移动端 ffmpeg-kit）是否认得
 /// `-allowed_segment_extensions` 与 `-extension_picky`。
@@ -306,16 +308,21 @@ String? ffmpegTlsPinArg(String? raw) {
 /// 带 Cookie），只有当前播放会话知道，所以得由 [ImmersionMiningRequest] 一路传进来。
 /// 传入的 `User-Agent` / `Referer` 分别覆盖默认 UA 与 host 推出的 Referer（调用方比
 /// 推断更权威），其余头经 `-headers` 下发。空 map = 既有行为逐字节不变。
-List<String> buildFfmpegRemoteInputArgs(String inputPath,
-    {String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) {
+List<String> buildFfmpegRemoteInputArgs(
+  String inputPath, {
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+}) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
   final FfmpegRemoteInputRoute? route = ffmpegRemoteInputRouteResolver?.call(
     inputPath,
   );
   final String? httpProxy = route?.httpProxy;
   final String? pin = ffmpegTlsPinArg(tlsPinSha256);
-  final _FfmpegHttpHeaderArgs headers =
-      _FfmpegHttpHeaderArgs.from(httpHeaders, inputPath);
+  final _FfmpegHttpHeaderArgs headers = _FfmpegHttpHeaderArgs.from(
+    httpHeaders,
+    inputPath,
+  );
   final String? referer = headers.referer;
   return <String>[
     // BUG-891：远端自签 Fushi 主机（统一 FFmpeg 的 tls pin 补丁，
@@ -336,7 +343,7 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     // BUG-2625：UA/Referer 之外的头（Origin、Cookie、X-* …）一次性经 `-headers` 下发。
     if (headers.extraHeaderBlock != null) ...<String>[
       '-headers',
-      headers.extraHeaderBlock!
+      headers.extraHeaderBlock!,
     ],
     '-reconnect',
     '1',
@@ -577,7 +584,7 @@ class MiningMediaCompression {
   /// 给出真实可用的封顶值（仍显著高于高清档：960px·12fps ≈ 高清档 1.8 倍像素，实测同一
   /// 4 秒区间 6 秒 / 7.7 MB），截图侧的原图直通语义完全不动。
   static const List<({int gifFps, int gifWidth, int maxLongEdge, int quality})>
-      imageTiers = [
+  imageTiers = [
     (gifFps: 6, gifWidth: 360, maxLongEdge: 720, quality: 80), // 0 省流
     (gifFps: 8, gifWidth: 480, maxLongEdge: 1000, quality: 90), // 1 标准（默认=旧压缩档）
     (gifFps: 12, gifWidth: 720, maxLongEdge: 2000, quality: 95), // 2 高清（=旧高保真档）
@@ -585,7 +592,7 @@ class MiningMediaCompression {
       gifFps: 0,
       gifWidth: 0,
       maxLongEdge: 0,
-      quality: 100
+      quality: 100,
     ), // 3 最高（截图原图直通；动图参数由格式声明，见下）
   ];
 
@@ -693,8 +700,12 @@ class MiningMediaCompression {
 /// 两者共用同一条通道：走 [ErrorLogService.logDiagnostic]，**不计入错误计数、不落盘**，
 /// 转入日志页的「诊断/取证」分节，随复制/分享/上传一并带走（降严重性，不删证据）。
 /// 否则走 [ErrorLogService.log] 进用户可见错误列表。默认 false = 既有行为逐字等价。
-void _logFfmpegSummary(String source, String summary, StackTrace stack,
-    {required bool diagnosticOnly}) {
+void _logFfmpegSummary(
+  String source,
+  String summary,
+  StackTrace stack, {
+  required bool diagnosticOnly,
+}) {
   if (diagnosticOnly) {
     engineLog.logDiagnostic(source, summary);
   } else {
@@ -710,8 +721,12 @@ void _reportFfmpegFailure(
 }) {
   final String summary = result.failureSummary;
   onFailure?.call(summary);
-  _logFfmpegSummary(source, summary, StackTrace.current,
-      diagnosticOnly: diagnosticOnly);
+  _logFfmpegSummary(
+    source,
+    summary,
+    StackTrace.current,
+    diagnosticOnly: diagnosticOnly,
+  );
 }
 
 void _reportFfmpegProcessException(
@@ -805,8 +820,11 @@ List<String> buildFfmpegClipArgs({
   final String? tempoFilter = buildFfmpegAtempoFilter(tempo);
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath,
-        tlsPinSha256: tlsPinSha256, httpHeaders: httpHeaders),
+    ...buildFfmpegRemoteInputArgs(
+      inputPath,
+      tlsPinSha256: tlsPinSha256,
+      httpHeaders: httpHeaders,
+    ),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -1082,8 +1100,11 @@ List<String> buildFfmpegFrameArgs({
   ].join(',');
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath,
-        tlsPinSha256: tlsPinSha256, httpHeaders: httpHeaders),
+    ...buildFfmpegRemoteInputArgs(
+      inputPath,
+      tlsPinSha256: tlsPinSha256,
+      httpHeaders: httpHeaders,
+    ),
     if (!decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-i',
     inputPath,
@@ -1227,19 +1248,18 @@ List<String> buildFfmpegClipGifArgs({
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
   Map<String, String> httpHeaders = const {},
-}) =>
-    buildFfmpegClipAnimatedArgs(
-      format: MiningAnimatedFormat.gif,
-      inputPath: inputPath,
-      startMs: startMs,
-      endMs: endMs,
-      outputPath: outputPath,
-      fps: fps,
-      width: width,
-      maxDurationMs: maxDurationMs,
-      tlsPinSha256: tlsPinSha256,
-      httpHeaders: httpHeaders,
-    );
+}) => buildFfmpegClipAnimatedArgs(
+  format: MiningAnimatedFormat.gif,
+  inputPath: inputPath,
+  startMs: startMs,
+  endMs: endMs,
+  outputPath: outputPath,
+  fps: fps,
+  width: width,
+  maxDurationMs: maxDurationMs,
+  tlsPinSha256: tlsPinSha256,
+  httpHeaders: httpHeaders,
+);
 
 /// 纯函数：构建「cue 时间窗 → 循环动图」的 ffmpeg 参数表，按 [format] 分派编码器。
 /// [buildFfmpegClipGifArgs] 是本函数 `format: gif` 的薄委托（旧调用点/测试逐字等价）。
@@ -1274,11 +1294,15 @@ List<String> buildFfmpegClipAnimatedArgs({
   Map<String, String> httpHeaders = const {},
   // BUG-2192：crop 段排在 fps/scale 之前（先裁后缩）。null / 空 = 不裁。
   String? cropFilter,
+  // 反馈 ZxyIMK-C5V：true = 动图只播放一次（见 [animatedLoopArgs]）。纯函数不读全局
+  // 偏好，由 IO 层（[extractClipGifViaFfmpeg]）按 [miningAnimatedPlayOnceReader] 传值。
+  bool playOnce = false,
 }) {
   final double startSeconds = (startMs < 0 ? 0 : startMs) / 1000.0;
   final int rawDur = endMs - startMs;
-  final int clampedDur =
-      rawDur > maxDurationMs ? maxDurationMs : (rawDur < 1 ? 1 : rawDur);
+  final int clampedDur = rawDur > maxDurationMs
+      ? maxDurationMs
+      : (rawDur < 1 ? 1 : rawDur);
   final double durationSeconds = clampedDur / 1000.0;
   // [fps]<=0 / [width]<=0 表示「源帧率 / 源分辨率」。[MiningMediaCompression.resolve]
   // 已不产出 0（三种格式的顶格档都是有限上限，见 MiningAnimatedFormat 与 BUG-1039），
@@ -1305,8 +1329,11 @@ List<String> buildFfmpegClipAnimatedArgs({
 
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath,
-        tlsPinSha256: tlsPinSha256, httpHeaders: httpHeaders),
+    ...buildFfmpegRemoteInputArgs(
+      inputPath,
+      tlsPinSha256: tlsPinSha256,
+      httpHeaders: httpHeaders,
+    ),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -1316,10 +1343,36 @@ List<String> buildFfmpegClipAnimatedArgs({
     '-an',
     ...filterArgs,
     ...animatedEncoderArgs(format),
-    '-loop',
-    '0',
+    ...animatedLoopArgs(format, playOnce: playOnce),
     outputPath,
   ];
+}
+
+/// 进程级「动图只播放一次」读取器（用户偏好 `mining_animated_play_once`，反馈
+/// ZxyIMK-C5V：GIF 制进 Anki 后无限循环，希望像视频片段一样只播一遍）。app 在偏好可读
+/// 的那一刻接到 `PreferencesRepository` 上；无头服务端与测试不接 = 循环（存量行为）。
+/// 只有 IO 层（真正跑 ffmpeg 的函数）读它，参数构建函数保持纯函数。
+bool Function() miningAnimatedPlayOnceReader = () => false;
+
+/// 动图循环次数参数。**视频 cue 动图与 galgame 窗口动图共用这一处**。
+///
+/// 三个 muxer 的 `-loop` 口径不同（Windows 随包 ffmpeg 实测，按字节核对产物）：
+/// - GIF：`0` = 写 NETSCAPE2.0 扩展、循环计数 0（无限）；`-1` = 不写该扩展 = 只播一次。
+///   GIF muxer 缺省就是 0，所以「不传 -loop」也是无限循环。
+/// - WebP（`libwebp_anim`）：写进 ANIM 块的循环计数，`0` = 无限、`1` = 播一次。
+/// - AVIF：`0` 时 `elst` 的 repeat 标志位为 1（无限），`1` 时为 0（播一次）。
+List<String> animatedLoopArgs(
+  MiningAnimatedFormat format, {
+  required bool playOnce,
+}) {
+  if (!playOnce) return const <String>['-loop', '0'];
+  switch (format) {
+    case MiningAnimatedFormat.gif:
+      return const <String>['-loop', '-1'];
+    case MiningAnimatedFormat.webp:
+    case MiningAnimatedFormat.avif:
+      return const <String>['-loop', '1'];
+  }
 }
 
 /// 按格式给出编码器参数段。**视频 cue 动图与 galgame 窗口动图共用这一处**，避免两条
@@ -1394,6 +1447,8 @@ Future<String?> extractClipGifViaFfmpeg({
   Map<String, String> httpHeaders = const {},
   // BUG-2192：先裁再缩的 crop 滤镜段，null = 不裁。
   String? cropFilter,
+  // null = 读用户偏好（[miningAnimatedPlayOnceReader]）。
+  bool? playOnce,
 }) async {
   if (endMs <= startMs) return null;
   if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
@@ -1415,6 +1470,7 @@ Future<String?> extractClipGifViaFfmpeg({
         tlsPinSha256: tlsPinSha256,
         httpHeaders: httpHeaders,
         cropFilter: cropFilter,
+        playOnce: playOnce ?? miningAnimatedPlayOnceReader(),
       ),
       const Duration(seconds: 120),
     );
@@ -1427,8 +1483,12 @@ Future<String?> extractClipGifViaFfmpeg({
         output.deleteSync();
       } catch (_) {}
     }
-    _reportFfmpegFailure('extractClipGifViaFfmpeg', result, onFailure,
-        diagnosticOnly: diagnosticOnly);
+    _reportFfmpegFailure(
+      'extractClipGifViaFfmpeg',
+      result,
+      onFailure,
+      diagnosticOnly: diagnosticOnly,
+    );
     return null;
   } on ProcessException catch (e, stack) {
     // 移动端无 CLI ffmpeg：优雅回退（调用方改用单帧截图）。
@@ -1594,7 +1654,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
   Duration timeout = const Duration(seconds: 180),
 }) async {
   if (outputs.isEmpty) return const <int, String>{};
-  if (!File(inputPath).existsSync()) return const <int, String>{};
+  // 输入是用户库里的视频（常在网络盘上）：async 判存在，互联 host 的内封字幕端点在
+  // app 主 isolate 上走到这里，同步 stat 会冻结全部端点与 UI（BUG-3756）。输出落在
+  // 系统临时目录的缓存里（本地盘），沿用同步写法。
+  if (!await File(inputPath).exists()) return const <int, String>{};
   try {
     for (final String out in outputs.values) {
       File(out).parent.createSync(recursive: true);
@@ -1652,8 +1715,9 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
         final int? rc = single.returnCode;
         if (rc != null && rc != 0) {
           try {
-            File('${entry.value}$kUnsupportedEmbeddedSubtitleSentinelSuffix')
-                .writeAsStringSync('');
+            File(
+              '${entry.value}$kUnsupportedEmbeddedSubtitleSentinelSuffix',
+            ).writeAsStringSync('');
           } catch (_) {}
         }
       }
@@ -1662,11 +1726,7 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
     // Only a genuinely empty result (every track un-extractable) is worth an
     // error log; a partial batch rescued by the per-track fallback is a success.
     if (written.isEmpty) {
-      _reportFfmpegFailure(
-        'extractEmbeddedSubtitlesViaFfmpeg',
-        result,
-        null,
-      );
+      _reportFfmpegFailure('extractEmbeddedSubtitlesViaFfmpeg', result, null);
     }
     return written;
   } on ProcessException catch (e, stack) {
@@ -1684,8 +1744,10 @@ Future<Map<int, String>> extractEmbeddedSubtitlesViaFfmpeg({
 /// [KitFfmpegBackend] (self-built ffmpeg-kit) slots in transparently. Throws
 /// [ProcessException] when ffmpeg is unavailable — callers handle that.
 Future<FfmpegRunResult> _runFfmpeg(List<String> args, Duration timeout) async {
-  final FfmpegRunResult result =
-      await resolveFfmpegBackend().run(args, timeout);
+  final FfmpegRunResult result = await resolveFfmpegBackend().run(
+    args,
+    timeout,
+  );
   return result;
 }
 
@@ -1725,7 +1787,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
     );
     return null;
   }
-  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
+  // 输入常是网络盘上的视频：async 判存在（BUG-3756，互联 host 的 clipaudio 端点走这里）。
+  if (!_isRemoteFfmpegInput(inputPath) && !await File(inputPath).exists()) {
     _reportFfmpegEarlyReturn(
       'extractAudioSegmentViaFfmpeg',
       'input audio file does not exist: $inputPath '

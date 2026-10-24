@@ -200,6 +200,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 所有 Profile 共用的标签（反馈 ORHr4_WDOy），见 [AnkiSettings.globalTags]。
+  Future<void> updateGlobalTags(String tags) async {
+    final updated =
+        await _repository.updateSettings((s) => s.copyWith(globalTags: tags));
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> updateTags(String tags) async {
     final updated =
         await _repository.updateSettings((s) => s.copyWith(tags: tags));
@@ -663,6 +670,17 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
 });
 
+/// 互联主机**替别的设备**制卡（收转发、浏览器扩展、读写出处笔记）用的仓库：裸本机后端，
+/// 不套待发队列 / 制卡到主机（对端有自己的队列，主机再排一次会让「送没送到」不确定），
+/// 但必须遵守本机的挖词目标——主机已迁到 Fushi 复习时，替对端制的卡也落复习，
+/// 再经复习同步回到各设备；否则会继续写进主机已弃用的 Anki。
+final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
+  (Ref ref) => _withSrsMining(
+    ref,
+    ref.watch(platformServicesProvider).createAnkiRepository(),
+  ),
+);
+
 /// 最外层套上「挖词目标 = Fushi 复习」（[SrsMiningAnkiRepository]）。
 ///
 /// **只有复习模块开着、且目标是 Fushi 复习时才包**：模块关着时链上根本没有这一层，
@@ -692,6 +710,19 @@ BaseAnkiRepository _withSrsMining(Ref ref, BaseAnkiRepository repo) {
 
 /// [repo] 的重排快照目录名：装饰链里有 SRS 层（挖词目标 = Fushi 复习）时用复习的
 /// 目录，否则用 Anki 的（见 [AnkiDeckRepositionRunner.kSrsSnapshotFolder]）。
+/// 诊断日志用：装饰链从外到内的类型名（`SrsMining… > PendingMining… > AnkiRepository`），
+/// 只看最外层的 runtimeType 分不出实际落卡的是哪个后端。
+String ankiRepositoryChainLabel(BaseAnkiRepository repo) {
+  final List<String> names = <String>[];
+  BaseAnkiRepository cur = repo;
+  while (cur is DelegatingAnkiRepository) {
+    names.add('${cur.runtimeType}');
+    cur = cur.inner;
+  }
+  names.add('${cur.runtimeType}');
+  return names.join(' > ');
+}
+
 String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   BaseAnkiRepository cur = repo;
   while (true) {
@@ -749,7 +780,7 @@ PendingMineStore pendingMineStoreFor(AppModel appModel) =>
 /// 卡片位置、不制卡，绑自己不会递归，但多绕一层没有意义。
 ///
 /// 这里**不**看 `autoRepositionEnabled`：开关由调度器每轮重新读。若在此处按开关
-/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
+/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的设置存储（Drift `anki_settings` 行）里
 /// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
 BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
   final AnkiAutoRepositionWiring wiring = withAnkiAutoReposition(

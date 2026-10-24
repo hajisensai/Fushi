@@ -15,6 +15,7 @@ import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
@@ -28,6 +29,7 @@ import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
+import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
@@ -196,7 +198,8 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteVideoQualityLimit,
         RemoteVideoDanmakuKeyFetch,
         RemoteVideoWorkMetadataFetch,
-        RemoteCoverFetcher {
+        RemoteCoverFetcher,
+        RemoteListingCapable {
   InterconnectSyncBackend._({FushiProbe? probe})
     : _probe = probe ?? _defaultFushiProbe;
   static final InterconnectSyncBackend instance = InterconnectSyncBackend._();
@@ -244,22 +247,41 @@ class InterconnectSyncBackend extends SyncBackend
     Duration? timeout,
   }) {
     final Duration limit = timeout ?? requestTimeout;
-    return req.close().timeout(
-      limit,
-      onTimeout: () {
-        req.abort();
-        throw TimeoutException(
-          interconnectRequestTimeoutMessage(req.method, req.uri, limit),
+    // XVEF3huDTF：互联端点的连接类失败（含本处超时）同样要让会话置脏换路——
+    // 以前只有 [WebDavOps] 自有方法与建连失败会通知，经这里发送的几十个端点
+    // 超时后会话仍钉在死地址上。
+    final WebDavOps? ops = _ops;
+    return req
+        .close()
+        .timeout(
           limit,
-        );
-      },
-    );
+          onTimeout: () {
+            req.abort();
+            throw TimeoutException(
+              interconnectRequestTimeoutMessage(req.method, req.uri, limit),
+              limit,
+            );
+          },
+        )
+        .catchError((Object e, StackTrace stack) {
+          ops?.reportConnectivityFailure(e);
+          Error.throwWithStackTrace(e, stack);
+        });
   }
 
   /// BUG-1567：在 [requestTimeout] 内读完 [res] 的 UTF-8 响应体（响应头到了但
   /// body 断流的对称封顶），超时抛 [TimeoutException]。
-  Future<String> _readBodyBounded(HttpClientResponse res) =>
-      res.transform(utf8.decoder).join().timeout(requestTimeout);
+  Future<String> _readBodyBounded(HttpClientResponse res) {
+    final WebDavOps? ops = _ops;
+    return res
+        .transform(utf8.decoder)
+        .join()
+        .timeout(requestTimeout)
+        .catchError((Object e, StackTrace stack) {
+          ops?.reportConnectivityFailure(e);
+          Error.throwWithStackTrace(e, stack);
+        });
+  }
 
   /// 下载健壮性（弱网，TODO-819 续）超时：
   /// - [downloadStallTimeout]：数据流两个 chunk 之间的最大空闲。超过即判定连接卡死并
@@ -427,13 +449,10 @@ class InterconnectSyncBackend extends SyncBackend
       final String? token = interconnectTokenFor(candidate, _token);
       if (token == null) continue;
       try {
-        _ops = WebDavOps(
+        _ops = _sessionOps(
           baseUrl: WebDavOps.normalizeUrl(candidate.url),
-          username: 'hibiki',
-          password: token,
-          pinnedFingerprint: candidate.fingerprintSha256,
-          // BUG-2377：互联的凭据是配对 token，不是登录会话。
-          unauthorizedKind: SyncAuthFailureKind.pairingRejected,
+          token: token,
+          fingerprint: candidate.fingerprintSha256,
         );
         _activeFingerprint = candidate.fingerprintSha256;
         // 与 [_ensureResolved] 的判据保持同一真相：暂定句柄用的是哪份凭据必须记下，
@@ -445,6 +464,35 @@ class InterconnectSyncBackend extends SyncBackend
       }
     }
   }
+
+  /// 会话连接句柄的**唯一**构造点（暂定句柄与解析后的句柄共用）。
+  ///
+  /// XVEF3huDTF：暂定句柄（[_buildProvisionalOps]，restoreAuth 时建在候选[0]上）
+  /// 以前不带 [WebDavOps] 的 `onConnectivityError`；而 [_ensureResolved] 选中的地址
+  /// 若恰好就是候选[0]，会原样沿用这个暂定句柄、不再重建。净效果：会话一旦落在
+  /// 第一条地址上，它掉线后没有任何东西把会话置脏——同步的每本书、每个请求都继续
+  /// 打向死地址、各自等满超时（host 换了 IP 后日志里那条 `errno = 110` 就是它），
+  /// 整轮被拖到八九分钟，直到手动 clearCache 才换路。两处必须是同一份配置。
+  WebDavOps _sessionOps({
+    required String baseUrl,
+    required String token,
+    required String? fingerprint,
+  }) => WebDavOps(
+    baseUrl: baseUrl,
+    username: 'hibiki',
+    password: token,
+    pinnedFingerprint: fingerprint,
+    // BUG-1693（故障切换）：已解析地址一掉线（拒连/超时/握手失败/断流），
+    // 立即把会话置脏——下一次任何操作重探全部候选。
+    onConnectivityError: () => _sessionResolved = false,
+    // BUG-2377：互联的凭据是配对 token，不是登录会话。
+    unauthorizedKind: SyncAuthFailureKind.pairingRejected,
+    // XVEF3huDTF：WebDAV 文件箱的小请求（同步每本书的 PROPFIND / 进度 JSON
+    // 读写 / DELETE，以及根目录列举）不经 [_sendBounded]，此前只有 60s 的 connect
+    // 上限；连接建立后 host 掉线就一直等到 OS 级 TCP 超时（分钟级）。与互联端点
+    // 同一封顶。
+    requestTimeout: requestTimeout,
+  );
 
   /// Probes the candidate addresses (in order) and settles the session on the
   /// first reachable one. Switching addresses rebuilds [_ops] and clears the
@@ -476,18 +524,10 @@ class InterconnectSyncBackend extends SyncBackend
         _activeToken != token ||
         _activeFingerprint != chosen.fingerprintSha256) {
       _ops?.close();
-      _ops = WebDavOps(
+      _ops = _sessionOps(
         baseUrl: normalized,
-        username: 'hibiki',
-        password: token,
-        pinnedFingerprint: chosen.fingerprintSha256,
-        // BUG-1693（故障切换）：已解析地址一掉线（拒连/超时/握手失败/断流），
-        // 立即把会话置脏——下一次任何操作重探全部候选。此前只有手动同步 /
-        // clearCache 才复位，页面级读取失败后永远钉死在死地址上，WAN 备用
-        // 地址到重启前都不会被尝试。
-        onConnectivityError: () => _sessionResolved = false,
-        // BUG-2377：互联的凭据是配对 token，不是登录会话。
-        unauthorizedKind: SyncAuthFailureKind.pairingRejected,
+        token: token,
+        fingerprint: chosen.fingerprintSha256,
       );
       _activeFingerprint = chosen.fingerprintSha256;
       _activeToken = token;
@@ -613,6 +653,49 @@ class InterconnectSyncBackend extends SyncBackend
 
   @override
   String get davLogTag => '[fushi-client]';
+
+  /// BUG-3743：书阶段一次拿到整个同步根，不再逐本 PROPFIND（44 本书 = 44 次往返）。
+  ///
+  /// 只在 host 于 `/api/capabilities` **显式**声明树列举（`webdav.treeListingLevels`
+  /// ≥ 2）时才发 `Depth: infinity`：老 host 把 infinity 当 Depth 0、只回根自身，那份
+  /// 回包与「空文件箱」长得一模一样，凭回包形状没法区分；误读会让每本书都按「远端
+  /// 无进度」判方向。能力每轮现问、不跨轮缓存——同一地址上的 host 可能被换成老版本。
+  ///
+  /// 拿不到 / 不支持 / 回包形状不对一律返回 null，调用方逐本列举，语义与改动前一致。
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) async {
+    try {
+      await _ensureResolved();
+      final int levels = interconnectDavTreeListingLevels(
+        await _readHostCapabilities(),
+      );
+      if (levels < 2) return null;
+      final List<DavEntry> entries = await _ops!.propfindDepth(
+        rootFolderId,
+        'infinity',
+      );
+      return remoteListingFromDavTree(entries, rootFolderId);
+    } catch (e) {
+      debugPrint('$davLogTag snapshotListing failed, falling back: $e');
+      return null;
+    }
+  }
+
+  /// `GET /api/capabilities` 的解码结果；老 host（404 / 405）返回 null。网络 / 鉴权
+  /// 等其它失败照常抛。
+  Future<Object?> _readHostCapabilities() async {
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/capabilities',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
+    return jsonDecode(await _readBodyBounded(res));
+  }
 
   // ── Metadata sync ─────────────────────────────────────────────────
 

@@ -382,23 +382,55 @@ Future<SrsImportTask?> startSrsBackgroundImport(
   SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
   String? displayName,
   bool deleteFileWhenDone = false,
+}) => _startSrsBackgroundImport(
+  ref.read,
+  file: file,
+  options: options,
+  displayName: displayName,
+  deleteFileWhenDone: deleteFileWhenDone,
+);
+
+/// [startSrsBackgroundImport] 的 provider 版（app 级控制器里用，如入门预置卡组）。
+Future<SrsImportTask?> startSrsBackgroundImportFromRef(
+  Ref ref, {
+  required File file,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
+  String? displayName,
+  bool deleteFileWhenDone = false,
+}) => _startSrsBackgroundImport(
+  ref.read,
+  file: file,
+  options: options,
+  displayName: displayName,
+  deleteFileWhenDone: deleteFileWhenDone,
+);
+
+Future<SrsImportTask?> _startSrsBackgroundImport(
+  T Function<T>(ProviderListenable<T> provider) read, {
+  required File file,
+  required SrsAnkiImportOptions options,
+  required String? displayName,
+  required bool deleteFileWhenDone,
 }) async {
-  final SrsDbStore? store = await readSrsStore(ref);
+  SrsDbStore? store;
   SrsMediaStore? media;
   try {
-    media = await ref.read(srsMediaStoreProvider.future);
+    store = await read(srsStoreProvider.future);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('readSrsStore', e, stack);
+  }
+  try {
+    media = await read(srsMediaStoreProvider.future);
   } catch (e, stack) {
     ErrorLogService.instance.log('startSrsBackgroundImport.media', e, stack);
   }
   if (store == null || media == null) return null;
-  return ref
-      .read(srsImportControllerProvider)
-      .enqueue(
-        store: store,
-        media: media,
-        file: file,
-        options: options,
-        displayName: displayName,
-        deleteFileWhenDone: deleteFileWhenDone,
-      );
+  return read(srsImportControllerProvider).enqueue(
+    store: store,
+    media: media,
+    file: file,
+    options: options,
+    displayName: displayName,
+    deleteFileWhenDone: deleteFileWhenDone,
+  );
 }

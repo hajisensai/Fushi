@@ -425,6 +425,7 @@ class SourceReviewDraftStore {
         'clipStartMs': context.clipStartMs,
         'clipEndMs': context.clipEndMs,
         'sourceLink': context.sourceLink?.toUri().toString(),
+        'sourceUrl': context.sourceUrl,
       };
 
   static AnkiMiningContext _decodeContext(
@@ -451,6 +452,8 @@ class SourceReviewDraftStore {
       clipStartMs: json['clipStartMs'] as int?,
       clipEndMs: json['clipEndMs'] as int?,
       sourceLink: link,
+      // 旧草稿没有这个键 → null（与改版前一致）。
+      sourceUrl: json['sourceUrl'] as String?,
     );
   }
 }

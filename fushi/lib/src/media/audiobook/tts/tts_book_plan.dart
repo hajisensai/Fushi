@@ -116,10 +116,13 @@ TtsBookPlan buildTtsBookPlanSync(
         ReaderAudioPositionIndex.fromChapterHtml(book.chapters[section].html);
     final int chapterFirst = out.length;
     final List<({int start, int end})> raw = <({int start, int end})>[];
-    final List<TtsTextSegment> segments = splitTtsText(
-      input,
-      maxLength: maxLength,
-    );
+    final ({List<TtsTextSegment> segments, List<String> spoken}) fitted =
+        splitTtsTextWithPronunciation(
+          input,
+          maxLength: maxLength,
+          pronunciation: pronunciation,
+        );
+    final List<TtsTextSegment> segments = fitted.segments;
     // 每句之前的间隙与句子本身各占一段，整章一次归一化（一次 FFI）：第 j 段的起点就是
     // 前 j 段归一化长度之和，即逐段累加出来的归一化偏移。
     final List<String> pieces = <String>[];
@@ -149,7 +152,7 @@ TtsBookPlan buildTtsBookPlanSync(
           section: section,
           href: book.chapters[section].href,
           text: seg.text,
-          spokenText: applyTtsPronunciation(seg.spokenText, pronunciation),
+          spokenText: fitted.spoken[i],
           matchStart: matchStart,
           matchEnd: matchEnd,
           studyStart: study?.offset ?? 0,
@@ -160,10 +163,10 @@ TtsBookPlan buildTtsBookPlanSync(
     }
     final List<({bool endsParagraph, bool sceneBreakAfter})> marks =
         ttsSentenceBoundaryMarks(
-      sentences: raw,
-      blockEnds: input.blockEnds,
-      sceneBreaks: input.sceneBreaks,
-    );
+          sentences: raw,
+          blockEnds: input.blockEnds,
+          sceneBreaks: input.sceneBreaks,
+        );
     for (int k = 0; k < marks.length; k++) {
       final TtsPlanSentence s = out[chapterFirst + k];
       out[chapterFirst + k] = TtsPlanSentence(
@@ -196,8 +199,13 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
   // 各句区间升序、边界列表升序：两个游标单调前移，整章线性。
   int b = 0;
   int s = 0;
-  bool advance(List<int> sorted, int cursor, int from, int to,
-      void Function(int) save) {
+  bool advance(
+    List<int> sorted,
+    int cursor,
+    int from,
+    int to,
+    void Function(int) save,
+  ) {
     while (cursor < sorted.length && sorted[cursor] < from) {
       cursor++;
     }
@@ -211,10 +219,8 @@ List<({bool endsParagraph, bool sceneBreakAfter})> ttsSentenceBoundaryMarks({
     final int from = sentences[k].end;
     final bool last = k + 1 == sentences.length;
     final int to = last ? 1 << 40 : sentences[k + 1].start;
-    final bool paragraph =
-        advance(blockEnds, b, from, to, (int c) => b = c);
-    final bool scene =
-        advance(sceneBreaks, s, from, to, (int c) => s = c);
+    final bool paragraph = advance(blockEnds, b, from, to, (int c) => b = c);
+    final bool scene = advance(sceneBreaks, s, from, to, (int c) => s = c);
     out.add((endsParagraph: paragraph, sceneBreakAfter: !last && scene));
   }
   return out;
@@ -245,6 +251,50 @@ List<TtsTextSegment> splitTtsText(
   );
 }
 
+/// 切句并套用发音词典，保证每句**套用后**的合成文本不超过 [maxLength]。
+///
+/// 发音词典在切句之后才替换，替换可能把文本撑长（「AI」→「エーアイ」、人名换成
+/// 长读音）：按引擎上限刚好切满的句子替换后会超长，引擎直接拒收（谷歌翻译朗读上限
+/// 180 字，超了回 400），朗读停在那句。这里按超出量收紧切句上限重切本章，直到全部
+/// 放得下；收紧到原上限的 1/4（且不低于切句内核允许的最小值 8）仍放不下（规则把
+/// 文本放大了 4 倍以上），超长句退回不套用词典的读法（不超过上限）——宁可读原写法，
+/// 也不让整句被引擎拒掉。
+({List<TtsTextSegment> segments, List<String> spoken})
+splitTtsTextWithPronunciation(
+  EpubPlainTextWithRuby input, {
+  required int maxLength,
+  List<TtsPronunciationRule> pronunciation = const <TtsPronunciationRule>[],
+}) {
+  // 切句内核要求上限至少 8（`TtsSplitNative.split`）。
+  final int quarter = maxLength ~/ 4 < 8 ? 8 : maxLength ~/ 4;
+  final int floor = quarter > maxLength ? maxLength : quarter;
+  int limit = maxLength;
+  while (true) {
+    final List<TtsTextSegment> segments = splitTtsText(input, maxLength: limit);
+    final List<String> spoken = <String>[
+      for (final TtsTextSegment seg in segments)
+        applyTtsPronunciation(seg.spokenText, pronunciation),
+    ];
+    int overflow = 0;
+    for (final String text in spoken) {
+      if (text.length - maxLength > overflow) {
+        overflow = text.length - maxLength;
+      }
+    }
+    if (overflow == 0) return (segments: segments, spoken: spoken);
+    if (limit <= floor) {
+      return (
+        segments: segments,
+        spoken: <String>[
+          for (int i = 0; i < segments.length; i++)
+            spoken[i].length > maxLength ? segments[i].spokenText : spoken[i],
+        ],
+      );
+    }
+    limit = limit - overflow < floor ? floor : limit - overflow;
+  }
+}
+
 /// 朗读用：把同一段落里相邻的过短句子并成一次合成。
 ///
 /// 自建引擎每次请求有约 2 秒的固定开销（实测 GPT-SoVITS v5：7 字的句子 2.2 秒出声、
@@ -260,11 +310,13 @@ TtsBookPlan mergeShortTtsSentences(
   final List<TtsPlanSentence> out = <TtsPlanSentence>[];
   for (final TtsPlanSentence s in plan.sentences) {
     final TtsPlanSentence? last = out.isEmpty ? null : out.last;
-    final bool canMerge = last != null &&
+    final bool canMerge =
+        last != null &&
         last.section == s.section &&
         !last.endsParagraph &&
         !last.sceneBreakAfter &&
-        (last.spokenText.length < minLength || s.spokenText.length < minLength) &&
+        (last.spokenText.length < minLength ||
+            s.spokenText.length < minLength) &&
         last.spokenText.length + s.spokenText.length <= maxLength;
     if (!canMerge) {
       out.add(s);

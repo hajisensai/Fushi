@@ -575,6 +575,13 @@ if (!window.__fushiCueRanges) {
         var forced = window.__fushiSentenceAudioRangeMode;
         return typeof forced === 'boolean' ? forced : isWebKit();
       },
+      // BUG-3741：VN 播放到哪句才处理哪句，任何引擎上切 DOM 都发生在句子已经显示之后——Blink
+      // 包裹段落里后一句的文本节点会让同段含 ruby 的那一列行盒差出 6px，整屏跟着居中平移。
+      // 所以 VN 只要引擎支持 CSS Highlight 就走 Range（分页 / 滚动开章即整章包裹，不受影响）。
+      availableForLiveText: function() {
+        if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
+        return window.__fushiSentenceAudioRangeMode !== false;
+      },
       // 分段 {node, start, end} → Range（建 Range 前让文本可被 ::highlight 绘制，见 BUG-3323）。
       build: function(segments) {
         var out = [];
@@ -1082,7 +1089,8 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var start = vertical
         ? box.top + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) - body.scrollTop
         : box.left + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) - body.scrollLeft;
-      return { v: vertical, start: start, step: width + (parseFloat(cs.columnGap) || 0), width: width };
+      var gap = parseFloat(cs.columnGap) || 0;
+      return { v: vertical, start: start, step: width + gap, width: width, gap: gap };
     };
     var lanes = function(pieces, join) {
       var annCache = [];
@@ -1099,10 +1107,21 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
           rubies: p.ruby ? [p.ruby] : []
         };
         if (frame && frame.v === p.v && frame.step > 0) {
-          // 按片段起点归栏（悬挂字形只会伸出栏尾），再把两端收进这一栏。
-          it.col = Math.floor((it.a + 0.5 - frame.start) / frame.step);
+          // 按片段起点归栏（悬挂字形只会伸出栏尾），只把栏尾收进这一栏。
+          //
+          // DEHOXVOYVQ（安卓翻页：当前句只亮第一行，折到下一行的部分全没了）：算出来的栏
+          // 网格 start + k·step 与浏览器真实排出的栏并不逐像素重合——计算样式里的
+          // column-width 是 calc 的浮点结果，而 Blink 排栏用 1/64px 的定点数，每一栏差
+          // 不到 1/64px，翻到第 k 页就累积 k 倍；scrollLeft 又按设备像素取整。几十页后
+          // 每行行首（恰在真实栏起点）就落到算出的栏起点左边超过 0.5px，旧的 `+ 0.5`
+          // 容差把它归进前一栏，再被收到前一栏栏尾、宽度归零被滤掉——一句话折行后只剩
+          // 第一行（行中起头的那段起点离栏界远，不受影响）。
+          // 正文片段的起点永远在某一栏内（悬挂标点也只从栏尾往外伸），从不落在列间距
+          // 前半段之外，所以归栏容差放宽到半个列间距：网格误差远小于它，归栏不再错。
+          // 栏头不再收（片段不会从栏头之前开始，收它只会把漂移量削进字里）。
+          var tol = Math.max(0.5, Math.min(frame.gap / 2, frame.step / 4));
+          it.col = Math.floor((it.a + tol - frame.start) / frame.step);
           var colStart = frame.start + it.col * frame.step;
-          it.a = Math.max(it.a, colStart);
           it.b = Math.min(it.b, colStart + frame.width);
         }
         return it;
@@ -1756,6 +1775,18 @@ window.fushiSelection = {
   isScanBoundary: function(char) {
     return this.isScanWhitespace(char) || this.isScanStop(char);
   },
+  // BUG-3664：点词时「回退到词首」的终点。除了 [isScanBoundary]，还要停在**词内连字符**
+  // 上：`time-blackened` 点 blackened，旧逻辑跨过 `-` 一路退到 time 的 t，把
+  // 「time-blackened oak…」交给引擎，词典里没有复合词就只匹配出前半截 time
+  // （用户报「只能查到前面」）。连字符只截回退、不截前向扫描：点 time 仍把整串交给
+  // 引擎，`well-known` 这类有词条的复合词照样能查到。与 Dart 侧
+  // `latin_word_lookup.dart`（只回退拉丁字母/数字）和长按选词
+  // [spaceDelimitedWordBounds]（只回退空格分词字母）同一口径。软连字符 U+00AD 不在其列
+  // （它不可见，是排版断词点而不是词间连接符）。
+  wordHyphenPattern: /[\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D]/,
+  isTokenStartBoundary: function(char) {
+    return this.isScanBoundary(char) || this.wordHyphenPattern.test(char || '');
+  },
 
   // BUG-2056：撇号在**词内**时不是词边界。英语的缩合形与所有格（don’t / it’s /
   // John’s / we’ve）在真实 EPUB 里几乎都用排版撇号 U+2019，而它和 ASCII ' 一样躺在
@@ -1825,6 +1856,30 @@ window.fushiSelection = {
     // 没有任何块级祖先：绝不放到整个 body 上游走，退到选区容器的父元素（最坏情况也
     // 只覆盖词所在的直接父节点，绝不跨整篇）。
     return el.parentElement || el;
+  },
+  // 字幕合成书（`CuesToEpub`：独立 SRT 书 / 语音转录产物）把相邻 cue 拼进同一个 <p>，每条
+  // cue 一个 [data-cue-id] span。听写稿常常整段没有句末标点，只按标点切句会把整段（几十条
+  // cue）当成一句塞进卡片。cue 是转录器按停顿 / 时长切好的语音单元，是没有标点时唯一可靠的
+  // 句界，所以：相邻两条 cue **都**不含句末标点时，它们之间的边界算句界。只要任一侧有标点
+  // （正常带标点的稿、被停顿切开的半句「今日は天気が」|「いいですね。」），照旧按标点取句，
+  // 不受影响。
+  cueSpanOf: function(node) {
+    var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    return el && el.closest ? el.closest('[data-cue-id]') : null;
+  },
+  hasSentenceDelimiter: function(text) {
+    if (!text) return false;
+    for (var i = 0; i < text.length; i++) {
+      if (this.sentenceDelimiters.includes(text[i])) return true;
+    }
+    return false;
+  },
+  isUnpunctuatedCueBoundary: function(a, b) {
+    var cueA = this.cueSpanOf(a);
+    var cueB = this.cueSpanOf(b);
+    if (!cueA || !cueB || cueA === cueB) return false;
+    return !this.hasSentenceDelimiter(cueA.textContent) &&
+      !this.hasSentenceDelimiter(cueB.textContent);
   },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
@@ -2455,6 +2510,8 @@ window.fushiSelection = {
       sStartOffset = 0;
       var laterNode = node;
       node = walker.previousNode();
+      // 无标点听写稿：cue 边界即句界（见 isUnpunctuatedCueBoundary）。
+      if (node && this.isUnpunctuatedCueBoundary(node, laterNode)) break;
       if (node) {
         limit = node.textContent.length;
         // BUG-3453：被跳过的空白缝还原成一个空格（partsBefore 最后反转拼接）。
@@ -2491,6 +2548,7 @@ window.fushiSelection = {
       var earlierNode = node;
       node = walker.nextNode();
       start = 0;
+      if (node && this.isUnpunctuatedCueBoundary(earlierNode, node)) break;
       // BUG-3453：同上，向后拼接时也把被跳过的空白缝还原成一个空格。
       if (node && this.hasSkippedWhitespaceBetween(earlierNode, node) &&
           this.isWordGapBetweenChars(earlierNode.textContent, node.textContent)) {
@@ -2952,7 +3010,7 @@ window.fushiSelection = {
       var content = hit.node.textContent;
       var offset = hit.offset;
       if (offset < content.length && !this.isCodePointJapanese(content.codePointAt(offset))) {
-        while (offset > 0 && !this.isScanBoundary(content[offset - 1])) offset--;
+        while (offset > 0 && !this.isTokenStartBoundary(content[offset - 1])) offset--;
       }
       if (hit.node === this.selection.startNode && offset === this.selection.startOffset) return null;
     }
@@ -2982,7 +3040,7 @@ window.fushiSelection = {
     var startOffset = offset;
     var hitContent = startNode.textContent;
     if (startOffset < hitContent.length && !this.isCodePointJapanese(hitContent.codePointAt(startOffset))) {
-      while (startOffset > 0 && !this.isScanBoundary(hitContent[startOffset - 1])) {
+      while (startOffset > 0 && !this.isTokenStartBoundary(hitContent[startOffset - 1])) {
         startOffset--;
       }
     }
@@ -3032,6 +3090,10 @@ window.fushiSelection = {
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+    // BUG-3665：记下点击点，[highlightSelection] 用它挑出用户点中的那一段字形当锚点。
+    if (typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y)) {
+      this.selection.point = { x: x, y: y };
+    }
     return this.fireTextSelected(x, y, fromHover);
   },
   // Build the onTextSelected/onSelectionMenu payload for the current
@@ -3660,6 +3722,64 @@ window.fushiSelection = {
     var rect = rects.find(function(rect) { return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom; }) || range.getBoundingClientRect();
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   },
+  isVerticalTextNode: function(node) {
+    var el = node && (node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
+    if (!el || !window.getComputedStyle) return false;
+    var mode = window.getComputedStyle(el).writingMode || '';
+    return mode.indexOf('vertical') === 0 || mode.indexOf('tb') === 0;
+  },
+  // BUG-3665：查词弹窗的锚点矩形 = 被查词「用户看得见、点中的那一段」字形，而不是
+  // 全部字形片段的并集。一个词被断在两栏 / 两页（`su-` 在上一页末行、`perfluous` 在
+  // 本页首行）时，旧实现把屏外那段也并进来：并集从页顶一直拉到页底，弹窗上下都没空间，
+  // 被 calcPopupPosition 的「绝不压词」挤成贴底的一条（用户报「在边缘查词，卡片位置
+  // 不合适」）。规则：
+  //   1. 只看与视口相交的片段（翻页模式下别的页在屏外）；一个都不相交时退回全部片段。
+  //   2. 锚段 = 含点击点的片段，没有点击点（键盘 / 手柄光标）或都不含时取第一段。
+  //   3. 从锚段出发，只并入交叉轴上与已并区间相距不超过两行的片段——同一栏里折到下一行
+  //      的半个词仍并进来（弹窗不压它），隔栏 / 隔半页的另一段不并。
+  anchoredWordBounds: function(rects, point, vertical) {
+    var list = [];
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      if (r && r.width > 0 && r.height > 0) list.push(r);
+    }
+    if (!list.length) return null;
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var visible = list.filter(function(r) {
+      return r.right > 0 && r.bottom > 0 && (!vw || r.left < vw) && (!vh || r.top < vh);
+    });
+    if (!visible.length) visible = list;
+    var anchor = null;
+    if (point) {
+      anchor = visible.find(function(r) {
+        return point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom;
+      }) || null;
+    }
+    if (!anchor) anchor = visible[0];
+    var bounds = { left: anchor.left, top: anchor.top, right: anchor.right, bottom: anchor.bottom };
+    var lineSize = vertical ? anchor.width : anchor.height;
+    var maxGap = lineSize * 2;
+    var pending = visible.filter(function(r) { return r !== anchor; });
+    var grew = true;
+    while (grew && pending.length) {
+      grew = false;
+      for (var k = pending.length - 1; k >= 0; k--) {
+        var c = pending[k];
+        var gap = vertical
+          ? Math.max(0, Math.max(c.left, bounds.left) - Math.min(c.right, bounds.right))
+          : Math.max(0, Math.max(c.top, bounds.top) - Math.min(c.bottom, bounds.bottom));
+        if (gap > maxGap) continue;
+        if (c.left < bounds.left) bounds.left = c.left;
+        if (c.top < bounds.top) bounds.top = c.top;
+        if (c.right > bounds.right) bounds.right = c.right;
+        if (c.bottom > bounds.bottom) bounds.bottom = c.bottom;
+        pending.splice(k, 1);
+        grew = true;
+      }
+    }
+    return bounds;
+  },
   highlightSelection: function(charCount) {
     if (!this.selection || !this.selection.ranges.length) return null;
     var trimmedRanges = [];
@@ -3676,25 +3796,19 @@ window.fushiSelection = {
       trimmedRanges.push({ node: r.node, start: r.start, end: end });
     }
     this.selection.matchedRanges = trimmedRanges;
-    var bounds = null;
+    var wordRects = [];
     for (var i = 0; i < trimmedRanges.length; i++) {
       var seg = trimmedRanges[i];
       var bRange = document.createRange();
       bRange.setStart(seg.node, seg.start);
       bRange.setEnd(seg.node, seg.end);
       var rects = bRange.getClientRects();
-      for (var j = 0; j < rects.length; j++) {
-        var r = rects[j];
-        if (!bounds) {
-          bounds = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-        } else {
-          if (r.left < bounds.left) bounds.left = r.left;
-          if (r.top < bounds.top) bounds.top = r.top;
-          if (r.right > bounds.right) bounds.right = r.right;
-          if (r.bottom > bounds.bottom) bounds.bottom = r.bottom;
-        }
-      }
+      for (var j = 0; j < rects.length; j++) wordRects.push(rects[j]);
     }
+    var firstSeg = trimmedRanges.length ? trimmedRanges[0] : null;
+    var bounds = this.anchoredWordBounds(
+      wordRects, this.selection.point || null,
+      firstSeg ? this.isVerticalTextNode(firstSeg.node) : false);
     if (window.__fushiCssHighlightsSupported) {
       // BUG-110：<ruby> 内的字不放进 ::highlight（竖排下 ::highlight 把 ruby 基字盒
       // 画两遍 → 半透明叠加成深色带遮字），改给 <ruby> 元素加 class 单次绘背景。

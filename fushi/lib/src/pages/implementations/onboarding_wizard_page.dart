@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show ByteData, rootBundle;
@@ -15,6 +16,7 @@ import 'package:fushi/src/models/module_registry.dart'
     show hasAnyNavigationModule;
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
+import 'package:fushi/src/onboarding/onboarding_system_permissions.dart';
 import 'package:fushi/src/onboarding/online_services_onboarding_view.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/onboarding/recommended_pack.dart';
@@ -131,6 +133,9 @@ List<OnboardingTutorialItem> fushiReviewFinishNextSteps() =>
 /// 步骤内容区最大宽度：桌面宽窗口下正文行长过长会难读，卡片也会被拉成长条。
 const double _kOnboardingContentMaxWidth = 720;
 
+/// 「跳过新手引导」确认键的强制等待（用户 2026-10-21：跳过前二次确认并强制三秒）。
+const Duration kOnboardingSkipConfirmDelay = Duration(seconds: 3);
+
 /// 功能选择页在多宽以上排两列。
 const double _kOnboardingTwoColumnMinWidth = 560;
 
@@ -151,9 +156,18 @@ const double _kOnboardingTwoColumnMinWidth = 560;
 /// [OnboardingStepHero]（图标 + 标题 + 一句话）开头；动作走 [OnboardingActionList]
 /// ——必做/推荐的动作直接摊开，可选动作收进「其他方式」折叠组，避免一屏五个入口。
 class OnboardingWizardPage extends BasePage {
-  const OnboardingWizardPage({this.tutorialOnly = false, super.key});
+  const OnboardingWizardPage({
+    this.tutorialOnly = false,
+    this.systemPermissions,
+    super.key,
+  });
 
   final bool tutorialOnly;
+
+  /// 「系统权限」一步的查询 / 申请端口。null = 按平台取（Android 用
+  /// [AppOnboardingSystemPermissions]，其它平台没有这一步）；测试注入假实现时
+  /// 任何平台都出这一步。
+  final OnboardingSystemPermissions? systemPermissions;
 
   @override
   BasePageState<OnboardingWizardPage> createState() =>
@@ -181,6 +195,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
 
   /// 最近一次换步的方向：决定共享轴转场往哪边滑（[OnboardingStepSwitcher]）。
   bool _navigatingForward = true;
+
+  /// 当前步骤正文下方是否还有没滚到的内容（反馈 VtbEJzUEYL：功能步「接下来
+  /// 配置」一节在视口外，用户看不到就直接按了下一步）。为真时底栏主按钮变成
+  /// 「往下看」，按一下先把正文往下翻一屏，滚到底才恢复「下一步」。
+  bool _stepHasMoreBelow = false;
+
+  /// 当前步骤正文的滚动体（随滚动通知更新，换步清空）。
+  ScrollableState? _stepScrollable;
   final OnboardingTutorialProgress _tutorialProgress =
       OnboardingTutorialProgress();
   bool _completing = false;
@@ -248,7 +270,63 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
           reviewMethod: _reviewMethod,
           // 只在没有「复习方式」一步（制卡没勾）时用得上：模块开着就出介绍步骤。
           srsEnabled: appModelNoUpdate.moduleVisibility.isEnabled(ModuleId.srs),
+          systemPermissionsAvailable: _systemPermissions != null,
         );
+
+  // ── 系统权限（仅 Android） ─────────────────────────────────────────
+  late final OnboardingSystemPermissions? _systemPermissions =
+      widget.systemPermissions ??
+      (Platform.isAndroid
+          ? AppOnboardingSystemPermissions(
+              updateFeed: appModelNoUpdate.updateFeedService,
+              permissionService: appModelNoUpdate.platformServices.permission,
+            )
+          : null);
+
+  /// 各权限的最近一次查询结果；没查过的不在表里（行显示为未开启、可点）。
+  final Map<OnboardingSystemPermission, bool> _permissionGranted =
+      <OnboardingSystemPermission, bool>{};
+
+  /// 悬浮窗 / 所有文件访问是跳系统设置页授权的：申请调用早于用户做完决定返回，
+  /// 只能等回到应用时再查一遍。
+  AppLifecycleListener? _permissionResumeListener;
+
+  Future<void> _refreshPermissions() async {
+    final OnboardingSystemPermissions? ops = _systemPermissions;
+    if (ops == null) return;
+    for (final OnboardingSystemPermission p
+        in OnboardingSystemPermission.values) {
+      final bool granted = await ops.isGranted(p);
+      if (!mounted) return;
+      setState(() => _permissionGranted[p] = granted);
+    }
+  }
+
+  /// 正在申请（系统弹窗 / 设置页还没返回）的权限：这些行置灰不可点。
+  /// permission_handler 同一时刻只允许一个在途申请，连点会抛 PlatformException。
+  final Set<OnboardingSystemPermission> _permissionRequesting =
+      <OnboardingSystemPermission>{};
+
+  Future<void> _requestPermission(OnboardingSystemPermission permission) async {
+    final OnboardingSystemPermissions? ops = _systemPermissions;
+    if (ops == null) return;
+    if (!_permissionRequesting.add(permission)) return;
+    if (mounted) setState(() {});
+    try {
+      await ops.request(permission);
+    } catch (e, stack) {
+      // 申请失败（平台拒绝 / 已有在途申请等）不打断向导，留痕后按真实状态刷新。
+      ErrorLogService.instance.log('onboarding.requestPermission', e, stack);
+    } finally {
+      _permissionRequesting.remove(permission);
+      if (mounted) setState(() {});
+    }
+    try {
+      await _refreshPermissions();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('onboarding.refreshPermissions', e, stack);
+    }
+  }
 
   /// 本平台上这个模块**是否存在**（与用户意愿无关）。平台判据只认
   /// [ModuleId.availableOn] 这一处，向导不再自己写 `Platform.isWindows`。
@@ -263,6 +341,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   void initState() {
     super.initState();
     if (widget.tutorialOnly) return;
+    if (_systemPermissions != null) {
+      _permissionResumeListener = AppLifecycleListener(
+        onResume: () => unawaited(_refreshPermissions()),
+      );
+      unawaited(_refreshPermissions());
+    }
     // 模块方格的初值 = 用户此刻的意愿（pref 真值，缺省全开）。遍历
     // [ModuleId.values] 而不是逐个 if：此前这里只覆盖 5 个模块，下载/查词等根本
     // 没被读也没被写，用户在引导里「只留阅读」压根做不到。
@@ -275,6 +359,12 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 包目录进场收尾（删已导入的残包、搬旧命名的半截文件、按磁盘对齐阶段）。
     // 下载正在跑时 controller 整体跳过——那些都是在动同一批文件。
     unawaited(_packController.prepareDiskState());
+  }
+
+  @override
+  void dispose() {
+    _permissionResumeListener?.dispose();
+    super.dispose();
   }
 
   // dispose 里**没有**取消下载：BUG-2097 的根因就是这里曾经有一句
@@ -304,12 +394,47 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       }
       if (!widget.tutorialOnly) {
         await appModelNoUpdate.setOnboardingCompleted(value: true);
+        // 只有走完才收首页的引导卡；跳过照旧留着它当回来的入口。
+        if (finished) {
+          await appModelNoUpdate.setOnboardingFinished(value: true);
+        }
       }
     } finally {
       _completing = false;
     }
     if (!mounted) return;
-    await Navigator.of(context).maybePop();
+    // 直接 pop：本页的 PopScope 拦的是「没确认就离开」，这里已经确认过了。
+    final NavigatorState navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
+  /// 跳过之前的二次确认（用户反馈：手滑点了「暂时跳过」就再也找不到引导）。
+  /// 确认键强制倒计时 [kOnboardingSkipConfirmDelay]，倒计时内只能取消。
+  bool _confirmingSkip = false;
+
+  ///
+  /// 只看查词教程（[OnboardingWizardPage.tutorialOnly]，导入推荐包后打开）时
+  /// 不弹：那不是「新手引导」，跳过它也丢不了任何配置入口，原本就是直接退出。
+  Future<void> _confirmSkip() async {
+    if (_confirmingSkip || _completing) return;
+    if (widget.tutorialOnly) {
+      await _complete();
+      return;
+    }
+    _confirmingSkip = true;
+    try {
+      final bool skip = await showFushiConfirmDialog(
+        context: context,
+        title: t.onboarding_skip_confirm_title,
+        message: t.onboarding_skip_confirm_desc,
+        confirmLabel: t.onboarding_skip_confirm_action,
+        icon: FushiIcons.flag,
+        confirmDelay: kOnboardingSkipConfirmDelay,
+      );
+      if (skip && mounted) await _complete();
+    } finally {
+      _confirmingSkip = false;
+    }
   }
 
   /// 离开功能选择步骤时，把模块勾选写进 `module_*_enabled` 偏好（只写有变化的）。
@@ -343,6 +468,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
   /// 变成硬门）。但建成了的话 `_steps` 会因为 Anki 变 ready 而多出一步，所以 await
   /// 之后必须重新取一次序列，不能沿用进函数时那份。
   Future<void> _goNextAsync() async {
+    if (_revealMoreOfStep()) return;
     if (_steps[_stepIndex] == OnboardingStepId.anki) {
       await promptCreateLapisIfCannotMine(
         context: context,
@@ -383,6 +509,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     setState(() {
       _navigatingForward = true;
       _stepIndex += 1;
+      _resetStepScroll();
     });
   }
 
@@ -391,7 +518,77 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     setState(() {
       _navigatingForward = false;
       _stepIndex -= 1;
+      _resetStepScroll();
     });
+  }
+
+  void _resetStepScroll() {
+    _stepHasMoreBelow = false;
+    _stepScrollable = null;
+  }
+
+  /// 正文下方还有没看到的内容时，把它往下翻约一屏并返回 true（这一下不换步）。
+  bool _revealMoreOfStep() {
+    final ScrollableState? scrollable = _stepScrollable;
+    if (!_stepHasMoreBelow || scrollable == null || !scrollable.mounted) {
+      return false;
+    }
+    final ScrollPosition position = scrollable.position;
+    if (!position.hasContentDimensions || !position.hasViewportDimension) {
+      return false;
+    }
+    final double target = math.min(
+      position.maxScrollExtent,
+      position.pixels + position.viewportDimension * 0.8,
+    );
+    if (target <= position.pixels) return false;
+    // 与步骤切换同一条 spatial 弹簧；墨水屏 / 减弱动态效果下时长归零，直接跳。
+    final FushiSpringSpec spatial = context.fushiMotion.spatialDefault;
+    if (spatial.duration == Duration.zero) {
+      position.jumpTo(target);
+    } else {
+      unawaited(
+        position.animateTo(
+          target,
+          duration: spatial.duration,
+          curve: spatial.curve,
+        ),
+      );
+    }
+    return true;
+  }
+
+  /// 收当前步骤正文（深度 0 的竖向滚动体）的滚动 / 尺寸通知，维护
+  /// [_stepHasMoreBelow]。[owner] 是发出通知的那一步：换步转场期间旧步骤还在树
+  /// 里，它的通知不能改写新步骤的状态。
+  bool _onStepScrollNotification(
+    OnboardingStepId owner,
+    Notification notification,
+  ) {
+    final ScrollMetrics metrics;
+    final BuildContext? source;
+    final int depth;
+    if (notification is ScrollNotification) {
+      metrics = notification.metrics;
+      source = notification.context;
+      depth = notification.depth;
+    } else if (notification is ScrollMetricsNotification) {
+      metrics = notification.metrics;
+      source = notification.context;
+      depth = notification.depth;
+    } else {
+      return false;
+    }
+    if (depth != 0 || metrics.axis != Axis.vertical) return false;
+    if (owner != _steps[_stepIndex]) return false;
+    _stepScrollable = source?.findAncestorStateOfType<ScrollableState>();
+    final bool more =
+        metrics.hasContentDimensions &&
+        metrics.extentAfter > kOnboardingMoreBelowSlop;
+    if (more != _stepHasMoreBelow && mounted) {
+      setState(() => _stepHasMoreBelow = more);
+    }
+    return false;
   }
 
   /// 「复习方式」点选：立即写偏好（模块开关 + 挖词目标），步骤序列随之重算（选 Fushi
@@ -984,25 +1181,104 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     // 流程与 Apple 的引导页都只保留一组前进 / 后退 / 跳过控件；系统返回手势 / 键
     // 照旧可离开。关闭自动推导，避免本页在可返回 route 中被脚手架补回返回按钮。
     // 脚手架的 PrimaryScrollController / PageScrollRegistry（手柄 LB/RB 翻页）照旧保留。
-    return FushiPageScaffold(
-      automaticallyImplyLeading: false,
-      headerCompact: true,
-      title: t.onboarding_title,
-      headerBottom: OnboardingProgressBar(
-        current: _stepIndex,
-        total: steps.length,
-      ),
-      body: OnboardingWizardBody(
-        stepKey: step,
-        forward: _navigatingForward,
-        step: _buildStep(step),
-        navigationBar: OnboardingNavigationBar(
-          onSkip: isLast ? null : () => unawaited(_complete()),
-          onBack: _stepIndex > 0 ? _goBack : null,
-          onNext: _goNext,
-          isLast: isLast,
+    // 系统返回手势 / 返回键与「暂时跳过」同义（都是没走完就离开），走同一个确认。
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) {
+        if (!didPop) unawaited(_confirmSkip());
+      },
+      child: FushiPageScaffold(
+        automaticallyImplyLeading: false,
+        headerCompact: true,
+        title: t.onboarding_title,
+        headerBottom: OnboardingProgressBar(
+          current: _stepIndex,
+          total: steps.length,
+        ),
+        body: OnboardingWizardBody(
+          stepKey: step,
+          forward: _navigatingForward,
+          step: NotificationListener<Notification>(
+            onNotification: (Notification n) =>
+                _onStepScrollNotification(step, n),
+            child: _buildStep(step),
+          ),
+          navigationBar: OnboardingNavigationBar(
+            onSkip: isLast ? null : () => unawaited(_confirmSkip()),
+            onBack: _stepIndex > 0 ? _goBack : null,
+            onNext: _goNext,
+            isLast: isLast,
+            moreBelow: _stepHasMoreBelow,
+          ),
         ),
       ),
+    );
+  }
+
+  /// 「系统权限」：每项一行，未开启的可点去开，已开启的置灰并挂勾。三项都标
+  /// 「推荐」而不是「可选」：可选项会被 [OnboardingActionList] 收进「其他方式」
+  /// 折叠，而这一步的全部意义就是让人看见哪几项还关着。
+  Widget _buildPermissionsStep() {
+    final Color grantedColor = Theme.of(context).colorScheme.primary;
+    OnboardingAction row(
+      OnboardingSystemPermission permission, {
+      required IconData icon,
+      required String label,
+      required String description,
+      required OnboardingActionNecessity necessity,
+    }) {
+      final bool granted = _permissionGranted[permission] ?? false;
+      final bool requesting = _permissionRequesting.contains(permission);
+      return OnboardingAction(
+        icon: icon,
+        label: label,
+        description: granted
+            ? '${t.onboarding_permission_granted} · $description'
+            : description,
+        necessity: necessity,
+        onPressed: granted || requesting
+            ? null
+            : () => unawaited(_requestPermission(permission)),
+        trailing: granted
+            ? FushiIcon(
+                FushiIcons.check,
+                key: ValueKey<String>(
+                  'onboarding-permission-granted-'
+                  '${permission.name}',
+                ),
+                color: grantedColor,
+              )
+            : null,
+      );
+    }
+
+    return OnboardingStepView(
+      icon: FushiIcons.shield,
+      title: t.onboarding_step_permissions_title,
+      body: t.onboarding_step_permissions_body,
+      actions: <OnboardingAction>[
+        row(
+          OnboardingSystemPermission.notifications,
+          icon: FushiIcons.notifications,
+          label: t.onboarding_permission_notifications_label,
+          description: t.onboarding_permission_notifications_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+        row(
+          OnboardingSystemPermission.overlay,
+          icon: FushiIcons.floatingBall,
+          label: t.onboarding_permission_overlay_label,
+          description: t.onboarding_permission_overlay_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+        row(
+          OnboardingSystemPermission.storage,
+          icon: FushiIcons.folder,
+          label: t.onboarding_permission_storage_label,
+          description: t.onboarding_permission_storage_desc,
+          necessity: OnboardingActionNecessity.recommended,
+        ),
+      ],
     );
   }
 
@@ -1012,6 +1288,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return _buildWelcomeStep();
       case OnboardingStepId.features:
         return _buildFeaturesStep();
+      case OnboardingStepId.permissions:
+        return _buildPermissionsStep();
       case OnboardingStepId.recommendedPack:
         return _buildPackStep();
       case OnboardingStepId.manualResources:
@@ -1923,17 +2201,25 @@ class _OnboardingSharedAxisX extends StatelessWidget {
 ///
 /// M3E 按钮尺寸随宽度换档：宽屏（≥ 480）用 M（56 高），窄屏用 S（40 高），手机上
 /// 三颗按钮 + 中文 / 英文标签都放得下。
+/// 正文离底还剩多少逻辑像素以内算「已看到底」（吸收亚像素与回弹误差）。
+const double kOnboardingMoreBelowSlop = 8;
+
 class OnboardingNavigationBar extends StatelessWidget {
   const OnboardingNavigationBar({
     required this.onNext,
     required this.isLast,
     this.onSkip,
     this.onBack,
+    this.moreBelow = false,
     super.key,
   });
 
   final VoidCallback onNext;
   final bool isLast;
+
+  /// 当前步骤正文下方还有没看到的内容：主按钮显示「往下看」（向下箭头），
+  /// [onNext] 此时先翻正文而不换步（反馈 VtbEJzUEYL）。
+  final bool moreBelow;
 
   /// null = 不显示「跳过」（最后一步）。
   final VoidCallback? onSkip;
@@ -1983,10 +2269,16 @@ class OnboardingNavigationBar extends StatelessWidget {
                   onPressed: onNext,
                   iconAlignment: IconAlignment.end,
                   icon: FushiIcon(
-                    isLast ? FushiIcons.check : FushiIcons.forward,
+                    moreBelow
+                        ? FushiIcons.arrowDown
+                        : isLast
+                        ? FushiIcons.check
+                        : FushiIcons.forward,
                   ),
                   label: Text(
-                    isLast
+                    moreBelow
+                        ? t.onboarding_action_scroll_more
+                        : isLast
                         ? t.onboarding_action_start
                         : t.onboarding_action_next,
                   ),
@@ -2276,7 +2568,10 @@ class OnboardingHeroIllustration extends StatelessWidget {
               top: 0,
               child: accent(
                 size: 40,
-                border: FushiCookieBorder(lobes: 4, side: side),
+                border: MaterialShapeBorder(
+                  shape: MaterialShapes.cookie4Sided,
+                  side: side,
+                ),
                 color: colors.tertiaryContainer,
               ),
             ),

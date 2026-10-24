@@ -117,6 +117,69 @@ class RwkvWorker {
     return out.materialize().asFloat32List();
   }
 
+  /// 追加并记撤销日志（[RwkvNativeRuntime.append]）。返回 false = 模型不支持撤销日志（大模型），
+  /// 这时行**已按普通回放追加**（状态照样是最新的，只是不能 [unappend]）。
+  Future<bool> append(RwkvRows rows, List<int> tags) =>
+      _call<bool>(_Op.append, (
+        TransferableTypedData.fromList(<Uint8List>[rows.bytes]),
+        Uint64List.fromList(tags),
+      ));
+
+  /// 撤回最近一条 [append]（仅当标签是 [tag]）。
+  Future<bool> unappend(int tag) => _call<bool>(_Op.unappend, tag);
+
+  Future<void> clearScores() => _call<void>(_Op.clearScores);
+
+  Future<RwkvScoreLookup> lookupScores(
+    Int64List cardIds,
+    Uint64List versions,
+  ) async {
+    final (TransferableTypedData, TransferableTypedData) out =
+        await _call<(TransferableTypedData, TransferableTypedData)>(
+          _Op.lookupScores,
+          (
+            TransferableTypedData.fromList(<Uint8List>[
+              cardIds.buffer.asUint8List(
+                cardIds.offsetInBytes,
+                cardIds.lengthInBytes,
+              ),
+            ]),
+            TransferableTypedData.fromList(<Uint8List>[
+              versions.buffer.asUint8List(
+                versions.offsetInBytes,
+                versions.lengthInBytes,
+              ),
+            ]),
+          ),
+        );
+    return RwkvScoreLookup(
+      out.$1.materialize().asFloat32List(),
+      out.$2.materialize().asUint8List(),
+    );
+  }
+
+  Future<Float32List> updateScores(
+    RwkvRows rows,
+    Uint64List versions,
+    Int64List anchorsMs,
+  ) async {
+    final TransferableTypedData out =
+        await _call<TransferableTypedData>(_Op.updateScores, (
+          TransferableTypedData.fromList(<Uint8List>[rows.bytes]),
+          Uint64List.fromList(versions),
+          Int64List.fromList(anchorsMs),
+        ));
+    return out.materialize().asFloat32List();
+  }
+
+  /// [RwkvNativeRuntime.requeryScores]。
+  Future<int> requeryScores(int today, int nowMs) =>
+      _call<int>(_Op.requeryScores, (today, nowMs));
+
+  /// [RwkvNativeRuntime.removeScores]。
+  Future<int> removeScores(Int64List cardIds) =>
+      _call<int>(_Op.removeScores, Int64List.fromList(cardIds));
+
   Future<RwkvIntervals> nextIntervals(
     RwkvRows answer, {
     required double targetRetention,
@@ -177,6 +240,13 @@ class RwkvWorker {
 enum _Op {
   replay,
   query,
+  append,
+  unappend,
+  clearScores,
+  lookupScores,
+  updateScores,
+  requeryScores,
+  removeScores,
   nextIntervals,
   snapshot,
   restore,
@@ -309,6 +379,55 @@ Object? _run(RwkvNativeRuntime runtime, _Command command) {
       return TransferableTypedData.fromList(<Uint8List>[
         out.buffer.asUint8List(),
       ]);
+    case _Op.append:
+      final (TransferableTypedData rows, Uint64List tags) =
+          command.argument! as (TransferableTypedData, Uint64List);
+      final RwkvRows batch = rowsOf(rows);
+      try {
+        runtime.append(batch, tags);
+        return true;
+      } on RwkvNativeException catch (error) {
+        if (!error.isUnsupported) rethrow;
+        runtime.replay(batch);
+        return false;
+      }
+    case _Op.unappend:
+      return runtime.unappend(command.argument! as int);
+    case _Op.clearScores:
+      runtime.clearScores();
+      return null;
+    case _Op.lookupScores:
+      final (TransferableTypedData ids, TransferableTypedData versions) =
+          command.argument! as (TransferableTypedData, TransferableTypedData);
+      final RwkvScoreLookup out = runtime.lookupScores(
+        ids.materialize().asInt64List(),
+        versions.materialize().asUint64List(),
+      );
+      return (
+        TransferableTypedData.fromList(<Uint8List>[
+          out.scores.buffer.asUint8List(),
+        ]),
+        TransferableTypedData.fromList(<Uint8List>[out.found]),
+      );
+    case _Op.updateScores:
+      final (
+        TransferableTypedData rows,
+        Uint64List versions,
+        Int64List anchors,
+      ) = command.argument! as (TransferableTypedData, Uint64List, Int64List);
+      final Float32List out = runtime.updateScores(
+        rowsOf(rows),
+        versions,
+        anchors,
+      );
+      return TransferableTypedData.fromList(<Uint8List>[
+        out.buffer.asUint8List(),
+      ]);
+    case _Op.requeryScores:
+      final (int today, int nowMs) = command.argument! as (int, int);
+      return runtime.requeryScores(today, nowMs);
+    case _Op.removeScores:
+      return runtime.removeScores(command.argument! as Int64List);
     case _Op.nextIntervals:
       final (Uint8List row, double target, int max) =
           command.argument! as (Uint8List, double, int);

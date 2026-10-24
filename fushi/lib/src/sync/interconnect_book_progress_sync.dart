@@ -12,7 +12,17 @@ const String kInterconnectBookProgressDimension = 'progress_live';
 
 /// 「已发出、尚未确认」的推送位置（BUG-3528）。值形态同基线（[BookProgressBaseline]
 /// 编码）；推送成功并记下基线后删除。见 [InterconnectBookProgressSync.decide]。
-const String kInterconnectBookProgressPendingDimension = 'progress_live_pending';
+const String kInterconnectBookProgressPendingDimension =
+    'progress_live_pending';
+
+/// 一轮书籍进度 sweep 开头一次读齐的本端状态（见
+/// [InterconnectBookProgressSync.loadSweepSnapshot]）：`reader_positions` 按书 uid，
+/// 位置基线 / 「待确认」基线按 bookKey（值是 [BookProgressBaseline.encode]）。
+typedef BookProgressSweepSnapshot = ({
+  Map<String, ReaderPositionRow> positions,
+  Map<String, int> baselines,
+  Map<String, int> pending,
+});
 
 /// 互联书籍进度的三方同步落地层（BUG-2506）：sweep（[SyncOrchestrator]）与
 /// 冲突对比弹窗（`SyncCompareDialog`）共用同一份读 / 写 / 记基线，两处口径不会
@@ -26,8 +36,8 @@ class InterconnectBookProgressSync {
   const InterconnectBookProgressSync({
     required FushiDatabase db,
     required InterconnectSyncBackend backend,
-  })  : _db = db,
-        _backend = backend;
+  }) : _db = db,
+       _backend = backend;
 
   final FushiDatabase _db;
   final InterconnectSyncBackend _backend;
@@ -45,16 +55,72 @@ class InterconnectBookProgressSync {
     );
   }
 
+  /// 一次读齐 sweep 判定要用的本端状态：全部 `reader_positions`（按书 uid）、
+  /// 全部位置基线与「待确认」基线（按 bookKey），共三条查询，免逐本 N+1。
+  Future<BookProgressSweepSnapshot> loadSweepSnapshot() async => (
+    positions: <String, ReaderPositionRow>{
+      for (final ReaderPositionRow row in await _db.getAllReaderPositions())
+        row.bookUid: row,
+    },
+    baselines: await _db.getSyncBaselinesForDimension(
+      kInterconnectBookProgressDimension,
+    ),
+    pending: await _db.getSyncBaselinesForDimension(
+      kInterconnectBookProgressPendingDimension,
+    ),
+  );
+
+  /// 从快照取本端进度（与 [localProgress] 同口径，零查询）。
+  static RemoteBookProgress localProgressFromSnapshot(
+    EpubBookRow book,
+    BookProgressSweepSnapshot snapshot,
+  ) {
+    final ReaderPositionRow? row = snapshot.positions[book.uid];
+    if (row == null) return RemoteBookProgress.empty;
+    return RemoteBookProgress(
+      sectionIndex: row.sectionIndex,
+      normCharOffset: row.normCharOffset,
+      charOffset: row.charOffset,
+      updatedAtMs: row.updatedAt,
+    );
+  }
+
+  /// 两端已完全收敛、这一轮无事可做（sweep 据此跳过，不再逐本读写基线）。
+  ///
+  /// 对应原路径 [decide] → synced → [alignSynced] 的净零情形：
+  /// - 两端都无记录：[alignSynced] 本来就直接返回；
+  /// - 两端位置、charOffset、时间戳全同，基线已等于该位置，且没有「待确认」
+  ///   推送：不 PUT、不落本端，只是把同一个基线重写一遍、删一条不存在的行。
+  /// 任何一项不成立都不算收敛，调用方回到原路径逐本重读、判定、落地，语义不变。
+  static bool isSettled({
+    required EpubBookRow book,
+    required RemoteBookProgress local,
+    required RemoteBookProgress remote,
+    required BookProgressSweepSnapshot snapshot,
+  }) {
+    if (local.updatedAtMs <= 0 && remote.updatedAtMs <= 0) return true;
+    if (snapshot.pending.containsKey(book.bookKey)) return false;
+    if (local.updatedAtMs != remote.updatedAtMs ||
+        local.charOffset != remote.charOffset ||
+        !sameBookPosition(local, remote)) {
+      return false;
+    }
+    return snapshot.baselines[book.bookKey] ==
+        BookProgressBaseline.of(local).encode();
+  }
+
   /// host 端该书进度（host 无记录 → empty）。
   Future<RemoteBookProgress> remoteProgress(EpubBookRow book) =>
       _backend.remoteBookProgress(book.bookKey);
 
   /// 上次两端达成一致的位置基线（没有 → null）。
   Future<BookProgressBaseline?> baseline(EpubBookRow book) async =>
-      BookProgressBaseline.decode(await _db.getSyncBaseline(
-        book.bookKey,
-        kInterconnectBookProgressDimension,
-      ));
+      BookProgressBaseline.decode(
+        await _db.getSyncBaseline(
+          book.bookKey,
+          kInterconnectBookProgressDimension,
+        ),
+      );
 
   /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
   ///
@@ -69,11 +135,12 @@ class InterconnectBookProgressSync {
     required RemoteBookProgress remote,
   }) async {
     BookProgressBaseline? base = await baseline(book);
-    final BookProgressBaseline? pending =
-        BookProgressBaseline.decode(await _db.getSyncBaseline(
-      book.bookKey,
-      kInterconnectBookProgressPendingDimension,
-    ));
+    final BookProgressBaseline? pending = BookProgressBaseline.decode(
+      await _db.getSyncBaseline(
+        book.bookKey,
+        kInterconnectBookProgressPendingDimension,
+      ),
+    );
     if (pending != null &&
         remote.updatedAtMs > 0 &&
         pending.matches(remote) &&
@@ -81,7 +148,11 @@ class InterconnectBookProgressSync {
       await recordBaseline(book, remote);
       base = pending;
     }
-    return resolveBookProgressThreeWay(local: local, remote: remote, base: base);
+    return resolveBookProgressThreeWay(
+      local: local,
+      remote: remote,
+      base: base,
+    );
   }
 
   /// 记下两端此刻达成一致的位置；同时作废「待确认」推送（两端已对齐，它不再
@@ -151,8 +222,11 @@ class InterconnectBookProgressSync {
     RemoteBookProgress remote, {
     required RemoteBookProgress local,
   }) async {
-    final bool landed =
-        await _upsertLocalIfUnchanged(book, remote, expected: local);
+    final bool landed = await _upsertLocalIfUnchanged(
+      book,
+      remote,
+      expected: local,
+    );
     if (landed) await recordBaseline(book, remote);
     return landed;
   }
@@ -166,20 +240,26 @@ class InterconnectBookProgressSync {
     required RemoteBookProgress remote,
   }) async {
     if (local.updatedAtMs <= 0 && remote.updatedAtMs <= 0) return false;
-    final RemoteBookProgress winner =
-        resolveBookProgressSync(local: local, remote: remote);
+    final RemoteBookProgress winner = resolveBookProgressSync(
+      local: local,
+      remote: remote,
+    );
     if (winner.updatedAtMs > remote.updatedAtMs ||
         (winner.updatedAtMs == remote.updatedAtMs &&
             winner.charOffset != remote.charOffset)) {
       await _backend.putRemoteBookProgress(book.bookKey, winner);
     }
-    bool localChanged = winner.updatedAtMs != local.updatedAtMs ||
+    bool localChanged =
+        winner.updatedAtMs != local.updatedAtMs ||
         winner.charOffset != local.charOffset;
     if (localChanged) {
       // 比较后写入（BUG-3537）：本地在判定后被改写就不对齐，下一轮再说。位置
       // 一致这件事在判定时成立、host 也停在这个位置，基线照记。
-      localChanged =
-          await _upsertLocalIfUnchanged(book, winner, expected: local);
+      localChanged = await _upsertLocalIfUnchanged(
+        book,
+        winner,
+        expected: local,
+      );
     }
     await recordBaseline(book, winner);
     return localChanged;
@@ -191,15 +271,14 @@ class InterconnectBookProgressSync {
     EpubBookRow book,
     RemoteBookProgress p, {
     required RemoteBookProgress expected,
-  }) =>
-      _db.upsertReaderPositionIfUnchanged(
-        ReaderPositionsCompanion(
-          bookUid: Value(book.uid),
-          sectionIndex: Value(p.sectionIndex),
-          normCharOffset: Value(p.normCharOffset),
-          charOffset: Value(p.charOffset),
-          updatedAt: Value(p.updatedAtMs),
-        ),
-        expectedUpdatedAt: expected.updatedAtMs,
-      );
+  }) => _db.upsertReaderPositionIfUnchanged(
+    ReaderPositionsCompanion(
+      bookUid: Value(book.uid),
+      sectionIndex: Value(p.sectionIndex),
+      normCharOffset: Value(p.normCharOffset),
+      charOffset: Value(p.charOffset),
+      updatedAt: Value(p.updatedAtMs),
+    ),
+    expectedUpdatedAt: expected.updatedAtMs,
+  );
 }

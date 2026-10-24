@@ -30,11 +30,12 @@ class CueEnergySnapper {
     this.floorMarginDb = 16,
     this.minThresholdDb = -50,
     this.maxThresholdDb = -30,
-    this.tokenGuardMs = 200,
+    this.tokenGuardMs = 1000,
     this.edgeMaxShiftMs = 600,
     this.edgeMinVoiceMs = 60,
     this.edgeLeadMs = 150,
     this.edgeTailMs = 80,
+    this.cutBiasMs = 350,
   });
 
   /// [refineEdges]：终点留到收声后多少。春物卷 2 扫过 80 / 150：150 起点延迟
@@ -51,6 +52,12 @@ class CueEnergySnapper {
 
   /// [refineEdges]：多长的连续有声才算真开口 / 真收声（滤掉单帧噪声）。
   final int edgeMinVoiceMs;
+
+  /// [snap] 选谷的中心相对 token 推算切点往后挪多少。RNN-T 发射系统性偏早
+  /// （首 token 比开口早 ~440 ms），切点跟着偏早；以原切点为中心选谷时，常挑中
+  /// 前句句尾之前的换气停顿，前句没念完就换下一句。四个系列 7 本扫 0 / 200 / 350：
+  /// 350 时句间早切（七魔剑 II 173 → 12、春物 6 247 → 11）最少，晚起点基本不变。
+  final int cutBiasMs;
 
   /// 包络帧长（与转录时写入的一致）。
   final int frameMs;
@@ -84,7 +91,9 @@ class CueEnergySnapper {
   final double maxThresholdDb;
 
   /// 后句新起点不晚于它首 token 发射时刻 + 此值（RNN-T 首 token 一般早于开口，
-  /// 比它还晚很多就是吸错了谷、会吃掉字头）。
+  /// 比它还晚很多就是吸错了谷、会吃掉字头）。原先 200 ms 太紧：首 token 常比开口早
+  /// 400~700 ms，正确的谷反被拦下、切点留在前句句尾里（七魔剑 II 句间早切 173 处）；
+  /// 1000 ms 时早切降到 YuiMoe 的水平，晚起点只多 0~5 条（多为换气声边界）。
   final int tokenGuardMs;
 
   // 两个方法共用的门限：每 250 帧一块、取前后 750 帧已知电平的第 10 百分位当底噪 +
@@ -142,6 +151,7 @@ class CueEnergySnapper {
     edgeMinVoiceMs.toDouble(),
     edgeLeadMs.toDouble(),
     edgeTailMs.toDouble(),
+    cutBiasMs.toDouble(),
   ]);
 
   /// 打包成 [kFfcSnapCueStride] 槽一条：起止、文件序号、有无 token、首末 token 偏移

@@ -123,6 +123,14 @@ Future<SrsStatsBundle> loadSrsStats(
     if (i % 4000 == 3999) await Future<void>.delayed(Duration.zero);
   }
 
+  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后隐藏的旧卡）的日志算到继承它历史的可见卡上，
+  // 与复习时用的 [SrsDbStore.history] 同一血统：否则迁移过来的卡在牌组统计里一条复习都没有。
+  for (final MapEntry<String, String> e
+      in (await store.historyOwnerIndex()).entries) {
+    final List<SrsReviewLog>? moved = logsByCard.remove(e.key);
+    if (moved != null) (logsByCard[e.value] ??= <SrsReviewLog>[]).addAll(moved);
+  }
+
   final List<SrsCardCacheRow> cardRows = <SrsCardCacheRow>[
     for (final SrsCardCacheRow c in await store.allCardRows())
       if (!c.hidden) c,
@@ -161,7 +169,7 @@ Future<SrsStatsBundle> loadSrsStats(
   for (final MapEntry<String, List<SrsReviewLog>> e in logsByCard.entries) {
     final SrsCardHistory h = SrsCardHistory(e.value);
     final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-    one = srsStatsFromHistory(h, dayCtx);
+    one = srsStatsFromHistory(h, dayCtx, cardId: e.key);
     reviews.addAll(one.reviews);
     maturity.addAll(one.maturity);
     memoryByCard[e.key] = h.state.memory;

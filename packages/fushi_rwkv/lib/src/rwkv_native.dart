@@ -33,12 +33,13 @@ enum RwkvPrecision {
 class RwkvNativeException implements Exception {
   const RwkvNativeException(this.code, this.message);
 
-  /// -1 参数、-2 输入行、-3 数据、-4 panic、-5 poisoned（见 README.md）。
+  /// -1 参数、-2 输入行、-3 数据、-4 panic、-5 poisoned、-6 模型不支持（见 README.md）。
   final int code;
   final String message;
 
   bool get isInput => code == -2;
   bool get isPoisoned => code == -5;
+  bool get isUnsupported => code == -6;
 
   @override
   String toString() => 'RwkvNativeException($code): $message';
@@ -70,6 +71,17 @@ class RwkvStats {
 
   int get totalBytes =>
       cardStateBytes + noteStateBytes + sharedStateBytes + featureStateBytes;
+}
+
+/// 分数表查询（`frwkv_runtime_scores_lookup`）：[scores] 与请求同序，没命中的是 NaN、
+/// [found] 对应位是 0。
+class RwkvScoreLookup {
+  const RwkvScoreLookup(this.scores, this.found);
+
+  final Float32List scores;
+  final Uint8List found;
+
+  int get hits => found.fold<int>(0, (int n, int f) => n + f);
 }
 
 /// 作答时排程的结果：Again / Hard / Good / Easy 各自的天数与那天的 R。
@@ -138,6 +150,52 @@ typedef _RestoreC = Int32 Function(Pointer<Void>, Pointer<Uint8>, Size);
 typedef _RestoreDart = int Function(Pointer<Void>, Pointer<Uint8>, int);
 typedef _StatsC = Int32 Function(Pointer<Void>, Pointer<_Stats>);
 typedef _StatsDart = int Function(Pointer<Void>, Pointer<_Stats>);
+typedef _AppendC =
+    Int32 Function(Pointer<Void>, Pointer<Uint8>, Pointer<Uint64>, Size);
+typedef _AppendDart =
+    int Function(Pointer<Void>, Pointer<Uint8>, Pointer<Uint64>, int);
+typedef _UnappendC = Int32 Function(Pointer<Void>, Uint64);
+typedef _UnappendDart = int Function(Pointer<Void>, int);
+typedef _LookupC =
+    Int32 Function(
+      Pointer<Void>,
+      Pointer<Int64>,
+      Pointer<Uint64>,
+      Size,
+      Pointer<Float>,
+      Pointer<Uint8>,
+    );
+typedef _LookupDart =
+    int Function(
+      Pointer<Void>,
+      Pointer<Int64>,
+      Pointer<Uint64>,
+      int,
+      Pointer<Float>,
+      Pointer<Uint8>,
+    );
+typedef _UpdateC =
+    Int32 Function(
+      Pointer<Void>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+      Pointer<Int64>,
+      Size,
+      Pointer<Float>,
+    );
+typedef _UpdateDart =
+    int Function(
+      Pointer<Void>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+      Pointer<Int64>,
+      int,
+      Pointer<Float>,
+    );
+typedef _RequeryC = Int32 Function(Pointer<Void>, Int64, Int64);
+typedef _RequeryDart = int Function(Pointer<Void>, int, int);
+typedef _RemoveC = Int32 Function(Pointer<Void>, Pointer<Int64>, Size);
+typedef _RemoveDart = int Function(Pointer<Void>, Pointer<Int64>, int);
 typedef _LastErrorC = Pointer<Utf8> Function();
 typedef _FreeStringC = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
@@ -173,6 +231,27 @@ class _Bindings {
         'frwkv_runtime_reset',
       ),
       stats = lib.lookupFunction<_StatsC, _StatsDart>('frwkv_runtime_stats'),
+      append = lib.lookupFunction<_AppendC, _AppendDart>(
+        'frwkv_runtime_append',
+      ),
+      unappend = lib.lookupFunction<_UnappendC, _UnappendDart>(
+        'frwkv_runtime_unappend',
+      ),
+      scoresClear = lib.lookupFunction<_PtrToI32C, _PtrToI32Dart>(
+        'frwkv_runtime_scores_clear',
+      ),
+      scoresLookup = lib.lookupFunction<_LookupC, _LookupDart>(
+        'frwkv_runtime_scores_lookup',
+      ),
+      scoresUpdate = lib.lookupFunction<_UpdateC, _UpdateDart>(
+        'frwkv_runtime_scores_update',
+      ),
+      scoresRequery = lib.lookupFunction<_RequeryC, _RequeryDart>(
+        'frwkv_runtime_scores_requery',
+      ),
+      scoresRemove = lib.lookupFunction<_RemoveC, _RemoveDart>(
+        'frwkv_runtime_scores_remove',
+      ),
       lastError = lib.lookupFunction<_LastErrorC, _LastErrorC>(
         'frwkv_last_error',
       ),
@@ -195,6 +274,13 @@ class _Bindings {
   final _RestoreDart restore;
   final _PtrToI32Dart reset;
   final _StatsDart stats;
+  final _AppendDart append;
+  final _UnappendDart unappend;
+  final _PtrToI32Dart scoresClear;
+  final _LookupDart scoresLookup;
+  final _UpdateDart scoresUpdate;
+  final _RequeryDart scoresRequery;
+  final _RemoveDart scoresRemove;
   final Pointer<Utf8> Function() lastError;
   final _FreeStringDart freeString;
   final _FreeBytesDart freeBytes;
@@ -322,6 +408,124 @@ class RwkvNativeRuntime implements Finalizable {
     } finally {
       malloc.free(input);
       if (out != nullptr) malloc.free(out);
+    }
+  }
+
+  /// 追加已答复习并记撤销日志（`frwkv_runtime_append`，标签 [tags] 与行同序）：状态与 [replay]
+  /// 同一批行逐位相同，之后可用 [unappend] 原样撤回。只有小模型支持（大模型抛
+  /// [RwkvNativeException.isUnsupported]）。
+  void append(RwkvRows rows, List<int> tags) {
+    _alive();
+    final int n = rows.length;
+    if (tags.length != n) throw ArgumentError('tags/rows length mismatch');
+    final Pointer<Uint8> input = malloc<Uint8>(n * kFrwkvReviewSize + 1);
+    final Pointer<Uint64> tagBuffer = malloc<Uint64>(n + 1);
+    try {
+      input.asTypedList(n * kFrwkvReviewSize).setAll(0, rows.bytes);
+      tagBuffer.asTypedList(n).setAll(0, tags);
+      _b.check(_b.append(_handle, input, tagBuffer, n));
+    } finally {
+      malloc
+        ..free(input)
+        ..free(tagBuffer);
+    }
+  }
+
+  /// 撤回最近一条 [append]（仅当标签是 [tag]）：true = 已撤回，状态与没回放过它逐位相同；
+  /// false = 不是它（或日志已清空），什么都没改。
+  bool unappend(int tag) {
+    _alive();
+    final int code = _b.unappend(_handle, tag);
+    if (code < 0) throw _b.error(code);
+    return code == 1;
+  }
+
+  /// 清空常驻分数表（全量刷新前）。
+  void clearScores() {
+    _alive();
+    _b.check(_b.scoresClear(_handle));
+  }
+
+  /// 在分数表里查这些卡（id 与版本，见 lib.rs `frwkv_runtime_scores_lookup`）。不改状态。
+  RwkvScoreLookup lookupScores(Int64List cardIds, Uint64List versions) {
+    _alive();
+    final int n = cardIds.length;
+    if (versions.length != n) throw ArgumentError('ids/versions mismatch');
+    final Pointer<Int64> ids = malloc<Int64>(n + 1);
+    final Pointer<Uint64> vs = malloc<Uint64>(n + 1);
+    final Pointer<Float> scores = malloc<Float>(n + 1);
+    final Pointer<Uint8> found = malloc<Uint8>(n + 1);
+    try {
+      ids.asTypedList(n).setAll(0, cardIds);
+      vs.asTypedList(n).setAll(0, versions);
+      final int code = _b.scoresLookup(_handle, ids, vs, n, scores, found);
+      if (code < 0) throw _b.error(code);
+      return RwkvScoreLookup(
+        Float32List.fromList(scores.asTypedList(n)),
+        Uint8List.fromList(found.asTypedList(n)),
+      );
+    } finally {
+      malloc
+        ..free(ids)
+        ..free(vs)
+        ..free(scores)
+        ..free(found);
+    }
+  }
+
+  /// 算这些查询行的 R（与 [query] 逐位相同）并记进分数表（版本 [versions]；锚点
+  /// [anchorsMs] = 每张卡最后一条保留评分的时刻，没有给 -1，[requeryScores] 用）。
+  Float32List updateScores(
+    RwkvRows rows,
+    Uint64List versions,
+    Int64List anchorsMs,
+  ) {
+    _alive();
+    final int n = rows.length;
+    if (versions.length != n || anchorsMs.length != n) {
+      throw ArgumentError('rows/versions/anchors mismatch');
+    }
+    final Pointer<Uint8> input = malloc<Uint8>(n * kFrwkvReviewSize + 1);
+    final Pointer<Uint64> vs = malloc<Uint64>(n + 1);
+    final Pointer<Int64> anchors = malloc<Int64>(n + 1);
+    final Pointer<Float> out = malloc<Float>(n + 1);
+    try {
+      input.asTypedList(n * kFrwkvReviewSize).setAll(0, rows.bytes);
+      vs.asTypedList(n).setAll(0, versions);
+      anchors.asTypedList(n).setAll(0, anchorsMs);
+      _b.check(_b.scoresUpdate(_handle, input, vs, anchors, n, out));
+      return Float32List.fromList(out.asTypedList(n));
+    } finally {
+      malloc
+        ..free(input)
+        ..free(vs)
+        ..free(anchors)
+        ..free(out);
+    }
+  }
+
+  /// 全量刷新分数表：每一项按第 [today] 个调度日、此刻 [nowMs] 重算（lib.rs
+  /// `frwkv_runtime_scores_requery`）。返回重查的项数。
+  int requeryScores(int today, int nowMs) {
+    _alive();
+    final int code = _b.scoresRequery(_handle, today, nowMs);
+    if (code < 0) throw _b.error(code);
+    return code;
+  }
+
+  /// 从分数表删掉这些卡的项（卡被永久清除，lib.rs `frwkv_runtime_scores_remove`）。
+  /// 返回删掉的项数。
+  int removeScores(Int64List cardIds) {
+    _alive();
+    final int n = cardIds.length;
+    final Pointer<Int64> ids = malloc<Int64>(n + 1);
+    try {
+      ids.asTypedList(n).setAll(0, cardIds);
+      final int code = _b.scoresRemove(_handle, ids, n);
+      if (code < 0) throw _b.error(code);
+      return code;
+    } finally {
+      malloc.free(ids);
     }
   }
 

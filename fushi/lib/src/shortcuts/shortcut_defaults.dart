@@ -330,6 +330,9 @@ class ShortcutDefaults {
     ShortcutAction.videoScreenshotSubtitled: _kb([
       _key(LogicalKeyboardKey.keyS, {ModifierKey.shift}),
     ]),
+    // 识别当前画面：O = OCR。video co-active 组（含 universal）内裸 O 此前完全空闲。
+    // 手柄留空，用户可自绑。
+    ShortcutAction.videoOcrFrame: _kb([_key(LogicalKeyboardKey.keyO)]),
     ShortcutAction.videoToggleFullscreen: _kb(
       [_key(LogicalKeyboardKey.keyF), _key(LogicalKeyboardKey.f12)],
       [_gRT],
@@ -492,6 +495,55 @@ class ShortcutDefaults {
         ModifierKey.shift,
       }),
     ]),
+    // app 内浏览器（webBrowser 独立 co-active 组）：桌面浏览器的通行键位。macOS
+    // 表自动 Ctrl→Meta（⌘T / ⌘W / ⌘L…），被系统占用或另有 Apple 惯例的几条见
+    // [_macOSKeyboardOverrides]。
+    ShortcutAction.webBrowserNewTab: _kb([
+      _key(LogicalKeyboardKey.keyT, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserCloseTab: _kb([
+      _key(LogicalKeyboardKey.keyW, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserReopenClosedTab: _kb([
+      _key(LogicalKeyboardKey.keyT, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.webBrowserNextTab: _kb([
+      _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserPreviousTab: _kb([
+      _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.webBrowserFocusAddress: _kb([
+      _key(LogicalKeyboardKey.keyL, {ModifierKey.ctrl}),
+    ]),
+    // 网页后退：**不绑 Alt+←**——那是 universal globalBack 的默认键，页面 scope 绑同键
+    // 会静默遮蔽「返回上一级」（universal_back_test）。浏览器页在 universal 兜底里把
+    // globalBack 解释成「能网页后退就后退、否则退出浏览器」，Alt+← 照样是网页后退；
+    // 这里只放键盘上的专用「浏览器后退」键。前进没有这层顾虑，Alt+→ 照常。
+    ShortcutAction.webBrowserBack: _kb([_key(LogicalKeyboardKey.browserBack)]),
+    ShortcutAction.webBrowserForward: _kb([
+      _key(LogicalKeyboardKey.arrowRight, {ModifierKey.alt}),
+      _key(LogicalKeyboardKey.browserForward),
+    ]),
+    ShortcutAction.webBrowserReload: _kb([
+      _key(LogicalKeyboardKey.keyR, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.f5),
+    ]),
+    ShortcutAction.webBrowserFindInPage: _kb([
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserToggleBookmark: _kb([
+      _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserZoomIn: _kb([
+      _key(LogicalKeyboardKey.equal, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserZoomOut: _kb([
+      _key(LogicalKeyboardKey.minus, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserZoomReset: _kb([
+      _key(LogicalKeyboardKey.digit0, {ModifierKey.ctrl}),
+    ]),
     // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
     // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
     // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。
@@ -514,6 +566,11 @@ class ShortcutDefaults {
     // 空绑定（见 _mobile），系统不允许第三方注册全局热键。
     ShortcutAction.globalExternalOpenLookupPage: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.alt}),
+    ]),
+    // 「截屏识字」：默认 Ctrl+Alt+O（O = OCR），与同 scope 的 D / F 不撞；macOS 表
+    // 同样 Ctrl→Meta，移动端整个 scope 为空。
+    ShortcutAction.globalExternalScreenOcr: _kb([
+      _key(LogicalKeyboardKey.keyO, {ModifierKey.ctrl, ModifierKey.alt}),
     ]),
     // 查词弹窗「上/下一个词条」：默认 Alt+滚轮（Yomitan 的 Next/Previous entry 同款
     // 手感）。裸滚轮永远滚动弹窗内容，故必须带修饰键；Alt 在 WebView 里没有默认滚轮
@@ -570,6 +627,10 @@ class ShortcutDefaults {
   /// * 窗口全屏：F11 是 macOS「显示桌面」，且笔记本 F 行默认是媒体键。Ctrl+Cmd+F 是
   ///   macOS 标准全屏键（Runner 菜单「Enter Full Screen」同键，Flutter 先拿到并消费）。
   /// 老用户没改过的旧默认由 `FushiShortcutRegistry` 的 v13 迁移换过来。
+  /// * 浏览器切标签页：Ctrl→Meta 会得到 Cmd+Tab = 系统切换 App。Safari / Chrome
+  ///   在 macOS 上同样认 Ctrl+Tab，另加 Apple 惯例 ⌘⇧] / ⌘⇧[。
+  /// * 浏览器后退 / 前进：Apple 惯例 ⌘[ / ⌘]（Safari / Chrome 同键）。后退刻意不放
+  ///   ⌥←（universal globalBack 的默认键，见 [_desktop] 的注释）。
   static final Map<ShortcutAction, List<InputBinding>> _macOSKeyboardOverrides =
       <ShortcutAction, List<InputBinding>>{
         ShortcutAction.audiobookPlayPause: <InputBinding>[
@@ -577,6 +638,28 @@ class ShortcutDefaults {
         ],
         ShortcutAction.globalToggleFullscreen: <InputBinding>[
           _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.meta}),
+        ],
+        ShortcutAction.webBrowserNextTab: <InputBinding>[
+          _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl}),
+          _key(LogicalKeyboardKey.bracketRight, {
+            ModifierKey.meta,
+            ModifierKey.shift,
+          }),
+        ],
+        ShortcutAction.webBrowserPreviousTab: <InputBinding>[
+          _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl, ModifierKey.shift}),
+          _key(LogicalKeyboardKey.bracketLeft, {
+            ModifierKey.meta,
+            ModifierKey.shift,
+          }),
+        ],
+        ShortcutAction.webBrowserBack: <InputBinding>[
+          _key(LogicalKeyboardKey.bracketLeft, {ModifierKey.meta}),
+          _key(LogicalKeyboardKey.browserBack),
+        ],
+        ShortcutAction.webBrowserForward: <InputBinding>[
+          _key(LogicalKeyboardKey.bracketRight, {ModifierKey.meta}),
+          _key(LogicalKeyboardKey.browserForward),
         ],
       };
 
@@ -615,9 +698,12 @@ class ShortcutDefaults {
       action: () {
         final desktop = _desktop[action]!;
         switch (action.scope) {
+          // 浏览器同档：平板 / DeX / 外接键盘上 Ctrl+T 之类照样该用，没有外接键盘的
+          // 设备上永不触发。
           case ShortcutScope.reader:
           case ShortcutScope.video:
           case ShortcutScope.manga:
+          case ShortcutScope.webBrowser:
             return ShortcutBindingSet(
               keyboardBindings: desktop.keyboardBindings,
               gamepadBindings: desktop.gamepadBindings,
@@ -686,6 +772,11 @@ class ShortcutDefaults {
 
   /// iOS / iPadOS：与 Android 同一份移动端默认，只有保留了键盘绑定的库页搜索
   /// 按 Apple 惯例换成 ⌘F（与 macOS 同键；`/` 不变）。
+  ///
+  /// 浏览器（webBrowser）刻意**不**换成 ⌘ 键位：与 reader / video / manga 一样沿用
+  /// 移动端（= 桌面 Ctrl）键位，守卫 `library_search_shortcut_migration_test` /
+  /// `shortcut_defaults_test` 钉死「除 librarySearch 外 iOS 与 Android 逐项相同」。
+  /// 要给 iPad 外接键盘换成 ⌘T / ⌘L 需先改那两条守卫的契约。
   static final Map<ShortcutAction, ShortcutBindingSet> _iOS = {
     for (final entry in _mobile.entries)
       entry.key: entry.key == ShortcutAction.librarySearch

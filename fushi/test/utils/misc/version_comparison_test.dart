@@ -463,12 +463,35 @@ void main() {
       );
       expect(
         isUpdateVersionNewer(
-          '1.3.0-beta.1',
+          '1.3.0-beta.120',
           '1.2.0-debug.100',
           UpdateChannel.debug,
         ),
         isTrue,
-        reason: 'debug 合集含 beta 轨：更高基 beta 也应收到',
+        reason: 'debug 合集含 beta 轨：更高基（且更晚构建）的 beta 也应收到',
+      );
+    });
+
+    test('higher-base stable built earlier is not an update (seq rules)', () {
+      // 2026-10-22 实测：从 main 发的正式版 3.0.1（seq 19816）被推给 3.0.0-debug.20320，
+      // Android 报「无法降级安装」——versionCode 由 seq 导出，序号更低的包系统拒装。
+      expect(
+        isUpdateVersionNewer('3.0.1', '3.0.0-debug.20320', UpdateChannel.debug,
+            remoteSeq: 19816),
+        isFalse,
+        reason: '序号都已知时按序号判，高基不再无条件更新',
+      );
+      // 正式版用户（本机 3.0.0 seq 19763）照常收到它。
+      expect(
+        isUpdateVersionNewer('3.0.1', '3.0.0', UpdateChannel.stable,
+            remoteSeq: 19816, localSeq: 19763),
+        isTrue,
+      );
+      // 反过来：更晚构建的低基调试版仍是更新。
+      expect(
+        isUpdateVersionNewer('3.0.0-debug.20400', '3.0.1', UpdateChannel.debug,
+            localSeq: 19816),
+        isTrue,
       );
     });
 
@@ -595,20 +618,20 @@ void main() {
         AndroidUpdater(abiProvider: () async => <String>['arm64-v8a']);
 
     test('beta user picks higher-base beta over same-base stable', () async {
-      // beta 轨领先（1.3.0-beta.1）时选 beta，而非因 stable 1.2.0 排前而误选旧版。
+      // beta 轨领先（1.3.0-beta.9）时选 beta，而非因 stable 1.2.0 排前而误选旧版。
       final UpdateReleaseSelection? sel =
           await selectUpdateReleaseForCurrentPlatform(
         <Map<String, dynamic>>[
           _relWithApks('v1.2.0',
               prerelease: false, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
-          _relWithApks('v1.3.0-beta.1',
+          _relWithApks('v1.3.0-beta.9',
               prerelease: true, apks: <String>['fushi-1.3.0-arm64-v8a.apk']),
         ],
         currentVersion: '1.2.0-beta.5',
         channel: UpdateChannel.beta,
         updater: arm64Updater(),
       );
-      expect(sel?.version, '1.3.0-beta.1');
+      expect(sel?.version, '1.3.0-beta.9');
     });
 
     test('stranded beta user falls back to newer stable', () async {
@@ -702,6 +725,28 @@ void main() {
         updater: arm64Updater(),
       );
       expect(stable?.version, '3.0.0');
+    });
+
+    test('debug user is not offered a higher-base stable built earlier',
+        () async {
+      // 2026-10-22 实测：3.0.0-debug.20320 被选中正式版 3.0.1（seq 19816），装不上。
+      final UpdateReleaseSelection? sel =
+          await selectUpdateReleaseForCurrentPlatform(
+        <Map<String, dynamic>>[
+          _relWithApks('v3.0.1',
+              prerelease: false,
+              apks: <String>['fushi-3.0.1-arm64-v8a.apk'],
+              releaseSequence: 19816),
+          _relWithApks('v3.0.0-debug.20320+abc1234',
+              prerelease: true,
+              apks: <String>['fushi-3.0.0-debug.20320-abc1234-debug.apk'],
+              releaseSequence: 20320),
+        ],
+        currentVersion: '3.0.0-debug.20320',
+        channel: UpdateChannel.debug,
+        updater: arm64Updater(),
+      );
+      expect(sel?.version, isNot('3.0.1'));
     });
 
     test('BUG-846 乒乓收敛: debug user on stable 1.2.0 升到更晚的 debug.200', () async {

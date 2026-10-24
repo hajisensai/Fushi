@@ -4,6 +4,7 @@ import '../ctl_commands.dart';
 import 'settings_ops_commands.dart' show videoSettingsOpsCommands;
 import 'video_player_commands.dart';
 import 'video_subtitle_commands.dart';
+import 'video_subtitle_fetch_commands.dart';
 
 /// video 域命令（app 侧路由见 `fushi/lib/src/platform/desktop/ctl/ctl_video_routes.dart`）：
 /// 视频库刮削（作品列表 / 重刮 / 回答待确认 / 手动候选 / 手动指定身份）、视频发现
@@ -91,6 +92,7 @@ const List<CtlCommandGroup> videoCommandGroups = <CtlCommandGroup>[
       ),
       ...videoPlayerCommands,
       ...videoSubtitleCommands,
+      ...videoSubtitleFetchCommands,
       ...videoSettingsOpsCommands,
     ],
   ),
@@ -123,6 +125,15 @@ String _provider(String? raw) {
     throw CtlUsageError('不支持的资料源：$raw（anidb | mal | tmdb）');
   }
   return name;
+}
+
+/// `--type`（tv | movie），没给返回 null。
+String? _optionalMediaType(CtlCommandContext context) {
+  final String? type = context.option('type')?.toLowerCase();
+  if (type != null && type != 'tv' && type != 'movie') {
+    throw CtlUsageError('--type 只能是 tv 或 movie：$type');
+  }
+  return type;
 }
 
 // ── works ────────────────────────────────────────────────────────────────
@@ -366,10 +377,7 @@ CtlRequestSpec _buildConfirm(CtlCommandContext context) {
     if (!RegExp(r'^[1-9]\d*$').hasMatch(externalId)) {
       throw CtlUsageError('--id 必须是正整数：$externalId');
     }
-    final String? type = context.option('type')?.toLowerCase();
-    if (type != null && type != 'tv' && type != 'movie') {
-      throw CtlUsageError('--type 只能是 tv 或 movie：$type');
-    }
+    final String? type = _optionalMediaType(context);
     body['action'] = 'identity';
     body['provider'] = _provider(provider);
     body['externalId'] = externalId;
@@ -427,7 +435,8 @@ String _renderConfirm(Object? data) {
 
 void _configureCandidates(ArgParser parser) {
   parser
-    ..addOption('provider', help: '只看某个资料源的候选（anidb | mal | tmdb）')
+    ..addOption('provider', help: '只搜这个资料源（anidb | mal | tmdb；缺省按主源链搜到有结果为止）')
+    ..addOption('type', help: '只按这个形态搜：tv | movie（缺省按作品形态）')
     ..addOption('query', abbr: 'q', help: '搜索词（缺省用作品标题；也可直接给 anidb:123 这类身份）');
 }
 
@@ -438,6 +447,7 @@ CtlRequestSpec _buildCandidates(CtlCommandContext context) {
     '/api/admin/video/works/${_seg(id)}/candidates',
     query: <String, String>{
       if (provider != null) 'provider': _provider(provider),
+      if (_optionalMediaType(context) case final String type) 'type': type,
       if (context.option('query') case final String q) 'q': q,
     },
   );
@@ -478,10 +488,7 @@ CtlRequestSpec _buildIdentify(CtlCommandContext context) {
   if (!RegExp(r'^[1-9]\d*$').hasMatch(externalId)) {
     throw CtlUsageError('--id 必须是正整数：$externalId');
   }
-  final String? type = context.option('type')?.toLowerCase();
-  if (type != null && type != 'tv' && type != 'movie') {
-    throw CtlUsageError('--type 只能是 tv 或 movie：$type');
-  }
+  final String? type = _optionalMediaType(context);
   return CtlRequestSpec.post(
     '/api/admin/video/works/${_seg(id)}/identify',
     body: <String, Object?>{

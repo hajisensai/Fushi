@@ -394,6 +394,9 @@ class FavoriteBatchMiningRunner {
             status: FavoriteBatchItemStatus.failed,
             message: described.message,
           ),
+          // 字段映射整体为空 / 首字段为空是配置问题，后面每一条都会同样失败：
+          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。
+          abortBatch: isFieldMappingConfigError(outcome.errorCode),
         );
     }
   }

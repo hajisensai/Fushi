@@ -884,13 +884,21 @@ class VideoBookRepository {
   /// 一个事务 = 全有或全无：任何一条违反约束都会让整批回滚。需要「某条失败不拖累
   /// 其余条」的调用方（批量删除 UI）走 [deleteVideoBooksAndReclaimAssets]，那里
   /// 整批失败时退回逐条重试并汇总失败。
+  ///
+  /// [removeFromCollections] = false 只给「删掉从配对设备下载来的本机副本」用：
+  /// 那一集仍在对端、合集成员行的 entryKey 就是对端 id，成员行留着，合集详情页
+  /// 下次解析时它退回成远端集（可再流播 / 再下载），合集也不会因此被清空自删。
   Future<List<VideoBookRow>> deleteVideoBooks(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool removeFromCollections = true,
   }) async {
     final List<String> uids = bookUids.toSet().toList(growable: false);
     if (uids.isEmpty) return const <VideoBookRow>[];
-    final List<VideoBookRow> deleted = await _db.deleteVideoBooks(uids);
+    final List<VideoBookRow> deleted = await _db.deleteVideoBooks(
+      uids,
+      removeFromCollections: removeFromCollections,
+    );
     // keepLocalOnly 不记墓碑，避免删本地→回写墓碑循环。
     if (scope == DeleteScope.syncEverywhere) {
       await _writeVideoDeletionTombstones(uids);
@@ -959,6 +967,7 @@ class VideoBookRepository {
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool compactDatabase = true,
     bool deleteLocalFiles = false,
+    bool removeFromCollections = true,
     LocalVideoFileDeleteHooks? localFileHooks,
     Future<void> Function()? afterDeleteBeforeReclaim,
   }) {
@@ -973,6 +982,7 @@ class VideoBookRepository {
         scope: scope,
         compactDatabase: compactDatabase,
         deleteLocalFiles: deleteLocalFiles,
+        removeFromCollections: removeFromCollections,
         localFileHooks: localFileHooks,
         afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
       ),
@@ -984,6 +994,7 @@ class VideoBookRepository {
     required DeleteScope scope,
     required bool compactDatabase,
     required bool deleteLocalFiles,
+    required bool removeFromCollections,
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
   }) async {
@@ -1004,7 +1015,10 @@ class VideoBookRepository {
     List<VideoBookRow> deletedRows;
     try {
       // 快路径：整批一个事务（BUG-2754：原来每条 2~3 个独立事务）。
-      deletedRows = await deleteVideoBooks(uids);
+      deletedRows = await deleteVideoBooks(
+        uids,
+        removeFromCollections: removeFromCollections,
+      );
     } catch (batchError, batchStack) {
       // 一个事务全有或全无：任一条违反约束整批回滚。退回逐条删，让坏的那条只
       // 拖累它自己，其余照删；失败条目逐条记下并在尾活跑完后汇总抛出。
@@ -1016,7 +1030,12 @@ class VideoBookRepository {
       deletedRows = <VideoBookRow>[];
       for (final String bookUid in uids) {
         try {
-          deletedRows.addAll(await deleteVideoBooks(<String>[bookUid]));
+          deletedRows.addAll(
+            await deleteVideoBooks(
+              <String>[bookUid],
+              removeFromCollections: removeFromCollections,
+            ),
+          );
         } catch (e, stack) {
           engineLog.log('VideoBookRepository.deleteVideoBooks.row', e, stack);
           failures.add(

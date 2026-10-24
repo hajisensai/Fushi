@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/asr_host/shared_model_downloads.dart'
+    show SharedModelDownloads;
 import 'package:fushi/src/asr_host/asr_model_downloads.dart';
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart';
 
@@ -168,6 +170,8 @@ void main() {
     onGpuRuntimeError: onGpuRuntimeError,
     openPackStore: stores.open,
     gpuRuntimeToDownload: () async => gpu,
+    // 每个用例一份单飞登记表：上一个用例故意挂着没下完的流不能被下一个接上。
+    shared: SharedModelDownloads(),
     serviceForProfile:
         serviceForProfile ??
         (AsrAudioProfile _) => throw StateError('本用例不该按素材另建服务'),

@@ -14,6 +14,17 @@ import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
+/// 鼠标此刻是否停在**应用内悬浮球**（球或展开的按钮）上。由 `AppFloatingBallHost`
+/// 的 [MouseRegion] 写入（只在球 / 按钮命中时进入，空白处穿透不算）。
+///
+/// 页面据此把「指针移到悬浮球上」与「指针离开、回去看视频」区分开：视频页悬停查词
+/// 「指针离开后自动关栈续播」遇到它不触发——移到球上是要操作应用（反馈 / 截图 /
+/// 同步……），不是想接着看视频（用户反馈 5yWS2o6U6q：一点悬浮球的反馈，查词就被
+/// 关掉、视频播起来了）。
+final ValueNotifier<bool> appFloatingBallPointerInside = ValueNotifier<bool>(
+  false,
+);
+
 /// 一组登记中的场景按钮。
 class _SceneEntry {
   _SceneEntry(this.state);
@@ -24,6 +35,7 @@ class _SceneEntry {
   Map<String, ReaderHeaderAction> get actions => state.widget.actions;
   bool get hidesBall => state.widget.hideBall;
   List<String> get pinnedIds => state.widget.pinnedIds;
+  ThemeData? get theme => state._theme;
 
   bool get isCurrent {
     if (!state.mounted || !state._active) return false;
@@ -47,6 +59,7 @@ class FloatingBallSceneSnapshot {
     required this.hidesBall,
     this.pinnedIds = const <String>[],
     this.owner,
+    this.theme,
   });
 
   /// 没有登记场景的页面：按「其它页面」的按钮配置。
@@ -73,6 +86,10 @@ class FloatingBallSceneSnapshot {
   /// 宿主据此判断用户是否已经离开了点「关闭悬浮球」的那个页面（离开即恢复）。
   /// 用路由而不是场景 State：页面上弹对话框时场景暂时不是当前，但人还在这页。
   final Object? owner;
+
+  /// 场景所在位置的主题：球按页面此刻的配色画（例如歌词模式按封面取色换了整页
+  /// 主题，球要跟着换，不能停在导航之上的根主题）。没有场景时 null = 根主题。
+  final ThemeData? theme;
 }
 
 /// 进程级场景登记表。
@@ -99,6 +116,7 @@ class FloatingBallSceneRegistry extends ChangeNotifier {
         hidesBall: entry.hidesBall,
         pinnedIds: entry.pinnedIds,
         owner: entry.owner,
+        theme: entry.theme,
       );
     }
     final Route<dynamic>? top = _topPage;
@@ -235,8 +253,18 @@ class _FloatingBallSceneState extends State<FloatingBallScene> {
     super.dispose();
   }
 
+  /// 本页此刻的主题（build 里取，主题一变本元素随之重建并通知宿主）。
+  ThemeData? _theme;
+
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    if (!identical(theme, _theme)) {
+      _theme = theme;
+      _registry._scheduleNotify();
+    }
+    return widget.child;
+  }
 }
 
 /// 两组按钮在外观上是否一致（id、图标、文案、key、可用态）。闭包不参与比较：页面

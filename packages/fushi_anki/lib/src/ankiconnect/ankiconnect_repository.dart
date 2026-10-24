@@ -246,7 +246,7 @@ class _DedupPlan {
 }
 
 class AnkiConnectRepository extends BaseAnkiRepository {
-  AnkiConnectRepository({AnkiConnectService? service})
+  AnkiConnectRepository({AnkiConnectService? service, super.settingsStore})
     : _fixedService = service;
 
   final AnkiConnectService? _fixedService;
@@ -468,7 +468,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // the user's configured tags (de-duped, order preserved) via the shared
       // base helper, so both backends behave identically.
       final tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
@@ -799,7 +799,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper——覆盖后的卡不该比新制
       // 的少 `fushi` / 分类 / 书名标签。
       final List<String> tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,

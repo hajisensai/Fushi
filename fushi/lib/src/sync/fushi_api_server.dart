@@ -20,8 +20,11 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
+import 'package:fushi/src/srs/srs_term_status_bridge.dart'
+    show kSrsTermStatusBatchMax;
 import 'package:fushi/src/sync/remote_subtitle_search_handlers.dart';
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_endpoint.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -67,6 +70,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/anki/open',
   '/api/extension/favorite',
   '/api/srs/term-status',
+  '/api/srs/term-status-batch',
 };
 
 /// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
@@ -121,11 +125,14 @@ class ExtensionFavoriteRequest {
 typedef ExtensionFavoriteHandler =
     Future<bool> Function(ExtensionFavoriteRequest request);
 
-/// 复习（Fushi SRS）给浏览器扩展弹窗的两个端点（`/api/srs/term-status`、
-/// `/api/srs/open`）。复习模块关着时供给器回 null → 两个端点 404。
+/// 复习（Fushi SRS）给浏览器扩展弹窗的端点（`/api/srs/term-status`、
+/// `/api/srs/term-status-batch`、`/api/srs/open`）。复习模块关着时供给器回 null → 都 404。
 abstract interface class SrsExtensionApi {
   /// 词状态回包（null = 复习库里没有这个词）。形状见 srs_term_status_bridge.dart。
   Future<Map<String, Object?>?> termStatus(String expression, String reading);
+
+  /// 批量词状态（`/api/srs/term-status-batch`）：回包与 [terms] 等长同序，没有的词为 null。
+  Future<List<Map<String, Object?>?>> termStatuses(List<SrsTermQuery> terms);
 
   /// 在 app 里打开这张卡。
   Future<bool> openCard({required String cardId, String? noteId});
@@ -590,6 +597,8 @@ class FushiApiServer {
         return _handleExtensionFavorite(request);
       case '/api/srs/term-status':
         return _handleSrsTermStatus(request);
+      case '/api/srs/term-status-batch':
+        return _handleSrsTermStatusBatch(request);
       case '/api/srs/open':
         return _handleSrsOpen(request);
       case '/api/extension/status':
@@ -999,6 +1008,38 @@ class FushiApiServer {
       reading is String ? reading : '',
     );
     return jsonResponse(<String, dynamic>{'status': status});
+  }
+
+  /// 批量复习词状态（扩展弹窗一轮可见批次一次）：body `{terms: [{expression, reading}, …]}`
+  /// → `{statuses: [null | {...}, …]}`（等长同序）。复习模块关着时 404（与单条端点同文案，
+  /// 扩展照样退避）；超过 [kSrsTermStatusBatchMax] 个词 400。老 app 没有本端点时扩展收到
+  /// 非 200 → 退回逐条 `/api/srs/term-status`。
+  Future<shelf.Response> _handleSrsTermStatusBatch(
+    shelf.Request request,
+  ) async {
+    final SrsExtensionApi? api = _srsApiProvider?.call();
+    if (api == null) return shelf.Response.notFound('SRS module off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    final Object? raw = body['terms'];
+    if (raw is! List || raw.length > kSrsTermStatusBatchMax) {
+      return shelf.Response(400, body: 'Invalid terms');
+    }
+    final List<SrsTermQuery> terms = <SrsTermQuery>[];
+    for (final Object? item in raw) {
+      if (item is! Map) return shelf.Response(400, body: 'Invalid terms');
+      final Object? expression = item['expression'];
+      final Object? reading = item['reading'];
+      terms.add(
+        SrsTermQuery(
+          expression is String ? expression : '',
+          reading is String && reading.trim().isNotEmpty ? reading : null,
+        ),
+      );
+    }
+    return jsonResponse(<String, dynamic>{
+      'statuses': await api.termStatuses(terms),
+    });
   }
 
   /// 扩展里点复习标记：body `{cardId, noteId?}` → `{opened: bool}`。模块关着时 404。

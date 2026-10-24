@@ -10,6 +10,9 @@
 #include <dlfcn.h>
 #include <linux/limits.h>
 #include <unistd.h>
+#include <sys/random.h>
+#include <cerrno>
+#include <cstdio>
 
 #include <algorithm>
 #include <cmath>
@@ -180,6 +183,61 @@ std::string GenerateRandomSecret(size_t length = 32) {
     result += hex_chars[dis(gen)];
   }
   return result;
+}
+
+// Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md).
+// Name the page uses to request the lock; intercepted here, never dispatched
+// to Dart handlers.
+constexpr const char* kFushiLockBridgeHandlerName = "_fushiLockBridge";
+
+// Fills `out` with a 256-bit token from the kernel CSPRNG, hex encoded.
+// Returns false (and leaves `out` empty) when no cryptographic randomness is
+// available; the caller then refuses the lock instead of using a weak token.
+bool GenerateBridgeLockToken(std::string* out) {
+  out->clear();
+  unsigned char bytes[32];
+  size_t filled = 0;
+  while (filled < sizeof(bytes)) {
+    ssize_t n = getrandom(bytes + filled, sizeof(bytes) - filled, 0);
+    if (n < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      break;
+    }
+    filled += static_cast<size_t>(n);
+  }
+  if (filled < sizeof(bytes)) {
+    // getrandom unavailable (very old kernel): read /dev/urandom directly.
+    FILE* urandom = fopen("/dev/urandom", "rb");
+    if (urandom == nullptr) {
+      return false;
+    }
+    size_t read = fread(bytes, 1, sizeof(bytes), urandom);
+    fclose(urandom);
+    if (read != sizeof(bytes)) {
+      return false;
+    }
+  }
+  static const char* hex_chars = "0123456789abcdef";
+  out->reserve(sizeof(bytes) * 2);
+  for (unsigned char b : bytes) {
+    out->push_back(hex_chars[b >> 4]);
+    out->push_back(hex_chars[b & 0x0f]);
+  }
+  return true;
+}
+
+// Length-independent-of-content comparison for the bridge lock token.
+bool BridgeLockTokenEquals(const std::string& expected, const std::string& received) {
+  if (expected.size() != received.size()) {
+    return false;
+  }
+  unsigned char diff = 0;
+  for (size_t i = 0; i < expected.size(); ++i) {
+    diff |= static_cast<unsigned char>(expected[i] ^ received[i]);
+  }
+  return diff == 0;
 }
 
 }  // namespace
@@ -3835,7 +3893,18 @@ void InAppWebView::OnLoadChanged(WebKitWebView* web_view, WebKitLoadEvent load_e
   if (!WEBKIT_IS_WEB_VIEW(web_view)) {
     return;
   }
-  
+
+  // Fushi bridge lock: a new top-level document was committed, so the
+  // document that held the lock token is gone. Back to unlocked (legacy)
+  // behaviour. `load-changed` only fires for the main frame, so subframe
+  // navigations never reach here. Cleared on COMMITTED rather than STARTED:
+  // a provisional load that fails or turns into a download leaves the locked
+  // document (and its sandboxed iframes) alive, and it must stay locked.
+  // Runs before the channel_delegate_ check so it never gets skipped.
+  if (load_event == WEBKIT_LOAD_COMMITTED) {
+    self->bridge_lock_token_.clear();
+  }
+
   if (self->channel_delegate_ == nullptr) {
     return;
   }
@@ -7383,6 +7452,44 @@ bool InAppWebView::handleScriptMessageWithReply(const std::string& body, WebKitS
   std::optional<int64_t> windowId;
   if (bodyJson.contains("_windowId") && bodyJson["_windowId"].is_number()) {
     windowId = bodyJson["_windowId"].get<int64_t>();
+  }
+
+  // === Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md) ===
+  // WPE's script-message-with-reply signal carries no frame info, so the
+  // per-WebView token is the authority; the JS-reported `_isMainFrame` is only
+  // an extra filter (an iframe can lie about it, but cannot produce the token).
+  std::string receivedLockToken = "";
+  if (bodyJson.contains("_fushiBridgeToken") && bodyJson["_fushiBridgeToken"].is_string()) {
+    receivedLockToken = bodyJson["_fushiBridgeToken"].get<std::string>();
+  }
+
+  if (handlerName == kFushiLockBridgeHandlerName) {
+    // ResolveInternalHandlerWithReply() unrefs the reply; the signal emitter
+    // keeps its own reference, so take ours first.
+    webkit_script_message_reply_ref(reply);
+    // Already locked, or not a top-level frame: refuse, keep the old token.
+    if (!bridge_lock_token_.empty() || !isMainFrame) {
+      ResolveInternalHandlerWithReply(reply, "false");
+      return true;
+    }
+    std::string newToken;
+    if (!GenerateBridgeLockToken(&newToken)) {
+      g_warning("[flutter_inappwebview] Fushi bridge lock refused: no CSPRNG available");
+      ResolveInternalHandlerWithReply(reply, "false");
+      return true;
+    }
+    bridge_lock_token_ = newToken;
+    // Only the requesting frame's bridge closure receives the token (hex, safe to quote).
+    ResolveInternalHandlerWithReply(reply, "\"" + newToken + "\"");
+    return true;
+  }
+
+  if (!bridge_lock_token_.empty()) {
+    if (!isMainFrame || !BridgeLockTokenEquals(bridge_lock_token_, receivedLockToken)) {
+      g_warning("[flutter_inappwebview] Fushi bridge locked: dropped call '%s' (%s)",
+                handlerName.c_str(), isMainFrame ? "bad token" : "non-main frame");
+      return false;
+    }
   }
 
   InAppWebView* targetWebView = this;

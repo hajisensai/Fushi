@@ -110,7 +110,9 @@ void _publishSyncOutcome(SyncRunOutcome outcome) {
 ///
 /// 这道门只决定「点不点亮在飞标志」，**不是**能不能跑的最终判据：门开之后还要排
 /// [_autoSyncMutex]，前面可能是一轮很长的手动「立即同步」，用户这期间关掉开关，
-/// 拿到锁后由 [_autoSyncStillEnabled] 再判一次才算数。
+/// 拿到锁后由 [autoSyncChannels] 再取一次才算数（那次的结果就是本轮实际跑的通道）。
+///
+/// 门开 = 至少一条通道的自动同步开着（反馈 5nWEirdCs2 起两条通道各有开关）。
 ///
 /// 被挡下时若有整轮 sweep 在飞（`__all__`，含手动「立即同步」），**不公布**结局：
 /// 那一轮自己马上会公布真结局，这里抢先写一个 autoDisabled 会让
@@ -119,7 +121,7 @@ void _publishSyncOutcome(SyncRunOutcome outcome) {
 Future<bool> _autoSyncGateOpen(FushiDatabase db, SyncActivityKind kind) async {
   SyncOutcomeReason reason;
   try {
-    if (await SyncRepository(db).isAutoSyncEnabled()) return true;
+    if ((await autoSyncChannels(SyncRepository(db))).isNotEmpty) return true;
     reason = SyncOutcomeReason.autoDisabled;
   } catch (e, stack) {
     developer.log(
@@ -142,13 +144,33 @@ Future<bool> _autoSyncGateOpen(FushiDatabase db, SyncActivityKind kind) async {
   return false;
 }
 
-/// 自动同步路径**拿到 [_autoSyncMutex] 之后**的开关复核，是能不能跑的最终判据。
+/// 一条通道自己的自动同步开关（反馈 5nWEirdCs2）：互联通道读
+/// [SyncRepository.isInterconnectAutoSyncEnabled]（默认开），云通道读
+/// [SyncRepository.isAutoSyncEnabled]（默认关）。按通道**身份**分（与
+/// [resolveChannelSyncFlags] 同一判据）：备份后端被选成互联时那一格跑的就是互联
+/// 链路，读互联开关。
+Future<bool> isChannelAutoSyncEnabled(
+  SyncRepository repo,
+  SyncChannel channel,
+) => channel.isInterconnect
+    ? repo.isInterconnectAutoSyncEnabled()
+    : repo.isAutoSyncEnabled();
+
+/// 自动同步路径（开机 / 定时 / 切后台 sweep、合集轻量、退出书单本）这一轮要跑的
+/// 通道：[enabledSyncChannelBackends] 里自动同步开关开着的那些。手动「立即同步」
+/// 不经此过滤（显式意图恒放行）。
 ///
-/// [_autoSyncGateOpen] 在锁外判，判完到拿到锁之间可能排在一轮很长的手动同步后面；
-/// 这段时间里用户关掉自动同步，不能让已经排上队的自动同步照样跑一次。读失败照常
-/// 抛给调用方，由它的外层 catch 记成 failed（与门前那次读失败同一口径）。
-Future<bool> _autoSyncStillEnabled(FushiDatabase db) =>
-    SyncRepository(db).isAutoSyncEnabled();
+/// 空列表 = 每条通道的自动同步都关着，调用方据此判 [SyncOutcomeReason.autoDisabled]。
+/// 自动路径在 [_autoSyncGateOpen]（锁外，决定点不点亮在飞标志）与拿到
+/// [_autoSyncMutex] 之后（最终判据：排队期间用户可能关掉开关）各取一次，后者的结果
+/// 就是本轮实际遍历的通道。读失败照常抛给调用方，由它的外层 catch 记成 failed。
+Future<List<SyncChannel>> autoSyncChannels(SyncRepository repo) async {
+  final List<SyncChannel> channels = <SyncChannel>[];
+  for (final SyncChannel channel in await enabledSyncChannelBackends(repo)) {
+    if (await isChannelAutoSyncEnabled(repo, channel)) channels.add(channel);
+  }
+  return channels;
+}
 
 // HBK-AUDIT-049: cloud backends (GoogleDrive/Dropbox/OneDrive/WebDAV/SMB) are
 // process-wide singletons holding mutable shared state (_accessToken,
@@ -347,6 +369,7 @@ class ChannelSyncFlags {
   const ChannelSyncFlags({
     required this.syncStats,
     required this.syncFavorites,
+    this.syncWebHistory = false,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncMangaContent,
@@ -359,6 +382,10 @@ class ChannelSyncFlags {
   /// 聚合快照里统计与收藏本来就由同一个开关代管，拆开会改变云备份的既有行为）；
   /// 互联通道读自己的 `interconnect_sync_favorites`。
   final bool syncFavorites;
+
+  /// 浏览器历史是否参与聚合同步：设备级「同步浏览历史」，两条通道读同一个键
+  /// （默认关；历史不跟收藏走，见 `kSyncWebHistoryPrefKey`）。
+  final bool syncWebHistory;
   final bool syncAudioBookPosition;
   final bool syncContent;
 
@@ -399,6 +426,7 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
     syncFavorites: isInterconnect
         ? await repo.isInterconnectSyncFavoritesEnabled()
         : await repo.isSyncStatsEnabled(),
+    syncWebHistory: await repo.isWebHistorySyncEnabled(),
     syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
     syncContent: isInterconnect
         ? await repo.isInterconnectSyncContentEnabled()
@@ -490,6 +518,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     ),
     syncStats: flags.syncStats,
     syncFavorites: flags.syncFavorites,
+    syncWebHistory: flags.syncWebHistory,
     syncAudioBookPosition: flags.syncAudioBookPosition,
     syncContent: flags.syncContent,
     syncMangaContent: flags.syncMangaContent,
@@ -722,11 +751,12 @@ Future<void> _runAutoSyncAll({
     // HBK-AUDIT-049: serialize the actual sync work so it never overlaps a
     // per-book sync mutating the same singleton backend state.
     await _autoSyncMutex.withLock(() async {
-      if (!await _autoSyncStillEnabled(db)) {
+      final repo = SyncRepository(db);
+      final List<SyncChannel> channels = await autoSyncChannels(repo);
+      if (channels.isEmpty) {
         reason = SyncOutcomeReason.autoDisabled;
         return;
       }
-      final repo = SyncRepository(db);
       final now = DateTime.now().millisecondsSinceEpoch;
       // BUG-1569①：成功冷却戳只在整轮跑成后写（TODO-1332），失败轮不推进它——
       // 只配互联且对端离线时，每分钟 tick 都会全额重付候选串行探测。失败退避戳
@@ -745,9 +775,7 @@ Future<void> _runAutoSyncAll({
       // 就此不成立：云盘一坏，互联跟着一起哑。一条通道炸了只该记它自己的账。
       bool anyChannelFailed = false;
       int cooledChannels = 0;
-      for (final SyncChannel channel in await enabledSyncChannelBackends(
-        repo,
-      )) {
+      for (final SyncChannel channel in channels) {
         // BUG-1580：冷却窗**按通道**判。这个判断原本在循环外，读的是一份全局
         // lastSyncMs，而两条通道各自在自己整轮结束时都会写它——于是云通道刚跑完
         // 就把局域网互联通道一起压住 5 分钟；反过来，一条通道失败后想重试，也会被
@@ -1295,11 +1323,12 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
   int channelsRun = 0;
   try {
     await _autoSyncMutex.withLock(() async {
-      if (!await _autoSyncStillEnabled(db)) {
+      final repo = SyncRepository(db);
+      final List<SyncChannel> channels = await autoSyncChannels(repo);
+      if (channels.isEmpty) {
         reason = SyncOutcomeReason.autoDisabled;
         return;
       }
-      final repo = SyncRepository(db);
       // BUG-1604：**逐通道**隔离异常，与 app-open sweep 同一范式。这个 for 原来
       // 整体裸奔，只有外层一个 `catch (e) { developer.log(...) }`——云通道恒排第一
       // （见 enabledSyncChannelBackends），它的 `restoreAuth` 探测不到 WebDAV/FTP、
@@ -1307,9 +1336,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
       // 通道的合集同步这一轮**根本不执行**。合集是双端都在改的维度，漏跑一轮就是
       // 「我在手机上建的合集，桌面上一直不出现」。
       bool anyChannelFailed = false;
-      for (final SyncChannel channel in await enabledSyncChannelBackends(
-        repo,
-      )) {
+      for (final SyncChannel channel in channels) {
         try {
           final SyncBackend backend = channel.backend;
           await backend.restoreAuth(repo);
@@ -1406,11 +1433,12 @@ Future<void> _runAutoSync({
     // books or the '__all__' sweep) so the shared singleton backend's
     // token/api/folder cache is never mutated concurrently.
     await _autoSyncMutex.withLock(() async {
-      if (!await _autoSyncStillEnabled(db)) {
+      final repo = SyncRepository(db);
+      final List<SyncChannel> channels = await autoSyncChannels(repo);
+      if (channels.isEmpty) {
         reason = SyncOutcomeReason.autoDisabled;
         return;
       }
-      final repo = SyncRepository(db);
       final book = await db.getEpubBook(bookKey);
       if (book == null) {
         // 书没了（导入记录被删/清库）——本轮无对象可同步，与「跑完了」不是一回事。
@@ -1430,9 +1458,7 @@ Future<void> _runAutoSync({
       // 互联通道的书进度与内容推送整轮被跳过。退出书是「读到哪」最主要的写入时机，
       // 漏跑一轮就是对端续读位置停在旧处，而失败原因指向云盘，用户不会想到互联被连累。
       bool anyChannelFailed = false;
-      for (final SyncChannel channel in await enabledSyncChannelBackends(
-        repo,
-      )) {
+      for (final SyncChannel channel in channels) {
         final SyncBackend backend = channel.backend;
         try {
           await backend.restoreAuth(repo);

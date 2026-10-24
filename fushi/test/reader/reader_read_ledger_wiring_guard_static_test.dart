@@ -13,7 +13,8 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 ///    记字入口；
 ///  * 离开当前单元只有一种动作 `leave`，且在**离开那一刻**：`_beginNavigation`（所有
 ///    导航的必经点）与同章跳转入口（进度条 `restoreProgress` / 收藏句 `restoreToCharOffset`
-///    / 脚注内链 `jumpToFragment`）；`_onRestoreComplete` 不碰账本（BUG-2225 / 2189：
+///    / 脚注内链 `jumpToFragment` / 书签 `_jumpToBookmark` / 跳回历史
+///    `_restoreJumpPoint`）；`_onRestoreComplete` 不碰账本（BUG-2225 / 2189：
 ///    旧的 `restoreIsInPlace → rebaseOnNextArrive` 把同章跳转恒判原位、跳走前那页不结算）；
 ///  * `_failNavigation`（含内容就绪兜底超时）：`discard`；
 ///  * `_recomputeCharCountsInBackground` 落定：`reset`；
@@ -143,7 +144,10 @@ void main() {
       // 歌词模式是盖在正文上的一层，正文在下面照常跟随音频翻页，字数照常由正文的
       // _refreshProgress 入账；歌词层不写任何统计，全语料只剩这一处 arrive。
       // BUG-3100 起这唯一一处经 arriveReadUnitThroughStartGate(ledger: _readLedger)。
-      expect('arriveReadUnitThroughStartGate('.allMatches(masked), hasLength(1));
+      expect(
+        'arriveReadUnitThroughStartGate('.allMatches(masked),
+        hasLength(1),
+      );
       expect('_readLedger.arrive('.allMatches(masked), isEmpty);
       expect(masked.contains('_arriveLyricsCueUnit'), isFalse);
     });
@@ -196,7 +200,8 @@ void main() {
       expect(
         containsIdentifier(body, '_readLedger'),
         isFalse,
-        reason: 'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
+        reason:
+            'BUG-2225：旧 restoreIsInPlace 拿「恢复锚 vs 上次采样」比对，同章跳转不经 '
             '_beginNavigation、恢复锚就是上次采样 → 恒判原位 → 跳走前那页被 rebase 掉',
       );
     });
@@ -242,6 +247,30 @@ void main() {
       expect(leave, isNonNegative);
       expect(js, greaterThan(leave));
     });
+
+    // 书签（PR #2485）与跳回历史（PR #2486）的同章分支与收藏同族：不经
+    // _beginNavigation、直接 restoreToCharOffset / restoreProgress，所以同样在 JS
+    // 之前结算离开的那页；跨章分支走 _navigateToChapterAndWait（由 _beginNavigation
+    // 统一 leave），歌词模式分支只动音频不 leave。
+    for (final String method in <String>[
+      'Future<void> _jumpToBookmark(Bookmark bookmark) async',
+      'Future<void> _restoreJumpPoint(ReaderJumpPoint point) async',
+    ]) {
+      test('同章跳转 $method 只在同章分支、JS 之前 leave', () {
+        final String body = maskComments(methodBody(corpus, method));
+        final int navigate = body.indexOf('_navigateToChapterAndWait(');
+        final int leave = body.indexOf('_readLedger.leave();');
+        final int js = body.indexOf('.restoreToCharOffset(', leave);
+        expect(navigate, isNonNegative);
+        expect(
+          leave,
+          greaterThan(navigate),
+          reason: '只在同章分支（跨章由 _beginNavigation）',
+        );
+        expect('_readLedger.leave('.allMatches(body), hasLength(1));
+        expect(js, greaterThan(leave));
+      });
+    }
 
     test('原位恢复判据与实时锚已删（EPUB 不再用 rebaseOnNextArrive）', () {
       for (final String stale in <String>[
@@ -291,8 +320,10 @@ void main() {
       expect('_readLedger.reset('.allMatches(masked), hasLength(2));
       final int review = masked.indexOf('void _onSourceReviewChanged() {');
       expect(review, isNonNegative);
-      final String body =
-          masked.substring(review, masked.indexOf('\n  }\n', review));
+      final String body = masked.substring(
+        review,
+        masked.indexOf('\n  }\n', review),
+      );
       expect(body, contains('_readLedger.reset();'));
     });
   });
@@ -316,7 +347,8 @@ void main() {
       expect(
         containsCodeLine(body, '_studyClock?.detach();'),
         isTrue,
-        reason: 'dispose 是同步的：停表必须走 detach（内部零 IO，'
+        reason:
+            'dispose 是同步的：停表必须走 detach（内部零 IO，'
             '攒下的写交给 ExitFlushRegistry.defer），不许自己起事务',
       );
       expect(
@@ -388,12 +420,13 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test(
-        'leave 恰五处：跳句 + _beginNavigation + 三个同章跳转入口；'
+    test('leave 恰七处：跳句 + _beginNavigation + 五个同章跳转入口；'
         '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
       // 2026-10-04 歌词覆盖层：进歌词不再换掉正文文档，正文仍站在当前页并继续跟随，
       // 所以进歌词**不**结算正文页（旧 BUG-2597 的第六处 leave 随之删除）。
-      expect('_readLedger.leave('.allMatches(masked), hasLength(5));
+      // 五个同章跳转入口：进度条 / 收藏 / 脚注，加上书签（#2485）与跳回历史
+      // （#2486）——后两处同章分支同样绕过 _beginNavigation，见上面的逐方法断言。
+      expect('_readLedger.leave('.allMatches(masked), hasLength(7));
       expect(
         containsIdentifier(
           methodBody(corpus, 'Future<void> _toggleLyricsMode()'),
@@ -414,9 +447,7 @@ void main() {
 
   group('搜索跳转不对账本做动作（只滚动、不 notifyRestoreComplete，落点首个 arrive 结算旧页）', () {
     test('onSearchJump（_jumpToSearchResult）无账本动作', () {
-      final int start = masked.indexOf(
-        'Future<void> _jumpToSearchResult(',
-      );
+      final int start = masked.indexOf('Future<void> _jumpToSearchResult(');
       expect(start, isNonNegative);
       final int end = masked.indexOf('switch (action) {', start);
       expect(end, greaterThan(start));

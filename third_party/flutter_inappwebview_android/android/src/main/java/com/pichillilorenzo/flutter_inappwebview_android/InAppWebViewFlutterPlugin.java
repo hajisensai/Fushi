@@ -19,6 +19,7 @@ import com.pichillilorenzo.flutter_inappwebview_android.service_worker.ServiceWo
 import com.pichillilorenzo.flutter_inappwebview_android.tracing.TracingControllerManager;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.FlutterWebViewFactory;
 import com.pichillilorenzo.flutter_inappwebview_android.webview.InAppWebViewManager;
+import com.pichillilorenzo.flutter_inappwebview_android.webview.WebViewProfileManager;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -53,6 +54,9 @@ public class InAppWebViewFlutterPlugin implements FlutterPlugin, ActivityAware {
   public ServiceWorkerManager serviceWorkerManager;
   @Nullable
   public WebViewFeatureManager webViewFeatureManager;
+  // Hibiki patch: named WebView profiles (incognito isolation), see WebViewProfileManager.
+  @Nullable
+  public WebViewProfileManager webViewProfileManager;
   @Nullable
   public ProxyManager proxyManager;
   @Nullable
@@ -110,6 +114,7 @@ public class InAppWebViewFlutterPlugin implements FlutterPlugin, ActivityAware {
       credentialDatabaseHandler = new CredentialDatabaseHandler(this);
     }
     webViewFeatureManager = new WebViewFeatureManager(this);
+    webViewProfileManager = new WebViewProfileManager(this);
     proxyManager = new ProxyManager(this);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
       printJobManager = new PrintJobManager(this);
@@ -163,6 +168,10 @@ public class InAppWebViewFlutterPlugin implements FlutterPlugin, ActivityAware {
     if (webViewFeatureManager != null) {
       webViewFeatureManager.dispose();
       webViewFeatureManager = null;
+    }
+    if (webViewProfileManager != null) {
+      webViewProfileManager.dispose();
+      webViewProfileManager = null;
     }
     if (proxyManager != null) {
       proxyManager.dispose();

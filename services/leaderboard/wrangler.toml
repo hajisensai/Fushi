@@ -55,13 +55,15 @@ simple = { limit = 60, period = 60 }
 crons = ["*/30 * * * *"]
 
 [vars]
-# Resend 上已验证域名的发件地址。
+# 发信服务（Brevo SMTP，见 secrets SMTP_*）上已验证域名的发件地址。
 EMAIL_FROM = "Fushi <no-reply@fushi.moe>"
+# 发信走 Brevo SMTP（免费 300 封/天）；默认 90 是按 Resend 100 封/天定的，这里留两成余量调到 280。
+# 撤掉 SMTP secrets 退回 Resend 时要一起删掉这行。
+BUDGET_EMAIL = "280"
 # 可选：逗号分隔的昵称屏蔽词（不入库维护词表）。
 BANNED_WORDS = ""
 # 可选：覆盖每日预算（默认 write_rows 80000 / media 3000 / register 2000 / email 90）与 R2 配额（字节，默认 8 GiB）。
 # BUDGET_WRITE_ROWS = "80000"
-# BUDGET_EMAIL = "90"
 # MEDIA_QUOTA_BYTES = "8589934592"
 # 反馈视频配额池（字节，默认 1 GiB，从上面的总配额里切出，最多切一半）。
 # VIDEO_QUOTA_BYTES = "1073741824"

@@ -26,6 +26,28 @@ void main() {
       expect(parsed.sentenceAudioBytes, isNull);
     });
 
+    test('web source url round-trips; older peers omit it', () {
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: 's',
+        documentTitle: 'Page',
+        sourceUrl: 'https://example.com/a?b=1',
+      );
+      final Map<String, dynamic> j =
+          jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>;
+      expect(j['sourceUrl'], 'https://example.com/a?b=1');
+      expect(
+        ForwardedMinePayload.fromJson(j).sourceUrl,
+        'https://example.com/a?b=1',
+      );
+      const ForwardedMinePayload legacy = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: 's',
+      );
+      expect(legacy.toJson().containsKey('sourceUrl'), isFalse);
+      expect(ForwardedMinePayload.fromJson(legacy.toJson()).sourceUrl, isNull);
+    });
+
     test('older peers omit synchronized video and retain independent audio', () {
       const payload = ForwardedMinePayload(rawPayloadJson: '{}', sentence: 's');
       final json = payload.toJson();

@@ -31,7 +31,30 @@ const CONFIG = {
   initialFragment: null, initialCharOffset: -1, initialProgress: 0, sentenceAudioCues: null,
 };
 
-function page({ writingMode, spread, paragraphs, fontSize = 22, fullwidthPrefix = false }) {
+// One line of the BUG-3651 case: ends on 「。」, starts with a character that may
+// begin a line, and has an inner 「。」 so the stop is not only at paragraph ends.
+const STOP_LINE = 'これはテスト本文です。ページ分割の幾何を検証します。';
+
+// Viewport [width, height] whose line length (the vertical body's content height,
+// 100vh - PT - PB) holds exactly one STOP_LINE: at least its measured advance in
+// this Chrome's fonts, less than that plus one more glyph. Measured in the same
+// body CSS the case renders with, so the line ends on the 「。」 on every platform.
+async function stopLineViewport(driver, width, fontSize) {
+  const html = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0}'
+    + `body{writing-mode:vertical-rl;font-size:${fontSize}px;line-height:1.8}</style></head>`
+    + `<body><span id="a">${STOP_LINE}</span><span id="g">こ</span></body></html>`;
+  const m = await driver.evalOnPage(html, "({ line: document.getElementById('a').getBoundingClientRect().height,"
+    + " glyph: document.getElementById('g').getBoundingClientRect().height })");
+  // The viewport is integral, so the line is ceil(advance): STOP_LINE fits (a
+  // line it exactly fills still holds it) and the next glyph does not.
+  const line = Math.ceil(m.line);
+  if (!(m.glyph > 0) || line >= m.line + m.glyph) {
+    throw new Error('stop line measure ' + JSON.stringify(m));
+  }
+  return [width, line + PT + PB];
+}
+
+function page({ writingMode, spread, paragraphs, fontSize = 22, stopLines = 0 }) {
   const vertical = writingMode === 'vertical-rl';
   const css = 'html,body{margin:0;padding:0}html{overflow:hidden}'
     + `body{width:100vw;height:100vh;box-sizing:border-box;padding:${PT}px ${PR}px ${PB}px ${PL}px;`
@@ -43,17 +66,15 @@ function page({ writingMode, spread, paragraphs, fontSize = 22, fullwidthPrefix 
   // pushed back before 「章」 and that page-first 「章」 is exactly where the
   // collapsed caret is reported at the previous line's end. Varying the text
   // loses the case (a mutation run of the old caret anchor stayed green).
-  // fullwidthPrefix: 「Ｐ０８　」 instead of 「P8 」. The Latin prefix is set in the
-  // platform's proportional Latin face (its advance differs between Windows and
-  // Linux CI), so it shifts every soft wrap after it; all-fullwidth text advances
-  // exactly 1em per code unit in any CJK face, and the wraps fall on
-  // floor(line length / font size) code units on every platform.
-  const prefix = (i) => (fullwidthPrefix
-    ? `Ｐ${String(i).padStart(2, '0').replace(/[0-9]/g, (d) => String.fromCharCode(0xFF10 + Number(d)))}　`
-    : `P${i} `);
-  const paras = Array.from({ length: paragraphs }, (_, i) =>
-    `<p>${prefix(i)}これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを`
-    + '並べています。文章文章文章文章文章文章文章文章。</p>').join('\n');
+  // stopLines: each paragraph is STOP_LINE repeated stopLines times, and the
+  // case's viewport makes the line exactly one STOP_LINE long (see
+  // stopLineViewport), so every line but a paragraph's first starts right after
+  // a 「。」 in the same text node, whatever the platform's fonts.
+  const body = (i) => (stopLines
+    ? STOP_LINE.repeat(stopLines)
+    : `P${i} これはテスト本文です。ページ分割の幾何を検証するための十分な長さのダミーテキストを`
+      + '並べています。文章文章文章文章文章文章文章文章。');
+  const paras = Array.from({ length: paragraphs }, (_, i) => `<p>${body(i)}</p>`).join('\n');
   return `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style>`
     + (spread ? `<style>${payload.spreadCss}</style>` : '')
     + `</head><body>${paras}\n${payload.engine}\n`
@@ -127,21 +148,18 @@ const CASES = [
   // two more font sizes keep the spread geometry inside the mutation net.
   ['vertical spread 20px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20 }, 'xr'],
   ['vertical spread 26px', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 26 }, 'xr'],
-  // BUG-3651: every page must start right after the previous paragraph's
-  // 「…並べています。」, where the old unit -> text-offset lookup stopped on that
-  // 「。」 (drawn on the previous page) and every reopen fell one page back.
-  // The premise is pinned by arithmetic, not by a measured viewport: the prefix
-  // is fullwidth (see page()), so each paragraph is 69 code units at exactly
-  // 1em each; the viewport height 586 leaves a 530px line = 26 units, so every
-  // paragraph wraps 26 + 26 + 17 and its third line starts right after the
-  // 「。」 at code unit 51. Paragraph pitch = 3 x 36px + 20px margin = 128px,
-  // nine paragraphs per 1272px spread at width 1280 (the page breaks then fall
-  // on those third lines). The former 「P8 」 prefix at 1280x560 only hit on
-  // Windows: Linux CI's wider Latin face moved the wraps (0 pages after 「。」).
-  // requireAfterStop still guards the premise. Must stay last: the viewport
-  // override persists for the rest of the run.
-  ['vertical spread 20px @1280x586', { writingMode: 'vertical-rl', spread: true, paragraphs: 83, fontSize: 20, fullwidthPrefix: true }, 'xr',
-    { viewport: [1280, 586], requireAfterStop: true }],
+  // BUG-3651: pages that start right after a 「。」 drawn on the previous page,
+  // where the old unit -> text-offset lookup stopped on that 「。」 and every
+  // reopen fell one page back. The premise is built, not hoped for: the
+  // viewport height is set from the measured advance of STOP_LINE (see
+  // stopLineViewport), so every line ends on its 「。」 and nearly every page
+  // starts right after one. Arithmetic on assumed glyph advances (1em per
+  // fullwidth code unit, a fixed 1280x586 viewport) held on Windows but not on
+  // Linux CI, whose fallback faces drew 0 such pages. requireAfterStop still
+  // guards the premise. Must stay last: the viewport override persists for the
+  // rest of the run.
+  ['vertical spread 20px, lines end on 「。」', { writingMode: 'vertical-rl', spread: true, paragraphs: 40, fontSize: 20, stopLines: 6 }, 'xr',
+    { stopLineViewportWidth: 1280, requireAfterStop: true }],
 ];
 
 const driver = await launchChromeDriver();
@@ -153,9 +171,12 @@ try {
       console.log(`skip ${name}: Chrome lacks column-wrap (needs 145+)`);
       continue;
     }
-    if (extra.viewport) {
+    const viewport = extra.stopLineViewportWidth
+      ? await stopLineViewport(driver, extra.stopLineViewportWidth, opts.fontSize)
+      : null;
+    if (viewport) {
       // snap() is the driver's only Emulation.setDeviceMetricsOverride entry.
-      await driver.snap('<!doctype html><body></body>', null, extra.viewport[0], extra.viewport[1]);
+      await driver.snap('<!doctype html><body></body>', null, viewport[0], viewport[1]);
     }
     const res = await driver.evalOnPage(page(opts), check(axis));
     if (extra.requireAfterStop && res.afterStop === 0) {
@@ -163,9 +184,9 @@ try {
     }
     if (res.fails.length) {
       failed++;
-      console.log(`FAIL ${name}: ${res.fails.join('; ')}`);
+      console.log(`FAIL ${name}${viewport ? ` @${viewport.join('x')}` : ''}: ${res.pages} pages, pageSize ${res.pageSize}, ${res.afterStop} after 「。」: ${res.fails.join('; ')}`);
     } else {
-      console.log(`ok ${name}: ${res.pages} pages, pageSize ${res.pageSize}, ${res.afterStop} after 「。」`);
+      console.log(`ok ${name}${viewport ? ` @${viewport.join('x')}` : ''}: ${res.pages} pages, pageSize ${res.pageSize}, ${res.afterStop} after 「。」`);
     }
   }
 } finally {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 
@@ -109,6 +110,57 @@ final class VideoRemoteSubtitleOption {
   };
 }
 
+/// One online subtitle the computer found for the playing video. [id] is
+/// opaque and only valid until the next search.
+final class VideoRemoteOnlineSubtitle {
+  const VideoRemoteOnlineSubtitle({
+    required this.id,
+    required this.fileName,
+    required this.provider,
+    this.language,
+    this.episode,
+    this.aiTranslated = false,
+    this.hearingImpaired = false,
+  });
+  final String id;
+  final String fileName;
+  final String provider;
+  final String? language;
+  final int? episode;
+  final bool aiTranslated;
+  final bool hearingImpaired;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'fileName': fileName,
+    'provider': provider,
+    if (language != null) 'language': language,
+    if (episode != null) 'episode': episode,
+    'aiTranslated': aiTranslated,
+    'hearingImpaired': hearingImpaired,
+  };
+}
+
+/// Result of a `subtitleSearch`: the query / episode the computer actually
+/// searched with (its own defaults when the phone sent none) and the hits.
+final class VideoRemoteOnlineSubtitleSearch {
+  const VideoRemoteOnlineSubtitleSearch({
+    required this.query,
+    required this.candidates,
+    this.episode,
+  });
+  final String query;
+  final int? episode;
+  final List<VideoRemoteOnlineSubtitle> candidates;
+  Map<String, Object?> toJson() => <String, Object?>{
+    'query': query,
+    if (episode != null) 'episode': episode,
+    'candidates': <Map<String, Object?>>[
+      for (final VideoRemoteOnlineSubtitle candidate in candidates)
+        candidate.toJson(),
+    ],
+  };
+}
+
 /// One video of the computer's library, as the phone's on-demand picker lists
 /// it. Library identity and display text only, never media paths.
 final class VideoRemoteLibraryItem {
@@ -118,6 +170,7 @@ final class VideoRemoteLibraryItem {
     this.collection,
     this.positionMs = 0,
     this.lastPlayedAt,
+    this.coverPath,
   });
   final String bookUid;
   final String title;
@@ -126,13 +179,31 @@ final class VideoRemoteLibraryItem {
   final String? collection;
   final int positionMs;
   final int? lastPlayedAt;
-  Map<String, Object?> toJson() => <String, Object?>{
+
+  /// The cover file on this computer. Never sent: only its modification time
+  /// goes out as `coverVersion` ([videoRemoteCoverVersion]), computed for the
+  /// requested page only.
+  final String? coverPath;
+
+  Map<String, Object?> toJson({int? coverVersion}) => <String, Object?>{
     'bookUid': bookUid,
     'title': title,
     if (collection != null) 'collection': collection,
     'positionMs': positionMs,
     if (lastPlayedAt != null) 'lastPlayedAt': lastPlayedAt,
+    if (coverVersion != null) 'coverVersion': coverVersion,
   };
+}
+
+/// Modification time (ms) of a cover file as its version; null without a
+/// cover or when the file is gone. The phone fetches a cover (from the
+/// interconnect library's cover endpoint, same `coverPath`) only when this is
+/// set and keys its cache by it, so a re-scraped cover is fetched again.
+Future<int?> videoRemoteCoverVersion(String? coverPath) async {
+  if (coverPath == null || coverPath.isEmpty) return null;
+  final FileStat stat = await FileStat.stat(coverPath);
+  if (stat.type != FileSystemEntityType.file) return null;
+  return stat.modified.millisecondsSinceEpoch;
 }
 
 /// App-owned access to the computer's video library for on-demand playback
@@ -150,6 +221,9 @@ final class VideoRemoteLibrary {
 }
 
 /// App-owned callbacks; the HTTP layer never sees media paths or widget state.
+/// Applies a subtitle [VideoRemotePlaybackBinding.downloadSubtitle] fetched.
+typedef VideoRemoteSubtitleApply = Future<void> Function();
+
 final class VideoRemotePlaybackBinding {
   const VideoRemotePlaybackBinding({
     required this.identity,
@@ -171,6 +245,9 @@ final class VideoRemotePlaybackBinding {
     this.switchEpisode,
     this.subtitleTracks,
     this.selectSubtitleTrack,
+    this.searchSubtitles,
+    this.downloadSubtitle,
+    this.caret,
   });
   final String Function() identity;
   final String Function() title;
@@ -220,6 +297,33 @@ final class VideoRemotePlaybackBinding {
   /// it off when null. Fails with a [VideoRemoteException].
   final Future<void> Function(String? trackId)? selectSubtitleTrack;
 
+  /// Searches online subtitles for the playing video; null [query] /
+  /// [episode] use the computer's own defaults. Together with
+  /// [downloadSubtitle] it enables `subtitleSearch` / `subtitleDownload`.
+  final Future<VideoRemoteOnlineSubtitleSearch> Function(
+    String? query,
+    int? episode,
+  )?
+  searchSubtitles;
+
+  /// Downloads hit [candidateId] of the last [searchSubtitles] and returns
+  /// the step that applies it as the primary subtitle. Fails with a
+  /// [VideoRemoteException].
+  ///
+  /// The download is slow and runs beside the command queue, so it must not
+  /// touch the player: the host revalidates the session after it and only
+  /// then runs the returned step inside the queue. The step itself must also
+  /// refuse (409 `session_changed`) when the player it was downloaded for is
+  /// no longer the one playing.
+  final Future<VideoRemoteSubtitleApply> Function(String candidateId)?
+  downloadSubtitle;
+
+  /// Runs one step from [videoRemoteCaretActions] on the computer's subtitle
+  /// word cursor and returns its surface afterwards (one of
+  /// [videoRemoteCaretSurfaces]). The binding's `state` should report the
+  /// same surface as `caret`. Null: the `caret` action is unsupported.
+  final Future<String> Function(String action)? caret;
+
   /// Optional controls this player supports (snapshot `capabilities`).
   List<String> get capabilities => <String>[
     if (setVolume != null) videoRemoteCapabilityVolume,
@@ -227,6 +331,9 @@ final class VideoRemotePlaybackBinding {
       videoRemoteCapabilityEpisodes,
     if (subtitleTracks != null && selectSubtitleTrack != null)
       videoRemoteCapabilitySubtitleTracks,
+    if (searchSubtitles != null && downloadSubtitle != null)
+      videoRemoteCapabilitySubtitleSearch,
+    if (caret != null) videoRemoteCapabilityCaret,
   ];
 }
 
@@ -350,6 +457,8 @@ final class VideoRemoteHost implements VideoRemoteService {
         // Volume has no periodic tick of its own: a paused player would
         // otherwise keep the phone's volume stale until the next change.
         state['volume'] != _lastState['volume'] ||
+        // The word cursor moves with no player tick (see `caret`).
+        state['caret'] != _lastState['caret'] ||
         state['controlRevision'] != _lastState['controlRevision'];
     if (immediate ||
         _lastPublish == null ||
@@ -467,6 +576,9 @@ final class VideoRemoteHost implements VideoRemoteService {
     if (operation == 'library') {
       return _listLibrary(body);
     }
+    if (operation == 'subtitleSearch') {
+      return _searchSubtitles(body);
+    }
     if (operation == 'mineStatus') {
       _RemoteMineTask? task = _tasks[body['taskId']];
       if (task == null && body['requestId'] is String) {
@@ -502,24 +614,34 @@ final class VideoRemoteHost implements VideoRemoteService {
         }
       }
     }
+    Future<Map<String, Object?>> run() async {
+      // Queued commands revalidate their owner/session at execution time.
+      await _core.assertOwner(peerId);
+      final Map<String, Object?> result = await _mutate(
+        operation,
+        body,
+        peerId,
+      );
+      // A successful controller operation supersedes an earlier failure.
+      if (_playbackError != null) {
+        _playbackError = null;
+        _publish();
+      }
+      return result;
+    }
+
+    // A subtitle download (network, archive, alignment against the embedded
+    // track) can take longer than the phone's request timeout; queued behind
+    // it, play / pause / seek would stall just as long. The download runs
+    // beside the queue and a phone retry with the same request ID joins it
+    // instead of downloading again; only the apply step re-enters the queue,
+    // after revalidating the session (see the `subtitleDownload` branch).
+    final bool beside =
+        operation == 'command' && body['action'] == 'subtitleDownload';
     return _core.runIdempotent(
       peerId,
       requestId,
-      () => _serialize(() async {
-        // Queued commands revalidate their owner/session at execution time.
-        await _core.assertOwner(peerId);
-        final Map<String, Object?> result = await _mutate(
-          operation,
-          body,
-          peerId,
-        );
-        // A successful controller operation supersedes an earlier failure.
-        if (_playbackError != null) {
-          _playbackError = null;
-          _publish();
-        }
-        return result;
-      }),
+      () => beside ? run() : _serialize(run),
       fingerprint: fingerprint,
     );
   }
@@ -723,6 +845,61 @@ final class VideoRemoteHost implements VideoRemoteService {
         _publish();
         return <String, Object?>{'ok': true};
       }
+      if (action == 'subtitleDownload') {
+        final Future<VideoRemoteSubtitleApply> Function(String)? download =
+            binding.downloadSubtitle;
+        if (binding.searchSubtitles == null || download == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? candidateId = body['candidateId'];
+        if (candidateId is! String || candidateId.isEmpty) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        // The download runs beside the queue (see [handle]); the apply joins
+        // it, so it is ordered after any episode switch / track change the
+        // phone sent meanwhile, and is refused when the session it was
+        // downloaded for is gone.
+        final VideoRemoteSubtitleApply apply = await download(candidateId);
+        return _serialize(() async {
+          await _core.assertOwner(peerId);
+          _refresh();
+          if (!identical(binding, _binding) ||
+              body['sessionId'] != _sessionId) {
+            throw const VideoRemoteException(409, 'session_changed');
+          }
+          // Applying a subtitle replaces the cue list the lookup is bound to.
+          _lookup = null;
+          await apply();
+          _refresh();
+          _publish();
+          return <String, Object?>{'ok': true};
+        });
+      }
+      if (action == 'caret') {
+        final Future<String> Function(String)? caret = binding.caret;
+        if (caret == null) {
+          throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+        }
+        final Object? step = body['caret'];
+        if (step is! String || !videoRemoteCaretActions.contains(step)) {
+          throw const VideoRemoteException(400, 'invalid_argument');
+        }
+        final Object? count = body['count'] ?? 1;
+        if (count is! int ||
+            count < 1 ||
+            count > videoRemoteCaretMaxCount ||
+            (count > 1 && !videoRemoteCaretMoves.contains(step))) {
+          throw const VideoRemoteException(400, 'invalid_number');
+        }
+        // The phone's own lookup (if any) is untouched: the cursor works on
+        // the computer screen, the pause it takes is the page's own.
+        String surface = await caret(step);
+        for (int i = 1; i < count && surface != 'none'; i++) {
+          surface = await caret(step);
+        }
+        _publish();
+        return <String, Object?>{'ok': true, 'caret': surface};
+      }
       _lookup = null; // Explicit playback intent supersedes automatic resume.
       final Map<String, dynamic> command = <String, dynamic>{};
       if (action == 'seekCue') {
@@ -872,6 +1049,35 @@ final class VideoRemoteHost implements VideoRemoteService {
         (VideoRemoteSubtitleOption track) => track.selected,
       ),
     };
+  }
+
+  /// `subtitleSearch`: online subtitles for the playing video. Re-validated
+  /// after the (slow, networked) search like [_playbackOptions].
+  Future<Map<String, Object?>> _searchSubtitles(
+    Map<String, dynamic> body,
+  ) async {
+    final VideoRemotePlaybackBinding binding = _requireSession(body);
+    final Future<VideoRemoteOnlineSubtitleSearch> Function(String?, int?)?
+    search = binding.searchSubtitles;
+    if (search == null || binding.downloadSubtitle == null) {
+      throw const VideoRemoteException(409, videoRemoteActionUnsupported);
+    }
+    final Object? query = body['query'];
+    if (query != null && (query is! String || query.length > 200)) {
+      throw const VideoRemoteException(400, 'invalid_argument');
+    }
+    final Object? episode = body['episode'];
+    if (episode != null && (episode is! int || episode < 0)) {
+      throw const VideoRemoteException(400, 'invalid_number');
+    }
+    final VideoRemoteOnlineSubtitleSearch result = await search(
+      query as String?,
+      episode as int?,
+    );
+    if (!identical(binding, _requireSession(body))) {
+      throw const VideoRemoteException(409, 'session_changed');
+    }
+    return result.toJson();
   }
 
   /// The open lookup [body] names, still bound to the current session and
@@ -1057,11 +1263,18 @@ final class VideoRemoteHost implements VideoRemoteService {
       'total': all.length,
       'offset': offset,
       'currentBookUid': _binding?.bookUid(),
-      'items': all
-          .skip(offset)
-          .take(limit)
-          .map((VideoRemoteLibraryItem item) => item.toJson())
-          .toList(),
+      // Cover versions only for the page being sent: a stat per row of the
+      // whole library on every search keystroke is slow on network drives.
+      'items': await Future.wait(
+        all
+            .skip(offset)
+            .take(limit)
+            .map(
+              (VideoRemoteLibraryItem item) async => item.toJson(
+                coverVersion: await videoRemoteCoverVersion(item.coverPath),
+              ),
+            ),
+      ),
     };
   }
 

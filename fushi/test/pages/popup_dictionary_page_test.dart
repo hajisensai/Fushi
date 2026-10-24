@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 class PopupTestAppModel extends AppModel {
   PopupTestAppModel() : super(testPlatformServices());
@@ -61,6 +62,7 @@ Widget buildTestApp({
   return ProviderScope(
     overrides: [
       appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
     ],
     child: TranslationProvider(
       child: MaterialApp(

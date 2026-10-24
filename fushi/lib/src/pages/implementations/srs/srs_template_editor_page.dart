@@ -178,7 +178,8 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           .where((SrsTemplateDef x) => x.id == widget.templateId)
           .firstOrNull;
       if (type == null || tpl == null) throw StateError('template not found');
-      final List<String> notes = await store.noteIdsOfType(type.id);
+      // 只要一条样本：走索引取第一条 id，不把整个类型的笔记都列出来。
+      final List<String> notes = await store.noteIdsOfType(type.id, limit: 1);
       final SrsNoteView? sample = notes.isEmpty
           ? null
           : await store.note(notes.first);
@@ -382,21 +383,21 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     setState(() => _saving = true);
     try {
       final Map<String, String> nameToId = _nameToId;
-      if (_front.text != _savedFront || _back.text != _savedBack) {
-        await store.updateTemplate(
-          type.id,
-          tpl.id,
-          front: templateNamesToIds(_front.text, nameToId),
-          back: templateNamesToIds(_back.text, nameToId),
-        );
-      }
-      if (_css.text != _savedCss) await store.setCss(type.id, _css.text);
-      for (final MapEntry<String, String> e in _pendingDescriptions.entries) {
-        if (type.fieldById(e.key) == null) continue;
-        await store.setFieldDescription(type.id, e.key, e.value);
-      }
+      final bool templateChanged =
+          _front.text != _savedFront || _back.text != _savedBack;
+      // 模板 / CSS / 字段说明一次写入（一个事务、一次缓存刷新），见 saveTemplateEdits。
+      final bool wrote = await store.saveTemplateEdits(
+        type.id,
+        tpl.id,
+        front: templateChanged
+            ? templateNamesToIds(_front.text, nameToId)
+            : null,
+        back: templateChanged ? templateNamesToIds(_back.text, nameToId) : null,
+        css: _css.text != _savedCss ? _css.text : null,
+        fieldDescriptions: _pendingDescriptions,
+      );
       if (!mounted) return;
-      bumpSrsRevision(ref);
+      if (wrote) bumpSrsRevision(ref);
       setState(() {
         _savedFront = _front.text;
         _savedBack = _back.text;
@@ -488,6 +489,41 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
         : () => unawaited(_save()),
   );
 
+  /// 顶栏「AI 帮忙」：任何标签页都能用（不必先切到可视化页）。问一句要求 → 跑 AI → 切到
+  /// 可视化页看结果（结果仍只进草稿）。AI 模块关着时没有这个按钮。
+  FushiToolbarItem? get _aiItem {
+    if (_type == null ||
+        !isAiModuleEnabled(ref.watch(appProvider).moduleVisibility)) {
+      return null;
+    }
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_template_ai'),
+      icon: FushiIcons.aiAssistant,
+      label: t.ai_assist_section,
+      onPressed: () => srsRunLogged('SrsTemplateEditor.ai', _askAi),
+    );
+  }
+
+  Future<void> _askAi() async {
+    final String? request = await showFushiTextInputDialog(
+      context: context,
+      title: t.ai_assist_section,
+      hintText: t.srs_visual_ai_hint,
+      confirmLabel: t.srs_visual_ai_run,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.aiAssistant,
+      maxLines: 4,
+    );
+    if (request == null || request.trim().isEmpty || !mounted) return;
+    final String? message = await _runAi(request.trim());
+    if (!mounted) return;
+    if (message != null) {
+      FushiToast.show(msg: message, severity: ToastSeverity.error);
+      return;
+    }
+    setState(() => _tab = SrsTemplateEditorTab.visual);
+  }
+
   FushiToolbarItem get _insertItem => FushiToolbarItem(
     key: const ValueKey<String>('srs_template_insert_field'),
     icon: FushiIcons.textFields,
@@ -515,6 +551,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
         actions: apple
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
+                  ?_aiItem,
                   _insertItem,
                   _saveItem,
                 ])
@@ -553,7 +590,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[_insertItem, _saveItem],
+          <FushiToolbarItem>[?_aiItem, _insertItem, _saveItem],
         ],
       ),
     );

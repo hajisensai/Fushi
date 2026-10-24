@@ -302,6 +302,8 @@ class VideoSourceScrapeCoordinator
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) {
@@ -318,8 +320,8 @@ class VideoSourceScrapeCoordinator
             workStableKey: workStableKey);
     final List<VideoMetadataLookup> explicit = parseExplicitVideoMetadataIds(
       <String>[trimmed],
-      fallbackMediaKind:
-          work == null ? VideoMetadataMediaKind.tv : _manualMediaKind(work),
+      fallbackMediaKind: mediaKind ??
+          (work == null ? VideoMetadataMediaKind.tv : _manualMediaKind(work)),
     );
     final bool identityInput = explicit.isNotEmpty ||
         trimmed.contains('://') ||
@@ -328,7 +330,12 @@ class VideoSourceScrapeCoordinator
             .hasMatch(trimmed);
     final VideoMetadataProviderKind selected =
         source == null ? primaryProvider : await _sourceProvider(source);
-    final List<VideoMetadataProviderKind> chain = _providerChain(selected);
+    // 用户显式指定资料源时只搜它（不在可选主源白名单里的照样当查无）。
+    final List<VideoMetadataProviderKind> chain = provider == null
+        ? _providerChain(selected)
+        : <VideoMetadataProviderKind>[
+            if (kSelectableVideoMetadataProviders.contains(provider)) provider,
+          ];
     if (identityInput) {
       final VideoMetadataLookup? lookup =
           explicit.length == 1 ? explicit.single : null;
@@ -344,12 +351,12 @@ class VideoSourceScrapeCoordinator
           !<String>{'http', 'https'}.contains(Uri.tryParse(trimmed)?.scheme)) {
         throw const FormatException('Invalid video metadata work URL');
       }
-      final VideoMetadataProvider? provider =
+      final VideoMetadataProvider? idProvider =
           _manualSearchProvider(lookup.provider);
-      if (provider == null) {
+      if (idProvider == null) {
         return const <VideoSourceScrapeConfirmationCandidate>[];
       }
-      final VideoMetadataWork? result = await provider.fetchWork(lookup);
+      final VideoMetadataWork? result = await idProvider.fetchWork(lookup);
       return <VideoSourceScrapeConfirmationCandidate>[
         if (result != null)
           VideoSourceScrapeConfirmationCandidate(
@@ -363,26 +370,28 @@ class VideoSourceScrapeCoordinator
               work: result),
       ];
     }
-    final List<VideoMetadataMediaKind> kinds = work == null
-        ? const <VideoMetadataMediaKind>[
-            VideoMetadataMediaKind.tv,
-            VideoMetadataMediaKind.movie,
-          ]
-        : <VideoMetadataMediaKind>[_manualMediaKind(work)];
+    final List<VideoMetadataMediaKind> kinds = mediaKind != null
+        ? <VideoMetadataMediaKind>[mediaKind]
+        : work == null
+            ? const <VideoMetadataMediaKind>[
+                VideoMetadataMediaKind.tv,
+                VideoMetadataMediaKind.movie,
+              ]
+            : <VideoMetadataMediaKind>[_manualMediaKind(work)];
     final List<VideoSourceScrapeConfirmationCandidate> candidates =
         <VideoSourceScrapeConfirmationCandidate>[];
     final Set<String> seenLookups = <String>{};
     for (final VideoMetadataProviderKind providerKind in chain) {
-      final VideoMetadataProvider? provider =
+      final VideoMetadataProvider? searchProvider =
           _manualSearchProvider(providerKind);
-      if (provider == null) continue;
+      if (searchProvider == null) continue;
       try {
         for (final VideoMetadataMediaKind kind in kinds) {
-          final List<VideoMetadataWork> results = await provider.search(
+          final List<VideoMetadataWork> results = await searchProvider.search(
             VideoMetadataSearchRequest(title: trimmed, mediaKind: kind),
           );
           for (final VideoMetadataWork candidate in results) {
-            if (_lookupForCandidate(candidate, provider.providerKind)
+            if (_lookupForCandidate(candidate, searchProvider.providerKind)
                 case final VideoMetadataLookup lookup) {
               if (!seenLookups.add(
                   '${lookup.provider.name}:${lookup.mediaKind.name}:${lookup.externalId}')) {
@@ -700,10 +709,17 @@ class VideoSourceScrapeCoordinator
   VideoMetadataMediaKind _manualMediaKind(VideoSourceScrapeWork work) {
     final VideoNameInfo parsed =
         parseVideoFilename(p.basename(work.members.first.videoPath));
-    return work.isEpisodic || parsed.episode != null
+    return _looksEpisodic(work, parsed)
         ? VideoMetadataMediaKind.tv
         : VideoMetadataMediaKind.movie;
   }
+
+  /// 没有身份证据时的形态判据：多集作品是剧；单文件作品解出集号也是剧，**除非**
+  /// 文件名带电影关键词——`Doraemon Movie 01 (1980)` 的 `01` 是剧场版序号，按剧
+  /// 搜会让「Doraemon」唯一命中 TMDB 的 TV 本体并自动绑上（下载整理器
+  /// `video_download_organizer.dart` 同样是电影提示优先于集号）。
+  static bool _looksEpisodic(VideoSourceScrapeWork work, VideoNameInfo parsed) =>
+      work.isEpisodic || (parsed.episode != null && !parsed.isMovieHint);
 
   @override
   Future<SourceScrapeReport> scrapeSource(
@@ -1282,7 +1298,7 @@ class VideoSourceScrapeCoordinator
         confirmedLookup ?? downloadLookups.firstOrNull;
     VideoMetadataMediaKind kind = !localWork.isEpisodic && kindEvidence != null
         ? kindEvidence.mediaKind
-        : localWork.isEpisodic || parsed.episode != null
+        : _looksEpisodic(localWork, parsed)
             ? VideoMetadataMediaKind.tv
             : VideoMetadataMediaKind.movie;
     VideoMetadataWork? nfo = await VideoNfoReader(
@@ -1866,6 +1882,8 @@ class VideoSourceScrapeCoordinator
         metadata,
         tmdb.metadata,
         preferredLanguage: _locale,
+        supplementPart:
+            await _tmdbSupplementPart(resolvedLookup, tmdb.metadata),
       );
       // MAL cour 季缺分集（播出中的作品 Jikan 常给 0 集）→ 按映射表显式的
       // 「TMDB 第 S 季从第 O+1 集起」切片补集，本地文件才挂得上分集行。
@@ -3035,6 +3053,48 @@ class VideoSourceScrapeCoordinator
       externalId: '${tmdbIds.single}',
       mediaKind: kind,
     );
+  }
+
+  /// TMDB 补充若是主身份所属的**整部剧**（Fribb 行指向剧的第 S≠1 季 / 集偏移
+  /// 大于 0 / 剧场版挂在剧的特典季下），返回主身份那一部分自己的年份来源；补充
+  /// 就是主身份本身时返回 null。不这么分，AniDB 只有标题目录摘要（没有年份）时
+  /// 剧本体的首播年会填进续作季与剧场版（响け！2/3 显示 2015、剧场版显示 1979）。
+  Future<VideoMetadataSupplementPart?> _tmdbSupplementPart(
+    VideoMetadataLookup? resolved,
+    VideoMetadataWork? supplement,
+  ) async {
+    if (supplement == null) return null;
+    final int? supplementId = int.tryParse(
+      _lookupForCandidate(supplement, VideoMetadataProviderKind.tmdb)
+              ?.externalId ??
+          '',
+    );
+    if (supplementId == null) return null;
+    for (final AnimeIdentityEntry entry in await _mappingEntries(resolved)) {
+      if (entry.tmdbId != supplementId ||
+          entry.tmdbMediaKind != VideoMetadataMediaKind.tv ||
+          supplement.kind != VideoMetadataMediaKind.tv) {
+        continue;
+      }
+      final int? season = entry.tmdbSeason;
+      final bool part = entry.isMovie ||
+          (season != null && season != 1) ||
+          (entry.tmdbEpisodeOffset ?? 0) > 0;
+      if (!part) continue;
+      final VideoMetadataSeason? own = entry.isMovie || season == null
+          ? null
+          : supplement.seasons
+              .where((VideoMetadataSeason s) => s.seasonNumber == season)
+              .firstOrNull;
+      // 同一季里的后半段（集偏移 > 0）不是从这一季开头播的，季的年份 / 首播日
+      // 都不一定属于它，留空。
+      final bool offset = (entry.tmdbEpisodeOffset ?? 0) > 0;
+      return VideoMetadataSupplementPart(
+        year: offset ? null : own?.year,
+        premiered: offset ? null : own?.airDate,
+      );
+    }
+    return null;
   }
 
   /// 主身份（MAL / AniDB）在离线映射里的行；没有映射 / 不是这两家 / 查询失败 → 空。

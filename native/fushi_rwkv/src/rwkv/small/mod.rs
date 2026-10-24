@@ -92,6 +92,26 @@ fn stream_precision(stream: usize, precision: StatePrecision) -> StatePrecision 
     }
 }
 
+/// Fushi: what one journaled review overwrote (the five stream states it
+/// touched, `None` = the entity had none yet, and the feature bookkeeping).
+pub struct SmallUndo {
+    keys: [i64; STREAMS],
+    prior: [Option<Vec<u8>>; STREAMS],
+    features: super::FeatureUndo,
+}
+
+impl SmallUndo {
+    /// (card, note) keys whose states this entry restores.
+    pub fn affected(&self) -> (i64, i64) {
+        (self.keys[0], self.keys[2])
+    }
+
+    /// Bytes this entry holds (the journal is capped by it).
+    pub fn bytes(&self) -> usize {
+        self.prior.iter().flatten().map(Vec::len).sum::<usize>() + 256
+    }
+}
+
 pub struct SmallInference {
     model: SmallModel,
     precision: StatePrecision,
@@ -229,6 +249,38 @@ impl SmallInference {
             }
         }
         Ok(predictions)
+    }
+
+    /// Fushi: replays one answered review exactly as [Self::warm_up_reviews]
+    /// would (a chunk of one row; chunk boundaries do not change results) and
+    /// returns what it overwrote, for [Self::rewind].
+    pub fn append_journaled(&mut self, input: ReviewInput) -> io::Result<SmallUndo> {
+        let keys = stream_keys(&input);
+        let prior: [Option<Vec<u8>>; STREAMS] =
+            std::array::from_fn(|stream| self.stores[stream].get(keys[stream]).map(<[u8]>::to_vec));
+        let mut features_undo = self.features.checkpoint(&input);
+        self.warm_up_reviews(vec![input], false)?;
+        self.features.seal(&mut features_undo);
+        Ok(SmallUndo {
+            keys,
+            prior,
+            features: features_undo,
+        })
+    }
+
+    /// Fushi: undoes the last [Self::append_journaled] whose journal entry
+    /// this is; entries must be rewound newest first.
+    pub fn rewind(&mut self, undo: SmallUndo) {
+        for (stream, prior) in undo.prior.into_iter().enumerate() {
+            let id = undo.keys[stream];
+            match prior {
+                Some(bytes) => self.stores[stream].get_or_insert(id).copy_from_slice(&bytes),
+                None => {
+                    self.stores[stream].take(id);
+                }
+            }
+        }
+        self.features.rewind(undo.features);
     }
 
     /// R of each query (all must be queries); no state changes apart from the

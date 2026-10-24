@@ -256,6 +256,29 @@ void main() {
       expect(result.useAnkiSyncClient, isTrue);
       expect(result.repositionRareFirst, isTrue);
     });
+
+    // 反馈 ORHr4_WDOy：全局标签所有 Profile 共用，Profile 标签各配各的。
+    test('global tags survive a profile switch; profile tags are swapped', () {
+      const AnkiSettings current = AnkiSettings(
+        tags: 'profile_a',
+        globalTags: 'everywhere',
+      );
+      final Map<String, String> snapshotB = ProfileKeys.ankiSettingsToMap(
+        const AnkiSettings(tags: 'profile_b', globalTags: 'stale'),
+      );
+      expect(
+        snapshotB.containsKey('globalTags'),
+        isFalse,
+        reason: '全局标签进了 Profile 快照就不再全局',
+      );
+      final AnkiSettings result = ProfileKeys.mapToAnkiSettings(
+        snapshotB,
+        current,
+      );
+      expect(result.tags, 'profile_b');
+      expect(result.globalTags, 'everywhere');
+      expect(result.noteTags, 'everywhere profile_b');
+    });
   });
 
   group('ProfileKeys.isExcludedPref — credentials never enter a snapshot', () {

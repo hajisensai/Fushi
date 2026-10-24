@@ -15,6 +15,9 @@ import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/desktop_tts.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart';
+import 'package:fushi/src/utils/misc/system_tts_voices.dart';
+import 'package:fushi_engine/tts/tts_types.dart' show TtsVoice;
 
 /// 一个本地音频库推给查询层的配置：库路径 + 启用子来源的优先级序。
 ///
@@ -22,8 +25,10 @@ import 'package:fushi/src/utils/misc/local_audio_db.dart';
 /// 空表示「该库不限制」——退回 DB 自然顺序、全部启用（向后兼容无配置的旧库）。
 @immutable
 class LocalAudioDbConfig {
-  const LocalAudioDbConfig(
-      {required this.path, this.sourceOrder = const <String>[]});
+  const LocalAudioDbConfig({
+    required this.path,
+    this.sourceOrder = const <String>[],
+  });
 
   final String path;
   final List<String> sourceOrder;
@@ -49,11 +54,12 @@ class TtsChannel {
   static bool get isSupported => _isSupported;
   static const _channel = FushiChannels.tts;
 
-  /// 原生 `TtsChannelHandler` 只注册在主 Activity 的引擎上（`MainActivity.
-  /// configureFlutterEngine`）；Android 弹窗词典 / 悬浮词典是另外的引擎与 entry
-  /// point，那里调本通道只会 MissingPluginException。由主入口 `main()` 调
-  /// [markHostPlaybackRegistered] 声明「本引擎有原生播放器」，消费端据此决定能否
-  /// 把单词音频交给原生 MediaPlayer（BUG-3311）。
+  /// 原生 `TtsChannelHandler` 注册在主 Activity 的引擎上（`MainActivity.
+  /// configureFlutterEngine`），也注册在 `:popup` 进程的 app 外查词引擎上
+  /// （`FloatingDictPluginRegistrant`，BUG-3740：本地音频库查询要用它）。但单词音频
+  /// 改交原生 MediaPlayer（BUG-3311 的防 duck 路径）只在主引擎上做：app 外查词浮在
+  /// 别的 app 上，照旧走弹窗 WebView 的 `<audio>`。由主入口 `main()` 调
+  /// [markHostPlaybackRegistered] 声明「本引擎走原生播放」，消费端据此分流。
   static bool _hostPlaybackRegistered = false;
 
   /// 本引擎是否能用原生 MediaPlayer 播单词音频（Android 主引擎）。
@@ -121,10 +127,12 @@ class TtsChannel {
         // 'paths' 保留兼容旧逻辑；'dbConfigs' 携带每库启用源优先级。
         'paths': dbs.map((LocalAudioDbConfig c) => c.path).toList(),
         'dbConfigs': dbs
-            .map((LocalAudioDbConfig c) => <String, Object?>{
-                  'path': c.path,
-                  'order': c.sourceOrder,
-                })
+            .map(
+              (LocalAudioDbConfig c) => <String, Object?>{
+                'path': c.path,
+                'order': c.sourceOrder,
+              },
+            )
             .toList(),
       });
       return result == true;
@@ -134,9 +142,11 @@ class TtsChannel {
     }
   }
 
-  Future<bool> setLocalAudioDb(String path) => setLocalAudioDbs(path.isEmpty
-      ? const <LocalAudioDbConfig>[]
-      : <LocalAudioDbConfig>[LocalAudioDbConfig(path: path)]);
+  Future<bool> setLocalAudioDb(String path) => setLocalAudioDbs(
+    path.isEmpty
+        ? const <LocalAudioDbConfig>[]
+        : <LocalAudioDbConfig>[LocalAudioDbConfig(path: path)],
+  );
 
   /// 枚举一个本地音频库内的全部子来源名（`SELECT DISTINCT source`）。
   /// Android 走 native；桌面直接读 sqlite。返回空表示库为空 / 读失败。
@@ -144,11 +154,16 @@ class TtsChannel {
     if (!_isSupported) return LocalAudioDb.listSources(dbPath);
     try {
       final Object? r = await _channel.invokeMethod(
-          'listLocalAudioSources', <String, Object?>{'path': dbPath});
+        'listLocalAudioSources',
+        <String, Object?>{'path': dbPath},
+      );
       return (r as List<Object?>?)?.cast<String>() ?? const <String>[];
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('TtsChannel.listLocalAudioSources', e, stack);
+      ErrorLogService.instance.log(
+        'TtsChannel.listLocalAudioSources',
+        e,
+        stack,
+      );
       return const <String>[];
     }
   }
@@ -168,9 +183,9 @@ class TtsChannel {
       // 弹窗独立 isolate 也会调进来：Isolate.run 嵌套是允许的。
       final List<({String path, List<String> order})> configs =
           <({String path, List<String> order})>[
-        for (final LocalAudioDbConfig c in _desktopDbConfigs)
-          (path: c.path, order: List<String>.of(c.sourceOrder)),
-      ];
+            for (final LocalAudioDbConfig c in _desktopDbConfigs)
+              (path: c.path, order: List<String>.of(c.sourceOrder)),
+          ];
       // 绑定期 [setLocalAudioDbs] 对同一批库文件 unawaited 派出了
       // [LocalAudioDb.ensureIndexes]——那是**我们自己**开的 readWrite 连接。
       // 在它收尾前发查询，两条连接就在同一个 inode 上抢锁：CREATE INDEX 提交
@@ -228,8 +243,71 @@ class TtsChannel {
     }
   }
 
-  Future<String?> extractLocalAudio(String file, String source,
-      {int dbIndex = 0}) async {
+  /// 「选择音频源」菜单用：第 [dbIndex] 个本地音频库里 [expression] / [reading]
+  /// 的**全部**启用子来源命中（`{file, source, dbIndex}`，按子来源优先级排好，
+  /// 首项即 [queryLocalAudio] 会回的那条）。语义见 [LocalAudioDb.queryMetaAll]；
+  /// 撞锁同样抛 [LocalAudioUnavailableError]。
+  Future<List<Map<String, dynamic>>> queryLocalAudioAll(
+    String expression,
+    String reading, {
+    required int dbIndex,
+  }) async {
+    if (!_isSupported) {
+      if (dbIndex < 0 || dbIndex >= _desktopDbConfigs.length) {
+        return const <Map<String, dynamic>>[];
+      }
+      final LocalAudioDbConfig config = _desktopDbConfigs[dbIndex];
+      final String path = config.path;
+      final List<String> order = List<String>.of(config.sourceOrder);
+      // 同 [queryLocalAudio]：排在自家绑定期建索引之后（BUG-1365）。
+      await LocalAudioDb.waitForPendingIndexing(path);
+      try {
+        return await Isolate.run(
+          () => <Map<String, dynamic>>[
+            for (final ({String file, String source}) meta
+                in LocalAudioDb.queryMetaAll(
+                  path,
+                  expression,
+                  reading,
+                  order: order,
+                ))
+              <String, dynamic>{
+                'file': meta.file,
+                'source': meta.source,
+                'dbIndex': dbIndex,
+              },
+          ],
+        );
+      } on LocalAudioUnavailableError {
+        rethrow; // 同 [queryLocalAudio]（BUG-1413）。
+      } catch (e, stack) {
+        ErrorLogService.instance.log('TtsChannel.queryLocalAudioAll', e, stack);
+        return const <Map<String, dynamic>>[];
+      }
+    }
+    try {
+      final Object? result = await _channel.invokeMethod('queryLocalAudio', {
+        'expression': expression,
+        'reading': reading,
+        'dbIndex': dbIndex,
+        'all': true,
+      });
+      if (result is! List) return const <Map<String, dynamic>>[];
+      return <Map<String, dynamic>>[
+        for (final Object? row in result)
+          if (row is Map) Map<String, dynamic>.from(row),
+      ];
+    } catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.queryLocalAudioAll', e, stack);
+      return const <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<String?> extractLocalAudio(
+    String file,
+    String source, {
+    int dbIndex = 0,
+  }) async {
     if (!_isSupported) {
       if (dbIndex < 0 || dbIndex >= _desktopDbPaths.length) return null;
       final String dbPath = _desktopDbPaths[dbIndex];
@@ -243,12 +321,14 @@ class TtsChannel {
       // ＝已查到词条却「音频提取失败」（BUG-1365）。
       await LocalAudioDb.waitForPendingIndexing(dbPath);
       try {
-        return await Isolate.run(() => LocalAudioDb.extractBlob(
-              dbPath: dbPath,
-              file: file,
-              source: source,
-              cacheDir: Directory(cacheDirPath),
-            ));
+        return await Isolate.run(
+          () => LocalAudioDb.extractBlob(
+            dbPath: dbPath,
+            file: file,
+            source: source,
+            cacheDir: Directory(cacheDirPath),
+          ),
+        );
       } on LocalAudioUnavailableError {
         rethrow; // 同 [queryLocalAudio]（BUG-1413）：没答上 ≠ 没有音频。
       } catch (e, stack) {
@@ -315,8 +395,9 @@ class TtsChannel {
       case ResolvedAudioPlayback.url:
         return playUrl(ref, volume: volume);
       case ResolvedAudioPlayback.file:
-        final String path =
-            ref.startsWith('file://') ? Uri.parse(ref).toFilePath() : ref;
+        final String path = ref.startsWith('file://')
+            ? Uri.parse(ref).toFilePath()
+            : ref;
         return playFile(path, volume: volume);
     }
   }
@@ -349,9 +430,7 @@ class TtsChannel {
   /// 移动端 KitFfmpegBackend 走 `FFprobeKit.executeWithArguments`。缺 ffprobe / 无 tag
   /// 时返回 null（[extractAudioMetadataViaFfprobe] 内部吞异常降级），调用方保留文件名
   /// 兜底，绝不崩。
-  Future<AudioMetadata?> extractAudioMetadata({
-    required String audioPath,
-  }) {
+  Future<AudioMetadata?> extractAudioMetadata({required String audioPath}) {
     return extractAudioMetadataViaFfprobe(inputPath: audioPath);
   }
 
@@ -400,25 +479,114 @@ class TtsChannel {
     );
   }
 
-  Future<String?> ttsToFile(String text, String outputPath,
-      {String locale = 'ja-JP'}) async {
-    if (!_isSupported) {
-      // No native TextToSpeech off Android: use the OS speech engine
-      // (macOS `say` / Windows SAPI / Linux Open JTalk or espeak-ng). Returns
-      // null when no engine is installed or on failure.
-      return ttsToFileDesktop(text: text, outputPath: outputPath);
+  /// 系统语音走原生通道的平台：Android（`TtsChannelHandler` → TextToSpeech）与 iOS
+  /// （`FushiSystemTts.swift` → AVSpeechSynthesizer）。iOS 的同名通道只实现语音
+  /// 三个方法（`ttsToFile` / `getVoices`），播放等仍走 [_isSupported] 之外的实现。
+  static bool get _nativeSpeech => Platform.isAndroid || Platform.isIOS;
+
+  /// 用系统语音把 [text] 合成到 [outputPath]，返回实际写出的文件路径。
+  ///
+  /// [voice] 是 [listSystemTtsVoices] 给出的声音 id（null / 空 = 按 [languageTag]
+  /// 自动挑）；[engine] 只在 Android 有意义（引擎包名，null / 空 = 系统默认引擎）。
+  /// [languageTag]（BCP-47）是要念的语言，由 [resolveSystemTtsLanguageTag] 决定；
+  /// null = 用引擎默认语言（不再写死日语，BUG-3669）。失败抛 [SystemTtsFailure]
+  /// （带原因与语言），由调用方记日志、提示用户——这里不吞、不返回 null。
+  ///
+  /// Android / iOS 走原生；桌面走 OS 自带引擎（[ttsToFileDesktop]）。
+  Future<String> ttsToFile(
+    String text,
+    String outputPath, {
+    String? languageTag,
+    String? engine,
+    String? voice,
+  }) async {
+    if (!_nativeSpeech) {
+      return ttsToFileDesktop(
+        text: text,
+        outputPath: outputPath,
+        languageTag: languageTag,
+        voice: voice,
+      );
     }
+    return nativeTtsToFile(
+      _channel,
+      text: text,
+      outputPath: outputPath,
+      languageTag: languageTag,
+      engine: engine,
+      voice: voice,
+    );
+  }
+
+  /// 本机的系统语音引擎（只有 Android 能选引擎；别的平台返回空表）。
+  Future<List<SystemTtsEngine>> listSystemTtsEngines() async {
+    if (!Platform.isAndroid) return const <SystemTtsEngine>[];
     try {
-      final result = await _channel.invokeMethod('ttsToFile', {
-        'text': text,
-        'locale': locale,
-        'outputPath': outputPath,
-      });
-      return result as String?;
-    } catch (e, stack) {
-      ErrorLogService.instance.log('TtsChannel.ttsToFile', e, stack);
-      return null;
+      return parseAndroidTtsEngines(
+        await _channel.invokeMethod<Object?>('getEngines'),
+      );
+    } on PlatformException catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.listSystemTtsEngines', e, stack);
+      return const <SystemTtsEngine>[];
+    } on MissingPluginException {
+      return const <SystemTtsEngine>[];
     }
+  }
+
+  /// 系统语音可选的声音。[engine] 只在 Android 有意义（null / 空 = 默认引擎）。
+  /// 列不出来返回空表（调用方提示「没有可用声音」）。
+  Future<List<TtsVoice>> listSystemTtsVoices({String? engine}) async {
+    if (!_nativeSpeech) return listDesktopTtsVoices();
+    try {
+      final Object? raw = await _channel.invokeMethod<Object?>('getVoices', {
+        if (engine != null && engine.isNotEmpty) 'engine': engine,
+      });
+      return Platform.isAndroid
+          ? parseAndroidTtsVoices(raw)
+          : parseAppleSpeechVoices(raw);
+    } on PlatformException catch (e, stack) {
+      ErrorLogService.instance.log('TtsChannel.listSystemTtsVoices', e, stack);
+      return const <TtsVoice>[];
+    } on MissingPluginException {
+      return const <TtsVoice>[];
+    }
+  }
+
+  /// [ttsToFile] 的原生半段（Android `TtsChannelHandler.handleTtsToFile` / iOS
+  /// `FushiSystemTts`）：把语言、引擎、声音原样交给原生侧，把原生的错误码映射成
+  /// [SystemTtsFailure]。通道可注入，这样非原生机器上也能测「参数透传」与「失败不静默」。
+  @visibleForTesting
+  static Future<String> nativeTtsToFile(
+    MethodChannel channel, {
+    required String text,
+    required String outputPath,
+    required String? languageTag,
+    String? engine,
+    String? voice,
+  }) async {
+    final Object? result;
+    try {
+      result = await channel.invokeMethod<Object?>('ttsToFile', {
+        'text': text,
+        'languageTag': languageTag,
+        'outputPath': outputPath,
+        if (engine != null && engine.isNotEmpty) 'engine': engine,
+        if (voice != null && voice.isNotEmpty) 'voice': voice,
+      });
+    } on PlatformException catch (e) {
+      throw SystemTtsFailure.fromPlatformCode(e.code, languageTag);
+    } on MissingPluginException {
+      // 原生 handler 没挂上（没有语音实现的引擎 / 平台）。
+      throw SystemTtsFailure(
+        SystemTtsFailureReason.engineUnavailable,
+        languageTag: languageTag,
+      );
+    }
+    if (result is String && result.isNotEmpty) return result;
+    throw SystemTtsFailure(
+      SystemTtsFailureReason.synthesisFailed,
+      languageTag: languageTag,
+    );
   }
 
   Future<void> stop() async {

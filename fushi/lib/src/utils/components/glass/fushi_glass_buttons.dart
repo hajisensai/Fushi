@@ -1322,8 +1322,8 @@ class FushiIconButtonControl extends StatelessWidget {
     this.isSelected,
     this.selectedIcon,
     this.size,
-    this.width = FushiIconButtonWidth.standard,
-    this.shape = FushiIconButtonShape.round,
+    this.width = IconButtonWidthVariant.standard,
+    this.shape = ButtonShapeVariant.round,
     required this.icon,
   }) : _variant = _IconButtonVariant.standard;
 
@@ -1353,8 +1353,8 @@ class FushiIconButtonControl extends StatelessWidget {
     this.isSelected,
     this.selectedIcon,
     this.size,
-    this.width = FushiIconButtonWidth.standard,
-    this.shape = FushiIconButtonShape.round,
+    this.width = IconButtonWidthVariant.standard,
+    this.shape = ButtonShapeVariant.round,
     required this.icon,
   }) : _variant = _IconButtonVariant.filled;
 
@@ -1384,8 +1384,8 @@ class FushiIconButtonControl extends StatelessWidget {
     this.isSelected,
     this.selectedIcon,
     this.size,
-    this.width = FushiIconButtonWidth.standard,
-    this.shape = FushiIconButtonShape.round,
+    this.width = IconButtonWidthVariant.standard,
+    this.shape = ButtonShapeVariant.round,
     required this.icon,
   }) : _variant = _IconButtonVariant.filledTonal;
 
@@ -1415,8 +1415,8 @@ class FushiIconButtonControl extends StatelessWidget {
     this.isSelected,
     this.selectedIcon,
     this.size,
-    this.width = FushiIconButtonWidth.standard,
-    this.shape = FushiIconButtonShape.round,
+    this.width = IconButtonWidthVariant.standard,
+    this.shape = ButtonShapeVariant.round,
     required this.icon,
   }) : _variant = _IconButtonVariant.outlined;
 
@@ -1447,187 +1447,89 @@ class FushiIconButtonControl extends StatelessWidget {
   final _IconButtonVariant _variant;
 
   /// M3 Expressive 尺寸档（只影响 MD3）。null = 按 [visualDensity] 推：
-  /// compact → XS 32，其余 → S 40。
-  final FushiIconButtonSize? size;
+  /// compact → xSmall 32，其余 → small 40。
+  final ButtonSizeVariant? size;
 
-  /// 实际尺寸档：显式 [size]，否则 compact 密度 → XS，其余 → S。
-  FushiIconButtonSize get _effectiveSize =>
+  /// 实际尺寸档：显式 [size]，否则 compact 密度 → xSmall，其余 → small。
+  ButtonSizeVariant get _effectiveSize =>
       size ??
       (visualDensity == VisualDensity.compact
-          ? FushiIconButtonSize.xs
-          : FushiIconButtonSize.s);
+          ? ButtonSizeVariant.xSmall
+          : ButtonSizeVariant.small);
 
   /// M3 Expressive 宽度变体（只影响 MD3）。
-  final FushiIconButtonWidth width;
+  final IconButtonWidthVariant width;
 
-  /// M3 Expressive 形状（只影响 MD3）：方形 = 常驻圆角 12。
-  final FushiIconButtonShape shape;
+  /// M3 Expressive 形状变体（只影响 MD3）。
+  final ButtonShapeVariant shape;
 
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    // MD3 = M3 Expressive 图标按钮：尺寸档 / 宽度 / 形状 + 变体配色（见
-    // [_expressiveDefaults]），按压变形圆 → 圆角 12；toggle 选中态与方形按钮
-    // 常驻圆角 12、按下收到 8。IconButton 不暴露 statesController，按指针判按下。
-    // 墨水屏不套 Expressive 配色（那套方案的容器色塌成页面底色），保持原件。
-    final bool square = shape == FushiIconButtonShape.square;
-    final bool selected = isSelected ?? false;
-    final bool einkMode = isEinkTheme(context);
-    final ButtonStyle? base = einkMode
-        ? style
-        : (style?.merge(_expressiveDefaults(context)) ??
-              _expressiveDefaults(context));
+    // MD3 = 官方 M3 Expressive 图标按钮：主题工厂把
+    // IconButtonThemeData.variant 设成 material3Expressive，尺寸档 / 宽度 /
+    // 形状经 ButtonStyle 的变体字段交给官方默认样式，配色与各状态目标形状由
+    // 官方实现；标准变体选中态补浅色底（[fushiSelectedTonalIconButtonStyle]），
+    // 状态间的弹簧由 [FushiIconButtonSpring] 补齐。墨水屏主题不开 Expressive
+    // 变体，保持 M3 原件。
+    ButtonStyle? effective = style;
+    if (!isEinkTheme(context)) {
+      ButtonStyle variants = ButtonStyle(
+        sizeVariant: _effectiveSize,
+        iconButtonWidth: width,
+        shapeVariant: shape,
+        // 尺寸档已经把 compact 解释成 xSmall；不再让 VisualDensity 二次缩小。
+        visualDensity: constraints != null ? null : VisualDensity.standard,
+        // 减弱动态效果：形状切换瞬时完成，不跑补间。
+        animationDuration: fushiExpressiveMotionEnabled(context)
+            ? null
+            : Duration.zero,
+      );
+      if (_variant == _IconButtonVariant.standard) {
+        variants = variants.merge(
+          fushiSelectedTonalIconButtonStyle(
+            Theme.of(context).colorScheme,
+            foreground: color == null,
+          ),
+        );
+      }
+      effective = style?.merge(variants) ?? variants;
+    }
     // 装在填充槽里（返回圆胶囊 / 单按钮动作胶囊）：按钮 = 可见容器，尺寸与
-    // 形状都取容器的，state layer 与命中区撑满容器；容器不变形，按钮也不变形。
+    // 形状都取容器的（固定 shape 盖过官方的按压形变），state layer 与命中区
+    // 撑满容器。
     final FushiFillSlot? slot = FushiFillSlot.maybeOf(context);
     if (slot != null) {
       final ButtonStyle fill = fushiFillSlotButtonStyle(
         slot.extent,
         slot.shape,
       );
-      return _buildMaterial(base == null ? fill : fill.merge(base));
+      return _buildMaterial(effective == null ? fill : fill.merge(effective));
     }
-    // 圆角按尺寸档（XS / S 12→8、M 16→12、L / XL 28→16）；圆形未选按下收到
-    // 方形圆角，方形 / 选中按下再收到 pressed 圆角。
-    final ({double square, double pressed}) radii =
-        fushiExpressiveIconButtonRadii(_effectiveSize);
-    return FushiPressMorph(
-      enabled: onPressed != null || onLongPress != null,
-      style: base,
-      trackPointer: true,
-      pressedRadius: (square || selected) ? radii.pressed : radii.square,
-      selected: selected || square,
-      selectedRadius: radii.square,
+    // 墨水屏 / 调用方自带固定形状：不形变。
+    if (isEinkTheme(context) || style?.shape != null) {
+      return _buildMaterial(effective);
+    }
+    // 官方 M3E 形变是定时补间、没有 M3E 弹簧：在官方按钮上补齐（见
+    // [FushiIconButtonSpring]）。
+    final ButtonStyle? base = effective;
+    return FushiIconButtonSpring(
+      size: _effectiveSize,
+      shapeVariant: shape,
+      selected: isSelected ?? false,
       builder:
           (
             BuildContext context,
-            ButtonStyle? morphStyle,
-            WidgetStatesController? _,
-          ) {
-            ButtonStyle? effective = morphStyle;
-            // 不做动效（减少动画）时形变包装原样透传：方形 / 选中态仍要静态方圆角。
-            if (!einkMode && effective?.shape == null && (square || selected)) {
-              effective = (effective ?? const ButtonStyle()).copyWith(
-                shape: WidgetStatePropertyAll<OutlinedBorder>(
-                  RoundedRectangleBorder(
-                    borderRadius: BorderRadius.all(
-                      Radius.circular(radii.square),
-                    ),
-                  ),
-                ),
-              );
-            }
-            return _buildMaterial(effective);
-          },
+            WidgetStatesController states,
+            ButtonStyle? springStyle,
+          ) => _buildMaterial(
+            springStyle == null ? base : springStyle.merge(base),
+            states: states,
+          ),
     );
   }
 
-  /// M3 Expressive 图标按钮默认样式（合并在调用方 style **之下**）。调用方
-  /// 显式给了的 IconButton 参数（color / iconSize / padding / constraints /
-  /// 各状态色）对应的字段不填，交回 IconButton 自己的合并逻辑。
-  ///
-  /// 配色：standard 无底 onSurfaceVariant；filled primary + onPrimary；
-  /// filledTonal secondaryContainer + onSecondaryContainer；outlined 1px
-  /// outlineVariant 描边。toggle（isSelected 非 null）未选时 filled / tonal 退成
-  /// surfaceContainer + onSurfaceVariant，选中时上填充色（standard 选中
-  /// secondaryContainer、outlined 选中 inverseSurface）。
-  ButtonStyle _expressiveDefaults(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiIconButtonSize effectiveSize = _effectiveSize;
-    final Size extent = fushiExpressiveIconButtonExtent(effectiveSize, width);
-    final bool toggle = isSelected != null;
-
-    (Color?, Color) colorsFor(Set<WidgetState> states) {
-      final bool on = states.contains(WidgetState.selected);
-      if (states.contains(WidgetState.disabled)) {
-        final Color fg = cs.onSurface.withValues(alpha: 0.38);
-        return switch (_variant) {
-          _IconButtonVariant.standard ||
-          _IconButtonVariant.outlined => (null, fg),
-          _ => (cs.onSurface.withValues(alpha: 0.12), fg),
-        };
-      }
-      switch (_variant) {
-        case _IconButtonVariant.standard:
-          return on
-              ? (cs.secondaryContainer, cs.onSecondaryContainer)
-              : (null, cs.onSurfaceVariant);
-        case _IconButtonVariant.filled:
-          return (toggle && !on)
-              ? (cs.surfaceContainer, cs.onSurfaceVariant)
-              : (cs.primary, cs.onPrimary);
-        case _IconButtonVariant.filledTonal:
-          return (toggle && !on)
-              ? (cs.surfaceContainer, cs.onSurfaceVariant)
-              : (cs.secondaryContainer, cs.onSecondaryContainer);
-        case _IconButtonVariant.outlined:
-          return on
-              ? (cs.inverseSurface, cs.onInverseSurface)
-              : (null, cs.onSurfaceVariant);
-      }
-    }
-
-    final bool customOverlay =
-        focusColor != null ||
-        hoverColor != null ||
-        highlightColor != null ||
-        splashColor != null;
-    return ButtonStyle(
-      backgroundColor: WidgetStateProperty.resolveWith<Color?>(
-        (Set<WidgetState> states) => colorsFor(states).$1,
-      ),
-      foregroundColor: color != null || disabledColor != null
-          ? null
-          : WidgetStateProperty.resolveWith<Color?>(
-              (Set<WidgetState> states) => colorsFor(states).$2,
-            ),
-      overlayColor: customOverlay
-          ? null
-          : WidgetStateProperty.resolveWith<Color?>((Set<WidgetState> states) {
-              final Color fg = colorsFor(states).$2;
-              if (states.contains(WidgetState.pressed)) {
-                return fg.withValues(alpha: 0.1);
-              }
-              if (states.contains(WidgetState.hovered)) {
-                return fg.withValues(alpha: 0.08);
-              }
-              if (states.contains(WidgetState.focused)) {
-                return fg.withValues(alpha: 0.1);
-              }
-              return null;
-            }),
-      side: _variant == _IconButtonVariant.outlined
-          ? WidgetStateProperty.resolveWith<BorderSide?>((
-              Set<WidgetState> states,
-            ) {
-              if (states.contains(WidgetState.selected)) return BorderSide.none;
-              return BorderSide(
-                color: states.contains(WidgetState.disabled)
-                    ? cs.onSurface.withValues(alpha: 0.12)
-                    : cs.outlineVariant,
-              );
-            })
-          : null,
-      iconSize: iconSize != null
-          ? null
-          : WidgetStatePropertyAll<double>(
-              fushiExpressiveIconSize(effectiveSize),
-            ),
-      padding: padding != null
-          ? null
-          : const WidgetStatePropertyAll<EdgeInsetsGeometry>(EdgeInsets.zero),
-      minimumSize: constraints != null
-          ? null
-          : WidgetStatePropertyAll<Size>(extent),
-      maximumSize: constraints != null
-          ? null
-          : WidgetStatePropertyAll<Size>(extent),
-      // 尺寸档已经把 compact 解释成 XS；不再让 VisualDensity 二次缩小。
-      visualDensity: constraints != null ? null : VisualDensity.standard,
-    );
-  }
-
-  Widget _buildMaterial(ButtonStyle? style) {
+  Widget _buildMaterial(ButtonStyle? style, {WidgetStatesController? states}) {
     switch (_variant) {
       case _IconButtonVariant.standard:
         return IconButton(
@@ -1652,6 +1554,7 @@ class FushiIconButtonControl extends StatelessWidget {
           enableFeedback: enableFeedback,
           constraints: constraints,
           style: style,
+          statesController: states,
           isSelected: isSelected,
           selectedIcon: selectedIcon,
           icon: icon,
@@ -1679,6 +1582,7 @@ class FushiIconButtonControl extends StatelessWidget {
           enableFeedback: enableFeedback,
           constraints: constraints,
           style: style,
+          statesController: states,
           isSelected: isSelected,
           selectedIcon: selectedIcon,
           icon: icon,
@@ -1706,6 +1610,7 @@ class FushiIconButtonControl extends StatelessWidget {
           enableFeedback: enableFeedback,
           constraints: constraints,
           style: style,
+          statesController: states,
           isSelected: isSelected,
           selectedIcon: selectedIcon,
           icon: icon,
@@ -1733,6 +1638,7 @@ class FushiIconButtonControl extends StatelessWidget {
           enableFeedback: enableFeedback,
           constraints: constraints,
           style: style,
+          statesController: states,
           isSelected: isSelected,
           selectedIcon: selectedIcon,
           icon: icon,

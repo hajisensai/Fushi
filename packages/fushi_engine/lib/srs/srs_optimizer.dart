@@ -31,7 +31,6 @@ class SrsOptimizationInput {
     required this.algorithmAuto,
     required this.currentParams,
     required this.items,
-    required this.cardIds,
     required this.reviewCount,
   });
 
@@ -42,9 +41,9 @@ class SrsOptimizationInput {
   /// 当前参数（空 = 默认）。
   final List<double> currentParams;
 
-  /// 每项是一张卡到某次评分为止的历史（按最后一次评分时刻排序，供时间序列切分）。
-  final List<List<SrsFsrsReview>> items;
-  final List<int> cardIds;
+  /// 训练集：每条是一张卡到某次评分为止的历史前缀（按最后一次评分时刻排序，供时间序列切分），
+  /// 带每张卡的数字 ID。打包成 TypedData，每张卡只存一份完整历史，前缀在原生侧展开（BUG-3745）。
+  final SrsFsrsTrainingSet items;
 
   /// 进训练集的评分条数（门槛与基线用）。
   final int reviewCount;
@@ -104,8 +103,9 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
   final SrsAlgorithm alg = owner.localAlgorithm.memoryAlgorithm;
   final SrsParamSet? set = owner.paramSetFor(alg);
 
-  final List<(int, List<SrsFsrsReview>, int)> rows =
-      <(int, List<SrsFsrsReview>, int)>[];
+  final SrsFsrsTrainingSetBuilder builder = SrsFsrsTrainingSetBuilder();
+  // (评分时刻, 卡序号, 前缀长度)：一条复习一行，只记坐标，不复制历史前缀（BUG-3745）。
+  final List<(int, int, int)> rows = <(int, int, int)>[];
   int count = 0;
   final List<String> cardIds = await store.cardIdsInDecks(scope);
   // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3543）；分块取，内存里只留一块的历史。
@@ -131,30 +131,26 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
         // 有可证明时间错误的日志：这张卡整卡不进训练集（间隔算不准）。
         continue;
       }
-      final int numericId = SrsIds.ankiNumericId(cardId);
+      final int card = builder.addCard(
+        input.reviews,
+        cardId: SrsIds.ankiNumericId(cardId),
+      );
       for (int i = 1; i < input.reviews.length; i++) {
-        rows.add((
-          ratings[i].occurredAt,
-          input.reviews.sublist(0, i + 1),
-          numericId,
-        ));
+        rows.add((ratings[i].occurredAt, card, i + 1));
         count++;
       }
     }
   }
-  rows.sort(
-    ((int, List<SrsFsrsReview>, int) a, (int, List<SrsFsrsReview>, int) b) =>
-        a.$1.compareTo(b.$1),
-  );
+  rows.sort(((int, int, int) a, (int, int, int) b) => a.$1.compareTo(b.$1));
+  for (final (int, int, int) r in rows) {
+    builder.addItem(r.$2, r.$3);
+  }
   return SrsOptimizationInput(
     deckId: owner.id,
     algorithm: alg,
     algorithmAuto: owner.algorithmAuto,
     currentParams: set?.params ?? const <double>[],
-    items: <List<SrsFsrsReview>>[
-      for (final (int, List<SrsFsrsReview>, int) r in rows) r.$2,
-    ],
-    cardIds: <int>[for (final (int, List<SrsFsrsReview>, int) r in rows) r.$3],
+    items: builder.build(),
     reviewCount: count,
   );
 }
@@ -174,7 +170,6 @@ SrsOptimizationResult srsRunOptimization(
   final List<double> fresh = engine.computeParameters(
     algorithm: alg,
     items: input.items,
-    cardIds: input.cardIds,
     control: control,
   );
   final List<double> current = input.currentParams.isEmpty
@@ -201,7 +196,6 @@ SrsOptimizationResult srsRunOptimization(
       final List<double> p7 = engine.computeParameters(
         algorithm: SrsAlgorithm.fsrs7,
         items: input.items,
-        cardIds: input.cardIds,
         control: control,
       );
       return SrsOptimizationResult(

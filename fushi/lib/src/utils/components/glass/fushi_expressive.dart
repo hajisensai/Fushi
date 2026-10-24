@@ -17,7 +17,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 //   按下弹到小圆角，松手弹回；toggle 选中态常驻方圆角。
 // - [FushiConnectedButtonGroup]：连接式按钮组（MD3 的 SegmentedButton）。段间
 //   2px 缝、外端全圆角、内侧小圆角，选中段弹成全胶囊，按下的段变宽、邻段让出。
-// - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居被挤窄。
+// - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居只让出富余（不折行）。
 //
 // 弹簧取 M3 Expressive 的 motion scheme（[FushiSprings]，唯一真相源在
 // fushi_motion_tokens.dart）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
@@ -40,58 +40,6 @@ bool fushiExpressiveMotionEnabled(BuildContext context) {
   if (isEinkTheme(context)) return false;
   return !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
 }
-
-/// M3 Expressive 图标按钮尺寸档：XS 32 / S 40（默认）/ M 56 / L 96 / XL 136。
-enum FushiIconButtonSize { xs, s, m, l, xl }
-
-/// M3 Expressive 图标按钮宽度变体：窄 / 默认（正方）/ 宽。
-enum FushiIconButtonWidth { narrow, standard, wide }
-
-/// M3 Expressive 图标按钮形状：圆（默认）/ 方（圆角 12）。
-enum FushiIconButtonShape { round, square }
-
-/// 图标按钮的容器尺寸（M3 Expressive 规格表：XS 28/32/40×32、S 32/40/52×40、
-/// M 48/56/72×56、L 64/96/128×96、XL 104/136/184×136，依次为窄 / 默认 / 宽）。
-Size fushiExpressiveIconButtonExtent(
-  FushiIconButtonSize size,
-  FushiIconButtonWidth width,
-) {
-  final (
-    double narrow,
-    double standard,
-    double wide,
-    double height,
-  ) = switch (size) {
-    FushiIconButtonSize.xs => (28, 32, 40, 32),
-    FushiIconButtonSize.s => (32, 40, 52, 40),
-    FushiIconButtonSize.m => (48, 56, 72, 56),
-    FushiIconButtonSize.l => (64, 96, 128, 96),
-    FushiIconButtonSize.xl => (104, 136, 184, 136),
-  };
-  return Size(switch (width) {
-    FushiIconButtonWidth.narrow => narrow,
-    FushiIconButtonWidth.standard => standard,
-    FushiIconButtonWidth.wide => wide,
-  }, height);
-}
-
-/// 图标按钮的图标尺寸：XS 20，S / M 24，L 32，XL 40。
-double fushiExpressiveIconSize(FushiIconButtonSize size) => switch (size) {
-  FushiIconButtonSize.xs => 20,
-  FushiIconButtonSize.s || FushiIconButtonSize.m => 24,
-  FushiIconButtonSize.l => 32,
-  FushiIconButtonSize.xl => 40,
-};
-
-/// 图标按钮方形 / 选中态的圆角与按下圆角（Compose `IconButton*Tokens`：
-/// XS / S 12→8，M 16→12，L / XL 28→16）。
-({double square, double pressed}) fushiExpressiveIconButtonRadii(
-  FushiIconButtonSize size,
-) => switch (size) {
-  FushiIconButtonSize.xs || FushiIconButtonSize.s => (square: 12, pressed: 8),
-  FushiIconButtonSize.m => (square: 16, pressed: 12),
-  FushiIconButtonSize.l || FushiIconButtonSize.xl => (square: 28, pressed: 16),
-};
 
 /// 一个由弹簧驱动的标量（0 = 静止，1 = 目标态）。重定向时带着当前速度续上，
 /// 快速连点不会「跳帧回零」——这是弹簧比定时曲线更顺的原因。
@@ -138,6 +86,175 @@ class FushiSpring {
   }
 
   void dispose() => _controller.dispose();
+}
+
+/// M3E 图标按钮各尺寸档的方形 / 按下圆角（与官方 M3E [IconButton] 默认样式
+/// 同表：xSmall / small 12→8，medium 16→12，large / xLarge 28→16）。
+({double square, double pressed}) fushiExpressiveIconButtonRadii(
+  ButtonSizeVariant size,
+) => switch (size) {
+  ButtonSizeVariant.xSmall ||
+  ButtonSizeVariant.small => (square: 12, pressed: 8),
+  ButtonSizeVariant.medium => (square: 16, pressed: 12),
+  ButtonSizeVariant.large ||
+  ButtonSizeVariant.xLarge => (square: 28, pressed: 16),
+};
+
+/// 标准图标按钮选中态的浅色底（用户 2026-10-23 拍板保留）：官方 M3E 标准
+/// toggle 选中只把图标染 primary、不加容器，选中与否不好认；这里在官方按钮上
+/// 只给**选中态**叠 secondaryContainer 底 + onSecondaryContainer 图标与 state
+/// layer，其余状态解析为 null、交回官方默认。[foreground] 为 false 时（调用方
+/// 显式给了图标色）不覆盖前景。
+ButtonStyle fushiSelectedTonalIconButtonStyle(
+  ColorScheme cs, {
+  bool foreground = true,
+}) {
+  bool on(Set<WidgetState> states) =>
+      states.contains(WidgetState.selected) &&
+      !states.contains(WidgetState.disabled);
+  return ButtonStyle(
+    backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+      (Set<WidgetState> states) => on(states) ? cs.secondaryContainer : null,
+    ),
+    foregroundColor: foreground
+        ? WidgetStateProperty.resolveWith<Color?>(
+            (Set<WidgetState> states) =>
+                on(states) ? cs.onSecondaryContainer : null,
+          )
+        : null,
+    overlayColor: WidgetStateProperty.resolveWith<Color?>((
+      Set<WidgetState> states,
+    ) {
+      if (!on(states)) return null;
+      if (states.contains(WidgetState.pressed) ||
+          states.contains(WidgetState.focused)) {
+        return cs.onSecondaryContainer.withValues(alpha: 0.10);
+      }
+      if (states.contains(WidgetState.hovered)) {
+        return cs.onSecondaryContainer.withValues(alpha: 0.08);
+      }
+      return null;
+    }),
+  );
+}
+
+/// 在官方 M3E [IconButton] 上补齐 M3E 弹簧形变。
+///
+/// material_ui 1.8 的官方 M3E IconButton 只给出各状态的目标形状（round：静止
+/// 胶囊、选中方圆角；square：静止方圆角、选中胶囊；按下统一收到小圆角），状态
+/// 之间是 200 ms 定时补间（`kThemeChangeDuration`），没有 M3E 的 spatial 弹簧。
+/// 这里经官方按钮自己的 [WidgetStatesController] 读 pressed、[selected] 由调用方
+/// 给，用 [FushiSpring] 在**官方同一组目标形状**之间插值，结果作为固定 shape
+/// 交回官方按钮（animationDuration 归零，盖掉官方补间）。官方自带弹簧后删掉这层。
+///
+/// 减少动画 / 墨水屏下 [builder] 收到的 springStyle 为 null：直接用官方状态形状。
+class FushiIconButtonSpring extends StatefulWidget {
+  const FushiIconButtonSpring({
+    super.key,
+    required this.size,
+    required this.shapeVariant,
+    required this.selected,
+    required this.builder,
+  });
+
+  final ButtonSizeVariant size;
+  final ButtonShapeVariant shapeVariant;
+  final bool selected;
+  final Widget Function(
+    BuildContext context,
+    WidgetStatesController states,
+    ButtonStyle? springStyle,
+  )
+  builder;
+
+  @override
+  State<FushiIconButtonSpring> createState() => _FushiIconButtonSpringState();
+}
+
+class _FushiIconButtonSpringState extends State<FushiIconButtonSpring>
+    with TickerProviderStateMixin {
+  final WidgetStatesController _states = WidgetStatesController();
+
+  /// 0 = 静止，1 = 按下（fast spatial 弹簧，快速连点带速度续上）。
+  late final FushiSpring _press = FushiSpring(vsync: this);
+
+  /// 0 = 未选，1 = 选中（default spatial 弹簧）。
+  late final FushiSpring _select = FushiSpring(
+    vsync: this,
+    initial: widget.selected ? 1 : 0,
+    spring: fushiExpressiveDefaultSpatial,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _states.addListener(_onStates);
+  }
+
+  void _onStates() {
+    if (!mounted) return;
+    _press.animateTo(
+      _states.value.contains(WidgetState.pressed) ? 1 : 0,
+      animate: fushiExpressiveMotionEnabled(context),
+    );
+  }
+
+  @override
+  void didUpdateWidget(FushiIconButtonSpring oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selected != widget.selected) {
+      _select.animateTo(
+        widget.selected ? 1 : 0,
+        animate: fushiExpressiveMotionEnabled(context),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _states
+      ..removeListener(_onStates)
+      ..dispose();
+    _press.dispose();
+    _select.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!fushiExpressiveMotionEnabled(context)) {
+      return widget.builder(context, _states, null);
+    }
+    final ({double square, double pressed}) radii =
+        fushiExpressiveIconButtonRadii(widget.size);
+    final bool round = widget.shapeVariant == ButtonShapeVariant.round;
+    return AnimatedBuilder(
+      animation: Listenable.merge(<Listenable>[
+        _press.animation,
+        _select.animation,
+      ]),
+      builder: (BuildContext context, Widget? _) {
+        final double press = _press.value.clamp(0.0, 1.0);
+        final double select = _select.value.clamp(0.0, 1.0);
+        // 静止形状的胶囊度：round 未选 = 胶囊、选中 = 方圆角；square 反之。
+        final double restPill = round ? 1 - select : select;
+        final double pill = restPill * (1 - press);
+        final OutlinedBorder shape = FushiMorphBorder(
+          radius: lerpDouble(radii.square, radii.pressed, press)!,
+          startPill: pill,
+          endPill: pill,
+        );
+        return widget.builder(
+          context,
+          _states,
+          ButtonStyle(
+            shape: WidgetStatePropertyAll<OutlinedBorder>(shape),
+            animationDuration: Duration.zero,
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// 可在「固定圆角」与「全胶囊」之间连续插值的按钮外形。[startPill] /
@@ -642,12 +759,18 @@ class _RenderFushiSqueeze extends RenderBox
 
   /// 各子项的最终宽度：基准宽（等宽 = 最宽者；否则各自的最大固有宽，受约束
   /// 时按比例缩放 / 撑满），再按按下进度把宽度从邻居匀给按下的那个。
+  ///
+  /// 邻居只让出「超出自身单行固有宽」的那部分富余（反馈 orCq_DE1i7：按下
+  /// 「更多」把「分享主题」挤到比单行还窄，文字折成两行、按钮高度跳变）。
+  /// 按自然宽排布的组没有富余，按下只剩按钮自身的形变，不再挤压邻居；撑满
+  /// 整行（[expand]）或等宽段这类有富余的组照常挤压，但永远不会挤到折行。
   List<double> _widths(BoxConstraints constraints, List<RenderBox> children) {
     final int n = children.length;
     final double gaps = _gaps(n);
-    List<double> base = children
+    final List<double> natural = children
         .map((RenderBox c) => c.getMaxIntrinsicWidth(double.infinity))
         .toList();
+    List<double> base = List<double>.of(natural);
     if (_equalExtents) {
       final double widest = base.reduce(math.max);
       base = List<double>.filled(n, widest);
@@ -677,10 +800,17 @@ class _RenderFushiSqueeze extends RenderBox
         if (i < n - 1) i + 1,
       ];
       if (neighbours.isEmpty) continue;
-      final double grow = _growFactor * base[i] * p;
+      final List<double> spare = <double>[
+        for (final int j in neighbours) math.max(0.0, widths[j] - natural[j]),
+      ];
+      final double totalSpare = spare.fold<double>(0, (double a, double b) {
+        return a + b;
+      });
+      if (totalSpare <= 0) continue;
+      final double grow = math.min(_growFactor * base[i] * p, totalSpare);
       widths[i] += grow;
-      for (final int j in neighbours) {
-        widths[j] -= grow / neighbours.length;
+      for (int k = 0; k < neighbours.length; k++) {
+        widths[neighbours[k]] -= grow * spare[k] / totalSpare;
       }
     }
     return widths.map((double w) => math.max(0.0, w)).toList();
@@ -1254,7 +1384,8 @@ class _ConnectedSegmentContent extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 /// 一排并列按钮。MD3 下是 M3 Expressive 标准按钮组：按下的按钮变宽
-/// （+[growFactor]），相邻按钮被挤窄让出同样的宽度（fast spatial 弹簧），
+/// （至多 +[growFactor]），宽度只从相邻按钮「超出单行固有宽」的富余里匀出
+/// ——邻居永远不会被挤到折行；没有富余（按自然宽排布）就不挤（fast spatial 弹簧），
 /// 子按钮本身（FushiFilledButton 等）再各自做按压变形；Apple 设计系统下就是
 /// 间距 [spacing] 的普通 Row，不挤压。
 ///

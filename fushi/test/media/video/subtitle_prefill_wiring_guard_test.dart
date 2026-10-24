@@ -52,8 +52,9 @@ void main() {
       );
       expect(
         body,
-        contains('episode: _jimakuEpisodeNumber()'),
-        reason: '集号必须随请求下发，否则集数框恒空（用户得自己数第几集再手填）。',
+        contains('episode: seed.isMovie ? null : _jimakuEpisodeNumber()'),
+        reason: '集号必须随请求下发，否则集数框恒空（用户得自己数第几集再手填）；'
+            '刮成电影的不预填——「Doraemon Movie 25」的 25 是系列序号（BUG-3747）。',
       );
     });
 

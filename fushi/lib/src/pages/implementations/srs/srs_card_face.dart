@@ -37,6 +37,7 @@ import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
+import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
@@ -58,8 +59,12 @@ class SrsCardFace {
     this.onWheel,
     this.onZoomWheel,
     this.hostCss = '',
+    this.hostScript = '',
     this.onSourceLink,
-    this.autoplayMedia = true,
+    this.autoplayMedia = false,
+    this.onPlayAudio,
+    this.onTapEmpty,
+    this.onImageTap,
   });
 
   final String cardId;
@@ -106,6 +111,11 @@ class SrsCardFace {
   /// 「长释义收起高度」按外层视口给成像素值：释义 WebView 高度跟内容走，页内 `vh` 不再是屏高。
   final String hostCss;
 
+  /// 宿主追加的外壳脚本（随主题下发一次）。可定义 `window.__fushiSrsHostLayout`：外壳在
+  /// 卡片脚本跑完、换主题后都会调它（混合渲染的释义页据此重排词典分组）。脚本内容应当
+  /// 固定不变，随设置变化的参数走 [hostCss] 里的 CSS 变量（主题键只比脚本长度）。
+  final String hostScript;
+
   /// 卡面里点了 Fushi 制卡写进 MiscInfo 的来源链接（`fushi://source?...`）：宿主据此
   /// 跳回书 / 漫画 / 视频的对应位置（`openCardSource`）。null = 来源链接不响应。其它
   /// 链接一律不导航（卡面外壳不能被链接带走）。
@@ -114,7 +124,24 @@ class SrsCardFace {
   /// 卡面页面自己发起的媒体播放（同步片段的 `oncanplay`、`autoplay` 属性）是否放行。
   /// false = 只放行用户在卡面上点按 / 按键直接引起的播放（牌组关了自动播放，
   /// 见 srs_card_autoplay.dart 的 [kSrsCardAutoplayGateScript]，BUG-3546）。
+  ///
+  /// 缺省 false（#3）：只有复习页按牌组的「自动播放」显式打开。浏览预览、笔记编辑页（查词
+  /// 弹窗「跳转到卡片」打开的就是它）、模板 / 外观 / 字段说明预览都是打开或编辑卡片的场景，
+  /// 以前吃到缺省 true，一打开视频片段就自己出声。
   final bool autoplayMedia;
+
+  /// 卡面上的发音键（`[sound:]` 播放按钮、原生卡面的单词 / 例句发音键）交给宿主的那条
+  /// 播放序列播。复习页给出它：卡面按钮、底栏重播、R 键与自动播放共用同一个序列，新的
+  /// 一段打断上一段，同一时刻只出一路声音（#10）。null = 卡面自己直接播（预览页）。
+  final void Function(List<String> names)? onPlayAudio;
+
+  /// 卡面空白处被点了一下（页内取词脚本判定：没点在字、链接、按钮上）。复习页据此唤出 /
+  /// 收起悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同一口径）。null = 不响应。
+  final VoidCallback? onTapEmpty;
+
+  /// 卡面正文里点了图片（`src` 是页内地址：媒体库虚拟域 / 自定义 scheme / `data:`）：
+  /// 宿主据此全屏查看（[srsMediaNameFromUrl] 换回媒体名）。null = 图片点击不拦。
+  final void Function(String src)? onImageTap;
 
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
@@ -133,8 +160,12 @@ class SrsCardFace {
         onWheel: onWheel,
         onZoomWheel: onZoomWheel,
         hostCss: hostCss,
+        hostScript: hostScript,
         onSourceLink: onSourceLink,
         autoplayMedia: autoplayMedia,
+        onPlayAudio: onPlayAudio,
+        onTapEmpty: onTapEmpty,
+        onImageTap: onImageTap,
       );
 }
 
@@ -270,24 +301,145 @@ const String _kSrsBridgeHandler = 'onSrsReviewKey';
 /// 页内链接点击 → 宿主（见 [kSrsCardLinkScript]）。
 const String kSrsSourceLinkHandler = 'onSrsSourceLink';
 
+/// 页内词典链接 / 外链点击 → 宿主（见 [kSrsCardLinkScript]，#16）。参数是一个对象：
+/// `{kind: 'external', href}` 或 `{kind: 'lookup', query, x, y, width, height}`（链接在
+/// 页面里的矩形，CSS 像素）。
+const String kSrsCardLinkHandler = 'onSrsCardLink';
+
 /// 卡面链接：捕获阶段拦下所有 `<a href>` 的默认导航（卡面外壳不能被链接带走；页内
-/// `#锚点` 与 `javascript:` 不算导航，放行），其中 Fushi 来源链接（`fushi://source`）
-/// 交给宿主跳回原媒体。不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
+/// `#锚点` 与 `javascript:` 不算导航，放行），然后按链接种类交给宿主，与查词弹窗
+/// （popup.js 的 `handleGlossaryAnchorClick` / 结构化内容链接）同一套判据（#16）：
+///
+/// - `fushi://source`：Fushi 来源链接，跳回书 / 漫画 / 视频（[kSrsSourceLinkHandler]）。
+/// - `http(s)://`：外链，宿主用系统浏览器打开。
+/// - `sound:`：词典发音媒体节点，不是查词目标，忽略。
+/// - 其余（Yomitan 结构化内容的 `?query=词`、MDX 的 `entry://词`、`bword://` 等词典内部
+///   交叉引用，如明鏡「➡ よほど」）：查词。查询词优先取 `?query=`，否则取链接的**基字**
+///   文本（剥掉 `rt` / `rp` / `.ruby-rt` / `.ruby-reserve` 振假名，见 popup.js
+///   `linkVisibleBaseText`，BUG-2456）。
+///
+/// 不 stopPropagation：卡片模板自己挂在链接上的点击脚本照常执行。
 const String kSrsCardLinkScript = r'''
 (function(){
   if (window.__fushiSrsLinks) return;
   window.__fushiSrsLinks = true;
+  function call(name, arg){
+    try { window.flutter_inappwebview.callHandler(name, arg); } catch (err) {}
+  }
+  function baseText(root){
+    var out = '';
+    (function walk(node){
+      if (node.nodeType === 3) { out += node.textContent || ''; return; }
+      if (node.nodeType !== 1) return;
+      var tag = node.tagName;
+      if (tag === 'RT' || tag === 'RP') return;
+      var cls = node.classList;
+      if (cls && (cls.contains('ruby-rt') || cls.contains('ruby-reserve'))) return;
+      for (var i = 0; i < node.childNodes.length; i++) walk(node.childNodes[i]);
+    })(root);
+    return out.replace(/\s+/g, ' ').trim();
+  }
+  function queryOf(href, a){
+    var q = href.indexOf('?');
+    if (q >= 0) {
+      try {
+        var v = new URLSearchParams(href.substring(q)).get('query');
+        if (v) return v;
+      } catch (err) {}
+    }
+    return baseText(a);
+  }
   document.addEventListener('click', function(e){
     var t = e.target;
     var a = t && t.closest ? t.closest('a[href]') : null;
     if (!a) return;
-    var href = a.getAttribute('href') || '';
+    var href = (a.getAttribute('href') || '').trim();
     if (href.charAt(0) === '#' || /^javascript:/i.test(href)) return;
     e.preventDefault();
     if (/^fushi:\/\/source/i.test(href)) {
-      try { window.flutter_inappwebview.callHandler('onSrsSourceLink', href); } catch (err) {}
+      call('onSrsSourceLink', href);
+      return;
     }
+    if (/^https?:\/\//i.test(href)) {
+      call('onSrsCardLink', {kind: 'external', href: href});
+      return;
+    }
+    if (/^sound:/i.test(href)) return;
+    var query = queryOf(href, a);
+    if (!query) return;
+    var r = a.getBoundingClientRect();
+    call('onSrsCardLink', {kind: 'lookup', query: query, x: r.left, y: r.top,
+      width: r.width, height: r.height});
   }, true);
+})();
+''';
+
+/// 页内链接点击的一次解析结果（[kSrsCardLinkHandler] 的参数）。
+@immutable
+sealed class SrsCardLinkAction {
+  const SrsCardLinkAction();
+
+  /// 解析桥参数；不认识的形状返回 null。
+  static SrsCardLinkAction? parse(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? kind = raw['kind'];
+    if (kind == 'external') {
+      final Object? href = raw['href'];
+      return href is String && href.isNotEmpty
+          ? SrsCardExternalLink(href)
+          : null;
+    }
+    if (kind == 'lookup') {
+      final Object? query = raw['query'];
+      if (query is! String || query.trim().isEmpty) return null;
+      double n(String key) {
+        final Object? v = raw[key];
+        return v is num ? v.toDouble() : 0;
+      }
+
+      return SrsCardLookupLink(
+        query.trim(),
+        Rect.fromLTWH(n('x'), n('y'), n('width'), n('height')),
+      );
+    }
+    return null;
+  }
+}
+
+/// 外链：系统浏览器打开（只放行 http / https，见 [openDictionaryExternalLink]）。
+final class SrsCardExternalLink extends SrsCardLinkAction {
+  const SrsCardExternalLink(this.href);
+
+  final String href;
+}
+
+/// 词典内部交叉引用：查 [query]；[rect] 是链接在页面里的矩形（弹窗锚点）。
+final class SrsCardLookupLink extends SrsCardLinkAction {
+  const SrsCardLookupLink(this.query, this.rect);
+
+  final String query;
+  final Rect rect;
+}
+
+/// 页内图片点击 → 宿主（见 [kSrsCardImageTapScript]）。
+const String kSrsImageTapHandler = 'onSrsImageTap';
+
+/// 卡面图片点按放大：冒泡阶段收 `.card` 里 `<img>` 的点击，把 `currentSrc` 交给宿主。
+/// 卡片模板自己处理了的点击（链接里的图、带 `onclick` 的图或祖先、已
+/// `preventDefault`）不抢，模板的点图翻转 / 显示提示照常。
+const String kSrsCardImageTapScript = r'''
+(function(){
+  if (window.__fushiSrsImageTap) return;
+  window.__fushiSrsImageTap = true;
+  document.addEventListener('click', function(e){
+    if (e.defaultPrevented || e.button !== 0) return;
+    var t = e.target;
+    if (!t || t.tagName !== 'IMG' || !t.closest('.card')) return;
+    if (t.closest('a[href],button,[onclick]')) return;
+    var src = t.currentSrc || t.src || '';
+    if (!src) return;
+    try { window.flutter_inappwebview.callHandler('onSrsImageTap', src); } catch (err) {}
+  });
 })();
 ''';
 
@@ -540,12 +692,21 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 宿主排版钩子（SrsCardFace.hostScript 定义）：卡片脚本与钩子都跑完后再排。
+  function hostLayout(){
+    try {
+      if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
     dictStyle();
     runHooks(window.onUpdateHook);
     runHooks(window.onShownHook);
     designSkin();
+    hostLayout();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
     document.getElementById('fushi-theme-css').textContent = themeCss;
@@ -556,6 +717,7 @@ const String kSrsCardShellScript = r'''
     try {
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
     } catch (e) {}
+    hostLayout();
   };
   // 样式注册表：每段样式（笔记类型 CSS / 卡片正文里抽出的 <style>）按内容哈希只建一次
   // <style data-fushi-css>，之后换卡只传哈希引用；当前卡没引用的全部 disabled（词典样式
@@ -1056,11 +1218,15 @@ class SrsCardFaceSync {
 /// 卡面 `[sound:]` 的播放实现（测试覆写）。参数是本地文件路径；返回是否开始播放。
 typedef SrsSoundPlayer = Future<bool> Function(String path);
 
-/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]）。
+/// 生产实现：app 共用的 just_audio 播放器（串行化激活，见 [DesktopAudioPlayback]），
+/// 音量取开播那一刻的 [srsReviewVolumeProvider]。
 final Provider<SrsSoundPlayer> srsSoundPlayerProvider =
     Provider<SrsSoundPlayer>(
       (Ref ref) =>
-          (String path) => DesktopAudioPlayback.playFile(path),
+          (String path) => DesktopAudioPlayback.playFile(
+            path,
+            volume: ref.read(srsReviewVolumeProvider),
+          ),
     );
 
 /// 卡面媒体请求的响应：[store] 里按名字取字节；不是卡面媒体 URL 时返回 null。
@@ -1181,6 +1347,7 @@ class SrsCardFaceDocumentInputs {
         a.bodyHtml == b.bodyHtml &&
         a.css == b.css &&
         a.hostCss == b.hostCss &&
+        a.hostScript == b.hostScript &&
         // 复习中改牌组「自动播放」要立即重下发（BUG-3547）：不比它会命中旧文档。
         a.autoplayMedia == b.autoplayMedia &&
         identical(fonts, other.fonts) &&
@@ -1276,7 +1443,7 @@ SrsCardFaceDocument srsCardFaceDocumentFor(
         : skin
         ? kSrsDesignSkinClass
         : '',
-    hostScript: skin ? kSrsCardDesignSkinScript : '',
+    hostScript: (skin ? kSrsCardDesignSkinScript : '') + face.hostScript,
   );
 }
 
@@ -1566,7 +1733,12 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             r['width'] ?? 0,
             r['height'] ?? 0,
           );
-    final Rect anchor = box.localToGlobal(local.topLeft) & local.size;
+    // 整个矩形经同一变换：复习页不在 FushiAppUiScaleNeutralizer 之下，「全局左上角 & 局部
+    // 尺寸」会把高宽留在 1/界面缩放，弹窗按偏高的下沿摆、盖住被查的那一行。
+    final Rect anchor = MatrixUtils.transformRect(
+      box.getTransformTo(null),
+      local,
+    );
     lookup.lookup(
       SrsCardLookupRequest(
         term: data.text,
@@ -1579,6 +1751,28 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
         ),
       ),
     );
+  }
+
+  /// 卡面里点了词典链接 / 外链（#16）：外链交系统浏览器；词典内部交叉引用在链接处查词
+  /// （与查词弹窗里点链接同一行为）。没有查词作用域（预览页）时内部链接不响应。
+  void _onCardLink(SrsCardLinkAction action) {
+    switch (action) {
+      case SrsCardExternalLink(:final String href):
+        unawaited(openDictionaryExternalLink(href));
+      case SrsCardLookupLink(:final String query, :final Rect rect):
+        final SrsCardLookupController? lookup = _lookup;
+        final RenderBox? box = _box;
+        if (lookup == null || box == null) return;
+        lookup.lookup(
+          SrsCardLookupRequest(
+            term: query,
+            anchor: MatrixUtils.transformRect(box.getTransformTo(null), rect),
+            sentence: query,
+            fromHover: false,
+            origin: this,
+          ),
+        );
+    }
   }
 
   @override
@@ -1664,6 +1858,9 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
             : srsCardFaceBridgeScript(widget.face.bridgeKeys),
       );
       await controller.evaluateJavascript(source: kSrsCardLinkScript);
+      if (widget.face.onImageTap != null) {
+        await controller.evaluateJavascript(source: kSrsCardImageTapScript);
+      }
       final bool height = widget.face.onContentHeight != null;
       final bool wheel = widget.face.onWheel != null;
       final bool zoom = widget.face.onZoomWheel != null;
@@ -1788,6 +1985,16 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
               return null;
             },
           );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsImageTapHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? src = arguments.isEmpty ? null : arguments.first;
+              if (src is String && src.isNotEmpty && mounted) {
+                widget.face.onImageTap?.call(src);
+              }
+              return null;
+            },
+          );
           // 卡面取词（阅读器同一份选区脚本回调 onTextSelected，见 [_installLookup]）。
           controller.addJavaScriptHandler(
             handlerName: 'onTextSelected',
@@ -1800,18 +2007,38 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           );
           controller.addJavaScriptHandler(
             handlerName: 'onTapEmpty',
-            callback: (List<dynamic> _) => null,
+            callback: (List<dynamic> _) {
+              if (mounted) widget.face.onTapEmpty?.call();
+              return null;
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: kSrsPlaySoundHandler,
             callback: (List<dynamic> arguments) {
               final Object? name = arguments.isEmpty ? null : arguments.first;
               if (name is String && name.isNotEmpty && mounted) {
-                srsRunLogged(
-                  'SrsWebCardFace.playSound',
-                  () => _playSound(name),
-                );
+                // 复习页：交给它的播放序列（与底栏重播 / 自动播放同一路，新的打断旧的）。
+                final void Function(List<String>)? host =
+                    widget.face.onPlayAudio;
+                if (host != null) {
+                  host(<String>[name]);
+                } else {
+                  srsRunLogged(
+                    'SrsWebCardFace.playSound',
+                    () => _playSound(name),
+                  );
+                }
               }
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsCardLinkHandler,
+            callback: (List<dynamic> arguments) {
+              final SrsCardLinkAction? action = SrsCardLinkAction.parse(
+                arguments.isEmpty ? null : arguments.first,
+              );
+              if (action != null && mounted) _onCardLink(action);
               return null;
             },
           );

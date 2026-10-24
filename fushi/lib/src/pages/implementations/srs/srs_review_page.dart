@@ -16,9 +16,16 @@ library;
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show FlutterView, ViewFocusDirection, ViewFocusState;
 
 import 'package:flutter/gestures.dart'
-    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
+    show
+        GestureBinding,
+        PointerDeviceKind,
+        PointerDownEvent,
+        PointerScrollEvent,
+        PointerSignalEvent,
+        kSecondaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,11 +48,13 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
-import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
+import 'package:fushi/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -109,6 +118,20 @@ class SrsReviewPage extends ConsumerStatefulWidget {
   @visibleForTesting
   static void Function(String phase)? debugPhase;
 
+  /// 把 OS 键盘焦点交回 Flutter 视图（测试覆写以观察调用）。
+  ///
+  /// 生产实现 = `PlatformDispatcher.requestViewFocusChange`，引擎据此 `SetFocus(FlutterView)`。
+  @visibleForTesting
+  static void Function(FlutterView view) requestNativeViewFocus =
+      _requestNativeViewFocus;
+
+  static void _requestNativeViewFocus(FlutterView view) =>
+      WidgetsBinding.instance.platformDispatcher.requestViewFocusChange(
+        viewId: view.viewId,
+        state: ViewFocusState.focused,
+        direction: ViewFocusDirection.undefined,
+      );
+
   @override
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
 }
@@ -155,6 +178,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   bool _finished = false;
   Object? _error;
 
+  /// 悬浮顶栏（[srsReviewChromeFloatingProvider]，默认开）当前是否被唤出。默认收起；
+  /// 点卡面空白 / 右键在唤出与收起间切换，不自动收起（与小说、漫画阅读器同一口径：
+  /// 点击是唯一的开关）。固定页头时不用它。
+  bool _chromeShown = false;
+
   SrsCardDetail? _detail;
   SrsRenderedCard? _rendered;
   SrsAnswerPreview? _preview;
@@ -182,6 +210,46 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   /// 当前卡的音频设置来自哪个牌组（卡所在牌组的 own 祖先）；随换卡 / 改设置重读。
   SrsDeckView? _audioOwner;
+
+  /// 按 [cause] 收回键盘焦点，并把 **OS** 焦点一并拉回 Flutter 视图（#8）。
+  ///
+  /// 卡面 / 释义 / 查词弹窗都是原生 WebView2：指针点进去后 OS 焦点留在 WebView2，而
+  /// Flutter 这边的焦点仍认为在本页（WebView 平台视图自带的 Flutter 焦点节点就在本页
+  /// 子树里，`custom_platform_view.dart` 按下即 requestFocus）。这时 [PageFocusOwnership.reclaim]
+  /// 的 `requestFocus` 只在 Flutter 内部挪节点，视图焦点状态没变、引擎不会 `SetFocus`，
+  /// 按键继续发给那个 WebView2。卡面可见时页内键盘桥还能把空格交回来；可一旦那个
+  /// WebView2 已经不在屏上——评分换卡后原生卡面的释义 WebView 进了正面的 Offstage
+  /// 预热位、查词弹窗关掉后停进热槽——它的文档收不到可见交互，空格就此失灵，直到用户点
+  /// 一下窗口（激活窗口时宿主把焦点交回 FlutterView）。所以换卡 / 弹窗关掉这两个点，
+  /// 在判据放行后显式请求视图焦点；主窗不在前台时不请求（[DesktopForegroundGuard]，
+  /// 免得把主窗抬到别的程序之上，BUG-1619）。
+  ///
+  /// 2026-10-23 Windows 实测（`integration_test/srs_review_os_focus_itest.dart`，读
+  /// `GetGUIThreadInfo.hwndFocus`）：卡面 / 释义 WebView 走 composition 宿主，指针经插件
+  /// `SendMouseInput` 转发，点进去后 OS 焦点**仍在 FLUTTERVIEW**，上面那条「OS 焦点留在
+  /// WebView2」的链在当前宿主下不成立；评分换卡后 Flutter 焦点由 [PageFocusOwnership]
+  /// 收回本页，真投递的空格照常翻面（去掉下面的视图焦点请求同样通过）。请求保留为窗口
+  /// 宿主模式（`--fushi-windowed-hosting`，WebView2 是真子窗口）下的防护，代价是一次
+  /// 空操作的 SetFocus。
+  void _reclaim(FocusReclaimCause cause) {
+    if (!_focusOwnership.reclaim(cause)) return;
+    if (!DesktopForegroundGuard.isMainWindowForeground()) return;
+    final FlutterView? view = View.maybeOf(context);
+    if (view != null) SrsReviewPage.requestNativeViewFocus(view);
+  }
+
+  /// 下一帧结束后 [_reclaim]（换卡后卡面先 build 完）。`addPostFrameCallback` 本身不排帧，
+  /// 树静止时要 [WidgetsBinding.ensureVisualUpdate] 把帧要出来（BUG-1168）。
+  void _reclaimAfterFrame(FocusReclaimCause cause) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reclaim(cause);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// 当前卡上引用了、但媒体库里没有的文件（换卡后异步探一次）：不给它们出重播键，自动
+  /// 播放也跳过（#15）。
+  Set<String> _missingMedia = const <String>{};
 
   @override
   void initState() {
@@ -250,7 +318,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         if (id == null) return null;
         final SrsCardDetail? detail = await store.cardDetail(id);
         if (detail == null) return null;
-        final SrsRenderedCard? rendered = await store.renderCard(id);
+        final SrsRenderedCard? rendered = await store.renderCard(
+          id,
+          detail: detail,
+        );
         // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
         if (rendered != null) {
           srsWarmCardFace(
@@ -328,22 +399,21 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       await _refreshCounts();
       SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
-      final SrsRenderedCard? rendered = await store.renderCard(id);
+      final SrsRenderedCard? rendered = detail == null
+          ? null
+          : await store.renderCard(id, detail: detail);
       SrsReviewPage.debugPhase?.call('render');
+      if (detail == null) {
+        // 排程选中的卡读不到（例如刚被同步删掉）：报错，不把 null 当「还在读」——
+        // 加载指示只认 detail == null，静默转圈且「显示答案」永远禁用。
+        throw StateError('SrsReviewPage: scheduled card $id has no detail');
+      }
       final SrsDeckView? audioOwner = await _audioOwnerOf(store, detail);
-      final SrsDayContext day = await store.dayContext();
-      final SrsAnswerPreview? preview = store.canSchedule
-          ? await store.preview(id)
-          : null;
-      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted) return;
-      _show(
-        detail,
-        rendered,
-        preview: preview,
-        day: day,
-        audioOwner: audioOwner,
-      );
+      // 问题面只要卡片内容：间隔预览（只在翻面后的评分键上）与日界在卡面上屏后补齐，
+      // 与预取命中同一条路径（[_completeShown]），不挡首张卡。
+      _show(detail, rendered, preview: null, day: _day, audioOwner: audioOwner);
+      unawaited(_completeShown(id, _shownGeneration));
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsReviewPage.loadNext', e, stack);
       if (mounted) {
@@ -377,12 +447,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _day = day;
       _audioOwner = audioOwner;
       _showingAnswer = false;
+      _missingMedia = const <String>{};
     });
+    unawaited(_probeMedia(_shownGeneration));
     _answerClock
       ..reset()
       ..start();
     _autoplayAudio();
-    _focusOwnership.reclaimAfterFrame(FocusReclaimCause.contentReady);
+    _reclaimAfterFrame(FocusReclaimCause.contentReady);
     if (detail != null) _startPrefetch(detail.card.id);
   }
 
@@ -396,6 +468,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       final SrsAnswerPreview? preview = store.canSchedule
           ? await store.preview(cardId)
           : null;
+      SrsReviewPage.debugPhase?.call('preview');
       if (!mounted || generation != _shownGeneration) return;
       setState(() {
         _applyCounts(sum);
@@ -447,6 +520,63 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   bool get _autoplayEnabled => _audioOwner?.autoplayAudio ?? true;
   bool get _replayIncludesQuestion => _audioOwner?.replayQuestionAudio ?? true;
 
+  /// 一张卡两面的媒体清单（问题面、答案面，按卡面从上到下的顺序，保留重复以便按次数
+  /// 扣掉 `{{FrontSide}}` 带过来的）。
+  ///
+  /// 原生 Fushi 卡面按字段取它**实际画出来**的发音键与片段（[srsFushiCardMedia]）——不再扫
+  /// 整面答案 HTML：释义区里词典自带的音频、模板复制的多份容器都不是卡面上的按钮（#15）。
+  /// 整面 WebView 卡面按 Anki 的 `[sound:]` 标记。
+  ({List<String> question, List<String> answer}) _mediaOf(
+    SrsRenderedCard rendered,
+  ) {
+    if (rendered.fushiCardDefinitions != null) {
+      final SrsFushiCardMedia media = srsFushiCardMedia(
+        rendered.fields,
+        audioCardFront:
+            srsFushiFrontKind(rendered.fields) == SrsFushiFrontKind.audio,
+      );
+      return (question: media.front, answer: media.back);
+    }
+    return (
+      question: srsCardSoundNames(rendered.question),
+      answer: srsCardSoundNames(rendered.answer),
+    );
+  }
+
+  /// 去掉媒体库里没有的文件。
+  List<String> _present(List<String> names) => <String>[
+    for (final String n in names)
+      if (!_missingMedia.contains(n)) n,
+  ];
+
+  /// 换卡 / 重载后探一次这张卡引用的媒体在不在库里（经播放出口解析，与真正开播同一判据）。
+  Future<void> _probeMedia(int generation) async {
+    final SrsRenderedCard? rendered = _rendered;
+    if (rendered == null) return;
+    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    final SrsCardAudioOutput output = ref.read(srsCardAudioOutputProvider);
+    final Set<String> missing = <String>{};
+    try {
+      for (final String name in <String>{...m.question, ...m.answer}) {
+        if (await output.resolve(name) == null) missing.add(name);
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsReviewPage.probeMedia', e, stack);
+      return;
+    }
+    if (!mounted || generation != _shownGeneration) return;
+    if (missing.length == _missingMedia.length &&
+        missing.containsAll(_missingMedia)) {
+      return;
+    }
+    setState(() => _missingMedia = missing);
+  }
+
+  /// 卡面上的发音键 / 底栏逐段键：交给同一个序列（新的一段打断上一段，同一时刻只出一路
+  /// 声音，#10）。
+  void _playNames(List<String> names) =>
+      srsRunLogged('SrsReviewPage.play', () => _audio.play(names));
+
   /// 当前这一面的音频要不要自动播：开关关着时只打断上一张卡还在播的序列。
   void _autoplayAudio() {
     final SrsRenderedCard? rendered = _rendered;
@@ -454,23 +584,32 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
       return;
     }
-    final List<String> names = srsAutoplaySounds(
-      questionHtml: rendered.question,
-      answerHtml: rendered.answer,
-      answerSide: _showingAnswer,
+    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    final List<String> names = _present(
+      srsAutoplayOf(
+        question: m.question,
+        answer: m.answer,
+        answerSide: _showingAnswer,
+      ),
     );
     srsRunLogged('SrsReviewPage.autoplay', () => _audio.play(names));
   }
 
   /// 手动「重播音频」该播的那几段（这一面没有音频时为空）。
-  List<String> _replayNames({required bool includeQuestion}) {
+  List<String> _replayNames({
+    required bool includeQuestion,
+    bool answerSide = false,
+  }) {
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null) return const <String>[];
-    return srsReplaySounds(
-      questionHtml: rendered.question,
-      answerHtml: rendered.answer,
-      answerSide: _showingAnswer,
-      includeQuestion: includeQuestion,
+    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    return _present(
+      srsReplayOf(
+        question: m.question,
+        answer: m.answer,
+        answerSide: answerSide || _showingAnswer,
+        includeQuestion: includeQuestion,
+      ),
     );
   }
 
@@ -721,7 +860,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       return;
     }
     final SrsCardDetail? fresh = await store.cardDetail(id);
-    final SrsRenderedCard? rendered = await store.renderCard(id);
+    final SrsRenderedCard? rendered = fresh == null
+        ? null
+        : await store.renderCard(id, detail: fresh);
     final SrsDeckView? audioOwner = await _audioOwnerOf(store, fresh);
     final SrsDeckSummary? sum = await _deckSummary();
     final SrsDayContext day = await store.dayContext();
@@ -737,6 +878,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _day = day;
       _preview = preview;
     });
+    unawaited(_probeMedia(generation));
     // 编辑可能改了同一笔记的兄弟卡、设置可能改了下一张的音频设置：预取作废重来。
     _startPrefetch(id);
   }
@@ -859,6 +1001,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
+  /// WebView 卡面里点了图片（[SrsCardFace.onImageTap]）：页内地址换回媒体名，用原生卡
+  /// 那个可缩放的全屏查看；关掉后焦点回复习页（WebView 拿走过 OS 焦点）。
+  void _viewCardImage(String src) {
+    final Uri? url = src.startsWith('data:') ? null : Uri.tryParse(src);
+    final String? name = url == null ? src : srsMediaNameFromUrl(url);
+    if (name == null) return;
+    srsRunLogged('SrsReview.viewCardImage', () async {
+      final Widget? picture = srsCardImageWidget(
+        name,
+        await ref.read(srsMediaStoreProvider.future),
+        fit: BoxFit.contain,
+      );
+      if (picture == null || !mounted) return;
+      _lookup.closeAll();
+      await showSrsCardImageViewer(context, picture);
+      if (mounted) _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    });
+  }
+
   // ------------------------------------------------------------------ 界面
 
   String get _countsText =>
@@ -948,7 +1109,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     if (tpl == null) return null;
     return FushiToolbarItem(
       key: const ValueKey<String>('srs_review_edit_template'),
-      icon: FushiIcons.appearance,
+      // 模板编辑器（正面 / 背面 / 样式源码）用代码图标，不与卡面外观的调色板混成一样。
+      icon: FushiIcons.code,
       label: t.srs_card_edit_template(name: detail.noteType.name),
       onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
         await Navigator.of(context).push<void>(
@@ -965,99 +1127,72 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
-  List<FushiToolbarItem> _menuItems() => _detail == null
-      ? const <FushiToolbarItem>[]
-      : <FushiToolbarItem>[
-          FushiToolbarItem(
-            key: const ValueKey<String>('srs_review_browse'),
-            icon: FushiIcons.search,
-            label: t.srs_browse_title,
-            onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.pause,
-            label: t.srs_card_suspend,
-            onPressed: () => unawaited(_onCardAction(_CardAction.suspend)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.schedule,
-            label: t.srs_card_bury,
-            onPressed: () => unawaited(_onCardAction(_CardAction.bury)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.flag,
-            label: t.srs_card_flag,
-            onPressed: () => unawaited(_onCardAction(_CardAction.flag)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.moveFile,
-            label: t.srs_card_move,
-            onPressed: () => unawaited(_onCardAction(_CardAction.move)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.restart,
-            label: t.srs_card_reset,
-            onPressed: () => unawaited(_onCardAction(_CardAction.reset)),
-          ),
-          FushiToolbarItem(
-            icon: FushiIcons.delete,
-            label: t.srs_note_delete,
-            onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
-          ),
-          ?_appearanceItem,
-          ?_designSkinItem,
-          _hideHardEasyItem,
-          FushiToolbarItem(
-            key: const ValueKey<String>('srs_review_layout'),
-            icon: FushiIcons.dashboardCustomize,
-            label: t.srs_review_layout_title,
-            onPressed: () => srsRunLogged(
-              'SrsReview.layout',
-              () => _focusOwnership.guardOverlay(
-                () => showSrsReviewLayoutSheet(context),
-              ),
-            ),
-          ),
-          ..._audioSettingItems(),
-        ];
-
-  /// 「卡面跟随设计系统」开关（只对非 Fushi 卡片显示：Fushi 卡片本身就按设计系统画）。
-  /// 勾选态 = 覆盖开着；写进卡面外观偏好，当前卡面经外观监听原地换主题、立即生效。
-  FushiToolbarItem? get _designSkinItem {
+  /// 低优先级的卡片操作与设置，按优先级从高到低排（宽度不够时从**末尾**起先收进「⋯」）：
+  /// 复习中常用的标记 / 埋卡 / 暂停在前，浏览与设置居中，低频又带破坏性的移牌组 / 重置 /
+  /// 删除最后、最先收起。显示类开关（只留重来 / 良好、卡面跟随设计系统、间隔、剩余数）
+  /// 不再各占一颗顶栏按钮，统一在「复习选项」面板里（[showSrsReviewLayoutSheet]）。
+  List<FushiToolbarItem> _menuItems() {
     final SrsCardDetail? detail = _detail;
-    if (detail == null ||
-        detail.noteType.builtinKey == kSrsBuiltinFushiCardKey) {
-      return null;
-    }
-    final SrsCardAppearance a = ref.watch(srsCardAppearanceProvider);
-    return FushiToolbarItem(
-      key: const ValueKey<String>('srs_review_design_skin'),
-      icon: FushiIcons.appearance,
-      label: t.srs_card_appearance_design_skin,
-      selected: a.designSkin,
-      onPressed: () => srsRunLogged(
-        'SrsReview.designSkin',
-        () => ref
-            .read(appProvider)
-            .setSrsCardAppearance(a.copyWith(designSkin: !a.designSkin)),
+    if (detail == null) return const <FushiToolbarItem>[];
+    final bool fushiCard =
+        detail.noteType.builtinKey == kSrsBuiltinFushiCardKey;
+    return <FushiToolbarItem>[
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_flag'),
+        icon: FushiIcons.flag,
+        label: t.srs_card_flag,
+        onPressed: () => unawaited(_onCardAction(_CardAction.flag)),
       ),
-    );
-  }
-
-  /// 评分栏只留「重来 / 良好」的开关（对齐 AnkiDroid 的 hideHardAndEasy；键盘 2/4
-  /// 照样有效）。勾选态 = 已隐藏；点了立即生效、写进按 profile 的偏好。
-  FushiToolbarItem get _hideHardEasyItem {
-    final bool hidden = ref.watch(srsReviewHideHardEasyProvider);
-    return FushiToolbarItem(
-      key: const ValueKey<String>('srs_review_hide_hard_easy'),
-      icon: FushiIcons.visibilityOff,
-      label: t.srs_review_hide_hard_easy,
-      selected: hidden,
-      onPressed: () => srsRunLogged(
-        'SrsReview.hideHardEasy',
-        () => ref.read(appProvider).setSrsReviewHideHardEasy(!hidden),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_bury'),
+        icon: FushiIcons.schedule,
+        label: t.srs_card_bury,
+        onPressed: () => unawaited(_onCardAction(_CardAction.bury)),
       ),
-    );
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_suspend'),
+        icon: FushiIcons.pause,
+        label: t.srs_card_suspend,
+        onPressed: () => unawaited(_onCardAction(_CardAction.suspend)),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_browse'),
+        icon: FushiIcons.search,
+        label: t.srs_browse_title,
+        onPressed: () => srsRunLogged('SrsReview.browse', _openBrowse),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_layout'),
+        icon: FushiIcons.dashboardCustomize,
+        label: t.srs_review_layout_title,
+        onPressed: () => srsRunLogged(
+          'SrsReview.layout',
+          () => _focusOwnership.guardOverlay(
+            () => showSrsReviewLayoutSheet(context, showDesignSkin: !fushiCard),
+          ),
+        ),
+      ),
+      ..._audioSettingItems(),
+      ?_appearanceItem,
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_move'),
+        icon: FushiIcons.moveFile,
+        label: t.srs_card_move,
+        onPressed: () => unawaited(_onCardAction(_CardAction.move)),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_reset'),
+        icon: FushiIcons.restart,
+        label: t.srs_card_reset,
+        onPressed: () => unawaited(_onCardAction(_CardAction.reset)),
+      ),
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_review_delete'),
+        icon: FushiIcons.delete,
+        label: t.srs_note_delete,
+        onPressed: () => unawaited(_onCardAction(_CardAction.deleteNote)),
+      ),
+    ];
   }
 
   /// 「牌组设置」：打开当前卡的音频 / 排程设置所在的牌组（own 祖先）。音频两项是
@@ -1113,6 +1248,35 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     if (mounted && wasAutoplay != _autoplayEnabled) _autoplayAudio();
   }
 
+  /// 悬浮态下没有卡面可点（读失败 / 复习完 / 排程不可用）：顶栏常驻，不然连返回键都
+  /// 唤不出来。
+  bool get _chromeForced =>
+      _error != null ||
+      _finished ||
+      (!_loading && !(_store?.canSchedule ?? false));
+
+  void _toggleChrome() {
+    if (!mounted || !ref.read(srsReviewChromeFloatingProvider)) return;
+    setState(() => _chromeShown = !_chromeShown);
+  }
+
+  /// 卡面空白处被点（WebView 卡面经页内取词脚本、原生卡面经 [SrsBlankTapRegion] 回报）。
+  /// 查词弹窗开着时这一下是关弹窗，不切换顶栏。
+  void _onCardTapEmpty() {
+    if (_lookup.isOpen) return;
+    _toggleChrome();
+  }
+
+  /// 鼠标右键（卡面已关掉 WebView 自带右键菜单，复习页上右键别无他用）：切换悬浮顶栏。
+  void _onPagePointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse ||
+        (event.buttons & kSecondaryMouseButton) == 0 ||
+        _lookup.isOpen) {
+      return;
+    }
+    _toggleChrome();
+  }
+
   Widget _buildTopBar(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final NavigatorState? navigator = Navigator.maybeOf(context);
@@ -1125,7 +1289,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       ),
       child: FushiFloatingTopBar(
         title: _title,
-        subtitle: _finished ? '' : _countsText,
+        subtitle: _finished || !ref.watch(srsReviewShowCountsProvider)
+            ? ''
+            : _countsText,
         leading: <FushiToolbarItem>[
           if (navigator != null && navigator.canPop())
             FushiToolbarItem(
@@ -1162,15 +1328,24 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    // 悬浮顶栏：页头不占布局（空页头），两套设计系统都改由正文上层的悬浮胶囊栏
+    // （[_buildTopBar]）承载，默认收起、点空白 / 右键唤出。
+    final bool floating = ref.watch(srsReviewChromeFloatingProvider);
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: _onKey,
       child: FushiPageScaffold(
         title: _title,
-        header: apple ? null : _buildTopBar(context),
-        actions: apple ? _buildAppleActions() : const <Widget>[],
-        headerBottom: apple && !_finished
+        header: floating
+            ? const SizedBox.shrink()
+            : (apple ? null : _buildTopBar(context)),
+        actions: apple && !floating ? _buildAppleActions() : const <Widget>[],
+        headerBottom:
+            apple &&
+                !floating &&
+                !_finished &&
+                ref.watch(srsReviewShowCountsProvider)
             ? SrsCountTriple(
                 newCount: _newCount,
                 learnCount: _learnCount,
@@ -1179,34 +1354,67 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
               )
             : null,
         body: Builder(
-          builder: (BuildContext context) => Padding(
-            // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
-            // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
-            // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
-            padding: EdgeInsets.only(
-              top: _cardScrollsUnderHeader
-                  ? 0
-                  : MediaQuery.paddingOf(context).top,
-            ),
-            child: AnimatedSwitcher(
-              duration: fushiMotionDuration(context, FushiMotion.medium),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              child: KeyedSubtree(
-                key: ValueKey<String>(
-                  _loading
-                      ? 'loading'
-                      : _error != null
-                      ? 'error'
-                      : _finished
-                      ? 'finished'
-                      : 'review',
+          builder: (BuildContext context) => _withFloatingChrome(
+            context,
+            floating: floating,
+            child: Padding(
+              // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+              // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+              // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+              padding: EdgeInsets.only(
+                top: _cardScrollsUnderHeader
+                    ? 0
+                    : MediaQuery.paddingOf(context).top,
+              ),
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.medium),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                child: KeyedSubtree(
+                  // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
+                  // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
+                  key: ValueKey<String>(
+                    _error != null
+                        ? 'error'
+                        : _finished
+                        ? 'finished'
+                        : 'review',
+                  ),
+                  child: _buildBody(context),
                 ),
-                child: _buildBody(context),
               ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 悬浮态：正文之上压一条悬浮顶栏（与小说、漫画阅读器同款弹簧滑入 / 淡出），右键
+  /// 切换显隐。固定页头时原样返回 [child]。
+  Widget _withFloatingChrome(
+    BuildContext context, {
+    required bool floating,
+    required Widget child,
+  }) {
+    if (!floating) return child;
+    return Listener(
+      onPointerDown: _onPagePointerDown,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          child,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: FushiChromeReveal(
+              key: const ValueKey<String>('srs-review-floating-chrome'),
+              visible: _chromeShown || _chromeForced,
+              child: SafeArea(bottom: false, child: _buildTopBar(context)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1221,7 +1429,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       _rendered?.fushiCardDefinitions != null;
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return const FushiLoadingView();
+    // 首张卡还在读：先把卡面（WebView 外壳）建起来、上面压加载指示。WebView 冷建 +
+    // 外壳加载与读库并行，数据一到只在同一个平台视图里换内容（BUG-3579 实测这段在
+    // 数据之后串行要 0.8~1.3 s）。
+    if (_loading) return _buildCard(context);
     final Object? error = _error;
     if (error != null) {
       return Center(
@@ -1283,7 +1494,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
 
   Widget _buildCard(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsCardDetail detail = _detail!;
+    // null = 首张卡还在读（[_buildBody]）：空卡面先建平台视图，上面压加载指示。
+    final SrsCardDetail? detail = _detail;
     final SrsRenderedCard? rendered = _rendered;
     final SrsCardFaceBuilder faceBuilder = ref.watch(
       srsCardFaceBuilderProvider,
@@ -1291,7 +1503,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     final String language = ref.read(appProvider).defaultContentLanguage;
     final double zoom = ref.watch(srsReviewZoomProvider);
     final SrsCardFace face = SrsCardFace(
-      cardId: detail.card.id,
+      cardId: detail?.card.id ?? '',
       showingAnswer: _showingAnswer,
       bodyHtml: rendered == null
           ? ''
@@ -1301,19 +1513,24 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       css: rendered?.css ?? '',
       languageCode: language.isEmpty ? null : language,
       onBridgeKey: _onBridgeKey,
-      fushiCard: detail.noteType.builtinKey == kSrsBuiltinFushiCardKey,
+      fushiCard: detail?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
       pageZoom: zoom == 1 ? null : zoom,
       onZoomWheel: _zoomWheel,
       onSourceLink: _openSource,
+      // 「卡面图片大小」随主题原地下发（不重放卡片）；Fushi 卡片的原生图片读同一设置。
+      hostCss: srsReviewImageSizeCss(ref.watch(srsReviewImageSizeProvider)),
+      onImageTap: _viewCardImage,
       // 卡面页内自己出声的媒体（视频制卡的同步片段等）同样服从牌组的自动播放开关
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,
+      onPlayAudio: _playNames,
+      onTapEmpty: _onCardTapEmpty,
     );
     final MediaQueryData media = MediaQuery.of(context);
     return SrsCardLookupHost(
       controller: _lookup,
       // 弹窗整栈关掉：焦点回复习页（WebView / 弹窗拿走过 OS 焦点）。
-      onClosed: () => _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+      onClosed: () => _reclaim(FocusReclaimCause.overlayClosed),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1337,9 +1554,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                   key: const ValueKey<String>('srs-card-surface'),
                   padding: EdgeInsets.zero,
                   pressScale: false,
-                  // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
-                  child: rendered?.fushiCardDefinitions != null
-                      ? MediaQuery(
+                  // 结构恒定（卡面在 Stack 第一格）：读首张卡时建起的卡面平台视图出卡后
+                  // 原地复用，加载指示只是压在上面的第二格。
+                  child: Stack(
+                    fit: StackFit.passthrough,
+                    children: <Widget>[
+                      // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
+                      if (rendered?.fushiCardDefinitions != null)
+                        MediaQuery(
                           // 原生区跟随卡面缩放：在系统字号倍率上再乘缩放倍率。
                           data: media.copyWith(
                             textScaler: TextScaler.linear(
@@ -1354,7 +1576,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
                             topInset: media.padding.top,
                           ),
                         )
-                      : faceBuilder(context, face),
+                      else
+                        faceBuilder(context, face),
+                      IgnorePointer(
+                        child: AnimatedSwitcher(
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.medium,
+                          ),
+                          switchInCurve: FushiMotion.enter,
+                          switchOutCurve: FushiMotion.exit,
+                          child: detail == null
+                              ? const FushiLoadingView(
+                                  key: ValueKey<String>('srs-card-loading'),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1390,31 +1630,43 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   /// 大按钮档）；两者都 ≥ 48dp 命中区。
   static const double _kBarButtonHeightApple = 50;
 
+  /// 「显示答案」的最小宽度（底部重播键再多也不把它挤得更窄）。
+  static const double _kShowAnswerMinWidth = 220;
+
   /// 「显示答案」：设计系统主按钮（MD3 = M3E 中号胶囊 + 按压变形，Apple = 强调色胶囊），
   /// 不再通栏铺满——居中、宽度封顶，与评分按钮同高，翻面时两者原地交替。
   Widget _buildShowAnswer(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    // 首张卡还在读时（卡面已先建着）不可按。
+    final bool enabled = !_busy && _detail != null;
     return Center(
       key: const ValueKey<String>('srs-show-answer-row'),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minWidth: 220, maxWidth: 420),
+        constraints: const BoxConstraints(
+          minWidth: _kShowAnswerMinWidth,
+          maxWidth: 420,
+        ),
         child: FushiPressScale(
-          enabled: !_busy,
-          child: SizedBox(
-            width: double.infinity,
-            child: FushiFilledButton.icon(
-              key: const ValueKey<String>('srs-show-answer'),
-              onPressed: _busy ? null : _showAnswer,
-              size: FushiButtonSize.m,
-              style: apple
-                  ? const ButtonStyle(
-                      minimumSize: WidgetStatePropertyAll<Size>(
-                        Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
-                      ),
-                    )
-                  : null,
-              icon: const FushiIcon(FushiIcons.visibility),
-              label: Text(t.srs_review_show_answer),
+          enabled: enabled,
+          // 快捷键提示与评分按钮同一写法（空格 / Enter / 手柄 A 都翻面，见 _onKey）。
+          child: FushiTooltip(
+            message: '${t.srs_review_show_answer} (Space)',
+            child: SizedBox(
+              width: double.infinity,
+              child: FushiFilledButton.icon(
+                key: const ValueKey<String>('srs-show-answer'),
+                onPressed: enabled ? _showAnswer : null,
+                size: FushiButtonSize.m,
+                style: apple
+                    ? const ButtonStyle(
+                        minimumSize: WidgetStatePropertyAll<Size>(
+                          Size(_kBarButtonHeightApple, _kBarButtonHeightApple),
+                        ),
+                      )
+                    : null,
+                icon: const FushiIcon(FushiIcons.visibility),
+                label: Text(t.srs_review_show_answer),
+              ),
             ),
           ),
         ),
@@ -1422,49 +1674,122 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
     );
   }
 
-  /// 底部操作行一端的重播键（⋯「复习布局」里选左 / 右，默认不放）。翻面前后同一位置；
-  /// 这张卡没有可重播的音频时照样占位、只是不可点，评分按钮不会左右跳。设计系统按钮：
-  /// MD3 = M3E 中号色调方钮（56），Apple = 50 高的色调胶囊，与「显示答案」/ 评分按钮同高。
+  /// 底部重播键的边长：≥ 48dp 命中区，比「显示答案」/ 评分按钮（56 / 50）小一号——它是
+  /// 辅助操作，单独一行放在评分按钮上方，不和评分按钮并排抢同一高度（#17）。
+  static const double _kReplayButtonExtent = 48;
+
+  /// 底栏重播键（⋯「复习选项」里选左 / 右，默认不放）：单独一行、放在「显示答案」/ 评分
+  /// 按钮**上方**，靠选定那一侧（#17：以前与评分按钮并排同高，挤在同一行里很怪）。
+  ///
+  /// **每段音频一个键**（只想听例句就只点例句那颗；R 仍是整面重播）。键位按两面全部音频定
+  /// （问题面在前，与卡面从上到下的顺序一致），翻面前后同一位置、同样多——正面还没有的那段
+  /// 先不可点；「重播含问题音频」只管整面重播（R），逐段键在哪一面都能点问题面那段。
+  /// 媒体库里没有的文件不出键（#15）；一行放不下逐段键、只有一段时退回一颗整面重播键；
+  /// 这张卡完全没有音频时整行收起。
   Widget _withBottomReplay(BuildContext context, Widget row) {
     final SrsReviewReplayButton side = ref.watch(srsReviewReplayButtonProvider);
     if (side == SrsReviewReplayButton.off || _detail == null) return row;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool apple = isGlassDesign(context);
-    final double extent = apple ? _kBarButtonHeightApple : 56;
-    final bool canReplay = _replayNames(
+    const double extent = _kReplayButtonExtent;
+    final List<String> slots = _replayNames(
+      includeQuestion: true,
+      answerSide: true,
+    );
+    final Set<String> playable = _replayNames(includeQuestion: true).toSet();
+    final bool canReplayFace = _replayNames(
       includeQuestion: _replayIncludesQuestion,
     ).isNotEmpty;
-    final VoidCallback? onPressed = canReplay && !_busy ? _replayAudio : null;
-    final Widget replay = FushiPressScale(
-      enabled: onPressed != null,
-      child: FushiTooltip(
-        message: '${t.srs_review_replay_audio} (R)',
-        child: SizedBox.square(
-          dimension: extent,
-          child: FushiFilledButton.tonal(
-            key: const ValueKey<String>('srs-bottom-replay'),
-            onPressed: onPressed,
-            size: FushiButtonSize.m,
-            style: ButtonStyle(
-              minimumSize: WidgetStatePropertyAll<Size>(Size(extent, extent)),
-              padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
-                EdgeInsets.zero,
+
+    Widget replayButton(int i, {required bool split}) {
+      final String? name = split ? slots[i] : null;
+      final VoidCallback? onPressed = _busy
+          ? null
+          : !split
+          ? (canReplayFace ? _replayAudio : null)
+          : playable.contains(name)
+          ? () => _playNames(<String>[name!])
+          : null;
+      final String label = split
+          ? '${t.srs_review_replay_audio} ${i + 1}/${slots.length}'
+          : t.srs_review_replay_audio;
+      return FushiPressScale(
+        enabled: onPressed != null,
+        child: FushiTooltip(
+          message: split ? label : '$label (R)',
+          child: SizedBox.square(
+            dimension: extent,
+            child: FushiFilledButton.tonal(
+              key: ValueKey<String>('srs-bottom-replay-$i'),
+              onPressed: onPressed,
+              size: FushiButtonSize.m,
+              style: const ButtonStyle(
+                minimumSize: WidgetStatePropertyAll<Size>(Size(extent, extent)),
+                maximumSize: WidgetStatePropertyAll<Size>(
+                  Size(double.infinity, extent),
+                ),
+                padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
+                  EdgeInsets.zero,
+                ),
               ),
-            ),
-            child: FushiIcon(
-              FushiIcons.volumeUp,
-              semanticLabel: t.srs_review_replay_audio,
+              // 多段时图标旁标序号（与卡面上从上到下的顺序一致）。
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 2,
+                children: <Widget>[
+                  FushiIcon(FushiIcons.volumeUp, semanticLabel: label),
+                  if (split) ExcludeSemantics(child: Text('${i + 1}')),
+                ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-    return Row(
-      spacing: tokens.spacing.gap,
+      );
+    }
+
+    final bool start = side == SrsReviewReplayButton.start;
+    final Widget replay = slots.isEmpty
+        ? const SizedBox(width: double.infinity)
+        : LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              final double unit = extent + tokens.spacing.gap;
+              // 逐段键只在一行放得下时用，否则退回一颗整面重播键。
+              final bool split =
+                  slots.length > 1 &&
+                  slots.length * unit - tokens.spacing.gap <= c.maxWidth;
+              final int count = split ? slots.length : 1;
+              return Align(
+                alignment: start
+                    ? AlignmentDirectional.centerStart
+                    : AlignmentDirectional.centerEnd,
+                child: Row(
+                  key: const ValueKey<String>('srs-bottom-replay-row'),
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    for (int i = 0; i < count; i++)
+                      replayButton(i, split: split),
+                  ],
+                ),
+              );
+            },
+          );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (side == SrsReviewReplayButton.start) replay,
-        Expanded(child: row),
-        if (side == SrsReviewReplayButton.end) replay,
+        // 换到没有音频的卡时整行平滑收起，有音频时展开（不让评分按钮上下跳）。
+        FushiAnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.enter,
+          alignment: Alignment.bottomCenter,
+          child: slots.isEmpty
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                  child: replay,
+                ),
+        ),
+        row,
       ],
     );
   }
@@ -1492,7 +1817,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       );
     }
 
-    // 评分按钮的下次间隔可在 ⋯「复习布局」里关掉；关掉或调度器给不出间隔（预览缺失）
+    // 评分按钮的下次间隔可在 ⋯「复习选项」里关掉；关掉或调度器给不出间隔（预览缺失）
     // 时按钮只剩评价词一行。
     final bool showIntervals = ref.watch(srsReviewShowIntervalsProvider);
     Widget button(int rating, String label, SrsRatingTone tone) => Expanded(

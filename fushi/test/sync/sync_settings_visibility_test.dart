@@ -107,6 +107,9 @@ void main() {
       // C1：§2 只放五个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
       expect(idsOf(dest.sections[1]), <String>[
         'sync.statistics',
+        // 设备级「同步浏览历史」（默认关，3fdceb86fa / PR #2500）：云备份与互联
+        // 共用、不设 visible 门控，所以同样是全局项，紧跟统计开关。
+        'sync.web_history',
         'sync.content',
         'sync.manga_content',
         'sync.audiobook_files',
@@ -464,13 +467,21 @@ void main() {
         // C2：对端列表 + LAN 发现（整页最高的两个 widget）挪进子页「配对与设备」，
         // 主页只留一行带已配对数摘要的入口；其后是「加入游戏串流」入口
         // （PR #1611）——每个平台都能当接收端，所以该行不带平台门控。
+        // _sZllpFQWm：两者之间是「互联下载」任务页入口——iOS 没有浏览模块，
+        // 互联下载又不是商店受限能力，这一行同样不带任何门控。
         expect(idsOf(dest.sections[1]), <String>[
           'interconnect.devices',
+          'interconnect.download_tasks',
           'interconnect.game_stream',
         ]);
         expect(dest.sections[1].visible, isNotNull);
         expect(
           dest.sections[1].items[1].visible,
+          isNull,
+          reason: '互联下载不是商店受限能力，入口不该按平台藏起来',
+        );
+        expect(
+          dest.sections[1].items[2].visible,
           isNull,
           reason: '串流接收端覆盖全部平台，入口不该再按平台藏起来',
         );
@@ -503,10 +514,28 @@ void main() {
         expect(dest.sections[2].visible, isNotNull);
         // 与已配对设备共享：统计 / 收藏夹。刻意独立成区而不并进上面的上传区——那一区
         // 是纯 OUTBOUND 的重内容、脚注承诺「默认全部关闭」，这两项双向且默认开启。
+        // 反馈 5nWEirdCs2（方案 A）：两项只在「一轮同步」里合并——互联通道自己的
+        // 自动同步开关（默认开）与它们同区，「双向合并、默认开启」才成立。它是真开关，
+        // 不是指向同步分类的指路行：同步分类那个从此只管云通道。
         expect(idsOf(dest.sections[3]), <String>[
           'interconnect.share_statistics',
           'interconnect.share_favorites',
+          'interconnect.auto_sync',
         ]);
+        expect(dest.sections[3].items.last, isA<SettingsSwitchItem>());
+        expect(
+          dest.sections[3].items.last.subtitle,
+          t.interconnect_auto_sync_hint,
+        );
+        final SettingsItem cloudAutoSync = buildSyncBackupDestination()
+            .sections
+            .expand((SettingsSection s) => s.items)
+            .firstWhere((SettingsItem i) => i.id == 'sync.auto_sync');
+        expect(
+          cloudAutoSync.subtitle,
+          t.sync_auto_sync_cloud_hint,
+          reason: '同步分类的旧开关必须说清它只管云同步',
+        );
         expect(dest.sections[3].visible, isNotNull);
         expect(
           dest.sections[3].footer,

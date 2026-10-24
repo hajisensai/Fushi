@@ -169,7 +169,11 @@ void main() {
       )!;
       expect(containsIdentifier(schedule, 'captureSetupEnabled'), isTrue);
       expect(containsIdentifierCall(schedule, 'TickerMode.of'), isTrue);
-      final String build = topLevelFunctionBody(texthooker, 'build')!;
+      // BUG-3663 把 build 拆成「LookupOwnerRouteProbe 包一层 + _buildPage」，
+      // 每次重建的页面主体落在 _buildPage；build 必须仍委托给它。
+      final String outerBuild = topLevelFunctionBody(texthooker, 'build')!;
+      expect(containsIdentifierCall(outerBuild, '_buildPage'), isTrue);
+      final String build = topLevelFunctionBody(texthooker, '_buildPage')!;
       expect(containsIdentifierCall(build, 'TickerMode.of'), isTrue);
       expect(
         containsIdentifierCall(build, '_maybeScheduleCaptureSetupDialog'),

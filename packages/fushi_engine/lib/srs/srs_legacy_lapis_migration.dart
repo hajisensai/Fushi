@@ -67,6 +67,17 @@ class SrsLapisFieldSlot {
   final SrsLapisFieldMatch match;
 }
 
+/// 牌组名里作为独立单词出现的「lapis」（不分大小写）换成「Fushi Card」
+/// （[FushiCardNoteType.modelName]）；没有时为 null。按词边界匹配而不是子串：
+/// `Lapis` → `Fushi Card`，`Lapis Mining` → `Fushi Card Mining`，`日语 LAPIS` →
+/// `日语 Fushi Card`；`Lapislazuli` 这类只是含这几个字母的名字不动。
+String? srsLapisDeckRenamed(String name) {
+  if (!_lapisWord.hasMatch(name)) return null;
+  return name.replaceAll(_lapisWord, FushiCardNoteType.modelName);
+}
+
+final RegExp _lapisWord = RegExp(r'\blapis\b', caseSensitive: false);
+
 /// 字段名归一：小写、去掉空白与常见分隔符（`Misc Info` = `misc_info` = `MiscInfo`）。
 String srsNormalizeLapisFieldName(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'[\s_\-\.:/·・（）()\[\]【】「」]'), '');
@@ -742,6 +753,35 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
       rethrow;
     }
     return ids.length;
+  });
+
+  /// 把名字里带独立单词「lapis」的牌组（不分大小写，只看牌组自己那一级的名字）改名：
+  /// 「lapis」换成「Fushi Card」（[srsLapisDeckRenamed]）。改名后与同级已有牌组（或同级另一个改名结果）重名的跳过，不合并
+  /// 牌组。一次批量写入，返回改名的牌组数；重复执行不再写任何东西。
+  ///
+  /// 之后再从 Anki 迁移（Anki 那边仍叫「Lapis」）时，导入按导入 ID 把它认回这个改过名的牌组
+  /// （`srs_apkg_import.dart` 的 `_renamedLapisDeck`），不另建「Lapis」、不把卡挪走。
+  Future<int> renameLapisDecks() => runExclusive(() async {
+    final SrsDeckTree tree = await deckTree();
+    final Map<String?, Set<String>> siblingNames = <String?, Set<String>>{};
+    for (final SrsDeckView d in tree.decks) {
+      (siblingNames[tree.parentOf(d.id)] ??= <String>{}).add(d.name);
+    }
+    final List<SrsDeckView> decks = tree.decks.toList()
+      ..sort((SrsDeckView a, SrsDeckView b) => a.id.compareTo(b.id));
+    final List<SrsFieldChange> changes = <SrsFieldChange>[];
+    for (final SrsDeckView d in decks) {
+      final String? renamed = srsLapisDeckRenamed(d.name);
+      if (renamed == null) continue;
+      final Set<String> names = siblingNames[tree.parentOf(d.id)]!;
+      if (!names.add(renamed)) continue;
+      names.remove(d.name);
+      changes.add(
+        SrsFieldChange(SrsEntityKind.deck, d.id, SrsFieldKeys.name, renamed),
+      );
+    }
+    if (changes.isNotEmpty) await editFieldsBatch(changes);
+    return changes.length;
   });
 
   /// 把 [noteIds] 的首选牌组与它们现有的可见卡片都移到 [deckId]（已经在那里的不写）。

@@ -174,10 +174,17 @@ void main() {
     test('AppModel owns the controller and starts it on launch', () {
       final String appModel =
           File('lib/src/models/app_model.dart').readAsStringSync();
+      // Whitespace-tolerant: since the #2472 merge the declaration is wrapped as
+      // `late final FushiSyncServerController\n  syncServerController = ...`.
+      // Still pins an AppModel-owned field of the controller type.
       expect(
-          appModel, contains('FushiSyncServerController syncServerController'),
+          appModel,
+          matches(RegExp(
+              r'late final FushiSyncServerController\s+syncServerController\s*=')),
           reason: 'AppModel must own the server controller for the session');
-      expect(appModel, contains('syncServerController.startIfEnabled()'),
+      // Same #2472 re-wrap: `syncServerController\n    .startIfEnabled()`.
+      expect(appModel,
+          matches(RegExp(r'syncServerController\s*\.startIfEnabled\(\)')),
           reason: 'the host must start app-wide on launch when enabled');
     });
 

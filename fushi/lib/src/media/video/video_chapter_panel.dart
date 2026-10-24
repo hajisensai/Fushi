@@ -4,7 +4,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
     show formatCueTimestamp;
 import 'package:fushi/src/reader/reader_panel_kit.dart'
-    show ReaderBadgeShape, ReaderPolarShapeBorder;
+    show ReaderBadgeShape, readerBadgeShapeBorder;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
@@ -204,7 +204,7 @@ class _ChapterIndexBadge extends StatelessWidget {
         decoration: ShapeDecoration(
           color: selected ? cs.primary : cs.onSurface.withValues(alpha: 0.08),
           shape: selected
-              ? ReaderPolarShapeBorder.of(ReaderBadgeShape.cookie4)
+              ? readerBadgeShapeBorder(ReaderBadgeShape.cookie4)
               : const CircleBorder(),
         ),
         child: Center(

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/creator/mining_tts_fallback_picker.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption;
 import 'package:fushi_engine/foundation/pref_store.dart';
@@ -171,20 +172,27 @@ void main() {
   late Directory outDir;
   late TtsAudioCache cache;
   late List<String> systemCalls;
+  late List<String?> systemLanguages;
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('mining_tts_fallback_');
     outDir = Directory('${tmp.path}/out');
     cache = TtsAudioCache(root: Directory('${tmp.path}/cache'));
     systemCalls = <String>[];
+    systemLanguages = <String?>[];
   });
 
   tearDown(() async {
     if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 
-  Future<String?> fakeSystemTts(String text, String outputPath) async {
+  Future<String> fakeSystemTts(
+    String text,
+    String outputPath,
+    String? languageTag,
+  ) async {
     systemCalls.add('$text|$outputPath');
+    systemLanguages.add(languageTag);
     await File(outputPath).parent.create(recursive: true);
     await File(outputPath).writeAsBytes(_wav());
     return outputPath;
@@ -235,6 +243,23 @@ void main() {
       );
     });
 
+    test('查词兜底只认显式选过的声音（没碰过设置 / 选了不使用 = 不兜底）', () {
+      final _MemoryPrefs prefs = _MemoryPrefs();
+      expect(lookupTtsFallbackVoiceOf(prefs), isNull);
+      prefs.values[kMiningTtsFallbackVoicePref] = 'none';
+      expect(lookupTtsFallbackVoiceOf(prefs), isNull);
+      prefs.values[kMiningTtsFallbackVoicePref] = 'system';
+      expect(
+        lookupTtsFallbackVoiceOf(prefs),
+        const MiningTtsFallbackVoice.system(),
+      );
+      prefs.values[kMiningTtsFallbackVoicePref] = 'preset:sovits';
+      expect(
+        lookupTtsFallbackVoiceOf(prefs),
+        const MiningTtsFallbackVoice.preset('sovits'),
+      );
+    });
+
     test('三种选择往返', () async {
       final _MemoryPrefs prefs = _MemoryPrefs();
       for (final MiningTtsFallbackVoice v in <MiningTtsFallbackVoice>[
@@ -265,15 +290,59 @@ void main() {
       expect(d.texts, isEmpty);
     });
 
-    test('系统语音合成失败：返回 null，不带原因（与升级前一致）', () async {
-      final File? file = await synthesizeMiningTtsFallback(
-        text: 'たべる',
+    test('BUG-3669 系统语音：languageTag 原样交给系统语音（不写死 ja-JP）', () async {
+      await synthesizeMiningTtsFallback(
+        text: 'apple',
         choice: const MiningTtsFallbackVoice.system(),
         outputDir: outDir,
-        systemTts: (String text, String out) async => null,
+        systemTts: fakeSystemTts,
         voices: () => throw StateError('不该取朗读声音'),
+        languageTag: 'en',
       );
-      expect(file, isNull);
+      expect(systemLanguages, <String?>['en']);
+    });
+
+    test('BUG-3669 系统语音合成失败：抛带原因的 WordAudioUnavailable，不再静默 null', () async {
+      await expectLater(
+        synthesizeMiningTtsFallback(
+          text: 'apple',
+          choice: const MiningTtsFallbackVoice.system(),
+          outputDir: outDir,
+          systemTts: (String text, String out, String? lang) async =>
+              throw SystemTtsFailure(
+                SystemTtsFailureReason.languageMissingData,
+                languageTag: lang,
+              ),
+          voices: () => throw StateError('不该取朗读声音'),
+          languageTag: 'en',
+        ),
+        throwsA(
+          isA<WordAudioUnavailable>()
+              .having(
+                (WordAudioUnavailable e) => e.reason,
+                'reason',
+                t.tts_system_language_missing_data(language: 'English (en)'),
+              )
+              .having(
+                (WordAudioUnavailable e) => e.cause,
+                'cause',
+                isA<SystemTtsFailure>(),
+              ),
+        ),
+      );
+    });
+
+    test('BUG-3669 系统语音说成功却没写出文件：同样按合成失败上报', () async {
+      await expectLater(
+        synthesizeMiningTtsFallback(
+          text: 'apple',
+          choice: const MiningTtsFallbackVoice.system(),
+          outputDir: outDir,
+          systemTts: (String text, String out, String? lang) async => out,
+          voices: () => throw StateError('不该取朗读声音'),
+        ),
+        throwsA(isA<WordAudioUnavailable>()),
+      );
     });
 
     test('不使用 TTS 兜底：直接跳过，系统与预设都不调用', () async {

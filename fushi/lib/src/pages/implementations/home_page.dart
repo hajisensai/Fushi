@@ -1,5 +1,6 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -105,6 +106,8 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_browse
     show MediaServerEntry;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show MediaServerVideoLibrary;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
@@ -156,8 +159,9 @@ export 'package:fushi/src/models/home_tab.dart';
 /// 顺序是**用户自己排的**（设置 → 外观 → 功能模块 拖拽排序，存在
 /// [ModuleVisibility.order]）；没排过时按 [ModuleId] 枚举顺序，即首页 → 书架 →
 /// 漫画 → 视频 → 游戏 → 浏览 → 查词 → 浏览器扩展（与排序功能上线前写死的顺序
-/// 一致，升级上来不变）。被关掉或平台上不存在的模块跳过但保留位置意愿；设置恒在
-/// 且恒在最后，是全部模块关光后的安全回退面（故 [ModuleId] 里没有它，也不参与排序）。
+/// 一致，升级上来不变）。被关掉或平台上不存在的模块跳过但保留位置意愿；设置恒在、
+/// 恰好一次，是全部模块关光后的安全回退面（故 [ModuleId] 里没有它）。设置默认在
+/// 最后，用户可以把它拖到别处（[ModuleVisibility.settingsSlot]，反馈 TqJ_xq3UlO）。
 ///
 /// 形参是**一个** [ModuleVisibility] 而不是一串 bool：此前这里收七个具名 bool，
 /// 调用方（`_activeTabs()` 与 main.dart 的 macOS 根侧栏）各手抄一份实参表，两份
@@ -165,18 +169,23 @@ export 'package:fushi/src/models/home_tab.dart';
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
 /// 一次，顺序也随快照一起走，所有调用点不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-  for (final ModuleId module in visibility.ordered)
-    if (homeTabOfModule(module) case final HomeTab tab
+  for (final ModuleId? module in visibility.navOrder)
+    if (module == null)
+      HomeTab.settings
+    else if (homeTabOfModule(module) case final HomeTab tab
         when visibility.isEnabled(module))
       tab,
-  HomeTab.settings,
 ];
 
-/// 默认落地 tab：可见列表的第一项。首页开着就是首页；首页被关掉时是第一个
-/// 启用的模块（底栏最左边那一项）；导航模块全关时只剩设置。设置恒在，所以
-/// [tabs]（[homeActiveTabs] 的结果）永不为空。
-HomeTab homeLandingTab(List<HomeTab> tabs) =>
-    tabs.isEmpty ? HomeTab.settings : tabs.first;
+/// 默认落地 tab：可见列表里第一个**不是设置**的 tab。首页开着就是首页；首页被
+/// 关掉时是第一个启用的模块；用户把设置拖到最前也不会一打开就落在设置里。导航
+/// 模块全关时只剩设置。设置恒在，所以 [tabs]（[homeActiveTabs] 的结果）永不为空。
+HomeTab homeLandingTab(List<HomeTab> tabs) {
+  for (final HomeTab tab in tabs) {
+    if (tab != HomeTab.settings) return tab;
+  }
+  return HomeTab.settings;
+}
 
 /// 启动落地 tab：用户选的启动页（设置 → 系统 → 启动页，[startupModule]）在
 /// [tabs]（[homeActiveTabs] 的结果）里可见时就落它，否则落默认 [homeLandingTab]。
@@ -231,8 +240,21 @@ final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
 );
 
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
-/// 根侧栏共用，保证三处标签/图标一致。
-AdaptiveNavItem homeNavItemFor(HomeTab tab) {
+/// 根侧栏共用，保证三处标签/图标一致。MD3 侧栏另读 [AdaptiveNavItem.railShape]
+/// （各模块的专属形状）与 [peek]（悬停速览卡，只有 HomePage 的 rail 传）。
+AdaptiveNavItem homeNavItemFor(HomeTab tab, {AdaptiveNavPeek? peek}) {
+  final AdaptiveNavItem base = _homeNavItemBase(tab);
+  return AdaptiveNavItem(
+    icon: base.icon,
+    selectedIcon: base.selectedIcon,
+    label: base.label,
+    experimentalBadge: base.experimentalBadge,
+    railShape: homeNavRailShapeFor(tab),
+    peek: peek,
+  );
+}
+
+AdaptiveNavItem _homeNavItemBase(HomeTab tab) {
   switch (tab) {
     case HomeTab.home:
       return AdaptiveNavItem(
@@ -551,6 +573,8 @@ class _HomePageState extends BasePageState<HomePage>
         // 上来时该键缺省即 true（不弹）；中途杀进程下次启动值仍是 false，会
         // 重新弹出（缺省语义见 PreferencesRepository.onboardingCompleted）。
         await appModel.setOnboardingCompleted(value: false);
+        // 「走完」与「弹过」分开记：跳过向导后首页常驻一张引导卡，走完才收。
+        await appModel.setOnboardingFinished(value: false);
       }
 
       // 新手引导在更新弹窗之前弹（避免两个模态抢同一帧）；向导关闭（完成/
@@ -788,7 +812,7 @@ class _HomePageState extends BasePageState<HomePage>
       dictionaryResourceRoot: appModel.dictionaryResourceDirectory,
       audioDatabaseRoot: Directory('${appModel.appDirectory.path}/audiobooks'),
       tempDir: appModel.temporaryDirectory,
-      localAudioEntries: appModel.localAudioDbs,
+      localAudioEntries: appModel.localAudioDbsOnThisDevice,
       onLocalAudioImported: appModel.importSyncedLocalAudioDb,
       onPostRun: appModel.refreshAfterSyncRun,
       onReport: appModel.presentSyncPrompts,
@@ -1742,7 +1766,17 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
   /// [homeNavItemFor]，保证三处标签/选中图标一致。
-  AdaptiveNavItem _navItemFor(HomeTab tab) => homeNavItemFor(tab);
+  AdaptiveNavItem _navItemFor(HomeTab tab) => homeNavItemFor(
+    tab,
+    peek: homeNavPeekFor(
+      tab,
+      ref: ref,
+      appModel: appModel,
+      contextOf: () => context,
+      videoRepo: () => _videoRepository,
+      goToTab: _selectTabFromNav,
+    ),
+  );
 
   /// 可见 tab 列表对应的导航项（与 [_activeTabs] 顺序一致）。
   List<AdaptiveNavItem> _navItems(List<HomeTab> tabs) =>
@@ -1869,46 +1903,124 @@ class _HomePageState extends BasePageState<HomePage>
         // NavRailContentSync 与 buildBody），免得它们每帧重排；可见内容照常
         // 随 rail 重排，否则右侧贴边内容整段过渡被裁、结束时弹回（BUG-3447）。
         child: NavRailContentSync(
-          child: Row(
-            children: [
-              // Each rail destination is its own gamepad/keyboard focus target,
-              // so the app focus ring hugs the single selected item; D-pad
-              // Up/Down steps between them and Left/Right leaves to the content.
-              FocusTraversalGroup(
-                child: ValueListenableBuilder<bool?>(
-                  valueListenable: appModel.navRailExpandedNotifier,
-                  builder: (BuildContext context, bool? userExpanded, _) {
-                    // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
-                    // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
-                    // 抽屉）。玻璃设计系统恒按尺寸档。
-                    final bool extended = adaptiveNavRailExtended(
-                      context,
-                      sizeClass: sizeClass,
-                      userExpanded: userExpanded,
-                    );
-                    return adaptiveNavRail(
-                      context: context,
-                      currentIndex: visualIndex,
-                      onTap: selectVisual,
-                      items: displayItems,
-                      leading: const NavRailBrandButton(),
-                      extended: extended,
-                      onToggleExtended: () =>
-                          unawaited(appModel.setNavRailExpanded(!extended)),
-                    );
-                  },
+          child: isGlassDesign(context) && sizeClass == WindowSizeClass.expanded
+              ? _appleSidebarShell(
+                  tabs: tabs,
+                  reversed: reversed,
+                  displayItems: displayItems,
+                  visualIndex: visualIndex,
+                  selectVisual: selectVisual,
+                )
+              : Row(
+                  children: [
+                    // Each rail destination is its own gamepad/keyboard focus target,
+                    // so the app focus ring hugs the single selected item; D-pad
+                    // Up/Down steps between them and Left/Right leaves to the content.
+                    FocusTraversalGroup(
+                      child: ValueListenableBuilder<bool?>(
+                        valueListenable: appModel.navRailExpandedNotifier,
+                        builder: (BuildContext context, bool? userExpanded, _) {
+                          // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
+                          // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
+                          // 抽屉）。玻璃设计系统恒按尺寸档。
+                          final bool extended = adaptiveNavRailExtended(
+                            context,
+                            sizeClass: sizeClass,
+                            userExpanded: userExpanded,
+                          );
+                          return adaptiveNavRail(
+                            context: context,
+                            currentIndex: visualIndex,
+                            onTap: selectVisual,
+                            items: displayItems,
+                            leading: const NavRailBrandButton(),
+                            extended: extended,
+                            onToggleExtended: () => unawaited(
+                              appModel.setNavRailExpanded(!extended),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    Expanded(child: _homeContentPane()),
+                  ],
                 ),
-              ),
-              Expanded(
-                child: _GlassContentSurface(
-                  child: _withAppleScrollChrome(
-                    FocusTraversalGroup(child: _bodyWithMiniBar()),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
+      ),
+    );
+  }
+
+  /// 宽屏首页的内容区（rail / 侧栏右边那一块）。
+  Widget _homeContentPane() => _GlassContentSurface(
+    child: _withAppleScrollChrome(
+      FocusTraversalGroup(child: _bodyWithMiniBar()),
+    ),
+  );
+
+  /// Apple 设计系统宽窗口：侧栏 ↔ 顶部标签栏外壳（[AppleSidebarTabsShell]）。
+  /// 分组按模块性质：媒体库（首页 + 各库页 + 网页）/ 工具（浏览、查词、复习）/
+  /// 底部钉设置。收成标签栏 = 用户把 rail 记成「收起」（与 MD3 rail 的菜单钮
+  /// 同一个偏好，见 [adaptiveAppleTabBarMode]）。
+  Widget _appleSidebarShell({
+    required List<HomeTab> tabs,
+    required bool reversed,
+    required List<AdaptiveNavItem> displayItems,
+    required int visualIndex,
+    required ValueChanged<int> selectVisual,
+  }) {
+    const Set<HomeTab> tools = <HomeTab>{
+      HomeTab.browse,
+      HomeTab.dictionaries,
+      HomeTab.srs,
+    };
+    final List<int> library = <int>[];
+    final List<int> toolIndices = <int>[];
+    final List<int> footer = <int>[];
+    for (int i = 0; i < displayItems.length; i++) {
+      final HomeTab tab = homeTabForVisualIndex(
+        tabs: tabs,
+        visualIndex: i,
+        reversed: reversed,
+      );
+      if (tab == HomeTab.settings) {
+        footer.add(i);
+      } else if (tools.contains(tab)) {
+        toolIndices.add(i);
+      } else {
+        library.add(i);
+      }
+    }
+    return FocusTraversalGroup(
+      child: ValueListenableBuilder<bool?>(
+        valueListenable: appModel.navRailExpandedNotifier,
+        builder: (BuildContext context, bool? userExpanded, _) {
+          final bool tabBar = adaptiveAppleTabBarMode(
+            context,
+            sizeClass: WindowSizeClass.expanded,
+            userExpanded: userExpanded,
+          );
+          return AppleSidebarTabsShell(
+            items: displayItems,
+            currentIndex: visualIndex,
+            onTap: selectVisual,
+            leading: const NavRailBrandButton(),
+            sections: <AppleSidebarSection>[
+              AppleSidebarSection(
+                title: t.nav_section_library,
+                indices: library,
+              ),
+              if (toolIndices.isNotEmpty)
+                AppleSidebarSection(
+                  title: t.nav_section_tools,
+                  indices: toolIndices,
+                ),
+            ],
+            footer: footer,
+            tabBar: tabBar,
+            onToggle: () => unawaited(appModel.setNavRailExpanded(tabBar)),
+            child: _homeContentPane(),
+          );
+        },
       ),
     );
   }
@@ -3501,6 +3613,9 @@ class _HomePageState extends BasePageState<HomePage>
   Future<List<MediaServerEntry>> _loadMediaServerEntries() async {
     final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
     final List<MediaServerConfig> configs = await syncRepo.getMediaServers();
+    final MediaServerVideoLibrary library = MediaServerVideoLibrary(
+      database: appModelNoUpdate.database,
+    );
     return <MediaServerEntry>[
       for (final MediaServerConfig config in configs)
         MediaServerEntry(
@@ -3508,6 +3623,7 @@ class _HomePageState extends BasePageState<HomePage>
           accountName: config.accountName,
           routeUrls: config.routeUrls,
           onSwitchRoute: (String url) => _switchMediaServerRoute(config, url),
+          library: library,
         ),
     ];
   }

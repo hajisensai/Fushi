@@ -19,6 +19,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/reader/reader_settings_ia.dart';
@@ -92,6 +93,13 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onDeleteFavorite,
     this.onJumpToFavorite,
     this.onPlayFavorite,
+    this.bookmarks = const <Bookmark>[],
+    this.resolveBookmarkPage,
+    this.openBookmarks = false,
+    this.onAddBookmark,
+    this.onDeleteBookmark,
+    this.onJumpToBookmark,
+    this.bookmarkChapterLabel,
     this.showMediaNotification = true,
     this.onToggleMediaNotification,
     this.showFloatingLyric = false,
@@ -166,6 +174,28 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   final Future<void> Function(FavoriteSentence fav)? onDeleteFavorite;
   final Future<void> Function(FavoriteSentence fav)? onJumpToFavorite;
   final Future<void> Function(FavoriteSentence fav)? onPlayFavorite;
+
+  /// 本书书签（导航面板「收藏」页的「书签」段；面板内按创建时间倒序显示）。页面
+  /// 在整个面板会话里持有这份列表并在 [onAddBookmark] / [onDeleteBookmark] 里同步
+  /// 写回，面板按种类重建本组件时据此恢复最新状态。
+  final List<Bookmark> bookmarks;
+
+  /// 现取当前页的章内字符区间（判「当前页有没有书签」，见 [readerBookmarkOnPage]）；
+  /// 拿不到时回 null（不判，按钮为「添加」）。书签段第一次出现时取一次，点「添加 /
+  /// 移除」前再取一次——面板开着时有声书跟读 / 改排版都会挪页，不能用开面板时的快照。
+  final Future<ReaderBookmarkPageRange?> Function()? resolveBookmarkPage;
+
+  /// 打开即落在「收藏」页的「书签」段（工具栏「书签」按钮）。
+  final bool openBookmarks;
+
+  /// 在当前页加书签并落库，返回带 id 的书签；拿不到位置时 null。为 null（书没有
+  /// 稳定 uid）时整段书签不出现，「收藏」页只显示收藏句（旧形态）。
+  final Future<Bookmark?> Function()? onAddBookmark;
+  final Future<void> Function(Bookmark bookmark)? onDeleteBookmark;
+  final Future<void> Function(Bookmark bookmark)? onJumpToBookmark;
+
+  /// 书签行标题（章节名，按阅读器的目录反查）；null 时用书签存的 [Bookmark.label]。
+  final String Function(Bookmark bookmark)? bookmarkChapterLabel;
   final bool showMediaNotification;
   final VoidCallback? onToggleMediaNotification;
   final bool showFloatingLyric;
@@ -318,6 +348,94 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   late List<FavoriteSentence> _favorites =
       List<FavoriteSentence>.of(widget.favoriteSentences);
+
+  /// 书签段的本地镜像（新的在上）；加 / 删在面板里即时反映。
+  late List<Bookmark> _bookmarks = readerBookmarksNewestFirst(widget.bookmarks);
+
+  /// 本次面板会话里在当前页新加的书签：页区间快照拿不到（重锚在飞）时，它仍能让
+  /// 「添加 / 移除」按钮知道当前页已有书签。
+  Bookmark? _addedPageBookmark;
+
+  /// 加 / 删书签的异步写库期间禁用按钮，防连点加出两条。
+  bool _bookmarkBusy = false;
+
+  /// 最近一次现取的当前页区间（[ReaderQuickSettingsSheet.resolveBookmarkPage]）。
+  ReaderBookmarkPageRange? _bookmarkPageRange;
+
+  /// 书签段是否已发起过首次取页区间（只在书签段真正出现时取，开设置 / 有声书面板
+  /// 不多跑一次 JS 求值）。
+  bool _bookmarkPageRequested = false;
+
+  Future<ReaderBookmarkPageRange?> _refreshBookmarkPageRange() async {
+    final ReaderBookmarkPageRange? range = await widget.resolveBookmarkPage
+        ?.call();
+    if (mounted) setState(() => _bookmarkPageRange = range);
+    return range;
+  }
+
+  bool get _bookmarksEnabled => widget.onAddBookmark != null;
+
+  /// 「收藏」页当前分段。初值：工具栏「书签」键 → 书签；没有书签段 → 收藏句；没有
+  /// 书签但有收藏句 → 收藏句（老用户打开不扑空）；其余 → 书签（第一段）。
+  late _ReaderFavoritesSegment _favoritesSegment = !_bookmarksEnabled
+      ? _ReaderFavoritesSegment.favorites
+      : widget.openBookmarks
+      ? _ReaderFavoritesSegment.bookmarks
+      : (_bookmarks.isEmpty && _favorites.isNotEmpty)
+      ? _ReaderFavoritesSegment.favorites
+      : _ReaderFavoritesSegment.bookmarks;
+
+  /// 当前页上的书签（没有为 null）。
+  Bookmark? get _currentPageBookmark {
+    final Bookmark? added = _addedPageBookmark;
+    if (added != null && _bookmarks.contains(added)) return added;
+    return readerBookmarkOnPage(_bookmarks, _bookmarkPageRange);
+  }
+
+  Future<void> _toggleCurrentPageBookmark() async {
+    if (_bookmarkBusy) return;
+    setState(() => _bookmarkBusy = true);
+    try {
+      // 判定前现取页区间：显示的「添加 / 移除」可能是几秒前的页。
+      await _refreshBookmarkPageRange();
+      if (!mounted) return;
+      final Bookmark? existing = _currentPageBookmark;
+      if (existing != null) {
+        await widget.onDeleteBookmark?.call(existing);
+        if (!mounted) return;
+        setState(() {
+          _bookmarks = List<Bookmark>.of(_bookmarks)..remove(existing);
+          if (identical(_addedPageBookmark, existing)) {
+            _addedPageBookmark = null;
+          }
+        });
+        FushiToast.show(msg: t.reader_bookmark_removed);
+        return;
+      }
+      final Bookmark? added = await widget.onAddBookmark?.call();
+      if (!mounted || added == null) return;
+      setState(() {
+        _bookmarks = <Bookmark>[added, ..._bookmarks];
+        _addedPageBookmark = added;
+      });
+      FushiToast.show(
+        msg: t.reader_bookmark_added,
+        severity: ToastSeverity.success,
+      );
+    } finally {
+      if (mounted) setState(() => _bookmarkBusy = false);
+    }
+  }
+
+  Future<void> _deleteBookmark(Bookmark bookmark) async {
+    await widget.onDeleteBookmark?.call(bookmark);
+    if (!mounted) return;
+    setState(() {
+      _bookmarks = List<Bookmark>.of(_bookmarks)..remove(bookmark);
+      if (identical(_addedPageBookmark, bookmark)) _addedPageBookmark = null;
+    });
+    FushiToast.show(msg: t.reader_bookmark_removed);
+  }
 
   /// 2026-10 体验优化：收藏句删除改为「先标记 + 撤销窗口」，窗口到期（或面板
   /// 关闭）才真正调 [ReaderQuickSettingsSheet.onDeleteFavorite] 落库；此前
@@ -544,7 +662,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final TabController? existing = _navTabController;
     if (existing != null) return existing;
     // Ctrl+F（autofocusSearch）直达搜索页；其余落目录（没有目录时落第一页）。
-    final int initial = widget.autofocusSearch
+    // 工具栏「书签」键直达「收藏」页（分段初值见 [_favoritesSegment]）。
+    final int initial = widget.openBookmarks
+        ? _navTabs.indexOf(_ReaderNavTab.favorites)
+        : widget.autofocusSearch
         ? _navTabs.indexOf(_ReaderNavTab.search)
         : 0;
     return _navTabController = TabController(
@@ -557,9 +678,10 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   String _navTabLabel(_ReaderNavTab tab) => switch (tab) {
         _ReaderNavTab.contents => t.reader_nav_tab_contents,
-        _ReaderNavTab.favorites => _favorites.isEmpty
+        // 计数 = 书签 + 收藏句（两段同在这一页）。
+        _ReaderNavTab.favorites => _favoritesTabCount == 0
             ? t.reader_nav_tab_favorites
-            : '${t.reader_nav_tab_favorites} ${_favorites.length}',
+            : '${t.reader_nav_tab_favorites} $_favoritesTabCount',
         _ReaderNavTab.search => t.reader_nav_tab_search,
       };
 
@@ -666,15 +788,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                   _ReaderNavTab.contents =>
                     page(tab, _buildTocSection(context, theme)),
                   _ReaderNavTab.favorites => page(
-                      tab,
-                      _favorites.isEmpty
-                          ? _buildNavEmptyState(
-                              theme,
-                              icon: FushiIcons.star,
-                              message: t.reader_nav_favorites_empty,
-                            )
-                          : _buildFavoritesSection(context, theme),
-                    ),
+                    tab,
+                    _buildFavoritesTabPage(context, theme),
+                  ),
                   _ReaderNavTab.search => page(tab, _buildNavSearchPage(theme)),
                 },
             ],
@@ -682,6 +798,163 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         );
       },
     );
+  }
+
+  int get _favoritesTabCount =>
+      _favorites.length + (_bookmarksEnabled ? _bookmarks.length : 0);
+
+  /// 「收藏」页：顶部全宽分段「书签 | 收藏句子」，下面按分段显示各自的列表 / 空态；
+  /// 切分段交叉淡入（时长走 [fushiMotionDuration]，墨水屏 / 减弱动态效果归零）。
+  /// 没有书签段（书没有稳定 uid）时与旧形态一致：只有收藏句。
+  Widget _buildFavoritesTabPage(BuildContext context, ThemeData theme) {
+    if (!_bookmarksEnabled) return _buildFavoriteSentencesBody(context, theme);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(
+          key: const ValueKey<String>('fushi_nav_favorites_segments'),
+          width: double.infinity,
+          child: adaptiveSegmentedButton<_ReaderFavoritesSegment>(
+            context: context,
+            segments: <ButtonSegment<_ReaderFavoritesSegment>>[
+              ButtonSegment<_ReaderFavoritesSegment>(
+                value: _ReaderFavoritesSegment.bookmarks,
+                label: Text(t.reader_nav_segment_bookmarks),
+              ),
+              ButtonSegment<_ReaderFavoritesSegment>(
+                value: _ReaderFavoritesSegment.favorites,
+                label: Text(t.reader_nav_segment_favorites),
+              ),
+            ],
+            selected: <_ReaderFavoritesSegment>{_favoritesSegment},
+            onSelectionChanged: (Set<_ReaderFavoritesSegment> v) {
+              if (v.isEmpty) return;
+              setState(() => _favoritesSegment = v.first);
+            },
+          ),
+        ),
+        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+        AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          switchInCurve: FushiMotion.enter,
+          switchOutCurve: FushiMotion.exit,
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            alignment: Alignment.topCenter,
+            children: <Widget>[...previous, if (current != null) current],
+          ),
+          child: KeyedSubtree(
+            key: ValueKey<_ReaderFavoritesSegment>(_favoritesSegment),
+            child: FushiEntranceScope(
+              child: switch (_favoritesSegment) {
+                _ReaderFavoritesSegment.bookmarks => _buildBookmarksBody(
+                  context,
+                  theme,
+                ),
+                _ReaderFavoritesSegment.favorites =>
+                  _buildFavoriteSentencesBody(context, theme),
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 收藏句分段：列表或空态（旧「收藏」页的全部内容）。
+  Widget _buildFavoriteSentencesBody(BuildContext context, ThemeData theme) {
+    if (_favorites.isEmpty) {
+      return _buildNavEmptyState(
+        theme,
+        icon: FushiIcons.star,
+        message: t.reader_nav_favorites_empty,
+      );
+    }
+    return _buildFavoritesSection(context, theme);
+  }
+
+  /// 书签分段：顶部「添加 / 移除书签」（按当前页有没有书签切换）+ 书签列表（新的在
+  /// 上，错峰进场）或空态。
+  Widget _buildBookmarksBody(BuildContext context, ThemeData theme) {
+    if (!_bookmarkPageRequested) {
+      _bookmarkPageRequested = true;
+      unawaited(Future<void>.microtask(_refreshBookmarkPageRange));
+    }
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool onPage = _currentPageBookmark != null;
+    final DateFormat fmt = DateFormat('MM/dd HH:mm');
+    final Widget toggle = FushiFilledButton.tonalIcon(
+      key: const ValueKey<String>('fushi_nav_bookmark_toggle'),
+      onPressed: _bookmarkBusy
+          ? null
+          : () => unawaited(_toggleCurrentPageBookmark()),
+      icon: FushiIcon(
+        onPage
+            ? FushiIcons.filled(FushiIcons.bookmark)
+            : FushiIcons.bookmarkAdd,
+        size: 18,
+      ),
+      label: Text(onPage ? t.reader_bookmark_remove : t.reader_bookmark_add),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiStaggeredEntrance(index: 0, child: toggle),
+        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+        if (_bookmarks.isEmpty)
+          FushiStaggeredEntrance(
+            index: 1,
+            child: _buildNavEmptyState(
+              theme,
+              icon: FushiIcons.bookmarks,
+              message: t.reader_bookmarks_empty,
+            ),
+          )
+        else
+          for (final (int i, Bookmark bookmark) in _bookmarks.indexed)
+            Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: FushiStaggeredEntrance(
+                index: i + 1,
+                child: _InBookBookmarkRow(
+                  key: ValueKey<String>(
+                    'in_book_bookmark_${bookmark.id ?? bookmark.createdAt.millisecondsSinceEpoch}',
+                  ),
+                  title: _bookmarkTitle(bookmark),
+                  meta: _bookmarkMetaLabel(bookmark, fmt),
+                  onJump: widget.onJumpToBookmark == null
+                      ? null
+                      : () async {
+                          Navigator.of(context).pop();
+                          await widget.onJumpToBookmark?.call(bookmark);
+                        },
+                  onDelete: () => unawaited(_deleteBookmark(bookmark)),
+                ),
+              ),
+            ),
+      ],
+    );
+  }
+
+  String _bookmarkTitle(Bookmark bookmark) {
+    final String? resolved = widget.bookmarkChapterLabel?.call(bookmark);
+    if (resolved != null && resolved.isNotEmpty) return resolved;
+    return bookmark.label.isEmpty ? t.untitled_chapter : bookmark.label;
+  }
+
+  /// 书签行副标题：「第 N/M 页 · 时间」（连续模式没有页码，只报时间）。
+  String _bookmarkMetaLabel(Bookmark bookmark, DateFormat fmt) {
+    final int? page = bookmark.pageInChapter;
+    final int? total = bookmark.totalPagesInChapter;
+    return <String>[
+      if (page != null)
+        t.reader_bookmark_page_label(
+          page: total != null && total > 0 ? '$page/$total' : '$page',
+        ),
+      fmt.format(bookmark.createdAt),
+    ].join(' · ');
   }
 
   /// 搜索页：书内搜索（结果带上下文）+ 按字数跳转；还没搜过时给一句用法提示。
@@ -2949,6 +3222,41 @@ class _InBookFavoriteRow extends StatelessWidget {
   }
 }
 
+/// 书签行：引文卡（正文 = 章节名，元信息 = 页码 · 时间）；整卡点击跳转，右下删除。
+class _InBookBookmarkRow extends StatelessWidget {
+  const _InBookBookmarkRow({
+    required this.title,
+    required this.meta,
+    required this.onDelete,
+    this.onJump,
+    super.key,
+  });
+
+  final String title;
+  final String meta;
+  final VoidCallback? onJump;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return ReaderQuoteCard(
+      quote: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+      meta: meta,
+      onTap: onJump,
+      focusIdPrefix: 'reader-bookmark',
+      actions: <Widget>[
+        _InBookIconButton(
+          materialIcon: FushiIcons.delete,
+          cupertinoIcon: CupertinoIcons.delete,
+          tooltip: t.reader_bookmark_delete,
+          destructive: true,
+          onPressed: onDelete,
+        ),
+      ],
+    );
+  }
+}
+
 /// 2026-10 体验优化：收藏句删除后的撤销窗口行——原文划线 + 「撤销」按钮。
 class _InBookFavoriteUndoRow extends StatelessWidget {
   const _InBookFavoriteUndoRow({
@@ -3169,3 +3477,6 @@ class AudiobookVolumeRow extends StatelessWidget {
 
 /// 导航侧板的分页（目录 / 收藏 / 搜索）。
 enum _ReaderNavTab { contents, favorites, search }
+
+/// 导航面板「收藏」页的分段：书签 / 收藏句子。
+enum _ReaderFavoritesSegment { bookmarks, favorites }

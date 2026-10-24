@@ -261,8 +261,8 @@ class _TransportGroup extends StatelessWidget {
   final bool isPlaying;
   final LyricsPlayerCallbacks callbacks;
   final double playSize;
-  final FushiIconButtonSize sideSize;
-  final FushiIconButtonWidth sideWidth;
+  final ButtonSizeVariant sideSize;
+  final IconButtonWidthVariant sideWidth;
   final double spacing;
 
   /// false = ±10 秒不在这一行（窄屏放不下时挪到进度条两侧，见
@@ -342,6 +342,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
         mirror: mirrorProgress,
       );
       final VoidCallback? onSwap = callbacks.onSwapSides;
+      final VoidCallback? onExitBook = callbacks.onExitBook;
       return Stack(
         clipBehavior: Clip.none,
         children: <Widget>[
@@ -349,13 +350,24 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             rect: geometry.panel,
             child: _WidePanel(data: data, callbacks: callbacks),
           ),
-          // 底板右上角：左右互换 + 关闭（M3E 按钮组，tonal 同一档）。
+          // 底板右上角：书籍模式 + 左右互换 + 关闭（M3E 按钮组，tonal 同一档）。
+          // 有 [LyricsPlayerCallbacks.onExitBook] 时 × 直接退书回书架，回正文
+          // 交给前面的「书籍模式」键（反馈 QvYpZODImz）。
           Positioned(
             top: geometry.plate.top + 12,
             right: size.width - geometry.plate.right + 12,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                if (onExitBook != null) ...<Widget>[
+                  FushiIconButtonControl.filledTonal(
+                    key: const ValueKey<String>('lyrics_return_to_book_button'),
+                    tooltip: t.book_mode,
+                    onPressed: callbacks.onClose,
+                    icon: const FushiIcon(FushiIcons.readingMode),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 if (onSwap != null) ...<Widget>[
                   FushiIconButtonControl.filledTonal(
                     key: const ValueKey<String>('lyrics_swap_sides_button'),
@@ -366,8 +378,11 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
                   const SizedBox(width: 8),
                 ],
                 FushiIconButtonControl.filledTonal(
-                  tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  onPressed: callbacks.onClose,
+                  key: const ValueKey<String>('lyrics_close_button'),
+                  tooltip: onExitBook != null
+                      ? t.lyrics_exit_to_library
+                      : MaterialLocalizations.of(context).closeButtonTooltip,
+                  onPressed: onExitBook ?? callbacks.onClose,
                   icon: const FushiIcon(FushiIcons.close),
                 ),
               ],
@@ -477,8 +492,8 @@ class _WidePanel extends StatelessWidget {
                     isPlaying: data.isPlaying,
                     callbacks: callbacks,
                     playSize: 68,
-                    sideSize: FushiIconButtonSize.s,
-                    sideWidth: FushiIconButtonWidth.standard,
+                    sideSize: ButtonSizeVariant.small,
+                    sideWidth: IconButtonWidthVariant.standard,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -504,25 +519,29 @@ class _WidePanel extends StatelessWidget {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: _gap),
                     child: _SpringEntrance(
-                      child: Center(
-                        // 播放走过书中插图时封面位换成插图（见
-                        // lyrics_illustration_view）。
-                        child: LyricsIllustrationArtworkSlot(
-                          controller: data.illustrations,
-                          side: width,
-                          height: height,
-                          borderRadius: _kLargeBorderRadius,
-                          onOpen: callbacks.onOpenIllustration == null
-                              ? null
-                              : (int index) => callbacks.onOpenIllustration!(
-                                  index,
-                                  returnToCover: false,
-                                ),
-                          cover: _CoverTile(
-                            cover: data.cover,
-                            width: width,
+                      // 封面（带大投影）自成一层：控件层别处重画时不连带它
+                      // 重新栅格化。
+                      child: RepaintBoundary(
+                        child: Center(
+                          // 播放走过书中插图时封面位换成插图（见
+                          // lyrics_illustration_view）。
+                          child: LyricsIllustrationArtworkSlot(
+                            controller: data.illustrations,
+                            side: width,
                             height: height,
-                            isPlaying: data.isPlaying,
+                            borderRadius: _kLargeBorderRadius,
+                            onOpen: callbacks.onOpenIllustration == null
+                                ? null
+                                : (int index) => callbacks.onOpenIllustration!(
+                                    index,
+                                    returnToCover: false,
+                                  ),
+                            cover: _CoverTile(
+                              cover: data.cover,
+                              width: width,
+                              height: height,
+                              isPlaying: data.isPlaying,
+                            ),
                           ),
                         ),
                       ),
@@ -976,8 +995,10 @@ class _StatsBuilderState extends State<_StatsBuilder> {
     super.dispose();
   }
 
+  // 自带重绘边界：读数每秒一变只重录这一小块，不连带播放卡投影与封面。
   @override
-  Widget build(BuildContext context) => widget.builder(context, _stats);
+  Widget build(BuildContext context) =>
+      RepaintBoundary(child: widget.builder(context, _stats));
 }
 
 /// 宽屏读数：tonal 标签一行（阅读速度 / 全书进度 / 会话时长）。
@@ -1320,6 +1341,14 @@ class _NarrowTopBar extends StatelessWidget {
                 onPressed: callbacks.onOpenStatistics,
                 icon: const FushiIcon(FushiIcons.statistics),
               ),
+              // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
+              if (callbacks.onExitBook != null)
+                FushiIconButtonControl(
+                  key: const ValueKey<String>('lyrics_close_button'),
+                  tooltip: t.lyrics_exit_to_library,
+                  onPressed: callbacks.onExitBook!,
+                  icon: const FushiIcon(FushiIcons.close),
+                ),
             ],
           ),
         ),
@@ -1504,8 +1533,8 @@ class _NarrowControlBar extends StatelessWidget {
                   playSize: transport.playSize,
                   spacing: transport.spacing,
                   showRelativeSeek: transport.inlineSeek,
-                  sideSize: FushiIconButtonSize.m,
-                  sideWidth: FushiIconButtonWidth.narrow,
+                  sideSize: ButtonSizeVariant.medium,
+                  sideWidth: IconButtonWidthVariant.narrow,
                 ),
               ),
             ),

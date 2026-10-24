@@ -11,10 +11,14 @@ class CountingInterceptor extends QueryInterceptor {
   /// SELECT 读回的总行数。
   int rowsRead = 0;
 
+  /// 单条 SELECT 读回的最多行数（一次物化了多少行到调用方 isolate）。
+  int maxRowsPerSelect = 0;
+
   void reset() {
     counts.clear();
     micros.clear();
     rowsRead = 0;
+    maxRowsPerSelect = 0;
     transactions = 0;
   }
 
@@ -50,6 +54,7 @@ class CountingInterceptor extends QueryInterceptor {
       args,
     );
     rowsRead += rows.length;
+    if (rows.length > maxRowsPerSelect) maxRowsPerSelect = rows.length;
     return rows;
   });
 

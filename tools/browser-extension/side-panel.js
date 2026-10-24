@@ -756,6 +756,27 @@
           return status && typeof status === 'object' ? status : null;
         });
       }
+      if (name === 'srsTermStatusBatch') {
+        // 批量版（与 bridge-shim 同契约）：退避期回等长全 null；失败 / 老 app 回 null →
+        // popup.js 退回逐条。
+        var srsTerms = args[0] && Array.isArray(args[0].terms) ? args[0].terms : null;
+        if (!srsTerms) return Promise.resolve(null);
+        if (Date.now() < srsDisabledUntil) {
+          return Promise.resolve({ statuses: srsTerms.map(function () { return null; }) });
+        }
+        return sendRuntime({
+          type: 'srsTermStatusBatch',
+          terms: srsTerms.map(function (t) {
+            return { expression: (t && t.expression) || '', reading: (t && t.reading) || '' };
+          }),
+        }).then(function (response) {
+          var statuses = response && response.ok && response.data ? response.data.statuses : null;
+          if (!Array.isArray(statuses) || statuses.length !== srsTerms.length) return null;
+          return {
+            statuses: statuses.map(function (s) { return s && typeof s === 'object' ? s : null; }),
+          };
+        });
+      }
       if (name === 'srsOpenCard') {
         var srsOpen = args[0] || {};
         return sendRuntime({

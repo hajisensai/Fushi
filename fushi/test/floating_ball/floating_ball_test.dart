@@ -704,6 +704,45 @@ void main() {
       expect(registry.current.actions, isEmpty);
     });
 
+    testWidgets('场景带上页面此刻的主题，页面换主题（歌词模式封面取色）时跟着变', (WidgetTester tester) async {
+      final FloatingBallSceneRegistry registry =
+          FloatingBallSceneRegistry.instance;
+      final ThemeData root = ThemeData(colorSchemeSeed: Colors.purple);
+      final ThemeData cover = ThemeData(colorSchemeSeed: Colors.brown);
+      Widget app(ThemeData? pageTheme) => MaterialApp(
+        theme: root,
+        home: Builder(
+          builder: (BuildContext context) {
+            final Widget scene = FloatingBallScene(
+              scope: FloatingBallScope.reader,
+              actions: <String, ReaderHeaderAction>{'a': _action('a')},
+            );
+            return pageTheme == null
+                ? Theme(data: Theme.of(context), child: scene)
+                : Theme(data: pageTheme, child: scene);
+          },
+        ),
+      );
+
+      await tester.pumpWidget(app(null));
+      await tester.pump();
+      expect(
+        registry.current.theme?.colorScheme.primary,
+        root.colorScheme.primary,
+      );
+
+      await tester.pumpWidget(app(cover));
+      await tester.pump();
+      expect(
+        registry.current.theme?.colorScheme.primary,
+        cover.colorScheme.primary,
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(registry.current.theme, isNull);
+    });
+
     test('sameFloatingBallActions 只比外观不比闭包', () {
       expect(
         sameFloatingBallActions(

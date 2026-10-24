@@ -15,6 +15,8 @@ import '../ankiconnect/ankiconnect_repository.dart';
 import '../lapis_note_type.dart';
 
 class AnkiRepository extends BaseAnkiRepository {
+  AnkiRepository({super.settingsStore});
+
   static const _channel = MethodChannel('app.fushi.reader/anki');
   static const _legacyDeckKey = 'last_selected_deck';
 
@@ -75,13 +77,13 @@ class AnkiRepository extends BaseAnkiRepository {
 
   @override
   Future<AnkiSettings> loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    // 原始串必须经基类 readSettingsJson 取（W2-7 键搬移 + W2-2 别名改写的唯一
-    // 通道）；直接 prefs.getString 会绕过两个载入期迁移。
-    final String? raw = await readSettingsJson(prefs);
+    // 原始串必须经基类 readSettingsJson 取（载入期迁移的唯一通道）；直接读存储
+    // 会绕过它们。
+    final AnkiSettingsStore store = settingsStore;
+    final String? raw = await readSettingsJson(store);
     if (raw == null) {
-      await _migrateFromLegacy(prefs);
-      final migrated = prefs.getString(BaseAnkiRepository.settingsKey);
+      await _migrateFromLegacy(store);
+      final migrated = await store.read();
       if (migrated != null) {
         try {
           return AnkiSettings.fromJson(
@@ -323,7 +325,7 @@ class AnkiRepository extends BaseAnkiRepository {
     // user's configured tags via the shared base helper — same behavior as the
     // AnkiConnect backend.
     final tags = buildNoteTags(
-      settings.tags,
+      settings.noteTags,
       source: context.source,
       includeHibiki: settings.tagIncludeHibiki,
       includeCategory: settings.tagIncludeCategory,
@@ -528,7 +530,7 @@ class AnkiRepository extends BaseAnkiRepository {
 
       // BUG-2606：与 [mineEntry] 同一组标签、同一个 helper。
       final List<String> tags = buildNoteTags(
-        settings.tags,
+        settings.noteTags,
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
@@ -1144,14 +1146,14 @@ class AnkiRepository extends BaseAnkiRepository {
     return -1;
   }
 
-  Future<void> _migrateFromLegacy(SharedPreferences prefs) async {
+  /// 更早的「只存牌组名」旧键（SharedPreferences）：设置存储里一份都没有时，用它
+  /// 种一份初始设置写进 [store]。只读 SP、不改 SP。
+  Future<void> _migrateFromLegacy(AnkiSettingsStore store) async {
+    final prefs = await SharedPreferences.getInstance();
     final legacyDeck = prefs.getString(_legacyDeckKey);
     if (legacyDeck != null && legacyDeck != 'Default') {
       final settings = AnkiSettings(selectedDeckName: legacyDeck);
-      await prefs.setString(
-        BaseAnkiRepository.settingsKey,
-        jsonEncode(settings.toJson()),
-      );
+      await store.write(jsonEncode(settings.toJson()));
     }
   }
 }

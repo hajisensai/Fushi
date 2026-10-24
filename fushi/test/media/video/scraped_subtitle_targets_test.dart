@@ -131,6 +131,18 @@ void main() {
           isTrue);
     });
 
+    test('单文件电影不带集号：「Doraemon Movie 25」的 25 是系列序号', () {
+      final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
+        members: <VideoBookRow>[
+          _book('m25', '/v/[Fabre-RAW] Doraemon Movie 25 (2004) [1080p].mkv'),
+        ],
+        metadata: _work(kind: VideoMetadataMediaKind.movie),
+        hasExistingSubtitle: (_) => false,
+      );
+      expect(targets.single.media.episode, isNull);
+      expect(targets.single.media.season, isNull);
+    });
+
     test('用户对本作品明确选过的字幕语言原样盖到每个目标', () {
       final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
         members: <VideoBookRow>[

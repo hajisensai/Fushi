@@ -78,6 +78,16 @@ void main() {
     expect(kGitHubSponsorsUrl, 'https://github.com/sponsors/hajisensai');
   });
 
+  test('system.ko_fi opens the Ko-fi page, not GitHub Sponsors', () async {
+    final SettingsActionItem koFi = actionItem('system.ko_fi');
+    expect(koFi.title, t.options_ko_fi);
+
+    await koFi.onTap(_StubSettingsContext());
+
+    expect(launchedUrls, <String>[kKoFiUrl]);
+    expect(kKoFiUrl, 'https://ko-fi.com/hajisensai');
+  });
+
   test('openOfficialDownloadPage 落在下载页，而不是首页', () async {
     expect(await openOfficialDownloadPage(), isTrue);
 

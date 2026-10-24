@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/popup_mining_target_overrides.dart';
 
 /// app 外查词窗（PopupDictionaryPage）查一个没词条的词，「未找到」叠成两份：
 /// 基础层传 `overrideFillColor: Colors.transparent`（整卡由外层 surface 画），
@@ -64,7 +65,10 @@ class _EmptyResultAppModel extends AppModel {
 
 Widget _buildApp(AppModel appModel) {
   return ProviderScope(
-    overrides: [appProvider.overrideWith((ref) => appModel)],
+    overrides: [
+      appProvider.overrideWith((ref) => appModel),
+      ...popupMiningTargetTestOverrides(),
+    ],
     child: TranslationProvider(
       child: MaterialApp(
         navigatorKey: appModel.navigatorKey,

@@ -31,7 +31,10 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
+    show OverlayMiningHandler, screenOcrOverlayMiningHandler;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -127,6 +130,10 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   // 截屏确认框的宿主 Activity 被系统静默拦下（vivo「后台弹出界面」等）时的提示
   // （BUG-3603，原生 ScreenCaptureRequestActivity.LABEL_LAUNCH_BLOCKED）。
   'ocr_launch_blocked': t.floating_ball_ocr_launch_blocked,
+  // 保持截屏会话时的常驻通知（原生 ScreenOcrService.LABEL_SESSION_*）。
+  'ocr_session_notification': t.screen_ocr_session_notification,
+  'ocr_session_hint': t.screen_ocr_session_hint,
+  'ocr_session_stop': t.screen_ocr_session_stop,
 };
 
 /// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
@@ -243,11 +250,13 @@ class DesktopSystemBallActionTarget {
     String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
+    OverlayMiningHandler? miningHandler,
   }) => GlobalLookupController.instance.lookupText(
     text,
     sentence: sentence,
     anchorScreenRect: anchorScreenRect,
     physicalPlacement: physicalPlacement,
+    miningHandler: miningHandler,
   );
 
   /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
@@ -438,6 +447,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ),
       );
     }
+    // 「截屏识字」全局快捷键（反馈 vTpcneuvAm）与应用外球的同名按钮共用这条桌面
+    // 截屏 OCR：没有球可锚，截光标所在的显示器（原生 anchor 为空时的约定）。
+    if (isDesktopSystemBallPlatform) {
+      GlobalLookupController.instance.screenOcrHandler = _screenOcrFromHotKey;
+    }
     // 处理器（同步装上）先于首次查询：查询在路上时原生若推来新方向，两条消息
     // 按发出顺序到达，不会被后到的旧值盖掉，也不会因为还没处理器而丢。
     if (floatingBallSensorHousingEdgeSupported) {
@@ -458,6 +472,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     feedbackWindowCaptureActive.removeListener(_onChanged);
     appLogoFollowsAccent.removeListener(_onLogoTintChanged);
     _prefs?.removeListener(_onPrefsChanged);
+    final GlobalLookupController lookup = GlobalLookupController.instance;
+    if (lookup.screenOcrHandler == _screenOcrFromHotKey) {
+      lookup.screenOcrHandler = null;
+    }
     // 还在路上的起球闭包作废。
     _systemGeneration++;
     super.dispose();
@@ -474,6 +492,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   void _onPrefsChanged() {
     _settleClosedBalls();
     _syncSystemBall();
+    _pushScreenOcrOptions();
     // 「应用内显示」开关一变，应用外球让不让位跟着变。
     _pushSystemBallYield();
     if (mounted) setState(() {});
@@ -583,14 +602,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, int> colors = _systemBallColors;
     final bool animate = _systemBallAnimate;
     final bool showLabels = prefs.floatingBallShowLabels;
-    final bool tapClipboard = prefs.floatingBallTapClipboard;
+    final bool showOpenApp = prefs.floatingBallSystemOpenApp;
+    final String tapAction = prefs.floatingBallTapAction.storageValue;
     final bool tintMascot = appLogoFollowsAccent.value;
-    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 点球查剪贴板都进签名：切换
-    // 界面语言、主题、换色开关，或这些偏好切换（配色可能完全没变）后原生球也要换。
+    // 文案 / 配色 / 吉祥物换色开关 / 动效 / 文字开关 / 「打开 Fushi」开关 / 点球动作
+    // 都进签名：切换界面语言、主题、换色开关，或这些偏好切换（配色可能完全没变）后
+    // 原生球也要换。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
         '${colors.values.join(',')}|$tintMascot|$animate|$showLabels|'
-        '$tapClipboard';
+        '$showOpenApp|$tapAction';
     // 与「在途目标」比（没有在途请求时才是稳态签名）：A→B→A 时最后的 A 与在途
     // 的 B 不同，必须开新一代取代 B；在途期间同签名的重复同步则直接跳过。
     if (!force && signature == (_systemInFlightSignature ?? _systemSignature)) {
@@ -679,7 +700,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         colors: colors,
         animate: animate,
         showLabels: showLabels,
-        tapClipboard: tapClipboard,
+        showOpenApp: showOpenApp,
+        tapAction: tapAction,
         ocrLanguage: kFloatingBallOcrLanguage,
         iconImages: iconImages,
         ballImage: ballImage,
@@ -718,12 +740,26 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 应用外球此刻该不该给应用内球让位（见 [floatingBallSystemBallYieldsToInApp]）。
   bool _systemBallYields() => floatingBallSystemBallYieldsToInApp(
-    inAppBallEnabled: _prefs?.floatingBallInApp ?? true,
+    inAppBallEnabled:
+        (_prefs?.floatingBallInApp ?? true) && _inAppBallHasButtons,
     lifecycle: _lifecycle,
     mobileForeground: _foreground,
     desktop: isDesktopSystemBallPlatform,
     inPictureInPicture: _inPictureInPicture,
   );
+
+  /// 当前场景按用户勾选还剩不剩按钮（与开关、可用性一起算；临时隐藏不算）。
+  /// 一颗都没有 = 本场景不要应用内球，应用外球不让位（BUG-3687）。
+  bool _inAppBallHasButtons = true;
+
+  /// build 里记下本场景有没有按钮；变了等这一帧结束再重新下发让位值。
+  void _noteInAppBallHasButtons(bool hasButtons) {
+    if (hasButtons == _inAppBallHasButtons) return;
+    _inAppBallHasButtons = hasButtons;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pushSystemBallYield();
+    });
+  }
 
   /// 原生球在跑、让位值变了才下发（线协议沿用 `setAppForeground`，值的含义是
   /// 「让位」）。原生球没起时不发：起球前会先下发一次。
@@ -771,6 +807,32 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _prefs = prefs;
     prefs.addListener(_onPrefsChanged);
     _syncSystemBall(force: true);
+    _sentScreenOcrOptions = null;
+    _pushScreenOcrOptions();
+  }
+
+  /// 上一次下发给 Android 原生的截屏识字选项（保持截屏会话 / 制卡带图）。
+  ({bool keepSession, bool cardImage})? _sentScreenOcrOptions;
+
+  /// Android：截屏识字的两个选项由原生在截屏服务里直接读（应用外截屏识字时主引擎
+  /// 不一定在），值变了就下发。关掉「保持」时原生立刻停掉常驻会话，关掉「带图」时
+  /// 清掉缓存里的定格帧。
+  void _pushScreenOcrOptions() {
+    if (!Platform.isAndroid) return;
+    final PreferencesRepository? prefs = _prefs;
+    if (prefs == null) return;
+    final ({bool keepSession, bool cardImage}) options = (
+      keepSession: prefs.screenOcrKeepCaptureSession,
+      cardImage: prefs.screenOcrCardImage,
+    );
+    if (options == _sentScreenOcrOptions) return;
+    _sentScreenOcrOptions = options;
+    unawaited(
+      FloatingBallChannel.setScreenOcrOptions(
+        keepSession: options.keepSession,
+        cardImage: options.cardImage,
+      ),
+    );
   }
 
   /// 桌面系统球上点了某个动作（原生只画与报事件，动作都在这里执行）。[anchor] 是
@@ -832,6 +894,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     }
   }
 
+  /// 全局快捷键「截屏识字」（`ShortcutAction.globalExternalScreenOcr`）：没有球可锚，
+  /// 原生按约定截光标所在的显示器。
+  Future<void> _screenOcrFromHotKey() async {
+    if (!mounted) return;
+    await _desktopScreenOcr(null);
+  }
+
   /// 桌面应用外球的截屏识字：原生截球所在的显示器并盖上冻结层 → 系统 OCR →
   /// 原生画行框 → 点字（[_onDesktopScreenOcrTap]）用全局查词卡查。按钮只在查词
   /// 模块开着时下发（结果要用覆盖窗，见 [FloatingBallGlobalAction.availableIn]）。
@@ -886,7 +955,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       );
       return;
     }
-    final _DesktopScreenOcrSession session = _DesktopScreenOcrSession(screen);
+    final _DesktopScreenOcrSession session = _DesktopScreenOcrSession(
+      screen,
+      png,
+    );
     _desktopOcr = session;
     String? message;
     List<SystemOcrTextLine> lines = const <SystemOcrTextLine>[];
@@ -937,6 +1009,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         sentence: text,
         physicalPlacement: GlobalLookupPhysicalPlacement(
           anchorScreenRect: hit.charRect.shift(session.screen.topLeft),
+        ),
+        // 反馈 Gz7z6Y6Mbr：制卡带上截图里所点文字所在的文本块。
+        miningHandler: screenOcrOverlayMiningHandler(
+          model: ref.read(appProvider),
+          cardImage: screenOcrCardImageForHit(
+            bytes: session.png,
+            lines: lines,
+            hit: hit.line,
+          ),
+          sentenceContext: text,
         ),
       ),
     );
@@ -1323,14 +1405,6 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       _dismissed = false;
       _dismissedOwner = null;
     }
-    if (!prefs.floatingBallInApp ||
-        scene.hidesBall ||
-        _capturing ||
-        // 反馈截图走原生窗口快照（含 WebView）时球会被一起拍进去，先藏。
-        feedbackWindowCaptureActive.value ||
-        _dismissed) {
-      return const SizedBox.shrink();
-    }
     final List<ReaderHeaderAction> buttons = <ReaderHeaderAction>[
       for (final String id in scene.pinnedIds)
         if (scene.actions[id] case final ReaderHeaderAction action) action,
@@ -1340,8 +1414,20 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           .map((String id) => _resolveButton(id, scene))
           .nonNulls,
     ];
-    // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。
-    if (buttons.isEmpty) return const SizedBox.shrink();
+    // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。这与关掉「应用内显示」
+    // 同义：应用外球不能再让位，否则这一场景里一颗球都没有（BUG-3687，反馈
+    // C-Bm1TZ388「应用外显示、应用内不显示」）。临时不画（场景隐藏 / 关闭 / 截屏中）
+    // 不影响这个判断，照样让位。
+    _noteInAppBallHasButtons(buttons.isNotEmpty);
+    if (!prefs.floatingBallInApp ||
+        scene.hidesBall ||
+        _capturing ||
+        // 反馈截图走原生窗口快照（含 WebView）时球会被一起拍进去，先藏。
+        feedbackWindowCaptureActive.value ||
+        _dismissed ||
+        buttons.isEmpty) {
+      return const SizedBox.shrink();
+    }
     // 「关闭悬浮球」排最上（离球最远，防误触）；按钮在下、末颗紧贴球。接管中的
     // 页面没有关闭键，固定按钮占最上面那几格。
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
@@ -1357,24 +1443,36 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // ReaderFloatingBall 返回 Positioned，必须是 Stack 的直接子节点。本宿主挂在
     // 导航之上，没有 Overlay 祖先，球与按钮的 Tooltip 要自带一层；Stack 只在
     // 球 / 按钮上命中，空白处照常穿透到底下页面。
-    return Overlay.wrap(
-      child: Stack(
-        children: <Widget>[
-          ReaderFloatingBall(
-            key: const ValueKey<String>('fushi_app_floating_ball'),
-            viewport: viewport,
-            actions: actions,
-            dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
-            verticalFraction: prefs.floatingBallVerticalFraction,
-            animate: !appModel.einkMode,
-            showLabels: prefs.floatingBallShowLabels,
-            onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
-              unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
-            },
-          ),
-        ],
+    // 球按页面此刻的主题画（歌词模式的封面取色等），而不是导航之上的根主题。
+    final ThemeData? sceneTheme = scene.theme;
+    final Widget ball = Overlay.wrap(
+      // 指针停在球 / 按钮上（[appFloatingBallPointerInside]）。deferToChild：Stack 只在
+      // 球与按钮上命中，空白处既不进入也不挡下层页面的 MouseRegion。
+      child: MouseRegion(
+        opaque: false,
+        hitTestBehavior: HitTestBehavior.deferToChild,
+        onEnter: (_) => appFloatingBallPointerInside.value = true,
+        onExit: (_) => appFloatingBallPointerInside.value = false,
+        child: Stack(
+          children: <Widget>[
+            ReaderFloatingBall(
+              key: const ValueKey<String>('fushi_app_floating_ball'),
+              viewport: viewport,
+              actions: actions,
+              dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
+              verticalFraction: prefs.floatingBallVerticalFraction,
+              animate: !appModel.einkMode,
+              showLabels: prefs.floatingBallShowLabels,
+              onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
+                unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
+              },
+            ),
+          ],
+        ),
       ),
     );
+    // 恒包一层 Theme：有无场景主题时结构一致，球的展开 / 拖动状态不随换页丢失。
+    return Theme(data: sceneTheme ?? Theme.of(context), child: ball);
   }
 }
 
@@ -1425,10 +1523,13 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
 
 /// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
 class _DesktopScreenOcrSession {
-  _DesktopScreenOcrSession(this.screen);
+  _DesktopScreenOcrSession(this.screen, this.png);
 
   /// 那块显示器的屏幕矩形（物理像素、左上原点）；截图像素 + 它的左上 = 屏幕坐标。
   final Rect screen;
+
+  /// 识别用的整屏截图：点字制卡时裁出所点文本块当卡图（反馈 Gz7z6Y6Mbr）。
+  final Uint8List png;
 
   List<SystemOcrTextLine>? lines;
 }

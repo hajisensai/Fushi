@@ -9,6 +9,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io' show Directory;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart';
@@ -41,6 +42,7 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_starter_packs_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -62,9 +64,11 @@ enum _DeckAction {
   delete,
 }
 
-enum _ImportSource { anki, file, minedHistory }
+enum _ImportSource { anki, file, starter, minedHistory }
 
-enum _DeckDeleteMode { moveCards, deleteCards }
+/// [purge]：连卡片一起删并当场物理清除（释放磁盘、不可恢复）；只在本机从没同步过时提供
+/// （`SrsDbStore.neverSynced`，见 srs_purge.dart）。同步过的副本由维护在同步安全期后自动清除。
+enum _DeckDeleteMode { moveCards, deleteCards, purge }
 
 /// [deckId] 的同级（含自己），按列表顺序（列表是先序、同级已按 [SrsDeckView.compareSiblings] 排好）。
 List<SrsDeckSummary> _siblingsOf(
@@ -192,6 +196,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 
   /// 删牌组时卡片的去向二选一（Anki 的删除牌组是连卡片一起删；以前这里只能移走卡片）。
   Future<void> _delete(SrsDeckSummary deck) async {
+    final SrsDbStore? before = await readSrsStore(ref);
+    if (before == null || !mounted) return;
+    final bool canPurgeNow = before.neverSynced;
     final _DeckDeleteMode? mode = await showFushiChoiceDialog<_DeckDeleteMode>(
       context: context,
       title: t.srs_deck_delete,
@@ -210,6 +217,13 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           subtitle: t.srs_deck_delete_with_cards_hint,
           icon: FushiIcons.deleteSweep,
         ),
+        if (canPurgeNow)
+          FushiChoiceOption<_DeckDeleteMode>(
+            value: _DeckDeleteMode.purge,
+            label: t.srs_deck_delete_purge,
+            subtitle: t.srs_deck_delete_purge_hint,
+            icon: FushiIcons.delete,
+          ),
       ],
     );
     if (mode == null || !mounted) return;
@@ -219,21 +233,31 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     );
     final SrsDbStore? store = await readSrsStore(ref);
     if (store == null) return;
+    final bool purge = mode == _DeckDeleteMode.purge;
+    final Directory? mediaRoot = purge
+        ? (await ref.read(srsMediaStoreProvider.future))?.root
+        : null;
     // 删除按块进行（BUG-3543）：行里显示进度、不可点，界面其余部分照常可用。删除由 app 级
     // 控制器跑完并让列表重读，与本页在不在无关。
     await deleter.delete(
       store,
       deck.deck.id,
-      deleteCards: mode == _DeckDeleteMode.deleteCards,
+      deleteCards: mode != _DeckDeleteMode.moveCards,
+      purgeNow: purge,
+      mediaRoot: mediaRoot,
     );
   }
 
   /// 收起 / 展开子牌组：写进牌组本身（Anki deck collapsed），随同步到其它设备。
-  Future<void> _setCollapsed(SrsDeckSummary deck, bool collapsed) async {
+  ///
+  /// 不发 [bumpSrsRevision]：收起 / 展开只是界面状态，列表这一行已经按本地覆盖画好了（见
+  /// [_DeckListState._pending]），为它把全部牌组的计数重数一遍不值。返回写完时 store 的修订号，
+  /// 列表据此判断之后重读回来的数据是否已包含这次写入；store 不可用时返回 null。
+  Future<int?> _setCollapsed(SrsDeckSummary deck, bool collapsed) async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) return null;
     await store.setDeckCollapsed(deck.deck.id, collapsed);
-    if (mounted) bumpSrsRevision(ref);
+    return store.revision;
   }
 
   void _onDeckAction(SrsDeckSummary deck, _DeckAction action) {
@@ -287,6 +311,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           icon: FushiIcons.importFile,
         ),
         FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.starter,
+          label: t.srs_starter_title,
+          subtitle: t.srs_starter_hint,
+          icon: FushiIcons.cloudDownload,
+        ),
+        FushiChoiceOption<_ImportSource>(
           value: _ImportSource.minedHistory,
           label: t.srs_history_import,
           subtitle: t.srs_history_import_hint,
@@ -302,6 +332,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         );
       case _ImportSource.file:
         await openSrsImport(context, ref);
+      case _ImportSource.starter:
+        await openSrsStarterPacks(context, ref);
       case _ImportSource.minedHistory:
         await openSrsMinedHistoryImport(context, ref);
     }
@@ -596,6 +628,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
       onAction: _onDeckAction,
       onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
+      onStarterPacks: () => srsRunLogged(
+        'SrsDeckList.starterPacks',
+        () => openSrsStarterPacks(context, ref),
+      ),
       onSetCollapsed: _setCollapsed,
       onPlace: (SrsDeckSummary deck, String? parentId, String? beforeId) =>
           srsRunLogged(
@@ -613,6 +649,7 @@ class _DeckList extends StatefulWidget {
     required this.onOpen,
     required this.onAction,
     required this.onAddFirst,
+    required this.onStarterPacks,
     required this.onSetCollapsed,
     required this.showImportTasks,
     required this.lapisPending,
@@ -641,8 +678,11 @@ class _DeckList extends StatefulWidget {
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
   final VoidCallback onAddFirst;
 
-  /// 收起 / 展开一个牌组（写进牌组本身，随同步）。
-  final Future<void> Function(SrsDeckSummary deck, bool collapsed)
+  /// 空牌组卡片「入门卡组」：下载预置卡组（如 Kaishi 1.5k）。
+  final VoidCallback onStarterPacks;
+
+  /// 收起 / 展开一个牌组（写进牌组本身，随同步）。返回写完时 store 的修订号（null = 没写）。
+  final Future<int?> Function(SrsDeckSummary deck, bool collapsed)
   onSetCollapsed;
 
   @override
@@ -650,8 +690,15 @@ class _DeckList extends StatefulWidget {
 }
 
 class _DeckListState extends State<_DeckList> {
-  /// 本机刚点过、数据还没重读回来的折叠状态：先按它动画，不等写库往返。
+  /// 本机点过、列表数据还没反映出来的折叠状态：先按它画，不等写库往返。收起 / 展开不触发列表
+  /// 重读（见 `_SrsDeckListPageState._setCollapsed`），覆盖一直留到某次重读的数据确定包含了这次写入。
   final Map<String, bool> _pending = <String, bool>{};
+
+  /// 每个牌组的折叠写入序号（连点时只认最后一次）。
+  final Map<String, int> _toggleSeq = <String, int>{};
+
+  /// 最后一次折叠写入完成时 store 的修订号：重读数据的修订号 ≥ 它就一定包含这次写入。
+  final Map<String, int> _committedAt = <String, int>{};
 
   /// 正在拖的牌组（拖着子牌组时列表顶上出现「移到顶层」落点）。
   SrsDeckSummary? _dragging;
@@ -665,9 +712,24 @@ class _DeckListState extends State<_DeckList> {
   void didUpdateWidget(_DeckList oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (identical(oldWidget.data, widget.data)) return;
-    // 重读回来的数据已经反映了这次修改：撤掉本地覆盖。
+    if (!identical(oldWidget.data.store, widget.data.store)) {
+      // 换了 profile / 重开了库：旧覆盖对新库无意义。
+      _pending.clear();
+      _committedAt.clear();
+      return;
+    }
+    // 重读回来的数据已经反映了这次修改：撤掉本地覆盖。值相同可直接撤；值不同但数据是在写入
+    // 完成之后读的（别的设备同步来了新值），也撤——以数据为准。
     for (final SrsDeckSummary d in widget.data.decks) {
-      if (_pending[d.deck.id] == d.deck.collapsed) _pending.remove(d.deck.id);
+      final String id = d.deck.id;
+      final bool? pending = _pending[id];
+      if (pending == null) continue;
+      final int? at = _committedAt[id];
+      if (pending == d.deck.collapsed ||
+          (at != null && widget.data.revision >= at)) {
+        _pending.remove(id);
+        _committedAt.remove(id);
+      }
     }
   }
 
@@ -675,11 +737,29 @@ class _DeckListState extends State<_DeckList> {
 
   void _setCollapsed(SrsDeckSummary d, bool collapsed) {
     if (_collapsed(d) == collapsed) return;
-    setState(() => _pending[d.deck.id] = collapsed);
-    srsRunLogged(
-      'SrsDeckList.collapse',
-      () => widget.onSetCollapsed(d, collapsed),
-    );
+    final String id = d.deck.id;
+    final int seq = (_toggleSeq[id] ?? 0) + 1;
+    _toggleSeq[id] = seq;
+    _committedAt.remove(id);
+    setState(() => _pending[id] = collapsed);
+    srsRunLogged('SrsDeckList.collapse', () async {
+      final int? at;
+      try {
+        at = await widget.onSetCollapsed(d, collapsed);
+      } catch (_) {
+        // 没写进去：撤掉覆盖，回到数据里的状态（失败由 srsRunLogged 留痕）。
+        if (mounted && _toggleSeq[id] == seq) {
+          setState(() => _pending.remove(id));
+        }
+        rethrow;
+      }
+      if (!mounted || _toggleSeq[id] != seq) return;
+      if (at == null) {
+        setState(() => _pending.remove(id));
+      } else {
+        _committedAt[id] = at;
+      }
+    });
   }
 
   @override
@@ -791,11 +871,28 @@ class _DeckListState extends State<_DeckList> {
               Text(t.srs_empty_body),
               Align(
                 alignment: AlignmentDirectional.centerEnd,
-                child: FushiFilledButton.icon(
-                  key: const ValueKey<String>('srs-add-first'),
-                  onPressed: widget.onAddFirst,
-                  icon: const FushiIcon(FushiIcons.add),
-                  label: Text(t.srs_empty_action),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    FushiPressScale(
+                      child: FushiFilledButton.tonalIcon(
+                        key: const ValueKey<String>('srs-starter-packs'),
+                        onPressed: widget.onStarterPacks,
+                        icon: const FushiIcon(FushiIcons.cloudDownload),
+                        label: Text(t.srs_starter_title),
+                      ),
+                    ),
+                    FushiPressScale(
+                      child: FushiFilledButton.icon(
+                        key: const ValueKey<String>('srs-add-first'),
+                        onPressed: widget.onAddFirst,
+                        icon: const FushiIcon(FushiIcons.add),
+                        label: Text(t.srs_empty_action),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

@@ -236,6 +236,16 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   run 被后续 push 顶掉），手动补 `gh workflow run release-desktop.yml --repo hajisensai/fushi
   --ref develop -f channel=debug -f testflight_only=true`。testflight_only 的 run 只签 iOS、
   不发 Release、走独立 concurrency 组，不会与 push 构建互相取消。
+- **同一个 commit 不能重复传 TestFlight**（2026-10-22 实测）：build number 由
+  `tool/release_sequence.sh`（commit 数 + 地板）算出、经 `--build-number` 直接喂给 iOS 构建，
+  `pubspec.yaml` 的 `+build` 与 `workflow_dispatch` 输入都改不了它。所以在同一个 sha 上重跑
+  `testflight_only` 必然算出同一个号，ASC 直接 409 `ENTITY_ERROR.ATTRIBUTE.INVALID.DUPLICATE`
+  （`The bundle version must be higher than the previously uploaded version: '<seq>'`）：`ios`
+  job 全绿、只有 `testflight` job 红，容易误判成签名或凭据问题。要真正再出一份新包，唯一前提是
+  让序列涨一格（develop 多一个 commit），触发方式本身解决不了。纯为出包抬序列时优先落 docs 类
+  改动——`docs/**` 不在本 workflow 的 push `paths` 里，不会顺带触发一轮全量构建，随后单独 dispatch
+  `testflight_only` 只跑一轮 iOS。
+
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
   App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每第三次 debug

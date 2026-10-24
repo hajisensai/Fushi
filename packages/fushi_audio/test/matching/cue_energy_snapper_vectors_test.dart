@@ -53,6 +53,7 @@ CueEnergySnapper _snapper(SnapParams p) => CueEnergySnapper(
   edgeMinVoiceMs: p.edgeMinVoiceMs,
   edgeLeadMs: p.edgeLeadMs,
   edgeTailMs: p.edgeTailMs,
+  cutBiasMs: 0, // 冻结向量生成时还没有这一项
 );
 
 void main() {

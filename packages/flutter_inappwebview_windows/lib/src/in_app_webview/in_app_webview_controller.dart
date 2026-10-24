@@ -255,8 +255,8 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
             _inAppBrowserEventHandler != null) {
           WebResourceRequest request = WebResourceRequest.fromMap(
               call.arguments["request"].cast<String, dynamic>())!;
-          WebResourceError error = WebResourceError.fromMap(
-              call.arguments["error"].cast<String, dynamic>())!;
+          WebResourceError error = _webResourceErrorFromMap(
+              call.arguments["error"].cast<String, dynamic>());
           var isForMainFrame = request.isForMainFrame ?? false;
 
           if (webviewParams != null) {
@@ -2772,4 +2772,16 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
 
 extension InternalInAppWebViewController on WindowsInAppWebViewController {
   get handleMethod => _handleMethod;
+}
+
+/// `WebResourceError.fromMap` 对 type 做 `fromNativeValue(...)!`，而平台接口没给
+/// WebView2 的证书错误状态（`COREWEBVIEW2_WEB_ERROR_STATUS` 1–5）配 Windows 值：
+/// 证书错误一到就在通道回调里抛空值异常，事件整个丢掉，页面停在 WebView2 自带的
+/// 拦截页。没有对应枚举的状态归为 UNKNOWN，原生给的描述文本照样带上，调用方据此分类。
+WebResourceError _webResourceErrorFromMap(Map<String, dynamic> map) {
+  return WebResourceError(
+    description: map['description'],
+    type: WebResourceErrorType.fromNativeValue(map['type']) ??
+        WebResourceErrorType.UNKNOWN,
+  );
 }

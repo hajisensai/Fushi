@@ -1531,6 +1531,91 @@ pub unsafe extern "C" fn ffc_image_probe(
     })
 }
 
+/// 打开一张 AVIF 准备逐帧解码（动图 `avis` 走视频轨；静态 AVIF 退化成 1 帧，见
+/// `image/avif/sequence.rs`）。Rust 拷一份 `data` 并持有解码状态；open 时已解出首帧（验证码流与
+/// 真实尺寸）。`max_width` > 0 时输出按宽只缩不放、等比。
+///
+/// 成功写 `*out_handle`（用 [ffc_image_avif_anim_close] 释放）与
+/// `out_info = [width, height, frame_count, source_width, source_height, repeat]`
+/// （输出尺寸；`repeat` = 1 表示文件要求无限循环）。认不出 / 解不开返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// `data` 按 `len` 可读；`out_handle` 可写；`out_info` 可写 6 个 u32。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_avif_anim_open(
+    data: *const u8,
+    len: usize,
+    max_width: u32,
+    out_handle: *mut *mut std::ffi::c_void,
+    out_info: *mut u32,
+) -> i32 {
+    guard(|| {
+        if data.is_null() || out_handle.is_null() || out_info.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        match avif::AvifAnimation::open(slice(data, len), max_width) {
+            Ok(anim) => {
+                let (sw, sh) = anim.source_size();
+                slice_mut(out_info, 6).copy_from_slice(&[
+                    anim.width,
+                    anim.height,
+                    anim.frame_count(),
+                    sw,
+                    sh,
+                    anim.repeats() as u32,
+                ]);
+                *out_handle = Box::into_raw(Box::new(anim)) as *mut std::ffi::c_void;
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// 解下一帧，RGBA8888（动图 alpha 恒 255；静态图保留原 alpha）写进 `out_rgba`（至少
+/// `width * height * 4` 字节，否则 [status::BUFFER_TOO_SMALL]），`out_meta = [帧下标, 时长 ms]`。
+/// 末帧之后自动回到第 0 帧。坏样本返回 [status::BAD_INPUT]。
+///
+/// # Safety
+/// `handle` 是 [ffc_image_avif_anim_open] 交出且尚未释放的指针，且不被并发使用；
+/// `out_rgba` 按 `out_len` 可写；`out_meta` 可写 2 个 u32。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_avif_anim_next(
+    handle: *mut std::ffi::c_void,
+    out_rgba: *mut u8,
+    out_len: usize,
+    out_meta: *mut u32,
+) -> i32 {
+    guard(|| {
+        if handle.is_null() || out_rgba.is_null() || out_meta.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let anim = &mut *(handle as *mut avif::AvifAnimation);
+        match anim.next_frame(slice_mut(out_rgba, out_len)) {
+            Ok(info) => {
+                slice_mut(out_meta, 2).copy_from_slice(&[info.index, info.duration_ms]);
+                status::OK
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// 释放 [ffc_image_avif_anim_open] 建的对象（空指针无操作）。签名是 `void(void*)`，可直接挂
+/// `NativeFinalizer`。
+///
+/// # Safety
+/// `handle` 是 [ffc_image_avif_anim_open] 交出且尚未释放的指针。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_image_avif_anim_close(handle: *mut std::ffi::c_void) {
+    if !handle.is_null() {
+        // Drop 里关 rav1d 上下文；panic 不越过 FFI（rav1d panic 过的上下文已作废、不再碰）。
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            drop(Box::from_raw(handle as *mut avif::AvifAnimation));
+        }));
+    }
+}
+
 /// 解码（转正 EXIF 方向）后编码成 JPEG（4:4:4，`quality` 1..=100，忽略 alpha，同
 /// `encodeJpg` 的通道取法），经 `out_ptr` / `out_len` 交出。解不开返回 [status::BAD_INPUT]。
 ///

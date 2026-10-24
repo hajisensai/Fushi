@@ -2415,6 +2415,12 @@ ThemeData buildFushiThemeData({
   return ThemeData(
     useMaterial3: true,
     colorScheme: cs,
+    // MD3 设计系统的图标按钮走官方 M3 Expressive 实现（尺寸 / 宽度 / 形状变体、
+    // 按压与 toggle 形变）。Apple 设计系统的按钮自绘、不读它；墨水屏保持 M3 原件
+    // （Expressive 的容器色与形变在灰阶慢刷屏上只添噪声）。
+    iconButtonTheme: appleDesign || eink
+        ? null
+        : const IconButtonThemeData(variant: StyleVariant.material3Expressive),
     textTheme: tt,
     primaryTextTheme: tt.apply(
       bodyColor: cs.onPrimary,

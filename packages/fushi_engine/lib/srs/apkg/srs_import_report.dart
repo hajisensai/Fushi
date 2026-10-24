@@ -93,6 +93,9 @@ class SrsImportReport {
   /// 「从 Anki 迁移」选了「导入后把旧 Lapis 迁到 Fushi 卡片」：迁过去 / 补迁的笔记数。
   int lapisNotesMigrated = 0;
 
+  /// 同时选了「牌组名里的 Lapis 改成 Fushi Card」：改名的牌组数。
+  int lapisDecksRenamed = 0;
+
   /// 上面那一步失败（导入本身已落库；笔记仍是旧 Lapis，可在笔记类型页重试）。
   bool lapisMigrationFailed = false;
 
@@ -116,6 +119,9 @@ class SrsImportReport {
 
   /// 新增笔记带来的卡片数。
   int cardsAdded = 0;
+
+  /// 本机已有、从没排过位置的新卡补上了来源的新卡位置（重新导入时的补救）。
+  int newPositionsRepaired = 0;
 
   /// 写入的来源 revlog 日志数（被识别为本机原生 / fushi-ext 已有的不算）。
   int reviewLogsImported = 0;

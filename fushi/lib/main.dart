@@ -640,6 +640,8 @@ void main([List<String> args = const <String>[]]) {
           restoreFallback: false,
         );
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
+    appModel.hostMiningRepositoryReader = () =>
+        container.read(hostMiningAnkiRepositoryProvider);
     // BUG-3439：原生 TtsChannelHandler 随 Activity 重建（引擎被保留），新 handler
     // 的本地音频库是空的；它挂上时会通知这里重推。必须在 initialise() 之前装。
     TtsChannel.onNativeHandlerAttached(
@@ -1012,6 +1014,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       unawaited(_startCtlServer());
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    FushiToast.mineNoticeFilter = ref.read(appProvider).mineNoticeShown;
     installAnkiVideoTemplateFallbackNotice(
       navigatorKey: ref.read(appProvider).navigatorKey,
       prefs: () => ref.read(appProvider).prefsRepo,
@@ -2977,8 +2980,19 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                 // rail）与收起 rail 宽度不同，标题跟着它缩进；
                                 // 展开态与首页 rail 同一判据（尺寸档 + MD3 菜单钮
                                 // 手动切换的记忆）。
-                                final double railWidth =
-                                    adaptiveNavRailWidthFor(
+                                // Apple 宽窗口收成顶部标签栏时左边没有侧栏，
+                                // 标题不缩进。
+                                final bool appleTabBar =
+                                    adaptiveAppleTabBarMode(
+                                      context,
+                                      sizeClass: sizeClass,
+                                      userExpanded: appModel
+                                          .navRailExpandedNotifier
+                                          .value,
+                                    );
+                                final double railWidth = appleTabBar
+                                    ? 0
+                                    : adaptiveNavRailWidthFor(
                                       context,
                                       extended: adaptiveNavRailExtended(
                                         context,

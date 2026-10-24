@@ -68,6 +68,52 @@ enum SrsVisualAlign {
   final String css;
 }
 
+/// 块上下的间距（外边距，em）。
+enum SrsVisualSpacing {
+  /// 无。
+  none(0, 0),
+
+  /// 紧凑。
+  compact(0.2, 0.45),
+
+  /// 标准（旧版编译结果的固定值）。
+  normal(0.45, 0.9),
+
+  /// 宽松。
+  loose(0.9, 1.6);
+
+  const SrsVisualSpacing(this.em, this.dividerEm);
+
+  /// 文字 / 字段块的上下外边距。
+  final double em;
+
+  /// 分隔线的上下外边距。
+  final double dividerEm;
+}
+
+/// 字段里图片的显示宽度（相对卡面宽度；高度按比例）。
+enum SrsVisualImageSize {
+  /// 不管（按卡片 CSS）。
+  auto(null),
+
+  /// 小。
+  small(25),
+
+  /// 中。
+  medium(50),
+
+  /// 大。
+  large(75),
+
+  /// 满宽。
+  full(100);
+
+  const SrsVisualImageSize(this.percent);
+
+  /// 最大宽度百分比；null = 不加规则。
+  final int? percent;
+}
+
 /// 颜色。
 enum SrsVisualTone {
   /// 正文色。
@@ -118,10 +164,14 @@ class SrsVisualBlock {
     this.size = SrsVisualSize.body,
     this.align = SrsVisualAlign.center,
     this.bold = false,
+    this.italic = false,
+    this.color,
     this.tone = SrsVisualTone.normal,
     this.filter = SrsVisualFilter.plain,
     this.boxed = false,
     this.hideWhenEmpty = true,
+    this.spacing = SrsVisualSpacing.normal,
+    this.imageSize = SrsVisualImageSize.auto,
   });
 
   /// 块 id（`b1` / `b2` …），只在本面内唯一；编辑器靠它做列表 key。
@@ -145,6 +195,14 @@ class SrsVisualBlock {
   final SrsVisualSize size;
   final SrsVisualAlign align;
   final bool bold;
+
+  /// 斜体。
+  final bool italic;
+
+  /// 自定义文字颜色 `#rrggbb`（小写）；null = 按 [tone]。设了颜色时 [tone] 的强调色让位，
+  /// 弱化仍生效（半透明）。
+  final String? color;
+
   final SrsVisualTone tone;
   final SrsVisualFilter filter;
 
@@ -153,6 +211,12 @@ class SrsVisualBlock {
 
   /// 字段为空时整块（含小标题）不出现（`{{#字段}}…{{/字段}}`）。
   final bool hideWhenEmpty;
+
+  /// 块上下的间距。
+  final SrsVisualSpacing spacing;
+
+  /// [SrsVisualBlockKind.field] 用：字段里图片的显示宽度。
+  final SrsVisualImageSize imageSize;
 
   SrsVisualBlock copyWith({
     String? id,
@@ -164,10 +228,15 @@ class SrsVisualBlock {
     SrsVisualSize? size,
     SrsVisualAlign? align,
     bool? bold,
+    bool? italic,
+    String? color,
+    bool clearColor = false,
     SrsVisualTone? tone,
     SrsVisualFilter? filter,
     bool? boxed,
     bool? hideWhenEmpty,
+    SrsVisualSpacing? spacing,
+    SrsVisualImageSize? imageSize,
   }) => SrsVisualBlock(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -179,10 +248,14 @@ class SrsVisualBlock {
     size: size ?? this.size,
     align: align ?? this.align,
     bold: bold ?? this.bold,
+    italic: italic ?? this.italic,
+    color: clearColor ? null : (color ?? this.color),
     tone: tone ?? this.tone,
     filter: filter ?? this.filter,
     boxed: boxed ?? this.boxed,
     hideWhenEmpty: hideWhenEmpty ?? this.hideWhenEmpty,
+    spacing: spacing ?? this.spacing,
+    imageSize: imageSize ?? this.imageSize,
   );
 
   /// 持久化形态：只写与默认值不同的项，注释更短。
@@ -196,10 +269,14 @@ class SrsVisualBlock {
     if (size != SrsVisualSize.body) 's': size.name,
     if (align != SrsVisualAlign.center) 'a': align.name,
     if (bold) 'b': true,
+    if (italic) 'i': true,
+    if (color != null) 'col': color,
     if (tone != SrsVisualTone.normal) 'c': tone.name,
     if (filter != SrsVisualFilter.plain) 'x': filter.name,
     if (boxed) 'box': true,
     if (!hideWhenEmpty) 'show': true,
+    if (spacing != SrsVisualSpacing.normal) 'sp': spacing.name,
+    if (imageSize != SrsVisualImageSize.auto) 'img': imageSize.name,
   };
 
   /// 解析持久化形态；认不出种类 / 字段块没有字段时返回 null（整块丢弃，不猜）。
@@ -226,13 +303,34 @@ class SrsVisualBlock {
       size: _byName(SrsVisualSize.values, raw['s']) ?? SrsVisualSize.body,
       align: _byName(SrsVisualAlign.values, raw['a']) ?? SrsVisualAlign.center,
       bold: raw['b'] == true,
+      italic: raw['i'] == true,
+      color: srsVisualColorOrNull(raw['col']),
       tone: _byName(SrsVisualTone.values, raw['c']) ?? SrsVisualTone.normal,
       filter:
           _byName(SrsVisualFilter.values, raw['x']) ?? SrsVisualFilter.plain,
       boxed: raw['box'] == true,
       hideWhenEmpty: raw['show'] != true,
+      spacing:
+          _byName(SrsVisualSpacing.values, raw['sp']) ??
+          SrsVisualSpacing.normal,
+      imageSize:
+          _byName(SrsVisualImageSize.values, raw['img']) ??
+          SrsVisualImageSize.auto,
     );
   }
+}
+
+/// 认得的自定义颜色：只收 `#rgb` / `#rrggbb`，统一成小写 `#rrggbb`；其余（含任何能逃出
+/// CSS 声明的字符）返回 null。注释里的值来自同步 / 导入 / AI，不可信。
+String? srsVisualColorOrNull(Object? raw) {
+  if (raw is! String) return null;
+  final String v = raw.trim().toLowerCase();
+  final RegExpMatch? m = RegExp(r'^#([0-9a-f]{3}|[0-9a-f]{6})$').firstMatch(v);
+  if (m == null) return null;
+  final String h = m.group(1)!;
+  return h.length == 6
+      ? '#$h'
+      : '#${h.split('').map((String c) => '$c$c').join()}';
 }
 
 T? _byName<T extends Enum>(List<T> values, Object? name) {
@@ -317,12 +415,15 @@ String _style(SrsVisualBlock b) {
     if (b.size == SrsVisualSize.display || b.size == SrsVisualSize.title)
       'line-height:1.35',
     if (b.bold) 'font-weight:700',
+    if (b.italic) 'font-style:italic',
+    if (srsVisualColorOrNull(b.color) case final String c) 'color:$c',
     switch (b.tone) {
       SrsVisualTone.normal => '',
+      SrsVisualTone.accent when srsVisualColorOrNull(b.color) != null => '',
       SrsVisualTone.accent => 'color:$_kAccent',
       SrsVisualTone.muted => 'opacity:0.7',
     },
-    'margin:0.45em 0',
+    'margin:${_num(b.spacing.em)}em 0',
     if (b.boxed) ...<String>[
       'background:rgba(127,127,127,0.12)',
       'border-radius:12px',
@@ -337,12 +438,19 @@ String _labelHtml(SrsVisualBlock b) => b.label.trim().isEmpty
     : '<div style="font-size:0.75em;opacity:0.65;margin-bottom:0.2em">'
           '${_escapeText(b.label.trim())}</div>';
 
+/// 图片宽度的类名（只有设了宽度的字段块才挂）。
+String _imageClass(SrsVisualImageSize size) => 'fv-img-${size.percent}';
+
 /// 编译一面（不含注释标记）。字段块引用的字段已不存在时整块跳过（字段被删了）。
+///
+/// 设了图片宽度的字段块挂 `fv-img-<百分比>` 类，正文末尾追加一段只作用于本面
+/// （`.fushi-visual` 下）的 `<style>`；没设时输出与旧版逐字节一致。
 String srsCompileVisualBody(
   List<SrsVisualBlock> blocks,
   SrsVisualCompileContext ctx,
 ) {
   final StringBuffer out = StringBuffer('<div class="fushi-visual">\n');
+  final Set<SrsVisualImageSize> imageSizes = <SrsVisualImageSize>{};
   for (final SrsVisualBlock b in blocks) {
     switch (b.kind) {
       case SrsVisualBlockKind.field:
@@ -355,8 +463,13 @@ String srsCompileVisualBody(
         final String tag = filter.ankiFilter == null
             ? '{{$name}}'
             : '{{${filter.ankiFilter}:$name}}';
+        final bool sized = b.imageSize.percent != null;
+        if (sized) imageSizes.add(b.imageSize);
+        final String cls = sized
+            ? 'fv-block ${_imageClass(b.imageSize)}'
+            : 'fv-block';
         final String div =
-            '<div class="fv-block" style="${_style(b)}">'
+            '<div class="$cls" style="${_style(b)}">'
             '${_labelHtml(b)}$tag</div>';
         // 填空字段不包条件段：填空卡的正面由 cN 决定，字段本身恒非空。
         if (b.hideWhenEmpty && filter != SrsVisualFilter.cloze) {
@@ -372,14 +485,29 @@ String srsCompileVisualBody(
       case SrsVisualBlockKind.divider:
         out.writeln(
           '<hr class="fv-divider" style="border:none;border-top:1px solid '
-          '${b.tone == SrsVisualTone.accent ? _kAccent : 'rgba(127,127,127,0.35)'};'
-          'margin:0.9em 0">',
+          '${srsVisualColorOrNull(b.color) ?? (b.tone == SrsVisualTone.accent ? _kAccent : 'rgba(127,127,127,0.35)')};'
+          'margin:${_num(b.spacing.dividerEm)}em 0">',
         );
       case SrsVisualBlockKind.frontSide:
         out.writeln('{{FrontSide}}');
     }
   }
   out.write('</div>');
+  if (imageSizes.isNotEmpty) {
+    final List<SrsVisualImageSize> sizes = imageSizes.toList()
+      ..sort(
+        (SrsVisualImageSize a, SrsVisualImageSize b) =>
+            a.percent!.compareTo(b.percent!),
+      );
+    out.write('\n<style>');
+    for (final SrsVisualImageSize size in sizes) {
+      out.write(
+        '.fushi-visual .${_imageClass(size)} img{'
+        'max-width:${size.percent}%;width:${size.percent}%;height:auto}',
+      );
+    }
+    out.write('</style>');
+  }
   return out.toString();
 }
 

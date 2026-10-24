@@ -27,15 +27,24 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart'
+    show SrsFushiCardMedia, srsFushiCardMedia;
+import 'package:fushi/src/srs/srs_card_video_channel.dart';
+import 'package:fushi/src/srs/srs_card_defs_layout.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/cover_image.dart'
+    show AvifFileImage, isAvifPath;
+import 'package:fushi/src/utils/animated_avif_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -91,6 +100,137 @@ SrsFushiFrontKind srsFushiFrontKind(Map<String, String> f) {
   return SrsFushiFrontKind.word;
 }
 
+// ---------------------------------------------------------------- 例句目标词（#9）
+
+final RegExp _boldBlock = RegExp(
+  r'<(b|strong)\b[^>]*>([\s\S]*?)</\1\s*>',
+  caseSensitive: false,
+);
+final RegExp _cloze = RegExp(r'\{\{c\d+::([\s\S]*?)(?:::[\s\S]*?)?\}\}');
+
+/// Anki 挖空 `{{c1::词::提示}}` → `<b>词</b>`（卡面上显示答案、按目标词强调；Anki 迁移来的
+/// 挖空笔记直接把这串写在例句字段里）。
+@visibleForTesting
+String srsClozeToBold(String html) =>
+    html.replaceAllMapped(_cloze, (Match m) => '<b>${m.group(1)}</b>');
+
+/// 字段里显式标出的目标词（`<b>` / `<strong>` / 挖空），纯文本（去振假名与标签）。
+@visibleForTesting
+List<String> srsMarkedTargets(String html) => <String>[
+  for (final Match m in _boldBlock.allMatches(srsClozeToBold(html)))
+    if (srsKanaFree(m.group(2)!).trim() case final String t when t.isNotEmpty)
+      t,
+];
+
+bool _isHiragana(int c) => c >= 0x3041 && c <= 0x309F;
+
+/// 片假名 → 平假名（逐字一一对应，下标不变）：例句把词写成片假名时照样对得上。
+String _hiraganaOf(String s) => String.fromCharCodes(<int>[
+  for (final int c in s.codeUnits) c >= 0x30A1 && c <= 0x30F6 ? c - 0x60 : c,
+]);
+
+/// 在例句纯文本 [text] 里找目标词的位置（UTF-16 区间），找不到返回 null。按序尝试：
+///
+/// 1. [marked]（字段里 `<b>` / 挖空标出的写法）或 [terms]（词条写法、读音）逐字出现
+///    （平 / 片假名视为同一字）；
+/// 2. 活用形：去掉词尾送假名的词干（全假名的词去掉最后一拍）出现在句子里，再向后吞掉紧跟的
+///    平假名（最多吞「原送假名长度 + 4」个）——`くっつく` 认出 `くっつこう`、`言う` 认出
+///    `言った`。这是卡面显示的启发式，不是词形还原；多吞一两个假名只影响强调范围。
+@visibleForTesting
+(int, int)? srsSentenceTargetRange(
+  String text, {
+  List<String> marked = const <String>[],
+  List<String> terms = const <String>[],
+}) {
+  final String hay = _hiraganaOf(text);
+  for (final String raw in <String>[...marked, ...terms]) {
+    final String needle = _hiraganaOf(raw.trim());
+    if (needle.isEmpty) continue;
+    final int i = hay.indexOf(needle);
+    if (i >= 0) return (i, i + needle.length);
+  }
+  for (final String raw in terms) {
+    final String term = _hiraganaOf(raw.trim());
+    if (term.isEmpty) continue;
+    int cut = term.length;
+    while (cut > 0 && _isHiragana(term.codeUnitAt(cut - 1))) {
+      cut--;
+    }
+    // 全假名的词：去掉最后一拍当词干（至少留两个字，单字词干太容易撞上别的词）。
+    if (cut == 0) cut = term.length >= 3 ? term.length - 1 : 0;
+    if (cut == 0 || cut == term.length) continue;
+    final String stem = term.substring(0, cut);
+    final int i = hay.indexOf(stem);
+    if (i < 0) continue;
+    final int maxExtra = term.length - cut + 4;
+    int end = i + stem.length;
+    while (end < hay.length &&
+        end - (i + stem.length) < maxExtra &&
+        _isHiragana(hay.codeUnitAt(end))) {
+      end++;
+    }
+    return (i, end);
+  }
+  return null;
+}
+
+/// 例句没有任何加粗段时补上目标词强调（#9）。
+///
+/// 制卡链路只在「查到的那串」逐字出现在例句里时才写 `<b>`（`anki_models.dart`
+/// `_sentenceValue`），以下情形卡面上没有蓝色强调：例句字段里没 `<b>`（Anki 迁移的笔记、
+/// 字幕句与上下文句不同的视频卡）、`SentenceFurigana` 优先显示而它没带 `<b>`、例句里有
+/// 白名单外的标签让解析退回纯文本（`<b>` 一起丢了）、挖空 `{{c1::…}}`。这里按
+/// [srsSentenceTargetRange] 在显示的段落里重新定位目标词并标成加粗段（注音段整段标）。
+@visibleForTesting
+List<SrsInline> srsEmphasizeSentenceTarget(
+  List<SrsInline> segs, {
+  List<String> marked = const <String>[],
+  List<String> terms = const <String>[],
+}) {
+  if (segs.isEmpty || segs.any((SrsInline x) => x.bold)) return segs;
+  final String full = segs.map((SrsInline x) => x.text).join();
+  final (int, int)? range = srsSentenceTargetRange(
+    full,
+    marked: marked,
+    terms: terms,
+  );
+  if (range == null) return segs;
+  final (int from, int to) = range;
+  final List<SrsInline> out = <SrsInline>[];
+  int at = 0;
+  for (final SrsInline x in segs) {
+    final int start = at;
+    final int end = at + x.text.length;
+    at = end;
+    if (end <= from || start >= to || x.isBreak) {
+      out.add(x);
+      continue;
+    }
+    if (x.ruby != null) {
+      out.add(
+        SrsInline(
+          x.text,
+          ruby: x.ruby,
+          bold: true,
+          italic: x.italic,
+          underline: x.underline,
+        ),
+      );
+      continue;
+    }
+    final int a = math.max(from, start) - start;
+    final int b = math.min(to, end) - start;
+    SrsInline piece(String text, {required bool bold}) =>
+        SrsInline(text, bold: bold, italic: x.italic, underline: x.underline);
+    if (a > 0) out.add(piece(x.text.substring(0, a), bold: false));
+    out.add(piece(x.text.substring(a, b), bold: true));
+    if (b < x.text.length) {
+      out.add(piece(x.text.substring(b), bold: false));
+    }
+  }
+  return out;
+}
+
 /// 原生 + 释义 WebView 的 Fushi 卡片卡面。
 class SrsFushiCardView extends ConsumerStatefulWidget {
   const SrsFushiCardView({
@@ -144,9 +284,37 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   bool _clickOpen = false;
   bool _sentenceRuby = false;
 
+  /// 复习页的片段通道（声明这张卡的陪播例句音频用，见 [_declareSentenceAudio]）。
+  late final SrsCardVideoChannel _channel = ref.read(
+    srsCardVideoChannelProvider,
+  );
+
+  /// 这张卡实际画出来的发音键 / 片段（与复习页的自动播放、底栏重播同一份，#10 / #15）。
+  SrsFushiCardMedia get _media => srsFushiCardMedia(
+    widget.fields,
+    audioCardFront: srsFushiFrontKind(widget.fields) == SrsFushiFrontKind.audio,
+  );
+
+  /// 只在复习页（卡面发音交给宿主序列时）声明陪播例句音频：外观页预览等别的卡面不碰复习页
+  /// 的通道。
+  void _declareSentenceAudio() {
+    if (widget.face.onPlayAudio == null) {
+      _channel.clearSentenceAudio(this);
+      return;
+    }
+    _channel.setSentenceAudio(this, _media.companionSentence);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _declareSentenceAudio();
+  }
+
   @override
   void didUpdateWidget(SrsFushiCardView old) {
     super.didUpdateWidget(old);
+    _declareSentenceAudio();
     if (old.face.cardId != widget.face.cardId) {
       // 内容高度保留上一张的：页面只在高度变化时上报，新卡同高时不会再报。
       _clickOpen = false;
@@ -159,9 +327,21 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   @override
   void dispose() {
+    _channel.clearSentenceAudio(this);
     _scroll.dispose();
     _selectionFocus.dispose();
     super.dispose();
+  }
+
+  /// 卡面发音键：复习页里交给它的播放序列（与底栏重播 / 自动播放同一路，新的打断旧的，
+  /// 片段带声时在画面上播），否则（外观预览）直接播第一段。
+  Future<void> _playNames(List<String> names) async {
+    final void Function(List<String>)? host = widget.face.onPlayAudio;
+    if (host != null) {
+      host(names);
+      return;
+    }
+    if (names.isNotEmpty) await _play(names.first);
   }
 
   Future<void> _play(String name) async {
@@ -212,31 +392,36 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
       child: SelectionArea(
         focusNode: _selectionFocus,
-        child: SrsNativeLookupRegion(
-          key: _lookupRegion,
-          child: ColoredBox(
-            color: scheme.surface,
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints c) {
-                if (c.maxHeight.isFinite) {
-                  _viewport = math.max(0, c.maxHeight - widget.topInset);
-                }
-                final bool wide = switch (widget.face.layout) {
-                  SrsCardLayout.wide => true,
-                  SrsCardLayout.narrow => false,
-                  SrsCardLayout.auto =>
-                    c.maxWidth >= kSrsFushiCardWideBreakpoint,
-                };
-                return FushiEntranceScope(
-                  replayKey:
-                      '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
-                  child: widget.face.showingAnswer
-                      ? (wide
-                            ? _buildWideBack(context, style, c)
-                            : _buildNarrowBack(context, style, c))
-                      : _frontWithWarmDefs(context, style, c, wide: wide),
-                );
-              },
+        // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
+        child: SrsBlankTapRegion(
+          onTapEmpty: widget.face.onTapEmpty,
+          tapTookLookup: () => _tapTookLookup,
+          child: SrsNativeLookupRegion(
+            key: _lookupRegion,
+            child: ColoredBox(
+              color: scheme.surface,
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints c) {
+                  if (c.maxHeight.isFinite) {
+                    _viewport = math.max(0, c.maxHeight - widget.topInset);
+                  }
+                  final bool wide = switch (widget.face.layout) {
+                    SrsCardLayout.wide => true,
+                    SrsCardLayout.narrow => false,
+                    SrsCardLayout.auto =>
+                      c.maxWidth >= kSrsFushiCardWideBreakpoint,
+                  };
+                  return FushiEntranceScope(
+                    replayKey:
+                        '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
+                    child: widget.face.showingAnswer
+                        ? (wide
+                              ? _buildWideBack(context, style, c)
+                              : _buildNarrowBack(context, style, c))
+                        : _frontWithWarmDefs(context, style, c, wide: wide),
+                  );
+                },
+              ),
             ),
           ),
         ),
@@ -264,16 +449,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           _frontSentence(s, c, masked: true),
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-front-audio'),
-            name:
-                srsSoundNames(
-                  srsFieldFilled(f['SentenceAudio'])
-                      ? f['SentenceAudio']!
-                      : f['ExpressionAudio'] ?? '',
-                ).firstOrNull ??
-                '',
+            name: _media.front.firstOrNull ?? '',
             large: true,
             style: s,
-            onPlay: _play,
+            onPlay: (String name) => _playNames(<String>[name]),
           ),
         ],
       },
@@ -294,9 +473,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: SingleChildScrollView(
         key: const ValueKey<String>('srs-fushi-front'),
         controller: _scroll,
-        padding: EdgeInsets.all(
-          s.pad,
-        ).copyWith(top: s.pad + widget.topInset),
+        padding: EdgeInsets.all(s.pad).copyWith(top: s.pad + widget.topInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -471,16 +648,70 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             style: s,
             color: srsPitchColor(srsPitchType(p, morae, cats), dark: s.dark),
           ),
-        for (final String name in srsSoundNames(f['ExpressionAudio'] ?? ''))
-          _AudioButton(
-            key: const ValueKey<String>('srs-fushi-word-audio'),
-            name: name,
-            style: s,
-            onPlay: _play,
-          ),
-        if (srsFieldFilled(f['FreqSort']))
+        // 下方「词频」区已列出各词典频次时不再重复显示排序频次。
+        if (srsFieldFilled(f['FreqSort']) &&
+            !srsFushiBlockVisible(FushiCardBlock.frequency, f, s.appearance))
           _Chip(text: srsPlainText(f['FreqSort']!), style: s),
       ],
+    );
+  }
+
+  /// 词条区：「发音键｜词条 + 读音行」。左栏统一网格——卡片 / 图片通栏，词条区与底部
+  /// 元信息缩进一个卡片内边距，发音键与例句卡里的发音键落在同一条竖线上、后面的文字
+  /// 也从同一个 x 起头。[trailing] 是窄版式标题右侧的缩略图。
+  Widget _header(_SrsCardStyle s, BoxConstraints c, {Widget? trailing}) {
+    final List<String> audio = srsAudioSources(
+      widget.fields['ExpressionAudio'] ?? '',
+    );
+    final Widget main = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _term(s, c),
+        const SizedBox(height: 4),
+        _readingRow(s),
+      ],
+    );
+    final Widget body = audio.isEmpty
+        ? main
+        : Row(
+            children: <Widget>[
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 6,
+                children: <Widget>[
+                  for (int i = 0; i < audio.length; i++)
+                    _AudioButton(
+                      // 单词音频可能有好几段（多个发音来源）：key 各不相同，否则同一个
+                      // Column 里重复 key 直接抛错、整张卡面渲染失败。
+                      key: ValueKey<String>(
+                        i == 0
+                            ? 'srs-fushi-word-audio'
+                            : 'srs-fushi-word-audio-$i',
+                      ),
+                      name: audio[i],
+                      style: s,
+                      onPlay: (String name) => _playNames(<String>[name]),
+                    ),
+                ],
+              ),
+              SizedBox(width: s.gap),
+              Expanded(child: main),
+            ],
+          );
+    return Padding(
+      key: const ValueKey<String>('srs-fushi-header'),
+      padding: EdgeInsets.symmetric(horizontal: s.pad),
+      child: trailing == null
+          ? body
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(child: body),
+                SizedBox(width: s.gap),
+                trailing,
+              ],
+            ),
     );
   }
 
@@ -515,15 +746,40 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     )) {
       return null;
     }
-    final String? name = srsImageSources(widget.fields['Picture']!).firstOrNull;
+    final String picture = widget.fields['Picture']!;
+    final SrsPictureLimits limits = srsPictureLimits(
+      ref.watch(srsReviewImageSizeProvider),
+      wide: wide,
+      viewport: _viewport,
+      thumb: s.thumb,
+    );
+    final double? maxWidth = limits.maxWidth;
+    final double maxHeight = limits.maxHeight;
+    // 视频片段（WebM `<video>` / MP4 `[sound:]`）：在卡面上原生播，复习页的音频序列经
+    // 片段通道驱动它（先单词音频、再片段）。
+    final String? clip = srsVideoSources(picture).firstOrNull;
+    if (clip != null) {
+      return SrsCardVideoClip(
+        key: const ValueKey<String>('srs-fushi-picture'),
+        name: clip,
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+        radius: s.tokens.radiusSmall,
+      );
+    }
+    final String? name = srsImageSources(picture).firstOrNull;
     if (name == null) return null;
     return _MediaImage(
       key: const ValueKey<String>('srs-fushi-picture'),
       name: name,
-      // 与模板同：窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）；
-      // 左栏图最高 220，矮视口（手机横屏）120。
-      maxWidth: wide ? null : s.thumb * 1.5,
-      maxHeight: wide ? (_viewport <= 520 ? 120 : 220) : s.thumb * 1.4,
+      // 窄版式是标题右侧的缩略图，按原比例完整显示（书封等竖图不裁切）。宽版式左栏：
+      // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
+      // 限高完整显示。铺满的图有高度上限，再高就整张等比缩小（不裁切），不把例句挤出
+      // 首屏。各上限随「卡面图片大小」设置，见 [srsPictureLimits]。
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+      fillWidth: limits.fillWidth,
+      maxFillHeight: limits.maxFillHeight,
       radius: s.tokens.radiusSmall,
     );
   }
@@ -534,13 +790,27 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       return null;
     }
     final bool showRuby = s.appearance.sentenceFurigana || _sentenceRuby;
-    final List<SrsInline> segs = srsParseInline(
-      srsFieldFilled(f['SentenceFurigana'])
-          ? f['SentenceFurigana']!
-          : f['Sentence']!,
+    final String raw = srsFieldFilled(f['SentenceFurigana'])
+        ? f['SentenceFurigana']!
+        : f['Sentence']!;
+    // 目标词强调（#9）：显示的那份没带 `<b>` 时按字段标记 / 词条写法重新定位。
+    final List<SrsInline> segs = srsEmphasizeSentenceTarget(
+      srsParseInline(srsClozeToBold(raw)),
+      marked: <String>[
+        ...srsMarkedTargets(raw),
+        ...srsMarkedTargets(f['Sentence'] ?? ''),
+      ],
+      terms: <String>[
+        srsPlainText(f['Expression'] ?? ''),
+        if (srsFieldFilled(f['ExpressionFurigana']))
+          srsKanaOf(srsParseInline(f['ExpressionFurigana']!)),
+        srsPlainText(f['ExpressionReading'] ?? ''),
+      ],
     );
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
-    final List<String> audio = srsSoundNames(f['SentenceAudio'] ?? '');
+    // 例句发音键：片段自带例句声音时它控制片段（画面上从头播、有声），否则播例句音频
+    // （画面上的动图 / 静音片段从头陪播），两者不再各出一路声音（#7 / #10）。
+    final List<String> audio = _media.sentenceUnit;
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
@@ -567,9 +837,18 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       padding: EdgeInsets.all(s.pad),
       pressScale: false,
       color: s.tokens.surface1(s.scheme),
+      // 发音按钮在句首、与整段垂直居中：贴着它播放的那句话，不再孤零零停在卡片右上角。
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          if (audio.isNotEmpty) ...<Widget>[
+            _AudioButton(
+              key: const ValueKey<String>('srs-fushi-sentence-audio'),
+              name: audio.first,
+              style: s,
+              onPlay: (String _) => _playNames(audio),
+            ),
+            SizedBox(width: s.gap),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -617,13 +896,6 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               ],
             ),
           ),
-          for (final String name in audio)
-            _AudioButton(
-              key: const ValueKey<String>('srs-fushi-sentence-audio'),
-              name: name,
-              style: s,
-              onPlay: _play,
-            ),
         ],
       ),
     );
@@ -713,12 +985,22 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 窄版式释义 WebView 跟内容等高，页内 vh 不再是屏高：收起高度按外层视口给像素值。
     // 三个类名：宿主 CSS 排在卡片 CSS 之前，同为两类名的模板规则
     // （`.fc-back.fc-layout-wide{max-width:1160px}`）会后来居上，宽屏右侧又空出来。
+    // 宽版式还要 `align-items:stretch`：模板双栏网格的 `align-items:start` 在这里切成 flex
+    // 纵向后照样生效，释义块会按内容收缩成窄条（实测栏宽 785px、释义只有 325px）。
     hostCss:
-        '.fc.fc-back.fc-defs-only{flex-direction:column;max-width:none;margin:0;}'
-        '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}',
+        '.fc.fc-back.fc-defs-only{flex-direction:column;align-items:stretch;'
+        'max-width:none;margin:0;}'
+        '${wide ? '' : ':root{--fushi-srs-clamp:${(_viewport * 0.52).round()}px;}'}'
+        // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
+        '${ref.watch(srsDefsLayoutCssProvider)}',
+    hostScript: kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
     autoplayMedia: widget.face.autoplayMedia,
+    // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
+    onPlayAudio: widget.face.onPlayAudio,
+    // 释义区的空白点按由页内取词脚本回报（原生区那一层见 [SrsBlankTapRegion]）。
+    onTapEmpty: widget.face.onTapEmpty,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -734,7 +1016,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       key: _defsKey,
       child: KeyedSubtree(
         key: const ValueKey<String>('srs-fushi-definitions'),
-        child: builder(context, _defsFace(wide: wide)),
+        // 释义 WebView 上的点按归页内脚本判空白，原生区的空白判定跳过这块。
+        child: SrsBlankTapRegion.excluded(
+          child: builder(context, _defsFace(wide: wide)),
+        ),
       ),
     );
   }
@@ -784,22 +1069,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final List<Widget> blocks = <Widget>[
       Padding(
         padding: EdgeInsets.fromLTRB(s.pad, s.pad, s.pad, 0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _term(s, c),
-                  const SizedBox(height: 4),
-                  _readingRow(s),
-                ],
-              ),
-            ),
-            if (picture != null) ...<Widget>[SizedBox(width: s.gap), picture],
-          ],
-        ),
+        child: _header(s, c, trailing: picture),
       ),
       if (sentence != null)
         Padding(
@@ -847,8 +1117,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Widget? sentence = _sentence(s);
     final Widget? defs = _definitions(context, wide: true);
     final List<Widget> left = <Widget>[
-      _term(s, c),
-      _readingRow(s),
+      _header(s, c),
       ?picture,
       ?sentence,
       ..._footer(s),
@@ -1219,19 +1488,23 @@ class _MetaRow extends StatelessWidget {
   final _SrsCardStyle style;
   final Widget child;
 
+  /// 与词条区同缩进（一个卡片内边距）：左栏的文字都落在卡片内容那条竖线上。
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: <Widget>[
-      Text(
-        label,
-        style: style
-            .text(style.tokens.label, color: style.muted, ui: true)
-            .copyWith(fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: 6),
-      child,
-    ],
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.symmetric(horizontal: style.pad),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: style
+              .text(style.tokens.label, color: style.muted, ui: true)
+              .copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    ),
   );
 }
 
@@ -1263,14 +1536,124 @@ class _AudioButton extends StatelessWidget {
   }
 }
 
+/// 铺满栏宽的图片比例范围（宽 / 高）：视频截图 16:9、4:3、方图都在内；竖长书封、超宽
+/// 横幅铺满会过高 / 过扁，照旧限高完整显示。
+const double kSrsPictureFillMinAspect = 0.9;
+const double kSrsPictureFillMaxAspect = 2.5;
+
+/// 铺满的图片最高占卡面视口高度的比例。
+const double kSrsPictureFillMaxViewportFraction = 0.4;
+
+/// 会动的图片格式（例句音频开播时从头重播，见 [SrsCardSentenceCompanion]）。
+const Set<String> _kAnimatedImageExtensions = <String>{
+  'gif',
+  'webp',
+  'avif',
+  'apng',
+};
+
+/// [name] 可能是动图（按扩展名）。
+@visibleForTesting
+bool srsIsAnimatedImageName(String name) {
+  final int dot = name.lastIndexOf('.');
+  return dot >= 0 &&
+      _kAnimatedImageExtensions.contains(name.substring(dot + 1).toLowerCase());
+}
+
+/// 媒体库里的图片：点按全屏查看。动图是例句音频的陪播画面（#7）：例句开播时从第一帧重播，
+/// 画面与句子同步（视频制卡的动图封面与例句音频切自同一段字幕时间）。
+
+/// 原生卡面图片的尺寸上限（[srsPictureLimits] 按「卡面图片大小」设置给出）。
+typedef SrsPictureLimits = ({
+  double? maxWidth,
+  double maxHeight,
+  bool fillWidth,
+  double maxFillHeight,
+});
+
+/// Fushi 卡片图片（含视频片段）的尺寸上限，与 WebView 卡面的 [srsReviewImageSizeCss]
+/// 读同一个设置。[wide]：宽版式左栏；否则是窄版式标题右侧的缩略图（[thumb] 为基准边长）。
+///
+/// - 原样：左栏常见比例铺满栏宽（视口高于 520 时），怪比例 / 视频片段最高 220（矮视口
+///   120）；铺满的图最高占视口的 [kSrsPictureFillMaxViewportFraction]。缩略图 1.5 × 1.4 基准边。
+/// - 适应宽度：任何视口都铺满栏宽，限高放宽到 360（矮视口 180）/ 视口的 55%；缩略图 ×1.5。
+/// - 放大：铺满栏宽，限高到视口的 [kSrsReviewLargeImageMaxVh]%；缩略图 ×2。
+@visibleForTesting
+SrsPictureLimits srsPictureLimits(
+  SrsReviewImageSize size, {
+  required bool wide,
+  required double viewport,
+  required double thumb,
+}) {
+  final bool short = viewport <= 520;
+  final double thumbScale = switch (size) {
+    SrsReviewImageSize.original => 1,
+    SrsReviewImageSize.fitWidth => 1.5,
+    SrsReviewImageSize.large => 2,
+  };
+  final double largeCap = viewport * kSrsReviewLargeImageMaxVh / 100;
+  return (
+    maxWidth: wide ? null : thumb * 1.5 * thumbScale,
+    maxHeight: !wide
+        ? thumb * 1.4 * thumbScale
+        : switch (size) {
+            SrsReviewImageSize.original => short ? 120 : 220,
+            SrsReviewImageSize.fitWidth => short ? 180 : 360,
+            SrsReviewImageSize.large => largeCap,
+          },
+    fillWidth: wide && (size != SrsReviewImageSize.original || !short),
+    maxFillHeight: switch (size) {
+      SrsReviewImageSize.original =>
+        viewport * kSrsPictureFillMaxViewportFraction,
+      SrsReviewImageSize.fitWidth => viewport * 0.55,
+      SrsReviewImageSize.large => largeCap,
+    },
+  );
+}
+
+/// 全屏查看一张卡面图片（原生卡点图、WebView 卡经 [SrsCardFace.onImageTap] 点图共用）：
+/// 可双指 / 滚轮缩放拖动，点一下关闭。
+Future<void> showSrsCardImageViewer(BuildContext context, Widget picture) =>
+    showAppDialog<void>(
+      context: context,
+      builder: (BuildContext context) => GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: InteractiveViewer(child: picture),
+      ),
+    );
+
+/// 卡面图片控件：AVIF（制卡默认的动图格式）走 Rust 逐帧解码播放，其余按
+/// [srsCardImageProvider]。来源无法显示时 null。
+Widget? srsCardImageWidget(String src, SrsMediaStore? store, {BoxFit? fit}) {
+  final File? avif = !src.startsWith('data:') && isAvifPath(src)
+      ? store?.resolve(src)
+      : null;
+  if (avif != null) {
+    return FushiAnimatedAvifImage(
+      file: avif,
+      fit: fit,
+      errorBuilder: (_, _, _) => const SizedBox.shrink(),
+    );
+  }
+  final ImageProvider<Object>? provider = srsCardImageProvider(src, store);
+  if (provider == null) return null;
+  return Image(
+    image: provider,
+    fit: fit,
+    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+  );
+}
+
 /// 媒体库里的图片：点按全屏查看。
-class _MediaImage extends ConsumerWidget {
+class _MediaImage extends ConsumerStatefulWidget {
   const _MediaImage({
     super.key,
     required this.name,
     required this.radius,
     this.maxWidth,
     this.maxHeight,
+    this.fillWidth = false,
+    this.maxFillHeight,
   });
 
   final String name;
@@ -1278,39 +1661,170 @@ class _MediaImage extends ConsumerWidget {
   final double? maxWidth;
   final double? maxHeight;
 
+  /// 常见比例时铺满父级宽度（按原比例定高）；怪比例退回 [maxHeight] 限高。
+  final bool fillWidth;
+
+  /// 铺满时的高度上限；按原比例超过它就封顶并居中裁切。null = 不封顶。
+  final double? maxFillHeight;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ImageProvider<Object>? provider = srsCardImageProvider(
-      name,
+  ConsumerState<_MediaImage> createState() => _MediaImageState();
+}
+
+class _MediaImageState extends ConsumerState<_MediaImage>
+    implements SrsCardSentenceCompanion {
+  ImageProvider<Object>? _provider;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  /// 解码出的宽 / 高；未知（还没解码 / 失败）时 null。
+  double? _aspect;
+
+  late final SrsCardVideoChannel _channel = ref.read(
+    srsCardVideoChannelProvider,
+  );
+
+  /// 每次例句开播 +1：动图子树换 key 重建，从第一帧播起。
+  int _restart = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _channel.attachCompanion(this);
+  }
+
+  @override
+  void dispose() {
+    _channel.detachCompanion(this);
+    _unlisten();
+    super.dispose();
+  }
+
+  /// 例句音频开播：动图回到第一帧。普通图片引擎的多帧解码器挂在图片缓存里，换 key 重建
+  /// 拿到的仍是同一个（接着当前帧播），先把它逐出缓存；AVIF 由原生解码器按 key 重开。
+  @override
+  void sentenceStarted(String name) {
+    if (!mounted || !srsIsAnimatedImageName(widget.name)) return;
+    final ImageProvider<Object>? provider = _provider;
+    if (provider != null && !isAvifPath(widget.name)) {
+      unawaited(provider.evict());
+    }
+    setState(() => _restart++);
+  }
+
+  void _unlisten() {
+    final ImageStreamListener? l = _listener;
+    if (l != null) _stream?.removeListener(l);
+    _stream = null;
+    _listener = null;
+  }
+
+  String? _providerName;
+  SrsMediaStore? _providerStore;
+
+  /// 同一张图（名字 + 媒体库不变）只建一次 provider：`MemoryImage` 按字节数组身份判等，
+  /// 每次 build 新建会让 Image 反复重载、尺寸监听反复重来。
+  ImageProvider<Object>? _providerFor(SrsMediaStore? store) {
+    if (_providerName != widget.name || !identical(_providerStore, store)) {
+      _providerName = widget.name;
+      _providerStore = store;
+      _unlisten();
+      _provider = srsCardImageProvider(widget.name, store);
+      _aspect = null;
+    }
+    return _provider;
+  }
+
+  /// 只在铺满模式下解析尺寸（决定铺不铺满）；同一 provider 只解析一次。
+  void _resolve(BuildContext context, ImageProvider<Object> provider) {
+    if (!widget.fillWidth || _stream != null) return;
+    final ImageStream stream = provider.resolve(
+      createLocalImageConfiguration(context),
+    );
+    final ImageStreamListener listener = ImageStreamListener((
+      ImageInfo info,
+      bool _,
+    ) {
+      final double w = info.image.width.toDouble();
+      final double h = info.image.height.toDouble();
+      info.dispose();
+      if (!mounted || h <= 0) return;
+      setState(() => _aspect = w / h);
+    }, onError: (Object _, StackTrace? _) {});
+    stream.addListener(listener);
+    _stream = stream;
+    _listener = listener;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double radius = widget.radius;
+    final ImageProvider<Object>? provider = _providerFor(
       ref.watch(srsMediaStoreProvider).valueOrNull,
+    );
+    if (provider != null) _resolve(context, provider);
+    final double? aspect = _aspect;
+    final bool fill =
+        widget.fillWidth &&
+        aspect != null &&
+        aspect >= kSrsPictureFillMinAspect &&
+        aspect <= kSrsPictureFillMaxAspect;
+    // AVIF（制卡默认的动图格式）：Rust 逐帧解码播放；静图同一个控件出首帧。尺寸仍由
+    // [provider]（AVIF 时是原生首帧解码的 AvifFileImage）解析。
+    final File? avif =
+        !widget.name.startsWith('data:') && isAvifPath(widget.name)
+        ? _providerStore?.resolve(widget.name)
+        : null;
+    Widget picture({BoxFit? fit}) => KeyedSubtree(
+      key: ValueKey<int>(_restart),
+      child: avif != null
+          ? FushiAnimatedAvifImage(
+              file: avif,
+              fit: fit,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            )
+          : Image(
+              image: provider!,
+              fit: fit,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
     );
     final Widget image = provider == null
         ? const SizedBox.shrink()
-        : Image(
-            image: provider,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          );
+        // 框与原图同比例；contain 保证取整误差下也不裁掉边。
+        : picture(fit: fill ? BoxFit.contain : null);
     final Widget box = ClipRRect(
       borderRadius: BorderRadius.all(Radius.circular(radius)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth ?? double.infinity,
-          maxHeight: maxHeight ?? 220,
-        ),
-        child: image,
-      ),
+      child: fill
+          // 铺满：按原比例定高；超过 [maxFillHeight] 就整张等比缩小到这个高度（不裁切），
+          // 靠左对齐卡片边缘。
+          ? LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) {
+                final double natural = c.maxWidth / aspect;
+                final double cap = widget.maxFillHeight ?? double.infinity;
+                return natural > cap
+                    ? SizedBox(width: cap * aspect, height: cap, child: image)
+                    : SizedBox(
+                        width: c.maxWidth,
+                        height: natural,
+                        child: image,
+                      );
+              },
+            )
+          : ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: widget.maxWidth ?? double.infinity,
+                maxHeight: widget.maxHeight ?? 220,
+              ),
+              child: image,
+            ),
     );
     if (provider == null) return box;
     return FushiPressScale(
       child: GestureDetector(
         onTap: () => unawaited(
-          showAppDialog<void>(
-            context: context,
-            builder: (BuildContext context) => GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: InteractiveViewer(child: Image(image: provider)),
-            ),
-          ),
+          showSrsCardImageViewer(context, picture(fit: BoxFit.contain)),
         ),
         child: box,
       ),
@@ -1334,5 +1848,8 @@ ImageProvider<Object>? srsCardImageProvider(String src, SrsMediaStore? store) {
   }
   if (src.contains('://')) return null;
   final File? file = store?.resolve(src);
-  return file == null ? null : FileImage(file);
+  if (file == null) return null;
+  // AVIF 统一走原生内核（同 resizedFileImage / BUG-3643）：不依赖各平台引擎 codec 是否带
+  // AVIF；动图在这里只取首帧（全屏查看用），卡面上的动图播放见 FushiAnimatedAvifImage。
+  return isAvifPath(file.path) ? AvifFileImage(file) : FileImage(file);
 }

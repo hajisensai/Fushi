@@ -83,6 +83,8 @@ list(APPEND PLUGIN_SOURCES
   "types/screenshot_configuration.h"
   "types/create_window_action.cpp"
   "types/create_window_action.h"
+  "types/download_start_request.cpp"
+  "types/download_start_request.h"
   "types/new_window_requested_args.cpp"
   "types/new_window_requested_args.h"
   "types/window_features.cpp"

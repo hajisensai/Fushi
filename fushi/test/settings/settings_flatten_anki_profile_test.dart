@@ -248,11 +248,21 @@ void main() {
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(8),
+      findsNWidgets(10),
       reason:
-          '常用开关（卡片内容 2 + 标签 4）与 Anki 分组的批量制卡 + 落地设备直接可见，'
-          '维护开关属于独立子页',
+          '常用开关（卡片内容 2 + 制卡提示 2 + 标签 4）与 Anki 分组的批量制卡 + 落地设备'
+          '直接可见，维护开关属于独立子页',
     );
+    for (final String notice in <String>[
+      'Show mining confirmations',
+      'Show duplicate-card notices',
+    ]) {
+      expect(
+        find.widgetWithText(AdaptiveSettingsSwitchRow, notice),
+        findsOneWidget,
+        reason: '「制卡提示」开关应无条件显示（两种挖词目标都生效）',
+      );
+    }
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),
       findsOneWidget,
@@ -367,13 +377,20 @@ void main() {
     );
     // 图片质量 / 音频质量 + 句子音频头/尾 padding 两对滑块。
     expect(find.byType(AdaptiveSettingsSliderRow), findsNWidgets(4));
-    // 唯一的开关是「句子音频跟随播放倍速」（PR #1537，与音频质量同组）；
-    // 通用设置的开关一个都不该出现在这个子页。
-    expect(find.byType(AdaptiveSettingsSwitchRow), findsOneWidget);
+    // 开关只有「句子音频跟随播放倍速」（PR #1537，与音频质量同组）与「动图只播放
+    // 一次」（反馈 ZxyIMK-C5V，与动图格式同组）；通用设置的开关一个都不该出现在这个子页。
+    expect(find.byType(AdaptiveSettingsSwitchRow), findsNWidgets(2));
     expect(
       find.widgetWithText(
         AdaptiveSettingsSwitchRow,
         'Match sentence audio to playback speed',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.widgetWithText(
+        AdaptiveSettingsSwitchRow,
+        'Play animated images once',
       ),
       findsOneWidget,
     );
@@ -535,11 +552,16 @@ void main() {
     );
   });
 
-  group('制卡页：Fushi 复习是主路径，Anki 收在次级分组', () {
-    CardTargetRow targetRow(WidgetTester tester, String key) =>
-        tester.widget<CardTargetRow>(find.byKey(ValueKey<String>(key)));
+  group('制卡页：挖词目标是一条分段条（与下载后端同形态）', () {
+    final Finder strip = find.byKey(
+      const ValueKey<String>('card-target-switch'),
+    );
+    SrsMiningTarget selected(WidgetTester tester) =>
+        tester.widget<FushiSegmentedStrip<SrsMiningTarget>>(strip).selected;
+    Finder segment(String label) =>
+        find.descendant(of: strip, matching: find.text(label));
 
-    testWidgets('当前发往 Anki（复习模块开）：Anki 分组展开、标明当前；Fushi 行只写状态', (
+    testWidgets('当前发往 Anki（复习模块开）：分段条选 Anki，Anki 分组展开', (
       WidgetTester tester,
     ) async {
       await tester.runAsync(() async {
@@ -552,35 +574,28 @@ void main() {
         <SettingsDestination>[],
       );
       expect(tester.takeException(), isNull);
-      final CardTargetRow srs = targetRow(tester, 'card-target-srs');
-      expect(srs.selected, isFalse);
-      expect(srs.subtitle, t.card_target_anki_current_note);
-      final CardTargetRow anki = targetRow(tester, 'card-target-anki');
-      expect(anki.selected, isTrue, reason: '存量 Anki 用户一眼看到「当前发往 Anki」');
+      expect(selected(tester), SrsMiningTarget.anki);
+      expect(find.text(t.card_target_anki_hint), findsWidgets);
       expect(find.text(t.anki_fetch), findsOneWidget, reason: 'Anki 分组默认展开');
       expect(
         find.byKey(const ValueKey<String>('srs-mining-deck')),
         findsNothing,
         reason: '未选中的 Fushi 复习一侧整组不显示',
       );
-      // Fushi 复习分组在 Anki 分组之前（主路径），但不出现任何推广措辞。
+      // 分段条在最上方，Fushi 复习排第一（新用户默认目标）。
       expect(
-        tester
-            .getTopLeft(find.byKey(const ValueKey<String>('card-target-srs')))
-            .dy,
-        lessThan(
-          tester
-              .getTopLeft(
-                find.byKey(const ValueKey<String>('card-target-anki')),
-              )
-              .dy,
-        ),
+        tester.getTopLeft(strip).dy,
+        lessThan(tester.getTopLeft(find.text(t.anki_fetch)).dy),
+      );
+      expect(
+        tester.getTopLeft(segment(t.srs_mining_target_srs)).dx,
+        lessThan(tester.getTopLeft(segment(t.srs_mining_target_anki)).dx),
       );
       expect(find.textContaining('ecommend'), findsNothing);
       expect(find.textContaining('推荐'), findsNothing);
     });
 
-    testWidgets('当前发往 Fushi 复习：Anki 专属项全隐藏；展开 Anki 分组点「发往 Anki」切回', (
+    testWidgets('当前发往 Fushi 复习：Anki 分组整组不显示；点分段条的 Anki 切回', (
       WidgetTester tester,
     ) async {
       final (FushiDatabase srsDb, SrsDbStore store) = (await tester.runAsync(
@@ -604,7 +619,7 @@ void main() {
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expect(targetRow(tester, 'card-target-srs').selected, isTrue);
+      expect(selected(tester), SrsMiningTarget.srs);
       expect(
         find.byKey(const ValueKey<String>('srs-mining-deck')),
         findsOneWidget,
@@ -616,37 +631,11 @@ void main() {
       );
       expect(find.text(t.anki_fetch), findsNothing);
       expect(find.text('AnkiConnect'), findsNothing);
+      // 整页唯一的「Anki」是分段条里那一段：没有「Anki」分组头，也没有页头跳转胶囊。
+      expect(find.text(t.srs_mining_target_anki), findsOneWidget);
+      expect(segment(t.srs_mining_target_anki), findsOneWidget);
 
-      // 折叠的「Anki」分组：展开后只有「发往 Anki」（与空的待发队列）。
-      // 分组头（不是页头跳转条里的同名胶囊）。
-      final Finder header = find
-          .descendant(
-            of: find.byType(AdaptiveSettingsSection),
-            matching: find.text(t.srs_mining_target_anki),
-          )
-          .last;
-      await Scrollable.ensureVisible(tester.element(header), alignment: 0.5);
-      await tester.pump();
-      if (find
-          .byKey(const ValueKey<String>('card-target-anki'))
-          .hitTestable()
-          .evaluate()
-          .isEmpty) {
-        await tester.tap(header);
-        await tester.pump(const Duration(milliseconds: 600));
-      }
-      final Finder ankiRow = find.byKey(
-        const ValueKey<String>('card-target-anki'),
-      );
-      expect(targetRow(tester, 'card-target-anki').selected, isFalse);
-      expect(find.text(t.anki_fetch), findsNothing);
-      // 等展开动画走完再滚入（动画途中算的滚动终点会把行留在视口外）。
-      for (int i = 0; i < 10; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      await Scrollable.ensureVisible(tester.element(ankiRow), alignment: 0.5);
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.tap(ankiRow);
+      await tester.tap(segment(t.srs_mining_target_anki));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 100)),
       );
@@ -654,9 +643,7 @@ void main() {
       expect(appModel.srsMiningTarget, SrsMiningTarget.anki);
     });
 
-    testWidgets('复习模块关着：Fushi 复习分组是开启入口，确认一次即开模块并改目标', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('复习模块关着：点「Fushi 复习」确认一次即开模块并改目标', (WidgetTester tester) async {
       await tester.runAsync(
         () => appModel.setModuleEnabled(ModuleId.srs, false),
       );
@@ -665,24 +652,13 @@ void main() {
         SettingsDestinationId.cardCreation,
         <SettingsDestination>[],
       );
+      expect(selected(tester), SrsMiningTarget.anki);
       expect(
-        find.byKey(const ValueKey<String>('card-target-srs')),
-        findsNothing,
+        tester.getSize(segment(t.srs_mining_target_srs)).height,
+        greaterThan(0),
       );
-      final Finder enable = find.byKey(
-        const ValueKey<String>('card-target-srs-enable'),
-      );
-      expect(enable, findsOneWidget);
-      expect(
-        tester.getSize(enable).height,
-        greaterThanOrEqualTo(48),
-        reason: '触控目标 ≥ 48',
-      );
-      // Anki 是唯一目标：标为当前、不给切换。
-      expect(targetRow(tester, 'card-target-anki').selected, isTrue);
-      expect(targetRow(tester, 'card-target-anki').onSelect, isNull);
 
-      await tester.tap(enable);
+      await tester.tap(segment(t.srs_mining_target_srs));
       await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(find.text(t.dialog_ok).last);
       await tester.runAsync(
@@ -713,10 +689,7 @@ void main() {
           <SettingsDestination>[],
         );
         expect(tester.takeException(), isNull);
-        expect(
-          find.byKey(const ValueKey<String>('card-target-anki')),
-          findsOneWidget,
-        );
+        expect(strip, findsOneWidget);
       });
     }
   });

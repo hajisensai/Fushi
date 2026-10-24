@@ -294,12 +294,12 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
 
   @override
   Future<ProviderBatchResult<VideoSubtitleCandidate>> search(VideoSubtitleSearchRequest request) async {
-    final List<String> titles = <String>{
+    final List<String> titles = jimakuQueryVariants(<String>[
       request.effectiveQuery,
       ...request.alternateTitles,
-    }.where((String t) => t.trim().isNotEmpty).toList();
+    ]);
     try {
-      final List<JimakuEntry> entries = await _client.searchEntries(
+      final List<JimakuEntry> found = await _client.searchEntries(
         queryFallbacks: titles,
         throwOnError: true,
         animeFilter: switch (request.anime) {
@@ -308,11 +308,13 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
           null => JimakuAnimeFilter.either,
         },
       );
+      // 与 app 侧 provider 同一条配额约束：只列与标题最像的几个条目。
+      final List<JimakuEntry> entries = pickJimakuEntriesForTitles(found, titles);
       final List<VideoSubtitleCandidate> out = <VideoSubtitleCandidate>[];
       for (final JimakuEntry entry in entries) {
         final List<JimakuFile> files = await _client.listFiles(
           entry.id,
-          episode: request.effectiveEpisode,
+          episode: entry.flags.movie ? null : request.effectiveEpisode,
           throwOnError: true,
         );
         for (final JimakuFile file in files) {

@@ -61,6 +61,13 @@ abstract class TtsProvider {
   Future<List<TtsVoice>> listVoices({TtsCancelToken? cancel}) async =>
       const <TtsVoice>[];
 
+  /// [TtsParamKind.voice] 类参数 [paramKey] 的可选值（设置页的选择列表）。默认就是
+  /// [listVoices]；一个引擎有多个这类参数时（系统语音的「引擎」与「声音」）按 key 分别给。
+  Future<List<TtsVoice>> listParamOptions(
+    String paramKey, {
+    TtsCancelToken? cancel,
+  }) => listVoices(cancel: cancel);
+
   Future<void> dispose() async {}
 }
 
@@ -130,7 +137,10 @@ const int kTtsMaxConcurrency = 8;
 
 /// 这份预设实际用的并发请求数：用户设了就用（夹到 1..[kTtsMaxConcurrency]），
 /// 否则用引擎默认值。系统语音只能串行。
-int ttsEffectiveConcurrency(TtsProviderDescriptor descriptor, TtsVoicePreset preset) {
+int ttsEffectiveConcurrency(
+  TtsProviderDescriptor descriptor,
+  TtsVoicePreset preset,
+) {
   if (descriptor.category == TtsProviderCategory.system) return 1;
   final int? custom = int.tryParse(preset.param(kTtsConcurrencyParam).trim());
   if (custom == null) return descriptor.capabilities.maxConcurrency;

@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
+    show AudiobookAlignmentStep;
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:path/path.dart' as p;
 
@@ -48,10 +51,15 @@ void main() {
   AudiobookTranscribeImportQueue newQueue() => AudiobookTranscribeImportQueue(
     store: store,
     transcriber: transcriber,
-    importer: (AudiobookTranscribeJob job, String subtitlePath) async {
-      imported.add('${job.title}<-$subtitlePath');
-      return importResult;
-    },
+    importer:
+        (
+          AudiobookTranscribeJob job,
+          String subtitlePath,
+          AudiobookTranscribeImportSink sink,
+        ) async {
+          imported.add('${job.title}<-$subtitlePath');
+          return importResult;
+        },
   );
 
   setUp(() {
@@ -238,5 +246,84 @@ void main() {
     expect(queue.jobs, isEmpty);
     await queue.close();
     expect(stored(), isEmpty);
+  });
+
+  test('入库端口经 sink 推进匹配 / 入库阶段，覆盖情况落盘并能读回', () async {
+    final Completer<void> inMatching = Completer<void>();
+    final Completer<void> releaseMatching = Completer<void>();
+    final List<(AudiobookTranscribeJobPhase?, AudiobookAlignmentStep?)> seen =
+        <(AudiobookTranscribeJobPhase?, AudiobookAlignmentStep?)>[];
+    late AudiobookTranscribeJob job;
+    final AudiobookTranscribeImportQueue queue = AudiobookTranscribeImportQueue(
+      store: store,
+      transcriber: transcriber,
+      importer:
+          (
+            AudiobookTranscribeJob j,
+            String subtitlePath,
+            AudiobookTranscribeImportSink sink,
+          ) async {
+            // 入库端口被调用时队列已按「有正文」先落到匹配阶段。
+            seen.add((j.phase, j.alignmentStep));
+            sink.step(AudiobookAlignmentStep.matching);
+            seen.add((j.phase, j.alignmentStep));
+            inMatching.complete();
+            await releaseMatching.future;
+            sink.step(AudiobookAlignmentStep.persisting, detail: 'a.mp3');
+            seen.add((j.phase, j.alignmentStep));
+            sink.coverage(
+              const AudiobookTextCoverage(
+                matchedCues: 98,
+                totalCues: 100,
+                coveredChars: 990,
+                spanChars: 1000,
+              ),
+            );
+            return 'book-key';
+          },
+    );
+    job = await queue.enqueue(
+      audioPaths: <String>['/a/01.mp3'],
+      contentPath: '/a/book.epub',
+      title: 'Book',
+    );
+    await _until(() => transcriber.pending.containsKey('Book'));
+    transcriber.pending['Book']!.complete('/asr/transcript.srt');
+    await inMatching.future;
+    expect(job.phase, AudiobookTranscribeJobPhase.matching);
+    expect(job.progress, isNull, reason: '匹配器没有数值进度，不估算');
+    releaseMatching.complete();
+    await _until(() => job.isTerminal);
+    await queue.close();
+
+    expect(seen, <(AudiobookTranscribeJobPhase?, AudiobookAlignmentStep?)>[
+      (AudiobookTranscribeJobPhase.matching, null),
+      (AudiobookTranscribeJobPhase.matching, AudiobookAlignmentStep.matching),
+      (
+        AudiobookTranscribeJobPhase.importing,
+        AudiobookAlignmentStep.persisting,
+      ),
+    ]);
+    expect(job.status, AudiobookTranscribeJobStatus.done);
+    expect(job.alignmentStep, isNull);
+    expect(job.coverage?.charRate, closeTo(0.99, 1e-9));
+    final AudiobookTranscribeImportQueue reloaded = newQueue();
+    await reloaded.load();
+    expect(reloaded.jobs.single.coverage, job.coverage);
+    await reloaded.close();
+  });
+
+  test('没经过下载模型就进了转录：记为跳过下载；没有正文直接入库', () async {
+    final AudiobookTranscribeImportQueue queue = newQueue();
+    final AudiobookTranscribeJob job = await queue.enqueue(
+      audioPaths: <String>['/a/01.mp3'],
+      title: 'Book',
+    );
+    await _until(() => transcriber.pending.containsKey('Book'));
+    expect(job.modelDownloadSkipped, isTrue);
+    transcriber.pending['Book']!.complete('/asr/t.srt');
+    await _until(() => job.isTerminal);
+    await queue.close();
+    expect(job.coverage, isNull);
   });
 }

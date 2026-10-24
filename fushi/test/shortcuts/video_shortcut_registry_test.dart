@@ -30,6 +30,7 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     nextFrame: () => log.add('nextFrame'),
     screenshot: () => log.add('screenshot'),
     screenshotSubtitled: () => log.add('screenshotSubtitled'),
+    ocrFrame: () => log.add('ocrFrame'),
     toggleFullscreen: () => log.add('toggleFullscreen'),
     toggleMiniWindow: () => log.add('toggleMiniWindow'),
     toggleMiniChrome: () => log.add('toggleMiniChrome'),

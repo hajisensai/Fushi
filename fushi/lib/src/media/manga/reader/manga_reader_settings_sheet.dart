@@ -328,6 +328,7 @@ Future<void> showMangaReaderSettingsSheet({
   Set<String> supportedDeviceKeys = const <String>{},
   MangaPageTurnSettings? pageTurn,
   Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged,
+  VoidCallback? onEditToolbarLayout,
 }) async => showReaderSideSheet<void>(
   context: context,
   side: ReaderSideSheetSide.right,
@@ -341,6 +342,7 @@ Future<void> showMangaReaderSettingsSheet({
     supportedDeviceKeys: supportedDeviceKeys,
     pageTurn: pageTurn,
     onPageTurnChanged: onPageTurnChanged,
+    onEditToolbarLayout: onEditToolbarLayout,
   ),
 );
 
@@ -358,6 +360,7 @@ class MangaReaderSettingsSheet extends StatefulWidget {
     this.ocrSettings,
     this.pageTurn,
     this.onPageTurnChanged,
+    this.onEditToolbarLayout,
   });
   final MangaReaderPreferences globalDefaults;
   final Map<String, Object?> overrides;
@@ -373,6 +376,10 @@ class MangaReaderSettingsSheet extends StatefulWidget {
 
   /// 翻页动画三项的写入（全局偏好）；null = 只读。
   final Future<void> Function(MangaPageTurnSettings value)? onPageTurnChanged;
+
+  /// 「工具栏布局」入口（打开按钮布局编辑器）；null = 不显示。工具栏布局是全局
+  /// 偏好（不分作品），不受下方作用域切换影响。
+  final VoidCallback? onEditToolbarLayout;
   @override
   State<MangaReaderSettingsSheet> createState() =>
       _MangaReaderSettingsSheetState();
@@ -907,7 +914,13 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     0 => <(String Function(), List<String>)>[
       (
         () => t.manga_reader_group_layout,
-        <String>['direction', 'scaleType', 'tapZones', 'longStripSidePadding'],
+        <String>[
+          'direction',
+          'scaleType',
+          'tapZones',
+          'showPageGaps',
+          'longStripSidePadding',
+        ],
       ),
       (
         () => t.manga_reader_group_wide_pages,
@@ -915,12 +928,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
       (
         () => t.manga_reader_group_long_strip,
-        <String>[
-          'showPageGaps',
-          'webtoonDoubleTapZoom',
-          'autoScroll',
-          'autoScrollSpeed',
-        ],
+        <String>['webtoonDoubleTapZoom', 'autoScroll', 'autoScrollSpeed'],
       ),
       (
         () => t.manga_reader_group_controls,
@@ -978,6 +986,15 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     ],
   };
 
+  /// 只对某种阅读模式生效的项，在别的模式下不出现——关着还留着会让人以为它有用。
+  /// 页间距：长条漫由「条漫 / 带间距长条漫」两个模式本身决定（BUG-3749），
+  /// 开关只剩纵向分页的翻页空隙在用。
+  bool _appliesToCurrentMode(String key) => switch (key) {
+    'showPageGaps' =>
+      _value('mode') == MangaReadingMode.pagedVertical.storageKey,
+    _ => true,
+  };
+
   List<Widget> _tabBlocks(
     int tab,
     Map<String, MangaReaderPreferenceDescriptor> byKey,
@@ -996,13 +1013,26 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       if (tab == 0 && byKey['mode'] != null) _modeBlock(byKey['mode']!),
       if (tab == 0 && _pageTurn != null) _pageTurnGroup(_pageTurn!),
       if (tab == 2) _filterPreview(),
+      if (tab == 1 && widget.onEditToolbarLayout != null)
+        MangaPanelGroup(
+          title: t.manga_reader_control_layout,
+          children: <Widget>[
+            AdaptiveSettingsNavigationRow(
+              key: const ValueKey<String>('manga_reader_toolbar_layout'),
+              title: t.manga_reader_control_layout,
+              icon: FushiIcons.dashboardCustomize,
+              showIcon: true,
+              onTap: widget.onEditToolbarLayout!,
+            ),
+          ],
+        ),
       for (final (String Function(), List<String>) g in groups)
         MangaPanelGroup(
           title: g.$1(),
           children: <Widget>[
             for (final String key in g.$2)
               if (byKey[key] case final MangaReaderPreferenceDescriptor d)
-                _row(d),
+                if (_appliesToCurrentMode(key)) _row(d),
           ],
         ),
       if (orphans.isNotEmpty)

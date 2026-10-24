@@ -25,6 +25,20 @@ typedef UpdateProbe = Future<void> Function();
 String updateLastCheckPrefKey(UpdateFeedKind kind) =>
     'updates_last_check_${kind.dbValue}';
 
+/// 调度器的域开关（[UpdateCheckScheduler.isKindEnabled] 的生产接线）。
+///
+/// 番剧新集域在调度器里只跑「媒体库在线作品补新集」：跑不跑看它自己的开关
+/// [videoLibraryAutoUpdate]（`video_library_auto_update`），**不看**「番剧新集提醒」
+/// ——提醒开关只决定补上的集进不进更新中心（publishBatch 按域开关丢弃），用户
+/// 2026-10-23 拍板拆开。其余域看各自的提醒开关 [notifyEnabled]。
+bool Function(UpdateFeedKind) updateCheckKindGate({
+  required bool Function() videoLibraryAutoUpdate,
+  required bool Function(UpdateFeedKind) notifyEnabled,
+}) =>
+    (UpdateFeedKind kind) => kind == UpdateFeedKind.videoEpisode
+        ? videoLibraryAutoUpdate()
+        : notifyEnabled(kind);
+
 class UpdateCheckScheduler {
   UpdateCheckScheduler({
     required PreferencesRepository prefs,
@@ -46,6 +60,8 @@ class UpdateCheckScheduler {
   /// 扩展与 app 24 小时：版本发布是周级事件，一天一次已经足够快。
   static const Map<UpdateFeedKind, Duration> kDefaultUpdateCheckIntervals =
       <UpdateFeedKind, Duration>{
+    // 番剧域在这里只有「媒体库在线作品补新集」（订阅仍走自己的相位节奏，见库注释）。
+    UpdateFeedKind.videoEpisode: Duration(hours: 6),
     UpdateFeedKind.mangaChapter: Duration(hours: 6),
     UpdateFeedKind.mangaExtension: Duration(hours: 24),
     UpdateFeedKind.animeExtension: Duration(hours: 24),

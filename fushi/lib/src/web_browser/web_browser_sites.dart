@@ -98,38 +98,115 @@ List<WebBrowserSite> addWebBrowserSite(
   return List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[...sites, site]);
 }
 
-/// 地址栏输入 → 可打开的 http(s) 地址。没写协议的补 https；不像网址返回 null。
+/// 地址栏输入 → 可打开的 http(s) 地址；不像网址返回 null（交给搜索引擎）。
+///
+/// - 写了 `http://` / `https://`：用户明说是网址，任何非空主机都直接打开——
+///   `http://localhost:55000/texthooker`、`http://nas:8080` 这类本机 / 局域网
+///   地址没有点号，旧判据「主机必须带点」把它们统统送去了搜索（5wWlKU_Rir）；
+/// - 没写协议：主机带点（域名 / IPv4）、`[IPv6]`，或 `localhost` 带端口 / 路径
+///   才算网址。回环与 IP 字面量补 `http`（本机服务几乎都不是 TLS，浏览器同
+///   口径），其余补 `https`。裸 `localhost` / 单个词仍按搜索处理。
 Uri? parseWebBrowserAddress(String input) {
-  String text = input.trim();
+  final String text = input.trim();
   if (text.isEmpty || text.contains(' ')) return null;
-  if (!RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*://').hasMatch(text)) {
-    text = 'https://$text';
+  final bool explicitScheme = RegExp(
+    r'^[a-zA-Z][a-zA-Z0-9+.-]*://',
+  ).hasMatch(text);
+  if (explicitScheme) {
+    final Uri? uri = Uri.tryParse(text);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    return uri.host.isEmpty ? null : uri;
   }
-  final Uri? uri = Uri.tryParse(text);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-    return null;
-  }
-  if (uri.host.isEmpty || !uri.host.contains('.')) return null;
-  return uri;
+  final Uri? probe = Uri.tryParse('http://$text');
+  if (probe == null || probe.host.isEmpty) return null;
+  final String host = probe.host;
+  final bool ipLiteral =
+      host.contains(':') || RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
+  final bool localhost =
+      host == 'localhost' &&
+      (probe.hasPort || text.length > 'localhost'.length);
+  if (!localhost && !ipLiteral && !host.contains('.')) return null;
+  return Uri.tryParse('${localhost || ipLiteral ? 'http' : 'https'}://$text');
+}
+
+/// 用 [next] 替换站点表里 URL 与 [previous] 相同的那一项（编辑站点）。
+/// 新 URL 与表里另一项撞了时丢掉被编辑的这项、保留原有那项，不出现重复。
+List<WebBrowserSite> replaceWebBrowserSite(
+  List<WebBrowserSite> sites,
+  WebBrowserSite previous,
+  WebBrowserSite next,
+) {
+  final String oldUrl = previous.url.toString();
+  final String newUrl = next.url.toString();
+  final bool collides =
+      newUrl != oldUrl &&
+      sites.any((WebBrowserSite s) => s.url.toString() == newUrl);
+  return List<WebBrowserSite>.unmodifiable(<WebBrowserSite>[
+    for (final WebBrowserSite s in sites)
+      if (s.url.toString() != oldUrl) s else if (!collides) next,
+  ]);
+}
+
+/// 地址栏可用的一个搜索引擎：内置 [WebBrowserSearchEngine] 或用户自定义的
+/// [WebBrowserCustomSearchEngine]。地址栏、联想、搜索引擎页只认这个接口。
+abstract interface class WebBrowserSearchProvider {
+  /// 写进 [kWebBrowserSearchEnginePref] 的值（内置 = 枚举名，自定义 = `custom:<id>`）。
+  String get prefValue;
+
+  /// 显示名（专有名词 / 用户起的名字，不进 i18n）。
+  String get label;
+
+  /// 用本引擎搜 [query] 的地址。
+  Uri searchUrl(String query);
+
+  /// 在线联想地址；没有联想接口返回 null。响应约定为 OpenSearch JSON
+  /// `["query", ["s1", "s2", ...]]`。
+  Uri? suggestUrl(String query);
 }
 
 /// 地址栏的搜索引擎（用户 2026-10-20：「搜索框不要用网址，要支持搜索引擎，并且
 /// 可切换默认谷歌」）。值名即持久化值，改名要迁移。
-enum WebBrowserSearchEngine {
-  google('Google', 'https://www.google.com/search'),
-  bing('Bing', 'https://www.bing.com/search'),
-  duckDuckGo('DuckDuckGo', 'https://duckduckgo.com/');
+enum WebBrowserSearchEngine implements WebBrowserSearchProvider {
+  google(
+    'Google',
+    'https://www.google.com/search',
+    'https://suggestqueries.google.com/complete/search?client=firefox&q=%s',
+  ),
+  bing(
+    'Bing',
+    'https://www.bing.com/search',
+    'https://api.bing.com/osjson.aspx?query=%s',
+  ),
+  duckDuckGo(
+    'DuckDuckGo',
+    'https://duckduckgo.com/',
+    'https://duckduckgo.com/ac/?type=list&q=%s',
+  );
 
-  const WebBrowserSearchEngine(this.label, this.endpoint);
+  const WebBrowserSearchEngine(this.label, this.endpoint, this.suggestTemplate);
 
   /// 专有名词，不进 i18n。
+  @override
   final String label;
   final String endpoint;
 
+  /// 联想接口模板（`%s` = 查询词），三家都回 OpenSearch JSON。
+  final String suggestTemplate;
+
+  @override
+  String get prefValue => name;
+
   /// 用本引擎搜 [query] 的地址（三家都吃 `q` 参数）。
+  @override
   Uri searchUrl(String query) => Uri.parse(
     endpoint,
   ).replace(queryParameters: <String, String>{'q': query.trim()});
+
+  @override
+  Uri? suggestUrl(String query) =>
+      fillWebBrowserSearchTemplate(suggestTemplate, query);
 
   static WebBrowserSearchEngine fromName(Object? name) =>
       WebBrowserSearchEngine.values.firstWhere(
@@ -138,20 +215,263 @@ enum WebBrowserSearchEngine {
       );
 }
 
-/// 当前搜索引擎的偏好键（设备本地）。
+/// 模板占位符。
+const String kWebBrowserSearchPlaceholder = '%s';
+
+/// 把 [template] 里的 `%s` 换成编码后的 [query]；模板不是 http(s) 或不含 `%s`
+/// 返回 null。
+Uri? fillWebBrowserSearchTemplate(String template, String query) {
+  if (!isValidWebBrowserSearchTemplate(template)) return null;
+  return Uri.tryParse(
+    template.trim().replaceAll(
+      kWebBrowserSearchPlaceholder,
+      Uri.encodeQueryComponent(query.trim()),
+    ),
+  );
+}
+
+/// 模板是否可用：http(s)、有主机、含 `%s`、不含空格。
+bool isValidWebBrowserSearchTemplate(String template) {
+  final String text = template.trim();
+  if (!text.contains(kWebBrowserSearchPlaceholder) || text.contains(' ')) {
+    return false;
+  }
+  final Uri? probe = Uri.tryParse(
+    text.replaceAll(kWebBrowserSearchPlaceholder, 'x'),
+  );
+  return probe != null &&
+      (probe.scheme == 'http' || probe.scheme == 'https') &&
+      probe.host.isNotEmpty;
+}
+
+/// 用户自定义的搜索引擎（名称 + 含 `%s` 的搜索模板 + 可选联想模板）。
+@immutable
+class WebBrowserCustomSearchEngine implements WebBrowserSearchProvider {
+  const WebBrowserCustomSearchEngine({
+    required this.id,
+    required this.name,
+    required this.searchTemplate,
+    this.suggestTemplate,
+  });
+
+  /// 稳定 id（创建时生成，编辑不变），选中项持久化引用它。
+  final String id;
+  final String name;
+  final String searchTemplate;
+  final String? suggestTemplate;
+
+  static const String prefPrefix = 'custom:';
+
+  @override
+  String get prefValue => '$prefPrefix$id';
+
+  @override
+  String get label => name;
+
+  @override
+  Uri searchUrl(String query) =>
+      fillWebBrowserSearchTemplate(searchTemplate, query) ??
+      WebBrowserSearchEngine.google.searchUrl(query);
+
+  @override
+  Uri? suggestUrl(String query) {
+    final String? template = suggestTemplate;
+    if (template == null || template.trim().isEmpty) return null;
+    return fillWebBrowserSearchTemplate(template, query);
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'name': name,
+    'search': searchTemplate,
+    if (suggestTemplate != null) 'suggest': suggestTemplate,
+  };
+
+  static WebBrowserCustomSearchEngine? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final String id = json['id']?.toString().trim() ?? '';
+    final String search = json['search']?.toString().trim() ?? '';
+    if (id.isEmpty || !isValidWebBrowserSearchTemplate(search)) return null;
+    final String suggest = json['suggest']?.toString().trim() ?? '';
+    final String name = json['name']?.toString().trim() ?? '';
+    return WebBrowserCustomSearchEngine(
+      id: id,
+      name: name.isEmpty ? (Uri.tryParse(search)?.host ?? id) : name,
+      searchTemplate: search,
+      suggestTemplate: isValidWebBrowserSearchTemplate(suggest)
+          ? suggest
+          : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is WebBrowserCustomSearchEngine &&
+      other.id == id &&
+      other.name == name &&
+      other.searchTemplate == searchTemplate &&
+      other.suggestTemplate == suggestTemplate;
+
+  @override
+  int get hashCode => Object.hash(id, name, searchTemplate, suggestTemplate);
+}
+
+/// 当前搜索引擎的偏好键（设备本地）。值：内置枚举名（旧值原样兼容）或
+/// `custom:<id>`。
 const String kWebBrowserSearchEnginePref = 'web_browser_search_engine';
 
+/// 自定义搜索引擎表的偏好键（设备本地，JSON 数组）。
+const String kWebBrowserCustomSearchEnginesPref =
+    'web_browser_custom_search_engines';
+
+/// 只读内置引擎；选中的是自定义引擎时返回 Google。**旧接口**，新代码用
+/// [readWebBrowserSearchProvider]。
 WebBrowserSearchEngine readWebBrowserSearchEngine(PrefStore prefs) =>
     WebBrowserSearchEngine.fromName(prefs.getPref(kWebBrowserSearchEnginePref));
 
 Future<void> writeWebBrowserSearchEngine(
   PrefStore prefs,
   WebBrowserSearchEngine engine,
-) => prefs.setPref(kWebBrowserSearchEnginePref, engine.name);
+) => writeWebBrowserSearchProvider(prefs, engine);
+
+List<WebBrowserCustomSearchEngine> parseWebBrowserCustomSearchEngines(
+  String raw,
+) {
+  if (raw.trim().isEmpty) return const <WebBrowserCustomSearchEngine>[];
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    return const <WebBrowserCustomSearchEngine>[];
+  }
+  if (decoded is! List) return const <WebBrowserCustomSearchEngine>[];
+  final Set<String> seen = <String>{};
+  final List<WebBrowserCustomSearchEngine> result =
+      <WebBrowserCustomSearchEngine>[];
+  for (final Object? item in decoded) {
+    final WebBrowserCustomSearchEngine? engine =
+        WebBrowserCustomSearchEngine.fromJson(item);
+    if (engine != null && seen.add(engine.id)) result.add(engine);
+  }
+  return List<WebBrowserCustomSearchEngine>.unmodifiable(result);
+}
+
+String encodeWebBrowserCustomSearchEngines(
+  List<WebBrowserCustomSearchEngine> engines,
+) => jsonEncode(<Object?>[
+  for (final WebBrowserCustomSearchEngine e in engines) e.toJson(),
+]);
+
+List<WebBrowserCustomSearchEngine> readWebBrowserCustomSearchEngines(
+  PrefStore prefs,
+) => parseWebBrowserCustomSearchEngines(
+  prefs.getPref(kWebBrowserCustomSearchEnginesPref)?.toString() ?? '',
+);
+
+Future<void> writeWebBrowserCustomSearchEngines(
+  PrefStore prefs,
+  List<WebBrowserCustomSearchEngine> engines,
+) => prefs.setPref(
+  kWebBrowserCustomSearchEnginesPref,
+  encodeWebBrowserCustomSearchEngines(engines),
+);
+
+/// 全部可选引擎：内置三家在前，自定义按添加顺序在后。
+List<WebBrowserSearchProvider> webBrowserSearchProviders(PrefStore prefs) =>
+    List<WebBrowserSearchProvider>.unmodifiable(<WebBrowserSearchProvider>[
+      ...WebBrowserSearchEngine.values,
+      ...readWebBrowserCustomSearchEngines(prefs),
+    ]);
+
+/// 按持久化值找引擎；找不到（含自定义已删）回落 Google。
+WebBrowserSearchProvider webBrowserSearchProviderFromPref(
+  Object? value,
+  List<WebBrowserCustomSearchEngine> customs,
+) {
+  final String text = value?.toString() ?? '';
+  if (text.startsWith(WebBrowserCustomSearchEngine.prefPrefix)) {
+    final String id = text.substring(
+      WebBrowserCustomSearchEngine.prefPrefix.length,
+    );
+    for (final WebBrowserCustomSearchEngine e in customs) {
+      if (e.id == id) return e;
+    }
+    return WebBrowserSearchEngine.google;
+  }
+  return WebBrowserSearchEngine.fromName(text);
+}
+
+/// 当前选中的搜索引擎（内置或自定义）。
+WebBrowserSearchProvider readWebBrowserSearchProvider(PrefStore prefs) =>
+    webBrowserSearchProviderFromPref(
+      prefs.getPref(kWebBrowserSearchEnginePref),
+      readWebBrowserCustomSearchEngines(prefs),
+    );
+
+Future<void> writeWebBrowserSearchProvider(
+  PrefStore prefs,
+  WebBrowserSearchProvider provider,
+) => prefs.setPref(kWebBrowserSearchEnginePref, provider.prefValue);
+
+/// 新增或按 id 替换一条自定义引擎。
+Future<void> upsertWebBrowserCustomSearchEngine(
+  PrefStore prefs,
+  WebBrowserCustomSearchEngine engine,
+) {
+  final List<WebBrowserCustomSearchEngine> current =
+      readWebBrowserCustomSearchEngines(prefs);
+  final bool exists = current.any(
+    (WebBrowserCustomSearchEngine e) => e.id == engine.id,
+  );
+  return writeWebBrowserCustomSearchEngines(
+    prefs,
+    <WebBrowserCustomSearchEngine>[
+      for (final WebBrowserCustomSearchEngine e in current)
+        e.id == engine.id ? engine : e,
+      if (!exists) engine,
+    ],
+  );
+}
+
+/// 删一条自定义引擎；删的是当前选中项时选中回落 Google。
+Future<void> removeWebBrowserCustomSearchEngine(
+  PrefStore prefs,
+  String id,
+) async {
+  final bool wasSelected =
+      readWebBrowserSearchProvider(prefs).prefValue ==
+      '${WebBrowserCustomSearchEngine.prefPrefix}$id';
+  await writeWebBrowserCustomSearchEngines(
+    prefs,
+    <WebBrowserCustomSearchEngine>[
+      for (final WebBrowserCustomSearchEngine e
+          in readWebBrowserCustomSearchEngines(prefs))
+        if (e.id != id) e,
+    ],
+  );
+  if (wasSelected) {
+    await writeWebBrowserSearchProvider(prefs, WebBrowserSearchEngine.google);
+  }
+}
+
+/// 生成一个新自定义引擎 id（时间戳 base36，冲突时递增）。
+String newWebBrowserCustomSearchEngineId(
+  List<WebBrowserCustomSearchEngine> existing, {
+  DateTime? now,
+}) {
+  int seed = (now ?? DateTime.now()).millisecondsSinceEpoch;
+  final Set<String> taken = <String>{
+    for (final WebBrowserCustomSearchEngine e in existing) e.id,
+  };
+  while (taken.contains(seed.toRadixString(36))) {
+    seed++;
+  }
+  return seed.toRadixString(36);
+}
 
 /// 地址栏输入 → 要打开的地址：像网址就直接打开（[parseWebBrowserAddress]），
 /// 否则交给 [engine] 搜索；空输入返回 null。
-Uri? resolveWebBrowserInput(String input, WebBrowserSearchEngine engine) {
+Uri? resolveWebBrowserInput(String input, WebBrowserSearchProvider engine) {
   final String text = input.trim();
   if (text.isEmpty) return null;
   return parseWebBrowserAddress(text) ?? engine.searchUrl(text);

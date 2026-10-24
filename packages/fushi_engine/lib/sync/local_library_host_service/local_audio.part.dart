@@ -7,11 +7,15 @@ mixin _LocalLibraryHostLocalAudio
   // ── 本地音频（T3.1）────────────────────────────────────────────────────────
 
   /// host 当前本地音频来源清单（从注入的 [_localAudioEntries] 取 displayName）。
+  ///
+  /// 只列库文件真在本机的来源：从别的设备导入的配置方案会带来文件不在本机的同名
+  /// 引用（BUG-3702），列出来对端就会来拉一个 [exportLocalAudio] 必然抛错的库。
   @override
   Future<List<RemoteLocalAudioInfo>> listLocalAudio() async {
     return <RemoteLocalAudioInfo>[
       for (final LocalAudioDbEntry e in _localAudioEntries)
-        RemoteLocalAudioInfo(displayName: e.displayName),
+        if (File(e.path).existsSync())
+          RemoteLocalAudioInfo(displayName: e.displayName),
     ];
   }
 
@@ -22,21 +26,23 @@ mixin _LocalLibraryHostLocalAudio
   @override
   Future<File> exportLocalAudio(String displayName) async {
     _assertSafeName(displayName);
-    final LocalAudioDbEntry? entry =
-        _localAudioEntries.cast<LocalAudioDbEntry?>().firstWhere(
-              (LocalAudioDbEntry? e) => e!.displayName == displayName,
-              orElse: () => null,
-            );
+    final LocalAudioDbEntry? entry = _localAudioEntries
+        .cast<LocalAudioDbEntry?>()
+        .firstWhere(
+          (LocalAudioDbEntry? e) => e!.displayName == displayName,
+          orElse: () => null,
+        );
     if (entry == null) {
       throw StateError('local audio not found: $displayName');
     }
     final File dbFile = File(entry.path);
-    if (!dbFile.existsSync()) {
+    if (!await dbFile.exists()) {
       throw StateError('local audio DB file not found: ${entry.path}');
     }
 
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_local_audio_export');
+    final Directory tmpDir = await Directory.systemTemp.createTemp(
+      'fushi_local_audio_export',
+    );
     final File out = File(p.join(tmpDir.path, '$displayName.fushiaudiolib'));
     await _packages.exportLocalAudioPackage(
       displayName: entry.displayName,
@@ -62,11 +68,11 @@ mixin _LocalLibraryHostLocalAudio
     await _runExclusive(() async {
       final Directory stagingDir =
           _localAudioStagingDir ?? Directory.systemTemp;
-      final LocalAudioPackageContents contents =
-          await _packages.importLocalAudioPackage(
-        packageFile: packageFile,
-        stagingDir: stagingDir,
-      );
+      final LocalAudioPackageContents contents = await _packages
+          .importLocalAudioPackage(
+            packageFile: packageFile,
+            stagingDir: stagingDir,
+          );
       try {
         await callback(contents);
       } finally {

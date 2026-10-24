@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/srs/srs_anki_migration.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -200,6 +201,61 @@ void main() {
     expect(again.notesAdded, 0);
     expect(again.cardsAdded, 0);
     expect((await store.history(cardId)).all, hasLength(2), reason: '日志 + 锚点');
+  });
+
+  group('迁移成功后切卡片去向（制卡目标 + 互联「制卡到互联主机」）', () {
+    late File colpkg;
+    late List<Object> writes;
+    late SrsCardTargetSwitch recorder;
+
+    setUp(() {
+      colpkg = File('${tmp.path}/switch.colpkg')
+        ..writeAsBytesSync(
+          zipOf(<String, List<int>>{'collection.anki2': _collection()}),
+        );
+      writes = <Object>[];
+      recorder = SrsCardTargetSwitch(
+        setMiningTarget: (SrsMiningTarget t) async => writes.add(t),
+        setMineToServer: (bool v) async => writes.add(v),
+      );
+    });
+
+    test('默认开：制卡目标改成复习、关掉制卡到互联主机', () async {
+      final SrsImportReport r = await runSrsAnkiMigration(
+        store: store,
+        media: media,
+        source: SrsAnkiMigrationFromPackage(colpkg),
+        cardTargetSwitch: recorder,
+      );
+      expect(r.notesAdded, 1);
+      expect(writes, <Object>[SrsMiningTarget.srs, false]);
+    });
+
+    test('选项关掉：两个偏好都不动', () async {
+      await runSrsAnkiMigration(
+        store: store,
+        media: media,
+        source: SrsAnkiMigrationFromPackage(colpkg),
+        settings: const SrsAnkiMigrationSettings(switchCardTarget: false),
+        cardTargetSwitch: recorder,
+      );
+      expect(writes, isEmpty);
+    });
+
+    test('导入失败：不切', () async {
+      final File broken = File('${tmp.path}/broken.colpkg')
+        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+      await expectLater(
+        runSrsAnkiMigration(
+          store: store,
+          media: media,
+          source: SrsAnkiMigrationFromPackage(broken),
+          cardTargetSwitch: recorder,
+        ),
+        throwsA(isA<SrsImportException>()),
+      );
+      expect(writes, isEmpty);
+    });
   });
 
   test('平台能力：桌面三端与 Android 能扫本机，iOS 只能选文件', () {

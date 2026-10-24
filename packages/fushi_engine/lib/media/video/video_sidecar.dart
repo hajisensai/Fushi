@@ -84,16 +84,18 @@ List<String> listSidecarSubtitles(
 /// ext ∈ srt/ass/ssa/vtt，langTag 只允许 `[A-Za-z0-9_-]`）。互联字幕上传端点用它做
 /// 服务端白名单校验（后缀由 client 报，绝不放行路径分隔符/穿越）。
 bool isSidecarSubtitleSuffix(String suffix) => RegExp(
-      r'^(\.[A-Za-z0-9_-]{1,32})?\.(srt|ass|ssa|vtt)$',
-      caseSensitive: false,
-    ).hasMatch(suffix);
+  r'^(\.[A-Za-z0-9_-]{1,32})?\.(srt|ass|ssa|vtt)$',
+  caseSensitive: false,
+).hasMatch(suffix);
 
 /// 纯函数：「设为该视频默认字幕」时落盘用的 sidecar 后缀——学习语言标记版
 /// `.<langCode>.<ext>`（[pickSidecar] 优先级最高的那一组），[langCode] 为空时退回
 /// 无标记 `.<ext>`。[format] 取 `srt` / `.ass` 等（大小写、前导点皆可）；不是字幕
 /// 扩展名时返回 null。
-String? defaultSidecarSubtitleSuffix(String format,
-    {required String langCode}) {
+String? defaultSidecarSubtitleSuffix(
+  String format, {
+  required String langCode,
+}) {
   final String ext = format.toLowerCase().replaceFirst(RegExp(r'^\.'), '');
   if (!_baseSubtitleExtensions.contains('.$ext')) return null;
   final String lang = langCode.toLowerCase();
@@ -123,26 +125,34 @@ List<String> sidecarSuffixesDisplacedBy(
 /// [langCode] 是 app 目标学习语言代码（如 `'ja'`/`'ko'`），优先选带该语言标记的
 /// 字幕。返回第一个存在的字幕绝对路径（优先级见 [pickSidecar]），无则 null。
 /// 目录不存在 / 读取失败时静默返回 null。
-String? findSidecarSubtitle(String videoPath, {required String langCode}) {
+///
+/// async：视频常在网络盘（rclone / SMB 挂载）上，同步 listSync 冷目录时要逐级重列
+/// 目录、单次数秒，会冻结调用方整条 isolate——互联 host 跑在 app 主 isolate 上，
+/// 一次字幕请求就能把全部端点和 UI 一起卡住（BUG-3756）。
+Future<String?> findSidecarSubtitle(
+  String videoPath, {
+  required String langCode,
+}) async {
   final String dir = p.dirname(videoPath);
   final String baseNameNoExt = p.basenameWithoutExtension(videoPath);
 
-  final Directory directory = Directory(dir);
-  if (!directory.existsSync()) return null;
-
-  final List<String> dirFiles;
+  final List<String> dirFiles = <String>[];
   try {
-    dirFiles = directory
-        .listSync(followLinks: false)
-        .whereType<File>()
-        .map((File f) => p.basename(f.path))
-        .toList();
+    await for (final FileSystemEntity e in Directory(
+      dir,
+    ).list(followLinks: false)) {
+      if (e is File) dirFiles.add(p.basename(e.path));
+    }
   } on FileSystemException {
+    // 目录不存在 / 无权限：与旧实现一致，静默返回 null。
     return null;
   }
 
-  final String? picked =
-      pickSidecar(baseNameNoExt, dirFiles, langCode: langCode);
+  final String? picked = pickSidecar(
+    baseNameNoExt,
+    dirFiles,
+    langCode: langCode,
+  );
   if (picked == null) return null;
   return p.normalize(p.join(dir, picked));
 }

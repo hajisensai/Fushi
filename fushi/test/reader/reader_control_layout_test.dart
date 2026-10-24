@@ -24,6 +24,7 @@ void main() {
         ReaderControlItem.statistics,
         ReaderControlItem.gallery,
         ReaderControlItem.fullscreen,
+        ReaderControlItem.bookmarks,
       ]);
       // 常驻按钮数（不含书名）= 4：返回 + 三颗主操作。
       final int pinned = <ReaderControlSlot>[
@@ -64,6 +65,7 @@ void main() {
         ReaderControlItem.modeToggle,
         ReaderControlItem.gallery,
         ReaderControlItem.fullscreen,
+        ReaderControlItem.bookmarks,
       ]);
       expect(c.hasBottomItems, isTrue);
     });
@@ -91,9 +93,70 @@ void main() {
         ReaderControlItem.fullscreen,
         ReaderControlItem.settings,
       ]);
-      expect(d.itemsIn(ReaderControlSlot.overflow), isEmpty);
+      // 旧 JSON 里没有「书签」键（2026-10 新增）：按出厂表回填到「更多」，
+      // 其余按钮一颗不动。
+      expect(d.itemsIn(ReaderControlSlot.overflow), <ReaderControlItem>[
+        ReaderControlItem.bookmarks,
+      ]);
       // 往返不漂。
       expect(ReaderControlLayout.decode(d.encode()), d);
+    });
+
+    test('书签键：出厂在「更多」；存量布局缺它时宽 / 窄窗都回填到「更多」', () {
+      expect(
+        ReaderControlLayout.defaults.core.slotOf(ReaderControlItem.bookmarks),
+        ReaderControlSlot.overflow,
+      );
+      expect(
+        ReaderControlLayout.compactDefaults.core.slotOf(
+          ReaderControlItem.bookmarks,
+        ),
+        ReaderControlSlot.overflow,
+      );
+      // 存过的自定义布局（显式列了别的按钮、没有 bookmarks）解码。
+      const String stored =
+          '{"version":1,"slots":{'
+          '"topLeft":["back"],"topCenter":["title"],'
+          '"topRight":["navigation","audiobook","settings"],'
+          '"overflow":["gallery"]}}';
+      final ReaderControlLayout wide = ReaderControlLayout.decode(stored);
+      // 用户显式放的按钮原位不动，缺席的书签键回填进「更多」。
+      expect(
+        wide.itemsIn(ReaderControlSlot.overflow).first,
+        ReaderControlItem.gallery,
+      );
+      expect(
+        wide.core.slotOf(ReaderControlItem.bookmarks),
+        ReaderControlSlot.overflow,
+      );
+      expect(wide.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
+        ReaderControlItem.navigation,
+        ReaderControlItem.audiobook,
+        ReaderControlItem.settings,
+      ]);
+      final ReaderControlLayout compact = ReaderControlLayout.decode(
+        stored,
+        fallback: ReaderControlLayout.compactDefaults,
+      );
+      expect(
+        compact.core.slotOf(ReaderControlItem.bookmarks),
+        ReaderControlSlot.overflow,
+      );
+      // 用户把它移出（removed）后不再回填。
+      final ReaderControlLayout removed = ReaderControlLayout.decode(
+        '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"]},'
+        '"removed":["bookmarks"]}',
+      );
+      expect(removed.core.removedItems, contains(ReaderControlItem.bookmarks));
+      // 可以拖去顶栏 / 底栏，但不能进顶栏中间。
+      expect(
+        ReaderControlItem.bookmarks.canMoveToSlot(ReaderControlSlot.topRight),
+        isTrue,
+      );
+      expect(
+        ReaderControlItem.bookmarks.canMoveToSlot(ReaderControlSlot.topCenter),
+        isFalse,
+      );
     });
 
     test('返回不进「更多」；其余按钮可进；书名只在顶栏中间', () {

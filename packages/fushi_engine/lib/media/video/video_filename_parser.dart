@@ -18,6 +18,7 @@ class VideoNameInfo {
     required this.series,
     this.season,
     this.episode,
+    this.isMovieHint = false,
   });
 
   /// 系列/番剧名（去字幕组 tag / 画质 / 集号后的可读主干）。
@@ -29,9 +30,14 @@ class VideoNameInfo {
   /// 集号；未识别为 null（此时分组按单片处理）。
   final int? episode;
 
+  /// 文件名带电影关键词（`Movie` / `劇場版` / `剧场版`…，引擎 [ParsedMediaName.isMovieHint]）。
+  /// `Doraemon Movie 01 (1980)` 里的 `01` 是剧场版序号而不是集号：单文件作品据此
+  /// 判电影，不能只看 [episode]。
+  final bool isMovieHint;
+
   @override
-  String toString() =>
-      'VideoNameInfo(series: $series, season: $season, episode: $episode)';
+  String toString() => 'VideoNameInfo(series: $series, season: $season, '
+      'episode: $episode, isMovieHint: $isMovieHint)';
 }
 
 /// 解析视频文件名（可带或不带扩展名）→ [VideoNameInfo]。纯函数，无 IO。
@@ -68,6 +74,7 @@ VideoNameInfo parseVideoFilename(String filename) {
         : _fallbackSeries(parsedFilename),
     season: explicitNumber('s', 'season') ?? parsed.season,
     episode: explicitNumber('e', 'episode') ?? parsed.episode,
+    isMovieHint: parsed.isMovieHint,
   );
 }
 
@@ -102,6 +109,7 @@ VideoNameInfo parseVideoPath(String path) {
     series: info.series,
     season: dirSeason,
     episode: info.episode,
+    isMovieHint: info.isMovieHint,
   );
 }
 

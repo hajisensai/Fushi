@@ -80,7 +80,8 @@ void main() {
   group('AggregateSnapshot.select 按族裁剪', () {
     test('只共享统计：收藏族整族清空，统计族原样保留', () {
       final AggregateSnapshot out =
-          _peerSnapshot().select(stats: true, favorites: false);
+          _peerSnapshot()
+          .select(stats: true, favorites: false, webHistory: false);
 
       expect(out.readingStats, hasLength(1));
       expect(out.videoStats, hasLength(1));
@@ -91,7 +92,8 @@ void main() {
 
     test('只共享收藏：统计族整族清空，收藏族原样保留', () {
       final AggregateSnapshot out =
-          _peerSnapshot().select(stats: false, favorites: true);
+          _peerSnapshot()
+          .select(stats: false, favorites: true, webHistory: false);
 
       expect(out.readingStats, isEmpty);
       expect(out.videoStats, isEmpty);
@@ -111,7 +113,8 @@ void main() {
       );
 
       final AggregateSnapshot out =
-          withTombstones.select(stats: true, favorites: false);
+          withTombstones
+          .select(stats: true, favorites: false, webHistory: false);
       expect(out.favoriteWordTombstones, isEmpty);
       expect(out.favoriteSentenceTombstones, isEmpty);
     });
@@ -119,11 +122,16 @@ void main() {
     test('两族都许可时零拷贝返回入参本身', () {
       final AggregateSnapshot snap = _peerSnapshot();
       expect(
-          identical(snap.select(stats: true, favorites: true), snap), isTrue);
+          identical(
+              snap.select(stats: true, favorites: true, webHistory: true),
+              snap),
+          isTrue);
     });
 
     test('两族都不许可时是空快照', () {
-      expect(_peerSnapshot().select(stats: false, favorites: false).isEmpty,
+      expect(_peerSnapshot()
+              .select(stats: false, favorites: false, webHistory: false)
+              .isEmpty,
           isTrue);
     });
   });

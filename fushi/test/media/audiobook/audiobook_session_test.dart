@@ -617,6 +617,9 @@ class _FakeReader implements ReaderAudiobookView {
   void onExplicitCueJump(AudioCue cue) {}
 
   @override
+  void onBeforeAudioJump(int fromGlobalMs) {}
+
+  @override
   void onReaderCueChanged() {
     cueChangedCount++;
   }

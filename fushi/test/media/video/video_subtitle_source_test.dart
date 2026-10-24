@@ -14,14 +14,17 @@ void main() {
   // 面板可消费的 cue JSON。纯函数（parseSubtitleContent 无 IO），复用 app 内已测的 parser。
   group('buildParsedSubtitleResponse (extension external subtitle)', () {
     test('SRT → cues {text,startMs,endMs}', () {
-      const String srt = '1\n'
+      const String srt =
+          '1\n'
           '00:00:01,500 --> 00:00:03,500\n'
           '走り出した\n\n'
           '2\n'
           '00:00:04,000 --> 00:00:05,000\n'
           'こんにちは\n';
-      final Map<String, dynamic> json =
-          buildParsedSubtitleResponse(filename: 'movie.ja.srt', content: srt);
+      final Map<String, dynamic> json = buildParsedSubtitleResponse(
+        filename: 'movie.ja.srt',
+        content: srt,
+      );
       final List<dynamic> cues = json['cues'] as List<dynamic>;
       expect(cues.length, 2);
       expect(cues[0], <String, dynamic>{
@@ -34,11 +37,14 @@ void main() {
     });
 
     test('ASS 也解析（复用 AssParser）', () {
-      const String ass = '[Events]\n'
+      const String ass =
+          '[Events]\n'
           'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
           'Dialogue: 0,0:00:02.00,0:00:04.00,Default,,0,0,0,,テスト\n';
-      final Map<String, dynamic> json =
-          buildParsedSubtitleResponse(filename: 'x.ass', content: ass);
+      final Map<String, dynamic> json = buildParsedSubtitleResponse(
+        filename: 'x.ass',
+        content: ass,
+      );
       final List<dynamic> cues = json['cues'] as List<dynamic>;
       expect(cues.length, 1);
       expect((cues[0] as Map<String, dynamic>)['text'], 'テスト');
@@ -46,8 +52,10 @@ void main() {
     });
 
     test('不支持的扩展名 → error、不抛', () {
-      final Map<String, dynamic> json =
-          buildParsedSubtitleResponse(filename: 'notes.txt', content: 'x');
+      final Map<String, dynamic> json = buildParsedSubtitleResponse(
+        filename: 'notes.txt',
+        content: 'x',
+      );
       expect(json['error'], 'unsupported');
       expect(json['cues'], isEmpty);
     });
@@ -136,8 +144,10 @@ Input #0, matroska,webm, from 'S01E01.mkv':
 ''';
       final List<EmbeddedSubtitleTrack> tracks =
           parseSubtitleStreamsFromFfmpegLog(stderr);
-      expect(tracks.map((EmbeddedSubtitleTrack t) => t.codec).toList(),
-          <String>['subrip', 'mov_text']);
+      expect(
+        tracks.map((EmbeddedSubtitleTrack t) => t.codec).toList(),
+        <String>['subrip', 'mov_text'],
+      );
       expect(tracks[0].streamIndex, 0);
       expect(tracks[1].streamIndex, 1);
     });
@@ -231,44 +241,49 @@ Input #0, matroska,webm, from 'S01E01.mkv':
   group('embeddedSubtitleTrackLabel（菜单标签含 title·TODO-844）', () {
     test('有 title：内封 N: lang / title / codec', () {
       expect(
-        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
-          streamIndex: 0,
-          codec: 'ass',
-          language: 'eng',
-          title: 'Full Subtitles',
-        )),
+        embeddedSubtitleTrackLabel(
+          const EmbeddedSubtitleTrack(
+            streamIndex: 0,
+            codec: 'ass',
+            language: 'eng',
+            title: 'Full Subtitles',
+          ),
+        ),
         '内封 0: eng / Full Subtitles / ass',
       );
     });
 
     test('无 title：退回旧标签 内封 N: lang / codec（不显示 title）', () {
       expect(
-        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
-          streamIndex: 1,
-          codec: 'subrip',
-          language: 'jpn',
-        )),
+        embeddedSubtitleTrackLabel(
+          const EmbeddedSubtitleTrack(
+            streamIndex: 1,
+            codec: 'subrip',
+            language: 'jpn',
+          ),
+        ),
         '内封 1: jpn / subrip',
       );
     });
 
     test('无 language 有 title：内封 N: title / codec', () {
       expect(
-        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
-          streamIndex: 2,
-          codec: 'ass',
-          title: 'Signs & Songs',
-        )),
+        embeddedSubtitleTrackLabel(
+          const EmbeddedSubtitleTrack(
+            streamIndex: 2,
+            codec: 'ass',
+            title: 'Signs & Songs',
+          ),
+        ),
         '内封 2: Signs & Songs / ass',
       );
     });
 
     test('lang/title 全缺省：内封 N: codec', () {
       expect(
-        embeddedSubtitleTrackLabel(const EmbeddedSubtitleTrack(
-          streamIndex: 3,
-          codec: 'mov_text',
-        )),
+        embeddedSubtitleTrackLabel(
+          const EmbeddedSubtitleTrack(streamIndex: 3, codec: 'mov_text'),
+        ),
         '内封 3: mov_text',
       );
     });
@@ -333,8 +348,11 @@ Input #0, matroska,webm, from 'S01E01.mkv':
 00:00:01,000 --> 00:00:03,000
 こんにちは
 ''';
-      final cues = parseSubtitleContent(SubtitleFormat.srt,
-          content: srt, bookUid: bookUid);
+      final cues = parseSubtitleContent(
+        SubtitleFormat.srt,
+        content: srt,
+        bookUid: bookUid,
+      );
       expect(cues, hasLength(1));
       expect(cues.first.text, 'こんにちは');
     });
@@ -346,8 +364,11 @@ Input #0, matroska,webm, from 'S01E01.mkv':
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,おはよう
 ''';
-      final cues = parseSubtitleContent(SubtitleFormat.ass,
-          content: ass, bookUid: bookUid);
+      final cues = parseSubtitleContent(
+        SubtitleFormat.ass,
+        content: ass,
+        bookUid: bookUid,
+      );
       expect(cues, hasLength(1));
       expect(cues.first.text, 'おはよう');
     });
@@ -359,8 +380,11 @@ WEBVTT
 00:00:01.000 --> 00:00:03.000
 さようなら
 ''';
-      final cues = parseSubtitleContent(SubtitleFormat.vtt,
-          content: vtt, bookUid: bookUid);
+      final cues = parseSubtitleContent(
+        SubtitleFormat.vtt,
+        content: vtt,
+        bookUid: bookUid,
+      );
       expect(cues, hasLength(1));
       expect(cues.first.text, 'さようなら');
     });
@@ -369,30 +393,35 @@ WEBVTT
   group('parseSubtitleContentAsync (TODO-475 async parser route)', () {
     const String bookUid = 'video_book_x://book/async';
 
-    test('routes small vtt content through the async parser entry point',
-        () async {
-      const String vtt = '''
+    test(
+      'routes small vtt content through the async parser entry point',
+      () async {
+        const String vtt = '''
 WEBVTT
 
 00:00:01.000 --> 00:00:03.000
 hello async vtt
 ''';
 
-      final List<AudioCue> cues = await parseSubtitleContentAsync(
-        SubtitleFormat.vtt,
-        content: vtt,
-        bookUid: bookUid,
-      );
+        final List<AudioCue> cues = await parseSubtitleContentAsync(
+          SubtitleFormat.vtt,
+          content: vtt,
+          bookUid: bookUid,
+        );
 
-      expect(cues, hasLength(1));
-      expect(cues.single.bookKey, bookUid);
-      expect(cues.single.text, 'hello async vtt');
-    });
+        expect(cues, hasLength(1));
+        expect(cues.single.bookKey, bookUid);
+        expect(cues.single.text, 'hello async vtt');
+      },
+    );
 
     test('parses large srt content through the async entry point', () async {
       final String srt = _largeSrt(cueCount: 5000);
-      expect(srt.length, greaterThan(1024 * 1024),
-          reason: 'The large-content path should be exercised.');
+      expect(
+        srt.length,
+        greaterThan(1024 * 1024),
+        reason: 'The large-content path should be exercised.',
+      );
 
       final List<AudioCue> cues = await parseSubtitleContentAsync(
         SubtitleFormat.srt,
@@ -407,8 +436,11 @@ hello async vtt
 
     test('parses large ass content through the async entry point', () async {
       final String ass = _largeAss(cueCount: 5000);
-      expect(ass.length, greaterThan(1024 * 1024),
-          reason: 'The large-content path should be exercised.');
+      expect(
+        ass.length,
+        greaterThan(1024 * 1024),
+        reason: 'The large-content path should be exercised.',
+      );
 
       final List<AudioCue> cues = await parseSubtitleContentAsync(
         SubtitleFormat.ass,
@@ -423,8 +455,11 @@ hello async vtt
 
     test('parses large vtt content through the async entry point', () async {
       final String vtt = _largeVtt(cueCount: 5000);
-      expect(vtt.length, greaterThan(1024 * 1024),
-          reason: 'The large-content path should be exercised.');
+      expect(
+        vtt.length,
+        greaterThan(1024 * 1024),
+        reason: 'The large-content path should be exercised.',
+      );
 
       final List<AudioCue> cues = await parseSubtitleContentAsync(
         SubtitleFormat.vtt,
@@ -441,8 +476,11 @@ hello async vtt
       final String cjkSubtitle =
           '字幕' * ((SrtParser.largeContentComputeThreshold ~/ 6) + 1);
 
-      expect(cjkSubtitle.length, lessThan(1024 * 1024),
-          reason: 'CJK files can be byte-large while char-count-small.');
+      expect(
+        cjkSubtitle.length,
+        lessThan(1024 * 1024),
+        reason: 'CJK files can be byte-large while char-count-small.',
+      );
       expect(
         SrtParser.utf8ContentByteLength(cjkSubtitle),
         greaterThan(SrtParser.largeContentComputeThreshold),
@@ -479,7 +517,9 @@ hello async vtt
       );
       expect(
         _functionBody(
-            source, 'Future<SubtitleCueLoadResult> _loadEmbeddedCues'),
+          source,
+          'Future<SubtitleCueLoadResult> _loadEmbeddedCues',
+        ),
         contains('_readAndParse('),
       );
       expect(
@@ -538,41 +578,54 @@ hello async vtt
       expect(pgs.isGraphicEmbedded, isTrue);
       expect(
         const SubtitleSource.embedded(
-                streamIndex: 1, label: 'x', codec: 'dvd_subtitle')
-            .isGraphicEmbedded,
+          streamIndex: 1,
+          label: 'x',
+          codec: 'dvd_subtitle',
+        ).isGraphicEmbedded,
         isTrue,
       );
 
       // 文本内嵌轨（ass/subrip/mov_text）：能转 cue → 不是图形轨。
       expect(
-        const SubtitleSource.embedded(streamIndex: 0, label: 'x', codec: 'ass')
-            .isGraphicEmbedded,
+        const SubtitleSource.embedded(
+          streamIndex: 0,
+          label: 'x',
+          codec: 'ass',
+        ).isGraphicEmbedded,
         isFalse,
       );
       expect(
         const SubtitleSource.embedded(
-                streamIndex: 0, label: 'x', codec: 'subrip')
-            .isGraphicEmbedded,
+          streamIndex: 0,
+          label: 'x',
+          codec: 'subrip',
+        ).isGraphicEmbedded,
         isFalse,
       );
       expect(
         const SubtitleSource.embedded(
-                streamIndex: 0, label: 'x', codec: 'mov_text')
-            .isGraphicEmbedded,
+          streamIndex: 0,
+          label: 'x',
+          codec: 'mov_text',
+        ).isGraphicEmbedded,
         isFalse,
       );
 
       // 未知/空 codec：fail-open 当文本（subtitleFormatForCodec→srt）→ 非图形。
       expect(
-        const SubtitleSource.embedded(streamIndex: 0, label: 'x')
-            .isGraphicEmbedded,
+        const SubtitleSource.embedded(
+          streamIndex: 0,
+          label: 'x',
+        ).isGraphicEmbedded,
         isFalse,
       );
 
       // 外挂源恒非图形（codec 永远 null，但 isEmbedded=false 先短路）。
       expect(
-        const SubtitleSource.external(externalPath: r'D:\v\a.srt', label: 'a')
-            .isGraphicEmbedded,
+        const SubtitleSource.external(
+          externalPath: r'D:\v\a.srt',
+          label: 'a',
+        ).isGraphicEmbedded,
         isFalse,
       );
     });
@@ -624,8 +677,11 @@ hello async vtt
     });
 
     test('基名里的非法目录字符折叠为下划线', () {
-      final String key =
-          embeddedSubtitleCacheKey('My Movie:S01 (BD)/x', 10, 20);
+      final String key = embeddedSubtitleCacheKey(
+        'My Movie:S01 (BD)/x',
+        10,
+        20,
+      );
       expect(key, isNot(contains(' ')));
       expect(key, isNot(contains(':')));
       expect(key, isNot(contains('/')));
@@ -639,8 +695,9 @@ hello async vtt
     test('小文件取 ~60s 下限（不再是固定 30s 静默失败）', () {
       expect(subtitleExtractTimeoutForBytes(0).inSeconds, 60);
       // 100MB ≈ 0.1GB → 60 + 0.1*8 ≈ 61s，紧贴下限、远超旧 30s。
-      final int small =
-          subtitleExtractTimeoutForBytes(100 * 1024 * 1024).inSeconds;
+      final int small = subtitleExtractTimeoutForBytes(
+        100 * 1024 * 1024,
+      ).inSeconds;
       expect(small, inInclusiveRange(60, 61));
       expect(small, greaterThan(30));
     });
@@ -659,10 +716,12 @@ hello async vtt
     });
 
     test('随体积单调不减', () {
-      final int t1 =
-          subtitleExtractTimeoutForBytes(5 * 1024 * 1024 * 1024).inSeconds;
-      final int t2 =
-          subtitleExtractTimeoutForBytes(50 * 1024 * 1024 * 1024).inSeconds;
+      final int t1 = subtitleExtractTimeoutForBytes(
+        5 * 1024 * 1024 * 1024,
+      ).inSeconds;
+      final int t2 = subtitleExtractTimeoutForBytes(
+        50 * 1024 * 1024 * 1024,
+      ).inSeconds;
       expect(t2, greaterThanOrEqualTo(t1));
     });
   });
@@ -671,7 +730,8 @@ hello async vtt
     test('app 文档目录里的导入字幕路径 → true（应直接按路径恢复）', () {
       expect(
         isImportedExternalSubtitlePath(
-            '/data/app/docs/video_subtitles/Show S01E01.ja.srt'),
+          '/data/app/docs/video_subtitles/Show S01E01.ja.srt',
+        ),
         isTrue,
       );
       expect(
@@ -693,11 +753,16 @@ hello async vtt
 
     test('四种受支持字幕扩展名都识别（大小写不敏感）', () {
       for (final String ext in <String>['srt', 'ass', 'ssa', 'vtt']) {
-        expect(isImportedExternalSubtitlePath('/d/sub.$ext'), isTrue,
-            reason: ext);
-        expect(isImportedExternalSubtitlePath('/d/SUB.${ext.toUpperCase()}'),
-            isTrue,
-            reason: ext);
+        expect(
+          isImportedExternalSubtitlePath('/d/sub.$ext'),
+          isTrue,
+          reason: ext,
+        );
+        expect(
+          isImportedExternalSubtitlePath('/d/SUB.${ext.toUpperCase()}'),
+          isTrue,
+          reason: ext,
+        );
       }
     });
   });
@@ -711,13 +776,16 @@ hello async vtt
       tempDir = Directory.systemTemp.createTempSync('fushi_todo016_menu_');
       video = File(p.join(tempDir.path, 'Miss Kobayashi S01E01.mkv'))
         ..writeAsStringSync('fake video bytes');
-      imported = File(p.join(
-        tempDir.path,
-        'video_subtitles',
-        'todo016-imported-reentry.srt',
-      ))
-        ..createSync(recursive: true)
-        ..writeAsStringSync('''
+      imported =
+          File(
+              p.join(
+                tempDir.path,
+                'video_subtitles',
+                'todo016-imported-reentry.srt',
+              ),
+            )
+            ..createSync(recursive: true)
+            ..writeAsStringSync('''
 1
 00:00:00,000 --> 00:00:01,000
 TODO016 imported subtitle survives reopen.
@@ -731,61 +799,61 @@ TODO016 imported subtitle survives reopen.
     });
 
     test(
-        'uses already loaded cues as evidence for the current persisted source',
-        () async {
-      final List<SubtitleSource> sources =
-          await includeCurrentPersistedSubtitleForMenu(
-        const <SubtitleSource>[
-          SubtitleSource.embedded(streamIndex: 0, label: '内封 0: eng / ass'),
-        ],
-        videoPath: video.path,
-        bookUid: 'video/todo016',
-        currentSubtitleSource: imported.path,
-        currentCues: <AudioCue>[
-          _cue('video/todo016', 'TODO016 imported subtitle survives reopen.'),
-        ],
-        loadCues: (_, __, ___) {
-          fail('已有 DB cues 时菜单不应再因为二次解析失败隐藏当前持久化字幕源');
-        },
-      );
+      'uses already loaded cues as evidence for the current persisted source',
+      () async {
+        final List<SubtitleSource>
+        sources = await includeCurrentPersistedSubtitleForMenu(
+          const <SubtitleSource>[
+            SubtitleSource.embedded(streamIndex: 0, label: '内封 0: eng / ass'),
+          ],
+          videoPath: video.path,
+          bookUid: 'video/todo016',
+          currentSubtitleSource: imported.path,
+          currentCues: <AudioCue>[
+            _cue('video/todo016', 'TODO016 imported subtitle survives reopen.'),
+          ],
+          loadCues: (_, __, ___) {
+            fail('已有 DB cues 时菜单不应再因为二次解析失败隐藏当前持久化字幕源');
+          },
+        );
 
-      expect(
-        sources.map((SubtitleSource s) => s.label).toList(),
-        <String>[
+        expect(sources.map((SubtitleSource s) => s.label).toList(), <String>[
           'todo016-imported-reentry.srt',
           '内封 0: eng / ass',
-        ],
-      );
-    });
+        ]);
+      },
+    );
 
-    test('parses the current persisted source when no cues are loaded',
-        () async {
-      final List<SubtitleSource> sources =
-          await includeCurrentPersistedSubtitleForMenu(
-        const <SubtitleSource>[],
-        videoPath: video.path,
-        bookUid: 'video/todo016',
-        currentSubtitleSource: imported.path,
-      );
+    test(
+      'parses the current persisted source when no cues are loaded',
+      () async {
+        final List<SubtitleSource> sources =
+            await includeCurrentPersistedSubtitleForMenu(
+              const <SubtitleSource>[],
+              videoPath: video.path,
+              bookUid: 'video/todo016',
+              currentSubtitleSource: imported.path,
+            );
 
-      expect(sources, hasLength(1));
-      expect(sources.single.externalPath, imported.path);
-    });
+        expect(sources, hasLength(1));
+        expect(sources.single.externalPath, imported.path);
+      },
+    );
 
     test('dedupes an existing source for the same canonical path', () async {
       final List<SubtitleSource> sources =
           await includeCurrentPersistedSubtitleForMenu(
-        <SubtitleSource>[
-          SubtitleSource.external(
-            externalPath: p.normalize(imported.path),
-            label: 'already-listed.srt',
-          ),
-        ],
-        videoPath: video.path,
-        bookUid: 'video/todo016',
-        currentSubtitleSource: imported.path,
-        currentCues: <AudioCue>[_cue('video/todo016', 'already loaded')],
-      );
+            <SubtitleSource>[
+              SubtitleSource.external(
+                externalPath: p.normalize(imported.path),
+                label: 'already-listed.srt',
+              ),
+            ],
+            videoPath: video.path,
+            bookUid: 'video/todo016',
+            currentSubtitleSource: imported.path,
+            currentCues: <AudioCue>[_cue('video/todo016', 'already loaded')],
+          );
 
       expect(sources, hasLength(1));
       expect(sources.single.label, 'already-listed.srt');
@@ -795,42 +863,41 @@ TODO016 imported subtitle survives reopen.
     // 持久化指针，重开视频后（本会话登记的导入档已按视频源作用域清空、枚举又永远
     // 看不到 video_subtitles/）副字幕那个档在列表里彻底消失，而它的 cue 仍从库里
     // 重放——「副字幕没了，但视频里还在显示」。
-    test('lists an import that is only used as the secondary subtitle',
-        () async {
-      final List<SubtitleSource> sources =
-          await includeCurrentPersistedSubtitleForMenu(
-        const <SubtitleSource>[
-          SubtitleSource.embedded(streamIndex: 0, label: '内封 0: jpn / ass'),
-        ],
-        videoPath: video.path,
-        bookUid: 'video/todo016',
-        currentSubtitleSource: 'embedded:0',
-        currentSecondarySubtitleSource: imported.path,
-        currentSecondaryCues: <AudioCue>[
-          _cue('video/todo016', 'secondary line'),
-        ],
-        loadCues: (_, __, ___) {
-          fail('已有副字幕 cues 时不应再二次解析');
-        },
-      );
+    test(
+      'lists an import that is only used as the secondary subtitle',
+      () async {
+        final List<SubtitleSource> sources =
+            await includeCurrentPersistedSubtitleForMenu(
+              const <SubtitleSource>[
+                SubtitleSource.embedded(
+                  streamIndex: 0,
+                  label: '内封 0: jpn / ass',
+                ),
+              ],
+              videoPath: video.path,
+              bookUid: 'video/todo016',
+              currentSubtitleSource: 'embedded:0',
+              currentSecondarySubtitleSource: imported.path,
+              currentSecondaryCues: <AudioCue>[
+                _cue('video/todo016', 'secondary line'),
+              ],
+              loadCues: (_, __, ___) {
+                fail('已有副字幕 cues 时不应再二次解析');
+              },
+            );
 
-      expect(
-        sources.map((SubtitleSource s) => s.label).toList(),
-        <String>[
+        expect(sources.map((SubtitleSource s) => s.label).toList(), <String>[
           'todo016-imported-reentry.srt',
           '内封 0: jpn / ass',
-        ],
-      );
-    });
+        ]);
+      },
+    );
 
     test('lists both persisted imports with the primary one first', () async {
-      final File secondaryImported = File(p.join(
-        tempDir.path,
-        'video_subtitles',
-        'todo016-secondary.srt',
-      ))
-        ..createSync(recursive: true)
-        ..writeAsStringSync('''
+      final File secondaryImported =
+          File(p.join(tempDir.path, 'video_subtitles', 'todo016-secondary.srt'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('''
 1
 00:00:00,000 --> 00:00:01,000
 BUG-2094 secondary import.
@@ -838,47 +905,46 @@ BUG-2094 secondary import.
 
       final List<SubtitleSource> sources =
           await includeCurrentPersistedSubtitleForMenu(
-        const <SubtitleSource>[
-          SubtitleSource.embedded(streamIndex: 0, label: '内封 0: jpn / ass'),
-        ],
-        videoPath: video.path,
-        bookUid: 'video/todo016',
-        currentSubtitleSource: imported.path,
-        currentCues: <AudioCue>[_cue('video/todo016', 'primary line')],
-        currentSecondarySubtitleSource: secondaryImported.path,
-        currentSecondaryCues: <AudioCue>[
-          _cue('video/todo016', 'secondary line'),
-        ],
-      );
+            const <SubtitleSource>[
+              SubtitleSource.embedded(streamIndex: 0, label: '内封 0: jpn / ass'),
+            ],
+            videoPath: video.path,
+            bookUid: 'video/todo016',
+            currentSubtitleSource: imported.path,
+            currentCues: <AudioCue>[_cue('video/todo016', 'primary line')],
+            currentSecondarySubtitleSource: secondaryImported.path,
+            currentSecondaryCues: <AudioCue>[
+              _cue('video/todo016', 'secondary line'),
+            ],
+          );
 
-      expect(
-        sources.map((SubtitleSource s) => s.label).toList(),
-        <String>[
-          'todo016-imported-reentry.srt',
-          'todo016-secondary.srt',
-          '内封 0: jpn / ass',
-        ],
-      );
+      expect(sources.map((SubtitleSource s) => s.label).toList(), <String>[
+        'todo016-imported-reentry.srt',
+        'todo016-secondary.srt',
+        '内封 0: jpn / ass',
+      ]);
     });
 
-    test('lists a single row when primary and secondary share one file',
-        () async {
-      final List<SubtitleSource> sources =
-          await includeCurrentPersistedSubtitleForMenu(
-        const <SubtitleSource>[],
-        videoPath: video.path,
-        bookUid: 'video/todo016',
-        currentSubtitleSource: imported.path,
-        currentCues: <AudioCue>[_cue('video/todo016', 'primary line')],
-        currentSecondarySubtitleSource: p.normalize(imported.path),
-        currentSecondaryCues: <AudioCue>[
-          _cue('video/todo016', 'secondary line'),
-        ],
-      );
+    test(
+      'lists a single row when primary and secondary share one file',
+      () async {
+        final List<SubtitleSource> sources =
+            await includeCurrentPersistedSubtitleForMenu(
+              const <SubtitleSource>[],
+              videoPath: video.path,
+              bookUid: 'video/todo016',
+              currentSubtitleSource: imported.path,
+              currentCues: <AudioCue>[_cue('video/todo016', 'primary line')],
+              currentSecondarySubtitleSource: p.normalize(imported.path),
+              currentSecondaryCues: <AudioCue>[
+                _cue('video/todo016', 'secondary line'),
+              ],
+            );
 
-      expect(sources, hasLength(1));
-      expect(sources.single.externalPath, imported.path);
-    });
+        expect(sources, hasLength(1));
+        expect(sources.single.externalPath, imported.path);
+      },
+    );
   });
 
   group('embedded subtitle cache prewarm (TODO-011)', () {
@@ -895,27 +961,30 @@ BUG-2094 secondary import.
       }
     });
 
-    test('prewarm extracts all text embedded subtitles without parsing cues',
-        () async {
-      final File video = File(p.join(tempDir.path, 'movie.mkv'))
-        ..writeAsStringSync('fake video bytes');
-      final _FakeFfmpegBackend backend = _FakeFfmpegBackend();
-      setFfmpegBackendForTesting(backend);
+    test(
+      'prewarm extracts all text embedded subtitles without parsing cues',
+      () async {
+        final File video = File(p.join(tempDir.path, 'movie.mkv'))
+          ..writeAsStringSync('fake video bytes');
+        final _FakeFfmpegBackend backend = _FakeFfmpegBackend();
+        setFfmpegBackendForTesting(backend);
 
-      await prewarmEmbeddedSubtitleCache(video.path);
+        await prewarmEmbeddedSubtitleCache(video.path);
 
-      expect(backend.probeCount, 1);
-      expect(backend.extractCount, 1);
-      expect(backend.extractedSubtitleIndices, <int>[0, 1]);
-      final Directory cacheDir = embeddedSubtitleCacheDir(video.path);
-      expect(File(p.join(cacheDir.path, 'sub_0.srt')).existsSync(), isTrue);
-      expect(File(p.join(cacheDir.path, 'sub_1.ass')).existsSync(), isTrue);
-      expect(
-        File(p.join(cacheDir.path, 'sub_2.srt')).existsSync(),
-        isFalse,
-        reason: 'PGS/image subtitles must not be prewarmed into text overlay.',
-      );
-    });
+        expect(backend.probeCount, 1);
+        expect(backend.extractCount, 1);
+        expect(backend.extractedSubtitleIndices, <int>[0, 1]);
+        final Directory cacheDir = await embeddedSubtitleCacheDir(video.path);
+        expect(File(p.join(cacheDir.path, 'sub_0.srt')).existsSync(), isTrue);
+        expect(File(p.join(cacheDir.path, 'sub_1.ass')).existsSync(), isTrue);
+        expect(
+          File(p.join(cacheDir.path, 'sub_2.srt')).existsSync(),
+          isFalse,
+          reason:
+              'PGS/image subtitles must not be prewarmed into text overlay.',
+        );
+      },
+    );
 
     test('manual switch reuses a pending background extraction', () async {
       final File video = File(p.join(tempDir.path, 'pending.mkv'))
@@ -938,8 +1007,11 @@ BUG-2094 secondary import.
       );
 
       await Future<void>.delayed(Duration.zero);
-      expect(backend.extractCount, 1,
-          reason: 'manual switch should await the pending prewarm task.');
+      expect(
+        backend.extractCount,
+        1,
+        reason: 'manual switch should await the pending prewarm task.',
+      );
 
       backend.completeExtract();
       await prewarm;
@@ -950,95 +1022,118 @@ BUG-2094 secondary import.
     });
 
     test(
-        'two playlist episode prewarms keep separate caches for later switches',
-        () async {
-      final File first = File(p.join(tempDir.path, 'episode1.mkv'))
-        ..writeAsStringSync('fake episode 1 bytes');
-      final File second = File(p.join(tempDir.path, 'episode2.mkv'))
-        ..writeAsStringSync('fake episode 2 bytes');
-      final _FakeFfmpegBackend backend = _FakeFfmpegBackend();
-      setFfmpegBackendForTesting(backend);
+      'two playlist episode prewarms keep separate caches for later switches',
+      () async {
+        final File first = File(p.join(tempDir.path, 'episode1.mkv'))
+          ..writeAsStringSync('fake episode 1 bytes');
+        final File second = File(p.join(tempDir.path, 'episode2.mkv'))
+          ..writeAsStringSync('fake episode 2 bytes');
+        final _FakeFfmpegBackend backend = _FakeFfmpegBackend();
+        setFfmpegBackendForTesting(backend);
 
-      await prewarmEmbeddedSubtitleCache(first.path);
-      await prewarmEmbeddedSubtitleCache(second.path);
+        await prewarmEmbeddedSubtitleCache(first.path);
+        await prewarmEmbeddedSubtitleCache(second.path);
 
-      expect(backend.extractCount, 2);
-      expect(
-        File(p.join(embeddedSubtitleCacheDir(first.path).path, 'sub_0.srt'))
-            .existsSync(),
-        isTrue,
-      );
-      expect(
-        File(p.join(embeddedSubtitleCacheDir(second.path).path, 'sub_0.srt'))
-            .existsSync(),
-        isTrue,
-      );
+        expect(backend.extractCount, 2);
+        expect(
+          File(
+            p.join(
+              (await embeddedSubtitleCacheDir(first.path)).path,
+              'sub_0.srt',
+            ),
+          ).existsSync(),
+          isTrue,
+        );
+        expect(
+          File(
+            p.join(
+              (await embeddedSubtitleCacheDir(second.path)).path,
+              'sub_0.srt',
+            ),
+          ).existsSync(),
+          isTrue,
+        );
 
-      final List<AudioCue> secondCues = await loadCuesForSource(
-        const SubtitleSource.embedded(
-          streamIndex: 0,
-          label: '内封 0: jpn / subrip',
-          language: 'jpn',
-          codec: 'subrip',
-        ),
-        second.path,
-        'video_book_x://book/episode2',
-      );
+        final List<AudioCue> secondCues = await loadCuesForSource(
+          const SubtitleSource.embedded(
+            streamIndex: 0,
+            label: '内封 0: jpn / subrip',
+            language: 'jpn',
+            codec: 'subrip',
+          ),
+          second.path,
+          'video_book_x://book/episode2',
+        );
 
-      expect(secondCues, isNotEmpty);
-      expect(backend.extractCount, 2,
-          reason: 'manual switch for prewarmed next episode must hit cache');
-    });
-
-    test(
-        'transient (timeout) prewarm failure clears in-flight state so manual '
-        'selection retries (BUG-863: timeouts are NOT negatively cached)',
-        () async {
-      final File video = File(p.join(tempDir.path, 'broken.mkv'))
-        ..writeAsStringSync('fake video bytes');
-      // returnCode null == ffmpeg timed out (SIGKILL) — transient, retryable.
-      final _FakeFfmpegBackend backend =
-          _FakeFfmpegBackend(extractReturnCode: null, writeOutputs: false);
-      setFfmpegBackendForTesting(backend);
-
-      await prewarmEmbeddedSubtitleCache(video.path);
-      final int afterPrewarm = backend.extractCount;
-      expect(afterPrewarm, greaterThan(0));
-
-      final List<AudioCue> cues = await loadCuesForSource(
-        const SubtitleSource.embedded(
-          streamIndex: 0,
-          label: '内封 0: jpn / subrip',
-          language: 'jpn',
-          codec: 'subrip',
-        ),
-        video.path,
-        'video_book_x://book/broken',
-      );
-
-      expect(cues, isEmpty);
-      // A timeout leaves no `.unsupported` sentinel, and the failed prewarm
-      // cleared the in-flight future, so manual selection re-attempts.
-      expect(backend.extractCount, greaterThan(afterPrewarm),
-          reason: 'transient prewarm failure must clear in-flight state so a '
-              'later manual selection can retry.');
-    });
+        expect(secondCues, isNotEmpty);
+        expect(
+          backend.extractCount,
+          2,
+          reason: 'manual switch for prewarmed next episode must hit cache',
+        );
+      },
+    );
 
     test(
-        'definitive prewarm failure is negatively cached — manual selection '
+      'transient (timeout) prewarm failure clears in-flight state so manual '
+      'selection retries (BUG-863: timeouts are NOT negatively cached)',
+      () async {
+        final File video = File(p.join(tempDir.path, 'broken.mkv'))
+          ..writeAsStringSync('fake video bytes');
+        // returnCode null == ffmpeg timed out (SIGKILL) — transient, retryable.
+        final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+          extractReturnCode: null,
+          writeOutputs: false,
+        );
+        setFfmpegBackendForTesting(backend);
+
+        await prewarmEmbeddedSubtitleCache(video.path);
+        final int afterPrewarm = backend.extractCount;
+        expect(afterPrewarm, greaterThan(0));
+
+        final List<AudioCue> cues = await loadCuesForSource(
+          const SubtitleSource.embedded(
+            streamIndex: 0,
+            label: '内封 0: jpn / subrip',
+            language: 'jpn',
+            codec: 'subrip',
+          ),
+          video.path,
+          'video_book_x://book/broken',
+        );
+
+        expect(cues, isEmpty);
+        // A timeout leaves no `.unsupported` sentinel, and the failed prewarm
+        // cleared the in-flight future, so manual selection re-attempts.
+        expect(
+          backend.extractCount,
+          greaterThan(afterPrewarm),
+          reason:
+              'transient prewarm failure must clear in-flight state so a '
+              'later manual selection can retry.',
+        );
+      },
+    );
+
+    test('definitive prewarm failure is negatively cached — manual selection '
         'does not re-read the container (BUG-863)', () async {
       final File video = File(p.join(tempDir.path, 'exotic.mkv'))
         ..writeAsStringSync('fake video bytes');
       // Non-zero, non-timeout exit == ffmpeg definitively rejected the track
       // (a codec the bundled build can't decode).
-      final _FakeFfmpegBackend backend =
-          _FakeFfmpegBackend(extractReturnCode: 1, writeOutputs: false);
+      final _FakeFfmpegBackend backend = _FakeFfmpegBackend(
+        extractReturnCode: 1,
+        writeOutputs: false,
+      );
       setFfmpegBackendForTesting(backend);
 
       await prewarmEmbeddedSubtitleCache(video.path);
       final int afterPrewarm = backend.extractCount;
-      expect(afterPrewarm, greaterThan(0),
-          reason: 'prewarm probes + attempts (batch + per-track fallback).');
+      expect(
+        afterPrewarm,
+        greaterThan(0),
+        reason: 'prewarm probes + attempts (batch + per-track fallback).',
+      );
 
       final List<AudioCue> cues = await loadCuesForSource(
         const SubtitleSource.embedded(
@@ -1054,8 +1149,11 @@ BUG-2094 secondary import.
       expect(cues, isEmpty);
       // The undecodable tracks were sentinel-ed, so the manual path skips them
       // instead of re-reading the whole container and re-logging.
-      expect(backend.extractCount, afterPrewarm,
-          reason: 'a definitively-rejected track must not be re-extracted.');
+      expect(
+        backend.extractCount,
+        afterPrewarm,
+        reason: 'a definitively-rejected track must not be re-extracted.',
+      );
     });
   });
 
@@ -1071,8 +1169,7 @@ BUG-2094 secondary import.
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
 
-    test(
-        '真实 BanG Dream S01E01 ffmpeg -i 日志（1 条 ass + attachment 流 + '
+    test('真实 BanG Dream S01E01 ffmpeg -i 日志（1 条 ass + attachment 流 + '
         '"Could not find codec parameters" 警告）枚举出 1 条字幕', () {
       // 本机对真文件 `ffmpeg -hide_banner -i` 的真实 stderr：那条 ass 字幕轨在
       // 一连串 attachment 流的 "Could not find codec parameters" 警告之后。
@@ -1097,8 +1194,7 @@ At least one output file must be specified
       expect(tracks.single.codec, 'ass');
     });
 
-    test(
-        '枚举 -i 的超时随容器体积放大（不再固定 30s）——用 '
+    test('枚举 -i 的超时随容器体积放大（不再固定 30s）——用 '
         'subtitleExtractTimeoutForBytes，与抽取路径一致', () async {
       // 根因：原固定 30s 超时，大体积交错容器在冷缓存 + 并发抽取 + 播放争用磁盘
       // 时 `-i` 探测可能超时 → 返回空 → 菜单「一个字幕没有」。捕获实际传给后端的
@@ -1114,8 +1210,11 @@ At least one output file must be specified
 
       expect(backend.lastTimeout, isNotNull);
       expect(backend.lastTimeout, subtitleExtractTimeoutForBytes(realSize));
-      expect(backend.lastTimeout!.inSeconds, greaterThan(30),
-          reason: '固定 30s 已被 size-scaled 超时取代（下限 60s）');
+      expect(
+        backend.lastTimeout!.inSeconds,
+        greaterThan(30),
+        reason: '固定 30s 已被 size-scaled 超时取代（下限 60s）',
+      );
       expect(tracks, hasLength(1));
       expect(tracks.single.codec, 'ass');
     });
@@ -1124,8 +1223,10 @@ At least one output file must be specified
       const int oneGb = 1024 * 1024 * 1024;
       const int twentySevenGb = 27 * oneGb;
       expect(subtitleExtractTimeoutForBytes(oneGb).inSeconds, greaterThan(30));
-      expect(subtitleExtractTimeoutForBytes(twentySevenGb).inSeconds,
-          greaterThan(200));
+      expect(
+        subtitleExtractTimeoutForBytes(twentySevenGb).inSeconds,
+        greaterThan(200),
+      );
     });
 
     test('诊断 API 区分枚举 timeout 与真无字幕', () async {
@@ -1143,13 +1244,16 @@ At least one output file must be specified
       expect(timedOut.status, EmbeddedSubtitleTrackProbeStatus.timeout);
       expect(timedOut.tracks, isEmpty);
       expect(
-          timedOut.timeout, subtitleExtractTimeoutForBytes(video.lengthSync()));
+        timedOut.timeout,
+        subtitleExtractTimeoutForBytes(video.lengthSync()),
+      );
 
       setFfmpegBackendForTesting(
         const _ProbeResultBackend(
           FfmpegRunResult(
             returnCode: 1,
-            output: '  Stream #0:0: Video: h264\n'
+            output:
+                '  Stream #0:0: Video: h264\n'
                 'At least one output file must be specified',
           ),
         ),
@@ -1184,17 +1288,20 @@ At least one output file must be specified
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCues(
-        videoPath: video.path,
-        bookUid: 'video/book',
-      );
+            videoPath: video.path,
+            bookUid: 'video/book',
+          );
 
       expect(result.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
-      expect(result.source?.streamIndex, 1,
-          reason: 'stream 0 is PGS and must stay out of searchable cues');
+      expect(
+        result.source?.streamIndex,
+        1,
+        reason: 'stream 0 is PGS and must stay out of searchable cues',
+      );
       expect(result.cues.map((AudioCue c) => c.text), <String>['hello mov']);
-      expect(backend.extractedSubtitleIndices, <int>[1],
-          reason:
-              'default load should demux the first text-capable track only');
+      expect(backend.extractedSubtitleIndices, <int>[
+        1,
+      ], reason: 'default load should demux the first text-capable track only');
     });
 
     test('文本轨抽取为空时返回可提示的失败状态，不静默空屏', () async {
@@ -1206,9 +1313,9 @@ At least one output file must be specified
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCues(
-        videoPath: video.path,
-        bookUid: 'video/book',
-      );
+            videoPath: video.path,
+            bookUid: 'video/book',
+          );
 
       expect(result.status, DefaultEmbeddedSubtitleLoadStatus.emptyCues);
       expect(result.source?.streamIndex, 1);
@@ -1230,31 +1337,28 @@ synthetic subtitle
 ''');
 
       final File mkv = File(p.join(tempDir.path, 'sample.mkv'));
-      final String? mkvError = await _runFfmpeg(
-        ffmpeg,
-        <String>[
-          '-y',
-          '-f',
-          'lavfi',
-          '-i',
-          'color=c=black:s=16x16:d=2',
-          '-f',
-          'srt',
-          '-i',
-          srt.path,
-          '-map',
-          '0:v:0',
-          '-map',
-          '1:0',
-          '-c:v',
-          'mpeg4',
-          '-c:s',
-          'srt',
-          '-t',
-          '2',
-          mkv.path,
-        ],
-      );
+      final String? mkvError = await _runFfmpeg(ffmpeg, <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:s=16x16:d=2',
+        '-f',
+        'srt',
+        '-i',
+        srt.path,
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:0',
+        '-c:v',
+        'mpeg4',
+        '-c:s',
+        'srt',
+        '-t',
+        '2',
+        mkv.path,
+      ]);
       if (mkvError != null) {
         markTestSkipped('ffmpeg 无法合成 mkv+srt: $mkvError');
         return;
@@ -1262,39 +1366,36 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult mkvResult =
           await loadDefaultTextEmbeddedSubtitleCues(
-        videoPath: mkv.path,
-        bookUid: 'video/mkv',
-      );
+            videoPath: mkv.path,
+            bookUid: 'video/mkv',
+          );
       expect(mkvResult.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
       expect(mkvResult.source?.codec, 'subrip');
       expect(mkvResult.cues.single.text, 'synthetic subtitle');
 
       final File mp4 = File(p.join(tempDir.path, 'sample.mp4'));
-      final String? mp4Error = await _runFfmpeg(
-        ffmpeg,
-        <String>[
-          '-y',
-          '-f',
-          'lavfi',
-          '-i',
-          'color=c=black:s=16x16:d=2',
-          '-f',
-          'srt',
-          '-i',
-          srt.path,
-          '-map',
-          '0:v:0',
-          '-map',
-          '1:0',
-          '-c:v',
-          'mpeg4',
-          '-c:s',
-          'mov_text',
-          '-t',
-          '2',
-          mp4.path,
-        ],
-      );
+      final String? mp4Error = await _runFfmpeg(ffmpeg, <String>[
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=black:s=16x16:d=2',
+        '-f',
+        'srt',
+        '-i',
+        srt.path,
+        '-map',
+        '0:v:0',
+        '-map',
+        '1:0',
+        '-c:v',
+        'mpeg4',
+        '-c:s',
+        'mov_text',
+        '-t',
+        '2',
+        mp4.path,
+      ]);
       if (mp4Error != null) {
         markTestSkipped('ffmpeg 无法合成 mp4 mov_text: $mp4Error');
         return;
@@ -1302,9 +1403,9 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult mp4Result =
           await loadDefaultTextEmbeddedSubtitleCues(
-        videoPath: mp4.path,
-        bookUid: 'video/mp4',
-      );
+            videoPath: mp4.path,
+            bookUid: 'video/mp4',
+          );
       expect(mp4Result.status, DefaultEmbeddedSubtitleLoadStatus.loaded);
       expect(mp4Result.source?.codec, 'mov_text');
       expect(mp4Result.cues.single.text, 'synthetic subtitle');
@@ -1380,29 +1481,30 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
-        videoPath: '/tmp/movie.mkv',
-        bookUid: 'video/todo572',
-        waitForReady: () async {
-          readinessWaited = true;
-        },
-        isStillCurrent: () => true,
-        loadOnce: ({
-          required String videoPath,
-          required String bookUid,
-          String langCode = 'ja',
-        }) async {
-          loadCalls++;
-          if (loadCalls == 1) {
-            return resultFor(
-              DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
-            );
-          }
-          return resultFor(
-            DefaultEmbeddedSubtitleLoadStatus.loaded,
-            cues: cues,
+            videoPath: '/tmp/movie.mkv',
+            bookUid: 'video/todo572',
+            waitForReady: () async {
+              readinessWaited = true;
+            },
+            isStillCurrent: () => true,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                }) async {
+                  loadCalls++;
+                  if (loadCalls == 1) {
+                    return resultFor(
+                      DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+                    );
+                  }
+                  return resultFor(
+                    DefaultEmbeddedSubtitleLoadStatus.loaded,
+                    cues: cues,
+                  );
+                },
           );
-        },
-      );
 
       expect(loadCalls, 2, reason: '瞬态失败必须触发恰好一次重试');
       expect(readinessWaited, isTrue, reason: '重试前必须等就绪信号，而非固定延迟');
@@ -1417,24 +1519,25 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
-        videoPath: '/tmp/movie.mkv',
-        bookUid: 'video/todo572',
-        waitForReady: () async {
-          readinessWaited = true;
-        },
-        isStillCurrent: () => true,
-        loadOnce: ({
-          required String videoPath,
-          required String bookUid,
-          String langCode = 'ja',
-        }) async {
-          loadCalls++;
-          return resultFor(
-            DefaultEmbeddedSubtitleLoadStatus.loaded,
-            cues: cues,
+            videoPath: '/tmp/movie.mkv',
+            bookUid: 'video/todo572',
+            waitForReady: () async {
+              readinessWaited = true;
+            },
+            isStillCurrent: () => true,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                }) async {
+                  loadCalls++;
+                  return resultFor(
+                    DefaultEmbeddedSubtitleLoadStatus.loaded,
+                    cues: cues,
+                  );
+                },
           );
-        },
-      );
 
       expect(loadCalls, 1);
       expect(readinessWaited, isFalse);
@@ -1447,23 +1550,24 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
-        videoPath: '/tmp/movie.mkv',
-        bookUid: 'video/todo572',
-        waitForReady: () async {
-          readinessWaited = true;
-        },
-        isStillCurrent: () => true,
-        loadOnce: ({
-          required String videoPath,
-          required String bookUid,
-          String langCode = 'ja',
-        }) async {
-          loadCalls++;
-          return resultFor(
-            DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks,
+            videoPath: '/tmp/movie.mkv',
+            bookUid: 'video/todo572',
+            waitForReady: () async {
+              readinessWaited = true;
+            },
+            isStillCurrent: () => true,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                }) async {
+                  loadCalls++;
+                  return resultFor(
+                    DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks,
+                  );
+                },
           );
-        },
-      );
 
       expect(loadCalls, 1, reason: '终态不应重试');
       expect(readinessWaited, isFalse);
@@ -1475,21 +1579,22 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
-        videoPath: '/tmp/movie.mkv',
-        bookUid: 'video/todo572',
-        waitForReady: () async {},
-        isStillCurrent: () => true,
-        loadOnce: ({
-          required String videoPath,
-          required String bookUid,
-          String langCode = 'ja',
-        }) async {
-          loadCalls++;
-          return resultFor(
-            DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+            videoPath: '/tmp/movie.mkv',
+            bookUid: 'video/todo572',
+            waitForReady: () async {},
+            isStillCurrent: () => true,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                }) async {
+                  loadCalls++;
+                  return resultFor(
+                    DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+                  );
+                },
           );
-        },
-      );
 
       expect(loadCalls, 2, reason: '有界重试：最多一次重试');
       expect(
@@ -1504,23 +1609,24 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
-        videoPath: '/tmp/old.mkv',
-        bookUid: 'video/old',
-        waitForReady: () async {
-          current = false;
-        },
-        isStillCurrent: () => current,
-        loadOnce: ({
-          required String videoPath,
-          required String bookUid,
-          String langCode = 'ja',
-        }) async {
-          loadCalls++;
-          return resultFor(
-            DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+            videoPath: '/tmp/old.mkv',
+            bookUid: 'video/old',
+            waitForReady: () async {
+              current = false;
+            },
+            isStillCurrent: () => current,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                }) async {
+                  loadCalls++;
+                  return resultFor(
+                    DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+                  );
+                },
           );
-        },
-      );
 
       expect(loadCalls, 1, reason: '换片后不得用旧 videoPath 再枚举');
       expect(
@@ -1536,23 +1642,24 @@ synthetic subtitle
 
       final DefaultEmbeddedSubtitleLoadResult result =
           await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
-        videoPath: '/tmp/old.mkv',
-        bookUid: 'video/old',
-        waitForReady: () async {
-          readinessWaited = true;
-        },
-        isStillCurrent: () => false,
-        loadOnce: ({
-          required String videoPath,
-          required String bookUid,
-          String langCode = 'ja',
-        }) async {
-          loadCalls++;
-          return resultFor(
-            DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+            videoPath: '/tmp/old.mkv',
+            bookUid: 'video/old',
+            waitForReady: () async {
+              readinessWaited = true;
+            },
+            isStillCurrent: () => false,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                }) async {
+                  loadCalls++;
+                  return resultFor(
+                    DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
+                  );
+                },
           );
-        },
-      );
 
       expect(loadCalls, 1);
       expect(readinessWaited, isFalse, reason: '非当前 load 不应再等就绪/重试');
@@ -1583,8 +1690,10 @@ String _largeSrt({required int cueCount}) {
     final int startMs = i * 1000;
     buffer
       ..writeln(i + 1)
-      ..writeln('${_srtTimestamp(startMs)} --> '
-          '${_srtTimestamp(startMs + 750)}')
+      ..writeln(
+        '${_srtTimestamp(startMs)} --> '
+        '${_srtTimestamp(startMs + 750)}',
+      )
       ..writeln('<i>large async srt cue $i</i> $filler')
       ..writeln();
   }
@@ -1603,9 +1712,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ''');
   for (int i = 0; i < cueCount; i++) {
     final int startMs = i * 1000;
-    buffer.writeln('Dialogue: 0,${_assTimestamp(startMs)},'
-        '${_assTimestamp(startMs + 750)},Default,,0,0,0,,'
-        '{\\an8}large async ass cue $i $filler');
+    buffer.writeln(
+      'Dialogue: 0,${_assTimestamp(startMs)},'
+      '${_assTimestamp(startMs + 750)},Default,,0,0,0,,'
+      '{\\an8}large async ass cue $i $filler',
+    );
   }
   return buffer.toString();
 }
@@ -1617,8 +1728,10 @@ String _largeVtt({required int cueCount}) {
     final int startMs = i * 1000;
     buffer
       ..writeln(i)
-      ..writeln('${_vttTimestamp(startMs)} --> '
-          '${_vttTimestamp(startMs + 750)}')
+      ..writeln(
+        '${_vttTimestamp(startMs)} --> '
+        '${_vttTimestamp(startMs + 750)}',
+      )
       ..writeln('large async cue $i $filler')
       ..writeln();
   }
@@ -1633,10 +1746,7 @@ String _vttTimestamp(int millis) {
   return _subtitleTimestamp(millis, millisecondSeparator: '.');
 }
 
-String _subtitleTimestamp(
-  int millis, {
-  required String millisecondSeparator,
-}) {
+String _subtitleTimestamp(int millis, {required String millisecondSeparator}) {
   final int hours = millis ~/ 3600000;
   final int minutes = (millis ~/ 60000) % 60;
   final int seconds = (millis ~/ 1000) % 60;
@@ -1703,15 +1813,13 @@ class _FakeFfmpegBackend implements FfmpegBackend {
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
       const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
 
-  _FakeFfmpegBackend({
-    this.extractReturnCode = 0,
-    this.writeOutputs = true,
-  }) : _blockExtract = false;
+  _FakeFfmpegBackend({this.extractReturnCode = 0, this.writeOutputs = true})
+    : _blockExtract = false;
 
   _FakeFfmpegBackend.blockingExtract()
-      : extractReturnCode = 0,
-        writeOutputs = true,
-        _blockExtract = true;
+    : extractReturnCode = 0,
+      writeOutputs = true,
+      _blockExtract = true;
 
   /// ffmpeg exit code for extraction runs. `null` models a timeout (SIGKILL),
   /// which is transient and must NOT be negatively cached (BUG-863).
@@ -1733,12 +1841,15 @@ class _FakeFfmpegBackend implements FfmpegBackend {
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     if (args.contains('-hide_banner')) {
       probeCount++;
-      return const FfmpegRunResult(returnCode: 1, output: '''
+      return const FfmpegRunResult(
+        returnCode: 1,
+        output: '''
   Stream #0:0: Video: h264
   Stream #0:1(jpn): Subtitle: subrip (srt) (default)
   Stream #0:2(eng): Subtitle: ass (ssa)
   Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
-''');
+''',
+      );
     }
 
     extractCount++;
@@ -1794,7 +1905,8 @@ class _TimeoutCapturingBackend implements FfmpegBackend {
     // Mimic a working `ffmpeg -i` enumeration of a single ass embedded track.
     return const FfmpegRunResult(
       returnCode: 1,
-      output: '  Stream #0:2(eng): Subtitle: ass (ssa) (default)\n'
+      output:
+          '  Stream #0:2(eng): Subtitle: ass (ssa) (default)\n'
           'At least one output file must be specified',
     );
   }
@@ -1838,12 +1950,15 @@ class _DefaultSubtitleFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     if (args.contains('-hide_banner')) {
-      return const FfmpegRunResult(returnCode: 1, output: '''
+      return const FfmpegRunResult(
+        returnCode: 1,
+        output: '''
   Stream #0:0: Video: h264
   Stream #0:1(jpn): Subtitle: hdmv_pgs_subtitle
   Stream #0:2(jpn): Subtitle: mov_text (tx3g / 0x67337874) (default)
   Stream #0:3(eng): Subtitle: dvd_subtitle
-''');
+''',
+      );
     }
 
     for (int i = 0; i < args.length - 2; i++) {
@@ -1871,10 +1986,10 @@ Future<String?> _workingFfmpegExecutable() async {
     ?resolveBundledUnifiedFfmpegForTests()?.ffmpeg,
   ]) {
     try {
-      final ProcessResult result = await Process.run(
-        executable,
-        <String>['-hide_banner', '-version'],
-      ).timeout(const Duration(seconds: 10));
+      final ProcessResult result = await Process.run(executable, <String>[
+        '-hide_banner',
+        '-version',
+      ]).timeout(const Duration(seconds: 10));
       if (result.exitCode == 0) return executable;
     } catch (_) {
       // Try the next candidate.

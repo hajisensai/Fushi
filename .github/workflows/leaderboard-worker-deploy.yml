@@ -7,9 +7,8 @@
 # 凭据：优先读 CLOUDFLARE_WORKERS_API_TOKEN，没配再回退到 CLOUDFLARE_API_TOKEN
 # （后者原本给 mirror-releases.yml 的 R2 镜像用）。token 至少要有
 # 「Account → Workers Scripts: Edit」与「Account → D1: Edit」（每次部署都先跑 D1 迁移）；
-# wrangler.toml 的 routes 把自定义域名 rank.fushi.moe 绑在 zone fushi.moe 上，部署时会一并
-# 同步；若 deploy 报 zone / route 相关的权限错误，再给 token 加限定 fushi.moe 的
-# 「Zone → Workers Routes: Edit」。只有 R2 权限的 token 会在后续步骤报鉴权错误（token 校验 / 迁移 / deploy）。
+# wrangler.toml 的 routes 把自定义域名 rank.fushi.moe 绑在 zone fushi.moe 上；触发器只在与线上不一致时
+# 才同步（Sync triggers 步骤），那时才需要限定 fushi.moe 的「Zone → Workers Routes: Edit」。只有 R2 权限的 token 会在后续步骤报鉴权错误（token 校验 / 迁移 / deploy）。
 #
 # 每次部署都先 `d1 migrations apply --remote` 再 `deploy`，不提供开关：迁移幂等，没有待执行迁移时是
 # 空操作；而「先部署、后迁移」会让新 Worker 读到缺列 / 缺表，心跳、反馈提交等接口 500（#2433）。
@@ -131,13 +130,43 @@ jobs:
           set -euo pipefail
           $WRANGLER d1 migrations apply fushi-leaderboard --remote --config "$WRANGLER_CONFIG"
 
+      # 不用 `wrangler deploy`：它每次都先读 zone 的 /workers/routes 查路由冲突（只配 custom_domain 也读），
+      # token 缺 zone 级「Workers Routes」权限时 Worker 已上线、整次部署却报红（BUG-3661）。
+      # 拆成 versions upload（保留现有 secrets）+ versions deploy（100%，不碰触发器），触发器单独一步。
       - name: Deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          $WRANGLER deploy --config "$WRANGLER_CONFIG"
+          out="$RUNNER_TEMP/wrangler-upload.ndjson"
+          WRANGLER_OUTPUT_FILE_PATH="$out" $WRANGLER versions upload --config "$WRANGLER_CONFIG" \
+            --message "deploy ${GITHUB_SHA::12} (run $GITHUB_RUN_ID)"
+          version="$(jq -r 'select(.type == "version-upload") | .version_id' "$out" | tail -n 1)"
+          if [ -z "$version" ] || [ "$version" = 'null' ]; then
+            echo "::error::versions upload 没有返回 version_id"
+            exit 1
+          fi
+          $WRANGLER versions deploy "$version@100%" --yes --config "$WRANGLER_CONFIG" \
+            --message "deploy ${GITHUB_SHA::12} (run $GITHUB_RUN_ID)"
+          echo "- version: \`$version\` (100%)" >> "$GITHUB_STEP_SUMMARY"
+
+      # 触发器（自定义域名 / crons / workers.dev）与 wrangler.toml 一致就不动；不一致或核不了才 triggers deploy，
+      # 那一步仍需 zone 级「Workers Routes」权限，缺了照样报红——此时是真的有变更没生效。
+      - name: Sync triggers
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          rc=0
+          node services/leaderboard/scripts/triggers_in_sync.mjs "$WRANGLER_CONFIG" || rc=$?
+          if [ "$rc" = 0 ]; then
+            echo "- triggers: in sync, skipped \`triggers deploy\`" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "- triggers: out of sync or unverifiable (rc=$rc), ran \`triggers deploy\`" >> "$GITHUB_STEP_SUMMARY"
+          $WRANGLER triggers deploy --config "$WRANGLER_CONFIG"
 
       # 公开健康端点（src/worker.js：GET /v1/health → {"ok":true}），只看状态码。
       - name: Smoke test

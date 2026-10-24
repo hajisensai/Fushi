@@ -1,6 +1,7 @@
 // Anki 包导入 / 导出测试的公共夹具：假引擎、内存同步目录、旧 / 新 schema 集合构造、protobuf 写入器。
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -79,20 +80,19 @@ class FakeFsrsEngine implements FsrsEngine {
   @override
   List<double> computeParameters({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
-    List<int>? cardIds,
+    required SrsFsrsTrainingSet items,
     SrsOptimizerControl? control,
   }) => defaultParams(algorithm);
   @override
   SrsEvaluation evaluateTimeSeries({
     required SrsAlgorithm algorithm,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
   @override
   SrsEvaluation evaluate({
     required SrsAlgorithm algorithm,
     required List<double> params,
-    required List<List<SrsFsrsReview>> items,
+    required SrsFsrsTrainingSet items,
   }) => const SrsEvaluation(logLoss: 0.3, rmseBins: 0.1);
 }
 
@@ -439,6 +439,25 @@ class PbWriter {
   }
 
   Uint8List toBytes() => _b.toBytes();
+}
+
+/// 只含 Raw 块的 zstd 帧（不压缩，但是合法的 zstd：解码路径与真压缩包相同）。
+Uint8List zstdRawFrame(Uint8List data) {
+  const int block = 128 * 1024;
+  final BytesBuilder b = BytesBuilder(copy: false)
+    // 魔数；帧头描述符 0（无内容大小、非单段、无校验）；窗口描述符：2^(10+7) = 128 KB。
+    ..add(<int>[0x28, 0xB5, 0x2F, 0xFD, 0x00, 7 << 3]);
+  int off = 0;
+  do {
+    final int n = min(block, data.length - off);
+    final bool last = off + n >= data.length;
+    final int header = (last ? 1 : 0) | (0 << 1) | (n << 3);
+    b
+      ..add(<int>[header & 0xff, (header >> 8) & 0xff, (header >> 16) & 0xff])
+      ..add(Uint8List.sublistView(data, off, off + n));
+    off += n;
+  } while (off < data.length);
+  return b.takeBytes();
 }
 
 /// 本机 python 的 zstandard 压缩（没有返回 null）。

@@ -1,6 +1,7 @@
 // 复习同步调度：用现有同步后端跑 SrsSyncEngine、成功后 anchorTime、后端不支持服务器
 // 时间只提示一次、系统时间不准只提示一次、进复习 tab 的 60 秒节流、没配置后端时什么都
 // 不做；以及「常规同步每条通道成功后调后置步骤」这条接线。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -570,5 +571,72 @@ void main() {
     expect(hook, greaterThan(run), reason: 'SRS 同步必须在常规同步成功之后跑');
     // 模块关着时没有任何钩子：默认为 null。
     expect(syncChannelPostRunHook, isNull);
+  });
+
+  // 反馈 OMWOurRQKb：关库（退出 / 备份恢复 / 数据根迁移）时 SRS 同步还在跑，半截同步打在
+  // 已关闭的连接上（`SrsDbStore._loadLocal`「connection was closed」）。关库前先让 canRun
+  // 变 false 再 quiesce：新一轮不开，在跑的一轮等它收尾。
+  group('关库协作', () {
+    test('canRun 为 false：不开新一轮、不碰 runner，报 store 不可用', () async {
+      int runs = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: notices.add,
+        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
+          runs++;
+          return SrsSyncReport();
+        },
+        canRun: () => false,
+      );
+      final SrsSyncReport r = await s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      expect(r.error, kSrsSyncStoreUnavailable);
+      expect(runs, 0);
+    });
+
+    test('quiesce 等在跑的一轮结束；之后排进来的轮次在库关着时直接收手', () async {
+      bool open = true;
+      int runs = 0;
+      final Completer<void> release = Completer<void>();
+      final Completer<void> started = Completer<void>();
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: notices.add,
+        runner: (SyncAssetStore b, SrsDbStore st, String key) async {
+          runs++;
+          started.complete();
+          await release.future;
+          return SrsSyncReport();
+        },
+        canRun: () => open,
+      );
+      final Future<SrsSyncReport> inFlight = s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      await started.future;
+      // 关库开始：先标成不可用，再等。
+      open = false;
+      final Future<SrsSyncReport> queued = s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      bool quiesced = false;
+      final Future<void> q = s.quiesce().then((_) => quiesced = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(quiesced, isFalse, reason: '在跑的一轮没结束前 quiesce 不能返回');
+      release.complete();
+      await q;
+      expect((await inFlight).error, isNull);
+      expect((await queued).error, kSrsSyncStoreUnavailable);
+      expect(runs, 1, reason: '排队的一轮在库关着时不该跑');
+    });
   });
 }

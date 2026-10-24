@@ -229,9 +229,38 @@ enum ModuleId {
     return out;
   }
 
-  /// [parseOrder] 的逆。
-  static String encodeOrder(Iterable<ModuleId> order) =>
-      order.map((ModuleId id) => id.prefKey).join(',');
+  /// [orderPrefKey] 里「设置」tab 的位置标记（反馈 TqJ_xq3UlO：设置也要能拖）。
+  /// 设置不是 [ModuleId]（它恒在、不可关），所以它在顺序里只是一个标记：不是任何
+  /// 模块的 [prefKey]，旧版本的 [parseOrder] 把它当未知键跳过，设置回到最后。
+  static const String settingsOrderToken = 'settings';
+
+  /// [orderPrefKey] 存储值里「设置」排在第几个模块之前（= 它前面有几个能解析的
+  /// 模块）；没有标记 = null（设置在最后）。与 [parseOrder] 同口径跳过未知键与重复项。
+  static int? parseSettingsSlot(String? stored) {
+    if (stored == null || stored.isEmpty) return null;
+    final List<ModuleId> seen = <ModuleId>[];
+    for (final String raw in stored.split(',')) {
+      final String key = raw.trim();
+      if (key == settingsOrderToken) return seen.length;
+      final ModuleId? id = tryParsePrefKey(key);
+      if (id != null && !seen.contains(id)) seen.add(id);
+    }
+    return null;
+  }
+
+  /// [parseOrder] / [parseSettingsSlot] 的逆。[settingsSlot] 为 null 或不小于
+  /// 模块数时不写标记（设置在最后，与没排过一样）。
+  static String encodeOrder(Iterable<ModuleId> order, {int? settingsSlot}) {
+    final List<String> keys = <String>[
+      for (final ModuleId id in order) id.prefKey,
+    ];
+    if (settingsSlot != null &&
+        settingsSlot >= 0 &&
+        settingsSlot < keys.length) {
+      keys.insert(settingsSlot, settingsOrderToken);
+    }
+    return keys.join(',');
+  }
 }
 
 /// 把用户排过的顺序补全成**覆盖全部 [ModuleId] 的完整序列**：[preferred] 去重后
@@ -272,7 +301,11 @@ enum GamesModuleForm {
 /// 全 app 的门控一律读它，不再各自组合 pref + 平台。
 @immutable
 class ModuleVisibility {
-  const ModuleVisibility(this.enabled, {this.order = const <ModuleId>[]});
+  const ModuleVisibility(
+    this.enabled, {
+    this.order = const <ModuleId>[],
+    this.settingsSlot,
+  });
 
   /// 当前可见的模块集合。
   final Set<ModuleId> enabled;
@@ -284,6 +317,22 @@ class ModuleVisibility {
   /// 全部模块的展示顺序（[order] 打头，余下按枚举顺序），底栏 / 侧栏 tab 顺序由
   /// 它导出（`homeActiveTabs`）。
   List<ModuleId> get ordered => orderModules(order);
+
+  /// 「设置」tab 排在 [ordered] 的第几项之前；null = 最后（默认）。位置按**全部**
+  /// 模块（含被关掉、平台上不存在的）计，开关模块不会让设置跳位。
+  final int? settingsSlot;
+
+  /// 导航 tab 的完整顺序：[ordered] 里插入一个 `null` 代表设置（恒在、恰好一次）。
+  List<ModuleId?> get navOrder {
+    final List<ModuleId?> out = <ModuleId?>[...ordered];
+    final int? slot = settingsSlot;
+    if (slot == null || slot < 0 || slot >= out.length) {
+      out.add(null);
+    } else {
+      out.insert(slot, null);
+    }
+    return out;
+  }
 
   /// 全部模块都可见（平台可用的那些）。仅供测试与默认值使用。
   factory ModuleVisibility.all({
@@ -312,6 +361,7 @@ class ModuleVisibility {
     required bool isIOS,
     required bool isAndroid,
     List<ModuleId> order = const <ModuleId>[],
+    int? settingsSlot,
   }) {
     final Set<ModuleId> enabled = <ModuleId>{};
     for (final ModuleId id in ModuleId.values) {
@@ -326,7 +376,7 @@ class ModuleVisibility {
       if (!prefOf(id)) continue;
       enabled.add(id);
     }
-    return ModuleVisibility(enabled, order: order);
+    return ModuleVisibility(enabled, order: order, settingsSlot: settingsSlot);
   }
 
   bool isEnabled(ModuleId id) => enabled.contains(id);
@@ -339,11 +389,11 @@ class ModuleVisibility {
   bool operator ==(Object other) =>
       other is ModuleVisibility &&
       setEquals(other.enabled, enabled) &&
-      listEquals(other.ordered, ordered);
+      listEquals(other.navOrder, navOrder);
 
   @override
   int get hashCode =>
-      Object.hash(Object.hashAllUnordered(enabled), Object.hashAll(ordered));
+      Object.hash(Object.hashAllUnordered(enabled), Object.hashAll(navOrder));
 
   @override
   String toString() =>

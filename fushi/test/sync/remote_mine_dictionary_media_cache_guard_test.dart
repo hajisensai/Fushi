@@ -37,11 +37,16 @@ void main() {
     expect(immersionBody,
         contains("writeDictionaryMediaCache(payload.fields['dictionaryMedia']"),
         reason: 'mineImmersion 三条沉浸分支最终都走 repo 渲染，同样要先落缓存');
-    // 落缓存必须在 repo 创建/制卡之前（顺序守卫：缓存在前，repo 才读得到）。
-    expect(entryBody.indexOf('writeDictionaryMediaCache'),
-        lessThan(entryBody.indexOf('createAnkiRepository()')));
-    expect(immersionBody.indexOf('writeDictionaryMediaCache'),
-        lessThan(immersionBody.indexOf('createAnkiRepository()')));
+    // 落缓存必须在拿 repo / 制卡之前（顺序守卫：缓存在前，repo 才读得到）。
+    // #2477 起远程制卡改走 `_appModel.hostMiningAnkiRepository`（遵守本机挖词目标），
+    // 不再直接 `createAnkiRepository()`；锚点随之换，并先断言锚点存在，免得 -1
+    // 让顺序比较失去意义。
+    const String repoAnchor = '_appModel.hostMiningAnkiRepository';
+    for (final String methodBody in <String>[entryBody, immersionBody]) {
+      final int repoAt = methodBody.indexOf(repoAnchor);
+      expect(repoAt, greaterThan(0), reason: '制卡仓库应经 $repoAnchor 取得');
+      expect(methodBody.indexOf('writeDictionaryMediaCache'), lessThan(repoAt));
+    }
   });
 
   test('扩展 content.js 渲染弹窗前置 window.embedMedia = true（三镜像）', () {

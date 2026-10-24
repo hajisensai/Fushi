@@ -18,7 +18,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/srs/srs_card_video_channel.dart';
+import 'package:fushi/src/srs/srs_fushi_card_fields.dart'
+    show srsAudioSources, srsVideoSources;
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -40,17 +44,83 @@ List<String> srsCardSoundNames(String html) => <String>[
       _htmlUnescape(m.group(1)!.trim()),
 ];
 
-/// 答案面「新出现」的音频：从答案面音频里按次数扣掉问题面的（`{{FrontSide}}` 带过来的）。
-List<String> srsAnswerOnlySounds({
-  required String questionHtml,
-  required String answerHtml,
-}) {
+final RegExp _inlineMediaTag = RegExp(
+  r'<(audio|video)\b([^>]*)>',
+  caseSensitive: false,
+);
+final RegExp _srcAttr = RegExp(
+  r'''\ssrc\s*=\s*(["'])([^"']*)\1''',
+  caseSensitive: false,
+);
+final RegExp _classAttr = RegExp(
+  r'''\sclass\s*=\s*(["'])([^"']*)\1''',
+  caseSensitive: false,
+);
+
+/// 原生卡面的媒体序列：`[sound:x]` 加制卡内嵌的 `<audio src>` / `<video src>`，按出现
+/// 顺序、同名只播一次（Lapis 背面把 Picture 渲染多份）。与模板里的页内脚本同一规则：
+/// 有视频片段时片段放最后（先单词音频、再片段），句子音频（`fushi-inline-audio`）不播——
+/// 片段自带句子声音。整面 WebView 卡面里这些标签由页内脚本自己播，不走这里。
+List<String> srsCardMediaNames(String html) {
+  final List<(int, String, String)> found = <(int, String, String)>[
+    for (final Match m in _soundTag.allMatches(html))
+      (m.start, _htmlUnescape(m.group(1)!.trim()), 'sound'),
+    for (final Match m in _inlineMediaTag.allMatches(html))
+      if (_srcAttr.firstMatch(m.group(2)!) case final Match src)
+        (
+          m.start,
+          _htmlUnescape(src.group(2)!.trim()),
+          m.group(1)!.toLowerCase() == 'video'
+              ? 'video'
+              : (_classAttr.firstMatch(m.group(2)!)?.group(2) ?? '').contains(
+                  'fushi-inline-audio',
+                )
+              ? 'sentence'
+              : 'audio',
+        ),
+  ]..sort((a, b) => a.$1.compareTo(b.$1));
+  final bool hasVideo = found.any(((int, String, String) f) => f.$3 == 'video');
+  final Set<String> seen = <String>{};
+  final List<String> out = <String>[];
+  final List<String> videos = <String>[];
+  for (final (int _, String name, String kind) in found) {
+    if (name.isEmpty || !seen.add(name)) continue;
+    if (kind == 'video') {
+      videos.add(name);
+    } else if (!(hasVideo && kind == 'sentence')) {
+      out.add(name);
+    }
+  }
+  return <String>[...out, ...videos];
+}
+
+/// 按出现顺序去重（同一个文件在一面卡上只算一段）。
+///
+/// 模板把同一音频字段渲染多份（Lapis 背面把 `{{Picture}}` / 音频容器复制进好几处，由 CSS
+/// 只显示一处）时，`[sound:x]` 在 HTML 里出现好几次——以前每次都出一颗底部重播键、自动播放
+/// 把同一段连播好几遍（#15：一句例句的语法卡出了 🔊1…🔊5）。
+List<String> srsDedupeMediaNames(Iterable<String> names) {
+  final Set<String> seen = <String>{};
+  return <String>[
+    for (final String n in names)
+      if (n.isNotEmpty && seen.add(n)) n,
+  ];
+}
+
+/// 一面卡的媒体名：[inlineMedia]（原生卡面）走 [srsCardMediaNames]，否则只认 `[sound:]`。
+/// 这里保留重复（按次数扣掉问题面带过来的那几次要靠它），选段结果再去重。
+List<String> _faceNames(String html, bool inlineMedia) =>
+    inlineMedia ? srsCardMediaNames(html) : srsCardSoundNames(html);
+
+/// 答案面「新出现」的媒体（列表版）：从 [answer] 里按次数扣掉 [question] 带过来的
+/// （`{{FrontSide}}` 带过来的不算），结果按出现顺序去重。
+List<String> srsAnswerOnlyOf(List<String> question, List<String> answer) {
   final Map<String, int> fromQuestion = <String, int>{};
-  for (final String name in srsCardSoundNames(questionHtml)) {
+  for (final String name in question) {
     fromQuestion[name] = (fromQuestion[name] ?? 0) + 1;
   }
   final List<String> out = <String>[];
-  for (final String name in srsCardSoundNames(answerHtml)) {
+  for (final String name in answer) {
     final int left = fromQuestion[name] ?? 0;
     if (left > 0) {
       fromQuestion[name] = left - 1;
@@ -58,17 +128,127 @@ List<String> srsAnswerOnlySounds({
       out.add(name);
     }
   }
-  return out;
+  return srsDedupeMediaNames(out);
 }
+
+/// 一面卡该**自动**播的媒体（列表版，见 [srsAutoplaySounds]）。
+List<String> srsAutoplayOf({
+  required List<String> question,
+  required List<String> answer,
+  required bool answerSide,
+}) => answerSide
+    ? srsAnswerOnlyOf(question, answer)
+    : srsDedupeMediaNames(question);
+
+/// 手动**重播**的媒体（列表版，见 [srsReplaySounds]）。
+List<String> srsReplayOf({
+  required List<String> question,
+  required List<String> answer,
+  required bool answerSide,
+  required bool includeQuestion,
+}) {
+  if (!answerSide) return srsDedupeMediaNames(question);
+  final List<String> answerOnly = srsAnswerOnlyOf(question, answer);
+  return includeQuestion
+      ? srsDedupeMediaNames(<String>[...question, ...answerOnly])
+      : answerOnly;
+}
+
+// ------------------------------------------------------------------ 原生 Fushi 卡面
+
+/// 原生 Fushi 卡面上**实际画出来**的媒体（按字段，不扫整面 HTML）。
+///
+/// 原生卡面只画三样会出声的东西：词条旁的单词音频键（`ExpressionAudio`）、Picture 里的视频
+/// 片段、例句卡里的例句音频键（`SentenceAudio`）。以前复习页按整张背面 HTML 收集媒体
+/// （[srsCardMediaNames]）——释义区里词典自带的 `<audio>` / `[sound:]`、模板复制的多份
+/// 容器都被算进来，于是卡面上只有一两颗发音键、底栏却出一排重播键，自动播放也把它们全播
+/// 了（#15）。底栏重播键、自动播放、R 重播与卡面上的发音键现在是同一份清单。
+@immutable
+class SrsFushiCardMedia {
+  const SrsFushiCardMedia({
+    required this.front,
+    required this.word,
+    required this.clip,
+    required this.sentence,
+  });
+
+  /// 问题面会出声的媒体（只有听力卡正面有发音键，见 `_buildFront`）。
+  final List<String> front;
+
+  /// 单词音频（`ExpressionAudio`）。
+  final List<String> word;
+
+  /// Picture 里的视频片段（第一个）；没有 = null。
+  final String? clip;
+
+  /// 例句音频（`SentenceAudio`）。
+  final List<String> sentence;
+
+  /// 片段自带例句声音：例句音频就是片段本身（视频制卡的同步片段，`SentenceAudio` 里的隐藏
+  /// `<audio>` 与 `<video>` 是同一个文件），或卡上只有片段没有单独的例句音频。此时例句键
+  /// 控制片段（在画面上从头播、有声），不再另起一路纯音频（#10：二者重复、叠音）。
+  bool get clipCarriesSentence {
+    final String? c = clip;
+    return c != null && (sentence.isEmpty || sentence.contains(c));
+  }
+
+  /// 例句发音键播什么：片段带声 → 片段；否则例句音频（画面上的动图 / 静音片段经片段通道
+  /// 跟着从头播，见 `SrsCardVideoChannel.setSentenceAudio`）。
+  List<String> get sentenceUnit =>
+      clipCarriesSentence ? <String>[clip!] : sentence;
+
+  /// 只作「画面陪播」的例句音频（片段不带这段声音时）：播它们时画面从头播、片段静音。
+  List<String> get companionSentence =>
+      clipCarriesSentence ? const <String>[] : sentence;
+
+  /// 答案面的全部媒体（顺序与卡面从上到下一致：单词 → 例句 / 片段）。片段不带例句声音
+  /// 时它只陪播画面（静音），不单独进序列——否则例句音频之后片段再出一遍声。
+  List<String> get back =>
+      srsDedupeMediaNames(<String>[...word, ...sentenceUnit]);
+}
+
+/// 从笔记字段（按字段名）算出原生 Fushi 卡面的媒体。[audioCardFront] = 卡型是听力卡
+/// （正面放一颗发音键：有例句音频播例句，否则播单词音频，与模板 `{{#SentenceAudio}}` 同义）。
+SrsFushiCardMedia srsFushiCardMedia(
+  Map<String, String> fields, {
+  required bool audioCardFront,
+}) {
+  final List<String> word = srsAudioSources(fields['ExpressionAudio'] ?? '');
+  final List<String> sentence = srsAudioSources(fields['SentenceAudio'] ?? '');
+  final String? clip = srsVideoSources(fields['Picture'] ?? '').firstOrNull;
+  final List<String> front = !audioCardFront
+      ? const <String>[]
+      : <String>[?(sentence.isNotEmpty ? sentence.first : word.firstOrNull)];
+  return SrsFushiCardMedia(
+    front: front,
+    word: word,
+    clip: clip,
+    sentence: sentence,
+  );
+}
+
+/// 答案面「新出现」的音频：从答案面音频里按次数扣掉问题面的（`{{FrontSide}}` 带过来的）。
+/// [inlineMedia] 见 [srsCardMediaNames]。
+List<String> srsAnswerOnlySounds({
+  required String questionHtml,
+  required String answerHtml,
+  bool inlineMedia = false,
+}) => srsAnswerOnlyOf(
+  _faceNames(questionHtml, inlineMedia),
+  _faceNames(answerHtml, inlineMedia),
+);
 
 /// 一面卡该**自动**播哪些音频。
 List<String> srsAutoplaySounds({
   required String questionHtml,
   required String answerHtml,
   required bool answerSide,
-}) => answerSide
-    ? srsAnswerOnlySounds(questionHtml: questionHtml, answerHtml: answerHtml)
-    : srsCardSoundNames(questionHtml);
+  bool inlineMedia = false,
+}) => srsAutoplayOf(
+  question: _faceNames(questionHtml, inlineMedia),
+  answer: answerSide ? _faceNames(answerHtml, inlineMedia) : const <String>[],
+  answerSide: answerSide,
+);
 
 /// 手动**重播**该播哪些音频。[includeQuestion] = 答案面上也先播问题音频（Anki 默认）。
 List<String> srsReplaySounds({
@@ -76,16 +256,13 @@ List<String> srsReplaySounds({
   required String answerHtml,
   required bool answerSide,
   required bool includeQuestion,
-}) {
-  if (!answerSide) return srsCardSoundNames(questionHtml);
-  final List<String> answerOnly = srsAnswerOnlySounds(
-    questionHtml: questionHtml,
-    answerHtml: answerHtml,
-  );
-  return includeQuestion
-      ? <String>[...srsCardSoundNames(questionHtml), ...answerOnly]
-      : answerOnly;
-}
+  bool inlineMedia = false,
+}) => srsReplayOf(
+  question: _faceNames(questionHtml, inlineMedia),
+  answer: answerSide ? _faceNames(answerHtml, inlineMedia) : const <String>[],
+  answerSide: answerSide,
+  includeQuestion: includeQuestion,
+);
 
 /// 卡面音频的播放出口（测试覆写）。
 ///
@@ -126,14 +303,29 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
     return file.path;
   }
 
-  /// [DesktopAudioPlayback.playFileToEnd] 在第一个 await 之前就记下了激活代号并排进
-  /// 串行队列，随后的 [DesktopAudioPlayback.stop] 会让它放弃开播。
+  /// 卡面上挂着同名视频片段（`SrsCardVideoClip`，见 [SrsCardVideoChannel]）时交给它在画面里播，否则走共用音频播放器。
+  /// 片段可能还没挂上（翻面后同步起的序列先于片段那一帧构建）：通道等这轮构建跑完再决定，
+  /// 不先退回只播音频（否则画面停在首帧、声音由后台播放器单独放）。
+  /// 每条路都在第一个 await 之前就登记了这次播放（片段通道同步登记 / 登记等待；
+  /// [DesktopAudioPlayback.playFileToEnd] 先记激活代号再排队），随后的 [stop] 能取消它。
   @override
-  Future<bool> playToEnd(String path) =>
-      DesktopAudioPlayback.playFileToEnd(path);
+  Future<bool> playToEnd(String path) => _ref
+      .read(srsCardVideoChannelProvider)
+      .playToEndOrElse(
+        p.basename(path),
+        () => DesktopAudioPlayback.playFileToEnd(
+          path,
+          volume: _ref.read(srsReviewVolumeProvider),
+        ),
+        // 走片段时停掉共用播放器里还在响的上一段（同一时刻只出一路声音，#10）。
+        stopAudio: DesktopAudioPlayback.stop,
+      );
 
   @override
-  Future<void> stop() => DesktopAudioPlayback.stop();
+  Future<void> stop() async {
+    await _ref.read(srsCardVideoChannelProvider).stopAll();
+    await DesktopAudioPlayback.stop();
+  }
 }
 
 final Provider<SrsCardAudioOutput> srsCardAudioOutputProvider =
@@ -168,7 +360,10 @@ class SrsCardAudioSequencer {
         // 解析期间被取代（换卡 / 翻面 / 关了自动播放 / 离开复习页）：不再开播。
         // 这一步必须紧挨着开播、中间没有 await，否则 cancel 的 stop 先到、
         // 这段随后照样出声（BUG-3546）。
-        if (generation != _generation || path == null) return;
+        if (generation != _generation) return;
+        // 媒体库里没有这段（字段引用了没随卡导入的文件）：跳过它接着播后面的，
+        // 不让一段缺失的音频把整组都吞掉（#15）。
+        if (path == null) continue;
         final bool finished = await _output.playToEnd(path);
         if (!finished) break;
       }
@@ -238,6 +433,9 @@ const String kSrsCardAutoplayGateScript = r'''
     return !!n && n.nodeType === 1 && (n.tagName === 'AUDIO' || n.tagName === 'VIDEO');
   }
   function blocked(){ return !allowed && !gesture; }
+  // 卡面 `[sound:]` 播放按钮的点击委托（srs_card_media.dart）据此拒绝模板脚本在手势外
+  // 合成的 `.click()`（#15：关了自动播放，模板脚本照样把一排音频按钮挨个点响）。
+  window.__fushiSrsMediaBlocked = blocked;
   function permit(el){ if (permitted && isMedia(el)) permitted.add(el); }
   var kinds = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click',
     'dblclick', 'auxclick', 'touchstart', 'touchend', 'keydown', 'keyup'];

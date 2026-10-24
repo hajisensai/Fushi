@@ -121,10 +121,11 @@ class SubtitleBackfillResult {
 ///
 /// 返回值必须是入参的**全量排列**——它只改顺序、不改集合，[VideoSubtitleBackfillService.maxCandidates]
 /// 的语义（最多真下几条）不受影响。抛异常按「原序」处理。
-typedef SubtitleBackfillReorder = Future<List<VideoSubtitleCandidate>> Function(
-  List<VideoSubtitleCandidate> candidates,
-  SubtitleBackfillTarget target,
-);
+typedef SubtitleBackfillReorder =
+    Future<List<VideoSubtitleCandidate>> Function(
+      List<VideoSubtitleCandidate> candidates,
+      SubtitleBackfillTarget target,
+    );
 
 /// 给刮削后仍缺字幕的视频自动补一条字幕。
 class VideoSubtitleBackfillService {
@@ -161,8 +162,10 @@ class VideoSubtitleBackfillService {
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
     }
+    // 全部文件判据 async：补字幕跑在 UI isolate，视频与 sidecar 常在网络盘上，同步
+    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。
     final File video = File(target.videoPath);
-    if (!video.existsSync()) {
+    if (!await video.exists()) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
@@ -170,7 +173,7 @@ class VideoSubtitleBackfillService {
     }
     // 目录里已经躺着 sidecar 就当已有字幕——它可能是用户手放的，也可能是下载
     // 流水线放的。两种都不该被覆盖。
-    if (_existingSidecars(video).isNotEmpty) {
+    if ((await _existingSidecars(video)).isNotEmpty) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
@@ -178,23 +181,7 @@ class VideoSubtitleBackfillService {
 
     final ProviderBatchResult<VideoSubtitleCandidate> result;
     try {
-      result = await registry.search(
-        VideoSubtitleSearchRequest(
-          media: target.media,
-          season: target.media.season,
-          episode: target.media.episode,
-          languages: target.explicitLanguage == null
-              ? preferredLanguages
-              : <String>[target.explicitLanguage!],
-          fingerprint: LocalVideoFingerprint(
-            fileSize: await video.length(),
-            fileName: p.basename(video.path),
-            openSubtitlesMovieHash: await computeOpenSubtitlesMovieHash(
-              video.path,
-            ),
-          ),
-        ),
-      );
+      result = await registry.search(await _request(target, video));
     } on Object catch (error) {
       return SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
@@ -226,7 +213,8 @@ class VideoSubtitleBackfillService {
       contentMetadataLanguage:
           target.originalLanguage ?? facts.primaryAudioLanguage,
     );
-    final String? ranking = preferred ??
+    final String? ranking =
+        preferred ??
         resolveSubtitleDownloadLanguage(
           globalDefaultContentLanguage: defaultContentLanguage,
         );
@@ -275,8 +263,9 @@ class VideoSubtitleBackfillService {
         );
       }
     }
-    final int limit =
-        ordered.length < maxCandidates ? ordered.length : maxCandidates;
+    final int limit = ordered.length < maxCandidates
+        ? ordered.length
+        : maxCandidates;
     for (int i = 0; i < limit; i++) {
       final VideoSubtitleCandidate candidate = ordered[i];
       final VideoSubtitleDownload download;
@@ -330,6 +319,94 @@ class VideoSubtitleBackfillService {
       SubtitleBackfillOutcome.allCandidatesRejected,
       detail: lastRejection,
     );
+  }
+
+  /// 自动补与手动搜共用的检索请求：身份、季集号、语言硬过滤、文件指纹。
+  ///
+  /// [query] / [episode] 只给手动搜用：覆盖检索词（身份 id 照旧带上）与集号。
+  Future<VideoSubtitleSearchRequest> _request(
+    SubtitleBackfillTarget target,
+    File video, {
+    String? query,
+    int? episode,
+  }) async {
+    final int? wantedEpisode = episode ?? target.media.episode;
+    return VideoSubtitleSearchRequest(
+      media: target.media,
+      query: query,
+      season: target.media.season,
+      episode: wantedEpisode,
+      languages: target.explicitLanguage == null
+          ? preferredLanguages
+          : <String>[target.explicitLanguage!],
+      fingerprint: LocalVideoFingerprint(
+        fileSize: await video.length(),
+        fileName: p.basename(video.path),
+        openSubtitlesMovieHash: await computeOpenSubtitlesMovieHash(video.path),
+      ),
+    );
+  }
+
+  /// 手动搜：与 [backfill] 同一个请求，但只列候选、不下载不校验（用户自己挑）。
+  /// 视频文件不在时抛 [FileSystemException]。
+  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
+    SubtitleBackfillTarget target, {
+    String? query,
+    int? episode,
+  }) async {
+    final File video = File(target.videoPath);
+    if (!await video.exists()) {
+      throw FileSystemException('video file is gone', target.videoPath);
+    }
+    return registry.search(
+      await _request(target, video, query: query, episode: episode),
+    );
+  }
+
+  /// 手动挑：用户点名的这一条直接下载落 sidecar，跳过作品 / 语言 / 时长的自动拒收
+  /// （那些是无人值守时的保护，用户亲手选的就以他为准）。仍然**不覆盖**已有的同名
+  /// 字幕文件。
+  Future<SubtitleBackfillResult> install(
+    SubtitleBackfillTarget target,
+    VideoSubtitleCandidate candidate,
+  ) async {
+    final File video = File(target.videoPath);
+    if (!await video.exists()) {
+      return const SubtitleBackfillResult(
+        SubtitleBackfillOutcome.failed,
+        detail: 'video file is gone',
+      );
+    }
+    final VideoSubtitleDownload download;
+    try {
+      download = await registry.download(candidate);
+    } on Object catch (error) {
+      return SubtitleBackfillResult(
+        SubtitleBackfillOutcome.failed,
+        detail: 'download failed: $error',
+      );
+    }
+    final String dest = sidecarPathFor(video.path, download);
+    if (await File(dest).exists()) {
+      return SubtitleBackfillResult(
+        SubtitleBackfillOutcome.alreadyHasSubtitle,
+        installedPath: dest,
+        detail: 'a subtitle file with the same name already exists',
+      );
+    }
+    try {
+      final String installed = await _writeSidecar(video, download);
+      return SubtitleBackfillResult(
+        SubtitleBackfillOutcome.installed,
+        installedPath: installed,
+        language: download.language,
+      );
+    } on Object catch (error) {
+      return SubtitleBackfillResult(
+        SubtitleBackfillOutcome.failed,
+        detail: 'sidecar write failed: $error',
+      );
+    }
   }
 
   /// 下载前就能判死的候选：不是这部作品（BUG-3068），或来源标明了别的语言
@@ -387,18 +464,18 @@ class VideoSubtitleBackfillService {
     return null;
   }
 
-  List<String> _existingSidecars(File video) {
+  Future<List<String>> _existingSidecars(File video) async {
     try {
       final Directory dir = video.parent;
       final List<String> names = <String>[
-        for (final FileSystemEntity entity in dir.listSync())
+        await for (final FileSystemEntity entity in dir.list())
           if (entity is File) p.basename(entity.path),
       ];
       return listSidecarSubtitles(
         p.basenameWithoutExtension(video.path),
         names,
       );
-    } catch (_) {
+    } on FileSystemException {
       // 目录读不了就当「不确定有没有」，按有处理——宁可不补，也不能覆盖。
       return const <String>['<unreadable>'];
     }
@@ -410,14 +487,9 @@ class VideoSubtitleBackfillService {
     File video,
     VideoSubtitleDownload download,
   ) async {
-    final String extension = sidecarSubtitleExtension(download.fileName);
-    final String language = sidecarLanguageTag(download.language);
-    final String target = p.join(
-      p.dirname(video.path),
-      '${p.basenameWithoutExtension(video.path)}.$language$extension',
-    );
+    final String target = sidecarPathFor(video.path, download);
     final File dest = File(target);
-    if (dest.existsSync()) return target;
+    if (await dest.exists()) return target;
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
@@ -432,7 +504,7 @@ class VideoSubtitleBackfillService {
     );
     // 对齐可能要几十秒（整片抽轨）：这期间用户 / 另一条路径可能已经落了同名
     // sidecar，rename 会把它覆盖掉。再查一次，已存在就放弃这份。
-    if (dest.existsSync()) {
+    if (await dest.exists()) {
       try {
         await temp.delete();
       } catch (_) {}
@@ -442,6 +514,15 @@ class VideoSubtitleBackfillService {
     return target;
   }
 }
+
+/// 一条下载结果在 [videoPath] 旁的 sidecar 路径：`<video 基名>.<lang><ext>`。纯函数。
+String sidecarPathFor(String videoPath, VideoSubtitleDownload download) =>
+    p.join(
+      p.dirname(videoPath),
+      '${p.basenameWithoutExtension(videoPath)}.'
+      '${sidecarLanguageTag(download.language)}'
+      '${sidecarSubtitleExtension(download.fileName)}',
+    );
 
 /// 语言标签归一到 sidecar 后缀白名单允许的字符集（见 `isSidecarSubtitleSuffix`：
 /// `[A-Za-z0-9_-]{1,32}`）。纯函数，与那条白名单成对单测。

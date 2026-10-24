@@ -33,6 +33,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -169,19 +170,25 @@ double dashboardRowCoverHeight(double mainColumnWidth) =>
 /// 文件不在（换盘 / 清缓存 / 刮削改过路径）或这一集还没抽帧时，主角卡与横滑卡
 /// 直接掉成「图标 + 名字」占位，而视频页同一部作品照样有封面。全部候选都不存在
 /// 返回 null（调用方画占位）。
+///
+/// [exists] 是 async：候选可能落在网络盘（rclone / SMB 挂载）上，挂载端目录缓存
+/// 过期时一次 stat 要逐级重列目录、单次数秒。旧实现在 build 里同步 `existsSync`，
+/// 读有声书时统计表每几秒一写就触发首页重建 → 主 isolate 冻结数秒，同 isolate 上
+/// 的互联 host 端点（含 `/api/ping`）与 UI 一起卡死（BUG-3756）。
 @visibleForTesting
-String? dashboardVideoCoverPath({
+Future<String?> dashboardVideoCoverPath({
   required String? collectionCover,
   required String? ownCover,
   Iterable<String?> memberCovers = const <String?>[],
-  required bool Function(String path) exists,
-}) {
-  bool usable(String? path) => path != null && path.isNotEmpty && exists(path);
-  if (usable(collectionCover)) return collectionCover;
-  if (usable(ownCover)) return ownCover;
+  required Future<bool> Function(String path) exists,
+}) async {
+  Future<bool> usable(String? path) async =>
+      path != null && path.isNotEmpty && await exists(path);
+  if (await usable(collectionCover)) return collectionCover;
+  if (await usable(ownCover)) return ownCover;
   // 逐个惰性取：找到第一张存在的就停。
   for (final String? path in memberCovers) {
-    if (usable(path)) return path;
+    if (await usable(path)) return path;
   }
   return null;
 }
@@ -754,6 +761,13 @@ class _HomeDashboardPageState
   /// 合集主封面（`MediaCollections.coverPath`，刮削落地的作品海报）：「继续」
   /// 竖卡的视频优先用它，集封面多是横版截帧。
   Map<int, String> _collectionCoverById = const <int, String>{};
+
+  /// 「继续」视频卡封面的异步解析结果：候选签名（[_videoCoverCandidateKey]）→
+  /// 第一张存在的封面（null = 全不存在）。build 只读这张表、绝不碰文件系统
+  /// （BUG-3756）；表里还没有的候选由 [_resolveVideoCover] 在后台解析完再重建。
+  /// 按候选签名缓存：重载后候选不变就直接复用，不会每次重载都闪占位。
+  final Map<String, String?> _videoCoverByCandidates = <String, String?>{};
+  final Set<String> _videoCoverResolving = <String>{};
 
   /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
   /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
@@ -1386,6 +1400,19 @@ class _HomeDashboardPageState
         int entrance = 0;
         Widget entering(Widget child) =>
             FushiStaggeredEntrance(index: entrance++, child: child);
+        // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
+        // 一个回到引导的入口）。排在最上面、最先进场。
+        final Widget? onboardingCard = _initialLoadDone &&
+                homeOnboardingCardVisible(
+                  dismissed: appModel.onboardingHomeCardDismissed,
+                  onboardingFinished: appModel.onboardingFinished,
+                  libraryEmpty: books.isEmpty &&
+                      _videos.isEmpty &&
+                      _games.isEmpty &&
+                      continueEntries.isEmpty,
+                )
+            ? entering(_buildOnboardingCard(tokens, appModel))
+            : null;
         final Widget body;
         if (twoColumn) {
           final Widget main = entering(continueCard);
@@ -1466,6 +1493,10 @@ class _HomeDashboardPageState
                   appModel.packageInfo.packageName !=
                       kHibikiPackageName) ...<Widget>[
                 _FushiMigrationBanner(appModel: appModel),
+              ],
+              if (onboardingCard != null) ...<Widget>[
+                onboardingCard,
+                SizedBox(height: tokens.spacing.card),
               ],
               body,
             ],
@@ -1805,8 +1836,21 @@ class _HomeDashboardPageState
       ));
     }
     // 互联 host 的远端补位（本地无同 key/uid 的在读书/在看视频），与本地条目
-    // 按最近活动时刻统一混排（「继续也走互联」）。
-    for (final RemoteContinueCandidate c in _remoteContinue) {
+    // 按最近活动时刻统一混排（「继续也走互联」）。远端合集已在候选层收敛成一
+    // 合集一卡；本地已出同名合集卡的再去掉（反馈 GonyeE75Kd：同名卡刷屏）。
+    final List<RemoteContinueCandidate> remoteUnits =
+        withoutLocallyCoveredCollections(
+      _remoteContinue,
+      localVideoCollectionNames: <String>{
+        for (final _ContinueEntry e in entries)
+          if (e.isVideo && e.collectionName != null) e.collectionName!,
+      },
+      localBookCollectionNames: <String>{
+        for (final _ContinueEntry e in entries)
+          if (e.isBook && e.collectionName != null) e.collectionName!,
+      },
+    );
+    for (final RemoteContinueCandidate c in remoteUnits) {
       entries.add(_ContinueEntry(
         // BUG-1119：此前是 `c.isVideo ? video : epub` 二元降维——远端 SRT 书会被
         // 抹成 epub、第三种媒体装不下（BUG-1111 的漏网消费点）。直读候选种类。
@@ -1859,6 +1903,52 @@ class _HomeDashboardPageState
       );
       if (mounted) bumpSrsRevision(ref);
     });
+  }
+
+  /// 「新手引导」卡：一句说明 + 「继续新手引导」主按钮，标题行尾是「不再显示」。
+  /// 走完向导（[AppModel.onboardingFinished]）且库里有了内容后自己消失。
+  Widget _buildOnboardingCard(FushiDesignTokens tokens, AppModel appModel) {
+    return _sectionCard(
+      tokens,
+      key: const ValueKey<String>('home-onboarding-card'),
+      title: t.onboarding_title,
+      icon: FushiIcons.flag,
+      trailing: <Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('home-onboarding-card-dismiss'),
+          icon: FushiIcons.close,
+          tooltip: t.home_onboarding_card_dismiss,
+          onTap: () async {
+            await appModel.setOnboardingHomeCardDismissed(value: true);
+            if (mounted) setState(() {});
+          },
+        ),
+      ],
+      child: HomeEmptyState(
+        stateKey: 'home-onboarding-card-body',
+        icon: FushiIcons.flag,
+        message: t.home_onboarding_card_desc,
+        actions: <Widget>[
+          FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('home-onboarding-card-start'),
+            onPressed: () => unawaited(_openOnboardingWizard()),
+            icon: const FushiIcon(FushiIcons.forward),
+            label: Text(t.home_onboarding_card_start),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openOnboardingWizard() async {
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const OnboardingWizardPage(),
+        fullscreenDialog: true,
+      ),
+    );
+    if (mounted) setState(() {});
   }
 
   /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。
@@ -2508,18 +2598,72 @@ class _HomeDashboardPageState
     final VideoBookRow? video = entry.video;
     if (video == null) return null;
     final int? cid = entry.collectionId;
+    final String? collectionCover = cid == null
+        ? null
+        : _collectionCoverById[cid];
+    final List<String?> memberCovers = cid == null
+        ? const <String?>[]
+        : _collectionMemberCovers(cid, except: video.bookUid).toList();
+    final String key = _videoCoverCandidateKey(
+      collectionCover,
+      video.coverPath,
+      memberCovers,
+    );
+    if (!_videoCoverByCandidates.containsKey(key)) {
+      _resolveVideoCover(
+        key,
+        collectionCover: collectionCover,
+        ownCover: video.coverPath,
+        memberCovers: memberCovers,
+      );
+      return null; // 解析完成前画占位，解析完 setState 重建。
+    }
+    final String? localPath = _videoCoverByCandidates[key];
+    if (localPath == null) return null;
     return resolveMediaCoverImage(
       kind: MediaKind.video,
-      localPath: dashboardVideoCoverPath(
-        collectionCover: cid == null ? null : _collectionCoverById[cid],
-        ownCover: video.coverPath,
-        memberCovers: cid == null
-            ? const <String?>[]
-            : _collectionMemberCovers(cid, except: video.bookUid),
-        exists: (String path) => File(path).existsSync(),
-      ),
+      localPath: localPath,
       decodeWidth: kLocalCoverDecodePixelWidth,
     );
+  }
+
+  /// [_videoCoverByCandidates] 的键：候选路径按回退顺序拼接（纯字符串，零 IO）。
+  static String _videoCoverCandidateKey(
+    String? collectionCover,
+    String? ownCover,
+    List<String?> memberCovers,
+  ) => <String?>[
+    collectionCover,
+    ownCover,
+    ...memberCovers,
+  ].map((String? e) => e ?? '').join('|');
+
+  /// 后台按 [dashboardVideoCoverPath] 回退链异步解析一组候选（async `exists`，在 IO
+  /// 线程池里等，不阻塞 UI isolate），结果进 [_videoCoverByCandidates] 后重建。
+  void _resolveVideoCover(
+    String key, {
+    required String? collectionCover,
+    required String? ownCover,
+    required List<String?> memberCovers,
+  }) {
+    if (!_videoCoverResolving.add(key)) return;
+    unawaited(() async {
+      String? resolved;
+      try {
+        resolved = await dashboardVideoCoverPath(
+          collectionCover: collectionCover,
+          ownCover: ownCover,
+          memberCovers: memberCovers,
+          exists: (String path) => File(path).exists(),
+        );
+      } on FileSystemException catch (e, stack) {
+        ErrorLogService.instance.log('HomeDashboardPage.videoCover', e, stack);
+      } finally {
+        _videoCoverResolving.remove(key);
+      }
+      if (!mounted) return;
+      setState(() => _videoCoverByCandidates[key] = resolved);
+    }());
   }
 
   /// 同一主合集里其它集的封面路径（懒序列，[dashboardVideoCoverPath] 找到第一张

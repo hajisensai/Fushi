@@ -225,27 +225,49 @@ class _VideoSubtitleGenerateSheetState
   AppVideoSubtitleJob? _job;
   String? _startError;
 
-  /// 整季：已有 `<视频名>.ja.srt`、管线会跳过的集。
-  late final Set<String> _existing = <String>{
-    if (_target.wholeSeason)
+  /// 整季：已有 `<视频名>.ja.srt`、管线会跳过的集。initState 里 async 探好后
+  /// setState（[_loadExisting]）：这些字幕在视频旁边，常在网络盘上，旧实现作为
+  /// late 字段在 build 里逐集同步 stat，冷目录一次数秒、冻结 UI isolate（BUG-3756）。
+  Set<String> _existing = const <String>{};
+
+  Future<void> _loadExisting() async {
+    if (!_target.wholeSeason) return;
+    final Set<String> existing = <String>{
       for (final AppVideoSubtitleEpisode e in _target.episodes)
-        if (File(
+        if (await File(
           p.join(
             p.dirname(e.videoPath),
             '${p.basenameWithoutExtension(e.videoPath)}.ja.srt',
           ),
-        ).existsSync())
+        ).exists())
           e.videoPath,
-  };
+    };
+    if (!mounted) return;
+    setState(() => _existing = existing);
+  }
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadExisting());
     final AppVideoSubtitleJob? latest = _service.latestJobFor(_target);
     if (latest != null) _attach(latest);
     unawaited(_refreshPlan());
     unawaited(_refreshMoss());
     if (_proofread) unawaited(_refreshEstimate());
+    // 下载归全应用登记表、不归弹层（kZZmXQBv7E）：关掉再打开弹层时接回进行中的
+    // 那条，进度照常显示、按钮不再亮——以前这里看不到它，再点一次就起第二条写者。
+    final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
+        .resumeDownload();
+    if (asr != null) {
+      _asrDownload = _starting;
+      unawaited(_followAsr(asr));
+    }
+    final Stream<ModelDownloadEvent>? moss = _service.mossPort.resumeEnsure();
+    if (moss != null) {
+      _mossDownload = _starting;
+      unawaited(_followMoss(moss));
+    }
   }
 
   @override
@@ -330,49 +352,56 @@ class _VideoSubtitleGenerateSheetState
     }
   }
 
-  Future<void> _downloadAsr() async {
+  static const ModelDownloadEvent _starting = ModelDownloadEvent(
+    fileName: '',
+    receivedBytes: 0,
+    totalBytes: 0,
+  );
+
+  void _downloadAsr() {
     setState(() {
       _asrDownloadError = null;
-      _asrDownload = const ModelDownloadEvent(
-        fileName: '',
-        receivedBytes: 0,
-        totalBytes: 0,
-      );
+      _asrDownload = _starting;
     });
+    unawaited(_followAsr(_service.asrModelPort.download()));
+  }
+
+  /// 跟一条识别模型下载的进度。弹层关掉只摘掉这个监听，下载本身继续。
+  Future<void> _followAsr(Stream<ModelDownloadEvent> download) async {
     try {
-      await for (final ModelDownloadEvent e
-          in _service.asrModelPort.download()) {
-        if (mounted) setState(() => _asrDownload = e);
+      await for (final ModelDownloadEvent e in download) {
+        if (!mounted) return;
+        setState(() => _asrDownload = e);
       }
     } catch (error) {
       if (mounted) setState(() => _asrDownloadError = '$error');
-    } finally {
-      if (mounted) setState(() => _asrDownload = null);
-      await _refreshPlan();
     }
+    if (!mounted) return;
+    setState(() => _asrDownload = null);
+    await _refreshPlan();
   }
 
-  Future<void> _downloadMoss() async {
+  void _downloadMoss() {
     setState(() {
       _mossDownloadError = null;
-      _mossDownload = const ModelDownloadEvent(
-        fileName: '',
-        receivedBytes: 0,
-        totalBytes: 0,
-      );
+      _mossDownload = _starting;
     });
+    unawaited(_followMoss(_service.mossPort.ensure(widget.prefs.mossBackend)));
+  }
+
+  /// 跟一条 MOSS 下载的进度（同 [_followAsr]）。
+  Future<void> _followMoss(Stream<ModelDownloadEvent> download) async {
     try {
-      await for (final ModelDownloadEvent e in _service.mossPort.ensure(
-        widget.prefs.mossBackend,
-      )) {
-        if (mounted) setState(() => _mossDownload = e);
+      await for (final ModelDownloadEvent e in download) {
+        if (!mounted) return;
+        setState(() => _mossDownload = e);
       }
     } catch (error) {
       if (mounted) setState(() => _mossDownloadError = '$error');
-    } finally {
-      if (mounted) setState(() => _mossDownload = null);
-      await _refreshMoss();
     }
+    if (!mounted) return;
+    setState(() => _mossDownload = null);
+    await _refreshMoss();
   }
 
   Future<void> _setSegmenter(VideoSubtitleSegmenterMode mode) async {

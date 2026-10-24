@@ -319,8 +319,8 @@ const ValueKey<String> kSubtitleNoticeBannerKey = ValueKey<String>(
 /// 盖掉的那几条永远不会有人发现。
 ///
 /// 批量落盘路径（[runSubtitleBatch]）早就踩过同一个坑，用的是 bookUid 前缀；
-/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。
-@visibleForTesting
+/// 这里是「同一集的多个候选」，没有 bookUid 可用，故按序号消歧。手机遥控在线
+/// 字幕（`RemoteOnlineSubtitleSearch`）落盘同样用它。
 String uniqueSubtitleDestination(String directory, String fileName) {
   final String ext = p.extension(fileName);
   final String stem = p.basenameWithoutExtension(fileName);

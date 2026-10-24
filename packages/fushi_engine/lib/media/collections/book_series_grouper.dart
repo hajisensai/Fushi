@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
+import 'package:fushi_engine/epub/epub_series_backfill.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
@@ -41,17 +43,38 @@ class BookSeriesGrouper {
   Future<BookSeriesGroupSummary> groupAll() async {
     final List<int> created = <int>[];
     final List<int> updated = <int>[];
+    // 存量书补读 OPF 系列声明（每本只读一次）；之后导入的书由导入器直接写。
+    await backfillEpubSeries(_database);
     final List<_Volume> volumes = await _loadVolumes();
-    final List<MediaCollectionItemRow> items = await _database
-        .getAllCollectionItems();
-    final Set<String> inCollection = <String>{
-      for (final MediaCollectionItemRow i in items)
-        '${i.mediaType}|${i.entryKey}',
-    };
     final Map<String, _Volume> byMember = <String, _Volume>{
       for (final _Volume v in volumes)
         for (final _Member m in v.members) m.id: v,
     };
+    // 只读与本机分卷相关的成员行（互联 host 每次出书单都调本方法）。成员表可以远大于
+    // 本机书架——在线源 / 播放列表合集挂着成千上万本机不存在的集数（实测 3180 合集、
+    // 8.5 万行）；旧实现整表物化后再逐合集 / 逐系列线性扫，是 O(合集 × 成员) 的秒级
+    // 热点。这里先按分卷成员键取命中行，再只取命中合集的全部成员：
+    // - [seriesItems]：分卷成员所在的成员行，供「已在合集里」与「已有同系列成员的
+    //   合集」判定（两处本来只认能映射到分卷的行）；
+    // - [itemsByCollection]：含分卷成员的合集 → 本合集全部成员行，供卷序自愈。没有
+    //   分卷成员的合集 [BookSeriesOrder.orderOf] 必判不定序，本来就不会被自愈。
+    // 两份都在归组写库前读好，与旧实现「先读快照、归组时改过的合集不再自愈」同序。
+    final List<MediaCollectionItemRow> seriesItems = await _itemsForMembers(
+      byMember.keys,
+    );
+    final Set<String> inCollection = <String>{
+      for (final MediaCollectionItemRow i in seriesItems)
+        '${i.mediaType}|${i.entryKey}',
+    };
+    final Map<int, List<MediaCollectionItemRow>> itemsByCollection =
+        <int, List<MediaCollectionItemRow>>{};
+    for (final MediaCollectionItemRow i in await _itemsOfCollections(<int>{
+      for (final MediaCollectionItemRow i in seriesItems) i.collectionId,
+    })) {
+      itemsByCollection
+          .putIfAbsent(i.collectionId, () => <MediaCollectionItemRow>[])
+          .add(i);
+    }
     final Map<String, List<_Volume>> loose = <String, List<_Volume>>{};
     for (final _Volume v in volumes) {
       if (v.members.any((m) => inCollection.contains(m.id))) continue;
@@ -74,7 +97,7 @@ class BookSeriesGrouper {
       for (final List<_Volume> group in loose.values) {
         final int? id = await _groupSeries(
           group,
-          items,
+          seriesItems,
           byMember,
           created,
           playlistByName,
@@ -85,7 +108,9 @@ class BookSeriesGrouper {
     final BookSeriesOrder order = BookSeriesOrder._(byMember);
     for (final MediaCollectionRow c in collections) {
       if (created.contains(c.id) || updated.contains(c.id)) continue;
-      if (await _healSeriesOrder(c, items, order)) updated.add(c.id);
+      final List<MediaCollectionItemRow>? members = itemsByCollection[c.id];
+      if (members == null) continue; // 无分卷成员：不可能被定序。
+      if (await _healSeriesOrder(c, members, order)) updated.add(c.id);
     }
     return (
       createdCollectionIds: List<int>.unmodifiable(created),
@@ -93,12 +118,89 @@ class BookSeriesGrouper {
     );
   }
 
+  /// 每批 IN 列表的上限（远低于 SQLite 32766 个绑定变量的默认上限）。
+  static const int _inChunk = 500;
+
+  /// `'<mediaType>|<entryKey>'` 成员键对应的全部成员行，与
+  /// [FushiDatabase.getAllCollectionItems] 同一全序（collectionId → sortIndex →
+  /// entryKey → mediaType）——「已有同系列成员的合集」平票时取先出现者，依赖这个序。
+  Future<List<MediaCollectionItemRow>> _itemsForMembers(
+    Iterable<String> memberIds,
+  ) async {
+    final Map<String, List<String>> keysByType = <String, List<String>>{};
+    for (final String id in memberIds) {
+      final int bar = id.indexOf('|');
+      keysByType
+          .putIfAbsent(id.substring(0, bar), () => <String>[])
+          .add(id.substring(bar + 1));
+    }
+    final List<MediaCollectionItemRow> out = <MediaCollectionItemRow>[];
+    for (final MapEntry<String, List<String>> e in keysByType.entries) {
+      for (int i = 0; i < e.value.length; i += _inChunk) {
+        final List<String> chunk = e.value.sublist(
+          i,
+          i + _inChunk > e.value.length ? e.value.length : i + _inChunk,
+        );
+        out.addAll(
+          await (_database.select(_database.mediaCollectionItems)..where(
+                (t) => t.mediaType.equals(e.key) & t.entryKey.isIn(chunk),
+              ))
+              .get(),
+        );
+      }
+    }
+    return out..sort(_compareItemRows);
+  }
+
+  /// [collectionIds] 这些合集的全部成员行（同 [_itemsForMembers] 的全序）。
+  Future<List<MediaCollectionItemRow>> _itemsOfCollections(
+    Set<int> collectionIds,
+  ) async {
+    final List<int> ids = collectionIds.toList();
+    final List<MediaCollectionItemRow> out = <MediaCollectionItemRow>[];
+    for (int i = 0; i < ids.length; i += _inChunk) {
+      final List<int> chunk = ids.sublist(
+        i,
+        i + _inChunk > ids.length ? ids.length : i + _inChunk,
+      );
+      out.addAll(
+        await (_database.select(
+          _database.mediaCollectionItems,
+        )..where((t) => t.collectionId.isIn(chunk))).get(),
+      );
+    }
+    return out..sort(_compareItemRows);
+  }
+
+  static int _compareItemRows(
+    MediaCollectionItemRow a,
+    MediaCollectionItemRow b,
+  ) {
+    final int c = a.collectionId.compareTo(b.collectionId);
+    if (c != 0) return c;
+    final int s = a.sortIndex.compareTo(b.sortIndex);
+    if (s != 0) return s;
+    final int k = a.entryKey.compareTo(b.entryKey);
+    return k != 0 ? k : a.mediaType.compareTo(b.mediaType);
+  }
+
   Future<List<_Volume>> _loadVolumes() async {
     final List<_Volume> out = <_Volume>[];
     final Map<String, _Volume> byBookKey = <String, _Volume>{};
     for (final EpubBookRow book in await _database.getAllEpubBooks()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
-      final BookSeriesKey? key = parseBookSeriesKey(book.title);
+      // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品
+      // 只能靠它），没有声明才按书名启发式。
+      final EpubSeries? declared = decodeEpubSeriesMetadata(
+        book.sourceMetadata,
+      );
+      final BookSeriesKey? key = declared != null
+          ? declaredBookSeriesKey(
+              name: declared.name,
+              index: declared.index,
+              title: book.title,
+            )
+          : parseBookSeriesKey(book.title);
       if (key == null) continue;
       final _Volume v = _Volume(
         title: book.title,
@@ -143,10 +245,11 @@ class BookSeriesGrouper {
     return out;
   }
 
-  /// 归一个系列；有成员落进合集返回合集 id，否则 null。
+  /// 归一个系列；有成员落进合集返回合集 id，否则 null。[seriesItems] 只含能映射到
+  /// 本机分卷的成员行（见 [groupAll]）。
   Future<int?> _groupSeries(
     List<_Volume> volumes,
-    List<MediaCollectionItemRow> items,
+    List<MediaCollectionItemRow> seriesItems,
     Map<String, _Volume> byMember,
     List<int> created,
     Map<String, MediaCollectionRow> playlistByName,
@@ -154,7 +257,7 @@ class BookSeriesGrouper {
     final String groupKey = volumes.first.groupKey;
     MediaCollectionRow? collection = await _collectionHoldingSeries(
       groupKey,
-      items,
+      seriesItems,
       byMember,
     );
     final String name = volumes.first.key.seriesTitle;
@@ -242,23 +345,22 @@ class BookSeriesGrouper {
   /// 只动用户没手动排过（`orderUpdatedAt == 0`）、且 [BookSeriesOrder.orderOf]
   /// 能完整定序的合集；顺序已对时不写库。返回是否重排了。合集同步合并时走同一判据
   /// （`loadBookSeriesRuleOrder`），本地与共享清单不会各持一序来回翻。
+  /// [collectionItems] 是本合集的成员行（[groupAll] 预先分好桶）。
   Future<bool> _healSeriesOrder(
     MediaCollectionRow collection,
-    List<MediaCollectionItemRow> allItems,
+    List<MediaCollectionItemRow> collectionItems,
     BookSeriesOrder order,
   ) async {
     if (collection.orderUpdatedAt != 0) return false;
     final List<MediaCollectionItemRow> rows =
-        <MediaCollectionItemRow>[
-          for (final MediaCollectionItemRow i in allItems)
-            if (i.collectionId == collection.id) i,
-        ]..sort((MediaCollectionItemRow a, MediaCollectionItemRow b) {
-          // 与 getCollectionItems 同一全序（sortIndex → entryKey → mediaType）。
-          final int s = a.sortIndex.compareTo(b.sortIndex);
-          if (s != 0) return s;
-          final int k = a.entryKey.compareTo(b.entryKey);
-          return k != 0 ? k : a.mediaType.compareTo(b.mediaType);
-        });
+        List<MediaCollectionItemRow>.of(collectionItems)
+          ..sort((MediaCollectionItemRow a, MediaCollectionItemRow b) {
+            // 与 getCollectionItems 同一全序（sortIndex → entryKey → mediaType）。
+            final int s = a.sortIndex.compareTo(b.sortIndex);
+            if (s != 0) return s;
+            final int k = a.entryKey.compareTo(b.entryKey);
+            return k != 0 ? k : a.mediaType.compareTo(b.mediaType);
+          });
     final List<CollectionMemberKey> current = <CollectionMemberKey>[
       for (final MediaCollectionItemRow i in rows)
         (mediaType: i.mediaType, entryKey: i.entryKey),
@@ -329,10 +431,9 @@ class BookSeriesOrder {
     }
     if (volumes.length < 2) return null;
     if (volumes.map((_Volume v) => v.shelf).toSet().length != 1) return null;
-    if (sharedBookSeriesKey(<String>[
-          for (final _Volume v in volumes) v.title,
-        ]) ==
-        null) {
+    // 同系列看各卷已定的系列键（书名启发式或包里声明的系列），不再从书名重解析：
+    // 声明了系列的卷书名里未必有系列线索。
+    if (volumes.map((_Volume v) => v.key.key).toSet().length != 1) {
       return null;
     }
     final List<num?> numbers = <num?>[

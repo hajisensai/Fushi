@@ -1,6 +1,7 @@
 package app.fushi.reader;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -984,17 +985,37 @@ public class AnkiChannelHandler {
      * {@code nid:<id>} filters to this note. Returns {@code true} when an activity
      * was launched, {@code false} when nothing can handle it (e.g. an AnkiDroid
      * too old to expose the deep link) — the caller then surfaces a toast.
+     *
+     * <p>Feedback 6lORfLyhXd ("cards were mined but can no longer be opened"):
+     * <ul>
+     *   <li>The intent is pinned to the AnkiDroid package whose provider we mine
+     *   into ({@link AnkiDroidTarget#resolve}). The note id only exists in that
+     *   install's collection; an unpinned {@code anki://} intent may land in another
+     *   installed variant (parallel build, debug build) or a chooser.</li>
+     *   <li>{@code startActivity} is the authority, not {@code resolveActivity}: the
+     *   latter is only a prediction filtered by package visibility and OEM
+     *   resolver policy, and a wrong {@code null} there made us report "cannot
+     *   open" without ever trying. {@link ActivityNotFoundException} is the real
+     *   "nothing handles this" signal.</li>
+     * </ul>
      */
     private boolean openNote(long noteId) {
         Uri browserUri = Uri.parse("anki://x-callback-url/browser?search="
             + Uri.encode("nid:" + noteId));
         Intent intent = new Intent(Intent.ACTION_VIEW, browserUri);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (intent.resolveActivity(context.getPackageManager()) == null) {
+        final AnkiDroidTarget target = AnkiDroidTarget.resolve(context);
+        if (target != null) {
+            intent.setPackage(target.packageName);
+        }
+        try {
+            context.startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            android.util.Log.w("fushi-anki", "no activity handles the AnkiDroid browser deep link"
+                + (target != null ? " in " + target.packageName : ""), e);
             return false;
         }
-        context.startActivity(intent);
-        return true;
     }
 
     /**

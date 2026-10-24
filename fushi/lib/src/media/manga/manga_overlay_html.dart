@@ -808,9 +808,13 @@ String mangaWindowDocument(
   // that only know spread/webtoon continue to work.
   final bool isVerticalPaged = mode == MangaReadingMode.pagedVertical;
   final bool isWebtoon = mode.isWebtoon || isVerticalPaged;
-  final bool hasGaps = readerPreferences == null
+  // 长条漫的页间距只由阅读模式决定：「条漫」无缝拼接、「带间距长条漫」留间距
+  // （与 Mihon 两种长条模式同义）。此前两种模式都只看 showPageGaps，而它默认开，
+  // 于是「条漫」每页之间都露出一条背景色横带——切片发布的韩漫满屏黑线。
+  // showPageGaps 只管纵向分页（翻页步进之间的空隙，见 _layoutSource）。
+  final bool hasGaps = mode.isWebtoon
       ? mode.hasGaps
-      : preferences.showPageGaps;
+      : readerPreferences != null && preferences.showPageGaps;
   // spread 容器本身始终按 LTR 的几何顺序排列，保证 offsetLeft 是稳定的
   // 0/100vw/200vw；RTL 只施加到每个 spread 内部，让双页视觉页序反转。
   // 若把 direction:rtl 放在根 strip 上，Chromium 会把 wrapper 的 RTL 起点偏移
@@ -978,7 +982,10 @@ String mangaWindowDocument(
       'container-type:inline-size;overflow:hidden;}'
       '.manga-page img{display:block;width:100%;height:100%;'
       'object-fit:contain;-webkit-user-drag:none;user-drag:none;}'
-      '.manga-source img{filter:${mangaImageFilterCss(preferences)};}'
+      // 全为恒等值时写 none：哪怕 invert(0)…saturate(1) 也会让每张页图走一次滤镜
+      // 离屏渲染，长条漫的超高页图（数万像素高）会把滤镜面撑过纹理上限画成空白，
+      // 滚动时逐帧重做滤镜也是卡顿的大头。
+      '.manga-source img{filter:${mangaImageFilterIsIdentity(preferences) ? 'none' : mangaImageFilterCss(preferences)};}'
       // 取页失败的页：中央一个重试符号（点它 / 翻到它会重新请求，见 _retryPageImage）。
       '.manga-page[data-load-failed="1"] .manga-source::before{content:"\\21BB";'
       'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
@@ -1027,6 +1034,15 @@ String mangaWindowDocument(
       '</script>'
       '</body></html>';
 }
+
+/// Whether [mangaImageFilterCss] would leave every pixel unchanged.
+bool mangaImageFilterIsIdentity(MangaReaderPreferences preferences) =>
+    !preferences.invertColors &&
+    !preferences.grayscale &&
+    !preferences.einkMode &&
+    preferences.brightness.clamp(-100, 100) == 0 &&
+    preferences.contrast.clamp(0, 200) == 100 &&
+    preferences.saturation.clamp(0, 200) == 100;
 
 /// CSS filters affect the bitmap only; OCR hit boxes retain their source geometry.
 String mangaImageFilterCss(MangaReaderPreferences preferences) =>
@@ -1178,6 +1194,18 @@ String _mangaGestureJs({
     else if ('${scaleType.key}' === 'original') fit = 1;
     var scaleX = fit, scaleY = fit;
     if (!IS_WEBTOON && '${scaleType.key}' === 'stretch') { scaleX = sx; scaleY = sy; }
+    // 长条漫页缝：页高按宽度比例算出来是小数像素，页与页的交界落在物理像素中间，
+    // 两张图的边缘各被抗锯齿掉半个像素，底色从缝里透出来——就是那条横贯的黑线。
+    // 页高对齐到物理像素，并让无间距的后一页向上压住前一页一个物理像素：滚动偏移
+    // 是小数时交界仍会落在像素中间，有这一像素的重叠，底色就永远透不出来。
+    if (IS_WEBTOON && !IS_VERTICAL_PAGED && !rotated) {
+      var dpr = window.devicePixelRatio || 1;
+      scaleY = Math.max(1, Math.round(vh * scaleY * dpr)) / dpr / vh;
+      var prevPage = page.previousElementSibling;
+      var gapped = prevPage &&
+          parseFloat(getComputedStyle(prevPage).marginBottom) > 0;
+      page.style.marginTop = prevPage && !gapped ? (-1 / dpr) + 'px' : '';
+    }
     page.style.width = (vw * scaleX) + 'px';
     page.style.height = (vh * scaleY) + 'px';
     // A short vertical page keeps its true hit-test frame. Empty space between
@@ -1888,6 +1916,12 @@ String _mangaGestureJs({
     panDrag.lastY = e.clientY;
     panDrag.lastT = pnow;
     panDrag.vy = pdy / pdt * 1000;
+    // 松手速度取最近约 100ms 的位移 / 时间（见 _releaseVelocity）：只看最后一次
+    // pointermove 时，两次事件间隔 1~2ms 的抖动会把速度放大成离谱值或压成 0，
+    // 惯性一会儿飞很远、一会儿根本不滑——「滑动有卡顿感」的一半来源。
+    var ps = panDrag.samples;
+    ps.push({t: e.timeStamp, y: e.clientY});
+    while (ps.length > 2 && e.timeStamp - ps[0].t > 100) ps.shift();
     _panBy(pdx, pdy);
     _swipeMove(e.clientX, e.clientY);
   }, {passive: false});
@@ -2212,17 +2246,30 @@ String _mangaGestureJs({
   window.__mangaPanBy = function(fx, fy){
     _panBy(-window.innerWidth * fx, -window.innerHeight * fy);
   };
-  // 惯性：每秒衰减到 0.2%，低于 40px/s 停。阈值挡掉松手时的微抖动，
-  // 否则每次抬手都会看到一小段无意的漂移。
+  // 松手速度（px/s，向下拖为正）：最近约 100ms 窗口内的平均速度。手指停住
+  // 超过 50ms 再抬起视为「按住后松开」，不带惯性。
+  function _releaseVelocity(drag, upT){
+    var ps = drag.samples;
+    if (!ps || ps.length < 2) return drag.vy;
+    var last = ps[ps.length - 1];
+    if (upT - last.t > 50) return 0;
+    var first = ps[0];
+    var span = last.t - first.t;
+    if (span < 8) return drag.vy;
+    return (last.y - first.y) / span * 1000;
+  }
+  // 惯性：时间常数约 330ms（每秒衰减到 5%），滑行距离约为松手速度 × 0.33s，
+  // 接近系统原生滚动的手感；旧值（每秒衰减到 0.2%，时间常数 160ms）一甩就
+  // 急刹，读长条漫要不停地反复拨。低于 40px/s 停，阈值挡掉松手时的微抖动。
   function _startFlick(vy){
     if (!IS_WEBTOON || Math.abs(vy) < 80) return;
     flickVy = vy;
-    var last = Date.now();
-    var step = function(){
-      var now = Date.now();
-      var dt = Math.min(64, Math.max(1, now - last));
+    var last = null;
+    var step = function(now){
+      if (typeof now !== 'number') now = Date.now();
+      var dt = last === null ? 16 : Math.min(64, Math.max(1, now - last));
       last = now;
-      flickVy *= Math.pow(0.002, dt / 1000);
+      flickVy *= Math.pow(0.05, dt / 1000);
       if (Math.abs(flickVy) < 40) { _stopFlick(); return; }
       window.scrollBy(0, -flickVy * dt / 1000);
       flickRaf = requestAnimationFrame(step);
@@ -2381,11 +2428,28 @@ String _mangaGestureJs({
   var DBL_MS = ${doubleTapAnimationMs.clamp(100, 600)}, DBL_SLOP = 30;
   var lastTapT = 0, lastTapX = 0, lastTapY = 0;
   var pendingEmptyTap = null;
+  // 双击窗口按「第一击松手 → 第二击**按下**」计（反馈 IDF2uWUvlf，与 Android
+  // GestureDetector 的 DOUBLE_TAP_TIMEOUT 同口径）。此前只在第二击**松手**时判，
+  // 窗口里还得塞下第二击按住的那 ~100ms，挂起的 onTapEmpty 定时器又是从第一击
+  // 松手起算——手指还按在屏上它就先发了，悬浮栏被切出来、双击缩放落空，只有
+  // 快速三击（第二、三击凑成一对）才偶尔放大。第二击按下时落在挂起窗口内且离
+  // 第一击够近，就当场取消挂起的单击并武装双击，松手时直接缩放。
+  var dblArmed = false;
+  function _armDoubleTapOnDown(x, y){
+    dblArmed = false;
+    if (pendingEmptyTap === null) return;
+    var dx = x - lastTapX, dy = y - lastTapY;
+    if ((dx * dx + dy * dy) > DBL_SLOP * DBL_SLOP) return;
+    _cancelPendingEmptyTap();
+    dblArmed = true;
+  }
   function _consumeDoubleTap(x, y){
     var now = Date.now();
     var dx = x - lastTapX, dy = y - lastTapY;
-    var isDouble = (now - lastTapT) <= DBL_MS &&
-        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP;
+    var armed = dblArmed;
+    dblArmed = false;
+    var isDouble = armed || ((now - lastTapT) <= DBL_MS &&
+        (dx * dx + dy * dy) <= DBL_SLOP * DBL_SLOP);
     if (isDouble) { lastTapT = 0; return true; }
     lastTapT = now; lastTapX = x; lastTapY = y;
     return false;
@@ -2534,8 +2598,10 @@ String _mangaGestureJs({
     _stopScrollAnim();
     panDrag = {
       id: e.pointerId, lastX: e.clientX, lastY: e.clientY,
-      lastT: Date.now(), vy: 0, touch: e.pointerType === 'touch'
+      lastT: Date.now(), vy: 0, touch: e.pointerType === 'touch',
+      samples: [{t: e.timeStamp, y: e.clientY}]
     };
+    _armDoubleTapOnDown(e.clientX, e.clientY);
     _start(e.clientX, e.clientY);
   }, {passive: true});
   document.addEventListener('pointermove', function(e){
@@ -2584,7 +2650,7 @@ String _mangaGestureJs({
         if (Object.keys(touchPts).length === 0) pinchGuard = false;
         return;
       }
-      if (drag && drag.touch) _startFlick(drag.vy);
+      if (drag && drag.touch) _startFlick(_releaseVelocity(drag, e.timeStamp));
     }
     if (e.button === 2) {
       var drag = rightDrag;

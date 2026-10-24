@@ -7,6 +7,7 @@ export 'src/font/fushi_font.dart';
 export 'src/fushi_compute_library.dart';
 export 'src/galcal/fushi_compute_galcal.dart';
 export 'src/hash/ffc_hash.dart';
+export 'src/image/fushi_compute_avif_animation.dart';
 export 'src/image/fushi_compute_bitmap_subtitle.dart';
 export 'src/image/fushi_compute_image.dart';
 export 'src/ocr/fushi_compute_ocr.dart';

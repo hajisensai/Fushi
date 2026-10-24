@@ -57,6 +57,11 @@ void main() {
       reason: '正则没匹配到几个名字，八成是 callHandler 的写法变了，先修正则',
     );
 
+    // 桥脚本自己拦截、永远到不了 Dart 的名字（BUG-3762 的桥锁定，五个平台的 vendored /
+    // 打过补丁的 inappwebview 都在桥里处理它）。注册成 Dart 空 handler 反而错：回 null
+    // 或 true 都不是锁定成功的专用值，却会让人误以为 Dart 侧参与了锁定。
+    called.removeAll(const <String>{'_fushiLockBridge'});
+
     final Set<String> registered = kDictStylePreviewNoopHandlers.toSet();
     expect(
       registered.length,

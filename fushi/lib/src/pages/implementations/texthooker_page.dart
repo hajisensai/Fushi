@@ -1647,6 +1647,29 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   @override
   Widget build(BuildContext context) {
+    // BUG-3685：探针挂在本页路由里，路由被压住 / 回到栈顶时刷新根 Overlay 浮层。
+    return LookupOwnerRouteProbe(
+      onChanged: _onLookupOwnerRouteChanged,
+      child: _buildPage(context),
+    );
+  }
+
+  /// BUG-3685（反馈 5yWS2o6U6q）：查词浮层挂在根 Overlay、跟随本页路由。别的整页
+  /// 推上来（设置 / 反馈……）时本页不再是栈顶，[DictionaryPageMixin] 把浮层停靠屏外、
+  /// 撤掉整屏 barrier——否则 `Overlay.rearrange` 把浮层排回最顶，压住新页面、吃掉点击。
+  @override
+  ModalRoute<Object?>? get lookupOwnerRoute =>
+      mounted ? ModalRoute.of(context) : null;
+
+  /// [LookupOwnerRouteProbe] 回报本页路由栈顶状态变了：帧后刷新根 Overlay 浮层 entry
+  /// （它只在自己 build 时读 [lookupOwnerRoute]；探针回调在 build 阶段，不能同步刷新）。
+  void _onLookupOwnerRouteChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncPopupOverlay();
+    });
+  }
+
+  Widget _buildPage(BuildContext context) {
     final bool captureSetupVisible = TickerMode.of(context);
     final List<TexthookerTextThread> textThreads = _session.textThreads;
     final String? selectedTextThreadKey = _session.selectedTextThreadKey;
@@ -3253,7 +3276,10 @@ class _SessionHeroBadge extends StatelessWidget {
         decoration: ShapeDecoration(
           color: eink ? Colors.transparent : fill,
           shape: active
-              ? FushiCookieBorder(lobes: 4, side: side)
+              ? MaterialShapeBorder(
+                  shape: MaterialShapes.cookie4Sided,
+                  side: side,
+                )
               : CircleBorder(side: side),
         ),
         child: SizedBox.square(

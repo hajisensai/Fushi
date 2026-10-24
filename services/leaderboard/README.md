@@ -26,7 +26,7 @@ Cloudflare Worker + D1 + R2。设计与分期见
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行；安装统计心跳另有日预算 `ping` 4000 个安装（每个约 5 行，同一安装当天第二次心跳只读不写） |
 | R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 50MB，结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
-| Resend 发信 | 100 封/天、3000 封/月 | 全局日预算 `email` 90 封；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
+| 发信：Brevo SMTP（配了 `SMTP_*` 时）或 Resend | Brevo 300 封/天；Resend 100 封/天、3000 封/月 | 全局日预算 `email` 默认 90 封，`wrangler.toml` 走 Brevo 时设为 280；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
 
 代价（如实）：D1 每写一行、每个受影响索引另计一行，所以超大书架（8000 部）首次同步约 4 万行，会被拆到两三天里
 续传；几百部的普通书架一次传完。榜单最多滞后 30 分钟（响应里带 `computedAt`）。
@@ -108,19 +108,23 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
   `d1 migrations apply fushi-leaderboard --remote`（幂等，无待执行迁移时为空操作；迁移失败则不部署）。
   原先的 `apply_migrations` 开关默认关，漏勾就是「先部署、后迁移」，心跳等接口 500（#2433），已移除。
 - 步骤：checkout `ref` → `npm ci` → `npm test`（**测试不过不部署**）→ 校验 Cloudflare token（只打状态，不用会泄露账户邮箱的 `wrangler whoami`）并打印将要部署的
-  提交号 → D1 迁移 → `wrangler deploy --config services/leaderboard/wrangler.toml` →
-  `GET https://rank.fushi.moe/v1/health` 必须 200。用的是 `package-lock.json` 锁定的 wrangler，不走 `npx`。
+  提交号 → D1 迁移 → `wrangler versions upload` + `versions deploy <id>@100%`（不用 `wrangler deploy`，见下）→
+  触发器核对（`scripts/triggers_in_sync.mjs`：自定义域名 / crons / workers.dev 与 `wrangler.toml` 一致就跳过，
+  否则 `wrangler triggers deploy`）→ `GET https://rank.fushi.moe/v1/health` 必须 200。
+  拆开的原因（BUG-3661）：`wrangler deploy` 每次都先读 zone 的 `/workers/routes` 查冲突，只配 custom_domain
+  也读，token 缺 zone 权限时 Worker 已上线、workflow 却报红。用的是 `package-lock.json` 锁定的 wrangler，不走 `npx`。
 - 凭据：优先读 secret `CLOUDFLARE_WORKERS_API_TOKEN`，没配就回退到 `CLOUDFLARE_API_TOKEN`（原本给
   `mirror-releases.yml` 的 R2 镜像用）；账户 ID 读 `CLOUDFLARE_ACCOUNT_ID`。token 至少要有
-  「Account → Workers Scripts: Edit」与「Account → D1: Edit」（每次都迁移）；若 deploy 报
-  自定义域名 / route 相关的权限错误，再加限定 `fushi.moe` 的「Zone → Workers Routes: Edit」。
+  「Account → Workers Scripts: Edit」与「Account → D1: Edit」（每次都迁移）。限定 `fushi.moe` 的
+  「Zone → Workers Routes: Edit」只在触发器有变更（改了 `routes` / crons）时才用到；缺它时那次部署的
+  Sync triggers 步骤会报红。
   现有 token 只有 R2 权限时，二选一：在 Cloudflare 后台给它加上述权限，或另建一个 token 存成
   `CLOUDFLARE_WORKERS_API_TOKEN`（推荐，R2 镜像与 Worker 部署权限分开）。
 - 跑在 environment `leaderboard-production` 里：在仓库 Settings → Environments 给它配 Required reviewers
   就变成「点了运行还要审批」；不配也能直接跑。token 也可以只存成该 environment 的 secret。
 - 同一时刻只跑一次部署（concurrency 组 `leaderboard-worker-deploy`），后来者排队，不会取消正在跑的部署。
 - Worker 的运行时 secret（`ADMIN_USER` / `ADMIN_PASS` / `EMAIL_PEPPER` / `RESEND_API_KEY`）已存在 Cloudflare
-  上，`wrangler deploy` 不会动它们；这个 workflow 也不负责设置它们。
+  上，`wrangler versions upload` 会沿用它们；这个 workflow 也不负责设置它们。
 
 ## API
 

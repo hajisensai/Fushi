@@ -421,6 +421,10 @@ enum MangaChromeSlot {
   /// 单双页 / 翻页方向 / 快捷设置）。窄屏放不下时按 [MangaChromeAction.priority]
   /// 从低到高降到右上角动作胶囊。
   toolbar,
+
+  /// 「更多」菜单：恒在右上角「⋯」里（用户在工具栏布局里放进「更多」的按钮），
+  /// 不参与平铺测宽。
+  overflow,
 }
 
 /// chrome 里的一颗动作。[active] 是「开关型」动作的当前态（选中底 + 更多菜单
@@ -495,7 +499,11 @@ double mangaToolbarWidth({
 /// [planMangaChrome] 的结果：每颗动作最终画在哪儿。
 @immutable
 class MangaChromePlan {
-  const MangaChromePlan({required this.top, required this.toolbar});
+  const MangaChromePlan({
+    required this.top,
+    required this.toolbar,
+    this.overflow = const <MangaChromeAction>[],
+  });
 
   /// 右上角动作胶囊的全部动作，按 [MangaChromeAction.priority] 从高到低（同优先级
   /// 保持声明顺序）：[MangaChromeSlot.top] + 底部工具栏放不下降下来的。顶栏按真实
@@ -504,16 +512,23 @@ class MangaChromePlan {
 
   /// 底部悬浮工具栏的分组（空组已剔除；画出来时摊平成一排）。
   final List<List<MangaChromeAction>> toolbar;
+
+  /// 恒在「⋯」里的动作（[MangaChromeSlot.overflow]，按声明顺序）。
+  final List<MangaChromeAction> overflow;
 }
 
 /// 按**真实宽度**把动作分到右上角动作胶囊 / 底部工具栏（纯函数，单测钉住）。
 ///
 ///  1. [groups] 是页面声明的全部动作（按组、组内按序）；[MangaChromeSlot.top] 恒在
-///     右上角；
+///     右上角（**保持声明顺序**——那是用户在工具栏布局里排的顺序）；
+///     [MangaChromeSlot.overflow] 恒在「⋯」里；
 ///  2. [MangaChromeSlot.toolbar] 动作排进底部纯图标工具栏；
 ///  3. 工具栏（含 FAB）超出可用宽（屏宽 − 两侧边距，封顶
 ///     [kMangaChromeBottomMaxWidth]）时，按 [MangaChromeAction.priority] 从低到高
-///     （同优先级先降靠后的）逐个降到右上角，直到放得下；降空也不报错。
+///     （同优先级先降靠后的）逐个降到右上角，直到放得下；降空也不报错。降下来的
+///     动作按优先级插进右上角：插在第一颗优先级更低（或同优先级的原顶栏动作）之前
+///     ——顶栏动作本身按优先级从高到低声明时（出厂布局），结果与「整体按优先级稳定
+///     排序」逐字相同。
 ///
 /// 右上角那一排**默认全部平铺**——要不要收进「⋯」不在这里定，由顶栏按自己拿到的
 /// 真实宽度、经共享的 [FushiTopBarOverflowFit] 决定。
@@ -552,20 +567,33 @@ MangaChromePlan planMangaChrome({
     kept.removeWhere((List<MangaChromeAction> g) => g.isEmpty);
     demoted.add(victim);
   }
-  // 右上角：固定的顶栏动作 + 降下来的，按优先级从高到低（稳定排序：同优先级保持
-  // 声明顺序）。
+  // 右上角：顶栏动作保持声明顺序（用户排的），降下来的按优先级插进去：插在第一颗
+  // 优先级更低、或同优先级的原顶栏动作之前（同优先级的先降者在前）。
   final List<MangaChromeAction> top = <MangaChromeAction>[
     for (final MangaChromeAction a in actions)
-      if (a.slot == MangaChromeSlot.top || demoted.contains(a)) a,
+      if (a.slot == MangaChromeSlot.top) a,
   ];
-  final List<int> order = <int>[for (int i = 0; i < top.length; i++) i];
-  order.sort((int a, int b) {
-    final int byPriority = top[b].priority.compareTo(top[a].priority);
-    return byPriority != 0 ? byPriority : a.compareTo(b);
-  });
+  final Set<MangaChromeAction> pinnedTop = top.toSet();
+  for (final MangaChromeAction a in actions) {
+    if (!demoted.contains(a)) continue;
+    int at = top.length;
+    for (int i = 0; i < top.length; i++) {
+      final MangaChromeAction other = top[i];
+      if (other.priority < a.priority ||
+          (other.priority == a.priority && pinnedTop.contains(other))) {
+        at = i;
+        break;
+      }
+    }
+    top.insert(at, a);
+  }
   return MangaChromePlan(
-    top: <MangaChromeAction>[for (final int i in order) top[i]],
+    top: top,
     toolbar: kept,
+    overflow: <MangaChromeAction>[
+      for (final MangaChromeAction a in actions)
+        if (a.slot == MangaChromeSlot.overflow) a,
+    ],
   );
 }
 
@@ -592,6 +620,7 @@ class MangaReaderTopBar extends StatefulWidget {
     this.titleTooltip,
     this.status,
     this.actions = const <MangaChromeAction>[],
+    this.overflowActions = const <MangaChromeAction>[],
   });
 
   /// 主标题（章节名 / 卷名）；空串且无副标题时不画标题胶囊。
@@ -613,6 +642,10 @@ class MangaReaderTopBar extends StatefulWidget {
   /// 其余进「⋯」。
   final List<MangaChromeAction> actions;
 
+  /// 恒在「⋯」里的动作（[MangaChromePlan.overflow]）：排在放不下的 [actions]
+  /// 之后；非空时「⋯」常驻，测宽时把它算进去。
+  final List<MangaChromeAction> overflowActions;
+
   /// 悬浮态：胶囊浮在页图上；固定态：胶囊画在让出的区域里（同样画投影，两种
   /// 形态外观一致，只差正文让不让位）。
   final bool floating;
@@ -629,6 +662,7 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
   String? get subtitle => widget.subtitle;
   Widget? get status => widget.status;
   List<MangaChromeAction> get actions => widget.actions;
+  List<MangaChromeAction> get overflowActions => widget.overflowActions;
 
   bool get _hasTitlePill =>
       title.trim().isNotEmpty ||
@@ -706,9 +740,13 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
               leadingCount: 1,
               hasTitle: _hasTitlePill,
             ),
+            pinnedMenu: overflowActions.isNotEmpty,
           );
     final List<MangaChromeAction> shown = actions.sublist(0, visible);
-    final List<MangaChromeAction> folded = actions.sublist(visible);
+    final List<MangaChromeAction> folded = <MangaChromeAction>[
+      ...actions.sublist(visible),
+      ...overflowActions,
+    ];
     return Row(
       children: <Widget>[
         FushiFloatingPill(
@@ -731,7 +769,7 @@ class _MangaReaderTopBarState extends State<MangaReaderTopBar> {
             child: _titlePill(context, palette),
           ),
         ),
-        if (actions.isNotEmpty) ...<Widget>[
+        if (actions.isNotEmpty || overflowActions.isNotEmpty) ...<Widget>[
           const SizedBox(width: 8),
           _actionPill(context, palette, shown, folded),
         ],

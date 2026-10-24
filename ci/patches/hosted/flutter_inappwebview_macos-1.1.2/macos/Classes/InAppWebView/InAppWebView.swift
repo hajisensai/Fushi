@@ -8,6 +8,7 @@
 import FlutterMacOS
 import Foundation
 import WebKit
+import Security
 
 public class InAppWebView: WKWebView, WKUIDelegate,
                             WKNavigationDelegate, WKScriptMessageHandler,
@@ -45,6 +46,9 @@ public class InAppWebView: WKWebView, WKUIDelegate,
     var customIMPs: [IMP] = []
     
     var callAsyncJavaScriptBelowMacOS11Results: [String:((Any?) -> Void)] = [:]
+    // Fushi bridge lock token (docs/specs/2026-10-23-dictionary-script-sandbox.md).
+    // nil = unlocked (legacy behaviour). Set by `_fushiLockBridge`, cleared on top-level commit.
+    var fushiBridgeLockToken: String? = nil
     
     var currentOpenPanel: NSOpenPanel?
     
@@ -1945,11 +1949,18 @@ public class InAppWebView: WKWebView, WKUIDelegate,
     }
     
     public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        // Fushi bridge lock: every document died with the content process.
+        fushiBridgeLockToken = nil
         channelDelegate?.onWebContentProcessDidTerminate()
     }
     
     public func webView(_ webView: WKWebView,
                         didCommit navigation: WKNavigation!) {
+        // Fushi bridge lock: a new top-level document committed (WKNavigationDelegate
+        // only reports main-frame navigations), so the locking document is gone.
+        // Cleared on commit, not on provisional start: a provisional load that fails
+        // leaves the locked document alive and it must stay locked.
+        fushiBridgeLockToken = nil
         channelDelegate?.onPageCommitVisible(url: url?.absoluteString)
     }
     
@@ -2115,11 +2126,96 @@ public class InAppWebView: WKWebView, WKUIDelegate,
 //        channel?.invokeMethod("onContextMenuWillPresentForElement", arguments: arguments)
 //    }
     
+
+    // MARK: - Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md)
+
+    /// Answers a `_fushiLockBridge` request. Only the page world of the top frame may
+    /// lock; the token goes back to that frame's bridge closure via the pending
+    /// callHandler promise. Already locked -> resolves `false` and keeps the token.
+    private func handleFushiLockBridgeRequest(message: WKScriptMessage, body: [String: Any?]) {
+        guard message.frameInfo.isMainFrame else {
+            print("InAppWebView: Fushi bridge lock refused for a non-main frame")
+            return
+        }
+        if #available(macOS 11.0, *) {
+            guard message.world == WKContentWorld.page else {
+                print("InAppWebView: Fushi bridge lock refused outside the page content world")
+                return
+            }
+        }
+        let callHandlerID = body["_callHandlerID"] as? Int64 ?? 0
+        var json = "false"
+        if fushiBridgeLockToken == nil {
+            if let token = InAppWebView.generateFushiBridgeLockToken() {
+                fushiBridgeLockToken = token
+                // Hex only, safe inside a JS string literal.
+                json = "\"" + token + "\""
+            } else {
+                print("InAppWebView: Fushi bridge lock refused, SecRandomCopyBytes failed")
+            }
+        }
+        evaluateJavaScript("""
+if(window.\(JAVASCRIPT_BRIDGE_NAME)[\(callHandlerID)] != null) {
+    window.\(JAVASCRIPT_BRIDGE_NAME)[\(callHandlerID)].resolve(\(json));
+    delete window.\(JAVASCRIPT_BRIDGE_NAME)[\(callHandlerID)];
+}
+""", completionHandler: nil)
+    }
+
+    /// 256-bit token from the system CSPRNG, hex encoded; nil when unavailable.
+    static func generateFushiBridgeLockToken() -> String? {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        guard status == errSecSuccess else {
+            return nil
+        }
+        return bytes.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Comparison whose running time does not depend on where the tokens differ.
+    static func fushiBridgeLockTokenMatches(_ expected: String, _ received: String?) -> Bool {
+        guard let received = received else {
+            return false
+        }
+        let expectedBytes = Array(expected.utf8)
+        let receivedBytes = Array(received.utf8)
+        guard expectedBytes.count == receivedBytes.count else {
+            return false
+        }
+        var diff: UInt8 = 0
+        for index in 0..<expectedBytes.count {
+            diff |= expectedBytes[index] ^ receivedBytes[index]
+        }
+        return diff == 0
+    }
+
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any?] else {
             return
         }
         
+        // Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md).
+        // `_fushiLockBridge` is handled here and never reaches Dart handlers.
+        if message.name == "callHandler", let handlerName = body["handlerName"] as? String,
+           handlerName == FUSHI_LOCK_BRIDGE_HANDLER_NAME {
+            handleFushiLockBridgeRequest(message: message, body: body)
+            return
+        }
+        // Locked: only the top frame holding the token may talk to native. Applies to
+        // every message name (callHandler, console*, onFindResultReceived, web message
+        // ports / listeners, ...). Non-main-frame messages are dropped even with a token.
+        if let lockToken = fushiBridgeLockToken {
+            let receivedToken = body["_fushiBridgeToken"] as? String
+            if !message.frameInfo.isMainFrame {
+                print("InAppWebView: Fushi bridge locked, dropped '\(message.name)' from a non-main frame")
+                return
+            }
+            if !InAppWebView.fushiBridgeLockTokenMatches(lockToken, receivedToken) {
+                print("InAppWebView: Fushi bridge locked, dropped '\(message.name)' with a missing or wrong token")
+                return
+            }
+        }
+
         if ["consoleLog", "consoleDebug", "consoleError", "consoleInfo", "consoleWarn"].contains(message.name) {
             var messageLevel = 1
             switch (message.name) {

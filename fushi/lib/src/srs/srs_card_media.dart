@@ -128,6 +128,11 @@ background:var(--fushi-srs-accent,#6750a4);}
 ''';
 
 /// 播放按钮的点击委托（捕获阶段，不受卡片自己的脚本影响）。
+///
+/// 卡片模板脚本在手势之外合成的 `.click()`（`isTrusted` 为 false，例如模板在显示时把
+/// 每颗音频按钮挨个点一遍来「自动播放」）在牌组关了自动播放时一律不放行——闸门
+/// `window.__fushiSrsMediaBlocked` 由 srs_card_autoplay.dart 的自动播放闸门脚本定义；
+/// 同一次用户点按里转手的合成点击（Lapis「点例句重播」）仍在手势窗口内，照常播放（#15）。
 const String kSrsCardMediaScript =
     '''
 (function(){
@@ -139,6 +144,8 @@ const String kSrsCardMediaScript =
     if (!b) return;
     e.preventDefault();
     e.stopPropagation();
+    if (e.isTrusted !== true && typeof window.__fushiSrsMediaBlocked === 'function' &&
+        window.__fushiSrsMediaBlocked()) return;
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('$kSrsPlaySoundHandler', b.getAttribute('data-sound'));
     }

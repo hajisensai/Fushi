@@ -49,6 +49,22 @@ const String _kFloatingBallSceneButtons =
     '各场景的勾选互不影响 / 勾选了但页面此刻没提供的专属按钮跳过';
 
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // app 内浏览器（系统 › 浏览器）：生效点在全屏浏览页 / 标签页 WebView，harness 设置页
+  // 没有浏览页。浏览页每次打开现读这些偏好。
+  'system/Tab style':
+      'test/pages/fushi_web_browser_shell_test.dart（桌面侧边栏 ↔ 顶部标签栏、偏好写穿）',
+  'system/Hide toolbar while scrolling':
+      'test/web_browser/web_browser_layout_test.dart（收起状态机 / 可收起判据）+ '
+      'test/pages/fushi_web_browser_shell_test.dart（往下滚收成小地址条）',
+  'system/Search engine':
+      'test/web_browser/web_browser_search_engines_test.dart（选中引擎决定搜索地址）',
+  'system/Dark mode for web pages':
+      'test/web_browser/tab_view/web_browser_tab_view_logic_test.dart（forceDark 进 WebView 设置）',
+  'system/Open desktop sites by default':
+      'test/pages/fushi_web_browser_shell_test.dart（新标签页默认桌面版）',
+  'system/Restore tabs from last time':
+      'test/web_browser/web_browser_tabs_controller_test.dart（关闭会话持久化时不读不写）+ '
+      'test/pages/fushi_web_browser_shell_test.dart（恢复上次的标签页）',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、
@@ -99,6 +115,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 启动轮照查」。
   'system/Auto-update extensions in the background':
       'test/updates/mihon_extension_update_probe_test.dart（关着不装 / 开着且空闲才装 / dueOnStart）',
+  // 媒体库在线作品自动补新集（video_library_auto_update，PR#2493）：写 prefsRepo
+  // （changed=true），生效点是后台调度器里番剧新集域的补集探针——要联网取媒体服务器
+  // / 在线源的新集，harness 观测不到。接线 updateCheckKindGate 由调度器用例咬住：
+  // 关掉它提醒开着也不跑、关提醒不停补集。
+  'system/Auto-add new episodes to the video library':
+      'test/updates/update_check_scheduler_test.dart（番剧新集域只看 '
+      'video_library_auto_update，不看提醒开关）',
   'system/Notify about app releases':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':
@@ -573,6 +596,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Back': _kFloatingBallSceneButtons,
   'floatingBall/Lyrics mode': _kFloatingBallSceneButtons,
   'floatingBall/Navigation': _kFloatingBallSceneButtons,
+  'floatingBall/Bookmarks & saved sentences': _kFloatingBallSceneButtons,
   'floatingBall/Browse illustrations': _kFloatingBallSceneButtons,
   'floatingBall/Reading statistics': _kFloatingBallSceneButtons,
   'floatingBall/Pause / resume reading timer': _kFloatingBallSceneButtons,
@@ -598,6 +622,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Favorite current sentence': _kFloatingBallSceneButtons,
   'floatingBall/Screenshot': _kFloatingBallSceneButtons,
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
+  // 截屏识字制卡带图：生效点是制卡那一刻（词典弹窗 mixin / 覆盖窗委托读偏好、按截图
+  // 裁卡图），设置页里没有制卡面。裁图与通道载荷由专项测试钉住。
+  'floatingBall/Add screenshot to cards':
+      'test/floating_ball/screen_ocr_card_image_test.dart + '
+      'test/floating_ball/screen_ocr_session_and_card_image_guard_test.dart',
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
@@ -716,6 +745,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/anki/anki_overwrite_scope_test.dart + test/srs/srs_mining_test.dart',
   'cardCreation/Compact glossaries':
       'test/anki/anki_compact_glossaries_guard_test.dart',
+  // 「制卡提示」两个开关（反馈 zNuGKLIhmT / aK5wv0CnWf）：写的是内存 DB 里的偏好，
+  // changed / persisted 已由本测试证实；效果（哪类 toast 不弹）在 widget 树里看不见
+  // （FushiToast 走全局 navigatorKey 的 overlay），由纯函数裁决 + 接线源码守卫咬住。
+  'cardCreation/Show mining confirmations':
+      'test/anki/mine_notice_toggle_test.dart',
+  'cardCreation/Show duplicate-card notices':
+      'test/anki/mine_notice_toggle_test.dart',
+  // 「动图只播放一次」（反馈 ZxyIMK-C5V）：效果在 ffmpeg 产物的循环计数里，widget
+  // 树看不到；参数映射与两条动图链的接线由专项测试咬住（-loop 口径已实测）。
+  'cardCreation/Play animated images once':
+      'test/mining/mining_animated_play_once_test.dart',
   'cardCreation/Add "fushi" tag':
       'packages/fushi_anki/test/mining_tag_and_parallel_test.dart',
   'cardCreation/Add source category tag':
@@ -824,6 +864,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/torrent/download_http_client_proxy_test.dart',
   'syncBackup/Auto sync': 'test/sync/sync_gating_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
+  // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
+  'syncBackup/Sync browsing history':
+      'test/sync/aggregate_web_history_share_gate_test.dart',
   'syncBackup/Upload book files': 'test/sync/sync_gating_test.dart',
   // 「上传漫画文件」（书籍和漫画分开，2026-10-21）：按格式分流的上传 / 不上传、旧名
   // `.epub` 漫画包去重都在这条专项测试里咬住。
@@ -941,6 +984,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 直通：下发值由 mpv 配置测试咬住；真正的码流直通要接功放 / 回音壁才能验。
   'video/Dolby / DTS passthrough':
       'test/media/video/video_mpv_config_test.dart',
+  // 音量上限（W-qZRr3lwK）：volume-max 下发与编解码由 mpv 配置测试咬住，各音量入口
+  // 按上限 clamp 由控制器测试咬住；实际放大响度要真机听。
+  'video/Volume limit': 'test/media/video/video_player_controller_test.dart',
   // TODO-1247：尊重 .ass 自带样式开关平移到首页（videoRespectAssStyle 纯 pref）；
   // 生效点在字幕 overlay 标记渲染，由 video_subtitle_overlay_markup_test.dart 咬住。
   "video/Respect subtitle's own style":
@@ -1372,6 +1418,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/sync/interconnect_share_scope_test.dart',
   'interconnect/Share favorites':
       'test/sync/interconnect_share_scope_test.dart',
+  // 互联通道自己的自动同步（反馈 5nWEirdCs2 / BUG-3668）：开关写 interconnect_sync_auto，
+  // 效果是自动路径只跑开着的通道（关互联云照跑 / 关云互联照跑），迁移三态在
+  // sync_repository_test。
+  'interconnect/Auto sync': 'test/sync/sync_channel_isolation_test.dart',
   // service-config 同步：开关是请求前的进场门（关 = 连请求都不发），且是设备本地键。
   'interconnect/Sync service configuration from host':
       'test/sync/interconnect_service_config_test.dart',

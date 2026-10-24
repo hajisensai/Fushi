@@ -41,15 +41,26 @@ void main() {
     );
   });
 
-  test('同名同内容：不重写（修改时刻不变）', () async {
+  test('同名同内容：不重写，但刷新修改时间（墓碑清除的媒体回收靠它判「刚复用」）', () async {
     final SrsMediaStore store = SrsMediaStore(Directory(p.join(tmp.path, 'm')));
     final Uint8List data = bytes(3, 2048);
     final String name = await store.store('a.mp3', data);
     final File file = File(p.join(store.root.path, name));
-    final DateTime before = file.lastModifiedSync();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    final DateTime old = DateTime.now().subtract(const Duration(days: 3));
+    file.setLastModifiedSync(old);
     expect(await store.store('b.mp3', data), name);
-    expect(file.lastModifiedSync(), before);
+    expect(file.readAsBytesSync(), data);
+    expect(
+      file.lastModifiedSync().isAfter(old.add(const Duration(days: 2))),
+      isTrue,
+    );
+    expect(
+      store.root.listSync().where(
+        (FileSystemEntity e) => e.path.endsWith('.tmp'),
+      ),
+      isEmpty,
+      reason: '没有走重写',
+    );
   });
 
   test('不同名字同一内容并发存：不撞共享冲突，只落一个文件', () async {

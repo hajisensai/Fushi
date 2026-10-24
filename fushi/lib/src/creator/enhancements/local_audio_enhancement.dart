@@ -13,6 +13,8 @@ import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError;
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart'
     show kLocalAudioQueryBudget, resolveLookupAudioUrl;
+import 'package:fushi/src/utils/misc/system_tts.dart'
+    show resolveSystemTtsLanguageTag;
 import 'package:fushi/utils.dart';
 
 /// BUG-1005：把 [resolveLookupAudioUrl] 解析出的单词音频 ref 物化成本地 [File] 供 Anki 落
@@ -152,8 +154,9 @@ class LocalAudioEnhancement extends AudioEnhancement {
   Future<File?> _generateAudio(
     AppModel appModel,
     String term,
-    String reading,
-  ) async {
+    String reading, {
+    String? dictionaryName,
+  }) async {
     // 1. Local audio database (Yomitan SQLite): query metadata, then extract
     //    the blob. Native handler on Android; pure-Dart sqlite3 on desktop —
     //    both behind TtsChannel, so this call site is platform-agnostic.
@@ -192,7 +195,14 @@ class LocalAudioEnhancement extends AudioEnhancement {
     //    制卡恒无单词音频。解析出 ref（远端 URL 或本地路径）后物化成本地文件供 Anki 落媒体；
     //    失败落到 TTS 兜底。
     try {
-      final String? ref = await resolveLookupAudioUrl(appModel, term, reading);
+      // TTS 兜底由下面第 3 步负责（带「手动触发弹原因」语义），这里关掉，
+      // 免得同一个词合成两次。
+      final String? ref = await resolveLookupAudioUrl(
+        appModel,
+        term,
+        reading,
+        ttsFallback: false,
+      );
       if (ref != null && ref.isNotEmpty) {
         final Directory remoteDir = await getApplicationSupportDirectory();
         final File? materialized = await materializeWordAudioRef(
@@ -217,13 +227,28 @@ class LocalAudioEnhancement extends AudioEnhancement {
     return synthesizeMiningTtsFallback(
       text: word,
       choice: choice,
+      // 系统语音念哪种语言（BUG-3669，判据见 [resolveSystemTtsLanguageTag]）：
+      // 知道这条词条出自哪本词典时用它声明的词头语言，否则看文字与已装词典。
+      // 文字判据看词头 + 读音：日语汉字词的词头只有汉字（中日共用、不算证据），
+      // 假名在读音里。
+      languageTag: resolveSystemTtsLanguageTag(
+        text: '$term $reading',
+        dictionaryLanguage: appModel.dictionarySourceLanguageOf(dictionaryName),
+        installedDictionaryLanguages:
+            appModel.installedDictionarySourceLanguages,
+      ),
       // 系统语音沿用支持目录下的固定文件名；预设产物按缓存键命名，放临时目录。
       outputDir: choice.kind == MiningTtsFallbackKind.system
           ? await getApplicationSupportDirectory()
           : Directory(
               '${(await getTemporaryDirectory()).path}/fushi_mining_tts',
             ),
-      systemTts: TtsChannel.instance.ttsToFile,
+      systemTts: (String text, String outputPath, String? languageTag) =>
+          TtsChannel.instance.ttsToFile(
+            text,
+            outputPath,
+            languageTag: languageTag,
+          ),
       voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
     );
   }
@@ -234,9 +259,23 @@ class LocalAudioEnhancement extends AudioEnhancement {
     required BuildContext context,
     required String term,
     required String reading,
+  }) => fetchEntryAudio(appModel: appModel, term: term, reading: reading);
+
+  /// [fetchAudio] 的带词典版本：[dictionaryName] 是这条词条出自的词典，系统语音
+  /// 兜底按它声明的词头语言念（BUG-3669）。
+  Future<File?> fetchEntryAudio({
+    required AppModel appModel,
+    required String term,
+    required String reading,
+    String? dictionaryName,
   }) async {
     try {
-      return await _generateAudio(appModel, term, reading);
+      return await _generateAudio(
+        appModel,
+        term,
+        reading,
+        dictionaryName: dictionaryName,
+      );
     } on WordAudioUnavailable catch (e, stack) {
       // 播放预览是用户手动点的：带原因提示，而不是静默没声音。
       reportWordAudioUnavailable(e, stack, manual: true);

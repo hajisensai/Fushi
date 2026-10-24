@@ -13,6 +13,7 @@ import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是网络流地址，或 `.strm` 流指针。
 ///
@@ -26,13 +27,16 @@ import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 ///   真正的流地址起播时经 [resolveStrmStreamTarget] 现读。
 /// - 在线视频源（Aniyomi）入库集（[isAnimeSourceVideoPath]）：没有本地文件，
 ///   起播时向扩展重新取流（见 `anime_source_library.dart`）。
+/// - 媒体服务器入库条目（[isMediaServerVideoPath]）：起播时按设置里的服务器配置
+///   现建客户端取流（见 `media_server_library.dart`）。
 /// - 来源库 SFTP 条目（[isSourceLibrarySftpVideoPath]，`sftp://`）：起播时经来源
 ///   的播放期解析器登记进回环中继（`sftp_stream_source.dart`）。
 bool isStreamVideoBook(VideoBookRow book) =>
     isNetworkStreamUrl(book.videoPath) ||
     isSourceLibrarySftpVideoPath(book.videoPath) ||
     isStrmPath(book.videoPath) ||
-    isAnimeSourceVideoPath(book.videoPath);
+    isAnimeSourceVideoPath(book.videoPath) ||
+    isMediaServerVideoPath(book.videoPath);
 
 /// `.strm` 读不出可播地址的原因（起播失败文案据此分派）。
 enum StrmResolveFailure {

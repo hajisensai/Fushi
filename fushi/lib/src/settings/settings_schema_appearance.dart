@@ -172,6 +172,10 @@ SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
     settingsContext: settingsContext,
     modules: _orderedNavModules(settingsContext),
     identityOf: moduleNavIdentity,
+    settingsIdentity: (
+      label: homeNavItemFor(HomeTab.settings).label,
+      icon: homeNavItemFor(HomeTab.settings).icon,
+    ),
     hintOf: moduleSwitchHint,
     onEnabledChanged: (ModuleId module, bool enabled) =>
         _applyModuleEnabled(settingsContext, module, enabled),
@@ -509,7 +513,28 @@ SettingsDestination buildAppearanceDestination() {
                 value: AdaptiveNavBarStyle.pager,
                 label: t.home_nav_bar_style_pager,
               ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.dial,
+                label: t.home_nav_bar_style_dial,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.shelf,
+                label: t.home_nav_bar_style_shelf,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.drum,
+                label: t.home_nav_bar_style_drum,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.fan,
+                label: t.home_nav_bar_style_fan,
+              ),
+              SettingsSegmentOption<AdaptiveNavBarStyle>(
+                value: AdaptiveNavBarStyle.modeStrip,
+                label: t.home_nav_bar_style_mode_strip,
+              ),
             ],
+            dropdown: true,
             selected: (SettingsContext settingsContext) =>
                 settingsContext.appModel.navBarStyle,
             onChanged:

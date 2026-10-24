@@ -95,6 +95,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   final TextEditingController _rwkvMinReviews = TextEditingController();
   final TextEditingController _rwkvRepeatReviews = TextEditingController();
   final TextEditingController _rwkvRepeatSeconds = TextEditingController();
+  final TextEditingController _rwkvRefreshEvery = TextEditingController();
   double _retention = 0.8;
   SrsAlgorithm _algorithm = srsDefaultAlgorithm;
   bool _autoOptimize = true;
@@ -123,6 +124,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       _rwkvMinReviews,
       _rwkvRepeatReviews,
       _rwkvRepeatSeconds,
+      _rwkvRefreshEvery,
     ]) {
       c.dispose();
     }
@@ -167,6 +169,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _rwkvMinReviews.text = '${deck.rwkvQueue.minReviewsPerDay}';
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
+        _rwkvRefreshEvery.text = '${deck.rwkvQueue.refreshEvery}';
         _loading = false;
       });
     } catch (e, stack) {
@@ -192,6 +195,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         'repeatSeconds':
             int.tryParse(_rwkvRepeatSeconds.text.trim()) ??
             current.repeatMinSeconds,
+        'refreshEvery':
+            int.tryParse(_rwkvRefreshEvery.text.trim()) ?? current.refreshEvery,
       });
 
   /// 与物化视图逐项比较，只收改动过的键。步长不合法返回 null（并标出错误）。
@@ -577,6 +582,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           helper: t.srs_settings_rwkv_min_reviews_hint,
           key: const ValueKey<String>('srs-settings-rwkv-min-reviews'),
         ),
+        _numberField(
+          _rwkvRefreshEvery,
+          t.srs_settings_rwkv_refresh_every,
+          helper: t.srs_settings_rwkv_refresh_every_hint,
+          key: const ValueKey<String>('srs-settings-rwkv-refresh-every'),
+        ),
         Text(
           t.srs_settings_rwkv_repeat,
           style: context.fushiType.titleSmallEmphasized,
@@ -833,17 +844,18 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-algorithm'),
           showSelectedIcon: false,
           segments: <ButtonSegment<SrsAlgorithm>>[
+            // 默认算法（srsDefaultAlgorithm）排第一并标「推荐」，FSRS-7 次之。
+            ButtonSegment<SrsAlgorithm>(
+              value: SrsAlgorithm.rwkv,
+              label: Text(t.srs_settings_algorithm_rwkv_recommended),
+            ),
             ButtonSegment<SrsAlgorithm>(
               value: SrsAlgorithm.fsrs7,
-              label: Text(t.srs_settings_algorithm_fsrs7),
+              label: Text(_algorithmLabel(SrsAlgorithm.fsrs7)),
             ),
             ButtonSegment<SrsAlgorithm>(
               value: SrsAlgorithm.fsrs6,
               label: Text(_algorithmLabel(SrsAlgorithm.fsrs6)),
-            ),
-            ButtonSegment<SrsAlgorithm>(
-              value: SrsAlgorithm.rwkv,
-              label: Text(_algorithmLabel(SrsAlgorithm.rwkv)),
             ),
           ],
           selected: <SrsAlgorithm>{_algorithm},

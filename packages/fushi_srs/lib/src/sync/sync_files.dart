@@ -9,6 +9,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi_compute/fushi_compute.dart';
@@ -209,13 +210,28 @@ class SrsSnapshot {
   final Map<String, int> serverTimes;
   final List<SrsEvent> events;
 
-  Uint8List encode() {
-    final List<int> events = _eventsBody(this.events);
-    final List<int> times = utf8.encode(srsCanonicalJson(serverTimes));
+  Uint8List encode() => encodeParts(
+    writerId: writerId,
+    maxOwnBatch: maxOwnBatch,
+    vv: vv,
+    serverTimesJson: utf8.encode(srsCanonicalJson(serverTimes)),
+    eventsBody: _eventsBody(events),
+  );
+
+  /// 由已拼好的两段正文组成快照文件（与 [encode] 同格式）：[serverTimesJson] 是「事件 ID → S」的
+  /// JSON 对象，[eventsBody] 是每行一条事件规范 JSON（每行以换行结尾）。纯函数，只做拼接与 SHA-256：
+  /// 同步引擎按页从副本读出两段后在后台 isolate 里调它（整份快照几十 MB，不能在调用方 isolate 上算）。
+  static Uint8List encodeParts({
+    required String writerId,
+    required int maxOwnBatch,
+    required Map<String, int> vv,
+    required List<int> serverTimesJson,
+    required List<int> eventsBody,
+  }) {
     final BytesBuilder body = BytesBuilder(copy: false)
-      ..add(utf8.encode('${times.length}\n'))
-      ..add(times)
-      ..add(events);
+      ..add(utf8.encode('${serverTimesJson.length}\n'))
+      ..add(serverTimesJson)
+      ..add(eventsBody);
     return _encode(<String, Object?>{
       'magic': srsSnapshotMagic,
       'writer': writerId,
@@ -252,6 +268,89 @@ class SrsSnapshot {
     );
   }
 }
+
+/// 快照的头部（只要 vv / 编号时用，不带几十 MB 的事件正文）。
+class SrsSnapshotHeader {
+  const SrsSnapshotHeader({
+    required this.writerId,
+    required this.maxOwnBatch,
+    required this.vv,
+  });
+
+  SrsSnapshotHeader.of(SrsSnapshot s)
+    : writerId = s.writerId,
+      maxOwnBatch = s.maxOwnBatch,
+      vv = s.vv;
+
+  final String writerId;
+  final int maxOwnBatch;
+  final Map<String, int> vv;
+}
+
+/// 小于它的文件就在调用方 isolate 上编解码：起一个 isolate 的固定开销比解它本身还贵，
+/// 也不会长时间占住事件循环。更大的（整份快照、几千条事件的批次）一律放后台 isolate——
+/// 自校验（SHA-256）、逐条事件解析 / 规范编码都是 O(正文) 的 CPU 活，大库上一次就是秒级，
+/// 在 UI isolate 上做会让整个 app 卡死（反馈 OMWOurRQKb）。
+const int kSrsOffThreadMinBytes = 256 * 1024;
+
+/// 少于这么多条事件的批次就地编码（同 [kSrsOffThreadMinBytes] 的理由）。
+const int kSrsOffThreadMinEvents = 500;
+
+/// 解码快照（大文件在后台 isolate）。
+Future<SrsFileDecode<SrsSnapshot>> srsDecodeSnapshot(Uint8List bytes) =>
+    bytes.length < kSrsOffThreadMinBytes
+    ? Future<SrsFileDecode<SrsSnapshot>>.value(SrsSnapshot.tryDecode(bytes))
+    : Isolate.run(() => SrsSnapshot.tryDecode(bytes));
+
+/// 只要快照头部（vv）时：照样整份校验（坏了的快照不能算覆盖），但只把头部带回调用方，
+/// 不把几万条事件对象搬回来。
+Future<SrsFileDecode<SrsSnapshotHeader>> srsDecodeSnapshotHeader(
+  Uint8List bytes,
+) => bytes.length < kSrsOffThreadMinBytes
+    ? Future<SrsFileDecode<SrsSnapshotHeader>>.value(_snapshotHeaderOf(bytes))
+    : Isolate.run(() => _snapshotHeaderOf(bytes));
+
+SrsFileDecode<SrsSnapshotHeader> _snapshotHeaderOf(Uint8List bytes) =>
+    switch (SrsSnapshot.tryDecode(bytes)) {
+      SrsFileOk<SrsSnapshot>(:final SrsSnapshot value) =>
+        SrsFileOk<SrsSnapshotHeader>(SrsSnapshotHeader.of(value)),
+      SrsFileMalformed<SrsSnapshot>(:final String reason) =>
+        SrsFileMalformed<SrsSnapshotHeader>(reason),
+      SrsFileIncomplete<SrsSnapshot>() =>
+        const SrsFileIncomplete<SrsSnapshotHeader>(),
+    };
+
+/// 按页拼好的两段正文组成快照文件（[SrsSnapshot.encodeParts]；大的在后台 isolate 拼接、求摘要）。
+Future<Uint8List> srsEncodeSnapshotParts({
+  required String writerId,
+  required int maxOwnBatch,
+  required Map<String, int> vv,
+  required Uint8List serverTimesJson,
+  required Uint8List eventsBody,
+}) {
+  Uint8List run() => SrsSnapshot.encodeParts(
+    writerId: writerId,
+    maxOwnBatch: maxOwnBatch,
+    vv: vv,
+    serverTimesJson: serverTimesJson,
+    eventsBody: eventsBody,
+  );
+  return serverTimesJson.length + eventsBody.length < kSrsOffThreadMinBytes
+      ? Future<Uint8List>.value(run())
+      : Isolate.run(run);
+}
+
+/// 解码批次（同 [srsDecodeSnapshot]）。
+Future<SrsFileDecode<SrsBatch>> srsDecodeBatch(Uint8List bytes) =>
+    bytes.length < kSrsOffThreadMinBytes
+    ? Future<SrsFileDecode<SrsBatch>>.value(SrsBatch.tryDecode(bytes))
+    : Isolate.run(() => SrsBatch.tryDecode(bytes));
+
+/// 编码批次：几千条事件逐条规范编码 + SHA-256，大批次在后台 isolate 做。
+Future<Uint8List> srsEncodeBatch(SrsBatch batch) =>
+    batch.events.length < kSrsOffThreadMinEvents
+    ? Future<Uint8List>.value(batch.encode())
+    : Isolate.run(batch.encode);
 
 /// cursor 文件：本写入者对每个对端的读取进度（只表示无缺口前缀）与更新时刻（判退役）。
 class SrsCursorFile {

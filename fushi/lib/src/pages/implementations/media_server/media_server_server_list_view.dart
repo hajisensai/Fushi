@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_aggregate_search_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -21,6 +22,7 @@ class MediaServerEntry {
     this.accountName,
     this.routeUrls = const <String>[],
     this.onSwitchRoute,
+    this.library,
   });
 
   final MediaServerBrowser browser;
@@ -32,6 +34,9 @@ class MediaServerEntry {
 
   /// 切到某条线路（写配置 + 失效缓存槽）；完成后列表重取，新浏览器按新线路建。
   final Future<void> Function(String url)? onSwitchRoute;
+
+  /// 入库出口（见 [MediaServerSession.library]）。
+  final MediaServerVideoLibrary? library;
 
   bool get canSwitchRoute => onSwitchRoute != null && routeUrls.length > 1;
 }
@@ -83,7 +88,11 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   Widget _homeFor(MediaServerEntry entry) {
     return MediaServerHomeView(
       key: ValueKey<String>('media-server-home-${entry.browser.serverId}'),
-      session: MediaServerSession(browser: entry.browser, play: widget.play),
+      session: MediaServerSession(
+        browser: entry.browser,
+        play: widget.play,
+        library: entry.library,
+      ),
       showBackButton: true,
       servers: <MediaServerBrowser>[
         for (final MediaServerEntry e in _servers) e.browser,
@@ -164,6 +173,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                           MediaServerSession(
                             browser: e.browser,
                             play: widget.play,
+                            library: e.library,
                           ),
                       ],
                     ),

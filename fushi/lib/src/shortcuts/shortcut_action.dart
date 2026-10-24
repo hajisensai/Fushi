@@ -1,6 +1,6 @@
 /// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
 /// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
-/// （home / reader / audiobook / manga / video）→ 输入设备（gamepad）→ 查词弹窗。
+/// （home / reader / audiobook / manga / video / webBrowser）→ 输入设备（gamepad）→ 查词弹窗。
 /// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
   global,
@@ -38,6 +38,11 @@ enum ShortcutScope {
   // 方向（日漫默认 rtl）校正。
   manga,
   video,
+  // app 内浏览器（多标签页 WebView 外壳）。与 video / manga 同理是独立界面：页面只
+  // 解析自己这一组绑定，未命中再兜底 universal（Esc 返回）。动作集是桌面浏览器的
+  // 肌肉记忆（新建 / 关闭标签页、地址栏、页内查找、缩放…），与任何其它页面都不
+  // 同时激活，故自成 co-active 组。
+  webBrowser,
   // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
   // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
   // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
@@ -84,6 +89,10 @@ enum ShortcutScope {
       // 冲突检测只扫 manga（与 video 同理）。
       case manga:
         return const <ShortcutScope>[manga];
+      // app 内浏览器同样是独立界面：只解析自己的绑定，自成 co-active 组，冲突检测
+      // 只扫 webBrowser（与 video / manga 同理）。
+      case webBrowser:
+        return const <ShortcutScope>[webBrowser];
       // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
@@ -203,6 +212,16 @@ enum ShortcutScope {
       // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
       case gamepad:
         return const <ShortcutChannel>{ShortcutChannel.gamepad};
+      // app 内浏览器：只开键盘。派发点是浏览器页的键事件节点
+      // （`resolveKeyboard(event, scope: webBrowser)` → 未命中兜底 universal）。
+      //   · 手柄**不开**：浏览器里手柄走普通焦点遍历（摇杆 / dpad → 焦点移动、A 确认），
+      //     没有 `resolveGamepad(scope: webBrowser)` 的派发点，开了就是死通道；
+      //   · 鼠标**不开**：正文是原生 WebView，指针归 WebView，侧键「后退 / 前进」由
+      //     WebView 自己按浏览器语义处理，宿主没有 `resolveMouse(scope: webBrowser)`。
+      // 要开任一通道，先在页面里接上对应的解析入口（守卫
+      // `shortcut_channel_wiring_guard_test` 盯着）。
+      case webBrowser:
+        return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // app 外全局查词：三通道，但**三条通道各走各的 OS 机制**，不共用一套注册。
       // 这是全 app 唯一一处「同一个动作、三种底层触发机制」的 scope，故在此写明
       // 各自的边界（TODO-1066）：
@@ -289,7 +308,9 @@ enum ShortcutAction {
   readerLookupAtCursor(ShortcutScope.reader, 'reader_lookup_at_cursor'),
   readerShiftLookup(ShortcutScope.reader, 'reader_shift_lookup'),
   readerCreateCardFromPopup(
-      ShortcutScope.reader, 'reader_create_card_from_popup'),
+    ShortcutScope.reader,
+    'reader_create_card_from_popup',
+  ),
   // TODO-700 T7：「进入选字查词光标」可改键（默认手柄 A + 键盘 Enter）。这是
   // enter-trigger 的绑定真相源：reader 写死判 A/Enter 进光标的分支改读它的绑定
   // （见 reader_caret_router.isEnterTrigger*）。默认与旧硬编码一致，行为不变，只
@@ -401,7 +422,9 @@ enum ShortcutAction {
   // 鼠标中键点句 → 跳到该句并播放。位置型动作，运行时不走
   // _executeShortcutAction，而是 onPointerSeek 经 resolveMouse 判定后定位执行。
   audiobookSeekToClickedSentence(
-      ShortcutScope.audiobook, 'audiobook_seek_clicked_sentence'),
+    ShortcutScope.audiobook,
+    'audiobook_seek_clicked_sentence',
+  ),
 
   // Video player (TODO-134): migrated out of the hard-coded
   // buildVideoPlayerShortcuts map so they live in the remappable registry and
@@ -444,12 +467,16 @@ enum ShortcutAction {
   videoPreviousSubtitle(ShortcutScope.video, 'video_previous_subtitle'),
   videoNextSubtitle(ShortcutScope.video, 'video_next_subtitle'),
   videoReplayCurrentSubtitle(
-      ShortcutScope.video, 'video_replay_current_subtitle'),
+    ShortcutScope.video,
+    'video_replay_current_subtitle',
+  ),
   // 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，**不**退化成
   // 回退几秒。与 videoPreviousSubtitle（Ctrl+←，gap 太远时退化时间 seek，BUG-185/TODO-085）
   // 语义不同，是两个独立功能；TODO-328 误当重复删掉，此处恢复。
   videoReplayPreviousSubtitle(
-      ShortcutScope.video, 'video_replay_previous_subtitle'),
+    ShortcutScope.video,
+    'video_replay_previous_subtitle',
+  ),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),
@@ -465,15 +492,21 @@ enum ShortcutAction {
   // 主字幕」。与历史的 videoToggleSubtitleBlur（B，开/关模糊）正交并存——后者保留
   // 不破坏旧绑定（Never break userspace）。三者执行体都在 video_player_shortcuts。
   videoCycleSubtitleObscure(
-      ShortcutScope.video, 'video_cycle_subtitle_obscure'),
+    ShortcutScope.video,
+    'video_cycle_subtitle_obscure',
+  ),
   videoToggleSubtitleHide(ShortcutScope.video, 'video_toggle_subtitle_hide'),
   // TODO-1382：**副字幕**遮蔽三态（镜像主字幕，独立开关）。videoCycleSecondarySubtitleObscure
   // 循环 不遮蔽→模糊→隐藏（默认 Shift+G）；videoToggleSecondarySubtitleHide 直接开/关
   // 「隐藏副字幕」（默认 Shift+H）。执行体在 video_player_shortcuts。
   videoCycleSecondarySubtitleObscure(
-      ShortcutScope.video, 'video_cycle_secondary_subtitle_obscure'),
+    ShortcutScope.video,
+    'video_cycle_secondary_subtitle_obscure',
+  ),
   videoToggleSecondarySubtitleHide(
-      ShortcutScope.video, 'video_toggle_secondary_subtitle_hide'),
+    ShortcutScope.video,
+    'video_toggle_secondary_subtitle_hide',
+  ),
   // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕
   // 首个可见字符，D-pad/方向键逐字移动、A/Enter 对光标字符查词（浮层内继续用手柄
   // 翻词条/跳词典/制卡）、B/Esc 退出。激活期的方向/确认/退出键在页面侧**先于**注册
@@ -503,9 +536,13 @@ enum ShortcutAction {
   // 在 video 独立 co-active 组内，默认键与既有视频键无冲突。
   videoOpenSubtitleAlign(ShortcutScope.video, 'video_open_subtitle_align'),
   videoSubtitleDelayIncrease(
-      ShortcutScope.video, 'video_subtitle_delay_increase'),
+    ShortcutScope.video,
+    'video_subtitle_delay_increase',
+  ),
   videoSubtitleDelayDecrease(
-      ShortcutScope.video, 'video_subtitle_delay_decrease'),
+    ShortcutScope.video,
+    'video_subtitle_delay_decrease',
+  ),
   // asbplayer 式「字幕偏移对齐」（用户请求，默认 Ctrl+Shift+←/→）：把上一句 / 下一句
   // 字幕的起点整体平移到当前播放时间点（按目标 cue 求**绝对**偏移，一键粗对齐整轨；与
   // z/x 的固定步进平移互补）。执行体走同一 _setDelayMs 写穿路径（clamp + 落盘 + OSD），
@@ -537,9 +574,14 @@ enum ShortcutAction {
   // 「含字幕」那条要在 Dart 侧把字幕合成回帧上（`video_screenshot_compose.dart`）。
   videoScreenshot(ShortcutScope.video, 'video_screenshot'),
   videoScreenshotSubtitled(ShortcutScope.video, 'video_screenshot_subtitled'),
+  // 识别一次当前画面（反馈 X3ozgOAx8v）：正在播放先暂停，再对当前帧 OCR、原位铺可点
+  // 的字查词——不依赖「暂停时自动识别」范围（默认关）。画面上的硬字幕 / 招牌只能靠它查。
+  videoOcrFrame(ShortcutScope.video, 'video_ocr_frame'),
   videoToggleShaderCompare(ShortcutScope.video, 'video_toggle_shader_compare'),
   videoToggleFavoriteSentence(
-      ShortcutScope.video, 'video_toggle_favorite_sentence'),
+    ShortcutScope.video,
+    'video_toggle_favorite_sentence',
+  ),
 
   // 漫画：翻页存的是**页序语义**（forward=下一页），左右方向键再按跨页方向
   // （日漫默认 rtl）校正——与 reader 的 resolveReaderArrowPageTurn 同构，见
@@ -563,6 +605,34 @@ enum ShortcutAction {
   mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
   mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
   mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
+
+  // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
+  // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的
+  // `resolveKeyboard(event, scope: webBrowser)` 派发 switch。
+  webBrowserNewTab(ShortcutScope.webBrowser, 'web_browser_new_tab'),
+  webBrowserCloseTab(ShortcutScope.webBrowser, 'web_browser_close_tab'),
+  webBrowserReopenClosedTab(
+    ShortcutScope.webBrowser,
+    'web_browser_reopen_closed_tab',
+  ),
+  webBrowserNextTab(ShortcutScope.webBrowser, 'web_browser_next_tab'),
+  webBrowserPreviousTab(ShortcutScope.webBrowser, 'web_browser_previous_tab'),
+  webBrowserFocusAddress(ShortcutScope.webBrowser, 'web_browser_focus_address'),
+  // 网页历史后退 / 前进。⚠️ 后退的桌面默认**不含** Alt+←：那是 universal
+  // globalBack 的默认键，页面 scope 绑同键会把「返回上一级」静默遮蔽（守卫
+  // universal_back_test）。浏览器页在 universal 兜底里把 globalBack 解释成「能后退
+  // 就网页后退、否则退出浏览器」，Alt+← 因此照样是网页后退。
+  webBrowserBack(ShortcutScope.webBrowser, 'web_browser_back'),
+  webBrowserForward(ShortcutScope.webBrowser, 'web_browser_forward'),
+  webBrowserReload(ShortcutScope.webBrowser, 'web_browser_reload'),
+  webBrowserFindInPage(ShortcutScope.webBrowser, 'web_browser_find_in_page'),
+  webBrowserToggleBookmark(
+    ShortcutScope.webBrowser,
+    'web_browser_toggle_bookmark',
+  ),
+  webBrowserZoomIn(ShortcutScope.webBrowser, 'web_browser_zoom_in'),
+  webBrowserZoomOut(ShortcutScope.webBrowser, 'web_browser_zoom_out'),
+  webBrowserZoomReset(ShortcutScope.webBrowser, 'web_browser_zoom_reset'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
@@ -603,6 +673,17 @@ enum ShortcutAction {
   globalExternalOpenLookupPage(
     ShortcutScope.globalExternal,
     'global_external_open_lookup_page',
+  ),
+
+  // 用户请求（反馈 vTpcneuvAm）：「截屏识字」的全局快捷键。与桌面应用外悬浮球的
+  // 「截屏识字」按钮同一个执行体（`AppFloatingBallHost` 的桌面截屏 OCR：截光标所在
+  // 显示器 → 冻结层 → 系统 OCR → 点字用全局查词卡查），只是不经球、不必先开应用外
+  // 悬浮球。执行体登记在 GlobalLookupController._osHotKeyActions（经
+  // `GlobalLookupController.screenOcrHandler` 转给悬浮球宿主）。键盘-only，理由同
+  // globalExternalOpenLookupPage。
+  globalExternalScreenOcr(
+    ShortcutScope.globalExternal,
+    'global_external_screen_ocr',
   ),
 
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
@@ -687,7 +768,8 @@ enum ShortcutAction {
         // RawInput 侧键触发（runner 侧只登记那一个按钮号），手柄是进程级单槽
         // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
         // 能回显，按下去什么都不发生。
-        ShortcutAction.globalExternalOpenLookupPage => const <ShortcutChannel>{
+        ShortcutAction.globalExternalOpenLookupPage ||
+    ShortcutAction.globalExternalScreenOcr => const <ShortcutChannel>{
             ShortcutChannel.keyboard,
           },
         _ => scope.channels,

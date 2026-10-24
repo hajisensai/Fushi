@@ -303,11 +303,16 @@ bool isImportableDropUrl(String candidate) {
 ///
 /// [isDirectory] 是唯一的外注入判据：拖入的**目录**（漫画页图文件夹）没有扩展名，
 /// 纯扩展名分类无法与「无扩展名的文件」区分，而本函数不碰文件系统。调用方
-/// （widget 层）传 `(pth) => Directory(pth).existsSync()`，测试注入假谓词。
+/// （widget 层）先用 async 文件 API（`FileSystemEntity.isDirectory`，各路径
+/// `Future.wait` 并发）判完，再传**查表**谓词（如 `directories.contains`）；测试注入
+/// 假谓词。**禁止**在谓词里做同步 stat（`existsSync` 之类）：拖进来的常是网络盘上的
+/// 文件，同步 stat 冷目录要数秒、冻结 UI isolate（BUG-3756）。
 /// 不传（默认 null）时行为与历史逐字节一致——目录会落进 [DroppedFiles.unknown]。
 ///
-/// [blurayDiscRootForDirectory] 同理由 widget 层注入（`bluray_disc.dart` 的同名函数，
-/// 要看目录下有没有 `BDMV/PLAYLIST`）；盘内**文件**只看路径形状，本函数自己认。
+/// [blurayDiscRootForDirectory] 同理：调用方先对判为目录的路径 await
+/// `bluray_disc.dart` 的同名 async 函数（看目录下有没有 `BDMV/PLAYLIST`），把
+/// 「目录 → 盘根」结果做成表，这里只传查表函数（如 `(d) => discRoots[d]`）；
+/// 盘内**文件**只看路径形状，本函数自己认。
 ///
 /// [preferManga]：落点是漫画库。图片型 `.epub` 经 [isImageArchive] 归漫画、`.pdf`
 /// 直接归漫画（见 [kDragMangaSurfaceProbeExtensions] / [kDragMangaSurfaceDirectExtensions]）。

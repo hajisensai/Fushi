@@ -66,6 +66,8 @@ class _CoverSearchScrapeRunner extends _IdleScrapeRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     queries.add(query);
     return const <VideoSourceScrapeConfirmationCandidate>[];
@@ -104,10 +106,12 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   Future<List<VideoBookRow>> deleteVideoBooks(
     Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
+    bool removeFromCollections = true,
   }) async {
     final List<VideoBookRow> deleted = await super.deleteVideoBooks(
       bookUids,
       scope: scope,
+      removeFromCollections: removeFromCollections,
     );
     deleteCalls += deleted.length;
     if (deleteCalls >= pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
@@ -233,7 +237,11 @@ void main() {
   }
 
   Directory writeEmbeddedSubtitleCache(File video) {
-    final Directory dir = embeddedSubtitleCacheDir(video.path);
+    // 同步拿 stat 走纯函数那一半：widget 测试的 fake-async 里不能 await 真 IO。
+    final Directory dir = embeddedSubtitleCacheDirForStat(
+      video.path,
+      video.statSync(),
+    );
     dir.createSync(recursive: true);
     File(
       p.join(dir.path, 'sub_0.srt'),

@@ -381,6 +381,17 @@ class VideoMetadataResolver {
           continue;
         }
         final VideoMetadataWork validated = details;
+        // AniDB HTTP 详情不可用时 fetchWork 退回标题目录摘要：类型照抄请求、没有
+        // 年份，上面的类型 / 年份门对它恒放行——「劇場版 X～副标题～」剥成 X 后
+        // 会唯一精确命中 X 的 TV 第一季并被自动绑上。没有类型与年份证据的摘要
+        // 不能当自动命中，只进待确认（自动路径是离线标题索引阶段，那里按 Fribb
+        // 的作品类型过门）。
+        if (validated.rawPayload?[
+                AniDbVideoMetadataProvider.catalogOnlyPayloadKey] ==
+            true) {
+          reviewCandidates.putIfAbsent(lookupKey, () => validated);
+          continue;
+        }
         // 搜索摘要常常只带当前语言标题。真正详情会带原名/别名；MoviePilot
         // 同样用 title/original/alias/translation 做严格清洗后比较，因此必须在
         // detail gate 之后再做一次标题判定，不能在摘要阶段把罗马字别名丢掉。

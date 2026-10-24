@@ -29,6 +29,8 @@ void main() {
       expect(d.options, kSrsAnkiMigrationOptions);
       expect(d.options.useRwkv, isTrue);
       expect(d.convertLapis, isTrue);
+      expect(d.renameLapisDecks, isTrue);
+      expect(d.switchCardTarget, isTrue, reason: '迁移后默认切到 Fushi 复习');
     });
 
     test('JSON 往返；缺项 / 坏值回落到默认', () {
@@ -38,17 +40,27 @@ void main() {
           withScheduling: false,
         ),
         convertLapis: false,
+        renameLapisDecks: false,
+        switchCardTarget: false,
       );
       final SrsAnkiMigrationSettings back = SrsAnkiMigrationSettings.fromJson(
         s.toJson(),
       );
       expect(back.options, s.options);
       expect(back.convertLapis, isFalse);
-      final SrsAnkiMigrationSettings broken = SrsAnkiMigrationSettings.fromJson(
-        <String, Object?>{'options': 'nope', 'convertLapis': 3},
-      );
+      expect(back.renameLapisDecks, isFalse);
+      expect(back.switchCardTarget, isFalse);
+      final SrsAnkiMigrationSettings broken =
+          SrsAnkiMigrationSettings.fromJson(<String, Object?>{
+            'options': 'nope',
+            'convertLapis': 3,
+            'renameLapisDecks': 'x',
+            'switchCardTarget': 'y',
+          });
+      expect(broken.switchCardTarget, isTrue);
       expect(broken.options, kSrsAnkiMigrationOptions);
       expect(broken.convertLapis, isTrue);
+      expect(broken.renameLapisDecks, isTrue);
     });
   });
 
@@ -165,6 +177,9 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
+      // scrollUntilVisible 只保证露出一部分，按钮中心可能还在屏外。
+      await tester.ensureVisible(start);
+      await tester.pumpAndSettle();
       await tester.tap(start);
       await tester.pumpAndSettle();
 
