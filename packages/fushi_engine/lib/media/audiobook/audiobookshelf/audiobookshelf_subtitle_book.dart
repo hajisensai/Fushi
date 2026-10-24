@@ -56,7 +56,7 @@ List<RemoteAudioTrack> remoteTracksOf(List<AudiobookshelfTrack> tracks) =>
         ),
     ];
 
-/// 导入一本远端字幕书：解析 [subtitlePath]、按 [tracks] 切时间轴、生成正文、落
+/// 导入一本远端字幕书：解析 [subtitlePath]（null = 不挂字幕，纯听书）、按 [tracks] 切时间轴、生成正文、落
 /// `SrtBook` 与绑定，返回落库的 [SrtBook]。
 ///
 /// - [subtitleOrigin]：`local`（用户选的本机文件）或
@@ -73,7 +73,7 @@ Future<SrtBook> importAudiobookshelfSubtitleBook({
   required List<RemoteAudioTrack> tracks,
   required String title,
   String? author,
-  required String subtitlePath,
+  String? subtitlePath,
   String subtitleOrigin = RemoteAudioBinding.subtitleOriginLocal,
   required DuplicatePolicy policy,
   Directory? tempDir,

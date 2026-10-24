@@ -23,6 +23,7 @@ const Set<String> kAudiobookshelfSubtitleExtensions = <String>{
 
 /// 「从本机选」的哨兵值（选项值类型是 [Object]，服务器文件用 [ServerSubtitleChoice]）。
 const Object _kPickFromDevice = Object();
+const Object _kNoSubtitle = Object();
 
 /// 选项的排列：推荐的服务器字幕在最前，其余服务器字幕按原序，最后是「从本机选」。
 @visibleForTesting
@@ -63,6 +64,12 @@ Future<AudiobookshelfSubtitleChoice?> chooseAudiobookshelfSubtitle({
       label: t.audiobookshelf_subtitle_from_device,
       icon: FushiIcons.folderOpen,
     ),
+    FushiChoiceOption<Object>(
+      value: _kNoSubtitle,
+      label: t.audiobookshelf_subtitle_none,
+      subtitle: t.audiobookshelf_subtitle_none_hint,
+      icon: FushiIcons.audiobook,
+    ),
   ];
   final Object? picked = await showFushiChoiceDialog<Object>(
     context: context,
@@ -76,6 +83,7 @@ Future<AudiobookshelfSubtitleChoice?> chooseAudiobookshelfSubtitle({
   );
   if (picked == null) return null;
   if (picked is ServerSubtitleChoice) return picked;
+  if (identical(picked, _kNoSubtitle)) return const NoSubtitleChoice();
   if (!context.mounted) return null;
 
   final String? path = await pickSystemFilePath(

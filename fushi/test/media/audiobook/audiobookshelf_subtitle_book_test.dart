@@ -141,6 +141,30 @@ void main() {
     expect(binding.serverSubtitleIno, '20');
   });
 
+  testWidgets('不挂字幕：仍有正文与绑定，0 条 cue，没有字幕文件', (WidgetTester tester) async {
+    final SrtBook book = (await tester.runAsync(
+      () => importAudiobookshelfSubtitleBook(
+        db: db,
+        repo: repo,
+        bindings: bindings,
+        serverConfigId: 'srv',
+        itemId: 'item_1',
+        tracks: _tracks,
+        title: 'Fables',
+        subtitleOrigin: RemoteAudioBinding.subtitleOriginNone,
+        policy: const DuplicatePolicy.suffix(),
+        tempDir: work,
+      ),
+    ))!;
+
+    expect(book.bookKey, isNotEmpty, reason: '阅读器要有正文才打得开');
+    expect(book.srtPath, isEmpty);
+    expect(await tester.runAsync(() => repo.cuesFor(book.uid)), isEmpty);
+    final RemoteAudioBinding binding = (await tester
+        .runAsync<RemoteAudioBinding?>(() => bindings.get(book.uid)))!;
+    expect(binding.subtitleOrigin, RemoteAudioBinding.subtitleOriginNone);
+  });
+
   testWidgets('绑定写失败：回滚字幕书与正文 EPUB，原样抛出', (WidgetTester tester) async {
     final String subtitlePath = writeSrt();
     final Object? error = await tester.runAsync<Object?>(() async {

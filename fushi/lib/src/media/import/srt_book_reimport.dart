@@ -144,10 +144,18 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     report(0.05, messages.parsing);
     // cue 的命名空间是 uid（与 `SrtBookRepository.cuesFor` / 首次导入同源），
     // 不是 bookKey——两者在字幕书上是不同的键，写错整本书查不到 cue。
-    final List<AudioCue> cues =
-        await parseCuesForFormat(File(subtitlePath), uid, 0);
+    List<AudioCue> cues = await parseCuesForFormat(File(subtitlePath), uid, 0);
     if (cues.isEmpty) {
       throw SrtBookReimportEmptyCuesException(subtitlePath);
+    }
+    // 绑在服务器音频上的书：字幕是整本书的时间轴，要按音轨偏移切成各文件内的时间。
+    final RemoteAudioBindingRepository bindings =
+        RemoteAudioBindingRepository(db);
+    final RemoteAudioBinding? binding = await bindings.get(uid);
+    if (binding != null) {
+      cues = splitCuesAcrossTracks(cues, <AudioTrackSpan>[
+        for (final RemoteAudioTrack t in binding.tracks) t.span,
+      ]);
     }
     cueCount = cues.length;
     throwIfAlignmentCancelled(isCancelled);
@@ -182,6 +190,14 @@ Future<SrtBookReimportOutcome> reimportSrtBook({
     await repo.saveCues(uid: uid, cues: cues);
     book.srtPath = persistedSrt;
     await repo.save(book);
+    if (binding != null) {
+      await bindings.save(
+        binding.copyWith(
+          subtitleOrigin: RemoteAudioBinding.subtitleOriginLocal,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
   }
 
   if (wantAudio) {

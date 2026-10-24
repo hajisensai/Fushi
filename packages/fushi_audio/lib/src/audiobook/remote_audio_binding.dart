@@ -91,6 +91,9 @@ class RemoteAudioBinding {
   /// 字幕是用户选的本机文件。
   static const String subtitleOriginLocal = 'local';
 
+  /// 没挂字幕（纯听书）；之后补上字幕时改成 [subtitleOriginLocal]。
+  static const String subtitleOriginNone = 'none';
+
   /// 字幕来自服务器条目里的文件：`server:<ino>`。
   static String subtitleOriginServer(String ino) => 'server:$ino';
 

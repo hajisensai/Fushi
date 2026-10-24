@@ -46,6 +46,9 @@ typedef StandaloneSubtitleBookProgress =
 /// - [cueTransform]：解析出 cue 之后、生成正文与落库之前对 cue 做一次改写。远端
 ///   （流式）音频用它把整本书时间轴上的字幕按音轨切成各文件内的本地时间；缺省不改。
 ///
+/// [subtitlePath] 为 null = 没有字幕（纯听书）：不解析、不落字幕文件，但仍生成一份
+/// 只有标题的正文 EPUB，阅读器才打得开；之后补字幕走 `reimportSrtBook`，它会重建正文。
+///
 /// 字幕解析出 0 条 cue 时与对话框历史行为一致：不生成正文，仍落一条只有字幕
 /// 与音频的书（`bookKey` 为空串）。需要「0 条即失败」语义的调用方（转录产物）
 /// 自己在调用前判。
@@ -54,7 +57,7 @@ Future<SrtBook> importStandaloneSubtitleBook({
   required SrtBookRepository repo,
   required String title,
   String? author,
-  required String subtitlePath,
+  String? subtitlePath,
   List<String> audioPaths = const <String>[],
   bool copyAudio = true,
   required DuplicatePolicy policy,
@@ -69,16 +72,14 @@ Future<SrtBook> importStandaloneSubtitleBook({
   final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
   report(0.1, StandaloneSubtitleBookStep.parsing);
 
-  final List<AudioCue> parsed = await parseCuesForFormat(
-    File(subtitlePath),
-    uid,
-    0,
-  );
+  final List<AudioCue> parsed = subtitlePath == null
+      ? const <AudioCue>[]
+      : await parseCuesForFormat(File(subtitlePath), uid, 0);
   final List<AudioCue> cues = cueTransform?.call(parsed) ?? parsed;
   fushiDebugPrint('[fushi-import] subtitleBook: parsed ${cues.length} cues');
 
   String bookKey = '';
-  if (cues.isNotEmpty) {
+  if (cues.isNotEmpty || subtitlePath == null) {
     try {
       report(0.3, StandaloneSubtitleBookStep.buildingEpub);
       final Directory tmp = tempDir ?? await enginePaths.tempRootDirectory();
@@ -115,15 +116,17 @@ Future<SrtBook> importStandaloneSubtitleBook({
 
   report(0.7, StandaloneSubtitleBookStep.persisting);
   final Directory persistDir = await AudiobookStorage.ensurePersistDir(uid);
-  final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
-    File(subtitlePath),
-    persistDir,
-    onProgress: (int copied, int total) => report(
-      0.7,
-      StandaloneSubtitleBookStep.copyingFile,
-      p.basename(subtitlePath),
-    ),
-  );
+  final String persistedSrt = subtitlePath == null
+      ? ''
+      : await AudiobookStorage.persistFileWithProgress(
+          File(subtitlePath),
+          persistDir,
+          onProgress: (int copied, int total) => report(
+            0.7,
+            StandaloneSubtitleBookStep.copyingFile,
+            p.basename(subtitlePath),
+          ),
+        );
 
   // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
   final List<String> persistedAudioPaths =

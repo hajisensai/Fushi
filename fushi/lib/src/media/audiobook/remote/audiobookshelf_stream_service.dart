@@ -29,6 +29,11 @@ class LocalSubtitleChoice extends AudiobookshelfSubtitleChoice {
   final String path;
 }
 
+/// 不挂字幕：当普通有声书 / 播客听，之后可在阅读器里补字幕。
+class NoSubtitleChoice extends AudiobookshelfSubtitleChoice {
+  const NoSubtitleChoice();
+}
+
 /// 服务器条目文件夹里的字幕文件。
 class ServerSubtitleChoice extends AudiobookshelfSubtitleChoice {
   const ServerSubtitleChoice(this.file);
@@ -134,12 +139,15 @@ class AudiobookshelfStreamService {
       throw StateError('Audiobookshelf item ${item.id} has no audio tracks');
     }
 
-    final String subtitlePath;
+    final String? subtitlePath;
     final String origin;
     switch (subtitle) {
       case LocalSubtitleChoice(:final String path):
         subtitlePath = path;
         origin = RemoteAudioBinding.subtitleOriginLocal;
+      case NoSubtitleChoice():
+        subtitlePath = null;
+        origin = RemoteAudioBinding.subtitleOriginNone;
       case ServerSubtitleChoice(:final AudiobookshelfLibraryFile file):
         final File downloaded = await downloadAudiobookshelfSubtitle(
           api: api,
