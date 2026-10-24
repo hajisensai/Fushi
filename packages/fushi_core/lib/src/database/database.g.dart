@@ -71129,6 +71129,1266 @@ class VideoThemeSongSpansCompanion
   }
 }
 
+class $GameVoiceCastsTable extends GameVoiceCasts
+    with TableInfo<$GameVoiceCastsTable, GameVoiceCastRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GameVoiceCastsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+    'game_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _vndbIdMeta = const VerificationMeta('vndbId');
+  @override
+  late final GeneratedColumn<String> vndbId = GeneratedColumn<String>(
+    'vndb_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _castJsonMeta = const VerificationMeta(
+    'castJson',
+  );
+  @override
+  late final GeneratedColumn<String> castJson = GeneratedColumn<String>(
+    'cast_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [gameId, vndbId, castJson, fetchedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'game_voice_casts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GameVoiceCastRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('game_id')) {
+      context.handle(
+        _gameIdMeta,
+        gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('vndb_id')) {
+      context.handle(
+        _vndbIdMeta,
+        vndbId.isAcceptableOrUnknown(data['vndb_id']!, _vndbIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_vndbIdMeta);
+    }
+    if (data.containsKey('cast_json')) {
+      context.handle(
+        _castJsonMeta,
+        castJson.isAcceptableOrUnknown(data['cast_json']!, _castJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_castJsonMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {gameId};
+  @override
+  GameVoiceCastRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GameVoiceCastRow(
+      gameId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_id'],
+      )!,
+      vndbId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}vndb_id'],
+      )!,
+      castJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cast_json'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GameVoiceCastsTable createAlias(String alias) {
+    return $GameVoiceCastsTable(attachedDatabase, alias);
+  }
+}
+
+class GameVoiceCastRow extends DataClass
+    implements Insertable<GameVoiceCastRow> {
+  /// `galgames.id`。
+  final String gameId;
+
+  /// 取数时用的 VNDB VN id（`v17`）：游戏换绑到另一部 VN 时据此判失效。
+  final String vndbId;
+
+  /// `encodeGameVoiceCast` 的 JSON 列表。
+  final String castJson;
+  final int fetchedAt;
+  const GameVoiceCastRow({
+    required this.gameId,
+    required this.vndbId,
+    required this.castJson,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['game_id'] = Variable<String>(gameId);
+    map['vndb_id'] = Variable<String>(vndbId);
+    map['cast_json'] = Variable<String>(castJson);
+    map['fetched_at'] = Variable<int>(fetchedAt);
+    return map;
+  }
+
+  GameVoiceCastsCompanion toCompanion(bool nullToAbsent) {
+    return GameVoiceCastsCompanion(
+      gameId: Value(gameId),
+      vndbId: Value(vndbId),
+      castJson: Value(castJson),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory GameVoiceCastRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GameVoiceCastRow(
+      gameId: serializer.fromJson<String>(json['gameId']),
+      vndbId: serializer.fromJson<String>(json['vndbId']),
+      castJson: serializer.fromJson<String>(json['castJson']),
+      fetchedAt: serializer.fromJson<int>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'gameId': serializer.toJson<String>(gameId),
+      'vndbId': serializer.toJson<String>(vndbId),
+      'castJson': serializer.toJson<String>(castJson),
+      'fetchedAt': serializer.toJson<int>(fetchedAt),
+    };
+  }
+
+  GameVoiceCastRow copyWith({
+    String? gameId,
+    String? vndbId,
+    String? castJson,
+    int? fetchedAt,
+  }) => GameVoiceCastRow(
+    gameId: gameId ?? this.gameId,
+    vndbId: vndbId ?? this.vndbId,
+    castJson: castJson ?? this.castJson,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  GameVoiceCastRow copyWithCompanion(GameVoiceCastsCompanion data) {
+    return GameVoiceCastRow(
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      vndbId: data.vndbId.present ? data.vndbId.value : this.vndbId,
+      castJson: data.castJson.present ? data.castJson.value : this.castJson,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GameVoiceCastRow(')
+          ..write('gameId: $gameId, ')
+          ..write('vndbId: $vndbId, ')
+          ..write('castJson: $castJson, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(gameId, vndbId, castJson, fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GameVoiceCastRow &&
+          other.gameId == this.gameId &&
+          other.vndbId == this.vndbId &&
+          other.castJson == this.castJson &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class GameVoiceCastsCompanion extends UpdateCompanion<GameVoiceCastRow> {
+  final Value<String> gameId;
+  final Value<String> vndbId;
+  final Value<String> castJson;
+  final Value<int> fetchedAt;
+  final Value<int> rowid;
+  const GameVoiceCastsCompanion({
+    this.gameId = const Value.absent(),
+    this.vndbId = const Value.absent(),
+    this.castJson = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GameVoiceCastsCompanion.insert({
+    required String gameId,
+    required String vndbId,
+    required String castJson,
+    required int fetchedAt,
+    this.rowid = const Value.absent(),
+  }) : gameId = Value(gameId),
+       vndbId = Value(vndbId),
+       castJson = Value(castJson),
+       fetchedAt = Value(fetchedAt);
+  static Insertable<GameVoiceCastRow> custom({
+    Expression<String>? gameId,
+    Expression<String>? vndbId,
+    Expression<String>? castJson,
+    Expression<int>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (gameId != null) 'game_id': gameId,
+      if (vndbId != null) 'vndb_id': vndbId,
+      if (castJson != null) 'cast_json': castJson,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GameVoiceCastsCompanion copyWith({
+    Value<String>? gameId,
+    Value<String>? vndbId,
+    Value<String>? castJson,
+    Value<int>? fetchedAt,
+    Value<int>? rowid,
+  }) {
+    return GameVoiceCastsCompanion(
+      gameId: gameId ?? this.gameId,
+      vndbId: vndbId ?? this.vndbId,
+      castJson: castJson ?? this.castJson,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (vndbId.present) {
+      map['vndb_id'] = Variable<String>(vndbId.value);
+    }
+    if (castJson.present) {
+      map['cast_json'] = Variable<String>(castJson.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GameVoiceCastsCompanion(')
+          ..write('gameId: $gameId, ')
+          ..write('vndbId: $vndbId, ')
+          ..write('castJson: $castJson, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PersonIdentityBridgesTable extends PersonIdentityBridges
+    with TableInfo<$PersonIdentityBridgesTable, PersonIdentityBridgeRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PersonIdentityBridgesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _subjectMeta = const VerificationMeta(
+    'subject',
+  );
+  @override
+  late final GeneratedColumn<String> subject = GeneratedColumn<String>(
+    'subject',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _objectMeta = const VerificationMeta('object');
+  @override
+  late final GeneratedColumn<String> object = GeneratedColumn<String>(
+    'object',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    subject,
+    object,
+    source,
+    createdAt,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'person_identity_bridges';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PersonIdentityBridgeRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('subject')) {
+      context.handle(
+        _subjectMeta,
+        subject.isAcceptableOrUnknown(data['subject']!, _subjectMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_subjectMeta);
+    }
+    if (data.containsKey('object')) {
+      context.handle(
+        _objectMeta,
+        object.isAcceptableOrUnknown(data['object']!, _objectMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_objectMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {subject, object, source};
+  @override
+  PersonIdentityBridgeRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PersonIdentityBridgeRow(
+      subject: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject'],
+      )!,
+      object: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}object'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $PersonIdentityBridgesTable createAlias(String alias) {
+    return $PersonIdentityBridgesTable(attachedDatabase, alias);
+  }
+}
+
+class PersonIdentityBridgeRow extends DataClass
+    implements Insertable<PersonIdentityBridgeRow> {
+  final String subject;
+  final String object;
+
+  /// `wikidata` / `manual`（开放文本，未知来源读侧忽略）。
+  final String source;
+  final int createdAt;
+
+  /// 否决 / 取消合并时刻（只对 manual 有意义）；NULL = 存活。
+  final int? deletedAt;
+  const PersonIdentityBridgeRow({
+    required this.subject,
+    required this.object,
+    required this.source,
+    required this.createdAt,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['subject'] = Variable<String>(subject);
+    map['object'] = Variable<String>(object);
+    map['source'] = Variable<String>(source);
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
+    return map;
+  }
+
+  PersonIdentityBridgesCompanion toCompanion(bool nullToAbsent) {
+    return PersonIdentityBridgesCompanion(
+      subject: Value(subject),
+      object: Value(object),
+      source: Value(source),
+      createdAt: Value(createdAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory PersonIdentityBridgeRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PersonIdentityBridgeRow(
+      subject: serializer.fromJson<String>(json['subject']),
+      object: serializer.fromJson<String>(json['object']),
+      source: serializer.fromJson<String>(json['source']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'subject': serializer.toJson<String>(subject),
+      'object': serializer.toJson<String>(object),
+      'source': serializer.toJson<String>(source),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
+    };
+  }
+
+  PersonIdentityBridgeRow copyWith({
+    String? subject,
+    String? object,
+    String? source,
+    int? createdAt,
+    Value<int?> deletedAt = const Value.absent(),
+  }) => PersonIdentityBridgeRow(
+    subject: subject ?? this.subject,
+    object: object ?? this.object,
+    source: source ?? this.source,
+    createdAt: createdAt ?? this.createdAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  PersonIdentityBridgeRow copyWithCompanion(
+    PersonIdentityBridgesCompanion data,
+  ) {
+    return PersonIdentityBridgeRow(
+      subject: data.subject.present ? data.subject.value : this.subject,
+      object: data.object.present ? data.object.value : this.object,
+      source: data.source.present ? data.source.value : this.source,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PersonIdentityBridgeRow(')
+          ..write('subject: $subject, ')
+          ..write('object: $object, ')
+          ..write('source: $source, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(subject, object, source, createdAt, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PersonIdentityBridgeRow &&
+          other.subject == this.subject &&
+          other.object == this.object &&
+          other.source == this.source &&
+          other.createdAt == this.createdAt &&
+          other.deletedAt == this.deletedAt);
+}
+
+class PersonIdentityBridgesCompanion
+    extends UpdateCompanion<PersonIdentityBridgeRow> {
+  final Value<String> subject;
+  final Value<String> object;
+  final Value<String> source;
+  final Value<int> createdAt;
+  final Value<int?> deletedAt;
+  final Value<int> rowid;
+  const PersonIdentityBridgesCompanion({
+    this.subject = const Value.absent(),
+    this.object = const Value.absent(),
+    this.source = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PersonIdentityBridgesCompanion.insert({
+    required String subject,
+    required String object,
+    required String source,
+    required int createdAt,
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : subject = Value(subject),
+       object = Value(object),
+       source = Value(source),
+       createdAt = Value(createdAt);
+  static Insertable<PersonIdentityBridgeRow> custom({
+    Expression<String>? subject,
+    Expression<String>? object,
+    Expression<String>? source,
+    Expression<int>? createdAt,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (subject != null) 'subject': subject,
+      if (object != null) 'object': object,
+      if (source != null) 'source': source,
+      if (createdAt != null) 'created_at': createdAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PersonIdentityBridgesCompanion copyWith({
+    Value<String>? subject,
+    Value<String>? object,
+    Value<String>? source,
+    Value<int>? createdAt,
+    Value<int?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return PersonIdentityBridgesCompanion(
+      subject: subject ?? this.subject,
+      object: object ?? this.object,
+      source: source ?? this.source,
+      createdAt: createdAt ?? this.createdAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (subject.present) {
+      map['subject'] = Variable<String>(subject.value);
+    }
+    if (object.present) {
+      map['object'] = Variable<String>(object.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PersonIdentityBridgesCompanion(')
+          ..write('subject: $subject, ')
+          ..write('object: $object, ')
+          ..write('source: $source, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AdaptationProgressAnchorsTable extends AdaptationProgressAnchors
+    with
+        TableInfo<
+          $AdaptationProgressAnchorsTable,
+          AdaptationProgressAnchorRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AdaptationProgressAnchorsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _sourceKindMeta = const VerificationMeta(
+    'sourceKind',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKind = GeneratedColumn<String>(
+    'source_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceKeyMeta = const VerificationMeta(
+    'sourceKey',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKey = GeneratedColumn<String>(
+    'source_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _adaptationKindMeta = const VerificationMeta(
+    'adaptationKind',
+  );
+  @override
+  late final GeneratedColumn<String> adaptationKind = GeneratedColumn<String>(
+    'adaptation_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _adaptationKeyMeta = const VerificationMeta(
+    'adaptationKey',
+  );
+  @override
+  late final GeneratedColumn<String> adaptationKey = GeneratedColumn<String>(
+    'adaptation_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<int> episodeNumber = GeneratedColumn<int>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceUnitMeta = const VerificationMeta(
+    'sourceUnit',
+  );
+  @override
+  late final GeneratedColumn<String> sourceUnit = GeneratedColumn<String>(
+    'source_unit',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceNumberMeta = const VerificationMeta(
+    'sourceNumber',
+  );
+  @override
+  late final GeneratedColumn<int> sourceNumber = GeneratedColumn<int>(
+    'source_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    sourceKind,
+    sourceKey,
+    adaptationKind,
+    adaptationKey,
+    episodeNumber,
+    sourceUnit,
+    sourceNumber,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'adaptation_progress_anchors';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AdaptationProgressAnchorRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('source_kind')) {
+      context.handle(
+        _sourceKindMeta,
+        sourceKind.isAcceptableOrUnknown(data['source_kind']!, _sourceKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKindMeta);
+    }
+    if (data.containsKey('source_key')) {
+      context.handle(
+        _sourceKeyMeta,
+        sourceKey.isAcceptableOrUnknown(data['source_key']!, _sourceKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKeyMeta);
+    }
+    if (data.containsKey('adaptation_kind')) {
+      context.handle(
+        _adaptationKindMeta,
+        adaptationKind.isAcceptableOrUnknown(
+          data['adaptation_kind']!,
+          _adaptationKindMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_adaptationKindMeta);
+    }
+    if (data.containsKey('adaptation_key')) {
+      context.handle(
+        _adaptationKeyMeta,
+        adaptationKey.isAcceptableOrUnknown(
+          data['adaptation_key']!,
+          _adaptationKeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_adaptationKeyMeta);
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_episodeNumberMeta);
+    }
+    if (data.containsKey('source_unit')) {
+      context.handle(
+        _sourceUnitMeta,
+        sourceUnit.isAcceptableOrUnknown(data['source_unit']!, _sourceUnitMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceUnitMeta);
+    }
+    if (data.containsKey('source_number')) {
+      context.handle(
+        _sourceNumberMeta,
+        sourceNumber.isAcceptableOrUnknown(
+          data['source_number']!,
+          _sourceNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceNumberMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {
+    sourceKind,
+    sourceKey,
+    adaptationKind,
+    adaptationKey,
+    episodeNumber,
+  };
+  @override
+  AdaptationProgressAnchorRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AdaptationProgressAnchorRow(
+      sourceKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_kind'],
+      )!,
+      sourceKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_key'],
+      )!,
+      adaptationKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}adaptation_kind'],
+      )!,
+      adaptationKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}adaptation_key'],
+      )!,
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      sourceUnit: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_unit'],
+      )!,
+      sourceNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}source_number'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AdaptationProgressAnchorsTable createAlias(String alias) {
+    return $AdaptationProgressAnchorsTable(attachedDatabase, alias);
+  }
+}
+
+class AdaptationProgressAnchorRow extends DataClass
+    implements Insertable<AdaptationProgressAnchorRow> {
+  /// 原作端（`MediaLinkKind.dbValue`，通常是 `book`）。
+  final String sourceKind;
+  final String sourceKey;
+
+  /// 改编端（`video_collection` / `video_episode`）。
+  final String adaptationKind;
+  final String adaptationKey;
+
+  /// 改编作集号（1 起）。
+  final int episodeNumber;
+
+  /// `volume` | `chapter`（开放文本，未知值读侧按卷显示）。
+  final String sourceUnit;
+
+  /// 原作卷号 / 章号（1 起）。
+  final int sourceNumber;
+  final int updatedAt;
+  const AdaptationProgressAnchorRow({
+    required this.sourceKind,
+    required this.sourceKey,
+    required this.adaptationKind,
+    required this.adaptationKey,
+    required this.episodeNumber,
+    required this.sourceUnit,
+    required this.sourceNumber,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['source_kind'] = Variable<String>(sourceKind);
+    map['source_key'] = Variable<String>(sourceKey);
+    map['adaptation_kind'] = Variable<String>(adaptationKind);
+    map['adaptation_key'] = Variable<String>(adaptationKey);
+    map['episode_number'] = Variable<int>(episodeNumber);
+    map['source_unit'] = Variable<String>(sourceUnit);
+    map['source_number'] = Variable<int>(sourceNumber);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  AdaptationProgressAnchorsCompanion toCompanion(bool nullToAbsent) {
+    return AdaptationProgressAnchorsCompanion(
+      sourceKind: Value(sourceKind),
+      sourceKey: Value(sourceKey),
+      adaptationKind: Value(adaptationKind),
+      adaptationKey: Value(adaptationKey),
+      episodeNumber: Value(episodeNumber),
+      sourceUnit: Value(sourceUnit),
+      sourceNumber: Value(sourceNumber),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory AdaptationProgressAnchorRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AdaptationProgressAnchorRow(
+      sourceKind: serializer.fromJson<String>(json['sourceKind']),
+      sourceKey: serializer.fromJson<String>(json['sourceKey']),
+      adaptationKind: serializer.fromJson<String>(json['adaptationKind']),
+      adaptationKey: serializer.fromJson<String>(json['adaptationKey']),
+      episodeNumber: serializer.fromJson<int>(json['episodeNumber']),
+      sourceUnit: serializer.fromJson<String>(json['sourceUnit']),
+      sourceNumber: serializer.fromJson<int>(json['sourceNumber']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'sourceKind': serializer.toJson<String>(sourceKind),
+      'sourceKey': serializer.toJson<String>(sourceKey),
+      'adaptationKind': serializer.toJson<String>(adaptationKind),
+      'adaptationKey': serializer.toJson<String>(adaptationKey),
+      'episodeNumber': serializer.toJson<int>(episodeNumber),
+      'sourceUnit': serializer.toJson<String>(sourceUnit),
+      'sourceNumber': serializer.toJson<int>(sourceNumber),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  AdaptationProgressAnchorRow copyWith({
+    String? sourceKind,
+    String? sourceKey,
+    String? adaptationKind,
+    String? adaptationKey,
+    int? episodeNumber,
+    String? sourceUnit,
+    int? sourceNumber,
+    int? updatedAt,
+  }) => AdaptationProgressAnchorRow(
+    sourceKind: sourceKind ?? this.sourceKind,
+    sourceKey: sourceKey ?? this.sourceKey,
+    adaptationKind: adaptationKind ?? this.adaptationKind,
+    adaptationKey: adaptationKey ?? this.adaptationKey,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    sourceUnit: sourceUnit ?? this.sourceUnit,
+    sourceNumber: sourceNumber ?? this.sourceNumber,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  AdaptationProgressAnchorRow copyWithCompanion(
+    AdaptationProgressAnchorsCompanion data,
+  ) {
+    return AdaptationProgressAnchorRow(
+      sourceKind: data.sourceKind.present
+          ? data.sourceKind.value
+          : this.sourceKind,
+      sourceKey: data.sourceKey.present ? data.sourceKey.value : this.sourceKey,
+      adaptationKind: data.adaptationKind.present
+          ? data.adaptationKind.value
+          : this.adaptationKind,
+      adaptationKey: data.adaptationKey.present
+          ? data.adaptationKey.value
+          : this.adaptationKey,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      sourceUnit: data.sourceUnit.present
+          ? data.sourceUnit.value
+          : this.sourceUnit,
+      sourceNumber: data.sourceNumber.present
+          ? data.sourceNumber.value
+          : this.sourceNumber,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AdaptationProgressAnchorRow(')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('adaptationKind: $adaptationKind, ')
+          ..write('adaptationKey: $adaptationKey, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('sourceUnit: $sourceUnit, ')
+          ..write('sourceNumber: $sourceNumber, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    sourceKind,
+    sourceKey,
+    adaptationKind,
+    adaptationKey,
+    episodeNumber,
+    sourceUnit,
+    sourceNumber,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AdaptationProgressAnchorRow &&
+          other.sourceKind == this.sourceKind &&
+          other.sourceKey == this.sourceKey &&
+          other.adaptationKind == this.adaptationKind &&
+          other.adaptationKey == this.adaptationKey &&
+          other.episodeNumber == this.episodeNumber &&
+          other.sourceUnit == this.sourceUnit &&
+          other.sourceNumber == this.sourceNumber &&
+          other.updatedAt == this.updatedAt);
+}
+
+class AdaptationProgressAnchorsCompanion
+    extends UpdateCompanion<AdaptationProgressAnchorRow> {
+  final Value<String> sourceKind;
+  final Value<String> sourceKey;
+  final Value<String> adaptationKind;
+  final Value<String> adaptationKey;
+  final Value<int> episodeNumber;
+  final Value<String> sourceUnit;
+  final Value<int> sourceNumber;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const AdaptationProgressAnchorsCompanion({
+    this.sourceKind = const Value.absent(),
+    this.sourceKey = const Value.absent(),
+    this.adaptationKind = const Value.absent(),
+    this.adaptationKey = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.sourceUnit = const Value.absent(),
+    this.sourceNumber = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AdaptationProgressAnchorsCompanion.insert({
+    required String sourceKind,
+    required String sourceKey,
+    required String adaptationKind,
+    required String adaptationKey,
+    required int episodeNumber,
+    required String sourceUnit,
+    required int sourceNumber,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : sourceKind = Value(sourceKind),
+       sourceKey = Value(sourceKey),
+       adaptationKind = Value(adaptationKind),
+       adaptationKey = Value(adaptationKey),
+       episodeNumber = Value(episodeNumber),
+       sourceUnit = Value(sourceUnit),
+       sourceNumber = Value(sourceNumber),
+       updatedAt = Value(updatedAt);
+  static Insertable<AdaptationProgressAnchorRow> custom({
+    Expression<String>? sourceKind,
+    Expression<String>? sourceKey,
+    Expression<String>? adaptationKind,
+    Expression<String>? adaptationKey,
+    Expression<int>? episodeNumber,
+    Expression<String>? sourceUnit,
+    Expression<int>? sourceNumber,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (sourceKind != null) 'source_kind': sourceKind,
+      if (sourceKey != null) 'source_key': sourceKey,
+      if (adaptationKind != null) 'adaptation_kind': adaptationKind,
+      if (adaptationKey != null) 'adaptation_key': adaptationKey,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (sourceUnit != null) 'source_unit': sourceUnit,
+      if (sourceNumber != null) 'source_number': sourceNumber,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AdaptationProgressAnchorsCompanion copyWith({
+    Value<String>? sourceKind,
+    Value<String>? sourceKey,
+    Value<String>? adaptationKind,
+    Value<String>? adaptationKey,
+    Value<int>? episodeNumber,
+    Value<String>? sourceUnit,
+    Value<int>? sourceNumber,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return AdaptationProgressAnchorsCompanion(
+      sourceKind: sourceKind ?? this.sourceKind,
+      sourceKey: sourceKey ?? this.sourceKey,
+      adaptationKind: adaptationKind ?? this.adaptationKind,
+      adaptationKey: adaptationKey ?? this.adaptationKey,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      sourceUnit: sourceUnit ?? this.sourceUnit,
+      sourceNumber: sourceNumber ?? this.sourceNumber,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (sourceKind.present) {
+      map['source_kind'] = Variable<String>(sourceKind.value);
+    }
+    if (sourceKey.present) {
+      map['source_key'] = Variable<String>(sourceKey.value);
+    }
+    if (adaptationKind.present) {
+      map['adaptation_kind'] = Variable<String>(adaptationKind.value);
+    }
+    if (adaptationKey.present) {
+      map['adaptation_key'] = Variable<String>(adaptationKey.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<int>(episodeNumber.value);
+    }
+    if (sourceUnit.present) {
+      map['source_unit'] = Variable<String>(sourceUnit.value);
+    }
+    if (sourceNumber.present) {
+      map['source_number'] = Variable<int>(sourceNumber.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AdaptationProgressAnchorsCompanion(')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('adaptationKind: $adaptationKind, ')
+          ..write('adaptationKey: $adaptationKey, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('sourceUnit: $sourceUnit, ')
+          ..write('sourceNumber: $sourceNumber, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -71335,6 +72595,11 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   );
   late final $VideoThemeSongSpansTable videoThemeSongSpans =
       $VideoThemeSongSpansTable(this);
+  late final $GameVoiceCastsTable gameVoiceCasts = $GameVoiceCastsTable(this);
+  late final $PersonIdentityBridgesTable personIdentityBridges =
+      $PersonIdentityBridgesTable(this);
+  late final $AdaptationProgressAnchorsTable adaptationProgressAnchors =
+      $AdaptationProgressAnchorsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -71455,6 +72720,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlaylistEntries,
     musicPlayEvents,
     videoThemeSongSpans,
+    gameVoiceCasts,
+    personIdentityBridges,
+    adaptationProgressAnchors,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -119941,6 +121209,700 @@ typedef $$VideoThemeSongSpansTableProcessedTableManager =
       VideoThemeSongSpanRow,
       PrefetchHooks Function()
     >;
+typedef $$GameVoiceCastsTableCreateCompanionBuilder =
+    GameVoiceCastsCompanion Function({
+      required String gameId,
+      required String vndbId,
+      required String castJson,
+      required int fetchedAt,
+      Value<int> rowid,
+    });
+typedef $$GameVoiceCastsTableUpdateCompanionBuilder =
+    GameVoiceCastsCompanion Function({
+      Value<String> gameId,
+      Value<String> vndbId,
+      Value<String> castJson,
+      Value<int> fetchedAt,
+      Value<int> rowid,
+    });
+
+class $$GameVoiceCastsTableFilterComposer
+    extends Composer<_$FushiDatabase, $GameVoiceCastsTable> {
+  $$GameVoiceCastsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get vndbId => $composableBuilder(
+    column: $table.vndbId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get castJson => $composableBuilder(
+    column: $table.castJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GameVoiceCastsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $GameVoiceCastsTable> {
+  $$GameVoiceCastsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get vndbId => $composableBuilder(
+    column: $table.vndbId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get castJson => $composableBuilder(
+    column: $table.castJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GameVoiceCastsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $GameVoiceCastsTable> {
+  $$GameVoiceCastsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get gameId =>
+      $composableBuilder(column: $table.gameId, builder: (column) => column);
+
+  GeneratedColumn<String> get vndbId =>
+      $composableBuilder(column: $table.vndbId, builder: (column) => column);
+
+  GeneratedColumn<String> get castJson =>
+      $composableBuilder(column: $table.castJson, builder: (column) => column);
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$GameVoiceCastsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $GameVoiceCastsTable,
+          GameVoiceCastRow,
+          $$GameVoiceCastsTableFilterComposer,
+          $$GameVoiceCastsTableOrderingComposer,
+          $$GameVoiceCastsTableAnnotationComposer,
+          $$GameVoiceCastsTableCreateCompanionBuilder,
+          $$GameVoiceCastsTableUpdateCompanionBuilder,
+          (
+            GameVoiceCastRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $GameVoiceCastsTable,
+              GameVoiceCastRow
+            >,
+          ),
+          GameVoiceCastRow,
+          PrefetchHooks Function()
+        > {
+  $$GameVoiceCastsTableTableManager(
+    _$FushiDatabase db,
+    $GameVoiceCastsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GameVoiceCastsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GameVoiceCastsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GameVoiceCastsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> gameId = const Value.absent(),
+                Value<String> vndbId = const Value.absent(),
+                Value<String> castJson = const Value.absent(),
+                Value<int> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => GameVoiceCastsCompanion(
+                gameId: gameId,
+                vndbId: vndbId,
+                castJson: castJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String gameId,
+                required String vndbId,
+                required String castJson,
+                required int fetchedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => GameVoiceCastsCompanion.insert(
+                gameId: gameId,
+                vndbId: vndbId,
+                castJson: castJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GameVoiceCastsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $GameVoiceCastsTable,
+      GameVoiceCastRow,
+      $$GameVoiceCastsTableFilterComposer,
+      $$GameVoiceCastsTableOrderingComposer,
+      $$GameVoiceCastsTableAnnotationComposer,
+      $$GameVoiceCastsTableCreateCompanionBuilder,
+      $$GameVoiceCastsTableUpdateCompanionBuilder,
+      (
+        GameVoiceCastRow,
+        BaseReferences<_$FushiDatabase, $GameVoiceCastsTable, GameVoiceCastRow>,
+      ),
+      GameVoiceCastRow,
+      PrefetchHooks Function()
+    >;
+typedef $$PersonIdentityBridgesTableCreateCompanionBuilder =
+    PersonIdentityBridgesCompanion Function({
+      required String subject,
+      required String object,
+      required String source,
+      required int createdAt,
+      Value<int?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$PersonIdentityBridgesTableUpdateCompanionBuilder =
+    PersonIdentityBridgesCompanion Function({
+      Value<String> subject,
+      Value<String> object,
+      Value<String> source,
+      Value<int> createdAt,
+      Value<int?> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$PersonIdentityBridgesTableFilterComposer
+    extends Composer<_$FushiDatabase, $PersonIdentityBridgesTable> {
+  $$PersonIdentityBridgesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get object => $composableBuilder(
+    column: $table.object,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PersonIdentityBridgesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $PersonIdentityBridgesTable> {
+  $$PersonIdentityBridgesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get object => $composableBuilder(
+    column: $table.object,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PersonIdentityBridgesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $PersonIdentityBridgesTable> {
+  $$PersonIdentityBridgesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get subject =>
+      $composableBuilder(column: $table.subject, builder: (column) => column);
+
+  GeneratedColumn<String> get object =>
+      $composableBuilder(column: $table.object, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$PersonIdentityBridgesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $PersonIdentityBridgesTable,
+          PersonIdentityBridgeRow,
+          $$PersonIdentityBridgesTableFilterComposer,
+          $$PersonIdentityBridgesTableOrderingComposer,
+          $$PersonIdentityBridgesTableAnnotationComposer,
+          $$PersonIdentityBridgesTableCreateCompanionBuilder,
+          $$PersonIdentityBridgesTableUpdateCompanionBuilder,
+          (
+            PersonIdentityBridgeRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $PersonIdentityBridgesTable,
+              PersonIdentityBridgeRow
+            >,
+          ),
+          PersonIdentityBridgeRow,
+          PrefetchHooks Function()
+        > {
+  $$PersonIdentityBridgesTableTableManager(
+    _$FushiDatabase db,
+    $PersonIdentityBridgesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PersonIdentityBridgesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$PersonIdentityBridgesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$PersonIdentityBridgesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> subject = const Value.absent(),
+                Value<String> object = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PersonIdentityBridgesCompanion(
+                subject: subject,
+                object: object,
+                source: source,
+                createdAt: createdAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String subject,
+                required String object,
+                required String source,
+                required int createdAt,
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PersonIdentityBridgesCompanion.insert(
+                subject: subject,
+                object: object,
+                source: source,
+                createdAt: createdAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PersonIdentityBridgesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $PersonIdentityBridgesTable,
+      PersonIdentityBridgeRow,
+      $$PersonIdentityBridgesTableFilterComposer,
+      $$PersonIdentityBridgesTableOrderingComposer,
+      $$PersonIdentityBridgesTableAnnotationComposer,
+      $$PersonIdentityBridgesTableCreateCompanionBuilder,
+      $$PersonIdentityBridgesTableUpdateCompanionBuilder,
+      (
+        PersonIdentityBridgeRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $PersonIdentityBridgesTable,
+          PersonIdentityBridgeRow
+        >,
+      ),
+      PersonIdentityBridgeRow,
+      PrefetchHooks Function()
+    >;
+typedef $$AdaptationProgressAnchorsTableCreateCompanionBuilder =
+    AdaptationProgressAnchorsCompanion Function({
+      required String sourceKind,
+      required String sourceKey,
+      required String adaptationKind,
+      required String adaptationKey,
+      required int episodeNumber,
+      required String sourceUnit,
+      required int sourceNumber,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$AdaptationProgressAnchorsTableUpdateCompanionBuilder =
+    AdaptationProgressAnchorsCompanion Function({
+      Value<String> sourceKind,
+      Value<String> sourceKey,
+      Value<String> adaptationKind,
+      Value<String> adaptationKey,
+      Value<int> episodeNumber,
+      Value<String> sourceUnit,
+      Value<int> sourceNumber,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$AdaptationProgressAnchorsTableFilterComposer
+    extends Composer<_$FushiDatabase, $AdaptationProgressAnchorsTable> {
+  $$AdaptationProgressAnchorsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get adaptationKind => $composableBuilder(
+    column: $table.adaptationKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get adaptationKey => $composableBuilder(
+    column: $table.adaptationKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceUnit => $composableBuilder(
+    column: $table.sourceUnit,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sourceNumber => $composableBuilder(
+    column: $table.sourceNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AdaptationProgressAnchorsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $AdaptationProgressAnchorsTable> {
+  $$AdaptationProgressAnchorsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get adaptationKind => $composableBuilder(
+    column: $table.adaptationKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get adaptationKey => $composableBuilder(
+    column: $table.adaptationKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceUnit => $composableBuilder(
+    column: $table.sourceUnit,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sourceNumber => $composableBuilder(
+    column: $table.sourceNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AdaptationProgressAnchorsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $AdaptationProgressAnchorsTable> {
+  $$AdaptationProgressAnchorsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceKey =>
+      $composableBuilder(column: $table.sourceKey, builder: (column) => column);
+
+  GeneratedColumn<String> get adaptationKind => $composableBuilder(
+    column: $table.adaptationKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get adaptationKey => $composableBuilder(
+    column: $table.adaptationKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceUnit => $composableBuilder(
+    column: $table.sourceUnit,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sourceNumber => $composableBuilder(
+    column: $table.sourceNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$AdaptationProgressAnchorsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $AdaptationProgressAnchorsTable,
+          AdaptationProgressAnchorRow,
+          $$AdaptationProgressAnchorsTableFilterComposer,
+          $$AdaptationProgressAnchorsTableOrderingComposer,
+          $$AdaptationProgressAnchorsTableAnnotationComposer,
+          $$AdaptationProgressAnchorsTableCreateCompanionBuilder,
+          $$AdaptationProgressAnchorsTableUpdateCompanionBuilder,
+          (
+            AdaptationProgressAnchorRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $AdaptationProgressAnchorsTable,
+              AdaptationProgressAnchorRow
+            >,
+          ),
+          AdaptationProgressAnchorRow,
+          PrefetchHooks Function()
+        > {
+  $$AdaptationProgressAnchorsTableTableManager(
+    _$FushiDatabase db,
+    $AdaptationProgressAnchorsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AdaptationProgressAnchorsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$AdaptationProgressAnchorsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$AdaptationProgressAnchorsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> sourceKind = const Value.absent(),
+                Value<String> sourceKey = const Value.absent(),
+                Value<String> adaptationKind = const Value.absent(),
+                Value<String> adaptationKey = const Value.absent(),
+                Value<int> episodeNumber = const Value.absent(),
+                Value<String> sourceUnit = const Value.absent(),
+                Value<int> sourceNumber = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AdaptationProgressAnchorsCompanion(
+                sourceKind: sourceKind,
+                sourceKey: sourceKey,
+                adaptationKind: adaptationKind,
+                adaptationKey: adaptationKey,
+                episodeNumber: episodeNumber,
+                sourceUnit: sourceUnit,
+                sourceNumber: sourceNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String sourceKind,
+                required String sourceKey,
+                required String adaptationKind,
+                required String adaptationKey,
+                required int episodeNumber,
+                required String sourceUnit,
+                required int sourceNumber,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AdaptationProgressAnchorsCompanion.insert(
+                sourceKind: sourceKind,
+                sourceKey: sourceKey,
+                adaptationKind: adaptationKind,
+                adaptationKey: adaptationKey,
+                episodeNumber: episodeNumber,
+                sourceUnit: sourceUnit,
+                sourceNumber: sourceNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AdaptationProgressAnchorsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $AdaptationProgressAnchorsTable,
+      AdaptationProgressAnchorRow,
+      $$AdaptationProgressAnchorsTableFilterComposer,
+      $$AdaptationProgressAnchorsTableOrderingComposer,
+      $$AdaptationProgressAnchorsTableAnnotationComposer,
+      $$AdaptationProgressAnchorsTableCreateCompanionBuilder,
+      $$AdaptationProgressAnchorsTableUpdateCompanionBuilder,
+      (
+        AdaptationProgressAnchorRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $AdaptationProgressAnchorsTable,
+          AdaptationProgressAnchorRow
+        >,
+      ),
+      AdaptationProgressAnchorRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -120229,4 +122191,13 @@ class $FushiDatabaseManager {
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
   $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
       $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
+  $$GameVoiceCastsTableTableManager get gameVoiceCasts =>
+      $$GameVoiceCastsTableTableManager(_db, _db.gameVoiceCasts);
+  $$PersonIdentityBridgesTableTableManager get personIdentityBridges =>
+      $$PersonIdentityBridgesTableTableManager(_db, _db.personIdentityBridges);
+  $$AdaptationProgressAnchorsTableTableManager get adaptationProgressAnchors =>
+      $$AdaptationProgressAnchorsTableTableManager(
+        _db,
+        _db.adaptationProgressAnchors,
+      );
 }
