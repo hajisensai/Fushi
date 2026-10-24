@@ -89,6 +89,7 @@ public class MainActivity extends AudioServiceActivity {
     // 系统画中画。持有 Activity，所以是实例而不是静态注册：onDestroy 要断开它，
     // onPictureInPictureModeChanged 要把系统的进出事件转发给它。
     private PictureInPictureChannelHandler pictureInPictureChannelHandler;
+    private MusicOutputChannelHandler musicOutputChannelHandler;
     // 互联配对链接写 NFC 贴纸：读卡模式挂在 Activity 上，同样是实例、onDestroy 断开。
     private NfcTagWriterChannelHandler nfcTagWriterChannelHandler;
     private MethodChannel.Result pendingSafResult;
@@ -129,6 +130,7 @@ public class MainActivity extends AudioServiceActivity {
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
         pictureInPictureChannelHandler = new PictureInPictureChannelHandler(context);
+        musicOutputChannelHandler = new MusicOutputChannelHandler(context);
         nfcTagWriterChannelHandler = new NfcTagWriterChannelHandler(context);
         // Manga extensions are an optional subsystem. Its constructor wires up
         // Injekt, whose reified type resolution is only as sound as the R8 keep
@@ -267,6 +269,10 @@ public class MainActivity extends AudioServiceActivity {
         if (pictureInPictureChannelHandler != null) {
             pictureInPictureChannelHandler.destroy();
             pictureInPictureChannelHandler = null;
+        }
+        if (musicOutputChannelHandler != null) {
+            musicOutputChannelHandler.destroy();
+            musicOutputChannelHandler = null;
         }
         // HBK-AUDIT-057: the static floating-service channels are bound to this
         // engine's messenger; clear their handlers and null them so stale
@@ -669,6 +675,9 @@ public class MainActivity extends AudioServiceActivity {
         }
         if (pictureInPictureChannelHandler != null) {
             pictureInPictureChannelHandler.register(flutterEngine);
+        }
+        if (musicOutputChannelHandler != null) {
+            musicOutputChannelHandler.register(flutterEngine);
         }
         if (mihonChannelHandler != null) {
             mihonChannelHandler.register(flutterEngine);
