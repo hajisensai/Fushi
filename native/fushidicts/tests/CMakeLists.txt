@@ -189,6 +189,22 @@ add_test(NAME tokenize_ffi_nul_test
          COMMAND tokenize_ffi_nul_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
+# 「我库里的例句」倒排键：C ABI 入口 fushidicts_corpus_terms 给出词典形（日语 / 英语同一条
+# 代码，真 ja.json / en.json / en_irregular.json）、UTF-16 位置、未命中拉丁词整串跳过。
+add_executable(corpus_terms_ffi_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/corpus_terms_ffi_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(corpus_terms_ffi_test PRIVATE fushidicts libzstd_static)
+target_include_directories(corpus_terms_ffi_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(corpus_terms_ffi_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME corpus_terms_ffi_test
+         COMMAND corpus_terms_ffi_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
+
 # HBK-AUDIT-009：句柄引用计数（retain / release / 退役式 destroy）与读写锁，用真线程
 # 验证：借用期间退役不销毁、最后一次 release 才销毁且只销毁一次、重载与 add_*_dict
 # 和在飞分词并发时结果都正确。同样经真实导出符号，所以编进 fushidicts_ffi.cpp。

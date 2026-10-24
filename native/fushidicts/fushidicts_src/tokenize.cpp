@@ -1,5 +1,7 @@
 #include "fushidicts/tokenize.hpp"
 
+#include "scan/word_scan.hpp"
+
 #include <utf8.h>
 
 #include <algorithm>
@@ -181,6 +183,83 @@ TokenizeOutput tokenize(const Lookup& lookup, const std::string& text_utf8, std:
       out.lengths.push_back(1);
     }
     if (with_readings) out.readings.push_back(reading_of(segment));
+  }
+  return out;
+}
+
+bool CorpusLemmaMemo::get(const std::string& window, int32_t& length, std::string& lemma) const {
+  auto it = entries_.find(window);
+  if (it == entries_.end()) return false;
+  length = it->second.first;
+  lemma = it->second.second;
+  return true;
+}
+
+void CorpusLemmaMemo::put(const std::string& window, int32_t length, const std::string& lemma) {
+  if (entries_.size() >= kCapacity) entries_.clear();
+  entries_.emplace(window, std::make_pair(length, lemma));
+}
+
+namespace {
+
+bool is_corpus_whitespace(char32_t c) {
+  return c == 0x20 || (c >= 0x09 && c <= 0x0D) || c == 0xA0 || c == 0x1680 ||
+         (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F ||
+         c == 0x205F || c == 0x3000;
+}
+
+}  // namespace
+
+std::vector<CorpusToken> tokenize_corpus(const Lookup& lookup, const std::string& text_utf8,
+                                         std::size_t scan_length, CorpusLemmaMemo* memo) {
+  std::vector<CorpusToken> out;
+  const std::vector<CodePoint> cps = decode(text_utf8);
+  std::vector<char32_t> values;
+  values.reserve(cps.size());
+  for (const CodePoint& cp : cps) {
+    auto it = text_utf8.begin() + static_cast<std::ptrdiff_t>(cp.begin);
+    values.push_back(static_cast<char32_t>(utf8::next(it, text_utf8.end())));
+  }
+
+  std::size_t i = 0;
+  int32_t pos16 = 0;  // cps[i] 的 UTF-16 起点
+  auto advance = [&]() {
+    pos16 += cps[i].units;
+    i += 1;
+  };
+  while (i < cps.size()) {
+    if (is_corpus_whitespace(values[i])) {
+      advance();
+      continue;
+    }
+    const std::string window = build_window(text_utf8, cps, i, false, scan_length);
+    int32_t matched = 0;
+    std::string lemma;
+    if (!memo || !memo->get(window, matched, lemma)) {
+      const auto results = lookup.lookup(window, 1, scan_length, tokenize_options());
+      if (!results.empty()) {
+        matched = utf16_length(results.front().matched);
+        lemma = results.front().term.expression;
+      }
+      if (memo) memo->put(window, matched, lemma);
+    }
+    if (matched > 0 && !lemma.empty()) {
+      CorpusToken token{pos16, matched, lemma};
+      int32_t units = matched;
+      while (units > 0 && i < cps.size()) {
+        units -= cps[i].units;
+        advance();
+      }
+      token.length = pos16 - token.start;
+      out.push_back(std::move(token));
+      continue;
+    }
+    // 未命中：拉丁等空格分词类字母整串跳过（不从词中间起查），其余前进一个码点。
+    const bool letter = is_space_delimited_letter(values[i]);
+    advance();
+    if (letter) {
+      while (i < cps.size() && is_space_delimited_letter(values[i])) advance();
+    }
   }
   return out;
 }

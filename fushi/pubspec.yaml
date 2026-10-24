@@ -86,6 +86,9 @@ dependencies:
   # 音乐胖核心（native/fushi_music：曲库扫描 / 标签 / CUE），硬依赖、没有 Dart 回退。
   fushi_music:
     path: ../packages/fushi_music
+  # 语料胖核心（native/fushi_corpus：「我库里的例句」倒排索引），硬依赖、没有 Dart 回退。
+  fushi_corpus:
+    path: ../packages/fushi_corpus
   # 网页广告 / 跟踪拦截（adblock-rust FFI + 过滤列表管理），WebView 接线在 lib/src/web_adblock/。
   fushi_web_core:
     path: ../packages/fushi_web_core
