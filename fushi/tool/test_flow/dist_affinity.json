@@ -1,0 +1,12 @@
+{
+  "pins": {
+    "test/desktop/fushi_desktop_title_bar_subtree_identity_test.dart": {
+      "platforms": ["windows"],
+      "reason": "lib picks the title bar by host: on macOS the native traffic-light bar draws no Flutter-side top resize edges, which this test asserts (Mac run 2026-10-24)"
+    },
+    "test/pages/storage_usage_view_test.dart": {
+      "platforms": ["windows"],
+      "reason": "storage_usage_service.dart scans extra real directories only on macOS (Platform.isMacOS branch); that real IO never completes under the widget test's fake clock, so pumpAndSettle times out (Mac run 2026-10-24)"
+    }
+  }
+}

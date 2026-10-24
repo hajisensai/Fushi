@@ -4,6 +4,8 @@
 /// Design: docs/specs/2026-10-24-distributed-unit-tests.md (sections 3 and 4).
 library;
 
+import 'dart:convert';
+
 /// Host platforms a worker can be. Linux-gated suites are not pinned (no
 /// Linux worker exists; they self-skip on the others and CI covers them).
 enum DistPlatform { windows, macos }
@@ -74,6 +76,51 @@ SuiteRequirement scanSuiteRequirement(String source) {
   }
   return SuiteRequirement(platforms: platforms, capabilities: capabilities);
 }
+
+/// The checked-in manual pins, relative to `fushi/`: suites whose host
+/// dependence sits in lib code (a `Platform.isMacOS` branch under test), which
+/// [scanSuiteRequirement] cannot see in the test file.
+const String kDistAffinityPath = 'tool/test_flow/dist_affinity.json';
+
+/// Reads `{"pins": {path: {"platforms": [...], "reason": "..."}}}`; every pin
+/// must name at least one platform and give a reason.
+Map<String, Set<DistPlatform>> readDistAffinity(String text) {
+  final Object? decoded = jsonDecode(text);
+  final Object? pins = decoded is Map<String, Object?> ? decoded['pins'] : null;
+  if (pins is! Map<String, Object?>) {
+    throw const FormatException('expected {"pins": {path: {...}}}');
+  }
+  return <String, Set<DistPlatform>>{
+    for (final MapEntry<String, Object?> e in pins.entries)
+      e.key: _pinPlatforms(e.key, e.value),
+  };
+}
+
+Set<DistPlatform> _pinPlatforms(String path, Object? pin) {
+  if (pin is! Map<String, Object?> ||
+      pin['platforms'] is! List<Object?> ||
+      pin['reason'] is! String ||
+      (pin['reason']! as String).trim().isEmpty) {
+    throw FormatException('$path: needs "platforms" and a "reason"');
+  }
+  final Set<DistPlatform> platforms = <DistPlatform>{
+    for (final Object? p in pin['platforms']! as List<Object?>)
+      DistPlatform.values.firstWhere(
+        (DistPlatform d) => d.name == p,
+        orElse: () => throw FormatException('$path: unknown platform "$p"'),
+      ),
+  };
+  if (platforms.isEmpty) throw FormatException('$path: empty "platforms"');
+  return platforms;
+}
+
+/// [scanned] with a manual pin's platforms in place of the scanned ones.
+SuiteRequirement applyDistPin(
+  SuiteRequirement scanned,
+  Set<DistPlatform>? pin,
+) => pin == null
+    ? scanned
+    : SuiteRequirement(platforms: pin, capabilities: scanned.capabilities);
 
 /// One unit of queue work: one `flutter test` process on one worker.
 class DistBatch {

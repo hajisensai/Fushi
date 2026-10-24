@@ -108,9 +108,15 @@ Future<void> main(List<String> args) async {
     ).entries)
       e.key: e.value + options.suiteOverheadMs,
   };
+  final Map<String, Set<DistPlatform>> pins = readDistAffinity(
+    File(kDistAffinityPath).readAsStringSync(),
+  );
   final Map<String, SuiteRequirement> requirements = <String, SuiteRequirement>{
     for (final String p in bytes.keys)
-      p: scanSuiteRequirement(File(p).readAsStringSync()),
+      p: applyDistPin(
+        scanSuiteRequirement(File(p).readAsStringSync()),
+        pins[p],
+      ),
   };
   final List<DistBatch> pending = planDistBatches(
     weights: weights,

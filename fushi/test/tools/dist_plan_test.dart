@@ -106,6 +106,46 @@ void main() {
     });
   });
 
+  group('dist_affinity.json', () {
+    test('every pin names an existing suite, platforms and a reason', () {
+      final Map<String, Set<DistPlatform>> pins = readDistAffinity(
+        File(kDistAffinityPath).readAsStringSync(),
+      );
+      expect(pins, isNotEmpty);
+      for (final MapEntry<String, Set<DistPlatform>> e in pins.entries) {
+        expect(File(e.key).existsSync(), isTrue, reason: 'stale pin ${e.key}');
+        expect(isSafeDistTestPath(e.key), isTrue, reason: e.key);
+      }
+    });
+
+    test('a pin replaces the scanned platforms and keeps the tags', () {
+      const SuiteRequirement scanned = SuiteRequirement(
+        platforms: <DistPlatform>{DistPlatform.macos},
+        capabilities: <String>{_chrome},
+      );
+      final SuiteRequirement pinned = applyDistPin(scanned, <DistPlatform>{
+        DistPlatform.windows,
+      });
+      expect(pinned.platforms, <DistPlatform>{DistPlatform.windows});
+      expect(pinned.capabilities, <String>{_chrome});
+      expect(applyDistPin(scanned, null), same(scanned));
+    });
+
+    test('pins without a reason or with an unknown platform are rejected', () {
+      for (final String bad in <String>[
+        '{"pins": {"test/a_test.dart": {"platforms": ["windows"]}}}',
+        '{"pins": {"test/a_test.dart": {"platforms": [], "reason": "x"}}}',
+        '{"pins": {"test/a_test.dart": {"platforms": ["linux"], "reason": "x"}}}',
+      ]) {
+        expect(
+          () => readDistAffinity(bad),
+          throwsA(isA<FormatException>()),
+          reason: bad,
+        );
+      }
+    });
+  });
+
   group('planDistBatches', () {
     final Map<String, int> weights = <String, int>{
       for (int i = 0; i < 200; i++)
