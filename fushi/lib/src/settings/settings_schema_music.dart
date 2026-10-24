@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -154,6 +155,54 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
+      // 识别（P4，设计 §8.1）：MusicBrainz 主源；AcoustID 需要用户自己的应用 key（本仓
+      // 不内置任何 key），没填时声纹这一步跳过并在这里说明；VGMdb 默认关。
+      SettingsSection(
+        title: t.music_scrape_section,
+        items: <SettingsItem>[
+          SettingsTextItem(
+            id: 'music.acoustid_api_key',
+            title: t.music_setting_acoustid_key,
+            subtitle: t.music_setting_acoustid_key_hint,
+            icon: FushiIcons.key,
+            secret: true,
+            value: (SettingsContext c) => c.appModel.musicAcoustidApiKey,
+            onChanged: (SettingsContext c, String v) =>
+                c.appModel.setMusicAcoustidApiKey(v),
+          ),
+          SettingsSwitchItem(
+            id: 'music.vgmdb',
+            title: t.music_setting_vgmdb,
+            subtitle: t.music_setting_vgmdb_hint,
+            icon: FushiIcons.cloud,
+            defaultValue: false,
+            value: (SettingsContext c) => c.appModel.musicVgmdbEnabled,
+            onChanged: (SettingsContext c, bool v) =>
+                c.appModel.setMusicVgmdbEnabled(v),
+          ),
+          SettingsActionItem(
+            id: 'music.identify_library',
+            title: t.music_setting_identify_library,
+            subtitle: t.music_setting_identify_library_hint,
+            icon: FushiIcons.refresh,
+            onTap: _identifyLibrary,
+            cli: SettingsCliAction(
+              offPageRunnable: true,
+              run: (SettingsContext c, Map<String, String> args) async {
+                final MusicLibraryScrapeReport r = await c.appModel.musicScrape
+                    .scrapeLibrary();
+                return <String, Object?>{
+                  'total': r.total,
+                  'matched': r.matched,
+                  'unmatched': r.unmatched,
+                  'failed': r.failed,
+                  'byMethod': r.byMethod,
+                };
+              },
+            ),
+          ),
+        ],
+      ),
       // 歌词（P1，设计 §5.4 / §6.1）。
       SettingsSection(
         title: t.music_lyrics_title,
@@ -184,6 +233,17 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 识别整个曲库：串行跑（MusicBrainz 1 req/s），进度与结果走 toast。
+Future<void> _identifyLibrary(SettingsContext c) async {
+  FushiToast.show(msg: t.music_scrape_identifying);
+  final MusicLibraryScrapeReport r = await c.appModel.musicScrape
+      .scrapeLibrary();
+  FushiToast.show(
+    msg: t.music_scrape_library_done(matched: r.matched, total: r.total),
+    severity: r.failed > 0 ? ToastSeverity.warning : ToastSeverity.success,
   );
 }
 

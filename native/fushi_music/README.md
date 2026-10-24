@@ -23,6 +23,9 @@
 | `ffm_fp_item_ms() -> f64` | 一个声纹项的时长（≈ 123.8 ms） |
 | `ffm_fp_compute(const i16* pcm, usize n, u32 rate, u32 ch, u8** out, usize* len) -> i32` | 整段交错 s16 PCM → 声纹（小端 u32 数组字节）；一集一次 |
 | `ffm_fp_align(const u32* needle, usize, const u32* hay, usize, u32 min_items, FfmFpMatch* out) -> i32` | 短声纹在长声纹上滑窗对齐 → 偏移 / 起止 / 置信度（没出现 `found = 0`） |
+| `ffm_fp_acoustid_encode(const u32* fp, usize n, u8** out, usize* len) -> i32` | 声纹 → AcoustID 查询串（chromaprint 压缩 + URL-safe base64，与 `fpcalc` 同形；音乐刮削 P4） |
+| `ffm_tags_read_fields(const u8* path, usize, u8** out, usize* len) -> i32` | 读「写回标签」白名单字段（线格式 `src/tag_write.rs`；文件读不了 -3） |
+| `ffm_tags_write_fields(const u8* path, usize, const u8* kv, usize) -> i32` | 写回白名单字段（空值 = 删除；键 / 数字非法 -2 且文件不动；写盘失败 -6） |
 
 歌词（P1，`src/lyrics/`，详见 `src/lyrics/ffi.rs`）：
 

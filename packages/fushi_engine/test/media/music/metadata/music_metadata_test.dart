@@ -37,10 +37,8 @@ const String _lemon = '79a8b80c-018d-4004-b3ff-cc10d21a3ddd';
 const String _lemonWork = 'd69ecd96-bb2c-461f-9762-29102d2b50a1';
 
 /// 不睡的闸门：测试只验证顺序与调用，不等真实间隔。
-MusicRequestThrottle _noWait() => MusicRequestThrottle(
-  Duration.zero,
-  sleep: (Duration _) async {},
-);
+MusicRequestThrottle _noWait() =>
+    MusicRequestThrottle(Duration.zero, sleep: (Duration _) async {});
 
 /// 按路径分发 fixture 的假 MusicBrainz，记下每个请求（断言 UA / 次数）。
 ({MusicBrainzProvider provider, List<http.Request> requests}) _fakeMb({
@@ -92,13 +90,48 @@ void main() {
       expect(musicArtistSimilarity('LiSA', <String>['Aimer']), 0);
     });
 
+    test('角色歌署名：同一声优 / 角色名包含 / 假名写法不同（本机抽样里的真实形态）', () {
+      expect(
+        musicArtistSimilarity('ノア(CV:鈴代紗弓)', <String>['生塩ノア(CV.鈴代紗弓)']),
+        0.8,
+      );
+      expect(
+        musicArtistSimilarity('サオリ(CV:石上静香)', <String>['東さおり(CV:石上静香)']),
+        0.8,
+      );
+      expect(
+        musicArtistSimilarity('アロナ(CV:小原好美)', <String>['アロナ (CV:小原好美)']),
+        1,
+      );
+      // 同名角色、不同声优：不算。
+      expect(musicArtistSimilarity('ノア(CV:甲)', <String>['生塩ノア(CV.乙)']), 0);
+    });
+
+    test('唯一挑选：标题逐字相等优先于只在去版本注记后相等', () {
+      MusicRecordingCandidate c(String id, String title, double ts, double s) =>
+          MusicRecordingCandidate(
+            recording: MusicRecording(mbRecordingId: id, title: title),
+            score: s,
+            titleScore: ts,
+            artistScore: 1,
+            durationScore: 1,
+            albumScore: 0.4,
+          );
+      expect(
+        pickUniqueMusicCandidate(<MusicRecordingCandidate>[
+          c('a', '夢路の花', 1, 0.91),
+          c('b', '夢路の花 (Instrumental Ver.)', 0.8, 0.83),
+        ])?.recording.mbRecordingId,
+        'a',
+      );
+    });
+
     test('残缺日期排序', () {
-      final List<String?> dates = <String?>[
-        null,
-        '2018-03-14',
-        '2018',
-        '2017-12',
-      ]..sort((String? a, String? b) => musicDateSortKey(a).compareTo(musicDateSortKey(b)));
+      final List<String?> dates =
+          <String?>[null, '2018-03-14', '2018', '2017-12']..sort(
+            (String? a, String? b) =>
+                musicDateSortKey(a).compareTo(musicDateSortKey(b)),
+          );
       expect(dates, <String?>['2017-12', '2018', '2018-03-14', null]);
     });
   });
@@ -115,7 +148,10 @@ void main() {
         ),
         r'recording:"Say \"Hi\"" AND artist:"A\\B" AND release:"X" AND video:false',
       );
-      expect(normalizeMusicBrainzId(' 79A8B80C-018D-4004-B3FF-CC10D21A3DDD '), _lemon);
+      expect(
+        normalizeMusicBrainzId(' 79A8B80C-018D-4004-B3FF-CC10D21A3DDD '),
+        _lemon,
+      );
       expect(normalizeMusicBrainzId('not-a-mbid'), isNull);
     });
 
@@ -231,15 +267,14 @@ void main() {
               'recording/$_lemon': 'mb_recording_lemon.json',
             },
           );
-      final MusicIdentification id = await MusicMetadataResolver(
-        musicBrainz: mb.provider,
-      ).identify(
-        const MusicTrackFacts(
-          trackUid: 't1',
-          title: 'whatever',
-          mbRecordingIdTag: _lemon,
-        ),
-      );
+      final MusicIdentification id =
+          await MusicMetadataResolver(musicBrainz: mb.provider).identify(
+            const MusicTrackFacts(
+              trackUid: 't1',
+              title: 'whatever',
+              mbRecordingIdTag: _lemon,
+            ),
+          );
       expect(id.method, MusicIdentificationMethod.mbidTag);
       expect(id.recordingId, _lemon);
       expect(mb.requests, hasLength(1));
@@ -266,17 +301,18 @@ void main() {
     test('时长差 > 15 s 硬拒：不识别，交手选（AcoustID 没配 → 记原因）', () async {
       final ({MusicBrainzProvider provider, List<http.Request> requests}) mb =
           _fakeMb(routes: <String, String>{'?query': 'mb_search_lemon.json'});
-      final MusicIdentification id = await MusicMetadataResolver(
-        musicBrainz: mb.provider,
-        acoustid: AcoustidProvider(apiKey: '  '),
-      ).identify(
-        const MusicTrackFacts(
-          trackUid: 't1',
-          title: 'Lemon',
-          artist: '米津玄師',
-          durationMs: 90000,
-        ),
-      );
+      final MusicIdentification id =
+          await MusicMetadataResolver(
+            musicBrainz: mb.provider,
+            acoustid: AcoustidProvider(apiKey: '  '),
+          ).identify(
+            const MusicTrackFacts(
+              trackUid: 't1',
+              title: 'Lemon',
+              artist: '米津玄師',
+              durationMs: 90000,
+            ),
+          );
       expect(id.matched, isFalse);
       expect(id.acoustidSkippedReason, contains('API key'));
     });
@@ -284,16 +320,15 @@ void main() {
     test('艺人对不上：不算严格命中', () async {
       final ({MusicBrainzProvider provider, List<http.Request> requests}) mb =
           _fakeMb(routes: <String, String>{'?query': 'mb_search_lemon.json'});
-      final MusicIdentification id = await MusicMetadataResolver(
-        musicBrainz: mb.provider,
-      ).identify(
-        const MusicTrackFacts(
-          trackUid: 't1',
-          title: 'Lemon',
-          artist: 'Someone Else',
-          durationMs: 255900,
-        ),
-      );
+      final MusicIdentification id =
+          await MusicMetadataResolver(musicBrainz: mb.provider).identify(
+            const MusicTrackFacts(
+              trackUid: 't1',
+              title: 'Lemon',
+              artist: 'Someone Else',
+              durationMs: 255900,
+            ),
+          );
       expect(id.matched, isFalse);
       expect(id.candidates, isNotEmpty);
     });
@@ -399,20 +434,23 @@ void main() {
       final CoverArtArchiveProvider caa = CoverArtArchiveProvider(
         throttle: _noWait(),
         client: MockClient(
-          (http.Request req) async =>
-              http.Response.bytes(utf8.encode(_fixture('caa_release_lemon.json')), 200),
+          (http.Request req) async => http.Response.bytes(
+            utf8.encode(_fixture('caa_release_lemon.json')),
+            200,
+          ),
         ),
       );
-      final MusicScrapeResult r = await MusicMetadataScraper(
-        resolver: MusicMetadataResolver(musicBrainz: mb.provider),
-        covers: caa,
-      ).scrape(
-        const MusicTrackFacts(
-          trackUid: 't1',
-          title: 'Lemon',
-          mbRecordingIdTag: _lemon,
-        ),
-      );
+      final MusicScrapeResult r =
+          await MusicMetadataScraper(
+            resolver: MusicMetadataResolver(musicBrainz: mb.provider),
+            covers: caa,
+          ).scrape(
+            const MusicTrackFacts(
+              trackUid: 't1',
+              title: 'Lemon',
+              mbRecordingIdTag: _lemon,
+            ),
+          );
       expect(r.identification.method, MusicIdentificationMethod.mbidTag);
       expect(r.release?.mbReleaseId, isNotNull);
       expect(r.cover?.front, isTrue);

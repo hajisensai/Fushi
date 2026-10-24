@@ -55,21 +55,67 @@ Set<String> splitMusicArtists(String credit) => <String>{
     if (normalizeMusicText(part) case final String n when n.isNotEmpty) n,
 };
 
-/// 艺人相似度：整串归一化相等 1.0；拆开后有交集 0.8；否则 0。
+/// 声优标注：`ノア(CV:鈴代紗弓)` / `生塩ノア（CV.鈴代紗弓）` / `アロナ (cv.小原好美)`。
+final RegExp _cvPart = RegExp(
+  r'[(（]\s*cv\s*[.:：．]?\s*([^)）]+)[)）]',
+  caseSensitive: false,
+  unicode: true,
+);
+
+/// 片假名 → 平假名（`サオリ` 与 `さおり` 同名）。只用于艺人比对。
+String _foldKana(String s) => String.fromCharCodes(<int>[
+  for (final int r in s.runes) (r >= 0x30A1 && r <= 0x30F6) ? r - 0x60 : r,
+]);
+
+/// 一个署名里的（角色名, 声优名）对：没有 CV 标注时角色名就是整串、声优为空。
+List<({String name, Set<String> cv})> _artistEntries(String credit) {
+  final List<({String name, Set<String> cv})> out =
+      <({String name, Set<String> cv})>[];
+  for (final String part in credit.split(_artistSeparators)) {
+    final Set<String> cv = <String>{
+      for (final RegExpMatch m in _cvPart.allMatches(part))
+        for (final String n in splitMusicArtists(m.group(1)!)) _foldKana(n),
+    };
+    final String name = _foldKana(
+      normalizeMusicText(part.replaceAll(_cvPart, '')),
+    );
+    if (name.isEmpty && cv.isEmpty) continue;
+    out.add((name: name, cv: cv));
+  }
+  return out;
+}
+
+/// 艺人相似度：整串归一化相等 1.0；拆开后有交集 0.8；角色歌的同一声优（`(CV:…)` 里的名字
+/// 相同）或角色名一方包含另一方（`ノア` ⊂ `生塩ノア`，≥ 2 字）0.8；否则 0。
 double musicArtistSimilarity(String tag, Iterable<String> candidateNames) {
   final String nt = normalizeMusicText(tag);
   if (nt.isEmpty) return 0;
   final Set<String> tagParts = splitMusicArtists(tag);
+  final List<({String name, Set<String> cv})> tagEntries = _artistEntries(tag);
   double best = 0;
   for (final String name in candidateNames) {
     final String nn = normalizeMusicText(name);
     if (nn.isEmpty) continue;
-    if (nn == nt) return 1;
+    if (nn == nt || _foldKana(nn) == _foldKana(nt)) return 1;
     final Set<String> parts = splitMusicArtists(name);
     if (parts.intersection(tagParts).isNotEmpty ||
         tagParts.contains(nn) ||
         parts.contains(nt)) {
       best = 0.8;
+      continue;
+    }
+    for (final ({String name, Set<String> cv}) a in tagEntries) {
+      for (final ({String name, Set<String> cv}) b in _artistEntries(name)) {
+        final bool sameCv =
+            a.cv.isNotEmpty && a.cv.intersection(b.cv).isNotEmpty;
+        final bool nested =
+            a.name.length >= 2 &&
+            b.name.length >= 2 &&
+            (a.name.contains(b.name) || b.name.contains(a.name));
+        if (sameCv || (nested && (a.cv.isEmpty || b.cv.isEmpty || sameCv))) {
+          best = 0.8;
+        }
+      }
     }
   }
   return best;

@@ -24,9 +24,12 @@ abstract interface class MusicMetadataProvider {
 }
 
 /// 录音检索 / 详情（MusicBrainz）。
-abstract interface class MusicRecordingProvider implements MusicMetadataProvider {
+abstract interface class MusicRecordingProvider
+    implements MusicMetadataProvider {
   /// 标签精确查：按 [query] 搜录音，返回原始顺序的候选（打分在识别器里做）。
-  Future<List<MusicRecording>> searchRecordings(MusicRecordingSearchQuery query);
+  Future<List<MusicRecording>> searchRecordings(
+    MusicRecordingSearchQuery query,
+  );
 
   /// 录音详情（含发行、作品关系、MV 关系、URL 关系）。不存在返回 null。
   Future<MusicRecording?> fetchRecording(String mbRecordingId);

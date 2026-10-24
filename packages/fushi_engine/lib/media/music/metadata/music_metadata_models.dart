@@ -281,7 +281,10 @@ class MusicCoverImage {
 
   /// 列表 / 卡片用的尺寸：优先 500 px 缩略图，没有就原图。
   String get displayUrl =>
-      thumbnails['500'] ?? thumbnails['large'] ?? thumbnails['1200'] ?? imageUrl;
+      thumbnails['500'] ??
+      thumbnails['large'] ??
+      thumbnails['1200'] ??
+      imageUrl;
 }
 
 /// VGMdb 专辑（社区 JSON 镜像 vgmdb.info 的 `album/<id>`）。

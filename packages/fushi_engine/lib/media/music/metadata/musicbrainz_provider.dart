@@ -43,7 +43,9 @@ String buildMusicBrainzRecordingQuery(
   MusicRecordingSearchQuery q, {
   bool withAlbum = true,
 }) {
-  final List<String> parts = <String>['recording:${musicBrainzPhrase(q.title)}'];
+  final List<String> parts = <String>[
+    'recording:${musicBrainzPhrase(q.title)}',
+  ];
   final String? artist = q.artist?.trim();
   if (artist != null && artist.isNotEmpty) {
     parts.add('artist:${musicBrainzPhrase(artist)}');
@@ -64,7 +66,11 @@ class MusicBrainzProvider implements MusicRecordingProvider {
     Uri? baseUri,
     String? userAgent,
     this.onRawResponse,
-  }) : _transport = transport ?? VideoMetadataHttpClient(),
+  }) : _transport =
+           transport ??
+           // 503 = MusicBrainz 限流：退避必须比 1 req/s 的闸门更长，否则重试本身又撞限流
+           // （实测：默认 400 ms 退避下 200 首里 3 首三连 503）。
+           VideoMetadataHttpClient(baseBackoff: const Duration(seconds: 2)),
        _ownsTransport = transport == null,
        _throttle = throttle ?? MusicRequestThrottle.musicBrainz,
        _base = baseUri ?? Uri.parse('https://musicbrainz.org/ws/2/'),
@@ -146,14 +152,10 @@ class MusicBrainzProvider implements MusicRecordingProvider {
     MusicRecordingSearchQuery query, {
     required bool withAlbum,
   }) async {
-    final Map<String, Object?>? json = await _get(
-      'recording',
-      <String, String>{
-        'query': buildMusicBrainzRecordingQuery(query, withAlbum: withAlbum),
-        'limit': '${query.limit.clamp(1, 100)}',
-      },
-      operation: 'musicbrainz recording search',
-    );
+    final Map<String, Object?>? json = await _get('recording', <String, String>{
+      'query': buildMusicBrainzRecordingQuery(query, withAlbum: withAlbum),
+      'limit': '${query.limit.clamp(1, 100)}',
+    }, operation: 'musicbrainz recording search');
     final Object? list = json?['recordings'];
     if (list is! List<Object?>) return const <MusicRecording>[];
     return <MusicRecording>[
@@ -235,19 +237,20 @@ List<String> _strings(Object? v) => <String>[
       if (_str(e) case final String s) s,
 ];
 
-List<MusicArtistCredit> parseMusicBrainzArtistCredit(Object? v) =>
-    <MusicArtistCredit>[
-      for (final Map<String, Object?> c in _maps(v))
-        MusicArtistCredit(
-          name:
-              _str(c['name']) ??
-              _str((c['artist'] as Map<String, Object?>?)?['name']) ??
-              '',
-          mbArtistId: _str((c['artist'] as Map<String, Object?>?)?['id']),
-          sortName: _str((c['artist'] as Map<String, Object?>?)?['sort-name']),
-          joinPhrase: c['joinphrase'] is String ? c['joinphrase']! as String : '',
-        ),
-    ];
+List<MusicArtistCredit> parseMusicBrainzArtistCredit(
+  Object? v,
+) => <MusicArtistCredit>[
+  for (final Map<String, Object?> c in _maps(v))
+    MusicArtistCredit(
+      name:
+          _str(c['name']) ??
+          _str((c['artist'] as Map<String, Object?>?)?['name']) ??
+          '',
+      mbArtistId: _str((c['artist'] as Map<String, Object?>?)?['id']),
+      sortName: _str((c['artist'] as Map<String, Object?>?)?['sort-name']),
+      joinPhrase: c['joinphrase'] is String ? c['joinphrase']! as String : '',
+    ),
+];
 
 /// 一张发行 + 这首在里面的位置（搜索结果 `media[].track[]`，详情 `media[].tracks[]`）。
 MusicReleaseRef? parseMusicBrainzRelease(

@@ -237,11 +237,22 @@ MusicRecordingCandidate? pickUniqueMusicCandidate(
   List<MusicRecordingCandidate> strict,
 ) {
   if (strict.isEmpty) return null;
-  final List<MusicRecordingCandidate> sorted = <MusicRecordingCandidate>[
-    ...strict,
-  ]..sort((MusicRecordingCandidate a, MusicRecordingCandidate b) =>
-        b.score.compareTo(a.score));
+  final List<MusicRecordingCandidate> sorted =
+      <MusicRecordingCandidate>[...strict]..sort(
+        (MusicRecordingCandidate a, MusicRecordingCandidate b) =>
+            b.score.compareTo(a.score),
+      );
   if (sorted.length == 1) return sorted.single;
+  // 标题逐字相等的优先于只在去掉版本注记后才相等的（「夢路の花」vs「夢路の花 (Instrumental
+  // Ver.)」）：前者唯一就是它。
+  final List<MusicRecordingCandidate> exact = <MusicRecordingCandidate>[
+    for (final MusicRecordingCandidate c in sorted)
+      if (c.titleScore >= 1) c,
+  ];
+  if (exact.length == 1) return exact.single;
+  if (exact.length > 1 && exact.length < sorted.length) {
+    return pickUniqueMusicCandidate(exact);
+  }
   final MusicRecordingCandidate top = sorted.first;
   // 专辑 + 曲序都对上的只有一条：就是它。
   final List<MusicRecordingCandidate> pinned = <MusicRecordingCandidate>[
@@ -315,8 +326,10 @@ class MusicMetadataResolver {
         final MusicRecordingCandidate? c = scoreMusicRecording(facts, r);
         if (c != null) searched.add(c);
       }
-      searched.sort((MusicRecordingCandidate a, MusicRecordingCandidate b) =>
-          b.score.compareTo(a.score));
+      searched.sort(
+        (MusicRecordingCandidate a, MusicRecordingCandidate b) =>
+            b.score.compareTo(a.score),
+      );
       final List<MusicRecordingCandidate> strict = <MusicRecordingCandidate>[
         for (final MusicRecordingCandidate c in searched)
           if (c.strict) c,
@@ -342,7 +355,8 @@ class MusicMetadataResolver {
     } else if (fingerprint == null) {
       skipped = 'no fingerprint source';
     } else {
-      final ({String fingerprint, int durationSec})? print = await fingerprint();
+      final ({String fingerprint, int durationSec})? print =
+          await fingerprint();
       if (print == null) {
         skipped = 'fingerprint could not be computed';
       } else {
@@ -492,6 +506,14 @@ class MusicMetadataScraper {
   final MusicAlbumCatalogProvider? vgmdb;
   final int maxMusicVideoLookups;
 
+  /// 关掉全部 provider（各自持有的 HTTP 连接）。
+  void close() {
+    resolver.musicBrainz.close();
+    resolver.acoustid?.close();
+    covers?.close();
+    vgmdb?.close();
+  }
+
   /// 识别一首；[manualRecordingId] 给了就跳过识别（用户手选）。
   Future<MusicScrapeResult> scrape(
     MusicTrackFacts facts, {
@@ -512,8 +534,9 @@ class MusicMetadataScraper {
     if (!id.matched) return MusicScrapeResult(identification: id);
 
     final List<String> warnings = <String>[];
-    final MusicRecording? recording = await resolver.musicBrainz
-        .fetchRecording(id.recordingId!);
+    final MusicRecording? recording = await resolver.musicBrainz.fetchRecording(
+      id.recordingId!,
+    );
     if (recording == null) {
       return MusicScrapeResult(
         identification: id,
@@ -577,8 +600,7 @@ class MusicMetadataScraper {
 
     VgmdbAlbum? vgm;
     final MusicAlbumCatalogProvider? vgmProvider = vgmdb;
-    final String? catalog =
-        (facts.catalogNo?.trim().isNotEmpty ?? false)
+    final String? catalog = (facts.catalogNo?.trim().isNotEmpty ?? false)
         ? facts.catalogNo
         : release?.catalogNumbers.firstOrNull;
     if (vgmProvider != null && vgmProvider.isAvailable && catalog != null) {

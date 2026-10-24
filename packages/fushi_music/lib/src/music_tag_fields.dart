@@ -36,7 +36,7 @@ enum MusicTagField {
 }
 
 /// 读 / 写标签失败。[status] 是 `FfmStatus` 码：`badInput` = 文件读不了，
-/// `invalidArgument` = 字段值非法（文件没动），[kWriteFailedStatus] = 写盘失败。
+/// `invalidArgument` = 字段值非法（文件没动），`writeFailed` = 写盘失败。
 final class MusicTagWriteException implements Exception {
   const MusicTagWriteException(this.path, this.status);
 
@@ -46,9 +46,6 @@ final class MusicTagWriteException implements Exception {
   @override
   String toString() => 'MusicTagWriteException($path): status $status';
 }
-
-/// tag_write.rs 写盘失败的返回码（lib.rs `status::WRITE_FAILED`）。
-const int kWriteFailedStatus = -6;
 
 typedef _ReadC =
     Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Uint8>>, Pointer<Size>);

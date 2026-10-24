@@ -72,7 +72,9 @@ class AcoustidProvider implements MusicFingerprintProvider {
     if (!isAvailable) {
       throw MusicMetadataProviderUnavailable(providerKind, unavailableReason!);
     }
-    if (fingerprint.isEmpty || durationSec <= 0) return const <AcoustidResult>[];
+    if (fingerprint.isEmpty || durationSec <= 0) {
+      return const <AcoustidResult>[];
+    }
     final Map<String, String> form = <String, String>{
       'client': apiKey,
       'duration': '$durationSec',
@@ -139,7 +141,8 @@ List<AcoustidResult> parseAcoustidResponse(
     final int? code = err is Map<String, Object?> && err['code'] is int
         ? err['code']! as int
         : null;
-    final String message = err is Map<String, Object?> && err['message'] is String
+    final String message =
+        err is Map<String, Object?> && err['message'] is String
         ? err['message']! as String
         : 'acoustid error';
     if (code == 4) throw AcoustidKeyRejected(message);

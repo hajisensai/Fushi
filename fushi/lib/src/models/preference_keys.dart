@@ -381,6 +381,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_manga_enabled',
   'module_music_enabled',
   'module_video_enabled',
+  // String（默认 ''）：AcoustID 应用 API key（音乐刮削 §8.1；本仓不内置 key，空 = AcoustID
+  // 不可用）。凭据：同时登记在 PrefRedactionPolicy.sensitiveKeys（`api_key` 形状亦覆盖）。
+  'music_acoustid_api_key',
   // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
   'music_audio_device',
   // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。
@@ -401,6 +404,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_replaygain_preamp_db',
   // double（默认 1.0）：音乐播放速度（变速不变调）。
   'music_speed',
+  // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
+  'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。

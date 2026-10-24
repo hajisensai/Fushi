@@ -204,6 +204,10 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
     }
   });
 
+  /// 全部专辑行（含没有在库曲目的），数据根迁移改写 `cover_path` 用。
+  Future<List<MusicAlbumRow>> listAllMusicAlbumsForPathRebase() =>
+      select(musicAlbums).get();
+
   /// 专辑封面换成刮削下载的本地文件（[coverPath]）。专辑已有目录封面时不动——目录图是
   /// 用户自己放的，优先级最高。返回是否写了。
   Future<bool> setMusicAlbumScrapedCover({
