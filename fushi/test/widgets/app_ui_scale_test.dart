@@ -193,7 +193,7 @@ void main() {
     expect(visual.width, 100);
   });
 
-  // BUG-3770：宽松约束（Stack 非定位子 / Align 下）时 RenderFittedBox 曾把自己缩成
+  // BUG-3773：宽松约束（Stack 非定位子 / Align 下）时 RenderFittedBox 曾把自己缩成
   // 子树尺寸 canvas = view/s，变换比例退化成 1：既不缩放，层又被撑成 canvas 大小。
   testWidgets('宽松约束下照样按 scale 缩放、层占满 view', (WidgetTester tester) async {
     const Key boxKey = Key('loose-box');

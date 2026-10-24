@@ -125,7 +125,7 @@ class FushiAppUiScale extends StatelessWidget {
         //
         // 外层 SizedBox 把本层钉成 view：宽松约束（Stack 非定位子 / Align 下）时
         // RenderFittedBox 会把自己缩成子树尺寸 canvas，变换比例退化成 1——画布按 1/s
-        // 反算了、却没放大回去，整层既不缩放又被撑成 canvas 大小（BUG-3770：浮条调轴
+        // 反算了、却没放大回去，整层既不缩放又被撑成 canvas 大小（BUG-3773：浮条调轴
         // 拖出一整块空白大板）。紧约束调用点（侧栏 / 主导航）本就是 view，不受影响。
         return SizedBox.fromSize(
           size: view,
