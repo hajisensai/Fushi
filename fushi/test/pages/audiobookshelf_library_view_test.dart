@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_library_view.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
@@ -51,6 +52,7 @@ class _Server {
   List<Map<String, Object?>> page1 = <Map<String, Object?>>[];
   List<Map<String, Object?>> searchHits = <Map<String, Object?>>[];
   List<Map<String, Object?>> inProgress = <Map<String, Object?>>[];
+  List<Map<String, Object?>> mediaProgress = <Map<String, Object?>>[];
 
   Future<http.Response> handle(http.Request request) async {
     requests.add('${request.url.path}?${request.url.query}');
@@ -99,6 +101,9 @@ class _Server {
             <String, Object?>{'libraryItem': hit},
         ],
       });
+    }
+    if (path == '/api/me') {
+      return _json(<String, Object?>{'mediaProgress': mediaProgress});
     }
     if (path == '/api/me/items-in-progress') {
       return _json(<String, Object?>{'libraryItems': inProgress});
@@ -226,6 +231,33 @@ void main() {
     expect(find.text('Continue listening'), findsOneWidget);
     // 同一本书在「继续收听」行与网格里各出现一次。
     expect(find.text('Second Book'), findsNWidgets(2));
+  });
+
+  testWidgets('封面卡：听完的条目有对勾角标，听到一半的有进度条', (WidgetTester tester) async {
+    server.mediaProgress = <Map<String, Object?>>[
+      <String, Object?>{
+        'libraryItemId': 'b1',
+        'currentTime': 10,
+        'duration': 100,
+        'isFinished': true,
+      },
+      <String, Object?>{
+        'libraryItemId': 'b2',
+        'currentTime': 50,
+        'duration': 100,
+        'progress': 0.5,
+        'isFinished': false,
+      },
+    ];
+    await pumpView(tester);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          .value,
+      0.5,
+    );
+    expect(find.byIcon(FushiIcons.check), findsOneWidget);
   });
 
   testWidgets('没有进行中的条目 → 没有这一行', (WidgetTester tester) async {

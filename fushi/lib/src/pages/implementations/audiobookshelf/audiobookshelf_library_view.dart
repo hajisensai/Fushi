@@ -58,6 +58,10 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
   List<AudiobookshelfInProgressEntry> _continue =
       const <AudiobookshelfInProgressEntry>[];
 
+  /// 服务器上的收听进度，卡片据此画「已听完」角标和进度条；取不到就不画。
+  Map<String, AudiobookshelfMediaProgress> _progress =
+      const <String, AudiobookshelfMediaProgress>{};
+
   int _page = 0;
   bool _hasMore = false;
   bool _loading = true;
@@ -125,6 +129,7 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
             );
       await _loadFirstPage(generation);
       unawaited(_loadContinue(generation));
+      unawaited(_loadProgress(generation));
     } catch (e) {
       if (generation != _generation || !mounted) return;
       setState(() {
@@ -231,6 +236,20 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
     }
   }
 
+  Future<void> _loadProgress([int? knownGeneration]) async {
+    final int generation = knownGeneration ?? _generation;
+    final AudiobookshelfApi? api = _api;
+    if (api == null) return;
+    try {
+      final Map<String, AudiobookshelfMediaProgress> latest = await api
+          .allMediaProgress();
+      if (generation != _generation || !mounted) return;
+      setState(() => _progress = latest);
+    } catch (_) {
+      // 只是装饰：取不到就不画角标。
+    }
+  }
+
   /// 只有电子书 / 补充文件、确定没有音频的条目不列（点了也没法播）。
   static List<AudiobookshelfItem> _playable(
     Iterable<AudiobookshelfItem> items,
@@ -300,6 +319,7 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
     _library = null;
     _query = '';
     _continue = const <AudiobookshelfInProgressEntry>[];
+    _progress = const <String, AudiobookshelfMediaProgress>{};
     unawaited(_loadServer());
   }
 
@@ -307,16 +327,23 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
     final AudiobookshelfApi? api = _api;
     if (api == null) return;
     unawaited(
-      Navigator.of(context, rootNavigator: true).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (BuildContext _) => AudiobookshelfItemDetailPage(
-            server: _server,
-            api: api,
-            item: item,
-          ),
-        ),
-      ),
+      Navigator.of(context, rootNavigator: true)
+          .push<void>(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext _) => AudiobookshelfItemDetailPage(
+                server: _server,
+                api: api,
+                item: item,
+              ),
+            ),
+          )
+          .then((_) {
+            if (!mounted) return;
+            // 详情页里可能标了已听完 / 听了一阵：回来刷新卡片状态。
+            unawaited(_loadProgress());
+            unawaited(_loadContinue(_generation));
+          }),
     );
   }
 
@@ -453,6 +480,7 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
           api: api,
           serverId: _server.id,
           item: item,
+          progress: _progress[audiobookshelfProgressKey(item.id, null)],
           onTap: () => _openItem(item),
         );
       },
@@ -490,6 +518,7 @@ class _AudiobookshelfLibraryViewState extends State<AudiobookshelfLibraryView> {
                   api: api,
                   serverId: _server.id,
                   item: item,
+                  progress: _progress[audiobookshelfProgressKey(item.id, null)],
                   onTap: () => _openItem(item),
                 );
               }),
@@ -508,6 +537,7 @@ class _ItemCard extends StatelessWidget {
     required this.api,
     required this.serverId,
     required this.item,
+    required this.progress,
     required this.onTap,
     super.key,
   });
@@ -515,11 +545,23 @@ class _ItemCard extends StatelessWidget {
   final AudiobookshelfApi api;
   final String serverId;
   final AudiobookshelfItem item;
+
+  /// 条目本身的进度（播客没有整体进度，传 null）。
+  final AudiobookshelfMediaProgress? progress;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final AudiobookshelfMediaProgress? p = progress;
+    final bool finished = p?.isFinished ?? false;
+    final double fraction = p == null || finished
+        ? 0
+        : (p.progress ??
+                  (p.durationSeconds > 0
+                      ? p.currentTimeSeconds / p.durationSeconds
+                      : 0))
+              .clamp(0.0, 1.0);
     final String subtitle = audiobookshelfCardSubtitle(item);
     return FushiHoverLift(
       builder: (BuildContext context, bool _) => shelfCoverCard(
@@ -531,13 +573,49 @@ class _ItemCard extends StatelessWidget {
             AspectRatio(
               aspectRatio: 1,
               child: ShelfCoverFrame(
-                child: PortraitCoverImage(
-                  image: AppCachedHttpImage(
-                    api.coverUri(item.id, width: 400).toString(),
-                    cacheKey: 'abs:$serverId:${item.id}',
-                  ),
-                  errorBuilder: (_) =>
-                      const ShelfCoverPlaceholder(icon: FushiIcons.brokenImage),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    PortraitCoverImage(
+                      image: AppCachedHttpImage(
+                        api.coverUri(item.id, width: 400).toString(),
+                        cacheKey: 'abs:$serverId:${item.id}',
+                      ),
+                      errorBuilder: (_) => const ShelfCoverPlaceholder(
+                        icon: FushiIcons.brokenImage,
+                      ),
+                    ),
+                    if (finished)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: FushiIcon(
+                              FushiIcons.check,
+                              size: 14,
+                              color: Theme.of(context).colorScheme.onPrimary,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (fraction > 0)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: LinearProgressIndicator(
+                          value: fraction,
+                          minHeight: 3,
+                          backgroundColor: Colors.black38,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
