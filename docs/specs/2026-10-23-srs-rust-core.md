@@ -100,7 +100,7 @@ isolate（或核心自己的工作线程 + `SendPort` 回推）上跑，不阻�
 | P3 缓存刷新整段 | 笔记缓存行 + 卡片生成（`isAnkiCardEmpty` / cloze 序号）+ 卡片缓存行一次算完；Dart 只做预读与写 batch | `_planNote` / `_applyNotePlan` / `_cardCacheRow` | 用 P1+P2 之后的 Dart 刷新路径生成「事件集 → 缓存行」向量 | 导入 1 万笔记、`rebuildCaches`、单卡作答 |
 | P4 事件库归 Rust | Rust 自持 SQLite 连接，事务边界与写入全在 Rust；计数 / 选卡 / 牌组树改为核心命令；Drift 对 `srs_*` 只读或不碰 | `SrsDbStore` 的写路径与 `_countContext` | 同步模拟器（`simulator_test`）整套改为驱动核心；现有往返次数守卫改为「命令次数」守卫 | 作答、打开复习页、应用一批对端事件 |
 | P5 AnkiConnect 镜像收编 | 整库笔记、`_dupeNorms`、查询身份、搜索语料改为核心常驻索引，随变更事件增量更新 | handler 里的四份镜像与按请求重建 | AnkiConnect 现有契约测试 + 用镜像版生成的 `findNotes` / `canAddNotes` 向量 | Yomitan 连续 `findNotes` / `canAddNotes` 一千次 |
-| P6 统计 / 优化器 / RWKV 取数 | 统计投影、优化器训练集、`RwkvRows` 由核心按页产出 | `srs_stats_loader.dart` 的取数与 `SrsCardHistory` 循环、`srs_rwkv_history.dart` 的取数 | 用旧取数生成的统计结果 / 训练集 / RWKV 行指纹 | 打开统计页、一次优化、RWKV 全量重建 |
+| P6（已完成，见 srs-rust-store §7.1）统计 / 优化器 / RWKV 取数 | 统计投影、优化器训练集、`RwkvRows` 由核心按页产出 | `srs_stats_loader.dart` 的取数与 `SrsCardHistory` 循环、`srs_rwkv_history.dart` 的取数 | 用旧取数生成的统计结果 / 训练集 / RWKV 行指纹 | 打开统计页、一次优化、RWKV 全量重建 |
 
 P2 与 P3 可以在同一 PR 里做（它们共享预读形状）；P4 是分水岭，之前每个阶段都保持「Drift 是唯一连接、
 Rust 是纯函数内核」，事务语义不变；P4 之后 Rust 持有连接。P5 依赖 P4（常驻索引要与事务同步），

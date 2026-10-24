@@ -116,8 +116,48 @@
   两边 650–730 ms 交替持平）；收益来自两处：日志不再跨 isolate、Rust 连接的 mmap + 大页缓存（直读命令里 SQLite
   读 6.6 万行从 260–400 ms 降到约 160 ms；`opt-level` 3 / z 无差别）。
 
+### 7.1 P6：统计 / 优化器 / RWKV 取数收编（2026-10-24）
+
+三处「把整份历史读进 Dart 再算」改成 Rust 在 srs.db 的**读连接**上一个读事务里直读日志 + 服务器时刻、选取、投影，
+只把结果列交回 Dart（`native/fushi_fsrs/src/store/projections.rs`，规则在 `src/projection.rs`）。读连接 = 只看
+已提交的行、不挡写连接上的作答；血统与数字 id 仍由 Dart 给出（与缓存刷新的 `history_states` 同一形态，只预读修改记录）。
+
+| 路径 | 命令 | 交回 Dart 的东西 | 删掉的 Dart |
+|---|---|---|---|
+| 优化器训练集（`srsPrepareOptimization`） | `ffsrs_store_optimizer_items` | 列式训练集（每张进训练集的卡一条评审序列 + 按时刻排好的前缀条目），`SrsTrainingSet` 一块字节跨 isolate，拟合用的后台 isolate 里才展开 | `store.histories` 循环、`_timeUncertain`、逐卡 `srsCollectMemoryInput` |
+| RWKV 全量回放 / 增量追加 / 排队此刻行（`SrsRwkvService`） | `ffsrs_store_rwkv_rows`（逐卡 / 全量）、`ffsrs_store_rwkv_log_tail`、`ffsrs_rwkv_now_rows` | `RwkvRows` 同布局的字节（全量已按时刻排好）、指纹与日志尾巴 | 整个 `srs_rwkv_history.dart`（保留评分 / card_type / 间隔 / 行构建 / 排序）、服务里 4 条 SQL 与「读完再核对、丢卡重读」循环 |
+| 统计页（`loadSrsStats`） | `ffsrs_store_stats_reviews` | 每卡记忆状态 + 每条有效日志 8 列 | 全表 `db.select` + 逐卡 `SrsCardHistory`；投影 `srsStatsFromLogs` 仍在 Dart |
+| 记忆状态输入（排程 `SrsCardOps` 也用） | `ffsrs_memory_input`（列模式） | 评审序列与起点 | `srsElapsedDays`、`srsIsReset`、`srsIsRestoreState`、`_fromAnchor` / `_lastAnchor` |
+
+- 回归向量：`packages/fushi_engine/test/srs/fixtures/p6_vectors.json.gz` 与
+  `packages/fushi_srs/test/memory/fixtures/memory_input_vectors.json.gz` 由删除前的 Dart 实现生成（脚本留档
+  `gen_p6_vectors.dart.txt`），1200 份随机历史 × 四种日界；`srs_p6_vectors_test.dart` 把日志写进真实 srs.db 经命令取回逐条比
+  （训练条目、回放行逐字节、此刻行逐字节、统计投影与记忆状态），`memory_input_vectors_test.dart` 钉列模式三种算法。
+- RWKV 全量回放的指纹与回放行出自同一条语句（同一快照），列卡之后才新建的卡由 Rust 作为「漏卡」报出、补进再取，
+  取代原来「读完核对指纹 → 丢掉有新日志的卡重读」的五轮循环。
+- **行为差异（有意）**：统计页以前构造 `SrsCardHistory` 时不带服务器时刻（不钳位排序键），与缓存刷新 / `histories()` 的
+  选取不一致；现在与它们同一套（含钳位）。只影响有被钳位日志、且钳位改变了有效顺序的卡。
+- 日志 ID 排序 / 时刻并列：训练条目按评分时刻**稳定**排序（同刻按卡的输入顺序）；旧实现用 Dart 的不稳定 `List.sort`，
+  并列时的先后本来就不确定。
+
+实测（Windows x64，`FUSHI_SRS_P6_BENCH=<笔记数> dart test test/srs/srs_p6_projection_bench_test.dart`，每卡 10 条日志，
+三轮；改前 = `fce7dacc18`（只加了向量与 bench，取数代码与 `9320259ca4` 相同；实测在它 rebase 前的同内容提交上跑），改后 = 本阶段；同一时段新旧交替各跑两遍）。
+计的是调用方看到的整段耗时：优化器 = 每个参数归属牌组一次准备 + 训练集送进后台 isolate 展开；RWKV = `rebuild()`
+一次全量回放（后端是只收行的替身）；统计 = `loadSrsStats` 一次。
+
+| 规模 | 操作 | 改前 | 改后 |
+|---|---|---:|---:|
+| 3000 笔记 / 6000 卡 / 6 万日志 | 优化器准备 + 跨 isolate | 1615–1950 ms | 544–780 ms |
+| | RWKV 全量回放 | 1194–1455 ms | 563–792 ms |
+| | 统计页装载 | 1322–1592 ms | 709–907 ms |
+| 10000 笔记 / 20000 卡 / 20 万日志 | 优化器准备 + 跨 isolate | 4802–6303 ms | 1490–2286 ms |
+| | RWKV 全量回放 | 3465–4638 ms | 1944–2736 ms |
+| | 统计页装载 | 4402–5187 ms | 2182–2919 ms |
+
 仍未收编（下一步）：
-- 统计页（`srs_stats_loader.dart`）、RWKV 全量回放（`srs_rwkv_service.dart` / `srs_rwkv_history.dart`）、优化器训练集
-  （`srs_optimizer.dart`）仍把整份历史读进 Dart；按「Rust 直读、只回需要的列」逐个改成命令。
-- 这几处与 Lapis 迁移里还有直接 SQL，`srs_store_ownership_guard_test` 按文件白名单放行；改成命令后从白名单删掉。
+- 优化器的拟合 / 评估仍走 `ffsrs_compute_parameters` / `ffsrs_call` 的 JSON 请求（训练集在后台 isolate 展开成
+  `List<List<SrsFsrsReview>>` 再编码，一轮最多 6 次）；下一步给引擎加列式入口直接吃 `SrsTrainingSet` 的字节。
+- 统计页的笔记缓存行 / 卡缓存行 / 笔记物化仍经 Drift 执行器读；统计投影（`srsStatsFromLogs`）与可提取度分组留在 Dart。
+- 血统（字段寄存器内核）仍由 Dart 预读修改记录后给出；搬进 Rust 后这几条命令可以只收卡 ID。
+- Lapis 迁移里还有直接 SQL，`srs_store_ownership_guard_test` 按文件白名单放行。
 - 写路径（事件落库、支配判定、写入者状态）仍是 Dart 组语句、Rust 执行；收编为 Rust 事务命令后删除 Dart 的 `runExclusive`。
