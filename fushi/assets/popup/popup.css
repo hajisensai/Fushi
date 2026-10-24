@@ -476,6 +476,23 @@ html {
     margin-top: 0;
 }
 
+/* 用户 10-23：元数据列换到词头下方时铺满整行（含按钮组下方），不再只占左簇那一截。
+   .meta-stacked 由 popup.js updateEntryHeaderMetaLayout 按「词头 + 按钮组放得下、再加
+   14em 元数据列放不下」挂上：左簇拆成 contents，词头与按钮组同一行，元数据列独占下一行。 */
+.entry-header.meta-stacked {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+
+.entry-header.meta-stacked > .entry-header-main {
+    display: contents;
+}
+
+.entry-header.meta-stacked .entry-header-meta {
+    order: 1;
+    flex: 1 1 100%;
+}
+
 .expression {
     font-size: 26px;
     cursor: pointer;
@@ -1070,6 +1087,12 @@ html.global-lookup .mine-button:not(:disabled) {
 .entry-tags {
     margin-top: -4px;
     -webkit-user-select: none;
+}
+
+/* 词形标签收进词头元数据列（用户 10-23）时跟在频率 / 音调后面：不再往上拽贴词头，
+   与列内其它 section 同一行距（2px，tag-row 自带 3px）。列首照旧由 :first-child 归零。 */
+.entry-header-meta > .entry-tags:not(:first-child) {
+    margin-top: 2px;
 }
 
 .tag-row {
@@ -3202,6 +3225,10 @@ html.fushi-m3e .entry-current .entry-header::before {
    行之间 8。chip 一律 inline-flex 垂直居中——不再靠各自的 line-height / padding 凑高度，
    所以音调行的「N 本辞典」与读音 [n] 落在同一条中线上。 */
 html.fushi-m3e .entry-tags {
+    margin-top: 8px;
+}
+
+html.fushi-m3e .entry-header-meta > .entry-tags:not(:first-child) {
     margin-top: 8px;
 }
 
