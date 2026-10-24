@@ -149,10 +149,12 @@ void main() {
     final String cmake = File('$pkg/windows/CMakeLists.txt').readAsStringSync();
     // `-mkvdts1` must stay in the pinned archive name; later rebuild tags
     // (`-dovi1` Dolby Vision reshaping, `-ffu1` unified FFmpeg, `-dvd1` DVD
-    // menus) may follow it.
+    // menus, `-rdisc1` remote discs) may follow it.
     expect(
       cmake,
-      matches(RegExp(r'-mkvdts1(-dovi\d+)?(-ffu\d+)?(-dvd\d+)?\.7z"')),
+      matches(
+        RegExp(r'-mkvdts1(-dovi\d+)?(-ffu\d+)?(-dvd\d+)?(-rdisc\d+)?\.7z"'),
+      ),
     );
   });
 
@@ -239,7 +241,8 @@ void main() {
       );
     }
     int abis = 0;
-    for (final ({String abi, String contents, String codec}) lib in verifiedAndroidLibmpv()) {
+    for (final ({String abi, String contents, String codec}) lib
+        in verifiedAndroidLibmpv()) {
       abis++;
       expect(
         lib.contents,
