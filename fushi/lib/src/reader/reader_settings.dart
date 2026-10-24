@@ -61,7 +61,7 @@ enum FontTarget {
   /// 复习（SRS）「Fushi 卡片」卡面的字体：卡面是 WebView 渲染，整条字体链按
   /// 字形回落，语义与 [body]（阅读器正文）相同——不是 native 单字体表面。
   /// 五平台通用。
-  srsCard
+  srsCard,
 }
 
 /// 这个用途在当前平台**是否真有消费端**。
@@ -71,14 +71,13 @@ enum FontTarget {
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
-      FontTarget.gameLookup || FontTarget.floatingLyric => Platform.isWindows,
-      FontTarget.appUi ||
-      FontTarget.body ||
-      FontTarget.dictionary ||
-      FontTarget.videoSubtitle ||
-      FontTarget.srsCard =>
-        true,
-    };
+  FontTarget.gameLookup || FontTarget.floatingLyric => Platform.isWindows,
+  FontTarget.appUi ||
+  FontTarget.body ||
+  FontTarget.dictionary ||
+  FontTarget.videoSubtitle ||
+  FontTarget.srsCard => true,
+};
 
 /// All reader display/behavior settings, decoupled from the media source.
 ///
@@ -286,6 +285,16 @@ class ReaderSettings {
   Future<void> setLyricsPanelMirrored(bool v) =>
       _set<bool>('lyrics_panel_mirrored', v);
 
+  /// 歌词模式次要按钮布局 JSON（`LyricsControlLayout`）：宽屏 / 窄屏各一份，
+  /// 空串 = 出厂布局。
+  String get lyricsControlLayout => _get<String>('lyrics_control_layout', '');
+  Future<void> setLyricsControlLayout(String v) =>
+      _set<String>('lyrics_control_layout', v);
+  String get lyricsCompactControlLayout =>
+      _get<String>('lyrics_control_layout_compact', '');
+  Future<void> setLyricsCompactControlLayout(String v) =>
+      _set<String>('lyrics_control_layout_compact', v);
+
   /// 有声书正文当前句是否铺底色。默认 `true` = 历史行为；关掉后只靠
   /// [audioHighlightTextColor]（未设时用高亮色本身）给字上色、不加底色。
   bool get audioHighlightBackground =>
@@ -435,8 +444,10 @@ class ReaderSettings {
     final dynamic raw = _cache['hide_furigana'];
     final bool? legacy = raw is bool ? raw : null;
     if (legacy != null) {
-      final String oldStyle =
-          _get<String>('furigana_style', 'partial').toLowerCase();
+      final String oldStyle = _get<String>(
+        'furigana_style',
+        'partial',
+      ).toLowerCase();
       final String mode = legacy ? 'hidden' : 'off';
       final String merged = normalizeFuriganaMode(
         (legacy && (oldStyle == 'partial' || oldStyle == 'toggle'))
@@ -449,9 +460,7 @@ class ReaderSettings {
       _db.deletePref('${_prefix}furigana_style');
       return merged;
     }
-    return normalizeFuriganaMode(
-      _get<String>('furigana_mode', 'off'),
-    );
+    return normalizeFuriganaMode(_get<String>('furigana_mode', 'off'));
   }
 
   Future<void> setFuriganaMode(String v) =>
@@ -562,10 +571,8 @@ class ReaderSettings {
 
   int get lookupAudioVolume =>
       _get<int>('lookup_audio_volume', 100).clamp(0, 100).toInt();
-  Future<void> setLookupAudioVolume(num value) => _set<int>(
-        'lookup_audio_volume',
-        normalizeLookupAudioVolume(value),
-      );
+  Future<void> setLookupAudioVolume(num value) =>
+      _set<int>('lookup_audio_volume', normalizeLookupAudioVolume(value));
 
   double get dismissSwipeSensitivity =>
       _get<double>('dismiss_swipe_sensitivity', 0.6);
@@ -583,9 +590,9 @@ class ReaderSettings {
   /// 用顶栏 X 兜底；触摸为主的平台（macOS/iOS/Android）默认开启。未持久化覆盖时
   /// 回退到 [defaultSwipeToClose]，让"换平台即取该平台默认"成立。
   bool get enableSwipeToClose => _get<bool>(
-        'enable_swipe_to_close',
-        defaultSwipeToClose(defaultTargetPlatform),
-      );
+    'enable_swipe_to_close',
+    defaultSwipeToClose(defaultTargetPlatform),
+  );
   Future<void> setEnableSwipeToClose(bool v) =>
       _set<bool>('enable_swipe_to_close', v);
 
@@ -641,10 +648,8 @@ class ReaderSettings {
     return defaultSwipePageTurnSensitivity;
   }
 
-  Future<void> setSwipePageTurnSensitivity(double v) => _set<double>(
-        swipeSensitivityKey,
-        normalizeSwipePageTurnSensitivity(v),
-      );
+  Future<void> setSwipePageTurnSensitivity(double v) =>
+      _set<double>(swipeSensitivityKey, normalizeSwipePageTurnSensitivity(v));
 
   /// 基础滑动翻页阈值：纯距离触发 [baseSwipeDistPx]，配合速度的快速短滑触发
   /// [baseSwipeFastDistPx] + [baseSwipeFastVelocityPxPerSec]。灵敏度 1.0 = 24 / 12 / 300。
@@ -687,7 +692,7 @@ class ReaderSettings {
   /// 半径、swipe 判的是**净位移**，而轨迹半径恒 ≥ 净位移，所以只要 `dist > tapSlopPx`
   /// 两者就不可能同时命中。
   static ({int dist, int fastDist, int fastVelocity})
-      swipePageTurnDistThresholds(double sensitivity) {
+  swipePageTurnDistThresholds(double sensitivity) {
     final double s = normalizeSwipePageTurnSensitivity(sensitivity);
     return (
       dist: (baseSwipeDistPx / s).round().clamp(tapSlopPx + 1, 600),
@@ -773,12 +778,13 @@ class ReaderSettings {
   // (centered between left/right 96px insets). Normalized on read so an
   // unexpected stored value degrades to 'center'.
   static String normalizeTopProgressPosition(String value) => switch (value) {
-        'left' || 'center' || 'right' => value,
-        _ => 'center',
-      };
+    'left' || 'center' || 'right' => value,
+    _ => 'center',
+  };
 
   String get topProgressPosition => normalizeTopProgressPosition(
-      _get<String>('top_progress_position', 'center'));
+    _get<String>('top_progress_position', 'center'),
+  );
   Future<void> setTopProgressPosition(String v) =>
       _set<String>('top_progress_position', normalizeTopProgressPosition(v));
 
@@ -800,8 +806,8 @@ class ReaderSettings {
   /// 顶部与底栏共用同一个值。默认 [kDefaultAutoHideChromeMillis]（3000ms），可调滑块
   /// 1000–10000，越界值经 [normalizeAutoHideChromeMillis] 归一。
   int get autoHideChromeMillis => normalizeAutoHideChromeMillis(
-        _get<int>('auto_hide_chrome_millis', kDefaultAutoHideChromeMillis),
-      );
+    _get<int>('auto_hide_chrome_millis', kDefaultAutoHideChromeMillis),
+  );
   Future<void> setAutoHideChromeMillis(int v) =>
       _set<int>('auto_hide_chrome_millis', normalizeAutoHideChromeMillis(v));
 
@@ -827,7 +833,9 @@ class ReaderSettings {
   bool get invertAudiobookSkipDirection =>
       _get<bool>('invert_audiobook_skip_direction', false);
   Future<void> toggleInvertAudiobookSkipDirection() => _set<bool>(
-      'invert_audiobook_skip_direction', !invertAudiobookSkipDirection);
+    'invert_audiobook_skip_direction',
+    !invertAudiobookSkipDirection,
+  );
 
   // ── Custom fonts (catalog + per-target refs) ─────────────────────
   //
@@ -873,7 +881,7 @@ class ReaderSettings {
     fontKeyVideoSubtitle,
     fontKeyGameLookup,
     fontKeyFloatingLyric,
-    fontKeySrsCard
+    fontKeySrsCard,
   ];
 
   bool get _hasAnyFontPrefs =>
@@ -912,7 +920,7 @@ class ReaderSettings {
       if (_cache.containsKey(fontKeyFloatingLyric))
         fontKeyFloatingLyric: _legacyFontListForKey(fontKeyFloatingLyric),
       if (_cache.containsKey(fontKeySrsCard))
-        fontKeySrsCard: _legacyFontListForKey(fontKeySrsCard)
+        fontKeySrsCard: _legacyFontListForKey(fontKeySrsCard),
     };
   }
 
@@ -972,8 +980,11 @@ class ReaderSettings {
         await _db.setPref('$_prefix$key', _cache[key] as String);
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderSettings.fontCatalog.write', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderSettings.fontCatalog.write',
+        e,
+        stack,
+      );
       debugPrint('[ReaderSettings] write error: $e');
     }
   }
@@ -1014,8 +1025,11 @@ class ReaderSettings {
 
     final dynamic catalog = _cache[fontCatalogKey];
     if (catalog is String) {
-      final ({String json, int relocated}) r =
-          relocateMissingFontCatalogPaths(catalog, currentFontsDir, exists);
+      final ({String json, int relocated}) r = relocateMissingFontCatalogPaths(
+        catalog,
+        currentFontsDir,
+        exists,
+      );
       if (r.relocated > 0) {
         _cache[fontCatalogKey] = r.json;
         await _db.setPref('$_prefix$fontCatalogKey', r.json);
@@ -1026,8 +1040,11 @@ class ReaderSettings {
     for (final String key in _fontTargetKeys) {
       final dynamic raw = _cache[key];
       if (raw is! String) continue;
-      final ({String json, int relocated}) r =
-          relocateMissingFontListPaths(raw, currentFontsDir, exists);
+      final ({String json, int relocated}) r = relocateMissingFontListPaths(
+        raw,
+        currentFontsDir,
+        exists,
+      );
       if (r.relocated > 0) {
         _cache[key] = r.json;
         await _db.setPref('$_prefix$key', r.json);
@@ -1098,7 +1115,7 @@ class ReaderSettings {
         FontTarget.videoSubtitle => videoSubtitleFonts,
         FontTarget.gameLookup => gameLookupFonts,
         FontTarget.floatingLyric => floatingLyricFonts,
-        FontTarget.srsCard => srsCardFonts
+        FontTarget.srsCard => srsCardFonts,
       };
 
   /// CSS font-family string and @font-face declarations for the BODY fonts.
@@ -1139,14 +1156,14 @@ class ReaderSettings {
 
   /// Resolves the persistence key backing a [FontTarget].
   static String fontKeyForTarget(FontTarget target) => switch (target) {
-        FontTarget.body => fontKeyBody,
-        FontTarget.appUi => fontKeyAppUi,
-        FontTarget.dictionary => fontKeyDictionary,
-        FontTarget.videoSubtitle => fontKeyVideoSubtitle,
-        FontTarget.gameLookup => fontKeyGameLookup,
-        FontTarget.floatingLyric => fontKeyFloatingLyric,
-        FontTarget.srsCard => fontKeySrsCard
-      };
+    FontTarget.body => fontKeyBody,
+    FontTarget.appUi => fontKeyAppUi,
+    FontTarget.dictionary => fontKeyDictionary,
+    FontTarget.videoSubtitle => fontKeyVideoSubtitle,
+    FontTarget.gameLookup => fontKeyGameLookup,
+    FontTarget.floatingLyric => fontKeyFloatingLyric,
+    FontTarget.srsCard => fontKeySrsCard,
+  };
 
   /// Persists the whole list for [target]. The body convenience overload
   /// [setCustomFonts] preserves the pre-split call sites unchanged.
@@ -1170,23 +1187,26 @@ class ReaderSettings {
     required String name,
     String? path,
   }) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     list.add(<String, dynamic>{'name': name, 'path': path, 'enabled': true});
     await setFontsForTarget(target, list);
   }
 
   Future<void> removeFontForTarget(FontTarget target, int index) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     if (index < 0 || index >= list.length) return;
     list.removeAt(index);
     await setFontsForTarget(target, list);
   }
 
   Future<void> toggleFontForTarget(FontTarget target, int index) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     if (index < 0 || index >= list.length) return;
     list[index]['enabled'] = !(list[index]['enabled'] as bool? ?? true);
     await setFontsForTarget(target, list);
@@ -1197,8 +1217,9 @@ class ReaderSettings {
     int oldIndex,
     int newIndex,
   ) async {
-    final List<Map<String, dynamic>> list =
-        List<Map<String, dynamic>>.from(fontsForTarget(target));
+    final List<Map<String, dynamic>> list = List<Map<String, dynamic>>.from(
+      fontsForTarget(target),
+    );
     if (newIndex > oldIndex) newIndex--;
     if (oldIndex < 0 ||
         oldIndex >= list.length ||
@@ -1239,8 +1260,9 @@ class ReaderCustomFontCss {
         .where((String path) => path.isNotEmpty)
         .map(p.canonicalize)
         .toSet();
-    final Iterable<Map<String, dynamic>> enabled =
-        fonts.where((e) => e['enabled'] as bool? ?? true);
+    final Iterable<Map<String, dynamic>> enabled = fonts.where(
+      (e) => e['enabled'] as bool? ?? true,
+    );
     final List<String> families = <String>[];
     final List<String> faces = <String>[];
     for (final Map<String, dynamic> e in enabled) {
@@ -1252,8 +1274,10 @@ class ReaderCustomFontCss {
         families.add(cssFontFamilyName(normalizedName));
         continue;
       }
-      final String? safePath =
-          safeFontPath(fontPath, allowedRoots: allowedRoots);
+      final String? safePath = safeFontPath(
+        fontPath,
+        allowedRoots: allowedRoots,
+      );
       if (safePath == null) {
         continue;
       }
@@ -1268,10 +1292,7 @@ class ReaderCustomFontCss {
         'font-display: swap; }',
       );
     }
-    return (
-      fontFamily: families.join(', '),
-      fontFaces: faces.join('\n'),
-    );
+    return (fontFamily: families.join(', '), fontFaces: faces.join('\n'));
   }
 
   /// 关闭字重合成的声明：**只**给查词弹窗用（它的粗体是纯装饰性的词头 / 标签强调，
@@ -1311,7 +1332,7 @@ class ReaderCustomFontCss {
   /// (mtime, size) 内容键的进程内缓存：阅读器每次重建样式都会走 [build]，
   /// 同一文件只读一次表头。文件原地覆盖时 mtime/size 变，自动失效。
   static final Map<String, ({int mtimeUs, int size, FontFaceWeight? weight})>
-      _faceWeightCache =
+  _faceWeightCache =
       <String, ({int mtimeUs, int size, FontFaceWeight? weight})>{};
 
   static FontFaceWeight? _cachedFaceWeight(String path) {
@@ -1331,7 +1352,11 @@ class ReaderCustomFontCss {
       return cached.weight;
     }
     final FontFaceWeight? weight = readFontFaceWeightSync(path);
-    _faceWeightCache[path] = (mtimeUs: mtimeUs, size: stat.size, weight: weight);
+    _faceWeightCache[path] = (
+      mtimeUs: mtimeUs,
+      size: stat.size,
+      weight: weight,
+    );
     return weight;
   }
 
@@ -1341,8 +1366,9 @@ class ReaderCustomFontCss {
 
   static String cssFontFamilyName(String name) {
     final String normalized = normalizedFontFamilyName(name);
-    final String escaped =
-        normalized.replaceAll('\\', r'\\').replaceAll('"', r'\"');
+    final String escaped = normalized
+        .replaceAll('\\', r'\\')
+        .replaceAll('"', r'\"');
     return '"$escaped"';
   }
 
@@ -1356,8 +1382,10 @@ class ReaderCustomFontCss {
         .map(p.canonicalize)
         .toList();
     if (roots.isNotEmpty &&
-        !roots.any((String root) =>
-            canonicalPath == root || p.isWithin(root, canonicalPath))) {
+        !roots.any(
+          (String root) =>
+              canonicalPath == root || p.isWithin(root, canonicalPath),
+        )) {
       return null;
     }
     return canonicalPath;

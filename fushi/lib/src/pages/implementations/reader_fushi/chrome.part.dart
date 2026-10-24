@@ -88,8 +88,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 连续模式无关。放在在飞判定之后的话，换章加载期到达的输入会绕过限速直接入队，
     // 落定后一次性连翻，等于用户配的速率对跨章不生效。
     if (throttleMs > 0 && _lastPaginateTime != null) {
-      final int elapsedMs =
-          DateTime.now().difference(_lastPaginateTime!).inMilliseconds;
+      final int elapsedMs = DateTime.now()
+          .difference(_lastPaginateTime!)
+          .inMilliseconds;
       if (elapsedMs < throttleMs) return;
     }
     // 过了节流 = 这一次输入被**接受**，占掉一个翻页配额，所以此刻就 stamp——哪怕它
@@ -156,8 +157,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (uri == null || _extractDir == null) return null;
     if (uri.host != ReaderFushiSource.kHost) return null;
     if (!uri.path.startsWith('/epub/')) return null;
-    final String epubPath =
-        Uri.decodeComponent(uri.path.substring('/epub/'.length));
+    final String epubPath = Uri.decodeComponent(
+      uri.path.substring('/epub/'.length),
+    );
     // BUG-1218：真实路径保留大小写（越界判据仍走 canonicalize），否则大小写敏感
     // 平台上图片查看器/分享取不到 EPUB 内插图。
     final String joined = p.join(_extractDir!, epubPath);
@@ -254,7 +256,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 乘界面缩放，否则视觉尺寸是 scale²。详见上方 _showReaderImageContextMenu 注释。
       final Offset anchor = overlay.globalToLocal(globalPosition);
 
-      final bool hasAudio = _audiobookController != null &&
+      final bool hasAudio =
+          _audiobookController != null &&
           _audiobookController!.chapterCueCount > 0;
 
       final List<PopupMenuEntry<String>> items = <PopupMenuEntry<String>>[
@@ -377,7 +380,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
             return;
           }
           await _toggleFavoriteSentence(
-              selection: favoriteSelection, selectionSection: favoriteSection);
+            selection: favoriteSelection,
+            selectionSection: favoriteSection,
+          );
           await _clearReaderAppSelection();
           return;
         case 'export':
@@ -402,8 +407,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _handleSelectionMenu(ReaderSelectionData data) async {
     if (!mounted) return;
     final ModalRoute<Object?>? owner = ModalRoute.of(context);
-    if (_sideSheetOpen || _appearanceSheetOpen ||
-        _studyClockModalDepth > 0 || (owner != null && !owner.isCurrent)) {
+    if (_sideSheetOpen ||
+        _appearanceSheetOpen ||
+        _studyClockModalDepth > 0 ||
+        (owner != null && !owner.isCurrent)) {
       // A delayed WebView message must not recreate controls over another route.
       await _clearReaderAppSelection();
       return;
@@ -488,11 +495,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
     } else if (gripsRect != null) {
       gripBoxes.add(gripsRect);
     }
-    final Rect selectionRect = mapToOverlay(data.rect) ??
+    final Rect selectionRect =
+        mapToOverlay(data.rect) ??
         gripsRect ??
         Rect.fromLTWH(0, overlaySize.height / 2, 0, 0);
 
-    final bool hasAudio = _audiobookController != null &&
+    final bool hasAudio =
+        _audiobookController != null &&
         _audiobookController!.chapterCueCount > 0;
     final ThemeData theme = Theme.of(overlayContext);
     final bool glass = isGlassDesign(overlayContext);
@@ -505,27 +514,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
       IconData icon,
       String label,
       String action,
-    ) =>
-        ReaderSelectionActionItem(
-          icon: icon,
-          label: label,
-          onPressed: () => unawaited(_runSelectionAction(action)),
-        );
+    ) => ReaderSelectionActionItem(
+      icon: icon,
+      label: label,
+      onPressed: () => unawaited(_runSelectionAction(action)),
+    );
 
     final List<ReaderSelectionActionItem> actionItems =
         <ReaderSelectionActionItem>[
-      item(FushiIcons.search, t.search, 'search'),
-      item(FushiIcons.copy, t.copy, 'copy'),
-      if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
-      if (isAndroidPlatform)
-        item(
-          FushiIcons.travelExplore,
-          t.selection_web_search,
-          'webSearch',
-        ),
-      item(FushiIcons.star, t.action_favorite, 'favorite'),
-      if (hasAudio) item(FushiIcons.video, t.audiobook_export_clip, 'export'),
-    ];
+          item(FushiIcons.search, t.search, 'search'),
+          item(FushiIcons.copy, t.copy, 'copy'),
+          if (isAndroidPlatform) item(FushiIcons.share, t.share, 'share'),
+          if (isAndroidPlatform)
+            item(FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
+          item(FushiIcons.star, t.action_favorite, 'favorite'),
+          if (hasAudio)
+            item(FushiIcons.video, t.audiobook_export_clip, 'export'),
+        ];
 
     // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
     // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
@@ -547,14 +552,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
                     alignment: Alignment.center,
                     child: GlassContainer(
                       useOwnLayer: true,
-                      quality: fushiGlassQuality(overlayContext, prominent: true),
-                      settings:
-                          fushiGlassSettingsOverPlatformView(overlayContext),
+                      quality: fushiGlassQuality(
+                        overlayContext,
+                        prominent: true,
+                      ),
+                      settings: fushiGlassSettingsOverPlatformView(
+                        overlayContext,
+                      ),
                       shape: const LiquidRoundedSuperellipse(
                         borderRadius: barHeight / 2,
                       ),
-                      platformViewBackdrop:
-                          fushiGlassOverPlatformView(overlayContext),
+                      platformViewBackdrop: fushiGlassOverPlatformView(
+                        overlayContext,
+                      ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4.0),
                         child: ReaderGlassSelectionActionRow(
@@ -568,7 +578,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 },
               )
             : ReaderSelectionActionBar(
-                color: theme.popupMenuTheme.color ??
+                color:
+                    theme.popupMenuTheme.color ??
                     theme.colorScheme.surfaceContainerHigh,
                 items: actionItems,
               ),
@@ -627,7 +638,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return;
       case 'favorite':
         await _toggleFavoriteSentence(
-            selection: data, selectionSection: selectionSection);
+          selection: data,
+          selectionSection: selectionSection,
+        );
         await _clearReaderAppSelection();
         return;
       case 'export':
@@ -656,8 +669,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
         source: ReaderSelectionScripts.clearInvocation(),
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.clearReaderAppSelection', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.clearReaderAppSelection',
+        e,
+        stack,
+      );
     }
   }
 
@@ -683,8 +699,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // eval 抛 MissingPluginException / TypeError，且本方法被菜单 fire-and-forget 调用，
       // 异常会逃当前 zone。失败退回 null —— 菜单「查词」调用方据此用 selectedText 兜底
       // 补满 currentSentence 非空契约，导出路径走空选区文案。
-      ErrorLogService.instance
-          .log('ReaderFushi.fillLookupStateFromNativeSelection.eval', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.fillLookupStateFromNativeSelection.eval',
+        e,
+        stack,
+      );
       return null;
     }
     if (!mounted) return null;
@@ -756,13 +775,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
     _cachedSelectionRange =
         (data.normalizedOffset != null && data.normalizedLength != null)
-            ? (
-                offset: data.normalizedOffset!,
-                length: data.normalizedLength!,
-                text: data.text,
-              )
-            : null;
-    _cachedSentenceRange = (data.sentenceNormalizedOffset != null &&
+        ? (
+            offset: data.normalizedOffset!,
+            length: data.normalizedLength!,
+            text: data.text,
+          )
+        : null;
+    _cachedSentenceRange =
+        (data.sentenceNormalizedOffset != null &&
             data.sentenceNormalizedLength != null)
         ? (
             offset: data.sentenceNormalizedOffset!,
@@ -782,10 +802,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// [_exportAudiobookClip] 导出链（四类边界兜底：空选区 / 无音频 / 跨章跨文件 / 可导出
   /// 原样生效）。与桌面右键 / 原生 ActionMode 的「导出片段」共用同一后端动作。
   Future<void> _exportAudiobookClipFromSelectionData(
-      ReaderSelectionData data) async {
+    ReaderSelectionData data,
+  ) async {
     if (data.text.isEmpty) {
       FushiToast.show(
-          msg: t.audiobook_export_clip_no_text, severity: ToastSeverity.error);
+        msg: t.audiobook_export_clip_no_text,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await _fillLookupStateFromSelectionData(data, extractNativeImages: false);
@@ -803,8 +826,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
         source: 'window.fushiSelection.hideSelectionHandles()',
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.hideReaderSelectionHandles', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.hideReaderSelectionHandles',
+        e,
+        stack,
+      );
     }
   }
 
@@ -814,7 +840,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// （复用 [downsampleCardScreenshot] 护体积）。裸矢量 `.svg` 文件 `Image.memory` 无法
   /// 解码 → 跳过并记日志（光栅封面 <svg><image> 的内层位图已由 JS 侧解析为真实位图 URL）。
   Future<List<({int normOffset, Uint8List bytes})>>
-      _extractSelectionClipImages() async {
+  _extractSelectionClipImages() async {
     final InAppWebViewController? controller = _surfaceController;
     if (controller == null) {
       return const <({int normOffset, Uint8List bytes})>[];
@@ -825,8 +851,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
         source: ReaderSelectionScripts.nativeSelectionImagesInvocation(),
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('ReaderFushi.extractSelectionClipImages.eval', e, stack);
+      ErrorLogService.instance.log(
+        'ReaderFushi.extractSelectionClipImages.eval',
+        e,
+        stack,
+      );
       return const <({int normOffset, Uint8List bytes})>[];
     }
     if (!mounted) return const <({int normOffset, Uint8List bytes})>[];
@@ -855,12 +884,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
         // 降采样护体积（长边 1000px / JPEG q90，与制卡截图同档）；小图/无法解码时
         // downsampleCardScreenshot 原样返回，绝不把有效插图变空。BUG-933：解码/编码
         // 卸到后台 isolate，避免逐张插图的纯 Dart CPU 阻塞 UI。
-        final Uint8List downsampled =
-            await downsampleCardScreenshotAsync(bytes);
+        final Uint8List downsampled = await downsampleCardScreenshotAsync(
+          bytes,
+        );
         images.add((normOffset: ref.normOffset, bytes: downsampled));
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('ReaderFushi.extractSelectionClipImages.read', e, stack);
+        ErrorLogService.instance.log(
+          'ReaderFushi.extractSelectionClipImages.read',
+          e,
+          stack,
+        );
       }
     }
     return images;
@@ -878,7 +911,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (data == null) {
       // 无选区 / 解析失败：走与 _exportAudiobookClip 空选区分支一致的兜底文案。
       FushiToast.show(
-          msg: t.audiobook_export_clip_no_text, severity: ToastSeverity.error);
+        msg: t.audiobook_export_clip_no_text,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     _exportAudiobookClip();
@@ -891,7 +926,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
       FushiToast.show(
-          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await shareImageFile(file);
@@ -901,7 +938,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final File? file = _readerImageFileForUrl(imgUrl);
     if (file == null) {
       FushiToast.show(
-          msg: t.reader_image_file_unavailable, severity: ToastSeverity.error);
+        msg: t.reader_image_file_unavailable,
+        severity: ToastSeverity.error,
+      );
       return;
     }
     await copyImageFileToClipboard(file);
@@ -926,12 +965,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
               // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
               onInvoke: isWindowsPlatform && contextMenu
                   ? (Offset position) => unawaited(
-                        _showReaderImageContextMenuAtGlobalPosition(
-                          imgUrl,
-                          position,
-                          menuContext: routeContext,
-                        ),
-                      )
+                      _showReaderImageContextMenuAtGlobalPosition(
+                        imgUrl,
+                        position,
+                        menuContext: routeContext,
+                      ),
+                    )
                   : null,
               ladder: kReaderMouseLadder,
               // 缩放查看本体与书架端插图册同一份（illustration_zoom_viewer.dart）。
@@ -958,8 +997,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     await _clearReaderAppSelection();
     if (!mounted) return;
-    final List<EpubImageRef> images =
-        await _loadBookImagesOffUiIsolate(book, _extractDir);
+    final List<EpubImageRef> images = await _loadBookImagesOffUiIsolate(
+      book,
+      _extractDir,
+    );
     if (!mounted || !identical(_book, book)) return;
     final int currentChapter = _currentChapter;
     final List<TtuTocEntry> toc = _buildTtuToc();
@@ -997,13 +1038,18 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 if (!_revealedImageKeys.add(key)) return;
                 final String? bookUid = _bookUid;
                 if (bookUid != null) {
-                  unawaited(appModel.database.markImageRevealed(
-                    bookUid,
-                    key,
-                    DateTime.now().millisecondsSinceEpoch,
-                  ));
+                  unawaited(
+                    appModel.database.markImageRevealed(
+                      bookUid,
+                      key,
+                      DateTime.now().millisecondsSinceEpoch,
+                    ),
+                  );
                 }
-                unawaited(_controller?.evaluateJavascript(source: '''
+                unawaited(
+                  _controller?.evaluateJavascript(
+                    source:
+                        '''
                   (function() {
                     var key = ${jsonEncode(key)};
                     if (window.__fushiMarkImageRevealed) {
@@ -1014,16 +1060,22 @@ extension _ReaderChrome on _ReaderFushiPageState {
                       if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
                     });
                   })();
-                '''));
+                ''',
+                  ),
+                );
               },
               onUnrevealImage: (String key) {
                 if (!_revealedImageKeys.remove(key)) return;
                 final String? bookUid = _bookUid;
                 if (bookUid != null) {
                   unawaited(
-                      appModel.database.unmarkImageRevealed(bookUid, key));
+                    appModel.database.unmarkImageRevealed(bookUid, key),
+                  );
                 }
-                unawaited(_controller?.evaluateJavascript(source: '''
+                unawaited(
+                  _controller?.evaluateJavascript(
+                    source:
+                        '''
                   (function() {
                     var key = ${jsonEncode(key)};
                     if (window.__fushiUnmarkImageRevealed) {
@@ -1034,7 +1086,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
                       if (window.__fushiImageRevealKey(el) === key) el.classList.add('blurred');
                     });
                   })();
-                '''));
+                ''',
+                  ),
+                );
               },
               fileForRef: (EpubImageRef ref) =>
                   _readerImageFileForUrl(ReaderFushiSource.epubUrl(ref.src)),
@@ -1218,10 +1272,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 同一组派生 getter；只是把「内容就绪后从未补发」这个漏洞补上。歌词模式由
   /// [_applyChromeInsets] 自身的 `_lyricsMode` 早返回挡掉（歌词走 Flutter 侧 padding）。
   void _reapplyChromeInsetsAfterFirstLoad() {
-    unawaited(_applyChromeInsets().catchError((Object e, StackTrace s) {
-      ErrorLogService.instance
-          .log('ReaderFushi.reapplyChromeInsetsAfterFirstLoad', e, s);
-    }));
+    unawaited(
+      _applyChromeInsets().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log(
+          'ReaderFushi.reapplyChromeInsetsAfterFirstLoad',
+          e,
+          s,
+        );
+      }),
+    );
   }
 
   /// TODO-975：预留高发生变化（开/关顶部进度、挤压↔悬浮切换）后，先下发新 chrome
@@ -1389,18 +1448,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       schedulePostFrame: (void Function() commit) =>
           WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
       stillAlive: () => mounted && _controller != null,
-      onBeginError: (Object e, StackTrace stack) =>
-          ErrorLogService.instance.log(
-        'ReaderFushi.reanchorContinuousForUiScale.begin',
-        e,
-        stack,
-      ),
-      onCommitError: (Object e, StackTrace stack) =>
-          ErrorLogService.instance.log(
-        'ReaderFushi.reanchorContinuousForUiScale.commit',
-        e,
-        stack,
-      ),
+      onBeginError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('ReaderFushi.reanchorContinuousForUiScale.begin', e, stack),
+      onCommitError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('ReaderFushi.reanchorContinuousForUiScale.commit', e, stack),
     );
   }
 
@@ -1447,18 +1498,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       schedulePostFrame: (void Function() commit) =>
           WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
       stillAlive: () => mounted && _controller != null,
-      onBeginError: (Object e, StackTrace stack) =>
-          ErrorLogService.instance.log(
-        'ReaderFushi.reanchorContinuousAfterRestore.begin',
-        e,
-        stack,
-      ),
-      onCommitError: (Object e, StackTrace stack) =>
-          ErrorLogService.instance.log(
-        'ReaderFushi.reanchorContinuousAfterRestore.commit',
-        e,
-        stack,
-      ),
+      onBeginError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('ReaderFushi.reanchorContinuousAfterRestore.begin', e, stack),
+      onCommitError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('ReaderFushi.reanchorContinuousAfterRestore.commit', e, stack),
       // TODO-933：恢复重锚 commit 清旗后确定性补刷一次进度。根因——_onRestoreComplete 里
       // 紧跟 _reanchorContinuousAfterRestore() 调的首发 _refreshProgress() 撞上 begin 刚同步
       // 置的 _reanchorPending=true，stableProgressInvocation 返 null → 早退 → _progressCurrentChars
@@ -1519,18 +1562,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       schedulePostFrame: (void Function() commit) =>
           WidgetsBinding.instance.addPostFrameCallback((_) => commit()),
       stillAlive: () => mounted && _controller != null,
-      onBeginError: (Object e, StackTrace stack) =>
-          ErrorLogService.instance.log(
-        'ReaderFushi.reanchorForStyleChange.begin',
-        e,
-        stack,
-      ),
-      onCommitError: (Object e, StackTrace stack) =>
-          ErrorLogService.instance.log(
-        'ReaderFushi.reanchorForStyleChange.commit',
-        e,
-        stack,
-      ),
+      onBeginError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('ReaderFushi.reanchorForStyleChange.begin', e, stack),
+      onCommitError: (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('ReaderFushi.reanchorForStyleChange.commit', e, stack),
     );
   }
 
@@ -1665,34 +1700,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 「更多」溢出菜单里的动作（布局的 overflow 槽，减去被提到常驻位的模式键）。
   List<ReaderHeaderAction> _overflowControlActions() => <ReaderHeaderAction>[
-        for (final ReaderControlItem item
-            in _renderableControlsIn(ReaderControlSlot.overflow))
-          if (item != ReaderControlItem.title &&
-              !(item == ReaderControlItem.modeToggle && _modeTogglePromoted))
-            _readerControlAction(item),
-      ];
+    for (final ReaderControlItem item in _renderableControlsIn(
+      ReaderControlSlot.overflow,
+    ))
+      if (item != ReaderControlItem.title &&
+          !(item == ReaderControlItem.modeToggle && _modeTogglePromoted))
+        _readerControlAction(item),
+  ];
 
   /// 按钮的功能分组（M3E button group 的组间留白）：0 导航类 / 1 阅读与工具类 /
   /// 2 有声书类。布局里相邻且同组的按钮并成一组。
   int _readerControlGroup(ReaderControlItem item) => switch (item) {
-        ReaderControlItem.navigation ||
-        ReaderControlItem.bookmarks ||
-        ReaderControlItem.gallery ||
-        ReaderControlItem.statistics =>
-          0,
-        ReaderControlItem.audiobook => 2,
-        _ when item.isAudiobookTransport => 2,
-        _ => 1,
-      };
+    ReaderControlItem.navigation ||
+    ReaderControlItem.bookmarks ||
+    ReaderControlItem.gallery ||
+    ReaderControlItem.statistics => 0,
+    ReaderControlItem.audiobook => 2,
+    _ when item.isAudiobookTransport => 2,
+    _ => 1,
+  };
 
   FushiToolbarItem _toolbarItem(ReaderHeaderAction a) => FushiToolbarItem(
-        icon: a.icon,
-        label: a.label,
-        tooltip: a.tooltipText,
-        onPressed: a.onPressed,
-        key: a.key,
-        semanticsId: a.semanticsId,
-      );
+    icon: a.icon,
+    label: a.label,
+    tooltip: a.tooltipText,
+    onPressed: a.onPressed,
+    key: a.key,
+    semanticsId: a.semanticsId,
+  );
 
   /// 把一串按钮按 [_readerControlGroup] 切成相邻同组的若干组。
   List<List<FushiToolbarItem>> _groupedToolbarItems(
@@ -1825,9 +1860,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ),
           pinned: true,
           semanticsId: 'fushi.reader.header.navigation',
-          onPressed: () => unawaited(
-            _showAppearanceSheet(initialSubPage: 'location'),
-          ),
+          onPressed: () =>
+              unawaited(_showAppearanceSheet(initialSubPage: 'location')),
         );
       case ReaderControlItem.bookmarks:
         return ReaderHeaderAction(
@@ -1868,7 +1902,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_study_timer_button'),
           icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
-          label: paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
+          label: paused
+              ? t.reader_stats_clock_resume
+              : t.reader_stats_clock_pause,
           tooltip: _shortcutTooltip(
             paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
             ShortcutAction.readerToggleStudyClock,
@@ -1894,9 +1930,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           semanticsId: 'fushi.reader.header.audiobook',
           // 已挂有声书（含 TTS 朗读）→ 侧栏面板；没有 → 听书入口（朗读 / 导入）。
           onPressed: _audiobookController != null
-              ? () => unawaited(
-                    _showAppearanceSheet(initialSubPage: 'audiobook'),
-                  )
+              ? () =>
+                    unawaited(_showAppearanceSheet(initialSubPage: 'audiobook'))
               : _openListenEntry,
         );
       case ReaderControlItem.fullscreen:
@@ -1916,9 +1951,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         final bool hidden = _toolbarsHidden;
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_toolbars_button'),
-          icon: hidden
-              ? FushiIcons.webAsset
-              : FushiIcons.webAssetOff,
+          icon: hidden ? FushiIcons.webAsset : FushiIcons.webAssetOff,
           label: hidden ? t.reader_toolbars_show : t.reader_toolbars_hide,
           semanticsId: 'fushi.reader.control.toolbars',
           onPressed: () => unawaited(_setHideToolbars(!hidden)),
@@ -1943,9 +1976,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.audiobookPrev:
         final int skip = ReaderFushiSource.instance.skipActionSeconds;
         return ReaderHeaderAction(
-          icon: skip == 0
-              ? FushiIcons.skipPrevious
-              : FushiIcons.fastRewind,
+          icon: skip == 0 ? FushiIcons.skipPrevious : FushiIcons.fastRewind,
           label: skip == 0 ? t.prev_sentence : '-${skip}s',
           semanticsId: 'fushi.reader.control.audiobook_prev',
           onPressed: () => unawaited(
@@ -1957,9 +1988,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.audiobookNext:
         final int skip = ReaderFushiSource.instance.skipActionSeconds;
         return ReaderHeaderAction(
-          icon: skip == 0
-              ? FushiIcons.skipNext
-              : FushiIcons.fastForward,
+          icon: skip == 0 ? FushiIcons.skipNext : FushiIcons.fastForward,
           label: skip == 0 ? t.next_sentence : '+${skip}s',
           semanticsId: 'fushi.reader.control.audiobook_next',
           onPressed: () => unawaited(
@@ -2043,7 +2072,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ];
 
   /// 底栏槽位里的一颗按钮（与顶栏同款图标按钮）。
-  Widget _readerControlButton(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
+  Widget _readerControlButton(ReaderHeaderAction a) =>
+      ReaderDesktopHeaderButton(
         key: a.key,
         icon: a.icon,
         tooltip: a.tooltipText,
@@ -2055,12 +2085,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 底栏三槽（左 / 中 / 右）排成一行：`[左…] Spacer [中…] Spacer [右…]`；
   /// 中槽为空时只剩左右两端。
   List<Widget> _bottomSlotButtons() {
-    final List<ReaderHeaderAction> left =
-        _readerControlActionsIn(ReaderControlSlot.bottomLeft);
-    final List<ReaderHeaderAction> center =
-        _readerControlActionsIn(ReaderControlSlot.bottomCenter);
-    final List<ReaderHeaderAction> right =
-        _readerControlActionsIn(ReaderControlSlot.bottomRight);
+    final List<ReaderHeaderAction> left = _readerControlActionsIn(
+      ReaderControlSlot.bottomLeft,
+    );
+    final List<ReaderHeaderAction> center = _readerControlActionsIn(
+      ReaderControlSlot.bottomCenter,
+    );
+    final List<ReaderHeaderAction> right = _readerControlActionsIn(
+      ReaderControlSlot.bottomRight,
+    );
     return <Widget>[
       for (final ReaderHeaderAction a in left) _readerControlButton(a),
       const Spacer(),
@@ -2117,7 +2150,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
             key: const ValueKey<String>('fushi_play_bar_tts_voice_switch'),
             icon: FushiIcons.voice,
             label: t.audiobook_tts_voices_section,
-            tooltip: '${t.audiobook_tts_voices_section}: '
+            tooltip:
+                '${t.audiobook_tts_voices_section}: '
                 '${ttsVoiceDisplayName(_ttsReadAlong!.preset)}',
             onPressed: () => unawaited(_openTtsVoiceQuickSwitch()),
           ),
@@ -2348,8 +2382,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // _settings 就是 ReaderFushiSource.readerSettings 本体（见 initState 绑定），
       // 面板控件经 ReaderFushiSource.instance.ttu* 实时读写同一对象，开面板前后都
       // 无需设置同步。
-      final FavoriteSentenceRepository favRepo =
-          FavoriteSentenceRepository(appModel.database);
+      final FavoriteSentenceRepository favRepo = FavoriteSentenceRepository(
+        appModel.database,
+      );
       final List<FavoriteSentence> favorites =
           await _favoriteSentencesForBook();
       // 书签列表归整个面板会话所有（可变）：面板内容按种类 key 重建时 sheet 从这份
@@ -2377,15 +2412,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
               switchOutCurve: FushiMotion.exit,
               transitionBuilder: (Widget child, Animation<double> a) =>
                   FadeTransition(
-                opacity: a,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0.04, 0),
-                    end: Offset.zero,
-                  ).animate(a),
-                  child: child,
-                ),
-              ),
+                    opacity: a,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.04, 0),
+                        end: Offset.zero,
+                      ).animate(a),
+                      child: child,
+                    ),
+                  ),
               child: KeyedSubtree(
                 key: ValueKey<String>('fushi_reader_panel_$current'),
                 child: _buildReaderPanelContent(
@@ -2434,7 +2469,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 侧板旁的面板切换工具栏（宽 / 平板档）：导航 /（有声书）/ 阅读设置 / 统计。
   ReaderPanelSwitcher _readerPanelSwitcher(ValueNotifier<String> notifier) {
-    final bool audiobook = _audiobookController != null &&
+    final bool audiobook =
+        _audiobookController != null &&
         _moduleVisibility.isEnabled(ModuleId.listening);
     return ReaderPanelSwitcher(
       current: notifier,
@@ -2666,6 +2702,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           _studyRangeForAudioFragment(f)?.offset,
       lyricsMode: _lyricsMode,
       onToggleLyricsMode: _toggleLyricsMode,
+      onOpenLyricsControlLayout: () =>
+          unawaited(_showLyricsControlLayoutEditor()),
       showFloatingLyric: appModel.showFloatingLyric,
       onToggleFloatingLyric: _toggleFloatingLyric,
       floatingLyricFontSize: appModel.floatingLyricFontSize,
@@ -2776,8 +2814,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final EpubBook? book = _book;
     if (uid == null || book == null) return;
     try {
-      final ReaderVolumeContext? ctx =
-          await loadReaderVolumeContext(db, bookUid: uid);
+      final ReaderVolumeContext? ctx = await loadReaderVolumeContext(
+        db,
+        bookUid: uid,
+      );
       if (!mounted || ctx == null) return;
       _volumeBooks.seed(ctx.current, book);
       _volumeContext = ctx;
@@ -2791,10 +2831,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final ReaderVolume v = _volumeContext!.volumes[volume];
     if (!v.canPeek) return const <TtuTocEntry>[];
     final EpubBook book = await _volumeBooks.bookFor(v);
-    return buildTtuTocForBook(
-      book,
-      autoLabel: (int n) => t.auto_chapter(n: n),
-    );
+    return buildTtuTocForBook(book, autoLabel: (int n) => t.auto_chapter(n: n));
   }
 
   ReaderTocVolumeSwitch? _tocVolumeSwitch() {
@@ -2835,9 +2872,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       },
       onOpenImage: (int volume, EpubImageRef ref, File file) =>
           _openImageViewer(
-        ReaderFushiSource.epubUrl(ref.src),
-        resolvedFile: file,
-      ),
+            ReaderFushiSource.epubUrl(ref.src),
+            resolvedFile: file,
+          ),
     );
   }
 
@@ -2876,7 +2913,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
           );
     final MediaSource? closing = appModel.currentMediaSource;
     final MediaItem? closingItem = widget.item;
-    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(
+      context,
+    );
     persistInBackground(
       persist: onSourcePagePop,
       onPersistError: (Object error, StackTrace stack) => ErrorLogService
@@ -2884,7 +2923,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
           .log('ReaderFushi.switchVolumeFlush', error, stack),
     );
     if (closing != null) {
-      await appModel.closeMedia(ref: ref, mediaSource: closing, item: closingItem);
+      await appModel.closeMedia(
+        ref: ref,
+        mediaSource: closing,
+        item: closingItem,
+      );
     }
     if (closingItem != null && messenger != null) {
       triggerAutoSyncAfterClose(
@@ -2969,7 +3012,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (toc.isEmpty) {
       return List<TtuTocEntry>.generate(
         _book!.chapters.length,
-        (i) => TtuTocEntry(index: i, label: t.auto_chapter(n: i + 1)),
+        (i) => TtuTocEntry(
+          index: i,
+          label: t.auto_chapter(n: i + 1),
+        ),
       );
     }
     // TODO-1333: 压平交给纯函数 flattenTtuTocEntries，它保留所有解析到的章、不再因
@@ -3154,8 +3200,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
     final ReaderControlLayout layout = _controlLayout;
     final List<FushiToolbarItem> leading = <FushiToolbarItem>[
-      for (final ReaderHeaderAction a
-          in _readerControlActionsIn(ReaderControlSlot.topLeft))
+      for (final ReaderHeaderAction a in _readerControlActionsIn(
+        ReaderControlSlot.topLeft,
+      ))
         _toolbarItem(a),
       if (_modeTogglePromoted)
         _toolbarItem(_readerControlAction(ReaderControlItem.modeToggle)),
@@ -3178,9 +3225,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
                 ? _currentChapterLabel()
                 : '',
             titleTooltip: t.section_navigation,
-            onTitleTap: () => unawaited(
-              _showAppearanceSheet(initialSubPage: 'location'),
-            ),
+            onTitleTap: () =>
+                unawaited(_showAppearanceSheet(initialSubPage: 'location')),
             actions: _groupedToolbarItems(
               _renderableControlsIn(ReaderControlSlot.topRight),
             ),
@@ -3239,8 +3285,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   ),
             chapterLabel: _lyricsMode ? null : _currentChapterLabel(),
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
-            invertSkip:
-                ReaderFushiSource.instance.invertAudiobookSkipDirection,
+            invertSkip: ReaderFushiSource.instance.invertAudiobookSkipDirection,
             colors: colors,
             onOpenPanel: () =>
                 unawaited(_showAppearanceSheet(initialSubPage: 'audiobook')),
@@ -3368,8 +3413,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 有声书面板「对齐文件」：打开导入对话框并预填当前音频（对话框内可选文件 /
   /// 转录），关掉后按导入后的同一条路重载音频槽。
-  Future<void> _openAlignmentImportDialog(
-      {String? initialAlignmentPath}) async {
+  Future<void> _openAlignmentImportDialog({
+    String? initialAlignmentPath,
+  }) async {
     final Audiobook? audiobook = _audiobookController?.audiobook;
     final AudiobookRepository repo = AudiobookRepository(appModel.database);
     // BUG-2208：导入 / 对齐对话框压着正文期间停表。
@@ -3410,8 +3456,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       );
       return;
     }
-    final EpubBookRow? book =
-        await appModel.database.getEpubBook(widget.bookKey);
+    final EpubBookRow? book = await appModel.database.getEpubBook(
+      widget.bookKey,
+    );
     if (!mounted) return;
     final String? srtPath = await _withStudyClockPaused(
       () => showAsrTranscribeSheet(
@@ -3478,28 +3525,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// （[_wrapBottomChromeBar]，[_statusFooterInBottomBar]）两处共用同一份，
   /// 差别只有贴右 / 居中。
   Widget _buildStatusFooterRow({required bool centered}) => ReaderStatusFooter(
-        key: const ValueKey<String>('fushi_status_footer'),
-        bottomInset: _stableBottomInset,
-        centered: centered,
-        sessionTotals: _readingSessionTotals,
-        currentChars: _progressCurrentChars,
-        totalChars: _progressTotalChars,
-        showTimer: ReaderFushiSource.instance.showReadingTimer,
-        showProgress: ReaderFushiSource.instance.showTopProgressBar,
-        textColor: _themeTextColor(),
-        // 悬浮工具栏样式：读数是一枚浮在正文上的小胶囊（与悬浮工具栏同色），整条
-        // 带透明，竖排 / 横排都没有实体底栏。
-        backgroundColor: _floatingToolbars
-            ? _floatingToolbarColors().container!
-            : _chromeSurfaceColor(),
-        floating: _floatingToolbars,
-        onTap: _anyChromeFloating
-            ? () => _handleFloatingChromeReveal()
-            : _toggleChrome,
-        // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
-        onTapTracker: _toggleStudyClockManualPause,
-        onTapProgress: _openReadingStatistics,
-      );
+    key: const ValueKey<String>('fushi_status_footer'),
+    bottomInset: _stableBottomInset,
+    centered: centered,
+    sessionTotals: _readingSessionTotals,
+    currentChars: _progressCurrentChars,
+    totalChars: _progressTotalChars,
+    showTimer: ReaderFushiSource.instance.showReadingTimer,
+    showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    textColor: _themeTextColor(),
+    // 悬浮工具栏样式：读数是一枚浮在正文上的小胶囊（与悬浮工具栏同色），整条
+    // 带透明，竖排 / 横排都没有实体底栏。
+    backgroundColor: _floatingToolbars
+        ? _floatingToolbarColors().container!
+        : _chromeSurfaceColor(),
+    floating: _floatingToolbars,
+    onTap: _anyChromeFloating
+        ? () => _handleFloatingChromeReveal()
+        : _toggleChrome,
+    // 左侧计时器 = 手动暂停 / 继续；右侧进度数字 = 打开统计浮层。
+    onTapTracker: _toggleStudyClockManualPause,
+    onTapProgress: _openReadingStatistics,
+  );
 
   /// 悬浮态状态行收起后留在屏底的细进度线（[ReaderProgressEdgeLine]）：
   /// 贴 `bottom: 0`，不占预留、不吃指针；状态行唤出时它让位（同一真相源
@@ -3556,9 +3603,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 顶栏 / 底栏 / 状态行的底色：悬浮态半透明盖在正文上，挤压态即主题背景
   /// （[readerChromeSurfaceColor]）。
   Color _chromeSurfaceColor() => readerChromeSurfaceColor(
-        _themeBackgroundColor(),
-        floating: _bottomBarFloating,
-      );
+    _themeBackgroundColor(),
+    floating: _bottomBarFloating,
+  );
 
   /// 本章总字数 / 已读字数（状态行括号段 / 预计读完）——派生量在
   /// [ReaderProgressState]，这里只是按当前章取。
@@ -3568,14 +3615,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 播放条右端的状态文字（与状态行同一套文案 / 同一读口），只在桌面端播放条可见时用。
   Widget _buildBarStatusText() => ReaderStatusInline(
-        sessionTotals: _readingSessionTotals,
-        currentChars: _progressCurrentChars,
-        totalChars: _progressTotalChars,
-        showTimer: ReaderFushiSource.instance.showReadingTimer,
-        showProgress: ReaderFushiSource.instance.showTopProgressBar,
-        textColor: _themeTextColor(),
-        onToggleTimer: _toggleStudyClockManualPause,
-      );
+    sessionTotals: _readingSessionTotals,
+    currentChars: _progressCurrentChars,
+    totalChars: _progressTotalChars,
+    showTimer: ReaderFushiSource.instance.showReadingTimer,
+    showProgress: ReaderFushiSource.instance.showTopProgressBar,
+    textColor: _themeTextColor(),
+    onToggleTimer: _toggleStudyClockManualPause,
+  );
 
   /// 状态行左侧的会话累计读口：账只在 [StudyClock] 一本（v92 纪律），时钟未建
   /// （首屏未就绪）时给零值 + 未计时。
@@ -3591,8 +3638,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return const SizedBox.shrink();
     }
 
-    final double ratio =
-        (_progressCurrentChars! / _progressTotalChars!).clamp(0.0, 1.0);
+    final double ratio = (_progressCurrentChars! / _progressTotalChars!).clamp(
+      0.0,
+      1.0,
+    );
     final Color infoColor = _themeTextColor();
     final String position = ReaderFushiSource.instance.topProgressPosition;
 
@@ -3604,8 +3653,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     //  下 strip 预留了自身高度、正文被推到其下方，pill 落在预留区（正文空白顶边距
     //  = 主题背景）之上，背后并无正文，毛玻璃既无意义又会显出一块贴着正文首行的模糊
     //  矩形（横线字如「一」「ー」尤为明显）。故 frostedFill 仅悬浮态使用。
-    final Color frostedFill = _themeBackgroundColor()
-        .withValues(alpha: _isReaderThemeDark ? 0.42 : 0.55);
+    final Color frostedFill = _themeBackgroundColor().withValues(
+      alpha: _isReaderThemeDark ? 0.42 : 0.55,
+    );
 
     // TODO-728: position-aware top progress + tap-to-toggle chrome.
     //  - The Positioned strip spans the available width (16px side margins);
@@ -3623,7 +3673,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
       '  ${(ratio * 100).toStringAsFixed(2)}%',
       key: const ValueKey<String>('fushi_progress'),
       style: TextStyle(
-          fontSize: _ReaderFushiPageState._infoFontSize, color: infoColor),
+        fontSize: _ReaderFushiPageState._infoFontSize,
+        color: infoColor,
+      ),
       textAlign: readerTopProgressTextAlign(position),
     );
 
@@ -3645,25 +3697,26 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
     final Widget pill =
         topProgressUsesFrostedGlass(floating: _topProgressFloating)
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: topProgressPillShowsBlur(
+        ? ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child:
+                topProgressPillShowsBlur(
                   floating: _topProgressFloating,
                   obscured: _appearanceSheetOpen,
                 )
-                    ? BackdropFilter(
-                        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                        child: frostedInner,
-                      )
-                    : frostedInner,
-              )
-            : Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: kTopProgressPillVerticalPadding,
-                ),
-                child: label,
-              );
+                ? BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: frostedInner,
+                  )
+                : frostedInner,
+          )
+        : Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: kTopProgressPillVerticalPadding,
+            ),
+            child: label,
+          );
 
     return Positioned(
       top: _stableTopInset,
@@ -3750,11 +3803,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// `activeCustomTheme*` getter 解析——条目优先、旧扁平偏好兜底、非自定义 key
   /// 恒 null；null 的角色由 [resolveReaderThemeColors] 按真实 ColorScheme 派生。
   ReaderThemeOverrides get _customReaderThemeOverrides => (
-        bg: appModel.activeCustomThemeBackgroundColor,
-        fg: appModel.activeCustomThemeFontColor,
-        selection: appModel.activeCustomThemeSelectionColor,
-        link: appModel.activeCustomThemeLinkColor,
-      );
+    bg: appModel.activeCustomThemeBackgroundColor,
+    fg: appModel.activeCustomThemeFontColor,
+    selection: appModel.activeCustomThemeSelectionColor,
+    link: appModel.activeCustomThemeLinkColor,
+  );
 
   /// 当前主题 key 解析出的阅读器角色色，统一经 [resolveReaderThemeColors]：
   /// preset 命中用手调底色，未命中（light/system/自定义/未来 key）跟随真实
@@ -3958,10 +4011,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  Future<void> _toggleFavoriteSentence(
-      {ReaderSelectionData? selection, int? selectionSection}) async {
+  Future<void> _toggleFavoriteSentence({
+    ReaderSelectionData? selection,
+    int? selectionSection,
+  }) async {
     if (_controller == null || _book == null) return;
-    final String sentence = selection?.text ??
+    final String sentence =
+        selection?.text ??
         appModel.currentMediaSource?.currentSentence.text ??
         '';
     if (sentence.isEmpty) {
@@ -3975,19 +4031,19 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final int section = selectionSection ?? _favoriteSectionIndex;
     final sentenceRange = selection != null
         ? (selection.normalizedOffset != null &&
-                selection.normalizedLength != null
-            ? (
-                offset: selection.normalizedOffset!,
-                length: selection.normalizedLength!,
-              )
-            : null)
+                  selection.normalizedLength != null
+              ? (
+                  offset: selection.normalizedOffset!,
+                  length: selection.normalizedLength!,
+                )
+              : null)
         : _cachedSentenceRange ??
-            (_cachedSelectionRange != null
-                ? (
-                    offset: _cachedSelectionRange!.offset,
-                    length: _cachedSelectionRange!.length,
-                  )
-                : null);
+              (_cachedSelectionRange != null
+                  ? (
+                      offset: _cachedSelectionRange!.offset,
+                      length: _cachedSelectionRange!.length,
+                    )
+                  : null);
     debugPrint(
       '[fushi-hl] toggleFavorite: '
       'sentenceRange=${sentenceRange != null ? "(${sentenceRange.offset},${sentenceRange.length})" : "null"} '
@@ -4019,8 +4075,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
     // 从查词弹窗顶栏 ★ 收藏（无划选）时记下当时查的那个词，收藏夹在句子旁显示、
     // 批量制卡以它为词条；划选 / 右键菜单收藏没有查词对象，不记。
-    final ({String expression, String reading})? headword =
-        selection == null ? leadingHeadwordOf(rootLookupResult) : null;
+    final ({String expression, String reading})? headword = selection == null
+        ? leadingHeadwordOf(rootLookupResult)
+        : null;
     final FavoriteSentence fav = FavoriteSentence(
       text: sentence,
       bookTitle: _book!.title,
@@ -4087,9 +4144,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 在落点的首个 arrive 时结算，命中处之前跳过的正文从未成为当前单元、不计。
     final String preciseLocateJs =
         ReaderPaginationScripts.scrollToSearchMatchInvocation(
-      query,
-      result.charOffset,
-    );
+          query,
+          result.charOffset,
+        );
     final ReaderSearchJumpAction action = decideReaderSearchJump(
       targetChapter: result.sectionIndex,
       currentChapter: _currentChapter,
@@ -4153,8 +4210,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final int? favLen = fav.normCharLength;
     final int charOffsetEnd =
         (normCharOffset != null && favLen != null && favLen > 0)
-            ? normCharOffset + favLen
-            : -1;
+        ? normCharOffset + favLen
+        : -1;
     // BUG-876（「点收藏有时跳不过去」根因修复）：normCharOffset 可能缺失——收藏写入端
     // （`_toggleFavoriteSentence`）的 `sentenceRange?.offset` 依赖 JS getNormalizedOffset
     // 解析出章内偏移，跨 ruby / 复杂节点的选区可能返 null → 存 null。此时旧跳转：同章
@@ -4186,7 +4243,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _readLedger.leave();
     if (useOffset) {
       await _controller!.evaluateJavascript(
-        source: 'window.fushiReader && window.fushiReader'
+        source:
+            'window.fushiReader && window.fushiReader'
             '.restoreToCharOffset($normCharOffset, $charOffsetEnd);',
       );
     } else if (textLocateJs != null) {
@@ -4443,11 +4501,7 @@ class ReaderSelectionActionItem {
 /// 2. 放不下则只显示图标，文字进 Tooltip；
 /// 3. 只图标也放不下时前 [pinnedCount] 颗常驻，其余折进 ⋮ 弹出菜单。
 class ReaderSelectionActionBar extends StatelessWidget {
-  const ReaderSelectionActionBar({
-    required this.items,
-    this.color,
-    super.key,
-  });
+  const ReaderSelectionActionBar({required this.items, this.color, super.key});
 
   final List<ReaderSelectionActionItem> items;
   final Color? color;
@@ -4473,7 +4527,8 @@ class ReaderSelectionActionBar extends StatelessWidget {
         textScaler: scaler,
         maxLines: 1,
       )..layout();
-      final double w = painter.width +
+      final double w =
+          painter.width +
           _iconSize +
           _iconLabelGap +
           _labelHorizontalPadding * 2;
@@ -4541,11 +4596,11 @@ class ReaderSelectionActionBar extends StatelessWidget {
             for (final ReaderSelectionActionItem i in items) _iconButton(i),
           ];
         } else {
-          final List<ReaderSelectionActionItem> overflow =
-              items.sublist(pinnedCount);
+          final List<ReaderSelectionActionItem> overflow = items.sublist(
+            pinnedCount,
+          );
           children = <Widget>[
-            for (final ReaderSelectionActionItem i
-                in items.take(pinnedCount))
+            for (final ReaderSelectionActionItem i in items.take(pinnedCount))
               _iconButton(i),
             PopupMenuButton<int>(
               key: const ValueKey<String>('reader_selection_action_more'),
@@ -4572,15 +4627,13 @@ class ReaderSelectionActionBar extends StatelessWidget {
           alignment: Alignment.center,
           child: Material(
             elevation: 6,
-            color: color ??
+            color:
+                color ??
                 theme.popupMenuTheme.color ??
                 theme.colorScheme.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(8.0),
             clipBehavior: Clip.antiAlias,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: children,
-            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: children),
           ),
         );
       },
@@ -4627,7 +4680,8 @@ class ReaderGlassSelectionActionRow extends StatelessWidget {
         textScaler: scaler,
         maxLines: 1,
       )..layout();
-      final double w = painter.width +
+      final double w =
+          painter.width +
           _iconSize +
           _iconLabelGap +
           _labelHorizontalPadding * 2;

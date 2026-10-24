@@ -27,7 +27,7 @@ Widget _app({
   required double textScale,
   TargetPlatform? platform,
   ValueChanged<int>? onSeekRelative,
-  ValueChanged<LyricsMenuAnchor>? onSleepTimer,
+  VoidCallback? onToggleStatsTimer,
   ValueChanged<String>? onOtherAction,
 }) => MaterialApp(
   theme: platform == null ? null : ThemeData(platform: platform),
@@ -48,7 +48,7 @@ Widget _app({
         isPlaying: false,
         speed: 1,
         lyricsMasked: false,
-        sleepTimerMinutes: 15,
+        statsTimerPaused: true,
         clock: _Clock(),
       ),
       callbacks: LyricsPlayerCallbacks(
@@ -64,7 +64,8 @@ Widget _app({
         onTypography: (_) => onOtherAction?.call('typography'),
         onTapBackground: () => onOtherAction?.call('background'),
         onSeekRelative: onSeekRelative ?? (_) {},
-        onSleepTimer: onSleepTimer ?? (_) => onOtherAction?.call('sleepTimer'),
+        onToggleStatsTimer:
+            onToggleStatsTimer ?? () => onOtherAction?.call('studyClock'),
       ),
       onHtmlThemeChanged: (_) {},
     ),
@@ -97,12 +98,12 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 500));
         final Object? exception = tester.takeException();
-        // 头行的次要操作不再被压进固定高度：触控平台上睡眠按钮命中区保持 48。
+        // 头行的次要操作不再被压进固定高度：触控平台上计时按钮命中区保持 48。
         Size? sleep;
         if (viewport.size.width < viewport.size.height &&
             platform == TargetPlatform.android) {
           final RenderBox box = tester.renderObject<RenderBox>(
-            find.byKey(const ValueKey<String>('lyrics_sleep_timer_button')),
+            find.byKey(const ValueKey<String>('lyrics_study_timer_button')),
           );
           final Offset a = box.localToGlobal(Offset.zero);
           final Offset b = box.localToGlobal(box.size.bottomRight(Offset.zero));
@@ -118,29 +119,32 @@ void main() {
     }
   }
 
-  testWidgets('new relative seek and sleep controls forward real UI taps', (
+  testWidgets('relative seek and study timer controls forward real UI taps', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
     addTearDown(tester.view.reset);
     final List<int> relativeSeeks = <int>[];
-    LyricsMenuAnchor? sleepAnchor;
+    int statsTimerToggles = 0;
     await tester.pumpWidget(
       _app(
         textScale: 1,
         onSeekRelative: relativeSeeks.add,
-        onSleepTimer: (LyricsMenuAnchor anchor) => sleepAnchor = anchor,
+        onToggleStatsTimer: () => statsTimerToggles++,
       ),
     );
     await tester.pump(const Duration(milliseconds: 500));
     await tester.tap(find.byKey(const ValueKey('lyrics_seek_back_button')));
     await tester.tap(find.byKey(const ValueKey('lyrics_seek_forward_button')));
-    await tester.tap(find.byKey(const ValueKey('lyrics_sleep_timer_button')));
+    await tester.tap(find.byKey(const ValueKey('lyrics_study_timer_button')));
     expect(relativeSeeks, <int>[-10, 10]);
-    expect(sleepAnchor, isNotNull);
-    expect(sleepAnchor!.rect.isEmpty, isFalse);
-    expect(sleepAnchor!.context.mounted, isTrue);
+    expect(statsTimerToggles, 1);
+    // 睡眠定时已从歌词页移除（2026-10-25 用户：换成启动 / 关闭统计）。
+    expect(
+      find.byKey(const ValueKey('lyrics_sleep_timer_button')),
+      findsNothing,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

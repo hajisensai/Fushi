@@ -255,6 +255,11 @@ void main() {
       '  Future<void> _openGallery() async {',
       '  Future<void> _transcribeFromAudiobookPanel() async {',
       '  void _showLyricsModeHintIfNeeded() {',
+      // 歌词页面板：页面弹、压着期间停表（2026-10-25 用户：歌词模式计时要与阅读器
+      // 一致）。倍速面板此前由按钮自己 push，页面看不见，一直不停表。
+      '  Future<void> _showLyricsTypographyPanel(LyricsMenuAnchor anchor) async {',
+      '  Future<void> _showLyricsSpeedPanel(',
+      '  Future<void> _showLyricsControlLayoutEditor() async {',
     ];
     for (final String entry in entries) {
       test('入口经 _withStudyClockPaused：${entry.trim()}', () {
@@ -268,6 +273,48 @@ void main() {
         );
       });
     }
+
+    test('从页面外推上来的整页路由（悬浮球的反馈中心等）盖住阅读器也停表', () {
+      // 这类路由不经任何 _withStudyClockPaused 入口：阅读器只能靠 RouteAware 看见。
+      // routeObserver 必须真挂进 MaterialApp，否则 subscribe 永远收不到通知。
+      final String main = maskComments(
+        File('lib/main.dart').readAsStringSync().replaceAll('\r\n', '\n'),
+      );
+      final String observers = _functionSource(
+        main,
+        'navigatorObservers: <NavigatorObserver>[',
+        '],',
+      );
+      expect(observers, contains('appModel.routeObserver'));
+      expect(corpus, contains('with WidgetsBindingObserver, RouteAware'));
+      expect(corpus, contains('routeObserver.unsubscribe(this)'));
+      expect(compactCode(corpus), contains('..subscribe(this,route)'));
+      final String pushed = _functionSource(
+        corpus,
+        '  void didPushNext() {',
+        '\n  }\n',
+      );
+      expect(pushed, contains('_studyClockCoveredByRoute = true;'));
+      expect(pushed, contains('_syncStudyClockRunState();'));
+      final String popped = _functionSource(
+        corpus,
+        '  void didPopNext() {',
+        '\n  }\n',
+      );
+      expect(popped, contains('_studyClockCoveredByRoute = false;'));
+      expect(popped, contains('_syncStudyClockRunState();'));
+      final String mayRun = _functionSource(
+        corpus,
+        '  bool get _studyClockMayRun =>',
+        ';\n',
+      );
+      expect(
+        compactCode(mayRun),
+        contains(
+          'modalDepth:_studyClockModalDepth+(_studyClockCoveredByRoute?1:0)',
+        ),
+      );
+    });
 
     test('书内统计侧栏（_openReadingStatistics）有意不停表——侧栏不遮正文', () {
       // 2026-09-13 chrome 重做：统计从 640px 居中对话框改成右侧侧栏，正文照常可读，
