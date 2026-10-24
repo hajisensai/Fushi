@@ -394,8 +394,15 @@ class ThemeSongDetector {
   }
 
   /// MV 偏移（音乐方案 §8.3 第 1 条）：本地音频在 MV 视频音轨上的偏移——MV 时间 =
-  /// 音频时间 + 返回值。没对上返回 null。UI（MV 模式按偏移同步歌词 / 画面）留给 P4。
+  /// 音频时间 + 返回值。没对上返回 null。
   Future<Duration?> mvOffset({
+    required ThemeSongSong audio,
+    required String mvPath,
+  }) async => (await mvAlignment(audio: audio, mvPath: mvPath))?.offset;
+
+  /// 同 [mvOffset]，但返回完整对齐结果（置信度 / 命中段，MV 匹配要按置信度排序与判定）。
+  /// 置信度低于 [minConfidence] 视为没对上。
+  Future<AudioFingerprintMatch?> mvAlignment({
     required ThemeSongSong audio,
     required String mvPath,
   }) => _serial(() async {
@@ -418,7 +425,7 @@ class ThemeSongDetector {
     }
     final AudioFingerprintMatch? m = await engine.align(needle, haystack);
     if (m == null || m.confidence < minConfidence) return null;
-    return m.offset;
+    return m;
   });
 }
 

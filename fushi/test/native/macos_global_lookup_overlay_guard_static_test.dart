@@ -125,6 +125,9 @@ void main() {
         // Fushi 复习词状态标记（复习模块开着时才有回包）。
         'srsTermStatus',
         'srsOpenCard',
+        // 「我库里的例句」（作品图谱 L4）。
+        'librarySentences',
+        'librarySentenceOpen',
       ]) {
         expect(
           cpp,

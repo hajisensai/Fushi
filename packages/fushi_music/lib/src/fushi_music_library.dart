@@ -14,6 +14,9 @@ abstract final class FfmStatus {
   static const int invalidArgument = -2;
   static const int badInput = -3;
   static const int notFound = -5;
+
+  /// 写文件失败（只读 / 被占用 / 格式不支持写标签，tag_write.rs）。
+  static const int writeFailed = -6;
   static const int panic = -100;
 }
 

@@ -71129,6 +71129,3802 @@ class VideoThemeSongSpansCompanion
   }
 }
 
+class $MusicScrapeMetaTable extends MusicScrapeMeta
+    with TableInfo<$MusicScrapeMetaTable, MusicScrapeMetaRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicScrapeMetaTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _methodMeta = const VerificationMeta('method');
+  @override
+  late final GeneratedColumn<String> method = GeneratedColumn<String>(
+    'method',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _mbRecordingIdMeta = const VerificationMeta(
+    'mbRecordingId',
+  );
+  @override
+  late final GeneratedColumn<String> mbRecordingId = GeneratedColumn<String>(
+    'mb_recording_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _mbReleaseIdMeta = const VerificationMeta(
+    'mbReleaseId',
+  );
+  @override
+  late final GeneratedColumn<String> mbReleaseId = GeneratedColumn<String>(
+    'mb_release_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _mbReleaseGroupIdMeta = const VerificationMeta(
+    'mbReleaseGroupId',
+  );
+  @override
+  late final GeneratedColumn<String> mbReleaseGroupId = GeneratedColumn<String>(
+    'mb_release_group_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _mbWorkIdMeta = const VerificationMeta(
+    'mbWorkId',
+  );
+  @override
+  late final GeneratedColumn<String> mbWorkId = GeneratedColumn<String>(
+    'mb_work_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _mbArtistIdMeta = const VerificationMeta(
+    'mbArtistId',
+  );
+  @override
+  late final GeneratedColumn<String> mbArtistId = GeneratedColumn<String>(
+    'mb_artist_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _acoustidMeta = const VerificationMeta(
+    'acoustid',
+  );
+  @override
+  late final GeneratedColumn<String> acoustid = GeneratedColumn<String>(
+    'acoustid',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<double> confidence = GeneratedColumn<double>(
+    'confidence',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _artistCreditMeta = const VerificationMeta(
+    'artistCredit',
+  );
+  @override
+  late final GeneratedColumn<String> artistCredit = GeneratedColumn<String>(
+    'artist_credit',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumTitleMeta = const VerificationMeta(
+    'albumTitle',
+  );
+  @override
+  late final GeneratedColumn<String> albumTitle = GeneratedColumn<String>(
+    'album_title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _albumArtistCreditMeta = const VerificationMeta(
+    'albumArtistCredit',
+  );
+  @override
+  late final GeneratedColumn<String> albumArtistCredit =
+      GeneratedColumn<String>(
+        'album_artist_credit',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _releaseDateMeta = const VerificationMeta(
+    'releaseDate',
+  );
+  @override
+  late final GeneratedColumn<String> releaseDate = GeneratedColumn<String>(
+    'release_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _catalogNoMeta = const VerificationMeta(
+    'catalogNo',
+  );
+  @override
+  late final GeneratedColumn<String> catalogNo = GeneratedColumn<String>(
+    'catalog_no',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _trackNoMeta = const VerificationMeta(
+    'trackNo',
+  );
+  @override
+  late final GeneratedColumn<int> trackNo = GeneratedColumn<int>(
+    'track_no',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _discNoMeta = const VerificationMeta('discNo');
+  @override
+  late final GeneratedColumn<int> discNo = GeneratedColumn<int>(
+    'disc_no',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _originalRecordingIdMeta =
+      const VerificationMeta('originalRecordingId');
+  @override
+  late final GeneratedColumn<String> originalRecordingId =
+      GeneratedColumn<String>(
+        'original_recording_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _originalTitleMeta = const VerificationMeta(
+    'originalTitle',
+  );
+  @override
+  late final GeneratedColumn<String> originalTitle = GeneratedColumn<String>(
+    'original_title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _originalArtistCreditMeta =
+      const VerificationMeta('originalArtistCredit');
+  @override
+  late final GeneratedColumn<String> originalArtistCredit =
+      GeneratedColumn<String>(
+        'original_artist_credit',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _originalReleaseDateMeta =
+      const VerificationMeta('originalReleaseDate');
+  @override
+  late final GeneratedColumn<String> originalReleaseDate =
+      GeneratedColumn<String>(
+        'original_release_date',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _selfIsOriginalMeta = const VerificationMeta(
+    'selfIsOriginal',
+  );
+  @override
+  late final GeneratedColumn<bool> selfIsOriginal = GeneratedColumn<bool>(
+    'self_is_original',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("self_is_original" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _versionsJsonMeta = const VerificationMeta(
+    'versionsJson',
+  );
+  @override
+  late final GeneratedColumn<String> versionsJson = GeneratedColumn<String>(
+    'versions_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _musicVideosJsonMeta = const VerificationMeta(
+    'musicVideosJson',
+  );
+  @override
+  late final GeneratedColumn<String> musicVideosJson = GeneratedColumn<String>(
+    'music_videos_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _coverUrlMeta = const VerificationMeta(
+    'coverUrl',
+  );
+  @override
+  late final GeneratedColumn<String> coverUrl = GeneratedColumn<String>(
+    'cover_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _vgmdbJsonMeta = const VerificationMeta(
+    'vgmdbJson',
+  );
+  @override
+  late final GeneratedColumn<String> vgmdbJson = GeneratedColumn<String>(
+    'vgmdb_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _candidatesJsonMeta = const VerificationMeta(
+    'candidatesJson',
+  );
+  @override
+  late final GeneratedColumn<String> candidatesJson = GeneratedColumn<String>(
+    'candidates_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _warningsMeta = const VerificationMeta(
+    'warnings',
+  );
+  @override
+  late final GeneratedColumn<String> warnings = GeneratedColumn<String>(
+    'warnings',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _scraperVersionMeta = const VerificationMeta(
+    'scraperVersion',
+  );
+  @override
+  late final GeneratedColumn<int> scraperVersion = GeneratedColumn<int>(
+    'scraper_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _scrapedAtMeta = const VerificationMeta(
+    'scrapedAt',
+  );
+  @override
+  late final GeneratedColumn<int> scrapedAt = GeneratedColumn<int>(
+    'scraped_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    status,
+    method,
+    mbRecordingId,
+    mbReleaseId,
+    mbReleaseGroupId,
+    mbWorkId,
+    mbArtistId,
+    acoustid,
+    confidence,
+    title,
+    artistCredit,
+    albumTitle,
+    albumArtistCredit,
+    releaseDate,
+    catalogNo,
+    trackNo,
+    discNo,
+    originalRecordingId,
+    originalTitle,
+    originalArtistCredit,
+    originalReleaseDate,
+    selfIsOriginal,
+    versionsJson,
+    musicVideosJson,
+    coverUrl,
+    vgmdbJson,
+    candidatesJson,
+    warnings,
+    scraperVersion,
+    scrapedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_scrape_meta';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicScrapeMetaRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('method')) {
+      context.handle(
+        _methodMeta,
+        method.isAcceptableOrUnknown(data['method']!, _methodMeta),
+      );
+    }
+    if (data.containsKey('mb_recording_id')) {
+      context.handle(
+        _mbRecordingIdMeta,
+        mbRecordingId.isAcceptableOrUnknown(
+          data['mb_recording_id']!,
+          _mbRecordingIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('mb_release_id')) {
+      context.handle(
+        _mbReleaseIdMeta,
+        mbReleaseId.isAcceptableOrUnknown(
+          data['mb_release_id']!,
+          _mbReleaseIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('mb_release_group_id')) {
+      context.handle(
+        _mbReleaseGroupIdMeta,
+        mbReleaseGroupId.isAcceptableOrUnknown(
+          data['mb_release_group_id']!,
+          _mbReleaseGroupIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('mb_work_id')) {
+      context.handle(
+        _mbWorkIdMeta,
+        mbWorkId.isAcceptableOrUnknown(data['mb_work_id']!, _mbWorkIdMeta),
+      );
+    }
+    if (data.containsKey('mb_artist_id')) {
+      context.handle(
+        _mbArtistIdMeta,
+        mbArtistId.isAcceptableOrUnknown(
+          data['mb_artist_id']!,
+          _mbArtistIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('acoustid')) {
+      context.handle(
+        _acoustidMeta,
+        acoustid.isAcceptableOrUnknown(data['acoustid']!, _acoustidMeta),
+      );
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('artist_credit')) {
+      context.handle(
+        _artistCreditMeta,
+        artistCredit.isAcceptableOrUnknown(
+          data['artist_credit']!,
+          _artistCreditMeta,
+        ),
+      );
+    }
+    if (data.containsKey('album_title')) {
+      context.handle(
+        _albumTitleMeta,
+        albumTitle.isAcceptableOrUnknown(data['album_title']!, _albumTitleMeta),
+      );
+    }
+    if (data.containsKey('album_artist_credit')) {
+      context.handle(
+        _albumArtistCreditMeta,
+        albumArtistCredit.isAcceptableOrUnknown(
+          data['album_artist_credit']!,
+          _albumArtistCreditMeta,
+        ),
+      );
+    }
+    if (data.containsKey('release_date')) {
+      context.handle(
+        _releaseDateMeta,
+        releaseDate.isAcceptableOrUnknown(
+          data['release_date']!,
+          _releaseDateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('catalog_no')) {
+      context.handle(
+        _catalogNoMeta,
+        catalogNo.isAcceptableOrUnknown(data['catalog_no']!, _catalogNoMeta),
+      );
+    }
+    if (data.containsKey('track_no')) {
+      context.handle(
+        _trackNoMeta,
+        trackNo.isAcceptableOrUnknown(data['track_no']!, _trackNoMeta),
+      );
+    }
+    if (data.containsKey('disc_no')) {
+      context.handle(
+        _discNoMeta,
+        discNo.isAcceptableOrUnknown(data['disc_no']!, _discNoMeta),
+      );
+    }
+    if (data.containsKey('original_recording_id')) {
+      context.handle(
+        _originalRecordingIdMeta,
+        originalRecordingId.isAcceptableOrUnknown(
+          data['original_recording_id']!,
+          _originalRecordingIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('original_title')) {
+      context.handle(
+        _originalTitleMeta,
+        originalTitle.isAcceptableOrUnknown(
+          data['original_title']!,
+          _originalTitleMeta,
+        ),
+      );
+    }
+    if (data.containsKey('original_artist_credit')) {
+      context.handle(
+        _originalArtistCreditMeta,
+        originalArtistCredit.isAcceptableOrUnknown(
+          data['original_artist_credit']!,
+          _originalArtistCreditMeta,
+        ),
+      );
+    }
+    if (data.containsKey('original_release_date')) {
+      context.handle(
+        _originalReleaseDateMeta,
+        originalReleaseDate.isAcceptableOrUnknown(
+          data['original_release_date']!,
+          _originalReleaseDateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('self_is_original')) {
+      context.handle(
+        _selfIsOriginalMeta,
+        selfIsOriginal.isAcceptableOrUnknown(
+          data['self_is_original']!,
+          _selfIsOriginalMeta,
+        ),
+      );
+    }
+    if (data.containsKey('versions_json')) {
+      context.handle(
+        _versionsJsonMeta,
+        versionsJson.isAcceptableOrUnknown(
+          data['versions_json']!,
+          _versionsJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('music_videos_json')) {
+      context.handle(
+        _musicVideosJsonMeta,
+        musicVideosJson.isAcceptableOrUnknown(
+          data['music_videos_json']!,
+          _musicVideosJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cover_url')) {
+      context.handle(
+        _coverUrlMeta,
+        coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta),
+      );
+    }
+    if (data.containsKey('vgmdb_json')) {
+      context.handle(
+        _vgmdbJsonMeta,
+        vgmdbJson.isAcceptableOrUnknown(data['vgmdb_json']!, _vgmdbJsonMeta),
+      );
+    }
+    if (data.containsKey('candidates_json')) {
+      context.handle(
+        _candidatesJsonMeta,
+        candidatesJson.isAcceptableOrUnknown(
+          data['candidates_json']!,
+          _candidatesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('warnings')) {
+      context.handle(
+        _warningsMeta,
+        warnings.isAcceptableOrUnknown(data['warnings']!, _warningsMeta),
+      );
+    }
+    if (data.containsKey('scraper_version')) {
+      context.handle(
+        _scraperVersionMeta,
+        scraperVersion.isAcceptableOrUnknown(
+          data['scraper_version']!,
+          _scraperVersionMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_scraperVersionMeta);
+    }
+    if (data.containsKey('scraped_at')) {
+      context.handle(
+        _scrapedAtMeta,
+        scrapedAt.isAcceptableOrUnknown(data['scraped_at']!, _scrapedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_scrapedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid};
+  @override
+  MusicScrapeMetaRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicScrapeMetaRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      method: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}method'],
+      ),
+      mbRecordingId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mb_recording_id'],
+      ),
+      mbReleaseId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mb_release_id'],
+      ),
+      mbReleaseGroupId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mb_release_group_id'],
+      ),
+      mbWorkId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mb_work_id'],
+      ),
+      mbArtistId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mb_artist_id'],
+      ),
+      acoustid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}acoustid'],
+      ),
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}confidence'],
+      ),
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      ),
+      artistCredit: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}artist_credit'],
+      ),
+      albumTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_title'],
+      ),
+      albumArtistCredit: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_artist_credit'],
+      ),
+      releaseDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}release_date'],
+      ),
+      catalogNo: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}catalog_no'],
+      ),
+      trackNo: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}track_no'],
+      ),
+      discNo: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}disc_no'],
+      ),
+      originalRecordingId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_recording_id'],
+      ),
+      originalTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_title'],
+      ),
+      originalArtistCredit: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_artist_credit'],
+      ),
+      originalReleaseDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_release_date'],
+      ),
+      selfIsOriginal: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}self_is_original'],
+      )!,
+      versionsJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}versions_json'],
+      ),
+      musicVideosJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}music_videos_json'],
+      ),
+      coverUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_url'],
+      ),
+      vgmdbJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}vgmdb_json'],
+      ),
+      candidatesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}candidates_json'],
+      ),
+      warnings: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}warnings'],
+      ),
+      scraperVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}scraper_version'],
+      )!,
+      scrapedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}scraped_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicScrapeMetaTable createAlias(String alias) {
+    return $MusicScrapeMetaTable(attachedDatabase, alias);
+  }
+}
+
+class MusicScrapeMetaRow extends DataClass
+    implements Insertable<MusicScrapeMetaRow> {
+  final String trackUid;
+
+  /// `matched`（已识别）/ `unmatched`（没认出来，[candidatesJson] 给手选）/
+  /// `error`（资料源连不上，[warnings] 写原因）。
+  final String status;
+
+  /// `MusicIdentificationMethod.wire`：`mbid_tag` / `tag_search` / `acoustid` / `manual`。
+  final String? method;
+  final String? mbRecordingId;
+  final String? mbReleaseId;
+  final String? mbReleaseGroupId;
+  final String? mbWorkId;
+  final String? mbArtistId;
+  final String? acoustid;
+
+  /// 0..1。
+  final double? confidence;
+  final String? title;
+  final String? artistCredit;
+  final String? albumTitle;
+  final String? albumArtistCredit;
+
+  /// MusicBrainz 残缺日期原样（`YYYY` / `YYYY-MM` / `YYYY-MM-DD`）。
+  final String? releaseDate;
+  final String? catalogNo;
+  final int? trackNo;
+  final int? discNo;
+
+  /// 原曲（§8.2）。[selfIsOriginal] = 这首就是原曲。
+  final String? originalRecordingId;
+  final String? originalTitle;
+  final String? originalArtistCredit;
+  final String? originalReleaseDate;
+  final bool selfIsOriginal;
+
+  /// 其它版本（同作品的其余录音）JSON 数组：`[{id,title,artist,date,attrs}]`。
+  final String? versionsJson;
+
+  /// MusicBrainz 关系给出的在线 MV JSON 数组：`[{url,videoRecordingId,title}]`。
+  final String? musicVideosJson;
+
+  /// Cover Art Archive 正面封面 URL（已下载到本地时专辑行 `cover_path` 指向本地文件）。
+  final String? coverUrl;
+
+  /// VGMdb 专辑 JSON：`{id,link,catalog,names}`。
+  final String? vgmdbJson;
+
+  /// 未识别 / 歧义时的候选 JSON 数组（手选用）：`[{id,title,artist,lengthMs,release,score}]`。
+  final String? candidatesJson;
+
+  /// 非致命问题（某个补全源连不上 / AcoustID 没配）换行分隔。
+  final String? warnings;
+
+  /// 刮削器版本（判据变了按它重刮）。
+  final int scraperVersion;
+  final int scrapedAt;
+  const MusicScrapeMetaRow({
+    required this.trackUid,
+    required this.status,
+    this.method,
+    this.mbRecordingId,
+    this.mbReleaseId,
+    this.mbReleaseGroupId,
+    this.mbWorkId,
+    this.mbArtistId,
+    this.acoustid,
+    this.confidence,
+    this.title,
+    this.artistCredit,
+    this.albumTitle,
+    this.albumArtistCredit,
+    this.releaseDate,
+    this.catalogNo,
+    this.trackNo,
+    this.discNo,
+    this.originalRecordingId,
+    this.originalTitle,
+    this.originalArtistCredit,
+    this.originalReleaseDate,
+    required this.selfIsOriginal,
+    this.versionsJson,
+    this.musicVideosJson,
+    this.coverUrl,
+    this.vgmdbJson,
+    this.candidatesJson,
+    this.warnings,
+    required this.scraperVersion,
+    required this.scrapedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || method != null) {
+      map['method'] = Variable<String>(method);
+    }
+    if (!nullToAbsent || mbRecordingId != null) {
+      map['mb_recording_id'] = Variable<String>(mbRecordingId);
+    }
+    if (!nullToAbsent || mbReleaseId != null) {
+      map['mb_release_id'] = Variable<String>(mbReleaseId);
+    }
+    if (!nullToAbsent || mbReleaseGroupId != null) {
+      map['mb_release_group_id'] = Variable<String>(mbReleaseGroupId);
+    }
+    if (!nullToAbsent || mbWorkId != null) {
+      map['mb_work_id'] = Variable<String>(mbWorkId);
+    }
+    if (!nullToAbsent || mbArtistId != null) {
+      map['mb_artist_id'] = Variable<String>(mbArtistId);
+    }
+    if (!nullToAbsent || acoustid != null) {
+      map['acoustid'] = Variable<String>(acoustid);
+    }
+    if (!nullToAbsent || confidence != null) {
+      map['confidence'] = Variable<double>(confidence);
+    }
+    if (!nullToAbsent || title != null) {
+      map['title'] = Variable<String>(title);
+    }
+    if (!nullToAbsent || artistCredit != null) {
+      map['artist_credit'] = Variable<String>(artistCredit);
+    }
+    if (!nullToAbsent || albumTitle != null) {
+      map['album_title'] = Variable<String>(albumTitle);
+    }
+    if (!nullToAbsent || albumArtistCredit != null) {
+      map['album_artist_credit'] = Variable<String>(albumArtistCredit);
+    }
+    if (!nullToAbsent || releaseDate != null) {
+      map['release_date'] = Variable<String>(releaseDate);
+    }
+    if (!nullToAbsent || catalogNo != null) {
+      map['catalog_no'] = Variable<String>(catalogNo);
+    }
+    if (!nullToAbsent || trackNo != null) {
+      map['track_no'] = Variable<int>(trackNo);
+    }
+    if (!nullToAbsent || discNo != null) {
+      map['disc_no'] = Variable<int>(discNo);
+    }
+    if (!nullToAbsent || originalRecordingId != null) {
+      map['original_recording_id'] = Variable<String>(originalRecordingId);
+    }
+    if (!nullToAbsent || originalTitle != null) {
+      map['original_title'] = Variable<String>(originalTitle);
+    }
+    if (!nullToAbsent || originalArtistCredit != null) {
+      map['original_artist_credit'] = Variable<String>(originalArtistCredit);
+    }
+    if (!nullToAbsent || originalReleaseDate != null) {
+      map['original_release_date'] = Variable<String>(originalReleaseDate);
+    }
+    map['self_is_original'] = Variable<bool>(selfIsOriginal);
+    if (!nullToAbsent || versionsJson != null) {
+      map['versions_json'] = Variable<String>(versionsJson);
+    }
+    if (!nullToAbsent || musicVideosJson != null) {
+      map['music_videos_json'] = Variable<String>(musicVideosJson);
+    }
+    if (!nullToAbsent || coverUrl != null) {
+      map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || vgmdbJson != null) {
+      map['vgmdb_json'] = Variable<String>(vgmdbJson);
+    }
+    if (!nullToAbsent || candidatesJson != null) {
+      map['candidates_json'] = Variable<String>(candidatesJson);
+    }
+    if (!nullToAbsent || warnings != null) {
+      map['warnings'] = Variable<String>(warnings);
+    }
+    map['scraper_version'] = Variable<int>(scraperVersion);
+    map['scraped_at'] = Variable<int>(scrapedAt);
+    return map;
+  }
+
+  MusicScrapeMetaCompanion toCompanion(bool nullToAbsent) {
+    return MusicScrapeMetaCompanion(
+      trackUid: Value(trackUid),
+      status: Value(status),
+      method: method == null && nullToAbsent
+          ? const Value.absent()
+          : Value(method),
+      mbRecordingId: mbRecordingId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mbRecordingId),
+      mbReleaseId: mbReleaseId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mbReleaseId),
+      mbReleaseGroupId: mbReleaseGroupId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mbReleaseGroupId),
+      mbWorkId: mbWorkId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mbWorkId),
+      mbArtistId: mbArtistId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(mbArtistId),
+      acoustid: acoustid == null && nullToAbsent
+          ? const Value.absent()
+          : Value(acoustid),
+      confidence: confidence == null && nullToAbsent
+          ? const Value.absent()
+          : Value(confidence),
+      title: title == null && nullToAbsent
+          ? const Value.absent()
+          : Value(title),
+      artistCredit: artistCredit == null && nullToAbsent
+          ? const Value.absent()
+          : Value(artistCredit),
+      albumTitle: albumTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albumTitle),
+      albumArtistCredit: albumArtistCredit == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albumArtistCredit),
+      releaseDate: releaseDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(releaseDate),
+      catalogNo: catalogNo == null && nullToAbsent
+          ? const Value.absent()
+          : Value(catalogNo),
+      trackNo: trackNo == null && nullToAbsent
+          ? const Value.absent()
+          : Value(trackNo),
+      discNo: discNo == null && nullToAbsent
+          ? const Value.absent()
+          : Value(discNo),
+      originalRecordingId: originalRecordingId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalRecordingId),
+      originalTitle: originalTitle == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalTitle),
+      originalArtistCredit: originalArtistCredit == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalArtistCredit),
+      originalReleaseDate: originalReleaseDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalReleaseDate),
+      selfIsOriginal: Value(selfIsOriginal),
+      versionsJson: versionsJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(versionsJson),
+      musicVideosJson: musicVideosJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(musicVideosJson),
+      coverUrl: coverUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverUrl),
+      vgmdbJson: vgmdbJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(vgmdbJson),
+      candidatesJson: candidatesJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(candidatesJson),
+      warnings: warnings == null && nullToAbsent
+          ? const Value.absent()
+          : Value(warnings),
+      scraperVersion: Value(scraperVersion),
+      scrapedAt: Value(scrapedAt),
+    );
+  }
+
+  factory MusicScrapeMetaRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicScrapeMetaRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      status: serializer.fromJson<String>(json['status']),
+      method: serializer.fromJson<String?>(json['method']),
+      mbRecordingId: serializer.fromJson<String?>(json['mbRecordingId']),
+      mbReleaseId: serializer.fromJson<String?>(json['mbReleaseId']),
+      mbReleaseGroupId: serializer.fromJson<String?>(json['mbReleaseGroupId']),
+      mbWorkId: serializer.fromJson<String?>(json['mbWorkId']),
+      mbArtistId: serializer.fromJson<String?>(json['mbArtistId']),
+      acoustid: serializer.fromJson<String?>(json['acoustid']),
+      confidence: serializer.fromJson<double?>(json['confidence']),
+      title: serializer.fromJson<String?>(json['title']),
+      artistCredit: serializer.fromJson<String?>(json['artistCredit']),
+      albumTitle: serializer.fromJson<String?>(json['albumTitle']),
+      albumArtistCredit: serializer.fromJson<String?>(
+        json['albumArtistCredit'],
+      ),
+      releaseDate: serializer.fromJson<String?>(json['releaseDate']),
+      catalogNo: serializer.fromJson<String?>(json['catalogNo']),
+      trackNo: serializer.fromJson<int?>(json['trackNo']),
+      discNo: serializer.fromJson<int?>(json['discNo']),
+      originalRecordingId: serializer.fromJson<String?>(
+        json['originalRecordingId'],
+      ),
+      originalTitle: serializer.fromJson<String?>(json['originalTitle']),
+      originalArtistCredit: serializer.fromJson<String?>(
+        json['originalArtistCredit'],
+      ),
+      originalReleaseDate: serializer.fromJson<String?>(
+        json['originalReleaseDate'],
+      ),
+      selfIsOriginal: serializer.fromJson<bool>(json['selfIsOriginal']),
+      versionsJson: serializer.fromJson<String?>(json['versionsJson']),
+      musicVideosJson: serializer.fromJson<String?>(json['musicVideosJson']),
+      coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      vgmdbJson: serializer.fromJson<String?>(json['vgmdbJson']),
+      candidatesJson: serializer.fromJson<String?>(json['candidatesJson']),
+      warnings: serializer.fromJson<String?>(json['warnings']),
+      scraperVersion: serializer.fromJson<int>(json['scraperVersion']),
+      scrapedAt: serializer.fromJson<int>(json['scrapedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'status': serializer.toJson<String>(status),
+      'method': serializer.toJson<String?>(method),
+      'mbRecordingId': serializer.toJson<String?>(mbRecordingId),
+      'mbReleaseId': serializer.toJson<String?>(mbReleaseId),
+      'mbReleaseGroupId': serializer.toJson<String?>(mbReleaseGroupId),
+      'mbWorkId': serializer.toJson<String?>(mbWorkId),
+      'mbArtistId': serializer.toJson<String?>(mbArtistId),
+      'acoustid': serializer.toJson<String?>(acoustid),
+      'confidence': serializer.toJson<double?>(confidence),
+      'title': serializer.toJson<String?>(title),
+      'artistCredit': serializer.toJson<String?>(artistCredit),
+      'albumTitle': serializer.toJson<String?>(albumTitle),
+      'albumArtistCredit': serializer.toJson<String?>(albumArtistCredit),
+      'releaseDate': serializer.toJson<String?>(releaseDate),
+      'catalogNo': serializer.toJson<String?>(catalogNo),
+      'trackNo': serializer.toJson<int?>(trackNo),
+      'discNo': serializer.toJson<int?>(discNo),
+      'originalRecordingId': serializer.toJson<String?>(originalRecordingId),
+      'originalTitle': serializer.toJson<String?>(originalTitle),
+      'originalArtistCredit': serializer.toJson<String?>(originalArtistCredit),
+      'originalReleaseDate': serializer.toJson<String?>(originalReleaseDate),
+      'selfIsOriginal': serializer.toJson<bool>(selfIsOriginal),
+      'versionsJson': serializer.toJson<String?>(versionsJson),
+      'musicVideosJson': serializer.toJson<String?>(musicVideosJson),
+      'coverUrl': serializer.toJson<String?>(coverUrl),
+      'vgmdbJson': serializer.toJson<String?>(vgmdbJson),
+      'candidatesJson': serializer.toJson<String?>(candidatesJson),
+      'warnings': serializer.toJson<String?>(warnings),
+      'scraperVersion': serializer.toJson<int>(scraperVersion),
+      'scrapedAt': serializer.toJson<int>(scrapedAt),
+    };
+  }
+
+  MusicScrapeMetaRow copyWith({
+    String? trackUid,
+    String? status,
+    Value<String?> method = const Value.absent(),
+    Value<String?> mbRecordingId = const Value.absent(),
+    Value<String?> mbReleaseId = const Value.absent(),
+    Value<String?> mbReleaseGroupId = const Value.absent(),
+    Value<String?> mbWorkId = const Value.absent(),
+    Value<String?> mbArtistId = const Value.absent(),
+    Value<String?> acoustid = const Value.absent(),
+    Value<double?> confidence = const Value.absent(),
+    Value<String?> title = const Value.absent(),
+    Value<String?> artistCredit = const Value.absent(),
+    Value<String?> albumTitle = const Value.absent(),
+    Value<String?> albumArtistCredit = const Value.absent(),
+    Value<String?> releaseDate = const Value.absent(),
+    Value<String?> catalogNo = const Value.absent(),
+    Value<int?> trackNo = const Value.absent(),
+    Value<int?> discNo = const Value.absent(),
+    Value<String?> originalRecordingId = const Value.absent(),
+    Value<String?> originalTitle = const Value.absent(),
+    Value<String?> originalArtistCredit = const Value.absent(),
+    Value<String?> originalReleaseDate = const Value.absent(),
+    bool? selfIsOriginal,
+    Value<String?> versionsJson = const Value.absent(),
+    Value<String?> musicVideosJson = const Value.absent(),
+    Value<String?> coverUrl = const Value.absent(),
+    Value<String?> vgmdbJson = const Value.absent(),
+    Value<String?> candidatesJson = const Value.absent(),
+    Value<String?> warnings = const Value.absent(),
+    int? scraperVersion,
+    int? scrapedAt,
+  }) => MusicScrapeMetaRow(
+    trackUid: trackUid ?? this.trackUid,
+    status: status ?? this.status,
+    method: method.present ? method.value : this.method,
+    mbRecordingId: mbRecordingId.present
+        ? mbRecordingId.value
+        : this.mbRecordingId,
+    mbReleaseId: mbReleaseId.present ? mbReleaseId.value : this.mbReleaseId,
+    mbReleaseGroupId: mbReleaseGroupId.present
+        ? mbReleaseGroupId.value
+        : this.mbReleaseGroupId,
+    mbWorkId: mbWorkId.present ? mbWorkId.value : this.mbWorkId,
+    mbArtistId: mbArtistId.present ? mbArtistId.value : this.mbArtistId,
+    acoustid: acoustid.present ? acoustid.value : this.acoustid,
+    confidence: confidence.present ? confidence.value : this.confidence,
+    title: title.present ? title.value : this.title,
+    artistCredit: artistCredit.present ? artistCredit.value : this.artistCredit,
+    albumTitle: albumTitle.present ? albumTitle.value : this.albumTitle,
+    albumArtistCredit: albumArtistCredit.present
+        ? albumArtistCredit.value
+        : this.albumArtistCredit,
+    releaseDate: releaseDate.present ? releaseDate.value : this.releaseDate,
+    catalogNo: catalogNo.present ? catalogNo.value : this.catalogNo,
+    trackNo: trackNo.present ? trackNo.value : this.trackNo,
+    discNo: discNo.present ? discNo.value : this.discNo,
+    originalRecordingId: originalRecordingId.present
+        ? originalRecordingId.value
+        : this.originalRecordingId,
+    originalTitle: originalTitle.present
+        ? originalTitle.value
+        : this.originalTitle,
+    originalArtistCredit: originalArtistCredit.present
+        ? originalArtistCredit.value
+        : this.originalArtistCredit,
+    originalReleaseDate: originalReleaseDate.present
+        ? originalReleaseDate.value
+        : this.originalReleaseDate,
+    selfIsOriginal: selfIsOriginal ?? this.selfIsOriginal,
+    versionsJson: versionsJson.present ? versionsJson.value : this.versionsJson,
+    musicVideosJson: musicVideosJson.present
+        ? musicVideosJson.value
+        : this.musicVideosJson,
+    coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+    vgmdbJson: vgmdbJson.present ? vgmdbJson.value : this.vgmdbJson,
+    candidatesJson: candidatesJson.present
+        ? candidatesJson.value
+        : this.candidatesJson,
+    warnings: warnings.present ? warnings.value : this.warnings,
+    scraperVersion: scraperVersion ?? this.scraperVersion,
+    scrapedAt: scrapedAt ?? this.scrapedAt,
+  );
+  MusicScrapeMetaRow copyWithCompanion(MusicScrapeMetaCompanion data) {
+    return MusicScrapeMetaRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      status: data.status.present ? data.status.value : this.status,
+      method: data.method.present ? data.method.value : this.method,
+      mbRecordingId: data.mbRecordingId.present
+          ? data.mbRecordingId.value
+          : this.mbRecordingId,
+      mbReleaseId: data.mbReleaseId.present
+          ? data.mbReleaseId.value
+          : this.mbReleaseId,
+      mbReleaseGroupId: data.mbReleaseGroupId.present
+          ? data.mbReleaseGroupId.value
+          : this.mbReleaseGroupId,
+      mbWorkId: data.mbWorkId.present ? data.mbWorkId.value : this.mbWorkId,
+      mbArtistId: data.mbArtistId.present
+          ? data.mbArtistId.value
+          : this.mbArtistId,
+      acoustid: data.acoustid.present ? data.acoustid.value : this.acoustid,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      title: data.title.present ? data.title.value : this.title,
+      artistCredit: data.artistCredit.present
+          ? data.artistCredit.value
+          : this.artistCredit,
+      albumTitle: data.albumTitle.present
+          ? data.albumTitle.value
+          : this.albumTitle,
+      albumArtistCredit: data.albumArtistCredit.present
+          ? data.albumArtistCredit.value
+          : this.albumArtistCredit,
+      releaseDate: data.releaseDate.present
+          ? data.releaseDate.value
+          : this.releaseDate,
+      catalogNo: data.catalogNo.present ? data.catalogNo.value : this.catalogNo,
+      trackNo: data.trackNo.present ? data.trackNo.value : this.trackNo,
+      discNo: data.discNo.present ? data.discNo.value : this.discNo,
+      originalRecordingId: data.originalRecordingId.present
+          ? data.originalRecordingId.value
+          : this.originalRecordingId,
+      originalTitle: data.originalTitle.present
+          ? data.originalTitle.value
+          : this.originalTitle,
+      originalArtistCredit: data.originalArtistCredit.present
+          ? data.originalArtistCredit.value
+          : this.originalArtistCredit,
+      originalReleaseDate: data.originalReleaseDate.present
+          ? data.originalReleaseDate.value
+          : this.originalReleaseDate,
+      selfIsOriginal: data.selfIsOriginal.present
+          ? data.selfIsOriginal.value
+          : this.selfIsOriginal,
+      versionsJson: data.versionsJson.present
+          ? data.versionsJson.value
+          : this.versionsJson,
+      musicVideosJson: data.musicVideosJson.present
+          ? data.musicVideosJson.value
+          : this.musicVideosJson,
+      coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      vgmdbJson: data.vgmdbJson.present ? data.vgmdbJson.value : this.vgmdbJson,
+      candidatesJson: data.candidatesJson.present
+          ? data.candidatesJson.value
+          : this.candidatesJson,
+      warnings: data.warnings.present ? data.warnings.value : this.warnings,
+      scraperVersion: data.scraperVersion.present
+          ? data.scraperVersion.value
+          : this.scraperVersion,
+      scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicScrapeMetaRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('status: $status, ')
+          ..write('method: $method, ')
+          ..write('mbRecordingId: $mbRecordingId, ')
+          ..write('mbReleaseId: $mbReleaseId, ')
+          ..write('mbReleaseGroupId: $mbReleaseGroupId, ')
+          ..write('mbWorkId: $mbWorkId, ')
+          ..write('mbArtistId: $mbArtistId, ')
+          ..write('acoustid: $acoustid, ')
+          ..write('confidence: $confidence, ')
+          ..write('title: $title, ')
+          ..write('artistCredit: $artistCredit, ')
+          ..write('albumTitle: $albumTitle, ')
+          ..write('albumArtistCredit: $albumArtistCredit, ')
+          ..write('releaseDate: $releaseDate, ')
+          ..write('catalogNo: $catalogNo, ')
+          ..write('trackNo: $trackNo, ')
+          ..write('discNo: $discNo, ')
+          ..write('originalRecordingId: $originalRecordingId, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('originalArtistCredit: $originalArtistCredit, ')
+          ..write('originalReleaseDate: $originalReleaseDate, ')
+          ..write('selfIsOriginal: $selfIsOriginal, ')
+          ..write('versionsJson: $versionsJson, ')
+          ..write('musicVideosJson: $musicVideosJson, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('vgmdbJson: $vgmdbJson, ')
+          ..write('candidatesJson: $candidatesJson, ')
+          ..write('warnings: $warnings, ')
+          ..write('scraperVersion: $scraperVersion, ')
+          ..write('scrapedAt: $scrapedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+    trackUid,
+    status,
+    method,
+    mbRecordingId,
+    mbReleaseId,
+    mbReleaseGroupId,
+    mbWorkId,
+    mbArtistId,
+    acoustid,
+    confidence,
+    title,
+    artistCredit,
+    albumTitle,
+    albumArtistCredit,
+    releaseDate,
+    catalogNo,
+    trackNo,
+    discNo,
+    originalRecordingId,
+    originalTitle,
+    originalArtistCredit,
+    originalReleaseDate,
+    selfIsOriginal,
+    versionsJson,
+    musicVideosJson,
+    coverUrl,
+    vgmdbJson,
+    candidatesJson,
+    warnings,
+    scraperVersion,
+    scrapedAt,
+  ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicScrapeMetaRow &&
+          other.trackUid == this.trackUid &&
+          other.status == this.status &&
+          other.method == this.method &&
+          other.mbRecordingId == this.mbRecordingId &&
+          other.mbReleaseId == this.mbReleaseId &&
+          other.mbReleaseGroupId == this.mbReleaseGroupId &&
+          other.mbWorkId == this.mbWorkId &&
+          other.mbArtistId == this.mbArtistId &&
+          other.acoustid == this.acoustid &&
+          other.confidence == this.confidence &&
+          other.title == this.title &&
+          other.artistCredit == this.artistCredit &&
+          other.albumTitle == this.albumTitle &&
+          other.albumArtistCredit == this.albumArtistCredit &&
+          other.releaseDate == this.releaseDate &&
+          other.catalogNo == this.catalogNo &&
+          other.trackNo == this.trackNo &&
+          other.discNo == this.discNo &&
+          other.originalRecordingId == this.originalRecordingId &&
+          other.originalTitle == this.originalTitle &&
+          other.originalArtistCredit == this.originalArtistCredit &&
+          other.originalReleaseDate == this.originalReleaseDate &&
+          other.selfIsOriginal == this.selfIsOriginal &&
+          other.versionsJson == this.versionsJson &&
+          other.musicVideosJson == this.musicVideosJson &&
+          other.coverUrl == this.coverUrl &&
+          other.vgmdbJson == this.vgmdbJson &&
+          other.candidatesJson == this.candidatesJson &&
+          other.warnings == this.warnings &&
+          other.scraperVersion == this.scraperVersion &&
+          other.scrapedAt == this.scrapedAt);
+}
+
+class MusicScrapeMetaCompanion extends UpdateCompanion<MusicScrapeMetaRow> {
+  final Value<String> trackUid;
+  final Value<String> status;
+  final Value<String?> method;
+  final Value<String?> mbRecordingId;
+  final Value<String?> mbReleaseId;
+  final Value<String?> mbReleaseGroupId;
+  final Value<String?> mbWorkId;
+  final Value<String?> mbArtistId;
+  final Value<String?> acoustid;
+  final Value<double?> confidence;
+  final Value<String?> title;
+  final Value<String?> artistCredit;
+  final Value<String?> albumTitle;
+  final Value<String?> albumArtistCredit;
+  final Value<String?> releaseDate;
+  final Value<String?> catalogNo;
+  final Value<int?> trackNo;
+  final Value<int?> discNo;
+  final Value<String?> originalRecordingId;
+  final Value<String?> originalTitle;
+  final Value<String?> originalArtistCredit;
+  final Value<String?> originalReleaseDate;
+  final Value<bool> selfIsOriginal;
+  final Value<String?> versionsJson;
+  final Value<String?> musicVideosJson;
+  final Value<String?> coverUrl;
+  final Value<String?> vgmdbJson;
+  final Value<String?> candidatesJson;
+  final Value<String?> warnings;
+  final Value<int> scraperVersion;
+  final Value<int> scrapedAt;
+  final Value<int> rowid;
+  const MusicScrapeMetaCompanion({
+    this.trackUid = const Value.absent(),
+    this.status = const Value.absent(),
+    this.method = const Value.absent(),
+    this.mbRecordingId = const Value.absent(),
+    this.mbReleaseId = const Value.absent(),
+    this.mbReleaseGroupId = const Value.absent(),
+    this.mbWorkId = const Value.absent(),
+    this.mbArtistId = const Value.absent(),
+    this.acoustid = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.title = const Value.absent(),
+    this.artistCredit = const Value.absent(),
+    this.albumTitle = const Value.absent(),
+    this.albumArtistCredit = const Value.absent(),
+    this.releaseDate = const Value.absent(),
+    this.catalogNo = const Value.absent(),
+    this.trackNo = const Value.absent(),
+    this.discNo = const Value.absent(),
+    this.originalRecordingId = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.originalArtistCredit = const Value.absent(),
+    this.originalReleaseDate = const Value.absent(),
+    this.selfIsOriginal = const Value.absent(),
+    this.versionsJson = const Value.absent(),
+    this.musicVideosJson = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.vgmdbJson = const Value.absent(),
+    this.candidatesJson = const Value.absent(),
+    this.warnings = const Value.absent(),
+    this.scraperVersion = const Value.absent(),
+    this.scrapedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicScrapeMetaCompanion.insert({
+    required String trackUid,
+    required String status,
+    this.method = const Value.absent(),
+    this.mbRecordingId = const Value.absent(),
+    this.mbReleaseId = const Value.absent(),
+    this.mbReleaseGroupId = const Value.absent(),
+    this.mbWorkId = const Value.absent(),
+    this.mbArtistId = const Value.absent(),
+    this.acoustid = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.title = const Value.absent(),
+    this.artistCredit = const Value.absent(),
+    this.albumTitle = const Value.absent(),
+    this.albumArtistCredit = const Value.absent(),
+    this.releaseDate = const Value.absent(),
+    this.catalogNo = const Value.absent(),
+    this.trackNo = const Value.absent(),
+    this.discNo = const Value.absent(),
+    this.originalRecordingId = const Value.absent(),
+    this.originalTitle = const Value.absent(),
+    this.originalArtistCredit = const Value.absent(),
+    this.originalReleaseDate = const Value.absent(),
+    this.selfIsOriginal = const Value.absent(),
+    this.versionsJson = const Value.absent(),
+    this.musicVideosJson = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.vgmdbJson = const Value.absent(),
+    this.candidatesJson = const Value.absent(),
+    this.warnings = const Value.absent(),
+    required int scraperVersion,
+    required int scrapedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       status = Value(status),
+       scraperVersion = Value(scraperVersion),
+       scrapedAt = Value(scrapedAt);
+  static Insertable<MusicScrapeMetaRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? status,
+    Expression<String>? method,
+    Expression<String>? mbRecordingId,
+    Expression<String>? mbReleaseId,
+    Expression<String>? mbReleaseGroupId,
+    Expression<String>? mbWorkId,
+    Expression<String>? mbArtistId,
+    Expression<String>? acoustid,
+    Expression<double>? confidence,
+    Expression<String>? title,
+    Expression<String>? artistCredit,
+    Expression<String>? albumTitle,
+    Expression<String>? albumArtistCredit,
+    Expression<String>? releaseDate,
+    Expression<String>? catalogNo,
+    Expression<int>? trackNo,
+    Expression<int>? discNo,
+    Expression<String>? originalRecordingId,
+    Expression<String>? originalTitle,
+    Expression<String>? originalArtistCredit,
+    Expression<String>? originalReleaseDate,
+    Expression<bool>? selfIsOriginal,
+    Expression<String>? versionsJson,
+    Expression<String>? musicVideosJson,
+    Expression<String>? coverUrl,
+    Expression<String>? vgmdbJson,
+    Expression<String>? candidatesJson,
+    Expression<String>? warnings,
+    Expression<int>? scraperVersion,
+    Expression<int>? scrapedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (status != null) 'status': status,
+      if (method != null) 'method': method,
+      if (mbRecordingId != null) 'mb_recording_id': mbRecordingId,
+      if (mbReleaseId != null) 'mb_release_id': mbReleaseId,
+      if (mbReleaseGroupId != null) 'mb_release_group_id': mbReleaseGroupId,
+      if (mbWorkId != null) 'mb_work_id': mbWorkId,
+      if (mbArtistId != null) 'mb_artist_id': mbArtistId,
+      if (acoustid != null) 'acoustid': acoustid,
+      if (confidence != null) 'confidence': confidence,
+      if (title != null) 'title': title,
+      if (artistCredit != null) 'artist_credit': artistCredit,
+      if (albumTitle != null) 'album_title': albumTitle,
+      if (albumArtistCredit != null) 'album_artist_credit': albumArtistCredit,
+      if (releaseDate != null) 'release_date': releaseDate,
+      if (catalogNo != null) 'catalog_no': catalogNo,
+      if (trackNo != null) 'track_no': trackNo,
+      if (discNo != null) 'disc_no': discNo,
+      if (originalRecordingId != null)
+        'original_recording_id': originalRecordingId,
+      if (originalTitle != null) 'original_title': originalTitle,
+      if (originalArtistCredit != null)
+        'original_artist_credit': originalArtistCredit,
+      if (originalReleaseDate != null)
+        'original_release_date': originalReleaseDate,
+      if (selfIsOriginal != null) 'self_is_original': selfIsOriginal,
+      if (versionsJson != null) 'versions_json': versionsJson,
+      if (musicVideosJson != null) 'music_videos_json': musicVideosJson,
+      if (coverUrl != null) 'cover_url': coverUrl,
+      if (vgmdbJson != null) 'vgmdb_json': vgmdbJson,
+      if (candidatesJson != null) 'candidates_json': candidatesJson,
+      if (warnings != null) 'warnings': warnings,
+      if (scraperVersion != null) 'scraper_version': scraperVersion,
+      if (scrapedAt != null) 'scraped_at': scrapedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicScrapeMetaCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? status,
+    Value<String?>? method,
+    Value<String?>? mbRecordingId,
+    Value<String?>? mbReleaseId,
+    Value<String?>? mbReleaseGroupId,
+    Value<String?>? mbWorkId,
+    Value<String?>? mbArtistId,
+    Value<String?>? acoustid,
+    Value<double?>? confidence,
+    Value<String?>? title,
+    Value<String?>? artistCredit,
+    Value<String?>? albumTitle,
+    Value<String?>? albumArtistCredit,
+    Value<String?>? releaseDate,
+    Value<String?>? catalogNo,
+    Value<int?>? trackNo,
+    Value<int?>? discNo,
+    Value<String?>? originalRecordingId,
+    Value<String?>? originalTitle,
+    Value<String?>? originalArtistCredit,
+    Value<String?>? originalReleaseDate,
+    Value<bool>? selfIsOriginal,
+    Value<String?>? versionsJson,
+    Value<String?>? musicVideosJson,
+    Value<String?>? coverUrl,
+    Value<String?>? vgmdbJson,
+    Value<String?>? candidatesJson,
+    Value<String?>? warnings,
+    Value<int>? scraperVersion,
+    Value<int>? scrapedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicScrapeMetaCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      status: status ?? this.status,
+      method: method ?? this.method,
+      mbRecordingId: mbRecordingId ?? this.mbRecordingId,
+      mbReleaseId: mbReleaseId ?? this.mbReleaseId,
+      mbReleaseGroupId: mbReleaseGroupId ?? this.mbReleaseGroupId,
+      mbWorkId: mbWorkId ?? this.mbWorkId,
+      mbArtistId: mbArtistId ?? this.mbArtistId,
+      acoustid: acoustid ?? this.acoustid,
+      confidence: confidence ?? this.confidence,
+      title: title ?? this.title,
+      artistCredit: artistCredit ?? this.artistCredit,
+      albumTitle: albumTitle ?? this.albumTitle,
+      albumArtistCredit: albumArtistCredit ?? this.albumArtistCredit,
+      releaseDate: releaseDate ?? this.releaseDate,
+      catalogNo: catalogNo ?? this.catalogNo,
+      trackNo: trackNo ?? this.trackNo,
+      discNo: discNo ?? this.discNo,
+      originalRecordingId: originalRecordingId ?? this.originalRecordingId,
+      originalTitle: originalTitle ?? this.originalTitle,
+      originalArtistCredit: originalArtistCredit ?? this.originalArtistCredit,
+      originalReleaseDate: originalReleaseDate ?? this.originalReleaseDate,
+      selfIsOriginal: selfIsOriginal ?? this.selfIsOriginal,
+      versionsJson: versionsJson ?? this.versionsJson,
+      musicVideosJson: musicVideosJson ?? this.musicVideosJson,
+      coverUrl: coverUrl ?? this.coverUrl,
+      vgmdbJson: vgmdbJson ?? this.vgmdbJson,
+      candidatesJson: candidatesJson ?? this.candidatesJson,
+      warnings: warnings ?? this.warnings,
+      scraperVersion: scraperVersion ?? this.scraperVersion,
+      scrapedAt: scrapedAt ?? this.scrapedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (method.present) {
+      map['method'] = Variable<String>(method.value);
+    }
+    if (mbRecordingId.present) {
+      map['mb_recording_id'] = Variable<String>(mbRecordingId.value);
+    }
+    if (mbReleaseId.present) {
+      map['mb_release_id'] = Variable<String>(mbReleaseId.value);
+    }
+    if (mbReleaseGroupId.present) {
+      map['mb_release_group_id'] = Variable<String>(mbReleaseGroupId.value);
+    }
+    if (mbWorkId.present) {
+      map['mb_work_id'] = Variable<String>(mbWorkId.value);
+    }
+    if (mbArtistId.present) {
+      map['mb_artist_id'] = Variable<String>(mbArtistId.value);
+    }
+    if (acoustid.present) {
+      map['acoustid'] = Variable<String>(acoustid.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<double>(confidence.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (artistCredit.present) {
+      map['artist_credit'] = Variable<String>(artistCredit.value);
+    }
+    if (albumTitle.present) {
+      map['album_title'] = Variable<String>(albumTitle.value);
+    }
+    if (albumArtistCredit.present) {
+      map['album_artist_credit'] = Variable<String>(albumArtistCredit.value);
+    }
+    if (releaseDate.present) {
+      map['release_date'] = Variable<String>(releaseDate.value);
+    }
+    if (catalogNo.present) {
+      map['catalog_no'] = Variable<String>(catalogNo.value);
+    }
+    if (trackNo.present) {
+      map['track_no'] = Variable<int>(trackNo.value);
+    }
+    if (discNo.present) {
+      map['disc_no'] = Variable<int>(discNo.value);
+    }
+    if (originalRecordingId.present) {
+      map['original_recording_id'] = Variable<String>(
+        originalRecordingId.value,
+      );
+    }
+    if (originalTitle.present) {
+      map['original_title'] = Variable<String>(originalTitle.value);
+    }
+    if (originalArtistCredit.present) {
+      map['original_artist_credit'] = Variable<String>(
+        originalArtistCredit.value,
+      );
+    }
+    if (originalReleaseDate.present) {
+      map['original_release_date'] = Variable<String>(
+        originalReleaseDate.value,
+      );
+    }
+    if (selfIsOriginal.present) {
+      map['self_is_original'] = Variable<bool>(selfIsOriginal.value);
+    }
+    if (versionsJson.present) {
+      map['versions_json'] = Variable<String>(versionsJson.value);
+    }
+    if (musicVideosJson.present) {
+      map['music_videos_json'] = Variable<String>(musicVideosJson.value);
+    }
+    if (coverUrl.present) {
+      map['cover_url'] = Variable<String>(coverUrl.value);
+    }
+    if (vgmdbJson.present) {
+      map['vgmdb_json'] = Variable<String>(vgmdbJson.value);
+    }
+    if (candidatesJson.present) {
+      map['candidates_json'] = Variable<String>(candidatesJson.value);
+    }
+    if (warnings.present) {
+      map['warnings'] = Variable<String>(warnings.value);
+    }
+    if (scraperVersion.present) {
+      map['scraper_version'] = Variable<int>(scraperVersion.value);
+    }
+    if (scrapedAt.present) {
+      map['scraped_at'] = Variable<int>(scrapedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicScrapeMetaCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('status: $status, ')
+          ..write('method: $method, ')
+          ..write('mbRecordingId: $mbRecordingId, ')
+          ..write('mbReleaseId: $mbReleaseId, ')
+          ..write('mbReleaseGroupId: $mbReleaseGroupId, ')
+          ..write('mbWorkId: $mbWorkId, ')
+          ..write('mbArtistId: $mbArtistId, ')
+          ..write('acoustid: $acoustid, ')
+          ..write('confidence: $confidence, ')
+          ..write('title: $title, ')
+          ..write('artistCredit: $artistCredit, ')
+          ..write('albumTitle: $albumTitle, ')
+          ..write('albumArtistCredit: $albumArtistCredit, ')
+          ..write('releaseDate: $releaseDate, ')
+          ..write('catalogNo: $catalogNo, ')
+          ..write('trackNo: $trackNo, ')
+          ..write('discNo: $discNo, ')
+          ..write('originalRecordingId: $originalRecordingId, ')
+          ..write('originalTitle: $originalTitle, ')
+          ..write('originalArtistCredit: $originalArtistCredit, ')
+          ..write('originalReleaseDate: $originalReleaseDate, ')
+          ..write('selfIsOriginal: $selfIsOriginal, ')
+          ..write('versionsJson: $versionsJson, ')
+          ..write('musicVideosJson: $musicVideosJson, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('vgmdbJson: $vgmdbJson, ')
+          ..write('candidatesJson: $candidatesJson, ')
+          ..write('warnings: $warnings, ')
+          ..write('scraperVersion: $scraperVersion, ')
+          ..write('scrapedAt: $scrapedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicMetadataRawSnapshotsTable extends MusicMetadataRawSnapshots
+    with
+        TableInfo<
+          $MusicMetadataRawSnapshotsTable,
+          MusicMetadataRawSnapshotRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicMetadataRawSnapshotsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _providerMeta = const VerificationMeta(
+    'provider',
+  );
+  @override
+  late final GeneratedColumn<String> provider = GeneratedColumn<String>(
+    'provider',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _snapshotKindMeta = const VerificationMeta(
+    'snapshotKind',
+  );
+  @override
+  late final GeneratedColumn<String> snapshotKind = GeneratedColumn<String>(
+    'snapshot_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _externalIdMeta = const VerificationMeta(
+    'externalId',
+  );
+  @override
+  late final GeneratedColumn<String> externalId = GeneratedColumn<String>(
+    'external_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _rawJsonMeta = const VerificationMeta(
+    'rawJson',
+  );
+  @override
+  late final GeneratedColumn<String> rawJson = GeneratedColumn<String>(
+    'raw_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    provider,
+    snapshotKind,
+    externalId,
+    rawJson,
+    fetchedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_metadata_raw_snapshots';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicMetadataRawSnapshotRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('provider')) {
+      context.handle(
+        _providerMeta,
+        provider.isAcceptableOrUnknown(data['provider']!, _providerMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerMeta);
+    }
+    if (data.containsKey('snapshot_kind')) {
+      context.handle(
+        _snapshotKindMeta,
+        snapshotKind.isAcceptableOrUnknown(
+          data['snapshot_kind']!,
+          _snapshotKindMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_snapshotKindMeta);
+    }
+    if (data.containsKey('external_id')) {
+      context.handle(
+        _externalIdMeta,
+        externalId.isAcceptableOrUnknown(data['external_id']!, _externalIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_externalIdMeta);
+    }
+    if (data.containsKey('raw_json')) {
+      context.handle(
+        _rawJsonMeta,
+        rawJson.isAcceptableOrUnknown(data['raw_json']!, _rawJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_rawJsonMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {provider, snapshotKind, externalId},
+  ];
+  @override
+  MusicMetadataRawSnapshotRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicMetadataRawSnapshotRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      provider: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider'],
+      )!,
+      snapshotKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}snapshot_kind'],
+      )!,
+      externalId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}external_id'],
+      )!,
+      rawJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}raw_json'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicMetadataRawSnapshotsTable createAlias(String alias) {
+    return $MusicMetadataRawSnapshotsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicMetadataRawSnapshotRow extends DataClass
+    implements Insertable<MusicMetadataRawSnapshotRow> {
+  final int id;
+
+  /// `MusicMetadataProviderKind.wire`。
+  final String provider;
+
+  /// `recording` / `work` / `work_recordings` / `release` / `lookup` / `catalog_search`。
+  final String snapshotKind;
+  final String externalId;
+  final String rawJson;
+  final int fetchedAt;
+  const MusicMetadataRawSnapshotRow({
+    required this.id,
+    required this.provider,
+    required this.snapshotKind,
+    required this.externalId,
+    required this.rawJson,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['provider'] = Variable<String>(provider);
+    map['snapshot_kind'] = Variable<String>(snapshotKind);
+    map['external_id'] = Variable<String>(externalId);
+    map['raw_json'] = Variable<String>(rawJson);
+    map['fetched_at'] = Variable<int>(fetchedAt);
+    return map;
+  }
+
+  MusicMetadataRawSnapshotsCompanion toCompanion(bool nullToAbsent) {
+    return MusicMetadataRawSnapshotsCompanion(
+      id: Value(id),
+      provider: Value(provider),
+      snapshotKind: Value(snapshotKind),
+      externalId: Value(externalId),
+      rawJson: Value(rawJson),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory MusicMetadataRawSnapshotRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicMetadataRawSnapshotRow(
+      id: serializer.fromJson<int>(json['id']),
+      provider: serializer.fromJson<String>(json['provider']),
+      snapshotKind: serializer.fromJson<String>(json['snapshotKind']),
+      externalId: serializer.fromJson<String>(json['externalId']),
+      rawJson: serializer.fromJson<String>(json['rawJson']),
+      fetchedAt: serializer.fromJson<int>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'provider': serializer.toJson<String>(provider),
+      'snapshotKind': serializer.toJson<String>(snapshotKind),
+      'externalId': serializer.toJson<String>(externalId),
+      'rawJson': serializer.toJson<String>(rawJson),
+      'fetchedAt': serializer.toJson<int>(fetchedAt),
+    };
+  }
+
+  MusicMetadataRawSnapshotRow copyWith({
+    int? id,
+    String? provider,
+    String? snapshotKind,
+    String? externalId,
+    String? rawJson,
+    int? fetchedAt,
+  }) => MusicMetadataRawSnapshotRow(
+    id: id ?? this.id,
+    provider: provider ?? this.provider,
+    snapshotKind: snapshotKind ?? this.snapshotKind,
+    externalId: externalId ?? this.externalId,
+    rawJson: rawJson ?? this.rawJson,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  MusicMetadataRawSnapshotRow copyWithCompanion(
+    MusicMetadataRawSnapshotsCompanion data,
+  ) {
+    return MusicMetadataRawSnapshotRow(
+      id: data.id.present ? data.id.value : this.id,
+      provider: data.provider.present ? data.provider.value : this.provider,
+      snapshotKind: data.snapshotKind.present
+          ? data.snapshotKind.value
+          : this.snapshotKind,
+      externalId: data.externalId.present
+          ? data.externalId.value
+          : this.externalId,
+      rawJson: data.rawJson.present ? data.rawJson.value : this.rawJson,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicMetadataRawSnapshotRow(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('snapshotKind: $snapshotKind, ')
+          ..write('externalId: $externalId, ')
+          ..write('rawJson: $rawJson, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, provider, snapshotKind, externalId, rawJson, fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicMetadataRawSnapshotRow &&
+          other.id == this.id &&
+          other.provider == this.provider &&
+          other.snapshotKind == this.snapshotKind &&
+          other.externalId == this.externalId &&
+          other.rawJson == this.rawJson &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class MusicMetadataRawSnapshotsCompanion
+    extends UpdateCompanion<MusicMetadataRawSnapshotRow> {
+  final Value<int> id;
+  final Value<String> provider;
+  final Value<String> snapshotKind;
+  final Value<String> externalId;
+  final Value<String> rawJson;
+  final Value<int> fetchedAt;
+  const MusicMetadataRawSnapshotsCompanion({
+    this.id = const Value.absent(),
+    this.provider = const Value.absent(),
+    this.snapshotKind = const Value.absent(),
+    this.externalId = const Value.absent(),
+    this.rawJson = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+  });
+  MusicMetadataRawSnapshotsCompanion.insert({
+    this.id = const Value.absent(),
+    required String provider,
+    required String snapshotKind,
+    required String externalId,
+    required String rawJson,
+    required int fetchedAt,
+  }) : provider = Value(provider),
+       snapshotKind = Value(snapshotKind),
+       externalId = Value(externalId),
+       rawJson = Value(rawJson),
+       fetchedAt = Value(fetchedAt);
+  static Insertable<MusicMetadataRawSnapshotRow> custom({
+    Expression<int>? id,
+    Expression<String>? provider,
+    Expression<String>? snapshotKind,
+    Expression<String>? externalId,
+    Expression<String>? rawJson,
+    Expression<int>? fetchedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (provider != null) 'provider': provider,
+      if (snapshotKind != null) 'snapshot_kind': snapshotKind,
+      if (externalId != null) 'external_id': externalId,
+      if (rawJson != null) 'raw_json': rawJson,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+    });
+  }
+
+  MusicMetadataRawSnapshotsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? provider,
+    Value<String>? snapshotKind,
+    Value<String>? externalId,
+    Value<String>? rawJson,
+    Value<int>? fetchedAt,
+  }) {
+    return MusicMetadataRawSnapshotsCompanion(
+      id: id ?? this.id,
+      provider: provider ?? this.provider,
+      snapshotKind: snapshotKind ?? this.snapshotKind,
+      externalId: externalId ?? this.externalId,
+      rawJson: rawJson ?? this.rawJson,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (provider.present) {
+      map['provider'] = Variable<String>(provider.value);
+    }
+    if (snapshotKind.present) {
+      map['snapshot_kind'] = Variable<String>(snapshotKind.value);
+    }
+    if (externalId.present) {
+      map['external_id'] = Variable<String>(externalId.value);
+    }
+    if (rawJson.present) {
+      map['raw_json'] = Variable<String>(rawJson.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicMetadataRawSnapshotsCompanion(')
+          ..write('id: $id, ')
+          ..write('provider: $provider, ')
+          ..write('snapshotKind: $snapshotKind, ')
+          ..write('externalId: $externalId, ')
+          ..write('rawJson: $rawJson, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicLockedFieldsTable extends MusicLockedFields
+    with TableInfo<$MusicLockedFieldsTable, MusicLockedFieldRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicLockedFieldsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _entityKindMeta = const VerificationMeta(
+    'entityKind',
+  );
+  @override
+  late final GeneratedColumn<String> entityKind = GeneratedColumn<String>(
+    'entity_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityUidMeta = const VerificationMeta(
+    'entityUid',
+  );
+  @override
+  late final GeneratedColumn<String> entityUid = GeneratedColumn<String>(
+    'entity_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fieldMeta = const VerificationMeta('field');
+  @override
+  late final GeneratedColumn<String> field = GeneratedColumn<String>(
+    'field',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lockedAtMeta = const VerificationMeta(
+    'lockedAt',
+  );
+  @override
+  late final GeneratedColumn<int> lockedAt = GeneratedColumn<int>(
+    'locked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    entityKind,
+    entityUid,
+    field,
+    lockedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_locked_fields';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicLockedFieldRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('entity_kind')) {
+      context.handle(
+        _entityKindMeta,
+        entityKind.isAcceptableOrUnknown(data['entity_kind']!, _entityKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityKindMeta);
+    }
+    if (data.containsKey('entity_uid')) {
+      context.handle(
+        _entityUidMeta,
+        entityUid.isAcceptableOrUnknown(data['entity_uid']!, _entityUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityUidMeta);
+    }
+    if (data.containsKey('field')) {
+      context.handle(
+        _fieldMeta,
+        field.isAcceptableOrUnknown(data['field']!, _fieldMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fieldMeta);
+    }
+    if (data.containsKey('locked_at')) {
+      context.handle(
+        _lockedAtMeta,
+        lockedAt.isAcceptableOrUnknown(data['locked_at']!, _lockedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lockedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {entityKind, entityUid, field};
+  @override
+  MusicLockedFieldRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicLockedFieldRow(
+      entityKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_kind'],
+      )!,
+      entityUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_uid'],
+      )!,
+      field: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}field'],
+      )!,
+      lockedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}locked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicLockedFieldsTable createAlias(String alias) {
+    return $MusicLockedFieldsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicLockedFieldRow extends DataClass
+    implements Insertable<MusicLockedFieldRow> {
+  /// `track` / `album`。
+  final String entityKind;
+  final String entityUid;
+
+  /// `MusicLockableField.wire`（与标签字段同名：`title` / `artist` / … / `cover`）。
+  final String field;
+  final int lockedAt;
+  const MusicLockedFieldRow({
+    required this.entityKind,
+    required this.entityUid,
+    required this.field,
+    required this.lockedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['entity_kind'] = Variable<String>(entityKind);
+    map['entity_uid'] = Variable<String>(entityUid);
+    map['field'] = Variable<String>(field);
+    map['locked_at'] = Variable<int>(lockedAt);
+    return map;
+  }
+
+  MusicLockedFieldsCompanion toCompanion(bool nullToAbsent) {
+    return MusicLockedFieldsCompanion(
+      entityKind: Value(entityKind),
+      entityUid: Value(entityUid),
+      field: Value(field),
+      lockedAt: Value(lockedAt),
+    );
+  }
+
+  factory MusicLockedFieldRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicLockedFieldRow(
+      entityKind: serializer.fromJson<String>(json['entityKind']),
+      entityUid: serializer.fromJson<String>(json['entityUid']),
+      field: serializer.fromJson<String>(json['field']),
+      lockedAt: serializer.fromJson<int>(json['lockedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'entityKind': serializer.toJson<String>(entityKind),
+      'entityUid': serializer.toJson<String>(entityUid),
+      'field': serializer.toJson<String>(field),
+      'lockedAt': serializer.toJson<int>(lockedAt),
+    };
+  }
+
+  MusicLockedFieldRow copyWith({
+    String? entityKind,
+    String? entityUid,
+    String? field,
+    int? lockedAt,
+  }) => MusicLockedFieldRow(
+    entityKind: entityKind ?? this.entityKind,
+    entityUid: entityUid ?? this.entityUid,
+    field: field ?? this.field,
+    lockedAt: lockedAt ?? this.lockedAt,
+  );
+  MusicLockedFieldRow copyWithCompanion(MusicLockedFieldsCompanion data) {
+    return MusicLockedFieldRow(
+      entityKind: data.entityKind.present
+          ? data.entityKind.value
+          : this.entityKind,
+      entityUid: data.entityUid.present ? data.entityUid.value : this.entityUid,
+      field: data.field.present ? data.field.value : this.field,
+      lockedAt: data.lockedAt.present ? data.lockedAt.value : this.lockedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicLockedFieldRow(')
+          ..write('entityKind: $entityKind, ')
+          ..write('entityUid: $entityUid, ')
+          ..write('field: $field, ')
+          ..write('lockedAt: $lockedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(entityKind, entityUid, field, lockedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicLockedFieldRow &&
+          other.entityKind == this.entityKind &&
+          other.entityUid == this.entityUid &&
+          other.field == this.field &&
+          other.lockedAt == this.lockedAt);
+}
+
+class MusicLockedFieldsCompanion extends UpdateCompanion<MusicLockedFieldRow> {
+  final Value<String> entityKind;
+  final Value<String> entityUid;
+  final Value<String> field;
+  final Value<int> lockedAt;
+  final Value<int> rowid;
+  const MusicLockedFieldsCompanion({
+    this.entityKind = const Value.absent(),
+    this.entityUid = const Value.absent(),
+    this.field = const Value.absent(),
+    this.lockedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicLockedFieldsCompanion.insert({
+    required String entityKind,
+    required String entityUid,
+    required String field,
+    required int lockedAt,
+    this.rowid = const Value.absent(),
+  }) : entityKind = Value(entityKind),
+       entityUid = Value(entityUid),
+       field = Value(field),
+       lockedAt = Value(lockedAt);
+  static Insertable<MusicLockedFieldRow> custom({
+    Expression<String>? entityKind,
+    Expression<String>? entityUid,
+    Expression<String>? field,
+    Expression<int>? lockedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (entityKind != null) 'entity_kind': entityKind,
+      if (entityUid != null) 'entity_uid': entityUid,
+      if (field != null) 'field': field,
+      if (lockedAt != null) 'locked_at': lockedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicLockedFieldsCompanion copyWith({
+    Value<String>? entityKind,
+    Value<String>? entityUid,
+    Value<String>? field,
+    Value<int>? lockedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicLockedFieldsCompanion(
+      entityKind: entityKind ?? this.entityKind,
+      entityUid: entityUid ?? this.entityUid,
+      field: field ?? this.field,
+      lockedAt: lockedAt ?? this.lockedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (entityKind.present) {
+      map['entity_kind'] = Variable<String>(entityKind.value);
+    }
+    if (entityUid.present) {
+      map['entity_uid'] = Variable<String>(entityUid.value);
+    }
+    if (field.present) {
+      map['field'] = Variable<String>(field.value);
+    }
+    if (lockedAt.present) {
+      map['locked_at'] = Variable<int>(lockedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicLockedFieldsCompanion(')
+          ..write('entityKind: $entityKind, ')
+          ..write('entityUid: $entityUid, ')
+          ..write('field: $field, ')
+          ..write('lockedAt: $lockedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $GameVoiceCastsTable extends GameVoiceCasts
+    with TableInfo<$GameVoiceCastsTable, GameVoiceCastRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GameVoiceCastsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+    'game_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _vndbIdMeta = const VerificationMeta('vndbId');
+  @override
+  late final GeneratedColumn<String> vndbId = GeneratedColumn<String>(
+    'vndb_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _castJsonMeta = const VerificationMeta(
+    'castJson',
+  );
+  @override
+  late final GeneratedColumn<String> castJson = GeneratedColumn<String>(
+    'cast_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+    'fetched_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [gameId, vndbId, castJson, fetchedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'game_voice_casts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GameVoiceCastRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('game_id')) {
+      context.handle(
+        _gameIdMeta,
+        gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('vndb_id')) {
+      context.handle(
+        _vndbIdMeta,
+        vndbId.isAcceptableOrUnknown(data['vndb_id']!, _vndbIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_vndbIdMeta);
+    }
+    if (data.containsKey('cast_json')) {
+      context.handle(
+        _castJsonMeta,
+        castJson.isAcceptableOrUnknown(data['cast_json']!, _castJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_castJsonMeta);
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fetchedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {gameId};
+  @override
+  GameVoiceCastRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GameVoiceCastRow(
+      gameId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_id'],
+      )!,
+      vndbId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}vndb_id'],
+      )!,
+      castJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cast_json'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}fetched_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GameVoiceCastsTable createAlias(String alias) {
+    return $GameVoiceCastsTable(attachedDatabase, alias);
+  }
+}
+
+class GameVoiceCastRow extends DataClass
+    implements Insertable<GameVoiceCastRow> {
+  /// `galgames.id`。
+  final String gameId;
+
+  /// 取数时用的 VNDB VN id（`v17`）：游戏换绑到另一部 VN 时据此判失效。
+  final String vndbId;
+
+  /// `encodeGameVoiceCast` 的 JSON 列表。
+  final String castJson;
+  final int fetchedAt;
+  const GameVoiceCastRow({
+    required this.gameId,
+    required this.vndbId,
+    required this.castJson,
+    required this.fetchedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['game_id'] = Variable<String>(gameId);
+    map['vndb_id'] = Variable<String>(vndbId);
+    map['cast_json'] = Variable<String>(castJson);
+    map['fetched_at'] = Variable<int>(fetchedAt);
+    return map;
+  }
+
+  GameVoiceCastsCompanion toCompanion(bool nullToAbsent) {
+    return GameVoiceCastsCompanion(
+      gameId: Value(gameId),
+      vndbId: Value(vndbId),
+      castJson: Value(castJson),
+      fetchedAt: Value(fetchedAt),
+    );
+  }
+
+  factory GameVoiceCastRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GameVoiceCastRow(
+      gameId: serializer.fromJson<String>(json['gameId']),
+      vndbId: serializer.fromJson<String>(json['vndbId']),
+      castJson: serializer.fromJson<String>(json['castJson']),
+      fetchedAt: serializer.fromJson<int>(json['fetchedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'gameId': serializer.toJson<String>(gameId),
+      'vndbId': serializer.toJson<String>(vndbId),
+      'castJson': serializer.toJson<String>(castJson),
+      'fetchedAt': serializer.toJson<int>(fetchedAt),
+    };
+  }
+
+  GameVoiceCastRow copyWith({
+    String? gameId,
+    String? vndbId,
+    String? castJson,
+    int? fetchedAt,
+  }) => GameVoiceCastRow(
+    gameId: gameId ?? this.gameId,
+    vndbId: vndbId ?? this.vndbId,
+    castJson: castJson ?? this.castJson,
+    fetchedAt: fetchedAt ?? this.fetchedAt,
+  );
+  GameVoiceCastRow copyWithCompanion(GameVoiceCastsCompanion data) {
+    return GameVoiceCastRow(
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      vndbId: data.vndbId.present ? data.vndbId.value : this.vndbId,
+      castJson: data.castJson.present ? data.castJson.value : this.castJson,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GameVoiceCastRow(')
+          ..write('gameId: $gameId, ')
+          ..write('vndbId: $vndbId, ')
+          ..write('castJson: $castJson, ')
+          ..write('fetchedAt: $fetchedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(gameId, vndbId, castJson, fetchedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GameVoiceCastRow &&
+          other.gameId == this.gameId &&
+          other.vndbId == this.vndbId &&
+          other.castJson == this.castJson &&
+          other.fetchedAt == this.fetchedAt);
+}
+
+class GameVoiceCastsCompanion extends UpdateCompanion<GameVoiceCastRow> {
+  final Value<String> gameId;
+  final Value<String> vndbId;
+  final Value<String> castJson;
+  final Value<int> fetchedAt;
+  final Value<int> rowid;
+  const GameVoiceCastsCompanion({
+    this.gameId = const Value.absent(),
+    this.vndbId = const Value.absent(),
+    this.castJson = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  GameVoiceCastsCompanion.insert({
+    required String gameId,
+    required String vndbId,
+    required String castJson,
+    required int fetchedAt,
+    this.rowid = const Value.absent(),
+  }) : gameId = Value(gameId),
+       vndbId = Value(vndbId),
+       castJson = Value(castJson),
+       fetchedAt = Value(fetchedAt);
+  static Insertable<GameVoiceCastRow> custom({
+    Expression<String>? gameId,
+    Expression<String>? vndbId,
+    Expression<String>? castJson,
+    Expression<int>? fetchedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (gameId != null) 'game_id': gameId,
+      if (vndbId != null) 'vndb_id': vndbId,
+      if (castJson != null) 'cast_json': castJson,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  GameVoiceCastsCompanion copyWith({
+    Value<String>? gameId,
+    Value<String>? vndbId,
+    Value<String>? castJson,
+    Value<int>? fetchedAt,
+    Value<int>? rowid,
+  }) {
+    return GameVoiceCastsCompanion(
+      gameId: gameId ?? this.gameId,
+      vndbId: vndbId ?? this.vndbId,
+      castJson: castJson ?? this.castJson,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (vndbId.present) {
+      map['vndb_id'] = Variable<String>(vndbId.value);
+    }
+    if (castJson.present) {
+      map['cast_json'] = Variable<String>(castJson.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GameVoiceCastsCompanion(')
+          ..write('gameId: $gameId, ')
+          ..write('vndbId: $vndbId, ')
+          ..write('castJson: $castJson, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PersonIdentityBridgesTable extends PersonIdentityBridges
+    with TableInfo<$PersonIdentityBridgesTable, PersonIdentityBridgeRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PersonIdentityBridgesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _subjectMeta = const VerificationMeta(
+    'subject',
+  );
+  @override
+  late final GeneratedColumn<String> subject = GeneratedColumn<String>(
+    'subject',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _objectMeta = const VerificationMeta('object');
+  @override
+  late final GeneratedColumn<String> object = GeneratedColumn<String>(
+    'object',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<int> deletedAt = GeneratedColumn<int>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    subject,
+    object,
+    source,
+    createdAt,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'person_identity_bridges';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PersonIdentityBridgeRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('subject')) {
+      context.handle(
+        _subjectMeta,
+        subject.isAcceptableOrUnknown(data['subject']!, _subjectMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_subjectMeta);
+    }
+    if (data.containsKey('object')) {
+      context.handle(
+        _objectMeta,
+        object.isAcceptableOrUnknown(data['object']!, _objectMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_objectMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {subject, object, source};
+  @override
+  PersonIdentityBridgeRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PersonIdentityBridgeRow(
+      subject: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}subject'],
+      )!,
+      object: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}object'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $PersonIdentityBridgesTable createAlias(String alias) {
+    return $PersonIdentityBridgesTable(attachedDatabase, alias);
+  }
+}
+
+class PersonIdentityBridgeRow extends DataClass
+    implements Insertable<PersonIdentityBridgeRow> {
+  final String subject;
+  final String object;
+
+  /// `wikidata` / `manual`（开放文本，未知来源读侧忽略）。
+  final String source;
+  final int createdAt;
+
+  /// 否决 / 取消合并时刻（只对 manual 有意义）；NULL = 存活。
+  final int? deletedAt;
+  const PersonIdentityBridgeRow({
+    required this.subject,
+    required this.object,
+    required this.source,
+    required this.createdAt,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['subject'] = Variable<String>(subject);
+    map['object'] = Variable<String>(object);
+    map['source'] = Variable<String>(source);
+    map['created_at'] = Variable<int>(createdAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<int>(deletedAt);
+    }
+    return map;
+  }
+
+  PersonIdentityBridgesCompanion toCompanion(bool nullToAbsent) {
+    return PersonIdentityBridgesCompanion(
+      subject: Value(subject),
+      object: Value(object),
+      source: Value(source),
+      createdAt: Value(createdAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory PersonIdentityBridgeRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PersonIdentityBridgeRow(
+      subject: serializer.fromJson<String>(json['subject']),
+      object: serializer.fromJson<String>(json['object']),
+      source: serializer.fromJson<String>(json['source']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      deletedAt: serializer.fromJson<int?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'subject': serializer.toJson<String>(subject),
+      'object': serializer.toJson<String>(object),
+      'source': serializer.toJson<String>(source),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'deletedAt': serializer.toJson<int?>(deletedAt),
+    };
+  }
+
+  PersonIdentityBridgeRow copyWith({
+    String? subject,
+    String? object,
+    String? source,
+    int? createdAt,
+    Value<int?> deletedAt = const Value.absent(),
+  }) => PersonIdentityBridgeRow(
+    subject: subject ?? this.subject,
+    object: object ?? this.object,
+    source: source ?? this.source,
+    createdAt: createdAt ?? this.createdAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  PersonIdentityBridgeRow copyWithCompanion(
+    PersonIdentityBridgesCompanion data,
+  ) {
+    return PersonIdentityBridgeRow(
+      subject: data.subject.present ? data.subject.value : this.subject,
+      object: data.object.present ? data.object.value : this.object,
+      source: data.source.present ? data.source.value : this.source,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PersonIdentityBridgeRow(')
+          ..write('subject: $subject, ')
+          ..write('object: $object, ')
+          ..write('source: $source, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(subject, object, source, createdAt, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PersonIdentityBridgeRow &&
+          other.subject == this.subject &&
+          other.object == this.object &&
+          other.source == this.source &&
+          other.createdAt == this.createdAt &&
+          other.deletedAt == this.deletedAt);
+}
+
+class PersonIdentityBridgesCompanion
+    extends UpdateCompanion<PersonIdentityBridgeRow> {
+  final Value<String> subject;
+  final Value<String> object;
+  final Value<String> source;
+  final Value<int> createdAt;
+  final Value<int?> deletedAt;
+  final Value<int> rowid;
+  const PersonIdentityBridgesCompanion({
+    this.subject = const Value.absent(),
+    this.object = const Value.absent(),
+    this.source = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PersonIdentityBridgesCompanion.insert({
+    required String subject,
+    required String object,
+    required String source,
+    required int createdAt,
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : subject = Value(subject),
+       object = Value(object),
+       source = Value(source),
+       createdAt = Value(createdAt);
+  static Insertable<PersonIdentityBridgeRow> custom({
+    Expression<String>? subject,
+    Expression<String>? object,
+    Expression<String>? source,
+    Expression<int>? createdAt,
+    Expression<int>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (subject != null) 'subject': subject,
+      if (object != null) 'object': object,
+      if (source != null) 'source': source,
+      if (createdAt != null) 'created_at': createdAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PersonIdentityBridgesCompanion copyWith({
+    Value<String>? subject,
+    Value<String>? object,
+    Value<String>? source,
+    Value<int>? createdAt,
+    Value<int?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return PersonIdentityBridgesCompanion(
+      subject: subject ?? this.subject,
+      object: object ?? this.object,
+      source: source ?? this.source,
+      createdAt: createdAt ?? this.createdAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (subject.present) {
+      map['subject'] = Variable<String>(subject.value);
+    }
+    if (object.present) {
+      map['object'] = Variable<String>(object.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<int>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PersonIdentityBridgesCompanion(')
+          ..write('subject: $subject, ')
+          ..write('object: $object, ')
+          ..write('source: $source, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AdaptationProgressAnchorsTable extends AdaptationProgressAnchors
+    with
+        TableInfo<
+          $AdaptationProgressAnchorsTable,
+          AdaptationProgressAnchorRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AdaptationProgressAnchorsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _sourceKindMeta = const VerificationMeta(
+    'sourceKind',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKind = GeneratedColumn<String>(
+    'source_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceKeyMeta = const VerificationMeta(
+    'sourceKey',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKey = GeneratedColumn<String>(
+    'source_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _adaptationKindMeta = const VerificationMeta(
+    'adaptationKind',
+  );
+  @override
+  late final GeneratedColumn<String> adaptationKind = GeneratedColumn<String>(
+    'adaptation_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _adaptationKeyMeta = const VerificationMeta(
+    'adaptationKey',
+  );
+  @override
+  late final GeneratedColumn<String> adaptationKey = GeneratedColumn<String>(
+    'adaptation_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<int> episodeNumber = GeneratedColumn<int>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceUnitMeta = const VerificationMeta(
+    'sourceUnit',
+  );
+  @override
+  late final GeneratedColumn<String> sourceUnit = GeneratedColumn<String>(
+    'source_unit',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceNumberMeta = const VerificationMeta(
+    'sourceNumber',
+  );
+  @override
+  late final GeneratedColumn<int> sourceNumber = GeneratedColumn<int>(
+    'source_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    sourceKind,
+    sourceKey,
+    adaptationKind,
+    adaptationKey,
+    episodeNumber,
+    sourceUnit,
+    sourceNumber,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'adaptation_progress_anchors';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AdaptationProgressAnchorRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('source_kind')) {
+      context.handle(
+        _sourceKindMeta,
+        sourceKind.isAcceptableOrUnknown(data['source_kind']!, _sourceKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKindMeta);
+    }
+    if (data.containsKey('source_key')) {
+      context.handle(
+        _sourceKeyMeta,
+        sourceKey.isAcceptableOrUnknown(data['source_key']!, _sourceKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKeyMeta);
+    }
+    if (data.containsKey('adaptation_kind')) {
+      context.handle(
+        _adaptationKindMeta,
+        adaptationKind.isAcceptableOrUnknown(
+          data['adaptation_kind']!,
+          _adaptationKindMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_adaptationKindMeta);
+    }
+    if (data.containsKey('adaptation_key')) {
+      context.handle(
+        _adaptationKeyMeta,
+        adaptationKey.isAcceptableOrUnknown(
+          data['adaptation_key']!,
+          _adaptationKeyMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_adaptationKeyMeta);
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_episodeNumberMeta);
+    }
+    if (data.containsKey('source_unit')) {
+      context.handle(
+        _sourceUnitMeta,
+        sourceUnit.isAcceptableOrUnknown(data['source_unit']!, _sourceUnitMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceUnitMeta);
+    }
+    if (data.containsKey('source_number')) {
+      context.handle(
+        _sourceNumberMeta,
+        sourceNumber.isAcceptableOrUnknown(
+          data['source_number']!,
+          _sourceNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceNumberMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {
+    sourceKind,
+    sourceKey,
+    adaptationKind,
+    adaptationKey,
+    episodeNumber,
+  };
+  @override
+  AdaptationProgressAnchorRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AdaptationProgressAnchorRow(
+      sourceKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_kind'],
+      )!,
+      sourceKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_key'],
+      )!,
+      adaptationKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}adaptation_kind'],
+      )!,
+      adaptationKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}adaptation_key'],
+      )!,
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      sourceUnit: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_unit'],
+      )!,
+      sourceNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}source_number'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AdaptationProgressAnchorsTable createAlias(String alias) {
+    return $AdaptationProgressAnchorsTable(attachedDatabase, alias);
+  }
+}
+
+class AdaptationProgressAnchorRow extends DataClass
+    implements Insertable<AdaptationProgressAnchorRow> {
+  /// 原作端（`MediaLinkKind.dbValue`，通常是 `book`）。
+  final String sourceKind;
+  final String sourceKey;
+
+  /// 改编端（`video_collection` / `video_episode`）。
+  final String adaptationKind;
+  final String adaptationKey;
+
+  /// 改编作集号（1 起）。
+  final int episodeNumber;
+
+  /// `volume` | `chapter`（开放文本，未知值读侧按卷显示）。
+  final String sourceUnit;
+
+  /// 原作卷号 / 章号（1 起）。
+  final int sourceNumber;
+  final int updatedAt;
+  const AdaptationProgressAnchorRow({
+    required this.sourceKind,
+    required this.sourceKey,
+    required this.adaptationKind,
+    required this.adaptationKey,
+    required this.episodeNumber,
+    required this.sourceUnit,
+    required this.sourceNumber,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['source_kind'] = Variable<String>(sourceKind);
+    map['source_key'] = Variable<String>(sourceKey);
+    map['adaptation_kind'] = Variable<String>(adaptationKind);
+    map['adaptation_key'] = Variable<String>(adaptationKey);
+    map['episode_number'] = Variable<int>(episodeNumber);
+    map['source_unit'] = Variable<String>(sourceUnit);
+    map['source_number'] = Variable<int>(sourceNumber);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  AdaptationProgressAnchorsCompanion toCompanion(bool nullToAbsent) {
+    return AdaptationProgressAnchorsCompanion(
+      sourceKind: Value(sourceKind),
+      sourceKey: Value(sourceKey),
+      adaptationKind: Value(adaptationKind),
+      adaptationKey: Value(adaptationKey),
+      episodeNumber: Value(episodeNumber),
+      sourceUnit: Value(sourceUnit),
+      sourceNumber: Value(sourceNumber),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory AdaptationProgressAnchorRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AdaptationProgressAnchorRow(
+      sourceKind: serializer.fromJson<String>(json['sourceKind']),
+      sourceKey: serializer.fromJson<String>(json['sourceKey']),
+      adaptationKind: serializer.fromJson<String>(json['adaptationKind']),
+      adaptationKey: serializer.fromJson<String>(json['adaptationKey']),
+      episodeNumber: serializer.fromJson<int>(json['episodeNumber']),
+      sourceUnit: serializer.fromJson<String>(json['sourceUnit']),
+      sourceNumber: serializer.fromJson<int>(json['sourceNumber']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'sourceKind': serializer.toJson<String>(sourceKind),
+      'sourceKey': serializer.toJson<String>(sourceKey),
+      'adaptationKind': serializer.toJson<String>(adaptationKind),
+      'adaptationKey': serializer.toJson<String>(adaptationKey),
+      'episodeNumber': serializer.toJson<int>(episodeNumber),
+      'sourceUnit': serializer.toJson<String>(sourceUnit),
+      'sourceNumber': serializer.toJson<int>(sourceNumber),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  AdaptationProgressAnchorRow copyWith({
+    String? sourceKind,
+    String? sourceKey,
+    String? adaptationKind,
+    String? adaptationKey,
+    int? episodeNumber,
+    String? sourceUnit,
+    int? sourceNumber,
+    int? updatedAt,
+  }) => AdaptationProgressAnchorRow(
+    sourceKind: sourceKind ?? this.sourceKind,
+    sourceKey: sourceKey ?? this.sourceKey,
+    adaptationKind: adaptationKind ?? this.adaptationKind,
+    adaptationKey: adaptationKey ?? this.adaptationKey,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    sourceUnit: sourceUnit ?? this.sourceUnit,
+    sourceNumber: sourceNumber ?? this.sourceNumber,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  AdaptationProgressAnchorRow copyWithCompanion(
+    AdaptationProgressAnchorsCompanion data,
+  ) {
+    return AdaptationProgressAnchorRow(
+      sourceKind: data.sourceKind.present
+          ? data.sourceKind.value
+          : this.sourceKind,
+      sourceKey: data.sourceKey.present ? data.sourceKey.value : this.sourceKey,
+      adaptationKind: data.adaptationKind.present
+          ? data.adaptationKind.value
+          : this.adaptationKind,
+      adaptationKey: data.adaptationKey.present
+          ? data.adaptationKey.value
+          : this.adaptationKey,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      sourceUnit: data.sourceUnit.present
+          ? data.sourceUnit.value
+          : this.sourceUnit,
+      sourceNumber: data.sourceNumber.present
+          ? data.sourceNumber.value
+          : this.sourceNumber,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AdaptationProgressAnchorRow(')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('adaptationKind: $adaptationKind, ')
+          ..write('adaptationKey: $adaptationKey, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('sourceUnit: $sourceUnit, ')
+          ..write('sourceNumber: $sourceNumber, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    sourceKind,
+    sourceKey,
+    adaptationKind,
+    adaptationKey,
+    episodeNumber,
+    sourceUnit,
+    sourceNumber,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AdaptationProgressAnchorRow &&
+          other.sourceKind == this.sourceKind &&
+          other.sourceKey == this.sourceKey &&
+          other.adaptationKind == this.adaptationKind &&
+          other.adaptationKey == this.adaptationKey &&
+          other.episodeNumber == this.episodeNumber &&
+          other.sourceUnit == this.sourceUnit &&
+          other.sourceNumber == this.sourceNumber &&
+          other.updatedAt == this.updatedAt);
+}
+
+class AdaptationProgressAnchorsCompanion
+    extends UpdateCompanion<AdaptationProgressAnchorRow> {
+  final Value<String> sourceKind;
+  final Value<String> sourceKey;
+  final Value<String> adaptationKind;
+  final Value<String> adaptationKey;
+  final Value<int> episodeNumber;
+  final Value<String> sourceUnit;
+  final Value<int> sourceNumber;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const AdaptationProgressAnchorsCompanion({
+    this.sourceKind = const Value.absent(),
+    this.sourceKey = const Value.absent(),
+    this.adaptationKind = const Value.absent(),
+    this.adaptationKey = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.sourceUnit = const Value.absent(),
+    this.sourceNumber = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AdaptationProgressAnchorsCompanion.insert({
+    required String sourceKind,
+    required String sourceKey,
+    required String adaptationKind,
+    required String adaptationKey,
+    required int episodeNumber,
+    required String sourceUnit,
+    required int sourceNumber,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : sourceKind = Value(sourceKind),
+       sourceKey = Value(sourceKey),
+       adaptationKind = Value(adaptationKind),
+       adaptationKey = Value(adaptationKey),
+       episodeNumber = Value(episodeNumber),
+       sourceUnit = Value(sourceUnit),
+       sourceNumber = Value(sourceNumber),
+       updatedAt = Value(updatedAt);
+  static Insertable<AdaptationProgressAnchorRow> custom({
+    Expression<String>? sourceKind,
+    Expression<String>? sourceKey,
+    Expression<String>? adaptationKind,
+    Expression<String>? adaptationKey,
+    Expression<int>? episodeNumber,
+    Expression<String>? sourceUnit,
+    Expression<int>? sourceNumber,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (sourceKind != null) 'source_kind': sourceKind,
+      if (sourceKey != null) 'source_key': sourceKey,
+      if (adaptationKind != null) 'adaptation_kind': adaptationKind,
+      if (adaptationKey != null) 'adaptation_key': adaptationKey,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (sourceUnit != null) 'source_unit': sourceUnit,
+      if (sourceNumber != null) 'source_number': sourceNumber,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AdaptationProgressAnchorsCompanion copyWith({
+    Value<String>? sourceKind,
+    Value<String>? sourceKey,
+    Value<String>? adaptationKind,
+    Value<String>? adaptationKey,
+    Value<int>? episodeNumber,
+    Value<String>? sourceUnit,
+    Value<int>? sourceNumber,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return AdaptationProgressAnchorsCompanion(
+      sourceKind: sourceKind ?? this.sourceKind,
+      sourceKey: sourceKey ?? this.sourceKey,
+      adaptationKind: adaptationKind ?? this.adaptationKind,
+      adaptationKey: adaptationKey ?? this.adaptationKey,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      sourceUnit: sourceUnit ?? this.sourceUnit,
+      sourceNumber: sourceNumber ?? this.sourceNumber,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (sourceKind.present) {
+      map['source_kind'] = Variable<String>(sourceKind.value);
+    }
+    if (sourceKey.present) {
+      map['source_key'] = Variable<String>(sourceKey.value);
+    }
+    if (adaptationKind.present) {
+      map['adaptation_kind'] = Variable<String>(adaptationKind.value);
+    }
+    if (adaptationKey.present) {
+      map['adaptation_key'] = Variable<String>(adaptationKey.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<int>(episodeNumber.value);
+    }
+    if (sourceUnit.present) {
+      map['source_unit'] = Variable<String>(sourceUnit.value);
+    }
+    if (sourceNumber.present) {
+      map['source_number'] = Variable<int>(sourceNumber.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AdaptationProgressAnchorsCompanion(')
+          ..write('sourceKind: $sourceKind, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('adaptationKind: $adaptationKind, ')
+          ..write('adaptationKey: $adaptationKey, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('sourceUnit: $sourceUnit, ')
+          ..write('sourceNumber: $sourceNumber, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -71335,6 +75131,18 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   );
   late final $VideoThemeSongSpansTable videoThemeSongSpans =
       $VideoThemeSongSpansTable(this);
+  late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
+    this,
+  );
+  late final $MusicMetadataRawSnapshotsTable musicMetadataRawSnapshots =
+      $MusicMetadataRawSnapshotsTable(this);
+  late final $MusicLockedFieldsTable musicLockedFields =
+      $MusicLockedFieldsTable(this);
+  late final $GameVoiceCastsTable gameVoiceCasts = $GameVoiceCastsTable(this);
+  late final $PersonIdentityBridgesTable personIdentityBridges =
+      $PersonIdentityBridgesTable(this);
+  late final $AdaptationProgressAnchorsTable adaptationProgressAnchors =
+      $AdaptationProgressAnchorsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -71455,6 +75263,12 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicPlaylistEntries,
     musicPlayEvents,
     videoThemeSongSpans,
+    musicScrapeMeta,
+    musicMetadataRawSnapshots,
+    musicLockedFields,
+    gameVoiceCasts,
+    personIdentityBridges,
+    adaptationProgressAnchors,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -119941,6 +123755,1872 @@ typedef $$VideoThemeSongSpansTableProcessedTableManager =
       VideoThemeSongSpanRow,
       PrefetchHooks Function()
     >;
+typedef $$MusicScrapeMetaTableCreateCompanionBuilder =
+    MusicScrapeMetaCompanion Function({
+      required String trackUid,
+      required String status,
+      Value<String?> method,
+      Value<String?> mbRecordingId,
+      Value<String?> mbReleaseId,
+      Value<String?> mbReleaseGroupId,
+      Value<String?> mbWorkId,
+      Value<String?> mbArtistId,
+      Value<String?> acoustid,
+      Value<double?> confidence,
+      Value<String?> title,
+      Value<String?> artistCredit,
+      Value<String?> albumTitle,
+      Value<String?> albumArtistCredit,
+      Value<String?> releaseDate,
+      Value<String?> catalogNo,
+      Value<int?> trackNo,
+      Value<int?> discNo,
+      Value<String?> originalRecordingId,
+      Value<String?> originalTitle,
+      Value<String?> originalArtistCredit,
+      Value<String?> originalReleaseDate,
+      Value<bool> selfIsOriginal,
+      Value<String?> versionsJson,
+      Value<String?> musicVideosJson,
+      Value<String?> coverUrl,
+      Value<String?> vgmdbJson,
+      Value<String?> candidatesJson,
+      Value<String?> warnings,
+      required int scraperVersion,
+      required int scrapedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicScrapeMetaTableUpdateCompanionBuilder =
+    MusicScrapeMetaCompanion Function({
+      Value<String> trackUid,
+      Value<String> status,
+      Value<String?> method,
+      Value<String?> mbRecordingId,
+      Value<String?> mbReleaseId,
+      Value<String?> mbReleaseGroupId,
+      Value<String?> mbWorkId,
+      Value<String?> mbArtistId,
+      Value<String?> acoustid,
+      Value<double?> confidence,
+      Value<String?> title,
+      Value<String?> artistCredit,
+      Value<String?> albumTitle,
+      Value<String?> albumArtistCredit,
+      Value<String?> releaseDate,
+      Value<String?> catalogNo,
+      Value<int?> trackNo,
+      Value<int?> discNo,
+      Value<String?> originalRecordingId,
+      Value<String?> originalTitle,
+      Value<String?> originalArtistCredit,
+      Value<String?> originalReleaseDate,
+      Value<bool> selfIsOriginal,
+      Value<String?> versionsJson,
+      Value<String?> musicVideosJson,
+      Value<String?> coverUrl,
+      Value<String?> vgmdbJson,
+      Value<String?> candidatesJson,
+      Value<String?> warnings,
+      Value<int> scraperVersion,
+      Value<int> scrapedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicScrapeMetaTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicScrapeMetaTable> {
+  $$MusicScrapeMetaTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get method => $composableBuilder(
+    column: $table.method,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mbRecordingId => $composableBuilder(
+    column: $table.mbRecordingId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mbReleaseId => $composableBuilder(
+    column: $table.mbReleaseId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mbReleaseGroupId => $composableBuilder(
+    column: $table.mbReleaseGroupId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mbWorkId => $composableBuilder(
+    column: $table.mbWorkId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mbArtistId => $composableBuilder(
+    column: $table.mbArtistId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get acoustid => $composableBuilder(
+    column: $table.acoustid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get artistCredit => $composableBuilder(
+    column: $table.artistCredit,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get albumTitle => $composableBuilder(
+    column: $table.albumTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get albumArtistCredit => $composableBuilder(
+    column: $table.albumArtistCredit,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get releaseDate => $composableBuilder(
+    column: $table.releaseDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get catalogNo => $composableBuilder(
+    column: $table.catalogNo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get trackNo => $composableBuilder(
+    column: $table.trackNo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get discNo => $composableBuilder(
+    column: $table.discNo,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalRecordingId => $composableBuilder(
+    column: $table.originalRecordingId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalArtistCredit => $composableBuilder(
+    column: $table.originalArtistCredit,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalReleaseDate => $composableBuilder(
+    column: $table.originalReleaseDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get selfIsOriginal => $composableBuilder(
+    column: $table.selfIsOriginal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get versionsJson => $composableBuilder(
+    column: $table.versionsJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get musicVideosJson => $composableBuilder(
+    column: $table.musicVideosJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverUrl => $composableBuilder(
+    column: $table.coverUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get vgmdbJson => $composableBuilder(
+    column: $table.vgmdbJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get candidatesJson => $composableBuilder(
+    column: $table.candidatesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get warnings => $composableBuilder(
+    column: $table.warnings,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get scraperVersion => $composableBuilder(
+    column: $table.scraperVersion,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get scrapedAt => $composableBuilder(
+    column: $table.scrapedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicScrapeMetaTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicScrapeMetaTable> {
+  $$MusicScrapeMetaTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get method => $composableBuilder(
+    column: $table.method,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mbRecordingId => $composableBuilder(
+    column: $table.mbRecordingId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mbReleaseId => $composableBuilder(
+    column: $table.mbReleaseId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mbReleaseGroupId => $composableBuilder(
+    column: $table.mbReleaseGroupId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mbWorkId => $composableBuilder(
+    column: $table.mbWorkId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mbArtistId => $composableBuilder(
+    column: $table.mbArtistId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get acoustid => $composableBuilder(
+    column: $table.acoustid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get artistCredit => $composableBuilder(
+    column: $table.artistCredit,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get albumTitle => $composableBuilder(
+    column: $table.albumTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get albumArtistCredit => $composableBuilder(
+    column: $table.albumArtistCredit,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get releaseDate => $composableBuilder(
+    column: $table.releaseDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get catalogNo => $composableBuilder(
+    column: $table.catalogNo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get trackNo => $composableBuilder(
+    column: $table.trackNo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get discNo => $composableBuilder(
+    column: $table.discNo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalRecordingId => $composableBuilder(
+    column: $table.originalRecordingId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalArtistCredit => $composableBuilder(
+    column: $table.originalArtistCredit,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalReleaseDate => $composableBuilder(
+    column: $table.originalReleaseDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get selfIsOriginal => $composableBuilder(
+    column: $table.selfIsOriginal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get versionsJson => $composableBuilder(
+    column: $table.versionsJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get musicVideosJson => $composableBuilder(
+    column: $table.musicVideosJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverUrl => $composableBuilder(
+    column: $table.coverUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get vgmdbJson => $composableBuilder(
+    column: $table.vgmdbJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get candidatesJson => $composableBuilder(
+    column: $table.candidatesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get warnings => $composableBuilder(
+    column: $table.warnings,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get scraperVersion => $composableBuilder(
+    column: $table.scraperVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get scrapedAt => $composableBuilder(
+    column: $table.scrapedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicScrapeMetaTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicScrapeMetaTable> {
+  $$MusicScrapeMetaTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get method =>
+      $composableBuilder(column: $table.method, builder: (column) => column);
+
+  GeneratedColumn<String> get mbRecordingId => $composableBuilder(
+    column: $table.mbRecordingId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get mbReleaseId => $composableBuilder(
+    column: $table.mbReleaseId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get mbReleaseGroupId => $composableBuilder(
+    column: $table.mbReleaseGroupId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get mbWorkId =>
+      $composableBuilder(column: $table.mbWorkId, builder: (column) => column);
+
+  GeneratedColumn<String> get mbArtistId => $composableBuilder(
+    column: $table.mbArtistId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get acoustid =>
+      $composableBuilder(column: $table.acoustid, builder: (column) => column);
+
+  GeneratedColumn<double> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get artistCredit => $composableBuilder(
+    column: $table.artistCredit,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get albumTitle => $composableBuilder(
+    column: $table.albumTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get albumArtistCredit => $composableBuilder(
+    column: $table.albumArtistCredit,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get releaseDate => $composableBuilder(
+    column: $table.releaseDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get catalogNo =>
+      $composableBuilder(column: $table.catalogNo, builder: (column) => column);
+
+  GeneratedColumn<int> get trackNo =>
+      $composableBuilder(column: $table.trackNo, builder: (column) => column);
+
+  GeneratedColumn<int> get discNo =>
+      $composableBuilder(column: $table.discNo, builder: (column) => column);
+
+  GeneratedColumn<String> get originalRecordingId => $composableBuilder(
+    column: $table.originalRecordingId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originalTitle => $composableBuilder(
+    column: $table.originalTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originalArtistCredit => $composableBuilder(
+    column: $table.originalArtistCredit,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originalReleaseDate => $composableBuilder(
+    column: $table.originalReleaseDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get selfIsOriginal => $composableBuilder(
+    column: $table.selfIsOriginal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get versionsJson => $composableBuilder(
+    column: $table.versionsJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get musicVideosJson => $composableBuilder(
+    column: $table.musicVideosJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get coverUrl =>
+      $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get vgmdbJson =>
+      $composableBuilder(column: $table.vgmdbJson, builder: (column) => column);
+
+  GeneratedColumn<String> get candidatesJson => $composableBuilder(
+    column: $table.candidatesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get warnings =>
+      $composableBuilder(column: $table.warnings, builder: (column) => column);
+
+  GeneratedColumn<int> get scraperVersion => $composableBuilder(
+    column: $table.scraperVersion,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get scrapedAt =>
+      $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+}
+
+class $$MusicScrapeMetaTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicScrapeMetaTable,
+          MusicScrapeMetaRow,
+          $$MusicScrapeMetaTableFilterComposer,
+          $$MusicScrapeMetaTableOrderingComposer,
+          $$MusicScrapeMetaTableAnnotationComposer,
+          $$MusicScrapeMetaTableCreateCompanionBuilder,
+          $$MusicScrapeMetaTableUpdateCompanionBuilder,
+          (
+            MusicScrapeMetaRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicScrapeMetaTable,
+              MusicScrapeMetaRow
+            >,
+          ),
+          MusicScrapeMetaRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicScrapeMetaTableTableManager(
+    _$FushiDatabase db,
+    $MusicScrapeMetaTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicScrapeMetaTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicScrapeMetaTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MusicScrapeMetaTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String?> method = const Value.absent(),
+                Value<String?> mbRecordingId = const Value.absent(),
+                Value<String?> mbReleaseId = const Value.absent(),
+                Value<String?> mbReleaseGroupId = const Value.absent(),
+                Value<String?> mbWorkId = const Value.absent(),
+                Value<String?> mbArtistId = const Value.absent(),
+                Value<String?> acoustid = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> artistCredit = const Value.absent(),
+                Value<String?> albumTitle = const Value.absent(),
+                Value<String?> albumArtistCredit = const Value.absent(),
+                Value<String?> releaseDate = const Value.absent(),
+                Value<String?> catalogNo = const Value.absent(),
+                Value<int?> trackNo = const Value.absent(),
+                Value<int?> discNo = const Value.absent(),
+                Value<String?> originalRecordingId = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> originalArtistCredit = const Value.absent(),
+                Value<String?> originalReleaseDate = const Value.absent(),
+                Value<bool> selfIsOriginal = const Value.absent(),
+                Value<String?> versionsJson = const Value.absent(),
+                Value<String?> musicVideosJson = const Value.absent(),
+                Value<String?> coverUrl = const Value.absent(),
+                Value<String?> vgmdbJson = const Value.absent(),
+                Value<String?> candidatesJson = const Value.absent(),
+                Value<String?> warnings = const Value.absent(),
+                Value<int> scraperVersion = const Value.absent(),
+                Value<int> scrapedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicScrapeMetaCompanion(
+                trackUid: trackUid,
+                status: status,
+                method: method,
+                mbRecordingId: mbRecordingId,
+                mbReleaseId: mbReleaseId,
+                mbReleaseGroupId: mbReleaseGroupId,
+                mbWorkId: mbWorkId,
+                mbArtistId: mbArtistId,
+                acoustid: acoustid,
+                confidence: confidence,
+                title: title,
+                artistCredit: artistCredit,
+                albumTitle: albumTitle,
+                albumArtistCredit: albumArtistCredit,
+                releaseDate: releaseDate,
+                catalogNo: catalogNo,
+                trackNo: trackNo,
+                discNo: discNo,
+                originalRecordingId: originalRecordingId,
+                originalTitle: originalTitle,
+                originalArtistCredit: originalArtistCredit,
+                originalReleaseDate: originalReleaseDate,
+                selfIsOriginal: selfIsOriginal,
+                versionsJson: versionsJson,
+                musicVideosJson: musicVideosJson,
+                coverUrl: coverUrl,
+                vgmdbJson: vgmdbJson,
+                candidatesJson: candidatesJson,
+                warnings: warnings,
+                scraperVersion: scraperVersion,
+                scrapedAt: scrapedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String status,
+                Value<String?> method = const Value.absent(),
+                Value<String?> mbRecordingId = const Value.absent(),
+                Value<String?> mbReleaseId = const Value.absent(),
+                Value<String?> mbReleaseGroupId = const Value.absent(),
+                Value<String?> mbWorkId = const Value.absent(),
+                Value<String?> mbArtistId = const Value.absent(),
+                Value<String?> acoustid = const Value.absent(),
+                Value<double?> confidence = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String?> artistCredit = const Value.absent(),
+                Value<String?> albumTitle = const Value.absent(),
+                Value<String?> albumArtistCredit = const Value.absent(),
+                Value<String?> releaseDate = const Value.absent(),
+                Value<String?> catalogNo = const Value.absent(),
+                Value<int?> trackNo = const Value.absent(),
+                Value<int?> discNo = const Value.absent(),
+                Value<String?> originalRecordingId = const Value.absent(),
+                Value<String?> originalTitle = const Value.absent(),
+                Value<String?> originalArtistCredit = const Value.absent(),
+                Value<String?> originalReleaseDate = const Value.absent(),
+                Value<bool> selfIsOriginal = const Value.absent(),
+                Value<String?> versionsJson = const Value.absent(),
+                Value<String?> musicVideosJson = const Value.absent(),
+                Value<String?> coverUrl = const Value.absent(),
+                Value<String?> vgmdbJson = const Value.absent(),
+                Value<String?> candidatesJson = const Value.absent(),
+                Value<String?> warnings = const Value.absent(),
+                required int scraperVersion,
+                required int scrapedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicScrapeMetaCompanion.insert(
+                trackUid: trackUid,
+                status: status,
+                method: method,
+                mbRecordingId: mbRecordingId,
+                mbReleaseId: mbReleaseId,
+                mbReleaseGroupId: mbReleaseGroupId,
+                mbWorkId: mbWorkId,
+                mbArtistId: mbArtistId,
+                acoustid: acoustid,
+                confidence: confidence,
+                title: title,
+                artistCredit: artistCredit,
+                albumTitle: albumTitle,
+                albumArtistCredit: albumArtistCredit,
+                releaseDate: releaseDate,
+                catalogNo: catalogNo,
+                trackNo: trackNo,
+                discNo: discNo,
+                originalRecordingId: originalRecordingId,
+                originalTitle: originalTitle,
+                originalArtistCredit: originalArtistCredit,
+                originalReleaseDate: originalReleaseDate,
+                selfIsOriginal: selfIsOriginal,
+                versionsJson: versionsJson,
+                musicVideosJson: musicVideosJson,
+                coverUrl: coverUrl,
+                vgmdbJson: vgmdbJson,
+                candidatesJson: candidatesJson,
+                warnings: warnings,
+                scraperVersion: scraperVersion,
+                scrapedAt: scrapedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicScrapeMetaTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicScrapeMetaTable,
+      MusicScrapeMetaRow,
+      $$MusicScrapeMetaTableFilterComposer,
+      $$MusicScrapeMetaTableOrderingComposer,
+      $$MusicScrapeMetaTableAnnotationComposer,
+      $$MusicScrapeMetaTableCreateCompanionBuilder,
+      $$MusicScrapeMetaTableUpdateCompanionBuilder,
+      (
+        MusicScrapeMetaRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicScrapeMetaTable,
+          MusicScrapeMetaRow
+        >,
+      ),
+      MusicScrapeMetaRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicMetadataRawSnapshotsTableCreateCompanionBuilder =
+    MusicMetadataRawSnapshotsCompanion Function({
+      Value<int> id,
+      required String provider,
+      required String snapshotKind,
+      required String externalId,
+      required String rawJson,
+      required int fetchedAt,
+    });
+typedef $$MusicMetadataRawSnapshotsTableUpdateCompanionBuilder =
+    MusicMetadataRawSnapshotsCompanion Function({
+      Value<int> id,
+      Value<String> provider,
+      Value<String> snapshotKind,
+      Value<String> externalId,
+      Value<String> rawJson,
+      Value<int> fetchedAt,
+    });
+
+class $$MusicMetadataRawSnapshotsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicMetadataRawSnapshotsTable> {
+  $$MusicMetadataRawSnapshotsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get snapshotKind => $composableBuilder(
+    column: $table.snapshotKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get externalId => $composableBuilder(
+    column: $table.externalId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rawJson => $composableBuilder(
+    column: $table.rawJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicMetadataRawSnapshotsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicMetadataRawSnapshotsTable> {
+  $$MusicMetadataRawSnapshotsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get provider => $composableBuilder(
+    column: $table.provider,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get snapshotKind => $composableBuilder(
+    column: $table.snapshotKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get externalId => $composableBuilder(
+    column: $table.externalId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get rawJson => $composableBuilder(
+    column: $table.rawJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicMetadataRawSnapshotsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicMetadataRawSnapshotsTable> {
+  $$MusicMetadataRawSnapshotsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get provider =>
+      $composableBuilder(column: $table.provider, builder: (column) => column);
+
+  GeneratedColumn<String> get snapshotKind => $composableBuilder(
+    column: $table.snapshotKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get externalId => $composableBuilder(
+    column: $table.externalId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get rawJson =>
+      $composableBuilder(column: $table.rawJson, builder: (column) => column);
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$MusicMetadataRawSnapshotsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicMetadataRawSnapshotsTable,
+          MusicMetadataRawSnapshotRow,
+          $$MusicMetadataRawSnapshotsTableFilterComposer,
+          $$MusicMetadataRawSnapshotsTableOrderingComposer,
+          $$MusicMetadataRawSnapshotsTableAnnotationComposer,
+          $$MusicMetadataRawSnapshotsTableCreateCompanionBuilder,
+          $$MusicMetadataRawSnapshotsTableUpdateCompanionBuilder,
+          (
+            MusicMetadataRawSnapshotRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicMetadataRawSnapshotsTable,
+              MusicMetadataRawSnapshotRow
+            >,
+          ),
+          MusicMetadataRawSnapshotRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicMetadataRawSnapshotsTableTableManager(
+    _$FushiDatabase db,
+    $MusicMetadataRawSnapshotsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicMetadataRawSnapshotsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MusicMetadataRawSnapshotsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicMetadataRawSnapshotsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> provider = const Value.absent(),
+                Value<String> snapshotKind = const Value.absent(),
+                Value<String> externalId = const Value.absent(),
+                Value<String> rawJson = const Value.absent(),
+                Value<int> fetchedAt = const Value.absent(),
+              }) => MusicMetadataRawSnapshotsCompanion(
+                id: id,
+                provider: provider,
+                snapshotKind: snapshotKind,
+                externalId: externalId,
+                rawJson: rawJson,
+                fetchedAt: fetchedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String provider,
+                required String snapshotKind,
+                required String externalId,
+                required String rawJson,
+                required int fetchedAt,
+              }) => MusicMetadataRawSnapshotsCompanion.insert(
+                id: id,
+                provider: provider,
+                snapshotKind: snapshotKind,
+                externalId: externalId,
+                rawJson: rawJson,
+                fetchedAt: fetchedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicMetadataRawSnapshotsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicMetadataRawSnapshotsTable,
+      MusicMetadataRawSnapshotRow,
+      $$MusicMetadataRawSnapshotsTableFilterComposer,
+      $$MusicMetadataRawSnapshotsTableOrderingComposer,
+      $$MusicMetadataRawSnapshotsTableAnnotationComposer,
+      $$MusicMetadataRawSnapshotsTableCreateCompanionBuilder,
+      $$MusicMetadataRawSnapshotsTableUpdateCompanionBuilder,
+      (
+        MusicMetadataRawSnapshotRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicMetadataRawSnapshotsTable,
+          MusicMetadataRawSnapshotRow
+        >,
+      ),
+      MusicMetadataRawSnapshotRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicLockedFieldsTableCreateCompanionBuilder =
+    MusicLockedFieldsCompanion Function({
+      required String entityKind,
+      required String entityUid,
+      required String field,
+      required int lockedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicLockedFieldsTableUpdateCompanionBuilder =
+    MusicLockedFieldsCompanion Function({
+      Value<String> entityKind,
+      Value<String> entityUid,
+      Value<String> field,
+      Value<int> lockedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicLockedFieldsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicLockedFieldsTable> {
+  $$MusicLockedFieldsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get entityKind => $composableBuilder(
+    column: $table.entityKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityUid => $composableBuilder(
+    column: $table.entityUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lockedAt => $composableBuilder(
+    column: $table.lockedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicLockedFieldsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicLockedFieldsTable> {
+  $$MusicLockedFieldsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get entityKind => $composableBuilder(
+    column: $table.entityKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityUid => $composableBuilder(
+    column: $table.entityUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get field => $composableBuilder(
+    column: $table.field,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lockedAt => $composableBuilder(
+    column: $table.lockedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicLockedFieldsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicLockedFieldsTable> {
+  $$MusicLockedFieldsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get entityKind => $composableBuilder(
+    column: $table.entityKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityUid =>
+      $composableBuilder(column: $table.entityUid, builder: (column) => column);
+
+  GeneratedColumn<String> get field =>
+      $composableBuilder(column: $table.field, builder: (column) => column);
+
+  GeneratedColumn<int> get lockedAt =>
+      $composableBuilder(column: $table.lockedAt, builder: (column) => column);
+}
+
+class $$MusicLockedFieldsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicLockedFieldsTable,
+          MusicLockedFieldRow,
+          $$MusicLockedFieldsTableFilterComposer,
+          $$MusicLockedFieldsTableOrderingComposer,
+          $$MusicLockedFieldsTableAnnotationComposer,
+          $$MusicLockedFieldsTableCreateCompanionBuilder,
+          $$MusicLockedFieldsTableUpdateCompanionBuilder,
+          (
+            MusicLockedFieldRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicLockedFieldsTable,
+              MusicLockedFieldRow
+            >,
+          ),
+          MusicLockedFieldRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicLockedFieldsTableTableManager(
+    _$FushiDatabase db,
+    $MusicLockedFieldsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicLockedFieldsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicLockedFieldsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MusicLockedFieldsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> entityKind = const Value.absent(),
+                Value<String> entityUid = const Value.absent(),
+                Value<String> field = const Value.absent(),
+                Value<int> lockedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicLockedFieldsCompanion(
+                entityKind: entityKind,
+                entityUid: entityUid,
+                field: field,
+                lockedAt: lockedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String entityKind,
+                required String entityUid,
+                required String field,
+                required int lockedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicLockedFieldsCompanion.insert(
+                entityKind: entityKind,
+                entityUid: entityUid,
+                field: field,
+                lockedAt: lockedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicLockedFieldsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicLockedFieldsTable,
+      MusicLockedFieldRow,
+      $$MusicLockedFieldsTableFilterComposer,
+      $$MusicLockedFieldsTableOrderingComposer,
+      $$MusicLockedFieldsTableAnnotationComposer,
+      $$MusicLockedFieldsTableCreateCompanionBuilder,
+      $$MusicLockedFieldsTableUpdateCompanionBuilder,
+      (
+        MusicLockedFieldRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicLockedFieldsTable,
+          MusicLockedFieldRow
+        >,
+      ),
+      MusicLockedFieldRow,
+      PrefetchHooks Function()
+    >;
+typedef $$GameVoiceCastsTableCreateCompanionBuilder =
+    GameVoiceCastsCompanion Function({
+      required String gameId,
+      required String vndbId,
+      required String castJson,
+      required int fetchedAt,
+      Value<int> rowid,
+    });
+typedef $$GameVoiceCastsTableUpdateCompanionBuilder =
+    GameVoiceCastsCompanion Function({
+      Value<String> gameId,
+      Value<String> vndbId,
+      Value<String> castJson,
+      Value<int> fetchedAt,
+      Value<int> rowid,
+    });
+
+class $$GameVoiceCastsTableFilterComposer
+    extends Composer<_$FushiDatabase, $GameVoiceCastsTable> {
+  $$GameVoiceCastsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get vndbId => $composableBuilder(
+    column: $table.vndbId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get castJson => $composableBuilder(
+    column: $table.castJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GameVoiceCastsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $GameVoiceCastsTable> {
+  $$GameVoiceCastsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get vndbId => $composableBuilder(
+    column: $table.vndbId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get castJson => $composableBuilder(
+    column: $table.castJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GameVoiceCastsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $GameVoiceCastsTable> {
+  $$GameVoiceCastsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get gameId =>
+      $composableBuilder(column: $table.gameId, builder: (column) => column);
+
+  GeneratedColumn<String> get vndbId =>
+      $composableBuilder(column: $table.vndbId, builder: (column) => column);
+
+  GeneratedColumn<String> get castJson =>
+      $composableBuilder(column: $table.castJson, builder: (column) => column);
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+}
+
+class $$GameVoiceCastsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $GameVoiceCastsTable,
+          GameVoiceCastRow,
+          $$GameVoiceCastsTableFilterComposer,
+          $$GameVoiceCastsTableOrderingComposer,
+          $$GameVoiceCastsTableAnnotationComposer,
+          $$GameVoiceCastsTableCreateCompanionBuilder,
+          $$GameVoiceCastsTableUpdateCompanionBuilder,
+          (
+            GameVoiceCastRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $GameVoiceCastsTable,
+              GameVoiceCastRow
+            >,
+          ),
+          GameVoiceCastRow,
+          PrefetchHooks Function()
+        > {
+  $$GameVoiceCastsTableTableManager(
+    _$FushiDatabase db,
+    $GameVoiceCastsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GameVoiceCastsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GameVoiceCastsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GameVoiceCastsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> gameId = const Value.absent(),
+                Value<String> vndbId = const Value.absent(),
+                Value<String> castJson = const Value.absent(),
+                Value<int> fetchedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => GameVoiceCastsCompanion(
+                gameId: gameId,
+                vndbId: vndbId,
+                castJson: castJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String gameId,
+                required String vndbId,
+                required String castJson,
+                required int fetchedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => GameVoiceCastsCompanion.insert(
+                gameId: gameId,
+                vndbId: vndbId,
+                castJson: castJson,
+                fetchedAt: fetchedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GameVoiceCastsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $GameVoiceCastsTable,
+      GameVoiceCastRow,
+      $$GameVoiceCastsTableFilterComposer,
+      $$GameVoiceCastsTableOrderingComposer,
+      $$GameVoiceCastsTableAnnotationComposer,
+      $$GameVoiceCastsTableCreateCompanionBuilder,
+      $$GameVoiceCastsTableUpdateCompanionBuilder,
+      (
+        GameVoiceCastRow,
+        BaseReferences<_$FushiDatabase, $GameVoiceCastsTable, GameVoiceCastRow>,
+      ),
+      GameVoiceCastRow,
+      PrefetchHooks Function()
+    >;
+typedef $$PersonIdentityBridgesTableCreateCompanionBuilder =
+    PersonIdentityBridgesCompanion Function({
+      required String subject,
+      required String object,
+      required String source,
+      required int createdAt,
+      Value<int?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$PersonIdentityBridgesTableUpdateCompanionBuilder =
+    PersonIdentityBridgesCompanion Function({
+      Value<String> subject,
+      Value<String> object,
+      Value<String> source,
+      Value<int> createdAt,
+      Value<int?> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$PersonIdentityBridgesTableFilterComposer
+    extends Composer<_$FushiDatabase, $PersonIdentityBridgesTable> {
+  $$PersonIdentityBridgesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get object => $composableBuilder(
+    column: $table.object,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PersonIdentityBridgesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $PersonIdentityBridgesTable> {
+  $$PersonIdentityBridgesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get subject => $composableBuilder(
+    column: $table.subject,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get object => $composableBuilder(
+    column: $table.object,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PersonIdentityBridgesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $PersonIdentityBridgesTable> {
+  $$PersonIdentityBridgesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get subject =>
+      $composableBuilder(column: $table.subject, builder: (column) => column);
+
+  GeneratedColumn<String> get object =>
+      $composableBuilder(column: $table.object, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$PersonIdentityBridgesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $PersonIdentityBridgesTable,
+          PersonIdentityBridgeRow,
+          $$PersonIdentityBridgesTableFilterComposer,
+          $$PersonIdentityBridgesTableOrderingComposer,
+          $$PersonIdentityBridgesTableAnnotationComposer,
+          $$PersonIdentityBridgesTableCreateCompanionBuilder,
+          $$PersonIdentityBridgesTableUpdateCompanionBuilder,
+          (
+            PersonIdentityBridgeRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $PersonIdentityBridgesTable,
+              PersonIdentityBridgeRow
+            >,
+          ),
+          PersonIdentityBridgeRow,
+          PrefetchHooks Function()
+        > {
+  $$PersonIdentityBridgesTableTableManager(
+    _$FushiDatabase db,
+    $PersonIdentityBridgesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PersonIdentityBridgesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$PersonIdentityBridgesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$PersonIdentityBridgesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> subject = const Value.absent(),
+                Value<String> object = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PersonIdentityBridgesCompanion(
+                subject: subject,
+                object: object,
+                source: source,
+                createdAt: createdAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String subject,
+                required String object,
+                required String source,
+                required int createdAt,
+                Value<int?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PersonIdentityBridgesCompanion.insert(
+                subject: subject,
+                object: object,
+                source: source,
+                createdAt: createdAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PersonIdentityBridgesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $PersonIdentityBridgesTable,
+      PersonIdentityBridgeRow,
+      $$PersonIdentityBridgesTableFilterComposer,
+      $$PersonIdentityBridgesTableOrderingComposer,
+      $$PersonIdentityBridgesTableAnnotationComposer,
+      $$PersonIdentityBridgesTableCreateCompanionBuilder,
+      $$PersonIdentityBridgesTableUpdateCompanionBuilder,
+      (
+        PersonIdentityBridgeRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $PersonIdentityBridgesTable,
+          PersonIdentityBridgeRow
+        >,
+      ),
+      PersonIdentityBridgeRow,
+      PrefetchHooks Function()
+    >;
+typedef $$AdaptationProgressAnchorsTableCreateCompanionBuilder =
+    AdaptationProgressAnchorsCompanion Function({
+      required String sourceKind,
+      required String sourceKey,
+      required String adaptationKind,
+      required String adaptationKey,
+      required int episodeNumber,
+      required String sourceUnit,
+      required int sourceNumber,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$AdaptationProgressAnchorsTableUpdateCompanionBuilder =
+    AdaptationProgressAnchorsCompanion Function({
+      Value<String> sourceKind,
+      Value<String> sourceKey,
+      Value<String> adaptationKind,
+      Value<String> adaptationKey,
+      Value<int> episodeNumber,
+      Value<String> sourceUnit,
+      Value<int> sourceNumber,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$AdaptationProgressAnchorsTableFilterComposer
+    extends Composer<_$FushiDatabase, $AdaptationProgressAnchorsTable> {
+  $$AdaptationProgressAnchorsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get adaptationKind => $composableBuilder(
+    column: $table.adaptationKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get adaptationKey => $composableBuilder(
+    column: $table.adaptationKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceUnit => $composableBuilder(
+    column: $table.sourceUnit,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sourceNumber => $composableBuilder(
+    column: $table.sourceNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AdaptationProgressAnchorsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $AdaptationProgressAnchorsTable> {
+  $$AdaptationProgressAnchorsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get adaptationKind => $composableBuilder(
+    column: $table.adaptationKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get adaptationKey => $composableBuilder(
+    column: $table.adaptationKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceUnit => $composableBuilder(
+    column: $table.sourceUnit,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sourceNumber => $composableBuilder(
+    column: $table.sourceNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AdaptationProgressAnchorsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $AdaptationProgressAnchorsTable> {
+  $$AdaptationProgressAnchorsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get sourceKind => $composableBuilder(
+    column: $table.sourceKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceKey =>
+      $composableBuilder(column: $table.sourceKey, builder: (column) => column);
+
+  GeneratedColumn<String> get adaptationKind => $composableBuilder(
+    column: $table.adaptationKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get adaptationKey => $composableBuilder(
+    column: $table.adaptationKey,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceUnit => $composableBuilder(
+    column: $table.sourceUnit,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sourceNumber => $composableBuilder(
+    column: $table.sourceNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$AdaptationProgressAnchorsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $AdaptationProgressAnchorsTable,
+          AdaptationProgressAnchorRow,
+          $$AdaptationProgressAnchorsTableFilterComposer,
+          $$AdaptationProgressAnchorsTableOrderingComposer,
+          $$AdaptationProgressAnchorsTableAnnotationComposer,
+          $$AdaptationProgressAnchorsTableCreateCompanionBuilder,
+          $$AdaptationProgressAnchorsTableUpdateCompanionBuilder,
+          (
+            AdaptationProgressAnchorRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $AdaptationProgressAnchorsTable,
+              AdaptationProgressAnchorRow
+            >,
+          ),
+          AdaptationProgressAnchorRow,
+          PrefetchHooks Function()
+        > {
+  $$AdaptationProgressAnchorsTableTableManager(
+    _$FushiDatabase db,
+    $AdaptationProgressAnchorsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AdaptationProgressAnchorsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$AdaptationProgressAnchorsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$AdaptationProgressAnchorsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> sourceKind = const Value.absent(),
+                Value<String> sourceKey = const Value.absent(),
+                Value<String> adaptationKind = const Value.absent(),
+                Value<String> adaptationKey = const Value.absent(),
+                Value<int> episodeNumber = const Value.absent(),
+                Value<String> sourceUnit = const Value.absent(),
+                Value<int> sourceNumber = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AdaptationProgressAnchorsCompanion(
+                sourceKind: sourceKind,
+                sourceKey: sourceKey,
+                adaptationKind: adaptationKind,
+                adaptationKey: adaptationKey,
+                episodeNumber: episodeNumber,
+                sourceUnit: sourceUnit,
+                sourceNumber: sourceNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String sourceKind,
+                required String sourceKey,
+                required String adaptationKind,
+                required String adaptationKey,
+                required int episodeNumber,
+                required String sourceUnit,
+                required int sourceNumber,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AdaptationProgressAnchorsCompanion.insert(
+                sourceKind: sourceKind,
+                sourceKey: sourceKey,
+                adaptationKind: adaptationKind,
+                adaptationKey: adaptationKey,
+                episodeNumber: episodeNumber,
+                sourceUnit: sourceUnit,
+                sourceNumber: sourceNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AdaptationProgressAnchorsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $AdaptationProgressAnchorsTable,
+      AdaptationProgressAnchorRow,
+      $$AdaptationProgressAnchorsTableFilterComposer,
+      $$AdaptationProgressAnchorsTableOrderingComposer,
+      $$AdaptationProgressAnchorsTableAnnotationComposer,
+      $$AdaptationProgressAnchorsTableCreateCompanionBuilder,
+      $$AdaptationProgressAnchorsTableUpdateCompanionBuilder,
+      (
+        AdaptationProgressAnchorRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $AdaptationProgressAnchorsTable,
+          AdaptationProgressAnchorRow
+        >,
+      ),
+      AdaptationProgressAnchorRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -120229,4 +125909,22 @@ class $FushiDatabaseManager {
       $$MusicPlayEventsTableTableManager(_db, _db.musicPlayEvents);
   $$VideoThemeSongSpansTableTableManager get videoThemeSongSpans =>
       $$VideoThemeSongSpansTableTableManager(_db, _db.videoThemeSongSpans);
+  $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>
+      $$MusicScrapeMetaTableTableManager(_db, _db.musicScrapeMeta);
+  $$MusicMetadataRawSnapshotsTableTableManager get musicMetadataRawSnapshots =>
+      $$MusicMetadataRawSnapshotsTableTableManager(
+        _db,
+        _db.musicMetadataRawSnapshots,
+      );
+  $$MusicLockedFieldsTableTableManager get musicLockedFields =>
+      $$MusicLockedFieldsTableTableManager(_db, _db.musicLockedFields);
+  $$GameVoiceCastsTableTableManager get gameVoiceCasts =>
+      $$GameVoiceCastsTableTableManager(_db, _db.gameVoiceCasts);
+  $$PersonIdentityBridgesTableTableManager get personIdentityBridges =>
+      $$PersonIdentityBridgesTableTableManager(_db, _db.personIdentityBridges);
+  $$AdaptationProgressAnchorsTableTableManager get adaptationProgressAnchors =>
+      $$AdaptationProgressAnchorsTableTableManager(
+        _db,
+        _db.adaptationProgressAnchors,
+      );
 }

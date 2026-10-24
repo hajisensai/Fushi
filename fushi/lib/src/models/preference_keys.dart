@@ -28,6 +28,9 @@ const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 /// Profile 快照（ProfileKeys._excludedPrefPrefixes）。
 const String kSectionTabOrderPrefKeyPrefix = 'section_tab_order::';
 
+/// 查词弹窗「我库里的例句」开关（bool，默认 true：全在本机、不上传，所有者 D-L2）。
+const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -288,6 +291,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 false）：已删除的「查词时让 AI 按句意挑词条」开关（2026-10-09
   // 所有者拍板移除）。存量键冻结、不再读写；留在这里只为键名不被别的功能复用。
   'lookup_ai_context_auto',
+  // bool（默认 true，D-L2）：查词弹窗「我库里的例句」区块（作品图谱 L4）。关掉时弹窗不渲染、
+  // 也不再往语料库喂入（索引留在本机，再开时增量补齐）。常量 [kLibrarySentencesEnabledPrefKey]。
+  'lookup_library_sentences',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
@@ -381,9 +387,14 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_manga_enabled',
   'module_music_enabled',
   'module_video_enabled',
+  // String（默认 ''）：AcoustID 应用 API key（音乐刮削 §8.1；本仓不内置 key，空 = AcoustID
+  // 不可用）。凭据：同时登记在 PrefRedactionPolicy.sensitiveKeys（`api_key` 形状亦覆盖）。
+  'music_acoustid_api_key',
   // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
   'music_audio_device',
   // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。
+  // bool（默认 false）：专辑连续曲目 / CUE 拆轨也交叉淡入（设计 §7.2）。
+  'music_crossfade_continuous',
   'music_crossfade_ms',
   // bool（默认 false）：桌面歌词（Android 悬浮窗 / Windows 置顶穿透窗，设计 §6.2）。
   'music_desktop_lyrics',
@@ -407,6 +418,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_replaygain_preamp_db',
   // double（默认 1.0）：音乐播放速度（变速不变调）。
   'music_speed',
+  // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
+  'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。

@@ -62,3 +62,35 @@ int32_t match_length_utf16(const Lookup& lookup, const std::string& text_utf8, s
 // 与浏览器扩展 yomitan tokenize 以前逐词调用 lookup 的口径相同。
 TokenizeOutput tokenize(const Lookup& lookup, const std::string& text_utf8, std::size_t scan_length,
                         bool with_readings, MatchLengthCache* cache);
+
+// ── 语料词元（「我库里的例句」：native/fushi_corpus 的倒排索引键） ─────────────
+//
+// 与 [tokenize] 同一条最长匹配，但目的不同：不是给 UI 切段，而是给出每个**命中**位置的
+// 词典形（首条结果的 `term.expression`，也就是查词弹窗词头显示的那个写法），让用户库里的
+// 句子按「查词时会看到的词头」建倒排。于是：
+//   * 只输出命中的词元（未命中的位置不可能是弹窗里的词头，不进索引）；
+//   * 未命中时若落在空格分词类字母上，整串字母一起跳过（不从词中间起查，免得 "zephyr"
+//     未收录时切出 "e" / "phy" 一类伪词元）；空白直接跳过，不查；
+//   * 位置与长度按 UTF-16 码元计（调用方是 Dart 字符串，高亮直接用）。
+// 词形还原、文本变体归一都在 [Lookup] 里，按已加载的变形表与词典生效——**不分语言、
+// 不假设日语**：没装词典 / 变形表的语言自然一个词元都不出。
+struct CorpusToken {
+  int32_t start;   // UTF-16 码元偏移
+  int32_t length;  // UTF-16 码元数（≥ 1）
+  std::string lemma;
+};
+
+// 一次批量调用内共享的窗口 → (匹配长度, 词典形) 记忆。同一批句子里高频词反复出现，
+// 窗口相同的位置只查一次。容量到顶时整表清空（批内命中率已足够，不做 LRU）。
+class CorpusLemmaMemo {
+ public:
+  bool get(const std::string& window, int32_t& length, std::string& lemma) const;
+  void put(const std::string& window, int32_t length, const std::string& lemma);
+
+ private:
+  static constexpr std::size_t kCapacity = 200000;
+  std::unordered_map<std::string, std::pair<int32_t, std::string>> entries_;
+};
+
+std::vector<CorpusToken> tokenize_corpus(const Lookup& lookup, const std::string& text_utf8,
+                                         std::size_t scan_length, CorpusLemmaMemo* memo);

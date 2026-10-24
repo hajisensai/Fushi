@@ -148,6 +148,63 @@ TA 配音的动画角色、游戏角色、唱过的角色歌，全部可点进�
 - **偏离**：手动连接的音乐端只开放「曲目」（OP / ED 是单曲；编辑器分段按钮放不下第六段）；专辑端点
   照常解析（同步 / 推断带来的专辑连接展开成该专辑 ≤ 8 分钟的曲目，每集取置信度最高的一首）。
 
+## L4 落地记录（2026-10-24）
+
+- **Rust 胖核心** `native/fushi_corpus/`（C ABI 前缀 `fcorp_`，Dart 绑定 `packages/fushi_corpus`）：
+  切句（`fcorp_split`，Unicode 各文字句末标点一张表，不分语言）、写入 / 替换 / 删除文档、
+  一次查询返回分组 top-N（句长惩罚 → 文档新旧 → 库内先后；每模块 / 每文档条数上限、原文去重）、
+  读回原文（`fcorp_export`）。句柄带读写锁，可跨 isolate 共用：后台写入时 UI 照常查。
+- **归一 = 词典形**：fushidicts 新导出 `fushidicts_corpus_terms`（一批句子一次 FFI），每个命中位置
+  给出首条结果的 `term.expression`——就是查词弹窗词头显示的那个写法；词形还原 / 文本变体都在
+  `Lookup` 里按已装载的词典与变形表生效，**不分语言**（没词典的语言一个词元都不出，有变形表的
+  18 种自动带还原）。未命中的拉丁等空格分词字母整串跳过，不从词中间起查。弹窗按词头查询。
+  词元线格式原样从 fushidicts 交给 Rust，Dart 不解码。
+- **书的定位**：句子起止换算成章内学习单位前缀（fushi_compute 新导出
+  `ffc_parse_study_char_prefixes`，一章一次 FFI），与阅读器 `charAnchor` 同一把尺子；跳回走收藏句
+  同款 `Bookmark(charAnchor, charAnchorLength, preserveSavedPosition)`。
+- **存储不进 Drift（没有用 v130）**：`<数据根>/corpus/` 一文档一文件（格式见 `src/corpus.rs` 头注释），
+  打开时载入倒排、句子原文按偏移回读。理由：索引是派生数据，不该进备份 / 同步，也不该和 UI 写事务
+  抢 SQLite 写锁（首次建索引要写上百万句）；状态归 Rust。唯一例外是游戏台词：文本钩子历史只在会话
+  内存里，语料库这份是它唯一的持久副本（**不进备份**，「重建」不删它，只重新分词）。
+- **增量**：书 / 音乐 / 游戏删除按来源表变化（drift `tableUpdates`）去抖对账，覆盖导入、同步、
+  备份合并等所有入库路径；视频在播放页每次换上字幕时喂这一集（`VideoPlayerController.onCuesReplaced`，
+  覆盖不落库的播放列表各集），对账补上已落库 cue 的单视频；游戏台词在 `_recordActivity` 攒批、
+  去抖 / 停止捕获 / 退出时落盘。首次建索引逐份提交，中途退出下次接着做；词典集合变了（签名 =
+  释义词典路径 + 目录修改时刻）就从语料库读回原文重新分词。启动 20 s 后才开始，全部在后台 isolate。
+- **弹窗**：`popup.js` 一份实现，app 内 WebView 弹窗（阅读器 / 视频 / 查词页 / 悬浮词典…）与
+  Windows / macOS app 外查词窗都接了两根 deferred 桥（`librarySentences` / `librarySentenceOpen`），
+  点击经根状态的 `WidgetRef` 回到出处（L3 的出口）。**浏览器扩展不支持**：扩展的 shim 对未知桥回
+  null，区块不出现（索引只在 app 本机，扩展端要另开服务端 API，未做）。Flutter 原生弹窗
+  `DictionaryPopupNative`（只有悬浮词典窗用）没有加。设置 → 查词 →「我库里的例句」：开关（默认开）
+  与「重建例句索引」（带进度 / 规模状态行）。
+- **限制**：用户查的是复合词的一部分、而分词把整串切成了更长的词元时，查不到（索引键是分词得到的
+  最长匹配词元）；游戏出处只能打开游戏详情（与 L3 同）。
+
+## L5 落地记录（2026-10-24）
+
+- **schema v131**（三张表，`people_tables.dart`）：`game_voice_casts`（游戏 VNDB 配音表缓存，设备本地、
+  无外键，删游戏同事务清）、`person_identity_bridges`（人物身份桥：`wikidata` 桥接缓存——自环行 =「查过」
+  标记，30 天过期重查；`manual` = 用户确认 / 否决「同一人」，`deleted_at` 墓碑）、
+  `adaptation_progress_anchors`（动画集 ↔ 原作卷 / 章手动对应点）。后两张按类别随备份，不进合并导入、
+  不进互联同步。
+- **同一人判据**：`fushi_engine/media/people/person_identity.dart` 的并查集，节点是 `id:<scheme>:<值>`
+  （AniDB creator / MAL people / TMDB person / VNDB staff / MusicBrainz artist / Wikidata QID）与
+  `ref:<域>:<键>`。只有共享外部 id、Wikidata 桥、用户手动确认会合并；**名字相同（全半角 / 空白 / 罗马字
+  段序归一）只出「可能是同一人」建议**，否决过的一对不再建议（外部 id 合并不受名字否决影响）。
+- **桥的来源**：VNDB `va.staff.extlinks` 直接给出声优的 `anidb` / `wikidata` / `musicbrainz_artist`
+  （2026-10-24 实测 `v17`），是三域合并的主桥；视频 / 音乐侧只有单一 id 时，人物页打开时对未查过的 id 跑
+  一次 Wikidata SPARQL（属性 P5649 / P4084 / P4985 / P434 / P3180，`wbgetentities` 实测核对），结果落库。
+- **游戏配音数据**：此前游戏侧没有任何配音数据。游戏详情页打开时，已绑定 VNDB id 的游戏后台取一次
+  `POST /kana/vn` 的 `va`（缓存 30 天；换绑 VN 重取；失败只记诊断不写缓存）。角色图 `sexual` 均值 > 0.5 不保留。
+- **音乐**：只读 `music_track_credits`（`vocal_cv` = CV 演唱、`character` = 角色名义）+ `music_artists.mb_artist_id`；
+  音乐刮削尚未写入这类署名时人物页「演唱与角色歌」显示空态，曲目详情「署名」不渲染。
+- **入口**：视频合集 / 单文件作品的人物轨道（`VideoCreditRail`，点头像）、游戏详情「配音」、曲目详情「署名」
+  → `PersonDetailPage`；页内卡片经 `openMediaLinkEntry` 进各模块条目。
+- **动画 ↔ 原作进度（§6）**：只做手动对应点 + 展示（「同一作品」区块下，已确认的书 → 视频改编连接一张卡：
+  「看到第 N 集 ≈ 原作第 M 卷」，取集号 ≤ N 的最后一个对应点、不插值）。文本相似度推断依赖 L4
+  `fushi_corpus`，**未做**：`AdaptationProgressInferrer` 只有接口，`kAdaptationProgressInferrer` 恒为 null。
+- **偏离**：人物图在 Dart 里建（IO / 编排层的小图，几万节点并查集线性时间，不是 CPU 热点）。
+
 ## 决策
 
 - **D-L1**：不用 Bangumi（2026-10-24 拍板）；自动判断支持 AI 辅助（见上）。

@@ -116,7 +116,7 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
   return rows;
 }
 
-@visibleForTesting
+/// 收藏句 / 「我库里的例句」（`corpus_origin_navigation.dart`）共用的视频起点解析。
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
   required VideoBookRow row,
   required int? favoriteSectionIndex,

@@ -54,6 +54,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
   'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
+  // 交叉淡入：设置值 → 引擎判衔接（crossfadeNext）→ 双实例编排由 music_crossfade_test
+  // 咬住；真 libmpv 上的样本级曲线 / 实时对齐在 music_crossfade_real_test。
+  'music/Crossfade': 'test/media/music/music_crossfade_test.dart',
+  'music/Crossfade gapless tracks too':
+      'test/media/music/music_crossfade_test.dart',
   // 预放大 / 独占 / DSD 采样率：设置值 → 引擎输出设置 → mpv 属性由
   // music_player_engine_test 咬住；真 libmpv 上的实际效果（volume-gain 电平、
   // WASAPI 独占 audio-out-params、DSD 逐文件 audio-samplerate）在
@@ -73,6 +78,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/music/lyrics/music_lyrics_service_test.dart',
   // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup），harness
   // 设置页没有歌词页；判据由 music_lyrics_page_logic_test 咬住。
+  // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
+  'music/VGMdb lookup': 'test/media/music/metadata/music_scrape_service_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
@@ -655,6 +662,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
   'floatingBall/Auto-restore floating ball':
       'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
+  // 「我库里的例句」开关：生效点是弹窗注入 window.__fushiLibrarySentencesEnabled（popup.js
+  // 据此不渲染 / 不发桥）与语料喂入门（LibraryCorpusService.enabled）。
+  'lookup/Sentences from your library':
+      'test/pages/popup_settings_injection_memo_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   // 弹出查词 / 浏览器扩展弹窗的独立尺寸：生效点是有效尺寸解析（解锁前跟随
   // app 内共享值、解锁后用自身宽高），由 AppModel 接线测试咬住；窗口真尺寸要

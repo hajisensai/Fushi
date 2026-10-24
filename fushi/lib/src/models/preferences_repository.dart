@@ -4345,6 +4345,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// AcoustID 应用 API key（音乐刮削 §8.1）。本仓不内置任何 key；空 = AcoustID 不可用。
+  String get musicAcoustidApiKey =>
+      (getPref('music_acoustid_api_key', defaultValue: '') as String?) ?? '';
+
+  Future<void> setMusicAcoustidApiKey(String value) async {
+    await setPref('music_acoustid_api_key', value.trim());
+    notifyListeners();
+  }
+
+  /// VGMdb 补充开关（社区镜像，无官方 API）。默认关。
+  bool get musicVgmdbEnabled =>
+      getPref('music_vgmdb_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicVgmdbEnabled(bool value) async {
+    await setPref('music_vgmdb_enabled', value);
+    notifyListeners();
+  }
+
   /// 歌词页查词时自动暂停（设计 §6.1「查词时自动暂停可配」）。默认开。
   bool get musicLyricsLookupPause =>
       getPref('music_lyrics_lookup_pause', defaultValue: true) == true;
@@ -4451,6 +4469,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicCrossfadeMs(int value) async {
     await setPref('music_crossfade_ms', value);
+    notifyListeners();
+  }
+
+  /// 专辑连续曲目 / CUE 拆轨也交叉淡入（默认关：真无缝优先，设计 §7.2）。
+  bool get musicCrossfadeContinuous =>
+      getPref('music_crossfade_continuous', defaultValue: false) as bool;
+
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await setPref('music_crossfade_continuous', value);
     notifyListeners();
   }
 

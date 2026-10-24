@@ -193,6 +193,42 @@ pub unsafe extern "C" fn ffc_parse_study_chars_utf16(
     })
 }
 
+/// 一段文本里多个位置的学习单位前缀数（一次调用，「我库里的例句」给一章所有句子的起止
+/// 换算阅读器锚点用）：`out[i]` = `units[0..offsets[i]]` 的单位数（未收尾的词串按 1 计，
+/// 同 [StudyCharState::total]）。`offsets` 必须升序且不超过 `len`。
+///
+/// # Safety
+/// `len > 0` 时 `units` 指向 `len` 个 `u16`；`n > 0` 时 `offsets` / `out` 各指向 `n` 个元素。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_parse_study_char_prefixes(
+    units: *const u16,
+    len: usize,
+    offsets: *const u32,
+    n: usize,
+    out: *mut u64,
+) -> i32 {
+    if (len > 0 && units.is_null()) || (n > 0 && (offsets.is_null() || out.is_null())) {
+        return status::NULL_ARGUMENT;
+    }
+    guard(|| {
+        let text: &[u16] = if len == 0 { &[] } else { std::slice::from_raw_parts(units, len) };
+        let offsets: &[u32] = if n == 0 { &[] } else { std::slice::from_raw_parts(offsets, n) };
+        let out: &mut [u64] = if n == 0 { &mut [] } else { std::slice::from_raw_parts_mut(out, n) };
+        let mut state = StudyCharState::default();
+        let mut at = 0usize;
+        for (i, &off) in offsets.iter().enumerate() {
+            let off = off as usize;
+            if off < at || off > text.len() {
+                return status::INVALID_ARGUMENT;
+            }
+            state.add_utf16(&text[at..off]);
+            at = off;
+            out[i] = state.total();
+        }
+        status::OK
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +236,24 @@ mod tests {
     fn count(s: &str) -> u64 {
         let units: Vec<u16> = s.encode_utf16().collect();
         count_study_chars_utf16(&units)
+    }
+
+    #[test]
+    fn prefixes_match_counts() {
+        let text = "猫が魚。 Hello world! 食べた";
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let offsets: Vec<u32> = vec![0, 4, 5, 10, 18, units.len() as u32];
+        let mut out = vec![0u64; offsets.len()];
+        let rc = unsafe {
+            ffc_parse_study_char_prefixes(units.as_ptr(), units.len(), offsets.as_ptr(), offsets.len(), out.as_mut_ptr())
+        };
+        assert_eq!(rc, status::OK);
+        let want: Vec<u64> = offsets.iter().map(|&o| count_study_chars_utf16(&units[..o as usize])).collect();
+        assert_eq!(out, want);
+        let bad = [3u32, 1];
+        let mut out2 = [0u64; 2];
+        let rc = unsafe { ffc_parse_study_char_prefixes(units.as_ptr(), units.len(), bad.as_ptr(), 2, out2.as_mut_ptr()) };
+        assert_eq!(rc, status::INVALID_ARGUMENT);
     }
 
     #[test]

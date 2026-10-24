@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -188,6 +189,22 @@ class _MusicSignalPathPanelState extends State<MusicSignalPathPanel> {
         active: v.stages.contains(MusicSignalStage.speed),
         detail: '×${s.speed.toStringAsFixed(2)}',
       ),
+      // 交叉淡入：作用于本曲时是一环（判非 bit-perfect）；设置开着但被独占 / 硬件直出
+      // 自动停用时标出原因。
+      if (s.crossfade ||
+          s.crossfadeAvailability != MusicCrossfadeAvailability.off)
+        _Stage(
+          label: musicSignalStageLabel(MusicSignalStage.crossfade),
+          active: s.crossfade,
+          detail: switch (s.crossfadeAvailability) {
+            MusicCrossfadeAvailability.disabledByExclusive =>
+              t.music_crossfade_disabled_exclusive,
+            MusicCrossfadeAvailability.disabledByDirectDevice =>
+              t.music_crossfade_disabled_direct,
+            MusicCrossfadeAvailability.off ||
+            MusicCrossfadeAvailability.available => null,
+          },
+        ),
       _Stage(
         label: musicSignalStageLabel(MusicSignalStage.resampler),
         active: v.stages.contains(MusicSignalStage.resampler),

@@ -469,6 +469,7 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
       StorageCategoryId.covers: <String>[
         'video_covers',
         'game_covers',
+        'music_covers',
         'thumbnails',
       ],
       StorageCategoryId.subtitles: <String>['video_subtitles'],

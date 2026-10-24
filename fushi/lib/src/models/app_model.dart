@@ -9,6 +9,9 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/corpus/library_corpus_service.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kLibrarySentencesEnabledPrefKey;
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
@@ -281,6 +284,8 @@ import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -1190,6 +1195,14 @@ class AppModel with ChangeNotifier {
   /// Preference management, extracted from AppModel for testability.
   PreferencesRepository? _prefsRepo;
   PreferencesRepository get prefsRepo => _prefsRepo!;
+
+  /// 查词弹窗「我库里的例句」开关（D-L2 默认开）。偏好还没装好（独立弹窗 entry point /
+  /// 测试替身没跑 initialise）时按默认值，不抛——判据放在这个 getter 自己身上，弹窗注入等
+  /// 读它的地方不各自判空。
+  bool get librarySentencesEnabled =>
+      _prefsRepo?.getPref(kLibrarySentencesEnabledPrefKey, defaultValue: true)
+          as bool? ??
+      true;
   bool get isPreferencesReady => _prefsRepo != null;
 
   /// v101 统一更新提醒。懒建：四个投递方（番剧订阅检查、漫画库刷新、扩展检查、
@@ -1513,7 +1526,12 @@ class AppModel with ChangeNotifier {
   /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
   MusicSession _createMusicSession() {
     final MusicPlayerEngine engine = MusicPlayerEngine(
-      backendFactory: MpvMusicOutputBackend.new,
+      // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
+      // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
+      backendFactory: () => MusicCrossfadeBackend(
+        instanceFactory: MpvMusicOutputBackend.new,
+        platform: musicOutputPlatformOfHost(),
+      ),
       gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
       replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
       baseSettings: _musicBaseOutputSettings,
@@ -1630,6 +1648,21 @@ class AppModel with ChangeNotifier {
   Future<void> setMusicLyricsOnline(bool value) =>
       prefsRepo.setMusicLyricsOnline(value);
 
+  /// 音乐刮削（设计 §8）：MusicBrainz 主源 + AcoustID（有应用 key 才用）+ CAA + VGMdb（开关）。
+  late final MusicScrapeService musicScrape = MusicScrapeService(
+    database: () => isDatabaseReady ? database : null,
+    acoustidApiKey: () => isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    vgmdbEnabled: () => isDatabaseReady && prefsRepo.musicVgmdbEnabled,
+  );
+
+  String get musicAcoustidApiKey => prefsRepo.musicAcoustidApiKey;
+  Future<void> setMusicAcoustidApiKey(String value) =>
+      prefsRepo.setMusicAcoustidApiKey(value);
+
+  bool get musicVgmdbEnabled => prefsRepo.musicVgmdbEnabled;
+  Future<void> setMusicVgmdbEnabled(bool value) =>
+      prefsRepo.setMusicVgmdbEnabled(value);
+
   bool get musicLyricsLookupPause => prefsRepo.musicLyricsLookupPause;
   Future<void> setMusicLyricsLookupPause(bool value) =>
       prefsRepo.setMusicLyricsLookupPause(value);
@@ -1667,6 +1700,7 @@ class AppModel with ChangeNotifier {
         orElse: () => MusicDsdPcmRate.khz176,
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
+      crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
     );
   }
 
@@ -1709,6 +1743,12 @@ class AppModel with ChangeNotifier {
   int get musicCrossfadeMs => prefsRepo.musicCrossfadeMs;
   Future<void> setMusicCrossfadeMs(int value) async {
     await prefsRepo.setMusicCrossfadeMs(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicCrossfadeContinuous => prefsRepo.musicCrossfadeContinuous;
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await prefsRepo.setMusicCrossfadeContinuous(value);
     await musicSession.engine.reapplySettings();
   }
 
@@ -3841,6 +3881,12 @@ class AppModel with ChangeNotifier {
           '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
+      // 「我库里的例句」（作品图谱 L4）：延后打开本机语料库并对账、订阅来源表做增量。
+      LibraryCorpusService.instance.start(
+        database: _database,
+        directory: LibraryCorpusService.directoryUnder(_databaseDirectory.path),
+        isEnabled: () => librarySentencesEnabled,
+      );
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
       unawaited(deleteRemovedMangaOcrModelDirs());

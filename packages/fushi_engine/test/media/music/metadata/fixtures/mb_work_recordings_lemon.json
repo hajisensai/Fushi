@@ -1,0 +1,224 @@
+{
+ "recordings": [
+  {
+   "title": "Lemon",
+   "artist-credit": [
+    {
+     "joinphrase": "",
+     "artist": {
+      "name": "Bao the Whale",
+      "id": "f8e62ed9-d88b-4331-8d21-14922016c505",
+      "country": "US",
+      "disambiguation": "VTuber",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "sort-name": "Bao the Whale",
+      "type": "Person"
+     },
+     "name": "Bao The Whale"
+    }
+   ],
+   "video": false,
+   "disambiguation": "",
+   "length": 260000,
+   "first-release-date": "2023-04-15",
+   "id": "2e5c1dbe-39e5-486c-b087-fc3ba71b7d18"
+  },
+  {
+   "title": "Lemon (Kenshi Yonezu Cover)",
+   "video": false,
+   "artist-credit": [
+    {
+     "joinphrase": " & ",
+     "name": "KOBASOLO",
+     "artist": {
+      "type": "Person",
+      "sort-name": "Kobasolo",
+      "id": "4981caf4-856a-4a2f-bdf1-3cfd65c6a532",
+      "country": "JP",
+      "name": "コバソロ",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "disambiguation": ""
+     }
+    },
+    {
+     "joinphrase": "",
+     "name": "Harutya",
+     "artist": {
+      "type": "Person",
+      "sort-name": "Harutya",
+      "id": "4f5a5fb0-81f1-4006-a0e3-a1848325a96e",
+      "country": "JP",
+      "name": "春茶",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "disambiguation": "Japanese singer"
+     }
+    }
+   ],
+   "disambiguation": "",
+   "length": 271000,
+   "first-release-date": "2018-02-20",
+   "id": "47ff3783-34ea-47a3-a945-1e4fca3b3085"
+  },
+  {
+   "id": "67b6a4ef-dabb-429a-b3f7-6bdabfd4634e",
+   "first-release-date": "2019-03-22",
+   "length": 256000,
+   "disambiguation": "",
+   "video": true,
+   "artist-credit": [
+    {
+     "artist": {
+      "name": "富士葵",
+      "id": "03b96523-db37-4e85-ac9d-b7ceb6926e9b",
+      "country": "JP",
+      "disambiguation": "バーチャルYouTuber",
+      "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+      "sort-name": "Fuji, Aoi",
+      "type": "Character"
+     },
+     "name": "富士葵",
+     "joinphrase": ""
+    }
+   ],
+   "title": "Lemon"
+  },
+  {
+   "video": true,
+   "artist-credit": [
+    {
+     "artist": {
+      "type": "Character",
+      "sort-name": "KAF",
+      "id": "47ba70a2-d040-4265-bf52-86b9ef28c2c9",
+      "country": "JP",
+      "name": "花譜",
+      "type-id": "5c1375b0-f18d-3db7-a164-a49d7a63773f",
+      "disambiguation": ""
+     },
+     "name": "花譜",
+     "joinphrase": ""
+    }
+   ],
+   "title": "Lemon",
+   "length": 259000,
+   "id": "76f113e3-81ed-4c4d-8418-fe1bc5274048",
+   "disambiguation": ""
+  },
+  {
+   "length": 255826,
+   "disambiguation": "",
+   "video": false,
+   "artist-credit": [
+    {
+     "joinphrase": "",
+     "artist": {
+      "sort-name": "Yonezu, Kenshi",
+      "type": "Person",
+      "disambiguation": "",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "name": "米津玄師",
+      "id": "09d4a85c-4916-4b4e-bc96-c4cfcf371046",
+      "country": "JP"
+     },
+     "name": "米津玄師"
+    }
+   ],
+   "title": "Lemon",
+   "id": "79a8b80c-018d-4004-b3ff-cc10d21a3ddd",
+   "first-release-date": "2018-03-14"
+  },
+  {
+   "first-release-date": "2025-02-04",
+   "id": "b138e408-30cb-4086-89f5-5eaaa4330ba9",
+   "title": "lemon",
+   "video": false,
+   "artist-credit": [
+    {
+     "joinphrase": "",
+     "name": "J‐POP CHANNEL PROJECT",
+     "artist": {
+      "sort-name": "J‐POP CHANNEL PROJECT",
+      "type": "Group",
+      "disambiguation": "",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "name": "J‐POP CHANNEL PROJECT",
+      "country": "JP",
+      "id": "e0a68a8f-948e-4dd2-8329-45fbe5a58feb"
+     }
+    }
+   ],
+   "disambiguation": "",
+   "length": 256058
+  },
+  {
+   "length": 247587,
+   "disambiguation": "",
+   "video": false,
+   "artist-credit": [
+    {
+     "artist": {
+      "name": "オルゴールサウンド J‐POP",
+      "country": "JP",
+      "id": "4d6e9b5f-6ba3-41f6-ac94-c634ae971304",
+      "disambiguation": "orgel group",
+      "type-id": "e431f5f6-b5d2-343d-8b36-72607fffb74b",
+      "sort-name": "Orgel Sound J‐pop",
+      "type": "Group"
+     },
+     "name": "オルゴールサウンド J‐POP",
+     "joinphrase": ""
+    }
+   ],
+   "title": "Lemon",
+   "id": "e9b253f8-0068-4573-81b7-861bcd09aa0f",
+   "first-release-date": "2018-05-16"
+  },
+  {
+   "artist-credit": [
+    {
+     "joinphrase": "",
+     "artist": {
+      "sort-name": "yurisa",
+      "type": "Person",
+      "disambiguation": "Korean singer, cover artist",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "name": "yurisa",
+      "country": null,
+      "id": "0f8e5e71-ef74-4faa-b75c-0871143f2748"
+     },
+     "name": "yurisa"
+    }
+   ],
+   "video": false,
+   "title": "lemon",
+   "length": 255021,
+   "disambiguation": "",
+   "first-release-date": "2020-04-02",
+   "id": "f530830a-7db8-424d-930d-cf105cb85192"
+  },
+  {
+   "length": 256000,
+   "id": "f6921995-abfc-46bb-a6c4-da9b4df81624",
+   "disambiguation": "",
+   "video": true,
+   "artist-credit": [
+    {
+     "joinphrase": "",
+     "name": "ダズビー",
+     "artist": {
+      "country": "JP",
+      "id": "10623c33-205c-49f4-b8a0-55a105dd4fa3",
+      "name": "ダズビー",
+      "type-id": "b6e035f4-3ce9-331c-97df-83397230b0df",
+      "disambiguation": "",
+      "type": "Person",
+      "sort-name": "Dazbee"
+     }
+    }
+   ],
+   "title": "Lemon"
+  }
+ ],
+ "recording-count": 9,
+ "recording-offset": 0
+}

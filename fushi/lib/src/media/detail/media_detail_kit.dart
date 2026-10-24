@@ -1773,6 +1773,7 @@ class MediaDetailPerson {
     this.image,
     this.key,
     this.onImageError,
+    this.onTap,
   });
 
   final String name;
@@ -1784,6 +1785,9 @@ class MediaDetailPerson {
 
   /// 头像解码失败（诊断日志用）。
   final void Function(Object error)? onImageError;
+
+  /// 点头像（作品图谱 L5：进人物聚合页）；null = 不可点。
+  final VoidCallback? onTap;
 }
 
 /// 人物表横滑：圆形头像卡（照片 + 姓名 + 角色），错峰进场。
@@ -1868,7 +1872,7 @@ class _CastAvatar extends StatelessWidget {
       ),
     );
     final String? role = person.role?.trim();
-    return SizedBox(
+    final Widget card = SizedBox(
       width: size + 28,
       child: Column(
         children: <Widget>[
@@ -1913,6 +1917,26 @@ class _CastAvatar extends StatelessWidget {
               style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
             ),
         ],
+      ),
+    );
+    final VoidCallback? onTap = person.onTap;
+    if (onTap == null) return card;
+    // 可点头像：按压回弹 + 悬停抬升（两套设计系统同样生效），InkWell 承接焦点与
+    // Enter / 手柄 A 激活。
+    return FushiHoverLift(
+      builder: (BuildContext context, bool _) => FushiPressScale(
+        child: Semantics(
+          button: true,
+          label: role == null || role.isEmpty
+              ? person.name
+              : '${person.name} · $role',
+          excludeSemantics: true,
+          child: InkWell(
+            borderRadius: FushiM3eShape.cardRadius,
+            onTap: onTap,
+            child: card,
+          ),
+        ),
       ),
     );
   }

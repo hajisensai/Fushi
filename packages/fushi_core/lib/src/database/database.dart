@@ -23,11 +23,13 @@ import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_link_kind.dart';
+import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
 import 'tables.dart';
 import 'tag_host_kind.dart';
+import 'people_tables.dart';
 import 'theme_song_span_tables.dart';
 
 part 'database.g.dart';
@@ -43,7 +45,9 @@ part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
 part 'database_media_links.part.dart';
 part 'database_music.part.dart';
+part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
+part 'database_people.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
 /// the one currently running (`db user_version > code schemaVersion`).
@@ -836,6 +840,12 @@ void _requireOneVideoMetadataOwner({
   MusicPlaylistEntries,
   MusicPlayEvents,
   VideoThemeSongSpans,
+  MusicScrapeMeta,
+  MusicMetadataRawSnapshots,
+  MusicLockedFields,
+  GameVoiceCasts,
+  PersonIdentityBridges,
+  AdaptationProgressAnchors,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -851,7 +861,9 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMangaDownload,
         _FushiDbMediaLinks,
         _FushiDbMusic,
-        _FushiDbThemeSongSpans {
+        _FushiDbMusicScrape,
+        _FushiDbThemeSongSpans,
+        _FushiDbPeople {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
   /// while the separate `:popup` process passes `false` so it backs off on an
@@ -872,7 +884,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 128;
+  int get schemaVersion => 131;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2503,6 +2515,38 @@ class FushiDatabase extends _$FushiDatabase
                 "WHERE source = 'video' AND position_ms IS NULL "
                 'AND (norm_char_offset IS NOT NULL OR norm_char_length IS NOT NULL)',
               );
+            }
+          }
+          if (from < 129) {
+            // v129（音乐 P4 刮削，docs/specs/2026-10-23-music-module-design.md §8 / §10）：
+            // music_scrape_meta / music_metadata_raw_snapshots / music_locked_fields
+            // 三张新表（设备本地）。纯建表、不动既有数据；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table
+                in <TableInfo<Table, Object?>>[
+              musicScrapeMeta,
+              musicMetadataRawSnapshots,
+              musicLockedFields,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
+            }
+          }
+          if (from < 131) {
+            // v131（作品图谱 L5，docs/specs/2026-10-24-cross-media-links.md §5 / §6）：
+            // game_voice_casts（游戏 VNDB 配音表缓存，设备本地）、person_identity_bridges
+            // （人物身份桥：Wikidata 桥接缓存 + 用户确认 / 否决的「同一人」）、
+            // adaptation_progress_anchors（动画集 ↔ 原作卷 / 章的手动对应点）。
+            // 纯建表；幂等守卫同 v119。v129 / v130 由并行分支使用，本步只认自己的表。
+            for (final TableInfo<Table, Object?> table
+                in <TableInfo<Table, Object?>>[
+              gameVoiceCasts,
+              personIdentityBridges,
+              adaptationProgressAnchors,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
             }
           }
         },

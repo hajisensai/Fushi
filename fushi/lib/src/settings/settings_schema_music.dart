@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -54,6 +57,54 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicGapless(value);
             },
+          ),
+          // 交叉淡入（设计 §7.2）：双 libmpv 实例、逐样本等功率曲线；独占 / 硬件直出时
+          // 后端自动停用（musicCrossfadeAvailability），这里与信号路径面板都标出来。
+          SettingsSliderItem(
+            id: 'music.crossfade',
+            title: t.music_crossfade_title,
+            subtitle: t.music_crossfade_hint,
+            icon: FushiIcons.playlist,
+            min: 0,
+            max: 12,
+            divisions: 12,
+            defaultValue: 0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) =>
+                v.round() == 0 ? t.music_crossfade_off : '${v.round()} s',
+            value: (SettingsContext c) => c.appModel.musicCrossfadeMs / 1000,
+            onChanged: (SettingsContext c, double v) =>
+                c.appModel.setMusicCrossfadeMs(v.round() * 1000),
+          ),
+          SettingsSwitchItem(
+            id: 'music.crossfade_continuous',
+            title: t.music_crossfade_continuous_title,
+            subtitleBuilder: (SettingsContext c) =>
+                switch (musicCrossfadeAvailability(
+                  c.appModel.musicSession.engine.currentSettings,
+                  platform: musicOutputPlatformOfHost(),
+                )) {
+                  MusicCrossfadeAvailability.disabledByExclusive =>
+                    t.music_crossfade_disabled_exclusive,
+                  MusicCrossfadeAvailability.disabledByDirectDevice =>
+                    t.music_crossfade_disabled_direct,
+                  MusicCrossfadeAvailability.off ||
+                  MusicCrossfadeAvailability.available =>
+                    t.music_crossfade_continuous_hint,
+                },
+            icon: FushiIcons.playlist,
+            defaultValue: false,
+            // 只在交叉淡入真正生效时有意义（关 / 独占 / 硬件直出时置灰，原因见副标题）。
+            enabled: (SettingsContext c) =>
+                musicCrossfadeAvailability(
+                  c.appModel.musicSession.engine.currentSettings,
+                  platform: musicOutputPlatformOfHost(),
+                ) ==
+                MusicCrossfadeAvailability.available,
+            value: (SettingsContext c) => c.appModel.musicCrossfadeContinuous,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicCrossfadeContinuous(value),
           ),
           SettingsSwitchItem(
             id: 'music.replaygain',
@@ -155,6 +206,54 @@ SettingsDestination buildMusicDestination() {
           ),
         ],
       ),
+      // 识别（P4，设计 §8.1）：MusicBrainz 主源；AcoustID 需要用户自己的应用 key（本仓
+      // 不内置任何 key），没填时声纹这一步跳过并在这里说明；VGMdb 默认关。
+      SettingsSection(
+        title: t.music_scrape_section,
+        items: <SettingsItem>[
+          SettingsTextItem(
+            id: 'music.acoustid_api_key',
+            title: t.music_setting_acoustid_key,
+            subtitle: t.music_setting_acoustid_key_hint,
+            icon: FushiIcons.key,
+            secret: true,
+            value: (SettingsContext c) => c.appModel.musicAcoustidApiKey,
+            onChanged: (SettingsContext c, String v) =>
+                c.appModel.setMusicAcoustidApiKey(v),
+          ),
+          SettingsSwitchItem(
+            id: 'music.vgmdb',
+            title: t.music_setting_vgmdb,
+            subtitle: t.music_setting_vgmdb_hint,
+            icon: FushiIcons.cloud,
+            defaultValue: false,
+            value: (SettingsContext c) => c.appModel.musicVgmdbEnabled,
+            onChanged: (SettingsContext c, bool v) =>
+                c.appModel.setMusicVgmdbEnabled(v),
+          ),
+          SettingsActionItem(
+            id: 'music.identify_library',
+            title: t.music_setting_identify_library,
+            subtitle: t.music_setting_identify_library_hint,
+            icon: FushiIcons.refresh,
+            onTap: _identifyLibrary,
+            cli: SettingsCliAction(
+              offPageRunnable: true,
+              run: (SettingsContext c, Map<String, String> args) async {
+                final MusicLibraryScrapeReport r = await c.appModel.musicScrape
+                    .scrapeLibrary();
+                return <String, Object?>{
+                  'total': r.total,
+                  'matched': r.matched,
+                  'unmatched': r.unmatched,
+                  'failed': r.failed,
+                  'byMethod': r.byMethod,
+                };
+              },
+            ),
+          ),
+        ],
+      ),
       // 歌词（P1，设计 §5.4 / §6.1）。
       SettingsSection(
         title: t.music_lyrics_title,
@@ -217,6 +316,17 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 识别整个曲库：串行跑（MusicBrainz 1 req/s），进度与结果走 toast。
+Future<void> _identifyLibrary(SettingsContext c) async {
+  FushiToast.show(msg: t.music_scrape_identifying);
+  final MusicLibraryScrapeReport r = await c.appModel.musicScrape
+      .scrapeLibrary();
+  FushiToast.show(
+    msg: t.music_scrape_library_done(matched: r.matched, total: r.total),
+    severity: r.failed > 0 ? ToastSeverity.warning : ToastSeverity.success,
   );
 }
 

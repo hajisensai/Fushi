@@ -10,6 +10,16 @@ typedef _CountUtf16C =
     Int32 Function(Pointer<Uint16>, Size, Pointer<Uint64>, Pointer<Uint8>);
 typedef _CountUtf16Dart =
     int Function(Pointer<Uint16>, int, Pointer<Uint64>, Pointer<Uint8>);
+typedef _PrefixesC =
+    Int32 Function(
+      Pointer<Uint16>,
+      Size,
+      Pointer<Uint32>,
+      Size,
+      Pointer<Uint64>,
+    );
+typedef _PrefixesDart =
+    int Function(Pointer<Uint16>, int, Pointer<Uint32>, int, Pointer<Uint64>);
 
 /// 学习统计「字数」口径的原生实现（`native/fushi_compute/src/parse.rs` 的
 /// `ffc_parse_study_char_class` / `ffc_parse_study_chars_utf16`）。
@@ -20,10 +30,11 @@ typedef _CountUtf16Dart =
 /// 每个 isolate 各持一份实例与一块复用的原生暂存区（[NativeScratch]：随 isolate 存活，
 /// 退出时由 finalizer 释放）。
 final class StudyCharsNative implements Finalizable {
-  StudyCharsNative._(this._classOf, this._countUtf16);
+  StudyCharsNative._(this._classOf, this._countUtf16, this._prefixes);
 
   final _ClassOfDart _classOf;
   final _CountUtf16Dart _countUtf16;
+  final _PrefixesDart _prefixes;
 
   /// 固定槽：count（u64）+ inWord（u8）。
   final NativeScratch _slots = NativeScratch.fixed(16);
@@ -45,6 +56,10 @@ final class StudyCharsNative implements Finalizable {
         ),
         compute.library.lookupFunction<_CountUtf16C, _CountUtf16Dart>(
           'ffc_parse_study_chars_utf16',
+          isLeaf: true,
+        ),
+        compute.library.lookupFunction<_PrefixesC, _PrefixesDart>(
+          'ffc_parse_study_char_prefixes',
           isLeaf: true,
         ),
       );
@@ -80,5 +95,35 @@ final class StudyCharsNative implements Finalizable {
       );
     }
     return (count: countSlot.value, inWord: inWordSlot.value != 0);
+  }
+
+  /// [text] 里多个位置（UTF-16 偏移，升序、不超过长度）的学习单位前缀数，一次 FFI 算完：
+  /// 第 i 个结果 = `countStudyChars(text.substring(0, offsets[i]))`。
+  List<int> prefixTotals(String text, List<int> offsets) {
+    if (offsets.isEmpty) return const <int>[];
+    final int length = text.length;
+    final int n = offsets.length;
+    // 一块暂存：文本 u16 | 偏移 u32（4 字节对齐）| 结果 u64（8 字节对齐）。
+    final int textBytes = (length * 2 + 7) & ~7;
+    final int offsetBytes = (n * 4 + 7) & ~7;
+    final Pointer<Uint8> base = _buffer.reserve(
+      textBytes + offsetBytes + n * 8,
+    );
+    final Pointer<Uint16> unitsPtr = base.cast<Uint16>();
+    final Uint16List units = unitsPtr.asTypedList(length);
+    for (int i = 0; i < length; i++) {
+      units[i] = text.codeUnitAt(i);
+    }
+    final Pointer<Uint32> offsetsPtr = (base + textBytes).cast<Uint32>();
+    offsetsPtr.asTypedList(n).setAll(0, offsets);
+    final Pointer<Uint64> outPtr = (base + textBytes + offsetBytes)
+        .cast<Uint64>();
+    final int status = _prefixes(unitsPtr, length, offsetsPtr, n, outPtr);
+    if (status != FfcStatus.ok) {
+      throw StateError(
+        'ffc_parse_study_char_prefixes failed with status $status',
+      );
+    }
+    return List<int>.of(outPtr.asTypedList(n));
   }
 }

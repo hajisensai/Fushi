@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/mining/adts_duration.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_char_count.dart';
@@ -2040,6 +2041,8 @@ class GalHookSessionController extends ChangeNotifier {
     if (generation != _operationGeneration) return;
     // Preserve the author's awaited activity flush before releasing ownership.
     await _stopActivityClock();
+    // 停止捕获 = 这一局的终点：攒着的台词落进语料库（不等它，失败只记日志）。
+    unawaited(LibraryCorpusService.instance.flushGameLines());
     if (generation != _operationGeneration) return;
     _activityPendingChars = 0;
     _activityGameTitle = null;
@@ -4387,7 +4390,20 @@ class GalHookSessionController extends ChangeNotifier {
     required String lineText,
     required int atMs,
   }) {
-    if (_activityGameTitle == null) return;
+    final String? gameTitle = _activityGameTitle;
+    if (gameTitle == null) return;
+    // 「我库里的例句」：有库内身份的游戏台词落进本机语料库（文本钩子历史只在会话内存里，
+    // 这是它唯一的持久副本）。同一行逐段重绘按行 id 覆盖，外部通道按前缀续写覆盖。
+    final String? corpusGameId = _activityGameKey;
+    if (corpusGameId != null) {
+      LibraryCorpusService.instance.feedGameLine(
+        gameId: corpusGameId,
+        title: gameTitle,
+        lineKey: lineId,
+        text: lineText,
+        atMs: atMs,
+      );
+    }
     if (fromEngineHook) {
       _engineTextCounted = true;
     } else if (_engineTextCounted) {

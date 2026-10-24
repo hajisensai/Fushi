@@ -1145,6 +1145,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fushi_corpus"
+version = "0.1.0"
+
+[[package]]
 name = "fushi_fsrs"
 version = "0.1.0"
 dependencies = [
@@ -1160,6 +1164,7 @@ name = "fushi_ios_umbrella"
 version = "0.1.0"
 dependencies = [
  "fushi_compute",
+ "fushi_corpus",
  "fushi_fsrs",
  "fushi_music",
  "fushi_p2p",

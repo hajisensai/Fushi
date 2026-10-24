@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/media/links/adaptation_progress_section.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
@@ -500,6 +501,11 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                     replayKey: suggested.length,
                   ),
                 ],
+                // 作品图谱 L5：已确认的「原作（书）→ 改编（视频）」连接的进度对应。
+                AdaptationProgressSection(
+                  database: widget.database,
+                  links: adaptationProgressLinksOf(confirmed),
+                ),
               ],
             ),
           ),
