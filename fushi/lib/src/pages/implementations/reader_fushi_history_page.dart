@@ -3193,7 +3193,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       // 跨模块「同一作品」（作品图谱）：书没有详情页，区块装进弹窗。
       DialogListAction(
         label: t.media_link_add,
-        icon: Icons.link,
+        icon: FushiIcons.link,
         onPressed: () => showMediaLinksDialog(
           context: context,
           database: appModel.database,

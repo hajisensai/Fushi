@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
@@ -31,7 +30,7 @@ void main() {
     await target.customStatement('DETACH DATABASE mergesrc');
   }
 
-  test('合集 id 按自然键重映射；墓碑 LWW；本机没有的合集端点跳过；重复导入幂等', () async {
+  test('合集 id 按自然键重映射；墓碑 LWW；备份独有合集落地后重映射；重复导入幂等', () async {
     late int srcAnime;
     final String srcDbPath = await buildSrcDb((FushiDatabase src) async {
       await src.createMediaCollection('Filler');
@@ -90,11 +89,17 @@ void main() {
       expect(anime, hasLength(1));
       expect(anime.single.fromKey, 'clannad-novel');
       expect(anime.single.isUserConfirmed, isTrue);
-      expect(
-        await target.mediaLinksForEndpoint(MediaLinkKind.book, 'x'),
-        isEmpty,
-        reason: '本机没有的合集：端点落不了地，跳过而不是写成指向别的 id 的孤儿',
+      // 备份独有的合集先被 _mergeMediaCollections 按自然键建进本机，连接随后
+      // 重映射到本机新 id（不是照抄 src 的 id）。
+      final MediaCollectionRow? onlyInBackup = await target
+          .getMediaCollectionByNaturalKey('Only In Backup', 'collection');
+      expect(onlyInBackup, isNotNull);
+      final List<MediaLinkRow> x = await target.mediaLinksForEndpoint(
+        MediaLinkKind.book,
+        'x',
       );
+      expect(x, hasLength(1));
+      expect(x.single.toKey, '${onlyInBackup!.id}');
       expect(
         await target.mediaLinksForEndpoint(MediaLinkKind.book, 'b'),
         isEmpty,

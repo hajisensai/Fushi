@@ -7,7 +7,9 @@ import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -167,7 +169,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
           value: true,
           child: Row(
             children: <Widget>[
-              const FushiIcon(Icons.link_off, size: 20),
+              const FushiIcon(FushiIcons.linkOff, size: 20),
               const SizedBox(width: 12),
               Text(t.media_link_remove),
             ],
@@ -414,8 +416,9 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
         return Padding(
           key: const ValueKey<String>('media-links-section'),
           padding: EdgeInsets.only(top: tokens.spacing.section),
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
             alignment: Alignment.topCenter,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

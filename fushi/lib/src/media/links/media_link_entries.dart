@@ -1,5 +1,6 @@
 import 'package:fushi/src/mining/galgame_repository.dart'
     show galgameEntryFromRow;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -68,13 +69,13 @@ String mediaLinkKindLabel(MediaLinkKind kind) => switch (kind) {
 
 /// 端点种类的图标（占位封面与选择器行首用）。
 IconData mediaLinkKindIcon(MediaLinkKind kind) => switch (kind) {
-  MediaLinkKind.videoCollection => Icons.video_library_outlined,
-  MediaLinkKind.videoEpisode => Icons.movie_outlined,
-  MediaLinkKind.book => Icons.menu_book_outlined,
-  MediaLinkKind.game => Icons.sports_esports_outlined,
-  MediaLinkKind.musicAlbum => Icons.album_outlined,
-  MediaLinkKind.musicTrack => Icons.music_note_outlined,
-  MediaLinkKind.audiobook => Icons.headphones_outlined,
+  MediaLinkKind.videoCollection => FushiIcons.video,
+  MediaLinkKind.videoEpisode => FushiIcons.video,
+  MediaLinkKind.book => FushiIcons.books,
+  MediaLinkKind.game => FushiIcons.game,
+  MediaLinkKind.musicAlbum => FushiIcons.music,
+  MediaLinkKind.musicTrack => FushiIcons.music,
+  MediaLinkKind.audiobook => FushiIcons.audiobook,
 };
 
 /// 关系的显示名。

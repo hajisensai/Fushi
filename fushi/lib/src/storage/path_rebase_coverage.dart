@@ -133,6 +133,8 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath, '成员键与合集快照 JSON，无路径。'),
   PathRebaseColumn('LibraryOrganizeChanges', 'source', PathRebaseKind.notAPath,
       '`rule` / `ai` 来源标记，不是来源路径。'),
+  PathRebaseColumn('MediaLinks', 'source', PathRebaseKind.notAPath,
+      '作品图谱连接来源（manual / mal / ai …），不是来源路径。'),
   PathRebaseColumn('MediaOpenHistory', 'mediaSource', PathRebaseKind.notAPath,
       '媒体源标识（MediaSource.uniqueKey），不是路径。'),
   PathRebaseColumn(

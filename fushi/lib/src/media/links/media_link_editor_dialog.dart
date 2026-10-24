@@ -1,7 +1,9 @@
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
@@ -105,7 +107,7 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.media_link_editor_title,
-        leadingIcon: Icons.link,
+        leadingIcon: FushiIcons.link,
         scrollable: true,
         bodyPadding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.gap,
@@ -142,8 +144,9 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
               onSelectionChanged: (Set<MediaLinkRelation> s) =>
                   setState(() => _relation = s.first),
             ),
-            AnimatedSize(
+            FushiAnimatedSize(
               duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
               child: _relation.directed
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -224,7 +227,7 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
                                   shape: FushiLeadingShape.square,
                                 ),
                                 title: Text(shown[i].title),
-                                trailing: const FushiIcon(Icons.add_link),
+                                trailing: const FushiIcon(FushiIcons.link),
                                 onTap: _saving ? null : () => _pick(shown[i]),
                               ),
                             ),
