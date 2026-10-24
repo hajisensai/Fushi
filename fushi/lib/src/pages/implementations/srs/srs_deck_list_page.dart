@@ -42,6 +42,7 @@ import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_starter_packs_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -63,7 +64,7 @@ enum _DeckAction {
   delete,
 }
 
-enum _ImportSource { anki, file, minedHistory }
+enum _ImportSource { anki, file, starter, minedHistory }
 
 /// [purge]：连卡片一起删并当场物理清除（释放磁盘、不可恢复）；只在本机从没同步过时提供
 /// （`SrsDbStore.neverSynced`，见 srs_purge.dart）。同步过的副本由维护在同步安全期后自动清除。
@@ -310,6 +311,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           icon: FushiIcons.importFile,
         ),
         FushiChoiceOption<_ImportSource>(
+          value: _ImportSource.starter,
+          label: t.srs_starter_title,
+          subtitle: t.srs_starter_hint,
+          icon: FushiIcons.cloudDownload,
+        ),
+        FushiChoiceOption<_ImportSource>(
           value: _ImportSource.minedHistory,
           label: t.srs_history_import,
           subtitle: t.srs_history_import_hint,
@@ -325,6 +332,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         );
       case _ImportSource.file:
         await openSrsImport(context, ref);
+      case _ImportSource.starter:
+        await openSrsStarterPacks(context, ref);
       case _ImportSource.minedHistory:
         await openSrsMinedHistoryImport(context, ref);
     }
@@ -619,6 +628,10 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
           srsRunLogged('SrsDeckList.review', () => _openReview(d)),
       onAction: _onDeckAction,
       onAddFirst: () => srsRunLogged('SrsDeckList.addFirst', _addNote),
+      onStarterPacks: () => srsRunLogged(
+        'SrsDeckList.starterPacks',
+        () => openSrsStarterPacks(context, ref),
+      ),
       onSetCollapsed: _setCollapsed,
       onPlace: (SrsDeckSummary deck, String? parentId, String? beforeId) =>
           srsRunLogged(
@@ -636,6 +649,7 @@ class _DeckList extends StatefulWidget {
     required this.onOpen,
     required this.onAction,
     required this.onAddFirst,
+    required this.onStarterPacks,
     required this.onSetCollapsed,
     required this.showImportTasks,
     required this.lapisPending,
@@ -663,6 +677,9 @@ class _DeckList extends StatefulWidget {
   final void Function(SrsDeckSummary deck) onOpen;
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
   final VoidCallback onAddFirst;
+
+  /// 空牌组卡片「入门卡组」：下载预置卡组（如 Kaishi 1.5k）。
+  final VoidCallback onStarterPacks;
 
   /// 收起 / 展开一个牌组（写进牌组本身，随同步）。返回写完时 store 的修订号（null = 没写）。
   final Future<int?> Function(SrsDeckSummary deck, bool collapsed)
@@ -854,11 +871,28 @@ class _DeckListState extends State<_DeckList> {
               Text(t.srs_empty_body),
               Align(
                 alignment: AlignmentDirectional.centerEnd,
-                child: FushiFilledButton.icon(
-                  key: const ValueKey<String>('srs-add-first'),
-                  onPressed: widget.onAddFirst,
-                  icon: const FushiIcon(FushiIcons.add),
-                  label: Text(t.srs_empty_action),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    FushiPressScale(
+                      child: FushiFilledButton.tonalIcon(
+                        key: const ValueKey<String>('srs-starter-packs'),
+                        onPressed: widget.onStarterPacks,
+                        icon: const FushiIcon(FushiIcons.cloudDownload),
+                        label: Text(t.srs_starter_title),
+                      ),
+                    ),
+                    FushiPressScale(
+                      child: FushiFilledButton.icon(
+                        key: const ValueKey<String>('srs-add-first'),
+                        onPressed: widget.onAddFirst,
+                        icon: const FushiIcon(FushiIcons.add),
+                        label: Text(t.srs_empty_action),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
