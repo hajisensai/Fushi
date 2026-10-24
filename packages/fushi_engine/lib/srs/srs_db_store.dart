@@ -1658,6 +1658,16 @@ class SrsDbStore implements SrsSyncReplica {
   /// 重算的卡），顺序无关。
   Future<void> _writeCache(_CacheWrites w) async {
     if (w.isEmpty) return;
+    final List<String> noteIds = <String>[
+      for (final SrsNotesCacheCompanion n in w.notes) n.id.value,
+    ];
+    final List<String> cardIds = <String>[
+      for (final SrsCardsCacheCompanion c in w.cards) c.id.value,
+    ];
+    // 变更日志与数字索引随写入同步记下（同一个独占区 / 事务里）；事务回滚时
+    // [_transactionOrReload] 会把两者一起作废。
+    _journalCacheWrite(noteIds, <String>[...cardIds, ...w.hide]);
+    _indexCacheRows(noteIds, cardIds);
     await db.batch((Batch b) {
       if (w.notes.isNotEmpty) {
         b.insertAllOnConflictUpdate(db.srsNotesCache, w.notes);
@@ -1893,6 +1903,7 @@ class SrsDbStore implements SrsSyncReplica {
   /// 丢掉全部缓存，由事件重建（缓存不同步，随时可重建）。
   Future<void> rebuildCaches() => runExclusive(() async {
     _cacheRevision = _kCacheRevision;
+    _resetCacheJournal();
     await db.transaction(() async {
       await (db.delete(
         db.srsCardsCache,
@@ -4394,6 +4405,7 @@ class SrsDbStore implements SrsSyncReplica {
     _dirtyNotes.clear();
     _dirtyCards.clear();
     _dirtyNoteTypes.clear();
+    _resetCacheJournal();
     await _loadLocal();
   });
 
@@ -4797,6 +4809,7 @@ class SrsDbStore implements SrsSyncReplica {
       _dirtyNotes.clear();
       _dirtyCards.clear();
       _dirtyNoteTypes.clear();
+      _resetCacheJournal();
       try {
         await _loadLocal();
       } on Object catch (reloadError) {
@@ -5229,48 +5242,151 @@ class SrsDbStore implements SrsSyncReplica {
     return (row.read(count) ?? 0, row.read(maxUpdated) ?? 0);
   }
 
+  /// AnkiConnect 整数 id → UUID 的本机索引（不同步）。null = 还没回填（或缓存行被整体换掉，
+  /// 要重新回填）；回填之后由 [_writeCache] 在写缓存行的同一个独占区 / 事务里随写随增，未命中即
+  /// 「不存在」——不再每次未命中都整表重建（HBK-AUDIT-017）。
+  ///
+  /// 缓存行只经 [_writeCache] 写入（导入、同步、更改笔记类型、编辑都走缓存刷新）；绕过它整体
+  /// 删 / 换缓存行的路径（[rebuildCaches]、事务回滚后的 [_loadLocal] 重读）调
+  /// [_resetCacheJournal] 把索引置回 null，下次查时重新回填。被删掉的实体在索引里留着无害：
+  /// 它映射到的 UUID 查不到行，调用方照常报「不存在」。
   Map<int, String>? _ankiNoteIndex;
   Map<int, String>? _ankiCardIndex;
 
-  Future<void> _rebuildAnkiNumericIndex() async {
-    final List<SrsNoteCacheRow> notes = await (db.select(
-      db.srsNotesCache,
-    )..where((n) => n.profileUid.equals(profileUid))).get();
-    final List<SrsCardCacheRow> cards = await allCardRows();
-    // 整表一次批量派生（hash53 在 native/fushi_compute 里算）。
-    final List<String> noteIds = <String>[
-      for (final SrsNoteCacheRow n in notes) n.id,
-    ];
-    final List<String> cardIds = <String>[
-      for (final SrsCardCacheRow c in cards) c.id,
-    ];
-    final List<int> noteNums = SrsIds.ankiNumericIds(noteIds);
-    final List<int> cardNums = SrsIds.ankiNumericIds(cardIds);
-    _ankiNoteIndex = <int, String>{
-      for (int i = 0; i < noteIds.length; i++) noteNums[i]: noteIds[i],
-    };
-    _ankiCardIndex = <int, String>{
-      for (int i = 0; i < cardIds.length; i++) cardNums[i]: cardIds[i],
-    };
+  /// 整表回填数字索引（在独占区里跑：回填期间不会有写入插进来、让新行既不在回填结果里、
+  /// 又因为索引还是 null 没被 [_writeCache] 记上）。
+  Future<void> _ensureAnkiNumericIndex() async {
+    if (_ankiNoteIndex != null && _ankiCardIndex != null) return;
+    await runExclusive(() async {
+      if (_ankiNoteIndex != null && _ankiCardIndex != null) return;
+      final List<SrsNoteCacheRow> notes = await (db.select(
+        db.srsNotesCache,
+      )..where((n) => n.profileUid.equals(profileUid))).get();
+      final List<SrsCardCacheRow> cards = await allCardRows();
+      // 整表一次批量派生（hash53 在 native/fushi_compute 里算）。
+      final List<String> noteIds = <String>[
+        for (final SrsNoteCacheRow n in notes) n.id,
+      ];
+      final List<String> cardIds = <String>[
+        for (final SrsCardCacheRow c in cards) c.id,
+      ];
+      final List<int> noteNums = SrsIds.ankiNumericIds(noteIds);
+      final List<int> cardNums = SrsIds.ankiNumericIds(cardIds);
+      _ankiNoteIndex = <int, String>{
+        for (int i = 0; i < noteIds.length; i++) noteNums[i]: noteIds[i],
+      };
+      _ankiCardIndex = <int, String>{
+        for (int i = 0; i < cardIds.length; i++) cardNums[i]: cardIds[i],
+      };
+    });
   }
 
-  /// AnkiConnect 整数笔记 id（[SrsIds.ankiNumericId]）→ noteId。本机索引，不同步；
-  /// 未命中时重建一次（id 由 UUID 确定性派生，旧索引只会缺新条目、不会映错）。
+  /// 一批刚写的缓存行登记进数字索引（索引还没回填时什么也不做：回填会读到它们）。
+  void _indexCacheRows(List<String> noteIds, List<String> cardIds) {
+    final Map<int, String>? notes = _ankiNoteIndex;
+    if (notes != null && noteIds.isNotEmpty) {
+      final List<int> nums = SrsIds.ankiNumericIds(noteIds);
+      for (int i = 0; i < noteIds.length; i++) {
+        notes[nums[i]] = noteIds[i];
+      }
+    }
+    final Map<int, String>? cards = _ankiCardIndex;
+    if (cards != null && cardIds.isNotEmpty) {
+      final List<int> nums = SrsIds.ankiNumericIds(cardIds);
+      for (int i = 0; i < cardIds.length; i++) {
+        cards[nums[i]] = cardIds[i];
+      }
+    }
+  }
+
+  /// AnkiConnect 整数笔记 id（[SrsIds.ankiNumericId]）→ noteId；没有这条笔记为 null。
   Future<String?> noteIdForAnkiNumericId(int ankiId) async {
-    String? hit = _ankiNoteIndex?[ankiId];
-    if (hit != null) return hit;
-    await _rebuildAnkiNumericIndex();
-    hit = _ankiNoteIndex![ankiId];
-    return hit;
+    await _ensureAnkiNumericIndex();
+    return _ankiNoteIndex![ankiId];
   }
 
   /// AnkiConnect 整数卡片 id → cardId（同 [noteIdForAnkiNumericId]）。
   Future<String?> cardIdForAnkiNumericId(int ankiId) async {
-    String? hit = _ankiCardIndex?[ankiId];
-    if (hit != null) return hit;
-    await _rebuildAnkiNumericIndex();
-    hit = _ankiCardIndex![ankiId];
-    return hit;
+    await _ensureAnkiNumericIndex();
+    return _ankiCardIndex![ankiId];
+  }
+
+  /// [noteIdForAnkiNumericId] 的成批版本（按输入顺序）。
+  Future<List<String?>> noteIdsForAnkiNumericIds(List<int> ankiIds) async {
+    await _ensureAnkiNumericIndex();
+    final Map<int, String> index = _ankiNoteIndex!;
+    return <String?>[for (final int n in ankiIds) index[n]];
+  }
+
+  /// [cardIdForAnkiNumericId] 的成批版本（按输入顺序）。
+  Future<List<String?>> cardIdsForAnkiNumericIds(List<int> ankiIds) async {
+    await _ensureAnkiNumericIndex();
+    final Map<int, String> index = _ankiCardIndex!;
+    return <String?>[for (final int n in ankiIds) index[n]];
+  }
+
+  // ------------------------------------------------------------------ 缓存变更日志
+
+  /// 缓存行的变化代号：每次 [_writeCache] 写入 +1，缓存被整体换掉（[_resetCacheJournal]）也 +1。
+  /// 只在本对象内单调；跨对象 / 跨进程不可比。
+  int _cacheGeneration = 0;
+
+  /// [_cacheJournal] 还能完整回答的最小代号：比它旧的代号问 [cacheChangesSince] 得 null。
+  int _cacheJournalFloor = 0;
+
+  /// (代号, 写过缓存行的笔记, 写过缓存行的卡)，按代号升序。
+  final List<(int, List<String>, List<String>)> _cacheJournal =
+      <(int, List<String>, List<String>)>[];
+  int _cacheJournalIds = 0;
+
+  /// 日志最多留多少个 ID（超了丢最旧的，更旧的代号只能整份重读）。
+  static const int _kCacheJournalMaxIds = 100000;
+
+  /// 缓存行的当前变化代号（见 [cacheChangesSince]）。
+  int get cacheGeneration => _cacheGeneration;
+
+  /// 代号 [generation] 之后写过缓存行的笔记与卡（同一实体可能出现在两边）。null = 日志已经答不了
+  /// （缓存整体换过、事务回滚重读过本机状态，或日志滚掉了这段）：调用方要整份重读。
+  ///
+  /// 常驻视图（AnkiConnect 兼容层）据此只重读变了的那些笔记 / 卡，不再每次请求整库重物化。
+  /// 缓存行只经 [_writeCache] 写，所以导入、同步、编辑、复习、更改笔记类型都在这里留痕。
+  ({Set<String> notes, Set<String> cards})? cacheChangesSince(int generation) {
+    if (generation > _cacheGeneration || generation < _cacheJournalFloor) {
+      return null;
+    }
+    final Set<String> notes = <String>{};
+    final Set<String> cards = <String>{};
+    for (int i = _cacheJournal.length - 1; i >= 0; i--) {
+      final (int gen, List<String> n, List<String> c) = _cacheJournal[i];
+      if (gen <= generation) break;
+      notes.addAll(n);
+      cards.addAll(c);
+    }
+    return (notes: notes, cards: cards);
+  }
+
+  void _journalCacheWrite(List<String> noteIds, List<String> cardIds) {
+    _cacheGeneration++;
+    _cacheJournal.add((_cacheGeneration, noteIds, cardIds));
+    _cacheJournalIds += noteIds.length + cardIds.length;
+    while (_cacheJournalIds > _kCacheJournalMaxIds &&
+        _cacheJournal.isNotEmpty) {
+      final (int gen, List<String> n, List<String> c) = _cacheJournal.removeAt(
+        0,
+      );
+      _cacheJournalIds -= n.length + c.length;
+      _cacheJournalFloor = gen;
+    }
+  }
+
+  /// 缓存行被整体换掉 / 内存与库可能不一致：日志作废（旧代号一律答 null）、数字索引待重新回填。
+  void _resetCacheJournal() {
+    _cacheGeneration++;
+    _cacheJournal.clear();
+    _cacheJournalIds = 0;
+    _cacheJournalFloor = _cacheGeneration;
+    _ankiNoteIndex = null;
+    _ankiCardIndex = null;
   }
 }
 
