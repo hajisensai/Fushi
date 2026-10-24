@@ -62,7 +62,7 @@ Color _dimColor(BuildContext context) => isGlassDesign(context)
 Widget _favicon(WebBrowserTab tab, {double size = 20}) => tab.incognito
     ? SizedBox.square(
         dimension: size,
-        child: FushiIcon(FushiIcons.visibilityOff, size: size * 0.9),
+        child: FushiIcon(FushiIcons.incognito, size: size * 0.9),
       )
     : WebBrowserFavicon(
         url: tab.url,
@@ -669,7 +669,7 @@ class WebBrowserTabGrid extends StatelessWidget {
                         'web-browser-grid-new-incognito',
                       ),
                       tooltip: t.web_browser_tab_new_incognito,
-                      icon: FushiIcons.visibilityOff,
+                      icon: FushiIcons.incognito,
                       onTap: callbacks.onNewIncognitoTab,
                     ),
                   FushiIconButton(
@@ -823,7 +823,7 @@ class _GridCard extends StatelessWidget {
                               child: Center(
                                 child: dark
                                     ? FushiIcon(
-                                        FushiIcons.visibilityOff,
+                                        FushiIcons.incognito,
                                         size: 32,
                                         color: Colors.white70,
                                       )

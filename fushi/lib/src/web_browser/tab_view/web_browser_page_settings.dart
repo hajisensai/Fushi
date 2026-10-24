@@ -178,3 +178,67 @@ void applyWebBrowserPageSettings(
         : UserPreferredContentMode.RECOMMENDED;
   }
 }
+
+/// 退出网页全屏后把页面缩放还原成进全屏前的样子（Android）。
+///
+/// 现象：允许缩放（没有 `user-scalable=no`）的网页退出 HTML5 全屏后，页面缩到约
+/// 0.76、视口读成 541x1050；YouTube（`user-scalable=no`）不出现。原因：Android
+/// WebView 进全屏时把内容挪进系统给的全屏 custom view（尺寸 / 方向都跟着变），
+/// Blink 按全屏视口重算缩放约束；`loadWithOverviewMode`（插件默认开）下，退出时
+/// 视口先回到窗口尺寸、内容宽度还停在全屏布局上，「缩小到能放下内容」把页面缩放
+/// 压到最小；内容随后缩回原宽，但 Blink 把这次缩放当作用户可调的当前缩放保留，
+/// 不会自己再放大。禁止缩放的页面最小 = 最大缩放，压不下去，所以不受影响。
+///
+/// 修法：记下全屏前最后一次缩放；退出全屏后（以及之后引擎还在调整缩放的这段时间）
+/// 发现缩放偏离就 `zoomBy(全屏前 / 当前)` 拉回。用户一碰网页（可能是自己捏合
+/// 缩放）或开始新导航即停手，不和用户抢缩放。缩放值只取比值，单位（含不含屏幕
+/// 密度）抵消，`onZoomScaleChanged` 的原始值可以直接用。
+class WebBrowserFullscreenZoomGuard {
+  /// 相对偏差小于这个值不算偏离（浮点 / 引擎取整的抖动）。
+  static const double tolerance = 0.01;
+
+  double? _scale;
+  double? _scaleBeforeFullscreen;
+  bool _fullscreen = false;
+  bool _restoring = false;
+
+  /// 当前是否在等待还原（测试用）。
+  bool get restoring => _restoring;
+
+  /// 引擎报告了新缩放；返回需要 `zoomBy` 的倍数，null = 不动。
+  double? onScaleChanged(double newScale) {
+    if (!newScale.isFinite || newScale <= 0) return null;
+    _scale = newScale;
+    if (_fullscreen || !_restoring) return null;
+    return _correction();
+  }
+
+  /// 进入网页全屏：冻结全屏前的缩放。
+  void onEnterFullscreen() {
+    if (_fullscreen) return;
+    _fullscreen = true;
+    _restoring = false;
+    _scaleBeforeFullscreen = _scale;
+  }
+
+  /// 退出网页全屏：开始还原；返回立即需要 `zoomBy` 的倍数（全屏期间缩放已被
+  /// 压下、退出时不再有新事件的情况）。
+  double? onExitFullscreen() {
+    if (!_fullscreen) return null;
+    _fullscreen = false;
+    _restoring = _scaleBeforeFullscreen != null;
+    return _restoring ? _correction() : null;
+  }
+
+  /// 用户触碰网页 / 新导航：停止还原。
+  void stop() => _restoring = false;
+
+  double? _correction() {
+    final double? target = _scaleBeforeFullscreen;
+    final double? current = _scale;
+    if (target == null || current == null) return null;
+    final double factor = target / current;
+    if ((factor - 1).abs() < tolerance) return null;
+    return factor;
+  }
+}

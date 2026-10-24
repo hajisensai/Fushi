@@ -19,7 +19,7 @@ void main() {
   group('加载失败分类', () {
     final Uri url = Uri.parse('https://example.com/a');
 
-    test('主框架断网 → 失败页且标成断网', () {
+    test('主框架域名解析失败 → 失败页且标成 DNS', () {
       final WebBrowserLoadError? e = classifyWebBrowserMainFrameError(
         url: url,
         isForMainFrame: true,
@@ -27,8 +27,118 @@ void main() {
         description: 'net::ERR_NAME_NOT_RESOLVED',
       );
       expect(e, isNotNull);
-      expect(e!.offline, isTrue);
+      expect(e!.kind, WebBrowserLoadErrorKind.dnsFailed);
+      expect(e.offline, isFalse);
       expect(e.url, url);
+    });
+
+    test('Android 断网报成 HOST_LOOKUP，靠 net::ERR 描述分出断网', () {
+      expect(
+        webBrowserLoadErrorKindOf(
+          type: WebResourceErrorType.HOST_LOOKUP,
+          description: 'net::ERR_INTERNET_DISCONNECTED',
+        ),
+        WebBrowserLoadErrorKind.offline,
+      );
+    });
+
+    test('Android 各类 net::ERR → 类别', () {
+      final Map<String, WebBrowserLoadErrorKind>
+      cases = <String, WebBrowserLoadErrorKind>{
+        'net::ERR_CONNECTION_REFUSED': WebBrowserLoadErrorKind.connectionFailed,
+        'net::ERR_CONNECTION_RESET': WebBrowserLoadErrorKind.connectionFailed,
+        'net::ERR_ADDRESS_UNREACHABLE':
+            WebBrowserLoadErrorKind.connectionFailed,
+        'net::ERR_CONNECTION_TIMED_OUT': WebBrowserLoadErrorKind.timedOut,
+        'net::ERR_CERT_DATE_INVALID': WebBrowserLoadErrorKind.certificate,
+        'net::ERR_SSL_PROTOCOL_ERROR': WebBrowserLoadErrorKind.certificate,
+        'net::ERR_EMPTY_RESPONSE': WebBrowserLoadErrorKind.badResponse,
+        'net::ERR_TOO_MANY_REDIRECTS': WebBrowserLoadErrorKind.tooManyRedirects,
+        'net::ERR_FAILED': WebBrowserLoadErrorKind.generic,
+      };
+      cases.forEach((String description, WebBrowserLoadErrorKind kind) {
+        expect(
+          webBrowserLoadErrorKindOf(
+            type: WebResourceErrorType.UNKNOWN,
+            description: description,
+          ),
+          kind,
+          reason: description,
+        );
+      });
+    });
+
+    test('WebView2：fork 按 COREWEBVIEW2_WEB_ERROR_STATUS 查表的描述 → 类别', () {
+      // 与 packages/flutter_inappwebview_windows/windows/types/web_resource_error.h
+      // 的 WebErrorStatusDescription 逐条对应（证书类原生侧不走 onReceivedError）。
+      final Map<String, WebBrowserLoadErrorKind>
+      cases = <String, WebBrowserLoadErrorKind>{
+        // 0 UNKNOWN：WebView2 把连接被拒落在这里
+        'Indicates that an unknown error occurred.':
+            WebBrowserLoadErrorKind.generic,
+        'Indicates that the host is unreachable.':
+            WebBrowserLoadErrorKind.connectionFailed,
+        'Indicates that the connection has timed out.':
+            WebBrowserLoadErrorKind.timedOut,
+        'Indicates that the server returned an invalid or unrecognized response.':
+            WebBrowserLoadErrorKind.badResponse,
+        'Indicates that the connection was stopped.':
+            WebBrowserLoadErrorKind.connectionFailed,
+        'Indicates that the connection was reset.':
+            WebBrowserLoadErrorKind.connectionFailed,
+        'Indicates that the Internet connection has been lost.':
+            WebBrowserLoadErrorKind.offline,
+        'Indicates that a connection to the destination was not established.':
+            WebBrowserLoadErrorKind.connectionFailed,
+        'Indicates that the provided host name was not able to be resolved.':
+            WebBrowserLoadErrorKind.dnsFailed,
+        'Indicates that the request redirect failed.':
+            WebBrowserLoadErrorKind.tooManyRedirects,
+        'Indicates that an unexpected error occurred.':
+            WebBrowserLoadErrorKind.generic,
+        'Indicates that the SSL certificate has expired.':
+            WebBrowserLoadErrorKind.certificate,
+      };
+      cases.forEach((String description, WebBrowserLoadErrorKind kind) {
+        expect(
+          webBrowserLoadErrorKindOf(
+            type: WebResourceErrorType.UNKNOWN,
+            description: description,
+          ),
+          kind,
+          reason: description,
+        );
+      });
+    });
+
+    test('iOS / macOS：NSURLError 类型 → 类别（描述是系统语言，不靠它）', () {
+      final Map<WebResourceErrorType, WebBrowserLoadErrorKind> cases =
+          <WebResourceErrorType, WebBrowserLoadErrorKind>{
+            WebResourceErrorType.NOT_CONNECTED_TO_INTERNET:
+                WebBrowserLoadErrorKind.offline,
+            WebResourceErrorType.NETWORK_CONNECTION_LOST:
+                WebBrowserLoadErrorKind.offline,
+            WebResourceErrorType.HOST_LOOKUP: WebBrowserLoadErrorKind.dnsFailed,
+            WebResourceErrorType.CANNOT_CONNECT_TO_HOST:
+                WebBrowserLoadErrorKind.connectionFailed,
+            WebResourceErrorType.TIMEOUT: WebBrowserLoadErrorKind.timedOut,
+            WebResourceErrorType.SERVER_CERTIFICATE_UNTRUSTED:
+                WebBrowserLoadErrorKind.certificate,
+            WebResourceErrorType.SECURE_CONNECTION_FAILED:
+                WebBrowserLoadErrorKind.certificate,
+            WebResourceErrorType.BAD_SERVER_RESPONSE:
+                WebBrowserLoadErrorKind.badResponse,
+            WebResourceErrorType.TOO_MANY_REDIRECTS:
+                WebBrowserLoadErrorKind.tooManyRedirects,
+            WebResourceErrorType.UNKNOWN: WebBrowserLoadErrorKind.generic,
+          };
+      cases.forEach((WebResourceErrorType type, WebBrowserLoadErrorKind kind) {
+        expect(
+          webBrowserLoadErrorKindOf(type: type, description: '无法连接'),
+          kind,
+          reason: '$type',
+        );
+      });
     });
 
     test('导航被取消（iOS -999 / WebView2 OPERATION_CANCELED）不算失败', () {
@@ -92,6 +202,7 @@ void main() {
       );
       expect(e, isNotNull);
       expect(e!.offline, isFalse);
+      expect(e.kind, WebBrowserLoadErrorKind.certificate);
     });
 
     test('HTTP 4xx/5xx 只在页面空白时盖失败页（Cloudflare 验证页有正文不能挡）', () {
@@ -131,6 +242,46 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('退出网页全屏还原缩放', () {
+    test('全屏后缩放被压到 0.76 → 退出时按比值拉回', () {
+      final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard();
+      expect(g.onScaleChanged(2.625), isNull); // 全屏前（原始值含屏幕密度）
+      g.onEnterFullscreen();
+      expect(g.onScaleChanged(1.0), isNull); // 全屏里的变化不动
+      final double? f = g.onExitFullscreen();
+      expect(f, closeTo(2.625, 1e-9));
+    });
+
+    test('退出后引擎才压缩放 → 事件里拉回；回到原值不再动', () {
+      final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard()
+        ..onScaleChanged(2.0)
+        ..onEnterFullscreen();
+      expect(g.onExitFullscreen(), isNull);
+      expect(g.onScaleChanged(1.52), closeTo(2.0 / 1.52, 1e-9));
+      expect(g.onScaleChanged(2.0), isNull);
+      expect(g.restoring, isTrue);
+    });
+
+    test('用户触碰 / 新导航后停手，不和用户抢缩放', () {
+      final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard()
+        ..onScaleChanged(2.0)
+        ..onEnterFullscreen()
+        ..onExitFullscreen()
+        ..stop();
+      expect(g.onScaleChanged(3.0), isNull);
+    });
+
+    test('没进过全屏 / 不知道全屏前缩放 → 什么都不做', () {
+      final WebBrowserFullscreenZoomGuard g = WebBrowserFullscreenZoomGuard();
+      expect(g.onExitFullscreen(), isNull);
+      // 进全屏前没收到过任何缩放事件：没有可还原的目标。
+      g.onEnterFullscreen();
+      expect(g.onExitFullscreen(), isNull);
+      expect(g.restoring, isFalse);
+      expect(g.onScaleChanged(1.0), isNull);
     });
   });
 

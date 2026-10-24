@@ -28,18 +28,18 @@ SettingsSection buildWebBrowserSection() {
         id: 'system.web_browser_tab_style',
         title: t.web_browser_tab_style,
         subtitle: t.web_browser_settings_tab_style_hint,
-        icon: FushiIcons.webAsset,
+        icon: FushiIcons.tab,
         defaultValue: kWebBrowserTabStyleDefault,
         options: <SettingsSegmentOption<WebBrowserTabStyle>>[
           SettingsSegmentOption<WebBrowserTabStyle>(
             value: WebBrowserTabStyle.sidebar,
             label: t.web_browser_tab_style_sidebar,
-            icon: FushiIcons.menuOpen,
+            icon: FushiIcons.sidebar,
           ),
           SettingsSegmentOption<WebBrowserTabStyle>(
             value: WebBrowserTabStyle.topStrip,
             label: t.web_browser_tab_style_top,
-            icon: FushiIcons.webAsset,
+            icon: FushiIcons.tab,
           ),
         ],
         selected: (SettingsContext c) =>

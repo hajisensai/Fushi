@@ -165,15 +165,49 @@ class WebBrowserLoadError {
     required this.url,
     required this.description,
     this.statusCode,
-    this.offline = false,
+    this.kind = WebBrowserLoadErrorKind.generic,
   });
 
   final Uri url;
+
+  /// 引擎给的原始描述（WebView2 / Android / iOS 的英文或系统语言原文）。失败页
+  /// 只把它放进折叠的「详细信息」，正文按 [kind] 取本地化文案。
   final String description;
 
   /// HTTP 错误码（4xx / 5xx 主框架响应）；网络层错误为 null。
   final int? statusCode;
 
+  /// 网络层失败的类别（决定失败页的标题 / 正文 / 图标）。
+  final WebBrowserLoadErrorKind kind;
+
   /// 断网类错误（加载失败页换「检查网络」文案）。
-  final bool offline;
+  bool get offline => kind == WebBrowserLoadErrorKind.offline;
+}
+
+/// 主框架网络层失败的类别。三端引擎的错误码在
+/// `web_browser_load_errors.dart` 的 `classifyWebBrowserMainFrameError` 里归到这里。
+enum WebBrowserLoadErrorKind {
+  /// 归不了类（含 WebView2 的 UNKNOWN：连接被拒在 WebView2 上就落这里）。
+  generic,
+
+  /// 本机没有网络 / 网络中途断开。
+  offline,
+
+  /// 域名解析失败。
+  dnsFailed,
+
+  /// 连接被拒 / 被重置 / 主机不可达。
+  connectionFailed,
+
+  /// 连接或响应超时。
+  timedOut,
+
+  /// TLS 握手失败 / 证书无效。
+  certificate,
+
+  /// 服务器回了无法解析的响应（空响应 / 格式错误）。
+  badResponse,
+
+  /// 重定向过多或重定向失败。
+  tooManyRedirects,
 }

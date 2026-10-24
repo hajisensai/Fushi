@@ -146,6 +146,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   bool _closed = false;
 
   WebBrowserTab get _tab => widget.tab;
+  /// Android：退出网页全屏后还原页面缩放（见 [WebBrowserFullscreenZoomGuard]）。
+  final WebBrowserFullscreenZoomGuard _fullscreenZoom =
+      WebBrowserFullscreenZoomGuard();
+
 
   /// initState 里取一次：dispose 期间不能再经 ref 往上查（Riverpod 禁止）。
   late final PreferencesRepository _prefs = ref.read(appProvider).prefsRepo;
@@ -537,6 +541,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
       progress: 0,
     );
   }
+    _fullscreenZoom.stop();
 
   Future<void> _onLoadStop(
     InAppWebViewController controller,
@@ -626,11 +631,29 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   // ── 新窗口 ───────────────────────────────────────────────────────────
 
   Future<bool> _onCreateWindow(CreateWindowAction action) async {
+    if (_platform == TargetPlatform.android) {
+      if (fullscreen) {
+        _fullscreenZoom.onEnterFullscreen();
+      } else {
+        _applyZoomCorrection(_fullscreenZoom.onExitFullscreen());
+      }
+    }
     final String? origin = _originOf(_tab.url);
     if (origin != null &&
         WebBrowserSiteSettings(
               _prefs,
             ).decision(origin, WebBrowserSitePermission.popups) ==
+  void _onZoomScaleChanged(double newScale) {
+    if (_platform != TargetPlatform.android) return;
+    _applyZoomCorrection(_fullscreenZoom.onScaleChanged(newScale));
+  }
+
+  void _applyZoomCorrection(double? factor) {
+    final InAppWebViewController? controller = _controller;
+    if (factor == null || controller == null) return;
+    unawaited(controller.zoomBy(zoomFactor: factor).catchError((Object _) {}));
+  }
+
             WebBrowserPermissionDecision.block) {
       return false;
     }
@@ -869,7 +892,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   IconData _menuIcon(WebBrowserContextMenuItem item) => switch (item) {
     WebBrowserContextMenuItem.openNewTab => FushiIcons.openInNew,
     WebBrowserContextMenuItem.openBackgroundTab => FushiIcons.openInNew,
-    WebBrowserContextMenuItem.openIncognitoTab => FushiIcons.visibilityOff,
+    WebBrowserContextMenuItem.openIncognitoTab => FushiIcons.incognito,
     WebBrowserContextMenuItem.copyLink => FushiIcons.link,
     WebBrowserContextMenuItem.shareLink => FushiIcons.share,
     WebBrowserContextMenuItem.openImageNewTab => FushiIcons.image,
@@ -1309,6 +1332,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:
+        onZoomScaleChanged:
+            (InAppWebViewController _, double oldScale, double newScale) =>
+                _onZoomScaleChanged(newScale),
             (InAppWebViewController _, RenderProcessGoneDetail detail) =>
                 unawaited(
                   _deathGuard.handleDeath(
@@ -1325,8 +1351,10 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _syncActive();
     Widget view = KeyedSubtree(key: _webViewKey, child: _buildWebView(context));
     view = Listener(
-      onPointerDown: (PointerDownEvent event) =>
-          _lastPointerDown = event.position,
+      onPointerDown: (PointerDownEvent event) {
+        _lastPointerDown = event.position;
+        _fullscreenZoom.stop();
+      },
       onPointerHover: hostOwnsWebViewHoverLookup ? _onHostHover : null,
       child: view,
     );

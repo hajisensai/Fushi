@@ -1219,7 +1219,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         if (webBrowserIncognitoSupported())
           WebBrowserMenuItem(
             id: 'new-incognito-tab',
-            icon: FushiIcons.visibilityOff,
+            icon: FushiIcons.incognito,
             label: t.web_browser_tab_new_incognito,
             onSelected: () => _newTab(incognito: true),
           ),
@@ -1254,7 +1254,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         ),
         WebBrowserMenuItem(
           id: 'find',
-          icon: FushiIcons.manageSearch,
+          icon: FushiIcons.findInPage,
           label: t.web_browser_find_hint,
           enabled: hasPage,
           onSelected: _openFind,
@@ -1358,7 +1358,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
               if (_tabStyle == WebBrowserTabStyle.sidebar)
                 WebBrowserMenuItem(
                   id: 'use-top',
-                  icon: FushiIcons.webAsset,
+                  icon: FushiIcons.tab,
                   label: t.web_browser_tab_style_use_top,
                   onSelected: () =>
                       unawaited(_setTabStyle(WebBrowserTabStyle.topStrip)),
@@ -1366,7 +1366,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
               else
                 WebBrowserMenuItem(
                   id: 'use-sidebar',
-                  icon: FushiIcons.menuOpen,
+                  icon: FushiIcons.sidebar,
                   label: t.web_browser_tab_style_use_sidebar,
                   onSelected: () =>
                       unawaited(_setTabStyle(WebBrowserTabStyle.sidebar)),
@@ -1530,7 +1530,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       if (sidebar)
         _iconButton(
           key: const ValueKey<String>('web-browser-sidebar-toggle'),
-          icon: FushiIcons.menuOpen,
+          icon: FushiIcons.sidebar,
           tooltip: t.web_browser_sidebar_toggle,
           selected: sidebarShown,
           onTap: () => _toggleSidebar(overlaySidebar),

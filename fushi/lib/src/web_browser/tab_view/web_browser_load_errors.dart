@@ -10,32 +10,150 @@ final Set<WebResourceErrorType> _kIgnoredErrorTypes = <WebResourceErrorType>{
   WebResourceErrorType.USER_CANCELLED_AUTHENTICATION,
 };
 
-/// 断网类：失败页换「检查网络连接」文案。
-final Set<WebResourceErrorType> _kOfflineErrorTypes = <WebResourceErrorType>{
-  WebResourceErrorType.NOT_CONNECTED_TO_INTERNET,
-  WebResourceErrorType.NETWORK_CONNECTION_LOST,
-  WebResourceErrorType.HOST_LOOKUP,
-  WebResourceErrorType.CANNOT_CONNECT_TO_HOST,
-  WebResourceErrorType.TIMEOUT,
-  WebResourceErrorType.DATA_NOT_ALLOWED,
-  WebResourceErrorType.INTERNATIONAL_ROAMING_OFF,
-  WebResourceErrorType.SERVER_UNREACHABLE,
+/// 引擎错误类型 → 类别。三端的原生码由 platform_interface 落成同一个
+/// [WebResourceErrorType]（Windows 是 COREWEBVIEW2_WEB_ERROR_STATUS，经
+/// `WebResourceErrorType.fromNativeValue` 映射；Android 是 WebViewClient.ERROR_*；
+/// iOS / macOS 是 NSURLError*）。不在表里的（含 UNKNOWN）→ generic。
+final Map<WebResourceErrorType, WebBrowserLoadErrorKind>
+_kKindByType = <WebResourceErrorType, WebBrowserLoadErrorKind>{
+  // 断网
+  WebResourceErrorType.NOT_CONNECTED_TO_INTERNET:
+      WebBrowserLoadErrorKind.offline,
+  WebResourceErrorType.NETWORK_CONNECTION_LOST: WebBrowserLoadErrorKind.offline,
+  WebResourceErrorType.DATA_NOT_ALLOWED: WebBrowserLoadErrorKind.offline,
+  WebResourceErrorType.INTERNATIONAL_ROAMING_OFF:
+      WebBrowserLoadErrorKind.offline,
+  WebResourceErrorType.CALL_IS_ACTIVE: WebBrowserLoadErrorKind.offline,
+  // 域名解析
+  WebResourceErrorType.HOST_LOOKUP: WebBrowserLoadErrorKind.dnsFailed,
+  // 连不上（WebView2 CANNOT_CONNECT / HOST_NAME_UNREACHABLE /
+  // CONNECTION_RESET / CONNECTION_ABORTED；Android ERROR_CONNECT）
+  WebResourceErrorType.CANNOT_CONNECT_TO_HOST:
+      WebBrowserLoadErrorKind.connectionFailed,
+  WebResourceErrorType.SERVER_UNREACHABLE:
+      WebBrowserLoadErrorKind.connectionFailed,
+  WebResourceErrorType.RESET: WebBrowserLoadErrorKind.connectionFailed,
+  WebResourceErrorType.CONNECTION_ABORTED:
+      WebBrowserLoadErrorKind.connectionFailed,
+  WebResourceErrorType.RESOURCE_UNAVAILABLE:
+      WebBrowserLoadErrorKind.connectionFailed,
+  // 超时
+  WebResourceErrorType.TIMEOUT: WebBrowserLoadErrorKind.timedOut,
+  // 证书 / TLS（WebView2 的证书错误 fork 不走 onReceivedError，见原生
+  // `isSslError`；这里覆盖 Android / iOS）
+  WebResourceErrorType.FAILED_SSL_HANDSHAKE:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.SECURE_CONNECTION_FAILED:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.SERVER_CERTIFICATE_HAS_BAD_DATE:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.SERVER_CERTIFICATE_HAS_UNKNOWN_ROOT:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.SERVER_CERTIFICATE_NOT_YET_VALID:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.SERVER_CERTIFICATE_UNTRUSTED:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.CLIENT_CERTIFICATE_REJECTED:
+      WebBrowserLoadErrorKind.certificate,
+  WebResourceErrorType.CLIENT_CERTIFICATE_REQUIRED:
+      WebBrowserLoadErrorKind.certificate,
+  // 响应坏了
+  WebResourceErrorType.BAD_SERVER_RESPONSE: WebBrowserLoadErrorKind.badResponse,
+  WebResourceErrorType.CANNOT_PARSE_RESPONSE:
+      WebBrowserLoadErrorKind.badResponse,
+  WebResourceErrorType.CANNOT_DECODE_CONTENT_DATA:
+      WebBrowserLoadErrorKind.badResponse,
+  WebResourceErrorType.CANNOT_DECODE_RAW_DATA:
+      WebBrowserLoadErrorKind.badResponse,
+  WebResourceErrorType.ZERO_BYTE_RESOURCE: WebBrowserLoadErrorKind.badResponse,
+  // 重定向
+  WebResourceErrorType.TOO_MANY_REDIRECTS:
+      WebBrowserLoadErrorKind.tooManyRedirects,
+  WebResourceErrorType.REDIRECT_FAILED:
+      WebBrowserLoadErrorKind.tooManyRedirects,
+  WebResourceErrorType.REDIRECT_TO_NON_EXISTENT_LOCATION:
+      WebBrowserLoadErrorKind.tooManyRedirects,
 };
 
+/// 按描述细分：Android 描述是 Chromium 的 `net::ERR_*`，比 WebViewClient 的
+/// ERROR_* 细（断网在 Android 上报成 HOST_LOOKUP、只有描述能分出来）；WebView2 的
+/// 描述是 fork 按 COREWEBVIEW2_WEB_ERROR_STATUS 查表的固定英文句子
+/// （`web_resource_error.h` 的 `WebErrorStatusDescription`）。按顺序取第一个命中。
+final List<(RegExp, WebBrowserLoadErrorKind)>
+_kKindByDescription = <(RegExp, WebBrowserLoadErrorKind)>[
+  (
+    RegExp(
+      r'ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|'
+      r'internet connection has been lost|appears to be offline',
+      caseSensitive: false,
+    ),
+    WebBrowserLoadErrorKind.offline,
+  ),
+  (
+    RegExp(
+      r'ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED|'
+      r'host name was not able to be resolved|'
+      r'server with the specified hostname could not be found',
+      caseSensitive: false,
+    ),
+    WebBrowserLoadErrorKind.dnsFailed,
+  ),
+  (
+    RegExp(
+      r'ERR_CONNECTION_TIMED_OUT|ERR_TIMED_OUT|timed out',
+      caseSensitive: false,
+    ),
+    WebBrowserLoadErrorKind.timedOut,
+  ),
+  (
+    RegExp(
+      r'ERR_CERT_|ERR_SSL_|ERR_BAD_SSL|SSL certificate|SSL client certificate',
+      caseSensitive: false,
+    ),
+    WebBrowserLoadErrorKind.certificate,
+  ),
+  (
+    RegExp(
+      r'ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET|ERR_CONNECTION_CLOSED|'
+      r'ERR_CONNECTION_FAILED|ERR_CONNECTION_ABORTED|ERR_ADDRESS_UNREACHABLE|'
+      r'host is unreachable|connection was reset|connection was stopped|'
+      r'connection to the destination was not established|'
+      r'could not connect to the server',
+      caseSensitive: false,
+    ),
+    WebBrowserLoadErrorKind.connectionFailed,
+  ),
+  (
+    RegExp(
+      r'ERR_EMPTY_RESPONSE|ERR_INVALID_RESPONSE|'
+      r'ERR_CONTENT_DECODING_FAILED|invalid or unrecognized response',
+      caseSensitive: false,
+    ),
+    WebBrowserLoadErrorKind.badResponse,
+  ),
+  (
+    RegExp(r'ERR_TOO_MANY_REDIRECTS|redirect failed', caseSensitive: false),
+    WebBrowserLoadErrorKind.tooManyRedirects,
+  ),
+];
+
+/// 引擎错误 → 类别：先按描述（更细），再按类型，都不中 → generic。
+WebBrowserLoadErrorKind webBrowserLoadErrorKindOf({
+  required WebResourceErrorType type,
+  required String description,
+}) {
+  for (final (RegExp pattern, WebBrowserLoadErrorKind kind)
+      in _kKindByDescription) {
+    if (pattern.hasMatch(description)) return kind;
+  }
+  return _kKindByType[type] ?? WebBrowserLoadErrorKind.generic;
+}
+
 /// WebView2 的错误码经 fork 只落成英文描述（`WebErrorStatusDescription`），类型
-/// 常是 UNKNOWN：再按描述兜一层，与上面两张表同义。
+/// 常是 UNKNOWN：取消类再按描述兜一层。
 final RegExp _kCancelledDescription = RegExp(
   r'operation was canceled|operation was cancelled|NSURLErrorCancelled|'
   r'ERR_ABORTED|frame load interrupted',
-  caseSensitive: false,
-);
-final RegExp _kOfflineDescription = RegExp(
-  r'internet connection has been lost|host name was not able to be resolved|'
-  r'host is unreachable|connection has timed out|'
-  r'connection to the destination was not established|'
-  r'ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NAME_RESOLUTION_FAILED|'
-  r'ERR_CONNECTION_TIMED_OUT|ERR_ADDRESS_UNREACHABLE|ERR_NETWORK_CHANGED|'
-  r'offline',
   caseSensitive: false,
 );
 
@@ -54,9 +172,7 @@ WebBrowserLoadError? classifyWebBrowserMainFrameError({
   return WebBrowserLoadError(
     url: url,
     description: description,
-    offline:
-        _kOfflineErrorTypes.contains(type) ||
-        _kOfflineDescription.hasMatch(description),
+    kind: webBrowserLoadErrorKindOf(type: type, description: description),
   );
 }
 

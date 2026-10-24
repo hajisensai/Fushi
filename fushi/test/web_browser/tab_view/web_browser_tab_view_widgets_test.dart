@@ -212,7 +212,7 @@ void main() {
           error: WebBrowserLoadError(
             url: Uri.parse('https://a.test/'),
             description: 'x',
-            offline: true,
+            kind: WebBrowserLoadErrorKind.offline,
           ),
           onRetry: () => retries++,
         ),
@@ -242,6 +242,63 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.web_browser_error_title), findsOneWidget);
     expect(find.text(t.web_browser_error_http_body(code: 502)), findsOneWidget);
+  });
+
+  testWidgets('加载失败页：连接被拒显示本地化正文，引擎英文原文只在详细信息里', (WidgetTester tester) async {
+    const String raw = 'Indicates that an unknown error occurred.';
+    await tester.pumpWidget(
+      _wrap(
+        WebBrowserErrorView(
+          error: WebBrowserLoadError(
+            url: Uri.parse('http://127.0.0.1:9/'),
+            description: raw,
+          ),
+          onRetry: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.web_browser_error_title), findsOneWidget);
+    expect(find.text(t.web_browser_error_generic_body), findsOneWidget);
+    expect(find.text(raw), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('web-browser-error-details')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(raw), findsOneWidget);
+    expect(find.text(t.web_browser_error_details_hide), findsOneWidget);
+  });
+
+  test('加载失败页：各类别取各自标题', () {
+    final Map<WebBrowserLoadErrorKind, String> titles =
+        <WebBrowserLoadErrorKind, String>{
+          WebBrowserLoadErrorKind.offline: t.web_browser_error_offline_title,
+          WebBrowserLoadErrorKind.dnsFailed: t.web_browser_error_dns_title,
+          WebBrowserLoadErrorKind.connectionFailed:
+              t.web_browser_error_connection_title,
+          WebBrowserLoadErrorKind.timedOut: t.web_browser_error_timeout_title,
+          WebBrowserLoadErrorKind.certificate:
+              t.web_browser_error_certificate_title,
+          WebBrowserLoadErrorKind.badResponse:
+              t.web_browser_error_response_title,
+          WebBrowserLoadErrorKind.tooManyRedirects:
+              t.web_browser_error_redirect_title,
+          WebBrowserLoadErrorKind.generic: t.web_browser_error_title,
+        };
+    expect(titles.keys.toSet(), WebBrowserLoadErrorKind.values.toSet());
+    for (final MapEntry<WebBrowserLoadErrorKind, String> e in titles.entries) {
+      expect(
+        webBrowserErrorCopyOf(
+          WebBrowserLoadError(
+            url: Uri.parse('https://a.test/'),
+            description: 'x',
+            kind: e.key,
+          ),
+        ).title,
+        e.value,
+        reason: '${e.key}',
+      );
+    }
   });
 
   testWidgets('页内查找条：输入即查、计数、下一个、Esc 关闭', (WidgetTester tester) async {

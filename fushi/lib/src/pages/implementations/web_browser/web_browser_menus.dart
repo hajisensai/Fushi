@@ -187,7 +187,7 @@ class _WebBrowserTabStyleSegmentsState
         Row(
           children: <Widget>[
             FushiIcon(
-              FushiIcons.webAsset,
+              FushiIcons.tab,
               size: 20,
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -217,12 +217,12 @@ List<ButtonSegment<WebBrowserTabStyle>> webBrowserTabStyleSegments() =>
       ButtonSegment<WebBrowserTabStyle>(
         value: WebBrowserTabStyle.sidebar,
         label: Text(t.web_browser_tab_style_sidebar),
-        icon: const FushiIcon(FushiIcons.menuOpen, size: 18),
+        icon: const FushiIcon(FushiIcons.sidebar, size: 18),
       ),
       ButtonSegment<WebBrowserTabStyle>(
         value: WebBrowserTabStyle.topStrip,
         label: Text(t.web_browser_tab_style_top),
-        icon: const FushiIcon(FushiIcons.webAsset, size: 18),
+        icon: const FushiIcon(FushiIcons.tab, size: 18),
       ),
     ];
 
