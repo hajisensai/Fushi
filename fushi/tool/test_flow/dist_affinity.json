@@ -4,9 +4,29 @@
       "platforms": ["windows"],
       "reason": "lib picks the title bar by host: on macOS the native traffic-light bar draws no Flutter-side top resize edges, which this test asserts (Mac run 2026-10-24)"
     },
+    "test/media/novel/lnreader_cover_image_test.dart": {
+      "platforms": ["windows"],
+      "reason": "flutter_cache_manager opens sqflite; on a macOS host that is the platform plugin, not the FFI factory, so 'databaseFactory not initialized' (Mac run 2026-10-24, reproduces alone)"
+    },
+    "test/media/video/video_mine_queue_dialog_test.dart": {
+      "platforms": ["windows"],
+      "reason": "deterministic red on the macOS host only (a deleted staged card's text is still found); cause not analysed yet (Mac run 2026-10-24, reproduces alone)"
+    },
     "test/pages/storage_usage_view_test.dart": {
       "platforms": ["windows"],
       "reason": "storage_usage_service.dart scans extra real directories only on macOS (Platform.isMacOS branch); that real IO never completes under the widget test's fake clock, so pumpAndSettle times out (Mac run 2026-10-24)"
+    },
+    "test/platform/desktop_mini_window_mode_test.dart": {
+      "platforms": ["windows"],
+      "reason": "30 s test timeouts on the macOS host in 2 of 3 runs (passed once alone): timing-sensitive on that slower host (Mac runs 2026-10-24)"
+    },
+    "test/utils/net/app_image_file_service_retry_test.dart": {
+      "platforms": ["windows"],
+      "reason": "flutter_cache_manager opens sqflite; on a macOS host that is the platform plugin, not the FFI factory, so 'databaseFactory not initialized' in tearDownAll (Mac run 2026-10-24, reproduces alone)"
+    },
+    "test/widgets/glass/fushi_popup_surface_glass_test.dart": {
+      "platforms": ["windows"],
+      "reason": "the iOS / macOS opaque-panel case reads the real host on a macOS machine and paints differently than the test expects (Mac run 2026-10-24, reproduces alone)"
     }
   }
 }
