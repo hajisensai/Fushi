@@ -25,13 +25,45 @@ void main() {
     expect(providers[2].isUsable, isFalse);
   });
 
-  test('没指派的功能跟随默认提供商', () {
+  test('没指派的功能跟随默认提供商（云端语音转录除外）', () {
     const AiFeatureAssignments assignments = AiFeatureAssignments(
       defaultProviderId: 'ai-a',
     );
     for (final AiFeature feature in AiFeature.values) {
-      expect(assignments.resolve(feature, providers)?.id, 'ai-a');
+      expect(
+        assignments.resolve(feature, providers)?.id,
+        feature.followsDefaultProvider ? 'ai-a' : isNull,
+        reason: '$feature',
+      );
     }
+  });
+
+  test('云端语音转录只认显式指派：上传音频、按量计费，不随默认提供商生效', () {
+    expect(AiFeature.cloudTranscription.followsDefaultProvider, isFalse);
+    const AiFeatureAssignments onlyDefault = AiFeatureAssignments(
+      defaultProviderId: 'ai-a',
+    );
+    expect(
+      onlyDefault.resolve(AiFeature.cloudTranscription, providers),
+      isNull,
+    );
+    expect(
+      onlyDefault.effectiveProviderIdFor(AiFeature.cloudTranscription),
+      isNull,
+    );
+    final AiFeatureAssignments explicit = onlyDefault.withAssignment(
+      AiFeature.cloudTranscription,
+      'ai-b',
+    );
+    expect(
+      explicit.resolve(AiFeature.cloudTranscription, providers)?.id,
+      'ai-b',
+    );
+    // 持久化键与枚举名一致，往返不丢。
+    final AiFeatureAssignments back = AiFeatureAssignments.fromJson(
+      explicit.toJson(),
+    );
+    expect(back.providerIdFor(AiFeature.cloudTranscription), 'ai-b');
   });
 
   test('显式指派压过默认；显式关掉 = 不用 AI', () {

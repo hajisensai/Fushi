@@ -160,6 +160,17 @@ class LocalAudioManager {
     }
   }
 
+  /// [entries] 的 path 逐条经 [resolveInternalPath] 归一到**本机实际文件位置**。
+  ///
+  /// 存储的 path 可能带源机绝对前缀（Profile 分享 JSON / 备份从别的设备带过来，
+  /// BUG-3702）：互联同步判「本端有没有这份库」、推送时打包文件，都必须看本机
+  /// 真实落点，而不是那串源机路径。
+  List<LocalAudioDbEntry> get entriesOnThisDevice => <LocalAudioDbEntry>[
+        for (final LocalAudioDbEntry e in entries)
+          e.copyWith(
+              path: resolveInternalPath(e.path, _databaseDirectory.path)),
+      ];
+
   Future<void> setEntries(List<LocalAudioDbEntry> dbs) async {
     await _prefsRepo.setPref(
         'local_audio_dbs', jsonEncode(dbs.map((e) => e.toJson()).toList()));

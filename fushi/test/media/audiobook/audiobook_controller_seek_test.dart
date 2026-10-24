@@ -138,6 +138,82 @@ void main() {
       expect(prev, 1);
     });
 
+    // 反馈 XUBiOO8VML / lPEaXxZNhn：「上一句」按音乐播放器习惯，听进当前句超过
+    // 阈值先回当前句开头，句首附近再按才去上一句。
+    test('prev cue: past the restart threshold replays the current cue', () {
+      final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
+      const int t = AudiobookPlayerController.prevCueRestartThresholdMs;
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 1,
+        currentCue: cues[1],
+        positionMs: 10000 + t + 1,
+      );
+
+      expect(prev, 1);
+    });
+
+    test('prev cue: right after restarting, pressing again goes back one',
+        () {
+      final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
+      const int t = AudiobookPlayerController.prevCueRestartThresholdMs;
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 1,
+        currentCue: cues[1],
+        positionMs: 10000 + t,
+      );
+
+      expect(prev, 0);
+    });
+
+    test(
+        'prev cue: in the silence after the current cue ended, replays that '
+        'cue', () {
+      // cue 1 spans [10000, 10500]; the highlight stays on it during the gap.
+      final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 1,
+        currentCue: cues[1],
+        positionMs: 15000,
+      );
+
+      expect(prev, 1);
+    });
+
+    test('prev cue: first cue past the threshold replays it (no chapter hop)',
+        () {
+      final List<AudioCue> cues = [_cue(0), _cue(10000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 0,
+        currentCue: cues[0],
+        positionMs: 5000,
+      );
+
+      expect(prev, 0);
+    });
+
+    test('prev cue: position from another audio file never triggers restart',
+        () {
+      final List<AudioCue> cues = [_cue(0), _cue(10000), _cue(20000)];
+
+      final int? prev = AudiobookPlayerController.prevCueIndexForTesting(
+        cues: cues,
+        currentCueIndex: 1,
+        currentCue: cues[1],
+        positionMs: 50000,
+        audioFileIndex: 1,
+      );
+
+      expect(prev, 0);
+    });
+
     test('all-book cue lookup does not collapse duplicate selectors', () {
       final List<AudioCue> cues = [
         _cue(0, id: 1, fragmentId: ''),

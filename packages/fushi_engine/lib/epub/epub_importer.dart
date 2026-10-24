@@ -11,6 +11,7 @@ import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:meta/meta.dart';
@@ -203,6 +204,9 @@ class EpubImporter {
           // v115：OPF dc:identifier 里校验通过的 ISBN（已规范成 ISBN-13），排行榜
           // 作品匹配的强 ID。没有合法 ISBN → NULL。
           isbn: book.isbn != null ? Value(book.isbn) : const Value.absent(),
+          // n4KC1azJvw：OPF 声明的系列（没有也写类型标记，存量回填据此跳过）。
+          // 书架系列归组优先认它，标题启发式只兜底。
+          sourceMetadata: Value(encodeEpubSeriesMetadata(book.series)),
         ),
       );
 

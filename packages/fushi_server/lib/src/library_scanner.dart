@@ -582,15 +582,56 @@ class LibraryScanner {
         import: (DuplicatePolicy policy) => MangaImporter.importFromImageFolder(
           db: db,
           imageDirPath: folder,
-          title: p.basename(folder),
+          // 「系列/卷N」下探出的卷叫「系列名 卷目录名」，与 app 同口径（见引擎
+          // MangaSeriesVolume.title）；随后 BookSeriesGrouper 按书名把它们收进系列合集。
+          title: plan.imageFolderTitle(folder),
           policy: policy,
           sourceId: scan.source.id,
         ),
       );
       if (!tracked) untracked++;
     }
+    await _retireFlattenedSeries(dir, root.id, plan, scan, summary);
     await _finishBookScan(root.id, scan, summary.mangaAdded - addedBefore, untracked);
     return scan;
+  }
+
+  /// 旧版把 `系列/卷N/页图` 的整个系列目录导成一本；本轮拆出的分卷全部在库后回收那本
+  /// 合订本（引擎 `retireFlattenedMangaSeries`，与 app 来源扫描同一份）。它的源目录
+  /// 还在，对账不会删它，不收就是合订本与分卷各一份。
+  Future<void> _retireFlattenedSeries(
+    Directory dir,
+    String rootId,
+    MangaFolderPlan plan,
+    _BookScan scan,
+    ScanSummary summary,
+  ) async {
+    final Map<String, List<String>> volumeDirs = plan.seriesVolumeDirs;
+    if (volumeDirs.isEmpty) return;
+    final ({List<String> retiredUids, List<String> errors}) result = await retireFlattenedMangaSeries(
+      db: db,
+      index: scan.index,
+      sourceId: scan.source.id,
+      series: <FlattenedMangaSeries>[
+        for (final MapEntry<String, List<String>> e in volumeDirs.entries)
+          (
+            seriesRel: bookSourceRelPath(dir.path, e.key),
+            seriesTitle: plan.seriesVolumes[e.value.first]!.seriesTitle,
+            volumeRels: <String>[for (final String v in e.value) bookSourceRelPath(dir.path, v)],
+          ),
+      ],
+    );
+    summary.mangaPruned += result.retiredUids.length;
+    if (result.retiredUids.isNotEmpty) {
+      engineLog.logDiagnostic(
+        'LibraryScanner.manga',
+        '$rootId: retired ${result.retiredUids.length} flattened series book(s) superseded by split volumes',
+      );
+    }
+    for (final String e in result.errors) {
+      summary.errors.add('$rootId: retire flattened series: $e');
+      engineLog.logDiagnostic('LibraryScanner.manga', '$rootId: $e');
+    }
   }
 
   /// 导入一个书 / 漫画源并登记进来源索引。返回 false 表示这个源撞上了一本

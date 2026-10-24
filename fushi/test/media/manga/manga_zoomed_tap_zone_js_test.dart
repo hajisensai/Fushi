@@ -145,6 +145,54 @@ assert.deepEqual(calls,[],'双击取消了第一击挂起的 onTapEmpty');
     );
   });
 
+  // 反馈 IDF2uWUvlf：双击窗口按「第一击松手 → 第二击按下」计。第二击按住
+  // ~130ms、松手已超出 DBL_MS，也必须缩放，且挂起的 onTapEmpty 不得发出。
+  test('第二击按下在窗口内、松手超出窗口：仍判双击缩放，不切悬浮栏', () async {
+    await runJs(
+      harness(buildDocument(), '''
+ZOOM=2;
+now+=1000; _onTap(206,430);
+now+=250; _armDoubleTapOnDown(208,432);
+flush();
+assert.deepEqual(calls,[],'第二击按下即取消挂起的 onTapEmpty（手指还按着时不能切栏）');
+now+=130; _onTap(208,432);
+assert.deepEqual(zoomTo,[1],'松手时按双击缩放');
+flush();
+assert.deepEqual(calls,[]);
+'''),
+    );
+  });
+
+  test('第二击按下离第一击太远：不算双击，不缩放，退回空白单击', () async {
+    await runJs(
+      harness(buildDocument(), '''
+ZOOM=2;
+now+=1000; _onTap(150,430);
+now+=150; _armDoubleTapOnDown(260,600);
+now+=100; _onTap(260,600);
+assert.deepEqual(zoomTo,[]);
+flush();
+assert.deepEqual(calls,['onTapEmpty']);
+'''),
+    );
+  });
+
+  test('第二击按下晚于窗口（挂起单击已发出）：各算一次单击', () async {
+    await runJs(
+      harness(buildDocument(), '''
+ZOOM=2;
+now+=1000; _onTap(206,430);
+flush();
+assert.deepEqual(calls,['onTapEmpty']);
+now+=400; _armDoubleTapOnDown(206,430);
+now+=80; _onTap(206,430);
+assert.deepEqual(zoomTo,[]);
+flush();
+assert.deepEqual(calls,['onTapEmpty','onTapEmpty']);
+'''),
+    );
+  });
+
   test('捏合残留 101%（吸附阈值内的抖动）：仍可点击翻页', () async {
     await runJs(
       harness(buildDocument(), '''

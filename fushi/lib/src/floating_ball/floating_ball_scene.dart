@@ -14,6 +14,17 @@ import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 
+/// 鼠标此刻是否停在**应用内悬浮球**（球或展开的按钮）上。由 `AppFloatingBallHost`
+/// 的 [MouseRegion] 写入（只在球 / 按钮命中时进入，空白处穿透不算）。
+///
+/// 页面据此把「指针移到悬浮球上」与「指针离开、回去看视频」区分开：视频页悬停查词
+/// 「指针离开后自动关栈续播」遇到它不触发——移到球上是要操作应用（反馈 / 截图 /
+/// 同步……），不是想接着看视频（用户反馈 5yWS2o6U6q：一点悬浮球的反馈，查词就被
+/// 关掉、视频播起来了）。
+final ValueNotifier<bool> appFloatingBallPointerInside = ValueNotifier<bool>(
+  false,
+);
+
 /// 一组登记中的场景按钮。
 class _SceneEntry {
   _SceneEntry(this.state);

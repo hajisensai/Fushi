@@ -150,10 +150,7 @@ class DictionaryRepository {
     // 历史落库是 debounce 写穿：重载（启动 no-op / Profile 切换 TODO-1077）前
     // 先 flush pending 变更，保持「变更先于重载落库」的旧语义，防旧快照复活。
     await flushPendingWritesNow();
-    final dictRows = await _db.getAllDictionaryMetadata();
-    _dictionariesCache = dictRows.map(_rowToDictionary).toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
-    _dictionariesChanged();
+    _applyMetadataRows(await _db.getAllDictionaryMetadata());
 
     _dictionaryHistoryResults.clear();
     final histRows = await _db.getAllDictionaryHistory();
@@ -166,6 +163,47 @@ class DictionaryRepository {
         debugPrint('[Fushi] skipping corrupted dictionary history: $e');
       }
     }
+  }
+
+  /// 上一次从 DB 整表装载 dictionary_metadata 时读到的行（按 name 排序），供
+  /// [reloadMetadataIfChangedInDb] 判断「别的进程改过没有」。null = 还没装载过。
+  List<DictionaryMetaRow>? _loadedMetadataRows;
+
+  void _applyMetadataRows(List<DictionaryMetaRow> rows) {
+    final List<DictionaryMetaRow> sorted = List<DictionaryMetaRow>.of(rows)
+      ..sort((DictionaryMetaRow a, DictionaryMetaRow b) =>
+          a.name.compareTo(b.name));
+    _loadedMetadataRows = sorted;
+    _dictionariesCache = sorted.map(_rowToDictionary).toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    _dictionariesChanged();
+  }
+
+  /// BUG-3662：Android app 外查词跑在独立的 `:popup` 进程里，它的词典缓存只在进程
+  /// 冷启动时 [loadFromDb] 一次；主进程在「词典管理」里改顺序 / 启用 / 折叠 / 改名
+  /// 只写 `dictionary_metadata` 表（不抬 `prefs_version`），常驻的热进程永远看不见，
+  /// 用户只能杀掉 app 才生效。
+  ///
+  /// 本方法在每次热复用查词前读一遍这张小表（几十行），与上次装载的快照逐行比较
+  /// （drift 行类型自带值相等），变了才换缓存并返回 true——调用方据此重载引擎、
+  /// 清查词缓存。先排空本进程自己在途的元数据写，免得把自己写到一半的状态当成外部
+  /// 改动读回来。
+  Future<bool> reloadMetadataIfChangedInDb() async {
+    Future<void> pending;
+    do {
+      pending = _metadataWrites;
+      await pending;
+    } while (!identical(pending, _metadataWrites));
+    final List<DictionaryMetaRow> rows = await _db.getAllDictionaryMetadata();
+    final List<DictionaryMetaRow> sorted = List<DictionaryMetaRow>.of(rows)
+      ..sort((DictionaryMetaRow a, DictionaryMetaRow b) =>
+          a.name.compareTo(b.name));
+    if (_loadedMetadataRows != null &&
+        listEquals(sorted, _loadedMetadataRows)) {
+      return false;
+    }
+    _applyMetadataRows(sorted);
+    return true;
   }
 
   // ── row conversion ───────────────────────────────────────────────────

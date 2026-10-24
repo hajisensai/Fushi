@@ -172,6 +172,10 @@ SettingsCustomItem _navModuleOrderItem() => SettingsCustomItem(
     settingsContext: settingsContext,
     modules: _orderedNavModules(settingsContext),
     identityOf: moduleNavIdentity,
+    settingsIdentity: (
+      label: homeNavItemFor(HomeTab.settings).label,
+      icon: homeNavItemFor(HomeTab.settings).icon,
+    ),
     hintOf: moduleSwitchHint,
     onEnabledChanged: (ModuleId module, bool enabled) =>
         _applyModuleEnabled(settingsContext, module, enabled),

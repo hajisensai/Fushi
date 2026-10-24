@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -12,10 +13,14 @@ class FloatingLyricLookupRequest {
     required this.text,
     required this.index,
     this.selectionRect,
+    this.cardImage,
   });
 
   final String text;
   final int index;
+
+  /// 截屏识字 / 拍照查词这次点字的卡图来源（反馈 Gz7z6Y6Mbr）；悬浮字幕点词为 null。
+  final ScreenOcrCardImage? cardImage;
 
   /// 被点文字在屏幕上的矩形（逻辑像素）；null = 没有可定位的选区，弹窗落在
   /// 屏幕中央。悬浮球的截屏识字会带上被点字符的框。
@@ -44,12 +49,18 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
   FloatingLyricLookupRequest? get pending => _pending;
 
   /// 推一次点词请求（app 级默认 handler 调）。空白文本忽略。
-  void requestLookup(String text, int index, {Rect? selectionRect}) {
+  void requestLookup(
+    String text,
+    int index, {
+    Rect? selectionRect,
+    ScreenOcrCardImage? cardImage,
+  }) {
     if (text.trim().isEmpty) return;
     _pending = FloatingLyricLookupRequest(
       text: text,
       index: index,
       selectionRect: selectionRect,
+      cardImage: cardImage,
     );
     notifyListeners();
   }
@@ -121,6 +132,13 @@ class _FloatingLyricLookupHostState
   @override
   AppModel get mixinAppModel => _appModel;
 
+  /// 最近一次顶层查词带来的卡图来源（截屏识字 / 拍照查词），制卡时裁成卡图；悬浮字幕
+  /// 点词的请求不带，会把它清掉。
+  ScreenOcrCardImage? _cardImage;
+
+  @override
+  ScreenOcrCardImage? get miningCardImage => _cardImage;
+
   @override
   ThemeData get mixinTheme => Theme.of(context);
 
@@ -163,6 +181,7 @@ class _FloatingLyricLookupHostState
   void _lookup(FloatingLyricLookupRequest req) {
     final String trimmed = req.text.trim();
     if (trimmed.isEmpty) return;
+    _cardImage = req.cardImage;
     _ensureWarmPopup();
     final String word = lookupWordAtIndex(req.text, req.index).trim();
     final String searchTerm = word.isNotEmpty ? word : trimmed;

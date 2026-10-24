@@ -67,7 +67,7 @@ enum class Profile {
 // FloatingLyricWindow::ControlActionAt() resolves through SlotAction(), so the
 // body window and the standalone toolbar can never disagree about what a slot
 // does.
-constexpr int kGalHookSlotCount = 9;
+constexpr int kGalHookSlotCount = 10;
 constexpr const char* kGalHookSlotActions[kGalHookSlotCount] = {
     "replayVoice",         // 0 replay the line's captured audio
     "recaptureVoice",      // 1 open a recapture window
@@ -76,13 +76,17 @@ constexpr const char* kGalHookSlotActions[kGalHookSlotCount] = {
     "toggleTransparency",  // 4 one-click background transparency
     "lock",                // 5 position lock
     "openWorkbench",       // 6 capture workbench
-    // 7 always-on-top pin. Handled natively in DispatchControlAction (no Dart
+    // 7 copy the displayed line to the clipboard (feedback qM4n-Tu0pc: the
+    // line could only be copied from the workbench, i.e. after switching
+    // windows). Executed by Dart (it owns the displayed line text).
+    "copyLine",
+    // 8 always-on-top pin. Handled natively in DispatchControlAction (no Dart
     // round-trip), exactly like the clipboard window's 📌 — the overlay is born
     // topmost, and this is the only way to drop it behind another window
-    // without closing it. Inserted ahead of the close slot so the rightmost
-    // button is still 关闭 (muscle memory) and slots 0..6 keep their index.
+    // without closing it. Kept right ahead of the close slot so the rightmost
+    // button is still 关闭 (muscle memory).
     "topmost",
-    "close",  // 8 close the overlay
+    "close",  // 9 close the overlay
 };
 
 // 有声书悬浮字幕的槽表。前三颗是播放控制（沿用旧歌词条的肌肉记忆顺序：上一句 /

@@ -15,6 +15,7 @@ void main() {
       VideoControlItem.frameBackward,
       VideoControlItem.frameForward,
       VideoControlItem.screenshot,
+      VideoControlItem.ocrFrame,
       VideoControlItem.clipExport,
       // 音轨只在站点上报了音轨时才画（见下一条测试）。
       VideoControlItem.audioTrack,

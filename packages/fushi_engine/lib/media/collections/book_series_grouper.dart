@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/epub_series.dart';
+import 'package:fushi_engine/epub/epub_series_backfill.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
@@ -41,6 +43,8 @@ class BookSeriesGrouper {
   Future<BookSeriesGroupSummary> groupAll() async {
     final List<int> created = <int>[];
     final List<int> updated = <int>[];
+    // 存量书补读 OPF 系列声明（每本只读一次）；之后导入的书由导入器直接写。
+    await backfillEpubSeries(_database);
     final List<_Volume> volumes = await _loadVolumes();
     final List<MediaCollectionItemRow> items = await _database
         .getAllCollectionItems();
@@ -98,7 +102,18 @@ class BookSeriesGrouper {
     final Map<String, _Volume> byBookKey = <String, _Volume>{};
     for (final EpubBookRow book in await _database.getAllEpubBooks()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
-      final BookSeriesKey? key = parseBookSeriesKey(book.title);
+      // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品
+      // 只能靠它），没有声明才按书名启发式。
+      final EpubSeries? declared = decodeEpubSeriesMetadata(
+        book.sourceMetadata,
+      );
+      final BookSeriesKey? key = declared != null
+          ? declaredBookSeriesKey(
+              name: declared.name,
+              index: declared.index,
+              title: book.title,
+            )
+          : parseBookSeriesKey(book.title);
       if (key == null) continue;
       final _Volume v = _Volume(
         title: book.title,
@@ -329,10 +344,9 @@ class BookSeriesOrder {
     }
     if (volumes.length < 2) return null;
     if (volumes.map((_Volume v) => v.shelf).toSet().length != 1) return null;
-    if (sharedBookSeriesKey(<String>[
-          for (final _Volume v in volumes) v.title,
-        ]) ==
-        null) {
+    // 同系列看各卷已定的系列键（书名启发式或包里声明的系列），不再从书名重解析：
+    // 声明了系列的卷书名里未必有系列线索。
+    if (volumes.map((_Volume v) => v.key.key).toSet().length != 1) {
       return null;
     }
     final List<num?> numbers = <num?>[
