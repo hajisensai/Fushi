@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_release_match.dart';
 import 'package:fushi_engine/media/music/metadata/musicbrainz_provider.dart';
@@ -124,12 +125,27 @@ void main() {
       musicPlayItemOf(tracks[1], album: album),
     );
     expect(media.media.uri, 'cdda://E:');
-    expect(media.fileLocal['start'], '13.333000');
-    expect(media.fileLocal['end'], '30.000000');
+    // 毫秒按扇区还原到轨界（1000 帧 = 13.333… s），起止都后挪 1 µs（mpv 截断取样本）。
+    expect(media.fileLocal['start'], '13.333334333');
+    expect(media.fileLocal['end'], '30.000001000');
     final MusicResolvedMedia last = await resolveMusicMedia(
       musicPlayItemOf(tracks[2], album: album),
     );
     expect(last.fileLocal.containsKey('end'), isFalse);
+    // 盘上相邻的后一首在同一个文件里接着播：终点取它的（末轨 = 盘尾）。
+    final MusicPlayItem second = musicPlayItemOf(tracks[1], album: album);
+    final MusicPlayItem third = musicPlayItemOf(tracks[2], album: album);
+    expect(musicCddaContinues(second, third), isTrue);
+    expect(
+      musicCddaContinues(musicPlayItemOf(tracks[0], album: album), third),
+      isFalse,
+    );
+    final MusicResolvedMedia through = await resolveMusicMedia(
+      musicPlayItemOf(tracks[0], album: album),
+      playThrough: second,
+    );
+    expect(through.fileLocal['start'], '0.000001000');
+    expect(through.fileLocal['end'], '30.000001000');
 
     await service.import(
       info,
@@ -147,6 +163,98 @@ void main() {
     ]);
     expect(again.first.path, 'cdda://F:');
     expect((await db.listMusicDiscSources()).single.path, 'F:');
+  });
+
+  test('毫秒 → 盘时间：按 CD 扇区还原轨界，误差 ≤ 1 ms 的往返都落回同一扇区', () {
+    for (final int frame in <int>[0, 1, 1000, 17446, 334000]) {
+      final double exact = frame / kAudioCdFramesPerSecond;
+      final int ms = (frame * 1000 / kAudioCdFramesPerSecond).round();
+      for (final int err in <int>[-1, 0, 1]) {
+        expect(musicCddaSeconds(ms + err), exact, reason: '$frame $err');
+      }
+    }
+    expect(musicCddaDevice('cdda://E:'), 'E:');
+    expect(musicCddaDevice('cdda:///dev/sr0'), '/dev/sr0');
+  });
+
+  test('不同盘符 / 不同光驱上的同一张盘不算相邻；CUE 文件不算', () {
+    const MusicPlayItem a = MusicPlayItem(
+      trackUid: 'a',
+      path: 'cdda://E:',
+      title: 'a',
+      startMs: 0,
+      endMs: 13333,
+    );
+    const MusicPlayItem b = MusicPlayItem(
+      trackUid: 'b',
+      path: 'cdda://E:',
+      title: 'b',
+      startMs: 13333,
+      endMs: 30000,
+    );
+    expect(musicCddaContinues(a, b), isTrue);
+    expect(
+      musicCddaContinues(
+        a,
+        const MusicPlayItem(
+          trackUid: 'b',
+          path: 'cdda://F:',
+          title: 'b',
+          startMs: 13333,
+        ),
+      ),
+      isFalse,
+    );
+    expect(musicCddaContinues(b, a), isFalse);
+    expect(
+      musicCddaContinues(
+        const MusicPlayItem(
+          trackUid: 'x',
+          path: '/m/a.flac',
+          title: 'x',
+          startMs: 0,
+          endMs: 1000,
+        ),
+        const MusicPlayItem(
+          trackUid: 'y',
+          path: '/m/a.flac',
+          title: 'y',
+          startMs: 1000,
+        ),
+      ),
+      isFalse,
+    );
+  });
+
+  test('播放前核对盘：同一张 / 换了盘 / 没盘 / 数据盘', () async {
+    final String uid2 = musicCdTrackUid(_info.discId!, 2);
+    Future<MusicCdDiscCheck> check(MusicCdDiscIdReader read) =>
+        musicCdCheckDisc(
+          device: 'E:',
+          trackUid: uid2,
+          trackNo: 2,
+          readDiscId: read,
+        );
+    expect(await check((String d) async => _info.discId), MusicCdDiscCheck.ok);
+    expect(
+      await check((String d) async => 'some-other-disc-id-xxxxxxxxx-'),
+      MusicCdDiscCheck.otherDisc,
+    );
+    expect(
+      await check((String d) async => throw AudioCdReadException(d, 1)),
+      MusicCdDiscCheck.noDisc,
+    );
+    expect(await check((String d) async => null), MusicCdDiscCheck.noDisc);
+    // 轨号对不上（曲目行坏了）也不当成这张盘播。
+    expect(
+      await musicCdCheckDisc(
+        device: 'E:',
+        trackUid: uid2,
+        trackNo: null,
+        readDiscId: (String d) async => _info.discId,
+      ),
+      MusicCdDiscCheck.otherDisc,
+    );
   });
 
   test('数据盘（没有音频轨）明确报错', () async {

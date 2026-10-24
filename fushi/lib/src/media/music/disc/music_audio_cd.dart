@@ -5,11 +5,16 @@
 /// 时间轴，从第一条音频轨起点算 0），`cue_start_ms` / `cue_end_ms` = 这一轨在盘时间轴上的
 /// 起止（帧 → 毫秒，误差 ≤ 0.5 ms）。
 ///
-/// 播放：mpv 的 `cdda://` 不能当 EDL 段的源（与 `dvd://` 同理，盘协议在 EDL 里被拒），只能
-/// 用逐文件 `start` / `end` 选项——是播放器级 seek，**轨间不是无缝的**（seek 会清掉设备缓冲
-/// 里前一首的尾巴，实测 CUE 场景约 360 ms），见 `mpv_music_output_backend.dart` 文件头。
-/// 现随包的 Windows libmpv 没有编 libcdio（`-Dcdda` 未开），`cdda://` 会报「No protocol
-/// handler」——读盘、识别、入库可用，播放要等 libmpv 换成带 cdda 的构建。
+/// 播放（`mpv_music_output_backend.dart` 文件头「音频 CD」）：mpv 的 `cdda://` 不能当 EDL
+/// 段的源（盘协议在 EDL 里被拒），所以一首 CD 曲目 = 一个直接加载的 `cdda://<设备>` +
+/// 逐文件 `start` / `end`（按 CD 扇区 1/75 s 取整，逐样本落在轨界上）。盘上**相邻**的几首
+/// 共用同一个 mpv 文件（一条连续时间轴，轨界不经 seek），所以顺序连播逐样本无缝。
+/// 播放前按 Disc ID 核对光驱里的盘（[musicCdCheckDisc]）：没盘 / 换了盘明确报错，不会拿
+/// 别的盘的音频顶着这张专辑的曲名播。
+///
+/// 平台：Windows 随包 libmpv 带 cdda（`tool/cdda`）；macOS 随包 libmpv 要等 Darwin fork
+/// 重编（`tool/bluray/forks/README.md`）；Linux 用系统 mpv（需带 cdda）；Android / iOS
+/// 没有光驱。
 library;
 
 import 'dart:isolate';
@@ -28,6 +33,58 @@ const String kMusicCddaScheme = 'cdda://';
 String musicCddaPath(String device) => '$kMusicCddaScheme$device';
 
 bool isMusicCddaPath(String path) => path.startsWith(kMusicCddaScheme);
+
+/// 整盘路径里的设备（`cdda://E:` → `E:`）。
+String musicCddaDevice(String path) => path.substring(kMusicCddaScheme.length);
+
+/// 纯函数：曲目行里的毫秒（盘时间轴，[musicAudioCdRows] 由 CD 帧换算、误差 ≤ 0.5 ms）→
+/// 交给 mpv 的秒数。CD 的轨界都在扇区（1/75 s = 588 个样本）上，毫秒取整的误差远小于半个
+/// 扇区，按扇区四舍五入就还原出轨界的确切时刻；不还原的话 mpv 精确 seek 到的样本会偏离
+/// 轨界最多 22 个样本（0.5 ms × 44.1 kHz）。
+double musicCddaSeconds(int ms) =>
+    (ms * kAudioCdFramesPerSecond / 1000).round() / kAudioCdFramesPerSecond;
+
+/// 播放前核对光驱里的盘的结果。
+enum MusicCdDiscCheck {
+  /// 就是这张盘。
+  ok,
+
+  /// 光驱里没有能读的盘（没盘 / 托盘开着 / 数据盘）。
+  noDisc,
+
+  /// 光驱里是另一张盘。
+  otherDisc,
+}
+
+/// 读光驱里的盘的 Disc ID（后台 isolate；读不到抛异常）。
+typedef MusicCdDiscIdReader = Future<String?> Function(String device);
+
+Future<String?> _discIdInBackground(String device) => Isolate.run(
+  () => AudioCdReader.instance.read(device).discId,
+  debugName: 'music-cd-identity',
+);
+
+/// 播放前核对：[trackUid] / [trackNo] 是曲目行上的，Disc ID 从光驱现读——曲目 uid 由
+/// Disc ID + 轨号算出（[musicCdTrackUid]），同一张盘才对得上。
+Future<MusicCdDiscCheck> musicCdCheckDisc({
+  required String device,
+  required String trackUid,
+  required int? trackNo,
+  MusicCdDiscIdReader? readDiscId,
+}) async {
+  final String? discId;
+  try {
+    discId = await (readDiscId ?? _discIdInBackground)(device);
+  } on AudioCdReadException {
+    // 没盘 / 托盘开着 / 设备打不开（Isolate.run 原样转回这个异常）。
+    return MusicCdDiscCheck.noDisc;
+  }
+  if (discId == null) return MusicCdDiscCheck.noDisc;
+  if (trackNo == null || musicCdTrackUid(discId, trackNo) != trackUid) {
+    return MusicCdDiscCheck.otherDisc;
+  }
+  return MusicCdDiscCheck.ok;
+}
 
 /// 音频 CD 曲目的 uid：MusicBrainz Disc ID + 轨号（同一张盘在哪台光驱、哪个盘符都一样）。
 String musicCdTrackUid(String discId, int trackNumber) =>

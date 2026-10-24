@@ -21,6 +21,18 @@ import 'package:fushi/i18n/strings.g.dart';
 /// 一首播完算「听完」的容差。
 const Duration kMusicCompletionSlack = Duration(seconds: 2);
 
+/// 播放失败的提示文字。
+String musicPlaybackFailureText(MusicBackendFailed failure) =>
+    switch (failure.reason) {
+      MusicPlaybackFailure.cdNoDisc => t.music_cd_play_no_disc(
+        device: failure.device ?? '',
+      ),
+      MusicPlaybackFailure.cdOtherDisc => t.music_cd_play_other_disc(
+        device: failure.device ?? '',
+      ),
+      null => t.music_play_failed(error: failure.message),
+    };
+
 class MusicSession extends ChangeNotifier {
   MusicSession({
     required this.engine,
@@ -43,6 +55,10 @@ class MusicSession extends ChangeNotifier {
               t.music_output_fallback_device,
           },
         );
+      }
+      // 播放失败：音频 CD 没盘 / 换了盘说清楚是哪台光驱，其余带上 mpv 的原文。
+      ..onPlaybackFailed = (MusicBackendFailed f) {
+        FushiToast.show(msg: musicPlaybackFailureText(f));
       }
       ..onWillPlay = _onWillPlay
       ..onTrackStarted = _onTrackStarted

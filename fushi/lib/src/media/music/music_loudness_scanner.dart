@@ -17,6 +17,8 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 
+import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
+
 /// ReplayGain 2.0 参考响度（LUFS）。
 const double kReplayGain2ReferenceLufs = -18;
 
@@ -211,6 +213,9 @@ class MusicLoudnessScanner extends ChangeNotifier {
   }
 
   Future<MusicLoudnessMeasurement?> _measure(MusicTrackRow track) async {
+    // 音频 CD 曲目：FFmpeg 没有 cdda 协议，光驱里的盘也随时会换——不测，按 0 dB 播
+    // （记成已扫描、增益为空，信号路径面板照实显示没有 ReplayGain）。
+    if (isMusicCddaPath(track.path)) return null;
     final FfmpegRunResult r = await _ffmpeg().run(
       musicEbur128Args(track),
       _perTrackTimeout,

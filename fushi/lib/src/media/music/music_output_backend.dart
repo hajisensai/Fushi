@@ -253,10 +253,25 @@ final class MusicBackendOutputFallback extends MusicBackendEvent {
   final String detail;
 }
 
+/// 播放失败里界面要单独说清楚的几种（其余只有 mpv 原文）。
+enum MusicPlaybackFailure {
+  /// 音频 CD 曲目：光驱里没有能读的盘（没盘 / 托盘开着 / 中途拔出）。
+  cdNoDisc,
+
+  /// 音频 CD 曲目：光驱里换成了另一张盘（Disc ID 对不上）。
+  cdOtherDisc,
+}
+
 final class MusicBackendFailed extends MusicBackendEvent {
-  const MusicBackendFailed(this.message);
+  const MusicBackendFailed(this.message, {this.reason, this.device});
 
   final String message;
+
+  /// 已知原因；null = 只有 [message]。
+  final MusicPlaybackFailure? reason;
+
+  /// [reason] 涉及的设备（音频 CD 的光驱，如 `E:`）。
+  final String? device;
 }
 
 /// 输出后端。实现必须保证：[openPair] 后后端只持有 [current] 与（可选）[next] 两项；
