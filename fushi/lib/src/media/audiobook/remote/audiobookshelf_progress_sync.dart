@@ -6,6 +6,8 @@
 ///   刚开书的头 [kAudiobookshelfResumeWhilePlayingWindow] 内正在播也照跳；
 /// - 暂停很久后再按播放时再看一眼服务器：位置和本机上次写进去的不一样，说明别的设备
 ///   动过，跳过去；
+/// - 本机听过 / 拖过就记下时间（哪怕发不出去），所以只在离线听的位置不会被下次开书时
+///   服务器上更旧的记录盖掉；
 /// - 播放中每 [interval] 同步一次，暂停的那一刻立即同步一次；
 /// - 会话被服务器清掉（404）或根本开不了（离线）时退回「直接写进度」；
 /// - 结束时同步最后一次位置并关闭会话。
@@ -255,6 +257,8 @@ class AudiobookshelfProgressSync {
       final double? last = _lastSyncedPosition;
       // 没在听、位置也没动：不发无意义的请求。
       if (listened <= 0 && last != null && (position - last).abs() < 1) return;
+      // 先记「本机写过位置」再发：离线时发不出去，本机的位置也比服务器旧记录新。
+      if (_movedLocally(position, listened)) _stampLocalWrite();
       await _send(position, listened);
     } finally {
       _flushing = false;
@@ -277,7 +281,6 @@ class AudiobookshelfProgressSync {
       _pendingListened = Duration.zero;
       _lastSyncedPosition = position;
       _reportedFailure = false;
-      _notePushed();
     } on ExternalProviderFailure catch (failure) {
       if (failure.kind == ExternalProviderFailureKind.notFound &&
           session != null) {
@@ -299,7 +302,15 @@ class AudiobookshelfProgressSync {
     }
   }
 
-  void _notePushed() {
+  /// 这次是否真的听过 / 拖过（暂停着挂机不算，别拿它去压服务器上更新的进度）。
+  bool _movedLocally(double position, double listened) {
+    if (listened > 0) return true;
+    final double? last = _lastSyncedPosition;
+    return last != null && (position - last).abs() >= 1;
+  }
+
+  /// 记下本机最后一次写位置的时间（落库），下次开书据此判断谁的位置更新。
+  void _stampLocalWrite() {
     _lastPushedAtMs = _now().millisecondsSinceEpoch;
     final Future<void> Function(int nowMs)? hook = _onPushed;
     if (hook != null) unawaited(hook(_lastPushedAtMs).catchError((_) {}));
@@ -326,6 +337,9 @@ class AudiobookshelfProgressSync {
       _accrue();
       position = _absoluteSeconds();
       listened = _pendingListened.inMilliseconds / 1000;
+    }
+    if (position != null && _movedLocally(position, listened)) {
+      _stampLocalWrite();
     }
     _closed = true;
     final AudiobookshelfPlaySession? session = _session;

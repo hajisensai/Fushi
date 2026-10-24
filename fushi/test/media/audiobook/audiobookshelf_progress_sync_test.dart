@@ -352,6 +352,44 @@ void main() {
     });
   });
 
+  group('离线听过的位置', () {
+    test('同步发不出去也记下本机写入时间；没听过的挂机不记', () async {
+      final List<int> stamps = <int>[];
+      final AudiobookshelfProgressSync s = AudiobookshelfProgressSync(
+        api: _api(server),
+        binding: _binding(),
+        deviceId: () async => 'dev-1',
+        now: () => clock,
+        timerFactory: (Duration interval, void Function() onTick) {
+          tick = onTick;
+          return Timer(const Duration(days: 1), () {});
+        },
+        onError: (String what, Object e) => errors.add(what),
+        onPushed: (int ms) async => stamps.add(ms),
+      );
+      addTearDown(s.close);
+      server.startPlayFails = true;
+      server.patchFails = true;
+      await s.attach(player.host);
+
+      // 暂停挂机：不算本机写过。
+      advance(30);
+      tick!();
+      await pumpEventQueue();
+      expect(stamps, isEmpty);
+
+      // 离线听了一段：写失败，但时间戳照记。
+      player.playing = true;
+      player.notify();
+      advance(30);
+      player.positionMs = 30000;
+      tick!();
+      await pumpEventQueue();
+      expect(errors, contains('startPlay'));
+      expect(stamps, <int>[clock.millisecondsSinceEpoch]);
+    });
+  });
+
   group('结束', () {
     test('close：写最后位置并关会话，之后不再同步', () async {
       await sync.attach(player.host);
