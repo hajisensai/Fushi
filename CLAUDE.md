@@ -8,7 +8,7 @@
 
 - 始终用中文回复。
 - 开始分析、修改、测试、提交或 PR 前，先读最近层级的 `AGENTS.md` / `CLAUDE.md`；子目录里有更近的就按更近层级执行。
-- 修改代码、文档、配置或测试时必须使用独立 Git worktree，不得直接在原工作区编辑；在 worktree 中完成修改、验证和提交。非大型修改（单一目标、短周期）完成后，默认将工作分支合并回原目标分支；大型、长周期或需分阶段审查的修改保留独立分支/worktree，待审查确认后再合并。合并不得覆盖原工作区已有的未提交改动。
+- 修改代码、文档、配置或测试时必须使用独立 Git worktree，不得直接在原工作区编辑；在 worktree 中完成修改、验证和提交，推送并开 PR 后就停：**不自己合并**，用户当轮明说「合并」才合（2026-10-24 删掉了旧版「非大型修改默认合并回原目标分支」）。合并不得覆盖原工作区已有的未提交改动。
 - 新建 worktree 后（无论 `EnterWorktree`、手动 `git worktree add` 还是其它工具创建），第一件事在该 worktree 里跑 `pwsh -File tool/setup_worktree.ps1`（Windows 用 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`）：它从主 checkout 把本地真值密钥（`google_oauth_secret.dart` / `log_upload_secret.dart` 等**所有 skip-worktree 文件**，清单动态读取无需硬编码）搬进来并在本 worktree 续上 `skip-worktree`（真值不显示 dirty、绝不会误提交），再调 `tool/bootstrap.ps1`（pub get + 打补丁）。**别再手动 cp 密钥桩或逐个配置**。只跑 `flutter analyze` / `flutter test` 时入库的占位/空值已够编译；真值仅在 worktree 里真机验证 Google Drive 登录 / 日志上传时才需要。只搬密钥不跑 bootstrap 用 `-SkipBootstrap`。
 - 多 agent 并发时必须先登记本机 ownership：
   - 在主 checkout 的 `.worktrees/coordination/claims/` 复制 `_template.json` 新建自己的 claim；若当前位于 `.worktrees/<task>` worktree，则使用同级的 `../coordination/claims/`。
@@ -139,7 +139,7 @@
 ## 提交
 
 - 完成代码/文档/测试/审查改动后默认提交本轮。
-- **提交并过了推送门就直接 push + 开 PR，不要问（用户 2026-10-24 拍板：「不要每次老问我要不要推送并开pr，直接推送+pr就行，除非要让我决策」）**：收尾时不再问「要我推送并开 PR 吗？」，也不出这类按钮；只有真要用户拍板的事（方案取舍、范围扩大、风险判断）才问。本条只管推送与开 PR，合并照本文件其它合并规则走。
+- **提交并过了推送门就直接 push + 开 PR，不要问（用户 2026-10-24 拍板：「不要每次老问我要不要推送并开pr，直接推送+pr就行，除非要让我决策」）**：收尾时不再问「要我推送并开 PR 吗？」，也不出这类按钮；只有真要用户拍板的事（方案取舍、范围扩大、风险判断）才问。合并仍等用户明说（见「基本规则」worktree 条）。
 - push 前按 [docs/agent/build.md](docs/agent/build.md) 的版本号规则判断是否 bump `fushi/pubspec.yaml`：**`+build` 每次发布单调 +1**（可读发布序号，与语义版本无关，多数发布只 +build）；**语义版本 `X.Y.Z` 按里程碑升**——一批功能/大改升 minor 重置 patch、一批修复升 patch，不是每个 commit 都升；Android `versionCode` 由 CI `git rev-list --count HEAD` 自动，不靠 `+build`。
 - 发布通道硬规则：默认 `main` / `develop` push 只能进入 debug / prerelease / non-Latest 通道；测试版和正式版只能通过手动 `workflow_dispatch` 或手动发布 GitHub Release 触发；push 不得创建或更新 Latest/正式 release。
 - **每次大合并进 `develop` 后必须有一次 TestFlight（debug 通道）上传**（用户 2026-10-14 拍板）。「大合并」= 一次批量合入多条 PR，或一条大型功能 PR 合入 `develop`。合并 push 后核对该 push 的发布序列（`git rev-list --count HEAD + 2000`；本地浅克隆算不准，用 `gh api -i "repos/hajisensai/fushi/commits?sha=develop&per_page=1"` 的 Link 头 `page=N; rel="last"` 取真 commit 数）：`% 3 == 0` 时 push 的 `release-desktop.yml` 会自动传 TF（仍要确认那条 run 没被后续 push 顶掉）；否则补发 `gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=debug -f testflight_only=true`（只传 TF、不发 Release）。细节见 [docs/agent/build.md](docs/agent/build.md)「Apple 签名与 TestFlight」。
