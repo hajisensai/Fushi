@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
@@ -145,6 +146,10 @@ class Win32Window {
   static Win32Window* GetThisFromHandle(HWND const window) noexcept;
 
   bool quit_on_close_ = false;
+
+  // BUG-3704: test-mode origin every move is pinned to (WM_WINDOWPOSCHANGING,
+  // see test_window_origin_pin.h); nullopt outside FUSHI_TEST_HIDDEN.
+  std::optional<POINT> test_origin_pin_;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

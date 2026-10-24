@@ -204,6 +204,22 @@ add_custom_target(fushi_windows_activation_policy_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_activation_policy_gate)
 
+# BUG-3704: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
+# Dart startup placement (setBounds / maximize) otherwise pulls it onto the
+# user's desktop. Keep the pin policy executable on every Windows runner build.
+add_executable(fushi_windows_test_window_origin_pin_test
+  "tests/test_window_origin_pin_test.cpp"
+)
+apply_standard_settings(fushi_windows_test_window_origin_pin_test)
+target_compile_definitions(fushi_windows_test_window_origin_pin_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_test_window_origin_pin_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_test_window_origin_pin_test>"
+  DEPENDS fushi_windows_test_window_origin_pin_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_test_window_origin_pin_gate)
+
 # BUG-2462: the Flutter child resize gate (child_resize_gate.h) closes the
 # engine's resize-synchroniser hazard (A -> B -> A while Dart is busy pins the
 # resize target and drops every frame = frozen window when entering fullscreen

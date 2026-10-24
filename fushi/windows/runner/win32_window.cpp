@@ -1,5 +1,6 @@
 #include "win32_window.h"
 
+#include "test_window_origin_pin.h"
 #include "window_activation_policy.h"
 
 #include <dwmapi.h>
@@ -64,6 +65,25 @@ bool IsTestHiddenMode() {
 // capture exist without hijacking what the user is doing.
 bool IsTestOnscreenMode() {
   return GetEnvironmentVariableW(L"FUSHI_TEST_ONSCREEN", nullptr, 0) > 0;
+}
+
+// FUSHI_TEST_TOPMOST="x,y,w,h" parsed into a physical-pixel rect; nullopt
+// outside test-hidden mode, when unset, or when malformed. See
+// Win32Window::ApplyTestTopmostPlacement.
+std::optional<RECT> ReadTestTopmostSpec() {
+  if (!IsTestHiddenMode()) {
+    return std::nullopt;
+  }
+  wchar_t spec[64] = {0};
+  if (GetEnvironmentVariableW(L"FUSHI_TEST_TOPMOST", spec, 64) == 0) {
+    return std::nullopt;
+  }
+  int x = 0, y = 0, w = 0, h = 0;
+  if (swscanf_s(spec, L"%d,%d,%d,%d", &x, &y, &w, &h) != 4 || w <= 0 ||
+      h <= 0) {
+    return std::nullopt;
+  }
+  return RECT{x, y, x + w, y + h};
 }
 
 // The main window stays hidden through Flutter startup. This backdrop is only
@@ -205,6 +225,16 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
 
   ApplyTestTopmostPlacement(window);
 
+  // BUG-3704: armed only now, after the runner's own placement above; from
+  // here on every move (Dart startup placement, window_manager, DPI change)
+  // keeps this origin. See test_window_origin_pin.h.
+  const std::optional<RECT> topmost = ReadTestTopmostSpec();
+  test_origin_pin_ = ResolveTestWindowOriginPin(
+      hidden, onscreen,
+      topmost ? std::optional<POINT>(POINT{topmost->left, topmost->top})
+              : std::nullopt,
+      POINT{kOffscreenOrigin, kOffscreenOrigin});
+
   return OnCreate();
 }
 
@@ -216,18 +246,14 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
 // thread's input state for the single SetWindowPos; no focus / foreground
 // change is made, the window stays WS_EX_NOACTIVATE.
 void Win32Window::ApplyTestTopmostPlacement(HWND window) {
-  if (!IsTestHiddenMode()) {
+  const std::optional<RECT> spec = ReadTestTopmostSpec();
+  if (!spec) {
     return;
   }
-  wchar_t spec[64] = {0};
-  if (GetEnvironmentVariableW(L"FUSHI_TEST_TOPMOST", spec, 64) == 0) {
-    return;
-  }
-  int x = 0, y = 0, w = 0, h = 0;
-  if (swscanf_s(spec, L"%d,%d,%d,%d", &x, &y, &w, &h) != 4 || w <= 0 ||
-      h <= 0) {
-    return;
-  }
+  const int x = spec->left;
+  const int y = spec->top;
+  const int w = spec->right - spec->left;
+  const int h = spec->bottom - spec->top;
   const HWND foreground = GetForegroundWindow();
   const DWORD fg_thread =
       foreground ? GetWindowThreadProcessId(foreground, nullptr) : 0;
@@ -255,6 +281,13 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
     EnableFullDpiSupportIfAvailable(window);
     that->window_handle_ = window;
   } else if (Win32Window* that = GetThisFromHandle(window)) {
+    // BUG-3704: rewrite before any handler sees the request — plugins answer
+    // top-level messages first in FlutterWindow::MessageHandler and could
+    // otherwise consume it. Not consumed here; dispatch continues as usual.
+    if (message == WM_WINDOWPOSCHANGING) {
+      PinWindowPosOrigin(reinterpret_cast<WINDOWPOS*>(lparam),
+                         that->test_origin_pin_, IsIconic(window) != 0);
+    }
     return that->MessageHandler(window, message, wparam, lparam);
   }
 
