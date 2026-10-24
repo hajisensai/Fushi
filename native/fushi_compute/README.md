@@ -509,11 +509,15 @@ crate 的 AES 指令，跳过）。
 | macOS | `build_macos_dylib.sh`（只出 arm64，部署目标 13.4） | `prebuilt/macos/libfushi_compute.dylib`（install name `@rpath/…`） | Runner 构建阶段（`fushi/macos/bundle_fushi_compute.sh`）拷进 `Contents/Frameworks`，缺则 `exit 1` | 1,725,464 B |
 | iOS | `native/fushi_ios_umbrella/build_ios_staticlib.sh [device\|simulator\|all]` | 伞形 `libfushi_ios_umbrella.a`（fushi_p2p + fushi_fsrs + fushi_compute） | `-force_load` 链进 Runner；Runner 构建阶段 `fushi/ios/check_fushi_compute.sh` 在缺 `.a` / `FUSHI_IOS_NATIVE_LDFLAGS` 为空 / `.a` 不导出 `ffc_abi_version` 时失败 | device `.a` 16,526,192 B（三合一，2026-10-18 测、未含 parse 域） |
 
-- macOS 坑：本机 Mac（macOS 27.2）上 rustc 自带 strip（`strip = true`）+ `MACOSX_DEPLOYMENT_TARGET` 出的
-  dylib dlopen 报 `mis-aligned LINKEDIT string pool`，`verify_abi.sh` 查不出来；所以
-  `build_macos_dylib.sh` 关掉 cargo strip、改用 `strip -x`，并用 python ctypes 调 `ffc_abi_version`
-  冒烟。`Cargo.toml` 另设 `[profile.release.build-override] strip = false`：同一工具链上被 strip 的
-  构建脚本 / 过程宏也会坏（hajisensai/Fushi#2329）。fushi_fsrs / fushi_p2p 用的是旧写法，可能同样受影响（未验证）。
+- macOS 坑（2026-10-24 定根因）：macOS 27 的 dyld（dyld-27102）对链接 SDK ≥ 27 的 Mach-O 要求 LINKEDIT
+  字符串表起点 8 字节对齐，否则 dlopen 报 `mis-aligned LINKEDIT string pool`。Apple ld 的输出是对齐的；
+  弄坏它的是 rustc 的 `-C strip`（Apple 目标上调 `rust-objcopy` 重排 LINKEDIT，间接符号表项数为奇数时
+  字符串表只对齐到 4）。cargo 在 release（`debug = 0`）下就算 profile 写 `strip = false` / `"none"` 也照样传
+  `-C strip=debuginfo`，所以 `build_macos_dylib.sh` 在 `cargo rustc` 末尾加 `-C strip=none` 覆盖，改用
+  `/usr/bin/strip -x` 去本地符号，install name 由链接时的 `-Wl,-install_name` 设好，再用 python ctypes 调
+  `ffc_abi_version` 冒烟；`verify_abi.sh` 按同一套 dyld 规则（看二进制记录的链接 SDK）静态核对对齐。
+  五个 Rust crate（fushi_compute / fushi_fsrs / fushi_p2p / fushi_rwkv / fushi_web_core）同一做法。
+  iOS 静态库不经 rustc 链接、没有这一步，不受影响。
 - 伞形库：`pub extern crate fushi_compute;`（不用 glob 重导出，`ABI_VERSION` 会与 fushi_fsrs 撞名）；
   fushi_compute 加依赖时要同步更新 `native/fushi_ios_umbrella/Cargo.lock`（构建用 `--locked`）。
   因为三个 crate 编成一个 `.a`，iOS 上 fushi_p2p / fushi_fsrs 实际也随之变成必需。

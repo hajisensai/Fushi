@@ -44,6 +44,14 @@ codegen-units = 1
 strip = true
 panic = "unwind"
 
+# 构建脚本 / 过程宏不 strip：rustc 的 -C strip 在 Apple 主机上调 rust-objcopy 重排 LINKEDIT，
+# 间接符号表项数为奇数时字符串表只对齐到 4；macOS 27 的 dyld 拒绝加载这种 SDK 27 链出的 dylib
+# （mis-aligned LINKEDIT string pool），过程宏载不进 rustc 就报 E0463「can't find crate」
+# （2026-10-24 实测：MACOSX_DEPLOYMENT_TARGET=13.4 时 rustversion / zerocopy-derive 中招，11.0 时碰巧偶数）。
+# 最终产物的 macOS strip 见 build_macos_dylib.sh。
+[profile.release.build-override]
+strip = false
+
 # 图像解码与定位图形扫描是逐像素热循环；"s" 会把它们拖慢一倍以上，单独给 O3。
 [profile.release.package.image]
 opt-level = 3
