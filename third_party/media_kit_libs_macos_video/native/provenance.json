@@ -1,12 +1,12 @@
 {
-  "source_repository": "https://github.com/hajisensai/libmpv-darwin-build",
-  "source_commit": "0f29c43057bbc4faa8f884cce4dd871926129b6e",
-  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build/actions/runs/39034287620",
+  "source_repository": "https://github.com/W1ght/libmpv-darwin-build",
+  "source_commit": "b2c41c669b25d0a06275eced4bfa5e1c2455d995",
+  "workflow_run": "https://github.com/W1ght/libmpv-darwin-build/actions/runs/39908685651",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
   "native_navigation_patch_sha256": "c01c1daddec8523ab2c9944f6ed8cf986e8eb3ae79fe1c6060d0bc9479280a87",
   "dovi_patch_sha256": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
   "archive": "libmpv-xcframeworks-bluray.tar.gz",
-  "archive_sha256": "4cb73ff047d8ba1e6def51059570f26a897a815ba5b2d906357fc0cf064ecc49",
+  "archive_sha256": "8b498aca0620756519855e62419c2f8a3dfdd0aab678e0a7cf5293a68255b01c",
   "host_runtime_probe": {
     "version": "mpv v0.41.0-UNKNOWN",
     "disc_menu_option_result": 0,
@@ -56,7 +56,7 @@
   },
   "host_runtime_probe_architecture": "arm64",
   "verification": {
-    "sha256": "4cb73ff047d8ba1e6def51059570f26a897a815ba5b2d906357fc0cf064ecc49",
+    "sha256": "8b498aca0620756519855e62419c2f8a3dfdd0aab678e0a7cf5293a68255b01c",
     "platform": "macos",
     "frameworks": {
       "Placebo": {
@@ -175,6 +175,8 @@
               "/usr/lib/libSystem.B.dylib",
               "@rpath/Uchardet.framework/Versions/A/Uchardet",
               "/usr/lib/libz.1.dylib",
+              "/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+              "/System/Library/Frameworks/AVFoundation.framework/Versions/A/AVFoundation",
               "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
               "/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio",
               "/System/Library/Frameworks/AudioUnit.framework/Versions/A/AudioUnit",
@@ -194,11 +196,16 @@
   },
   "lace_timestamp_patch_sha256": "fc9f987887d18892e0cc2cbf08a20a787e02fd15900c2853a7bb6bb97ab45bad",
   "recorder_video_dts_patch_sha256": "353b1c4371db0955eb21ed5917a06438c30c60082a58e14de4dbc3dc451e7f83",
-  "source_branch": "fushi/unified-ffmpeg",
+  "source_branch": "fushi/avfoundation-ao",
   "unified_ffmpeg": {
     "recipe": "hajisensai/fushi tool/ffmpeg-unified (FFmpeg 9.0.1 + Fushi patches)",
     "frameworks_archive": "https://github.com/hajisensai/libmpv-darwin-build/releases/download/unified-ffmpeg-9.0.1-r1/ffmpeg-unified-9.0.1-macos-xcframeworks.tar.gz",
     "frameworks_archive_sha256": "66ccad7ea913b8b2defc721f925d0b1df0743a1a6fd6db2aa36d3e32583e4ca1",
     "note": "libmpv links @rpath/lib*.framework from this build; the app bundles it once"
-  }
+  },
+  "upstream_pull_request": "https://github.com/hajisensai/libmpv-darwin-build/pull/3",
+  "audio_outputs": [
+    "coreaudio",
+    "avfoundation"
+  ]
 }
