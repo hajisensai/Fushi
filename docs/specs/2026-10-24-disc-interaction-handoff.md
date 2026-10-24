@@ -133,6 +133,68 @@ host 端：提供需鉴权、支持 Range 的只读盘目录服务（含 BDMV/�
 带宽：BD 峰值约 40 Mbps，UHD 可以超过 100 Mbps；局域网可行，公网或 P2P 可能会卡。
 缓冲提示：反复缓冲时给出非强制提示（见拍板决策）。
 加密盘：客户端也要有 KEYDB。
+
+#### 第二期实现记录（2026-10-24）
+
+**host：只读盘目录共享**（`packages/fushi_engine/lib/media/video/disc/disc_share_manifest.dart`、
+`packages/fushi_engine/lib/sync/disc_share_routes.dart`）
+
+- `GET /api/library/videos/<id>/disc`（Basic 鉴权，`<id>` 是盘上任一条标题）签发会话：
+  `{token, baseUrl, manifest, titles}`。`titles` 是 host 库里落在这张盘上的行（bookUid + 相对盘根的
+  成员路径），供整盘下载落地后认领。
+- `GET /api/library/disc/<token>/manifest.json` 与 `/files/<相对路径>` 豁免 Basic（libmpv 里的
+  libbluray 发不了 Authorization），门是路径里的不透明 token：空闲 30 分钟作废、签发起 12 小时作废、
+  最多 32 个；文件只认清单里列出的路径（白名单），支持 Range，ETag 取当前文件 size/mtime。
+- 清单：BD 收 `BDMV/` + `CERTIFICATE/`，**仍有 AACS 密文码流时**才带 `AACS/`（明文副本带着它会让
+  client 的 libbluray 去加载 libaacs）；DVD 收 `VIDEO_TS/`；ISO 是单文件。能力位
+  `liveLibrary.discShareV1`，host 接口 `VideoDiscShareHost`。
+
+**第 1 项 遥控 PC 打开菜单**：视频遥控 `openVideo` 加 `discMenu: true`；host 快照声明
+`openDiscMenu` 才发（老 host 会把标题当普通视频播）。详情页远端原盘多一个「在 PC 上打开」
+（`remote_disc_host_open.dart`），host 侧走同一条媒体切换队列进原盘会话
+（`video_remote_library_port.dart`）。
+
+**第 2 项 整盘下载**：复用 `InterconnectDownloadManager`（互联下载的那套任务 / 暂停 / 继续 / 取消 /
+下载中心），**不是** `video_download_jobs`——后者是 torrent / 直链队列，表结构是磁力与发现身份，
+放不进互联整盘任务，硬塞要改 schema。一张盘一个任务（键 `disc:<discKey>`），按清单逐个文件 `.part`
++ 验证器续传，已完整落地的文件跳过；每次起跑重新签发会话（暂停很久后旧 token 已过期），盘身份变了
+按失败报。落点 `<documents>/remote_videos/discs/<discKey 前 12 位>/<盘名>`，落地后把 host 的标题行
+按同一 bookUid 认领成本机行（成员路径指向本机盘根），合集归属照 host。**限制**：整盘任务没有
+续传清单，进程被杀后要用户再点一次下载（已落地的文件不会重下）。
+
+**第 3 项 流式播放**
+
+- libmpv：`disc-navigation-state.patch` 在 v2 上加远端访问（快照仍是 v2）——`bluray-device` 是 URL 时
+  用 `bd_open_files()`，每个文件是一个 mpv stream（HTTP Range，走 app 的 `http-proxy` 中继，TLS
+  钉扎仍只在 Dart），目录按清单列；`dvd-device` 是 URL 时按块读 DVD 镜像（`dvdnav_open_stream2`）；
+  只读属性 `disc-remote-access` 供 app 判断运行时能力。
+- **DVD 评估结论**：libdvdnav 7.0 只有 `dvdnav_open_stream`（块级，适合 ISO）；libdvdread 7.1 的
+  `DVDOpenFiles` 能读文件夹，但 libdvdnav 没有入口用它，且它明确不支持 CSS。所以远端 DVD **镜像**
+  可以流式开菜单，**VIDEO_TS 文件夹**不行（主按钮退回普通播放，写明原因，建议下载）。要支持得给
+  libdvdnav 加 `dvdnav_open_files` 补丁，未做。
+- 加密盘：client 从共享读 `AACS/Unit_Key_RO.inf`，用**本机** KEYDB 按盘 ID 取 VUK 注册给
+  `fushi_aacs`（与本地加密盘同一策略）；`fushi_aacs` 新导出 libaacs 0.11 的
+  `aacs_init` / `aacs_set_fopen` / `aacs_open_device`，经 libbluray 的文件层读 AACS 文件——
+  `bd_open_files` 打开的盘没有本地路径，旧的 `aacs_open2(path)` 读不到。无钥时打开前报 KEYDB 提示。
+  加密远端盘**未用真实加密盘实测**（本机测试盘 Disc 1 无 KEYDB）。
+- 会话：`VideoFushiPage.neutralizedRemoteDisc`，标题不绑本机库行、不写进度、不制卡
+  （`remote-disc-extraction`）。
+- 缓冲提示：起播后 2 分钟内 3 次「播放中 → 缓冲」弹一条可关闭提示（下载到本机 / 不再提示 /
+  关闭），一个会话至多一次，绝不切换。
+
+**第 4 项 第一期退回逻辑**：详情页对远端原盘签发一次共享再判：能流式就「播放原盘」；否则主按钮
+退回普通播放，副标题给确切原因——对端版本过低（`remoteHostTooOld`）、DVD 文件夹（`remoteDvdFolder`）、
+连不上（`remoteUnreachable`）、移动端 BD-J（同本地）、非互联远端源（`remote`）。本机播放组件不支持
+（Android / Apple 产物重编前）要会话起来查 `disc-remote-access` 才知道，届时报
+`video_disc_menu_unavailable_remote_runtime`。
+
+**实测（Windows，2026-10-24）**：`tool/bluray/build_libmpv.ps1` 编出 `…-dvd1-rdisc1` 运行时并全部验证；
+`packages/fushi_engine/tool/disc_share_host_probe.dart` 起真实 `FushiSyncServer` 共享
+`Disc 2 - Fushi menu test`（46 个文件 / 7.5 GB），`verify_menu_render.py --remote-disc` 经 loopback HTTP：
+18 s 进 HDMV IG 菜单（与本地同），`right` 移到チャプター，right×3 + select×2 进 title 2（00002.mpls）并
+实时播放；对照同一动作序列本地与远端状态一致（全編再生的 select 两边都回菜单）。证据在
+`.codex-test/remote-disc/`。**未实测**：Fushi app 内端到端（没编 app）、Android / Apple、BD-J 盘、加密盘、
+DVD 镜像流式、公网 / P2P 带宽。
 不做
 
 在 Android / iOS 上跑 BD-J，只说明原因。
