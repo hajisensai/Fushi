@@ -2947,7 +2947,7 @@ class InterconnectSyncBackend extends SyncBackend
       final HttpClientRequest req = await client
           .getUrl(share.fileUrl(relativePath))
           .timeout(requestTimeout);
-      final HttpClientResponse res = await req.close().timeout(requestTimeout);
+      final HttpClientResponse res = await _sendBounded(req);
       if (res.statusCode != HttpStatus.ok) {
         await res.drain<void>();
         return null;

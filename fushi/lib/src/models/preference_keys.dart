@@ -381,12 +381,30 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_manga_enabled',
   'module_music_enabled',
   'module_video_enabled',
+  // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
+  'music_audio_device',
+  // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。
+  // bool（默认 false）：专辑连续曲目 / CUE 拆轨也交叉淡入（设计 §7.2）。
+  'music_crossfade_continuous',
+  'music_crossfade_ms',
+  // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
+  'music_dsd_pcm_rate',
+  // bool（默认 false）：独占 / bit-perfect 输出（设计 §7.4；设备本地）。
+  'music_exclusive_output',
   'music_gapless',
+  // bool（默认 true）：缺 ReplayGain 标签时后台 EBU R128 测响度写曲库（设计 §7.3）。
+  'music_loudness_scan',
   // bool（默认 true）：查歌词时自动暂停（音乐 P1 歌词页）。
   'music_lyrics_lookup_pause',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
   'music_replaygain',
+  // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
+  'music_replaygain_preamp_db',
+  // double（默认 1.0）：音乐播放速度（变速不变调）。
+  'music_speed',
+  // double（默认 100）：音乐软件音量（100 = 不改样本）。
+  'music_volume',
   // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
   'nav_bar_labels_visible',
   // String（默认 '' = AdaptiveNavBarStyle.defaultStyle，2026-10-16 起 pager）：
