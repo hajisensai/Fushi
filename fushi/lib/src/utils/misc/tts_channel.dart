@@ -477,7 +477,6 @@ class TtsChannel {
     );
   }
 
-<<<<<<< HEAD
   /// 用系统语音把 [text] 合成到 [outputPath]，返回实际写出的文件路径。
   ///
   /// [languageTag]（BCP-47）是要念的语言，由 [resolveSystemTtsLanguageTag] 决定；
@@ -489,12 +488,6 @@ class TtsChannel {
     String text,
     String outputPath, {
     String? languageTag,
-=======
-  Future<String?> ttsToFile(
-    String text,
-    String outputPath, {
-    String locale = 'ja-JP',
->>>>>>> refs/pr/2468
   }) async {
     if (!_isSupported) {
       return ttsToFileDesktop(
