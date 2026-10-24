@@ -1,12 +1,12 @@
 {
   "source_repository": "https://github.com/hajisensai/libmpv-darwin-build",
-  "source_commit": "95d986ea08751fd97871defbadb5df9a4ccb189f",
-  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build-fushi/actions/runs/40067864441",
+  "source_commit": "568c90717bcf3ba6f0ae65134159790d8d4fcd0d",
+  "workflow_run": "https://github.com/hajisensai/libmpv-darwin-build-fushi/actions/runs/40085846799",
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
-  "native_navigation_patch_sha256": "6095b2221374626b2388a16d09f890c82eea62108159058d15309701fcd1cb00",
+  "native_navigation_patch_sha256": "5edcd0de27d14793204b89754dd18c3d1b3c18e29a6edd19c594ef60c72d2b00",
   "dovi_patch_sha256": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b",
   "archive": "libmpv-xcframeworks-bluray.tar.gz",
-  "archive_sha256": "d856181dd841781e768a996dd98d33a869b78c8c7a70c3ada4f15b5c76fad6e2",
+  "archive_sha256": "cf6b9d666e8e70d90b4edae210d63b65cabe234b6b72a2ddaaf5d83c06c3433f",
   "host_runtime_probe": {
     "version": "mpv v0.41.0-UNKNOWN",
     "disc_menu_option_result": 0,
@@ -56,7 +56,7 @@
   },
   "host_runtime_probe_architecture": "arm64",
   "verification": {
-    "sha256": "d856181dd841781e768a996dd98d33a869b78c8c7a70c3ada4f15b5c76fad6e2",
+    "sha256": "cf6b9d666e8e70d90b4edae210d63b65cabe234b6b72a2ddaaf5d83c06c3433f",
     "platform": "macos",
     "frameworks": {
       "Placebo": {
@@ -195,7 +195,7 @@
   },
   "lace_timestamp_patch_sha256": "fc9f987887d18892e0cc2cbf08a20a787e02fd15900c2853a7bb6bb97ab45bad",
   "recorder_video_dts_patch_sha256": "353b1c4371db0955eb21ed5917a06438c30c60082a58e14de4dbc3dc451e7f83",
-  "source_branch": "fushi/dvd",
+  "source_branch": "fushi/rdisc",
   "unified_ffmpeg": {
     "recipe": "hajisensai/fushi tool/ffmpeg-unified (FFmpeg 9.0.1 + Fushi patches)",
     "frameworks_archive": "https://github.com/hajisensai/libmpv-darwin-build/releases/download/unified-ffmpeg-9.0.1-r2/ffmpeg-unified-9.0.1-macos-xcframeworks.tar.gz",
@@ -204,5 +204,6 @@
     "app_layout_sha256": "31eab2c3b9900e54cebd0e67c365801c11348929aa3d512e2d705172885d5c68"
   },
   "build_repository": "hajisensai/libmpv-darwin-build-fushi (private mirror of hajisensai/libmpv-darwin-build)",
-  "gpl": "libmpv built with -Dgpl=true -Ddvdnav=enabled (stream_dvdnav is GPL-only): GPL-2.0-or-later"
+  "gpl": "libmpv built with -Dgpl=true -Ddvdnav=enabled (stream_dvdnav is GPL-only): GPL-2.0-or-later",
+  "remote_disc": "rdisc1: bluray-device / dvd-device accept http(s) URLs of a paired host's disc share; Mpv carries the disc-remote-access marker (verify_darwin_archive.py requires it)"
 }

@@ -1,4 +1,17 @@
-# libmpv fork 的远端原盘改动（`rdisc1`，2026-10-24，**未推送、未构建**）
+# libmpv fork 的远端原盘改动（`rdisc1`，2026-10-24，**已推送、已构建、已 vendor**）
+
+## 状态（2026-10-24）
+
+| 平台 | 分支 | 提交 | 镜像仓 run | 产物 sha256 |
+|---|---|---|---|---|
+| Android（三 ABI jar） | `fushi/rdisc` | `faab8d9ac9d8bfd744334b54cbd06db3787f3cac` | `hajisensai/libmpv-android-build-fushi` `40085844759` | arm64-v8a `015524c5…` / armeabi-v7a `e3107aeb…` / x86_64 `3c16b97a…` |
+| iOS | `fushi/rdisc` | `568c90717bcf3ba6f0ae65134159790d8d4fcd0d` | `hajisensai/libmpv-darwin-build-fushi` `40085846799` | `3d26e14b…` |
+| macOS（arm64） | `fushi/rdisc` | 同上 | 同上 | `cf6b9d66…` |
+
+补丁 sha256 `5edcd0de27d14793204b89754dd18c3d1b3c18e29a6edd19c594ef60c72d2b00`（旧 `6095b222…`）；
+产物已 vendor 进 `third_party/media_kit_libs_{android,ios,macos}_video`，provenance / Makefile 钉值已更新；
+三端 `disc-remote-access` 字符串已核对，Darwin 归档过 `verify_darwin_archive.py`。真机验证（下面第 4 点）仍未做。
+以下是当时的改动说明与步骤，留作复现参考。
 
 远端原盘（`docs/specs/2026-10-24-disc-interaction-handoff.md` 第二期）改了
 `third_party/media_kit_libs_windows_video/patches/disc-navigation-state.patch`：
@@ -14,7 +27,7 @@
 导航快照仍是 v2（`native_menu_schema` 不变），Dart 侧 v1 / v2 解析不受影响。
 Windows 已按本仓 `tool/bluray/build_libmpv.ps1` 重编并 vendor（`…-dvd1-rdisc1.7z`，
 见 `third_party/media_kit_libs_windows_video/NATIVE_BUILD.md`）。**Android / iOS / macOS
-的随包 libmpv 仍是旧补丁编的**：它们不认 URL 设备，app 在打开前查不到
+的随包 libmpv 已用新补丁重编并 vendor（见上表）**；旧产物不认 URL 设备时 app 在打开前查不到
 `disc-remote-access`，会明确提示「本机播放组件暂不支持经网络读取原盘」，不会静默失败。
 
 ## 补丁散列一改，哪些守卫会红
