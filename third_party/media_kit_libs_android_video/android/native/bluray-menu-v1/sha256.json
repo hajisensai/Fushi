@@ -1,5 +1,5 @@
 {
-  "full-arm64-v8a.jar": "50c308ef80e06feadb6cd2d70600d08721c151dd29cdf57234eb8df9a30bf052",
-  "full-armeabi-v7a.jar": "3108cb4b40d11cdebd0b60b776966682b01ef16b65ff632f8fad5786fa8cd0e5",
-  "full-x86_64.jar": "0aa20f9a8a1f94b0f4d8801ade5d90b3ce33955c7a74383d482ac0882449b98d"
+  "full-arm64-v8a.jar": "c602185b445e7c29b0e379d1ba934c3554cda65cedc034d0d1f1138020506401",
+  "full-armeabi-v7a.jar": "a5e41e341aee38ffe702795efac930d2b00339bdbc28134dff8bf92eeb083e9a",
+  "full-x86_64.jar": "2fef098a02b2feb5370a21aa197fe91b30529790e44072fb6a0842266837e9cf"
 }

@@ -30,7 +30,7 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "b3be79c2f5bbd9ad9a794595c1f98abeb6b2c83e3b45f089810b434d427c19de",
+    "native/third_party_licenses/manifest.json": "27cc5363f60116f46d39a0f13f04cbcf5b0b3fecb18e0fb681c91300054146fb",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/crates/DimaKudosh-difflib-6fd59b0c/LICENSE": "6725d1437fc6c77301f2ff0e7d52914cf4f9509213e1078dc77d9356dbe6eac5",
     "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
@@ -6246,7 +6246,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix fast-float 97b54ca9…（注释 'Exact submodule revision from libplacebo v7.360.1'）；nix/packages/mk-pkg-libplacebo/default.nix:15-26 拷入 3rdparty/fast_float",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix fast-float 97b54ca9…（注释 'Exact submodule revision from libplacebo v7.360.1'）；nix/packages/mk-pkg-libplacebo/default.nix:15-26 拷入 3rdparty/fast_float",
       "note": "header-only，编进 Placebo.framework。"
     },
     {
@@ -6341,7 +6341,7 @@
         "ios",
         "macos"
       ],
-      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_TAG=n9.0.1 / FFMPEG_COMMIT=bf1b838f…；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 39225163967（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。二进制内嵌版本串：Android libavutil.so 'n9.0.1-4-g79a6f40'、iOS libavutil 'n9.0.1-4-g5907999'、macOS libavutil 'n9.0.1-4-g326b7fb'（n9.0.1 之上 4 个补丁提交）；三平台 configure 串均含 '--enable-gpl' 与 '--enable-version3'，无 --enable-nonfree （Android 另有 --enable-mediacodec --enable-jni，Apple 有 --enable-videotoolbox --enable-audiotoolbox --enable-bzlib，macOS 有 --enable-ffmpeg --enable-ffprobe）；外部库开关 --enable-libx264 --enable-libvpx --enable-libopus --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-openssl --enable-libxml2 --enable-iconv --enable-zlib（tool/ffmpeg-unified/mobile/kit_options.sh）",
+      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_TAG=n9.0.1 / FFMPEG_COMMIT=bf1b838f…；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 40064825841（unified-ffmpeg-9.0.1-r2，含 tool/dvd 共享 DVD 库；首版落地见 docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。二进制内嵌版本串：Android libavutil.so 'n9.0.1-4-ge8feddf'、iOS libavutil 'n9.0.1-4-g3dcaa13'、macOS libavutil 'n9.0.1-4-ga0085b8'（n9.0.1 之上 4 个补丁提交）；三平台 configure 串均含 '--enable-gpl' 与 '--enable-version3'，无 --enable-nonfree （Android 另有 --enable-mediacodec --enable-jni，Apple 有 --enable-videotoolbox --enable-audiotoolbox --enable-bzlib，macOS 有 --enable-ffmpeg --enable-ffprobe）；外部库开关 --enable-libx264 --enable-libvpx --enable-libopus --enable-libdav1d --enable-libsvtav1 --enable-libwebp --enable-openssl --enable-libxml2 --enable-iconv --enable-zlib（tool/ffmpeg-unified/mobile/kit_options.sh），以及 FFmpegKitNext 补丁 0003 加的 --enable-libdvdnav --enable-libdvdread（dvdvideo 解复用器，DVD 库见 libdvdcss / libdvdread / libdvdnav 条目）",
       "note": "统一 FFmpeg：同一平台上播放器 libmpv 与制卡 / 导出共用这一份。--enable-gpl + --enable-version3 → 按 LICENSE.md 为 GPL v3（or later）。Android：AAR android/libs/ffmpeg-kit-next.aar 的 jni/<abi>/libav{codec,device,filter,format,util}.so + libsw{resample,scale}.so（arm64-v8a / armeabi-v7a / x86_64）；iOS：ios/ffmpeg_kit_next_flutter/Frameworks/libav*.xcframework（ios-arm64 + ios-arm64_x86_64-simulator）；macOS：third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 的 Frameworks/libav*.framework 与 MacOS/ffmpeg、MacOS/ffprobe（arm64）。zlib / bzip2 / iconv 在 Apple 上链系统库（LC_LOAD_DYLIB /usr/lib/libz.1.dylib、libbz2.1.0.dylib、libiconv.2.dylib），Android 的 zlib 链系统 libz.so（DT_NEEDED），均不随包。FFmpegKitNext 为 libwebp 一并构建并在 AAR res/raw 与 framework Resources 里附了 giflib / libjpeg-turbo / libpng / libtiff 的许可文件，但二进制里查不到这些库的特征串，判定未链接，不登记。Windows 的 FFmpeg 9.0.1 见 pub:media_kit_libs_windows_video 条目。"
     },
     {
@@ -6378,7 +6378,7 @@
         "android",
         "ios"
       ],
-      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_KIT_NEXT_TAG=v9.0.0 / FFMPEG_KIT_NEXT_COMMIT=a724ed99…，补丁 tool/ffmpeg-unified/patches/ffmpeg-kit-next/；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 39225163967（docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。Android libffmpegkit.so / iOS ffmpegkit 二进制内嵌 '9.0.0'；源文件头（android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c）为 'GNU Lesser General License ... either version 3 of the License, or (at your option) any later version'；third_party/ffmpeg_kit_next_flutter/LICENSE 与上游 a724ed99 根目录 LICENSE 逐字节一致（LGPL v3）",
+      "source": "tool/ffmpeg-unified/recipe.env FFMPEG_KIT_NEXT_TAG=v9.0.0 / FFMPEG_KIT_NEXT_COMMIT=a724ed99…，补丁 tool/ffmpeg-unified/patches/ffmpeg-kit-next/；fushi 仓 .github/workflows/ffmpeg-unified-mobile.yml：Android / iOS / macOS run 40064825841（unified-ffmpeg-9.0.1-r2，含 tool/dvd 共享 DVD 库；首版落地见 docs/specs/2026-10-17-unified-ffmpeg.md「落地实测」）。Android libffmpegkit.so / iOS ffmpegkit 二进制内嵌 '9.0.0'；源文件头（android/ffmpeg-kit-next-android-lib/src/main/cpp/ffmpegkit.c）为 'GNU Lesser General License ... either version 3 of the License, or (at your option) any later version'；third_party/ffmpeg_kit_next_flutter/LICENSE 与上游 a724ed99 根目录 LICENSE 逐字节一致（LGPL v3）",
       "note": "进程内命令执行器：Android libffmpegkit.so + libffmpegkit_abidetect.so（每 ABI 一份），iOS ffmpegkit.xcframework。本身 LGPL v3，但链接的是 GPL 构建的 FFmpeg，随包分发按 GPL-3.0（ffmpegkit.framework/LICENSE 与 AAR res/raw/license.txt 即 GPL v3 全文）。macOS 不用它（CliFfmpegBackend 直接跑 ffmpeg / ffprobe 程序）。AAR 另带一份 NDK 的 libc++_shared.so，与 fushi/android 的 libc++_shared.so 条目是同一组件。"
     },
     {
@@ -6568,7 +6568,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_freetype=2-13-0（git tag VER-2-13-0）；二进制只见 'Raster: FreeType %d.%d.%d'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_freetype=2-13-0（git tag VER-2-13-0）；二进制只见 'Raster: FreeType %d.%d.%d'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。双许可，任选其一。"
     },
     {
@@ -6588,7 +6588,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix freetype 2.13.2（二进制无版本串，仅配方）",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix freetype 2.13.2（二进制无版本串，仅配方）",
       "note": "Freetype.framework（依赖 Png16、Harfbuzz、系统 libz）。双许可。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -6623,7 +6623,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_fribidi=1.0.12; libmpv.so 内嵌 'Shaper: FriBidi 1.0.12 (SIMPLE)'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_fribidi=1.0.12; libmpv.so 内嵌 'Shaper: FriBidi 1.0.12 (SIMPLE)'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）"
     },
     {
@@ -6641,7 +6641,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix fribidi 1.0.13；Ass 二进制内嵌 'Shaper: FriBidi 1.0.13'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix fribidi 1.0.13；Ass 二进制内嵌 'Shaper: FriBidi 1.0.13'",
       "note": "Fribidi.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -7209,7 +7209,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_harfbuzz=7.2.0（二进制只见 'HarfBuzz-ng %s'，版本只来自配方）",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_harfbuzz=7.2.0（二进制只见 'HarfBuzz-ng %s'，版本只来自配方）",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。SPDX 按 HarfBuzz COPYING 的 'Old MIT' 措辞取 MIT-Modern-Variant；COPYING 说明部分文件另有许可（见文本）。"
     },
     {
@@ -7227,7 +7227,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix harfbuzz 8.1.1；Harfbuzz 二进制内嵌 '8.1.1'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix harfbuzz 8.1.1；Harfbuzz 二进制内嵌 '8.1.1'",
       "note": "Harfbuzz.framework（-Dcoretext=enabled）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8160,7 +8160,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libass=0.17.1; libmpv.so 内嵌 'commit: 0.17.1-0-ge8ad72accd3a...'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libass=0.17.1; libmpv.so 内嵌 'commit: 0.17.1-0-ge8ad72accd3a...'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）"
     },
     {
@@ -8178,7 +8178,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libass 0.17.1",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libass 0.17.1",
       "note": "Ass.framework。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8212,7 +8212,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libbluray=1.5.0，tarball https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz sha256 f676408e…（本地复核一致）；libmpv.so 内嵌 'libbluray version 1.5.0'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libbluray=1.5.0，tarball https://download.videolan.org/pub/videolan/libbluray/1.5.0/libbluray-1.5.0.tar.xz sha256 f676408e…（本地复核一致）；libmpv.so 内嵌 'libbluray version 1.5.0'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。-Dbdj_jar=disabled（不含 BD-J jar，tarball 里的 contrib/asm 不参与原生构建）。"
     },
     {
@@ -8230,7 +8230,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libbluray 1.5.0（sha256 f676408e…）；Bluray 二进制内嵌 'libbluray version 1.5.0'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libbluray 1.5.0（sha256 f676408e…）；Bluray 二进制内嵌 'libbluray version 1.5.0'",
       "note": "Bluray.framework；-Dbdj_jar=disabled -Dfreetype=disabled -Dlibxml2=disabled -Dembed_udfread=true。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8403,6 +8403,25 @@
       "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships in the vendored Windows libmpv archive (…-ffu2-dvd1.7z, tool/bluray/build_libmpv.ps1; docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not vendored yet."
     },
     {
+      "name": "libdvdcss",
+      "version": "1.6.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "b90ed8150a6d371c.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256)；由 tool/dvd/platforms/build_cross.sh 交叉编译，tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh 经 FFmpegKitNext 补丁 0003（FUSHI_DVD_ROOT）链入统一 FFmpeg 并随包（ffmpeg-unified-mobile.yml run 40064825841）",
+      "note": "Android libdvdcss.so / iOS libdvdcss.xcframework / macOS libdvdcss.framework。iOS 打 tool/dvd/patches/libdvdcss/0001-no-drive-ioctls.patch（FUSHI_DVDCSS_NO_DRIVE：无光驱 ioctl，只解镜像/目录）。"
+    },
+    {
       "name": "libdvdnav",
       "version": "7.0.0",
       "license": "GPL-2.0-or-later",
@@ -8420,6 +8439,25 @@
       "note": "DLL: libdvdnav-4.dll (fbddvdnav-4.dll in the bundle); one copy for libmpv's dvd:// navigation (-Ddvdnav=enabled) and FFmpeg's dvdvideo demuxer (--enable-libdvdnav)."
     },
     {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "ce34cda77a9b4bf8.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDNAV_VERSION=7.0.0, tarball https://download.videolan.org/pub/videolan/libdvdnav/7.0.0/libdvdnav-7.0.0.tar.xz sha256 a2a18f5a… (matches VideoLAN's .sha256)；由 tool/dvd/platforms/build_cross.sh 交叉编译，tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh 经 FFmpegKitNext 补丁 0003（FUSHI_DVD_ROOT）链入统一 FFmpeg 并随包（ffmpeg-unified-mobile.yml run 40064825841）",
+      "note": "Android libdvdnav.so / iOS libdvdnav.xcframework / macOS libdvdnav.framework；一份同时供 libmpv dvd://（-Ddvdnav=enabled）与 FFmpeg dvdvideo（--enable-libdvdnav）。"
+    },
+    {
       "name": "libdvdread",
       "version": "7.1.1",
       "license": "GPL-2.0-or-later",
@@ -8435,6 +8473,25 @@
       ],
       "source": "tool/dvd/recipe.env LIBDVDREAD_VERSION=7.1.1, tarball https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz sha256 a0d47876… (matches VideoLAN's .sha256); meson -Dlibdvdcss=enabled; source headers: 'either version 2 of the License, or (at your option) any later version'",
       "note": "DLL: libdvdread-8.dll (fbddvdread-8.dll in the bundle); used by libdvdnav and by FFmpeg's dvdvideo demuxer (--enable-libdvdread)."
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "license": "GPL-2.0-or-later",
+      "origin": [
+        "third_party/ffmpeg_kit_next_flutter, third_party/media_kit_libs_macos_video"
+      ],
+      "textSource": "manifest",
+      "texts": [
+        "199b95d7900b06e1.txt"
+      ],
+      "platforms": [
+        "android",
+        "ios",
+        "macos"
+      ],
+      "source": "tool/dvd/recipe.env LIBDVDREAD_VERSION=7.1.1, tarball https://download.videolan.org/pub/videolan/libdvdread/7.1.1/libdvdread-7.1.1.tar.xz sha256 a0d47876… (matches VideoLAN's .sha256)；由 tool/dvd/platforms/build_cross.sh 交叉编译，tool/ffmpeg-unified/mobile/build_{android,ios,macos}.sh 经 FFmpegKitNext 补丁 0003（FUSHI_DVD_ROOT）链入统一 FFmpeg 并随包（ffmpeg-unified-mobile.yml run 40064825841）",
+      "note": "Android libdvdread.so / iOS libdvdread.xcframework / macOS libdvdread.framework；libdvdnav 与 FFmpeg dvdvideo 解复用器共用。"
     },
     {
       "name": "libffi",
@@ -8641,7 +8698,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libplacebo=cee9b076（= tag v7.360.1 的提交，gh api repos/haasn/libplacebo/commits/v7.360.1）；libmpv.so 内嵌 'v7.360.1 (v7.360.1)'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libplacebo=cee9b076（= tag v7.360.1 的提交，gh api repos/haasn/libplacebo/commits/v7.360.1）；libmpv.so 内嵌 'v7.360.1 (v7.360.1)'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）。-Dopengl=enabled，vulkan/glslang/shaderc/lcms/libdovi=disabled，-Ddovi=enabled（内置 DoVi 解析，不链 libdovi；二进制含 'libplacebo compiled without LittleCMS 2 support!'）。"
     },
     {
@@ -8659,7 +8716,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libplacebo 7.360.1（tag v7.360.1 tarball）；Placebo 二进制内嵌 'v7.360.1'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libplacebo 7.360.1（tag v7.360.1 tarball）；Placebo 二进制内嵌 'v7.360.1'",
       "note": "Placebo.framework；-Dauto_features=disabled -Ddovi=enabled（无 OpenGL/Vulkan/lcms/libdovi，二进制含 'compiled without OpenGL support' 与 'without LittleCMS 2 support'）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -8710,7 +8767,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix libpng 1.6.40（+ wrapdb 构建补丁 1.6.40-1）；Png16 二进制内嵌 ' libpng version 1.6.40 - June 21, 2023'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix libpng 1.6.40（+ wrapdb 构建补丁 1.6.40-1）；Png16 二进制内嵌 ' libpng version 1.6.40 - June 21, 2023'",
       "note": "Png16.framework，仅 Apple 有（FreeType PNG 支持）。LICENSE 同时含 PNG Reference Library License v2 与旧版 libpng 许可。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
@@ -9154,7 +9211,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_libxml2=2.10.3（git tag v2.10.3）",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_libxml2=2.10.3（git tag v2.10.3）",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）（--with-minimum 配置）。统一 FFmpeg 后只剩 libbluray 使用（dep_libbluray=(freetype libxml2)；libmpv.so 内嵌 LIBXML_VERSION 串 '21003'）；FFmpeg 的 DASH 用 AAR 里自带的 libxml2 2.11.4。"
     },
     {
@@ -9278,7 +9335,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce scripts/libplacebo.sh 追加 'Libs.private: -lc++_static -lc++abi -lunwind'；README 'The C++ runtime is linked statically'；libmpv.so 含 std::__ndk1 符号串；本机 NDK r27 AndroidVersion.txt '18.0.1 based on r522817'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 scripts/libplacebo.sh 追加 'Libs.private: -lc++_static -lc++abi -lunwind'；README 'The C++ runtime is linked statically'；libmpv.so 含 std::__ndk1 符号串；本机 NDK r27 AndroidVersion.txt '18.0.1 based on r522817'",
       "note": "存疑：文本取自 llvm-project tag llvmorg-18.1.0 的三份 LICENSE.TXT，NDK 的 r522817 是 LLVM 18 开发快照，版本为近似。LLVM-exception 免除二进制嵌入时的署名要求，是否登记由所有者决定。"
     },
     {
@@ -9390,7 +9447,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce depinfo.sh v_lua=5.2.4，tarball https://www.lua.org/ftp/lua-5.2.4.tar.gz sha256 b9e2e4aa…（本地复核一致）；libmpv.so 内嵌 '$LuaVersion: Lua 5.2.4  Copyright (C) 1994-2015 Lua.org, PUC-Rio $'",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 depinfo.sh v_lua=5.2.4，tarball https://www.lua.org/ftp/lua-5.2.4.tar.gz sha256 b9e2e4aa…（本地复核一致）；libmpv.so 内嵌 '$LuaVersion: Lua 5.2.4  Copyright (C) 1994-2015 Lua.org, PUC-Rio $'",
       "note": "静态链入 libmpv.so（Android 每 ABI 的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 的 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc 加统一 FFmpeg 的 libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so，后者由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供）（liblua.a）。Lua 发行包无独立 LICENSE 文件，文本取自 src/lua.h 末尾许可注释块（第 420–444 行，逐字）。"
     },
     {
@@ -9559,7 +9616,7 @@
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce include/download-deps.sh 'git reset --hard 42054e5d479f…'；buildscripts/bundle_unified.sh 从 https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-<abi>-ffmpeg6.1.6-dovi.jar 取 helper 并校验 md5",
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726 include/download-deps.sh 'git reset --hard 42054e5d479f…'；buildscripts/bundle_unified.sh 从 https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-<abi>-ffmpeg6.1.6-dovi.jar 取 helper 并校验 md5",
       "note": "独立 .so（每 ABI 一份）。存疑：随包 helper 是从旧 vendor jar 按 md5 取出的既有二进制，未从 42054e5d 重编复核；许可按该提交的 LICENSE。"
     },
     {
@@ -9706,39 +9763,41 @@
     {
       "name": "mpv (libmpv)",
       "version": "36abaa32 (v0.41.0-dev)",
-      "license": "LGPL-2.1-or-later",
+      "license": "GPL-2.0-or-later",
       "origin": [
         "pub:media_kit_libs_android_video"
       ],
       "textSource": "manifest",
       "texts": [
         "bfe9ee4cceabcb8e.txt",
+        "e329c2735166ea18.txt",
         "1c895bfaf60b9069.txt"
       ],
       "platforms": [
         "android"
       ],
-      "source": "hajisensai/libmpv-android-video-build@452510d169c847cbc5bd59ed72602ecc2eb163ce buildscripts/include/depinfo.sh v_mpv、dep_mpv=(unified_ffmpeg libass lua libbluray libplacebo)；provenance.json build_commit / mpv_commit / unified_ffmpeg；libmpv.so 内嵌 'Configuration: -Db_lundef=true -Dgpl=false -Dlibmpv=true -Dlua=lua ...'",
-      "note": "-Dgpl=false（LGPL 构建）；Fushi 补丁 5 个（provenance.json patches）。三 ABI（arm64-v8a / armeabi-v7a / x86_64）的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 不再自带 FFmpeg，NEEDED libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so（统一 FFmpeg 9.0.1，见 third_party/ffmpeg_kit_next_flutter 条目），其余 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc。mpv Copyright 文件说明 -Dgpl=false 本身不构成 LGPL 授权，链接库可影响最终许可：所链的统一 FFmpeg 是 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。"
+      "source": "hajisensai/libmpv-android-video-build@96ac8a57d35c27b1ad2913198aa835046f188726（分支 fushi/dvd，私有镜像 hajisensai/libmpv-android-build-fushi run 40068054506）buildscripts/include/depinfo.sh v_mpv、dep_mpv=(unified_ffmpeg libass lua libbluray libplacebo)；provenance.json build_commit / mpv_commit / unified_ffmpeg；libmpv.so 内嵌 'Configuration: -Db_lundef=true -Dgpl=true -Dlibmpv=true -Dlua=lua ... -Dlibbluray=enabled -Ddvdnav=enabled -Ddvda=disabled ...'",
+      "note": "-Dgpl=true -Ddvdnav=enabled（mpv 的 stream_dvdnav 只在 GPL 构建可用，meson 'dvdnav' 依赖 'gpl'），故按 GPL-2.0-or-later；Fushi 补丁 5 个（provenance.json patches，含 disc-navigation-state v2 的 dvd-state）。三 ABI（arm64-v8a / armeabi-v7a / x86_64）的 jar 只有 libmpv.so + libmediakitandroidhelper.so；libmpv.so 不自带 FFmpeg / DVD 库，NEEDED libavcodec/libavfilter/libavformat/libavutil/libswresample/libswscale/libavdevice.so（统一 FFmpeg 9.0.1）与 libdvdnav.so（tool/dvd，libdvdread/libdvdcss 经 libdvdnav 加载），均由 third_party/ffmpeg_kit_next_flutter 的 AAR 提供；其余 NEEDED 为 libm/libandroid/libdl/libOpenSLES/libEGL/libc。所链的统一 FFmpeg 是 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。"
     },
     {
       "name": "mpv (libmpv)",
       "version": "36abaa32 (v0.41.0-dev)",
-      "license": "LGPL-2.1-or-later",
+      "license": "GPL-2.0-or-later",
       "origin": [
         "pub:media_kit_libs_ios_video, pub:media_kit_libs_macos_video"
       ],
       "textSource": "manifest",
       "texts": [
         "bfe9ee4cceabcb8e.txt",
+        "e329c2735166ea18.txt",
         "1c895bfaf60b9069.txt"
       ],
       "platforms": [
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix mpv-menu.version=36abaa32…（分支 fushi/unified-ffmpeg）；provenance.json mpv_commit / unified_ffmpeg；Mpv 二进制内嵌 'mpv v0.41.0-UNKNOWN' 与 'Configuration: ... -Dgpl=false ... -Dlibbluray=enabled'；Mpv 的 LC_LOAD_DYLIB 为 @rpath/libavcodec.framework/libavcodec 等统一 FFmpeg framework",
-      "note": "Mpv.framework，-Dgpl=false；未启用 Lua（-Dauto_features=disabled，无 -Dlua）。不再打包 FFmpeg / Mbed TLS / dav1d / libxml2 framework：归档只剩 Ass/Bluray/Freetype/Fribidi/Harfbuzz/Mpv/Placebo/Png16/Uchardet，Mpv 动态链接统一 FFmpeg 9.0.1 的 libav*.framework（iOS 由 third_party/ffmpeg_kit_next_flutter 的 xcframework 提供，macOS 由 third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 提供）。所链 FFmpeg 为 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f（分支 fushi/dvd，私有镜像 hajisensai/libmpv-darwin-build-fushi run 40067864441）packages.lock.nix mpv-menu.version=36abaa32…；provenance.json mpv_commit / unified_ffmpeg；Mpv 二进制内嵌 'mpv v0.41.0-UNKNOWN' 与 'Configuration: ... -Dgpl=true ... -Dlibbluray=enabled -Ddvdnav=enabled -Ddvda=disabled ...'；Mpv 的 LC_LOAD_DYLIB 含 @rpath/libavcodec.framework/libavcodec 等统一 FFmpeg framework 与 @rpath/libdvdnav.framework/libdvdnav",
+      "note": "Mpv.framework，-Dgpl=true -Ddvdnav=enabled（stream_dvdnav 只在 GPL 构建可用），故按 GPL-2.0-or-later；未启用 Lua（-Dauto_features=disabled，无 -Dlua）。不打包 FFmpeg / DVD 库 / Mbed TLS / dav1d / libxml2 framework：归档只剩 Ass/Bluray/Freetype/Fribidi/Harfbuzz/Mpv/Placebo/Png16/Uchardet，Mpv 动态链接统一 FFmpeg 9.0.1 的 libav*.framework 与 tool/dvd 的 libdvdnav.framework（iOS 由 third_party/ffmpeg_kit_next_flutter 的 xcframework 提供，macOS 由 third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz 提供）。所链 FFmpeg 为 --enable-gpl --enable-version3 构建，合并分发按 GPL-3.0。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {
       "name": "mpv (libmpv)",
@@ -13545,7 +13604,7 @@
         "ios",
         "macos"
       ],
-      "source": "hajisensai/libmpv-darwin-build@0f29c43057bbc4faa8f884cce4dd871926129b6e packages.lock.nix uchardet 0.0.8（tarball sha256 e97a60cf… 本地复核一致）；Uchardet 二进制内嵌 nix 路径 'mk-pkg-uchardet-patched-source-0.0.8'",
+      "source": "hajisensai/libmpv-darwin-build@95d986ea08751fd97871defbadb5df9a4ccb189f packages.lock.nix uchardet 0.0.8（tarball sha256 e97a60cf… 本地复核一致）；Uchardet 二进制内嵌 nix 路径 'mk-pkg-uchardet-patched-source-0.0.8'",
       "note": "Uchardet.framework，仅 Apple 有（mpv -Duchardet=enabled）。三选一许可；COPYING 依次含 MPL 1.1、GPL v2、LGPL v2.1 三份全文（第 473、815 行起）。动态 framework（xcframework，iOS: ios-arm64 + ios-arm64_x86_64-simulator；macOS: macos-arm64）"
     },
     {

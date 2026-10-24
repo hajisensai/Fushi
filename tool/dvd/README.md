@@ -113,13 +113,26 @@ libdvdcss 1.6.0 原样编不过（`ioctl.c` 在没有 IOKit DVD 客户端的系�
 Android（POSIX）宿主用 `C:/` 前缀，所以脚本只在 Linux / macOS 宿主跑。FFmpegKitNext 的
 Android 整包（Gradle + AAR）没在本机编，留给 CI。
 
-## 未完成（未验证 / 待批准）
+## 已完成：移动端 / Apple 产物（2026-10-24）
 
-- **移动端 CI**：`ffmpeg-unified-mobile.yml` 的三个平台 job 现在都先编 DVD 库，验证改用
-  `--require-staged`；未在 CI 上跑过。
-- **libmpv fork**：补丁与说明在 `forks/`，未推送、未触发远端构建（需所有者批准；要把两端
-  libmpv 改成 `-Dgpl=true`）。fork 产物重新 vendor 前，`fushi/test/build` 下按补丁散列钉住
-  Android / Darwin 产物的 6 条用例保持红。
+- **移动端 CI**：`ffmpeg-unified-mobile.yml` run `40064825841`（三平台先编 DVD 库，
+  `verify_mobile_outputs.py --require-staged` 通过），发布为统一 FFmpeg `unified-ffmpeg-9.0.1-r2`。
+  入库：`third_party/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar`（每 ABI 带
+  `libdvd{css,read,nav}.so`）、iOS `Frameworks/libdvd{css,read,nav}.xcframework`（podspec
+  `vendored_frameworks` 已登记）、`media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz`
+  （`Frameworks/libdvd*.framework` 与 libav* 并列，Makefile `UNIFIED_FFMPEG_SHA256SUM` 已换）。
+- **libmpv fork**（`-Dgpl=true -Ddvdnav=enabled`）：Android `fushi/dvd` @ `96ac8a5`，私有镜像
+  `hajisensai/libmpv-android-build-fushi` run `40068054506`；Darwin `fushi/dvd` @ `95d986e`，私有镜像
+  `hajisensai/libmpv-darwin-build-fushi` run `40067864441`。入库产物的 libmpv.so NEED
+  `libdvdnav.so`、Mpv.framework 链 `@rpath/libdvdnav.framework/libdvdnav`，配置串含
+  `-Dgpl=true … -Ddvdnav=enabled`，带 `dvd-state`；来源记录在各自 `provenance.json`，细节见 `forks/README.md`。
+- **`dvdvideo` 提升条件已满足**：Windows / Android 三 ABI / iOS 两片 / macOS 布局的 libavformat
+  都带 `dvdvideo`（2026-10-24 逐份核对）。挪进下限需另定 `staged.configure` 的去处，未在本轮改。
+
+## 未完成（未验证）
+
+- **真机 / 模拟器**：Android / iOS / macOS 上 DVD 菜单的实际播放没有跑过（入库产物只做了结构、
+  链接与字符串校验；Darwin 的 host probe 不含 DVD 段）。
 - **Linux**：用系统 libmpv / FFmpeg（Debian 的 libmpv2 已带 dvdnav）；加密盘需要系统装
   libdvdcss（Debian 走 contrib 的 `libdvd-pkg`）。以 `probe_libmpv.py` 的探测结果为准。
 - **iOS 上架风险**：判据预留在 `fushi/lib/src/models/store_compliance.dart` 的

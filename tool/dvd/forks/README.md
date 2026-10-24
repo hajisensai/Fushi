@@ -1,11 +1,16 @@
-# libmpv fork 的 DVD 改动（待所有者批准后再推）
+# libmpv fork 的 DVD 改动（已推送、已构建、已 vendor，2026-10-24）
 
 Android / Apple 的 libmpv 在两个 fork 里构建，本仓只放**可直接应用的补丁**和说明：
 
-| fork | 基线 | 补丁 |
-| --- | --- | --- |
-| `hajisensai/libmpv-android-video-build`（CI 跑在私有镜像 `libmpv-android-build-fushi`，原 fork 的 Actions 已被停用） | `fushi/unified-ffmpeg` @ `452510d169c847cbc5bd59ed72602ecc2eb163ce` | `libmpv-android-video-build.patch` |
-| `hajisensai/libmpv-darwin-build` | `fushi/unified-ffmpeg` @ `0f29c43057bbc4faa8f884cce4dd871926129b6e` | `libmpv-darwin-build.patch` |
+| fork（CI 所在仓） | 基线 | DVD 分支 `fushi/dvd` 头 | 构建 run | 补丁 |
+| --- | --- | --- | --- | --- |
+| `hajisensai/libmpv-android-video-build`（CI 跑在私有镜像 `hajisensai/libmpv-android-build-fushi`，原 fork 的 Actions 已被停用） | `fushi/unified-ffmpeg` @ `452510d169c847cbc5bd59ed72602ecc2eb163ce` | `96ac8a57d35c27b1ad2913198aa835046f188726` | 镜像仓 run `40068054506` | `libmpv-android-video-build.patch` |
+| `hajisensai/libmpv-darwin-build`（CI 跑在私有镜像 `hajisensai/libmpv-darwin-build-fushi`，与 Android 同一做法） | `fushi/unified-ffmpeg` @ `0f29c43057bbc4faa8f884cce4dd871926129b6e` | `95d986ea08751fd97871defbadb5df9a4ccb189f` | 镜像仓 run `40067864441` | `libmpv-darwin-build.patch` |
+
+两个补丁与 fork 头一一对应：对 fork 头的检出 `patch -p1 -R --dry-run` 干净回退（2026-10-24 实测）。
+补丁之外 fork 头还多两样不属于补丁的东西：锁文件指向统一 FFmpeg `unified-ffmpeg-9.0.1-r2`
+（Android `buildscripts/unified-ffmpeg.lock`、Darwin `packages.lock.nix` 的 `ffmpeg-unified`），
+以及 Darwin 镜像仓需要的 workflow 触发项。
 
 本地应用（只改工作区，不提交、不推送、不触发 workflow）：
 
@@ -15,8 +20,7 @@ bash tool/dvd/forks/apply.sh darwin  <fork 检出目录>
 ```
 
 `apply.sh` 先打补丁，再把本仓 `third_party/media_kit_libs_windows_video/patches/disc-navigation-state.patch`
-（v2，带 `dvd-state`）复制进 fork 自己那份补丁的位置。两个补丁都对上面的基线做过
-`patch --dry-run`，干净应用。
+（v2，带 `dvd-state`，sha256 `6095b222…`）复制进 fork 自己那份补丁的位置。
 
 ## 改了什么
 
@@ -26,8 +30,10 @@ bash tool/dvd/forks/apply.sh darwin  <fork 检出目录>
 - `scripts/unified_ffmpeg.sh`：要求 ffmpeg-dev 前缀里有 `libdvdcss.so` / `libdvdread.so` /
   `libdvdnav.so` 及其 `.pc`，并把 `dvdread.pc` / `dvdnav.pc` 按 FFmpeg 的方式改写前缀。这些 `.so`
   就是 AAR 里 libavformat.so 旁边那几份（FFmpegKitNext 补丁 0003），libmpv 只 NEED、不自带。
-- `bundle_unified.sh`：libmpv.so 必须 NEED `libdvdnav.so` / `libdvdread.so`，配置串含
-  `-Ddvdnav=enabled`，带 `dvd-state` 字符串，且不能自己定义 `dvdnav_open`（不许私带一份）。
+- `bundle_unified.sh`：libmpv.so 必须 NEED `libdvdnav.so`（**不要求** `libdvdread.so`：mpv 只调
+  dvdnav API，`--as-needed` 去掉了直接依赖，libdvdread 经 libdvdnav 的 NEEDED 加载——fork 头
+  `96ac8a5` 的修正），配置串含 `-Ddvdnav=enabled`，带 `dvd-state` 字符串，且不能自己定义
+  `dvdnav_open`（不许私带一份）。
 
 **Darwin**
 
@@ -36,26 +42,25 @@ bash tool/dvd/forks/apply.sh darwin  <fork 检出目录>
   头文件取自 framework 的 `Headers`。
 - `mk-pkg-mpv/video.nix`：`-Dgpl=true -Ddvdnav=enabled -Ddvda=disabled`。
 
-## 需要所有者拍板的点
+## 许可
 
-1. **`-Dgpl=true`**：mpv 的 `stream_dvdnav.c` 只在 GPL 构建里编译（meson：`dvdnav` 要求
-   `gpl`），两端 libmpv 现在是 `-Dgpl=false`（LGPL）。开 DVD 菜单必须改成 GPL 构建。应用本身
-   是 GPL-3.0、统一 FFmpeg 也已是 GPL，所以分发许可不变；但
-   `native/third_party_licenses/manifest.json` 里 Android / iOS / macOS 的 mpv 条目
-   （现写 LGPL-2.1-or-later）要在重新 vendor 时改成 GPL-2.0-or-later。
-2. 推送与远端构建：fork 提交、推送，Android 走私有镜像仓手动 dispatch，Darwin 跑 fork workflow。
+`-Dgpl=true` 是 DVD 菜单的硬前提（mpv 的 `stream_dvdnav.c` 只在 GPL 构建里编译，meson 的
+`dvdnav` 要求 `gpl`）。应用本身是 GPL-3.0、统一 FFmpeg 也已是 GPL，分发许可不变；
+`native/third_party_licenses/manifest.json` 里 Android / iOS / macOS 的 mpv 条目已随本次 vendor
+改为 GPL-2.0-or-later，三个 DVD 库另有 android / ios / macos 条目。
 
-## 推送后的顺序
+## 已完成的顺序（run id 留档）
 
-1. 跑本仓 `ffmpeg-unified-mobile.yml`（现在三个平台都会先编 DVD 库，再用补丁 0003 让
-   FFmpeg 链接它们；`verify_mobile_outputs.py --require-staged` 把关），产物 vendor 进
-   `third_party/ffmpeg_kit_next_flutter` / `media_kit_libs_macos_video`，并在
-   podspec / Gradle 侧把 `libdvd*.xcframework` / `.so` 一起带上。
-2. 把新的 ffmpeg-dev / xcframeworks 产物挂到 fork 的锁文件（Android `unified-ffmpeg.lock`、
-   Darwin `packages.lock.nix` 的 `ffmpeg-unified`），应用本目录补丁，跑 fork 构建。
-3. 用新 jar / tar.gz 重新 vendor，更新 `provenance.json` 里的补丁散列——
-   `fushi/test/build` 下按补丁散列钉住 Android / Darwin 产物的 6 条用例（android_libmpv_lua、
-   dolby_vision_bundled 两条、libmpv_mkv_laced_audio 的 Android 一条、libmpv_truehd 两条）
-   此时才会转绿。
-4. 五端产物都带 `dvdvideo` 之后，把它从 `tool/ffmpeg-unified/capabilities.json` 的 `staged`
-   挪进 `demuxers` 下限。
+1. 本仓 `ffmpeg-unified-mobile.yml` run `40064825841`：三个平台先编 DVD 库，再用补丁 0003 让
+   FFmpeg 链接它们；产物发布为 `unified-ffmpeg-9.0.1-r2`（Android 挂在
+   `libmpv-android-video-build`、Apple 挂在 `libmpv-darwin-build` 的 Release）。
+2. fork 锁文件指到 r2，应用本目录补丁，跑镜像仓构建（Android `40068054506`、Darwin `40067864441`）。
+3. 重新 vendor：Android `full-<abi>.jar` 进 `third_party/media_kit_libs_android_video/android/native/bluray-menu-v1/`，
+   Darwin 归档进 `third_party/media_kit_libs_{ios,macos}_video/native/`（`verify_darwin_archive.py`
+   已要求 Mpv 链 `@rpath/libdvdnav.framework` 且归档里不私带 `libdvd*`），新 AAR / iOS
+   xcframework（含 `libdvd{css,read,nav}.xcframework`，podspec 已登记）/ macOS 布局一起换；
+   `fushi/test/build` 下按补丁散列钉住产物的 6 条用例转绿。
+4. **待定**：四份入库产物（Windows / Android / iOS / macOS）现在都带 `dvdvideo`，满足
+   `tool/ffmpeg-unified/capabilities.json` 的提升条件；挪进 `demuxers` 下限需要同时决定
+   `staged.configure`（下限没有 configure 槽位）与守卫 `ffmpeg_unified_dvd_guard_test` 的写法，
+   未在本轮改。

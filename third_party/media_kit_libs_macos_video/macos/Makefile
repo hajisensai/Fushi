@@ -7,7 +7,7 @@ all: Frameworks/*.xcframework Frameworks/.symlinks Frameworks/.unified-ffmpeg
 # fushi.app/Contents layout (Frameworks/ + MacOS/) built and verified by
 # .github/workflows/ffmpeg-unified-mobile.yml (tool/ffmpeg-unified/mobile/build_macos.sh).
 UNIFIED_FFMPEG_ARCHIVE=$(abspath ../native/ffmpeg-unified-macos.tar.gz)
-UNIFIED_FFMPEG_SHA256SUM=cddcbde3cc2f1b36d8d7c41027d68428a803a96464f6465243692ad858301484
+UNIFIED_FFMPEG_SHA256SUM=31eab2c3b9900e54cebd0e67c365801c11348929aa3d512e2d705172885d5c68
 
 Frameworks/.unified-ffmpeg: $(UNIFIED_FFMPEG_ARCHIVE)
 	shasum -a 256 -c <<< '${UNIFIED_FFMPEG_SHA256SUM}  $(UNIFIED_FFMPEG_ARCHIVE)'
@@ -21,7 +21,7 @@ Frameworks/.unified-ffmpeg: $(UNIFIED_FFMPEG_ARCHIVE)
 # Verified original-menu libmpv bundle. Source and actual slice/closure checks:
 # ../native/provenance.json. Keep full TrueHD decoding and the DOVI GL patch.
 MPV_XCFRAMEWORKS_VERSION=unified-0f29c43057bb
-MPV_XCFRAMEWORKS_SHA256SUM=4cb73ff047d8ba1e6def51059570f26a897a815ba5b2d906357fc0cf064ecc49
+MPV_XCFRAMEWORKS_SHA256SUM=d856181dd841781e768a996dd98d33a869b78c8c7a70c3ada4f15b5c76fad6e2
 MPV_XCFRAMEWORKS_VENDOR_ARCHIVE=$(abspath ../native/libmpv-xcframeworks-bluray.tar.gz)
 
 # Explicit local build verification, without publishing or changing production pins.

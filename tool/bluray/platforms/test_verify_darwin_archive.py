@@ -9,16 +9,20 @@ from pathlib import Path
 from verify_darwin_archive import macho_slices, verify_archive
 
 
-MARKERS = (b"disc-navigation-state-json\0disc-menu-active\0discnav\0without DefaultDuration\0"
-           b"Deriving missing DTS\0")
+MARKERS = (b"disc-navigation-state-json\0disc-menu-active\0discnav\0dvd-state\0"
+           b"without DefaultDuration\0Deriving missing DTS\0")
 
 
 def thin(cpu, dependency="/usr/lib/libSystem.B.dylib", markers=MARKERS):
-    name = dependency.encode() + b"\0"
-    size = (24 + len(name) + 7) & ~7
-    command = struct.pack("<6I", 0xC, size, 24, 0, 0, 0) + name
-    command += b"\0" * (size - len(command))
-    return struct.pack("<8I", 0xFEEDFACF, cpu, 0, 6, 1, size, 0, 0) + command + markers
+    dependencies = [dependency] if isinstance(dependency, str) else list(dependency)
+    commands = b""
+    for item in dependencies:
+        name = item.encode() + b"\0"
+        size = (24 + len(name) + 7) & ~7
+        command = struct.pack("<6I", 0xC, size, 24, 0, 0, 0) + name
+        commands += command + b"\0" * (size - len(command))
+    return (struct.pack("<8I", 0xFEEDFACF, cpu, 0, 6, len(dependencies), len(commands), 0, 0)
+            + commands + markers)
 
 
 def universal(slices):
@@ -32,17 +36,18 @@ def universal(slices):
 
 
 UNIFIED_AVCODEC = "@rpath/libavcodec.framework/libavcodec"
+SHARED_DVDNAV = "@rpath/libdvdnav.framework/libdvdnav"
 
 
 def archive_fixture(path, dependency=None, extra_x86=False, extra=()):
-    """macOS arm64 libmpv archive; Mpv links the unified FFmpeg by default."""
+    """macOS arm64 libmpv archive; Mpv links the unified FFmpeg and shared DVD by default."""
     with tarfile.open(path, "w:gz") as archive:
         for framework in ("Mpv", "Bluray", "Placebo", *extra):
             info = {"AvailableLibraries": [{"LibraryIdentifier": "macos-arm64",
                     "LibraryPath": f"{framework}.framework", "SupportedPlatform": "macos",
                     "SupportedArchitectures": ["arm64"]}]}
             root = f"bundle/{framework}.xcframework"
-            dep = dependency or (UNIFIED_AVCODEC if framework == "Mpv"
+            dep = dependency or ((UNIFIED_AVCODEC, SHARED_DVDNAV) if framework == "Mpv"
                                  else "/usr/lib/libSystem.B.dylib")
             slices = [(0x0100000C, thin(0x0100000C, dep))]
             if extra_x86:
@@ -77,6 +82,21 @@ class DarwinArchiveTest(unittest.TestCase):
             path = Path(directory) / "frameworks.tar.gz"
             archive_fixture(path, dependency="/usr/lib/libSystem.B.dylib")
             with self.assertRaisesRegex(ValueError, "does not link the unified FFmpeg"):
+                verify_archive(path, "macos")
+
+    def test_rejects_packaged_dvd_libraries(self):
+        # tool/dvd: libdvdnav ships once beside the unified FFmpeg, never inside libmpv.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frameworks.tar.gz"
+            archive_fixture(path, extra=("libdvdnav",))
+            with self.assertRaisesRegex(ValueError, "DVD libraries packaged inside libmpv"):
+                verify_archive(path, "macos")
+
+    def test_requires_mpv_to_link_the_shared_dvd_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "frameworks.tar.gz"
+            archive_fixture(path, dependency=UNIFIED_AVCODEC)
+            with self.assertRaisesRegex(ValueError, "does not link the shared DVD library"):
                 verify_archive(path, "macos")
 
     def test_rejects_unbundled_and_build_machine_dependencies(self):

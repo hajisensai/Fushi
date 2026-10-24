@@ -11,8 +11,14 @@ is no fallback to an older download.
   and mining therefore share one FFmpeg; the jars shrank from ~9 MB to ~3 MB.
   Both sides route `av_log` through the unified FFmpeg's primary/secondary
   callback patch, so neither steals the other's log stream.
-- Build source: [`452510d`](https://github.com/hajisensai/libmpv-android-video-build/commit/452510d169c847cbc5bd59ed72602ecc2eb163ce)
-  (branch `fushi/unified-ffmpeg`, on top of `fushi/mkv-lace` `3166982`):
+- **DVD menus (2026-10-24).** Built with `-Dgpl=true -Ddvdnav=enabled
+  -Ddvda=disabled` (mpv's `stream_dvdnav` is GPL-only, so this libmpv is
+  GPL-2.0-or-later). `libmpv.so` NEEDs `libdvdnav.so` from the same AAR
+  (`tool/dvd`, FFmpegKitNext patch 0003; libdvdread / libdvdcss load through
+  it) and carries the v2 navigation snapshot (`dvd-state`). The fork patch is
+  `tool/dvd/forks/libmpv-android-video-build.patch`.
+- Build source: [`96ac8a5`](https://github.com/hajisensai/libmpv-android-video-build/commit/96ac8a57d35c27b1ad2913198aa835046f188726)
+  (branch `fushi/dvd`, on top of `fushi/unified-ffmpeg` `452510d`):
   `buildscripts/scripts/unified_ffmpeg.sh` installs the unified FFmpeg
   development prefix pinned by `buildscripts/unified-ffmpeg.lock`, and
   `buildscripts/bundle_unified.sh` fails unless every `libmpv.so` NEEDs the
@@ -20,8 +26,10 @@ is no fallback to an older download.
   navigation, Lua and dump-cache patch strings (`without DefaultDuration`,
   `Deriving missing DTS`; BUG-3499 / BUG-3500). Built at API 24 (the app's
   minSdk, matching the FFmpegKitNext libraries).
-- Successful three-ABI build: Actions run 39037350491 in the private mirror
-  `hajisensai/libmpv-android-build-fushi` (same commit). Pushes to the fork
+- Successful three-ABI build: Actions run 40068054506 in the private mirror
+  `hajisensai/libmpv-android-build-fushi` (same commit), against unified
+  FFmpeg `unified-ffmpeg-9.0.1-r2` (fushi `ffmpeg-unified-mobile.yml` run
+  40064825841). Pushes to the fork
   itself do not start Actions runs.
 - mpv `36abaa32`, libbluray `1.5.0`, libplacebo `7.360.1`, Lua `5.2.4` (static,
   `-Dlua=lua`), Android NDK `27.3.13750724`. TrueHD / MLP decoding, the

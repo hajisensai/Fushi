@@ -69,6 +69,9 @@ def macho_slices(data, required_markers=()):
 # framework may be packaged inside it (that would be a second FFmpeg again).
 UNIFIED_FFMPEG = {"libavcodec", "libavdevice", "libavfilter", "libavformat",
                   "libavutil", "libswresample", "libswscale"}
+# tool/dvd: libdvdcss / libdvdread / libdvdnav ship once beside the unified FFmpeg
+# frameworks (FFmpegKitNext patch 0003); Mpv's dvd:// links the same copies.
+SHARED_DVD = {"libdvdcss", "libdvdread", "libdvdnav"}
 PRIVATE_FFMPEG = {"Avcodec", "Avdevice", "Avfilter", "Avformat", "Avutil",
                   "Swresample", "Swscale"}
 
@@ -107,7 +110,7 @@ def verify_archive(path, platform):
                 # BUG-3500: "Deriving missing DTS" is the debug message of
                 # recorder-video-dts.patch (dump-cache of Matroska B-frame video).
                 markers = (b"disc-navigation-state-json", b"disc-menu-active", b"discnav",
-                           b"without DefaultDuration",
+                           b"dvd-state", b"without DefaultDuration",
                            b"Deriving missing DTS") if framework == "Mpv" else ()
                 slices = macho_slices(data, markers)
                 actual = {item["architecture"] for item in slices}
@@ -121,10 +124,14 @@ def verify_archive(path, platform):
             frameworks[framework] = variants
     if not required <= frameworks.keys():
         raise ValueError(f"Missing required frameworks: {required - frameworks.keys()}")
+    if packaged := SHARED_DVD & frameworks.keys():
+        raise ValueError(f"DVD libraries packaged inside libmpv ({sorted(packaged)}); "
+                         "libmpv must link the shared tool/dvd frameworks")
     if packaged := (PRIVATE_FFMPEG | UNIFIED_FFMPEG) & frameworks.keys():
         raise ValueError(f"FFmpeg packaged inside libmpv ({sorted(packaged)}); "
                          "libmpv must link the unified FFmpeg frameworks")
     unified_used = False
+    dvd_used = False
     for framework, variants in frameworks.items():
         for slices in variants.values():
             for item in slices:
@@ -141,16 +148,21 @@ def verify_archive(path, platform):
                         if target in UNIFIED_FFMPEG and dependency in valid_paths:
                             unified_used = True
                             continue
+                        if target in SHARED_DVD and dependency in valid_paths:
+                            dvd_used = dvd_used or (framework == "Mpv" and target == "libdvdnav")
+                            continue
                     raise ValueError(f"{framework}: unbundled dependency {dependency}")
     if not unified_used:
         raise ValueError("Mpv does not link the unified FFmpeg (@rpath/libavcodec.framework)")
+    if not dvd_used:
+        raise ValueError("Mpv does not link the shared DVD library (@rpath/libdvdnav.framework)")
     checksum = hashlib.sha256()
     with open(path, "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             checksum.update(chunk)
     digest = checksum.hexdigest()
     return {"sha256": digest, "platform": platform, "frameworks": frameworks,
-            "validation": "archive structure, Mach-O CPU slices, dylib closure, navigation, lace-timestamp and recorder-DTS markers",
+            "validation": "archive structure, Mach-O CPU slices, dylib closure (unified FFmpeg + shared DVD frameworks), navigation incl. dvd-state, lace-timestamp and recorder-DTS markers",
             "device_menu_rendering_tested": False}
 
 

@@ -14,8 +14,8 @@ Its complete corresponding source is:
    download locations are listed in scripts/source.sh at that commit and
    on https://github.com/arthenica/ffmpeg-kit-next/wiki/Source.
 3. Fushi's modifications and build recipe, applied on top of the above:
-   https://github.com/hajisensai/Fushi/tree/80acd319d6e568db5e2263e85a84bab8d02e7c82/tool/ffmpeg-unified
-   (repository https://github.com/hajisensai/Fushi, commit 80acd319d6e568db5e2263e85a84bab8d02e7c82)
+   https://github.com/hajisensai/Fushi/tree/3c77822a2f33ffc20da207fdc5239b196cf81c54/tool/ffmpeg-unified
+   (repository https://github.com/hajisensai/Fushi, commit 3c77822a2f33ffc20da207fdc5239b196cf81c54)
    - recipe.env                      version pins
    - patches/ffmpeg/0001-avformat-tls-add-tls_pin_sha256-certificate-pinning-.patch
    - patches/ffmpeg/0002-avutil-log-primary-secondary-log-callback-for-in-pro.patch
@@ -23,6 +23,7 @@ Its complete corresponding source is:
    - patches/ffmpeg/0004-avformat-tls_openssl-verify-peers-with-the-Apple-sys.patch
    - patches/ffmpeg-kit-next/0001-ffmpegkit-lock-primary-log-callback-forward-foreign-.patch
    - patches/ffmpeg-kit-next/0002-apple-build-ffmpeg-ffprobe-programs-on-the-framework.patch
+   - patches/ffmpeg-kit-next/0003-fushi-dvd-link-the-shared-tool-dvd-libraries.patch
    - prepare_ffmpeg_src.sh, mobile/, windows/   build scripts
 
 To rebuild: check out the Fushi commit above and run

@@ -52,16 +52,18 @@ diff --git a/buildscripts/scripts/mpv.sh b/buildscripts/scripts/mpv.sh
 diff --git a/buildscripts/bundle_unified.sh b/buildscripts/bundle_unified.sh
 --- a/buildscripts/bundle_unified.sh
 +++ b/buildscripts/bundle_unified.sh
-@@ -44,7 +44,7 @@
- 
+@@ -44,7 +44,9 @@
+
  # Unified FFmpeg: libmpv must NEED the AAR's plain-named FFmpeg libraries and
  # must not carry an FFmpeg copy of its own.
 -for ff in libavcodec libavformat libavutil libavfilter libswresample libswscale; do
-+for ff in libavcodec libavformat libavutil libavfilter libswresample libswscale libdvdnav libdvdread; do
++# libdvdread is not listed: mpv calls only the dvdnav API, so --as-needed drops
++# the direct dependency and libdvdread.so loads through libdvdnav.so's NEEDED.
++for ff in libavcodec libavformat libavutil libavfilter libswresample libswscale libdvdnav; do
      grep -Eq "\(NEEDED\)[[:space:]]+Shared library: \[$ff\.so\]" "$out/$abi.elf.txt" ||
          { echo "libmpv.so does not NEED $ff.so (shared unified FFmpeg)" >&2; exit 3; }
  done
-@@ -57,6 +57,13 @@
+@@ -57,6 +59,13 @@
      { echo "libmpv.so does not import avcodec_send_packet" >&2; exit 3; }
  
  "$bin/llvm-strings" "$lib" > "$out/$abi.strings.txt"
