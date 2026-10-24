@@ -18,6 +18,7 @@ import 'dart:typed_data';
 import 'package:fushi_asr_subtitles/asr_subtitles.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
@@ -260,7 +261,7 @@ Future<Uint8List> alignSubtitleForAutomaticPath(
   SubtitleReferenceTrackLoader loadReferences = loadEmbeddedReferenceTracks,
   Future<int?> Function(String videoPath) probeDurationMs = _probeDurationMs,
 }) async {
-  if (!File(videoPath).existsSync()) return subtitleBytes;
+  if (!hasLocalMediaFileSync(videoPath)) return subtitleBytes;
   final EmbeddedReferenceSyncResult result =
       await syncSubtitleToEmbeddedReferences(
         subtitleBytes: subtitleBytes,

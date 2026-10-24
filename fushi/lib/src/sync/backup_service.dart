@@ -7,6 +7,7 @@ import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
@@ -2220,8 +2221,8 @@ class BackupService {
             sourcePathToArchiveRelative.containsKey(videoPath)) {
           continue;
         }
-        final File videoFile = File(videoPath);
-        if (!await videoFile.exists()) continue;
+        // 打包的是这个路径上的文件本身（本地 .strm 指针照打）；DVD title 是虚拟路径，没有可打包的文件。
+        if (!await videoPathFileExists(videoPath)) continue;
         final String relativePath = _videoArchiveRelativePath(
           bookUid: row.bookUid,
           sourcePath: videoPath,

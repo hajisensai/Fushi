@@ -19,6 +19,7 @@ import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
 import 'package:fushi/src/updates/app_update_check.dart';
 import 'package:fushi/src/updates/usage_heartbeat.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -6110,8 +6111,8 @@ class AppModel with ChangeNotifier {
     final VideoBookRow? row =
         await VideoBookRepository(database).getByBookUid(videoId);
     if (row == null) return null;
-    final File file = File(row.videoPath);
-    return await file.exists() ? file.path : null;
+    // ASR 要读媒体字节：DVD title / 网络流 / .strm 没有本地媒体文件。
+    return await hasLocalMediaFile(row.videoPath) ? row.videoPath : null;
   }
 
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。

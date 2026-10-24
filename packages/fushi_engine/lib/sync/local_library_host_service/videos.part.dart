@@ -105,7 +105,7 @@ mixin _LocalLibraryHostVideos
     // 无从服务——整段不碰文件系统，sizeBytes 留 null、hasSubtitle 为 false。
     if (videoPath.isNotEmpty && !lacksLocalMediaFile(videoPath)) {
       final File f = File(videoPath);
-      if (f.existsSync()) {
+      if (hasLocalMediaFileSync(videoPath)) {
         try {
           sizeBytes = f.lengthSync();
         } catch (_) {

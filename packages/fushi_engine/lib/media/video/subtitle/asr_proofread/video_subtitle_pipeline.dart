@@ -24,6 +24,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
     show SubtitleCue, SubtitleFormat, renderSubtitles;
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_clip_classifier.dart';
@@ -185,8 +186,9 @@ Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
 
 /// 任务目录名：`sha1(视频文件名 + '|' + 字节数)`（文件不存在按 0 字节）。
 String videoSubtitleJobId(String videoPath) {
-  final File f = File(videoPath);
-  final int bytes = f.existsSync() ? f.lengthSync() : 0;
+  final int bytes = hasLocalMediaFileSync(videoPath)
+      ? File(videoPath).lengthSync()
+      : 0;
   return sha1
       .convert(utf8.encode('${p.basename(videoPath)}|$bytes'))
       .toString();
