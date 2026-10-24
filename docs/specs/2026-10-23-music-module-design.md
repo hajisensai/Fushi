@@ -629,6 +629,42 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   painter 内 saveLayer / 像素对齐）实测都只是挪动编译时机，已撤回。根治需在组件外
   （Impeller 预编译与 HDR 引擎补丁冲突 / 引擎持久化着色器缓存），待所有者决定。
 
+### 13.2 P3 卡拉 OK 字幕落地记录（2026-10-24）
+
+- **一页一个 mpv**：MV 页泛化成卡拉 OK 字幕页（`pages/implementations/music/music_mv_page.dart`
+  的 `MusicKaraokeStagePage`，纯判据与指令计划在 `media/music/lyrics/karaoke/karaoke_stage_plan.dart`）。
+  画面三选一：MV / 画布（主文件 = 曲目音频，CUE 曲目是 EDL 段；封面或纯色画布按 ASS 的
+  PlayRes 比例画成 PNG，`video-add … albumart` 挂成封面轨）/ CD+G（`video-add` 同名 `.cdg`）。
+  画面、声音、libass 字幕同一个实例出，不在 Dart 里追帧；进入时暂停音乐引擎，画布 / CD+G
+  离开时把引擎拨到本页位置。
+- **原样渲染**：`sub-add` ASS 原文（Rust `ffm_lyrics_ass_raw` 统一成 UTF-8 并按 libass 规则补
+  PlayRes），`sub-delay = MV 偏移 − 歌词偏移`。media_kit 默认 `libass: false` 会关掉 `sub-ass` /
+  `sub-visibility`，本页显式打开，其余字幕选项保持 mpv 默认。叠加三选一（原样 / 逐字歌词 /
+  关闭），默认 = Rust 特效检测（P3 加了 `\org`、`\p1` 绘图、逐字定位；解析器版本升 2）× 设置
+  「ASS 卡拉 OK 字幕」（`music_karaoke_ass_render`：自动 / 总是原样 / 总是逐字）。歌词来源是
+  ASS 时，手动选定也照存 ASS 原文（不再转 TTML）。歌词页在来源是 ASS 或有 `.cdg` 时出现入口，
+  ASS 带特效时歌词区顶上提示去原样渲染。
+- **`\ko` 语义修正**：真 libmpv 截帧确认 libass 的 `\k` 与 `\ko` 都在音节**起点**瞬间切换，
+  `\ko` 另外在起点之前不画描边；P1 的结构化渲染把 `\ko` 当线性擦色，已改。
+- **验收（真 libmpv，`fushi/test/media/music/karaoke/music_karaoke_stage_real_test.dart`，样本全由
+  测试程序生成）**：`\k` `\kf` `\ko` 按像素颜色量出的逐音节进度与结构化进度一致；字幕组风格特效
+  ASS（`\move` `\t` `\fad` `\blur` `\org`+`\frz` `\clip` `\p1` 粒子、fx 行）本页管线 vs「mpv 放视频
+  + `sub-files` 外挂、其余默认」在 0.48–4.48 s 按 25 fps 逐帧比：**101/101 帧逐像素一致**；MV
+  偏移 1.5 s、歌词偏移 +300 ms 下 31/31 帧与参考在 `v − 1.2 s` 一致；CD+G 解码与跳转正确。
+  截图走 `screenshot … subtitles`（视频分辨率合成）；纹理显示路径（libass 按纹理尺寸排字）
+  没有在离屏 runner 上截帧。
+- **CD+G**：统一 FFmpeg 能力下限已含 `cdgraphics` 解码器与 `cdg` 解复用器。图形指令稀疏的
+  `.cdg` 探测分只有个位数、低于 mpv 默认门槛，`video-add` 会静默失败——CD+G 实例下发
+  `demuxer-lavf-probescore=1`。解码器只在图形指令上出帧，跳到长间奏中间时画面要等下一个
+  指令包才出现。`.zip` 打包的 MP3+G 不认（要先解包）。
+- **UltraStar / `.kar`**：走结构化渲染。UltraStar 包按 `#MP3:` / `#AUDIO:` 头配对主名不同的
+  `.txt`；`.kar` / `.mid` 进 sidecar 分档（逐字格式之后、LRC 之前）。**音高条不做**：§5.1 定的
+  是音高忽略，时间轴模型不带音高，做它要改线格式 + 渲染；没有麦克风评分时价值有限。纯 `.kar`
+  文件本身不能当曲目播（统一 FFmpeg 没有 MIDI 合成）。
+- **未做**：原样渲染下「点画面按当前时间取行查词」（§6.3 末句）；Android 上 libass 找不到系统
+  字体（media_kit 需要随包字体资产，本仓没有），ASS 内嵌字体之外的字形在 Android 原样渲染下
+  未验证。
+
 ## 14. 风险
 
 - **DVD 高亮正确性**：正是 mpv 当年删菜单的原因。缓解：先在 P5 前单独做一个
