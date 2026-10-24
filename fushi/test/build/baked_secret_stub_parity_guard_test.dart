@@ -39,6 +39,8 @@ void main() {
         'fushi/lib/src/media/video/scraper/tmdb_default_key.dart',
     'Provide OpenSubtitles API key stub':
         'packages/fushi_engine/lib/media/video/subtitle/opensubtitles_default_key.dart',
+    'Provide AcoustID API key stub':
+        'fushi/lib/src/media/music/acoustid_secret.dart',
   };
 
   const String actionRef = './.github/actions/provide-baked-secrets';
@@ -79,6 +81,7 @@ void main() {
       'dandanplay-app-secret': 'DANDANPLAY_APP_SECRET',
       'tmdb-api-key': 'TMDB_API_KEY',
       'opensubtitles-api-key': 'OPENSUBTITLES_API_KEY',
+      'acoustid-api-key': 'ACOUSTID_API_KEY',
     };
     final List<String> offenders = <String>[];
     wiring.forEach((String input, String secret) {

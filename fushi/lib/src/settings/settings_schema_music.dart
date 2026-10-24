@@ -213,7 +213,11 @@ SettingsDestination buildMusicDestination() {
           SettingsTextItem(
             id: 'music.acoustid_api_key',
             title: t.music_setting_acoustid_key,
-            subtitle: t.music_setting_acoustid_key_hint,
+            // 随包内置了应用 key 时，这里只是「填自己的 key 覆盖」；没内置（fork / 无 secret
+            // 的构建）才说明不填就没有声纹识别。
+            subtitle: musicAcoustidBuiltinKeyAvailable
+                ? t.music_setting_acoustid_key_builtin_hint
+                : t.music_setting_acoustid_key_hint,
             icon: FushiIcons.key,
             secret: true,
             value: (SettingsContext c) => c.appModel.musicAcoustidApiKey,
