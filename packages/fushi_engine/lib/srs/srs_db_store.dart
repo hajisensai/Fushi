@@ -2378,11 +2378,10 @@ class SrsDbStore implements SrsSyncReplica {
         for (final String o in chunk) groups[o]!,
       ];
       // Rust 在写连接上直读日志（含本事务未提交的行）；放后台 isolate，不挡 UI（同 [_cardMaterials]）。
-      final Uint8List page = await Isolate.run<Uint8List>(
-        () => SrsCore.fromAddress(
-          address,
-          libraryPath: libraryPath,
-        ).statProjection(batch),
+      final Uint8List page = await _coreStatProjection(
+        address,
+        libraryPath,
+        batch,
       );
       final (int _, List<List<Object?>> out) = srsDecodeRows(page);
       for (final List<Object?> r in out) {
@@ -2605,11 +2604,10 @@ class SrsDbStore implements SrsSyncReplica {
     // （缓存刷新在写锁 + 事务里）。
     final int address = core.address;
     final String? libraryPath = core.libraryPath;
-    final Uint8List raw = await Isolate.run<Uint8List>(
-      () => SrsCore.fromAddress(
-        address,
-        libraryPath: libraryPath,
-      ).historyStates(groups),
+    final Uint8List raw = await _coreHistoryStates(
+      address,
+      libraryPath,
+      groups,
     );
     final List<SrsHistoryState> states = srsDecodeHistoryStates(
       raw,
@@ -6014,6 +6012,31 @@ class _BulkWriteState {
 // ------------------------------------------------------------------ P6 命令的后台 isolate 入口
 //
 // 写成顶层函数：闭包只捕获句柄地址、库路径与入参（都可发送），不把 store（持有 Drift 连接）带过 isolate 边界。
+
+// 送进后台 isolate 的 Rust 直读命令一律写成顶层函数：闭包写在实例方法里会连带捕获 `this`
+// （SrsDbStore 里有 Future 等不可发送的对象），Isolate.run 当场抛「object is unsendable」。
+
+Future<Uint8List> _coreHistoryStates(
+  int address,
+  String? libraryPath,
+  List<List<String>> groups,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(
+    address,
+    libraryPath: libraryPath,
+  ).historyStates(groups),
+);
+
+Future<Uint8List> _coreStatProjection(
+  int address,
+  String? libraryPath,
+  List<List<String>> groups,
+) => Isolate.run<Uint8List>(
+  () => SrsCore.fromAddress(
+    address,
+    libraryPath: libraryPath,
+  ).statProjection(groups),
+);
 
 Future<Uint8List> _coreOptimizerItems(
   int address,

@@ -4,7 +4,7 @@
 // test/srs/fixtures/gen_p6_vectors.dart.txt）：1200 份随机历史，期望值是旧的 `srsPrepareOptimization`
 // 循环体（逐卡训练条目）、`SrsRwkvReplayBuilder` / `srsRwkvKeptRatings` / `SrsRwkvLastRating.of` /
 // `srsRwkvAddNowRow`（回放行字节、此刻行字节）、`srsStatsFromHistory` + `SrsCardHistory.state.memory`
-// （统计投影）。
+// （统计投影；现由 Rust `history::stats_from_json` 经 `ffsrs_store_stat_projection` 产出）。
 //
 // 这里把向量日志（落库原文 + 服务器时刻）写进真实的 srs.db，经 `ffsrs_store_*` 直读命令取回，解包后
 // 与旧实现逐条比较——走的就是生产路径（SQL → 选取 → 投影 → 字节布局 → Dart 解包）。要真实原生库。
@@ -34,6 +34,20 @@ SrsDayContext _day(Map<String, Object?> v) {
 }
 
 List<int> _ids(int i) => <int>[1000 + i, 2000 + i, 7, 9];
+
+/// `SrsCore.statProjection` 的一行（9 列，见其文档）→ [SrsStatProjection]，归属卡 [owner]。
+SrsStatProjection _projectionOf(List<Object?> r, String owner) =>
+    SrsStatProjection(
+      logId: r[1]! as String,
+      cardId: owner,
+      occurredAt: r[2]! as int,
+      utcOffsetMin: r[3]! as int,
+      rating: r[4] as int?,
+      kind: SrsStatReviewKind.values[r[5]! as int],
+      durationMs: r[6]! as int,
+      prevDueDay: r[7] as int?,
+      maturityDelta: r[8]! as int,
+    );
 
 void main() {
   final List<Map<String, Object?>> vectors = _load(
@@ -263,41 +277,21 @@ void main() {
     expect(rows, greaterThan(1500));
   });
 
-  test('统计页取数（ffsrs_store_stats_reviews）+ 投影与旧 Dart 实现逐条一致', () {
+  test('统计页取数（ffsrs_store_stat_projection）+ 投影与旧 Dart 实现逐条一致', () {
     int checked = 0;
     for (int i = 0; i < vectors.length; i++) {
       final Map<String, Object?> want =
           vectors[i]['stats']! as Map<String, Object?>;
-      final SrsStatsColumns cols = SrsStatsColumns(core.statsReviews('p$i'));
-      final int nLogs = (vectors[i]['logs']! as List<Object?>).length;
-      expect(cols.cardCount, nLogs == 0 ? 0 : 1);
-      if (nLogs == 0) {
-        expect(want['reviews'], isEmpty);
-        continue;
-      }
-      expect(cols.cardIds.single, 'v$i');
-      final List<SrsStatLog> eff = <SrsStatLog>[
-        for (int k = 0; k < cols.logCount; k++)
-          SrsStatLog(
-            cardId: 'v$i',
-            isReviewKind: cols.isReviewKindOf(k),
-            rating: cols.ratingOf(k),
-            reviewType: cols.reviewTypeOf(k),
-            at: cols.atOf(k),
-            utcOffsetMin: cols.utcOffsetMinOf(k),
-            durationMs: cols.durationMsOf(k),
-            rwkv: cols.rwkvOf(k),
-            result: cols.hasResultOf(k)
-                ? (
-                    queue: cols.queueOf(k),
-                    scheduledDays: cols.scheduledDaysOf(k),
-                    dueDay: cols.dueDayOf(k),
-                  )
-                : null,
-          ),
-      ];
+      final (int _, List<List<Object?>> rows) = srsDecodeRows(
+        core.statProjection(<List<String>>[
+          <String>['v$i'],
+        ]),
+      );
+      expect(rows.every((List<Object?> r) => r[0] == 0), isTrue);
       final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-      got = srsStatsFromLogs(eff, _day(vectors[i]));
+      got = srsStatsFromProjection(<SrsStatProjection>[
+        for (final List<Object?> r in rows) _projectionOf(r, 'v$i'),
+      ], _day(vectors[i]));
       // 期望的 cardId 是向量日志 JSON 里的 card 字段；库里按 card_id 列分组（生产里两者相同）。
       expect(
         <List<Object?>>[
@@ -327,14 +321,26 @@ void main() {
           for (final Object? m in want['maturity']! as List<Object?>)
             (m! as List<Object?>).sublist(1),
         ],
+        reason: 'vector $i maturity',
       );
-      final SrsMemory? mem = cols.memoryOf(0);
+      // 记忆状态 = 同一份历史经 ffsrs_store_history_states 选取后最后一条有效结果的记忆。
+      final SrsMemory? mem = srsDecodeHistoryStates(
+        core.historyStates(<List<String>>[
+          <String>['v$i'],
+        ]),
+        1,
+      ).single.result.memory;
       expect(
         mem == null
             ? null
             : <double>[mem.stability, mem.difficulty, mem.stabilityFast],
         want['memory'],
+        reason: 'vector $i memory',
       );
+      if ((vectors[i]['logs']! as List<Object?>).isEmpty) {
+        expect(want['reviews'], isEmpty);
+        continue;
+      }
       checked++;
     }
     expect(checked, greaterThan(1000));
