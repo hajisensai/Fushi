@@ -204,7 +204,12 @@ void ExportKnifeVoice(const std::wstring& path, uint64_t text_tick,
   const bool written = WriteVoiceOggAt(
       ogg.data(), static_cast<uint32_t>(ogg.size()), base, text_tick,
       text_event);
-  if (written) KnifeDiag(kKnifeDiagVoiceWritten);
+  if (written) {
+    KnifeDiag(kKnifeDiagVoiceWritten);
+    // The bytes are the engine's own resource for this line: the host pairs per
+    // line instead of staying on the loopback fallback.
+    SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagGameResourcePublished);
+  }
   KnifeLog(L"voice %s event=%llu nopus=%zu ogg=%zu written=%d", base,
            static_cast<unsigned long long>(text_event), nopus.size(),
            ogg.size(), written ? 1 : 0);
