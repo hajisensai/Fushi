@@ -42,15 +42,6 @@ const Map<String, Map<String, int>> _legacy = <String, Map<String, int>>{
   },
   // 设置页重设计把同一 Apple 玻璃搜索胶囊抽到共享 SettingsSearchBar；
   // 仅搬迁原有一处预算，不豁免整个 settings_kit，也不增加裸控件总数。
-  // Apple 侧栏（宽窗变顶部标签栏的 macOS 式侧栏，9c5a0a2455）顶部的 32pt
-  // tertiaryFill 搜索框：侧栏几何按这个高度排版，共享 Apple 搜索胶囊是 36pt，
-  // 没有侧栏这一档。只在 Apple 设计系统分支渲染。
-  'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
-      <String, int>{'TextField': 1},
-  // SRS 字段版式所见即所得编辑器（e583566220）：每个段落是无框、collapsed 的
-  // 行内多行文本，排在卡面版式里原位编辑；共享输入框都自带容器 / 描边。
-  'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
-      <String, int>{'TextField': 1},
   'lib/src/settings/settings_kit.dart': <String, int>{
     'CupertinoSearchTextField': 1,
   },
