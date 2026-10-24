@@ -90,6 +90,10 @@ class _FakeInstance implements MusicCrossfadeInstance {
       log.add('seek:${position.inMilliseconds}');
 
   @override
+  Future<void> setAbLoop(Duration? a, Duration? b) async =>
+      log.add('ab:${a?.inMilliseconds}-${b?.inMilliseconds}');
+
+  @override
   Future<void> stop() async => log.add('stop');
 
   @override
@@ -755,6 +759,9 @@ class _FlagBackend implements MusicOutputBackend {
 
   @override
   Future<void> seek(Duration position) async {}
+
+  @override
+  Future<void> setAbLoop(Duration? a, Duration? b) async {}
 
   @override
   Future<void> stop() async {}

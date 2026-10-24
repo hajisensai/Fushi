@@ -68,7 +68,6 @@ class KaraokeLyricsView extends StatefulWidget {
     this.onSeek,
     this.onLookup,
     this.tapLooksUp = false,
-    this.lineOffsetsMs = const <int, int>{},
   });
 
   final LyricTimeline timeline;
@@ -78,8 +77,6 @@ class KaraokeLyricsView extends StatefulWidget {
   /// 显示时间 = 位置 + [offsetMs]（正 = 歌词提前）。
   final int offsetMs;
 
-  /// 单行偏移：行下标 → 额外毫秒（同号语义）。
-  final Map<int, int> lineOffsetsMs;
   final KaraokeLyricsAppearance appearance;
 
   /// 跳转到播放位置（毫秒）：点行、拖动预览松手。
@@ -176,7 +173,6 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
     rows: _rows,
     positionMs: _position.value,
     offsetMs: widget.offsetMs,
-    lineOffsetsMs: widget.lineOffsetsMs,
   );
 
   void _refresh({bool fromBuild = false}) {
@@ -284,8 +280,6 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
   int _seekPositionOf(int lineIndex) => karaokeSeekPositionForLine(
     line: widget.timeline.lines[lineIndex],
     offsetMs: widget.offsetMs,
-    lineOffsetsMs: widget.lineOffsetsMs,
-    lineIndex: lineIndex,
   );
 
   void _ensureLayouts(double width, KaraokeResolvedStyle style) {
@@ -494,7 +488,6 @@ class _KaraokeLyricsViewState extends State<KaraokeLyricsView>
               active: isCurrent,
               position: isCurrent ? _position : null,
               offsetMs: widget.offsetMs,
-              lineOffsetsMs: widget.lineOffsetsMs,
               motion: _motion,
               lineLevelSweep: widget.appearance.lineLevelSweep,
               liftPx: widget.appearance.liftPx,
@@ -528,7 +521,6 @@ class _KaraokeRowPainter extends CustomPainter {
     required this.active,
     required this.position,
     required this.offsetMs,
-    required this.lineOffsetsMs,
     required this.motion,
     required this.lineLevelSweep,
     required this.liftPx,
@@ -539,7 +531,6 @@ class _KaraokeRowPainter extends CustomPainter {
   final bool active;
   final ValueListenable<int>? position;
   final int offsetMs;
-  final Map<int, int> lineOffsetsMs;
   final bool motion;
   final bool lineLevelSweep;
   final double liftPx;
@@ -555,12 +546,7 @@ class _KaraokeRowPainter extends CustomPainter {
       if (active && pos != null) {
         l.paintActive(
           canvas,
-          timeMs: karaokeLineTimeMs(
-            positionMs: pos.value,
-            offsetMs: offsetMs,
-            lineOffsetsMs: lineOffsetsMs,
-            lineIndex: lineIndex,
-          ),
+          timeMs: karaokeLineTimeMs(positionMs: pos.value, offsetMs: offsetMs),
           motion: motion,
           lineLevelSweep: lineLevelSweep,
           liftPx: liftPx,
@@ -587,7 +573,6 @@ class _KaraokeRowPainter extends CustomPainter {
       old.active != active ||
       old.position != position ||
       old.offsetMs != offsetMs ||
-      !identical(old.lineOffsetsMs, lineOffsetsMs) ||
       old.motion != motion ||
       old.lineLevelSweep != lineLevelSweep ||
       old.liftPx != liftPx ||

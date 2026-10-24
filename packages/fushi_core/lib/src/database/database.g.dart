@@ -74925,6 +74925,321 @@ class AdaptationProgressAnchorsCompanion
   }
 }
 
+class $GalgameTextLinesTable extends GalgameTextLines
+    with TableInfo<$GalgameTextLinesTable, GalgameTextLineRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GalgameTextLinesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+    'game_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES galgames (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _lineTextMeta = const VerificationMeta(
+    'lineText',
+  );
+  @override
+  late final GeneratedColumn<String> lineText = GeneratedColumn<String>(
+    'text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<int> receivedAt = GeneratedColumn<int>(
+    'received_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, gameId, lineText, receivedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'galgame_text_lines';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GalgameTextLineRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('game_id')) {
+      context.handle(
+        _gameIdMeta,
+        gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('text')) {
+      context.handle(
+        _lineTextMeta,
+        lineText.isAcceptableOrUnknown(data['text']!, _lineTextMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_lineTextMeta);
+    }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_receivedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {gameId, lineText},
+  ];
+  @override
+  GalgameTextLineRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GalgameTextLineRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      gameId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_id'],
+      )!,
+      lineText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}text'],
+      )!,
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}received_at'],
+      )!,
+    );
+  }
+
+  @override
+  $GalgameTextLinesTable createAlias(String alias) {
+    return $GalgameTextLinesTable(attachedDatabase, alias);
+  }
+}
+
+class GalgameTextLineRow extends DataClass
+    implements Insertable<GalgameTextLineRow> {
+  final int id;
+
+  /// 所属游戏（`galgames.id`）。游戏从库里移除时台词跟着删（ON DELETE CASCADE）：
+  /// 台词是这个游戏的内容，不像游玩时长那样要留作统计。
+  final String gameId;
+
+  /// 台词正文（文本钩子管线处理后的那一份：注音已剥、折叠后的整行）。
+  final String lineText;
+
+  /// 第一次收到这句台词的时刻（毫秒时间戳）。
+  final int receivedAt;
+  const GalgameTextLineRow({
+    required this.id,
+    required this.gameId,
+    required this.lineText,
+    required this.receivedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['game_id'] = Variable<String>(gameId);
+    map['text'] = Variable<String>(lineText);
+    map['received_at'] = Variable<int>(receivedAt);
+    return map;
+  }
+
+  GalgameTextLinesCompanion toCompanion(bool nullToAbsent) {
+    return GalgameTextLinesCompanion(
+      id: Value(id),
+      gameId: Value(gameId),
+      lineText: Value(lineText),
+      receivedAt: Value(receivedAt),
+    );
+  }
+
+  factory GalgameTextLineRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GalgameTextLineRow(
+      id: serializer.fromJson<int>(json['id']),
+      gameId: serializer.fromJson<String>(json['gameId']),
+      lineText: serializer.fromJson<String>(json['lineText']),
+      receivedAt: serializer.fromJson<int>(json['receivedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'gameId': serializer.toJson<String>(gameId),
+      'lineText': serializer.toJson<String>(lineText),
+      'receivedAt': serializer.toJson<int>(receivedAt),
+    };
+  }
+
+  GalgameTextLineRow copyWith({
+    int? id,
+    String? gameId,
+    String? lineText,
+    int? receivedAt,
+  }) => GalgameTextLineRow(
+    id: id ?? this.id,
+    gameId: gameId ?? this.gameId,
+    lineText: lineText ?? this.lineText,
+    receivedAt: receivedAt ?? this.receivedAt,
+  );
+  GalgameTextLineRow copyWithCompanion(GalgameTextLinesCompanion data) {
+    return GalgameTextLineRow(
+      id: data.id.present ? data.id.value : this.id,
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      lineText: data.lineText.present ? data.lineText.value : this.lineText,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameTextLineRow(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('lineText: $lineText, ')
+          ..write('receivedAt: $receivedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, gameId, lineText, receivedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GalgameTextLineRow &&
+          other.id == this.id &&
+          other.gameId == this.gameId &&
+          other.lineText == this.lineText &&
+          other.receivedAt == this.receivedAt);
+}
+
+class GalgameTextLinesCompanion extends UpdateCompanion<GalgameTextLineRow> {
+  final Value<int> id;
+  final Value<String> gameId;
+  final Value<String> lineText;
+  final Value<int> receivedAt;
+  const GalgameTextLinesCompanion({
+    this.id = const Value.absent(),
+    this.gameId = const Value.absent(),
+    this.lineText = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+  });
+  GalgameTextLinesCompanion.insert({
+    this.id = const Value.absent(),
+    required String gameId,
+    required String lineText,
+    required int receivedAt,
+  }) : gameId = Value(gameId),
+       lineText = Value(lineText),
+       receivedAt = Value(receivedAt);
+  static Insertable<GalgameTextLineRow> custom({
+    Expression<int>? id,
+    Expression<String>? gameId,
+    Expression<String>? lineText,
+    Expression<int>? receivedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (gameId != null) 'game_id': gameId,
+      if (lineText != null) 'text': lineText,
+      if (receivedAt != null) 'received_at': receivedAt,
+    });
+  }
+
+  GalgameTextLinesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? gameId,
+    Value<String>? lineText,
+    Value<int>? receivedAt,
+  }) {
+    return GalgameTextLinesCompanion(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      lineText: lineText ?? this.lineText,
+      receivedAt: receivedAt ?? this.receivedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (lineText.present) {
+      map['text'] = Variable<String>(lineText.value);
+    }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<int>(receivedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GalgameTextLinesCompanion(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('lineText: $lineText, ')
+          ..write('receivedAt: $receivedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -75143,6 +75458,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $PersonIdentityBridgesTable(this);
   late final $AdaptationProgressAnchorsTable adaptationProgressAnchors =
       $AdaptationProgressAnchorsTable(this);
+  late final $GalgameTextLinesTable galgameTextLines = $GalgameTextLinesTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -75269,6 +75587,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     gameVoiceCasts,
     personIdentityBridges,
     adaptationProgressAnchors,
+    galgameTextLines,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -75757,6 +76076,13 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('music_playlist_entries', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'galgames',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('galgame_text_lines', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -92713,6 +93039,27 @@ final class $$GalgamesTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$GalgameTextLinesTable, List<GalgameTextLineRow>>
+  _galgameTextLinesRefsTable(_$FushiDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.galgameTextLines,
+        aliasName: 'galgames__id__galgame_text_lines__game_id',
+      );
+
+  $$GalgameTextLinesTableProcessedTableManager get galgameTextLinesRefs {
+    final manager = $$GalgameTextLinesTableTableManager(
+      $_db,
+      $_db.galgameTextLines,
+    ).filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _galgameTextLinesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$GalgamesTableFilterComposer
@@ -92820,6 +93167,31 @@ class $$GalgamesTableFilterComposer
           }) => $$GalgameSourcesTableFilterComposer(
             $db: $db,
             $table: $db.galgameSources,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> galgameTextLinesRefs(
+    Expression<bool> Function($$GalgameTextLinesTableFilterComposer f) f,
+  ) {
+    final $$GalgameTextLinesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.galgameTextLines,
+      getReferencedColumn: (t) => t.gameId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$GalgameTextLinesTableFilterComposer(
+            $db: $db,
+            $table: $db.galgameTextLines,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -93017,6 +93389,31 @@ class $$GalgamesTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> galgameTextLinesRefs<T extends Object>(
+    Expression<T> Function($$GalgameTextLinesTableAnnotationComposer a) f,
+  ) {
+    final $$GalgameTextLinesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.galgameTextLines,
+      getReferencedColumn: (t) => t.gameId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$GalgameTextLinesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.galgameTextLines,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$GalgamesTableTableManager
@@ -93032,7 +93429,10 @@ class $$GalgamesTableTableManager
           $$GalgamesTableUpdateCompanionBuilder,
           (GalgameRow, $$GalgamesTableReferences),
           GalgameRow,
-          PrefetchHooks Function({bool galgameSourcesRefs})
+          PrefetchHooks Function({
+            bool galgameSourcesRefs,
+            bool galgameTextLinesRefs,
+          })
         > {
   $$GalgamesTableTableManager(_$FushiDatabase db, $GalgamesTable table)
     : super(
@@ -93129,37 +93529,63 @@ class $$GalgamesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({galgameSourcesRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (galgameSourcesRefs) db.galgameSources,
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (galgameSourcesRefs)
-                    await $_getPrefetchedData<
-                      GalgameRow,
-                      $GalgamesTable,
-                      GalgameSourceRow
-                    >(
-                      currentTable: table,
-                      referencedTable: $$GalgamesTableReferences
-                          ._galgameSourcesRefsTable(db),
-                      managerFromTypedResult: (p0) => $$GalgamesTableReferences(
-                        db,
-                        table,
-                        p0,
-                      ).galgameSourcesRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.gameId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({galgameSourcesRefs = false, galgameTextLinesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (galgameSourcesRefs) db.galgameSources,
+                    if (galgameTextLinesRefs) db.galgameTextLines,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (galgameSourcesRefs)
+                        await $_getPrefetchedData<
+                          GalgameRow,
+                          $GalgamesTable,
+                          GalgameSourceRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$GalgamesTableReferences
+                              ._galgameSourcesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$GalgamesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).galgameSourcesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.gameId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (galgameTextLinesRefs)
+                        await $_getPrefetchedData<
+                          GalgameRow,
+                          $GalgamesTable,
+                          GalgameTextLineRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$GalgamesTableReferences
+                              ._galgameTextLinesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$GalgamesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).galgameTextLinesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.gameId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -93176,7 +93602,10 @@ typedef $$GalgamesTableProcessedTableManager =
       $$GalgamesTableUpdateCompanionBuilder,
       (GalgameRow, $$GalgamesTableReferences),
       GalgameRow,
-      PrefetchHooks Function({bool galgameSourcesRefs})
+      PrefetchHooks Function({
+        bool galgameSourcesRefs,
+        bool galgameTextLinesRefs,
+      })
     >;
 typedef $$GalgameSourcesTableCreateCompanionBuilder =
     GalgameSourcesCompanion Function({
@@ -125621,6 +126050,313 @@ typedef $$AdaptationProgressAnchorsTableProcessedTableManager =
       AdaptationProgressAnchorRow,
       PrefetchHooks Function()
     >;
+typedef $$GalgameTextLinesTableCreateCompanionBuilder =
+    GalgameTextLinesCompanion Function({
+      Value<int> id,
+      required String gameId,
+      required String lineText,
+      required int receivedAt,
+    });
+typedef $$GalgameTextLinesTableUpdateCompanionBuilder =
+    GalgameTextLinesCompanion Function({
+      Value<int> id,
+      Value<String> gameId,
+      Value<String> lineText,
+      Value<int> receivedAt,
+    });
+
+final class $$GalgameTextLinesTableReferences
+    extends
+        BaseReferences<
+          _$FushiDatabase,
+          $GalgameTextLinesTable,
+          GalgameTextLineRow
+        > {
+  $$GalgameTextLinesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
+      db.galgames.createAlias('galgame_text_lines__game_id__galgames__id');
+
+  $$GalgamesTableProcessedTableManager get gameId {
+    final $_column = $_itemColumn<String>('game_id')!;
+
+    final manager = $$GalgamesTableTableManager(
+      $_db,
+      $_db.galgames,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$GalgameTextLinesTableFilterComposer
+    extends Composer<_$FushiDatabase, $GalgameTextLinesTable> {
+  $$GalgameTextLinesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lineText => $composableBuilder(
+    column: $table.lineText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$GalgamesTableFilterComposer get gameId {
+    final $$GalgamesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.gameId,
+      referencedTable: $db.galgames,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$GalgamesTableFilterComposer(
+            $db: $db,
+            $table: $db.galgames,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$GalgameTextLinesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $GalgameTextLinesTable> {
+  $$GalgameTextLinesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lineText => $composableBuilder(
+    column: $table.lineText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$GalgamesTableOrderingComposer get gameId {
+    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.gameId,
+      referencedTable: $db.galgames,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$GalgamesTableOrderingComposer(
+            $db: $db,
+            $table: $db.galgames,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$GalgameTextLinesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $GalgameTextLinesTable> {
+  $$GalgameTextLinesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get lineText =>
+      $composableBuilder(column: $table.lineText, builder: (column) => column);
+
+  GeneratedColumn<int> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+
+  $$GalgamesTableAnnotationComposer get gameId {
+    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.gameId,
+      referencedTable: $db.galgames,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$GalgamesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.galgames,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$GalgameTextLinesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $GalgameTextLinesTable,
+          GalgameTextLineRow,
+          $$GalgameTextLinesTableFilterComposer,
+          $$GalgameTextLinesTableOrderingComposer,
+          $$GalgameTextLinesTableAnnotationComposer,
+          $$GalgameTextLinesTableCreateCompanionBuilder,
+          $$GalgameTextLinesTableUpdateCompanionBuilder,
+          (GalgameTextLineRow, $$GalgameTextLinesTableReferences),
+          GalgameTextLineRow,
+          PrefetchHooks Function({bool gameId})
+        > {
+  $$GalgameTextLinesTableTableManager(
+    _$FushiDatabase db,
+    $GalgameTextLinesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GalgameTextLinesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GalgameTextLinesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$GalgameTextLinesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> gameId = const Value.absent(),
+                Value<String> lineText = const Value.absent(),
+                Value<int> receivedAt = const Value.absent(),
+              }) => GalgameTextLinesCompanion(
+                id: id,
+                gameId: gameId,
+                lineText: lineText,
+                receivedAt: receivedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String gameId,
+                required String lineText,
+                required int receivedAt,
+              }) => GalgameTextLinesCompanion.insert(
+                id: id,
+                gameId: gameId,
+                lineText: lineText,
+                receivedAt: receivedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$GalgameTextLinesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({gameId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (gameId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.gameId,
+                                referencedTable:
+                                    $$GalgameTextLinesTableReferences
+                                        ._gameIdTable(db),
+                                referencedColumn:
+                                    $$GalgameTextLinesTableReferences
+                                        ._gameIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$GalgameTextLinesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $GalgameTextLinesTable,
+      GalgameTextLineRow,
+      $$GalgameTextLinesTableFilterComposer,
+      $$GalgameTextLinesTableOrderingComposer,
+      $$GalgameTextLinesTableAnnotationComposer,
+      $$GalgameTextLinesTableCreateCompanionBuilder,
+      $$GalgameTextLinesTableUpdateCompanionBuilder,
+      (GalgameTextLineRow, $$GalgameTextLinesTableReferences),
+      GalgameTextLineRow,
+      PrefetchHooks Function({bool gameId})
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -125927,4 +126663,6 @@ class $FushiDatabaseManager {
         _db,
         _db.adaptationProgressAnchors,
       );
+  $$GalgameTextLinesTableTableManager get galgameTextLines =>
+      $$GalgameTextLinesTableTableManager(_db, _db.galgameTextLines);
 }

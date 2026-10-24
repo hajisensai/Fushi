@@ -1,6 +1,6 @@
 /// 一首歌用哪份歌词（设计 §5.4）+ `music_lyrics` 落库（`timeline_cache` 二进制 + 版本）。
 ///
-/// 优先级：① 用户手动指定 / 编辑（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
+/// 优先级：① 用户手动指定（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
 /// ④ LRCLIB（精确匹配；失败不自动采用模糊结果，由用户挑）。
 ///
 /// - 解析与格式互转全在 Rust（`package:fushi_music`）；这里只做 IO 与编排；
@@ -54,13 +54,29 @@ class MusicLyricsTrackRef {
 
 /// 解析结果：生效的时间轴（已带该来源的偏移）+ 它来自哪个来源。
 class MusicLyricsResolution {
-  const MusicLyricsResolution({required this.timeline, required this.source});
+  const MusicLyricsResolution({
+    required this.timeline,
+    required this.source,
+    this.rawAss,
+  });
 
   final LyricTimeline timeline;
 
   /// `music_lyrics.source`。
   final String source;
+
+  /// 生效来源是 ASS / SSA 时的原文（原样渲染交给 libass，设计 §6.3）；其它格式为 null。
+  final Uint8List? rawAss;
 }
+
+/// 格式名是 ASS / SSA（`music_lyrics.format` / 时间轴 format / sidecar 扩展名）。
+bool musicLyricsFormatIsAss(String format) {
+  final String f = format.toLowerCase();
+  return f == 'ass' || f == 'ssa';
+}
+
+Uint8List? _assRawOf(String format, Uint8List raw) =>
+    musicLyricsFormatIsAss(format) && raw.isNotEmpty ? raw : null;
 
 /// 可供用户挑的一份候选（选来源面板）。
 class MusicLyricsCandidate {
@@ -148,10 +164,13 @@ class MusicLyricsService {
     if (cache != null && row.timelineVersion == version) {
       t = decodeLyricTimeline(cache);
     } else {
-      // 用户编辑行的 raw 是 TTML（无损交换格式），其余是原格式。
+      // 手动指定行的 raw 是 TTML（无损交换格式）——选的是 ASS 时除外：ASS 原文要留给
+      // libass 原样渲染（[choose]），重建时按 ASS 解析（外挂翻译文件合并的结果此时不保留）。
       t = await _parse(
         row.raw,
-        row.isUserEdited ? 'ttml' : row.format,
+        row.isUserEdited && !musicLyricsFormatIsAss(row.format)
+            ? 'ttml'
+            : row.format,
         durationMs,
       );
       t = t.copyWith(source: row.source, isUserEdited: row.isUserEdited);
@@ -246,12 +265,13 @@ class MusicLyricsService {
       return null;
     }
 
-    // ① 用户手动指定 / 编辑。
+    // ① 用户手动指定。
     for (final MusicLyricRow r in rows) {
       if (r.isUserEdited) {
         return MusicLyricsResolution(
           timeline: await _timelineOf(db, r, track.durationMs),
           source: r.source,
+          rawAss: _assRawOf(r.format, r.raw),
         );
       }
     }
@@ -275,6 +295,7 @@ class MusicLyricsService {
             offsetMs: prev?.offsetMs ?? 0,
           ),
           source: MusicLyricsSource.sidecar,
+          rawAss: _assRawOf(side.timeline.format, side.raw),
         );
       }
     }
@@ -298,6 +319,7 @@ class MusicLyricsService {
             offsetMs: prev?.offsetMs ?? 0,
           ),
           source: MusicLyricsSource.embedded,
+          rawAss: _assRawOf(emb.format, emb.raw),
         );
       }
     }
@@ -355,8 +377,10 @@ class MusicLyricsService {
 
   Future<_Sidecar?> _readSidecars(MusicLyricsTrackRef track) async {
     final String dir = File(track.path).parent.path;
-    final LyricSidecarSet set = pickLyricSidecars(track.path, _listDir(dir));
-    final LyricSidecarFile? primary = set.primary;
+    final List<String> siblings = _listDir(dir);
+    final LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
+    final LyricSidecarFile? primary =
+        set.primary ?? await _ultraStarByHeader(track.path, siblings);
     if (primary == null) return null;
     final Uint8List raw;
     try {
@@ -389,6 +413,34 @@ class MusicLyricsService {
       raw: raw,
       label: File(primary.path).uri.pathSegments.last,
     );
+  }
+
+  /// UltraStar 歌曲包：主名不同、头部 `#MP3:` / `#AUDIO:` 指向这首音频的 `.txt`。
+  Future<LyricSidecarFile?> _ultraStarByHeader(
+    String audioPath,
+    List<String> siblings,
+  ) async {
+    final String audioName = File(audioPath).uri.pathSegments.last;
+    for (final String p in ultraStarCandidates(audioPath, siblings)) {
+      final List<int> head;
+      try {
+        final RandomAccessFile f = await File(p).open();
+        try {
+          head = await f.read(kUltraStarHeadBytes);
+        } finally {
+          await f.close();
+        }
+      } on FileSystemException {
+        continue;
+      }
+      final String? ref = ultraStarAudioReference(
+        utf8.decode(head, allowMalformed: true),
+      );
+      if (ref != null && ref.toLowerCase() == audioName.toLowerCase()) {
+        return LyricSidecarFile(path: p, ext: 'ultrastar');
+      }
+    }
+    return null;
   }
 
   Future<EmbeddedLyrics?> _bestEmbedded(MusicLyricsTrackRef track) async {
@@ -487,32 +539,35 @@ class MusicLyricsService {
     return out;
   }
 
-  /// 用户挑定一份候选：写成 `user` 行（`is_user_edited`，永远最高）。原文存 TTML（无损），
-  /// 这样之后的轻量编辑与选来源走同一条路径。
-  Future<void> choose(String trackUid, MusicLyricsCandidate candidate) =>
-      saveUserEdit(trackUid, candidate.timeline);
-
-  /// 保存用户编辑（改错字、翻译、注音、单行偏移）后的时间轴。
-  Future<void> saveUserEdit(String trackUid, LyricTimeline edited) async {
+  /// 用户挑定一份候选：写成 `user` 行（`is_user_edited` = 手动指定，永远最高）。原文存
+  /// TTML（无损交换格式，翻译合并后的结果也一并保住）；ASS / SSA 候选例外，原文照存——
+  /// 字幕组特效要交给 libass 原样渲染，转成 TTML 会全部丢掉（设计 §6.3）。
+  ///
+  /// 只有「选来源」这一条写入口：所有者 2026-10-24 拍板不做歌词编辑（改字 / 翻译 /
+  /// 注音 / 单行偏移），这里不接受任意改过的时间轴。
+  Future<void> choose(String trackUid, MusicLyricsCandidate candidate) async {
     final FushiDatabase? db = _database();
     if (db == null) return;
-    final LyricTimeline t = edited.copyWith(
+    final LyricTimeline t = candidate.timeline.copyWith(
       source: MusicLyricsSource.user,
       isUserEdited: true,
     );
+    final bool ass = musicLyricsFormatIsAss(candidate.format);
     await _upsert(
       db,
       trackUid: trackUid,
       source: MusicLyricsSource.user,
-      format: 'ttml',
-      raw: FushiLyrics.export(t.copyWith(offsetMs: 0), 'ttml'),
+      format: ass ? candidate.format.toLowerCase() : 'ttml',
+      raw: ass
+          ? candidate.raw
+          : FushiLyrics.export(t.copyWith(offsetMs: 0), 'ttml'),
       timeline: t.copyWith(offsetMs: 0),
       isUserEdited: true,
-      offsetMs: edited.offsetMs,
+      offsetMs: candidate.timeline.offsetMs,
     );
   }
 
-  /// 撤销手动指定 / 编辑，回到自动优先级。
+  /// 撤销手动指定，回到自动优先级。
   Future<void> clearUserEdit(String trackUid) async {
     final FushiDatabase? db = _database();
     if (db == null) return;

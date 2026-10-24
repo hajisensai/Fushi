@@ -24,7 +24,6 @@ pub mod markup;
 pub mod merge;
 pub mod midi;
 pub mod model;
-pub mod ruby;
 pub mod subtitle;
 pub mod syllabic;
 pub mod text;
@@ -37,7 +36,8 @@ use model::*;
 
 /// 解析器版本：任何会改变解析结果的修改都要升它；`music_lyrics.timeline_version` 与它不符
 /// 的缓存在读取时重建。
-pub const PARSER_VERSION: u32 = 1;
+/// 2：ASS 特效检测加了 `\org`、`\p1` 绘图与逐字定位（P3）。
+pub const PARSER_VERSION: u32 = 2;
 
 /// 按格式提示（扩展名或格式名，大小写不敏感，可空）+ 内容嗅探解析。`duration_ms` 是曲长
 /// （补最后一行终点），未知传 None。

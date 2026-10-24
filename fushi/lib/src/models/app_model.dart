@@ -280,11 +280,16 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_study_tracker.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
@@ -1515,8 +1520,15 @@ class AppModel with ChangeNotifier {
   /// 进程级音乐会话（音乐模块，docs/specs/2026-10-23-music-module-design.md §7）：独立
   /// libmpv 实例（首次播放才建）、队列 / 无缝 / ReplayGain 编排，与有声书互斥持有
   /// 媒体会话。
-  late final MusicSession musicSession = MusicSession(
-    engine: MusicPlayerEngine(
+  late final MusicSession musicSession = _createMusicSession();
+
+  MusicLyricsLive? _musicLyricsLive;
+  MusicStudyTracker? _musicStudy;
+
+  /// 音乐会话 + 跟着引擎走的两个常驻伴随者（歌词当前行 → 桌面歌词 / 锁屏副标题；
+  /// 学习统计写入面）。三者共用同一个引擎，所以在一处一起建。
+  MusicSession _createMusicSession() {
+    final MusicPlayerEngine engine = MusicPlayerEngine(
       // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
       // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
       backendFactory: () => MusicCrossfadeBackend(
@@ -1526,12 +1538,100 @@ class AppModel with ChangeNotifier {
       gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
       replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
       baseSettings: _musicBaseOutputSettings,
-    ),
-    audio: audioCtrl,
-    audiobook: audiobookSession,
-    database: () => isDatabaseReady ? database : null,
-    showMediaNotification: () => showMediaNotification,
-  );
+    );
+    final MusicSession session = MusicSession(
+      engine: engine,
+      audio: audioCtrl,
+      audiobook: audiobookSession,
+      database: () => isDatabaseReady ? database : null,
+      showMediaNotification: () => showMediaNotification,
+    );
+    final MusicLyricsLive live = MusicLyricsLive(
+      engine: engine,
+      service: musicLyrics,
+      desktop: FloatingLyricMusicSurface(
+        style: _appLevelFloatingLyricStyle,
+        clickLookup: () => floatingLyricClickLookup,
+        windowRect: _floatingLyricWindowRect,
+        onBoundsChanged: (FloatingLyricWindowRect rect) =>
+            unawaited(_persistFloatingLyricWindowRect(rect)),
+        onLookup: (String text, int index, Rect? wordRect) {
+          unawaited(() async {
+            if (await tryFloatingLyricGlobalLookup(
+                appModel: this, text: text, index: index, wordRect: wordRect)) {
+              return;
+            }
+            FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+          }());
+        },
+        onPlayPause: () => unawaited(engine.togglePlayPause()),
+        onPrevious: () => unawaited(engine.skipPrevious()),
+        onNext: () => unawaited(engine.skipNext()),
+        onClose: () => unawaited(setMusicDesktopLyrics(false)),
+      ),
+      desktopEnabled: () => isDatabaseReady && prefsRepo.musicDesktopLyrics,
+      mediaSessionEnabled: () =>
+          isDatabaseReady && prefsRepo.musicLyricsMediaSession,
+      sessionOwnerChanged: audioCtrl.sessionOwner,
+      musicOwnsSession: () =>
+          audioCtrl.sessionOwner.value == MediaSessionOwner.music,
+      // 音乐让出窗口时，有声书若还挂着悬浮字幕就把它的窗口还回去。
+      onDesktopReleased: () {
+        if (audiobookSession.isActive && showFloatingLyric) {
+          unawaited(audiobookSession
+              .showFloatingLyricOverlay()
+              .then((_) => audiobookSession.resyncFloatingLyricText()));
+        }
+      },
+    )..addListener(session.refreshMediaSession);
+    session.mediaSessionLyricLine = () => live.mediaSessionLine;
+    _musicLyricsLive = live;
+    _musicStudy = MusicStudyTracker(
+      engine: engine,
+      database: () => isDatabaseReady ? database : null,
+      listeningCountsAsStudy: () =>
+          isDatabaseReady && prefsRepo.musicListeningCountsAsStudy,
+      idleTimeout: () => readingIdleTimeout,
+    );
+    return session;
+  }
+
+  /// 歌词页之外的当前行（桌面歌词 / 锁屏副标题）。
+  MusicLyricsLive get musicLyricsLive {
+    musicSession;
+    return _musicLyricsLive!;
+  }
+
+  /// 音乐学习统计写入面（决策 D4）。
+  MusicStudyTracker get musicStudy {
+    musicSession;
+    return _musicStudy!;
+  }
+
+  bool get musicDesktopLyrics => prefsRepo.musicDesktopLyrics;
+  Future<void> setMusicDesktopLyrics(bool value) async {
+    await prefsRepo.setMusicDesktopLyrics(value);
+    musicLyricsLive.onSettingsChanged();
+  }
+
+  bool get musicLyricsMediaSession => prefsRepo.musicLyricsMediaSession;
+  Future<void> setMusicLyricsMediaSession(bool value) async {
+    await prefsRepo.setMusicLyricsMediaSession(value);
+    musicLyricsLive.onSettingsChanged();
+    musicSession.refreshMediaSession();
+  }
+
+  MusicAssRenderPreference get musicKaraokeAssRender =>
+      MusicAssRenderPreference.fromPref(prefsRepo.musicKaraokeAssRender);
+  Future<void> setMusicKaraokeAssRender(MusicAssRenderPreference value) =>
+      prefsRepo.setMusicKaraokeAssRender(value.prefValue);
+
+  bool get musicListeningCountsAsStudy =>
+      prefsRepo.musicListeningCountsAsStudy;
+  Future<void> setMusicListeningCountsAsStudy(bool value) async {
+    await prefsRepo.setMusicListeningCountsAsStudy(value);
+    musicStudy.onSettingChanged();
+  }
 
   bool get musicGapless => prefsRepo.musicGapless;
   Future<void> setMusicGapless(bool value) async {
@@ -1559,7 +1659,9 @@ class AppModel with ChangeNotifier {
   /// 音乐刮削（设计 §8）：MusicBrainz 主源 + AcoustID（有应用 key 才用）+ CAA + VGMdb（开关）。
   late final MusicScrapeService musicScrape = MusicScrapeService(
     database: () => isDatabaseReady ? database : null,
-    acoustidApiKey: () => isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    acoustidApiKey: () => resolveMusicAcoustidApiKey(
+      isDatabaseReady ? prefsRepo.musicAcoustidApiKey : '',
+    ),
     vgmdbEnabled: () => isDatabaseReady && prefsRepo.musicVgmdbEnabled,
   );
 
@@ -8400,9 +8502,10 @@ class AppModel with ChangeNotifier {
           fontSize: fontSize, font: _floatingLyricNativeFont());
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
-  /// Windows 原生窗吃字体；阅读器设置尚未加载时返回 null（原生用默认字族）。
+  /// 桌面原生窗（Windows / macOS）吃字体；阅读器设置尚未加载时返回 null（原生用
+  /// 默认字族）。
   ({String family, String? path})? _floatingLyricNativeFont() {
-    if (!Platform.isWindows) return null;
+    if (!isFontTargetAvailableOnPlatform(FontTarget.floatingLyric)) return null;
     final ReaderSettings? settings = ReaderFushiSource.readerSettings;
     if (settings == null) return null;
     return AppFontLoader.resolveForNativeOverlay(settings.floatingLyricFonts,

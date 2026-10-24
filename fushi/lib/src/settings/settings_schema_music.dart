@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
+import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
+    show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
@@ -229,7 +232,11 @@ SettingsDestination buildMusicDestination() {
           SettingsTextItem(
             id: 'music.acoustid_api_key',
             title: t.music_setting_acoustid_key,
-            subtitle: t.music_setting_acoustid_key_hint,
+            // 随包内置了应用 key 时，这里只是「填自己的 key 覆盖」；没内置（fork / 无 secret
+            // 的构建）才说明不填就没有声纹识别。
+            subtitle: musicAcoustidBuiltinKeyAvailable
+                ? t.music_setting_acoustid_key_builtin_hint
+                : t.music_setting_acoustid_key_hint,
             icon: FushiIcons.key,
             secret: true,
             value: (SettingsContext c) => c.appModel.musicAcoustidApiKey,
@@ -336,6 +343,66 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicLyricsLookupPause(value);
             },
+          ),
+          SettingsSwitchItem(
+            id: 'music.desktop_lyrics',
+            title: t.music_desktop_lyrics_title,
+            subtitle: t.music_desktop_lyrics_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: false,
+            // 原生悬浮字幕窗只有 Android / Windows / macOS（与有声书悬浮字幕同一个
+            // 窗口）。
+            visible: (SettingsContext c) => FloatingLyricChannel.supported,
+            value: (SettingsContext c) => c.appModel.musicDesktopLyrics,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicDesktopLyrics(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_media_session',
+            title: t.music_lyrics_media_session_title,
+            subtitle: t.music_lyrics_media_session_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsMediaSession,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsMediaSession(value),
+          ),
+          // 卡拉 OK 字幕页里 ASS 的默认显示（P3，设计 §6.3）：自动 = 按 Rust 特效检测。
+          SettingsSegmentedItem<MusicAssRenderPreference>(
+            id: 'music.karaoke_ass_render',
+            dropdown: true,
+            title: t.music_karaoke_ass_render_title,
+            subtitle: t.music_karaoke_ass_render_hint,
+            icon: FushiIcons.lyrics,
+            options: <SettingsSegmentOption<MusicAssRenderPreference>>[
+              for (final MusicAssRenderPreference p
+                  in MusicAssRenderPreference.values)
+                SettingsSegmentOption<MusicAssRenderPreference>(
+                  value: p,
+                  label: switch (p) {
+                    MusicAssRenderPreference.auto =>
+                      t.music_karaoke_ass_render_auto,
+                    MusicAssRenderPreference.original =>
+                      t.music_karaoke_overlay_original,
+                    MusicAssRenderPreference.structured =>
+                      t.music_karaoke_overlay_structured,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.musicKaraokeAssRender,
+            onChanged: (SettingsContext c, MusicAssRenderPreference value) =>
+                c.appModel.setMusicKaraokeAssRender(value),
+            defaultValue: MusicAssRenderPreference.auto,
+          ),
+          SettingsSwitchItem(
+            id: 'music.listening_counts_as_study',
+            title: t.music_listening_study_title,
+            subtitle: t.music_listening_study_hint,
+            icon: FushiIcons.timer,
+            defaultValue: false,
+            value: (SettingsContext c) => c.appModel.musicListeningCountsAsStudy,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicListeningCountsAsStudy(value),
           ),
         ],
       ),

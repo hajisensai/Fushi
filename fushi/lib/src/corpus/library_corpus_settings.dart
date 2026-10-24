@@ -8,6 +8,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -43,7 +44,7 @@ List<SettingsItem> librarySentencesSettingsItems() => <SettingsItem>[
     id: 'lookup.library_sentences',
     title: t.lookup_library_sentences_enabled,
     subtitle: t.lookup_library_sentences_enabled_hint,
-    icon: Icons.format_quote_outlined,
+    icon: FushiIcons.quote,
     value: (SettingsContext c) => librarySentencesEnabledOf(c.appModel),
     onChanged: (SettingsContext c, bool value) async {
       await setLibrarySentencesEnabled(c.appModel, value);
@@ -56,7 +57,7 @@ List<SettingsItem> librarySentencesSettingsItems() => <SettingsItem>[
     title: t.lookup_library_sentences_rebuild,
     subtitle: t.lookup_library_sentences_rebuild_hint,
     subtitleBuilder: (SettingsContext c) => librarySentencesStatusText(),
-    icon: Icons.manage_history_outlined,
+    icon: FushiIcons.refresh,
     visible: (SettingsContext c) => librarySentencesEnabledOf(c.appModel),
     cli: SettingsCliAction(
       run: (SettingsContext c, Map<String, String> args) async {

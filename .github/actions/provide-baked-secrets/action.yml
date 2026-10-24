@@ -53,6 +53,10 @@ inputs:
     description: secrets.OPENSUBTITLES_API_KEY
     required: false
     default: ''
+  acoustid-api-key:
+    description: secrets.ACOUSTID_API_KEY
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -74,6 +78,16 @@ runs:
       run: |
         dst=packages/fushi_engine/lib/media/video/subtitle/opensubtitles_default_key.dart
         python3 "$GITHUB_ACTION_PATH/write_opensubtitles_key.py" "$dst"
+    # 音乐刮削的 AcoustID 应用 key（2026-10-24 所有者提供，应用名 Fushi）。入库是
+    # 空占位、不在 analyzer.exclude 里，同 OpenSubtitles 一样只写单引号字面量。
+    # 用户在设置里填的 key 优先，内置 key 只是兜底（resolveMusicAcoustidApiKey）。
+    - name: Provide AcoustID API key stub
+      shell: bash
+      env:
+        ACOUSTID_API_KEY: ${{ inputs.acoustid-api-key }}
+      run: |
+        dst=fushi/lib/src/media/music/acoustid_secret.dart
+        python3 "$GITHUB_ACTION_PATH/write_acoustid_key.py" "$dst"
     # google_oauth_secret.dart 是 gitignored 的（真值只存在于仓库 secret 与本机），
     # 所以这里连占位都可能不存在，缺文件时才从 .example.dart 复制。
     - name: Provide gitignored Google OAuth secret stub

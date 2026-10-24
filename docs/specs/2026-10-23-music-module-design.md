@@ -230,14 +230,13 @@ LyricTimeline
 
 - 源文件自带 ruby（TTML ruby、RhythmicaLyrics `【漢字|かんじ】`、ASS
   `{\k}漢|かん` 写法）原样保留。
-- 无注音时按**当前学习语言**的既有分词 / 读音能力自动补（日语读音、中文拼音
-  等，**不假设日语**：没有读音能力的语言不显示注音开关）。
-- 自动注音与音节时间对齐：一个汉字音节拆成多个假名时按音节内均分或按对齐结果
-  分配，算法在 Rust（输入整行，输出整行）。
+- **自动注音绝对不做（所有者 2026-10-24 拍板，D11）**：源文件没有注音就不显示
+  注音，不按任何语言能力自动补读音、不做音节对齐。P1 曾在 Rust 侧实现过对齐函数
+  （`ffm_lyrics_align_ruby`），已随该决定删除。
 
 ### 5.4 歌词来源与优先级
 
-1. 用户手动指定 / 编辑过的（`isUserEdited`，永远最高）
+1. 用户手动指定的来源（`isUserEdited` = 手动指定，永远最高；持久化列名冻结）
 2. 同目录 sidecar（同名 `.ttml` > `.ass` > `.lys/.qrc/.krc/.yrc` > `.lrc` >
    `.srt/.vtt` > `.txt`；同名 + 语言后缀 `.zh.lrc` 视为翻译）
 3. 文件内嵌
@@ -296,10 +295,12 @@ LyricTimeline
   同时后台仍保留结构化时间轴，用于查词：点画面时按当前时间取行，弹出该行文本
   的可点选浮层。
 
-### 6.4 歌词编辑（仅限轻量）
+### 6.4 歌词编辑：不做（所有者 2026-10-24 拍板，D11）
 
-不做打轴。只提供：整首 / 单行偏移、选择歌词来源、改错字、编辑翻译与注音；
-改动存 DB（`isUserEdited`），可导出为原格式或 TTML。音节时间只读。
+不做任何歌词编辑：不改错字、不编辑翻译 / 注音、不做单行偏移，也不做打轴。保留的
+只有三项时间对齐 / 来源操作：**整首偏移**、**选择歌词来源 / 恢复自动来源**、**导出
+TTML**。手动指定的来源存成 `user` 行（`isUserEdited`），原文为 TTML。P1 曾留下的
+单行偏移渲染 / 换算参数与「保存编辑后时间轴」接口已删除。
 
 ## 7. 播放引擎与音质
 
@@ -415,8 +416,10 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   并在每个扫描批次的同一事务里重放（扫描按标签整行 upsert 会把身份冲回 NULL）。刮到的
   标题 / 艺人等经「写回文件标签」显式落进文件；预览里取消勾选的字段记成
   `music_locked_fields`，以后不再提议。CUE 虚拟曲目不能写回（一份整轨一组标签）。
-- **AcoustID**：本仓不内置任何 key；设置 › 音乐 填用户自己的应用 key，没填时声纹这步跳过、
-  设置页与曲目页说明原因。声纹 = 统一 FFmpeg 解前 120 s → `ffm_fp_compute` →
+- **AcoustID**：随包内置所有者的应用 key（应用名 Fushi）：入库的 `fushi/lib/src/media/music/acoustid_secret.dart`
+  是空占位，CI 经 `provide-baked-secrets` 从仓库 secret `ACOUSTID_API_KEY` 注入，本机真值走
+  skip-worktree。设置 › 音乐 里用户自己填的 key 优先（`resolveMusicAcoustidApiKey`），两者都空才跳过
+  声纹这步并说明原因。声纹 = 统一 FFmpeg 解前 120 s → `ffm_fp_compute` →
   `ffm_fp_acoustid_encode`（chromaprint 压缩 + URL-safe base64，与 `fpcalc` 同形），只上传
   这个串与时长。
 - **VGMdb**：社区镜像 vgmdb.info，只按目录编号查一次、1 次 / 3 s、默认关。2026-10-24 本机
@@ -516,9 +519,9 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `media_kind_mappings.dart` 补齐；**只有出现查词 / 制卡等学习动作或
   用户开启「听歌计入学习」时**才写 `study_segments`，避免把背景音乐全算成学习
   时长（D4）。
-- 同步：曲目身份用内容派生 uid，跨设备 / 互联共享歌词编辑、歌单、播放统计。
+- 同步：曲目身份用内容派生 uid，跨设备 / 互联共享手动指定的歌词来源、歌单、播放统计。
   墓碑 `SyncTombstoneKind` 加 music 类型。
-- 备份：歌词编辑、歌单、绑定关系进备份；封面缓存不进。
+- 备份：手动指定的歌词来源（含整首偏移）、歌单、绑定关系进备份；封面缓存不进。
 
 **P0 落地时的三处偏离（所有者 2026-10-24 认可）**：
 
@@ -583,15 +586,14 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 - 制卡：音频片段 = 该行（可前后扩 0.5 s）；图片 = 封面或 MV 当前帧；沿用
   `video_clip_exporter` 的导出路径。
 - AB 循环一行 / 多行。
-- 歌词生词统计：一首歌的未知词数 / 覆盖率（复用词典已知词判定），曲库可按「难度」
-  排序。
+- 不做难度 / 生词覆盖率类功能（曲库按难度排序、歌词页覆盖率），见 D12。
 
 ## 13. 分期
 
 | 期 | 内容 | 退出标准 |
 |---|---|---|
 | **P0 底座** | `fushi_music` Rust crate 骨架 + 扫描 / 标签 / CUE；统一 FFmpeg 能力下限扩充并五端重编；schema 125；`ModuleId.music`；曲库页 / 专辑页 / 基础播放（mpv 独立实例、gapless、ReplayGain、媒体会话） | 五端能扫库播放 FLAC/ALAC/APE/WV/DSF，CUE 拆轨无缝 |
-| **P1 歌词** | 全格式解析 → `LyricTimeline`（含回归向量）；`KaraokeLyricsView`；Apple / MD3 歌词页；LRCLIB；偏移；桌面歌词；查词制卡 | §5.1 每种格式有样本测试；逐字擦色 120 Hz 不掉帧（profile 实测） |
+| **P1 歌词** | 全格式解析 → `LyricTimeline`（含回归向量）；`KaraokeLyricsView`；Apple / MD3 歌词页；LRCLIB；整首偏移；桌面歌词；查词制卡（**不含歌词编辑与自动注音**，所有者 2026-10-24 拍板，D11） | §5.1 每种格式有样本测试；逐字擦色 120 Hz 不掉帧（profile 实测） |
 | **P2 音质** | 独占 / bit-perfect 五端；信号路径面板；R128 扫描；DSD 处理 | 每平台实测 `audio-out-params` 与源一致，面板判定与实测一致 |
 | **P3 卡拉 OK 字幕** | ASS 卡拉 OK 结构化 + 原样渲染（libass）；MV + 卡拉 OK 字幕页；UltraStar / `.kar` / CDG 显示 | 字幕组特效 ASS 样本与 mpv 单独播放逐帧一致；`\k` `\kf` `\ko` 擦色语义正确 |
 | **P4 刮削与 MV** | AcoustID / MusicBrainz / CAA / VGMdb；原曲与其它版本；MV 本地匹配 + 声纹偏移 + 在线绑定；动画 OP/ED 联动 | 抽样 200 首识别正确率报告；MV 偏移误差 ≤ 100 ms |
@@ -599,6 +601,72 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 
 每期按本仓验证纪律：Dart 改动 `flutter analyze` 为推送门；播放 / 歌词 / 布局类
 修复要在真机或 Windows 离屏 runner 复测原始路径；Rust 侧带固定输入→输出向量。
+
+### 13.1 P1 剩余部分落地记录（2026-10-24）
+
+- **桌面歌词**：`MusicLyricsLive`（`media/music/lyrics/music_lyrics_live.dart`）复用有声书的
+  `FloatingLyricChannel`（Android 系统悬浮窗 / Windows 置顶穿透分层窗，不抢前台）。双行
+  （当前 + 下一行）；逐字推进按**音节边界**下发一次区间高亮（定时器排到下一个边界，
+  不逐帧过平台通道）——原生窗口只有区间高亮，没有逐帧渐变擦色。与有声书按媒体会话
+  归属让出 / 拿回窗口。macOS 后端（2026-10-24 补上）：`macos/Runner/FushiFloatingLyric.swift`，
+  不激活的置顶 NSPanel（`.statusBar` 级、`canJoinAllSpaces + fullScreenAuxiliary`）+ 独立
+  工具条子窗，同一条通道契约；有声书悬浮字幕随之在 macOS 可用。不做竖排与注音，穿透态
+  （`ignoresMouseEvents` 整窗级）只剩 Shift-悬停查词。设置项按
+  `FloatingLyricChannel.supported`（Android / Windows / macOS）显示，竖排仍只在 Windows。
+- **锁屏 / 通知**：当前行写进媒体会话的副标题（`MusicSession.mediaSessionLyricLine`），
+  设置「锁屏显示歌词」默认开。
+- **学习闭环（§12）**：歌词页制卡 = 查词那行 + 该行音频（前后扩 0.5 s）+ 封面 + `music`
+  来源链接与 `mined_sentences.position_ms / duration_ms`（L3）；AB 循环一行 / 多行走 mpv
+  原生 `ab-loop-a/b`（换曲自动关，交叉淡入下作用于出声的主实例）；学习统计
+  `MusicStudyTracker` 写 `study_segments`（`media_kind = music`），按 D4 只在学习动作后
+  的空闲窗口内或开了「听歌计入学习」时计。
+  音乐卡的 Anki 分类标签单独打 `music`（`AnkiMiningSource.music`，所有者 2026-10-24；
+  歌词页手动制卡、收藏夹批量制卡与查词弹窗同口径，此前打成 `book` 的旧卡不迁移）。
+  生词覆盖率与曲库按难度排序曾经落地过，按 D12 已整体删除。
+- **120 Hz 实测**（`fushi/integration_test/karaoke_lyrics_perf_itest.dart`，Windows profile、
+  Skia、160 Hz 屏、dpr 1.5、48 行 / 530 音节字级时间轴、每场景 25 s）：稳态（同进程第
+  二遍 / 换歌）超 8.33 ms 帧数为 **0**，build p99 ≈ 0.5 ms、raster p99 ≈ 1.1 ms，每帧只
+  重绘 1 个行组、播放中零重排。**进程内第一次**播歌词的头几次换行有 4–5 帧 10–18 ms，
+  `--trace-skia` 定位为 Skia/ANGLE 首次编译模糊着色器（`GrGLProgramBuilder::finalize`
+  → `driver_link_program` 11 ms），组件自身绘制 0.3 ms；三种组件内改法（统一模糊强度 /
+  painter 内 saveLayer / 像素对齐）实测都只是挪动编译时机，已撤回。根治需在组件外
+  （Impeller 预编译与 HDR 引擎补丁冲突 / 引擎持久化着色器缓存），待所有者决定。
+
+### 13.2 P3 卡拉 OK 字幕落地记录（2026-10-24）
+
+- **一页一个 mpv**：MV 页泛化成卡拉 OK 字幕页（`pages/implementations/music/music_mv_page.dart`
+  的 `MusicKaraokeStagePage`，纯判据与指令计划在 `media/music/lyrics/karaoke/karaoke_stage_plan.dart`）。
+  画面三选一：MV / 画布（主文件 = 曲目音频，CUE 曲目是 EDL 段；封面或纯色画布按 ASS 的
+  PlayRes 比例画成 PNG，`video-add … albumart` 挂成封面轨）/ CD+G（`video-add` 同名 `.cdg`）。
+  画面、声音、libass 字幕同一个实例出，不在 Dart 里追帧；进入时暂停音乐引擎，画布 / CD+G
+  离开时把引擎拨到本页位置。
+- **原样渲染**：`sub-add` ASS 原文（Rust `ffm_lyrics_ass_raw` 统一成 UTF-8 并按 libass 规则补
+  PlayRes），`sub-delay = MV 偏移 − 歌词偏移`。media_kit 默认 `libass: false` 会关掉 `sub-ass` /
+  `sub-visibility`，本页显式打开，其余字幕选项保持 mpv 默认。叠加三选一（原样 / 逐字歌词 /
+  关闭），默认 = Rust 特效检测（P3 加了 `\org`、`\p1` 绘图、逐字定位；解析器版本升 2）× 设置
+  「ASS 卡拉 OK 字幕」（`music_karaoke_ass_render`：自动 / 总是原样 / 总是逐字）。歌词来源是
+  ASS 时，手动选定也照存 ASS 原文（不再转 TTML）。歌词页在来源是 ASS 或有 `.cdg` 时出现入口，
+  ASS 带特效时歌词区顶上提示去原样渲染。
+- **`\ko` 语义修正**：真 libmpv 截帧确认 libass 的 `\k` 与 `\ko` 都在音节**起点**瞬间切换，
+  `\ko` 另外在起点之前不画描边；P1 的结构化渲染把 `\ko` 当线性擦色，已改。
+- **验收（真 libmpv，`fushi/test/media/music/karaoke/music_karaoke_stage_real_test.dart`，样本全由
+  测试程序生成）**：`\k` `\kf` `\ko` 按像素颜色量出的逐音节进度与结构化进度一致；字幕组风格特效
+  ASS（`\move` `\t` `\fad` `\blur` `\org`+`\frz` `\clip` `\p1` 粒子、fx 行）本页管线 vs「mpv 放视频
+  + `sub-files` 外挂、其余默认」在 0.48–4.48 s 按 25 fps 逐帧比：**101/101 帧逐像素一致**；MV
+  偏移 1.5 s、歌词偏移 +300 ms 下 31/31 帧与参考在 `v − 1.2 s` 一致；CD+G 解码与跳转正确。
+  截图走 `screenshot … subtitles`（视频分辨率合成）；纹理显示路径（libass 按纹理尺寸排字）
+  没有在离屏 runner 上截帧。
+- **CD+G**：统一 FFmpeg 能力下限已含 `cdgraphics` 解码器与 `cdg` 解复用器。图形指令稀疏的
+  `.cdg` 探测分只有个位数、低于 mpv 默认门槛，`video-add` 会静默失败——CD+G 实例下发
+  `demuxer-lavf-probescore=1`。解码器只在图形指令上出帧，跳到长间奏中间时画面要等下一个
+  指令包才出现。`.zip` 打包的 MP3+G 不认（要先解包）。
+- **UltraStar / `.kar`**：走结构化渲染。UltraStar 包按 `#MP3:` / `#AUDIO:` 头配对主名不同的
+  `.txt`；`.kar` / `.mid` 进 sidecar 分档（逐字格式之后、LRC 之前）。**音高条不做**：§5.1 定的
+  是音高忽略，时间轴模型不带音高，做它要改线格式 + 渲染；没有麦克风评分时价值有限。纯 `.kar`
+  文件本身不能当曲目播（统一 FFmpeg 没有 MIDI 合成）。
+- **未做**：原样渲染下「点画面按当前时间取行查词」（§6.3 末句）；Android 上 libass 找不到系统
+  字体（media_kit 需要随包字体资产，本仓没有），ASS 内嵌字体之外的字形在 Android 原样渲染下
+  未验证。
 
 ## 14. 风险
 
@@ -624,9 +692,16 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `2026-10-24-dvd-original-menu.md`）。
 - **D10 跨模块联动**：音乐 ↔ 视频联动保留，并推广到各模块（独立方案
   `2026-10-24-cross-media-links.md`）。
+- **D11 歌词编辑与自动注音**（所有者 2026-10-24）：**不做歌词编辑**（改字 / 翻译 /
+  注音 / 单行偏移 / 打轴），**自动注音绝对不做**；已合入的编辑保存接口、单行偏移支持与
+  Rust 注音对齐函数一并删除。保留整首偏移、选来源 / 恢复自动来源、导出 TTML（§5.3、§6.4）。
 - **D7 人声分离**：作废——卡拉 OK 只做字幕兼容，不做人声分离（范围澄清见 §0）。
 - **D8 DVD 菜单**：与 BD 原盘菜单同一套体验（§9.1）。
 - **D9 曲库统计卡**：不要。
+- **D12 难度 / 生词覆盖率**（所有者 2026-10-24）：**不做难度 / 生词覆盖率类功能**——
+  曲库按难度排序（`music_lyric_coverage` 缓存表、排序偏好、「已知 N%」标记）与歌词页
+  「已知词 / 歌词里的词」覆盖率一并删除，只为它们存在的复习库已知词快照与
+  `fushidicts_tokenize_terms` 批量取词头接口同删；类似功能以后也不加。
 
 ## 16. 设计稿
 

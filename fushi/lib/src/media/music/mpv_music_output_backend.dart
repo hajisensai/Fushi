@@ -663,6 +663,20 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     await _player.seek(position);
   }
 
+  /// mpv 原生 `ab-loop-a` / `ab-loop-b`（秒，相对当前播放项——CUE 曲目的 EDL 段同样
+  /// 从 0 起）。`no` = 关。这两个属性跨 loadfile 保留，所以换曲目必须显式关。
+  @override
+  Future<void> setAbLoop(Duration? a, Duration? b) async {
+    await _ensureInitialised();
+    final NativePlayer? native = _native;
+    if (native == null) return;
+    String secondsOf(Duration? d) =>
+        d == null ? 'no' : (d.inMicroseconds / 1e6).toStringAsFixed(3);
+    final bool on = a != null && b != null && b > a;
+    await native.setProperty('ab-loop-a', on ? secondsOf(a) : 'no');
+    await native.setProperty('ab-loop-b', on ? secondsOf(b) : 'no');
+  }
+
   @override
   Future<void> stop() async {
     await _releaseAudioDevice();

@@ -87,6 +87,25 @@ typedef _Bin2Dart =
       Pointer<Size>,
     );
 
+typedef _Bin1C =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Uint8>>, Pointer<Size>);
+typedef _Bin1Dart =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
+
+/// ASS 原样渲染（设计 §6.3）要喂给 libass 的脚本：已统一成 UTF-8，带画布尺寸
+/// （`PlayResX/Y`，缺省按 libass 的规则补齐）。
+class AssRawScript {
+  const AssRawScript({
+    required this.text,
+    required this.playResX,
+    required this.playResY,
+  });
+
+  final String text;
+  final int playResX;
+  final int playResY;
+}
+
 /// 歌词解析失败（格式不对 / 不支持的加密变体）。业务层失败：界面提示「这份歌词读不了」。
 final class LyricsParseException implements Exception {
   const LyricsParseException(this.message);
@@ -132,11 +151,11 @@ class _LyricsBindings {
       merge = _lib.library.lookupFunction<_MergeC, _MergeDart>(
         'ffm_lyrics_merge',
       );
-      alignRuby = _lib.library.lookupFunction<_Bin2C, _Bin2Dart>(
-        'ffm_lyrics_align_ruby',
-      );
       export = _lib.library.lookupFunction<_Bin2C, _Bin2Dart>(
         'ffm_lyrics_export',
+      );
+      assRaw = _lib.library.lookupFunction<_Bin1C, _Bin1Dart>(
+        'ffm_lyrics_ass_raw',
       );
     } on ArgumentError catch (e) {
       throw _lib.missingSymbols('lyrics', e);
@@ -148,8 +167,8 @@ class _LyricsBindings {
   late final _ParseDart parse;
   late final _EmbeddedDart embedded;
   late final _MergeDart merge;
-  late final _Bin2Dart alignRuby;
   late final _Bin2Dart export;
+  late final _Bin1Dart assRaw;
 
   static _LyricsBindings? _instance;
   static _LyricsBindings get instance =>
@@ -284,30 +303,6 @@ abstract final class FushiLyrics {
     return decodeLyricTimeline(r.bytes);
   }
 
-  /// 自动注音：[tokensPerLine] 第 i 组是时间轴第 i 行的 (表层形, 读音)。已带 ruby 的行不动。
-  static LyricTimeline alignRuby(
-    LyricTimeline timeline,
-    List<List<({String surface, String reading})>> tokensPerLine,
-  ) {
-    final _LyricsBindings b = _LyricsBindings.instance;
-    final Uint8List t = encodeLyricTimeline(timeline);
-    final Uint8List k = encodeRubyTokens(tokensPerLine);
-    final ({int status, Uint8List bytes}) r = b.call(
-      (Arena a, Pointer<Pointer<Uint8>> out, Pointer<Size> len) => b.alignRuby(
-        _copyIn(t, a),
-        t.length,
-        _copyIn(k, a),
-        k.length,
-        out,
-        len,
-      ),
-    );
-    if (r.status != FfmStatus.ok) {
-      throw StateError('ffm_lyrics_align_ruby failed with status ${r.status}');
-    }
-    return decodeLyricTimeline(r.bytes);
-  }
-
   /// 导出成 `ttml`（无损）或 `lrc`（丢声部 / 和声 / 注音）。
   static Uint8List export(LyricTimeline timeline, String format) {
     final _LyricsBindings b = _LyricsBindings.instance;
@@ -324,32 +319,22 @@ abstract final class FushiLyrics {
   }
 }
 
-/// 注音 token 线格式：`u32 lineCount | (u32 n | (str surface | str reading)*n)*`。
-Uint8List encodeRubyTokens(
-  List<List<({String surface, String reading})>> lines,
-) {
-  final BytesBuilder b = BytesBuilder(copy: false);
-  final ByteData scratch = ByteData(4);
-  void u32(int v) {
-    scratch.setUint32(0, v, Endian.little);
-    b.add(scratch.buffer.asUint8List(0, 4).toList());
+/// ASS 原样渲染的准备（任意编码 → UTF-8 + 画布尺寸），整份一次 FFI。
+AssRawScript prepareAssRawScript(Uint8List bytes) {
+  final _LyricsBindings b = _LyricsBindings.instance;
+  final ({int status, Uint8List bytes}) r = b.call(
+    (Arena a, Pointer<Pointer<Uint8>> out, Pointer<Size> len) =>
+        b.assRaw(_copyIn(bytes, a), bytes.length, out, len),
+  );
+  if (r.status != FfmStatus.ok || r.bytes.length < 8) {
+    throw StateError('ffm_lyrics_ass_raw failed with status ${r.status}');
   }
-
-  void str(String s) {
-    final Uint8List e = utf8.encode(s);
-    u32(e.length);
-    b.add(e);
-  }
-
-  u32(lines.length);
-  for (final List<({String surface, String reading})> line in lines) {
-    u32(line.length);
-    for (final ({String surface, String reading}) t in line) {
-      str(t.surface);
-      str(t.reading);
-    }
-  }
-  return b.takeBytes();
+  final ByteData v = ByteData.sublistView(r.bytes);
+  return AssRawScript(
+    playResX: v.getUint32(0, Endian.little),
+    playResY: v.getUint32(4, Endian.little),
+    text: utf8.decode(Uint8List.sublistView(r.bytes, 8), allowMalformed: true),
+  );
 }
 
 /// 后台 isolate 版本（UI isolate 用这些）：每次调用在 [Isolate.run] 里加载库并执行。
@@ -366,4 +351,7 @@ abstract final class FushiLyricsAsync {
     String path, {
     int? durationMs,
   }) => Isolate.run(() => FushiLyrics.embedded(path, durationMs: durationMs));
+
+  static Future<AssRawScript> assRaw(Uint8List bytes) =>
+      Isolate.run(() => prepareAssRawScript(bytes));
 }

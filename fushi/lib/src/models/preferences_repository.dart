@@ -4453,6 +4453,44 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 桌面歌词（设计 §6.2：Android 悬浮窗 / Windows 置顶穿透窗）。默认关。
+  bool get musicDesktopLyrics =>
+      getPref('music_desktop_lyrics', defaultValue: false) == true;
+
+  Future<void> setMusicDesktopLyrics(bool value) async {
+    await setPref('music_desktop_lyrics', value);
+    notifyListeners();
+  }
+
+  /// 锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。默认开。
+  bool get musicLyricsMediaSession =>
+      getPref('music_lyrics_media_session', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsMediaSession(bool value) async {
+    await setPref('music_lyrics_media_session', value);
+    notifyListeners();
+  }
+
+  /// 「听歌计入学习」（决策 D4）：关着时只有歌词页上的学习动作之后才计时。默认关。
+  bool get musicListeningCountsAsStudy =>
+      getPref('music_listening_counts_as_study', defaultValue: false) == true;
+
+  Future<void> setMusicListeningCountsAsStudy(bool value) async {
+    await setPref('music_listening_counts_as_study', value);
+    notifyListeners();
+  }
+
+  /// 卡拉 OK 字幕页里 ASS 歌词的默认显示：`auto`（按特效检测）/ `original`（libass 原样）/
+  /// `structured`（逐字歌词）。默认 `auto`（音乐 P3，设计 §6.3）。
+  String get musicKaraokeAssRender =>
+      (getPref('music_karaoke_ass_render', defaultValue: 'auto') as String?) ??
+      'auto';
+
+  Future<void> setMusicKaraokeAssRender(String value) async {
+    await setPref('music_karaoke_ass_render', value);
+    notifyListeners();
+  }
+
   /// ReplayGain 预放大（dB，-15…+15，设计 §7.3）。默认 0。
   double get musicReplayGainPreampDb =>
       (getPref('music_replaygain_preamp_db', defaultValue: 0.0) as num)

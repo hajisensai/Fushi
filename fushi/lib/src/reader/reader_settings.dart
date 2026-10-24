@@ -50,10 +50,11 @@ enum FontTarget {
   /// **不是**用户列表里的第二条。语义与 [appUi] 的整链回退不同。
   gameLookup,
 
-  /// Windows 有声书**悬浮字幕**（native 分层窗 `FloatingLyricWindow`，与
-  /// [gameLookup] 同一个原生窗类，DirectWrite 自绘）的字体。
+  /// 有声书**悬浮字幕** / 音乐桌面歌词的字体：Windows native 分层窗
+  /// `FloatingLyricWindow`（与 [gameLookup] 同一个原生窗类，DirectWrite 自绘）与
+  /// macOS `FushiFloatingLyric.swift`（NSPanel + TextKit，CTFontManager 读字体文件）。
   ///
-  /// 语义、平台可用性（只 Windows）与导入格式限制都与 [gameLookup] 相同：
+  /// 语义与导入格式限制都与 [gameLookup] 相同（平台多一个 macOS）：
   /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
   /// 缺字回退靠 native 追加的系统字体集。
   floatingLyric,
@@ -66,12 +67,13 @@ enum FontTarget {
 
 /// 这个用途在当前平台**是否真有消费端**。
 ///
-/// [FontTarget.gameLookup] / [FontTarget.floatingLyric] 只有 Windows 有 native
-/// 消费端（分层窗 DirectWrite），
+/// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
+/// [FontTarget.floatingLyric] 是 Windows + macOS（悬浮字幕原生窗），
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
-      FontTarget.gameLookup || FontTarget.floatingLyric => Platform.isWindows,
+      FontTarget.gameLookup => Platform.isWindows,
+      FontTarget.floatingLyric => Platform.isWindows || Platform.isMacOS,
       FontTarget.appUi ||
       FontTarget.body ||
       FontTarget.dictionary ||

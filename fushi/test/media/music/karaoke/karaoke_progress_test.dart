@@ -29,11 +29,15 @@ void main() {
       fill: LyricFill.outline,
     );
 
-    test('Sweep / Outline 线性，Instant 到点整字', () {
+    // 与 libass 一致（真 libmpv 截帧：music_karaoke_stage_real_test）：\kf 擦色，
+    // \k 与 \ko 都在音节起点瞬间切换。
+    test('Sweep 线性，Instant / Outline 在起点整字切换', () {
       expect(karaokeSyllableProgress(sweep, 999), 0);
       expect(karaokeSyllableProgress(sweep, 1250), closeTo(0.25, 1e-9));
       expect(karaokeSyllableProgress(sweep, 2000), 1);
-      expect(karaokeSyllableProgress(outline, 1500), closeTo(0.5, 1e-9));
+      expect(karaokeSyllableProgress(outline, 999), 0);
+      expect(karaokeSyllableProgress(outline, 1000), 1);
+      expect(karaokeSyllableProgress(outline, 1500), 1);
       expect(karaokeSyllableProgress(instant, 999), 0);
       expect(karaokeSyllableProgress(instant, 1000), 1);
       expect(karaokeSyllableProgress(instant, 1999), 1);
@@ -97,16 +101,11 @@ void main() {
       expect(rows[1].main, 2);
     });
 
-    int cur(
-      int pos, {
-      int offset = 0,
-      Map<int, int> lines = const <int, int>{},
-    }) => karaokeCurrentRow(
+    int cur(int pos, {int offset = 0}) => karaokeCurrentRow(
       timeline: t,
       rows: rows,
       positionMs: pos,
       offsetMs: offset,
-      lineOffsetsMs: lines,
     );
 
     test('起点已到的最后一组；间奏保持上一组', () {
@@ -117,32 +116,14 @@ void main() {
       expect(cur(9999), 2);
     });
 
-    test('整首偏移正 = 歌词提前；单行偏移只影响该行', () {
+    test('整首偏移正 = 歌词提前', () {
       expect(cur(2500, offset: 500), 1);
       expect(cur(2500), 0);
-      expect(cur(4600, lines: <int, int>{3: 400}), 2);
-      expect(cur(4600), 1);
     });
 
     test('跳转位置抵消偏移，且不为负', () {
-      expect(
-        karaokeSeekPositionForLine(
-          line: t.lines[2],
-          offsetMs: 500,
-          lineOffsetsMs: const <int, int>{2: 100},
-          lineIndex: 2,
-        ),
-        2400,
-      );
-      expect(
-        karaokeSeekPositionForLine(
-          line: t.lines[0],
-          offsetMs: 5000,
-          lineOffsetsMs: const <int, int>{},
-          lineIndex: 0,
-        ),
-        0,
-      );
+      expect(karaokeSeekPositionForLine(line: t.lines[2], offsetMs: 500), 2500);
+      expect(karaokeSeekPositionForLine(line: t.lines[0], offsetMs: 5000), 0);
     });
 
     test('是否正在唱（含和声行）', () {
@@ -152,7 +133,6 @@ void main() {
           row: rows[0],
           positionMs: 2200,
           offsetMs: 0,
-          lineOffsetsMs: const <int, int>{},
         ),
         isTrue,
         reason: '主行已唱完但和声行还在',
@@ -163,7 +143,6 @@ void main() {
           row: rows[0],
           positionMs: 2800,
           offsetMs: 0,
-          lineOffsetsMs: const <int, int>{},
         ),
         isFalse,
       );
@@ -181,7 +160,6 @@ void main() {
           rows: karaokeRows(u),
           positionMs: 9999,
           offsetMs: 0,
-          lineOffsetsMs: const <int, int>{},
         ),
         -1,
       );

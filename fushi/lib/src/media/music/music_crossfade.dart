@@ -793,6 +793,11 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     await _primary?.seek(position);
   }
 
+  /// AB 循环只作用在出声的主实例上；换曲目时引擎显式关（新主实例收到的就是「关」）。
+  @override
+  Future<void> setAbLoop(Duration? a, Duration? b) async =>
+      _primary?.setAbLoop(a, b);
+
   @override
   Future<void> stop() async {
     await _collapse();

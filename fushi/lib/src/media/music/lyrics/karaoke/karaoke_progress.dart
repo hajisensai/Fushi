@@ -1,6 +1,6 @@
 /// 逐字歌词的时间换算（纯函数，可单测）：生效时间、音节擦色进度、当前行判定。
 ///
-/// 时间语义：显示时间 = 播放位置 + 整首偏移 + 单行偏移（正 = 歌词提前，与 LRC `[offset:]`
+/// 时间语义：显示时间 = 播放位置 + 整首偏移（正 = 歌词提前，与 LRC `[offset:]`
 /// 与 `music_lyrics.offset_ms` 同号）。
 library;
 
@@ -8,32 +8,29 @@ import 'dart:math' as math;
 
 import 'package:fushi_music/fushi_music.dart';
 
-/// 第 [lineIndex] 行在播放位置 [positionMs] 下的显示时间。
-int karaokeLineTimeMs({
-  required int positionMs,
-  required int offsetMs,
-  required Map<int, int> lineOffsetsMs,
-  required int lineIndex,
-}) => positionMs + offsetMs + (lineOffsetsMs[lineIndex] ?? 0);
+/// 播放位置 [positionMs] 下的歌词显示时间。
+int karaokeLineTimeMs({required int positionMs, required int offsetMs}) =>
+    positionMs + offsetMs;
 
-/// 点第 [lineIndex] 行要跳到的播放位置：让该行起点恰好落在显示时间上。
+/// 点 [line] 要跳到的播放位置：让该行起点恰好落在显示时间上。
 int karaokeSeekPositionForLine({
   required LyricLine line,
   required int offsetMs,
-  required Map<int, int> lineOffsetsMs,
-  required int lineIndex,
 }) {
-  final int p = line.startMs - offsetMs - (lineOffsetsMs[lineIndex] ?? 0);
+  final int p = line.startMs - offsetMs;
   return p < 0 ? 0 : p;
 }
 
-/// 音节擦色进度（0–1）：
-/// - [LyricFill.instant]（`\k`）：到点整字变色，0 或 1；
-/// - [LyricFill.sweep] / [LyricFill.outline]：起止之间线性。
+/// 音节擦色进度（0–1），语义对齐 libass（`ass_render.c` 的 `process_karaoke_effects`，
+/// 真 libmpv 截帧验证见 `music_karaoke_stage_real_test.dart`）：
+/// - [LyricFill.instant]（`\k`）：音节**起点**整字变色，0 或 1；
+/// - [LyricFill.outline]（`\ko`）：同样在起点瞬间切换（不是擦色），且描边起点之前不画、
+///   起点之后出现（描边由画家处理）；
+/// - [LyricFill.sweep]（`\kf` / `\K`）：起止之间线性擦色。
 double karaokeSyllableProgress(LyricSyllable s, int timeMs) {
   if (timeMs < s.startMs) return 0;
   if (timeMs >= s.endMs) return 1;
-  if (s.fill == LyricFill.instant) return 1;
+  if (s.fill != LyricFill.sweep) return 1;
   final int d = s.endMs - s.startMs;
   if (d <= 0) return 1;
   return (timeMs - s.startMs) / d;
@@ -115,7 +112,6 @@ int karaokeCurrentRow({
   required List<KaraokeRowSpan> rows,
   required int positionMs,
   required int offsetMs,
-  required Map<int, int> lineOffsetsMs,
 }) {
   if (!timeline.isSynced) return -1;
   int current = -1;
@@ -125,12 +121,7 @@ int karaokeCurrentRow({
   while (lo <= hi) {
     final int mid = (lo + hi) >> 1;
     final int li = rows[mid].main;
-    final int t = karaokeLineTimeMs(
-      positionMs: positionMs,
-      offsetMs: offsetMs,
-      lineOffsetsMs: lineOffsetsMs,
-      lineIndex: li,
-    );
+    final int t = karaokeLineTimeMs(positionMs: positionMs, offsetMs: offsetMs);
     if (timeline.lines[li].startMs <= t) {
       current = mid;
       lo = mid + 1;
@@ -147,16 +138,10 @@ bool karaokeRowIsSinging({
   required KaraokeRowSpan row,
   required int positionMs,
   required int offsetMs,
-  required Map<int, int> lineOffsetsMs,
 }) {
   for (final int li in row.all) {
     final LyricLine l = timeline.lines[li];
-    final int t = karaokeLineTimeMs(
-      positionMs: positionMs,
-      offsetMs: offsetMs,
-      lineOffsetsMs: lineOffsetsMs,
-      lineIndex: li,
-    );
+    final int t = karaokeLineTimeMs(positionMs: positionMs, offsetMs: offsetMs);
     if (t >= l.startMs && t < l.endMs) return true;
   }
   return false;

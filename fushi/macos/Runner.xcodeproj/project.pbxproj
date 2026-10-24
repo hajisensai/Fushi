@@ -26,6 +26,7 @@
 		FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */; };
 		FA171A002B000001001C0F11 /* GlobalLookupOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */; };
 		FA171A002B000001001C0F31 /* FushiDesktopFloatingBall.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F32 /* FushiDesktopFloatingBall.swift */; };
+		FA171A002B000001001C0F51 /* FushiFloatingLyric.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F52 /* FushiFloatingLyric.swift */; };
 		FA171A002B000001001C0F41 /* FushiDesktopScreenOcr.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F42 /* FushiDesktopScreenOcr.swift */; };
 		FA171A002B000001001C0F21 /* SelectionCaptureMac.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000001001C0F22 /* SelectionCaptureMac.swift */; };
 		FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000004001C0F02 /* FushiClipboardImage.swift */; };
@@ -78,6 +79,7 @@
 		FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiSpeechTranscriber.swift; path = ../../apple/FushiSpeechTranscriber.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalLookupOverlay.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F32 /* FushiDesktopFloatingBall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FushiDesktopFloatingBall.swift; sourceTree = "<group>"; };
+		FA171A002B000001001C0F52 /* FushiFloatingLyric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FushiFloatingLyric.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F42 /* FushiDesktopScreenOcr.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FushiDesktopScreenOcr.swift; sourceTree = "<group>"; };
 		FA171A002B000001001C0F22 /* SelectionCaptureMac.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionCaptureMac.swift; sourceTree = "<group>"; };
 		FA171A002B000004001C0F02 /* FushiClipboardImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiClipboardImage.swift; path = ../../apple/FushiClipboardImage.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */,
 				FA171A002B000001001C0F32 /* FushiDesktopFloatingBall.swift */,
+				FA171A002B000001001C0F52 /* FushiFloatingLyric.swift */,
 				FA171A002B000001001C0F42 /* FushiDesktopScreenOcr.swift */,
 				FA171A002B000001001C0F22 /* SelectionCaptureMac.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
@@ -704,6 +707,7 @@
 				FA171A002B000003001C0F01 /* FushiSpeechTranscriber.swift in Sources */,
 				FA171A002B000001001C0F11 /* GlobalLookupOverlay.swift in Sources */,
 				FA171A002B000001001C0F31 /* FushiDesktopFloatingBall.swift in Sources */,
+				FA171A002B000001001C0F51 /* FushiFloatingLyric.swift in Sources */,
 				FA171A002B000001001C0F41 /* FushiDesktopScreenOcr.swift in Sources */,
 				FA171A002B000001001C0F21 /* SelectionCaptureMac.swift in Sources */,
 				FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */,

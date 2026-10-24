@@ -21,6 +21,7 @@ import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart'
         FfmpegThemeSongAudioDecoder,
         ThemeSongAudioDecoder,
         ThemeSongDecodeException;
+import 'package:fushi/src/media/music/acoustid_secret.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_auxiliary_providers.dart';
@@ -30,6 +31,20 @@ import 'package:fushi_engine/media/music/metadata/music_versions.dart';
 import 'package:fushi_engine/media/music/metadata/musicbrainz_provider.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
+
+/// AcoustID key 的生效值：用户在设置里填的优先，没填用随包的应用 key
+/// （[kBuiltinAcoustidApiKey]，CI 从仓库 secret 注入、入库是空占位）；两者都空 = 不可用。
+String resolveMusicAcoustidApiKey(
+  String userKey, {
+  String builtinKey = kBuiltinAcoustidApiKey,
+}) {
+  final String user = userKey.trim();
+  return user.isNotEmpty ? user : builtinKey.trim();
+}
+
+/// 这个包是否随带了 AcoustID 应用 key（设置页文案用）。
+bool get musicAcoustidBuiltinKeyAvailable =>
+    kBuiltinAcoustidApiKey.trim().isNotEmpty;
 
 /// 刮削器版本：识别判据 / 落库形态变了就升，曲库「识别全部」会重刮旧版本的结论。
 const int kMusicScraperVersion = 1;
