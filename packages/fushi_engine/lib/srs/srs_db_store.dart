@@ -4946,11 +4946,15 @@ class SrsDbStore implements SrsSyncReplica {
     return '$deviceId#$_incarnation';
   }
 
-  /// 同步成功拿到服务器时间后校时。
-  Future<void> anchorTime(int serverTimeMs) => runExclusive(() async {
-    _trusted.anchor(serverTimeMs: serverTimeMs);
-    await _saveLocal();
-  });
+  /// 同步成功拿到服务器时间后校时。[atMonotonicMs] 见 [SrsTrustedClock.anchor]。
+  Future<void> anchorTime(int serverTimeMs, {int? atMonotonicMs}) =>
+      runExclusive(() async {
+        _trusted.anchor(
+          serverTimeMs: serverTimeMs,
+          atMonotonicMs: atMonotonicMs,
+        );
+        await _saveLocal();
+      });
 
   /// 恢复备份后调用：本机换新化身号（不复用旧 writerId），重新起步读快照。
   ///
