@@ -221,6 +221,9 @@ final class VideoRemoteLibrary {
 }
 
 /// App-owned callbacks; the HTTP layer never sees media paths or widget state.
+/// Applies a subtitle [VideoRemotePlaybackBinding.downloadSubtitle] fetched.
+typedef VideoRemoteSubtitleApply = Future<void> Function();
+
 final class VideoRemotePlaybackBinding {
   const VideoRemotePlaybackBinding({
     required this.identity,
@@ -303,9 +306,17 @@ final class VideoRemotePlaybackBinding {
   )?
   searchSubtitles;
 
-  /// Downloads hit [candidateId] of the last [searchSubtitles] and applies it
-  /// as the primary subtitle. Fails with a [VideoRemoteException].
-  final Future<void> Function(String candidateId)? downloadSubtitle;
+  /// Downloads hit [candidateId] of the last [searchSubtitles] and returns
+  /// the step that applies it as the primary subtitle. Fails with a
+  /// [VideoRemoteException].
+  ///
+  /// The download is slow and runs beside the command queue, so it must not
+  /// touch the player: the host revalidates the session after it and only
+  /// then runs the returned step inside the queue. The step itself must also
+  /// refuse (409 `session_changed`) when the player it was downloaded for is
+  /// no longer the one playing.
+  final Future<VideoRemoteSubtitleApply> Function(String candidateId)?
+  downloadSubtitle;
 
   /// Runs one step from [videoRemoteCaretActions] on the computer's subtitle
   /// word cursor and returns its surface afterwards (one of
@@ -621,9 +632,10 @@ final class VideoRemoteHost implements VideoRemoteService {
 
     // A subtitle download (network, archive, alignment against the embedded
     // track) can take longer than the phone's request timeout; queued behind
-    // it, play / pause / seek would stall just as long. It runs beside the
-    // queue: its result only replaces the subtitle, and a phone retry with the
-    // same request ID joins it instead of downloading again.
+    // it, play / pause / seek would stall just as long. The download runs
+    // beside the queue and a phone retry with the same request ID joins it
+    // instead of downloading again; only the apply step re-enters the queue,
+    // after revalidating the session (see the `subtitleDownload` branch).
     final bool beside =
         operation == 'command' && body['action'] == 'subtitleDownload';
     return _core.runIdempotent(
@@ -834,7 +846,7 @@ final class VideoRemoteHost implements VideoRemoteService {
         return <String, Object?>{'ok': true};
       }
       if (action == 'subtitleDownload') {
-        final Future<void> Function(String)? download =
+        final Future<VideoRemoteSubtitleApply> Function(String)? download =
             binding.downloadSubtitle;
         if (binding.searchSubtitles == null || download == null) {
           throw const VideoRemoteException(409, videoRemoteActionUnsupported);
@@ -843,12 +855,25 @@ final class VideoRemoteHost implements VideoRemoteService {
         if (candidateId is! String || candidateId.isEmpty) {
           throw const VideoRemoteException(400, 'invalid_argument');
         }
-        // Applying a subtitle replaces the cue list the lookup is bound to.
-        _lookup = null;
-        await download(candidateId);
-        _refresh();
-        _publish();
-        return <String, Object?>{'ok': true};
+        // The download runs beside the queue (see [handle]); the apply joins
+        // it, so it is ordered after any episode switch / track change the
+        // phone sent meanwhile, and is refused when the session it was
+        // downloaded for is gone.
+        final VideoRemoteSubtitleApply apply = await download(candidateId);
+        return _serialize(() async {
+          await _core.assertOwner(peerId);
+          _refresh();
+          if (!identical(binding, _binding) ||
+              body['sessionId'] != _sessionId) {
+            throw const VideoRemoteException(409, 'session_changed');
+          }
+          // Applying a subtitle replaces the cue list the lookup is bound to.
+          _lookup = null;
+          await apply();
+          _refresh();
+          _publish();
+          return <String, Object?>{'ok': true};
+        });
       }
       if (action == 'caret') {
         final Future<String> Function(String)? caret = binding.caret;

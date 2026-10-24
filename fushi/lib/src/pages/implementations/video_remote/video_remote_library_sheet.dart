@@ -5,6 +5,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show formatFushiPlaybackTime;
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiListItem, FushiModalSheetFrame, FushiSearchField;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -14,6 +16,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiCircularProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -331,11 +334,11 @@ class _VideoRemoteLibraryCover extends StatelessWidget {
       width: _width,
       height: _height,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: FushiM3eShape.smallRadius,
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            ColoredBox(color: scheme.surfaceContainerHighest),
+            ColoredBox(color: scheme.containerOf(FushiTone.neutral)),
             Image(
               image: image,
               fit: BoxFit.cover,

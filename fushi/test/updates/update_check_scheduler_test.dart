@@ -118,7 +118,10 @@ void main() {
     expect(calls, 2, reason: '关掉的域连手动检查也不跑');
   });
 
-  test('没有登记 probe 的域不跑（番剧走自己的相位节奏）', () async {
+  // PR#2493 起 videoEpisode 有 6 小时间隔：它在这里只承载「媒体库在线作品补
+  // 新集」探针（video_library_update_probe.dart），番剧订阅仍走自己的相位节奏、
+  // 不登记 probe。所以契约是「没登记 probe 就不跑」，而不是「不在 intervals 里」。
+  test('没有登记 probe 的域到期也不跑（番剧订阅走自己的相位节奏）', () async {
     prefs = await makePrefs();
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefs,
@@ -126,8 +129,65 @@ void main() {
       probes: const <UpdateFeedKind, UpdateProbe>{},
       now: () => clock,
     );
-    expect(scheduler.isDue(UpdateFeedKind.videoEpisode), isFalse,
-        reason: 'videoEpisode 不在 intervals 里，恒不到期');
+    expect(
+      scheduler.isDue(UpdateFeedKind.videoEpisode),
+      isTrue,
+      reason: 'videoEpisode 有间隔、从没查过 = 到期',
+    );
     await scheduler.runDue();
+    expect(
+      prefs.getPref(
+        updateLastCheckPrefKey(UpdateFeedKind.videoEpisode),
+        defaultValue: 0,
+      ),
+      0,
+      reason: '没有 probe 就没有这一轮检查，不得记下检查时刻',
+    );
+  });
+
+  test('番剧新集域只看 video_library_auto_update，不看提醒开关', () async {
+    prefs = await makePrefs();
+    final List<UpdateFeedKind> ran = <UpdateFeedKind>[];
+    bool notify = true;
+    UpdateCheckScheduler build() => UpdateCheckScheduler(
+          prefs: prefs,
+          isKindEnabled: updateCheckKindGate(
+            videoLibraryAutoUpdate: () => prefs.videoLibraryAutoUpdate,
+            notifyEnabled: (_) => notify,
+          ),
+          probes: <UpdateFeedKind, UpdateProbe>{
+            UpdateFeedKind.videoEpisode: () async =>
+                ran.add(UpdateFeedKind.videoEpisode),
+            UpdateFeedKind.mangaChapter: () async =>
+                ran.add(UpdateFeedKind.mangaChapter),
+          },
+          now: () => clock,
+        );
+
+    expect(prefs.videoLibraryAutoUpdate, isTrue, reason: '默认开');
+    await prefs.setVideoLibraryAutoUpdate(false);
+    await build().checkNow(UpdateFeedKind.videoEpisode);
+    expect(ran, isEmpty, reason: '关掉自动补集：提醒开着也不跑补集探针');
+
+    await prefs.setVideoLibraryAutoUpdate(true);
+    notify = false;
+    await build().checkNow(UpdateFeedKind.videoEpisode);
+    await build().checkNow(UpdateFeedKind.mangaChapter);
+    expect(ran, <UpdateFeedKind>[UpdateFeedKind.videoEpisode],
+        reason: '关提醒不停补集；其它域仍看自己的提醒开关');
+  });
+
+  test('不在 intervals 里的域恒不到期', () async {
+    prefs = await makePrefs();
+    final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
+      prefs: prefs,
+      isKindEnabled: (_) => true,
+      intervals: const <UpdateFeedKind, Duration>{
+        UpdateFeedKind.mangaChapter: Duration(hours: 6),
+      },
+      probes: const <UpdateFeedKind, UpdateProbe>{},
+      now: () => clock,
+    );
+    expect(scheduler.isDue(UpdateFeedKind.videoEpisode), isFalse);
   });
 }

@@ -190,6 +190,14 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     CoverDeriverRole.writesViaService,
     '导入弹窗重取封面，字节走 applyCover*。',
   ),
+  'lib/src/media/video/media_server/media_server_library.dart': (
+    CoverDeriverRole.writesViaService,
+    '媒体服务器（Jellyfin / Emby / Plex）作品加入媒体库（PR#2493）：派生 '
+        '<video_covers>/media_server_<sha1>.jpg 作品共用封面与合集封面目的地'
+        '（VideoStorage.coversDir / collectionCoversDir + videoCoverFileName），'
+        '字节经 MediaCoverService.applyCoverBytes、合集副本经 applyCoverFile 落盘，'
+        '本文件不裸写。',
+  ),
   'lib/src/media/video/iptv_playlist_import.dart': (
     CoverDeriverRole.writesViaService,
     'IPTV 频道台标（tvg-logo）补封面：派生 <video_covers>/<uid> 目的地，字节经引擎 '

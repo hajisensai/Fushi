@@ -74,12 +74,15 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     _videoRemoteBinding = null;
   }
 
+  /// 遥控会话身份：作品 / 集 / 视频路径 / 制卡来源任一变了就是新会话。
+  String _videoRemoteIdentity(VideoPlayerController controller) =>
+      '$_activeBookUid|$_currentEpisode|$_currentVideoPath|'
+      '${controller.miningSource}';
+
   void _registerVideoRemote(VideoPlayerController controller) {
     _unregisterVideoRemote();
     final VideoRemotePlaybackBinding binding = VideoRemotePlaybackBinding(
-      identity: () =>
-          '$_activeBookUid|$_currentEpisode|$_currentVideoPath|'
-          '${controller.miningSource}',
+      identity: () => _videoRemoteIdentity(controller),
       title: () => _videoMiningDocumentTitle() ?? '',
       bookUid: () => _activeBookUid,
       sectionIndex: () => _favoriteSectionIndex ?? 0,
@@ -302,18 +305,34 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     );
   }
 
-  /// 手机选中一条在线字幕：电脑下载落盘（本机视频按内嵌轨对齐），再与字幕工作台
-  /// 下载完成同一入口登记并应用。
-  Future<void> _downloadRemoteOnlineSubtitle(
+  /// 手机选中一条在线字幕：电脑下载落盘（本机视频按内嵌轨对齐），返回「应用」
+  /// 一步，由遥控宿主核过会话后在命令队列里执行，与字幕工作台下载完成同一入口
+  /// 登记并应用。
+  ///
+  /// 下载期间手机可能已经换集（新集可能就在本页换 controller，也可能
+  /// pushReplacement 到新页、本页还没 dispose）：应用前核对本页仍登记着发起时
+  /// 那份绑定、controller 与会话身份都没变，否则回 409 `session_changed`，
+  /// 绝不把上一集的字幕套到新集 / 已释放的 controller 上。
+  Future<VideoRemoteSubtitleApply> _downloadRemoteOnlineSubtitle(
     VideoPlayerController controller,
     String id,
   ) async {
+    final VideoRemotePlaybackBinding? binding = _videoRemoteBinding;
+    final String identity = _videoRemoteIdentity(controller);
     final String path = await _remoteOnlineSubtitles.download(
       id,
       videoPath: _isRemote ? null : _currentVideoPath,
     );
-    if (!mounted) throw const VideoRemoteException(409, 'no_video');
-    await _applyDownloadedSubtitles(controller, <String>[path]);
+    return () async {
+      if (!mounted) throw const VideoRemoteException(409, 'no_video');
+      if (binding == null ||
+          !identical(_videoRemoteBinding, binding) ||
+          !identical(_controller, controller) ||
+          _videoRemoteIdentity(controller) != identity) {
+        throw const VideoRemoteException(409, 'session_changed');
+      }
+      await _applyDownloadedSubtitles(controller, <String>[path]);
+    };
   }
 
   /// 遥控制卡 / 试听共用的音频与画面窗：字幕时基区间 `[startMs, endMs]`（[anchor] 所在
