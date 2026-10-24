@@ -182,7 +182,9 @@ void main() {
           matches(RegExp(
               r'late final FushiSyncServerController\s+syncServerController\s*=')),
           reason: 'AppModel must own the server controller for the session');
-      expect(appModel, contains('syncServerController.startIfEnabled()'),
+      // Same #2472 re-wrap: `syncServerController\n    .startIfEnabled()`.
+      expect(appModel,
+          matches(RegExp(r'syncServerController\s*\.startIfEnabled\(\)')),
           reason: 'the host must start app-wide on launch when enabled');
     });
 
