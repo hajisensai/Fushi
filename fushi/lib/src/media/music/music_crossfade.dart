@@ -51,8 +51,9 @@ MusicCrossfadeAvailability musicCrossfadeAvailability(
   MusicOutputSettings settings, {
   required MusicOutputPlatform platform,
 }) {
-  if (settings.crossfade <= Duration.zero)
+  if (settings.crossfade <= Duration.zero) {
     return MusicCrossfadeAvailability.off;
+  }
   if (settings.exclusive) return MusicCrossfadeAvailability.disabledByExclusive;
   if (platform == MusicOutputPlatform.linux &&
       settings.audioDevice.startsWith('alsa/hw:')) {
