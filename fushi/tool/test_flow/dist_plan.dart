@@ -199,31 +199,41 @@ List<DistBatch> planDistBatches({
         return byWeight != 0 ? byWeight : a.compareTo(b);
       });
     final int total = paths.fold<int>(0, (int s, String p) => s + weights[p]!);
-    final int binCount = ((total / targetMs).ceil()).clamp(1, paths.length);
-    final List<List<String>> bins = List<List<String>>.generate(
-      binCount,
-      (_) => <String>[],
-    );
-    final List<int> loads = List<int>.filled(binCount, 0);
-    for (final String path in paths) {
-      int target = 0;
-      for (int i = 1; i < binCount; i++) {
-        if (loads[i] < loads[target]) target = i;
+    // The lightest [kDistTailFraction] of a big group goes into quarter-size
+    // batches, which sort to the end of the queue: when the fast worker runs
+    // dry, a slow one is then holding a small batch, not a full one (the Mac
+    // kept a whole run waiting ~10 minutes on its last full-size batch).
+    final List<String> bulk = <String>[];
+    final List<String> tail = <String>[];
+    if (total > 4 * targetMs) {
+      int acc = 0;
+      for (final String path in paths) {
+        (acc < total * (1 - kDistTailFraction) ? bulk : tail).add(path);
+        acc += weights[path]!;
       }
-      bins[target].add(path);
-      loads[target] += weights[path]!;
+    } else {
+      bulk.addAll(paths);
     }
     final (DistPlatform?, Set<String>) placement = groupKeys[key]!;
-    for (int i = 0; i < binCount; i++) {
-      batches.add(
-        DistBatch(
-          id: 0,
-          files: bins[i]..sort(),
-          estimatedMs: loads[i],
-          platform: placement.$1,
-          capabilities: placement.$2,
-        ),
-      );
+    for (final (List<String>, int) part in <(List<String>, int)>[
+      (bulk, targetMs),
+      (tail, (targetMs / 4).ceil()),
+    ]) {
+      for (final (List<String>, int) bin in _packLpt(
+        part.$1,
+        weights,
+        part.$2,
+      )) {
+        batches.add(
+          DistBatch(
+            id: 0,
+            files: bin.$1..sort(),
+            estimatedMs: bin.$2,
+            platform: placement.$1,
+            capabilities: placement.$2,
+          ),
+        );
+      }
     }
   }
   batches.sort((DistBatch a, DistBatch b) {
@@ -239,6 +249,37 @@ List<DistBatch> planDistBatches({
         platform: batches[i].platform,
         capabilities: batches[i].capabilities,
       ),
+  ];
+}
+
+/// Share of a big group's work packed into the small tail batches.
+const double kDistTailFraction = 0.2;
+
+/// LPT: [paths] (heaviest first) into ceil(sum / [targetMs]) bins, each path
+/// onto the currently lightest bin. Returns (paths, load) per bin.
+List<(List<String>, int)> _packLpt(
+  List<String> paths,
+  Map<String, int> weights,
+  int targetMs,
+) {
+  if (paths.isEmpty) return const <(List<String>, int)>[];
+  final int total = paths.fold<int>(0, (int s, String p) => s + weights[p]!);
+  final int binCount = ((total / targetMs).ceil()).clamp(1, paths.length);
+  final List<List<String>> bins = List<List<String>>.generate(
+    binCount,
+    (_) => <String>[],
+  );
+  final List<int> loads = List<int>.filled(binCount, 0);
+  for (final String path in paths) {
+    int target = 0;
+    for (int i = 1; i < binCount; i++) {
+      if (loads[i] < loads[target]) target = i;
+    }
+    bins[target].add(path);
+    loads[target] += weights[path]!;
+  }
+  return <(List<String>, int)>[
+    for (int i = 0; i < binCount; i++) (bins[i], loads[i]),
   ];
 }
 

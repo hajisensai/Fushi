@@ -164,10 +164,18 @@ void main() {
       expect(all.toSet(), weights.keys.toSet());
       expect(all.length, weights.length);
       final int total = weights.values.reduce((int a, int b) => a + b);
-      expect(batches.length, (total / 1000).ceil());
-      final List<int> loads =
-          batches.map((DistBatch b) => b.estimatedMs).toList()..sort();
-      expect(loads.last - loads.first, lessThanOrEqualTo(101));
+      // 80 % of the work in ~1000 ms batches, the lightest 20 % in ~250 ms
+      // batches that sort to the end of the queue.
+      final List<int> loads = batches
+          .map((DistBatch b) => b.estimatedMs)
+          .toList();
+      expect(loads, orderedEquals(List<int>.of(loads)..sort((a, b) => b - a)));
+      expect(loads.first, lessThanOrEqualTo(1000 + 101));
+      expect(loads.last, lessThanOrEqualTo(250 + 101));
+      final int tailMs = batches
+          .where((DistBatch b) => b.estimatedMs <= 250 + 101)
+          .fold<int>(0, (int s, DistBatch b) => s + b.estimatedMs);
+      expect(tailMs, inInclusiveRange(total * 0.15, total * 0.3));
       expect(
         batches.map((DistBatch b) => b.id).toList(),
         List<int>.generate(batches.length, (int i) => i + 1),
