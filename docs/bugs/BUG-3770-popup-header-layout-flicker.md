@@ -1,0 +1,10 @@
+## BUG-3770 · 查词弹窗词头区在两种布局之间每帧来回切（一直闪）
+- **报告**：2026-10-25（用户：Windows 阅读器查词偶发「一直闪」，录屏 `2026-10-24 23-34-19.mp4`，怀疑「px 刚好差 1、到了中间值」；要求连同类问题一起修）
+- **真实性**：✅ 真 bug。录屏逐帧：弹窗外框不动，词头区在两态间不规则来回切——A 态词头整行、按钮组换到下一行、频率 / 词形标签铺满整行；B 态按钮组挤在词头旁、词头被压到折行（「る」掉到第二行）、频率 chip 一枚一行。根因在 `fushi/assets/popup/popup.js` 的 `updateEntryHeaderMetaLayout`（10-23 引入，ResizeObserver 驱动、按测量切 `.meta-stacked`）：
+  1. 判据读 `headword.scrollWidth`，注释断言「挂不挂类都不改变它」——只对 `.expression-scroll` 成立。`createEntryHeader` 原先只给「整词一段注音」的词头套 `.expression-scroll`（`needsScroll`），多段注音（手心を加える）与无注音词头是可逐字折行的裸 span。
+  2. 不挂类（B 态）：左簇 `min-width: min-content` 对可折行 span 只有一个字宽，按钮组挤上同一行，词头被压到「行宽 − 按钮组 − gap」，scrollWidth 报压缩宽 → `≤ rowWidth` → 挂类；挂上后（A 态）左簇变 `display: contents`，词头按 max-content 参与换行、恢复整宽 → `> rowWidth` → 摘类。压缩宽 + gap + 按钮组恰好等于行宽，翻不翻只看 scrollWidth / clientWidth 的整数取整——这就是「差 1px」的偶发；一旦触发每次回调翻一次。
+  3. Chromium（与 WebView2 同引擎）真跑 popup.js 复现：受影响宽度下 1 秒内类名自己翻 90 次，离开该宽度区间为 0。
+  - 同类排查（审查代理 + Chromium 实测）另确认一处：M3E 暗色下词典浅底调色的 MutationObserver 对任何 class / style 写入都「同步复原 → 下一帧重调」，滚动指示每个 scroll 事件都 `classList.add('popup-scroll-active')`（类已在也照样出 mutation 记录）、nudge 写 `opacity`，每次露出一帧词典原色（实测滚动两次 + nudge 一次共 3 帧，主题变量热更新也 1 帧），连续滚动时停在原色。
+- **[x] ① 已修复** — 词头一律套 `.expression-scroll`（`createEntryHeader`），让 BUG-3320「词头本身永远不被挤压」与 `updateEntryHeaderMetaLayout` 的「词头宽不随类名变」两条前提对所有词头成立；判据对非滚动容器的词头不判定（兜底，宁可不铺满也不振荡）。暗色调色：重调的复原挂起到重调那一帧开头、与重调同帧完成；观察器先比对调色输入签名（明暗、统一开关、data-theme、去掉瞬态类的 class、颜色相关内联声明 / CSS 变量），不变就跳过。Chromium 实测修复后：振荡宽度翻转 0 次；暗色滚动 / nudge / 变量热更新 0 帧露底，亮暗切换照常还原 / 重调。
+- **[x] ② 已加自动化测试** — `fushi/test/dictionary/popup_header_meta_stacked_test.js`（新增：scrollWidth 随类名变的词头连续 6 轮回调不得翻转——旧代码实得 `true,false,true,false,true,false`；`createEntryHeader` 必须无条件套 `.expression-scroll`）；`fushi/test/dictionary/popup_dark_retone_no_flash_test.{js,dart}`（新增：签名忽略滚动类 / opacity / zoom / 宽度、捕捉 data-theme / 主题变量 / 颜色；重调不同步复原、重调帧先复原后调色）。
+- **备注**：多段注音 / 无注音词头改为不折行、超长横向滚动（与整词一段注音的词头一致）。审查代理提的「app 外 / 扩展宿主里 `.meta-stacked` 经 8px 滚动条间接振荡」在 Chromium 扫 360–700px 未复现：临界带里不挂类那态元数据列恰好贴词头右侧、反而更矮，两态各自自洽（双稳态而非振荡），未改。iframe / app 外宿主测高「只增不减」会留白但不振荡，不在本条范围。
