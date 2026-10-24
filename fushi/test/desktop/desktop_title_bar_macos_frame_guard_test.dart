@@ -41,7 +41,8 @@ void main() {
     expect(
       buttons,
       greaterThan(style),
-      reason: 'macOS 一律用系统原生红绿灯：隐藏标题栏的同一次调用里必须按平台保留'
+      reason:
+          'macOS 一律用系统原生红绿灯：隐藏标题栏的同一次调用里必须按平台保留'
           '它们（windowButtonVisibility: Platform.isMacOS）。',
     );
     expect(
@@ -62,7 +63,8 @@ void main() {
         r'Platform\.isWindows\s*&&\s*FushiDesktopTitleBar\.isEnabled',
       ).hasMatch(compactMain),
       isFalse,
-      reason: 'macOS 已经隐藏了系统标题栏；再用 Platform.isWindows 门控挂载 '
+      reason:
+          'macOS 已经隐藏了系统标题栏；再用 Platform.isWindows 门控挂载 '
           '= macOS 窗口没有可拖动的顶栏。',
     );
     expect(
@@ -80,9 +82,29 @@ void main() {
         methodBody(titleBar, 'Widget _buildCaptionControls(');
 
     expect(
-      body.contains('final bool trafficLights = Platform.isMacOS;'),
+      body.contains(
+        'final bool trafficLights = FushiDesktopTitleBar._hostIsMacOS;',
+      ),
       isTrue,
       reason: '窗口按钮只按平台分流，不读设计系统（用户 2026-10-04）。',
+    );
+    // 宿主判断经测试缝 debugHostPlatform（让 widget 测试与跑在哪台机器无关），
+    // 但默认值必须仍是 dart:io 的真实宿主，而不是主题平台 / 设计系统。
+    expect(
+      RegExp(
+        r'static TargetPlatform Function\(\) debugHostPlatform\s*=\s*'
+        r'_realHostPlatform;',
+      ).hasMatch(titleBar),
+      isTrue,
+      reason: '宿主平台缝的默认值必须是真实宿主。',
+    );
+    expect(
+      methodBody(
+        titleBar,
+        'static TargetPlatform _realHostPlatform() {',
+      ).contains('if (Platform.isMacOS) return TargetPlatform.macOS;'),
+      isTrue,
+      reason: '真实宿主取自 dart:io 的 Platform，不读 ThemeData.platform。',
     );
     expect(
       RegExp(
@@ -93,9 +115,9 @@ void main() {
       reason: 'macOS 顶栏左侧必须给系统红绿灯留位，否则它们压在拖动区 / 页面内容上。',
     );
     expect(
-      RegExp(r'const double _kTrafficLightsReserve\s*=\s*\d+').hasMatch(
-        titleBar,
-      ),
+      RegExp(
+        r'const double _kTrafficLightsReserve\s*=\s*\d+',
+      ).hasMatch(titleBar),
       isTrue,
     );
 
@@ -135,7 +157,9 @@ void main() {
     // Windows/Linux 实现），挂上去拖一下就是 MissingPluginException；而 AppKit 在
     // full-size content view 下仍自己拥有窗口四边的 resize 边框，本来就不需要代劳。
     expect(
-      titleBar.contains('if (Platform.isMacOS) return const <ResizeEdge>[];'),
+      titleBar.contains(
+        'if (FushiDesktopTitleBar._hostIsMacOS) return const <ResizeEdge>[];',
+      ),
       isTrue,
       reason: 'macOS 必须返回空边表，把 resize 完全留给 AppKit。',
     );
@@ -156,7 +180,8 @@ void main() {
     expect(
       RegExp(r'setMacOSTrafficLightsHidden\(').allMatches(titleBar).length,
       1,
-      reason: '只允许 reassertMacTrafficLights 一处写红绿灯；写死 true/false 会与'
+      reason:
+          '只允许 reassertMacTrafficLights 一处写红绿灯；写死 true/false 会与'
           '全屏真值打架（顶栏在却没按钮 / 全屏时三个圆点浮在内容上）。',
     );
 
@@ -167,11 +192,7 @@ void main() {
     final int publish = setFs.indexOf('_contentFullscreen.value =');
     final int sync = setFs.indexOf('reassertMacTrafficLights()');
     expect(publish, greaterThanOrEqualTo(0));
-    expect(
-      sync,
-      greaterThan(publish),
-      reason: '内容全屏真值每次变化后都要同步红绿灯（先发布再断言）。',
-    );
+    expect(sync, greaterThan(publish), reason: '内容全屏真值每次变化后都要同步红绿灯（先发布再断言）。');
   });
 
   test('macOS 原生全屏由 NSWindowDelegate 真相源驱动，退出后重申红绿灯', () {
@@ -194,14 +215,17 @@ void main() {
     expect(
       reassert,
       greaterThan(exitGate),
-      reason: 'AppKit 退全屏会重建标题栏视图、复位 standardWindowButton.isHidden；'
+      reason:
+          'AppKit 退全屏会重建标题栏视图、复位 standardWindowButton.isHidden；'
           '退出后必须经 reassertMacTrafficLights 按真值重申（所有者未变时 '
           'setContentFullscreen 不会触发它）。',
     );
 
     // initState 在 macOS 上立即跑一次，等于挂载时按真值初断言一次红绿灯。
     final String init = methodBody(titleBar, 'void initState() {');
-    final int macGate = init.indexOf('if (Platform.isMacOS) {');
+    final int macGate = init.indexOf(
+      'if (FushiDesktopTitleBar._hostIsMacOS) {',
+    );
     expect(macGate, greaterThanOrEqualTo(0));
     expect(
       init.indexOf('_onMacosFullscreenChanged();', macGate),
