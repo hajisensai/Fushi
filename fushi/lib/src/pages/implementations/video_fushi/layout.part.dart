@@ -1337,53 +1337,21 @@ extension _VideoLayout on _VideoFushiPageState {
   /// 「浮条调轴」浮条：画面顶部居中一条紧凑浮层（与设置面板同一中性深色表面），
   /// 内容是 [VideoSubtitleSyncRow] 的浮条形态——±步进 + 可点按输入的读数 + 上/下句
   /// 对齐到此刻 + 自动对轴 + 完成。字幕区域（画面底部）完全不遮，调一下立刻看到
-  /// 效果；「完成」退出。非模式态零尺寸。
+  /// 效果；「完成」退出。非模式态零尺寸。布局（缩放层必须在对齐外面，否则浮条被
+  /// 撑成盖住画面的大板）见 [VideoTopFloatBarLayer]。
   Widget _buildSubtitleDelayBar() {
     if (!_subtitleDelayBarActive) return const SizedBox.shrink();
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-          child: TweenAnimationBuilder<double>(
-            tween: Tween<double>(begin: 0, end: 1),
-            duration: fushiMotionDuration(context, FushiMotion.medium),
-            curve: FushiMotion.enter,
-            builder: (BuildContext context, double t, Widget? child) =>
-                FractionalTranslation(
-                  translation: Offset(0, -0.4 * (1 - t)),
-                  child: Opacity(opacity: t.clamp(0.0, 1.0), child: child),
-                ),
-            child: FushiAppUiScale(
-              scale: _videoUiScale,
-              child: PanelFocusScope(
-                visible: true,
-                restoreFocus: () =>
-                    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 720),
-                  child: VideoFloatingPanelSurface(
-                    opaque: true,
-                    surfaceKey: const ValueKey<String>(
-                      'video-subtitle-delay-bar',
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      child: VideoSubtitleSyncRow(
-                        host: _buildVideoQuickSettingsHost(),
-                        floatBar: true,
-                        onDone: () =>
-                            _rebuild(() => _subtitleDelayBarActive = false),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+    return VideoTopFloatBarLayer(
+      scale: _videoUiScale,
+      surfaceKey: const ValueKey<String>('video-subtitle-delay-bar'),
+      child: PanelFocusScope(
+        visible: true,
+        restoreFocus: () =>
+            _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+        child: VideoSubtitleSyncRow(
+          host: _buildVideoQuickSettingsHost(),
+          floatBar: true,
+          onDone: () => _rebuild(() => _subtitleDelayBarActive = false),
         ),
       ),
     );
