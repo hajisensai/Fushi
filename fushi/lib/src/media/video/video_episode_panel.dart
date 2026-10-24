@@ -334,14 +334,28 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
                       if (currentName != null) currentName,
                     ],
                   )
-                : Row(
-                    children: <Widget>[
-                      titleRow,
-                      if (currentName != null) ...<Widget>[
-                        SizedBox(width: fs),
-                        Expanded(child: currentName),
-                      ],
-                    ],
+                : LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints box) {
+                      // 标题行按自然宽度排、当前集名吃剩余；但标题行必须拿到
+                      // 有界宽度，否则它内部的 Flexible 标题永远不省略，大字号下
+                      // 直接撑破这一行（官方 M3E 图标按钮按真实图标尺寸占位后，
+                      // 留给标题的宽度变窄即溢出）。上限扣掉与当前集名的间距。
+                      final double titleMax = currentName == null
+                          ? box.maxWidth
+                          : (box.maxWidth - fs).clamp(0.0, box.maxWidth);
+                      return Row(
+                        children: <Widget>[
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: titleMax),
+                            child: titleRow,
+                          ),
+                          if (currentName != null) ...<Widget>[
+                            SizedBox(width: fs),
+                            Expanded(child: currentName),
+                          ],
+                        ],
+                      );
+                    },
                   ),
           ),
           if (showPager) ...<Widget>[

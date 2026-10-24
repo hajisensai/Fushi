@@ -107,6 +107,9 @@ void main() {
       // C1：§2 只放五个同形态开关；§3 是时机（自动 + 手动）；§4 是显式动作行。
       expect(idsOf(dest.sections[1]), <String>[
         'sync.statistics',
+        // 设备级「同步浏览历史」（默认关，3fdceb86fa / PR #2500）：云备份与互联
+        // 共用、不设 visible 门控，所以同样是全局项，紧跟统计开关。
+        'sync.web_history',
         'sync.content',
         'sync.manga_content',
         'sync.audiobook_files',

@@ -12,7 +12,9 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 //
 // MD3 设计系统的应用级导航按 M3 Expressive 规格：
 // - 宽屏 navigation rail 有收起（96）/ 展开（220，取代旧侧边抽屉）两态，顶部
-//   菜单钮切换，宽度走 spatial 弹簧；两态都恒显示文字标签；
+//   菜单钮切换，宽度走 spatial 弹簧；展开态恒显示文字标签，收起态纯图标
+//   （2026-10-23 用户「侧边栏收起不显示文字」，PR #2476 的 M3E 侧栏），名称
+//   进 tooltip 与无障碍语义；
 // - 底栏（flexible navigation bar）64 高、标签恒显示（首页 ≥600 走 rail，
 //   M3E 的横排目的地不在底栏里做）；
 // - 活动指示器选中时按 expressive 弹簧展开，悬停 / 按压状态层与指示器同框；
@@ -120,10 +122,32 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('两态都恒显示全部文字标签', (WidgetTester tester) async {
+    testWidgets('收起态纯图标、名称进 tooltip 与语义；展开态恒显示全部文字标签', (
+      WidgetTester tester,
+    ) async {
+      final SemanticsHandle semantics = tester.ensureSemantics();
       final ValueNotifier<bool> expanded = await pumpToggleRail(tester);
       for (final AdaptiveNavItem item in items) {
-        expect(labelPainted(tester, item.label), isTrue, reason: item.label);
+        expect(
+          find.text(item.label),
+          findsNothing,
+          reason: '${item.label}：收起态不画文字',
+        );
+        expect(find.byIcon(item.icon), findsOneWidget, reason: item.label);
+        // 收起格的 tooltip 不进语义（名称由外层 Semantics 报），flutter_test 的
+        // byTooltip 只认 SDK 旧 Tooltip 类型，这里直接按 material_ui 的 Tooltip 找。
+        expect(
+          find.byWidgetPredicate(
+            (Widget w) => w is Tooltip && w.message == item.label,
+          ),
+          findsOneWidget,
+          reason: '${item.label}：名称要进 tooltip',
+        );
+        expect(
+          find.bySemanticsLabel(item.label),
+          findsOneWidget,
+          reason: '${item.label}：名称仍要进无障碍语义',
+        );
       }
       expanded.value = true;
       await tester.pumpAndSettle();
@@ -135,6 +159,7 @@ void main() {
       final Rect label = tester.getRect(find.text('视频'));
       expect(icon.right, lessThan(label.left));
       expect((icon.center.dy - label.center.dy).abs(), lessThan(2));
+      semantics.dispose();
     });
 
     testWidgets('减弱动态效果下宽度同帧到位', (WidgetTester tester) async {
