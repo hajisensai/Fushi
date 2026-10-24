@@ -2026,7 +2026,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 ),
               ],
             ),
-            AnimatedSize(
+            FushiAnimatedSize(
               duration: motion.spatialDefault.duration,
               curve: motion.spatialDefault.curve,
               alignment: Alignment.topCenter,

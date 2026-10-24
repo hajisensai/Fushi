@@ -313,8 +313,9 @@ class WindowsSpeechWorker {
       process = await _startProcess('powershell.exe', <String>[
         '-NoProfile',
         '-NonInteractive',
-        '-ExecutionPolicy',
-        'Bypass',
+        // 不传执行策略参数：它只约束 .ps1 文件加载，对 -EncodedCommand 内联脚本
+        // 不生效，带上只会白送 EDR 高危信号（守卫
+        // no_powershell_execution_policy_guard_test）。
         '-EncodedCommand',
         encodePowerShellCommand(
           windowsSpeechWorkerCommand(parentPid: pid, token: token),

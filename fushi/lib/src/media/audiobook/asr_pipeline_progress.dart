@@ -302,10 +302,8 @@ class _Connector extends StatelessWidget {
       curve: FushiMotion.standard,
       height: 2,
       margin: const EdgeInsets.symmetric(horizontal: 3),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(1),
-      ),
+      // 2dp 细线两端全圆角 = M3 的 full 形状（胶囊），不写像素圆角。
+      decoration: ShapeDecoration(color: color, shape: const StadiumBorder()),
     );
   }
 }
@@ -336,7 +334,7 @@ class _StageMarker extends StatelessWidget {
         size: size,
         color: accent,
       ),
-      AsrStageState.skipped => Tooltip(
+      AsrStageState.skipped => FushiTooltip(
         message: t.audiobook_transcribe_stage_state_skipped,
         child: FushiIcon(FushiIcons.removeCircle, size: size, color: muted),
       ),

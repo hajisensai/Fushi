@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSide, showReaderSideSheet;
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -382,7 +383,7 @@ class _ZoneRow extends StatelessWidget {
                   ),
                 ),
               ),
-              child: AnimatedSize(
+              child: FushiAnimatedSize(
                 duration: fushiMotionDuration(context, FushiMotion.short),
                 curve: FushiMotion.standard,
                 alignment: Alignment.topLeft,
@@ -653,7 +654,7 @@ class _MangaToolbarPreview extends StatelessWidget {
     final double design = compact ? 420 : 760;
     return IgnorePointer(
       child: ExcludeFocus(
-        child: AnimatedSize(
+        child: FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.medium),
           curve: FushiMotion.standard,
           alignment: Alignment.topCenter,
