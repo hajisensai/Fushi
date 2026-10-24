@@ -144,6 +144,58 @@ void main() {
     },
   );
 
+  test(
+    'discMenu: refused when the host cannot open discs (never plays instead)',
+    () async {
+      await expectLater(
+        call('openVideo', <String, dynamic>{'bookUid': 'a', 'discMenu': true}),
+        throwsA(
+          isA<VideoRemoteException>().having(
+            (VideoRemoteException e) => e.code,
+            'code',
+            videoRemoteActionUnsupported,
+          ),
+        ),
+      );
+      expect(opened, isEmpty, reason: '老口径不能把标题当普通视频直接播');
+    },
+  );
+
+  test('discMenu: advertised and routed to openDisc', () async {
+    final List<String> discs = <String>[];
+    final VideoRemoteHost discHost = VideoRemoteHost(
+      favorites: () => FavoriteSentenceRepository(db),
+      library: VideoRemoteLibrary(
+        list: () async => library,
+        open: (String bookUid) async => opened.add(bookUid),
+        openDisc: (String bookUid) async => discs.add(bookUid),
+      ),
+    );
+    addTearDown(discHost.dispose);
+    final Map<String, Object?> snapshot = await discHost.handle(
+      'snapshot',
+      <String, dynamic>{},
+      'phone',
+    );
+    expect(
+      snapshot['capabilities'],
+      containsAll(<String>[
+        videoRemoteCapabilityOpenVideo,
+        videoRemoteCapabilityOpenDiscMenu,
+      ]),
+    );
+    expect(
+      await discHost.handle('openVideo', <String, dynamic>{
+        'requestId': 'r1',
+        'bookUid': 'a',
+        'discMenu': true,
+      }, 'phone'),
+      <String, Object?>{'ok': true},
+    );
+    expect(discs, <String>['a']);
+    expect(opened, isEmpty);
+  });
+
   test('a host without a library neither advertises nor answers', () async {
     final VideoRemoteHost bare = VideoRemoteHost(
       favorites: () => FavoriteSentenceRepository(db),
