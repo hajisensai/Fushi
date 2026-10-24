@@ -2019,8 +2019,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     compact: compact,
                     actions: sessionActions,
                     footer: <Widget>[
+                      // 色块嵌在 footer 的 surface 容器里：四周留白，别贴着容器边
+                      // 和下方的游戏内查词行。
                       if (state.knifeTextServiceIniPath != null)
-                        _buildKnifeTextServiceNotice(state),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                          child: _buildKnifeTextServiceNotice(state),
+                        ),
                       if (Platform.isWindows)
                         GalAttachedLookupWorkbench(
                           controller: GalHookTextOverlayController
