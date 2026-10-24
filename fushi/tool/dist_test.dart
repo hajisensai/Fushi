@@ -97,10 +97,17 @@ Future<void> main(List<String> args) async {
     );
     exit(64);
   }
-  final Map<String, int> weights = suiteShardWeights(
-    bytes,
-    readSuiteTimings(File(kSuiteTimingsPath)),
-  );
+  // CI-measured run time plus the per-suite compile + tester start-up that
+  // one `flutter test` process pays serially (≈1.5 s per suite on the M4 Mac,
+  // where the CI table says 0.1-0.3 s): without it batches of many small
+  // suites come out far too big and slots sit idle.
+  final Map<String, int> weights = <String, int>{
+    for (final MapEntry<String, int> e in suiteShardWeights(
+      bytes,
+      readSuiteTimings(File(kSuiteTimingsPath)),
+    ).entries)
+      e.key: e.value + options.suiteOverheadMs,
+  };
   final Map<String, SuiteRequirement> requirements = <String, SuiteRequirement>{
     for (final String p in bytes.keys)
       p: scanSuiteRequirement(File(p).readAsStringSync()),
@@ -359,6 +366,7 @@ class _Options {
     required this.configPath,
     required this.workers,
     required this.batchMinutes,
+    required this.suiteOverheadMs,
     required this.outputDir,
     required this.status,
     required this.dryRun,
@@ -369,6 +377,7 @@ class _Options {
   final String configPath;
   final Set<String>? workers;
   final int batchMinutes;
+  final int suiteOverheadMs;
   final String? outputDir;
   final bool status;
   final bool dryRun;
@@ -379,6 +388,7 @@ class _Options {
     String configPath = 'tool/dist_test/workers.local.json';
     Set<String>? workers;
     int batchMinutes = 4;
+    int suiteOverheadMs = 1500;
     String? outputDir;
     bool status = false;
     bool dryRun = false;
@@ -394,6 +404,15 @@ class _Options {
         workers = arg.substring('--workers='.length).split(',').toSet();
       } else if (arg.startsWith('--output-dir=')) {
         outputDir = arg.substring('--output-dir='.length);
+      } else if (arg.startsWith('--suite-overhead-ms=')) {
+        final int? v = int.tryParse(
+          arg.substring('--suite-overhead-ms='.length),
+        );
+        if (v == null || v < 0) {
+          stderr.writeln('bad --suite-overhead-ms');
+          exit(64);
+        }
+        suiteOverheadMs = v;
       } else if (arg.startsWith('--batch-minutes=')) {
         final int? v = int.tryParse(arg.substring('--batch-minutes='.length));
         if (v == null || v < 1) {
@@ -420,6 +439,7 @@ class _Options {
       configPath: configPath,
       workers: workers,
       batchMinutes: batchMinutes,
+      suiteOverheadMs: suiteOverheadMs,
       outputDir: outputDir,
       status: status,
       dryRun: dryRun,
@@ -474,7 +494,7 @@ void _printPlan(
   final int totalMs = weights.values.fold<int>(0, (int s, int v) => s + v);
   stdout.writeln(
     '${weights.length} suites, '
-    '~${(totalMs / 60000).toStringAsFixed(1)} suite-minutes (CI-measured), '
+    '~${(totalMs / 60000).toStringAsFixed(1)} suite-minutes (CI-measured + per-suite overhead), '
     '${batches.length} batches:',
   );
   for (final String label in byLabel.keys.toList()..sort()) {
