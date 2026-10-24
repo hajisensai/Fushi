@@ -195,7 +195,14 @@ class LocalAudioEnhancement extends AudioEnhancement {
     //    制卡恒无单词音频。解析出 ref（远端 URL 或本地路径）后物化成本地文件供 Anki 落媒体；
     //    失败落到 TTS 兜底。
     try {
-      final String? ref = await resolveLookupAudioUrl(appModel, term, reading);
+      // TTS 兜底由下面第 3 步负责（带「手动触发弹原因」语义），这里关掉，
+      // 免得同一个词合成两次。
+      final String? ref = await resolveLookupAudioUrl(
+        appModel,
+        term,
+        reading,
+        ttsFallback: false,
+      );
       if (ref != null && ref.isNotEmpty) {
         final Directory remoteDir = await getApplicationSupportDirectory();
         final File? materialized = await materializeWordAudioRef(

@@ -93,6 +93,21 @@ MiningTtsFallbackVoice miningTtsFallbackVoiceOf(PrefStore prefs) =>
       prefs.getPref(kMiningTtsFallbackVoicePref, defaultValue: ''),
     );
 
+/// 查词播放（♪ / 自动发音）在全部音频源都没命中时用的兜底声音；null = 不兜底。
+///
+/// 与制卡兜底共用同一个偏好，但只认用户**显式选过**的声音：从没碰过这项设置
+/// （空串，制卡按系统语音兜底的升级前行为）的用户，查词仍保持「只用音频源」，
+/// 不会突然冒出系统语音。选了「不使用」同样不兜底。
+MiningTtsFallbackVoice? lookupTtsFallbackVoiceOf(PrefStore prefs) {
+  final Object? raw = prefs.getPref(
+    kMiningTtsFallbackVoicePref,
+    defaultValue: '',
+  );
+  if (raw is! String || raw.isEmpty) return null;
+  final MiningTtsFallbackVoice choice = MiningTtsFallbackVoice.parse(raw);
+  return choice.kind == MiningTtsFallbackKind.none ? null : choice;
+}
+
 Future<void> setMiningTtsFallbackVoice(
   PrefStore prefs,
   MiningTtsFallbackVoice voice,
