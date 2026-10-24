@@ -14,6 +14,7 @@ import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
 import 'package:fushi/src/media/video/disc/disc_session_controls.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/bluray_disc_track_selection.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
@@ -706,6 +707,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.discLaunchCover,
     this.discLaunchOrigin,
     this.webSite,
+    this.remoteDisc,
     super.key,
   }) : remoteInfo = null,
        remoteClient = null,
@@ -731,6 +733,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        discLaunchCover = null,
        discLaunchOrigin = null,
        webSite = null,
+       remoteDisc = null,
        playlistCollectionId = null;
 
   final String bookUid;
@@ -774,6 +777,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
 
+  /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。只与
+  /// [openBlurayMenu] 一起用（入口 [neutralizedRemoteDisc]）；本机没有这张盘的库行，
+  /// 会话里的标题不绑定库行、不写进度。
+  final RemoteDiscMenuSource? remoteDisc;
+
   /// 打开视频播放页的**唯一入口**：在路由层用 [FushiAppUiScaleNeutralizer] 把整页中和
   /// （与阅读器 [ReaderFushiSource.buildLaunchPage] 同范式）。
   ///
@@ -813,6 +821,24 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       discLaunchCover: discLaunchCover,
       discLaunchOrigin: discLaunchOrigin,
       webSite: webSite,
+    ),
+  );
+
+  /// 远端原盘的流式原盘会话（[remoteDisc]）。[bookUid] 是只作身份的合成 id，不对应
+  /// 本机任何库行。
+  static Widget neutralizedRemoteDisc({
+    required RemoteDiscMenuSource remoteDisc,
+    required VideoBookRepository repo,
+    ImageProvider? discLaunchCover,
+    Rect? discLaunchOrigin,
+  }) => FushiAppUiScaleNeutralizer(
+    child: VideoFushiPage(
+      bookUid: 'remote-disc:${remoteDisc.manifest.discKey}',
+      repo: repo,
+      openBlurayMenu: true,
+      discLaunchCover: discLaunchCover,
+      discLaunchOrigin: discLaunchOrigin,
+      remoteDisc: remoteDisc,
     ),
   );
 
@@ -3836,6 +3862,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // /有声书同构），使看视频时的查词浮层 / 制卡按绑定 profile 生效。与视频
     // 加载并行、失败非致命（unawaited + 内部 try/catch）。
     unawaited(_resolveAndApplyVideoProfile());
+    if (widget.remoteDisc != null) {
+      await _initRemoteDisc();
+      return;
+    }
     if (_isRemote) {
       await _initRemote();
       return;
@@ -4110,6 +4140,51 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     await _loadSingle(row);
+  }
+
+  /// 流式原盘会话：没有本机库行，用一条只作身份的伪行走原盘会话的同一条加载路径
+  /// （BD-J 运行时检查、开盘、会话外壳），设备串交给 libmpv。
+  Future<void> _initRemoteDisc() async {
+    final RemoteDiscMenuSource source = widget.remoteDisc!;
+    _bookRow = VideoBookRow(
+      bookUid: widget.bookUid,
+      title: source.title,
+      videoPath: source.representativeMemberPath,
+      lastPositionMs: 0,
+      currentEpisode: 0,
+      delayMs: 0,
+    );
+    if (!source.isDvd) {
+      final BlurayMenuInfo? info;
+      try {
+        info = await source.readMenuInfo();
+      } catch (error, stack) {
+        ErrorLogService.instance.log('VideoDiscMenu.remoteIndex', error, stack);
+        if (mounted) {
+          setState(() {
+            _failed = true;
+            _failReason = t.video_disc_navigation_failed;
+          });
+        }
+        return;
+      }
+      if (!await _ensureDiscMenuRuntimeFor(info)) return;
+    }
+    if (!mounted) return;
+    _currentSubtitleSource = null;
+    _currentSecondarySubtitleSource = null;
+    _currentAudioTrackId = null;
+    _delayMs = 0;
+    _secondaryDelayMs = null;
+    await _applyLoad(
+      videoPath: null,
+      mediaUri: source.nativeDevice,
+      cues: const <AudioCue>[],
+      title: source.title,
+      initialPositionMs: 0,
+      startIntent: EpisodeStartIntent.initialOpen,
+      remoteDisc: source,
+    );
   }
 
   Future<void> _initRemote() async {
@@ -5449,6 +5524,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     bool detectHls = true,
     // 互联 host 的蓝光标题段表（见 [VideoPlayerController.load] 的同名参数）。
     BlurayRemoteTitle? remoteDiscTitle,
+    // 流式原盘会话的盘源（见 [VideoPlayerController.load] 的同名参数）。
+    RemoteDiscMenuSource? remoteDisc,
   }) async {
     _unregisterVideoRemote();
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
@@ -5565,6 +5642,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         autoPlay: !_sourceReviewActive,
         externalAudioTrackUrl: externalAudioTrackUrl,
         remoteDiscTitle: remoteDiscTitle,
+        remoteDisc: remoteDisc,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
       );
     } catch (e, stack) {
@@ -5592,7 +5670,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 远端蓝光标题的 [mediaUri] 是 `edl://`，ffmpeg 打不开：不设成制卡源（host 给了
     // 低清制卡流时远端载入路径会再覆盖成它）。
     controller.setMiningSourceOverride(
-      videoPath == null && remoteDiscTitle == null ? mediaUri : null,
+      videoPath == null && remoteDiscTitle == null && remoteDisc == null
+          ? mediaUri
+          : null,
     );
     // TODO-1158：探测当前流是否为 HLS master（多档画质），填充画质菜单。仅常规载入
     // 触发（画质切档的重载 detectHls=false）；网络 .m3u8 直链才 fetch，best-effort。
@@ -5608,7 +5688,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
     controller.setSecondaryDelayMs(_secondaryDelayMs);
     // TODO-559: 远端断点保存——远端无 DB 行，按 bookUid 落 prefs（原为 null 不存）。
-    controller.onPositionWrite = _isRemote
+    // 流式原盘会话：标题在 host 的库里，本机没有行可写。
+    controller.onPositionWrite = remoteDisc != null
+        ? null
+        : _isRemote
         ? _persistRemotePosition
         : _persistPosition;
     if (!mounted) {
@@ -11712,6 +11795,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (error is VideoDiscMenuException) {
       if (error.code == 'java-runtime-unavailable') {
         return t.video_disc_runtime_required;
+      }
+      if (error.code == kVideoDiscRemoteRuntimeUnsupported) {
+        return t.video_disc_menu_unavailable_remote_runtime;
+      }
+      if (error.code == kVideoDiscRemoteDvdFolder) {
+        return t.video_disc_menu_unavailable_remote_dvd_folder;
       }
       return error.code.startsWith('navigation-')
           ? t.video_disc_menu_unsupported

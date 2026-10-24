@@ -55,6 +55,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         token: token,
         requestedUri: request.requestedUri,
         manifest: manifest,
+        titles: await (svc as VideoDiscShareHost).videoTitlesOnDisc(root),
       ));
     }
 

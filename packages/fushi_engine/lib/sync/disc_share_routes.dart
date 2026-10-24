@@ -134,14 +134,23 @@ bool isDiscShareSessionPath(String urlPath) =>
 
 /// 签发：`GET /api/library/videos/<id>/disc` 的响应体。[baseUrl] 以 `/` 结尾，
 /// client 在其后拼 `manifest.json` / `files/<路径>`。
+///
+/// [titles] 是库里落在这张盘上的视频行（bookUid + 相对盘根的成员路径），client
+/// 整盘下载落地后据此把它们认领成本地行。
 Map<String, Object?> discShareIssueBody({
   required String token,
   required Uri requestedUri,
   required DiscShareManifest manifest,
+  List<({String id, String path})> titles =
+      const <({String id, String path})>[],
 }) => <String, Object?>{
   'token': token,
   'baseUrl': discShareBaseUri(requestedUri, token).toString(),
   'manifest': manifest.toJson(),
+  'titles': <Map<String, String>>[
+    for (final ({String id, String path}) title in titles)
+      <String, String>{'id': title.id, 'path': title.path},
+  ],
 };
 
 /// 会话根 URL（与签发请求同一个 scheme / host / port——client 经哪条地址来的就回
@@ -181,8 +190,9 @@ Future<shelf.Response> handleDiscShareRequest(
     );
   }
   const String filesPrefix = 'files/';
-  if (!tail.startsWith(filesPrefix))
+  if (!tail.startsWith(filesPrefix)) {
     return shelf.Response.notFound('Not found');
+  }
   final String relative = tail.substring(filesPrefix.length);
   final String? path = resolveDiscShareFilePath(
     session.discRoot,

@@ -11,6 +11,7 @@ import 'package:fushi/src/media/video/coalesced_rereader.dart';
 import 'package:fushi/src/media/video/video_disc_menu.dart';
 import 'package:fushi/src/media/video/bluray_aacs_module.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
@@ -824,6 +825,10 @@ class VideoPlayerController extends ChangeNotifier
   /// Its selected / bound "playlist" paths then carry DVD title member paths
   /// (`<disc>/VIDEO_TS/TITLE_nn.dvdtitle`, dvd_title_path.dart).
   bool _discIsDvd = false;
+
+  /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。
+  /// 非 null 时 [_discRootPath] 是只作身份的虚拟根（[RemoteDiscMenuSource.identityRoot]）。
+  RemoteDiscMenuSource? _discRemote;
   VideoDiscNavigationState? _discState;
   String? _selectedDiscPlaylistPath;
   String? _boundDiscPlaylistPath;
@@ -3055,6 +3060,8 @@ class VideoPlayerController extends ChangeNotifier
     // 互联 host 下发的蓝光标题段表（与 [mediaUri] 同时给，非 null 时取代它）。与本地
     // 蓝光同一套 EDL 拼法；[nativePlaybackUri] 对 `edl://` 逐段改写自签 https 段。
     BlurayRemoteTitle? remoteDiscTitle,
+    // 流式原盘会话的盘源（与 [openBlurayMenu] 同时给；[mediaUri] 给它的设备串）。
+    RemoteDiscMenuSource? remoteDisc,
     // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
     // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
     // 才会让它随首个 seek / 起播与视频时间轴同步；若等 load 返回后再挂（play 已开始），新加的
@@ -3076,7 +3083,15 @@ class VideoPlayerController extends ChangeNotifier
       if (loadToken != _loadToken) return;
     }
     _resetDiscMenu();
-    if (openBlurayMenu) {
+    if (openBlurayMenu && remoteDisc != null) {
+      // Remote disc: libbluray / libdvdnav read the host's share over HTTP; the
+      // virtual root only tells titles apart, nothing reads from it.
+      _discRootPath = remoteDisc.identityRoot;
+      _discIsDvd = remoteDisc.isDvd;
+      _discRemote = remoteDisc;
+      _miningSourceOverride = null;
+      _miningAudioSourceOverride = null;
+    } else if (openBlurayMenu) {
       // Blu-ray `.mpls` or DVD `TITLE_nn.dvdtitle` member: both name their disc.
       final String? root = videoFile == null
           ? null

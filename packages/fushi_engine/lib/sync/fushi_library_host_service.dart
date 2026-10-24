@@ -2985,6 +2985,11 @@ abstract interface class VideoDiscShareHost {
   /// 盘根（目录或 `.iso`）；不是原盘标题、行不存在或盘已不在 → null。路径只来自
   /// host 自己的 DB。
   Future<String?> resolveVideoDiscRoot(String id);
+
+  /// 库里成员路径落在 [discRoot] 这张盘上的全部视频行：`id` 是 bookUid，`path`
+  /// 是成员路径相对盘根的部分（正斜杠，如 `BDMV/PLAYLIST/00800.mpls`、
+  /// `VIDEO_TS/TITLE_01.dvdtitle`）。client 整盘下载落地后据此把这些行认领成本地行。
+  Future<List<({String id, String path})>> videoTitlesOnDisc(String discRoot);
 }
 
 /// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好

@@ -101,6 +101,11 @@ const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
 /// answers `library` / `openVideo`.
 const String videoRemoteCapabilityOpenVideo = 'openVideo';
 
+/// Host-level capability: `openVideo` accepts `discMenu: true` and opens the
+/// title's disc in its authored menu (remote discs, phase 2). Older hosts
+/// would silently play the title instead, so the phone checks this first.
+const String videoRemoteCapabilityOpenDiscMenu = 'openDiscMenu';
+
 /// Error code for a known action the current player cannot perform.
 const String videoRemoteActionUnsupported = 'action_unsupported';
 

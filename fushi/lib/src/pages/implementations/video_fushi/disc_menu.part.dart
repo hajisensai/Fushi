@@ -8,8 +8,26 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (isDvdTitlePath(playlistPath)) return true;
     final String? root = discRootForMemberPath(playlistPath);
     if (root == null) return true; // Controller reports malformed input.
+    final BlurayMenuInfo? info;
     try {
-      final BlurayMenuInfo? info = await readBlurayMenuInfo(root);
+      info = await readBlurayMenuInfo(root);
+    } catch (error, stack) {
+      ErrorLogService.instance.log('VideoDiscMenu.runtime', error, stack);
+      if (mounted) {
+        _rebuild(() {
+          _failed = true;
+          _failReason = t.video_disc_runtime_required;
+        });
+      }
+      return false;
+    }
+    return _ensureDiscMenuRuntimeFor(info);
+  }
+
+  /// BD-J 运行时检查本体：本地盘读本机 `index.bdmv`，远端盘读共享里的同一文件，
+  /// 之后完全相同。
+  Future<bool> _ensureDiscMenuRuntimeFor(BlurayMenuInfo? info) async {
+    try {
       if (!mounted) return false;
       if (info?.requiresJava != true) return true;
       final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
@@ -55,6 +73,8 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       'audio-track-unavailable' => t.video_disc_audio_selection_pending,
       'extraction-source-unavailable' => t.video_clip_export_input_missing,
       'encrypted-extraction-source' => t.video_disc_extraction_unavailable,
+      kVideoDiscRemoteExtractionUnavailable =>
+        t.video_disc_extraction_unavailable,
       _ => t.video_disc_title_binding_failed,
     };
     _showOsd(message, severity: ToastSeverity.warning);
@@ -344,6 +364,12 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // They get their row through the importer's own rules (disc source, disc
       // collection, META disc name) — a hand-built sourceless row is invisible
       // to every scrape entry point, which select books by source.
+      // Remote disc: the title is the host's; there is no row to bind here.
+      if (controller.isRemoteDiscSession) {
+        if (!current()) return;
+        controller.bindRemoteDiscTitle(expectedGeneration: nativeGeneration);
+        return;
+      }
       final VideoBookRow? row = isDvdTitlePath(path)
           ? await ensureDvdTitleInLibrary(appModel.database, path)
           : await ensureBlurayTitleInLibrary(appModel.database, path);

@@ -5,6 +5,9 @@ part of 'video_player_controller.dart';
 extension VideoDiscMenuController on VideoPlayerController {
   bool get isBlurayNavigationSession => _discRootPath != null;
 
+  /// The disc lives on a paired host and is read over HTTP (remote discs).
+  bool get isRemoteDiscSession => _discRemote != null;
+
   /// Which navigation library drives the session (meaningless outside one).
   VideoDiscType get discType =>
       _discIsDvd ? VideoDiscType.dvd : VideoDiscType.bluray;
@@ -85,6 +88,7 @@ extension VideoDiscMenuController on VideoPlayerController {
     _discJavaRuntimeProbe = null;
     _discRootPath = null;
     _discIsDvd = false;
+    _discRemote = null;
     _discState = null;
     _selectedDiscPlaylistPath = null;
     _boundDiscPlaylistPath = null;
@@ -128,12 +132,29 @@ extension VideoDiscMenuController on VideoPlayerController {
     // stream before setting a new device, without replacing Player or texture.
     _setDiscLoadStage('disc-stop');
     await runCheckedVideoDiscCommand(native, <String>['stop']);
+    final RemoteDiscMenuSource? remote = _discRemote;
+    if (remote != null) {
+      // An older runtime would take the URL as a path and only report a
+      // generic open failure; say exactly what is missing instead.
+      _setDiscLoadStage('disc-remote-capability');
+      final String remoteProperties =
+          await native.getPropertyAsync('property-list', waitForInitialization: false) as String;
+      if (!_isCurrentLoad(player, loadToken)) return;
+      if (!remoteProperties.split(',').contains('disc-remote-access')) {
+        throw const VideoDiscMenuException(kVideoDiscRemoteRuntimeUnsupported);
+      }
+      if (remote.streamBlock == RemoteDiscStreamBlock.dvdFolder) {
+        throw const VideoDiscMenuException(kVideoDiscRemoteDvdFolder);
+      }
+    }
     if (_discIsDvd) {
       await _prepareDvdMenu(player, loadToken, option);
       return;
     }
     _setDiscLoadStage('disc-index');
-    final BlurayMenuInfo? info = await readBlurayMenuInfo(_discRootPath!);
+    final BlurayMenuInfo? info = remote != null
+        ? await remote.readMenuInfo()
+        : await readBlurayMenuInfo(_discRootPath!);
     if (!_isCurrentLoad(player, loadToken)) return;
     if (info == null) throw const VideoDiscMenuException('invalid-disc-index');
     if (!info.hasMenu) {
@@ -169,8 +190,13 @@ extension VideoDiscMenuController on VideoPlayerController {
     // this disc's KEYDB key with the bundled module before it opens the disc;
     // an encrypted disc without a key fails here with the KEYDB guidance.
     _setDiscLoadStage('disc-aacs');
-    final BlurayMenuAacsState aacs =
-        await prepareBlurayMenuAacs(_discRootPath!);
+    final BlurayMenuAacsState aacs = remote != null
+        ? await prepareRemoteBlurayMenuAacs(
+            sharedAacs: remote.manifest.aacs,
+            readUnitKeyFile: () =>
+                remote.readFile('AACS/Unit_Key_RO.inf', 1024 * 1024),
+          )
+        : await prepareBlurayMenuAacs(_discRootPath!);
     if (!_isCurrentLoad(player, loadToken)) return;
     _discAacsState = aacs;
     // An empty per-player override lets libbluray use its documented system
@@ -184,7 +210,9 @@ extension VideoDiscMenuController on VideoPlayerController {
     await runCheckedVideoDiscCommand(native, <String>[
       'set',
       'bluray-device',
-      _discRootPath!,
+      // Remote: the share URL, downgraded to loopback plaintext for the app's
+      // relay (which re-pins the host's TLS), like every other native URL.
+      remote != null ? nativePlaybackUri(remote.nativeDevice) : _discRootPath!,
     ]);
     await _finishDiscMenuPreparation(player, loadToken);
   }
@@ -218,10 +246,11 @@ extension VideoDiscMenuController on VideoPlayerController {
     }
     _discInitialMenuPending = true;
     _setDiscLoadStage('disc-properties');
+    final RemoteDiscMenuSource? remote = _discRemote;
     await runCheckedVideoDiscCommand(native, <String>[
       'set',
       'dvd-device',
-      _discRootPath!,
+      remote != null ? nativePlaybackUri(remote.nativeDevice) : _discRootPath!,
     ]);
     await _finishDiscMenuPreparation(player, loadToken);
   }
@@ -630,6 +659,26 @@ extension VideoDiscMenuController on VideoPlayerController {
             ),
           ),
     ];
+  }
+
+  /// Remote disc: the confirmed title has no library row on this device (the
+  /// disc is the host's), so its identity is bound without one. Mining reads
+  /// local files and stays unavailable; the session plays and navigates.
+  void bindRemoteDiscTitle({int? expectedGeneration}) {
+    if (!isRemoteDiscSession ||
+        (expectedGeneration != null &&
+            expectedGeneration != _discTitleGeneration) ||
+        _selectedDiscPlaylistPath == null ||
+        _discState?.isTitle != true) {
+      return;
+    }
+    _videoPath = null;
+    _discMiningAvailable = false;
+    _discExtractionError = kVideoDiscRemoteExtractionUnavailable;
+    _bookUid = null;
+    _boundDiscPlaylistPath = _selectedDiscPlaylistPath;
+    _blurayChapters = null;
+    _notifyDiscMenuChanged();
   }
 
   /// Bind the current native title to its library row without reopening Player.

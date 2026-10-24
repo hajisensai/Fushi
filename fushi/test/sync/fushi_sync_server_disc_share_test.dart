@@ -22,6 +22,13 @@ class _DiscHost implements FushiLibraryHostService, VideoDiscShareHost {
       id == 'video/title1' ? discRoot : null;
 
   @override
+  Future<List<({String id, String path})>> videoTitlesOnDisc(
+    String discRoot,
+  ) async => <({String id, String path})>[
+    (id: 'video/title1', path: 'BDMV/PLAYLIST/00000.mpls'),
+  ];
+
+  @override
   Future<AggregateSnapshot> getAggregateSnapshot() async =>
       const AggregateSnapshot();
 
@@ -132,6 +139,12 @@ void main() {
     )!;
     expect(manifest.name, 'Disc 2');
     expect(manifest.aacs, isFalse);
+    expect(body['titles'], <Object?>[
+      <String, Object?>{
+        'id': 'video/title1',
+        'path': 'BDMV/PLAYLIST/00000.mpls',
+      },
+    ]);
 
     final HttpClientResponse listed = await get(
       '${baseUrl}manifest.json',
