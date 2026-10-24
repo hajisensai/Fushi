@@ -609,8 +609,11 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   `FloatingLyricChannel`（Android 系统悬浮窗 / Windows 置顶穿透分层窗，不抢前台）。双行
   （当前 + 下一行）；逐字推进按**音节边界**下发一次区间高亮（定时器排到下一个边界，
   不逐帧过平台通道）——原生窗口只有区间高亮，没有逐帧渐变擦色。与有声书按媒体会话
-  归属让出 / 拿回窗口。**macOS 没有原生悬浮窗后端**（有声书同样没有），设置项只在
-  Android / Windows 显示。
+  归属让出 / 拿回窗口。macOS 后端（2026-10-24 补上）：`macos/Runner/FushiFloatingLyric.swift`，
+  不激活的置顶 NSPanel（`.statusBar` 级、`canJoinAllSpaces + fullScreenAuxiliary`）+ 独立
+  工具条子窗，同一条通道契约；有声书悬浮字幕随之在 macOS 可用。不做竖排与注音，穿透态
+  （`ignoresMouseEvents` 整窗级）只剩 Shift-悬停查词。设置项按
+  `FloatingLyricChannel.supported`（Android / Windows / macOS）显示，竖排仍只在 Windows。
 - **锁屏 / 通知**：当前行写进媒体会话的副标题（`MusicSession.mediaSessionLyricLine`），
   设置「锁屏显示歌词」默认开。
 - **学习闭环（§12）**：歌词页制卡 = 查词那行 + 该行音频（前后扩 0.5 s）+ 封面 + `music`
