@@ -52,6 +52,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/srs/srs_providers.dart' show srsStoreProvider;
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -85,6 +86,40 @@ bool musicLyricsShouldPauseForLookup({
   required bool playing,
 }) => settingEnabled && playing;
 
+/// 截一段音频（制卡句子音频）。生产 = ffmpeg（[TtsChannel.extractAudioSegment]）；widget
+/// 测试换成不起子进程的替身。失败返回 null，原因经 [onFailure] 带出。
+typedef MusicLyricsClipExtractor =
+    Future<String?> Function({
+      required String inputPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      required int audioChannels,
+      required String audioBitrate,
+      required void Function(String summary) onFailure,
+    });
+
+Future<String?> _ffmpegClip({
+  required String inputPath,
+  required int startMs,
+  required int endMs,
+  required String outputPath,
+  required int audioChannels,
+  required String audioBitrate,
+  required void Function(String summary) onFailure,
+}) => TtsChannel.instance.extractAudioSegment(
+  inputPath: inputPath,
+  startMs: startMs,
+  endMs: endMs,
+  outputPath: outputPath,
+  audioChannels: audioChannels,
+  audioBitrate: audioBitrate,
+  onFailure: onFailure,
+);
+
+@visibleForTesting
+MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
+
 /// 复习库 → 「已知」词头（卡已进入复习队列）。[store] 为 null（复习模块关着）返回 null。
 Future<Set<String>?> musicKnownTermsFromSrs(
   SrsDbStore? store,
@@ -114,8 +149,10 @@ class MusicLyricsPage extends BaseSourcePage {
 }
 
 class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
-  MusicPlayerEngine get _engine => appModel.musicSession.engine;
-  MusicLyricsService get _service => appModel.musicLyrics;
+  // 进程级单例，不随 provider 变：用缓存的 AppModel 取（initState 里就要挂监听，那时
+  // 还不能经 ref.watch 读 inherited widget——之前这里在 debug 下开页即断言）。
+  MusicPlayerEngine get _engine => appModelNoUpdate.musicSession.engine;
+  MusicLyricsService get _service => appModelNoUpdate.musicLyrics;
 
   late final MusicLyricsClock _clock = MusicLyricsClock(_engine);
   late bool _showLyrics = widget.startWithLyrics;
@@ -322,7 +359,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           'fushi_music_mine_audio_',
         );
         String? failure;
-        audioPath = await TtsChannel.instance.extractAudioSegment(
+        audioPath = await musicLyricsClipExtractor(
           inputPath: item.path,
           startMs: clip.startMs,
           endMs: clip.endMs,
@@ -862,11 +899,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           style: context.fushiType.bodyMedium,
         ),
         // 生词覆盖率：有词典、复习模块开着、至少命中一个词才显示。
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: context.fushiMotion.spatialDefault.curve,
           child: coverage == null
               ? const SizedBox(width: double.infinity)
-              : Tooltip(
+              : FushiTooltip(
                   message: t.music_lyrics_coverage_hint,
                   child: Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -922,8 +960,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           ],
         ),
         if (synced)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // 窄栏（宽屏左栏 380）放不下偏移 + 循环一整排时自动换行，不溢出。
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
               FushiIconButtonControl(
                 key: const ValueKey<String>('music_lyrics_offset_earlier'),
@@ -941,7 +981,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 tooltip: t.music_lyrics_offset_earlier,
                 onPressed: () => _nudgeOffset(kMusicLyricsOffsetStepMs),
               ),
-              const SizedBox(width: 12),
               FushiIconButtonControl(
                 key: const ValueKey<String>('music_lyrics_ab_loop'),
                 icon: const FushiIcon(FushiIcons.repeat),

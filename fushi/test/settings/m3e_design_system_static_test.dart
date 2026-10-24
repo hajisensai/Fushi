@@ -867,6 +867,12 @@ class AnotherPopupPart {
           'size to the platform overlay channel (content/data passed to '
           'FloatingLyricChannel.show/updateStyle), not page chrome — same '
           'rationale as audiobook_bridge.',
+      'lib/src/media/music/lyrics/music_desktop_lyrics_surface.dart':
+          'Music desktop lyrics reuse the audiobook floating-lyric overlay: the '
+          'user-configurable caption font size is forwarded to the native '
+          'Android / Win32 window via FloatingLyricChannel.show (content data, '
+          'renders no Flutter widgets) — same reviewed exception as '
+          'audiobook_session.',
       'lib/src/media/audiobook/now_listening_mini_bar.dart':
           'Now-listening media mini-bar: surface role + book-cover thumbnail '
           'radius are media-subsystem content chrome (same category as the '
@@ -1342,6 +1348,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/music_desktop_lyrics_surface.dart': <String>{
+        'fontSize:',
+      },
       'lib/src/media/audiobook/floating_lyric_style.dart': <String>{
         'surfaceContainerHigh',
         'fontSize:',
