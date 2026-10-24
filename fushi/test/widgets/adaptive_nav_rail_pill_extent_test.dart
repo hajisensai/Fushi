@@ -104,9 +104,18 @@ void main() {
   });
 
   // MD3 底栏 / 收起 rail：整格是点击区，但悬停 / 按压状态层（含涟漪）只画在
-  // 指示器药丸上，与选中高亮同尺寸（M3 NavigationBar 的 indicator ink）。
-  Rect stateLayerRect(WidgetTester tester, String label) {
-    final Finder ink = inkOf(label);
+  // 指示器上，与选中高亮同尺寸（M3 NavigationBar 的 indicator ink）。底栏的
+  // 指示器是标签上方的药丸；收起 rail 纯图标（PR #2476），指示器是图标背后
+  // 52 的专属形状方槽（墨滴落点），状态层是它的内切圆。
+  Finder inkAround(Finder anchor) => find
+      .ancestor(
+        of: anchor,
+        matching: find.byWidgetPredicate((Widget w) => w is InkWell),
+      )
+      .first;
+
+  Rect stateLayerRect(WidgetTester tester, Finder anchor) {
+    final Finder ink = inkAround(anchor);
     final InkWell inkWell = tester.widget<InkWell>(ink);
     final RenderBox ref = tester.renderObject<RenderBox>(ink);
     final RectCallback? callback = inkWell.getRectCallback(ref);
@@ -114,32 +123,49 @@ void main() {
     return local.shift(ref.localToGlobal(Offset.zero));
   }
 
-  Rect selectedPillRect(WidgetTester tester, String label) {
+  /// 底栏：标签所在 Column 的第一个孩子是药丸槽（pillWidth × 32）。
+  Rect barPillRect(WidgetTester tester, Finder label) {
     final Finder pill = find
-        .ancestor(of: find.text(label), matching: find.byType(Column))
+        .ancestor(of: label, matching: find.byType(Column))
         .first;
-    // Column 的第一个孩子是药丸槽（pillWidth × 32）。
     final Finder slot = find
         .descendant(of: pill, matching: find.byType(SizedBox))
         .first;
     return tester.getRect(slot);
   }
 
-  Future<void> expectIndicatorInk(WidgetTester tester) async {
-    final Rect selected = selectedPillRect(tester, '视频');
+  /// 收起 rail：图标外层带指示器 GlobalKey 的方槽（墨滴落点 / 专属形状）。
+  Rect railSlotRect(WidgetTester tester, Finder icon) => tester.getRect(
+    find
+        .ancestor(
+          of: icon,
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is SizedBox && w.key is GlobalKey,
+          ),
+        )
+        .first,
+  );
+
+  Future<void> expectIndicatorInk(
+    WidgetTester tester, {
+    required Finder Function(AdaptiveNavItem item) anchorOf,
+    required Rect Function(WidgetTester tester, Finder anchor) indicatorOf,
+  }) async {
+    final Rect selected = indicatorOf(tester, anchorOf(items[2]));
     for (final AdaptiveNavItem item in items) {
-      final Rect layer = stateLayerRect(tester, item.label);
-      expect(layer.size, selected.size, reason: '${item.label}：状态层与选中药丸尺寸不一致');
+      final Finder anchor = anchorOf(item);
+      final Rect layer = stateLayerRect(tester, anchor);
+      expect(layer.size, selected.size, reason: '${item.label}：状态层与选中指示器尺寸不一致');
       expect(
         layer,
-        selectedPillRect(tester, item.label),
-        reason: '${item.label}：状态层没有落在自己的药丸上',
+        indicatorOf(tester, anchor),
+        reason: '${item.label}：状态层没有落在自己的指示器上',
       );
-      final InkWell inkWell = tester.widget<InkWell>(inkOf(item.label));
+      final InkWell inkWell = tester.widget<InkWell>(inkAround(anchor));
       expect(
         inkWell.borderRadius,
         BorderRadius.circular(selected.height / 2),
-        reason: '${item.label}：状态层圆角与药丸不一致',
+        reason: '${item.label}：状态层圆角与指示器不一致',
       );
     }
   }
@@ -166,10 +192,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await expectIndicatorInk(tester);
+    await expectIndicatorInk(
+      tester,
+      anchorOf: (AdaptiveNavItem item) => find.text(item.label),
+      indicatorOf: barPillRect,
+    );
   });
 
-  testWidgets('MD3 收起 rail：状态层裁到指示器药丸', (WidgetTester tester) async {
+  testWidgets('MD3 收起 rail：状态层裁到指示器形状槽', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -196,6 +226,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await expectIndicatorInk(tester);
+    expect(find.text('视频'), findsNothing, reason: '收起 rail 纯图标');
+    await expectIndicatorInk(
+      tester,
+      anchorOf: (AdaptiveNavItem item) => find.byIcon(item.icon),
+      indicatorOf: railSlotRect,
+    );
   });
 }

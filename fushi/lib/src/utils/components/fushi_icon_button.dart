@@ -438,10 +438,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
         _withTooltip(_buildAppleIcon(context, tokens)),
       );
     }
-    return _focusable(
-      context,
-      _withTooltip(_buildMaterialIcon(context, tokens)),
-    );
+    // MD3 的提示气泡由官方按钮自己挂（见 [_buildMaterialIcon]），外面不再包
+    // 一层 Tooltip。
+    return _focusable(context, _buildMaterialIcon(context, tokens));
   }
 
   /// MD3（M3 Expressive）标准图标按钮 = 官方 M3E [IconButton]（主题工厂把
@@ -490,6 +489,14 @@ class _FushiIconButtonState extends State<FushiIconButton>
     if (slot != null) {
       style = fushiFillSlotButtonStyle(slot.extent, slot.shape).merge(style);
     }
+    // 语义只留官方按钮自己那一个容器节点：名称（label）挂在图标上并入它，
+    // 提示气泡走官方 `tooltip:`（官方把 Tooltip 放在自己的
+    // `Semantics(container: true)` 里面），选中态走 `isSelected`。不能在官方
+    // 按钮外面再套 `Semantics(label:)` / Tooltip：外层会在官方容器之上多出一个
+    // 语义节点，按钮落在滚动视图缓存区之外时（如牌组设置页底部输入框的粘贴
+    // 钮），框架给官方容器算出的矩形是空的，报「Invisible SemanticsNodes
+    // should not be added to the tree」。
+    final String? tooltip = widget.tooltip.isEmpty ? null : widget.tooltip;
     Widget official(WidgetStatesController? states, ButtonStyle? spring) =>
         IconButton(
           style: spring == null ? style : spring.merge(style),
@@ -500,7 +507,11 @@ class _FushiIconButtonState extends State<FushiIconButton>
           color: widget.enabledColor ?? (eink ? enabledColor : null),
           disabledColor: widget.disabledColor ?? (eink ? disabledColor : null),
           onPressed: _tapHandler,
-          icon: FushiIcon(widget.icon, size: widget.size),
+          tooltip: tooltip,
+          icon: Semantics(
+            label: tooltip,
+            child: FushiIcon(widget.icon, size: widget.size),
+          ),
         );
     // 官方 M3E 形变是定时补间、没有 M3E 弹簧：在官方按钮上补齐（见
     // [FushiIconButtonSpring]）。填充槽 / 固定形状 / 墨水屏不形变。
@@ -538,10 +549,11 @@ class _FushiIconButtonState extends State<FushiIconButton>
         child: Center(child: button),
       );
     }
-    return Semantics(
-      label: widget.tooltip,
-      button: true,
-      selected: (widget.selected ?? false) ? true : null,
+    // 悬停延迟与其它路径的 [_withTooltip] 同口径。
+    return TooltipTheme(
+      data: TooltipTheme.of(
+        context,
+      ).copyWith(waitDuration: kIconButtonTooltipHoverDelay),
       child: button,
     );
   }
