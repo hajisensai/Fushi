@@ -157,6 +157,11 @@ void main() {
       while (DateTime.now().isBefore(until)) {
         await tester.pump(const Duration(milliseconds: 200));
       }
+      // ignore: avoid_print
+      print(
+        '[flyric] snapshot ready '
+        '${await _test.invokeMethod<Object?>('snapshot', <String, Object?>{'tag': 'ready'})}',
+      );
 
       // ② 真 NSEvent 点字 → lookupText（带字的屏幕逻辑 px 矩形）。
       final Map<Object?, Object?>? click = await _test
@@ -179,6 +184,18 @@ void main() {
         reason: 'wordRect $word (screen logical, top-left) must lie in $window',
       );
       expect(word.width, greaterThan(0));
+      // ignore: avoid_print
+      print(
+        '[flyric] wordRect LTWH=${word.left},${word.top},${word.width},'
+        '${word.height} window=$frame',
+      );
+      final Map<String, Object?> afterClick = await probe();
+      expect(
+        afterClick['appActive'],
+        isFalse,
+        reason: 'click must not activate',
+      );
+      expect(afterClick['isKeyWindow'], isFalse);
 
       // ③ 拖动 → windowRectChanged（物理 px）；hide → 按回传矩形恢复。
       final Map<String, Object?> dragged = Map<String, Object?>.from(
@@ -250,6 +267,11 @@ void main() {
       expect(through['ignoresMouseEvents'], isTrue);
       expect(through['toolbarVisible'], isTrue);
       expect(passThroughs, <bool>[true]);
+      // ignore: avoid_print
+      print(
+        '[flyric] snapshot passthrough '
+        '${await _test.invokeMethod<Object?>('snapshot', <String, Object?>{'tag': 'passthrough'})}',
+      );
       await FloatingLyricChannel.setPassThrough(false);
 
       // ⑥ 物理 px 编码自检（合成多屏）。

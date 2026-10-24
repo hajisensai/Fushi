@@ -1514,6 +1514,23 @@ final class FloatingLyricController: NSObject {
       result(probe())
     case "screenSpaceSelfTest":
       result(FloatingLyricController.screenSpaceSelfTest())
+    case "snapshot":
+      // 进程内把正文 / 工具条视图按真绘制代码渲染成 PNG（落 NSTemporaryDirectory）。
+      // ssh 起的进程没有屏幕录制授权，screencapture 抓不到窗口像素，这是退而求其次
+      // 的目视证据：画的是同一个 draw(_:)，但不含窗口合成（阴影 / 下层桌面）。
+      let tag = (args["tag"] as? String) ?? "snap"
+      var out: [String: Any] = [:]
+      for (name, view) in [("body", bodyView as NSView?), ("toolbar", toolbarView as NSView?)] {
+        guard let view = view, view.bounds.width > 1,
+          let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        else { continue }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { continue }
+        let path = (NSTemporaryDirectory() as NSString).appendingPathComponent(
+          "flyric-\(tag)-\(name).png")
+        if (try? png.write(to: URL(fileURLWithPath: path))) != nil { out[name] = path }
+      }
+      result(out)
     default:
       result(FlutterMethodNotImplemented)
     }
