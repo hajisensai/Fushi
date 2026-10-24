@@ -9,6 +9,7 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -22,7 +23,20 @@ String formatMusicDuration(int? ms) {
   return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
 }
 
-/// 曲目列表（歌曲分区 / 艺人 / 专辑碟内）：点一首 = 以该列表为队列从这首开始播。
+/// 打开曲目详情（出现在哪些集 / 同一作品）。
+void openMusicTrackDetail(BuildContext context, String trackUid) {
+  unawaited(
+    Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => MusicTrackDetailPage(trackUid: trackUid),
+      ),
+    ),
+  );
+}
+
+/// 曲目列表（歌曲分区 / 艺人 / 专辑碟内）：点一首 = 以该列表为队列从这首开始播；
+/// 长按 / 行尾「详情」= 曲目详情页。
 class MusicTrackList extends ConsumerWidget {
   const MusicTrackList({
     super.key,
@@ -86,6 +100,7 @@ class MusicTrackList extends ConsumerWidget {
               onTap: () => unawaited(
                 engine.playQueue(_items(), startIndex: i, context: context),
               ),
+              onLongPress: () => openMusicTrackDetail(c, track.trackUid),
               child: FushiListItem(
                 leading: showTrackNumbers
                     ? SizedBox(
@@ -110,9 +125,22 @@ class MusicTrackList extends ConsumerWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: Text(
-                  formatMusicDuration(track.durationMs),
-                  style: c.fushiType.bodySmall,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      formatMusicDuration(track.durationMs),
+                      style: c.fushiType.bodySmall,
+                    ),
+                    FushiIconButton(
+                      key: ValueKey<String>(
+                        'music-track-detail-${track.trackUid}',
+                      ),
+                      icon: FushiIcons.info,
+                      tooltip: t.music_track_detail,
+                      onTap: () => openMusicTrackDetail(c, track.trackUid),
+                    ),
+                  ],
                 ),
               ),
             ),

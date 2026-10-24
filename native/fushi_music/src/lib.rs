@@ -15,6 +15,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 pub mod cue;
 pub mod dsf;
+pub mod fingerprint;
 pub mod scan;
 pub mod tags;
 pub mod uid;

@@ -85,13 +85,16 @@ extension _VideoChapter on _VideoFushiPageState {
   /// 比例斜切，首章右偏、末章左偏）。
   Widget _buildChapterMarkersOverlay(VideoPlayerController controller) {
     // mini 档没有进度条（进度交给底部细线），刻度无处可落。
-    if (!_hasChapters || !_controlsDensity.showSeekBar) {
+    // 作品图谱 L2 的 OP / ED 段首段尾（[_themeSongChapters]）同样画成刻度。
+    if ((!_hasChapters && _themeSongChapters.value.isEmpty) ||
+        !_controlsDensity.showSeekBar) {
       return const SizedBox.shrink();
     }
     // 刻度竖线高度：比轨道再高一截（约轨道高 + 8px×缩放），让标记探出轨道上下、清晰可见，
     // 但不至于像整条容器那样高出一大块。
     final double tickHeight =
-        (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) * _controlsDensityScale;
+        (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) *
+        _controlsDensityScale;
     // 轨道中线取真实轨道几何（BUG-3062，[_videoSeekBarTrackCenter]）。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       trackCenter: _videoSeekBarTrackCenter,
@@ -133,6 +136,7 @@ extension _VideoChapter on _VideoFushiPageState {
                         color: _VideoFushiPageState._videoChromeNeutralFg
                             .withValues(alpha: 0.7),
                         thickness: 2.0 * _videoUiScale,
+                        extraChapters: _themeSongChapters,
                       ),
                     ),
                   ),
@@ -158,7 +162,8 @@ extension _VideoChapter on _VideoFushiPageState {
     if (preview == null) return const SizedBox.shrink();
     // 缩略图轨道竖直锚点：与刻度层同样的 band，浮层底缘抬到轨道带上沿 + 间距。
     final double tickHeight =
-        (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) * _controlsDensityScale;
+        (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) *
+        _controlsDensityScale;
     // 轨道中线取真实轨道几何（BUG-3062，[_videoSeekBarTrackCenter]）。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       trackCenter: _videoSeekBarTrackCenter,
@@ -234,9 +239,6 @@ extension _VideoChapter on _VideoFushiPageState {
     VideoPlayerController _, {
     VideoControlSlot? sourceSlot,
   }) {
-    _showVideoSidePanel(
-      _VideoSidePanelKind.chapters,
-      sourceSlot: sourceSlot,
-    );
+    _showVideoSidePanel(_VideoSidePanelKind.chapters, sourceSlot: sourceSlot);
   }
 }

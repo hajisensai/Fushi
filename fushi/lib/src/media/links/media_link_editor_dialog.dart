@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:fushi/src/media/links/media_link_entries.dart';
+import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
+import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -8,12 +12,27 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 手动连接里可选的关系（主题曲 / 原声需要音乐端点、声优需要人物端点，那两类
-/// 本地条目落地前不提供）。
+/// 手动连接里可选的关系（原声需要 OST 专辑端点、声优需要人物端点，那两类本地条目
+/// 落地前不提供）。主题曲只在一端音乐、一端视频时可选（[mediaLinkThemeSongCompatible]）。
 const List<MediaLinkRelation> kMediaLinkPickableRelations = <MediaLinkRelation>[
   MediaLinkRelation.adaptation,
   MediaLinkRelation.sameWork,
+  MediaLinkRelation.themeSong,
 ];
+
+/// 主题曲连接可选的角色（`media_links.role`）。
+const List<ThemeSongRole> kMediaLinkPickableThemeSongRoles = <ThemeSongRole>[
+  ThemeSongRole.op,
+  ThemeSongRole.ed,
+  ThemeSongRole.insert,
+];
+
+String _themeSongRoleLabel(ThemeSongRole r) => switch (r) {
+  ThemeSongRole.op => t.music_theme_song_role_op,
+  ThemeSongRole.ed => t.music_theme_song_role_ed,
+  ThemeSongRole.insert => t.music_theme_song_role_insert,
+  ThemeSongRole.theme => t.music_theme_song_role_theme,
+};
 
 /// 详情页「关联作品」入口：选目标种类 → 关系 → 方向（有方向关系才问）→ 点选目标
 /// 条目即写一条手动连接（`upsertManualMediaLink`，恒为已确认）。返回是否写入了。
@@ -53,6 +72,10 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
 
   /// adaptation 方向：true = 本条是原作（本条 → 目标）。
   bool _selfIsOriginal = true;
+
+  /// theme_song 的角色与适用集数（`media_links.role` / `episode_range`）。
+  ThemeSongRole _themeSongRole = ThemeSongRole.op;
+  final TextEditingController _episodeRange = TextEditingController();
   String _query = '';
   bool _saving = false;
   final TextEditingController _search = TextEditingController();
@@ -72,23 +95,54 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
   Future<List<MediaLinkEntry>> _candidatesFor(MediaLinkKind kind) => _candidates
       .putIfAbsent(kind, () => loadMediaLinkCandidates(widget.database, kind));
 
+  /// 选了主题曲但两端不是「音乐 + 视频」：候选不可点。
+  bool get _relationUsable =>
+      _relation != MediaLinkRelation.themeSong ||
+      mediaLinkThemeSongCompatible(widget.self.kind, _kind);
+
   @override
   void dispose() {
+    _episodeRange.dispose();
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
 
   Future<void> _pick(MediaLinkEntry target) async {
-    if (_saving) return;
+    if (_saving || !_relationUsable) return;
     setState(() => _saving = true);
-    final bool selfIsFrom =
-        _relation != MediaLinkRelation.adaptation || _selfIsOriginal;
-    await widget.database.upsertManualMediaLink(
-      relation: _relation,
-      from: selfIsFrom ? widget.self : target.endpoint,
-      to: selfIsFrom ? target.endpoint : widget.self,
-    );
+    if (_relation == MediaLinkRelation.themeSong) {
+      // 方向固定「音乐 → 视频」。
+      final bool selfIsMusic = mediaLinkIsMusicKind(widget.self.kind);
+      final MediaLinkEndpoint music = selfIsMusic
+          ? widget.self
+          : target.endpoint;
+      final String range = _episodeRange.text.trim();
+      await widget.database.upsertManualMediaLink(
+        relation: _relation,
+        from: music,
+        to: selfIsMusic ? target.endpoint : widget.self,
+        role: _themeSongRole.wire,
+        // 解析不了的范围按「全部」存（不把一段垃圾文本冻进 wire 值）。
+        episodeRange: parseEpisodeRange(range) == null ? null : range,
+      );
+      // 后台识别这条连接覆盖的各集（串行队列、缓存有效的集跳过）。
+      unawaited(
+        themeSongDetectorFor(widget.database).detect(
+          onlyTrackUid: music.kind == MediaLinkKind.musicTrack
+              ? music.key
+              : null,
+        ),
+      );
+    } else {
+      final bool selfIsFrom =
+          _relation != MediaLinkRelation.adaptation || _selfIsOriginal;
+      await widget.database.upsertManualMediaLink(
+        relation: _relation,
+        from: selfIsFrom ? widget.self : target.endpoint,
+        to: selfIsFrom ? target.endpoint : widget.self,
+      );
+    }
     if (!mounted) return;
     Navigator.of(context).pop(target);
   }
@@ -147,7 +201,7 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
             FushiAnimatedSize(
               duration: fushiMotionDuration(context, FushiMotion.short),
               curve: FushiMotion.standard,
-              child: _relation.directed
+              child: _relation == MediaLinkRelation.adaptation
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
@@ -173,6 +227,55 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
                       ],
                     )
                   : const SizedBox(width: double.infinity),
+            ),
+            FushiAnimatedSize(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              child: _relation != MediaLinkRelation.themeSong
+                  ? const SizedBox(width: double.infinity)
+                  : !_relationUsable
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        t.media_link_theme_song_needs_music_video,
+                        key: const ValueKey<String>(
+                          'media-link-theme-song-incompatible',
+                        ),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _label(context, t.media_link_editor_theme_song_role),
+                        adaptiveSegmentedButton<ThemeSongRole>(
+                          context: context,
+                          segments: <ButtonSegment<ThemeSongRole>>[
+                            for (final ThemeSongRole r
+                                in kMediaLinkPickableThemeSongRoles)
+                              ButtonSegment<ThemeSongRole>(
+                                value: r,
+                                label: Text(_themeSongRoleLabel(r)),
+                              ),
+                          ],
+                          selected: <ThemeSongRole>{_themeSongRole},
+                          onSelectionChanged: (Set<ThemeSongRole> s) =>
+                              setState(() => _themeSongRole = s.first),
+                        ),
+                        _label(
+                          context,
+                          t.media_link_editor_theme_song_episodes,
+                        ),
+                        FushiTextField(
+                          key: const ValueKey<String>(
+                            'media-link-theme-song-episodes',
+                          ),
+                          controller: _episodeRange,
+                          hintText:
+                              t.media_link_editor_theme_song_episodes_hint,
+                        ),
+                      ],
+                    ),
             ),
             const SizedBox(height: 12),
             FushiSearchField(
@@ -228,7 +331,9 @@ class _MediaLinkEditorDialogState extends State<MediaLinkEditorDialog> {
                                 ),
                                 title: Text(shown[i].title),
                                 trailing: const FushiIcon(FushiIcons.link),
-                                onTap: _saving ? null : () => _pick(shown[i]),
+                                onTap: _saving || !_relationUsable
+                                    ? null
+                                    : () => _pick(shown[i]),
                               ),
                             ),
                         ],

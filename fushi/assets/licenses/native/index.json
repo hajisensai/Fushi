@@ -9,10 +9,10 @@
     "native/fushi_compute/Cargo.toml": "6f41f9145ac7bae3f75f5a55c12a207838ea687db072992e39b1bd33e47a6130",
     "native/fushi_fsrs/Cargo.lock": "a8815739cc64de26beb0e848f11b7c8cf53d2efea4c63fdcbac57a69ea765de9",
     "native/fushi_fsrs/Cargo.toml": "31efb16a899a66b190c27e6791758071b8cd176688954f298ef2780de5e0fe02",
-    "native/fushi_ios_umbrella/Cargo.lock": "86e490f203b9524d8a2829fa056694c5c485433466998c1f572472fcd88b3ed5",
+    "native/fushi_ios_umbrella/Cargo.lock": "4bae1311cbc2375a95d83840196152133ead14c70532fad68c1aa3c2bf869a26",
     "native/fushi_ios_umbrella/Cargo.toml": "6d7a8d3cbe53bd13303ebee1f66a406dc038f3076dc57a952a27736d37cd141e",
-    "native/fushi_music/Cargo.lock": "7c4e04f38fb9ce3425bf6de7d0afe0f7de4cc362c210f79652a505ae58ef00ce",
-    "native/fushi_music/Cargo.toml": "cd07c5b3f2c188adb77d50cb4d1a1569981badcdcf23654a05699177968783e8",
+    "native/fushi_music/Cargo.lock": "9158d888a433e7b7be8005c7cca8f97fdc583edc021d3d50072f69b2e674f310",
+    "native/fushi_music/Cargo.toml": "d85aa5d2e48ec5d7406b32d8123928f3215f0beab643c7bc1b4e1dc28d1742de",
     "native/fushi_p2p/Cargo.lock": "e50e51d44154f56bc3771a7278dbae39ba260f5d884fa68f9e98d0dd501be4e4",
     "native/fushi_p2p/Cargo.toml": "4c1cd272cf7d1ebbaa774a8cf9f17ae771bd6f36d2607fb3a4590447178d68a2",
     "native/fushi_rwkv/Cargo.lock": "4266ab30ac34757a5e95aa95202377ca0a021b4fb288b12e0e009ac157444961",
@@ -323,6 +323,8 @@
   "pendingUpstreamLicense": [
     "lofty@0.22.4",
     "ogg_pager@0.7.2",
+    "realfft@3.5.0",
+    "rusty-chromaprint@0.3.0",
     "seahash@4.1.0",
     "selectors@0.38.0"
   ],
@@ -477,6 +479,12 @@
       "file": "09f1f96437694942.txt",
       "packages": [
         "combine"
+      ]
+    },
+    {
+      "file": "0a4e5a27177da58e.txt",
+      "packages": [
+        "transpose"
       ]
     },
     {
@@ -701,6 +709,7 @@
         "percent-encoding",
         "png",
         "postcard",
+        "primal-check",
         "prost",
         "psl-types",
         "rawpointer",
@@ -1057,6 +1066,12 @@
       "file": "2654a4264b2bfe29.txt",
       "packages": [
         "speex"
+      ]
+    },
+    {
+      "file": "275370a97013f37a.txt",
+      "packages": [
+        "transpose"
       ]
     },
     {
@@ -2394,6 +2409,12 @@
       ]
     },
     {
+      "file": "8385bbba0704efc3.txt",
+      "packages": [
+        "rubato"
+      ]
+    },
+    {
       "file": "83c1763356e822ad.txt",
       "packages": [
         "zerocopy"
@@ -2891,6 +2912,8 @@
         "hex",
         "jni-sys",
         "quick-error",
+        "rustfft",
+        "strength_reduce",
         "winapi"
       ]
     },
@@ -3023,6 +3046,8 @@
         "objc2-security-foundation",
         "objc2-system-configuration",
         "ogg_pager",
+        "realfft",
+        "rusty-chromaprint",
         "seahash"
       ]
     },
@@ -3418,6 +3443,13 @@
       "file": "ca471051e1527e5f.txt",
       "packages": [
         "ipconfig"
+      ]
+    },
+    {
+      "file": "cb22dce3ea93e49e.txt",
+      "packages": [
+        "rustfft",
+        "strength_reduce"
       ]
     },
     {
@@ -3878,6 +3910,12 @@
       "file": "ec1815db59fcd302.txt",
       "packages": [
         "libvorbis"
+      ]
+    },
+    {
+      "file": "ec835b87c9b101e2.txt",
+      "packages": [
+        "primal-check"
       ]
     },
     {
@@ -10244,7 +10282,8 @@
       "origin": [
         "fushi_anki_sync",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -10288,7 +10327,8 @@
         "fushi_anki_sync",
         "fushi_compute",
         "fushi_fsrs",
-        "fushi_ios_umbrella"
+        "fushi_ios_umbrella",
+        "fushi_music"
       ],
       "textSource": "package",
       "texts": [
@@ -10319,6 +10359,7 @@
         "fushi_compute",
         "fushi_fsrs",
         "fushi_ios_umbrella",
+        "fushi_music",
         "fushi_p2p",
         "fushi_web_core"
       ],
@@ -11384,6 +11425,20 @@
       ]
     },
     {
+      "name": "primal-check",
+      "version": "0.3.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "143368af9701a24e.txt",
+        "ec835b87c9b101e2.txt"
+      ]
+    },
+    {
       "name": "primeorder",
       "version": "0.13.6",
       "license": "Apache-2.0 OR MIT",
@@ -11811,6 +11866,20 @@
       ]
     },
     {
+      "name": "realfft",
+      "version": "3.5.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT 的标准文本，版权人见 crate 作者：HEnquist <henrik.enquist@gmail.com>"
+    },
+    {
       "name": "regex",
       "version": "1.13.1",
       "license": "MIT OR Apache-2.0",
@@ -11949,6 +12018,19 @@
       "note": "DLLs: librtmp-1.dll."
     },
     {
+      "name": "rubato",
+      "version": "0.16.2",
+      "license": "MIT",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "8385bbba0704efc3.txt"
+      ]
+    },
+    {
       "name": "rusqlite",
       "version": "0.36.0",
       "license": "MIT",
@@ -11974,6 +12056,20 @@
       "texts": [
         "b30df9a48463d1c9.txt",
         "23f18e03dc49df91.txt"
+      ]
+    },
+    {
+      "name": "rustfft",
+      "version": "6.4.1",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "cb22dce3ea93e49e.txt"
       ]
     },
     {
@@ -12094,6 +12190,20 @@
       "texts": [
         "5b698ca13897be3a.txt"
       ]
+    },
+    {
+      "name": "rusty-chromaprint",
+      "version": "0.3.0",
+      "license": "MIT",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "spdx-fallback",
+      "texts": [
+        "b05785f9f18e6716.txt"
+      ],
+      "note": "crate 包内没有许可文件；以下是 MIT 的标准文本，版权人见 crate 作者："
     },
     {
       "name": "ruzstd",
@@ -13002,6 +13112,20 @@
       ]
     },
     {
+      "name": "strength_reduce",
+      "version": "0.2.4",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "a8ad31b1c3f40dca.txt",
+        "cb22dce3ea93e49e.txt"
+      ]
+    },
+    {
       "name": "string_cache",
       "version": "0.11.0",
       "license": "MIT OR Apache-2.0",
@@ -13529,6 +13653,20 @@
       "textSource": "package",
       "texts": [
         "898b1ae9821e98da.txt"
+      ]
+    },
+    {
+      "name": "transpose",
+      "version": "0.2.3",
+      "license": "MIT OR Apache-2.0",
+      "origin": [
+        "fushi_ios_umbrella",
+        "fushi_music"
+      ],
+      "textSource": "package",
+      "texts": [
+        "0a4e5a27177da58e.txt",
+        "275370a97013f37a.txt"
       ]
     },
     {

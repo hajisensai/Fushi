@@ -19,8 +19,28 @@
 | `ffm_scan_next(Scanner*, u32 max, u8** out, usize* len) -> i32` | 下一批（≤256 条，紧凑二进制，格式见 `src/wire.rs`） |
 | `ffm_scan_close(Scanner*)` | 关闭游标 |
 | `ffm_tags_embedded_cover(const u8* path, usize, u8** out, usize* len) -> i32` | 内嵌封面字节（没有时 len = 0） |
+| `ffm_fp_version() -> u32` | 声纹算法 / 对齐判据版本（Dart 侧缓存按它失效） |
+| `ffm_fp_item_ms() -> f64` | 一个声纹项的时长（≈ 123.8 ms） |
+| `ffm_fp_compute(const i16* pcm, usize n, u32 rate, u32 ch, u8** out, usize* len) -> i32` | 整段交错 s16 PCM → 声纹（小端 u32 数组字节）；一集一次 |
+| `ffm_fp_align(const u32* needle, usize, const u32* hay, usize, u32 min_items, FfmFpMatch* out) -> i32` | 短声纹在长声纹上滑窗对齐 → 偏移 / 起止 / 置信度（没出现 `found = 0`） |
 
 状态码：0 成功；-1 空指针；-2 参数非法；-3 输入格式不对；-5 根不存在；-100 panic（已接住）。
+
+## 声纹（`src/fingerprint.rs`）
+
+作品图谱 L2 的 OP / ED 识别与 MV 偏移共用一组函数（`docs/specs/2026-10-24-cross-media-links.md` §2、
+音乐方案 §8.3 第 1 条）。**不解码**：Dart 经统一 FFmpeg 后端把音轨解成 11025 Hz 单声道 s16
+交过来（`packages/fushi_music/lib/src/audio_fingerprint.dart`），Rust 侧不引第二份 FFmpeg。
+
+- 声纹 = [rusty-chromaprint](https://crates.io/crates/rusty-chromaprint)（MIT，chromaprint 纯
+  Rust 移植）的 `preset_test2`（= chromaprint / AcoustID 默认配置）。
+- 对齐 = 每个整项偏移上逐项比汉明距离（≤ 10 位算命中），找命中项间空档 ≤ 1 s 的最长段，按命中
+  数取全局最优偏移；O(needle × haystack) 次 popcount，90 s 歌 × 24 min 集实测 ~30 ms（release）。
+- 精度：偏移 ≤ 半项（≈ 62 ms）；段端点延伸到 needle 端点时由偏移推出（同精度），落在 needle
+  中间（TV size 剪辑）时按「窗中点越过边界」估，合成样本实测 ≲ 0.6 s。
+- 回归向量：`fingerprint_regression_vector`（声纹长度 + 前 4 项 + SHA-1）与
+  `alignment_regression_vectors`（整首 / 剪头 / 剪尾 / 两头都剪 / 插在开头）。改了 crate 版本或
+  对齐常数让向量变了，必须升 `FINGERPRINT_VERSION`。
 
 ## uid
 
@@ -54,4 +74,6 @@ App 打包（Windows CMake 已接；Linux CMake / Android Gradle / macOS / iOS �
 ## 许可
 
 本 crate GPL-3.0-only。依赖：lofty（MIT OR Apache-2.0）、sha1（MIT OR Apache-2.0）、
-encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）。
+encoding_rs（(Apache-2.0 OR MIT) AND BSD-3-Clause）、rusty-chromaprint（MIT；其依赖 rubato /
+realfft MIT、rustfft MIT OR Apache-2.0）。rusty-chromaprint 与 realfft 上游仓库在发版提交上都没有
+LICENSE 文件，许可页按 SPDX 标准 MIT 文本收录（`pendingUpstreamLicense`）。

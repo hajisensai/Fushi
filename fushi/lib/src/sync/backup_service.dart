@@ -665,6 +665,9 @@ const List<String> _deviceLocalTables = <String>[
   'music_albums',
   'music_artists',
   'music_disc_sources',
+  // v127：OP / ED 声纹比对的按集缓存。纯缓存、可重算；本机文件的实测结果（另一台设备
+  // 可能是另一份片源，OP 位置不同），设备本地。无外键，删除 / 回灌顺序无约束。
+  'video_theme_song_spans',
 ];
 
 const List<String> _deviceLocalTablesParentFirst = <String>[
@@ -693,6 +696,7 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'music_albums',
   'music_tracks',
   'music_track_credits',
+  'video_theme_song_spans',
 ];
 
 /// v117 SRS 的**本机发布元信息 / 本机状态 / 可重建缓存**（docs/specs/2026-10-14-

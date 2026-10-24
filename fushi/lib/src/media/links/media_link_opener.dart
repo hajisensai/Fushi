@@ -10,6 +10,9 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
+import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -77,7 +80,7 @@ ValueChanged<String>? mediaLinkSearchAction({
 /// - 单个视频 → 播放器（属于合集就作为合集一集打开，与统计页 / ctl 同一口径）；
 /// - 书 / 有声书 → 漫画进作品页，其余与书架点卡同一条 [AppModel.openMedia]；
 /// - 游戏 → 游戏详情页；
-/// - 音乐 → 音乐模块落地前没有本地条目（区块里恒为「未入库」灰卡，到不了这里）。
+/// - 音乐曲目 → 曲目详情页（出现在哪些集 / 同一作品）；专辑 → 专辑页。
 Future<void> openMediaLinkEntry({
   required BuildContext context,
   required WidgetRef ref,
@@ -177,8 +180,40 @@ Future<void> openMediaLinkEntry({
           ),
         ),
       );
-    case MediaLinkKind.musicAlbum:
     case MediaLinkKind.musicTrack:
-      return;
+      unawaited(
+        navigator.push<void>(
+          adaptivePageRoute<void>(
+            context: navigator.context,
+            builder: (_) => MusicTrackDetailPage(trackUid: e.key),
+          ),
+        ),
+      );
+    case MediaLinkKind.musicAlbum:
+      final MusicAlbumRow? album = await db.getMusicAlbum(e.key);
+      if (album == null) return;
+      final List<MusicTrackRow> tracks = sortAlbumTracks(<MusicTrackRow>[
+        for (final MusicTrackRow tr in await db.listMusicTracks(
+          albumUid: album.albumUid,
+        ))
+          if (tr.deletedAt == null) tr,
+      ]);
+      final String? coverTrack = album.coverTrackUid;
+      final String? embedded = coverTrack == null
+          ? null
+          : (await db.getMusicTrack(coverTrack))?.path;
+      if (!navigator.mounted) return;
+      unawaited(
+        navigator.push<void>(
+          adaptivePageRoute<void>(
+            context: navigator.context,
+            builder: (_) => MusicAlbumPage(
+              album: album,
+              tracks: tracks,
+              embeddedCoverPath: embedded,
+            ),
+          ),
+        ),
+      );
   }
 }

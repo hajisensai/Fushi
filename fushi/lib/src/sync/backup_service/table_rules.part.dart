@@ -350,6 +350,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_albums': BackupTableRule.deviceLocal(),
   'music_artists': BackupTableRule.deviceLocal(),
   'music_disc_sources': BackupTableRule.deviceLocal(),
+  // v127：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
+  'video_theme_song_spans': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]
