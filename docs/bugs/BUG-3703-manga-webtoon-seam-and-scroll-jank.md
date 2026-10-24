@@ -1,0 +1,12 @@
+## BUG-3703 · manga-webtoon-seam-and-scroll-jank
+- **报告**：2026-10-23（用户：转述群反馈「看条漫有条黑线，韩漫看不了，条漫模式滑动还是有点卡顿感」；「韩漫看不了」经用户确认指卡顿，不是看不到）
+- **真实性**：✅ 真 bug，小米 Pad 5（Chromium 155，DPR 2.25）真机 A/B 复现。根因都在 `fushi/lib/src/media/manga/manga_overlay_html.dart`：
+  1. 黑线（主因）：`mangaWindowDocument` 的 `hasGaps` 对长条漫只看 `showPageGaps`，而它默认开——「条漫」与「带间距长条漫」两个模式渲染完全一样，每页之间都有 12px 背景色（默认 `#000`）横带。切片发布的韩漫满屏黑线。真机截图：每个页交界 27~28 物理像素的纯黑带。
+  2. 黑线（次因）：`_layoutSource` 按 `宽 × 原图比例` 给长条页高，是小数像素，交界落在物理像素中间，两图边缘各抗锯齿掉半像素、底色透出。真机把间距关掉后仍有 1 物理像素的暗线（行平均灰度 86）。
+  3. 卡顿：webtoon 是 JS 自实现竖滚（BUG-1701），松手速度只取最后一次 pointermove（`pdy / pdt`），同一手势惯性距离忽大忽小；惯性时间常数约 160ms，一甩就急刹。真机 8 次完全相同的 `input swipe`：惯性距离 171~785 CSS px 乱跳。
+  4. 卡顿（推断，真机未测出差异）：默认设置也下发恒等 `filter: invert(0) … saturate(1)`，每张页图都走滤镜离屏。
+- **[x] ① 已修复** — 长条漫页间距只由阅读模式决定（条漫无缝 / 带间距长条漫留间距，用户 2026-10-23 拍板；`showPageGaps` 只管纵向分页）；页高对齐物理像素、无间距时后一页上压一个物理像素；恒等滤镜写 `none`；松手速度取最近约 100ms 窗口（停住 >50ms 不带惯性），惯性时间常数约 330ms，帧间隔用 rAF 时间戳。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_reader_transforms_js_test.dart`（模式决定间距；node 跑生成的真 JS：页高对齐 / 重叠 / 有间距不压 / 速度窗口 / 停住不滑；恒等滤镜为 none），`fushi/test/media/manga/manga_overlay_html_test.dart` 同步惯性字面量。
+- **真机证据**（改前 / 改后同一生成器的真实阅读页，平板 Chrome 155 打开，`adb shell input swipe` 注入，探针回传）：页交界截图——改前 27~28px 黑带、改前关间距 1px 暗线、改后 0（3 种小数滚动偏移 × 2 个交界全部为 0）；惯性距离——改前 171~785 px，改后 772~832 px；帧间隔两边 p50/p95 均 16.7/16.8 ms（测试图较轻，这台机器上看不出滤镜对帧率的影响）。
+- **设置面板**：「显示页间距」从「长条」分组挪到「布局」分组，且只在阅读模式为纵向分页时出现（`manga_reader_settings_sheet.dart` 的 `_appliesToCurrentMode`），测试 `fushi/test/media/manga/manga_reader_settings_sheet_test.dart`。
+- **真 app 真机 A/B**（2026-10-24，小米 Pad 5 横屏，120Hz，`fushi/integration_test/manga_webtoon_strip_itest.dart` 打 profile 包并行安装 + adb input swipe）：改前页间距 12px、交界截图 27~28px 黑带（6/6）、恒等滤镜仍下发、8 次相同滑动惯性 52~1044px；改后间距 0、页高 8297.0002 物理像素、交界重叠 0.98 物理像素、交界截图 0/6、filter none、惯性 643~791px（首次 346）。帧间隔 p50 两边都是 8.3~8.4ms。

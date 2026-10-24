@@ -914,7 +914,13 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     0 => <(String Function(), List<String>)>[
       (
         () => t.manga_reader_group_layout,
-        <String>['direction', 'scaleType', 'tapZones', 'longStripSidePadding'],
+        <String>[
+          'direction',
+          'scaleType',
+          'tapZones',
+          'showPageGaps',
+          'longStripSidePadding',
+        ],
       ),
       (
         () => t.manga_reader_group_wide_pages,
@@ -922,12 +928,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       ),
       (
         () => t.manga_reader_group_long_strip,
-        <String>[
-          'showPageGaps',
-          'webtoonDoubleTapZoom',
-          'autoScroll',
-          'autoScrollSpeed',
-        ],
+        <String>['webtoonDoubleTapZoom', 'autoScroll', 'autoScrollSpeed'],
       ),
       (
         () => t.manga_reader_group_controls,
@@ -985,6 +986,15 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     ],
   };
 
+  /// 只对某种阅读模式生效的项，在别的模式下不出现——关着还留着会让人以为它有用。
+  /// 页间距：长条漫由「条漫 / 带间距长条漫」两个模式本身决定（BUG-3703），
+  /// 开关只剩纵向分页的翻页空隙在用。
+  bool _appliesToCurrentMode(String key) => switch (key) {
+    'showPageGaps' =>
+      _value('mode') == MangaReadingMode.pagedVertical.storageKey,
+    _ => true,
+  };
+
   List<Widget> _tabBlocks(
     int tab,
     Map<String, MangaReaderPreferenceDescriptor> byKey,
@@ -1022,7 +1032,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
           children: <Widget>[
             for (final String key in g.$2)
               if (byKey[key] case final MangaReaderPreferenceDescriptor d)
-                _row(d),
+                if (_appliesToCurrentMode(key)) _row(d),
           ],
         ),
       if (orphans.isNotEmpty)

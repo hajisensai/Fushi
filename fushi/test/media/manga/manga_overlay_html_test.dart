@@ -1791,14 +1791,17 @@ void main() {
           reason: 'touch-action:none 后单指拖动必须自己驱动竖滚',
         );
         expect(
-          doc.contains('flickVy *= Math.pow(0.002, dt / 1000);'),
+          doc.contains('flickVy *= Math.pow(0.05, dt / 1000);'),
           isTrue,
-          reason: '自实现滚动必须补上惯性，否则手感比原生退化',
+          reason: '自实现滚动必须补上惯性，且滑行距离接近原生（时间常数约 330ms）',
         );
         expect(
-          doc.contains('if (drag && drag.touch) _startFlick(drag.vy);'),
+          doc.contains(
+            'if (drag && drag.touch) '
+            '_startFlick(_releaseVelocity(drag, e.timeStamp));',
+          ),
           isTrue,
-          reason: '惯性只给触屏：鼠标松手不该继续滑',
+          reason: '惯性只给触屏：鼠标松手不该继续滑；速度取最近一段窗口而非单次事件',
         );
       });
 

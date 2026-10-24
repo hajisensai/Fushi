@@ -128,6 +128,124 @@ assert.equal(source.style.width,'1000px');
   );
 
   test(
+    'long strip pages snap to device pixels and overlap one device pixel',
+    () async {
+      final String webtoon = mangaWindowDocument(
+        const <MokuroImage>[
+          MokuroImage(
+            url: 'a.png',
+            size: MokuroSize(720, 3001),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+        const <String>['a.png'],
+        mode: MangaReadingMode.webtoon,
+        spreadDirection: 'ltr',
+        inlineSelectionJs: '',
+        readerPreferences: const MangaReaderPreferences(),
+      );
+      final int start = webtoon.indexOf('  function _layoutSource(page){');
+      final String layout = webtoon.substring(
+        start,
+        webtoon.indexOf('  function _inspectSource(page){', start),
+      );
+      await runJs('''
+const assert=require('node:assert/strict');
+function mk(prev, gap){
+  const source={style:{}};
+  return {dataset:{pw:'720',ph:'3001',spreadPages:'1'},style:{},
+    previousElementSibling:prev,__gap:gap,querySelector:()=>source,source};
+}
+const window={innerWidth:393,innerHeight:852,devicePixelRatio:2.75};
+function getComputedStyle(el){return {marginBottom:el.__gap?'12px':'0px'};}
+const ROTATE_WIDE=false,IS_WEBTOON=true,IS_VERTICAL_PAGED=false;
+$layout
+const first=mk(null,false), second=mk(first,false), afterGap=mk(mk(null,true),false);
+[first,second,afterGap].forEach(_layoutSource);
+// 393/720*3001 = 1638.07… CSS px → 4504.7 device px; must land on a whole one.
+const devicePx=parseFloat(first.style.height)*2.75;
+assert.ok(Math.abs(devicePx-Math.round(devicePx))<1e-6, first.style.height);
+assert.equal(first.style.marginTop,'');
+assert.equal(second.style.marginTop,(-1/2.75)+'px');
+// 有间距（webtoonGaps）时页缝是有意的，不能被压掉。
+assert.equal(afterGap.style.marginTop,'');
+// 图像的纵向缩放必须跟着对齐后的页高走，否则图和页框之间又留一条缝。
+const sy=Number(first.source.style.transform.split(',')[3]);
+assert.ok(Math.abs(sy*3001-parseFloat(first.style.height))<1e-6);
+''');
+    },
+  );
+
+  test('long strip gaps follow the reading mode, not showPageGaps', () {
+    String rule(MangaReadingMode mode, {required bool showPageGaps}) {
+      final String doc = mangaWindowDocument(
+        const <MokuroImage>[
+          MokuroImage(
+            url: 'a.png',
+            size: MokuroSize(720, 2000),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+        const <String>['a.png'],
+        mode: mode,
+        spreadDirection: 'ltr',
+        inlineSelectionJs: '',
+        readerPreferences: MangaReaderPreferences(
+          mode: mode,
+          showPageGaps: showPageGaps,
+        ),
+      );
+      final int start = doc.indexOf('.manga-page{width:');
+      return doc.substring(start, doc.indexOf('}', start));
+    }
+
+    // 「条漫」：showPageGaps 默认开也不能留缝（BUG-3703 的满屏黑线）。
+    expect(
+      rule(MangaReadingMode.webtoon, showPageGaps: true),
+      isNot(contains('margin-bottom')),
+    );
+    expect(
+      rule(MangaReadingMode.webtoonGaps, showPageGaps: false),
+      contains('margin-bottom:12px'),
+    );
+  });
+
+  test(
+    'fling velocity averages the recent window, not the last event',
+    () async {
+      final String webtoon = mangaWindowDocument(
+        const <MokuroImage>[
+          MokuroImage(
+            url: 'a.png',
+            size: MokuroSize(720, 3000),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+        const <String>['a.png'],
+        mode: MangaReadingMode.webtoon,
+        spreadDirection: 'ltr',
+        inlineSelectionJs: '',
+      );
+      final int start = webtoon.indexOf(
+        '  function _releaseVelocity(drag, upT){',
+      );
+      final String velocity = webtoon.substring(
+        start,
+        webtoon.indexOf('  function _startFlick(vy){', start),
+      );
+      await runJs('''
+const assert=require('node:assert/strict');
+$velocity
+// 最后一次事件间隔 1ms、只挪 0.2px：旧实现得到 200px/s，几乎不滑。
+const drag={vy:200,samples:[{t:0,y:0},{t:50,y:-100},{t:99,y:-199.8},{t:100,y:-200}]};
+assert.equal(_releaseVelocity(drag,104),-2000);
+// 手指停住 80ms 后才抬：不带惯性。
+assert.equal(_releaseVelocity(drag,180),0);
+''');
+    },
+  );
+
+  test(
     'split wide page consumes exactly two halves in reading direction',
     () async {
       for (final String direction in <String>['rtl', 'ltr']) {
@@ -336,6 +454,16 @@ check(page.getAttribute('data-load-failed') === '1', 'blank centre away from the
         ),
         'invert(1) grayscale(1) brightness(1.25) contrast(1.5) saturate(0.5)',
       );
+      // 恒等滤镜不下发：超高长条页图上的滤镜离屏面会越过纹理上限画成空白。
+      expect(
+        mangaImageFilterIsIdentity(const MangaReaderPreferences()),
+        isTrue,
+      );
+      expect(
+        mangaImageFilterIsIdentity(const MangaReaderPreferences(brightness: 5)),
+        isFalse,
+      );
+      expect(document, contains('.manga-source img{filter:none;}'));
       expect(document, contains('class="manga-source"'));
       expect(document, contains('source.insertAdjacentHTML'));
     },
