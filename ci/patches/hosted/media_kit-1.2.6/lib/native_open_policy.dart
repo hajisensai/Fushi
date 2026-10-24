@@ -22,9 +22,19 @@ bool nativeOpenUsesDirectLoad(Playable playable) {
   return false;
 }
 
-/// mpv's Blu-ray (`bd`, `bluray`) and DVD (`dvd`, `dvdnav`) stream drivers.
+/// mpv's Blu-ray (`bd`, `bluray`), DVD (`dvd`, `dvdnav`) and audio CD
+/// (`cdda`) stream drivers.
 bool _isDisc(String uri) =>
     uri.startsWith('bd://') ||
     uri.startsWith('bluray://') ||
     uri.startsWith('dvd://') ||
-    uri.startsWith('dvdnav://');
+    uri.startsWith('dvdnav://') ||
+    _isOwnCdda(uri);
+
+/// Audio CD: only the exact `cdda://<drive>` shape the app builds from its own
+/// drive list (Windows `E:`, Linux `/dev/sr0`, macOS `/dev/rdisk4`). mpv's
+/// cdda stream takes the whole remainder as a device path, so anything else
+/// (other paths, query strings, `..`) keeps mpv's origin check.
+final RegExp _ownCdda = RegExp(r'^cdda://(?:[A-Za-z]:|/dev/[A-Za-z][A-Za-z0-9]*)$');
+
+bool _isOwnCdda(String uri) => _ownCdda.hasMatch(uri);
