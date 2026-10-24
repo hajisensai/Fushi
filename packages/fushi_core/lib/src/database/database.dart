@@ -824,6 +824,7 @@ void _requireOneVideoMetadataOwner({
   WebBrowserSessionTabs,
   WebBrowserClosedTabs,
   WebBrowserDownloads,
+  SrsStatReviews,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -858,7 +859,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 128;
+  int get schemaVersion => 129;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2478,6 +2479,15 @@ class FushiDatabase extends _$FushiDatabase
               await m.createTable(webBrowserDownloads);
             }
           }
+          if (from < 129) {
+            // v129：srs_stat_reviews——SRS 有效复习投影（本机可重建缓存，不同步、不进备份，
+            // BUG-3770）。存量库建空表即可：SrsDbStore 打开时缓存修订号 < 2 会按卡片缓存整体
+            // 重算一遍把它填满（与卡片缓存同一重算点）。
+            if (!await _tableExists('srs_stat_reviews')) {
+              await m.createTable(srsStatReviews);
+            }
+            await _ensureSrsStatIndexes();
+          }
         },
         onCreate: (m) async {
           await m.createAll();
@@ -2493,6 +2503,7 @@ class FushiDatabase extends _$FushiDatabase
           await _ensureIndexes();
           await _ensureProfileUidIndex();
           await _ensureSrsIndexes();
+          await _ensureSrsStatIndexes();
         },
         beforeOpen: (details) async {
           // Second, belt-and-suspenders downgrade guard. drift calls beforeOpen

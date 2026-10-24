@@ -21,6 +21,7 @@ import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
+import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 
 /// 本机时间：服务器校时锚点 + 本进程单调时钟（Stopwatch）。
@@ -330,7 +331,10 @@ class SrsDbStore implements SrsSyncReplica {
   /// 1（v123）：srs_cards_cache.new_position。旧版本设备会照常收下对端同步来的 `newPos`
   /// 修改记录（修改记录不认键名、原样落库），但它的卡片缓存没有这一列；升级加列时留 NULL，
   /// 这些卡就一直按创建时刻出、取卡读到的位置也是空的，直到这张卡再被改一次。
-  static const int _kCacheRevision = 1;
+  ///
+  /// 2（v129）：srs_stat_reviews（有效复习投影）。升级时整张卡片缓存按事件重算一遍，把投影
+  /// 填满（投影与卡片缓存出自同一次重算，见 [_cardCacheRow]）。
+  static const int _kCacheRevision = 2;
   int _cacheRevision = _kCacheRevision;
 
   /// 库的变化修订号：任何事件真正落库（本机产生或对端来的）+1（见 [changeFingerprint]）。
@@ -1639,7 +1643,7 @@ class SrsDbStore implements SrsSyncReplica {
         final SrsCardCacheRow? c = rows[id];
         if (c == null) continue;
         final SrsNoteCacheRow? n = notes[c.noteId];
-        out.cards.add(
+        out.addCard(
           await _cardCacheRow(
             cardId: id,
             noteId: c.noteId,
@@ -1649,6 +1653,7 @@ class SrsDbStore implements SrsSyncReplica {
             noteCreatedAt: n?.createdAt ?? c.noteCreatedAt,
             hidden: c.hidden,
           ),
+          id,
         );
       }
     });
@@ -1682,6 +1687,17 @@ class SrsDbStore implements SrsSyncReplica {
       }
       if (w.cards.isNotEmpty) {
         b.insertAllOnConflictUpdate(db.srsCardsCache, w.cards);
+      }
+      // 投影整卡替换：先删这些卡名下的行，再写重算结果（每条日志只由它自己的卡投影，
+      // 一条日志永远至多一行）。
+      for (final List<String> ids in _chunks(w.statCards)) {
+        b.deleteWhere(
+          db.srsStatReviews,
+          ($SrsStatReviewsTable x) => x.cardId.isIn(ids),
+        );
+      }
+      if (w.stats.isNotEmpty) {
+        b.insertAllOnConflictUpdate(db.srsStatReviews, w.stats);
       }
     });
   }
@@ -1896,6 +1912,17 @@ class SrsDbStore implements SrsSyncReplica {
         );
         await _flushCaches();
       }
+      if (_cacheRevision < 2) {
+        // 投影表是新建的空表：缓存里的每张卡（含隐藏卡：已删笔记的复习历史照样进统计）重算。
+        final List<QueryRow> rows = await db
+            .customSelect(
+              'SELECT id FROM srs_cards_cache WHERE profile_uid = ?',
+              variables: <Variable<Object>>[Variable<String>(profileUid)],
+            )
+            .get();
+        _dirtyCards.addAll(rows.map((QueryRow r) => r.read<String>('id')));
+        await _flushCaches();
+      }
       _cacheRevision = _kCacheRevision;
       await _saveLocal();
     });
@@ -1911,6 +1938,9 @@ class SrsDbStore implements SrsSyncReplica {
       )..where((t) => t.profileUid.equals(profileUid))).go();
       await (db.delete(
         db.srsNotesCache,
+      )..where((t) => t.profileUid.equals(profileUid))).go();
+      await (db.delete(
+        db.srsStatReviews,
       )..where((t) => t.profileUid.equals(profileUid))).go();
       final List<SrsEntityRow> notes =
           await (db.select(db.srsEntities)..where(
@@ -2039,7 +2069,7 @@ class SrsDbStore implements SrsSyncReplica {
     }
     for (final MapEntry<String, (String, int, bool)> e in expected.entries) {
       final (String tplId, int ord, bool empty) = e.value;
-      out.cards.add(
+      out.addCard(
         await _cardCacheRow(
           cardId: e.key,
           noteId: n.id,
@@ -2049,6 +2079,7 @@ class SrsDbStore implements SrsSyncReplica {
           noteCreatedAt: n.createdAt,
           hidden: noteGone || empty,
         ),
+        e.key,
       );
       refreshed.add(e.key);
     }
@@ -2144,7 +2175,12 @@ class SrsDbStore implements SrsSyncReplica {
   }
 
   /// 一张卡的缓存行（只算不写）：标志沿血统继承，状态由自己 + 全部前身的日志重放。
-  Future<SrsCardsCacheCompanion> _cardCacheRow({
+  ///
+  /// 同一份有效历史同时产出这张卡名下的有效复习投影（`srs_stat_reviews`，统计读它）：
+  /// 卡片缓存因任何原因重算（新日志、undo、同步来的同 ID 覆盖 / 晚到日志、服务器时刻改了
+  /// 排序、恢复、重建、前身变化），投影跟着重算，两者永远出自同一份历史。
+  Future<(SrsCardsCacheCompanion, List<SrsStatReviewsCompanion>)>
+  _cardCacheRow({
     required String cardId,
     required String noteId,
     required String templateId,
@@ -2163,7 +2199,24 @@ class SrsDbStore implements SrsSyncReplica {
       for (final (String id, SrsEntityEdits _) in lineage) id,
     ]);
     final SrsScheduleResult s = h.state;
-    return SrsCardsCacheCompanion.insert(
+    final List<SrsStatReviewsCompanion> stats = <SrsStatReviewsCompanion>[
+      for (final SrsStatProjection p in srsStatProjectionOf(h))
+        // 前身卡的日志只用来定本卡日志的前序状态；它们由前身卡自己投影。
+        if (p.cardId == cardId)
+          SrsStatReviewsCompanion.insert(
+            logId: p.logId,
+            profileUid: profileUid,
+            cardId: cardId,
+            occurredAt: p.occurredAt,
+            utcOffsetMin: Value<int>(p.utcOffsetMin),
+            rating: Value<int?>(p.rating),
+            kind: Value<int>(p.kind.index),
+            durationMs: Value<int>(p.durationMs),
+            prevDueDay: Value<int?>(p.prevDueDay),
+            maturityDelta: Value<int>(p.maturityDelta),
+          ),
+    ];
+    final SrsCardsCacheCompanion row = SrsCardsCacheCompanion.insert(
       id: cardId,
       profileUid: profileUid,
       noteId: noteId,
@@ -2188,6 +2241,7 @@ class SrsDbStore implements SrsSyncReplica {
       noteCreatedAt: Value<int>(noteCreatedAt),
       newPosition: Value<int?>(flags.newPosition),
     );
+    return (row, stats);
   }
 
   // ------------------------------------------------------------------ 修改记录
@@ -5419,7 +5473,21 @@ class _CacheWrites {
   final List<String> hide = <String>[];
   final List<SrsCardsCacheCompanion> cards = <SrsCardsCacheCompanion>[];
 
+  /// 重算过的卡：它们名下的有效复习投影整卡替换成 [stats]。
+  final List<String> statCards = <String>[];
+  final List<SrsStatReviewsCompanion> stats = <SrsStatReviewsCompanion>[];
+
   bool get isEmpty => notes.isEmpty && hide.isEmpty && cards.isEmpty;
+
+  /// 一张卡重算的结果：缓存行 + 它名下的有效复习投影。
+  void addCard(
+    (SrsCardsCacheCompanion, List<SrsStatReviewsCompanion>) row,
+    String cardId,
+  ) {
+    cards.add(row.$1);
+    statCards.add(cardId);
+    stats.addAll(row.$2);
+  }
 }
 
 /// [SrsDbStore._planNote] 的结果。

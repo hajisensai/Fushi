@@ -103,6 +103,8 @@ void main() {
     'srs_local_state',
     'srs_notes_cache',
     'srs_cards_cache',
+    // v129：有效复习投影（可重建缓存）。
+    'srs_stat_reviews',
   ];
   const List<String> srsData = <String>[
     'srs_entities',

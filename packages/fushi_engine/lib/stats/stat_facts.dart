@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 // 引擎只准 import 纯 Dart 子 barrel（全 barrel 会导出 just_audio 等插件，
@@ -28,7 +29,8 @@ class StatFact {
     required this.lastActiveMs,
   });
 
-  /// 'book' | 'video' | 'game'（[ActivityMediaKind.dbValue]）。
+  /// 'book' | 'video' | 'game'（[ActivityMediaKind.dbValue]），或 [kStatMediaReview]
+  /// （SRS 复习时长，只在 `loadStatFacts(includeReviews: true)` 时出现，读时合并）。
   final String mediaKind;
 
   /// 稳定媒体身份；'' = legacy 无身份行。
@@ -56,11 +58,20 @@ class StatFact {
   bool get isBook => mediaKind == kActivityMediaBook;
   bool get isVideo => mediaKind == kActivityMediaVideo;
   bool get isGame => mediaKind == kActivityMediaGame;
+  bool get isReview => mediaKind == kStatMediaReview;
   bool get isManga => format == BookFormat.manga.dbValue;
 
   /// 分组键：有身份用身份，否则 title（legacy 回退）。
   String get identityKey => mediaKey.isNotEmpty ? mediaKey : title;
 }
+
+/// 复习（SRS）时长事实的 [StatFact.mediaKind]。**不是** [ActivityMediaKind]：复习不写
+/// `study_segments`、不进活动流 / 会话流 / 同步 wire，只在统计中心总览读时合并进来
+/// （[loadStatFacts] 的 `includeReviews`）。
+const String kStatMediaReview = 'review';
+
+/// 复习事实的 [StatFact.mediaKey]：一个 Profile 的复习是一个整体（不按牌组拆）。
+const String kStatReviewMediaKey = 'srs';
 
 /// 「查词 / 制卡 / 收藏词 / 收藏句」四类计数事实（学习事实面之外的**计数面**）。
 ///
@@ -307,11 +318,16 @@ const Set<String> kLegacyStudyActivityTypes = <String>{
 /// 事实。v92 段与游玩会话按 `profile_id` 列过滤；legacy 四表 + legacy 活动行没有
 /// Profile 维度，只在 [profileId] 是 legacy 归属 Profile
 /// （[FushiDatabase.getStatLegacyProfileId]，无归属 = 所有人）时装载，否则整批为空。
+///
+/// [includeReviews]：把该 Profile 的 SRS 复习时长按 (统计日, 小时) 并进 [StatFacts.daily] /
+/// [StatFacts.hourly]（[kStatMediaReview]，见 [loadStatReviewFacts]）。只给统计中心总览用，
+/// 且调用方只在复习模块开着时传 true；三个域 tab / 首页 / 活动流都不要它。
 Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
   bool includeCounters = false,
   int? profileId,
+  bool includeReviews = false,
 }) async {
   final int scope = profileId ?? await db.resolveActiveProfileId();
   final bool legacyVisible = await db.legacyStatsVisibleTo(scope);
@@ -358,7 +374,11 @@ Future<StatFacts> loadStatFacts(
   final Future<StatCounterFacts> countersF = includeCounters
       ? _loadCounterFacts(db)
       : Future<StatCounterFacts>.value(StatCounterFacts.empty);
+  final Future<List<StatFact>> reviewsF = includeReviews
+      ? loadStatReviewFacts(db, profileId: scope)
+      : Future<List<StatFact>>.value(const <StatFact>[]);
   await Future.wait<Object?>(<Future<Object?>>[
+    reviewsF,
     epubRowsF,
     readingF,
     watchF,
@@ -529,6 +549,11 @@ Future<StatFacts> loadStatFacts(
     daily.add(fact);
     hourly.add(fact);
   }
+  // SRS 复习时长：一条 (统计日, 小时) 一行，两面各一份（与段同形，见 [loadStatReviewFacts]）。
+  for (final StatFact fact in await reviewsF) {
+    daily.add(fact);
+    hourly.add(fact);
+  }
   // 游玩会话（活动流合成「游玩」事件用；activityLimit 为 0 时不取）。
   final List<GalgameSessionRow> recentGameSessions = await recentGameSessionsF;
   // 库内显示名优先；已移除游戏的孤儿会话回落会话行上的快照名（v113）。
@@ -549,6 +574,70 @@ Future<StatFacts> loadStatFacts(
     counters: await countersF,
     activityLimit: activityLimit,
   );
+}
+
+/// [profileId] 这个 Profile 的 SRS 复习时长，按 (统计日, 本地小时) 聚合成 [StatFact]
+/// （mediaKind [kStatMediaReview]、mediaKey [kStatReviewMediaKey]，字数 / 页数为 0）。
+///
+/// 口径：
+/// - **只算有效复习**：读 `srs_stat_reviews`（有效复习投影：被 undo 撤销的、与原生复习等价
+///   的导入日志都不在），评分复习（rating 非空）的 `duration_ms` 求和；导入的 Anki revlog
+///   保留了 Anki 的 `time`，照样计入。时长为 0 的格子不出（与写零的段同律）。
+/// - **身份**：统计域按本库 `profiles.id` 分区，SRS 按全局 `profiles.uid`；这里经
+///   `profiles` 表把 id 换成 uid。该 Profile 还没有 uid（从没用过复习）= 没有复习。
+/// - **日界**：用统计域的 [FushiDatabase.statDayResetHour]（「今日」重置整点），不用 SRS
+///   自己的翻日时刻（dayContext / Profile 同步设置），这样总览里复习与阅读 / 观看落在同一个
+///   「今天」。本地时刻按**日志自己记下的 UTC 偏移**算（与段的 dateKey / hour 在写入时按
+///   写入端本地时间定同一语义；旅行不改历史复习落在几点）。差别：段的 dateKey 写入时
+///   定死，复习是读时算，改「今日」重置整点会重分桶历史复习、不重分桶历史段。
+/// - **刷新 / 删除**：读时现算，不落 `study_segments`、不进同步 wire；复习日志被 undo /
+///   同步覆盖 / 删除牌组物理清理后投影随卡片缓存重算，下次加载即反映。总览的「清空统计」
+///   不碰复习（复习数据归 SRS 管）。
+Future<List<StatFact>> loadStatReviewFacts(
+  FushiDatabase db, {
+  required int profileId,
+}) async {
+  final QueryRow? profile = await db.customSelect(
+    'SELECT uid FROM profiles WHERE id = ?',
+    variables: <Variable<Object>>[Variable<int>(profileId)],
+  ).getSingleOrNull();
+  final String? uid = profile?.read<String?>('uid');
+  if (uid == null || uid.isEmpty) return const <StatFact>[];
+  const int dayMs = 86400000;
+  const int hourMs = 3600000;
+  final int resetMs = FushiDatabase.statDayResetHour * hourMs;
+  final List<QueryRow> rows = await db.customSelect(
+    'SELECT (occurred_at + utc_offset_min * 60000 - ?) / $dayMs AS d, '
+    '((occurred_at + utc_offset_min * 60000) % $dayMs) / $hourMs AS h, '
+    'SUM(duration_ms) AS ms, MAX(occurred_at) AS last '
+    'FROM srs_stat_reviews '
+    'WHERE profile_uid = ? AND rating IS NOT NULL '
+    'GROUP BY d, h',
+    variables: <Variable<Object>>[
+      Variable<int>(resetMs),
+      Variable<String>(uid),
+    ],
+    readsFrom: <ResultSetImplementation<dynamic, dynamic>>{db.srsStatReviews},
+  ).get();
+  final DateTime epoch = DateTime.utc(1970);
+  return <StatFact>[
+    for (final QueryRow r in rows)
+      if (r.read<int>('ms') > 0)
+        StatFact(
+          mediaKind: kStatMediaReview,
+          mediaKey: kStatReviewMediaKey,
+          title: '',
+          format: '',
+          dateKey: FushiDatabase.statCalendarDayKeyOf(
+            epoch.add(Duration(days: r.read<int>('d'))),
+          ),
+          hour: r.read<int>('h'),
+          ms: r.read<int>('ms'),
+          chars: 0,
+          pages: 0,
+          lastActiveMs: r.read<int>('last'),
+        ),
+  ];
 }
 
 /// 计数面的四个全表读（与主事实面同一批并发）。收藏句在偏好里（一条 JSON），

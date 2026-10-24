@@ -513,6 +513,8 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       'profile 全局身份 UUIDv7（撞正则是因为 profile 里含 file），不是路径。'),
   PathRebaseColumn('SrsSentBatches', 'profileUid', PathRebaseKind.notAPath,
       'profile 全局身份 UUIDv7（撞正则是因为 profile 里含 file），不是路径。'),
+  PathRebaseColumn('SrsStatReviews', 'profileUid', PathRebaseKind.notAPath,
+      'profile 全局身份 UUIDv7（撞正则是因为 profile 里含 file），不是路径。'),
   PathRebaseColumn('SrsSentBatches', 'writerId', PathRebaseKind.notAPath,
       'SRS 写入者身份（deviceId#化身号），不是路径。'),
   PathRebaseColumn('SrsEntities', 'payloadJson', PathRebaseKind.notAPath,

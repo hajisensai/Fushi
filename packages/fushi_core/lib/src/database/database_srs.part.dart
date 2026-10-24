@@ -99,6 +99,19 @@ mixin _FushiDbSrs on _$FushiDatabase {
     }
   }
 
+  /// v129 有效复习投影的索引（与 [_ensureSrsIndexes] 分开：v117 步调它时这张表还不存在）。
+  /// 按 profile + 时刻读统计；按产出卡整卡替换。
+  Future<void> _ensureSrsStatIndexes() async {
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_srs_stat_reviews_profile_time '
+      'ON srs_stat_reviews (profile_uid, occurred_at)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS idx_srs_stat_reviews_card '
+      'ON srs_stat_reviews (card_id)',
+    );
+  }
+
   /// profile 的全局身份；没有就当场生成并写回（新建的 profile 行不必改各处插入点）。
   Future<String> profileUidOf(int profileId) async {
     final QueryRow? row = await customSelect(

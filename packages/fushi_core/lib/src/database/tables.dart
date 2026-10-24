@@ -3570,6 +3570,41 @@ class SrsCardsCache extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// v129：有效复习投影（本机可重建缓存，不同步、不进备份）。每条「有效」复习日志一行
+/// （被 undo 撤销的、被判与原生日志等价的导入日志、不认识的 kind 都不在），复习统计页与
+/// 统计中心总览直接按定长列读，不再全量读 `srs_review_logs` 逐条 jsonDecode 重放历史。
+///
+/// - 身份 = 日志 ID（[logId]）：同一条日志只有一行。行由「卡片缓存行」的同一次重算产出
+///   （`SrsDbStore._cardCacheRow`：卡自己 + 全部前身的日志 + 服务器时刻排序），所以
+///   同 ID 覆盖、后来的 undo、同步来的晚到日志、恢复、重建都随卡片缓存一起重算；
+///   [cardId] = 日志自己的卡（每条日志只由自己的卡投影；后继卡的前身日志只用来定前序状态）。
+/// - 只存与「日界」无关的事实：原始时刻 [occurredAt] + 写入时的 UTC 偏移；日序号、
+///   提前复习（[prevDueDay] 与当天比）在读时按读方的日界口径算。
+/// - 分类 [kind] 依赖前序有效状态（新卡 / 学习 / 年轻 / 成熟…，`SrsStatReviewKind` 下标），
+///   在重算时定。[rating] 为 null = 只是成熟状态变化（[maturityDelta] ≠ 0）的非评分日志。
+/// - 重建版本：`SrsDbStore` 的缓存修订号（`_kCacheRevision` = 2 起含本表）。
+@DataClassName('SrsStatReviewRow')
+class SrsStatReviews extends Table {
+  TextColumn get logId => text()();
+  TextColumn get profileUid => text()();
+  TextColumn get cardId => text()();
+  IntColumn get occurredAt => integer()();
+  IntColumn get utcOffsetMin => integer().withDefault(const Constant(0))();
+  IntColumn get rating => integer().nullable()();
+  IntColumn get kind => integer().withDefault(const Constant(0))();
+  IntColumn get durationMs => integer().withDefault(const Constant(0))();
+
+  /// 复习卡按到期日排的评分复习：上一条有效结果的到期日（读时与当天比得出「提前复习」）；
+  /// 其余 null。
+  IntColumn get prevDueDay => integer().nullable()();
+
+  /// +1 = 这条日志后变成熟，−1 = 掉出成熟，0 = 不变。
+  IntColumn get maturityDelta => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {logId};
+}
+
 // ── video_subtitle_glossaries（v119：视频字幕 AI 校对的作品级专名表）──────
 /// 视频字幕 AI 校对（docs/specs/2026-10-19-video-asr-llm-subtitle-pipeline.md
 /// 第 3 节 S0）的专名表：一部作品一行，各集共用。[glossaryJson] 是

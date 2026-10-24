@@ -242,10 +242,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     try {
       final AppModel appModel = ref.read(appProvider);
       final FushiDatabase db = appModel.database;
+      // 复习（SRS）时长读时并进总览（BUG-3771），复习模块关着时不出现。
       final StatFacts facts = await loadStatFacts(
         db,
         activityLimit: 0,
         includeCounters: true,
+        includeReviews: ref.read(srsModuleEnabledProvider),
       );
       _daily = facts.daily;
       _byDay = sumStatDaysByKey(_daily);
@@ -551,6 +553,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 事实行 → 展示标题（合集名走 sheet 组头；与首页 dashboard 同判据）。
   String _entryTitle(StatFact f) {
+    if (f.isReview) return t.nav_srs;
     if (f.isGame) {
       final GalgameEntry? entry = findGalgameForActivity(
         _games,
@@ -573,6 +576,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 事实行 → 所属合集名（v83 键契约：epub 经 bookKey→uid 换算）。
   String? _entryCollection(StatFact f) {
+    if (f.isReview) return null;
     if (f.isBook) {
       final String? bookKey = f.mediaKey.isNotEmpty
           ? f.mediaKey

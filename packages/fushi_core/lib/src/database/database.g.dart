@@ -65516,6 +65516,632 @@ class WebBrowserDownloadsCompanion
   }
 }
 
+class $SrsStatReviewsTable extends SrsStatReviews
+    with TableInfo<$SrsStatReviewsTable, SrsStatReviewRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SrsStatReviewsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _logIdMeta = const VerificationMeta('logId');
+  @override
+  late final GeneratedColumn<String> logId = GeneratedColumn<String>(
+    'log_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _profileUidMeta = const VerificationMeta(
+    'profileUid',
+  );
+  @override
+  late final GeneratedColumn<String> profileUid = GeneratedColumn<String>(
+    'profile_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cardIdMeta = const VerificationMeta('cardId');
+  @override
+  late final GeneratedColumn<String> cardId = GeneratedColumn<String>(
+    'card_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _occurredAtMeta = const VerificationMeta(
+    'occurredAt',
+  );
+  @override
+  late final GeneratedColumn<int> occurredAt = GeneratedColumn<int>(
+    'occurred_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _utcOffsetMinMeta = const VerificationMeta(
+    'utcOffsetMin',
+  );
+  @override
+  late final GeneratedColumn<int> utcOffsetMin = GeneratedColumn<int>(
+    'utc_offset_min',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<int> rating = GeneratedColumn<int>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<int> kind = GeneratedColumn<int>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _prevDueDayMeta = const VerificationMeta(
+    'prevDueDay',
+  );
+  @override
+  late final GeneratedColumn<int> prevDueDay = GeneratedColumn<int>(
+    'prev_due_day',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _maturityDeltaMeta = const VerificationMeta(
+    'maturityDelta',
+  );
+  @override
+  late final GeneratedColumn<int> maturityDelta = GeneratedColumn<int>(
+    'maturity_delta',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    logId,
+    profileUid,
+    cardId,
+    occurredAt,
+    utcOffsetMin,
+    rating,
+    kind,
+    durationMs,
+    prevDueDay,
+    maturityDelta,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'srs_stat_reviews';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SrsStatReviewRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('log_id')) {
+      context.handle(
+        _logIdMeta,
+        logId.isAcceptableOrUnknown(data['log_id']!, _logIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_logIdMeta);
+    }
+    if (data.containsKey('profile_uid')) {
+      context.handle(
+        _profileUidMeta,
+        profileUid.isAcceptableOrUnknown(data['profile_uid']!, _profileUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_profileUidMeta);
+    }
+    if (data.containsKey('card_id')) {
+      context.handle(
+        _cardIdMeta,
+        cardId.isAcceptableOrUnknown(data['card_id']!, _cardIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cardIdMeta);
+    }
+    if (data.containsKey('occurred_at')) {
+      context.handle(
+        _occurredAtMeta,
+        occurredAt.isAcceptableOrUnknown(data['occurred_at']!, _occurredAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_occurredAtMeta);
+    }
+    if (data.containsKey('utc_offset_min')) {
+      context.handle(
+        _utcOffsetMinMeta,
+        utcOffsetMin.isAcceptableOrUnknown(
+          data['utc_offset_min']!,
+          _utcOffsetMinMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    }
+    if (data.containsKey('prev_due_day')) {
+      context.handle(
+        _prevDueDayMeta,
+        prevDueDay.isAcceptableOrUnknown(
+          data['prev_due_day']!,
+          _prevDueDayMeta,
+        ),
+      );
+    }
+    if (data.containsKey('maturity_delta')) {
+      context.handle(
+        _maturityDeltaMeta,
+        maturityDelta.isAcceptableOrUnknown(
+          data['maturity_delta']!,
+          _maturityDeltaMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {logId};
+  @override
+  SrsStatReviewRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SrsStatReviewRow(
+      logId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}log_id'],
+      )!,
+      profileUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}profile_uid'],
+      )!,
+      cardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}card_id'],
+      )!,
+      occurredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}occurred_at'],
+      )!,
+      utcOffsetMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}utc_offset_min'],
+      )!,
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rating'],
+      ),
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}kind'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      prevDueDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}prev_due_day'],
+      ),
+      maturityDelta: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}maturity_delta'],
+      )!,
+    );
+  }
+
+  @override
+  $SrsStatReviewsTable createAlias(String alias) {
+    return $SrsStatReviewsTable(attachedDatabase, alias);
+  }
+}
+
+class SrsStatReviewRow extends DataClass
+    implements Insertable<SrsStatReviewRow> {
+  final String logId;
+  final String profileUid;
+  final String cardId;
+  final int occurredAt;
+  final int utcOffsetMin;
+  final int? rating;
+  final int kind;
+  final int durationMs;
+
+  /// 复习卡按到期日排的评分复习：上一条有效结果的到期日（读时与当天比得出「提前复习」）；
+  /// 其余 null。
+  final int? prevDueDay;
+
+  /// +1 = 这条日志后变成熟，−1 = 掉出成熟，0 = 不变。
+  final int maturityDelta;
+  const SrsStatReviewRow({
+    required this.logId,
+    required this.profileUid,
+    required this.cardId,
+    required this.occurredAt,
+    required this.utcOffsetMin,
+    this.rating,
+    required this.kind,
+    required this.durationMs,
+    this.prevDueDay,
+    required this.maturityDelta,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['log_id'] = Variable<String>(logId);
+    map['profile_uid'] = Variable<String>(profileUid);
+    map['card_id'] = Variable<String>(cardId);
+    map['occurred_at'] = Variable<int>(occurredAt);
+    map['utc_offset_min'] = Variable<int>(utcOffsetMin);
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<int>(rating);
+    }
+    map['kind'] = Variable<int>(kind);
+    map['duration_ms'] = Variable<int>(durationMs);
+    if (!nullToAbsent || prevDueDay != null) {
+      map['prev_due_day'] = Variable<int>(prevDueDay);
+    }
+    map['maturity_delta'] = Variable<int>(maturityDelta);
+    return map;
+  }
+
+  SrsStatReviewsCompanion toCompanion(bool nullToAbsent) {
+    return SrsStatReviewsCompanion(
+      logId: Value(logId),
+      profileUid: Value(profileUid),
+      cardId: Value(cardId),
+      occurredAt: Value(occurredAt),
+      utcOffsetMin: Value(utcOffsetMin),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      kind: Value(kind),
+      durationMs: Value(durationMs),
+      prevDueDay: prevDueDay == null && nullToAbsent
+          ? const Value.absent()
+          : Value(prevDueDay),
+      maturityDelta: Value(maturityDelta),
+    );
+  }
+
+  factory SrsStatReviewRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SrsStatReviewRow(
+      logId: serializer.fromJson<String>(json['logId']),
+      profileUid: serializer.fromJson<String>(json['profileUid']),
+      cardId: serializer.fromJson<String>(json['cardId']),
+      occurredAt: serializer.fromJson<int>(json['occurredAt']),
+      utcOffsetMin: serializer.fromJson<int>(json['utcOffsetMin']),
+      rating: serializer.fromJson<int?>(json['rating']),
+      kind: serializer.fromJson<int>(json['kind']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      prevDueDay: serializer.fromJson<int?>(json['prevDueDay']),
+      maturityDelta: serializer.fromJson<int>(json['maturityDelta']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'logId': serializer.toJson<String>(logId),
+      'profileUid': serializer.toJson<String>(profileUid),
+      'cardId': serializer.toJson<String>(cardId),
+      'occurredAt': serializer.toJson<int>(occurredAt),
+      'utcOffsetMin': serializer.toJson<int>(utcOffsetMin),
+      'rating': serializer.toJson<int?>(rating),
+      'kind': serializer.toJson<int>(kind),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'prevDueDay': serializer.toJson<int?>(prevDueDay),
+      'maturityDelta': serializer.toJson<int>(maturityDelta),
+    };
+  }
+
+  SrsStatReviewRow copyWith({
+    String? logId,
+    String? profileUid,
+    String? cardId,
+    int? occurredAt,
+    int? utcOffsetMin,
+    Value<int?> rating = const Value.absent(),
+    int? kind,
+    int? durationMs,
+    Value<int?> prevDueDay = const Value.absent(),
+    int? maturityDelta,
+  }) => SrsStatReviewRow(
+    logId: logId ?? this.logId,
+    profileUid: profileUid ?? this.profileUid,
+    cardId: cardId ?? this.cardId,
+    occurredAt: occurredAt ?? this.occurredAt,
+    utcOffsetMin: utcOffsetMin ?? this.utcOffsetMin,
+    rating: rating.present ? rating.value : this.rating,
+    kind: kind ?? this.kind,
+    durationMs: durationMs ?? this.durationMs,
+    prevDueDay: prevDueDay.present ? prevDueDay.value : this.prevDueDay,
+    maturityDelta: maturityDelta ?? this.maturityDelta,
+  );
+  SrsStatReviewRow copyWithCompanion(SrsStatReviewsCompanion data) {
+    return SrsStatReviewRow(
+      logId: data.logId.present ? data.logId.value : this.logId,
+      profileUid: data.profileUid.present
+          ? data.profileUid.value
+          : this.profileUid,
+      cardId: data.cardId.present ? data.cardId.value : this.cardId,
+      occurredAt: data.occurredAt.present
+          ? data.occurredAt.value
+          : this.occurredAt,
+      utcOffsetMin: data.utcOffsetMin.present
+          ? data.utcOffsetMin.value
+          : this.utcOffsetMin,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      prevDueDay: data.prevDueDay.present
+          ? data.prevDueDay.value
+          : this.prevDueDay,
+      maturityDelta: data.maturityDelta.present
+          ? data.maturityDelta.value
+          : this.maturityDelta,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsStatReviewRow(')
+          ..write('logId: $logId, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('cardId: $cardId, ')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('utcOffsetMin: $utcOffsetMin, ')
+          ..write('rating: $rating, ')
+          ..write('kind: $kind, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('prevDueDay: $prevDueDay, ')
+          ..write('maturityDelta: $maturityDelta')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    logId,
+    profileUid,
+    cardId,
+    occurredAt,
+    utcOffsetMin,
+    rating,
+    kind,
+    durationMs,
+    prevDueDay,
+    maturityDelta,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SrsStatReviewRow &&
+          other.logId == this.logId &&
+          other.profileUid == this.profileUid &&
+          other.cardId == this.cardId &&
+          other.occurredAt == this.occurredAt &&
+          other.utcOffsetMin == this.utcOffsetMin &&
+          other.rating == this.rating &&
+          other.kind == this.kind &&
+          other.durationMs == this.durationMs &&
+          other.prevDueDay == this.prevDueDay &&
+          other.maturityDelta == this.maturityDelta);
+}
+
+class SrsStatReviewsCompanion extends UpdateCompanion<SrsStatReviewRow> {
+  final Value<String> logId;
+  final Value<String> profileUid;
+  final Value<String> cardId;
+  final Value<int> occurredAt;
+  final Value<int> utcOffsetMin;
+  final Value<int?> rating;
+  final Value<int> kind;
+  final Value<int> durationMs;
+  final Value<int?> prevDueDay;
+  final Value<int> maturityDelta;
+  final Value<int> rowid;
+  const SrsStatReviewsCompanion({
+    this.logId = const Value.absent(),
+    this.profileUid = const Value.absent(),
+    this.cardId = const Value.absent(),
+    this.occurredAt = const Value.absent(),
+    this.utcOffsetMin = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.prevDueDay = const Value.absent(),
+    this.maturityDelta = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SrsStatReviewsCompanion.insert({
+    required String logId,
+    required String profileUid,
+    required String cardId,
+    required int occurredAt,
+    this.utcOffsetMin = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.prevDueDay = const Value.absent(),
+    this.maturityDelta = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : logId = Value(logId),
+       profileUid = Value(profileUid),
+       cardId = Value(cardId),
+       occurredAt = Value(occurredAt);
+  static Insertable<SrsStatReviewRow> custom({
+    Expression<String>? logId,
+    Expression<String>? profileUid,
+    Expression<String>? cardId,
+    Expression<int>? occurredAt,
+    Expression<int>? utcOffsetMin,
+    Expression<int>? rating,
+    Expression<int>? kind,
+    Expression<int>? durationMs,
+    Expression<int>? prevDueDay,
+    Expression<int>? maturityDelta,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (logId != null) 'log_id': logId,
+      if (profileUid != null) 'profile_uid': profileUid,
+      if (cardId != null) 'card_id': cardId,
+      if (occurredAt != null) 'occurred_at': occurredAt,
+      if (utcOffsetMin != null) 'utc_offset_min': utcOffsetMin,
+      if (rating != null) 'rating': rating,
+      if (kind != null) 'kind': kind,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (prevDueDay != null) 'prev_due_day': prevDueDay,
+      if (maturityDelta != null) 'maturity_delta': maturityDelta,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SrsStatReviewsCompanion copyWith({
+    Value<String>? logId,
+    Value<String>? profileUid,
+    Value<String>? cardId,
+    Value<int>? occurredAt,
+    Value<int>? utcOffsetMin,
+    Value<int?>? rating,
+    Value<int>? kind,
+    Value<int>? durationMs,
+    Value<int?>? prevDueDay,
+    Value<int>? maturityDelta,
+    Value<int>? rowid,
+  }) {
+    return SrsStatReviewsCompanion(
+      logId: logId ?? this.logId,
+      profileUid: profileUid ?? this.profileUid,
+      cardId: cardId ?? this.cardId,
+      occurredAt: occurredAt ?? this.occurredAt,
+      utcOffsetMin: utcOffsetMin ?? this.utcOffsetMin,
+      rating: rating ?? this.rating,
+      kind: kind ?? this.kind,
+      durationMs: durationMs ?? this.durationMs,
+      prevDueDay: prevDueDay ?? this.prevDueDay,
+      maturityDelta: maturityDelta ?? this.maturityDelta,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (logId.present) {
+      map['log_id'] = Variable<String>(logId.value);
+    }
+    if (profileUid.present) {
+      map['profile_uid'] = Variable<String>(profileUid.value);
+    }
+    if (cardId.present) {
+      map['card_id'] = Variable<String>(cardId.value);
+    }
+    if (occurredAt.present) {
+      map['occurred_at'] = Variable<int>(occurredAt.value);
+    }
+    if (utcOffsetMin.present) {
+      map['utc_offset_min'] = Variable<int>(utcOffsetMin.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<int>(rating.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<int>(kind.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (prevDueDay.present) {
+      map['prev_due_day'] = Variable<int>(prevDueDay.value);
+    }
+    if (maturityDelta.present) {
+      map['maturity_delta'] = Variable<int>(maturityDelta.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SrsStatReviewsCompanion(')
+          ..write('logId: $logId, ')
+          ..write('profileUid: $profileUid, ')
+          ..write('cardId: $cardId, ')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('utcOffsetMin: $utcOffsetMin, ')
+          ..write('rating: $rating, ')
+          ..write('kind: $kind, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('prevDueDay: $prevDueDay, ')
+          ..write('maturityDelta: $maturityDelta, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -65713,6 +66339,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $WebBrowserClosedTabsTable(this);
   late final $WebBrowserDownloadsTable webBrowserDownloads =
       $WebBrowserDownloadsTable(this);
+  late final $SrsStatReviewsTable srsStatReviews = $SrsStatReviewsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -65826,6 +66453,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     webBrowserSessionTabs,
     webBrowserClosedTabs,
     webBrowserDownloads,
+    srsStatReviews,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -111523,6 +112151,319 @@ typedef $$WebBrowserDownloadsTableProcessedTableManager =
       WebBrowserDownloadRow,
       PrefetchHooks Function()
     >;
+typedef $$SrsStatReviewsTableCreateCompanionBuilder =
+    SrsStatReviewsCompanion Function({
+      required String logId,
+      required String profileUid,
+      required String cardId,
+      required int occurredAt,
+      Value<int> utcOffsetMin,
+      Value<int?> rating,
+      Value<int> kind,
+      Value<int> durationMs,
+      Value<int?> prevDueDay,
+      Value<int> maturityDelta,
+      Value<int> rowid,
+    });
+typedef $$SrsStatReviewsTableUpdateCompanionBuilder =
+    SrsStatReviewsCompanion Function({
+      Value<String> logId,
+      Value<String> profileUid,
+      Value<String> cardId,
+      Value<int> occurredAt,
+      Value<int> utcOffsetMin,
+      Value<int?> rating,
+      Value<int> kind,
+      Value<int> durationMs,
+      Value<int?> prevDueDay,
+      Value<int> maturityDelta,
+      Value<int> rowid,
+    });
+
+class $$SrsStatReviewsTableFilterComposer
+    extends Composer<_$FushiDatabase, $SrsStatReviewsTable> {
+  $$SrsStatReviewsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get logId => $composableBuilder(
+    column: $table.logId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cardId => $composableBuilder(
+    column: $table.cardId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get utcOffsetMin => $composableBuilder(
+    column: $table.utcOffsetMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get prevDueDay => $composableBuilder(
+    column: $table.prevDueDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get maturityDelta => $composableBuilder(
+    column: $table.maturityDelta,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SrsStatReviewsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $SrsStatReviewsTable> {
+  $$SrsStatReviewsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get logId => $composableBuilder(
+    column: $table.logId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cardId => $composableBuilder(
+    column: $table.cardId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get utcOffsetMin => $composableBuilder(
+    column: $table.utcOffsetMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get prevDueDay => $composableBuilder(
+    column: $table.prevDueDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get maturityDelta => $composableBuilder(
+    column: $table.maturityDelta,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SrsStatReviewsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $SrsStatReviewsTable> {
+  $$SrsStatReviewsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get logId =>
+      $composableBuilder(column: $table.logId, builder: (column) => column);
+
+  GeneratedColumn<String> get profileUid => $composableBuilder(
+    column: $table.profileUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cardId =>
+      $composableBuilder(column: $table.cardId, builder: (column) => column);
+
+  GeneratedColumn<int> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get utcOffsetMin => $composableBuilder(
+    column: $table.utcOffsetMin,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<int> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get prevDueDay => $composableBuilder(
+    column: $table.prevDueDay,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get maturityDelta => $composableBuilder(
+    column: $table.maturityDelta,
+    builder: (column) => column,
+  );
+}
+
+class $$SrsStatReviewsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $SrsStatReviewsTable,
+          SrsStatReviewRow,
+          $$SrsStatReviewsTableFilterComposer,
+          $$SrsStatReviewsTableOrderingComposer,
+          $$SrsStatReviewsTableAnnotationComposer,
+          $$SrsStatReviewsTableCreateCompanionBuilder,
+          $$SrsStatReviewsTableUpdateCompanionBuilder,
+          (
+            SrsStatReviewRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $SrsStatReviewsTable,
+              SrsStatReviewRow
+            >,
+          ),
+          SrsStatReviewRow,
+          PrefetchHooks Function()
+        > {
+  $$SrsStatReviewsTableTableManager(
+    _$FushiDatabase db,
+    $SrsStatReviewsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SrsStatReviewsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SrsStatReviewsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SrsStatReviewsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> logId = const Value.absent(),
+                Value<String> profileUid = const Value.absent(),
+                Value<String> cardId = const Value.absent(),
+                Value<int> occurredAt = const Value.absent(),
+                Value<int> utcOffsetMin = const Value.absent(),
+                Value<int?> rating = const Value.absent(),
+                Value<int> kind = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<int?> prevDueDay = const Value.absent(),
+                Value<int> maturityDelta = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsStatReviewsCompanion(
+                logId: logId,
+                profileUid: profileUid,
+                cardId: cardId,
+                occurredAt: occurredAt,
+                utcOffsetMin: utcOffsetMin,
+                rating: rating,
+                kind: kind,
+                durationMs: durationMs,
+                prevDueDay: prevDueDay,
+                maturityDelta: maturityDelta,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String logId,
+                required String profileUid,
+                required String cardId,
+                required int occurredAt,
+                Value<int> utcOffsetMin = const Value.absent(),
+                Value<int?> rating = const Value.absent(),
+                Value<int> kind = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<int?> prevDueDay = const Value.absent(),
+                Value<int> maturityDelta = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SrsStatReviewsCompanion.insert(
+                logId: logId,
+                profileUid: profileUid,
+                cardId: cardId,
+                occurredAt: occurredAt,
+                utcOffsetMin: utcOffsetMin,
+                rating: rating,
+                kind: kind,
+                durationMs: durationMs,
+                prevDueDay: prevDueDay,
+                maturityDelta: maturityDelta,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SrsStatReviewsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $SrsStatReviewsTable,
+      SrsStatReviewRow,
+      $$SrsStatReviewsTableFilterComposer,
+      $$SrsStatReviewsTableOrderingComposer,
+      $$SrsStatReviewsTableAnnotationComposer,
+      $$SrsStatReviewsTableCreateCompanionBuilder,
+      $$SrsStatReviewsTableUpdateCompanionBuilder,
+      (
+        SrsStatReviewRow,
+        BaseReferences<_$FushiDatabase, $SrsStatReviewsTable, SrsStatReviewRow>,
+      ),
+      SrsStatReviewRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -111797,4 +112738,6 @@ class $FushiDatabaseManager {
       $$WebBrowserClosedTabsTableTableManager(_db, _db.webBrowserClosedTabs);
   $$WebBrowserDownloadsTableTableManager get webBrowserDownloads =>
       $$WebBrowserDownloadsTableTableManager(_db, _db.webBrowserDownloads);
+  $$SrsStatReviewsTableTableManager get srsStatReviews =>
+      $$SrsStatReviewsTableTableManager(_db, _db.srsStatReviews);
 }

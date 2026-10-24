@@ -331,6 +331,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'web_browser_session_tabs': BackupTableRule.deviceLocal(),
   'web_browser_closed_tabs': BackupTableRule.deviceLocal(),
   'web_browser_downloads': BackupTableRule.deviceLocal(),
+  // v129：SRS 有效复习投影（可重建缓存），设备本地、恢复后清空。
+  'srs_stat_reviews': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

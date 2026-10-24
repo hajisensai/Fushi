@@ -129,8 +129,8 @@ enum BackupCategory {
   /// 复习（SRS）：四张同步数据表（`srs_entities` / `srs_field_edits` /
   /// `srs_review_logs` / `srs_unknown_events`）+ 媒体目录 `<support>/srs_media/`
   /// （按 profile 子目录原样打包，归档前缀 `srs_media/`，文件名 = 内容 sha1）。
-  /// 五张设备本地表（`srs_event_local` / `srs_local_state` / `srs_notes_cache` /
-  /// `srs_cards_cache` / `srs_sent_batches`）不属于本类别，任何组合下都不出境、恢复后清空。
+  /// 六张设备本地表（`srs_event_local` / `srs_local_state` / `srs_notes_cache` /
+  /// `srs_cards_cache` / `srs_sent_batches` / `srs_stat_reviews`）不属于本类别，任何组合下都不出境、恢复后清空。
   ///
   /// **依赖 `profiles` 的 uid**：SRS 行按 `profiles.uid` 归属。覆盖恢复时，配置档案
   /// 若来自备份（勾了导入设置与配置档案）就照原样覆盖 SRS 表；否则本机配置档案被保留、
@@ -692,13 +692,16 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
 ///   - `srs_sent_batches`（v121）：本机已冻结批次留存（多目录同步按批次号
 ///     补发用），与本机写入者身份 / seq 绑定；恢复后写入者换新化身，旧留存
 ///     对不上，清空。
-/// 这五张表没有外键，删除顺序无约束。
+///   - `srs_stat_reviews`（v129）：有效复习投影，与卡片缓存同一次重算产出，
+///     同理清空后由引擎重建。
+/// 这六张表没有外键，删除顺序无约束。
 const List<String> _srsDeviceLocalDiscardTables = <String>[
   'srs_event_local',
   'srs_local_state',
   'srs_notes_cache',
   'srs_cards_cache',
   'srs_sent_batches',
+  'srs_stat_reviews',
 ];
 
 /// Content tables stripped from the exported DB copy when the `statistics`

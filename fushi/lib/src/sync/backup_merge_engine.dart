@@ -1900,6 +1900,8 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'web_browser_session_tabs',
       'web_browser_closed_tabs',
       'web_browser_downloads',
+      // v129：SRS 有效复习投影，与卡片缓存同为事件推导出的可重建缓存。
+      'srs_stat_reviews',
       // v117 SRS 数据本体（**不是**设备本地，会随备份走）：合并导入的规则是计划
       // 铁律 E——按 profileUid 归属、事件取并集、不做 id 重映射（事件 ID 全局唯一、
       // 不可变），由 SRS 专用合并步骤（BackupMergeEngine._mergeSrs →

@@ -45,7 +45,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 128);
+    expect(migrated.schemaVersion, 129);
     // 与 SrsDbStore 的后继查询同一句 WHERE：读出前身链接，且计划走部分索引（不全表扫描）。
     final List<QueryRow> rows = await migrated
         .customSelect(
@@ -71,7 +71,7 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 128);
+    expect(probe.select('PRAGMA user_version').first.values.first, 129);
     expect(indexesOf(probe), contains(index));
     expect(
       probe.select('SELECT COUNT(*) AS n FROM srs_field_edits').first['n'],
@@ -87,6 +87,6 @@ void main() {
     await reopened.customSelect('SELECT 1').get();
     await reopened.close();
     expect(indexesOf(probe), contains(index));
-    expect(probe.select('PRAGMA user_version').first.values.first, 128);
+    expect(probe.select('PRAGMA user_version').first.values.first, 129);
   });
 }

@@ -46,7 +46,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 128);
+    expect(migrated.schemaVersion, 129);
     expect((await migrated.getAllMediaCollections()).single.name, 'Keep');
     await migrated.recordWebBrowserVisit(
       url: 'https://example.com/',
@@ -86,7 +86,7 @@ void main() {
         'started_at',
       ]),
     );
-    expect(probe.select('PRAGMA user_version').first.values.first, 128);
+    expect(probe.select('PRAGMA user_version').first.values.first, 129);
     // 重跑：表已存在时 _tableExists 守卫让整步 no-op，数据保留。
     probe.execute('PRAGMA user_version = 127');
     probe.dispose();

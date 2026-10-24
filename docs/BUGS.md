@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3373 条。点号进各自文件。
+> 共 3375 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3771](bugs/BUG-3771-stats-overview-missing-srs-review-time.md) | ✅ | ✅ | 统计中心总览看不到 SRS 复习时长（含导入的 Anki 复习时长） |
+| [BUG-3770](bugs/BUG-3770-srs-stats-full-log-decode.md) | ✅ | ✅ | SRS 统计页每次全量读复习日志逐条 jsonDecode，随日志量线性变慢 |
 | [BUG-3769](bugs/BUG-3769-browser-windows-cert-error-interstitial.md) | ✅ | ✅ | Windows 浏览器证书错误停在 WebView2 自带拦截页，app 失败页不出现 |
 | [BUG-3768](bugs/BUG-3768-win-hidden-test-window-pulled-onscreen.md) | ✅ | ✅ | Windows 隐藏测试模式（FUSHI_TEST_HIDDEN）的主窗口被 Dart 启动定位挪回屏内 |
 | [BUG-3767](bugs/BUG-3767-video-audio-output-lost-never-recovers.md) | ✅ | ✅ | 播放中音频设备失效后视频永久没声音，只能重启 app |
