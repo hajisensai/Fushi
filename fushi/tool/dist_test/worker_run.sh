@@ -52,8 +52,14 @@ kill_tree() {
 flutter "${args[@]}" "$@" "${files[@]}" < /dev/null &
 pid=$!
 echo "$pid" > "$state/run.pid"
-trap 'kill_tree "$pid"; rm -f "$state/run.pid"; exit 143' TERM INT HUP
+# Heartbeat of the checkout lock (see kDistLockStaleMinutes); fds detached
+# so it can never hold the ssh channel open.
+(while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
+heartbeat=$!
+trap 'kill "$heartbeat" 2>/dev/null; kill_tree "$pid"; rm -f "$state/run.pid"; exit 143' TERM INT HUP
+touch "$state/lock" 2>/dev/null
 wait "$pid"
 rc=$?
+kill "$heartbeat" 2>/dev/null
 rm -f "$state/run.pid"
 exit "$rc"

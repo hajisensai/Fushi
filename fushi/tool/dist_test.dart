@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'test_flow/dist_console.dart';
 import 'test_flow/dist_plan.dart';
@@ -550,6 +551,12 @@ Map<String, Object?>? _decodeEvent(String line) {
 String _runId() {
   final DateTime n = DateTime.now();
   String two(int v) => v.toString().padLeft(2, '0');
+  // The random tail keeps two coordinators started in the same second apart
+  // (the run id names the remote lock owner and the snapshot ref).
+  final String tail = Random()
+      .nextInt(0x10000)
+      .toRadixString(16)
+      .padLeft(4, '0');
   return '${n.year}${two(n.month)}${two(n.day)}-'
-      '${two(n.hour)}${two(n.minute)}${two(n.second)}';
+      '${two(n.hour)}${two(n.minute)}${two(n.second)}-$tail';
 }

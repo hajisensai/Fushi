@@ -70,6 +70,11 @@ Map<String, String> distTestEnvironment(Map<String, String> parent) =>
         if (!kDistStrippedTestEnv.contains(e.key.toUpperCase())) e.key: e.value,
     };
 
+/// A remote checkout lock without a heartbeat for this long is taken over:
+/// its coordinator died (worker_run.sh touches it every minute while a batch
+/// runs, and no other step takes that long).
+const int kDistLockStaleMinutes = 15;
+
 /// ssh's own exit code for connection-level failures.
 const int kSshConnectionFailure = 255;
 
@@ -554,6 +559,9 @@ class SshDistWorker extends DistWorker {
   /// libraries can be copied instead of built twice in parallel.
   final SshDistWorker? primary;
   final Completer<void> _prepared = Completer<void>();
+
+  /// This run holds the checkout's lock (set once `init` got it).
+  bool _locked = false;
   Process? _process;
 
   List<String> get _sshBase => <String>[
@@ -616,14 +624,28 @@ class SshDistWorker extends DistWorker {
               '[ ! -d "\$HOME"/${shellQuote(config.seedRepo!)}/.git/objects ] || '
               'echo "\$HOME"/${shellQuote(config.seedRepo!)}/.git/objects '
               '> .git/objects/info/alternates; }';
+    // One run per checkout: `mkdir` is the atomic test-and-set. The lock's
+    // mtime is the heartbeat (worker_run.sh touches it while a batch runs);
+    // one silent for [kDistLockStaleMinutes] belongs to a coordinator that
+    // died and is taken over. Leftover batch processes are only killed once
+    // the lock is ours: before that they may be another live run's.
     await _sshChecked(
       'init',
       'mkdir -p "\$HOME"/$workdir && cd "\$HOME"/$workdir && '
           '{ [ -d .git ] || git init -q; }$seed && '
+          'mkdir -p .git/fushi-dist && '
+          '{ mkdir .git/fushi-dist/lock 2>/dev/null || '
+          '{ [ -n "\$(find .git/fushi-dist/lock -maxdepth 0 '
+          '-mmin +$kDistLockStaleMinutes)" ] && rm -rf .git/fushi-dist/lock && '
+          'mkdir .git/fushi-dist/lock; } || '
+          '{ echo "busy: in use by dist_test run '
+          '\$(cat .git/fushi-dist/lock/owner 2>/dev/null)" >&2; exit 75; }; } && '
+          'echo $runId > .git/fushi-dist/lock/owner && '
           '{ [ ! -f fushi/tool/dist_test/worker_kill.sh ] || '
           'bash fushi/tool/dist_test/worker_kill.sh; }',
       log,
     );
+    _locked = true;
 
     final String sshCommand = <String>[
       'ssh',
@@ -726,7 +748,13 @@ class SshDistWorker extends DistWorker {
 
   @override
   Future<void> finish(String runId) async {
-    await _ssh('${_prefix}git update-ref -d refs/dist/$runId');
+    if (!_locked) return;
+    _locked = false;
+    await _ssh(
+      '${_prefix}git update-ref -d refs/dist/$runId; '
+      '[ "\$(cat .git/fushi-dist/lock/owner 2>/dev/null)" = $runId ] && '
+      'rm -rf .git/fushi-dist/lock',
+    );
   }
 
   @override

@@ -15,6 +15,11 @@ fi
 
 state=.git/fushi-dist
 mkdir -p "$state"
+# Heartbeat of the checkout lock while native builds run (first build of a
+# crate can take longer than the stale limit).
+(while sleep 60; do touch "$state/lock"; done) > /dev/null 2>&1 < /dev/null &
+heartbeat=$!
+trap 'kill "$heartbeat" 2>/dev/null' EXIT
 
 # Dependencies: pub get + pub-cache patches + one tiny test run, which builds
 # the native-asset hooks (sqlite3, pdfium download) while prepareEnv (proxy)
