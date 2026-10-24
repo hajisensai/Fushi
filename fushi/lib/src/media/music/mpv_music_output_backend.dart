@@ -28,6 +28,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
+    show redactSubsonicCredentials;
 import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
@@ -535,7 +537,9 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       unawaited(_recoverOutput(message));
       return;
     }
-    _emit(MusicBackendFailed(message));
+    // 服务器曲库的流地址把凭据放在 query 里（mpv 没有头通道）：mpv 的打开失败文本会带上
+    // 整条 URL，界面 toast / 错误日志拿到前先脱敏（含 Subsonic 的 t / s）。
+    _emit(MusicBackendFailed(redactSubsonicCredentials(message)));
   }
 
   /// 输出打不开：独占 → 共享；还不行（或本来就是共享）且指定了设备 → 默认设备。每一步

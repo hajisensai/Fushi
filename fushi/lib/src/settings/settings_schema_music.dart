@@ -5,7 +5,9 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -250,6 +252,47 @@ SettingsDestination buildMusicDestination() {
                 };
               },
             ),
+          ),
+        ],
+      ),
+      // 服务器曲库（P5）：Jellyfin 家族复用视频的媒体服务器登录，OpenSubsonic 在子页里增删；
+      // 混排进曲库是每台服务器的显式开关（子页）。
+      SettingsSection(
+        title: t.music_servers_title,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'music.servers',
+            title: t.music_servers_manage,
+            subtitle: t.music_servers_settings_hint,
+            icon: FushiIcons.server,
+            showIcon: true,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.music,
+              title: t.music_servers_title,
+              icon: FushiIcons.server,
+              sections: const <SettingsSection>[],
+              body: (SettingsContext c) =>
+                  MusicServerSettingsBody(appModel: c.appModel),
+            ),
+          ),
+          SettingsSegmentedItem<int>(
+            id: 'music.server_bitrate',
+            title: t.music_server_bitrate_title,
+            subtitle: t.music_server_bitrate_hint,
+            icon: FushiIcons.highQuality,
+            defaultValue: 0,
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.music_server_bitrate_original,
+              ),
+              for (final int kbps in kMusicServerBitrateChoices)
+                SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicServerMaxBitrate,
+            onChanged: (SettingsContext c, int v) =>
+                c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
           ),
         ],
       ),

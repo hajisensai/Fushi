@@ -82,6 +82,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'music/VGMdb lookup': 'test/media/music/metadata/music_scrape_service_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
+  // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
+  // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
+  // 属性由 music_server_test 咬住。
+  'music/Server streaming quality':
+      'test/media/music/server/music_server_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、

@@ -1906,6 +1906,10 @@ class SyncRepository {
     // 同形：Audiobookshelf 服务器清单，条目里带 base64 令牌（refresh token 会轮换，
     // 两台设备共用一枚只会互相把对方挤下线）。
     'discovery_audiobookshelf_servers',
+    // 同形：OpenSubsonic 服务器清单（服务器曲库），条目里带 base64 密码 / API key；
+    // 混排开关按这些服务器的 id 记，跟着一起设备本地。
+    'music_subsonic_servers',
+    'music_server_library_mix',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

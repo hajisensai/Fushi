@@ -46,7 +46,7 @@ class MusicCover extends StatelessWidget {
     this.borderRadius,
   });
 
-  /// 目录封面 / 缓存封面文件。
+  /// 目录封面 / 缓存封面文件；服务器曲库的封面是 `http(s)://` 地址（服务器侧缩放）。
   final String? coverPath;
 
   /// 有内嵌封面的音频文件路径（[coverPath] 为空时用）。
@@ -71,7 +71,16 @@ class MusicCover extends StatelessWidget {
     );
     final String? file = coverPath;
     Widget child;
-    if (file != null && File(file).existsSync()) {
+    if (file != null &&
+        (file.startsWith('http://') || file.startsWith('https://'))) {
+      child = Image.network(
+        file,
+        fit: BoxFit.cover,
+        cacheWidth: size == null ? 512 : (size! * 2).round(),
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => placeholder,
+      );
+    } else if (file != null && File(file).existsSync()) {
       child = Image.file(
         File(file),
         fit: BoxFit.cover,

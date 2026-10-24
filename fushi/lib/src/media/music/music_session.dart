@@ -238,9 +238,12 @@ class MusicSession extends ChangeNotifier {
       duration: item.durationMs == null
           ? null
           : Duration(milliseconds: item.durationMs!),
-      artUri: cover != null && File(cover).existsSync()
-          ? Uri.file(cover)
-          : null,
+      // 服务器曲库的封面是 http(s) 地址（audio_service 自己下载），本地封面是文件。
+      artUri: cover == null
+          ? null
+          : (cover.startsWith('http://') || cover.startsWith('https://'))
+          ? Uri.parse(cover)
+          : (File(cover).existsSync() ? Uri.file(cover) : null),
     );
     handler.updatePlaybackState(
       playing: engine.isPlaying,

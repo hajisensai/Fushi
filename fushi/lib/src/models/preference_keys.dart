@@ -410,8 +410,17 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',
+  // String（JSON 数组，serverId）：混排进本地曲库的服务器（服务器曲库 P5，显式 opt-in）。
+  // 服务器配置本身设备本地，这份也设备本地（deviceLocalPrefKeys）。
+  'music_server_library_mix',
+  // int（kbps，默认 0 = 原样直出）：服务器曲库的码率上限，非 0 时请服务器转码。跨设备。
+  'music_server_max_bitrate',
   // double（默认 1.0）：音乐播放速度（变速不变调）。
   'music_speed',
+  // String（JSON 数组）：用户自配的 OpenSubsonic 服务器（服务器曲库 P5），每条里带
+  // base64 的密码 / API key → 同时登记在 kCredentialPreferenceKeys、
+  // PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys。
+  'music_subsonic_servers',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
@@ -815,6 +824,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',
+  // 每条 OpenSubsonic 服务器记录里带 base64 的 passwordB64 / apiKeyB64。
+  'music_subsonic_servers',
   'network_proxy_password',
   'network_proxy_username',
   // 每份朗读声音预设里 base64 的 secretsB64（API key / Bearer）。

@@ -21,6 +21,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -73,10 +75,17 @@ bool dispatchMusicShortcut(ShortcutAction? action, MusicPlayerEngine engine) {
 }
 
 class MusicLibraryPage extends ConsumerStatefulWidget {
-  const MusicLibraryPage({super.key, this.snapshotLoader});
+  const MusicLibraryPage({
+    super.key,
+    this.snapshotLoader,
+    this.serverAlbumsLoader,
+  });
 
   /// 测试注入：替代读数据库。
   final Future<MusicLibrarySnapshot> Function()? snapshotLoader;
+
+  /// 测试注入：替代读「混排进曲库」的服务器专辑。
+  final Future<List<MusicServerAlbumRef>> Function()? serverAlbumsLoader;
 
   @override
   ConsumerState<MusicLibraryPage> createState() => _MusicLibraryPageState();
@@ -85,6 +94,10 @@ class MusicLibraryPage extends ConsumerStatefulWidget {
 class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   MusicLibrarySection _section = MusicLibrarySection.albums;
   MusicLibrarySnapshot? _snapshot;
+
+  /// 显式 opt-in 混排进曲库的服务器专辑（服务器曲库 P5）。与本地快照分开取：服务器慢或
+  /// 不在线不拖住本地曲库。
+  List<MusicServerAlbumRef> _serverAlbums = const <MusicServerAlbumRef>[];
   bool _scanning = false;
   StreamSubscription<Set<TableUpdate>>? _dbSub;
 
@@ -94,6 +107,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   void initState() {
     super.initState();
     unawaited(_reload());
+    unawaited(_reloadServerAlbums());
     if (widget.snapshotLoader == null && _app.isDatabaseReady) {
       final FushiDatabase db = _app.database;
       // 表级变更流（不是 drift .watch()：长驻页面订阅 watch 会在 dispose 时挂死测试）。
@@ -128,6 +142,24 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               : MusicLibrarySnapshot.empty);
     if (!mounted) return;
     setState(() => _snapshot = snap);
+  }
+
+  Future<void> _reloadServerAlbums() async {
+    final Future<List<MusicServerAlbumRef>> Function()? loader =
+        widget.serverAlbumsLoader;
+    final List<MusicServerAlbumRef> albums = loader != null
+        ? await loader()
+        : (_app.isDatabaseReady
+              ? await loadMixedServerAlbums(_app)
+              : const <MusicServerAlbumRef>[]);
+    if (!mounted) return;
+    setState(() => _serverAlbums = albums);
+  }
+
+  Future<void> _openServers() async {
+    await openMusicServerList(context);
+    // 设置页可能改了混排开关 / 服务器清单。
+    await _reloadServerAlbums();
   }
 
   Future<void> _addFolder() async {
@@ -303,6 +335,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                             : () => unawaited(_readCd()),
                       ),
                     FushiToolbarItem(
+                      key: const ValueKey<String>('music_servers'),
+                      icon: FushiIcons.cloud,
+                      label: t.music_servers_title,
+                      onPressed: () => unawaited(_openServers()),
+                    ),
+                    FushiToolbarItem(
                       key: const ValueKey<String>('music_rescan'),
                       icon: FushiIcons.refresh,
                       label: t.music_library_rescan,
@@ -358,7 +396,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 
   Widget _buildSection(BuildContext context, MusicLibrarySnapshot snap) {
-    if (snap.isEmpty && _section != MusicLibrarySection.works) {
+    if (snap.isEmpty &&
+        _serverAlbums.isEmpty &&
+        _section != MusicLibrarySection.works) {
       return Center(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.music,
@@ -376,6 +416,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     return switch (_section) {
       MusicLibrarySection.albums => _AlbumGrid(
         snapshot: snap,
+        serverAlbums: _serverAlbums,
         onOpen: _openAlbum,
       ),
       MusicLibrarySection.artists => _ArtistList(
@@ -408,10 +449,17 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 }
 
 class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.snapshot, required this.onOpen});
+  const _AlbumGrid({
+    required this.snapshot,
+    required this.onOpen,
+    this.serverAlbums = const <MusicServerAlbumRef>[],
+  });
 
   final MusicLibrarySnapshot snapshot;
   final ValueChanged<MusicAlbumRow> onOpen;
+
+  /// 混排进来的服务器专辑：排在本地专辑之后，卡片带云朵、点开走服务器专辑页。
+  final List<MusicServerAlbumRef> serverAlbums;
 
   @override
   Widget build(BuildContext context) {
@@ -434,8 +482,18 @@ class _AlbumGrid extends StatelessWidget {
           crossAxisSpacing: tokens.spacing.gap * 1.5,
           childAspectRatio: 0.74,
         ),
-        itemCount: albums.length,
+        itemCount: albums.length + serverAlbums.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          if (i >= albums.length) {
+            final MusicServerAlbumRef ref = serverAlbums[i - albums.length];
+            return MusicServerAlbumCard(
+              key: ValueKey<String>(
+                'music-server-album-${ref.browser.serverId}-${ref.album.id}',
+              ),
+              browser: ref.browser,
+              album: ref.album,
+            );
+          }
           final MusicAlbumRow album = albums[i];
           return _AlbumCard(
             key: ValueKey<String>('music-album-${album.albumUid}'),
