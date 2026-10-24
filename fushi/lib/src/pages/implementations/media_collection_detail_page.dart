@@ -1,7 +1,8 @@
 import 'dart:async' show Completer, Timer, unawaited;
 import 'dart:io';
 import 'package:flutter/foundation.dart' show setEquals;
-import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
+import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -108,7 +109,6 @@ class MediaCollectionDetailPage extends StatefulWidget {
     required this.collection,
     required this.loadEpisodes,
     required this.onOpenEpisode,
-    this.onOpenDiscMenu,
     this.remote,
     required this.onChanged,
     this.onDeleteMembersMedia,
@@ -119,10 +119,16 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.onPickOnlineCover,
     this.collectionAiSettings,
     this.aiClientFactory,
+    this.discMenuProbe,
     super.key,
   });
 
   final FushiDatabase database;
+
+  /// 测试注入：判定一张盘在本机能否开菜单。生产为 null，走 [probeLocalDiscMenu]
+  /// （读一次 index.bdmv）。
+  final Future<DiscMenuUnavailableReason?> Function(DiscRef disc)?
+  discMenuProbe;
 
   /// 「排序」菜单的「AI 排序」用的 AI 指派来源。null = 不显示该项（AI 模块关着，
   /// 调用方按 `isAiModuleEnabled` 求值后传）。构造注入的理由同 [videoSpecs]。
@@ -147,8 +153,6 @@ class MediaCollectionDetailPage extends StatefulWidget {
 
   /// 打开某集（调用方用 playlistCollectionId 进播放器带面板）。
   final void Function(VideoBookRow episode) onOpenEpisode;
-
-  final void Function(VideoBookRow episode)? onOpenDiscMenu;
 
   /// 远端上下文（列远端成员 / 流播 / 取封面）；null = 纯本地视图。
   final CollectionRemoteContext? remote;
@@ -212,6 +216,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     for (final CollectionEpisodeSlot slot in _slots)
       if (slot.local case final VideoBookRow row) row,
   ];
+
+  /// 原盘入口（BD/DVD 原盘交互改造第 5 项）：本合集背后的盘根（按盘号 / 目录名
+  /// 排序）。原盘入口由本页自己提供，不再靠调用方记得传回调——此前「相关作品」
+  /// 进来的那条路径就因为没传而看不到原盘按钮。
+  List<DiscRef> _discs = const <DiscRef>[];
+
+  /// 原盘成员只在对端（互联 host）上：libbluray 要本地文件系统，菜单开不了。
+  bool _hasRemoteDisc = false;
+
+  /// 主按钮那张盘（最近看过的那张）在本机开不开得了菜单；null = 能开 / 未探测。
+  DiscMenuUnavailableReason? _discUnavailable;
 
   /// 成员里只在对端的那些（按序），供远端连播列表与起播下标换算。
   List<RemoteVideoInfo> get _remoteMembers => <RemoteVideoInfo>[
@@ -459,8 +474,18 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final Map<String, int> knownDurations = await loadKnownVideoDurationsMs(
       widget.database,
     );
+    final List<DiscRef> discs = collectDiscRefs(members);
+    final bool remoteDisc =
+        discs.isEmpty &&
+        slots.any(
+          (CollectionEpisodeSlot slot) =>
+              slot.local == null &&
+              (slot.remote?.fileName?.toLowerCase().endsWith('.mpls') ?? false),
+        );
     if (!mounted) return;
     setState(() {
+      _discs = discs;
+      _hasRemoteDisc = remoteDisc;
       _knownDurationsMs = knownDurations;
       _slots = episodeSlots;
       _groupKeyByEntry = <String, String>{
@@ -535,7 +560,118 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _loading = false;
     });
     unawaited(_refreshPeerCopyKeys(members));
+    unawaited(_probeDiscMenu());
     _syncBackdropRotation();
+  }
+
+  /// 探测主按钮那张盘能不能开菜单（只读一次 index.bdmv，不启动 Java）。远端盘不用
+  /// 探：本机没有文件系统可给 libbluray。
+  Future<void> _probeDiscMenu() async {
+    final DiscRef? disc = preferredDisc(_discs);
+    final DiscMenuUnavailableReason? reason = _hasRemoteDisc
+        ? DiscMenuUnavailableReason.remote
+        : disc == null
+        ? null
+        : await (widget.discMenuProbe ?? probeLocalDiscMenu)(disc);
+    if (!mounted) return;
+    if (reason != _discUnavailable) setState(() => _discUnavailable = reason);
+  }
+
+  bool get _isDiscEntry => _discs.isNotEmpty || _hasRemoteDisc;
+
+  /// 「原盘默认进入菜单」设置；没有 [ProviderScope]（部分 widget 测试）时取默认开。
+  bool get _discOpenMenuByDefault => discOpenMenuByDefaultOf(context);
+
+  DiscPrimaryKind get _discPrimaryKind => resolveDiscPrimaryKind(
+    hasDisc: _isDiscEntry,
+    openMenuByDefault: _discOpenMenuByDefault,
+    unavailable: _discUnavailable,
+  );
+
+  void _openDisc(DiscRef disc) {
+    // 播放页回来时重读进度（见 [_awaitingPlaybackReturn]）。
+    _awaitingPlaybackReturn = true;
+    unawaited(
+      openDiscSession(
+        context: context,
+        repo: VideoBookRepository(widget.database),
+        book: disc.book,
+        collectionId: widget.collection.id,
+        cover: _heroCover,
+      ),
+    );
+  }
+
+  /// 多盘：选一张再进它的菜单。所选那张开不了菜单时说明原因，不静默降级。
+  Future<void> _chooseDisc() async {
+    final DiscRef? disc = await showDiscPicker(
+      context: context,
+      discs: _discs,
+      selected: preferredDisc(_discs),
+    );
+    if (disc == null || !mounted) return;
+    final DiscMenuUnavailableReason? reason =
+        await (widget.discMenuProbe ?? probeLocalDiscMenu)(disc);
+    if (!mounted) return;
+    if (reason != null) {
+      FushiToast.show(
+        msg: discMenuUnavailableText(reason),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    _openDisc(disc);
+  }
+
+  /// 主按钮的动作：原盘可开菜单时「播放原盘」（最近看过的那张），否则普通播放。
+  void _onPrimaryPlay(CollectionEpisodeSlot episode) {
+    final DiscRef? disc = preferredDisc(_discs);
+    if (_discPrimaryKind == DiscPrimaryKind.playDisc && disc != null) {
+      _openDisc(disc);
+      return;
+    }
+    _openSlot(episode);
+  }
+
+  /// 原盘作品 hero 的次按钮：主按钮是「播放原盘」时给「继续观看 xx:xx」/「直接播放
+  /// 正片」；多盘再给「选盘」。主按钮退回普通播放（设置关 / 开不了菜单）但菜单仍可开
+  /// 时，菜单入口留在次按钮。
+  List<Widget> _discSecondaryActions(CollectionEpisodeSlot episode) {
+    if (!_isDiscEntry) return const <Widget>[];
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    final DiscRef? disc = preferredDisc(_discs);
+    return <Widget>[
+      if (discPrimary)
+        _isEpisodeStarted(episode)
+            ? MediaDetailSecondaryButton(
+                buttonKey: const ValueKey<String>('collection-disc-continue'),
+                icon: FushiIcons.history,
+                label: t.video_disc_continue_at(
+                  time: formatDiscResumePosition(episode.positionMs),
+                ),
+                onPressed: () => _openSlot(episode),
+              )
+            : MediaDetailSecondaryButton(
+                buttonKey: const ValueKey<String>('collection-disc-main-title'),
+                icon: FushiIcons.playCircle,
+                label: t.video_disc_play_main_title,
+                onPressed: () => _openSlot(episode),
+              )
+      else if (_discUnavailable == null && disc != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-open-menu'),
+          icon: FushiIcons.toc,
+          label: t.video_disc_play,
+          onPressed: () => _openDisc(disc),
+        ),
+      if (_discs.length > 1 && _discUnavailable == null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-choose'),
+          icon: FushiIcons.swap,
+          label: t.video_disc_choose_disc,
+          onPressed: () => unawaited(_chooseDisc()),
+        ),
+    ];
   }
 
   /// 本会话里已经在详情页兜底索引过的来源 id，按数据库实例分（见
@@ -1736,12 +1872,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget? _buildResumeFab() {
     if (_slots.isEmpty) return null;
     final CollectionEpisodeSlot episode = _slots[_continueIndex];
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
     return MediaDetailResumeFab(
       buttonKey: const ValueKey<String>('collection-resume-fab'),
       watching: true,
       started: _isEpisodeStarted(episode),
       itemLabel: _episodeDisplayTitle(episode),
-      onPressed: () => _openSlot(episode),
+      labelOverride: discPrimary ? t.video_disc_play : null,
+      icon: discPrimary ? FushiIcons.toc : null,
+      onPressed: () => _onPrimaryPlay(episode),
     );
   }
 
@@ -1760,6 +1899,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 避免老库凭空丢信息。简介只在 hero 里展示一份（可展开、可选中划词）。
     final bool useLegacyHeroDetails = _canonicalWork == null;
     final bool started = _isEpisodeStarted(episode);
+    final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
+    final DiscMenuUnavailableReason? discUnavailable = _isDiscEntry
+        ? _discUnavailable
+        : null;
+    final DiscRef? disc = preferredDisc(_discs);
     return CollectionDetailHero(
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,
@@ -1789,16 +1933,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             ]
           : const <CollectionHeroCredit>[],
       summary: useLegacyHeroDetails ? meta?.summary : _canonicalWork?.overview,
-      continueLabel:
-          '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
-          '${_episodeDisplayTitle(episode)}',
+      // 原盘开不了菜单时，这一行写明原因（主按钮退回普通播放）；多盘时写主按钮
+      // 开的是哪一张。
+      continueLabel: discUnavailable != null
+          ? discMenuUnavailableText(discUnavailable)
+          : discPrimary && _discs.length > 1 && disc != null
+          ? '${t.video_disc_play}  ·  ${disc.label}'
+          : '${t.collection_continue_progress(n: _continueIndex + 1)}  ·  '
+                '${_episodeDisplayTitle(episode)}',
       // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
-      playLabel: MediaDetailResumeFab.labelFor(
-        watching: true,
-        started: started,
-      ),
+      playLabel: discPrimary
+          ? t.video_disc_play
+          : MediaDetailResumeFab.labelFor(watching: true, started: started),
+      playIcon: discPrimary ? FushiIcons.toc : null,
       playButtonKey: const ValueKey<String>('collection-hero-play'),
-      onPlay: () => _openSlot(episode),
+      onPlay: () => _onPrimaryPlay(episode),
       // hero 不再挂「⋯」：它只是右上角管理菜单的子集，左右两处同样的按钮
       // （BUG-3190）。完整管理只在右上角；hero 只留主操作与两个次按钮。
       secondaryActions: _heroSecondaryActions(),
@@ -1811,6 +1960,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 数据逻辑。
   List<Widget> _heroSecondaryActions() {
     return <Widget>[
+      if (_slots.isNotEmpty) ..._discSecondaryActions(_slots[_continueIndex]),
       MediaDetailSecondaryButton(
         buttonKey: const ValueKey<String>('collection-hero-tags'),
         icon: FushiIcons.tag,
@@ -2158,36 +2308,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     }
   }
 
-  Widget _buildDiscMenuEntries(FushiDesignTokens tokens) {
-    final Map<String, VideoBookRow> discs = <String, VideoBookRow>{};
-    for (final VideoBookRow book in _members) {
-      final String? root = blurayDiscRootForPlaylistPath(book.videoPath);
-      if (root != null) discs.putIfAbsent(root, () => book);
-    }
-    if (discs.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.page,
-        vertical: tokens.spacing.rowVertical,
-      ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: <Widget>[
-          for (final MapEntry<String, VideoBookRow> disc in discs.entries)
-            FushiOutlinedButton.icon(
-              key: ValueKey<String>('bluray-menu-${disc.key}'),
-              onPressed: () => widget.onOpenDiscMenu!(disc.value),
-              icon: const FushiIcon(FushiIcons.toc),
-              label: Text(
-                '${t.video_disc_open_menu} · ${p.basename(disc.key)}',
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEpisodeSection(FushiDesignTokens tokens) {
     return Padding(
       padding: EdgeInsets.only(
@@ -2197,7 +2317,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (widget.onOpenDiscMenu != null) _buildDiscMenuEntries(tokens),
           CollectionSectionTitle(
             t.video_episode_list,
             count: _visibleSlots.length,

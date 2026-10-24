@@ -413,6 +413,19 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 写盘前的对齐钩子（AppModel.alignDownloadedSubtitle = gatedAutomaticSubtitleAligner，
   // 每次调用现读开关）——要下载 + 真视频内嵌轨，不是 reader CSS / 主题树，无适用
   // 探针；由专项测试咬住（关=原样返回且不调用对齐器、运行中改开关下一次即生效）。
+  // 原盘会话三项（BD/DVD 原盘交互改造第 8 项）。写 prefsRepo（changed=true），生效点
+  // 都不在 harness 能观测的树里：自动全屏要真窗口（runner 的 SetFullscreen 与退出时的
+  // WINDOWPLACEMENT 还原）、启动动画只在从库里进原盘会话的播放页出现、「默认进入菜单」
+  // 决定原盘作品详情页主按钮——各由专项测试咬住判据，真窗口那条走 Windows itest。
+  'video/Full screen for disc playback':
+      'integration_test/bluray_disc_session_itest.dart'
+      '（真窗口：进原盘自动全屏、退出恢复尺寸 / 位置 / 最大化；需真盘）',
+  'video/Disc launch animation':
+      'test/media/video/disc/disc_session_controls_test.dart'
+      '（DiscLaunchCoverTransition：放大铺满再淡出、减弱动效下不画）',
+  'video/Open disc menu by default':
+      'test/media/video/disc/disc_session_entry_test.dart'
+      '（resolveDiscPrimaryKind：设置关 = 主按钮直接播正片）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',

@@ -180,6 +180,27 @@ class WindowCaptionChannel {
     }
   }
 
+  /// macOS 应用自有的无边框全屏（原盘会话）：窗口去掉标题栏与边框、铺满当前屏幕、
+  /// 菜单栏与 Dock 自动隐藏，退出时还原进入前的 styleMask / frame / 层级。不走
+  /// AppKit 的 `toggleFullScreen`——那会进独立 Space、Esc 归系统，原盘会话的 Esc
+  /// （呼出控制栏 / 退出原盘）到不了 Flutter。实现见
+  /// `macos/Runner/MainFlutterWindow.swift` 的 `setBorderlessFullscreen`。
+  ///
+  /// 返回 runner 是否照做（已处在系统原生全屏、或没有屏幕可铺时为 false）。非 macOS
+  /// 恒 false；通道未注册（widget 测试）同样 false。平台侧的真实错误照常抛出。
+  static Future<bool> setBorderlessFullscreen(bool fullscreen) async {
+    if (!Platform.isMacOS) return false;
+    try {
+      return await _channel.invokeMethod<bool>(
+            'setBorderlessFullscreen',
+            <String, bool>{'fullscreen': fullscreen},
+          ) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// BUG-2462：告诉 runner「引擎刚光栅化了一帧、视图物理尺寸是这个」。
   ///
   /// runner 的子窗 resize 闸门（`child_resize_gate.h`）以此确认它交付的尺寸已被

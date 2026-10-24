@@ -2306,7 +2306,16 @@ class MediaDetailResumeFab extends StatelessWidget {
     super.key,
     this.itemLabel,
     this.buttonKey,
+    this.labelOverride,
+    this.icon,
   });
+
+  /// 非 null 时直接用作按钮文案（原盘作品的「播放原盘」），不再按 [watching] /
+  /// [started] 推导。
+  final String? labelOverride;
+
+  /// 非 null 时替换默认的播放图标。
+  final IconData? icon;
 
   /// true = 视频（观看），false = 书 / 漫画 / 小说（阅读）。
   final bool watching;
@@ -2337,18 +2346,16 @@ class MediaDetailResumeFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String label = labelFor(
-      watching: watching,
-      started: started,
-      itemLabel: itemLabel,
-    );
+    final String label =
+        labelOverride ??
+        labelFor(watching: watching, started: started, itemLabel: itemLabel);
     // 扩展 FAB（图标 + 文案）：一眼看出会从哪一话 / 集继续；过长的章名省略。
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 280),
       child: FushiFab(
         key: buttonKey,
         heroTag: null,
-        icon: const FushiIcon(FushiIcons.play),
+        icon: FushiIcon(icon ?? FushiIcons.play),
         tooltip: label,
         onPressed: onPressed,
         label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),

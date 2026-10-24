@@ -434,7 +434,10 @@ extension _VideoLayout on _VideoFushiPageState {
                 child: Stack(
                   children: <Widget>[
                     Positioned.fill(child: _buildDiscMenuSurface(controller)),
+                    // 栏内「章节」（正片上的盘弹出菜单阶段）用的同一套侧栏。
+                    _buildVideoSidePanelOverlay(controller),
                     _buildDiscMenuChrome(controller),
+                    Positioned.fill(child: _buildDiscExitHoldRing()),
                     _buildOsdOverlay(),
                   ],
                 ),
