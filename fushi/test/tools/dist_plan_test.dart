@@ -111,7 +111,7 @@ void main() {
       final Map<String, Set<DistPlatform>> pins = readDistAffinity(
         File(kDistAffinityPath).readAsStringSync(),
       );
-      expect(pins, isNotEmpty);
+      // Empty is the goal: a host-dependent red gets its root fix instead.
       for (final MapEntry<String, Set<DistPlatform>> e in pins.entries) {
         expect(File(e.key).existsSync(), isTrue, reason: 'stale pin ${e.key}');
         expect(isSafeDistTestPath(e.key), isTrue, reason: e.key);

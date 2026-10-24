@@ -263,8 +263,11 @@ void main() {
   });
 
   // 真正的桌面 enter / exit 主路径：mock 掉 window_manager 通道，记账每一次调用。
-  // screen_retriever / 标题栏 / 全屏读写这些通道不 mock——它们在 `_step` / 各自的
-  // try 里失败即回落，正好也验了「非致命通道失败不阻断小窗」。
+  // screen_retriever / 标题栏这些通道不 mock——它们在 `_step` / 各自的 try 里失败即
+  // 回落，正好也验了「非致命通道失败不阻断小窗」。
+  // 「先退全屏」那一步必须经测试缝替换：真实原语按**宿主** Platform 分派后端，macOS
+  // 宿主上走 macos_window_utils，它等一个只有 `main()` 才会完成的 initialize
+  // completer，单测里永不返回（整条 enter 链挂到 30 秒超时）。
   group('DesktopMiniWindowMode（mock window_manager 通道）', () {
     const MethodChannel channel = MethodChannel('window_manager');
     const Map<String, double> originalBounds = <String, double>{
@@ -275,11 +278,17 @@ void main() {
     };
     late Map<String, double> currentBounds;
     late List<MethodCall> calls;
+    late int fullscreenExits;
 
     setUp(() {
       TestWidgetsFlutterBinding.ensureInitialized();
       DesktopMiniWindowMode.resetForTesting();
       DesktopMiniWindowMode.debugDesktopOverride = true;
+      fullscreenExits = 0;
+      DesktopMiniWindowMode.debugExitFullscreenOverride = () async {
+        fullscreenExits++;
+        return false;
+      };
       currentBounds = Map<String, double>.of(originalBounds);
       calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -332,6 +341,7 @@ void main() {
         hasLength(1),
         reason: '第二条链必须排在第一条之后，看到已进入即 no-op，不再摆位',
       );
+      expect(fullscreenExits, 1, reason: '第二条链看到已进入就返回，不会再去退全屏');
 
       final bool exited = await DesktopMiniWindowMode.exit(
         owner: owner,
