@@ -6775,6 +6775,8 @@
   "srs_review_done_detail": "Reviewed $n cards in this session",
   "srs_review_hide_hard_easy": "Hide ‘Hard’ and ‘Easy’ buttons",
   "srs_review_hide_hard_easy_hint": "Keys 2 and 4 still rate Hard and Easy",
+  "srs_review_layout_floating_top_bar": "Floating top bar",
+  "srs_review_layout_floating_top_bar_hint": "Hidden by default. Tap a blank spot on the card or right-click to show it, and again to hide it.",
   "srs_review_layout_replay_button": "Replay button at the bottom",
   "srs_review_layout_replay_button_hint": "Within thumb reach when reviewing on a phone; the top bar keeps its replay",
   "srs_review_layout_replay_end": "Right",

@@ -519,6 +519,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 新装 srs、老用户 anki）。设备本地（SyncRepository.installScopedPrefKeys）：不进
   // Profile 快照 / 分享、不随备份 / 推荐包出境；导入设置的恢复会清掉它，下次启动重判。
   'srs_mining_target_install_default',
+  // bool（默认 true）：复习页顶栏悬浮——不占布局、默认收起，点卡面空白 / 右键唤出、
+  // 再点收起（与小说、漫画阅读器的悬浮顶栏同一口径）；false = 固定页头常驻。非凭据、跨设备。
+  'srs_review_chrome_floating',
   // bool（默认 false）：复习页底部评分栏只留「重来 / 良好」两个按钮（对齐 AnkiDroid
   // 的 hideHardAndEasy）；键盘 2/4 仍可评「困难 / 简单」。非凭据、跨设备。
   'srs_review_hide_hard_easy',

@@ -134,6 +134,14 @@ final Provider<bool> srsReviewShowIntervalsProvider = Provider<bool>(
   ),
 );
 
+/// 复习页顶栏是否悬浮（按 profile 偏好，默认悬浮：不占布局、默认收起，点卡面空白 / 右键
+/// 唤出，与小说、漫画阅读器一致）。
+final Provider<bool> srsReviewChromeFloatingProvider = Provider<bool>(
+  (Ref ref) => ref.watch(
+    appProvider.select((AppModel app) => app.srsReviewChromeFloating),
+  ),
+);
+
 /// 复习页页头是否显示剩余卡数（按 profile 偏好，默认显示；对齐 Anki「显示剩余卡片数量」）。
 final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
   (Ref ref) =>

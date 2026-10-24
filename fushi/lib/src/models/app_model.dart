@@ -9133,6 +9133,12 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsCardAppearance(SrsCardAppearance appearance) =>
       prefsRepo.setSrsCardAppearance(appearance.encode());
 
+  // 复习页顶栏悬浮（透传 prefsRepo）。可空读：prefs 未装配 = 悬浮（默认）。
+  bool get srsReviewChromeFloating =>
+      _prefsRepo?.srsReviewChromeFloating ?? true;
+  Future<void> setSrsReviewChromeFloating(bool value) =>
+      prefsRepo.setSrsReviewChromeFloating(value);
+
   // 复习页评分栏只留「重来 / 良好」（透传 prefsRepo）。可空读：prefs 未装配 = 四按钮。
   bool get srsReviewHideHardEasy => _prefsRepo?.srsReviewHideHardEasy ?? false;
   Future<void> setSrsReviewHideHardEasy(bool value) =>

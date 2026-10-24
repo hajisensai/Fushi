@@ -63,6 +63,7 @@ class SrsCardFace {
     this.onSourceLink,
     this.autoplayMedia = false,
     this.onPlayAudio,
+    this.onTapEmpty,
   });
 
   final String cardId;
@@ -133,6 +134,10 @@ class SrsCardFace {
   /// 一段打断上一段，同一时刻只出一路声音（#10）。null = 卡面自己直接播（预览页）。
   final void Function(List<String> names)? onPlayAudio;
 
+  /// 卡面空白处被点了一下（页内取词脚本判定：没点在字、链接、按钮上）。复习页据此唤出 /
+  /// 收起悬浮顶栏（与小说、漫画阅读器「点空白切换顶栏」同一口径）。null = 不响应。
+  final VoidCallback? onTapEmpty;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -154,6 +159,7 @@ class SrsCardFace {
         onSourceLink: onSourceLink,
         autoplayMedia: autoplayMedia,
         onPlayAudio: onPlayAudio,
+        onTapEmpty: onTapEmpty,
       );
 }
 
@@ -1960,7 +1966,10 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
           );
           controller.addJavaScriptHandler(
             handlerName: 'onTapEmpty',
-            callback: (List<dynamic> _) => null,
+            callback: (List<dynamic> _) {
+              if (mounted) widget.face.onTapEmpty?.call();
+              return null;
+            },
           );
           controller.addJavaScriptHandler(
             handlerName: kSrsPlaySoundHandler,

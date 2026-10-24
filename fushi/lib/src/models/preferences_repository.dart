@@ -3161,6 +3161,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习页顶栏悬浮（不占布局、默认收起，点卡面空白 / 右键唤出），与小说、漫画阅读器
+  // 同一口径。默认 true；false = 固定页头常驻。
+  bool get srsReviewChromeFloating =>
+      getPref('srs_review_chrome_floating', defaultValue: true) as bool;
+
+  Future<void> setSrsReviewChromeFloating(bool value) async {
+    await setPref('srs_review_chrome_floating', value);
+    notifyListeners();
+  }
+
   // 复习页评分栏只留「重来 / 良好」（对齐 AnkiDroid hideHardAndEasy）。默认 false。
   bool get srsReviewHideHardEasy =>
       getPref('srs_review_hide_hard_easy', defaultValue: false) as bool;
