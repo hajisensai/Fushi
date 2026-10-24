@@ -20,6 +20,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
@@ -120,21 +121,20 @@ void main() {
       AdaptiveNavItem(icon: Icons.search, label: '词典'),
     ];
 
-    Container selectedPill(WidgetTester tester) {
-      // 选中项的药丸：那个 64×32、带 BoxDecoration 的 Container。
-      return tester.widget<Container>(
+    Color? selectedShapeColor(WidgetTester tester) {
+      // 选中项图标背后的专属多边形（[NavMorphShape] 里那块 ShapeDecoration）。
+      final DecoratedBox box = tester.widget<DecoratedBox>(
         find
-            .ancestor(
-              of: find.byIcon(Icons.home).hitTestable(),
-              matching: find.byWidgetPredicate(
-                (Widget w) => w is Container && w.decoration is BoxDecoration,
-              ),
+            .descendant(
+              of: find.byType(NavMorphShape),
+              matching: find.byType(DecoratedBox),
             )
             .first,
       );
+      return (box.decoration as ShapeDecoration).color;
     }
 
-    testWidgets('底栏选中药丸反色：底色前景、图标底色', (WidgetTester tester) async {
+    testWidgets('底栏选中多边形反色：底色前景、图标底色', (WidgetTester tester) async {
       await tester.pumpWidget(
         _wrap(
           Builder(
@@ -150,15 +150,17 @@ void main() {
       await tester.pumpAndSettle();
 
       final ColorScheme colors = buildEinkColorScheme(Brightness.light);
-      final BoxDecoration pill =
-          selectedPill(tester).decoration! as BoxDecoration;
-      expect(pill.color, colors.onSurface, reason: '药丸必须是实心前景色');
+      expect(
+        selectedShapeColor(tester),
+        colors.onSurface,
+        reason: '选中多边形必须是实心前景色',
+      );
       expect(
         // 只认能点到的那份：悬浮底栏常驻一枚透明 + IgnorePointer 的「最小化小
         // 胶囊」，里面也有当前项图标，那份不是这里要钉的药丸。
         tester.widget<Icon>(find.byIcon(Icons.home).hitTestable()).color,
         colors.surface,
-        reason: '反色药丸里的图标用底色',
+        reason: '反色多边形上的图标用底色',
       );
 
       // 悬浮胶囊一圈前景色描边（eink 不画阴影）。
@@ -191,7 +193,7 @@ void main() {
       );
     });
 
-    testWidgets('非 eink 主题原样：悬浮胶囊 tertiary 指示器药丸、无边线', (
+    testWidgets('非 eink 主题原样：悬浮胶囊 tertiary 选中多边形、无边线', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -208,10 +210,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final BoxDecoration pill =
-          selectedPill(tester).decoration! as BoxDecoration;
-      // M3E 悬浮底栏是 vibrant tertiaryContainer 胶囊，选中指示器深一阶 tertiary。
-      expect(pill.color, ThemeData().colorScheme.tertiary);
+      // M3E 悬浮底栏是 vibrant tertiaryContainer 胶囊，选中多边形深一阶 tertiary。
+      expect(selectedShapeColor(tester), ThemeData().colorScheme.tertiary);
       expect(
         tester.widget<Material>(find.byKey(fushiMaterialNavKey)).shape,
         isNull,
@@ -330,7 +330,11 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(
         tester
-            .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),)
+            .widget<CircularProgressIndicator>(
+              glassUnwrap<CircularProgressIndicator>(
+                find.byType(CircularProgressIndicator),
+              ),
+            )
             .value,
         0.5,
       );
@@ -356,7 +360,11 @@ void main() {
         ),
       );
       final CircularProgressIndicator ring = tester
-          .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),);
+          .widget<CircularProgressIndicator>(
+            glassUnwrap<CircularProgressIndicator>(
+              find.byType(CircularProgressIndicator),
+            ),
+          );
       expect(ring.value, 0, reason: 'null = 无限转圈，eink 下钉成 0');
       final List<Container> discs = tester
           .widgetList<Container>(find.byType(Container))
@@ -402,7 +410,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
+      final TabBar bar = tester.widget<TabBar>(
+        glassUnwrap<TabBar>(find.byType(TabBar)),
+      );
       expect(bar.controller?.animationDuration, Duration.zero);
 
       final Finder gradientBox = find.byWidgetPredicate(
@@ -434,7 +444,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
+      final TabBar bar = tester.widget<TabBar>(
+        glassUnwrap<TabBar>(find.byType(TabBar)),
+      );
       expect(bar.controller?.animationDuration, kTabScrollDuration);
     });
   });

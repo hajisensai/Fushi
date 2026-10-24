@@ -25,6 +25,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
+import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiWavyLinearProgress;
@@ -221,14 +222,30 @@ const double _kMaterialMenuPillHeight = 40;
 /// M3 Expressive「expressive」动效方案的 default spatial 弹簧（刚度 380、
 /// 阻尼比 0.8）：导航指示器选中时带一点回弹地展开，rail 展开 / 收起同用。
 /// 按压类形变用的 standard 方案见 fushi_expressive.dart。
-final SpringDescription _kNavExpressiveSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 380, ratio: 0.8);
+final SpringDescription _kNavExpressiveSpatial = kNavExpressiveSpatial;
 
 /// MD3 展开 rail 一行的高度与收起 rail / 底栏指示器药丸的尺寸（M3 Expressive：
 /// 行 56、药丸 56×32，全圆角）。
 const double _kMaterialRailRowHeight = 56;
 const double _kMaterialPillWidth = 56;
 const double _kMaterialPillHeight = 32;
+
+/// MD3 底栏选中项图标背后的专属多边形边长（用户 2026-10-24「底部栏的高亮也
+/// 用跟侧边栏一样有多边形的」）：纯图标底栏 48（整格高即 48dp 命中区），带
+/// 标签时 40、与标签隔 [_kMaterialBarLabelGap]。窄格再按格宽收（见
+/// [AdaptiveNavTileMetrics.pillWidth]）。
+const double _kMaterialBarShapeSize = 48;
+const double _kMaterialBarLabeledShapeSize = 40;
+const double _kMaterialBarLabelGap = 2;
+
+/// MD3 底栏一格选中多边形（也是状态层裁剪区）的实际边长。
+double _materialBarShapeSize({
+  required bool showLabel,
+  required double pillWidth,
+}) => math.min(
+  showLabel ? _kMaterialBarLabeledShapeSize : _kMaterialBarShapeSize,
+  pillWidth,
+);
 
 /// 当前设计系统下导航 rail / 侧栏实际占的宽（标题栏按它缩进标题）。
 double adaptiveNavRailWidthFor(BuildContext context, {required bool extended}) {
@@ -449,9 +466,7 @@ class _MaterialNavCluster extends StatelessWidget {
       extended: axis == Axis.vertical && extended,
       iconOnly: iconOnly,
       cellWidth: cellWidth,
-      railShape:
-          items[i].railShape ??
-          kNavRailFallbackShapes[i % kNavRailFallbackShapes.length],
+      railShape: navShapeOf(items, i),
       order: i,
       onSelect: () {
         if (i != currentIndex) fushiSelectionHaptic(context);
@@ -723,7 +738,7 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// MD3 悬浮胶囊的高度：按「指示器药丸 32 + 缝 4 + 标签实际行高」加上下各
+  /// MD3 悬浮胶囊的高度：按「选中多边形 40 + 缝 2 + 标签实际行高」加上下各
   /// [_kCapsuleVerticalPadding] 算，跟随（钳到 1.3 的）文字缩放；标签隐藏时只
   /// 剩药丸，取 [kAdaptiveNavBarContentHeight]（64）。此前用 64 的最小高 +
   /// IntrinsicHeight，Windows 上标签字体行高偏大时下半截被胶囊圆角裁掉
@@ -745,8 +760,8 @@ class _MaterialNavCluster extends StatelessWidget {
     return math.max(
       kAdaptiveNavBarContentHeight,
       (2 * _kCapsuleVerticalPadding +
-              AdaptiveNavTileMetrics.pillHeight +
-              4 +
+              _kMaterialBarLabeledShapeSize +
+              _kMaterialBarLabelGap +
               labelHeight)
           .ceilToDouble(),
     );
@@ -881,6 +896,9 @@ class _MaterialNavCluster extends StatelessWidget {
     final ValueChanged<int>? dragSelect = onDragSelect;
     return _SlidingIndicatorScope(
       selectedId: selectedId,
+      // 与侧栏同一枚液态墨滴：槽是方的，滑动时画成拉伸的圆，落定交给选中项
+      // 的多边形由圆变形（[NavMorphShape]）。
+      liquid: true,
       color: barStyle?.indicator ?? Theme.of(context).colorScheme.tertiary,
       // 长按拖选只认胶囊里看得见的目的地；「更多」不参与（拖到它上面松手 =
       // 取消），FAB（查词）不在胶囊里。
@@ -1755,7 +1773,8 @@ class _SlidingIndicatorScope extends StatefulWidget {
   });
 
   /// 液态墨滴（MD3 侧栏）：滑动时前沿先走、后沿后到，指示器沿行进方向拉长、
-  /// 横向收细，落点随弹簧回弹（见 [_liquidRect]）。false = 整块平移（底栏）。
+  /// 横向收细，落点随弹簧回弹（见 [_liquidRect]）。MD3 侧栏与 MD3 底栏都开；
+  /// false = 整块平移（Apple 侧栏）。
   final bool liquid;
 
   /// 拖选的目标：目的地焦点 id → 序号。null = 不启用拖选。
@@ -3676,7 +3695,11 @@ class _NavFocusCellState extends State<_NavFocusCell> {
                     ? _kMaterialRailRowHeight / 2
                     : (collapsedMaterialRail
                           ? _kNavRailShapeSize / 2
-                          : _kMaterialPillHeight / 2),
+                          : _materialBarShapeSize(
+                                  showLabel: !labelsHidden,
+                                  pillWidth: metrics.pillWidth,
+                                ) /
+                                2),
               ),
         // 玻璃设计系统不画 MD 涟漪（按压反馈是选中气泡本身）；InkWell 本身保留，
         // 焦点目标的父链不随设计系统变。
@@ -3695,9 +3718,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
           padding: glassDesign || materialRailRow
               ? EdgeInsets.zero
               : EdgeInsets.symmetric(
-                  // 纯图标底栏：32 高的药丸上下各补 8，整格点击区凑足 48dp
-                  // 触控目标（带标签时标签行已把格撑过 48）。
-                  vertical: horizontal ? (labelsHidden ? 8 : 0) : 4,
+                  // 底栏的多边形槽自己就是 48（纯图标）/ 40 + 标签，整格点击区
+                  // 已足 48dp 触控目标，不再上下补边。
+                  vertical: horizontal ? 0 : 4,
                   horizontal: horizontal ? 4 : 0,
                 ),
           child: Align(
@@ -3772,14 +3795,12 @@ class _NavIndicatorInkWell extends InkWell {
   }
 }
 
-/// Pure MD3 destination visual: an indicator pill behind the icon (filled when
-/// selected) over a label. Shared by the bottom bar and the side rail.
+/// Pure MD3 destination visual: the destination's own M3E shape behind the icon
+/// (drawn when selected) over a label. Shared by the bottom bar and the side rail.
 ///
-/// 2026-10 动效重做：选中药丸不再一帧跳出——它从图标宽度（32）横向展开到 56、
-/// 同时由透明渐入填充色（M3 导航栏的「指示器展开」），M3 Expressive 下由
-/// expressive spatial 弹簧驱动、落点带回弹（[_NavIndicatorPill]）；图标的线框 ↔
-/// 实心切换走一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下
-/// 三处都瞬间到位，最终几何与配色不变。
+/// 2026-10-24 起底栏与侧栏同一套选中高亮：该目的地的专属多边形
+/// （[NavMorphShape]），墨滴落定后由圆形弹簧变形出来；图标的线框 ↔ 实心切换走
+/// 一次轻缩放交叉淡化，标签字重随之过渡。墨水屏 / 减弱动态效果下瞬间到位。
 class _FushiNavTile extends StatelessWidget {
   const _FushiNavTile({
     required this.item,
@@ -4001,11 +4022,9 @@ class _FushiNavTile extends StatelessWidget {
   /// 「只给选中项显示标签」（2026-10-05 用户反馈）。
   final bool compactLabel;
 
-  /// 挂在 MD3 指示器药丸槽（[pillWidth] × 32）上，供 [_NavIndicatorInkWell]
-  /// 把状态层裁到药丸。
+  /// 挂在 MD3 指示器槽上（底栏 = 选中多边形的方槽，收起 rail = 52 方槽），供
+  /// [_NavIndicatorInkWell] 把状态层裁到指示器、滑动墨滴取落点。
   final GlobalKey? indicatorKey;
-
-  static const double _pillHeight = AdaptiveNavTileMetrics.pillHeight;
 
   /// MD3 展开 rail 的一行（M3 Expressive expanded navigation rail）：行高 56，
   /// 24 图标 + 14 号 w500 标签横排，选中是包住图标与文字的全圆角
@@ -4033,7 +4052,7 @@ class _FushiNavTile extends StatelessWidget {
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
-    // 选中项图标背后的小专属形状（墨滴落定后由圆形变过来，见 [_NavRailShape]）；
+    // 选中项图标背后的小专属形状（墨滴落定后由圆形变过来，见 [NavMorphShape]）；
     // 形状在时图标改 onPrimary。
     final bool shapeShown = selected && !sliding && railShape != null;
     final Widget glyph = SizedBox.square(
@@ -4042,7 +4061,7 @@ class _FushiNavTile extends StatelessWidget {
         alignment: Alignment.center,
         children: <Widget>[
           if (railShape != null)
-            _NavRailShape(
+            NavMorphShape(
               shape: railShape!,
               visible: shapeShown,
               color: eink ? colors.surface : colors.primary,
@@ -4098,7 +4117,7 @@ class _FushiNavTile extends StatelessWidget {
   }
 
   /// MD3 收起 rail 的一格（M3E 组合方案，2026-10-23）：纯图标，选中项图标
-  /// 背后是 52 的 primary 专属形状（[_NavRailShape]），图标 onPrimary。墨滴
+  /// 背后是 52 的 primary 专属形状（[NavMorphShape]），图标 onPrimary。墨滴
   /// 还在路上时新选中项只把图标染成 primary、形状不画，落定后形状从圆变出来。
   /// 52 的方槽同时是墨滴的落点矩形（[indicatorKey]）与状态层的圆形裁剪区。
   Widget _buildMaterialRailCollapsed(BuildContext context) {
@@ -4119,7 +4138,7 @@ class _FushiNavTile extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: <Widget>[
-          _NavRailShape(
+          NavMorphShape(
             shape: railShape ?? kNavRailFallbackShapes.first,
             visible: landed,
             color: eink ? colors.onSurface : colors.primary,
@@ -4165,12 +4184,11 @@ class _FushiNavTile extends StatelessWidget {
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
     // 滑动指示器正在项间滑：本格药丸先不填色，只留那一枚滑块。
+    // 墨滴正在项间滑（或被拎起拖动）：本格多边形先不画，落定后由圆变出来。
     final bool sliding =
         _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
-    final Color pillColor = sliding
-        ? Colors.transparent
-        : bar?.indicator ??
-              (eink ? colors.onSurface : colors.secondaryContainer);
+    final Color indicatorColor =
+        bar?.indicator ?? (eink ? colors.onSurface : colors.secondaryContainer);
     final Color pillIconColor =
         bar?.onIndicator ??
         (eink ? colors.surface : colors.onSecondaryContainer);
@@ -4180,6 +4198,10 @@ class _FushiNavTile extends StatelessWidget {
     final IconData icon = selected
         ? (item.selectedIcon ?? item.icon)
         : item.icon;
+    final double shapeSize = _materialBarShapeSize(
+      showLabel: showLabel,
+      pillWidth: pillWidth,
+    );
     // 图标线框 ↔ 实心切换：一次轻缩放交叉淡化。
     final Widget glyph = AnimatedSwitcher(
       duration: duration,
@@ -4222,127 +4244,33 @@ class _FushiNavTile extends StatelessWidget {
         textAlign: TextAlign.center,
       ),
     );
+    // 选中项图标背后是该目的地的专属 M3E 多边形（与侧栏同一形状），墨滴落定
+    // 后由圆形弹簧变形出来（[NavMorphShape]）。方槽同时是墨滴落点与状态层的
+    // 圆形裁剪区（[indicatorKey]）。
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _NavIndicatorPill(
+        SizedBox.square(
           key: indicatorKey,
-          selected: selected,
-          color: pillColor,
-          width: pillWidth,
-          height: _pillHeight,
-          child: glyph,
-        ),
-        if (showLabel) ...<Widget>[const SizedBox(height: 4), label],
-      ],
-    );
-  }
-}
-
-/// MD3 导航的活动指示器（M3 Expressive）：全圆角药丸，选中时从图标宽（=高）
-/// 横向展开到整宽、由透明渐入填充色，按 expressive default spatial 弹簧
-/// （[_kNavExpressiveSpatial]）驱动——落点前带一点回弹，取消选中反向收拢。
-/// 快速连点时弹簧带着当前速度续上，不会跳帧回零。
-///
-/// 外层 [SizedBox] 恒为静止几何（状态层按它裁剪，见 [_NavIndicatorInkWell]），
-/// 回弹超出的几个像素画在格内边距里。墨水屏 / 减弱动态效果下瞬间到位；静止时
-/// 填充色与目标色逐值相同（eink 守卫按 `decoration.color == onSurface` 断言）。
-class _NavIndicatorPill extends StatefulWidget {
-  const _NavIndicatorPill({
-    required this.selected,
-    required this.color,
-    required this.height,
-    required this.child,
-    required this.width,
-    super.key,
-  });
-
-  final bool selected;
-  final Color color;
-  final double width;
-  final double height;
-  final Widget child;
-
-  @override
-  State<_NavIndicatorPill> createState() => _NavIndicatorPillState();
-}
-
-class _NavIndicatorPillState extends State<_NavIndicatorPill>
-    with SingleTickerProviderStateMixin {
-  /// 回弹允许超出静止宽度的量（每侧一半，落在格的 4dp 内边距里）。
-  static const double _kOvershootAllowance = 8;
-
-  late final FushiSpring _select = FushiSpring(
-    vsync: this,
-    initial: widget.selected ? 1 : 0,
-    spring: _kNavExpressiveSpatial,
-  );
-
-  @override
-  void didUpdateWidget(covariant _NavIndicatorPill oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.selected != widget.selected) {
-      _select.animateTo(
-        widget.selected ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _select.dispose();
-    super.dispose();
-  }
-
-  /// 弹簧当前进度；落到目标附近直接取目标，静止几何与配色与目标逐值相同。
-  double get _t {
-    final double target = _select.target;
-    final double raw = _select.value;
-    return (raw - target).abs() < 0.001 ? target : raw;
-  }
-
-  Color _fillFor(double t) => t >= 1
-      ? widget.color
-      : t <= 0
-      ? Colors.transparent
-      : widget.color.withValues(alpha: widget.color.a * t.clamp(0.0, 1.0));
-
-  @override
-  Widget build(BuildContext context) {
-    final double height = widget.height;
-    final BorderRadius radius = BorderRadius.circular(height / 2);
-    final double width = widget.width;
-    return SizedBox(
-      width: width,
-      height: height,
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _select.animation,
-          child: widget.child,
-          builder: (BuildContext context, Widget? child) {
-            final double t = _t;
-            final double pill = math.min(
-              math.max(0.0, height + (width - height) * t),
-              width + _kOvershootAllowance,
-            );
-            return OverflowBox(
-              maxWidth: width + _kOvershootAllowance,
-              maxHeight: height,
-              child: Container(
-                width: pill,
-                height: height,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _fillFor(t),
-                  borderRadius: radius,
-                ),
-                child: child,
+          dimension: shapeSize,
+          child: Stack(
+            alignment: Alignment.center,
+            children: <Widget>[
+              NavMorphShape(
+                shape: railShape ?? kNavRailFallbackShapes.first,
+                visible: selected && !sliding,
+                color: indicatorColor,
+                size: shapeSize,
               ),
-            );
-          },
+              glyph,
+            ],
+          ),
         ),
-      ),
+        if (showLabel) ...<Widget>[
+          const SizedBox(height: _kMaterialBarLabelGap),
+          label,
+        ],
+      ],
     );
   }
 }

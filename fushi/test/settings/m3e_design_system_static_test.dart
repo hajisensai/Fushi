@@ -746,10 +746,6 @@ class AnotherPopupPart {
           'Hand-drawn dial nav bar: tick marks and the knob are geometry derived from the dial radius, not card/container chrome (panel uses FushiM3eShape).',
       'lib/src/utils/adaptive/nav_overflow/nav_drum_bar.dart':
           'Hand-drawn drum nav bar: row radius follows the drum perspective scale per row; the 2dp indicator bar is a glyph, not chrome.',
-      'lib/src/utils/adaptive/nav_overflow/nav_fan_bar.dart':
-          'Fan nav bar: card faces use FushiM3eShape.smallRadius; the remaining 4dp radius is the current-item indicator glyph.',
-      'lib/src/utils/adaptive/nav_overflow/nav_shelf_bar.dart':
-          'Bookshelf nav bar: spine width/label size are auto-fitted to the spine geometry (text must fit the drawn spine); 2dp/9dp radii are spine bands and badge, panel uses tokens.',
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
           'Apple design-system sidebar/tab strip: radii follow the iOS/macOS sidebar selection and tab-pill metrics (Apple branch, not M3E).',
       'lib/src/utils/components/fushi_design_tokens.dart':
@@ -1338,13 +1334,6 @@ class AnotherPopupPart {
       },
       'lib/src/utils/adaptive/nav_overflow/nav_drum_bar.dart': <String>{
         'BorderRadius.circular(',
-      },
-      'lib/src/utils/adaptive/nav_overflow/nav_fan_bar.dart': <String>{
-        'BorderRadius.circular(',
-      },
-      'lib/src/utils/adaptive/nav_overflow/nav_shelf_bar.dart': <String>{
-        'BorderRadius.circular(',
-        'fontSize:',
       },
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart': <String>{
         'BorderRadius.circular(',

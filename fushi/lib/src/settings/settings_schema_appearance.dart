@@ -518,16 +518,8 @@ SettingsDestination buildAppearanceDestination() {
                 label: t.home_nav_bar_style_dial,
               ),
               SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.shelf,
-                label: t.home_nav_bar_style_shelf,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.drum,
                 label: t.home_nav_bar_style_drum,
-              ),
-              SettingsSegmentOption<AdaptiveNavBarStyle>(
-                value: AdaptiveNavBarStyle.fan,
-                label: t.home_nav_bar_style_fan,
               ),
               SettingsSegmentOption<AdaptiveNavBarStyle>(
                 value: AdaptiveNavBarStyle.modeStrip,
