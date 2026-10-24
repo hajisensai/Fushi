@@ -13,6 +13,8 @@ import 'package:fushi/src/utils/misc/audio_mime.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart'
     show LocalAudioUnavailableError, LocalAudioUnavailableReason;
+import 'package:fushi/src/utils/misc/system_tts.dart'
+    show resolveSystemTtsLanguageTag;
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
@@ -95,18 +97,36 @@ Future<String?> _synthesizeLookupTtsFallback(
   String expression,
   String reading,
 ) async {
+  // 兜底只认用户显式选过的声音，而那个选择存在偏好里：偏好还没装载（AppModel
+  // 尚未 initialise，或只装了数据库的轻量进程）时不知道用户选了什么，按「没选」
+  // 处理——与 [lookupTtsFallbackVoiceOf] 对空串的口径一致，不去读空的 prefsRepo。
+  if (!appModel.isPreferencesReady) return null;
   final MiningTtsFallbackVoice? choice = lookupTtsFallbackVoiceOf(
     appModel.prefsRepo,
   );
   if (choice == null) return null;
+  final String text = reading.isNotEmpty ? reading : expression;
   try {
     final File? file = await synthesizeMiningTtsFallback(
-      text: reading.isNotEmpty ? reading : expression,
+      text: text,
       choice: choice,
+      // 系统语音念哪种语言（BUG-3669，判据见 [resolveSystemTtsLanguageTag]）：
+      // 查词播放不知道词条出自哪本词典，只看文字（词头 + 读音，日语汉字词的
+      // 假名在读音里）与已装词典声明的词头语言。
+      languageTag: resolveSystemTtsLanguageTag(
+        text: '$expression $reading',
+        installedDictionaryLanguages:
+            appModel.installedDictionarySourceLanguages,
+      ),
       outputDir: Directory(
         '${(await getTemporaryDirectory()).path}/fushi_lookup_tts',
       ),
-      systemTts: TtsChannel.instance.ttsToFile,
+      systemTts: (String text, String outputPath, String? languageTag) =>
+          TtsChannel.instance.ttsToFile(
+            text,
+            outputPath,
+            languageTag: languageTag,
+          ),
       voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
     );
     return file?.path;

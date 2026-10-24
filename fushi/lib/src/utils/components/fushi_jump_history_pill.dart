@@ -4,6 +4,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 媒体页「跳转回退」浮动胶囊：`← 返回 <位置>`｜`<位置> 前进 →`｜`×`。
 ///
@@ -78,7 +80,7 @@ class FushiJumpHistoryPill extends StatelessWidget {
                           if (back != null)
                             _PillButton(
                               key: const ValueKey<String>('fushi_jump_back'),
-                              icon: Icons.arrow_back_rounded,
+                              icon: FushiIcons.back,
                               label: back,
                               tooltip: t.media_jump_back(position: back),
                               iconFirst: true,
@@ -87,7 +89,7 @@ class FushiJumpHistoryPill extends StatelessWidget {
                           if (forward != null)
                             _PillButton(
                               key: const ValueKey<String>('fushi_jump_forward'),
-                              icon: Icons.arrow_forward_rounded,
+                              icon: FushiIcons.forward,
                               label: forward,
                               tooltip: t.media_jump_forward(position: forward),
                               iconFirst: false,
@@ -95,7 +97,7 @@ class FushiJumpHistoryPill extends StatelessWidget {
                             ),
                           _PillButton(
                             key: const ValueKey<String>('fushi_jump_clear'),
-                            icon: Icons.close_rounded,
+                            icon: FushiIcons.close,
                             label: null,
                             tooltip: t.media_jump_history_clear,
                             iconFirst: true,
@@ -131,7 +133,7 @@ class _PillButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? text = label;
-    final Widget iconWidget = Icon(icon);
+    final Widget iconWidget = FushiIcon(icon);
     final Widget content = text == null
         ? iconWidget
         : Row(

@@ -17,6 +17,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -221,7 +222,7 @@ class _MangaBookmarkPanelState extends State<MangaBookmarkPanel> {
     if (items == null) {
       body = const Padding(
         padding: EdgeInsets.symmetric(vertical: 32),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: FushiCircularProgressIndicator()),
       );
     } else if (items.isEmpty) {
       body = ReaderPanelEmpty(
@@ -313,7 +314,7 @@ class _BookmarkRow extends StatelessWidget {
         height: 60,
         child: image == null
             ? ColoredBox(
-                color: scheme.surfaceContainerHighest,
+                color: scheme.containerOf(FushiTone.neutral),
                 child: Center(
                   child: FushiIcon(
                     FushiIcons.bookmark,
@@ -326,7 +327,7 @@ class _BookmarkRow extends StatelessWidget {
                 image: image,
                 fit: BoxFit.cover,
                 errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
-                    ColoredBox(color: scheme.surfaceContainerHighest),
+                    ColoredBox(color: scheme.containerOf(FushiTone.neutral)),
               ),
       ),
     );
