@@ -357,7 +357,7 @@ class SyncAssetPackageService {
     // strips any Windows-invalid chars. The DB still keys rows by [bookKey];
     // only the storage directory name is sanitized.
     final Directory targetDir =
-        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookKey)));
+        _audioBookDir(audioDatabaseRoot, bookKey, 'bookKey');
 
     // 先把**必需**资源（对齐文件 / 音频 / 字幕）解析成落地路径：包里没有登记的
     // 立刻抛 [SyncAssetPackageIncompleteException]，且抛在解压与写 DB **之前**——
@@ -503,8 +503,7 @@ class SyncAssetPackageService {
   }) async {
     final String uid = _stringValue(srtBook, 'uid');
     // standalone 无 bookKey，持久目录键统一用 uid（与 AudiobookStorage 一致）。
-    final Directory targetDir =
-        Directory(p.join(audioDatabaseRoot.path, _safeDirName(uid)));
+    final Directory targetDir = _audioBookDir(audioDatabaseRoot, uid, 'uid');
 
     // 同 srt-backed 分支：必需资源先解析（缺则抛），再解压、再写 DB。
     final List<String> audioPaths = _stringList(srtBook, 'audioPaths')
@@ -752,8 +751,7 @@ class SyncAssetPackageService {
         localAudioRoot: local.audioRoot,
         remoteCount: _stringList(srtBook, 'audioPaths').length,
       );
-      final Directory targetDir =
-          Directory(p.join(audioDatabaseRoot.path, _safeDirName(uid)));
+      final Directory targetDir = _audioBookDir(audioDatabaseRoot, uid, 'uid');
       final String srtPath = _requiredResourcePath(targetDir, resources,
           _stringValue(srtBook, 'srtPath'), missingAtExport);
       await _extractResourcesInIsolate(
@@ -789,7 +787,7 @@ class SyncAssetPackageService {
     // 落点与整包导入同一目录：从对端下载来的书字幕就在这里，原位覆盖；本机自己
     // 导入的书（字幕在用户目录）不改写用户文件，改为指向这里的新副本。
     final Directory targetDir =
-        Directory(p.join(audioDatabaseRoot.path, _safeDirName(bookKey)));
+        _audioBookDir(audioDatabaseRoot, bookKey, 'bookKey');
     final String alignmentPath = _requiredResourcePath(targetDir, resources,
         _stringValue(audiobook, 'alignmentPath'), missingAtExport);
     final String srtPath = _requiredResourcePath(targetDir, resources,
@@ -995,6 +993,26 @@ class SyncAssetPackageService {
 /// Windows-invalid `\ / : * ? " < > |` and control chars with `_`).
 /// Filesystem-safe inputs (e.g. `ttu-42`) pass through unchanged.
 String _safeDirName(String id) => safeWindowsFileName(id);
+
+/// 有声书包的持久目录 `<audioDatabaseRoot>/<安全名>`。
+///
+/// [id]（bookKey / uid）来自对端 manifest 或调用方覆盖值，是外来数据。
+/// [_safeDirName] 只替换分隔符与 Windows 非法字符，**不拒 `.` / `..`**：uid 写成
+/// `..` 时目录落到数据根的上一级，`...` 在 Windows 上剥掉段尾点后就是数据根本身，
+/// 整包会被解压进去。这里在安全化之后再要求单个路径段、拒掉只剩点与空格的名字，
+/// 最后按根目录做 `isWithin`，任何一道不过都直接 [FormatException]，不改写成
+/// 别的名字（目录名要与 DB 行的 bookKey / uid 对得上）。
+Directory _audioBookDir(Directory root, String id, String field) {
+  final String name = _requireSinglePathSegment(_safeDirName(id), field);
+  if (name.replaceAll(RegExp(r'[. ]+$'), '').isEmpty) {
+    throw FormatException('Invalid package $field: $id');
+  }
+  final String rootPath = p.normalize(p.absolute(root.path));
+  if (!p.isWithin(rootPath, p.normalize(p.join(rootPath, name)))) {
+    throw FormatException('Invalid package $field: $id');
+  }
+  return Directory(p.join(root.path, name));
+}
 
 /// manifest 里拿来拼落地路径的名字（词典名、音频库 db 文件名）必须是**单个路径段**。
 ///

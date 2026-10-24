@@ -415,6 +415,9 @@ SettingsDestination buildSystemDestination() {
           SettingsActionItem(
             id: 'system.github_sponsors',
             title: t.options_github_sponsors,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
             icon: FushiIcons.favorite,
             cli: const SettingsCliAction.tap(),
             onTap: (_) async {
@@ -427,6 +430,9 @@ SettingsDestination buildSystemDestination() {
           SettingsActionItem(
             id: 'system.ko_fi',
             title: t.options_ko_fi,
+            // App Store 3.1.1：iOS 不放外部打赏入口（判据见 store_compliance.dart）。
+            visible: (_) =>
+                StoreRestrictedCapability.externalDonation.isAvailable,
             icon: FushiIcons.favorite,
             cli: const SettingsCliAction.tap(),
             onTap: (_) async {

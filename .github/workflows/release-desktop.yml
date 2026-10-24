@@ -1783,13 +1783,15 @@ jobs:
           archs="$(lipo -archs "$dylib")"
           if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           bash native/fushi_compute/verify_abi.sh "$dylib" nm
-          DYLIB_PATH="$dylib" python3 - <<'PY'
+          abi="$(sed -n 's/^pub const ABI_VERSION: i32 = \([0-9][0-9]*\);.*/\1/p' native/fushi_compute/src/lib.rs)"
+          test -n "$abi" || { echo "::error::cannot read ABI_VERSION from native/fushi_compute/src/lib.rs"; exit 1; }
+          DYLIB_PATH="$dylib" ABI_EXPECTED="$abi" python3 - <<'PY'
           import ctypes
           import os
           lib = ctypes.CDLL(os.environ["DYLIB_PATH"])
           lib.ffc_abi_version.restype = ctypes.c_int32
           abi = lib.ffc_abi_version()
-          if abi != 1:
+          if abi != int(os.environ["ABI_EXPECTED"]):
               raise SystemExit(f"ffc_abi_version returned {abi}")
           print("fushi_compute dylib smoke ok: abi", abi)
           PY
@@ -1850,7 +1852,9 @@ jobs:
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_aacs dylib' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libaacs.dylib"
           lipo -info "$dylib"
-          DYLIB_PATH="$dylib" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); assert lib.fushi_aacs_abi_version() == 1; assert lib.aacs_open2 and lib.aacs_decrypt_unit; print("fushi_aacs dylib smoke ok")'
+          abi="$(sed -n 's/^#define FUSHI_AACS_ABI_VERSION \([0-9][0-9]*\).*/\1/p' native/fushi_aacs/src/fushi_aacs.c)"
+          test -n "$abi" || { echo "::error::cannot read FUSHI_AACS_ABI_VERSION from native/fushi_aacs/src/fushi_aacs.c"; exit 1; }
+          DYLIB_PATH="$dylib" ABI_EXPECTED="$abi" python3 -c 'import ctypes, os; lib = ctypes.CDLL(os.environ["DYLIB_PATH"]); assert lib.fushi_aacs_abi_version() == int(os.environ["ABI_EXPECTED"]); assert lib.aacs_open2 and lib.aacs_decrypt_unit; print("fushi_aacs dylib smoke ok")'
       - name: Save torrent bridge dylib to native artifact store
         if: steps.torrent_store.outputs.hit != 'true'
         continue-on-error: true

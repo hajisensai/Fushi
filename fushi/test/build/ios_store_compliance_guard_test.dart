@@ -854,6 +854,57 @@ void main() {
     });
   });
 
+  group('外部打赏入口由 externalDonation 门控', () {
+    test('设置页的 GitHub Sponsors / Ko-fi 两项都委托 externalDonation', () {
+      final String schema = compactCode(
+        read('lib/src/settings/settings_schema_system.dart'),
+      );
+      for (final String id in <String>[
+        'system.github_sponsors',
+        'system.ko_fi',
+      ]) {
+        final int start = schema.indexOf("id:'$id',");
+        expect(start, greaterThanOrEqualTo(0), reason: '找不到 $id');
+        final int end = schema.indexOf('SettingsActionItem(', start);
+        final String item = schema.substring(
+          start,
+          end < 0 ? schema.length : end,
+        );
+        expect(
+          item,
+          contains(
+            'visible:(_)=>StoreRestrictedCapability.externalDonation.isAvailable,',
+          ),
+          reason: '$id 在 iOS 上会触发 App Store 3.1.1 拒审（外部打赏）。',
+        );
+      }
+    });
+
+    test('外部打赏链接常量只在设置 schema 里被引用（新入口必须过同一道门）', () {
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity e in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (e is! File || !e.path.endsWith('.dart')) continue;
+        final String normalized = e.path.replaceAll(r'\', '/');
+        if (normalized.endsWith('lib/src/utils/misc/official_links.dart') ||
+            normalized.endsWith(
+              'lib/src/settings/settings_schema_system.dart',
+            )) {
+          continue;
+        }
+        final String src = e.readAsStringSync();
+        if (src.contains('kGitHubSponsorsUrl') ||
+            src.contains('kKoFiUrl') ||
+            src.contains('ko-fi.com') ||
+            src.contains('github.com/sponsors')) {
+          offenders.add(normalized);
+        }
+      }
+      expect(offenders, isEmpty);
+    });
+  });
+
   group('蓝光 AACS 解密由 aacsDecryption 门控', () {
     test('app 用合规判据给引擎装配点赋值，引擎默认值按同一判据 fail-closed', () {
       expect(

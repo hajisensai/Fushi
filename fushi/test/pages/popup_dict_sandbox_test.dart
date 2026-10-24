@@ -13,7 +13,7 @@ import '../helpers/node_runtime.dart';
 /// ① 行为级 —— 真 Chrome 里跑生产 `dict-media.js` + `selection.js` + `popup.js`
 ///    （`popup_dict_sandbox_harness.mjs`）：结构化内容标签白名单、HTML 释义净化、带脚本的
 ///    释义只进 `sandbox="allow-scripts"` iframe 且只在宿主回专用锁定值后挂载、沙箱发来的
-///    无用户激活动作被丢、词典 CSS 外部引用被剥。
+///    无用户激活动作被丢、沙箱伪造的外链即便父页面有激活也不放行、词典 CSS 外部引用被剥。
 /// ② 源码级 —— 三份 dict-media.js 镜像都不再有主文档执行词典脚本的通路。
 void main() {
   final NodeTestRuntime runtime = NodeTestRuntime.probe(needsChrome: true);
@@ -41,7 +41,7 @@ void main() {
           payload.path,
         ]).timeout(const Duration(seconds: 80));
         expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-        expect(run.stdout, contains('PASS 9 dictionary sandbox scenarios'));
+        expect(run.stdout, contains('PASS 10 dictionary sandbox scenarios'));
       } finally {
         temp.deleteSync(recursive: true);
       }
