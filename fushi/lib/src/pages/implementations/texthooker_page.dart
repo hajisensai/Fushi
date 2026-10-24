@@ -145,6 +145,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   );
   final ScrollController _scroll = ScrollController();
   final GalHookSessionController _session = GalHookSessionController.instance;
+  bool _knifeIniWriteFailed = false;
   OverlayEntry? _popupOverlayEntry;
   bool _overlayInert = false;
 
@@ -2018,6 +2019,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     compact: compact,
                     actions: sessionActions,
                     footer: <Widget>[
+                      if (state.knifeTextServiceIniPath != null)
+                        _buildKnifeTextServiceNotice(state),
                       if (Platform.isWindows)
                         GalAttachedLookupWorkbench(
                           controller: GalHookTextOverlayController
@@ -2186,6 +2189,35 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               remember: true,
             ),
       ),
+    );
+  }
+
+  /// knife 的台词服务没开（附着到已在运行的游戏）：说明原因，并经用户点击把开关写进
+  /// knife.ini。写入后要重启游戏才生效——服务只在游戏启动时读开关。
+  Widget _buildKnifeTextServiceNotice(GalHookSessionState state) {
+    if (state.knifeTextServiceIniWritten) {
+      return FushiInlineNotice(
+        severity: FushiNoticeSeverity.success,
+        message: t.game_knife_text_service_written,
+      );
+    }
+    return FushiInlineNotice(
+      severity: FushiNoticeSeverity.warning,
+      title: t.game_knife_text_service_off_title,
+      message: _knifeIniWriteFailed
+          ? t.game_knife_text_service_write_failed
+          : t.game_knife_text_service_off_body,
+      actions: <Widget>[
+        FushiFilledButton.tonal(
+          onPressed: () {
+            final bool written = _session.enableKnifeTextServiceInIni();
+            if (!written && mounted) {
+              setState(() => _knifeIniWriteFailed = true);
+            }
+          },
+          child: Text(t.game_knife_text_service_enable_action),
+        ),
+      ],
     );
   }
 
