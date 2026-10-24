@@ -10,7 +10,8 @@ import 'package:flutter/foundation.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
-import 'package:fushi/src/media/audiobook/floating_lyric_style.dart';
+import 'package:fushi/src/media/audiobook/audiobook_session.dart'
+    show FloatingLyricStyle;
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 
 class FloatingLyricMusicSurface implements MusicDesktopLyricsSurface {

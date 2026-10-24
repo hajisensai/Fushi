@@ -1,8 +1,8 @@
 /// 音乐的学习统计写入面（设计 §12 / 决策 D4，统计域规则见 docs/agent/statistics.md）。
 ///
 /// D4：**只有发生学习动作，或用户开了「听歌计入学习」，听歌才计入学习时长**。
-/// - 开关开着：在播就计（墙钟窗口，`isActive` = 在播；不设空闲门——听歌没有滚动 /
-///   翻页这类输入，设了门听一小时只记 10 分钟）；
+/// - 开关开着：在播就计（墙钟窗口；在播起表、暂停停表，与后台听书同律；不设空闲门——
+///   听歌没有滚动 / 翻页这类输入，设了门听一小时只记 10 分钟）；
 /// - 开关关着（默认）：本曲发生过学习动作（歌词页查词 / 制卡 / AB 循环，见
 ///   [noteLearningAction]）才起表，空闲门 = 阅读空闲超时，**只由学习动作喂门**：最后
 ///   一次学习动作之后再听超过空闲超时，后面的窗口一律拒掉。换曲目清掉「已投入学习」。
@@ -18,20 +18,19 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 
 /// 建时钟（测试注入假 sink / 假时间）。
 typedef MusicStudyClockFactory =
     StudyClock Function({
       required FushiDatabase database,
       required MusicPlayItem item,
-      required bool Function() isActive,
       required Duration? idleTimeout,
     });
 
 StudyClock _defaultClock({
   required FushiDatabase database,
   required MusicPlayItem item,
-  required bool Function() isActive,
   required Duration? idleTimeout,
 }) => StudyClock(
   database: database,
@@ -39,8 +38,8 @@ StudyClock _defaultClock({
   mediaKey: item.trackUid,
   title: item.title,
   format: item.codec ?? '',
-  isActive: isActive,
   idleTimeout: idleTimeout,
+  deferWrite: ExitFlushRegistry.instance.defer,
 );
 
 /// 纯函数：此刻时钟该不该跑。
@@ -136,7 +135,6 @@ class MusicStudyTracker {
     final StudyClock clock = _clock ??= _clockFactory(
       database: db,
       item: item,
-      isActive: () => _engine.isPlaying,
       idleTimeout: counts ? null : _idleTimeout(),
     );
     _clockTrackUid = item.trackUid;

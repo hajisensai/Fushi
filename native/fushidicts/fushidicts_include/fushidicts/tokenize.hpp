@@ -51,6 +51,9 @@ class MatchLengthCache {
 struct TokenizeOutput {
   std::vector<int32_t> lengths;
   std::vector<std::string> readings;
+  // 只在 with_terms 时填：每段首条结果的词头（词典形，未命中为空），与 lengths 等长。
+  // 音乐歌词生词覆盖率按它去复习库里查「认不认识」（变形后的表层形查不到）。
+  std::vector<std::string> expressions;
 };
 
 // 文本开头的最长匹配长度（UTF-16 码元；0 = 未命中）。[cache] 可为 nullptr。
@@ -60,8 +63,9 @@ int32_t match_length_utf16(const Lookup& lookup, const std::string& text_utf8, s
 // 整段分词。[text_utf8] 必须是合法 UTF-8（Dart 侧编码保证；孤立代理已是 U+FFFD）。
 // with_readings：每段另做一次 `lookup(段文本, 1)` 取首条结果的读音（未命中为空）——
 // 与浏览器扩展 yomitan tokenize 以前逐词调用 lookup 的口径相同。
+// with_terms：另外填 expressions（隐含 with_readings，同一次 lookup 取读音与词头）。
 TokenizeOutput tokenize(const Lookup& lookup, const std::string& text_utf8, std::size_t scan_length,
-                        bool with_readings, MatchLengthCache* cache);
+                        bool with_readings, MatchLengthCache* cache, bool with_terms = false);
 
 // ── 语料词元（「我库里的例句」：native/fushi_corpus 的倒排索引键） ─────────────
 //

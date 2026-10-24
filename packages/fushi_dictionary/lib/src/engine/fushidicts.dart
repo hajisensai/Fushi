@@ -31,6 +31,10 @@ export 'lookup_scheduler.dart' show LookupJobScheduler;
 
 part 'background_lookup.dart';
 
+/// [FushiDicts.tokenizeTermsInBackground] 的一段：UTF-16 码元数 + 首条结果的读音与词头
+/// （词典形）。未命中的段 [expression] / [reading] 为空串。
+typedef FushiTermToken = ({int length, String reading, String expression});
+
 // ── conversion helpers ──────────────────────────────────────────────
 
 /// Converts a possibly-null native UTF-8 pointer to a Dart string, treating
@@ -1121,6 +1125,102 @@ class FushiDicts {
         texts,
       ),
     );
+  }
+
+  /// 多段文本一次分词，每段再给首条结果的读音与**词头**（词典形，未命中为空串）。切分
+  /// 与 [tokenizeLengths] 逐位相同。整批**一次** FFI（`fushidicts_tokenize_terms`），跑在
+  /// 后台 isolate；句柄借用同 [tokenizeWithReadingsInBackground]。
+  ///
+  /// 返回与 [texts] 等长的列表（每项是该段的 token 序列）；原生失败（各段长度对不上
+  /// 原文）或本实例已 dispose 返回 null。
+  Future<List<List<FushiTermToken>>?> tokenizeTermsInBackground(
+      List<String> texts) {
+    final Pointer<Void>? handle = _handle;
+    if (handle == null || texts.isEmpty) {
+      return Future<List<List<FushiTermToken>>?>.value(
+          texts.isEmpty ? const <List<FushiTermToken>>[] : null);
+    }
+    final FushidictsFfiBindings bindings = _bindings!;
+    return borrowNativeHandle<List<List<FushiTermToken>>?>(
+      ledger: _backgroundBorrows,
+      retain: () => bindings.retain(handle) == 1,
+      release: () => bindings.release(handle),
+      work: () => _runBorrowedTokenizeTerms(
+        handle.address,
+        FushidictsFfiBindings.libraryPathOverride,
+        texts,
+      ),
+    );
+  }
+
+  /// 静态函数：交给 `Isolate.run` 的闭包只捕获可发送的地址 / 库路径 / 文本（与
+  /// [_runBorrowedTokenize] 同理，不把 Pointer 所在的上下文拖过 isolate 边界）。
+  static Future<List<List<FushiTermToken>>?> _runBorrowedTokenizeTerms(
+    int address,
+    String? libraryPath,
+    List<String> texts,
+  ) =>
+      Isolate.run(
+        () => _tokenizeTermsBorrowed(address, libraryPath, texts),
+        debugName: kBackgroundTokenizeIsolateName,
+      );
+
+  static List<List<FushiTermToken>>? _tokenizeTermsBorrowed(
+    int address,
+    String? libraryPath,
+    List<String> texts,
+  ) {
+    FushidictsFfiBindings.libraryPathOverride = libraryPath;
+    final FushidictsFfiBindings bindings = FushidictsFfiBindings();
+    final Pointer<Void> handle = Pointer<Void>.fromAddress(address);
+    final List<Uint8List> encoded = <Uint8List>[
+      for (final String t in texts) utf8.encode(t),
+    ];
+    int total = 0;
+    for (final Uint8List e in encoded) {
+      total += e.length;
+    }
+    final Pointer<Uint8> tp = calloc<Uint8>(total == 0 ? 1 : total);
+    final Pointer<Int32> lens = calloc<Int32>(texts.length);
+    final Pointer<FfiTokenizeTermsResult> rPtr =
+        calloc<FfiTokenizeTermsResult>();
+    try {
+      int at = 0;
+      for (int i = 0; i < encoded.length; i++) {
+        tp.asTypedList(total == 0 ? 1 : total).setAll(at, encoded[i]);
+        at += encoded[i].length;
+        lens[i] = encoded[i].length;
+      }
+      rPtr.ref = bindings.tokenizeTerms(
+          handle, tp, lens, texts.length, defaultScanLength);
+      final FfiTokenizeTermsResult r = rPtr.ref;
+      if (r.textCount != texts.length) return null;
+      final List<List<FushiTermToken>> out = <List<FushiTermToken>>[];
+      int k = 0;
+      for (int i = 0; i < texts.length; i++) {
+        final int n = r.segmentCounts[i];
+        final List<FushiTermToken> tokens = <FushiTermToken>[];
+        int units = 0;
+        for (int j = 0; j < n; j++, k++) {
+          final int len = r.lengths[k];
+          units += len;
+          tokens.add((
+            length: len,
+            reading: _utf8OrEmpty(r.readings[k]),
+            expression: _utf8OrEmpty(r.expressions[k]),
+          ));
+        }
+        // 原生闸门吞掉异常后各段长度对不上原文：整批视为失败。
+        if (units != texts[i].length) return null;
+        out.add(tokens);
+      }
+      return out;
+    } finally {
+      bindings.freeTokenizeTermsResult(rPtr);
+      calloc.free(rPtr);
+      calloc.free(lens);
+      calloc.free(tp);
+    }
   }
 
   /// 单独成静态函数：交给 `Isolate.run` 的闭包只捕获地址 / 库路径 / 文本这三样

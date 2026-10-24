@@ -127,18 +127,22 @@ int32_t match_length_utf16(const Lookup& lookup, const std::string& text_utf8, s
 }
 
 TokenizeOutput tokenize(const Lookup& lookup, const std::string& text_utf8, std::size_t scan_length,
-                        bool with_readings, MatchLengthCache* cache) {
+                        bool with_readings, MatchLengthCache* cache, bool with_terms) {
+  if (with_terms) with_readings = true;
   TokenizeOutput out;
   const std::vector<CodePoint> cps = decode(text_utf8);
   out.lengths.reserve(cps.size());
 
-  // 段文本 → 读音。同一段（助词、标点）在一段文本里反复出现，各查一次就够。
-  std::unordered_map<std::string, std::string> reading_memo;
-  auto reading_of = [&](const std::string& segment) -> std::string {
+  // 段文本 → (读音, 词头)。同一段（助词、标点）在一段文本里反复出现，各查一次就够。
+  std::unordered_map<std::string, std::pair<std::string, std::string>> reading_memo;
+  auto term_of = [&](const std::string& segment) -> const std::pair<std::string, std::string>& {
     auto [it, inserted] = reading_memo.try_emplace(segment);
     if (inserted) {
       const auto results = lookup.lookup(segment, 1, scan_length, tokenize_options());
-      if (!results.empty()) it->second = results.front().term.reading;
+      if (!results.empty()) {
+        it->second.first = results.front().term.reading;
+        it->second.second = results.front().term.expression;
+      }
     }
     return it->second;
   };
@@ -182,7 +186,11 @@ TokenizeOutput tokenize(const Lookup& lookup, const std::string& text_utf8, std:
       }
       out.lengths.push_back(1);
     }
-    if (with_readings) out.readings.push_back(reading_of(segment));
+    if (with_readings) {
+      const auto& term = term_of(segment);
+      out.readings.push_back(term.first);
+      if (with_terms) out.expressions.push_back(term.second);
+    }
   }
   return out;
 }
