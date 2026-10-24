@@ -21,8 +21,16 @@ mkdir -p "${WORK}" "${OUT}"
 KIT="${WORK}/ffmpeg-kit-next"
 bash "${HERE}/prepare_kit.sh" "${KIT}"
 
+# DVD (tool/dvd): shared libdvdcss / libdvdread / libdvdnav per ABI; kit patch
+# 0003 links them (FUSHI_DVD_ROOT) and packs the .so into the AAR, and the
+# ffmpeg-dev tarballs below carry their headers / .pc for libmpv.
+DVD="${WORK}/dvd"
+for target in android-arm64-v8a android-armeabi-v7a android-x86_64; do
+  bash "${HERE}/../../dvd/platforms/build_cross.sh" "${target}" "${DVD}" "${OUT}"
+done
+
 cd "${KIT}"
-if ! ./android.sh "${KIT_COMMON_OPTIONS[@]}" "${KIT_ANDROID_OPTIONS[@]}"; then
+if ! FUSHI_DVD_ROOT="${DVD}" ./android.sh "${KIT_COMMON_OPTIONS[@]}" "${KIT_ANDROID_OPTIONS[@]}"; then
   tail -200 build.log || true
   exit 1
 fi
@@ -51,6 +59,10 @@ for dir in prebuilt/android-*-24; do
   # FFmpeg's own .pc files (install prefix); libmpv's build rewrites their
   # prefix and drops the static-link closure (scripts/unified_ffmpeg.sh).
   cp -a "${dir}"/ffmpeg/lib/pkgconfig/lib*.pc "${stage}/lib/pkgconfig/"
+  # DVD: the same .so are already in lib/ (kit patch 0003); add their headers
+  # and .pc (prefix rewritten by the libmpv build like FFmpeg's).
+  cp -a "${DVD}/android-${abi}/include/." "${stage}/include/"
+  cp -a "${DVD}/android-${abi}"/lib/pkgconfig/{libdvdcss,dvdread,dvdnav}.pc "${stage}/lib/pkgconfig/"
   tar -C "${stage}" -czf "${OUT}/ffmpeg-dev-android-${abi}.tar.gz" .
   echo "build_android: staged ${abi} from ${dir}"
 done

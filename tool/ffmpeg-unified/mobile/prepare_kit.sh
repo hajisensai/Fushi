@@ -59,4 +59,8 @@ for f in android/ffmpeg-kit-next-android-lib/src/main/cpp/fftools/ffmpeg_sched.c
 done
 grep -q 'FUSHI_FFMPEG_PROGRAMS' "${KIT}/scripts/apple/ffmpeg.sh" ||
   { echo "PATCH MISSING: macOS ffmpeg/ffprobe programs" >&2; exit 4; }
+for f in scripts/android/ffmpeg.sh scripts/apple/ffmpeg.sh android/jni/Android.mk android/jni/ffmpeg/Android.mk; do
+  grep -q -e 'FUSHI_DVD_ROOT' -e 'libdvdnav' "${KIT}/${f}" ||
+    { echo "PATCH MISSING: shared DVD libraries in ${f} (kit patch 0003)" >&2; exit 4; }
+done
 echo "prepare_kit: FFmpegKitNext ${FFMPEG_KIT_NEXT_TAG} + unified FFmpeg ${FFMPEG_VERSION} -> ${KIT}"

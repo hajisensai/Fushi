@@ -19,8 +19,16 @@ OUT="$(cd "${OUT}" && pwd)"
 KIT="${WORK}/ffmpeg-kit-next"
 bash "${HERE}/prepare_kit.sh" "${KIT}"
 
+# DVD (tool/dvd): shared libdvdcss / libdvdread / libdvdnav per slice; kit patch
+# 0003 links them (FUSHI_DVD_ROOT) and libmpv links the same frameworks.
+DVD="${WORK}/dvd"
+for target in ios-arm64 ios-simulator-arm64 ios-simulator-x86_64; do
+  bash "${HERE}/../../dvd/platforms/build_cross.sh" "${target}" "${DVD}" "${OUT}"
+done
+bash "${HERE}/../../dvd/platforms/make_xcframeworks.sh" ios "${DVD}" "${WORK}/dvd-xcframeworks"
+
 cd "${KIT}"
-if ! ./ios.sh "${KIT_COMMON_OPTIONS[@]}" "${KIT_IOS_OPTIONS[@]}"; then
+if ! FUSHI_DVD_ROOT="${DVD}" ./ios.sh "${KIT_COMMON_OPTIONS[@]}" "${KIT_IOS_OPTIONS[@]}"; then
   tail -200 build.log || true
   exit 1
 fi
@@ -28,4 +36,5 @@ fi
 bundle="$(find prebuilt -maxdepth 1 -type d -name 'bundle-apple-xcframework-ios*' | head -1)"
 [ -n "${bundle}" ] || { echo "build_ios: no xcframework bundle produced" >&2; exit 5; }
 (cd "${bundle}" && zip -qry "${OUT}/ffmpeg-kit-next-ios-xcframeworks.zip" ./*.xcframework)
+(cd "${WORK}/dvd-xcframeworks" && zip -qry "${OUT}/ffmpeg-kit-next-ios-xcframeworks.zip" ./libdvd*.xcframework)
 ls -la "${OUT}"

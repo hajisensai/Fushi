@@ -80,7 +80,7 @@ jobs:
         run: bash tool/ffmpeg-unified/mobile/build_android.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
 
       - name: Verify outputs
-        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py android "$RUNNER_TEMP/out"
+        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py android "$RUNNER_TEMP/out" --require-staged
 
       - name: build.log tail on failure
         if: failure()
@@ -185,7 +185,7 @@ jobs:
         run: bash tool/ffmpeg-unified/mobile/build_ios.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/out"
 
       - name: Verify outputs
-        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py ios "$RUNNER_TEMP/out"
+        run: python3 tool/ffmpeg-unified/mobile/verify_mobile_outputs.py ios "$RUNNER_TEMP/out" --require-staged
 
       - name: build.log tail on failure
         if: failure()
@@ -205,56 +205,3 @@ jobs:
           name: ffmpeg-unified-ios-build-log
           path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
           if-no-files-found: ignore
-
-  # DVD libraries (tool/dvd, docs/specs/2026-10-24-dvd-original-menu.md):
-  # shared libdvdcss / libdvdread / libdvdnav per mobile / Apple target, staged
-  # as dvd-dev-<target>.tar.gz for the FFmpegKitNext and libmpv fork builds to
-  # link the SAME copy. Artifact only; nothing consumes it yet (tool/dvd/README.md
-  # "未完成"). Written 2026-10-24 without a CI run.
-  dvd-libs:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android || inputs.build_ios }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: android-arm64-v8a, os: ubuntu-24.04 }
-          - { target: android-armeabi-v7a, os: ubuntu-24.04 }
-          - { target: android-x86_64, os: ubuntu-24.04 }
-          - { target: ios-arm64, os: macos-26 }
-          - { target: ios-simulator-arm64, os: macos-26 }
-          - { target: macos-arm64, os: macos-26 }
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    env:
-      NDK_VERSION: 27.3.13750724
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Host tools (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends meson ninja-build pkg-config curl xz-utils
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" --install "ndk;${NDK_VERSION}"
-          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-
-      - name: Host tools (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          set -euo pipefail
-          XCODE_APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)"
-          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
-          brew install meson ninja pkg-config
-
-      - name: Build DVD libraries
-        run: bash tool/dvd/platforms/build_cross.sh "${{ matrix.target }}" "$RUNNER_TEMP/dvd" "$RUNNER_TEMP/out"
-
-      - name: Upload
-        uses: actions/upload-artifact@v7
-        with:
-          name: dvd-dev-${{ matrix.target }}
-          path: ${{ runner.temp }}/out/*
-          if-no-files-found: error
