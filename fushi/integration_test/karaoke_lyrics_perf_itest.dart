@@ -57,11 +57,15 @@ void main() {
       'long=$longNotes budget=${_kBudgetMs.toStringAsFixed(2)}ms',
     );
 
-    final List<int> rowStarts = <int>[
-      for (final KaraokeRowSpan r in karaokeRows(timeline))
-        timeline.lines[r.main].startMs,
-    ];
+    final LyricTimeline baseTimeline = timeline;
     for (final _Scenario s in _scenarios) {
+      final LyricTimeline timeline = s.seed == _kSeed
+          ? baseTimeline
+          : _buildTimeline(s.seed);
+      final List<int> rowStarts = <int>[
+        for (final KaraokeRowSpan r in karaokeRows(timeline))
+          timeline.lines[r.main].startMs,
+      ];
       final _StopwatchClock clock = _StopwatchClock();
       await tester.pumpWidget(
         _Harness(
@@ -83,10 +87,14 @@ void main() {
         },
       );
       if (_kTrace && s.appearance != null) {
-        // 定位超预算帧用：引擎 raster 线程事件进 build/integration_response_data.json。
+        // 定位超预算帧用：只录第 2 次换行（≈4.08 s，首次弹簧滚动）前后 400 ms 的引擎事件
+        // （配 `--trace-skia` 时环形缓冲只装得下约 0.5 s），进
+        // build/integration_response_data.json。
+        clock.restart();
+        await _wait(3950);
         await binding.traceAction(
-          run,
-          streams: const <String>['Embedder', 'Dart'],
+          () => _wait(400),
+          streams: const <String>['Embedder'],
           reportKey: 'timeline:${s.label}',
         );
       } else {
@@ -109,18 +117,34 @@ const bool _kTrace = bool.fromEnvironment('KARAOKE_TRACE');
 const double _kBudgetMs = 1000 / 120;
 
 class _Scenario {
-  const _Scenario(this.label, this.appearance);
+  const _Scenario(this.label, this.appearance, {this.seed = _kSeed});
   final String label;
+
+  /// 时间轴随机种子：换一首「歌」（不同行数 / 字 / 折行）看首用编译是否再来一遍。
+  final int seed;
 
   /// null = 对照组（只有一条不定进度条在动），量本机负载下的噪声底。
   final KaraokeLyricsAppearance? appearance;
 }
 
+/// 默认外观跑两遍：第一遍承担本进程里模糊相关 GPU 程序的首次编译（Skia + ANGLE，
+/// `driver_link_program` 单次 10–15 ms，落在头几次换行上），第二遍是稳态。两遍要
+/// 分开看，否则「首用编译」会被误读成每次换行的结构性开销（或者反过来，把排在后面的
+/// 变体误读成优化）。
 const List<_Scenario> _scenarios = <_Scenario>[
   _Scenario('control(progress-bar)', null),
   _Scenario(
     'default(blur+glow)',
     KaraokeLyricsAppearance(activeColor: Color(0xFFFFFFFF)),
+  ),
+  _Scenario(
+    'default-again',
+    KaraokeLyricsAppearance(activeColor: Color(0xFFFFFFFF)),
+  ),
+  _Scenario(
+    'default-otherSong',
+    KaraokeLyricsAppearance(activeColor: Color(0xFFFFFFFF)),
+    seed: 7,
   ),
   _Scenario(
     'noBlur',
@@ -210,8 +234,10 @@ const List<(String, String?)> _kana = <(String, String?)>[
 
 /// 40 组行（主行 + 每 5 行一条和声行），每行 10–14 音节、每音节 150–300 ms，
 /// 每行最后一个音节有一定概率是 >1 s 的长音（触发呼吸）。
-LyricTimeline _buildTimeline() {
-  final math.Random rnd = math.Random(20261024);
+const int _kSeed = 20261024;
+
+LyricTimeline _buildTimeline([int seed = _kSeed]) {
+  final math.Random rnd = math.Random(seed);
   final List<LyricLine> lines = <LyricLine>[];
   int t = 800;
   for (int row = 0; row < 40; row++) {
