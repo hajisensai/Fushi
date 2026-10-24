@@ -7,6 +7,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/audio_controller.dart'
+    show MediaSessionOwner;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -76,6 +78,11 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     final SessionBookInfo? book = session.book;
     final AudiobookPlayerController? controller = session.controller;
     if (book == null || controller == null) {
+      return const SizedBox.shrink();
+    }
+    // 与音乐迷你条互斥（音乐模块 §7.5）：音乐持有媒体会话时让位给音乐条。
+    if (appModel.musicSession.isActive &&
+        appModel.audioCtrl.sessionOwner.value == MediaSessionOwner.music) {
       return const SizedBox.shrink();
     }
 

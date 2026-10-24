@@ -710,6 +710,11 @@ class _LibraryManageHandlers {
       SourceLibraryKind.book => LibraryCtlKind.book,
       SourceLibraryKind.video => LibraryCtlKind.video,
       SourceLibraryKind.manga => LibraryCtlKind.manga,
+      // 命令行控制通道还没有音乐库命令（列条目 / 打开 / 删除都不认 music），只开
+      // 「加来源」会造出一个 ctl 自己管不了的库，如实拒绝。
+      SourceLibraryKind.music => throw CtlFailure.badRequest(
+        '命令行暂不支持音乐来源，请在 app 的音乐库里添加',
+      ),
     };
     if (!_app.moduleVisibility.isEnabled(ctlKind.module)) {
       throw CtlFailure.rejected('「${ctlKind.wireName}」所属模块已在设置里关闭');

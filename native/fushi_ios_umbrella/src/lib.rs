@@ -17,6 +17,8 @@
 // fushi_rwkv 同理（它也有 `ABI_VERSION`）。
 pub extern crate fushi_compute;
 pub extern crate fushi_rwkv;
+// 音乐胖核心 ffm_*（也有 `ABI_VERSION` / `status`，同理按 crate 名重新导出、不 glob）。
+pub extern crate fushi_music;
 extern crate fushi_web_core;
 extern crate fushi_fsrs;
 extern crate fushi_p2p;

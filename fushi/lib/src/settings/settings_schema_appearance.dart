@@ -28,6 +28,8 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.books => 'system.module_books',
   ModuleId.manga => 'system.module_manga',
   ModuleId.video => 'system.module_video',
+  // 2026-10 新增（音乐模块），跟随同一前缀。
+  ModuleId.music => 'system.module_music',
   ModuleId.games => 'system.module_games',
   ModuleId.browse => 'system.module_downloads',
   ModuleId.lookup => 'system.module_lookup',
@@ -79,6 +81,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ModuleId.books ||
     ModuleId.manga ||
     ModuleId.video ||
+    ModuleId.music ||
     ModuleId.games ||
     ModuleId.browse ||
     ModuleId.lookup ||

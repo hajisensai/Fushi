@@ -295,6 +295,23 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
     BackupCategory.srs,
   }),
 
+  // ── 音乐用户数据（v125；与 musicUserTables 一致，子表在前）──
+  'music_playlist_entries': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_playlists': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_lyrics': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_videos': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+  'music_play_events': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
+
   // ── 私人使用痕迹 ──
   'search_history_items': BackupTableRule.alwaysStripped(),
   'dictionary_history': BackupTableRule.alwaysStripped(),
@@ -327,6 +344,12 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v124：AI 整理记录（本机做过哪些整理、供撤销），设备本地。
   'library_organize_runs': BackupTableRule.deviceLocal(),
   'library_organize_changes': BackupTableRule.deviceLocal(),
+  // v125 音乐曲库目录：设备本地（本机重扫产物 + 绝对路径，见 _deviceLocalTables）。
+  'music_track_credits': BackupTableRule.deviceLocal(),
+  'music_tracks': BackupTableRule.deviceLocal(),
+  'music_albums': BackupTableRule.deviceLocal(),
+  'music_artists': BackupTableRule.deviceLocal(),
+  'music_disc_sources': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

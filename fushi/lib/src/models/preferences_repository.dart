@@ -4286,6 +4286,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 音乐无缝播放（mpv `gapless-audio=weak` + 预取下一首，设计 §7.2）。默认开。
+  bool get musicGapless =>
+      getPref('music_gapless', defaultValue: true) == true;
+
+  Future<void> setMusicGapless(bool value) async {
+    await setPref('music_gapless', value);
+    notifyListeners();
+  }
+
+  /// 音乐 ReplayGain（专辑顺序播 album / 其它 track，设计 §7.2）。默认开。
+  bool get musicReplayGain =>
+      getPref('music_replaygain', defaultValue: true) == true;
+
+  Future<void> setMusicReplayGain(bool value) async {
+    await setPref('music_replaygain', value);
+    notifyListeners();
+  }
+
   bool get floatingLyricClickLookup =>
       getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
 

@@ -1,0 +1,31 @@
+[package]
+name = "fushi_music"
+version = "0.1.0"
+edition = "2021"
+publish = false
+# 依赖一律选可链进 GPL-3.0 app 本体的许可（MIT / Apache-2.0 / BSD）。
+license = "GPL-3.0-only"
+
+[lib]
+# rlib：将来给 native/fushi_ios_umbrella（iOS 伞形 staticlib，共用一份 Rust std）当依赖用。
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# 标签 + 音频属性（FLAC / MP3 / MP4(ALAC/AAC) / APE / WavPack / Ogg / Opus / WAV / AIFF / MPC）。
+# MIT OR Apache-2.0，纯 Rust。
+lofty = "0.22"
+# 内容派生 uid 的摘要。MIT OR Apache-2.0。
+sha1 = "0.10"
+# .cue 的传统多字节编码（Shift_JIS / GBK / Big5）。(Apache-2.0 OR MIT) AND BSD-3-Clause。
+encoding_rs = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"
+
+# 构建脚本 / 过程宏不 strip（与 fushi_compute 同理：hajisensai/Fushi#2329）。
+[profile.release.build-override]
+strip = false

@@ -30,6 +30,8 @@ fushi_compute = { path = "../fushi_compute" }
 fushi_web_core = { path = "../fushi_web_core" }
 # AGPL-3.0-or-later：见上面 license 处的说明。
 fushi_rwkv = { path = "../fushi_rwkv" }
+# 音乐胖核心（GPL-3.0-only；lofty / sha1 MIT OR Apache-2.0，encoding_rs (Apache-2.0 OR MIT) AND BSD-3-Clause）。
+fushi_music = { path = "../fushi_music" }
 
 [profile.release]
 # 与 fushi_p2p 一致取 "s"：隧道要扛视频流，"z" 的 QUIC 包处理变慢不划算（见 fushi_p2p/README）。

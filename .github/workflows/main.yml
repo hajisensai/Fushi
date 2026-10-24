@@ -44,6 +44,7 @@ on:
       - '.github/actions/fushidicts-linux/**'
       - '.github/actions/setup-fushi-compute/**'
       - '.github/actions/setup-fushi-rwkv/**'
+      - '.github/actions/setup-fushi-music/**'
       # setup-fushi-compute / setup-fushi-rwkv 从这里读 Rust / cargo-ndk 钉版。
       - '.github/actions/native-store-names/names.sh'
       - 'pubspec.yaml'
@@ -93,6 +94,7 @@ jobs:
           native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
           native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
           native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+          native/fushi_music/prebuilt/linux-x64/libfushi_music.so
         if-no-files-found: error
         retention-days: 3
 
@@ -250,6 +252,11 @@ jobs:
     # RWKV-Instant 排程推理 fushi_rwkv 同为硬依赖（无 Dart 回退）：同样的输入，导出 FUSHI_RWKV_LIB。
     - name: Build fushi_rwkv (Linux .so + Android arm64-v8a)
       uses: ./.github/actions/setup-fushi-rwkv
+      with:
+        android-abis: arm64-v8a
+    # 音乐胖核心 fushi_music（曲库扫描 / 标签 / CUE）同为 app 硬依赖：与上一步 fushi_rwkv 同一口径。
+    - name: Build fushi_music (Linux .so + Android arm64-v8a)
+      uses: ./.github/actions/setup-fushi-music
       with:
         android-abis: arm64-v8a
     # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip）。只读 native-rwkv-gate 写的
@@ -475,6 +482,7 @@ jobs:
       FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
       FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
       FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
+      FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
     strategy:
       fail-fast: false
       matrix:

@@ -277,6 +277,9 @@ import 'package:fushi/src/models/theme_notifier.dart'
 export 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/media/music/music_session.dart';
+import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
@@ -985,6 +988,11 @@ class AppModel with ChangeNotifier {
       for (final SrtBookRow r in await database.getAllSrtBooks())
         r.uid: r.title,
     };
+    // 音乐曲目：itemKey 是内容派生的 track_uid，展示曲名。
+    final Map<String, String> musicTitles = <String, String>{
+      for (final MusicTrackRow r in await database.listMusicTracks())
+        r.trackUid: r.title,
+    };
     // 收藏句：itemKey 是内容键（用户看不懂），从本地在库收藏句解析回句子文本展示。
     // deleteLocal 候选必是本地仍在库者，映射通常命中；查不到退回 itemKey。
     final Map<String, String> favSentenceTexts = <String, String>{
@@ -1010,6 +1018,7 @@ class AppModel with ChangeNotifier {
               parseFavoriteWordItemKey(c.itemKey)?.expression ?? c.itemKey,
             SyncTombstoneKind.favoritesentence =>
               favSentenceTexts[c.itemKey] ?? c.itemKey,
+            SyncTombstoneKind.music => musicTitles[c.itemKey] ?? c.itemKey,
             // localaudio: displayName 本身即可读；null = 未知种类原样展示。
             SyncTombstoneKind.localaudio || null => c.itemKey,
           },
@@ -1071,6 +1080,12 @@ class AppModel with ChangeNotifier {
             // 按内容键取消收藏。默认写墓碑（本设备也需抑制第三设备并集复活，与源墓碑同键）。
             await FavoriteSentenceRepository(database)
                 .removeByItemKey(c.itemKey);
+          case SyncTombstoneKind.music:
+            // 音乐曲目：软删（与重扫发现文件消失同一语义），不回写墓碑。
+            await database.softDeleteMusicTrack(
+              c.itemKey,
+              deletedAt: DateTime.now().millisecondsSinceEpoch,
+            );
           case null:
             // 未知类型：跳过，但留痕——用户确认了删除、这里静默吞掉会造成
             // 「以为删了实际没删」且无从排查（mediaType 审计 2026-07-25）。
@@ -1455,11 +1470,16 @@ class AppModel with ChangeNotifier {
           FloatingLyricLookupNotifier.instance.requestLookup(text, index);
         }());
       },
+      // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
       controlStreams: AudioControlStreams(
-          playIntentStream: audioCtrl.playIntentStream,
-          seekStream: audioCtrl.seekStream,
-          skipNextStream: audioCtrl.skipNextStream,
-          skipPreviousStream: audioCtrl.skipPreviousStream,
+          playIntentStream: audioCtrl.streamFor(
+              audioCtrl.playIntentStream, MediaSessionOwner.audiobook),
+          seekStream: audioCtrl.streamFor(
+              audioCtrl.seekStream, MediaSessionOwner.audiobook),
+          skipNextStream: audioCtrl.streamFor(
+              audioCtrl.skipNextStream, MediaSessionOwner.audiobook),
+          skipPreviousStream: audioCtrl.streamFor(
+              audioCtrl.skipPreviousStream, MediaSessionOwner.audiobook),
           toggleFloatingLyricStream: audioCtrl.toggleFloatingLyricStream),
       // BUG-2558：后台听书（reader 已 dispose）期间的学习统计写入方。两个 getter 都是
       // 闭包——本字段在 AppModel 字段初始化期构造，那时 database / 偏好都还没 ready。
@@ -1471,6 +1491,33 @@ class AppModel with ChangeNotifier {
     ..floatingLyricWindowRect = _floatingLyricWindowRect
     ..onFloatingLyricBoundsPersist = _persistFloatingLyricWindowRect
     ..onToggleFloatingLyricFromNotification = toggleFloatingLyricFromControls;
+
+  /// 进程级音乐会话（音乐模块，docs/specs/2026-10-23-music-module-design.md §7）：独立
+  /// libmpv 实例（首次播放才建）、队列 / 无缝 / ReplayGain 编排，与有声书互斥持有
+  /// 媒体会话。
+  late final MusicSession musicSession = MusicSession(
+    engine: MusicPlayerEngine(
+      backendFactory: MpvMusicOutputBackend.new,
+      gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
+      replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
+    ),
+    audio: audioCtrl,
+    audiobook: audiobookSession,
+    database: () => isDatabaseReady ? database : null,
+    showMediaNotification: () => showMediaNotification,
+  );
+
+  bool get musicGapless => prefsRepo.musicGapless;
+  Future<void> setMusicGapless(bool value) async {
+    await prefsRepo.setMusicGapless(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicReplayGain => prefsRepo.musicReplayGain;
+  Future<void> setMusicReplayGain(bool value) async {
+    await prefsRepo.setMusicReplayGain(value);
+    await musicSession.engine.reapplySettings();
+  }
   late DictionaryImportManager _dictImportManager;
 
   /// BUG-1499 / BUG-1500：词典下载/更新任务的所有权持有者。挂在 [AppModel] 上而不是

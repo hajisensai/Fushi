@@ -11,7 +11,10 @@
 enum SourceLibraryKind {
   book('book'),
   video('video'),
-  manga('manga');
+  manga('manga'),
+
+  /// 音乐（v125，音乐模块）：扫音频文件 + `.cue`，落 `music_tracks`。
+  music('music');
 
   const SourceLibraryKind(this.dbValue);
 

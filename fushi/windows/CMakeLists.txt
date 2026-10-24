@@ -257,6 +257,20 @@ endif()
 install(FILES "${FUSHI_RWKV_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# === 音乐胖核心（**硬依赖**，GPL-3.0-only）===
+# native/fushi_music/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_music.dll，随包到 exe
+# 同级（Dart 侧 packages/fushi_music 的 FushiMusic 按 exe 同级定位）。没有 Dart 回退，缺库配置期失败。
+set(FUSHI_MUSIC_DLL
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_music/prebuilt/windows-x64/fushi_music.dll")
+if(NOT EXISTS "${FUSHI_MUSIC_DLL}")
+  message(FATAL_ERROR
+    "fushi_music is a required native dependency, but ${FUSHI_MUSIC_DLL} is missing. "
+    "Build it first: powershell -ExecutionPolicy Bypass -File native/fushi_music/build_windows_dll.ps1 "
+    "(needs Rust/cargo; tool/bootstrap.ps1 runs it for new worktrees).")
+endif()
+install(FILES "${FUSHI_MUSIC_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Debug builds may intentionally omit the expensive libtorrent prebuild so UI
 # work stays lightweight. A Profile/Release bundle, however, must never be
 # produced while advertising an embedded backend that cannot open at runtime.

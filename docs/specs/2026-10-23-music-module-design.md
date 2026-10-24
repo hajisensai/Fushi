@@ -462,7 +462,7 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   查询；抓轨（rip 成 FLAC + CUE + 日志，AccurateRip 校验）列为 P5 可选。
 - **CD+G**：`.cdg` + 音频成对识别，画面走 FFmpeg `cdgraphics` 解码到纹理。
 
-## 10. 数据模型（Drift，schema 124 → 125）
+## 10. 数据模型（Drift，schema 125 → 126；v125 是作品图谱的 `media_links`）
 
 命名遵守术语表（`cover`、`deletedAt`、`<名>At` 毫秒、`source library`）。
 
@@ -487,6 +487,24 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 - 同步：曲目身份用内容派生 uid，跨设备 / 互联共享歌词编辑、歌单、播放统计。
   墓碑 `SyncTombstoneKind` 加 music 类型。
 - 备份：歌词编辑、歌单、绑定关系进备份；封面缓存不进。
+
+**P0 落地时的三处偏离（所有者 2026-10-24 认可）**：
+
+- **`track_uid` 的「文件指纹」取音频属性而非文件字节**：`sha1("fushi-music-track-v1" ‖ 路径 ‖
+  CUE 起点 ‖ 时长ms/采样率/声道)` 取前 128 bit。改标签（Picard / foobar 写回）会改写
+  FLAC / MP3 文件头、APE / WavPack 文件尾的标签块，字节指纹会让每次改标签都换 uid，
+  歌单 / 歌词 / 播放记录全断；音频属性在改标签时不变、换成另一段录音时几乎必变。
+  派生规则由 `native/fushi_music/src/uid.rs` 的固定向量冻结，要改就升命名空间版本。
+- **专辑封面用 `music_albums.cover_path` + `cover_track_uid`，不走 `media_images`**：
+  `media_images` 的 CHECK 只允许合集 / 视频两种归属，接音乐要重建那张表。`cover_path`
+  是目录封面（`cover.*` / `folder.*` …）；没有目录图时 `cover_track_uid` 指向带内嵌封面
+  的曲目，界面按需在后台 isolate 抽取。
+- **刮削三表（`music_scrape_meta` / `music_metadata_raw_snapshots` /
+  `music_locked_fields`）延到 P4**：随 provider 结构一起定形，届时单独加一步建表。
+- 备份落地：曲库目录五表（曲目 / 专辑 / 艺人 / 署名 / 光盘来源）设备本地；歌单 + 条目、
+  歌词、MV 绑定、播放流随新的「音乐」备份类别走，合并规则见
+  `BackupMergeEngine._mergeMusicUserData`（歌单 / 歌词 / MV 按 `updated_at` LWW，播放流
+  去重并集）。
 
 ## 11. 模块与 UI
 

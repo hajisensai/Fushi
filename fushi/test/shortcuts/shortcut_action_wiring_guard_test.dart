@@ -84,6 +84,8 @@ void main() {
       // 它挂在首页键事件节点之下、先于 home 页的 _executeShortcutAction，库页
       // 之外 home 解析到它时返回 ignored 冒泡——与 globalExternalLookup 同类。
       'lib/src/utils/components/fushi_header_search.dart',
+      // 音乐（ShortcutScope.music）的执行体：曲库页 _handleKey → dispatchMusicShortcut。
+      'lib/src/pages/implementations/music/music_library_page.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

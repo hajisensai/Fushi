@@ -213,6 +213,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         return true;
       case SyncTombstoneKind.favoriteword:
       case SyncTombstoneKind.favoritesentence:
+      // 音乐曲库（v125）还没有互联删除端点：曲库目录是本机重扫出来的，P0 不跨端传播删除。
+      case SyncTombstoneKind.music:
         return false;
     }
   }
@@ -243,6 +245,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
         return backend.deleteRemoteVideo(itemKey);
       case SyncTombstoneKind.favoriteword:
       case SyncTombstoneKind.favoritesentence:
+      case SyncTombstoneKind.music:
         // [_hasInterconnectDeletionChannel] 已挡在前面，走不到这里。
         return true;
     }

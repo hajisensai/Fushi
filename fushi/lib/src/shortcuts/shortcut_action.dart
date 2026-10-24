@@ -38,6 +38,8 @@ enum ShortcutScope {
   // 方向（日漫默认 rtl）校正。
   manga,
   video,
+  // 音乐播放（播放 / 上下曲 / ±5 s）。音乐页自成 co-active 组，与视频 / 阅读器不同时激活。
+  music,
   // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
   // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
   // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
@@ -84,6 +86,9 @@ enum ShortcutScope {
       // 冲突检测只扫 manga（与 video 同理）。
       case manga:
         return const <ShortcutScope>[manga];
+      // 音乐库页只解析自己的绑定（与 video / manga 同理），自成 co-active 组。
+      case music:
+        return const <ShortcutScope>[music];
       // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
@@ -203,6 +208,10 @@ enum ShortcutScope {
       // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
       case gamepad:
         return const <ShortcutChannel>{ShortcutChannel.gamepad};
+      // 音乐：只有键盘有解析入口（music_library_page.dart 的 _handleKey →
+      // `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有派发点，不开通道。
+      case music:
+        return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // app 外全局查词：三通道，但**三条通道各走各的 OS 机制**，不共用一套注册。
       // 这是全 app 唯一一处「同一个动作、三种底层触发机制」的 scope，故在此写明
       // 各自的边界（TODO-1066）：
@@ -566,6 +575,14 @@ enum ShortcutAction {
   mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
   mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
   mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
+
+  // 音乐（音乐模块 P0）：曲库页 / 播放条的播放控制。键盘一条通道，由音乐库页按
+  // ShortcutScope.music 解析（music_library_page.dart 的 _handleKey）。
+  musicTogglePlayPause(ShortcutScope.music, 'music_toggle_play_pause'),
+  musicNextTrack(ShortcutScope.music, 'music_next_track'),
+  musicPreviousTrack(ShortcutScope.music, 'music_previous_track'),
+  musicSeekForward(ShortcutScope.music, 'music_seek_forward'),
+  musicSeekBackward(ShortcutScope.music, 'music_seek_backward'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
