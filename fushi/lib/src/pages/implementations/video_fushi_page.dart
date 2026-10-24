@@ -301,6 +301,7 @@ import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
+import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
@@ -2905,6 +2906,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final Set<String> _favoritedVideoSentences = <String>{};
   VideoRemotePlaybackBinding? _videoRemoteBinding;
   final _VideoRemoteCueCache _videoRemoteCueCache = _VideoRemoteCueCache();
+
+  /// 手机遥控「在线搜索字幕」的执行体（候选按 id 记在里面，随本页释放）。
+  late final RemoteOnlineSubtitleSearch _remoteOnlineSubtitles =
+      RemoteOnlineSubtitleSearch(
+        registry: appModel.subtitleSearchRegistry,
+        preferredLanguageFor: AppSubtitleWorkbenchHost(
+          appModel,
+        ).preferredLanguageFor,
+        saveDirectory: AppPaths.videoSubtitlesDirectory,
+        aligner: appModel.alignDownloadedSubtitle,
+      );
   bool _initialRemoteFavoriteApplied = false;
 
   // ── DictionaryPageMixin 必需的抽象成员 ──────────────────────────────

@@ -1439,6 +1439,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
         !context.mounted) {
       return;
     }
+    await _applyDownloadedSubtitles(controller, downloadedPaths);
+  }
+
+  /// 在线下载的字幕落盘后：登记进字幕轨列表并把第一条应用为主字幕。字幕工作台
+  /// 「本集」与手机遥控「在线搜索字幕」共用这一处。
+  Future<void> _applyDownloadedSubtitles(
+    VideoPlayerController controller,
+    List<String> downloadedPaths,
+  ) async {
     // 多选下载：**全部**登记进字幕轨列表，只把第一条（用户最先勾的那条）应用为
     // 当前字幕。其余就在轨列表里等着切——一次下 5 条却只有 1 条能找得到，等于
     // 另外 4 条白下了。

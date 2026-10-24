@@ -150,6 +150,11 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       switchEpisode: _switchRemoteControlledEpisode,
       subtitleTracks: _remoteSubtitleOptions,
       selectSubtitleTrack: _selectRemoteSubtitleOption,
+      // 在线搜字幕：与字幕工作台「本集」同一组默认值与检索请求，下载后走同一个
+      // [_applyDownloadedSubtitles]。
+      searchSubtitles: _searchRemoteOnlineSubtitles,
+      downloadSubtitle: (String id) =>
+          _downloadRemoteOnlineSubtitle(controller, id),
     );
     _videoRemoteBinding = binding;
     appModel.videoRemoteHost.register(binding);
@@ -229,6 +234,44 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     } on VideoRemoteFailure catch (failure) {
       throw _remoteSubtitleException(failure);
     }
+  }
+
+  /// 手机「在线搜索字幕」：默认值取本页的番名 / 身份种子 / 集号 / 季号（与
+  /// [_openSubtitleWorkbench] 同源）。算不出番名时回空结果，手机自己填词再搜。
+  Future<VideoRemoteOnlineSubtitleSearch> _searchRemoteOnlineSubtitles(
+    String? query,
+    int? episode,
+  ) async {
+    final String series = _jimakuQuery() ?? '';
+    final SubtitleSearchSeed seed = series.isEmpty
+        ? const SubtitleSearchSeed()
+        : await _buildJimakuSeed(series);
+    if (!mounted) throw const VideoRemoteException(409, 'no_video');
+    return _remoteOnlineSubtitles.search(
+      RemoteOnlineSubtitleContext(
+        seriesQuery: series,
+        seed: seed,
+        episode: _jimakuEpisodeNumber(),
+        season: _jimakuSeasonNumber(),
+        videoPath: _isRemote ? null : _currentVideoPath,
+      ),
+      query: query,
+      episode: episode,
+    );
+  }
+
+  /// 手机选中一条在线字幕：电脑下载落盘（本机视频按内嵌轨对齐），再与字幕工作台
+  /// 下载完成同一入口登记并应用。
+  Future<void> _downloadRemoteOnlineSubtitle(
+    VideoPlayerController controller,
+    String id,
+  ) async {
+    final String path = await _remoteOnlineSubtitles.download(
+      id,
+      videoPath: _isRemote ? null : _currentVideoPath,
+    );
+    if (!mounted) throw const VideoRemoteException(409, 'no_video');
+    await _applyDownloadedSubtitles(controller, <String>[path]);
   }
 
   /// 遥控制卡 / 试听共用的音频与画面窗：字幕时基区间 `[startMs, endMs]`（[anchor] 所在
