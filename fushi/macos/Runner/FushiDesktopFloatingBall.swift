@@ -1428,8 +1428,9 @@ final class DesktopFloatingBallController: NSObject {
   /// `showProfileMenu {items: [{id, label, checked}], anchor}`：在球旁边弹原生配置列表，
   /// 回选中项 id（Int）；关掉 / 空列表回 nil。
   ///
-  /// 不激活 Fushi：`popUp(positioning:at:in: nil)` 走屏幕坐标、不挂在任何窗口上，非激活
-  /// app 也能正常跟踪鼠标与收起（与状态栏菜单同一机制），前台始终是用户正在用的那个 app。
+  /// 前台：`popUp(positioning:at:in: nil)` 走屏幕坐标、不挂在任何窗口上，弹出与跟踪期间不激活
+  /// Fushi（非激活 app 也能正常跟踪鼠标与收起）；但真点中菜单项时系统会激活 Fushi，所以
+  /// 菜单结束后把前台还给弹出前的 app（见方法末尾）。
   /// 代价：Fushi 不是 key app，菜单不吃键盘（方向键 / 回车 / Esc）——只能鼠标选、点外面关。
   ///
   /// 选中判定见 `DesktopFloatingBallMenuTarget.resolve`：action 路径与「popUp 回 true +
@@ -1488,11 +1489,21 @@ final class DesktopFloatingBallController: NSObject {
     let location = NSPoint(
       x: x, y: DesktopFloatingBallController.primaryScreenHeight - ballRect.minY)
 
+    // 真鼠标点中菜单项时 macOS（27 实测）会把 Fushi 激活成前台（点下即激活，早于
+    // didClose / action；`in:` 传面板视图或改用 popUpContextMenu 都一样，点菜单外关掉则不会）。
+    // 弹之前记下用户正在用的 app，菜单结束后若 Fushi 被顶到前台就把前台还给它。
+    let wasActive = NSApp.isActive
+    let previousFront = NSWorkspace.shared.frontmostApplication
     profileMenu = menu
     menu.delegate = target
     let chose = menu.popUp(positioning: nil, at: location, in: nil)
     profileMenu = nil
     menu.delegate = nil
+    if !wasActive, NSApp.isActive, let previous = previousFront,
+      previous.processIdentifier != NSRunningApplication.current.processIdentifier
+    {
+      previous.activate(options: [])
+    }
     let picked = DesktopFloatingBallMenuTarget.resolve(
       actionId: target.selectedId, popUpChose: chose, highlightedId: target.highlightedId)
     result(picked.map { NSNumber(value: $0) })
