@@ -183,9 +183,18 @@ void main() {
     if (legacy) {
       for (final MapEntry<String, String> t in kLegacySrsTableDdl.entries) {
         await db.customStatement(t.value);
+        // 只抄老表有的列：srs.db 之后加的列（schema v4 的 media_refs 等）老形态里本来就没有。
+        final Set<String> legacyCols = <String>{
+          for (final QueryRow c
+              in await db.customSelect('PRAGMA table_info(${t.key})').get())
+            c.read<String>('name'),
+        };
         for (final QueryRow r
             in await srs.db.customSelect('SELECT * FROM ${t.key}').get()) {
-          final List<String> cols = r.data.keys.toList();
+          final List<String> cols = <String>[
+            for (final String c in r.data.keys)
+              if (legacyCols.contains(c)) c,
+          ];
           await db.customStatement(
             'INSERT INTO ${t.key} (${cols.join(', ')}) '
             'VALUES (${List<String>.filled(cols.length, '?').join(', ')})',
