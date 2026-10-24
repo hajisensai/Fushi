@@ -12,8 +12,12 @@ class MusicLibrarySnapshot {
     required this.tracks,
     required this.artists,
     required this.playlists,
+    List<MusicDiscSourceRow> discs = const <MusicDiscSourceRow>[],
   }) : albumByUid = <String, MusicAlbumRow>{
          for (final MusicAlbumRow a in albums) a.albumUid: a,
+       },
+       discByUid = <String, MusicDiscSourceRow>{
+         for (final MusicDiscSourceRow d in discs) d.discUid: d,
        },
        _trackByUid = <String, MusicTrackRow>{
          for (final MusicTrackRow t in tracks) t.trackUid: t,
@@ -31,9 +35,20 @@ class MusicLibrarySnapshot {
   final List<MusicArtistRow> artists;
   final List<MusicPlaylistRow> playlists;
   final Map<String, MusicAlbumRow> albumByUid;
+
+  /// 光盘来源（`music_disc_sources`）：盘是一张带 `DVD` / `BD` 角标的专辑（§9.2）。
+  final Map<String, MusicDiscSourceRow> discByUid;
+
+  /// 专辑的光盘来源；不是光盘专辑为 null。
+  MusicDiscSourceRow? discOf(MusicAlbumRow album) {
+    final String? uid = album.discUid;
+    return uid == null ? null : discByUid[uid];
+  }
+
   final Map<String, MusicTrackRow> _trackByUid;
 
-  bool get isEmpty => tracks.isEmpty;
+  /// 曲库里什么都没有：没有曲目，也没有（还没导入章节的）光盘专辑。
+  bool get isEmpty => tracks.isEmpty && albums.isEmpty;
 
   /// 专辑内嵌封面所在的音频文件（[MusicAlbumRow.coverTrackUid] → 路径）。
   String? embeddedCoverPathOf(MusicAlbumRow album) {
@@ -54,6 +69,7 @@ class MusicLibrarySnapshot {
         tracks: await db.listMusicTracks(),
         artists: await db.listMusicArtists(),
         playlists: await db.listMusicPlaylists(),
+        discs: await db.listMusicDiscSources(),
       );
 }
 

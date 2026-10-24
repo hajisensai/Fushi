@@ -96,9 +96,22 @@ class DvdCell {
     required this.playbackTime,
     required this.firstSector,
     required this.lastSector,
+    this.category = 0,
   });
 
   final Duration playbackTime;
+
+  /// cell 播放信息的第 1 个字节（`C_PBKT` 的类别字节）：高 2 位是块模式
+  /// （0 不在块内 / 1 块首 / 2 块中 / 3 块尾），其后 2 位是块类型（1 = 角度块）。
+  final int category;
+
+  /// 是不是角度块里**非首个**的 cell：多角度盘同一段时间有几个 cell 并列（每角度一个），
+  /// 按时间累加章节起点时只能算其中一个，否则角度数一多章节起点就整段后移。
+  bool get isAlternateAngle {
+    final int blockMode = category >> 6;
+    final int blockType = (category >> 4) & 0x3;
+    return blockType == 1 && blockMode != 0 && blockMode != 1;
+  }
 
   /// 首个 VOBU 起始扇区（相对 VTS 的 title VOB）。
   final int firstSector;
@@ -113,6 +126,7 @@ class DvdProgramChain {
     required this.programCount,
     required this.playbackTime,
     required this.cells,
+    this.programEntryCells = const <int>[],
   });
 
   final int programCount;
@@ -121,6 +135,37 @@ class DvdProgramChain {
   final Duration playbackTime;
 
   final List<DvdCell> cells;
+
+  /// program map：第 i 个 program 的入口 cell 号（1 起）。IFO 没写 program map 时为空。
+  final List<int> programEntryCells;
+
+  /// 第 [programNumber] 个 program（1 起）的入口 cell 号（1 起）；查不到返回 null。
+  ///
+  /// 没有 program map 时，只有「program 数 = cell 数」能确定一一对应（一 program 一 cell，
+  /// 简单写盘工具的产物）；其余情况不猜。
+  int? entryCellOf(int programNumber) {
+    if (programNumber < 1) return null;
+    if (programEntryCells.isNotEmpty) {
+      if (programNumber > programEntryCells.length) return null;
+      final int cell = programEntryCells[programNumber - 1];
+      return cell >= 1 && cell <= cells.length ? cell : null;
+    }
+    if (programCount == cells.length && programNumber <= cells.length) {
+      return programNumber;
+    }
+    return null;
+  }
+
+  /// PGC 内第 [cellNumber] 个 cell（1 起）的起点：之前各 cell 时长之和（角度块只算
+  /// 首个角度）。
+  Duration offsetOfCell(int cellNumber) {
+    Duration at = Duration.zero;
+    for (int i = 0; i < cellNumber - 1 && i < cells.length; i++) {
+      if (cells[i].isAlternateAngle) continue;
+      at += cells[i].playbackTime;
+    }
+    return at;
+  }
 }
 
 /// 一个 title 的一个章节入口（PTT）。
@@ -293,14 +338,30 @@ DvdProgramChain _parsePgc(_Reader r, int at) {
           playbackTime: r.dvdTime(c + 4),
           firstSector: r.u32(c + 8),
           lastSector: r.u32(c + 20),
+          category: r.u8(c),
         ),
       );
+    }
+  }
+  // program map（PGC 偏移 0xE6）：每 program 一个字节，入口 cell 号。偏移为 0 = 没写。
+  // 只有章节起点（音乐的「章节导入为曲目」）用它：越界的 program map 只让章节起点
+  // 不可知，不连坐这条 PGC（入库选片只看 cell 与总时长）。
+  List<int> programEntryCells = const <int>[];
+  final int programMap = r.u16(at + 0xE6);
+  if (programMap != 0 && programCount > 0) {
+    try {
+      programEntryCells = <int>[
+        for (int i = 0; i < programCount; i++) r.u8(at + programMap + i),
+      ];
+    } on DvdIfoFormatException {
+      programEntryCells = const <int>[];
     }
   }
   return DvdProgramChain(
     programCount: programCount,
     playbackTime: time,
     cells: List<DvdCell>.unmodifiable(cells),
+    programEntryCells: List<int>.unmodifiable(programEntryCells),
   );
 }
 

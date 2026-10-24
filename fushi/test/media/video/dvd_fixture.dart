@@ -12,28 +12,43 @@ const int _kBlock = 2048;
 
 /// 一个 cell：时长 + 扇区范围。
 class FixtureDvdCell {
-  const FixtureDvdCell(this.seconds, this.firstSector, this.lastSector);
+  const FixtureDvdCell(
+    this.seconds,
+    this.firstSector,
+    this.lastSector, {
+    this.category = 0,
+  });
 
   final int seconds;
   final int firstSector;
   final int lastSector;
+
+  /// cell 类别字节（块模式 / 块类型，角度块用）。
+  final int category;
 }
 
 /// 一条 PGC。
 class FixtureDvdPgc {
-  const FixtureDvdPgc(this.cells, {this.headerSeconds});
+  const FixtureDvdPgc(this.cells, {this.headerSeconds, this.programMap});
 
   final List<FixtureDvdCell> cells;
 
   /// PGC 头里的总时长；null = 按 cells 之和写。
   final int? headerSeconds;
+
+  /// program map（每个 program 的入口 cell 号，1 起）；null = 不写（0xE6 留 0，
+  /// program 数 = cell 数）。
+  final List<int>? programMap;
 }
 
 /// VTS 里的一个 title：章节依次落在哪些 PGC（1 起）上。
 class FixtureDvdVtsTitle {
-  const FixtureDvdVtsTitle(this.chapterPgcs);
+  const FixtureDvdVtsTitle(this.chapterPgcs, {this.programs});
 
   final List<int> chapterPgcs;
+
+  /// 各章节的 program 号；null = 按章节序 1、2、3……
+  final List<int>? programs;
 }
 
 /// TT_SRPT 的一行。
@@ -119,7 +134,8 @@ Uint8List buildVtsIfo({
       pgcs.length * 8 +
       pgcs.fold<int>(
         0,
-        (int s, FixtureDvdPgc g) => s + pgcHeader + g.cells.length * 24,
+        (int s, FixtureDvdPgc g) =>
+            s + pgcHeader + g.cells.length * 24 + (g.programMap?.length ?? 0),
       );
   final int pgciBlocks = (pgciSize + _kBlock - 1) ~/ _kBlock;
   final Uint8List b = Uint8List(_kBlock * (2 + pgciBlocks));
@@ -135,7 +151,7 @@ Uint8List buildVtsIfo({
     _putU32(b, ptt + 8 + i * 4, cursor);
     for (int c = 0; c < titles[i].chapterPgcs.length; c++) {
       _putU16(b, ptt + cursor, titles[i].chapterPgcs[c]);
-      _putU16(b, ptt + cursor + 2, c + 1);
+      _putU16(b, ptt + cursor + 2, titles[i].programs?[c] ?? c + 1);
       cursor += 4;
     }
   }
@@ -150,7 +166,7 @@ Uint8List buildVtsIfo({
     b[pgci + 8 + i * 8] = 0x81;
     _putU32(b, pgci + 8 + i * 8 + 4, offset);
     final int at = pgci + offset;
-    b[at + 2] = pgc.cells.length;
+    b[at + 2] = pgc.programMap?.length ?? pgc.cells.length;
     b[at + 3] = pgc.cells.length;
     final int total =
         pgc.headerSeconds ??
@@ -159,11 +175,20 @@ Uint8List buildVtsIfo({
     _putU16(b, at + 0xE8, pgcHeader);
     for (int c = 0; c < pgc.cells.length; c++) {
       final int cell = at + pgcHeader + c * 24;
+      b[cell] = pgc.cells[c].category;
       putDvdTime(b, cell + 4, pgc.cells[c].seconds);
       _putU32(b, cell + 8, pgc.cells[c].firstSector);
       _putU32(b, cell + 20, pgc.cells[c].lastSector);
     }
-    offset += pgcHeader + pgc.cells.length * 24;
+    final List<int>? programMap = pgc.programMap;
+    if (programMap != null) {
+      final int mapAt = pgcHeader + pgc.cells.length * 24;
+      _putU16(b, at + 0xE6, mapAt);
+      for (int i = 0; i < programMap.length; i++) {
+        b[at + mapAt + i] = programMap[i];
+      }
+    }
+    offset += pgcHeader + pgc.cells.length * 24 + (programMap?.length ?? 0);
   }
   _putU32(b, pgci + 4, offset - 1);
   return b;

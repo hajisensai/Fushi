@@ -7,6 +7,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/music/disc/music_disc_import.dart';
+
 /// 音乐来源扫描完一次后的装配点（AppModel 接到后台响度扫描，设计 §7.3）。
 void Function()? onMusicSourceScanned;
 
@@ -171,12 +173,22 @@ Stream<MusicScanBatch> _nativeScanner(
       const <String, ({int mtimeMs, int size})>{},
 }) => scanMusicRoot(root, recursive: recursive, known: known);
 
+/// 来源扫描顺带登记目录树里的光盘（演唱会 / MV 合集 DVD·BD，音乐方案 §9.2）：返回登记
+/// 失败的盘（路径 → 原因）。
+typedef MusicDiscRegistrar = Future<Map<String, String>> Function(String root);
+
 class MusicLibraryScanner {
-  MusicLibraryScanner(this._db, {MusicRootScanner? scanner})
-    : _scanner = scanner ?? _nativeScanner;
+  MusicLibraryScanner(
+    this._db, {
+    MusicRootScanner? scanner,
+    MusicDiscRegistrar? discRegistrar,
+  }) : _scanner = scanner ?? _nativeScanner,
+       _discRegistrar =
+           discRegistrar ?? MusicDiscImportService(_db).registerDiscsUnder;
 
   final FushiDatabase _db;
   final MusicRootScanner _scanner;
+  final MusicDiscRegistrar _discRegistrar;
 
   /// 扫一个音乐来源（本地目录）。原生库缺失（[FushiMusicUnavailableError]）与根不可读
   /// （[MusicScanRootError]）照常抛给调用方：前者是部署缺陷，后者由来源行记录错误。
@@ -234,6 +246,12 @@ class MusicLibraryScanner {
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    // 盘不是音频文件，Rust 扫描不认；登记成专辑（章节由用户在专辑页导入）。
+    for (final MapEntry<String, String> f in (await _discRegistrar(
+      rootPath,
+    )).entries) {
+      errors.add(MusicScanError(f.key, f.value));
+    }
     return MusicScanSummary(
       trackCount: seen.length,
       parsedTrackCount: parsed,

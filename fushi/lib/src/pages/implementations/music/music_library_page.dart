@@ -17,10 +17,13 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/video/cover_ui/disc_format_badge.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -102,6 +105,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                 db.musicTracks,
                 db.musicAlbums,
                 db.musicPlaylists,
+                db.musicDiscSources,
               ],
             ),
           )
@@ -175,6 +179,16 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     await _reload();
   }
 
+  Future<void> _addDisc() async {
+    setState(() => _scanning = true);
+    try {
+      await pickAndAddMusicDiscs(context: context, app: _app);
+    } finally {
+      if (mounted) setState(() => _scanning = false);
+    }
+    await _reload();
+  }
+
   Future<void> _reportScan() async {
     final int count = (await _app.database.listMusicTracks()).length;
     FushiToast.show(msg: t.music_scan_done(count: count));
@@ -210,6 +224,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             album: album,
             tracks: snap.tracksOfAlbum(album.albumUid),
             embeddedCoverPath: snap.embeddedCoverPathOf(album),
+            disc: snap.discOf(album),
           ),
         ),
       ),
@@ -262,6 +277,12 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                       onPressed: _scanning
                           ? null
                           : () => unawaited(_addFolder()),
+                    ),
+                    FushiToolbarItem(
+                      key: const ValueKey<String>('music_add_disc'),
+                      icon: FushiIcons.storage,
+                      label: t.music_disc_add,
+                      onPressed: _scanning ? null : () => unawaited(_addDisc()),
                     ),
                     FushiToolbarItem(
                       key: const ValueKey<String>('music_rescan'),
@@ -403,6 +424,7 @@ class _AlbumGrid extends StatelessWidget {
             album: album,
             tracks: snapshot.tracksOfAlbum(album.albumUid),
             embeddedCoverPath: snapshot.embeddedCoverPathOf(album),
+            disc: snapshot.discOf(album),
             onTap: () => onOpen(album),
           );
         }),
@@ -411,13 +433,14 @@ class _AlbumGrid extends StatelessWidget {
   }
 }
 
-class _AlbumCard extends StatelessWidget {
+class _AlbumCard extends ConsumerWidget {
   const _AlbumCard({
     super.key,
     required this.album,
     required this.tracks,
     required this.embeddedCoverPath,
     required this.onTap,
+    this.disc,
   });
 
   final MusicAlbumRow album;
@@ -425,8 +448,31 @@ class _AlbumCard extends StatelessWidget {
   final String? embeddedCoverPath;
   final VoidCallback onTap;
 
+  /// 光盘来源：盘是一张带 `DVD` / `BD` 角标的专辑，右键 / 长按菜单里有「章节导入为曲目」
+  /// （§9.2）。
+  final MusicDiscSourceRow? disc;
+
+  void _showDiscMenu(BuildContext context, WidgetRef ref, Offset position) {
+    final MusicDiscSourceRow? d = disc;
+    if (d == null) return;
+    unawaited(
+      showMusicDiscAlbumMenu(
+        context: context,
+        app: ref.read(appProvider),
+        globalPosition: position,
+        album: album,
+        disc: d,
+        tracks: tracks,
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final MusicDiscSourceRow? disc = this.disc;
+    final String? discMember = disc == null
+        ? null
+        : musicDiscBadgeMemberPath(disc);
     final MusicTrackRow? first = tracks.isEmpty ? null : tracks.first;
     final String badge = first == null
         ? ''
@@ -437,18 +483,45 @@ class _AlbumCard extends StatelessWidget {
             bitDepth: first.bitDepth,
             bitrateKbps: first.bitrate,
           );
-    return FushiHoverLift(
+    final Widget card = FushiHoverLift(
       builder: (BuildContext context, bool hovering) => FushiPressScale(
         child: InkWell(
           borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
           onTap: onTap,
+          onLongPress: disc == null
+              ? null
+              : () {
+                  final RenderObject? box = context.findRenderObject();
+                  if (box is! RenderBox) return;
+                  _showDiscMenu(
+                    context,
+                    ref,
+                    box.localToGlobal(box.size.center(Offset.zero)),
+                  );
+                },
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
-                child: MusicCover(
-                  coverPath: album.coverPath,
-                  embeddedFromPath: embeddedCoverPath,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: <Widget>[
+                    MusicCover(
+                      coverPath: album.coverPath,
+                      embeddedFromPath: embeddedCoverPath,
+                    ),
+                    if (discMember != null)
+                      Positioned(
+                        left: 6,
+                        top: 6,
+                        child: IgnorePointer(
+                          child: DiscFormatBadge(
+                            resolver: ref.read(discFormatResolverProvider),
+                            memberPaths: <String>[discMember],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 6),
@@ -462,6 +535,7 @@ class _AlbumCard extends StatelessWidget {
                 <String>[
                   album.albumArtistCredit ?? t.music_artist_unknown,
                   if (badge.isNotEmpty) badge,
+                  if (disc != null && tracks.isEmpty) t.music_disc_not_imported,
                 ].join(' · '),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -471,6 +545,12 @@ class _AlbumCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (disc == null) return card;
+    // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
+    return ContextMenuTrigger(
+      onInvoke: (Offset position) => _showDiscMenu(context, ref, position),
+      child: card,
     );
   }
 }

@@ -24,10 +24,10 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/music_crossfade.dart';
@@ -35,33 +35,47 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 
-/// EDL 段尾的补偿（秒）。mpv 按 `floor((end - pts) · rate)` 截段尾（`audio/aframe.c`
-/// `mp_aframe_clip_timestamps`），边界恰好落在样本上时浮点误差让它少一个样本——实测
-/// 每段都丢最后 1 个样本，两段拼起来比整轨少 2 个。段尾往后挪 1 µs（44.1 kHz 下 0.044
-/// 个样本，768 kHz 下也不到 1 个）就落回正确的样本；段首按同一时刻取 floor，与上一段
-/// 首尾相接，不重不漏（真 libmpv 用例逐样本比对整轨）。
-const double _kEdlEndSlackSeconds = 0.000001;
-
-/// 最后一轨（播到文件尾）的段长：给一个远超任何音轨的长度，让 mpv 播到真正的 EOF、
-/// 不做段尾截断（不给 length 时段尾取解复用器报的时长，同样会被上面的截断吃掉 1 个样本）。
-const int _kEdlOpenEndSeconds = 86400;
-
 /// 纯函数：整轨文件里的一段 → mpv EDL URI。路径按 UTF-8 字节数加 `%len%` 前缀，
 /// 路径里的逗号 / 等号不会被当成 EDL 分隔符。[endMs] 为 null = 播到文件尾。
-String musicEdlUri(String path, {required int startMs, int? endMs}) {
-  final String length = endMs == null
-      ? '$_kEdlOpenEndSeconds'
-      : ((endMs - startMs) / 1000 + _kEdlEndSlackSeconds).toStringAsFixed(6);
-  return 'edl://%${utf8.encode(path).length}%$path,'
-      'start=${(startMs / 1000).toStringAsFixed(6)},length=$length';
-}
+///
+/// 段尾补偿（[kMusicEdlEndSlackSeconds]）：mpv 按 `floor((end - pts) · rate)` 截段尾
+/// （`audio/aframe.c` `mp_aframe_clip_timestamps`），边界恰好落在样本上时浮点误差让它少一个
+/// 样本——实测每段都丢最后 1 个样本，两段拼起来比整轨少 2 个。段尾往后挪 1 µs（44.1 kHz
+/// 下 0.044 个样本，768 kHz 下也不到 1 个）就落回正确的样本；段首按同一时刻取 floor，与上
+/// 一段首尾相接，不重不漏（真 libmpv 用例逐样本比对整轨）。最后一轨（播到文件尾）给
+/// [kMusicEdlOpenEndSeconds] 这样远超任何音轨的段长，让 mpv 播到真正的 EOF、不做段尾截断
+/// （不给 length 时段尾取解复用器报的时长，同样会被截断吃掉 1 个样本）。
+String musicEdlUri(String path, {required int startMs, int? endMs}) =>
+    musicEdlSegmentUri(path, startMs: startMs, endMs: endMs);
 
 /// 纯函数：一首曲目 → mpv 的 [Media]。普通文件直接给路径；CUE 虚拟曲目给 EDL 段。
+/// 光盘章节曲目（DVD title / BD 播放列表 + 章节起止）走 [resolveMusicMedia]。
 Media musicMediaOf(MusicPlayItem item) {
   final int start = item.startMs ?? 0;
   final int? end = item.endMs;
   if (start == 0 && end == null) return Media(item.path);
   return Media(musicEdlUri(item.path, startMs: start, endMs: end));
+}
+
+/// 一首曲目交给 mpv 的东西：[media] + 加载它时要下发的逐文件选项。
+typedef MusicResolvedMedia = ({Media media, Map<String, String> fileLocal});
+
+/// 一首曲目 → mpv 源。光盘章节曲目（`music_disc_media.dart`）换成 dvdvideo / m2ts 的 EDL
+/// 段并带逐文件选项；盘不在了（读不到 MPLS）时原样交出路径，由 mpv 报打不开、走既有的
+/// 播放失败路径，而不是在这里吞掉。
+Future<MusicResolvedMedia> resolveMusicMedia(MusicPlayItem item) async {
+  if (isMusicDiscTitlePath(item.path)) {
+    final MusicDiscMediaSource? disc = await resolveMusicDiscMediaSource(
+      item.path,
+      startMs: item.startMs ?? 0,
+      endMs: item.endMs,
+    );
+    if (disc != null) {
+      return (media: Media(disc.uri), fileLocal: disc.fileLocalOptions);
+    }
+    return (media: Media(item.path), fileLocal: const <String, String>{});
+  }
+  return (media: musicMediaOf(item), fileLocal: const <String, String>{});
 }
 
 /// 当前进程的输出平台。
@@ -305,6 +319,25 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
         '${_settings.dsdPcmRate.hz}',
       );
     }
+    // 光盘章节曲目：dvdvideo demuxer 选 title、只要音频（[resolveMusicMedia]）。
+    for (final MapEntry<String, String> e
+        in (_fileLocalFor[item.trackUid] ?? const <String, String>{}).entries) {
+      await native.setProperty('file-local-options/${e.key}', e.value);
+    }
+  }
+
+  /// 曲目 → 逐文件选项（[resolveMusicMedia] 解析时记下，`on_load` 钩子取用）。
+  final Map<String, Map<String, String>> _fileLocalFor =
+      <String, Map<String, String>>{};
+
+  Future<Media> _mediaFor(MusicPlayItem item) async {
+    final MusicResolvedMedia resolved = await resolveMusicMedia(item);
+    if (resolved.fileLocal.isEmpty) {
+      _fileLocalFor.remove(item.trackUid);
+    } else {
+      _fileLocalFor[item.trackUid] = resolved.fileLocal;
+    }
+    return resolved.media;
   }
 
   @override
@@ -324,12 +357,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       _lastIndex = 0;
       _mpvItems = <MusicPlayItem>[current, ?next];
       await _applyGain(current);
-      await _player.open(
-        Playlist(<Media>[
-          for (final MusicPlayItem i in _mpvItems) musicMediaOf(i),
-        ]),
-        play: play,
-      );
+      final List<Media> medias = <Media>[
+        for (final MusicPlayItem i in _mpvItems) await _mediaFor(i),
+      ];
+      await _player.open(Playlist(medias), play: play);
     } finally {
       _rewiring = false;
     }
@@ -355,7 +386,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       _next = next;
       final MusicPlayItem? loaded = _pending ?? _audible;
       _mpvItems = <MusicPlayItem>[?loaded, ?next];
-      if (next != null) await _player.add(musicMediaOf(next));
+      if (next != null) await _player.add(await _mediaFor(next));
     } finally {
       _rewiring = false;
     }

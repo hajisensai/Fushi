@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 
 import 'package:fushi_engine/media/music/metadata/music_metadata_models.dart';
+import 'package:fushi_engine/media/music/metadata/music_release_match.dart';
 
 abstract interface class MusicMetadataProvider {
   MusicMetadataProviderKind get providerKind;
@@ -36,6 +37,26 @@ abstract interface class MusicRecordingProvider
 
   /// 作品及其全部录音（原曲 / 其它版本）。不存在返回 null。
   Future<MusicWork?> fetchWork(String mbWorkId);
+}
+
+/// 整张发行的曲目表（MusicBrainz）：光盘专辑按曲目表对号（音乐方案 §9.2）。
+abstract interface class MusicReleaseProvider implements MusicMetadataProvider {
+  /// 按标题（可带艺人）搜 DVD-Video / Blu-ray 发行，返回带曲目表的候选（已逐张取详情，
+  /// 至多 [limit] 张——MusicBrainz 搜索结果不含曲目表，每张详情各算一次请求）。
+  Future<List<MusicReleaseTracklist>> searchDiscReleases(
+    String title, {
+    String? artist,
+    int limit = 5,
+  });
+
+  /// 发行详情（含全部 medium 与曲目）。不存在返回 null。
+  Future<MusicReleaseTracklist?> fetchReleaseTracklist(String mbReleaseId);
+
+  /// 音频 CD：按 MusicBrainz Disc ID（可带 TOC 做模糊查）找发行。查不到返回空表。
+  Future<List<MusicReleaseTracklist>> lookupDiscId(
+    String discId, {
+    String? toc,
+  });
 }
 
 /// 声纹查询（AcoustID）。
