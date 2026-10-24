@@ -497,6 +497,64 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   查询；抓轨（rip 成 FLAC + CUE + 日志，AccurateRip 校验）列为 P5 可选。
 - **CD+G**：`.cdg` + 音频成对识别，画面走 FFmpeg `cdgraphics` 解码到纹理。
 
+### 9.3 P5 落地记录（2026-10-24，光盘与扩展；DVD 菜单与 CD+G 不在此列）
+
+**不加 schema**：全部复用 v126 已建的 `music_disc_sources` / `music_albums.disc_uid`，没有新表 / 新列。
+
+- **章节导入为曲目（DVD / BD）**：盘登记成一张带 `DVD` / `BD` / `UHD` 角标的专辑（不设光盘分区）——
+  工具栏「添加光盘」选目录（盘根 / 光驱根 / 含盘的目录，`.iso` 也认）；音乐来源扫描时顺带登记目录树
+  里的盘。入口在专辑详情与专辑卡右键 / 长按菜单（`ContextMenuTrigger`）：章节导入（选 title，默认勾
+  章节最多的那条——**不沿用视频入库的「正片」判定**，实测一张 TV BD 视频侧选中的是 9 小时只有 1 章
+  的循环播放列表）、在 MusicBrainz 查曲目表、从曲库移除。曲目与 CUE 虚拟曲目同一约定：`path` =
+  title 身份路径（DVD `…/VIDEO_TS/TITLE_nn.dvdtitle`、BD `.mpls`），`cue_start_ms` / `cue_end_ms`
+  = 章节起止；`source_id` 留空（来源重扫不会把它当消失的文件）；uid 由盘身份派生（挪目录 / 换盘符
+  不变）。重新导入只更新盘上的事实，不冲掉 MusicBrainz / 用户改过的名字。
+  - DVD 章节起点来自 IFO：PTT → PGC 的 program map → 入口 cell 的累计时长（角度块只算首个角度；
+    program map 缺失且 program 数 ≠ cell 数时不猜，整条当一首）。短于 1.5 s 的章节并进相邻章节
+    （BD 结尾常见 1.06 s 的黑场章节点）。
+  - **播放**：DVD 不用 dvdvideo demuxer 自己的 `chapter_start/chapter_end` 裁——实测它按 VOBU 粒度
+    截，相邻两章之间各丢约 0.36 s；改为 title 整条经 `demuxer-lavf-format=dvdvideo` +
+    `demuxer-lavf-o=title=N`（逐文件选项）读出，再套 EDL 段按章节时间裁（EDL 段的源写 `VIDEO_TS`
+    目录 / `.iso`；mpv 的 `dvd://` 不能当 EDL 段源，实测 `EDL: Could not open source file`）。BD 按
+    MPLS PlayItem 拼 m2ts EDL 段（与视频 `bluray_source.dart` 同一拼法）。音乐实例逐文件
+    `vid=no` / `sid=no`。真 libmpv：自制测试盘第 2+3 章连播 4.17 s、第 2 章 2.39 s（AC-3 帧内裁边，
+    误差 < 1 帧）；真 BD 章节段按 3 s 截取出 3.00 s。
+  - **对号**：按专辑名（可改）搜 MusicBrainz 的 DVD-Video / Blu-ray 发行，逐张取曲目表，章节时长与
+    曲目时长逐首比（视频盘 medium 优先，平均误差 ≤ 3 s 且一半以上曲目有时长才标可信），用户选一张
+    套用；曲数不一致不半截套用。DVD / BD 章节本身没有名字，所以「章节名」这一条判据实际不可用。
+  - **没做**：BD 镜像（`.iso`）的章节导入（MPLS 在镜像里、EDL 要真实 m2ts 路径，给出明确提示）；
+    加密 BD（AACS 解密会话在视频链路，音乐实例不接）；专辑页的「播放原盘」主按钮（DVD 方案写的
+    音乐专辑页同规则——原盘菜单会话要绑定视频库条目，盘不在视频库时没有入口，需另定）。
+- **音频 CD**：`native/fushi_music/src/cd.rs` 读 MMC TOC（格式 0）与 CD-TEXT（格式 5）原始响应，
+  算 MusicBrainz Disc ID（Enhanced CD 扣掉数据轨与 11400 帧 session 间隙）。设备读：Windows
+  `IOCTL_CDROM_READ_TOC_EX`、Linux `CDROMREADTOCHDR/ENTRY`（CD-TEXT 要 SG_IO，未做）、macOS
+  `DKIOCCDREADTOC`（完整 TOC 换算成格式 0）；移动端返回不支持。实测本机光驱一张 12 轨 CD：Disc ID
+  `wQ8ygYRJ6TxS9evQ5yIRDW8yJLo-` 在 MusicBrainz 查到对应发行，整盘入库。曲目路径 `cdda://<设备>` +
+  起止（毫秒，相对第 1 轨起点）。
+  - **播放被两件事挡住（需要决策）**：① 随包 Windows libmpv 没编 libcdio（`-Dcdda`）；② media_kit
+    覆盖层 `native_open_policy.dart` 刻意不让播放列表里的盘协议走直接 loadfile（安全策略），而音乐后端
+    恒用两项播放列表。另编一份带 cdda 的 libmpv（只在本机验证用）实测：`cdda://E:` + 逐文件
+    `start`/`end` 播第 2 轨，长度 0 误差、内容与 cd-paranoia 直读逐样本一致，但整段提前 172 个样本
+    （mpv `stream_cdda.c` 的 seek 丢掉扇区内偏移，需要一个小补丁）；EDL 包 `cdda://` 默认被拒（不安全
+    来源），开 `load-unsafe-playlists` 才行。
+  - **抓轨（FLAC + CUE + 日志 + AccurateRip）评估后不做**：需要原始扇区读（C2 / 重读校验）、驱动器
+    读偏移库、AccurateRip v1/v2 校验与数据库查询、日志格式——是一个独立子系统的量级。
+- **服务器曲库**：`packages/fushi_engine/lib/media/music/server/`（`MusicServerBrowser` 契约 +
+  OpenSubsonic 客户端 + Jellyfin 解析）、app `media/music/server/`。Jellyfin 家族**复用视频的媒体
+  服务器登录**（`JellyfinServerConfig` + `JellyfinApi` 传输），不另登录；OpenSubsonic 在 设置 › 音乐 ›
+  服务器 里增删（token+salt 或 OpenSubsonic API key，`music_subsonic_servers` 登记为凭据键 / 脱敏 /
+  设备本地）。只读浏览（专辑分页 / 艺人 / 搜索 / 专辑曲目）+ 播放：缺省原样直出，设了码率上限才请
+  服务器转码（信号路径按转码后的属性）。每台服务器「显示在曲库里」是显式 opt-in
+  （`music_server_library_mix`），混排进来的是专辑卡（每台至多 500 张，带云朵，点开走服务器专辑页）。
+  mpv 的打开失败文本带流地址，后端在报错前统一脱敏（含 Subsonic 的 `t` / `s`）。**没有真服务器验证**
+  （本机没有 Jellyfin 音乐库 / Navidrome），只有离线 fixture 与假客户端。
+- **均衡器（可选）**：10 段倍频程峰值滤波（`equalizer`，`precision=f64`）+ 自动余量，作为带标签的
+  lavfi 链挂在 `af` 上；关 / 平直时不挂滤镜。交叉淡入的逐文件 `af` 会整体替换全局 `af`，所以装淡入
+  淡出时把均衡器拼进同一条链。信号路径面板单列「均衡器」，判非 bit-perfect。真 libmpv：关时逐样本
+  与 FFmpeg 解码相同；1 kHz +6 dB 时 1 kHz 正弦 0.000 dB、125 Hz −5.95 dB（只剩余量）；满幅不削波。
+  卷积（`afir`）评估后不做：需要第二路 IR 输入，mpv 的 `af=lavfi` 包装只给单进单出，也没有可信的
+  质量验收数据。
+
 ## 10. 数据模型（Drift，schema 125 → 126；v125 是作品图谱的 `media_links`）
 
 命名遵守术语表（`cover`、`deletedAt`、`<名>At` 毫秒、`source library`）。
