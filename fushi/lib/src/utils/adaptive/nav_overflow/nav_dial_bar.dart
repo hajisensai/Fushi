@@ -7,6 +7,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 旋钮触发格的宽度（也是 [NavOverflowSpec.pinnedCount] 的 triggerWidth）。
@@ -52,8 +54,8 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
     ..addStatusListener(_onOpenStatus);
   late final CurvedAnimation _openCurve = CurvedAnimation(
     parent: _open,
-    curve: Curves.easeOutBack,
-    reverseCurve: Curves.easeInCubic,
+    curve: FushiSpringCurve.spatial,
+    reverseCurve: FushiMotion.exit,
   );
   late final AnimationController _snap = AnimationController(vsync: this)
     ..addListener(_onSnapTick);
@@ -193,7 +195,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
   }
 
   void _onSnapTick() {
-    final double t = Curves.easeOutBack.transform(_snap.value);
+    final double t = FushiSpringCurve.spatial.transform(_snap.value);
     _rotation.value = lerpDouble(_snapFrom, _snapTarget, t) ?? _snapTarget;
   }
 
@@ -357,7 +359,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
     return Semantics(
       button: true,
       label: tooltip,
-      child: Tooltip(
+      child: FushiTooltip(
         message: tooltip,
         excludeFromSemantics: true,
         child: FocusableActionDetector(
@@ -396,7 +398,7 @@ class _NavDialBarState extends State<NavDialBar> with TickerProviderStateMixin {
                             context,
                             const Duration(milliseconds: 480),
                           ),
-                    curve: Curves.easeOutBack,
+                    curve: FushiSpringCurve.spatial,
                     child: _KnobFace(
                       scheme: scheme,
                       dotTurns: dotTurns,
@@ -804,7 +806,7 @@ class _DialItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double p = Curves.easeOut.transform(proximity);
+    final double p = FushiMotion.enter.transform(proximity);
     final Color bg =
         Color.lerp(
           current
@@ -865,7 +867,7 @@ class _DialLabel extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
       duration: fushiMotionDuration(context, const Duration(milliseconds: 200)),
-      curve: Curves.easeOutCubic,
+      curve: FushiMotion.enter,
       builder: (BuildContext context, double t, Widget? child) => Opacity(
         opacity: fushiMotionEnabled(context) ? t : 1,
         child: Transform.translate(

@@ -136,8 +136,10 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   }
 
   bool _matches(int index) {
-    final String q = _query.text.trim().toLowerCase();
-    return q.isEmpty || widget.items[index].label.toLowerCase().contains(q);
+    return matchesMediaSearch(
+      query: _query.text,
+      titles: <String>[widget.items[index].label],
+    );
   }
 
   /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠 / 过滤掉的行给 null。
@@ -238,9 +240,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
-    final TextTheme text = Theme.of(context).textTheme;
-    final TextStyle tabLabel = (text.labelLarge ?? const TextStyle()).copyWith(
-      fontSize: 13.5,
+    final TextStyle tabLabel = context.fushiType.labelMedium.copyWith(
       fontWeight: FontWeight.w500,
     );
     return LayoutBuilder(
@@ -477,11 +477,9 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     final double s = t.clamp(0.0, 1.0);
     final bool selected = index == widget.currentIndex;
     final AdaptiveNavItem item = widget.items[index];
-    final TextStyle sideLabel =
-        (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).copyWith(
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-        );
+    final TextStyle sideLabel = context.fushiType.bodyMedium.copyWith(
+      fontWeight: FontWeight.w400,
+    );
     final TextStyle label = TextStyle.lerp(sideLabel, tabLabel, s)!;
     // 选中态：侧栏是强调色实底 + onAccent；标签栏是灰色托盘 + 强调色字。
     final Color fill = selected

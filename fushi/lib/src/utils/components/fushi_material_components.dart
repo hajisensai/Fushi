@@ -4288,7 +4288,7 @@ bool fushiIsCollapsibleHeaderAction(Widget item) =>
     item is FushiIconButton &&
     item.onTap != null &&
     !item.alwaysVisible &&
-    !item.selected;
+    item.selected != true;
 
 /// [actions] 里可收纳动作的收纳顺序（最先收的在前）：
 /// [FushiIconButton.overflowPriority] 低的先收，同优先级越靠后越先收。纯函数。

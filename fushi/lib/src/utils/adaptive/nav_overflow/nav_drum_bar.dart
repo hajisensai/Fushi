@@ -5,6 +5,10 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiBadgeControl;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 相邻两项在筒面上相隔的角度（度）。
@@ -329,7 +333,7 @@ class _DrumCell extends StatelessWidget {
     final Color foreground = selected
         ? scheme.onTertiary
         : scheme.onTertiaryContainer;
-    final Widget icon = Badge(
+    final Widget icon = FushiBadgeControl(
       isLabelVisible: item.experimentalBadge,
       child: FushiIcon(
         selected ? (item.selectedIcon ?? item.icon) : item.icon,
@@ -341,7 +345,7 @@ class _DrumCell extends StatelessWidget {
       selected: selected,
       label: item.label,
       excludeSemantics: true,
-      child: Tooltip(
+      child: FushiTooltip(
         message: item.label,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,

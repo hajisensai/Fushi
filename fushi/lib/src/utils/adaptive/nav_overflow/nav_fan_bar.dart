@@ -9,6 +9,9 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 牌叠格宽（与 [NavOverflowSpec.pinnedCount] 的 triggerWidth 一致）。
@@ -266,7 +269,7 @@ class _NavFanBarState extends State<NavFanBar>
     final String label = labelSource
         .map((int i) => _spec.item(i).label)
         .join(' · ');
-    return Tooltip(
+    return FushiTooltip(
       message: label,
       excludeFromSemantics: true,
       child: Semantics(
@@ -340,7 +343,7 @@ class _NavFanBarState extends State<NavFanBar>
       0.0,
       1.0,
     );
-    return Curves.easeOutBack.transform(local);
+    return FushiSpringCurve.spatial.transform(local);
   }
 
   Widget _buildFan(BuildContext context, Size size) {
@@ -428,7 +431,7 @@ class _NavFanBarState extends State<NavFanBar>
                   child: TweenAnimationBuilder<double>(
                     tween: Tween<double>(end: index == _hot ? 1 : 0),
                     duration: hotDuration,
-                    curve: Curves.easeOutBack,
+                    curve: FushiSpringCurve.spatial,
                     builder: (BuildContext context, double hot, Widget? _) =>
                         Transform.translate(
                           offset: Offset(0, -_kHotLift * hot),
@@ -482,13 +485,11 @@ class _FanCard extends StatelessWidget {
     final Color border = current
         ? scheme.tertiary
         : Color.lerp(scheme.outlineVariant, scheme.tertiary, hot)!;
-    final TextStyle labelStyle =
-        (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          height: 1.15,
-          color: foreground.withValues(alpha: 0.85),
-        );
+    final TextStyle labelStyle = context.fushiType.labelSmall.copyWith(
+      fontWeight: FontWeight.w600,
+      height: 1.15,
+      color: foreground.withValues(alpha: 0.85),
+    );
     final String label = item.label;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -566,7 +567,7 @@ class _DeckGlyph extends StatelessWidget {
       return AnimatedRotation(
         turns: deg / 360,
         duration: duration,
-        curve: Curves.easeOutBack,
+        curve: FushiSpringCurve.spatial,
         // 旋转支点在牌下方（CSS 的 50% 120%）。
         alignment: const Alignment(0, 1.4),
         child: Container(
