@@ -10,6 +10,9 @@ import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
 import 'package:fushi_engine/sync/bluray_clip_relay_pool.dart';
+import 'package:fushi_engine/sync/disc_share_routes.dart';
+import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
+    show buildDiscShareManifest, DiscShareManifest;
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
     show probeVideoDurationMs;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
@@ -408,6 +411,9 @@ class FushiSyncServer {
   final Map<String, _VideoStreamToken> _videoStreamTokens =
       <String, _VideoStreamToken>{};
 
+  /// 远端原盘的共享会话（`disc_share_routes.dart`）：token 在路径里，按空闲续期。
+  late final DiscShareTokenStore _discShares = DiscShareTokenStore(now: _now);
+
   /// 蓝光标题分段的解密会话（按流 token 复用，空闲回收；见 [BlurayClipRelayPool]）。
   final BlurayClipRelayPool _blurayClipRelays;
 
@@ -757,6 +763,7 @@ class FushiSyncServer {
     await stopP2pListener();
     await main?.close(force: true);
     await _blurayClipRelays.closeAll();
+    _discShares.clear();
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
@@ -970,6 +977,13 @@ class FushiSyncServer {
     if (reqPath == '/api/library/videos' ||
         reqPath.startsWith('/api/library/videos/')) {
       return _handleLibraryVideos(request, method, reqPath);
+    }
+    // 远端原盘的只读盘目录（会话 token 鉴权，豁免 Basic 见 auth 中间件）。
+    if (reqPath.startsWith(kDiscShareRoutePrefix)) {
+      if (_libraryService is! VideoDiscShareHost) {
+        return shelf.Response.notFound('Disc share off');
+      }
+      return handleDiscShareRequest(_discShares, request, method, reqPath);
     }
     if (reqPath == '/api/library/aggregate') {
       return _handleLibraryAggregate(request, method, reqPath);
