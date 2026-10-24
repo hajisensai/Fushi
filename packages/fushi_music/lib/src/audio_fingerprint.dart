@@ -110,6 +110,16 @@ typedef _AlignDart =
       Pointer<_FfmFpMatch>,
     );
 
+typedef _EncodeC =
+    Int32 Function(
+      Pointer<Uint32>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _EncodeDart =
+    int Function(Pointer<Uint32>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
+
 /// 与 fingerprint.rs `FfmFpMatch` 同序同型（`#[repr(C)]`）。
 final class _FfmFpMatch extends Struct {
   @Int64()
@@ -154,6 +164,9 @@ class AudioFingerprinter {
         'ffm_fp_compute',
       );
       _align = lib.library.lookupFunction<_AlignC, _AlignDart>('ffm_fp_align');
+      _encode = lib.library.lookupFunction<_EncodeC, _EncodeDart>(
+        'ffm_fp_acoustid_encode',
+      );
     } on ArgumentError catch (e) {
       throw lib.missingSymbols('fingerprint', e);
     }
@@ -164,6 +177,7 @@ class AudioFingerprinter {
   late final _ItemMsDart _itemMs;
   late final _ComputeDart _compute;
   late final _AlignDart _align;
+  late final _EncodeDart _encode;
 
   static AudioFingerprinter? _instance;
 
@@ -213,6 +227,35 @@ class AudioFingerprinter {
           out[i] = view.getUint32(i * 4, Endian.little);
         }
         return out;
+      } finally {
+        _lib.freeBytes(bytes, len);
+      }
+    } finally {
+      if (input != nullptr) malloc.free(input);
+      calloc.free(outPtr);
+      calloc.free(outLen);
+    }
+  }
+
+  /// 声纹 → AcoustID 查询串（chromaprint 压缩 + URL-safe base64，与 `fpcalc` 同形）。
+  /// AcoustID 只收这个串与时长，PCM / 原始声纹不出本机。
+  String acoustidEncode(Uint32List fingerprint) {
+    final Pointer<Uint32> input = fingerprint.isEmpty
+        ? nullptr
+        : malloc<Uint32>(fingerprint.length);
+    final Pointer<Pointer<Uint8>> outPtr = calloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = calloc<Size>();
+    try {
+      if (fingerprint.isNotEmpty) {
+        input.asTypedList(fingerprint.length).setAll(0, fingerprint);
+      }
+      final int rc = _encode(input, fingerprint.length, outPtr, outLen);
+      if (rc != FfmStatus.ok) throw AudioFingerprintFormatError(rc);
+      final int len = outLen.value;
+      final Pointer<Uint8> bytes = outPtr.value;
+      if (len == 0 || bytes == nullptr) return '';
+      try {
+        return String.fromCharCodes(bytes.asTypedList(len));
       } finally {
         _lib.freeBytes(bytes, len);
       }

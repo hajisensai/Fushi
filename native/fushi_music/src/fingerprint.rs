@@ -27,7 +27,7 @@
 //!   命中与否取决于窗内多数音频是不是歌，所以翻转发生在窗中点越过歌曲边界处，按
 //!   [interior_boundary_ms] 换算，实测误差 ≲ 0.6 s。
 
-use rusty_chromaprint::{Configuration, Fingerprinter};
+use rusty_chromaprint::{Configuration, FingerprintCompressor, Fingerprinter};
 
 use crate::{guard, hand_over_bytes, status};
 
@@ -96,6 +96,15 @@ pub fn compute(pcm: &[i16], sample_rate: u32, channels: u32) -> Result<Vec<u32>,
     printer.consume(pcm);
     printer.finish();
     Ok(printer.fingerprint().to_vec())
+}
+
+/// AcoustID 查询用的声纹编码：chromaprint `compress_fingerprint`（算法 id = test2 = 1）+
+/// URL-safe base64、无填充——与 `fpcalc` 输出的 `FINGERPRINT=` 同一形态。AcoustID 只收这
+/// 个串和时长；PCM 与原始声纹都不出本机（音乐方案 §8.1）。
+pub fn acoustid_encode(fingerprint: &[u32]) -> String {
+    let config = Configuration::preset_test2();
+    let compressed = FingerprintCompressor::from(&config).compress(fingerprint);
+    data_encoding::BASE64URL_NOPAD.encode(&compressed)
 }
 
 /// 一次对齐的结果。needle 时间 t ↔ haystack 时间 `t + offset_ms`。
@@ -337,6 +346,32 @@ pub unsafe extern "C" fn ffm_fp_compute(
     })
 }
 
+/// 声纹（小端 u32 数组，`count` 项）→ AcoustID 查询串（ASCII，[acoustid_encode]），
+/// 用 `ffm_free_bytes` 释放。
+///
+/// # Safety
+/// `fp` 为空（且 `count == 0`）或指向 `count` 个 u32；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_fp_acoustid_encode(
+    fp: *const u32,
+    count: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() || (fp.is_null() && count != 0) {
+            return status::NULL_ARGUMENT;
+        }
+        let words: &[u32] = if count == 0 {
+            &[]
+        } else {
+            std::slice::from_raw_parts(fp, count)
+        };
+        hand_over_bytes(acoustid_encode(words).into_bytes(), out_ptr, out_len);
+        status::OK
+    })
+}
+
 /// needle 声纹在 haystack 声纹上对齐，结果写 `out`（没出现时 `found = 0`，返回 OK）。
 ///
 /// # Safety
@@ -438,6 +473,24 @@ mod tests {
     use super::synth::music;
     use super::*;
     use sha1::{Digest, Sha1};
+
+    /// chromaprint 上游 `test_fingerprint_compressor.cpp` 的固定向量（算法 id 换成 test2 = 1）：
+    /// 与 `fpcalc` / AcoustID 服务端同一编码。
+    #[test]
+    fn acoustid_encode_matches_chromaprint_vectors() {
+        // OneItemOneBit：{1} → [algo, 0, 0, 1, 0b001]。
+        assert_eq!(acoustid_encode(&[1]), "AQAAAQE");
+        // OneItemThreeBits：{7} → [algo, 0, 0, 1, 0b01001001 0b00000000]。
+        let raw = data_encoding::BASE64URL_NOPAD
+            .decode(acoustid_encode(&[7]).as_bytes())
+            .unwrap();
+        assert_eq!(raw, vec![1, 0, 0, 1, 73, 0]);
+        // 头 3 字节是大端项数。
+        let raw = data_encoding::BASE64URL_NOPAD
+            .decode(acoustid_encode(&vec![0u32; 300]).as_bytes())
+            .unwrap();
+        assert_eq!(&raw[..4], &[1, 0, 1, 44]);
+    }
 
     /// 端点延伸到 needle 端点时的容差：半项量化 + 1 ms 舍入。
     fn edge_tol() -> f64 {

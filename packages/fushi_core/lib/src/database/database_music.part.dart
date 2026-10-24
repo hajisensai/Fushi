@@ -99,6 +99,10 @@ mixin _FushiDbMusic on _$FushiDatabase {
         for (final MusicTrackCreditsCompanion credit in batch.credits) {
           await into(musicTrackCredits).insertOnConflictUpdate(credit);
         }
+        // 标签里没有 MBID 的文件刚被按标签冲回 NULL：把识别身份（v129 刮削结论）重放上去。
+        if (creditedTracks.isNotEmpty) {
+          await _reapplyMusicScrapeOverlaySql(this, creditedTracks.toList());
+        }
       });
 
   /// 扫描收尾：来源 [sourceId] 下本次没见到的曲目（uid 不在 [seenTrackUids]）软删。

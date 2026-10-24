@@ -23,6 +23,7 @@ import 'epub_book_meta.dart';
 import 'media_kind.dart';
 import 'media_kind_mappings.dart';
 import 'media_link_kind.dart';
+import 'music_scrape_tables.dart';
 import 'music_tables.dart';
 import 'pref_codec.dart';
 import 'sync_tombstone_kind.dart';
@@ -43,6 +44,7 @@ part 'database_manga_download.part.dart';
 part 'database_srs.part.dart';
 part 'database_media_links.part.dart';
 part 'database_music.part.dart';
+part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
 
 /// Thrown when the on-disk database was created by a NEWER build of Fushi than
@@ -836,6 +838,9 @@ void _requireOneVideoMetadataOwner({
   MusicPlaylistEntries,
   MusicPlayEvents,
   VideoThemeSongSpans,
+  MusicScrapeMeta,
+  MusicMetadataRawSnapshots,
+  MusicLockedFields,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -851,6 +856,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMangaDownload,
         _FushiDbMediaLinks,
         _FushiDbMusic,
+        _FushiDbMusicScrape,
         _FushiDbThemeSongSpans {
   /// [isMainProcess] gates the TODO-905 sidecar rebuild: the main app passes
   /// the default `true` (it may physically delete a poisoned `-wal`/`-shm`),
@@ -872,7 +878,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 128;
+  int get schemaVersion => 129;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -2503,6 +2509,20 @@ class FushiDatabase extends _$FushiDatabase
                 "WHERE source = 'video' AND position_ms IS NULL "
                 'AND (norm_char_offset IS NOT NULL OR norm_char_length IS NOT NULL)',
               );
+            }
+          }
+          if (from < 129) {
+            // v129（音乐 P4 刮削，docs/specs/2026-10-23-music-module-design.md §8 / §10）：
+            // music_scrape_meta / music_metadata_raw_snapshots / music_locked_fields
+            // 三张新表（设备本地）。纯建表、不动既有数据；幂等守卫同 v119。
+            for (final TableInfo<Table, Object?> table in <TableInfo<Table, Object?>>[
+              musicScrapeMeta,
+              musicMetadataRawSnapshots,
+              musicLockedFields,
+            ]) {
+              if (!await _tableExists(table.actualTableName)) {
+                await m.createTable(table);
+              }
             }
           }
         },
