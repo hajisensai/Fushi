@@ -403,6 +403,35 @@ MV 播放切到带纹理的 mpv 实例，**音频源可选**：用 MV 自带音�
 iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D5 拍板），
 五端一致。
 
+### 8.4 P4 落地记录（2026-10-24）
+
+- **代码位置**：provider / 识别器 / 原曲判定 / MV 判据在引擎
+  `packages/fushi_engine/lib/media/music/metadata/`（纯 Dart）；app 装配
+  `fushi/lib/src/media/music/metadata/`（`MusicScrapeService` / `MusicTagWriteback` /
+  `MusicVideoService`）；曲目详情页的识别 / 原曲与其它版本 / MV 区块与 MV 播放页在
+  `pages/implementations/music/`。
+- **文件标签是显示真相源**（Picard 模型）：识别结论落 `music_scrape_meta`（v129），只把身份
+  （录音 / 作品 MBID、AcoustID）与专辑缺项（发行 MBID、目录编号、CAA 封面）叠加到曲库目录，
+  并在每个扫描批次的同一事务里重放（扫描按标签整行 upsert 会把身份冲回 NULL）。刮到的
+  标题 / 艺人等经「写回文件标签」显式落进文件；预览里取消勾选的字段记成
+  `music_locked_fields`，以后不再提议。CUE 虚拟曲目不能写回（一份整轨一组标签）。
+- **AcoustID**：本仓不内置任何 key；设置 › 音乐 填用户自己的应用 key，没填时声纹这步跳过、
+  设置页与曲目页说明原因。声纹 = 统一 FFmpeg 解前 120 s → `ffm_fp_compute` →
+  `ffm_fp_acoustid_encode`（chromaprint 压缩 + URL-safe base64，与 `fpcalc` 同形），只上传
+  这个串与时长。
+- **VGMdb**：社区镜像 vgmdb.info，只按目录编号查一次、1 次 / 3 s、默认关。2026-10-24 本机
+  经代理实测 vgmdb.info TLS 握手失败、vgmdb.net 403，**实际不可用**；实现按离线 fixture 验证。
+- **AniDB**：音乐侧不发任何 AniDB 请求。动画出处只读作品图谱里已有的主题曲连接
+  （视频库的 AniDB / MAL / TMDB 身份），与动画刮削 provider 边界一致。
+- **MV**：本地 = 文件名预筛 + 声纹对齐硬判据（过门自动绑定，偏移 = 对齐偏移）；
+  MusicBrainz `music video` 关系 / YouTube 高置信搜索 / 动画 OP·ED 出现位置只给候选，用户
+  确认才写 `music_videos`。YouTube 绑定时尝试拿音频流做一次声纹对齐求偏移，拿不到按 0、
+  MV 页可 ±100 ms 微调。「曲库音轨」模式在同一个 mpv 实例里 `audio-add` 本地文件、
+  `audio-delay = offset − cueStart`，由 mpv 自己对齐，不在 Dart 里追帧。
+- **schema v129**：`music_scrape_meta` / `music_metadata_raw_snapshots` / `music_locked_fields`，
+  三张都设备本地。刮削下载的封面在 `<documents>/music_covers/`，数据根迁移按
+  `DataRootMigrator._rebaseMusicAlbums` 改写（目录封面是外部路径，不动）。
+
 ## 9. 光盘：DVD（含菜单）/ 蓝光 / CD
 
 ### 9.1 DVD-Video：与蓝光原盘菜单同一套
@@ -500,7 +529,7 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   是目录封面（`cover.*` / `folder.*` …）；没有目录图时 `cover_track_uid` 指向带内嵌封面
   的曲目，界面按需在后台 isolate 抽取。
 - **刮削三表（`music_scrape_meta` / `music_metadata_raw_snapshots` /
-  `music_locked_fields`）延到 P4**：随 provider 结构一起定形，届时单独加一步建表。
+  `music_locked_fields`）延到 P4**：随 provider 结构一起定形，P4 落在 schema v129（§8.4）。
 - 备份落地：曲库目录五表（曲目 / 专辑 / 艺人 / 署名 / 光盘来源）设备本地；歌单 + 条目、
   歌词、MV 绑定、播放流随新的「音乐」备份类别走，合并规则见
   `BackupMergeEngine._mergeMusicUserData`（歌单 / 歌词 / MV 按 `updated_at` LWW，播放流

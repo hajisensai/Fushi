@@ -226,6 +226,39 @@ void main() {
     expect((await db.getMusicScrapeMeta('t1'))!.method, 'manual');
   });
 
+  test('设置：AcoustID key / VGMdb 开关按调用时的偏好交给 provider 组', () async {
+    final List<({String key, bool vgmdb})> seen = <({String key, bool vgmdb})>[];
+    bool vgmdb = false;
+    String key = '';
+    final MusicScrapeService s = MusicScrapeService(
+      database: () => db,
+      acoustidApiKey: () => key,
+      vgmdbEnabled: () => vgmdb,
+      fingerprinter: (MusicTrackRow _) async => null,
+      scraperFactory:
+          ({
+            required MusicRawResponseSink sink,
+            required String acoustidApiKey,
+            required bool vgmdbEnabled,
+          }) {
+            seen.add((key: acoustidApiKey, vgmdb: vgmdbEnabled));
+            return MusicMetadataScraper(
+              resolver: MusicMetadataResolver(musicBrainz: _FakeMb(sink)),
+            );
+          },
+    );
+    expect(s.acoustidConfigured, isFalse);
+    await s.scrapeTrack('t1');
+    vgmdb = true;
+    key = 'k';
+    expect(s.acoustidConfigured, isTrue);
+    await s.scrapeTrack('t1');
+    expect(seen, <({String key, bool vgmdb})>[
+      (key: '', vgmdb: false),
+      (key: 'k', vgmdb: true),
+    ]);
+  });
+
   test('曲库批量：串行、统计按途径', () async {
     final MusicLibraryScrapeReport r = await service().scrapeLibrary();
     expect(r.total, 1);
