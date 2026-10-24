@@ -44,8 +44,8 @@ bool ankiMobileLedgerIsDuplicateSource({
 /// AnkiMobile URL scheme 的边界；有回读通道的那天（或用户改用 AnkiConnect）应当
 /// 直接问 Anki，而不是加厚这份账本。
 ///
-/// 持久化跟着 anki 仓库层既有的 SharedPreferences 走（设置串 `fushi_anki_settings`
-/// 就在那儿），不为一个 iOS 专属的降级账本动 Drift schema。
+/// 持久化走 SharedPreferences（当初 anki 设置串 `fushi_anki_settings` 也在那儿，现已迁
+/// Drift `anki_settings`；这份 iOS 专属降级账本不跨进程读，留在 SP），不为它动 Drift schema。
 ///
 /// **导入快照**（[replaceImported]）：用户从 Anki 导出的备份里读出的全部第一字段，
 /// 对齐 Hoshi Reader iOS 的「Import Anki Backup」。它补的是上面能力边界里「别处加的、

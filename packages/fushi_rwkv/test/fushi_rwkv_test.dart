@@ -239,6 +239,9 @@ void main() {
       expect(hit.scores[0], plain[0]);
       expect(hit.scores[2].isNaN, isTrue);
       expect(await worker.requeryScores(61, 0), 4);
+      // 永久清除的卡：项删掉（不存在的不算），整表重查只剩 3 项。
+      expect(await worker.removeScores(Int64List.fromList(<int>[101, 999])), 1);
+      expect(await worker.requeryScores(61, 0), 3);
       await worker.clearScores();
       expect(
         (await worker.lookupScores(

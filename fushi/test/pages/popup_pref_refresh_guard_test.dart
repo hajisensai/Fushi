@@ -40,7 +40,7 @@ void main() {
     // which must still gate prefs through refreshPrefCacheIfChanged() and also
     // reconcile dictionary metadata.
     expect(
-      src.contains('await appModel.refreshForWarmDictionaryPopup();'),
+      src.contains('await appModel.refreshForWarmDictionaryPopup()'),
       isTrue,
       reason:
           'popup_main 必须调用 refreshForWarmDictionaryPopup() —— 否则 warm-reuse '
@@ -50,7 +50,7 @@ void main() {
       'lib/src/models/app_model.dart',
     ).readAsStringSync();
     final int at = model.indexOf(
-      'Future<void> refreshForWarmDictionaryPopup() async {',
+      'Future<bool> refreshForWarmDictionaryPopup() async {',
     );
     expect(at, greaterThan(0), reason: 'refreshForWarmDictionaryPopup 锚点不在了');
     final String body = model.substring(at, model.indexOf('\n  }\n', at));

@@ -1857,6 +1857,8 @@ class _FakeRwkv implements SrsRwkvScheduling {
 
   @override
   Future<void> onAnswered(String cardId, SrsReviewLog log) async {}
+  @override
+  Future<void> onCardsPurged(List<String> cardIds) async {}
 }
 
 /// 记下播了哪些音频的假播放出口。[holdOpen] = 每段都「播不完」，直到 stop。

@@ -6784,6 +6784,8 @@
   "srs_settings_rwkv_ready": "已就绪",
   "srs_settings_rwkv_rebuild": "重建 RWKV 状态",
   "srs_settings_rwkv_rebuild_hint": "按全部复习记录重新回放一遍。平时会自动更新；只有把卡片换到别的牌组、或改了牌组继承参数的方式之后才需要。",
+  "srs_settings_rwkv_refresh_every": "每答几题刷新一次 RWKV 队列",
+  "srs_settings_rwkv_refresh_every_hint": "两次整体刷新 RWKV 分数之间隔几次作答。1 = 每答一题都刷新（在后台算，从下一张卡起生效）。调大能减少复习时 RWKV 的计算，代价是两次刷新之间队列用的是较旧的估计。",
   "srs_settings_rwkv_repeat": "同日重复",
   "srs_settings_rwkv_repeat_hint": "今天答过的卡，要等这些牌组里别的卡又答过这么多次、并且过了这么多秒，才会再出。",
   "srs_settings_rwkv_repeat_reviews": "间隔至少几次作答",

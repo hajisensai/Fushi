@@ -6784,6 +6784,8 @@
   "srs_settings_rwkv_ready": "Ready",
   "srs_settings_rwkv_rebuild": "Rebuild RWKV state",
   "srs_settings_rwkv_rebuild_hint": "Replays your whole review history again. RWKV keeps itself up to date otherwise; this is only needed after moving cards to another deck or changing how a deck inherits its settings.",
+  "srs_settings_rwkv_refresh_every": "Update the RWKV queue every N answers",
+  "srs_settings_rwkv_refresh_every_hint": "How many answers to wait between full RWKV score updates. 1 updates after every answer (in the background, used from the next card). Higher values reduce the work RWKV does while you review, but the queue may use older estimates between updates.",
   "srs_settings_rwkv_repeat": "Same-day repeats",
   "srs_settings_rwkv_repeat_hint": "A card answered today comes back only after both: this many answers to other cards in these decks, and this many seconds.",
   "srs_settings_rwkv_repeat_reviews": "Minimum answers in between",

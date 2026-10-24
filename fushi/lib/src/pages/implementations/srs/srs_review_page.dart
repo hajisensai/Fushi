@@ -208,10 +208,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
   /// 按键继续发给那个 WebView2。卡面可见时页内键盘桥还能把空格交回来；可一旦那个
   /// WebView2 已经不在屏上——评分换卡后原生卡面的释义 WebView 进了正面的 Offstage
   /// 预热位、查词弹窗关掉后停进热槽——它的文档收不到可见交互，空格就此失灵，直到用户点
-  /// 一下窗口（激活窗口时宿主把焦点交回 FlutterView）。（这条链由代码路径推断，未在真机上
-  /// 抓到 OS 焦点句柄；Flutter 侧焦点已由测试钉住。）所以换卡 / 弹窗关掉这两个点，
+  /// 一下窗口（激活窗口时宿主把焦点交回 FlutterView）。所以换卡 / 弹窗关掉这两个点，
   /// 在判据放行后显式请求视图焦点；主窗不在前台时不请求（[DesktopForegroundGuard]，
   /// 免得把主窗抬到别的程序之上，BUG-1619）。
+  ///
+  /// 2026-10-23 Windows 实测（`integration_test/srs_review_os_focus_itest.dart`，读
+  /// `GetGUIThreadInfo.hwndFocus`）：卡面 / 释义 WebView 走 composition 宿主，指针经插件
+  /// `SendMouseInput` 转发，点进去后 OS 焦点**仍在 FLUTTERVIEW**，上面那条「OS 焦点留在
+  /// WebView2」的链在当前宿主下不成立；评分换卡后 Flutter 焦点由 [PageFocusOwnership]
+  /// 收回本页，真投递的空格照常翻面（去掉下面的视图焦点请求同样通过）。请求保留为窗口
+  /// 宿主模式（`--fushi-windowed-hosting`，WebView2 是真子窗口）下的防护，代价是一次
+  /// 空操作的 SetFocus。
   void _reclaim(FocusReclaimCause cause) {
     if (!_focusOwnership.reclaim(cause)) return;
     if (!DesktopForegroundGuard.isMainWindowForeground()) return;
@@ -299,7 +306,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
         if (id == null) return null;
         final SrsCardDetail? detail = await store.cardDetail(id);
         if (detail == null) return null;
-        final SrsRenderedCard? rendered = await store.renderCard(id);
+        final SrsRenderedCard? rendered = await store.renderCard(
+          id,
+          detail: detail,
+        );
         // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
         if (rendered != null) {
           srsWarmCardFace(
@@ -377,7 +387,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       await _refreshCounts();
       SrsReviewPage.debugPhase?.call('counts');
       final SrsCardDetail? detail = await store.cardDetail(id);
-      final SrsRenderedCard? rendered = await store.renderCard(id);
+      final SrsRenderedCard? rendered = detail == null
+          ? null
+          : await store.renderCard(id, detail: detail);
       SrsReviewPage.debugPhase?.call('render');
       if (detail == null) {
         // 排程选中的卡读不到（例如刚被同步删掉）：报错，不把 null 当「还在读」——
@@ -836,7 +848,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage> {
       return;
     }
     final SrsCardDetail? fresh = await store.cardDetail(id);
-    final SrsRenderedCard? rendered = await store.renderCard(id);
+    final SrsRenderedCard? rendered = fresh == null
+        ? null
+        : await store.renderCard(id, detail: fresh);
     final SrsDeckView? audioOwner = await _audioOwnerOf(store, fresh);
     final SrsDeckSummary? sum = await _deckSummary();
     final SrsDayContext day = await store.dayContext();

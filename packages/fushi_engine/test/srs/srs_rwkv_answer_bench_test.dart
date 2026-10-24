@@ -1,6 +1,8 @@
 // 手动基准：真库（后台 isolate 连接）+ 真 RWKV worker（小模型 int4）上「作答一次 → 出下一张」与
 // 「撤销 → 出下一张」的端到端耗时（含 FFI、isolate 往返、SQL）。默认跳过：
 //   FUSHI_SRS_RWKV_BENCH=<笔记数>（每条两张卡）dart test test/srs/srs_rwkv_answer_bench_test.dart
+// 对比分数表整表重查频率：再加 FUSHI_SRS_RWKV_REQUERY=<每几题重查一次>；
+// FUSHI_SRS_RWKV_THINK_MS=<毫秒> 模拟每题之间看卡的工夫。
 // 权重：native/fushi_rwkv/model/sm40_weights.int8.bin（native/fushi_rwkv/fetch_model.*）。
 import 'dart:io';
 import 'dart:typed_data';
@@ -50,6 +52,8 @@ class _Worker implements SrsRwkvBackend {
   @override
   Future<int> requeryScores(int today, int nowMs) =>
       worker.requeryScores(today, nowMs);
+  @override
+  Future<int> removeScores(Int64List cardIds) => worker.removeScores(cardIds);
 }
 
 String _weights() {
@@ -103,6 +107,22 @@ void main() {
           ),
         ),
       );
+      // FUSHI_SRS_RWKV_REQUERY=<N>：牌组设置「每答几题刷新」（缺省 1，同上游）。
+      final int? refreshEvery = int.tryParse(
+        Platform.environment['FUSHI_SRS_RWKV_REQUERY'] ?? '',
+      );
+      if (refreshEvery != null) {
+        final SrsDeckTree tree = await store.deckTree();
+        await store.editFields(
+          SrsEntityKind.deck,
+          tree.paramsOwner(await deckId(store, 'Lang')).id,
+          <String, Object?>{
+            SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings(
+              refreshEvery: refreshEvery,
+            ).toValue(),
+          },
+        );
+      }
       store.rwkv = service;
       final Stopwatch sw = Stopwatch()..start();
       await service.start();
@@ -129,6 +149,9 @@ void main() {
               .read<int>('c');
       print('review cards (RWKV candidates): $reviewCards');
       print('first nextCard (full score build): ${sw.elapsedMilliseconds} ms');
+      final int thinkMs =
+          int.tryParse(Platform.environment['FUSHI_SRS_RWKV_THINK_MS'] ?? '') ??
+          0;
       final List<SrsReviewLog> logs = <SrsReviewLog>[];
       final List<int> answerMs = <int>[];
       for (int i = 0; i < 8; i++) {
@@ -146,6 +169,8 @@ void main() {
           '+counts ${tCounts - tAppend}, +nextCard ${sw.elapsedMilliseconds - tCounts}',
         );
         logs.add(log);
+        // 模拟看卡的工夫（FUSHI_SRS_RWKV_THINK_MS）：后台整表重查在这段时间里跑完。
+        await Future<void>.delayed(Duration(milliseconds: thinkMs));
       }
       print('answer+counts+nextCard ms: $answerMs');
       final List<int> undoMs = <int>[];

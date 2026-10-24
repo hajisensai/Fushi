@@ -160,6 +160,15 @@ class PlatformServices {
   /// after all services are constructed.
   Future<void> init() async {
     await _androidClipboard?.init();
+    await restoreAnkiBackendSelection();
+  }
+
+  /// 按持久化的 Anki 设置重新选后端（同步客户端 / 移动端 AnkiConnect）。
+  ///
+  /// 启动时由 [init] 调一次；常驻的 `:popup` 进程 / 悬浮词典在发现主 app 改过偏好
+  /// （跨进程 prefs_version 变了）时再调，否则主 app 切了后端，应用外制卡仍走旧后端。
+  /// 幂等：只读设置；唯一的写是下面那条存量坏状态修复，修过一次就不再命中。
+  Future<void> restoreAnkiBackendSelection() async {
     final AnkiSettings settings =
         await _createDefaultAnkiRepository().loadSettings();
     setUseAnkiSyncClient(settings.useAnkiSyncClient);

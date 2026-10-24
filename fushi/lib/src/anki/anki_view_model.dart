@@ -780,7 +780,7 @@ PendingMineStore pendingMineStoreFor(AppModel appModel) =>
 /// 卡片位置、不制卡，绑自己不会递归，但多绕一层没有意义。
 ///
 /// 这里**不**看 `autoRepositionEnabled`：开关由调度器每轮重新读。若在此处按开关
-/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的 SharedPreferences 里
+/// 决定包不包，provider 就得 watch 它，而它存在 Anki 仓库的设置存储（Drift `anki_settings` 行）里
 /// （不是 Riverpod 状态）watch 不到，那样改开关得重启 app 才生效。
 BaseAnkiRepository _withAutoReposition(Ref ref, BaseAnkiRepository repo) {
   final AnkiAutoRepositionWiring wiring = withAnkiAutoReposition(

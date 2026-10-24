@@ -160,7 +160,9 @@ class SrsSyncScheduler {
     SrsMediaSyncRunner mediaRunner = srsDefaultMediaSyncRunner,
     DateTime Function()? clock,
     Duration hostWriteDebounce = kSrsHostWriteDebounce,
+    bool Function()? canRun,
   }) : _profileLinker = profileLinker,
+       _canRun = canRun ?? _alwaysRun,
        _hostWriteDebounce = hostWriteDebounce,
        _readMediaRoot = readMediaRoot,
        _mediaRunner = mediaRunner,
@@ -197,6 +199,15 @@ class SrsSyncScheduler {
   String? lastUnlinkedProfile;
   bool _disposed = false;
 
+  /// 底层库此刻能不能用（app 侧 = 库已打开）。关库（备份恢复 / 数据根迁移 / 退出）
+  /// 期间为 false：新一轮不开、在跑的一轮在下一个检查点收手；重开后自动恢复。
+  final bool Function() _canRun;
+
+  static bool _alwaysRun() => true;
+
+  /// 调度器已卸下，或库正关着：这一轮不该开始 / 不该继续。
+  bool get _halted => _disposed || !_canRun();
+
   /// 已经提示过的通知（测试读）。
   Set<SrsSyncNotice> get noticed => Set<SrsSyncNotice>.unmodifiable(_noticed);
 
@@ -204,6 +215,18 @@ class SrsSyncScheduler {
     _disposed = true;
     _hostWriteTimer?.cancel();
     _hostWriteTimer = null;
+  }
+
+  /// 关库前调用：撤掉待触发的本机目录同步，等在跑（及已排队）的一轮结束。
+  ///
+  /// 调用方先让 [canRun] 变 false（app 侧先把库标成未初始化），排队中的轮次一进来就
+  /// 收手；在跑的一轮在下一个检查点收手，并且它此刻还持着 store 独占区——关库若不等
+  /// 它，就会在半截同步上把连接关掉（反馈 OMWOurRQKb 日志：`SrsDbStore._loadLocal`
+  /// 「connection was closed」）。
+  Future<void> quiesce() async {
+    _hostWriteTimer?.cancel();
+    _hostWriteTimer = null;
+    await _tail;
   }
 
   /// 已配对设备往本机 host 的 SRS 目录写了文件：去抖后只跑本机目录（见文件头第 4 条）。
@@ -238,9 +261,9 @@ class SrsSyncScheduler {
     SyncAssetStore backend,
     String? directoryKey,
   ) async {
-    if (_disposed) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+    if (_halted) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
     SrsDbStore? store = await _readStore();
-    if (store == null || _disposed) {
+    if (store == null || _halted) {
       return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
     }
     final String? key = directoryKey ?? await _directoryKeyOf(backend);
@@ -259,10 +282,10 @@ class SrsSyncScheduler {
         lastUnlinkedProfile = unlinked;
         _noticeOnce(SrsSyncNotice.profileNotLinked);
       }
-      if (_disposed) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+      if (_halted) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
     }
     final SrsSyncReport report = await _runner(backend, store, key);
-    if (linker != null && report.error == null && !_disposed) {
+    if (linker != null && report.error == null && !_halted) {
       try {
         await linker.publish(backend, store, key);
       } catch (e, stack) {
@@ -292,7 +315,7 @@ class SrsSyncScheduler {
     }
     bool mediaChanged = false;
     final Future<Directory?> Function()? readMediaRoot = _readMediaRoot;
-    if (report.error == null && readMediaRoot != null && !_disposed) {
+    if (report.error == null && readMediaRoot != null && !_halted) {
       // 媒体跟在事件之后：先拿到引用它们的笔记，再按内容哈希补齐两边缺的文件。
       // 媒体失败只记日志，不影响复习数据本身的同步结果。
       try {
@@ -322,7 +345,7 @@ class SrsSyncScheduler {
   /// 对所有已认证通道、以及本机直接读写的目录（本机作为互联 host 时）各跑一轮（不节流）。
   /// 通道抛错与报告里带回错误的目录都记进 [SrsSyncNowResult.errors]，不算同步成功。
   Future<SrsSyncNowResult> syncNow() async {
-    if (_disposed) return const SrsSyncNowResult(ran: 0);
+    if (_halted) return const SrsSyncNowResult(ran: 0);
     int reportFailures = 0;
     final List<Object> errors = <Object>[];
     final ({int ran, List<Object> errors}) channels = await _channels((
@@ -346,7 +369,7 @@ class SrsSyncScheduler {
   /// 只跑本机直接读写的目录（本机作为互联 host 时）。
   Future<SrsSyncNowResult> syncLocalDirectories() async {
     final Future<List<SrsLocalDirectory>> Function()? local = _localDirectories;
-    if (local == null || _disposed) return const SrsSyncNowResult(ran: 0);
+    if (local == null || _halted) return const SrsSyncNowResult(ran: 0);
     int ran = 0;
     final List<Object> errors = <Object>[];
     for (final SrsLocalDirectory d in await local()) {

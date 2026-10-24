@@ -12,6 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_rwkv_history.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
@@ -109,6 +110,18 @@ class _FakeBackend implements SrsRwkvBackend {
       scores[rows.cardIdAt(i)] = (versions[i], out[i]);
     }
     return out;
+  }
+
+  final List<int> removed = <int>[];
+
+  @override
+  Future<int> removeScores(Int64List cardIds) async {
+    int n = 0;
+    for (final int id in cardIds) {
+      removed.add(id);
+      if (scores.remove(id) != null) n++;
+    }
+    return n;
   }
 
   @override
@@ -261,6 +274,17 @@ class _Fixture {
         snapshotDir: Directory('${dir.path}/state'),
         openBackend: (File weights) async => backend,
       );
+
+  /// 默认牌组的「每答几题刷新 RWKV 分数」（牌组设置）。
+  Future<void> setRefreshEvery(int n) => store.editFields(
+    SrsEntityKind.deck,
+    store.defaultDeckId,
+    <String, Object?>{
+      SrsFieldKeys.deckRwkvQueue: SrsRwkvQueueSettings(
+        refreshEvery: n,
+      ).toValue(),
+    },
+  );
 
   Future<int> reviewCount() async =>
       (await store.deckSummary(store.defaultDeckId))!.reviewCount;
@@ -541,6 +565,8 @@ void main() {
       cards = await f.cards(8);
       await f.graduate(cards);
       backend = _FakeBackend()..defaultR = 0.5;
+      // 这组钉的是局部作废与撤销日志：把按作答次数的整表重查调到够不着（那条在下一组）。
+      await f.setRefreshEvery(1000);
       service = f.service(backend);
       f.store.rwkv = service;
       await service.start();
@@ -637,6 +663,145 @@ void main() {
       expect(backend.unappends, 0);
       expect(backend.resets, 1);
       expect(backend.replayedCards, hasLength(8));
+    });
+  });
+
+  group('分数表整表重查按模型状态推进次数（HBK-AUDIT-019）与清除淘汰（HBK-AUDIT-020）', () {
+    late _Fixture f;
+    late List<String> cards;
+    late _FakeBackend backend;
+    late SrsRwkvService service;
+
+    Future<void> open({int refreshEvery = 1}) async {
+      backend = _FakeBackend()..defaultR = 0.5;
+      if (refreshEvery != 1) await f.setRefreshEvery(refreshEvery);
+      service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      f.advance(kDay);
+    }
+
+    setUp(() async {
+      f = await _Fixture.create();
+      cards = await f.cards(8);
+      await f.graduate(cards);
+    });
+
+    tearDown(() => service.close());
+
+    test('缺省每次作答后整表按最新状态重查：放后台、下一次排队生效', () async {
+      await open();
+      final String deck = f.store.defaultDeckId;
+      final String a = (await f.store.nextCard(deck))!;
+      expect(backend.requeries, 0);
+      // 答 a 之后，模型的共享状态变了：别的卡（没有新日志）的 R 也变。
+      for (final String c in cards) {
+        backend.setR(c, 0.6);
+      }
+      final String low = cards.firstWhere((String c) => c != a);
+      final int lowId = SrsIds.ankiNumericIds(<String>[low]).single;
+      backend.setR(low, 0.3);
+      await f.store.answer(a, 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      // 这一次排队不等整表重查：用表里现有的分数出卡，出完再在后台重查（不阻塞出卡的耗时由
+      // srs_rwkv_answer_bench_test 真模型实测）。
+      final String first = (await f.store.nextCard(deck))!;
+      await pumpEventQueue();
+      expect(backend.requeries, 1);
+      expect(backend.scores[lowId]!.$2, closeTo(0.3, 1e-9), reason: '后台重查完');
+      // 下一题起用新分数：R 最低的那张先出。
+      final String b = first == low
+          ? cards.firstWhere((String c) => c != a && c != low)
+          : first;
+      await f.store.answer(b, 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      expect(await f.store.nextCard(deck, exclude: <String>{a, b}), low);
+    });
+
+    test('每答几题刷新是牌组设置：改了下一次排队就按新值数；小于 1 按 1', () async {
+      expect(
+        SrsRwkvQueueSettings.fromValue(<String, Object?>{
+          'refreshEvery': 0,
+        }).refreshEvery,
+        1,
+      );
+      expect(const SrsRwkvQueueSettings().refreshEvery, 1, reason: '默认每题');
+      await open();
+      final String deck = f.store.defaultDeckId;
+      await f.store.nextCard(deck);
+      await f.setRefreshEvery(2);
+      await f.store.nextCard(deck);
+      expect(backend.requeries, 1, reason: '牌组设置变了：当场整表重查');
+      await f.store.answer(cards[0], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 1, reason: '推进 1 次，没满 2 次');
+      await f.store.answer(cards[1], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 2);
+    });
+
+    test('只数状态推进：连续直接评分（中间不排队）照样数满就重查', () async {
+      await open(refreshEvery: 3);
+      final String deck = f.store.defaultDeckId;
+      await f.store.nextCard(deck);
+      for (final String c in cards.take(2)) {
+        await f.store.answer(c, 3);
+        f.advance(1000);
+      }
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 0, reason: '推进 2 次，没满 3 次');
+      // 第三次作答之前不排队：以前按「部分命中的查询」计数，这里一次都不算。
+      await f.store.answer(cards[2], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 1);
+      // 撤回也是状态推进。
+      final SrsReviewLog l = await f.store.answer(cards[3], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      expect(await f.store.undo(cards[3], l.id), isTrue);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 1, reason: '答 + 撤 = 2 次');
+      await f.store.answer(cards[4], 3);
+      f.advance(1000);
+      expect(await service.refresh(), isTrue);
+      await f.store.nextCard(deck);
+      await pumpEventQueue();
+      expect(backend.requeries, 2);
+    });
+
+    test('永久清除的卡：分数表里的项删掉，整表重查不再算它', () async {
+      await open();
+      final String deck = f.store.defaultDeckId;
+      await f.store.nextCard(deck);
+      final String gone = cards.last;
+      final int goneId = SrsIds.ankiNumericIds(<String>[gone]).single;
+      expect(backend.scores.containsKey(goneId), isTrue);
+      final String noteId = (await f.store.cardRow(gone))!.noteId;
+      await f.store.deleteNote(noteId);
+      final SrsPurgeReport r = await srsPurgeNotesNow(f.store, <String>[
+        noteId,
+      ]);
+      expect(r.cards, 1);
+      await pumpEventQueue();
+      expect(backend.removed, <int>[goneId]);
+      expect(backend.scores.containsKey(goneId), isFalse);
+      expect(backend.scores, hasLength(cards.length - 1));
     });
   });
 

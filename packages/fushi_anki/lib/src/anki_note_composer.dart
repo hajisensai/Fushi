@@ -347,7 +347,9 @@ mixin AnkiNoteComposer {
         !_currentSelectionMatchesLapis(current)) {
       return LapisPreset.applyDefaults(selectedNoteType, {});
     }
-    return current.fieldMappings;
+    // 现有映射一个字段都不属于选中的笔记类型（空表，或留着上一个笔记类型的字段名）：
+    // 原样沿用 = 每张卡都是空卡。按字段名补默认映射。
+    return LapisPreset.applyDefaults(selectedNoteType, current.fieldMappings);
   }
 
   bool _currentSelectionMatchesLapis(AnkiSettings current) {

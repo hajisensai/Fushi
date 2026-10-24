@@ -194,6 +194,8 @@ typedef _UpdateDart =
     );
 typedef _RequeryC = Int32 Function(Pointer<Void>, Int64, Int64);
 typedef _RequeryDart = int Function(Pointer<Void>, int, int);
+typedef _RemoveC = Int32 Function(Pointer<Void>, Pointer<Int64>, Size);
+typedef _RemoveDart = int Function(Pointer<Void>, Pointer<Int64>, int);
 typedef _LastErrorC = Pointer<Utf8> Function();
 typedef _FreeStringC = Void Function(Pointer<Utf8>);
 typedef _FreeStringDart = void Function(Pointer<Utf8>);
@@ -247,6 +249,9 @@ class _Bindings {
       scoresRequery = lib.lookupFunction<_RequeryC, _RequeryDart>(
         'frwkv_runtime_scores_requery',
       ),
+      scoresRemove = lib.lookupFunction<_RemoveC, _RemoveDart>(
+        'frwkv_runtime_scores_remove',
+      ),
       lastError = lib.lookupFunction<_LastErrorC, _LastErrorC>(
         'frwkv_last_error',
       ),
@@ -275,6 +280,7 @@ class _Bindings {
   final _LookupDart scoresLookup;
   final _UpdateDart scoresUpdate;
   final _RequeryDart scoresRequery;
+  final _RemoveDart scoresRemove;
   final Pointer<Utf8> Function() lastError;
   final _FreeStringDart freeString;
   final _FreeBytesDart freeBytes;
@@ -505,6 +511,22 @@ class RwkvNativeRuntime implements Finalizable {
     final int code = _b.scoresRequery(_handle, today, nowMs);
     if (code < 0) throw _b.error(code);
     return code;
+  }
+
+  /// 从分数表删掉这些卡的项（卡被永久清除，lib.rs `frwkv_runtime_scores_remove`）。
+  /// 返回删掉的项数。
+  int removeScores(Int64List cardIds) {
+    _alive();
+    final int n = cardIds.length;
+    final Pointer<Int64> ids = malloc<Int64>(n + 1);
+    try {
+      ids.asTypedList(n).setAll(0, cardIds);
+      final int code = _b.scoresRemove(_handle, ids, n);
+      if (code < 0) throw _b.error(code);
+      return code;
+    } finally {
+      malloc.free(ids);
+    }
   }
 
   /// 作答时排程：[answer] 第一行是这次作答（ease 被忽略），见 lib.rs `frwkv_runtime_next_intervals`。

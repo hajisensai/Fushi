@@ -254,12 +254,13 @@ final List<_ForbiddenPattern> _forbidden = <_ForbiddenPattern>[
   ),
   _ForbiddenPattern(
     // W2-7：Anki 设置 SharedPreferences 键已是 fushi_anki_settings，存量由
-    // BaseAnkiRepository.readSettingsJson 载入期搬键。
+    // SharedPreferencesAnkiSettingsStore.read 载入期搬键（设置主存储已迁 Drift，
+    // SP 只剩迁移输入）。
     name: 'hoshi_anki_settings',
     regex: RegExp('hoshi_anki_settings'),
     allowed: <String, String>{
-      'packages/fushi_anki/lib/src/base_anki_repository.dart':
-          '_legacySettingsKey：载入期搬键迁移的旧键输入'
+      'packages/fushi_anki/lib/src/anki_settings_store.dart':
+          'legacySettingsKey：载入期搬键 / 一次性迁 Drift 的旧键输入'
               '（SharedPreferences 无版本阶梯，载入期搬移即迁移通道）。',
     },
   ),

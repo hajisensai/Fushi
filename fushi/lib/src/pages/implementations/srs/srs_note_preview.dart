@@ -12,14 +12,22 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki_core.dart'
-    show AnkiCardSpecialFields, AnkiRenderedCard, templateIdsToNames;
+    show
+        AnkiCardSpecialFields,
+        AnkiRenderedCard,
+        AnkiTemplateError,
+        templateIdsToNames;
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show srsFushiCardNativeDefinitions;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
+    show SrsFushiCardView;
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart'
     show SrsTemplatePreview, srsRenderTemplatePreview;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -73,6 +81,48 @@ SrsTemplatePreview srsRenderNotePreview({
   );
 }
 
+/// 这张预览卡能否与复习页一样走原生混合渲染（内置 Fushi 卡片、模板未改、媒体原生画得全）；
+/// 能则返回 (按字段名的字段值, 释义区 HTML)，否则 null（整面 WebView）。判据与复习页同一处
+/// （[srsFushiCardNativeDefinitions]），编辑页看到的就是复习页那张卡。
+({Map<String, String> fieldsByName, String definitionsHtml})?
+srsNotePreviewNativeFushiCard({
+  required SrsNoteTypeView type,
+  required SrsTemplateDef template,
+  required Map<String, String> valuesById,
+  List<String> tags = const <String>[],
+}) {
+  if (type.isCloze) return null;
+  final Map<String, String> idToName = <String, String>{
+    for (final SrsFieldDef f in type.fields) f.id: f.name,
+  };
+  final Map<String, String> fieldsByName = <String, String>{
+    for (final SrsFieldDef f in type.fields) f.name: valuesById[f.id] ?? '',
+  };
+  final int ord = type.templates.indexWhere(
+    (SrsTemplateDef x) => x.id == template.id,
+  );
+  final String? definitions;
+  try {
+    definitions = srsFushiCardNativeDefinitions(
+      builtinKey: type.builtinKey,
+      front: templateIdsToNames(template.front, idToName),
+      back: templateIdsToNames(template.back, idToName),
+      css: type.css,
+      fieldsByName: fieldsByName,
+      cardOrd: ord < 0 ? 0 : ord,
+      specials: AnkiCardSpecialFields(
+        tags: tags,
+        noteTypeName: type.name,
+        cardName: template.name,
+      ),
+    );
+  } on AnkiTemplateError {
+    return null;
+  }
+  if (definitions == null) return null;
+  return (fieldsByName: fieldsByName, definitionsHtml: definitions);
+}
+
 /// 把共享样式引用展开回内联（与复习页渲染同一份内容）；null = 原样用。
 typedef SrsNotePreviewExpand =
     Future<Map<String, String>> Function(Map<String, String> valuesById);
@@ -112,6 +162,9 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
   String? _templateId;
   int _clozeOrd = 1;
   SrsTemplatePreview _preview = const SrsTemplatePreview();
+
+  /// 非 null = 原生混合渲染（与复习页同一个 [SrsFushiCardView]）。
+  ({Map<String, String> fieldsByName, String definitionsHtml})? _native;
   Timer? _debounce;
   int _seq = 0;
   Listenable? _listening;
@@ -195,6 +248,14 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
         tags: widget.tags,
         clozeOrd: _clozeOrd,
       );
+      _native = _preview.error == null
+          ? srsNotePreviewNativeFushiCard(
+              type: widget.type,
+              template: tpl,
+              valuesById: values,
+              tags: widget.tags,
+            )
+          : null;
     });
   }
 
@@ -317,20 +378,28 @@ class _SrsNotePreviewState extends ConsumerState<SrsNotePreview> {
       );
     }
     final String language = ref.read(appProvider).defaultContentLanguage;
-    return ref.watch(srsCardFaceBuilderProvider)(
-      context,
-      SrsCardFace(
-        cardId: 'note-editor-preview',
-        showingAnswer: _showAnswer,
-        bodyHtml: _showAnswer ? card.answer : card.question,
-        css: widget.type.css,
-        languageCode: language.isEmpty ? null : language,
-        fushiCard: widget.type.builtinKey == kSrsBuiltinFushiCardKey,
-        onBridgeKey: (_) {},
-        bridgeKeys: const <String>[],
-        autoplayMedia: false,
-      ),
+    final SrsCardFace face = SrsCardFace(
+      cardId: 'note-editor-preview',
+      showingAnswer: _showAnswer,
+      bodyHtml: _showAnswer ? card.answer : card.question,
+      css: widget.type.css,
+      languageCode: language.isEmpty ? null : language,
+      fushiCard: widget.type.builtinKey == kSrsBuiltinFushiCardKey,
+      onBridgeKey: (_) {},
+      bridgeKeys: const <String>[],
+      autoplayMedia: false,
     );
+    final ({Map<String, String> fieldsByName, String definitionsHtml})? native =
+        _native;
+    if (native != null) {
+      return SrsFushiCardView(
+        key: const ValueKey<String>('srs-note-preview-native'),
+        face: face,
+        fields: native.fieldsByName,
+        definitionsHtml: native.definitionsHtml,
+      );
+    }
+    return ref.watch(srsCardFaceBuilderProvider)(context, face);
   }
 }
 

@@ -11,6 +11,7 @@
 /// 已冻结的批次在本机留存到所有在用目录都确认收到为止，所以先跑的目录不会把批次「用掉」。
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import '../event_store.dart';
@@ -46,6 +47,8 @@ class SrsDirectoryState {
     this.ownSeen = false,
     this.bootstrapped = false,
     this.lastSnapshotBatch = 0,
+    this.snapshotAttemptBatch = 0,
+    this.snapshotAttemptAt = 0,
     this.lastSyncAt,
     Map<String, int>? writers,
     Set<String>? alive,
@@ -67,6 +70,8 @@ class SrsDirectoryState {
       ownSeen: j['ownSeen'] == true,
       bootstrapped: j['boot'] == true,
       lastSnapshotBatch: (j['snap'] as int?) ?? 0,
+      snapshotAttemptBatch: (j['snapTry'] as int?) ?? 0,
+      snapshotAttemptAt: (j['snapTryAt'] as int?) ?? 0,
       lastSyncAt: j['at'] as int?,
       writers: ints(j['writers']),
       alive: <String>{
@@ -86,6 +91,11 @@ class SrsDirectoryState {
   /// 是否已按「读这个目录里全部现存写入者的最新快照」起步过。
   bool bootstrapped;
   int lastSnapshotBatch;
+
+  /// 最近一次开始写快照时的本写入者批次号与服务器时间。没写成（读回校验不过、中途抛错、进程被杀）
+  /// 时据此退避：整份快照是 O(全部历史) 的活，不能每轮同步都重做一遍（反馈 OMWOurRQKb）。
+  int snapshotAttemptBatch;
+  int snapshotAttemptAt;
 
   /// 最近一次在这个目录同步成功时的服务器时间；null = 还没成功过。
   int? lastSyncAt;
@@ -113,6 +123,8 @@ class SrsDirectoryState {
     'ownSeen': ownSeen,
     'boot': bootstrapped,
     'snap': lastSnapshotBatch,
+    if (snapshotAttemptBatch != 0) 'snapTry': snapshotAttemptBatch,
+    if (snapshotAttemptAt != 0) 'snapTryAt': snapshotAttemptAt,
     if (lastSyncAt != null) 'at': lastSyncAt,
     'writers': writers,
     'alive': (alive.toList()..sort()),
@@ -161,8 +173,9 @@ abstract interface class SrsSyncReplica {
   Future<SrsSyncLocalState> loadSyncState();
   Future<void> saveSyncState(SrsSyncLocalState state);
 
-  /// 本机发件箱里、还没进任何批次的事件，按入箱顺序。
-  Future<List<SrsEvent>> unpublishedEvents();
+  /// 本机发件箱里、还没进任何批次的事件，按入箱顺序；给了 [limit] 时只取最前面的至多这么多条
+  /// （冻结按批次逐页取，不把整个发件箱一次读进内存）。
+  Future<List<SrsEvent>> unpublishedEvents({int? limit});
 
   /// 冻结一个批次（一次原子操作）：[bytes] 作为写入者 [SrsSyncLocalState.writerId] 的第 [no] 批留存在本机、
   /// [eventIds] 出发件箱、[state]（nextBatchNo 已越过 [no]）落盘。冻结后内容不再改变，
@@ -206,9 +219,21 @@ abstract interface class SrsSyncReplica {
   /// [eventIds] 里已知 S 的事件 → S（冻结批次时带上，见 [SrsBatch.knownServerTimes]）。
   Future<Map<String, int>> knownServerTimes(List<String> eventIds);
 
-  /// 完整合并状态（写快照用）。
+  /// 完整合并状态（整份进内存；同步引擎不用它，写快照走 [exportSnapshotPages]）。
   Future<List<SrsEvent>> exportAll();
   Future<Map<String, int>> exportServerTimes();
+
+  /// 全部事件的 ID（与 [exportAll] 同序；全量重新发布只要 ID，不必把正文读出来解析）。
+  Future<List<String>> exportAllIds();
+
+  /// 完整合并状态按页交出（写快照用）：先逐页交出全部事件的规范 JSON 行（与 `SrsEvent.canonical()`
+  /// 逐字节相同），再逐页交出已知的「事件 ID → S」。整个导出是同一个一致读（中间插不进别的写入），
+  /// 内存只占一页、页与页之间让出事件循环——几万条事件、几十 MB 正文不能一次物化在调用方 isolate 上。
+  Future<void> exportSnapshotPages({
+    required Future<void> Function(List<String> canonicalLines) onEvents,
+    required Future<void> Function(List<(String, int)> serverTimes)
+    onServerTimes,
+  });
 
   /// 本机写入者目录已不存在（被当作退役清理过）：换新化身号（deviceId + 新化身号）。
   String newIncarnationWriterId();
@@ -246,6 +271,7 @@ class SrsSyncOptions {
     this.retainSentForMs = 30 * 24 * 60 * 60 * 1000,
     this.maxSentBatches = 5000,
     this.maxEventsPerBatch = 5000,
+    this.snapshotRetryAfterMs = 24 * 60 * 60 * 1000,
   });
 
   final int snapshotEveryBatches;
@@ -262,6 +288,9 @@ class SrsSyncOptions {
   /// 恢复备份）与大包导入一次进箱几万条：切开后单个文件有界，上传 / 读取中断时已确认的那几批不必重来，
   /// 读方也逐批应用、不必一次解码整库。
   final int maxEventsPerBatch;
+
+  /// 快照没写成时，等本写入者又攒够 [snapshotEveryBatches] 个批次、或过了这么久（服务器时间）再试。
+  final int snapshotRetryAfterMs;
 }
 
 /// 同步引擎：对**一个**目录跑一轮。
@@ -321,7 +350,7 @@ class SrsSyncEngine {
     ds.confirmedThrough = await _confirmedThrough(st, ds, ownFiles);
 
     await _freeze(st, s);
-    await _upload(st, ds, report);
+    await _upload(st, ds, s, report);
     final Map<String, SrsCursorFile> peers = await _peerCursors(
       st.writerId,
       report.skippedFiles,
@@ -331,9 +360,7 @@ class SrsSyncEngine {
     final List<String> missing = _dataMissingHere(st, ds);
     if (missing.isNotEmpty) {
       // 本机持有这个目录缺的数据（写入者在这里不活着、也没人替它带进来过）：全部事件重新发布一次。
-      await replica.requeue(<String>[
-        for (final SrsEvent e in await replica.exportAll()) e.id,
-      ]);
+      await replica.requeue(await replica.exportAllIds());
       // 重新发布进的是本机批次流，会到达每一个目录：每个目录都按本机此刻的读取进度记账，
       // 别的目录不必再各自重发一次。
       for (final SrsDirectoryState d in st.directories.values) {
@@ -344,7 +371,7 @@ class SrsSyncEngine {
       }
       report.republished = true;
       await _freeze(st, s);
-      await _upload(st, ds, report);
+      await _upload(st, ds, s, report);
     }
     await directory.write(
       st.writerId,
@@ -355,7 +382,7 @@ class SrsSyncEngine {
         updatedAtMs: s,
       ).encode(),
     );
-    await _maybeSnapshot(st, ds, report);
+    await _maybeSnapshot(st, ds, s, report);
     ds.lastSyncAt = s;
     await _cleanup(st, ds, peers, s, report);
     await _pruneSent(st, s);
@@ -391,13 +418,13 @@ class SrsSyncEngine {
       e.value
         ..confirmedThrough = 0
         ..ownSeen = false
-        ..lastSnapshotBatch = 0;
+        ..lastSnapshotBatch = 0
+        ..snapshotAttemptBatch = 0
+        ..snapshotAttemptAt = 0;
       // 触发换化身的目录按「起步」流程重来（它把旧化身删了，退役后回归要重新读全部快照）。
       if (e.key == directoryKey) e.value.bootstrapped = false;
     }
-    await replica.requeue(<String>[
-      for (final SrsEvent e in await replica.exportAll()) e.id,
-    ]);
+    await replica.requeue(await replica.exportAllIds());
     await replica.dropSentBatches(old);
     await replica.saveSyncState(st);
   }
@@ -420,18 +447,19 @@ class SrsSyncEngine {
   }
 
   /// 发件箱里的事件按序冻结成新批次（每批至多 [SrsSyncOptions.maxEventsPerBatch] 条，发布时的服务器时间 S
-  /// 写进信封）。冻结后内容不再改变。
+  /// 写进信封）。冻结后内容不再改变。逐批从发件箱头部取（冻结即出箱），不把整个发件箱一次读进内存：
+  /// 大包导入 / 全量重新发布后发件箱是几万条事件。
   Future<void> _freeze(SrsSyncLocalState st, int s) async {
-    final List<SrsEvent> all = await replica.unpublishedEvents();
     final int step = options.maxEventsPerBatch < 1
         ? 1
         : options.maxEventsPerBatch;
-    for (int i = 0; i < all.length; i += step) {
-      await _freezeOne(
-        st,
-        s,
-        all.sublist(i, i + step > all.length ? all.length : i + step),
+    while (true) {
+      final List<SrsEvent> pending = await replica.unpublishedEvents(
+        limit: step,
       );
+      if (pending.isEmpty) return;
+      await _freezeOne(st, s, pending);
+      if (pending.length < step) return;
     }
   }
 
@@ -443,13 +471,15 @@ class SrsSyncEngine {
     final int no = st.nextBatchNo;
     final List<String> ids = <String>[for (final SrsEvent e in pending) e.id];
     final Map<String, int> known = await replica.knownServerTimes(ids);
-    final Uint8List bytes = SrsBatch(
-      writerId: st.writerId,
-      no: no,
-      serverTimeMs: s,
-      events: pending,
-      knownServerTimes: known,
-    ).encode();
+    final Uint8List bytes = await srsEncodeBatch(
+      SrsBatch(
+        writerId: st.writerId,
+        no: no,
+        serverTimeMs: s,
+        events: pending,
+        knownServerTimes: known,
+      ),
+    );
     st.nextBatchNo = no + 1;
     await replica.freezeBatch(st, no, bytes, ids);
     // 冻结即定下首次发布事件的 S（批次字节不再变，每个目录收到的都是这个 S）。
@@ -490,6 +520,7 @@ class SrsSyncEngine {
   Future<void> _upload(
     SrsSyncLocalState st,
     SrsDirectoryState ds,
+    int s,
     SrsSyncReport report,
   ) async {
     final int own = st.nextBatchNo - 1;
@@ -498,7 +529,8 @@ class SrsSyncEngine {
       final Uint8List? bytes = await replica.sentBatch(st.writerId, no);
       if (bytes == null) {
         // 这个目录落后得比本机留存还久：快照覆盖本写入者到 own 为止的全部批次。
-        if (await _writeSnapshot(st, ds)) {
+        if (!_snapshotRetryDue(ds, own, s)) return;
+        if (await _attemptSnapshot(st, ds, s)) {
           ds.confirmedThrough = own;
           report.snapshotWritten = true;
         }
@@ -509,7 +541,9 @@ class SrsSyncEngine {
         st.writerId,
         srsBatchName(no),
       );
-      final SrsBatch? frozen = back == null ? null : SrsBatch.decode(back);
+      final SrsBatch? frozen = back == null
+          ? null
+          : (await srsDecodeBatch(back)).valueOrNull;
       if (frozen == null) {
         // 上传失败或响应丢失：下一轮用同号同字节重传。
         return;
@@ -608,9 +642,11 @@ class SrsSyncEngine {
     ds.bootstrapped = true;
   }
 
+  /// 写入者 [writerId] 最新一份完好的快照（按 [decode] 解出）。
   /// [skipped] 非空时，跳过的坏快照记进去（较旧的完好快照照常可用）。
-  Future<SrsSnapshot?> _latestSnapshot(
-    String writerId, {
+  Future<T?> _latestSnapshotOf<T>(
+    String writerId,
+    Future<SrsFileDecode<T>> Function(Uint8List bytes) decode, {
     List<String>? files,
     List<String>? skipped,
   }) async {
@@ -626,17 +662,33 @@ class SrsSyncEngine {
         srsSnapshotName(n),
       );
       if (bytes == null) continue;
-      switch (SrsSnapshot.tryDecode(bytes)) {
-        case SrsFileOk<SrsSnapshot>(:final SrsSnapshot value):
+      switch (await decode(bytes)) {
+        case SrsFileOk<T>(:final T value):
           return value;
-        case SrsFileMalformed<SrsSnapshot>(:final String reason):
+        case SrsFileMalformed<T>(:final String reason):
           skipped?.add('$writerId/${srsSnapshotName(n)}: $reason');
-        case SrsFileIncomplete<SrsSnapshot>():
+        case SrsFileIncomplete<T>():
           break;
       }
     }
     return null;
   }
+
+  /// [_latestSnapshotOf] 的完整内容（要应用其中的事件时）。
+  Future<SrsSnapshot?> _latestSnapshot(
+    String writerId, {
+    List<String>? files,
+    List<String>? skipped,
+  }) => _latestSnapshotOf(
+    writerId,
+    srsDecodeSnapshot,
+    files: files,
+    skipped: skipped,
+  );
+
+  /// 只要最新快照的 vv 时：照样整份校验，但事件正文留在后台 isolate，不搬回来。
+  Future<SrsSnapshotHeader?> _latestSnapshotHeader(String writerId) =>
+      _latestSnapshotOf(writerId, srsDecodeSnapshotHeader);
 
   /// 应用一份快照（快照的写入者 [SrsSnapshot.writerId] 决定转发目标）。转发了的，记进目标目录的覆盖范围。
   Future<void> _applySnapshot(
@@ -717,7 +769,7 @@ class SrsSyncEngine {
           final Uint8List? bytes = await directory.read(w, name);
           if (bytes == null) break;
           SrsBatch? batch;
-          switch (SrsBatch.tryDecode(bytes)) {
+          switch (await srsDecodeBatch(bytes)) {
             case SrsFileOk<SrsBatch>(:final SrsBatch value)
                 when value.writerId == w && value.no == cursor + 1:
               batch = value;
@@ -766,42 +818,101 @@ class SrsSyncEngine {
   Future<void> _maybeSnapshot(
     SrsSyncLocalState st,
     SrsDirectoryState ds,
+    int s,
     SrsSyncReport report,
   ) async {
     final int own = st.nextBatchNo - 1;
     if (own <= 0 ||
         ds.confirmedThrough < own ||
-        own - ds.lastSnapshotBatch < options.snapshotEveryBatches) {
+        own - ds.lastSnapshotBatch < options.snapshotEveryBatches ||
+        !_snapshotRetryDue(ds, own, s)) {
       return;
     }
-    if (await _writeSnapshot(st, ds)) report.snapshotWritten = true;
+    if (await _attemptSnapshot(st, ds, s)) report.snapshotWritten = true;
+  }
+
+  /// 上一次快照没写成时，本写入者又攒够 [SrsSyncOptions.snapshotEveryBatches] 个批次、或过了
+  /// [SrsSyncOptions.snapshotRetryAfterMs] 才再试；没有失败记录时总是可以写。
+  bool _snapshotRetryDue(SrsDirectoryState ds, int own, int s) =>
+      ds.snapshotAttemptBatch <= ds.lastSnapshotBatch ||
+      own - ds.snapshotAttemptBatch >= options.snapshotEveryBatches ||
+      s - ds.snapshotAttemptAt >= options.snapshotRetryAfterMs;
+
+  /// 先把「这次尝试」落盘再写快照：写不成、中途抛错（连接被关、后端出错）或进程被杀，
+  /// 下一轮都按退避规则等，而不是每轮从头再导出、编码、上传一份整库快照。
+  Future<bool> _attemptSnapshot(
+    SrsSyncLocalState st,
+    SrsDirectoryState ds,
+    int s,
+  ) async {
+    ds
+      ..snapshotAttemptBatch = st.nextBatchNo - 1
+      ..snapshotAttemptAt = s;
+    await replica.saveSyncState(st);
+    return _writeSnapshot(st, ds);
   }
 
   /// 往这个目录写一份完整状态快照（vv 只记无缺口前缀，且只增不减）。读回校验通过才算写成。
+  ///
+  /// 正文按页从副本读（[SrsSyncReplica.exportSnapshotPages]），拼接、SHA-256 与读回校验在后台
+  /// isolate 做：整份快照是全部历史（几万条事件、几十 MB），以前一次物化成对象、在调用方 isolate 上
+  /// 编码再整份解码校验，大库上单段阻塞秒级（反馈 OMWOurRQKb）。
   Future<bool> _writeSnapshot(
     SrsSyncLocalState st,
     SrsDirectoryState ds,
   ) async {
     final int own = st.nextBatchNo - 1;
-    final SrsSnapshot? previous = await _latestSnapshot(st.writerId);
+    final SrsSnapshotHeader? previous = await _latestSnapshotHeader(
+      st.writerId,
+    );
     final Map<String, int> vv = <String, int>{...?previous?.vv};
     for (final MapEntry<String, int> e in st.cursors.entries) {
       if ((vv[e.key] ?? 0) < e.value) vv[e.key] = e.value;
     }
     vv[st.writerId] = own;
-    final SrsSnapshot snap = SrsSnapshot(
+    final BytesBuilder events = BytesBuilder(copy: false);
+    final BytesBuilder times = BytesBuilder(copy: false)..addByte(0x7b);
+    bool firstTime = true;
+    await replica.exportSnapshotPages(
+      onEvents: (List<String> lines) async {
+        final StringBuffer sb = StringBuffer();
+        for (final String l in lines) {
+          sb
+            ..write(l)
+            ..writeCharCode(0x0a);
+        }
+        events.add(utf8.encode(sb.toString()));
+      },
+      onServerTimes: (List<(String, int)> page) async {
+        final StringBuffer sb = StringBuffer();
+        for (final (String id, int t) in page) {
+          if (!firstTime) sb.write(',');
+          firstTime = false;
+          sb
+            ..write(jsonEncode(id))
+            ..write(':')
+            ..write(t);
+        }
+        times.add(utf8.encode(sb.toString()));
+      },
+    );
+    times.addByte(0x7d);
+    final Uint8List bytes = await srsEncodeSnapshotParts(
       writerId: st.writerId,
       maxOwnBatch: own,
       vv: vv,
-      serverTimes: await replica.exportServerTimes(),
-      events: await replica.exportAll(),
+      serverTimesJson: times.takeBytes(),
+      eventsBody: events.takeBytes(),
     );
-    await directory.write(st.writerId, srsSnapshotName(own), snap.encode());
+    await directory.write(st.writerId, srsSnapshotName(own), bytes);
     final Uint8List? back = await directory.read(
       st.writerId,
       srsSnapshotName(own),
     );
-    if (back == null || SrsSnapshot.decode(back) == null) return false;
+    if (back == null ||
+        await srsDecodeSnapshotHeader(back) is! SrsFileOk<SrsSnapshotHeader>) {
+      return false;
+    }
     ds.lastSnapshotBatch = own;
     return true;
   }
@@ -879,7 +990,7 @@ class SrsSyncEngine {
         st.writerId,
         for (final SrsCursorFile c in activePeers) c.writerId,
       ]) {
-        final SrsSnapshot? snap = await _latestSnapshot(holder);
+        final SrsSnapshotHeader? snap = await _latestSnapshotHeader(holder);
         if (snap != null && (snap.vv[w] ?? 0) >= last) {
           covered = true;
           break;

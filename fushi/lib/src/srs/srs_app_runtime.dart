@@ -150,7 +150,12 @@ class SrsAppRuntime {
     onDataChanged: _bumpRevision,
     onNotice: _showSyncNotice,
     readMediaRoot: () async => (await _readMedia())?.root,
+    // 库关着（备份恢复 / 数据根迁移 / 退出）时不开新一轮；重开后自动恢复。
+    canRun: () => app.isInitialised,
   );
+
+  /// 关库前等 SRS 同步收尾（登记到 [AppModel.addDatabaseCloseQuiescer]）。
+  late final Future<void> Function() _quiesceSync = sync.quiesce;
 
   late final SrsOptimizationScheduler optimizer = SrsOptimizationScheduler(
     readStore: _readStore,
@@ -221,6 +226,7 @@ class SrsAppRuntime {
     srsActiveReviewSessions.addListener(_onReviewSessionsChanged);
     _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     optimizer.start();
+    app.addDatabaseCloseQuiescer(_quiesceSync);
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
@@ -238,6 +244,7 @@ class SrsAppRuntime {
     _lifecycle?.dispose();
     _lifecycle = null;
     optimizer.dispose();
+    app.removeDatabaseCloseQuiescer(_quiesceSync);
     unawaited(_hostWrites?.cancel());
     _hostWrites = null;
     sync.dispose();

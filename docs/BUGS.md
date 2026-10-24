@@ -33,10 +33,21 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3326 条。点号进各自文件。
+> 共 3337 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3733](bugs/BUG-3733-srs-expanded-clip-error-box-covers-video.md) | ✅ | ✅ | 复习卡片段「放大查看」被错误盒整块盖住，关闭键缺失 |
+| [BUG-3732](bugs/BUG-3732-srs-note-editor-preview-not-native-fushi-card.md) | ✅ | ✅ | 笔记编辑页实时预览与复习页不是同一张卡（Fushi 卡片退回整面 WebView，片段 / 图片画法不同） |
+| [BUG-3731](bugs/BUG-3731-popup-mining-target-switch-hidden-on-base-layer.md) | ✅ | ✅ | 应用外查词窗基础层不显示「制卡目标」切换按钮 |
+| [BUG-3730](bugs/BUG-3730-srs-anki-import-drops-new-card-position.md) | ✅ | ✅ | 从 Anki 迁移 / 导入不带新卡位置，新卡按笔记创建时刻出、丢了 Anki 里排好的顺序 |
+| [BUG-3729](bugs/BUG-3729-srs-stats-miss-inherited-history-after-type-change.md) | ✅ | ✅ | 旧 Lapis 迁到 Fushi 卡片（或换笔记类型）后，牌组统计里复习记录全空 |
+| [BUG-3728](bugs/BUG-3728-srs-rwkv-purged-card-scores-not-evicted.md) | ✅ | ✅ | 永久清除的卡仍留在 RWKV 常驻分数表里 |
+| [BUG-3727](bugs/BUG-3727-srs-rwkv-score-requery-counts-cache-hits.md) | ✅ | ✅ | RWKV 分数表「每 50 次」刷新数的是部分命中的查询，不是作答 |
+| [BUG-3726](bugs/BUG-3726-srs-purge-media-delete-race.md) | ✅ | ✅ | 墓碑清除回收媒体时，扫描与删除之间新加的引用照样被删 |
+| [BUG-3725](bugs/BUG-3725-srs-sync-snapshot-freezes-ui.md) | ✅ | ✅ | 复习模块开着时大库同步快照与媒体引用在主线程整库处理，全 app 卡死 |
+| [BUG-3724](bugs/BUG-3724-anki-settings-stale-in-popup-process.md) | ✅ | ✅ | 应用外查词制卡用旧牌组/配置，且无法在应用外切换 |
+| [BUG-3723](bugs/BUG-3723-anki-non-lapis-note-type-empty-mappings.md) | ✅ | ✅ | 选非 Lapis 笔记类型后字段映射为空，制卡全部被拒为空卡 |
 | [BUG-3722](bugs/BUG-3722-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
 | [BUG-3721](bugs/BUG-3721-srs-editor-no-preview-visual-ai.md) | ✅ | ✅ | 编辑卡片缺预览与可视化编辑，字段名无翻译说明，编辑与模板无 AI |
 | [BUG-3720](bugs/BUG-3720-srs-deck-delete-never-purged.md) | ✅ | ✅ | 删除牌组（含连卡片删除）只写墓碑，永不物理清除 |

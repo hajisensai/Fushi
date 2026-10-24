@@ -477,3 +477,14 @@ final profileViewModelProvider =
 
   return ProfileViewModel(repo, onApplied, profileDraftCoordinator);
 });
+
+/// 另一个进程 / engine 改过偏好（[AppModel.refreshPrefCacheIfChanged] 返回 true）后，
+/// 丢掉本 engine 里由 Anki 设置派生的 Riverpod 状态：仓库装饰链（后端选择已由
+/// `refreshPrefCache` 重新推导）、[AnkiViewModel] 里缓存的设置快照、Profile 视图。
+/// 常驻的 `:popup` / 悬浮词典据此在下一次查词时显示主 app 刚切的牌组 / 配置
+/// （fiwDIpFep7）。三者都 watch [ankiRepositoryProvider]，逐个点名只是让意图可读。
+void invalidateAnkiStateAfterPrefsChange(WidgetRef ref) {
+  ref.invalidate(ankiRepositoryProvider);
+  ref.invalidate(ankiViewModelProvider);
+  ref.invalidate(profileViewModelProvider);
+}

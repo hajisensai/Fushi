@@ -11,7 +11,6 @@
 library;
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// 把除构造外的一切转给 [inner] 的 Anki 仓库。子类覆盖 [mineEntry] 等需要
 /// 附加行为的方法。
@@ -31,8 +30,11 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   }) => inner.mineEntry(rawPayloadJson: rawPayloadJson, context: context);
 
   @override
-  Future<String?> readSettingsJson(SharedPreferences prefs) =>
-      inner.readSettingsJson(prefs);
+  AnkiSettingsStore get settingsStore => inner.settingsStore;
+
+  @override
+  Future<String?> readSettingsJson(AnkiSettingsStore store) =>
+      inner.readSettingsJson(store);
 
   @override
   Future<AnkiSettings> loadSettings() => inner.loadSettings();

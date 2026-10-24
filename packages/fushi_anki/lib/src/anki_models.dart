@@ -8,6 +8,8 @@ import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:meta/meta.dart';
 
 import 'lapis_blocks.dart';
+import 'lapis_preset.dart';
+import 'note_type_default_mappings.dart';
 import 'card_source_link.dart';
 import 'mining_request_overrides.dart';
 
@@ -231,7 +233,12 @@ class AnkiSettings {
     this.ankiDesktopExecutable = '',
   });
 
-  factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
+  /// 载入时顺带修复「映射一个字段都没覆盖到选中的笔记类型」的存量设置（见
+  /// [withDefaultMappingsIfUncovered]）：已经存成空映射的用户不必重选笔记类型。
+  factory AnkiSettings.fromJson(Map<String, dynamic> json) =>
+      AnkiSettings._fromJson(json).withDefaultMappingsIfUncovered();
+
+  factory AnkiSettings._fromJson(Map<String, dynamic> json) => AnkiSettings(
     selectedDeckId: json['selectedDeckId'] as int?,
     selectedDeckName: json['selectedDeckName'] as String?,
     selectedNoteTypeId: json['selectedNoteTypeId'] as int?,
@@ -488,6 +495,21 @@ class AnkiSettings {
     if (noteType.fields.isEmpty) return true;
     final String? template = fieldMappings[noteType.fields.first];
     return template != null && template.trim().isNotEmpty;
+  }
+
+  /// 选中的笔记类型已知、但 [fieldMappings] 一个字段都没映射到它（空表，或留着别的
+  /// 笔记类型的字段名）时，换成按字段名推出的默认映射；否则原样返回。
+  ///
+  /// 这种设置下每张卡渲染出来都是空卡、必被拒收（反馈 AGLC0BuaKB：选了非 Lapis 笔记
+  /// 类型后映射被置成 `{}`，批量制卡逐条失败）。只要覆盖到一个字段就视为用户自己配过，
+  /// 不动。
+  AnkiSettings withDefaultMappingsIfUncovered() {
+    final AnkiNoteType? noteType = selectedNoteType;
+    if (noteType == null || noteType.fields.isEmpty) return this;
+    if (mappingsCoverNoteType(fieldMappings, noteType)) return this;
+    return copyWith(
+      fieldMappings: LapisPreset.applyDefaults(noteType, const {}),
+    );
   }
 
   AnkiNoteType? get selectedNoteType =>
@@ -1753,6 +1775,13 @@ class AnkiErrorCode {
   /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
   static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
+
+/// [code] 是不是「字段映射配错」一类：映射整体为空、字段名全不属于笔记类型、首字段空。
+/// 这类失败与具体词条无关，同一批里后面每一条都会一样失败，批量制卡应整批中止。
+bool isFieldMappingConfigError(String? code) =>
+    code == AnkiErrorCode.allFieldsEmpty ||
+    code == AnkiErrorCode.fieldMappingMismatch ||
+    code == AnkiErrorCode.firstFieldEmpty;
 
 sealed class AnkiFetchResult {
   const AnkiFetchResult();
