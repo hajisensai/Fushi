@@ -30,6 +30,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_autoplay.dart'
+    show SrsFushiCardMedia, srsFushiCardMedia;
+import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_card_defs_layout.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
@@ -96,6 +99,137 @@ SrsFushiFrontKind srsFushiFrontKind(Map<String, String> f) {
   return SrsFushiFrontKind.word;
 }
 
+// ---------------------------------------------------------------- 例句目标词（#9）
+
+final RegExp _boldBlock = RegExp(
+  r'<(b|strong)\b[^>]*>([\s\S]*?)</\1\s*>',
+  caseSensitive: false,
+);
+final RegExp _cloze = RegExp(r'\{\{c\d+::([\s\S]*?)(?:::[\s\S]*?)?\}\}');
+
+/// Anki 挖空 `{{c1::词::提示}}` → `<b>词</b>`（卡面上显示答案、按目标词强调；Anki 迁移来的
+/// 挖空笔记直接把这串写在例句字段里）。
+@visibleForTesting
+String srsClozeToBold(String html) =>
+    html.replaceAllMapped(_cloze, (Match m) => '<b>${m.group(1)}</b>');
+
+/// 字段里显式标出的目标词（`<b>` / `<strong>` / 挖空），纯文本（去振假名与标签）。
+@visibleForTesting
+List<String> srsMarkedTargets(String html) => <String>[
+  for (final Match m in _boldBlock.allMatches(srsClozeToBold(html)))
+    if (srsKanaFree(m.group(2)!).trim() case final String t when t.isNotEmpty)
+      t,
+];
+
+bool _isHiragana(int c) => c >= 0x3041 && c <= 0x309F;
+
+/// 片假名 → 平假名（逐字一一对应，下标不变）：例句把词写成片假名时照样对得上。
+String _hiraganaOf(String s) => String.fromCharCodes(<int>[
+  for (final int c in s.codeUnits) c >= 0x30A1 && c <= 0x30F6 ? c - 0x60 : c,
+]);
+
+/// 在例句纯文本 [text] 里找目标词的位置（UTF-16 区间），找不到返回 null。按序尝试：
+///
+/// 1. [marked]（字段里 `<b>` / 挖空标出的写法）或 [terms]（词条写法、读音）逐字出现
+///    （平 / 片假名视为同一字）；
+/// 2. 活用形：去掉词尾送假名的词干（全假名的词去掉最后一拍）出现在句子里，再向后吞掉紧跟的
+///    平假名（最多吞「原送假名长度 + 4」个）——`くっつく` 认出 `くっつこう`、`言う` 认出
+///    `言った`。这是卡面显示的启发式，不是词形还原；多吞一两个假名只影响强调范围。
+@visibleForTesting
+(int, int)? srsSentenceTargetRange(
+  String text, {
+  List<String> marked = const <String>[],
+  List<String> terms = const <String>[],
+}) {
+  final String hay = _hiraganaOf(text);
+  for (final String raw in <String>[...marked, ...terms]) {
+    final String needle = _hiraganaOf(raw.trim());
+    if (needle.isEmpty) continue;
+    final int i = hay.indexOf(needle);
+    if (i >= 0) return (i, i + needle.length);
+  }
+  for (final String raw in terms) {
+    final String term = _hiraganaOf(raw.trim());
+    if (term.isEmpty) continue;
+    int cut = term.length;
+    while (cut > 0 && _isHiragana(term.codeUnitAt(cut - 1))) {
+      cut--;
+    }
+    // 全假名的词：去掉最后一拍当词干（至少留两个字，单字词干太容易撞上别的词）。
+    if (cut == 0) cut = term.length >= 3 ? term.length - 1 : 0;
+    if (cut == 0 || cut == term.length) continue;
+    final String stem = term.substring(0, cut);
+    final int i = hay.indexOf(stem);
+    if (i < 0) continue;
+    final int maxExtra = term.length - cut + 4;
+    int end = i + stem.length;
+    while (end < hay.length &&
+        end - (i + stem.length) < maxExtra &&
+        _isHiragana(hay.codeUnitAt(end))) {
+      end++;
+    }
+    return (i, end);
+  }
+  return null;
+}
+
+/// 例句没有任何加粗段时补上目标词强调（#9）。
+///
+/// 制卡链路只在「查到的那串」逐字出现在例句里时才写 `<b>`（`anki_models.dart`
+/// `_sentenceValue`），以下情形卡面上没有蓝色强调：例句字段里没 `<b>`（Anki 迁移的笔记、
+/// 字幕句与上下文句不同的视频卡）、`SentenceFurigana` 优先显示而它没带 `<b>`、例句里有
+/// 白名单外的标签让解析退回纯文本（`<b>` 一起丢了）、挖空 `{{c1::…}}`。这里按
+/// [srsSentenceTargetRange] 在显示的段落里重新定位目标词并标成加粗段（注音段整段标）。
+@visibleForTesting
+List<SrsInline> srsEmphasizeSentenceTarget(
+  List<SrsInline> segs, {
+  List<String> marked = const <String>[],
+  List<String> terms = const <String>[],
+}) {
+  if (segs.isEmpty || segs.any((SrsInline x) => x.bold)) return segs;
+  final String full = segs.map((SrsInline x) => x.text).join();
+  final (int, int)? range = srsSentenceTargetRange(
+    full,
+    marked: marked,
+    terms: terms,
+  );
+  if (range == null) return segs;
+  final (int from, int to) = range;
+  final List<SrsInline> out = <SrsInline>[];
+  int at = 0;
+  for (final SrsInline x in segs) {
+    final int start = at;
+    final int end = at + x.text.length;
+    at = end;
+    if (end <= from || start >= to || x.isBreak) {
+      out.add(x);
+      continue;
+    }
+    if (x.ruby != null) {
+      out.add(
+        SrsInline(
+          x.text,
+          ruby: x.ruby,
+          bold: true,
+          italic: x.italic,
+          underline: x.underline,
+        ),
+      );
+      continue;
+    }
+    final int a = math.max(from, start) - start;
+    final int b = math.min(to, end) - start;
+    SrsInline piece(String text, {required bool bold}) =>
+        SrsInline(text, bold: bold, italic: x.italic, underline: x.underline);
+    if (a > 0) out.add(piece(x.text.substring(0, a), bold: false));
+    out.add(piece(x.text.substring(a, b), bold: true));
+    if (b < x.text.length) {
+      out.add(piece(x.text.substring(b), bold: false));
+    }
+  }
+  return out;
+}
+
 /// 原生 + 释义 WebView 的 Fushi 卡片卡面。
 class SrsFushiCardView extends ConsumerStatefulWidget {
   const SrsFushiCardView({
@@ -149,9 +283,37 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   bool _clickOpen = false;
   bool _sentenceRuby = false;
 
+  /// 复习页的片段通道（声明这张卡的陪播例句音频用，见 [_declareSentenceAudio]）。
+  late final SrsCardVideoChannel _channel = ref.read(
+    srsCardVideoChannelProvider,
+  );
+
+  /// 这张卡实际画出来的发音键 / 片段（与复习页的自动播放、底栏重播同一份，#10 / #15）。
+  SrsFushiCardMedia get _media => srsFushiCardMedia(
+    widget.fields,
+    audioCardFront: srsFushiFrontKind(widget.fields) == SrsFushiFrontKind.audio,
+  );
+
+  /// 只在复习页（卡面发音交给宿主序列时）声明陪播例句音频：外观页预览等别的卡面不碰复习页
+  /// 的通道。
+  void _declareSentenceAudio() {
+    if (widget.face.onPlayAudio == null) {
+      _channel.clearSentenceAudio(this);
+      return;
+    }
+    _channel.setSentenceAudio(this, _media.companionSentence);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _declareSentenceAudio();
+  }
+
   @override
   void didUpdateWidget(SrsFushiCardView old) {
     super.didUpdateWidget(old);
+    _declareSentenceAudio();
     if (old.face.cardId != widget.face.cardId) {
       // 内容高度保留上一张的：页面只在高度变化时上报，新卡同高时不会再报。
       _clickOpen = false;
@@ -164,9 +326,21 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   @override
   void dispose() {
+    _channel.clearSentenceAudio(this);
     _scroll.dispose();
     _selectionFocus.dispose();
     super.dispose();
+  }
+
+  /// 卡面发音键：复习页里交给它的播放序列（与底栏重播 / 自动播放同一路，新的打断旧的，
+  /// 片段带声时在画面上播），否则（外观预览）直接播第一段。
+  Future<void> _playNames(List<String> names) async {
+    final void Function(List<String>)? host = widget.face.onPlayAudio;
+    if (host != null) {
+      host(names);
+      return;
+    }
+    if (names.isNotEmpty) await _play(names.first);
   }
 
   Future<void> _play(String name) async {
@@ -269,16 +443,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           _frontSentence(s, c, masked: true),
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-front-audio'),
-            name:
-                srsAudioSources(
-                  srsFieldFilled(f['SentenceAudio'])
-                      ? f['SentenceAudio']!
-                      : f['ExpressionAudio'] ?? '',
-                ).firstOrNull ??
-                '',
+            name: _media.front.firstOrNull ?? '',
             large: true,
             style: s,
-            onPlay: _play,
+            onPlay: (String name) => _playNames(<String>[name]),
           ),
         ],
       },
@@ -506,12 +674,18 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                 mainAxisSize: MainAxisSize.min,
                 spacing: 6,
                 children: <Widget>[
-                  for (final String name in audio)
+                  for (int i = 0; i < audio.length; i++)
                     _AudioButton(
-                      key: const ValueKey<String>('srs-fushi-word-audio'),
-                      name: name,
+                      // 单词音频可能有好几段（多个发音来源）：key 各不相同，否则同一个
+                      // Column 里重复 key 直接抛错、整张卡面渲染失败。
+                      key: ValueKey<String>(
+                        i == 0
+                            ? 'srs-fushi-word-audio'
+                            : 'srs-fushi-word-audio-$i',
+                      ),
+                      name: audio[i],
                       style: s,
-                      onPlay: _play,
+                      onPlay: (String name) => _playNames(<String>[name]),
                     ),
                 ],
               ),
@@ -608,13 +782,27 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       return null;
     }
     final bool showRuby = s.appearance.sentenceFurigana || _sentenceRuby;
-    final List<SrsInline> segs = srsParseInline(
-      srsFieldFilled(f['SentenceFurigana'])
-          ? f['SentenceFurigana']!
-          : f['Sentence']!,
+    final String raw = srsFieldFilled(f['SentenceFurigana'])
+        ? f['SentenceFurigana']!
+        : f['Sentence']!;
+    // 目标词强调（#9）：显示的那份没带 `<b>` 时按字段标记 / 词条写法重新定位。
+    final List<SrsInline> segs = srsEmphasizeSentenceTarget(
+      srsParseInline(srsClozeToBold(raw)),
+      marked: <String>[
+        ...srsMarkedTargets(raw),
+        ...srsMarkedTargets(f['Sentence'] ?? ''),
+      ],
+      terms: <String>[
+        srsPlainText(f['Expression'] ?? ''),
+        if (srsFieldFilled(f['ExpressionFurigana']))
+          srsKanaOf(srsParseInline(f['ExpressionFurigana']!)),
+        srsPlainText(f['ExpressionReading'] ?? ''),
+      ],
     );
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
-    final List<String> audio = srsAudioSources(f['SentenceAudio'] ?? '');
+    // 例句发音键：片段自带例句声音时它控制片段（画面上从头播、有声），否则播例句音频
+    // （画面上的动图 / 静音片段从头陪播），两者不再各出一路声音（#7 / #10）。
+    final List<String> audio = _media.sentenceUnit;
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby && !s.appearance.sentenceFurigana;
@@ -644,12 +832,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       // 发音按钮在句首、与整段垂直居中：贴着它播放的那句话，不再孤零零停在卡片右上角。
       child: Row(
         children: <Widget>[
-          for (final String name in audio) ...<Widget>[
+          if (audio.isNotEmpty) ...<Widget>[
             _AudioButton(
               key: const ValueKey<String>('srs-fushi-sentence-audio'),
-              name: name,
+              name: audio.first,
               style: s,
-              onPlay: _play,
+              onPlay: (String _) => _playNames(audio),
             ),
             SizedBox(width: s.gap),
           ],
@@ -801,6 +989,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
     autoplayMedia: widget.face.autoplayMedia,
+    // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
+    onPlayAudio: widget.face.onPlayAudio,
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
@@ -1341,7 +1531,24 @@ const double kSrsPictureFillMaxAspect = 2.5;
 /// 铺满的图片最高占卡面视口高度的比例。
 const double kSrsPictureFillMaxViewportFraction = 0.4;
 
-/// 媒体库里的图片：点按全屏查看。
+/// 会动的图片格式（例句音频开播时从头重播，见 [SrsCardSentenceCompanion]）。
+const Set<String> _kAnimatedImageExtensions = <String>{
+  'gif',
+  'webp',
+  'avif',
+  'apng',
+};
+
+/// [name] 可能是动图（按扩展名）。
+@visibleForTesting
+bool srsIsAnimatedImageName(String name) {
+  final int dot = name.lastIndexOf('.');
+  return dot >= 0 &&
+      _kAnimatedImageExtensions.contains(name.substring(dot + 1).toLowerCase());
+}
+
+/// 媒体库里的图片：点按全屏查看。动图是例句音频的陪播画面（#7）：例句开播时从第一帧重播，
+/// 画面与句子同步（视频制卡的动图封面与例句音频切自同一段字幕时间）。
 class _MediaImage extends ConsumerStatefulWidget {
   const _MediaImage({
     super.key,
@@ -1368,7 +1575,8 @@ class _MediaImage extends ConsumerStatefulWidget {
   ConsumerState<_MediaImage> createState() => _MediaImageState();
 }
 
-class _MediaImageState extends ConsumerState<_MediaImage> {
+class _MediaImageState extends ConsumerState<_MediaImage>
+    implements SrsCardSentenceCompanion {
   ImageProvider<Object>? _provider;
   ImageStream? _stream;
   ImageStreamListener? _listener;
@@ -1376,10 +1584,36 @@ class _MediaImageState extends ConsumerState<_MediaImage> {
   /// 解码出的宽 / 高；未知（还没解码 / 失败）时 null。
   double? _aspect;
 
+  late final SrsCardVideoChannel _channel = ref.read(
+    srsCardVideoChannelProvider,
+  );
+
+  /// 每次例句开播 +1：动图子树换 key 重建，从第一帧播起。
+  int _restart = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _channel.attachCompanion(this);
+  }
+
   @override
   void dispose() {
+    _channel.detachCompanion(this);
     _unlisten();
     super.dispose();
+  }
+
+  /// 例句音频开播：动图回到第一帧。普通图片引擎的多帧解码器挂在图片缓存里，换 key 重建
+  /// 拿到的仍是同一个（接着当前帧播），先把它逐出缓存；AVIF 由原生解码器按 key 重开。
+  @override
+  void sentenceStarted(String name) {
+    if (!mounted || !srsIsAnimatedImageName(widget.name)) return;
+    final ImageProvider<Object>? provider = _provider;
+    if (provider != null && !isAvifPath(widget.name)) {
+      unawaited(provider.evict());
+    }
+    setState(() => _restart++);
   }
 
   void _unlisten() {
@@ -1445,17 +1679,21 @@ class _MediaImageState extends ConsumerState<_MediaImage> {
         !widget.name.startsWith('data:') && isAvifPath(widget.name)
         ? _providerStore?.resolve(widget.name)
         : null;
-    Widget picture({BoxFit? fit}) => avif != null
-        ? FushiAnimatedAvifImage(
-            file: avif,
-            fit: fit,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          )
-        : Image(
-            image: provider!,
-            fit: fit,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          );
+    Widget picture({BoxFit? fit}) => KeyedSubtree(
+      key: ValueKey<int>(_restart),
+      child: avif != null
+          ? FushiAnimatedAvifImage(
+              file: avif,
+              fit: fit,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            )
+          : Image(
+              image: provider!,
+              fit: fit,
+              gaplessPlayback: true,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+    );
     final Widget image = provider == null
         ? const SizedBox.shrink()
         // 框与原图同比例；contain 保证取整误差下也不裁掉边。

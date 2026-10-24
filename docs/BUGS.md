@@ -33,10 +33,30 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3306 条。点号进各自文件。
+> 共 3326 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3722](bugs/BUG-3722-srs-anki-migration-no-switch-to-srs.md) | ✅ | ✅ | 从 Anki 迁移后制卡仍走 Anki，无切换到 Fushi SRS 选项 |
+| [BUG-3721](bugs/BUG-3721-srs-editor-no-preview-visual-ai.md) | ✅ | ✅ | 编辑卡片缺预览与可视化编辑，字段名无翻译说明，编辑与模板无 AI |
+| [BUG-3720](bugs/BUG-3720-srs-deck-delete-never-purged.md) | ✅ | ✅ | 删除牌组（含连卡片删除）只写墓碑，永不物理清除 |
+| [BUG-3719](bugs/BUG-3719-srs-undo-slow-and-downgrades-fsrs7.md) | ✅ | ✅ | Ctrl+Z 撤回极慢且撤回后降级成 FSRS-7 |
+| [BUG-3718](bugs/BUG-3718-srs-rwkv-full-rescore-per-answer.md) | ✅ | ✅ | RWKV 每评一张卡全量重算分数 |
+| [BUG-3717](bugs/BUG-3717-srs-browse-loads-all-fields.md) | ✅ | ✅ | SRS 浏览把整个集合所有卡全部字段加载进内存 |
+| [BUG-3716](bugs/BUG-3716-srs-host-remote-mining-ignores-srs-target.md) | ✅ | 🚧 | 互联主机替其它设备制卡时无视「制卡目标 = Fushi 复习」 |
+| [BUG-3715](bugs/BUG-3715-srs-colpkg-import-out-of-memory.md) | ✅ | ✅ | Android 导入 .colpkg 报 Out of Memory |
+| [BUG-3714](bugs/BUG-3714-srs-interconnect-sync-not-shared.md) | ✅ | ✅ | Fushi SRS 通过互联同步不互通 |
+| [BUG-3713](bugs/BUG-3713-srs-card-fonts-need-toggle.md) | ✅ | ✅ | SRS 卡片字体需关掉再打开字体设置才生效 |
+| [BUG-3712](bugs/BUG-3712-srs-open-note-editor-no-lock-slow.md) | ✅ | ✅ | 跳转卡片无防重入锁且加载慢、编辑页无法删卡 |
+| [BUG-3711](bugs/BUG-3711-srs-popup-duplicate-open-card-buttons.md) | ✅ | ✅ | 查词弹窗「新卡」与「跳转」去同一页面 |
+| [BUG-3710](bugs/BUG-3710-srs-jump-to-card-autoplays-video.md) | ✅ | ✅ | 从查词弹窗跳转到卡片视频自动播放 |
+| [BUG-3709](bugs/BUG-3709-srs-replay-buttons-same-row-as-grades.md) | ✅ | ✅ | 复习页音频按钮与评分按钮同一行 |
+| [BUG-3708](bugs/BUG-3708-srs-card-links-not-clickable.md) | ✅ | ✅ | 卡片内超链接无法点击 |
+| [BUG-3707](bugs/BUG-3707-srs-review-extra-audio-buttons.md) | ✅ | ✅ | 只有一句例句却出 5 个音频按钮、未开自动播放全播 |
+| [BUG-3706](bugs/BUG-3706-srs-clip-and-sentence-double-audio.md) | ✅ | ✅ | 卡上视频不能放大、与例句按钮重复出声，重播导致重音 |
+| [BUG-3705](bugs/BUG-3705-srs-sentence-target-word-not-highlighted.md) | ✅ | ✅ | 例句中目标词不高亮 |
+| [BUG-3704](bugs/BUG-3704-srs-review-space-dead-after-grading.md) | ✅ | ✅ | 评分后下一张卡「显示答案」空格失灵 |
+| [BUG-3703](bugs/BUG-3703-srs-review-gif-not-synced-with-sentence.md) | ✅ | ✅ | 复习卡动图不与例句音频联动 |
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |

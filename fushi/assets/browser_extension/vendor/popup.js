@@ -4951,7 +4951,13 @@ function createEntryHeader(entry, idx) {
         }
     });
     setButtonIcon(openAnkiButton, 'openInAnki');
-    if (miningEnabled) {
+    // 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget）时，↗ 走的是
+    // SrsMiningAnkiRepository.openWordInAnki → 复习笔记编辑页，与上面复习状态标记
+    // （「新卡」/「复习中 · 3天后」）点开的是同一张笔记：两颗按钮去同一个地方，只留
+    // 带状态文案的那颗。制卡目标 = Anki 时两者去处不同（Anki / Fushi 复习），照旧都在。
+    const srsOwnsOpenCard = srsBadge !== null &&
+        window.__fushiSrsMiningTarget === true;
+    if (miningEnabled && !srsOwnsOpenCard) {
         buttonsContainer.appendChild(openAnkiButton);
     }
     // Lookup-time detection: query Anki's real card existence for THIS word as

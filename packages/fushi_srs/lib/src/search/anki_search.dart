@@ -4,6 +4,10 @@
 library;
 
 export 'search_corpus.dart'
-    show SrsSearchCorpus, kSrsSearchKernelUnavailable, srsDupeNormBatch;
+    show
+        SrsSearchCorpus,
+        SrsSearchFieldLoader,
+        kSrsSearchKernelUnavailable,
+        srsDupeNormBatch;
 export 'search_node.dart';
 export 'search_parser.dart' show parseAnkiSearch;

@@ -41,6 +41,8 @@ const MAX_LORA_RANK: usize = 16;
 #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
 const RETRIEVABILITY_GEMM_BATCH_SIZE: usize = 128;
 const ID_PLACEHOLDER: i64 = 314_159_265_358_979_323;
+/// Fushi: the note key of a row without a note id is this plus its card id.
+pub(crate) const ID_PLACEHOLDER_NOTE_BASE: i64 = ID_PLACEHOLDER;
 const ID_SPLIT: u64 = 4;
 const TORCH_ID_RNG_STATE_LEN: usize = 624;
 const TORCH_ID_RNG_INITIAL_INDEX: usize = 4;
@@ -676,6 +678,19 @@ fn read_runtime_feature_state(bytes: &[u8]) -> io::Result<FeatureState> {
     Ok(features)
 }
 
+/// Fushi: the feature bookkeeping one journaled review changed
+/// ([FeatureState::checkpoint] / [FeatureState::rewind]).
+#[derive(Clone)]
+pub(crate) struct FeatureUndo {
+    card: i64,
+    scalars: (Option<i64>, Option<i64>, i64, i64, i64, i64),
+    seen: bool,
+    per_card: [Option<i64>; 5],
+    new_ids: Vec<(IdKind, i64)>,
+    rng_before: Option<TorchIdRng>,
+    rng_after: Option<TorchIdRng>,
+}
+
 #[derive(Clone)]
 struct FeatureState {
     first_day_offset: Option<i64>,
@@ -909,6 +924,96 @@ impl FeatureState {
         result
     }
 
+    /// Fushi: what [Self::features_for] + [Self::store_review] of `input` is
+    /// about to change, so [Self::rewind] can put it back (the undo journal).
+    fn checkpoint(&self, input: &ReviewInput) -> FeatureUndo {
+        let card = input.card_id;
+        let ids = [
+            (IdKind::Card, card),
+            (IdKind::Note, input.note_id.unwrap_or(ID_PLACEHOLDER + card)),
+            (IdKind::Deck, input.deck_id.unwrap_or(ID_PLACEHOLDER)),
+            (IdKind::Preset, input.preset_id.unwrap_or(ID_PLACEHOLDER)),
+        ];
+        let new_ids: Vec<(IdKind, i64)> = ids
+            .into_iter()
+            .filter(|key| !self.id_encodings.contains_key(key))
+            .collect();
+        FeatureUndo {
+            card,
+            scalars: (
+                self.first_day_offset,
+                self.previous_day_offset,
+                self.today,
+                self.today_reviews,
+                self.today_new_cards,
+                self.review_index,
+            ),
+            seen: self.card_set.contains_key(&card),
+            per_card: [
+                self.last_new_cards.get(&card).copied(),
+                self.last_i.get(&card).copied(),
+                self.card_first_day_offset.get(&card).copied(),
+                self.card_elapsed_days_cumulative.get(&card).copied(),
+                self.card_elapsed_seconds_cumulative.get(&card).copied(),
+            ],
+            rng_before: (!new_ids.is_empty()).then(|| self.id_rng.clone()),
+            rng_after: None,
+            new_ids,
+        }
+    }
+
+    /// Fushi: called right after the journaled review was stored; records
+    /// where the ID code stream stood then.
+    fn seal(&self, undo: &mut FeatureUndo) {
+        if undo.rng_before.is_some() {
+            undo.rng_after = Some(self.id_rng.clone());
+        }
+    }
+
+    /// Fushi: puts back what [Self::checkpoint] recorded. The ID codes the
+    /// review drew are taken back only when nothing drew codes after it
+    /// (a later query of a first-seen entity keeps its codes and the stream
+    /// position, so no two entities ever share a code).
+    fn rewind(&mut self, undo: FeatureUndo) {
+        let card = undo.card;
+        (
+            self.first_day_offset,
+            self.previous_day_offset,
+            self.today,
+            self.today_reviews,
+            self.today_new_cards,
+            self.review_index,
+        ) = undo.scalars;
+        if !undo.seen {
+            self.card_set.remove(&card);
+        }
+        let maps = [
+            &mut self.last_new_cards,
+            &mut self.last_i,
+            &mut self.card_first_day_offset,
+            &mut self.card_elapsed_days_cumulative,
+            &mut self.card_elapsed_seconds_cumulative,
+        ];
+        for (map, value) in maps.into_iter().zip(undo.per_card) {
+            match value {
+                Some(value) => {
+                    map.insert(card, value);
+                }
+                None => {
+                    map.remove(&card);
+                }
+            }
+        }
+        if let (Some(before), Some(after)) = (undo.rng_before, undo.rng_after) {
+            if self.id_rng.same_position(&after) {
+                for key in &undo.new_ids {
+                    self.id_encodings.remove(key);
+                }
+                self.id_rng = before;
+            }
+        }
+    }
+
     fn append_id_encoding(&mut self, features: &mut Vec<f32>, kind: IdKind, value: i64) {
         let encoding = self.id_encodings.entry((kind, value)).or_insert_with(|| {
             let dim = id_encoding_dim(kind);
@@ -1042,6 +1147,11 @@ impl Default for TorchIdRng {
 }
 
 impl TorchIdRng {
+    /// Fushi: the stream is where `other` left it (no codes drawn since).
+    fn same_position(&self, other: &Self) -> bool {
+        self.index == other.index && self.state == other.state
+    }
+
     fn encoding(&mut self, dim: usize) -> Vec<f32> {
         (0..dim)
             .map(|_| (self.next_u32() as u64 % ID_SPLIT) as f32 - ((ID_SPLIT - 1) as f32 / 2.0))

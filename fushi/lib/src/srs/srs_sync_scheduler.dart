@@ -21,6 +21,11 @@
 /// 服务器时间（报告 error = `server time unavailable`）时提示一次「当前同步后端不支持
 /// 复习数据同步」；可信时间与墙钟偏差超过 10 分钟时提示一次「系统时间不准」。
 /// 没配置任何同步后端时什么都不做。
+///
+/// 每个目录跑引擎之前先做 profile 关联（[SrsProfileLinker]，铁律 E）：profileUid 是每台设备
+/// 本机随机生成的，不关联的话两台设备各写各的 `fushi-srs/<profileUid>/`，互联 / 云盘「同步成功」
+/// 而复习数据从不互通。跑完再在本机写入者目录里发布 profile 说明文件（必须在引擎之后：引擎靠
+/// 「本机写入者目录不见了」判断自己被当作退役设备清理过，先建目录会把这个信号盖掉）。
 library;
 
 import 'dart:async';
@@ -30,6 +35,7 @@ import 'package:fushi/utils.dart' show ErrorLogService;
 import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -134,6 +140,10 @@ enum SrsSyncNotice {
 
   /// 系统时间与可信时间偏差超过 10 分钟。
   clockSkew,
+
+  /// 同步目录里有另一台设备的同一个 profile，但两边都有用户笔记，没法自动关联
+  /// （[SrsSyncScheduler.lastUnlinkedProfile] 是对方的 profile 名）。
+  profileNotLinked,
 }
 
 class SrsSyncScheduler {
@@ -144,12 +154,14 @@ class SrsSyncScheduler {
     required void Function() onDataChanged,
     required void Function(SrsSyncNotice notice) onNotice,
     Future<List<SrsLocalDirectory>> Function()? localDirectories,
+    SrsProfileLinker? profileLinker,
     SrsSyncRunner runner = srsDefaultSyncRunner,
     Future<Directory?> Function()? readMediaRoot,
     SrsMediaSyncRunner mediaRunner = srsDefaultMediaSyncRunner,
     DateTime Function()? clock,
     Duration hostWriteDebounce = kSrsHostWriteDebounce,
-  }) : _hostWriteDebounce = hostWriteDebounce,
+  }) : _profileLinker = profileLinker,
+       _hostWriteDebounce = hostWriteDebounce,
        _readMediaRoot = readMediaRoot,
        _mediaRunner = mediaRunner,
        _readStore = readStore,
@@ -164,6 +176,7 @@ class SrsSyncScheduler {
   final Future<SrsDbStore?> Function() _readStore;
   final SrsChannelRunner _channels;
   final Future<String?> Function(SyncAssetStore backend) _directoryKeyOf;
+  final SrsProfileLinker? _profileLinker;
   final Duration _hostWriteDebounce;
   Timer? _hostWriteTimer;
 
@@ -179,6 +192,9 @@ class SrsSyncScheduler {
 
   final Set<SrsSyncNotice> _noticed = <SrsSyncNotice>{};
   DateTime? _lastThrottledAt;
+
+  /// 最近一次 [SrsSyncNotice.profileNotLinked] 说的那个对方 profile 名。
+  String? lastUnlinkedProfile;
   bool _disposed = false;
 
   /// 已经提示过的通知（测试读）。
@@ -223,7 +239,7 @@ class SrsSyncScheduler {
     String? directoryKey,
   ) async {
     if (_disposed) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
-    final SrsDbStore? store = await _readStore();
+    SrsDbStore? store = await _readStore();
     if (store == null || _disposed) {
       return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
     }
@@ -232,7 +248,28 @@ class SrsSyncScheduler {
       // 同一个物理目录换了个身份就会被当成新目录（重新起步、可能全量重发）：宁可这轮不同步。
       return SrsSyncReport()..error = kSrsSyncDirectoryIdentityUnavailable;
     }
+    final SrsProfileLinker? linker = _profileLinker;
+    bool adopted = false;
+    if (linker != null) {
+      final SrsProfileLinkOutcome link = await linker.link(backend, store);
+      adopted = !identical(link.store, store);
+      store = link.store;
+      final String? unlinked = link.unlinkedProfileName;
+      if (unlinked != null) {
+        lastUnlinkedProfile = unlinked;
+        _noticeOnce(SrsSyncNotice.profileNotLinked);
+      }
+      if (_disposed) return SrsSyncReport()..error = kSrsSyncStoreUnavailable;
+    }
     final SrsSyncReport report = await _runner(backend, store, key);
+    if (linker != null && report.error == null && !_disposed) {
+      try {
+        await linker.publish(backend, store, key);
+      } catch (e, stack) {
+        // 说明文件只用来让别的设备认出同一个 profile，写失败下一轮再写。
+        ErrorLogService.instance.log('SrsSyncScheduler.profileInfo', e, stack);
+      }
+    }
     for (final String f in report.skippedFiles) {
       if (_loggedSkipped.add('$key|$f')) {
         ErrorLogService.instance.log(
@@ -272,7 +309,8 @@ class SrsSyncScheduler {
         ErrorLogService.instance.log('SrsSyncScheduler.media', e, stack);
       }
     }
-    if (report.applied > 0 ||
+    if (adopted ||
+        report.applied > 0 ||
         report.published > 0 ||
         report.reincarnated ||
         mediaChanged) {

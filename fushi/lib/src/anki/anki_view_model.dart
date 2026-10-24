@@ -670,6 +670,17 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
 });
 
+/// 互联主机**替别的设备**制卡（收转发、浏览器扩展、读写出处笔记）用的仓库：裸本机后端，
+/// 不套待发队列 / 制卡到主机（对端有自己的队列，主机再排一次会让「送没送到」不确定），
+/// 但必须遵守本机的挖词目标——主机已迁到 Fushi 复习时，替对端制的卡也落复习，
+/// 再经复习同步回到各设备；否则会继续写进主机已弃用的 Anki。
+final hostMiningAnkiRepositoryProvider = Provider<BaseAnkiRepository>(
+  (Ref ref) => _withSrsMining(
+    ref,
+    ref.watch(platformServicesProvider).createAnkiRepository(),
+  ),
+);
+
 /// 最外层套上「挖词目标 = Fushi 复习」（[SrsMiningAnkiRepository]）。
 ///
 /// **只有复习模块开着、且目标是 Fushi 复习时才包**：模块关着时链上根本没有这一层，

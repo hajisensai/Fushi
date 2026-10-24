@@ -60,16 +60,43 @@ class SrsAppHost implements SrsExtensionApi {
   }
 }
 
-/// 在 [navigator] 上压一页笔记编辑（弹窗 / 外部工具打开卡片）。
-Future<bool> srsPushNoteEditor(NavigatorState? navigator, String noteId) async {
+/// 已压栈（含正在压）的笔记编辑页对应的笔记 id。
+///
+/// 防重入：查词弹窗的复习标记 / ↗、浏览器扩展、AnkiConnect `guiEditNote` 都经
+/// [srsPushNoteEditor] 打开编辑页，而桥调用在 push 发出后就返回（不等页面加载完），
+/// 弹窗按钮自己的 busy 守卫只挡得住同一次桥往返——连点同一个词会叠出好几页同一条
+/// 笔记的编辑页，每页各自跑一遍加载。同一条笔记的编辑页还开着时再请求打开，直接视为
+/// 已打开（回 true），不再叠页；页面出栈后摘掉登记。
+final Set<String> _srsOpenNoteEditors = <String>{};
+
+/// 测试用：清掉防重入登记（测试之间不共享进程级状态）。
+@visibleForTesting
+void debugResetSrsNoteEditorLock() => _srsOpenNoteEditors.clear();
+
+/// 在 [navigator] 上压一页笔记编辑（弹窗 / 外部工具打开卡片）。同一条笔记的编辑页
+/// 已经开着时不再叠页（见 [_srsOpenNoteEditors]）。
+///
+/// [pageBuilder] 只给测试换页面用；缺省 = [SrsNoteEditorPage]。
+Future<bool> srsPushNoteEditor(
+  NavigatorState? navigator,
+  String noteId, {
+  @visibleForTesting Widget Function(String noteId)? pageBuilder,
+}) async {
   if (navigator == null || !navigator.mounted) return false;
+  if (!_srsOpenNoteEditors.add(noteId)) return true;
+  final Widget Function(String) build =
+      pageBuilder ?? (String id) => SrsNoteEditorPage(noteId: id);
   unawaited(
-    navigator.push<void>(
-      adaptivePageRoute<void>(
-        context: navigator.context,
-        builder: (BuildContext context) => SrsNoteEditorPage(noteId: noteId),
-      ),
-    ),
+    navigator
+        .push<void>(
+          adaptivePageRoute<void>(
+            context: navigator.context,
+            builder: (BuildContext context) => build(noteId),
+          ),
+        )
+        .whenComplete(() {
+          _srsOpenNoteEditors.remove(noteId);
+        }),
   );
   return true;
 }

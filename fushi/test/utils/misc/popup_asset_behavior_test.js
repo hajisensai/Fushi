@@ -4092,9 +4092,47 @@ async function testSrsBadgeHiddenWhenWordNotInSrs() {
   assert.equal(badge.textContent, '');
 }
 
+// 制卡目标 = Fushi 复习（宿主注入 __fushiSrsMiningTarget=true）：「在 Anki 中打开」↗
+// 此时经 SrsMiningAnkiRepository.openWordInAnki 打开的就是复习状态标记打开的同一张笔记，
+// 两颗按钮去同一个地方 → 只留状态标记。制卡目标 = Anki 时两者去处不同，↗ 照旧渲染。
+async function testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs() {
+  for (const [target, expectOpenAnki] of [[true, false], [false, true], [undefined, true]]) {
+    const context = loadPopup();
+    context.window.__fushiSrsEnabled = true;
+    context.window.__fushiSrsMiningTarget = target;
+    context.window.flutter_inappwebview.callHandler = (name) => {
+      if (name === 'duplicateCheck') return Promise.resolve(true);
+      if (name === 'srsTermStatus') {
+        return Promise.resolve({
+          queue: 'new', dueLabel: '新卡', suspended: false,
+          cardId: 'c1', noteId: 'n1', cardCount: 1, tooltip: 'Open',
+        });
+      }
+      return Promise.resolve(null);
+    };
+    const header = context.createEntryHeader(srsEntry(), 0);
+    await flush();
+    assert.ok(findByClassDeep(header, 'srs-status-badge'),
+      `target=${target}: SRS badge is the open-card entry`);
+    assert.equal(findByClassDeep(header, 'open-anki-button') !== null, expectOpenAnki,
+      `target=${target}: open-in-Anki button rendered=${expectOpenAnki}`);
+  }
+  // 复习模块关着（没有状态标记）时，即使宿主说目标是复习，↗ 也不能跟着消失。
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = false;
+  context.window.__fushiSrsMiningTarget = true;
+  context.window.flutter_inappwebview.callHandler = (name) =>
+    Promise.resolve(name === 'duplicateCheck' ? true : null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.ok(findByClassDeep(header, 'open-anki-button'),
+    'no SRS badge -> open-in-Anki button stays');
+}
+
 Promise.all([
   testSrsBadgeAbsentAndSilentWhenModuleOff(),
   testSrsBadgeShowsHostLabelAndOpensCard(),
   testSrsBadgeHiddenWhenWordNotInSrs(),
+  testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs(),
 ]).then(() => console.log('SRS badge tests passed'))
   .catch((error) => { console.error(error); process.exitCode = 1; });

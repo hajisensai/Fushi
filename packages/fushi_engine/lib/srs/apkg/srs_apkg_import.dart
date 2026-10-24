@@ -63,15 +63,65 @@ Future<SrsImportReport> importAnkiPackage({
   SrsZstdDecoder? zstdDecompress,
   bool Function()? shouldStop,
 }) async {
-  // 解 zip、解 zstd、解出集合 SQLite 是纯 CPU 活（几十 MB 的包要几百毫秒到数秒）：放后台
-  // isolate，不卡 UI 帧；结果经 Isolate.exit 交回，不复制（BUG-3549）。
+  // 内存里的包落一份临时文件，走与 [importAnkiPackageFile] 同一条流式路径（只有一条解包实现）。
+  final Directory tmp = await Directory.systemTemp.createTemp('fushi_apkg_in_');
+  try {
+    final File f = File('${tmp.path}${Platform.pathSeparator}package.apkg');
+    await f.writeAsBytes(bytes, flush: true);
+    return await importAnkiPackageFile(
+      store: store,
+      file: f,
+      storeMedia: storeMedia,
+      options: options,
+      onProgress: onProgress,
+      zstdDecompress: zstdDecompress,
+      shouldStop: shouldStop,
+    );
+  } finally {
+    try {
+      await tmp.delete(recursive: true);
+    } on FileSystemException {
+      // Windows 上句柄偶尔晚释放：临时目录留给系统清理。
+    }
+  }
+}
+
+/// 同 [importAnkiPackage]，从文件读。**不把整个包读进内存**（BUG：Android 上 AnkiDroid 导出的
+/// 带媒体 .colpkg 整包 `readAsBytes` 后又被 Isolate.run 复制一份、archive 再把每个解压过的媒体
+/// 缓存在条目上，峰值 ≈ 2×包 + 全部媒体解压后大小 → Out of Memory）：
+/// 后台 isolate 只读 zip 中央目录、把集合流式解压到临时目录（见 [SrsAnkiPackage.openFile]），
+/// 媒体在导入时按引用逐个从文件里取。
+Future<SrsImportReport> importAnkiPackageFile({
+  required SrsDbStore store,
+  required File file,
+  required SrsImportMediaSink storeMedia,
+  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
+  void Function(double progress)? onProgress,
+  SrsZstdDecoder? zstdDecompress,
+  bool Function()? shouldStop,
+}) async {
   final SrsZstdDecoder zstd = zstdDecompress ?? _defaultZstd;
-  final SrsAnkiPackage pkg = await Isolate.run(
-    () => SrsAnkiPackage.open(bytes, zstd: zstd),
-    debugName: 'srs-apkg-open',
-  );
-  final SrsAnkiCollection col = await SrsAnkiCollection.open(
-    pkg.collectionBytes,
+  final Directory work = await Directory.systemTemp.createTemp('fushi_apkg_');
+  final String path = file.path;
+  final String workPath = work.path;
+  final SrsAnkiPackage pkg;
+  try {
+    // 解 zip 目录、流式解压集合、zstd 是纯 CPU / IO 活：放后台 isolate，不卡 UI 帧（BUG-3549）。
+    pkg = await Isolate.run(
+      () => SrsAnkiPackage.openFile(path, zstd: zstd, workDir: workPath),
+      debugName: 'srs-apkg-open',
+    );
+  } catch (_) {
+    try {
+      await work.delete(recursive: true);
+    } on FileSystemException {
+      // 临时目录留给系统清理。
+    }
+    rethrow;
+  }
+  // 关闭时连同工作目录一起删（打开失败也删）。
+  final SrsAnkiCollection col = await SrsAnkiCollection.openExtracted(
+    pkg.collectionFile!,
   );
   return _importOpened(
     store: store,
@@ -143,25 +193,6 @@ Future<SrsImportReport> _importOpened({
 
 /// 缺省 zstd 解码（排程内核）。顶层函数：可随闭包送进后台 isolate。
 Uint8List? _defaultZstd(Uint8List data) => FfiFsrsEngine.zstdDecompress(data);
-
-/// 同 [importAnkiPackage]，从文件读。
-Future<SrsImportReport> importAnkiPackageFile({
-  required SrsDbStore store,
-  required File file,
-  required SrsImportMediaSink storeMedia,
-  SrsAnkiImportOptions options = const SrsAnkiImportOptions(),
-  void Function(double progress)? onProgress,
-  SrsZstdDecoder? zstdDecompress,
-  bool Function()? shouldStop,
-}) async => importAnkiPackage(
-  store: store,
-  bytes: await file.readAsBytes(),
-  storeMedia: storeMedia,
-  options: options,
-  onProgress: onProgress,
-  zstdDecompress: zstdDecompress,
-  shouldStop: shouldStop,
-);
 
 /// 一个来源笔记类型映射到本机的结果。
 class _NtMap {

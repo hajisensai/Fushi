@@ -54,6 +54,36 @@ Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
   return out.where(_isBareName).toSet();
 }
 
+/// 回收媒体文件前的「存活引用」全集：比 [srsReferencedMedia] 更保守——
+/// 已删除但还没清除的笔记（可能被恢复）、字段的并发候选值（可能被裁决选中）、
+/// 已删除的笔记类型的模板 / CSS 都算引用。只有物理清除了的笔记（身份记录已删）不算。
+Future<Set<String>> srsAllMediaReferences(SrsDbStore store) async {
+  final Set<String> out = <String>{};
+  for (final SrsNoteView n in await store.allNoteViews()) {
+    for (final SrsRegister r in n.edits.registers) {
+      if (!r.key.startsWith('f/')) continue;
+      for (final SrsFieldEdit e in r.live) {
+        final Object? v = e.value;
+        if (v is! String) continue;
+        out.addAll(srsMediaRefsIn(v));
+        out.addAll(srsStyleRefsIn(v));
+      }
+    }
+  }
+  final Map<String, SrsNoteTypeView?> types = await store.noteTypesById(
+    await store.entityIds(SrsEntityKind.noteType),
+  );
+  for (final SrsNoteTypeView? t in types.values) {
+    if (t == null) continue;
+    for (final SrsTemplateDef tpl in t.templates) {
+      out.addAll(srsMediaRefsIn(tpl.front, includeStatic: true));
+      out.addAll(srsMediaRefsIn(tpl.back, includeStatic: true));
+    }
+    out.addAll(srsMediaRefsIn(t.css, includeStatic: true));
+  }
+  return out.where(_isBareName).toSet();
+}
+
 bool _isBareName(String n) =>
     n.isNotEmpty &&
     !n.contains('/') &&

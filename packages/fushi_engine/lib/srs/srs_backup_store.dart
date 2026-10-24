@@ -826,6 +826,7 @@ class SrsBackupStore {
       await for (final FileSystemEntity e in mediaDir.list())
         if (e is File) e,
     ]..sort((File a, File b) => a.path.compareTo(b.path));
+    final Set<String> listed = <String>{};
     for (final File f in files) {
       final String name = p.basename(f.path);
       if (!_isBareName(name) ||
@@ -834,7 +835,10 @@ class SrsBackupStore {
         continue;
       }
       final FileStat st = await f.stat();
+      // 列出之后被删掉的（墓碑清除回收了不再被引用的媒体，见 srs_purge.dart）：不进这份备份。
+      if (st.type == FileSystemEntityType.notFound) continue;
       final String key = '$profileUid/$name';
+      listed.add(key);
       final Object? cached = index[key];
       String? sha;
       if (cached is Map &&
@@ -843,22 +847,41 @@ class SrsBackupStore {
           cached['sha256'] is String) {
         sha = cached['sha256']! as String;
       }
-      sha ??= await ffcSha256File(f.path);
-      if (cached is! Map || cached['sha256'] != sha) {
+      final String hash;
+      try {
+        hash = sha ?? await ffcSha256File(f.path);
+        final File pooled = File(p.join(mediaPool.path, hash));
+        if (!await pooled.exists() || await pooled.length() != st.size) {
+          final File tmp = File('${pooled.path}.tmp');
+          await f.copy(tmp.path);
+          await tmp.rename(pooled.path);
+        }
+      } on Object {
+        if (!await f.exists()) {
+          listed.remove(key);
+          continue;
+        }
+        rethrow;
+      }
+      if (cached is! Map || cached['sha256'] != hash) {
         index[key] = <String, Object?>{
           'size': st.size,
           'mtime': st.modified.millisecondsSinceEpoch,
-          'sha256': sha,
+          'sha256': hash,
         };
         dirty = true;
       }
-      final File pooled = File(p.join(mediaPool.path, sha));
-      if (!await pooled.exists() || await pooled.length() != st.size) {
-        final File tmp = File('${pooled.path}.tmp');
-        await f.copy(tmp.path);
-        await tmp.rename(pooled.path);
-      }
-      out.add(SrsBackupMediaEntry(name: name, sha256: sha, size: st.size));
+      out.add(SrsBackupMediaEntry(name: name, sha256: hash, size: st.size));
+    }
+    // 本 profile 已不在媒体目录里的文件：哈希缓存条目一起丢掉（不然随回收的媒体只增不减）。
+    final String own = '$profileUid/';
+    final List<String> stale = <String>[
+      for (final String k in index.keys)
+        if (k.startsWith(own) && !listed.contains(k)) k,
+    ];
+    if (stale.isNotEmpty) {
+      stale.forEach(index.remove);
+      dirty = true;
     }
     if (dirty) await _writeMediaIndex(index);
     return out;

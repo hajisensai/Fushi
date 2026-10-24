@@ -7,7 +7,10 @@
 /// - [srsStoreProvider]：按当前 profile 打开的 [SrsDbStore]；切 profile 时随
 ///   `activeProfileId` 重建（profile 的全局身份由 `FushiDatabase.profileUidOf` 给出）。
 /// - [srsRevisionProvider]：本机写操作后的刷新信号。store 本身不发变更流，页面写完
-///   一律 [bumpSrsRevision]，订阅它的列表 / 计数随之重读。
+///   一律 [bumpSrsRevision]，订阅它的列表 / 计数随之重读。信号不分种类，由消费方按数据自己
+///   判断要不要真重算：整库扫一遍的角标（同步冲突 / 待裁决 / 旧 Lapis 迁移提醒）按
+///   [SrsDbStore.contentFingerprint] 复用上次结果（[_srsMemoByContent]），评分只落日志，
+///   不重扫它们；牌组收起 / 展开（界面状态）不发信号（见 `srs_deck_list_page.dart`）。
 library;
 
 import 'dart:async';
@@ -20,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
+import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
@@ -228,6 +232,15 @@ final FutureProvider<SrsDbStore?> srsStoreProvider =
       srsRunLogged('srsCompactStoredStyles', () async {
         await store.compactStoredStyles(shouldStop: () => disposed);
       });
+      // 墓碑清除：删掉的笔记过了同步安全期后物理清除正文 / 复习日志 / 缓存 / 不再被引用的媒体
+      // （srs_purge.dart）。分块、每块让出，store 换掉时停，下次打开从剩下的候选继续。
+      srsRunLogged('srsPurgeExpiredTombstones', () async {
+        await srsPurgeExpiredTombstones(
+          store,
+          mediaRoot: SrsMediaStore.directoryFor(support, profileUid),
+          shouldStop: () => disposed,
+        );
+      });
       return store;
     });
 
@@ -338,23 +351,31 @@ class SrsDeckDeleteController extends ChangeNotifier {
   /// 删一个牌组（连同子牌组，见 `SrsDbStore.deleteDeck`；[deleteCards] 为真时连卡片一起删）。
   /// 同一个牌组已经在删时直接返回。
   /// 失败原样抛出（调用方记日志）；成功或失败都让列表重读（失败也可能已提交了前几块）。
+  ///
+  /// [purgeNow]（只在 [deleteCards] 且 `store.neverSynced` 时有意义）：删完立刻物理清除这些笔记的
+  /// 正文、复习日志与不再被引用的媒体（[mediaRoot]），不进回收、不可恢复（见 srs_purge.dart）。
   Future<void> delete(
     SrsDbStore store,
     String deckId, {
     bool deleteCards = false,
+    bool purgeNow = false,
+    Directory? mediaRoot,
   }) async {
     if (_disposed || _deleting.containsKey(deckId)) return;
     final ValueNotifier<double?> progress = ValueNotifier<double?>(null);
     _deleting[deckId] = progress;
     _notify();
     try {
-      await store.deleteDeck(
+      final List<String> deletedNotes = await store.deleteDeck(
         deckId,
         deleteCards: deleteCards,
         onProgress: (int done, int total) {
           if (!_disposed && total > 0) progress.value = done / total;
         },
       );
+      if (purgeNow && deletedNotes.isNotEmpty && store.neverSynced) {
+        await srsPurgeNotesNow(store, deletedNotes, mediaRoot: mediaRoot);
+      }
       _deleted.add(deckId);
     } catch (_) {
       if (identical(_deleting[deckId], progress)) {
@@ -408,10 +429,18 @@ final Provider<SrsDeckDeleteController> srsDeckDeleteControllerProvider =
 
 /// 牌组列表数据（牌组行）。同步冲突数另见 [srsConflictCountProvider]。
 class SrsDeckListData {
-  const SrsDeckListData({required this.store, required this.decks});
+  const SrsDeckListData({
+    required this.store,
+    required this.decks,
+    this.revision = 0,
+  });
 
   final SrsDbStore store;
   final List<SrsDeckSummary> decks;
+
+  /// 开始读这份数据时 store 的修订号（[SrsDbStore.revision]）：≥ 某次写入完成时的修订号 = 这份
+  /// 数据一定反映了那次写入（牌组列表据此撤掉收起 / 展开的本地覆盖）。
+  final int revision;
 
   int get totalCards => _sumRoots((SrsDeckSummary d) => d.totalCards);
 
@@ -480,11 +509,12 @@ final FutureProvider<SrsDeckListData?> srsDeckListProvider =
       ref.watch(srsRevisionProvider);
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
+      final int revision = store.revision;
       final List<SrsDeckSummary> decks = srsVisibleDecks(
         await store.deckSummaries(),
         defaultDeckId: store.defaultDeckId,
       );
-      return SrsDeckListData(store: store, decks: decks);
+      return SrsDeckListData(store: store, decks: decks, revision: revision);
     });
 
 /// 偏好：牌组列表顶部是否提醒「还有旧 Lapis 笔记可迁到 Fushi 卡片」（缺省 = 提醒）。
@@ -511,8 +541,49 @@ Future<void> dismissSrsLapisMigrationReminder(WidgetRef ref) async {
   await app.prefsRepo.setPref(kSrsLapisMigrationReminderPrefKey, false);
 }
 
+/// 一个整库计数在某个 store 内容指纹下的结果（[_srsMemoByContent]）。
+class _SrsContentMemo {
+  const _SrsContentMemo(this.fingerprint, this.value);
+
+  final String fingerprint;
+  final Future<int> value;
+}
+
+final Expando<_SrsContentMemo> _lapisPendingMemo = Expando<_SrsContentMemo>(
+  'srsLegacyLapisPending',
+);
+final Expando<_SrsContentMemo> _conflictCountMemo = Expando<_SrsContentMemo>(
+  'srsConflictCount',
+);
+
+/// 按 [SrsDbStore.contentFingerprint] 复用 [compute] 的结果：指纹没变（这期间只落了复习日志 /
+/// 界面状态类修改记录）时直接给上次的 Future，不再扫库。以前每评一张卡 [srsRevisionProvider]
+/// 递增，被复习页盖住的牌组列表就把同步冲突（对全部修改记录分组）、旧 Lapis 迁移提醒各重扫一遍。
+///
+/// 指纹在开始算**之前**取：算的途中有写入落库，存下的是旧指纹，下次照样重算。失败不缓存（原样
+/// 抛给 provider，下次重试）。
+Future<int> _srsMemoByContent(
+  Expando<_SrsContentMemo> memo,
+  SrsDbStore store,
+  Future<int> Function() compute,
+) {
+  final String fingerprint = store.contentFingerprint;
+  final _SrsContentMemo? hit = memo[store];
+  if (hit != null && hit.fingerprint == fingerprint) return hit.value;
+  final Future<int> value = compute();
+  final _SrsContentMemo entry = _SrsContentMemo(fingerprint, value);
+  memo[store] = entry;
+  value.then<void>(
+    (_) {},
+    onError: (Object _) {
+      if (identical(memo[store], entry)) memo[store] = null;
+    },
+  );
+  return value;
+}
+
 /// 还能迁到 Fushi 卡片的旧 Lapis 笔记 + 可补迁遗漏字段的笔记，合计（牌组列表的迁移提醒）。
-/// 提醒关着时不算（不为看不见的提示扫库）。
+/// 提醒关着时不算（不为看不见的提示扫库）。内容没变时复用上次结果（[_srsMemoByContent]）。
 final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
   Ref ref,
 ) async {
@@ -520,22 +591,26 @@ final FutureProvider<int> srsLegacyLapisPendingProvider = FutureProvider<int>((
   if (!ref.watch(srsLapisMigrationReminderProvider)) return 0;
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return 0;
-  final ({int migratable, int backfill}) pending = await store
-      .legacyLapisPendingCounts();
-  return pending.migratable + pending.backfill;
+  return _srsMemoByContent(_lapisPendingMemo, store, () async {
+    final ({int migratable, int backfill}) pending = await store
+        .legacyLapisPendingCounts();
+    return pending.migratable + pending.backfill;
+  });
 });
 
 /// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
-/// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。
+/// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。内容没变时复用
+/// 上次结果（[_srsMemoByContent]）：评分只落日志，冲突数不可能因此变。
 final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
   Ref ref,
 ) async {
   ref.watch(srsRevisionProvider);
   final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
   if (store == null) return 0;
-  final int conflicts = (await store.syncConflicts()).length;
-  final int pending = (await store.notesPendingDecision()).length;
-  return conflicts + pending;
+  return _srsMemoByContent(_conflictCountMemo, store, () async {
+    final int conflicts = (await store.syncConflicts()).length;
+    return conflicts + await store.pendingDecisionCount();
+  });
 });
 
 /// 等 store 就绪（页面动作里用）。模块关着 / 打开失败时返回 null。

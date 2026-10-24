@@ -27,6 +27,8 @@ const String kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 const int kDay = 86400000;
 
 /// 记录收到的命令；查询按卡的数字 id 给 [r]（没设的给 [defaultR]）。快照 = 已回放的卡（JSON）。
+/// 撤销日志与分数表照原生契约模拟：append 记 (标签, 卡)，unappend 只撤最近一条；分数表按
+/// (卡, 版本) 命中，append / unappend 作废同卡的项，replay / reset / restore 清空日志与表。
 class _FakeBackend implements SrsRwkvBackend {
   final List<int> replayedCards = <int>[];
   final Map<int, double> r = <int, double>{};
@@ -34,15 +36,100 @@ class _FakeBackend implements SrsRwkvBackend {
   int resets = 0;
   int restores = 0;
   int queries = 0;
+  int appends = 0;
+  int unappends = 0;
+
+  /// 分数表重算过的行数（[updateScores] 的行 + [requeryScores] 的项）。
+  int scoredRows = 0;
+  int requeries = 0;
+  int clears = 0;
+  final List<(int, int)> journal = <(int, int)>[];
+  final Map<int, (int, double)> scores = <int, (int, double)>{};
   bool closed = false;
+
+  double _r(int card) => r[card] ?? defaultR;
+
+  @override
+  Future<bool> append(RwkvRows rows, List<int> tags) async {
+    appends++;
+    for (int i = 0; i < rows.length; i++) {
+      replayedCards.add(rows.cardIdAt(i));
+      journal.add((tags[i], rows.cardIdAt(i)));
+      scores.remove(rows.cardIdAt(i));
+    }
+    return true;
+  }
+
+  @override
+  Future<bool> unappend(int tag) async {
+    if (journal.isEmpty || journal.last.$1 != tag) return false;
+    unappends++;
+    final (int _, int card) = journal.removeLast();
+    replayedCards.removeAt(replayedCards.lastIndexOf(card));
+    scores.remove(card);
+    return true;
+  }
+
+  @override
+  Future<void> clearScores() async {
+    clears++;
+    scores.clear();
+  }
+
+  @override
+  Future<RwkvScoreLookup> lookupScores(
+    Int64List cardIds,
+    Uint64List versions,
+  ) async {
+    final Float32List out = Float32List(cardIds.length);
+    final Uint8List found = Uint8List(cardIds.length);
+    for (int i = 0; i < cardIds.length; i++) {
+      final (int, double)? e = scores[cardIds[i]];
+      if (e != null && e.$1 == versions[i]) {
+        out[i] = e.$2;
+        found[i] = 1;
+      } else {
+        out[i] = double.nan;
+      }
+    }
+    return RwkvScoreLookup(out, found);
+  }
+
+  @override
+  Future<Float32List> updateScores(
+    RwkvRows rows,
+    Uint64List versions,
+    Int64List anchorsMs,
+  ) async {
+    queries++;
+    scoredRows += rows.length;
+    final Float32List out = Float32List(rows.length);
+    for (int i = 0; i < rows.length; i++) {
+      out[i] = _r(rows.cardIdAt(i));
+      scores[rows.cardIdAt(i)] = (versions[i], out[i]);
+    }
+    return out;
+  }
+
+  @override
+  Future<int> requeryScores(int today, int nowMs) async {
+    requeries++;
+    scoredRows += scores.length;
+    for (final int card in scores.keys.toList()) {
+      scores[card] = (scores[card]!.$1, _r(card));
+    }
+    return scores.length;
+  }
 
   void setR(String cardId, double value) =>
       r[SrsIds.ankiNumericIds(<String>[cardId]).single] = value;
 
   @override
   Future<void> replay(RwkvRows rows) async {
+    journal.clear();
     for (int i = 0; i < rows.length; i++) {
       replayedCards.add(rows.cardIdAt(i));
+      scores.remove(rows.cardIdAt(i));
     }
   }
 
@@ -61,6 +148,8 @@ class _FakeBackend implements SrsRwkvBackend {
   @override
   Future<void> restore(Uint8List snapshot) async {
     restores++;
+    journal.clear();
+    scores.clear();
     replayedCards
       ..clear()
       ..addAll(
@@ -71,6 +160,8 @@ class _FakeBackend implements SrsRwkvBackend {
   @override
   Future<void> reset() async {
     resets++;
+    journal.clear();
+    scores.clear();
     replayedCards.clear();
   }
 
@@ -280,7 +371,7 @@ void main() {
   });
 
   group('服务', () {
-    test('启动全量回放；作答只追加这一条；撤销触发后台重建；快照命中', () async {
+    test('启动全量回放；作答只追加这一条；撤销按撤销日志撤回（不重建、不退回 FSRS）；快照命中', () async {
       final _Fixture f = await _Fixture.create();
       final List<String> cards = await f.cards(3);
       await f.graduate(cards);
@@ -312,12 +403,16 @@ void main() {
       );
       expect(backend.replayedCards, hasLength(4));
 
-      // 撤销改写了历史：后台重建，回到 3 条。
+      // 撤销最近一次作答：按撤销日志原样撤回，不全量重建，全程就绪（不退回 FSRS-7）。
       expect(await f.store.undo(next, log.id), isTrue);
-      expect(await service.refresh(), isFalse);
-      await _settled(service);
-      expect(backend.resets, 2);
+      expect(await service.refresh(), isTrue);
+      expect(service.ready, isTrue);
+      expect(backend.resets, 1, reason: 'undo rewinds the journal');
+      expect(backend.unappends, 1);
       expect(backend.replayedCards, hasLength(3));
+      final SrsAnswerPreview again0 = await f.store.preview(next);
+      expect(again0.algorithm, SrsAlgorithm.rwkv);
+      expect(again0.rwkvUnavailable, isFalse);
 
       // 关闭存快照；新服务从快照恢复，不重建。
       await service.close();
@@ -435,6 +530,116 @@ void main() {
     });
   });
 
+  group('常驻分数表与撤销日志', () {
+    late _Fixture f;
+    late List<String> cards;
+    late _FakeBackend backend;
+    late SrsRwkvService service;
+
+    setUp(() async {
+      f = await _Fixture.create();
+      cards = await f.cards(8);
+      await f.graduate(cards);
+      backend = _FakeBackend()..defaultR = 0.5;
+      service = f.service(backend);
+      f.store.rwkv = service;
+      await service.start();
+      await _settled(service);
+      f.advance(kDay);
+    });
+
+    tearDown(() => service.close());
+
+    test('作答后只重算答过的那张；换日 / 牌组设置变化 / 同步合并整表重查', () async {
+      final String deck = f.store.defaultDeckId;
+      final String first = (await f.store.nextCard(deck))!;
+      expect(backend.scoredRows, 8, reason: 'first queue scores every card');
+      await f.store.answer(first, 3);
+      f.advance(1000);
+      await f.store.deckSummary(deck);
+      await f.store.nextCard(deck);
+      expect(
+        backend.scoredRows,
+        9,
+        reason: 'only the answered card is rescored',
+      );
+      expect(backend.requeries, 0);
+
+      // 换日：整表按此刻重查（原生侧，不回读历史）。
+      f.advance(kDay);
+      await f.store.nextCard(deck);
+      expect(backend.requeries, 1);
+
+      // 牌组设置变化：整表重查。
+      await f.store.editFields(SrsEntityKind.deck, deck, <String, Object?>{
+        SrsFieldKeys.deckAlgorithm: <String, Object?>{
+          'alg': SrsAlgorithm.rwkv.wire,
+          'auto': false,
+        },
+      });
+      await f.store.nextCard(deck);
+      expect(backend.requeries, 2);
+      expect(backend.clears, 1, reason: 'only the first build cleared');
+    });
+
+    test('撤销最近一次作答：撤回日志、只重算那张卡；撤更早的作答 → 全量重建', () async {
+      final String deck = f.store.defaultDeckId;
+      final String a = (await f.store.nextCard(deck))!;
+      final SrsReviewLog la = await f.store.answer(a, 3);
+      f.advance(40000);
+      final String b = (await f.store.nextCard(deck, exclude: <String>{a}))!;
+      final SrsReviewLog lb = await f.store.answer(b, 1);
+      f.advance(1000);
+      await f.store.nextCard(deck);
+      final int scored = backend.scoredRows;
+
+      expect(await f.store.undo(b, lb.id), isTrue);
+      await f.store.nextCard(deck);
+      expect(service.ready, isTrue);
+      expect(backend.unappends, 1);
+      expect(backend.resets, 1);
+      expect(backend.scoredRows, scored + 1);
+      expect((await f.store.preview(b)).rwkvUnavailable, isFalse);
+
+      // 再撤 a：它现在又是撤销日志的最近一条。
+      expect(await f.store.undo(a, la.id), isTrue);
+      expect(await service.refresh(), isTrue);
+      expect(backend.unappends, 2);
+      expect(backend.resets, 1);
+      expect(backend.replayedCards, hasLength(8));
+
+      // 撤的不是最近一条（先答 c、d，再撤 c）：撤销日志对不上 → 全量重建，结果仍是对的。
+      final String c = (await f.store.nextCard(deck))!;
+      final SrsReviewLog lc = await f.store.answer(c, 3);
+      f.advance(40000);
+      final String d = (await f.store.nextCard(deck, exclude: <String>{c}))!;
+      await f.store.answer(d, 3);
+      await service.refresh();
+      expect(await f.store.undo(c, lc.id), isTrue);
+      expect(await service.refresh(), isFalse);
+      await _settled(service);
+      expect(backend.resets, 2);
+      expect(backend.replayedCards, hasLength(9));
+    });
+
+    test('同一批里答了又撤回：相互抵消，不碰状态', () async {
+      final String deck = f.store.defaultDeckId;
+      final String a = (await f.store.nextCard(deck))!;
+      await service.refresh();
+      final int appends = backend.appends;
+      // 作答与撤销都在下一次对齐之前落库（onAnswered 是 unawaited 的，这里先拿掉服务）。
+      f.store.rwkv = null;
+      final SrsReviewLog la = await f.store.answer(a, 3);
+      expect(await f.store.undo(a, la.id), isTrue);
+      f.store.rwkv = service;
+      expect(await service.refresh(), isTrue);
+      expect(backend.appends, appends);
+      expect(backend.unappends, 0);
+      expect(backend.resets, 1);
+      expect(backend.replayedCards, hasLength(8));
+    });
+  });
+
   group('RWKV-Instant 排队', () {
     late _Fixture f;
     late List<String> cards;
@@ -476,7 +681,8 @@ void main() {
       expect(await f.reviewCount(), 0);
       expect(await f.store.nextCard(f.store.defaultDeckId), isNull);
       // 只有一张合格时只出它：别的卡按到期日早就该复习、FSRS 的 R 还更低，也不出。
-      f.advance(31000);
+      // （替身后端直接改 R，没有作答：分数表到定时全量刷新（30 分钟）才重查。）
+      f.advance(31 * 60000);
       backend.setR(cards[3], 0.7);
       expect(await f.reviewCount(), 1);
       expect(await f.store.nextCard(f.store.defaultDeckId), cards[3]);

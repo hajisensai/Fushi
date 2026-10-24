@@ -21,6 +21,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -899,6 +900,7 @@ class _PopupStaticSettingsMemo {
     required this.localeTag,
     required this.miningEnabled,
     required this.srsEnabled,
+    required this.srsMiningToReview,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -932,6 +934,7 @@ class _PopupStaticSettingsMemo {
   final String localeTag;
   final bool miningEnabled;
   final bool srsEnabled;
+  final bool srsMiningToReview;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -1063,6 +1066,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 「复习」功能模块（[ModuleId.srs]，默认关）。关着时 popup.js 不渲染复习词状态标记、
   // 也不发 srsTermStatus 桥（零开销）；与制卡模块互不牵连（只想看复习状态也行）。
   final bool srsEnabled = appModel.moduleVisibility.isEnabled(ModuleId.srs);
+  // 制卡此刻发往 Fushi 复习（与 `srsMiningToReviewProvider` 同一判据）：这时词条头上
+  // 「在 Anki 中打开」↗ 经 SrsMiningAnkiRepository.openWordInAnki 打开的正是复习状态
+  // 标记（「新卡」/「复习中」）打开的同一张笔记编辑页——两颗按钮去同一个地方，popup.js
+  // 据此只留状态标记一颗。
+  final bool srsMiningToReview =
+      srsEnabled && appModel.srsMiningTarget == SrsMiningTarget.srs;
 
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
@@ -1087,6 +1096,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.localeTag == localeTag &&
       cached.miningEnabled == miningEnabled &&
       cached.srsEnabled == srsEnabled &&
+      cached.srsMiningToReview == srsMiningToReview &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -1208,6 +1218,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 复习模块开关：false ⇒ popup.js 不渲染复习词状态标记、不发 srsTermStatus 桥。
     // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，由扩展 shim 按服务端 404 退避。
     window.__fushiSrsEnabled = $srsEnabled;
+    // 制卡目标 = Fushi 复习：↗ 与复习状态标记打开同一张笔记，popup.js 不再渲染 ↗。
+    window.__fushiSrsMiningTarget = $srsMiningToReview;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
@@ -1262,6 +1274,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     localeTag: localeTag,
     miningEnabled: miningEnabled,
     srsEnabled: srsEnabled,
+    srsMiningToReview: srsMiningToReview,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,

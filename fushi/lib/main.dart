@@ -640,6 +640,8 @@ void main([List<String> args = const <String>[]]) {
           restoreFallback: false,
         );
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
+    appModel.hostMiningRepositoryReader = () =>
+        container.read(hostMiningAnkiRepositoryProvider);
     // BUG-3439：原生 TtsChannelHandler 随 Activity 重建（引擎被保留），新 handler
     // 的本地音频库是空的；它挂上时会通知这里重推。必须在 initialise() 之前装。
     TtsChannel.onNativeHandlerAttached(

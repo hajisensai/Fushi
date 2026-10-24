@@ -5,8 +5,11 @@
 /// - **自己不自动播放**：片段自带句子音频，何时出声由复习页的音频序列决定——它经
 ///   [SrsCardVideoChannel] 找到挂在卡面上的这段片段，从头播到尾（与 WebView 卡面里
 ///   「先播单词音频、再从头播一次片段」同一顺序）。
-/// - 点按画面 = 播放 / 暂停；角上「重播」= 从头播。用户的任何点按都会打断正在进行的
-///   序列播放（与「手动点了别的音频，序列就此停下」一致）。
+/// - 点按画面 = 播放 / 暂停；角上「重播」= 从头播；另一角「放大」= 弹出大画面查看（同一个
+///   播放器，#10）。用户的任何点按都会打断正在进行的序列播放（与「手动点了别的音频，序列
+///   就此停下」一致）。
+/// - 片段不带例句声音（例句音频是另一个文件）时，它是例句音频的陪播画面
+///   （[SrsCardSentenceCompanion]）：例句音频开播时从头**静音**播，同一时刻只有一路声音。
 /// - 卸载 / 换片段时暂停并释放播放器；文件不存在时什么也不画。
 ///
 /// 播放器经 [srsCardVideoPlayerFactoryProvider] 创建：生产是 media_kit（libmpv），
@@ -194,7 +197,7 @@ Size srsCardVideoClipSize({
 }
 
 class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
-    implements SrsCardVideoHandle {
+    implements SrsCardVideoHandle, SrsCardSentenceCompanion {
   late final SrsCardVideoChannel _channel;
 
   /// 当前挂在 [_channel] 上的名字（换片段时据此撤销旧登记）。
@@ -226,6 +229,7 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
   void initState() {
     super.initState();
     _channel = ref.read(srsCardVideoChannelProvider);
+    _channel.attachCompanion(this);
     _load(widget.name);
   }
 
@@ -245,6 +249,7 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
 
   @override
   void dispose() {
+    _channel.detachCompanion(this);
     _interruptRun();
     _teardown();
     super.dispose();
@@ -280,6 +285,7 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
     final SrsMediaStore? store = await ref.read(srsMediaStoreProvider.future);
     final File? file = store?.resolve(name);
     final bool exists = file != null && await file.exists();
+    // 两次 await 之间组件可能已卸载：先判 mounted/token 再碰 ref（卸载后读 provider 抛错）。
     if (!_isCurrent(token)) return null;
     if (!exists) {
       ErrorLogService.instance.logDiagnostic(
@@ -394,6 +400,21 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
     await _player?.pause();
   }
 
+  // ---------------------------------------------------------- 例句陪播
+
+  /// 例句音频（另一个文件）开播：画面从头静音陪播，声音只有例句那一路。
+  @override
+  void sentenceStarted(String name) {
+    _interruptRun();
+    final SrsCardVideoPlayer? player = _player;
+    if (player == null) return;
+    _logged('companion', () async {
+      await player.setVolume(0);
+      await player.seek(Duration.zero);
+      await player.play();
+    });
+  }
+
   // ---------------------------------------------------------------- 用户点按
 
   Future<void> _toggle() async {
@@ -416,6 +437,25 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
     await player.setVolume(ref.read(srsReviewVolumeProvider));
     await player.seek(Duration.zero);
     await player.play();
+  }
+
+  /// 放大查看：同一个播放器在对话框里铺满可用区域（按视频比例），点画面播放 / 暂停，
+  /// 点外面 / 关闭键收起；画面继续停在原来的位置（不重开文件、不打断播放进度）。
+  Future<void> _expand() async {
+    final SrsCardVideoPlayer? player = _player;
+    if (player == null) return;
+    final Size? video = _videoSize;
+    final double aspect = video == null || video.height <= 0
+        ? _kFallbackAspect
+        : video.width / video.height;
+    await showAppDialog<void>(
+      context: context,
+      builder: (BuildContext context) => SrsCardVideoExpandedView(
+        aspect: aspect,
+        view: player.buildView(),
+        onToggle: () => _logged('toggle', _toggle),
+      ),
+    );
   }
 
   void _logged(String what, Future<void> Function() action) {
@@ -499,6 +539,20 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
             ),
             Positioned(
               right: 0,
+              top: 0,
+              child: FushiIconButton(
+                key: const ValueKey<String>('srs-card-video-expand'),
+                icon: FushiIcons.fullscreen,
+                tooltip: t.video_control_fullscreen,
+                size: 20,
+                padding: const EdgeInsets.all(14),
+                backgroundColor: Colors.black45,
+                enabledColor: Colors.white,
+                onTap: () => _logged('expand', _expand),
+              ),
+            ),
+            Positioned(
+              right: 0,
               bottom: 0,
               child: FushiIconButton(
                 key: const ValueKey<String>('srs-card-video-replay'),
@@ -515,6 +569,72 @@ class _SrsCardVideoClipState extends ConsumerState<SrsCardVideoClip>
           ],
         );
       },
+    );
+  }
+}
+
+/// 放大后的片段画面：按视频比例在可用区域里取最大，点画面播放 / 暂停，角上关闭。
+@visibleForTesting
+class SrsCardVideoExpandedView extends StatelessWidget {
+  const SrsCardVideoExpandedView({
+    super.key,
+    required this.aspect,
+    required this.view,
+    required this.onToggle,
+  });
+
+  /// 视频宽高比。
+  final double aspect;
+
+  /// 播放器画面（与卡面上同一个播放器）。
+  final Widget view;
+
+  /// 点画面：播放 / 暂停。
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final Size screen = MediaQuery.sizeOf(context);
+    final Size size = srsCardVideoClipSize(
+      aspect: aspect,
+      maxWidth: screen.width * 0.92,
+      maxHeight: screen.height * 0.86,
+    );
+    return Center(
+      child: SizedBox.fromSize(
+        size: size,
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ClipRRect(
+              borderRadius: const BorderRadius.all(Radius.circular(12)),
+              child: ColoredBox(
+                color: Colors.black,
+                child: GestureDetector(
+                  key: const ValueKey<String>('srs-card-video-expanded'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onToggle,
+                  child: view,
+                ),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              top: 0,
+              child: FushiIconButton(
+                key: const ValueKey<String>('srs-card-video-expanded-close'),
+                icon: FushiIcons.close,
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                size: 20,
+                padding: const EdgeInsets.all(14),
+                backgroundColor: Colors.black45,
+                enabledColor: Colors.white,
+                onTap: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
