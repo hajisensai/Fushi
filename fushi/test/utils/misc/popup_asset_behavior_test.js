@@ -151,6 +151,13 @@ class FakeElement {
 
   append(...children) {
     for (const child of children) {
+      // 真 DOM 的 append 接受字符串（建文本节点）；注音 <ruby> 的读音片段就是这么塞的。
+      if (typeof child === 'string') {
+        const text = new FakeElement('#text');
+        text.textContent = child;
+        this.appendChild(text);
+        continue;
+      }
       this.appendChild(child);
     }
   }
@@ -4136,3 +4143,212 @@ Promise.all([
   testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs(),
 ]).then(() => console.log('SRS badge tests passed'))
   .catch((error) => { console.error(error); process.exitCode = 1; });
+
+// ── srs_followup K：复习词状态按可见批次合并成一次 srsTermStatusBatch ────────────
+// 约束（HBK-AUDIT-016）：只合并本轮进入可见 / 预取范围的词条，隐藏词条不发；同 key
+// 在途去重、epoch / 元素版本检查、单条刷新与老宿主（没有批量桥）逐条回退都保留。
+function makeSrsObserverPopup() {
+  const observers = [];
+  class FakeIntersectionObserver {
+    constructor(callback, options) {
+      this.callback = callback;
+      this.options = options;
+      this.targets = new Set();
+      observers.push(this);
+    }
+    observe(target) { this.targets.add(target); }
+    unobserve(target) { this.targets.delete(target); }
+    disconnect() { this.targets.clear(); }
+    // 一次回调交付多个目标 = 真实浏览器里一屏词条同时进入视口。
+    revealAll(targets) {
+      this.callback(targets.map((target) => ({ target, isIntersecting: true })));
+    }
+  }
+  const context = loadPopup((value) => {
+    value.IntersectionObserver = FakeIntersectionObserver;
+  });
+  context.window.__fushiSrsEnabled = true;
+  return { context, observers };
+}
+
+function srsWord(expression, reading) {
+  return { expression, reading, matched: expression, frequencies: [], pitches: [], rules: [] };
+}
+
+function srsStatusFor(term) {
+  return {
+    queue: 'review', dueLabel: `${term.expression}/${term.reading}`, suspended: false,
+    cardId: `c-${term.expression}-${term.reading}`, noteId: 'n', cardCount: 1, tooltip: 't',
+  };
+}
+
+async function testSrsVisibleBatchIsOneRoundTripAndSkipsHiddenEntries() {
+  const { context, observers } = makeSrsObserverPopup();
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push({ name, payload: JSON.parse(JSON.stringify(payload ?? null)) });
+    if (name === 'srsTermStatusBatch') {
+      return Promise.resolve({
+        // 「雨」不在复习库 → null。
+        statuses: payload.terms.map((t) => (t.expression === '雨' ? null : srsStatusFor(t))),
+      });
+    }
+    if (name === 'srsTermStatus') return Promise.resolve(srsStatusFor(payload));
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  // 6 个可见词条（含同词形异读「上手」两条、重复的「雪」一条）+ 3 个从未进入视口的。
+  const visibleWords = [
+    srsWord('雪', 'ゆき'), srsWord('上手', 'じょうず'), srsWord('上手', 'うわて'),
+    srsWord('雨', 'あめ'), srsWord('雪', 'ゆき'), srsWord('猫', 'ねこ'),
+  ];
+  const hiddenWords = [srsWord('犬', 'いぬ'), srsWord('鳥', 'とり'), srsWord('魚', 'さかな')];
+  const visible = visibleWords.map((w, i) => context.createEntryHeader(w, i));
+  const hidden = hiddenWords.map((w, i) => context.createEntryHeader(w, 10 + i));
+  await flush();
+  assert.equal(calls.filter((c) => c.name.startsWith('srsTermStatus')).length, 0,
+    'nothing is fetched before the observer reports visibility');
+
+  const badges = visible.map((h) => findByClassDeep(h, 'srs-status-badge'));
+  observers[0].revealAll(badges);
+  await flush();
+
+  const srsCalls = calls.filter((c) => c.name.startsWith('srsTermStatus'));
+  assert.equal(srsCalls.length, 1, 'one visible batch = exactly one bridge round trip');
+  assert.equal(srsCalls[0].name, 'srsTermStatusBatch');
+  assert.deepEqual(srsCalls[0].payload.terms, [
+    { expression: '雪', reading: 'ゆき' },
+    { expression: '上手', reading: 'じょうず' },
+    { expression: '上手', reading: 'うわて' },
+    { expression: '雨', reading: 'あめ' },
+    { expression: '猫', reading: 'ねこ' },
+  ], 'deduped by expression+reading; same-form/different-reading kept apart');
+  for (const w of hiddenWords) {
+    assert.ok(!srsCalls[0].payload.terms.some((t) => t.expression === w.expression),
+      `hidden entry ${w.expression} is not pulled into the batch`);
+  }
+  assert.equal(badges[0].textContent, '雪/ゆき');
+  assert.equal(badges[1].textContent, '上手/じょうず');
+  assert.equal(badges[2].textContent, '上手/うわて', 'reading-keyed reply lands on its own header');
+  assert.ok(badges[3].classList.contains('srs-status-hidden'), 'null status stays hidden');
+  assert.equal(badges[4].textContent, '雪/ゆき', 'duplicate header joins the in-flight request');
+  assert.equal(badges[5].textContent, '猫/ねこ');
+  for (const h of hidden) {
+    assert.ok(findByClassDeep(h, 'srs-status-badge').classList.contains('srs-status-hidden'));
+  }
+  console.log(`SRS visible batch: ${visibleWords.length} headers -> ` +
+    `${srsCalls.length} round trip (was ${srsCalls[0].payload.terms.length} single calls)`);
+
+  // 之后滚进视口的词条是下一批，照样一次。
+  observers[0].revealAll(hidden.map((h) => findByClassDeep(h, 'srs-status-badge')));
+  await flush();
+  const after = calls.filter((c) => c.name.startsWith('srsTermStatus'));
+  assert.equal(after.length, 2);
+  assert.equal(after[1].payload.terms.length, 3);
+}
+
+async function testSrsBatchStaleReplyCannotRepaint() {
+  const { context, observers } = makeSrsObserverPopup();
+  const pending = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'srsTermStatusBatch') {
+      return new Promise((resolve) => pending.push(() => resolve({
+        statuses: payload.terms.map(srsStatusFor),
+      })));
+    }
+    if (name === 'srsTermStatus') {
+      return Promise.resolve({ ...srsStatusFor(payload), dueLabel: 'fresh' });
+    }
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const headers = [srsWord('雪', 'ゆき'), srsWord('猫', 'ねこ')].map((w, i) =>
+    context.createEntryHeader(w, i));
+  const badges = headers.map((h) => findByClassDeep(h, 'srs-status-badge'));
+  observers[0].revealAll(badges);
+  await flush();
+  assert.equal(pending.length, 1);
+  // 元素版本：批次在途时单条刷新了第一个标记 → 旧批次结果不得覆盖它。
+  await badges[0].__fushiRefreshSrsStatus();
+  assert.equal(badges[0].textContent, 'fresh', 'single refresh goes out immediately');
+  pending[0]();
+  await flush();
+  assert.equal(badges[0].textContent, 'fresh', 'stale batch reply cannot overwrite a refreshed badge');
+  assert.equal(badges[1].textContent, '猫/ねこ');
+
+  // epoch：重新渲染后上一轮在途批次的回包不再落地。
+  const next = [srsWord('犬', 'いぬ'), srsWord('鳥', 'とり')].map((w, i) =>
+    context.createEntryHeader(w, i));
+  const nextBadges = next.map((h) => findByClassDeep(h, 'srs-status-badge'));
+  observers[0].revealAll(nextBadges);
+  await flush();
+  context.resetEntryStateChecks();
+  pending[1]();
+  await flush();
+  assert.ok(nextBadges.every((b) => b.textContent === ''),
+    'a batch from the previous render cannot paint');
+}
+
+async function testSrsBatchFallsBackToSinglesOnOldHost() {
+  const { context, observers } = makeSrsObserverPopup();
+  const names = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    names.push(name);
+    // 老宿主：没有批量桥（回 null）。
+    if (name === 'srsTermStatus') return Promise.resolve(srsStatusFor(payload));
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const words = [srsWord('雪', 'ゆき'), srsWord('猫', 'ねこ'), srsWord('犬', 'いぬ')];
+  const badges = words.map((w, i) =>
+    findByClassDeep(context.createEntryHeader(w, i), 'srs-status-badge'));
+  observers[0].revealAll(badges);
+  await flush();
+  await flush();
+  assert.deepEqual(badges.map((b) => b.textContent), ['雪/ゆき', '猫/ねこ', '犬/いぬ']);
+  assert.equal(names.filter((n) => n === 'srsTermStatusBatch').length, 1);
+  assert.equal(names.filter((n) => n === 'srsTermStatus').length, 3);
+  // 同一轮渲染里不再试批量。
+  const more = [srsWord('鳥', 'とり'), srsWord('魚', 'さかな')].map((w, i) =>
+    findByClassDeep(context.createEntryHeader(w, 5 + i), 'srs-status-badge'));
+  observers[0].revealAll(more);
+  await flush();
+  await flush();
+  assert.equal(names.filter((n) => n === 'srsTermStatusBatch').length, 1,
+    'after a failed batch the render keeps using single calls');
+  assert.deepEqual(more.map((b) => b.textContent), ['鳥/とり', '魚/さかな']);
+}
+
+async function testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped() {
+  const { context, observers } = makeSrsObserverPopup();
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    calls.push({ name, n: payload && payload.terms ? payload.terms.length : 1 });
+    if (name === 'srsTermStatusBatch') {
+      return Promise.resolve({ statuses: payload.terms.map(srsStatusFor) });
+    }
+    if (name === 'srsTermStatus') return Promise.resolve(srsStatusFor(payload));
+    return Promise.resolve(name === 'duplicateCheck' ? false : null);
+  };
+  const one = findByClassDeep(context.createEntryHeader(srsWord('雪', 'ゆき'), 0), 'srs-status-badge');
+  observers[0].revealAll([one]);
+  await flush();
+  assert.deepEqual(calls.filter((c) => c.name.startsWith('srs')).map((c) => c.name),
+    ['srsTermStatus'], 'a lone visible entry needs no batch envelope');
+  calls.length = 0;
+  const many = [];
+  for (let i = 0; i < 40; i++) {
+    many.push(findByClassDeep(
+      context.createEntryHeader(srsWord(`語${i}`, `ご${i}`), 1 + i), 'srs-status-badge'));
+  }
+  observers[0].revealAll(many);
+  await flush();
+  const batches = calls.filter((c) => c.name === 'srsTermStatusBatch');
+  assert.deepEqual(batches.map((c) => c.n), [32, 8], 'batches are capped at 32 terms');
+  assert.ok(many.every((b) => b.textContent !== ''));
+}
+
+(async () => {
+  await testSrsVisibleBatchIsOneRoundTripAndSkipsHiddenEntries();
+  await testSrsBatchStaleReplyCannotRepaint();
+  await testSrsBatchFallsBackToSinglesOnOldHost();
+  await testSrsSingleVisibleEntryUsesSingleCallAndBatchesAreCapped();
+  console.log('SRS visible-batch tests passed');
+})().catch((error) => { console.error(error); process.exitCode = 1; });
