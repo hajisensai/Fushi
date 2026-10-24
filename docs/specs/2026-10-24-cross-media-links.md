@@ -180,6 +180,31 @@ TA 配音的动画角色、游戏角色、唱过的角色歌，全部可点进�
 - **限制**：用户查的是复合词的一部分、而分词把整串切成了更长的词元时，查不到（索引键是分词得到的
   最长匹配词元）；游戏出处只能打开游戏详情（与 L3 同）。
 
+## L5 落地记录（2026-10-24）
+
+- **schema v131**（三张表，`people_tables.dart`）：`game_voice_casts`（游戏 VNDB 配音表缓存，设备本地、
+  无外键，删游戏同事务清）、`person_identity_bridges`（人物身份桥：`wikidata` 桥接缓存——自环行 =「查过」
+  标记，30 天过期重查；`manual` = 用户确认 / 否决「同一人」，`deleted_at` 墓碑）、
+  `adaptation_progress_anchors`（动画集 ↔ 原作卷 / 章手动对应点）。后两张按类别随备份，不进合并导入、
+  不进互联同步。
+- **同一人判据**：`fushi_engine/media/people/person_identity.dart` 的并查集，节点是 `id:<scheme>:<值>`
+  （AniDB creator / MAL people / TMDB person / VNDB staff / MusicBrainz artist / Wikidata QID）与
+  `ref:<域>:<键>`。只有共享外部 id、Wikidata 桥、用户手动确认会合并；**名字相同（全半角 / 空白 / 罗马字
+  段序归一）只出「可能是同一人」建议**，否决过的一对不再建议（外部 id 合并不受名字否决影响）。
+- **桥的来源**：VNDB `va.staff.extlinks` 直接给出声优的 `anidb` / `wikidata` / `musicbrainz_artist`
+  （2026-10-24 实测 `v17`），是三域合并的主桥；视频 / 音乐侧只有单一 id 时，人物页打开时对未查过的 id 跑
+  一次 Wikidata SPARQL（属性 P5649 / P4084 / P4985 / P434 / P3180，`wbgetentities` 实测核对），结果落库。
+- **游戏配音数据**：此前游戏侧没有任何配音数据。游戏详情页打开时，已绑定 VNDB id 的游戏后台取一次
+  `POST /kana/vn` 的 `va`（缓存 30 天；换绑 VN 重取；失败只记诊断不写缓存）。角色图 `sexual` 均值 > 0.5 不保留。
+- **音乐**：只读 `music_track_credits`（`vocal_cv` = CV 演唱、`character` = 角色名义）+ `music_artists.mb_artist_id`；
+  音乐刮削尚未写入这类署名时人物页「演唱与角色歌」显示空态，曲目详情「署名」不渲染。
+- **入口**：视频合集 / 单文件作品的人物轨道（`VideoCreditRail`，点头像）、游戏详情「配音」、曲目详情「署名」
+  → `PersonDetailPage`；页内卡片经 `openMediaLinkEntry` 进各模块条目。
+- **动画 ↔ 原作进度（§6）**：只做手动对应点 + 展示（「同一作品」区块下，已确认的书 → 视频改编连接一张卡：
+  「看到第 N 集 ≈ 原作第 M 卷」，取集号 ≤ N 的最后一个对应点、不插值）。文本相似度推断依赖 L4
+  `fushi_corpus`，**未做**：`AdaptationProgressInferrer` 只有接口，`kAdaptationProgressInferrer` 恒为 null。
+- **偏离**：人物图在 Dart 里建（IO / 编排层的小图，几万节点并查集线性时间，不是 CPU 热点）。
+
 ## 决策
 
 - **D-L1**：不用 Bangumi（2026-10-24 拍板）；自动判断支持 AI 辅助（见上）。

@@ -26,20 +26,29 @@ class _FakeBackend implements MusicOutputBackend {
     log.add('settings:${s.replayGain.name}:${s.gapless}');
   }
 
+  /// 每次 openPair / replaceNext 带的 crossfadeNext。
+  final List<bool> crossfadeFlags = <bool>[];
+
   @override
   Future<void> openPair(
     MusicPlayItem current,
     MusicPlayItem? next, {
     required bool play,
+    bool crossfadeNext = false,
   }) async {
     this.current = current;
     this.next = next;
+    crossfadeFlags.add(crossfadeNext);
     log.add('open:${current.trackUid}+${next?.trackUid}');
   }
 
   @override
-  Future<void> replaceNext(MusicPlayItem? next) async {
+  Future<void> replaceNext(
+    MusicPlayItem? next, {
+    bool crossfadeNext = false,
+  }) async {
     this.next = next;
+    crossfadeFlags.add(crossfadeNext);
     log.add('next:${next?.trackUid}');
   }
 

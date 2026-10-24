@@ -8,6 +8,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 
@@ -132,6 +133,35 @@ class MusicPlayerEngine extends ChangeNotifier {
     ),
   );
 
+  /// 当前 → 下一首这一处衔接是否交叉淡入（设计 §7.2）：设置开了、没有「播完本曲停」、
+  /// 而且是真边界（专辑连续 / CUE 拆轨默认不淡入，见 [musicTransitionCrossfades]）。
+  /// 独占等输出侧的停用由后端判（[musicCrossfadeAvailability]）。
+  bool get crossfadeToNext {
+    final MusicPlayItem? from = current;
+    final MusicPlayItem? to = next;
+    if (from == null || to == null || _stopAfterCurrent) return false;
+    final MusicOutputSettings s = _baseSettings();
+    if (s.crossfade <= Duration.zero) return false;
+    return musicTransitionCrossfades(
+      from,
+      to,
+      albumOrder: _context == MusicQueueContext.album && !_shuffled,
+      includeContinuous: s.crossfadeContinuous,
+    );
+  }
+
+  /// 最近一次发给后端的 [crossfadeToNext]（设置变了才重发「下一首」）。
+  bool _sentCrossfadeNext = false;
+
+  Future<void> _sendNext(MusicOutputBackend backend) {
+    final bool crossfade = crossfadeToNext;
+    _sentCrossfadeNext = crossfade;
+    return backend.replaceNext(
+      _stopAfterCurrent ? null : next,
+      crossfadeNext: crossfade,
+    );
+  }
+
   /// 正在播放时读信号路径（面板）；没在播为 null。
   Future<MusicSignalPathSnapshot?> readSignalPath() async =>
       _backend?.readSignalPath();
@@ -196,7 +226,14 @@ class MusicPlayerEngine extends ChangeNotifier {
     _ended = false;
     if (play) onWillPlay?.call();
     await backend.applySettings(currentSettings);
-    await backend.openPair(item, _stopAfterCurrent ? null : next, play: play);
+    final bool crossfade = crossfadeToNext;
+    _sentCrossfadeNext = crossfade;
+    await backend.openPair(
+      item,
+      _stopAfterCurrent ? null : next,
+      play: play,
+      crossfadeNext: crossfade,
+    );
     if (play) {
       _playing = true;
       onTrackStarted?.call(item);
@@ -253,7 +290,8 @@ class MusicPlayerEngine extends ChangeNotifier {
     }
     notifyListeners();
     // 后端不再预排下一首，当前曲目播完即 Completed；取消时把下一首补回去。
-    await _backend?.replaceNext(value ? null : next);
+    final MusicOutputBackend? backend = _backend;
+    if (backend != null) await _sendNext(backend);
   }
 
   /// 睡眠定时：[after] 之后播完当时正在放的那首停；null 取消。
@@ -318,7 +356,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     final MusicOutputBackend? backend = _backend;
     if (backend != null) {
       await backend.applySettings(currentSettings);
-      await backend.replaceNext(_stopAfterCurrent ? null : next);
+      await _sendNext(backend);
     }
     notifyListeners();
   }
@@ -349,7 +387,14 @@ class MusicPlayerEngine extends ChangeNotifier {
   /// 输出设置变了（设置页切无缝 / ReplayGain）：立刻下发给在用的后端。
   Future<void> reapplySettings() async {
     _lastOutputFallback = null;
-    await _backend?.applySettings(currentSettings);
+    final MusicOutputBackend? backend = _backend;
+    if (backend != null) {
+      await backend.applySettings(currentSettings);
+      // 交叉淡入开关 / 「连续曲目也淡入」变了：这一处衔接的方式跟着变（还来得及的话）。
+      if (!_ended && current != null && crossfadeToNext != _sentCrossfadeNext) {
+        await _sendNext(backend);
+      }
+    }
     notifyListeners();
   }
 
@@ -384,7 +429,8 @@ class MusicPlayerEngine extends ChangeNotifier {
             : Duration(milliseconds: item!.durationMs!);
         if (item != null) onTrackStarted?.call(item);
         notifyListeners();
-        unawaited(_backend?.replaceNext(_stopAfterCurrent ? null : next));
+        final MusicOutputBackend? backend = _backend;
+        if (backend != null) unawaited(_sendNext(backend));
       case MusicBackendCompleted():
         // 后端播完即卸载文件、交还设备（独占不再占着）；再按播放由 [play] 重开。
         _playing = false;

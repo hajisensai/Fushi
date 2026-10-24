@@ -4427,6 +4427,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 专辑连续曲目 / CUE 拆轨也交叉淡入（默认关：真无缝优先，设计 §7.2）。
+  bool get musicCrossfadeContinuous =>
+      getPref('music_crossfade_continuous', defaultValue: false) as bool;
+
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await setPref('music_crossfade_continuous', value);
+    notifyListeners();
+  }
+
   bool get floatingLyricClickLookup =>
       getPref('floating_lyric_click_lookup', defaultValue: true) as bool;
 
