@@ -23,6 +23,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -68,16 +69,26 @@ List<WebBrowserSite> _loadWebBrowserSites(AppModel appModel) =>
       ),
     );
 
-/// 推出全屏浏览页（[FushiWebBrowserPage]）。它是独立子页：盖住首页外壳的主导航
-/// 底栏 / 侧栏，网页独占整屏，退出回到入口页。
-Future<void> openFushiWebBrowser(BuildContext context, Uri url) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext _) =>
-            FushiWebBrowserPage(initialUrl: url.toString()),
+/// 全屏浏览页（[FushiWebBrowserPage]）的路由：所有推浏览页的入口（入口页、视频站点
+/// 入口）都经这一处建路由。
+///
+/// 整页包 [FushiAppUiScaleNeutralizer]（与阅读器 / 漫画 / 网页漫画等 WebView 页同一
+/// 写法）：不包时 WebView 先按「界面大小」缩小后的画布排版、再被整体放大，网页发软
+/// （实测 1.12 倍界面缩放下 innerWidth=367、屏宽 411dp）。中和层在路由层包在页面外，
+/// 页面 State.context、查词弹窗层与 WebView 落在同一套净缩放=1 的坐标里。
+Route<void> fushiWebBrowserRoute(BuildContext context, String url) =>
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (BuildContext _) => FushiAppUiScaleNeutralizer(
+        child: FushiWebBrowserPage(initialUrl: url),
       ),
     );
+
+/// 推出全屏浏览页（[FushiWebBrowserPage]）。它是独立子页：盖住首页外壳的主导航
+/// 底栏 / 侧栏，网页独占整屏，退出回到入口页。
+Future<void> openFushiWebBrowser(BuildContext context, Uri url) => Navigator.of(
+  context,
+).push<void>(fushiWebBrowserRoute(context, url.toString()));
 
 /// 「浏览器」模块里通用浏览子页的入口：地址栏 + 站点网格。
 ///
@@ -755,7 +766,10 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         webBrowserDesktopModeDefault(_appModel.prefsRepo)) {
       tab.update(desktopMode: true);
     }
-    if (url == null && activate) {
+    // 只有用户新建的空白页才把焦点给地址栏。window.open 开出的新窗口（带
+    // windowId）在 Android 上发起时也拿不到地址（url 为 null），但它是网页自己
+    // 开的页、马上加载内容：不弹地址栏和软键盘。
+    if (url == null && windowId == null && activate) {
       WidgetsBinding.instance.addPostFrameCallback((Duration _) {
         if (mounted && identical(_tabs.activeTab, tab)) {
           _addressBar.currentState?.beginEditing();
@@ -1755,7 +1769,13 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     return ListenableBuilder(
       listenable: tab,
       builder: (BuildContext context, Widget? _) {
-        if (tab.url == null) return _buildStartView(context, tab);
+        // 没有地址的页画起始页——除了 window.open 开出的新窗口：它带 windowId，
+        // Android 发起时 request.url 为 null，地址要等页面加载后由 WebView 回填；
+        // 这时必须照常建 WebView 接走 windowId，否则平台侧挂着的新窗口没人认领，
+        // 弹窗内容丢失、只剩一张空白起始页。
+        if (tab.url == null && tab.windowId == null) {
+          return _buildStartView(context, tab);
+        }
         final WebBrowserLoadError? error = tab.error;
         return Stack(
           fit: StackFit.expand,
@@ -1975,6 +1995,31 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       !_addressFocus.hasFocus &&
       !_lookup.isOpen;
 
+  /// 软键盘避让（本页不经 Scaffold，得自己做 Scaffold 的 resizeToAvoidBottomInset）：
+  /// 整个壳底边让到键盘上方——竖屏底栏（地址栏）随键盘上移不被盖住，网页区域跟着
+  /// 变矮（与浏览器 / 旧版 Scaffold 浏览页一致，网页里的输入框也露在键盘上方）。
+  /// 键盘盖住了系统导航条，让位后底部安全区不再重复留白。布局形态仍按整窗尺寸判
+  /// （[MediaQuery.sizeOf] 不含键盘），弹键盘不会在竖屏 / 宽屏两套壳之间来回切。
+  ///
+  /// 树形必须恒定：键盘开合时若在「裸 child」与「Padding 包 child」之间切换，父节点
+  /// 类型一变整个壳（含各标签页的 InAppWebView）会被卸载重挂，网页随之重载、表单
+  /// 输入丢失（Android 真机实测）。所以始终是同一个 Padding + MediaQuery，只改数值。
+  Widget _avoidKeyboard(BuildContext context, Widget child) {
+    final MediaQueryData media = MediaQuery.of(context);
+    final double keyboard = media.viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard > 0 ? keyboard : 0),
+      child: MediaQuery(
+        data: keyboard > 0
+            ? media
+                  .removePadding(removeBottom: true)
+                  .removeViewInsets(removeBottom: true)
+            : media,
+        child: child,
+      ),
+    );
+  }
+
   Widget _buildNarrow(BuildContext context, Size size) {
     final WebBrowserTab? tab = _tabs.activeTab;
     final bool fullscreen = tab?.fullscreen ?? false;
@@ -1990,7 +2035,15 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
             color: Theme.of(context).colorScheme.surface,
             child: const SafeArea(bottom: false, child: SizedBox.shrink()),
           ),
-        Expanded(child: _buildTabs(context)),
+        // 必须带 key：网页全屏时这一列首尾的状态栏垫块与底栏同时增删，不带 key 的
+        // 中间子节点在 Element.updateChildren 里配不上旧元素，整个网页区会被卸载
+        // 重挂——WebView 销毁重建（页面重载），全屏中的网页被拆掉后原生全屏视图
+        // 停在 app 上方冻结 / 白屏、退不出来（手机竖屏必现；宽屏布局只增删排在
+        // 前面的子节点，自底向上能配上，不受影响）。
+        Expanded(
+          key: const ValueKey<String>('web-browser-narrow-tabs'),
+          child: _buildTabs(context),
+        ),
         if (!fullscreen) ...<Widget>[
           if (!collapsed) _progressLine(context),
           ClipRect(
@@ -2024,9 +2077,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     final Color bg = isGlassDesign(context)
         ? appleColorsOf(context).groupedBackground
         : Theme.of(context).colorScheme.surface;
-    final Widget body = layout == WebBrowserShellLayout.bottomBar
-        ? _buildNarrow(context, size)
-        : _buildWide(context, layout, size);
+    final Widget body = _avoidKeyboard(
+      context,
+      layout == WebBrowserShellLayout.bottomBar
+          ? _buildNarrow(context, size)
+          : _buildWide(context, layout, size),
+    );
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
     return PopScope(
       // 系统返回 / 侧滑 / Esc：先关查词弹窗与临时层，再退网页历史，都退到头

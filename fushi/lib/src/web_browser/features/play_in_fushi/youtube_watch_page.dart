@@ -72,3 +72,8 @@ String? youtubeWatchVideoIdOf(Uri? uri) {
 /// 交给播放器解析、也作为落库身份（`streamVideoBookUid`）。
 String youtubeCanonicalWatchUrl(String videoId) =>
     'https://www.youtube.com/watch?v=$videoId';
+
+/// [uri] 是不是视频站的「观看页」（一条视频在播的页面）。网页漫画「阅读本章」、网页
+/// 小说「阅读（小说）」这类按正文 / 图片抽内容的动作在观看页上没有意义，据此不出现。
+/// 目前只认 YouTube（[youtubeWatchVideoIdOf]）；别的视频站有观看页判据时加在这里。
+bool isWebBrowserVideoWatchPage(Uri? uri) => youtubeWatchVideoIdOf(uri) != null;

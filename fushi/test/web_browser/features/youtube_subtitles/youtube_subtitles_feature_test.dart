@@ -70,11 +70,23 @@ void main() {
     test('开关脚本', () {
       expect(
         webBrowserYoutubeSubtitlesToggleScript(enabled: true),
-        'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled(true);',
+        'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled(true, "");',
+      );
+      expect(
+        webBrowserYoutubeSubtitlesToggleScript(enabled: true, language: 'ja'),
+        'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled(true, "ja");',
+      );
+      expect(
+        webBrowserYoutubeSubtitlesToggleScript(
+          enabled: true,
+          language: '"); alert(1); ("',
+        ),
+        contains(r'"\"); alert(1); (\""'),
+        reason: '语言按 JSON 字符串转义，不能拼出脚本',
       );
       expect(
         webBrowserYoutubeSubtitlesToggleScript(enabled: false),
-        contains('setEnabled(false)'),
+        contains('setEnabled(false, "")'),
       );
     });
 
@@ -148,11 +160,41 @@ void main() {
         UserScriptInjectionTime.AT_DOCUMENT_START,
       );
       expect(scripts.single.source, contains('__fushiYtSubsBundle'));
-      expect(scripts.single.source, contains('setEnabled(true)'));
+      expect(scripts.single.source, contains('setEnabled(true, "")'));
 
       await feature.setEnabled(false);
       expect(prefs.values[kWebBrowserYoutubeSubtitlesPref], isFalse);
       expect(feature.userScripts(), isEmpty);
+    });
+
+    test('学习语言随脚本下发（每次现读）', () async {
+      String language = 'ja';
+      final YoutubeSubtitlesFeature feature = YoutubeSubtitlesFeature(
+        prefs: _MemoryPrefs(),
+        learningLanguage: () => language,
+        loadAsset: _readAsset,
+      );
+      await feature.bundleReady;
+      expect(
+        feature.userScripts().single.source,
+        contains('setEnabled(true, "ja")'),
+      );
+      language = 'zh-Hant';
+      expect(
+        feature.userScripts().single.source,
+        contains('setEnabled(true, "zh-Hant")'),
+      );
+    });
+
+    test('学习语言：默认内容语言优先，未设置时是日语', () {
+      expect(
+        webBrowserYoutubeSubtitleLanguage(defaultContentLanguage: ''),
+        'ja',
+      );
+      expect(
+        webBrowserYoutubeSubtitleLanguage(defaultContentLanguage: ' ko '),
+        'ko',
+      );
     });
 
     test('资产读失败：不注入、不抛', () async {

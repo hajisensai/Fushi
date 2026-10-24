@@ -5,6 +5,8 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart'
+    show debugDefaultTargetPlatformOverride;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -19,6 +21,7 @@ import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/web_adblock/web_adblock_service.dart';
 import 'package:fushi/src/web_browser/data/memory_web_browser_store.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
@@ -390,6 +393,200 @@ void main() {
       findsNothing,
       reason: '关掉「滚动时收起工具栏」后不收',
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('window.open 新窗口：Android 发起时没有地址也照常建 WebView 接走 windowId，不弹地址栏', (
+    WidgetTester tester,
+  ) async {
+    await pumpBrowser(tester, const Size(390, 844));
+    final FushiWebBrowserPageState state = page(tester);
+    final WebBrowserTab opener = state.tabsController.activeTab!;
+    final WebBrowserTab popup = state.openTab(
+      null,
+      openerId: opener.id,
+      windowId: 7,
+    );
+    await tester.pumpAndSettle();
+    expect(state.tabsController.activeTab, popup);
+    expect(popup.url, isNull);
+    expect(
+      byKey('web-browser-start-${popup.id}'),
+      findsNothing,
+      reason: '带 windowId 的页不能画起始页（平台侧挂着的新窗口没人认领）',
+    );
+    expect(find.text('page null'), findsOneWidget, reason: '新窗口的 WebView 已建');
+    Finder addressEditor() => find.descendant(
+      of: byKey('web-browser-address'),
+      matching: find.byType(EditableText),
+    );
+    expect(addressEditor(), findsNothing, reason: '网页自己开的窗口不进地址栏编辑、不弹键盘');
+
+    // 页面加载后 WebView 回填地址，照常显示网页。
+    popup.update(url: Uri.parse('https://popup.example/'));
+    await tester.pumpAndSettle();
+    expect(find.text('page https://popup.example/'), findsOneWidget);
+
+    // 用户自己新建的空白页仍是起始页 + 地址栏编辑。
+    final WebBrowserTab blank = state.openTab(null);
+    await tester.pumpAndSettle();
+    expect(byKey('web-browser-start-${blank.id}'), findsOneWidget);
+    expect(addressEditor(), findsOneWidget, reason: '用户新建的空白页进地址栏编辑');
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('竖屏弹软键盘：底栏（地址栏）让到键盘上方，网页区域变矮而不被盖住', (WidgetTester tester) async {
+    await pumpBrowser(tester, const Size(390, 844));
+    await tester.tap(byKey('web-browser-address'));
+    await tester.pumpAndSettle();
+    // 键盘开合不得重挂标签页（真机上重挂 = InAppWebView 重建、网页重载、表单输入丢失）。
+    final Element webBefore = tester.element(byKey('stub-webview'));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    final Rect bar = tester.getRect(byKey('web-browser-toolbar'));
+    expect(bar.bottom, lessThanOrEqualTo(844 - 300), reason: '底栏在键盘上方');
+    expect(bar.top, greaterThan(0));
+    final Rect web = tester.getRect(byKey('stub-webview'));
+    expect(web.bottom, lessThanOrEqualTo(bar.top), reason: '网页不叠在底栏下');
+    expect(web.height, greaterThan(0));
+    expect(
+      find.descendant(
+        of: byKey('web-browser-address'),
+        matching: find.byType(EditableText),
+      ),
+      findsOneWidget,
+      reason: '弹键盘不收起地址栏编辑',
+    );
+
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(byKey('web-browser-toolbar')).bottom,
+      844,
+      reason: '收起键盘底栏回到底部',
+    );
+    expect(
+      identical(tester.element(byKey('stub-webview')), webBefore),
+      isTrue,
+      reason: '键盘开合前后网页是同一个元素，没有被卸载重挂',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final Size size in <Size>[const Size(390, 844), const Size(1280, 800)]) {
+    testWidgets('网页全屏进出不重挂标签页（${size.width.toInt()} 宽）', (
+      WidgetTester tester,
+    ) async {
+      // 回归：手机竖屏全屏时网页区所在的列首尾同时增删子节点，不带 key 的网页区
+      // 被卸载重挂——真机上 InAppWebView 销毁重建（页面重载），原生全屏视图冻结 /
+      // 白屏盖在 app 上退不出来。
+      await pumpBrowser(tester, size);
+      final FushiWebBrowserPageState state = page(tester);
+      final WebBrowserTab tab = state.tabsController.activeTab!;
+      final Element webBefore = tester.element(byKey('stub-webview'));
+      expect(byKey('web-browser-toolbar'), findsOneWidget);
+
+      state.onFullscreenChanged(tab, fullscreen: true);
+      await tester.pumpAndSettle();
+      expect(byKey('web-browser-toolbar'), findsNothing, reason: '全屏收起 chrome');
+      expect(
+        tester.getRect(byKey('stub-webview')),
+        Offset.zero & size,
+        reason: '网页占满整屏',
+      );
+      expect(
+        identical(tester.element(byKey('stub-webview')), webBefore),
+        isTrue,
+      );
+
+      state.onFullscreenChanged(tab, fullscreen: false);
+      await tester.pumpAndSettle();
+      expect(
+        byKey('web-browser-toolbar'),
+        findsOneWidget,
+        reason: '退出恢复 chrome',
+      );
+      expect(
+        identical(tester.element(byKey('stub-webview')), webBefore),
+        isTrue,
+        reason: '全屏进出前后网页是同一个元素，没有被卸载重挂',
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('标签页网格有普通「新标签页」按钮（Android 不支持无痕时也能新建）', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await pumpBrowser(tester, const Size(390, 844));
+      final FushiWebBrowserPageState state = page(tester);
+      await tester.tap(byKey('web-browser-tab-count'));
+      await tester.pumpAndSettle();
+      expect(byKey('web-browser-tab-grid'), findsOneWidget);
+      expect(
+        byKey('web-browser-grid-new-incognito'),
+        findsNothing,
+        reason: 'Android 不支持无痕',
+      );
+      await tester.tap(byKey('web-browser-grid-new-tab'));
+      await tester.pumpAndSettle();
+      expect(state.tabsController.length, 2);
+      expect(byKey('web-browser-tab-grid'), findsNothing, reason: '新建后回到新页');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('浏览页抵消全局界面缩放：路由整页包在中和层里，网页按真实视口排版', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(411, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    // 与 app 根一致：缩放层包在 Navigator 外，推出来的路由同样处在缩放画布里。
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: overrides(),
+        child: TranslationProvider(
+          child: MaterialApp(
+            builder: (BuildContext context, Widget? child) =>
+                FushiAppUiScale(scale: 1.12, child: child!),
+            home: const FushiWebBrowserHomePage(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      MediaQuery.sizeOf(
+        tester.element(find.byType(FushiWebBrowserHomePage)),
+      ).width,
+      lessThan(400),
+      reason: '前提：入口页在缩小后的画布里',
+    );
+    await tester.tap(find.text('Example'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.byType(FushiWebBrowserPage),
+        matching: find.byType(FushiAppUiScaleNeutralizer),
+      ),
+      findsOneWidget,
+    );
+    final BuildContext pageContext = tester.element(
+      find.byType(FushiWebBrowserPage),
+    );
+    expect(FushiAppUiScale.of(pageContext), FushiAppUiScale.defaultScale);
+    expect(MediaQuery.sizeOf(pageContext).width, closeTo(411, 0.01));
     expect(tester.takeException(), isNull);
   });
 }

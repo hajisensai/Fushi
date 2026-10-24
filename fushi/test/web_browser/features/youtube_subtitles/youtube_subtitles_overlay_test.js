@@ -48,10 +48,49 @@ store['yt-A|live'] = [cue(0, 100, 'l')];
 store['yt-A|English'] = [cue(0, 100, 'e')];
 store['yt-A|日本語 (自动)'] = [cue(0, 100, 'j')];
 store['yt-B|日本語'] = [cue(0, 100, 'b')];
-assert.strictEqual(p.chooseTrackKey(store, 'yt-A', null), 'yt-A|English', '登记顺序里第一条有 cue 的整轨');
-assert.strictEqual(p.chooseTrackKey(store, 'yt-A', 'yt-A|日本語 (自动)'), 'yt-A|日本語 (自动)', '当前轨仍有效则保持');
-assert.strictEqual(p.chooseTrackKey(store, 'yt-A', 'yt-B|日本語'), 'yt-A|English', '别的视频的轨不算');
-assert.strictEqual(p.chooseTrackKey(store, 'yt-A', 'yt-A|日本語'), 'yt-A|English', '空轨不当当前轨');
+// 不指定学习语言：原声（与自动字幕同语言）优先，首选（日語人工轨）还没取到时先用自动轨。
+assert.strictEqual(p.chooseTrackKey(store, 'yt-A', null), 'yt-A|日本語 (自动)', '原声自动轨先于别的人工轨');
+assert.strictEqual(p.preferredTrackKey(store, 'yt-A', {}), 'yt-A|日本語', '首选是原声人工轨（占位，待取）');
+assert.strictEqual(p.chooseTrackKey(store, 'yt-A', 'yt-A|English'), 'yt-A|English', '首选还在取时当前轨仍有效则保持');
+assert.strictEqual(p.chooseTrackKey(store, 'yt-A', 'yt-B|日本語'), 'yt-A|日本語 (自动)', '别的视频的轨不算');
+assert.strictEqual(p.chooseTrackKey(store, 'yt-A', 'yt-A|日本語'), 'yt-A|日本語 (自动)', '空轨不当当前轨');
+// 首选轨取到 cue 后换过去（不再死守当前轨）。
+const loaded = Object.assign(Object.create(null), store, { 'yt-A|日本語': [cue(0, 100, 'J')] });
+assert.strictEqual(p.chooseTrackKey(loaded, 'yt-A', 'yt-A|日本語 (自动)'), 'yt-A|日本語');
+
+// m.youtube.com 真实回归：拿不到音轨元数据，bridge 退回字母序把德语人工轨排第一并急取。
+// 学习语言 ja 必须压过登记顺序：日语轨还是占位时先显示原声 / 英文，绝不选德语。
+const mobile = Object.create(null);
+mobile['yt-M|Deutsch'] = [cue(0, 100, 'de')];
+mobile['yt-M|English'] = [];
+mobile['yt-M|English (auto-generated)'] = [cue(0, 100, 'en-asr')];
+mobile['yt-M|Japanese'] = [];
+const ja = { lang: 'ja', uiLangs: ['en'] };
+assert.strictEqual(p.preferredTrackKey(mobile, 'yt-M', ja), 'yt-M|Japanese', '学习语言日语排第一（按语言名识别）');
+assert.strictEqual(p.chooseTrackKey(mobile, 'yt-M', null, ja), 'yt-M|English (auto-generated)', '日语未取到：原声（英文自动轨）先于德语');
+mobile['yt-M|Japanese'] = [cue(0, 100, 'ja')];
+assert.strictEqual(p.chooseTrackKey(mobile, 'yt-M', 'yt-M|English (auto-generated)', ja), 'yt-M|Japanese', '日语取到后换过去');
+// 标签是日文界面下的名字、带「(自動生成)」也认。
+const jaUi = Object.create(null);
+jaUi['yt-J|ドイツ語'] = [cue(0, 1, 'de')];
+jaUi['yt-J|日本語 (自動生成) (自动)'] = [cue(0, 1, 'ja')];
+assert.strictEqual(p.chooseTrackKey(jaUi, 'yt-J', null, { lang: 'ja', uiLangs: ['ja'] }), 'yt-J|日本語 (自動生成) (自动)');
+// 有页面元数据时按语言码，不靠名字；默认轨算原声。
+const meta = Object.create(null);
+meta['yt-X|Foo'] = [cue(0, 1, 'foo')];
+meta['yt-X|Bar'] = [cue(0, 1, 'bar')];
+meta['yt-X|Baz'] = [cue(0, 1, 'baz')];
+const metaOpts = { lang: 'ko', meta: { Foo: { lang: 'de', asr: false }, Bar: { lang: 'ko', asr: false }, Baz: { lang: 'fr', asr: false, def: true } } };
+assert.strictEqual(p.chooseTrackKey(meta, 'yt-X', null, metaOpts), 'yt-X|Bar', '元数据语言码命中学习语言');
+assert.strictEqual(p.chooseTrackKey(meta, 'yt-X', null, { meta: metaOpts.meta }), 'yt-X|Baz', '没有学习语言轨：默认（原声）轨');
+// 没有学习语言 / 原声线索时：人工轨先于英文自动轨，英文自动轨先于其它自动轨。
+const plain = Object.create(null);
+plain['yt-P|Français (auto-generated)'] = [cue(0, 1, 'fr')];
+plain['yt-P|English (auto-generated)'] = [cue(0, 1, 'en')];
+assert.deepStrictEqual(Array.from(p.rankTrackKeys(plain, 'yt-P', { lang: 'ko', uiLangs: ['en'] })),
+  ['yt-P|Français (auto-generated)', 'yt-P|English (auto-generated)'], '第一条自动轨视为原声');
+assert.strictEqual(p.baseName('日本語 (自動生成) (自动)'), '日本語');
+assert.strictEqual(p.baseName('English (United States)'), 'english');
 const onlyLive = Object.create(null);
 onlyLive['yt-C|live'] = [cue(0, 1, 'x')];
 onlyLive['yt-C|日本語'] = [];
@@ -83,6 +122,11 @@ if (bundlePath) {
   const yt = run(bundle, 'm.youtube.com');
   assert.strictEqual(yt.__fushiYtSubsBundle, true, 'YouTube 上应装上');
   assert.strictEqual(typeof yt.__fushiYtSubs.setEnabled, 'function');
+  // Dart 下发的学习语言随 setEnabled 记下。
+  yt.__fushiYtSubs.setEnabled(true, 'ja');
+  assert.strictEqual(yt.__fushiYtSubs.state().lang, 'ja');
+  yt.__fushiYtSubs.setEnabled(false);
+  assert.strictEqual(yt.__fushiYtSubs.state().lang, 'ja', '只关不改语言');
   assert.strictEqual(typeof yt.fushiVideoKey, 'function', 'providers 的 window 契约可见');
   assert.ok(yt.fushiEpisodeCues, 'store 可见');
   // 同一文档再执行一次（onLoadStop 补装）不应抛（providers 顶层 const 不重复声明）。

@@ -651,6 +651,13 @@ class WebBrowserTabGrid extends StatelessWidget {
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
+                  // 普通新建永远在：不支持无痕的平台（Android）网格里只剩这一个新建入口。
+                  FushiIconButton(
+                    key: const ValueKey<String>('web-browser-grid-new-tab'),
+                    tooltip: t.web_browser_tab_new,
+                    icon: FushiIcons.add,
+                    onTap: callbacks.onNewTab,
+                  ),
                   if (callbacks.onNewIncognitoTab != null)
                     FushiIconButton(
                       key: const ValueKey<String>(

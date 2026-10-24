@@ -23,7 +23,12 @@ List<WebBrowserFeature> buildWebBrowserFeatures(WidgetRef ref) =>
         youtubeTargetHeight: () =>
             ref.read(appProvider).youtubeQualityTargetHeightOrNull,
       ),
-      YoutubeSubtitlesFeature(prefs: ref.read(appProvider).prefsRepo),
+      YoutubeSubtitlesFeature(
+        prefs: ref.read(appProvider).prefsRepo,
+        learningLanguage: () => webBrowserYoutubeSubtitleLanguage(
+          defaultContentLanguage: ref.read(appProvider).defaultContentLanguage,
+        ),
+      ),
       WebBrowserReaderModeFeature(ref: ref),
       WebBrowserFuriganaFeature(prefs: ref.read(appProvider).prefsRepo),
       WebBrowserStudyFeature(

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart' show rootBundle;
 
 import 'package:fushi/src/media/video/web_video_bridge.dart'
@@ -48,9 +50,15 @@ String webBrowserYoutubeSubtitlesBundle(List<String> sources) {
   return out.toString();
 }
 
-/// 开 / 关页面里的字幕层（字幕层没装时什么也不做）。
-String webBrowserYoutubeSubtitlesToggleScript({required bool enabled}) =>
-    'if (window.__fushiYtSubs) window.__fushiYtSubs.setEnabled($enabled);';
+/// 开 / 关页面里的字幕层（字幕层没装时什么也不做）。[language] 是用户的学习语言
+/// （BCP-47，如 `ja`），字幕层据此在视频的多条字幕轨里优先选它；空串 = 不指定，只按
+/// 原声 / 人工轨 / 英文的次序选。
+String webBrowserYoutubeSubtitlesToggleScript({
+  required bool enabled,
+  String language = '',
+}) =>
+    'if (window.__fushiYtSubs) '
+    'window.__fushiYtSubs.setEnabled($enabled, ${jsonEncode(language)});';
 
 /// 页面里字幕层装好了没有（`evaluateJavascript` 回 bool）。
 const String kWebBrowserYoutubeSubtitlesInstalledProbe =

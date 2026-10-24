@@ -10,6 +10,7 @@ import 'package:fushi/src/media/novel/web/web_novel_reader_launch.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
@@ -41,6 +42,8 @@ class WebNovelFeature extends WebBrowserFeature {
   @override
   List<WebBrowserAction> actions(BuildContext context, WebBrowserTab tab) {
     if (!_novelAvailable) return const <WebBrowserAction>[];
+    // 视频观看页（YouTube 等）没有小说正文可提取：不出「阅读（小说）」。
+    if (isWebBrowserVideoWatchPage(tab.url)) return const <WebBrowserAction>[];
     final bool busy = _extracting.contains(tab.id);
     return <WebBrowserAction>[
       WebBrowserAction(

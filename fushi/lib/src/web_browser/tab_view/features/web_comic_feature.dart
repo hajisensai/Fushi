@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/web/web_comic_scanner.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
@@ -51,6 +52,8 @@ class WebComicFeature extends WebBrowserFeature {
   List<WebBrowserAction> actions(BuildContext context, WebBrowserTab tab) {
     final WebComicScanDriver? driver = _scanDriver;
     if (driver == null) return const <WebBrowserAction>[];
+    // 视频观看页（YouTube 等）不是漫画页：扫图 / 漫画广告过滤都不出。
+    if (isWebBrowserVideoWatchPage(tab.url)) return const <WebBrowserAction>[];
     final AppModel appModel = _ref.read(appProvider);
     final bool canRead = tab.controller != null && tab.url != null;
     final bool adFilter = appModel.prefsRepo.webComicAdFilter;

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -37,8 +38,10 @@ bool isWebBrowserYoutubePage(Uri? uri) {
 class YoutubeSubtitlesFeature extends WebBrowserFeature {
   YoutubeSubtitlesFeature({
     required PrefStore prefs,
+    String Function()? learningLanguage,
     Future<String> Function(String asset)? loadAsset,
-  }) : _prefs = prefs {
+  }) : _prefs = prefs,
+       _learningLanguage = learningLanguage ?? (() => '') {
     _bundleLoad = loadWebBrowserYoutubeSubtitlesBundle(loadAsset: loadAsset)
         .then<String?>(
           (String bundle) => _bundle = bundle,
@@ -50,6 +53,13 @@ class YoutubeSubtitlesFeature extends WebBrowserFeature {
   }
 
   final PrefStore _prefs;
+
+  /// 用户的学习语言（BCP-47）：每次下发脚本时现读，设置里改了，下一次开页 / 切开关
+  /// 即生效。字幕层据此在一条视频的多条字幕轨里优先选它。
+  final String Function() _learningLanguage;
+
+  String get _language => _learningLanguage().trim();
+
   late final Future<String?> _bundleLoad;
   String? _bundle;
 
@@ -80,7 +90,8 @@ class YoutubeSubtitlesFeature extends WebBrowserFeature {
     return <UserScript>[
       UserScript(
         source:
-            '$bundle\n${webBrowserYoutubeSubtitlesToggleScript(enabled: true)}',
+            '$bundle\n'
+            '${webBrowserYoutubeSubtitlesToggleScript(enabled: true, language: _language)}',
         injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
       ),
     ];
@@ -149,7 +160,10 @@ class YoutubeSubtitlesFeature extends WebBrowserFeature {
         }
       }
       await controller.evaluateJavascript(
-        source: webBrowserYoutubeSubtitlesToggleScript(enabled: enabled),
+        source: webBrowserYoutubeSubtitlesToggleScript(
+          enabled: enabled,
+          language: _language,
+        ),
       );
     } catch (e) {
       // 标签页正在导航 / WebView 已销毁：下次 onLoadStop 再同步。
@@ -161,4 +175,15 @@ class YoutubeSubtitlesFeature extends WebBrowserFeature {
   void dispose() {
     _tabs.clear();
   }
+}
+
+/// 网页 YouTube 字幕优先选的语言（学习语言）：用户设了「默认内容语言」就用它，否则是
+/// app 的学习语言日语（与互联 / 视频字幕的 `videoSubtitleLangCode` 同源）。
+String webBrowserYoutubeSubtitleLanguage({
+  required String defaultContentLanguage,
+}) {
+  final String configured = defaultContentLanguage.trim();
+  return configured.isNotEmpty
+      ? configured
+      : JapaneseLanguage.instance.languageCode;
 }
