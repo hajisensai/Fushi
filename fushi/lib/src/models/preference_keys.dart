@@ -606,6 +606,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_disc_auto_fullscreen',
   'video_disc_launch_animation',
   'video_disc_open_menu_by_default',
+  // bool（默认 false）：远端原盘流式播放反复缓冲时的「建议下载到本机」提示，用户
+  // 点了「不再提示」后为 true（拍板决策：只提示、绝不强制切换）。
+  'video_disc_remote_buffering_notice_suppressed',
   'video_download_backend_path_mappings',
   'video_download_embedded_installation_id',
   // bool：下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）——管线

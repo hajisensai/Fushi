@@ -68,6 +68,8 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart'
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
+    show DiscShareFile;
 import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
@@ -141,12 +143,17 @@ import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_deletion_filter.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
+import 'package:fushi/src/sync/remote_disc_share.dart';
+import 'package:fushi/src/sync/remote_disc_host_open.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart';
 import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
@@ -3322,11 +3329,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return;
     }
+    // 原盘标题（`.mpls` / DVD title）不是一个能单独存下来的文件：按盘整体下载
+    // （远端原盘第二期，一张盘一个任务），其余成员照旧逐集下载。
+    final List<RemoteVideoInfo> discMembers = <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in pending)
+        if (isRemoteDiscMemberFileName(video.fileName)) video,
+    ];
+    final List<Future<void> Function()> discStarters = discMembers.isEmpty
+        ? const <Future<void> Function()>[]
+        : await _prepareRemoteDiscDownloads(discMembers, source, manager);
     // 先把整批启动器解析完再起跑：启动器不依赖本页 State（见 _prepareRemoteDownload）。
     final List<Future<void> Function()> starters = <Future<void> Function()>[
+      ...discStarters,
       for (final RemoteVideoInfo video in pending)
-        await _prepareRemoteDownload(video, source, manager),
+        if (!isRemoteDiscMemberFileName(video.fileName))
+          await _prepareRemoteDownload(video, source, manager),
     ];
+    if (starters.isEmpty) return;
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         FushiSnackBar(
@@ -3353,6 +3372,138 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         ),
       ),
     );
+  }
+
+  /// 远端原盘整盘下载的启动器：按盘分组（一张盘签发一次共享会话、一个任务），每个
+  /// 启动器在起跑时**重新签发**会话——任务可能被暂停很久，旧会话 token 早已按空闲
+  /// 过期；盘身份（discKey）变了就是 host 上换了盘，按失败报而不是接着下。
+  /// 对端不支持（老 host）或全部签发失败时给出原因并返回空表。
+  Future<List<Future<void> Function()>> _prepareRemoteDiscDownloads(
+    List<RemoteVideoInfo> members,
+    RemoteVideoSource source,
+    InterconnectDownloadManager manager,
+  ) async {
+    if (source is! RemoteDiscShareSource) {
+      _showDiscDownloadNotice(t.video_disc_remote_download_unsupported);
+      return const <Future<void> Function()>[];
+    }
+    final RemoteDiscShareSource discSource = source as RemoteDiscShareSource;
+    final ({List<RemoteDiscShare> shares, List<RemoteVideoInfo> failed})
+    grouped;
+    try {
+      grouped = await groupRemoteDiscMembers(
+        members,
+        discSource.openRemoteDiscShare,
+      );
+    } on RemoteDiscShareUnsupported {
+      _showDiscDownloadNotice(t.video_disc_remote_download_unsupported);
+      return const <Future<void> Function()>[];
+    }
+    if (grouped.failed.isNotEmpty) {
+      _showDiscDownloadNotice(t.remote_video_download_failed);
+    }
+    final Directory root = Directory(
+      p.join((await AppPaths.remoteVideosDirectory()).path, 'discs'),
+    );
+    final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{
+      for (final RemoteVideoInfo video in _lastRemoteState?.videos ?? members)
+        video.id: video,
+      for (final RemoteVideoInfo video in members) video.id: video,
+    };
+    final VideoBookRepository repo = widget.repo;
+    final RemoteCollectionAdoptionService adoption =
+        RemoteCollectionAdoptionService(appModelNoUpdate.database);
+    return <Future<void> Function()>[
+      for (final RemoteDiscShare share in grouped.shares)
+        if (!manager.isRunning(
+          InterconnectDownloadManager.discTaskId(share.manifest.discKey),
+        ))
+          () => _startRemoteDiscDownload(
+            share: share,
+            source: discSource,
+            manager: manager,
+            localRoot: remoteDiscLocalRoot(root.path, share.manifest),
+            repo: repo,
+            adoption: adoption,
+            remoteById: byId,
+          ),
+    ];
+  }
+
+  /// 起跑（或续跑）一张盘的整盘下载。不碰本页 State：批里排在后面的盘起跑时本页
+  /// 可能早已 dispose。
+  static Future<void> _startRemoteDiscDownload({
+    required RemoteDiscShare share,
+    required RemoteDiscShareSource source,
+    required InterconnectDownloadManager manager,
+    required String localRoot,
+    required VideoBookRepository repo,
+    required RemoteCollectionAdoptionService adoption,
+    required Map<String, RemoteVideoInfo> remoteById,
+  }) async {
+    final String anyTitle = share.titles.isEmpty ? '' : share.titles.first.id;
+    RemoteDiscShare current = share;
+    await manager.startDiscDownload(
+      discKey: share.manifest.discKey,
+      title: share.manifest.name,
+      dest: File(localRoot),
+      discard: () => discardRemoteDiscDownload(localRoot),
+      run:
+          (
+            File dest, {
+            void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal,
+          }) async {
+            if (anyTitle.isNotEmpty) {
+              final RemoteDiscShare fresh = await source.openRemoteDiscShare(
+                anyTitle,
+              );
+              if (fresh.manifest.discKey != share.manifest.discKey) {
+                throw StateError('the disc on the paired device changed');
+              }
+              current = fresh;
+            }
+            await downloadRemoteDisc(
+              manifest: current.manifest,
+              localRoot: dest.path,
+              fetch:
+                  (
+                    DiscShareFile file,
+                    File target, {
+                    void Function(int received, int? total)? onBytes,
+                    Future<void>? cancelSignal,
+                  }) => source.downloadRemoteDiscFile(
+                    current,
+                    file,
+                    target,
+                    onBytes: onBytes,
+                    cancelSignal: cancelSignal,
+                  ),
+              onBytes: (int received, int total) {
+                onBytes?.call(received, total);
+                if (total > 0) onProgress?.call(received / total);
+              },
+              cancelSignal: cancelSignal,
+            );
+          },
+      onComplete: (File dest) async {
+        await registerDownloadedRemoteDisc(
+          repo: repo,
+          adoption: adoption,
+          share: current,
+          localRoot: dest.path,
+          remoteById: remoteById,
+        );
+      },
+    );
+  }
+
+  void _showDiscDownloadNotice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 合集卡右键「下载远端集」：先按详情页同一路径解析成员槽，取远端子集交给
@@ -9629,6 +9780,42 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ? null
           : _chooseTmdbOrderingOnHost,
       deleteLocalCopy: _deleteDownloadedLocalCopy,
+      discActions: _remoteDiscActions(source),
+    );
+  }
+
+  /// 远端原盘（第二期）：只有互联 host 能把一张盘按目录共享出来；它同时是视频遥控
+  /// 的对端，「在 PC 上打开」走同一台 host 的遥控通道。
+  RemoteDiscActions? _remoteDiscActions(RemoteVideoSource source) {
+    if (source is! RemoteDiscShareSource) return null;
+    final RemoteDiscShareSource discs = source as RemoteDiscShareSource;
+    final SyncRepository repository = SyncRepository(appModelNoUpdate.database);
+    Future<VideoRemoteClient?> hostClient() async {
+      if (source is! InterconnectSyncBackend) return null;
+      final String identity = await source.connectedHostIdentity();
+      final FushiClientUrl? peer = await videoRemotePeerForHost(
+        repository,
+        identity,
+      );
+      return peer == null
+          ? null
+          : VideoRemoteClient(repository: repository, peer: peer);
+    }
+
+    return RemoteDiscActions(
+      openShare: discs.openRemoteDiscShare,
+      readFile: discs.readRemoteDiscFile,
+      hostCanOpenDisc: () async {
+        final VideoRemoteClient? client = await hostClient();
+        return client != null && await hostCanOpenDiscMenu(client);
+      },
+      openOnHost: (String videoId) async {
+        final VideoRemoteClient? client = await hostClient();
+        if (client == null) {
+          throw const VideoRemoteError(VideoRemoteError.unreachableCode);
+        }
+        await openDiscOnHost(client, videoId);
+      },
     );
   }
 

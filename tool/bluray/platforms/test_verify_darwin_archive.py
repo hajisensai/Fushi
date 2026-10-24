@@ -9,7 +9,7 @@ from pathlib import Path
 from verify_darwin_archive import macho_slices, verify_archive
 
 
-MARKERS = (b"disc-navigation-state-json\0disc-menu-active\0discnav\0dvd-state\0"
+MARKERS = (b"disc-navigation-state-json\0disc-menu-active\0discnav\0dvd-state\0disc-remote-access\0"
            b"without DefaultDuration\0Deriving missing DTS\0")
 
 

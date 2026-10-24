@@ -81,6 +81,11 @@ def main():
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--disc", help="Blu-ray disc root")
     source.add_argument("--dvd", help="DVD VIDEO_TS folder, its parent, or an .iso")
+    # Remote disc (docs/specs/2026-10-24-disc-interaction-handoff.md, phase 2):
+    # libbluray / libdvdnav read the disc over HTTP from a paired host's share
+    # (packages/fushi_engine/tool/disc_share_host_probe.dart prints the URL).
+    source.add_argument("--remote-disc", help="Blu-ray disc share base URL (bluray-device)")
+    source.add_argument("--remote-dvd", help="DVD image URL on a disc share (dvd-device)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seconds", type=float, default=28)
     parser.add_argument("--actions", type=Path, help="JSON list of {at: seconds, args: [discnav, action, ...]}")
@@ -89,11 +94,18 @@ def main():
                         help="DVD: minimum share of the focused button drawn in an opaque select colour")
     args = parser.parse_args()
     preload = preload_runtime(args.preload) if args.preload else []
+    remote_dvd = bool(args.remote_dvd)
     default_actions = ([{"at": 6, "args": ["discnav", "right"]}, {"at": 10, "args": ["discnav", "left"]}]
-                       if args.dvd else [{"at": 24, "args": ["discnav", "right"]}])
+                       if (args.dvd or remote_dvd) else [{"at": 24, "args": ["discnav", "right"]}])
     actions = json.loads(args.actions.read_text()) if args.actions else default_actions
-    shot_seconds = (3, 5, 7, 9, 11, 13) if args.dvd else (8, 22, 26, 30, 34, 38)
-    if args.dvd:
+    shot_seconds = (3, 5, 7, 9, 11, 13) if (args.dvd or remote_dvd) else (8, 22, 26, 30, 34, 38)
+    is_dvd = bool(args.dvd or args.remote_dvd)
+    device_option = None
+    if args.remote_disc:
+        url, device_option = "bd://menu", ("bluray-device", args.remote_disc)
+    elif args.remote_dvd:
+        url, device_option = "dvd://menu", ("dvd-device", args.remote_dvd)
+    elif args.dvd:
         target = Path(args.dvd).resolve()
         if target.is_dir() and (target / "VIDEO_TS").is_dir():
             target = target / "VIDEO_TS"
@@ -145,6 +157,8 @@ def main():
         params = (RenderParam * 3)(RenderParam(1, C.cast(api, C.c_void_p)), RenderParam(2, C.cast(C.pointer(init), C.c_void_p)), RenderParam())
         assert create(C.byref(render_ctx), mpv.handle, params) == 0
         mpv.lib.mpv_request_log_messages(mpv.handle, b"v")
+        if device_option:
+            assert mpv.command("set", *device_option) == 0
         assert mpv.command("loadfile", url) == 0
         fbo, flip = Fbo(0, width, height, 0), C.c_int(1)
         render_params = (RenderParam * 3)(RenderParam(3, C.cast(C.pointer(fbo), C.c_void_p)), RenderParam(4, C.cast(C.pointer(flip), C.c_void_p)), RenderParam())
@@ -174,7 +188,7 @@ def main():
                     frame = Image.frombytes("RGBA", (width, height), bytes(pixels)).transpose(Image.Transpose.FLIP_TOP_BOTTOM)
                     frame.save(args.output / f"frame-{second}.png")
                     shots.add(second)
-                    if args.dvd:
+                    if is_dvd:
                         wire = mpv.get("disc-navigation-state-json")
                         osd = mpv.get("osd-dimensions")
                         match = highlight_match(frame, wire, osd)
@@ -205,7 +219,7 @@ def main():
         print(json.dumps({"egl": [major.value, minor.value], "records": records, "frames": sorted(shots),
                           "preloaded_modules": len(preload) - 1 if preload else 0}, indent=2))
         assert any(isinstance(r.get("state"), dict) and r["state"].get("menu-active") for r in records), "No interactive menu rendered"
-        if args.dvd:
+        if is_dvd:
             assert any(isinstance(r.get("state"), dict) and r["state"].get("disc-type") == "dvd"
                        for r in records), "No DVD navigation snapshot (disc-navigation-state v2)"
             checked = [r["highlight"] for r in records if r.get("highlight")]

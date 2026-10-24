@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -50,6 +51,11 @@ Future<DiscMenuUnavailableReason?> probeLocalDiscMenu(DiscRef disc) =>
 String discMenuUnavailableText(DiscMenuUnavailableReason reason) =>
     switch (reason) {
       DiscMenuUnavailableReason.remote => t.video_disc_menu_unavailable_remote,
+      DiscMenuUnavailableReason.remoteHostTooOld =>
+        t.video_disc_menu_unavailable_remote_host_old,
+      DiscMenuUnavailableReason.remoteDvdFolder =>
+        t.video_disc_menu_unavailable_remote_dvd_folder,
+      DiscMenuUnavailableReason.remoteUnreachable => t.remote_video_unavailable,
       DiscMenuUnavailableReason.mobileBdj =>
         t.video_disc_menu_unavailable_mobile_bdj,
       DiscMenuUnavailableReason.missingBdjComponent =>
@@ -78,6 +84,30 @@ Future<void> openDiscSession({
         repo: repo,
         playlistCollectionId: collectionId,
         openBlurayMenu: true,
+        discLaunchCover: cover,
+        discLaunchOrigin: origin,
+      ),
+    ),
+  );
+}
+
+/// Opens a remote disc (a paired host's disc share) as a streamed disc session
+/// (remote discs, phase 2). Same immersive session as a local disc; libmpv
+/// reads the share over HTTP. The remote titles bind no local library row.
+Future<void> openRemoteDiscSession({
+  required BuildContext context,
+  required VideoBookRepository repo,
+  required RemoteDiscMenuSource source,
+  ImageProvider? cover,
+  Rect? origin,
+}) {
+  return Navigator.push<void>(
+    context,
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => VideoFushiPage.neutralizedRemoteDisc(
+        remoteDisc: source,
+        repo: repo,
         discLaunchCover: cover,
         discLaunchOrigin: origin,
       ),

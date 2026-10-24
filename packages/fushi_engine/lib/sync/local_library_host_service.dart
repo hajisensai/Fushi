@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart'
     show Value;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart'
@@ -135,6 +137,7 @@ abstract class _LocalLibraryHostBase
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         VideoDanmakuKeyHost,
+        VideoDiscShareHost,
         AudiobookDelayHost,
         AudiobookSubtitleHost,
         VideoSubtitleDefaultHost,

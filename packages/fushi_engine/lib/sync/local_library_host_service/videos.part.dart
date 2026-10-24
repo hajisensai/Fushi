@@ -338,6 +338,36 @@ mixin _LocalLibraryHostVideos
     return f.existsSync() ? f : null;
   }
 
+  /// 远端原盘（[VideoDiscShareHost]）：视频行的成员路径是原盘标题时反推盘根。只认
+  /// `videoPath`（当前集）——一张盘的每条标题各是一行，不经播放列表下标。
+  @override
+  Future<String?> resolveVideoDiscRoot(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null || row.videoPath.isEmpty) return null;
+    final String? root = discRootForMemberPath(row.videoPath);
+    if (root == null) return null;
+    final FileSystemEntityType type = FileSystemEntity.typeSync(root);
+    return type == FileSystemEntityType.notFound ? null : root;
+  }
+
+  @override
+  Future<List<({String id, String path})>> videoTitlesOnDisc(
+      String discRoot) async {
+    final String target = p.normalize(discRoot);
+    return <({String id, String path})>[
+      for (final VideoBookRow row in await _db.allVideoBooks())
+        if (discRootForMemberPath(row.videoPath) case final String root
+            when p.equals(p.normalize(root), target))
+          (
+            id: row.bookUid,
+            path: p
+                .relative(row.videoPath, from: target)
+                .split(p.separator)
+                .join('/'),
+          ),
+    ];
+  }
+
   /// 弹弹play 指纹（[VideoDanmakuKeyHost]，BUG-3614）：对 [resolveVideoFile] 反查到
   /// 的真实文件现算——只读前 16 MiB，路径只来自 host 自己的 DB。
   @override

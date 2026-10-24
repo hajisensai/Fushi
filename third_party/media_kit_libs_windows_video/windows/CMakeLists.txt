@@ -112,11 +112,16 @@ get_filename_component(
 # -Ddvdnav=enabled on tool/dvd libdvdcss / libdvdread / libdvdnav (fbddvd*.dll,
 # the same copies the unified FFmpeg's dvdvideo demuxer links) and the
 # disc-navigation-state v2 snapshot (disc-type + dvd-state).
-set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1.7z")
+# `rdisc1`: remote discs (docs/specs/2026-10-24-disc-interaction-handoff.md,
+# phase 2): disc-navigation-state.patch lets libbluray read a paired host's
+# disc share over HTTP (bd_open_files: files by Range, directories from the
+# share manifest) and libdvdnav read a shared DVD image block-wise
+# (dvdnav_open_stream2). The navigation snapshot schema stays v2.
+set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1.7z")
 
 # Upstream source provenance; the committed patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
-set(LIBMPV_MD5 "9d752775f10ff24043079057a7419eb1")
+set(LIBMPV_MD5 "f826fdedc0b628cf299ff25541eaddd4")
 
 # Vendored archive (committed) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")

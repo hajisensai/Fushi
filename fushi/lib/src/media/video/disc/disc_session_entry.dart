@@ -83,9 +83,19 @@ DiscRef? preferredDisc(List<DiscRef> discs) {
 /// Why a disc's authored menu cannot be opened here. The disc label stays
 /// (it is a file-structure fact); this is a runtime capability.
 enum DiscMenuUnavailableReason {
-  /// The disc lives on an interconnect peer. libbluray needs a local file
-  /// system, so menus of remote discs cannot run yet.
+  /// The disc lives on a remote source that cannot share it as a disc (cloud
+  /// storage, media servers): there is nothing libbluray could read.
   remote,
+
+  /// The disc lives on a paired host whose Fushi predates disc shares
+  /// (`liveLibrary.discShareV1`): update it, or download the disc.
+  remoteHostTooOld,
+
+  /// A VIDEO_TS folder DVD on a paired host: libdvdnav streams images only.
+  remoteDvdFolder,
+
+  /// The paired host could not be reached to share the disc.
+  remoteUnreachable,
 
   /// A BD-J (Java) menu on Android / iOS: those packages ship no JVM.
   mobileBdj,
@@ -123,6 +133,27 @@ DiscMenuUnavailableReason? resolveDiscMenuAvailability({
           : DiscMenuUnavailableReason.missingBdjComponent,
     DiscMenuPlatform.macos || DiscMenuPlatform.linux => null,
   };
+}
+
+/// Remote disc (a paired host's disc share): [shareSupported] is the host's
+/// capability, [streamBlocked] a structural limit of this disc ([RemoteDiscStreamBlock]
+/// in remote_disc_menu_source.dart, passed as a bool to keep this rule pure);
+/// past those the BD-J rules are the same as for a local disc.
+DiscMenuUnavailableReason? resolveRemoteDiscMenuAvailability({
+  required bool shareSupported,
+  required bool dvdFolder,
+  required bool requiresJava,
+  required DiscMenuPlatform platform,
+  required bool bdjComponentInstallable,
+}) {
+  if (!shareSupported) return DiscMenuUnavailableReason.remoteHostTooOld;
+  if (dvdFolder) return DiscMenuUnavailableReason.remoteDvdFolder;
+  return resolveDiscMenuAvailability(
+    local: true,
+    requiresJava: requiresJava,
+    platform: platform,
+    bdjComponentInstallable: bdjComponentInstallable,
+  );
 }
 
 /// Reads the disc index (no video decoding) and applies

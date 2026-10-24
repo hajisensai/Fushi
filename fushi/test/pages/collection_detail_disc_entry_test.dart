@@ -13,6 +13,12 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/sync/remote_disc_share.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart';
+import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -186,6 +192,12 @@ void main() {
           t.video_disc_menu_unavailable_mobile_bdj,
         DiscMenuUnavailableReason.missingBdjComponent =>
           t.video_disc_menu_unavailable_missing_bdj,
+        DiscMenuUnavailableReason.remoteHostTooOld =>
+          t.video_disc_menu_unavailable_remote_host_old,
+        DiscMenuUnavailableReason.remoteDvdFolder =>
+          t.video_disc_menu_unavailable_remote_dvd_folder,
+        DiscMenuUnavailableReason.remoteUnreachable =>
+          t.remote_video_unavailable,
       };
       expect(find.text(text), findsOneWidget);
       expect(
@@ -263,6 +275,203 @@ void main() {
       find.byKey(const ValueKey<String>('collection-disc-main-title')),
       findsNothing,
     );
+  });
+
+  // 远端原盘（第二期）：成员只在对端时，能流式就「播放原盘」，给「在 PC 上打开」；
+  // 开不了时主按钮退回普通播放并写明确切原因。
+  group('remote disc', () {
+    RemoteDiscShare share({
+      DiscFormat format = DiscFormat.bluray,
+      DiscShareLayout layout = DiscShareLayout.directory,
+    }) => RemoteDiscShare(
+      baseUrl: Uri.parse('http://host:1/api/library/disc/tok/'),
+      manifest: DiscShareManifest(
+        discKey: 'c' * 40,
+        name: 'Disc 1',
+        format: format,
+        layout: layout,
+        aacs: false,
+        files: <DiscShareFile>[
+          DiscShareFile(
+            path: layout == DiscShareLayout.image
+                ? 'DISC.iso'
+                : format == DiscFormat.dvd
+                ? 'VIDEO_TS/VIDEO_TS.IFO'
+                : 'BDMV/index.bdmv',
+            size: 1,
+            modifiedAt: 0,
+          ),
+        ],
+      ),
+    );
+
+    late List<String> openedOnHost;
+    setUp(() => openedOnHost = <String>[]);
+
+    Widget buildRemote({
+      required Future<RemoteDiscShare> Function(String id) openShare,
+      bool hostCanOpen = true,
+      String fileName = '00001.mpls',
+    }) {
+      final RemoteVideoInfo info = RemoteVideoInfo(
+        id: 'host/title1',
+        title: 'Title 1',
+        fileName: fileName,
+      );
+      return TranslationProvider(
+        child: MaterialApp(
+          home: MediaCollectionDetailPage(
+            database: db,
+            collection: MediaCollectionRow(
+              origin: 'user',
+              organizeAliases: '',
+              id: collectionId,
+              name: 'Box',
+              collectionType: 'playlist',
+              coverSource: null,
+              sortOrder: 0,
+              createdAt: 0,
+              orderUpdatedAt: 0,
+            ),
+            loadEpisodes: () async => <CollectionEpisodeSlot>[
+              CollectionEpisodeSlot.remote(info),
+            ],
+            onOpenEpisode: (VideoBookRow row) => opened.add(row.bookUid),
+            onChanged: () {},
+            remote: CollectionRemoteContext(
+              loadRemoteVideos: () async => <RemoteVideoInfo>[info],
+              openEpisode:
+                  (
+                    RemoteVideoInfo episode,
+                    List<RemoteVideoInfo> members,
+                    int index,
+                  ) => opened.add(episode.id),
+              discActions: RemoteDiscActions(
+                openShare: openShare,
+                readFile: (RemoteDiscShare _, String _, int _) async => null,
+                hostCanOpenDisc: () async => hostCanOpen,
+                openOnHost: (String id) async => openedOnHost.add(id),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('streamable: play disc + open on PC', (
+      WidgetTester tester,
+    ) async {
+      useSurface(tester);
+      await tester.pumpWidget(
+        buildRemote(openShare: (String _) async => share()),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
+        findsOneWidget,
+      );
+      expect(find.text(t.video_disc_menu_unavailable_remote), findsNothing);
+      final Finder onHost = find.byKey(
+        const ValueKey<String>('collection-disc-open-on-host'),
+      );
+      expect(onHost, findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is MediaDetailSecondaryButton &&
+              w.label == t.video_disc_open_on_host,
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(onHost);
+      await tester.pumpAndSettle();
+      expect(openedOnHost, <String>['host/title1']);
+    });
+
+    testWidgets('host without disc shares: plain play, says the host is old', (
+      WidgetTester tester,
+    ) async {
+      useSurface(tester);
+      await tester.pumpWidget(
+        buildRemote(
+          openShare: (String _) async =>
+              throw const RemoteDiscShareUnsupported(),
+          hostCanOpen: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
+        findsNothing,
+      );
+      expect(
+        find.text(t.video_disc_menu_unavailable_remote_host_old),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('collection-disc-open-on-host')),
+        findsNothing,
+      );
+      await tester.tap(heroPlay());
+      await tester.pumpAndSettle();
+      expect(opened, <String>['host/title1'], reason: '退回普通播放远端标题');
+    });
+
+    testWidgets('VIDEO_TS folder DVD: plain play, says folders cannot stream', (
+      WidgetTester tester,
+    ) async {
+      useSurface(tester);
+      await tester.pumpWidget(
+        buildRemote(
+          fileName: 'TITLE_01.dvdtitle',
+          openShare: (String _) async => share(format: DiscFormat.dvd),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(t.video_disc_menu_unavailable_remote_dvd_folder),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
+        findsNothing,
+      );
+      // 菜单开不了，但 host 那边能开：「在 PC 上打开」仍在。
+      expect(
+        find.byKey(const ValueKey<String>('collection-disc-open-on-host')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('DVD image streams', (WidgetTester tester) async {
+      useSurface(tester);
+      await tester.pumpWidget(
+        buildRemote(
+          fileName: 'TITLE_01.dvdtitle',
+          openShare: (String _) async =>
+              share(format: DiscFormat.dvd, layout: DiscShareLayout.image),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('host unreachable: plain play with the reason', (
+      WidgetTester tester,
+    ) async {
+      useSurface(tester);
+      await tester.pumpWidget(
+        buildRemote(
+          openShare: (String _) async => throw const SocketException('down'),
+          hostCanOpen: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.remote_video_unavailable), findsOneWidget);
+    });
   });
 
   test('every route into the detail page gets the disc entry', () {

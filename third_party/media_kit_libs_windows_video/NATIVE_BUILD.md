@@ -6,11 +6,34 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1.7z` (40,652,650 bytes).
-SHA-256: `bdd78bf52a23bcd3c4c58037e2f13930b6c4ce13d76491a204c4a70d25841805`.
-The `fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1.7z` (40,657,787 bytes).
+SHA-256: `344e3159d78ee509cbc036cf231fe0a62bdf7979300c5ff6dbd88ec9b370d935`.
+The `fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
+
+`dvd1-rdisc1` (2026-10-24): remote discs (`docs/specs/2026-10-24-disc-interaction-handoff.md`,
+phase 2). `disc-navigation-state.patch` adds, without changing the v2 snapshot:
+a `bluray-device` that is an `http(s)://` URL is the base of a paired host's
+read-only disc share (`packages/fushi_engine/lib/sync/disc_share_routes.dart`);
+libbluray opens it with `bd_open_files()` — every file is an mpv stream (HTTP
+Range through the app's `http-proxy` relay, which owns TLS pinning), and
+directories are listed from the share's `manifest.json` (paths with `..`,
+absolute paths or backslashes reject the whole manifest). A `dvd-device` URL is
+a shared DVD image read block-wise through `dvdnav_open_stream2()`; VIDEO_TS
+folders cannot be streamed (libdvdnav 7.0 has no file-access entry point).
+A read-only `disc-remote-access` property (`1`) tells the app the runtime can
+do this; `probe_libmpv.py` requires it, and the app checks it before handing a
+URL device to an older runtime (which would only report a generic open failure).
+Same unified FFmpeg recipe and MSYS2 package set as `dvd1` (only the FFmpeg
+`patched_commit` differs, it is a fresh local commit of the same patches);
+`build_libmpv.ps1` ran every verifier. Remote verification with
+`verify_menu_render.py --remote-disc` against
+`packages/fushi_engine/tool/disc_share_host_probe.dart` serving the readable
+Disc 2 copy over loopback HTTP: same states as the local disc (first play →
+HDMV IG menu at ~18 s, `right` moves to チャプター, the local and remote
+`select` on 全編再生 both return to the menu identically), and
+right ×3 → `select` ×2 plays title 2 (00002.mpls) from the share.
 
 `discnav2-...-dvd1` (2026-10-24): DVD menus (`docs/specs/2026-10-24-dvd-original-menu.md`,
 `tool/dvd/README.md`). The unified FFmpeg prefix now also holds libdvdcss 1.6.0,

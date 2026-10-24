@@ -584,6 +584,17 @@ bool isVideoDiscOpenFailureLog({
     level.trim() == 'error' &&
     const <String>{'bd', 'dvdnav', 'stream'}.contains(prefix.trim());
 
+/// Remote disc: this device's libmpv cannot read a disc share over HTTP (no
+/// `disc-remote-access`; Android / Apple artifacts until they are rebuilt).
+const String kVideoDiscRemoteRuntimeUnsupported =
+    'remote-disc-runtime-unsupported';
+
+/// Remote disc: a VIDEO_TS folder DVD cannot stream (libdvdnav reads images).
+const String kVideoDiscRemoteDvdFolder = 'remote-disc-dvd-folder';
+
+/// Remote disc titles have no local file for clip / card extraction.
+const String kVideoDiscRemoteExtractionUnavailable = 'remote-disc-extraction';
+
 class VideoDiscMenuException implements Exception {
   const VideoDiscMenuException(this.code);
   final String code;

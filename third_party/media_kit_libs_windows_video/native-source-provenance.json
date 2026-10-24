@@ -1,6 +1,6 @@
 {
   "mpv_commit": "36abaa32d00a7229ee206aae12dc0e97e7962dca",
-  "patch_sha256": "6095b2221374626b2388a16d09f890c82eea62108159058d15309701fcd1cb00",
+  "patch_sha256": "5edcd0de27d14793204b89754dd18c3d1b3c18e29a6edd19c594ef60c72d2b00",
   "render_patches": {
     "gpu-dumb-mode-hwdec-crop.patch": "8428056320adff93087dd284fa9ef254839a28c7632a13b0bb4624a6b224e482",
     "mpv-gl-dovi-p5.patch": "bff4b4bc5cafecf7cf622a85d5c5ebb5ba76739f64189e87e450f7086000b08b"

@@ -2977,6 +2977,21 @@ abstract interface class VideoDanmakuKeyHost {
   Future<DandanplayFileKey?> videoDanmakuKey(String id, {int episodeIndex = 0});
 }
 
+/// host 端「把一张原盘按只读目录共享给对端」的**可选**能力（远端原盘第二期，
+/// `disc_share_routes.dart`）。与 [VideoDanmakuKeyHost] 同范式：server 用 `is`
+/// 探测，不实现 → `/api/library/videos/<id>/disc` 404、能力位不出现。
+abstract interface class VideoDiscShareHost {
+  /// 视频 [id] 若是一条原盘标题（蓝光 `.mpls` / DVD title），返回它所在盘的本机
+  /// 盘根（目录或 `.iso`）；不是原盘标题、行不存在或盘已不在 → null。路径只来自
+  /// host 自己的 DB。
+  Future<String?> resolveVideoDiscRoot(String id);
+
+  /// 库里成员路径落在 [discRoot] 这张盘上的全部视频行：`id` 是 bookUid，`path`
+  /// 是成员路径相对盘根的部分（正斜杠，如 `BDMV/PLAYLIST/00800.mpls`、
+  /// `VIDEO_TS/TITLE_01.dvdtitle`）。client 整盘下载落地后据此把这些行认领成本地行。
+  Future<List<({String id, String path})>> videoTitlesOnDisc(String discRoot);
+}
+
 /// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
 /// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
 ///

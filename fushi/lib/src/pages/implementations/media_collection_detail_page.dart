@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -230,8 +232,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 进来的那条路径就因为没传而看不到原盘按钮。
   List<DiscRef> _discs = const <DiscRef>[];
 
-  /// 原盘成员只在对端（互联 host）上：libbluray 要本地文件系统，菜单开不了。
+  /// 原盘成员只在对端（互联 host）上（远端原盘第二期：能流式就开菜单）。
   bool _hasRemoteDisc = false;
+
+  /// 远端原盘探测得到的盘源（能流式开菜单时非 null）。
+  RemoteDiscMenuSource? _remoteDiscSource;
+
+  /// 这台 host 能被遥控着在它那边打开原盘菜单（「在 PC 上打开」）。
+  bool _hostCanOpenDisc = false;
+
+  /// 第一条远端原盘成员（探测 / 遥控用它的 id 指认这张盘）。
+  RemoteVideoInfo? get _firstRemoteDiscMember {
+    for (final CollectionEpisodeSlot slot in _slots) {
+      if (slot.local == null && isRemoteDiscMember(slot.remote)) {
+        return slot.remote;
+      }
+    }
+    return null;
+  }
 
   /// 主按钮那张盘（最近看过的那张）在本机开不开得了菜单；null = 能开 / 未探测。
   DiscMenuUnavailableReason? _discUnavailable;
@@ -487,8 +505,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         discs.isEmpty &&
         slots.any(
           (CollectionEpisodeSlot slot) =>
-              slot.local == null &&
-              (slot.remote?.fileName?.toLowerCase().endsWith('.mpls') ?? false),
+              slot.local == null && isRemoteDiscMember(slot.remote),
         );
     if (!mounted) return;
     setState(() {
@@ -572,17 +589,97 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     _syncBackdropRotation();
   }
 
-  /// 探测主按钮那张盘能不能开菜单（只读一次 index.bdmv，不启动 Java）。远端盘不用
-  /// 探：本机没有文件系统可给 libbluray。
+  /// 探测主按钮那张盘能不能开菜单（只读一次 index.bdmv，不启动 Java）。远端盘
+  /// （第二期）向 host 签发一次盘目录共享、读共享里的 index.bdmv：能流式就开菜单，
+  /// 不能时给出确切原因（对端版本过低 / DVD 文件夹形态 / 移动端 BD-J / 连不上）。
   Future<void> _probeDiscMenu() async {
+    if (_hasRemoteDisc) {
+      await _probeRemoteDiscMenu();
+      return;
+    }
     final DiscRef? disc = preferredDisc(_discs);
-    final DiscMenuUnavailableReason? reason = _hasRemoteDisc
-        ? DiscMenuUnavailableReason.remote
-        : disc == null
+    final DiscMenuUnavailableReason? reason = disc == null
         ? null
         : await (widget.discMenuProbe ?? probeLocalDiscMenu)(disc);
     if (!mounted) return;
     if (reason != _discUnavailable) setState(() => _discUnavailable = reason);
+  }
+
+  Future<void> _probeRemoteDiscMenu() async {
+    final RemoteDiscActions? actions = widget.remote?.discActions;
+    final RemoteVideoInfo? member = _firstRemoteDiscMember;
+    if (actions == null || member == null) {
+      if (!mounted) return;
+      setState(() {
+        _remoteDiscSource = null;
+        _discUnavailable = DiscMenuUnavailableReason.remote;
+      });
+      return;
+    }
+    final Future<bool> Function()? hostCheck = actions.hostCanOpenDisc;
+    if (hostCheck != null) {
+      unawaited(
+        hostCheck().then((bool can) {
+          if (mounted && can != _hostCanOpenDisc) {
+            setState(() => _hostCanOpenDisc = can);
+          }
+        }, onError: (Object _) {}),
+      );
+    }
+    final RemoteDiscProbe probe = await probeRemoteDiscMenu(
+      actions: actions,
+      videoId: member.id,
+      title: _name,
+      platform: currentDiscMenuPlatform(),
+      bdjComponentInstallable: currentBdjComponentInstallable(),
+      downloadToDevice: _downloadRemoteDiscToDevice,
+    );
+    if (!mounted) return;
+    setState(() {
+      _remoteDiscSource = probe.source;
+      _discUnavailable = probe.unavailable;
+    });
+  }
+
+  /// 流式会话缓冲提示里的「下载到本机」：与「下载远端集」同一入口（原盘成员按盘
+  /// 整体下载，见库页 `_prepareRemoteDiscDownloads`）。
+  Future<void> _downloadRemoteDiscToDevice() async {
+    final Future<void> Function(MediaCollectionRow, List<RemoteVideoInfo>)?
+    download = widget.remote?.downloadMembers;
+    if (download == null) return;
+    await download(_collectionRow ?? widget.collection, <RemoteVideoInfo>[
+      for (final RemoteVideoInfo info in _remoteMembers)
+        if (isRemoteDiscMember(info)) info,
+    ]);
+  }
+
+  void _openRemoteDisc(RemoteDiscMenuSource source) {
+    unawaited(
+      openRemoteDiscSession(
+        context: context,
+        repo: VideoBookRepository(widget.database),
+        source: source,
+        cover: _heroCover,
+      ),
+    );
+  }
+
+  /// 「在 PC 上打开」：遥控 host 在它那边进原盘会话（复用视频遥控通道）。
+  Future<void> _openRemoteDiscOnHost() async {
+    final Future<void> Function(String videoId)? open =
+        widget.remote?.discActions?.openOnHost;
+    final RemoteVideoInfo? member = _firstRemoteDiscMember;
+    if (open == null || member == null) return;
+    try {
+      await open(member.id);
+      FushiToast.show(msg: t.video_disc_open_on_host_sent);
+    } catch (error, stack) {
+      ErrorLogService.instance.log('VideoDiscMenu.openOnHost', error, stack);
+      FushiToast.show(
+        msg: t.video_disc_open_on_host_failed,
+        severity: ToastSeverity.warning,
+      );
+    }
   }
 
   bool get _isDiscEntry => _discs.isNotEmpty || _hasRemoteDisc;
@@ -638,6 +735,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _openDisc(disc);
       return;
     }
+    final RemoteDiscMenuSource? remote = _remoteDiscSource;
+    if (_discPrimaryKind == DiscPrimaryKind.playDisc && remote != null) {
+      _openRemoteDisc(remote);
+      return;
+    }
     _openSlot(episode);
   }
 
@@ -671,6 +773,20 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           icon: FushiIcons.toc,
           label: t.video_disc_play,
           onPressed: () => _openDisc(disc),
+        )
+      else if (_discUnavailable == null && _remoteDiscSource != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-open-menu'),
+          icon: FushiIcons.toc,
+          label: t.video_disc_play,
+          onPressed: () => _openRemoteDisc(_remoteDiscSource!),
+        ),
+      if (_hasRemoteDisc && _hostCanOpenDisc)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-disc-open-on-host'),
+          icon: FushiIcons.cast,
+          label: t.video_disc_open_on_host,
+          onPressed: () => unawaited(_openRemoteDiscOnHost()),
         ),
       if (_discs.length > 1 && _discUnavailable == null)
         MediaDetailSecondaryButton(

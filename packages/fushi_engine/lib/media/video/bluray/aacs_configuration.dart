@@ -77,6 +77,20 @@ loadAacsConfiguration(String discRoot) async {
       AacsConfigurationError.unsupportedDisc,
     );
   }
+  return loadAacsConfigurationForUnitKeyFile(unitBytes);
+}
+
+/// [loadAacsConfiguration] 的密钥查找本体，输入是盘上 `AACS/Unit_Key_RO.inf` 的字节：
+/// 盘身份 = 它的 SHA-1。远端原盘（第二期）在 client 侧用它——那张盘不在本机文件
+/// 系统上，`Unit_Key_RO.inf` 是从 host 的盘目录共享取来的，KEYDB 仍是**本机**的
+/// （与本地加密盘同一套查找顺序：显式指定 → 标准位置 → 应用缓存 → 下载）。
+Future<({Uint8List unitKeyFile, Uint8List volumeUniqueKey})>
+loadAacsConfigurationForUnitKeyFile(Uint8List unitBytes) async {
+  if (unitBytes.length < 16 || unitBytes.length > 1024 * 1024) {
+    throw const AacsConfigurationException(
+      AacsConfigurationError.unsupportedDisc,
+    );
+  }
   final String discId = sha1.convert(unitBytes).toString();
   final String? override = aacsKeyDbPathOverride;
   if (override != null) {
