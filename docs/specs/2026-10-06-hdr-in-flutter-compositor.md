@@ -54,8 +54,13 @@ Windows「SDR 内容亮度」，HDR 片源按绝对亮度出，面板峰值以�
 
 ## 回退与边界
 
-- 原版引擎（没有 `FlutterDesktopViewSetHdrOutput` 导出）、Impeller、ANGLE 缺扩展、软件渲染：
+- 原版引擎（没有 `FlutterDesktopViewSetHdrOutput` 导出）、ANGLE 缺扩展、软件渲染：
   一律报告不支持，视频留在 8-bit SDR 纹理里（HDR 片源由 mpv 色调映射）。
+- 渲染后端（2026-10-24 起）：app 全线 Impeller（音乐设计 D12），合成器内 HDR 经
+  `engine-impeller-hdr.patch` 接到 Impeller（GLES / ANGLE）路径；Impeller 的离屏层（saveLayer、
+  背景滤镜整帧 readback、滤镜子 pass）在 HDR 帧里跟随根目标用 RGBA16F，不然一个 `BackdropFilter`
+  就把整帧钳回 1.0。同一片源同一窗口下 Skia / Impeller 的 backing store 回读逐值一致（取证脚本
+  `fushi/integration_test/video_compositor_hdr_probe_itest.dart`，`FUSHI_HDR_PROBE=repeat`）。
 - **宿主窗已删除（2026-10-18）**。它原本只剩两个用途：上面这些不支持场景的退路，和
   Dolby Vision Profile 5（Windows 的 gl_video 当时没有 DV 重整，只有 gpu-next 颜色正确）。
   Windows libmpv 改打 `tool/bluray/platforms/patches/mpv-gl-dovi-p5.patch`（`-dovi1` 归档，

@@ -254,7 +254,7 @@ CompositorHdrTarget compositorHdrTarget(HdrDisplayInfo display) {
 /// 合成器内 HDR 某一步没成时该怎么退：失败的**层级**决定记忆的范围。三种都留在 SDR
 /// 纹理路径上（HDR 片源由 mpv 色调映射），不存在别的输出窗口可退。
 enum CompositorHdrFallback {
-  /// 引擎没开成（原版引擎 / Impeller / ANGLE 缺扩展）：进程内不会变，记成「不支持」。
+  /// 引擎没开成（原版引擎 / 引擎产物缺 Impeller 路径补丁 / ANGLE 缺扩展）：进程内不会变，记成「不支持」。
   engineUnsupported,
 
   /// 视频纹理还没建好：先保持 SDR，纹理就绪后重判，不记任何失败。

@@ -28,6 +28,8 @@ void main() {
     expect(versions, <String>[flutterVersion]);
     for (final String name in <String>[
       'engine-hdr-output.patch',
+      'engine-underlay-composition.patch',
+      'engine-impeller-hdr.patch',
       'angle-scrgb-swapchain.patch',
       'README.md',
     ]) {
@@ -55,6 +57,8 @@ void main() {
   test('补丁是 LF（git apply 在 CRLF 补丁上整份失败）', () {
     for (final String name in <String>[
       'engine-hdr-output.patch',
+      'engine-underlay-composition.patch',
+      'engine-impeller-hdr.patch',
       'angle-scrgb-swapchain.patch',
     ]) {
       final List<int> bytes = File('$patchDir/$name').readAsBytesSync();
@@ -109,14 +113,51 @@ void main() {
     );
   });
 
-  test('runner 钉 Skia：补丁只实现 Skia 路径，3.47 起 Windows 默认 Impeller', () {
+  test('runner 钉 Impeller：全线 Impeller、不留 Skia 回退（D12）', () {
     final String main = _read('$fushi/windows/runner/main.cpp');
     expect(
       main,
       contains(
-        'project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);',
+        'project.set_impeller_switch(flutter::ImpellerSwitch::Enabled);',
       ),
     );
+    expect(main, isNot(contains('ImpellerSwitch::Disabled')));
+  });
+
+  test('引擎：HDR 输出接到 Impeller 路径（否则 Impeller 下 HDR 静默退回 SDR）', () {
+    final String impeller = _read('$patchDir/engine-impeller-hdr.patch');
+    // SetHdrOutput 不再因 Impeller 拒绝；backing store 两条判据去掉 !enable_impeller_。
+    expect(
+      impeller,
+      contains(
+        '-        engine_->impeller_enabled() || !(sdr_white_nits > 0.0f)) {',
+      ),
+    );
+    expect(
+      impeller,
+      contains(
+        '-  store->half_float = !enable_impeller_ && half_float_renderable_',
+      ),
+    );
+    // embedder：半浮点 backing store 与外部纹理都按 R16G16B16A16Float 包装。
+    expect(
+      'impeller::PixelFormat::kR16G16B16A16Float'.allMatches(impeller).length,
+      greaterThanOrEqualTo(2),
+    );
+    // 离屏层跟随根目标格式：不改的话一出现 BackdropFilter 整帧被钳回 1.0（实测）。
+    expect(impeller, contains('SetDefaultColorFormatOverride('));
+    expect(impeller, contains('previous_color_format_override_'));
+    expect(impeller, contains('GetRenderTargetPixelFormat() =='));
+    // 构建脚本按顺序打三份 flutter 补丁。
+    final String script = _read(
+      '$repo/tool/flutter_engine/build_patched_engine.ps1',
+    );
+    final int hdr = script.indexOf("'engine-hdr-output.patch'");
+    final int underlay = script.indexOf("'engine-underlay-composition.patch'");
+    final int port = script.indexOf("'engine-impeller-hdr.patch'");
+    expect(hdr, greaterThan(0));
+    expect(underlay, greaterThan(hdr));
+    expect(port, greaterThan(underlay));
   });
 
   test('media_kit：半浮点纹理与 mpv 渲染目标同一任务内切换', () {

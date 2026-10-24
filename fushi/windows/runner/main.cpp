@@ -278,11 +278,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
   flutter::DartProject project(L"data");
-  // Flutter 3.47 起 Windows 默认 Impeller；合成器内 HDR 的引擎补丁
-  // （ci/patches/flutter-engine/<版本>/）只实现了 Skia 路径，Impeller 下
-  // FlutterDesktopViewSetHdrOutput 恒返回 false、HDR 视频静默退回宿主窗。
-  // 3.44 及以前 Windows 默认就是 Skia，这里保持同一渲染器。
-  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
+  // 全线 Impeller，不留 Skia 回退（docs/specs/2026-10-23-music-module-design.md
+  // D12）。显式钉住而不是依赖引擎默认：环境变量 FLUTTER_ENGINE_SWITCHES 的
+  // --enable-impeller=false 在默认档下仍会生效。合成器内 HDR 在 Impeller 下由
+  // ci/patches/flutter-engine/<版本>/engine-impeller-hdr.patch 接上；没有它的
+  // 引擎产物会让 HDR 视频静默退回 SDR（守卫 compositor_hdr_engine_guard_test）。
+  project.set_impeller_switch(flutter::ImpellerSwitch::Enabled);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
