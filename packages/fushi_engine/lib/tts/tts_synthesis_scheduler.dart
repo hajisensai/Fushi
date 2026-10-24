@@ -1,15 +1,29 @@
 /// 按播放位置调度逐句合成：当前句 + 往后 [lookahead] 句预取，播放器要哪句就先合成哪句。
 ///
-/// 失败策略（不靠重试掩盖）：任一句失败 → 调度整体停下并报 [failure]，等待中的请求
-/// **保持挂起**（播放器表现为缓冲中，而不是跳到下一句）；调用方提示用户后 [resume]
-/// 重新合成。被取消的请求（换位置移出窗口 / 关闭）以 [TtsFailureCode.cancelled]
-/// 结束，不算失败。
+/// 失败策略：
+/// - **临时失败先有限次重试**（`ttsWithRetry`，全部引擎共用一处）：在线语音跑在
+///   第三方服务与用户网络上，偶发的断连 / 超时 / 429 / 5xx 是外部系统常态、本机
+///   无法消除；零重试时一本书几千个请求里任一次抖动都会让朗读停下（BUG：微软、
+///   谷歌语音「经常会断」）。只重试可判定为临时的失败，次数有上限，用尽后照常按
+///   下面的规则上报——不吞失败、不跳句。影响范围：仅单句合成请求；清理条件见
+///   `tts_retry.dart`。
+/// - **播放器要的句子（[ensure] 登记过）失败** → 调度整体停下并报 [failure]，等待
+///   中的请求**保持挂起**（播放器表现为缓冲中，而不是跳到下一句）；调用方提示用户后
+///   [resume] 重新合成。事件里 [TtsSegmentFailed.blocking] 为真。
+/// - **后台预取的句子失败**（播放器还没要它）不打断播放：记下这一句、暂停继续往后
+///   预取（避免断网 / 限流时把整个窗口打一遍），播放器要的句子照常合成；任一句合成
+///   成功、播放前进到别的句子或 [resume] 即恢复预取（失败句本身仍跳过）。等播放器
+///   真要到失败句时 [ensure] 重新请求它，再失败才按上一条停下——失败句不会被静默
+///   跳过。事件里 [TtsSegmentFailed.blocking] 为假。
+/// - 被取消的请求（换位置移出窗口 / 关闭）以 [TtsFailureCode.cancelled] 结束，不算
+///   失败。
 library;
 
 import 'dart:async';
 
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_retry.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 
 /// 一句合成好了 / 失败了。
@@ -24,8 +38,12 @@ class TtsSegmentReady extends TtsSegmentEvent {
 }
 
 class TtsSegmentFailed extends TtsSegmentEvent {
-  const TtsSegmentFailed(super.index, this.failure);
+  const TtsSegmentFailed(super.index, this.failure, {this.blocking = true});
   final TtsFailure failure;
+
+  /// 这一句是播放器要的（调度已停在它上面，[TtsSynthesisScheduler.failure] 非空）。
+  /// 为假 = 后台预取失败，播放不受影响，播放器要到它时会重新请求。
+  final bool blocking;
 }
 
 class TtsSynthesisScheduler {
@@ -37,7 +55,9 @@ class TtsSynthesisScheduler {
     int lookahead = 3,
     this.keepPinned = 8,
     int? concurrency,
+    TtsRetryPolicy retryPolicy = const TtsRetryPolicy(),
   }) : _provider = provider,
+       _retryPolicy = retryPolicy,
        _cache = cache,
        _texts = texts,
        _keys = <String>[
@@ -48,6 +68,7 @@ class TtsSynthesisScheduler {
        _concurrency = concurrency ?? provider.capabilities.maxConcurrency;
 
   final TtsProvider _provider;
+  final TtsRetryPolicy _retryPolicy;
   final TtsAudioCache _cache;
   final List<String> _texts;
   final List<String> _keys;
@@ -81,6 +102,12 @@ class TtsSynthesisScheduler {
   final StreamController<TtsSegmentEvent> _events =
       StreamController<TtsSegmentEvent>.broadcast();
 
+  /// 后台预取失败、播放器还没要过的句子（预取跳过它们；[ensure] 时重新请求）。
+  final Map<int, TtsFailure> _prefetchFailed = <int, TtsFailure>{};
+
+  /// 有预取失败后暂停继续往后预取，直到任一句合成成功 / [resume] / 换位置。
+  bool _prefetchHeld = false;
+
   int _cursor = 0;
   TtsFailure? _failure;
   int? _failedIndex;
@@ -93,6 +120,9 @@ class TtsSynthesisScheduler {
   /// 调度因失败而停下（非 null 时不再发起新合成）。
   TtsFailure? get failure => _failure;
   int? get failedIndex => _failedIndex;
+
+  /// 这一句后台预取失败过、尚未被重新请求。
+  bool prefetchFailed(int index) => _prefetchFailed.containsKey(index);
 
   String keyOf(int index) => _keys[index];
 
@@ -110,6 +140,8 @@ class TtsSynthesisScheduler {
     }
     final TtsCachedAudio? ready = _ready[index];
     if (ready != null) return Future<TtsCachedAudio>.value(ready);
+    // 预取失败过的句子：播放器真的要到它了，重新请求（再失败才停下提示）。
+    _prefetchFailed.remove(index);
     _demanded.add(index);
     final Future<TtsCachedAudio> future = _waiters
         .putIfAbsent(index, Completer<TtsCachedAudio>.new)
@@ -128,6 +160,11 @@ class TtsSynthesisScheduler {
     if (_disposed) return;
     _cursor = index.clamp(0, _texts.isEmpty ? 0 : _texts.length - 1);
     _demanded.removeWhere((int i) => !_inWindow(i, slack: 1));
+    // 窗口外的预取失败记录作废：之后回到那里按新请求重来。换了位置也解除预取暂停。
+    _prefetchFailed.removeWhere(
+      (int i, TtsFailure _) => !_inWindow(i, slack: 1),
+    );
+    _prefetchHeld = false;
     for (final int i in _waiters.keys.toList()) {
       if (_inWindow(i, slack: 1)) continue;
       final Completer<TtsCachedAudio> waiter = _waiters.remove(i)!;
@@ -155,6 +192,8 @@ class TtsSynthesisScheduler {
     if (_disposed || _failure == null) return;
     _failure = null;
     _failedIndex = null;
+    _prefetchFailed.clear();
+    _prefetchHeld = false;
     _pump();
   }
 
@@ -170,8 +209,14 @@ class TtsSynthesisScheduler {
       }
     }
     if (best != null) return best;
+    if (_prefetchHeld) return null;
     for (int i = _cursor; i <= _cursor + lookahead && i < _texts.length; i++) {
-      if (!_ready.containsKey(i) && !_inFlight.containsKey(i)) return i;
+      if (_ready.containsKey(i) ||
+          _inFlight.containsKey(i) ||
+          _prefetchFailed.containsKey(i)) {
+        continue;
+      }
+      return i;
     }
     return null;
   }
@@ -191,39 +236,52 @@ class TtsSynthesisScheduler {
     final TtsCancelToken token = TtsCancelToken();
     _inFlight[index] = token;
     try {
-      final TtsCachedAudio audio = await _cache.obtain(
-        _keys[index],
-        (String outputPath) => _provider.synthesize(
-          _texts[index],
-          outputPath: outputPath,
-          cancel: token,
+      // 每次尝试走一遍缓存的「写 .part → 校验 → 发布」，失败的半成品由缓存清掉。
+      final TtsCachedAudio audio = await ttsWithRetry(
+        () => _cache.obtain(
+          _keys[index],
+          (String outputPath) => _provider.synthesize(
+            _texts[index],
+            outputPath: outputPath,
+            cancel: token,
+          ),
         ),
+        cancel: token,
+        policy: _retryPolicy,
       );
       if (_disposed) return;
       if (token.isCancelled && !_demanded.contains(index)) return;
       _ready[index] = audio;
+      _prefetchHeld = false;
       if (_pinned.add(index)) _cache.pin(_keys[index]);
       _demanded.remove(index);
       _waiters.remove(index)?.complete(audio);
       _events.add(TtsSegmentReady(index, audio));
     } on TtsFailure catch (failure) {
       if (_disposed || failure.code == TtsFailureCode.cancelled) return;
-      _failure ??= failure;
-      _failedIndex ??= index;
-      _events.add(TtsSegmentFailed(index, failure));
+      _recordFailure(index, failure);
     } catch (error) {
       if (_disposed) return;
-      final TtsFailure failure = TtsFailure(
-        TtsFailureCode.badResponse,
-        error.runtimeType.toString(),
+      _recordFailure(
+        index,
+        TtsFailure(TtsFailureCode.badResponse, error.runtimeType.toString()),
       );
-      _failure ??= failure;
-      _failedIndex ??= index;
-      _events.add(TtsSegmentFailed(index, failure));
     } finally {
       if (identical(_inFlight[index], token)) _inFlight.remove(index);
       _pump();
     }
+  }
+
+  void _recordFailure(int index, TtsFailure failure) {
+    if (_demanded.contains(index)) {
+      _failure ??= failure;
+      _failedIndex ??= index;
+      _events.add(TtsSegmentFailed(index, failure));
+      return;
+    }
+    _prefetchFailed[index] = failure;
+    _prefetchHeld = true;
+    _events.add(TtsSegmentFailed(index, failure, blocking: false));
   }
 
   /// 停止调度：取消在途合成、让等待者以「已取消」失败、解除 pin，并**等在途合成

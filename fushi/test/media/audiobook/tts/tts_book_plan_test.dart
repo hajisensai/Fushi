@@ -2,21 +2,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
 EpubPlainTextWithRuby _plain(
   String text, [
   List<EpubRubyAnnotation> rubies = const <EpubRubyAnnotation>[],
-]) =>
-    EpubPlainTextWithRuby(text: text, rubies: rubies);
+]) => EpubPlainTextWithRuby(text: text, rubies: rubies);
 
-EpubChapter _chapter(String id, String body, {bool nav = false}) =>
-    EpubChapter(
-      id: id,
-      href: '$id.xhtml',
-      mediaType: 'application/xhtml+xml',
-      html: '<html><body>$body</body></html>',
-      isNav: nav,
-    );
+EpubChapter _chapter(String id, String body, {bool nav = false}) => EpubChapter(
+  id: id,
+  href: '$id.xhtml',
+  mediaType: 'application/xhtml+xml',
+  html: '<html><body>$body</body></html>',
+  isNav: nav,
+);
 
 void main() {
   group('splitTtsText', () {
@@ -25,10 +24,11 @@ void main() {
         _plain('「おはよう。」と言った。次の文！'),
         maxLength: 120,
       );
-      expect(
-        segs.map((TtsTextSegment s) => s.text),
-        <String>['「おはよう。」', 'と言った。', '次の文！'],
-      );
+      expect(segs.map((TtsTextSegment s) => s.text), <String>[
+        '「おはよう。」',
+        'と言った。',
+        '次の文！',
+      ]);
       for (final TtsTextSegment s in segs) {
         expect(s.spokenText, s.text);
       }
@@ -39,10 +39,10 @@ void main() {
         _plain('ないわー」「うるせ、お前だろーが。'),
         maxLength: 120,
       );
-      expect(
-        segs.map((TtsTextSegment s) => s.text),
-        <String>['ないわー」', '「うるせ、お前だろーが。'],
-      );
+      expect(segs.map((TtsTextSegment s) => s.text), <String>[
+        'ないわー」',
+        '「うるせ、お前だろーが。',
+      ]);
     });
 
     test('ruby bases stay whole: spoken text uses the reading', () {
@@ -94,7 +94,10 @@ void main() {
       );
       final TtsBookPlan plan = buildTtsBookPlanSync(book, maxLength: 120);
       expect(plan.length, 2);
-      expect(plan.sentences.every((TtsPlanSentence s) => s.section == 1), isTrue);
+      expect(
+        plan.sentences.every((TtsPlanSentence s) => s.section == 1),
+        isTrue,
+      );
 
       final String plain = book.chapterPlainText(1);
       final String normalized = AudioTextNormalizer.normalize(plain);
@@ -113,22 +116,25 @@ void main() {
       final EpubBook book = EpubBook(
         title: 'b',
         chapters: <EpubChapter>[
-          _chapter(
-            'c0',
-            '<h2>第一章</h2><p>一。二。</p><p>◆◆◆</p><p>三</p><p>四。</p>',
-          ),
+          _chapter('c0', '<h2>第一章</h2><p>一。二。</p><p>◆◆◆</p><p>三</p><p>四。</p>'),
         ],
       );
       final TtsBookPlan plan = buildTtsBookPlanSync(book, maxLength: 120);
       // 标题、不带句号的段落各自成句；分隔行不进计划也不粘到下一句。
-      expect(
-        plan.sentences.map((TtsPlanSentence s) => s.text),
-        <String>['第一章', '一。', '二。', '三', '四。'],
-      );
-      expect(
-        plan.sentences.map((TtsPlanSentence s) => s.endsParagraph),
-        <bool>[true, false, true, true, true],
-      );
+      expect(plan.sentences.map((TtsPlanSentence s) => s.text), <String>[
+        '第一章',
+        '一。',
+        '二。',
+        '三',
+        '四。',
+      ]);
+      expect(plan.sentences.map((TtsPlanSentence s) => s.endsParagraph), <bool>[
+        true,
+        false,
+        true,
+        true,
+        true,
+      ]);
       expect(
         plan.sentences.map((TtsPlanSentence s) => s.sceneBreakAfter),
         <bool>[false, false, true, false, false],
@@ -164,7 +170,11 @@ void main() {
       final TtsBookPlan raw = buildTtsBookPlanSync(book, maxLength: 120);
       expect(raw.length, 4);
       final TtsBookPlan merged = mergeShortTtsSentences(raw, maxLength: 120);
-      expect(merged.length, 2, reason: 'short lines merge, the next paragraph stays');
+      expect(
+        merged.length,
+        2,
+        reason: 'short lines merge, the next paragraph stays',
+      );
       expect(merged.sentences.first.text, startsWith('はい。うん。'));
       expect(merged.sentences.first.matchStart, raw.sentences.first.matchStart);
       expect(merged.sentences.first.matchEnd, raw.sentences[2].matchEnd);
@@ -184,5 +194,71 @@ void main() {
         expect(s.spokenText.length, lessThanOrEqualTo(4));
       }
     });
+  });
+
+  group('pronunciation never pushes a sentence past the engine limit', () {
+    // 发音词典在切句之后替换：按上限切满的句子替换后会超长，谷歌翻译朗读（上限
+    // 180）直接 400 拒收、朗读停在那句。
+    const String body = 'ＡＩがＡＩにＡＩをＡＩでＡＩへＡＩとＡＩやＡＩかＡＩもＡＩの話。';
+    EpubBook book() => EpubBook(
+      title: 'b',
+      chapters: <EpubChapter>[_chapter('c0', '<p>$body</p>')],
+    );
+
+    test('re-splits tighter so every spoken text fits', () {
+      const int limit = 40;
+      const List<TtsPronunciationRule> rules = <TtsPronunciationRule>[
+        TtsPronunciationRule(written: 'ＡＩ', spoken: 'エーアイ'),
+      ];
+      // 前提：不收紧时这句确实会被撑破。
+      final List<TtsTextSegment> naive = splitTtsText(
+        _plain(body),
+        maxLength: limit,
+      );
+      expect(
+        naive.any(
+          (TtsTextSegment s) =>
+              applyTtsPronunciation(s.spokenText, rules).length > limit,
+        ),
+        isTrue,
+      );
+
+      final TtsBookPlan plan = buildTtsBookPlanSync(
+        book(),
+        maxLength: limit,
+        pronunciation: rules,
+      );
+      expect(plan.sentences, isNotEmpty);
+      for (final TtsPlanSentence s in plan.sentences) {
+        expect(s.spokenText.length, lessThanOrEqualTo(limit), reason: s.text);
+      }
+      expect(plan.sentences.map((TtsPlanSentence s) => s.text).join(), body);
+      expect(
+        plan.sentences.any(
+          (TtsPlanSentence s) => s.spokenText.contains('エーアイ'),
+        ),
+        isTrue,
+      );
+    });
+
+    test(
+      'absurd expansion falls back to the written form within the limit',
+      () {
+        const int limit = 12;
+        final List<TtsPronunciationRule> rules = <TtsPronunciationRule>[
+          TtsPronunciationRule(written: 'ＡＩ', spoken: 'あ' * 100),
+        ];
+        final ({List<TtsTextSegment> segments, List<String> spoken}) fitted =
+            splitTtsTextWithPronunciation(
+              _plain(body),
+              maxLength: limit,
+              pronunciation: rules,
+            );
+        for (final String spoken in fitted.spoken) {
+          expect(spoken.length, lessThanOrEqualTo(limit));
+        }
+        expect(fitted.segments.map((TtsTextSegment s) => s.text).join(), body);
+      },
+    );
   });
 }

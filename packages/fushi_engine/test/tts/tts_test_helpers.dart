@@ -81,6 +81,9 @@ class FakeTtsProvider extends TtsProvider {
   final List<String> calls = <String>[];
   final List<String> cancelled = <String>[];
   final Set<String> failing = <String>{};
+
+  /// 文本 → 还要失败几次（临时失败：serverError），用完后照常成功。
+  final Map<String, int> failTimes = <String, int>{};
   final Map<String, Completer<void>> gates = <String, Completer<void>>{};
   bool gateAll = false;
   int active = 0;
@@ -124,6 +127,11 @@ class FakeTtsProvider extends TtsProvider {
       }
       if (failing.contains(text)) {
         throw const TtsFailure(TtsFailureCode.serverError, 'HTTP 500');
+      }
+      final int remaining = failTimes[text] ?? 0;
+      if (remaining > 0) {
+        failTimes[text] = remaining - 1;
+        throw const TtsFailure(TtsFailureCode.network, 'reset');
       }
       await File(outputPath).writeAsBytes(buildWav());
       return const TtsResult(format: TtsAudioFormat.wav);
