@@ -295,6 +295,34 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     }
   }
 
+  /// zstd 文件到文件流式解码（.apkg 新格式的 collection.anki21b）：一次 FFI 调用解完整个
+  /// 文件，内存峰值与文件大小无关。阻塞到结束——大文件要在后台 isolate 里调。
+  ///
+  /// 原生库不可用返回 null；成功返回 [SrsZstdFileResult.ok]，其余见 [SrsZstdFileResult]。
+  /// 失败时 [outPath] 可能残留半截内容，由调用方删除。
+  static SrsZstdFileResult? zstdDecompressFile(
+    String inPath,
+    String outPath, {
+    FushiFsrs? library,
+  }) {
+    final FushiFsrs? lib = library ?? FushiFsrs.instance;
+    if (lib == null) return null;
+    final Pointer<Utf8> i = inPath.toNativeUtf8();
+    final Pointer<Utf8> o = outPath.toNativeUtf8();
+    try {
+      final int code = lib.bindings.ffsrs_zstd_decompress_file(
+        i.cast<Char>(),
+        o.cast<Char>(),
+      );
+      return code >= 0 && code < SrsZstdFileResult.values.length
+          ? SrsZstdFileResult.values[code]
+          : SrsZstdFileResult.panic;
+    } finally {
+      calloc.free(i);
+      calloc.free(o);
+    }
+  }
+
   // ---- JSON 往返 ----
 
   Object? _call(Map<String, Object?> request) {
@@ -462,4 +490,17 @@ class NativeSrsOptimizerControl implements SrsOptimizerControl {
       throw StateError('NativeSrsOptimizerControl already disposed');
     }
   }
+}
+
+/// [FfiFsrsEngine.zstdDecompressFile] 的结果（与 native 的 `ZSTD_FILE_*` 同序）。
+enum SrsZstdFileResult {
+  ok,
+  badArgs,
+
+  /// 读源文件 / 写目标文件失败。
+  io,
+
+  /// 不是合法的 zstd 帧（含截断）。
+  corrupt,
+  panic,
 }

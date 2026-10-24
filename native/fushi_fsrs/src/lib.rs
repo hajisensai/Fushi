@@ -11,7 +11,7 @@
 //!
 //! 导出符号（与 packages/fushi_srs/lib/src/ffi/fushi_fsrs_bindings.dart 的 lookup 名一一对应）：
 //!   ffsrs_call / ffsrs_compute_parameters / ffsrs_retrievability_batch / ffsrs_free_string /
-//!   ffsrs_zstd_decompress / ffsrs_free_bytes / ffsrs_abi_version /
+//!   ffsrs_zstd_decompress / ffsrs_zstd_decompress_file / ffsrs_free_bytes / ffsrs_abi_version /
 //!   ffsrs_search_corpus_new / ffsrs_search_corpus_free / ffsrs_search_corpus_set_ints /
 //!   ffsrs_search_corpus_set_floats / ffsrs_search_chunk_new / ffsrs_search_chunk_free /
 //!   ffsrs_search_corpus_attach / ffsrs_search_corpus_needs / ffsrs_search_corpus_match /
@@ -505,6 +505,75 @@ pub fn zstd_decompress(input: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
+/// [ffsrs_zstd_decompress_file] 的返回码。
+pub const ZSTD_FILE_OK: i32 = 0;
+pub const ZSTD_FILE_BAD_ARGS: i32 = 1;
+pub const ZSTD_FILE_IO: i32 = 2;
+pub const ZSTD_FILE_CORRUPT: i32 = 3;
+pub const ZSTD_FILE_PANIC: i32 = 4;
+
+/// zstd 文件到文件流式解码（.apkg 新格式的 collection.anki21b）：一次调用解完整个文件，
+/// 内存峰值是解码窗口 + 读写缓冲，不随文件大小增长（[ffsrs_zstd_decompress] 要把输入与
+/// 整个输出都放进内存）。两个路径都是 UTF-8、NUL 结尾；输出文件已存在则覆盖。
+/// 返回 `ZSTD_FILE_*`；失败时输出文件可能残留半截内容，由调用方删除。
+#[no_mangle]
+pub extern "C" fn ffsrs_zstd_decompress_file(
+    in_path: *const c_char,
+    out_path: *const c_char,
+) -> i32 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> i32 {
+        if in_path.is_null() || out_path.is_null() {
+            return ZSTD_FILE_BAD_ARGS;
+        }
+        let (Ok(input), Ok(output)) = (
+            unsafe { CStr::from_ptr(in_path) }.to_str(),
+            unsafe { CStr::from_ptr(out_path) }.to_str(),
+        ) else {
+            return ZSTD_FILE_BAD_ARGS;
+        };
+        match zstd_decompress_file(input, output) {
+            Ok(()) => ZSTD_FILE_OK,
+            Err(ZstdFileError::Io(_)) => ZSTD_FILE_IO,
+            Err(ZstdFileError::Corrupt(_)) => ZSTD_FILE_CORRUPT,
+        }
+    }));
+    outcome.unwrap_or(ZSTD_FILE_PANIC)
+}
+
+#[derive(Debug)]
+pub enum ZstdFileError {
+    Io(std::io::Error),
+    Corrupt(String),
+}
+
+pub fn zstd_decompress_file(input: &str, output: &str) -> Result<(), ZstdFileError> {
+    use std::io::{BufReader, BufWriter, ErrorKind, Write};
+    let reader = BufReader::with_capacity(
+        1 << 20,
+        std::fs::File::open(input).map_err(ZstdFileError::Io)?,
+    );
+    let mut decoder = ruzstd::decoding::StreamingDecoder::new(reader)
+        .map_err(|e| ZstdFileError::Corrupt(e.to_string()))?;
+    let mut writer = BufWriter::with_capacity(
+        1 << 20,
+        std::fs::File::create(output).map_err(ZstdFileError::Io)?,
+    );
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = match decoder.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            // 读源文件本身的 IO 错误也经 decoder 冒上来；文件已成功打开，读失败按数据非法处理
+            // （截断 / 损坏的帧是这里最常见的原因）。
+            Err(e) => return Err(ZstdFileError::Corrupt(e.to_string())),
+        };
+        writer.write_all(&buf[..n]).map_err(ZstdFileError::Io)?;
+    }
+    writer.flush().map_err(ZstdFileError::Io)?;
+    Ok(())
+}
+
 /// 释放 [ffsrs_zstd_decompress] 返回的缓冲区。
 #[no_mangle]
 pub extern "C" fn ffsrs_free_bytes(ptr: *mut u8, len: usize) {
@@ -934,6 +1003,50 @@ mod tests {
         // 损坏的帧返回空指针，不 panic。
         let bad = [0x28u8, 0xb5, 0x2f, 0xfd, 0xff];
         assert!(ffsrs_zstd_decompress(bad.as_ptr(), bad.len(), &mut out_len).is_null());
+    }
+
+    #[test]
+    fn zstd_file_roundtrip() {
+        // 多个读块（> 1 MB 缓冲）+ 能压缩的内容，与 ffsrs_zstd_decompress 结果逐字节相同。
+        let payload: Vec<u8> = (0..1_500_000u32).flat_map(|i| (i % 4093).to_le_bytes()).collect();
+        let frame = ruzstd::encoding::compress_to_vec(
+            payload.as_slice(),
+            ruzstd::encoding::CompressionLevel::Fastest,
+        );
+        let dir = std::env::temp_dir().join(format!("ffsrs_zstd_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = dir.join("in.zst");
+        let dst = dir.join("out.bin");
+        std::fs::write(&src, &frame).unwrap();
+        let c = |p: &std::path::Path| CString::new(p.to_str().unwrap()).unwrap();
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&src).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_OK
+        );
+        assert_eq!(std::fs::read(&dst).unwrap(), payload);
+
+        // 截断的帧：数据非法，不 panic。
+        std::fs::write(&src, &frame[..frame.len() / 2]).unwrap();
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&src).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_CORRUPT
+        );
+        // 不是 zstd。
+        std::fs::write(&src, b"SQLite format 3\0").unwrap();
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&src).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_CORRUPT
+        );
+        // 源文件不存在。
+        assert_eq!(
+            ffsrs_zstd_decompress_file(c(&dir.join("missing")).as_ptr(), c(&dst).as_ptr()),
+            ZSTD_FILE_IO
+        );
+        assert_eq!(
+            ffsrs_zstd_decompress_file(std::ptr::null(), c(&dst).as_ptr()),
+            ZSTD_FILE_BAD_ARGS
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ------------------------------------------------------------ 搜索语料的锁（HBK-AUDIT-005）

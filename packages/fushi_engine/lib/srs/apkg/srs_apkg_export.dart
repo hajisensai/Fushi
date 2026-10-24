@@ -10,7 +10,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -64,17 +64,36 @@ CREATE INDEX ix_notes_csum ON notes (csum);
 ///
 /// 一条笔记只要有一张卡在范围内就整条导出（含它在范围外的卡，Anki 的笔记不能拆）。
 /// [options] 决定带不带学习进度 / 牌组预设、附不附带 fushi-ext（见 [SrsAnkiExportOptions]）。
+///
+/// 内部先流式写进临时文件（见 [exportAnkiPackageFile]），最后读回一份；能直接给文件的调用方
+/// 用 [exportAnkiPackageFile]，整包一份也不进内存。
 Future<Uint8List> exportAnkiPackage({
   required SrsDbStore store,
   String? deckId,
   SrsMediaLoad? loadMedia,
   SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
-  final _Exporter ex = _Exporter(store, options);
-  return ex.run(deckId: deckId, loadMedia: loadMedia);
+  final Directory tmp = await Directory.systemTemp.createTemp('fushi_apkg_');
+  try {
+    final File out = File('${tmp.path}${Platform.pathSeparator}out.apkg');
+    await exportAnkiPackageFile(
+      store: store,
+      file: out,
+      deckId: deckId,
+      loadMedia: loadMedia,
+      options: options,
+    );
+    return await out.readAsBytes();
+  } finally {
+    await _deleteQuietly(tmp);
+  }
 }
 
-/// 同 [exportAnkiPackage]，写到文件。
+/// 同 [exportAnkiPackage]，写到文件：zip 条目边生成边写盘——集合 SQLite 从临时文件分块原生
+/// deflate、媒体一个读一个写、fushi-ext 的日志边遍历边写临时文件，整包从不整份放进内存（以前
+/// 全部条目先进 [Archive]，`ZipEncoder.encode` 出整包，再 `Uint8List.fromList` 复制一份才落盘）。
+///
+/// 先写 `<file>.part`，成功后改名：失败不留半截包、也不覆盖已有的同名文件。
 Future<void> exportAnkiPackageFile({
   required SrsDbStore store,
   required File file,
@@ -82,15 +101,79 @@ Future<void> exportAnkiPackageFile({
   SrsMediaLoad? loadMedia,
   SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
-  await file.writeAsBytes(
-    await exportAnkiPackage(
-      store: store,
-      deckId: deckId,
-      loadMedia: loadMedia,
-      options: options,
-    ),
-    flush: true,
-  );
+  final File part = File('${file.path}.part');
+  try {
+    await _Exporter(
+      store,
+      options,
+    ).run(part, deckId: deckId, loadMedia: loadMedia);
+    await part.rename(file.path);
+  } on Object {
+    if (part.existsSync()) await _deleteQuietly(part);
+    rethrow;
+  }
+}
+
+Future<void> _deleteQuietly(FileSystemEntity e) async {
+  try {
+    await e.delete(recursive: true);
+  } on FileSystemException {
+    // 句柄晚释放：留给系统清理临时目录。
+  }
+}
+
+/// fushi-ext 的 JSON 边生成边写进 [path]：`logs` 数组逐条追加，攒满一块才落盘（导出时日志
+/// 是全部条目里最大的一份，不再整份放进内存再 `jsonEncode`）。字节与
+/// `jsonEncode(<format, version, profileUid, logs, …>)` 相同。
+class _ExtWriter {
+  _ExtWriter(String path, Map<String, Object?> head)
+    : _raf = File(path).openSync(mode: FileMode.write) {
+    final String h = jsonEncode(head);
+    _buf
+      ..write(h.substring(0, h.length - 1))
+      ..write(',"logs":[');
+  }
+
+  static const int _flushChars = 1 << 20;
+
+  final RandomAccessFile _raf;
+  final StringBuffer _buf = StringBuffer();
+  bool _firstLog = true;
+
+  void addLog(Map<String, Object?> log) {
+    if (!_firstLog) _buf.write(',');
+    _firstLog = false;
+    _buf.write(jsonEncode(log));
+    if (_buf.length >= _flushChars) _flush();
+  }
+
+  /// 收尾：`logs` 之后的键按 [tail] 的顺序写完、关文件。
+  void finish(Map<String, Object?> tail) {
+    _buf.write(']');
+    for (final MapEntry<String, Object?> e in tail.entries) {
+      _buf
+        ..write(',')
+        ..write(jsonEncode(e.key))
+        ..write(':')
+        ..write(jsonEncode(e.value));
+    }
+    _buf.write('}');
+    _flush();
+    _raf.closeSync();
+  }
+
+  void abort() {
+    try {
+      _raf.closeSync();
+    } on FileSystemException {
+      // 已关。
+    }
+  }
+
+  void _flush() {
+    _raf.writeFromSync(utf8.encode(_buf.toString()));
+    _buf.clear();
+  }
 }
 
 class _ExportCard {
@@ -109,7 +192,7 @@ class _Exporter {
   int _ankiDeckId(String id) =>
       id == store.defaultDeckId ? 1 : SrsIds.ankiNumericId(id);
 
-  Future<Uint8List> run({String? deckId, SrsMediaLoad? loadMedia}) async {
+  Future<void> run(File out, {String? deckId, SrsMediaLoad? loadMedia}) async {
     final SrsDeckTree tree = await store.deckTree();
     final SrsDayContext day = await store.dayContext();
     final (int nowMs, _) = store.now();
@@ -187,12 +270,18 @@ class _Exporter {
 
     final Directory tmp = await Directory.systemTemp.createTemp('fushi_apkg_');
     final File dbFile = File('${tmp.path}${Platform.pathSeparator}c.anki21');
+    // 兼容 Anki：只写 Anki 认识的条目，不附带 fushi-ext（日志也就不必写）。
+    final File? extFile = options.ankiCompatible
+        ? null
+        : File('${tmp.path}${Platform.pathSeparator}fushi-ext.json');
+    final _ExtWriter? ext = extFile == null
+        ? null
+        : _ExtWriter(extFile.path, <String, Object?>{
+            'format': srsFushiExtFormat,
+            'version': srsFushiExtVersion,
+            'profileUid': store.profileUid,
+          });
     final Database db = sqlite3.open(dbFile.path);
-    final Map<String, Object?> ext = <String, Object?>{
-      'format': srsFushiExtFormat,
-      'version': srsFushiExtVersion,
-      'profileUid': store.profileUid,
-    };
     final Set<String> mediaRefs = <String>{};
     try {
       db.execute(_schema11);
@@ -205,10 +294,11 @@ class _Exporter {
       final PreparedStatement insRev = db.prepare(
         'INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)',
       );
-      final List<Map<String, Object?>> extLogs = <Map<String, Object?>>[];
       final Map<String, int> revlogIds = <String, int>{};
       final Map<String, int> extLogCards = <String, int>{};
       final Map<String, Object?> extNotes = <String, Object?>{};
+      // 笔记数字 id 是 ankiNumericId 派生的，不是创建时刻：创建时刻另记，回导时恢复。
+      final Map<String, int> extCreatedAt = <String, int>{};
       final List<(SrsReviewLog, int)> revlogQueue = <(SrsReviewLog, int)>[];
       int newPos = 0;
       try {
@@ -243,6 +333,7 @@ class _Exporter {
             '',
           ]);
           if (n.source != null) extNotes[n.guid] = n.source!.toJson();
+          extCreatedAt[n.guid] = n.createdAt;
           for (final _ExportCard ec in cardsOf[n.id] ?? const <_ExportCard>[]) {
             final SrsCardCacheRow c = ec.row;
             final int tplPos = t.templates.indexWhere(
@@ -283,7 +374,7 @@ class _Exporter {
             ]);
             if (asNew) continue;
             for (final SrsReviewLog l in ec.history.all) {
-              extLogs.add(l.toJson());
+              ext?.addLog(l.toJson());
               // 「更改笔记类型」继承来的前身卡日志：记下它在包里归哪张卡，回导时跟到这张卡上。
               if (l.cardId != c.id) extLogCards[l.id] = cid;
             }
@@ -369,54 +460,54 @@ class _Exporter {
         insRev.close();
       }
 
-      ext['logs'] = extLogs;
-      ext['revlogIds'] = revlogIds;
-      if (extLogCards.isNotEmpty) ext['logCards'] = extLogCards;
-      ext['notes'] = extNotes;
-      ext['decks'] = <Map<String, Object?>>[
-        for (final String d in usedDecks)
-          if (options.withDeckConfigs && tree[d] != null)
-            <String, Object?>{
-              'name': tree.fullName(d),
-              'values': <String, Object?>{
-                for (final String k in srsFushiExtDeckKeys)
-                  if (tree[d]!.edits[k] != null) k: tree[d]!.edits.value(k),
+      ext?.finish(<String, Object?>{
+        'revlogIds': revlogIds,
+        if (extLogCards.isNotEmpty) 'logCards': extLogCards,
+        'notes': extNotes,
+        'noteCreatedAt': extCreatedAt,
+        'decks': <Map<String, Object?>>[
+          for (final String d in usedDecks)
+            if (options.withDeckConfigs && tree[d] != null)
+              <String, Object?>{
+                'name': tree.fullName(d),
+                'values': <String, Object?>{
+                  for (final String k in srsFushiExtDeckKeys)
+                    if (tree[d]!.edits[k] != null) k: tree[d]!.edits.value(k),
+                },
               },
-            },
-      ];
-    } finally {
+        ],
+      });
+    } on Object {
+      ext?.abort();
       db.close();
+      await _deleteQuietly(tmp);
+      rethrow;
     }
+    db.close();
 
-    final Archive archive = Archive();
-    final Uint8List col = await dbFile.readAsBytes();
+    // 条目逐个写进 zip 文件：集合与 fushi-ext 从临时文件分块原生 deflate，媒体读一个写一个。
+    final ZipFileEncoder zip = ZipFileEncoder()..create(out.path);
     try {
-      await tmp.delete(recursive: true);
-    } on FileSystemException {
-      // 句柄晚释放：留给系统清理临时目录。
-    }
-    archive.addFile(nativeDeflatedArchiveFile('collection.anki21', col));
-    final Map<String, String> mediaJson = <String, String>{};
-    if (loadMedia != null) {
-      int i = 0;
-      for (final String name in mediaRefs.toList()..sort()) {
-        final Uint8List? b = await loadMedia(name);
-        if (b == null) continue;
-        archive.addFile(nativeDeflatedArchiveFile('$i', b));
-        mediaJson['$i'] = name;
-        i++;
+      addFileNativeDeflate(zip, dbFile, 'collection.anki21');
+      final Map<String, String> mediaJson = <String, String>{};
+      if (loadMedia != null) {
+        int i = 0;
+        for (final String name in mediaRefs.toList()..sort()) {
+          final Uint8List? b = await loadMedia(name);
+          if (b == null) continue;
+          zip.addArchiveFile(nativeDeflatedArchiveFile('$i', b));
+          mediaJson['$i'] = name;
+          i++;
+        }
       }
+      zip.addArchiveFile(
+        nativeDeflatedArchiveFile('media', utf8.encode(jsonEncode(mediaJson))),
+      );
+      if (extFile != null) addFileNativeDeflate(zip, extFile, srsFushiExtEntry);
+    } finally {
+      zip.closeSync();
+      await _deleteQuietly(tmp);
     }
-    final List<int> media = utf8.encode(jsonEncode(mediaJson));
-    archive.addFile(nativeDeflatedArchiveFile('media', media));
-    // 兼容 Anki：只写 Anki 认识的条目，不附带 fushi-ext。
-    if (!options.ankiCompatible) {
-      final List<int> extBytes = utf8.encode(jsonEncode(ext));
-      archive.addFile(nativeDeflatedArchiveFile(srsFushiExtEntry, extBytes));
-    }
-    // 条目已用原生 zlib 压好（nativeDeflatedArchiveFile），ZipEncoder 原样透传，
-    // 不再跑纯 Dart Deflate。
-    return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }
 
   /// [type, queue, due, factor]

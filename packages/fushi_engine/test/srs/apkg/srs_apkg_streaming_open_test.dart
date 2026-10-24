@@ -118,6 +118,8 @@ void _writeZip(File file, List<_Entry> entries) {
   }
 }
 
+bool? _noZstdFile(String inPath, String outPath) => null;
+
 Uint8List? _noZstd(Uint8List data) => null;
 
 void main() {
@@ -160,6 +162,7 @@ void main() {
     final SrsAnkiPackage p = SrsAnkiPackage.openFile(
       pkg.path,
       zstd: _noZstd,
+      zstdFile: _noZstdFile,
       workDir: work.path,
     );
     expect(p.latestFormat, isFalse);
@@ -186,6 +189,10 @@ void main() {
       pkg.path,
       // 假 zstd：去掉 4 字节魔数。
       zstd: (Uint8List d) => Uint8List.sublistView(d, 4),
+      zstdFile: (String i, String o) {
+        File(o).writeAsBytesSync(File(i).readAsBytesSync().sublist(4));
+        return true;
+      },
       workDir: work.path,
     );
     expect(p.latestFormat, isTrue);
@@ -196,8 +203,12 @@ void main() {
     final File junk = File('${tmp.path}${Platform.pathSeparator}j.apkg')
       ..writeAsBytesSync(List<int>.filled(100, 7));
     expect(
-      () =>
-          SrsAnkiPackage.openFile(junk.path, zstd: _noZstd, workDir: work.path),
+      () => SrsAnkiPackage.openFile(
+        junk.path,
+        zstd: _noZstd,
+        zstdFile: _noZstdFile,
+        workDir: work.path,
+      ),
       throwsA(
         isA<SrsImportException>().having(
           (SrsImportException e) => e.code,
@@ -214,6 +225,7 @@ void main() {
       () => SrsAnkiPackage.openFile(
         empty.path,
         zstd: _noZstd,
+        zstdFile: _noZstdFile,
         workDir: work.path,
       ),
       throwsA(
@@ -243,6 +255,7 @@ void main() {
     final SrsAnkiPackage p = SrsAnkiPackage.openFile(
       pkg.path,
       zstd: _noZstd,
+      zstdFile: _noZstdFile,
       workDir: work.path,
     );
     // 旧实现（readAsBytes + archive 整包解码）这里至少多出一整个包（≥ 384 MB）。

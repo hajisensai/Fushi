@@ -666,6 +666,12 @@ class SrsDbStore implements SrsSyncReplica {
   Future<SrsEntityEdits> entityEdits(SrsEntityKind kind, String id) =>
       _entityEdits(kind, id);
 
+  /// 一组实体各自的全部修改记录（[entityEdits] 的成批版本：按 ID 分块预读，每块两三次往返）。
+  Future<Map<String, SrsEntityEdits>> entityEditsMany(
+    SrsEntityKind kind,
+    Iterable<String> ids,
+  ) => _entityEditsMany(kind, ids);
+
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async {
     final List<SrsFieldEditRow> rows =
         _RefreshPrefetch.current?.edits['${kind.wire}/$id'] ??

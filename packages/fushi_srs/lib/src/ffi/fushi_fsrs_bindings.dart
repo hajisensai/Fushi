@@ -52,6 +52,13 @@ typedef _ZstdDart =
       int,
       ffi.Pointer<ffi.Size>,
     );
+typedef _ZstdFileC =
+    ffi.Int32 Function(
+      ffi.Pointer<ffi.Char> inPath,
+      ffi.Pointer<ffi.Char> outPath,
+    );
+typedef _ZstdFileDart =
+    int Function(ffi.Pointer<ffi.Char> inPath, ffi.Pointer<ffi.Char> outPath);
 typedef _FreeBytesC = ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Size);
 typedef _FreeBytesDart = void Function(ffi.Pointer<ffi.Uint8>, int);
 typedef _CorpusNewC =
@@ -173,6 +180,10 @@ class FushiFsrsBindings {
       ffsrs_zstd_decompress = lib.lookupFunction<_ZstdC, _ZstdDart>(
         'ffsrs_zstd_decompress',
       ),
+      ffsrs_zstd_decompress_file = lib
+          .lookupFunction<_ZstdFileC, _ZstdFileDart>(
+            'ffsrs_zstd_decompress_file',
+          ),
       ffsrs_free_bytes = lib.lookupFunction<_FreeBytesC, _FreeBytesDart>(
         'ffsrs_free_bytes',
       ),
@@ -247,6 +258,14 @@ class FushiFsrsBindings {
     ffi.Pointer<ffi.Size> outLen,
   )
   ffsrs_zstd_decompress;
+
+  /// zstd 文件到文件流式解码：返回 0 成功 / 1 参数非法 / 2 读写失败 / 3 数据非法 / 4 panic
+  /// （native/fushi_fsrs/src/lib.rs 的 `ZSTD_FILE_*`）。
+  final int Function(
+    ffi.Pointer<ffi.Char> inPath,
+    ffi.Pointer<ffi.Char> outPath,
+  )
+  ffsrs_zstd_decompress_file;
 
   final void Function(ffi.Pointer<ffi.Uint8> ptr, int len) ffsrs_free_bytes;
 
