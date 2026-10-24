@@ -149,11 +149,13 @@ void main() {
     final String cmake = File('$pkg/windows/CMakeLists.txt').readAsStringSync();
     // `-mkvdts1` must stay in the pinned archive name; later rebuild tags
     // (`-dovi1` Dolby Vision reshaping, `-ffu1` unified FFmpeg, `-dvd1` DVD
-    // menus, `-rdisc1` remote discs) may follow it.
+    // menus, `-rdisc1` remote discs, `-cdda1` audio CD) may follow it.
     expect(
       cmake,
       matches(
-        RegExp(r'-mkvdts1(-dovi\d+)?(-ffu\d+)?(-dvd\d+)?(-rdisc\d+)?\.7z"'),
+        RegExp(
+          r'-mkvdts1(-dovi\d+)?(-ffu\d+)?(-dvd\d+)?(-rdisc\d+)?(-cdda\d+)?\.7z"',
+        ),
       ),
     );
   });

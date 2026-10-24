@@ -1,5 +1,22 @@
 [
   {
+    "name": "fushi-cdda",
+    "license": "GPL-3.0-or-later",
+    "versions": {
+      "libcdio": "2.3.0-1",
+      "libcdio-paranoia": "10.2+2.0.2-1"
+    },
+    "package_sha256": {
+      "libcdio": "e8ce99bccac484cf481791a112ae836200ca247a5b85cd47477b50d9de281ca9",
+      "libcdio-paranoia": "298bf8ef059f2d07448480a63fe6dd3f9c159303244e2e391d4737349db0abde"
+    },
+    "files": [
+      "libcdio-19.dll",
+      "libcdio_cdda-2.dll",
+      "libcdio_paranoia-2.dll"
+    ]
+  },
+  {
     "name": "fushi-dvd",
     "license": "GPL-2.0-or-later",
     "versions": {
