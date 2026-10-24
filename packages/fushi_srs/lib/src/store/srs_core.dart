@@ -553,7 +553,7 @@ final class SrsCore {
     return bytes;
   });
 
-  /// 有效复习投影（`srs_stat_reviews` 的行），Rust 直接从写连接读日志（含事务里未提交的行）。[groups]
+  /// 有效复习投影（`SrsStatReviews` 的行），Rust 直接从写连接读日志（含事务里未提交的行）。[groups]
   /// 每项是一个归属组（归属卡在前，再列出归它的前身卡），组内日志合在一起投影。返回 9 列行页
   /// （[srsDecodeRows]）：组下标, logId, occurredAt, utcOffsetMin, rating|null, kind, durationMs,
   /// prevDueDay|null, maturityDelta。

@@ -1,7 +1,7 @@
 /// 复习统计的装载：从 [SrsDbStore]（当前 profile）一次读出有效复习投影、卡片缓存、笔记与
 /// 牌组，归一成 [SrsStatsData]，另附牌组 / 搜索筛选用的索引 [SrsStatsIndex]。
 ///
-/// 只读：不写任何事件、不刷新缓存。复习记录读 srs.db 的 `srs_stat_reviews`（有效复习投影，缓存刷新时由
+/// 只读：不写任何事件、不刷新缓存。复习记录读 srs.db 的 `SrsStatReviews`（有效复习投影，缓存刷新时由
 /// Rust 按归属组的合并历史产出，见 `SrsDbStore._refreshStatProjection`）的定长列，不再每次装载都读全部
 /// 复习日志重放历史（BUG-3772）。
 library;
@@ -293,7 +293,7 @@ class _RetrievabilityGroup {
   }
 }
 
-/// 读出 [profileUid] 的有效复习投影（srs.db 的 `srs_stat_reviews`）。只取定长列：这是统计页随复习量
+/// 读出 [profileUid] 的有效复习投影（srs.db 的 `SrsStatReviews`）。只取定长列：这是统计页随复习量
 /// 线性增长的那一段。
 Future<List<SrsStatProjection>> loadSrsStatProjection(
   SrsDatabase db,
