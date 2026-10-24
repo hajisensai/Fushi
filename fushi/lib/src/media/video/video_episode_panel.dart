@@ -336,24 +336,21 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
                   )
                 : LayoutBuilder(
                     builder: (BuildContext context, BoxConstraints box) {
-                      // 标题 + 徽标优先占位，当前集名吃剩下的宽度。标题行是
-                      // 非 flex 子项，Row 给它的主轴约束是无界的，它内部的
-                      // Flexible 标题就不会省略号截断——大字号 / 窄宽屏下
-                      // 整行溢出。这里把它封顶在「行宽减去与集名的间距」，
-                      // 超长时由标题自己截断，集名退到 0 宽。
-                      final double gap = currentName != null ? fs : 0;
-                      final double titleCap = (box.maxWidth - gap).clamp(
-                        0.0,
-                        double.infinity,
-                      );
+                      // 标题行按自然宽度排、当前集名吃剩余；但标题行必须拿到
+                      // 有界宽度，否则它内部的 Flexible 标题永远不省略，大字号下
+                      // 直接撑破这一行（官方 M3E 图标按钮按真实图标尺寸占位后，
+                      // 留给标题的宽度变窄即溢出）。上限扣掉与当前集名的间距。
+                      final double titleMax = currentName == null
+                          ? box.maxWidth
+                          : (box.maxWidth - fs).clamp(0.0, box.maxWidth);
                       return Row(
                         children: <Widget>[
                           ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: titleCap),
+                            constraints: BoxConstraints(maxWidth: titleMax),
                             child: titleRow,
                           ),
                           if (currentName != null) ...<Widget>[
-                            SizedBox(width: gap),
+                            SizedBox(width: fs),
                             Expanded(child: currentName),
                           ],
                         ],

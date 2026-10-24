@@ -90,7 +90,8 @@ const List<String> _implementationFiles = <String>[
   'src/media/video/video_m3e_chrome.dart',
   // FushiRefreshIndicator 包装本体：MD3 RefreshIndicator / Apple 下拉菊花。
   'src/utils/components/fushi_m3e_feedback.dart',
-  // FushiIconButton 包装本体：M3E 官方 IconButton + FushiIconButtonSpring 补弹簧。
+  // FushiIconButton 包装本体：MD3 路径就是官方 M3E IconButton（material_ui
+  // 1.8 起换官方实现，见 _buildMaterialIcon）。
   'src/utils/components/fushi_icon_button.dart',
 ];
 
