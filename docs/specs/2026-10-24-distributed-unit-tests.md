@@ -25,7 +25,7 @@ dart tool/dist_test.dart --dry-run           # 看哪些 suite 只能在哪跑
 
 - 队列里是单个 suite（「放置单元」：同时门控 Windows 与 macOS 的 suite 是两个单元），不预先切批。
 - 每个 suite 的权重 = CI 实测耗时 + 每 suite 固定开销 1.5 s（`kDistSuiteOverheadMs`：一个 `flutter test` 进程逐个编译 suite，这笔开销 CI 表里没有，Mac 上实测约 1.5 s/suite）。权重只决定相对大小。
-- 每台机器的速度 = 它已跑完批次的「墙钟 / 权重」累计值（`DistSpeed`），每批更新。
+- 每台机器的速度 = 各批「墙钟 / 权重」的指数滑动平均（`DistSpeed`，最新一批权重 0.6）。不用累计平均：队列先发重的、后发小的，小 suite 的固定开销占比高，比值在一轮里会漂（M4 Mac 从 0.26 漂到 0.67），累计平均跟不上，曾让一个「4 分钟」的批跑了 768 s。
 - 机器空闲时现切下一批（`distChunkBudgetMs`，guided self-scheduling）：取它能跑的剩余工作 × 它的速度占在线机器速度和的比例 ÷ 2；按它自己的速度换算，限制在 20 s～4 min 墙钟之间；还没测过速度的机器先领 1 分钟的探测批。快机器领得多，收尾时块自动变小，没有尾批比例之类的常数。
 - 钉选优先：只有部分机器能跑的 suite 先发；同类里重的先发，收尾都是小 suite。
 - 失联 / 超时的批原样退回队列（可能被别的机器以不同切法领走）；测试失败不重试。
@@ -49,11 +49,27 @@ dart tool/dist_test.dart --dry-run           # 看哪些 suite 只能在哪跑
 
 - 每批：退出码 0、有 `done: success`、≥1 个测试、交给它的每个 suite 都有 `suite` 事件（零执行算红）。
 - `--workers=` 只选部分机器时，只能在没选上的平台跑的 suite 计为「没跑」、整轮判红。
-- 平台亲和：测试文件里的 `Platform.isWindows/isMacOS`、`@TestOn`、能力标签（golden / realdata / ffmpeg / chrome）静态扫描钉选；`dist_affinity.json` 只放「宿主依赖在被测代码里、扫描看不到」且**暂时修不了**的 suite，每条写原因。宿主相关的红优先按根因修，不往表里塞。
+- 平台亲和：测试文件里的 `Platform.isWindows/isMacOS`、`@TestOn`、能力标签（golden / realdata / ffmpeg / chrome）静态扫描钉选；`dist_affinity.json` 只放「宿主依赖在被测代码里、扫描看不到」且**暂时修不了**的 suite，每条写原因；目前为空。宿主相关的红按根因修，不往表里塞。
 
-### 实测（2026-10-24，第二轮全量）
+### macOS 宿主上暴露的测试宿主依赖（2026-10-25 已按根因修）
 
-本机 + Mac 3 槽、旧的固定批次调度：4532 个 suite 全部跑到、39 793 个测试、墙钟 52 分钟；本机 3021 个 suite / 47.6 分钟（约 0.7 s/suite，期间与其它会话共用机器），Mac 合计 1527 个。动态分块是此后改的，墙钟以下一轮验收为准。
+在 Mac 上跑全量第一次暴露了一批「只在 Windows / Linux 宿主上碰巧绿」的测试，全部按根因修掉，`dist_affinity.json` 清空：
+
+| suite | 根因 | 修法 |
+|---|---|---|
+| `storage_usage_view_test` | 默认缓存根在 macOS 上调 path_provider `getTemporaryDirectory()`，平台通道回复进不了 FakeAsync | 测试注入缓存根与 docs 归属 |
+| `lnreader_cover_image_test`、`app_image_file_service_retry_test`、`app_http_image_proxy_test` | flutter_cache_manager 在 macOS 宿主上选 sqflite 插件仓库，测试进程没有插件 | `AppImageCacheManager.debugRepositoryOverride`，`flutter_test_config.dart` 全套钉 JSON 仓库（= Windows/Linux 原行为） |
+| `fushi_desktop_title_bar_subtree_identity_test` | 标题栏按真实宿主分支（红绿灯 / AppKit resize） | `FushiDesktopTitleBar.debugHostPlatform`（默认真实宿主），测试钉宿主并补 macOS 用例；源码守卫同步 |
+| `fushi_popup_surface_glass_test` | 原生材质可用性按真实宿主 | 用例钉既有 `debugNativeMaterialHostSupported` |
+| `desktop_mini_window_mode_test` | 退出全屏按真实宿主走 macos_window_utils，其方法等一个只有 `main()` 会完成的 completer | `DesktopMiniWindowMode.debugExitFullscreenOverride` |
+| `video_mine_queue_dialog_test` | 赌真实目录删除在 100 ms 内完成（Mac 负载下不成立） | 在 root zone 跑 discard 并精确等它完成 |
+| `custom_font_weight_css_test` | 验证的是 Chromium WebView（WebView2 / Android）字体栈；macOS 版 Chrome 用 CoreText，与任何产品路径都不对应 | `@TestOn('!mac-os')` 声明适用宿主（扫描器据此钉到 Windows，覆盖不丢） |
+
+### 实测
+
+- 第二轮（2026-10-24，本机 + Mac 3 槽，旧的固定批次）：4532 suite 全跑到、39 793 测试、墙钟 52 分钟；本机 3021 suite / 47.6 分，Mac 1527 suite。收尾被 Mac 最后一个整批拖住。
+- 验收轮（2026-10-25，本机 + Mac 1 槽，动态分块）：4532 suite 全跑到、39 797 测试、墙钟 57 分 39 秒；Mac 忙 56 分 08 秒（2055 suite），本机忙 57 分 16 秒（2493 suite），两边几乎同时收尾，最后一批只有十几个 suite。Mac 单槽比上轮 3 槽多跑 35% 的 suite。墙钟比上轮长是因为本机同时被其它会话占满（这一轮 0.73 墙钟/权重）。
+- 仍红且与分流无关：本机 5 个起真 Chrome 的阅读器 suite（`highlight_lanes_test` 等），绕开 dist_test 直接跑也红；CI 上 chrome 标签缺 Chrome 时自跳过，所以 CI 没覆盖到它们。
 
 ## 目标与边界
 
