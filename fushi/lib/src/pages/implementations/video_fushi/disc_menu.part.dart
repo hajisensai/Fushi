@@ -570,7 +570,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
   /// 按住 Esc / 手柄 B 时屏幕中央的圆环进度。
   Widget _buildDiscExitHoldRing() => DiscExitHoldRing(
     holding: _discExitHold.holding,
-    color: Colors.white,
+    color: _osdTextColor(_videoChromeColorScheme(context)),
     label: t.video_disc_hold_to_exit,
   );
 
@@ -612,9 +612,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         state != null &&
         (state.discType == VideoDiscType.dvd
             ? state.dvd?.domain == VideoDvdDomain.title
-            : state.title > 0 &&
-                  state.title < 65535 &&
-                  state.playlist != null);
+            : state.title > 0 && state.title < 65535 && state.playlist != null);
     final bool chaptersAvailable = onTitle && _hasChapters;
     void poke() {
       _pokeControlsVisible();

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
@@ -283,16 +284,18 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       builder: (BuildContext context, bool _) => Semantics(
         button: !missing || search != null,
         label: other.title,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: missing
-              ? (search == null ? null : () => search(other.title))
-              : () => widget.onOpen(other),
-          onLongPressStart: (LongPressStartDetails d) =>
-              _showCardMenu(view, d.globalPosition),
-          onSecondaryTapUp: (TapUpDetails d) =>
-              _showCardMenu(view, d.globalPosition),
-          child: card,
+        // 右键菜单由绑定表决定唤出键（默认右键），右键被别的动作占用时自动让位。
+        child: ContextMenuTrigger(
+          onInvoke: (Offset position) => _showCardMenu(view, position),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: missing
+                ? (search == null ? null : () => search(other.title))
+                : () => widget.onOpen(other),
+            onLongPressStart: (LongPressStartDetails d) =>
+                _showCardMenu(view, d.globalPosition),
+            child: card,
+          ),
         ),
       ),
     );
