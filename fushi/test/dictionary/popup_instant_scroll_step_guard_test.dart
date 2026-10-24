@@ -127,10 +127,13 @@ void main() {
     test('扩展 theme 通道下发滚轮步长，content.js / side-panel.js 设同名全局', () {
       final String appModel =
           File('lib/src/models/app_model.dart').readAsStringSync();
+      // 只钉「键 → 值表达式」这对映射，不钉折行位置：#2472 的合并解冲突重排了
+      // app_model.dart，该行被折成 `…WheelStep` / `.toStringAsFixed(3)` 两行，下发
+      // 内容未变，原逐字字面量却红了。
       expect(
         appModel,
-        contains("'--fushi-instant-scroll-wheel-step':\n"
-            '          popupInstantScrollWheelStep.toStringAsFixed(3),'),
+        matches(RegExp(r"'--fushi-instant-scroll-wheel-step':\s*"
+            r'popupInstantScrollWheelStep\s*\.toStringAsFixed\(3\),')),
         reason: '扩展弹窗只有 theme 这一条下发通道（与 --fushi-instant-scroll 同法）',
       );
       for (final String path in <String>[

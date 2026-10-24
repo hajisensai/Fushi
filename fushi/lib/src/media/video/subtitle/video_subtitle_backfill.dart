@@ -355,7 +355,7 @@ class VideoSubtitleBackfillService {
     int? episode,
   }) async {
     final File video = File(target.videoPath);
-    if (!video.existsSync()) {
+    if (!await video.exists()) {
       throw FileSystemException('video file is gone', target.videoPath);
     }
     return registry.search(
@@ -371,7 +371,7 @@ class VideoSubtitleBackfillService {
     VideoSubtitleCandidate candidate,
   ) async {
     final File video = File(target.videoPath);
-    if (!video.existsSync()) {
+    if (!await video.exists()) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
@@ -387,7 +387,7 @@ class VideoSubtitleBackfillService {
       );
     }
     final String dest = sidecarPathFor(video.path, download);
-    if (File(dest).existsSync()) {
+    if (await File(dest).exists()) {
       return SubtitleBackfillResult(
         SubtitleBackfillOutcome.alreadyHasSubtitle,
         installedPath: dest,

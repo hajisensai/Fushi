@@ -459,7 +459,7 @@ class _NavRailPeekContent extends StatelessWidget {
                   ),
                 ),
               ),
-              FilledButton.tonal(
+              FushiFilledButton.tonal(
                 onPressed: onOpenModule,
                 child: Text(t.nav_peek_open),
               ),
@@ -478,7 +478,7 @@ class _NavRailPeekContent extends StatelessWidget {
                         ? const SizedBox(height: 8)
                         : const Padding(
                             padding: EdgeInsets.only(top: 16, bottom: 8),
-                            child: LinearProgressIndicator(),
+                            child: FushiLinearProgressIndicator(),
                           );
                   }
                   if (value.isEmpty) {

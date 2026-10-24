@@ -421,15 +421,37 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                 ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: TextField(
-                    controller: _query,
-                    style: text.bodyMedium?.copyWith(color: apple.label),
-                    decoration: InputDecoration.collapsed(
-                      hintText: t.search,
-                      hintStyle: text.bodyMedium?.copyWith(
-                        color: apple.secondaryLabel,
+                  // 胶囊（tertiaryFill 圆角 10 + 放大镜）由侧栏自己画，输入框
+                  // 走设计系统分派但不带装饰（decoration: null 在两套设计系统
+                  // 下都不加壳）；占位符随空值显隐，与原 collapsed 样式一致。
+                  child: Stack(
+                    alignment: AlignmentDirectional.centerStart,
+                    children: <Widget>[
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _query,
+                        builder:
+                            (
+                              BuildContext context,
+                              TextEditingValue value,
+                              Widget? hint,
+                            ) => value.text.isEmpty ? hint! : const SizedBox(),
+                        child: IgnorePointer(
+                          child: Text(
+                            t.search,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodyMedium?.copyWith(
+                              color: apple.secondaryLabel,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      FushiTextFieldControl(
+                        controller: _query,
+                        style: text.bodyMedium?.copyWith(color: apple.label),
+                        decoration: null,
+                      ),
+                    ],
                   ),
                 ),
               ],
