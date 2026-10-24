@@ -242,4 +242,49 @@ void main() {
       expect(patch, contains('-Ddvdnav=enabled'), reason: fork);
     }
   });
+
+  test('music module formats are in the capability floor (spec §7.1)', () {
+    // Measured 2026-10-24: every vendored artifact (Windows libmpv archive,
+    // Android AAR, iOS xcframeworks, macOS layout) already carries all of
+    // them, so they enter the floor directly instead of the staged section.
+    final Map<String, dynamic> caps =
+        jsonDecode(
+              File(
+                '../tool/ffmpeg-unified/capabilities.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    expect(
+      caps['decoders'],
+      containsAll(<String>[
+        'alac',
+        'ape',
+        'wavpack',
+        'tak',
+        'tta',
+        'mpc8',
+        'dsd_lsbf',
+        'dsd_msbf',
+        'dsd_lsbf_planar',
+        'dsd_msbf_planar',
+        'cdgraphics',
+      ]),
+    );
+    expect(
+      caps['demuxers'],
+      containsAll(<String>[
+        'ape',
+        'wv',
+        'tak',
+        'tta',
+        'dsf',
+        'iff',
+        'aiff',
+        'caf',
+        'w64',
+        'cdg',
+        'mpc8',
+      ]),
+    );
+  });
 }

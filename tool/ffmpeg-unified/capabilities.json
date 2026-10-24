@@ -9,7 +9,9 @@
     "h264", "hevc", "libdav1d", "vp9", "vp8", "mpeg4", "mpeg2video",
     "aac", "ac3", "eac3", "opus", "vorbis", "flac", "mp3", "truehd", "dca",
     "ass", "ssa", "subrip", "webvtt", "mov_text", "text", "sami", "microdvd",
-    "mjpeg", "png", "webp"
+    "mjpeg", "png", "webp",
+    "alac", "ape", "wavpack", "tak", "tta", "mpc8", "dsd_lsbf", "dsd_msbf",
+    "dsd_lsbf_planar", "dsd_msbf_planar", "cdgraphics"
   ],
   "muxers": [
     "gif", "adts", "image2", "mjpeg", "mov", "mp4", "ipod", "avif", "webp",
@@ -19,7 +21,8 @@
   "demuxers": [
     "matroska", "mov", "mpegts", "hls", "dash", "concat", "ffmetadata",
     "image2", "image2pipe", "srt", "ass", "webvtt", "aac", "mp3", "flac",
-    "wav", "ogg"
+    "wav", "ogg",
+    "ape", "wv", "tak", "tta", "dsf", "iff", "aiff", "caf", "w64", "cdg", "mpc8"
   ],
   "filters": [
     "scale", "fps", "split", "palettegen", "paletteuse", "format",
