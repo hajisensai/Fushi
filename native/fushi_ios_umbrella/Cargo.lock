@@ -1171,8 +1171,11 @@ dependencies = [
 name = "fushi_music"
 version = "0.1.0"
 dependencies = [
+ "data-encoding",
  "encoding_rs",
+ "flate2",
  "lofty",
+ "quick-xml",
  "sha1",
 ]
 

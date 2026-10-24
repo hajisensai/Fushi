@@ -54,6 +54,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
   'music/ReplayGain': 'test/media/music/music_player_engine_test.dart',
+  // 在线歌词（LRCLIB）：生效点是 MusicLyricsService.resolve 是否出网，harness 没有在播的
+  // 曲目。开关关闭即不出网、打开按标题 / 艺人 / 专辑 / 时长精确匹配由
+  // music_lyrics_service_test 咬住。
+  'music/Online lyrics (LRCLIB)':
+      'test/media/music/lyrics/music_lyrics_service_test.dart',
+  // 查词时暂停：生效点在歌词页查词回调（musicLyricsShouldPauseForLookup），harness
+  // 设置页没有歌词页；判据由 music_lyrics_page_logic_test 咬住。
+  'music/Pause while looking up words':
+      'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 网页广告拦截：生效点在 InAppWebView 的逐请求拦截 / cosmetic 注入，harness 设置页
   // 没有 WebView。总开关、订阅集、白名单都是 Rust 核心（fushi_web_core）的状态，行改动经
   // WebAdblockService 转成命令，由 web_adblock_service_test（开关 / 白名单下一次请求即生效、

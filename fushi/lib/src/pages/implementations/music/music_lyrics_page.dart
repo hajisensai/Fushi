@@ -51,6 +51,12 @@ String musicLyricsLookupTerm(KaraokeLookupHit hit) {
   return hit.lineText.substring(at);
 }
 
+/// 纯函数：查词时要不要暂停（设置开着且正在播）。
+bool musicLyricsShouldPauseForLookup({
+  required bool settingEnabled,
+  required bool playing,
+}) => settingEnabled && playing;
+
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
     : super(item: null);
@@ -132,7 +138,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   }
 
   Future<void> _onLookup(KaraokeLookupHit hit) async {
-    if (appModel.musicLyricsLookupPause && _engine.isPlaying) {
+    if (musicLyricsShouldPauseForLookup(
+      settingEnabled: appModel.musicLyricsLookupPause,
+      playing: _engine.isPlaying,
+    )) {
       _pausedForLookup = true;
       unawaited(_engine.pause());
     }
