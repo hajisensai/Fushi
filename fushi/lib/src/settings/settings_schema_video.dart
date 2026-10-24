@@ -95,7 +95,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.disc_auto_fullscreen',
             title: t.video_setting_disc_auto_fullscreen,
             subtitle: t.video_setting_disc_auto_fullscreen_hint,
-            icon: Icons.fullscreen_outlined,
+            icon: FushiIcons.fullscreen,
             // 移动端视频页全程横屏沉浸，没有窗口全屏这回事。
             visible: (_) => isDesktopPlatform,
             value: (SettingsContext settingsContext) =>
@@ -108,7 +108,7 @@ SettingsDestination buildVideoDestination() {
           SettingsSwitchItem(
             id: 'video.playback.disc_launch_animation',
             title: t.video_setting_disc_launch_animation,
-            icon: Icons.animation_outlined,
+            icon: FushiIcons.animation,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoDiscLaunchAnimation,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -120,7 +120,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.disc_open_menu_by_default',
             title: t.video_setting_disc_open_menu_by_default,
             subtitle: t.video_setting_disc_open_menu_by_default_hint,
-            icon: Icons.album_outlined,
+            icon: FushiIcons.menuOpen,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.videoDiscOpenMenuByDefault,
             onChanged: (SettingsContext settingsContext, bool value) async {
@@ -402,7 +402,7 @@ SettingsDestination buildVideoDestination() {
           _videoMpvSwitchItem(
             id: 'video.quality.interpolation',
             title: t.video_setting_mpv_interpolation,
-            icon: Icons.animation_outlined,
+            icon: FushiIcons.animation,
             video: VideoPlacement(
               group: VideoGroup.mpv,
               order: 40,

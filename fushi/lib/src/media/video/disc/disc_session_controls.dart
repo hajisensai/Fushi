@@ -289,11 +289,11 @@ class _DiscLaunchCoverTransitionState extends State<DiscLaunchCoverTransition>
     final double split = growMs / totalMs;
     final Animation<double> grow = CurvedAnimation(
       parent: controller,
-      curve: Interval(0, split, curve: Curves.easeOutCubic),
+      curve: Interval(0, split, curve: FushiMotion.enter),
     );
     final Animation<double> fade = CurvedAnimation(
       parent: controller,
-      curve: Interval(split, 1, curve: Curves.easeIn),
+      curve: Interval(split, 1, curve: FushiMotion.exit),
     );
     return IgnorePointer(
       child: LayoutBuilder(
