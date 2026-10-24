@@ -1,11 +1,12 @@
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
+
+import 'srs_test_support.dart' show openSrsTestStorage;
 
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000c7';
 
@@ -15,10 +16,10 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   test('冲突角标：修订信号递增但内容指纹没变 → 复用；内容变了 → 重算', () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
+    final SrsStorage srs = await openSrsTestStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: _kProfile,
       deviceId: 'memo-test',
     );
@@ -46,7 +47,7 @@ void main() {
     // 绕过事件直接在缓存里造一条「待裁决」：不推进内容指纹。信号递增后仍是上次的结果，
     // 说明这次没有重扫库。
     final String fp = store.contentFingerprint;
-    await db.customStatement(
+    await srs.db.customStatement(
       'UPDATE srs_notes_cache SET pending_decision = 1 WHERE id = ?',
       <Object>[note],
     );

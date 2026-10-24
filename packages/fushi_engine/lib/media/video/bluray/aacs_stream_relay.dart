@@ -90,7 +90,10 @@ final class AacsStreamRelay {
     final requests = <Future<void>>{};
     // Bodies are written on detached sockets, which the server no longer
     // tracks: shutdown has to destroy them itself or a paused player keeps
-    // its request (and the disc handle) alive forever.
+    // its request (and the disc handle) alive forever. A socket stays here
+    // until the player's side is gone too: a body that ended (or was cut
+    // short by shutdown) only half-closes it, and that open socket keeps this
+    // isolate, so [close], from ever finishing.
     final bodies = <Socket>{};
     final failures = args[4] as SendPort;
     var closing = false;
@@ -201,28 +204,34 @@ final class AacsStreamRelay {
       response.persistentConnection = false;
       final socket = await response.detachSocket();
       bodies.add(socket);
-      try {
-        // Shutdown may have swept `bodies` while the headers were being
-        // written: nobody else will destroy this socket, and there is no body
-        // left to serve.
-        if (isClosing()) {
-          socket.destroy();
-          return;
-        }
-        await _writeBody(
-          socket,
-          decryptedRange(
-            file,
-            decoder,
-            start,
-            end,
-            isClosing: isClosing,
-            onDecryptFailure: (error) => failures.send(error.message),
-          ),
-        );
-      } finally {
-        bodies.remove(socket);
+      // The inbound side ends once the player closes or the socket is
+      // destroyed; only then is the socket really released. Draining also
+      // gives `close()` the listener it needs: a player sends nothing after
+      // its request.
+      unawaited(
+        socket
+            .drain<void>()
+            .then((_) {}, onError: (Object _) {})
+            .whenComplete(() => bodies.remove(socket)),
+      );
+      // Shutdown may have swept `bodies` while the headers were being
+      // written: nobody else will destroy this socket, and there is no body
+      // left to serve.
+      if (isClosing()) {
+        socket.destroy();
+        return;
       }
+      await _writeBody(
+        socket,
+        decryptedRange(
+          file,
+          decoder,
+          start,
+          end,
+          isClosing: isClosing,
+          onDecryptFailure: (error) => failures.send(error.message),
+        ),
+      );
     } catch (_) {
       // A failed decode must terminate the byte stream, never serve ciphertext.
       try {
@@ -252,9 +261,6 @@ final class AacsStreamRelay {
   /// [body] closes the file. A decode failure destroys the socket too, so the
   /// body is cut short, never filled with ciphertext.
   static Future<void> _writeBody(Socket socket, Stream<Uint8List> body) async {
-    // `close()` only completes once the inbound side is done, which needs a
-    // listener; a player sends nothing after its request.
-    unawaited(socket.drain<void>().then((_) {}, onError: (Object _) {}));
     try {
       await for (final chunk in body) {
         socket.add(chunk);

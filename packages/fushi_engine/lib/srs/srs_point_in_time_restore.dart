@@ -160,7 +160,8 @@ Future<void> _restoreFields(
   List<SrsEvent> backupEvents,
   SrsRestoreReport report,
 ) async {
-  final List<SrsEvent> local = await store.exportAll();
+  // 只要身份记录与修改记录：复习日志（库里最大的一块）这一步用不到。
+  final List<SrsEvent> local = await store.exportEntitiesAndEdits();
   final Map<String, int> s = await store.exportServerTimes();
   int? serverTimeOf(String id) => s[id];
 
@@ -185,17 +186,24 @@ Future<void> _restoreFields(
 
   // 备份之后才出现的笔记 / 牌组 / 笔记类型：删掉（内置行每台设备都有，不算「之后才出现」）。
   final Set<String> createdAfter = <String>{};
-  for (final SrsEntityRecord r in localRecords.values) {
-    if (!_deletableKinds.contains(r.kind)) continue;
-    if (backupEntityIds.contains(r.id) || builtinIds.contains(r.id)) continue;
+  final List<SrsEntityRecord> fresh = <SrsEntityRecord>[
+    for (final SrsEntityRecord r in localRecords.values)
+      if (_deletableKinds.contains(r.kind) &&
+          !backupEntityIds.contains(r.id) &&
+          !builtinIds.contains(r.id))
+        r,
+  ];
+  // 寄存器整批一次 FFI 调用（字段寄存器内核）。
+  final List<SrsEntityEdits> freshEdits =
+      SrsEntityEdits.buildMany(<List<SrsFieldEdit>>[
+        for (final SrsEntityRecord r in fresh)
+          localEdits[(r.kind, r.id)] ?? const <SrsFieldEdit>[],
+      ], serverTimeOf: serverTimeOf);
+  for (int i = 0; i < fresh.length; i++) {
+    final SrsEntityRecord r = fresh[i];
     createdAfter.add(r.id);
-    final List<SrsFieldEdit> edits =
-        localEdits[(r.kind, r.id)] ?? const <SrsFieldEdit>[];
-    final SrsRegister? del = SrsEntityEdits.build(
-      edits,
-      serverTimeOf: serverTimeOf,
-    )[SrsFieldKeys.deleted];
-    if (del != null && !del.conflicted && srsEffectiveDeletedAt(del) != null) {
+    final SrsRegister? del = freshEdits[i][SrsFieldKeys.deleted];
+    if (del != null && !del.conflicted && freshEdits[i].deletedAt != null) {
       continue;
     }
     specs.add(SrsEditSpec(r.kind, r.id, SrsFieldKeys.deleted, nowMs));
@@ -211,33 +219,49 @@ Future<void> _restoreFields(
     ...backupEdits.keys,
     ...localEdits.keys,
   };
-  for (final _EntityKey key in entities) {
-    final (SrsEntityKind kind, String id) = key;
-    if (createdAfter.contains(id)) continue;
-    if (kind == SrsEntityKind.card &&
-        createdAfter.contains(noteOfCard[id] ?? '')) {
-      continue;
-    }
-    final SrsEntityEdits want = SrsEntityEdits.build(
-      backupEdits[key] ?? const <SrsFieldEdit>[],
-      serverTimeOf: serverTimeOf,
-    );
-    final SrsEntityEdits have = SrsEntityEdits.build(
-      localEdits[key] ?? const <SrsFieldEdit>[],
-      serverTimeOf: serverTimeOf,
-    );
+  final List<_EntityKey> keyed = <_EntityKey>[
+    for (final _EntityKey key in entities)
+      if (!createdAfter.contains(key.$2) &&
+          !(key.$1 == SrsEntityKind.card &&
+              createdAfter.contains(noteOfCard[key.$2] ?? '')))
+        key,
+  ];
+  // 备份时与现在的寄存器各整批一次 FFI 调用（字段寄存器内核）。
+  final List<SrsEntityEdits> wants = SrsEntityEdits.buildMany(
+    <List<SrsFieldEdit>>[
+      for (final _EntityKey key in keyed)
+        backupEdits[key] ?? const <SrsFieldEdit>[],
+    ],
+    serverTimeOf: serverTimeOf,
+  );
+  final List<SrsEntityEdits> haves = SrsEntityEdits.buildMany(
+    <List<SrsFieldEdit>>[
+      for (final _EntityKey key in keyed)
+        localEdits[key] ?? const <SrsFieldEdit>[],
+    ],
+    serverTimeOf: serverTimeOf,
+  );
+  // 要改回的候选按原顺序攒着；要判 no-op 的（现值与目标比较）最后整批一次 FFI 调用。
+  final List<(SrsEditSpec, int, bool)> candidates =
+      <(SrsEditSpec, int, bool)>[];
+  final List<(SrsRegister?, Object?)> noopAsk = <(SrsRegister?, Object?)>[];
+  for (int k = 0; k < keyed.length; k++) {
+    final (SrsEntityKind kind, String id) = keyed[k];
+    final SrsEntityEdits want = wants[k];
+    final SrsEntityEdits have = haves[k];
     final Set<String> keys = <String>{...want.keys, ...have.keys};
     for (final String field in keys) {
       final SrsRegister? cur = have[field];
       final SrsRegister? had = want[field];
       final Object? target;
+      int noopAt = -1;
       if (field == SrsFieldKeys.deleted) {
         // 删除优先：备份时只要有一条没被支配的删除记录，行就是已删，不看排序赢家。
-        target = had == null ? null : srsEffectiveDeletedAt(had);
+        target = had == null ? null : want.deletedAt;
         if (cur == null) {
           if (target == null) continue;
         } else if (!cur.conflicted &&
-            (srsEffectiveDeletedAt(cur) != null) == (target != null)) {
+            (have.deletedAt != null) == (target != null)) {
           continue;
         }
       } else {
@@ -246,18 +270,24 @@ Future<void> _restoreFields(
             : _absentValue(store, localRecords[id], kind, field, cur);
         if (cur == null) {
           if (target == null) continue;
-        } else if (srsEditIsNoop(cur, target)) {
-          continue;
+        } else {
+          noopAsk.add((cur, target));
+          noopAt = noopAsk.length - 1;
         }
       }
-      if (field == SrsFieldKeys.deleted &&
+      final bool restored =
+          field == SrsFieldKeys.deleted &&
           target == null &&
           cur != null &&
-          srsEffectiveDeletedAt(cur) != null) {
-        report.entitiesRestored++;
-      }
-      specs.add(SrsEditSpec(kind, id, field, target));
+          have.deletedAt != null;
+      candidates.add((SrsEditSpec(kind, id, field, target), noopAt, restored));
     }
+  }
+  final List<bool> noop = srsEditsAreNoop(noopAsk);
+  for (final (SrsEditSpec spec, int noopAt, bool restored) in candidates) {
+    if (noopAt >= 0 && noop[noopAt]) continue;
+    if (restored) report.entitiesRestored++;
+    specs.add(spec);
   }
   if (specs.isEmpty) return;
   report.fieldEdits = (await store.writeEdits(specs)).length;
@@ -314,28 +344,18 @@ Future<void> _restoreLogs(
   final Map<String, int> s = await store.exportServerTimes();
   int? serverTimeOf(String id) => s[id];
 
-  final Map<String, List<SrsReviewLog>> byCard = <String, List<SrsReviewLog>>{};
-  // 卡片的「前身」链接（更改笔记类型）：前身 → 继承它历史的卡。
-  final Map<String, Set<String>> successors = <String, Set<String>>{};
-  for (final SrsEvent e in await store.exportAll()) {
-    if (e is SrsLogEvent) {
-      (byCard[e.log.cardId] ??= <SrsReviewLog>[]).add(e.log);
-    } else if (e is SrsEditEvent &&
-        e.edit.entityKind == SrsEntityKind.card &&
-        e.edit.fieldKey.startsWith(SrsFieldKeys.cardHistoryFromPrefix)) {
-      (successors[e.edit.fieldKey.substring(
-                SrsFieldKeys.cardHistoryFromPrefix.length,
-              )] ??=
-              <String>{})
-          .add(e.edit.entityId);
-    }
-  }
   // 受影响的卡：有不在备份里的日志（备份之后的复习、撤销等）的卡。其余卡的日志与备份时完全相同，
-  // 状态必然一致，不用逐卡读历史。
+  // 状态必然一致，不用逐卡读历史。先只读「日志 ID → 卡」两列判定，正文只读受影响的卡。
   final Set<String> affected = <String>{
-    for (final MapEntry<String, List<SrsReviewLog>> e in byCard.entries)
-      if (e.value.any((SrsReviewLog l) => !backupLogIds.contains(l.id))) e.key,
+    for (final MapEntry<String, List<String>> e
+        in (await store.logIdsByCard()).entries)
+      if (e.value.any((String id) => !backupLogIds.contains(id))) e.key,
   };
+  final Map<String, List<SrsReviewLog>> byCard = await store.logsOfCards(
+    affected,
+  );
+  // 卡片的「前身」链接（更改笔记类型）：前身 → 继承它历史的卡。
+  final Map<String, List<String>> successors = await store.successorIndex();
   final SrsLogContext ctx = await store.logContext();
   final List<SrsReviewLog> undos = <SrsReviewLog>[
     for (final String card in affected)
@@ -354,7 +374,8 @@ Future<void> _restoreLogs(
   final Set<String> check = <String>{...affected};
   final List<String> queue = affected.toList();
   while (queue.isNotEmpty) {
-    for (final String next in successors[queue.removeLast()] ?? <String>{}) {
+    for (final String next
+        in successors[queue.removeLast()] ?? const <String>[]) {
       if (check.add(next)) queue.add(next);
     }
   }

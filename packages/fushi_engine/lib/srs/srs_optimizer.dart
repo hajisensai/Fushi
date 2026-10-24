@@ -1,7 +1,8 @@
 /// FSRS 自动优化（PR6，含第六轮审查第 10、11 条的修正）。
 ///
-/// 三段：[srsPrepareOptimization]（读库，主 isolate）→ [srsRunOptimization]（纯计算，可放后台 isolate，
-/// 支持取消）→ [srsApplyOptimization]（写回牌组这一行，主 isolate）。
+/// 三段：[srsPrepareOptimization]（取训练集：Rust 在 srs.db 上直读日志并选取，结果是一块字节）→
+/// [srsRunOptimization]（纯计算，可放后台 isolate，支持取消；训练集在那边才展开）→ [srsApplyOptimization]
+/// （写回牌组这一行，主 isolate）。
 ///
 /// - 训练数据：own 牌组整棵 inherit 子树里全部卡片的有效评分日志（被撤销的、被判等价的导入日志已排除），
 ///   从最近一次重置算起；历史不完整（第一条不是学习类）的卡不进训练集；可证明时间有错（timeUncertain）的日志不进。
@@ -14,6 +15,7 @@
 library;
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 /// 首次优化的样本门槛（进训练集的评分条数）。
@@ -30,8 +32,7 @@ class SrsOptimizationInput {
     required this.algorithm,
     required this.algorithmAuto,
     required this.currentParams,
-    required this.items,
-    required this.reviewCount,
+    required this.trainingSet,
   });
 
   final String deckId;
@@ -41,12 +42,16 @@ class SrsOptimizationInput {
   /// 当前参数（空 = 默认）。
   final List<double> currentParams;
 
+  /// 训练集（列式字节，跨 isolate 只拷一块）。
+  final SrsTrainingSet trainingSet;
+
   /// 训练集：每条是一张卡到某次评分为止的历史前缀（按最后一次评分时刻排序，供时间序列切分），
   /// 带每张卡的数字 ID。打包成 TypedData，每张卡只存一份完整历史，前缀在原生侧展开（BUG-3745）。
-  final SrsFsrsTrainingSet items;
+  /// 第一次读时由 [trainingSet] 转换。
+  SrsFsrsTrainingSet get items => trainingSet.fsrs;
 
   /// 进训练集的评分条数（门槛与基线用）。
-  final int reviewCount;
+  int get reviewCount => trainingSet.itemCount;
 }
 
 /// 一次优化的结果。
@@ -88,7 +93,10 @@ bool srsShouldOptimize({
   return nowMs - baseAt >= kSrsOptimizeIntervalMs;
 }
 
-/// 读库，组训练数据。只对 own 牌组有意义（inherit 子牌组用祖先的参数）。
+/// 组训练数据。只对 own 牌组有意义（inherit 子牌组用祖先的参数）。
+///
+/// 训练范围 = own 牌组整棵 inherit 子树里的可见卡；有效评分的选取、记忆状态输入（历史完整才进）、
+/// 「时间不确定」过滤都在 Rust 里（native/fushi_fsrs/src/projection.rs `optimizer_card`），日志不经 Dart。
 Future<SrsOptimizationInput?> srsPrepareOptimization(
   SrsDbStore store,
   String deckId,
@@ -102,63 +110,18 @@ Future<SrsOptimizationInput?> srsPrepareOptimization(
   // RWKV 牌组优化的是它的影子记忆状态（FSRS-7）参数。
   final SrsAlgorithm alg = owner.localAlgorithm.memoryAlgorithm;
   final SrsParamSet? set = owner.paramSetFor(alg);
-
-  final SrsFsrsTrainingSetBuilder builder = SrsFsrsTrainingSetBuilder();
-  // (评分时刻, 卡序号, 前缀长度)：一条复习一行，只记坐标，不复制历史前缀（BUG-3745）。
-  final List<(int, int, int)> rows = <(int, int, int)>[];
-  int count = 0;
-  final List<String> cardIds = await store.cardIdsInDecks(scope);
-  // 各卡历史按块一次预读（以前每张卡各查四五次，BUG-3543）；分块取，内存里只留一块的历史。
-  for (int start = 0; start < cardIds.length; start += 1000) {
-    final List<String> part = cardIds.sublist(
-      start,
-      start + 1000 > cardIds.length ? cardIds.length : start + 1000,
-    );
-    final Map<String, SrsCardHistory> histories = await store.histories(part);
-    for (final String cardId in part) {
-      final SrsCardHistory h = histories[cardId]!;
-      final SrsMemoryInput input = srsCollectMemoryInput(
-        h,
-        algorithm: alg,
-        dayIndexOf: day.dayIndexOf,
-      );
-      if (!input.complete || input.reviews.isEmpty) continue;
-      final List<SrsReviewLog> ratings = <SrsReviewLog>[
-        for (final SrsReviewLog l in h.effectiveRatings)
-          if (!_timeUncertain(l, h)) l,
-      ];
-      if (ratings.length != input.reviews.length) {
-        // 有可证明时间错误的日志：这张卡整卡不进训练集（间隔算不准）。
-        continue;
-      }
-      final int card = builder.addCard(
-        input.reviews,
-        cardId: SrsIds.ankiNumericId(cardId),
-      );
-      for (int i = 1; i < input.reviews.length; i++) {
-        rows.add((ratings[i].occurredAt, card, i + 1));
-        count++;
-      }
-    }
-  }
-  rows.sort(((int, int, int) a, (int, int, int) b) => a.$1.compareTo(b.$1));
-  for (final (int, int, int) r in rows) {
-    builder.addItem(r.$2, r.$3);
-  }
   return SrsOptimizationInput(
     deckId: owner.id,
     algorithm: alg,
     algorithmAuto: owner.algorithmAuto,
     currentParams: set?.params ?? const <double>[],
-    items: builder.build(),
-    reviewCount: count,
+    trainingSet: await store.optimizerTrainingSet(
+      await store.cardIdsInDecks(scope),
+      algorithm: alg,
+      day: day,
+    ),
   );
 }
-
-/// 可证明时间有错：墙钟来源，且排序键被钳位（物理时间超过它所在批次的 S + 10 分钟）。
-bool _timeUncertain(SrsReviewLog l, SrsCardHistory h) =>
-    l.timeSource == SrsTimeSource.wall &&
-    h.sortKeyOf(l).physical < l.hlc.physical;
 
 /// 纯计算（可在后台 isolate 跑）。被取消时抛 [SrsFsrsException]（isCancelled）。
 SrsOptimizationResult srsRunOptimization(

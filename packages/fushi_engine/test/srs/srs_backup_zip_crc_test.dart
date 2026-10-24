@@ -3,8 +3,6 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -13,6 +11,8 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'support/srs_fake_engine.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000c2';
 
@@ -27,25 +27,20 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   late Directory tmp;
-  final List<FushiDatabase> dbs = <FushiDatabase>[];
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('srs_backup_crc_test_');
   });
   tearDown(() async {
-    for (final FushiDatabase db in dbs) {
-      await db.close();
-    }
-    dbs.clear();
     await tmp.delete(recursive: true);
   });
 
   test('备份 zip 的 CRC / SHA-256 与 archive、crypto 对拍一致，读端完整校验通过', () async {
     int t = DateTime.utc(2026, 10, 18, 9).millisecondsSinceEpoch;
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    dbs.add(db);
+    final SrsStorage srsStorage = await openTestSrsStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: db,
+      db: srsStorage.db,
+      core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
       engine: const SrsFakeEngine(),

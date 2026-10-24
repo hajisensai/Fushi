@@ -361,10 +361,16 @@ void main() {
       final BookSourceIndex loaded = await BookSourceIndex.load(db, sourceId);
       expect(loaded.uidOf('a.cbz'), 'uid-a');
       expect(loaded.isRejected('dict.zip', 's:10|m:20'), isTrue);
-      expect(loaded.isRejected('dict.zip', 's:11|m:20'), isFalse,
-          reason: '指纹变了 = 文件被换过，必须重判');
-      expect(loaded.isRejected('dict.zip', null), isFalse,
-          reason: '拿不到指纹时宁可重判');
+      expect(
+        loaded.isRejected('dict.zip', 's:11|m:20'),
+        isFalse,
+        reason: '指纹变了 = 文件被换过，必须重判',
+      );
+      expect(
+        loaded.isRejected('dict.zip', null),
+        isFalse,
+        reason: '拿不到指纹时宁可重判',
+      );
 
       await indexOf(<String, String>{'b.cbz': 'uid-b'});
       expect((await BookSourceIndex.load(db, sourceId)).rejected, isEmpty);
@@ -376,7 +382,10 @@ void main() {
         ..reject('gone.zip', 'e:"def"');
       await index.save(db);
       final BookSourceIndex loaded = await BookSourceIndex.load(db, sourceId);
-      expect(loaded.rejected.keys, unorderedEquals(<String>['dict.zip', 'gone.zip']));
+      expect(
+        loaded.rejected.keys,
+        unorderedEquals(<String>['dict.zip', 'gone.zip']),
+      );
 
       loaded.retainRejected(<String>{'dict.zip'});
       expect(loaded.rejected.keys, <String>['dict.zip']);
@@ -434,15 +443,21 @@ void main() {
       final BookSourceIndex moved = BookSourceIndex.empty(sourceId)
         ..put('old/Vol 1.cbz', uid);
       expect(
-        (await judge(moved, 'new/Vol 1.cbz',
-                title: 'Vol 1', present: <String>{'new/Vol 1.cbz'}))
-            .kind,
+        (await judge(
+          moved,
+          'new/Vol 1.cbz',
+          title: 'Vol 1',
+          present: <String>{'new/Vol 1.cbz'},
+        )).kind,
         SourceDuplicateKind.sameSource,
       );
       expect(
-        (await judge(BookSourceIndex.empty(sourceId), 'Vol 1.cbz',
-                title: 'Vol 1', present: <String>{'Vol 1.cbz'}))
-            .isDuplicate,
+        (await judge(
+          BookSourceIndex.empty(sourceId),
+          'Vol 1.cbz',
+          title: 'Vol 1',
+          present: <String>{'Vol 1.cbz'},
+        )).isDuplicate,
         isTrue,
       );
     });
@@ -450,18 +465,24 @@ void main() {
     test('别的来源 / 手动导入（无来源）之外的格式 → 按重复处理（foreign）', () async {
       await addBook('x.cbz', owner: sourceId + 99, format: 'manga');
       expect(
-        (await judge(BookSourceIndex.empty(sourceId), 'x.cbz',
-                title: 'x', present: <String>{'x.cbz'}))
-            .kind,
+        (await judge(
+          BookSourceIndex.empty(sourceId),
+          'x.cbz',
+          title: 'x',
+          present: <String>{'x.cbz'},
+        )).kind,
         SourceDuplicateKind.foreign,
       );
     });
 
     test('标题没被占 → none', () async {
       expect(
-        (await judge(BookSourceIndex.empty(sourceId), 'y.cbz',
-                title: 'y', present: <String>{'y.cbz'}))
-            .kind,
+        (await judge(
+          BookSourceIndex.empty(sourceId),
+          'y.cbz',
+          title: 'y',
+          present: <String>{'y.cbz'},
+        )).kind,
         SourceDuplicateKind.none,
       );
     });

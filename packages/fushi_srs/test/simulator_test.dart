@@ -352,10 +352,10 @@ void main() {
         timeSource: SrsTimeSource.anchored,
         machine: true,
       );
-      final SrsRegister r = srsResolveRegister('k', <SrsFieldEdit>[
+      final SrsRegister r = SrsEntityEdits.build(<SrsFieldEdit>[
         mk(a, 'pa'),
         mk(b, 'pb'),
-      ]);
+      ])[SrsFieldKeys.deckFsrs7Params]!;
       expect(r.conflicted, isTrue);
       expect(r.visibleLosers, isEmpty);
     });
@@ -389,15 +389,20 @@ void main() {
         change,
       ]);
       expect(edits.deletedAt, 1000);
-      final SrsNoteView note = SrsNoteView.materialize(
-        const SrsEntityRecord(
-          id: 'n2',
-          profileUid: kProfile,
-          kind: SrsEntityKind.note,
-          payload: <String, Object?>{'noteTypeId': 't', 'guid': 'g'},
+      final SrsNoteView note = srsMaterializeNotes(<SrsEntitySource>[
+        SrsEntitySource.record(
+          const SrsEntityRecord(
+            id: 'n2',
+            profileUid: kProfile,
+            kind: SrsEntityKind.note,
+            payload: <String, Object?>{'noteTypeId': 't', 'guid': 'g'},
+          ),
+          <SrsEditItem>[
+            SrsEditItem.of(delReal, null),
+            SrsEditItem.of(change, null),
+          ],
         ),
-        edits,
-      );
+      ]).single;
       expect(note.hasPendingDecision, isTrue);
     });
   });

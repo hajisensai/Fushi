@@ -14,14 +14,18 @@ import 'package:fushi_engine/srs/srs_asset_store_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
+import 'support/srs_test_storage.dart';
+
 class _Device {
-  _Device._(this.db, this.deviceId, this.profileId);
+  _Device._(this.db, this.srs, this.deviceId, this.profileId);
 
   final FushiDatabase db;
+  final SrsStorage srs;
   final String deviceId;
   final int profileId;
   late SrsDbStore store;
@@ -30,11 +34,13 @@ class _Device {
 
   static Future<_Device> open(String deviceId) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final SrsStorage srs = await openTestSrsStorage();
     final int now = DateTime.now().millisecondsSinceEpoch;
     final int profileId = await db.insertProfile(
       ProfilesCompanion.insert(name: 'Default', createdAt: now, updatedAt: now),
     );
-    final _Device d = _Device._(db, deviceId, profileId);
+    final _Device d = _Device._(db, srs, deviceId, profileId);
     d.store = await d._openStore();
     d.linker = SrsDbProfileLinker(
       db: db,
@@ -45,7 +51,8 @@ class _Device {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: db,
+    db: srs.db,
+    core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,
   );

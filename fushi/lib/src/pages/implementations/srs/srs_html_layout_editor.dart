@@ -213,7 +213,9 @@ class _SrsHtmlLayoutEditorState extends State<SrsHtmlLayoutEditor> {
 
   Widget _paragraph(BuildContext context, SrsLayoutParagraph p) {
     final TextStyle base = context.fushiType.bodyLarge;
-    return TextField(
+    // 段落嵌在自绘的版式框里：不带装饰（decoration: null 在两套设计系统下
+    // 都不加壳，等同原来的 collapsed 空提示）。
+    return FushiTextFieldControl(
       key: ValueKey<String>(
         'srs-field-layout-${widget.fieldName}-${_index[p]}',
       ),
@@ -222,7 +224,7 @@ class _SrsHtmlLayoutEditorState extends State<SrsHtmlLayoutEditor> {
       minLines: 1,
       maxLines: null,
       keyboardType: TextInputType.multiline,
-      decoration: const InputDecoration.collapsed(hintText: ''),
+      decoration: null,
     );
   }
 

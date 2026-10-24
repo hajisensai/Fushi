@@ -1,8 +1,9 @@
 /// 混合逻辑时钟（铁律 F）与可信时间。
 library;
 
-/// HLC = (物理毫秒, 计数器, writerId)，按字典序比较。
-class Hlc implements Comparable<Hlc> {
+/// HLC = (物理毫秒, 计数器, writerId)。事件间的先后按排序键（钳位后的 HLC + eventId）比，只在 Rust 里
+/// 算一份（native/fushi_fsrs/src/ordering.rs）；这里不提供比较。
+class Hlc {
   const Hlc(this.physical, this.counter, this.writerId);
 
   final int physical;
@@ -10,18 +11,6 @@ class Hlc implements Comparable<Hlc> {
   final String writerId;
 
   static const Hlc zero = Hlc(0, 0, '');
-
-  @override
-  int compareTo(Hlc other) {
-    final int p = physical.compareTo(other.physical);
-    if (p != 0) return p;
-    final int c = counter.compareTo(other.counter);
-    if (c != 0) return c;
-    return writerId.compareTo(other.writerId);
-  }
-
-  bool operator >(Hlc other) => compareTo(other) > 0;
-  bool operator <(Hlc other) => compareTo(other) < 0;
 
   /// 线格式：`<physical>:<counter>:<writerId>`（writerId 可含冒号，只切前两段）。
   String encode() => '$physical:$counter:$writerId';
@@ -128,11 +117,18 @@ class SrsTrustedClock {
   String? _anchorBootId;
 
   /// 同步成功、拿到服务器时间时调用。
-  void anchor({required int serverTimeMs}) {
+  ///
+  /// [atMonotonicMs]：服务器时间被观测到那一刻的单调时钟读数（[monotonicNowMs]）。服务器时间是
+  /// 一轮同步开头的探针取到的，这一轮跑完才校时：不带它就会把整轮同步的耗时算成「墙钟超前」，
+  /// 同步一久就误报「系统时间不准」，校出来的可信时间也落后同样的时长。
+  void anchor({required int serverTimeMs, int? atMonotonicMs}) {
     _anchorServerMs = serverTimeMs;
-    _anchorMonoMs = _mono();
+    _anchorMonoMs = atMonotonicMs ?? _mono();
     _anchorBootId = _bootId;
   }
+
+  /// 当前单调时钟读数，供调用方记下「服务器时间是何时取到的」再传给 [anchor]。
+  int monotonicNowMs() => _mono();
 
   /// 恢复持久化的锚点（只有同一次开机的锚点才有效）。
   void restoreAnchor({

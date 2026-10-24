@@ -16,9 +16,22 @@
 //!   ffsrs_search_corpus_set_floats / ffsrs_search_chunk_new / ffsrs_search_chunk_free /
 //!   ffsrs_search_corpus_attach / ffsrs_search_corpus_needs / ffsrs_search_corpus_match /
 //!   ffsrs_search_dupe_norm_batch
-//!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）
+//!   （Anki 搜索的逐卡求值与查重规范形，见 search.rs）/
+//!   ffsrs_history_states / ffsrs_history_select / ffsrs_import_equivalent
+//!   （卡片历史内核：有效日志选取与当前排程状态、Anki 导入判重，见 history.rs）/
+//!   ffsrs_materialize
+//!   （字段寄存器内核：修改记录 → 寄存器 → 物化视图，见 registers.rs；排序键 ordering.rs、
+//!   释义样式去重规范形 style_dedup.rs 两边共用） /
+//!   ffsrs_memory_input / ffsrs_rwkv_now_rows
+//!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）
 
+pub mod history;
+pub mod ordering;
+pub mod projection;
+pub mod registers;
 pub mod search;
+pub mod store;
+pub mod style_dedup;
 
 use std::ffi::{c_char, CStr, CString};
 use std::io::Read;
@@ -946,6 +959,199 @@ pub extern "C" fn ffsrs_search_dupe_norm_batch(
         }
         None => std::ptr::null_mut(),
     }
+}
+
+// ---------------------------------------------------------------- 卡片历史（history.rs）
+
+/// 把成功的字节结果交给调用方（[ffsrs_free_bytes] 释放），失败写错误串（[ffsrs_free_string] 释放）。
+fn bytes_out(outcome: std::thread::Result<Result<Vec<u8>, String>>, out_len: *mut usize, error_out: *mut *mut c_char) -> *mut u8 {
+    match outcome {
+        Ok(Ok(bytes)) => {
+            let boxed = bytes.into_boxed_slice();
+            unsafe { *out_len = boxed.len() };
+            Box::into_raw(boxed) as *mut u8
+        }
+        Ok(Err(e)) => {
+            set_error(error_out, &e);
+            std::ptr::null_mut()
+        }
+        Err(_) => {
+            set_error(error_out, "panic in fushi_fsrs");
+            std::ptr::null_mut()
+        }
+    }
+}
+
+unsafe fn raw_slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    if len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    }
+}
+
+/// 一批卡片历史（落库 JSON 原文）的当前状态，布局见 [history::states_from_json]。
+/// `offs` 长 `n_logs + 1`，`servers` 长 `n_logs`，`groups` 长 `n_groups + 1`。
+/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_history_states(
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    servers: *const i64,
+    n_logs: usize,
+    groups: *const u32,
+    n_groups: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) || (servers.is_null() && n_logs > 0) {
+            return Err("null argument".to_owned());
+        }
+        let (text, offs, servers, groups) = unsafe {
+            (raw_slice(text, text_len), raw_slice(offs, n_logs + 1), raw_slice(servers, n_logs), raw_slice(groups, n_groups + 1))
+        };
+        history::states_from_json(text, offs, servers, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// 一批卡片历史（列模式）的选取，布局见 [history::select_columns]。`ints` 长
+/// `n_logs × COLUMN_WORDS`，`offs` 长 `3·n_logs + 1`，`groups` 长 `n_groups + 1`。
+/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_history_select(
+    ints: *const i64,
+    n_logs: usize,
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    groups: *const u32,
+    n_groups: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) || (ints.is_null() && n_logs > 0) {
+            return Err("null argument".to_owned());
+        }
+        let (ints, text, offs, groups) = unsafe {
+            (
+                raw_slice(ints, n_logs * history::COLUMN_WORDS),
+                raw_slice(text, text_len),
+                raw_slice(offs, 3 * n_logs + 1),
+                raw_slice(groups, n_groups + 1),
+            )
+        };
+        history::select_columns(ints, text, offs, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// 记忆状态输入（列模式，排程用），布局见 [projection::memory_input_columns] / [projection::encode_memory_input]。
+/// `ints` 长 `n_logs × MEMORY_COLUMN_WORDS`（一份历史的有效日志，已排序）；`alg` 0 fsrs6 / 1 fsrs7 / 2 rwkv。
+/// 成功返回缓冲区并写 `out_len`（[ffsrs_free_bytes] 释放）；失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_memory_input(
+    ints: *const i64,
+    n_logs: usize,
+    alg: i32,
+    utc_offset_min: i32,
+    rollover_hour: i32,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || (ints.is_null() && n_logs > 0) {
+            return Err("null argument".to_owned());
+        }
+        let ints = unsafe { raw_slice(ints, n_logs * projection::MEMORY_COLUMN_WORDS) };
+        let day = projection::Day { utc_offset_min: utc_offset_min.into(), rollover_hour: rollover_hour.into() };
+        let m = projection::memory_input_columns(ints, projection::Alg::from_code(alg.into())?, &day)?;
+        Ok(projection::encode_memory_input(&m))
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// RWKV「此刻」行（ease 0），布局见 [projection::rwkv_now_rows]：`ints` 长 `n_rows × NOW_ROW_WORDS`，
+/// 输出 `n_rows × 80` 字节（packages/fushi_rwkv `RwkvRows.fromBytes`）。释放规则同上。
+#[no_mangle]
+pub extern "C" fn ffsrs_rwkv_now_rows(
+    ints: *const i64,
+    n_rows: usize,
+    utc_offset_min: i32,
+    rollover_hour: i32,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || (ints.is_null() && n_rows > 0) {
+            return Err("null argument".to_owned());
+        }
+        let ints = unsafe { raw_slice(ints, n_rows * projection::NOW_ROW_WORDS) };
+        let day = projection::Day { utc_offset_min: utc_offset_min.into(), rollover_hour: rollover_hour.into() };
+        projection::rwkv_now_rows(ints, &day)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+/// Anki 导入器入库前判重，布局见 [history::import_equivalent_any]。`offs` 长 `n_logs + 1`，
+/// `groups` 长 `n_groups + 1`。成功返回每组一个字节的缓冲区（[ffsrs_free_bytes] 释放）。
+#[no_mangle]
+pub extern "C" fn ffsrs_import_equivalent(
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    n_logs: usize,
+    groups: *const u32,
+    n_groups: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null() || offs.is_null() || groups.is_null() || (text.is_null() && text_len > 0) {
+            return Err("null argument".to_owned());
+        }
+        let (text, offs, groups) =
+            unsafe { (raw_slice(text, text_len), raw_slice(offs, n_logs + 1), raw_slice(groups, n_groups + 1)) };
+        history::import_equivalent_any(text, offs, groups)
+    }));
+    bytes_out(outcome, out_len, error_out)
+}
+
+// ---------------------------------------------------------------- 字段寄存器（registers.rs）
+
+/// 一批实体的寄存器与物化视图，布局见 [registers::materialize]。`header` 是组描述 JSON，
+/// `offs` 长 `n_items + 1`，`servers` 长 `n_items`。成功返回 JSON 结果（UTF-8，[ffsrs_free_bytes] 释放）；
+/// 失败返回空指针并写 `error_out`。
+#[no_mangle]
+pub extern "C" fn ffsrs_materialize(
+    header: *const u8,
+    header_len: usize,
+    text: *const u8,
+    text_len: usize,
+    offs: *const u32,
+    servers: *const i64,
+    n_items: usize,
+    out_len: *mut usize,
+    error_out: *mut *mut c_char,
+) -> *mut u8 {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Vec<u8>, String> {
+        if out_len.is_null()
+            || offs.is_null()
+            || header.is_null()
+            || (text.is_null() && text_len > 0)
+            || (servers.is_null() && n_items > 0)
+        {
+            return Err("null argument".to_owned());
+        }
+        let (header, text, offs, servers) = unsafe {
+            (raw_slice(header, header_len), raw_slice(text, text_len), raw_slice(offs, n_items + 1), raw_slice(servers, n_items))
+        };
+        registers::materialize(header, text, offs, servers)
+    }));
+    bytes_out(outcome, out_len, error_out)
 }
 
 #[no_mangle]

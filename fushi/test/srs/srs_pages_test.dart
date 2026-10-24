@@ -7,7 +7,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
@@ -39,6 +38,8 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionaryEntry, DictionarySearchResult;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'srs_test_support.dart' show openSrsTestStorage;
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
@@ -238,11 +239,11 @@ class _LookupApp extends AppModel {
 const String _kProfile = '01928c3e-0000-7000-8000-0000000000aa';
 
 Future<SrsDbStore> _openStore(WidgetTester tester) async {
-  final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-  addTearDown(() => tester.runAsync(db.close));
+  final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
   return (await tester.runAsync(
     () => SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: _kProfile,
       deviceId: 'test-device',
       engine: const _FakeEngine(),
@@ -1765,10 +1766,14 @@ void main() {
   });
 
   testWidgets('排程内核不可用：横幅提示，复习页不给评分', (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(() => tester.runAsync(db.close));
+    final SrsStorage srs = (await tester.runAsync(openSrsTestStorage))!;
     final SrsDbStore store = (await tester.runAsync(
-      () => SrsDbStore.open(db: db, profileUid: _kProfile, deviceId: 'd'),
+      () => SrsDbStore.open(
+        db: srs.db,
+        core: srs.core,
+        profileUid: _kProfile,
+        deviceId: 'd',
+      ),
     ))!;
     await _pumpPage(
       tester,

@@ -13,7 +13,6 @@ library;
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -22,6 +21,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
+import 'support/srs_test_storage.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000be';
 
@@ -38,21 +39,19 @@ void main() {
     );
     src.dispose();
     final Directory tmp = Directory.systemTemp.createTempSync('srs_bench_');
-    final FushiDatabase plainDb = FushiDatabase.forTesting(
-      NativeDatabase.memory(),
-    );
-    final FushiDatabase dedupDb = FushiDatabase.forTesting(
-      NativeDatabase.memory(),
-    );
+    final SrsStorage plainDb = await openTestSrsStorage();
+    final SrsStorage dedupDb = await openTestSrsStorage();
     try {
       final SrsDbStore plain = await SrsDbStore.open(
-        db: plainDb,
+        db: plainDb.db,
+        core: plainDb.core,
         profileUid: kProfile,
         deviceId: 'plain',
       );
       final Directory styleDir = Directory(p.join(tmp.path, 'media'));
       final SrsDbStore dedup = await SrsDbStore.open(
-        db: dedupDb,
+        db: dedupDb.db,
+        core: dedupDb.core,
         profileUid: kProfile,
         deviceId: 'dedup',
         styles: SrsStyleStore(styleDir),
@@ -87,8 +86,8 @@ void main() {
           ),
         ));
       }
-      Future<int> bytes(FushiDatabase db) async =>
-          (await db
+      Future<int> bytes(SrsStorage s) async =>
+          (await s.db
                   .customSelect(
                     'SELECT COALESCE(SUM(LENGTH(CAST(json AS BLOB))), 0) AS n '
                     'FROM srs_field_edits',

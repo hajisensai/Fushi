@@ -14,8 +14,10 @@
 ///   `<script>` 里的文字不碰；样式短于 [kSrsStyleDedupMinChars] 不换（一个文件 + 一行引用不划算）。
 ///   因此 `srsExpandStyles(srsDedupStyles(x).html) == x` 逐字节成立（前提：x 本身没有手写的、
 ///   能解析到样式文件的规范引用行——那样的行会被一并展开）。
-/// - 两种表示在合并语义里等价：[srsSameFieldText] 是修改记录比较「值是否相同」的口径
-///   （见 field_edit.dart 的 `_sameValue`），去重前后、去重了一半的值互相比较都按展开后的内容判定。
+/// - 两种表示在合并语义里等价：修改记录比较「值是否相同」时字段文本按去重规范形比较
+///   （native/fushi_fsrs/src/registers.rs `same_value`，Dart 侧入口 `srsSameEditValues`），去重前后、
+///   去重了一半的值互相比较都按规范形判定。规范形在 Rust 里另有一份与 [srsDedupStyles] 同算法的实现
+///   （只用于比较）；两份由固定向量 test/registers/ 与 style_dedup_test 钉齐。
 ///
 /// [kSrsStyleDedupMinChars] 与引用行的写法属于持久化格式，**冻结**：改了会让不同版本对同一份内容
 /// 算出不同的规范形。
@@ -148,12 +150,4 @@ String srsExpandStyles(
       return '$_open$css$_close';
     }),
   );
-}
-
-/// 两个字段文本按「去重规范形」是否相同：内联样式与它的引用行视为同一内容。
-/// 修改记录合并（是否冲突 / 是否 no-op）用这个口径，见 field_edit.dart。
-bool srsSameFieldText(String a, String b) {
-  if (a == b) return true;
-  if (!a.contains(_open) && !b.contains(_open)) return false;
-  return srsDedupStyles(a).html == srsDedupStyles(b).html;
 }

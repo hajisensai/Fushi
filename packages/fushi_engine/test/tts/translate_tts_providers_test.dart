@@ -6,7 +6,8 @@ import 'package:test/test.dart';
 
 void main() {
   test('parses translator page session parameters', () {
-    const String html = '<div id="rich_tta" data-iid="translator.5023"></div>'
+    const String html =
+        '<div id="rich_tta" data-iid="translator.5023"></div>'
         '<script>_G={IG:"ABC123DEF",Region:"CN"};'
         'var params_AbusePreventionHelper = [1791710131935,"tok-en_9",3600000];'
         '</script>';
@@ -33,11 +34,7 @@ void main() {
     ]) {
       expect(d.category, TtsProviderCategory.online);
       expect(d.capabilities.needsCredential, isFalse);
-      expect(
-        d.params.single.kind,
-        TtsParamKind.voice,
-        reason: d.id,
-      );
+      expect(d.params.single.kind, TtsParamKind.voice, reason: d.id);
       expect(
         d.validate(TtsVoicePreset(id: 'p', providerId: d.id, name: 'n')),
         isEmpty,

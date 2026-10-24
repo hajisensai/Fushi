@@ -806,16 +806,7 @@ void _requireOneVideoMetadataOwner({
   AnidbFileIdentities,
   VideoEpisodeBindingOverrides,
   PendingMineQueue,
-  SrsEntities,
-  SrsFieldEdits,
-  SrsReviewLogs,
-  SrsUnknownEvents,
-  SrsEventLocal,
-  SrsLocalState,
-  SrsNotesCache,
-  SrsCardsCache,
   VideoSubtitleGlossaries,
-  SrsSentBatches,
   MediaPrivacyFlags,
   LibraryOrganizeRuns,
   LibraryOrganizeChanges,
@@ -2264,20 +2255,10 @@ class FushiDatabase extends _$FushiDatabase
               await _backfillProfileUids();
               await _ensureProfileUidIndex();
             }
-            for (final TableInfo<Table, Object?> t in <TableInfo<Table, Object?>>[
-              srsEntities,
-              srsFieldEdits,
-              srsReviewLogs,
-              srsUnknownEvents,
-              srsEventLocal,
-              srsLocalState,
-              srsNotesCache,
-              srsCardsCache,
-            ]) {
-              if (!await _tableExists(t.actualTableName)) {
-                await m.createTable(t);
-              }
-            }
+            // srs_* 表从 2026-10-23 起归 Rust 独占的 srs.db（docs/specs/2026-10-23-srs-rust-store.md），
+            // 不再在 Drift 里声明；老库仍按当年的形状建出来，由 SrsDbStore 打开前的一次性搬迁
+            // （fushi_engine srs_legacy_store_migration.dart）搬走后删除。
+            await _createLegacySrsTables(kLegacySrsV117Tables);
             await _ensureSrsIndexes();
           }
           if (from < 118) {
@@ -2354,8 +2335,8 @@ class FushiDatabase extends _$FushiDatabase
             // （云盘 / 互联 host / 本机 host 目录），到最近同步过的目录都确认为止。设备本地、
             // 不进备份、无外键；存量库没有留存可迁（旧版本冻结中的批次由 SrsDbStore 读本机
             // 状态时搬进来）。
-            if (!await _tableExists('srs_sent_batches')) {
-              await m.createTable(srsSentBatches);
+            if (await _tableExists('srs_entities')) {
+              await _createLegacySrsTables(const <String>['srs_sent_batches']);
             }
           }
           if (from < 122) {
@@ -2372,7 +2353,9 @@ class FushiDatabase extends _$FushiDatabase
             // （fushi_engine `SrsDbStore._upgradeCaches`）。幂等守卫同 v119。
             if (await _tableExists('srs_cards_cache') &&
                 !await _columnExists('srs_cards_cache', 'new_position')) {
-              await m.addColumn(srsCardsCache, srsCardsCache.newPosition);
+              await customStatement(
+                'ALTER TABLE srs_cards_cache ADD COLUMN new_position INTEGER NULL',
+              );
             }
           }
           if (from < 124) {

@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_backup_snapshot.dart';
 import 'package:fushi_engine/srs/srs_backup_store.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -15,23 +15,27 @@ import 'support/srs_fake_engine.dart';
 
 const String kProfile = '01928c3e-0000-7000-8000-0000000000c3';
 
-/// 自动备份不再占着主数据库连接：库在文件上时快照在后台 isolate 的独立只读连接里读
-/// （srs_backup_snapshot.dart）。这里用真实的文件库（WAL），走生产路径。
+/// 自动备份不再占着 SRS 的写连接：快照在后台 isolate 里、srs.db 上另开的一条 Rust 只读连接里读
+/// （[SrsCore.beginRead]，srs_backup_snapshot.dart）。这里用真实的文件库（WAL），走生产路径。
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   int t = DateTime.utc(2026, 10, 23, 9).millisecondsSinceEpoch;
   late Directory tmp;
-  late FushiDatabase db;
+  late SrsStorage srs;
   late SrsDbStore store;
   late SrsBackupStore backups;
 
   setUp(() async {
     t = DateTime.utc(2026, 10, 23, 9).millisecondsSinceEpoch;
     tmp = await Directory.systemTemp.createTemp('srs_backup_snapshot_test_');
-    db = FushiDatabase.atFile(p.join(tmp.path, 'fushi.db'));
+    srs = await SrsStorage.open(
+      path: p.join(tmp.path, kSrsDatabaseFileName),
+      inline: true,
+    );
     store = await SrsDbStore.open(
-      db: db,
+      db: srs.db,
+      core: srs.core,
       profileUid: kProfile,
       deviceId: 'snap',
       engine: const SrsFakeEngine(),
@@ -48,7 +52,7 @@ void main() {
     );
   });
   tearDown(() async {
-    await db.close();
+    await srs.close();
     await tmp.delete(recursive: true);
   });
 
@@ -73,8 +77,7 @@ void main() {
             .toList()
       : const <String>[];
 
-  test('文件库走后台独立连接：备份内容、计数、指纹与主连接上读的逐项相同', () async {
-    expect(await store.databaseFilePath(), p.join(tmp.path, 'fushi.db'));
+  test('后台独立只读连接：备份内容、计数、指纹与写连接上读的逐项相同', () async {
     for (final String w in <String>['雪', '雨', '風']) {
       await addReviewed(w);
     }
@@ -111,7 +114,7 @@ void main() {
     final String events = p.join(tmp.path, 'events.tmp');
     final String times = p.join(tmp.path, 'times.tmp');
     final SrsBackupSnapshotReader reader = await SrsBackupSnapshotReader.start(
-      dbPath: (await store.databaseFilePath())!,
+      core: srs.core,
       profileUid: kProfile,
       eventsPath: events,
       serverTimesPath: times,
@@ -139,7 +142,7 @@ void main() {
     }
     final String events = p.join(tmp.path, 'events.tmp');
     final SrsBackupSnapshotReader reader = await SrsBackupSnapshotReader.start(
-      dbPath: (await store.databaseFilePath())!,
+      core: srs.core,
       profileUid: kProfile,
       eventsPath: events,
       serverTimesPath: p.join(tmp.path, 'times.tmp'),
@@ -165,10 +168,11 @@ void main() {
     await addReviewed('月').timeout(const Duration(seconds: 5));
   });
 
-  test('库文件打不开：start 原样抛错，不挂起', () async {
+  test('开不了只读会话（库已关）：start 原样抛错，不挂起', () async {
+    final SrsCore closed = SrsCore.open(p.join(tmp.path, 'closed.db'))..close();
     await expectLater(
       SrsBackupSnapshotReader.start(
-        dbPath: p.join(tmp.path, 'missing', 'nope.db'),
+        core: closed,
         profileUid: kProfile,
         eventsPath: p.join(tmp.path, 'e.tmp'),
         serverTimesPath: p.join(tmp.path, 's.tmp'),

@@ -9,8 +9,7 @@ enum BackupTableFate {
   /// 其余照常出境（共享表、带每条内容选择的主表、偏好等）。
   rowLevel,
 
-  /// 永不出境：导出时清空，覆盖导入时从本机 `pre-restore.bak` 回灌（或按
-  /// [_srsDeviceLocalDiscardTables] 的语义清空）。
+  /// 永不出境：导出时清空，覆盖导入时从本机 `pre-restore.bak` 回灌。
   deviceLocal,
 
   /// 私人使用痕迹：任何组合下导出时都清空。
@@ -283,23 +282,14 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
     BackupCategory.statistics,
   }),
 
-  // ── 复习（与 _srsDataTables 一致）──
-  'srs_entities': BackupTableRule.follows(<BackupCategory>{BackupCategory.srs}),
-  'srs_field_edits': BackupTableRule.follows(<BackupCategory>{
-    BackupCategory.srs,
-  }),
-  'srs_review_logs': BackupTableRule.follows(<BackupCategory>{
-    BackupCategory.srs,
-  }),
-  'srs_unknown_events': BackupTableRule.follows(<BackupCategory>{
-    BackupCategory.srs,
-  }),
+  // 复习（SRS）的表不在主库里：归 Rust 的 srs.db，随「复习」类别整份快照进 zip 的 `srs.db`
+  // 条目（docs/specs/2026-10-23-srs-rust-store.md §4，见 backup_srs_tables.dart）。
 
   // ── 私人使用痕迹 ──
   'search_history_items': BackupTableRule.alwaysStripped(),
   'dictionary_history': BackupTableRule.alwaysStripped(),
 
-  // ── 设备本地（= _deviceLocalTables ∪ _srsDeviceLocalDiscardTables）──
+  // ── 设备本地（= _deviceLocalTables）──
   'clipboard_history': BackupTableRule.deviceLocal(),
   'video_download_subscription_items': BackupTableRule.deviceLocal(),
   'video_download_job_subtitles': BackupTableRule.deviceLocal(),
@@ -318,12 +308,6 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'update_feed_entries': BackupTableRule.deviceLocal(),
   'manga_download_jobs': BackupTableRule.deviceLocal(),
   'pending_mine_queue': BackupTableRule.deviceLocal(),
-  'srs_event_local': BackupTableRule.deviceLocal(),
-  'srs_local_state': BackupTableRule.deviceLocal(),
-  'srs_notes_cache': BackupTableRule.deviceLocal(),
-  'srs_cards_cache': BackupTableRule.deviceLocal(),
-  // v121：本机已冻结批次留存（SRS 多目录同步），设备本地、恢复后清空。
-  'srs_sent_batches': BackupTableRule.deviceLocal(),
   // v124：AI 整理记录（本机做过哪些整理、供撤销），设备本地。
   'library_organize_runs': BackupTableRule.deviceLocal(),
   'library_organize_changes': BackupTableRule.deviceLocal(),
@@ -340,9 +324,7 @@ Map<String, List<String>> get backupNamedTableListsForTesting =>
     <String, List<String>>{
       'deviceLocal': _deviceLocalTables,
       'deviceLocalParentFirst': _deviceLocalTablesParentFirst,
-      'srsDeviceLocalDiscard': _srsDeviceLocalDiscardTables,
       'statistics': _statisticsTables,
-      'srsData': _srsDataTables,
     };
 
 /// 按 [backupTableRules] 清空导出副本里**必须不随包**的表：归属类别全部未勾选

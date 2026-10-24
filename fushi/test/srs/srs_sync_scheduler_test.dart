@@ -203,6 +203,45 @@ void main() {
     expect(notices, <SrsSyncNotice>[SrsSyncNotice.clockSkew]);
   });
 
+  test('一轮同步跑很久：系统时间准就不提示，可信时间不落后整轮耗时', () async {
+    // 服务器时间是一轮开头的探针取到的；整轮跑完才校时。校时若用跑完时的单调时钟，
+    // 30 分钟的一轮会被算成「墙钟超前 30 分钟」→ 误报「系统时间不准」。
+    final SrsTestClock clock = SrsTestClock(
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    final (FushiDatabase db2, SrsDbStore slow) = await openSrsTestStore(
+      deviceId: 'slow',
+      clock: clock,
+    );
+    addTearDown(db2.close);
+    const Duration roundTook = Duration(minutes: 30);
+    final SrsSyncScheduler s = SrsSyncScheduler(
+      readStore: () async => slow,
+      channels: (Future<void> Function(SyncAssetStore) body) async {
+        await body(LocalDirectoryAssetStore(root));
+        return (ran: 1, errors: const <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore b) async => 'local:${root.path}',
+      onDataChanged: () => changed++,
+      onNotice: notices.add,
+      runner: (SyncAssetStore backend, SrsDbStore st, String key) async {
+        final SrsSyncReport r = await srsDefaultSyncRunner(backend, st, key);
+        clock.advance(roundTook);
+        return r;
+      },
+    );
+    final SrsSyncReport r = await s.syncWithBackend(
+      LocalDirectoryAssetStore(root),
+    );
+    expect(r.error, isNull);
+    expect(slow.trustedClock.isAnchored, isTrue);
+    expect(notices, isEmpty);
+    expect(
+      slow.trustedClock.wallSkewMs!.abs(),
+      lessThan(const Duration(minutes: 1).inMilliseconds),
+    );
+  });
+
   test('进复习 tab 的节流：60 秒内第二次跳过', () async {
     DateTime now = DateTime(2026, 10, 15, 10);
     int runs = 0;

@@ -1,12 +1,14 @@
-/// 复习统计的装载：从 [SrsDbStore]（当前 profile）一次读出日志、卡片缓存、笔记与
+/// 复习统计的装载：从 [SrsDbStore]（当前 profile）一次读出有效复习投影、卡片缓存、笔记与
 /// 牌组，归一成 [SrsStatsData]，另附牌组 / 搜索筛选用的索引 [SrsStatsIndex]。
 ///
-/// 只读：不写任何事件、不刷新缓存。日志按卡用 [SrsCardHistory] 判有效。
+/// 只读：不写任何事件、不刷新缓存。复习记录读 srs.db 的 `SrsStatReviews`（有效复习投影，缓存刷新时由
+/// Rust 按归属组的合并历史产出，见 `SrsDbStore._refreshStatProjection`）的定长列，不再每次装载都读全部
+/// 复习日志重放历史（BUG-3772）。
 library;
 
-import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -102,34 +104,19 @@ Future<SrsStatsBundle> loadSrsStats(
   SrsDayContext? day,
   int? nowMs,
 }) async {
-  final FushiDatabase db = store.db;
+  final SrsDatabase db = store.db;
   final SrsDayContext dayCtx = day ?? await store.dayContext();
   final int now = nowMs ?? store.now().$1;
   final int today = dayCtx.dayIndexOf(now);
   final SrsDeckTree tree = await store.deckTree();
 
-  final List<SrsReviewLogRow> logRows = await (db.select(
-    db.srsReviewLogs,
-  )..where((t) => t.profileUid.equals(store.profileUid))).get();
-  final Map<String, List<SrsReviewLog>> logsByCard =
-      <String, List<SrsReviewLog>>{};
-  for (int i = 0; i < logRows.length; i++) {
-    final SrsReviewLogRow r = logRows[i];
-    (logsByCard[r.cardId] ??= <SrsReviewLog>[]).add(
-      SrsReviewLog.fromJson(
-        (jsonDecode(r.json) as Map).cast<String, Object?>(),
-      ),
-    );
-    if (i % 4000 == 3999) await Future<void>.delayed(Duration.zero);
-  }
-
-  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后隐藏的旧卡）的日志算到继承它历史的可见卡上，
-  // 与复习时用的 [SrsDbStore.history] 同一血统：否则迁移过来的卡在牌组统计里一条复习都没有。
-  for (final MapEntry<String, String> e
-      in (await store.historyOwnerIndex()).entries) {
-    final List<SrsReviewLog>? moved = logsByCard.remove(e.key);
-    if (moved != null) (logsByCard[e.value] ??= <SrsReviewLog>[]).addAll(moved);
-  }
+  // 前身卡（更改笔记类型 / 旧 Lapis 迁到 Fushi 卡片后隐藏的旧卡）的复习已在缓存刷新时记到继承它历史的
+  // 可见卡上（投影的归属卡，见 `SrsDbStore._refreshStatProjection`），并按合并历史分类。
+  final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
+  history = srsStatsFromProjection(
+    await loadSrsStatProjection(db, store.profileUid),
+    dayCtx,
+  );
 
   final List<SrsCardCacheRow> cardRows = <SrsCardCacheRow>[
     for (final SrsCardCacheRow c in await store.allCardRows())
@@ -162,20 +149,6 @@ Future<SrsStatsBundle> loadSrsStats(
         return tree.schedulingConfig(id, defaultsOf: engine?.defaultParams);
       });
 
-  final List<SrsStatReview> reviews = <SrsStatReview>[];
-  final List<SrsStatMaturityEvent> maturity = <SrsStatMaturityEvent>[];
-  final Map<String, SrsMemory?> memoryByCard = <String, SrsMemory?>{};
-  int processed = 0;
-  for (final MapEntry<String, List<SrsReviewLog>> e in logsByCard.entries) {
-    final SrsCardHistory h = SrsCardHistory(e.value);
-    final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-    one = srsStatsFromHistory(h, dayCtx, cardId: e.key);
-    reviews.addAll(one.reviews);
-    maturity.addAll(one.maturity);
-    memoryByCard[e.key] = h.state.memory;
-    if (++processed % 1000 == 0) await Future<void>.delayed(Duration.zero);
-  }
-
   final int cardCount = cardRows.length;
   final List<SrsStatCardState> states = List<SrsStatCardState>.filled(
     cardCount,
@@ -189,11 +162,10 @@ Future<SrsStatsBundle> loadSrsStats(
   for (int i = 0; i < cardCount; i++) {
     final SrsCardCacheRow c = cardRows[i];
     final SrsStatCardState state = srsStatCardStateOf(c.queue, c.scheduledDays);
-    final SrsMemory? memory =
-        memoryByCard[c.id] ??
-        (c.stability != null && c.difficulty != null
-            ? SrsMemory(stability: c.stability!, difficulty: c.difficulty!)
-            : null);
+    // 卡片缓存里的记忆状态就是有效历史重放的结果（同一次重算写的）。
+    final SrsMemory? memory = c.stability != null && c.difficulty != null
+        ? SrsMemory(stability: c.stability!, difficulty: c.difficulty!)
+        : null;
     states[i] = state;
     memories[i] = memory;
     if (engine != null &&
@@ -288,9 +260,9 @@ Future<SrsStatsBundle> loadSrsStats(
     data: SrsStatsData(
       day: dayCtx,
       nowMs: now,
-      reviews: reviews,
+      reviews: history.reviews,
       cards: cards,
-      maturityEvents: maturity,
+      maturityEvents: history.maturity,
       sources: <String, SrsSourceRef?>{
         for (final SrsNoteView n in notes.values) n.id: n.source,
       },
@@ -319,4 +291,35 @@ class _RetrievabilityGroup {
     memories.add(memory);
     elapsedDays.add(elapsed);
   }
+}
+
+/// 读出 [profileUid] 的有效复习投影（srs.db 的 `SrsStatReviews`）。只取定长列：这是统计页随复习量
+/// 线性增长的那一段。
+Future<List<SrsStatProjection>> loadSrsStatProjection(
+  SrsDatabase db,
+  String profileUid,
+) async {
+  final $SrsStatReviewsTable t = db.srsStatReviews;
+  final List<SrsStatReviewRow> rows =
+      await (db.select(t)
+            ..where(($SrsStatReviewsTable x) => x.profileUid.equals(profileUid))
+            ..orderBy(<OrderClauseGenerator<$SrsStatReviewsTable>>[
+              ($SrsStatReviewsTable x) => OrderingTerm.asc(x.occurredAt),
+            ]))
+          .get();
+  const List<SrsStatReviewKind> kinds = SrsStatReviewKind.values;
+  return <SrsStatProjection>[
+    for (final SrsStatReviewRow r in rows)
+      SrsStatProjection(
+        logId: r.logId,
+        cardId: r.cardId,
+        occurredAt: r.occurredAt,
+        utcOffsetMin: r.utcOffsetMin,
+        rating: r.rating,
+        kind: kinds[r.kind.clamp(0, kinds.length - 1)],
+        durationMs: r.durationMs,
+        prevDueDay: r.prevDueDay,
+        maturityDelta: r.maturityDelta,
+      ),
+  ];
 }

@@ -11,6 +11,10 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 ///
 /// 迁移全部幂等守卫：v116 库升级后列 / 表 / 索引齐全、存量 profile 行有 uid；
 /// 再开一次（或表已存在时重跑该步）不抛异常、不改既有 uid。
+///
+/// 2026-10-23 起 SRS 归 Rust 的 srs.db（docs/specs/2026-10-23-srs-rust-store.md）：新建的主库
+/// 不再有 srs_* 表；迁移阶梯上的老库仍按当年的形状建出它们（`kLegacySrsTableDdl`），好让
+/// app 打开 srs.db 时的一次性搬迁原样搬走。
 void main() {
   final RegExp uuidV7 = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
@@ -72,7 +76,7 @@ void main() {
   void downgradeToV116(String path) {
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     for (final String t in srsTables) {
-      raw.execute('DROP TABLE $t');
+      raw.execute('DROP TABLE IF EXISTS $t');
     }
     raw.execute('DROP INDEX idx_profiles_uid');
     raw.execute('ALTER TABLE profiles DROP COLUMN uid');
@@ -86,8 +90,8 @@ void main() {
   }
 
   test(
-    'v116 → v117 adds profiles.uid (backfilled UUIDv7), eight srs tables and '
-    'their indexes; reopening is idempotent',
+    'v116 → v117 adds profiles.uid (backfilled UUIDv7) and still builds the '
+    'eight legacy srs tables with their indexes; reopening is idempotent',
     () async {
       final Directory directory = Directory.systemTemp.createTempSync('srs117');
       addTearDown(() => directory.deleteSync(recursive: true));
@@ -211,6 +215,25 @@ void main() {
       expect(uidsAfter, uidsByName, reason: '重跑迁移步不得改写已有 uid');
       expect(namesOf(probe2, 'table'), containsAll(srsTables));
       expect(namesOf(probe2, 'index'), containsAll(srsIndexes));
+    },
+  );
+
+  test(
+    'a freshly created main database has no srs tables (they live in srs.db)',
+    () async {
+      final Directory directory = Directory.systemTemp.createTempSync(
+        'srs117new',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final String path = await createDbAt(directory);
+      final sqlite.Database probe = sqlite.sqlite3.open(path);
+      addTearDown(probe.dispose);
+      expect(
+        namesOf(probe, 'table').where((String t) => t.startsWith('srs_')),
+        isEmpty,
+      );
+      expect(columnsOf(probe, 'profiles'), contains('uid'));
+      expect(namesOf(probe, 'index'), contains('idx_profiles_uid'));
     },
   );
 

@@ -116,7 +116,10 @@ void main() {
         ...buildMp3(frames: 10, padding: true),
         ...buildMp3(frames: 10),
       ]);
-      expect(probeTtsAudioDurationMs(mixed, TtsAudioFormat.mp3), expectedMs(30));
+      expect(
+        probeTtsAudioDurationMs(mixed, TtsAudioFormat.mp3),
+        expectedMs(30),
+      );
     });
 
     test('ID3v2 tag is skipped', () {
@@ -141,7 +144,10 @@ void main() {
         ...buildMp3(frames: 20),
       ]);
       expect(sniffTtsAudioFormat(bytes), TtsAudioFormat.mp3);
-      expect(probeTtsAudioDurationMs(bytes, TtsAudioFormat.mp3), expectedMs(20));
+      expect(
+        probeTtsAudioDurationMs(bytes, TtsAudioFormat.mp3),
+        expectedMs(20),
+      );
     });
 
     test('no frames → null', () {

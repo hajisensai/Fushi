@@ -10,6 +10,61 @@ import 'package:fushi/src/utils/misc/download_plan.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/segmented_downloader.dart';
 
+/// 虚拟网络时间：让「一家快一家慢」不再靠真睡出来。
+///
+/// 每块数据在 `开流时刻 + 该来源延迟` 的**虚拟**时刻到达；到达顺序只由时间戳（同刻按
+/// 登记先后）决定，由测试显式 [fireNext] 推进，与 CI runner 忙不忙、写盘快不快无关。
+/// 下载器经 `monotonicClock` 读 [now]，于是它量到的每片耗时就是精确已知的虚拟延迟。
+class _VirtualNetwork {
+  Duration now = Duration.zero;
+
+  final List<_Arrival> _pending = <_Arrival>[];
+
+  /// 累计登记过的到达数（含已触发的）。
+  int registered = 0;
+
+  Completer<void> _changed = Completer<void>();
+
+  /// 登记一块在 [delay] 后（虚拟时间）到达的数据，返回到达时完成的 future。
+  Future<void> arriveAfter(Duration delay) {
+    final Completer<void> arrival = Completer<void>();
+    _pending.add(_Arrival(now + delay, registered, arrival));
+    registered += 1;
+    poke();
+    return arrival.future;
+  }
+
+  bool get hasPending => _pending.isNotEmpty;
+
+  /// 把虚拟时钟推进到最早的那次到达并放行它。
+  void fireNext() {
+    _pending.sort((_Arrival a, _Arrival b) {
+      final int byTime = a.at.compareTo(b.at);
+      return byTime != 0 ? byTime : a.seq.compareTo(b.seq);
+    });
+    final _Arrival next = _pending.removeAt(0);
+    if (next.at > now) now = next.at;
+    next.gate.complete();
+  }
+
+  /// 等下一次状态变化（新到达登记，或外部 [poke]）。
+  Future<void> changed() async {
+    await _changed.future;
+    _changed = Completer<void>();
+  }
+
+  void poke() {
+    if (!_changed.isCompleted) _changed.complete();
+  }
+}
+
+class _Arrival {
+  _Arrival(this.at, this.seq, this.gate);
+  final Duration at;
+  final int seq;
+  final Completer<void> gate;
+}
+
 /// 假服务器：按 URL 路由资源，支持 Range，可注入「忽略 Range」「超发字节」「404」
 /// 「首字节后断流」等真实世界里会遇到的坏行为。
 class _FakeHost {
@@ -29,8 +84,13 @@ class _FakeHost {
   /// 这些 URL 回 206 但不带 Content-Range（畸形响应）。
   final Set<String> omitsContentRange = <String>{};
 
-  /// 这些 URL 每块投递前先等一会儿——用来做出「一家快一家慢」的真实差距。
+  /// 这些 URL 每块投递前先等一会儿——用来做出「一家快一家慢」的差距。
+  /// 设了 [network] 时等的是**虚拟**时间（每块都经它排队，未列出的 URL 延迟 0），
+  /// 否则是真实 `Future.delayed`。
   final Map<String, Duration> slowUrls = <String, Duration>{};
+
+  /// 非空时所有数据块按虚拟网络时间投递，见 [_VirtualNetwork]。
+  _VirtualNetwork? network;
 
   /// 每个 URL 收到的 Range 头，按序记录。
   final List<MapEntry<String, String?>> requests =
@@ -132,7 +192,11 @@ class _FakeHost {
           await gate.future;
           continue;
         }
-        if (delay != null && delay > Duration.zero) {
+        final _VirtualNetwork? net = network;
+        if (net != null) {
+          await net.arriveAfter(delay ?? Duration.zero);
+          if (cancelled) break;
+        } else if (delay != null && delay > Duration.zero) {
           await Future<void>.delayed(delay);
           if (cancelled) break;
         }
@@ -185,6 +249,7 @@ void main() {
     bool Function()? isCancelled,
     int maxAttemptsPerPart = 3,
     Duration Function(int attempt)? retryBackoff,
+    Duration Function()? monotonicClock,
   }) =>
       SegmentedDownloader(
         plan: plan,
@@ -198,6 +263,7 @@ void main() {
         flushInterval: 64,
         // 单测不空等真实退避。
         retryBackoff: retryBackoff ?? (int _) => Duration.zero,
+        monotonicClock: monotonicClock,
       );
 
   group('平台前提', () {
@@ -237,17 +303,26 @@ void main() {
       // 这条用例钉的是「哪个快用哪个」。选源以前是 `(片序号 + 重试次数) % 来源数`
       // ——片和源静态绑定，12 片两家就是雷打不动的 6 : 6，整包时长被慢的那家决定。
       // 改成按实测吞吐派活之后，快的那家必须明显多干。
+      //
+      // 快慢差距走虚拟网络时间，不走真实墙钟：以前慢源真睡 25ms → 120ms，下载器用
+      // 真 Stopwatch 量，CI runner 一忙，快源每片的写盘 / 落进度耗时就和慢源的网络
+      // 延迟混成同一量级，派活退化成 6 : 6（develop@a0c71341、@9ed8bd9d 两次实测）。
+      // 现在每片耗时精确已知（快 1ms、慢 120ms），到达顺序由测试逐个放行，结果不随
+      // 调度漂移。
       const int partSize = 4096;
       const int partCount = 12;
+      const int concurrency = 4;
       final Uint8List body = _payload(partSize * partCount);
       const String fast = 'https://fast/pack.zip';
       const String slow = 'https://slow/pack.zip';
+      final _VirtualNetwork net = _VirtualNetwork();
       final _FakeHost host = _FakeHost()
-        ..chunkSize = partSize // 一片一块，慢的那家每片正好吃一次延迟
+        ..network = net
+        // 一片一块：每个请求恰好一次到达。
+        ..chunkSize = partSize
         ..resources[fast] = body
         ..resources[slow] = body
-        // 慢源只慢 25ms 时，CI runner 一忙快源也能慢到同一量级，派活退化成 6 : 6
-        // （develop@a0c71341 实测）。差距拉到 120ms 让「按吞吐派活」与调度噪声分得开。
+        ..slowUrls[fast] = const Duration(milliseconds: 1)
         ..slowUrls[slow] = const Duration(milliseconds: 120);
 
       final DownloadPlan plan = DownloadPlan.ranged(
@@ -258,23 +333,53 @@ void main() {
       );
       expect(plan.parts.length, partCount);
 
-      final File out = await build(plan, host).download();
+      bool finished = false;
+      final SegmentedDownloader downloader = build(
+        plan,
+        host,
+        concurrency: concurrency,
+        monotonicClock: () => net.now,
+      );
+      final Future<File> job = downloader.download().whenComplete(() {
+        finished = true;
+        net.poke();
+      });
+
+      // 每放行一块（= 一片下完），都先等空出来的那个 worker 把下一片的请求登记上，
+      // 再放行下一块。于是「谁先完成、完成时账本里是什么」完全由虚拟时间决定。
+      int fired = 0;
+      while (!finished) {
+        final int expected = math.min(partCount, fired + concurrency);
+        if (net.registered < expected || !net.hasPending) {
+          await net.changed();
+          continue;
+        }
+        net.fireNext();
+        fired += 1;
+      }
+      final File out = await job;
       expect(out.readAsBytesSync(), body, reason: '择快不能以下错字节为代价');
 
       int served(String url) => host.requests
           .where((MapEntry<String, String?> r) => r.key == url)
           .length;
+      expect(served(fast) + served(slow), partCount, reason: '无失败重试');
       expect(
         served(fast),
         greaterThan(served(slow)),
         reason: '静态轮换会给出 6 : 6；按吞吐派活必须偏向快的那家',
       );
       expect(
+        served(fast),
+        greaterThanOrEqualTo(2 * served(slow)),
+        reason: '快源每片 1ms、慢源 120ms：快的那家至少要干慢的两倍',
+      );
+      expect(
         served(slow),
         greaterThan(0),
         reason: '慢的那家仍要分到片：多源并拉的总吞吐是各家之和，不该被掐掉',
       );
-    });
+    }, timeout: const Timeout(Duration(seconds: 60)));
   });
 
   group('并发分片下载', () {
@@ -801,16 +906,15 @@ void main() {
         totalBytes: body.length,
         partSize: 100,
       );
-      bool cancelled = false;
+      // 第一片收到一部分之后才取消。以前是「真睡 5ms 再置位」：机器快时 5ms 内
+      // 10 片可能已下完（不抛取消），机器慢时可能一个字节都没收——都与被测语义无关。
+      // 改成按已投递字节触发，取消点确定地落在第一片中途。
       final Future<File> future = build(
         plan,
         host,
         concurrency: 1,
-        isCancelled: () => cancelled,
+        isCancelled: () => host.deliveredBytes >= 50,
       ).download();
-      // 让第一片开跑再取消。
-      await Future<void>.delayed(const Duration(milliseconds: 5));
-      cancelled = true;
 
       await expectLater(
         future,

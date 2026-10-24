@@ -35,18 +35,12 @@ class SrsMediaSyncReport {
 
 /// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
 ///
-/// 字段值按页从修改记录里读（[SrsDbStore.forEachNoteFieldValuePage]，生效值口径），不物化笔记。
-/// 不按 [SrsDbStore.changeFingerprint] 缓存：存量样式去重（compactStoredStyles）改写字段里的
-/// 样式引用而不动指纹，缓存会漏掉新的共享样式文件。
+/// 笔记字段的引用读笔记缓存的 `media_refs` 列（[SrsDbStore.noteMediaRefs]）：它随笔记缓存同一次刷新
+/// 算出（新事件、同步并入、恢复、存量样式去重 compactStoredStyles 改写字段后都会刷新这条笔记），
+/// 每轮媒体同步（host 收到对端写入去抖 3 秒就跑一轮）不再逐页读全部修改记录解析字段值。
+/// 字段有并发候选值时按物化的生效值算（多算一个候选值引用的文件只是多下载一个，不会少）。
 Future<Set<String>> srsReferencedMedia(SrsDbStore store) async {
-  final Set<String> out = <String>{};
-  await store.forEachNoteFieldValuePage((List<String> values) async {
-    for (final String v in values) {
-      out.addAll(srsMediaRefsIn(v));
-      // 释义样式去重的共享样式文件（`_fushi_style_<sha1>.css`，见 srs_style_store.dart）。
-      out.addAll(srsStyleRefsIn(v));
-    }
-  }, currentOnly: true);
+  final Set<String> out = await store.noteMediaRefs();
   for (final SrsNoteTypeView t in await store.noteTypes()) {
     for (final SrsTemplateDef tpl in t.templates) {
       out.addAll(srsMediaRefsIn(tpl.front, includeStatic: true));

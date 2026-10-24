@@ -78,8 +78,10 @@ void main() {
 
   group('splitHostPort / rewriteUdpTrackerHost', () {
     test('splitHostPort', () {
-      expect(splitHostPort('dht.libtorrent.org:25401'),
-          (host: 'dht.libtorrent.org', port: 25401));
+      expect(splitHostPort('dht.libtorrent.org:25401'), (
+        host: 'dht.libtorrent.org',
+        port: 25401,
+      ));
       expect(splitHostPort('host'), isNull);
       expect(splitHostPort('host:0'), isNull);
       expect(splitHostPort('host:70000'), isNull);
@@ -89,12 +91,16 @@ void main() {
     test('only udp:// trackers with a port are rewritten', () {
       expect(
         rewriteUdpTrackerHost(
-            'udp://tracker.opentrackr.org:1337/announce', '93.158.213.92'),
+          'udp://tracker.opentrackr.org:1337/announce',
+          '93.158.213.92',
+        ),
         'udp://93.158.213.92:1337/announce',
       );
       expect(
         rewriteUdpTrackerHost(
-            'http://nyaa.tracker.wf:7777/announce', '1.2.3.4'),
+          'http://nyaa.tracker.wf:7777/announce',
+          '1.2.3.4',
+        ),
         isNull,
       );
       expect(rewriteUdpTrackerHost('udp://noport/announce', '1.2.3.4'), isNull);
@@ -126,72 +132,80 @@ void main() {
           'https://good.example/resolve',
         ],
       );
-      expect(await doh.resolveA('router.bittorrent.com'),
-          <String>['87.98.162.88']);
+      expect(await doh.resolveA('router.bittorrent.com'), <String>[
+        '87.98.162.88',
+      ]);
       expect(seen.map((Uri u) => u.host), <String>[
         'bad.example',
         'good.example',
       ]);
-      expect(seen.last.queryParameters,
-          <String, String>{'name': 'router.bittorrent.com', 'type': 'A'});
+      expect(seen.last.queryParameters, <String, String>{
+        'name': 'router.bittorrent.com',
+        'type': 'A',
+      });
     });
 
     test('IP literal returned without any request', () async {
       final DohResolver doh = DohResolver(
         client: MockClient(
-            (http.Request request) async => fail('should not hit network')),
+          (http.Request request) async => fail('should not hit network'),
+        ),
       );
       expect(await doh.resolveA('1.2.3.4'), <String>['1.2.3.4']);
     });
   });
 
   group('resolveFakeIpTorrentBypass', () {
-    test('rewrites DHT bootstrap + udp trackers, skips unresolvable / http',
-        () async {
-      final Map<String, List<String>> zone = <String, List<String>>{
-        'router.bittorrent.com': <String>['67.215.246.10'],
-        'dht.transmissionbt.com': <String>[
-          '87.98.162.88',
-          '212.129.33.59',
-          '9.9.9.9'
-        ],
-        'tracker.opentrackr.org': <String>['93.158.213.92'],
-      };
-      final MockClient client = MockClient((http.Request request) async {
-        final List<String> ips =
-            zone[request.url.queryParameters['name']] ?? const <String>[];
-        return http.Response(
-          jsonEncode(<String, Object>{
-            'Answer': <Object>[
-              for (final String ip in ips)
-                <String, Object>{'type': 1, 'data': ip},
-            ],
-          }),
-          200,
+    test(
+      'rewrites DHT bootstrap + udp trackers, skips unresolvable / http',
+      () async {
+        final Map<String, List<String>> zone = <String, List<String>>{
+          'router.bittorrent.com': <String>['67.215.246.10'],
+          'dht.transmissionbt.com': <String>[
+            '87.98.162.88',
+            '212.129.33.59',
+            '9.9.9.9',
+          ],
+          'tracker.opentrackr.org': <String>['93.158.213.92'],
+        };
+        final MockClient client = MockClient((http.Request request) async {
+          final List<String> ips =
+              zone[request.url.queryParameters['name']] ?? const <String>[];
+          return http.Response(
+            jsonEncode(<String, Object>{
+              'Answer': <Object>[
+                for (final String ip in ips)
+                  <String, Object>{'type': 1, 'data': ip},
+              ],
+            }),
+            200,
+          );
+        });
+        final FakeIpTorrentBypass bypass = await resolveFakeIpTorrentBypass(
+          doh: DohResolver(
+            client: client,
+            endpoints: <String>['https://doh.example/q'],
+          ),
+          bootstrapHostPorts: <String>[
+            'router.bittorrent.com:6881',
+            'dht.transmissionbt.com:6881',
+            'dead.example:6881',
+          ],
+          udpTrackers: <String>[
+            'udp://tracker.opentrackr.org:1337/announce',
+            'http://nyaa.tracker.wf:7777/announce',
+            'udp://dead.example:80/announce',
+          ],
         );
-      });
-      final FakeIpTorrentBypass bypass = await resolveFakeIpTorrentBypass(
-        doh: DohResolver(
-            client: client, endpoints: <String>['https://doh.example/q']),
-        bootstrapHostPorts: <String>[
-          'router.bittorrent.com:6881',
-          'dht.transmissionbt.com:6881',
-          'dead.example:6881',
-        ],
-        udpTrackers: <String>[
-          'udp://tracker.opentrackr.org:1337/announce',
-          'http://nyaa.tracker.wf:7777/announce',
-          'udp://dead.example:80/announce',
-        ],
-      );
-      expect(bypass.dhtNodes, <String>[
-        '67.215.246.10:6881',
-        '87.98.162.88:6881',
-        '212.129.33.59:6881',
-      ]);
-      expect(bypass.trackers, <String>['udp://93.158.213.92:1337/announce']);
-      expect(bypass.isEmpty, isFalse);
-    });
+        expect(bypass.dhtNodes, <String>[
+          '67.215.246.10:6881',
+          '87.98.162.88:6881',
+          '212.129.33.59:6881',
+        ]);
+        expect(bypass.trackers, <String>['udp://93.158.213.92:1337/announce']);
+        expect(bypass.isEmpty, isFalse);
+      },
+    );
 
     test('bootstrap list mirrors the native default (5 entries)', () {
       expect(kDhtBootstrapHostPorts, hasLength(5));
@@ -205,10 +219,11 @@ void main() {
     test('healthy DHT → none, even under fake-ip', () {
       expect(
         diagnoseTorrentNetwork(
-            dhtEnabled: true,
-            dhtNodes: 120,
-            sessionAge: late,
-            fakeIpDetected: true),
+          dhtEnabled: true,
+          dhtNodes: 120,
+          sessionAge: late,
+          fakeIpDetected: true,
+        ),
         TorrentNetworkIssue.none,
       );
     });
@@ -216,10 +231,11 @@ void main() {
     test('within grace period → none', () {
       expect(
         diagnoseTorrentNetwork(
-            dhtEnabled: true,
-            dhtNodes: 0,
-            sessionAge: const Duration(seconds: 30),
-            fakeIpDetected: true),
+          dhtEnabled: true,
+          dhtNodes: 0,
+          sessionAge: const Duration(seconds: 30),
+          fakeIpDetected: true,
+        ),
         TorrentNetworkIssue.none,
       );
     });
@@ -227,18 +243,20 @@ void main() {
     test('zero / unknown nodes after grace → issue by fake-ip flag', () {
       expect(
         diagnoseTorrentNetwork(
-            dhtEnabled: true,
-            dhtNodes: 0,
-            sessionAge: late,
-            fakeIpDetected: true),
+          dhtEnabled: true,
+          dhtNodes: 0,
+          sessionAge: late,
+          fakeIpDetected: true,
+        ),
         TorrentNetworkIssue.fakeIpUdpBlocked,
       );
       expect(
         diagnoseTorrentNetwork(
-            dhtEnabled: true,
-            dhtNodes: -1,
-            sessionAge: late,
-            fakeIpDetected: false),
+          dhtEnabled: true,
+          dhtNodes: -1,
+          sessionAge: late,
+          fakeIpDetected: false,
+        ),
         TorrentNetworkIssue.dhtUnreachable,
       );
     });
@@ -246,10 +264,11 @@ void main() {
     test('DHT disabled → none (nothing measurable)', () {
       expect(
         diagnoseTorrentNetwork(
-            dhtEnabled: false,
-            dhtNodes: 0,
-            sessionAge: late,
-            fakeIpDetected: true),
+          dhtEnabled: false,
+          dhtNodes: 0,
+          sessionAge: late,
+          fakeIpDetected: true,
+        ),
         TorrentNetworkIssue.none,
       );
     });

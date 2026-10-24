@@ -382,7 +382,7 @@ class SrsMiner with AnkiNoteComposer {
     );
     final String key = q.termKey;
     if (key.isEmpty) return const <SrsNoteCacheRow>[];
-    final FushiDatabase db = store.db;
+    final SrsDatabase db = store.db;
     final List<SrsNoteCacheRow> rows =
         await (db.select(db.srsNotesCache)..where(
               (n) =>
@@ -453,7 +453,7 @@ class SrsMiner with AnkiNoteComposer {
 
   /// 字段里出现 [sourceId] 的现存笔记（只是候选：调用方再解析 href 确认身份）。
   Future<List<String>> sourceNoteCandidates(String sourceId) async {
-    final FushiDatabase db = store.db;
+    final SrsDatabase db = store.db;
     final query = db.selectOnly(db.srsFieldEdits, distinct: true)
       ..addColumns(<Expression<Object>>[db.srsFieldEdits.entityId])
       ..where(

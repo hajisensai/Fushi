@@ -4,7 +4,6 @@ library;
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -16,6 +15,7 @@ import '../apkg/apkg_test_support.dart';
 import '../apkg/srs_apkg_import_bench_test.dart' show benchApkg;
 import '../apkg/srs_apkg_import_test.dart' show kBasic, kFullOptions;
 import 'srs_query_counter.dart';
+import 'srs_test_storage.dart';
 
 const String kBulkUid = '01928c3e-0000-7000-8000-0000000b0175';
 
@@ -32,40 +32,37 @@ SrsTrustedClock fixedTrustedClock() => SrsTrustedClock(
 class BulkFixture {
   BulkFixture._(this.db, this.store, this.counter);
 
-  final FushiDatabase db;
+  final SrsDatabase db;
   final SrsDbStore store;
   final CountingInterceptor counter;
 
-  /// 打开内存库并导入 [notes] 条笔记（每条两张卡、分在 Lang 与 Lang::JP，每卡 3 条日志）。
+  /// 打开临时 srs.db 并导入 [notes] 条笔记（每条两张卡、分在 Lang 与 Lang::JP，每卡 3 条日志）。
   ///
   /// [background]：库开在临时文件上、走后台 isolate（与 app 同一种连接，语句真的跨 isolate
-  /// 往返、与别的异步任务交错）；默认内存库。
+  /// 往返、与别的异步任务交错）；默认同 isolate 执行。
   static Future<BulkFixture> open({
     required int notes,
     String deviceId = 'dev',
     bool background = false,
   }) async {
     final CountingInterceptor counter = CountingInterceptor();
-    final QueryExecutor executor;
-    if (background) {
-      final Directory tmp = Directory.systemTemp.createTempSync('srs_bulk_');
-      addTearDown(() {
-        try {
-          tmp.deleteSync(recursive: true);
-        } on FileSystemException {
-          // 句柄晚释放。
-        }
-      });
-      executor = NativeDatabase.createInBackground(File('${tmp.path}/b.db'));
-    } else {
-      executor = NativeDatabase.memory();
-    }
-    final FushiDatabase db = FushiDatabase.forTesting(
-      executor.interceptWith(counter),
+    final Directory tmp = Directory.systemTemp.createTempSync('srs_bulk_');
+    addTearDown(() {
+      try {
+        tmp.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 句柄晚释放。
+      }
+    });
+    final TestSrs srs = await openTestSrsAt(
+      '${tmp.path}/srs.db',
+      interceptor: counter,
+      inline: !background,
     );
-    addTearDown(db.close);
+    final SrsDatabase db = srs.db;
     final SrsDbStore store = await SrsDbStore.open(
       db: db,
+      core: srs.core,
       profileUid: kBulkUid,
       deviceId: deviceId,
       engine: const FakeFsrsEngine(),
@@ -154,7 +151,7 @@ Future<ChangeSpec> reversedChange(SrsDbStore s) async {
 /// 本 profile 的全部 SRS 行（事件表、发件箱、本机状态、两张缓存），可逐条比较：
 /// 只抹掉本机「写入时刻」两列（receivedAt / updatedAt，墙钟，与语义无关），
 /// 本机产生的日志 ID（随机 UUIDv7）按 (卡, HLC) 顺序换成序号。
-Future<Map<String, List<String>>> dumpSrsState(FushiDatabase db) async {
+Future<Map<String, List<String>>> dumpSrsState(SrsDatabase db) async {
   Future<List<String>> rows(String sql) async => <String>[
     for (final QueryRow r in await db.customSelect(sql).get())
       r.data.values.join('|'),

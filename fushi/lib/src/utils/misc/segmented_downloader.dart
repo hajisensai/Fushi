@@ -69,7 +69,9 @@ class SegmentedDownloader {
     this.isCancelled,
     this.flushInterval = kDefaultFlushInterval,
     this.retryBackoff,
-  }) : assert(concurrency > 0, 'concurrency 必须为正'),
+    Duration Function()? monotonicClock,
+  }) : _now = monotonicClock ?? _realMonotonicNow,
+       assert(concurrency > 0, 'concurrency 必须为正'),
        assert(maxAttemptsPerPart > 0, 'maxAttemptsPerPart 必须为正');
 
   /// 并发段数默认值：国内下 CF 单连接常被限速，多连接叠加是主要提速手段；再大对
@@ -103,6 +105,18 @@ class SegmentedDownloader {
   /// 上限 30s）：移动网络抖动时背靠背重试三次基本是三次一起失败，退避才有意义。
   /// 单测注入 [Duration.zero] 免得空等。
   final Duration Function(int attempt)? retryBackoff;
+
+  /// 单调时钟：返回某个固定起点以来经过的时长，只用来量每片的传输耗时（喂给
+  /// [SourceSpeedLedger] 的吞吐样本）。默认是进程内一块常驻的真实 [Stopwatch]。
+  ///
+  /// 可注入是为了让「按实测吞吐派活」能被确定性地测：测试用虚拟网络时间驱动，每片
+  /// 耗时精确已知；量真实墙钟的话，CI runner 一忙，快源的写盘耗时就能和慢源的网络
+  /// 延迟混成同一量级，派活结论随调度漂移。
+  final Duration Function() _now;
+
+  static final Stopwatch _realMonotonic = Stopwatch()..start();
+
+  static Duration _realMonotonicNow() => _realMonotonic.elapsed;
 
   static Duration _defaultBackoff(int attempt) {
     final int seconds = 1 << (attempt > 4 ? 4 : attempt);
@@ -261,13 +275,13 @@ class SegmentedDownloader {
       // 本次净增字节。切片来源被服务端忽略 Range 时（200，见 _fetchPartFrom）实际
       // 传输量比这个大，吞吐会被略微低估——罕见路径，不值得为它把字节数一路回传。
       final int before = _store.receivedOf(part.index);
-      final Stopwatch elapsed = Stopwatch()..start();
+      final Duration startedAt = _now();
       try {
         await _fetchPartFrom(part, source);
         _ledger.recordSuccess(
           source.url,
           bytes: part.length - before,
-          elapsed: elapsed.elapsed,
+          elapsed: _now() - startedAt,
         );
         return;
       } on SegmentedDownloadCancelledException {

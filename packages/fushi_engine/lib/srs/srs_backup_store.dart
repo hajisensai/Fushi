@@ -556,9 +556,9 @@ class SrsBackupStore {
 
   /// 做一份备份。[profileName] 只用于显示。
   ///
-  /// 真实库三十万条复习日志要读二三十秒。库在文件上时在后台 isolate 的独立只读连接里读
-  /// （[SrsBackupSnapshotReader]），主连接上的复习查询与写入不排在它后面（BUG-3579 起先只是让路）。
-  /// [shouldStop] 每读完一页（后台读时约每 100 ms）问一次，为 true 时抛 [SrsBackupCancelled]：
+  /// 真实库三十万条复习日志要读二三十秒。在后台 isolate 里、srs.db 上另开的一条 Rust 只读连接里读
+  /// （[SrsBackupSnapshotReader]），写连接上的复习查询与写入不排在它后面（BUG-3579 起先只是让路）。
+  /// [shouldStop] 每读完一页问一次，为 true 时抛 [SrsBackupCancelled]：
   /// 读事务回滚（只读，没有副作用）、暂存文件删掉。
   Future<SrsBackupInfo> create(
     SrsDbStore store, {
@@ -602,46 +602,24 @@ class SrsBackupStore {
       // 指纹、事件、服务器时间、计数必须是同一个快照。
       late final String fingerprint;
       late final ({int eventCount, SrsBackupCounts counts}) snap;
-      final String? dbPath = await store.databaseFilePath();
-      if (dbPath != null) {
-        // 库在文件上：写锁里取指纹并让后台独立只读连接拿到快照（这一刻没有进行中的 SRS 写入，
-        // 两者一致），锁一放开就把主连接还给复习页；读取全在后台 isolate，主连接不等它。
-        late final SrsBackupSnapshotReader reader;
-        await store.runExclusive(() async {
-          checkStop();
-          fingerprint = await store.changeFingerprint();
-          reader = await SrsBackupSnapshotReader.start(
-            dbPath: dbPath,
-            profileUid: profileUid,
-            eventsPath: eventsTmp.path,
-            serverTimesPath: serverTimesTmp.path,
-          );
-        });
-        final Timer poll = Timer.periodic(const Duration(milliseconds: 100), (
-          _,
-        ) {
-          if (shouldStop?.call() ?? false) reader.cancel();
-        });
-        try {
-          snap = await reader.done;
-        } on SrsSnapshotCancelled {
-          throw const SrsBackupCancelled();
-        } finally {
-          poll.cancel();
-        }
-      } else {
-        // 内存库（测试）开不了第二条连接：在主连接的事务里读，中间插不进别的写入。
-        await store.db.transaction(() async {
-          checkStop();
-          fingerprint = await store.changeFingerprint();
-          snap = await srsWriteSnapshotFiles(
-            store.backupSelect,
-            profileUid,
-            eventsPath: eventsTmp.path,
-            serverTimesPath: serverTimesTmp.path,
-            checkStop: checkStop,
-          );
-        });
+      // 写锁里取指纹并让后台独立只读连接（srs.db 上的 Rust 只读会话）拿到快照：这一刻没有进行中的
+      // SRS 写入，两者一致；锁一放开就把写连接还给复习页，读取全在后台 isolate，写连接不等它。
+      late final SrsBackupSnapshotReader reader;
+      await store.runExclusive(() async {
+        checkStop();
+        fingerprint = await store.changeFingerprint();
+        reader = await SrsBackupSnapshotReader.start(
+          core: store.core,
+          profileUid: profileUid,
+          eventsPath: eventsTmp.path,
+          serverTimesPath: serverTimesTmp.path,
+          shouldStop: shouldStop,
+        );
+      });
+      try {
+        snap = await reader.done;
+      } on SrsSnapshotCancelled {
+        throw const SrsBackupCancelled();
       }
       final int eventCount = snap.eventCount;
       final SrsBackupCounts counts = snap.counts;
