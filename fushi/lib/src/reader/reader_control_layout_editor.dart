@@ -31,6 +31,8 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return FushiIcons.lyrics;
     case ReaderControlItem.navigation:
       return FushiIcons.bulletList;
+    case ReaderControlItem.bookmarks:
+      return FushiIcons.bookmark;
     case ReaderControlItem.gallery:
       return FushiIcons.collections;
     case ReaderControlItem.statistics:
@@ -70,6 +72,8 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.lyrics_mode;
     case ReaderControlItem.navigation:
       return t.section_navigation;
+    case ReaderControlItem.bookmarks:
+      return t.reader_control_bookmarks;
     case ReaderControlItem.gallery:
       return t.reader_gallery_tooltip;
     case ReaderControlItem.statistics:

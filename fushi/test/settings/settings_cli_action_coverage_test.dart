@@ -112,6 +112,7 @@ void main() {
       'video.player.danmaku_block_rules',
       'video.player.controls_editor',
       'reading_controls.controls_editor',
+      'manga.controls_editor',
       'game.gal_hook_text_color',
       'listening.floating_lyric_color_text',
     ];

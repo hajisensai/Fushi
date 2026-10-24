@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -7,6 +8,10 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_settings.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
+import 'package:fushi/src/media/manga/reader/manga_control_layout_editor.dart';
+import 'package:fushi/src/controls/control_layout_editor.dart'
+    show controlLayoutEditorHintStyle;
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -388,6 +393,83 @@ SettingsSection _mangaDisplaySection() {
         onChanged: (SettingsContext c, bool value) =>
             c.appModel.setMangaChromeFloating(value),
         defaultValue: true,
+      ),
+      // 漫画阅读器工具栏按钮布局（与小说阅读器的「阅读器按钮布局」同一套编辑器
+      // 手感）：顶栏 / 底部工具栏 / 更多 / 移出。写偏好后开着的漫画下次重建即换布局；
+      // 阅读器内「阅读设置 → 工具栏布局」入口改动立即生效。
+      SettingsCustomItem(
+        id: 'manga.controls_editor',
+        searchTitle: t.manga_reader_control_layout,
+        cliValue: mangaControlLayoutCli,
+        builder: buildMangaControlLayoutEditor,
+      ),
+    ],
+  );
+}
+
+/// 漫画工具栏布局在控制通道上的读写：`{"wide": <布局 JSON>, "compact": <布局
+/// JSON>}`（任一段可省略，省略的不改）。与小说阅读器 `readerControlLayoutCli` 同形；
+/// 布局解码器对坏输入静默回落出厂布局，所以写入前先校验结构。
+final SettingsCliValue mangaControlLayoutCli = SettingsCliValue(
+  help:
+      '{"wide": <布局 JSON，含 slots>, "compact": <布局 JSON>}'
+      '（config get 的输出可改后原样写回）',
+  read: (SettingsContext c) => jsonEncode(<String, Object?>{
+    'wide': jsonDecode(
+      c.appModel.mangaControlLayoutFor(compact: false).encode(),
+    ),
+    'compact': jsonDecode(
+      c.appModel.mangaControlLayoutFor(compact: true).encode(),
+    ),
+  }),
+  write: (SettingsContext c, String raw) async {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException catch (e) {
+      throw FormatException('不是 JSON：${e.message}');
+    }
+    if (decoded is! Map<String, dynamic> ||
+        !(decoded.containsKey('wide') || decoded.containsKey('compact'))) {
+      throw const FormatException('写成 {"wide": …, "compact": …}');
+    }
+    MangaControlLayout? parse(Object? layout, String name) {
+      if (layout == null) return null;
+      if (layout is! Map<String, dynamic> || layout['slots'] is! Map) {
+        throw FormatException('$name 布局必须含 slots 对象');
+      }
+      return MangaControlLayout.decode(jsonEncode(layout));
+    }
+
+    final MangaControlLayout? wide = parse(decoded['wide'], 'wide');
+    final MangaControlLayout? compact = parse(decoded['compact'], 'compact');
+    if (wide != null) {
+      await c.appModel.setMangaControlLayoutFor(compact: false, layout: wide);
+    }
+    if (compact != null) {
+      await c.appModel.setMangaControlLayoutFor(compact: true, layout: compact);
+    }
+  },
+);
+
+/// 「工具栏布局」编辑器（设置 → 漫画 → 显示与缩放）：手机 / 平板与桌面两份布局。
+Widget buildMangaControlLayoutEditor(SettingsContext context) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          t.manga_reader_control_layout_hint,
+          style: controlLayoutEditorHintStyle(context.context),
+        ),
+      ),
+      MangaControlLayoutTargetEditor(
+        read: (bool compact) =>
+            context.appModel.mangaControlLayoutFor(compact: compact),
+        write: (bool compact, MangaControlLayout layout) => context.appModel
+            .setMangaControlLayoutFor(compact: compact, layout: layout),
+        isTouchControls: !isDesktopPlatform,
       ),
     ],
   );

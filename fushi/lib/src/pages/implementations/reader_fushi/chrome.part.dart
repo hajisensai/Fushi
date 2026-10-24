@@ -1675,6 +1675,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 2 有声书类。布局里相邻且同组的按钮并成一组。
   int _readerControlGroup(ReaderControlItem item) => switch (item) {
         ReaderControlItem.navigation ||
+        ReaderControlItem.bookmarks ||
         ReaderControlItem.gallery ||
         ReaderControlItem.statistics =>
           0,
@@ -1753,6 +1754,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 用户反馈「歌词模式没有跳章节按钮」（BUG-2596）——旧码把它和图集一起藏掉。
       case ReaderControlItem.navigation:
         return true;
+      // 书签与收藏句：书签需要书的稳定 uid（[_bookUid]），收藏句不需要——uid 缺失时
+      // 面板只显示收藏句，按钮照样有用，故恒渲染（歌词模式书签按当前句定位）。
+      case ReaderControlItem.bookmarks:
+        return true;
       case ReaderControlItem.gallery:
         return !_lyricsMode;
       // 「听书」模块关掉时整颗不渲染（不是画一个点了没反应的按钮）。
@@ -1821,6 +1826,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
           semanticsId: 'fushi.reader.header.navigation',
           onPressed: () => unawaited(
             _showAppearanceSheet(initialSubPage: 'location'),
+          ),
+        );
+      case ReaderControlItem.bookmarks:
+        return ReaderHeaderAction(
+          key: const ValueKey<String>('fushi_reader_bookmarks_button'),
+          icon: FushiIcons.bookmark,
+          label: t.reader_control_bookmarks,
+          semanticsId: 'fushi.reader.header.bookmarks',
+          onPressed: () => unawaited(
+            _showAppearanceSheet(initialSubPage: _kReaderNavSubPageBookmarks),
           ),
         );
       case ReaderControlItem.gallery:
@@ -2285,10 +2300,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 统一走 [_openReaderPanel]（面板开着时只原地换内容，见 [ReaderPanelSwitcher]）。
     final String kind = switch (initialSubPage) {
       'location' => _kReaderPanelNavigation,
+      _kReaderNavSubPageBookmarks => _kReaderPanelNavigation,
       'audiobook' when _audiobookController != null => _kReaderPanelAudiobook,
       _ => _kReaderPanelSettings,
     };
-    await _openReaderPanel(kind, initialSettingsTab: initialSettingsTab);
+    await _openReaderPanel(
+      kind,
+      initialSettingsTab: initialSettingsTab,
+      navOpensBookmarks: initialSubPage == _kReaderNavSubPageBookmarks,
+    );
   }
 
   /// 打开（或原地切换到）[kind] 面板。
@@ -2300,7 +2320,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 停表：导航 / 有声书 / 设置压着正文期间停表（BUG-2208），统计侧板不停表
   /// （它自己画实时秒表）——按当前种类实时增减 [_studyClockModalDepth] 的一层
   /// （[_syncPanelClockHold]），切换种类时跟着变。
-  Future<void> _openReaderPanel(String kind, {String? initialSettingsTab}) async {
+  ///
+  /// [navOpensBookmarks]：导航面板直接落在「收藏」页的「书签」段（工具栏「书签」
+  /// 按钮）。只作用于本次会话里**第一次**构建的导航内容——用户随后在面板间切走再
+  /// 切回导航时按普通导航打开。面板已开着时只切种类，不改已建好的导航内容。
+  Future<void> _openReaderPanel(
+    String kind, {
+    String? initialSettingsTab,
+    bool navOpensBookmarks = false,
+  }) async {
     if (_settings == null || _controller == null || _book == null) return;
     final ValueNotifier<String>? live = _panelKind;
     if (live != null) {
@@ -2323,7 +2351,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
           FavoriteSentenceRepository(appModel.database);
       final List<FavoriteSentence> favorites =
           await _favoriteSentencesForBook();
+      // 书签列表归整个面板会话所有（可变）：面板内容按种类 key 重建时 sheet 从这份
+      // 重新初始化，所以加 / 删必须同步写回这里（见 [_buildQuickSettingsSheet] 的
+      // 包装回调），否则切走再切回导航会退回打开时的旧列表。「当前页区间」不在这里
+      // 取快照：有声书跟读 / 改排版都会在面板开着时挪页，由 sheet 用到时现取。
+      final List<Bookmark> bookmarks = _bookUid == null
+          ? <Bookmark>[]
+          : List<Bookmark>.of(await _bookmarksForBook());
       if (!mounted) return;
+      bool openBookmarksPending = navOpensBookmarks;
       _panelKind = notifier;
       _syncPanelClockHold(kind);
       notifier.addListener(onKindChanged);
@@ -2355,6 +2391,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   current,
                   favorites: favorites,
                   favRepo: favRepo,
+                  bookmarks: bookmarks,
+                  openBookmarks: () {
+                    if (current != _kReaderPanelNavigation) return false;
+                    final bool pending = openBookmarksPending;
+                    openBookmarksPending = false;
+                    return pending;
+                  },
                   initialSettingsTab: initialSettingsTab,
                 ),
               ),
@@ -2422,10 +2465,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   /// 某一类面板的内容（外壳 / 页头由各自的 [ReaderSideSheet] 画）。
+  ///
+  /// [openBookmarks] 在构建导航内容时问一次「这次要不要直达书签段」（一次性旗，
+  /// 见 [_openReaderPanel] 的 navOpensBookmarks）。
   Widget _buildReaderPanelContent(
     String kind, {
     required List<FavoriteSentence> favorites,
     required FavoriteSentenceRepository favRepo,
+    required List<Bookmark> bookmarks,
+    required bool Function() openBookmarks,
     String? initialSettingsTab,
   }) {
     switch (kind) {
@@ -2435,6 +2483,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return _buildQuickSettingsSheet(
           favorites: favorites,
           favRepo: favRepo,
+          bookmarks: bookmarks,
+          openBookmarks: openBookmarks(),
           presentation: ReaderQuickSettingsPresentation.sideSheetNavigation,
           initialSubPage: 'location',
         );
@@ -2442,6 +2492,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return _buildQuickSettingsSheet(
           favorites: favorites,
           favRepo: favRepo,
+          bookmarks: bookmarks,
           presentation: ReaderQuickSettingsPresentation.audiobookPanel,
           initialSubPage: 'audiobook',
         );
@@ -2449,6 +2500,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return _buildQuickSettingsSheet(
           favorites: favorites,
           favRepo: favRepo,
+          bookmarks: bookmarks,
           presentation: ReaderQuickSettingsPresentation.sideSheetAppearance,
           initialSettingsTab: initialSettingsTab,
         );
@@ -2527,7 +2579,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Widget _buildQuickSettingsSheet({
     required List<FavoriteSentence> favorites,
     required FavoriteSentenceRepository favRepo,
+    required List<Bookmark> bookmarks,
     required ReaderQuickSettingsPresentation presentation,
+    bool openBookmarks = false,
     String? initialSubPage,
     String? initialSettingsTab,
   }) {
@@ -2651,6 +2705,35 @@ extension _ReaderChrome on _ReaderFushiPageState {
         }
       },
       onJumpToFavorite: _jumpToFavoriteSentence,
+      // 书签：书的稳定 uid 缺失时整段不接线（面板按回调为空不出书签段）。加 / 删
+      // 同步写回会话列表 [bookmarks]（见 [_openReaderPanel]）。
+      bookmarks: bookmarks,
+      openBookmarks: openBookmarks,
+      resolveBookmarkPage: _bookUid == null
+          ? null
+          : () async => (await _bookmarkPagePosition())?.range,
+      onAddBookmark: _bookUid == null
+          ? null
+          : () async {
+              final Bookmark? added = await _addBookmarkAtCurrentPosition();
+              if (added != null) bookmarks.insert(0, added);
+              return added;
+            },
+      onDeleteBookmark: _bookUid == null
+          ? null
+          : (Bookmark bookmark) async {
+              await _deleteBookmark(bookmark);
+              bookmarks.removeWhere(
+                (Bookmark b) =>
+                    identical(b, bookmark) ||
+                    (b.id != null && b.id == bookmark.id),
+              );
+            },
+      onJumpToBookmark: _bookUid == null ? null : _jumpToBookmark,
+      bookmarkChapterLabel: (Bookmark bm) => _currentChapterLabelFor(
+        bm.sectionIndex,
+        charOffset: bm.charOffset >= 0 ? bm.charOffset : null,
+      ),
       onPlayFavorite: _audiobookController == null
           ? null
           : (fav) async {
@@ -3967,10 +4050,17 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 收藏句对应的音频 cue：按章取句级 cue，命中 `normCharOffset` 所在区间的那句。
   /// 「播放收藏」与歌词模式「跳到收藏」共用。没挂有声书 / 收藏缺偏移 → null。
   AudioCue? _favoriteAudioCue(FavoriteSentence fav) {
-    final AudiobookPlayerController? ctrl = _audiobookController;
     final int? offset = fav.normCharOffset;
     final int? section = fav.sectionIndex;
-    if (ctrl == null || offset == null || section == null) return null;
+    if (offset == null || section == null) return null;
+    return _audioCueAtCharOffset(section, offset);
+  }
+
+  /// 章 [section] 内覆盖字符偏移 [offset]（`getNormalizedOffset` 口径）的句子 cue；
+  /// 没挂有声书 / 对齐没覆盖到时 null。收藏句与书签（歌词模式）共用。
+  AudioCue? _audioCueAtCharOffset(int section, int offset) {
+    final AudiobookPlayerController? ctrl = _audiobookController;
+    if (ctrl == null) return null;
     for (final AudioCue cue in ctrl.sentenceAudioCuesForSection(section)) {
       final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
         cue.textFragmentId,
@@ -4115,6 +4205,216 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
     if (fraction == null) return null;
     return '${(fraction * 100).toStringAsFixed(1)}%';
+  }
+
+  // ── 书签（小说阅读器，2026-10 恢复） ─────────────────────────────────────
+
+  /// 本书全部书签（新的在上）；书的稳定 uid 缺失或读库失败时为空表。
+  Future<List<Bookmark>> _bookmarksForBook() async {
+    final String? uid = _bookUid;
+    if (uid == null) return const <Bookmark>[];
+    try {
+      final List<Bookmark> rows = await BookmarkRepository(
+        appModel.database,
+      ).getBookmarks(uid, legacyBookKey: widget.bookKey);
+      return readerBookmarksNewestFirst(rows);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi._bookmarksForBook', e, stack);
+      return const <Bookmark>[];
+    }
+  }
+
+  /// 章 [section] 的学习单位总数（未知 0）。
+  int _bookmarkChapterCharCount(int section) =>
+      section >= 0 && section < _chapterCharCounts.length
+      ? _chapterCharCounts[section]
+      : 0;
+
+  /// 当前页的章内字符区间 + 页首章内进度分数（加书签 / 判「当前页有没有书签」）。
+  ///
+  /// - 歌词模式：当前句即「当前页」（[_readingPositionFromCurrentCue]，与旧实现
+  ///   `_syncPositionFromCurrentCue` 同一份映射），区间是句首单点。
+  /// - 正文：现取 `fushiProgressDetails`（第三 / 四段 = 视口首 / 尾字符偏移）。重锚在飞
+  ///   / 翻页动画中它返 null，退回阅读器最近回报的位置（同章才算数）。
+  ///
+  /// 都拿不到时 null（不加书签、也不判当前页）。
+  Future<({ReaderBookmarkPageRange range, double progress})?>
+  _bookmarkPagePosition() async {
+    if (_lyricsMode) {
+      final ({int section, double progress, int charOffset})? cue =
+          _readingPositionFromCurrentCue();
+      if (cue == null || cue.charOffset < 0) return null;
+      return (
+        range: (
+          section: cue.section,
+          charStart: cue.charOffset,
+          charEnd: -1,
+          chapterCharCount: _bookmarkChapterCharCount(cue.section),
+        ),
+        progress: cue.progress,
+      );
+    }
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return null;
+    final int section = _currentChapter;
+    ReaderStableProgressDetails? details;
+    try {
+      details = parseReaderStableProgressDetails(
+        await controller.evaluateJavascript(
+          source: ReaderPaginationScripts.stableProgressInvocation(),
+        ),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ReaderFushi._bookmarkPagePosition',
+        e,
+        stack,
+      );
+    }
+    if (details != null && details.charOffset >= 0) {
+      return (
+        range: (
+          section: section,
+          charStart: details.charOffset,
+          charEnd: details.charOffsetEnd,
+          chapterCharCount: _bookmarkChapterCharCount(section),
+        ),
+        progress: details.progress,
+      );
+    }
+    if (_lastProgressSection == section && _lastProgressCharOffset >= 0) {
+      return (
+        range: (
+          section: section,
+          charStart: _lastProgressCharOffset,
+          charEnd: -1,
+          chapterCharCount: _bookmarkChapterCharCount(section),
+        ),
+        progress: _lastProgressValue,
+      );
+    }
+    return null;
+  }
+
+  /// 分页模式下当前页 / 本章总页数（`pageInfo()`，1 起）；连续 / 歌词模式或引擎
+  /// 未落定时 null。
+  Future<(int, int)?> _bookmarkPageInfo() async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null || _lyricsMode) return null;
+    try {
+      final Object? raw = await controller.evaluateJavascript(
+        source: ReaderPaginationScripts.pageInfoInvocation(),
+      );
+      if (raw is! String) return null;
+      final String trimmed = raw.trim();
+      if (trimmed.isEmpty || trimmed == 'null') return null;
+      final Object? decoded = jsonDecode(trimmed);
+      if (decoded is! Map<String, dynamic>) return null;
+      final int? current = (decoded['currentPage'] as num?)?.toInt();
+      final int? total = (decoded['totalPages'] as num?)?.toInt();
+      if (current == null || total == null || total <= 0) return null;
+      return (current, total);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi._bookmarkPageInfo', e, stack);
+      return null;
+    }
+  }
+
+  /// 在当前页加一条书签并落库；返回带 id 的书签（拿不到位置 / 没有 uid 时 null）。
+  ///
+  /// 位置以字符偏移为准（[Bookmark.charOffset] = 页首字符），`normCharOffset` 仍写
+  /// 0-10000 页首分数，兼容只认分数的旧端（备份 / 同步 / 桌面 CLI）。
+  Future<Bookmark?> _addBookmarkAtCurrentPosition() async {
+    final String? uid = _bookUid;
+    if (uid == null || _book == null) return null;
+    final ({ReaderBookmarkPageRange range, double progress})? page =
+        await _bookmarkPagePosition();
+    if (page == null || !mounted) return null;
+    final (int, int)? pageInfo = await _bookmarkPageInfo();
+    if (!mounted) return null;
+    final ReaderBookmarkPageRange range = page.range;
+    final Bookmark draft = Bookmark(
+      sectionIndex: range.section,
+      normCharOffset: (page.progress.clamp(0.0, 1.0) * 10000).round(),
+      label: _currentChapterLabelFor(
+        range.section,
+        charOffset: range.charStart,
+      ),
+      createdAt: DateTime.now(),
+      bookUid: uid,
+      bookTitle: _book?.title,
+      pageInChapter: pageInfo?.$1,
+      totalPagesInChapter: pageInfo?.$2,
+      charOffset: range.charStart,
+    );
+    final int id = await BookmarkRepository(
+      appModel.database,
+    ).addBookmark(uid, draft);
+    return Bookmark(
+      id: id,
+      sectionIndex: draft.sectionIndex,
+      normCharOffset: draft.normCharOffset,
+      label: draft.label,
+      createdAt: draft.createdAt,
+      bookUid: uid,
+      bookTitle: draft.bookTitle,
+      pageInChapter: draft.pageInChapter,
+      totalPagesInChapter: draft.totalPagesInChapter,
+      charOffset: draft.charOffset,
+    );
+  }
+
+  /// 删除一条书签（按 id；没有 id 的书签不是从库里读出来的，不处理）。
+  Future<void> _deleteBookmark(Bookmark bookmark) async {
+    final int? id = bookmark.id;
+    if (id == null) return;
+    await BookmarkRepository(appModel.database).removeBookmarkById(id);
+  }
+
+  /// 跳到书签：有精确字符偏移走字符锚（跨章烘进导航原子恢复、同章
+  /// `restoreToCharOffset`），旧书签按分数（同章 `restoreProgress`）。与
+  /// [_jumpToFavoriteSentence] 同一套前置：同章不经 `_beginNavigation`，跳走前那页在
+  /// 这里 `leave()` 结算（BUG-2225）。歌词模式把音频定位到书签所在句，找不到句子时
+  /// 退到该章首句（与跳章同一条路）。
+  Future<void> _jumpToBookmark(Bookmark bookmark) async {
+    final EpubBook? book = _book;
+    if (book == null) return;
+    final ReaderBookmarkJump jump = readerBookmarkJumpFor(bookmark);
+    if (jump.section < 0 || jump.section >= book.chapters.length) return;
+    if (_lyricsMode) {
+      final int? offset = readerBookmarkEffectiveOffset(
+        bookmark,
+        _bookmarkChapterCharCount(jump.section),
+      );
+      final AudioCue? cue = offset == null
+          ? null
+          : _audioCueAtCharOffset(jump.section, offset);
+      if (cue != null) {
+        await _audiobookController?.skipToCue(cue);
+      } else {
+        await _jumpToChapterAnchor(jump.section, null);
+      }
+      return;
+    }
+    final bool precise = jump.charOffset >= 0;
+    if (jump.section != _currentChapter) {
+      await _navigateToChapterAndWait(
+        jump.section,
+        manual: true,
+        progress: precise ? 0.0 : jump.progress,
+        charOffset: precise ? jump.charOffset : null,
+      );
+      return;
+    }
+    if (!mounted || _controller == null) return;
+    _readLedger.leave();
+    await _controller!.evaluateJavascript(
+      source: precise
+          ? 'window.fushiReader && window.fushiReader'
+                '.restoreToCharOffset(${jump.charOffset}, -1);'
+          : 'window.fushiReader && window.fushiReader'
+                '.restoreProgress(${jump.progress});',
+    );
   }
 }
 
@@ -4429,3 +4729,7 @@ const String _kReaderPanelNavigation = 'navigation';
 const String _kReaderPanelAudiobook = 'audiobook';
 const String _kReaderPanelSettings = 'settings';
 const String _kReaderPanelStatistics = 'statistics';
+
+/// [_showAppearanceSheet] 的 initialSubPage：打开导航面板并直达「收藏」页的书签段
+/// （工具栏「书签」按钮，[ReaderControlItem.bookmarks]）。
+const String _kReaderNavSubPageBookmarks = 'bookmarks';

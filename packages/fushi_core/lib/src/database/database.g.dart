@@ -4117,6 +4117,29 @@ class $BookmarksTable extends Bookmarks
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _charOffsetMeta = const VerificationMeta(
+    'charOffset',
+  );
+  @override
+  late final GeneratedColumn<int> charOffset = GeneratedColumn<int>(
+    'char_offset',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(-1),
+  );
+  static const VerificationMeta _chapterKeyMeta = const VerificationMeta(
+    'chapterKey',
+  );
+  @override
+  late final GeneratedColumn<String> chapterKey = GeneratedColumn<String>(
+    'chapter_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4128,6 +4151,8 @@ class $BookmarksTable extends Bookmarks
     bookTitle,
     pageInChapter,
     totalPagesInChapter,
+    charOffset,
+    chapterKey,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4214,6 +4239,18 @@ class $BookmarksTable extends Bookmarks
         ),
       );
     }
+    if (data.containsKey('char_offset')) {
+      context.handle(
+        _charOffsetMeta,
+        charOffset.isAcceptableOrUnknown(data['char_offset']!, _charOffsetMeta),
+      );
+    }
+    if (data.containsKey('chapter_key')) {
+      context.handle(
+        _chapterKeyMeta,
+        chapterKey.isAcceptableOrUnknown(data['chapter_key']!, _chapterKeyMeta),
+      );
+    }
     return context;
   }
 
@@ -4259,6 +4296,14 @@ class $BookmarksTable extends Bookmarks
         DriftSqlType.int,
         data['${effectivePrefix}total_pages_in_chapter'],
       ),
+      charOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}char_offset'],
+      )!,
+      chapterKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chapter_key'],
+      ),
     );
   }
 
@@ -4281,6 +4326,16 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
   final String? bookTitle;
   final int? pageInChapter;
   final int? totalPagesInChapter;
+
+  /// v125：书签所在页首字符的章内精确字符偏移（与 [ReaderPositions.charOffset]
+  /// 同计量）。存字符而不是页码：改字号 / 边距后页码会变，字符位置不变。-1 = 无
+  /// 精确偏移（v125 前的旧书签 / 拿不到页范围），跳转回退 [normCharOffset] 分数。
+  /// 漫画 / PDF 书签按页记，恒 -1。
+  final int charOffset;
+
+  /// v125：在线漫画书签所在章的稳定键（`MangaChapterStates.chapterKey`，Mihon 下是
+  /// 章 url）。章下标会随源更新漂移，按键找章；本地卷 / EPUB / PDF 为 null。
+  final String? chapterKey;
   const BookmarkRow({
     required this.id,
     required this.bookUid,
@@ -4291,6 +4346,8 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     this.bookTitle,
     this.pageInChapter,
     this.totalPagesInChapter,
+    required this.charOffset,
+    this.chapterKey,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4309,6 +4366,10 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     }
     if (!nullToAbsent || totalPagesInChapter != null) {
       map['total_pages_in_chapter'] = Variable<int>(totalPagesInChapter);
+    }
+    map['char_offset'] = Variable<int>(charOffset);
+    if (!nullToAbsent || chapterKey != null) {
+      map['chapter_key'] = Variable<String>(chapterKey);
     }
     return map;
   }
@@ -4330,6 +4391,10 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
       totalPagesInChapter: totalPagesInChapter == null && nullToAbsent
           ? const Value.absent()
           : Value(totalPagesInChapter),
+      charOffset: Value(charOffset),
+      chapterKey: chapterKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(chapterKey),
     );
   }
 
@@ -4350,6 +4415,8 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
       totalPagesInChapter: serializer.fromJson<int?>(
         json['totalPagesInChapter'],
       ),
+      charOffset: serializer.fromJson<int>(json['charOffset']),
+      chapterKey: serializer.fromJson<String?>(json['chapterKey']),
     );
   }
   @override
@@ -4365,6 +4432,8 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
       'bookTitle': serializer.toJson<String?>(bookTitle),
       'pageInChapter': serializer.toJson<int?>(pageInChapter),
       'totalPagesInChapter': serializer.toJson<int?>(totalPagesInChapter),
+      'charOffset': serializer.toJson<int>(charOffset),
+      'chapterKey': serializer.toJson<String?>(chapterKey),
     };
   }
 
@@ -4378,6 +4447,8 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     Value<String?> bookTitle = const Value.absent(),
     Value<int?> pageInChapter = const Value.absent(),
     Value<int?> totalPagesInChapter = const Value.absent(),
+    int? charOffset,
+    Value<String?> chapterKey = const Value.absent(),
   }) => BookmarkRow(
     id: id ?? this.id,
     bookUid: bookUid ?? this.bookUid,
@@ -4392,6 +4463,8 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     totalPagesInChapter: totalPagesInChapter.present
         ? totalPagesInChapter.value
         : this.totalPagesInChapter,
+    charOffset: charOffset ?? this.charOffset,
+    chapterKey: chapterKey.present ? chapterKey.value : this.chapterKey,
   );
   BookmarkRow copyWithCompanion(BookmarksCompanion data) {
     return BookmarkRow(
@@ -4412,6 +4485,12 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
       totalPagesInChapter: data.totalPagesInChapter.present
           ? data.totalPagesInChapter.value
           : this.totalPagesInChapter,
+      charOffset: data.charOffset.present
+          ? data.charOffset.value
+          : this.charOffset,
+      chapterKey: data.chapterKey.present
+          ? data.chapterKey.value
+          : this.chapterKey,
     );
   }
 
@@ -4426,7 +4505,9 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
           ..write('createdAt: $createdAt, ')
           ..write('bookTitle: $bookTitle, ')
           ..write('pageInChapter: $pageInChapter, ')
-          ..write('totalPagesInChapter: $totalPagesInChapter')
+          ..write('totalPagesInChapter: $totalPagesInChapter, ')
+          ..write('charOffset: $charOffset, ')
+          ..write('chapterKey: $chapterKey')
           ..write(')'))
         .toString();
   }
@@ -4442,6 +4523,8 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
     bookTitle,
     pageInChapter,
     totalPagesInChapter,
+    charOffset,
+    chapterKey,
   );
   @override
   bool operator ==(Object other) =>
@@ -4455,7 +4538,9 @@ class BookmarkRow extends DataClass implements Insertable<BookmarkRow> {
           other.createdAt == this.createdAt &&
           other.bookTitle == this.bookTitle &&
           other.pageInChapter == this.pageInChapter &&
-          other.totalPagesInChapter == this.totalPagesInChapter);
+          other.totalPagesInChapter == this.totalPagesInChapter &&
+          other.charOffset == this.charOffset &&
+          other.chapterKey == this.chapterKey);
 }
 
 class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
@@ -4468,6 +4553,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
   final Value<String?> bookTitle;
   final Value<int?> pageInChapter;
   final Value<int?> totalPagesInChapter;
+  final Value<int> charOffset;
+  final Value<String?> chapterKey;
   const BookmarksCompanion({
     this.id = const Value.absent(),
     this.bookUid = const Value.absent(),
@@ -4478,6 +4565,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     this.bookTitle = const Value.absent(),
     this.pageInChapter = const Value.absent(),
     this.totalPagesInChapter = const Value.absent(),
+    this.charOffset = const Value.absent(),
+    this.chapterKey = const Value.absent(),
   });
   BookmarksCompanion.insert({
     this.id = const Value.absent(),
@@ -4489,6 +4578,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     this.bookTitle = const Value.absent(),
     this.pageInChapter = const Value.absent(),
     this.totalPagesInChapter = const Value.absent(),
+    this.charOffset = const Value.absent(),
+    this.chapterKey = const Value.absent(),
   }) : bookUid = Value(bookUid),
        sectionIndex = Value(sectionIndex),
        normCharOffset = Value(normCharOffset),
@@ -4504,6 +4595,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     Expression<String>? bookTitle,
     Expression<int>? pageInChapter,
     Expression<int>? totalPagesInChapter,
+    Expression<int>? charOffset,
+    Expression<String>? chapterKey,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -4516,6 +4609,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
       if (pageInChapter != null) 'page_in_chapter': pageInChapter,
       if (totalPagesInChapter != null)
         'total_pages_in_chapter': totalPagesInChapter,
+      if (charOffset != null) 'char_offset': charOffset,
+      if (chapterKey != null) 'chapter_key': chapterKey,
     });
   }
 
@@ -4529,6 +4624,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     Value<String?>? bookTitle,
     Value<int?>? pageInChapter,
     Value<int?>? totalPagesInChapter,
+    Value<int>? charOffset,
+    Value<String?>? chapterKey,
   }) {
     return BookmarksCompanion(
       id: id ?? this.id,
@@ -4540,6 +4637,8 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
       bookTitle: bookTitle ?? this.bookTitle,
       pageInChapter: pageInChapter ?? this.pageInChapter,
       totalPagesInChapter: totalPagesInChapter ?? this.totalPagesInChapter,
+      charOffset: charOffset ?? this.charOffset,
+      chapterKey: chapterKey ?? this.chapterKey,
     );
   }
 
@@ -4573,6 +4672,12 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
     if (totalPagesInChapter.present) {
       map['total_pages_in_chapter'] = Variable<int>(totalPagesInChapter.value);
     }
+    if (charOffset.present) {
+      map['char_offset'] = Variable<int>(charOffset.value);
+    }
+    if (chapterKey.present) {
+      map['chapter_key'] = Variable<String>(chapterKey.value);
+    }
     return map;
   }
 
@@ -4587,7 +4692,9 @@ class BookmarksCompanion extends UpdateCompanion<BookmarkRow> {
           ..write('createdAt: $createdAt, ')
           ..write('bookTitle: $bookTitle, ')
           ..write('pageInChapter: $pageInChapter, ')
-          ..write('totalPagesInChapter: $totalPagesInChapter')
+          ..write('totalPagesInChapter: $totalPagesInChapter, ')
+          ..write('charOffset: $charOffset, ')
+          ..write('chapterKey: $chapterKey')
           ..write(')'))
         .toString();
   }
@@ -7031,7 +7138,8 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   final String rootPath;
 
   /// 非敏感网络连接参数 JSON（host/port/username/useTls）。**绝不裸存明文密码/
-  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL。
+  /// 私钥**（它们在 Preferences 单独 base64 落库）；本地来源恒 NULL（iOS 例外：
+  /// 存 `iosBookmark` 安全作用域书签）。
   final String? configJson;
 
   /// 截图「媒体数」：上次扫描产出的条目数。
@@ -66064,6 +66172,8 @@ typedef $$BookmarksTableCreateCompanionBuilder =
       Value<String?> bookTitle,
       Value<int?> pageInChapter,
       Value<int?> totalPagesInChapter,
+      Value<int> charOffset,
+      Value<String?> chapterKey,
     });
 typedef $$BookmarksTableUpdateCompanionBuilder =
     BookmarksCompanion Function({
@@ -66076,6 +66186,8 @@ typedef $$BookmarksTableUpdateCompanionBuilder =
       Value<String?> bookTitle,
       Value<int?> pageInChapter,
       Value<int?> totalPagesInChapter,
+      Value<int> charOffset,
+      Value<String?> chapterKey,
     });
 
 class $$BookmarksTableFilterComposer
@@ -66129,6 +66241,16 @@ class $$BookmarksTableFilterComposer
 
   ColumnFilters<int> get totalPagesInChapter => $composableBuilder(
     column: $table.totalPagesInChapter,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get charOffset => $composableBuilder(
+    column: $table.charOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chapterKey => $composableBuilder(
+    column: $table.chapterKey,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -66186,6 +66308,16 @@ class $$BookmarksTableOrderingComposer
     column: $table.totalPagesInChapter,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get charOffset => $composableBuilder(
+    column: $table.charOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chapterKey => $composableBuilder(
+    column: $table.chapterKey,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BookmarksTableAnnotationComposer
@@ -66231,6 +66363,16 @@ class $$BookmarksTableAnnotationComposer
     column: $table.totalPagesInChapter,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get charOffset => $composableBuilder(
+    column: $table.charOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get chapterKey => $composableBuilder(
+    column: $table.chapterKey,
+    builder: (column) => column,
+  );
 }
 
 class $$BookmarksTableTableManager
@@ -66273,6 +66415,8 @@ class $$BookmarksTableTableManager
                 Value<String?> bookTitle = const Value.absent(),
                 Value<int?> pageInChapter = const Value.absent(),
                 Value<int?> totalPagesInChapter = const Value.absent(),
+                Value<int> charOffset = const Value.absent(),
+                Value<String?> chapterKey = const Value.absent(),
               }) => BookmarksCompanion(
                 id: id,
                 bookUid: bookUid,
@@ -66283,6 +66427,8 @@ class $$BookmarksTableTableManager
                 bookTitle: bookTitle,
                 pageInChapter: pageInChapter,
                 totalPagesInChapter: totalPagesInChapter,
+                charOffset: charOffset,
+                chapterKey: chapterKey,
               ),
           createCompanionCallback:
               ({
@@ -66295,6 +66441,8 @@ class $$BookmarksTableTableManager
                 Value<String?> bookTitle = const Value.absent(),
                 Value<int?> pageInChapter = const Value.absent(),
                 Value<int?> totalPagesInChapter = const Value.absent(),
+                Value<int> charOffset = const Value.absent(),
+                Value<String?> chapterKey = const Value.absent(),
               }) => BookmarksCompanion.insert(
                 id: id,
                 bookUid: bookUid,
@@ -66305,6 +66453,8 @@ class $$BookmarksTableTableManager
                 bookTitle: bookTitle,
                 pageInChapter: pageInChapter,
                 totalPagesInChapter: totalPagesInChapter,
+                charOffset: charOffset,
+                chapterKey: chapterKey,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

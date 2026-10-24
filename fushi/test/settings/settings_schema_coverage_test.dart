@@ -573,6 +573,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'floatingBall/Back': _kFloatingBallSceneButtons,
   'floatingBall/Lyrics mode': _kFloatingBallSceneButtons,
   'floatingBall/Navigation': _kFloatingBallSceneButtons,
+  'floatingBall/Bookmarks & saved sentences': _kFloatingBallSceneButtons,
   'floatingBall/Browse illustrations': _kFloatingBallSceneButtons,
   'floatingBall/Reading statistics': _kFloatingBallSceneButtons,
   'floatingBall/Pause / resume reading timer': _kFloatingBallSceneButtons,
