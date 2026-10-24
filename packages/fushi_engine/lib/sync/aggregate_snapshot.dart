@@ -219,8 +219,8 @@ class AggregateSnapshot {
     );
   }
 
-  /// 按用户的共享许可裁掉整族数据，用于互联通道的「共享统计 / 共享收藏夹」两个
-  /// 开关（云通道不调用本方法，其行为逐字节不变）。
+  /// 按用户的共享许可裁掉整族数据：互联通道的「共享统计 / 共享收藏夹」两个开关，
+  /// 以及两条通道共用的设备级「同步浏览历史」开关。
   ///
   /// 快照的字段天然分成两族且不重叠：统计族（四张统计表 + 逐时桶 + 制卡计数 +
   /// 查词/制卡计数）与收藏族（收藏词 / 收藏句 + 两类删除墓碑）。裁剪就是把不许
@@ -230,13 +230,19 @@ class AggregateSnapshot {
   /// 墓碑跟着它保护的那一族走：收藏关掉时连「取消收藏」也不该外流，否则本设备的
   /// 删除意图仍在改写对端。
   ///
-  /// 两个许可都为真时返回入参本身（零拷贝，`identical` 仍成立，与
+  /// 浏览器历史（及其墓碑）是**单独一族**，由 [webHistory] 许可代管（设备级
+  /// 「同步浏览历史」，默认关，见 `kSyncWebHistoryPrefKey`）：浏览轨迹的隐私分量
+  /// 远高于收藏，不能让「已开共享收藏」的存量用户升级后零操作就把整份历史推出去。
+  /// 书签是用户主动收藏的网址，仍归收藏族。
+  ///
+  /// 三个许可都为真时返回入参本身（零拷贝，`identical` 仍成立，与
   /// [AggregateSyncService.filterTombstoned] 同纪律）。
   AggregateSnapshot select({
     required bool stats,
     required bool favorites,
+    required bool webHistory,
   }) {
-    if (stats && favorites) return this;
+    if (stats && favorites && webHistory) return this;
     return AggregateSnapshot(
       readingStats: stats ? readingStats : const <ReadingStatRecord>[],
       videoStats: stats ? videoStats : const <VideoStatRecord>[],
@@ -260,10 +266,10 @@ class AggregateSnapshot {
       studySegments: stats ? studySegments : const <StudySegmentRecord>[],
       studySegmentTombstones:
           stats ? studySegmentTombstones : const <StudyTombstoneRecord>[],
-      // v128 浏览器历史 / 书签归「收藏」族：「共享收藏夹」关掉时连同墓碑一起置空。
-      webHistory: favorites ? webHistory : const <WebHistoryRecord>[],
+      // v128 浏览器历史自成一族（[webHistory] 许可，连同墓碑）；书签归「收藏」族。
+      webHistory: webHistory ? this.webHistory : const <WebHistoryRecord>[],
       webBookmarks: favorites ? webBookmarks : const <WebBookmarkRecord>[],
-      webHistoryTombstones: favorites
+      webHistoryTombstones: webHistory
           ? webHistoryTombstones
           : const <AggregateTombstoneRecord>[],
       webBookmarkTombstones: favorites

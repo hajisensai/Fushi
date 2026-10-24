@@ -7548,6 +7548,8 @@
   "sync_username": "اسم المستخدم",
   "sync_video_files": "رفع ملفات الفيديو",
   "sync_video_files_warning": "ملفات الفيديو قد تكون كبيرة جداً.",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "حقول ناقصة",
   "sync_webdav_test_failed": "فشل الاتصال: $message",
   "sync_webdav_url": "عنوان الخادم",

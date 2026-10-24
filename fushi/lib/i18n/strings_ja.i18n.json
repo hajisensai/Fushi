@@ -7548,6 +7548,8 @@
   "sync_username": "ユーザー名",
   "sync_video_files": "動画ファイルをアップロード",
   "sync_video_files_warning": "動画ファイルは非常に大きくなる場合があります。",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "未入力の項目があります",
   "sync_webdav_test_failed": "接続に失敗しました: $message",
   "sync_webdav_url": "サーバーURL",

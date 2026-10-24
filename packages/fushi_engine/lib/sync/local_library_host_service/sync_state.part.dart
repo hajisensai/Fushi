@@ -84,9 +84,19 @@ mixin _LocalLibraryHostSyncState
   /// 读 host 端当前聚合快照。直接复用云后端 phase B 的
   /// [AggregateSyncService.materializeLocalSnapshot]（同一 DB 读取逻辑），保证互联
   /// 与云通道 materialize 结果字节等价、无第二套实现。
+  ///
+  /// 浏览历史族按 **host 本机**的「同步浏览历史」裁（默认关）：host 用户没打开就不把
+  /// 自己的浏览轨迹发给任何已配对设备，哪怕对端开着。统计 / 收藏仍由 client 侧许可
+  /// 裁（既有行为）。
   @override
   Future<AggregateSnapshot> getAggregateSnapshot() async {
-    return AggregateSyncService(_db).materializeLocalSnapshot();
+    final AggregateSnapshot snapshot =
+        await AggregateSyncService(_db).materializeLocalSnapshot();
+    return snapshot.select(
+      stats: true,
+      favorites: true,
+      webHistory: await readWebHistorySyncEnabled(_db),
+    );
   }
 
   /// 把 client 上报的聚合快照折叠进 host DB。用
@@ -96,10 +106,18 @@ mixin _LocalLibraryHostSyncState
   /// 幂等（重复 apply 同一快照不变）；删除不跨端传播。经 [_runSyncStateExclusive]
   /// 与本机出站同步的聚合落库串行，避免读-改-写交错丢更新；**不**排在 host 自己的
   /// 整轮同步后面（BUG-2717：否则对端 PUT 15s 拿不到响应头即超时）。
+  ///
+  /// host 没打开「同步浏览历史」时，对端上报的历史族（含墓碑）整族丢弃不落库——与
+  /// GET 同一判据，host 不参与历史同步就两个方向都不参与。
   @override
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {
+    final AggregateSnapshot incoming = snapshot.select(
+      stats: true,
+      favorites: true,
+      webHistory: await readWebHistorySyncEnabled(_db),
+    );
     await _runSyncStateExclusive(
-      () => AggregateSyncService(_db).foldIntoLocal(snapshot),
+      () => AggregateSyncService(_db).foldIntoLocal(incoming),
     );
   }
 

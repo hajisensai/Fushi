@@ -155,6 +155,25 @@ class WebBrowserIncognitoProfiles {
       return null;
     }
   }
+
+  /// 标签页下载 / 取图要带的 Cookie 头，按**标签页会话**取：
+  ///
+  /// - 普通标签页：[persistent]（持久 cookie 罐，Windows 上是同一 WebView2 环境的
+  ///   CookieManager）。
+  /// - Android 无痕页：本会话具名 Profile 自己的 cookie 罐。
+  /// - 其它平台无痕页：插件 `incognito` 的非持久存储（WebView2 InPrivate /
+  ///   WKWebsiteDataStore.nonPersistent / WPE 临时会话）对 CookieManager 不可读，
+  ///   没有隔离罐可取——一律**不带** cookie。绝不能退回 [persistent]：那会把普通会话
+  ///   的登录态带进无痕下载（隔离被打穿），而无痕页自己的 cookie 照样拿不到。
+  Future<String?> tabCookieHeader(
+    Uri url, {
+    required bool incognito,
+    required Future<String?> Function(Uri url) persistent,
+  }) {
+    if (!incognito) return persistent(url);
+    if (needsNamedProfile) return cookieHeader(url);
+    return Future<String?>.value();
+  }
 }
 
 /// 给标签页的 WebView 设置接上无痕：Android 把视图放进本次无痕会话的具名 Profile，

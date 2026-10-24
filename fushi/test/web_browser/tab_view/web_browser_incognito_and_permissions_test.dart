@@ -154,6 +154,69 @@ void main() {
       expect(await p.cookieHeader(_u('a')), isNull);
     });
 
+    test('标签页 cookie 按会话取：无痕页绝不读持久罐', () async {
+      final List<Uri> persistentReads = <Uri>[];
+      Future<String?> persistent(Uri url) async {
+        persistentReads.add(url);
+        return 'login=normal';
+      }
+
+      // 普通标签页：任何平台都走持久罐。
+      for (final TargetPlatform platform in TargetPlatform.values) {
+        final WebBrowserIncognitoProfiles p = _profiles(
+          _FakeBackend(),
+          platform: platform,
+        );
+        expect(
+          await p.tabCookieHeader(
+            _u('a'),
+            incognito: false,
+            persistent: persistent,
+          ),
+          'login=normal',
+        );
+      }
+      persistentReads.clear();
+
+      // 非 Android 无痕页：没有可读的隔离罐 → 不带 cookie，也不碰持久罐。
+      for (final TargetPlatform platform in <TargetPlatform>[
+        TargetPlatform.windows,
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      ]) {
+        final WebBrowserIncognitoProfiles p = _profiles(
+          _FakeBackend(),
+          platform: platform,
+        );
+        p.sessionProfileName();
+        expect(
+          await p.tabCookieHeader(
+            _u('a'),
+            incognito: true,
+            persistent: persistent,
+          ),
+          isNull,
+          reason: '$platform',
+        );
+      }
+      expect(persistentReads, isEmpty);
+
+      // Android 无痕页：取本会话具名 Profile 的 cookie。
+      final _FakeBackend backend = _FakeBackend();
+      final WebBrowserIncognitoProfiles android = _profiles(backend);
+      backend.cookies[android.sessionProfileName()] = 'sid=incog';
+      expect(
+        await android.tabCookieHeader(
+          _u('a'),
+          incognito: true,
+          persistent: persistent,
+        ),
+        'sid=incog',
+      );
+      expect(persistentReads, isEmpty);
+    });
+
     test('applyWebBrowserIncognito：Android 关掉插件 incognito、挂会话 Profile', () {
       final WebBrowserIncognitoProfiles p = _profiles(_FakeBackend());
       final InAppWebViewSettings incognito = InAppWebViewSettings(

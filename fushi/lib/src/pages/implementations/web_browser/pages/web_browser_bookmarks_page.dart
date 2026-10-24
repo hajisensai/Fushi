@@ -391,7 +391,7 @@ class _WebBrowserBookmarksPageState extends State<WebBrowserBookmarksPage> {
           ),
           if (_items.length > 1)
             FushiReorderableDragHandle(
-              child: Tooltip(
+              child: FushiTooltip(
                 message: t.web_browser_bookmark_reorder,
                 child: const SizedBox(
                   width: kMinInteractiveDimension,

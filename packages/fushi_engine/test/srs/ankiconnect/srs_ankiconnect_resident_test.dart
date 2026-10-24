@@ -314,6 +314,41 @@ void main() {
     await expectSameAsFresh('addNotes');
   });
 
+  test('并发请求：查询未落记忆前插进来的写入不会让记忆存旧结果、也不碰已释放的语料', () async {
+    // 常驻视图跨请求共享：请求 A 的 _matchCards 在语料 prepare/match 的几次 await 之后才写
+    // memo；若请求不串行，B 的 _refresh → markStale 会在这段时间里清空 memo、释放 delta 语料，
+    // A 随后把旧命中写进新一代的 memo（C 读到旧结果），或在已释放的语料上抛错。
+    // handler 的 [SrsAnkiConnectHandler.handle] 把请求排进同一条队列；这里同时发出不等待，
+    // 锁住「A → B → C 依次跑完、互不交错」。
+    const String q = 'Expression:并*';
+    Future<Object?> send(String action, Map<String, Object?> params) =>
+        call(resident, action, params);
+    final List<Future<Object?>> inFlight = <Future<Object?>>[
+      send('findNotes', <String, Object?>{'query': q}), // A：记忆未命中，要跑语料。
+      send('addNote', <String, Object?>{'note': yomitanNote('并发')}), // B：写入。
+      send('findNotes', <String, Object?>{'query': q}), // C：必须看到 B。
+      send('addNote', <String, Object?>{'note': yomitanNote('并发2')}),
+      send('findCards', <String, Object?>{'query': q}),
+    ];
+    final List<Map<String, Object?>> got = <Map<String, Object?>>[
+      for (final Object? r in await Future.wait(inFlight))
+        r! as Map<String, Object?>,
+    ];
+    for (final Map<String, Object?> r in got) {
+      expect(r['error'], isNull, reason: '$r');
+    }
+    expect(got[0]['result'], isEmpty);
+    final int added = got[1]['result']! as int;
+    expect(got[2]['result'], <Object?>[added]);
+    final Object? wantCards =
+        ((await call(fresh(), 'findCards', <String, Object?>{'query': q}))!
+            as Map<String, Object?>)['result'];
+    expect((wantCards! as List<Object?>), isNotEmpty);
+    expect(got[4]['result'], wantCards);
+    expect(await ok('findNotes', <String, Object?>{'query': q}), hasLength(2));
+    await expectSameAsFresh('concurrent');
+  });
+
   test('未知整数 id：不重建索引，直接回空', () async {
     final CountingInterceptor counter = CountingInterceptor();
     final FushiDatabase db = FushiDatabase.forTesting(

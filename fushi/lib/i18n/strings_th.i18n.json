@@ -7548,6 +7548,8 @@
   "sync_username": "ชื่อผู้ใช้",
   "sync_video_files": "อัปโหลดไฟล์วิดีโอ",
   "sync_video_files_warning": "ไฟล์วิดีโอมีขนาดใหญ่มาก",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "ข้อมูลไม่ครบ",
   "sync_webdav_test_failed": "เชื่อมต่อไม่สำเร็จ: $message",
   "sync_webdav_url": "URL เซิร์ฟเวอร์",

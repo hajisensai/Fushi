@@ -7548,6 +7548,8 @@
   "sync_username": "사용자 이름",
   "sync_video_files": "동영상 파일 업로드",
   "sync_video_files_warning": "동영상 파일은 매우 클 수 있습니다.",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "입력하지 않은 항목이 있습니다",
   "sync_webdav_test_failed": "연결 실패: $message",
   "sync_webdav_url": "서버 URL",

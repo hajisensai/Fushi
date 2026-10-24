@@ -7548,6 +7548,8 @@
   "sync_username": "Benutzername",
   "sync_video_files": "Videodateien hochladen",
   "sync_video_files_warning": "Videodateien können sehr groß sein.",
+  "sync_web_history": "Sync browsing history",
+  "sync_web_history_hint": "Off by default. When on, the in-app browser's history syncs with cloud backup and paired devices. Bookmarks follow favorites.",
   "sync_webdav_missing_fields": "Fehlende Felder",
   "sync_webdav_test_failed": "Verbindung fehlgeschlagen: $message",
   "sync_webdav_url": "Server-URL",
