@@ -26,6 +26,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -36,6 +37,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1586,7 +1588,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     final Color fg = isGlassDesign(context)
         ? appleColorsOf(context).label
         : theme.colorScheme.onSurface;
-    return Tooltip(
+    return FushiTooltip(
       message: t.web_browser_tab_count(count: count),
       child: Semantics(
         button: true,
@@ -1724,7 +1726,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       child: AnimatedOpacity(
         opacity: loading ? 1 : 0,
         duration: fushiMotionDuration(context, FushiMotion.short),
-        child: LinearProgressIndicator(
+        child: FushiLinearProgressIndicator(
           key: const ValueKey<String>('web-browser-progress'),
           value: loading ? tab!.progress : 1,
           minHeight: 2,
@@ -1906,7 +1908,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
             child: SafeArea(bottom: false, child: const SizedBox.shrink()),
           ),
         ClipRect(
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: duration,
             curve: FushiMotion.standard,
             alignment: Alignment.topCenter,
@@ -2047,7 +2049,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         if (!fullscreen) ...<Widget>[
           if (!collapsed) _progressLine(context),
           ClipRect(
-            child: AnimatedSize(
+            child: FushiAnimatedSize(
               duration: duration,
               curve: FushiMotion.standard,
               alignment: Alignment.bottomCenter,

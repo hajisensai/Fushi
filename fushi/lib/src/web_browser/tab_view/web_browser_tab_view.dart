@@ -165,12 +165,14 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _appliedForceDark = _readForceDark();
     _downloader = WebBrowserDownloader(
       store: widget.host.store,
-      // Android 无痕页的 cookie 在本会话的具名 Profile 里，全局 CookieManager 看不到。
+      // 按标签页会话取 cookie：Android 无痕页取本会话具名 Profile；其它平台无痕页
+      // 没有可读的隔离罐，不带 cookie（绝不退回持久罐）。
       cookieHeader: (Uri url) =>
-          _tab.incognito &&
-              WebBrowserIncognitoProfiles.instance.needsNamedProfile
-          ? WebBrowserIncognitoProfiles.instance.cookieHeader(url)
-          : webBrowserCookieHeaderResolverFor(_environment)(url),
+          WebBrowserIncognitoProfiles.instance.tabCookieHeader(
+            url,
+            incognito: _tab.incognito,
+            persistent: webBrowserCookieHeaderResolverFor(_environment),
+          ),
     );
     if (!_tab.incognito) {
       _recorder = WebBrowserVisitRecorder(
@@ -715,7 +717,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
       return;
     }
     messenger.showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(t.web_browser_download_completed(name: outcome.fileName)),
         action: SnackBarAction(
           label: t.web_browser_download_open,

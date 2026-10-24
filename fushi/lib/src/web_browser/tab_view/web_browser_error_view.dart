@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -138,12 +139,9 @@ class _WebBrowserErrorViewState extends State<WebBrowserErrorView> {
                           : t.web_browser_error_details_show,
                     ),
                   ),
-                  AnimatedSize(
-                    duration: fushiMotionDuration(
-                      context,
-                      const Duration(milliseconds: 200),
-                    ),
-                    curve: Curves.easeOutCubic,
+                  FushiAnimatedSize(
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: FushiMotion.standard,
                     alignment: Alignment.topCenter,
                     child: _detailsShown
                         ? ConstrainedBox(
