@@ -308,23 +308,10 @@ fn merge_ruby_and_export_round_trip_through_ffi() {
     assert_eq!(merged.lines[0].translations, vec![("zh".to_string(), "沉".to_string())]);
     assert_eq!(merged.lines[1].translations, vec![("zh".to_string(), "融".to_string())]);
 
-    // 注音：一行 token。
-    let ja = wire::encode(&ffi_parse("[00:01.00]夜に駆ける".as_bytes(), "lrc", 5000).unwrap());
-    let mut tok = wire::Writer::new();
-    tok.u32(1);
-    tok.u32(3);
-    for (s, r) in [("夜", "よる"), ("に", "に"), ("駆ける", "かける")] {
-        tok.str(s);
-        tok.str(r);
-    }
-    let aligned = wire::decode(&call2(ffi::ffm_lyrics_align_ruby, &ja, &tok.buf)).unwrap();
-    let rubies: Vec<_> = aligned.lines[0].syllables.iter().map(|s| (s.text.as_str(), s.ruby.as_deref())).collect();
-    assert_eq!(rubies, vec![("夜", Some("よる")), ("に", None), ("駆", Some("か")), ("ける", None)]);
-
     // 导出 TTML 再解析回来，时间轴不变。
-    let ttml = call2(ffi::ffm_lyrics_export, &wire::encode(&aligned), b"ttml");
+    let ttml = call2(ffi::ffm_lyrics_export, &wire::encode(&merged), b"ttml");
     let back = ffi_parse(&ttml, "ttml", 5000).unwrap();
-    assert_eq!(back.lines, aligned.lines);
+    assert_eq!(back.lines, merged.lines);
     let lrc = String::from_utf8(call2(ffi::ffm_lyrics_export, &wire::encode(&merged), b"lrc")).unwrap();
     assert!(lrc.contains("[00:01.00]sinking\n[00:01.00]沉\n"), "{lrc}");
 }

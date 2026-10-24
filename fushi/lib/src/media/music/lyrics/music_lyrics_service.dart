@@ -1,6 +1,6 @@
 /// 一首歌用哪份歌词（设计 §5.4）+ `music_lyrics` 落库（`timeline_cache` 二进制 + 版本）。
 ///
-/// 优先级：① 用户手动指定 / 编辑（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
+/// 优先级：① 用户手动指定（`is_user_edited`）→ ② 同目录 sidecar → ③ 文件内嵌 →
 /// ④ LRCLIB（精确匹配；失败不自动采用模糊结果，由用户挑）。
 ///
 /// - 解析与格式互转全在 Rust（`package:fushi_music`）；这里只做 IO 与编排；
@@ -148,7 +148,7 @@ class MusicLyricsService {
     if (cache != null && row.timelineVersion == version) {
       t = decodeLyricTimeline(cache);
     } else {
-      // 用户编辑行的 raw 是 TTML（无损交换格式），其余是原格式。
+      // 手动指定行的 raw 是 TTML（无损交换格式），其余是原格式。
       t = await _parse(
         row.raw,
         row.isUserEdited ? 'ttml' : row.format,
@@ -246,7 +246,7 @@ class MusicLyricsService {
       return null;
     }
 
-    // ① 用户手动指定 / 编辑。
+    // ① 用户手动指定。
     for (final MusicLyricRow r in rows) {
       if (r.isUserEdited) {
         return MusicLyricsResolution(
@@ -487,16 +487,15 @@ class MusicLyricsService {
     return out;
   }
 
-  /// 用户挑定一份候选：写成 `user` 行（`is_user_edited`，永远最高）。原文存 TTML（无损），
-  /// 这样之后的轻量编辑与选来源走同一条路径。
-  Future<void> choose(String trackUid, MusicLyricsCandidate candidate) =>
-      saveUserEdit(trackUid, candidate.timeline);
-
-  /// 保存用户编辑（改错字、翻译、注音、单行偏移）后的时间轴。
-  Future<void> saveUserEdit(String trackUid, LyricTimeline edited) async {
+  /// 用户挑定一份候选：写成 `user` 行（`is_user_edited` = 手动指定，永远最高）。原文存
+  /// TTML（无损交换格式，翻译合并后的结果也一并保住）。
+  ///
+  /// 只有「选来源」这一条写入口：所有者 2026-10-24 拍板不做歌词编辑（改字 / 翻译 /
+  /// 注音 / 单行偏移），这里不接受任意改过的时间轴。
+  Future<void> choose(String trackUid, MusicLyricsCandidate candidate) async {
     final FushiDatabase? db = _database();
     if (db == null) return;
-    final LyricTimeline t = edited.copyWith(
+    final LyricTimeline t = candidate.timeline.copyWith(
       source: MusicLyricsSource.user,
       isUserEdited: true,
     );
@@ -508,11 +507,11 @@ class MusicLyricsService {
       raw: FushiLyrics.export(t.copyWith(offsetMs: 0), 'ttml'),
       timeline: t.copyWith(offsetMs: 0),
       isUserEdited: true,
-      offsetMs: edited.offsetMs,
+      offsetMs: candidate.timeline.offsetMs,
     );
   }
 
-  /// 撤销手动指定 / 编辑，回到自动优先级。
+  /// 撤销手动指定，回到自动优先级。
   Future<void> clearUserEdit(String trackUid) async {
     final FushiDatabase? db = _database();
     if (db == null) return;

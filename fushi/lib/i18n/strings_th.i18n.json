@@ -1186,7 +1186,7 @@
   "backup_category_local_audio": "ฐานข้อมูลเสียงในเครื่อง",
   "backup_category_local_audio_desc": "ฐานข้อมูลเสียงออกเสียงในเครื่อง",
   "backup_category_music": "Music",
-  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
+  "backup_category_music_desc": "Playlists, chosen lyrics sources, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "โปรไฟล์",
   "backup_category_profiles_desc": "โปรไฟล์การตั้งค่า",
   "backup_category_progress": "ความคืบหน้าการอ่าน",

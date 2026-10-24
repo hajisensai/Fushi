@@ -7,13 +7,12 @@
 //! | `ffm_lyrics_parse(data, len, hint, hint_len, duration_ms, out, out_len) -> i32` | 解析；失败时 out 是 UTF-8 错误信息、返回 -3 |
 //! | `ffm_lyrics_embedded(path, path_len, duration_ms, out, out_len) -> i32` | 读文件内嵌歌词（列表） |
 //! | `ffm_lyrics_merge(primary, len, secondary, len, lang, lang_len, out, out_len) -> i32` | 翻译按时间配对 |
-//! | `ffm_lyrics_align_ruby(timeline, len, tokens, len, out, out_len) -> i32` | 自动注音对齐 |
 //! | `ffm_lyrics_export(timeline, len, format, format_len, out, out_len) -> i32` | 导出 `ttml` / `lrc` |
 //!
 //! `duration_ms < 0` = 曲长未知。
 
 use super::embedded::{self, Embedded};
-use super::wire::{self, Reader, Writer};
+use super::wire::{self, Writer};
 use crate::{guard, hand_over_bytes, slice_arg, status};
 
 unsafe fn str_arg<'a>(ptr: *const u8, len: usize) -> Result<&'a str, i32> {
@@ -152,48 +151,6 @@ pub unsafe extern "C" fn ffm_lyrics_merge(
         hand_over_bytes(wire::encode(&super::merge::merge_translation(&p, &s, lang)), out_ptr, out_len);
         status::OK
     })
-}
-
-/// tokens：`u32 lineCount | (u32 n | (str surface | str reading)*n)*`，第 i 组对应时间轴第 i 行。
-///
-/// # Safety
-/// 同 [ffm_lyrics_parse]。
-#[no_mangle]
-pub unsafe extern "C" fn ffm_lyrics_align_ruby(
-    timeline_ptr: *const u8,
-    timeline_len: usize,
-    tokens_ptr: *const u8,
-    tokens_len: usize,
-    out_ptr: *mut *mut u8,
-    out_len: *mut usize,
-) -> i32 {
-    guard(|| {
-        if out_ptr.is_null() || out_len.is_null() {
-            return status::NULL_ARGUMENT;
-        }
-        let (Some(tb), Some(kb)) = (slice_arg(timeline_ptr, timeline_len), slice_arg(tokens_ptr, tokens_len)) else {
-            return status::NULL_ARGUMENT;
-        };
-        let Some(t) = wire::decode(tb) else { return status::BAD_INPUT };
-        let Some(tokens) = read_tokens(kb) else { return status::BAD_INPUT };
-        hand_over_bytes(wire::encode(&super::ruby::align(&t, &tokens)), out_ptr, out_len);
-        status::OK
-    })
-}
-
-fn read_tokens(b: &[u8]) -> Option<Vec<super::ruby::LineTokens>> {
-    let mut r = Reader::new(b);
-    let lines = r.u32()? as usize;
-    let mut out = Vec::with_capacity(lines.min(10_000));
-    for _ in 0..lines {
-        let n = r.u32()? as usize;
-        let mut v = Vec::with_capacity(n.min(10_000));
-        for _ in 0..n {
-            v.push((r.str()?, r.str()?));
-        }
-        out.push(v);
-    }
-    r.at_end().then_some(out)
 }
 
 /// # Safety

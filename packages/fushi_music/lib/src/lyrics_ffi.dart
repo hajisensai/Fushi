@@ -132,9 +132,6 @@ class _LyricsBindings {
       merge = _lib.library.lookupFunction<_MergeC, _MergeDart>(
         'ffm_lyrics_merge',
       );
-      alignRuby = _lib.library.lookupFunction<_Bin2C, _Bin2Dart>(
-        'ffm_lyrics_align_ruby',
-      );
       export = _lib.library.lookupFunction<_Bin2C, _Bin2Dart>(
         'ffm_lyrics_export',
       );
@@ -148,7 +145,6 @@ class _LyricsBindings {
   late final _ParseDart parse;
   late final _EmbeddedDart embedded;
   late final _MergeDart merge;
-  late final _Bin2Dart alignRuby;
   late final _Bin2Dart export;
 
   static _LyricsBindings? _instance;
@@ -284,30 +280,6 @@ abstract final class FushiLyrics {
     return decodeLyricTimeline(r.bytes);
   }
 
-  /// 自动注音：[tokensPerLine] 第 i 组是时间轴第 i 行的 (表层形, 读音)。已带 ruby 的行不动。
-  static LyricTimeline alignRuby(
-    LyricTimeline timeline,
-    List<List<({String surface, String reading})>> tokensPerLine,
-  ) {
-    final _LyricsBindings b = _LyricsBindings.instance;
-    final Uint8List t = encodeLyricTimeline(timeline);
-    final Uint8List k = encodeRubyTokens(tokensPerLine);
-    final ({int status, Uint8List bytes}) r = b.call(
-      (Arena a, Pointer<Pointer<Uint8>> out, Pointer<Size> len) => b.alignRuby(
-        _copyIn(t, a),
-        t.length,
-        _copyIn(k, a),
-        k.length,
-        out,
-        len,
-      ),
-    );
-    if (r.status != FfmStatus.ok) {
-      throw StateError('ffm_lyrics_align_ruby failed with status ${r.status}');
-    }
-    return decodeLyricTimeline(r.bytes);
-  }
-
   /// 导出成 `ttml`（无损）或 `lrc`（丢声部 / 和声 / 注音）。
   static Uint8List export(LyricTimeline timeline, String format) {
     final _LyricsBindings b = _LyricsBindings.instance;
@@ -322,34 +294,6 @@ abstract final class FushiLyrics {
     }
     return r.bytes;
   }
-}
-
-/// 注音 token 线格式：`u32 lineCount | (u32 n | (str surface | str reading)*n)*`。
-Uint8List encodeRubyTokens(
-  List<List<({String surface, String reading})>> lines,
-) {
-  final BytesBuilder b = BytesBuilder(copy: false);
-  final ByteData scratch = ByteData(4);
-  void u32(int v) {
-    scratch.setUint32(0, v, Endian.little);
-    b.add(scratch.buffer.asUint8List(0, 4).toList());
-  }
-
-  void str(String s) {
-    final Uint8List e = utf8.encode(s);
-    u32(e.length);
-    b.add(e);
-  }
-
-  u32(lines.length);
-  for (final List<({String surface, String reading})> line in lines) {
-    u32(line.length);
-    for (final ({String surface, String reading}) t in line) {
-      str(t.surface);
-      str(t.reading);
-    }
-  }
-  return b.takeBytes();
 }
 
 /// 后台 isolate 版本（UI isolate 用这些）：每次调用在 [Isolate.run] 里加载库并执行。

@@ -205,26 +205,28 @@ void main() {
     expect(await db.select(db.musicLyrics).get(), isEmpty);
   });
 
-  test('用户编辑永远最高、偏移持久化、撤销后回到自动优先级', () async {
+  test('手动指定永远最高、偏移持久化、撤销后回到自动优先级', () async {
     writeSide('夜に駆ける.lrc', '[00:01.00]沈むように');
     final MusicLyricsService s = service();
     final MusicLyricsResolution side = (await s.resolve(track()))!;
     await s.setOffset('uid-1', side.source, 250);
     expect((await s.resolve(track()))!.timeline.offsetMs, 250);
 
-    final LyricLine l = side.timeline.lines.single;
-    final LyricTimeline edited = side.timeline.copyWith(
-      lines: <LyricLine>[
-        l.copyWith(
-          syllables: <LyricSyllable>[
-            l.syllables.single.copyWith(text: '沈むように!'),
-          ],
-          translations: const <LyricTranslation>[LyricTranslation('zh', '像沉没')],
-        ),
-      ],
-      offsetMs: -100,
+    final LyricTimeline other = FushiLyrics.mergeTranslation(
+      FushiLyrics.parse(utf8.encode('[00:01.00]沈むように!'), hint: 'lrc'),
+      FushiLyrics.parse(utf8.encode('[00:01.00]像沉没'), hint: 'lrc'),
+      'zh',
+    ).copyWith(offsetMs: -100);
+    await s.choose(
+      'uid-1',
+      MusicLyricsCandidate(
+        source: MusicLyricsSource.lrclib,
+        label: 'LRCLIB',
+        format: 'lrc',
+        raw: utf8.encode('[00:01.00]沈むように!'),
+        timeline: other,
+      ),
     );
-    await s.saveUserEdit('uid-1', edited);
     final MusicLyricsResolution user = (await s.resolve(track()))!;
     expect(user.source, MusicLyricsSource.user);
     expect(user.timeline.isUserEdited, isTrue);
@@ -245,8 +247,8 @@ void main() {
   test('缓存版本对不上时从 raw 重建', () async {
     writeSide('夜に駆ける.lrc', '[00:01.00]沈むように');
     final MusicLyricsService s = service();
-    final MusicLyricsResolution side = (await s.resolve(track()))!;
-    await s.saveUserEdit('uid-1', side.timeline);
+    final MusicLyricsCandidate side = (await s.localCandidates(track())).first;
+    await s.choose('uid-1', side);
     await (db.update(
       db.musicLyrics,
     )..where(($MusicLyricsTable t) => t.source.equals('user'))).write(
@@ -288,12 +290,11 @@ void main() {
       t,
       trackUid: 'uid-1',
       fileOffsetMs: 60000,
-      lineOffsetsMs: const <int, int>{2: 100},
     );
     expect(cues.length, 2);
     expect(cues[0].text, '沈むように');
     expect(cues[0].startMs, 1000 - 200 + 60000);
     expect(cues[1].sentenceIndex, 2);
-    expect(cues[1].startMs, 5000 - 200 - 100 + 60000);
+    expect(cues[1].startMs, 5000 - 200 + 60000);
   });
 }

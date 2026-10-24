@@ -1186,7 +1186,7 @@
   "backup_category_local_audio": "Локальные аудиобазы",
   "backup_category_local_audio_desc": "Локальные базы аудио произношения",
   "backup_category_music": "Music",
-  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
+  "backup_category_music_desc": "Playlists, chosen lyrics sources, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "Профили",
   "backup_category_profiles_desc": "Профили конфигурации",
   "backup_category_progress": "Прогресс чтения",

@@ -32,7 +32,6 @@
 | `ffm_lyrics_parse(const u8*, usize, const u8* hint, usize, i64 durationMs, u8**, usize*) -> i32` | 任意格式 → 统一时间轴（线格式 `src/lyrics/wire.rs`）；失败 -3，out 为错误信息 |
 | `ffm_lyrics_embedded(const u8* path, usize, i64 durationMs, u8**, usize*) -> i32` | 内嵌 USLT / SYLT / Vorbis LYRICS / MP4 ©lyr |
 | `ffm_lyrics_merge(primary, len, secondary, len, lang, len, u8**, usize*) -> i32` | 翻译按时间配对（≤ 300 ms） |
-| `ffm_lyrics_align_ruby(timeline, len, tokens, len, u8**, usize*) -> i32` | 自动注音与音节对齐 |
 | `ffm_lyrics_export(timeline, len, format, len, u8**, usize*) -> i32` | 导出 `ttml` / `lrc` |
 
 新增符号不升 `ffm_abi_version`（扫描批次格式没变）；Dart 侧按需 lookup，缺符号抛

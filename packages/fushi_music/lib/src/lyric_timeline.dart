@@ -170,21 +170,6 @@ class LyricLine {
     style: style,
   );
 
-  /// 整行平移 [deltaMs]（单行偏移）。
-  LyricLine shifted(int deltaMs) => deltaMs == 0
-      ? this
-      : copyWith(
-          startMs: startMs + deltaMs,
-          endMs: endMs + deltaMs,
-          syllables: <LyricSyllable>[
-            for (final LyricSyllable s in syllables)
-              s.copyWith(
-                startMs: s.startMs + deltaMs,
-                endMs: s.endMs + deltaMs,
-              ),
-          ],
-        );
-
   @override
   bool operator ==(Object other) =>
       other is LyricLine &&

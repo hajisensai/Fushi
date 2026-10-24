@@ -1186,7 +1186,7 @@
   "backup_category_local_audio": "本地音频数据库",
   "backup_category_local_audio_desc": "本地发音音频库",
   "backup_category_music": "音乐",
-  "backup_category_music_desc": "歌单、歌词编辑、MV 绑定与播放记录（不含扫描出的曲库目录与封面缓存）",
+  "backup_category_music_desc": "歌单、手动指定的歌词来源、MV 绑定与播放记录（不含扫描出的曲库目录与封面缓存）",
   "backup_category_profiles": "配置方案",
   "backup_category_profiles_desc": "配置方案",
   "backup_category_progress": "阅读进度",

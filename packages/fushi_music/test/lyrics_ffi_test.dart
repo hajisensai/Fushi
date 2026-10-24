@@ -79,7 +79,7 @@ void main() {
     );
   });
 
-  test('翻译合并 / 注音对齐 / 导出 LRC', () {
+  test('翻译合并 / 导出 LRC', () {
     final LyricTimeline src = FushiLyrics.parse(
       utf8.encode('[00:01.00]夜に駆ける\n[00:04.00]君の声'),
       hint: 'lrc',
@@ -92,24 +92,7 @@ void main() {
     expect(merged.lines[0].primaryTranslation, '在夜里奔跑');
     expect(merged.lines[1].translations.single.lang, 'zh');
 
-    final LyricTimeline ruby = FushiLyrics.alignRuby(
-      merged,
-      <List<({String surface, String reading})>>[
-        <({String surface, String reading})>[
-          (surface: '夜', reading: 'よる'),
-          (surface: 'に', reading: 'に'),
-          (surface: '駆ける', reading: 'かける'),
-        ],
-      ],
-    );
-    expect(ruby.lines[0].syllables.map((LyricSyllable s) => s.ruby), <String?>[
-      'よる',
-      null,
-      'か',
-      null,
-    ]);
-    expect(ruby.lines[0].text, '夜に駆ける');
-    final String lrc = utf8.decode(FushiLyrics.export(ruby, 'lrc'));
+    final String lrc = utf8.decode(FushiLyrics.export(merged, 'lrc'));
     expect(lrc, contains('[00:01.00]'));
     expect(FushiLyrics.parserVersion, greaterThanOrEqualTo(1));
   });

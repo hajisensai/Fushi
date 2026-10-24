@@ -1186,7 +1186,7 @@
   "backup_category_local_audio": "本地音頻資料庫",
   "backup_category_local_audio_desc": "本地發音音頻庫",
   "backup_category_music": "Music",
-  "backup_category_music_desc": "Playlists, lyrics edits, music-video links and play history (not the scanned library or covers)",
+  "backup_category_music_desc": "Playlists, chosen lyrics sources, music-video links and play history (not the scanned library or covers)",
   "backup_category_profiles": "配置方案",
   "backup_category_profiles_desc": "配置方案",
   "backup_category_progress": "閱讀進度",
