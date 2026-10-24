@@ -373,7 +373,9 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show kFushiFloatingToolbarEdgeMargin;
+    show FushiFloatingTopBar, FushiToolbarItem, kFushiFloatingToolbarEdgeMargin;
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiChoiceOption, showFushiChoiceDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/render_backend_service.dart';
@@ -2552,6 +2554,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 用户已要求退出原盘会话（按满 / Cmd+W / 「退出原盘」）：之后的返回链不再走
   /// 「先呼出控制栏」那一步。页面随即 pop，不需要复位。
   bool _discSessionExitRequested = false;
+
+  /// macOS 原盘会话正处于应用自有的无边框全屏（[WindowCaptionChannel.setBorderlessFullscreen]），
+  /// 退全屏时要走同一条通道还原，而不是 AppKit 的原生全屏退出。
+  bool _macBorderlessFullscreen = false;
   List<SubtitleTrack>? _discLastSubtitleTracks;
   int _discSubtitleTracksRevision = 0;
   String get _activeBookUid =>

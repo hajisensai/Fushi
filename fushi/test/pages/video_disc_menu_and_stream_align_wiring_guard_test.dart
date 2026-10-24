@@ -45,8 +45,12 @@ void main() {
     );
     expect(body, contains('VideoControlItem.fullscreen'));
     expect(body, contains("'bluray-menu-fullscreen'"));
-    expect(body, contains('_buildFullscreenButton(desktop: desktop)'));
+    expect(body, contains('_toggleVideoFullscreen(ctx)'));
     expect(body, contains('!isMobilePlatform'));
+    // 会话控制栏走 FushiFloatingTopBar 的自适应溢出（默认平铺、放不下才收进「⋯」）。
+    expect(body, contains('FushiFloatingTopBar('));
+    expect(body, isNot(contains('VideoControlBar(')));
+    expect(body, isNot(contains('adaptiveOverflow: false')));
   });
 
   test('waveform and auto-align accept stream audio; ASR does not', () {

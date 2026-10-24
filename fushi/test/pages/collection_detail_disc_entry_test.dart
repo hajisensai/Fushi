@@ -3,7 +3,12 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
@@ -11,6 +16,8 @@ import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../helpers/test_platform_services.dart';
 
 /// BD/DVD 原盘交互改造第 5 项：原盘合集详情页的主按钮是「播放原盘」，次按钮
 /// 「继续观看 xx:xx」/「直接播放正片」，多盘给「选盘」；开不了菜单时主按钮退回普通
@@ -190,6 +197,56 @@ void main() {
       expect(opened, hasLength(1), reason: '退回普通播放');
     });
   }
+
+  testWidgets(
+    'setting "open disc menu by default" off: main button plays the title, '
+    'the disc menu stays a secondary entry',
+    (WidgetTester tester) async {
+      useSurface(tester);
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final PreferencesRepository prefs = PreferencesRepository(db);
+      await tester.runAsync(prefs.loadFromDb);
+      await tester.runAsync(() => prefs.setVideoDiscOpenMenuByDefault(false));
+      final Directory store = Directory.systemTemp.createTempSync(
+        'fushi_disc_entry',
+      );
+      addTearDown(() => store.deleteSync(recursive: true));
+      final AppModel appModel = AppModel(testPlatformServices())
+        ..wireDatabaseForTesting(db)
+        ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: store);
+      expect(appModel.videoDiscOpenMenuByDefault, isFalse);
+      await addMember('d1', mpls('Disc 1'), playedAt: 100);
+      await addMember('d2', mpls('Disc 2'), playedAt: 500);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: buildApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
+        findsNothing,
+        reason: '主按钮变回直接播正片',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('collection-disc-open-menu')),
+        findsOneWidget,
+        reason: '菜单可开，入口留在次按钮',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('collection-disc-main-title')),
+        findsNothing,
+      );
+      await tester.tap(heroPlay());
+      await tester.pumpAndSettle();
+      expect(opened, hasLength(1), reason: '主按钮走普通播放');
+    },
+  );
 
   testWidgets('plain collections keep the normal play button', (
     WidgetTester tester,

@@ -7819,6 +7819,7 @@
   "video_diag_share_subject": "Fushi 影片診斷日誌",
   "video_disc_angle_extraction_unavailable": "This menu-selected angle cannot be extracted. Switch to the main angle before creating cards.",
   "video_disc_audio_selection_pending": "Wait for the disc to select an audio track, or choose one before creating cards.",
+  "video_disc_chapters_menu_unavailable": "Chapters are available once the main title is playing; the disc menu has no timeline.",
   "video_disc_choose_disc": "Choose disc",
   "video_disc_continue_at": "Continue watching $time",
   "video_disc_exit": "Exit disc",

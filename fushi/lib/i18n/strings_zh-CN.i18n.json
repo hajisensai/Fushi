@@ -7819,6 +7819,7 @@
   "video_diag_share_subject": "Fushi 视频诊断日志",
   "video_disc_angle_extraction_unavailable": "当前菜单选中的角度无法直接提取。请切回主视角后制卡。",
   "video_disc_audio_selection_pending": "请等待原盘确定音轨，或手动选择音轨后再制卡。",
+  "video_disc_chapters_menu_unavailable": "菜单阶段没有正片时间轴，进入正片后可用章节。",
   "video_disc_choose_disc": "选盘",
   "video_disc_continue_at": "继续观看 $time",
   "video_disc_exit": "退出原盘",

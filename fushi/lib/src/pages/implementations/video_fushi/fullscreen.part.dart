@@ -490,6 +490,18 @@ extension _VideoFullscreen on _VideoFushiPageState {
         await WindowCaptionChannel.setFullscreen(true);
         return;
       }
+      // 原盘会话在 macOS 上用应用自有的无边框全屏：系统原生全屏会把 Esc 归系统，
+      // 会话的「Esc 呼出控制栏 / 再按退出」就失效了。
+      if (Platform.isMacOS && widget.openBlurayMenu) {
+        if (await WindowCaptionChannel.setBorderlessFullscreen(true)) {
+          _macBorderlessFullscreen = true;
+          return;
+        }
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscSession.macFullscreen',
+          'borderless fullscreen refused by the runner; using native fullscreen',
+        );
+      }
       await defaultEnterNativeFullscreen();
       return;
     }
@@ -521,6 +533,13 @@ extension _VideoFullscreen on _VideoFushiPageState {
         // 闪一下标题栏。
         await WindowCaptionChannel.setFullscreen(false);
         FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: false);
+        return;
+      }
+      if (_macBorderlessFullscreen) {
+        // 与进入对称：还原无边框全屏之前的 styleMask / frame（含「缩放」后的尺寸）。
+        _macBorderlessFullscreen = false;
+        await WindowCaptionChannel.setBorderlessFullscreen(false);
+        FushiDesktopTitleBar.reassertMacTrafficLights();
         return;
       }
       await defaultExitNativeFullscreen();
