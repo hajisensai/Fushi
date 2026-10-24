@@ -40,6 +40,22 @@ bool musicPreviousGoesBack(
   Duration threshold = const Duration(seconds: 3),
 }) => position <= threshold;
 
+/// AB 循环区间（相对当前曲目起点，`b > a`）。
+@immutable
+class MusicAbLoop {
+  const MusicAbLoop(this.a, this.b);
+
+  final Duration a;
+  final Duration b;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicAbLoop && other.a == a && other.b == b;
+
+  @override
+  int get hashCode => Object.hash(a, b);
+}
+
 /// 构造输出后端的工厂（真 app 给 libmpv，测试给替身）。
 typedef MusicOutputBackendFactory = MusicOutputBackend Function();
 
@@ -91,6 +107,7 @@ class MusicPlayerEngine extends ChangeNotifier {
   Timer? _sleepTimer;
   DateTime? _sleepDeadline;
   MusicBackendOutputFallback? _lastOutputFallback;
+  MusicAbLoop? _abLoop;
 
   /// 输出自动退回（独占 → 共享 / 指定设备 → 默认）时调用：界面弹明确提示。
   void Function(MusicBackendOutputFallback fallback)? onOutputFallback;
@@ -122,6 +139,25 @@ class MusicPlayerEngine extends ChangeNotifier {
 
   /// 最近一次输出退回（面板显示原因）；用户改输出设置后清掉。
   MusicBackendOutputFallback? get lastOutputFallback => _lastOutputFallback;
+
+  /// 当前 AB 循环（相对当前曲目起点）；null = 没开。换曲目自动关。
+  MusicAbLoop? get abLoop => _abLoop;
+
+  /// 开 / 改 AB 循环；[loop] 为 null（或区间为空）= 关。没在播时只记状态不下发。
+  Future<void> setAbLoop(MusicAbLoop? loop) async {
+    final MusicAbLoop? next = loop == null || loop.b <= loop.a ? null : loop;
+    if (next == _abLoop) return;
+    _abLoop = next;
+    notifyListeners();
+    await _backend?.setAbLoop(next?.a, next?.b);
+  }
+
+  /// 换曲目时关掉循环（后端的循环点跨文件保留，必须显式清）。
+  void _dropAbLoopForTrackChange() {
+    if (_abLoop == null) return;
+    _abLoop = null;
+    unawaited(_backend?.setAbLoop(null, null));
+  }
 
   MusicOutputSettings get currentSettings => _baseSettings().copyWith(
     gapless: _gaplessEnabled(),
@@ -188,6 +224,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     final MusicPlayItem? item = current;
     if (item == null) return;
     final MusicOutputBackend backend = _ensureBackend();
+    _dropAbLoopForTrackChange();
     _position = Duration.zero;
     _duration = item.durationMs == null
         ? null
@@ -339,6 +376,7 @@ class MusicPlayerEngine extends ChangeNotifier {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepDeadline = null;
+    _abLoop = null;
     notifyListeners();
     if (backend != null) {
       await backend.stop();
@@ -378,6 +416,7 @@ class MusicPlayerEngine extends ChangeNotifier {
           _index++;
         }
         final MusicPlayItem? item = current;
+        _dropAbLoopForTrackChange();
         _position = Duration.zero;
         _duration = item?.durationMs == null
             ? null

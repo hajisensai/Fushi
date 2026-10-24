@@ -259,6 +259,11 @@ abstract interface class MusicOutputBackend {
 
   /// 跳到当前曲目内的 [position]（相对曲目起点）。
   Future<void> seek(Duration position);
+
+  /// AB 循环（设计 §12，歌词一行 / 多行）：播到 [b] 立即回到 [a]，两点都相对当前曲目
+  /// 起点。两个都给 null = 关。循环由后端在音频时间轴上做（不靠 Dart 定时器追位置），
+  /// 换曲目时由引擎显式关掉。
+  Future<void> setAbLoop(Duration? a, Duration? b);
   Future<void> stop();
   Future<void> dispose();
 

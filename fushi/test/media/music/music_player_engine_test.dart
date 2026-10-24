@@ -54,6 +54,10 @@ class _FakeBackend implements MusicOutputBackend {
       log.add('seek:${position.inMilliseconds}');
 
   @override
+  Future<void> setAbLoop(Duration? a, Duration? b) async =>
+      log.add('ab:${a?.inMilliseconds}-${b?.inMilliseconds}');
+
+  @override
   Future<void> stop() async => log.add('stop');
 
   @override
@@ -114,6 +118,36 @@ void main() {
 
     backend.controller.add(const MusicBackendCompleted());
     expect(engine.isPlaying, isFalse);
+  });
+
+  test('AB 循环：下发给后端；空区间 = 关；换曲目（含无缝推进）自动关', () async {
+    await engine.playQueue(<MusicPlayItem>[_item('a'), _item('b'), _item('c')]);
+    await engine.setAbLoop(
+      const MusicAbLoop(Duration(seconds: 10), Duration(seconds: 14)),
+    );
+    expect(engine.abLoop?.b, const Duration(seconds: 14));
+    expect(backend.log.last, 'ab:10000-14000');
+
+    await engine.setAbLoop(
+      const MusicAbLoop(Duration(seconds: 5), Duration(seconds: 5)),
+    );
+    expect(engine.abLoop, isNull, reason: '空区间等于关');
+    expect(backend.log.last, 'ab:null-null');
+
+    await engine.setAbLoop(
+      const MusicAbLoop(Duration(seconds: 1), Duration(seconds: 2)),
+    );
+    backend.controller.add(const MusicBackendAdvanced());
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.abLoop, isNull, reason: '无缝推进到下一首');
+    expect(backend.log.where((String l) => l == 'ab:null-null').length, 2);
+
+    await engine.setAbLoop(
+      const MusicAbLoop(Duration(seconds: 1), Duration(seconds: 2)),
+    );
+    await engine.skipNext();
+    expect(engine.abLoop, isNull, reason: '手动换曲同样关');
+    expect(backend.log.where((String l) => l == 'ab:null-null').length, 3);
   });
 
   test('ReplayGain：专辑顺序播 album，随机 / 混排 track，关掉 off', () {
