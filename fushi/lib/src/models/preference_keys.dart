@@ -384,6 +384,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
   'music_audio_device',
   // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。
+  // bool（默认 false）：专辑连续曲目 / CUE 拆轨也交叉淡入（设计 §7.2）。
+  'music_crossfade_continuous',
   'music_crossfade_ms',
   // int（默认 176400）：DSD → PCM 目标采样率 Hz（设计 §7.1）。
   'music_dsd_pcm_rate',

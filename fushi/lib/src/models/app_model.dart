@@ -279,6 +279,7 @@ export 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_library_scanner.dart'
@@ -1503,7 +1504,12 @@ class AppModel with ChangeNotifier {
   /// 媒体会话。
   late final MusicSession musicSession = MusicSession(
     engine: MusicPlayerEngine(
-      backendFactory: MpvMusicOutputBackend.new,
+      // 交叉淡入（设计 §7.2）：关着时只有一个 mpv 实例、调用原样转发；开了在曲目真边界处
+      // 用第二个实例预加载下一首、按样本等功率淡入淡出（music_crossfade.dart）。
+      backendFactory: () => MusicCrossfadeBackend(
+        instanceFactory: MpvMusicOutputBackend.new,
+        platform: musicOutputPlatformOfHost(),
+      ),
       gaplessEnabled: () => !isDatabaseReady || prefsRepo.musicGapless,
       replayGainEnabled: () => !isDatabaseReady || prefsRepo.musicReplayGain,
       baseSettings: _musicBaseOutputSettings,
@@ -1574,6 +1580,7 @@ class AppModel with ChangeNotifier {
         orElse: () => MusicDsdPcmRate.khz176,
       ),
       crossfade: Duration(milliseconds: prefsRepo.musicCrossfadeMs),
+      crossfadeContinuous: prefsRepo.musicCrossfadeContinuous,
     );
   }
 
@@ -1616,6 +1623,12 @@ class AppModel with ChangeNotifier {
   int get musicCrossfadeMs => prefsRepo.musicCrossfadeMs;
   Future<void> setMusicCrossfadeMs(int value) async {
     await prefsRepo.setMusicCrossfadeMs(value);
+    await musicSession.engine.reapplySettings();
+  }
+
+  bool get musicCrossfadeContinuous => prefsRepo.musicCrossfadeContinuous;
+  Future<void> setMusicCrossfadeContinuous(bool value) async {
+    await prefsRepo.setMusicCrossfadeContinuous(value);
     await musicSession.engine.reapplySettings();
   }
 
