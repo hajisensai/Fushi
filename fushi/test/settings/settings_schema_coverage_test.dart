@@ -115,6 +115,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 启动轮照查」。
   'system/Auto-update extensions in the background':
       'test/updates/mihon_extension_update_probe_test.dart（关着不装 / 开着且空闲才装 / dueOnStart）',
+  // 媒体库在线作品自动补新集（video_library_auto_update，PR#2493）：写 prefsRepo
+  // （changed=true），生效点是后台调度器里番剧新集域的补集探针——要联网取媒体服务器
+  // / 在线源的新集，harness 观测不到。接线 updateCheckKindGate 由调度器用例咬住：
+  // 关掉它提醒开着也不跑、关提醒不停补集。
+  'system/Auto-add new episodes to the video library':
+      'test/updates/update_check_scheduler_test.dart（番剧新集域只看 '
+      'video_library_auto_update，不看提醒开关）',
   'system/Notify about app releases':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':

@@ -130,6 +130,7 @@ void main() {
         <String, Object?>{'ok': true},
       );
       expect(player.downloads, <String>['1.0']);
+      expect(player.applied, <String>['video-one:1.0']);
 
       await expectLater(
         call('command', <String, dynamic>{'action': 'subtitleDownload'}),
@@ -183,6 +184,55 @@ void main() {
       expect(await first, <String, Object?>{'ok': true});
       expect(await retry, <String, Object?>{'ok': true});
       expect(player.downloads, <String>['1.0']);
+      expect(player.applied, <String>['video-one:1.0']);
+    },
+  );
+
+  test(
+    'an episode switch during the download is not handed the old subtitle',
+    () async {
+      final _FakePlayer player = await connect(search: true);
+      player.downloadGate = Completer<void>();
+      final Future<Map<String, Object?>> download = call(
+        'command',
+        <String, dynamic>{'action': 'subtitleDownload', 'candidateId': '1.0'},
+      );
+      await pumpEventQueue();
+      expect(player.downloads, <String>['1.0']);
+
+      // 下载还卡着，电脑换到下一集（会话身份变了）。
+      player.identity = 'video-two';
+      for (final VoidCallback listener in List<VoidCallback>.of(
+        player.listeners,
+      )) {
+        listener();
+      }
+      player.downloadGate!.complete();
+
+      await expectLater(download, throwsA(remoteError(409, 'session_changed')));
+      expect(player.applied, isEmpty);
+    },
+  );
+
+  test(
+    'a new player registered during the download is not handed the subtitle',
+    () async {
+      final _FakePlayer player = await connect(search: true);
+      player.downloadGate = Completer<void>();
+      final Future<Map<String, Object?>> download = call(
+        'command',
+        <String, dynamic>{'action': 'subtitleDownload', 'candidateId': '1.0'},
+      );
+      await pumpEventQueue();
+
+      // 换集走 pushReplacement：新页登记了新绑定（身份字符串碰巧相同也一样）。
+      final _FakePlayer next = _FakePlayer(search: true);
+      host.register(next.binding());
+      player.downloadGate!.complete();
+
+      await expectLater(download, throwsA(remoteError(409, 'session_changed')));
+      expect(player.applied, isEmpty);
+      expect(next.applied, isEmpty);
     },
   );
 }
@@ -195,13 +245,19 @@ final class _FakePlayer {
   final List<(String?, int?)> searches = <(String?, int?)>[];
   final List<String> downloads = <String>[];
   final List<String> commands = <String>[];
+
+  /// 下载完真正应用到播放器上的字幕（`<会话身份>:<候选 id>`）。
+  final List<String> applied = <String>[];
+
+  /// 会话身份；测试改它模拟电脑换集。
+  String identity = 'video-one';
   VideoRemoteException? downloadError;
 
   /// 非空时下载卡在这里，直到测试放行。
   Completer<void>? downloadGate;
 
   VideoRemotePlaybackBinding binding() => VideoRemotePlaybackBinding(
-    identity: () => 'video-one',
+    identity: () => identity,
     title: () => 'Video',
     bookUid: () => 'book',
     sectionIndex: () => 0,
@@ -242,6 +298,7 @@ final class _FakePlayer {
             if (error != null) throw error;
             downloads.add(id);
             await downloadGate?.future;
+            return () async => applied.add('$identity:$id');
           }
         : null,
   );

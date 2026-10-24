@@ -1345,13 +1345,12 @@ class AppModel with ChangeNotifier {
     );
     final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
       prefs: prefsRepo,
-      // 番剧新集域在调度器里只跑「媒体库在线作品补新集」：跑不跑看它自己的开关
-      // （`video_library_auto_update`），不看「番剧新集提醒」——提醒开关只决定补上
-      // 的集进不进更新中心（publishBatch 按域开关丢弃），用户 2026-10-23 拍板拆开。
-      isKindEnabled: (UpdateFeedKind kind) =>
-          kind == UpdateFeedKind.videoEpisode
-              ? prefsRepo.videoLibraryAutoUpdate
-              : feed.isKindEnabled(kind),
+      // 番剧新集域只看 `video_library_auto_update`，不看提醒开关（见
+      // [updateCheckKindGate]）。
+      isKindEnabled: updateCheckKindGate(
+        videoLibraryAutoUpdate: () => prefsRepo.videoLibraryAutoUpdate,
+        notifyEnabled: feed.isKindEnabled,
+      ),
       probes: <UpdateFeedKind, UpdateProbe>{
         UpdateFeedKind.videoEpisode: () => runVideoLibraryUpdateProbe(
               database: database,
