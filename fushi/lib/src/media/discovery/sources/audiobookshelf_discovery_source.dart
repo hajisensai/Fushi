@@ -29,6 +29,23 @@ String audiobookshelfSourceIdFor(String configId) =>
 /// 库目录的 browse 路径前缀（`DiscoveryFolder.path` 的源内语义）。
 const String kAudiobookshelfLibraryPathPrefix = 'library:';
 
+/// 播客单集的资源 id：`<条目id>#ep:<单集id>`（下载队列按 [DiscoveryResourceItem.id]
+/// 去重，也靠它在 [AudiobookshelfDiscoverySource.resolvePayload] 里认出单集）。
+String audiobookshelfEpisodeResourceId(String itemId, String episodeId) =>
+    '$itemId#ep:$episodeId';
+
+/// [audiobookshelfEpisodeResourceId] 的逆；不是单集 id 返回 null。
+({String itemId, String episodeId})? parseAudiobookshelfEpisodeResourceId(
+  String resourceId,
+) {
+  final int at = resourceId.indexOf('#ep:');
+  if (at <= 0 || at + 4 >= resourceId.length) return null;
+  return (
+    itemId: resourceId.substring(0, at),
+    episodeId: resourceId.substring(at + 4),
+  );
+}
+
 /// 每个库的搜索条数上限（ABS 搜索不分页）。
 const int kAudiobookshelfSearchLimitPerLibrary = 25;
 
@@ -173,7 +190,11 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
   Future<DiscoveryPayload> resolvePayload(DiscoveryResourceItem item) async {
     final AudiobookshelfDownloadTarget target;
     try {
-      target = await _api.prepareDownload(item.id);
+      final ({String itemId, String episodeId})? episode =
+          parseAudiobookshelfEpisodeResourceId(item.id);
+      target = episode == null
+          ? await _api.prepareDownload(item.id)
+          : await _prepareEpisodeDownload(episode.itemId, episode.episodeId);
     } on ExternalProviderFailure catch (failure) {
       throw _actionRequiredFor(failure) ?? failure;
     }
@@ -186,6 +207,36 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
           : const <String, String>{},
       fileName: target.fileName,
       sizeBytes: target.sizeBytes,
+    );
+  }
+
+  /// 播客单集：单个音频文件，没有 zip 可打。播客用非展开形状取详情（展开的单集清单
+  /// 体积大、慢服务器上会超时）。
+  Future<AudiobookshelfDownloadTarget> _prepareEpisodeDownload(
+    String itemId,
+    String episodeId,
+  ) async {
+    final AudiobookshelfItemDetail detail = await _api.itemDetail(
+      itemId,
+      expanded: false,
+    );
+    final AudiobookshelfEpisode? episode = detail.episodes
+        .where((AudiobookshelfEpisode e) => e.id == episodeId)
+        .firstOrNull;
+    if (episode == null) {
+      throw ExternalProviderFailure(
+        providerId: id,
+        operation: 'download',
+        kind: ExternalProviderFailureKind.notFound,
+        message: 'episode not found',
+        statusCode: 404,
+      );
+    }
+    return _api.prepareFileDownload(
+      itemId,
+      episode.track.ino,
+      fileName: audiobookshelfEpisodeFileName(episode),
+      sizeBytes: episode.track.sizeBytes,
     );
   }
 
@@ -246,6 +297,25 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
   void close() {
     if (_ownsApi) _api.close();
   }
+}
+
+/// 单集落盘文件名：服务器上的原文件名；没有就用标题 + 按 MIME 推的扩展名。
+/// 下载队列不读 `Content-Disposition`，没有扩展名导入分类器认不出是音频。
+String audiobookshelfEpisodeFileName(AudiobookshelfEpisode episode) {
+  final String? original = episode.track.filename?.trim();
+  if (original != null && original.contains('.')) return original;
+  final String ext = switch (episode.track.mimeType) {
+    'audio/mp4' || 'audio/x-m4a' || 'audio/m4a' => '.m4a',
+    'audio/ogg' => '.ogg',
+    'audio/opus' => '.opus',
+    'audio/flac' => '.flac',
+    'audio/wav' || 'audio/x-wav' => '.wav',
+    _ => '.mp3',
+  };
+  final String base = episode.title
+      .replaceAll(RegExp(r'[\\/:*?"<>|]'), ' ')
+      .trim();
+  return '${base.isEmpty ? episode.id : base}$ext';
 }
 
 /// 条目的一行标注：作者 · 演播 · 系列 · 时长（缺的项跳过）。

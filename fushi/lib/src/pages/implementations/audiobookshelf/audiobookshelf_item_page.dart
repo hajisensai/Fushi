@@ -13,6 +13,11 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
+import 'package:fushi/src/media/discovery/sources/audiobookshelf_discovery_source.dart';
+import 'package:fushi/src/media/downloads/download_start_result.dart';
+import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/download_actions.dart'
+    show startDiscoveryItemDownload;
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart';
@@ -24,6 +29,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:material_ui/material_ui.dart';
 
 class AudiobookshelfItemDetailPage extends ConsumerStatefulWidget {
@@ -129,6 +135,13 @@ class _AudiobookshelfItemPageState
                 finished ? _EpisodeMark.unfinished : _EpisodeMark.finished,
               ),
             ),
+            if (StoreRestrictedCapability.downloads.isAvailable)
+              ListTile(
+                leading: const FushiIcon(FushiIcons.download),
+                title: Text(t.audiobookshelf_item_download),
+                onTap: () =>
+                    Navigator.pop(dialogContext, _EpisodeMark.download),
+              ),
             if (index < episodes.length - 1)
               ListTile(
                 leading: const FushiIcon(FushiIcons.checklist),
@@ -140,6 +153,10 @@ class _AudiobookshelfItemPageState
       ),
     );
     if (choice == null || !mounted) return;
+    if (choice == _EpisodeMark.download) {
+      await _download(episode: episode);
+      return;
+    }
     await _mark(
       choice == _EpisodeMark.through
           ? <String?>[
@@ -152,6 +169,30 @@ class _AudiobookshelfItemPageState
   }
 
   AppModel get _appModel => ref.read(appProvider);
+
+  /// 下载整本书（zip）或一集音频，走发现页同一条直链队列（下完自动入库，没有字幕就
+  /// 留给「配对」）。令牌在队列真正开跑时才取（见 [AudiobookshelfDiscoverySource]）。
+  Future<void> _download({AudiobookshelfEpisode? episode}) async {
+    final AudiobookshelfItem item = widget.item;
+    final DiscoveryResourceItem resource = DiscoveryResourceItem(
+      sourceId: audiobookshelfSourceIdFor(widget.server.id),
+      id: episode == null
+          ? item.id
+          : audiobookshelfEpisodeResourceId(item.id, episode.id),
+      title: episode == null ? item.title : '${item.title} - ${episode.title}',
+      kind: DiscoveryMediaKind.audiobook,
+      payloadKind: DiscoveryPayloadKind.httpFile,
+      sizeBytes: episode == null ? item.sizeBytes : episode.track.sizeBytes,
+      coverUrl: widget.api.coverUri(item.id).toString(),
+    );
+    showDownloadStartNotices(
+      await startDiscoveryItemDownload(
+        context: context,
+        appModel: _appModel,
+        item: resource,
+      ),
+    );
+  }
 
   bool get _isPodcast => widget.item.mediaType == 'podcast';
 
@@ -373,6 +414,16 @@ class _AudiobookshelfItemPageState
                                   icon: const FushiIcon(FushiIcons.play),
                                   label: Text(t.audiobookshelf_item_stream),
                                 ),
+                                if (StoreRestrictedCapability
+                                    .downloads
+                                    .isAvailable) ...<Widget>[
+                                  SizedBox(height: tokens.spacing.gap),
+                                  FushiTextButton.icon(
+                                    onPressed: _download,
+                                    icon: const FushiIcon(FushiIcons.download),
+                                    label: Text(t.audiobookshelf_item_download),
+                                  ),
+                                ],
                                 SizedBox(height: tokens.spacing.gap),
                                 _BookProgressRow(
                                   progress: _progressOf(null),
@@ -562,7 +613,7 @@ class _EpisodeRow extends StatelessWidget {
 }
 
 /// 单集菜单的选择结果。
-enum _EpisodeMark { finished, unfinished, through }
+enum _EpisodeMark { finished, unfinished, through, download }
 
 /// 有声书的进度行：已听 N% / 已听完，加一个标记按钮。
 class _BookProgressRow extends StatelessWidget {

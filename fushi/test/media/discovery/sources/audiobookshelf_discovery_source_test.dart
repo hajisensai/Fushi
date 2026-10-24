@@ -128,6 +128,30 @@ class _FakeAbs {
     if (path == '/abs/api/items/li_1') {
       return _json(_item('li_1', title: 'Alpha'));
     }
+    if (path == '/abs/api/items/pod_1') {
+      return _json(<String, Object?>{
+        'id': 'pod_1',
+        'mediaType': 'podcast',
+        'media': <String, Object?>{
+          'metadata': <String, Object?>{'title': 'Show'},
+          'episodes': <Object?>[
+            <String, Object?>{
+              'id': 'ep_1',
+              'title': 'Ep One',
+              'audioFile': <String, Object?>{
+                'ino': '77',
+                'duration': 60.0,
+                'mimeType': 'audio/mpeg',
+                'metadata': <String, Object?>{
+                  'filename': 'e1.mp3',
+                  'size': 1234,
+                },
+              },
+            },
+          ],
+        },
+      });
+    }
     return http.Response('not found', 404);
   });
 }
@@ -282,6 +306,51 @@ void main() {
         fake.requests.map((http.Request r) => r.url.host).toSet(),
         <String>{_host},
       );
+    });
+
+    test('播客单集：单文件端点 + 原文件名 + 体积；单集不存在 → 找不到', () async {
+      final _FakeAbs fake = _FakeAbs();
+      final AudiobookshelfDiscoverySource source =
+          AudiobookshelfDiscoverySource(config: _config(), client: fake.client);
+
+      final DiscoveryHttpPayload direct =
+          await source.resolvePayload(
+                DiscoveryResourceItem(
+                  sourceId: 'abs-srv1',
+                  title: 'Show - Ep One',
+                  id: audiobookshelfEpisodeResourceId('pod_1', 'ep_1'),
+                  kind: DiscoveryMediaKind.audiobook,
+                  payloadKind: DiscoveryPayloadKind.httpFile,
+                ),
+              )
+              as DiscoveryHttpPayload;
+      expect(direct.url, 'https://$_host/abs/api/items/pod_1/file/77/download');
+      expect(direct.headers, <String, String>{'Authorization': 'Bearer tok'});
+      expect(direct.fileName, 'e1.mp3');
+      expect(direct.sizeBytes, 1234);
+
+      await expectLater(
+        source.resolvePayload(
+          DiscoveryResourceItem(
+            sourceId: 'abs-srv1',
+            title: 'x',
+            id: audiobookshelfEpisodeResourceId('pod_1', 'gone'),
+            kind: DiscoveryMediaKind.audiobook,
+            payloadKind: DiscoveryPayloadKind.httpFile,
+          ),
+        ),
+        throwsA(isA<ExternalProviderFailure>()),
+      );
+    });
+
+    test('单集资源 id 往返；普通条目 id 不是单集', () {
+      expect(audiobookshelfEpisodeResourceId('a', 'b'), 'a#ep:b');
+      final ({String itemId, String episodeId})? parsed =
+          parseAudiobookshelfEpisodeResourceId('a#ep:b');
+      expect(parsed?.itemId, 'a');
+      expect(parsed?.episodeId, 'b');
+      expect(parseAudiobookshelfEpisodeResourceId('li_1'), isNull);
+      expect(parseAudiobookshelfEpisodeResourceId('a#ep:'), isNull);
     });
 
     test('没有下载权限 → 用户可读的错误（toString 即提示文案）', () async {
