@@ -352,6 +352,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_disc_sources': BackupTableRule.deviceLocal(),
   // v127：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
   'video_theme_song_spans': BackupTableRule.deviceLocal(),
+  // v129：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、
+  // 可由重刮重建，设备本地（见 _deviceLocalTables）。
+  'music_scrape_meta': BackupTableRule.deviceLocal(),
+  'music_metadata_raw_snapshots': BackupTableRule.deviceLocal(),
+  'music_locked_fields': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]
