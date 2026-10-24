@@ -588,6 +588,17 @@ if (!window.__fushiCueRanges) {
         if (!window.__fushiCssHighlightsSupported || typeof Highlight !== 'function') return false;
         return window.__fushiSentenceAudioRangeMode !== false;
       },
+      // BUG-3770：Blink 用 CSS Highlight 换字色时把字形墨迹裁进文字片段盒（傍点、墨迹宽的字体被切边，
+      // 见窄条层 paintable）。当前句真要换字色（用户设了自定义字色）时，VN 改在换屏、显示之前把屏上
+      // 各句包裹好，字色走 wrapper 的 class，播放中只切 class。sample 取正文里的一个元素，比较它的
+      // ::highlight 计算字色与本身字色。
+      recolorClipsInk: function(sample) {
+        if (!sample || isWebKit()) return false;
+        var ua = typeof navigator !== 'undefined' && navigator.userAgent || '';
+        if (!/(Chrome|Chromium)\//.test(ua)) return false;
+        var color = getComputedStyle(sample, '::highlight(' + HIGHLIGHT + ')').color;
+        return !!color && color !== getComputedStyle(sample).color;
+      },
       // 分段 {node, start, end} → Range（建 Range 前让文本可被 ::highlight 绘制，见 BUG-3323）。
       build: function(segments) {
         var out = [];

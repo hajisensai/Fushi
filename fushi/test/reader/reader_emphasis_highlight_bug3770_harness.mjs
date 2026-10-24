@@ -33,6 +33,7 @@ const PREP = String.raw`(async () => {
   const strip = vertical
     ? { x: r.right, y: r.top, width: 0.6 * em, height: r.height }
     : { x: r.left, y: r.top - em, width: r.width, height: em };
+  window.__emphasisScreenHtml = Array.from(root.querySelectorAll('p')).map((p) => p.innerHTML).join('|');
   return { strip, vertical };
 })()`;
 
@@ -62,7 +63,12 @@ const PLAY = String.raw`(async () => {
       else paintsPlain = true;
     });
   }
+  const emText = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
   return {
+    // Playing the cue only toggles classes: the screen text DOM stays as it was (BUG-3741).
+    domSame: Array.from(root.querySelectorAll('p')).map((p) => p.innerHTML).join('|')
+      .replace(/ fushi-sentence-audio-active/g, '') === window.__emphasisScreenHtml,
+    emColor: getComputedStyle(emText.parentElement).color,
     covered,
     lanes: lanes.length,
     rangeMode: !!logical,
@@ -142,7 +148,11 @@ try {
     if (!play.rangeMode && !play.wrapped) fail('the cue is neither a CSS highlight nor a wrapper');
     if (play.rangeMode && !play.logicalCoversEmphasis) fail('CSS.highlights.get no longer returns the full cue');
     if (play.rangeMode && play.paintsEmphasis) fail('the painted CSS highlight still covers emphasised text');
-    if (play.rangeMode && page.customColor && !play.paintsPlain) fail('a custom cue text colour no longer reaches the plain text');
+    if (!play.domSame) fail('playing the cue changed the screen DOM');
+    // A custom cue colour must not go through a CSS highlight on Blink (it would clip the ink):
+    // the text is pre-wrapped and recoloured through the wrapper, emphasised text included.
+    if (page.customColor && play.rangeMode) fail('a custom cue text colour still goes through a CSS highlight');
+    if (page.customColor && play.emColor !== 'rgb(30, 90, 200)') fail('emphasised text did not take the custom cue colour: ' + play.emColor);
     if (play.rangeMode && !page.customColor && play.paintsPlain) fail('a no-op cue highlight is still painted by the engine');
     console.log(page.name + ': ink ' + before + ' -> ' + after + (play.rangeMode ? ' (range)' : ' (wrapper)'));
     checked++;

@@ -17,7 +17,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// 同一机制还把墨迹伸出文字片段盒的字形切平（圆体 / Meiryo 的 ruby 基字）。真 Chrome 跑生产 CSS +
 /// 引擎壳 + 选区脚本，三种 view mode、横竖排、默认 / 自定义字色各一遍：高亮前后截同一块着重号区域，
 /// 墨迹不能变少；当前句窄条仍盖住带傍点的字；交给引擎绘制的高亮不覆盖带傍点的文字，也不覆盖
-/// 高亮对它是空操作的文字（默认字色时整句都不交），自定义字色时普通文字照旧交给引擎换色。
+/// 高亮对它是空操作的文字（默认字色时整句都不交）；自定义字色时不走 CSS Highlight，VN 在换屏时
+/// （显示之前）把句子包裹好、字色走 wrapper，播放时屏上 DOM 只切 class（BUG-3741 不平移），
+/// 带傍点的字也换成自定义色。
 void main() {
   const String paragraph =
       '彼は<span class="em">教科書通り</span>の<ruby>技術<rt>ぎじゅつ</rt></ruby>で戦った。';
@@ -111,7 +113,7 @@ void main() {
             'name': '$writingMode/$viewMode',
             'html': await page(writingMode: writingMode, viewMode: viewMode),
           });
-          // 自定义当前句字色：普通文字仍交给引擎换色，带着重号的字不交。
+          // 自定义当前句字色：Blink 上不走 CSS Highlight，VN 换屏时先包裹、播放只切 class。
           pages.add(<String, String>{
             'name': '$writingMode/$viewMode/custom-color',
             'customColor': 'true',
