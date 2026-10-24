@@ -221,9 +221,9 @@ void main() {
     expect(hit.text, 'Hello World');
     expect(hit.pos, 1);
 
-    await (db.delete(db.galgames)..where((t) => t.id.equals('g1'))).go();
+    await db.deleteGalgame('g1');
     await settle();
-    expect(await db.countGalgameTextLines('g1'), 0, reason: '外键 cascade');
+    expect(await db.countGalgameTextLines('g1'), 0, reason: '台词跟游戏走');
     expect(await _gameDocs(service), isEmpty);
   });
 
