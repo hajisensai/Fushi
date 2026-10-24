@@ -207,25 +207,31 @@ void main() {
     expect(session.state.unsynced, 0);
   });
 
-  // 登录、刷新后牌组 / 笔记类型都有了，唯独字段映射空：卡渲染不出任何字段。
-  // 这必须是「等配置」而不是「失败」——失败的卡要人工重试，等配置的卡配好就自动落。
-  test('已登录但字段映射空：卡留着等，不标失败', () async {
+  // 登录、刷新后牌组 / 笔记类型都有了，唯独字段映射空。字段映射空曾是「等配置」：卡留着、
+  // 配好再落。cd732f10c7（反馈 AGLC0BuaKB）起 `AnkiSettings.fromJson` 载入时把「一个字段
+  // 都没映射到所选笔记类型」的设置按字段名补成默认映射，五端同一契约——服务端的设置也经
+  // fromJson 读，所以这里卡直接按默认映射落进 Anki，既不等配置也不标失败。
+  test('已登录但字段映射空：按字段名补默认映射，卡直接落', () async {
     await anki.setLandingEnabled(true);
     await session.signIn(endpoint: 'http://nas/', username: 'u', password: 'p');
     await anki.refreshMeta();
     expect(anki.settings.selectedNoteTypeName, 'Vocab');
-    expect(anki.settings.fieldMappings, isEmpty);
+    expect(anki.settings.fieldMappings, const <String, String>{
+      'Word': '{expression}',
+      'Meaning': '{glossary}',
+    });
 
     phoneUploads('a1', '猫');
     final r = await anki.runNow();
-    expect(r!.waiting, 1);
+    expect(r!.delivered, 1);
+    expect(r.waiting, 0);
     expect(r.failed, 0);
-    expect(helper.local, isEmpty);
+    expect(helper.local.single.first, '猫');
   });
 
-  // 审查第 9 项：映射里只有旧笔记类型的字段名（换了笔记类型没清）——「映射全空」
-  // 判断会被旧键骗过，卡被标成失败要手动重试。按所选笔记类型的字段判断。
-  test('映射只有别的笔记类型的字段：同样按没配置处理，不标失败', () async {
+  // 审查第 9 项：映射里只有旧笔记类型的字段名（换了笔记类型没清）——「映射全空」判断会被
+  // 旧键骗过、卡被标成失败。现在旧键同样算「没覆盖所选笔记类型」，载入时换成默认映射。
+  test('映射只有别的笔记类型的字段：换成默认映射落卡，不标失败', () async {
     await anki.setLandingEnabled(true);
     await session.signIn(endpoint: 'http://nas/', username: 'u', password: 'p');
     await anki.refreshMeta();
@@ -234,10 +240,12 @@ void main() {
         fieldMappings: const <String, String>{'Front': '{expression}'},
       ),
     );
+    expect(anki.settings.fieldMappings['Word'], '{expression}');
     phoneUploads('a1', '猫');
     final r = await anki.runNow();
-    expect(r!.waiting, 1);
+    expect(r!.delivered, 1);
     expect(r.failed, 0);
+    expect(helper.local.single.first, '猫');
   });
 
   test('关落地：立刻撤认领', () async {
