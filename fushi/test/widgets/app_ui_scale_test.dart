@@ -67,14 +67,14 @@ void main() {
     });
   });
 
-  testWidgets('整体缩放：固定尺寸子节点视觉尺寸按 scale 放大', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('整体缩放：固定尺寸子节点视觉尺寸按 scale 放大', (WidgetTester tester) async {
     const Key boxKey = Key('scaled-box');
     await tester.pumpWidget(
       MaterialApp(
         builder: (BuildContext context, Widget? child) => FushiAppUiScale(
-            scale: 2.0, child: child ?? const SizedBox.shrink()),
+          scale: 2.0,
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: const Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
@@ -94,17 +94,18 @@ void main() {
     expect(visual.height, 200);
   });
 
-  testWidgets('整体缩放：不再改写 textScaler（系统字号缩放原样透传）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('整体缩放：不再改写 textScaler（系统字号缩放原样透传）', (WidgetTester tester) async {
     late double textScale;
     await tester.pumpWidget(
       MaterialApp(
         builder: (BuildContext context, Widget? child) => MediaQuery(
-          data: MediaQuery.of(context)
-              .copyWith(textScaler: const TextScaler.linear(1.2)),
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.2)),
           child: FushiAppUiScale(
-              scale: 2.0, child: child ?? const SizedBox.shrink()),
+            scale: 2.0,
+            child: child ?? const SizedBox.shrink(),
+          ),
         ),
         home: Builder(
           builder: (BuildContext context) {
@@ -125,7 +126,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         builder: (BuildContext context, Widget? child) => FushiAppUiScale(
-            scale: 0.5, child: child ?? const SizedBox.shrink()),
+          scale: 0.5,
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: Scaffold(
           body: Stack(
             children: <Widget>[
@@ -172,7 +175,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         builder: (BuildContext context, Widget? child) => FushiAppUiScale(
-            scale: 1.0, child: child ?? const SizedBox.shrink()),
+          scale: 1.0,
+          child: child ?? const SizedBox.shrink(),
+        ),
         home: const Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
@@ -186,5 +191,39 @@ void main() {
     );
     final Rect visual = tester.getRect(find.byKey(boxKey));
     expect(visual.width, 100);
+  });
+
+  // BUG-3770：宽松约束（Stack 非定位子 / Align 下）时 RenderFittedBox 曾把自己缩成
+  // 子树尺寸 canvas = view/s，变换比例退化成 1：既不缩放，层又被撑成 canvas 大小。
+  testWidgets('宽松约束下照样按 scale 缩放、层占满 view', (WidgetTester tester) async {
+    const Key boxKey = Key('loose-box');
+    const Key layerKey = Key('loose-layer');
+    await tester.binding.setSurfaceSize(const Size(800, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Stack(
+          children: <Widget>[
+            FushiAppUiScale(
+              key: layerKey,
+              scale: 2.0,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  key: boxKey,
+                  width: 100,
+                  height: 100,
+                  child: ColoredBox(color: Color(0xFF000000)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(tester.getSize(find.byKey(layerKey)), const Size(800, 600));
+    final Rect visual = tester.getRect(find.byKey(boxKey));
+    expect(visual.width, 200);
+    expect(visual.height, 200);
   });
 }
