@@ -151,18 +151,28 @@ uint64_t PublishKnifeText(const std::wstring& text) {
 }
 
 // Takes the voice read for the text published now and frees every other
-// ready slot (older ones are replay / config-test voices; see knife_core.h).
-bool TakeKnifeVoiceForText(uint64_t text_tick, std::wstring* path) {
+// ready slot read no later than it (older ones are replay / config-test
+// voices; see knife_core.h). A slot read after [text_tick] belongs to the next
+// line and is handed back untouched.
+bool TakeKnifeVoiceForText(uint64_t text_tick, std::wstring* path,
+                           uint64_t* voice_tick) {
   std::vector<uint64_t> ticks;
   std::vector<int> slots;
   for (int i = 0; i < kKnifeVoiceSlots; ++i) {
     KnifeVoiceSlot& slot = g_knife_voice_slots[i];
     if (InterlockedCompareExchange(&slot.state, 3, 2) != 2) continue;
+    if (slot.tick_ms > text_tick) {
+      InterlockedExchange(&slot.state, 2);
+      continue;
+    }
     ticks.push_back(slot.tick_ms);
     slots.push_back(i);
   }
   const int pick = fushi_voice_hook::knife::SelectVoiceForText(ticks, text_tick);
-  if (pick >= 0) path->assign(g_knife_voice_slots[slots[pick]].path);
+  if (pick >= 0) {
+    path->assign(g_knife_voice_slots[slots[pick]].path);
+    *voice_tick = ticks[static_cast<size_t>(pick)];
+  }
   for (int index : slots) InterlockedExchange(&g_knife_voice_slots[index].state, 0);
   return pick >= 0;
 }
@@ -189,7 +199,7 @@ bool ReadKnifeVoiceFile(const std::wstring& path, std::vector<uint8_t>* out) {
 }
 
 void ExportKnifeVoice(const std::wstring& path, uint64_t text_tick,
-                      uint64_t text_event) {
+                      uint64_t voice_tick, uint64_t text_event) {
   std::vector<uint8_t> nopus;
   std::vector<uint8_t> ogg;
   if (!ReadKnifeVoiceFile(path, &nopus) ||
@@ -210,9 +220,10 @@ void ExportKnifeVoice(const std::wstring& path, uint64_t text_tick,
     // line instead of staying on the loopback fallback.
     SetXAudioDiagnostic(fushi_voice_hook::kXAudioDiagGameResourcePublished);
   }
-  KnifeLog(L"voice %s event=%llu nopus=%zu ogg=%zu written=%d", base,
-           static_cast<unsigned long long>(text_event), nopus.size(),
-           ogg.size(), written ? 1 : 0);
+  KnifeLog(L"voice %s event=%llu gap_ms=%llu nopus=%zu ogg=%zu written=%d",
+           base, static_cast<unsigned long long>(text_event),
+           static_cast<unsigned long long>(text_tick - voice_tick),
+           nopus.size(), ogg.size(), written ? 1 : 0);
 }
 
 void HandleKnifeMessage(const std::string& utf8) {
@@ -226,12 +237,13 @@ void HandleKnifeMessage(const std::string& utf8) {
                       text.data(), units);
   const uint64_t tick = GetTickCount64();
   std::wstring voice;
-  const bool has_voice = TakeKnifeVoiceForText(tick, &voice);
+  uint64_t voice_tick = 0;
+  const bool has_voice = TakeKnifeVoiceForText(tick, &voice, &voice_tick);
   const uint64_t event = PublishKnifeText(text);
   KnifeLog(L"text event=%llu units=%zu voice=%d",
            static_cast<unsigned long long>(event), text.size(),
            has_voice ? 1 : 0);
-  if (has_voice && event != 0u) ExportKnifeVoice(voice, tick, event);
+  if (has_voice && event != 0u) ExportKnifeVoice(voice, tick, voice_tick, event);
 }
 
 // One WebSocket session. Returns when the server closes or the adapter stops.
@@ -241,7 +253,10 @@ void RunKnifeWebSocketSession() {
                                   WINHTTP_NO_PROXY_NAME,
                                   WINHTTP_NO_PROXY_BYPASS, 0);
   if (session == nullptr) return;
-  WinHttpSetTimeouts(session, 2000, 2000, 2000, 0);
+  // Finite receive timeout for the handshake: a peer that accepts TCP but
+  // never answers must not park this thread where shutdown cannot reach it.
+  // The upgraded socket switches to an indefinite receive below.
+  WinHttpSetTimeouts(session, 2000, 2000, 2000, 2000);
   HINTERNET connect =
       WinHttpConnect(session, g_knife_ws_host.c_str(), g_knife_ws_port, 0);
   HINTERNET request =
@@ -268,13 +283,14 @@ void RunKnifeWebSocketSession() {
       socket = WinHttpWebSocketCompleteUpgrade(request, 0);
     }
   }
+  const DWORD connect_error = socket == nullptr ? GetLastError() : 0;
   if (request != nullptr) WinHttpCloseHandle(request);
   if (socket == nullptr) {
     // The server may simply not be up yet: log the first failure only.
     if ((InterlockedCompareExchange(&g_knife_diag, 0, 0) &
          static_cast<LONG>(kKnifeDiagConnectFailed)) == 0) {
       KnifeLog(L"connect %s:%u failed (%lu)", g_knife_ws_host.c_str(),
-               static_cast<unsigned>(g_knife_ws_port), GetLastError());
+               static_cast<unsigned>(g_knife_ws_port), connect_error);
     }
     KnifeDiag(kKnifeDiagConnectFailed);
   } else {
@@ -286,6 +302,7 @@ void RunKnifeWebSocketSession() {
     // from the other thread, which cancels it.
     WinHttpSetTimeouts(socket, 0, 0, 0, 0);
     std::string message;
+    bool oversized = false;
     std::vector<uint8_t> buffer(16 * 1024);
     while (InterlockedCompareExchange(&g_knife_stop, 0, 0) == 0) {
       DWORD read = 0;
@@ -299,15 +316,22 @@ void RunKnifeWebSocketSession() {
       if (type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE &&
           type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE) {
         message.clear();
+        oversized = false;
         continue;
       }
-      // A text slot holds 1024 UTF-16 units; a message past that is not a line.
-      if (message.size() + read <= fushi_voice_hook::kTextSlotBytes * 2) {
+      // A text slot holds 1024 UTF-16 units; a message past that is not a
+      // line, and is dropped whole rather than published with a gap.
+      if (!oversized &&
+          message.size() + read <= fushi_voice_hook::kTextSlotBytes * 2) {
         message.append(reinterpret_cast<const char*>(buffer.data()), read);
+      } else {
+        oversized = true;
+        message.clear();
       }
       if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) {
-        HandleKnifeMessage(message);
+        if (!oversized) HandleKnifeMessage(message);
         message.clear();
+        oversized = false;
       }
     }
     // Whoever takes the handle out of the slot closes it, exactly once.
@@ -364,7 +388,7 @@ void StopKnifeText() {
     g_knife_stop_event = nullptr;
   }
   for (KnifeVoiceSlot& slot : g_knife_voice_slots) {
-    InterlockedExchange(&slot.state, 0);
+    InterlockedCompareExchange(&slot.state, 0, 2);
   }
 }
 
@@ -386,11 +410,13 @@ class KnifeAdapter final : public fushi_voice_hook::EngineAdapter {
     KnifeDiag(kKnifeDiagIdentity);
     fushi_voice_hook::knife::ResolvedLaunch launch;
     fushi_voice_hook::knife::ResolveLaunch(&launch);
-    if (TryHookSiglusOvk()) {
+    // Voices are only ever consumed by the text thread: without the text
+    // server there is nothing to pair them with, so the file hooks stay off.
+    const bool text = StartKnifeText(launch.text_websocket);
+    if (text && TryHookSiglusOvk()) {
       KnifeDiag(kKnifeDiagFileHooksReady);
       InterlockedExchange(&g_knife_voice_active, 1);
     }
-    const bool text = StartKnifeText(launch.text_websocket);
     KnifeLog(L"install assets=%s websocket=%s file_hooks=%d text_thread=%d",
              launch.assets_dir.c_str(),
              launch.text_websocket.empty() ? L"(unset)"

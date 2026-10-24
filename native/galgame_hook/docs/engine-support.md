@@ -1276,9 +1276,9 @@ Tests：`tests/luca_adapter_test.cpp`、`tests/luca_x64_text_test.cpp`、`tests/
 
 已知限制：
 
-- Requires the player to enable knife's text WebSocket (knife.ini text-websocket).
+- Text needs knife's text WebSocket: Fushi adds it to its own launches; an attached game needs knife.ini text-websocket and one restart (Fushi offers to write it).
 - Native glyph-hit in-game lookup is unavailable (no glyph geometry leaves the GPU renderer); in-game lookup goes through the attached calibrated surface.
-- A voice played mid-message (VPL2) or by the voice-replay button is not paired.
+- Voices pair with the line published within 1 s after they are read: a voice played mid-message (VPL2) or by the voice-replay button can attach to the next line when it follows within that window.
 
 Fixtures：`tests/fixtures/knife_replay.json`
 

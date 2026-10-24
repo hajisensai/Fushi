@@ -42,6 +42,10 @@ inline uint32_t ReadLe32(const uint8_t* p) {
          (static_cast<uint32_t>(p[3]) << 24);
 }
 
+inline uint16_t ReadLe16(const uint8_t* p) {
+  return static_cast<uint16_t>(p[0] | (p[1] << 8));
+}
+
 inline uint32_t ReadBe32(const uint8_t* p) {
   return (static_cast<uint32_t>(p[0]) << 24) |
          (static_cast<uint32_t>(p[1]) << 16) |
@@ -158,9 +162,11 @@ inline bool RemuxNintendoOpusToOgg(const uint8_t* data, size_t size,
   const uint8_t channels = data[9];
   const uint32_t sample_rate = ReadLe32(data + 0x0C);
   const uint32_t data_offset = ReadLe32(data + 0x10);
-  const uint32_t pre_skip = ReadLe32(data + 0x1C);
+  // 16-bit pre-skip at 0x1C, as vgmstream reads it; 0x1E is a separate field
+  // that is non-zero in some titles and is not part of the pre-skip.
+  const uint32_t pre_skip = ReadLe16(data + 0x1C);
   if (channels == 0 || channels > 2 || sample_rate == 0 ||
-      pre_skip > 0xFFFFu || data_offset > size || size - data_offset < 8 ||
+      data_offset > size || size - data_offset < 8 ||
       ReadLe32(data + data_offset) != kNopusDataMagic) {
     return false;
   }

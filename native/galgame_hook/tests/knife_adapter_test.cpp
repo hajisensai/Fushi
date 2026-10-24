@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "../hook/adapters/knife_core.h"
+#include "../hook/adapters/knife_profile.h"
 
 namespace knife = fushi_voice_hook::knife;
 
@@ -194,6 +195,62 @@ void TestRemuxRejects() {
   std::vector<uint8_t> empty = MakeNopus(1, {});
   assert(!knife::RemuxNintendoOpusToOgg(empty.data(), empty.size(), 1, &ogg));
   assert(!knife::RemuxNintendoOpusToOgg(nopus.data(), 16, 1, &ogg));
+  // 0x1E is not part of the 16-bit pre-skip; some titles store a value there.
+  std::vector<uint8_t> tagged = nopus;
+  tagged[0x1E] = 0x34;
+  tagged[0x1F] = 0x12;
+  assert(knife::RemuxNintendoOpusToOgg(tagged.data(), tagged.size(), 1, &ogg));
+  assert(ogg.size() > 47 && ogg[28 + 10] == 120 && ogg[28 + 11] == 0);
+}
+
+void WriteBytes(const std::wstring& path, const std::vector<uint8_t>& bytes) {
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  assert(file != INVALID_HANDLE_VALUE);
+  DWORD written = 0;
+  WriteFile(file, bytes.data(), static_cast<DWORD>(bytes.size()), &written,
+            nullptr);
+  CloseHandle(file);
+}
+
+// The shared KernelBase file broker is enabled for knife only through this
+// layout check, so other engines' layouts must fail it.
+void TestAssetsLayout() {
+  wchar_t temp[MAX_PATH] = {};
+  GetTempPathW(MAX_PATH, temp);
+  const std::wstring root = std::wstring(temp) + L"fushi_knife_layout_test_" +
+                            std::to_wstring(GetCurrentProcessId());
+  const std::wstring assets = root + L"\\assets";
+  const std::wstring stream = assets + L"\\stream";
+  CreateDirectoryW(root.c_str(), nullptr);
+  CreateDirectoryW(assets.c_str(), nullptr);
+  CreateDirectoryW(stream.c_str(), nullptr);
+  const std::vector<uint8_t> one = {static_cast<uint8_t>(19 << 3), 1, 2};
+  const std::wstring voice = stream + L"\\A00_01_00_0000_0.opus";
+  const std::wstring scenario = assets + L"\\allscr.mrg";
+  const std::wstring packed = stream + L"\\voice.hfa";
+
+  // Only stream/ with Nintendo Opus, no scenario archive.
+  WriteBytes(voice, MakeNopus(1, {one}));
+  assert(!knife::AssetsLookLikeKnife(assets));
+  // Scenario archive + stream/ holding Ogg Opus (another engine's stream/).
+  WriteBytes(scenario, {0});
+  WriteBytes(voice, {'O', 'g', 'g', 'S', 0, 2});
+  assert(!knife::AssetsLookLikeKnife(assets));
+  // HuneX-style packed audio instead of loose .opus files.
+  DeleteFileW(voice.c_str());
+  WriteBytes(packed, {'H', 'U', 'N', 'E', 'X'});
+  assert(!knife::AssetsLookLikeKnife(assets));
+  // knife's layout.
+  WriteBytes(voice, MakeNopus(1, {one}));
+  assert(knife::AssetsLookLikeKnife(assets));
+
+  DeleteFileW(voice.c_str());
+  DeleteFileW(packed.c_str());
+  DeleteFileW(scenario.c_str());
+  RemoveDirectoryW(stream.c_str());
+  RemoveDirectoryW(assets.c_str());
+  RemoveDirectoryW(root.c_str());
 }
 
 void TestVoicePaths() {
@@ -282,5 +339,6 @@ int main() {
   TestVoicePaths();
   TestVoiceSelection();
   TestLaunchOptions();
+  TestAssetsLayout();
   return 0;
 }
