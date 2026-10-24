@@ -7,6 +7,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show formatFushiPlaybackTime;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiListItem, FushiModalSheetFrame, FushiSearchField;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show fushiMotionDuration;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
@@ -23,6 +25,7 @@ class VideoRemoteLibraryEntry {
     required this.title,
     this.collection,
     this.positionMs = 0,
+    this.coverVersion,
   });
 
   factory VideoRemoteLibraryEntry.fromJson(Map<String, dynamic> json) =>
@@ -31,13 +34,22 @@ class VideoRemoteLibraryEntry {
         title: json['title']?.toString() ?? '',
         collection: json['collection']?.toString(),
         positionMs: (json['positionMs'] as num?)?.toInt() ?? 0,
+        coverVersion: (json['coverVersion'] as num?)?.toInt(),
       );
 
   final String bookUid;
   final String title;
   final String? collection;
   final int positionMs;
+
+  /// 电脑上封面文件的版本（修改时间）；null = 没有封面（旧版电脑也不带），
+  /// 不去拉图。
+  final int? coverVersion;
 }
+
+/// 点播清单一行的封面图；返回 null = 这一行只显示图标。
+typedef VideoRemoteLibraryCoverResolver =
+    ImageProvider? Function(VideoRemoteLibraryEntry entry);
 
 /// `library` 的一页结果。
 @immutable
@@ -76,10 +88,12 @@ typedef VideoRemoteLibraryLoader =
 Future<String?> showVideoRemoteLibrarySheet({
   required BuildContext context,
   required VideoRemoteLibraryLoader load,
+  VideoRemoteLibraryCoverResolver? coverFor,
 }) => adaptiveModalSheet<String>(
   context: context,
   builder: (BuildContext sheetContext) => VideoRemoteLibrarySheet(
     load: load,
+    coverFor: coverFor,
     onPick: (String bookUid) => Navigator.of(sheetContext).pop(bookUid),
   ),
 );
@@ -90,10 +104,14 @@ class VideoRemoteLibrarySheet extends StatefulWidget {
     super.key,
     required this.load,
     required this.onPick,
+    this.coverFor,
   });
 
   final VideoRemoteLibraryLoader load;
   final ValueChanged<String> onPick;
+
+  /// 每行的封面；null = 全部只显示图标。
+  final VideoRemoteLibraryCoverResolver? coverFor;
 
   @override
   State<VideoRemoteLibrarySheet> createState() =>
@@ -263,14 +281,97 @@ class _VideoRemoteLibrarySheetState extends State<VideoRemoteLibrarySheet> {
           ),
         ),
     ].join(' · ');
+    final Widget icon = FushiIcon(
+      current ? FushiIcons.playCircle : FushiIcons.video,
+    );
+    final ImageProvider? cover = widget.coverFor?.call(entry);
     return FushiPressScale(
       child: FushiListItem(
         key: ValueKey<String>('video-remote-library-${entry.bookUid}'),
         selected: current,
-        leading: FushiIcon(current ? FushiIcons.playCircle : FushiIcons.video),
+        leading: cover == null
+            ? icon
+            : _VideoRemoteLibraryCover(
+                key: ValueKey<String>(
+                  'video-remote-library-cover-${entry.bookUid}',
+                ),
+                image: cover,
+                current: current,
+                fallback: icon,
+              ),
         title: Text(entry.title, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: subtitle.isEmpty ? null : Text(subtitle),
         onTap: () => widget.onPick(entry.bookUid),
+      ),
+    );
+  }
+}
+
+/// 点播行首的封面缩略图：取不到（拉图失败 / 解码失败）时退回图标；正在放的
+/// 那部压一层播放标记。
+class _VideoRemoteLibraryCover extends StatelessWidget {
+  const _VideoRemoteLibraryCover({
+    super.key,
+    required this.image,
+    required this.current,
+    required this.fallback,
+  });
+
+  final ImageProvider image;
+  final bool current;
+  final Widget fallback;
+
+  static const double _width = 48;
+  static const double _height = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return SizedBox(
+      width: _width,
+      height: _height,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            ColoredBox(color: scheme.surfaceContainerHighest),
+            Image(
+              image: image,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              frameBuilder:
+                  (
+                    BuildContext context,
+                    Widget child,
+                    int? frame,
+                    bool wasSynchronouslyLoaded,
+                  ) {
+                    if (wasSynchronouslyLoaded) return child;
+                    return AnimatedOpacity(
+                      opacity: frame == null ? 0 : 1,
+                      duration: fushiMotionDuration(
+                        context,
+                        const Duration(milliseconds: 200),
+                      ),
+                      child: child,
+                    );
+                  },
+              errorBuilder: (BuildContext context, Object _, StackTrace? __) =>
+                  Center(child: fallback),
+            ),
+            if (current)
+              ColoredBox(
+                color: scheme.scrim.withValues(alpha: 0.35),
+                child: Center(
+                  child: FushiIcon(
+                    FushiIcons.playCircle,
+                    color: scheme.onPrimary,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
