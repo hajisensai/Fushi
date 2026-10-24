@@ -336,11 +336,18 @@ bool transcodeAvailable() {
   // 一次时，移动端照样拿到 CliFfmpegBackend，于是能力位报 true、HLS URL 照发、
   // 每一段都失败。这里兜一条硬的。
   if (Platform.isAndroid || Platform.isIOS) return false;
-  // 进程单例外面恒套一层蓝光输入适配器；判的是它代理的真实后端能不能 exec 子进程。
-  final FfmpegBackend backend = resolveFfmpegBackend();
-  final FfmpegBackend runner = backend is BlurayFfmpegBackend
-      ? backend.delegate
-      : backend;
+  // 进程单例外面恒套原盘输入适配器（蓝光 → DVD）；判的是它们最终代理的真实后端
+  // 能不能 exec 子进程，适配器层数与顺序不进判据。
+  FfmpegBackend runner = resolveFfmpegBackend();
+  while (true) {
+    if (runner is BlurayFfmpegBackend) {
+      runner = runner.delegate;
+    } else if (runner is DvdFfmpegBackend) {
+      runner = runner.delegate;
+    } else {
+      break;
+    }
+  }
   return runner is CliFfmpegBackend;
 }
 
