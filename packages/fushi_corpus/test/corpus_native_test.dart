@@ -81,17 +81,19 @@ void main() {
 
     final CorpusQueryResult result = index.query(<String>['食べる']);
     expect(result.total, 3);
-    expect(
-      result.groups.map((CorpusGroup g) => g.kind),
-      <CorpusSourceKind>[CorpusSourceKind.book, CorpusSourceKind.video],
-    );
+    expect(result.groups.map((CorpusGroup g) => g.kind), <CorpusSourceKind>[
+      CorpusSourceKind.book,
+      CorpusSourceKind.video,
+    ]);
     final CorpusHit first = result.groups.first.items.first;
     expect(first.key, 'book-1');
     expect(first.title, 'T:book-1');
     expect(first.section, 2);
     expect(first.pos, 30);
     expect(first.text, '猫が魚を食べた。');
-    expect(first.highlights, <({int start, int length})>[(start: 4, length: 3)]);
+    expect(first.highlights, <({int start, int length})>[
+      (start: 4, length: 3),
+    ]);
     final CorpusHit supplementary = result.groups.first.items[1];
     expect(
       supplementary.text.substring(
@@ -133,9 +135,16 @@ void main() {
       );
     });
     expect(
-      index.query(<String>['食べる'], kinds: <CorpusSourceKind>[
-        CorpusSourceKind.game,
-      ]).groups.single.items.single.text,
+      index
+          .query(
+            <String>['食べる'],
+            kinds: <CorpusSourceKind>[CorpusSourceKind.game],
+          )
+          .groups
+          .single
+          .items
+          .single
+          .text,
       'もっと食べたい',
     );
     expect(index.stats().docs, 3);
@@ -171,12 +180,7 @@ void main() {
       for (final ({int start, int end}) s in splitCorpusSentences(text))
         text.substring(s.start, s.end),
     ];
-    expect(sentences, <String>[
-      '「行こう。」',
-      'と言った。',
-      'Pi is 3.14 here.',
-      'Next',
-    ]);
+    expect(sentences, <String>['「行こう。」', 'と言った。', 'Pi is 3.14 here.', 'Next']);
     expect(splitCorpusSentences(''), isEmpty);
   });
 }

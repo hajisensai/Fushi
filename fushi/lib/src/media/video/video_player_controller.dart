@@ -2511,8 +2511,13 @@ class VideoPlayerController extends ChangeNotifier
     _lastSubtitleEndPauseCueIndex = null;
     // 主字幕换了：给 Lua 脚本的镜像轨跟着重挂（没装脚本时零开销）。
     _scheduleLuaSubtitleMirrorSync();
+    if (_cues.isNotEmpty) onCuesReplaced?.call(_cues);
     notifyListeners();
   }
+
+  /// 主字幕 cue 列表整体换成了一份非空的新列表（加载 / 换轨 / 换集）。页面接到
+  /// 「我库里的例句」的语料喂入（LibraryCorpusService.feedVideoCues）；null = 不关心。
+  void Function(List<AudioCue> cues)? onCuesReplaced;
 
   /// TODO-1312：设置**副字幕** cue 列表：拷贝并按 startMs 升序排序，复位副字幕活动集。
   /// 副字幕与主字幕独立、同一 effective 位置各自求活动集，一起交给 Flutter overlay 多层

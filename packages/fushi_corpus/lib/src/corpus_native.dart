@@ -120,7 +120,9 @@ final class CorpusNative {
         'fcorp_remove',
       ),
       _removeKinds = _lib.library
-          .lookupFunction<_RemoveKindsC, _RemoveKindsDart>('fcorp_remove_kinds'),
+          .lookupFunction<_RemoveKindsC, _RemoveKindsDart>(
+            'fcorp_remove_kinds',
+          ),
       _docs = _lib.library.lookupFunction<_DocsC, _DocsDart>('fcorp_docs'),
       _export = _lib.library.lookupFunction<_ExportC, _ExportDart>(
         'fcorp_export',
@@ -185,8 +187,10 @@ final class FushiCorpusIndex {
   }
 
   /// 在另一个 isolate 里接上已打开的句柄。
-  static FushiCorpusIndex attach(int address) =>
-      FushiCorpusIndex._(CorpusNative.instance, Pointer<Void>.fromAddress(address));
+  static FushiCorpusIndex attach(int address) => FushiCorpusIndex._(
+    CorpusNative.instance,
+    Pointer<Void>.fromAddress(address),
+  );
 
   int get address => _handle.address;
 

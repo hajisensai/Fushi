@@ -9,6 +9,8 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/corpus/library_corpus_service.dart';
+import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/src/leaderboard/leaderboard_paired_login.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/models/asset_licenses.dart';
@@ -3748,6 +3750,12 @@ class AppModel with ChangeNotifier {
           '[Fushi] init: search preload (deferred to after first frame)');
       unawaited(_warmUpSearchAfterFirstFrame());
       unawaited(_migrateDictionaryRedirectFlags());
+      // 「我库里的例句」（作品图谱 L4）：延后打开本机语料库并对账、订阅来源表做增量。
+      LibraryCorpusService.instance.start(
+        database: _database,
+        directory: LibraryCorpusService.directoryUnder(_databaseDirectory.path),
+        isEnabled: () => librarySentencesEnabledOf(this),
+      );
       // 已下架的本机 OCR 模型（约 10 GB 的 CUDA 档）留在磁盘上的目录：设置页与
       // 存储页都没有它的入口了，不清就永远占着空间。幂等、失败只记日志。
       unawaited(deleteRemovedMangaOcrModelDirs());

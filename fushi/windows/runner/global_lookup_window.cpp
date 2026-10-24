@@ -3400,7 +3400,12 @@ void GlobalLookupWindow::ConfigureWebView() {
                   // Dart engine answers from the SRS store (or null / false
                   // while the review module is off).
                   body.find("\"srsTermStatus\"") != std::string::npos ||
-                  body.find("\"srsOpenCard\"") != std::string::npos;
+                  body.find("\"srsOpenCard\"") != std::string::npos ||
+                  // "Sentences from your library" (cross-media links L4): the
+                  // main Dart engine queries the local corpus (null while the
+                  // feature is off) and opens the origin in the main window.
+                  body.find("\"librarySentences\"") != std::string::npos ||
+                  body.find("\"librarySentenceOpen\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {

@@ -149,6 +149,34 @@ class CorpusHit {
   /// 句内命中词元的 UTF-16 区间。
   final List<({int start, int length})> highlights;
 
+  /// [toJson] 的逆：查词弹窗点击时把宿主下发的不透明定位原样交回。不合法返回 null。
+  static CorpusHit? tryFromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final Object? kindCode = raw['kind'];
+    final CorpusSourceKind? kind = kindCode is int
+        ? CorpusSourceKind.fromCode(kindCode)
+        : null;
+    final Object? key = raw['key'];
+    if (kind == null || key is! String || key.isEmpty) return null;
+    int intOf(String name) {
+      final Object? v = raw[name];
+      return v is num ? v.toInt() : 0;
+    }
+
+    final Object? text = raw['text'];
+    return CorpusHit(
+      kind: kind,
+      key: key,
+      part: intOf('part'),
+      title: raw['title'] is String ? raw['title']! as String : '',
+      section: intOf('section'),
+      pos: intOf('pos'),
+      len: intOf('len'),
+      text: text is String ? text : '',
+      highlights: const <({int start, int length})>[],
+    );
+  }
+
   Map<String, Object?> toJson() => <String, Object?>{
     'kind': kind.code,
     'key': key,

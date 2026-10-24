@@ -160,7 +160,12 @@ CorpusDocument gameLinesDocument({
   final List<CorpusSentence> sentences = <CorpusSentence>[
     for (final ({String text, int atMs}) line in lines)
       if (_oneLine(line.text).isNotEmpty)
-        CorpusSentence(section: 0, pos: line.atMs, len: 0, text: _oneLine(line.text)),
+        CorpusSentence(
+          section: 0,
+          pos: line.atMs,
+          len: 0,
+          text: _oneLine(line.text),
+        ),
   ];
   return CorpusDocument(
     kind: CorpusSourceKind.game,

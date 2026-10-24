@@ -11,7 +11,13 @@ typedef _CountUtf16C =
 typedef _CountUtf16Dart =
     int Function(Pointer<Uint16>, int, Pointer<Uint64>, Pointer<Uint8>);
 typedef _PrefixesC =
-    Int32 Function(Pointer<Uint16>, Size, Pointer<Uint32>, Size, Pointer<Uint64>);
+    Int32 Function(
+      Pointer<Uint16>,
+      Size,
+      Pointer<Uint32>,
+      Size,
+      Pointer<Uint64>,
+    );
 typedef _PrefixesDart =
     int Function(Pointer<Uint16>, int, Pointer<Uint32>, int, Pointer<Uint64>);
 
@@ -100,7 +106,9 @@ final class StudyCharsNative implements Finalizable {
     // 一块暂存：文本 u16 | 偏移 u32（4 字节对齐）| 结果 u64（8 字节对齐）。
     final int textBytes = (length * 2 + 7) & ~7;
     final int offsetBytes = (n * 4 + 7) & ~7;
-    final Pointer<Uint8> base = _buffer.reserve(textBytes + offsetBytes + n * 8);
+    final Pointer<Uint8> base = _buffer.reserve(
+      textBytes + offsetBytes + n * 8,
+    );
     final Pointer<Uint16> unitsPtr = base.cast<Uint16>();
     final Uint16List units = unitsPtr.asTypedList(length);
     for (int i = 0; i < length; i++) {

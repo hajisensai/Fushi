@@ -19,6 +19,7 @@ import 'package:fushi_music/fushi_music.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/corpus/corpus_documents.dart';
+import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一批句子 → fushidicts 语料词元线格式（原样交给 fushi_corpus）。在后台 isolate 里调用。
@@ -49,10 +50,7 @@ class FushiDictsCorpusNormalizer implements CorpusNormalizer {
     if (paths.isEmpty) return null;
     // 路径 + 目录修改时刻：同一路径重新导入（覆盖）也算换了词典。
     return corpusFingerprint(<Object?>[
-      for (final String path in paths) ...<Object?>[
-        path,
-        _modifiedMs(path),
-      ],
+      for (final String path in paths) ...<Object?>[path, _modifiedMs(path)],
     ]);
   }
 
@@ -128,6 +126,15 @@ class LibraryCorpusService {
   /// app 唯一实例（[AppModel] 启动时 [start]）。
   static LibraryCorpusService instance = LibraryCorpusService();
 
+  /// 「回到出处」的落地（由持有根 `WidgetRef` 的 app 根状态装上，见 main.dart）：查词弹窗
+  /// 在 app 内 WebView 与 app 外查词窗里都有，打开书要 `openMedia(ref:)`，只有根状态有一个
+  /// 始终活着的 ref。没装（测试 / 独立弹窗 entry point）时点击不跳。
+  static Future<bool> Function(CorpusHit hit)? openHitHandler;
+
+  /// 打开一条例句的出处。
+  static Future<bool> openHit(CorpusHit hit) =>
+      openHitHandler?.call(hit) ?? Future<bool>.value(false);
+
   final CorpusNormalizer _normalizer;
   final Duration _startDelay;
   final Duration _debounce;
@@ -146,6 +153,7 @@ class LibraryCorpusService {
       <StreamSubscription<Object?>>[];
   final Map<String, Timer> _debouncers = <String, Timer>{};
   Timer? _startTimer;
+  ExitFlushCallback? _exitFlush;
   int _jobsDone = 0;
   int _jobsTotal = 0;
 
@@ -159,6 +167,7 @@ class LibraryCorpusService {
     _db = database;
     _directory = directory;
     _isEnabled = isEnabled;
+    _exitFlush ??= ExitFlushRegistry.instance.register(flushGameLines);
     _startTimer?.cancel();
     _startTimer = Timer(_startDelay, () {
       _startTimer = null;
@@ -188,7 +197,9 @@ class LibraryCorpusService {
       _subscriptions.add(
         db
             .tableUpdates(TableUpdateQuery.onTable(table))
-            .listen((_) => _debounced(kind.name, () => _enqueueReconcile(kind))),
+            .listen(
+              (_) => _debounced(kind.name, () => _enqueueReconcile(kind)),
+            ),
       );
     }
 
@@ -220,6 +231,9 @@ class LibraryCorpusService {
 
   /// 测试 / 关闭：停掉订阅与计时器，冲刷游戏台词，等在跑的任务结束。
   Future<void> stop() async {
+    final ExitFlushCallback? exitFlush = _exitFlush;
+    if (exitFlush != null) ExitFlushRegistry.instance.unregister(exitFlush);
+    _exitFlush = null;
     _startTimer?.cancel();
     _startTimer = null;
     _unsubscribe();
@@ -271,7 +285,8 @@ class LibraryCorpusService {
   static List<CorpusDocInfo> Function(FushiCorpusIndex) _docsOp(
     CorpusSourceKind kind, [
     String? key,
-  ]) => (FushiCorpusIndex i) => i.docs(kind: kind, key: key);
+  ]) =>
+      (FushiCorpusIndex i) => i.docs(kind: kind, key: key);
 
   static CorpusStats _statsOp(FushiCorpusIndex i) => i.stats();
 
@@ -295,8 +310,8 @@ class LibraryCorpusService {
     List<String> keys,
     int perKind,
     int perDoc,
-  ) => (FushiCorpusIndex i) =>
-      i.query(keys, perKind: perKind, perDoc: perDoc);
+  ) =>
+      (FushiCorpusIndex i) => i.query(keys, perKind: perKind, perDoc: perDoc);
 
   // ── 查询 ─────────────────────────────────────────────────────────────
 
@@ -358,6 +373,14 @@ class LibraryCorpusService {
     return next;
   }
 
+  Future<void> _runNow(String label, Future<void> Function() job) async {
+    try {
+      if (enabled) await job();
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('corpus.$label', error, stack);
+    }
+  }
+
   void _publish({int? sentences, int? documents}) {
     final LibraryCorpusProgress old = progress.value;
     progress.value = LibraryCorpusProgress(
@@ -383,6 +406,11 @@ class LibraryCorpusService {
 
   void _enqueueReconcile(CorpusSourceKind kind) =>
       unawaited(_enqueue('reconcile.${kind.name}', () => _reconcile(kind)));
+
+  /// 测试观测：语料库里某个 kind 的文档清单。
+  @visibleForTesting
+  Future<List<CorpusDocInfo>> debugDocs(CorpusSourceKind kind) async =>
+      await _withIndex(_docsOp(kind)) ?? const <CorpusDocInfo>[];
 
   /// 当前对账（与一次对账要喂入的文档）是不是已经跑完：给测试等。
   @visibleForTesting
@@ -428,7 +456,10 @@ class LibraryCorpusService {
   }
 
   /// 归一口径过期的文档：从语料库读回原文、重新分词（不必回到来源）。
-  Future<void> _renormalize(List<CorpusDocInfo> stale, String normalizer) async {
+  Future<void> _renormalize(
+    List<CorpusDocInfo> stale,
+    String normalizer,
+  ) async {
     for (final CorpusDocInfo info in stale) {
       final CorpusSourceKind? kind = info.kind;
       if (kind == null || !enabled) continue;
@@ -503,15 +534,14 @@ class LibraryCorpusService {
     final VideoBookRepository repo = VideoBookRepository(db);
     final List<VideoBookRow> rows = await repo.listAll();
     final Set<String> indexed = <String>{for (final d in docs) d.key};
-    final Set<String> live = <String>{for (final VideoBookRow r in rows) r.bookUid};
+    final Set<String> live = <String>{
+      for (final VideoBookRow r in rows) r.bookUid,
+    };
     await _removeOrphans(CorpusSourceKind.video, docs, live);
-    await _renormalize(
-      <CorpusDocInfo>[
-        for (final CorpusDocInfo d in docs)
-          if (live.contains(d.key) && d.normalizer != normalizer) d,
-      ],
-      normalizer,
-    );
+    await _renormalize(<CorpusDocInfo>[
+      for (final CorpusDocInfo d in docs)
+        if (live.contains(d.key) && d.normalizer != normalizer) d,
+    ], normalizer);
     // 单视频的 cue 落库（播放列表各集不落库，只在播放时经 [feedVideoCues] 喂入）。
     for (final VideoBookRow row in rows) {
       if (indexed.contains(row.bookUid)) continue;
@@ -541,7 +571,9 @@ class LibraryCorpusService {
     final Map<String, MusicLyricRow> chosen = <String, MusicLyricRow>{};
     for (final MusicLyricRow row in lyricRows) {
       final MusicLyricRow? current = chosen[row.trackUid];
-      chosen[row.trackUid] = current == null ? row : _preferLyricRow(current, row);
+      chosen[row.trackUid] = current == null
+          ? row
+          : _preferLyricRow(current, row);
     }
     final Map<String, String> titles = <String, String>{
       for (final MusicTrackRow t in await db.select(db.musicTracks).get())
@@ -615,13 +647,10 @@ class LibraryCorpusService {
       for (final GalgameRow g in await db.getAllGalgames()) g.id,
     };
     await _removeOrphans(CorpusSourceKind.game, docs, live);
-    await _renormalize(
-      <CorpusDocInfo>[
-        for (final CorpusDocInfo d in docs)
-          if (live.contains(d.key) && d.normalizer != normalizer) d,
-      ],
-      normalizer,
-    );
+    await _renormalize(<CorpusDocInfo>[
+      for (final CorpusDocInfo d in docs)
+        if (live.contains(d.key) && d.normalizer != normalizer) d,
+    ], normalizer);
   }
 
   /// 分词 + 写入一份已构造好的文档（后台 isolate）。
@@ -634,7 +663,10 @@ class LibraryCorpusService {
   // 后台任务闭包一律在静态作用域里造：交给 `Isolate.run` 的闭包只能捕获可发送的值，
   // 在实例方法里写的闭包可能把 `this`（含计时器 / 订阅）一起拖过 isolate 边界。
 
-  static void Function(CorpusTermsFn) _putJob(int address, CorpusDocument doc) =>
+  static void Function(CorpusTermsFn) _putJob(
+    int address,
+    CorpusDocument doc,
+  ) =>
       (CorpusTermsFn terms) =>
           _putWith(FushiCorpusIndex.attach(address), terms, doc);
 
@@ -702,22 +734,28 @@ class LibraryCorpusService {
   // ── 播放 / 游戏的实时喂入 ────────────────────────────────────────────
 
   /// 视频页加载出一集字幕时调用：内容没变（指纹一致）就什么都不做。
+  /// 只认本地库里有行的视频（网页剧集 / 远端原盘的临时 uid 不进索引——对账会把它们当
+  /// 孤儿删掉，喂了也白喂）。
   void feedVideoCues({
     required String bookUid,
     required int episodeIndex,
-    required String title,
     required List<AudioCue> cues,
   }) {
-    if (!enabled || cues.isEmpty) return;
+    final FushiDatabase? db = _db;
+    if (db == null || !enabled || cues.isEmpty) return;
     final List<AudioCue> snapshot = List<AudioCue>.of(cues);
     unawaited(
       _enqueue('video', () async {
         final String? normalizer = _normalizer.signature;
         if (normalizer == null) return;
+        final VideoBookRow? row = await VideoBookRepository(
+          db,
+        ).getByBookUid(bookUid);
+        if (row == null) return;
         final CorpusDocument doc = videoCuesDocument(
           bookUid: bookUid,
           episodeIndex: episodeIndex,
-          title: title,
+          title: row.title,
           cues: snapshot,
           normalizer: normalizer,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
@@ -776,8 +814,10 @@ class LibraryCorpusService {
     final List<Future<void>> writes = <Future<void>>[];
     for (final _GameBatch batch in dirty) {
       final List<({String text, int atMs})> lines = batch.takeSnapshot();
+      // 不排进喂入队列：队列里可能正跑着一整本书，退出时的冲刷不能等它。语料库自带读写锁，
+      // 与在跑的写入并发安全。
       writes.add(
-        _enqueue('game', () async {
+        _runNow('game', () async {
           final String? normalizer = _normalizer.signature;
           if (normalizer == null) return;
           final int part = await batch.resolvePart(this);

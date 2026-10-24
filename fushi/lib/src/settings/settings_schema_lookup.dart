@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show
@@ -201,6 +202,13 @@ SettingsDestination buildLookupDestination() {
             },
           ),
         ],
+      ),
+      // 「我库里的例句」（作品图谱 L4，D-L2 默认开）：开关 + 重建索引。
+      SettingsSection(
+        id: 'lookup.section.library_sentences',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.lookup_library_sentences_enabled,
+        items: librarySentencesSettingsItems(),
       ),
       // 原「查词行为」19+ 项平铺长列表，按职责拆为四组：查词触发 / 外部集成 /
       // 朗读与反馈 / 弹窗窗口。纯展示重组：item id、持久化 key、

@@ -4,6 +4,9 @@ import 'dart:ui'
     show AppExitResponse, PlatformDispatcher;
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/corpus/corpus_origin_navigation.dart';
+import 'package:fushi/src/corpus/library_corpus_service.dart';
+import 'package:fushi_corpus/fushi_corpus.dart' show CorpusHit;
 import 'package:fushi/src/platform/desktop/windows_owned_file_picker.dart';
 import 'package:fushi/src/media/video/windows_hwdec_capability.dart';
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
@@ -955,6 +958,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     WidgetsBinding.instance.addObserver(this);
     _pendingMineArrivals =
         PendingMineRelay.arrivals.listen((_) => _flushPendingMines());
+    // 「我库里的例句」点击回到出处：打开书要 openMedia(ref:)，app 内 / app 外两类查词弹窗都
+    // 经根状态这个始终活着的 ref 落地（LibraryCorpusService.openHit）。
+    LibraryCorpusService.openHitHandler = (CorpusHit hit) =>
+        openCorpusHitOrigin(ref: ref, hit: hit);
     // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
     // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
     // libmpv/ANGLE/WGC churn 污染进程共享 D3D device），落盘取证 + 一次性自动重启。
