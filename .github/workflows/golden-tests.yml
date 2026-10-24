@@ -92,6 +92,9 @@ jobs:
       # 音乐胖核心 fushi_music 同为 app 硬依赖：同样的输入，导出 FUSHI_MUSIC_LIB。
       - name: Build fushi_music (Windows DLL)
         uses: ./.github/actions/setup-fushi-music
+      # 音乐胖核心 fushi_corpus 同为 app 硬依赖：同样的输入，导出 FUSHI_CORPUS_LIB。
+      - name: Build fushi_corpus (Windows DLL)
+        uses: ./.github/actions/setup-fushi-corpus
       - name: Run golden tests
         working-directory: fushi
         run: flutter test --no-pub --tags golden test/goldens

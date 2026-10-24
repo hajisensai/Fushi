@@ -1,11 +1,11 @@
-name: Rust test libraries (fushi_fsrs + fushi_compute + fushi_rwkv + fushi_music, linux-x64)
+name: Rust test libraries (fushi_fsrs + fushi_compute + fushi_rwkv + fushi_music + fushi_corpus, linux-x64)
 description: >-
-  Builds native/fushi_fsrs, native/fushi_compute, native/fushi_rwkv and native/fushi_music for
-  linux-x64 and verifies them. All four are hard dependencies of the fushi/ unit tests and of packages/
+  Builds native/fushi_fsrs, native/fushi_compute, native/fushi_rwkv, native/fushi_music and native/fushi_corpus for
+  linux-x64 and verifies them. All five are hard dependencies of the fushi/ unit tests and of packages/
   tests (no Dart fallback; a missing library fails the test instead of skipping). Producer
-  jobs call this action and upload the four .so files as the `fushi-test-native-linux-x64`
+  jobs call this action and upload the five .so files as the `fushi-test-native-linux-x64`
   artifact (paths relative to native/); the test matrix downloads it into native/ and points
-  FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB / FUSHI_RWKV_LIB / FUSHI_MUSIC_LIB at it.
+  FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB / FUSHI_RWKV_LIB / FUSHI_MUSIC_LIB / FUSHI_CORPUS_LIB at it.
 
 # Why one producer job instead of a build step in every shard: each of the four unit-test
 # shards used to build both crates itself (~2 min per shard, setup-fushi-compute 76 s +
@@ -36,3 +36,10 @@ runs:
         set -euo pipefail
         bash native/fushi_music/build_linux_so.sh
         bash native/fushi_music/verify_abi.sh native/fushi_music/prebuilt/linux-x64/libfushi_music.so nm
+    # 语料胖核心 fushi_corpus（「我库里的例句」倒排索引）同为硬依赖：runner 自带 stable 工具链编。
+    - name: Build fushi_corpus (linux-x64 .so)
+      shell: bash
+      run: |
+        set -euo pipefail
+        bash native/fushi_corpus/build_linux_so.sh
+        bash native/fushi_corpus/verify_abi.sh native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so nm
