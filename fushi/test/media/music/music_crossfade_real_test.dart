@@ -55,25 +55,21 @@ Future<String> _dc(Directory dir, String name, double seconds) =>
       '24',
     ]);
 
-Future<String> _tone(
-  Directory dir,
-  String name,
-  double seconds,
-  int freq,
-) => _gen(dir, name, <String>[
-  '-f',
-  'lavfi',
-  '-i',
-  'sine=frequency=$freq:sample_rate=44100:duration=$seconds',
-  '-ac',
-  '2',
-  '-c:a',
-  'flac',
-  '-sample_fmt',
-  's32',
-  '-bits_per_raw_sample',
-  '24',
-]);
+Future<String> _tone(Directory dir, String name, double seconds, int freq) =>
+    _gen(dir, name, <String>[
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=$freq:sample_rate=44100:duration=$seconds',
+      '-ac',
+      '2',
+      '-c:a',
+      'flac',
+      '-sample_fmt',
+      's32',
+      '-bits_per_raw_sample',
+      '24',
+    ]);
 
 /// WAV（float / s16 / s32，含 EXTENSIBLE）→ 第一声道样本。
 Float64List _readWavCh0(String path) {
@@ -332,12 +328,15 @@ void main() {
   test(
     '样本级：等功率曲线（cos/sin，平方和恒 1），两路叠加无阶跃',
     () async {
-      final (Float64List a, Float64List b, MusicCrossfadeTiming timing) =
-          await renderPair(
-            'dc',
-            _item('a', dcA, durationMs: 6000, album: 'x'),
-            _item('b', dcB, durationMs: 6000, album: 'y'),
-          );
+      final (
+        Float64List a,
+        Float64List b,
+        MusicCrossfadeTiming timing,
+      ) = await renderPair(
+        'dc',
+        _item('a', dcA, durationMs: 6000, album: 'x'),
+        _item('b', dcB, durationMs: 6000, album: 'y'),
+      );
       const int sr = 44100;
       final int start = (timing.fadeStart.inMicroseconds * sr / 1e6).round();
       final int len = (timing.fadeLength.inMicroseconds * sr / 1e6).round();
@@ -356,7 +355,7 @@ void main() {
       // 理想对齐（后一首第 0 个样本 = 前一首淡出起点）下的叠加。
       double powerDev = 0, sumStep = 0;
       double prev = a[0];
-      for (int n = 1; n < start + len + sr; n++) {
+      for (int n = 1; n < a.length; n++) {
         final double ga = a[n] / 0.5;
         final double gb = n - start >= 0 && n - start < b.length
             ? b[n - start] / 0.5
@@ -371,7 +370,7 @@ void main() {
       for (final int ms in <int>[10, 20, 40, 80]) {
         final int d = sr * ms ~/ 1000;
         double lo = double.infinity, hi = 0;
-        for (int n = start; n < start + len + d; n++) {
+        for (int n = start; n < math.min(a.length, start + len + d); n++) {
           final double ga = a[n] / 0.5;
           final int m = n - start - d;
           final double gb = m >= 0 && m < b.length ? b[m] / 0.5 : 0;
@@ -397,7 +396,11 @@ void main() {
       expect(powerDev, lessThan(1e-6), reason: '等功率：cos² + sin² = 1');
       // 曲线最陡处每样本增益变化 = (π/2)/len；叠加后的阶跃不超过它（乘振幅、两路合计）。
       expect(sumStep, lessThanOrEqualTo(0.5 * math.pi / 2 / len * math.sqrt2));
-      expect(devByOffsetMs[40]!, greaterThan(-0.3), reason: '40 ms 错位功率凹陷 < 0.3 dB');
+      expect(
+        devByOffsetMs[40]!,
+        greaterThan(-0.3),
+        reason: '40 ms 错位功率凹陷 < 0.3 dB',
+      );
     },
     skip: skip,
     timeout: const Timeout(Duration(seconds: 90)),
@@ -406,12 +409,15 @@ void main() {
   test(
     '样本级：音乐内容上两路输出逐样本 = 增益曲线 × 源（滤镜之外不改样本）',
     () async {
-      final (Float64List a, Float64List b, MusicCrossfadeTiming timing) =
-          await renderPair(
-            'tone',
-            _item('a', toneA, durationMs: 6000, album: 'x'),
-            _item('b', toneB, durationMs: 6000, album: 'y'),
-          );
+      final (
+        Float64List a,
+        Float64List b,
+        MusicCrossfadeTiming timing,
+      ) = await renderPair(
+        'tone',
+        _item('a', toneA, durationMs: 6000, album: 'x'),
+        _item('b', toneB, durationMs: 6000, album: 'y'),
+      );
       // 源的直接解码（无交叉淡入，单实例 ao=pcm）。
       Future<Float64List> plain(String path, String name) async {
         final String wav = '${dir.path}${Platform.pathSeparator}$name.wav';
@@ -430,7 +436,11 @@ void main() {
         final _Recorder rec = _Recorder(p.events);
         try {
           await p.applySettings(_xf.copyWith(crossfade: Duration.zero));
-          await p.openPair(_item('r', path, durationMs: 6000), null, play: true);
+          await p.openPair(
+            _item('r', path, durationMs: 6000),
+            null,
+            play: true,
+          );
           await rec.waitFor(() => rec.count<MusicBackendCompleted>() >= 1);
         } finally {
           await rec.cancel();
@@ -446,10 +456,7 @@ void main() {
       final int len = (timing.fadeLength.inMicroseconds * sr / 1e6).round();
       double errA = 0, errB = 0;
       for (int n = 0; n < a.length; n++) {
-        errA = math.max(
-          errA,
-          (a[n] - srcA[n] * _cosFade(n, start, len)).abs(),
-        );
+        errA = math.max(errA, (a[n] - srcA[n] * _cosFade(n, start, len)).abs());
       }
       for (int n = 0; n < b.length; n++) {
         errB = math.max(errB, (b[n] - srcB[n] * _sinFade(n, len)).abs());
@@ -548,9 +555,10 @@ void main() {
           await rec.waitFor(() => rec.count<MusicBackendAdvanced>() >= 1);
           await xf.replaceNext(null);
           await rec.waitFor(() => rec.count<MusicBackendCompleted>() >= 1);
-          final String af = await (instances.created.first.debugPlayer.platform!
-                  as NativePlayer)
-              .getPropertyAsync('af');
+          final String af =
+              await (instances.created.first.debugPlayer.platform!
+                      as NativePlayer)
+                  .getPropertyAsync('af');
           // ignore: avoid_print
           print('[xf-cue ${crossfade.inSeconds}s] af="$af"');
         } finally {
@@ -558,6 +566,11 @@ void main() {
           await xf.dispose();
         }
         expect(instances.created.length, 1, reason: '不淡入的衔接不建第二个实例');
+        // 开着交叉淡入时两段都装了（中性的）滤镜，输出照样与整轨逐样本一致。
+        expect(
+          instances.created.first.debugCrossfadeFilteredUids,
+          crossfade > Duration.zero ? <String>{'t1', 't2'} : isEmpty,
+        );
         expect(await md5Of(wav), await md5Of(full));
       },
       skip: skip,
@@ -877,7 +890,8 @@ void main() {
             _item('c', longA, durationMs: 9000, album: 'z'),
           ]);
           final Stopwatch sw = Stopwatch()..start();
-          while (started.length < 2 && sw.elapsed < const Duration(seconds: 15)) {
+          while (started.length < 2 &&
+              sw.elapsed < const Duration(seconds: 15)) {
             await Future<void>.delayed(const Duration(milliseconds: 20));
           }
           expect(started, <String>['a', 'b']);
@@ -993,7 +1007,10 @@ void main() {
         );
         final MusicSignalPathSnapshot snap = (await xf.readSignalPath())!;
         expect(snap.crossfade, isTrue);
-        expect(snap.crossfadeAvailability, MusicCrossfadeAvailability.available);
+        expect(
+          snap.crossfadeAvailability,
+          MusicCrossfadeAvailability.available,
+        );
         expect(snap.userFilters, isEmpty);
         final MusicSignalPathVerdict v = judgeMusicSignalPath(snap);
         expect(v.isBitPerfect, isFalse);
@@ -1046,9 +1063,8 @@ void main() {
             () => !r.xf.debugOverlapping,
             timeout: const Duration(seconds: 10),
           );
-          final List<double> o = List<double>.of(
-            r.xf.debugLastOverlapOffsetsMs,
-          )..sort();
+          final List<double> o = List<double>.of(r.xf.debugLastOverlapOffsetsMs)
+            ..sort();
           medians.add(o[o.length ~/ 2]);
           rows.add(
             'adv-vs-ideal=${((r.advanceAtUs - r.idealAtUs) / 1000).toStringAsFixed(1)}ms '
@@ -1064,6 +1080,64 @@ void main() {
       print('[xf-wasapi]\n  ${rows.join('\n  ')}');
       for (final double m in medians) {
         expect(m.abs(), lessThan(60));
+      }
+    },
+    skip: wasapiSkip,
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+
+  test(
+    'WASAPI 真设备 + 引擎：同一后端连续 4 次交叉淡入，启动补偿学到设备起播延迟后对齐收敛',
+    () async {
+      late MusicCrossfadeBackend xf;
+      final MusicPlayerEngine engine = MusicPlayerEngine(
+        backendFactory: () => xf = MusicCrossfadeBackend(
+          instanceFactory: _Instances(wasapi).call,
+          platform: MusicOutputPlatform.windows,
+        ),
+        replayGainEnabled: () => false,
+        baseSettings: () => const MusicOutputSettings(
+          gapless: true,
+          replayGain: MusicReplayGainMode.off,
+          crossfade: Duration(seconds: 3),
+        ),
+      );
+      final List<String> rows = <String>[];
+      final List<double> medians = <double>[];
+      try {
+        await engine.playQueue(<MusicPlayItem>[
+          for (int i = 0; i < 5; i++)
+            _item(
+              't$i',
+              i.isEven ? silenceA : silenceB,
+              durationMs: 9000,
+              album: 'al$i',
+            ),
+        ]);
+        List<double> seen = xf.debugLastOverlapOffsetsMs;
+        final Stopwatch sw = Stopwatch()..start();
+        while (medians.length < 4 && sw.elapsed < const Duration(seconds: 60)) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          final List<double> o = xf.debugLastOverlapOffsetsMs;
+          if (identical(o, seen) || o.isEmpty) continue;
+          seen = o;
+          final List<double> s = List<double>.of(o)..sort();
+          medians.add(s[s.length ~/ 2]);
+          rows.add(
+            '#${medians.length} median=${s[s.length ~/ 2].toStringAsFixed(1)}ms '
+            'min=${s.first.toStringAsFixed(1)} max=${s.last.toStringAsFixed(1)} '
+            'n=${s.length} → lead now ${xf.debugStartLead.inMicroseconds / 1000}ms',
+          );
+        }
+      } finally {
+        await engine.stop();
+        engine.dispose();
+      }
+      // ignore: avoid_print
+      print('[xf-wasapi-chain]\n  ${rows.join('\n  ')}');
+      expect(medians.length, 4);
+      for (final double m in medians.skip(1)) {
+        expect(m.abs(), lessThan(15), reason: '补偿后对齐误差应收敛：$rows');
       }
     },
     skip: wasapiSkip,

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
+import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -53,6 +55,54 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicGapless(value);
             },
+          ),
+          // 交叉淡入（设计 §7.2）：双 libmpv 实例、逐样本等功率曲线；独占 / 硬件直出时
+          // 后端自动停用（musicCrossfadeAvailability），这里与信号路径面板都标出来。
+          SettingsSliderItem(
+            id: 'music.crossfade',
+            title: t.music_crossfade_title,
+            subtitle: t.music_crossfade_hint,
+            icon: FushiIcons.playlist,
+            min: 0,
+            max: 12,
+            divisions: 12,
+            defaultValue: 0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) =>
+                v.round() == 0 ? t.music_crossfade_off : '${v.round()} s',
+            value: (SettingsContext c) => c.appModel.musicCrossfadeMs / 1000,
+            onChanged: (SettingsContext c, double v) =>
+                c.appModel.setMusicCrossfadeMs(v.round() * 1000),
+          ),
+          SettingsSwitchItem(
+            id: 'music.crossfade_continuous',
+            title: t.music_crossfade_continuous_title,
+            subtitleBuilder: (SettingsContext c) =>
+                switch (musicCrossfadeAvailability(
+                  c.appModel.musicSession.engine.currentSettings,
+                  platform: musicOutputPlatformOfHost(),
+                )) {
+                  MusicCrossfadeAvailability.disabledByExclusive =>
+                    t.music_crossfade_disabled_exclusive,
+                  MusicCrossfadeAvailability.disabledByDirectDevice =>
+                    t.music_crossfade_disabled_direct,
+                  MusicCrossfadeAvailability.off ||
+                  MusicCrossfadeAvailability.available =>
+                    t.music_crossfade_continuous_hint,
+                },
+            icon: FushiIcons.playlist,
+            defaultValue: false,
+            // 只在交叉淡入真正生效时有意义（关 / 独占 / 硬件直出时置灰，原因见副标题）。
+            enabled: (SettingsContext c) =>
+                musicCrossfadeAvailability(
+                  c.appModel.musicSession.engine.currentSettings,
+                  platform: musicOutputPlatformOfHost(),
+                ) ==
+                MusicCrossfadeAvailability.available,
+            value: (SettingsContext c) => c.appModel.musicCrossfadeContinuous,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicCrossfadeContinuous(value),
           ),
           SettingsSwitchItem(
             id: 'music.replaygain',

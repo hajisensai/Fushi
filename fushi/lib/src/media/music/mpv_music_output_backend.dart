@@ -678,6 +678,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
 
   static String? _nonEmpty(String s) => s.isEmpty ? null : s;
 
+  /// 测试：加载时装了交叉淡入滤镜的曲目。
+  @visibleForTesting
+  Set<String> get debugCrossfadeFilteredUids =>
+      Set<String>.unmodifiable(_filteredUids);
+
   /// 测试：[dispose] 已调用。
   @visibleForTesting
   bool get debugDisposed => _disposed;
@@ -761,10 +766,8 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   }
 
   @override
-  Future<void> disarmFadeOut() => _fadeOutCommand(
-    'st',
-    kMusicCrossfadeIdleStartSeconds.toStringAsFixed(0),
-  );
+  Future<void> disarmFadeOut() =>
+      _fadeOutCommand('st', kMusicCrossfadeIdleStartSeconds.toStringAsFixed(0));
 
   @override
   set onAudiblePts(void Function(double pts)? callback) =>

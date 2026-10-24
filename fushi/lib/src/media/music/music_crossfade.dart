@@ -51,7 +51,8 @@ MusicCrossfadeAvailability musicCrossfadeAvailability(
   MusicOutputSettings settings, {
   required MusicOutputPlatform platform,
 }) {
-  if (settings.crossfade <= Duration.zero) return MusicCrossfadeAvailability.off;
+  if (settings.crossfade <= Duration.zero)
+    return MusicCrossfadeAvailability.off;
   if (settings.exclusive) return MusicCrossfadeAvailability.disabledByExclusive;
   if (platform == MusicOutputPlatform.linux &&
       settings.audioDevice.startsWith('alsa/hw:')) {
@@ -153,7 +154,10 @@ const Duration kMusicCrossfadeMinLength = Duration(milliseconds: 200);
 /// 一次交叉淡入的时间参数（都是**媒体时间**：前一首的 [fadeStart]，两路共用 [fadeLength]）。
 @immutable
 class MusicCrossfadeTiming {
-  const MusicCrossfadeTiming({required this.fadeStart, required this.fadeLength});
+  const MusicCrossfadeTiming({
+    required this.fadeStart,
+    required this.fadeLength,
+  });
 
   final Duration fadeStart;
   final Duration fadeLength;
@@ -301,6 +305,13 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
   Duration? _overlapFadeLength;
   List<double> _lastOverlapOffsetsMs = const <double>[];
 
+  /// 启动补偿（微秒）：后一首比理想时刻晚出声的量（设备起播延迟，WASAPI 共享实测稳定在
+  /// 约 20 ms），由上一次完整重叠的对齐中位数学出来，下一次提前这么多启动。
+  int _startLeadUs = 0;
+
+  /// 补偿上限：再大说明测量本身不可信，不跟。
+  static const int _kMaxStartLeadUs = 100000;
+
   @override
   Stream<MusicBackendEvent> get events => _events.stream;
 
@@ -312,10 +323,11 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
 
   /// 测试 / 诊断：此刻活着的实例数。
   @visibleForTesting
-  int get debugInstanceCount =>
-      <MusicCrossfadeInstance?>[_primary, _incoming, _outgoing]
-          .whereType<MusicCrossfadeInstance>()
-          .length;
+  int get debugInstanceCount => <MusicCrossfadeInstance?>[
+    _primary,
+    _incoming,
+    _outgoing,
+  ].whereType<MusicCrossfadeInstance>().length;
 
   /// 测试 / 诊断：重叠期（前一首仍在淡出）。
   @visibleForTesting
@@ -434,7 +446,7 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     }
     final MusicCrossfadeTiming timing = plan.timing!;
     final double startS = timing.fadeStart.inMicroseconds / 1e6;
-    final double remainingWallS = (startS - pts) / _speed;
+    final double remainingWallS = (startS - pts) / _speed - _startLeadUs / 1e6;
     if (_incoming == null &&
         !plan.preloading &&
         remainingWallS <= kPreloadLead.inMicroseconds / 1e6) {
@@ -581,8 +593,22 @@ class MusicCrossfadeBackend implements MusicOutputBackend {
     final MusicCrossfadeInstance? out = _outgoing;
     _outgoing = null;
     _lastOverlapOffsetsMs = _alignmentOffsetsMs();
+    // 只从完整走完的重叠学补偿（被用户操作打断的那次样本太少）。
+    if (_lastOverlapOffsetsMs.length >= 5) {
+      final List<double> sorted = List<double>.of(_lastOverlapOffsetsMs)
+        ..sort();
+      final double medianMs = sorted[sorted.length ~/ 2];
+      _startLeadUs = (_startLeadUs + medianMs * 1000).round().clamp(
+        0,
+        _kMaxStartLeadUs,
+      );
+    }
     await _disposeInstance(out);
   }
+
+  /// 测试 / 诊断：当前的启动补偿。
+  @visibleForTesting
+  Duration get debugStartLead => Duration(microseconds: _startLeadUs);
 
   /// 重叠期内，每个后一首采样时刻用前一首相邻两采样线性插值，比「前一首超过淡出起点的量」
   /// 与「后一首的位置」之差。
