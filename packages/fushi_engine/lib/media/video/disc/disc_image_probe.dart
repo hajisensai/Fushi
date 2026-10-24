@@ -8,11 +8,12 @@
 //   - **ISO 9660**：DVD 一般带 UDF + ISO 9660 桥接，UDF 读不动时退回它；BD 镜像多半
 //     只有 UDF。
 //
-// 只读到判规格为止：根目录有没有 `VIDEO_TS/VIDEO_TS.IFO`、`BDMV/PLAYLIST`，以及蓝光
-// 的 `BDMV/index.bdmv` 头 8 字节（分 UHD）。不读标题表——镜像里的 title / MPLS 选片
-// 与播放交给原生 libdvdread / libbluray（它们本来就直接吃 ISO）。
+// 探测只读到判规格为止：根目录有没有 `VIDEO_TS/VIDEO_TS.IFO`、`BDMV/PLAYLIST`，以及
+// 蓝光的 `BDMV/index.bdmv` 头 8 字节（分 UHD）。DVD 镜像的整盘入库另经
+// [DiscImageFileSystem] 读出 `VIDEO_TS/*.IFO` 字节，交给 `dvd_disc.dart` 与文件夹形态
+// 同一条解析 / 选片链路（见 `readDvdDiscImage`）。
 //
-// 读坏 / 不是盘镜像一律返回 null，不抛：这里是「探测」，探不出来就是「不是盘」。
+// 探测读坏 / 不是盘镜像一律返回 null，不抛：探不出来就是「不是盘」。
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -55,40 +56,41 @@ Future<DiscImageProbe?> probeDiscImageFile(String imagePath) async {
 /// 在任意可随机读的镜像上探测（测试可直接喂内存字节）。
 DiscImageProbe? probeDiscImage(DiscImageRead read) {
   try {
-    final _DiscFs? udf = _UdfFs.open(read);
+    final DiscImageFileSystem? udf = _UdfFs.open(read);
     final DiscImageProbe? viaUdf = udf == null ? null : _probeFs(udf);
     if (viaUdf != null) return viaUdf;
-    final _DiscFs? iso = _Iso9660Fs.open(read);
+    final DiscImageFileSystem? iso = _Iso9660Fs.open(read);
     return iso == null ? null : _probeFs(iso);
-  } on _ImageFormatException {
+  } on DiscImageFormatException {
     return null;
   }
 }
 
-DiscImageProbe? _probeFs(_DiscFs fs) {
-  final List<_DirEntry> root = fs.listRoot();
-  final _DirEntry? videoTs = _find(root, 'VIDEO_TS', directory: true);
+DiscImageProbe? _probeFs(DiscImageFileSystem fs) {
+  final List<DiscImageEntry> root = fs.listRoot();
+  final DiscImageEntry? videoTs = _find(root, 'VIDEO_TS', directory: true);
   if (videoTs != null) {
-    final List<_DirEntry> inside = fs.list(videoTs);
+    final List<DiscImageEntry> inside = fs.list(videoTs);
     if (inside.any(
-      (_DirEntry e) => !e.isDirectory && _plainName(e.name) == 'VIDEO_TS.IFO',
+      (DiscImageEntry e) =>
+          !e.isDirectory && _plainName(e.name) == 'VIDEO_TS.IFO',
     )) {
       return DiscImageProbe(format: DiscFormat.dvd, volumeLabel: fs.label);
     }
   }
-  final _DirEntry? bdmv = _find(root, 'BDMV', directory: true);
+  final DiscImageEntry? bdmv = _find(root, 'BDMV', directory: true);
   if (bdmv != null) {
-    final List<_DirEntry> inside = fs.list(bdmv);
+    final List<DiscImageEntry> inside = fs.list(bdmv);
     if (_find(inside, 'PLAYLIST', directory: true) != null) {
-      final _DirEntry? index = inside
+      final DiscImageEntry? index = inside
           .where(
-            (_DirEntry e) =>
+            (DiscImageEntry e) =>
                 !e.isDirectory && _plainName(e.name) == 'INDEX.BDMV',
           )
           .firstOrNull;
       final DiscFormat format = index == null
           ? DiscFormat.bluray
-          : blurayFormatForIndexHeader(fs.readHead(index, 8)) ??
+          : blurayFormatForIndexHeader(fs.readFile(index, 8)) ??
                 DiscFormat.bluray;
       return DiscImageProbe(format: format, volumeLabel: fs.label);
     }
@@ -102,29 +104,30 @@ String _plainName(String name) {
   return (semi < 0 ? name : name.substring(0, semi)).toUpperCase();
 }
 
-_DirEntry? _find(
-  List<_DirEntry> entries,
+DiscImageEntry? _find(
+  List<DiscImageEntry> entries,
   String name, {
   required bool directory,
 }) {
-  for (final _DirEntry e in entries) {
+  for (final DiscImageEntry e in entries) {
     if (e.isDirectory == directory && _plainName(e.name) == name) return e;
   }
   return null;
 }
 
-class _ImageFormatException implements Exception {
-  const _ImageFormatException(this.message);
+/// 镜像文件系统结构不合法（标签不符、越界、分配描述符溢出……）。
+class DiscImageFormatException implements Exception {
+  const DiscImageFormatException(this.message);
 
   final String message;
 
   @override
-  String toString() => '_ImageFormatException: $message';
+  String toString() => 'DiscImageFormatException: $message';
 }
 
-/// 目录项：名字 + 是否目录 + 文件系统私有的定位信息。
-class _DirEntry {
-  const _DirEntry({
+/// 镜像里的一个目录项：名字 + 是否目录 + 文件系统私有的定位信息。
+class DiscImageEntry {
+  const DiscImageEntry({
     required this.name,
     required this.isDirectory,
     required this.location,
@@ -145,20 +148,79 @@ class _DirEntry {
   final int partRef;
 }
 
-abstract class _DiscFs {
+/// 只读的镜像文件系统（UDF 或 ISO 9660）。读坏抛 [DiscImageFormatException]。
+abstract class DiscImageFileSystem {
+  /// 卷标；取不到为 null。
   String? get label;
-  List<_DirEntry> listRoot();
-  List<_DirEntry> list(_DirEntry directory);
-  List<int> readHead(_DirEntry file, int length);
+  List<DiscImageEntry> listRoot();
+  List<DiscImageEntry> list(DiscImageEntry directory);
+
+  /// 文件 [file] 的前 [limit] 字节（文件更短就是整个文件）。
+  Uint8List readFile(DiscImageEntry file, int limit);
+}
+
+/// ISO 9660 文件名带 `;1` 版本号后缀：去掉并统一大写，用于按名比较。
+String discImagePlainName(String name) => _plainName(name);
+
+/// 在 [entries] 里按 [discImagePlainName] 找名为 [name]（大写）的目录 / 文件。
+DiscImageEntry? findDiscImageEntry(
+  List<DiscImageEntry> entries,
+  String name, {
+  required bool directory,
+}) => _find(entries, name, directory: directory);
+
+/// 打开镜像文件系统：优先 UDF（DVD-Video / BD 的主文件系统），UDF 读不动退回
+/// ISO 9660 桥接；都不是返回 null。
+DiscImageFileSystem? openDiscImageFileSystem(DiscImageRead read) {
+  try {
+    final DiscImageFileSystem? udf = _UdfFs.open(read);
+    if (udf != null) {
+      try {
+        udf.listRoot();
+        return udf;
+      } on DiscImageFormatException {
+        // 根目录读不动：退回 ISO 9660。
+      }
+    }
+    return _Iso9660Fs.open(read);
+  } on DiscImageFormatException {
+    return null;
+  }
+}
+
+/// 打开 [imagePath]，在 [body] 里随机读它；文件打不开时 [body] 收到 null。
+Future<T> withDiscImageFile<T>(
+  String imagePath,
+  Future<T> Function(DiscImageFileSystem? fs) body,
+) async {
+  RandomAccessFile? raf;
+  try {
+    raf = await File(imagePath).open();
+  } on FileSystemException {
+    return body(null);
+  }
+  final RandomAccessFile file = raf;
+  try {
+    final int size = await file.length();
+    return await body(
+      openDiscImageFileSystem((int offset, int length) {
+        if (offset < 0 || offset >= size) return Uint8List(0);
+        file.setPositionSync(offset);
+        return file.readSync(length);
+      }),
+    );
+  } finally {
+    await file.close();
+  }
 }
 
 int _le16(Uint8List b, int at) {
-  if (at + 2 > b.length) throw const _ImageFormatException('short read');
+  if (at + 2 > b.length) throw const DiscImageFormatException('short read');
   return b[at] | (b[at + 1] << 8);
 }
 
 int _le32(Uint8List b, int at) {
-  if (at + 4 > b.length) throw const _ImageFormatException('short read');
+  if (at + 4 > b.length) throw const DiscImageFormatException('short read');
   return b[at] | (b[at + 1] << 8) | (b[at + 2] << 16) | (b[at + 3] << 24);
 }
 
@@ -170,7 +232,7 @@ Uint8List _sector(DiscImageRead read, int sector, [int count = 1]) {
     count * kDiscImageSectorSize,
   );
   if (bytes.length < count * kDiscImageSectorSize) {
-    throw const _ImageFormatException('sector past end of image');
+    throw const DiscImageFormatException('sector past end of image');
   }
   return bytes;
 }
@@ -180,11 +242,11 @@ const int _kMaxDirectoryBytes = 4 * 1024 * 1024;
 
 // ───────────────────────────── ISO 9660 ─────────────────────────────
 
-class _Iso9660Fs implements _DiscFs {
+class _Iso9660Fs implements DiscImageFileSystem {
   _Iso9660Fs(this._read, this._root, this.label);
 
   final DiscImageRead _read;
-  final _DirEntry _root;
+  final DiscImageEntry _root;
 
   @override
   final String? label;
@@ -198,7 +260,7 @@ class _Iso9660Fs implements _DiscFs {
       if (type == 255) return null;
       if (type != 1) continue;
       final String volumeId = String.fromCharCodes(d.sublist(40, 72)).trim();
-      final _DirEntry root = _DirEntry(
+      final DiscImageEntry root = DiscImageEntry(
         name: '',
         isDirectory: true,
         location: _le32(d, 156 + 2),
@@ -210,18 +272,18 @@ class _Iso9660Fs implements _DiscFs {
   }
 
   @override
-  List<_DirEntry> listRoot() => list(_root);
+  List<DiscImageEntry> listRoot() => list(_root);
 
   @override
-  List<_DirEntry> list(_DirEntry directory) {
+  List<DiscImageEntry> list(DiscImageEntry directory) {
     if (directory.length > _kMaxDirectoryBytes) {
-      throw const _ImageFormatException('directory too large');
+      throw const DiscImageFormatException('directory too large');
     }
     final int sectors =
         (directory.length + kDiscImageSectorSize - 1) ~/ kDiscImageSectorSize;
-    if (sectors == 0) return const <_DirEntry>[];
+    if (sectors == 0) return const <DiscImageEntry>[];
     final Uint8List data = _sector(_read, directory.location, sectors);
-    final List<_DirEntry> out = <_DirEntry>[];
+    final List<DiscImageEntry> out = <DiscImageEntry>[];
     int at = 0;
     while (at < directory.length) {
       final int len = data[at];
@@ -231,17 +293,17 @@ class _Iso9660Fs implements _DiscFs {
         continue;
       }
       if (len < 34 || at + len > data.length) {
-        throw const _ImageFormatException('bad ISO 9660 directory record');
+        throw const DiscImageFormatException('bad ISO 9660 directory record');
       }
       final int nameLength = data[at + 32];
       if (33 + nameLength > len) {
-        throw const _ImageFormatException('bad ISO 9660 name length');
+        throw const DiscImageFormatException('bad ISO 9660 name length');
       }
       final Uint8List rawName = data.sublist(at + 33, at + 33 + nameLength);
       // 0x00 / 0x01 是「本目录」「上级目录」。
       if (!(nameLength == 1 && rawName[0] <= 1)) {
         out.add(
-          _DirEntry(
+          DiscImageEntry(
             name: String.fromCharCodes(rawName),
             isDirectory: data[at + 25] & 0x02 != 0,
             location: _le32(data, at + 2),
@@ -255,10 +317,11 @@ class _Iso9660Fs implements _DiscFs {
   }
 
   @override
-  List<int> readHead(_DirEntry file, int length) {
-    final int n = file.length < length ? file.length : length;
-    if (n <= 0) return const <int>[];
-    return _sector(_read, file.location).sublist(0, n);
+  Uint8List readFile(DiscImageEntry file, int limit) {
+    final int n = file.length < limit ? file.length : limit;
+    if (n <= 0) return Uint8List(0);
+    final int sectors = (n + kDiscImageSectorSize - 1) ~/ kDiscImageSectorSize;
+    return Uint8List.sublistView(_sector(_read, file.location, sectors), 0, n);
   }
 }
 
@@ -287,7 +350,7 @@ class _UdfExtent {
   final int length;
 }
 
-class _UdfFs implements _DiscFs {
+class _UdfFs implements DiscImageFileSystem {
   _UdfFs._(this._read, this._partitionStart, this._maps, this.label);
 
   final DiscImageRead _read;
@@ -311,7 +374,7 @@ class _UdfFs implements _DiscFs {
     final Uint8List anchor;
     try {
       anchor = _sector(read, 256);
-    } on _ImageFormatException {
+    } on DiscImageFormatException {
       return null;
     }
     if (_le16(anchor, 0) != _kTagAnchor) return null;
@@ -403,9 +466,9 @@ class _UdfFs implements _DiscFs {
           }
           remaining -= e.length;
         }
-        throw const _ImageFormatException('metadata block out of range');
+        throw const DiscImageFormatException('metadata block out of range');
       case _UdfMapKind.unsupported:
-        throw const _ImageFormatException('unsupported UDF partition map');
+        throw const DiscImageFormatException('unsupported UDF partition map');
     }
   }
 
@@ -426,11 +489,13 @@ class _UdfFs implements _DiscFs {
       adLength = _le32(fe, 212);
       adBase = 216 + _le32(fe, 208);
     } else {
-      throw const _ImageFormatException('not a UDF file entry');
+      throw const DiscImageFormatException('not a UDF file entry');
     }
     final int infoLength = _le64(fe, 56);
     if (adBase + adLength > fe.length) {
-      throw const _ImageFormatException('UDF allocation descriptors overflow');
+      throw const DiscImageFormatException(
+        'UDF allocation descriptors overflow',
+      );
     }
     final int adType = _le16(fe, 16 + 18) & 0x07;
     if (adType == 3) {
@@ -441,7 +506,7 @@ class _UdfFs implements _DiscFs {
       );
     }
     if (adType != 0 && adType != 1) {
-      throw const _ImageFormatException('unsupported UDF allocation type');
+      throw const DiscImageFormatException('unsupported UDF allocation type');
     }
     final int step = adType == 0 ? 8 : 16;
     final List<_UdfExtent> extents = <_UdfExtent>[];
@@ -494,19 +559,19 @@ class _UdfFs implements _DiscFs {
   }
 
   @override
-  List<_DirEntry> listRoot() => _listIcb(_rootIcb);
+  List<DiscImageEntry> listRoot() => _listIcb(_rootIcb);
 
   @override
-  List<_DirEntry> list(_DirEntry directory) =>
+  List<DiscImageEntry> list(DiscImageEntry directory) =>
       _listIcb(_UdfExtent(directory.partRef, directory.location, 0));
 
-  List<_DirEntry> _listIcb(_UdfExtent icb) {
+  List<DiscImageEntry> _listIcb(_UdfExtent icb) {
     final Uint8List data = _fileData(icb, _kMaxDirectoryBytes);
-    final List<_DirEntry> out = <_DirEntry>[];
+    final List<DiscImageEntry> out = <DiscImageEntry>[];
     int at = 0;
     while (at + 38 <= data.length) {
       if (_le16(data, at) != _kTagFileIdentifier) {
-        throw const _ImageFormatException('bad UDF file identifier');
+        throw const DiscImageFormatException('bad UDF file identifier');
       }
       final int characteristics = data[at + 18];
       final int nameLength = data[at + 19];
@@ -515,13 +580,13 @@ class _UdfFs implements _DiscFs {
       final int iuLength = _le16(data, at + 36);
       final int nameStart = at + 38 + iuLength;
       if (nameStart + nameLength > data.length) {
-        throw const _ImageFormatException('UDF name overflow');
+        throw const DiscImageFormatException('UDF name overflow');
       }
       final bool isParent = characteristics & 0x08 != 0;
       final bool isDeleted = characteristics & 0x04 != 0;
       if (!isParent && !isDeleted && nameLength > 0) {
         out.add(
-          _DirEntry(
+          DiscImageEntry(
             name: _dstringBytes(
               data.sublist(nameStart, nameStart + nameLength),
             ),
@@ -538,7 +603,7 @@ class _UdfFs implements _DiscFs {
   }
 
   @override
-  List<int> readHead(_DirEntry file, int length) =>
+  Uint8List readFile(DiscImageEntry file, int length) =>
       _fileData(_UdfExtent(file.partRef, file.location, 0), length);
 }
 

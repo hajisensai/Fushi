@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -16,9 +17,11 @@ import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
 
 import '../video/dvd_fixture.dart';
+import '../video/dvd_iso_fixture.dart';
 
 class _NoFfmpeg implements FfmpegBackend {
   @override
@@ -215,6 +218,80 @@ void main() {
       expect(summary.error, contains('DVD'));
       expect(summary.error, contains('Bad'));
       expect((await membersByCollection(db)).keys, <String>['Good']);
+    });
+
+    test('.iso 镜像形态的 DVD 整盘入库：成员挂在 iso 下，BD 镜像 / 数据镜像不入库', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory staging = Directory.systemTemp.createTempSync(
+        'dvd_iso_src_',
+      );
+      addTearDown(() => staging.deleteSync(recursive: true));
+      writeTvDvdFixture(p.join(staging.path, 'Show'));
+      final String iso = p.join(tmp.path, 'Show.iso');
+      writeIsoFromFolderDisc(p.join(staging.path, 'Show'), iso);
+      File(p.join(tmp.path, 'data.iso')).writeAsBytesSync(
+        buildVideoTsIsoImage(<String, List<int>>{
+          'README.TXT': <int>[1],
+        }),
+      );
+
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(await _videoSource(db, tmp.path));
+      expect(summary.succeeded, isTrue, reason: summary.error ?? '');
+      expect(await membersByCollection(db), <String, List<String>>{
+        'Show': <String>[
+          for (final int n in <int>[2, 3, 4, 5])
+            p.normalize(dvdTitlePath(iso, n)),
+        ],
+      });
+      expect(await VideoBookRepository(db).listAll(), hasLength(4));
+    });
+
+    test('特典入库、带来源、不进盘合集；单独删掉后重扫不复活', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String disc = p.join(tmp.path, 'Movie');
+      writeMovieWithExtrasDvdFixture(disc);
+      final SourceLibraryRow source = await _videoSource(db, tmp.path);
+      final SourceScanSummary first = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(first.succeeded, isTrue, reason: first.error ?? '');
+
+      final VideoBookRepository repo = VideoBookRepository(db);
+      expect(await membersByCollection(db), <String, List<String>>{
+        'Movie': <String>[p.normalize(dvdTitlePath(disc, 1))],
+      });
+      final VideoBookRow extra = (await repo.findByVideoPath(
+        dvdTitlePath(disc, 2),
+      ))!;
+      expect(extra.title, 'Movie - T02');
+      expect(extra.sourceId, source.id);
+      expect(await repo.findByVideoPath(dvdTitlePath(disc, 3)), isNull);
+      expect(await repo.findByVideoPath(dvdTitlePath(disc, 4)), isNull);
+
+      // 重扫幂等：不重复建特典行。
+      await SourceLibraryScanner(db).scan(source);
+      expect(await repo.listAll(), hasLength(2));
+
+      final VideoLibraryDeleteResult result =
+          await deleteVideoBooksWithDecision(
+            repo: repo,
+            database: db,
+            pipeline: null,
+            bookUids: <String>[extra.bookUid],
+            decision: const DeleteDecision(scope: DeleteScope.keepLocalOnly),
+            compactDatabase: false,
+          );
+      expect(result.deleted, 1);
+      final SourceScanSummary rescan = await SourceLibraryScanner(
+        db,
+      ).scan(source);
+      expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
+      expect(await repo.findByVideoPath(dvdTitlePath(disc, 2)), isNull);
+      expect(await repo.findByVideoPath(dvdTitlePath(disc, 1)), isNotNull);
     });
   });
 }

@@ -260,3 +260,49 @@ void writeTvDvdFixture(
     ],
   );
 }
+
+/// 电影盘带特典：title 1 是 110 分钟正片（VTS 1，20 章）；title 2 是 5 分钟制作
+/// 特辑、title 3 是 30 秒预告（同在 VTS 2）；title 4 是菜单背景循环（VTS 3，同一段
+/// cell 连排两次，共 4 分钟）。正片之外只有 title 2 算特典。
+void writeMovieWithExtrasDvdFixture(String root) {
+  writeDvdFixture(
+    root,
+    titles: const <FixtureDvdTitle>[
+      FixtureDvdTitle(titleSet: 1, vtsTitle: 1, chapters: 20),
+      FixtureDvdTitle(titleSet: 2, vtsTitle: 1, chapters: 1),
+      FixtureDvdTitle(titleSet: 2, vtsTitle: 2, chapters: 1),
+      FixtureDvdTitle(titleSet: 3, vtsTitle: 1, chapters: 1),
+    ],
+    titleSets: const <FixtureDvdTitleSet>[
+      FixtureDvdTitleSet(
+        titles: <FixtureDvdVtsTitle>[
+          FixtureDvdVtsTitle(<int>[1]),
+        ],
+        pgcs: <FixtureDvdPgc>[
+          FixtureDvdPgc(<FixtureDvdCell>[FixtureDvdCell(6600, 0, 9999)]),
+        ],
+      ),
+      FixtureDvdTitleSet(
+        titles: <FixtureDvdVtsTitle>[
+          FixtureDvdVtsTitle(<int>[1]),
+          FixtureDvdVtsTitle(<int>[2]),
+        ],
+        pgcs: <FixtureDvdPgc>[
+          FixtureDvdPgc(<FixtureDvdCell>[FixtureDvdCell(300, 0, 499)]),
+          FixtureDvdPgc(<FixtureDvdCell>[FixtureDvdCell(30, 500, 549)]),
+        ],
+      ),
+      FixtureDvdTitleSet(
+        titles: <FixtureDvdVtsTitle>[
+          FixtureDvdVtsTitle(<int>[1]),
+        ],
+        pgcs: <FixtureDvdPgc>[
+          FixtureDvdPgc(<FixtureDvdCell>[
+            FixtureDvdCell(120, 0, 99),
+            FixtureDvdCell(120, 0, 99),
+          ]),
+        ],
+      ),
+    ],
+  );
+}

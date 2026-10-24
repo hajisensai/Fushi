@@ -95,8 +95,9 @@ extension _VideoDanmaku on _VideoFushiPageState {
     }
 
     if (!appModel.videoDanmakuOnlineEnabled) return;
+    // 弹幕指纹读的是媒体文件头 16 MiB：DVD title / 网络流没有这个文件。
+    if (!hasLocalMediaFileSync(videoPath)) return;
     final File file = File(videoPath);
-    if (!file.existsSync()) return;
     await _loadOnlineDanmaku(seq, () => dandanplayFileKeyOf(file));
   }
 

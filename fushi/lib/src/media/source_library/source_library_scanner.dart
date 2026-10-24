@@ -41,6 +41,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart'
     show isSourceIncomingPath;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
@@ -61,6 +62,7 @@ import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_library_title.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ifo.dart'
     show DvdIfoFormatException;
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
@@ -489,7 +491,8 @@ class ScanBlurayDiscItem {
 class ScanDvdDiscItem {
   const ScanDvdDiscItem({required this.discRootPath});
 
-  /// 含 `VIDEO_TS` 的那一层目录。IFO 在导入时才解析——规划层只认路径形状。
+  /// 盘根：含 `VIDEO_TS` 的那一层目录，或 `.iso` 镜像文件。IFO 在导入时才解析——
+  /// 规划层只认路径形状。
   final String discRootPath;
 
   @override
@@ -637,6 +640,10 @@ ScanPlan planScanFromFileList(
         ])
       : const <String>[];
   final Set<String> dvdRootSet = dvdRoots.toSet();
+  // 镜像形态的 DVD（`.iso`）：规划层只收路径，导入时打开探测——不靠扩展名猜里面是
+  // DVD 还是 BD（BD 镜像暂不入库，见 [_importDvdDiscs]）。`.iso` 不在任何媒体白名单
+  // 里，不会与散装视频重复。
+  final List<String> discImages = <String>[];
 
   // parent dir -> all file basenames under it (for sidecar matching).
   final Map<String, List<String>> namesByDir = <String, List<String>>{};
@@ -663,6 +670,10 @@ ScanPlan planScanFromFileList(
     if (isInsideBlurayDisc(e.path, blurayRootSet)) continue;
     if (isInsideDvdDisc(e.path, dvdRootSet)) continue;
     final String ext = _extOf(e.name);
+    if (detectDvdDiscs && ext == 'iso') {
+      discImages.add(e.path);
+      continue;
+    }
     // TODO-1237: m3u8/m3u playlist manifest, reusing the drag-drop path's own
     // [kDragPlaylistExtensions] whitelist. Checked before the video branch
     // (m3u8 is not in kVideoExtensions, the two are disjoint; ordering is only
@@ -770,6 +781,8 @@ ScanPlan planScanFromFileList(
     ],
     dvdDiscs: <ScanDvdDiscItem>[
       for (final String root in dvdRoots) ScanDvdDiscItem(discRootPath: root),
+      for (final String image in discImages..sort())
+        ScanDvdDiscItem(discRootPath: image),
     ],
   );
 }
@@ -2376,6 +2389,14 @@ class SourceLibraryScanner {
   ///
   /// 多张盘先全部读完，再按 [compareDvdDiscOrder]（同一上级目录内按卷号，再按目录名）
   /// 排序后入库，入库时刻顺序就是盘序。IFO 损坏的盘记进返回的 `failed`，不中断其它盘。
+  ///
+  /// `.iso` 镜像经 `readDvdDiscImage` 读出同样的 IFO 字节、走同一条选片链；成员路径是
+  /// `<iso>/VIDEO_TS/TITLE_nn.dvdtitle`。镜像里是 BD 的暂不入库：蓝光的播放 / 规格 /
+  /// 封面 / 制卡链路全部建立在真实的 `STREAM/*.m2ts` 文件上（EDL 拼接），镜像里没有
+  /// 可给出的本地文件，要等原生 libbluray 直接吃镜像那一路接上。
+  ///
+  /// 特典（[DvdDisc.extras]）与蓝光同一规则：入库、带来源、不进盘合集，跳过用户
+  /// 单独删掉的（盘合集自然键下的成员墓碑）；整盘合集被删时连特典一起不复活。
   Future<({int imported, List<String> failed})> _importDvdDiscs(
     ScanPlan plan,
     int sourceId, {
@@ -2396,6 +2417,8 @@ class SourceLibraryScanner {
     }
     discs.sort(compareDvdDiscOrder);
 
+    final Map<String, Set<String>> deletedExtras =
+        await deletedBlurayExtraKeysByCollection(_db);
     final Map<String, int> existingCollectionIds = <String, int>{
       for (final MediaCollectionRow c in await _db.getAllMediaCollections())
         if (c.collectionType == 'playlist') c.name: c.id,
@@ -2423,26 +2446,43 @@ class SourceLibraryScanner {
           entries: entries,
           sourceId: sourceId,
         );
-        continue;
+      } else {
+        // BUG-1739 同款守卫：用户删过同名合集，重扫不复活（特典也不复活）。
+        if (!restoreDissolvedGroups &&
+            await _db.hasCollectionDeletionTombstone(
+                collectionName, 'playlist')) {
+          continue;
+        }
+        final SplitPlaylistImportResult result =
+            await _videoRepo.importSplitPlaylist(
+          collectionName: collectionName,
+          entries: entries,
+          sourceId: sourceId,
+          reuseExistingPaths: true,
+        );
+        existingCollectionIds[collectionName] = result.collectionId;
+        await _videoRepo.recordVideoImportActivity(
+          bookUid: result.episodeUids.first,
+          title: collectionName,
+        );
+        count++;
       }
-      // BUG-1739 同款守卫：用户删过同名合集，重扫不复活。
-      if (!restoreDissolvedGroups &&
-          await _db.hasCollectionDeletionTombstone(collectionName, 'playlist')) {
-        continue;
+
+      final Set<String> deleted =
+          deletedExtras[collectionName] ?? const <String>{};
+      final List<String> extras = <String>[
+        for (final DvdTitle extra in disc.extras)
+          if (!deleted.contains(blurayExtraTombstoneKey(extra.titlePath)))
+            extra.titlePath,
+      ];
+      if (extras.isNotEmpty) {
+        await ensureDvdDiscExtrasInLibrary(
+          _db,
+          disc: disc,
+          titlePaths: extras,
+          sourceId: sourceId,
+        );
       }
-      final SplitPlaylistImportResult result =
-          await _videoRepo.importSplitPlaylist(
-        collectionName: collectionName,
-        entries: entries,
-        sourceId: sourceId,
-        reuseExistingPaths: true,
-      );
-      existingCollectionIds[collectionName] = result.collectionId;
-      await _videoRepo.recordVideoImportActivity(
-        bookUid: result.episodeUids.first,
-        title: collectionName,
-      );
-      count++;
     }
     return (imported: count, failed: List<String>.unmodifiable(failed));
   }
@@ -2485,7 +2525,8 @@ bool isVideoRowMovedTo(VideoBookRow row, String newPath) {
   if (!p.isAbsolute(oldPath)) return false;
   final String root = p.rootPrefix(oldPath);
   if (root.isEmpty || !Directory(root).existsSync()) return false;
-  return !File(oldPath).existsSync();
+  // 原盘成员按它背后的真实文件判（DVD title 是虚拟路径，裸 File 恒「不存在」）。
+  return !videoMemberExistsSync(oldPath);
 }
 
 String _crossPlatformBasename(String path) {

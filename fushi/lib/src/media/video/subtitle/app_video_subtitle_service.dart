@@ -31,6 +31,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaCollectionItemRow,
         MediaCollectionRow,
         VideoBookRow;
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -570,7 +571,7 @@ class AppVideoSubtitleService {
     if (videoPath != null &&
         episodes.isEmpty &&
         isLocalVideoFilePath(videoPath) &&
-        File(videoPath).existsSync()) {
+        hasLocalMediaFileSync(videoPath)) {
       unavailable.clear();
       episodes.add(
         AppVideoSubtitleEpisode(

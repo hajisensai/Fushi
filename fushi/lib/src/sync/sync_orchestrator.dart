@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
@@ -1374,13 +1375,13 @@ class SyncOrchestrator {
         _emit(SyncPhase.videos,
             itemIndex: index, itemTotal: total, title: v.title);
         try {
-          final File file = File(v.videoPath);
-          if (!file.existsSync()) {
+          if (!hasLocalMediaFileSync(v.videoPath)) {
             report.errors
                 .add('video "${v.title}": local file missing: ${v.videoPath}');
             index++;
             continue;
           }
+          final File file = File(v.videoPath);
           final int size = await file.length();
           final String assetName = videoAssetName(v.bookUid, v.videoPath);
 

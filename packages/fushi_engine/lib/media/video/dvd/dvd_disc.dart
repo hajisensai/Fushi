@@ -1,6 +1,7 @@
-// 一张 DVD（`VIDEO_TS` 目录树）到「可播放标题列表」的映射，与 `bluray_disc.dart`
-// 同一套思路：盘上 title 表里真正是内容的往往只有几条，其余是厂标、警告、菜单
-// 背景、以及把各集串起来的「全部播放」。筛选链（判据取舍见 `bluray_disc.dart` 文件头）：
+// 一张 DVD（`VIDEO_TS` 目录树，或装着它的 `.iso` 镜像）到「可播放标题列表」的映射，
+// 与 `bluray_disc.dart` 同一套思路：盘上 title 表里真正是内容的往往只有几条，其余是
+// 厂标、警告、菜单背景、以及把各集串起来的「全部播放」。筛选链（判据取舍见
+// `bluray_disc.dart` 文件头）：
 //
 //   1. 引用不到的 title——它所在 VTS 的 IFO 读不出 / 坏 PGC / 盘上没有它的 title VOB。
 //   2. 绝对时长下限（与蓝光同一个 [kBlurayMinimumTitleDuration]）。
@@ -8,26 +9,19 @@
 //   4. 「全部播放」合并——cell 集合恰好等于另外 ≥2 条的并集。
 //   5. 相对时长下限（[kBlurayRelativeTitleFloor]），锚点排除 play-all 形状。
 //
+// 没被选成 title、但仍是一段可独立观看内容的 title 是这张盘的**特典**
+// （[selectDvdExtras]，与蓝光 `selectBlurayExtras` 同一规则）：入库、不进盘合集，
+// 由索引器挂到正片作品下。
+//
 // 「片段」在 DVD 上是一段 VTS 内的扇区范围（cell 的首末扇区），不是 cell 号：不同
 // PGC 可以各自给同一段扇区编不同的 cell 号，用扇区才能认出「是同一段内容」。
 //
-// ## 条目身份（成员路径）
+// 条目身份（虚拟成员路径）见 `dvd_title_path.dart`。规范里的盘身份是 libdvdread 的
+// `DVDDiscID`（[computeDvdDiscId]），条目身份 = 盘身份 + title 号；库里不另存（不改
+// schema），由成员路径的盘根随时现算。
 //
-// 蓝光一条标题的身份是它自己的 `.mpls`——一个真实文件。DVD 没有「一个 title 一个
-// 文件」的对应物：同一 VTS 里的多个 title 共用 `VTS_nn_0.IFO` 与那几个 VOB（TV 盘
-// 一个 VTS 放 4 集是常态），所以身份只能是虚拟路径：
-//
-//     <盘根>/VIDEO_TS/TITLE_<nn>.dvdtitle      （nn = 全盘 title 号，两位补零）
-//
-// 选它的理由：落在盘的 `VIDEO_TS/` 下，纯字符串就能反推盘根与 title 号；文件名去扩展名
-// （`TITLE_03`）就是 `coreSingleVideoBookUid` 的基身份，与蓝光 `00003` 同一形状，重扫
-// 对齐 / 去重逻辑原样可用；扩展名 `.dvdtitle` 不在任何媒体白名单里，扫描器永远不会把
-// 它当文件列出来。代价：它**不是真实文件**——下游凡是 `File(videoPath).existsSync()`
-// 的判据都会判它「不存在」，要先过 [dvdTitleBackingFilePath] 换成 `VIDEO_TS.IFO`
-// 再判（`disc_format.dart` 的 `discMemberBackingFilePath` 是两种盘共用的入口）。
-//
-// 规范里的盘身份是 libdvdread 的 `DVDDiscID`（[computeDvdDiscId]），条目身份 = 盘身份
-// + title 号；库里不另存（不改 schema），由成员路径的盘根随时现算。
+// 两种盘形态共用同一条解析链：文件夹形态直接读 `VIDEO_TS/*.IFO`，镜像形态经
+// `disc_image_probe.dart` 的 UDF / ISO 9660 读取器读出同样的字节（[_VideoTsFiles]）。
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -37,19 +31,17 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show kBlurayMinimumTitleDuration, kBlurayRelativeTitleFloor;
+import 'package:fushi_engine/media/video/disc/disc_image_probe.dart';
 import 'package:fushi_engine/media/video/disc/disc_title_selection.dart';
 import 'package:fushi_engine/media/video/dvd/dvd_ifo.dart';
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
 
-/// DVD 标题虚拟成员路径的扩展名（见文件头「条目身份」）。
-const String kDvdTitlePathExtension = '.dvdtitle';
+export 'package:fushi_engine/media/video/dvd/dvd_title_path.dart';
 
 /// 单个 IFO 的读入上限。实测 IFO 多在几十 KB 到 1 MB，几十 MB 的一律当坏数据。
 const int kDvdMaxIfoBytes = 16 * 1024 * 1024;
 
-/// 盘目录名（规范强制大写，按精确大小写认，与 `bluray_disc.dart` 的 `BDMV` 同口径）。
-const String kDvdVideoDirectory = 'VIDEO_TS';
-
-/// 一张盘上被选中的一个 title。
+/// 一张盘上被选中的一个 title（正片 / 各集，或特典）。
 class DvdTitle {
   const DvdTitle({
     required this.entry,
@@ -62,7 +54,7 @@ class DvdTitle {
 
   final DvdTitleEntry entry;
 
-  /// 含 `VIDEO_TS` 的那一层目录。
+  /// 盘根：含 `VIDEO_TS` 的目录，或 `.iso` 文件。
   final String discRootPath;
 
   /// 展示名，已含盘名。
@@ -80,7 +72,7 @@ class DvdTitle {
 
   int get chapterCount => entry.chapterCount;
 
-  /// 这条 title 的稳定身份（虚拟路径，见文件头）。
+  /// 这条 title 的稳定身份（虚拟路径，见 `dvd_title_path.dart`）。
   String get titlePath => dvdTitlePath(discRootPath, entry.titleNumber);
 }
 
@@ -92,12 +84,15 @@ class DvdDisc {
     required this.discId,
     required this.vmg,
     required this.titles,
+    this.candidates = const <DvdTitleCandidate>[],
+    this.extras = const <DvdTitle>[],
+    this.volumeLabel,
   });
 
-  /// 含 `VIDEO_TS` 的那一层目录。
+  /// 盘根：含 `VIDEO_TS` 的目录，或 `.iso` 文件。
   final String rootPath;
 
-  /// 盘名：目录名（文件夹形态的 DVD 没有卷标可读）。
+  /// 盘名：目录名 / 镜像文件名（去扩展名）。卷标常是 `DVD_VIDEO` 这类占位，不拿它当名。
   final String name;
 
   /// libdvdread `DVDDiscID` 口径的盘身份（32 位小写十六进制）。
@@ -107,6 +102,15 @@ class DvdDisc {
 
   /// 筛选后的 title，按 title 号升序。
   final List<DvdTitle> titles;
+
+  /// 盘上能解析出的全部 title（含被筛掉的），特典划分要用。
+  final List<DvdTitleCandidate> candidates;
+
+  /// 这张盘的特典（[selectDvdExtras]），按 title 号升序。入库但不进盘合集。
+  final List<DvdTitle> extras;
+
+  /// 镜像的卷标；文件夹形态为 null。
+  final String? volumeLabel;
 
   /// 本卷号 / 卷总数（`vmgi_mat`），多盘排序用；取不到为 1 / 1。
   int get volumeNumber => vmg.volumeNumber;
@@ -138,47 +142,6 @@ class DvdTitleCandidate {
   final List<String> cellIds;
 
   String get _id => entry.titleNumber.toString().padLeft(2, '0');
-}
-
-/// [titleNumber] 号 title 的虚拟成员路径。
-String dvdTitlePath(String discRootPath, int titleNumber) => p.join(
-  discRootPath,
-  kDvdVideoDirectory,
-  'TITLE_${titleNumber.toString().padLeft(2, '0')}$kDvdTitlePathExtension',
-);
-
-/// [path] 是不是一条 DVD title 的成员路径。
-bool isDvdTitlePath(String path) =>
-    p.extension(path).toLowerCase() == kDvdTitlePathExtension;
-
-/// 从 title 成员路径反推盘根；形状不对返回 null。纯函数。
-String? dvdDiscRootForTitlePath(String titlePath) {
-  if (!isDvdTitlePath(titlePath)) return null;
-  final List<String> parts = p.split(p.normalize(titlePath));
-  if (parts.length < 3) return null;
-  if (parts[parts.length - 2] != kDvdVideoDirectory) return null;
-  if (dvdTitleNumberForPath(titlePath) == null) return null;
-  return p.joinAll(parts.sublist(0, parts.length - 2));
-}
-
-/// 从 title 成员路径取 title 号；形状不对返回 null。
-int? dvdTitleNumberForPath(String titlePath) {
-  if (!isDvdTitlePath(titlePath)) return null;
-  final Match? match = RegExp(
-    r'^TITLE_(\d{2,3})$',
-  ).firstMatch(p.basenameWithoutExtension(titlePath));
-  if (match == null) return null;
-  final int value = int.parse(match.group(1)!);
-  return value >= 1 && value <= 99 ? value : null;
-}
-
-/// title 成员路径背后真实存在的那个文件（`VIDEO_TS/VIDEO_TS.IFO`）：下游「这一条还在
-/// 不在」的判据拿它判。只做字符串推导；实际文件名大小写以盘上为准时用
-/// [findDvdVideoTsIfo]。
-String? dvdTitleBackingFilePath(String titlePath) {
-  final String? root = dvdDiscRootForTitlePath(titlePath);
-  if (root == null) return null;
-  return p.join(root, kDvdVideoDirectory, 'VIDEO_TS.IFO');
 }
 
 /// 从盘内**文件**路径反推盘根（`<根>/VIDEO_TS/<文件>`）；不是盘内文件返回 null。
@@ -221,7 +184,8 @@ bool isInsideDvdDisc(String filePath, Set<String> discRoots) {
   return false;
 }
 
-/// [path] 指向一张 DVD 时返回含 `VIDEO_TS` 的那层目录（接受盘根或 `VIDEO_TS` 本身）。
+/// [path] 指向一张文件夹形态的 DVD 时返回含 `VIDEO_TS` 的那层目录（接受盘根或
+/// `VIDEO_TS` 本身）。
 String? dvdDiscRootForDirectory(String path) {
   final String normalized = p.normalize(path);
   if (findDvdVideoTsIfo(normalized) != null) return normalized;
@@ -250,15 +214,123 @@ Map<String, String>? _listVideoTs(String discRootPath) {
   }
 }
 
-/// 读入 [rootPath] 这张盘。
+/// `VIDEO_TS` 里的文件来源：文件夹或镜像。名字一律大写。
+abstract class _VideoTsFiles {
+  bool has(String upperName);
+
+  /// 读 [upperName] 的全部内容；超过 [kDvdMaxIfoBytes] 或读不动抛
+  /// [DvdIfoFormatException]。
+  Future<Uint8List> read(String upperName);
+}
+
+class _FolderVideoTs implements _VideoTsFiles {
+  _FolderVideoTs(this._paths);
+
+  final Map<String, String> _paths;
+
+  @override
+  bool has(String upperName) => _paths.containsKey(upperName);
+
+  @override
+  Future<Uint8List> read(String upperName) async {
+    final String? path = _paths[upperName];
+    if (path == null) throw DvdIfoFormatException('$upperName not found');
+    try {
+      final File file = File(path);
+      if (await file.length() > kDvdMaxIfoBytes) {
+        throw DvdIfoFormatException('$upperName is implausibly large');
+      }
+      return await file.readAsBytes();
+    } on FileSystemException catch (e) {
+      throw DvdIfoFormatException('$upperName unreadable: ${e.message}');
+    }
+  }
+}
+
+class _ImageVideoTs implements _VideoTsFiles {
+  _ImageVideoTs(this._fs, List<DiscImageEntry> entries)
+    : _entries = <String, DiscImageEntry>{
+        for (final DiscImageEntry e in entries)
+          if (!e.isDirectory) discImagePlainName(e.name): e,
+      };
+
+  final DiscImageFileSystem _fs;
+  final Map<String, DiscImageEntry> _entries;
+
+  @override
+  bool has(String upperName) => _entries.containsKey(upperName);
+
+  @override
+  Future<Uint8List> read(String upperName) async {
+    final DiscImageEntry? entry = _entries[upperName];
+    if (entry == null) throw DvdIfoFormatException('$upperName not found');
+    try {
+      final Uint8List bytes = _fs.readFile(entry, kDvdMaxIfoBytes + 1);
+      if (bytes.length > kDvdMaxIfoBytes) {
+        throw DvdIfoFormatException('$upperName is implausibly large');
+      }
+      return bytes;
+    } on DiscImageFormatException catch (e) {
+      throw DvdIfoFormatException(
+        '$upperName unreadable in image: ${e.message}',
+      );
+    }
+  }
+}
+
+/// 读入 [rootPath] 这张盘：含 `VIDEO_TS` 的目录（或 `VIDEO_TS` 本身），或 `.iso`。
 ///
 /// 不是盘、或一条 title 都选不出来时返回 null；`VIDEO_TS.IFO` 与它的备份
 /// `VIDEO_TS.BUP` 都损坏时抛 [DvdIfoFormatException]（明确报错，不当成「不是盘」吞掉）。
 Future<DvdDisc?> readDvdDisc(String rootPath) async {
+  if (isDiscImagePath(rootPath) &&
+      FileSystemEntity.typeSync(rootPath) == FileSystemEntityType.file) {
+    return readDvdDiscImage(rootPath);
+  }
   final String? root = dvdDiscRootForDirectory(rootPath);
   if (root == null) return null;
-  final Map<String, String> files = _listVideoTs(root)!;
+  final Map<String, String> paths = _listVideoTs(root)!;
+  return _readDisc(
+    root: root,
+    name: p.basename(p.normalize(root)),
+    files: _FolderVideoTs(paths),
+  );
+}
 
+/// 读入镜像形态的 DVD：打开 `.iso` 的 UDF / ISO 9660，读出 `VIDEO_TS/*.IFO` 字节后走
+/// 与文件夹形态同一条解析 / 选片链路。镜像里没有 `VIDEO_TS/VIDEO_TS.IFO`（是 BD 镜像、
+/// 数据盘、或根本打不开）返回 null；IFO 两份都坏抛 [DvdIfoFormatException]。
+Future<DvdDisc?> readDvdDiscImage(String imagePath) =>
+    withDiscImageFile<DvdDisc?>(imagePath, (DiscImageFileSystem? fs) async {
+      if (fs == null) return null;
+      final List<DiscImageEntry> inside;
+      try {
+        final DiscImageEntry? videoTs = findDiscImageEntry(
+          fs.listRoot(),
+          kDvdVideoDirectory,
+          directory: true,
+        );
+        if (videoTs == null) return null;
+        inside = fs.list(videoTs);
+      } on DiscImageFormatException {
+        return null;
+      }
+      final _ImageVideoTs files = _ImageVideoTs(fs, inside);
+      if (!files.has('VIDEO_TS.IFO') && !files.has('VIDEO_TS.BUP')) return null;
+      return _readDisc(
+        root: p.normalize(imagePath),
+        name: p.basenameWithoutExtension(imagePath),
+        files: files,
+        volumeLabel: fs.label,
+      );
+    });
+
+Future<DvdDisc?> _readDisc({
+  required String root,
+  required String name,
+  required _VideoTsFiles files,
+  String? volumeLabel,
+}) async {
   final DvdVmgInfo vmg = await _readWithBackup<DvdVmgInfo>(
     files,
     'VIDEO_TS',
@@ -271,7 +343,7 @@ Future<DvdDisc?> readDvdDisc(String rootPath) async {
   for (final DvdTitleEntry entry in vmg.titles) {
     if (titleSets.containsKey(entry.titleSetNumber)) continue;
     final String stem = _vtsStem(entry.titleSetNumber);
-    final bool hasVob = files.containsKey('${stem.substring(0, 7)}1.VOB');
+    final bool hasVob = files.has('${stem.substring(0, 7)}1.VOB');
     DvdTitleSetInfo? info;
     if (hasVob) {
       try {
@@ -294,7 +366,6 @@ Future<DvdDisc?> readDvdDisc(String rootPath) async {
         candidate,
   ];
 
-  final String name = p.basename(p.normalize(root));
   final List<DvdTitle> titles = selectDvdTitles(
     candidates,
     discRootPath: root,
@@ -304,9 +375,19 @@ Future<DvdDisc?> readDvdDisc(String rootPath) async {
   return DvdDisc(
     rootPath: root,
     name: name,
-    discId: await computeDvdDiscIdForDirectory(root),
+    discId: await _discId(files),
     vmg: vmg,
     titles: List<DvdTitle>.unmodifiable(titles),
+    candidates: List<DvdTitleCandidate>.unmodifiable(candidates),
+    extras: List<DvdTitle>.unmodifiable(
+      selectDvdExtras(
+        candidates,
+        titles: titles,
+        discRootPath: root,
+        discName: name,
+      ),
+    ),
+    volumeLabel: volumeLabel,
   );
 }
 
@@ -318,24 +399,18 @@ String _vtsStem(int titleSet) => 'VTS_${titleSet.toString().padLeft(2, '0')}_0';
 /// BUP 是 DVD 规范里 IFO 的逐字节备份，就是为「IFO 所在扇区读坏」准备的，libdvdread
 /// 同样按这个顺序回退。两份都坏才报错，报 IFO 的那条原因。
 Future<T> _readWithBackup<T>(
-  Map<String, String> files,
+  _VideoTsFiles files,
   String stem,
   T Function(Uint8List bytes, String name) parse,
 ) async {
   DvdIfoFormatException? first;
   for (final String ext in <String>['IFO', 'BUP']) {
-    final String? path = files['$stem.$ext'];
-    if (path == null) continue;
+    final String name = '$stem.$ext';
+    if (!files.has(name)) continue;
     try {
-      final File file = File(path);
-      if (await file.length() > kDvdMaxIfoBytes) {
-        throw DvdIfoFormatException('$stem.$ext is implausibly large');
-      }
-      return parse(await file.readAsBytes(), '$stem.$ext');
+      return parse(await files.read(name), name);
     } on DvdIfoFormatException catch (e) {
       first ??= e;
-    } on FileSystemException catch (e) {
-      first ??= DvdIfoFormatException('$stem.$ext unreadable: ${e.message}');
     }
   }
   throw first ?? DvdIfoFormatException('$stem.IFO not found');
@@ -383,6 +458,17 @@ List<String> _cellIdsOf(DvdTitleCandidate candidate) => candidate.cellIds;
 int _durationOf(DvdTitleCandidate candidate) =>
     candidate.duration.inMilliseconds;
 
+bool _prefers(DvdTitleCandidate candidate, DvdTitleCandidate incumbent) =>
+    discPrefersOver(
+      candidateChapters: candidate.entry.chapterCount,
+      candidateId: candidate._id,
+      incumbentChapters: incumbent.entry.chapterCount,
+      incumbentId: incumbent._id,
+    );
+
+String _signature(DvdTitleCandidate c) =>
+    discContentSignature(c.cellIds, c.duration.inMilliseconds);
+
 /// 从候选里挑出该进库的 title。纯函数，筛选链见文件头。
 List<DvdTitle> selectDvdTitles(
   List<DvdTitleCandidate> candidates, {
@@ -400,19 +486,9 @@ List<DvdTitle> selectDvdTitles(
   final Map<String, DvdTitleCandidate> bySignature =
       <String, DvdTitleCandidate>{};
   for (final DvdTitleCandidate c in eligible) {
-    final String signature = discContentSignature(
-      c.cellIds,
-      c.duration.inMilliseconds,
-    );
-    final DvdTitleCandidate? existing = bySignature[signature];
-    if (existing == null ||
-        discPrefersOver(
-          candidateChapters: c.entry.chapterCount,
-          candidateId: c._id,
-          incumbentChapters: existing.entry.chapterCount,
-          incumbentId: existing._id,
-        )) {
-      bySignature[signature] = c;
+    final DvdTitleCandidate? existing = bySignature[_signature(c)];
+    if (existing == null || _prefers(c, existing)) {
+      bySignature[_signature(c)] = c;
     }
   }
   List<DvdTitleCandidate> unique = bySignature.values.toList(growable: false);
@@ -454,6 +530,78 @@ List<DvdTitle> selectDvdTitles(
   ];
 }
 
+/// 特典在库里的名字：`<盘名> - T<nn>`（nn = title 号）。带 `T` 是为了不与正片的
+/// `<盘名> - 01` 顺序编号撞名（蓝光特典用 5 位 MPLS 号，天然不撞）。
+String dvdExtraTitleName(String discName, int titleNumber) =>
+    '$discName - T${titleNumber.toString().padLeft(2, '0')}';
+
+/// 从候选里挑出特典。纯函数，与 `selectBlurayExtras` 同一规则：
+///
+/// 逐条判据与 [selectDvdTitles] 共用（[minimumDuration] 绝对下限——厂标 / 警告画面都在
+/// 一分钟内；VTS 读得出、cell 齐全），再去掉：
+/// - 菜单背景循环：同一段 cell 在一个 title 里重复出现；
+/// - 正片的重复与章节子集：cell 全被某条已入选的 title 包含；
+/// - 特典之间的重复（同签名只留一条）与「全部播放」形状。
+List<DvdTitle> selectDvdExtras(
+  List<DvdTitleCandidate> candidates, {
+  required List<DvdTitle> titles,
+  required String discRootPath,
+  required String discName,
+  Duration minimumDuration = kBlurayMinimumTitleDuration,
+}) {
+  final Set<int> titleNumbers = <int>{
+    for (final DvdTitle t in titles) t.titleNumber,
+  };
+  final List<Set<String>> titleCells = <Set<String>>[
+    for (final DvdTitle t in titles) t.cellIds.toSet(),
+  ];
+  final Map<String, DvdTitleCandidate> bySignature =
+      <String, DvdTitleCandidate>{};
+  for (final DvdTitleCandidate c in candidates) {
+    if (titleNumbers.contains(c.entry.titleNumber)) continue;
+    if (c.duration < minimumDuration || c.cellIds.isEmpty) continue;
+    final Set<String> cells = c.cellIds.toSet();
+    if (cells.length != c.cellIds.length) continue;
+    if (titleCells.any((Set<String> t) => t.containsAll(cells))) continue;
+    final DvdTitleCandidate? existing = bySignature[_signature(c)];
+    if (existing == null || _prefers(c, existing)) {
+      bySignature[_signature(c)] = c;
+    }
+  }
+  final List<DvdTitleCandidate> unique = bySignature.values.toList();
+  final List<DvdTitleCandidate> pool = <DvdTitleCandidate>[
+    for (final DvdTitle t in titles)
+      DvdTitleCandidate(
+        entry: t.entry,
+        duration: t.duration,
+        cellIds: t.cellIds,
+      ),
+    ...unique,
+  ];
+  final List<DvdTitleCandidate> kept =
+      unique
+          .where(
+            (DvdTitleCandidate c) =>
+                !discIsPlayAllOf<DvdTitleCandidate>(c, pool, _cellIdsOf),
+          )
+          .toList()
+        ..sort(
+          (DvdTitleCandidate a, DvdTitleCandidate b) =>
+              a.entry.titleNumber.compareTo(b.entry.titleNumber),
+        );
+  return <DvdTitle>[
+    for (final DvdTitleCandidate c in kept)
+      DvdTitle(
+        entry: c.entry,
+        discRootPath: discRootPath,
+        name: dvdExtraTitleName(discName, c.entry.titleNumber),
+        isMainFeature: false,
+        duration: c.duration,
+        cellIds: c.cellIds,
+      ),
+  ];
+}
+
 /// libdvdread `DVDDiscID` 口径的盘身份：依次取 `VIDEO_TS.IFO`、`VTS_01_0.IFO` …
 /// `VTS_09_0.IFO`（存在的那些，最多 10 个），每个取整块（2048 的整数倍）内容，拼起来
 /// 求 MD5。[ifoContents] 按上述顺序给出（缺的跳过）。
@@ -469,20 +617,20 @@ String computeDvdDiscId(List<Uint8List> ifoContents) {
   return md5.convert(all.takeBytes()).toString();
 }
 
-/// 对文件夹形态的盘算 [computeDvdDiscId]。
-Future<String> computeDvdDiscIdForDirectory(String discRootPath) async {
-  final Map<String, String> files =
-      _listVideoTs(discRootPath) ?? const <String, String>{};
+Future<String> _discId(_VideoTsFiles files) async {
   final List<Uint8List> contents = <Uint8List>[];
   for (int i = 0; i < 10; i++) {
     final String name = i == 0 ? 'VIDEO_TS.IFO' : '${_vtsStem(i)}.IFO';
-    final String? path = files[name];
-    if (path == null) continue;
+    if (!files.has(name)) continue;
     try {
-      contents.add(await File(path).readAsBytes());
-    } on FileSystemException {
+      contents.add(await files.read(name));
+    } on DvdIfoFormatException {
       continue;
     }
   }
   return computeDvdDiscId(contents);
 }
+
+/// 对文件夹形态的盘算 [computeDvdDiscId]。
+Future<String> computeDvdDiscIdForDirectory(String discRootPath) =>
+    _discId(_FolderVideoTs(_listVideoTs(discRootPath) ?? <String, String>{}));

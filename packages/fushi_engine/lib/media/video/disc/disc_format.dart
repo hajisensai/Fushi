@@ -23,6 +23,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/disc/disc_image_probe.dart'
+    show probeDiscImageFile;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart';
 
 /// 原盘规格。顺序即角标 / 汇总的展示顺序。
@@ -62,8 +64,8 @@ DiscFormat? discFormatHintForMemberPath(String memberPath) {
   return null;
 }
 
-/// 成员路径背后真实存在的文件：蓝光就是 `.mpls` 本身；DVD 是盘的 `VIDEO_TS.IFO`
-/// （title 路径是虚拟的）。下游「这一条还在不在」先过它再 `existsSync`。不是原盘
+/// 成员路径背后真实存在的文件：蓝光就是 `.mpls` 本身；DVD 是盘的 `VIDEO_TS.IFO`，
+/// 镜像形态是 `.iso` 本身（title 路径是虚拟的）。下游「这一条还在不在」先过它再 `existsSync`。不是原盘
 /// 成员时原样返回 [memberPath]。
 String discMemberBackingFilePath(String memberPath) {
   if (isDvdTitlePath(memberPath)) {
@@ -86,6 +88,11 @@ DiscFormat? blurayFormatForIndexHeader(List<int> head) {
 /// `index.bdmv` 头分 BD / UHD（读不动按 BD——`PLAYLIST` 已确证是蓝光，只是证不了 UHD）；
 /// 都没有 → null。
 Future<DiscFormat?> readDiscFormatAtRoot(String discRootPath) async {
+  // 镜像形态：盘根就是 `.iso` 文件，打开探测（不靠扩展名猜里面是什么）。
+  if (isDiscImagePath(discRootPath) &&
+      FileSystemEntity.typeSync(discRootPath) == FileSystemEntityType.file) {
+    return (await probeDiscImageFile(discRootPath))?.format;
+  }
   if (findDvdVideoTsIfo(discRootPath) != null) return DiscFormat.dvd;
   final String bdmv = p.join(discRootPath, 'BDMV');
   if (!Directory(p.join(bdmv, 'PLAYLIST')).existsSync()) return null;

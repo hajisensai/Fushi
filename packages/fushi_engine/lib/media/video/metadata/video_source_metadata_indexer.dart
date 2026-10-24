@@ -127,7 +127,7 @@ class VideoSourceMetadataIndexer {
     final List<VideoBookRow> books = (await database.allVideoBooks())
         .where((VideoBookRow row) => row.sourceId == source.id)
         .toList(growable: false);
-    final Map<String, String> discExtras = await blurayDiscExtras(
+    final Map<String, String> discExtras = await discMemberExtras(
       books.map((VideoBookRow row) => row.videoPath),
     );
     for (final VideoBookRow book in books) {
@@ -141,7 +141,7 @@ class VideoSourceMetadataIndexer {
         // 蓝光特典挂在同盘父标题的作品下：同一个 PLAYLIST 目录里可能并排着几条
         // 正片级标题，按目录就近会二义，按「含父标题那条 .mpls 的作品」才唯一。
         // 正片不在库时父标题是顶上来的最长特典，它自己进了计划、有作品
-        // （[blurayDiscExtras]）。
+        // （[discMemberExtras]）。
         final String main = normalizeVideoPath(discMain);
         candidates = <_IndexedWorkRoot>[
           for (final _IndexedWorkRoot value in indexed.values)
