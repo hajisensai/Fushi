@@ -272,7 +272,12 @@ void main() {
       );
       // 每次查词新建客户端 = 指纹缓存随实例丢掉、结果不带样式（BUG-3612 的根因）。
       expect(body, isNot(contains('FushiRemoteLookupClient(')));
-      expect(body, contains('_remoteDictionaryLookup.searchDictionary('));
+      // 允许 `_remoteDictionaryLookup` 与 `.searchDictionary(` 之间折行：#2472 合并后
+      // 这次调用被折成两行，复用的仍是同一个缓存客户端。
+      expect(
+        body,
+        matches(RegExp(r'_remoteDictionaryLookup\s*\.searchDictionary\(')),
+      );
       expect(
         block('FushiRemoteLookupClient get _remoteDictionaryLookup'),
         contains('trackDictionaryStyles: true'),

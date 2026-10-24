@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
@@ -109,6 +110,28 @@ const Duration kIconButtonTooltipHoverDelay = Duration(milliseconds: 500);
 /// [onTap] action is on-going and processing, which can be used to
 /// indicate when a button cannot be pressed once its click action has been
 /// executed and is busy.
+/// 外层触控外扩（`FushiTouchTargetPadding`）让出的竖向触控带高度：带里的触点
+/// 会被转发进子组件，所以子组件里的紧凑动作钮（[FushiIconButton.padTouchTarget]）
+/// 可以把命中 / 语义区域竖向撑满这条带，而不改变自身布局高度。
+class FushiTouchTargetBand extends InheritedWidget {
+  const FushiTouchTargetBand({
+    super.key,
+    required this.height,
+    required super.child,
+  });
+
+  /// 触控带总高（逻辑 px，通常 48）。
+  final double height;
+
+  static double? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<FushiTouchTargetBand>()
+      ?.height;
+
+  @override
+  bool updateShouldNotify(FushiTouchTargetBand oldWidget) =>
+      oldWidget.height != height;
+}
+
 class FushiIconButton extends StatefulWidget {
   /// Creates a busy icon button. Default values rely on [IconTheme].
   const FushiIconButton({
@@ -132,8 +155,23 @@ class FushiIconButton extends StatefulWidget {
     this.overflowPriority = 0,
     this.alwaysVisible = false,
     this.badge = false,
+    this.padTouchTarget = false,
     super.key,
   });
+
+  /// 触控平台（[ThemeData.materialTapTargetSize] 为 padded，即 Android / iOS）
+  /// 上把命中与语义区域撑到至少 48×48（官方 IconButton 的 tapTargetSize），
+  /// 外观（图标、内边距、state layer）不变；桌面精确指针不受影响。
+  ///
+  /// 默认 false：页头 / 工具栏等按钮的存量布局不变。输入框尾部的紧凑动作钮
+  /// （清除 / 粘贴 / 软键盘 / 密码显隐）外观只有 26–32，必须打开——并排的
+  /// 每一枚各占自己的 48 宽，命中区不互相覆盖。
+  ///
+  /// 父级给的高度不足 48（40 高的搜索胶囊）时，只有处在 [FushiTouchTargetBand]
+  /// 里（外层 `FushiTouchTargetPadding` 让出了上下边距、并把边距里的触点转发
+  /// 进来）才让按钮竖向溢出到这条带里：布局高度仍是父级给的，命中与语义区域
+  /// 是真实可点到的 48。不在带里就按父级高度收，不虚报。
+  final bool padTouchTarget;
 
   /// 右上角亮一枚主色小圆点（筛选生效 / 后台任务进行中 / 收起的搜索仍有过滤词）。
   /// 只是提示，不改按钮的命中区与尺寸；收进「⋯」后菜单项不带圆点。
@@ -438,10 +476,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
         _withTooltip(_buildAppleIcon(context, tokens)),
       );
     }
-    return _focusable(
-      context,
-      _withTooltip(_buildMaterialIcon(context, tokens)),
-    );
+    // MD3 的提示气泡由官方按钮自己挂（见 [_buildMaterialIcon]），外面不再包
+    // 一层 Tooltip。
+    return _focusable(context, _buildMaterialIcon(context, tokens));
   }
 
   /// MD3（M3 Expressive）标准图标按钮 = 官方 M3E [IconButton]（主题工厂把
@@ -465,7 +502,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
         widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
       ),
       minimumSize: const WidgetStatePropertyAll<Size>(Size.zero),
-      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      tapTargetSize: widget.padTouchTarget
+          ? Theme.of(context).materialTapTargetSize
+          : MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.standard,
       backgroundColor: background == null
           ? null
@@ -490,6 +529,14 @@ class _FushiIconButtonState extends State<FushiIconButton>
     if (slot != null) {
       style = fushiFillSlotButtonStyle(slot.extent, slot.shape).merge(style);
     }
+    // 语义只留官方按钮自己那一个容器节点：名称（label）挂在图标上并入它，
+    // 提示气泡走官方 `tooltip:`（官方把 Tooltip 放在自己的
+    // `Semantics(container: true)` 里面），选中态走 `isSelected`。不能在官方
+    // 按钮外面再套 `Semantics(label:)` / Tooltip：外层会在官方容器之上多出一个
+    // 语义节点，按钮落在滚动视图缓存区之外时（如牌组设置页底部输入框的粘贴
+    // 钮），框架给官方容器算出的矩形是空的，报「Invisible SemanticsNodes
+    // should not be added to the tree」。
+    final String? tooltip = widget.tooltip.isEmpty ? null : widget.tooltip;
     Widget official(WidgetStatesController? states, ButtonStyle? spring) =>
         IconButton(
           style: spring == null ? style : spring.merge(style),
@@ -500,7 +547,11 @@ class _FushiIconButtonState extends State<FushiIconButton>
           color: widget.enabledColor ?? (eink ? enabledColor : null),
           disabledColor: widget.disabledColor ?? (eink ? disabledColor : null),
           onPressed: _tapHandler,
-          icon: FushiIcon(widget.icon, size: widget.size),
+          tooltip: tooltip,
+          icon: Semantics(
+            label: tooltip,
+            child: FushiIcon(widget.icon, size: widget.size),
+          ),
         );
     // 官方 M3E 形变是定时补间、没有 M3E 弹簧：在官方按钮上补齐（见
     // [FushiIconButtonSpring]）。填充槽 / 固定形状 / 墨水屏不形变。
@@ -538,10 +589,26 @@ class _FushiIconButtonState extends State<FushiIconButton>
         child: Center(child: button),
       );
     }
-    return Semantics(
-      label: widget.tooltip,
-      button: true,
-      selected: (widget.selected ?? false) ? true : null,
+    if (widget.padTouchTarget &&
+        Theme.of(context).materialTapTargetSize ==
+            MaterialTapTargetSize.padded) {
+      final double? band = FushiTouchTargetBand.maybeOf(context);
+      if (band != null) {
+        // 布局尺寸照父级（胶囊高度不变），按钮本体按 48 居中溢出到外层让出
+        // 的触控带里；外层把带里的触点收进胶囊，正好落在这枚按钮的列上。
+        button = OverflowBox(
+          minHeight: 0,
+          maxHeight: band,
+          fit: OverflowBoxFit.deferToChild,
+          child: button,
+        );
+      }
+    }
+    // 悬停延迟与其它路径的 [_withTooltip] 同口径。
+    return TooltipTheme(
+      data: TooltipTheme.of(
+        context,
+      ).copyWith(waitDuration: kIconButtonTooltipHoverDelay),
       child: button,
     );
   }
