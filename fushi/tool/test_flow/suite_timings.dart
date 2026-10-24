@@ -96,7 +96,7 @@ Map<String, int> suiteDurationsFromEvents(
         if (suite is Map<String, Object?> &&
             suite['id'] is int &&
             suite['path'] is String) {
-          final String? path = _matchKnownSuite(
+          final String? path = matchKnownSuite(
             suite['path']! as String,
             knownSuites,
           );
@@ -125,7 +125,9 @@ Map<String, int> suiteDurationsFromEvents(
   return durations;
 }
 
-String? _matchKnownSuite(String rawPath, Set<String> knownSuites) {
+/// Maps an event's suite path (relative, absolute, or `/`-prefixed) onto
+/// [knownSuites] (paths relative to `fushi/`) by suffix; null when none match.
+String? matchKnownSuite(String rawPath, Set<String> knownSuites) {
   final String path = rawPath.replaceAll(r'\', '/');
   if (knownSuites.contains(path)) return path;
   for (

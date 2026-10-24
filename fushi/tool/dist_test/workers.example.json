@@ -1,0 +1,24 @@
+{
+  "workers": [
+    {
+      "name": "self-win",
+      "kind": "local",
+      "os": "windows",
+      "capabilities": ["golden", "realdata", "ffmpeg", "chrome"]
+    },
+    {
+      "name": "self-mac",
+      "kind": "ssh-trusted",
+      "host": "user@192.168.1.34",
+      "os": "macos",
+      "seedRepo": "dev/hibiki",
+      "path": ["$HOME/flutter_3.47.6/bin", "/opt/homebrew/bin", "$HOME/.cargo/bin"],
+      "prepareEnv": {
+        "LANG": "en_US.UTF-8",
+        "HTTPS_PROXY": "http://127.0.0.1:7897",
+        "HTTP_PROXY": "http://127.0.0.1:7897"
+      },
+      "capabilities": []
+    }
+  ]
+}
