@@ -40,6 +40,7 @@ import 'package:fushi/src/web_browser/data/web_browser_site_settings.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_context_menu.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_downloader.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_incognito_profile.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_load_errors.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_scripts.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_settings.dart';
@@ -145,11 +146,11 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   Offset? _lastPointerDown;
   bool _closed = false;
 
-  WebBrowserTab get _tab => widget.tab;
   /// Android：退出网页全屏后还原页面缩放（见 [WebBrowserFullscreenZoomGuard]）。
   final WebBrowserFullscreenZoomGuard _fullscreenZoom =
       WebBrowserFullscreenZoomGuard();
 
+  WebBrowserTab get _tab => widget.tab;
 
   /// initState 里取一次：dispose 期间不能再经 ref 往上查（Riverpod 禁止）。
   late final PreferencesRepository _prefs = ref.read(appProvider).prefsRepo;
@@ -164,8 +165,12 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _appliedForceDark = _readForceDark();
     _downloader = WebBrowserDownloader(
       store: widget.host.store,
+      // Android 无痕页的 cookie 在本会话的具名 Profile 里，全局 CookieManager 看不到。
       cookieHeader: (Uri url) =>
-          webBrowserCookieHeaderResolverFor(_environment)(url),
+          _tab.incognito &&
+              WebBrowserIncognitoProfiles.instance.needsNamedProfile
+          ? WebBrowserIncognitoProfiles.instance.cookieHeader(url)
+          : webBrowserCookieHeaderResolverFor(_environment)(url),
     );
     if (!_tab.incognito) {
       _recorder = WebBrowserVisitRecorder(
@@ -284,6 +289,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
       allowsPictureInPictureMediaPlayback: true,
       isElementFullscreenEnabled: true,
     );
+    // 插件 `incognito` 在 Android 上会清全局 cookie：这里先把它关掉，后续
+    // adblock 副本与 setSettings 都从这份派生。
+    applyWebBrowserIncognito(settings, incognito: _tab.incognito);
     applyWebBrowserPageSettings(
       settings,
       platform: _platform,
@@ -533,6 +541,7 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
 
   void _onLoadStart(WebUri? url) {
     _adblock?.onLoadStart(url);
+    _fullscreenZoom.stop();
     _pendingHttpStatus = null;
     if (_tab.error != null) _tab.setError(null);
     _tab.update(
@@ -541,7 +550,6 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
       progress: 0,
     );
   }
-    _fullscreenZoom.stop();
 
   Future<void> _onLoadStop(
     InAppWebViewController controller,
@@ -623,14 +631,6 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
   }
 
   void _setFullscreen(bool fullscreen) {
-    if (_tab.fullscreen == fullscreen) return;
-    _tab.update(fullscreen: fullscreen);
-    widget.host.onFullscreenChanged(_tab, fullscreen: fullscreen);
-  }
-
-  // ── 新窗口 ───────────────────────────────────────────────────────────
-
-  Future<bool> _onCreateWindow(CreateWindowAction action) async {
     if (_platform == TargetPlatform.android) {
       if (fullscreen) {
         _fullscreenZoom.onEnterFullscreen();
@@ -638,11 +638,11 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         _applyZoomCorrection(_fullscreenZoom.onExitFullscreen());
       }
     }
-    final String? origin = _originOf(_tab.url);
-    if (origin != null &&
-        WebBrowserSiteSettings(
-              _prefs,
-            ).decision(origin, WebBrowserSitePermission.popups) ==
+    if (_tab.fullscreen == fullscreen) return;
+    _tab.update(fullscreen: fullscreen);
+    widget.host.onFullscreenChanged(_tab, fullscreen: fullscreen);
+  }
+
   void _onZoomScaleChanged(double newScale) {
     if (_platform != TargetPlatform.android) return;
     _applyZoomCorrection(_fullscreenZoom.onScaleChanged(newScale));
@@ -654,6 +654,14 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     unawaited(controller.zoomBy(zoomFactor: factor).catchError((Object _) {}));
   }
 
+  // ── 新窗口 ───────────────────────────────────────────────────────────
+
+  Future<bool> _onCreateWindow(CreateWindowAction action) async {
+    final String? origin = _originOf(_tab.url);
+    if (origin != null &&
+        WebBrowserSiteSettings(
+              _prefs,
+            ).decision(origin, WebBrowserSitePermission.popups) ==
             WebBrowserPermissionDecision.block) {
       return false;
     }
@@ -754,6 +762,14 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         origin: origin,
         permissions: permissions,
       );
+      // 网页层允许了还要 app 自己有系统权限（Android 摄像头 / 麦克风），用户在
+      // 系统框里拒绝就整条拒绝。
+      if (allow) {
+        allow = await ensureWebBrowserSystemPermissions(
+          permissions,
+          platform: _platform,
+        );
+      }
     }
     return PermissionResponse(
       resources: request.resources,
@@ -1258,6 +1274,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     if (!_environmentReady || adblock == null) return const FushiLoadingView();
     final int? windowId = _windowConsumed ? null : _tab.windowId;
     final Uri? initial = windowId != null ? null : _tab.url;
+    // 具名 Profile 挂在设置**实例**上（adblock 给的是副本），所以对真正交给
+    // WebView 的这份再接一次。
+    applyWebBrowserIncognito(adblock.settings, incognito: _tab.incognito);
     return KeyedSubtree(
       key: _deathGuard.rebuildKey,
       child: InAppWebView(
@@ -1313,6 +1332,9 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         onCreateWindow: (InAppWebViewController _, CreateWindowAction action) =>
             _onCreateWindow(action),
         onCloseWindow: (InAppWebViewController _) => widget.host.closeTab(_tab),
+        onZoomScaleChanged:
+            (InAppWebViewController _, double oldScale, double newScale) =>
+                _onZoomScaleChanged(newScale),
         onEnterFullscreen: (InAppWebViewController _) => _setFullscreen(true),
         onExitFullscreen: (InAppWebViewController _) => _setFullscreen(false),
         onDownloadStartRequest:
@@ -1332,9 +1354,6 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:
-        onZoomScaleChanged:
-            (InAppWebViewController _, double oldScale, double newScale) =>
-                _onZoomScaleChanged(newScale),
             (InAppWebViewController _, RenderProcessGoneDetail detail) =>
                 unawaited(
                   _deathGuard.handleDeath(

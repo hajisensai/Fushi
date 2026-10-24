@@ -590,7 +590,7 @@ void main() {
       );
     });
 
-    test('无痕：Android 不提供（插件 incognito 会清全局 cookie），其余平台提供', () {
+    test('无痕：Android 默认（未探测到多 Profile）不提供，其余平台提供', () {
       expect(webBrowserIncognitoSupportedOn(TargetPlatform.android), isFalse);
       expect(webBrowserIncognitoSupportedOn(TargetPlatform.iOS), isTrue);
       expect(webBrowserIncognitoSupportedOn(TargetPlatform.windows), isTrue);

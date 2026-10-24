@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/web_browser/data/web_browser_store.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_incognito_profile.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
 /// 同时活着（建着 WebView 平台视图）的标签页上限。超出时回收最久没看过的，
@@ -27,17 +28,35 @@ class WebBrowserTabsController extends ChangeNotifier {
     int maxLiveTabs = kWebBrowserMaxLiveTabs,
     Duration saveDebounce = kWebBrowserSessionSaveDebounce,
     DateTime Function()? clock,
+    WebBrowserIncognitoProfiles? incognitoProfiles,
   }) : _store = store,
        _features = features,
        _maxLiveTabs = maxLiveTabs < 1 ? 1 : maxLiveTabs,
        _saveDebounce = saveDebounce,
-       _clock = clock ?? DateTime.now;
+       _clock = clock ?? DateTime.now,
+       _incognitoProfiles =
+           incognitoProfiles ?? WebBrowserIncognitoProfiles.instance {
+    // Android 能不能开无痕要异步问系统 WebView：建控制器时就问，支持就通知壳重建
+    // （「新建无痕标签页」入口靠同步的 webBrowserIncognitoSupported() 判）。
+    final WebBrowserIncognitoProfiles profiles = _incognitoProfiles;
+    if (profiles.needsNamedProfile && profiles.multiProfileSupported == null) {
+      unawaited(
+        profiles.ensureProbed().then((bool supported) {
+          if (supported && !_disposed) notifyListeners();
+        }),
+      );
+    }
+  }
 
   final WebBrowserStore _store;
   final List<WebBrowserFeature> _features;
   final int _maxLiveTabs;
   final Duration _saveDebounce;
   final DateTime Function() _clock;
+
+  /// 无痕会话（Android 的具名 WebView Profile）：最后一个无痕标签页关掉、或浏览页
+  /// 销毁时结束会话、删掉该 Profile 的 cookie / 存储。
+  final WebBrowserIncognitoProfiles _incognitoProfiles;
 
   final List<WebBrowserTab> _tabs = <WebBrowserTab>[];
   WebBrowserTab? _active;
@@ -146,6 +165,9 @@ class WebBrowserTabsController extends ChangeNotifier {
       );
     }
     _remove(tab);
+    if (tab.incognito && incognitoCount == 0) {
+      unawaited(_incognitoProfiles.endSession());
+    }
     if (identical(tab, _active)) {
       WebBrowserTab? next;
       final String? opener = tab.openerId;
@@ -332,6 +354,7 @@ class WebBrowserTabsController extends ChangeNotifier {
       unawaited(_store.saveSession(snapshotSession()));
     }
     _disposed = true;
+    if (incognitoCount > 0) unawaited(_incognitoProfiles.endSession());
     for (final WebBrowserTab t in _tabs) {
       t.removeListener(_onTabChanged);
     }

@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_incognito_profile.dart';
 import 'package:fushi/src/web_browser/tab_view/web_browser_page_scripts.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
@@ -21,15 +22,33 @@ import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 ///   `IsInPrivateModeEnabled`），同一环境下所有 InPrivate 视图共用一份、最后一个
 ///   关掉即清；
 /// - Linux：WPE 的临时网络会话（`webkit_network_session_new_ephemeral`）；
-/// - **Android 不支持**：插件的 `incognito` 只是把**全局** CookieManager 清空 +
-///   关缓存——既不隔离（无痕页的 cookie 与普通页同一个罐），还会把普通标签页、
-///   漫画源的登录态一起清掉。系统 WebView 的多 Profile（androidx.webkit
-///   ProfileStore）插件没有接，接之前不提供无痕入口。
-bool webBrowserIncognitoSupportedOn(TargetPlatform platform) =>
-    platform != TargetPlatform.android && platform != TargetPlatform.fuchsia;
+/// - Android：系统 WebView 的具名 Profile（androidx.webkit `MULTI_PROFILE`，见
+///   [WebBrowserIncognitoProfiles]）。**不用**插件的 `incognito`——它只是把**全局**
+///   CookieManager 清空，既不隔离还会清掉普通标签页 / 漫画源的登录态。系统
+///   WebView 不支持多 Profile（[androidMultiProfile] 为 false，含还没探测完）时不提供
+///   无痕入口。
+bool webBrowserIncognitoSupportedOn(
+  TargetPlatform platform, {
+  bool androidMultiProfile = false,
+}) => switch (platform) {
+  TargetPlatform.android => androidMultiProfile,
+  TargetPlatform.fuchsia => false,
+  _ => true,
+};
 
-bool webBrowserIncognitoSupported() =>
-    webBrowserIncognitoSupportedOn(defaultTargetPlatform);
+/// 同步问「现在能不能开无痕」。Android 的探测是异步的：第一次调用顺带发起探测，
+/// 探测完之前答 false（浏览页的标签控制器建时就发起探测、支持时通知重建）。
+bool webBrowserIncognitoSupported() {
+  final WebBrowserIncognitoProfiles profiles =
+      WebBrowserIncognitoProfiles.instance;
+  if (profiles.needsNamedProfile && profiles.multiProfileSupported == null) {
+    unawaited(profiles.ensureProbed());
+  }
+  return webBrowserIncognitoSupportedOn(
+    defaultTargetPlatform,
+    androidMultiProfile: profiles.multiProfileSupported ?? false,
+  );
+}
 
 /// 分享当前页地址（系统分享面板；标题作 subject）。
 Future<bool> shareTabUrl(WebBrowserTab tab) async {

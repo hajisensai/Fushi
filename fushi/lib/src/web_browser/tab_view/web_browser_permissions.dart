@@ -1,5 +1,6 @@
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -104,6 +105,55 @@ IconData _iconFor(List<WebBrowserSitePermission> permissions) =>
       WebBrowserSitePermission.clipboard => FushiIcons.paste,
       _ => FushiIcons.lock,
     };
+
+/// 网页层允许之后还要的**系统**运行时权限（app 自己没有，WebView 拿不到设备）。
+///
+/// 只有 Android 需要 app 先拿到：WebView 的 `PermissionRequest.grant` 只是网页层
+/// 授权，app 没有 `CAMERA` / `RECORD_AUDIO` 时 getUserMedia 照样失败。iOS 的
+/// WKWebView 自己按 Info.plist 的用途说明弹系统框，桌面由 WebView2 / WebKit 管。
+/// 其它种类（定位、通知……）不在这条链路上申请。
+List<Permission> webBrowserSystemPermissionsFor(
+  List<WebBrowserSitePermission> permissions, {
+  required TargetPlatform platform,
+}) {
+  if (platform != TargetPlatform.android) return const <Permission>[];
+  return <Permission>[
+    if (permissions.contains(WebBrowserSitePermission.camera))
+      Permission.camera,
+    if (permissions.contains(WebBrowserSitePermission.microphone))
+      Permission.microphone,
+  ];
+}
+
+/// 一次申请若干系统权限，返回各自的结果。默认走 permission_handler（一次合并申请：
+/// 它同一时刻只允许一个在途申请）。
+typedef WebBrowserSystemPermissionRequester =
+    Future<Map<Permission, PermissionStatus>> Function(List<Permission>);
+
+Future<Map<Permission, PermissionStatus>> _requestSystemPermissions(
+  List<Permission> permissions,
+) => permissions.request();
+
+/// 网页层允许后补齐系统权限：已有的直接过，没有的弹系统框；任一项没给（拒绝 /
+/// 永久拒绝 / 受限）就整条拒绝，网页收到 NotAllowedError。
+Future<bool> ensureWebBrowserSystemPermissions(
+  List<WebBrowserSitePermission> permissions, {
+  required TargetPlatform platform,
+  WebBrowserSystemPermissionRequester request = _requestSystemPermissions,
+}) async {
+  final List<Permission> needed = webBrowserSystemPermissionsFor(
+    permissions,
+    platform: platform,
+  );
+  if (needed.isEmpty) return true;
+  try {
+    final Map<Permission, PermissionStatus> result = await request(needed);
+    return needed.every((Permission p) => result[p]?.isGranted ?? false);
+  } on Object {
+    // 在途申请冲突 / 插件不可用：拿不到系统权限就不能假装允许。
+    return false;
+  }
+}
 
 /// 按站点设置决定一次权限申请；记住的直接答，没记住的弹「允许 / 阻止 / 记住」框。
 /// 返回是否允许。
