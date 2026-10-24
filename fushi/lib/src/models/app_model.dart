@@ -5570,6 +5570,15 @@ class AppModel with ChangeNotifier {
   /// 用户改了字幕来源/语言后 `reloadVideoDownloadPipelineRuntime` 会一起重建。
   VideoSubtitleBackfillService? _videoSubtitleBackfillService;
 
+  /// 控制通道（`fushi_cli video sub-fetch / sub-search / sub-get`）用的同一个服务；
+  /// 下载管线运行时没起来时为 null。
+  VideoSubtitleBackfillService? get videoSubtitleBackfillService =>
+      _videoSubtitleBackfillService;
+
+  /// 每系列字幕语言记忆（[_seriesSubtitleLanguage] 的公开入口）。
+  String? seriesSubtitleLanguage(String seriesKey) =>
+      _seriesSubtitleLanguage(seriesKey);
+
   /// 下载后缺字幕的定期重试（[retryUnavailableDownloadSubtitles]），与下载管线
   /// 同起停。每行自带退避间隔，这里的周期只决定多久看一眼有没有到期的行。
   Timer? _downloadSubtitleRetryTimer;

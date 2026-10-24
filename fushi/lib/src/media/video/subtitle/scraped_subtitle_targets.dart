@@ -38,27 +38,33 @@ List<SubtitleBackfillTarget> scrapedSubtitleTargets({
   for (final VideoBookRow book in members) {
     if (book.videoPath.trim().isEmpty) continue;
     final VideoNameInfo parsed = parseVideoFilename(p.basename(book.videoPath));
-    final int? episode = parsed.episode;
+    // 单文件电影没有集号：「Doraemon Movie 25」里的 25 是系列序号，当成 S01E25 发给
+    // 字幕源只会被按集过滤掉。
+    final int? episode = single && metadata.kind == VideoMetadataMediaKind.movie
+        ? null
+        : parsed.episode;
     if (episode == null && !single) continue;
     final int? season = episode == null ? null : (parsed.season ?? 1);
-    out.add(SubtitleBackfillTarget(
-      bookUid: book.bookUid,
-      videoPath: book.videoPath,
-      hasExistingSubtitle: hasExistingSubtitle(book.bookUid),
-      media: scrapedMediaReference(
-        metadata,
-        season: season,
-        episode: episode,
+    out.add(
+      SubtitleBackfillTarget(
+        bookUid: book.bookUid,
+        videoPath: book.videoPath,
+        hasExistingSubtitle: hasExistingSubtitle(book.bookUid),
+        media: scrapedMediaReference(
+          metadata,
+          season: season,
+          episode: episode,
+        ),
+        scrapedRuntimeMinutes: _runtimeFor(metadata, season, episode),
+        // 「默认下视频语言的字幕」的两个来源：用户对本视频手动指定的内容语言
+        // （压过一切），与刮削出的作品原语言。两者都可能为空，那时由 ffprobe 的
+        // 音轨 tag 兜底，再没有就不表态——不猜。
+        contentLanguage: book.language,
+        originalLanguage: metadata.originalLanguage,
+        // 用户对这部作品明确选过的字幕语言（每系列记忆）：整个作品一个答案。
+        explicitLanguage: explicitLanguage,
       ),
-      scrapedRuntimeMinutes: _runtimeFor(metadata, season, episode),
-      // 「默认下视频语言的字幕」的两个来源：用户对本视频手动指定的内容语言
-      // （压过一切），与刮削出的作品原语言。两者都可能为空，那时由 ffprobe 的
-      // 音轨 tag 兜底，再没有就不表态——不猜。
-      contentLanguage: book.language,
-      originalLanguage: metadata.originalLanguage,
-      // 用户对这部作品明确选过的字幕语言（每系列记忆）：整个作品一个答案。
-      explicitLanguage: explicitLanguage,
-    ));
+    );
   }
   return out;
 }
@@ -75,18 +81,17 @@ VideoMediaReference scrapedMediaReference(
   VideoMetadataWork metadata, {
   int? season,
   int? episode,
-}) =>
-    identityMediaReference(
-      providerId: metadata.provider.name,
-      kind: metadata.kind,
-      externalIds: _idsOf(metadata),
-      title: metadata.title,
-      originalTitle: metadata.originalTitle,
-      aliases: metadata.aliases,
-      year: metadata.year,
-      season: season,
-      episode: episode,
-    );
+}) => identityMediaReference(
+  providerId: metadata.provider.name,
+  kind: metadata.kind,
+  externalIds: _idsOf(metadata),
+  title: metadata.title,
+  originalTitle: metadata.originalTitle,
+  aliases: metadata.aliases,
+  year: metadata.year,
+  season: season,
+  episode: episode,
+);
 
 /// 同一张映射的**去模型化**入口：只吃 `provider → externalId` 与媒体形态。
 ///
@@ -139,9 +144,9 @@ VideoMediaReference identityMediaReference({
 
 /// `VideoMetadataWork.ids` → `provider → externalId`（空值直接丢弃）。
 Map<String, String> _idsOf(VideoMetadataWork metadata) => <String, String>{
-      for (final VideoMetadataId id in metadata.ids)
-        if (id.value.trim().isNotEmpty) id.type.trim().toLowerCase(): id.value,
-    };
+  for (final VideoMetadataId id in metadata.ids)
+    if (id.value.trim().isNotEmpty) id.type.trim().toLowerCase(): id.value,
+};
 
 /// 刮削元数据 → 发现层分类。
 ///
@@ -150,10 +155,10 @@ Map<String, String> _idsOf(VideoMetadataWork metadata) => <String, String>{
 /// 专库，挂上对应 id 的作品视为动画。这不是完美判据，但**刮削过的作品**判据够硬：
 /// 动画走 AniDB 主身份、真人走 TMDB，两条链不会互串。
 ///
-/// 注意代价不对称：分类决定 Jimaku 的 `anime` 硬过滤档，而 `anime` / `liveAction`
-/// 两档各自**只试一个值**（只有分类为 null 时才走 [JimakuAnimeFilter.either] 依次
-/// 试两档）。所以判错不是「多一次请求」，是那一侧一条都搜不到——这正是 BUG-1694。
-/// 因此没有刮削结论时宁可不表态（传 null），也不要拿形态硬猜。
+/// 注意代价不对称：anime 档在 Jimaku 只试 `anime=true` 一个值，判成 anime 的真人剧
+/// 一条都搜不到（BUG-1694）。反方向不对称：没有动画 id 不等于真人（只刮了 TMDB 的
+/// 动画剧场版），所以 movie/tv 在 Jimaku 侧走 [JimakuAnimeFilter.liveActionFirst]，
+/// 真人档空了再试动画档。
 VideoDiscoveryCategory scrapedDiscoveryCategory(VideoMetadataWork metadata) =>
     identityDiscoveryCategory(
       kind: metadata.kind,

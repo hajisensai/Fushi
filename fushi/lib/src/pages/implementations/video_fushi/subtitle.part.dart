@@ -1425,8 +1425,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
         initialQuery: seed.primaryQuery.isEmpty ? query : seed.primaryQuery,
         seriesKey: query.trim().toLowerCase(),
         seed: seed,
-        // BUG-2626：预填当前集号（算不出就留空 = 列出全部，旧行为）。
-        episode: _jimakuEpisodeNumber(),
+        // BUG-2626：预填当前集号（算不出就留空 = 列出全部，旧行为）。刮成电影的
+        // 不预填：「Doraemon Movie 25」里的 25 是系列序号，不是集号。
+        episode: seed.isMovie ? null : _jimakuEpisodeNumber(),
         season: _jimakuSeasonNumber(),
         // 本地视频才有指纹可算（远端流恒 null），OpenSubtitles 据此按文件哈希精确匹配。
         videoPath: _isRemote ? null : _currentVideoPath,
