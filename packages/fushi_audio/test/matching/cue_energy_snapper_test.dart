@@ -55,13 +55,28 @@ void main() {
     expect(snapper.snap(cues, _energy(6000, <(int, int)>[(2100, 2500)])), 0);
   });
 
-  test('谷远在后句首 token 之后：吸过去会吃掉字头，不动', () {
+  test('谷远在后句首 token + tokenGuardMs 之后：吸过去会吃掉字头，不动', () {
     final List<AudioCue> cues = <AudioCue>[
       _cue(0, 2000),
       _cue(2000, 5000, firstTokenAt: 2050),
     ];
-    expect(snapper.snap(cues, _energy(6000, <(int, int)>[(2400, 2600)])), 0);
+    expect(
+      const CueEnergySnapper(
+        tokenGuardMs: 200,
+      ).snap(cues, _energy(6000, <(int, int)>[(2400, 2600)])),
+      0,
+    );
     expect(cues[1].startMs, 2000);
+  });
+
+  test('默认：RNN-T 首 token 比开口早几百毫秒，真实停顿照样吸过去', () {
+    // token 推算的切点 2000，真实句间停顿 [2400, 2600)，首 token 2050（偏早）。
+    final List<AudioCue> cues = <AudioCue>[
+      _cue(0, 2000),
+      _cue(2000, 5000, firstTokenAt: 2050),
+    ];
+    expect(snapper.snap(cues, _energy(6000, <(int, int)>[(2400, 2600)])), 1);
+    expect((cues[0].endMs, cues[1].startMs), (2480, 2560));
   });
 
   test('吸附后一侧短于 500 ms：不动', () {
@@ -111,7 +126,7 @@ void main() {
       expect(cues.single.startMs, 1350);
     });
 
-    test('收终点会早于末 token − 200 ms：不动', () {
+    test('收终点会早于末 token − tokenGuardMs：不动', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(1000, 4000)
           ..tokenTiming = CueTokenTiming(
@@ -121,7 +136,9 @@ void main() {
       ];
       // 收声 3500 → 本该收到 3580，但末 token 在 3900（守卫线 3700）。
       expect(
-        snapper.refineEdges(cues, _energy(6000, <(int, int)>[(3500, 6000)])),
+        const CueEnergySnapper(
+          tokenGuardMs: 200,
+        ).refineEdges(cues, _energy(6000, <(int, int)>[(3500, 6000)])),
         0,
       );
       expect(cues.single.endMs, 4000);

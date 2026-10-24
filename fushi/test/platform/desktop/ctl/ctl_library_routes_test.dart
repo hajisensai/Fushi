@@ -1368,10 +1368,15 @@ void main() {
           AudiobookTranscribeImportQueue(
             store: store,
             transcriber: _FakeTranscriber(p.join(tmp.path, 'out.srt')),
-            importer: (AudiobookTranscribeJob job, String subtitle) async {
-              importedTargets.add(job.targetBookKey);
-              return job.targetBookKey;
-            },
+            importer:
+                (
+                  AudiobookTranscribeJob job,
+                  String subtitle,
+                  AudiobookTranscribeImportSink sink,
+                ) async {
+                  importedTargets.add(job.targetBookKey);
+                  return job.targetBookKey;
+                },
           );
       final AudiobookTranscribeJob job = await queue.enqueue(
         audioPaths: const <String>['/a.mp3'],

@@ -1,8 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
+    show AudiobookAlignmentStep;
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/audiobook/asr_pipeline_progress.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -82,11 +86,33 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
         key: ValueKey<String>(id),
         taskId: id,
         title: job.title,
-        status: status,
+        // 卡片自己会在状态后拼进度百分比，覆盖率在摘要槽的着色标签里，这里都
+        // 不再带一份。
+        status: audiobookTranscribeJobStatusLabel(job, compact: true),
         subtitle: t.audiobook_transcribe_task_subtitle,
         progress: progress,
+        summary: _buildSummary(job),
         details: _buildDetails(context, queue, job, status, retryable),
       ),
+    );
+  }
+
+  /// 折叠时也看得到的摘要：阶段轨（下载模型 → 加载模型 → 转录 → 匹配正文 →
+  /// 入库）+ 完成后的覆盖情况。失败 / 取消时不知道停在哪一步（阶段已清掉），
+  /// 阶段轨不画。
+  Widget? _buildSummary(AudiobookTranscribeJob job) {
+    final List<AsrStageState>? rails = asrPipelineStatesForJob(job);
+    final AudiobookTextCoverage? coverage =
+        job.status == AudiobookTranscribeJobStatus.done ? job.coverage : null;
+    if (rails == null && coverage == null) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      spacing: 6,
+      children: <Widget>[
+        if (rails != null) AsrPipelineStageRail(states: rails, compact: true),
+        if (coverage != null) AsrCoverageSummary(coverage: coverage),
+      ],
     );
   }
 
@@ -130,13 +156,19 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
         iconSize: 20,
       ),
       title: Text(job.title),
-      subtitle: Text(
-        status,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: context.fushiType.bodySmall.copyWith(
-          color: failed ? theme.colorScheme.error : null,
-        ),
+      subtitle: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Text(
+            status,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: context.fushiType.bodySmall.copyWith(
+              color: failed ? theme.colorScheme.error : null,
+            ),
+          ),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -179,9 +211,15 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
   }
 }
 
-/// 任务行的状态一句话（纯函数，供测试直接断言）。运行中带当前步骤与百分比；
-/// 完成时区分「已入库」与「同名书已在库被跳过」；失败带错误原文。
-String audiobookTranscribeJobStatusLabel(AudiobookTranscribeJob job) {
+/// 任务行的状态一句话（纯函数，供测试直接断言）。运行中带当前步骤与百分比
+/// （百分比原样取引擎；匹配正文 / 入库没有数值进度，带细分步骤而不估百分比）；
+/// 完成时区分「已入库」与「同名书已在库被跳过」，有正文时附覆盖情况；失败带
+/// 错误原文。[compact] 给任务卡标题行用：卡片自己拼百分比、覆盖率另有着色
+/// 标签，两样都不带。
+String audiobookTranscribeJobStatusLabel(
+  AudiobookTranscribeJob job, {
+  bool compact = false,
+}) {
   switch (job.status) {
     case AudiobookTranscribeJobStatus.queued:
       return t.download_status_queued;
@@ -191,19 +229,28 @@ String audiobookTranscribeJobStatusLabel(AudiobookTranscribeJob job) {
           t.audiobook_transcribe_status_preparing,
         AudiobookTranscribeJobPhase.downloadingModel =>
           t.audiobook_transcribe_status_downloading_model,
+        AudiobookTranscribeJobPhase.loadingModel =>
+          t.audiobook_transcribe_status_loading_model,
         AudiobookTranscribeJobPhase.transcribing =>
           t.audiobook_transcribe_status_transcribing,
+        AudiobookTranscribeJobPhase.matching =>
+          t.audiobook_transcribe_status_matching,
         AudiobookTranscribeJobPhase.importing =>
           t.audiobook_transcribe_status_importing,
       };
       final double? progress = job.progress;
-      return progress == null
-          ? step
-          : '$step · ${(progress.clamp(0.0, 1.0) * 100).round()}%';
+      if (progress != null) {
+        return compact ? step : '$step · ${formatAsrPercent(progress)}';
+      }
+      final AudiobookAlignmentStep? detail = job.alignmentStep;
+      return detail == null ? step : '$step · ${asrAlignmentStepLabel(detail)}';
     case AudiobookTranscribeJobStatus.done:
-      return job.resultKey == null
-          ? t.audiobook_transcribe_status_skipped
-          : t.audiobook_transcribe_status_done;
+      if (job.resultKey == null) return t.audiobook_transcribe_status_skipped;
+      final AudiobookTextCoverage? coverage = job.coverage;
+      return coverage == null || compact
+          ? t.audiobook_transcribe_status_done
+          : '${t.audiobook_transcribe_status_done} · '
+                '${asrCoverageSentence(coverage)}';
     case AudiobookTranscribeJobStatus.failed:
       return '${t.manga_online_failed}: ${job.error ?? ''}';
     case AudiobookTranscribeJobStatus.cancelled:

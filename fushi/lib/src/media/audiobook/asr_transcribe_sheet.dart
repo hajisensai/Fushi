@@ -27,6 +27,7 @@ import 'package:fushi_engine/asr/asr_transcript_proofreader.dart';
 import 'package:fushi_engine/asr/cloud_whisper_transcription_service.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show preferredTranscriptExportPath;
+import 'package:fushi_engine/media/audiobook/audiobook_text_coverage.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
     show SubtitleAiRequestFailure;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
@@ -39,6 +40,7 @@ import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart';
 import 'package:fushi/src/media/audiobook/asr_local_model_dialog.dart';
+import 'package:fushi/src/media/audiobook/asr_pipeline_progress.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -506,6 +508,16 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
   /// 那一组自己的结果。
   bool _optionsChangedSinceResult = false;
 
+  /// 本弹层里下过模型。没下过 = 模型本来就在，阶段轨把「下载模型」画成跳过。
+  bool _downloadedModelHere = false;
+
+  /// 失败发生在哪个阶段（阶段轨标红那一格）；null = 还没进流水线就失败了。
+  AsrPipelineStage? _failedStage;
+
+  /// 现成结果上次跑「使用字幕」后的正文覆盖情况（转录产物旁的 sidecar）；
+  /// null = 还没匹配过正文。
+  AudiobookTextCoverage? _lastCoverage;
+
   // 下载进度。
   int _downloadReceived = 0;
   int _downloadTotal = 0;
@@ -656,6 +668,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       setState(() {
         _phase = _Phase.checking;
         _error = null;
+        _failedStage = null;
       });
     }
     try {
@@ -682,6 +695,9 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         widget.audioPaths,
         language,
       );
+      final AudiobookTextCoverage? coverage = finished == null
+          ? null
+          : readAsrCoverageSidecarSync(finished);
       final GpuRuntimeOffer? gpuOffer = await _probeGpuOffer(plan);
       final bool restart = gpuOffer == null && await _probeGpuRestart(plan);
       // 等待期间用户又切了语言 / 加速：这份结果已经过期，丢掉（新一轮
@@ -708,6 +724,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           _knownGpuProviders = plan.availableProviders;
         }
         _finishedSrt = finished;
+        _lastCoverage = coverage;
         _hasProofreadBackup =
             finished != null && asrTranscriptHasProofreadBackup(finished);
         if (finished != null) {
@@ -754,10 +771,23 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       return;
     }
     setState(() {
+      _failedStage = _stageForPhase(_phase);
       _phase = _Phase.error;
       _error = text;
     });
   }
+
+  /// 弹层阶段 → 阶段轨上的格（只用来记失败落在哪一格）。
+  AsrPipelineStage? _stageForPhase(_Phase phase) => switch (phase) {
+    _Phase.needDownload || _Phase.downloading => AsrPipelineStage.downloadModel,
+    _Phase.loading => AsrPipelineStage.loadModel,
+    _Phase.running ||
+    _Phase.pausing ||
+    _Phase.paused ||
+    _Phase.proofreading => AsrPipelineStage.transcribe,
+    _Phase.error => _failedStage,
+    _Phase.checking || _Phase.ready || _Phase.finished => null,
+  };
 
   Future<void> _startDownload() async {
     final AsrTranscribePlan? plan = _plan;
@@ -768,6 +798,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     if (!mounted) return;
     setState(() {
       _phase = _Phase.downloading;
+      _downloadedModelHere = true;
       _downloadTotal = plan.totalModelBytes + (gpu?.pendingDownloadBytes ?? 0);
       _downloadReceived = plan.obtainedModelBytes;
       _downloadFile = '';
@@ -963,6 +994,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               setState(() {
                 _result = r;
                 _finishedSrt = r.srtPath;
+                _lastCoverage = null;
                 _hasProofreadBackup = asrTranscriptHasProofreadBackup(
                   r.srtPath,
                 );
@@ -1095,6 +1127,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                 if (!mounted) return;
                 setState(() {
                   _finishedSrt = srt?.path;
+                  _lastCoverage = null;
                   _remoteProgress = 1;
                   _elapsedTotal = srt == null ? null : _runClock?.elapsed;
                   _phase = srt == null ? _Phase.error : _Phase.finished;
@@ -1105,6 +1138,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           onError: (Object error) {
             if (!mounted) return;
             setState(() {
+              _failedStage = _stageForPhase(_phase);
               _phase = _Phase.error;
               _error = '$error';
             });
@@ -1582,6 +1616,13 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               ),
             );
         }
+        // 匹配正文 / 入库在「使用字幕」之后由导入链路跑；还没跑过时说清楚，
+        // 阶段轨后两格空着不是卡住了。
+        if (_lastCoverage == null) {
+          sb
+            ..writeln()
+            ..write(t.audiobook_transcribe_match_after_use);
+        }
         sb
           ..writeln()
           ..write(
@@ -1619,6 +1660,58 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
     sb
       ..writeln()
       ..write(t.audiobook_transcribe_probe_failed(reason: reason));
+  }
+
+  /// 阶段轨五格（纯由弹层状态推出）。匹配正文 / 入库发生在「使用字幕」之后的
+  /// 导入链路里：有上次匹配留下的覆盖情况才画成已完成，否则留空。
+  List<AsrStageState> _pipelineStates() {
+    final Set<AsrPipelineStage> skipped = <AsrPipelineStage>{
+      if (!_downloadedModelHere || _runRemote) AsrPipelineStage.downloadModel,
+    };
+    const Set<AsrPipelineStage> transcribed = <AsrPipelineStage>{
+      AsrPipelineStage.downloadModel,
+      AsrPipelineStage.loadModel,
+      AsrPipelineStage.transcribe,
+    };
+    switch (_phase) {
+      case _Phase.checking:
+        return asrPipelineStates();
+      case _Phase.needDownload:
+      case _Phase.downloading:
+        return asrPipelineStates(current: AsrPipelineStage.downloadModel);
+      case _Phase.ready:
+        return asrPipelineStates(
+          completed: const <AsrPipelineStage>{AsrPipelineStage.downloadModel},
+          skipped: skipped,
+        );
+      case _Phase.loading:
+        return asrPipelineStates(
+          current: AsrPipelineStage.loadModel,
+          skipped: skipped,
+        );
+      case _Phase.running:
+      case _Phase.pausing:
+      case _Phase.paused:
+      // AI 校对是在转录稿上再加工一遍（还没到匹配正文），转录格仍算进行中。
+      case _Phase.proofreading:
+        return asrPipelineStates(
+          current: AsrPipelineStage.transcribe,
+          skipped: skipped,
+        );
+      case _Phase.finished:
+        return _lastCoverage != null
+            ? asrPipelineStates(allDone: true, skipped: skipped)
+            : asrPipelineStates(completed: transcribed, skipped: skipped);
+      case _Phase.error:
+        final AsrPipelineStage? failed = _failedStage;
+        return failed == null
+            ? asrPipelineStates()
+            : asrPipelineStates(
+                current: failed,
+                skipped: skipped,
+                failed: true,
+              );
+    }
   }
 
   double? _progressValue() {
@@ -1904,6 +1997,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            AsrPipelineStageRail(
+              states: _pipelineStates(),
+              foreground: fushiCardToneColors(
+                context,
+                _statusTone(),
+              )?.onContainer,
+            ),
+            const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
@@ -1929,11 +2030,35 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
               duration: motion.spatialDefault.duration,
               curve: motion.spatialDefault.curve,
               alignment: Alignment.topCenter,
+              child: _phase == _Phase.finished && _lastCoverage != null
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 8, left: 32),
+                      child: AsrCoverageSummary(
+                        coverage: _lastCoverage!,
+                        caption: t.audiobook_transcribe_coverage_last,
+                        foreground: fushiCardToneColors(
+                          context,
+                          _statusTone(),
+                        )?.onContainer,
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+            AnimatedSize(
+              duration: motion.spatialDefault.duration,
+              curve: motion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
               child: showProgressBar
                   ? Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: FushiLinearProgressIndicator(
+                      // 百分比与补间都在 AsrSmoothedProgressBar 里：数值原样取引擎
+                      // （下载字节 / 已转录时长 / 远端回报），不定态不显示百分比。
+                      child: AsrSmoothedProgressBar(
                         value: _progressValue(),
+                        foreground: fushiCardToneColors(
+                          context,
+                          _statusTone(),
+                        )?.onContainer,
                       ),
                     )
                   : const SizedBox(width: double.infinity),
