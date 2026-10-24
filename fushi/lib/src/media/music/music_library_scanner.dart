@@ -7,6 +7,9 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+/// 音乐来源扫描完一次后的装配点（AppModel 接到后台响度扫描，设计 §7.3）。
+void Function()? onMusicSourceScanned;
+
 /// 一次音乐来源扫描的结果。
 class MusicScanSummary {
   const MusicScanSummary({
@@ -79,6 +82,8 @@ MusicScanBatchWrite musicScanBatchWriteOf(
         rgTrackPeak: Value<double?>(t.rgTrackPeak),
         rgAlbumGain: Value<double?>(t.rgAlbumGain),
         rgAlbumPeak: Value<double?>(t.rgAlbumPeak),
+        // 文件变了 / 新文件：之前的 R128 现扫结果作废（增益列已被新标签覆盖），重扫。
+        r128ScannedAt: const Value<int?>(null),
         mbRecordingId: Value<String?>(t.mbRecordingId),
         mbWorkId: Value<String?>(t.mbWorkId),
         fileMtimeAt: t.fileMtimeMs,

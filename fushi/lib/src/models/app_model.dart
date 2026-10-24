@@ -279,6 +279,9 @@ export 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_library_scanner.dart'
+    show onMusicSourceScanned;
+import 'package:fushi/src/media/music/music_loudness_scanner.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
@@ -1547,6 +1550,18 @@ class AppModel with ChangeNotifier {
   Future<void> setMusicReplayGain(bool value) async {
     await prefsRepo.setMusicReplayGain(value);
     await musicSession.engine.reapplySettings();
+  }
+
+  /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
+  late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
+    database: () => isDatabaseReady ? database : null,
+    enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
+  );
+
+  bool get musicLoudnessScan => prefsRepo.musicLoudnessScan;
+  Future<void> setMusicLoudnessScan(bool value) async {
+    await prefsRepo.setMusicLoudnessScan(value);
+    if (value) unawaited(musicLoudness.schedule());
   }
 
   /// 音乐输出偏好（设计 §7.4）。库没开时给默认值（不碰 late 偏好）。
@@ -3447,6 +3462,8 @@ class AppModel with ChangeNotifier {
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
+      // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
+      onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
 
       // Sync-pref maintenance, before any repository loads them or sync runs:
       // 1) recover device-local sync config if a previous backup import crashed

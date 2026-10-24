@@ -159,6 +159,62 @@ mixin _FushiDbMusic on _$FushiDatabase {
     ];
   }
 
+  /// 需要 EBU R128 现扫的在库曲目（设计 §7.3）：标签里没有曲目增益、也还没扫过。
+  Future<List<MusicTrackRow>> listMusicTracksNeedingLoudnessScan({
+    int limit = 200,
+  }) =>
+      (select(musicTracks)
+            ..where(
+              ($MusicTracksTable t) =>
+                  t.deletedAt.isNull() &
+                  t.rgTrackGain.isNull() &
+                  t.r128ScannedAt.isNull(),
+            )
+            ..orderBy(<OrderingTerm Function($MusicTracksTable)>[
+              ($MusicTracksTable t) => OrderingTerm(expression: t.addedAt),
+            ])
+            ..limit(limit))
+          .get();
+
+  /// 写一首曲目的扫描结果。[gain] / [peak] 为 null = 扫过但测不出（静音 / 解码失败），
+  /// 照样记 [scannedAt]，文件变了（重扫时会清掉这个时刻）之前不再重试。只写标签没给的列。
+  Future<void> writeMusicTrackLoudness(
+    String trackUid, {
+    required double? gain,
+    required double? peak,
+    required int scannedAt,
+  }) =>
+      (update(musicTracks)..where(
+            ($MusicTracksTable t) =>
+                t.trackUid.equals(trackUid) & t.rgTrackGain.isNull(),
+          ))
+          .write(
+            MusicTracksCompanion(
+              rgTrackGain: Value<double?>(gain),
+              rgTrackPeak: Value<double?>(peak),
+              r128ScannedAt: Value<int?>(scannedAt),
+            ),
+          );
+
+  /// 专辑增益补齐：只写该专辑里专辑增益为空的在库曲目（标签带的专辑增益不覆盖）。
+  Future<int> writeMusicAlbumLoudness(
+    String albumUid, {
+    required double gain,
+    required double? peak,
+  }) =>
+      (update(musicTracks)..where(
+            ($MusicTracksTable t) =>
+                t.albumUid.equals(albumUid) &
+                t.deletedAt.isNull() &
+                t.rgAlbumGain.isNull(),
+          ))
+          .write(
+            MusicTracksCompanion(
+              rgAlbumGain: Value<double?>(gain),
+              rgAlbumPeak: Value<double?>(peak),
+            ),
+          );
+
   /// 软删一首曲目（远端删除标记 / 用户从曲库移除；不碰磁盘文件）。
   Future<void> softDeleteMusicTrack(
     String trackUid, {

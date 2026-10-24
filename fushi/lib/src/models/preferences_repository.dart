@@ -4406,6 +4406,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 缺 ReplayGain 标签时后台用 EBU R128 测响度写曲库（设计 §7.3，不改文件）。默认开。
+  bool get musicLoudnessScan =>
+      getPref('music_loudness_scan', defaultValue: true) == true;
+
+  Future<void> setMusicLoudnessScan(bool value) async {
+    await setPref('music_loudness_scan', value);
+    notifyListeners();
+  }
+
   /// 独占 / bit-perfect 输出（设计 §7.4）。默认关：独占会让别的程序在播放期间没有声音。
   bool get musicExclusiveOutput =>
       getPref('music_exclusive_output', defaultValue: false) == true;
