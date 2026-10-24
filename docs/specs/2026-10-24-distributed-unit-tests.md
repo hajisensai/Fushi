@@ -4,13 +4,56 @@
 
 ## 第一期实现（与下文设计的差异以此为准）
 
-- 入口 `fushi/tool/dist_test.dart`；模块 `fushi/tool/test_flow/dist_{plan,snapshot,workers,results}.dart`；worker 端脚本 `fushi/tool/dist_test/worker_{prepare,run,kill}.sh`（随快照一起推过去，版本与代码一致）；配置 `fushi/tool/dist_test/workers.local.json`（`.gitignore`，从 `workers.example.json` 复制）。契约测试 `fushi/test/tools/dist_{plan,snapshot,results,workers}_test.dart`。
-- worker 种类只有 `local`（本 checkout）与 `ssh-trusted`（自己的机器，普通 shell）；`ssh-shim`（朋友机器，强制命令）留给第二期。
-- **没有 `slots`**：每台 worker 一个 checkout、同一时刻一个 `flutter test` 进程，并行度靠 `--concurrency`（`concurrency` 字段）。本机 worker 经 heavy 租约（整轮持有一个槽位），并发缺省取 heavy 的 4。
-- 批次只按耗时切（`--batch-minutes`，缺省 4）。本机 Windows 的 `flutter.bat` 走 `cmd.exe`、命令行上限 8191 字符，所以本机 worker 把一批拆成多个连续进程跑（每个 ≤6000 字符路径），事件流按 `start` 事件拆段再合并判绿；ssh worker 的文件清单走 stdin，没有这个限制。
-- Mac 首次准备：裸仓不单独建，`~/fushi-dist/work` 本身就是推送目标（推到 `refs/dist/<runId>`），`seedRepo`（如 `dev/hibiki`）作为 `objects/info/alternates`，首推只传增量（实测 85 MB）。pub cache 与 `~/dev/hibiki` 共用。准备步骤按内容哈希记在 `.git/fushi-dist/`，命中跳过。
-- `prepareEnv`（代理）只给准备步骤；准备时顺手跑一个小测试把 native-asset hook（pdfium 下载等）的缓存建好，之后的批次不带代理跑，与 CI 一致。
-- `--workers=` 只选部分机器时，只能在没选上的平台跑的 suite 计为「没跑」、整轮判红，不静默跳过。
+### 用法
+
+```
+cd fushi
+dart tool/dist_test.dart                     # 全量
+dart tool/dist_test.dart test/reader         # 子树 / 文件
+dart tool/dist_test.dart --workers=self-mac  # 只用部分机器
+dart tool/dist_test.dart --status            # 各机器在线 / 版本 / 负载
+dart tool/dist_test.dart --dry-run           # 看哪些 suite 只能在哪跑
+```
+
+其它 `--flag` 原样传给每个 `flutter test`。末行 `DIST TEST VERDICT: PASSED|FAILED - ...`，退出码 0 才是绿。日志在 `.codex-test/dist/<runId>/`（`summary.md`、每批 `batch-<id>.<worker>.jsonl` / `.stderr.log`、`prepare.<worker>.log`、`timings.<worker>.json`）。
+
+### 文件
+
+入口 `fushi/tool/dist_test.dart`；模块 `fushi/tool/test_flow/dist_{plan,snapshot,workers,results,console}.dart`；worker 端脚本 `fushi/tool/dist_test/worker_{prepare,run,kill}.sh`（随快照推过去，与代码同版本）；配置 `fushi/tool/dist_test/workers.local.json`（`.gitignore`，从 `workers.example.json` 复制）；手工钉选 `fushi/tool/test_flow/dist_affinity.json`。契约测试 `fushi/test/tools/dist_{plan,snapshot,results,workers}_test.dart`。
+
+### 调度：按实测速度动态分块（取代原设计的固定批次）
+
+- 队列里是单个 suite（「放置单元」：同时门控 Windows 与 macOS 的 suite 是两个单元），不预先切批。
+- 每个 suite 的权重 = CI 实测耗时 + 每 suite 固定开销 1.5 s（`kDistSuiteOverheadMs`：一个 `flutter test` 进程逐个编译 suite，这笔开销 CI 表里没有，Mac 上实测约 1.5 s/suite）。权重只决定相对大小。
+- 每台机器的速度 = 它已跑完批次的「墙钟 / 权重」累计值（`DistSpeed`），每批更新。
+- 机器空闲时现切下一批（`distChunkBudgetMs`，guided self-scheduling）：取它能跑的剩余工作 × 它的速度占在线机器速度和的比例 ÷ 2；按它自己的速度换算，限制在 20 s～4 min 墙钟之间；还没测过速度的机器先领 1 分钟的探测批。快机器领得多，收尾时块自动变小，没有尾批比例之类的常数。
+- 钉选优先：只有部分机器能跑的 suite 先发；同类里重的先发，收尾都是小 suite。
+- 失联 / 超时的批原样退回队列（可能被别的机器以不同切法领走）；测试失败不重试。
+
+### worker
+
+- 种类：`local`（本 checkout，经 heavy 租约整轮持有一个槽位，并发缺省取 heavy 的 4）与 `ssh-trusted`（自己的机器，普通 shell）。`ssh-shim`（朋友机器，强制命令）留给第二期。
+- `slots`：同一台机器开 N 个独立 checkout（`work`、`work-2`…，后者用 alternates 共享前者的对象库，原生库按戳记从前者拷），各跑一个 `flutter test`。同一 checkout 里并行两个进程会抢 `build/native_assets`，所以不能共用。**实测 M4 Mac（16 GB）开 3 槽总吞吐反而略低于 1 槽**：瓶颈是每个 suite 单独编译出的上百 MB dill 写盘（磁盘持续 500+ MB/s、5000 IOPS）和换页，所以示例配置是 1 槽；IO 更强的机器再加。
+- 远端整轮锁：每个远端 checkout 用 `mkdir .git/fushi-dist/lock` 原子抢占，写入 runId；被占就让这台退出本轮（报 `busy: in use by dist_test run …`），别的机器照跑。`worker_run.sh` / `worker_prepare.sh` 每分钟刷新锁 mtime 作心跳，15 分钟无心跳视为协调者已死、可接管。拿到锁之后才清残留进程。runId 带随机后缀。
+- Mac 首次准备：`~/fushi-dist/work` 本身就是推送目标（`refs/dist/<runId>`），`seedRepo`（如 `dev/hibiki`）作 alternates，首推只传增量（实测 85 MB）。pub cache 与 `~/dev/hibiki` 共用。准备步骤按内容哈希记在 `.git/fushi-dist/`，命中即跳过。`prepareEnv`（代理）只给准备步骤，准备时顺手跑一个小测试把 native-asset hook 缓存建好。
+- 准备脚本的输出先写远端文件再回显：pub / cargo 留下的后台进程会继承 ssh 通道导致连接永不关闭（实测挂住过）。
+- Windows 上远端命令用系统 OpenSSH（`C:\Windows\System32\OpenSSH\ssh.exe`，`FUSHI_DIST_SSH` 可覆盖）：Git for Windows 自带的 msys `ssh.exe` 在 Dart 给的管道上做 select 模拟，长输出会卡死在半行（实测一批卡 10 分钟）。快照推送仍用 git 自己的 ssh。
+- 本机 `flutter.bat` 走 `cmd.exe`，命令行上限 8191 字符，本机 worker 把一批拆成多个连续进程（每个 ≤6000 字符路径），事件流按 `start` 拆段合并判绿。
+
+### 环境
+
+- 测试进程不带代理变量（`HTTP(S)_PROXY` / `ALL_PROXY` / `NO_PROXY`），与 CI 一致：本机 shell 里的 `NO_PROXY=127.0.0.1` 会让 ffmpeg 忽略显式 `-http_proxy`，`media_server_mining_relay_test` 因此伪红过。
+- **不弹窗**：控制台程序由「没有控制台的进程」启动时会各自新开一个可见窗口抢焦点。dist_test 启动先用 `GetConsoleProcessList` 自检，没有控制台就拒绝运行（`GetConsoleWindow` 区分不了「无控制台」和 agent shell 那种「无窗口控制台」）。所有子进程用默认模式启动、共享这个控制台；守卫测试禁止 detached / `Start-Process` / `start` / `wt`。两轮全量期间的窗口探针没有任何归属于 dist_test 的新窗口；探针抓到的周期性 cmd 窗口来自计划任务 `ClaudeDesktopSessionSync`（每 10 分钟 `cmd.exe /c …pythonw.exe`，上次运行时刻与弹窗吻合）。
+
+### 判绿
+
+- 每批：退出码 0、有 `done: success`、≥1 个测试、交给它的每个 suite 都有 `suite` 事件（零执行算红）。
+- `--workers=` 只选部分机器时，只能在没选上的平台跑的 suite 计为「没跑」、整轮判红。
+- 平台亲和：测试文件里的 `Platform.isWindows/isMacOS`、`@TestOn`、能力标签（golden / realdata / ffmpeg / chrome）静态扫描钉选；`dist_affinity.json` 只放「宿主依赖在被测代码里、扫描看不到」且**暂时修不了**的 suite，每条写原因。宿主相关的红优先按根因修，不往表里塞。
+
+### 实测（2026-10-24，第二轮全量）
+
+本机 + Mac 3 槽、旧的固定批次调度：4532 个 suite 全部跑到、39 793 个测试、墙钟 52 分钟；本机 3021 个 suite / 47.6 分钟（约 0.7 s/suite，期间与其它会话共用机器），Mac 合计 1527 个。动态分块是此后改的，墙钟以下一轮验收为准。
 
 ## 目标与边界
 
