@@ -604,11 +604,15 @@ class _VideoControlLayoutEditOverlayState
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              _buildDraggableControlChip(
-                item,
-                sourceSlot: sourceSlot,
-                sourceIndex: sourceIndex,
-                maxWidth: 112,
+              // 官方 IconButton 的实际占位比 28 大：芯片让出剩余宽度（文字省略），
+              // 不再固定占满 112 把「X」挤出槽位。
+              Flexible(
+                child: _buildDraggableControlChip(
+                  item,
+                  sourceSlot: sourceSlot,
+                  sourceIndex: sourceIndex,
+                  maxWidth: 112,
+                ),
               ),
               // TODO-554: hide the remove "x" when the item cannot be removed on
               // this surface (touch keeps the settings entry pinned), so the UI

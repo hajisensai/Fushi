@@ -15,9 +15,6 @@ final List<RoundedPolygon> kNavRailFallbackShapes = <RoundedPolygon>[
   MaterialShapes.clover8Leaf,
 ];
 
-/// 选中形状自转一圈的时长（M3E loading indicator 的慢速档；只是氛围，不抢眼）。
-const Duration _kNavRailShapeSpin = Duration(seconds: 16);
-
 /// 收起 rail 的选中形状 / 墨滴落点边长（56 宽的格里居中，四周留 2）。
 const double _kNavRailShapeSize = 52;
 
@@ -54,10 +51,6 @@ class _NavRailShapeState extends State<_NavRailShape>
     vsync: this,
     spring: _kNavExpressiveSpatial,
   );
-  late final AnimationController _spin = AnimationController(
-    vsync: this,
-    duration: _kNavRailShapeSpin,
-  );
 
   bool _motion = true;
 
@@ -80,25 +73,16 @@ class _NavRailShapeState extends State<_NavRailShape>
   void _sync({required bool initial}) {
     if (!widget.visible) {
       _morph.animateTo(0, animate: false);
-      _spin.stop();
       return;
     }
     // 初次挂载就已选中（开 app / 展开收起换了一份格）：直接是最终形状，
     // 不在没有墨滴落地的时候凭空变形一次。
     _morph.animateTo(1, animate: _motion && !initial);
-    if (_motion) {
-      if (!_spin.isAnimating) _spin.repeat();
-    } else {
-      _spin
-        ..stop()
-        ..value = 0;
-    }
   }
 
   @override
   void dispose() {
     _morph.dispose();
-    _spin.dispose();
     super.dispose();
   }
 
@@ -111,7 +95,7 @@ class _NavRailShapeState extends State<_NavRailShape>
     final MaterialShapeBorder to = MaterialShapeBorder(shape: widget.shape);
     return RepaintBoundary(
       child: AnimatedBuilder(
-        animation: Listenable.merge(<Listenable>[_morph.animation, _spin]),
+        animation: _morph.animation,
         builder: (BuildContext context, Widget? _) {
           // 弹簧过冲会让进度略超 1：形状插值只取 [0, 1]。
           final double t = _morph.value;
@@ -123,18 +107,12 @@ class _NavRailShapeState extends State<_NavRailShape>
           // 墨滴落定时就是同色同大的圆：形变从等大的圆开始，不缩一下；
           // 只把弹簧过冲换成一点点鼓起。
           final double scale = t <= 1 ? 1 : 1 + (t - 1) * 0.6;
-          return Transform.rotate(
-            angle: _spin.value * 2 * math.pi,
-            child: Transform.scale(
-              scale: scale,
-              child: SizedBox.square(
-                dimension: widget.size,
-                child: DecoratedBox(
-                  decoration: ShapeDecoration(
-                    color: widget.color,
-                    shape: border,
-                  ),
-                ),
+          return Transform.scale(
+            scale: scale,
+            child: SizedBox.square(
+              dimension: widget.size,
+              child: DecoratedBox(
+                decoration: ShapeDecoration(color: widget.color, shape: border),
               ),
             ),
           );

@@ -128,7 +128,7 @@ class FushiIconButton extends StatefulWidget {
     this.isWideTapArea = false,
     this.focusId,
     this.label,
-    this.selected = false,
+    this.selected,
     this.overflowPriority = 0,
     this.alwaysVisible = false,
     this.badge = false,
@@ -154,8 +154,9 @@ class FushiIconButton extends StatefulWidget {
   /// 切换型按钮的选中态（例如工具栏里「多选模式」开着）。MD3 = 官方 M3 Expressive
   /// toggle 图标按钮的方圆角 + 补上的 secondaryContainer 浅色底；
   /// Apple = 强调色着色的液态玻璃圆钮 + onAccent 图标（iOS 26 `.glassProminent`）。
-  /// 默认 false，存量调用点外观不变。
-  final bool selected;
+  /// 默认 null = 非切换按钮（不带 hasSelectedState 语义，外观同未选中）；
+  /// 只有传了 true/false 才是切换按钮。
+  final bool? selected;
 
   /// The icon to display within the button.
   final IconData icon;
@@ -508,7 +509,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
         : FushiIconButtonSpring(
             size: ButtonSizeVariant.small,
             shapeVariant: ButtonShapeVariant.round,
-            selected: widget.selected,
+            selected: widget.selected ?? false,
             builder:
                 (
                   BuildContext context,
@@ -540,7 +541,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
     return Semantics(
       label: widget.tooltip,
       button: true,
-      selected: widget.selected ? true : null,
+      selected: (widget.selected ?? false) ? true : null,
       child: button,
     );
   }
@@ -715,7 +716,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
   }) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
-    final bool selected = widget.selected;
+    final bool selected = widget.selected ?? false;
     final bool inGroup = FushiToolbarScope.inGlassGroupOf(context);
     final Color iconColor = !enabled
         ? (widget.disabledColor ?? apple.tertiaryLabel)

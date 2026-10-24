@@ -359,7 +359,7 @@ class _NavRailPeekScopeState extends State<_NavRailPeekScope>
             clipBehavior: Clip.antiAlias,
             child: SizedBox(
               width: _kNavPeekWidth,
-              child: AnimatedSize(
+              child: FushiAnimatedSize(
                 duration: fushiMotionDuration(context, FushiMotion.medium),
                 curve: FushiMotion.standard,
                 alignment: Alignment.topCenter,

@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
     show AdaptiveNavItem;
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -200,12 +201,10 @@ class _NavModeStripBarState extends State<NavModeStripBar>
   Widget build(BuildContext context) {
     if (spec.indices.isEmpty) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
-    final TextStyle labelStyle =
-        (theme.textTheme.labelLarge ?? const TextStyle()).copyWith(
-          fontSize: 14,
-          fontWeight: FontWeight.w700,
-          height: 1,
-        );
+    final TextStyle labelStyle = context.fushiType.labelLarge.copyWith(
+      fontWeight: FontWeight.w700,
+      height: 1,
+    );
     final List<double> labelWidths = _measureLabels(
       labelStyle,
       MediaQuery.textScalerOf(context),

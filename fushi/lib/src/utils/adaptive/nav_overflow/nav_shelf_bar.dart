@@ -7,6 +7,10 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_overflow_spec.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -291,7 +295,7 @@ class _NavShelfBarState extends State<NavShelfBar>
       selected: currentHidden,
       label: names,
       excludeSemantics: true,
-      child: Tooltip(
+      child: FushiTooltip(
         message: names,
         child: Listener(
           onPointerDown: (PointerDownEvent e) => _onSpinePointerDown(e, hidden),
@@ -490,12 +494,12 @@ class _NavShelfBarState extends State<NavShelfBar>
         math.min(1, _kShelfRise.inMilliseconds / totalMs),
         curve: _kShelfCurve,
       ),
-      reverseCurve: Curves.easeIn,
+      reverseCurve: FushiMotion.exit,
     );
     final Animation<double> fade = CurvedAnimation(
       parent: _shelf,
       curve: Interval(0, math.min(1, 200 / totalMs)),
-      reverseCurve: Curves.easeIn,
+      reverseCurve: FushiMotion.exit,
     );
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
@@ -594,46 +598,48 @@ class _NavShelfBarState extends State<NavShelfBar>
               height: _kBooksAreaHeight,
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints box) {
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minWidth: box.maxWidth,
-                        minHeight: box.maxHeight,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: <Widget>[
-                          for (int k = 0; k < hidden.length; k++)
-                            _ShelfBook(
-                              item: spec.item(hidden[k]),
-                              tone: tones[k % tones.length],
-                              height: _bookHeight(k),
-                              current: hidden[k] == spec.currentIndex,
-                              outline: scheme.onSurface,
-                              shade: scheme.shadow,
-                              rise: CurvedAnimation(
-                                parent: _shelf,
-                                curve: Interval(
-                                  math.min(
-                                    1,
-                                    (_kBookStagger.inMilliseconds * k) /
-                                        totalMs,
+                  return HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minWidth: box.maxWidth,
+                          minHeight: box.maxHeight,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: <Widget>[
+                            for (int k = 0; k < hidden.length; k++)
+                              _ShelfBook(
+                                item: spec.item(hidden[k]),
+                                tone: tones[k % tones.length],
+                                height: _bookHeight(k),
+                                current: hidden[k] == spec.currentIndex,
+                                outline: scheme.onSurface,
+                                shade: scheme.shadow,
+                                rise: CurvedAnimation(
+                                  parent: _shelf,
+                                  curve: Interval(
+                                    math.min(
+                                      1,
+                                      (_kBookStagger.inMilliseconds * k) /
+                                          totalMs,
+                                    ),
+                                    math.min(
+                                      1,
+                                      (_kBookStagger.inMilliseconds * k +
+                                              _kBookRise.inMilliseconds) /
+                                          totalMs,
+                                    ),
+                                    curve: _kBookCurve,
                                   ),
-                                  math.min(
-                                    1,
-                                    (_kBookStagger.inMilliseconds * k +
-                                            _kBookRise.inMilliseconds) /
-                                        totalMs,
-                                  ),
-                                  curve: _kBookCurve,
+                                  reverseCurve: FushiMotion.exit,
                                 ),
-                                reverseCurve: Curves.easeIn,
+                                onTap: () => _pickFromShelf(hidden[k]),
                               ),
-                              onTap: () => _pickFromShelf(hidden[k]),
-                            ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   );
