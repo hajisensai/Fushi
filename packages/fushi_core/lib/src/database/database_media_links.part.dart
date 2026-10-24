@@ -233,7 +233,10 @@ mixin _FushiDbMediaLinks on _$FushiDatabase {
       transaction(() async {
         final MediaLinkRow? local = await mediaLinkById(mediaLinkIdOf(remote));
         if (local != null && !mediaLinkRemoteWins(local, remote)) return false;
-        await into(mediaLinks).insertOnConflictUpdate(remote);
+        // toCompanion(false)：null 列（deletedAt / role / reason …）必须显式写成
+        // NULL。直接传数据类时 drift 按 nullToAbsent 省略 null 列，冲突更新就保留
+        // 本机旧值——对端复活一条连接时墓碑会原地不动。
+        await into(mediaLinks).insertOnConflictUpdate(remote.toCompanion(false));
         return true;
       });
 }

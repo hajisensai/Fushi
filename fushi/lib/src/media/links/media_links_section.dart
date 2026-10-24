@@ -83,7 +83,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
   static const double _textHeight = 44;
   static const double _gap = 12;
   static const double _suggestionWidth = 300;
-  static const double _suggestionHeight = 132;
+  static const double _suggestionHeight = 148;
 
   /// 持久化在 State 里（BUG-2010：build 里现取 = 每次重建都多查一次库）。
   late Future<List<MediaLinkView>> _views;
@@ -98,7 +98,11 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
         .tableUpdates(TableUpdateQuery.onTable(widget.database.mediaLinks))
         .listen((_) {
           if (!mounted) return;
-          setState(() => _views = _load());
+          // 块体写法：箭头体会把赋值结果（Future）当返回值交给 setState，触发
+          // 「setState() callback argument returned a Future」断言、整次重建作废。
+          setState(() {
+            _views = _load();
+          });
         });
   }
 
@@ -286,8 +290,9 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       ),
       width: _suggestionWidth,
       child: FushiCard(
-        child: Padding(
-          padding: const EdgeInsets.all(10),
+        // 卡片自带内边距会再吃掉一圈高度，这里由本卡自己给定一圈 10。
+        padding: const EdgeInsets.all(10),
+        child: SizedBox.expand(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
