@@ -18,12 +18,27 @@ import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 /// [creditNames] 是合并前从**全部**来源收集的人名 / 角色名写法等价类（见
 /// [VideoMetadataCreditNameBridge.fromWorks]）；多源依次合并时每一步都传同一份，
 /// 人物身份判定才与合并顺序无关。不传时只按两边自身的写法比对（旧行为）。
+///
+/// [supplementPart] 非 null 表示 [supplement] 描述的是**整部剧**，而 [primary]
+/// 只是其中一部分（续作季、挂在剧特典季下的剧场版）：剧本体的首播年 / 播出区间 /
+/// 状态 / 集数季数不属于这一部分，一律不拿来补空；年份与首播日改取
+/// [VideoMetadataSupplementPart] 给出的那一季（没有就留空——空着比错着好）。
+/// 补充源是整部剧、主身份只是其中一部分时，这一部分自己的年份 / 首播日
+/// （取自补充源里对应的那一季；剧场版挂在特典季下时两者都是 null）。
+class VideoMetadataSupplementPart {
+  const VideoMetadataSupplementPart({this.year, this.premiered});
+
+  final int? year;
+  final String? premiered;
+}
+
 VideoMetadataWork supplementVideoMetadata(
   VideoMetadataWork primary,
   VideoMetadataWork? supplement, {
   String? preferredLanguage,
   VideoMetadataCreditNameBridge creditNames =
       VideoMetadataCreditNameBridge.none,
+  VideoMetadataSupplementPart? supplementPart,
 }) {
   if (supplement == null || primary.provider == supplement.provider) {
     return primary;
@@ -61,9 +76,14 @@ VideoMetadataWork supplementVideoMetadata(
     ).where((String alias) => alias != title).toList(),
     romajiTitle: primary.romajiTitle ?? supplement.romajiTitle,
     englishTitle: primary.englishTitle ?? supplement.englishTitle,
-    year: primary.year ?? supplement.year,
-    premiered: primary.premiered ?? supplement.premiered,
-    endDate: primary.endDate ?? supplement.endDate,
+    year: primary.year ??
+        (supplementPart == null ? supplement.year : supplementPart.year),
+    premiered: primary.premiered ??
+        (supplementPart == null
+            ? supplement.premiered
+            : supplementPart.premiered),
+    endDate: primary.endDate ??
+        (supplementPart == null ? supplement.endDate : null),
     plot: _pickText(
       primary.plot,
       supplement.plot,
@@ -73,13 +93,16 @@ VideoMetadataWork supplementVideoMetadata(
     ratingVotes: primary.ratingVotes ?? supplement.ratingVotes,
     runtimeMinutes: primary.runtimeMinutes ?? supplement.runtimeMinutes,
     contentRating: primary.contentRating ?? supplement.contentRating,
-    status: primary.status ?? supplement.status,
+    status:
+        primary.status ?? (supplementPart == null ? supplement.status : null),
     originalLanguage: primary.originalLanguage ?? supplement.originalLanguage,
     homepage: primary.homepage ?? supplement.homepage,
     episodeGroupId: primary.episodeGroupId ?? supplement.episodeGroupId,
     ids: _mergeIds(primary.ids, supplement.ids),
-    seasonCount: primary.seasonCount ?? supplement.seasonCount,
-    episodeCount: primary.episodeCount ?? supplement.episodeCount,
+    seasonCount: primary.seasonCount ??
+        (supplementPart == null ? supplement.seasonCount : null),
+    episodeCount: primary.episodeCount ??
+        (supplementPart == null ? supplement.episodeCount : null),
     genres: _mergeLanguageTaggedStrings(
       primary.genres,
       supplement.genres,

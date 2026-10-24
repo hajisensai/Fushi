@@ -75,6 +75,15 @@
 |---|:--:|:--:|---|
 | [BUG-3704](bugs/BUG-3704-host-list-videos-sync-stat-blocks-isolate.md) | ✅ | ✅ | 网络盘上的视频让 Fushi 主 isolate 卡数秒（互联 host 列表与 UI 一起冻结） |
 | [BUG-3703](bugs/BUG-3703-interconnect-sync-slow.md) | ✅ | ✅ | 互联同步一轮要几分钟（局域网 / 全部客户端） |
+> 共 3311 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3707](bugs/BUG-3707-scrape-summary-hides-pending-backlog.md) | ✅ | ✅ | scrape-summary-hides-pending-backlog |
+| [BUG-3706](bugs/BUG-3706-tmdb-parent-series-year-leaks.md) | ✅ | ✅ | tmdb-parent-series-year-leaks |
+| [BUG-3705](bugs/BUG-3705-anidb-catalog-only-auto-matches-wrong-kind.md) | ✅ | ✅ | anidb-catalog-only-auto-matches-wrong-kind |
+| [BUG-3704](bugs/BUG-3704-movie-keyword-single-file-scraped-as-tv.md) | ✅ | ✅ | movie-keyword-single-file-scraped-as-tv |
+| [BUG-3703](bugs/BUG-3703-cli-candidates-provider-only-filters.md) | ✅ | ✅ | cli-candidates-provider-only-filters |
 | [BUG-3702](bugs/BUG-3702-local-audio-dangling-after-profile-import.md) | ✅ | ✅ | 导入别的设备的配置方案后，本地发音库成了悬空引用，互联同步也修不好 |
 | [BUG-3701](bugs/BUG-3701-manga-series-volume-folders-flattened.md) | ✅ | ✅ | manga-series-volume-folders-flattened |
 | [BUG-3700](bugs/BUG-3700-moved-seeds-hidden-from-download-list.md) | ✅ | ✅ | 整理后挪到来源根的做种种子从下载页消失，总速度上传恒为 0、「做种中」恒空 |

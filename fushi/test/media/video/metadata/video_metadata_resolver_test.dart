@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
@@ -59,6 +60,52 @@ void main() {
       expect(result.method, VideoMetadataResolutionMethod.explicitId);
       expect(result.lookup?.externalId, '99');
       expect(provider.searchCalls, 0);
+    });
+
+    // AniDB HTTP 详情不可用：搜索与 fetchWork 都只给标题目录摘要（类型照抄
+    // 请求、没有年份）。「劇場版 X～副标题～」剥成 X 后唯一精确命中 X 的 TV
+    // 第一季，旧实现直接 matched；没有类型 / 年份证据的摘要只能进待确认。
+    test('catalog-only AniDB exact hit is never auto-matched', () async {
+      VideoMetadataWork catalogRow(VideoMetadataMediaKind kind) =>
+          VideoMetadataWork(
+            provider: VideoMetadataProviderKind.anidb,
+            kind: kind,
+            title: 'Show',
+            ids: const <VideoMetadataId>[
+              VideoMetadataId(type: 'anidb', value: '10889', isDefault: true),
+            ],
+            rawPayload: const <String, Object?>{
+              AniDbVideoMetadataProvider.catalogOnlyPayloadKey: true,
+            },
+          );
+      final _FakeProvider provider = _FakeProvider(
+        kind: VideoMetadataProviderKind.anidb,
+        searchResults: <VideoMetadataWork>[
+          catalogRow(VideoMetadataMediaKind.movie),
+        ],
+        works: <String, VideoMetadataWork>{
+          '10889': catalogRow(VideoMetadataMediaKind.movie),
+        },
+      );
+      final VideoMetadataResolution result = await VideoMetadataResolver(
+        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+          provider,
+        ]),
+      ).resolve(
+        VideoMetadataResolveRequest(
+          selectedProvider: VideoMetadataProviderKind.anidb,
+          mediaKind: VideoMetadataMediaKind.movie,
+          titleCandidates: const <String>['Show'],
+          year: 2016,
+        ),
+      );
+
+      expect(result.status, isNot(VideoMetadataResolutionStatus.matched));
+      expect(
+        result.candidates.map((VideoMetadataWork w) => w.title),
+        contains('Show'),
+        reason: '摘要仍作为候选交给用户确认',
+      );
     });
 
     test('confirmed AniDB identity ignores local year and season heuristics',

@@ -168,6 +168,8 @@ class _ManualBindingRunner
     required String workTitle,
     String? workStableKey,
     required String query,
+    VideoMetadataProviderKind? provider,
+    VideoMetadataMediaKind? mediaKind,
   }) async {
     queries.add(query);
     return results;
@@ -617,6 +619,59 @@ void main() {
       }
     }
     expect(find.textContaining('Issue #60'), findsOneWidget);
+  });
+
+  // BUG-3707：本批「待确认 0」时，早就躺在待确认清单里的作品（后台补刮不重问）
+  // 必须在结果卡上说出来并给入口，不能读成「没有要你决策的」。
+  testWidgets('finished report points at the pending backlog',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(_ReportRunner(warnings: 0));
+    addTearDown(controller.dispose);
+    await controller.scrapeSource(entry.source);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                loadPendingWorks: () async => <VideoPendingScrapeWork>[entry],
+              )),
+              child: const Text('Open tasks'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open tasks'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('video-source-report-pending-backlog')),
+      findsOneWidget,
+    );
+    final Finder open =
+        find.byKey(const ValueKey<String>('video-source-report-pending-open'));
+    await tester.ensureVisible(open);
+    await tester.pumpAndSettle();
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey<String>('video-source-pending-work-book:movie-a'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('book and manga rows never expose video scrape controls',
