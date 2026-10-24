@@ -28,7 +28,7 @@
     "native/galgame_hook/third_party/locale_emulator/LICENSE-LGPL.txt": "ea8af5e789cb2d4e9b10bce3874982ade163b749b6bfbdb32e2df21c4d106de1",
     "native/galgame_hook/third_party/lunahook/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
     "native/galgame_hook/third_party/minhook/LICENSE.txt": "2bfff5fa29fc5d1cb2745acfaad9d930e983f5c8dd97e0ec5735d9199cf8f416",
-    "native/third_party_licenses/manifest.json": "e64a13ac8db6981487ab89df22164c3fa0879d84d966b55a95d9eadc223a65a2",
+    "native/third_party_licenses/manifest.json": "b3be79c2f5bbd9ad9a794595c1f98abeb6b2c83e3b45f089810b434d427c19de",
     "native/third_party_licenses/texts/boost-1.91.0-LICENSE_1_0.txt": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
     "native/third_party_licenses/texts/crates/DimaKudosh-difflib-6fd59b0c/LICENSE": "6725d1437fc6c77301f2ff0e7d52914cf4f9509213e1078dc77d9356dbe6eac5",
     "native/third_party_licenses/texts/crates/OpenByteDev-dlopen2-cc80e4a0/LICENSE": "39fa265207450e77c62e90c5594a06c085b655d8374c7ced4bf7894b6bd95dd2",
@@ -8366,7 +8366,7 @@
         "windows"
       ],
       "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256); built by tool/dvd/build_dvd_libs.sh into the unified FFmpeg prefix; source headers: 'either version 2 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-dvd/ in the rebuilt archive)",
-      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships with the Windows libmpv archive rebuilt by tool/bluray/build_libmpv.ps1 (docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not built yet."
+      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships in the vendored Windows libmpv archive (…-ffu2-dvd1.7z, tool/bluray/build_libmpv.ps1; docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not vendored yet."
     },
     {
       "name": "libdvdnav",

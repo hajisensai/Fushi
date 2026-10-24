@@ -974,7 +974,7 @@
         "native/third_party_licenses/texts/dvd/libdvdcss-1.6.0-COPYING"
       ],
       "source": "tool/dvd/recipe.env LIBDVDCSS_VERSION=1.6.0, tarball https://download.videolan.org/pub/videolan/libdvdcss/1.6.0/libdvdcss-1.6.0.tar.xz sha256 7ea556c8… (matches VideoLAN's .sha256); built by tool/dvd/build_dvd_libs.sh into the unified FFmpeg prefix; source headers: 'either version 2 of the License, or (at your option) any later version'; text = COPYING of that tarball (licenses/fushi-dvd/ in the rebuilt archive)",
-      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships with the Windows libmpv archive rebuilt by tool/bluray/build_libmpv.ps1 (docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not built yet."
+      "note": "DLL: libdvdcss-2.dll (fbddvdcss-2.dll in the bundle), linked by libdvdread (built against it, not dlopen). Ships in the vendored Windows libmpv archive (…-ffu2-dvd1.7z, tool/bluray/build_libmpv.ps1; docs/specs/2026-10-24-dvd-original-menu.md); Android / iOS / macOS artifacts with DVD are not vendored yet."
     },
     {
       "name": "libdvdread",

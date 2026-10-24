@@ -6,11 +6,30 @@ including upstream HDMV/BD-J navigation added on 2026-08-25. The previous
 2026-08-13 binary had neither `discnav` nor `disc-menu`; updating Flutter alone
 could not enable original menus.
 
-Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2.7z` (42,951,609 bytes).
-SHA-256: `9187cf8594bee5c90432ddbedd719dbca6e3d24c9741c17ecf71dfa0a5f147f1`.
-The `fushi-discnav1-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2` suffix identifies this patched build; it is not an
+Archive: `mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1.7z` (40,652,650 bytes).
+SHA-256: `bdd78bf52a23bcd3c4c58037e2f13930b6c4ce13d76491a204c4a70d25841805`.
+The `fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1` suffix identifies this patched build; it is not an
 unmodified zhongfly release. Its DLL and dependency manifests are also tracked
 beside this document for review without unpacking the binary.
+
+`discnav2-...-dvd1` (2026-10-24): DVD menus (`docs/specs/2026-10-24-dvd-original-menu.md`,
+`tool/dvd/README.md`). The unified FFmpeg prefix now also holds libdvdcss 1.6.0,
+libdvdread 7.1.1 (linked against libdvdcss) and libdvdnav 7.0.0 from
+`tool/dvd/recipe.env`; FFmpeg adds `--enable-libdvdnav --enable-libdvdread`
+(`dvdvideo` demuxer) and libmpv `-Ddvdnav=enabled -Ddvda=disabled`, so both
+load the same `fbddvdcss-2.dll` / `fbddvdread-8.dll` / `fbddvdnav-4.dll`
+(licenses in `licenses/fushi-dvd/`, provenance entry `fushi-dvd`).
+`disc-navigation-state.patch` is v2: `disc-type` plus a `dvd-state` branch;
+the Blu-ray fields are unchanged and the Dart side accepts v1 and v2. Apart
+from the three DVD DLLs and their licenses the file list is identical to `ffu2`.
+`build_libmpv.ps1` ran every verifier (capability floor with `--require-staged`,
+`probe_libmpv.py` incl. the DVD capability, mkv lace / DTS, DV P5 0.36 / 255,
+P8.1 0.27). Blu-ray regression with `verify_menu_render.py` on the readable
+Disc 2 test copy: same states, same HDMV IG menu (`right` moves to チャプター)
+as the `ffu2` archive; the authored DVD (`tool/dvd/make_test_dvd.py`) renders
+every focused button 100 % in its select colour and completes menu → title →
+menu. A second, encrypted / BD-J Blu-ray does not open in the isolated probe
+with either archive (no app-side AACS), identically.
 
 `ffu1` (2026-10-17): built against the **unified FFmpeg** (`tool/ffmpeg-unified`,
 FFmpeg 9.0.1 + Fushi patches, see `docs/specs/2026-10-17-unified-ffmpeg.md`)

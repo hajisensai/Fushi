@@ -1,9 +1,28 @@
 [
   {
+    "name": "fushi-dvd",
+    "license": "GPL-2.0-or-later",
+    "versions": {
+      "libdvdcss": "1.6.0",
+      "libdvdread": "7.1.1",
+      "libdvdnav": "7.0.0"
+    },
+    "tarball_sha256": {
+      "libdvdcss": "7ea556c846b7bfc32d47b41cae56d1863a6b6d5f706bb162778d6f298490977c",
+      "libdvdread": "a0d47876548bec806774bbf8dbf20bb19ba139464383156b32eb8e59915b90a9",
+      "libdvdnav": "a2a18f5ad36d133c74bf9106b6445806fa253b09141a46392550394b647b221e"
+    },
+    "files": [
+      "libdvdcss-2.dll",
+      "libdvdnav-4.dll",
+      "libdvdread-8.dll"
+    ]
+  },
+  {
     "name": "fushi-unified-ffmpeg",
     "version": "9.0.1",
     "upstream_commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
-    "patched_commit": "c0efa485e708f8b4d491e2c7cbb0bf3856f12895",
+    "patched_commit": "44ec6683e3d6047918efe0449c040b1980e19804",
     "patches": {
       "0001-avformat-tls-add-tls_pin_sha256-certificate-pinning-.patch": "a3caf1c60ed2850dac6292f27d4982ee5e33b1db23a803e4cb7ab34b562161a3",
       "0002-avutil-log-primary-secondary-log-callback-for-in-pro.patch": "475ff899a336f659f2bcba38e415dcec0009b9cda193da23d621c23850533d77",
@@ -18,6 +37,9 @@
       "avutil-61.dll",
       "ffmpeg.exe",
       "ffprobe.exe",
+      "libdvdcss-2.dll",
+      "libdvdnav-4.dll",
+      "libdvdread-8.dll",
       "swresample-7.dll",
       "swscale-10.dll"
     ]

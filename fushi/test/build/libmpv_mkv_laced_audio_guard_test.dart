@@ -148,8 +148,12 @@ void main() {
     }
     final String cmake = File('$pkg/windows/CMakeLists.txt').readAsStringSync();
     // `-mkvdts1` must stay in the pinned archive name; later rebuild tags
-    // (`-dovi1` Dolby Vision reshaping, `-ffu1` unified FFmpeg) may follow it.
-    expect(cmake, matches(RegExp(r'-mkvdts1(-dovi\d+)?(-ffu\d+)?\.7z"')));
+    // (`-dovi1` Dolby Vision reshaping, `-ffu1` unified FFmpeg, `-dvd1` DVD
+    // menus) may follow it.
+    expect(
+      cmake,
+      matches(RegExp(r'-mkvdts1(-dovi\d+)?(-ffu\d+)?(-dvd\d+)?\.7z"')),
+    );
   });
 
   // 补丁的 trace / debug 字符串只在它编进去时出现在二进制里：直接打开构建实际
