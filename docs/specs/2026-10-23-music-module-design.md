@@ -601,6 +601,32 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 每期按本仓验证纪律：Dart 改动 `flutter analyze` 为推送门；播放 / 歌词 / 布局类
 修复要在真机或 Windows 离屏 runner 复测原始路径；Rust 侧带固定输入→输出向量。
 
+### 13.1 P1 剩余部分落地记录（2026-10-24）
+
+- **桌面歌词**：`MusicLyricsLive`（`media/music/lyrics/music_lyrics_live.dart`）复用有声书的
+  `FloatingLyricChannel`（Android 系统悬浮窗 / Windows 置顶穿透分层窗，不抢前台）。双行
+  （当前 + 下一行）；逐字推进按**音节边界**下发一次区间高亮（定时器排到下一个边界，
+  不逐帧过平台通道）——原生窗口只有区间高亮，没有逐帧渐变擦色。与有声书按媒体会话
+  归属让出 / 拿回窗口。**macOS 没有原生悬浮窗后端**（有声书同样没有），设置项只在
+  Android / Windows 显示。
+- **锁屏 / 通知**：当前行写进媒体会话的副标题（`MusicSession.mediaSessionLyricLine`），
+  设置「锁屏显示歌词」默认开。
+- **学习闭环（§12）**：歌词页制卡 = 查词那行 + 该行音频（前后扩 0.5 s）+ 封面 + `music`
+  来源链接与 `mined_sentences.position_ms / duration_ms`（L3）；AB 循环一行 / 多行走 mpv
+  原生 `ab-loop-a/b`（换曲自动关，交叉淡入下作用于出声的主实例）；学习统计
+  `MusicStudyTracker` 写 `study_segments`（`media_kind = music`），按 D4 只在学习动作后
+  的空闲窗口内或开了「听歌计入学习」时计；生词覆盖率 = 复习库里已进复习队列的词 /
+  歌词里词典命中的词（新 C ABI `fushidicts_tokenize_terms` 整首一次 FFI 取词头）。
+  曲库按难度排序需要把覆盖率落库（新列 / 新表），未做，待分配 schema 号。
+- **120 Hz 实测**（`fushi/integration_test/karaoke_lyrics_perf_itest.dart`，Windows profile、
+  Skia、160 Hz 屏、dpr 1.5、48 行 / 530 音节字级时间轴、每场景 25 s）：稳态（同进程第
+  二遍 / 换歌）超 8.33 ms 帧数为 **0**，build p99 ≈ 0.5 ms、raster p99 ≈ 1.1 ms，每帧只
+  重绘 1 个行组、播放中零重排。**进程内第一次**播歌词的头几次换行有 4–5 帧 10–18 ms，
+  `--trace-skia` 定位为 Skia/ANGLE 首次编译模糊着色器（`GrGLProgramBuilder::finalize`
+  → `driver_link_program` 11 ms），组件自身绘制 0.3 ms；三种组件内改法（统一模糊强度 /
+  painter 内 saveLayer / 像素对齐）实测都只是挪动编译时机，已撤回。根治需在组件外
+  （Impeller 预编译与 HDR 引擎补丁冲突 / 引擎持久化着色器缓存），待所有者决定。
+
 ## 14. 风险
 
 - **DVD 高亮正确性**：正是 mpv 当年删菜单的原因。缓解：先在 P5 前单独做一个
