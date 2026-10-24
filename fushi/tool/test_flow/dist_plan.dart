@@ -271,24 +271,36 @@ class DistSuiteQueue {
   }
 }
 
-/// A worker's measured speed: wall milliseconds per weight millisecond over
-/// the batches it finished. Before the first one it is [prior].
+/// A worker's measured speed: wall milliseconds per weight millisecond, an
+/// exponential moving average over the batches it finished ([kDistSpeedAlpha]
+/// on the newest). Before the first one it is [prior].
+///
+/// Not a cumulative mean: the queue hands out heavy suites first and small ones
+/// last, and the per-suite overhead a machine really pays shows up mostly in the
+/// small ones, so the ratio drifts during a run (M4 Mac: 0.26 → 0.67). The
+/// cumulative mean lagged so far behind that a "4 minute" batch ran 768 s.
 class DistSpeed {
   DistSpeed({this.prior = 1.0});
 
   final double prior;
-  int _wallMs = 0;
-  int _weightMs = 0;
+  double? _factor;
 
-  bool get measured => _weightMs > 0;
+  bool get measured => _factor != null;
 
-  double get factor => measured ? _wallMs / _weightMs : prior;
+  double get factor => _factor ?? prior;
 
   void record({required int wallMs, required int weightMs}) {
-    _wallMs += wallMs;
-    _weightMs += weightMs;
+    if (weightMs <= 0) return;
+    final double ratio = wallMs / weightMs;
+    final double? previous = _factor;
+    _factor = previous == null
+        ? ratio
+        : kDistSpeedAlpha * ratio + (1 - kDistSpeedAlpha) * previous;
   }
 }
+
+/// Weight of the newest batch in [DistSpeed]'s moving average.
+const double kDistSpeedAlpha = 0.6;
 
 /// How much weight a worker takes next (guided self-scheduling): half of its
 /// share of what it can still run, its share being its speed over the summed

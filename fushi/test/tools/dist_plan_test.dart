@@ -257,6 +257,18 @@ void main() {
     DistSpeed measured(double factor) =>
         DistSpeed()..record(wallMs: (1000 * factor).round(), weightMs: 1000);
 
+    test('speed follows recent batches (moving average, not a mean)', () {
+      final DistSpeed speed = DistSpeed()
+        ..record(wallMs: 260, weightMs: 1000)
+        ..record(wallMs: 670, weightMs: 1000);
+      expect(
+        speed.factor,
+        closeTo(kDistSpeedAlpha * 0.67 + (1 - kDistSpeedAlpha) * 0.26, 1e-9),
+      );
+      // A cumulative mean would sit at 0.465 here.
+      expect(speed.factor, greaterThan(0.5));
+    });
+
     test('an unmeasured worker takes a probe batch of about a minute', () {
       expect(
         distChunkBudgetMs(
