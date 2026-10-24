@@ -9,6 +9,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -33,13 +34,15 @@ Map<String, String> musicMpvProperties(MusicOutputSettings settings) =>
     };
 
 class MpvMusicOutputBackend implements MusicOutputBackend {
-  MpvMusicOutputBackend()
-    : _player = Player(
-        configuration: const PlayerConfiguration(
-          vo: 'null',
-          title: 'Fushi Music',
-        ),
-      ) {
+  /// [initialProperties] 在第一次下发设置前写一次（测试用 `ao=null` 免得真出声）。
+  MpvMusicOutputBackend({
+    PlayerConfiguration configuration = const PlayerConfiguration(
+      vo: 'null',
+      title: 'Fushi Music',
+    ),
+    Map<String, String> initialProperties = const <String, String>{},
+  }) : _player = Player(configuration: configuration),
+       _initialProperties = initialProperties {
     _subs.add(_player.stream.position.listen(_onPosition));
     _subs.add(
       _player.stream.playing.listen(
@@ -60,6 +63,12 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
   }
 
   final Player _player;
+  final Map<String, String> _initialProperties;
+  bool _initialised = false;
+
+  /// 底层 mpv 播放器（测试读属性 / 日志用）。
+  @visibleForTesting
+  Player get debugPlayer => _player;
   final StreamController<MusicBackendEvent> _events =
       StreamController<MusicBackendEvent>.broadcast();
   final List<StreamSubscription<Object?>> _subs =
@@ -79,8 +88,19 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
       ? _player.platform! as NativePlayer
       : null;
 
+  Future<void> _ensureInitialised() async {
+    if (_initialised) return;
+    _initialised = true;
+    final NativePlayer? native = _native;
+    if (native == null) return;
+    for (final MapEntry<String, String> e in _initialProperties.entries) {
+      await native.setProperty(e.key, e.value);
+    }
+  }
+
   @override
   Future<void> applySettings(MusicOutputSettings settings) async {
+    await _ensureInitialised();
     final NativePlayer? native = _native;
     if (native == null) return;
     for (final MapEntry<String, String> e in musicMpvProperties(
@@ -96,6 +116,7 @@ class MpvMusicOutputBackend implements MusicOutputBackend {
     MusicPlayItem? next, {
     required bool play,
   }) async {
+    await _ensureInitialised();
     _rewiring = true;
     try {
       _current = current;
